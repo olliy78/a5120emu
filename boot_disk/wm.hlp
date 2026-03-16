@@ -1,0 +1,67 @@
+	|krannyj revim (navmi ^J dlq prodolveniq)
+
+^O   wstawku wkl./wykl.         DEL  steretx simwol slewa
+^S   kursor wlewo na simwol     ^G   steretx simwol sprawa
+^D   kursor wprawo na simwol    ^\   steretx slowo slewa
+^A   kursor wlewo na slowo      ^T   steretx slowo sprawa
+^F   kursor wprawo na slowo     ^U   steretx stroku slewa            
+^Q   tabulqciq wprawo		^K   steretx stroku sprawa
+^E   kursor wwerh na stroku     ^Y   steretx ws` stroku    
+^X   kursor wniz na stroku	^I   pomestitx simwol tabulqcii w fajl
+^^   kursor w na~. i kon.|krana ^N   razdwinutx stroki
+^L   kursor wprawo    		^@   DO NEXT CHR 4X  
+^W   fajl wniz na stroku	^P   NEXT CHR IN FILE
+^Z   fajl wwerh na stroku	^V   VIO CONTROL
+^R   predydu}aq stranica	ESC  wyjti iz |krannogo revima
+^C   sledu`}aq stranica		^J   wywod na |kran podskazki
+	
+        komandnyj revim (navmi ^J dlq prodolveniq)
+
++-  zdesx nuven + ili -, + podrazumewaetsq po umol~ani`
+@   zdesx navatx ET ili poda~a stroki (^Z)
+$   zdesx nuvno ESC, ET ili ^Z
+N   ozna~aet ~islo, 1 po umol~ani`, # = 65535
+
++-NC   sdwinutx na N simwolow   +-ND   steretx N simwolow
++-NL   sdwinutx na N strok      +-NK   steretx N strok     
++-NT   pe~atatx N strok           NZ   otdohni N sekund
++-NP   pe~atatx N stranic       +-N@   sdwinutx na N strok i   
+				       odnu raspe~atatx
+
+NItekst$    wstawitx tekst N raz
+I@          wojti w revim wstawki (wyhod po ^Z   ili ESC)
+A@, NAtekst$ (dobawitx) DO 1L THEN JUST LIKE INSERT
+N<....>     cikl: powtoritx<....> N raz (po umol~ani` = 65535)	
+ 	komandnyj revim (navmi ^J dlq prodolveniq)
+
++-NFkl`~$	(najti) korotkij poisk po kl`~u N raz
++-NNkl`~$	(sledu`}ij) dlinnyj poisk po kl`~u N raz
++-NSkl`~$tekst$   podstawitx <tekst> posle korotkogo poiska N raz
++-NRkl`~$stekst$  podstawitx <tekst> posle dlinnogo poiska N raz
+/F,/N,/S,/R     to ve, krome wyhoda iz <..> ili QX, esli ne najdeno
+
+Y[D:]Name.tYP$  pro~itatx fajl w pozici` kursora
+NW[D:]Name.tYP$ zapisatx N strok w nazwannyj fajl
+
+^N   wkps wnutri teksta ili kl`~a	^Y  ESC wnutri teksta ili kl`~a
+^A   l`boj simwol w kl`~e		^A  razdelitelx w kl`~e
+^OX  otsutstwie h w kl`~e
+	
+komandnyj revim (navmi ^J dlq wozwrata k redaktirowani`)
+
+NQP	   zapisatx N strok w Q-bufer, steretx iz fajla
+N/QP	   dobawitx N strok k Q-buferu, steretx iz fajla
+NQG	   (wzqtx) skopirowatx Q-bufer w fajl N raz
+QT	   nape~atatx Q-bufer
+QK	   (KILL) o~istitx Q-bufer
+QX	   wypolnitx komandu w Q-bufere
+QLtekst$   (LOAD) pomestitx tekst w Q-bufer
+N/QLtekst$ dobawitx tekst k Q-buferu N raz
+
+V   wojti w |krannyj revim		N!   pomestitx kod simwola N w fajl
+;   wse posledu`}ee - kommentarij	E    normalxnoe okon~. redaktirowaniq
+H   zapisx na disk, prodolvenie		Q    prerywanie redaktirowaniq
+    redaktirowaniq polu~ennogo fajla    ^Q   wywesti na |kran podskazku
+o   wozwrat k perwona~alxnomu                      
+    fajlu w WM
+ 

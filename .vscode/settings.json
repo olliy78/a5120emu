@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^mkdir -p /home/olliy/projects/a5120emu/src /home/olliy/projects/a5120emu/tests /home/olliy/projects/a5120emu/docs /home/olliy/projects/a5120emu/disks$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
