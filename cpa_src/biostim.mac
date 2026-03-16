@@ -1,0 +1,385 @@
+;*************************************************************
+;	Zeitgeberdienst
+; 15.06.88
+; - BAB2 als Standard
+ IF cpu eq c1715
+; - Tastatur im 25ms-Polling statt direkt ueber Interrupt wegen V.24
+; - Cursor fuer Bildschirm ueber 25ms-Zeittakt statt sofort
+ ENDIF
+; - zusaetzliche Laufwerksabschaltung ueber Zeittakt eingefuehrt
+; - Abfrage von 'synsem' in 1-sec-Interrupt entfernt (kein setbs/setram notw.)
+; 24.09.88
+; - Bildschirmpuffer kann ausserhalb des normalen RAM's liegen
+; 09.10.88
+; - Pflege der Statuszeile nur bei stzaus=0
+; 23.12.88
+; - Einbau der Pflege des Datums
+; 07.01.89
+; - Tastaturpolling nur wenn Zugriff zur Statuszeile erlaubt
+; 20.03.89
+; - Laufwerksabschaltung ueber Zeittakt nur bei FDC K5120/22 und F1715
+;*************************************************************
+
+ IF1
+timwarm	MACRO
+	ld	hl,ret		;;leere 1-sec-Interr.routine
+	ld	(tim1rt),hl
+  IF cpu eq c1715
+	ld	a,0fh
+	out	(sysctc+2),a	;;stoppen evtl. laufenden CTC 0a
+	ld	a,0
+bsform	equ	$-1
+	out	(sysctc+2),a	;;und erneut Bildschirmformat einst.
+	call	tim5on		;;25ms-Zeittakt ein
+  ELSE
+	call	tim5on		;;5 ms Zeittakt ein
+	call	tim1on		;;1 sec Zeittakt ein
+  ENDIF
+	ENDM
+
+ ENDIF
+
+; 5ms/25ms an
+tim5on:
+ IF cpu eq c1715
+	xor	a
+	ld	(crtccn),a	;Flag "Timer aus" fuer Cursor wieder loeschen
+ ENDIF
+	ld	a,10110001b
+	;int./zeitg./vort.256/pos.flanke/naechst.zykl./keine zk/weiter/1
+tim5ot:	DI
+	out	(sysctc+tim5ct),a
+	EI
+ret:	ret
+
+; 5ms/25ms aus
+tim5of:
+ IF cpu eq c1715
+	ld	hl,crtccn
+	ld	a,(hl)
+	ld	(hl),0ffh	;Setzen Flag "Timer aus" fuer Cursor
+	or	a		;muss noch Cursor gesetzt werden?
+	jr	z,tincur	;nein
+	inc	a		;war Flag "Timer aus"?
+	call	nz,crtscp	;nein, Cursor setzen bevor Timer abgeschaltet
+tincur:
+ ENDIF
+	ld	a,00110001b	;kein int./...
+	jr	tim5ot
+
+ IF cpu eq c1715
+tim1on	equ	tim5on
+tim1of	equ	tim5of
+ ELSE
+; 1s an
+tim1on:	ld	a,11010001b
+	;int./zaehler//pos.flanke//keine zk/weiter/1
+tim1ot:	DI
+	out	(sysctc+tim1ct),a
+	EI
+	ret
+; 1s aus
+tim1of:	ld	a,01010001b	;kein int./...
+	jr	tim1ot
+ ENDIF
+
+; Interr.routine 5ms/25ms
+tim5it:
+ IF stpvar or monitor
+	ld	(t5ihl),hl	;retten hl
+	ld	hl,chksp	;Test auf haengende Spezialfktnen
+	push	hl		;nach const-Aufruf in CTC-Interrupt
+	ld	hl,0		;wiederherstellen hl
+t5ihl	equ	$-2
+ ENDIF
+	ld	(intsp),sp
+	ld	sp,intstk
+	push	af
+	push	hl
+	push	de
+	push	bc
+	ld	hl,(tim5cn)
+	inc	hl
+	ld	(tim5cn),hl
+ IF cpu eq c1715
+	ld	hl,crtccn
+	ld	a,(hl)
+	or	a		;verzoegertes Cursor-Setzen im Bildschirm?
+	jr	z,tim5cu	;nein
+	dec	(hl)		;Zaehler -1
+	call	z,crtscp	;abgelaufen, Cursor setzen
+tim5cu:
+	ld	a,0
+tim1sc	equ	$-1
+	inc	a
+	cp	1000/25		;1 Sec um?
+	jr	c,tim1s1	;nein
+	xor	a		;sonst wieder auf 0 und Z-Flag
+tim1s1:	ld	(tim1sc),a
+	call	z,tim1up	; 1s Interrupt simulieren
+ ENDIF
+	ld	a,(synflg)
+	bit	stzaus,a	;Zugriff zur Statuszeile erlaubt?
+intkbd:	call	z,kbdsti	;ja, Tastatur abfragen und puffern
+				;auf 'ld hl,.. .' waehrend Lampen-Ausgabe
+intrbc:				;allg. Interr.-ausgang
+	pop	bc
+	pop	de
+intrhl:				;allg. Interr.-ausgang
+	pop	hl
+intraf:				;allg. Interr.-ausgang
+	pop	af
+	ld	sp,0
+intsp	equ	$-2
+intret:				;allg. Interr.-ausgang
+	ei
+	reti
+
+ IF cpu ne c1715
+; Interr.routine 1s
+tim1it:	ld	(intsp),sp
+	ld	sp,intstk
+	push	af
+	push	hl
+	push	de
+	push	bc
+	call	tim1up
+	jr	intrbc
+ ENDIF
+
+; Reaktionsroutine fuer 1 sec Interrupt
+tim1up:	ld	hl,(tim1cn)
+	dec	hl
+	ld	(tim1cn),hl
+ IF uhrvar
+;1 Sec. BCD-Uhr verwalten
+	ld	b,3		;HH:MM:SS
+	ld	hl,bcduhr+2	;auf SS
+	jr	t1uhr1		;Einsprung in Zyklus
+t1uhr2:	cp	60h		;Uebertrag?
+	jr	c,t1uhre	;nein
+	ld	(hl),0
+	dec	hl
+t1uhr1:	ld	a,(hl)
+	add	a,1		;kein "inc"-Befehl!
+	daa
+	djnz	t1uhr2		;Sec., Min. haben 60
+	cp	24h		;Std. haben 24
+	jr	c,t1uhre	;kein Uebertrag
+	xor	a		;A:=0, nc fuer Datumuebertrag einstellen
+t1uhre:	ld	(hl),a
+  IF datvar
+	jr	c,timdnc	;kein Datumuebertrag
+; Datum verwalten
+	ld	hl,bcduhr+5	;DD:MM:YY, auf YY
+	ld	c,(hl)		;Jahr
+	dec	hl
+	ld	a,(hl)		;Monat
+	dec	hl
+	ld	b,1		;Arbeitskonstante
+	cp	2		;Februar?
+	jr	nz,timdm2	;nein
+	ld	a,c
+	ld	c,28h
+	bit	0,a		;gerades Jahr?
+	jr	nz,timdmc	;nein, kein Schaltjahr
+	and	0f2h		;BCD-Zahl durch 4 teilbar?
+	jp	pe,timdmc	;nein
+	inc	c		;auch 2000 ist ein Schaltjahr
+	jr	timdmc
+timdm2:	cp	7		;Jan. bis Juni
+	jr	c,timdm3	;ja
+	dec	a		;7..12 -> 6..11
+timdm3:	and	b		;Jan 1, Maerz 1, Mai 1, Aug 1, Okt 1, Dez 1
+	or	30h		;30 o. 31
+	ld	c,a
+timdmc:	ld	a,(hl)
+	cp	c		;letzter Tag im Monat?
+	jr	c,timdnx	;nein
+	ld	(hl),b		;sonst neuer Monatsanfang, Tag:=1
+	inc	hl
+	ld	a,(hl)		;Monat
+	cp	12h		;letzter Monat im Jahr?
+	jr	c,timdnx	;nein
+	ld	(hl),b		;sonst neuer Jahresanfang, Monat:=1
+	inc	hl
+	ld	a,(hl)		;Jahr
+timdnx:	add	a,b		;kein "inc"-Befehl!
+	daa
+	ld	(hl),a
+timdnc:
+  ENDIF
+ ENDIF
+	ld	a,(intkbd)	;lampen aktiv?
+	cp	021h		;  call-Befehl oder ld hl,...
+	call	nz,lampen	;nein, Aktualisierung Lampen
+
+intcrt:	ld	hl,tim1uu	;auf jp,... waehrend conout
+
+ IF cpastz or uhrvar
+	ld	a,(synflg)
+	bit	stzaus,a	;Pflege der Statuszeile?
+	jr	nz,nt1stz	;nein
+  IF crtbfl eq 0
+; Bildschirmpuffer liegt nicht im adressierbaren RAM
+; Reg DE zeigt auf Hilfsspeicher, auf dem zunaechst alles aufbereitet wird
+	ld	de,ht1bsb	;Hilfsspeicher
+  ENDIF
+ ENDIF
+ IF uhrvar
+; Uhr anzeigen
+	ld	hl,bcduhr
+ IF crtbfl ;Bildschirmpuffer liegt im adressierbaren RAM
+  IF cpastz
+	ld	de,statz2+statzu
+bsuhr	equ	$-2		;BS-Puffer-Adr. fuer Uhr
+  ELSE
+	ld	de,bsanf2+bssp2-8
+bsuhr	equ	$-2		;BS-Puffer-Adr. fuer Uhr
+  ENDIF
+ ENDIF
+	ld	b,3
+	jr	t1uhr4		;Einsprung in Zyklus
+t1uhr3:	ld	a,':'
+	ld	(de),a
+	inc	de
+t1uhr4:	call	mbreco
+	inc	hl
+	djnz	t1uhr3
+  IF crtbfl
+t1uhrn:
+  ENDIF
+ ENDIF
+
+ IF cpastz
+; Default-LW, User in Statuszeile
+	ld	a,(defaul)
+	push	af
+	and	0fh		;User loeschen
+	add	a,'A'
+  IF crtbfl ;Bildschirmpuffer liegt im adressierbaren RAM
+	ld	de,statz2+statzd
+crtm27	equ	$-2		;BS-Puffer-Adr
+  ENDIF
+	ld	(de),a		;anzeigen default-LW
+	pop	af
+	inc	de
+	call	mrecol		;anzeigen user
+
+; I/O-Byte in Statuszeile
+	ld	a,(iobyte)
+ IF crtbfl ;Bildschirmpuffer liegt im adressierbaren RAM
+	ld	de,statz2+statzi
+crtm38	equ	$-2
+ ENDIF
+	call	mrecoa
+
+; Lampen-Byte in Statuszeile
+	ld	a,(lampbf)
+ IF crtbfl ;Bildschirmpuffer liegt im adressierbaren RAM
+	ld	de,statz2+statzl
+crtm39	equ	$-2
+ ENDIF
+	call	mrecoa
+
+ ENDIF ;cpastz
+
+ IF cpastz or uhrvar
+  IF crtbfl eq 0 ;Bildschirmpuffer liegt nicht im adressierbaren RAM
+; auf Hilfsspeicher aufbereitete Informationen in Bildschirmpuffer
+	crton			;Bildschirmpuffer zuschalten
+	ld	hl,ht1bsb	;Hilfspuffer
+   IF uhrvar
+; Uhr anzeigen
+    IF cpastz
+	ld	de,statz2+statzu
+bsuhr	equ	$-2		;BS-Puffer-Adr. fuer Uhr
+    ELSE
+	ld	de,bsanf2+bssp2-8
+bsuhr	equ	$-2		;BS-Puffer-Adr. fuer Uhr
+    ENDIF
+	ld	bc,8
+	ldir
+t1uhrn:
+   ENDIF ;uhrvar
+   IF cpastz
+	ld	de,statz2+statzd
+crtm27	equ	$-2		;BS-Puffer-Adr fuer default LW und user
+	ld	bc,2
+	ldir
+	ld	de,statz2+statzi
+crtm38	equ	$-2		;BS-Puffer-Adr fuer IO-Byte
+	ld	c,2
+	ldir
+	ld	de,statz2+statzl
+crtm39	equ	$-2		;BS-Puffer-Adr fuer Lampen-Byte
+	ld	c,2
+	ldir
+   ENDIF ;cpastz
+  ENDIF ;crtbfl eq 0
+ ENDIF ;cpastz or uhrvar
+
+ IF cpastz
+; wenn Anzeigezeit um, so BIOS-Meldung wieder loeschen
+	ld	hl,stzbto	;Anzeigezeit in Sekunden
+	dec	(hl)		;abgelaufen?
+	jr	nz,nstzcl	;nein
+	ld	b,stzbl
+	ld	hl,statz2+statzb
+crtm28	equ	$-2		;BS-Puffer-Adr.
+stzclz:	ld	(hl),' '
+	inc	hl
+	djnz	stzclz
+nstzcl:
+ .comment % wegen Stoerungen auf dem Bildschirm bei Arbeit ohne Wait abgeklemmt
+  IF crt eq dsy5
+; Statuszeile invertieren
+	ld	hl,statz2+statzd
+	ld	b,statzt-statzd	;bis vor Tastaturpuffer
+stzinv:	set	7,(hl)
+	inc	hl
+	djnz	stzinv	
+  ENDIF
+%
+ ENDIF ;cpastz
+
+ IF cpastz or uhrvar
+  IF crtbfl eq 0 ;Bildschirmpuffer liegt nicht im adressierbaren RAM
+	crtoff			;Bildschirmpuffer abschalten
+  ENDIF
+nt1stz:
+ ENDIF
+
+tim1uu:
+ IF disknb ne 0
+  IF (fdc eq K5120) or (fdc eq K5122) or (fdc eq f1715)
+; zusaetzliche Laufwerksabschaltung ueber Zeittakt
+	ld	a,(pretx+1)	;Motorabschaltung unterdrueckt?
+	or	a
+	jr	z,t1nmo1	;ja
+	ld	a,(fl.zto)	;pro Sekunde 5 Umdrehungen
+	sub	4		;noch >= 4* 200ms Zeit?
+	jr	nc,t1nmo2	;ja
+	xor	a
+t1nmo2:	ld	(fl.zto),a
+	call	z,headup	;Ueberw.zeit abgelaufen -> Motor aus
+t1nmo1:
+  ENDIF
+ ENDIF
+	ld	hl,(tim1rt)	;Adresse der Nutzerroutine
+	jp	(hl)		;1-sec-Nutzerroutine ausfuehren, ret
+
+ IF cpastz or uhrvar
+  IF crtbfl eq 0
+; Hilfsspeicher fuer Bildschirmzugriff aus Interruptroutine
+ht1bsb:
+   IF uhrvar
+	db	'hh:mm:ss'
+   ENDIF
+   IF cpastz
+	db	'du'		;Laufwerk, user
+	db	'ii'		;IO-Byte
+	db	'll'		;Lampen-Byte
+   ENDIF
+  ENDIF
+ ENDIF

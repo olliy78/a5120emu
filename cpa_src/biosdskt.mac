@@ -1,0 +1,1020 @@
+;*********************************************************
+; physischer Disketten-Transfer
+; Aenderungen:
+; - Es koennen 9 statt bisher 4 phys. Sektoren auf einmal gelesen werden
+;!-!Schnittstellenaenderung bei SektId lesen:
+;   ft.anz muss <>0 sein (zuvor beliebig, bei =0 kein Transfer)
+;   ft.len muss 0..3 sein (zuvor beliebig, bei >3 fehlerhafte Tabellenmodif.)
+;   ft.kom, Bit 7 eingefuehrt: =0 Vorderseite, =1 Rueckseite
+;   ft.kom, Bit 0 (Verify nach Schreiben) auf Bit 6 verlegt
+;   ft.kom, Bit 0 =1 bedeutet "keine Fehlerwiederholung"
+; - Floppy-Treiber auch fuer Variante K5120/22 generierbar
+; 06.07.88
+; - Motor-Start-Wait von 254 auf 252 veraendert (2.5 Umdrehungen)
+;   (ist bei einigen Laufwerken wegen PreReady notwendig)
+; 03.11.22
+; - Variante K5122 eingefuegt
+; 25.09.89
+; - bei MFS 1.2 bei Mehr-Sektor-Transfer "Fault reset" zwischen den Sektoren
+;*********************************************************
+
+; Aufruf:
+; -------
+; Bereitstellung der Parameter auf den Bytes:
+
+;       ft.kom:	db	0	; bit0 - =1 ohne Fehlerwiederholung
+;				     1 - =1 lesen ft.len von beliebigem Sektor
+;				     2 - =0 lesen ; =1 schreiben Sektor(en)
+;				     3 - =0-FM; =1-MFM   (5"FM nur bei PC1715)
+;				     4 - =0-8"; =1-5"
+;				     5 - =0- 40-Spur-Laufwerk; =1- 80-Spur-LW
+;				     6 - =1 bei verify nach schreiben
+;				     7 - =0 Vorderseite, =1 Rueckseite
+;	ft.adr: dw	0	; Transferadresse
+;	ft.lwn: db	0	; 0..3 phys. Laufwerksnummer
+;	ft.trk: db	0	; 0..  track
+;	ft.sid: db	0	; 0..ff side (side=0 auf Rueckseite moeglich!)
+;	ft.sec: db	0	; 0..  sector (beliebig bei SektId lesen)
+;	ft.len: db	0	; 0..3 Sektorlaenge (auch 0..3 bei SektId les.)
+;	ft.anz: db	0	; 0..9 Anzahl der zu uebertragenden Sektoren
+;				;      =0: nur Positionieren
+;				;      (<>0 bei SektId lesen)
+;       ft.stp: db	0	;      Anzahl der Stepimpulse von Spur zu Spur
+;	ft.sti: db	0	;      Schrittzeit von Spur zu Spur
+;				;      in 0,1ms Einheiten
+;
+;	call	floppy
+;       ...			; in A steht Ergebniskode
+;				; alle Register (auch IX) undef.
+;
+; Ergebniskode (in Reg. A):
+;	00h kein Fehler (Z-Flag nicht von floppy gesetzt)
+;	'C' CRC-Fehler
+;	'D' LW nicht existent
+;	'R' Geraet nicht bereit, aber existent
+;	'L' unzulaessige Transferlaenge
+;	'S' Sektor nicht gefunden
+;	'T' Spurnummer zu gross
+;	'U' keine Marke gefunden
+;	'W' Diskette schreibgeschuetzt
+
+; Paramfeld wird an folgenden Stellen veraendert:
+;  Komm. "Lesen Sekt,Id.":	ft.trk .. ft.len gestellt
+;  Komm. "Schreiben mit Verify":ft.kom, bit 2 geloescht
+;**************************************************
+
+maxlw	equ	4		; Anzahl der Laufwerke (1..4)
+
+; Adressen der Floppy-Karte
+;==========================
+
+ IF (fdc eq k5120) or (fdc eq k5122)
+;Steuer-PIO
+flcoad    equ  10h  ;PORT A
+flcoac    equ  11h
+flcobd    equ  12h  ;PORT B
+flcobc    equ  13h
+
+;Daten-PIO
+fldaad    equ  14h  ;Port A Schreib-Daten
+fldaac    equ  15h
+fldabd    equ  16h  ;Port B Lese-Daten
+fldabc    equ  17h
+
+;Select-Latch
+flseì     eqõ  18è  ;Biô 7..´ /Sel LW3..0;Biô 3..°  /LCË  L× 3..0
+;
+ ENDIF
+
+ IF (fdc eq f1715)
+;Steuer-PIO
+flcoad    equ  04h  ;PORT A
+flcoac    equ  05h
+flcobd    equ  06h  ;PORT B
+flcobc    equ  07h
+
+;Daten-PIO
+fldaad    equ  00h  ;Port A Schreib-Daten
+fldaac    equ  01h
+fldabd    equ  02h  ;Port B Lese-Daten
+fldabc    equ  03h
+
+;Select-Latch
+flseì     eqõ  20è  ;Biô 7..´ /Sel LW3..0;Biô 3..°  /LCË  L× 3..0
+flmot     equ  21h  ;Bit 7..4:/Mot on
+;
+ ENDIF
+
+;; Legende AMF:
+;;   Port A
+;;  | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+;;    |   |   |   |   |   |   |   |__ A  /WE  0-Schreiben ein
+;;    |   |   |   |   |   |   |______ A   MK  lesen  0-MFM-A1 Erkennung
+;;    |   |   |   |   |   |                          1-FM-Mark., MFM-C2 Erkenn.
+;;    |   |   |   |   |   |               schreiben  0-Takt fuer MFM
+;;    |   |   |   |   |   |                          1-Marken FM und A1 MFM
+;;    |   |   |   |   |   |__________ A  /SIDE 0-Kopf Seite 1; 1-Kopf Seite 0
+;;    |   |   |   |   |        oder   A  /FR   0-Fault reset;  1-kein FR
+;;    |   |   |   |   |______________ A  /STR 0-AMF aktiv
+;;    |   |   |   |                           1-AMF ausgeschaltet
+;;    |   |   |   |__________________ A   MK1 lesen  0-Informationen einlesen
+;;    |   |   |                                      1-nur 1 einlesen
+;;    |   |   |                           schreiben  0-FM-Daten schreiben
+;;    |   |   |                                      1-MFM und FM-Marken schr.
+;;    |   |   |______________________ A   MR, SD     0-steppen Richtung aussen
+;;    |   |                                          1-Marke-erkannt loeschen
+;;    |   |                                            steppen Richtung innen
+;;    |   |__________________________ A  /HL         0-Kopf geladen
+;;    |                                              1-Kopf entladen
+;;    |______________________________ A  /ST         0-Stepsignal an LW ein
+;;                                                   1-Stepsignal an LW aus
+;;
+;;  Port B
+;;  | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+;;    |   |   |   |   |   |   |   |__ E  /RDY  0-Laufwerk bereit
+;;    |   |   |   |   |   |   |                1-Laufwerk nicht bereit
+;;    |   |   |   |   |   |   |______ E  /MKE  0-Marke erkannt
+;;    |   |   |   |   |   |                    1-Marke noch nicht erkannt
+;;    |   |   |   |   |	 oder PC1715  E   MKE  1-Marke erkannt
+;;    |   |   |   |   |   | u.K5122            0-Marke noch nicht erkannt
+;;    |   |   |   |   |   |__________ E  /SYN  ???? (K5120)
+;;    |   |   |   |   |  oder K5122   A  /HF   0-Takt fuer 8" MFM
+;;    |   |   |   |   |                        1-Takt fuer 5" MFM und 8" FM
+;;    |   |   |   |   |  oder PC1715: A   MFM  0-FM-Aufzeichnung
+;;    |   |   |   |   |                        1-MFM-Aufzeichnung
+;;    |   |   |   |   |______________ A   PRE  0-schreiben ohne Prekompensation
+;;    |   |   |   |                            1-schreiben mit         "
+;;    |   |   |   |__________________ E  /FA   0-Fehler in der AMF aufgetreten
+;;    |   |   |                                1-kein Fehler aufgetreten
+;;    |   |   |          oder PC1715: A   FO   0-5"-Disketten
+;;    |   |   |                                1-8"-Disketten
+;;    |   |   |______________________ E  /WP   0-Schreibschutz ist ein
+;;    |   |                                    1-kein Schreibschutz
+;;    |   |__________________________ E  /FW   0-Laufwerk meldete Schreibfehler
+;;    |                                        1-Laufwerk meldete keinen Fehler
+;;    |______________________________ E  /T0   0-Kopf steht auf Spur 0
+;;                                             1-Kopf steht nicht auf Spur 0
+
+;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+;	FLOPPY-Treiber
+;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+floppy:
+
+; Anfangswerte stellen
+	ld	a,(ft.kom)
+	and	1		;Fehlerwiederholung?
+	jr	nz,setecr	;nein, A=0+1 (keine Wiederholung)
+	ld	a,15+1
+setecr:	ld	(crerc),a	; Fehlerzaehler fuer CRC-Fehlerwiederholungen
+	jr	nz,setesp
+	ld	a,4+1		; Fehlerzaehler fuer Spurfindewiederholungen
+setesp:	ld	(sperc),a
+
+; Laufwerksnummer pruefen
+	ld	a,(ft.lwn)	; LW
+;	cp	maxlw		; LW < groesster LW-Nr.?
+;	jr	nc,nolw		; -> nein, Fehler: LW nicht existent
+	ld	c,a		; merken LW fuer Motor-an-Test
+	ld	b,a		; fuer djnz
+	or	a		; LW=0?
+	ld	a,(lwexis)
+	jr	z,drv0		; ->ja
+sp13: 	rrca
+	rrca
+	djnz	sp13
+drv0: 	and	3
+	jr	nz,drv0a
+
+nolw: 	ld	a,'D'		; LW nicht existent
+	jp	fehret		; -> Fehler
+
+drv0a:
+; LW selektieren und Motor einschalten
+	xor	a
+	ld	(pretx+1),a	;Motorabschaltung verhindern
+	dec	a		;A:=255
+	call	fl.sto		;Index-Ueberwachung ein
+	set	3,c		; Motor-an-Bit setzen
+	ld	hl,alwnr
+	ld	a,(hl)
+	cp	c		; ist es das richtige LW und Motor an?
+	ld	a,+pvrw2-(xpvrw+2) ; jr z,pvrw2 (keine Vertikalstab.)
+	jr	z,dskmon	; ->ja, Kopf ist noch aufgesetzt
+; falsches LW oder Motor des LW aus
+	call	flres		; alte Spurnr. merken
+
+; neues LW anwaehlen, Motor einschalten und alte Spurnr. holen
+	ld	(hl),c		; neues LW, Motor-an-Bit
+	ex	de,hl		;merken ^alwnr
+	res	3,c		; alte Spurnr. holen
+	ld	b,0
+	ld	hl,spnrl
+	add	hl,bc
+	ld	a,(hl)
+	ld	(aspnr),a
+	ld	b,c
+	inc	b
+	ld	a,077h		; LW-Anwahlbyte bilden (mit Lock)
+nfdei2: rlca
+	djnz	nfdei2
+	out	(flsel),a	; Laufwerk selektieren (und evtl. Motor ein)
+ IF fdc eq f1715
+	out	(flmot),a	; Motor an (wenn nicht schon durch select)
+ ENDIF
+	ld	a,10101001b	; Kopf laden, Fault reset
+	out	(flcoad),a
+
+; Motor-Start
+	ld	l,252+1		;von 255 auf 252, d.h. mind 2 Umdrehungen?
+	ld	a,(ft.kom)
+	bit	4,a		;5"?
+	jr	z,dskmo1	;nein
+	bit	5,a		;5" 40 Spur?
+	jr	nz,dskmo1	;nein
+	ld	l,250+1		;von 255 auf 250,
+				; d.h. mind. 4 volle Umdrehungen?
+				;(bei MFS 1.2 kommt evtl. ready zu frueh)
+dskmo1:
+dskdaw:	ld	a,(fl.zto)	;Index-Interrupt-Zaehler
+	cp	l		;entprechend viele Umdrehungen vorbei?
+	jr	c,dskda		;ja
+	dec	c		; warten, bis Diskette eingeschoben
+	jr	nz,dskdaw
+	djnz	dskdaw
+	ex	de,hl
+	res	3,(hl)		;loeschen Motor an Bit
+	ld	a,'R'		;LW nicht bereit
+	jp	fehret
+dskda:	ld	a,+pvrw1-(xpvrw+2) ; jr z,pvrw1 (mit Vertikal-Stabil.)
+dskmon:
+	ld	(xpvrw+1),a	; Vertikal-Stabilisierung ein/aus
+
+
+ IF dsk8fm+dsk8mf+dsk5fm; Standard ist 5"MFM
+; modifizieren FM/MFM und 8"/5"
+
+	ld	hl,mdmfm8
+	ld	bc,mdtbl	;BC:=(Anzahl der Bytes)
+	ld	a,(ft.kom)
+	bit	3,a		;MFM?
+	jr	nz,modfl1	;ja
+	add	hl,bc
+	add	hl,bc
+modfl1:	bit	4,a		;8"?
+	jr	z,modfl2	;ja
+	add	hl,bc
+modfl2:	ex	de,hl
+	ld	hl,mdtbad
+	call	flmodf		;Modifizierung
+ ELSE
+ IF @write
+	ld	hl,diwmfm
+	ld	(dioop),hl	;Schreiben einstellen (falls Lesen war)
+ ENDIF
+ ENDIF
+ if dsk80
+	ld	a,(ft.kom)
+ if dsk8fm+dsk8mf
+	bit	4,a		;5" LW?
+	jr	z,dprecn	;nein
+ endif
+	bit	5,a		;80-Spur-LW?
+	ld	a,25		;Spur, ab der mit Praekomp.
+	jr	z,dprec2	;nein
+	ld	a,41
+dprec2:	ld	(dpretr),a
+dprecn:
+ endif
+
+; modifizieren entspr. phys. Sektorlaenge
+	ld	a,(ft.len)
+	ld	(sidlen),a
+	ld	hl,dsln0-dslnl
+	ld	b,a
+	inc	b
+	ld	de,dslnl
+dtrsll:	add	hl,de
+	djnz	dtrsll
+	ex	de,hl
+	ld	hl,dslnmt	;Tabelle der Modif.adr.
+	call	flmodf
+
+; Kopf positionieren
+	ld	hl,ft.trk	; gewuenschte Spur
+	ld	a,(hl)
+	or	a		;Spur 0?
+	jr	nz,npost0	;nein
+	ld	a,(ft.anz)	;Sektorzahl
+	or	a		;nur positionieren auf Spur 0 (FORMAT-Progr.)
+	jr	z,trk0		;ja, Spur 0 immer ueber Recalibrate
+	ld	a,(ft.kom)
+	bit	1,a		;Lesen Sekt.id Spur 0?
+	jr	nz,trk0s	;ja, Lesen Sektid Spur 0 ueber Recalibrate
+npost0:	ld	a,(aspnr)	; stimmt Spur?
+	cp	(hl)
+xpvrw:	jr	z,pvrw1		; -> ja, Kopf evtl. vertikal stabilisieren
+				; auf jr z,pvrw2, wenn Kopf noch aufgesetzt
+spprty:				;Wiederholung bei fehlerhafter Spur
+; Positionierung auf ft.trk
+spe: 	ld	a,(ft.trk)
+	ld	b,08fh		; stepout-Befehl
+	ld	hl,aspnr
+	cp	(hl)		; auf richtiger Spur angekommen?
+	jr	z,phrw		; -> ja, Kopf horizontal stabilisieren
+	jr	c,spre		; -> stepout
+xmaxtr: cp	85		; Spur zu gross?
+	jr	c,spve		; -> nein, stepin
+	ld	a,'T'		; Fehler: Spurnr. zu gross
+	jp	fehret
+
+; stepin
+spve:	ld	b,0afh		; stepin-Befehl
+	inc	(hl)		; alte Spurnr. erhoehen
+	inc	(hl)		; wegen stepout-dec
+
+; stepout
+spre: 	dec	(hl)		; alte Spurnr. verringern
+	call	step
+	jr	spe
+
+; steppen
+step: 	ld	a,(ft.stp)	; Anzahl der Stepimpulse pro Step
+step0: 	ld	c,flcoad
+	out	(c),b		; select direction
+;;;	push	bc
+;;;	ld	b,0
+;;;step1: 	djnz	step1		; 1,3ms warten
+;;;	pop	bc
+step2: 	push	bc
+	res	7,b
+	di			;verhindern Unterbrechung
+	out	(c),b
+	set	7,b
+	out	(c),b		; step
+	ei
+	ld	bc,(ft.sti)	; 13,2 / 11,6 / 3,0 ms Schrittzeit
+stepw1: ld	b,19		;(19*13)/(256*9600)=0.0001
+stepw: 	djnz	stepw		;0.1 ms warten
+	dec	c
+	jr	nz,stepw1
+	pop	bc
+	dec	a
+	jr	nz,step2
+	ret
+
+; Spur 0 anfahren (Recalibrate)
+trk0:	ld	b,2		; nach innen, falls auf Spur -1
+trk0i:	push	bc
+	ld	b,0afh	 	; stepin
+	call	step
+	pop	bc
+	djnz	trk0i
+trk0s:	in	a,(flcobd)
+	rlca			; Spur 0 erreicht?
+	jr	nc,trk0f	; -> ja
+	ld	b,08fh		; stepout-Befehl
+	ld	a,1		; in phys. Schritten
+	call	step0
+	jr	trk0s
+trk0f: 	xor	a
+	ld	(aspnr),a	; aktuelle Spurnr ist 0
+	jr	spprty
+
+
+; Kopf stabilisieren (horizontal und vertikal)
+pvrw1:	; Kopf vertikal stabilisieren
+phrw:	; Kopf horizontal (und evtl. auch vertikal) stabilisieren
+	ld	a,50		; 50 ms (fuer alle Laufwerkstypen)
+phrww1: ld	b,189		; (189*13)/(256*9600)=0.001
+phrww: 	djnz	phrww		; 1 ms warten
+	dec	a
+	jr	nz,phrww1
+pvrw2:	; Kopf war aufgesetzt und Spur stimmte auch - keine Stabilis.
+
+rdwr:
+; Anfangswerte fuer Transfer der physischen Sektoren
+	ld	a,(ft.anz)	; Anzahl der zu uebertragenden phys. Sektoren
+	ld	(secan1),a
+	ld	(secanz),a	; fuer CRC-Berechnung
+
+	ld	a,(ft.trk)	; Spur
+	ld	(sidtr),a
+	ld	hl,ft.stp
+	bit	0,(hl)		;Doppelschritte?
+	jr	z,dprec1	;nein
+	add	a,a		;sonst phys. Spur verdoppeln
+dprec1:
+; evtl. Precompensation einschalten
+	ld	bc,00000100b*256+flcobd
+dfrcod	equ	$-1		; Frequenzcode
+	cp	25		; Spur ab der mit writeprecomp.
+dpretr	equ	$-1
+	jr	c,prec		; <, ohne Precompensation
+	set	3,b		; >= , mit
+prec: 	out	(c),b
+
+	ld	a,(ft.sec)	; erste zu uebertr. Sektornr.
+	ld	(sidsec),a
+	ld	a,(ft.sid)
+	ld	(sidsid),a
+
+ IF dskds ; double sided
+; evtl. side 1 anwaehlen vorbereiten
+	ld	a,(ft.kom)
+	ld	hl,dsidmt
+	ld	b,(hl)
+dsidmz:	inc	hl
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ex	de,hl
+	bit	7,a		; side 0?
+	jr	z,pside0	; ja
+	res	2,(hl)		; side 1 einstellen
+	jr 	pside1
+pside0:	set	2,(hl)
+pside1:	ex	de,hl
+	djnz	dsidmz
+	bit	5,a		;40-Spur LW?
+	jr	nz,pside2	;nein
+	ex	de,hl		;diom11
+	res	2,(hl)		;fault reset zwischen den Sektoren
+pside2:
+ ENDIF
+
+; evtl. nur Lesen Sektor-Id.
+	ld	a,(ft.kom)
+	bit	1,a		; Lesen Sekt.Id?
+	ld	hl,dio
+	jr	z,srdsid	; -> nein
+	ld	hl,diotsr
+srdsid:	ld	(diortn),hl
+
+ IF @write
+	ld	a,(ft.kom)	; Schreiben?
+	bit	2,a
+	jr	nz,writpt	; -> ja, Schreibroutine steht auf dioop
+ ENDIF
+	ld	hl,diord
+	ld	(dioop),hl	; read einstellen
+
+ IF @write
+	jr	dtrdyt
+writpt:		; pruefen, ob Schreiben erlaubt ist
+	in	a,(flcobd)
+	bit	5,a		; /WP
+	ld	a,'W'		; Fehler: write protected
+	jp	z,fehret
+
+; CRC-Zeichen der zu schreibenden Daten berechnen und in crcber ablegen
+	ld	hl,(ft.adr)
+	ld	ix,crcber	; Pointer auf 1. Daten-CRC stellen
+crcbes: ld	(ix),0fbh	; Datenbeginn
+	call	crcbd		; CRC eines phys. Sektors berechnen
+	ld	(ix+0),d
+	ld	(ix+1),e	; ... und ablegen
+	call	crcnb		; weiterer phys. Sektor?
+	jr	nz,crcbes	; -> ja
+ ENDIF ;@write
+
+
+; Disk inzwischen ready?
+
+dtrdyt:
+dtrdyz:	IN	A,(flcobd)
+	RRA			;ready-bit =0?
+dtrdyw:	JR	C,dtrdyz	;nein, 5" Disk not ready
+				;auf jr c,$+2 modif bei 8"
+
+	ld	a,5
+	call	fl.sto		;bei evtl. Fehlerwiederholung
+				; timeout-Wert wieder hochstellen
+				; fuer Ueberwachung auf fehlende Marke
+	ld	a,(ft.anz)	;Sektorzahl
+	or	a		; nur positionieren?
+	jp	nz,diorun	; -> nein, Start des Transfers
+
+; kein Fehler aufgetreten
+noerr:	xor	a
+
+; Fertigmelden, Ergebnis in A
+fehret:	push	af
+	ld	hl,pretx+1	;Motorabschaltung ueber Index-Interrupt
+	ld	(hl),pret3-pret4;jr pret4
+	ld	a,20		;nach 20*200ms = 4 sec
+	call	fl.sto
+	pop	af
+	ret
+
+; normale Beendigung
+;===================
+
+; Schreiben
+dtrwre:	ld	hl,ft.kom
+	bit	6,(hl)		;Kontrollesen?
+	jr	z,noerr		;nein, fertig
+	res	2,(hl)		;sonst schreiben loeschen (d.h. auf lesen)
+	jp	rdwr		;und auf gleichen Puffer zuruecklesen
+
+; Lesen
+dtrrde:	ld	hl,(ft.adr)
+	ld	ix,crcber
+crcbel:	call	crcbd		;CRC bilden
+	call	crcvgl		; und vergleichen
+	jr	nz,crcerx	; -> Fehler
+	call	crcnb		;noch ein Sektor?
+	jr	nz,crcbel	;ja
+	jr	noerr
+
+; Fehlerbehandlung
+;=================
+; blieb weiterer Versuch, Sektor CRC-richtig reinzubekommen?
+crcerx: ld	hl,crerc
+	dec	(hl)
+	jp	nz,rdwr		; -> ja, alles noch mal
+	ld	a,'C'		; Fehler: CRC-Zeichen falsch
+	jr	fehret
+
+; Sektor nicht gefunden, evtl. falsche Spur
+serrx:
+; blieb weiterer Versuch, die richtige Spur zu finden?
+	ld	hl,sperc
+	dec	(hl)
+	jr	z,sperr2	; Wiederhlg. abgelaufen
+	ld	a,2
+	cp	(hl)		;> 2 Wiederhlg?
+	jp	c,trk0		;ja, Spur neu anfahren
+	ld	b,08fh		;stepout
+	jr	z,sperr4	;=2 Wiederhlg., stepout
+	ld	b,0afh		;stepin
+	call	step		;2 mal (zuvor war stepout)
+sperr4:	call	step
+	jp	phrw		;Wiederholung
+
+sperr2:	ld	a,'S'		; Fehler: Sektor ist nicht zu finden
+	jr	fehret
+
+
+fl.to1: ; keine Sektor-Marke gefunden
+	ld	a,'U'		; time-out (undefind)
+	jr	fehret
+
+; Modifizierung entsprechend Steuertabelle
+;=========================================
+; i HL	Tabelle der Modifizierungsadressen (wohin)
+; i DE	Tabelle der Modifizierungsbytes    (was)
+flmodf:	ld	b,(hl)		;Anzahl der Adressen
+dslnmz:	inc	hl
+	push	bc
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)		;bc:=wohin
+	ld	a,(de)		;a:=was
+	inc	de
+	ld	(bc),a
+	pop	bc
+	djnz	dslnmz
+	ret
+
+; CRC-Berechnung
+;===============
+
+; von weiterem Sektor CRC-Zeichen berechnen?
+; IX wird weitergestellt
+crcnb: 	inc	ix		; CRC-Pointer erhoehen
+	inc	ix
+	ld	a,0ffh
+secanz	equ	$-1
+	dec	a
+	ld	(secanz),a
+	ret
+
+; CRC-Vergleich DE mit (IX)
+crcvgl: ld	a,(ix+0)
+	cp	d
+	ret	nz
+	ld	a,(ix+1)
+	cp	e
+	ret
+
+; von einem phys. Sektor ab HL die CRC-Zeichen berechnen
+; HL wird weitergestellt
+crcbd:	ld	de,0cdb4h	;CRC Anfangswert
+crcbeg	equ	$-2
+	push	ix
+	ex	(sp),hl		;hl:= ^Datenbeginn-Byte
+	ld	b,1
+	call	bercrc		;CRC ueber Datenbeginn-Byte
+	ex	(sp),hl
+	pop	ix
+	ld	b,1
+fl.tsb	equ	$-1		; Zahl der 128er Bloecke
+sp74: 	push	bc
+	ld	b,128
+	call	bercrc
+	pop	bc
+	djnz	sp74
+	ret
+
+; von HL an B Zeichen auf DE als CRC-Polynom draufrechnen
+bercrc: ld	a,(hl)
+	xor	d
+	ld	d,a
+	rrca
+	rrca
+	rrca
+	rrca
+	and	0fh
+	xor	d
+	ld	d,a
+	rrca
+	rrca
+	rrca
+	ld	c,a
+	and	1fh
+	xor	e
+	ld	e,a
+	ld	a,c
+	rrca
+	and	0f0h
+	xor	e
+	ld	e,a
+	ld	a,c
+	and	0e0h
+	xor	d
+	ld	d,e
+	ld	e,a
+	inc	hl
+	djnz	bercrc
+	ret
+
+; Aktivieren Indexpunktueberwachung
+; i A	Zaehler (wird bis 0 runtergezaehlt)
+; nur Reg. A zerstoert
+
+fl.sto:	ld	(fl.zto),a	;Setzen Zaehler fuer Indexpunkte
+	ld	a,83h		;zulassen Indexinterrupt
+	out	(flcoac),a
+	ret
+
+; Interruptbehandlungsroutine: time-out-Zeit abgelaufen
+; ausgeloest durch Index-Interrupt
+itimeo: ld	(intsp),sp
+	ld	sp,intstk
+	push	af
+	ld	a,0		; Zaehler fuer time-out Takte
+fl.zto	equ	$-1
+	dec	a		; time-out -1
+	ld	(fl.zto),a
+	jr	nz,pret1	;-> nicht abgelaufen
+pretx:	jr	pret3		;modif. auf "jr pret4" waehrend Transfer
+pret4:
+ IF cpu eq k2526
+	ld	a,10101001b	;Time out waehrend Transfer
+	out	(flcoad),a	;CPU 2 stoppen
+	ld	a,dtrtor-dtrwjr
+	ld	(dtrret),a	;Reaktionsroutine "keine Marke gefunden"
+ ELSE
+	pop	af
+	ld	b,3		;Reaktionsroutine "keine Marke gefunden"
+	inc	b		;z-Flag loeschen
+	push	af
+ ENDIF
+	jr	pret1
+pret3:	call	headup
+pret1: 	jp	intraf		; allg. Ausgang Interruptroutinen
+
+; Motor-Abschaltung von aussen her
+; nur Reg. AF zerstoert
+headup:	ld	a,3		; Indexinterrupt sperren
+	out	(flcoac),a
+	ld	a,0ffh		; Motor aus
+	out	(flsel),a
+ IF fdc eq f1715
+	out	(flmot),a
+ ENDIF
+; Motor aus und alte Spurnummer merken
+flres: 	push	hl
+	push	bc
+	ld	hl,alwnr
+	res	3,(hl)		; Motor aus vermerken
+	ld	c,(hl)
+	ld	b,0
+	ld	hl,spnrl	; alte Spurnr. in Tabelle merken
+	add	hl,bc
+ 	ld	a,(aspnr)
+	ld	(hl),a
+	pop	bc
+	pop	hl
+	ret
+
+
+;*****************************************************
+;	Arbeitsbereiche phys. Floppy-Treiber
+;*****************************************************
+
+; Parameterfeld
+;==============
+ft.kom: db	0	; Kommando
+ft.adr: dw	0	; Transferadresse
+ft.lwn: db	0	; Laufwerksnummer 0..3
+ft.trk: db	0	; Spurnummer   0..
+ft.sid: db	0	; side-Nr.     0..1
+ft.sec: db	0	; Sektornummer
+ft.len: db	0	; Sektorlaenge 0..3
+ft.anz: db	0	; Anz. phys. Sektoren
+ft.stp: db	0	; Anzahl der Stepimpulse pro Spur
+ft.sti: db	0	; Schrittzeit von Spur zu Spur
+
+crcber: ds	3*9,0ffh; Ber. zum Ablegen der gelesenen/zu schreibenden CRC-Z.
+			; reicht fuer 9 physische Sektoren pro Transfer
+; Fehler-Wiederholungszaehler
+crerc: 	db	0	; CRC-Fehler
+sperc: 	db	0	; Spur nicht gefunden
+seerc: 	db	0	; Sektor nicht gefunden
+lwexis: db	0	; Anzeigebyte fuer vorhandene Laufwerke
+			; bit 0 = 1 LW 0 vorhanden
+			; bit 2 = 1 LW 1 vorhanden
+			; bit 4 = 1 LW 2 vorhanden
+			; bit 6 = 1 LW 3 vorhanden
+
+alwnr: 	db	0	; alte Laufwerksnummer vom vergangenen Zugriff
+			; bit 0-2 LW-Nr., bit 3 = 1 Motor laeuft noch
+
+aspnr:	db	0	; aktuelle Spur des durch alwnr bezeichneten LW
+spnrl: 	db	0,0,0,0	; Tabelle der alten Spurnummern
+
+ IF dsk8fm+dsk8mf+dsk5fm
+
+; Modifizierungstaelle entspr. LW-Typ und Aufzeichnungsverfahren
+; standardmaessig ist 5" MFM, Seite 0 eingestellt
+
+mdtbad:	db	mdtbl
+	dw	diom01		;Lesen Marke auf Seite 0 ein
+	dw	diomd2		;Gap-Rest Sektor/Daten
+	dw	crcbeg		;CRC-Anfangswert
+	dw	crcbeg+1
+	dw	dfrcod		;Taktfrequenzcode
+	dw	dpretr		;Precomp. Spur
+	dw	dtrdyw+1	;ready Wartezyklus
+ IF cpu eq k2526
+ ELSE
+	dw	diomrw		;Zusatztakte zwischen ini-Befehlen
+	dw	diomrw+1
+	dw	diomrw+2
+ ENDIF
+ if @write
+	dw	dioop		;Schreibroutine
+	dw	dioop+1
+  IF cpu eq k2526
+  ELSE
+	dw	diomww		;Zusatztakte zwischen outi-Befehlen
+	dw	diomww+1
+	dw	diomww+2
+  ENDIF
+  if dsk8fm+dsk8mf
+	dw	diowm1+1	;Zahl der Null-Bytes nach Datenschreiben
+  endif
+ endif
+mdtbl	equ	($-mdtbad-1)/2
+
+; MFM
+;====
+mdmfm8:	db	10000101b
+ IF cpu eq k2526
+	db	17
+ ELSE
+	db	20
+ ENDIF
+	dw	0cdb4h
+ IF fdc eq f1715
+	db	00010100b
+ ENDIF
+ IF fdc eq k5120
+	db	00000000b
+ ENDIF
+ IF fdc eq k5122
+	db	00000000b
+ ENDIF
+	db	255
+	db	0
+ IF cpu eq k2526
+ ELSE
+	jp	diord3
+ ENDIF
+ if @write
+	dw	diwmfm
+  IF cpu eq k2526
+  ELSE
+	jp	diowr3
+  ENDIF
+  if dsk8fm+dsk8mf
+	db	2
+  endif
+ endif
+
+mdmfm5:	db	10000101b
+ IF cpu eq k2526
+	db	17
+ ELSE
+	db	20
+ ENDIF
+	dw	0cdb4h
+ IF fdc eq f1715
+	db	00000100b
+ ENDIF
+ IF fdc eq k5120
+	db	00000000b
+ ENDIF
+ IF fdc eq k5122
+	db	00000100b
+ ENDIF
+	db	25
+	db	dtrdyz-(dtrdyw+2)
+ IF cpu eq k2526
+ ELSE
+	call	diowt1
+ ENDIF
+ if @write
+	dw	diwmfm
+  IF cpu eq k2526
+  ELSE
+	call	diowt1
+  ENDIF
+  if dsk8fm+dsk8mf
+	db	28
+  endif
+ endif
+
+; FM
+;===
+ IF dsk8mf+dsk8fm+dsk5fm ; dsk8fm-Platz immer freihalten wenn danach 5" FM
+mdfm8:	db	10000111b
+ IF cpu eq k2526
+	db	6
+ ELSE
+	db	9
+ ENDIF
+	dw	0ffffh
+ IF fdc eq f1715
+	db	00010000b
+ ENDIF
+ IF fdc eq k5120
+	db	00000000b
+ ENDIF
+ IF fdc eq k5122
+	db	00000100b
+ ENDIF
+	db	255
+	db	0
+ IF cpu eq k2526
+ ELSE
+	call	diowt1
+ ENDIF
+ if @write
+	dw	diowfm
+  IF cpu eq k2526
+  ELSE
+	call	diowt1
+  ENDIF
+  if dsk8fm+dsk8mf
+	db	2
+  endif
+ endif
+ ENDIF
+
+ IF dsk5fm ; kann K5120, K5122 nicht, nur PC1715
+mdfm5:	db	10000111b
+ IF cpu eq k2526
+	db	6
+ ELSE
+	db	9
+ ENDIF
+	dw	0ffffh
+	db	00000000b
+	db	25
+	db	dtrdyz-(dtrdyw+2)
+ IF cpu eq k2526
+ ELSE
+	call	diowt2
+ ENDIF
+ if @write
+	dw	diowfm
+  IF cpu eq k2526
+  ELSE
+	call	diowt2
+  ENDIF
+  if dsk8fm+dsk8mf
+	db	28
+  endif
+ endif
+ ENDIF
+
+ ENDIF ;nicht nur 5" MFM
+
+; Modifizierungstabelle entspr. Sektorlaenge
+
+dslnmt:	db	dslnl		;Tabellenlaenge
+	dw	fl.tsb		;Anzahl der 128er Bloecke
+	dw	diosl1		;Laenge erstes INIR
+ IF cpu eq k2526
+	dw	dini1+1		;INI oder INIR
+	dw	dini2+1
+	dw	dini3+1
+ ENDIF
+ if @write
+	dw	diosl2		;Laenge erstes OTIR
+  IF cpu eq k2526
+	dw	doti1+1		;OUTI oder OTIR
+	dw	doti2+1
+	dw	doti3+1
+  ENDIF
+ endif
+dslnl	equ	($-dslnmt-1)/2	;Tabellenlaenge
+
+; 128
+dsln0:	db	1
+ IF cpu eq k2526
+	db	128,0a2h,0a2h,0a2h
+ ELSE
+	db	1
+ ENDIF
+ if @write
+  IF cpu eq k2526
+	db	128,0a3h,0a3h,0a3h
+  ELSE
+	db	1
+  ENDIF
+ endif
+
+; 256
+dsln1:	db	2
+ IF cpu eq k2526
+	db	0,0a2h,0a2h,0a2h
+ ELSE
+	db	2
+ ENDIF
+ if @write
+  IF cpu eq k2526
+	db	0,0a3h,0a3h,0a3h
+  ELSE
+	db	2
+  ENDIF
+ endif
+
+; 512
+dsln2:	db	4
+ IF cpu eq k2526
+	db	0,0a2h,0a2h,0b2h
+ ELSE
+	db	4
+ ENDIF
+ if @write
+  IF cpu eq k2526
+	db	0,0a3h,0a3h,0b3h
+  ELSE
+	db	4
+  ENDIF
+ endif
+
+; 1024
+dsln3:	db	8
+ IF cpu eq k2526
+	db	0,0b2h,0b2h,0b2h
+ ELSE
+	db	8
+ ENDIF
+ if @write
+  IF cpu eq k2526
+	db	0,0b3h,0b3h,0b3h
+  ELSE
+	db	8
+  ENDIF
+ endif
+
+ IF dskds
+; Modifizierungsadressen fuer Seitenauswahl
+dsidmt:	db	dsidtl		; MFM		 FM
+	dw	diom01		;85/81		87/83
+ IF cpu eq k2526
+	dw	diom02		;a5/a1		a5/a1
+ 	dw	diom03		;b5/b1		b5/b1
+	dw	diom13		;bd/b9		bd/b9
+ ELSE
+	dw	diom02		;bd/b9		bd/b9
+ ENDIF
+ if @write
+  IF dsk8fm+dsk5fm
+	dw	diom04		; -		a4/a0
+	dw	diom05		; -		b6/b2
+	dw	diom06		; -		a4/a0
+  ENDIF
+	dw	diom07		;b4/b0		 -
+	dw	diom08		;b6/b2		 -
+	dw	diom09		;b4/b0		 -
+ endif
+	dw	diom10		;b5/b1		b5/b1
+;;diom11 muss letztes Byte in der Tabelle sein
+	dw	diom11		;b5/b1		b5/b1
+dsidtl	equ	($-dsidmt-1)/2
+ ENDIF

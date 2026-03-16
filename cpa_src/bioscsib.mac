@@ -1,0 +1,77 @@
+;***********************************************************************
+; SIO-Treiber fuer Strombauch
+; Hinweis: zur Nachnutzung siehe Telefonnr. in BIOS.MAC, nicht ueber AdW
+; 29.06.88
+; 04.04.89
+; - nach Drucker-Init 'set 0,(ix+ltpst)' statt 'ld (ix+ltpst),11h'
+;***********************************************************************
+
+cdsibi	equ	dumi		;keine Zeicheneingabe unterstuetzt
+
+; Einzelzeichenausgabe Reg. A
+cdsibo:	ld	h,2		;CTC auf 1200bd
+	call	cdsibc
+	ld	c,(ix+ltpsd)	;Datenport
+	out	(c),a
+	ld	c,(ix+ltpsc)	;Kommandoport
+cdsibw:	ld	l,1
+	out	(c),l
+	in	l,(c)
+	bit	0,l		;alle Zeichen gesendet?
+	jr	cdsibw		;nein
+	dec	h		;CTC auf 2400bd
+cdsibc:	ld	c,(ix+ltpcs)	;CTC Sendetakt
+	ld	l,5		;neue Zeitkonstante
+	out	(c),l
+	out	(c),h
+	ret
+
+;------------------------------------
+
+; Statusabfrage
+cdsibs:	ld	a,(ix+ltpst)	;Status
+	bit	1,a		;senderseitig blockiert?
+	jr	nz,cdsib4	;ja, frei rueckmelden
+	or	a		;initialisiert?
+	call	z,cdsib1	;nein
+	ld	c,(ix+ltpsc)	;SIO Kommando
+cdsib3:	in	a,(c)
+	and	1		;Empf. Zeichen da?
+	dec	a
+	jr	nz,cdsib4	;nein, frei
+	call	cdsib1		;sonst neu initialisieren
+	ld	de,0
+cdsib2:	in	a,(c)		;Kommandoport
+	and	80h		;Break?
+	jr	nz,cdsib3	;ja
+	dec	de
+	ld	a,d
+	or	e		;Ueberwachungszeit abgelaufen?
+	jr	nz,cdsib3	;nein
+; Ausgang Senderstatus
+cdsib4:	ld	a,0ffh
+	ret	nz		;senderseitig frei
+	inc	a		;A=00, ret z
+	RET			;senderseitig besetzt
+;-----------------------
+
+; (Re-)Initialisierung
+; IX auf Steuertabelle
+; ret: C zeigt auf Kommandoport
+cdsib1:
+	set	0,(ix+ltpst)	;Sender ist initialisiert
+	push	ix
+	pop	hl
+	ld	bc,ltpini
+	add	hl,bc
+	call	portpr		;CTC, WR0, WR4, WR1, WR3
+
+	LD	e,(ix+ltpw5)	;Prozedurtyp/Bitanzahl
+; Stellen Schreibregister 5
+; Reg. B,HL bleiben erhalten
+	ld	a,5
+	ld	c,(ix+ltpsc)
+	OUT	(C),A
+	OUT	(C),e
+	RET
+;-------------------------------------

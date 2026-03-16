@@ -1,0 +1,422 @@
+;**********************************************************************
+;	BIOS-MONITOR
+; -Aenderung M[em]-Kommando in S[ubstitute]-Kommando
+; -Erweiterung um O(ut/In)-Kommando
+;  Oadr byte fuer out-Befehl
+;  Oadr <enter> fuer in-Befehl
+; 25.09.88
+; -Streichen des Tastaturpuffers bei Betaetigen der Monitor-Taste
+;**********************************************************************
+biosmc:	ld	(moldsp),sp	;SP retten
+	ld	sp,mstack
+	push	iy
+	push	ix
+	push	hl
+	push	de
+	push	bc
+	push	af
+	ld	hl,synflg
+	set	monact,(hl)
+	ld	hl,(moldsp)	;Monitor-Aufrufstelle
+	inc	hl
+	inc	hl
+	ld	de,mvtxt1
+	call	mareco		;rueckkonvertieren
+	ld	hl,mtxt1
+	call 	putmes		;ausgeben MTXT1
+;
+mzykl1:	ld	hl,mtxt3	;MONITOR-Grundschleife
+mzykl2:	call	putmes		;ausgeben '*'
+	call	mconio		;Einlesen Steuerzeichen
+	cp	2dh		;"-" ? (wuerde zu RET)
+	jp	z,merr		;ja: Eingabefehler
+	and	5fh		;Grossbuchstabe	
+;
+mcal:	cp	'C'		;CALL ?
+	jr	nz,mmem		;nein
+	call	mraddr		;Einlesen Adresse
+	jp	c,merr		;Eingabefehler
+	ld	hl,mzykl1	;Ruecksprungadresse
+	push	hl		;ins Stack
+	ex	de,hl		;und Aufruf
+	jp	(hl)		;des UP
+;
+mmem:	cp	'S'		;SUBSTITUTE ?
+	jr	nz,mnmem	;nein
+	call	mraddr		;Einlesen Adresse
+	jp	c,merr		;Eingabefehler
+mmem1:	ex	de,hl
+mmem5:	ld	a,(hl)
+	cp	' '
+	jr	c,mmem2
+	cp	7fh
+	jr	c,mmem3
+mmem2:	ld	a,' '		;kein ASCII-Zeichen
+mmem3:	ld	(mmtxt+11),a	;Byte als Zeichen z.Ausgabe
+	push	hl		;Adresse retten
+	ld	de,mmtxt+8
+	ld	a,(hl)		;urspruengliches Zeichen
+	call	mrecoa
+	ld	hl,0
+	add	hl,sp		;HL:=SP
+	ld	de,mmtxt+3
+	call	mareco		;Adr.rueckkonvertieren
+	ld	hl,mmtxt
+	call	putmes		;Ausgabe
+	call	mraddr		;Einlesen Byte
+	pop	hl		;Adresse des Bytes
+	jr	c,mmem6		;Sonderzeichen/Eing.fehler
+	cp	0dh		;RET ?
+	jr	z,mmem4		;ja, keine Aenderung
+	ld	a,2
+	cp	b		;b>2 ?
+	jr	c,mmem1		;ja, DE ist neue Adresse
+	ld	(hl),e		;sonst Byte eintragen
+mmem4:	inc	hl
+	jr	mmem5
+mmem6:	cp	'.'		;Punkt ?
+	jr	z,mzykl1	;ja, MEM Ende
+	cp	'-'		;Minus ?
+	jp	nz,merr		;nein: Eingabefehler
+	dec	hl		;sonst Adr.dekrem.
+	jr	mmem5
+mnmem:
+
+mout:	cp	'O'		;OUT/IN ?
+	jr	nz,mnout	;nein
+	call	mraddr		;port
+	jp	c,merr		;Eingabefehler
+	push	de
+	call	mraddr		;bei out Byte holen
+	pop	bc		;auch high(port) gestellt!
+	jp	c,merr
+	cp	0dh		;Leereingabe?
+	jr	z,min		;ja, IN-Befehl
+	out	(c),e
+	jr	moute
+min:	in	a,(c)
+	ld	de,minbyt
+	call	mrecoa
+	ld	hl,mintxt
+	call	putmes
+moute:	jp	mzykl1
+mnout:
+
+	IF	mprot
+	cp	'P'		;PROTECT ?
+	jr	nz,mnmpr
+	ld	a,(mpflg)
+	or	a
+	call	z,mpinit
+	call	mraddr
+	jr	nc,mp4		;kein Sonderzeichen
+	cp	'.'		;Ende ?
+	jr	z,mp3
+	cp	'-'		;Loeschen ?
+	jr	z,mp2		
+	cp	'I'		;E/A-Schutz ignorieren ?
+	ld	hl,mpnmir	;RETN-Befehl
+	jr	z,mp1
+	cp	'L'		;E/A-Schutz listen ?
+	ld	hl,mpnmi	;NMI-Routine mit Protokoll
+	jp	nz,merr		;nein: Eingabefehler
+mp1:	ld	a,0c3h		;JP-Befehl
+	ld	(66h),a		;zur NMI-Routine
+	ld	(67h),hl	;auf 66h bringen
+	jr	mp3
+mp2:	ld	a,(mpflg)	;MPINIT-Aufruf-Flag
+	or	a
+	call	nz,mpoff
+	jr	mp3
+mp4:	push	de		;Anfangsadresse
+	call	mraddr		;DE:=Endadresse
+	pop	bc		;BC:=Anfangsadresse
+	jp	c,merr		;Eingabefehler
+	call	mpset
+mp3:	jp	mzykl1
+;
+mnmpr:
+	ENDIF
+
+;
+mtim:	cp	'T'		;TIMER ?
+	jr	nz,mreg
+	call	mconio
+	cp	'5'		;5 ms ?
+	ld	hl,0
+	jr	z,mt1
+	cp	'1'		;1 sec ?
+	ld	l,6
+	jp	nz,merr		;nein: Fehler
+mt1:	call	mconio
+	cp	0dh		;RETURN ?
+	ld	de,0
+	jr	z,mt2
+	cp	'-'		;Minus ?
+	ld	e,3
+	jp	nz,merr		;nein: Fehler
+mt2:	add	hl,de
+	ld	de,cpmx03	;im erw.Sprungvektor 
+	add	hl,de
+	ld	de,mzykl1	;Rueckspr.adresse
+	push	de		;ins Stack
+	jp	(hl)
+;
+mreg:	cp	'R'		;REG ?
+	jr	nz,mhelp
+	ld	hl,mrtxt1
+	call	putmes		;Ausgeben 1.Zeile
+	ld	c,7
+	ld	hl,mstckr-2
+	ld	de,mrtx21
+mreg1:	inc	hl
+	inc	hl
+	inc	de
+	inc	de
+	inc	de
+	inc	de
+	call	mareco		;Rueckkonv.Doppelregister
+	dec	c
+	jr	nz,mreg1
+	ld	hl,mrtxt2
+	call	putmes		;Ausgeben 2.Zeile
+	jp	mzykl1
+;
+mhelp:	cp	'H'		;HELP ?
+	jr	nz,met1
+	call	mraddr		;Zahl lesen/konvertieren
+	jp	c,merr		;CY: keine Zahl
+	ex	de,hl		;HL:=Zahl
+	call	mhldec		;dezimal ausgeben
+	ld	a,h
+	or	a		;nur ein Byte ?
+	jr	nz,mh1		;nein: raus
+	ld	a,l		;sonst
+	and	7fh		; hoechstes Bit wegschneiden
+	cp	7fh		; und
+	jr	nc,mh1		; Ausgebbarkeit als
+	cp	20h		; Zeichen pruefen
+	jr	c,mh1		
+	ld	(mhtxt+1),a
+	ld	hl,mhtxt
+	call	putmes		;Zeichen ausgeben
+mh1:	jp	mzykl1
+;
+met1:	cp	0dh		;RETURN ?
+	jr	nz,merr		;nein: also unzulaessig
+	ld	hl,mtxt2
+	call	putmes
+	ld	hl,synflg
+	res	monact,(hl)	;Monitor-Ende vermerken
+	pop	af
+	pop	bc
+	pop	de
+	pop	hl
+	pop	ix
+	pop     iy   
+	ld	sp,(moldsp)
+	ret
+;
+;----------------------------------------------------------
+;Fehlerreaktion
+;
+merr:	ld	hl,merrtx
+	jp	mzykl2
+;-----------------------------------------------------------
+;
+;Eingeben 0..4 Hex-Ziffern von Konsole; Konvertieren
+;RET: NC - o.k.; CY - unzulaessiges Zeichen
+;     A: erstes eingegebenes Zeichen
+;     B: Anzahl der Zeichen
+;     DE: Ergebnis
+mraddr:	ld	hl,mtad2-1
+	ld	b,5		;max. 5 Zeichen lesen
+mra1:	call	mconio		;Einlesen Zeichen
+	cp	7fh		;DELETE ?
+	jr	nz,mra2
+	dec	hl
+	inc	b
+	ld	a,5
+	cp	b		;B>5 ?
+	jp	c,merr		;ja: Fehler
+	jr	mra1
+mra2:	inc	hl
+	cp	'a'		;kleiner Buchstabe ?
+	jr	c,mra3		;nein
+	and	5fh		;klein => gross
+mra3:	ld	(hl),a
+	cp	0dh		;RETURN ?
+	jr	z,mra4
+	cp	' '		;Blank ?
+	jr	z,mra4
+	djnz	mra1
+	scf			;Fehler: 5.Zeichen
+	jr	mraret
+mra4:	ld	a,5
+	sub	b
+	ld	b,a		;b: Anz.eingeg.Zeichen
+	ld	de,mltad1
+	sbc	hl,de		;HL auf MTAD1+Versatz
+	call	mconv2		;Konvertieren 1.Byte
+	jr	c,mraret	;CY: unzul.Zeichen
+	ld	d,a		;sonst H-Teil nach D
+	call	mconv2		;Konvertieren 2.Byte
+   ;hier keine Pruefung auf unzulaessiges Zeichen:
+   ;CY wird durchgereicht
+	ld	e,a		;L-Teil nach E
+mraret:	ld	a,(mtad2)	;A:=1.Zeichen
+	ret
+;
+;----------------------------------------------------------
+;
+;Einlesen und Ausgeben 1 Zeichen ueber Konsole
+;RET: A - Zeichen (DEL fuer DEL,CAN,BACKSP;
+;		   alle sonstigen Steuerz. werden ignoriert)
+mconio:	push	bc
+	push	de
+	push	hl
+mcio1:	call	conin
+	cp	18h		;CANCEL ?
+	jr	z,mcio4
+	cp	7fh		;DELETE ?
+	jr	z,mcio4
+	cp	08h		;BACKSPACE ?
+	jr	z,mcio4
+	cp	0dh		;RETURN ?
+	jr	z,mcio5
+	cp	20h		;sonstiges Steuerzeichen ?
+	jr	c,mcio1		;ja: ignorieren
+	ld	c,a
+mcio2:	push	af
+	call	conol		;Echo
+mcio3:	pop	af
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+mcio4:	ld	hl,mciodel
+	ld	a,7fh
+	push	af		;A retten
+	call	putmes		;Sonderzeichen ausgeben
+	jr	mcio3
+mcio5:	ld	c,' '
+	jr	mcio2
+;
+mciodel:db	08h,' ',08h,0;
+;
+;-----------------------------------------------------------
+;
+;Konvertieren 2 HEX-Ziffern ab (HL)
+;RET: NC - o.k.; C - keine HEX-Ziffer
+;     A  - Binaerzahl; HL zeigt auf naechstes Byte
+mconv2:	ld	a,(hl)
+	call	mconv
+	ret	c		;keine Hex-Ziffer
+	push	bc
+	rlca			;linkes Halbbyte
+	rlca
+	rlca
+	rlca
+	ld	b,a
+	inc	hl
+	ld	a,(hl)
+	call	mconv
+	jr	c,mc2r	 	;keine Hex-Ziffer
+	or	b		;rechtes Halbbyte
+	inc	hl
+mc2r:	pop	bc
+	ret
+;
+;------------------------------------------------------------
+;
+;Konvertieren HEX-Ziffer in A
+;RET: NC - o.k.; C - keine HEX-Ziffer
+mconv:	cp	'0'		;<A> < '0' ?
+	ret	c		;ja
+	cp	'9'+1		;<A> > '9' ?
+	jr	c,mconvd	;nein
+	cp	'A'		;<A> < 'A' ?
+	ret	c		;ja
+	cp	'F'+1		;<A> > 'F' ?
+	jr	nc,mconve	;ja
+	sub	7		;'A'-7 => 10
+mconvd:	and	0fh		;nur rechtes Halbbyte
+	ret
+mconve:	scf			;Fehler
+	ret
+;
+;--------------------------------------------------------------
+
+; Rueckkonvertieren Adresse ab (HL) nach (DE)
+; RET: 4 Zeichen ab (DE), DE zeigt auf naechstes freies Byte
+;      C,HL unveraendert
+mareco:	ld	b,2
+	inc	hl
+marec1:	call	mbreco
+	dec	hl
+	djnz	marec1
+	inc	hl		;HL wiederherstellen
+	ret
+
+;
+; HL dezimal auf Konsole ausgeben
+; HL bleibt erhalten
+
+mhldec:	push	hl
+	ld	c,0		;bisher nur fuehrende Nullen
+	ld	de,-10000
+	call	mhsub		;Zehntausender
+	ld	de,-1000
+	call	mhsub		;Tausender
+	ld	de,-100
+	call	mhsub		;Hunderter
+	ld	de,-10
+	call	mhsub		;Zehner
+	ld	a,l
+	or	'0'
+	pop	hl
+	jr	mcono		;Einer (auch wenn Null)
+
+mhsub:	call	mhldig
+	ret	z		;fuehrende Null
+mcono:	push	bc
+	push	hl
+	ld	c,a
+	call	conol
+	pop	hl
+	pop	bc
+	ret
+;
+;--------------------------------------------------------------
+;
+; Arbeitsfelder:
+;===============
+mstcke:	ds	30*2,0		;freier Stack-Bereich
+mstckr:	ds	6*2,0		;Rettungsbereich Nutzerreg.
+mstack:
+moldsp:	ds	2,0		;fuer alten SP-Stand
+mrreg:	dw	mstckr		;Adr. Reg.rettb. fuer R-Komm.
+mtxt1:	db	0dh,0ah,'BIOS-Version '
+	version
+	db	'; MONITOR called at '
+mvtxt1:	db	'     - Type C,H,O'
+ IF mprot
+	db	',P'
+ ENDIF
+	db	',R,S,T, or ET',0
+mtxt2:	db	08h,'RETURN',0dh,0ah,0
+merrtx: db	' ?'
+mtxt3:	db	0dh,0ah,'*',0
+mrtxt1:	db	' Registers saved at '
+	hexout	mstckr
+	db	0dh,0ah,0
+mrtxt2:	db	'  '
+mrtx21:	db	' AF=0000 BC=0000 DE=0000'
+	db	' HL=0000 IX=0000 IY=0000 SP=0000',0
+mmtxt:	db	0dh,0ah,'           ',0
+mhtxt:	db	'  ',0
+mintxt:	db	': '
+minbyt:	db	'XX',0
+mtad1:	db	'0000'		;falls n<4 Zeichen
+mltad1	equ	$-mtad1		;Laenge MTAD1
+mtad2:	db	'00000'		;Eingabepuffer

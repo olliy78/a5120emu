@@ -1,0 +1,1090 @@
+;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+; Zentrale BIOS-Kompenenten
+; - rst 38h fuehrt bei Monitor zu seinem Aufruf, sonst Warmstart
+; - Nachladen CCP aus RAM-Floppy vereinheitlicht (unabh. von RAM-Floppy)
+; - synflg hinter BIOS-Sprungvektor fuer Modifizierung von aussen
+; - Verwendung der Interruptsaeule in Generierungsteil verlagert
+; 25.09.88
+; - Streichen des Tastaturpuffers in Tastaturstatus
+; 09.10.88
+; - Pflege der Statuszeile nur bei stzaus=0
+; 11.01.89
+; - Variante wbootv=4 (@CCP.COM) eingefuehrt
+; 17.05.89
+; - Generierung ohne LW A moeglich
+; 05.06.89
+; - Unterstuetzung NANOS-RAF
+;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+ IF iobvar
+;Verteiler fuer die 1-Zeichen-Kanaele entsprechend IOBYTE:
+;=========================================================
+
+const:			; iobyte  00 00 00 xx
+	call	iodisp
+	db	7
+	dw	kbdst		;0 kbd:
+	dw	kbdst		;1 kbd:
+	dw	reades		;2 rdr:
+	dw	uc1st		;3 uc1: (liefert, ob Z. da)
+
+conin:			; iobyte:  00 00 00 xx
+	call	iodisp
+	db	7
+	dw	kbdi		;0 kbd:
+	dw	kbdi		;1 kbd:
+	dw	reader		;2 rdr:
+	dw	uc1i		;3 uc1: (wartet, bis Z. da)
+
+conout:			; iobyte:  00 00 00 xx
+	call	iodisp
+	db	7
+	dw	crto		;0 crt:
+	dw	dumo		;1 dum:
+	dw	punch		;2 pun:
+	dw	uc1o		;3 uc1: (wartet, bis frei)
+
+reades:			; iobyte:   00 00 xx 00
+	call	iodisp
+	db	1
+	dw	kbdst		;0 kbd:
+	dw	dumst		;1 dum:
+	dw	dumst		;2 dum:
+	dw	uc1st		;3 uc1: (liefert, ob Z. da)
+
+reader:			; iobyte:   00 00 xx 00
+	call	iodisp
+	db	1
+	dw	kbdi		;0 kbd:
+	dw	dumi		;1 dum:
+	dw	dumi		;2 dum:
+	dw	uc1i		;3 uc1: (wartet, bis Z. da)
+
+
+punch:			; iobyte:   00 xx 00 00
+	call	iodisp
+	db	3
+	dw	crto		;0 crt:
+	dw	dumo		;1 dum:
+	dw	list		;2 lst:
+	dw	uc1o		;3 uc1: (wartet, bis frei)
+
+
+listst:			; iobyte:  xx 00 00 00
+	call	iodisp
+	db	5
+	dw	ttyst		;0 tty:
+	dw	crtst		;1 crt:
+	dw	lptst		;2 lpt:
+	dw	dumst		;3 dum:
+
+list:			; iobyte:  xx 00 00 00
+	call	iodisp
+	db	5
+	dw	ttyo		;0 tty:
+	dw	crto		;1 crt:
+	dw	lpto		;2 lpt:
+	dw	dumo		;3 dum:
+
+
+; IOBYTE-Auswertung - Verteilung auf die physischen Geraete
+; ---------------------------------------------------------
+; A,HL werden zerstoert
+; Anwender-IX wird gerettet, darf von Treiber-Routine zerstoert werden
+; damit kann Treiber auch aus Interrupt-Routine aufgerufen werden
+
+iodisp:
+	pop	hl
+	push	bc
+	ld	b,(hl)
+	inc	hl
+	ld	a,(iobyte)
+iodis1: rrca
+	djnz	iodis1
+	and	6
+	ld	c,a
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	pop	bc
+	push	ix		;retten Anwender-IX
+	call	callhl
+	pop	ix		;wiederherstellen Anwender-IX
+	ret
+
+ ELSE	;ohne IOBYTE
+const	equ	kbdst		;zerstoert kein IX
+conin	equ	kbdi		;zerstoert kein IX
+conout	equ	crto		;zerstoert kein IX
+reades	equ	kbdst		;zerstoert kein IX
+reader	equ	kbdi		;zerstoert kein IX
+punch	equ	crto		;zerstoert kein IX
+ if chdvar
+listst: push	ix
+	call	ttyst
+	jr	retix
+list:	push	ix
+	call	ttyo
+retix:	pop	ix
+	ret
+ else
+listst	equ	dumst		;zerstoert kein IX
+list	equ	dumo		;zerstoert kein IX
+ endif
+ ENDIF
+
+;************************************************************
+;	Spezialroutinen
+;************************************************************
+
+	IF	monitor
+moncal: call	biosmc		;Monitor-Aufruf ueber Spr.vekt.
+	ret			;**kein jp biosmc wegen stack**
+	ENDIF
+
+
+; Arbeit mit asynchronen Sonderaktionen
+;======================================
+; Die folgenden beiden Routinen werden vom BIOS immer dann aufgerufen,
+; wenn wegen zeitkritischer (z.B. Floppy-Bedienung) oder anderer
+; BIOS-Arbeit (z.B. Bildschirmrollen) keine parallelen Sonderaktionen
+; erlaubt sind.
+
+; Reg A bleibt erhalten
+delsps: push	af
+	ld	hl,(kritbg)	;evtl. Nutzerroutine fuer Beginn krit. BIOS
+	call	callhl		;aufrufen
+	pop	af
+	ld	hl,synsem	;Verzoegern Sonderaktionen
+	inc	(hl)
+	ret
+
+; Reg A bleibt erhalten
+delspr: push	af
+	ld	hl,(kriten)	;evtl. Nutzerroutine fuer Ende krit. BIOS
+	call	callhl		;aufrufen
+	pop	af
+	ld	hl,synsem	;Zulassen Sonderaktionen
+	dec	(hl)
+
+ IF stpvar or monitor
+
+; Test auf zwischenzeitliche Anforderung von Sonderroutinen
+;----------------------------------------------------------
+
+; Diese Routine wird nach dem Lesen eines Tastaturzeichens
+; als "Ohr" eingeschoben, bevor zur eigentlichen Interrupt-
+; adresse zurueckgekehrt wird. Sie wird nicht innerhalb der
+; Interruptroutine ausgefuehrt, um mit offenen Interrupts
+; arbeiten zu koennen.
+; maximale Stackbelastung nach RETI von Interruptroutinen:
+; -	Return-Adresse zum Nutzer
+; -	AF
+chksp:	di
+	push	af		;A und F Reg retten
+	ld	a,(synsem)
+	or	a		;asynchr. Routinen zugelassen?
+	jp	nz,chkspx	;nein
+	inc	a		;weiteren Eintritt verhindern
+	ld	(synsem),a
+chkspn: ei
+	ld	a,(synflg)	;inzw. (neue) Anforderung?
+rqmask	aset	0
+ IF monitor
+rqmask	aset	rqmask+(1 shl monrq)
+ ENDIF
+ IF stpvar
+rqmask	aset	rqmask+(1 shl stoprq)
+ IF chdvar
+rqmask	aset	rqmask+(1 shl synlrq)
+ ENDIF
+ ENDIF
+	and	rqmask
+	jp	nz,chkspd	;ja, ausfuehren
+	ld	a,(synsem)
+	dec	a
+	ld	(synsem),a
+chkspx: pop	af
+	ei
+	ret
+
+; asynchrone Aktionen ausfuehren
+chkspd:
+ IF monitor
+	ld	a,(synflg)
+	bit	monrq,a		;inzwischen Monitor-Request?
+	jr	z,nmonsp	;nein
+	res	monrq,a
+	ld	(synflg),a
+	pop	af		;alle Register wie Unterbr.zustand
+	call	biosmc
+	push	af
+nmonsp:
+ ENDIF
+
+ IF stpvar
+	ld	a,(synflg)
+	bit	stoprq,a	;inzwischen Stop-Forderung?
+	jr	z,nstpsp	;nein
+	res	stoprq,a
+	ld	(synflg),a
+	pop	af		;Nutzer-Stackbelastung verringern
+	ld	(asynhl),hl	;HL freimachen
+	ld	hl,stoprt	;Routine
+	call	asynrt		;aufrufen mit eigenem Stack
+	push	af
+nstpsp:
+
+ IF chdvar
+	ld	a,(synflg)
+	bit	synlrq,a	;inzwischen LST:-Synchr.?
+	jr	z,nsynlr	;nein
+	res	synlrq,a
+	ld	(synflg),a
+	pop	af
+	ld	(asynhl),hl
+	ld	hl,lsynch
+	call	asynrt
+	push	af
+nsynlr:
+ ENDIF
+ ENDIF	;stpvar
+
+	jp	chkspn		;Test auf neue Requests
+
+ IF stpvar or chdvar
+; Asynchrone Routine (HL) mit eigenem Stack aufrufen
+;---------------------------------------------------
+
+asynrt: ld	(asynsv),sp	;asynchr. Routinen haben
+	ld	sp,stpstk	;ein eigenes Stack
+	push	af
+	push	de
+	push	bc
+	call	callhl		;Routine aufrufen
+	pop	bc
+	pop	de
+	pop	af
+	ld	sp,0		;SP wiederherstellen
+asynsv	equ	$-2
+	ld	hl,0		;gerettetes hl wiederherst.
+asynhl	equ	$-2
+	ret
+ ENDIF
+
+ IF stpvar
+; Asynchrone Stop-Routine
+;------------------------
+stoprt:
+ IF disknb ne 0
+	call	headup		;Disk-Kopf abheben
+ ENDIF
+stopz:	call	stpchp		;holen naechste phys. Taste
+
+ IF umlaut
+	cp	'u'		;Umlaut-Modus umschalten ?
+	jr	z,stopzu
+	cp	'U'
+	jr	nz,stopnu	;Nein !
+stopzu: ld	hl,synflg	;Umlaute-Flag im Flagbyte
+	ld	a,(hl)
+	xor	1 shl umlflg	;umschalten
+	ld	(hl),a
+	ret
+stopnu:
+ ENDIF
+
+ IF chdvar
+	cp	zblmin		;"- im Ziffernblock": Hardcopy BS -> LIST?
+	jp	z,crthrd	;ja, ausfuehren
+	cp	spcins		;"INS": I/O-Byte im LST:Kanal weiterschalten?
+	jr	nz,stopz2	;nein
+	ld	hl,iobyte
+	ld	a,(hl)
+	add	a,40h		;Ueberlauf wird ignoriert
+	ld	(hl),a
+	ret
+stopz2:
+
+ IF l2bahn
+	cp	pf0c		;"F0": auf andere Druckerbahn?
+	ld	c,1 shl lmpb2r
+	jr	z,a2bsw		;ja
+	cp	pf1c		;"F1": 2. Druckerbahn parallel schalten?
+	ld	c,1 shl lmpb2b
+	jr	nz,na2bpr	;nein
+a2bsw:	ld	hl,lampbf
+	ld	a,(hl)
+	xor	c		;Bit umschalten
+	ld	(hl),a
+	ret
+na2bpr:
+ ENDIF
+ ENDIF
+
+ IF cpastz or uhrvar
+	cp	pfec		;"F14": Status-Anzeige ein/aus?
+	jr	nz,stopz3	;nein
+	ld	hl,synflg
+	ld	a,(hl)
+	xor	1 shl stzaus	;Status-Anzeige ein/aus
+	ld	(hl),a
+	ret			;fertig
+stopz3:
+ ENDIF
+
+ IF costu
+	cp	1bh		;"ESC": Tastendefinition?
+	jr	nz,stopz4	;nein
+	ld	c,a
+	call	crto		;1b (Escape-Folge einleiten)
+	call	crto		;1b (Stringdef. einleiten)
+	call	stpchp		;naechste Taste physisch
+	jr	stpz4b
+stpz4a: call	crto		;1b/Taste/Stringzeichen
+	call	stopch		;Taste logisch
+stpz4b: ld	c,a
+	sub	1bh		;fertig?
+	jr	nz,stpz4a	;nein
+	ld	c,a		;00h
+	jp	crto
+stopz4:
+ ENDIF
+
+	sub	kcurpd		;"Page down": ^C ?
+	ret	nz		;nein, Stop-Ende
+	ld	(synsem),a	;falls rst 0 nicht in BIOS fuehrt
+	rst	0		;sonst Warmstart
+
+; Holen naechste Taste physisch
+stpchp: ld	hl,synflg
+	set	phyact,(hl)	;naechste Taste physisch
+	push	hl
+	call	stopch		;holen naechstes Tastaturz.
+	pop	hl
+	res	phyact,(hl)	;physisches Lesen beendet
+	ret
+
+; Holen naechste Taste im Stopzustand
+stopch: call	swilmp		;Stop-Lampe an
+	call	kbdi		;Warten auf naechstes Zeichen
+	jp	swilmp		;danach Stop-Lampe aus
+
+ ENDIF ;stpvar
+ ELSE  ;kein Test auf asynchr. Routinen nach 'delspr'
+	ret
+ ENDIF ;asynchr. Routinen
+
+;***************************************************
+;	Allgemeine BIOS-Hilfsprogramme
+;***************************************************
+
+; Aufruf der Routine (HL)
+callhl: jp	(hl)
+
+; Ausgabe Text ab (HL) bis 00h auf CON: und evtl. LST:
+putmes: LD	A,(HL)
+	OR	A
+	RET	Z
+	PUSH	HL
+	LD	C,A
+	CALL	conol
+	POP	HL
+	INC	HL
+	JR	putmes
+
+; Ausgabe Text ab (HL) mit exakter Laenge "stzbl" in Statuszeile
+ IF cpastz
+biosms: ld	de,statz1+statzb
+crtm29	equ	$-2		;BS-Pufferadr. fuer Message
+	ld	bc,stzbl
+	setbs
+	ldir
+	setram
+	ld	hl,stzbto	;Anzeigezeit in Sekunden
+	ld	(hl),30
+	jp	crtclk		;Blinken
+
+stzbto: db	4*60		;Anzeigezeit fuer CP/A-Text
+ ELSE
+biosms	equ	putmes	;0dh,0ah,...,07h,00h im Text ergaenzen!!
+ ENDIF
+
+;	Wait 0.01 sec * (B)
+; Reg HL bleibt erhalten
+wait10: push	bc
+	ld	c,10		;10* 1ms warten
+wait2z: ld	b,189		;(189*13)/(256*9600)=0.001
+wait1z: djnz	wait1z		;1ms warten
+	dec	c
+	jr	nz,wait2z
+	pop	bc
+	djnz	wait10
+	ret
+
+;************************************************************
+;	zentral verwendete Rueckkonvertierungsroutinen
+;************************************************************
+
+ IF monitor or errvar or iobvar or uhrvar or mprot
+
+; Rueckkonvertieren Byte ab (HL) nach (DE)
+; RET: 2 Zeichen ab (DE), DE zeigt auf naechstes freies Byte
+mbreco: ld	a,(hl)
+
+; Rueckkonvertieren Byte in A nach (DE)
+; RET: 2 Zeichen ab (DE), DE zeigt auf naechstes freies Byte
+mrecoa: call	mreca
+
+; Rueckkonvertieren A in HEX-Ziffern nach (DE)
+; RET: A um 4 bits nach rechts rotiert
+;      DE zeigt auf naechstes Byte
+mrecol:
+mreca:	rrca			;linkes Halbbyte
+	rrca
+	rrca
+	rrca
+mrecor:				;rechtes Halbbyte
+	push	af		;fuer 2. mreca-Aufruf retten
+	and	0fh
+	sub	9+1
+	jr	c,mrecod	;0..9
+	add	a,7		;A..F
+mrecod: add	a,'0'+10
+	ld	(de),a
+	inc	de
+	pop	af
+	ret
+
+ ENDIF
+
+ IF monitor or cpastz
+
+; Ermitteln 10er-Ziffer von HL zur Basis -DE
+; C =0, wenn bisher nur fuehrende Nullen
+; RET: HL enthaelt Rest; C>0 bei Ziffer >'0'
+;	B,DE erhalten
+;	ret z bei fuehrender Null
+
+mhldig: ld	a,'0'-1		;ASCII-Zaehler
+mhdig1: inc	a
+	add	hl,de
+	jr	c,mhdig1
+	sbc	hl,de		;einmal zuviel gezaehlt
+	inc	c
+	cp	'0'		;Null ?
+	ret	nz		;nein
+	dec	c		; Test auf fuehrende Null
+	ret			;ret z bei ja
+
+ ENDIF
+
+
+;*************************************************************
+;	wiederholter Kaltstart
+;*************************************************************
+kalts1:
+ IF cpu eq k2521
+	ld	hl,cboott
+	call	putmes
+kaltwt: di
+	jr	kaltwt
+cboott: db	0dh,0ah,'Kaltstart-Taste!',07h,07h
+	db	0
+ ENDIF
+ IF (cpu eq k2526) or (cpu eq c1715)
+	call	tim5of		;totlegen aller Interruptquellen
+  IF cpu eq k2526
+	call	tim1of
+  ENDIF
+  IF cpu eq c1715
+  ENDIF
+	di
+  IF cpu eq k2526
+	ld	a,0f7h
+	out	(0ah),a		;Lade-ROM zuschalten
+  ENDIF
+  IF cpu eq c1715
+	out	(24h),a		;Lade-ROM zuschalten
+  ENDIF
+	rst	0		;RESET
+ ENDIF
+
+;*************************************************************
+;	Warmstart
+;*************************************************************
+ if1
+warmin	MACRO
+wbinit: DI
+	PUSH	HL		;;merken CCP-Eingang
+
+	LD	A,high(intvr)	;;Wiederherstellen Interruptsystem
+	LD	I,A
+	im	2
+
+	LD	A,0C3H		;;herstellen feste HS-Plaetze
+	LD	(REBOOT),A
+	LD	HL,BIOS+3	;;Warmstart-Eingang BIOS
+	LD	(REBOOT+1),HL
+	LD	(BDOSJP),A
+	LD	HL,BDOS+6	;;BDOS-Eingang
+bdosre	equ	$-2		;;veraenderter BDOS-Eingang bei
+;;				 RAM-Fehler
+	LD	(BDOSJP+1),HL
+	ld	(38h),a		;Breakpoint
+ IF monitor
+	ld	hl,moncal	;bei Monitor
+ ELSE
+	ld	hl,0		;ohne Monitor wie Warmstart
+ ENDIF
+	ld	(38h+1),hl
+	ld	hl,synflg
+	ld	(hl),0
+	inc	hl
+	ld	(hl),0		;synsem:=0
+
+	ld	hl,ret
+	ld	(kritbg),hl	;leere Routine fuer Beginn kritischer BIOS-Teil
+	ld	(kriten),hl
+
+	timwarm
+	chdwarm
+	crtwarm
+	kbdwarm
+	dskwarm
+ IF ramfl
+	rflwarm
+ ENDIF
+	EI
+
+ IF cpastz
+ ;LOGIN-Anzeige in Statuszeile loeschen
+	ld	hl,statz1+statzk
+crtm42	equ	$-2
+	ld	b,stzke-stzka
+	setbs
+clstkz: ld	(hl),' '
+	inc	hl
+	djnz	clstkz
+	setram
+ ENDIF
+
+setcld: ld	hl,defaul
+	ld	c,(hl)		;;user, default fuer CCP-Start
+	push	bc
+	ld	a,c
+	and	0fh		;;default-Laufwerk
+	ld	c,a		;;fuer seldsk
+	xor	(hl)		;;user bleibt
+	or	0		;;Kaltstart-LW bei Wdhlg.
+clddev	equ	$-1
+	ld	(hl),a
+	call	dgetpb
+	pop	bc
+	jr	z,setcld	;;nein, auf Kaltst.-LW
+	ret			;;Sprung zum CCP
+	ENDM
+ endif
+
+ IF	wbootv eq 1	;Warmstart=Kaltstart
+warmst	equ	bios00
+ ELSE
+WARMST: LD	SP,tpa-80h
+
+   if	wbootv eq 0		;;CCP-Kopie im BIOS
+	ld	hl,ccpkop	;;CCP von Kopie wiederherst.
+	ld	de,CCP
+	ld	bc,ccpkpl+bdskpl
+	ldir
+   endif
+
+   if	(wbootv eq 2) or (wbootv eq 3) or (wbootv eq 4)
+	;;CCP von @OS.COM/@CCP.SYS/@CCP.COM wiederhst.
+ccplod:
+	ld	c,13		;;Reset Disksystem (LOGIN neu)
+	call	bdos+6
+    if (wbootv eq 2) or (wbootv eq 4)
+	ld	a,0
+ccpldv	equ	$-1		;;Kaltstart-Laufwerk (A=1,B=2,..)
+	ld	(fcb@os),a
+	xor	a
+	ld	e,a		;;user 0
+	ld	(fcb@os+12),a	;;extent
+      if wbootv eq 2
+	inc	a		;;ab Satz 1 lesen
+      endif
+	ld	(fcb@os+32),a	;;record
+	ld	c,32		;;set user 0
+	call	bdos+6
+    endif
+    if wbootv eq 3
+	ld	c,0		;;suchen Laufwerk M:, falls SWAP-Kommando war
+	ld	b,dphnb
+ccplms: call	dgetpb		;;IX:=DPB
+	jr	z,ccplm1	;;LW nicht definiert
+	push	ix
+	pop	hl
+	ld	de,dpbm
+	or	a
+	sbc	hl,de		;;RAM-Floppy-Laufwerk gefunden?
+	jr	z,ccplm2	;;ja, c entghaelt LW-Nr (A=0, B=1,...)
+ccplm1: inc	c
+	djnz	ccplms
+ccplre: jp	bios00		;;nicht gefunden, Kaltstart
+ccplm2: ld	a,c
+	inc	a		;;A=1, B=2,...
+	ld	(fcb@os),a
+	xor	a
+	ld	(fcb@os+12),a	;;extent
+	ld	(fcb@os+32),a	;;record
+	ld	e,31
+	ld	c,32		;;set user 31
+	call	bdos+6
+    endif
+	ld	c,15		;;open
+	call	de@os
+	inc	a		;;Datei da?
+	jr	z,nosys@	;;nein
+ if (wbootv eq 2) or (wbootv eq 3)
+	ld	b,+(ccpkpl+127)/128	;;128er records
+	ld	hl,CCP		;;Zieladresse
+ endif
+ if wbootv eq 4
+	ld	a,(fcb@os+15)	;;128er records
+	ld	b,a
+	ld	hl,tpa		;;Zieladresse
+ endif
+ccpldz: push	bc
+	push	hl
+	ex	de,hl
+	ld	c,26		;;setdma
+	call	bdos+6
+	call	rd@os		;;read
+	or	a		;;Fehler?
+	jr	nz,nosyst	;;ja
+ if (wbootv eq 2) or (wbootv eq 3)
+	ld	hl,(CCP+1)	;;Test, ob richtiges @OS.COM
+	ld	bc,0		;;bevor BDOS-Anfang ueberladen!
+ccpjpm	equ	$-2		;;vom Kaltstart hinterlegt
+	sbc	hl,bc		;;stimmt Sprungadresse?
+	jr	nz,nosyst	;;nein, falsches CCP
+ endif
+	pop	hl
+	ld	bc,80h
+	add	hl,bc
+	pop	bc
+	djnz	ccpldz
+	jr	ccplde		;ok
+nosyst: pop	hl
+	pop	bc
+nosys@:
+    if (wbootv eq 2) or (wbootv eq 4)
+	ld	hl,nosysd
+	call	biosms
+	call	headup		;;Verriegelung oeffnen
+	ld	b,200		;;200* 10ms
+	call	wait10		;;warten
+	jr	ccplod		;;neuer Versuch
+nosysd:
+     IF cpastz eq 0
+	db	0dh,0ah
+     ENDIF
+	db	'Systemdiskette!  '
+     IF cpastz eq 0
+	db	07h,0
+     ENDIF
+    endif
+    if wbootv eq 3
+	jr	ccplre		;;Fehler beim CCP-Laden -> Kaltstart
+    endif
+
+fcb@os: db	01		;;LW
+    if wbootv eq 2
+	db	'@OS     COM'
+    endif
+    if wbootv eq 3
+	db	'@CCP    ','S'+00h,'Y'+80h,'S'	;spaeter read only
+    endif
+    if wbootv eq 4
+	db	'@CCP    COM'
+    endif
+	ds	21,0
+rd@os:	ld	c,20
+de@os:	ld	de,fcb@os
+	jp	bdos+6
+ccplde:
+    if (wbootv eq 2) or (wbootv eq 3)
+	ld	hl,bdskop
+	ld	de,BDOS
+	ld	bc,bdskpl
+	ldir			;BDOS-Kopf wiederherstellen
+    endif
+   endif ;(wbootv eq 2) or (wbootv eq 3) or (wbootv eq 4)
+
+   if (wbootv eq 0) or (wbootv eq 2) or (wbootv eq 3)
+	LD	HL,CCP+3	;EINGANG MIT KOMMANDOLOESCHEN
+   endif
+   if wbootv eq 4
+	ld	hl,0
+	ld	(tpa-80h),hl	;Kommandolaenge 0, Begrenzer 0
+	ld	hl,tpa		;Eingang fuer Selbstverschiebung
+   endif
+	warmin
+ ENDIF	;wbootv ne 1
+
+;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+;	Steuertabellen fuer Massenspeicher
+;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+ if1
+; Bestimmen groesstes definiertes Geraet
+dphnb	aset	16
+	IRP	di,<P,O,N,M,L,K,J,I,H,G,F,E,D,C,B,A>
+	if	dpha&di
+	EXITM
+	endif
+dphnb	aset	dphnb-1
+	ENDM
+ endif
+
+; Tabelle der Adressen der DPH's
+;===============================
+
+;===============================================
+@din	aset	dphnb
+dphatb: IRP	di,<A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P>
+	if	@din eq 0
+	EXITM
+	endif
+@din	aset	@din-1
+ IF dpha&di ; Laufwerk A auf erstes definiertes Geraet legen
+dphaA	aset	dpha&di
+ ENDIF
+	dw	dpha&di
+	ENDM
+
+; Ermitteln DPH und DPB von (c) nach HL bzw. IX
+; ret z		DPH existiert nicht, HL=0
+; ret nz	ok, HL auf DPH, IX auf DPB
+; BC, DE bleiben erhalten
+;=====================================================
+dgetpb: push	de
+	ld	hl,0
+	ld	a,c
+	cp	dphnb		;DPH definiert?
+	jr	nc,dgetp0	;nein
+	ex	de,hl
+	ld	hl,dphatb	;Adresstabelle fuer DPH's
+	ld	e,c
+	add	hl,de
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a		;hl:=^DPH
+	push	hl
+	ld	e,10
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		;de:=^dpb
+	push	de
+	pop	ix		;ix:=^dpb
+	pop	hl
+dgetp0: pop	de
+	ld	a,h
+	or	l		;ret z bei hl=0
+	ret
+
+
+;**************************************************
+;	Arbeits-Felder (ab hier keine Konstanten!!)
+;	Arbeits-Felder werden benutzt fuer Kaltstart-Routinen
+;**************************************************
+biosds	equ	$
+@dsad	aset	biosds
+
+; ===========allgemeine BIOS-Funktionen=============
+
+ccpkpl	equ	ccpln		;Laenge CCP+ BDOS-Anfang
+bdskpl	equ	11h		;BDOS-Anfang
+
+	if	wbootv eq 0	;CCP-Kopie im BIOS
+ccpkop	equ	@dsad
+ccpkpe	equ	ccpkop+ccpkpl+bdskpl
+@dsad	aset	ccpkpe	;Ende CCP-Kopie
+	endif
+
+	if	(wbootv eq 2) or (wbootv eq 3)
+bdskop	equ	@dsad
+@dsad	aset	@dsad+bdskpl
+	endif
+
+ IF stpvar
+@dsad	aset	@dsad+2*22	;Stack fuer asynchrone Routinen
+stpstk	equ	@dsad
+ ENDIF
+@dsad	aset	@dsad+2*12	;Stack fuer Interrupt-Routinen
+intstk	equ	@dsad
+
+;=============Disketten-Arbeit============
+
+dirbuf	equ	@dsad	;Directory-Puffer fuer alle Laufwerke
+@dsad	aset	@dsad+128
+	IRP	di,<A,B,C,D>
+ IF disk&di
+alv&di	equ	@dsad		;;Allocation-Vector Disk.
+	IF	((disk&di mod 1000)/100) eq 5	;;5" 
+	if	((disk&di mod 10000)/1000)	;;DS
+@dsad	aset	@dsad+(400+7)/8 ;;reicht fuer 400k (1K Bloecke)
+				;;	bzw. 800K (2K Bloecke)
+	else					;;SS
+@dsad	aset	@dsad+(200+7)/8 ;;reicht fuer 200k (1K Bloecke)
+				;;	bzw. 400K (2K Bloecke)
+	endif
+	ELSE					;;8" 
+	if	(disk&di ge 10000)		;;MFM
+@dsad	aset	@dsad+(352+7)/8 ;;reicht fuer 704 2K Bloecke
+	else					;;FM
+@dsad	aset	@dsad+(250+7)/8 ;;reicht fuer 250K (1K Bloecke)
+				;;	bzw. 500K (2K-Bloecke)
+	endif
+	ENDIF
+csv&di	equ	@dsad		;;Check Sum
+	IF	(disk&di mod 100) gt 40 ;;8",77 oder 5",80 Track
+	if	((disk&di mod 10000)/1000)	;;DS
+@dsad	aset	@dsad+256/4	;;reicht fuer 256 Dir.eintraege
+	else					;;SS
+@dsad	aset	@dsad+128/4	;;reicht fuer 128 Dir.eintraege
+	endif
+	ELSE				;;5" 40 Track
+	if	((disk&di mod 10000)/1000)	;;DS
+@dsad	aset	@dsad+128/4	;;reicht fuer 128 Dir.eintraege
+	else
+@dsad	aset	@dsad+64/4	;;reicht fuer 64 Dir.eintraege
+	endif
+	ENDIF
+ ENDIF
+	ENDM
+
+	if	oss
+alvoss	equ	@dsad		;Allocation Vector RAM-Floppy
+@dsad	aset	@dsad+(48+7)/8	;reicht fuer 48K (1K Bloecke)
+; kein checksum vektor, da nicht wechselbar
+ossbf1	equ	@dsad		;Rettungsfeld fuer 'ossbuf'
+@dsad	aset	@dsad+128
+	endif
+
+
+	IF	em256
+alvem	equ	@dsad		;Allocation Vektor TRAM-Floppy
+@dsad	aset	@dsad+32	;reicht fuer 256k
+; kein checksum vektor, da nicht wechselbar
+dmabuf	equ	@dsad		;Puffer fuer RAM-Zugriff
+@dsad	aset	@dsad+128
+	ENDIF
+
+	IF	mkd256
+alvmkd	equ	@dsad		;Allocation Vektor
+@dsad	aset	@dsad+256/8	;reicht fuer 512k bzw. 256k
+; kein checksum vektor, da nicht wechselbar
+	ENDIF
+
+ IF raf
+alvraf	equ	@dsad		;Allocation Vektor RAF
+@dsad	aset	@dsad+1024/8	;reicht fuer	1024 1K Gruppen (nicht mgl)
+				;		1024 2k Gruppen: 2M
+				;		1024 4k Gruppen: 4M
+				;		1024 8k Gruppen: 8M
+; kein checksum vektor, da nicht wechselbar
+ ENDIF
+
+ IF rna
+alvraf	equ	@dsad		;Allocation Vektor NANOS-RAF
+@dsad	aset	@dsad+256/8	;reicht fuer	256 1K Gruppen
+				;		256 2k Gruppen: 512k
+				;		256 4k Gruppen: 1024k
+; kein checksum vektor, da nicht wechselbar
+ ENDIF
+
+ IF dbufsz gt 7
+dbuf	equ	@dsad		;Diskettenpuffer
+@dsad	aset	@dsad+(1 shl dbufsz)
+ ENDIF
+
+; ============Tastatur=================
+
+ IF cpastz
+ ELSE
+kbdbuf	equ	@dsad
+@dsad	aset	@dsad+kbdbl+1
+ ENDIF
+
+; Es folgt der Bereich fuer nutzereigene Stringdefinition
+; immer am Ende, d.h. bis zum Beginn der Interruptsaeule,
+; damit durch Rundung auf 100h-Grenze freibleibende Bytes
+; fuer Nutzerstrings zusaetzlich zur Verfuegung stehen.
+ IF costu
+costrt	equ	@dsad
+@dsad	aset	@dsad+costu+1	;Mindestbereich
+ ENDIF
+
+biosde	aset	@dsad	;*****Ende BIOS-Arbeitsbereiche*****
+
+
+; Kontrolle auf Adressenueberschreitung
+;======================================
+ if1
+  printh  <BIOS endet auf ............ >,biosde
+@diff	aset	biosad+(biosln-crtbfl)-100h+intvr-intvec
+  printh  <berechnetes BIOS-Ende ..... >,@diff
+ endif
+
+ if biosde gt intvr
+ if1
+@diff	aset	(biosde-@diff+0fh) shr 4 shl 4
+ .printx *!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ .printx * BIOS-Code zu lang, Interruptvektoren ueberlagert!!!
+  printh  <Vereinbarung von "biosln" vergroessern um  >,@diff
+ .printx * Dann BIOS neu uebersetzen!
+ .printx *!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ endif
+ endif
+
+
+ if1
+  printh  <Interruptsaeule beginnt auf >,intvr
+ endif
+
+@diff	aset	biosde
+
+ if intvr ge @diff
+@diff	aset	(intvr-@diff) shr 8 shl 8
+ if @diff gt 100h ;100h als Unschaerfe zulassen
+ if1
+ .printx *!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ .printx * "biosln" und die Linkadresse (/p:...)
+  printh  <koennten jeweils um den Wert		      >,@diff
+ .printx * verringert und damit der TPA vergroessert werden
+ .printx *!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ endif
+ endif
+ endif ;intvr ge @diff
+
+ if1
+ .printx *
+ .printx * Link-Anweisung:
+@diff	aset	tpaend-5-80h-ccpln	;CCP beruecksichtigen
+  IF (cpu eq k2521) and (fdc eq K5126)
+  printh  <linkmt @oso=cpobas,ccp,bdos,x:bios/p:>,@diff
+  ENDIF
+  IF (cpu eq k2521) and (fdc ne K5126) and (dev eq oem)
+  printh  <linkmt @os=cpmbas,ccp,bdos,x:bios/p:>,@diff
+  ENDIF
+  IF (cpu eq k2521) and (fdc ne K5126) and (dev eq K8915)
+  printh  <linkmt @os=cpubas,ccp,bdos,x:bios/p:>,@diff
+  ENDIF
+  IF cpu eq k2526
+  printh  <linkmt @os=cpabas,ccp,bdos,x:bios/p:>,@diff
+  ENDIF
+  IF cpu eq c1715
+  printh  <linkmt @os=cppbas,ccp,bdos,x:bios/p:>,@diff
+  ENDIF
+ .printx * mit x = Zielgeraet fuer bios.erl-File
+ endif
+
+;************************************************
+;	Kaltstart-Rest, der nicht im Anfangslader
+; Anschlussbedingung:
+; i A:	Default-Laufwerk (i.a. =Kaltstartlaufwerk)
+;	Bit 7 =1, wenn kein jungfr. Kaltstart
+;************************************************
+
+KALTST:				;Kaltstart-Initialisierung
+; Achtung! Weder Stack noch Reg. A benutzen!
+	di
+ IF dev eq k8915
+	ld	bc,8fh*256+0a8h
+	out	(c),b		;Lade-ROM/RAM abschalten
+	ld	bc,0b0h*256+atsum
+	out	(c),b		;LED's am Front-Paneel aus
+ ENDIF
+	ld	hl,kaltsc
+	ld	de,kaltsb
+	ld	bc,kaltsl
+	ldir			;Kaltstart-Code nach vorn
+	jp	kaltsb		;und abarbeiten
+	.DEPHASE
+
+ IF dev eq OEM
+kaltsb	equ	180h		;Basisadr fuer Kaltstartcode
+ ENDIF
+ IF dev eq K8915
+kaltsb	equ	9000H		;Basisadr fuer Kaltstartcode
+				;muss wegen Bildschirmumschaltung
+				;hinten liegen
+ ENDIF
+kaltsc: .PHASE	kaltsb
+
+; Loeschen 0..tpa-80h
+	ld	hl,0
+	ld	(hl),0
+	ld	de,1
+	ld	bc,tpa-80h-1
+	ldir
+;
+	ld	sp,kaltsb
+	push	af		;merken Default
+	and	80h		;Bit 7
+	ld	(cjungf),a	;merken
+	pop	af
+
+	and	03h
+	ld	(defaul),a	;setzen Default-Laufwerk
+	ld	(clddev),a
+
+ if (wbootv eq 2) or (wbootv eq 3) or (wbootv eq 4)
+	;CCP von '@OS.COM'/@CCP.SYS/@CCP.COM laden
+  if (wbootv eq 2) or (wbootv eq 4)
+	inc	a		;von Kaltstart-Laufwerk
+	ld	(ccpldv),a
+  endif
+  if (wbootv eq 2) or (wbootv eq 3)
+	ld	hl,(CCP+1)	;fuer Warmstart-Kontrolle
+	ld	(ccpjpm),hl	;Sprungadresse aus CCP hinterlegen
+  endif
+ endif
+
+; Loeschen BIOS-Arbeitsbreiche zur Spur-Suche
+;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	ld	hl,biosds
+	ld	de,biosds+1
+	ld	bc,biosde-biosds-1
+	ld	(hl),0fdh
+	ldir
+
+; Definieren Interruptvektor
+;~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	LD	HL,intvr
+	LD	A,H
+	LD	I,A
+	im	2
+ IF (intvec+100h-intvr) eq 256
+	ld	b,0
+ ELSE
+	ld	b,intvec+100h-intvr
+ ENDIF
+intvcl: ld	(hl),0		;vorloeschen Interruptsaeule
+	inc	hl
+	djnz	intvcl
+	ld	hl,cpmx00	;Adr.Sprungvektor CP/M-Erw.
+	ld	(cpmext),hl	;eintragen
+
+; Definieren Arbeitszellen fuer asynchrone Routinen
+;--------------------------------------------------
+
+	ld	hl,ret
+	ld	(kritbg),hl
+	ld	(kriten),hl

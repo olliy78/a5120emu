@@ -1,0 +1,343 @@
+;*************************************************************
+;    DRUCKERTREIBER 1156
+; FZB Muencheberg, Kollgn. Rasch; Tel. 82241
+; 13.04.87
+; 04.04.89
+; - nach Drucker-Init 'set 0,(ix+ltpst)' statt 'ld (ix+ltpst),11h'
+;*************************************************************
+
+
+;  GENERIERUNG 1156 FUER KME10 (5V-PEGEL) U. KME3 (12V-PEGEL):
+
+
+;  ANSCHLUSS UEBER 2 PIO-PORTS, POLLING-BETRIEB, SIF 1000
+;  TOR A = DATEN
+;  TOR B = BIT7 END; BIT3 RUF
+;  KME10: RUF AUS/EIN-->1/0
+;         END AKTIV -->0
+;  KME3:  RUF AUS/EIN-->0/1
+;         END AKTIV -->1
+;
+;  STEUERCODE  1156:
+;       CR	0DH
+;	LF	0AH BEI KME10, 09H BEI KME3
+;	FF	0CH, 0BH BEI KME10, 0AH BEI KME3
+;	VORW.DRUCK	1CH
+;	RUECK.DRUCK	1DH
+;
+;UMBAUVORSCHRIFT ADA:
+;  DIE BELEGUNG DES AUSGABESTECKVERBINDERS BLEIBT ERHALTEN.
+;  DIE SIGNALE RUFA UND PA-A SIND GEBRUECKT.
+; UMBAU AUSGABEKANAL:
+; 1. SIGNAL "ENDA" AUF BIT7 VON PORT B LEGEN: BRUECKE VOM
+;    SCHALTKREIS 75154 PC (ANSCHLUSS 13) HINTER DEM AUSGABE-
+;    STECKVERBINDER ZUM PIO-BAUSTEIN 1 (ANSCHLUSS 34)
+; 2. SIGNAL "RUFA" VON BIT 3, PORT B ERZEUGEN: LEITUNG ZU
+;    KONTAKT B2 DES AUSGABESTECKVERBINDERS AUFTRENNEN UND
+;    BRUECKE VON B2 ZU C10 (SIGNAL PA-A) EINLOETEN.
+; 3. KONDENSATOR 100PF VON B12 DES AUSGABESTECKVERBINDERS
+;    NACH MASSE.
+; 4. 12V PEGEL AUF 5V LEGEN (NUR BEI KME10!): 12V VERSORGUNGS-
+;    SPANNUNG ZU DEN AUSGANGSWIDERSTANDSKOMBINATIONEN AUF-   
+;    TRENNEN UND MIT 5V VERBINDEN.
+
+; Seitenvorschub nur vom uebergeordneten Programm
+lmaxlp	equ	140	;max. Zeichenzahl/Zeile
+
+
+cdp56i	equ	dumi		;keine Zeicheneingabe unterstuetzt
+
+; Einzelzeichenausgabe (A)
+
+cdp56o:	res	7,a
+lch:	ld	c,a
+	cp	0dh	;
+	JP	Z,LCH0D
+	cp	0ah	;lf
+	jp	z,lch0a
+	cp	09h	;tab
+	jr	z,lch09
+	cp	08h	;bs
+	jr	z,lch08	 
+	cp	0ch	;ff
+	jr	z,lch0c
+	cp	0
+	ret	z
+	cp	20h
+	ret	c
+	CP	7CH
+	JR	NZ,LIST2
+	LD	C,49H
+	LD	A,C
+LIST2:	LD	HL,LLINEP
+	DEC	(HL)
+	JR	NZ,LCHNOK
+	PUSH	BC
+	CALL	LCH0A
+	POP	BC
+	JR	LIST2
+lchnok:	call	lchup	;in a zeichen
+	ld	hl,lpuff-1
+	ld	b,c
+	ld	c,a
+	ld	a,(llzap)
+	cp	0
+	jr	nz,lchok1
+	ld	a,20h
+	cp	b
+	jr	z,lchok1
+	ld	a,c
+	ld	(llzap),a	;posit.f.textanf.
+lchok1:	ld	a,b
+	ld	b,0
+	add	hl,bc
+	ld	(hl),a
+	ret
+
+lchup:	ld	hl,llinep
+	ld	a,lmaxlp+1
+	sub	(hl)
+	ret
+
+lch09:	ld	a,' '
+	call	lch
+	call	lchup
+	and	7	;durch 8 teilbar?
+	jr	nz,lch09
+	ret
+
+lch08:	call	lchup	;bs erzeugen
+	ret	z	;bs unterdruecken
+	push	af
+	call	lzei1	;zeile bis dahin drucken
+	pop	af
+	ld	(llzap),a
+	ld	c,20h
+	call	lchnok
+	call	lzeile
+	ld	hl,llinep
+	inc	(hl)
+	ret	
+
+lch0c:	
+	IF	cdtn56	;kme 10
+	ld	a,0ch
+	ENDIF
+	IF	cdtp56	;kme3
+	ld	a,0ah
+	ENDIF
+	jp	lout
+
+;vorw.druck, rueckw.druck, druckwegoptimierung
+
+lzeile:	call	lchup
+	ret	z
+lzei1:	ld	e,a	
+	ld	a,(llzap)
+	cp	0
+	ret	z
+	ld	d,a
+	ld	a,e
+	cp	d
+	jr	nc,lzei3
+	dec	d
+lzei3:	ld	a,(lposalt)
+	ld	b,a
+	ld	a,d
+	sub	b
+	jr	c,lchz1
+	call	lpoze2
+	call	ldrvor	;druckkopf steht links
+			;von dem zu druckenden text
+	ret
+
+lchz1:	ld	a,b
+	dec	a
+	cp	e
+	jr	c,lchz2
+	sub	e
+	call	lpoza1
+	call	ldrrue	;druckkopf steht rechts von
+			;der zu druckenden zeile
+	ret
+
+;druckkopf steht in mitten der zu druckenden zeile
+lchz2:	ld	a,d
+	add	a,e
+	rra
+	ld	c,a	;<c>=zeilenmitte
+	ld	a,b
+	cp	c
+	jr	nc,lchz3
+	call	lpoza	;zum zeilenanf. posit.
+	call	lpvorw
+	call	ldrvor
+	ret
+
+lchz3:	
+	call	lpoze
+	call	lprueck
+	call	ldrrue
+	ret
+
+lpoze:	ld	a,e	;zelenende posit.
+	inc	a
+	sub	b
+lpoze2:	push	af
+	call	lpvorw
+lpoze1:	pop	af
+	cp	0
+	ret	z
+	call	lpleer
+	ret
+
+lpoza:	sub	d	;druckkopf auf zeilenanf.
+lpoza1:	push	af	;posit.
+	call	lprueck
+	jr	lpoze1
+	
+ldrvor:	ld	c,d	;druck vorw.
+	ld	a,e
+	inc	a
+	ld	(lposalt),a
+	call	lpufad	
+ldrv1:	ld	a,(hl)
+	call	lout
+	inc	hl
+	djnz	ldrv1
+	ret
+
+ldrrue:	ld	c,e	;druck rueckw.
+	ld	a,d
+	ld	(lposalt),a
+	call	lpufad
+ldrr1:	ld	a,(hl)
+	call	lout
+	dec	hl
+	djnz	ldrr1
+	ret
+
+lpufad:	ld	b,0
+	ld	hl,lpuff-1
+	add	hl,bc
+	ld	a,e
+	sub	d
+	ld	b,a
+	inc	b
+	ret
+
+lch0d:	
+	CALL	LZEILE
+	LD	HL,LLINEP
+	LD	(HL),LMAXLP+1
+	XOR	A
+	LD	(LLZAP),A
+	RET
+lch0a:
+	IF	cdtp56
+	ld	a,09h
+	ENDIF
+	IF	cdtn56
+	ld	a,0ah
+	ENDIF
+	call	lout
+	RET
+
+; Statusabfrage
+
+cdp56s:	ld	a,(ix+ltpst)	;Status
+	bit	1,a		;senderseitig blockiert?
+	jr	nz,cdpsr	;ja, frei rueckmelden
+	bit	3,a		;schon mal frei gemeldet?
+	jr	nz,cdpsr1	;ja, Bereitsch.abfrage nur einmal moeglich!
+	or	a		;initialisiert?
+	JR	NZ,CDPS0
+	call	z,cdpini	;nein
+	JR	CDPSR
+CDPS0:	ld	c,(ix+ltpsd+1)
+	in	a,(c)
+	and	80h		;end?
+ IF cdtn56
+	xor	80h		;Bit umklappen
+ ENDIF
+cdpsr:	set	3,(ix+ltpst)	;frei, Status nicht neu abfragen
+cdpsr1:	ld	a,0ffh
+	ret	nz		;senderseitig frei
+	res	3,(ix+ltpst)	;nicht frei
+	inc	a		;a:=00, ret z
+	ret			;senderseitig besetzt
+
+	
+; (Re-)Initialisierung
+; IX auf Steuertabelle
+
+cdpini:
+	set	0,(ix+ltpst)	;Sender ist initialisiert
+	push	ix
+	pop	hl
+	ld	bc,ltpini
+	add	hl,bc
+	call	portpr
+	ld	hl,lposalt
+	ld	(hl),1
+	inc	hl
+	ld	(hl),0
+	ld	hl,llinep
+	ld	(hl),lmaxlp+1
+	ld	a,0dh
+	jp	lout
+
+; Unterprogramme
+;================
+
+lpvorw:	ld	a,1ch
+	call	lout
+	ret
+
+lprueck:ld	a,1dh
+	call	lout
+	ret
+
+; in a anzahl der auszugebenden leerzeichen
+lpleer:	ld	b,a
+lpler1:	ld	a,20h
+	call	lout
+	djnz	lpler1
+	ret
+ 
+lout:	IF	cdtn56
+	cpl
+	ENDIF
+	ld	c,(ix+ltpsd)
+	out	(c),a		;zeichen ausgeben
+	IF	cdtn56
+	res	3,a
+	ENDIF
+	IF	cdtp56
+	set	3,a
+	ENDIF
+	inc	c
+	out	(c),a		;ruf ein
+	res	3,(ix+ltpst)	;Status neu abfragen
+loutw3:
+lout1:	call	cdp56s	;end?
+	jr	z,lout1	;nein
+	IF	cdtn56
+	set	3,a
+	ENDIF
+	IF	cdtp56
+	res	3,a
+	ENDIF
+	ld	c,(ix+ltpsd+1)
+	out	(c),a		;ruf aus
+	ret
+ 
+lpuff:	defs	lmaxlp,20h	;puffer 1156
+lposalt:	defs	1,1	;druckkopfposition
+llzap:	defs	1,0	;zeilenanf.pos.
+
+llinep:	db	lmaxlp+1
+lflags:	db	0
+
+
+

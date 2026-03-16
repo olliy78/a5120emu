@@ -1,0 +1,49 @@
+;; Initialisieren OSS-RAM-Floppy
+;;==============================
+	ld	hl,ossini	;;Code fuer Test auf OSS
+	ld	de,ossbuf	;;unter ossadr laden
+	ld	bc,ossinl
+	ldir
+	call	ossbuf		;;und abarbeiten
+	jr	nz,ossinn	;;keine OSS vorhanden
+	jr	ossine
+ossini:	ld	hl,ossadr
+	ld	e,(hl)		;;merken Belegung
+	ld	a,3ch
+	out	(0eeh),a	;;OSS zuschalten
+	ld	a,(hl)
+	cpl
+	ld	(hl),a
+	ld	a,0
+	out	(0eeh),a	;;OSS abschalten
+	ld	a,(hl)
+	cp	e		;;war auf OSS umgeschaltet?
+	ld	(hl),e
+	ret	nz		;;nein
+;; Verzeichnis loeschen (OSS ist auch nach RESET undefiniert)
+	ld	a,3ch
+	out	(0eeh),a
+	ld	hl,ossrbg
+	ld	de,ossrbg+1
+	ld	bc,3ffh
+	ld	(hl),0e5h
+	ldir
+	ld	a,0
+	out	(0eeh),a
+	ld	hl,osscd
+	ld	de,ossld
+	ld	bc,osscdl
+	ldir			;;herstellen OSS-"LDIR"
+	xor	a
+	ret			;;ret z
+ossinl	equ	$-ossini
+
+;; keine OSS-Karte da
+ossinn:	ld	hl,osslwt
+	ld	(hl),'?'	;;in Kaltstart-Text
+	inc	hl
+	ld	(hl),'?'
+	ld	hl,0		;;Laufwerk nicht definiert
+	ld	(dphatb+2*('M'-'A')),hl
+ossine:
+

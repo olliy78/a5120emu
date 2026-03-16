@@ -1,0 +1,729 @@
+;****************************************************
+;	Tastatur-Eingabe
+; - Unterstuetzung weiterer Steckplaetze fuer IFSS-Tastatur
+;   (z.B. Digitalisier-AP)
+; - freie Belegbarkeit Kursor- und rechter Ziffernblock
+; 17.07.88
+; - uebersichtlichere Darstellung phys. -> virtueller Tastencode
+; 24.09.88
+; - Anpassung Tastaturpuffer in Statuszeile an umschaltbaren Bildschirmpuffer
+; 25.09.88
+; - Fehler in Stop-Tasten-Behandlung korrigiert
+; 07.11.88
+; - Erweiterung des virtuellen Tastaturcodes um K7634-spezifische Tasten
+; 23.12.88
+; - saemtliche Sondertasten c0..ff liefern mit Control oder Shift einen
+;   virtuellen Zwischencode 80..bf
+; 14.01.89
+; - Variante K7633 (kbdotp eq 3) eingefuehrt
+; - wenn Tastatur nach RESET gross schreibt, so caps-lock-Test invertiert
+; 20.01.89
+; - Abtesten auf ^Q-Prefix ueber virtuellen Tastencode
+; 22.03.89
+; - Control-Flag gilt genau fuer das naechste Zeichen
+; 31.03.89
+; - Sondertasten >=80h ignoriert, wenn nicht in Tastatur-Tabelle
+; 25.09.89
+; - Fehlerkorrektur K7637: CTRL-Ersatztaste brachte kein ^Q-Prefix
+;****************************************************
+
+ if1
+
+; Warmstart-Initialisierung Tastatur
+;===================================
+kbdwarm	MACRO
+	ld	a,(lampbf)
+ and (1 shl lmphcp)+(1 shl lmpb2r)+(1 shl lmpb2b)+(1 shl kbdcpb)+(1 shl kbdcal)
+	ld	(lampbf),a	;ruecksetzen Lampen
+
+	ld	hl,kbdsts	;Standard-Stringtabelle wiederherstellen
+	ld	(kbdsst),hl
+	ENDM
+
+ endif	;if1
+
+; Tastatur-Status
+;================
+kbdst:
+; vor Pufferabfrage anstehende Zeichen lesen (falls 5ms Takt aus)
+	di			;parallele Abfrage ueber 5ms verhindern
+ IF cpastz
+  IF crtbfl eq 0
+				;und Bildschirmpufferzuschaltung erlauben
+  ENDIF
+ ENDIF
+	call	kbdsti		;interner Aufruf
+	ei
+ IF stpvar or monitor
+	jp	chksp		;Test auf Spezialfunktionen
+ ELSE
+	ret
+ ENDIF
+
+kbdsti:				;kbdst-Aufruf internŠkbdstz:	call	kbdst1		;Taste neu gedrueckt ?
+	jr	z,kbdsnt	;nein
+	call	kbdrdt		;Taste in Puffer ablegen
+ IF stpvar
+ ELSE
+	ld	hl,synflg
+	bit	stoprq,(hl)	;STOP-Request?
+	res	stoprq,(hl)
+	jr	z,kbdstz	;nein
+kbdstw:	call	kbdst1		;warten auf beliebige Taste
+	jr	z,kbdstw
+ ENDIF
+	jr	kbdstz		;auf neuen Tastendruck testen
+
+kbdsnt:	ld	a,0		;erstes Pufferzeichen
+kbdbfe	equ	$-1
+	or	a		;Puffer leer?
+	ret	z		;ja
+	ld	a,0ffh
+	ret
+
+;------------------------------------------------------------
+
+
+; Taste umkodieren und im Puffer ablegen
+;=======================================
+; Achtung!! Dieses UP wird aus Interruptroutine aufgmrufen
+kbdrdt:	call	kbdrch		;Zeichen evtl. umkodieren
+	ld	hl,synflg
+
+	cp	ctlc		;Ersatz-Control-Taste ?
+	jr	nz,kbdnct	;nein
+	ld	a,(hl)
+	xor	1 shl ctrlst	;CTRL-Status umkehren
+	ld	(hl),a
+	ret			;und Zeichen ignorieren
+kbdnct:
+
+ IF stpvar
+	bit	phyact,(hl)	;Taste physisch in Puffer?
+	jp	nz,kbdput	;ja, direkt ablegen
+ ENDIF
+ IF costu
+	ld	hl,costrt+1
+	call	costr		;Nutzerstring?
+	jr	nz,kbdco	;ja
+ ENDIF
+	ld	hl,(kbdsst)	;Adresse der Standardstringtabelle
+	call	costr		;Standardstring?
+	jr	z,kbdnco	;nein
+kbdco:	dec	e		;String der Laenge 0?
+	ret	z		;ja, zu ignorierende Taste
+	dec	e		;String exakt ein Zeichen lang?
+	jp	nz,kbdco1	;nein, kann keine Sondertaste sein
+	ld	a,(hl)		;holen erstes Stringzeichen
+kbdnco:	ld	hl,synflg
+
+; Auswertung Sondertasten, die nicht im Puffer abgelegt werden
+;-------------------------------------------------------------
+
+	cp	stpc		;STOP ?
+	jr	nz,kbdnstŠ	set	stoprq,(hl)	;Stop-Request vermerken
+
+; Rest des Konsolpuffers streichen
+;---------------------------------
+kbdbcl:	xor	a
+ IF cpastz
+  IF crtbfl eq 0
+	crton			;Bildschirmpuffer zuschalten
+  ENDIF
+ ENDIF
+	ld	(0ffffh),a
+crtm36	equ	$-2
+ IF cpastz
+  IF crtbfl eq 0
+	crtoff			;Bildschirmpuffer abschalten
+  ENDIF
+ ENDIF
+	ld	(kbdbfe),a
+	ret
+
+kbdnst:
+ IF stpvar
+ IF chdvar
+	cp	SyLc		;Drucker Synchronisieren?
+	jr	nz,kbdnsy	;nein
+	set	synlrq,(hl)	;sonst vermerken
+	ret
+kbdnsy:
+	cp	HrLc		;Hardcopy ein/aus ?
+	jr	nz,kbdnhc
+	ld	hl,conol
+	ld	a,(hl)
+	xor	0cdh xor 0c3h	;CALL aus JP u.umgekehrt
+	ld	(hl),a
+	ld	a,1 shl lmphcp	;Hardcopy-Lampe
+	jp	kbdslm
+kbdnhc:
+ ENDIF
+ ENDIF	;stpvar
+
+ IF monitor
+	cp	Monc		;Monitor-Taste ?
+	jr	nz,kbdnmn
+	bit	monact,(hl)	;Monitor aktiv ?
+	jr	nz,kbdmo2	;ja
+	set	monrq,(hl)	;Vermerken Monitor-Request
+	jp	kbdbcl		;Tastatur-Puffer leeren
+kbdmo2:	ld	a,0dh		;sonst CR substituieren
+	jr	kbdput
+kbdnmn:
+ ENDIF
+
+	cp	Sel0		;Selector 0?
+	jr	c,kbdnsl	;nein
+	cp	Sel3+1		;Selector 0..3?
+	jr	nc,kbdnsl	;nein
+	and	0fh		;Bit 0..3
+	jp	kbdslm
+kbdnsl:
+	or	a		;Taste zu ignorieren?
+	ret	m		;jaŠ
+; Zeichen im Puffer ablegen
+;--------------------------
+kbdput:
+ IF cpastz
+  IF crtbfl eq 0
+	crton			;Bildschirmpuffer adressieren
+  ENDIF
+ ENDIF
+	ld	hl,0ffffh	;Pufferadresse
+crtm35	equ	$-2
+	ld	bc,kbdbl	;Pufferlaenge
+	ld	e,a		;A retten
+	xor	a		;Pufferende-Kennzeichen
+	cpir
+	jr	nz,kbdpt1	;Puffer voll
+	ld	(hl),a		;neues Pufferende anzeigen
+	ld	a,e		;A wiederherstellen
+	dec	hl
+	ld	(hl),a		;Zeichen puffern
+;um bei Arbeit mit Anzeige des Tastaturpuffers in Statuszeile
+;Bildschirmflimmern zu vermeiden hinterlegen des gepufferten Zeichens
+;ausserhalb des Bildschirmbereichs fuer Test, ob ueberhaupt etwas im Puffer
+ IF cpastz
+  IF crtbfl eq 0
+	crtoff			;Bildschirmpuffer abschalten
+  ENDIF
+ ENDIF
+	ld	(kbdbfe),a
+	ret
+kbdpt1:
+ IF cpastz
+  IF crtbfl eq 0
+	crtoff			;Bildschirmpuffer abschalten
+  ENDIF
+ ENDIF
+	jp	crtclk		;Puffer voll anzeigen
+
+; Ablegen String im Puffer
+;-------------------------
+; i E	Stringlaenge -1
+; i HL	Stringanfang
+kbdco1:	inc	e
+kbdco2:	push	hl
+	push	de
+	ld	a,(hl)
+	call	kbdput		;Zeichen in Puffer
+	pop	de
+	pop	hl
+	inc	hl
+	dec	e
+	jr	nz,kbdco2	;wenn String noch nicht fertig
+	ret
+
+; Holen naechstes Tastaturzeichen mit Warten
+;===========================================
+kbdi:
+kbdmd1:		;Modifizierung bei K7634/36/37 mit:
+;kbdwin:call	kbdst		;Taste im Puffer
+;	jr	z,kbdwin	;nein, warten
+;	jp	kbdinn		;sonst aeltestes PufferzeichenŠ
+kbdwin:	call	kbdst		;Taste im Puffer?
+	jr	nz,kbdinn	;ja
+	ld	hl,kbdwt	;wartefaktor
+	ld	b,100		;fuer dauerfunktion
+kbdwt	equ	$-1
+	ld	(hl),10		;auf 10*0,01sec fuer
+				;gleiche taste
+	jr	kbdwst		;einspr. in zyklus
+kbdwa:	push	bc
+	ld	b,1		;0,01 sec warten
+	call	wait10
+	pop	bc
+kbdwst:	call	kbdst1		;taste neu gedrueckt?
+	jr	nz,kbdwb	;ja, abholen ueber kbdst
+	in	a,(kbdpci)	;taste noch gedrueckt?
+	or	a		;(funktioniert nur bei K760X!)
+	jr	z,kbdwb		;nein; warten
+	djnz	kbdwa		;abwarten, wie lange
+
+	call	kbdrch		;Zeichen umkodieren
+	or	a		;Sondertaste?
+	jp	m,kbdwin	;ja, keine Dauerfunktion
+	call	kbdput		;sonst puffern
+	jr	kbdinn		;und aeltestes Pufferzeichen uebergeben
+kbdwb:	call	kbdst		;abwarten tastendruck
+	jr	z,kbdwb
+kbdwe:	ld	hl,kbdwt	;bei neuer taste
+	ld	(hl),100	;100*0.01 sec warten
+
+kbdinn:
+ IF cpastz
+  IF crtbfl eq 0
+	crton			;Bildschirmpuffer zuschalten
+  ENDIF
+ ENDIF
+	ld	de,0ffffh	;Kopf des Tastaturpuffers
+crtm33	equ	$-2
+	ld	a,(de)		;1.Zeichen lesen
+	ld	hl,0ffffh+1	;Puffer umspeichern
+crtm34	equ	$-2
+	ld	bc,kbdbl	;einschl. 00h am Ende
+	ldir			;parall. Tastatur-Interrupt
+				;stoert nicht, da alles umgesp.
+	ld	e,a
+	ld	a,(0ffffh)
+crtm32	equ	$-2		;auf Kopf des Tastaturpuffers
+ IF cpastz
+  IF crtbfl eq 0
+	crtoff			;Bildschirmpuffer abschalten
+  ENDIF
+ ENDIF
+ 	ld	(kbdbfe),a	;neues Zeichen als Flag Puffer voll/leer
+	ld	a,e
+	ret
+
+;-------------------------------------------------------------
+
+; Test, ob Taste (neu) gedrueckt
+;===============================
+; o AF	=00 und Z=1	keine Taste
+;	=FF und Z=0	es ist eine Taste gedrueckt
+kbdst1:
+
+; Modifiziert bei K7637 mit
+;kbdst1:in	a,(kbdscs) bzw. (kbddcs)
+;	and	1
+;	ret	z		;(a)=0, z=1
+;	ld	hl,synflg
+;	bit	ctrlst,(hl)	;Ersatz-CNTL?
+;	ld	a,0ffh		;Schnittmaske c0..ff -> c0..ff
+;	jr	z,cst37b	;nein
+;	ld	a,0bfh		;Schnittmaske c0..ff -> 80..bf
+;cst37b:ld	(kbdlcs),a
+;	xor	a
+;	dec	a		;(a)=ff, z=0
+;	ret
+
+; Modifiziert bei K7633 mit
+;kbdst1:in	a,(kbdbcs)
+;	and	3
+;	ret	z		;(a)=0, z=1
+;	ld	hl,synflg
+;	bit	ctrlst,(hl)	;Ersatz-CNTL?
+;	ld	a,0ffh		;Schnittmaske c0..ff -> c0..ff
+;	jr	z,cst33b	;nein
+;	ld	a,0bfh		;Schnittmaske c0..ff -> 80..bf
+;cst33b:ld	(kbdlcs),a
+;	xor	a
+;	dec	a		;(a)=ff, z=0
+;	ret
+
+; Version fuer alle anderen Tastaturen
+	in	a,(kbdpcs)
+kbdstc:	cpl			;auf NOP, wenn Status negiert
+; Bit 3	=1:Taste gedrueckt
+; Bit 2	=1:Control gedrueckt
+	bit	3,a		;Taste gedrueckt?
+	jr	z,kbdst0	;nein
+	ld	hl,synflg
+	bit	2,a		;CNTL-Taste gedrueckt?
+kbdstm:	jr	z,cst34a	;nein (auf jr modif., wenn kein CNTL-Status)
+	set	ctrlst,(hl)	;sonst vermerken
+cst34a:	bit	ctrlst,(hl)	;Taste mit CNTL oder Ersatz-CNTL?
+	ld	a,0ffh		;Schnittmaske c0..ff -> c0..ff
+	jr	z,cst34b	;nein
+	ld	a,0bfh		;Schnittmaske c0..ff -> 80..bf
+cst34b:	ld	(kbdlcs),a
+	xor	a
+	dec	a		;(a)=ff, z=0
+	ret
+kbdst0:	xor	a		;(a)=0, z=1
+	ret
+;-------------------------------------------------------------
+
+;Zeichen von Tastatur lesen , CAPS-Lock realisieren
+;==================================================
+kbdrch:	call	kbdrcu		;Zeichen holen
+	ld	hl,lampbf
+	bit	kbdcpb,(hl)	;CAPS-Lock?
+kbdmd3:	ret	z		;nein (auf ret nz, wenn nach RESET Grossb.)
+	cp	'A'
+	ret	c
+	cp	'Z'+1
+	jr	c,kbdcp1
+	cp	'a'
+	ret	c
+	cp	'z'+1
+	ret	nc
+kbdcp1:	xor	20h		;gross <-> klein
+	ret
+
+; Zeichen von Tastatur umkodieren
+;================================
+kbdrcu:
+	in	a,(kbdpci)	;Zeichen lesenŠkbdmt1	equ	$-1		;auf "kbdsci/kbddci" bei K7637
+
+cocpm1:	ld	hl,kbdcpt
+kbdrc3:	ld	c,(hl)		;phys. Tastencode
+	inc	c
+	dec	c		;TabEnde?
+	jr	z,kbdrc1	;ja
+	cp	c		;Umcodieren ?
+	inc	hl
+	jr	z,kbdrc2	;ja
+	inc	hl
+	jr	kbdrc3		;weiter in Tab
+kbdrc1:	cp	80h		;Sonderzeichen, das nicht in Tabelle?
+	jr	c,kbdrc6	;nein; sonst A=00, d.h. Zeichen ignorieren
+kbdrc2:	ld	a,(hl)		;virtueller Tastencode
+kbdrc6:	
+
+cocpm2:
+	ld	hl,synflg
+	cp	20h		;Sondertaste?
+	jr	c,kbdrc5	;<20h, ja
+	cp	80h		
+	jr	c,kbdrc4	;nein
+; virtueller Code 80..ff
+	and	0ffh
+kbdlcs	equ	$-1		;auf bfh, wenn Taste mit Control/Shift
+	jr	kbdrc5
+; normale Taste 20..7f
+kbdrc4:	bit	ctrlst,(hl)	;norm. Taste mit Control?
+	ret	z
+	and	1fh		;CTRL realisieren
+kbdrc5:	res	ctrlst,(hl)
+	ret
+
+; Suchen, ob Taste (A) umzukodieren entspr. Stringtab ab (HL)
+; ret z:	nicht gefunden, A unveraendert
+; ret nz:	gefunden, A unveraendert
+;		E Stringlaenge +1
+;		HL Stringanfang (nur gueltig falls E>1!)
+costr:	ld	d,0
+costr0:	ld	c,(hl)		;Tastencode o. Tabende
+	inc	c		;Tabende?
+	ret	z		;ja, nicht gefunden
+	inc	hl
+	ld	e,(hl)		;Stringlaenge
+	inc	e		;+1
+	dec	c		;Tastencode wiederherstellen
+	cp	c		;Zeichen umkodieren?
+	jr	z,costr1	;ja
+	add	hl,de		;String uebergehen
+	jr	costr0
+costr1:
+	inc	hl
+	inc	d		;ret nz
+	ret
+
+ IF costu
+; Eintrag Taste (A) in Stringtab ab (HL)+1
+; ret po:	Tabelle voll
+; ret pe:	ok, costda-Aufruf vorbereitet
+costdf:	ld	e,aŠ	ld	c,(hl)		;Laenge Stringtab -1
+	inc	hl
+	xor	a
+	ld	b,a
+	dec	a		;Endezeichen fuer Tab
+	cpir			;suchen Tab-Ende, BC:=Restlng
+	ret	po		;bc=0, Tab. voll
+	dec	hl		;auf Tastencode
+	ld	(hl),e		;ablegen
+	inc	hl		;auf Stringlaenge
+	ld	(hl),b		;Stringlaenge :=0
+	ld	(costdl),hl	;^Stringlaenge merken
+	jr	costdn
+
+; Verlaengern aktuell definierten String um Zeichen (A)
+; ret z:	kein Platz
+; ret nz:	ok
+costda:	ld	c,0		;c:=Restlaenge+1
+costdr	equ	$-1
+	dec	c		;noch Platz?
+	ret	z		;nein
+	ld	hl,0		;^Stringlaenge
+costdl	equ	$-2
+	inc	(hl)		;Stringlaenge +1
+	ld	hl,0		;^Tabende
+costdp	equ	$-2
+	ld	(hl),a		;Stringzeichen dorthin
+costdn:	inc	hl
+	ld	(hl),0ffh	;neues Tabende
+	ld	(costdp),hl	;merken
+	ld	a,c		;max. (restliche) Stringlaenge
+	ld	(costdr),a	;merken
+	ret			;ret nz / ret pe
+ ENDIF
+
+; Tastatur-Lampe umschalten
+;==========================
+kbdslm:	ld	hl,lampbf
+	xor	(hl)		;Lampe ein/aus
+	ld	(hl),a
+
+; Tastatur-Lampen ein/aus
+;========================
+; Achtung! Diese Routine wird auch aus Interrupt-Routine
+; aufgerufen (EI/DI darf hier nicht auftreten!!)
+lampen:
+
+kbdmd2:		;Routine fuer K7637,
+;		 wird modifiziert bei K7604/06/34/36
+lampen:	ld	a,(lampbf)
+	xor	00h		;ermitteln veraenderte Bits
+lamplt	equ	$-1		;Kopie Lampen-Puffer
+	ret	z		;unveraendert
+	ld	hl,intkbd
+	ld	(hl),21h	;call ... -> ld hl,...
+				;d.h. 5ms Tastaturabfrage verbieten
+	ld	h,55h		;Standard-Vorbyte
+	ld	l,a
+	bit	7,l		;INS-MODE ?
+	jr	z,lampb6	;nein
+	ld	a,h
+	out	(kbdsci),a
+k37dm3	equ	$-1		;modfiziert bei Digitalisier-AP
+	call	lmpout
+lampb6:	bit	6,l		;Fehlerlampe ?
+	jr	z,lampb3	;nein
+	ld	a,20h
+	call	lmpout
+lampb3:	bit	3,l		;Sel3?
+	jr	z,lampb2
+	ld	a,h
+	out	(kbdsci),a
+k37dm4	equ	$-1		;modfiziert bei Digitalisier-AP
+	ld	a,52h
+	call	lmpout
+lampb2:	bit	2,l		;Sel2?
+	jr	z,lampb1
+	ld	a,h
+	out	(kbdsci),a
+k37dm5	equ	$-1		;modfiziert bei Digitalisier-AP
+	ld	a,44h
+	call	lmpout
+lampb1:	bit	1,l
+	jr	z,lampb0
+	ld	a,h
+	out	(kbdsci),a
+k37dm6	equ	$-1		;modfiziert bei Digitalisier-AP
+	ld	a,20h
+	call	lmpout
+lampb0:	bit	0,l
+	jr	z,lampbn
+	ld	a,52h
+	call	lmpout
+lampbn:	ld	a,(lampbf)
+	ld	(lamplt),a	;neuen Zustand merken
+	ld	hl,intkbd
+	ld	(hl),0cch	;ld hl,... -> call z,...
+	ret
+
+lmpout:	push	hl
+	out	(kbdsci),a
+k37dm7	equ	$-1		;modfiziert bei Digitalisier-AP
+lmpow:	call	kbdst1		;warten auf Antwort
+	jr	z,lmpow
+	in	a,(kbdsci)
+k37dm8	equ	$-1		;modfiziert bei Digitalisier-AP
+	and	0f0h
+	cp	typc37		;Antwort da?
+	jr	nz,lmpow	;nein
+	pop	hl
+	ret
+
+; virtuelle Tastencodes: (unabhaengig von TastaturTyp)
+;=======================
+
+; Beim Betaetigen zusammen mit CONTROL/SHIFT wird bei allen folgenden
+; Tastencodes >=c0h Bit 6 geloescht (d.h. Codes liegen von 80h..bfh)
+
+; Kursortasten
+;-------------
+kcurwl	equ	0c1h
+kcurup	equ	0c2h
+kcurwr	equ	0c3h
+kcurlf	equ	0c4hŠkcurpu	equ	0c5h
+kcurri	equ	0c6h
+kcurpd	equ	0c7h
+kcurdw	equ	0c8h
+
+; Sondertasten
+;-------------
+;		0c9h		;belegt mit zblb
+spcclr	equ	0cah		;CLEAR
+spccnc	equ	0cbh		;CNCL	
+spcce	equ	0cch		;CE bzw. ERASE INPUT
+spcins	equ	0cdh		;INS
+spcdel	equ	0c0h		;DEL
+spckor	equ	0ceh		;KOR
+spcrol	equ	0cfh		;ROLL <-
+spcror	equ	0d0h		;ROLL ->
+
+; Bei Einfuehrung neuer Sonderzeichen zwischen Sel0..Sel3 muss
+; Test auf Sel0..3 zuletzt erfolgen, da diese als Gruppe
+; getestet werden, aber nicht dicht liegen!
+Sel0	equ	0d1h;!!hintere!!	;LED 0 bei SEL 0
+Sel1	equ	0d2h;!!Tetrade!!	;LED 1 bei SEL 1
+Sel2	equ	0d4h;!!=2**LED!!	;LED 2 bei SEL 2
+Sel3	equ	0d8h;!!	      !!	;LED 3 bei SEL 3
+
+SyLc	equ	0d9h			; Synch. List
+HrLc	equ	0dah			; Hardcopy
+Monc	equ	0dbh			; BIOS-Monitor
+z00c	equ	0dch			; "00" im Ziffernblock
+z000	equ	0ddh			; "000" im Ziffernblock
+stpc	equ	0deh			; allg. STOP
+ctlc	equ	0dfh			; Control (-Ersatz)
+
+; Funktionstasten
+;----------------
+pf0c	equ	0e0h			;PF0 bzw. S0 bzw. Enter im Ziffernblock
+pf1c	equ	0e1h			;PF1...
+pf2c	equ	0e2h
+pf3c	equ	0e3h
+pf4c	equ	0e4h
+pf5c	equ	0e5h
+pf6c	equ	0e6h
+pf7c	equ	0e7h
+pf8c	equ	0e8h
+pf9c	equ	0e9h
+;***die folgenden 6 Funktionstasten ex nicht bei allen
+; Tastaturen, koennen aber durch andere Tasten ersetzt werden!
+pfac	equ	0eah
+pfbc	equ	0ebh
+pfcc	equ	0ech
+pfdc	equ	0edh
+pfec	equ	0eeh		;bei CP/A i.a. Monitor-Taste
+pffc	equ	0efh		;bei CP/A i.a. Stop-Taste
+
+;rechter Ziffernblock
+;--------------------
+zbl0	equ	0f0h
+zbl1	equ	0f1h
+zbl2	equ	0f2h
+zbl3	equ	0f3h
+zbl4	equ	0f4hŠzbl5	equ	0f5h
+zbl6	equ	0f6h
+zbl7	equ	0f7h
+zbl8	equ	0f8h
+zbl9	equ	0f9h
+zbl00	equ	z00c
+zbl000	equ	z000
+zblkom	equ	0fah		;Komma im Ziffernblock
+zblmin	equ	0fbh		;Minus im Ziffernblock bei CP/A i.a. HardCopy
+	;Enter im Ziffernblock als "pf0c" behandelt
+zbla	equ	0fch		;Taste im Ziffernblock ueber der "7"
+;		0fdh		;belegt wegen TastenUmdefinitionsBegrenzer
+zblb	equ	0c9h		;dito "8"
+zblc	equ	0feh		;dito "9"
+
+; zu ignorierende Tasten
+;-----------------------
+cign	equ	0ffh			;Taste ignorieren
+
+kbdcpb	equ	lmpsl0	;0..3, Selectortaste fuer CAPS-Lock
+kbdcal	equ	lmpsl1	;0..3, Selectortaste fuer ALPHA K7633
+
+; Die folgende Code-Tabelle wird je nach Tastaturtyp beim
+; Kaltstart modifiziert. Sie dient dazu, um einen virtuellen
+; Tastaturcode zu erzeugen, der dann durch die String-
+; umkodierungstabellen unabhaengig von der konkreten Tastatur
+; zum eigentlichen Tastencode umgesetzt wird.
+
+; Codetabelle fuer K7606/36
+;==========================
+;(Bemerkung: Falls sich K76x4-Tastaturen mit dem Typcode von K76x6 melden,
+;wurden einige phys. Tastencodes fuer diese mit aufgenommen, um trotzdem
+;eine notduerftige Arbeit zu erlauben. Gleichzeitig wird fuer die Kaltstart-
+;Modifizierung von 'kbdcpt' Reserve-Platz freigehalten.)
+
+kbdcpt:
+; Kursortasten
+;-------------
+	db	00BH,kcurwl		;|<-
+	db	004H,kcurup		;^
+	DB	001H,kcurwr		;->|
+	db	006H,kcurlf		;<-
+	DB	00CH,kcurpu		;'\
+	db	007H,kcurri		;->
+	db	00AH,kcurpd		;<-'
+	db	005H,kcurdw		;v
+; Sondertasten
+;-------------
+	db	0ffh,0dh		;ET1 als CR
+	db	09dh,0dh		;ENTR			K7604/34
+	db	00FH,009h		;|<-| als Ersatz Tab
+	db	013H,01bh		;DELL als Ersatz ESC
+	db	01BH,spcdel		;DEL
+	db	019H,spcce		;CE
+	db	009H,spcce		;ERIN als Ersatz CE	K7604/34
+	db	003H,spcins		;INSL
+    	db	01eH,spcins		;INS			K7604/34
+	DB	0A0H,Sel0		;SEL0
+	DB	0A1H,Sel1		;SEL1
+	DB	0A2H,Sel2		;SEL2
+        DB	0A3H,Sel3		;SEL3Š	db	0feh,ctlc		;ET2 als Control-Taste (Loslassen!)
+	db	01fH,ctlc		;RESET Control-Taste	K7604/34
+; num. Tasten
+;------------
+	db	10*2,0ffh		;Reserve fuer rechtes Ziffernfeld
+	db	011H,zbl00		;00
+	db	012H,zbl000		;000
+	DB	0A8H,zblmin		;INSM als Ersatz num. Minus
+	db	002H,zblmin		;INSM			K7604/34
+; Funktionstasten
+;----------------
+	db	0c0h,pf0c		;S
+	db	0c1h,pf1c		;S1
+	db	0c2h,pf2c		;S2
+	db	0c3h,pf3c		;S3
+	db	0c4h,pf4c		;S4
+	db	0c5h,pf5c		;S5
+	db	0c6h,pf6c		;S6
+	db	0c7h,pf7c		;S7
+	db	0c8h,pf8c		;S8
+	db	0c9h,pf9c		;S9
+	db	0cah,pfac		;S10
+	db	0cbh,pfbc		;S11
+	db	0cch,pfcc		;S12
+	db	010H,pfec		;MON als PF14
+	db	008H,pfec		;EREO als Ersatz PF14	K7604/34
+	DB	0AFH,pffc		;CI als Ersatz PF15
+
+	db	0			;Tabellenende
+	ds	12,0			;Reserve fuer K7633, K7637
+kbdcpl	equ	$-kbdcpt		;max. Tabellenlaenge
+;----------------------------------------------------------
+
+; String-Umkodierungstabellen
+;============================
+
+; Standardstrings:
+
+kbdsts:	costs
+	db	0ffh		;Tab.ende
+
+ IF costu
+; Nutzerstrings liegen direkt vor Interruptvektoren
+;==================================================
+ ENDIF
+IF
+	ENDIF
+

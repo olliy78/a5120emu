@@ -1,0 +1,11 @@
+ IF cpu eq c1715
+
+	ld	a,(cjungf)
+	or	a		;wiederholter Kaltstart?
+	jr	z,njung1	;nein
+	in	a,(sysctc+2)	;sonst CTC-Wert setzen
+	ld	(babfrm),a	;als Bildschirmformat
+njung1:
+
+cldrty:	di			;Wdhlg mit neuem BS-Format
+ ENDIF

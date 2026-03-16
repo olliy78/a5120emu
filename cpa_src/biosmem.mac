@@ -1,0 +1,155 @@
+;**************************************************************
+;	Speicherschutz
+; 24.05.88
+; - putmes wird erst bei Austritt aus Interrupt-Routine aufgerufen
+;**************************************************************
+;
+mpinit:	ld	a,1
+	ld	(mpflg),a	;MPINIT-Aufruf-Flag setzen
+; Initialisieren von bdos+40h bis vor Bildschirmpuffer
+	DI
+	ld	bc,0509h	;pio kanal a progr.
+	ld	hl,mpchan
+	otir
+	ld	hl,mpinte	;interr.routine
+	ld	(intvec+ivprot),hl	;interr.adr.
+	out	(02h),a
+	in	a,(0ah)
+	or	4
+	out	(0ah),a		;schutz aus
+; Achtung! Bis zum Schutz ein keine pop-Befehle benutzen,
+; da sonst ungerade Adr. auftritt und diese schuetzt!!
+	ld	hl,0		;gerade Adresse beim Lesen -> nicht schuetzen
+	ld	de,64		;schrittweite
+mpm1:	cp	(hl)		;nicht schuetzen (gerade Adresse)
+	add	hl,de
+	ld	a,l
+	or	h		;fertig?
+	jr	nz,mpm1		;nein
+	ld	bc,bdos+40h	;ab bdos+6 liegt rueckw. Stack!
+	ld	de,bsanf2-1	;BDOS und BIOS schuetzen, da im
+;				 BIOS E/A-Befehle und BDOS in
+;				 Disk-Tab. des BIOS schreibt
+mpiend	equ	$-2		;wird modif. entspr. Bildsch.
+
+mpset:	DI
+; Bereich von bc bis de schuetzen
+	ld	a,e
+	and	0c0h
+	ld	l,a		;mod 64
+	ld	h,d		;hl:=endeadr.
+	ld	a,c
+	and	0c0h
+	ld	e,a		;mod 64
+	ld	d,b		;de:=anf.adr.
+	xor	a
+	sbc	hl,de
+	ld	b,6
+mpm4:	srl	h
+	rr	l		;hl=>
+	djnz	mpm4
+	inc	hl		;anz. der segmente
+	ld	c,l
+	ld	b,h
+	ex	de,hl		;HL auf Beginn des zu schuetzenden Bereichs
+	inc	hl		;ungerade Adresse vorbereiten (Schutz ein)
+	ld	de,64
+	in	a,(0ah)
+	or	4
+	out	(0ah),a		;schutz aus
+	inc	b		;wegen djnz
+mpm3:	cp	(hl)		;schuetzen
+	add	hl,de
+	dec	c
+	jr	nz,mpm3
+	djnz	mpm3
+	and	255-4
+; Da der folgende out-Befehl ebenfalls einen weiteren Speicherzugriff nach dem
+; Lesen des Befehlsbytes bewirkt, muss dieses Datenbyte auf einer ungeraden
+; Adresse stehen, damit das BIOS-Segment mitgeschuetzt wird.
+ IF ($-biosad) and 1;ungerade Adresse ?
+	nop			;dann Leerbefehl einfuegen
+ ENDIF
+	out	(0ah),a		;schutz ein - !!!ger.Adr.!!!
+	EI
+	ret
+
+mpoff:	xor	a
+	ld	(mpflg),a	;MPINIT-Aufruf-Flag loeschen
+; Schutz ausschalten
+	DI
+	in	a,(0ah)
+	or	4
+	out	(0ah),a
+	EI
+	ret
+
+mpchan:	db	ivprot,0ffh,0ffh,097h,0f7h
+
+; Interr.routine Speicherschutz
+mpinte:	ex	(sp),hl
+	ld	(mpadr),hl
+	ex	(sp),hl
+	out	(02h),a		;Ruecksetzen Speicherschutzmerkmal
+	ei
+	call	mpiret		;reti
+	ld	(mpihls),hl	;retten HL
+	ld	hl,mptx1	;und umstellen auf Fehlertext
+ IF monitor
+	call	mpimes		;Fehlermeldung
+	jp	moncal		;und Sprung in Monitor
+ ELSE
+	jp	mpimes		;Fehlermeldung
+ ENDIF
+
+mpiret:	reti
+
+; Interruptroutine E/A-Schutz
+mpnmi:	ex	(sp),hl
+	ld	(mpadr),hl
+	ex	(sp),hl
+	call	mpnmir		;retn
+	ld	(mpihls),hl	;retten HL
+	ld	hl,mptx2	;und umstellen auf Fehlertext
+mpimes:	ld	(mpisps),sp	;fuer Fehlermeldung eigenes Stack
+	ld	sp,mpistk
+; Fehlernachricht ausgeben
+	push	af
+	push	de
+	push	bc
+	call	putmes
+	ld	de,mptxad
+	ld	hl,0
+mpadr	equ	$-2		;Unterbrechungsadresse
+	ld	a,h
+	call	mrecoa
+	ld	a,l
+	call	mrecoa
+	ld	hl,mptx3
+	call	putmes
+	pop	bc
+	pop	de
+	pop	af
+	ld	sp,0
+mpisps	equ	$-2
+	ld	hl,0
+mpihls	equ	$-2
+	ret
+
+mpnmir:	retn
+
+
+mptx1:	db	0dh,0ah
+	db	'>> ILLEGAL STORE'
+	db	0
+mptx2:	db	0dh,0ah
+	db	'>> ILLEGAL I/O'
+	db	0
+mptx3:	db	' INSTRUCTION BEFORE '
+mptxad:	ds	4
+	db	'H <<'
+	db 	0dh,0ah,0
+
+	ds	15*2,0ffh	;Hilfsstack fuer Fehlermeldung
+mpistk:
+mpflg:	db	0		;MPINIT-Aufruf-Flag

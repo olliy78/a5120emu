@@ -1,0 +1,173 @@
+;********************************************************
+;	RAM-Floppy auf Basis RAF vom ZWG der AdW
+; Version 11.10.87
+;********************************************************
+
+ if1
+
+rflwarm	MACRO
+	ENDM
+ 
+ endif ;if1
+
+
+;**************************************************************
+;	Schreiben RAM-Floppy
+;**************************************************************
+wrramf:
+; Schreiben RAF
+;==============
+rafwr:	call	rafsst		;setzen RAF-Parameter, A:=0
+ IF rafpar
+; Schreiben mit XOR-Parity: 42 Takte statt 21 Takte ohne Parity
+rafwrz:	ld	d,(hl)
+	inc	hl
+	out	(c),d		;Byte 0,127,126,...,1
+	xor	d		;A=0 war durch rafsst
+	djnz	rafwrz
+	ld	d,a
+	call	rafchs		;adressieren Parity-Byte
+	out	(c),d		;neues Byte setzen
+	xor	a		;Transfer fehlerfrei
+ ELSE
+	inc	b		;otir beginnt intern mit 'dec b'
+	otir			;Byte 127..0
+ ENDIF
+	jr	rafdis
+
+
+;**************************************************************
+;	Lesen RAM-Floppy
+;**************************************************************
+
+rdramf:
+; Lesen RAF
+;==========
+rafrd:	call	rafsst		;setzen RAF-Parameter, A:=0
+ IF rafpar
+; Lesen mit XOR-Parity: 42 Takte statt 21 Takte ohne Parity
+rafrdz:	in	d,(c)		;Byte 0,127,126,...,1
+	xor	d		;A=0 war durch rafsst
+	ld	(hl),d
+	inc	hl
+	djnz	rafrdz
+	ld	d,a		;beim Lesen berechnetes Parity-Byte
+	call	rafchs		;adressieren Parity-Byte fuer aktuellen Sektor
+	in	a,(c)
+	xor	d		;Parity ok?
+	jr	z,rafdis	;ja, A=0
+	ld	a,1		;sonst Fehler melden
+ ELSE
+	inir			;Byte 127..1
+	ini			;Byte 0
+ ENDIF
+rafdis:
+; A,D muessen erhalten bleiben
+	inc	c
+	ld	b,0ffh
+	out	(c),b		;weiteren Zugriff verbieten
+	ret
+
+;********************************************************************
+;	Unterprogramme fuer RAM-Floppy
+;********************************************************************
+
+; UP: Setzen RAF-Parameter
+;-------------------------
+rafsst:	ld	hl,raftrt-1	;Tabelle der RAF-Kapazitaeten je Karte
+	ld	de,(rtrack)	;0..1ffh
+	ld	c,raf_d-2	;Beginn bei RAF-Karte mit niedrigster I/O-Adr.
+	ld	a,e
+rafst1:	inc	c
+	inc	c		;naechste Karte
+	inc	hl		;naechste Kapazitaet
+	sub	(hl)		;ist gesuchte Spur auf dieser Karte?
+	jr	nc,rafst1	;nein
+	dec	d		;war Spur >=100h?
+	jr	z,rafst1	;ja, weitersuchen
+	add	a,(hl)		;relative Spur in aktueller Karte
+	ld	b,a		;0..127
+	ld	a,(dsectr)	;Sektor 1..128
+	dec	a		;0..127
+	ld	hl,(ddma)
+; UP: Laden Track/Sector nach in RAF-Steuer-Register
+;---------------------------------------------------
+; i A	Sektor 0..127
+; i B	Spur 0..127 (16k pro Spur)
+; i C	raf_d (I/O-Adresse fuer Karte)
+ IF rafpar
+; o B	128 fuer in/out
+ ELSE
+; o B	127 fuer inir/otir
+ ENDIF
+; C,D,E,H,L bleiben erhalten
+raftrs:
+ IF rafpar
+	ld	(rafcx0),a	;merken Sektor
+ ENDIF
+	add	a,a		;wegen rra spaeter
+	srl	b		;00tttttt	PROT-Bit geloescht
+	rra			;tsssssss
+	inc	c
+	out	(c),a		;Laden RAF-Steuer-Register 00tttttttsssssss
+ IF rafpar
+	ld	(rafcx1),bc	;merken fuer out(c),r
+	or	7fh		;Sektor 127
+	ld	(rafcx2),a	;einschliesslich niederwertigstes track-Bit
+ ENDIF
+	dec	c		;zurueck auf raf_d
+ IF rafpar
+	ld	b,128		;fuer in/out
+ ELSE
+	ld	b,127		;fuer inir/otir
+ ENDIF
+	xor	a		;Transfer fehlerfrei bzw. Parity vorbereiten
+	ret
+
+ IF rafpar
+; UP: Adressieren Parity-Byte fuer aktuellen Sektor
+; i	raftrs muss zuvor aufgerufen worden sein
+; oB	Index 0..126 im Parity-Sektor
+; oC	raf-I/O-Adr Data
+; D bleibt erhalten
+rafchs:	ld	bc,0
+rafcx1	equ	$-2		;wird von raftrs gestellt
+	ld	a,0
+rafcx2	equ	$-1		;wird von raftrs gestellt
+	out	(c),a		;Laden RAF Steuerregister 00tttttttt1111111
+	dec	c		;zurueck auf RAF-data
+	ld	b,0		;Index 0..126 in Parity-Sektor
+rafcx0	equ	$-1		;wird von raftrs gestellt
+	ret
+ ENDIF
+
+
+;*************************************************************
+; Steuertabellen fuer RAM-Floppy
+;*************************************************************
+
+dphm:
+rafdph:	dw	0		;ohne Translate-Tabelle
+	dw	0,0,0
+	dw	dirbuf
+	dw	rafdpb
+	dw	0
+	dw	alvraf
+
+dpbm:
+rafdpb:	;wird je nach RAF-Kapazitaet gestellt, Beispiel 512K
+ IF rafpar
+	dw	128-1		;letzter Sektor in Spur fuer Parity
+ ELSE
+	dw	128
+ ENDIF
+	db	4,15,1		;2k Gruppen
+	dw	256-1
+	dw	128-1,0c0h	;128 Dir
+	dw	0,0
+  	db	80h		;kein Disketten-DPB
+
+raftrt:	db	0,0,0,0	;Tabelle der RAF-Kapazitaet in 16k Einheiten
+
+
+dpham	aset	dphm		;definieren LW "M:"

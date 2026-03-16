@@ -1,0 +1,85 @@
+;**************************************************************
+;	PIO-Treiber
+; 07.08.87
+; - Statusabfrage ueber Interrupt
+; 04.04.89
+; - nach Drucker-Init 'set 0,(ix+ltpst)' statt 'ld (ix+ltpst),11h'
+;**************************************************************
+
+cdpioi	equ	dumi		;keine Zeicheneingabe unterstuetzt
+
+; Einzelzeichenausgabe (A)
+
+cdpioo:	inc	(ix+ltpdc)	;Fehlerstatus simulieren fuer Neuabfrage
+	ld	c,(ix+ltpsd)	;datenport
+	out	(c),a		;Interruptroutine setzt Antwort-Status
+	ret
+
+	
+; Statusabfrage
+
+cdpios:	ld	a,(ix+ltpst)	;Status
+	bit	1,a		;senderseitig blockiert?
+	jr	nz,cdpsr1	;ja, frei rueckmelden
+	or	a		;initialisiert?
+	call	z,cdpini	;nein
+	ld	a,(ix+ltpdc)	;zuletzt empf. Status
+
+; Bedeutung der Statusbits PIO-Drucker:
+;--------------------------------------
+; Bit 0	Kommandofehler
+; Bit 1	Hardwarefehler
+; Bit 2	Papierende
+; Bit 3	Farbbandende
+; Bit 4	Rotdruck
+; Bit 5	Druckertyp, 0=1152, 1=1157
+; Bit 6	Druckbreite, 0=132, 1=210
+; Bit 7	Zeichenabstand, 0=variabel, 1=fest
+
+	and	7		;Fehler?
+	jr	z,cdpsr1	;nein, frei
+	xor	a		;a:=00, ret z (senderseitig besetzt)
+	ret
+cdpsr1:	xor	a
+	dec	a
+	ret			;a:=ff, ret nz (senderseitig frei)
+
+; Status-Interrupt-Routine
+;-------------------------
+
+cdpsti:	ld	(intsp),sp
+	ld	sp,intstk
+	push	af
+	push	bc
+	push	ix
+	ld	ix,0
+cdpcpa	equ	$-2		;Adresse der Steuertabelle fuer PIO
+	ld	c,(ix+ltpsd)
+	in	a,(c)
+	ld	(ix+ltpdc),a	;Status merken
+	pop	ix
+	pop	bc
+	jp	intraf
+
+
+; (Re-)Initialisierung
+; IX auf Steuertabelle
+
+cdpini:
+	set	0,(ix+ltpst)	;Sender ist initialisiert
+	push	ix
+	pop	hl
+	ld	(cdpcpa),hl	;ix fuer Interrupt merken
+	ld	bc,ltpini
+	add	hl,bc
+	call	portpr
+	ld	c,(ix+ltpsd)
+	in	a,(c)		;Scheineingabe
+	ld	c,(ix+ltpsc)
+	inc	c
+	ld	a,87h		;Interrupt Status erlauben
+	out	(c),a
+	ld	(ix+ltpdc),a	;Status auf Fehlerbedingung legen
+	xor	a		;NOP ausgeben
+	jr	cdpioo		;und dadurch Status anfordern
+

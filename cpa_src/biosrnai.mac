@@ -1,0 +1,367 @@
+;**************************************************************
+; Initialisierung der NANOS-RAF, Teil 2 (eigentliche Initialisierung)
+; 08.06.89
+;**************************************************************
+
+	ld	hl,0
+rafiaf	equ	$-2		;RAF-Initalisierungsflags
+	push	hl
+	pop	af
+	jp	z,rafil1	;keine RAF da
+	ld	de,rafms7	;RAF noch geladen?
+	jp	nc,rafil	;ja
+	ld	hl,rafms8	;RAF Formatierung
+	call	putmes
+
+	ld	c,'M'-'A'
+	ld	e,1		;ohne LOGIN
+	call	seldsk
+	ld	bc,dirbuf
+	call	setdma
+	ld	a,0e5h		;dirbuf mit E5 vorloeschen
+	call	rafidc
+
+	ld	bc,0
+rafitr	equ	$-2		;Spuranzahl
+
+; zerstoerende RAF-Formatierung
+;==============================
+	ld	hl,0		;ab Spur 0
+rafpi2:
+	push	bc		;retten restliche Spuranzahl
+	push	hl		;retten Spur
+	ld	ix,rafmft
+	call	rafhld
+	ld	hl,rafms9
+	call	putmes
+
+	pop	bc		;zu initialisierende Spur
+	push	bc
+	call	settrk
+
+	ld	bc,1		;ab Sektor 1
+rafpit: push	bc
+	call	setsec
+	call	write
+	pop	bc
+	inc	c		;naechster Sektor 1..256
+	jr	nz,rafpit	;noch ein Setor
+	pop	hl		;Spur
+	inc	hl
+	pop	bc		;restliche Spuranzahl
+	dec	bc
+	ld	a,b
+	or	c		;=0?
+	jr	nz,rafpi2	;nein
+	jr	rafpie		;fertig
+
+; Fuellen dirbuf mit Konstante in (A)
+;------------------------------------
+rafidc: ld	hl,dirbuf
+	ld	b,128
+rafid1: ld	(hl),a
+	inc	hl
+	djnz	rafid1
+	ret
+
+rafpie:
+
+; RAF formatiert, Erkennungs-Eintrag in Dir
+rafdc0: call	rafr01		;Spur 0, Sektor 1 nach dirbuf
+	ld	de,dirbuf
+	ld	hl,rafvld
+	ld	bc,32
+	ldir
+	call	write		;Sektor wieder ausgeben
+	ld	de,rafm9d
+	jp	rafil
+
+rafms7: db	0dh,0ah,'M: ist noch wie bei letzter Benutzung geladen!'
+	db	0dh,0ah,0
+rafms8: db	0dh,0ah,'M: ist undefiniert, es folgt Formatierung ...'
+	db	0dh,0ah,0
+rafms9: db	83h,0dh,16h,'Spur'
+rafmft: db	'?????',0
+rafm9d: db	82h,0dh,0ah,0
+
+
+; HL dezimal ausgeben
+;--------------------
+rafhld: push	hl
+	ld	c,0		;bisher nur fuehrende Nullen
+	ld	de,-10000
+	call	rafhls
+	ld	de,-1000
+	call	rafhls
+	ld	de,-100
+	call	rafhls
+	ld	de,-10
+	call	rafhls
+	ld	a,l
+	or	'0'
+	pop	hl
+	jr	rafhlo
+
+rafhls: call	rafhlz
+	jr	nz,rafhlo	;keine fuehrende Null
+	ld	a,' '
+rafhlo: ld	(ix),a
+	inc	ix
+	ret
+
+rafhlz: ld	a,'0'-1
+rafhz1: inc	a
+	add	hl,de
+	jr	c,rafhz1
+	sbc	hl,de
+	inc	c
+	cp	'0'
+	ret	nz
+	dec	c
+	ret
+
+
+;---------------------------------------------------------------------
+; Test auf NANOS-RAF
+;===================
+
+; Rueckkehr:
+; ret z, wenn keine RAF da
+; ret nz, wenn RAF da, dann
+;	DE Gesamt-Kapazitaet in 1K
+;	HL Gesamtzahl Spuren
+;	ret nc, wenn nicht jungfraeulich, sonst ret c
+
+raftst: ld	hl,rnatrt	;Tabelle fuer jeweilige Kapazitaet in Spuren
+	ld	de,0		;Gesamtkapazitaet
+	ld	b,rna_nb	;Anzahl der Karten
+
+; naechste RAF-Karte
+rafinx: ld	c,(hl)		;Basisadresse
+	inc	hl
+	push	bc
+	push	de
+	push	hl
+	ld	b,0		;b:=Bank (0..3)
+; naechste Bank
+rafint: push	bc
+; Es erfolgt ein Test auf die Existenz dieser Bank.
+; Dazu wird zunaechst das Byte 0 des Fensters (hier Fenster 0!) aus
+; dem normalen RAM gerettet und nach dem Zuschalten der NANOS-RAF das Byte 0
+; des Fensters komplementiert. Dies muss wohl im Fenster ankommen, aber nicht
+; im normalen RAM!
+	call	rnaisw		;zuschalten,
+				;Byte lesen und kompl., abschalten
+	jr	nz,rafine	;keine NANOS-RAF-Bank da
+	call	rnaisw		;Byte in RAF wiederherstellen
+	jr	nz,rafine	;keine NANOS-RAF-Bank da
+	pop	bc
+	inc	b		;naechste Bank
+	ld	a,b
+	cp	4
+	jr	nz,rafint	;Zwangsabbruch nach 4 Baenken
+	push	bc
+rafine: pop	bc
+	ld	a,b		;Kapazitaet in Baenken zu 64k
+	add	a,a		;Kapazitaet in Spuren zu 32k
+	pop	hl		;rnatrt
+	pop	de		;bisherige Gesamtzahl Spuren
+	ld	(hl),a		;Kapazitaet dieser Karte merken (0..8)
+	add	a,e		;Gesamtzahl Spuren
+	ld	e,a
+	ld	a,0
+	adc	a,d
+	ld	d,a
+	pop	bc
+	inc	hl		;rnatrt weiter
+	djnz	rafinx		;naechste Karte testen
+
+; alle Karten getestet, DE enthaelt Gesamtzahl Spuren (jeweils 32k-Spur)
+; DPB entsprechend Kapazitaet festlegen
+	ld	a,d
+	or	e		;mindestens eine Karte da?
+	jp	z,rafien	;nein, ret z
+	push	de
+	push	af		;ret nz, ret nc
+; Kapazitaet in 1k-Einheiten
+	ex	de,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl		;Kapazitaet in 1K
+	ex	de,hl
+	push	de
+	ld	hl,rafdpm
+	ld	bc,15		;Laenge DPB
+rafind:	ld	a,(hl)
+	inc	hl
+	sub	e		;dpbkap - kap >=0?
+	ld	a,(hl)
+	inc	hl
+	sbc	a,d
+	jr	nc,rafidf	;ja, DPB-Muster gefunden
+	add	hl,bc
+	jr	rafind
+rafidf:	push	de
+	ld	de,rafdpb
+	ldir
+	pop	hl
+	ld	(rafvlk),hl	;Kapazitaet in 1K in Valid-Muster
+
+; RAF-Kapazitaet in BDOS-Blockeinheiten
+	ld	a,(rafdpb+2)	;Gruppengroesse
+	sub	3
+	jr	z,rafig0	;ist 1K
+	ld	b,a
+rafig1:	srl	h
+	rr	l
+	djnz	rafig1
+rafig0:	dec	hl		;Gruppenanzahl -1
+	ld	(rafdpb+5),hl	;in DPB fuer RAF
+
+; RAF-DPB komplett, Test, ob RAF jungfraeulich
+	call	rafr01		;Spur 0, Sector 1
+	ld	hl,dirbuf
+	ld	de,rafvld
+	ld	b,32		;Test RAF-valid Entry einschl. Kapazitaet
+rafvl1:	ld	a,(de)
+	cp	(hl)
+	jr	nz,rafvl2
+	inc	de
+	inc	hl
+	djnz	rafvl1
+	jr	rafvlf		;keine Jungfrau mehr
+
+; RAF ist frisch zugeschaltet
+rafvl2:	pop	de
+	pop	af
+	scf			;Anzeigen ueber CY-Flag
+	push	af
+	push	de
+rafvlf:
+	pop	de
+	pop	af
+	pop	hl
+rafien:	;Ende der RAF-Initialisierung, Z-Flag, CY-Flag und DE gestellt
+	ret
+
+
+; UP: NANOS-RAF fuer Existenz-Test zuschalten
+; i B		Bank 0..3
+; i C		Portadresse dieser Karte
+; o ret z	NANOS-RAF-Bank ist da
+; o ret nz	keine NANOS-RAF-Bank da
+rnaisw:	ld	hl,rna_w	;Fenster
+	ld	a,(hl)		;retten Fensterbyte
+	push	af
+	ld	a,b		;Bank 0..3
+	out	(c),h		;xxxxx000 - Fenstersegment (256er Grenze)
+	rrca			;Bank 0..3 nach Bit 7,6
+	rrca
+	or	00111111b	;ausserhalb des Fensters Bank 3
+	set	1,c		;xxxxx010
+	out	(c),a		;Bank einstellen
+	ld	a,c
+	xor	010b xor 101b
+	ld	c,a		;xxxxx101
+	out	(c),a		;Speicher ein
+	xor	101b xor 111b
+	ld	c,a		;xxxxx111
+	out	(c),a		;MEMDI-Generierung ein
+	ld	a,(hl)		;Byte aus RAF lesen
+	ld	d,a		;und merken
+	cpl			;Byte veraendern
+	ld	(hl),a		;und setzen
+	ld	e,(hl)		;veraendertes Byte merken
+	res	1,c
+	res	0,c		;xxxxx100
+	out	(c),a		;Speicher aus
+	res	2,c		;xxxxx000
+	pop	af
+	cp	(hl)		;Fensterbyte unveraendert?
+	jr	z,rnais1	;ja
+	ld	(hl),a		;sonst wiederherstellen
+rnais2:	xor	a
+	inc	a
+	ret			;ret nz
+rnais1:	ld	a,d
+	cp	e		;Byte in RAF veraendert?
+	jr	z,rnais2	;nein
+	cpl
+	cp	e		;richtig angekommen?
+	jr	nz,rnais2	;nein
+	ret			;ret z
+
+; UP: Lesen Spur 0, Sektor 1
+rafr01: ld	bc,dirbuf
+	call	setdma
+	ld	c,'M'-'A'
+	ld	e,1		;ohne LOGIN
+	call	seldsk
+	ld	bc,0
+	call	settrk
+	ld	bc,1
+	call	setsec
+	jp	read
+
+
+; Arbeitszellen RAF-Init
+;=======================
+
+rafvld: db	32		;user 32
+	db	'NanosRAF'
+	db	'S'+80h		;R/O
+	db	'Y'+80h		;SYS
+	db	'S'
+	ds	4+16,0
+rafvlk	equ	rafvld+30	;RAF-Groesse in k-Bytes
+
+; DPB-Tabellen fuer Initialisierung
+;----------------------------------
+
+rafdpm:
+
+; 0< Kap <= 64
+raf064:	dw	64
+	dw	256		;Sektoren/Spur
+	db	3,7,0		;1k Gruppen
+	dw	64-1		;Gruppenanzahl -1
+	dw	32-1,80h	;32 Dir-Eintraege
+	dw	0,0		;kein Check, kein System
+
+; 64 < Kap <= 128
+raf128:	dw	128
+	dw	256		;Sektoren/Spur
+	db	3,7,0		;1k Gruppen
+	dw	128-1
+	dw	64-1,0c0h	;64 Dir
+	dw	0,0
+
+; 128 < Kap <=256
+raf256:	dw	256
+	dw	256		;Sektoren/Spur
+	db	3,7,0		;1k Gruppen
+	dw	256-1
+	dw	128-1,0f0h	;128 Dir
+	dw	0,0
+
+; 256 < Kap <=512
+raf512:	dw	512
+	dw	256		;Sektoren/Spur
+	db	4,15,1		;2k Gruppen
+	dw	256-1
+	dw	128-1,0c0h	;128 Dir
+	dw	0,0
+
+; 512 < Kap <=1024
+ra1024:	dw	1024
+	dw	256		;Sektoren/Spur
+	db	5,31,3		;4k Gruppen
+	dw	256-1
+	dw	256-1,0c0h	;256 Dir
+	dw	0,0
+
+rafil:	ex	de,hl
+	call	putmes
+rafil1:

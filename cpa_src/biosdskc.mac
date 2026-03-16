@@ -1,0 +1,77 @@
+
+; Kaltstart-Initialisierung Floppy
+;=================================
+
+;; Steuer-PIO A
+	LD	HL,itimeo		;;Interrupt bei Indexpunkt
+	LD	(intvec+ivdsk1),HL
+	ld	a,ivdsk1
+	OUT	(flcoac),A
+	LD	A,7FH
+	OUT	(flcoac),A		;;zunaechst Byte Eingabe
+;; Daten-PIO B (Lesen)
+	OUT	(fldabc),A		;;Byte Eingabe
+	IN	A,(fldabd)		;;Scheineingabe
+;; weiter Steuer-PIO A
+	LD	A,11111101b		;;AMF aus
+	OUT	(flcoad),A
+	LD	A,3FH			;;ab jetzt Byte Ausgabe
+	OUT	(flcoac),A
+;; Daten-PIO A (Schreiben)
+	OUT	(fldaac),A		;;Byte Ausgabe
+;; Steuer-PIO B
+	LD	A,0FFH			;;Bit E/A
+	OUT	(flcobc),A
+	LD	A,11110011b		;;eeee aaee
+	OUT	(flcobc),A
+
+;; Ermittlung der vorhandenen Laufwerke
+	ld	c,maxlw
+	ld	d,0
+	ld	a,0f7h		;; ohne lock
+fl.ka1: rlca
+	out	(flsel),a
+	ex	af,af'
+	ld	b,85		;; max 85 mal steppen
+fl.ka2:	in	a,(flcobd)
+	rlca			;; kam Spur0-Signal?
+	jr	nc,fl.ka4	;; -> ja
+	ld	a,01011111b	;; steppen in Richtung Spur 0
+	out	(flcoad),a
+	ld	a,11011111b	;; mit Kopf oben
+	out	(flcoad),a
+	ld	h,8		;; Schrittzeit abwarten
+fl.ka3: dec	l
+	jr	nz,fl.ka3
+	dec	h
+	jr	nz,fl.ka3
+	djnz	fl.ka2		;; -> weiteren Schritt ausfuehren
+;****Laufwerke immer existent melden wegen 8" Beistell-Laufwerken ohne Strom
+;***	jr	fl.ka5		;; -> LW nicht existent
+;***
+fl.ka4: set	6,d		;; Laufwerk existent melden
+fl.ka5: dec	c		;; weiteres LW?
+	jr	z,fl.ka6	;; -> nein
+	rrc	d
+	rrc	d
+	ex	af,af'
+	jr	fl.ka1		;; -> naechstes LW pruefen
+
+fl.ka6: ld	a,d
+	ld	(lwexis),a
+
+	ld	a,0ffh		;; alle LW ausschalten
+	out	(flsel),a
+
+	xor	a
+	ld	(alwnr),a	;; LW 0 ist das zuletzt benutzte, Motor ist aus
+	ld	(aspnr),a	;; steht auf Spur 0
+	ld	b,maxlw
+	ld	hl,spnrl
+fl.ka7: ld	(hl),a		;; alle alten Spurnr. sind 0
+	inc	hl
+	djnz	fl.ka7
+
+ -> -1; 41 -> -2; ...; 79 -> -40
+				;77 -> -1; 78 -> -2; ...;153 -> -77
+	add	

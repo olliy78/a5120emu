@@ -1,0 +1,36 @@
+
+; Kaltstart-Initialisierung Timer
+;================================
+; 21.03.89
+
+ IF cpu eq c1715
+tim5ct	equ	3
+ ELSE
+tim5ct	equ	2
+tim1ct	equ	3
+ ENDIF
+	ld	hl,tim5it	;;int.adr.
+	ld	(intvec+ivctc0+2*tim5ct),hl
+ IF cpu ne c1715
+ 	ld	hl,tim1it	;;int.adr. 1 sec
+	ld	(intvec+ivctc0+2*tim1ct),hl
+ ENDIF
+	ld	a,ivctc0
+	out	(sysctc),a	;;int.vekt.
+	ld	a,00110111b
+;;kein int./zeitg./vort.256/pos.flanke/naechst.zykl./zk folgt/abbruch/1
+	out	(sysctc+tim5ct),a
+tim5zk	equ	(5*100*cpuclk)/256	;;Zeitkonstante 5 ms
+ IF cpu eq c1715
+ 	ld	a,5*tim5zk		;;zk fuer 25ms
+ ELSE
+	ld	a,tim5zk		;;zk fuer 5 ms
+ ENDIF
+ 	out	(sysctc+tim5ct),a
+ IF cpu ne c1715
+ 	ld	a,01010111b
+;;kein int./zaehler//pos.flanke//zk folgt/abbruch/1
+	out	(sysctc+tim1ct),a
+	ld	a,1000/5		;;zk fuer 1s
+	out	(sysctc+tim1ct),a
+ ENDIF

@@ -1,0 +1,1087 @@
+; Kaltstart-Initialisierung Tastatur
+;===================================
+;14.07.88:
+; - Einbau Typcode 80h fuer K7634.54 (meldet sich wie K7636, ist aber anders!)
+; 07.11.88
+; - Erweiterung um K7634-spezifische Tasten
+;14.01.89
+; - Einbau K7633
+;16.02.89
+; - Ueberwachung der Tabellenlaenge zur Modifizierung der Tastaturcodes
+;22.03.89
+; - INSLINE -> spcins  bei K7634 in Umkodierungstabelle aufgenommen
+; - bei K7633 war KORR und ABBR vertauscht
+;07.08.89
+; - Fehlerkorrektur K7637: CTRL-Ersatztaste brachte kein ^Q-Prefix
+
+	xor	a
+	ld	(0ffffh),a	;;Tastaturpuffer leeren
+crtm43	equ	$-2
+
+ IF costu
+;;Setzen nutzereigene Stringtabelle
+	ld	hl,costrt	;setzen max. Laenge -1
+  if (costu-1+intvr-biosde) gt 255
+	ld	(hl),255
+  else
+	ld	(hl),costu-1+intvr-biosde
+  endif
+	inc	hl
+	ld	(hl),0ffh	;Tabelle ist leer
+ ENDIF
+
+;;automatische Tastaturerkennung
+;;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ IF kbdpin
+	ld	a,3
+	out	(kbdpin),a	;Tastatur-Interrupt ueber CTC sperren
+ ENDIF
+ 	ld	b,3
+ciini1:	ld	de,400h
+ciini2:	dec	de
+	in	a,(kbdpci)	;;ueberlesen Tastaturzeichen
+	ld	a,d
+	or	e
+	jr	nz,ciini2
+	djnz	ciini1
+
+	in	a,(kbdpcs)	;;Status einer leeren Tastatur
+	and	8		;;ist Taste gedrueckt?
+	jr	nz,ciini3	;;nein
+	ld	(coistc),a	;;sonst cpl -> nop
+	ld	(kbdstc),a
+ciini3:
+
+ciisrt:		;;Eingang fuer Wiederholen Tastatur-Abfrage
+	xor	a
+	out	(kbdp3o),a	;;ruecksetzen K7634/36
+ IF kbdotp eq 3
+	ld	a,0ffh
+	out	(kbdb3o),a	;;ruecksetzen K7633
+ ENDIF
+	ld	bc,(kbdsmt)
+	ld	b,00000101b	;;di/zeitg/vt16/neg.fl/strt/zk
+	out	(c),b		;;Zeitgeber fuer IFSS-Tastatur
+	ld	b,1		;;Zeitkonstante 9600bd
+	out	(c),b
+	ld	bc,(kbdsms)
+	ld	b,k37prl	;;ruecksetzen K7637
+	ld	hl,k37par
+	otir			;;SIO initialisieren
+	ld	bc,(kbdsmi)
+	xor	a		;;reset an Tastatur
+	out	(c),a
+;; Bediensicherung nach RESET wird als unzulaessiges Zeichen
+;; bei der normalen Tastatureingabe ignoriert
+	ld	hl,kmodif	;;Standard-Ausgang
+	push	hl		;;als Return-Adresse
+	ld	de,6*256+0	;;Warten auf Typ-Code K7634/36/37
+coityp:	call	coistp
+	bit	3,a		;;Zeichen da?
+	jr	z,coitn1	;;nein
+	bit	2,a		;;CNTL-Status ohne gedrueckte CNTL-Taste?
+	jr	z,coicnp	;;nein
+	ld	a,18h		;;sonst jr-Befehl,
+	ld	(kbdstm),a	;;zum Ignorieren des CNTL-Status
+coicnp:	in	a,(kbdpci)
+	and	0f0h
+	cp	typc3s		;;Typ-Code Sondertastatur
+	ld	hl,km3s
+	ret	z		;;ja
+	cp	typc34		;;Typ-Code K7634?
+	jr	nz,coin34	;;nein
+	call	coistp		;;ctrl-Taste vorhanden?
+	bit	2,a
+	ld	hl,km3458
+	ret	z		;;ja, nicht K7634.54
+	ld	hl,km3454
+	ret
+;;;Typcode 80h
+coin34:	cp	80h		;;Typcode 80h?
+ if typ80 eq 3454
+	ld	hl,km8454	;;  Modifizierung fuer K7634.54 in UBT-Variante
+ else
+	ld	hl,km36		;;  Modifizierung fuer K7636
+endif
+	ret	z		;;ja
+;;;Ende Typcode 80h
+
+coitn1:	ld	bc,(kbdsms)
+	in	a,(c)
+	bit	0,a		;;Zeichen da?
+	jr	z,coitn2	;;nein
+	ld	bc,(kbdsmi)
+	in	a,(c)
+	and	0f0h
+	cp	typc37
+	ld	hl,km37
+	jr	nz,coitn2	;;nicht Typcode K7637
+	ld	a,(kbdsms)	;;Portadressen aendern
+	ld	(k37dm1),a
+	ld	a,(kbdsmi)
+	ld	(k37dm2),a
+	ld	(k37dm3),a
+	ld	(k37dm4),a
+	ld	(k37dm5),a
+	ld	(k37dm6),a
+	ld	(k37dm7),a
+	ld	(k37dm8),a
+	ld	hl,km37
+	ret			;;K7637
+coitn2:
+	dec	e
+	jr	nz,coityp
+	dec	d
+	jr	nz,coityp	;;verhindern unendl.Schleife
+;;				 fuer Tastaturen ohne Typcode
+ 	ld	hl,kbdsnr	;;laufende SIO-Tastatur-Nr
+	ld	a,(hl)
+ 	inc	(hl)		;;+1
+ if kbds2i+kbds2s+kbds2t
+	cp	2		;;war schon 2?
+	jr	nc,coits2	;;ja
+	ld	a,kbds2i
+	ld	(kbdsmi),a
+	ld	a,kbds2s
+	ld	(kbdsms),a
+	ld	a,kbds2t
+	ld	(kbdsmt),a
+	pop	hl		;;return-Adresse vergessen
+	jp	ciisrt	
+coits2:
+ else
+	inc	(hl)
+ endif
+ if kbds3i+kbds3s+kbds3t
+	cp	3		;;war schon 3?
+	jr	nc,coits3	;;ja
+	ld	a,kbds3i
+	ld	(kbdsmi),a
+	ld	a,kbds3s
+	ld	(kbdsms),a
+	ld	a,kbds3t
+	ld	(kbdsmt),a
+	pop	hl		;;return-Adresse vergessen
+	jp	ciisrt	
+coits3:
+ else
+ 	inc	(hl)
+ endif
+ if kbds4i+kbds4s+kbds4t
+	cp	4		;;war schon 4?
+	jr	nc,coits4	;;ja
+	ld	a,kbds4i
+	ld	(kbdsmi),a
+	ld	a,kbds4s
+	ld	(kbdsms),a
+	ld	a,kbds4t
+	ld	(kbdsmt),a
+	pop	hl		;;return-Adresse vergessen
+	jp	ciisrt	
+coits4:
+ else
+	inc	(hl)
+ endif
+ if kbds5i+kbds5s+kbds5t
+	cp	5		;;war schon 5?
+	jr	nc,coits5	;;ja
+	ld	a,kbds5i
+	ld	(kbdsmi),a
+	ld	a,kbds5s
+	ld	(kbdsms),a
+	ld	a,kbds5t
+	ld	(kbdsmt),a
+	pop	hl		;;return-Adresse vergessen
+	jp	ciisrt	
+coits5:
+ else
+	inc	(hl)
+ endif
+ IF kbdotp eq 0	;;K7606 annehmen
+	ld	hl,km06
+ ENDIF
+ IF kbdotp eq 1	;;K7604 annehmen
+	call	coistp		;;ctrl-Taste vorhanden?
+	bit	2,a
+	ld	hl,km0458
+	ret	z		;;ja, nicht K7604.54
+	ld	hl,km0454
+ ENDIF
+ IF kbdotp eq 2	;;DEG-Tastatur annehmen
+	ld	hl,kmdeg
+ ENDIF
+ IF kbdotp eq 3	;;K7633 annehmen
+	ld	hl,km33
+ ENDIF
+	ret
+
+;;Lesen Statusregister fuer PIO-Tastatur
+; Bit 3	=1, wenn Taste gedrueckt
+; Bit 2	=1, wenn CNTL-Taste gedrueckt
+coistp:	in	a,(kbdpcs)
+coistc:	cpl			;;auf NOP, wenn Status negiert
+	ret
+
+;; Initialisierung Tastatur K7637
+kbdsmt:	db	kbdsct	;;CTC
+kbdsmi:	db	kbdsci	;;Zeichen E/A
+kbdsms:	db	kbdscs	;;Status
+kbdsnr:	db	1	;;Laufende Nr. fuer Tastaturvarianten
+k37par:	db	0,18h	;;Kanal-Reset
+	db	4,44h	;;clock*16  / 1 stoppbit / unger. Par.
+	db	1,0
+	db	5,68h	;;Send. ein / 8 bit pro Zeichen
+	db	3,0c1h	;;Empf. ein / 8 bit pro Zeichen
+k37prl	equ	$-k37par
+
+
+;; Tastatur-Modifizierung gemaess Steuertabelle ab (HL)
+
+kmodif:
+	ld	de,kbdtyp
+	ld	bc,2
+	ldir
+	ld	b,kmodl		;;Anzahl der Adressen
+kmodi1:	push	bc
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	push	hl
+	ld	hl,kmodi2
+	push	hl		;;ret-Adr.
+	push	de		;;Modif.routine
+coidum:	ret			;;abarbeiten
+kmodi2:	pop	hl
+	pop	bc
+	djnz	kmodi1
+;; Ende Kaltstart-Modifizierungen
+	jp	coinie
+
+
+;;Steuertabellen fuer Modifizierung
+;;==================================
+
+;; dw coidum, wenn keine Modifizierung
+
+;; k7637 -Tastatur
+;;----------------
+
+km37:	db	'37'
+kmodt:	dw	coi37p		;;Port-Modifizierung
+	dw	coi37t		;;Tastenumkodierung
+	dw	coi37c		;;kbdst1-Modifizierung
+	dw	coi37w		;;kbdwin-Modifizierung
+	dw	coidum		;;lampen-Modifizierung
+	dw	coidum		;;gross <-> klein vertauschen
+kmodl	equ	($-kmodt)/2	;;Anzahl der Adressen
+
+;; k76x4 -Tastaturen
+;;------------------
+
+ IF kbdotp eq 1
+km0454:	db	'04'		;;letzte 2 Zeichen Tastatur
+	dw	coidum		;;Port-Modifizierung
+	dw	coi044		;;Tastenumkodierung
+	dw	coidum		;;kbdst1-Modifizierung
+	dw	coi04w		;;kbdwin-Modifizierung
+	dw	coi04l		;;lampen-Modifizierung
+	dw	coicps		;;gross <-> klein vertauschen
+
+km0458:	db	'04'
+	dw	coidum
+	dw	coi048
+	dw	coidum
+	dw	coi04w
+	dw	coi04l
+	dw	coicps
+ ENDIF
+
+km3454:	db	'34'
+	dw	coidum
+	dw	coi344
+	dw	coidum
+	dw	coi34w
+	dw	coi34l
+	dw	coicps
+
+;;;Typcode 80h
+km8454:	db	'34'
+	dw	coidum
+	dw	coi834		;bis auf wenige Tasten wie K7636
+	dw	coidum
+	dw	coi34w
+	dw	coi84l		;warten auf Typcode 80h, sonst wie K7634
+	dw	coicps
+;;;Ende Typcode 80h
+
+km3458:	db	'34'
+	dw	coidum
+	dw	coi348
+	dw	coidum
+	dw	coi34w
+	dw	coi34l
+	dw	coicps
+
+;; k76x6 -Tastaturen
+;;------------------
+
+ IF kbdotp eq 0
+km06:	db	'06'
+	dw	coidum
+	dw	coidum
+	dw	coidum
+	dw	coidum
+	dw	coi06l
+	dw	coidum
+ ENDIF
+
+km36:	db	'36'
+	dw	coidum
+	dw	coidum
+	dw	coidum
+	dw	coi36w
+	dw	coi36l
+	dw	coidum
+
+;; Sondertastatur (modifizierte K7634)
+;;---------------
+km3s:	db	'?S'
+	dw	coidum		;;Portmodif.
+	dw	coi3st		;;Tastenumkodierung
+	dw	coidum		;;kbdst1-Modif.
+	dw	coi3sw		;;kbdwin-Modif.
+	dw	coi3sl		;;lampen-Modif.
+	dw	coidum		;;klein <-> gross
+
+ IF kbdotp eq 2
+;; DEG-Spezialtastatur
+;;--------------------
+kmdeg:	db	'DG'		;;Kennz. K76DG fuer DEG-Tastatur
+	dw	coidum
+	dw	coidg
+	dw	coidum
+	dw	coidum
+	dw	coidgl
+	dw	coidum
+ ENDIF
+ IF kbdotp eq 3
+;; K7633
+;-------
+km33:	db	'33'
+	dw	coi33p		;;Portmodif.
+	dw	coi33t		;;Tastenumkodierung
+	dw	coi33c		;;kbdst1-Modifizierung
+	dw	coi33w		;;kbdwin-Modifizierung
+	dw	coi33l		;;lampen-Modifizierung
+	dw	coicps		;;gross <-> klein vertauschen
+ ENDIF
+
+
+;; Modifizierungs-Unterprogramme
+;;==============================
+
+;;Portmodifizierung
+;;-----------------
+coi37p:	ld	a,kbdsci
+k37dm2	equ	$-1		;;modifiziert bei Digitalisier-AP
+	ld	(kbdmt1),a
+	ret
+ IF kbdotp eq 3
+
+coi33p:	ld	a,kbdbci
+	ld	(kbdmt1),a
+	ret
+ ENDIF
+
+;;Codemodif.
+;;----------
+ IF kbdotp eq 1
+coi044:	ld	hl,cp0454
+	jr	coicpt
+
+coi048:	ld	hl,cp0458
+	jr	coicpt
+ ENDIF
+coi344:	ld	hl,cp3454
+	jr	coicpt
+
+;;;Typcode 80h
+coi834:	ld	hl,cp8454
+	jr	coicpt
+;;;Ende Typcode 80h
+
+coi348:	ld	hl,cp3458
+	jr	coicpt
+
+coi37t:	ld	hl,cp37
+coicpt:	ld	de,kbdcpt
+	ld	bc,kbdcpl
+	ldir			;;Umkodierungstabelle setzen
+	ret
+
+coi3st:	ld	hl,cocp3s	;;Umkodierung ignorieren
+	ld	de,cocpm1
+	ld	bc,coc3se-cocp3s
+	ldir
+	ret
+
+ IF kbdotp eq 2
+coidg:	ld	hl,cpdg
+	jr	coicpt
+ ENDIF
+ IF kbdotp eq 3
+
+coi33t:	ld	hl,cp33
+	jr	coicpt
+ ENDIF
+
+;;kbdst1-Modif.
+;;-------------
+coi37c:	ld	hl,cst37
+	ld	de,kbdst1
+	ld	bc,cst37e-cst37
+	ldir
+	ret
+ IF kbdotp eq 3
+
+coi33c:	ld	hl,cst33
+	ld	de,kbdst1
+	ld	bc,cst33e-cst33
+	ldir
+	ret
+ ENDIF
+
+;;kbdwin-Modif.
+;;-------------
+coi3sw:
+coi04w:
+coi34w:
+coi36w:
+coi37w:
+ IF kbdotp eq 3
+coi33w:
+ ENDIF
+	ld	hl,cwi34
+	ld	de,kbdmd1
+	ld	bc,cwi34e-cwi34
+	ldir
+	ret
+
+;;lampen-Modif.
+;;-------------
+coi04l:	ld	hl,lmp04
+	ld	de,lmp3404	;;lmp34 modif. ohne Warten
+	ld	bc,lmp04e-lmp04
+	ldir
+coi34l:	ld	hl,lmp34
+	ld	de,kbdmd2
+	ld	bc,lmp34e-lmp34
+	ldir
+	ret
+
+;;;Typcode 80h
+coi84l:	ld	hl,lmp34c
+	ld	(hl),80h	;;Typecode modif.
+	jr	coi34l
+;;;Ende Typcode 80h
+
+ IF kbdotp eq 0
+coi06l:	ld	hl,lmp06
+	ld	de,kbdmd2
+	ld	bc,lmp06e-lmp06
+	ldir
+	ret
+ ENDIF
+
+ IF kbdotp eq 2
+coidgl:	ld	hl,lmpdg
+	ld	de,lmpdg06	;;lmp36 modif. ohne Warten
+	ld	bc,lmpdge-lmpdg
+	ldir
+ ENDIF
+
+coi36l:	ld	hl,lmp36
+	ld	de,kbdmd2
+	ld	bc,lmp36e-lmp36
+	ldir
+	ret	
+
+coi3sl:	ld	hl,lmp34c
+	ld	(hl),typc3s	;;Typecode modif.
+	jr	coi34l
+
+ IF kbdotp eq 3
+coi33l:	ld	hl,lmp33
+	ld	de,kbdmd2
+	ld	bc,lmp33e-lmp33
+	ldir
+	ld	hl,lampbf
+	set	kbdcal,(hl)	;ALPHA einschalten
+	ret
+ ENDIF
+
+;;Gross <-> klein modif. bei Tastaturen, die nach RESET Grossb. liefern
+;;----------------------
+coicps:	ld	a,0c0h		;ret nz
+	ld	(kbdmd3),a	;statt ret z
+	ret
+
+
+;; Modifizierungs-Muster
+;;======================
+
+;; Tastatur-Code modif.
+;;--------------------
+cocp3s:	jr	$+cocpm2-cocpm1
+coc3se:
+
+;; kbdwin
+;;-------
+cwi34:		;;Modifizierungsroutine fuer K7634/36/37
+;;kbdwin:
+	call	kbdst		;;Taste gedrueckt?
+	jr	z,cwi34		;;nein
+	jp	kbdinn		;;sonst auswerten
+
+cwi34e:
+
+;; kbdst1
+;;-------
+;; Modifizierungsroutine fuer K7637
+cst37:
+;;kbdst1:
+	in	a,(kbdscs)	;;Taste gedrueckt?
+k37dm1	equ	$-1		;;modifiziert bei Digitalisier-AP
+	and	1
+	ret	z		;(a)=0, z=1
+	ld	hl,synflg
+	bit	ctrlst,(hl)	;Ersatz-CNTL?
+	ld	a,0ffh		;Schnittmaske c0..ff -> c0..ff
+	jr	z,cst37b	;nein
+	ld	a,0bfh		;Schnittmaske c0..ff -> 80..bf
+cst37b:	ld	(kbdlcs),a
+	xor	a
+	dec	a		;(a)=ff, z=0
+	ret
+cst37e:
+
+ IF kbdotp eq 3
+
+;; Modifizierungsroutine fuer K7633
+cst33:
+;;kbdst1:
+	in	a,(kbdbcs)	;;Taste gedrueckt?
+	and	3		;;eigentlich nur Bit 1
+	ret	z		;(a)=0, z=1
+	ld	hl,synflg
+	bit	ctrlst,(hl)	;Ersatz-CNTL?
+	ld	a,0ffh		;Schnittmaske c0..ff -> c0..ff
+	jr	z,cst33b	;nein
+	ld	a,0bfh		;Schnittmaske c0..ff -> 80..bf
+cst33b:	ld	(kbdlcs),a
+	xor	a
+	dec	a		;(a)=ff, z=0
+	ret
+cst33e:
+ ENDIF
+
+;; lampen
+;;-------
+ IF kbdotp eq 0
+lmp06:		;;Modifizierungsroutine fuer K7606
+;;lampen:
+	ld	a,3
+	out	(kbdp3o),a	;;lampen aus
+	ld	a,(lampbf)	;;puffer lampenbits
+	push	af
+	rlca
+	rlca
+	and	3
+	xor	8+3		;;0 bedeutet ein
+	out	(kbdp3o),a
+	pop	af		;;selectorlampem
+	xor	0fh		;;0 bedeutet ein
+	out	(kbdp5o),a
+	ret
+lmp06e:
+ ENDIF
+
+lmp34:		;;Modifizierungsroutine fuer K7604/K7634
+;;lampen:
+	ld	a,(lampbf)
+	cp	00h		;;veraendert?
+lmpb34	equ	$-1		;;Kopie Lampen-Puffer
+	ret	z		;;unveraendert
+	ld	hl,intkbd
+	ld	(hl),21h	;;ld hl,...
+	and	0c0h		;;Sel 0..3 LED gibt es nicht
+	bit	7,a		;;INS-MODE ?
+	jr	z,lmp34a	;;aus
+	set	4,a
+lmp34a:	bit	6,a		;;Fehlerlampe ?
+	jr	z,lmp34b	;;aus
+	or	00100100b	;;sonst zusaetzlich OFF-LED
+lmp34b:	cpl			;;0 bedeutet ein
+	set	7,a		;;Flag LED-Aenderung
+	out	(kbdp3o),a
+lmp3404:
+lmp34w:	call	kbdst1		;;warten auf Antwort
+	jr	z,lmp34w
+	in	a,(kbdpci)
+	and	0f0h
+	cp	typc34
+lmp34c	equ	$-1		;;fuer evtl. Typecode-Modif.
+	jr	nz,lmp34w
+lmp04w:	ld	a,(lampbf)
+	ld	(lampen+lmpb34-lmp34),a
+	ld	hl,intkbd
+	ld	(hl),0cch
+	ret
+lmp34e	equ	$
+
+lmp04:		;;Modifizierungsroutine fuer K7604
+	jr	$+(lmp04w-lmp3404);;nicht auf Antwort warten
+lmp04e	equ	$
+
+lmp36:		;;Modifizierungsroutine fuer K7636
+;;lampen:
+	ld	a,(lampbf)
+	cp	00h		;;veraendert?
+lmpb36	equ	$-1		;;Kopie Lampen-Puffer
+	ret	z		;;unveraendert
+	ld	hl,intkbd	;parall. 5ms Portabfrage verhindern
+	ld	(hl),21h	;call ... -> ld hl,...
+	and	0cfh		;;loeschen unbenutzte Bits
+	bit	7,a		;;INS-MODE ?
+	jr	z,lmp36a	;;aus
+	set	4,a
+lmp36a:	bit	6,a		;;Fehlerlampe ?
+	jr	z,lmp36b	;;aus
+	set	5,a		;;sonst zusaetzlich 'PIEP'
+lmp36b:	cpl			;;0 bedeutet ein
+	set	7,a		;;Flag LED-Aenderung
+	out	(kbdp3o),a
+lmpdg06:
+lmp36w:	call	kbdst1		;;warten auf Antwort
+	jr	z,lmp36w
+	in	a,(kbdpci)
+	and	0f0h
+	cp	80h		;Typcode
+	jr	nz,lmp36w
+lmpdgw:	ld	a,(lampbf)
+	ld	(lampen+lmpb36-lmp36),a
+	ld	hl,intkbd
+	ld	(hl),0cch	;;wieder call ...
+	ret
+lmp36e	equ	$
+
+ IF kbdotp eq 2
+lmpdg:		;;Modifizierungsroutine fuer K76DG
+	jr	$+(lmpdgw-lmpdg06);;nicht auf Antwort warten
+lmpdge	equ	$
+ ENDIF
+
+ IF kbdotp eq 3
+lmp33:		;;Modifizierungsroutine fuer K7633
+;;lampen:
+	ld	a,(lampbf)	;;puffer lampenbits
+	and	0cfh		;;loeschen unbenutzte Bits
+	bit	7,a		;;INS-MODE ?
+	jr	z,lmp33a	;;aus
+	set	4,a
+lmp33a:	bit	6,a		;;Fehlerlampe ?
+	jr	z,lmp33b	;;aus
+	set	5,a		;;sonst zusaetzlich 'PIEP'
+lmp33b:	cpl			;;0 bedeutet ein
+	set	7,a		;;Flag LED-Aenderung
+	out	(kbdb3o),a
+	ret
+lmp33e:
+ ENDIF
+
+;; Tabelle physikalische -> virt. Tastencodes
+;; ##########################################
+
+;; K76x4.54 (ohne Controltaste)
+;;=========
+cp0454:
+cp3454:
+; Kursortasten
+;-------------
+	db	00BH,kcurwl		;|<-
+	db	004H,kcurup		;^
+	DB	001H,kcurwr		;->|
+	db	006H,kcurlf		;<-
+	db	01eh,kcurpu		;FM als Ersatz '\
+	db	007H,kcurri		;->
+	db	00AH,kcurpd		;<-'
+	db	005H,kcurdw		;v
+; Sondertasten
+;-------------
+	db	09dh,0dh		;ENTR
+	db	00FH,009h		;|<-| als Ersatz Tab
+	db	013H,01bh		;DEL LINE als Ersatz ESC
+	db	01BH,spcdel		;DEL
+	db	003H,spcins		;INSL
+	db	01cH,Sel0		;DUP
+	db	01fh,ctlc		;RESET als Ersatz Control-Taste
+	db	009h,spcce		;ERIN als Ersatz CE
+	db	08dh,spcclr		;CLEAR
+	db	08fh,spccnc		;CNCL
+	db	082h,spckor		;KOR
+	db	083h,spcrol		;ROLL <-
+	db	084h,spcror		;ROLL ->
+; num. Tasten
+;------------
+	db	012H,zbl000		;Dzif
+	db	002h,zblmin		;INS MODE als Ersatz num. Minus
+	db	086h,zbla		;Taste ueber der "7"
+	db	085h,zblb		;Taste ueber der "8"
+	db	087h,zblc		;Taste ueber der "9"
+; Funktionstasten
+;----------------
+	db	011h,pf0c		;REC
+	db	091h,pf1c		;PF1
+	db	092h,pf2c		;PF2
+	db	093h,pf3c		;PF3
+	db	094h,pf4c		;PF4
+	db	095h,pf5c		;PF5
+	db	096h,pf6c		;PF6
+	db	097h,pf7c		;PF7
+	db	098h,pf8c		;PF8
+	db	099h,pf9c		;PF9
+	db	09ah,pfac		;PF10
+	db	09bh,pfbc		;PF11
+	db	09ch,pfcc		;PF12
+	db	081h,pfdc		;VLD als Ersatz PF13
+	db	008H,pfec		;EREO als Ersatz PF14 (Monitor)
+	db	010h,pffc		;OFF als Erstatz PF15 (Stop)
+	db	0			;Tabellenende
+ IF1
+  IF ($-cp3454) gt kbdcpl
+   printh <Tabelle cp3454 in BIOSKBDC.MAC zu lang um hex >,$-cp3454-kbdcpl
+  ENDIF
+ ENDIF
+;----------------------------------------------------------
+
+;; K76x4.58 (mit Controltaste)
+;;=========
+cp0458:
+cp3458:
+; Kursortasten
+;-------------
+	db	00BH,kcurwl		;|<-
+	db	004H,kcurup		;^
+	DB	001H,kcurwr		;->|
+	db	007H,kcurlf		;<-
+	db	01eh,kcurpu		;FM als Ersatz '\
+	db	006H,kcurri		;->
+	db	00AH,kcurpd		;<-'
+	db	005H,kcurdw		;v
+; Sondertasten
+;-------------
+	db	09dh,0dh		;ENTR
+	db	00FH,009h		;|<-| als Ersatz Tab
+	db	013H,01bh		;DEL LINE als Ersatz ESC
+	db	01BH,spcdel		;DEL
+	db	003H,spcins		;INSL
+	db	01cH,Sel0		;DUP
+	db	01fh,ctlc		;RESET als Ersatz Control-Taste
+	db	009h,spcce		;ERIN als Ersatz CE
+	db	08dh,spcclr		;CLEAR
+	db	08fh,spccnc		;CNCL
+	db	082h,spckor		;KOR
+	db	083h,spcrol		;ROLL <-
+	db	084h,spcror		;ROLL ->
+; num. Tasten
+;------------
+	db	012H,zbl000		;Dzif
+	db	002h,zblmin		;INS MODE als Ersatz num. Minus
+	db	086h,zbla		;Taste ueber der "7"
+	db	085h,zblb		;Taste ueber der "8"
+	db	087h,zblc		;Taste ueber der "9"
+; Funktionstasten
+;----------------
+	db	011h,pf0c		;REC
+	db	091h,pf1c		;PF1
+	db	092h,pf2c		;PF2
+	db	093h,pf3c		;PF3
+	db	094h,pf4c		;PF4
+	db	095h,pf5c		;PF5
+	db	096h,pf6c		;PF6
+	db	097h,pf7c		;PF7
+	db	098h,pf8c		;PF8
+	db	099h,pf9c		;PF9
+	db	09ah,pfac		;PF10
+	db	09bh,pfbc		;PF11
+	db	09ch,pfcc		;PF12
+	db	081h,pfdc		;VLD als Ersatz PF13
+	db	008H,pfec		;EREO als Ersatz PF14 (Monitor)
+	db	010h,pffc		;OFF als Erstatz PF15 (Stop)
+	db	0			;Tabellenende
+ IF1
+  IF ($-cp3458) gt kbdcpl
+   printh <Tabelle cp3458 in BIOSKBDC.MAC zu lang um hex >,$-cp3458-kbdcpl
+  ENDIF
+ ENDIF
+;----------------------------------------------------------
+
+;;;Typcode 80h
+;; K7634.54 mit Typcode 80h (UBT-Tastatur)
+;==========================
+cp8454:
+; Kursortasten
+;-------------
+	db	00BH,kcurwl		;|<-
+	db	004H,kcurup		;^
+	DB	001H,kcurwr		;->|
+	db	006H,kcurlf		;<-
+	db	01eh,kcurpu		;FM als Ersatz '\
+	db	007H,kcurri		;->
+	db	00AH,kcurpd		;<-'
+	db	013h,kcurpd		;DEL LINE als Ersatz <-'
+	db	005H,kcurdw		;v
+; Sondertasten
+;-------------
+	db	0ffh,0dh		;ENT als CR
+	db	00FH,009h		;|<-| als Ersatz Tab
+	db	0feH,01bh		;CNCL als Ersatz ESC
+	db	01BH,spcdel		;DEL
+	db	009H,spcce		;ERIN als Ersatz CE	K7604/34
+	db	003H,spcins		;INSL
+	db	01cH,Sel0		;DUP
+	db	0afH,ctlc		;RESET Control-Taste	K7604/34
+; num. Tasten
+;------------
+	db	012H,zbl000		;Dzif
+	DB	0A8H,zblmin		;INSM als Ersatz num. Minus
+; Funktionstasten
+;----------------
+	db	0fdh,pf0c		;REC
+	db	0c1h,pf1c		;PF1
+	db	0c2h,pf2c		;PF2
+	db	0c3h,pf3c		;PF3
+	db	0c4h,pf4c		;PF4
+	db	0c5h,pf5c		;PF5
+	db	0c6h,pf6c		;PF6
+	db	0c7h,pf7c		;PF7
+	db	0c8h,pf8c		;PF8
+	db	0c9h,pf9c		;PF9
+	db	0cah,pfac		;PF10
+	db	0cbh,pfbc		;PF11
+	db	0cch,pfcc		;PF12
+	db	0fch,pfdc		;CLEAR als Ersatz PF13
+	db	008H,pfec		;EREO als Ersatz PF14
+	DB	010H,pffc		;OFF als Ersatz PF15
+
+	db	0			;Tabellenende
+ IF1
+  IF ($-cp8454) gt kbdcpl
+   printh <Tabelle cp8454 in BIOSKBDC.MAC zu lang um hex >,$-cp8454-kbdcpl
+  ENDIF
+ ENDIF
+;----------------------------------------------------------
+;;;Ende Typcode 80h
+
+;; K7637
+;;======
+cp37:
+; Kursortasten
+;-------------
+	db	09BH,kcurwl		;|<-
+	db	094H,kcurup		;^
+	DB	091H,kcurwr		;->|
+	db	096H,kcurlf		;<-
+	DB	09CH,kcurpu		;'\
+	db	097H,kcurri		;->
+	db	09AH,kcurpd		;<-'
+	db	095H,kcurdw		;v
+; Sondertasten
+;-------------
+	db	0ffh,0dh		;ET1 als CR
+	db	09FH,009h		;|<-| als Ersatz Tab
+	db	0b3H,01bh		;DELL als Ersatz ESC
+	db	0bBH,spcdel		;DELCH
+	db	0b9H,spcce		;CE
+	db	093H,spcins		;INSL
+	DB	0A0H,Sel0		;SEL0
+	DB	0A1H,Sel1		;SEL1
+	DB	0A2H,Sel2		;SEL2
+        DB	0A3H,Sel3		;SEL3
+	db	0feh,ctlc		;ET2 als Control-Taste (Loslassen!)
+; num. Tasten
+;------------
+	db	0b1H,zbl00		;00
+	DB	0A8H,zblmin		;INSMD als Ersatz num. Minus
+; Funktionstasten
+;----------------
+	db	0c0h,pf0c		;ENTER
+	db	0c1h,pf1c		;PF1
+	db	0c2h,pf2c		;PF2
+	db	0c3h,pf3c		;PF3
+	db	0c4h,pf4c		;PF4
+	db	0c5h,pf5c		;PF5
+	db	0c6h,pf6c		;PF6
+	db	0c7h,pf7c		;PF7
+	db	0c8h,pf8c		;PF8
+	db	0c9h,pf9c		;PF9
+	db	0cah,pfac		;PF10
+	db	0cbh,pfbc		;PF11
+	db	0cch,pfcc		;PF12
+	db	0b0H,pfec		;MON als PF14
+	DB	0AFH,pffc		;RESET als Ersatz PF15
+; Tasten, die mit Shift oder Control anderen Code liefern
+;--------------------------------------------------------
+	db	093h,zblmin-40h		;INSMD	+Shift/Control	= INSL
+	db	0b3h,spcdel-40h		;DELCH	+Shift/Control	= DELL
+	db	0fah,pf1c-40h		;PF1	+Shift/Control	= PA1
+	db	0f9h,pf2c-40h		;PF2	+Shift/Control	= PA2
+	db	0f8h,pf3c-40h		;PF3	+Shift/Control	= PA3
+	db	0fch,pf5c-40h		;PF5	+Shift/Control	= CLEAR
+	db	0fdh,pf6c-40h		;PF6	+Shift/Control	= REC
+	db	0beh,pf7c-40h		;PF7	+Shift/Control	= FM
+	db	0bch,pf8c-40h		;PF8	+Shift/Control	= DUP
+	db	098h,pfac-40h		;PF10	+Shift/Control	= EREOF
+	db	099h,pfbc-40h		;PF11	+Shift/Control	= ERINP
+
+	db	0			;Tabellenende
+
+ IF1
+  IF ($-cp37) gt kbdcpl
+   printh <Tabelle cp37 in BIOSKBDC.MAC zu lang um hex >,$-cp37-kbdcpl
+  ENDIF
+ ENDIF
+;----------------------------------------------------------
+
+
+ IF kbdotp eq 2
+;; DEG-Spezialtastatur
+;=====================
+cpdg:
+; Kursortasten
+;-------------
+	db	001H,kcurwl		;|<-
+	db	005H,kcurup		;^
+	DB	006H,kcurwr		;->|
+	db	013H,kcurlf		;<-
+	DB	003H,kcurpu		;'\
+	db	004H,kcurri		;->
+	db	012H,kcurpd		;<-'
+	db	018H,kcurdw		;v
+; Sondertasten
+;-------------
+	db	09dh,0dh		;ENTR
+	db	013h,008h		;BS
+	db	'Y','Z'
+	db	'y','z'
+	db	'Z','Y'
+	db	'z','y'
+	db	0c1H,spcins		;INSL
+	DB	0A0H,Sel0		;SEL0
+	DB	0A1H,Sel1		;SEL1
+	DB	0A2H,Sel2		;SEL2
+        DB	0A3H,Sel3		;SEL3
+; num. Tasten
+;------------
+	DB	0A6H,zblmin		;INSM als Ersatz num. Minus
+; Funktionstasten
+;----------------
+	db	0c0h,pf0c		;S
+	db	0c1h,pf1c		;S1
+	db	0c2h,pf2c		;S2
+	db	0c3h,pf3c		;S3
+	db	0c4h,pf4c		;S4
+	db	0c5h,pf5c		;S5
+	db	0c6h,pf6c		;S6
+	db	0c7h,pf7c		;S7
+	db	0a5H,pfec		;EREO als Ersatz PF14
+	DB	0A4H,pffc		;CI als Ersatz PF15
+
+	db	0			;Tabellenende
+ IF1
+  IF ($-cpdg) gt kbdcpl
+   printh <Tabelle cpdg in BIOSKBDC.MAC zu lang um hex >,$-cpdg-kbdcpl
+  ENDIF
+ ENDIF
+;----------------------------------------------------------
+ ENDIF
+
+ IF kbdotp eq 3
+; Umkodierungstabelle fuer K7633
+;===============================
+cp33:
+; Kursortasten
+;-------------
+	db	00BH,kcurwl		;|<-
+	db	0d7h,kcurup		;^	ist Taste Alpha-U
+	DB	001H,kcurwr		;->|
+	db	006H,kcurlf		;<-
+	DB	00CH,kcurpu		;'\
+	db	007H,kcurri		;->
+	db	00AH,kcurpd		;<-'
+	db	0dch,kcurdw		;v	ist Taste Alpha-Z
+; Sondertasten
+;-------------
+	db	0ffh,0dh		;ET1 als CR
+	db	0fdh,009h		;Tab 	ist Taste ET3
+	db	0fch,01bh		;ESC	ist Taste WI +
+	db	0f8h,spcdel		;DEL	ist Taste JA
+	db	019H,spcce		;CE
+	db	0ddh,spcins		;INS	ist Taste REP
+	DB	0A0H,Sel0		;SEL0	ist Taste SEL rot
+	DB	0A1H,Sel1		;SEL1	ist Taste ALPHA rot
+	db	0feh,ctlc		;ET2 als Control-Taste (Loslassen!)
+; num. Tasten
+;------------
+	db	011H,zbl00		;00
+	db	012H,zbl000		;000
+	DB	0fbh,zblmin		;num Minus ist Taste SI -
+; Funktionstasten
+;----------------
+	db	010h,pfec		;PF14	ist Taste M rot
+	DB	0AFH,pffc		;PF15	ist Taste CI rot
+; Nicht-Alpha-Zeichen (bei Betaetigung ALPHA-Taste)
+;--------------------
+	db	0c0h,'_'		;A
+	db	0c1h,'!'		;B
+	db	0c2h,'"'		;C
+	DB	0c3h,'#'		;D
+        DB	0c4h,'$'		;E
+	db	0c5h,'%'		;F
+	db	0c6h,'&'		;G
+	db	0c7h,''''		;H
+	db	0c8h,'?'		;/
+	db	0c9h,'('		;I
+	db	0cah,')'		;J
+	db	0cbh,'['		;K
+	db	0cch,']'		;L
+	db	0cdh,'>'		;.
+	db	0ceh,'{'		;M
+	db	0cfh,'}'		;N
+	db	0d0h,';'		;O
+	db	0d1h,'|'		;P
+	db	0d2h,'<'		;,
+	db	0d3h,'+'		;Q
+	db	0d4h,'\'		;R
+	db	0d5h,'@'		;S
+	db	0d6h,'`'		;T
+	db	0d8h,'='		;V
+	db	0d9h,'~'		;W
+	db	0dah,'^'		;X
+;;frei	db	0dbh,' '		;Y
+	db	0faH,'*'		;Taste KORR
+	db	0f9H,':'		;Taste ABBR
+
+	db	0			;Tabellenende
+ IF1
+  IF ($-cp33) gt kbdcpl
+   printh <Tabelle cp33 in BIOSKBDC.MAC zu lang um hex >,$-cp33-kbdcpl
+  ENDIF
+ ENDIF
+;----------------------------------------------------------
+ ENDIF
+
+coinie:
+	call	lampen		;alle Lampen aus
+g	equ	dpbstr+26	;(max.

@@ -1,0 +1,34 @@
+; Kaltstart-Initialisierung zeichenorientierte Geraete
+;=====================================================
+; 03.04.89
+ if cdtpio
+	ld	hl,cdpsti
+	ld	(intvec+ivpiod),hl
+ endif
+ if iobuc1
+ IF (uc1dat xor uc1sta) eq 01b	;Kanal-Nr ist Bit 1 (bei Buerocomp und OEM)
+  IF (uc1sta and 10b) eq 00b	;UC1 ist an Kanal A
+	ld	hl,uc1rin	;;Empf-Interrupt fuer UC1:
+	ld	(intvec+ivsio6),hl ;;Kanal A
+	ld	hl,uc1err	;;spez. Empf.Bedingung fuer UC1:
+	ld	(intvec+ivsio7),hl ;;Kanal A
+  ELSE				;UC1 ist an Kanal B
+	ld	hl,uc1rin	;;Empf-Interrupt fuer UC1:
+	ld	(intvec+ivsio2),hl ;;Kanal B
+	ld	hl,uc1err	;;spez. Empf.Bedingung fuer UC1:
+	ld	(intvec+ivsio3),hl ;;Kanal B
+  ENDIF
+ ELSE				;Kanal-Nr ist Bit 0 (bei PC1715)
+  IF (uc1sta and 01b) eq 00b	;UC1 ist an Kanal A
+	ld	hl,uc1rin	;;Empf-Interrupt fuer UC1:
+	ld	(intvec+ivsio6),hl ;;Kanal A
+	ld	hl,uc1err	;;spez. Empf.Bedingung fuer UC1:
+	ld	(intvec+ivsio7),hl ;;Kanal A
+  ELSE				;UC1 ist an Kanal B
+	ld	hl,uc1rin	;;Empf-Interrupt fuer UC1:
+	ld	(intvec+ivsio2),hl ;;Kanal B
+	ld	hl,uc1err	;;spez. Empf.Bedingung fuer UC1:
+	ld	(intvec+ivsio3),hl ;;Kanal B
+  ENDIF
+ ENDIF
+ endif

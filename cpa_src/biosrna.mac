@@ -1,0 +1,119 @@
+;********************************************************
+;	RAM-Floppy auf Basis NANOS-RAF IfS Warnemuende
+; Version 06.06.89
+;********************************************************
+
+ if1
+
+rflwarm MACRO
+	ENDM
+
+ endif ;if1
+
+
+;**************************************************************
+;	Schreiben RAM-Floppy
+;**************************************************************
+
+wrramf:
+; Schreiben RAF
+;==============
+rafwr:	ld	b,0		;Flag schreiben
+	jr	rna_tr		;Transfer
+
+;**************************************************************
+;	Lesen RAM-Floppy
+;**************************************************************
+
+rdramf:
+; Lesen RAF
+;==========
+rafrd:	ld	b,1		;Flag lesen
+
+; gemeinsames UP read/write
+; errechnet RAF-High-Addresse aus BIOS-Calls "SET-TRACK", "SET-SECTOR"
+; und laedt Track- und Sector-Register auf dem RAF entsprechend
+; HL := CP/M-DMA-Buffer-Adresse aus BIOS-Call "SET-DMA"
+; CPU-Register werden fuer LDIR vorbereitet und LDIR wird ausgefuehrt !!
+
+; i B		Flag lesen=01h/schreiben=00h
+; i dtrack	Spur 0..7 Karte 0, 8..15 Karte 1,...; d.h. 32k pro Spur
+; i dsectr	Sektor 1..256			    ; d.h. Sektornr 1 Byte
+
+rna_tr: ld	hl,rnatrt-1	;Tabelle Karten-Kapazitaeten in 32k-Einheiten
+	ld	a,(dtrack)	;Wert von settrk
+rna_s1: inc	hl
+	ld	c,(hl)		;Basisadresse der Karte
+	inc	hl		;naechste Kapazitaet
+	sub	(hl)		;ist Spur auf dieser Karte?
+	jr	nc,rna_s1	;nein
+
+	add	a,(hl)		;relative Bank 0..7 in dieser Karte
+	ld	hl,(dsectr-1)	;H:=Sektor 1..256
+	dec	h		;Sektoren ab 0 zaehlen
+	ld	l,0		;HL:=Sektor*256
+	srl	a		;Bank 0..3
+	rr	h		;HL:=Sektor*128 (Adresse des Sektors in Bank)
+	rr	l
+	out	(c),h		;xxxxx000 - Fenstersegment (256er Grenze)
+	ld	de,rna_w	;Window im normalen RAM (256er Grenze)
+	ld	e,l		;00h oder 80h
+	rrca			;Bank 00..3 nach Bit 7,6
+	rrca
+	or	00111111b	;ausserhalb des Fensters Bank 3
+	set	1,c		;xxxxx010
+	out	(c),a		;Bank einstellen
+	ld	hl,(ddma)
+
+	ld	a,c		;retten Portadresse
+	xor	010b xor 101b
+	ld	c,a		;xxxxx101
+	di			;falls Fenster durch Interrupt angesprochen
+	out	(c),a		;Speicher ein
+	set	1,c		;xxxxx111
+	out	(c),a		;MEMDI-Generierung freigeben
+	djnz	rna_mv		;B=1 bei lesen
+	ex	de,hl
+rna_mv: ld	bc,128
+	ldir
+	xor	101b xor 100b
+	ld	c,a		;xxxxx100
+	out	(c),a		;Speicher aus
+	ei
+
+	xor	A		;read/write fehlerfrei
+	RET
+
+;*************************************************************
+; Steuertabellen fuer RAM-Floppy
+;*************************************************************
+
+dphm:
+rafdph: dw	0		;ohne Translate-Tabelle
+	dw	0,0,0
+	dw	dirbuf
+	dw	rafdpb
+	dw	0
+	dw	alvraf
+
+dpbm:
+rafdpb: ;wird je nach NRAF-Kapazitaet gestellt, Beispiel 256K
+	dw	256		;Sectors per Track
+	db	3,7,1		;1k Gruppen
+	dw	256-1
+	dw	64-1,0c0h	;64 Dir
+	dw	0		;keine Check-Area
+	dw	0		;keine System-Spuren
+	db	80h		;kein Disketten-DPB
+
+dpham	aset	dphm		;definieren LW "M:"
+
+; Tabelle der Adressen und Kapazitaeten, wird vom Kaltstart gefuellt
+rnatrt: IRP	di,<1,2,3,4>
+ if di le rna_nb
+	db	rna_d&di	;Portadresse
+	db	0		;Kapazitaet
+ endif
+	 ENDM
+
+;---------------------------------------------------------------------------

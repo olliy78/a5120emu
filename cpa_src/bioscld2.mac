@@ -1,0 +1,231 @@
+; 23.12.88
+; - Anforderung des Datums bei "datvar"<>0
+
+; Ende der Kaltstart-Initialisierungen
+;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	ei
+	ld	hl,kalts1	;erneuten kaltstart
+	ld	(BIOS00+1),hl	;umlenken
+	LD	HL,kaltm	;Startmeldung, variabler Teil
+	CALL	cputms
+
+; Hauptspeicher-Test TPA-Bereich
+;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	ld	hl,ramtt
+	call	cputms
+	ld	hl,tpaend+1
+	ld	de,kaltsb+kaltsl+3;Kaltstart-Code nicht modif.
+	or	a
+	sbc	hl,de		;Restlaenge TPA (-3 fuer JP)
+	ld	b,h
+	ld	c,l
+	ex	de,hl
+ramtz:	ld	a,(hl)
+	cpl
+	ld	(hl),a
+	cp	(hl)		;angekommen?
+	jr	nz,ramter	;nein
+	cpl
+	ld	(hl),a
+	inc	hl
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,ramtz
+	ld	hl,ramtok
+	call	cputms
+	jp	ramten
+rameh:	ld	a,h
+	call	dcnvoa
+	ld	a,l
+
+; Rueckkonvertieren Byte in A nach (DE)
+; RET: 2 Zeichen ab (DE), DE zeigt auf naechstes freies Byte
+dcnvoa:	call	dcnva
+
+; Rueckkonvertieren A in HEX-Ziffern nach (DE)
+; RET: A um 4 bits nach rechts rotiert
+;      DE zeigt auf naechstes Byte
+dcnvol:
+dcnva:	rrca			;linkes Halbbyte
+	rrca
+	rrca
+	rrca
+dcnvor:				;rechtes Halbbyte
+	push	af		;fuer 2. dcnva-Aufruf retten
+	and	0fh
+	sub	9+1
+	jr	c,dcnvod	;0..9
+	add	a,7		;A..F
+dcnvod:	add	a,'0'+10
+	ld	(de),a
+	inc	de
+	pop	af
+	ret
+
+ramter:	ld	de,ramead
+	call	rameh
+	ld	de,BDOS+6	;jp BDOS+6 vor diese Stelle
+	dec	hl
+	ld	(hl),d
+	dec	hl
+	ld	(hl),e
+	dec	hl
+	ld	(hl),0c3h
+	ld	(bdosre),hl	;diesen Sprung als BDOS setzen
+	dec	hl
+	ld	de,ramete
+	call	rameh
+	ld	hl,ramert
+	call	cputms
+ramten:
+
+ IF uhrvar		;stellen der Uhr
+	ld	hl,uhrini	;Aufforderung fuer Uhr stellen
+	call	putmes		;ausgeben
+	ld	hl,uhrins
+uhrin1:	push	hl
+ IF cpu eq c1715
+	ld	hl,babdyn	;max. Wartezeit in Sekunden
+uhrw3:	push	hl
+	ld	b,100		;100*10ms=1 Sek.
+uhrw2:	push	bc
+	call	const		;Zeichen da?
+	or	a
+	jr	nz,uhrw1	;ja
+	ld	b,1
+	call	wait10		;10 ms warten
+	pop	bc
+	djnz	uhrw2
+	pop	hl
+	dec	hl
+	ld	a,h
+	or	l		;Wartezeit abgelaufen?
+	jr	nz,uhrw3	;nein
+babsw:	ld	a,(babfrm)
+	xor	40h		;umschalten Bildschirmformat
+	ld	(babfrm),a
+	jp	cldrty		;Kaltstart wiederholen
+uhrw1:	pop	bc
+	pop	hl
+ ENDIF
+	call	conin		;Zeichen holen
+	pop	hl
+ IF cpu eq c1715
+	cp	1bh		;ESC
+	jr	z,babsw		;ja, BS umschalten
+ ENDIF
+	cp	0dh		;CR?
+	jp	z,uhrw4		;ja, fertig
+	call	uhrchr		;eingegebenes Zeichen auswerten
+	ld	a,(hl)
+	cp	' '		;rechtes Eingabe-Ende?
+	jr	nz,uhrin1	;nein
+uhrw4:	jp	uhrine		;ja, fertig
+
+uhrchr:	cp	08h		;back?
+	jr	z,uhrinb	;ja
+	cp	7fh		;del?
+	jr	z,uhrinb	;ja
+	cp	04h		;^D? (Kursor nach rechts)
+	jr	z,uhrinf	;ja
+	cp	'9'+1		;irgendeine Nicht-Ziffern-Taste?
+	jr	c,uhrinz	;nein
+	dec	hl
+	ld	a,(hl)
+	inc	hl
+	cp	3ah		;Position rechts neben Trennzeichen?
+	ret	nc		;ja, Eingabe ignorieren
+	dec	hl
+	ld	(hl),'0'	;sonst fuehrende Null
+	ld	c,8
+	call	uhrinc
+	ld	c,'0'
+	call	uhrinc
+	inc	hl		;und die Ziffer um eins nach rechts
+	jr	uhrinl
+uhrinz:	cp	'0'		;Ziffer
+	ret	c		;nein, ignorieren
+uhrinl:	ld	(hl),a		;Zeichen in Text
+	ld	c,a		;und auf Bildschirm
+	jr	uhrif1
+uhrinf:	ld	c,15h		;Kursor nach rechts
+uhrif1:	inc	hl		;Textposition nach rechts
+	call	uhrinc
+	ld	a,(hl)		;aktuelle Kursorposition
+	cp	3ah		;Trennzeichen?
+	jr	nc,uhrinf	;ja, uebergehen
+	ret
+
+uhrinb:	dec	hl		;eine Position nach links ausfuehren
+	ld	c,8		;Kursor nach links
+	call	uhrinc
+	ld	a,(hl)
+	cp	' '		;linkes Textende?
+	jr	z,uhrinf	;ja, back zuweit
+	cp	3ah		;Trennzeichen?
+	jr	nc,uhrinb	;ja, uebergehen
+	ret
+
+uhrinc:	push	af
+	push	hl
+	push	bc
+	call	conol
+	pop	bc
+	pop	hl
+	pop	af
+	ret
+
+uhrini:	db	0dh,0ah
+	db	'- Bitte Uhrzeit'
+ IF datvar
+	db	' und Datum'
+ ENDIF
+ IF cpu eq c1715
+	db	0dh,0ah
+	db	'  oder ESC fuer anderes Bildschirmformat eingeben!'
+  IF babdyn
+	db	0dh,0ah
+	db	'  (nach '
+	decout	babdyn
+	db	' Sekunden ohne Eingabe wird ESC simuliert)'
+  ENDIF
+ ELSE
+	db	' eingeben!'
+ ENDIF
+	db	0dh,0ah
+	db	' HH:MM:SS'
+  IF datvar
+	db	':DD:MM:YY'
+  ENDIF
+	db	86h		;hell ein
+	db	0dh,0ah
+	db	' '
+uhrins:	db	'00:00:00'
+  IF datvar
+	db	':00:00:00'
+  ENDIF
+	db	' ',84h,0dh,15h	;normal ein, zurueck auf erste Eingabepos.
+	db	0
+
+uhrinn:	db	0dh,0ah,0
+
+uhrine:	ld	hl,uhrinn
+	call	putmes
+	ld	de,uhrins
+	ld	hl,bcduhr
+  IF datvar
+	ld	b,6
+  ELSE
+	ld	b,3
+  ENDIF
+uhrin4:	ld	a,(de)
+	rld
+	inc	de
+	ld	a,(de)
+	rld
+	inc	de
+	inc	de		;':' uebergehen
+	inc	hl
+	djnz	uhrin4
+ ENDIF

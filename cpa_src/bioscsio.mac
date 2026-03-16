@@ -1,0 +1,338 @@
+;===================================================================
+; SIO-Treiber, DTR- und DC1/DC3-Protokoll
+;===================================================================
+;
+; Aenderungen:
+; - Statusabfrage jedesmal, auch wenn zuvor frei gemeldet
+; - Pufferueberlauf bei UC1-Puffer kontrolliert
+; - bei DC1/DC3 nach Initialisierung 7fh an Drucker und max. 30 sec auf
+;  Antwort gewartet (sonst Fehler am SD1157, wenn zu frueh gesendet wird)
+; 29.6.88:
+; - bei DC1/3 Protokoll wird neu initialisiert, wenn DC4 vom Drucker kommt
+;  (Probleme bei K6314)
+; 20.09.88
+; - Neben DTR-Statusabfrage ueber Kanal B, Bit 3 (Treiber 1, Standard)
+;  auch DTR-Statusabfrage ueber Kanal A, Bit 5 (Treiber 3) unterstuetzt
+; 23.03.89
+; - CTS-Zusammenspiel bei K6311 u.ae. funktioniert nur, wenn bis zum
+;   Verlassen aller Bits aus dem Sender gewartet wird und nicht nur auf
+;   das Freiwerden des Sendepuffers - sonst Zeichenverlust!
+; - wenn UC1 am Kanal A wird WR1 Bit2 und WR2 im Kanal B gesetzt
+ IF cpu eq c1715
+; - Wegen evtl. parallelem Tastaturpolling am gleichen Kanal di/ei-Klammern
+;   um alle SIO-Status-E/A-Befehle, die nicht Register 0 adressieren
+ ENDIF
+; 04.04.89
+; - nach Drucker-Init 'set 0,(ix+ltpst)' statt 'ld (ix+ltpst),11h'
+; 06.07.89
+; - wegen K6314-Problemen wird nach Initialisierung DC1 angenommen
+; - bei UC1-Kopplung ueber DTR ohne Warten auf Senderegister leer,
+;   nur Warten auf Sendepuffer leer
+;   (Aenderung 23.03.89 daher nur fuer Drucker wirksam, sonst zu langsam)
+; 15.09.89
+; - bei UC1-Kopplung ueber DC1/DC3 nicht 7fh zu Beginn gesendet, sondern DC1
+;**************************************************************************
+
+cdsioi	equ	dumi		;keine Zeicheneingabe unterstuetzt
+
+; Einzelzeichenausgabe Reg. A
+cdsioo:	ld	c,(ix+ltpsd)	;Datenport
+	out	(c),a
+	ret
+
+;------------------------------------
+
+; Statusabfrage
+cdsios:	ld	a,(ix+ltpst)	;Status
+	bit	1,a		;senderseitig blockiert?
+	jr	nz,lstsr	;ja, frei rueckmelden
+	or	a		;initialisiert?
+	call	z,cdsins	;nein
+	bit	7,(ix+ltpw5)	;Prozedur DTR?
+	JR	Z,lstsdc	;nein
+	ld	c,(ix+ltpsc)	;SIO Kommando
+ IF iobuc1
+	bit	7,(ix+ltpdc)	;Warten auf Senderegister leer?
+	jr	z,lstse0	;ja
+	ld	a,00010000b	;Reset Ext/Status-Interrupt, Lesereg. 0
+	out	(c),a		;Status abspeichern
+	in	a,(c)		;Lesereg. 0
+	bit	2,a		;Sendepuffer leer?
+	jr	nz,lstse1	;ja
+	jr	lstsr		;nein, Drucker besetzt
+lstse0:
+ ENDIF
+ IF cpu eq c1715 ;wegen evtl. parallelem Tastaturpolling am gleichen SIO-Kanal
+	di
+ ENDIF
+	LD	a,00010001b	;Reset Ext/Status-Interrupt, Lesereg. 1
+	OUT	(C),a		;Status abspeichern
+	IN	a,(C)		;Leseregister 1
+ IF cpu eq c1715 ;wegen evtl. parallelem Tastaturpolling am gleichen SIO-Kanal
+	ei
+ ENDIF
+	bit	0,a		;alle Bits gesendet?
+				; Sendepuffer frei reicht nicht, da
+				; K6311 u.ae. nicht korrekt arbeiten
+	jr	z,lstsr		;nein, Drucker besetzt
+lstse1:	bit	3,(ix+ltpdc)	;Abfrage DTR ueber DCD im Kanal B?
+	jr	nz,lstsb3	;ja
+	in	a,(c)		;Leseregister 0
+	bit	5,a		;CTS?
+	jr	lstsr		;nz bei ja
+lstsb3:	inc	c
+	inc	c		;auf Kanal B
+	LD	a,00010000b	;Reset Ext/Status-Interrupt, Lesereg. 0
+	out	(c),a		;DCD in RR0 Kanal B abspeichern
+	in	a,(c)		;Leseregister 0 des Kanal B
+	bit	3,a		;DCD im Kanal B (ist DTR-Bit vom Kanal A)
+; Ausgang Senderstatus
+lstsr:
+lstsr1:	ld	a,0ffh
+	ret	nz		;senderseitig frei
+	inc	a		;A=00, ret z
+	RET			;senderseitig besetzt
+;-----------------------
+; DC1/DC3 und XON/XOFF
+lstsdc:	LD	C,(ix+ltpsd)	;SIO Daten
+	IN	A,(C)		;Status lesen (SIO speichert letzten Status)
+	LD	(ix+ltpdc),A	;zuletzt empf. Zeichen fuer Fehlersuche merken
+	and	7fh		;evtl. Paritaet ignorieren
+	cp	13h		;DC3?
+	jr	z,lstsd2	;ja, besetzt
+	cp	14h		;DC4 (Status)?
+	jr	nz,lstsd1	;nein (DC1 angenommen)
+	call	cdsini		;statt Status abzuholen neu initialisieren
+	jr	lstsdc		;und Status neu abfragen
+lstsd1:	ld	c,(ix+ltpsc)	;SIO Kommando
+	in	a,(c)
+	bit	2,a		;Sendepuffer leer? (nz bei ja)
+	jr	lstsr
+lstsd2:	xor	a		;A=00, ret z
+	ret			;senderseitig besetzt
+
+;-----------------------
+
+; (Re-)Initialisierung
+; IX auf Steuertabelle
+; ret: C zeigt auf Kommandoport
+
+; Sender initialisieren
+cdsins:
+	set	0,(ix+ltpst)	;Sender ist initialisiert
+	call	cdsini
+	bit	7,(ix+ltpw5)	;Prozedur DC1/DC3?
+	ret	nz		;nein
+	ld	b,c
+	ld	c,(ix+ltpsd)	;Datenport
+ IF iobuc1
+ 	bit	7,(ix+ltpdc)	;Warten auf Senderegister leer?
+	jr	z,cdsind	;ja, Drucker
+	ld	a,11h		;bei UC1: mit DC1/DC3-Protokoll DC1 senden
+	out	(c),a
+	ld	c,b
+	ret
+ ENDIF
+cdsind:	ld	a,7fh		;nach Initialisierung RESET senden
+	out	(c),a
+	ld	c,b
+	ld	de,30*100	;max. Wartezeit ca. 30 sec (SD1157!)
+cdsinw:	in	a,(c)
+	bit	0,a		;Antwort da?
+	ret	nz		;ja
+	ld	b,1
+	call	wait10		;10ms warten
+	dec	de
+	ld	a,d
+	or	e		;max. Wartezeit abgelaufen?
+	jr	nz,cdsinw	;nein
+	ret			;sonst Drucker wohl nicht bereit
+
+
+; gem. UP fuer Sender und Empf. initialisieren
+cdsini:
+	push	ix
+	pop	hl
+	ld	bc,ltpini
+	add	hl,bc
+ IF cpu eq c1715 ;wegen evtl. parallelem Tastaturpolling am gleichen SIO-Kanal
+	di
+ ENDIF
+	call	portpr		;CTC, WR0, WR4, WR1, WR3
+ IF cpu eq c1715 ;wegen evtl. parallelem Tastaturpolling am gleichen SIO-Kanal
+	ei
+ ENDIF
+ltpow5:	LD	e,(ix+ltpw5)	;Prozedurtyp/Bitanzahl
+; Stellen Schreibregister 5
+; Reg. B,HL bleiben erhalten
+ltpot5:	ld	a,5
+	ld	c,(ix+ltpsc)
+ IF cpu eq c1715 ;wegen evtl. parallelem Tastaturpolling am gleichen SIO-Kanal
+	di
+ ENDIF
+	OUT	(C),A
+	OUT	(C),e
+ IF cpu eq c1715 ;wegen evtl. parallelem Tastaturpolling am gleichen SIO-Kanal
+	ei
+ ENDIF
+	RET
+
+;-------------------------------------
+ if iobuc1
+
+; UC1-Routinen (ausser Senden)
+
+; UC1: Empf.-Status
+;==================
+; o A=0, ret z	: kein Zeichen empfangen
+; o A=ff,ret nz	: Zeichen da
+uc1st:	ld	ix,lstuc1	;Stellen IX auf Steuertabelle
+uc1si:	;interner Aufruf mit gestelltem IX
+	bit	4,(ix+ltpst)	;initialisiert?
+	jr	nz,uc1si1	;ja
+	xor	a
+	ld	(uc1bfp),a	;Puffer leeren
+	call	cdsini		;Initialisierung
+	set	4,(ix+ltpst)	;Empfaenger ist initialisiert
+	di
+ IF (uc1dat xor uc1sta) eq 01b	;Kanal-Nr ist Bit 1 (bei Buerocomp und OEM)
+  IF (uc1sta and 10b) eq 00b	;UC1 ist an Kanal A
+	set	1,c		;Kanal B erzwingen
+  ENDIF
+ ELSE				;Kanal-Nr ist Bit 0 (bei PC1715)
+  IF (uc1sta and 01b) eq 00b	;UC1 ist an Kanal A
+	set	0,c		;Kanal B erzwingen
+  ENDIF
+ ENDIF
+	ld	hl,uc1i2	;WR1,WR2 programmieren
+ 	ld	b,uc1il
+	otir
+	ei
+	call	uc1ird		;DTR bzw. DC1 senden
+uc1si1:	ld	a,(uc1bfp)	;Zeichen im Empfpuffer?
+	or	a
+	ret	z		;nein
+	ld	a,0ffh
+	ret
+
+uc1i2: ;zusaetzliche Initialisierung fuer WR1/Bit2 und WR2 (beide nur Kanal B)
+ IF (uc1dat xor uc1sta) eq 01b	;Kanal-Nr ist Bit 1 (bei Buerocomp und OEM)
+  IF (uc1sta and 10b) eq 00b	;UC1 ist an Kanal A
+	db	1,00000100b	;WR1, Kanal B: Intv.modif. setzen
+  ENDIF
+ ELSE				;Kanal-Nr ist Bit 0 (bei PC1715)
+  IF (uc1sta and 01b) eq 00b	;UC1 ist an Kanal A
+	db	1,00000100b	;WR1, Kanal B: Intv.modif. setzen
+  ENDIF
+ ENDIF
+	db	2,ivsio0	;WR2, Kanal B: Interruptvektor
+uc1il	equ	$-uc1i2
+; UC1: empf. Zeichen an Nutzer
+;=============================
+; o A:	aeltestes empf. Zeichen
+
+uc1i:	ld	ix,lstuc1	;Stellen IX auf Steuertabelle
+
+uc1ii:	;interner Aufruf mit gestelltem IX
+uc1iw:	ei			;UC1:-Interrupt zulassen
+	call	uc1si		;Zeichen da?
+	jr	z,uc1iw		;nein ***keine Zeitueberwachung!***
+	ld	hl,uc1bfp
+	di
+	ld	c,(hl)
+	dec	(hl)		;Pufferlaenge -1
+	ld	b,0
+	inc	hl		;^(aeltestes Pufferzeichen)
+	ld	a,(hl)		;Zeichen nach A
+	ld	de,uc1buf+1
+	ex	de,hl
+	ldir			;Puffer aufschieben
+	ei
+	bit	7,(ix+ltpst)	;war Stopaufforderung?
+	ret	z		;nein
+	push	af		;retten Zeichen
+	ld	a,(uc1bfp)	;Pufferbelegung
+	cp	1*uc1bfl/3	;unter dem Limit?
+	call	c,uc1ird	;ja, Senden wieder erlauben
+	pop	af
+	ret
+
+; Empfangsbereitschaft anzeigen
+uc1ird:	res	7,(ix+ltpst)
+	bit	7,(ix+ltpw5)	;Prozedur DC1/DC3?
+	jp	nz,ltpow5	;nein, DTR wieder setzen
+	ld	a,11h		;DC1 (Senden wieder erlauben)
+	LD	C,(ix+ltpsd)	;SIO Daten
+	OUT	(C),A
+	ret
+
+; UC1: Empf.-Interrupt
+;=====================
+uc1rin:	ld	(intsp),sp
+	ld	sp,intstk
+	push	af
+	push	hl
+	push	de
+	push	bc
+	push	ix
+	ld	hl,uc1rir
+	push	hl
+	ld	ix,lstuc1	;Stellen IX auf Steuertabelle
+	ld	c,(ix+ltpsd)	;SIO Daten
+	in	b,(c)		;Zeichen lesen
+	ld	hl,uc1bfp	;Pufferzeiger zum zuletzt empf. Zeichen
+	ld	a,(hl)
+	cp	uc1bfl		;Puffer voll?
+	ret	nc		;ja, Zeichen ignorieren
+	cp	2*uc1bfl/3	;Puffer fast voll (SIO-Empf.puffer 3 Byte!)?
+	call	nc,uc1ri1	;ja, DC3 senden bzw. DTR wegnehmen
+	inc	(hl)		;+1
+	ld	e,(hl)
+	ld	d,0
+	add	hl,de		;naechste freie Stelle
+	ld	(hl),b		;Zeichen in Puffer
+	ret
+uc1rir:	pop	ix
+	jp	intrbc		;fertig
+
+; Stopaufforderung senden
+; B,HL bleibt erhalten
+uc1ri1:	set	7,(ix+ltpst)	;merken Stopaufforderung
+	ld	e,(ix+ltpw5)
+	bit	7,e		;Prozedur DC1/DC3?
+	jr	z,uc1ri2	;ja
+	res	7,e		;DTR loeschen
+	jp	ltpot5
+uc1ri2:	ld	a,13h		;DC3 an Partner (Senden stopppen)
+	LD	C,(ix+ltpsd)	;SIO Daten
+	OUT	(C),A
+	ret
+
+; UC1: Interrupt Empf.-Fehler (Parit., Ueberlauf, Rahmenfehler)
+;============================
+uc1err:	ld	(intsp),sp
+	ld	sp,intstk
+	push	af
+	push	hl
+	push	de
+	push	bc
+	push	ix
+	ld	ix,lstuc1	;Stellen IX auf Steuertabelle
+	ld	c,(ix+ltpsc)	;SIO Kommando
+	ld	d,00110000b	;Reset Fehler-Interrupt
+	out	(c),d
+				;keine Fehlermeldung, da bei
+				;Empf.ueberlauf alles noch
+				;mehr verzoegert wird
+	jr	uc1rir
+
+; UC1: Empfangspuffer
+;====================
+uc1bfp:	db	0
+uc1buf:	ds	uc1bfl,0
+
+ endif	;uc1
+
+
+cldrty:	di			;Wdhlg mit neuem BS-Format
+ ENDIF

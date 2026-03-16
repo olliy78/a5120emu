@@ -1,0 +1,318 @@
+;****************************************************************
+; Treiber fuer Ansteuerung K5120/K5122 ueber K2526 (mit Hilfsprozessor)
+; 04.06.87
+; - Fehlerkorrektur 8" MFM (Taktzeiten)
+; 25.09.89
+; - wegen MFS 1.2 nach Transfer b1 (= fault reset) als Standardwert
+;****************************************************************
+
+diorun:
+	ld	hl,(ft.adr)
+	ld	(diodma),hl
+
+; physischen Transfer ueber CPU 2 starten
+
+	ld	hl,dio
+diortn	equ	$-2
+	ld	bc,(1)		;retten HS 1
+	ld	(1),hl		;CPU 2 -Routine
+	ld	a,0feh
+	ld	(dtrret),a	;stellen Warte-Reaktion
+	XOR	A
+	OUT	(fldaad),A
+	OUT	(04H),A		;reset CPU 2
+	dec	a		;Mode 3 (Bit E/A)
+	OUT	(fldabc),A
+	OUT	(fldabc),A	;alles Input
+	ld	a,10111001b	;AMF aus, Fault reset
+	out	(flcoad),a
+	LD	A,10100101b	;Seite einstellen, Mark reset, AMF aktiv
+diom02	equ	$-1		;a5/a1
+	OUT	(flcoad),A
+	LD	A,7FH		;Mode 1
+	OUT	(fldabc),A
+	IN	A,(fldabd)	;CPU2 starten (ueber BUSRQ)
+; durch die Anfangsinitialisierung der CPU2 vergehen die notwendigen
+; 100 Mikrosek. fuer Seitenumschaltung
+	ld	(1),bc		;HS 1 wiederherst.
+	LD	A,(diom01)	;Lesen Marke
+	OUT	(flcoad),A	;weiter bei CPU2 nach Anfangsinit.
+; Achtung!! Zur Synchronisation CPU1 und CPU2 keine 2-Byte-Werte
+; (Adressen) verwenden, da dazwischen BUSRQ auftreten kann und dann
+; nur ein Byte gesetzt wurde!!
+	jr	$		;auf CPU 2 Ende warten
+dtrret	equ	$-1
+dtrwjr:
+dtrtor:	jp	fl.to1		;time out
+dtrner:	jp	noerr		;fehlerfrei (Sekt.id)
+dtrnsr:	jp	serrx		;Sektor nicht gefunden
+dtrrdr:	jp	dtrrde		;Read Ende
+dtrwrr:	jp	dtrwre		;Write Ende
+;--------------------------
+
+
+; Code CPU 2 fuer phys. Diskettentransfer
+;========================================
+; Zeitbedingungen fuer 8" MFM:
+; 6 Umdrehungen pro Sec bei 2*5208 Bytes pro Spur bedeutet
+; 1/(6*2*5208), d.h. 16 Mikrosec pro Byte!!
+; Bei einer Taktfrequenz von (9600*256)=2457600 Hz sind das
+; (9600*256)/(6*2*5208) Takte, d.h. max. 39 Takte pro Byte!!
+; Wegen BUSRQ/BUSAK muss davon der laengste Maschinenzyklus
+; der CPU 1 abgezogen werden, d.h. 6 Takte (Interruptannahme),
+; weiterhin je ein Takt fuer BUSRQ/BUSAK-Umschaltung,
+; es verbleiben 31 Takte zwischen den E/A-Maschinenzyklen!!
+
+; normaler Entry in phys. Diskettentransfer
+;==========================================
+dio:	
+	xor	a		;wiederherstellen 'jr diokl'
+	ld	(diomd1+1),a
+	ld	hl,0
+diodma	equ	$-2		;Transferadresse
+	ld	a,0
+secan1	equ	$-1		;a':=Zahl zu transfer. phys. Sekt.
+	ex	af,af'
+	ld	de,crcber	;auf Beginn Datenbyte-/CRC-Vektor
+dio2:	exx
+	ld	bc,000ffh	;bc':= Spur, Seite
+sidtr	equ	$-2
+sidsid	equ	$-1
+	ld	hl,0ffffh	;hl':= Sektor, Sektlngflag
+sidsec	equ	$-2
+sidlen	equ	$-1
+	ld	de,0fea1h	;de':= Sektorid-Byte, Kluftbyte
+	ld	a,60		;Wiederholungszaehler falscher Sektid.
+	ld	(seerc),a	;fuer ersten Sektor stellen
+diostp:	ld	a,10111101b	;bd/b9, AMF aus, Seite bleibt (>=100 Mikros.)
+diom13	equ	$-1
+	out	(flcoad),a	;Ende CPU2
+	jr	diogo		;Fortsetzung nach Anfangsinit
+
+dionss:
+	ld	a,60		;Wiederholungszaehler falscher Sektid.
+	ld	(seerc),a	;fuer naechsten Sektor setzen
+diomr:
+	ld	a,5		;verhindern unendl. Schleife
+	ld	(fl.zto),a	;bei fehlender Sektor-Marke
+diomrk:	ld	a,10110101b	;b5/b1 MFM; b5/b1 FM
+diom03	equ	$-1		;Mark reset, lesen 1
+	out	(flcoad),a
+	ld	a,10000101b	;85/81 MFM; 87/83 FM
+diom01	equ	$-1		;Lesen Marke entspr. Aufzverf.
+	out	(flcoad),a
+diogo:	in	a,(fldabd)
+	out	(fldaad),a
+diomd1:	jr	diomd1+2	;wird modifiziert mit 'jr diotrr',
+				;wenn Sektorid zu lesen
+diokl:	in	a,(fldabd)
+	cp	e		;'A1', d.h. noch in Kluft?
+	jr	z,diokl		;ja
+	cp	d		;'FE', d.h. Sektorbeginn?
+	in	a,(fldabd)
+	jr	nz,diomrk	;nein, weitersuchen
+	cp	c		;Spur ok?
+	in	a,(fldabd)
+	jr	nz,serr		;nein, falscher Sektid.
+	cp	b		;Seite ok?
+	in	a,(fldabd)
+	jr	nz,serr		;nein, falscher Sektid.
+	cp	l		;Sektor ok?
+	in	a,(fldabd)
+	jr	nz,serr		;nein, falscher Sektid.
+	cp	h		;Sekt-Laengencode?
+	in	a,(fldabd)	;**ignorieren CRC Sektid**
+	jr	nz,serr		;nein, falscher Sektid.
+	exx
+	in	a,(fldabd)	;**ignorieren CRC Sektid**
+	ld	b,17		;Zahl zu uebergeh. Bytes
+diomd2	equ	$-1		;bei DD auf 17, bei SD auf 6
+diosyn:	in	a,(fldabd)	;Bytes ignorieren
+	djnz	diosyn
+	in	a,(fldabd)
+	jp	diord
+dioop	equ	$-2		;wird modifiziert entspr. Oper.
+;				 mit diord, diwmfm, diowfm
+
+; Entry fuer phys. Treiber zum Lesen Sekt.-Id. auf akt. Spur
+;===========================================================
+diotsr:	ld	a,diotrr-(diomd1+2)	;jr diotrr
+	ld	(diomd1+1),a	;modifizieren
+	ld	bc,3*256+fldabd	;Lesen 3 Bytes Sektorid
+	ld	hl,ft.trk+1	;dorthin Sektorid hinterlegen
+	jr	dio2		;Einsprung in phys. Treiber
+diotrr:
+diotr0:	in	a,(fldabd)
+	cp	e		;'A1', d.h. noch in Kluft?
+	jr	z,diotr0	;ja
+	cp	d		;'FE', d.h. Sektorbeginn?
+	in	a,(fldabd)	;wenn ja, so ist das die Spur
+	jr	nz,diomrk	;nein, weitersuchen
+	exx
+	inir			;Sektorid lesen
+	exx
+	ld	l,a		;Spur retten
+	ld	a,(diom03)
+	out	(flcoad),a	;Lesen 1
+	ld	a,l
+	cp	c		;richtige Spur?
+	jr	z,diotr1	;ja
+	ld	a,(ft.sid)
+	sub	b		;stimmt side?
+	jr	nz,diotre	;nein, dies ist kein Sektid.
+	cp	c		;war Spur 0 gefordert?
+	jr	z,serr2		;ja, nachjustieren (ft.trk steht noch)
+diotr1:	ld	a,l
+	ld	(ft.trk),a	;(tatsaechliche) Spur aus Sekt.Id.
+	ld	a,dtrner-dtrwjr	;Reaktionsroutine
+	jr	dioend		;Abschlussbehandlung
+diotre:	exx
+	ld	bc,3*256+fldabd	;Lesen 3 Bytes Sektorid
+	ld	hl,ft.trk+1	;dorthin Sektorid hinterlegen
+	exx
+	jr	serr1
+;---------------------------
+
+; Fehlerausgaenge
+;----------------
+; falscher Sektorid.
+serr:	in	a,(fldabd)
+	ld	a,(diom03)	;Lesen 1
+	out	(flcoad),a
+serr1:	ld	a,(seerc)
+	dec	a		;blieb weiterer Versuch?
+	ld	(seerc),a
+	jp	nz,diomr	;ja
+serr2:	ld	a,dtrnsr-dtrwjr	;Sektor nicht gefunden
+	jr	dioend
+
+; Lesen
+;-------
+diord:	in	a,(fldabd)
+	ld	b,6
+diords:	in	a,(fldabd)	;uebergehen Synchron-Bytes
+	djnz	diords
+	ld	a,10110101b	;b5/b1
+diom10	equ	$-1
+	out	(flcoad),a	;Lesen 1
+	ld	a,(diom01)	;85/81 MFM; 87/83 FM
+	ld	bc,128*256+fldabd ;b:=inir-Laenge
+diosl1	equ	$-1		  ;   128 bei Sektl 128, sonst =0
+	out	(flcoad),a	;Lesen Marke
+	in	a,(fldabd)	;ignorieren evtl. anstehenden Muell
+diorkl:	in	a,(fldabd)
+	cp	0a1h		;noch in Kluft?
+	jr	z,diorkl	;ja
+dini1:	ini			;Daten lesen
+	ld	(de),a		;Datenbeginn-Byte hinterlegen
+dini2:	ini
+	inc	de
+dini3:	ini
+	inir
+	ex	de,hl
+	ini			;CRC Daten
+	ini
+	ld	a,(diom11)	;b1 fuer MFS 1.2 Fault reset, sonst b5/b1
+	out	(flcoad),a	;Lesen 1
+	ex	de,hl
+	ld	a,dtrrdr-dtrwjr	;Reaktionsroutine Read Ende
+
+; naechsten Sektor behandeln
+;---------------------------
+dions:	ex	af,af'		;Zahl zu uebertr. Sektoren
+	dec	a
+	jr	z,dionse	;=0, fertig
+	ex	af,af'
+	exx
+	inc	l		;Sektor+1
+	jp	dionss
+dionse:	ex	af,af'
+
+; Abschlussbehandlung
+;--------------------
+dioend:
+	ld	(dtrret),a	;Reaktionsroutine hinterlegen
+	jp	diostp		;Stop CPU2
+
+ IF @write
+
+ IF dsk8fm+dsk8mf+dsk5fm
+
+; Schreiben FM
+;-------------
+diowfm:	in	a,(fldabd)
+	ex	de,hl
+	in	a,(fldabd)
+	ld	bc,10100100b*256+flcoad
+diom04	equ	$-1		;a4/a0
+	in	a,(fldabd)
+	out	(c),b		;Schreiben FM Daten ein
+	in	a,(fldabd)
+	xor	a
+	out	(fldaad),a	;6*'00'
+	ld	bc,4*256+fldaad
+diowfs:	out	(fldaad),a
+	djnz	diowfs
+	ld	a,10110110b
+diom05	equ	$-1		;b6/b2
+	out	(c),b
+	out	(flcoad),a	;schreiben FM Marke ein
+	ld	a,10100100b
+diom06	equ	$-1		;a4/a0
+	outi			;'FB'	
+	out	(flcoad),a	;schreiben FM Daten ein
+	jr	diowrt
+ ENDIF
+
+
+; Schreiben  MFM
+;---------------
+diwmfm:	in	a,(fldabd)
+	in	a,(fldabd)
+	ld	bc,10110100b*256+flcoad
+diom07	equ	$-1		;b4/b0
+	in	a,(fldabd)
+	out	(c),b		;Schreiben MFM normal
+	in	a,(fldabd)
+	xor	a
+	out	(fldaad),a	; 1*'00'
+	ld	bc,10*256+fldaad
+diwmfs:	out	(fldaad),a	;10*'00'
+	djnz	diwmfs
+	ld	a,10110110b
+diom08	equ	$-1		;b6/b2
+	out	(c),b		; 1*'00'
+	out	(flcoad),a	;Schreiben MFM Marke
+	ld	b,0a1h
+	out	(c),b		;3*'A1'
+	ld	a,10110100b
+diom09	equ	$-1		;b4/b0
+	out	(c),b
+	ex	de,hl
+	out	(c),b
+	out	(flcoad),a	;Schreiben MFM normal
+	outi			;'FB'
+
+diowrt:	ld	b,128		;Laenge erster OTIR-Block
+diosl2	equ	$-1		;128 bei Sektl 128, sonst 0
+	ex	de,hl
+doti1:	outi			;Daten ausgeben
+doti2:	outi
+doti3:	outi
+	otir
+	ex	de,hl
+	outi			;CRC Daten
+	xor	a
+	outi
+diowm1:	ld	b,20		;Anzahl der Nach-Null-Bytes
+				;5" MFM/FM: 20; 8" MFM/FM: 2
+diow00:	out	(fldaad),a	;'00'
+	djnz	diow00
+	ld	a,10110001b	;b1 fuer MFS 1.2 Fault reset, sonst b5/b1
+diom11	equ	$-1
+	out	(flcoad),a	;Schreiben aus, Lesen 1
+	ex	de,hl
+	ld	a,dtrwrr-dtrwjr	;Schreiben OK Reaktion
+	jp	dions		;naechster Sektor
+
+	ENDIF	;@write

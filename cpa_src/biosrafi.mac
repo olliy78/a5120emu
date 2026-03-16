@@ -1,0 +1,502 @@
+;**************************************************************
+; Initialisierung der RAF, Teil 2 (eigentliche Initialisierung)
+; 17.06.88
+; 14.01.89
+; - Fehlerkorrektur bei 'rafpar eq 2': Dir wurde nicht geloescht
+;**************************************************************
+
+	ld	hl,0
+rafiaf	equ	$-2		;RAF-Initalisierungsflags
+	push	hl
+	pop	af
+	jp	z,rafil1	;keine RAF da
+	ld	de,rafms7	;RAF noch geladen?
+	jp	nc,rafil	;ja
+	ld	hl,rafms8	;RAF Formatierung
+	call	putmes
+
+	ld	c,'M'-'A'
+	ld	e,1		;ohne LOGIN
+	call	seldsk
+	ld	bc,dirbuf
+	call	setdma
+
+	ld	bc,0
+rafitr	equ	$-2		;Spuranzahl
+
+ IF (rafpar eq 0) or (rafpar eq 2)
+; zerstoerende RAF-Formatierung
+;==============================
+	ld	hl,0		;ab Spur 0
+rafpi2:
+ IF rafpar eq 2
+	push	bc		;retten Spuranzahl
+ ENDIF
+	push	hl		;retten Spur
+	ld	ix,rafmft
+	call	rafhld
+	ld	hl,rafms9
+	call	putmes
+
+	pop	de		;zu initialisierende Spur
+ IF rafpar eq 2
+	push	de
+ ENDIF
+	ld	hl,raftrt-1	;Tabelle der RAF-Kapazitaeten je Karte
+	ld	a,e
+	ld	c,raf_d-2	;Beginn bei RAF-Karte mit niedrigster I/O-Adr.
+rafpi1:	inc	c
+	inc	c		;naechste Karte
+	inc	hl		;naechste Kapazitaet
+	sub	(hl)		;ist gesuchte Spur auf dieser Karte?
+	jr	nc,rafpi1	;nein
+	dec	d		;war Spur >=100h?
+	jr	z,rafpi1	;ja, weitersuchen
+	add	a,(hl)		;relative Spur in aktueller Karte
+	ld	d,a		;0..127
+
+	ld	a,0e5h		;dirbuf mit E5 vorloeschen
+	call	rafidc
+	xor	a		;Sektor 0
+rafpit:	ld	e,a
+	call	rafpiw		;Sektor schreiben
+	ld	a,e
+	inc	a		;naechster Sektor
+ IF rafpar eq 0
+	cp	128		;noch ein Sektor?
+	jr	nz,rafpit	;ja
+ ENDIF
+ IF rafpar eq 2
+	cp	127		;noch ein Sektor?
+	jr	nz,rafpit	;ja
+	xor	a
+	call	rafidc		;dirbuf mit Parity-Byte fuellen
+	ld	a,127		;Parity-Sektor
+	call	rafpiw
+	pop	hl		;initialisierte Spur
+	inc	hl		;naechste Spur
+	pop	bc
+	dec	bc
+	ld	a,b
+	or	c		;noch eine Spur?
+	jr	nz,rafpi2
+ ENDIF
+	jr	rafpie
+
+; Fuellen dirbuf mit Konstante in (A)
+;------------------------------------
+rafidc:	ld	hl,dirbuf
+	ld	b,128
+rafid1:	ld	(hl),a
+	inc	hl
+	djnz	rafid1
+	ret
+
+; Schreiben dirbuf
+;-----------------
+; i A	Sektor 0..127
+; i B	Spur 0..127 (16k pro Spur)
+; i C	raf_d (I/O-Adresse fuer Karte)
+rafpiw:	ld	b,d		;0ttttttt
+	add	a,a		;wegen rra spaeter
+	srl	b		;00tttttt	PROT-Bit geloescht
+	rra			;tsssssss
+	inc	c
+	out	(c),a		;Laden RAF-Steuer-Register 00tttttttsssssss
+	dec	c		;zurueck auf raf_d
+	ld	b,128		;fuer otir
+	ld	hl,dirbuf
+	otir			;Byte 127..0
+	ret
+
+rafpie:
+ ENDIF ;zerstoerende Formatierung
+
+ IF rafpar eq 1
+; nichtzerstoerende RAF-Formatierung (ausser Directory loeschen)
+
+	ld	de,(rafdpb+7)	;Zahl der Dir-Eintraege -1
+ 	inc	de
+	ld	hl,0		;ab Spur 0
+rafpi2:
+	push	bc		;noch zu formatierende Spuren
+	push	hl		;zu initialisierende Spur
+	push	de		;retten Zahl zu loeschender Dir-Eintraege
+	ld	ix,rafmft
+	call	rafhld
+	ld	hl,rafms9
+	call	putmes
+	pop	de
+	pop	bc		;BC:=zu initialisierende Spur
+	push	bc
+	push	de
+	call	settrk
+	pop	de
+	xor	a		;ab Sektor 1
+rafpi1:	inc	a		;naechster Sektor
+	push	af
+	push	de		;noch zu loeschende Dir-Eintraege
+	ld	b,0
+	ld	c,a
+	call	setsec
+	call	read		;Sektor lesen, evtl. Parity ignorieren
+	pop	de		;noch zu loeschende Dir-Eintraege
+	ld	a,d
+	or	e		;noch im Directory?
+	jr	z,rafpid	;nein, Sektor nicht veraendern
+	ld	hl,dirbuf
+	ld	a,4
+	ld	bc,32		;Abstand der Dir-Eintraege
+rafpi4:	ld	(hl),0e5h	;Directory loeschen
+	add	hl,bc
+	dec	de
+	dec	a
+	jr	nz,rafpi4
+rafpid:	push	de
+	call	write		;dabei evtl. Parity setzen
+	pop	de		;noch zu loeschende Dir-Eintraege
+	pop	af
+	ld	hl,rafdpb+0	;Sektoren pro Spur
+	cp	(hl)		;noch ein Sektor?
+	jr	nz,rafpi1	;ja
+	pop	hl		;gerade initialisierte Spur
+	inc	hl		;naechste Spur
+	pop	bc		;noch zu formatierende Spuren
+	dec	bc
+	ld	a,b
+	or	c		;alle Spuren durch?
+	jr	nz,rafpi2	;nein
+rafpie:
+ ENDIF ;rafpar eq 1
+
+; RAF formatiert, Erkennungs-Eintrag in Dir
+rafdc0:	call	rafr01		;Spur 0, Sektor 1 nach dirbuf
+	ld	de,dirbuf
+	ld	hl,rafvld
+	ld	bc,32
+	ldir
+	call	write		;Sektor wieder ausgeben
+	ld	de,rafm9d
+	jp	rafil
+
+rafms7:	db	0dh,0ah,'M: ist noch wie bei letzter Benutzung geladen!'
+	db	0dh,0ah,0
+rafms8:	db	0dh,0ah,'M: ist undefiniert, es folgt '
+ IF rafpar eq 1
+	db	'nichtzerstoerende '
+ ENDIF
+	db	'Formatierung ...'
+	db	0dh,0ah,0
+rafms9:	db	83h,0dh,16h,'Spur'
+rafmft:	db	'?????',0
+rafm9d:	db	82h,0dh,0ah,0
+
+
+; HL dezimal ausgeben
+;--------------------
+rafhld:	push	hl
+	ld	c,0		;bisher nur fuehrende Nullen
+	ld	de,-10000
+	call	rafhls
+	ld	de,-1000
+	call	rafhls
+	ld	de,-100
+	call	rafhls
+	ld	de,-10
+	call	rafhls
+	ld	a,l
+	or	'0'
+	pop	hl
+	jr	rafhlo
+
+rafhls:	call	rafhlz
+	jr	nz,rafhlo	;keine fuehrende Null
+	ld	a,' '
+rafhlo:	ld	(ix),a
+	inc	ix
+	ret
+
+rafhlz:	ld	a,'0'-1
+rafhz1:	inc	a
+	add	hl,de
+	jr	c,rafhz1
+	sbc	hl,de
+	inc	c
+	cp	'0'
+	ret	nz
+	dec	c
+	ret
+
+
+; RAF-Test
+;=========
+
+; Es erfolgt ein nichtzerstoerender Test auf Verfuegbarkeit und Kapazitaet.
+; Maximal werden 'raf_nb' (<=4) Karten mit aufeinanderfolgenden I/O-Adressen
+; unterstuetzt, die beliebiger Art (RAF16..RAF2048) sein koennen, d.h.
+; gemischt und auch nur teilbestueckt, jedoch immer dicht und ab 0.
+; Maximal werden damit 8MByte RAF unterstuetzt.
+; Rueckkehr:
+; ret z, wenn keine RAF da
+; ret nz, wenn RAF da, dann
+;	DE Gesamt-Kapazitaet in 1K
+;	HL Gesamtzahl Spuren
+;	ret nc, wenn nicht jungfraeulich, sonst ret c
+
+raftst:	ld	hl,raftrt	;Tabelle fuer jeweilige Kapazitaet in Spuren
+	ld	de,0		;Gesamtkapazitaet
+	ld	bc,raf_nb*256+raf_d
+
+; naechste RAF-Karte
+rafinx:	push	bc
+	push	hl
+	ld	b,0		;b:=Spur (0..127)
+; naechste Spur
+rafint:	push	bc
+	xor	a		;Sektor 0
+	call	raftrs		;spur, sektor laden
+	ld	a,5ah		;Muster
+	in	l,(c)		;altes Byte retten
+	out	(c),a		;neues Byte
+	dec	b		;auch Nachbarbyte wegen Datenbuss
+	cpl
+	in	h,(c)
+	out	(c),a
+	inc	b
+	in	a,(c)		;neues Byte zuruecklesen
+	cp	5ah		;ist dort eine RAF?
+	out	(c),l		;altes Byte zurueck
+	jr	nz,rafine	;nein
+	dec	b
+	in	a,(c)
+	cp	0a5h
+	out	(c),h
+	jr	nz,rafine
+	pop	bc
+	inc	b		;naechste Spur
+	jr	nz,rafint	;Zwangsabbruch nach 256 Spuren (Fehler, 0 Sp.)
+	push	bc
+rafine:	pop	bc
+	ld	a,b		;Kapazitaet in Spuren 0..128 retten
+	ld	b,0ffh		;Zugriffsverbot
+	inc	c
+	out	(c),b		;fuer RAF-Karte
+	pop	hl		;raftrt
+	ld	(hl),a		;Kapazitaet dieser Karte merken (0..128)
+	add	a,e		;Gesamtzahl Spuren
+	ld	e,a
+	ld	a,0
+	adc	a,d
+	ld	d,a
+	pop	bc
+	inc	hl		;raftrt weiter
+	inc	c
+	inc	c		;I/O-Adresse weiter
+	djnz	rafinx		;naechste RAF-Karte testen
+
+; alle RAF-Karten getestet, DE enthaelt Geamtzahl Spuren (jeweils 16k-Spur)
+; DPB entsprechend Kapazitaet festlegen
+
+	ld	a,d
+	or	e		;mindestens eine RAF da?
+	jp	z,rafien	;nein, ret z
+	push	de
+	push	af		;ret nz, ret nc
+; Kapazitaet in 1k-Einheiten
+	ex	de,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+ 	add	hl,hl		;Kapazitaet in 1K (0..2048)
+ IF rafpar	;1/128 pro Spur abziehen und abrunden
+	ld	d,h
+	ld	e,l
+	ld	bc,127
+	add	hl,bc		;Kap - (Kap+127) div 128
+	ld	b,7
+rafipk:	srl	h
+	rr	l
+	djnz	rafipk
+	or	a
+	ex	de,hl
+	sbc	hl,de
+ ENDIF
+
+	ex	de,hl
+	push	de
+	ld	hl,rafdpm
+	ld	bc,15		;Laenge DPB
+rafind:	ld	a,(hl)
+	inc	hl
+	sub	e		;dpbkap - kap >=0?
+	ld	a,(hl)
+	inc	hl
+	sbc	a,d
+	jr	nc,rafidf	;ja, DPB-Muster gefunden
+	add	hl,bc
+	jr	rafind
+rafidf:	push	de
+	ld	de,rafdpb
+	ldir
+	pop	hl
+	ld	(rafvlk),hl	;Kapazitaet in 1K in Valid-Muster
+
+; RAF-Kapazitaet in BDOS-Blockeinheiten
+	ld	a,(rafdpb+2)	;Gruppengroesse
+	sub	3
+	jr	z,rafig0	;ist 1K
+	ld	b,a
+rafig1:	srl	h
+	rr	l
+	djnz	rafig1
+rafig0:	dec	hl		;Gruppenanzahl -1
+	ld	(rafdpb+5),hl	;in DPB fuer RAF
+
+; RAF-DPB komplett, Test, ob RAF jungfraeulich
+	call	rafr01		;Spur 0, Sector 1
+				;evtl. moeglicher Parity-Fehler ignoriert
+	ld	hl,dirbuf
+	ld	de,rafvld
+	ld	b,32		;Test RAF-valid Entry einschl. Kapazitaet
+rafvl1:	ld	a,(de)
+	cp	(hl)
+	jr	nz,rafvl2
+	inc	de
+	inc	hl
+	djnz	rafvl1
+	jr	rafvlf		;keine Jungfrau mehr
+
+; RAF ist frisch zugeschaltet
+rafvl2:	pop	de
+	pop	af
+	scf			;Anzeigen ueber CY-Flag
+	push	af
+	push	de
+rafvlf:
+	pop	de
+	pop	af
+	pop	hl
+rafien:	;Ende der RAF-Initialisierung, Z-Flag, CY-Flag und DE gestellt
+	ret
+
+
+; UP: Lesen Spur 0, Sektor 1
+rafr01:	ld	c,'M'-'A'
+	ld	e,1		;ohne LOGIN
+	call	seldsk
+	ld	bc,dirbuf
+	call	setdma
+	ld	bc,0
+	call	settrk
+	ld	bc,1
+	call	setsec
+	jp	read
+
+
+; Arbeitszellen RAF-Init
+;=======================
+
+rafvld:	db	32		;user 32
+ IF rafpar
+	db	'RFPvalid'
+ ELSE
+	db	'RAFvalid'
+ ENDIF
+	db	'S'+80h		;R/O
+	db	'Y'+80h		;SYS
+	db	'S'
+	ds	4+16,0
+rafvlk	equ	rafvld+30	;RAF-Groesse in k-Bytes
+
+; DPB-Tabellen fuer Initialisierung
+;----------------------------------
+
+rafdpm:
+
+; 0< Kap <= 64
+raf064:	dw	64
+ IF rafpar
+	dw	128-1		;letzter Sektor ist Parity
+ ELSE
+	dw	128		;Sektoren/Spur
+ ENDIF
+	db	3,7,0		;1k Gruppen
+	dw	64-1		;Gruppenanzahl -1
+	dw	32-1,80h	;32 Dir-Eintraege
+	dw	0,0		;kein Check, kein System
+
+; 64 < Kap <= 128
+raf128:	dw	128
+ IF rafpar
+	dw	128-1		;letzter Sektor ist Parity
+ ELSE
+	dw	128		;Sektoren/Spur
+ ENDIF
+	db	3,7,0		;1k Gruppen
+	dw	128-1
+	dw	64-1,0c0h	;64 Dir
+	dw	0,0
+
+; 128 < Kap <=256
+raf256:	dw	256
+ IF rafpar
+	dw	128-1		;letzter Sektor ist Parity
+ ELSE
+	dw	128		;Sektoren/Spur
+ ENDIF
+	db	4,15,1		;2k Gruppen
+	dw	128-1
+	dw	128-1,0c0h	;128 Dir
+	dw	0,0
+
+; 256 < Kap <=512
+raf512:	dw	512
+ IF rafpar
+	dw	128-1		;letzter Sektor ist Parity
+ ELSE
+	dw	128		;Sektoren/Spur
+ ENDIF
+	db	4,15,1		;2k Gruppen
+	dw	256-1
+	dw	128-1,0c0h	;128 Dir
+	dw	0,0
+
+; 512 < Kap <=1024
+ra1024:	dw	1024
+ IF rafpar
+	dw	128-1		;letzter Sektor ist Parity
+ ELSE
+	dw	128		;Sektoren/Spur
+ ENDIF
+	db	4,15,0		;2k Gruppen
+	dw	512-1
+	dw	256-1,0f0h	;256 Dir
+	dw	0,0
+
+; 1024 < Kap <=4096
+ra4096:	dw	4096
+ IF rafpar
+	dw	128-1		;letzter Sektor ist Parity
+ ELSE
+	dw	128		;Sektoren/Spur
+ ENDIF
+	db	5,31,1		;4k Gruppen
+	dw	1024-1
+	dw	512-1,0f0h	;512 Dir
+	dw	0,0
+
+; 4096 < Kap <=8192
+ra8192:	dw	8192
+ IF rafpar
+	dw	128-1		;letzter Sektor ist Parity
+ ELSE
+	dw	128		;Sektoren/Spur
+ ENDIF
+	db	6,63,3		;8k Gruppen
+	dw	1024-1
+	dw	512-1,0c0h	;512 Dir
+	dw	0,0
+
+rafil:	ex	de,hl
+	call	putmes
+rafil1:

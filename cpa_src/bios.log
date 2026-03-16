@@ -1,0 +1,30 @@
+*
+* Generierung CP/A, Version 25 .9 .89 *
+* Buerocomputer-Variante
+*
+* Hauptspeicher in Kbytes:  64
+* mit Unterstuetzung EM256 als RAM-Floppy
+* CCP Kopie im BIOS (keine Systemspuren notw.)
+* ohne BIOS-Monitor
+* ohne Speicherschutz
+* mit BIOS-Uhr
+* TTY: Geraet an Portadresse:  50
+* LPT: Geraet an Portadresse:  5E
+* UC1: Geraet an Portadresse:  50
+* ohne Moeglichkeit der NutzerTastenDefinition
+* Anzahl 5 1/4 Zoll Disketten-Laufwerke:  3
+* Groesse Diskettenpuffer:  1024
+* mit automatischer Disketten-Formaterkennung
+* mit Umlaut-Umkodierung fuer Bildschirmausgabe
+*
+* BIOS beginnt auf ..........  0D000
+* BIOS endet auf ............  0F697
+* berechnetes BIOS-Ende .....  0F769
+* Interruptsaeule beginnt auf  0F7D0
+*
+* Link-Anweisung:
+* linkmt @os=cpabas,ccp,bdos,x:bios/p: 0B980
+* mit x = Zielgeraet fuer bios.erl-File
+
+No Fatal error(s)
+

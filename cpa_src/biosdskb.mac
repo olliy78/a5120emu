@@ -1,0 +1,35 @@
+;;***************************************************************
+;;	Arbeitsbereiche logischer Floppy-Treiber im BIOS-RAM   *
+;;***************************************************************
+ IF dev eq cpd
+diocdb	equ	flbsw		;;CDB-Hilfsspeicher fuer diskio-Aufruf
+ ELSE
+diocdb:	ds	9,0ffh
+ ENDIF
+diocfl	equ	diocdb+0
+diocde	equ	diocdb+1
+dioctr	equ	diocdb+2
+diocsi	equ	diocdb+3
+diocse	equ	diocdb+4
+diocsl	equ	diocdb+5
+diocsn	equ	diocdb+6
+diocad	equ	diocdb+7
+diocdl	equ	9		;;Anzahl der Bytes
+
+ IF dev eq cpd
+ ELSE
+  IF disknb eq 0
+;; Arbeitsbereiche phys. Floppy-Treiber
+;;=====================================
+ft.kom:	db	0		;;Kommando
+ft.lwn:	db	0		;;LW-Nr.
+ft.trk:	db	0		;;Spur
+ft.sid:	db	0		;;Seite
+ft.sec:	db	0		;;Sektor
+ft.len:	db	0		;;Laenge
+ft.anz:	db	0		;;Anzahl
+ft.stp:	db	0		;;Schritt-Zahl
+ft.sti:	db	0		;;Schritt-Zeit
+ft.adr:	dw	0		;;Transferadresse
+  ENDIF
+ ENDIF

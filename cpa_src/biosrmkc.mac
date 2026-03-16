@@ -1,0 +1,169 @@
+	ld	a,(PagSW0)	;; Lesen Seite 0
+	call	brfltst		;; RAM-Disk, Seiten 0-3 vorhanden?
+	jr	nz,brfli3	;; ja
+	ld	a,(PagSW4)
+	call	brfltst		;; RAM-Disk, Seiten 4-7 vorhanden?
+	jr	z,brfliA	;; nein
+	ld	hl,PagSW4
+	ld	de,PagSW0
+	ld	bc,12
+	ldir
+	jr	brfliB
+brfliA:	ld	hl,baslwt	;; Startmeldung modifizieren
+	ld	(hl),'?'	;; keine RAM-Disk vorhanden
+	inc	hl
+	ld	(hl),'?'
+	ld	hl,0		;; Laufwerk M: in Liste streichen
+	ld	(dphatb+2*('M'-'A')),hl
+	jp	brfliend
+brfli3:	ld	a,(PagSW4)
+	call	brfltst		;; RAM-Disk, Seiten 4-7 vorhanden?
+	jr	nz,brfli6	;; ja, sonst nur Seiten 0-3 (256 kByte)
+brfliB:	ld	hl,basmc	;; Startmeldung modifizieren
+	ld	(hl),'2'
+	inc	hl
+	ld	(hl),'5'
+	inc	hl
+	ld	(hl),'6'
+	ld	hl,dpbm256	;; DiskParameterBlock tauschen
+	ld	de,dpbmkd
+	ld	bc,16
+	ldir
+	ld	hl,800h
+	ld	(brfm1),hl
+	ld	(brfm6),hl
+	ld	(brfm10),hl
+	ld	hl,-800h
+	ld	(brfm11),hl
+	ld	hl,10h
+	ld	(brfm7),hl
+	ld	a,4
+	ld	(brfm4),a
+	ld	a,16
+	ld	(brfm5),a
+	add	a,a
+	ld	(brfm13),a
+	inc	a
+	ld	(brfm14),a
+	xor	a
+	ld	(brfm12),a
+brfli6:	ld	hl,1000h	;; Anfangsadresse Directory
+brfm1	equ	$-2
+	ld	de,rflbuf
+	ld	bc,12
+	ld	a,(PagSW0)
+	call	brfl30		;; erster DateiName nach rflbuf
+	ld	hl,rflbuf
+	ld	de,brflk
+	ld	b,12
+brfli4:	ld	a,(de)
+	cp	(hl)
+	jr	nz,brfli5	;; Fehler, formatieren
+	inc	hl
+	inc	de
+	djnz	brfli4		;; naechstes Byte
+	jp	brfliend
+brfli5:	ld	hl,rflbuf	;; RAM-Disk formatieren
+	ld	d,h
+	ld	e,l
+	inc	de
+	ld	bc,80h-1
+	ld	(hl),0e5h
+	ldir
+	ld	de,0
+	ld	ix,PagSW8	;; schreiben Seite 0
+	ld	a,8		;; SeitenZahl
+brfm4	equ	$-1
+brfli0:	push	af
+	ld	bc,512		;; Sectoren/Seite
+brfli1:	push	bc
+	ld	hl,rflbuf
+	ld	bc,80h
+	ld	a,(ix)
+	call	brfl30
+	pop	bc
+	dec	bc
+	ld	a,c
+	or	b
+	jr	nz,brfli1	;; naechsten Sector
+	inc	ix		;; auf naechste Seite
+	pop	af
+	dec	a
+	jr	nz,brfli0
+	ld	hl,rflbuf	;; LRC ergaenzen
+	ld	d,h
+	ld	e,l
+	inc	de
+	ld	bc,80h-1
+	ld	(hl),0
+	ldir
+	ld	de,0		;; ab Adresse 0, Seite 0
+	ld	b,32		;; Zahl der Sektoren
+brfm5	equ	$-1
+brfli2:	push	bc
+	ld	hl,rflbuf
+	ld	bc,80h
+	ld	a,(PagSW8)
+	call	brfl30
+	pop	bc
+	djnz	brfli2
+	ld	hl,brflk	;; Kennung eintragen
+	ld	de,1000h
+brfm6	equ	$-2
+	ld	bc,20h
+	ld	a,(PagSW8)	;; Schreiben Seite 0
+	call	brfl30
+	ld	hl,brflk
+	ld	de,rflbuf
+	ld	bc,20h
+	ldir
+	ld	h,d
+	ld	l,e
+	inc	de
+	ld	bc,60h-1
+	ld	(hl),0e5h
+	ldir
+	ld	hl,rflbuf
+	call	brfl10		;; Berechnung LRC
+	ld	hl,20h
+brfm7	equ	$-2
+	ld	d,a
+	ld	bc,88h
+	ld	a,(PagSW8)	;; Schreiben Seite 0
+	out	(c),a
+	ld	(hl),d		;; LRC-Zeichen eintragen
+	out	(c),b
+	jp	brfliend
+
+brfltst:
+	ld	hl,0
+	ld	de,rflbuf
+	ld	bc,80h
+	call	brfl30
+	ld	b,80h
+brflt0:	dec	hl
+	dec	de
+	ld	a,(de)
+	cp	(hl)
+	ret	nz
+	djnz	brflt0
+	ret
+
+brflk:	db	20h,'RafValid','S' or 80h,'Y' or 80h,'S'
+	db	0,0,0,0
+brfm2:	ds	16,0
+
+dpbm256:
+	dw	16		;; Sectoren pro Spur
+	db	3,7,0		;; 1k-Bloecke
+	dw	254-1		;; Blockanzahl-1
+	dw	64-1		;; Zahl der DIR-Eintraege -1
+	db	0c0h,0		;; Alloc. fuer DIR-Eintraege
+	dw	0		;; kein Check (da nicht wechselbar)
+	dw	1		;; Zahl der Systemspuren
+	db	80h		;; kein Disketten-DPB
+
+rflbuf:	ds	80h
+
+brfliend:
+

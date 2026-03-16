@@ -1,0 +1,186 @@
+;; 07.04.89
+;; 06.07.89
+;; - Einfuehrung Bit 7 in Statusmaske DTR - =1 kein Warten Senderegister leer
+	db	00H	;Status
+ IF ((@lt mod 10) eq 1) or ((@lt mod 10) eq 3)
+  IF (@lt mod 10) eq 1; DTR, Treiber 1
+@l	aset	@wsre xor 08h	;Statusmaske DTR-Abfrage ueber DCD im Kanal B
+  ENDIF
+  IF (@lt mod 10) eq 3; DTR, Treiber 3
+@l	aset	@wsre xor 20h	;Statusmaske DTR-Abfrage ueber CTS im Kanal A
+  ENDIF
+	db	@l	;DTR-Abfrage-Maske, Bit 7 Wait_Senderegister_leer-Flag
+ ELSE ;DC1/3 oder PIO
+	db	00H	;zuletzt empfangenes Zeichen
+ ENDIF
+	db	@ld	;Port fuer Daten
+	DB	@ls	;Port fuer Status/Kommando
+ IF (@lt mod 10) lt 5	;;SIO ###########################################
+ if ((@lt mod 10) eq 0) or ((@lt mod 10) eq 1) or ((@lt mod 10) eq 3)
+	dw	cdsioo	;;Senden
+	dw	cdsioi	;;Empfang
+	dw	cdsios	;;Empf.Status
+ endif
+ if (@lt mod 10) eq 2
+	dw	cdsibo	;;Senden
+	dw	cdsibi	;;Empfang
+	dw	cdsibs	;;Empf.Status
+ endif
+@l	aset	00001000b	;;DC1/3, 5 Bit
+ if ((@lt mod 10) eq 1) or ((@lt mod 10) eq 3)
+@l	aset	@l xor 10000010b	;;DTR
+ endif
+ if ((@lt mod 1000)/100) eq 6
+@l	aset	@l xor 01000000b
+ endif
+ if ((@lt mod 1000)/100) eq 7
+@l	aset	@l xor 00100000b
+ endif
+ if ((@lt mod 1000)/100) eq 8
+@l	aset	@l xor 01100000b
+ endif
+	db	@l	;WR5
+			;**Portinitialisierung**
+; CTC Sendetakt
+ 	db	2+1
+	db	@lcs		;CTC Senden
+ IF (cpu eq c1715) and (@ld eq kbdsci)	;;PC1715, SIO durch Tastatur init.!!
+	db	37h		;Vorteiler 256 (da in WR4 Takt*1 fuer Tastatur)
+ ELSE
+	db	17h		;Vorteiler 16
+ ENDIF
+@l	aset	1 shl (((@lt mod 100)/10)-1)
+  if ((@lt mod 100)/10) eq 8
+@l	aset	96		;;100 bd
+  endif
+  if ((@lt mod 100)/10) eq 9
+@l	aset	128		;;75 bd
+  endif
+	db	@l		;Baudrate senden
+ IF (cpu eq c1715) and (@ld eq kbdsci)	;;PC1715, SIO durch Tastatur init.!!
+ ELSE
+;;; zum nachtraeglichen Patchen immer CTC Empf. generieren
+;;; auch wenn '@cls eq @clr'
+; CTC Empfangstakt
+	db	2+1
+	db	@lcr		;CTC Empf.
+	db	17h		;Vorteiler 16
+	db	@l		;Baudrate empf.
+; SIO-Initialisierung
+	db	7+1
+	db	@ls		;SIO-Komm.
+	db	18h		;WR0
+@l	aset	01000100b	;;Takt*16, ohne P., 1 Stbit, DTR
+ if (@lt mod 10) eq 2
+@l	aset	@l xor 10000000b	;;Takt*64
+ endif
+  if @lt ge 10000
+@l	aset	@l xor 00000001b	;;ung P.
+  endif
+  if @lt ge 20000
+@l	aset	@l xor 00000011b	;;ger. P.
+  endif
+  if ((@lt mod 10000)/1000) eq 2
+@l	aset	@l xor 00001000b	;;2 Stbit
+  endif
+  if ((@lt mod 10000)/1000) eq 3
+@l	aset	@l xor 00001100b	;;1,5 Stbit
+  endif
+	db	4,@l		;WR4
+	db	1,@wr1		;WR1
+@l	aset	00000001b	;;5 Bit, Empf.freigabe
+  if ((@lt mod 1000)/100) eq 6
+@l	aset	@l xor 10000000b
+  endif
+  if ((@lt mod 1000)/100) eq 7
+@l	aset	@l xor 01000000b
+  endif
+  if ((@lt mod 1000)/100) eq 8
+@l	aset	@l xor 11000000b
+  endif
+	db	3,@l		;WR3
+  ENDIF	;;(cpu ne c1715) or (@ld ne kbdsci)
+	db	1	;**Ende SIO-Initialisierung** 
+ ELSE	;;PIO ###############################################
+@l	aset	(@lt mod 10)
+ IF @l eq 5			;;normaler PIO-Drucker
+	dw	cdpioo
+	dw	cdpioi
+	dw	cdpios
+	db	0		;dummy
+				;**Portinitialisierung**
+	db	1+1
+	db	@ls+1
+	db	ivpiod
+	db	1+1
+	db	@ld+1
+	db	8fh		;Datenport byte e/a bidirektional
+	db	1+1
+	db	@ls+1
+	db	07fh		;zunaechst Eingabemode
+	db	1+1
+	db	@ls
+	db	0ffh		;Statusport Ausgaenge high (Bit 0 Reset!)
+	db	2+1
+	db	@ls+1
+	db	0cfh,0feh	;Statusport bit e/a, Bit 0 ist Ausgang
+	db	1+1
+	db	@ls
+	db	0feh		;Reset loeschen
+	db	1		;**Ende**
+ ENDIF
+ IF @l eq 9			;;SD1154 ueber ADA mit TTL-Pegel
+	dw	cdp54o
+	dw	cdp54i
+	dw	cdp54s
+	db	0		;dummy
+				;**Portinitialisierung**
+	db	1+1
+	db	@ld+1
+	db	0fh		;Datenport output mode
+	db	2+1
+	db	@ls+1
+	db	0cfh,0feh	;Statusport bit e/a
+	db	1		;**Ende**
+ ENDIF
+ IF @l eq 6			;;SD1154 Spezialanschluss
+	dw	cdp54o
+	dw	cdp54i
+	dw	cdp54s
+	db	0		;dummy
+				;**Portinitialisierung**
+	db	1+1
+	db	@ld+1
+	db	0fh		;Datenport output mode
+	db	2+1
+	db	@ls+1
+	db	0cfh,0feh	;Statusport bit e/a
+	db	2+1
+	db	@ls
+	db	0,1		;reset (invers!)
+	db	1		;**Ende**
+ ENDIF
+ IF (@l eq 7) or (@l eq 8)	;;SD1156 mit KME-Pegel
+	dw	cdp56o
+	dw	cdp56i
+	dw	cdp56s
+	db	0		;dummy
+				;**Portinitialisierung**
+	db	2+1
+	db	@ls+1
+	db	0cfh,0
+	db	2+1
+	db	@ls+2
+	db	0cfh,0f0h
+	db	1+1
+	db	@ld+1
+  If @l eq 7
+	db	0ffh
+  ENDIF
+  IF @l eq 8
+	db	000h
+  ENDIF
+	db	1		;**Ende**
+ ENDIF
+ ENDIF
+

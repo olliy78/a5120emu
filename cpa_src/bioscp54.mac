@@ -1,0 +1,69 @@
+;**************************************************************
+;	PIO-Treiber fuer Drucker 1154 (Spezialinterface)
+; 23.06.87
+; 04.04.89
+; - nach Drucker-Init 'set 0,(ix+ltpst)' statt 'ld (ix+ltpst),11h'
+;**************************************************************
+
+cdp54i	equ	dumi		;keine Zeicheneingabe unterstuetzt
+
+; Einzelzeichenausgabe (A)
+
+cdp54o:
+	or	a		;nop?
+	ret	z		;ja, ignorieren
+	cp	0ah		;gueltiges zeichen?
+	jr	c,loutw3	;nein
+	cp	10h
+	jr	c,loutw4	;0a .. 0f gueltig 
+	cp	20h
+	jr	c,loutw3
+	cp	60h		;fuehrt zu druckerfehlern
+	jr	z,loutw3
+	cp	7bh
+	jr	c,loutw4
+loutw3:	ld	a,'^'		;ungueltiges zeichen
+loutw4:	ld	c,(ix+ltpsd)
+	cpl
+	out	(c),a
+	ld	c,(ix+ltpsc)
+	set	0,a		;zeichenausgabe anzeigen
+	out	(c),a
+	res	0,a
+	out	(c),a
+	res	3,(ix+ltpst)	;Sender nicht frei, Status neu abfragen
+	ret
+
+; Statusabfrage
+
+cdp54s:	ld	a,(ix+ltpst)	;Status
+	bit	1,a		;senderseitig blockiert?
+	jr	nz,cdpsr1	;ja, frei rueckmelden
+	bit	3,a		;schon mal frei gemeldet?
+	jr	nz,cdpsr1	;ja, Bereitsch.abfrage nur einmal moeglich!
+	or	a		;initialisiert?
+	call	z,cdpini	;nein
+
+	ld	c,(ix+ltpsc)	;Statusport
+	in	a,(c)
+	bit	1,a		;Drucker sendebereit?
+				;nz bei ja
+cdpsr1:	ld	a,0ffh
+	ret	nz		;senderseitig frei
+cdpsr2:	res	3,(ix+ltpst)	;nicht frei
+	inc	a		;a:=00, ret z
+	ret			;senderseitig besetzt
+
+
+
+; (Re-)Initialisierung
+; IX auf Steuertabelle
+
+cdpini:
+	set	0,(ix+ltpst)	;Sender ist initialisiert
+	push	ix
+	pop	hl
+	ld	bc,ltpini
+	add	hl,bc
+	jp	portpr
+

@@ -1,0 +1,243 @@
+
+;****************************************************************
+; PIO-Treiber fuer Drucker 1154 (Spezialinterface)
+; (c) by KARO (Karsten Roth, ORZ Humboldt-Uni Bln, Tel. 20932691)
+; mit modifizierter ADA K 6022 (Umruestung auf TTL-Pegel) 
+; Druckpuffer im BIOS
+; mit automatischer, alternativer Farbbandumschaltung nach 128 LF
+; ohne Zeichensatzumschaltung - mathematischer Zeichensatz
+; Aenderungen:
+; 04.04.89
+; - nach Drucker-Init 'set 0,(ix+ltpst)' statt 'ld (ix+ltpst),11h'
+;****************************************************************
+
+; Steckerbelegung
+;
+; Kanal A
+;
+; DB0: /D1   -> C04
+; DB1: /D2   -> C03
+; DB2: /D3   -> C02
+; DB3: /D4   -> C01
+; DB4: /D5   -> C09
+; DB5: /D6   -> C08
+; DB6: /D7   -> C06
+; DB7: /D8   -> C05 Umschaltung auf zweiten Zeichengenerator
+;
+; Kanal B
+;
+; Bit7: KONT -> A13 zusaetzlich verlegen (Bit wird auf ADA nicht genutzt)
+;                   PIO(34) -> D126 -> A13
+; Bit6: PVE  <- A02 Papiervorschubende
+; Bit5: KL   <- A03 mit zusaetzlichem D-FF puffern (s.u.)
+; Bit4: END  <- A01 mit D-FF puffern
+; Bit3: RUF  -> C10 /PA-A 
+; Bit2: /LF  -> C11 /KOM-A3
+; Bit1: RD   -> C12 /KOM-A2
+; Bit0: /CR  -> C13 /KOM-A1
+;
+;            ______________
+;            |  |'LS74 |  |
+;     +5V---4|S |      | Q|5---------/PIO(31)
+;            |  |      |  |
+;     +5V---2|D |      |  |
+;            |  |      |  |
+; END-------3|C |      |  |
+;            |  |      |  |
+; RUF-------1|R |      |/Q|6--
+;            |  |      |  |
+;            |~~|~~~~~~|~~|
+;     +5V--10|S |      | Q|9---------/PIO(32)
+;            |  |      |  |
+;     +5V--12|D |      |  |
+;            |  |      |  |
+; KL-------11|C |      |  |
+;            |  |      |  |
+; /RUF-----13|R |      |/Q|8--
+;            |  |      |  |
+;            ~~~~~~~~~~~~~~
+;
+;
+
+cdp54i	equ	dumi		;keine Zeicheneingabe unterstuetzt
+
+; Einzelzeichenausgabe (A)
+
+cdp54o: and	7fh
+	or	a		;nop?
+	ret	z		;ja, ignorieren
+	cp	0dh
+	jp	z,loutw7	;cr ausloesen
+	cp	0ch		;FF
+	jr	z,loutw4	;fuer M80 u. ae.
+	cp	0ah		;fuer alle anderen wird mit 7fh ge-
+	jr	z,loutw4	;kennzeichnet
+	cp	20h
+	jr	nc,loutw4
+	ld	a,7fh
+loutw4:	ld	hl,(puffad)	;HL mit aktueller Pufferadresse laden
+	ld	(hl),a
+	inc	hl
+	ld	(puffad),hl	;aktuelle Pufferadresse retten
+	ld	a,(puffza)
+	inc	a
+	ld	(puffza),a
+	cp	84h		;Ueberpruefung, ob Pufferueberlauf (>84h)
+	ret	c		;bei ja, Puffer ausdrucken
+	ld	a,89h		;bei Pufferueberlauf CR eintragen
+	ld	(puffst),a
+loutw0:	ld	hl,puffer	;ausdrucken des Puffers
+	ld	(puffad),hl	;Neuinitialisierung der Merkzellen
+	ld	a,(puffza)
+	ld	b,a
+	ld	a,0
+	ld	(puffza),a
+loutwg:	ld	a,(hl)
+	inc	hl
+	cp	0ah
+	jr	z,loutw5	;LF ausloesen
+	cp	0ch
+	jr	z,loutwc	;FF simulieren
+loutwn:	cp	41h		;Codekorrektur
+	jr	nc,loutwa
+	res	5,a
+loutwa:	ld	d,a
+	ld	a,(puffzg)
+	or	a
+	ld	a,d
+	set	7,a		;1. Zeichensatz, 8. Bit setzen
+	ld	c,(ix+ltpsd)
+	out	(c),a		;Ausgabe Port A
+	ld	a,(puffko)	;Zeichenausgabe anzeigen (KONT und RUF)
+	or	0
+	ld	c,(ix+ltpsc)
+	out	(c),a		;Port B
+loutw8: in	a,(c)		;END-Abfrage
+	bit	4,a
+	jr	nz,loutw8
+loutwj:	ld	a,(puffko)	;RUF und KONT zuruecknehmen
+	or	88h
+	ld	c,(ix+ltpsc)
+	out	(c),a
+	djnz	loutwg
+	ld	a,(puffst)
+	cp	89h		;Test ob CR ausloesen
+	ld	a,0
+	ld	(puffst),a
+	jp	z,loutw2
+	ret
+
+; Sonderfunktionen realisieren
+
+zgums:	ld	a,(puffzg)	;Zeichengeneratorumschaltung
+	xor	'`'		;alternativ umschalten
+	ld	(puffzg),a
+	ld	a,20h
+	jr 	loutwn
+
+loutwc:	push	bc		;"FF" simulieren
+	ld	b,6
+loutwh:	call	loutlf		;x-mal LF
+	djnz	loutwh
+	pop	bc
+	jp	loutwj
+
+loutlf:	ld	a,(puffko)	;Line feed (/KONT, /RUF und LF)
+	or	8ch
+loutw9:	ld	c,(ix+ltpsc)
+	out	(c),a
+loutww:	in	a,(c)
+	bit	6,a		;LF ausgeloest ?
+	jr	nz,loutww	;warten bis Rueckmeldung
+	ld	a,(puffko)
+	or	88h
+	ld	c,(ix+ltpsc)
+	out	(c),a		;LF zuruecknehmen
+loutwd:	in	a,(c)
+	bit	6,a		;LF fertig ?
+	jr	z,loutwd
+	ret
+
+loutw5:	call	loutlf		;LF ausloesen
+	ld	a,(pufffb)	;Erhoehung des Farbbandumschaltzaehlers
+	dec	a
+	ld	(pufffb),a
+	jp	nz,loutwj	;nach 128 Zeilen Farbband alternativ 
+	ld	a,128		;umschalten
+	ld	(pufffb),a
+	ld	a,(puffko)
+	xor	2		;RD oder /RD
+	ld	(puffko),a
+	or	88h
+	ld	c,(ix+ltpsc)
+	out	(c),a		;Farbband umschalten
+	push	bc
+	ld	bc,0
+loutwl:	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,loutwl
+	pop	bc
+	ld	a,(puffst)	;Kontrolle, ob CR zusaetzlich ausgeloest
+	cp	89h		;werden musz
+	jp	nz,loutwj
+	in	a,(c)		;bei KL nicht noetig
+	bit	5,a
+	call	z,loutw2
+	jp	loutwj
+
+loutw7:	ld	a,(puffza)	;Kontrolle, ob nur CR und kein Zeichen 
+	or	a		;im Puffer
+	ret	z
+	ld	a,89h		;Carriage Return (/KONT, /RUF und CR)
+	ld	(puffst),a	;kennzeichnen
+	jp	loutw0
+loutw2:	ld	a,(puffko)	;CR ausloesen
+	or	89h
+	ld	c,(ix+ltpsc)
+	out	(c),a
+loutwb:	in	a,(c)
+	bit	5,a		;linker Randkontakt (KL) erreicht ?
+	jr	nz,loutwb
+	ld	a,(puffko)
+	or	88h
+	out	(c),a
+	ret
+        
+; Statusabfrage
+     
+cdp54s:	ld	a,(ix+ltpst)	;Status
+	bit	1,a		;senderseitig blockiert?
+	jr	nz,cdpsr1	;ja, frei rueckmelden
+	or	a		;initialisiert?
+	call	z,cdpini	;nein
+cdpsr1:	ld	a,0ffh
+	ret			;senderseitig frei
+
+; (Re-)Initialisierung
+; IX auf Steuertabelle
+
+cdpini:	ld	a,00h
+	ld	(puffko),a
+	ld	(puffst),a
+	ld	(puffza),a
+	ld	hl,puffer 
+	ld	(puffad),hl
+	set	0,(ix+ltspst)	;Sender ist initialisiert
+	push	ix
+	pop	hl
+	ld	bc,ltpini
+	add	hl,bc
+	jp	portpr
+
+puffer:	ds	132,0		;132 Byte-Puffer reservieren (im BIOS)
+puffad:	dw	puffer		;aktuelle Pufferadresse
+puffza:	db	0		;Pufferzaehler
+puffst:	db	0		;Pufferstatus
+puffko:	db	0		;Puffer fuer Druckkommando 
+pufffb:	db	128		;Farbbandumschaltzaehler
+puffzg:	db	'`'		;Zeichengeneratorkennung
+				;27 = 1.ZG (mathematisch)
+				;00 = 2.ZG (deutsch) 
+
+

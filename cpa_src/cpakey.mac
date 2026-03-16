@@ -1,0 +1,88 @@
+	title	CP/A Neubelegung von Tasten und Start Anwenderprogramm
+
+; Vorbemerkung:
+;==============
+; Die mit ****** eingerahmten Assemblerzeilen sind vom Anwender auszufuellen
+; und das so veraenderte Programm ist wie folgt zu uebersetzen und zu linken:
+; m80 =cpakey
+; l80 xxx/n/p:100,cpakey/e	:xxx ist der com-File-Name entspr. Anwenderpr.
+
+; Am Ende des Anwenderprogramms sollte folgende Zeichenfolge an den Bild-
+; schirm ausgegeben werden (Zahlen hexadezimal):
+; 1b 1b 00     bzw. fuer dbase, wo 00 nicht erlaubt ist: 1b 1b fd
+; Hierdurch werden die Tastenumdefinitionen wieder wirkungslos gemacht.
+ 
+
+	.z80
+	ld	de,startmsg
+	ld	c,9
+	call	5
+
+	ld	de,tab		;Tastenumdefinition und evtl. Erklaerung
+	ld	c,9
+	call	5
+
+	ld	hl,(1)		;BIOS-Adresse+3
+				; (Adr. ist fest im Gegensatz zu BDOS auf (6))
+	ld	de,0e00h+800h+3	;BDOS 0e00h vor BIOS, CCP 800h vor BDOS
+	or	a
+	sbc	hl,de		;CCP+0
+	push	hl
+	ld	de,7		;CCP+7
+	add	hl,de		;Kommandoablage
+	ld	de,command
+	ex	de,hl
+	ld	bc,lcomm
+	ldir
+	ld	a,(4)		;default-LW
+	ld	c,a
+	ret			;Sprung zum CCP+0 (Kommando steht schon da)
+
+command:db	lcomm-2
+;********************************************************************
+;	Anwenderpgrogramm-Aufruf
+;	im folgenden String Namen und Parameter wie bei Kommando-Eingabe
+	db	'DIR *.COM'	;Kommando in Grossbuchstaben, max. 127 Zeichen
+;********************************************************************
+	db	0		;Flag fuer Kommando-Ende
+lcomm	equ	$-command
+
+; Tabelle zur Tastenumdefinition
+;===============================
+tab:
+;********************************************************************
+; Aufbau:
+; 	db	1bh,1bh,<phys. Tastencode>,'<String>',0
+;... beliebig oft (Achtung!, max. Laenge "costu" bei BIOS-Uebersetzung!)
+;... ausserdem beliebig viel Text als Erklaerung
+;	db	'$'	;Ende des BDOS-Strings, darf zuvor nicht auftreten!
+; <phys. Tastencode> ist fuer die Funktionstasten in CP/A tastaturunabhaengig
+; (virtueller Zwischencode Buerocomputer f.a. Tastaturen und auch PC1715):
+; S	0e0h	in CP/A-Dokumentation: ^B
+; F1	0e1h	in CP/A-Dokumentation: ^G
+; F2	0e2h	in CP/A-Dokumentation: ^Y
+; ...
+; F13	0edh	in CP/A-Dokumentation: ^KV
+; F14, F15 sollte wegen Monitor und STOP nicht benutzt werden
+
+	db	1bh,1bh,0				;alte Umdef. loeschen
+	db	1bh,1bh,0e9h,'hallo, neues ^Z! ',0	;Umdefinition
+	db	'F9-Taste (^Z) umprogrammiert!',0dh,0ah	;Erklaerung
+	db	1bh,1bh,0e8h,'Dies war ^W ',0		;Umdefinition
+	db	'F8-Taste (^W) umprogrammiert!',0dh,0ah	;Erklaerung
+;********************************************************************
+	db	'$'	;Stringende
+
+; Startmeldung
+;=============
+
+startmsg:
+;********************************************************************
+	db	'Beispiel fuer Tastenumdefinition und',0dh,0ah
+	db	'anschliessendem  Nachladen eines Anwenderprogramms',0dh,0ah
+	db	'unter CP/A, Version 10.09.87'
+;********************************************************************
+	db	0dh,0ah,0ah
+	db	'$'
+
+	end

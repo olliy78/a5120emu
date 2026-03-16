@@ -1,0 +1,89 @@
+;; Version 20.09.88
+; Ermitteln, welche zeichenweisen Treiber gebraucht werden
+cdtdc1	aset	0
+cdtdtr	aset	0
+cdtsib	aset	0
+cdtpio	aset	0
+cdtp54	aset	0
+cdth54	aset	0
+cdtn56	aset	0
+cdtp56	aset	0
+
+	IF	iobtty
+@cdt	aset	iobtty mod 10
+	IF	@cdt eq 0
+cdtdc1	aset	cdtdc1+1
+	ENDIF
+	IF	(@cdt eq 1) or (@cdt eq 3)
+cdtdtr	aset	cdtdtr+1
+	ENDIF
+	IF	@cdt eq 2
+cdtsib	aset	cdtsib+1
+	ENDIF
+	IF	@cdt eq 5
+cdtpio	aset	cdtpio+1
+	ENDIF
+	IF	@cdt eq 6
+cdtp54	aset	cdtp54+1
+	ENDIF
+	IF	@cdt eq 9
+cdth54	aset	cdth54+1
+	ENDIF
+	IF	@cdt eq 7
+cdtn56	aset	cdtn56+1
+	ENDIF
+	IF	@cdt eq 8
+cdtp56	aset	cdtp56+1
+	ENDIF
+	ENDIF
+
+	IF	ioblpt
+@cdt	aset	ioblpt mod 10
+	IF	@cdt eq 0
+cdtdc1	aset	cdtcd1+1
+	ENDIF
+	IF	(@cdt eq 1) or (@cdt eq 3)
+cdtdtr	aset	cdtdtr+1
+	ENDIF
+	IF	@cdt eq 5
+cdtpio	aset	cdtpio+1
+	ENDIF
+	IF	@cdt eq 6
+cdtp54	aset	cdtp54+1
+	ENDIF
+	IF	@cdt eq 9
+cdth54	aset	cdth54+1
+	ENDIF
+	IF	@cdt eq 7
+cdtn56	aset	cdtn56+1
+	ENDIF
+	IF	@cdt eq 8
+cdtp56	aset	cdtp56+1
+	ENDIF
+	ENDIF
+
+	IF	iobuc1
+@cdt	aset	iobuc1 mod 10
+	IF	@cdt eq 0
+cdtdc1	aset	cdtcd1+1
+	ENDIF
+	IF	(@cdt eq 1) or (@cdt eq 3)
+cdtdtr	aset	cdtdtr+1
+	ENDIF
+	IF	@cdt eq 5
+cdtpio	aset	cdtpio+1
+	ENDIF
+	IF	@cdt eq 6
+cdtp54	aset	cdtp54+1
+	ENDIF
+	IF	@cdt eq 9
+cdth54	aset	cdth54+1
+	ENDIF
+	IF	@cdt eq 7
+cdtn56	aset	cdtn56+1
+	ENDIF
+	IF	@cdt eq 8
+cdtp56	aset	cdtp56+1
+	ENDIF
+	ENDIF
+

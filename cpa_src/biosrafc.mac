@@ -1,0 +1,29 @@
+;*******************************************************************
+; Initialisieren RAM-Floppy mit RAF, Teil 1 (Kapazitaetsbestimmung)
+; Version 07.06.88
+;*******************************************************************
+
+	call	raftst		; Test RAF-Verfuegbarkeit
+	ld	(rafitr),hl	;HL (Spuranzahl) fuer Initalisierung stellen
+	push	af
+	pop	hl
+	ld	(rafiaf),hl	;AF fuer Initialisierung stellen
+	jr	nz,rafdak	;ist mindestens einmal da
+	ld	hl,0
+	ld	(dphatb+2*('M'-'A')),hl
+	ld	hl,raflwt	;kein LW da
+	ld	(hl),'?'
+	inc	hl
+	ld	(hl),'?'
+	jr	rafiex
+
+rafdak:	
+; Protokoll RAF-Gesamtkapazitaet
+	ld	ix,rafmc	;Stelle fuer RAF-Kapazitaet
+	ex	de,hl		;RAF-Kapazitaet in 1K nach HL
+	call	rafhld
+	ld	ix,rafmt
+	ld	hl,(rafitr)
+	call	rafhld
+rafiex:
+

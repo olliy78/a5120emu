@@ -1,0 +1,156 @@
+;***********************************************************************
+;	RAM-Floppy auf Basis MKD256 von Messelektr. Otto Schoen Dresden
+; Version 17.06.88
+;***********************************************************************
+
+ if1
+
+rflwarm	MACRO
+	ENDM
+ 
+ endif ;if1
+
+
+;**************************************************************
+;	Schreiben RAM-Floppy
+;**************************************************************
+wrramf:
+	xor	a
+	jr	brfl0
+
+;**************************************************************
+;	Lesen RAM-Floppy
+;**************************************************************
+
+rdramf:
+	ld	a,1
+brfl0:	ld	(brflm0),a	; =0, Sectorschreiben
+				; =1, Sectorlesen
+	ld	hl,PagSW0-1	; SteuerwortTab. lesen
+	or	a		; SectorLesen?
+	jr	nz,brfl1	; ja
+	ld	hl,(ddma)	; DMA-Adresse
+	call	brfl10		; A:= LRC-Zeichen
+	call	brfl20		; HL:= zu dtrack/dsectr geh. Adr. LRC-Zeichen
+	ld	d,a		; LRC-Zeichen
+	ld	bc,88h
+	ld	a,(PagSW8)	; Seite 1, schreiben
+	di
+	out	(c),a
+	ld	(hl),d		; LRC-Zeichen schreiben
+	out	(c),b
+	ld	hl,PagSW8-1	; SteuerwortTab. schreiben
+brfl1:	ld	a,(dtrack)	; Spurnummer
+brfl2:	inc	hl
+	sub	16
+brfm13	equ	$-1
+	jr	nc,brfl2
+	add	a,17		; korr. Spurnummer 1..16 unabh.
+brfm14	equ	$-1
+	ld	b,a		; von akt. Seite
+	ld	a,(hl)		; Steuerwort
+	push	af
+	call	brfl40		; akt. RAM-Sec.-Adr als Quelle
+	ld	de,(ddma)
+	ld	a,0
+brflm0	equ	$-1
+	or	a		; Sectorlesen?
+	jr	nz,brfl3	; ja
+	ex	de,hl		; Ziel/Quelle tauschen
+brfl3:	ld	bc,80h
+	pop	af
+	call	brfl30		; aktive Seite ein und Transfer
+	ld	a,(brflm0)
+	or	a		; Sectorlesen?
+	jr	z,brfl8		; nein, zum Ende, ohne Fehler
+	call	brfl20		; HL:= LRC-Adresse
+	ld	de,brflm1
+	ld	bc,1
+	ld	a,(PagSW0)
+	call	brfl30		; LRC lesen
+	ld	hl,(ddma)
+	call	brfl10		; LRC berechnen
+	sub	0
+brflm1	equ	$-1
+	jr	z,brfl8
+	ld	a,1		; LRC-Fehler
+brfl8:	ei
+	ret
+
+;********************************************************************
+;	Unterprogramme fuer RAM-Floppy
+;********************************************************************
+
+brfl40:	ld	hl,-1000h
+brfm11	equ	$-2
+	ld	de,1000h	; Bytes/Track
+brfm10	equ	$-2
+brfl41:	add	hl,de
+	djnz	brfl41
+	ex	de,hl
+	ld	a,(dsectr)
+	ld	hl,-80h		; Bytes/Sector
+	ld	bc,80h
+brfl42:	add	hl,bc
+	dec	a
+	jr	nz,brfl42
+	add	hl,de
+	ret
+
+brfl20:	ld	hl,(dtrack)	; Berechnung CRC-Adresse
+	ld	h,0
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+brfm12:	add	hl,hl
+	ld	de,(dsectr)
+	ld	d,0
+	dec	e		; in CP/A Sektornummer ab 1!!!
+	add	hl,de		; HL:= 32 * dtrack + dsectr
+	ret
+
+brfl10:	ld	b,80h		; Berechnung LRC-Zeichen
+	xor	a
+brfl11:	xor	(hl)
+	inc	hl
+	djnz	brfl11
+	ret
+
+brfl30:	di
+	out	(88h),a
+	ldir
+	set	7,c		; nur M1-Zyklen zulaessig
+	set	3,c
+	xor	a
+	out	(c),a		; RAM-Floppy aus
+	ret
+
+
+;*************************************************************
+; Steuertabellen fuer RAM-Floppy
+;*************************************************************
+
+dphm:
+mkddph:
+	dw	0		;kein Sektorversatz
+	dw	0,0,0
+	dw	dirbuf
+	dw	dpbmkd,0,alvmkd
+
+dpbm:
+dpbmkd:	dw	32		; Recs per Track
+	db	4,0fh,0		; 2k-BDOS-Bloecke 
+	dw	254-1		; Blockanzahl
+	dw	128-1		; Dir-.Eintraege
+	db	0c0h,0		; Alloc. fuer 64 Dir.
+	dw	0		; kein Check (da nicht wechselbar)
+	dw	1		; Offset, Zahl der Systemspuren
+	db	80h		; kein Disketten-DPB
+
+PagSW0:	db	46h,4ah,52h,62h	; SteuerwortTabelle
+PagSW4:	db	86h,8ah,92h,0a2h
+PagSW8:	db	45h,49h,51h,61h
+	db	85h,89h,91h,0a1h
+
+dpham	aset	dphm		;definieren LW "M:"

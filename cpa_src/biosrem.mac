@@ -1,0 +1,152 @@
+;********************************************************
+;	RAM-Floppy mit EM256 Erweiterungsmodul (16 Bit mit U8000)
+; Version 15.05.87
+;********************************************************
+
+ if1
+
+rflwarm	MACRO
+	ENDM
+
+ endif ;if1
+
+;**************************************************************
+;	Schreiben RAM-Floppy
+;**************************************************************
+wrramf:
+	ld 	hl,(ddma)
+	ld 	bc,128		;128 Byte von DMA nach Puffer
+	ld 	de,dmabuf
+	ldir
+	ld	a,(dtrack)
+	call 	ramon		;Testram / EM256 zuschalten
+	push 	bc
+	ex 	de,hl
+	ld 	bc,128
+	ld 	hl,dmabuf	;128 byte von Puffer nach RAM-Floppy
+	ldir
+	pop 	bc
+	call	ramoff
+	IF	em256
+	ld	a,(parerr)
+	ELSE
+	xor 	a		;kein Fehler
+	ENDIF
+	ret
+
+;**************************************************************
+;	Lesen RAM-Floppy
+;**************************************************************
+
+rdramf:
+	ld	a,(dtrack)
+	call 	ramon		;Testram aktivieren
+	push 	bc
+	ld 	bc,128		;128 Byte 
+	ld 	de,dmabuf	;nach Puffer
+	ldir
+	pop 	bc
+	call 	ramoff		;Testram abschalten
+	ld 	hl,dmabuf	;von Puffer nach DMA uebertragen
+	ld 	bc,128
+	ld 	de,(ddma)
+	ldir
+	IF	em256
+	ld	a,(parerr)
+	ELSE
+	xor 	a		;kein Fehler
+	ENDIF
+	ret
+
+;********************************************************************
+;	Unterprogramme fuer RAM-Floppy
+;********************************************************************
+
+;Routinen fuer EM256-RAM-Floppy
+;==============================
+;
+;Aktivieren / Deaktivieren der RAM des EM256
+;Eintritt: <A> - Tracknummer, <dsectr> - Sektornummer
+;Austritt: <DE>- Anfangsadresse des Sektors
+;
+ramon:	ld	d,a		;<a>=  0  0 S1 S0 P3 P2 P1 P0
+	rrca			;          Segment   Page   
+	rrca
+	rrca
+	rrca			;<a>= P3 P2 P1 P0  0  0 S1 S0
+	and	3fh		;   =  0  0 P1 P0  0  0 S1 S0
+	or	high(hbemadr)	;   = H3 H2 P1 P0  0  0 S1 S0
+	ld	b,a		;H3,H2 sind ext. Adresse!!
+	ld	a,d
+	cpl
+	and	0ch		;<a>=  0  0  0  0 /P3/P2  0  0
+	or	b		;   = H3 H2 P1 P0 /P3/P2 S1 S0
+	ld	b,a		;Low-Nibble gleichgueltig (retten)
+	ld 	c,modadr+7	;Adressierung 16*4-RAM
+	and	0ch		;<a>=  0  0  0  0 /P3/P2  0  0     
+				;EM256 erkennt sich auf em256adr
+				;Write enable, Page enable
+	out	(c),a
+	ld	a,b
+	and	3		;Segmentnummer
+	or	1 shl reset16	;U8000-Reset, RAM-Enable
+	out	(modadr+1),a	;RAM scharf
+	ld	a,b
+	and	0f0h
+	ld 	d,a		;Page erscheint auf Adr. in DE
+	xor 	a
+	ld	e,a
+	ld	(parerr),a	;Paritaetsfehler reset
+	ld	a,(dsectr)	;offset aus Sektornummer berechnen
+	dec	a
+	ld 	h,a
+	ld	l,0
+	srl	h
+	rr	l		
+	add	hl,de		;Offset zu Track(Page)Adresse addieren
+	ret
+ramoff:	ld a,b
+	and	0ch
+	or	1 shl n_pagen or 1 shl n_write	;page disable, write disable
+	out 	(c),a
+	ld	a,1 shl reset16 or 1 shl n_ramen
+	out	(modadr+1),a
+	ret
+
+parrou:	ld	(rettea),a	;Interruptbedienung Paritaetsfehler
+	ld	a,1		;benoetigt keinen eigenen Stack
+	ld	(parerr),a	;Kennung Fehler
+	in	a,(modadr+1)
+	set	prreset,a
+	out	(modadr+1),a	;Fehler ruecksetzen
+	res	prreset,a
+	out	(modadr+1),a
+	ld	a,(rettea)
+	ei
+	reti
+
+rettea:	db	0		;A bei Parityinterrupt
+parerr:	db	0		;Paritaetsfehlerspeicher
+
+
+;*************************************************************
+; Steuertabellen fuer RAM-Floppy
+;*************************************************************
+
+dphem:
+dphm:	dw	0	;kein Sektorversatz
+	dw	0,0,0
+	dw	dirbuf
+	dw	dpbem,0,alvem
+
+dpbem:
+dpbm:	dw	32	;Recs per Track
+	db	3,7,0	;1k-BDOS-Bloecke 
+	dw	256-1	;256k
+	dw	64-1	;64 Dir-.Eintraege
+	db	0c0h,0	;Alloc. fuer 64 Dir.
+	dw	0	;kein check
+	dw	0	;Offset: keine Systemspuren
+	db	80h	;kein Disketten-DPB
+
+dpham	aset	dphm		;definieren LW "M:"

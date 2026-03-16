@@ -1,0 +1,137 @@
+;********************************************************
+;	RAM-Floppy auf Basis OSS (48k Speichererweiterung)
+; Version 15.05.87
+;********************************************************
+
+ if1
+
+rflwarm	MACRO
+	ld	hl,osscd
+	ld	de,ossld
+	ld	bc,osscdl
+	ldir			;;wiederherstellen OSS-"LDIR"
+	ENDM
+ 
+ endif ;if1
+
+
+;**************************************************************
+;	Schreiben RAM-Floppy
+;**************************************************************
+wrramf:
+	call	osswri
+	jr	c,osswru	;dma -> oss direkt
+	push	de
+	ld	de,ossbuf
+	push	de
+	ldir			;dma -> ossbuf
+	pop	hl
+	pop	de
+	ld	c,128
+	call	ossld		;ossbuf -> oss
+ossrw:	ld	hl,ossbf1
+	ld	de,ossbuf
+	ld	c,128
+	ldir			;ossbuf wiederherstellen
+ossrdu:	ex	de,hl		;oss -> dma
+osswru:	call	c,ossld		;dma -> oss
+ossrwo:	xor	a		;Transfer fehlerfrei
+	ret
+
+;**************************************************************
+;	Lesen RAM-Floppy
+;**************************************************************
+
+rdramf:
+	call	osswri
+	jp	c,ossrdu	;oss -> dma direkt
+	push	hl
+	ex	de,hl
+	ld	de,ossbuf
+	push	de
+	call	ossld		;oss -> ossbuf
+	pop	hl
+	pop	de
+	ld	c,128
+	ldir			;ossbuf -> dma
+	jr	ossrw		;Rest wie write
+
+;********************************************************************
+;	Unterprogramme fuer RAM-Floppy
+;********************************************************************
+
+; oss-Arbeit vorbereiten
+; bc: 128; de: oss-Adresse; hl: dma-Adresse
+; ret c: dma < ossadr-256; ret nc: ossbuf ist gerettet
+osswri:	ld	bc,128
+	call	ossmad		;hl:=oss-Adresse
+	ex	de,hl
+	ld	hl,(ddma)	;hl:=dma-Adresse
+	ld	a,h
+	cp	((ossadr-256) shr 8);dma komplett vor ossadr?
+	ret	c		;ja
+	push	de
+	push	hl
+	ld	hl,ossbuf
+	ld	de,ossbf1
+	ldir
+	pop	hl
+	pop	de
+	ld	c,128
+	ret
+
+; Adresse in OSS entspr. Track, Sector berechnen nach HL
+ossmad:	ld	hl,(dtrack)
+	ld	h,0
+	add	hl,hl		;track*8 (8 Sektoren pro Spur)
+	add	hl,hl
+	add	hl,hl
+	ld	a,(dsectr)	;Sektor 1..8
+	dec	a
+	or	l
+	ld	l,a
+	add	hl,hl		;(track*8+(sector-1))*128
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	ld	de,ossrbg
+	add	hl,de
+	ret
+
+; Transfer RAM <-> OSS entsprechend ldir-Parmameter
+; Routine steht auf Adresse ossld (nach jedem Warmstart)
+osscd:	di
+	ld	a,3ch
+	out	(0eeh),a
+	ldir
+	ld	a,0
+	out	(0eeh),a
+	ei
+	ret
+osscdl	equ	$-osscd
+
+;*************************************************************
+; Steuertabellen fuer RAM-Floppy
+;*************************************************************
+
+dphoss:
+dphm:	dw	0		;kein Sector-Versatz
+	dw	0,0,0
+	dw	dirbuf
+	dw	dpboss,0,alvoss
+
+@dpbmk	equ	(ossren-ossrbg) shr 10 ;Groesse OSS-RAM-Floppy
+dpboss:
+dpbm:	dw	1024/128	;1K pro Spur
+	db	3,7,0		;1K Blockgroesse BDOS
+	dw	@dpbmk-1	;Kapazitaet in 1K Bloecken
+	dw	32-1		;Dir-Entries 0..31
+	db	80h,0		;Dir-Alloc
+	dw	0		;kein check
+	dw	0		;offset, keine Syst.spuren
+	db	80h		;kein Disketten-DPB
+
+dpham	aset	dphm		;definieren LW "M:"

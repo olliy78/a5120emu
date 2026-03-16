@@ -1,0 +1,283 @@
+;12.01.89
+;17.05.89
+;05.06.89
+
+;START CP/M
+;~~~~~~~~~~~
+ if wbootv eq 0
+	ld	hl,CCP		;CCP fuer Warmstart kopieren
+	ld	de,ccpkop
+	ld	bc,ccpkpl+bdskpl
+	ldir
+ endif
+
+   if	(wbootv eq 3)	;;CCP nach RAM-Floppy laden
+	ld	c,'M'-'A'
+	call	dgetpb		;;RAM-Floppy da?
+	jr	nz,ccpwm2	;ja
+ccpwme: ld	hl,bios00
+	ld	(bios03+1),hl	;sonst Warmstart=Kaltstart
+	jp	ccpwre
+ccpwm2: ld	a,c
+	inc	a		;;A=1, B=2,...
+	ld	(fcb@os),a
+	xor	a
+	ld	(fcb@os+12),a	;;extent
+	ld	(fcb@os+32),a	;;record
+	ld	e,31
+	ld	c,32		;;set user 31
+	call	bdos+6
+	ld	c,30		;;Dateiattribute setzen (read only loeschen)
+	call	de@os
+	ld	c,19		;;delete
+	call	de@os
+	ld	c,22		;;make
+	call	de@os
+	inc	a		;;ok?
+	jr	z,ccpwm4	;;nein
+	ld	b,+(ccpkpl+127)/128	;;128er records
+	ld	hl,CCP		;;Quelladresse
+ccpwrz: push	bc
+	push	hl
+	ex	de,hl
+	ld	c,26		;;setdma
+	call	bdos+6
+	ld	c,21
+	call	de@os		;;write
+	or	a		;;Fehler?
+	jr	nz,ccpwm3	;;ja
+	pop	hl
+	ld	bc,80h
+	add	hl,bc
+	pop	bc
+	djnz	ccpwrz
+	ld	c,16		;;close
+	call	de@os
+	inc	a		;;fehlerfrei?
+	jr	z,ccpwm4	;;nein
+	ld	hl,fcb@os+9
+	set	7,(hl)		;;read only
+	ld	c,30		;;Dateiattribute setzen
+	call	de@os
+	inc	a		;;ok?
+	jr	z,ccpwm4	;;nein
+	jr	ccpwre		;;ok
+ccpwm3: pop	hl
+	pop	bc
+ccpwm4:
+	jp	ccpwme		;;Fehler beim CCP-Laden -> Kaltstart
+ccpwre:
+   endif ;wbootv eq 3
+   if (wbootv eq 2) or (wbootv eq 3)
+	ld	hl,BDOS		;BDOS-Kopf fuer Warmstart kopieren
+	ld	de,bdskop
+	ld	bc,bdskpl
+	ldir
+   endif ;(wbootv eq 2) or (wbootv eq 3)
+
+	ld	hl,CCP+3	;zum Eingang mit Kommandoloeschen
+ if cldcmx eq 0
+	ld	a,(cjungf)
+	or	a		;jungfr. Start?
+	jr	nz,njung3	;nein
+ endif
+	LD	HL,kltkom	;Kaltstartkommando
+	LD	DE,CCP+7	;in CCP eintragen
+	LD	BC,lkaltc
+	LDIR
+	ld	hl,CCP		;zum Eingang ohne Komm.loeschen
+njung3:
+ if	wbootv eq 1	;Warmstart=Kaltstart, d.h. Code nur einmal
+	warmin
+ else
+	jp	wbinit		;Warmstart-Initialisierungen
+ endif
+
+; Meldungen Kaltstart
+
+cputms:
+	ld	a,0		;jungfr. Kaltstart?
+cjungf	equ	$-1
+	or	a
+	ret	nz		;nein
+	jp	putmes
+
+; Konstanten fuer Kaltstart
+;==========================
+kaltm:
+	db	'CP/A'
+	db	', Version '
+	version
+	db	', TPA '
+	hexout	tpa
+	db	' - '
+	hexout	tpaend
+
+	db	0dh,0ah
+	IF	monitor
+	db	'- mit BIOS-Monitor'
+	ELSE
+	db	'- ohne BIOS-Monitor (Taste und Aufruf ignoriert)'
+	ENDIF
+
+ IF cpu eq c1715
+ ELSE
+	db	0dh,0ah
+	db	'- Tastatur: K76'
+kbdtyp: db	'??'
+
+ ENDIF
+ IF oss
+	db	0dh,0ah
+	db	'- OSS als RAM-Floppy '
+osslwt: db	'M:'
+ ENDIF
+ IF	kes
+	db	0dh,0ah
+	db	'- Testram als RAM-Floppy '
+keslwt: db	'M: mit '
+kesmc:	db	'??? kByte'
+ ENDIF
+ IF	em256
+	db	0dh,0ah
+	db	'- 16-Bit Erweiterungsmodul als RAM-Floppy '
+kemlwt: db	'M: mit '
+kemmc:	db	'??? kByte'
+ ENDIF
+ IF	mkd256
+	db	0dh,0ah
+	db	'- RAM-Floppy '
+baslwt: db	'M: mit '
+basmc:	db	'512 kByte'
+ ENDIF
+ IF raf
+	db	0dh,0ah
+	db	'- RAF '
+ if rafpar
+	db	'mit'
+ else
+	db	'ohne'
+ endif
+	db	' Parity als RAM-Floppy '
+raflwt: db	'M:',0dh,0ah,'        '
+rafmc:	db	'????? kByte ('
+rafmt:	db	'????? Spuren zu '
+ if rafpar
+	db	'127'
+ else
+	db	'128'
+ endif
+	db	' Sektoren)'
+ ENDIF
+
+ IF rna
+	db	0dh,0ah
+	db	'- NANOS-RAF '
+raflwt: db	'M:',0dh,0ah,'        '
+rafmc:	db	'????? kByte ('
+rafmt:	db	'????? Spuren zu 256 Sektoren)'
+ ENDIF
+
+	db	0dh,0ah
+	db	'- Disketten: '
+@din	aset	0
+	IRP	di,<A,B,C,D>
+ IF disk&di
+@din	aset	@din+1
+	if	@din gt 1
+	db	'/'
+	endif
+	db	'&di:'
+	db	((disk&di mod 1000)/100) or '0','"('
+	db	((disk&di mod 100)/10) or '0'
+	db	(disk&di mod 10) or '0'
+	db	','
+	if	disk&di ge 10000
+	db	'DD'
+	else
+	db	'SD'
+	endif
+	db	','
+	if	((disk&di mod 10000)/1000) and 00000001b
+	db	'DS'
+	else
+	db	'SS'
+	endif
+	if	((disk&di mod 10000)/1000) and 00000010b
+	db	',Verify'
+	else
+	endif
+	db	')'
+ ENDIF
+	ENDM
+	db	0dh,0ah
+	db	'             max. phys. Sektorlaenge: '
+	if	dbufsz le 7
+	db	'128'
+	else
+	decout	<1 shl dbufsz>
+	endif
+	db	', '
+ if format
+	db	'mit'
+ else
+	db	87h,'ohne',84h
+ endif
+	db	' autom. Formaterkennung'
+	db	0dh,0ah
+ if chdvar eq 0
+	db	'- OHNE LST: (Druckausgaben, Sondertasten ignoriert)!'
+	db	0dh,0ah
+	db	'       ausser bei I/O-Byte, bit 7,6 auf 01 (CRT:)'
+ else
+ if1
+druckt	MACRO	d
+	db	'Geraet an Portadresse '
+	hexout	d
+	ENDM
+ endif
+	db	'- einige I/O-Byte-Zuordnungen:'
+	db	0dh,0ah,'  Bit 7,6 (LST:-Kanal):'
+	if	iobtty
+	db	0dh,0ah,'      00 (TTY:): '
+	druckt	ttydat
+	endif
+	db	0dh,0ah,'      01 (CRT:): LST:-Ausgabe auf Bildschirm'
+	if	ioblpt
+	db	0dh,0ah,'      10 (LPT:): '
+	druckt	lptdat
+	endif
+	db	0dh,0ah,'      11 (UL1:): LST:-Ausgabe hex auf Bildschirm'
+	if	iobuc1
+	db	0dh,0ah,'  Bit 5,4/3,2/1,0 (UP2:-/UR2:-/UC1:-Kanaele):'
+	db	0dh,0ah,'      11 (UC1:): '
+	druckt	uc1dat
+	endif
+ endif
+
+	db	0	;ende-flag putmes
+
+; RAM-Test-Texte
+;~~~~~~~~~~~~~~~
+ramtt:	db	0dh,0ah
+	db	'- RAM-Test fuer TPA-Bereich... ',0
+ramtok: db	'TPA ist OK!',0
+ramert: db	0dh,0ah,'!!RAM-Fehler auf Adresse '
+ramead: db	'XXXXH!!  TPA nur bis '
+ramete: db	'YYYYH.',07h,0dh,0ah,0
+
+; Kaltstart-Kommando
+;-------------------
+kltkom: db	kaltce-kaltc
+kaltc:	coldcm
+kaltce: DB	0		;00h notwendig fuer CCP
+lkaltc	equ	$-kltkom	;Laenge gesamtes Kommando
+
+	.DEPHASE
+kaltsl	equ	$-kaltsc
+
+kalten	equ	$
+
+
+ramert: db	0dh,0ah,'!!RAM-Fehler auf Adresse '
+ramead: db	'XXXXH!!  

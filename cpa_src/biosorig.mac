@@ -1,0 +1,1562 @@
+	title	BIOS CP/A, Buerocomputer (A5120/30 u. ae.)
+	name	('BIOSMOD')
+	.z80
+	.tfcond		;bei Assembler-Aufruf mit "/X" vollst. Listing
+
+; Versionsangabe:
+;----------------
+verst	equ	25	;Tag
+versm	equ	09	;Monat
+versj	equ	89	;Jahr
+
+	.xlist
+;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+; aktuelle Erweiterungen/Aenderungen (siehe auch CPA.DOK):
+;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;CCP:
+;====
+; -	Einfuehrung einer weiteren Warmstart-Variante fuer CCP-Nachladen
+;	Dabei wird das CCP als File @CCP.COM nach 100h geladen und ver-
+;	schiebt sich selbst 800h vor die aktuelle BDOS-Grenze. Dadurch
+;	muessen bei nachgeladenen Treibern keine 800h fuer CCP reserviert
+;	werden, d.h. die TPA-Groesse ist in diesem Fall um 2k groesser!
+;BDOS:
+;=====
+; -	Kopierschutz durch Kommando:
+;	    POWER SET [-X]
+;	    alle zu schuetzenden Files auswaehlen.
+;	    Vor "[" kann ein Laufwerk, z.B. "B:[-X]" angegeben werden.
+;	 Beim Kopier-Versuch erfolgt die Ausschrift 'File R/O'
+;	 und Abbruch. Geschuetzte Files sind anderweitig nicht er-
+;	 kennbar, insbesondere liefern DIR und DIR in POWER keinen
+;	 Hinweis.
+;	 Die Kopierfunktion im FORMAT[P]-Programm wird im Menuetext
+;	 und als Menueantwort nur bei der Aufrufform 'FORMATP CPA'
+;	 zugelassen, im normalen Aufruf 'FORMATP' ohne oder mit fal-
+;	 schem Parameter ist sie verboten.
+;	 Diese Schutzfunktionen sollten nur vom Systemverantwortlichen
+;	 genutzt werden und auch nur diesem bekannt sein!
+;RAM:
+;====
+; -	Unterstuetzung NANOS-RAF als RAM-Floppy
+;Floppy:
+;=======
+; -	BdosErr Select auch bei festem Format, wenn LW nicht bereit
+; -	bei Sektorlaenge 512 (DOS/DCP) Dir-Groesse 0 angenommen,
+;	d.h. versehentliches Beschreiben solcher Disketten unterdrueckt
+; -	Generierung ohne phys. Laufwerk 0 (d.h. ohne log. LW A:) moeglich
+; -	A: wird gleich dem ersten definierten log. Laufwerk ab A:,B:,C:,...
+;Tastatur:
+;=========
+; -	Unterstuetzung der Tastatur K7634.54 (UBT) mit gleichem Typcode
+;	80h wie K7636.
+;	Eine automatische Erkennung ist nicht moeglich, daher muss die
+;	gewuenschte Tastatur durch Redigierung von "typ80"
+;	eingestellt werden!
+; -	Unterstuetzung der Tastatur K7633 (Bankschalterterminal K8924)
+;	an AUP 062-8531
+;	Eine automatische Erkennung ist nicht moeglich, daher muss die
+;	gewuenschte Tastatur durch Redigierung von "kbdotp"
+;	eingestellt werden!
+;Bildschirm:
+;===========
+; -	Wahlweise Einfuehrung der Steuerzeichen 17h (insert line)
+;	und 19h (delete line) fuer TURBO-Pascal und WordStar
+; -	Wahlweise Realisierung der SCP1715-Steuerzeichenfolgen
+;	1b 5e xx (Feldattribut) und 1b 5f xx (Spezialzeichen)
+;	Diese ESC-Folgen fuehren beim Buerocomputer i.a. auf '^' (unzulaessig),
+;	ausser Feldattribute invers und hell (Reaktion wie Steuerz. 84..87)
+; -	wahlweise Darstellung von Umlauten
+;Drucker:
+;========
+;BIOS-Monitor:
+;=============
+; -	rst 38h fuehrt zum Monitor-Aufruf, ohne Monitor zum Warmstart
+;sonstiges:
+;==========
+; -	Parallelarbeit von BIOS-Interruptroutinen mit kritischen
+;	externen Geraetetreibern unterstuetzt durch Aufruf der Routinen
+;	auf (4ah) bei Beginn kritischer Routinen und
+;	auf (4ch) bei Ende.
+;	Nach Warmstart zeigen beide Adressen auf einen RET-Befehl.
+; -	Pflege des Datums ueber 24 Std hinaus bei "datvar"<>0
+;	(z.B. fuer Mailbox-Server im Lokalnetz)
+
+;Fehlerkorrekturen:
+;==================
+; -     Drucker K6313 muss nicht mehr ein-/ausgeschaltet werden,
+;       bevor er losgeht
+; -	bei UC1 mit DC1/DC3-Protokoll wird zu Beginn DC1 und nicht 7fh gesendet
+; -	Fault Reset fuer Laufwerke MFS 1.2 bei Multi-Sektor-Transfer korrigiert
+;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+;
+;=========================================================================
+; Vereinbarungen fuer Hardware - Achtung! equ's nicht veraenderbar!
+;=========================================================================
+
+; CPU
+;====
+K2521	equ	1
+K2526	equ	6
+C1715	equ	7
+
+; Floppy-Karte
+;=============
+K5120	equ	0 ;K5120
+K5122	equ	1 ;K5122
+K5126	equ	6 ;K5126
+F1715	equ	7 ;PC1715
+FDC3	equ	11
+
+; Bildschirm
+;===========
+K7024	equ	0 ;Bildschirm-Karte mit Kursor durch Bit 7
+DSY5	equ	1 ;Bildschirm-Karte mit Invers durch Bit 7
+		  ;z.B. VDE Buch oder geaenderte K7024-Karte
+B1715	equ	7 ;PC1715
+
+; Geraeteversion
+;===============
+oem	equ	0 ;OEM-Geraet
+cpd	equ	1 ;Hardware-Variante CP/D
+k8915	equ	2 ;Hardware-Variante K8915
+
+	.list
+
+;=====================================================================
+; Vereinbarungen fuer aktuelle Variante
+; Buerocomputer A5120/30
+;=====================================================================
+dev	equ	oem
+cpu	equ	k2526
+cpuclk	equ	25	;Takt der CPU; 25 bei 2,5Mhz; 40 bei 4,0Mhz
+fdc	equ	k5122
+crt	equ	k7024
+
+bsanf2	equ	0f800h		;Anfang Bildschirmpuffer BAB2
+bsanf1	equ	bsanf2+400h	;Anfang Bildschirmpuffer BAB1
+crtbfl	aset	800h		;benoetigter Bildschirmpuffer im Haupt-RAM
+				;400h/800h, wenn Bildschirm nicht weggeschaltet
+				;0   , wenn Bildschirm nicht im Haupt-RAM,
+				;dann Makros 'crton', 'crtoff' definieren!
+
+; eventuelle Routinen zum Aktivieren/Deaktivieren des Bildschirmpuffers
+; (ueber MEMDI/MEMDI1/MEMDI2) koennen hier eingefuegt werden:
+
+; Aktivieren Bildschirmpuffer, nur Reg. BC,HL; kein Stack!
+;----------------------------
+crton	MACRO
+	ENDM
+
+; Deaktivieren Bildschirmpuffer, nur Reg. BC,HL; kein Stack!
+;------------------------------
+crtoff	MACRO
+	ENDM
+;=====================================================================
+
+
+	entry	BIOS,BIOSCE
+bdosln	equ	0e00h
+ccpln	equ	0800h
+
+BIOS:
+
+;***********************************************************
+; Generierungsvarianten und andere Equ's:
+; =======================================
+
+; Vorbemerkung:
+; Alle in '"..."' eingeschlossenen Worte sind Bezeichner,
+; die in dem vorliegenden Assembler-Quelltext gesetzt werden.
+
+; BIOS-Laenge (Grundwert, wird spaeter evtl. modifiziert!)
+; -----------
+;	minimal erreichbare BIOS-Laenge
+;	 ohne Bildschirmpuffer
+;	 ohne Interruptvektoren
+;	 0 Diskettenlaufwerke
+;	 ohne Diskettenpuffer
+;	 ohne Extra's
+biosln	aset	07d0h
+
+; Durch Weglassen der CP/A-Extras kann man den TPA-Bereich
+; um den Wert vergroessern, der sonst zu 'biosln' addiert
+; wird.
+
+;	Hauptspeicher
+;	~~~~~~~~~~~~~
+; Bei Kaltstart erfolgt ein nichtzerstoerender RAM-Test von
+; "tpa"+3 bis "tpaend".
+; Wird dabei ein Speicherfehler erkannt, so wird auf die
+; letzten 3 fehlerfreien RAM-Zellen ein Sprung zum BDOS abge-
+; legt und der BDOS-Sprung auf Hauptspeicherplatz 5-7 auf
+; diesen Sprung gefuehrt. Ausserdem erfolgt eine entsprechende
+; Fehlermeldung beim Kaltstart.
+
+ramkb	equ	64	;RAM-Groesse in Kilobytes
+;			 Bildschirmpuffer am Ende!
+rambyt	equ	ramkb*1024
+
+; Falls eine 48k Speichererweiterung (OSS 062-8471) vorhanden
+; ist, so wird beim Kaltstart eine RAM-Floppy "M:" fuer diesen
+; Bereich angelegt.
+; Bei "oss"=0 erfolgt kein Test auf eine evtl. vorhandene
+; OSS-Karte.
+
+oss	equ	0	;=0, wenn keine OSS-Karte vorhanden
+;			 =1, wenn evtl. OSS-Karte vorhanden
+	IF	oss
+biosln	aset	biosln+180h
+ossadr	equ	4000h	;Anfangsadr. OSS-Karte (>=4000h!)
+ossade	equ	0f7ffh	;Endeadr. OSS-Karte
+;			 Die letzten 2K werden nicht benutzt,
+;			 da der Bildschirmaufbau sonst ge-
+;			 stoert sein kann. Damit ist die
+;			 RAM-Floppy nur 46K gross.
+;			 Wenn dies nicht stoert, kann "ossade"
+;			 auf 0ffffh gesetzt werden.
+ossrbg	aset	ossadr	;Anf.-Adr. fuer RAM-Floppy
+ossren	aset	ossade+1;End.-Adr. fuer RAM-Floppy
+	ENDIF
+
+
+; Wenn eine 16-Bit-Erweiterungskarte mit 256k-Speicher EM256 in-
+; stalliert ist, so kann dieser Speicher als RAM-Floppy 'M:' be-
+; nutzt werden.
+; Bei "em256" ungleich Null wird das Vorhandensein einer Erweite-
+; rungskarte getestet. Bei vorhandener EM256 wird beim Kaltstart
+; die RAM-Floppy eingerichtet.
+;
+em256	equ	0	;=0 ,wenn keine 16-Bit-Erweiterung
+			;=1 ,wenn 16-Bit-Erweiterung vorhanden
+	IF	em256
+biosln	aset	biosln+1c0h
+em256adr equ	4000h	;256k-RAM wird vom U880 unter Adr.
+			;4000..07FFFH angesprochen
+			;!! 0 nicht moeglich wegen Konflikt mit Kaltstart
+modadr	equ	0a8h	;Moduladresse der em256
+	ENDIF
+
+; Die RAM-Floppy mkd256 kann als Laufwerk 'M:' angesprochen werden.
+; Bei "mkd256" ungleich Null wird das Vorhandensein einer entsprechenden
+; Karte getestet. Ist diese vorhanden wird sie beim Kaltstart initialisiert
+mkd256	equ	0	; =0, ohne RAM-Floppy
+			; =1, mit
+
+	IF	mkd256
+biosln	aset	biosln+140h
+;basout equ	88h	; Moduladresse der Karte
+	ENDIF
+
+kes	equ	0	;keine Testram KES unterstuetzt
+
+; Wenn mindestens eine RAF-Karte des ZWG der AdW vorhanden ist (beliebig
+; bestueckt, auch nur teilweise und/oder gemischt, max. 2M Byte pro Karte,
+; max. 4 Karten mit aufeinanderfolgenden E/A-Adressen), so kann bzw.
+; koennen diese als RAM-Floppy 'M:' benutzt werden (ueber "SWAP A: M:"
+; bei Bedarf spaeter auch als LW A:)
+; Bei "raf" ungleich Null wird das Vorhandensein von RAF-Karten getestet.
+; Bei vorhandener(n) Karte(n) wird beim erstmaligen Kaltstart nach dem
+; Einschalten des Stromes die RAM-Floppy eingerichtet, bei RESET bleibt ihr
+; Inhalt erhalten.
+;
+raf	equ	0	;=0 ,wenn keine RAF-Karte
+			;=1 ,wenn RAF-Karte(n) vorhanden
+ IF	raf
+raf_d	equ	88h	;Basis-E/A-Adr fuer RAF-Karte(n)
+raf_nb	equ	4	;1..4, zu testende Karten ab 'raf_d'
+
+; Die RAF besitzt keine hardwaremaessige Parity-Kontrolle, dies scheint i.a.
+; auch ueberfluessig zu sein. Bei entsprechender Notwendigkeit wird eine
+; einfache Parity-Kontrolle pro 128 Bytes softwaremaessig unterstuetzt.
+; Hierdurch verdoppeln sich die Zugriffszeiten und die erstmalige Kaltstart-
+; Initialisierung dauert relativ lange.
+rafpar	equ	1	;=0, wenn ohne Parity-Kontrolle
+			;=1, wenn mit Parity-Kontrolle
+			;    und nichtzerstoerender Formatierung
+			;=2, wenn mit Parity-Kontrolle
+			;    und zerstoerender Formatierung (schneller)
+
+
+biosln	aset	biosln+140h
+  if rafpar
+biosln	aset	biosln+30h
+  endif
+ ENDIF
+
+; Wenn mindestens eine NANOS-256k-DRAM-Karte vorhanden ist (beliebig
+; bestueckt, auch nur teilweise und/oder gemischt, max. 256k Byte pro Karte,
+; max. 4 Karten mit jeweils beliebigen E/A-Adressen), so kann bzw.
+; koennen diese als RAM-Floppy 'M:' benutzt werden (ueber "SWAP A: M:"
+; bei Bedarf spaeter auch als LW A:)
+; Bei "rna" ungleich Null wird das Vorhandensein von NANOS-RAF-Karten getestet.
+; Bei vorhandener(n) Karte(n) wird beim erstmaligen Kaltstart nach dem
+; Einschalten des Stromes die RAM-Floppy eingerichtet, bei RESET bleibt ihr
+; Inhalt erhalten.
+;
+rna	equ	0	;=0 ,wenn keine NANOS-RAF-Karte
+			;=1 ,wenn mindestens eine NANOS-RAF-Karte da
+ IF	rna
+rna_nb	equ	1	;0..4, Zahl der vorhandenen NANOS-RAF-Karten
+rna_d1	equ	0c0h	;Basis-E/A-Adr fuer NANOS-RAF-Karte 1, 8 E/A-Adr. ben.
+;rna_d2	equ	xxxh	;Basis-E/A-Adr fuer NANOS-RAF-Karte 2, 8 E/A-Adr. ben.
+;rna_d3	equ	xxxh	;Basis-E/A-Adr fuer NANOS-RAF-Karte 3, 8 E/A-Adr. ben.
+;rna_d4	equ	xxxh	;Basis-E/A-Adr fuer NANOS-RAF-Karte 4, 8 E/A-Adr. ben.
+rna_w	equ	0f700h	;Window-Bereich (256 Bytes auf 256er Grenze)
+
+biosln	aset	biosln+0c0h
+ ENDIF
+
+ramfl	equ	oss+kes+em256+mkd256+raf+rna
+
+;	Kaltstart
+;	~~~~~~~~~
+; Es besteht die Moeglichkeit, beim Kaltstart des Systems automatisch
+; ein Kommando auszufuehren (dies kann auch ueber SUBMIT eine Kommando-
+; folge sein!).
+
+ IF1
+coldcm	MACRO
+kltbef: db	'DIR *.COM'	;;0 bis 127 Zeichen
+				;;z.B. auch 'SUBM AUTOEXEC' analog IBM XT
+	ds	kltbef+127-$,0	;;Rest fuer Patch kltbef freih.
+				;;dadurch spaeter ohne Neuuebers. aenderbar
+	ENDM
+ ENDIF
+cldcmx	equ	0		;=0, wenn Kommando nur bei Kaltstart
+				;    nach Einschalten auszufuehren
+				;=1, wenn Kommando auch bei RESET
+				;    auszufuehren
+
+;	Warmstart
+;	~~~~~~~~~
+; Im Normalfall wird das CCP von einer im BIOS gehaltenen Kopie
+; bei jedem Warmstart vor das BDOS kopiert, wodurch keine Sy-
+; stemspuren auf Laufwerk A erforderlich sind. Um einen maximal
+; grossen TPA zu erhalten, sind auch andere Varianten moeglich:
+
+wbootv	equ	0
+;		=0:	CCP-Kopie im BIOS (2K grosser Puffer)
+;		=1:	keine CCP-Kopie, Warmstart=Kaltstart
+;			(Kaltstart-Kommando sollte leer sein!)
+;		=2:	keine CCP-Kopie, CCP aus File '@os.com'
+;		=3:	CCP-Kopie in RAM-Floppy (RAM-Floppy
+;			dann um 2K kleiner),
+;			wenn keine RAM-Floppy vorhanden
+;			(siehe "Hauptspeicher"), so wie wbootv=1
+;		=4:	keine CCP-Kopie, CCP aus File '@ccp.com'
+;			selbstversch. vor BDOS o. Treiber geladen
+; Bei "wbootv"<>0 und Arbeit ohne Diskettenpuffer kann der
+; Kaltstart-Code u.U. bis in den Bildschirmpuffer reichen,
+; wodurch der Bildschirm beim Kaltstart kurzzeitig undefi-
+; niert sein kann.
+
+	IF	wbootv eq 0
+biosln	aset	biosln+90h+ccpln;2K fuer CCP-Kopie
+	ENDIF
+	IF	(wbootv eq 2) or (wbootv eq 3) or (wbootv eq 4)
+biosln	aset	biosln+110h	;Code fuer CCP-laden
+	ENDIF
+
+;	BIOS-Monitor
+;	~~~~~~~~~~~~
+monitor equ	0	;=1: mit  BIOS-Monitor
+;			 =0: ohne
+	IF	monitor
+biosln	aset	biosln+380h	;Laenge Monitorcode dazu
+	ENDIF
+
+
+;	STOP-Funktion
+;	-------------
+stpvar	equ	1	;=1: mit Unterstuetzung STOP-Funktion
+			;=0: ohne,
+			;    es werden auch alle Drucker-Sondert. ign.
+	IF	stpvar
+biosln	aset	biosln+0d0h
+	ENDIF
+
+;	Speicherschutz
+;	~~~~~~~~~~~~~~
+mprot	equ	0	;=1: mit Speicherschutz
+;			 =0: ohne
+	IF	mprot
+biosln	aset	biosln+150h	;Laenge Speicherschutzroutinen
+	ENDIF
+
+;	Status-Zeile
+;	------------
+cpastz	equ	0	;Statuszeile hardware-maessig nicht moeglich
+
+	IF	cpastz
+biosln	aset	biosln+0b0h
+stzfrm	equ	05h	;Format der Statuszeile, folgende Formen:
+			;05h:	      invers, normale Helligkeit
+			;07h:	      invers, andere  Helligkeit
+			;04h:	nicht invers, normale Helligkeit
+			;06h:	nicht invers, andere  Helligkeit
+	ENDIF
+
+;	Fehlermeldungen des BIOS
+;	------------------------
+errvar	equ	1	;=1: mit BIOS-Fehlermeludngen
+			;=0: ohne
+	IF	errvar
+biosln	aset	biosln+50h
+	ENDIF
+
+;	Uhr
+;	---
+sysctc	equ	0ch	;System-CTC, Kanal 0
+; Fuer die Uhr wird Kanal 2 und 3 benutzt (5ms, 1sec),
+; Kanal 0,1 steht fuer den Anwender frei
+
+uhrvar	equ	1	;=1: mit BCD-Uhr (Platz siehe "bcduhr")
+;			 =0: ohne
+	IF	uhrvar
+biosln	aset	biosln+50h
+datvar	equ	0	;=1 mit, =0 ohne Verwaltung des Datums
+  IF datvar
+biosln	aset	biosln+30h
+  ENDIF
+	ENDIF
+
+;	IOBYTE
+;	------
+iobvar	equ	1	;=1: mit IOBYTE-Unterstuetzung
+			;=0: ohne (wie IOBYTE=00h)
+	IF	iobvar
+biosln	aset	biosln+0a0h
+	ENDIF
+
+;	Vereinbarungen fuer zeichenweise arbeitende Geraete (i.a. Drucker)
+;	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+; gaengige Hardware (auch andere zulaessig):
+;	Karte A51xx	Daten	Status	CTC S/E Bemerkungen
+;	K8025		5e	5f	58/58	Normalfall IFSS
+;	K8025		5c	5d	58/58	i.a. Tastatur K7637
+;						oder Zusatzdrucker
+;						oder Digitalisiergeraet
+;	K8025		52	53	0c/0c	2. IFSS -Ausgang
+;			52	53	59/59	alternative Tastatur K7637
+;	K6028/K8025	50	51/53	0c/0c	V.24-Ausgang
+;	K8025.22/.32	a1	a3	a8/a8	AFS Spezial EC8404M
+;	K6022		54	56		Normalfall PIO-Drucker
+;	K6022		50	51		1154 ueber ADA -> Humboldt-Uni
+;	1154 Spezial	54	56		1154 Spezialanschluss
+;						1156-Anschl. siehe BIOSCP56.MAC
+;	1156 Spez. neg. 38	39		1156 ueber KME3, neg. Pegel
+;	1156 Spez. pos. 38	39		1156 ueber KME10,pos. Pegel
+
+; Diese Ausgaenge koennen physischen CP/M-Geraeten entsprechend
+; der I/O-Byte-Belegung zugewiesen werden:
+; TTY:	bei Kaltstart zugewiesener Drucker		(kann fehlen)
+; LPT:	zweiter Drucker					(kann fehlen)
+; UC1:	Geraetekopplung ueber CON: oder RDR:/PUN:	(kann fehlen)
+;	Fuer UC1: nur Treiber-Typ DC1/3 oder DTR erlaubt (kein PIO)!
+
+; Im folgenden fuer 'iobxxx', 'xxxdat', 'xxxsta', 'xxxcts', 'xxxctr'
+; jeweils die Parameter angeben:
+; (=00000 fuer fehlenden, d.h. vom BIOS nicht unterstuetzten Tr.)
+; Sind alle Treiber-Nr. =0, so entfaellt der gesamte Treiber-
+; teil im BIOS (fuer Testzwecke zum Erreichen eines grossen
+; TPA, alle Ausgaben und Druckersondertasten ignoriert)
+; Format fuer 'iobxxx':
+; PSCBT
+; PSCB	nur bei T<5 angeben, sonst 0000
+; P		Paritaet
+;		0 ohne Paritaet; 1 ungerade Paritaet; 2 gerade Paritaet
+;  S		Stopbits
+;		1  1   Stopbit
+;		2  2   Stopbits
+;		3  1.5 Stopbits
+;   C		Anzahl der Bits pro Zeichen (5..8)
+;    B		Baudrate
+;		1:9600,2:4800,3:2400,4:1200,5:600,6:300,7:150,8:100,9:75
+;     T		Treiber- und Protokoll-Typ
+;		0:DC1/DC3  (Normalfall IFSS)
+;		1:DTR im Kanal A mit Statusabfrage DTR ueber Kanal B, DCD
+;			   (Normalfall V.24 ueber K6028/K8025 mit DTR an DSR)
+;		2:Strombauch fuer LX86 (Information Koll. Tief, Bln. 6346461)
+;		  fuer PSCBT: 01812 (Baudrate wird durch 8 auf 1200bd geteilt)
+;		  fuer xxxdat: 5eh, fuer xxxsta: 5fh, fuer xxxctx: 58h
+;		3:DTR im Kanal A mit Statusabfrage DTR ueber Kanal A, CTS
+;			   (V.24 ueber K6028/K8025 bei DTR an CTS statt an DSR)
+;		5:PIO
+;		6:PIO1154 Spezialinterface (Hardware-Loesung nicht nachnutzbar)
+;		7:PIO1156 neg. Pegel (Hardware siehe BIOSCP56.MAC)
+;		8:PIO1156 pos. Pegel
+;		9:PIO1154 umgebaute ADA (Hardware siehe BIOSCH54.MAC)
+
+; Standard-Drucker
+;=================
+
+iobtty	equ	11710	;ung. P.;1 Stbit;7 Bit;9600;DC1/3 (z.B. 1152,1157,63xx)
+ttydat	equ	5eh	;IFSS Normalausgang
+ttysta	equ	5fh
+ttycts	equ	58h
+ttyctr	equ	58h
+
+
+; zweiter Drucker
+;================
+
+ioblpt	equ	01811	;ohne P.; 1 Stbit;8 Bit;9600;DTR (z.B. EPSON LX86)
+lptdat	equ	50h	;V.24
+lptsta	equ	51h
+lptcts	equ	0ch
+lptctr	equ	0ch
+
+
+; Kopplung
+;=========
+
+iobuc1	equ	01811	;ohne P.;1 Stbit;8 Bit;9600;DTR
+uc1dat	equ	50h	;am V.24-Ausgang
+uc1sta	equ	51h
+uc1cts	equ	0ch
+uc1ctr	equ	0ch
+uc1bfl	equ	20		;Laenge des UC1:-Puffers
+				;muss z.B. 2k Bildschirmrollen abfangen!
+				;d.h. >=20 bei 9600 bd
+
+; Ueber diese Treiber koennen unter Beachtung des unterschiedlichen
+; Steuerzeichenvorrats beliebige Geraete angeschlossen werden, die
+; Treiber-Software ist steuerzeichenunabhaengig
+; (ausser TTY: und LPT: bei generierter Variante 2-Bahn-Drucker).
+
+; Es besteht die Moeglichkeit, 2-Bahn-Drucker getrennt fuer
+; jede Bahn zu betreiben (nur Druckerschnittstelle 1):
+l2bahn	equ	0		;>0: Position fuer 2. Bahn (i.a. 138)
+				;=0: keine 2. Bahn unterst.
+
+;----Auswertung der ausgewaehlten Varianten
+ IF1
+	include BIOSCDRV	;ermittlen, welche Treiber gebraucht werden
+ ENDIF
+
+chdvar	equ	(iobtty ne 0) or (ioblpt ne 0) or (iobuc1 ne 0)
+ IF	chdvar
+  IF cdtdc1 or cdtdtr		;IFSS, V.24
+biosln	aset	biosln+150h
+  ENDIF
+  IF cdtsib			;Strombauch
+biosln	aset	biosln+150h
+  ENDIF
+  IF cdtpio			;PIO
+biosln	aset	biosln+110h
+  ENDIF
+  IF cdtp54			;Spez. 1154
+biosln	aset	biosln+110h
+  ENDIF
+  IF cdth54			;ADA 1154
+biosln	aset	biosln+280h
+  ENDIF
+  IF cdtn56			;1156 neg
+biosln	aset	biosln+2e0h
+  ENDIF
+  IF cdtp56			;1156 pos.
+biosln	aset	biosln+2e0h
+  ENDIF
+
+  IF stpvar
+biosln	aset	biosln+090h	;asynchrone LST:-Routinen
+				;und Hardcopy
+  ENDIF
+
+  IF	iobuc1
+biosln	aset	biosln+0e0h+uc1bfl ;UC1:-Routinen + UC1:-Puffer
+  ENDIF
+
+  IF l2bahn
+biosln	aset	biosln+70h
+  ENDIF
+
+ ENDIF ;chdvar
+;---Ende Auswertung zeichenweise Treiber
+
+
+;	Vereinbarungen fuer Disketten
+;	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+@write	equ	1	;bei <>0 auch Schreiben auf Disketten unterst.
+; Es werden maximal 4 Diskettenlaufwerke A..D dicht von A
+; beginnend unterstuetzt.
+; Diese koennen sowohl 5 1/4 " als auch 8" Laufwerke sein
+; (auch gemischte Konfigurationen erlaubt!).
+; Fuer jedes Laufwerk kann Zuruecklesen nach jedem Schreiben verlangt
+; werden (Verify), fuer sichere Disketten und Laufwerke dies jedoch i.a.
+; nicht notwendig (Schreiben geht dann genauso schnell wie Lesen), lediglich
+; beim Anlegen einer Sicherheitskopie sollte explizit Verify vom Kopier-
+; programm verlangt werden ([v] bei POWER bzw. DIENST). Die bei der System-
+; generierung eingestellte Variante kann durch FORMAT laufwerksspezifisch
+; geaendert werden.
+
+; Folgende Angaben sind verbindlich:
+;DSZTT
+;D		Density; 0 single (SD bzw. FM), 1 double (DD bzw. MFM)
+; S		Sided; 0 single (SS), 1 double (DS)
+;		bei Verify nach Schreiben S+2 angeben
+;  Z		5 fuer 5 1/4 ", 8 fuer 8 "
+;   TT		Anzahl der tracks
+; z.B.
+; 10540		DD, SS, 5", 40 Tracks (z.B. K5600.10)
+; 10580		DD, SS, 5", 80 Tracks (z.B. K5600.20)
+; 11580		DD, DS, 5", 80 Tracks
+; 00877		SD, SS, 8", 77 Tracks (z.B. MF3200)
+; 10877		DD, SS, 8", 77 Tracks (z.B. K5602.10, MF6400))
+; 0		nicht ex. (immer am Ende!)
+
+diskA	equ	11580
+diskB	equ	11580
+diskC	equ	11580
+diskD	equ	0
+
+; Es wird eine automatische Formaterkennung fuer gaengige CP/M-
+; Diskettenformate einschliesslich der SCP-Hausformate von CP/A
+; unterstuetzt. Dies kann unterdrueckt werden, wenn nur mit
+; festen Formaten gearbeitet wird (und eine extra CP/A-Variante
+; fuer den Datenaustausch mit Formaterkennung existiert). In
+; diesem Fall haben die Disketten das Standard-CP/A-Format ent-
+; sprechend dem vorgegebenen LW-Typ.
+
+format	equ	1	;=1 mit, =0 ohne Routinen fuer autom. Formaterkennung
+@fsys	equ	0	;=1 mit, =0 ohne Systemspuren fuer Standardformat
+ IF format
+@fact	equ	1	;=1 mit, =0 ohne automatische Formaterkennung scharf
+ ELSE
+@fact	equ	0	;immer =0
+ ENDIF
+ IF format
+biosln	aset	biosln+250h	;Routinen +Tabellen
+ ENDIF
+
+; Zur automatischen Format-Erkennung von SIOS-Datendisketten wird
+; auf 40h in Spur 0, Sektor 1 geprueft. Solche Disketten duerfen
+; also keine System-Lader-Informationen haben und werden dann als
+; "CP/M"-Disketten ohne Systempuren behandelt. Dadurch ist die Anwen-
+; dung von Original-Konvertierungsprogrammen IBM<->CP/M moeglich
+; {unter SCP existierende Programme laufen u.a. nur dann, wenn sie
+; konsequent den BIOS-Entry 30h (Sektornr. uebersetzen) nutzen!}.
+
+; Ohne automatische Formaterkennung oder bei vorhandenen System-Lader-
+; informationen auf der SIOS-Diskette muss das Format explizit einge-
+; stellt werden (26*128 einseitig ohne Systemspuren).
+
+ IF1
+; Kontrolle der Laufwerkstypen
+;-----------------------------
+dsk5fm	aset	0	;Zahl 5" FM (kann AMF5122 nicht!)
+dsk5mf	aset	0	;Zahl 5" MFM
+dsk8fm	aset	0	;Zahl 8" FM
+dsk8mf	aset	0	;Zahl 8" MFM
+dskds	aset	0	;Zahl DS-Laufwerke
+dsk80	aset	0	;Zahl der >40-Track Laufwerke
+
+	IRP	di,<A,B,C,D>
+ IF	disk&di
+  IF	disk&di lt 10000	;;SD
+   IF	(disk&di mod 1000/100) eq 5
+dsk5fm	aset	dsk5fm+1
+   ELSE
+dsk8fm	aset	dsk8fm+1
+   ENDIF
+  ELSE				;;DD
+   IF	(disk&di mod 1000/100) eq 5
+dsk5mf	aset	dsk5mf+1
+   ELSE
+dsk8mf	aset	dsk8mf+1
+   ENDIF
+  ENDIF
+  IF ((disk&di mod 10000)/1000) and 00000001b	;;DS
+dskds	aset	dskds+1
+  ENDIF
+  IF (disk&di mod 100) gt 40
+dsk80	aset	dsk80+1
+  ENDIF
+ ENDIF
+	ENDM
+ ENDIF
+disk5	aset	dsk5fm+dsk5mf
+disk8	aset	dsk8fm+dsk8mf
+disknb	aset	disk5+disk8
+ IF disknb ne 0
+biosln	aset	biosln+500h
+ ENDIF
+biosln	aset	biosln+disknb*6bh	;Diskettensteuerbloecke
+biosln	aset	biosln+dsk8mf*26	;Verlaengerung Sektortab.
+biosln	aset	biosln+disk8*16+dsk80*48;Checksize beruecks.
+
+; Die Disketten Ein-/Ausgabe kann gepuffert verlaufen.
+; "dbufsz"<=7 fuehrt zur ungepufferten Arbeit (Codeeinsparung).
+; Die Angabe der Pufferlaenge erfolgt als Exponent von 2, d.h.
+; die Puffergroesse ist 2**dbufsz !
+
+dbufsz	equ	10		;2**dbufsz = Pufferlaenge
+	IF	dbufsz gt 7
+biosln	aset	biosln+180h+(1 shl dbufsz);Diskpuffer dazu
+	ENDIF
+
+; Der Diskettenpuffer muss mindestens so gross wie die groesste
+; physische Sektorlaenge entspr. dem Spurformat sein, also
+; i.a. 1K. Fuer eine exakte BDOS-Rueckmeldung von Schreib-
+; fehlern (BAD SECTOR) darf die Puffergroesse nicht groesser
+; als die kleinste Blockgroesse fuer Disketten (1 K) sein,
+; da sonst die Pufferausgabe erst erfolgt, wenn mit anderen
+; Daten gearbeitet werden soll.
+; Vorzugswert fuer "dbufsz" ist daher 10!
+; Mehr als die maximale Spurlaenge von ca. 6 1/4  K ergibt
+; keinen Gewinn, d.h. "dbufsz"<=13 .
+; "dbufsz"<12 fuehrt zu einer ungepufferten Arbeit bei Sektor-
+; laenge 128, da die Effektivitaet wegen des Sektorversatzes
+; bei Pufferung von Teilen einer Spur sinkt!
+
+;	Vereinbarung fuer HardDisk
+;	~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+; Ueber einen Spezialadapter kann am 8-bit-Bus eine XT-kompatible Festplatte
+; genutzt werden.
+; Weitere Informationen befinden sich im Quelltext BIOxHD.MAC.
+hdsk	equ	0	;=1, wenn HardDisk zu unterstuetzen
+ if hdsk
+biosln	aset	biosln+230h
+ endif
+
+;	Vereinbarung der Tastatur
+;	~~~~~~~~~~~~~~~~~~~~~~~~~
+
+; Waehrend des Kaltstarts wird auf Typ K7604/06/34/36/37 ge-
+; testet und die Treiberroutinen modifiziert.
+; 'Standardmaessig' ist diejenige Routine generiert, die den
+; laengsten Code benoetigt, d.h. es wird in jedem Fall modi-
+; fiziert.
+
+; Portbelegungen:
+;----------------
+
+; PIO-Tastatur (i.a. PIO auf ZE-Platte)
+;=============
+kbdpci	equ	06h	;Zeichen-Eingabe
+kbdpcs	equ	01h	;Eingabe-Status
+kbdp3o	equ	03h	;Lampen ausser Selector
+kbdp5o	equ	05h	;LED Selector
+kbdpin	equ	0	;=0: kein CTC-Kanal als Tastatur-Interrupt
+
+; Bankschalter-Tastatur K7633 an AUP 062-08531
+; ===========================
+kbdbci	equ	42h	;;Zeichen-Eingabe
+kbdbcs	equ	41h	;;Status
+kbdb3o	equ	43h	;;Lampen
+
+; SIO-Tastatur (i.a. zusammen mit IFSS-Drucker [unterer Stecker] auf K8025)
+;=============
+kbdsct	equ	58h	;CTC		Takt von K8025-CTC Kanal 0
+kbdsci	equ	5ch	;Zeichen E/A	2.  Stecker von unten
+kbdscs	equ	5dh	;Status
+; weitere SIO-Tastatur-Anschluesse (z.B. bei Digitalisier-Arbeitsplatz)
+; wenn nicht zu unterstuetzen, so "kbdsNx"-Werte gleich 0 (N = 2..5)
+; Abfrage in der Reihenfolge kbdscx, kbds2x, kbds3x, kbds4x,...
+kbds2t	equ	59h	;CTC		Takt von K8025-CTC Kanal 1 (Umbau)
+kbds2i	equ	52h	;Zeichen E/A	2. Stecker von oben
+kbds2s	equ	53h	;Status
+
+kbds3t	equ	5ah	;CTC		Takt von K8025-CTC Kanal 2 (Umbau)
+kbds3i	equ	52h	;Zeichen E/A	2. Stecker von oben
+kbds3s	equ	53h	;Status
+
+kbds4t	equ	0ch	;CTC		Takt von CPU (so K8025 ausgeliefert)
+kbds4i	equ	52h	;Zeichen E/A	2. Stecker von oben
+kbds4s	equ	53h	;Status
+
+kbds5t	equ	4ah	;CTC
+kbds5i	equ	4eh	;Zeichen E/A
+kbds5s	equ	4fh	;Status
+
+
+; Die folgenden Typcode-Zeichen werden in der Reihenfolge
+; der Tastaturnummern abgetestet (falls durch PROM-Aenderung
+; der gleiche Typcode wie fuer eine andere Tastatur geliefert
+; wird, kann man so bestimmte Tastaturen bevorzugen).
+
+kbdotp	equ	0 ;Typ der Tast. die keinen Typcode liefert:
+;			=0 fuer K7606
+;			=1 fuer K7604
+;			=2 fuer DEG-Spezialtastatur am IIR
+;			=3 fuer K7633 an AUP 062-8531
+typc3s	equ	010h	;Sondertastatur IH Mittweida (modif. K7634)
+typc34	equ	0a0h	;K7634 ausser K7634.54
+
+; Typ der Tastatur, die Typcode 80h liefert:
+; von den equ-Zeilen genau eine ohne Semikolon davor!
+;typ80	equ	3454	;K7634.54 (UBT-Tastatur)
+typ80	equ	36	;K7636-Familie
+
+typc37	equ	080h	;K7637
+
+
+; Der Tastaturpuffer befindet sich bei Arbeit mit Statuszeile
+; an deren Ende, so dass der Kopf staendig auf dem Bildschirm
+; sichtbar ist. Ohne Statuszeile ist er im BIOS-Arbeitsbereich.
+; (Bei Verlagerung an das Bildschirm-Puffer-Ende gibt es
+;  "Spratzer" auf Grund der Speicherorganisation der K7024-Karte)
+
+kbdbl	equ	47	;1..47, Zahl zu puffernder Zeichen
+			;Weniger als 47 laesst auch bei Arbeit
+			;mit Statuszeile am Speicherende Bytes
+			;als BIOS-Patch-Bereich frei.
+
+; Unabhaengig von der Tastaturerkennung wird die Arbeit mit
+; Tastaturstrings unterstuetzt. Es existiert sowohl eine Stan-
+; dardbelegung von Stringtasten als auch die Moeglichkeit der
+; nutzereignenen Definition bis auf Widerruf.
+
+ IF cpastz	;Puffer benoetigt keinen zusaetzlichen Platz
+ ELSE
+biosln	aset	biosln+kbdbl
+ ENDIF
+
+ IF1
+costs	MACRO
+; Standardbelegung fuer Sondertasten
+;===================================
+;;Definition von Standardstrings in folgender Form
+;;	db	Tastencode nach phys. Umkodierung
+;;	db	Stringlaenge (1 Byte),'...String...'
+; Kursorblock
+;------------
+	db	kcurwl,1,'A' and 1fh	;;Kursor Wort links
+	db	kcurup,1,'E' and 1fh	;;Kursor hoch
+	db	kcurwr,1,'F' and 1fh	;;Kursor Wort rechts
+	db	kcurlf,1,'H' and 1fh	;;Kursor links
+	db	kcurpu,1,'R' and 1fh	;;Kursor Seite hoch
+	db	kcurri,1,'D' and 1fh	;;Kursor links
+	db	kcurpd,1,'C' and 1fh	;;Kursor Seite runter, ^C!
+	db	kcurdw,1,'X' and 1fh	;;Kursor runter
+; Funktionstasten
+;----------------
+	db	pf0c,1,'B' and 1fh	;;^B
+	db	pf1c,1,'G' and 1fh	;;^G
+	db	pf2c,1,'Y' and 1fh	;;^Y
+	db	pf3c,1,'T' and 1fh	;;^T
+	db	pf4c,1,'V' and 1fh	;;^V
+	db	pf5c,1,'L' and 1fh	;;^L
+	db	pf6c,2,'O' and 1fh,'D'	;;^OD
+	db	pf7c,2,'O' and 1fh,'G'	;;^OG
+	db	pf8c,1,'W' and 1fh	;;^W
+	db	pf9c,1,'Z' and 1fh	;;^Z
+;;PF10..PF12 nicht bei K76x6-Tastaturen
+	db	pfac,4,'K' and 1fh,'S','Q' and 1fh,'P';;^KS^QP
+	db	pfbc,2,'K' and 1fh,'B'	;;^KB
+	db	pfcc,2,'K' and 1fh,'K'	;;^KK
+;;PF13..PF15 nicht bei allen Tastaturen
+	db	pfdc,2,'K' and 1fh,'V'	;;^KV
+	db	pfec,1,Monc		;;Monitor-Taste
+	db	pffc,1,Stpc		;;Stop-Taste
+; Ziffernblock (nicht bei allen Tastaturen unterscheidbar)
+;-------------
+	db	zbl1,1,'1'
+	db	zbl2,1,'2'
+	db	zbl3,1,'3'
+	db	zbl4,1,'4'
+	db	zbl5,1,'5'
+	db	zbl6,1,'6'
+	db	zbl7,1,'7'
+	db	zbl8,1,'8'
+	db	zbl9,1,'9'
+	db	zbl0,1,'0'
+;; folgende Tasten nicht bei allen Tastaturen
+	db	zbl00,2,'00'
+	db	zbl000,3,'000'		;;bei K7634 "D" im Ziffernblock
+	db	zblkom,1,'.'		;;Komma im Ziffernblock
+	db	zblmin,1,HrLc		;;Minus im Ziffernblock wird HardCopy
+	;;Enter (Taste S) im Ziffernblock siehe "pf0c"
+;;	db	zbla,0			;Taste ueber "7"
+;;	db	zblb,0			;dito "8"
+;;	db	zblc,0			;dito "9"
+; Spezialtasten
+;--------------
+	db	spcce,1,'X' and 1fh	;;Taste CE bzw. ERASEINP
+	db	spcins,1,SyLc		;;INS wird DruckerSynchronisation
+	db	spcdel,1,7fh		;;Taste DEL
+;; folgende Tasten nicht bei allen Tastaturen
+;;	db	spcclr,0		;;CLEAR bzw. TEST
+;;	db	spccnc,0		;;CNCL
+;;	db	spckor,0		;;KOR
+;;	db	spcrol,0		;;ROLL <-
+;;	db	spcror,0		;;ROLL ->
+; Kursortasten +Shift/Control (bei einigen Tastaturen nur durch ET2 zuvor)
+;----------------------------
+	db	kcurwl-40h,2,'Q' and 1fh,'A' and 1fh	;;^Q^A
+	db	kcurup-40h,2,'Q' and 1fh,'E' and 1fh	;;^Q^E
+	db	kcurwr-40h,2,'Q' and 1fh,'F' and 1fh	;;^Q^F
+	db	kcurlf-40h,2,'Q' and 1fh,'S' and 1fh	;;^Q^S
+	db	kcurpu-40h,2,'Q' and 1fh,'R' and 1fh	;;^Q^R
+	db	kcurri-40h,2,'Q' and 1fh,'D' and 1fh	;;^Q^D
+	db	kcurpd-40h,2,'Q' and 1fh,'C' and 1fh	;;^Q^C
+	db	kcurdw-40h,2,'Q' and 1fh,'X' and 1fh	;;^Q^X
+; Funktionstasten +Shift/Control
+;-------------------------------
+	db	pf0c-40h,2,'Q' and 1fh,'B' and 1fh	;;^Q^B
+	db	pf1c-40h,2,'Q' and 1fh,'P' and 1fh	;;^Q^P
+	db	pf2c-40h,2,'Q' and 1fh,'Y' and 1fh	;;^Q^Y
+	db	pf3c-40h,2,'Q' and 1fh,7fh		;;^QDel
+	db	pf4c-40h,2,'Q' and 1fh,'V' and 1fh	;;^Q^V
+	db	pf5c-40h,2,'Q' and 1fh,'L' and 1fh	;;^Q^L
+	db	pf8c-40h,2,'Q' and 1fh,'W' and 1fh	;;^Q^W
+	db	pf9c-40h,2,'Q' and 1fh,'Z' and 1fh	;;^Q^Z
+;;PF10..PF12 nicht bei K76x6-Tastaturen
+	db	pfbc-40h,2,'Q' and 1fh,'B' and 1fh	;;^Q^B
+	db	pfcc-40h,2,'Q' and 1fh,'K' and 1fh	;;^Q^K
+;;PF13..PF15 nicht bei allen Tastaturen
+	db	pfdc-40h,2,'Q' and 1fh,'V' and 1fh	;;^Q^V
+	ENDM
+ ENDIF
+
+costu	equ	20	;>=0
+			;bei =0 werden Verw.routinen eingespart
+			;bei >0 Mindestlnge fuer Nutzer-Strdef.
+			;    Tab. liegt direkt vor Int.vektoren
+			;    und ist evtl. groesser!
+	IF	costu
+biosln	aset	biosln+0a0h+costu
+	ENDIF
+
+;	Vereinbarungen fuer Bildschirm
+;	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+biosln	aset	biosln+crtbfl
+
+;Es wird sowohl ein grosser (24*80, BAB2) als auch ein kleiner
+;(16*64, BAB1) Bildschirm unterstuetzt. Die Treibermodifizierung
+;geschieht beim Kaltstart ohne notwendige Neuuebersetzung.
+
+; vorgegebene Bildschirm-Werte:
+
+bsanf2	equ	0f800h		;Anfang Bildschirmpuffer BAB2
+bsanf1	equ	bsanf2+400h	;Anfang Bildschirmpuffer BAB1
+bszl2	equ	24		;Zeilenzahl
+bszl1	equ	16		;dito BAB1
+bssp2	equ	80		;Spaltenzahl
+bssp1	equ	64		;dito BAB1
+bsend2	equ	bsanf2+bszl2*bssp2-1	;Pufferende
+bsend1	equ	bsanf1+bszl1*bssp1-1	;dito BAB1
+ IF cpastz
+statz2	equ	bsend2+1	;Beginn der Statuszeile
+statz1	equ	bsend1+1	;dito BAB1
+ ENDIF
+
+; Waehrend des Kaltstarts wird Port 0ah, Bit 6 getestet (Wickel-
+; bruecke auf ZE-Karte) und hierueber BAB1 und BAB2/3 unterschieden.
+
+bsinic	equ	84h	;Steuerzeichen fuer Bildschirmzustand
+;			 nach dem Loeschen des Bildschirms
+;			 bei Kaltstart
+;			 z.B. auf 86h fuer andere Helligkeit
+
+; Es existiert inzwischen ein Reihe von Software, die die SCP1715-Steuer-
+; zeichenfolgen 1b 5e xx (Feldattribut) und 1b 5f xx (Spezialzeichen) nutzen,
+; die vom SCP1526 (Buerocomputer) nicht unterstuetzt werden.
+; Diese Steuerzeichenfolgen koennen wahlweise unter CP/A unterstuetzt werden,
+; wobei fuer den Buerocomputer technisch bedingt nur die Feldattribut-
+; Funktionen invers und hell zugelassen sind (Reaktion wie Steuerzeichen
+; 84,85,86,87; alle anderen Funktionen fuehren zur Steuerzeichen-Fehlermeldung
+; durch Ausgabe von '^' auf dem Bildschirm an dieser Selle).
+; Wird im folgenden "escpc"=0 gesetzt, so werden obige Steuerzeichenfolgen
+; als Kursorpositionierfolgen behandelt und fuehren zu entsprechend sinnlosen
+; Effekten auf dem Bildschirm. Ausser aus Speicherplatzgruenden sollte daher
+; "escpc"=1 sein.
+escpc	equ	1	;=1 fuer Unterstuetzung 1b 5e xx und 1b 5f xx
+			;=0 fuer fehlende Unterstuetzung
+ IF escpc
+biosln	aset	biosln+40h
+ ENDIF
+
+; Fuer eine effektivere Arbeit von TURBO-Pascal koennen wahlweise die
+; Nicht-SCP-Steuerzeichen 17h (Insert Line) und 19h (Delete Line)
+; vom Bildschirmtreiber unterstuetzt werden, wodurch der Bildschirm-
+; neuaufbau erheblich beschleunigt wird (keine Neuausgabe des gesamten
+; Bildschirmrestes). Hat nur Sinn, wenn TURBO-Pascal auch geaendert
+; wird, d.h. diese Steuerzeichen nutzt!
+
+inslin	equ	1	;=1, wenn InsLine und DelLine zu unterstuetzen
+			;=0 sonst
+ IF inslin
+biosln	aset	biosln+60h
+ ENDIF
+
+adm3a	equ	0	;=1, wenn auch Unterst. einiger ADM3A-St.zeich.
+;			 =0, wenn nur SCP-Steuerz.
+	IF	adm3a
+biosln	aset	biosln+40h
+	ENDIF
+
+
+; Umlautumcodierung (fuer deutschen Zeichensatz):
+; Bei BAB2 und BAB1 ist unter Verwendung eines speziellen
+; Zeichengenerators die Darstellung von Umlauten moeglich.
+; Dabei werden (nach Wunsch, umschaltbar mit CI/Stop U)
+; anstelle der ASCII-Zeichen spezielle Codierungen (10h..1fh)
+; auf den BS ausgegeben. Der Zeichensatz entspricht dem
+; Umfang des Typenrades des 1152 mit Umlauten.
+; Fuer BAB3 fuehrt die Umcodierung zur Interpretation als
+; Steuerzeichen normal/invers/intensiv ==> nicht benutzen!
+umlaut	equ	0	;=1 mit Umcodierungsmoeglichkeit
+			;=0 ohne	-"-
+ IF umlaut
+; Bei umlaut<>0 muss genau eines der folgenden equ's =1 sein,
+; wodurch der Zeichengenratortyp bestimmt wird.
+; Die genaue Belegung ist im Text 'BIOxCRT.MAC' zu finden.
+zsuml	equ	0	;Belegegung durch Koll. Geiler, IH Mittweida
+zsibm	equ	1	;Belegung fuer ersatzweisen IBM-Zeichensatz
+biosln	aset	biosln+60h
+ ENDIF
+
+
+;	Interruptvektor
+;	===============
+
+intvec	equ	0f700h	;Beginn des Interruptvektors (immer 100h-er Grenze)
+
+; Vom BIOS benutzte Interruptworte:
+intvsy	equ	0e0h		;immer benoetigt intvsy..intvsy+1fh
+ IF iobuc1
+intvuc	equ	intvsy-10h	;SIO-Bedienung fuer UC1:-Treiber
+intvb	equ	intvuc		;kleinster benoetiger Platz durch BIOS
+ ELSE
+intvb	equ	intvsy		;kleinster benoetiger Platz durch BIOS
+ ENDIF
+
+; Belegung der Interruptsaeule durch das BIOS:
+;============================================
+
+; Kassetten werden ausserhalb des BIOS bedient und benoetigen
+; Interruptsaeulenplatz von 0c0h..0cfh!!
+
+ if iobuc1
+;	SIO fuer UC1:-Treiber im Interrupt
+; Kanal B
+ivsio0	equ	intvuc		;Sendepuffer leer
+ivsio1	equ	ivsio0+2	;Statuswechsel
+ivsio2	equ	ivsio1+2	;Empf-Zeichen da
+ivsio3	equ	ivsio2+2	;Empf-Ueberlauf
+; Kanal A
+ivsio4	equ	ivsio3+2	;Sendepuffer leer
+ivsio5	equ	ivsio4+2	;Statuswechsel
+ivsio6	equ	ivsio5+2	;Empf-Zeichen da
+ivsio7	equ	ivsio6+2	;Empf-Ueberlauf
+ endif
+
+ivpar	equ	intvsy+00h	;Paritaetsfehler EM256-RAM
+ivpiod	equ	intvsy+02h	;Status-Interrupt PIO-Drucker
+
+;*** intvsy+04h frei
+
+ivprot	equ	intvsy+06h	;Speicherschutz bei A5120/30
+
+;*** die folgenden beiden Adressen werden vom FORMAT-Programm
+;*** vorausgesetzt, d.h. ihre Lage ist quasi fest !!
+ivdsk1	equ	intvsy+08h	;Disk Index-Interrupt
+ivdsk2	equ	intvsy+0ah	;Disk Marken-/Fault-Interrupt
+
+;*** intvsy+0ch, +0eh frei
+
+; LS-Leser und Stanzer bei A5120/30
+; *** Die folgenden Adressen werden von PTPUNCH/PTREAD
+; *** vorausgesetzt, d.h. ihre Lage ist quasi fest!!
+; *** bei nicht vorhandener Lochstreifenperipherie intvsy+10h..+16h frei
+ivpun1	equ	intvsy+10h	;LS-Stanzer
+ivrdr1	equ	intvsy+12h	;LS-Leser
+ivrdr2	equ	intvsy+14h
+ivpun2	equ	intvsy+16h	;LS-Stanzer
+
+ivctc0	equ	intvsy+18h	;CTC Kanal 0
+ivctc1	equ	ivctc0+2
+ivctc2	equ	ivctc1+2
+ivctc3	equ	ivctc2+2
+
+
+;	Unterstuetzung weiterer Peripherie
+;	----------------------------------
+
+; Es gibt in CP/A grundsaetzlich folgende Moeglichkeiten fuer die
+; Unterstuetzung einer SIO-Bedienung (i.a. fuer Kopplungen):
+; a) Unterstuetzung als UC1:-Geraet
+;   (siehe Vereinbarungen fuer serielle Geraete).
+;   In diesem Fall erfolgt die Bedienung voll ueber das BIOS
+;   (im Interruptbetrieb, mit speziellem Empf.puffer im BIOS)
+;   Fehler werden nur als BIOS-Fehler gemeldet, das Anwenderprogramm
+;   erfaehrt davon nichts ueber die BIOS-Schnittstelle.
+; b) im Anwenderprogramm, keine Unterstuetzung im BIOS.
+; Im Fall b) - oder wenn es sich um andersartige Peripherie handelt -
+; bietet CP/A durch Veraenderung von "intvl" zusaetzlichen Platz in
+; der Interruptvektor-Tabelle an, so dass eine Umspeicherung der
+; BIOS-Interruptvektoren vermieden werden kann.
+
+intvl	aset	intvb		;kleinster low-Interruptvektor
+				;Kann 000h..0d0h sein
+				;("intvb"..ff wird vom BIOS benoetigt)
+biosln	aset	biosln+(100h-intvl)
+
+;------------------------------------------------------
+;	absolute Hauptspeicherplaetze
+;------------------------------------------------------
+;		      Byteanzahl
+reboot	equ	0	;(3)	;Warmstart-Sprung
+iobyte	equ	3	;(1)	;I/O-Byte
+defaul	equ	4	;(1)	;DEFAULT-Disk
+bdosjp	equ	5	;(3)	;BDOS-Sprung
+
+ IF oss		;OSS-Hilfsadressen <4000h !
+ossld	equ	20h	;(0dh)	;Hilfscode fuer OSS-Zugriff
+ossbuf	equ	80h	;(80h)	;Hilfspuffer fuer OSS-Zugriff
+ ENDIF
+
+; In CP/M zugelassener Scratch-Bereich fuer BIOS 40h..4fh
+lampbf	equ	40h	;(1)	;Puffer Tastaturlampen
+				;Bedeutung (wenn Lampe vorhanden)
+lmpsl0	equ	0	;	Selektor 0
+lmpsl1	equ	1	;	Selektor 1
+lmpsl2	equ	2	;	Selektor 2
+lmpsl3	equ	3	;	Selektor 3
+lmpb2b	equ	4	;	2 Bahn Drucker beide Bahnen parallel
+lmpb2r	equ	5	;	2 Bahn Drucker rechte Bahn
+lmperr	equ	6	;	Fehler Lampe
+lmphcp	equ	7	;	Hardcopy (INSM) Lampe
+tim5cn	equ	41h	;(2)	;25-ms-Zaehler aufwaerts
+tim1cn	equ	43h	;(2)	;1-sec-Zaehler abwaerts
+tim1rt	equ	45h	;(2)	;Adr. der 1-sec Interr.routine
+kritbg	equ	4ah	;(2)	;Adr. der Nutzerroutine fuer Beginn zeit-
+			;	;kritischer BIOS-Abschnitte (z.B. Floppy)
+kriten	equ	4ch	;(2)	;Adr. Enderoutine fuer kritbg
+cpmext	equ	4eh	;(2)	;Adr. Sprungvektor CP/M-Erw.
+
+ IF uhrvar
+bcduhr	equ	50h	;(3)	;HH:MM:SS (40h ist Adr. in SCP)
+;		53h	;(3)	;DD:MM:YY
+ ENDIF
+
+tpa	equ	100h		;Programmladepunkt
+
+
+;************************Ende Varianten-Vereinbarungen*****************
+
+ IF1
+	include BIOSCHK
+ ENDIF
+	page	66
+
+; Die folgenden EQU's dienen dazu, um bereits zum Zeitpunkt der
+; Uebersetzung eine Verschiebung des Ladepunktes durch ein zu
+; lang gewordenes BIOS zu erkennen.
+
+biosl0	aset	(biosln+0ffh) and 0ff00h;auf 256-Grenze runden
+biosad	aset	rambyt-biosl0	;BIOS-Ladeadresse
+tpaend	equ	biosad-bdosln+5 ;Laenge BDOS abziehen
+
+intvec	equ	rambyt-crtbfl-100h	;Interruptvektoradr.
+;				 liegt immer 100h vor BS-Puffer
+;				 bei 64k RAM auf F700H
+intvr	aset	intvec+intvl	;nur hinterer teil genutzt
+
+BDOS	equ	biosad-bdosln	;vermeiden Externals, da linkmt
+CCP	equ	BDOS-ccpln	;nicht ganz sauber ist
+
+
+;------------------------------------------------------------
+;	BEGINN BIOS-CODE
+;------------------------------------------------------------
+
+	.PHASE	biosad
+ IF1
+ .printx *
+  printh  <BIOS beginnt auf .......... >,biosad
+ ENDIF
+
+BIOS00: JP	kaltst
+BIOS03: JP	warmst
+BIOS06: JP	const	;CON:	Status; oA =FF bereit, =00 sonst
+BIOS09: JP	conin	;CON:	Zeichen oA (solange Warten)
+conol:	;conout mit evtl. hardcopy
+BIOS0C: JP	conout	;CON:	Zeichen iC
+BIOS0F: jp	list	;LST:	Zeichen iC
+BIOS12: jp	punch	;PUN:	Zeichen iC
+BIOS15: jp	reader	;RDR:	Zeichen oA (solange Warten)
+BIOS18: JP	home		;./. (trk:=0)
+BIOS1B: JP	seldsk		;iC (0=A,1=B,..); oHL ^DPH
+BIOS1E: JP	settrk		;iBC
+BIOS21: JP	setsec		;iBC
+BIOS24: JP	setdma		;iBC
+BIOS27: JP	read		;oA Resultat; A=0 ok, A=1 sonst
+BIOS2A: JP	write		;oA Resultat; A=0 ok, A=1 sonst
+BIOS2D: jp	listst	;LST:	Status; oA =FF bereit, =00 sonst
+BIOS30: JP	sectran		;iBC log. Sektnr (ab 0!!),
+				;iDE ^Sektor-Translate-Tabelle
+				;oHL Sektornr. fuer setsec
+
+; Die folgenden Bytes liegen an der gleichen Stelle im BIOS
+; wie bei SCP fuer Buerocomputer und dienen zur sicheren Er-
+; kennung von SCP-spezifischen Programmen, da diese an dieser
+; Stelle testen.
+
+BIOS33: db	'CP'		;SCP-Kennzeichen ist 'BW '
+	db	'A'		;'CPA'
+BIOS36:
+	db	'B'		;Hardware Buerocomputer
+	db	'6'		;Schnittstellen-Version
+
+; Die folgenden Bytes dienen der direkten Bildschirmbedienung ohne
+; BIOS-Benutzung fuer extreme Zeitanforderungen
+BIOS38:
+crtcps: dw	bsanf1		;Kursorposition im Bildschirmpuffer
+crtccn: db	0ffh		;Zeittaktzaehler fuer Kursorpflege
+; Die folgenden Bytes dienen der Tastenumdefinition von aussen
+BIOS3B:
+kbdsst: dw	kbdsts		;Standard-Stringtabelle (bei jedem Warmstart)
+			;Aufbau: virt. Tastencode,Laenge,String,...,0ffh
+BIOS3D:
+; Die folgenden beiden Bytes dienen der Einstellung spezieller Zust. von aussen
+;*************************************************************
+;	Synchronisierungsflags
+;*************************************************************
+
+synflg: db	0		;Synchr.-Flags
+ctrlst	equ	0		;CTRL-Status-Bit (=0 fest!)
+ IF monitor
+monact	equ	1		;Monitor aktiv
+ ENDIF
+ IF umlaut
+umlflg	equ	2		;Umlaute umkodieren
+ ENDIF
+ IF stpvar
+  IF chdvar
+synlrq	equ	3		;Anforderung LST:-Kanal zu synchron.
+  ENDIF
+ ENDIF
+stoprq	equ	4		;Stop-Anforderung
+ IF monitor
+monrq	equ	5		;Monitor-Anforderung
+ ENDIF
+stzaus	equ	6		;keine Pflege der Statuszeile
+ IF stpvar
+phyact	equ	7		;Tasten physisch in Puffer
+ ENDIF
+
+;!!synsem muss direkt nach synflg liegen!!
+synsem: db	1		;bei >0 keine asynchr. Arbeit
+
+BIOS3F:
+;=====================Ende des festen BIOS-Vektors=========================
+
+ IF1 ;dphaX wird spaeter bei existierendem Geraet X <>0 gesetzt
+	IRP	di,<A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P>
+dpha&di aset	0
+	ENDM
+ ENDIF
+
+; Parameterheader fuer Disketten
+;-------------------------------
+
+	IRP	di,<A,B,C,D>
+ IF disk&di
+dph&di: DW	0,0,0,0,dirbuf
+	DW	dpb&di,csv&di,alv&di
+dpha&di aset	dph&di
+ ENDIF
+	ENDM
+
+; Bemerkungen zur Arbeit ohne automatische Formaterkennung:
+;---------------------------------------------------------
+; Die folgende DPB-Generierung erzeugt entspr. 'dbufsz' das
+; jeweilige Standardformat von CP/A, so dass dieses bei Arbeit
+; ohne automatische Formaterkennung eingestellt ist.
+; Nutzerspezifische Modifizierungen koennen in den Standard-DPB's
+; vorgenommen werden. Kommt dabei das Format der Kaltstart-
+; Diskette nicht mehr vor, so muss diese nach dem Kaltstart
+; gegen die Nutzerdiskette gewechselt werden. Dadurch ist z.B.
+; fuer extreme TPA-Anforderungen nur 128er Diskettenformat
+; moeglich (kein 1K Diskettenpuffer!), obwohl der Kaltstart von
+; einer Diskette mit 1K Sektoren erfolgte.
+
+	include BIOSDPBM
+
+; Im folgenden kein IRP im Assembler moeglich, da INCLUDE
+
+ IF diska ne 0
+diskdi	aset	diska
+@din	aset	0
+DPBA:	include BIOSDPB
+ ENDIF
+ IF diskb ne 0
+diskdi	aset	diskb
+@din	aset	1
+DPBB:	include BIOSDPB
+ ENDIF
+ IF diskc ne 0
+diskdi	aset	diskc
+@din	aset	2
+DPBC:	include BIOSDPB
+ ENDIF
+ IF diskd ne 0
+diskdi	aset	diskd
+@din	aset	3
+DPBD:	include BIOSDPB
+ ENDIF
+
+
+;=======================
+; CP/M-Erweiterungen
+;=======================
+cpmx00: IF	monitor
+	jp	moncal		;Monitor-Aufruf
+	ELSE
+	ret
+	nop
+	nop
+	ENDIF
+cpmx03: jp	tim5on		;5ms Takt an
+cpmx06: jp	tim5of		;5ms Takt aus
+cpmx09: jp	tim1on		;1s Takt an
+cpmx0c: jp	tim1of		;1s Takt aus
+	IF	mprot
+cpmx0f: jp	mpinit		;Speicherschutz init.
+cpmx12: jp	mpset		;zu schuetzenden Bereich def.
+cpmx15: jp	mpoff		;Speicherschutz aus
+	ELSE
+	ret
+	nop
+	nop
+	ret
+	nop
+	nop
+	ret
+	nop
+	nop
+	ENDIF
+ IF stpvar or monitor
+cpmx18: jp	delsps		;verzoegern Sondertasten
+cpmx1b: jp	delspr		;erlauben Sondertasten
+ ELSE
+cpmx18: ret
+	nop
+	nop
+cpmx1b: ret
+	nop
+	nop
+ ENDIF
+ IF umlaut
+cpmx1e: jp	crtuml
+ ELSE
+cpmx1e: ret
+	nop
+	nop
+ ENDIF
+cpmx21: jp	diskio		;phys. Disktransfer
+				;Schnittstelle siehe BIOxDSKT.MAC
+
+	page	66
+;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+;	Beginn BIOS-Treiber
+;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+; Dummy-Treiber
+dumst:
+	xor	a
+	dec	a		;Status immer FF (bereit)
+ IF iobvar
+ ELSE
+dumi:				;Eingabe undefiniert
+dumo:				;Ausgabe Zeichen wegschm.
+ ENDIF
+	ret			;Status immer FF (bereit)
+
+ IF iobvar
+dumi:	ld	a,1ah		;Eingabe-Zeichen immer EOF
+	ret
+dumo:	ld	a,c
+	ld	de,dumoh
+	call	mrecoa		;Zeichen hex aufbereiten
+	ld	c,'('
+	call	crto
+	ld	bc,0
+dumoh	equ	$-2
+	push	bc
+	call	crto
+	pop	bc
+	ld	c,b
+	call	crto
+	ld	c,')'
+	jp	crto
+ ENDIF
+
+	include BIOSKBD
+
+	include BIOSCRT
+
+ IF chdvar
+	include BIOSCHD
+ IF iobtty
+@lt	aset	iobtty
+@ld	aset	ttydat
+@ls	aset	ttysta
+@lcs	aset	ttycts
+@lcr	aset	ttyctr
+@wr1	aset	00000000b ;WR1: kein Interruptbetrieb
+@wsre	aset	00000000b ;Bit 7=0: Warten auf Senderegister leer
+lsttty: include BIOSCPB
+ ENDIF
+
+ IF ioblpt
+@lt	aset	ioblpt
+@ld	aset	lptdat
+@ls	aset	lptsta
+@lcs	aset	lptcts
+@lcr	aset	lptctr
+@wr1	aset	00000000b ;WR1: kein Interruptbetrieb
+@wsre	aset	00000000b ;Bit 7=0: Warten auf Senderegister leer
+lstlpt: include BIOSCPB
+ ENDIF
+
+ IF iobuc1
+@lt	aset	iobuc1
+@ld	aset	uc1dat
+@ls	aset	uc1sta
+@lcs	aset	uc1cts
+@lcr	aset	uc1ctr
+@wr1	aset	00010100b ;WR1: Empfangsinterr. bei jedem Char., Intv.modif.
+@wsre	aset	10000000b ;Bit 7=1: kein Warten auf Senderegister leer
+lstuc1: include BIOSCPB
+ ENDIF
+
+  IF cdtdc1 or cdtdtr
+	include BIOSCSIO
+  ENDIF
+  IF cdtsib
+	include BIOSCSIB
+  ENDIF
+  IF cdtpio
+	include BIOSCPIO
+  ENDIF
+  IF cdtp54
+	include BIOSCP54
+  ENDIF
+  IF cdth54
+	include BIOSCH54
+  ENDIF
+  IF cdtn56 or cdtp56
+	include BIOSCP56
+  ENDIF
+ ELSE
+ IF1
+chdcold MACRO
+	ENDM
+chdwarm MACRO
+	ENDM
+ ENDIF
+ttyst	equ	dumst
+ttyo	equ	dumo
+lptst	equ	dumst
+lpto	equ	dumo
+uc1st	equ	dumst
+uc1o	equ	dumo
+uc1i	equ	dumi
+ ENDIF
+
+	include BIOSDSK
+	include BIOSDSKW
+	include BIOSDSKB
+ IF disknb ne 0
+	include BIOSDSKT
+	include BIOSDSKP
+ ENDIF
+ IF hdsk
+	include BIOSHD
+ ENDIF
+ IF oss
+	include BIOSROS		;RAM-Floppy mit OSS
+ ENDIF
+ IF em256
+	include BIOSREM		;RAM-Floppy mit EM256
+ ENDIF
+ IF mkd256
+	include BIOSRMK		;RAM-Floppy mit MKD256
+ ENDIF
+ IF kes
+	include BIOSRKE		;RAM-Floppy mit KES
+ ENDIF
+ IF raf
+	include BIOSRAF		;RAM-Floppy mit RAF
+ ENDIF
+ IF rna
+	include BIOSRNA		;RAM-Floppy mit NANOS-RAF
+ ENDIF
+
+	include BIOSTIM
+
+ IF	mprot
+	include BIOSMEM		;Speicherschutz BCA1xx
+ ENDIF
+
+ IF	monitor
+	include BIOSMON
+ ENDIF
+
+	include BIOSNUC
+
+;#############################################################
+; Kaltstart-Initialisierungen
+;----------------------------
+	include BIOSTIMC
+	include BIOSCHDC
+  IF disknb ne 0
+	include BIOSDSKC
+  ENDIF
+  IF oss
+	include BIOSROSC
+  ENDIF
+  IF em256
+	include BIOSREMC
+  ENDIF
+  IF mkd256
+	include BIOSRMKC
+  ENDIF
+  IF kes
+	include BIOSRKEC
+  ENDIF
+  IF raf
+	include BIOSRAFC
+  ENDIF
+  IF rna
+	include BIOSRNAC
+  ENDIF
+
+;##############################################################
+; Kaltstart-Initialisierung, die vom Bildschirmformat abhaengen
+;--------------------------------------------------------------
+	include BIOSCLD1	;Wiederholung mit neuem Bildschirmformat
+	include BIOSCRTC
+	include BIOSKBDC
+
+;########################################################
+; Durch Initialisierrung modifizierte Kaltstart-Meldungen
+;--------------------------------------------------------
+	include BIOSCLD2
+
+;#############################################################
+; Kaltstart-Initialisierungen nach variabler Kaltstart-Meldung
+;-------------------------------------------------------------
+ IF raf
+	include BIOSRAFI
+ ENDIF
+ IF rna
+	include BIOSRNAI
+ ENDIF
+ IF hdsk
+	include BIOSHDC
+ ENDIF
+	include BIOSCLD3
+
+;##############################################################
+biosce: ;Code-Ende fuer BIOS
+
+	END
+' and 1fh,'Z' and 1fh	;;^Q^Z
+;;PF10..PF12 nicht

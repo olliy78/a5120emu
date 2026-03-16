@@ -1,0 +1,68 @@
+; Struktur DPB (einschl. Erweiterung gegenueber Standard-DPB)
+; Standard-Teil:
+dpbspt	equ	0	;(dw)	128-Sektoren pro Spur
+dpbbls	equ	2	;(db)	blockshift (3=1K, 4=2K)
+dpbblm	equ	3	;(db)	blockmask
+dpbexm	equ	4	;(db)	extentmask
+dpbsiz	equ	5	;(dw)	Kapazitaet -1 in Bloecken
+dpbdir	equ	7	;(dw)	Anzahl -1 DIR-Eintraege
+dpbalc	equ	9	;(dw)	Allocation-Bits fuer DIR
+dpbchk	equ	11	;(dw)	Check-Size fuer 'R/O'-Test
+dpbofs	equ	13	;(dw)	Zahl der Systemspuren
+; Ab Byte 15 folgt Nicht-Standard fuer DPB
+
+; DPB-Steuerinformationen
+dpbflg	equ	15	;(db)	Flags, i.a. alle =0
+dpbfsm	equ	3	;	0..3 Zahl der abweichend vom
+			;	restlichen Spurformat mit 
+			;	26*128 formatierten Spuren
+dpbffm	equ	2	;	=1, wenn FM-Aufzeichung zu erzwingen
+			;	    (d.h. FM-Disk in MFM-Laufwerk)
+dpbfsv	equ	3	;	=1, wenn Double sided zu betreiben,
+			;	    indem von aussen nach innen
+			;	    und auch Rueckseite von aussen
+			;	    nach innen
+			;	=0, wenn Double sided zu betreiben,
+			;	    indem zunaechst von aussen nach
+			;	    innen und Rueckseite von innen
+			;	    nach aussen
+			;	immer mit dpbf86+dpbfds zusammen setzen!
+dpbf86	equ	4	;	=1, dpbfsv benutzen
+			;	=0, wenn Double sided zu betreiben,
+			;	    indem ungerade logische Spuren
+			;	    auf der Rueckseite liegen
+			;	immer mit dpbfds zusammen setzen!
+dpbfds	equ	5	;	=1, wenn Double sided zu betreiben
+dpbfrm	equ	6	;	=1, wenn keine autom. Format-
+			;	    erkennung in Seldsk
+dpbfnd	equ	7	;	=1, wenn abweichende DPB-Struktur
+			;	    (keine Disketten)
+
+dpbslc	equ	16	;(db)	Sektorlaengencode
+dpbbfm	equ	17	;(db)	Puffermaske, d.h. Anzahl der 128er
+			;	Sektoren im Puffer -1
+			;	muss < 2**(dbufsz-7) sein,
+			;	muss < 2**dpbslc sein, wenn phys.
+			;	Sektornummern in dpbstr nicht monoton
+dpbstp	equ	18	;(db)	Stepimpulse pro Spurpositionierung
+			;	1 oder 2
+dpbsn0	equ	19	;(db)	Verschiebung der Sektor-Numm. auf Rueckseite
+dpbtrk	equ	20	;(db)	log. Anzahl Spuren
+; geraeteabh.Parameter:
+dpbdnr	equ	21	;(db)	physische Laufwerksnummer
+dpbptr	equ	22	;(db)	Gesamtzahl physische Spuren (40/77/80)
+dpbsti	equ	23	;(db)	Schrittzeit in 0.1 ms
+dpbtyp	equ	24	;(db)	Laufwerkstyp:
+dpbtds	equ	0	; =0 bei SS, =1 bei DS
+dpbtdd	equ	3	; =0 bei SD (FM), =1 bei DD (MFM)
+dpbt5z	equ	4	; =0 bei 8", =1 bei 5"
+dpbt80	equ	5	; =0 bei nicht 80-Spur, =1 bei 80-Spur
+dpbtwv	equ	6	; =0 ohne, =1 mit Verify nach Schreiben
+dpbt52	equ	7	; =0 bei max 26 ,=1 bei max 52 Sekt./Spur (8" MFM)
+; physische Sektortranslate-Tabelle (sollte am Ende liegen,
+; um bei festem Format mit weniger als 26 phys. Sektoren den
+; DPB entspr. verkuerzen zu koennen)
+dpbstr	equ	25	;(ds26)	entspr. phys. Sektoren pro Seite
+
+dpblng	equ	dpbstr+26	;(max.) Laenge eines DPB
+		;***bei 8" MFM:  52 Sektoren, d.h. dpblng um 26 groesser***
