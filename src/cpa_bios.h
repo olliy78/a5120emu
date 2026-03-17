@@ -135,6 +135,7 @@ public:
     uint16_t ccpBase;    ///< Basisadresse des CCP (Console Command Processor), typisch BA00h
     uint16_t bdosBase;   ///< Basisadresse des BDOS (Basic Disk Operating System), typisch C200h
     uint16_t biosBase;   ///< Basisadresse des BIOS, typisch D000h
+    std::vector<uint8_t> ccpImage_; ///< Gesicherte Kopie des CCP-Codes fuer Warmstart-Reload
     /// @}
 
     /**

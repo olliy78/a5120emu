@@ -252,6 +252,11 @@ bool CpaBios::bootFromFile(const std::string& osPath) {
     bdosBase = ccpBase + 0x800;           // C200h
     biosBase = biosEntry;                 // D000h
 
+    // Save CCP code for warm boot restoration (transient programs may overwrite it)
+    ccpImage_.resize(0x800);
+    for (int i = 0; i < 0x800; i++)
+        ccpImage_[i] = mem_.read(ccpBase + i);
+
     // Install our BIOS traps over the real BIOS jump table
     installTraps();
 
@@ -312,6 +317,11 @@ bool CpaBios::bootFromDisk(int drive) {
     bdosBase = ccpBase + 0x800;
     biosBase = biosEntry;
     currentDisk_ = drive;
+
+    // Save CCP code for warm boot restoration (transient programs may overwrite it)
+    ccpImage_.resize(0x800);
+    for (int i = 0; i < 0x800; i++)
+        ccpImage_[i] = mem_.read(ccpBase + i);
 
     installTraps();
 
@@ -733,7 +743,15 @@ void CpaBios::biosBoot() {
  * auf dem Stack.
  */
 void CpaBios::biosWboot() {
-    // Warm boot - re-enter CCP command loop
+    // Warm boot - reload CCP and re-enter command loop
+    // Transient programs (format.com etc.) may have overwritten the CCP area
+    // through stack usage, so we must restore it from the saved copy.
+
+    // Restore CCP code from saved image
+    if (!ccpImage_.empty()) {
+        uint16_t ccpLen = static_cast<uint16_t>(ccpImage_.size());
+        mem_.load(ccpBase, ccpImage_.data(), ccpLen);
+    }
 
     // Restore page zero
     mem_.write(0x0000, 0xC3);
@@ -1615,83 +1633,199 @@ void CpaBios::fdcFormatTrack(int drive, int track, int side) {
  */
 void CpaBios::biosDiskio() {
     // diskio is the CPA physical disk transfer extension (cpmx21)
-    // Called by format.com for seeking and sector I/O
+    // Replicates the BIOS diskio handler in biosdsk.mac:
+    //   - Reads the CDB (Command Descriptor Block) from HL
+    //   - Looks up the DPB for the logical device
+    //   - Converts logical track/sector to physical track/side/sector
+    //   - Performs the sector transfer
     //
-    // Interface (from biosdsk.mac):
-    //   HL points to a CDB (Command Descriptor Block) structure:
-    //     +0: cdbfl   - flags (bit 2: write, bit 5: head up/disengage)
-    //     +1: cdbdev  - logical device number (0..3)
-    //     +2: cdbtrk  - track number
-    //     +3: cdbsid  - side number
-    //     +4: cdbsec  - sector number
-    //     +5: cdbslc  - sector length code (0=128, 1=256, 2=512, 3=1024)
-    //     +6: cdbsnb  - sectors to transfer (0 = just seek/position)
-    //     +7,+8: cdbdma - transfer address (little-endian)
-    //
-    // Returns: A=0 (Z flag) success, A!=0 (NZ) error
+    // CDB layout (from biosdsk.mac):
+    //   +0: cdbfl   - flags (bit definitions: diofps=6, diofhd=5,
+    //                 dioftr=4, dioffm=3, diofwr=2, diofid=1)
+    //   +1: cdbdev  - logical device number (0..3)
+    //   +2: cdbtrk  - logical track number
+    //   +3: cdbsid  - side (only used when diofps=1)
+    //   +4: cdbsec  - sector number (1-based)
+    //   +5: cdbslc  - sector length code (0=128, 1=256, 2=512, 3=1024)
+    //   +6: cdbsnb  - sectors to transfer (0 = just seek/position)
+    //   +7,+8: cdbdma - transfer address (little-endian)
 
     uint16_t hl = cpu_.HL;
     uint8_t flags = mem_.read(hl + 0);   // cdbfl
 
-    // diofhd (bit 5): head up/disengage - return immediately without positioning
+    // diofhd (bit 5): head up/disengage
     if (flags & 0x20) {
         cpu_.A = 0;
-        cpu_.F |= 0x40; // Set Z flag
+        cpu_.F |= 0x40;
         return;
     }
 
-    uint8_t device = mem_.read(hl + 1);  // cdbdev: logical device
-    uint8_t track = mem_.read(hl + 2);   // cdbtrk
-    uint8_t side  = mem_.read(hl + 3);   // cdbsid
-    uint8_t sec   = mem_.read(hl + 4);   // cdbsec
-    uint8_t count = mem_.read(hl + 6);   // cdbsnb: sector count (0=seek)
-    uint16_t addr = mem_.read(hl + 7) | (mem_.read(hl + 8) << 8); // cdbdma
+    uint8_t device = mem_.read(hl + 1);  // cdbdev
+    uint8_t cdbTrack = mem_.read(hl + 2); // cdbtrk (logical)
+    uint8_t cdbSide  = mem_.read(hl + 3); // cdbsid
+    uint8_t cdbSec   = mem_.read(hl + 4); // cdbsec (1-based)
+    uint8_t slc      = mem_.read(hl + 5); // cdbslc
+    uint8_t count    = mem_.read(hl + 6); // cdbsnb
+    uint16_t addr = mem_.read(hl + 7) | (mem_.read(hl + 8) << 8);
 
-    // Map logical device to drive (simple 1:1 mapping for our emulator)
     uint8_t drive = device;
 
-    // Position the FDC to the requested track/side
-    // Also update fdcDriveSelect_ since format.com relies on diskio for
-    // drive selection rather than writing to port 0x18 directly
     if (drive < 4) {
         fdcDriveSelect_ = drive;
     }
-    fdcTrack_ = track;
-    fdcSide_ = side;
-    fdcAtTrack0_ = (track == 0);
 
     if (count == 0) {
-        // Just seek/position
+        // Seek only - compute physical track/side from logical track
+        // just like the BIOS does (needed for CPU2 format which reads fdcTrack_/fdcSide_)
+        int seekTrack = cdbTrack;
+        int seekSide = 0;
+        bool diofps_seek = (flags & 0x40) != 0;
+        if (!diofps_seek && drive < 4 && dphAddr_[drive] != 0) {
+            uint16_t dph = dphAddr_[drive];
+            uint16_t dpbAddr = mem_.read(dph + 10) | (mem_.read(dph + 11) << 8);
+            if (dpbAddr != 0) {
+                uint8_t dpbflg = mem_.read(dpbAddr + 15);
+                bool fds  = (dpbflg >> 5) & 1;
+                bool f86  = (dpbflg >> 4) & 1;
+                if (f86) {
+                    uint8_t dpbtrk = mem_.read(dpbAddr + 20);
+                    int halfTracks = dpbtrk / 2;
+                    int a = cdbTrack - halfTracks;
+                    if (a >= 0) {
+                        bool fsv = (dpbflg >> 3) & 1;
+                        if (!fsv) { a = (~a & 0xFF); a = (a + halfTracks) & 0xFF; }
+                        seekTrack = a;
+                        seekSide = 1;
+                    }
+                } else if (fds) {
+                    seekSide = cdbTrack & 1;
+                    seekTrack = cdbTrack >> 1;
+                }
+            }
+        } else if (diofps_seek) {
+            seekSide = cdbSide;
+        }
+        fdcTrack_ = seekTrack;
+        fdcSide_ = seekSide;
+        fdcAtTrack0_ = (seekTrack == 0);
         cpu_.A = 0;
-        cpu_.F |= 0x40; // Set Z flag
+        cpu_.F |= 0x40;
         return;
     }
 
-    // Sector transfer
     if (drive >= 4 || !disks_[drive].isLoaded()) {
-        cpu_.A = 'D'; // Device not found
-        cpu_.F &= ~0x40; // Clear Z flag (error)
+        cpu_.A = 'D';
+        cpu_.F &= ~0x40;
         return;
     }
 
-    int logTrack = track * 2 + side;
-    bool isWrite = (flags & 0x04) != 0; // bit 2 of cdbfl = write
+    // --- Logical to physical conversion (biosdsk.mac diskio handler) ---
+    // Look up the DPB through the DPH for this drive
+    int physTrack = cdbTrack;
+    int physSide = 0;
+    int physSec = (cdbSec > 0) ? cdbSec - 1 : 0; // 1-based -> 0-based
 
-    for (int i = 0; i < count && (sec + i) < FloppyDisk::CPM_SECTORS_PER_TRACK; i++) {
-        if (isWrite) {
-            uint8_t sectorBuf[128];
-            for (int b = 0; b < 128; b++)
-                sectorBuf[b] = mem_.read(addr + i * 128 + b);
-            disks_[drive].writeSector(logTrack, sec + i, sectorBuf);
-        } else {
-            uint8_t sectorBuf[128];
-            disks_[drive].readSector(logTrack, sec + i, sectorBuf);
-            mem_.load(addr + i * 128, sectorBuf, 128);
+    bool diofps = (flags & 0x40) != 0; // bit 6: already physical?
+
+    if (!diofps && drive < 4 && dphAddr_[drive] != 0) {
+        uint16_t dph = dphAddr_[drive];
+        uint16_t dpbAddr = mem_.read(dph + 10) | (mem_.read(dph + 11) << 8);
+
+        if (dpbAddr != 0) {
+            uint8_t dpbflg = mem_.read(dpbAddr + 15);
+            uint8_t dpbsn0 = mem_.read(dpbAddr + 19);
+            uint8_t dpbtrk = mem_.read(dpbAddr + 20);
+            uint8_t dpbofs = mem_.read(dpbAddr + 13); // system track offset
+            bool fds  = (dpbflg >> 5) & 1; // dpbfds: double-sided
+            bool f86  = (dpbflg >> 4) & 1; // dpbf86: continuation mode
+
+            int d = cdbTrack;  // logical track
+            int c = physSec;   // sector (0-based)
+
+            if (f86) {
+                // Continuation mode: tracks > half go to back side
+                int halfTracks = dpbtrk / 2;
+                int a = d - halfTracks;
+                if (a >= 0) {
+                    // Back side
+                    bool fsv = (dpbflg >> 3) & 1; // dpbfsv (shares bit with dpbfsm)
+                    if (!fsv) {
+                        // innen nach aussen: reverse track numbering
+                        a = ~a & 0xFF;           // CPL
+                        a = (a + halfTracks) & 0xFF; // ADD A,B
+                    }
+                    d = a;
+                    c = (c + dpbsn0) & 0xFF;
+                    physSide = 1;
+                }
+                // else: front side, d unchanged
+            } else if (fds) {
+                // Standard DS: odd logical tracks on back side
+                physSide = d & 1;
+                d = d >> 1; // SRL D
+                if (physSide) {
+                    c = (c + dpbsn0) & 0xFF;
+                }
+            }
+            // else: single-sided, no conversion
+
+            physTrack = d;
+
+            // Sector translation via dpbstr table (biosdsk.mac "diossp" section)
+            // For system tracks, sector numbers are already physical
+            uint16_t dpbstrAddr = dpbAddr + 25; // dpbstr offset
+            if (cdbTrack >= dpbofs) {
+                // Non-system track: look up in sector translate table
+                // physSec = dpbstr[c] (the table contains 1-based phys sector numbers)
+                // For DD format the table is sequential: 1,2,3,...
+                physSec = mem_.read(dpbstrAddr + c);
+                // dpbstr values are 1-based physical sector numbers;
+                // we need 0-based record indices for our image layout
+                if (physSec > 0) physSec--;
+            }
+            // else: system track — sector number used directly (already 0-based)
+        }
+    } else if (diofps) {
+        // Already physical: use cdbsid as side
+        physSide = cdbSide;
+        // physSec is already 0-based from cdbSec-1
+    }
+
+    // Compute logical track in disk image (interleaved: track*2+side)
+    int logTrack = physTrack * 2 + physSide;
+
+    fdcTrack_ = physTrack;
+    fdcSide_ = physSide;
+    fdcAtTrack0_ = (physTrack == 0);
+
+    bool isWrite = (flags & 0x04) != 0; // diofwr = bit 2
+
+    // Physical sector size from cdbslc
+    if (slc > 3) slc = 3;
+    int recsPerSector = 1 << slc;       // 128-byte records per physical sector
+    int physSectorSize = 128 * recsPerSector;
+
+    for (int i = 0; i < count; i++) {
+        int startRecord = (physSec + i) * recsPerSector;
+        for (int r = 0; r < recsPerSector; r++) {
+            int record = startRecord + r;
+            if (record >= FloppyDisk::CPM_SECTORS_PER_TRACK) break;
+            int memOffset = i * physSectorSize + r * 128;
+            if (isWrite) {
+                uint8_t sectorBuf[128];
+                for (int b = 0; b < 128; b++)
+                    sectorBuf[b] = mem_.read(addr + memOffset + b);
+                disks_[drive].writeSector(logTrack, record, sectorBuf);
+            } else {
+                uint8_t sectorBuf[128];
+                disks_[drive].readSector(logTrack, record, sectorBuf);
+                mem_.load(addr + memOffset, sectorBuf, 128);
+            }
         }
     }
 
-    cpu_.A = 0; // Success
-    cpu_.F |= 0x40; // Set Z flag
+    cpu_.A = 0;
+    cpu_.F |= 0x40;
 }
 
 /** @brief Periodischer Timer-Tick. Aktualisiert den Bildschirm alle 50 Ticks. */

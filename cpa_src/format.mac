@@ -6,71 +6,152 @@
 ; Address range: 0100H - 44FFH
 ;
 ; Disassembled from binary - all bytes accounted for
+;
+; PROGRAMMSTRUKTUR UND UEBERSICHT
+; ================================
+; Dieses Programm ist das universelle Formatierungswerkzeug fuer den
+; Robotron A5120 Buerocomputer. Es unterstuetzt:
+;   - Formatieren von 5.25"- und 8"-Disketten in verschiedensten Formaten
+;   - Kopieren ganzer Disketten (Spur fuer Spur)
+;   - Pruefen (Verify) bereits beschriebener Disketten
+;   - Automatische Formaterkennung im BIOS einstellen
+;
+; HARDWARE-ARCHITEKTUR (K2526/K5122/K7027)
+; =========================================
+; Der A5120 verwendet separate Hardwarekarten:
+;   K2526  - CPU-Karte mit 2 CPUs (Z80/U880) und EPROM
+;            CPU1: Hauptprozessor (fuehrt das Betriebssystem und Programme aus)
+;            CPU2: Wird fuer zeitkritische Formatierung aktiviert
+;   K5122  - Floppydisk-Controllerkarte (FDC) mit PIO-Baustellen
+;            Steuert bis zu 4 Diskettenlaufwerke ueber PIO-Ports
+;   K7027  - Bildschirmkarte (80x24 Zeichen)
+;
+; DIREKTER HARDWARE-ZUGRIFF (AM OS VORBEI)
+; ==========================================
+; Das Programm greift an mehreren kritischen Stellen direkt auf die
+; Hardware zu, ohne den Umweg ueber BDOS/BIOS zu nehmen:
+;
+; 1) CPU2-FORMATIERUNGSCODE (1C8EH-1EDEH):
+;    Dies ist der wichtigste Bereich direkten Hardwarezugriffs.
+;    Der komplette Formatiervorgang (Gap-Bytes, Sync-Markierungen,
+;    Adressfelder, Datenfelder) wird ueber direkte Port-I/O an die
+;    PIO-Bausteine der K5122-Karte gesendet. CPU2 der K2526 fuehrt
+;    diesen Code aus, waehrend CPU1 in einer JR $-Schleife wartet.
+;    Ports: 10H (FDC-Steuersignale), 11H (PIO-Interrupt-Steuerung),
+;           14H (Datenbytes zum FDC), 04H, 16H, 17H (PIO-Konfiguration)
+;
+; 2) INTERRUPT-SERVICE-ROUTINE (1E88H):
+;    Der ISR fuer den Index-Puls-Interrupt wird direkt installiert,
+;    indem die Vektortabelle im RAM (adressiert ueber I-Register)
+;    manipuliert wird. Der ISR modifiziert per Selbstmodifikation
+;    den JR-Displacement-Wert in der CPU2-Schleife, um den Ausstieg
+;    nach Abschluss der Formatierung zu signalisieren.
+;
+; 3) ISR-VEKTOR-VERWALTUNG (1E8EH-1EC7H):
+;    Sichert die originalen ISR-Vektoren bei F7E8H/F7EAH (Index-Puls
+;    und Daten-Markierung), installiert eigene Handler und stellt
+;    die Originale nach der Formatierung wieder her.
+;
+; 4) PIO-STATUS-ABFRAGE (1E8EH):
+;    Liest direkt Port 12H (PIO B Status), um den Schreibschutz-
+;    status der Diskette zu pruefen (Bit 5 = /WP).
+;
+; 5) WARM-BOOT-VEKTOR-UMLEITUNG (1CE5H-1CE9H):
+;    Waehrend der Formatierung wird der Warm-Boot-Vektor (0001H)
+;    voruebergehend auf 0000H gesetzt, um zu verhindern, dass ein
+;    versehentlicher Warm-Boot den Formatiervorgang stoert.
+;
+; 6) SELBSTMODIFIZIERENDER CODE:
+;    - 016BH: CPA-Modus-Flag wird zur Laufzeit gepatcht
+;    - 0B65H: Seiten-Flag wird zur Laufzeit gepatcht
+;    - 1CEEH: Schreibt FEH als JR-Displacement nach 1D22H (erzeugt JR $)
+;    - 1CF7H/1CFAH: Patcht JR-Opcodes an 1D50H und 1DE5H
+;    - 1E88H: ISR schreibt 3EH (LD A,n Opcode) ueber den JR-Opcode,
+;             wodurch CPU2 aus der Endlosschleife ausbricht
+;
+; DATENFLUSSPRINZIP
+; ==================
+; Normale Disk-I/O (Lesen/Schreiben/Seek) laeuft ueber:
+;   Programm -> CDB (Command Descriptor Block) -> cpmx21 (BIOS-Extension)
+; Die physische Formatierung laeuft direkt ueber:
+;   CPU2-Code -> PIO-Ports -> FDC-Hardware -> Diskette
+;
 ; ============================================================================
 
-; --- System addresses ---
-WBOOT		EQU	0000H	; CP/M warm boot
-WBOOTV		EQU	0001H	; Warm boot vector
-BDOS		EQU	0005H	; BDOS entry
-BDOSADDR	EQU	0006H	; BDOS address (high byte)
-CPMEXT		EQU	004EH	; CPA extensions table pointer
-FCB1		EQU	005CH	; Default FCB
-DMAADDR		EQU	0080H	; Default DMA address
+; --- CP/M Systemadressen ---
+WBOOT		EQU	0000H	; CP/M Warm-Boot (JP an BIOS warm boot)
+WBOOTV		EQU	0001H	; Warm-Boot-Vektor (Adresse der BIOS-Routine)
+BDOS		EQU	0005H	; BDOS-Einsprung (JP an BDOS)
+BDOSADDR	EQU	0006H	; BDOS-Adresse (Obergrenze des TPA)
+CPMEXT		EQU	004EH	; CPA-Erweiterungstabelle (Zeiger auf cpmx-Routinen)
+FCB1		EQU	005CH	; Standard-FCB (erstes Kommandozeilenargument)
+DMAADDR		EQU	0080H	; Standard-DMA-Puffer / Kommandozeilenpuffer
 
-; --- BDOS function codes ---
-F_RAWIO		EQU	06H	; Direct console I/O
-F_PRINT		EQU	09H	; Print $-terminated string
-F_RDBUF		EQU	0AH	; Read console buffer
-F_GETVER	EQU	0CH	; Get CP/M version
+; --- BDOS-Funktionsnummern ---
+F_RAWIO		EQU	06H	; Direkte Konsolen-E/A (Zeichen lesen/schreiben)
+F_PRINT		EQU	09H	; String ausgeben ($-terminiert)
+F_RDBUF		EQU	0AH	; Konsolenpuffer einlesen (Zeile)
+F_GETVER	EQU	0CH	; CP/M-Versionsnummer abfragen
 
-; --- FDC/PIO port addresses ---
-PIO_CTRL_A	EQU	10H	; PIO A data (FDC control)
-PIO_CTRL_C	EQU	11H	; PIO A control register
-PIO_STAT_B	EQU	12H	; PIO B data (FDC status)
-PIO_DATA_A	EQU	14H	; Data PIO A
-PIO_DATA_B	EQU	04H	; Data PIO B
-PIO_DATA_C	EQU	16H	; Data PIO control
-PIO_DATA_D	EQU	17H	; Data PIO control 2
-DRV_SEL		EQU	18H	; Drive select latch
+; --- FDC/PIO-Portadressen (K5122 Floppydisk-Controllerkarte) ---
+; Die K5122-Karte enthaelt zwei Z80-PIO-Bausteine:
+;   Steuer-PIO (Ports 10H-13H): Steuert FDC-Signale und liest Status
+;   Daten-PIO  (Ports 14H-17H): Uebertraegt Daten zum/vom FDC
+; ACHTUNG: Diese Ports werden im CPU2-Formatierungscode DIREKT
+;          angesprochen (am Betriebssystem vorbei)!
+PIO_CTRL_A	EQU	10H	; Steuer-PIO Port A Daten: FDC-Steuersignale
+				;   Bit 0: /WE  (Write Enable, aktiv low)
+				;   Bit 2: /SIDE (Seitenanwahl: 0=Seite 1, 1=Seite 0)
+				;   Bit 4: Motor-On
+				;   Bit 5: SD   (Step Direction: 0=aussen, 1=innen)
+				;   Bit 7: /ST  (Step-Puls, steigende Flanke)
+PIO_CTRL_C	EQU	11H	; Steuer-PIO Port A Steuerregister
+				;   83H = Interrupts aktivieren (fuer Index-Puls)
+				;   03H = Interrupts deaktivieren
+PIO_STAT_B	EQU	12H	; Steuer-PIO Port B Daten: FDC-Statussignale
+				;   Bit 0: /RDY (0=Laufwerk bereit)
+				;   Bit 5: /WP  (0=schreibgeschuetzt)
+				;   Bit 7: /T0  (0=Spur 0 erreicht)
+PIO_DATA_A	EQU	14H	; Daten-PIO Port A: Datenbytes zum/vom FDC
+				;   Hierueber werden beim Formatieren die
+				;   Gap-, Sync-, Adress- und Datenbytes gesendet
+PIO_DATA_B	EQU	04H	; Daten-PIO Port B: Zusaetzlicher Datenkanal
+PIO_DATA_C	EQU	16H	; Daten-PIO Steuerregister Port A
+PIO_DATA_D	EQU	17H	; Daten-PIO Steuerregister Port B
+DRV_SEL		EQU	18H	; Laufwerksauswahl-Latch
 
-; --- PIO A control bits ---
-; Bit 0: /WE (write enable, active low)
-; Bit 2: /SIDE (side select: 0=side 1, 1=side 0)
-; Bit 5: SD (step direction: 0=outward, 1=inward)
-; Bit 7: /ST (step pulse, rising edge)
-
-; --- PIO B status bits ---
-; Bit 0: /RDY (0=drive ready)
-; Bit 5: /WP (0=write protected)
-; Bit 7: /T0 (0=at track 0)
-
-; --- Interrupt vectors ---
-IV_INDEX	EQU	0F7E8H	; Index pulse ISR vector
-IV_MARK		EQU	0F7EAH	; Data mark ISR vector
+; --- Interruptvektoren (im RAM, adressiert ueber I-Register) ---
+; Diese Vektoren liegen normalerweise bei F7E8H (I-Register * 256 + E8H)
+; und werden vom CPU2-Formatierungscode temporaer umgebogen.
+IV_INDEX	EQU	0F7E8H	; Index-Puls ISR-Vektor (1 Puls pro Umdrehung)
+IV_MARK		EQU	0F7EAH	; Daten-Markierungs-ISR-Vektor
 
 ; ============================================================================
 
 	ORG	0100H
 
 ; ============================================================================
-; Entry Point: Check BIOS for CPA version string
-; Validates that system is CPA (not standard CP/M) with version >= CPAB5
+; PROGRAMMSTART: Systemvalidierung
+; Prueft ob das System ein CPA (nicht Standard-CP/M) ist und ob die
+; Version mindestens CPAB5 (d.h. CP/A Version B, ab Dezember 1987) ist.
+; Dies ist notwendig, weil FORMAT.COM CPA-spezifische BIOS-Extensions
+; wie cpmx21 (diskio) und cpmx18 (delsps) benoetigt.
 ; ============================================================================
 start:
-	LD HL,(0001H)                           ; 0100: 2A 01 00 ; HL = warm boot vector (BIOS base)
-	LD DE,0030H                             ; 0103: 11 30 00 ; offset +30H into BIOS
-	ADD HL,DE                               ; 0106: 19 ; HL -> BIOS version string
-	CALL check_CPA                          ; 0107: CD 22 01 ; check for 'CPA' string
-	JR NZ,L011C                             ; 010A: 20 10 ; not CPA -> error
-	LD A,42H                                ; 010C: 3E 42 ; 'B' - check for CPAB variant
-	CPI                                     ; 010E: ED A1
-	JR NZ,L011C                             ; 0110: 20 0A
-	LD A,39H                                ; 0112: 3E 39 ; check version digit >= '9'
+	LD HL,(0001H)                           ; 0100: 2A 01 00 ; HL = BIOS Warm-Boot-Adresse
+	LD DE,0030H                             ; 0103: 11 30 00 ; Offset +30H = Versionsstring im BIOS
+	ADD HL,DE                               ; 0106: 19 ; HL -> BIOS-Versionskennung
+	CALL check_CPA                          ; 0107: CD 22 01 ; Pruefe ob 'CPA' an dieser Stelle steht
+	JR NZ,L011C                             ; 010A: 20 10 ; Kein CPA -> Fehlermeldung
+	LD A,42H                                ; 010C: 3E 42 ; 'B' pruefen (CP/A Variante B)
+	CPI                                     ; 010E: ED A1 ; Vergleiche und HL++
+	JR NZ,L011C                             ; 0110: 20 0A ; Nicht Variante B -> Fehler
+	LD A,39H                                ; 0112: 3E 39 ; Versionsziffer muss < '9' sein
 	CP (HL)                                 ; 0114: BE
-	JR C,L011C                              ; 0115: 38 05
-	LD A,35H                                ; 0117: 3E 35 ; check version digit >= '5'
+	JR C,L011C                              ; 0115: 38 05 ; Version zu hoch -> Fehler
+	LD A,35H                                ; 0117: 3E 35 ; Versionsziffer muss >= '5' sein
 	CP (HL)                                 ; 0119: BE
-	JR C,check_TPA                          ; 011A: 38 15
+	JR C,check_TPA                          ; 011A: 38 15 ; Version OK -> TPA pruefen
 L011C:
 	LD DE,msg_version_error                 ; 011C: 11 BD 0F ; -> msg_version_error
 	JP print_string                         ; 011F: C3 18 0E
@@ -91,70 +172,88 @@ check_CPA:
 	CPI                                     ; 012E: ED A1
 	RET                                     ; 0130: C9
 
-; Check TPA size >= 9660H (required memory)
+; Pruefe ob genuegend TPA-Speicher vorhanden ist (mindestens 9660H = 38496 Bytes).
+; Der TPA (Transient Program Area) reicht von 0100H bis zur BDOS-Adresse.
+; FORMAT.COM benoetigt diesen Platz fuer Programm + Format-Tabellen + Puffer.
 check_TPA:
-	LD HL,(0006H)                           ; 0131: 2A 06 00 ; HL = BDOS entry addr = top of TPA
-	LD DE,9660H                             ; 0134: 11 60 96 ; minimum required = 38496 bytes
-	OR A                                    ; 0137: B7 ; clear carry for SBC
-	SBC HL,DE                               ; 0138: ED 52
-	JR NC,check_cmdline                     ; 013A: 30 06
-	LD DE,msg_tpa_error                     ; 013C: 11 12 10 ; -> msg_tpa_error
+	LD HL,(0006H)                           ; 0131: 2A 06 00 ; HL = BDOS-Einsprung = TPA-Obergrenze
+	LD DE,9660H                             ; 0134: 11 60 96 ; Mindestens 38496 Bytes erforderlich
+	OR A                                    ; 0137: B7 ; Carry loeschen fuer SBC
+	SBC HL,DE                               ; 0138: ED 52 ; TPA gross genug?
+	JR NC,check_cmdline                     ; 013A: 30 06 ; Ja -> weiter
+	LD DE,msg_tpa_error                     ; 013C: 11 12 10 ; Nein -> Fehlermeldung
 	JP print_string                         ; 013F: C3 18 0E
 
-; Check command line for 'CPA' parameter
-; If present, enables CPA-specific mode (format types)
+; Pruefe Kommandozeile auf 'CPA'-Parameter.
+; Wenn der Benutzer "FORMAT CPA" eingibt, werden zusaetzliche CPA-spezifische
+; Formattypen im Menue angeboten. Das Flag wird per Selbstmodifikation
+; in die Adresse 016CH geschrieben (dort steht ein LD A,nn Operand).
 check_cmdline:
-	LD HL,005DH                             ; 0142: 21 5D 00 ; FCB1+1 = first cmdline arg
-	CALL check_CPA                          ; 0145: CD 22 01
-	LD A,00H                                ; 0148: 3E 00
-	JR NZ,L0155                             ; 014A: 20 09
-	LD B,03H                                ; 014C: 06 03 ; call delsps (delete spaces) 3x
+	LD HL,005DH                             ; 0142: 21 5D 00 ; FCB1+1 = Kommandozeilenargument
+	CALL check_CPA                          ; 0145: CD 22 01 ; Pruefe auf 'CPA'
+	LD A,00H                                ; 0148: 3E 00 ; Default: CPA-Modus aus
+	JR NZ,L0155                             ; 014A: 20 09 ; Kein CPA-Argument -> Flag=0
+	LD B,03H                                ; 014C: 06 03 ; 3x Leerzeichen ueberspringen
 L014E:
 	PUSH BC                                 ; 014E: C5
-	CALL call_cpmx18                        ; 014F: CD EE 0D
+	CALL call_cpmx18                        ; 014F: CD EE 0D ; cpmx18 = delsps (Leerzeichen entf.)
 	POP BC                                  ; 0152: C1
 	DJNZ L014E                              ; 0153: 10 F9
 L0155:
-	LD (016CH),A                            ; 0155: 32 6C 01 ; store CPA mode flag
+	; SELBSTMODIFIKATION: Schreibt A (0 oder !=0) als Operand des
+	; LD A,nn Befehls bei 016BH. So wird das CPA-Flag zur Laufzeit gesetzt.
+	LD (016CH),A                            ; 0155: 32 6C 01 ; CPA-Modus-Flag speichern
 
 ; ============================================================================
-; Main Program Loop - Display menu and handle selections
+; HAUPTPROGRAMMSCHLEIFE
+; Zeigt das Formatierungsmenue an und verarbeitet Benutzerauswahlen.
+; Der Stapelzeiger wird auf die BDOS-Adresse gesetzt (= TPA-Obergrenze),
+; damit der gesamte Speicher darunter als Stack nutzbar ist.
 ; ============================================================================
 main_init:
-	LD SP,(0006H)                           ; 0158: ED 7B 06 00 ; set stack from BDOS addr
-	CALL save_isr_vectors                   ; 015C: CD 78 0C ; save ISR vectors, init hardware
-	LD DE,msg_banner                        ; 015F: 11 5B 10 ; -> msg_banner
+	LD SP,(0006H)                           ; 0158: ED 7B 06 00 ; Stack = TPA-Ende
+	CALL save_isr_vectors                   ; 015C: CD 78 0C ; ISR-Vektoren sichern, Hardware init
+	LD DE,msg_banner                        ; 015F: 11 5B 10 ; Programmtitel anzeigen
 	CALL print_string                       ; 0162: CD 18 0E
-; --- Show format type menu ---
+; --- Formattyp-Menue anzeigen ---
+; Das Menue bietet 4 Grundfunktionen:
+;   0 = Formatieren (Diskette komplett neu anlegen)
+;   1 = Kopieren (Spur fuer Spur von Quelle auf Ziel)
+;   2 = Pruefen (Lesen aller Spuren, Fehler melden)
+;   3 = Automatische Formaterkennung im BIOS einstellen
 show_menu:
-	LD DE,msg_menu                          ; 0165: 11 BE 10 ; -> msg_menu
+	LD DE,msg_menu                          ; 0165: 11 BE 10 ; Grundmenue
 	CALL print_string                       ; 0168: CD 18 0E
-	LD A,00H                                ; 016B: 3E 00 ; CPA mode flag (self-modifying)
+	; SELBSTMODIFIKATION: Der Operand bei 016CH wurde beim Start
+	; mit dem CPA-Modus-Flag ueberschrieben (siehe check_cmdline).
+	LD A,00H                                ; 016B: 3E 00 ; CPA-Modus? (Operand selbstmodifiziert)
 	OR A                                    ; 016D: B7
-	JR Z,L0176                              ; 016E: 28 06
-	LD DE,msg_cpa_mode                      ; 0170: 11 E3 10
+	JR Z,L0176                              ; 016E: 28 06 ; Kein CPA-Modus -> skip
+	LD DE,msg_cpa_mode                      ; 0170: 11 E3 10 ; CPA-spezifische Optionen
 	CALL print_string_inline                ; 0173: CD 1B 0E
 L0176:
-	LD DE,msg_format_info                   ; 0176: 11 1C 11 ; -> msg_format_info
+	LD DE,msg_format_info                   ; 0176: 11 1C 11 ; Formatauswahl-Prompt
 	CALL print_string_inline                ; 0179: CD 1B 0E
-	CALL read_char                          ; 017C: CD 37 0E
-	JR NZ,menu_input                        ; 017F: 20 02
-	LD A,30H                                ; 0181: 3E 30
-; --- Read user menu selection ---
+	CALL read_char                          ; 017C: CD 37 0E ; Eingabe abwarten
+	JR NZ,menu_input                        ; 017F: 20 02 ; Taste gedrueckt -> auswerten
+	LD A,30H                                ; 0181: 3E 30 ; Default bei ENTER = '0' (Formatieren)
+; --- Benutzereingabe auswerten ---
+; Q/X = Programmende (Rueckkehr ins Betriebssystem)
+; 0-3 = FORMAT-Funktion auswaehlen
 menu_input:
-	CP 51H                                  ; 0183: FE 51 ; check for 'Q' = quit
+	CP 51H                                  ; 0183: FE 51 ; 'Q' = Quit
 	JP Z,select_drive_side                  ; 0185: CA 5D 0B
-	CP 58H                                  ; 0188: FE 58 ; check for 'X' = quit
+	CP 58H                                  ; 0188: FE 58 ; 'X' = Exit 
 	JP Z,select_drive_side                  ; 018A: CA 5D 0B
-	SUB 30H                                 ; 018D: D6 30 ; convert ASCII to number
-	JR C,show_menu                          ; 018F: 38 D4 ; < '0' -> retry
-	CP 04H                                  ; 0191: FE 04 ; > 3 -> retry
+	SUB 30H                                 ; 018D: D6 30 ; ASCII -> Zahl (0-3)
+	JR C,show_menu                          ; 018F: 38 D4 ; Ungueltig -> nochmal
+	CP 04H                                  ; 0191: FE 04 ; > 3 -> ungueltig
 	JR NC,show_menu                         ; 0193: 30 D0
-	CP 01H                                  ; 0195: FE 01 ; choice 1?
+	CP 01H                                  ; 0195: FE 01 ; Funktion 1 (Kopieren)?
 	JR NZ,L01A1                             ; 0197: 20 08
-	LD A,(016CH)                            ; 0199: 3A 6C 01 ; check CPA mode required
+	LD A,(016CH)                            ; 0199: 3A 6C 01 ; Kopieren nur im CPA-Modus
 	OR A                                    ; 019C: B7
-	JR Z,show_menu                          ; 019D: 28 C6
+	JR Z,show_menu                          ; 019D: 28 C6 ; Nicht verfuegbar -> Menue
 	LD A,01H                                ; 019F: 3E 01
 L01A1:
 	LD (01C8H),A                            ; 01A1: 32 C8 01 ; store function number
@@ -162,8 +261,10 @@ L01A1:
 	LD DE,11CBH                             ; 01A6: 11 CB 11
 	JP NZ,process_choice                    ; 01A9: C2 AF 01
 	LD DE,11E5H                             ; 01AC: 11 E5 11
-; --- Process format function selection ---
-; A = selected function (0=format, 1=copy, 2=verify, 3=autodetect)
+; --- Funktionsnummer speichern und Laufwerk/Format vorbereiten ---
+; A = gewaehlte Funktion (0=Formatieren, 1=Kopieren, 2=Pruefen, 3=Autodetect)
+; Der Funktionscode wird an mehrere Stellen im Code geschrieben,
+; die spaeter per Selbstmodifikation abgefragt werden (01C8H etc.).
 process_choice:
 	PUSH DE                                 ; 01AF: D5
 	CALL read_char_upper                    ; 01B0: CD 34 0E
@@ -196,6 +297,29 @@ L01CD:
 	CALL read_char_upper                    ; 01F2: CD 34 0E
 	SUB 4EH                                 ; 01F5: D6 4E
 	LD (0AC7H),A                            ; 01F7: 32 C7 0A
+; ============================================================================
+; FORMATPARAMETER-EINRICHTUNG
+; Laedt die aktiven Formatparameter (CDB = Command Descriptor Block) in
+; die Arbeitsbereiche. Der CDB beschreibt ein komplettes Diskettenformat:
+;   Offset  0: Sektoren pro Spur (SPT)
+;   Offset  2: Block Shift Factor (BSH)
+;   Offset  3: Block Mask (BLM)
+;   Offset  4: Extent Mask (EXM)
+;   Offset  5-6: Disk Size - 1 (DSM, in Bloecken)
+;   Offset  7-8: Directory-Eintraege - 1 (DRM)
+;   Offset  9-10: Directory Allocation Bitmap (AL0/AL1)
+;   Offset 11-12: Checksum-Vektorgroesse (CKS)
+;   Offset 13: Reservierte Systemspuren (OFF)
+;   Offset 14: Track count
+;   Offset 15: Flags (Bit-Feld fuer Formatierungsoptionen)
+;   Offset 16: Sector Length Code (SLC: 0=128, 1=256, 2=512, 3=1024)
+;   Offset 17: Letzte Sektornummer
+;   Offset 18: Seitenanzahl/Konfiguration
+;   Offset 19: Seitenoffset fuer Sektornummern auf Rueckseite
+;   Offset 20: Anzahl Tracks gesamt
+;   Offset 22: Physische Spur-Anzahl
+;   Offset 24: Hardware-Feature-Flags (Bit 7: extended params etc.)
+; ============================================================================
 setup_format_params:
 	LD IY,drive_a_params                    ; 01FA: FD 21 1E 1C
 	CALL calc_track_capacity                ; 01FE: CD B4 0B
@@ -290,10 +414,12 @@ L02C1:
 	INC B                                   ; 02D2: 04
 	DEC B                                   ; 02D3: 05
 	JR Z,L02DA                              ; 02D4: 28 04
-; --- Calculate sector size from SLC ---
+; --- Sektorlaengencode aus SLC berechnen ---
+; SLC (Sector Length Code): 0=128B, 1=256B, 2=512B, 3=1024B
+; Die Sektorgroesse wird durch wiederholtes Halbieren berechnet.
 begin_operation:
-	SRL A                                   ; 02D6: CB 3F ; SRL A - divide by 2 per SLC step
-	DJNZ begin_operation                    ; 02D8: 10 FC
+	SRL A                                   ; 02D6: CB 3F ; Halbieren pro SLC-Schritt
+	DJNZ begin_operation                    ; 02D8: 10 FC ; B mal wiederholen
 L02DA:
 	LD (1B94H),A                            ; 02DA: 32 94 1B
 	LD HL,format_buffer                     ; 02DD: 21 50 1B
@@ -425,7 +551,8 @@ L03C0:
 	LD A,(1B94H)                            ; 03CC: 3A 94 1B
 	SRL A                                   ; 03CF: CB 3F
 	LD (1B94H),A                            ; 03D1: 32 94 1B
-; --- Set up format parameters ---
+; --- Formatparameter endgueltig setzen und Disk-I/O durchfuehren ---
+; Berechnet letzte Sektorgroessen und startet die BIOS-Disk-I/O ueber cpmx21.
 format_setup:
 	RES 7,(IX+18)                           ; 03D4: DD CB 12 BE
 	CALL do_disk_io                         ; 03D8: CD 10 0D
@@ -833,6 +960,15 @@ setup_format_ops:
 	CALL parse_dec_input                    ; 072A: CD 63 0F
 	JP Z,do_format_main                     ; 072D: CA 33 07
 	LD (1C39H),A                            ; 0730: 32 39 1C
+; ============================================================================
+; HAUPTSCHLEIFE: Formatieren/Kopieren/Pruefen ausfuehren
+; Je nach gewaehlter Funktion (01C8H) wird hier die eigentliche
+; Spur-fuer-Spur-Bearbeitung durchgefuehrt.
+; Bei Funktion 0 (Format): Prueft ob ein bekanntes Standardformat vorliegt
+;   und berechnet ggf. DPB-Parameter fuer den BIOS-Eintrag.
+; Bei Funktion 1 (Kopieren): Liest Quell- und Zieltracks, uebertraegt Daten.
+; Bei Funktion 2 (Pruefen): Liest alle Sektoren und meldet Fehler.
+; ============================================================================
 do_format_main:
 	LD A,(1C2BH)                            ; 0733: 3A 2B 1C
 	LD (1C20H),A                            ; 0736: 32 20 1C
@@ -901,6 +1037,10 @@ L079D:
 	JR Z,setup_variables                    ; 07C7: 28 02
 	JR L07DF                                ; 07C9: 18 14
 
+; --- Boot-Sektor und DPB-Tabelle fuer bekannte Formate einrichten ---
+; Fuer Standardformate (40T/80T, SS/DS, 5.25"/8") werden die passenden
+; DPB-Parameter und der Boot-Sektor vorbereitet. Bei unbekannten benutzer-
+; definierten Formaten wird nur A=0 gesetzt (kein Boot-Sektor).
 setup_variables:
 	LD DE,1F39H                             ; 07CB: 11 39 1F
 	LD BC,0008H                             ; 07CE: 01 08 00
@@ -1211,6 +1351,16 @@ L09E1:
 L09EC:
 	LD A,02H                                ; 09EC: 3E 02
 	LD (1C90H),A                            ; 09EE: 32 90 1C
+; ============================================================================
+; SPUR-BEARBEITUNGS-SCHLEIFE
+; Iteriert ueber alle zu bearbeitenden Spuren (von Startspur bis Endspur).
+; Pro Spur:
+;   1. Seek zur gewuenschten Spur (ueber cpmx21)
+;   2. Je nach Funktion: Formatieren / Daten kopieren / Verifizieren
+;   3. Optional: Verify nach Schreiben (Ruecklesen und Vergleichen)
+;   4. Fehlermeldung bei Problemen, bis zu 2 Wiederholungen
+;   5. Naechste Spur, bis alle fertig
+; ============================================================================
 format_next_track:
 	LD IX,active_cdb                        ; 09F1: DD 21 D0 1B
 	LD IY,drive_a_params                    ; 09F5: FD 21 1E 1C
@@ -1389,6 +1539,7 @@ L0B1E:
 	INC (HL)                                ; 0B2B: 34
 	JP L07EF                                ; 0B2C: C3 EF 07
 
+; --- Programmende: Zurueck zum Menue oder warm boot ---
 L0B2F:
 	LD DE,(1C82H)                           ; 0B2F: ED 5B 82 1C
 	CALL print_string                       ; 0B33: CD 18 0E
@@ -1409,11 +1560,16 @@ L0B49:
 	JP Z,main_init                          ; 0B54: CA 58 01
 	CALL restore_isr                        ; 0B57: CD A8 0F
 	CALL restore_isr_exit                   ; 0B5A: CD 90 0F
+; --- Programmende: Disk-Reset und Warm-Boot zurueck ins CPA ---
 select_drive_side:
-	LD C,0DH                                ; 0B5D: 0E 0D
-	CALL 0005H                              ; 0B5F: CD 05 00
-	JP 0000H                                ; 0B62: C3 00 00
+	LD C,0DH                                ; 0B5D: 0E 0D ; BDOS Funktion 0DH = Disk-Reset
+	CALL 0005H                              ; 0B5F: CD 05 00 ; Alle Laufwerke deselektieren
+	JP 0000H                                ; 0B62: C3 00 00 ; Warm-Boot -> zurueck ins CPA
 
+; --- Seitenflag bestimmen ---
+; SELBSTMODIFIKATION: Der Operand bei 0B66H wird zur Laufzeit
+; mit dem aktuellen Seitenflag (0 oder F6H) beschrieben.
+; Gibt in A den Fuellbyte-Wert fuer die aktuelle Seite zurueck.
 set_side_flag:
 	LD A,00H                                ; 0B65: 3E 00
 	OR A                                    ; 0B67: B7
@@ -1450,6 +1606,9 @@ save_drive_state:
 	LD A,20H                                ; 0B99: 3E 20
 	JP print_char_bdos                      ; 0B9B: C3 27 0E
 
+; --- Laufwerk validieren und Track-Kapazitaet berechnen ---
+; Springt in den BIOS-Code, um DPB-Informationen fuer das
+; angegebene Laufwerk zu holen. Verwendet calc_track_capacity.
 deselect_drive:
 	CALL calc_track_capacity                ; 0B9E: CD B4 0B
 	RET C                                   ; 0BA1: D8
@@ -1463,6 +1622,12 @@ display_track_info:
 	SCF                                     ; 0BB2: 37
 	RET                                     ; 0BB3: C9
 
+; --- Track-Kapazitaet berechnen ---
+; Ermittelt ueber den BIOS-Warmstart-Vektor die SELDSK-Routine
+; des BIOS und liest daraus die DPB-Informationen.
+; Dies ist ein INDIREKTER OS-Zugriff: Der Code berechnet die
+; Adresse der BIOS-Sprungtabelle aus dem Warmstart-Vektor (0001H)
+; und springt dann direkt in die BIOS SELDSK Routine.
 calc_track_capacity:
 	LD HL,(0001H)                           ; 0BB4: 2A 01 00
 	LD BC,0018H                             ; 0BB7: 01 18 00
@@ -1509,10 +1674,43 @@ input_format_count:
 	SCF                                     ; 0BFE: 37
 	RET                                     ; 0BFF: C9
 
-seek_only:
-	XOR A                                   ; 0C00: AF
-	JR do_cdb_io                            ; 0C01: 18 5E
+; ============================================================================
+; DISK I/O SUBROUTINEN
+; ============================================================================
+;
+; Diese Routinen verwenden zwei verschiedene I/O-Wege:
+;
+; 1. CPA-BIOS-Extension cpmx21 (diskio):
+;    Wird ueber call_diskio_cdb aufgerufen. Das ist der "offizielle" Weg
+;    ueber das Betriebssystem. Verwendet einen CDB (Command Descriptor Block)
+;    als Parameterblock.
+;
+; 2. DIREKTE PIO-Programmierung (CPU2-Code):
+;    Wird fuer die eigentliche Formatierung verwendet (siehe oben).
+;
+; CDB-Aufbau (Command Descriptor Block) bei drive_a_params / drive_b_params:
+;   Offset  0: Flags (Bit 1=Sekt-ID lesen, Bit 2=Schreiben, Bit 5=Kopf hoch)
+;   Offset  1: Laufwerk-Nummer
+;   Offset  2: Spur-Nummer (Track)
+;   Offset  3: Seite
+;   Offset  4: Sektor-Nummer (1-basiert)
+;   Offset  5: Sektorlaengencode (0=128, 1=256, 2=512, 3=1024)
+;   Offset  6: Anzahl phys. Sektoren (0=nur Seek)
+;   Offset  7-8: DMA-Adresse (Datenpuffer)
+;   Offset  9-10: DPB-Zeiger
+;   Offset 11-12: Spur-Tabellen-Zeiger
+; ============================================================================
 
+; --- Seek-Only: Lesekopf auf Spur positionieren ---
+; Funktion 0 im CDB = nur Seek, keine Daten lesen/schreiben.
+seek_only:
+	XOR A                                   ; 0C00: AF       ; A=0 = Seek-Funktion
+	JR do_cdb_io                            ; 0C01: 18 5E    ; -> CDB-I/O ausfuehren
+
+; --- Multi-Sektor I/O ---
+; Liest oder schreibt mehrere aufeinanderfolgende Sektoren.
+; Teilt grosse Transfers automatisch in kleinere Bloecke auf,
+; da der FDC nur begrenzt viele Sektoren auf einmal verarbeiten kann.
 do_multisector_io:
 	LD A,(1C80H)                            ; 0C03: 3A 80 1C
 	LD (IY+5),A                             ; 0C06: FD 77 05
@@ -1572,24 +1770,29 @@ L0C58:
 	OR A                                    ; 0C5F: B7
 	RET                                     ; 0C60: C9
 
+; --- CDB I/O ausfuehren: Lese-Modus ---
+; Setzt Funktion im CDB und ruft dann die CPA BIOS-Extension
+; cpmx21 (diskio) auf, um die Disk-Operation auszufuehren.
 do_cdb_io:
-	LD (IY+6),A                             ; 0C61: FD 77 06
-	RES 1,(IY+0)                            ; 0C64: FD CB 00 8E
+	LD (IY+6),A                             ; 0C61: FD 77 06 ; Funktion im CDB setzen
+	RES 1,(IY+0)                            ; 0C64: FD CB 00 8E ; Bit 1 loeschen = Lese-Modus
 	JR L0C6E                                ; 0C68: 18 04
 
+; --- CDB I/O: Schreib-Modus ---
 do_cdb_io_write:
-	SET 1,(IY+0)                            ; 0C6A: FD CB 00 CE
+	SET 1,(IY+0)                            ; 0C6A: FD CB 00 CE ; Bit 1 setzen = Schreib-Modus
 L0C6E:
 	PUSH IY                                 ; 0C6E: FD E5
-	POP HL                                  ; 0C70: E1
+	POP HL                                  ; 0C70: E1       ; HL -> CDB-Adresse
 	PUSH HL                                 ; 0C71: E5
-	CALL call_diskio_cdb                    ; 0C72: CD AB 0F
+	CALL call_diskio_cdb                    ; 0C72: CD AB 0F ; CPA Extension cpmx21 aufrufen
 	POP IY                                  ; 0C75: FD E1
 	RET                                     ; 0C77: C9
 
-; -----------------------------------------------
-; Save ISR vectors and setup for disk operations
-; -----------------------------------------------
+; ============================================================================
+; ISR-Vektoren sichern und Laufwerke deselektieren
+; Wird vor dem Beenden oder Laufwerkswechsel aufgerufen.
+; ============================================================================
 save_isr_vectors:
 	CALL restore_isr                        ; 0C78: CD A8 0F
 	LD A,(1C1FH)                            ; 0C7B: 3A 1F 1C
@@ -1668,10 +1871,15 @@ L0CED:
 	LD (1B95H),A                            ; 0D0C: 32 95 1B
 	RET                                     ; 0D0F: C9
 
-; -----------------------------------------------
-; Disk I/O via cpmx21 (diskio)
-; Sets up CDB structure and calls BIOS extension
-; -----------------------------------------------
+; ============================================================================
+; Disk I/O Setup und Spurkapazitaets-Berechnung
+; ============================================================================
+; Berechnet die Parameter fuer den physischen Disk-Zugriff:
+; - Sektorgroesse (80H * 2^N Bytes basierend auf DPB)
+; - Spurkapazitaet in Bytes
+; - Ganzzahl-Division fuer Sektor-Interleave
+; Nutzt CPA Extension cpmx21 fuer den eigentlichen Zugriff.
+; ============================================================================
 do_disk_io:
 	LD A,(IX+16)                            ; 0D10: DD 7E 10
 	LD (1BCFH),A                            ; 0D13: 32 CF 1B
@@ -1753,6 +1961,10 @@ L0D91:
 	DJNZ L0D91                              ; 0D94: 10 FB
 	RET                                     ; 0D96: C9
 
+; --- Sektor-Daten per CDB schreiben ---
+; Schreibt die Sektordaten ueber die CPA BIOS-Extension.
+; Der CDB wird mit der richtigen DMA-Adresse und Sektornummer
+; konfiguriert, dann wird cpmx21 (diskio) aufgerufen.
 write_sector_data:
 	PUSH IY                                 ; 0D97: FD E5
 	LD IY,1C8DH                             ; 0D99: FD 21 8D 1C
@@ -1770,6 +1982,8 @@ read_sector_data:
 	JR NZ,L0DA7                             ; 0DAF: 20 F6
 	RET                                     ; 0DB1: C9
 
+; --- Sektor verifizieren (Lesen ohne Datenvergleich) ---
+; Liest den Sektor ueber CDB und prueft auf Lesefehler.
 do_verify_read:
 	PUSH IY                                 ; 0DB2: FD E5
 	LD IY,1C86H                             ; 0DB4: FD 21 86 1C
@@ -1779,6 +1993,14 @@ do_verify_read:
 	LD E,04H                                ; 0DBF: 1E 04
 	JR advance_dma_ptr                      ; 0DC1: 18 04
 
+; ============================================================================
+; CRC-16 Berechnung
+; ============================================================================
+; Berechnet eine CRC-16 Pruefsumme ueber die Sektor-Daten.
+; Wird fuer die Integritaetspruefung der formatierten Sektoren verwendet.
+; Algorithmus: Standard CRC-16 mit Bit-Rotation und XOR.
+; Register: BC = laufende CRC, E = Byte-Zaehler, IY -> Datenpuffer
+; ============================================================================
 save_de_to_iy:
 	LD BC,(1C43H)                           ; 0DC3: ED 4B 43 1C
 advance_dma_ptr:
@@ -1814,7 +2036,25 @@ advance_dma_ptr:
 	JR NZ,advance_dma_ptr                   ; 0DEB: 20 DA
 	RET                                     ; 0DED: C9
 
-; Call CPA extension cpmx18 (delsps - delete spaces)
+; ============================================================================
+; CPA Extension Aufrufe (Betriebssystem-Zugriff)
+; ============================================================================
+; Diese Routinen rufen die CPA-spezifischen BIOS-Erweiterungen auf.
+; Der Zugriff erfolgt ueber die Extensionstabelle bei Adresse 004EH.
+;
+; cpmx18 (0DEE): "delsps" - Leerzeichen ueberlesen in der Kommandozeile
+; cpmx21 (0FAB): "diskio" - Erweiterte Disk-I/O ueber CDB
+;
+; Die Extension-Tabelle wird per LD HL,(004EH) gelesen, dann wird
+; der Funktions-Offset addiert. Dies ist der EINZIGE Weg wie
+; FORMAT.COM regulaer auf die Disk-Hardware zugreift (ausser beim
+; Formatieren selbst, wo direkte PIO-Programmierung noetig ist).
+; ============================================================================
+
+; --- CPA Extension cpmx18: Leerzeichen ueberlesen ---
+; Liest Zeichen aus dem Kommandozeilen-Puffer (0080H)
+; und ueberspringt Leerzeichen (20H).
+; Rueckgabe: A=naechstes Nicht-Leerzeichen, CF=1 wenn Zeichen vorhanden
 call_cpmx18:
 	CALL resolve_cpmext                     ; 0DEE: CD F9 0D
 	OR A                                    ; 0DF1: B7
@@ -1824,6 +2064,10 @@ call_cpmx18:
 	SCF                                     ; 0DF7: 37
 	RET                                     ; 0DF8: C9
 
+; --- Kommandozeilen-Puffer auslesen ---
+; Liest ein Byte aus dem DMA-Puffer (0080H = Laenge, 0081H+ = Daten).
+; Dekrementiert den Laengenzaehler. Konvertiert '/' in CR (0DH).
+; Rueckgabe: A=Zeichen, Z wenn Puffer leer.
 resolve_cpmext:
 	LD A,(0080H)                            ; 0DF9: 3A 80 00
 	OR A                                    ; 0DFC: B7
@@ -1838,13 +2082,15 @@ resolve_cpmext:
 	LD A,0DH                                ; 0E0B: 3E 0D
 L0E0D:
 	INC C                                   ; 0E0D: 0C
-; Call CPA extension by number
+; --- CPA Extension per Nummer aufrufen ---
+; C = Offset in der Kommandozeile, wird heruntergezaehlt.
+; Verschiebt den restlichen Pufferinhalt nach vorne.
 call_cpmext:
 	DEC C                                   ; 0E0E: 0D
 	RET Z                                   ; 0E0F: C8
 	LD B,00H                                ; 0E10: 06 00
-	LD HL,0082H                             ; 0E12: 21 82 00
-	LDIR                                    ; 0E15: ED B0
+	LD HL,0082H                             ; 0E12: 21 82 00 ; HL -> Puffer ab 2. Byte
+	LDIR                                    ; 0E15: ED B0    ; Restliche Bytes verschieben
 	RET                                     ; 0E17: C9
 
 ; -----------------------------------------------
@@ -2146,9 +2392,13 @@ L0F88:
 	CALL print_string_inline                ; 0F8B: CD 1B 0E
 	JR parse_dec_input                      ; 0F8E: 18 D3
 
-; -----------------------------------------------
-; Restore ISR vectors and return to CP/M
-; -----------------------------------------------
+; ============================================================================
+; Programmende und Rueckkehr-Routinen
+; ============================================================================
+
+; --- ISR restaurieren und Verzoegerung ---
+; Fuehrt eine Verzoegeurngsschleife aus (C8H = 200 Durchlaeufe),
+; um dem FDC Zeit zu geben die letzte Operation abzuschliessen.
 restore_isr_exit:
 	LD C,C8H                                ; 0F90: 0E C8
 L0F92:
@@ -2157,42 +2407,62 @@ L0F92:
 	JR NZ,L0F92                             ; 0F96: 20 FA
 	RET                                     ; 0F98: C9
 
+; --- Software-Verzoegerungsschleife ---
+; Zaehlt B von BDH (189) herunter bis 0.
+; Wird fuer Hardware-Timing gebraucht (Motor-Hochlauf etc.).
 exit_program:
 	LD B,BDH                                ; 0F99: 06 BD
 L0F9B:
 	DJNZ L0F9B                              ; 0F9B: 10 FE
 	RET                                     ; 0F9D: C9
 
+; --- Direkter BIOS-Warmstart-Aufruf ---
+; *** DIREKTER OS-ZUGRIFF: Berechnet BIOS-Adresse aus Warmstart-Vektor! ***
+; Liest den Warmstart-Vektor (0001H), addiert 18H (Offset zur
+; SELDSK-Routine in der BIOS-Sprungtabelle), und springt direkt
+; in den BIOS-Code. Dies umgeht den normalen BDOS-Weg.
 exit_warm_boot:
-	LD HL,(0001H)                           ; 0F9E: 2A 01 00
-	LD DE,0018H                             ; 0FA1: 11 18 00
-	ADD HL,DE                               ; 0FA4: 19
-	LD E,00H                                ; 0FA5: 1E 00
-	JP (HL)                                 ; 0FA7: E9
+	LD HL,(0001H)                           ; 0F9E: 2A 01 00 ; BIOS-Warmstart-Adresse lesen
+	LD DE,0018H                             ; 0FA1: 11 18 00 ; Offset +18H = SELDSK in BIOS-Tabelle
+	ADD HL,DE                               ; 0FA4: 19       ; HL -> BIOS SELDSK Routine
+	LD E,00H                                ; 0FA5: 1E 00    ; Parameter: Laufwerk 0
+	JP (HL)                                 ; 0FA7: E9       ; *** Direkt in BIOS springen!
 
+; --- ISR restaurieren ---
+; Ruft die CPA Extension cpmx21 auf, um den Disk-Controller
+; in den normalen Zustand zurueckzuversetzen.
 restore_isr:
-	LD HL,1C3AH                             ; 0FA8: 21 3A 1C
-; Call diskio with CDB at HL
+	LD HL,1C3AH                             ; 0FA8: 21 3A 1C ; HL -> CDB fuer Reset-Kommando
+
+; --- CPA Extension cpmx21 (diskio) aufrufen ---
+; Berechnet die Adresse der diskio-Funktion aus der CPA
+; Extensionstabelle bei 004EH und springt dorthin.
+; A = 21H = Funktionsnummer von diskio
+; HL = Zeiger auf CDB (Command Descriptor Block)
 call_diskio_cdb:
-	LD A,21H                                ; 0FAB: 3E 21
-; -----------------------------------------------
-; Delay loop
-; -----------------------------------------------
+	LD A,21H                                ; 0FAB: 3E 21    ; cpmx21 = diskio
+
+; --- Allgemeiner CPA-Extension-Aufruf ---
+; Liest die CPA-Extensionstabelle von 004EH, addiert den
+; Funktions-Offset (A) und springt indirekt dorthin.
+; *** OS-ZUGRIFF: Nutzt CPA-spezifische Erweiterungstabelle! ***
 delay_loop:
 	PUSH HL                                 ; 0FAD: E5
-	LD HL,(004EH)                           ; 0FAE: 2A 4E 00
-	ADD A,L                                 ; 0FB1: 85
+	LD HL,(004EH)                           ; 0FAE: 2A 4E 00 ; HL -> CPA Extensionstabelle
+	ADD A,L                                 ; 0FB1: 85       ; Offset addieren
 	LD L,A                                  ; 0FB2: 6F
 	JR NC,L0FB6                             ; 0FB3: 30 01
 	INC H                                   ; 0FB5: 24
 L0FB6:
-	LD (0FBBH),HL                           ; 0FB6: 22 BB 0F
+	LD (0FBBH),HL                           ; 0FB6: 22 BB 0F ; SELBSTMODIFIKATION: JP-Zieladresse schreiben!
 	POP HL                                  ; 0FB9: E1
-	JP 0000H                                ; 0FBA: C3 00 00
+	JP 0000H                                ; 0FBA: C3 00 00 ; *** SELBSTMODIFIKATION: Adresse wird ueberschrieben!
 
 
 ; ============================================================================
-; String Data Area
+; String-Datenbereich
+; Alle deutschsprachigen Meldungen des Programms.
+; Strings sind mit '$' terminiert (fuer BDOS Funktion 9).
 ; ============================================================================
 msg_version_error:
 	DB	0AH
@@ -2362,6 +2632,18 @@ active_cdb:
 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1BF0 | ................
 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1C00 | ................
 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1C10 | ..............
+; --- Arbeitsdaten-Bereich ---
+; Laufwerksparameter-Bloecke fuer Laufwerk A und B:
+;   Byte 0: Flags/Modus
+;   Byte 1: aktuelle Spur
+;   Byte 2: gewuenschte Spur
+;   Byte 3-4: reserviert
+;   Byte 5: Anzahl Sektoren
+;   Byte 6: Funktion
+;   Byte 7-8: DMA-Adresse
+;   Byte 9-10: DPB-Zeiger
+;   Byte 11-12: Spur-Tabellen-Zeiger
+;   Byte 13+: formatspezifische Parameter
 drive_a_params:
 	DB	10H,FFH,FFH,FFH,FFH,03H,01H,B0H,6CH,00H,00H,00H,00H,00H; 1C1E | ........l.....
 drive_b_params:
@@ -2374,401 +2656,801 @@ drive_b_params:
 	DB	00H,FBH                                           ; 1C8C | ..
 
 ; ============================================================================
-; CPU2 (K2526) Format Code
-; This is the timing-critical code for physical disk formatting.
-; The K2526 second CPU executes this while main CPU waits in JR $ loop.
-; Index pulse interrupt triggers ISR that modifies the JR displacement
-; to break the loop when formatting is complete.
+;                 CPU2 (K2526) FORMAT CODE - DIREKTER HARDWARE-ZUGRIFF
+; ============================================================================
+;
+; *** DIESER ABSCHNITT UMGEHT DAS BETRIEBSSYSTEM VOLLSTAENDIG! ***
+;
+; Die Karte K2526 besitzt ZWEI Z80/U880 CPUs auf einer Platine.
+; CPU1 fuehrt das CPA-Betriebssystem aus.
+; CPU2 ist normalerweise fuer Floppy-I/O ueber das BIOS zustaendig.
+;
+; FORMAT.COM nutzt CPU2 DIREKT fuer die Formatierung:
+;   1. CPU1 bereitet die Sektor-Tabellen vor (cpu2_init)
+;   2. sub_1E93 deaktiviert PIO-Interrupts und speichert alte ISR-Vektoren
+;   3. Der Warmstart-Vektor (0001H) wird umgeleitet, damit das OS
+;      waehrend der Formatierung nicht stoert
+;   4. CPU2-Formatroutine-Zeiger werden aus der Routinen-Tabelle geladen
+;   5. Die PIOs werden DIREKT konfiguriert (Port 10H-17H)
+;   6. CPU1 geht in eine JR $-Schleife (Endlosschleife bei 1D21H)
+;   7. CPU2 fuehrt die Formatierung durch (cpu2_format_5_sd/dd)
+;   8. Der Index-Puls-Interrupt (ISR bei 1E88H) modifiziert den
+;      JR-Operanden per Selbstmodifikation, um die Schleife zu beenden
+;   9. Nach Abschluss werden ISR-Vektoren restauriert
+;
+; EINSPRUNGPUNKTE:
+;   1C8EH: cpu2_init    - Einstieg 5.25" SD-Format
+;   1C96H:              - Einstieg 5.25" DD-Format
+;   1C9BH:              - Einstieg 8" Format
+;
+; Die ersten 3 Bytes (1C8E-1C90) werden als Laufzeit-Variablen benutzt:
+;   1C8EH: CPU2 Seitenoffset (0 = Seite A, >0 = Seite B)
+;   1C8FH: Aktueller Sektor-Zaehler
+;   1C90H: Wiederholungszaehler fuer Fehler
 ; ============================================================================
 cpu2_init:
-	NOP                                     ; 1C8E: 00
-	NOP                                     ; 1C8F: 00
-	NOP                                     ; 1C90: 00
-	LD DE,1EEAH                             ; 1C91: 11 EA 1E
+	NOP                                     ; 1C8E: 00 ; Variable: Seitenoffset (wird zur Laufzeit beschrieben)
+	NOP                                     ; 1C8F: 00 ; Variable: Sektor-Zaehler
+	NOP                                     ; 1C90: 00 ; Variable: Wiederholungen
+
+; --- Einstieg SD-Format (Single Density, FM-Kodierung) ---
+	LD DE,1EEAH                             ; 1C91: 11 EA 1E ; DE -> SD-Format-Parametertabelle
 	JR L1CA0                                ; 1C94: 18 0A
 
-	LD DE,1EEFH                             ; 1C96: 11 EF 1E
+; --- Einstieg DD-Format (Double Density, MFM-Kodierung) ---
+	LD DE,1EEFH                             ; 1C96: 11 EF 1E ; DE -> DD-Format-Parametertabelle
 	JR L1CA0                                ; 1C99: 18 05
 
-	LD DE,1EF4H                             ; 1C9B: 11 F4 1E
+; --- Einstieg 8"-Laufwerk Format ---
+	LD DE,1EF4H                             ; 1C9B: 11 F4 1E ; DE -> 8"-Format-Parametertabelle
 	JR L1CA0                                ; 1C9E: 18 00
 
+; --- Gemeinsame Initialisierung aller Formate ---
+; Laedt Formatroutinen-Zeiger aus der cpu2_format_table,
+; konfiguriert Gap-Fuellbytes und Sektorinterleave-Tabelle.
 L1CA0:
-	LD HL,cpu2_format_table                 ; 1CA0: 21 DF 1E
-	CALL sub_1ED2                           ; 1CA3: CD D2 1E
-	LD A,(1C8AH)                            ; 1CA6: 3A 8A 1C
+	LD HL,cpu2_format_table                 ; 1CA0: 21 DF 1E ; HL -> Zeigertabelle der CPU2-Routinen
+	CALL sub_1ED2                           ; 1CA3: CD D2 1E ; Kopiert Parameter aus (DE)-Tabelle nach (HL)-Zieladressen
+
+; --- Gap-Fuellbyte-Tabelle je nach Dichte auswaehlen ---
+; Die gap_fill_table (1F04H) enthaelt 8 Bytes pro Dichtestufe.
+; 1C8AH enthaelt den Index des aktuellen Formats (SD/DD/HD).
+	LD A,(1C8AH)                            ; 1CA6: 3A 8A 1C ; Formattyp-Index
 	LD B,A                                  ; 1CA9: 47
 	INC B                                   ; 1CAA: 04
-	LD DE,0008H                             ; 1CAB: 11 08 00
-	LD HL,1F02H                             ; 1CAE: 21 02 1F
+	LD DE,0008H                             ; 1CAB: 11 08 00 ; 8 Bytes pro Tabelleneintrag
+	LD HL,1F02H                             ; 1CAE: 21 02 1F ; Basis der Gap-Fill-Tabelle (vor gap_fill_table)
 L1CB1:
-	ADD HL,DE                               ; 1CB1: 19
+	ADD HL,DE                               ; 1CB1: 19       ; HL += 8 * (Formattyp+1)
 	DJNZ L1CB1                              ; 1CB2: 10 FD
-	EX DE,HL                                ; 1CB4: EB
-	LD HL,1EF9H                             ; 1CB5: 21 F9 1E
-	CALL sub_1ED2                           ; 1CB8: CD D2 1E
-	LD A,(1C81H)                            ; 1CBB: 3A 81 1C
-	LD HL,1F2AH                             ; 1CBE: 21 2A 1F
-	LD B,(HL)                               ; 1CC1: 46
+	EX DE,HL                                ; 1CB4: EB       ; DE -> Gap-Parameter fuer dieses Format
+	LD HL,1EF9H                             ; 1CB5: 21 F9 1E ; HL -> Zieladressen fuer Gap-Fill
+	CALL sub_1ED2                           ; 1CB8: CD D2 1E ; Kopiert Gap-Parameter an Zieladressen
+
+; --- Seitenwahl (Side Select) konfigurieren ---
+; Bit 2 der FDC-Steuerbytes wird je nach Seite gesetzt/geloescht.
+; 1C81H: 0=Seite A (Bit 2 setzen), >0=Seite B (Bit 2 loeschen)
+; Die Zeigertabelle format_ptr_table (1F2AH) enthaelt Adressen
+; der FDC-Steuerbytes, die entsprechend manipuliert werden.
+	LD A,(1C81H)                            ; 1CBB: 3A 81 1C ; Seitenflag (0=A, 1=B)
+	LD HL,1F2AH                             ; 1CBE: 21 2A 1F ; HL -> Zeigertabelle der Steuerbytes
+	LD B,(HL)                               ; 1CC1: 46       ; B = Anzahl der zu aendernden Steuerbytes
 L1CC2:
 	INC HL                                  ; 1CC2: 23
-	LD E,(HL)                               ; 1CC3: 5E
+	LD E,(HL)                               ; 1CC3: 5E       ; Lo-Byte der Zieladresse
 	INC HL                                  ; 1CC4: 23
-	LD D,(HL)                               ; 1CC5: 56
-	EX DE,HL                                ; 1CC6: EB
-	OR A                                    ; 1CC7: B7
-	JR Z,L1CCE                              ; 1CC8: 28 04
-	RES 2,(HL)                              ; 1CCA: CB 96
+	LD D,(HL)                               ; 1CC5: 56       ; Hi-Byte der Zieladresse
+	EX DE,HL                                ; 1CC6: EB       ; HL -> Ziel-Steuerbyte
+	OR A                                    ; 1CC7: B7       ; Seite A (A=0)?
+	JR Z,L1CCE                              ; 1CC8: 28 04    ; Ja -> Bit 2 setzen (/SIDE high)
+	RES 2,(HL)                              ; 1CCA: CB 96    ; Seite B: Bit 2 loeschen (/SIDE low)
 	JR cpu2_copy_data                       ; 1CCC: 18 02
 
 L1CCE:
-	SET 2,(HL)                              ; 1CCE: CB D6
+	SET 2,(HL)                              ; 1CCE: CB D6    ; Seite A: Bit 2 setzen (/SIDE high)
 cpu2_copy_data:
 	EX DE,HL                                ; 1CD0: EB
-	DJNZ L1CC2                              ; 1CD1: 10 EF
-	LD (1D29H),SP                           ; 1CD3: ED 73 29 1D
-	CALL setup_isr                          ; 1CD7: CD 8E 1E
-	LD B,57H                                ; 1CDA: 06 57
-	JP Z,L1D28                              ; 1CDC: CA 28 1D
-	CALL sub_1E93                           ; 1CDF: CD 93 1E
-	LD HL,0000H                             ; 1CE2: 21 00 00
-	LD BC,(0001H)                           ; 1CE5: ED 4B 01 00
-	LD (0001H),HL                           ; 1CE9: 22 01 00
-	LD A,FEH                                ; 1CEC: 3E FE
-	LD (cpu2_format_end),A                  ; 1CEE: 32 22 1D
-	LD HL,1D50H                             ; 1CF1: 21 50 1D
-	LD DE,1DE5H                             ; 1CF4: 11 E5 1D
-	LD (HL),18H                             ; 1CF7: 36 18
-	EX DE,HL                                ; 1CF9: EB
-	LD (HL),18H                             ; 1CFA: 36 18
-	EX DE,HL                                ; 1CFC: EB
-	XOR A                                   ; 1CFD: AF
-	OUT (14H),A                             ; 1CFE: D3 14
-	OUT (04H),A                             ; 1D00: D3 04
-	DEC A                                   ; 1D02: 3D
-	OUT (17H),A                             ; 1D03: D3 17
-	OUT (17H),A                             ; 1D05: D3 17
-	LD A,B9H                                ; 1D07: 3E B9
-	OUT (10H),A                             ; 1D09: D3 10
-	LD A,A1H                                ; 1D0B: 3E A1
-	OUT (10H),A                             ; 1D0D: D3 10
-	LD A,7FH                                ; 1D0F: 3E 7F
-	OUT (17H),A                             ; 1D11: D3 17
-	IN A,(16H)                              ; 1D13: DB 16
-	LD (0001H),BC                           ; 1D15: ED 43 01 00
-	LD A,B4H                                ; 1D19: 3E B4
-	OUT (10H),A                             ; 1D1B: D3 10
-	LD A,83H                                ; 1D1D: 3E 83
-	OUT (11H),A                             ; 1D1F: D3 11
-L1D21:
-	JR L1D21                                ; 1D21: 18 FE
+	DJNZ L1CC2                              ; 1CD1: 10 EF    ; Naechstes Steuerbyte
+; ============================================================================
+; HARDWARE-SETUP: DIREKTER PIO/FDC-ZUGRIFF (am OS vorbei!)
+; ============================================================================
+; Ab hier beginnt der kritische Abschnitt, in dem FORMAT.COM
+; DIREKT auf die Hardware der K5122 Floppy-Controller-Karte zugreift.
+; Das Betriebssystem (CPA) wird komplett umgangen.
+; ============================================================================
 
-	LD B,00H                                ; 1D23: 06 00
-	LD HL,0000H                             ; 1D25: 21 00 00
+	LD (1D29H),SP                           ; 1CD3: ED 73 29 1D ; Stack-Pointer sichern fuer spaetere Wiederherstellung
+
+; --- Schreibschutz-Pruefung: DIREKTER PORT-ZUGRIFF! ---
+; Liest PIO B Status-Port 12H direkt, um zu pruefen ob
+; die Diskette schreibgeschuetzt ist (Bit 5 = /WP).
+	CALL setup_isr                          ; 1CD7: CD 8E 1E ; -> IN A,(12H); BIT 5,A bei 1E8EH
+	LD B,57H                                ; 1CDA: 06 57    ; Fehlercode 'W' (Write-protect) vorbereiten
+	JP Z,L1D28                              ; 1CDC: CA 28 1D ; Wenn WP aktiv -> Abbruch mit Fehler
+
+; --- ISR-Vektoren umbiegen: DIREKTER I-REGISTER ZUGRIFF! ---
+; sub_1E93 macht Folgendes:
+;   1. Deaktiviert PIO-Interrupts: OUT (11H),03H
+;   2. Liest I-Register: LD A,I (Interrupt-Basisvektor)
+;   3. Speichert alte ISR-Vektoren von I*256+E8H (4 Bytes)
+;   4. Installiert eigene ISR-Vektoren (Index-Puls + Daten-Marke)
+;   5. Aktiviert Interrupts: EI
+	CALL sub_1E93                           ; 1CDF: CD 93 1E ; ISR-Vektoren umbiegen
+
+; --- Warmstart-Vektor deaktivieren: OS-UMGEHUNG! ---
+; Der Warmstart-Vektor bei 0001H wird auf 0000H gesetzt,
+; damit das CPA waehrend der Formatierung nicht durch einen
+; versehentlichen Warmstart die Hardware-Programmierung stoert.
+; Der originale Vektor wird in BC gesichert und spaeter restauriert.
+	LD HL,0000H                             ; 1CE2: 21 00 00
+	LD BC,(0001H)                           ; 1CE5: ED 4B 01 00 ; BC = Original-Warmstart-Vektor sichern
+	LD (0001H),HL                           ; 1CE9: 22 01 00    ; Warmstart deaktivieren (0000H)
+
+; --- Selbstmodifikation: JR $-Endlosschleife vorbereiten ---
+; Bei 1D22H (cpu2_format_end) wird FEH geschrieben, was zusammen
+; mit dem Opcode 18H (JR) zu JR $-2 wird -> Endlosschleife.
+; Wenn die Formatierung beendet ist, schreibt die ISR bei 1E88H
+; den Wert 3EH dorthin, was die Schleife aufbricht.
+	LD A,FEH                                ; 1CEC: 3E FE    ; FEH = JR-Displacement fuer "JR $" (-2)
+	LD (cpu2_format_end),A                  ; 1CEE: 32 22 1D ; Endlosschleife bei 1D21H programmieren
+
+; --- Selbstmodifikation der Format-Schleifen ---
+; In den Formatroutinen cpu2_format_5_sd (bei 1D50H) und
+; cpu2_format_5_dd_wr (bei 1DE5H) gibt es JR-Schleifen, die
+; ebenfalls per ISR aufgebrochen werden. 18H = JR-Opcode.
+	LD HL,1D50H                             ; 1CF1: 21 50 1D ; Adresse der SD-Formatschleife
+	LD DE,1DE5H                             ; 1CF4: 11 E5 1D ; Adresse der DD-Formatschleife
+	LD (HL),18H                             ; 1CF7: 36 18    ; 18H = JR Opcode einschreiben
+	EX DE,HL                                ; 1CF9: EB
+	LD (HL),18H                             ; 1CFA: 36 18    ; dto. fuer DD-Schleife
+	EX DE,HL                                ; 1CFC: EB
+; ============================================================================
+; *** KRITISCHER HARDWARE-ZUGRIFF: PIO-KONFIGURATION ***
+; Hier wird die K5122 Floppy-Controller-Karte DIREKT programmiert.
+; Alle OUT-Befehle gehen OHNE OS-Vermittlung an die PIO-Ports.
+; ============================================================================
+;
+; Port 14H = Daten-PIO Kanal A (Daten zum/vom FDC)
+; Port 04H = Daten-PIO Kanal B (Steuer-/Statusdaten)
+; Port 17H = Daten-PIO Steuerregister (Konfiguration Eingang/Ausgang)
+; Port 10H = FDC Steuer-PIO Ausgabe (Steuersignale zum FDC):
+;            Bit 0 = /WE (Write Enable, active low)
+;            Bit 2 = /SIDE (Seitenauswahl, 0=B, 1=A)
+;            Bit 3 = SD (Single Density, 1=FM, 0=MFM)
+;            Bit 4 = /ST (Step, Schrittimpuls)
+;            Bit 5 = DIR (Richtung, 1=innen, 0=aussen)
+;            Bit 7 = Laufwerk Select
+; Port 11H = FDC Steuer-PIO Interrupt-Steuerung:
+;            83H = Interrupts freigeben (Index-Puls-Erkennung)
+;            03H = Interrupts sperren
+; Port 16H = Daten-PIO Steuerregister lesen
+; ============================================================================
+
+	XOR A                                   ; 1CFD: AF       ; A = 00H
+	OUT (14H),A                             ; 1CFE: D3 14    ; *** HW-ZUGRIFF: Daten-PIO A auf 00H setzen
+	OUT (04H),A                             ; 1D00: D3 04    ; *** HW-ZUGRIFF: Daten-PIO B auf 00H setzen
+	DEC A                                   ; 1D02: 3D       ; A = FFH
+	OUT (17H),A                             ; 1D03: D3 17    ; *** HW-ZUGRIFF: PIO Steuer-Reg: Eingabemodus konfigurieren
+	OUT (17H),A                             ; 1D05: D3 17    ; *** HW-ZUGRIFF: Nochmals FFH -> alle Bits als Eingang
+
+; --- FDC-Steuersignale setzen: Laufwerk vorbereiten ---
+	LD A,B9H                                ; 1D07: 3E B9    ; B9H = 10111001b:
+	                                        ;                ; Bit 0=1: /WE inaktiv (NICHT schreiben)
+	                                        ;                ; Bit 3=1: SD=Single Density (FM)
+	                                        ;                ; Bit 4=1: /ST inaktiv (kein Step)
+	                                        ;                ; Bit 5=1: DIR=nach innen
+	                                        ;                ; Bit 7=1: Laufwerk selektiert
+	OUT (10H),A                             ; 1D09: D3 10    ; *** HW-ZUGRIFF: FDC-Steuersignale setzen
+
+	LD A,A1H                                ; 1D0B: 3E A1    ; A1H = 10100001b:
+	                                        ;                ; Bit 0=1: /WE inaktiv
+	                                        ;                ; Bit 5=1: DIR nach innen
+	                                        ;                ; Bit 7=1: Laufwerk selektiert
+	                                        ;                ; (SD-Bit geloescht = MFM vorbereitet)
+	OUT (10H),A                             ; 1D0D: D3 10    ; *** HW-ZUGRIFF: Steuersignale aktualisieren
+
+; --- Daten-PIO als Eingang konfigurieren (Bitmaske lesen) ---
+	LD A,7FH                                ; 1D0F: 3E 7F    ; 7FH = Bit-Maske fuer Eingangs-Konfiguration
+	OUT (17H),A                             ; 1D11: D3 17    ; *** HW-ZUGRIFF: PIO-Konfiguration
+	IN A,(16H)                              ; 1D13: DB 16    ; *** HW-ZUGRIFF: PIO-Status lesen (Handshake)
+
+; --- Warmstart-Vektor restaurieren ---
+	LD (0001H),BC                           ; 1D15: ED 43 01 00 ; Original-Warmstart-Vektor zurueckschreiben
+
+; --- Schreibmodus aktivieren und Index-Interrupt einschalten ---
+	LD A,B4H                                ; 1D19: 3E B4    ; B4H = 10110100b:
+	                                        ;                ; Bit 0=0: /WE AKTIV -> SCHREIBEN ERLAUBT!
+	                                        ;                ; Bit 2=1: /SIDE (Seite A)
+	                                        ;                ; Bit 4=1: /ST inaktiv
+	                                        ;                ; Bit 5=1: DIR nach innen
+	                                        ;                ; Bit 7=1: Laufwerk selektiert
+	OUT (10H),A                             ; 1D1B: D3 10    ; *** HW-ZUGRIFF: SCHREIBEN AKTIVIEREN!
+
+	LD A,83H                                ; 1D1D: 3E 83    ; 83H = Interrupts freigeben
+	                                        ;                ; Der Index-Puls am Laufwerk loest jetzt
+	                                        ;                ; einen Interrupt aus, der die ISR bei 1E88H anspringt.
+	OUT (11H),A                             ; 1D1F: D3 11    ; *** HW-ZUGRIFF: PIO-Interrupts EINSCHALTEN!
+
+; ============================================================================
+; *** ENDLOSSCHLEIFE - Warten auf Formatierung ***
+; CPU1 wartet hier, waehrend CPU2 die eigentliche Formatierung ausfuehrt.
+; Die ISR bei 1E88H wird beim Index-Puls am Ende der Spur ausgeloest
+; und modifiziert den JR-Operanden bei 1D22H von FEH (JR $) auf 3EH,
+; wodurch die Schleife aufgebrochen und die Ausfuehrung fortgesetzt wird.
+; Aus JR FEH (= JR $, Endlosschleife) wird LD A,06H (= NOP-artig).
+; ============================================================================
+L1D21:
+	JR L1D21                                ; 1D21: 18 FE    ; *** ENDLOSSCHLEIFE bis ISR sie aufbricht!
+cpu2_format_end EQU 1D22H                               ; Operand des JR wird von ISR modifiziert
+
+; --- Hierhin gelangt die Ausfuehrung nach ISR-Modifikation ---
+	LD B,00H                                ; 1D23: 06 00    ; B=0: kein Fehler
+	LD HL,0000H                             ; 1D25: 21 00 00 ; HL=0 (normal return)
+
+; --- Cleanup nach Formatierung ---
 L1D28:
-	LD SP,0000H                             ; 1D28: 31 00 00
-	LD A,03H                                ; 1D2B: 3E 03
-	OUT (11H),A                             ; 1D2D: D3 11
-	LD A,B                                  ; 1D2F: 78
+	LD SP,0000H                             ; 1D28: 31 00 00 ; SP restaurieren (Operand bei 1CD3H gesichert)
+
+; --- PIO-Interrupts wieder sperren ---
+	LD A,03H                                ; 1D2B: 3E 03    ; 03H = Interrupts sperren
+	OUT (11H),A                             ; 1D2D: D3 11    ; *** HW-ZUGRIFF: PIO-Interrupts ABSCHALTEN!
+
+	LD A,B                                  ; 1D2F: 78       ; Fehlercode laden
+
+; --- ISR-Vektoren restaurieren und zurueckkehren ---
 cpu2_check_ready:
 	PUSH HL                                 ; 1D30: E5
 	PUSH AF                                 ; 1D31: F5
-	CALL restore_isr_vecs                   ; 1D32: CD B6 1E
+	CALL restore_isr_vecs                   ; 1D32: CD B6 1E ; Originale ISR-Vektoren wiederherstellen
 	POP AF                                  ; 1D35: F1
 	POP HL                                  ; 1D36: E1
-	OR A                                    ; 1D37: B7
-	RET                                     ; 1D38: C9
+	OR A                                    ; 1D37: B7       ; Z-Flag setzen wenn kein Fehler
+	RET                                     ; 1D38: C9       ; Zurueck zum Hauptprogramm
 
-	EXX                                     ; 1D39: D9
+; ============================================================================
+; CPU2 FORMATIERROUTINE: SINGLE DENSITY (FM-KODIERUNG)
+; ============================================================================
+;
+; *** DIREKTER HARDWARE-ZUGRIFF AUF ALLEN PORTS! ***
+;
+; Diese Routine wird von CPU2 ausgefuehrt und schreibt die physische
+; Spur-Struktur im FM-Format (Single Density) direkt auf die Diskette.
+; Alle Daten werden byteweise ueber die PIO an den FDC geschickt.
+;
+; FM-Spurs-Struktur pro Sektor:
+;   1. GAP (4EH-Bytes via Port 14H/C=14H, B=Anzahl)
+;   2. SYNC (00H-Bytes, 11 Stueck via Port 14H)
+;   3. Index Address Mark (C2H) ueber Port 14H, Clock via Port 10H
+;   4. Sector ID (Track, Side, Sector, Size) via OTIR
+;   5. CRC (2 Bytes)
+;   6. GAP2
+;   7. Data Address Mark (A1H) und Data-Feld
+;   8. CRC (2 Bytes)
+;   9. GAP3
+;
+; Port-Zuordnung (DIREKT, ohne OS!):
+;   Port 14H (C=14H) = Daten-PIO A: Datenbytes zum FDC
+;   Port 10H (C=10H) = Steuer-PIO: Clock/Steuersignale
+;   Port 04H (C=04H) = Daten-PIO B: Hilfsdaten
+;
+; Register-Belegung:
+;   BC  = Port-Adresse und Zaehler fuer OUTI/OTIR
+;   D   = Sektorzaehler (herunterzaehlend)
+;   E   = Gap-Fuellbyte (4EH fuer SD)
+;   HL  = Zeiger auf Sektor-Daten (ab 6CB0H)
+;   HL' = Zeiger auf Sektor-Adress-Tabelle
+;   DE' = CRC/Kontroll-Werte (alternativregister)
+; ============================================================================
+	EXX                                     ; 1D39: D9       ; Alternativregister aktivieren
 cpu2_format_5_sd:
-	LD HL,6CB0H                             ; 1D3A: 21 B0 6C
-	LD DE,B6B4H                             ; 1D3D: 11 B4 B6
-	EXX                                     ; 1D40: D9
-	LD BC,5014H                             ; 1D41: 01 14 50
-	LD A,(1C45H)                            ; 1D44: 3A 45 1C
-	LD D,A                                  ; 1D47: 57
-	LD E,4EH                                ; 1D48: 1E 4E
-L1D4A:
-	LD A,BDH                                ; 1D4A: 3E BD
-	OUT (10H),A                             ; 1D4C: D3 10
-L1D4E:
-	OUT (C),E                               ; 1D4E: ED 59
-	JR L1D4E                                ; 1D50: 18 FC
+	LD HL,6CB0H                             ; 1D3A: 21 B0 6C ; HL' -> Sektor-Datenpuffer
+	LD DE,B6B4H                             ; 1D3D: 11 B4 B6 ; DE' = CRC Initialwert fuer FM
+	EXX                                     ; 1D40: D9       ; Zurueck zu Hauptregistern
+	LD BC,5014H                             ; 1D41: 01 14 50 ; B=50H (80 Gap-Bytes), C=14H (Daten-Port)
+	LD A,(1C45H)                            ; 1D44: 3A 45 1C ; Anzahl Sektoren pro Spur
+	LD D,A                                  ; 1D47: 57       ; D = Sektorzaehler
+	LD E,4EH                                ; 1D48: 1E 4E    ; E = Gap-Fuellbyte (4EH fuer FM)
 
+; --- Warten auf Index-Puls (Spuranfang) ---
+; Die ISR bei 1E88H bricht diese Schleife beim naechsten Index-Puls auf.
+; Danach beginnt sofort die Formatierung am Spuranfang.
+L1D4A:
+	LD A,BDH                                ; 1D4A: 3E BD    ; BDH = Steuerwort mit /WE aktiv (Schreiben an)
+	OUT (10H),A                             ; 1D4C: D3 10    ; *** HW: Schreibmodus aktivieren
+
+; --- Endlosschleife: Gap-Bytes schreiben bis Index-Puls ---
+; SELBSTMODIFIKATION: Die ISR aendert den JR-Operanden bei 1D50H+1
+; von FCH (JR $-2, Schleife) auf 3EH -> Schleife wird verlassen.
+L1D4E:
+	OUT (C),E                               ; 1D4E: ED 59    ; *** HW: Gap-Fuellbyte 4EH an Port 14H
+	JR L1D4E                                ; 1D50: 18 FC    ; Schleife bis ISR den Operanden aendert
+
+; ============================================================================
+; SEKTOR-GAP SCHREIBEN (Post-Index Gap / Gap 1)
+; 50H (80) Gap-Bytes werden am Anfang der Spur geschrieben
+; ============================================================================
 L1D52:
-	OUT (C),E                               ; 1D52: ED 59
-	DJNZ L1D52                              ; 1D54: 10 FC
-	XOR A                                   ; 1D56: AF
-	LD B,0BH                                ; 1D57: 06 0B
+	OUT (C),E                               ; 1D52: ED 59    ; *** HW: Gap-Byte schreiben
+	DJNZ L1D52                              ; 1D54: 10 FC    ; B Bytes schreiben
+
+; --- SYNC-Feld (11 Null-Bytes) ---
+; Die Null-Bytes dienen zur Taktsynchronisation des Lesekopfes.
+	XOR A                                   ; 1D56: AF       ; A = 00H (Sync-Byte)
+	LD B,0BH                                ; 1D57: 06 0B    ; 11 Sync-Bytes
 L1D59:
-	OUT (14H),A                             ; 1D59: D3 14
+	OUT (14H),A                             ; 1D59: D3 14    ; *** HW: Sync-Byte 00H schreiben
 	DJNZ L1D59                              ; 1D5B: 10 FC
-	EXX                                     ; 1D5D: D9
-	LD C,10H                                ; 1D5E: 0E 10
-	OUT (14H),A                             ; 1D60: D3 14
-	OUT (C),D                               ; 1D62: ED 51
-	LD A,C2H                                ; 1D64: 3E C2
-	OUT (14H),A                             ; 1D66: D3 14
-	OUT (14H),A                             ; 1D68: D3 14
-	OUT (14H),A                             ; 1D6A: D3 14
-	OUT (C),E                               ; 1D6C: ED 59
-	LD A,FCH                                ; 1D6E: 3E FC
-	OUT (14H),A                             ; 1D70: D3 14
-	EXX                                     ; 1D72: D9
-	LD B,32H                                ; 1D73: 06 32
+
+; --- INDEX ADDRESS MARK (IAM) ---
+; Spezielle Byte-Folge die dem Controller den Spuranfang signalisiert.
+; Im FM-Format: C2H C2H C2H mit speziellem Clock-Pattern.
+; Port 10H steuert die Clock-Bits des FDC.
+	EXX                                     ; 1D5D: D9       ; Alt-Register: D=Clock-Wert
+	LD C,10H                                ; 1D5E: 0E 10    ; C = Steuer-Port 10H
+	OUT (14H),A                             ; 1D60: D3 14    ; *** HW: Letztes Sync-Byte
+	OUT (C),D                               ; 1D62: ED 51    ; *** HW: Clock-Pattern fuer Address Mark
+	LD A,C2H                                ; 1D64: 3E C2    ; C2H = Index Address Mark Byte
+	OUT (14H),A                             ; 1D66: D3 14    ; *** HW: IAM Byte 1
+	OUT (14H),A                             ; 1D68: D3 14    ; *** HW: IAM Byte 2
+	OUT (14H),A                             ; 1D6A: D3 14    ; *** HW: IAM Byte 3
+	OUT (C),E                               ; 1D6C: ED 59    ; *** HW: Steuer-Signal normal
+	LD A,FCH                                ; 1D6E: 3E FC    ; FCH = Index Mark Schluss-Byte
+	OUT (14H),A                             ; 1D70: D3 14    ; *** HW: Index Mark abschliessen
+	EXX                                     ; 1D72: D9       ; Zurueck zu Hauptregistern
+
+; ============================================================================
+; SEKTOR-SCHLEIFE: Fuer jeden Sektor der Spur:
+; ============================================================================
+	LD B,32H                                ; 1D73: 06 32    ; 50 Gap-Bytes (Gap 2)
 L1D75:
-	OUT (C),E                               ; 1D75: ED 59
+	OUT (C),E                               ; 1D75: ED 59    ; *** HW: Gap-Byte schreiben
 	DJNZ L1D75                              ; 1D77: 10 FC
+
+; --- SECTOR ID FIELD ---
 L1D79:
+; Sync-Feld vor Sektor-ID (11 Null-Bytes)
 	XOR A                                   ; 1D79: AF
-	LD B,0BH                                ; 1D7A: 06 0B
+	LD B,0BH                                ; 1D7A: 06 0B    ; 11 Sync-Bytes
 L1D7C:
-	OUT (14H),A                             ; 1D7C: D3 14
+	OUT (14H),A                             ; 1D7C: D3 14    ; *** HW: Sync-Byte
 	DJNZ L1D7C                              ; 1D7E: 10 FC
-	EXX                                     ; 1D80: D9
-	LD C,10H                                ; 1D81: 0E 10
-	OUT (14H),A                             ; 1D83: D3 14
-	OUT (C),D                               ; 1D85: ED 51
-	LD A,A1H                                ; 1D87: 3E A1
-	OUT (14H),A                             ; 1D89: D3 14
-	OUT (14H),A                             ; 1D8B: D3 14
-	OUT (14H),A                             ; 1D8D: D3 14
-	OUT (C),E                               ; 1D8F: ED 59
-	LD A,FEH                                ; 1D91: 3E FE
-	OUT (14H),A                             ; 1D93: D3 14
-	LD BC,0614H                             ; 1D95: 01 14 06
-	OTIR                                    ; 1D98: ED B3
-	EXX                                     ; 1D9A: D9
-	LD B,16H                                ; 1D9B: 06 16
+
+; --- Address Mark fuer Sektor-ID ---
+; A1H mit speziellem Clock = Sektor-ID-Kennung
+	EXX                                     ; 1D80: D9       ; Alt-Register
+	LD C,10H                                ; 1D81: 0E 10    ; Steuer-Port
+	OUT (14H),A                             ; 1D83: D3 14    ; *** HW: Letztes Sync-Byte
+	OUT (C),D                               ; 1D85: ED 51    ; *** HW: Clock-Pattern fuer Address Mark
+	LD A,A1H                                ; 1D87: 3E A1    ; A1H = Sektor ID Address Mark
+	OUT (14H),A                             ; 1D89: D3 14    ; *** HW: IDAM Byte 1
+	OUT (14H),A                             ; 1D8B: D3 14    ; *** HW: IDAM Byte 2
+	OUT (14H),A                             ; 1D8D: D3 14    ; *** HW: IDAM Byte 3
+	OUT (C),E                               ; 1D8F: ED 59    ; *** HW: Steuer-Signal normal
+
+; --- Sektor-Header: FEH + Track + Side + Sector + Size ---
+	LD A,FEH                                ; 1D91: 3E FE    ; FEH = ID Address Mark
+	OUT (14H),A                             ; 1D93: D3 14    ; *** HW: ID-Mark schreiben
+	LD BC,0614H                             ; 1D95: 01 14 06 ; 6 Bytes an Port 14H (ID + CRC)
+	OTIR                                    ; 1D98: ED B3    ; *** HW: Sektor-ID-Feld schreiben (HL->Port)
+	EXX                                     ; 1D9A: D9       ; Hauptregister
+
+; --- GAP 2 (zwischen ID und Daten) ---
+	LD B,16H                                ; 1D9B: 06 16    ; 22 Gap-Bytes
 L1D9D:
-	OUT (C),E                               ; 1D9D: ED 59
+	OUT (C),E                               ; 1D9D: ED 59    ; *** HW: Gap-Byte
 	DJNZ L1D9D                              ; 1D9F: 10 FC
+
+; --- DATA FIELD ---
+; Sync-Feld vor Daten (11 Null-Bytes)
 	XOR A                                   ; 1DA1: AF
 	LD B,0BH                                ; 1DA2: 06 0B
 L1DA4:
-	OUT (14H),A                             ; 1DA4: D3 14
+	OUT (14H),A                             ; 1DA4: D3 14    ; *** HW: Sync-Byte
 	DJNZ L1DA4                              ; 1DA6: 10 FC
-	EXX                                     ; 1DA8: D9
+
+; --- Data Address Mark ---
+	EXX                                     ; 1DA8: D9       ; Alt-Register
 	LD C,10H                                ; 1DA9: 0E 10
-	OUT (14H),A                             ; 1DAB: D3 14
-	OUT (C),D                               ; 1DAD: ED 51
-	LD A,A1H                                ; 1DAF: 3E A1
-	OUT (14H),A                             ; 1DB1: D3 14
-	OUT (14H),A                             ; 1DB3: D3 14
-	OUT (14H),A                             ; 1DB5: D3 14
-	OUT (C),E                               ; 1DB7: ED 59
-	LD A,FBH                                ; 1DB9: 3E FB
-	OUT (14H),A                             ; 1DBB: D3 14
-	LD BC,8014H                             ; 1DBD: 01 14 80
-	OUTI                                    ; 1DC0: ED A3
-	OUTI                                    ; 1DC2: ED A3
-	OUTI                                    ; 1DC4: ED A3
-	OTIR                                    ; 1DC6: ED B3
-	OUTI                                    ; 1DC8: ED A3
-	OUTI                                    ; 1DCA: ED A3
-	EXX                                     ; 1DCC: D9
-	LD A,(1C46H)                            ; 1DCD: 3A 46 1C
-	OUT (C),E                               ; 1DD0: ED 59
-	LD B,A                                  ; 1DD2: 47
-	DEC B                                   ; 1DD3: 05
+	OUT (14H),A                             ; 1DAB: D3 14    ; *** HW: Letztes Sync-Byte
+	OUT (C),D                               ; 1DAD: ED 51    ; *** HW: Clock-Pattern
+	LD A,A1H                                ; 1DAF: 3E A1    ; A1H = Data Address Mark
+	OUT (14H),A                             ; 1DB1: D3 14    ; *** HW: DAM Byte 1
+	OUT (14H),A                             ; 1DB3: D3 14    ; *** HW: DAM Byte 2
+	OUT (14H),A                             ; 1DB5: D3 14    ; *** HW: DAM Byte 3
+	OUT (C),E                               ; 1DB7: ED 59    ; *** HW: Steuer normal
+
+; --- Daten-Mark + Sektor-Daten + CRC ---
+	LD A,FBH                                ; 1DB9: 3E FB    ; FBH = Data Mark
+	OUT (14H),A                             ; 1DBB: D3 14    ; *** HW: Data Mark schreiben
+	LD BC,8014H                             ; 1DBD: 01 14 80 ; 128 Bytes an Port 14H (SD=128 Bytes/Sektor)
+	OUTI                                    ; 1DC0: ED A3    ; *** HW: 1. Datenbyte
+	OUTI                                    ; 1DC2: ED A3    ; *** HW: 2. Datenbyte  
+	OUTI                                    ; 1DC4: ED A3    ; *** HW: 3. Datenbyte
+	OTIR                                    ; 1DC6: ED B3    ; *** HW: restliche Datenbytes (Block-Transfer)
+	OUTI                                    ; 1DC8: ED A3    ; *** HW: CRC Byte 1
+	OUTI                                    ; 1DCA: ED A3    ; *** HW: CRC Byte 2
+	EXX                                     ; 1DCC: D9       ; Hauptregister
+
+; --- GAP 3 (zwischen Sektoren) ---
+; Die Gap-Laenge wird aus 1C46H gelesen (formatspezifisch)
+	LD A,(1C46H)                            ; 1DCD: 3A 46 1C ; Gap3-Laenge
+	OUT (C),E                               ; 1DD0: ED 59    ; *** HW: 1. Gap-Byte
+	LD B,A                                  ; 1DD2: 47       ; B = Gap-Laenge
+	DEC B                                   ; 1DD3: 05       ; -2 (fuer die beiden OUT-Befehle davor/dahinter)
 	DEC B                                   ; 1DD4: 05
 L1DD5:
-	OUT (C),E                               ; 1DD5: ED 59
+	OUT (C),E                               ; 1DD5: ED 59    ; *** HW: Gap-Byte
 	DJNZ L1DD5                              ; 1DD7: 10 FC
-	DEC D                                   ; 1DD9: 15
-	OUT (C),E                               ; 1DDA: ED 59
-	JP NZ,L1D79                             ; 1DDC: C2 79 1D
+
+; --- Naechster Sektor oder Spur-Ende ---
+	DEC D                                   ; 1DD9: 15       ; Sektorzaehler verringern
+	OUT (C),E                               ; 1DDA: ED 59    ; *** HW: letztes Gap-Byte
+	JP NZ,L1D79                             ; 1DDC: C2 79 1D ; Wenn noch Sektoren -> naechster Sektor
+
+; --- Spur-Ende: Gap-Fuellbytes bis zum naechsten Index-Puls ---
 L1DDF:
-	LD HL,0000H                             ; 1DDF: 21 00 00
+	LD HL,0000H                             ; 1DDF: 21 00 00 ; Byte-Zaehler
 L1DE2:
-	OUT (C),E                               ; 1DE2: ED 59
-	INC HL                                  ; 1DE4: 23
-	JR L1DE2                                ; 1DE5: 18 FB
+	OUT (C),E                               ; 1DE2: ED 59    ; *** HW: Fuellbytes schreiben
+	INC HL                                  ; 1DE4: 23       ; Zaehler erhoehen
+	JR L1DE2                                ; 1DE5: 18 FB    ; Schleife bis ISR sie aufbricht
 
-	OUT (C),E                               ; 1DE7: ED 59
-	LD A,B1H                                ; 1DE9: 3E B1
-	OUT (10H),A                             ; 1DEB: D3 10
-	LD (1D26H),HL                           ; 1DED: 22 26 1D
+; --- Seite umschalten fuer naechste Formatierung ---
+; Wenn die aktuelle Seite fertig ist und Doppelseitig formatiert wird,
+; wechselt dieser Code auf die andere Seite und startet erneut.
+	OUT (C),E                               ; 1DE7: ED 59    ; *** HW: letztes Gap-Byte
+	LD A,B1H                                ; 1DE9: 3E B1    ; B1H = Seitenwechsel-Steuerwort
+	                                        ;                ; Bit 0=1: /WE inaktiv
+	                                        ;                ; Bit 4=1: /ST inaktiv
+	                                        ;                ; Bit 5=1: DIR
+	                                        ;                ; Bit 7=1: Laufwerk selektiert
+	OUT (10H),A                             ; 1DEB: D3 10    ; *** HW: FDC-Steuersignale fuer Seitenwechsel
+	LD (1D26H),HL                           ; 1DED: 22 26 1D ; Byte-Zaehler dieser Seite merken
 	XOR A                                   ; 1DF0: AF
-	LD (cpu2_format_end),A                  ; 1DF1: 32 22 1D
-	JP L1D4A                                ; 1DF4: C3 4A 1D
+	LD (cpu2_format_end),A                  ; 1DF1: 32 22 1D ; JR-Operand zuruecksetzen -> Schleife wieder aktiv
+	JP L1D4A                                ; 1DF4: C3 4A 1D ; Zurueck zum Spur-Anfang (andere Seite)
 
+; ============================================================================
+; CPU2 FORMATIERROUTINE: DOUBLE DENSITY (MFM-KODIERUNG)
+; ============================================================================
+;
+; *** DIREKTER HARDWARE-ZUGRIFF AUF ALLEN PORTS! ***
+;
+; Identische Struktur wie cpu2_format_5_sd (siehe oben), jedoch:
+; - MFM-Kodierung (doppelte Bitdichte)
+; - 256 Bytes pro Sektor statt 128 (bei DD-Formaten)
+; - Andere Gap-Laengen und Sync-Byte-Anzahlen
+; - Anderes Gap-Fuellbyte: FFH statt 4EH
+; - Andere CRC-Initialwerte
+;
+; MFM-Sektorstruktur:
+;   1. Gap (FFH-Bytes)
+;   2. Sync (00H, 5 Stueck statt 11)
+;   3. Address Mark (FCH mit Clock-Pattern)
+;   4. Sektor-ID (Track, Side, Sector, Size, CRC)
+;   5. Gap2 (1AH=26 Bytes)
+;   6. Data Mark (FBH)
+;   7. Sektor-Daten (256 Bytes)
+;   8. CRC (2 Bytes)
+;   9. Gap3
+; ============================================================================
 cpu2_format_5_dd_wr:
-	EXX                                     ; 1DF7: D9
-	LD HL,6CB0H                             ; 1DF8: 21 B0 6C
-	LD DE,B6A4H                             ; 1DFB: 11 A4 B6
-	EXX                                     ; 1DFE: D9
-	LD BC,2814H                             ; 1DFF: 01 14 28
-	LD A,(1C45H)                            ; 1E02: 3A 45 1C
-	LD D,A                                  ; 1E05: 57
-	LD E,FFH                                ; 1E06: 1E FF
-	LD A,B9H                                ; 1E08: 3E B9
-	OUT (10H),A                             ; 1E0A: D3 10
-L1E0C:
-	OUT (C),E                               ; 1E0C: ED 59
-	JR L1E0C                                ; 1E0E: 18 FC
+	EXX                                     ; 1DF7: D9       ; Alt-Register
+	LD HL,6CB0H                             ; 1DF8: 21 B0 6C ; HL' -> Sektor-Datenpuffer
+	LD DE,B6A4H                             ; 1DFB: 11 A4 B6 ; DE' = CRC Initialwert fuer MFM
+	EXX                                     ; 1DFE: D9       ; Hauptregister
+	LD BC,2814H                             ; 1DFF: 01 14 28 ; B=28H (40 Gap-Bytes), C=14H (Daten-Port)
+	LD A,(1C45H)                            ; 1E02: 3A 45 1C ; Sektoren pro Spur
+	LD D,A                                  ; 1E05: 57       ; Sektorzaehler
+	LD E,FFH                                ; 1E06: 1E FF    ; Gap-Fuellbyte (FFH fuer MFM)
 
+; --- Schreibmodus aktivieren ---
+	LD A,B9H                                ; 1E08: 3E B9    ; B9H = Steuerwort (s. SD-Routine Erklaerung)
+	OUT (10H),A                             ; 1E0A: D3 10    ; *** HW: FDC-Steuersignale setzen
+
+; --- Warten auf Index-Puls (SELBSTMODIFIKATION!) ---
+L1E0C:
+	OUT (C),E                               ; 1E0C: ED 59    ; *** HW: Gap-Fuellbyte FFH
+	JR L1E0C                                ; 1E0E: 18 FC    ; Endlosschleife bis ISR aufbricht
+
+; --- Post-Index Gap ---
 L1E10:
-	OUT (C),E                               ; 1E10: ED 59
+	OUT (C),E                               ; 1E10: ED 59    ; *** HW: Gap-Byte
 	DJNZ L1E10                              ; 1E12: 10 FC
+
+; --- Sync-Feld (5 Null-Bytes, weniger als bei FM) ---
 	XOR A                                   ; 1E14: AF
-	LD B,05H                                ; 1E15: 06 05
+	LD B,05H                                ; 1E15: 06 05    ; 5 Sync-Bytes (MFM braucht weniger)
 L1E17:
-	OUT (14H),A                             ; 1E17: D3 14
+	OUT (14H),A                             ; 1E17: D3 14    ; *** HW: Sync-Byte
 	DJNZ L1E17                              ; 1E19: 10 FC
+
+; --- Index Address Mark (MFM-Format) ---
 	EXX                                     ; 1E1B: D9
 	LD C,10H                                ; 1E1C: 0E 10
-	OUT (14H),A                             ; 1E1E: D3 14
-	OUT (C),D                               ; 1E20: ED 51
-	LD A,FCH                                ; 1E22: 3E FC
-	OUT (14H),A                             ; 1E24: D3 14
-	OUT (C),E                               ; 1E26: ED 59
+	OUT (14H),A                             ; 1E1E: D3 14    ; *** HW: Sync
+	OUT (C),D                               ; 1E20: ED 51    ; *** HW: Clock-Pattern
+	LD A,FCH                                ; 1E22: 3E FC    ; FCH = Index Mark (MFM)
+	OUT (14H),A                             ; 1E24: D3 14    ; *** HW: Index Mark
+	OUT (C),E                               ; 1E26: ED 59    ; *** HW: Steuer normal
 	EXX                                     ; 1E28: D9
-	LD B,1AH                                ; 1E29: 06 1A
+
+; --- Sektor-Schleife (DD) ---
+	LD B,1AH                                ; 1E29: 06 1A    ; 26 Gap-Bytes (Gap 1/Gap 2)
 L1E2B:
-	OUT (C),E                               ; 1E2B: ED 59
+	OUT (C),E                               ; 1E2B: ED 59    ; *** HW: Gap-Byte
 	DJNZ L1E2B                              ; 1E2D: 10 FC
+
+; --- SEKTOR ID FIELD (MFM) ---
 L1E2F:
 	XOR A                                   ; 1E2F: AF
-	LD B,05H                                ; 1E30: 06 05
+	LD B,05H                                ; 1E30: 06 05    ; 5 Sync-Bytes
 L1E32:
-	OUT (14H),A                             ; 1E32: D3 14
+	OUT (14H),A                             ; 1E32: D3 14    ; *** HW: Sync-Byte
 	DJNZ L1E32                              ; 1E34: 10 FC
+
+; --- Sektor ID Address Mark ---
 	EXX                                     ; 1E36: D9
 	LD C,10H                                ; 1E37: 0E 10
-	OUT (14H),A                             ; 1E39: D3 14
-	OUT (C),D                               ; 1E3B: ED 51
-	LD A,FEH                                ; 1E3D: 3E FE
-	OUT (14H),A                             ; 1E3F: D3 14
-	OUT (C),E                               ; 1E41: ED 59
+	OUT (14H),A                             ; 1E39: D3 14    ; *** HW: Sync
+	OUT (C),D                               ; 1E3B: ED 51    ; *** HW: Clock-Pattern
+	LD A,FEH                                ; 1E3D: 3E FE    ; FEH = ID Address Mark
+	OUT (14H),A                             ; 1E3F: D3 14    ; *** HW: ID Mark
+	OUT (C),E                               ; 1E41: ED 59    ; *** HW: Steuer normal
+
+; --- Sektor-ID: Track/Side/Sector/Size + CRC (6 Bytes Block-Transfer) ---
 	LD BC,0614H                             ; 1E43: 01 14 06
-	OTIR                                    ; 1E46: ED B3
+	OTIR                                    ; 1E46: ED B3    ; *** HW: 6 Bytes ID-Feld via Block-I/O
 	EXX                                     ; 1E48: D9
-	LD B,0BH                                ; 1E49: 06 0B
+
+; --- Gap 2 (zwischen ID und Daten) ---
+	LD B,0BH                                ; 1E49: 06 0B    ; 11 Gap-Bytes
 L1E4B:
-	OUT (C),E                               ; 1E4B: ED 59
+	OUT (C),E                               ; 1E4B: ED 59    ; *** HW: Gap-Byte
 	DJNZ L1E4B                              ; 1E4D: 10 FC
+
+; --- Datenfeld-Sync ---
 	XOR A                                   ; 1E4F: AF
-	LD B,05H                                ; 1E50: 06 05
+	LD B,05H                                ; 1E50: 06 05    ; 5 Sync-Bytes
 L1E52:
-	OUT (14H),A                             ; 1E52: D3 14
+	OUT (14H),A                             ; 1E52: D3 14    ; *** HW: Sync-Byte
 	DJNZ L1E52                              ; 1E54: 10 FC
+
+; --- Data Address Mark ---
 	EXX                                     ; 1E56: D9
 	LD C,10H                                ; 1E57: 0E 10
-	OUT (14H),A                             ; 1E59: D3 14
-	OUT (C),D                               ; 1E5B: ED 51
-	LD A,FBH                                ; 1E5D: 3E FB
-	OUT (14H),A                             ; 1E5F: D3 14
-	OUT (C),E                               ; 1E61: ED 59
-	LD BC,8014H                             ; 1E63: 01 14 80
-	OUTI                                    ; 1E66: ED A3
-	OUTI                                    ; 1E68: ED A3
-	OUTI                                    ; 1E6A: ED A3
-	OTIR                                    ; 1E6C: ED B3
-	OUTI                                    ; 1E6E: ED A3
-	OUTI                                    ; 1E70: ED A3
+	OUT (14H),A                             ; 1E59: D3 14    ; *** HW: Sync
+	OUT (C),D                               ; 1E5B: ED 51    ; *** HW: Clock-Pattern
+	LD A,FBH                                ; 1E5D: 3E FB    ; FBH = Data Mark
+	OUT (14H),A                             ; 1E5F: D3 14    ; *** HW: Data Mark
+	OUT (C),E                               ; 1E61: ED 59    ; *** HW: Steuer normal
+
+; --- Sektor-Daten + CRC (Block-Transfer) ---
+	LD BC,8014H                             ; 1E63: 01 14 80 ; 128 Bytes an Port 14H
+	OUTI                                    ; 1E66: ED A3    ; *** HW: Datenbyte 1
+	OUTI                                    ; 1E68: ED A3    ; *** HW: Datenbyte 2
+	OUTI                                    ; 1E6A: ED A3    ; *** HW: Datenbyte 3
+	OTIR                                    ; 1E6C: ED B3    ; *** HW: restliche Datenbytes
+	OUTI                                    ; 1E6E: ED A3    ; *** HW: CRC Byte 1
+	OUTI                                    ; 1E70: ED A3    ; *** HW: CRC Byte 2
 	EXX                                     ; 1E72: D9
-	LD A,(1C46H)                            ; 1E73: 3A 46 1C
-	OUT (C),E                               ; 1E76: ED 59
+
+; --- Gap 3 (zwischen Sektoren) ---
+	LD A,(1C46H)                            ; 1E73: 3A 46 1C ; Gap3-Laenge
+	OUT (C),E                               ; 1E76: ED 59    ; *** HW: 1. Gap-Byte
 	LD B,A                                  ; 1E78: 47
-	DEC B                                   ; 1E79: 05
+	DEC B                                   ; 1E79: 05       ; -2 Korrektur
 	DEC B                                   ; 1E7A: 05
 L1E7B:
-	OUT (C),E                               ; 1E7B: ED 59
+	OUT (C),E                               ; 1E7B: ED 59    ; *** HW: Gap-Byte
 	DJNZ L1E7B                              ; 1E7D: 10 FC
-	DEC D                                   ; 1E7F: 15
-	OUT (C),E                               ; 1E80: ED 59
-	JP NZ,L1E2F                             ; 1E82: C2 2F 1E
-	JP L1DDF                                ; 1E85: C3 DF 1D
 
-; --- Index pulse ISR ---
-; Modifies JR displacement in CPU2 loop to break out
+; --- Naechster Sektor oder Spur-Ende ---
+	DEC D                                   ; 1E7F: 15       ; Sektorzaehler--
+	OUT (C),E                               ; 1E80: ED 59    ; *** HW: letztes Gap-Byte
+	JP NZ,L1E2F                             ; 1E82: C2 2F 1E ; Naechster Sektor
+	JP L1DDF                                ; 1E85: C3 DF 1D ; Spur-Ende -> Fuellbytes
+
+; ============================================================================
+; INDEX-PULS ISR (Interrupt Service Routine)
+; ============================================================================
+;
+; *** DIREKTER HARDWARE-ISR-HANDLER! ***
+;
+; Diese ISR wird vom Index-Puls des Diskettenlaufwerks ausgeloest.
+; Sie signalisiert der CPU, dass eine komplette Umdrehung (= 1 Spur)
+; geschrieben wurde.
+;
+; MECHANISMUS (Selbstmodifikation):
+; Der ISR-Eintritt bekommt HL als Zeiger auf den JR-Operanden
+; der aktiven Format-Schleife (z.B. 1D50H+1 oder 1DE5H+1).
+; LD (HL),3EH schreibt den Wert 3EH an diese Stelle.
+; Aus dem JR $-2 (18H FEH = Endlosschleife) wird dann:
+;   18H 3EH -> JR $+3EH (springt weit nach vorne, bricht Schleife auf)
+; Oder bei der Haupt-Warteschleife bei 1D21H:
+;   (1D22H) wird von FEH auf 3EH gesetzt, Schleife verlassen.
+;
+; EI + RETI: Interrupts wieder zulassen und regulaer zurueckkehren.
+; ============================================================================
 isr_index_handler:
-	LD (HL),3EH                             ; 1E88: 36 3E
-	EX DE,HL                                ; 1E8A: EB
-	EI                                      ; 1E8B: FB
-	RETI                                    ; 1E8C: ED 4D
+	LD (HL),3EH                             ; 1E88: 36 3E    ; *** SELBSTMODIFIKATION: JR-Operand aendern!
+	EX DE,HL                                ; 1E8A: EB       ; HL <-> DE tauschen
+	EI                                      ; 1E8B: FB       ; Interrupts wieder freigeben
+	RETI                                    ; 1E8C: ED 4D    ; Interrupt-Rueckkehr
 
-; --- Setup ISR vectors for format ---
-; Saves old vectors at F7E8/F7EA, installs format handlers
+; ============================================================================
+; SCHREIBSCHUTZ-PRUEFUNG: DIREKTER PORT-ZUGRIFF!
+; ============================================================================
+;
+; *** UMGEHT DAS OS: Liest PIO B Status-Port direkt! ***
+;
+; Port 12H = PIO B Status (FDC-Statussignale vom Laufwerk):
+;   Bit 0 = /INDEX   (Index-Puls, aktiv low)
+;   Bit 2 = /T0      (Track 0 erreicht)
+;   Bit 4 = /RDY     (Laufwerk bereit)
+;   Bit 5 = /WP      (Write Protect, aktiv low = geschuetzt)
+;   Bit 6 = /DP      (Data Present / Double Step)
+;
+; Wenn Bit 5 = 0 -> Diskette ist schreibgeschuetzt
+; Rueckgabe: Z-Flag gesetzt wenn schreibgeschuetzt
+; ============================================================================
 setup_isr:
-	IN A,(12H)                              ; 1E8E: DB 12
-	BIT 5,A                                 ; 1E90: CB 6F
-	RET                                     ; 1E92: C9
+	IN A,(12H)                              ; 1E8E: DB 12    ; *** HW-ZUGRIFF: PIO B Status lesen!
+	BIT 5,A                                 ; 1E90: CB 6F    ; Bit 5 = /WP testen
+	RET                                     ; 1E92: C9       ; Z=1: geschuetzt, Z=0: nicht geschuetzt
 
+; ============================================================================
+; ISR-VEKTOR-INSTALLATION: DIREKTER I-REGISTER ZUGRIFF!
+; ============================================================================
+;
+; *** UMGEHT DAS OS: Manipuliert die Interrupt-Vektortabelle direkt! ***
+;
+; Der Z80 Interrupt-Modus 2 verwendet eine Vektortabelle im RAM.
+; Die Basisadresse steht im I-Register (z.B. I=F7H -> Tabelle bei F700H).
+; Der Index-Puls-Interrupt des FDC verwendet Vektor-Offset E8H,
+; also steht der ISR-Zeiger bei F7E8H (I*256 + E8H).
+;
+; Diese Routine:
+;   1. Sperrt Interrupts (DI implizit durch vorherigen OUT 11H,03H)
+;   2. Deaktiviert PIO-Interrupts: OUT (11H),03H
+;   3. Liest I-Register: LD A,I -> Basisadresse der Vektortabelle
+;   4. Speichert 4 Bytes (2 Vektor-Eintraege) von I*256+E8H
+;      nach 1ECAH (Sicherungskopie)
+;   5. Installiert eigene ISR-Vektoren von 1ECEH:
+;      E8H -> isr_index_handler (1E88H) = Index-Puls
+;      EAH -> sekundaerer Handler (1E8BH)
+;   6. Gibt Interrupts wieder frei (EI)
+; ============================================================================
 sub_1E93:
 	LD A,18H                                ; 1E93: 3E 18
-	CALL delay_loop                         ; 1E95: CD AD 0F
-	DI                                      ; 1E98: F3
-	LD A,03H                                ; 1E99: 3E 03
-	OUT (11H),A                             ; 1E9B: D3 11
-	LD A,I                                  ; 1E9D: ED 57
-	LD H,A                                  ; 1E9F: 67
-	LD L,E8H                                ; 1EA0: 2E E8
-	LD DE,1ECAH                             ; 1EA2: 11 CA 1E
-	LD BC,0004H                             ; 1EA5: 01 04 00
-	LDIR                                    ; 1EA8: ED B0
-	LD L,E8H                                ; 1EAA: 2E E8
-	EX DE,HL                                ; 1EAC: EB
-	LD HL,1ECEH                             ; 1EAD: 21 CE 1E
-	LD C,04H                                ; 1EB0: 0E 04
-	LDIR                                    ; 1EB2: ED B0
-	EI                                      ; 1EB4: FB
+	CALL delay_loop                         ; 1E95: CD AD 0F ; Kurze Verzoegerung
+
+; --- PIO-Interrupts sperren ---
+	DI                                      ; 1E98: F3       ; Interrupts global sperren
+	LD A,03H                                ; 1E99: 3E 03    ; 03H = PIO-Interrupts aus
+	OUT (11H),A                             ; 1E9B: D3 11    ; *** HW-ZUGRIFF: PIO-Interrupts sperren!
+
+; --- I-Register lesen: Basis der Interrupt-Vektortabelle ---
+	LD A,I                                  ; 1E9D: ED 57    ; *** HW-ZUGRIFF: I-Register lesen!
+	LD H,A                                  ; 1E9F: 67       ; H = I (z.B. F7H)
+	LD L,E8H                                ; 1EA0: 2E E8    ; L = E8H -> HL = F7E8H
+
+; --- Alte ISR-Vektoren sichern (4 Bytes: 2 Adressen) ---
+	LD DE,1ECAH                             ; 1EA2: 11 CA 1E ; Ziel: Sicherungskopie
+	LD BC,0004H                             ; 1EA5: 01 04 00 ; 4 Bytes (2 Vektor-Adressen)
+	LDIR                                    ; 1EA8: ED B0    ; Kopieren: (F7E8H..F7EBH) -> (1ECAH..1ECDH)
+
+; --- Eigene ISR-Vektoren installieren ---
+	LD L,E8H                                ; 1EAA: 2E E8    ; HL wieder auf F7E8H zuruecksetzen
+	EX DE,HL                                ; 1EAC: EB       ; DE = F7E8H (Ziel)
+	LD HL,1ECEH                             ; 1EAD: 21 CE 1E ; HL -> neue ISR-Vektoren:
+	                                        ;                ; 1ECEH: 88H,1EH -> isr_index_handler (1E88H)
+	                                        ;                ; 1ED0H: 8BH,1EH -> EI;RETI (1E8BH)
+	LD C,04H                                ; 1EB0: 0E 04    ; 4 Bytes
+	LDIR                                    ; 1EB2: ED B0    ; Installieren
+
+; --- Interrupts wieder freigeben ---
+	EI                                      ; 1EB4: FB       ; Interrupts global freigeben
 	RET                                     ; 1EB5: C9
 
-; --- Restore original ISR vectors ---
+; ============================================================================
+; ISR-VEKTOREN RESTAURIEREN: DIREKTER I-REGISTER ZUGRIFF!
+; ============================================================================
+;
+; *** UMGEHT DAS OS: Stellt originale Interrupt-Vektoren wieder her! ***
+;
+; Kehrt den Vorgang von sub_1E93 um:
+; Kopiert die gesicherten Original-Vektoren von 1ECAH
+; zurueck an I*256+E8H.
+; ============================================================================
 restore_isr_vecs:
-	DI                                      ; 1EB6: F3
-	LD A,I                                  ; 1EB7: ED 57
-	LD D,A                                  ; 1EB9: 57
-	LD E,E8H                                ; 1EBA: 1E E8
-	LD HL,1ECAH                             ; 1EBC: 21 CA 1E
-	LD BC,0004H                             ; 1EBF: 01 04 00
-	LDIR                                    ; 1EC2: ED B0
-	EI                                      ; 1EC4: FB
+	DI                                      ; 1EB6: F3       ; Interrupts sperren
+	LD A,I                                  ; 1EB7: ED 57    ; *** HW-ZUGRIFF: I-Register lesen!
+	LD D,A                                  ; 1EB9: 57       ; D = I
+	LD E,E8H                                ; 1EBA: 1E E8    ; DE = I*256+E8H (Vektortabellen-Adresse)
+	LD HL,1ECAH                             ; 1EBC: 21 CA 1E ; HL -> gesicherte Original-Vektoren
+	LD BC,0004H                             ; 1EBF: 01 04 00 ; 4 Bytes
+	LDIR                                    ; 1EC2: ED B0    ; Restaurieren
+	EI                                      ; 1EC4: FB       ; Interrupts wieder freigeben
 	LD A,1BH                                ; 1EC5: 3E 1B
-	JP delay_loop                           ; 1EC7: C3 AD 0F
+	JP delay_loop                           ; 1EC7: C3 AD 0F ; Kurze Verzoegerung und Rueckkehr
 
-	NOP                                     ; 1ECA: 00
-	NOP                                     ; 1ECB: 00
-	NOP                                     ; 1ECC: 00
-	NOP                                     ; 1ECD: 00
-	ADC A,B                                 ; 1ECE: 88
-	LD E,8BH                                ; 1ECF: 1E 8B
-	LD E,46H                                ; 1ED1: 1E 46
+; --- Gesicherte/neue ISR-Vektoren ---
+; 1ECAH-1ECDH: Platz fuer originale ISR-Vektoren (werden von sub_1E93 gesichert)
+	NOP                                     ; 1ECA: 00       ; Gesicherter Vektor 1 (Lo)
+	NOP                                     ; 1ECB: 00       ; Gesicherter Vektor 1 (Hi)
+	NOP                                     ; 1ECC: 00       ; Gesicherter Vektor 2 (Lo)
+	NOP                                     ; 1ECD: 00       ; Gesicherter Vektor 2 (Hi)
+; 1ECEH-1ED1H: Neue ISR-Vektoren fuer die Formatierung
+	ADC A,B                                 ; 1ECE: 88       ; -> 1E88H = isr_index_handler (Lo)
+	LD E,8BH                                ; 1ECF: 1E 8B    ; -> 1E8BH (Hi, plus naechster Lo)
+	LD E,46H                                ; 1ED1: 1E 46    ; Zweiter Vektor (1E46H? oder Fuellbyte)
+; --- Parametertabellen-Kopierer ---
+; Kopiert Parameter aus einer indirekten Tabelle (DE) an Zieladressen
+; in einer Zeigertabelle (HL).
+; Format der Zeigertabelle: 1 Byte Anzahl, dann Paare von:
+;   2 Bytes: Zieladresse (Low/High)
+; Fuer jeden Eintrag wird 1 Byte aus (DE) an die Zieladresse kopiert.
 L1ED3:
 	INC HL                                  ; 1ED3: 23
 	PUSH BC                                 ; 1ED4: C5
-	LD C,(HL)                               ; 1ED5: 4E
+	LD C,(HL)                               ; 1ED5: 4E       ; C = Lo-Byte der Zieladresse
 	INC HL                                  ; 1ED6: 23
-	LD B,(HL)                               ; 1ED7: 46
-	LD A,(DE)                               ; 1ED8: 1A
+	LD B,(HL)                               ; 1ED7: 46       ; B = Hi-Byte der Zieladresse
+	LD A,(DE)                               ; 1ED8: 1A       ; A = Parameterbyte aus Quelltabelle
 	INC DE                                  ; 1ED9: 13
-	LD (BC),A                               ; 1EDA: 02
+	LD (BC),A                               ; 1EDA: 02       ; An Zieladresse speichern
 	POP BC                                  ; 1EDB: C1
-	DJNZ L1ED3                              ; 1EDC: 10 F5
+	DJNZ L1ED3                              ; 1EDC: 10 F5    ; Naechster Parameter
 	RET                                     ; 1EDE: C9
+sub_1ED2 EQU L1ED3 - 1                                 ; Einstiegspunkt: liest erst Anzahl aus (HL)
 
 
 ; ============================================================================
-; CPU2 Format Routine Pointer Table
+; CPU2 Format-Routinen-Zeigertabelle
+; Enthaelt indirekte Zeiger auf die verschiedenen Format-Parameter.
+; Jeder Eintrag: 5 Bytes (Anzahl + 2 Zeiger-Paare) die auf die
+; Adressen der Steuerbytes in den Formatroutinen verweisen.
+; Die Parametertabellen (1EEAH, 1EEFH, 1EF4H) enthalten die
+; konkreten Werte fuer SD, DD und 8" Formate.
 ; ============================================================================
 cpu2_format_table:
 	DB	05H,E3H,1CH,E4H,1CH,1AH,1DH,F2H,1CH,F3H,1CH,39H,1DH,B4H,50H,1DH; 1EDF | ...........9..P.
 	DB	F7H,1DH,A4H,0EH,1EH,39H,1DH,B4H,50H,1DH,08H,BFH,1DH,C1H,1DH,C3H; 1EEF | .....9..P.......
 	DB	1DH,C5H,1DH,65H,1EH                               ; 1EFF | ...e.
+; ============================================================================
+; Gap-Fuellbyte-Tabelle
+; 8 Bytes pro Dichtestufe, definiert die GAP-Fuellwerte und OUTI/OTIR-
+; Steuersequenzen fuer die verschiedenen Format-Typen.
+; Die Zeiger in format_ptr_table verweisen auf Adressen in den
+; Formatroutinen, deren Werte hiermit initialisiert werden.
+; ============================================================================
 gap_fill_table:
 	DB	67H,1EH,69H,1EH,6BH,1EH,80H,A3H,A3H,A3H,80H,A3H,A3H,A3H,00H,A3H; 1F04 | g.i.k...........
 	DB	A3H,A3H,00H,A3H,A3H,A3H,00H,A3H,A3H,B3H,00H,A3H,A3H,B3H,00H,B3H; 1F14 | ................
 	DB	B3H,B3H,00H,B3H,B3H,B3H,07H                       ; 1F24 | .......
 
 ; ============================================================================
-; Format Parameter/Pointer Tables
+; Format Zeiger-/Parametertabellen
+; ============================================================================
+; format_ptr_table: Enthaelt Zeiger auf modifizierbare Stellen in den
+; Formatroutinen, die je nach Seitenwahl (Bit 2) veraendert werden.
+; Dient der Seitenwahl-Konfiguration (Side Select A/B).
 ; ============================================================================
 format_ptr_table:
 	DB	1AH,1DH,0CH,1DH,FDH,1DH,FCH,1DH,3EH,1DH,3FH,1DH,4BH,1DH,01H,00H; 1F2B | ........>.?.K...
 	DB	04H                                               ; 1F3B | .
-; DPB-like parameter blocks for different formats
+; ============================================================================
+; DPB-aehnliche Parameterbloecke (Disk Parameter Blocks)
+; Fuer jedes unterstuetzte Standard-Disketten-Format existiert ein
+; DPB mit den CP/M-ueblichen Werten:
+;   SPT (Sektoren/Spur), BSH (Block Shift), BLM (Block Mask),
+;   EXM (Extent Mask), DSM (Disk Size-1), DRM (Directory Max-1),
+;   AL0/AL1 (Allocation Bitmap), CKS (Check Area Size),
+;   OFF (System-Spuren Offset)
+; Diese werden bei bekannten Formaten in die aktive DPB-Struktur
+; kopiert und beim Formatieren auf den Boot-Sektor geschrieben.
+; ============================================================================
 dpb_table:
 	DB	00H,07H,00H,0EH,00H,01H,00H,03H,00H,05H,00H,09H,00H,00H,02H,01H; 1F3C | ................
 	DB	01H,00H,02H,40H,00H,68H,01H,FCH,02H,00H,09H,00H,01H,00H,00H,00H; 1F4C | ...@.h..........
@@ -2779,7 +3461,9 @@ dpb_table:
 	DB	02H,01H,00H,02H,80H,00H,40H,06H,F9H,03H,00H,0AH,00H,02H,00H,00H; 1F9C | ......@.........
 	DB	00H,05H,00H,06H,00H,07H,00H,0CH,00H,00H,04H,02H,05H,00H,02H,A0H; 1FAC | ................
 	DB	00H,20H,03H,FFH,01H,00H,05H,00H,02H,00H,00H,00H,EBH,34H,90H; 1FBC | . ...........4.
-; CPA version identification string
+; --- CPA-Versions-String zur Identifikation ---
+; Wird beim Programmstart mit dem String an Adresse 004EH verglichen,
+; um sicherzustellen, dass das richtige CPA-System laeuft.
 cpa_version_str:
 	DB	'CP/A1188'
 dpb_default:
@@ -2788,9 +3472,11 @@ dpb_default:
 	DB	00H,00H,00H,00H,0FH,00H,00H,00H,00H,01H,00H,FAH,33H; 1FF3 | ............3
 
 ; ============================================================================
-; Boot Sector Template (512 bytes)
-; Written to track 0 of formatted disks as system bootstrap
-; Contains x86-compatible boot code for MSDOS/CPA dual boot
+; Boot-Sektor-Vorlage (512 Bytes)
+; Wird auf Spur 0 formatierter Disketten geschrieben.
+; Enthaelt x86-kompatiblen Bootstrap-Code fuer MSDOS/CPA Dual-Boot.
+; Der Boot-Sektor laedt BIO.COM und DOS.COM vom Systembereich.
+; Die Fehlermeldungen sind deutsch ("Kein System", "Fehler beim Laden").
 ; ============================================================================
 boot_sector:
 	DB	C0H,8EH,D0H,BCH,00H,7CH,16H,07H,BBH,78H,00H,36H,C5H,37H,1EH,56H; 2000 | .....|...x.6.7.V
@@ -2832,9 +3518,20 @@ boot_sector_end:
 	DB	00H,55H,AAH,0CH                                   ; 21C5 | .U..
 
 ; ============================================================================
-; Format Definition Tables
-; Each table contains: menu text + DPB parameters + sector interleave tables
-; for a specific disk format (5.25"/8", SS/DS, SD/DD, etc.)
+; Format-Definitionstabellen
+; Jede Tabelle enthaelt:
+;   1. Menue-Text (deutschsprachig, $-terminiert)
+;   2. DPB-Parameter (Disk Parameter Block)
+;   3. Sektor-Interleave-Tabelle (physische Sektorreihenfolge)
+;
+; Unterstuetzte Formate:
+;   - 5.25" 40 Spuren einseitig (200KB-800KB)
+;   - 5.25" 40 Spuren doppelseitig
+;   - 5.25" 80 Spuren einseitig
+;   - 5.25" 80 Spuren doppelseitig (bis 1.6MB)
+;   - 8" einseitig und doppelseitig
+;   - Verschiedene Sektorgroessen (128/256/512/1024 Bytes)
+;   - SD (Single Density, FM) und DD (Double Density, MFM)
 ; ============================================================================
 fmt_5_25_40_ss:
 	DB	'Formate fuer 5 1/4", ','$'
