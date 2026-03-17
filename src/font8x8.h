@@ -1,10 +1,34 @@
-// font8x8.h - Basic 8x8 bitmap font for SDL terminal
-// Based on public domain font8x8_basic
+/**
+ * @file font8x8.h
+ * @brief 8×8-Bitmap-Font für die SDL-Terminaldarstellung
+ *
+ * Enthält eine Bitmap-Fonttabelle für alle 95 druckbaren ASCII-Zeichen
+ * (0x20 " " bis 0x7E "~"). Jedes Zeichen besteht aus 8 Bytes (8 Zeilen),
+ * wobei jedes Byte eine horizontale Pixelzeile darstellt.
+ *
+ * Pixel-Kodierung:
+ * - Bit 0 = linkestes Pixel, Bit 7 = rechtestes Pixel
+ * - Gesetztes Bit = Vordergrundfarbe, gelöschtes Bit = Hintergrundfarbe
+ *
+ * In der SDL-Darstellung wird jede Fontzeile vertikal verdoppelt,
+ * sodass ein Zeichen 8×16 Pixel auf dem Bildschirm belegt.
+ * Dies ergibt eine Gesamtauflösung von 640×384 Pixel (80×24 Zeichen).
+ *
+ * Basierend auf Public-Domain font8x8_basic.
+ *
+ * @author Olaf Krieger
+ * @license MIT License
+ * @see https://opensource.org/licenses/MIT
+ */
 #pragma once
 #include <cstdint>
 
-// 95 printable ASCII characters (0x20 to 0x7E), 8 bytes each
-// Each byte is one row, bit 0 = leftmost pixel
+/**
+ * @brief Bitmap-Fonttabelle: 95 druckbare ASCII-Zeichen, je 8 Bytes (Pixelzeilen).
+ *
+ * Indexierung: font8x8_basic[ch - 0x20][zeile], wobei ch das ASCII-Zeichen
+ * und zeile (0–7) die vertikale Pixelposition ist.
+ */
 static const uint8_t font8x8_basic[95][8] = {
     { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }, // 0x20 ' '
     { 0x18, 0x3C, 0x3C, 0x18, 0x18, 0x00, 0x18, 0x00 }, // 0x21 '!'

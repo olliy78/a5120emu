@@ -1,0 +1,3291 @@
+; ============================================================================
+; FORMAT.COM - Disketten-FORMAT fuer Buerocomputer
+; Robotron A5120 - CPA/CP/M 2.2 System
+; Version 19.05.89
+; Size: 17408 bytes (4400H)
+; Address range: 0100H - 44FFH
+;
+; Disassembled from binary - all bytes accounted for
+; ============================================================================
+
+; --- System addresses ---
+WBOOT		EQU	0000H	; CP/M warm boot
+WBOOTV		EQU	0001H	; Warm boot vector
+BDOS		EQU	0005H	; BDOS entry
+BDOSADDR	EQU	0006H	; BDOS address (high byte)
+CPMEXT		EQU	004EH	; CPA extensions table pointer
+FCB1		EQU	005CH	; Default FCB
+DMAADDR		EQU	0080H	; Default DMA address
+
+; --- BDOS function codes ---
+F_RAWIO		EQU	06H	; Direct console I/O
+F_PRINT		EQU	09H	; Print $-terminated string
+F_RDBUF		EQU	0AH	; Read console buffer
+F_GETVER	EQU	0CH	; Get CP/M version
+
+; --- FDC/PIO port addresses ---
+PIO_CTRL_A	EQU	10H	; PIO A data (FDC control)
+PIO_CTRL_C	EQU	11H	; PIO A control register
+PIO_STAT_B	EQU	12H	; PIO B data (FDC status)
+PIO_DATA_A	EQU	14H	; Data PIO A
+PIO_DATA_B	EQU	04H	; Data PIO B
+PIO_DATA_C	EQU	16H	; Data PIO control
+PIO_DATA_D	EQU	17H	; Data PIO control 2
+DRV_SEL		EQU	18H	; Drive select latch
+
+; --- PIO A control bits ---
+; Bit 0: /WE (write enable, active low)
+; Bit 2: /SIDE (side select: 0=side 1, 1=side 0)
+; Bit 5: SD (step direction: 0=outward, 1=inward)
+; Bit 7: /ST (step pulse, rising edge)
+
+; --- PIO B status bits ---
+; Bit 0: /RDY (0=drive ready)
+; Bit 5: /WP (0=write protected)
+; Bit 7: /T0 (0=at track 0)
+
+; --- Interrupt vectors ---
+IV_INDEX	EQU	0F7E8H	; Index pulse ISR vector
+IV_MARK		EQU	0F7EAH	; Data mark ISR vector
+
+; ============================================================================
+
+	ORG	0100H
+
+; ============================================================================
+; Entry Point: Check BIOS for CPA version string
+; Validates that system is CPA (not standard CP/M) with version >= CPAB5
+; ============================================================================
+start:
+	LD HL,(0001H)                           ; 0100: 2A 01 00 ; HL = warm boot vector (BIOS base)
+	LD DE,0030H                             ; 0103: 11 30 00 ; offset +30H into BIOS
+	ADD HL,DE                               ; 0106: 19 ; HL -> BIOS version string
+	CALL check_CPA                          ; 0107: CD 22 01 ; check for 'CPA' string
+	JR NZ,L011C                             ; 010A: 20 10 ; not CPA -> error
+	LD A,42H                                ; 010C: 3E 42 ; 'B' - check for CPAB variant
+	CPI                                     ; 010E: ED A1
+	JR NZ,L011C                             ; 0110: 20 0A
+	LD A,39H                                ; 0112: 3E 39 ; check version digit >= '9'
+	CP (HL)                                 ; 0114: BE
+	JR C,L011C                              ; 0115: 38 05
+	LD A,35H                                ; 0117: 3E 35 ; check version digit >= '5'
+	CP (HL)                                 ; 0119: BE
+	JR C,check_TPA                          ; 011A: 38 15
+L011C:
+	LD DE,msg_version_error                 ; 011C: 11 BD 0F ; -> msg_version_error
+	JP print_string                         ; 011F: C3 18 0E
+
+; -----------------------------------------------
+; Check for 'CPA' string at (HL)
+; Uses CPI to compare and advance HL
+; Returns: Z=match, NZ=no match
+; -----------------------------------------------
+check_CPA:
+	LD A,43H                                ; 0122: 3E 43 ; 'C'
+	CPI                                     ; 0124: ED A1
+	RET NZ                                  ; 0126: C0
+	LD A,50H                                ; 0127: 3E 50 ; 'P'
+	CPI                                     ; 0129: ED A1
+	RET NZ                                  ; 012B: C0
+	LD A,41H                                ; 012C: 3E 41 ; 'A'
+	CPI                                     ; 012E: ED A1
+	RET                                     ; 0130: C9
+
+; Check TPA size >= 9660H (required memory)
+check_TPA:
+	LD HL,(0006H)                           ; 0131: 2A 06 00 ; HL = BDOS entry addr = top of TPA
+	LD DE,9660H                             ; 0134: 11 60 96 ; minimum required = 38496 bytes
+	OR A                                    ; 0137: B7 ; clear carry for SBC
+	SBC HL,DE                               ; 0138: ED 52
+	JR NC,check_cmdline                     ; 013A: 30 06
+	LD DE,msg_tpa_error                     ; 013C: 11 12 10 ; -> msg_tpa_error
+	JP print_string                         ; 013F: C3 18 0E
+
+; Check command line for 'CPA' parameter
+; If present, enables CPA-specific mode (format types)
+check_cmdline:
+	LD HL,005DH                             ; 0142: 21 5D 00 ; FCB1+1 = first cmdline arg
+	CALL check_CPA                          ; 0145: CD 22 01
+	LD A,00H                                ; 0148: 3E 00
+	JR NZ,L0155                             ; 014A: 20 09
+	LD B,03H                                ; 014C: 06 03 ; call delsps (delete spaces) 3x
+L014E:
+	PUSH BC                                 ; 014E: C5
+	CALL call_cpmx18                        ; 014F: CD EE 0D
+	POP BC                                  ; 0152: C1
+	DJNZ L014E                              ; 0153: 10 F9
+L0155:
+	LD (016CH),A                            ; 0155: 32 6C 01 ; store CPA mode flag
+
+; ============================================================================
+; Main Program Loop - Display menu and handle selections
+; ============================================================================
+main_init:
+	LD SP,(0006H)                           ; 0158: ED 7B 06 00 ; set stack from BDOS addr
+	CALL save_isr_vectors                   ; 015C: CD 78 0C ; save ISR vectors, init hardware
+	LD DE,msg_banner                        ; 015F: 11 5B 10 ; -> msg_banner
+	CALL print_string                       ; 0162: CD 18 0E
+; --- Show format type menu ---
+show_menu:
+	LD DE,msg_menu                          ; 0165: 11 BE 10 ; -> msg_menu
+	CALL print_string                       ; 0168: CD 18 0E
+	LD A,00H                                ; 016B: 3E 00 ; CPA mode flag (self-modifying)
+	OR A                                    ; 016D: B7
+	JR Z,L0176                              ; 016E: 28 06
+	LD DE,msg_cpa_mode                      ; 0170: 11 E3 10
+	CALL print_string_inline                ; 0173: CD 1B 0E
+L0176:
+	LD DE,msg_format_info                   ; 0176: 11 1C 11 ; -> msg_format_info
+	CALL print_string_inline                ; 0179: CD 1B 0E
+	CALL read_char                          ; 017C: CD 37 0E
+	JR NZ,menu_input                        ; 017F: 20 02
+	LD A,30H                                ; 0181: 3E 30
+; --- Read user menu selection ---
+menu_input:
+	CP 51H                                  ; 0183: FE 51 ; check for 'Q' = quit
+	JP Z,select_drive_side                  ; 0185: CA 5D 0B
+	CP 58H                                  ; 0188: FE 58 ; check for 'X' = quit
+	JP Z,select_drive_side                  ; 018A: CA 5D 0B
+	SUB 30H                                 ; 018D: D6 30 ; convert ASCII to number
+	JR C,show_menu                          ; 018F: 38 D4 ; < '0' -> retry
+	CP 04H                                  ; 0191: FE 04 ; > 3 -> retry
+	JR NC,show_menu                         ; 0193: 30 D0
+	CP 01H                                  ; 0195: FE 01 ; choice 1?
+	JR NZ,L01A1                             ; 0197: 20 08
+	LD A,(016CH)                            ; 0199: 3A 6C 01 ; check CPA mode required
+	OR A                                    ; 019C: B7
+	JR Z,show_menu                          ; 019D: 28 C6
+	LD A,01H                                ; 019F: 3E 01
+L01A1:
+	LD (01C8H),A                            ; 01A1: 32 C8 01 ; store function number
+	CP 01H                                  ; 01A4: FE 01
+	LD DE,11CBH                             ; 01A6: 11 CB 11
+	JP NZ,process_choice                    ; 01A9: C2 AF 01
+	LD DE,11E5H                             ; 01AC: 11 E5 11
+; --- Process format function selection ---
+; A = selected function (0=format, 1=copy, 2=verify, 3=autodetect)
+process_choice:
+	PUSH DE                                 ; 01AF: D5
+	CALL read_char_upper                    ; 01B0: CD 34 0E
+	POP DE                                  ; 01B3: D1
+	CP 41H                                  ; 01B4: FE 41
+	JR C,process_choice                     ; 01B6: 38 F7
+	CP 51H                                  ; 01B8: FE 51
+	JR NC,process_choice                    ; 01BA: 30 F3
+	LD (123FH),A                            ; 01BC: 32 3F 12
+	LD (12B3H),A                            ; 01BF: 32 B3 12
+	SUB 41H                                 ; 01C2: D6 41
+	LD (1C1FH),A                            ; 01C4: 32 1F 1C
+	LD A,FFH                                ; 01C7: 3E FF
+	CP 03H                                  ; 01C9: FE 03
+	JR Z,setup_format_params                ; 01CB: 28 2D
+L01CD:
+	LD DE,1224H                             ; 01CD: 11 24 12
+	CALL read_char_upper                    ; 01D0: CD 34 0E
+	JR NZ,L01CD                             ; 01D3: 20 F8
+	LD IY,drive_a_params                    ; 01D5: FD 21 1E 1C
+	CALL deselect_drive                     ; 01D9: CD 9E 0B
+	JP C,L0B46                              ; 01DC: DA 46 0B
+	LD A,(01C8H)                            ; 01DF: 3A C8 01
+	CP 02H                                  ; 01E2: FE 02
+	JR Z,setup_format_params                ; 01E4: 28 14
+	CALL setup_isr                          ; 01E6: CD 8E 1E
+	LD DE,141DH                             ; 01E9: 11 1D 14
+	JP Z,L0B46                              ; 01EC: CA 46 0B
+	LD DE,1263H                             ; 01EF: 11 63 12
+	CALL read_char_upper                    ; 01F2: CD 34 0E
+	SUB 4EH                                 ; 01F5: D6 4E
+	LD (0AC7H),A                            ; 01F7: 32 C7 0A
+setup_format_params:
+	LD IY,drive_a_params                    ; 01FA: FD 21 1E 1C
+	CALL calc_track_capacity                ; 01FE: CD B4 0B
+	JP C,L0B46                              ; 0201: DA 46 0B
+	LD DE,active_cdb                        ; 0204: 11 D0 1B
+	PUSH DE                                 ; 0207: D5
+	POP IX                                  ; 0208: DD E1
+	LD BC,0033H                             ; 020A: 01 33 00
+	LDIR                                    ; 020D: ED B0
+	BIT 7,(IX+24)                           ; 020F: DD CB 18 7E
+	JR Z,L021A                              ; 0213: 28 05
+	LD BC,001AH                             ; 0215: 01 1A 00
+	LDIR                                    ; 0218: ED B0
+L021A:
+	BIT 4,(IX+24)                           ; 021A: DD CB 18 66
+	JR NZ,L0233                             ; 021E: 20 13
+	LD A,06H                                ; 0220: 3E 06
+	LD (1B95H),A                            ; 0222: 32 95 1B
+	LD HL,sector_table_2                    ; 0225: 21 92 1A
+	BIT 3,(IX+24)                           ; 0228: DD CB 18 5E
+	JR Z,L026D                              ; 022C: 28 3F
+	LD HL,1AE8H                             ; 022E: 21 E8 1A
+	JR L026D                                ; 0231: 18 3A
+
+L0233:
+	LD A,1EH                                ; 0233: 3E 1E
+	LD (1B95H),A                            ; 0235: 32 95 1B
+	LD A,(IX+22)                            ; 0238: DD 7E 16
+	LD C,A                                  ; 023B: 4F
+	LD HL,21DFH                             ; 023C: 21 DF 21
+	LD DE,2637H                             ; 023F: 11 37 26
+	CP 29H                                  ; 0242: FE 29
+	JR C,L024C                              ; 0244: 38 06
+	LD HL,fmt_5_25_80_ss                    ; 0246: 21 5A 29
+	LD DE,2BE0H                             ; 0249: 11 E0 2B
+L024C:
+	BIT 0,(IX+24)                           ; 024C: DD CB 18 46
+	JR Z,L0263                              ; 0250: 28 11
+	LD HL,fmt_5_25_40_ds                    ; 0252: 21 AF 2D
+	LD DE,30D9H                             ; 0255: 11 D9 30
+setup_drive:
+	LD A,C                                  ; 0258: 79
+	CP 29H                                  ; 0259: FE 29
+	JR C,L0263                              ; 025B: 38 06
+	LD HL,fmt_5_25_80_ds                    ; 025D: 21 12 33
+	LD DE,38A0H                             ; 0260: 11 A0 38
+L0263:
+	LD (1A3EH),HL                           ; 0263: 22 3E 1A
+	LD (1A40H),DE                           ; 0266: ED 53 40 1A
+	LD HL,default_params                    ; 026A: 21 3C 1A
+L026D:
+	LD DE,1B3EH                             ; 026D: 11 3E 1B
+	LD BC,0056H                             ; 0270: 01 56 00
+	LDIR                                    ; 0273: ED B0
+L0275:
+	LD DE,(1B3EH)                           ; 0275: ED 5B 3E 1B
+	CALL print_string                       ; 0279: CD 18 0E
+	LD DE,(1B40H)                           ; 027C: ED 5B 40 1B
+	CALL print_string_inline                ; 0280: CD 1B 0E
+	LD A,(01C8H)                            ; 0283: 3A C8 01
+	CP 03H                                  ; 0286: FE 03
+	LD DE,msg_auto_format                   ; 0288: 11 7C 14
+	CALL Z,print_string                     ; 028B: CC 18 0E
+	LD A,(01C8H)                            ; 028E: 3A C8 01
+	CP 03H                                  ; 0291: FE 03
+	JR NZ,L02A8                             ; 0293: 20 13
+	LD IX,(1C29H)                           ; 0295: DD 2A 29 1C
+	BIT 6,(IX+24)                           ; 0299: DD CB 18 76
+	LD DE,msg_verify_yes                    ; 029D: 11 BA 14
+	JR Z,L02A5                              ; 02A0: 28 03
+	LD DE,msg_verify_no                     ; 02A2: 11 EC 14
+L02A5:
+	CALL print_string                       ; 02A5: CD 18 0E
+L02A8:
+	LD A,(01C8H)                            ; 02A8: 3A C8 01
+	CP 02H                                  ; 02AB: FE 02
+	LD DE,msg_source_drive                  ; 02AD: 11 1E 15
+	CALL Z,print_string                     ; 02B0: CC 18 0E
+	LD DE,msg_select_fmt                    ; 02B3: 11 3F 15
+	CALL read_char_upper                    ; 02B6: CD 34 0E
+	LD IX,active_cdb                        ; 02B9: DD 21 D0 1B
+	JR NZ,L02C1                             ; 02BD: 20 02
+	LD A,30H                                ; 02BF: 3E 30
+L02C1:
+	CP 42H                                  ; 02C1: FE 42
+	JR NZ,L02EB                             ; 02C3: 20 26
+	LD A,(01C8H)                            ; 02C5: 3A C8 01
+	CP 02H                                  ; 02C8: FE 02
+	JR NZ,L0275                             ; 02CA: 20 A9
+	LD A,(IX+0)                             ; 02CC: DD 7E 00
+	LD B,(IX+16)                            ; 02CF: DD 46 10
+	INC B                                   ; 02D2: 04
+	DEC B                                   ; 02D3: 05
+	JR Z,L02DA                              ; 02D4: 28 04
+; --- Calculate sector size from SLC ---
+begin_operation:
+	SRL A                                   ; 02D6: CB 3F ; SRL A - divide by 2 per SLC step
+	DJNZ begin_operation                    ; 02D8: 10 FC
+L02DA:
+	LD (1B94H),A                            ; 02DA: 32 94 1B
+	LD HL,format_buffer                     ; 02DD: 21 50 1B
+	LD DE,1B96H                             ; 02E0: 11 96 1B
+	LD BC,0034H                             ; 02E3: 01 34 00
+	LDIR                                    ; 02E6: ED B0
+	JP format_setup                         ; 02E8: C3 D4 03
+
+L02EB:
+	BIT 7,(IX+18)                           ; 02EB: DD CB 12 7E
+	JR NZ,L02F5                             ; 02EF: 20 04
+	LD (IX+18),01H                          ; 02F1: DD 36 12 01
+L02F5:
+	CP 40H                                  ; 02F5: FE 40
+	JP Z,set_tracks                         ; 02F7: CA DE 03
+	CP 41H                                  ; 02FA: FE 41
+	JR NZ,L0311                             ; 02FC: 20 13
+	LD A,(01C8H)                            ; 02FE: 3A C8 01
+	CP 03H                                  ; 0301: FE 03
+	JP NZ,L0275                             ; 0303: C2 75 02
+	LD IX,(1C29H)                           ; 0306: DD 2A 29 1C
+	RES 6,(IX+15)                           ; 030A: DD CB 0F B6
+	JP main_init                            ; 030E: C3 58 01
+
+L0311:
+	CP 2BH                                  ; 0311: FE 2B
+	JR NZ,L0328                             ; 0313: 20 13
+	LD A,(01C8H)                            ; 0315: 3A C8 01
+	CP 03H                                  ; 0318: FE 03
+	JP NZ,L0275                             ; 031A: C2 75 02
+	LD IX,(1C29H)                           ; 031D: DD 2A 29 1C
+	SET 6,(IX+24)                           ; 0321: DD CB 18 F6
+	JP main_init                            ; 0325: C3 58 01
+
+L0328:
+	CP 2DH                                  ; 0328: FE 2D
+	JR NZ,L033F                             ; 032A: 20 13
+	LD A,(01C8H)                            ; 032C: 3A C8 01
+	CP 03H                                  ; 032F: FE 03
+	JP NZ,L0275                             ; 0331: C2 75 02
+	LD IX,(1C29H)                           ; 0334: DD 2A 29 1C
+	RES 6,(IX+24)                           ; 0338: DD CB 18 B6
+	JP main_init                            ; 033C: C3 58 01
+
+L033F:
+	LD C,A                                  ; 033F: 4F
+	LD HL,(1B42H)                           ; 0340: 2A 42 1B
+L0343:
+	LD A,(HL)                               ; 0343: 7E
+	INC HL                                  ; 0344: 23
+	CP C                                    ; 0345: B9
+	JR Z,L0350                              ; 0346: 28 08
+	INC A                                   ; 0348: 3C
+	JP Z,L0275                              ; 0349: CA 75 02
+	INC HL                                  ; 034C: 23
+	INC HL                                  ; 034D: 23
+	JR L0343                                ; 034E: 18 F3
+
+L0350:
+	LD E,(HL)                               ; 0350: 5E
+	INC HL                                  ; 0351: 23
+	LD D,(HL)                               ; 0352: 56
+	EX DE,HL                                ; 0353: EB
+	CP 53H                                  ; 0354: FE 53
+	JR C,apply_params                       ; 0356: 38 3A
+	BIT 6,(HL)                              ; 0358: CB 76
+	JR Z,L036D                              ; 035A: 28 11
+	PUSH HL                                 ; 035C: E5
+	LD HL,sector_table_2                    ; 035D: 21 92 1A
+	LD DE,1B3EH                             ; 0360: 11 3E 1B
+	LD BC,0056H                             ; 0363: 01 56 00
+	LDIR                                    ; 0366: ED B0
+	SET 2,(IX+15)                           ; 0368: DD CB 0F D6
+	POP HL                                  ; 036C: E1
+L036D:
+	LD C,(IX+18)                            ; 036D: DD 4E 12
+	BIT 7,C                                 ; 0370: CB 79
+	JR NZ,L037F                             ; 0372: 20 0B
+	LD A,(HL)                               ; 0374: 7E
+	AND 03H                                 ; 0375: E6 03
+	CP C                                    ; 0377: B9
+	JR Z,L037F                              ; 0378: 28 05
+	SET 7,A                                 ; 037A: CB FF
+	LD (IX+18),A                            ; 037C: DD 77 12
+L037F:
+	INC HL                                  ; 037F: 23
+	LD E,(HL)                               ; 0380: 5E
+	INC HL                                  ; 0381: 23
+	LD D,(HL)                               ; 0382: 56
+	LD (1B40H),DE                           ; 0383: ED 53 40 1B
+	INC HL                                  ; 0387: 23
+	LD E,(HL)                               ; 0388: 5E
+	INC HL                                  ; 0389: 23
+	LD D,(HL)                               ; 038A: 56
+	LD (1B42H),DE                           ; 038B: ED 53 42 1B
+	JP L0275                                ; 038F: C3 75 02
+
+apply_params:
+	LD B,00H                                ; 0392: 06 00
+	LD C,(HL)                               ; 0394: 4E
+	PUSH BC                                 ; 0395: C5
+	LD DE,1B94H                             ; 0396: 11 94 1B
+	LDI                                     ; 0399: ED A0
+	LDI                                     ; 039B: ED A0
+	POP BC                                  ; 039D: C1
+	PUSH BC                                 ; 039E: C5
+	LDIR                                    ; 039F: ED B0
+	LD A,(IX+18)                            ; 03A1: DD 7E 12
+	PUSH AF                                 ; 03A4: F5
+	LD A,(IX+15)                            ; 03A5: DD 7E 0F
+	LD DE,active_cdb                        ; 03A8: 11 D0 1B
+	LD BC,0015H                             ; 03AB: 01 15 00
+	LDIR                                    ; 03AE: ED B0
+	BIT 2,A                                 ; 03B0: CB 57
+	JR Z,L03B8                              ; 03B2: 28 04
+	SET 2,(IX+15)                           ; 03B4: DD CB 0F D6
+L03B8:
+	POP AF                                  ; 03B8: F1
+	BIT 7,A                                 ; 03B9: CB 7F
+	JR Z,L03C0                              ; 03BB: 28 03
+	LD (IX+18),A                            ; 03BD: DD 77 12
+L03C0:
+	LD DE,1BE9H                             ; 03C0: 11 E9 1B
+	POP BC                                  ; 03C3: C1
+	LDIR                                    ; 03C4: ED B0
+	LD A,(IX+19)                            ; 03C6: DD 7E 13
+	OR A                                    ; 03C9: B7
+	JR Z,format_setup                       ; 03CA: 28 08
+	LD A,(1B94H)                            ; 03CC: 3A 94 1B
+	SRL A                                   ; 03CF: CB 3F
+	LD (1B94H),A                            ; 03D1: 32 94 1B
+; --- Set up format parameters ---
+format_setup:
+	RES 7,(IX+18)                           ; 03D4: DD CB 12 BE
+	CALL do_disk_io                         ; 03D8: CD 10 0D
+	JP L0640                                ; 03DB: C3 40 06
+
+set_tracks:
+	LD (IX+15),00H                          ; 03DE: DD 36 0F 00
+	LD A,(IX+24)                            ; 03E2: DD 7E 18
+	AND 18H                                 ; 03E5: E6 18
+	CP 08H                                  ; 03E7: FE 08
+	JR NZ,L040A                             ; 03E9: 20 1F
+L03EB:
+	LD DE,166CH                             ; 03EB: 11 6C 16
+	CALL read_char_upper                    ; 03EE: CD 34 0E
+	JR Z,L040A                              ; 03F1: 28 17
+	CP 4EH                                  ; 03F3: FE 4E
+	JR Z,L040A                              ; 03F5: 28 13
+	CP 4AH                                  ; 03F7: FE 4A
+	JR NZ,L03EB                             ; 03F9: 20 F0
+	LD HL,sector_table_2                    ; 03FB: 21 92 1A
+	LD DE,1B3EH                             ; 03FE: 11 3E 1B
+	LD BC,0056H                             ; 0401: 01 56 00
+	LDIR                                    ; 0404: ED B0
+	SET 2,(IX+15)                           ; 0406: DD CB 0F D6
+L040A:
+	LD DE,169AH                             ; 040A: 11 9A 16
+	CALL print_string                       ; 040D: CD 18 0E
+	LD L,(IX+22)                            ; 0410: DD 6E 16
+	LD H,00H                                ; 0413: 26 00
+	CALL print_dec_HL                       ; 0415: CD 70 0E
+	LD DE,16C0H                             ; 0418: 11 C0 16
+	CALL print_string_inline                ; 041B: CD 1B 0E
+	CALL parse_dec_input                    ; 041E: CD 63 0F
+	JR NZ,L0426                             ; 0421: 20 03
+	LD A,(IX+22)                            ; 0423: DD 7E 16
+L0426:
+	LD L,(IX+22)                            ; 0426: DD 6E 16
+	INC L                                   ; 0429: 2C
+	CP L                                    ; 042A: BD
+	JR NC,L040A                             ; 042B: 30 DD
+	LD (IX+20),A                            ; 042D: DD 77 14
+L0430:
+	LD DE,16C4H                             ; 0430: 11 C4 16
+	CALL print_string                       ; 0433: CD 18 0E
+	CALL parse_dec_input                    ; 0436: CD 63 0F
+	OR A                                    ; 0439: B7
+	JR Z,L0430                              ; 043A: 28 F4
+	CP 35H                                  ; 043C: FE 35
+	JR NC,L0430                             ; 043E: 30 F0
+	LD (1B94H),A                            ; 0440: 32 94 1B
+L0443:
+	LD DE,16FEH                             ; 0443: 11 FE 16
+	CALL read_char_upper                    ; 0446: CD 34 0E
+	JR Z,L0443                              ; 0449: 28 F8
+	SUB 30H                                 ; 044B: D6 30
+	JR C,L0443                              ; 044D: 38 F4
+	CP 06H                                  ; 044F: FE 06
+	JR NC,L0443                             ; 0451: 30 F0
+	LD (IX+16),A                            ; 0453: DD 77 10
+	LD (1BCFH),A                            ; 0456: 32 CF 1B
+	LD A,(01C8H)                            ; 0459: 3A C8 01
+	CP 02H                                  ; 045C: FE 02
+	JR Z,set_length_code                    ; 045E: 28 07
+	CP 03H                                  ; 0460: FE 03
+	JR Z,set_length_code                    ; 0462: 28 03
+	CALL display_format_info                ; 0464: CD A2 0C
+set_length_code:
+	CALL do_disk_io                         ; 0467: CD 10 0D
+	LD A,(1BCEH)                            ; 046A: 3A CE 1B
+	DEC A                                   ; 046D: 3D
+	LD (IX+17),A                            ; 046E: DD 77 11
+	LD A,(1B94H)                            ; 0471: 3A 94 1B
+	LD B,A                                  ; 0474: 47
+	LD A,(1BCEH)                            ; 0475: 3A CE 1B
+	LD C,A                                  ; 0478: 4F
+	XOR A                                   ; 0479: AF
+L047A:
+	ADD A,C                                 ; 047A: 81
+	DJNZ L047A                              ; 047B: 10 FD
+	LD (IX+0),A                             ; 047D: DD 77 00
+	BIT 0,(IX+24)                           ; 0480: DD CB 18 46
+	JR Z,L0492                              ; 0484: 28 0C
+	LD DE,1794H                             ; 0486: 11 94 17
+	CALL print_string                       ; 0489: CD 18 0E
+	CALL parse_hex_input                    ; 048C: CD 32 0F
+	LD (IX+19),A                            ; 048F: DD 77 13
+L0492:
+	LD DE,17CEH                             ; 0492: 11 CE 17
+	CALL print_string                       ; 0495: CD 18 0E
+	LD DE,1B96H                             ; 0498: 11 96 1B
+set_format_5_14b:
+	CALL fill_format_buffer                 ; 049B: CD 6C 0D
+	LD B,01H                                ; 049E: 06 01
+	LD A,(IX+22)                            ; 04A0: DD 7E 16
+	CP 50H                                  ; 04A3: FE 50
+	JR NZ,L04B4                             ; 04A5: 20 0D
+set_format_8:
+	PUSH BC                                 ; 04A7: C5
+	LD DE,1820H                             ; 04A8: 11 20 18
+	CALL read_char_upper                    ; 04AB: CD 34 0E
+	POP BC                                  ; 04AE: C1
+	CP 4AH                                  ; 04AF: FE 4A
+	JR NZ,L04B4                             ; 04B1: 20 01
+	INC B                                   ; 04B3: 04
+L04B4:
+	LD (IX+18),B                            ; 04B4: DD 70 12
+	BIT 0,(IX+24)                           ; 04B7: DD CB 18 46
+	JR Z,L04F9                              ; 04BB: 28 3C
+L04BD:
+	LD DE,1850H                             ; 04BD: 11 50 18
+	CALL read_char_upper                    ; 04C0: CD 34 0E
+	JR Z,L04CD                              ; 04C3: 28 08
+	CP 53H                                  ; 04C5: FE 53
+	JR Z,L04F9                              ; 04C7: 28 30
+	CP 44H                                  ; 04C9: FE 44
+	JR NZ,L04BD                             ; 04CB: 20 F0
+L04CD:
+	SET 5,(IX+15)                           ; 04CD: DD CB 0F EE
+L04D1:
+	LD DE,1881H                             ; 04D1: 11 81 18
+	CALL read_char_upper                    ; 04D4: CD 34 0E
+	JR Z,L04F9                              ; 04D7: 28 20
+	CP 41H                                  ; 04D9: FE 41
+	JR Z,L04F9                              ; 04DB: 28 1C
+	CP 56H                                  ; 04DD: FE 56
+	JR NZ,L04D1                             ; 04DF: 20 F0
+	SET 4,(IX+15)                           ; 04E1: DD CB 0F E6
+L04E5:
+	LD DE,18BEH                             ; 04E5: 11 BE 18
+	CALL read_char_upper                    ; 04E8: CD 34 0E
+	JR Z,L04F9                              ; 04EB: 28 0C
+	CP 4EH                                  ; 04ED: FE 4E
+	JR Z,L04F9                              ; 04EF: 28 08
+	CP 4AH                                  ; 04F1: FE 4A
+	JR NZ,L04E5                             ; 04F3: 20 F0
+	SET 3,(IX+15)                           ; 04F5: DD CB 0F DE
+L04F9:
+	LD DE,18FDH                             ; 04F9: 11 FD 18
+	CALL print_string                       ; 04FC: CD 18 0E
+	LD DE,1BE9H                             ; 04FF: 11 E9 1B
+	CALL fill_format_buffer                 ; 0502: CD 6C 0D
+L0505:
+	LD DE,192AH                             ; 0505: 11 2A 19
+	CALL read_char_upper                    ; 0508: CD 34 0E
+	JR NZ,L050F                             ; 050B: 20 02
+	LD A,30H                                ; 050D: 3E 30
+L050F:
+	SUB 30H                                 ; 050F: D6 30
+	JR C,L0505                              ; 0511: 38 F2
+	LD (IX+13),A                            ; 0513: DD 77 0D
+	JR Z,L0542                              ; 0516: 28 2A
+	CP 0AH                                  ; 0518: FE 0A
+	JR NC,L0505                             ; 051A: 30 E9
+	CP 03H                                  ; 051C: FE 03
+	JR C,L0522                              ; 051E: 38 02
+	LD A,03H                                ; 0520: 3E 03
+L0522:
+	OR 30H                                  ; 0522: F6 30
+	LD (198AH),A                            ; 0524: 32 8A 19
+L0527:
+	LD DE,1954H                             ; 0527: 11 54 19
+	CALL read_char_upper                    ; 052A: CD 34 0E
+	JR NZ,L0531                             ; 052D: 20 02
+	LD A,30H                                ; 052F: 3E 30
+L0531:
+	SUB 30H                                 ; 0531: D6 30
+	JR C,L0527                              ; 0533: 38 F2
+	JR Z,L0542                              ; 0535: 28 0B
+	DEC A                                   ; 0537: 3D
+	CP (IX+13)                              ; 0538: DD BE 0D
+	JR NC,L0527                             ; 053B: 30 EA
+	INC A                                   ; 053D: 3C
+	CP 04H                                  ; 053E: FE 04
+	JR NC,L0527                             ; 0540: 30 E5
+L0542:
+	LD B,A                                  ; 0542: 47
+	LD A,(IX+15)                            ; 0543: DD 7E 0F
+	AND FCH                                 ; 0546: E6 FC
+	OR B                                    ; 0548: B0
+	LD (IX+15),A                            ; 0549: DD 77 0F
+L054C:
+	LD DE,1998H                             ; 054C: 11 98 19
+	CALL read_char_upper                    ; 054F: CD 34 0E
+	CP 31H                                  ; 0552: FE 31
+	JR C,L054C                              ; 0554: 38 F6
+	CP 35H                                  ; 0556: FE 35
+	JR NC,L054C                             ; 0558: 30 F2
+	SUB 30H                                 ; 055A: D6 30
+	LD B,A                                  ; 055C: 47
+	LD DE,0040H                             ; 055D: 11 40 00
+	LD HL,0000H                             ; 0560: 21 00 00
+L0563:
+	ADD HL,DE                               ; 0563: 19
+	DJNZ L0563                              ; 0564: 10 FD
+	DEC HL                                  ; 0566: 2B
+	LD (IX+7),L                             ; 0567: DD 75 07
+	LD (IX+8),H                             ; 056A: DD 74 08
+L056D:
+	LD DE,19D7H                             ; 056D: 11 D7 19
+	CALL read_char_upper                    ; 0570: CD 34 0E
+	CP 31H                                  ; 0573: FE 31
+	JR Z,L059B                              ; 0575: 28 24
+	CP 32H                                  ; 0577: FE 32
+	JR Z,L058D                              ; 0579: 28 12
+	CP 34H                                  ; 057B: FE 34
+	JR NZ,L056D                             ; 057D: 20 EE
+	LD (IX+2),05H                           ; 057F: DD 36 02 05
+	LD (IX+3),1FH                           ; 0583: DD 36 03 1F
+	LD (IX+4),03H                           ; 0587: DD 36 04 03
+	JR L05A7                                ; 058B: 18 1A
+
+L058D:
+	LD (IX+2),04H                           ; 058D: DD 36 02 04
+	LD (IX+3),0FH                           ; 0591: DD 36 03 0F
+	LD (IX+4),01H                           ; 0595: DD 36 04 01
+	JR L05A7                                ; 0599: 18 0C
+
+L059B:
+	LD (IX+2),03H                           ; 059B: DD 36 02 03
+	LD (IX+3),07H                           ; 059F: DD 36 03 07
+	LD (IX+4),00H                           ; 05A3: DD 36 04 00
+L05A7:
+	LD A,(IX+20)                            ; 05A7: DD 7E 14
+	BIT 0,(IX+18)                           ; 05AA: DD CB 12 46
+	JR NZ,L05B2                             ; 05AE: 20 02
+	SRL A                                   ; 05B0: CB 3F
+L05B2:
+	BIT 5,(IX+15)                           ; 05B2: DD CB 0F 6E
+	JR Z,L05B9                              ; 05B6: 28 01
+	ADD A,A                                 ; 05B8: 87
+L05B9:
+	LD (IX+20),A                            ; 05B9: DD 77 14
+	LD L,(IX+20)                            ; 05BC: DD 6E 14
+	XOR A                                   ; 05BF: AF
+	LD H,A                                  ; 05C0: 67
+	LD E,(IX+13)                            ; 05C1: DD 5E 0D
+	LD D,A                                  ; 05C4: 57
+	SBC HL,DE                               ; 05C5: ED 52
+	EX DE,HL                                ; 05C7: EB
+	LD L,A                                  ; 05C8: 6F
+	LD B,(IX+0)                             ; 05C9: DD 46 00
+calc_capacity:
+	ADD HL,DE                               ; 05CC: 19
+	DJNZ calc_capacity                      ; 05CD: 10 FD
+	LD B,(IX+2)                             ; 05CF: DD 46 02
+L05D2:
+	SRL H                                   ; 05D2: CB 3C
+	RR L                                    ; 05D4: CB 1D
+	DJNZ L05D2                              ; 05D6: 10 FA
+	DEC HL                                  ; 05D8: 2B
+	LD (IX+5),L                             ; 05D9: DD 75 05
+	LD (IX+6),H                             ; 05DC: DD 74 06
+	LD A,H                                  ; 05DF: 7C
+	OR A                                    ; 05E0: B7
+	JR Z,L060D                              ; 05E1: 28 2A
+	LD A,(IX+2)                             ; 05E3: DD 7E 02
+	CP 03H                                  ; 05E6: FE 03
+	JR Z,L0604                              ; 05E8: 28 1A
+	CP 04H                                  ; 05EA: FE 04
+	JR Z,L05F7                              ; 05EC: 28 09
+	LD A,(IX+4)                             ; 05EE: DD 7E 04
+	CP 03H                                  ; 05F1: FE 03
+	JR C,L060D                              ; 05F3: 38 18
+	JR L05FE                                ; 05F5: 18 07
+
+L05F7:
+	LD A,(IX+4)                             ; 05F7: DD 7E 04
+	CP 01H                                  ; 05FA: FE 01
+	JR C,L060D                              ; 05FC: 38 0F
+L05FE:
+	SRL (IX+4)                              ; 05FE: DD CB 04 3E
+	JR L060D                                ; 0602: 18 09
+
+L0604:
+	LD DE,19F9H                             ; 0604: 11 F9 19
+	CALL print_string                       ; 0607: CD 18 0E
+	JP L056D                                ; 060A: C3 6D 05
+
+L060D:
+	LD L,(IX+7)                             ; 060D: DD 6E 07
+	LD H,(IX+8)                             ; 0610: DD 66 08
+	INC HL                                  ; 0613: 23
+	SRL H                                   ; 0614: CB 3C
+	RR L                                    ; 0616: CB 1D
+	SRL H                                   ; 0618: CB 3C
+	RR L                                    ; 061A: CB 1D
+	LD (IX+11),L                            ; 061C: DD 75 0B
+	LD (IX+12),H                            ; 061F: DD 74 0C
+	LD B,(IX+2)                             ; 0622: DD 46 02
+L0625:
+	SRL H                                   ; 0625: CB 3C
+	RR L                                    ; 0627: CB 1D
+	DJNZ L0625                              ; 0629: 10 FA
+	LD B,L                                  ; 062B: 45
+	LD HL,0000H                             ; 062C: 21 00 00
+	INC B                                   ; 062F: 04
+	DEC B                                   ; 0630: 05
+	JR Z,L063A                              ; 0631: 28 07
+set_side_offset:
+	SCF                                     ; 0633: 37
+	RR H                                    ; 0634: CB 1C
+	RR L                                    ; 0636: CB 1D
+	DJNZ set_side_offset                    ; 0638: 10 F9
+L063A:
+	LD (IX+9),H                             ; 063A: DD 74 09
+	LD (IX+10),L                            ; 063D: DD 75 0A
+L0640:
+	LD A,(01C8H)                            ; 0640: 3A C8 01
+	CP 03H                                  ; 0643: FE 03
+	JR NZ,prompt_start_track                ; 0645: 20 04
+	SET 6,(IX+15)                           ; 0647: DD CB 0F F6
+prompt_start_track:
+	LD DE,(1C29H)                           ; 064B: ED 5B 29 1C
+	LD HL,active_cdb                        ; 064F: 21 D0 1B
+	LD BC,0033H                             ; 0652: 01 33 00
+	LDIR                                    ; 0655: ED B0
+	BIT 7,(IX+24)                           ; 0657: DD CB 18 7E
+	JR Z,L0662                              ; 065B: 28 05
+	LD BC,001AH                             ; 065D: 01 1A 00
+	LDIR                                    ; 0660: ED B0
+L0662:
+	LD A,(01C8H)                            ; 0662: 3A C8 01
+	CP 03H                                  ; 0665: FE 03
+	JP Z,main_init                          ; 0667: CA 58 01
+	LD A,(IX+20)                            ; 066A: DD 7E 14
+	DEC A                                   ; 066D: 3D
+	LD (1C1DH),A                            ; 066E: 32 1D 1C
+	LD HL,134EH                             ; 0671: 21 4E 13
+	LD A,(01C8H)                            ; 0674: 3A C8 01
+	CP 00H                                  ; 0677: FE 00
+	JR Z,L0685                              ; 0679: 28 0A
+	CP 02H                                  ; 067B: FE 02
+	LD HL,1367H                             ; 067D: 21 67 13
+	JR Z,L0685                              ; 0680: 28 03
+	LD HL,135CH                             ; 0682: 21 5C 13
+L0685:
+	LD (1C82H),HL                           ; 0685: 22 82 1C
+L0688:
+	LD DE,(1C82H)                           ; 0688: ED 5B 82 1C
+	CALL print_string                       ; 068C: CD 18 0E
+	LD DE,msg_formatting_label              ; 068F: 11 7C 15
+	CALL print_string_inline                ; 0692: CD 1B 0E
+	LD HL,(1C1DH)                           ; 0695: 2A 1D 1C
+	LD H,00H                                ; 0698: 26 00
+	CALL print_dec_HL                       ; 069A: CD 70 0E
+	LD DE,1591H                             ; 069D: 11 91 15
+	CALL print_string_inline                ; 06A0: CD 1B 0E
+	CALL parse_dec_input                    ; 06A3: CD 63 0F
+	LD (1C2BH),A                            ; 06A6: 32 2B 1C
+	LD B,A                                  ; 06A9: 47
+	LD A,(1C1DH)                            ; 06AA: 3A 1D 1C
+	CP B                                    ; 06AD: B8
+	JR C,L0688                              ; 06AE: 38 D8
+prompt_source_track:
+	LD DE,(1C82H)                           ; 06B0: ED 5B 82 1C
+	CALL print_string                       ; 06B4: CD 18 0E
+	LD DE,15A9H                             ; 06B7: 11 A9 15
+	CALL print_string_inline                ; 06BA: CD 1B 0E
+	LD HL,(1C1DH)                           ; 06BD: 2A 1D 1C
+	LD H,00H                                ; 06C0: 26 00
+	CALL print_dec_HL                       ; 06C2: CD 70 0E
+	LD DE,15BEH                             ; 06C5: 11 BE 15
+	CALL print_string_inline                ; 06C8: CD 1B 0E
+	CALL parse_dec_input                    ; 06CB: CD 63 0F
+	JR Z,setup_operation                    ; 06CE: 28 11
+	LD HL,1C2BH                             ; 06D0: 21 2B 1C
+	CP (HL)                                 ; 06D3: BE
+	JR C,prompt_source_track                ; 06D4: 38 DA
+	LD B,A                                  ; 06D6: 47
+	LD A,(1C1DH)                            ; 06D7: 3A 1D 1C
+	CP B                                    ; 06DA: B8
+	JR C,prompt_source_track                ; 06DB: 38 D3
+	LD A,B                                  ; 06DD: 78
+	LD (1C1DH),A                            ; 06DE: 32 1D 1C
+setup_operation:
+	LD A,(1C1FH)                            ; 06E1: 3A 1F 1C
+	LD (1C2DH),A                            ; 06E4: 32 2D 1C
+	LD A,(1C2BH)                            ; 06E7: 3A 2B 1C
+	LD (1C39H),A                            ; 06EA: 32 39 1C
+	LD A,(01C8H)                            ; 06ED: 3A C8 01
+	CP 01H                                  ; 06F0: FE 01
+	JP NZ,do_format_main                    ; 06F2: C2 33 07
+	LD DE,1204H                             ; 06F5: 11 04 12
+setup_format_ops:
+	CALL read_char_upper                    ; 06F8: CD 34 0E
+	LD DE,1204H                             ; 06FB: 11 04 12
+	CP 41H                                  ; 06FE: FE 41
+	JR C,setup_format_ops                   ; 0700: 38 F6
+	CP 51H                                  ; 0702: FE 51
+	JR NC,setup_format_ops                  ; 0704: 30 F2
+	SUB 41H                                 ; 0706: D6 41
+	LD (1C2DH),A                            ; 0708: 32 2D 1C
+	LD HL,1C1FH                             ; 070B: 21 1F 1C
+	CP (HL)                                 ; 070E: BE
+	JR Z,setup_format_ops                   ; 070F: 28 E7
+	LD C,A                                  ; 0711: 4F
+	CALL exit_warm_boot                     ; 0712: CD 9E 0F
+	LD IY,drive_b_params                    ; 0715: FD 21 2C 1C
+	CALL deselect_drive                     ; 0719: CD 9E 0B
+	JR C,setup_format_ops                   ; 071C: 38 DA
+	LD A,(1C2BH)                            ; 071E: 3A 2B 1C
+	LD (1C39H),A                            ; 0721: 32 39 1C
+	LD DE,1311H                             ; 0724: 11 11 13
+	CALL print_string                       ; 0727: CD 18 0E
+	CALL parse_dec_input                    ; 072A: CD 63 0F
+	JP Z,do_format_main                     ; 072D: CA 33 07
+	LD (1C39H),A                            ; 0730: 32 39 1C
+do_format_main:
+	LD A,(1C2BH)                            ; 0733: 3A 2B 1C
+	LD (1C20H),A                            ; 0736: 32 20 1C
+	LD A,(1C39H)                            ; 0739: 3A 39 1C
+	LD (1C2EH),A                            ; 073C: 32 2E 1C
+	LD A,(01C8H)                            ; 073F: 3A C8 01
+	CP 02H                                  ; 0742: FE 02
+	JP Z,L07E3                              ; 0744: CA E3 07
+	LD DE,1298H                             ; 0747: 11 98 12
+	CALL read_char_upper                    ; 074A: CD 34 0E
+	CP 4AH                                  ; 074D: FE 4A
+	JP NZ,L0E6A                             ; 074F: C2 6A 0E
+	LD DE,12D8H                             ; 0752: 11 D8 12
+	CALL print_string                       ; 0755: CD 18 0E
+	LD HL,(1B90H)                           ; 0758: 2A 90 1B
+	CALL print_dec_HL                       ; 075B: CD 70 0E
+	LD HL,0000H                             ; 075E: 21 00 00
+	LD A,(IX+9)                             ; 0761: DD 7E 09
+	CP 00H                                  ; 0764: FE 00
+	JR NZ,L07DF                             ; 0766: 20 77
+	LD A,(IX+20)                            ; 0768: DD 7E 14
+	CP 28H                                  ; 076B: FE 28
+	JR NZ,L0784                             ; 076D: 20 15
+	LD A,(IX+15)                            ; 076F: DD 7E 0F
+	RES 6,A                                 ; 0772: CB B7
+	CP 00H                                  ; 0774: FE 00
+	JR NZ,L07DF                             ; 0776: 20 67
+	LD HL,1F41H                             ; 0778: 21 41 1F
+	LD A,(IX+0)                             ; 077B: DD 7E 00
+	CP 24H                                  ; 077E: FE 24
+	JR NZ,L07DF                             ; 0780: 20 5D
+	JR setup_variables                      ; 0782: 18 47
+
+L0784:
+	CP 50H                                  ; 0784: FE 50
+	JR NZ,L079D                             ; 0786: 20 15
+	LD A,(IX+15)                            ; 0788: DD 7E 0F
+	RES 6,A                                 ; 078B: CB B7
+	CP 20H                                  ; 078D: FE 20
+	JR NZ,L07DF                             ; 078F: 20 4E
+	LD HL,1F5CH                             ; 0791: 21 5C 1F
+	LD A,(IX+0)                             ; 0794: DD 7E 00
+	CP 24H                                  ; 0797: FE 24
+	JR NZ,L07DF                             ; 0799: 20 44
+	JR setup_variables                      ; 079B: 18 2E
+
+L079D:
+	CP A0H                                  ; 079D: FE A0
+	JR NZ,L07DF                             ; 079F: 20 3E
+	LD A,(IX+15)                            ; 07A1: DD 7E 0F
+	RES 6,A                                 ; 07A4: CB B7
+	CP 20H                                  ; 07A6: FE 20
+	JR NZ,L07DF                             ; 07A8: 20 35
+	LD HL,1F77H                             ; 07AA: 21 77 1F
+	LD A,(IX+0)                             ; 07AD: DD 7E 00
+	CP 24H                                  ; 07B0: FE 24
+	JR Z,setup_variables                    ; 07B2: 28 17
+	CP 28H                                  ; 07B4: FE 28
+	JR NZ,L07DF                             ; 07B6: 20 27
+	LD HL,1F92H                             ; 07B8: 21 92 1F
+	LD A,(IX+16)                            ; 07BB: DD 7E 10
+	CP 02H                                  ; 07BE: FE 02
+	JR Z,setup_variables                    ; 07C0: 28 09
+	LD HL,1FADH                             ; 07C2: 21 AD 1F
+	CP 03H                                  ; 07C5: FE 03
+	JR Z,setup_variables                    ; 07C7: 28 02
+	JR L07DF                                ; 07C9: 18 14
+
+setup_variables:
+	LD DE,1F39H                             ; 07CB: 11 39 1F
+	LD BC,0008H                             ; 07CE: 01 08 00
+	LDIR                                    ; 07D1: ED B0
+	LD DE,dpb_default                       ; 07D3: 11 D3 1F
+	LD BC,0013H                             ; 07D6: 01 13 00
+	LDIR                                    ; 07D9: ED B0
+	LD A,F6H                                ; 07DB: 3E F6
+	JR L07E0                                ; 07DD: 18 01
+
+L07DF:
+	XOR A                                   ; 07DF: AF
+L07E0:
+	LD (0B66H),A                            ; 07E0: 32 66 0B
+L07E3:
+	CALL print_char                         ; 07E3: CD 20 0E
+	CALL print_char                         ; 07E6: CD 20 0E
+	LD HL,0000H                             ; 07E9: 21 00 00
+	LD (1C84H),HL                           ; 07EC: 22 84 1C
+L07EF:
+	LD DE,(1C82H)                           ; 07EF: ED 5B 82 1C
+	CALL print_string_inline                ; 07F3: CD 1B 0E
+	LD A,(01C8H)                            ; 07F6: 3A C8 01
+	CP 01H                                  ; 07F9: FE 01
+	JR NZ,L080B                             ; 07FB: 20 0E
+	LD DE,143BH                             ; 07FD: 11 3B 14
+	CALL print_string_inline                ; 0800: CD 1B 0E
+	LD HL,(1C2EH)                           ; 0803: 2A 2E 1C
+	LD H,00H                                ; 0806: 26 00
+	CALL print_dec_HL                       ; 0808: CD 70 0E
+L080B:
+	LD DE,1445H                             ; 080B: 11 45 14
+	CALL print_string_inline                ; 080E: CD 1B 0E
+	LD HL,(1C20H)                           ; 0811: 2A 20 1C
+	LD H,00H                                ; 0814: 26 00
+	CALL print_dec_HL                       ; 0816: CD 70 0E
+	LD C,06H                                ; 0819: 0E 06
+	LD E,FFH                                ; 081B: 1E FF
+	CALL 0005H                              ; 081D: CD 05 00
+	CP 03H                                  ; 0820: FE 03
+	JP Z,L0E6A                              ; 0822: CA 6A 0E
+	LD IX,active_cdb                        ; 0825: DD 21 D0 1B
+	LD A,(IX+15)                            ; 0829: DD 7E 0F
+	AND 03H                                 ; 082C: E6 03
+	LD C,A                                  ; 082E: 4F
+	LD A,(1C20H)                            ; 082F: 3A 20 1C
+	CP C                                    ; 0832: B9
+	LD BC,0046H                             ; 0833: 01 46 00
+	LD DE,1C3BH                             ; 0836: 11 3B 1C
+	LD HL,1B8AH                             ; 0839: 21 8A 1B
+	JR NC,L0841                             ; 083C: 30 03
+	LD HL,1B44H                             ; 083E: 21 44 1B
+L0841:
+	LDIR                                    ; 0841: ED B0
+	LD A,(1C80H)                            ; 0843: 3A 80 1C
+	LD (1C8AH),A                            ; 0846: 32 8A 1C
+	XOR A                                   ; 0849: AF
+	LD (1C81H),A                            ; 084A: 32 81 1C
+	LD (cpu2_init),A                        ; 084D: 32 8E 1C
+	LD DE,(1C1FH)                           ; 0850: ED 5B 1F 1C
+	LD E,D                                  ; 0854: 5A
+	LD C,00H                                ; 0855: 0E 00
+	BIT 4,(IX+15)                           ; 0857: DD CB 0F 66
+	JR NZ,L0869                             ; 085B: 20 0C
+	BIT 5,(IX+15)                           ; 085D: DD CB 0F 6E
+	JR Z,L088C                              ; 0861: 28 29
+	SRL D                                   ; 0863: CB 3A
+	JR NC,L088C                             ; 0865: 30 25
+	JR L087B                                ; 0867: 18 12
+
+L0869:
+	LD B,(IX+20)                            ; 0869: DD 46 14
+	SRL B                                   ; 086C: CB 38
+	LD A,D                                  ; 086E: 7A
+	SUB B                                   ; 086F: 90
+	JR C,L088C                              ; 0870: 38 1A
+	BIT 3,(IX+15)                           ; 0872: DD CB 0F 5E
+	JR NZ,L087A                             ; 0876: 20 02
+	CPL                                     ; 0878: 2F
+	ADD A,B                                 ; 0879: 80
+L087A:
+	LD D,A                                  ; 087A: 57
+L087B:
+	LD A,01H                                ; 087B: 3E 01
+	LD (1C81H),A                            ; 087D: 32 81 1C
+	LD A,(IX+19)                            ; 0880: DD 7E 13
+	LD (cpu2_init),A                        ; 0883: 32 8E 1C
+	ADD A,C                                 ; 0886: 81
+	LD C,A                                  ; 0887: 4F
+	LD A,01H                                ; 0888: 3E 01
+	JR L088D                                ; 088A: 18 01
+
+L088C:
+	XOR A                                   ; 088C: AF
+L088D:
+	LD (1C88H),A                            ; 088D: 32 88 1C
+	LD A,D                                  ; 0890: 7A
+	LD (1C87H),A                            ; 0891: 32 87 1C
+	LD A,(01C8H)                            ; 0894: 3A C8 01
+	CP 00H                                  ; 0897: FE 00
+	JR Z,L08D0                              ; 0899: 28 35
+	CALL input_format_count                 ; 089B: CD EE 0B
+	JP NC,L09E1                             ; 089E: D2 E1 09
+	LD A,(01C8H)                            ; 08A1: 3A C8 01
+	CP 02H                                  ; 08A4: FE 02
+	JP Z,L09E1                              ; 08A6: CA E1 09
+	LD HL,0000H                             ; 08A9: 21 00 00
+	LD (1C84H),HL                           ; 08AC: 22 84 1C
+	LD DE,1630H                             ; 08AF: 11 30 16
+	CALL print_string_inline                ; 08B2: CD 1B 0E
+	CALL set_side_flag                      ; 08B5: CD 65 0B
+	CALL print_hex_A                        ; 08B8: CD CC 0E
+	LD DE,164FH                             ; 08BB: 11 4F 16
+	CALL print_string_inline                ; 08BE: CD 1B 0E
+L08C1:
+	LD C,06H                                ; 08C1: 0E 06
+	LD E,FFH                                ; 08C3: 1E FF
+	CALL 0005H                              ; 08C5: CD 05 00
+	OR A                                    ; 08C8: B7
+	JR Z,L08C1                              ; 08C9: 28 F6
+	CP 03H                                  ; 08CB: FE 03
+	JP Z,L0E6A                              ; 08CD: CA 6A 0E
+L08D0:
+	CALL set_side_flag                      ; 08D0: CD 65 0B
+	LD E,A                                  ; 08D3: 5F
+	LD A,(1C7FH)                            ; 08D4: 3A 7F 1C
+	LD D,A                                  ; 08D7: 57
+	LD HL,(1C84H)                           ; 08D8: 2A 84 1C
+	XOR A                                   ; 08DB: AF
+	LD (0A3CH),A                            ; 08DC: 32 3C 0A
+	SBC HL,DE                               ; 08DF: ED 52
+	JR Z,L08FF                              ; 08E1: 28 1C
+	LD A,(1C45H)                            ; 08E3: 3A 45 1C
+	LD (0A3CH),A                            ; 08E6: 32 3C 0A
+	LD B,A                                  ; 08E9: 47
+	LD C,D                                  ; 08EA: 4A
+	LD HL,4400H                             ; 08EB: 21 00 44
+L08EE:
+	PUSH BC                                 ; 08EE: C5
+	LD B,80H                                ; 08EF: 06 80
+format_loop:
+	LD (HL),E                               ; 08F1: 73
+	INC HL                                  ; 08F2: 23
+	DJNZ format_loop                        ; 08F3: 10 FC
+	DEC C                                   ; 08F5: 0D
+	JR NZ,format_loop                       ; 08F6: 20 F9
+	POP BC                                  ; 08F8: C1
+	DJNZ L08EE                              ; 08F9: 10 F3
+	LD (1C84H),DE                           ; 08FB: ED 53 84 1C
+L08FF:
+	LD A,(0B66H)                            ; 08FF: 3A 66 0B
+	OR A                                    ; 0902: B7
+	JP Z,L09DF                              ; 0903: CA DF 09
+	LD A,(1C20H)                            ; 0906: 3A 20 1C
+	LD D,00H                                ; 0909: 16 00
+	LD E,A                                  ; 090B: 5F
+	LD A,(1FE0H)                            ; 090C: 3A E0 1F
+	LD HL,0000H                             ; 090F: 21 00 00
+	LD B,A                                  ; 0912: 47
+L0913:
+	ADD HL,DE                               ; 0913: 19
+	DJNZ L0913                              ; 0914: 10 FD
+	LD B,A                                  ; 0916: 47
+	LD DE,4400H                             ; 0917: 11 00 44
+L091A:
+	PUSH BC                                 ; 091A: C5
+	PUSH HL                                 ; 091B: E5
+	PUSH DE                                 ; 091C: D5
+	LD B,H                                  ; 091D: 44
+	LD C,L                                  ; 091E: 4D
+	LD DE,(1F3FH)                           ; 091F: ED 5B 3F 1F
+	OR A                                    ; 0923: B7
+	SBC HL,DE                               ; 0924: ED 52
+	JP NC,L09CE                             ; 0926: D2 CE 09
+	LD H,B                                  ; 0929: 60
+	LD L,C                                  ; 092A: 69
+	LD DE,(1F3DH)                           ; 092B: ED 5B 3D 1F
+	OR A                                    ; 092F: B7
+	SBC HL,DE                               ; 0930: ED 52
+	JP NC,L09B4                             ; 0932: D2 B4 09
+	LD H,B                                  ; 0935: 60
+	LD L,C                                  ; 0936: 69
+	LD DE,(1F3BH)                           ; 0937: ED 5B 3B 1F
+	OR A                                    ; 093B: B7
+	SBC HL,DE                               ; 093C: ED 52
+	JP NC,L097E                             ; 093E: D2 7E 09
+	LD H,B                                  ; 0941: 60
+	LD L,C                                  ; 0942: 69
+	LD DE,(1F39H)                           ; 0943: ED 5B 39 1F
+	OR A                                    ; 0947: B7
+	SBC HL,DE                               ; 0948: ED 52
+	JP NC,L097E                             ; 094A: D2 7E 09
+	LD H,B                                  ; 094D: 60
+	LD L,C                                  ; 094E: 69
+	LD DE,0000H                             ; 094F: 11 00 00
+	OR A                                    ; 0952: B7
+	SBC HL,DE                               ; 0953: ED 52
+	JP Z,L0962                              ; 0955: CA 62 09
+	JP L09CE                                ; 0958: C3 CE 09
+
+L095B:
+	POP HL                                  ; 095B: E1
+	INC HL                                  ; 095C: 23
+	POP BC                                  ; 095D: C1
+	DJNZ L091A                              ; 095E: 10 BA
+format_track_data:
+	JR L09DF                                ; 0960: 18 7D
+
+L0962:
+	POP DE                                  ; 0962: D1
+	LD HL,1FC8H                             ; 0963: 21 C8 1F
+	LD BC,0200H                             ; 0966: 01 00 02
+	LDIR                                    ; 0969: ED B0
+	LD A,(IX+16)                            ; 096B: DD 7E 10
+	CP 03H                                  ; 096E: FE 03
+	JR NZ,L09A6                             ; 0970: 20 34
+	LD H,D                                  ; 0972: 62
+	LD L,E                                  ; 0973: 6B
+	LD (HL),00H                             ; 0974: 36 00
+	INC DE                                  ; 0976: 13
+	LD BC,01FFH                             ; 0977: 01 FF 01
+	LDIR                                    ; 097A: ED B0
+	JR L09A6                                ; 097C: 18 28
+
+L097E:
+	POP DE                                  ; 097E: D1
+	PUSH AF                                 ; 097F: F5
+	LD H,D                                  ; 0980: 62
+	LD L,E                                  ; 0981: 6B
+	XOR A                                   ; 0982: AF
+	LD B,A                                  ; 0983: 47
+L0984:
+	LD (DE),A                               ; 0984: 12
+	INC DE                                  ; 0985: 13
+	LD (DE),A                               ; 0986: 12
+	INC DE                                  ; 0987: 13
+	DJNZ L0984                              ; 0988: 10 FA
+	LD A,(IX+16)                            ; 098A: DD 7E 10
+	CP 03H                                  ; 098D: FE 03
+	JR NZ,L0999                             ; 098F: 20 08
+	XOR A                                   ; 0991: AF
+	LD B,A                                  ; 0992: 47
+L0993:
+	LD (DE),A                               ; 0993: 12
+	INC DE                                  ; 0994: 13
+	LD (DE),A                               ; 0995: 12
+	INC DE                                  ; 0996: 13
+	DJNZ L0993                              ; 0997: 10 FA
+L0999:
+	POP AF                                  ; 0999: F1
+	JR NZ,L09A6                             ; 099A: 20 0A
+	LD A,(1FDDH)                            ; 099C: 3A DD 1F
+	LD (HL),A                               ; 099F: 77
+	INC HL                                  ; 09A0: 23
+	LD (HL),FFH                             ; 09A1: 36 FF
+	INC HL                                  ; 09A3: 23
+	LD (HL),FFH                             ; 09A4: 36 FF
+L09A6:
+	LD HL,0000H                             ; 09A6: 21 00 00
+	LD (1C84H),HL                           ; 09A9: 22 84 1C
+	LD A,01H                                ; 09AC: 3E 01
+	LD (0A3CH),A                            ; 09AE: 32 3C 0A
+	JP L095B                                ; 09B1: C3 5B 09
+
+L09B4:
+	POP DE                                  ; 09B4: D1
+	XOR A                                   ; 09B5: AF
+	LD B,A                                  ; 09B6: 47
+L09B7:
+	LD (DE),A                               ; 09B7: 12
+	INC DE                                  ; 09B8: 13
+	LD (DE),A                               ; 09B9: 12
+	INC DE                                  ; 09BA: 13
+	DJNZ L09B7                              ; 09BB: 10 FA
+	LD A,(IX+16)                            ; 09BD: DD 7E 10
+	CP 03H                                  ; 09C0: FE 03
+	JR NZ,L09A6                             ; 09C2: 20 E2
+	XOR A                                   ; 09C4: AF
+	LD B,A                                  ; 09C5: 47
+L09C6:
+	LD (DE),A                               ; 09C6: 12
+	INC DE                                  ; 09C7: 13
+	LD (DE),A                               ; 09C8: 12
+	INC DE                                  ; 09C9: 13
+	DJNZ L09C6                              ; 09CA: 10 FA
+	JR L09A6                                ; 09CC: 18 D8
+
+L09CE:
+	POP DE                                  ; 09CE: D1
+	LD HL,0200H                             ; 09CF: 21 00 02
+	LD A,(IX+16)                            ; 09D2: DD 7E 10
+	CP 03H                                  ; 09D5: FE 03
+	JR NZ,L09DA                             ; 09D7: 20 01
+	ADD HL,HL                               ; 09D9: 29
+L09DA:
+	ADD HL,DE                               ; 09DA: 19
+	EX DE,HL                                ; 09DB: EB
+	JP L095B                                ; 09DC: C3 5B 09
+
+L09DF:
+	JR L09EC                                ; 09DF: 18 0B
+
+L09E1:
+	LD A,(01C8H)                            ; 09E1: 3A C8 01
+	SUB 02H                                 ; 09E4: D6 02
+	JP Z,L0B1E                              ; 09E6: CA 1E 0B
+	LD (0A3CH),A                            ; 09E9: 32 3C 0A
+L09EC:
+	LD A,02H                                ; 09EC: 3E 02
+	LD (1C90H),A                            ; 09EE: 32 90 1C
+format_next_track:
+	LD IX,active_cdb                        ; 09F1: DD 21 D0 1B
+	LD IY,drive_a_params                    ; 09F5: FD 21 1E 1C
+	CALL seek_only                          ; 09F9: CD 00 0C
+	XOR A                                   ; 09FC: AF
+	LD (1C8FH),A                            ; 09FD: 32 8F 1C
+	LD DE,6CB0H                             ; 0A00: 11 B0 6C
+L0A03:
+	LD A,(1C8FH)                            ; 0A03: 3A 8F 1C
+	LD HL,cpu2_init                         ; 0A06: 21 8E 1C
+	ADD A,(HL)                              ; 0A09: 86
+	LD C,A                                  ; 0A0A: 4F
+	LD A,(1C20H)                            ; 0A0B: 3A 20 1C
+	LD HL,1BDDH                             ; 0A0E: 21 DD 1B
+	CP (HL)                                 ; 0A11: BE
+	LD HL,1C47H                             ; 0A12: 21 47 1C
+	LD A,C                                  ; 0A15: 79
+	JR C,L0A1C                              ; 0A16: 38 04
+	LD B,00H                                ; 0A18: 06 00
+	ADD HL,BC                               ; 0A1A: 09
+	LD A,B                                  ; 0A1B: 78
+L0A1C:
+	ADD A,(HL)                              ; 0A1C: 86
+	LD (1C89H),A                            ; 0A1D: 32 89 1C
+	PUSH DE                                 ; 0A20: D5
+	LD IY,1C87H                             ; 0A21: FD 21 87 1C
+	CALL do_verify_read                     ; 0A25: CD B2 0D
+	LD (IY+0),B                             ; 0A28: FD 70 00
+	LD (IY+1),C                             ; 0A2B: FD 71 01
+	LD HL,1C87H                             ; 0A2E: 21 87 1C
+	POP DE                                  ; 0A31: D1
+	LD BC,0006H                             ; 0A32: 01 06 00
+	LDIR                                    ; 0A35: ED B0
+	LD BC,(1C7DH)                           ; 0A37: ED 4B 7D 1C
+	LD A,00H                                ; 0A3B: 3E 00
+	OR 00H                                  ; 0A3D: F6 00
+	JR NZ,L0A47                             ; 0A3F: 20 06
+	EX DE,HL                                ; 0A41: EB
+	ADD HL,BC                               ; 0A42: 09
+	INC HL                                  ; 0A43: 23
+	INC HL                                  ; 0A44: 23
+	JR L0AAA                                ; 0A45: 18 63
+
+L0A47:
+	PUSH DE                                 ; 0A47: D5
+	LD A,(01C8H)                            ; 0A48: 3A C8 01
+	CP 00H                                  ; 0A4B: FE 00
+	JR NZ,L0A54                             ; 0A4D: 20 05
+	LD A,(1C8FH)                            ; 0A4F: 3A 8F 1C
+	JR L0A93                                ; 0A52: 18 3F
+
+L0A54:
+	PUSH IX                                 ; 0A54: DD E5
+	PUSH BC                                 ; 0A56: C5
+	PUSH DE                                 ; 0A57: D5
+	LD A,(1C89H)                            ; 0A58: 3A 89 1C
+	LD IX,(1C37H)                           ; 0A5B: DD 2A 37 1C
+	LD E,A                                  ; 0A5F: 5F
+	LD D,(IX+25)                            ; 0A60: DD 56 19
+	LD A,(1C2EH)                            ; 0A63: 3A 2E 1C
+	CP (IX+13)                              ; 0A66: DD BE 0D
+	JR C,L0A83                              ; 0A69: 38 18
+	PUSH IX                                 ; 0A6B: DD E5
+	POP HL                                  ; 0A6D: E1
+	LD BC,0019H                             ; 0A6E: 01 19 00
+	ADD HL,BC                               ; 0A71: 09
+	LD A,(1C45H)                            ; 0A72: 3A 45 1C
+	LD B,A                                  ; 0A75: 47
+handle_error:
+	LD A,E                                  ; 0A76: 7B
+	LD E,00H                                ; 0A77: 1E 00
+L0A79:
+	CP (HL)                                 ; 0A79: BE
+	JR Z,L0A81                              ; 0A7A: 28 05
+	INC E                                   ; 0A7C: 1C
+	INC HL                                  ; 0A7D: 23
+	DJNZ L0A79                              ; 0A7E: 10 F9
+	RST 38H                                 ; 0A80: FF
+L0A81:
+	LD D,00H                                ; 0A81: 16 00
+L0A83:
+	LD A,E                                  ; 0A83: 7B
+	SUB D                                   ; 0A84: 92
+	LD HL,1C81H                             ; 0A85: 21 81 1C
+	BIT 0,(HL)                              ; 0A88: CB 46
+	JR Z,L0A8F                              ; 0A8A: 28 03
+	SUB (IX+19)                             ; 0A8C: DD 96 13
+L0A8F:
+	POP DE                                  ; 0A8F: D1
+	POP BC                                  ; 0A90: C1
+	POP IX                                  ; 0A91: DD E1
+L0A93:
+	LD HL,4400H                             ; 0A93: 21 00 44
+display_status:
+	INC A                                   ; 0A96: 3C
+L0A97:
+	DEC A                                   ; 0A97: 3D
+	JR Z,L0A9D                              ; 0A98: 28 03
+	ADD HL,BC                               ; 0A9A: 09
+	JR L0A97                                ; 0A9B: 18 FA
+
+L0A9D:
+	LDIR                                    ; 0A9D: ED B0
+	POP IY                                  ; 0A9F: FD E1
+	PUSH DE                                 ; 0AA1: D5
+	CALL write_sector_data                  ; 0AA2: CD 97 0D
+	POP HL                                  ; 0AA5: E1
+	LD (HL),B                               ; 0AA6: 70
+	INC HL                                  ; 0AA7: 23
+	LD (HL),C                               ; 0AA8: 71
+	INC HL                                  ; 0AA9: 23
+L0AAA:
+	EX DE,HL                                ; 0AAA: EB
+	LD HL,1C8FH                             ; 0AAB: 21 8F 1C
+	INC (HL)                                ; 0AAE: 34
+	LD A,(1C45H)                            ; 0AAF: 3A 45 1C
+	CP (HL)                                 ; 0AB2: BE
+	JP NZ,L0A03                             ; 0AB3: C2 03 0A
+	XOR A                                   ; 0AB6: AF
+	LD (0A3EH),A                            ; 0AB7: 32 3E 0A
+	LD HL,(1C3BH)                           ; 0ABA: 2A 3B 1C
+	CALL prompt_format_count                ; 0ABD: CD ED 0B
+	OR A                                    ; 0AC0: B7
+	JR NZ,L0B0E                             ; 0AC1: 20 4B
+	LD (0B01H),HL                           ; 0AC3: 22 01 0B
+	LD A,FFH                                ; 0AC6: 3E FF
+	OR A                                    ; 0AC8: B7
+	JR Z,L0AFA                              ; 0AC9: 28 2F
+	LD (0A3EH),A                            ; 0ACB: 32 3E 0A
+	LD A,(6CB0H)                            ; 0ACE: 3A B0 6C
+	CPL                                     ; 0AD1: 2F
+	LD (6CB0H),A                            ; 0AD2: 32 B0 6C
+	LD IY,drive_a_params                    ; 0AD5: FD 21 1E 1C
+	CALL do_multisector_io                  ; 0AD9: CD 03 0C
+	JR NZ,L0B0E                             ; 0ADC: 20 30
+	LD A,(1C45H)                            ; 0ADE: 3A 45 1C
+	LD B,A                                  ; 0AE1: 47
+	LD HL,6CB0H                             ; 0AE2: 21 B0 6C
+	LD DE,4400H                             ; 0AE5: 11 00 44
+L0AE8:
+	PUSH BC                                 ; 0AE8: C5
+	LD BC,(1C7DH)                           ; 0AE9: ED 4B 7D 1C
+L0AED:
+	LD A,(DE)                               ; 0AED: 1A
+	INC DE                                  ; 0AEE: 13
+	CPI                                     ; 0AEF: ED A1
+	JP NZ,L0B0C                             ; 0AF1: C2 0C 0B
+	JP PE,L0AED                             ; 0AF4: EA ED 0A
+	POP BC                                  ; 0AF7: C1
+	DJNZ L0AE8                              ; 0AF8: 10 EE
+L0AFA:
+	LD DE,144FH                             ; 0AFA: 11 4F 14
+	CALL print_string_inline                ; 0AFD: CD 1B 0E
+	LD DE,0000H                             ; 0B00: 11 00 00
+	LD HL,(1C7BH)                           ; 0B03: 2A 7B 1C
+	ADD HL,DE                               ; 0B06: 19
+	CALL print_dec_HL                       ; 0B07: CD 70 0E
+	JR L0B1E                                ; 0B0A: 18 12
+
+L0B0C:
+	LD A,56H                                ; 0B0C: 3E 56
+L0B0E:
+	LD (13B6H),A                            ; 0B0E: 32 B6 13
+	LD HL,1C90H                             ; 0B11: 21 90 1C
+	DEC (HL)                                ; 0B14: 35
+	JP NZ,format_next_track                 ; 0B15: C2 F1 09
+	LD DE,msg_track_error                   ; 0B18: 11 AB 13
+	CALL print_string_inline                ; 0B1B: CD 1B 0E
+L0B1E:
+	LD HL,1C20H                             ; 0B1E: 21 20 1C
+	LD A,(1C1DH)                            ; 0B21: 3A 1D 1C
+	CP (HL)                                 ; 0B24: BE
+	JR Z,L0B2F                              ; 0B25: 28 08
+	INC (HL)                                ; 0B27: 34
+	LD HL,1C2EH                             ; 0B28: 21 2E 1C
+	INC (HL)                                ; 0B2B: 34
+	JP L07EF                                ; 0B2C: C3 EF 07
+
+L0B2F:
+	LD DE,(1C82H)                           ; 0B2F: ED 5B 82 1C
+	CALL print_string                       ; 0B33: CD 18 0E
+	LD DE,1371H                             ; 0B36: 11 71 13
+	CALL print_string_inline                ; 0B39: CD 1B 0E
+	CALL read_char                          ; 0B3C: CD 37 0E
+	CP 4AH                                  ; 0B3F: FE 4A
+	JP Z,do_format_main                     ; 0B41: CA 33 07
+	JR L0B49                                ; 0B44: 18 03
+
+L0B46:
+	CALL print_string                       ; 0B46: CD 18 0E
+L0B49:
+	CALL save_isr_vectors                   ; 0B49: CD 78 0C
+	LD DE,13C9H                             ; 0B4C: 11 C9 13
+	CALL read_char_upper                    ; 0B4F: CD 34 0E
+	CP 4AH                                  ; 0B52: FE 4A
+	JP Z,main_init                          ; 0B54: CA 58 01
+	CALL restore_isr                        ; 0B57: CD A8 0F
+	CALL restore_isr_exit                   ; 0B5A: CD 90 0F
+select_drive_side:
+	LD C,0DH                                ; 0B5D: 0E 0D
+	CALL 0005H                              ; 0B5F: CD 05 00
+	JP 0000H                                ; 0B62: C3 00 00
+
+set_side_flag:
+	LD A,00H                                ; 0B65: 3E 00
+	OR A                                    ; 0B67: B7
+	RET NZ                                  ; 0B68: C0
+	LD A,(1C20H)                            ; 0B69: 3A 20 1C
+	LD HL,1BDDH                             ; 0B6C: 21 DD 1B
+	CP (HL)                                 ; 0B6F: BE
+	LD A,E5H                                ; 0B70: 3E E5
+	RET NC                                  ; 0B72: D0
+	LD A,53H                                ; 0B73: 3E 53
+	RET                                     ; 0B75: C9
+
+check_valid_drive:
+	LD (15F1H),A                            ; 0B76: 32 F1 15
+	PUSH HL                                 ; 0B79: E5
+	PUSH DE                                 ; 0B7A: D5
+restore_drive:
+	LD DE,15E2H                             ; 0B7B: 11 E2 15
+	CALL print_string_inline                ; 0B7E: CD 1B 0E
+	POP DE                                  ; 0B81: D1
+	POP HL                                  ; 0B82: E1
+	LD A,E                                  ; 0B83: 7B
+	CALL save_drive_state                   ; 0B84: CD 96 0B
+	LD A,D                                  ; 0B87: 7A
+	CALL save_drive_state                   ; 0B88: CD 96 0B
+	LD A,L                                  ; 0B8B: 7D
+	CALL save_drive_state                   ; 0B8C: CD 96 0B
+	LD A,H                                  ; 0B8F: 7C
+	CALL save_drive_state                   ; 0B90: CD 96 0B
+	JP print_char                           ; 0B93: C3 20 0E
+
+save_drive_state:
+	CALL print_hex_A                        ; 0B96: CD CC 0E
+	LD A,20H                                ; 0B99: 3E 20
+	JP print_char_bdos                      ; 0B9B: C3 27 0E
+
+deselect_drive:
+	CALL calc_track_capacity                ; 0B9E: CD B4 0B
+	RET C                                   ; 0BA1: D8
+	LD (IY+2),00H                           ; 0BA2: FD 36 02 00
+	CALL seek_only                          ; 0BA6: CD 00 0C
+	OR A                                    ; 0BA9: B7
+display_track_info:
+	RET Z                                   ; 0BAA: C8
+	LD (IY+1),00H                           ; 0BAB: FD 36 01 00
+	LD DE,13FBH                             ; 0BAF: 11 FB 13
+	SCF                                     ; 0BB2: 37
+	RET                                     ; 0BB3: C9
+
+calc_track_capacity:
+	LD HL,(0001H)                           ; 0BB4: 2A 01 00
+	LD BC,0018H                             ; 0BB7: 01 18 00
+	ADD HL,BC                               ; 0BBA: 09
+	LD E,01H                                ; 0BBB: 1E 01
+	LD C,(IY+1)                             ; 0BBD: FD 4E 01
+	PUSH IY                                 ; 0BC0: FD E5
+	CALL prompt_format_count                ; 0BC2: CD ED 0B
+	POP IY                                  ; 0BC5: FD E1
+	LD A,H                                  ; 0BC7: 7C
+	OR L                                    ; 0BC8: B5
+	JR Z,L0BE8                              ; 0BC9: 28 1D
+	LD (IY+9),L                             ; 0BCB: FD 75 09
+	LD (IY+10),H                            ; 0BCE: FD 74 0A
+	LD DE,000AH                             ; 0BD1: 11 0A 00
+	ADD HL,DE                               ; 0BD4: 19
+	LD E,(HL)                               ; 0BD5: 5E
+	INC HL                                  ; 0BD6: 23
+	LD D,(HL)                               ; 0BD7: 56
+	EX DE,HL                                ; 0BD8: EB
+	LD (IY+11),L                            ; 0BD9: FD 75 0B
+	LD (IY+12),H                            ; 0BDC: FD 74 0C
+	PUSH HL                                 ; 0BDF: E5
+	POP IX                                  ; 0BE0: DD E1
+	OR A                                    ; 0BE2: B7
+	BIT 7,(IX+15)                           ; 0BE3: DD CB 0F 7E
+	RET Z                                   ; 0BE7: C8
+L0BE8:
+	LD DE,13FBH                             ; 0BE8: 11 FB 13
+	SCF                                     ; 0BEB: 37
+	RET                                     ; 0BEC: C9
+
+prompt_format_count:
+	JP (HL)                                 ; 0BED: E9
+
+input_format_count:
+	LD IY,drive_b_params                    ; 0BEE: FD 21 2C 1C
+	CALL do_multisector_io                  ; 0BF2: CD 03 0C
+	RET Z                                   ; 0BF5: C8
+	PUSH AF                                 ; 0BF6: F5
+	CALL do_cdb_io_write                    ; 0BF7: CD 6A 0C
+	POP AF                                  ; 0BFA: F1
+	CALL check_valid_drive                  ; 0BFB: CD 76 0B
+	SCF                                     ; 0BFE: 37
+	RET                                     ; 0BFF: C9
+
+seek_only:
+	XOR A                                   ; 0C00: AF
+	JR do_cdb_io                            ; 0C01: 18 5E
+
+do_multisector_io:
+	LD A,(1C80H)                            ; 0C03: 3A 80 1C
+	LD (IY+5),A                             ; 0C06: FD 77 05
+	LD (IY+4),01H                           ; 0C09: FD 36 04 01
+	LD E,09H                                ; 0C0D: 1E 09
+	LD A,(cpu2_init)                        ; 0C0F: 3A 8E 1C
+	LD C,A                                  ; 0C12: 4F
+	LD B,00H                                ; 0C13: 06 00
+	LD HL,1C47H                             ; 0C15: 21 47 1C
+	ADD HL,BC                               ; 0C18: 09
+	LD A,(HL)                               ; 0C19: 7E
+L0C1A:
+	INC B                                   ; 0C1A: 04
+	DEC E                                   ; 0C1B: 1D
+	JR Z,L0C23                              ; 0C1C: 28 05
+	INC A                                   ; 0C1E: 3C
+	INC HL                                  ; 0C1F: 23
+	CP (HL)                                 ; 0C20: BE
+	JR Z,L0C1A                              ; 0C21: 28 F7
+L0C23:
+	LD L,(IY+7)                             ; 0C23: FD 6E 07
+	LD H,(IY+8)                             ; 0C26: FD 66 08
+	PUSH HL                                 ; 0C29: E5
+	LD A,(1C45H)                            ; 0C2A: 3A 45 1C
+L0C2D:
+	LD C,A                                  ; 0C2D: 4F
+	CP B                                    ; 0C2E: B8
+	JR C,L0C34                              ; 0C2F: 38 03
+	LD A,B                                  ; 0C31: 78
+	JR L0C35                                ; 0C32: 18 01
+
+L0C34:
+	LD B,A                                  ; 0C34: 47
+L0C35:
+	PUSH BC                                 ; 0C35: C5
+	CALL do_cdb_io                          ; 0C36: CD 61 0C
+	POP BC                                  ; 0C39: C1
+	JR NZ,L0C58                             ; 0C3A: 20 1C
+	LD A,B                                  ; 0C3C: 78
+	LD DE,(1C7DH)                           ; 0C3D: ED 5B 7D 1C
+	LD L,(IY+7)                             ; 0C41: FD 6E 07
+	LD H,(IY+8)                             ; 0C44: FD 66 08
+L0C47:
+	ADD HL,DE                               ; 0C47: 19
+	INC (IY+4)                              ; 0C48: FD 34 04
+	DJNZ L0C47                              ; 0C4B: 10 FA
+	LD (IY+7),L                             ; 0C4D: FD 75 07
+	LD (IY+8),H                             ; 0C50: FD 74 08
+	LD B,A                                  ; 0C53: 47
+	LD A,C                                  ; 0C54: 79
+	SUB B                                   ; 0C55: 90
+	JR NZ,L0C2D                             ; 0C56: 20 D5
+L0C58:
+	POP HL                                  ; 0C58: E1
+	LD (IY+7),L                             ; 0C59: FD 75 07
+	LD (IY+8),H                             ; 0C5C: FD 74 08
+	OR A                                    ; 0C5F: B7
+	RET                                     ; 0C60: C9
+
+do_cdb_io:
+	LD (IY+6),A                             ; 0C61: FD 77 06
+	RES 1,(IY+0)                            ; 0C64: FD CB 00 8E
+	JR L0C6E                                ; 0C68: 18 04
+
+do_cdb_io_write:
+	SET 1,(IY+0)                            ; 0C6A: FD CB 00 CE
+L0C6E:
+	PUSH IY                                 ; 0C6E: FD E5
+	POP HL                                  ; 0C70: E1
+	PUSH HL                                 ; 0C71: E5
+	CALL call_diskio_cdb                    ; 0C72: CD AB 0F
+	POP IY                                  ; 0C75: FD E1
+	RET                                     ; 0C77: C9
+
+; -----------------------------------------------
+; Save ISR vectors and setup for disk operations
+; -----------------------------------------------
+save_isr_vectors:
+	CALL restore_isr                        ; 0C78: CD A8 0F
+	LD A,(1C1FH)                            ; 0C7B: 3A 1F 1C
+	INC A                                   ; 0C7E: 3C
+	JP Z,next_drive                         ; 0C7F: CA 8E 0C
+	LD IY,drive_a_params                    ; 0C82: FD 21 1E 1C
+	CALL deselect_drive                     ; 0C86: CD 9E 0B
+	LD A,FFH                                ; 0C89: 3E FF
+	LD (1C1FH),A                            ; 0C8B: 32 1F 1C
+next_drive:
+	LD A,(1C2DH)                            ; 0C8E: 3A 2D 1C
+	INC A                                   ; 0C91: 3C
+	JP Z,next_side                          ; 0C92: CA A1 0C
+	LD IY,drive_b_params                    ; 0C95: FD 21 2C 1C
+	CALL deselect_drive                     ; 0C99: CD 9E 0B
+	LD A,FFH                                ; 0C9C: 3E FF
+	LD (1C2DH),A                            ; 0C9E: 32 2D 1C
+next_side:
+	RET                                     ; 0CA1: C9
+
+display_format_info:
+	LD DE,msg_offset_prompt                 ; 0CA2: 11 2D 17
+	CALL print_string                       ; 0CA5: CD 18 0E
+	LD A,(1B95H)                            ; 0CA8: 3A 95 1B
+	LD H,00H                                ; 0CAB: 26 00
+	LD L,A                                  ; 0CAD: 6F
+	CALL print_dec_HL                       ; 0CAE: CD 70 0E
+	LD DE,msg_format_uses                   ; 0CB1: 11 5A 17
+	CALL print_string_inline                ; 0CB4: CD 1B 0E
+	LD HL,(1B90H)                           ; 0CB7: 2A 90 1B
+	LD DE,(1B8CH)                           ; 0CBA: ED 5B 8C 1B
+	XOR A                                   ; 0CBE: AF
+	SBC HL,DE                               ; 0CBF: ED 52
+	LD DE,0000H                             ; 0CC1: 11 00 00
+	LD BC,(1B94H)                           ; 0CC4: ED 4B 94 1B
+	LD B,D                                  ; 0CC8: 42
+L0CC9:
+	SBC HL,BC                               ; 0CC9: ED 42
+	JR C,L0CD0                              ; 0CCB: 38 03
+	INC DE                                  ; 0CCD: 13
+	JR L0CC9                                ; 0CCE: 18 F9
+
+L0CD0:
+	LD HL,(1B8EH)                           ; 0CD0: 2A 8E 1B
+	EX DE,HL                                ; 0CD3: EB
+	XOR A                                   ; 0CD4: AF
+	SBC HL,DE                               ; 0CD5: ED 52
+	EX DE,HL                                ; 0CD7: EB
+	LD A,(1BCFH)                            ; 0CD8: 3A CF 1B
+	LD HL,0040H                             ; 0CDB: 21 40 00
+	INC A                                   ; 0CDE: 3C
+	LD B,A                                  ; 0CDF: 47
+L0CE0:
+	ADD HL,HL                               ; 0CE0: 29
+	DJNZ L0CE0                              ; 0CE1: 10 FD
+	EX DE,HL                                ; 0CE3: EB
+	SBC HL,DE                               ; 0CE4: ED 52
+	LD A,H                                  ; 0CE6: 7C
+	OR A                                    ; 0CE7: B7
+	JR Z,L0CED                              ; 0CE8: 28 03
+	LD HL,00FFH                             ; 0CEA: 21 FF 00
+L0CED:
+	LD (0D06H),HL                           ; 0CED: 22 06 0D
+	CALL print_dec_HL                       ; 0CF0: CD 70 0E
+	LD DE,175DH                             ; 0CF3: 11 5D 17
+	CALL print_string_inline                ; 0CF6: CD 1B 0E
+	CALL parse_dec_input                    ; 0CF9: CD 63 0F
+	LD HL,(1B95H)                           ; 0CFC: 2A 95 1B
+	CP L                                    ; 0CFF: BD
+	JR C,display_format_info                ; 0D00: 38 A0
+	LD D,00H                                ; 0D02: 16 00
+	LD E,A                                  ; 0D04: 5F
+	LD HL,0000H                             ; 0D05: 21 00 00
+	SBC HL,DE                               ; 0D08: ED 52
+	JR C,display_format_info                ; 0D0A: 38 96
+	LD (1B95H),A                            ; 0D0C: 32 95 1B
+	RET                                     ; 0D0F: C9
+
+; -----------------------------------------------
+; Disk I/O via cpmx21 (diskio)
+; Sets up CDB structure and calls BIOS extension
+; -----------------------------------------------
+do_disk_io:
+	LD A,(IX+16)                            ; 0D10: DD 7E 10
+	LD (1BCFH),A                            ; 0D13: 32 CF 1B
+	LD B,A                                  ; 0D16: 47
+	INC B                                   ; 0D17: 04
+	LD A,80H                                ; 0D18: 3E 80
+L0D1A:
+	RLCA                                    ; 0D1A: 07
+	DJNZ L0D1A                              ; 0D1B: 10 FD
+	LD (1BCEH),A                            ; 0D1D: 32 CE 1B
+	LD HL,0000H                             ; 0D20: 21 00 00
+	LD DE,0080H                             ; 0D23: 11 80 00
+	LD B,A                                  ; 0D26: 47
+L0D27:
+	ADD HL,DE                               ; 0D27: 19
+	DJNZ L0D27                              ; 0D28: 10 FD
+	LD (1BCCH),HL                           ; 0D2A: 22 CC 1B
+	LD BC,(1B8EH)                           ; 0D2D: ED 4B 8E 1B
+	ADD HL,BC                               ; 0D31: 09
+	LD A,(1B95H)                            ; 0D32: 3A 95 1B
+	LD C,A                                  ; 0D35: 4F
+	ADD HL,BC                               ; 0D36: 09
+	EX DE,HL                                ; 0D37: EB
+	LD A,(1B94H)                            ; 0D38: 3A 94 1B
+	LD B,A                                  ; 0D3B: 47
+	LD HL,0000H                             ; 0D3C: 21 00 00
+L0D3F:
+	ADD HL,DE                               ; 0D3F: 19
+	DJNZ L0D3F                              ; 0D40: 10 FD
+	LD BC,(1B8CH)                           ; 0D42: ED 4B 8C 1B
+	ADD HL,BC                               ; 0D46: 09
+	LD (1BCAH),HL                           ; 0D47: 22 CA 1B
+	LD DE,(1B90H)                           ; 0D4A: ED 5B 90 1B
+	XOR A                                   ; 0D4E: AF
+	SBC HL,DE                               ; 0D4F: ED 52
+	RET C                                   ; 0D51: D8
+	LD DE,1761H                             ; 0D52: 11 61 17
+	CALL print_string                       ; 0D55: CD 18 0E
+	LD HL,(1B95H)                           ; 0D58: 2A 95 1B
+	LD H,00H                                ; 0D5B: 26 00
+do_format_write:
+	CALL print_dec_HL                       ; 0D5D: CD 70 0E
+	LD DE,1768H                             ; 0D60: 11 68 17
+	CALL print_string_inline                ; 0D63: CD 1B 0E
+	CALL display_format_info                ; 0D66: CD A2 0C
+	JP do_disk_io                           ; 0D69: C3 10 0D
+
+fill_format_buffer:
+	LD HL,1B94H                             ; 0D6C: 21 94 1B
+	LD B,(HL)                               ; 0D6F: 46
+	LD A,(1BE3H)                            ; 0D70: 3A E3 1B
+	OR A                                    ; 0D73: B7
+	JR Z,L0D78                              ; 0D74: 28 02
+	SLA B                                   ; 0D76: CB 20
+L0D78:
+	LD C,00H                                ; 0D78: 0E 00
+L0D7A:
+	PUSH DE                                 ; 0D7A: D5
+	PUSH BC                                 ; 0D7B: C5
+	LD DE,17F5H                             ; 0D7C: 11 F5 17
+	CALL print_string                       ; 0D7F: CD 18 0E
+	CALL parse_hex_input                    ; 0D82: CD 32 0F
+	JR Z,L0D8F                              ; 0D85: 28 08
+	POP BC                                  ; 0D87: C1
+	POP DE                                  ; 0D88: D1
+	LD (DE),A                               ; 0D89: 12
+	INC DE                                  ; 0D8A: 13
+	LD C,A                                  ; 0D8B: 4F
+	DJNZ L0D7A                              ; 0D8C: 10 EC
+	RET                                     ; 0D8E: C9
+
+L0D8F:
+	POP BC                                  ; 0D8F: C1
+	POP HL                                  ; 0D90: E1
+L0D91:
+	INC C                                   ; 0D91: 0C
+	LD (HL),C                               ; 0D92: 71
+	INC HL                                  ; 0D93: 23
+	DJNZ L0D91                              ; 0D94: 10 FB
+	RET                                     ; 0D96: C9
+
+write_sector_data:
+	PUSH IY                                 ; 0D97: FD E5
+	LD IY,1C8DH                             ; 0D99: FD 21 8D 1C
+	LD E,01H                                ; 0D9D: 1E 01
+	CALL save_de_to_iy                      ; 0D9F: CD C3 0D
+	POP IY                                  ; 0DA2: FD E1
+	LD A,(1C7FH)                            ; 0DA4: 3A 7F 1C
+L0DA7:
+	PUSH AF                                 ; 0DA7: F5
+	LD E,80H                                ; 0DA8: 1E 80
+	CALL advance_dma_ptr                    ; 0DAA: CD C7 0D
+read_sector_data:
+	POP AF                                  ; 0DAD: F1
+	DEC A                                   ; 0DAE: 3D
+	JR NZ,L0DA7                             ; 0DAF: 20 F6
+	RET                                     ; 0DB1: C9
+
+do_verify_read:
+	PUSH IY                                 ; 0DB2: FD E5
+	LD IY,1C86H                             ; 0DB4: FD 21 86 1C
+	LD E,01H                                ; 0DB8: 1E 01
+	CALL save_de_to_iy                      ; 0DBA: CD C3 0D
+	POP IY                                  ; 0DBD: FD E1
+	LD E,04H                                ; 0DBF: 1E 04
+	JR advance_dma_ptr                      ; 0DC1: 18 04
+
+save_de_to_iy:
+	LD BC,(1C43H)                           ; 0DC3: ED 4B 43 1C
+advance_dma_ptr:
+	LD A,(IY+0)                             ; 0DC7: FD 7E 00
+	XOR B                                   ; 0DCA: A8
+	LD B,A                                  ; 0DCB: 47
+	RRCA                                    ; 0DCC: 0F
+	RRCA                                    ; 0DCD: 0F
+	RRCA                                    ; 0DCE: 0F
+	RRCA                                    ; 0DCF: 0F
+	AND 0FH                                 ; 0DD0: E6 0F
+	XOR B                                   ; 0DD2: A8
+	LD B,A                                  ; 0DD3: 47
+	RRCA                                    ; 0DD4: 0F
+	RRCA                                    ; 0DD5: 0F
+	RRCA                                    ; 0DD6: 0F
+	LD D,A                                  ; 0DD7: 57
+	AND 1FH                                 ; 0DD8: E6 1F
+	XOR C                                   ; 0DDA: A9
+	LD C,A                                  ; 0DDB: 4F
+	LD A,D                                  ; 0DDC: 7A
+	RRCA                                    ; 0DDD: 0F
+	AND F0H                                 ; 0DDE: E6 F0
+	XOR C                                   ; 0DE0: A9
+	LD C,A                                  ; 0DE1: 4F
+	LD A,D                                  ; 0DE2: 7A
+	AND E0H                                 ; 0DE3: E6 E0
+	XOR B                                   ; 0DE5: A8
+	LD B,C                                  ; 0DE6: 41
+	LD C,A                                  ; 0DE7: 4F
+	INC IY                                  ; 0DE8: FD 23
+	DEC E                                   ; 0DEA: 1D
+	JR NZ,advance_dma_ptr                   ; 0DEB: 20 DA
+	RET                                     ; 0DED: C9
+
+; Call CPA extension cpmx18 (delsps - delete spaces)
+call_cpmx18:
+	CALL resolve_cpmext                     ; 0DEE: CD F9 0D
+	OR A                                    ; 0DF1: B7
+	RET Z                                   ; 0DF2: C8
+	CP 20H                                  ; 0DF3: FE 20
+	JR Z,call_cpmx18                        ; 0DF5: 28 F7
+	SCF                                     ; 0DF7: 37
+	RET                                     ; 0DF8: C9
+
+resolve_cpmext:
+	LD A,(0080H)                            ; 0DF9: 3A 80 00
+	OR A                                    ; 0DFC: B7
+	RET Z                                   ; 0DFD: C8
+	DEC A                                   ; 0DFE: 3D
+	LD (0080H),A                            ; 0DFF: 32 80 00
+	LD C,A                                  ; 0E02: 4F
+	LD DE,0081H                             ; 0E03: 11 81 00
+	LD A,(DE)                               ; 0E06: 1A
+	CP 2FH                                  ; 0E07: FE 2F
+	JR NZ,L0E0D                             ; 0E09: 20 02
+	LD A,0DH                                ; 0E0B: 3E 0D
+L0E0D:
+	INC C                                   ; 0E0D: 0C
+; Call CPA extension by number
+call_cpmext:
+	DEC C                                   ; 0E0E: 0D
+	RET Z                                   ; 0E0F: C8
+	LD B,00H                                ; 0E10: 06 00
+	LD HL,0082H                             ; 0E12: 21 82 00
+	LDIR                                    ; 0E15: ED B0
+	RET                                     ; 0E17: C9
+
+; -----------------------------------------------
+; Print $-terminated string
+; DE = pointer to string
+; -----------------------------------------------
+print_string:
+	CALL print_char                         ; 0E18: CD 20 0E ; BDOS function 9
+; Print $-terminated string + CRLF
+print_string_inline:
+	LD C,09H                                ; 0E1B: 0E 09 ; BDOS function 9
+	JP 0005H                                ; 0E1D: C3 05 00
+
+; Print character in A
+print_char:
+	LD A,0DH                                ; 0E20: 3E 0D
+	CALL print_char_bdos                    ; 0E22: CD 27 0E
+	LD A,0AH                                ; 0E25: 3E 0A
+; Print character via BDOS (E=char)
+print_char_bdos:
+	PUSH HL                                 ; 0E27: E5
+	PUSH DE                                 ; 0E28: D5
+	PUSH BC                                 ; 0E29: C5
+	LD C,02H                                ; 0E2A: 0E 02
+	LD E,A                                  ; 0E2C: 5F
+	CALL 0005H                              ; 0E2D: CD 05 00
+	POP BC                                  ; 0E30: C1
+	POP DE                                  ; 0E31: D1
+	POP HL                                  ; 0E32: E1
+	RET                                     ; 0E33: C9
+
+; Read char and convert to uppercase
+read_char_upper:
+	CALL print_string                       ; 0E34: CD 18 0E
+; -----------------------------------------------
+; Read character from console
+; Returns: A = character, Z if no char
+; -----------------------------------------------
+read_char:
+	CALL call_cpmx18                        ; 0E37: CD EE 0D ; BDOS direct console I/O
+	JR C,L0E43                              ; 0E3A: 38 07
+	LD E,FFH                                ; 0E3C: 1E FF
+	LD C,06H                                ; 0E3E: 0E 06
+	CALL 0005H                              ; 0E40: CD 05 00
+L0E43:
+	OR A                                    ; 0E43: B7
+	JR Z,read_char                          ; 0E44: 28 F1
+	CP 03H                                  ; 0E46: FE 03
+	JR Z,L0E6A                              ; 0E48: 28 20
+	CP 61H                                  ; 0E4A: FE 61
+	JR C,L0E50                              ; 0E4C: 38 02
+	AND 5FH                                 ; 0E4E: E6 5F
+L0E50:
+	CP 0DH                                  ; 0E50: FE 0D
+	RET Z                                   ; 0E52: C8
+	CP 21H                                  ; 0E53: FE 21
+	JR C,L0E62                              ; 0E55: 38 0B
+	PUSH AF                                 ; 0E57: F5
+	LD E,A                                  ; 0E58: 5F
+	LD C,02H                                ; 0E59: 0E 02
+	CALL 0005H                              ; 0E5B: CD 05 00
+	POP AF                                  ; 0E5E: F1
+	CP 0DH                                  ; 0E5F: FE 0D
+	RET                                     ; 0E61: C9
+
+L0E62:
+	LD DE,1462H                             ; 0E62: 11 62 14
+	CALL print_string_inline                ; 0E65: CD 1B 0E
+	JR read_char                            ; 0E68: 18 CD
+
+L0E6A:
+	LD DE,15D6H                             ; 0E6A: 11 D6 15
+	JP L0B46                                ; 0E6D: C3 46 0B
+
+; -----------------------------------------------
+; Print HL as decimal number (signed)
+; Uses successive subtraction by -10000,-1000,-100,-10
+; -----------------------------------------------
+print_dec_HL:
+	PUSH DE                                 ; 0E70: D5
+	PUSH BC                                 ; 0E71: C5
+	LD A,H                                  ; 0E72: 7C
+	AND 80H                                 ; 0E73: E6 80
+	LD B,A                                  ; 0E75: 47
+	JR Z,L0E7F                              ; 0E76: 28 07
+	XOR H                                   ; 0E78: AC
+	LD DE,0000H                             ; 0E79: 11 00 00
+	EX DE,HL                                ; 0E7C: EB
+	SBC HL,DE                               ; 0E7D: ED 52
+L0E7F:
+	INC H                                   ; 0E7F: 24
+	DEC H                                   ; 0E80: 25
+	JR Z,L0E8F                              ; 0E81: 28 0C
+	LD DE,D8F0H                             ; 0E83: 11 F0 D8
+	CALL dec_div_digit                      ; 0E86: CD A5 0E
+	LD DE,FC18H                             ; 0E89: 11 18 FC
+	CALL dec_div_digit                      ; 0E8C: CD A5 0E
+L0E8F:
+	LD DE,FF9CH                             ; 0E8F: 11 9C FF
+	CALL dec_div_digit                      ; 0E92: CD A5 0E
+	LD DE,FFF6H                             ; 0E95: 11 F6 FF
+	CALL dec_div_digit                      ; 0E98: CD A5 0E
+	LD A,L                                  ; 0E9B: 7D
+	ADD A,30H                               ; 0E9C: C6 30
+	LD C,A                                  ; 0E9E: 4F
+	CALL dec_out_digit                      ; 0E9F: CD B0 0E
+	POP BC                                  ; 0EA2: C1
+	POP DE                                  ; 0EA3: D1
+	RET                                     ; 0EA4: C9
+
+dec_div_digit:
+	LD C,2FH                                ; 0EA5: 0E 2F
+L0EA7:
+	INC C                                   ; 0EA7: 0C
+	ADD HL,DE                               ; 0EA8: 19
+	JR C,L0EA7                              ; 0EA9: 38 FC
+	SBC HL,DE                               ; 0EAB: ED 52
+dec_check_zero:
+	LD A,C                                  ; 0EAD: 79
+	CP 30H                                  ; 0EAE: FE 30
+dec_out_digit:
+	LD A,20H                                ; 0EB0: 3E 20
+	JR Z,L0EB6                              ; 0EB2: 28 02
+	SET 6,B                                 ; 0EB4: CB F0
+L0EB6:
+	BIT 6,B                                 ; 0EB6: CB 70
+	JR Z,L0EC9                              ; 0EB8: 28 0F
+	BIT 0,B                                 ; 0EBA: CB 40
+	JR NZ,L0EC8                             ; 0EBC: 20 0A
+	INC B                                   ; 0EBE: 04
+	BIT 7,B                                 ; 0EBF: CB 78
+	JR Z,L0EC5                              ; 0EC1: 28 02
+	LD A,2DH                                ; 0EC3: 3E 2D
+L0EC5:
+	CALL print_char_bdos                    ; 0EC5: CD 27 0E
+L0EC8:
+	LD A,C                                  ; 0EC8: 79
+L0EC9:
+	JP print_char_bdos                      ; 0EC9: C3 27 0E
+
+; -----------------------------------------------
+; Print A register as 2-digit hex
+; Rotates high nibble down, prints both nibbles
+; -----------------------------------------------
+print_hex_A:
+	PUSH AF                                 ; 0ECC: F5
+	RRCA                                    ; 0ECD: 0F
+	RRCA                                    ; 0ECE: 0F
+	RRCA                                    ; 0ECF: 0F
+	RRCA                                    ; 0ED0: 0F
+	CALL print_hex_nib                      ; 0ED1: CD D5 0E
+	POP AF                                  ; 0ED4: F1
+print_hex_nib:
+	AND 0FH                                 ; 0ED5: E6 0F
+	OR 30H                                  ; 0ED7: F6 30
+	CP 3AH                                  ; 0ED9: FE 3A
+	JR C,L0EDF                              ; 0EDB: 38 02
+	ADD A,07H                               ; 0EDD: C6 07
+L0EDF:
+	JP print_char_bdos                      ; 0EDF: C3 27 0E
+
+; -----------------------------------------------
+; Read user input (from command tail or console)
+; If (0080H)=0: uses BDOS read buffer function
+; Otherwise: reads chars via cpmx18, echoing each
+; Converts result to uppercase
+; -----------------------------------------------
+read_user_input:
+	LD A,(0080H)                            ; 0EE2: 3A 80 00
+	OR A                                    ; 0EE5: B7
+	JR Z,read_line_bdos                     ; 0EE6: 28 27
+	LD HL,format_data_area                  ; 0EE8: 21 30 1A
+	LD B,(HL)                               ; 0EEB: 46
+	INC HL                                  ; 0EEC: 23
+read_chars_loop:
+	LD C,00H                                ; 0EED: 0E 00
+L0EEF:
+	PUSH BC                                 ; 0EEF: C5
+	PUSH HL                                 ; 0EF0: E5
+	CALL call_cpmx18                        ; 0EF1: CD EE 0D
+	POP HL                                  ; 0EF4: E1
+	POP BC                                  ; 0EF5: C1
+	JR NC,L0F04                             ; 0EF6: 30 0C
+	CP 0DH                                  ; 0EF8: FE 0D
+	JR Z,L0F04                              ; 0EFA: 28 08
+	INC HL                                  ; 0EFC: 23
+	LD (HL),A                               ; 0EFD: 77
+	CALL print_char_bdos                    ; 0EFE: CD 27 0E
+	INC C                                   ; 0F01: 0C
+	DJNZ L0EEF                              ; 0F02: 10 EB
+L0F04:
+	LD A,0DH                                ; 0F04: 3E 0D
+	CALL print_char_bdos                    ; 0F06: CD 27 0E
+	LD A,C                                  ; 0F09: 79
+	LD (1A31H),A                            ; 0F0A: 32 31 1A
+	JR L0F17                                ; 0F0D: 18 08
+
+; Read console line via BDOS function 0AH
+read_line_bdos:
+	LD DE,format_data_area                  ; 0F0F: 11 30 1A
+	LD C,0AH                                ; 0F12: 0E 0A
+	CALL 0005H                              ; 0F14: CD 05 00
+L0F17:
+	LD HL,1A31H                             ; 0F17: 21 31 1A
+	LD A,(HL)                               ; 0F1A: 7E
+	INC HL                                  ; 0F1B: 23
+	OR A                                    ; 0F1C: B7
+	RET Z                                   ; 0F1D: C8
+	PUSH AF                                 ; 0F1E: F5
+	PUSH HL                                 ; 0F1F: E5
+	LD B,A                                  ; 0F20: 47
+L0F21:
+	LD A,(HL)                               ; 0F21: 7E
+	CP 61H                                  ; 0F22: FE 61
+	JR C,L0F2C                              ; 0F24: 38 06
+	CP 7BH                                  ; 0F26: FE 7B
+	JR NC,L0F2C                             ; 0F28: 30 02
+	RES 5,(HL)                              ; 0F2A: CB AE
+L0F2C:
+	INC HL                                  ; 0F2C: 23
+	DJNZ L0F21                              ; 0F2D: 10 F2
+	POP HL                                  ; 0F2F: E1
+	POP AF                                  ; 0F30: F1
+	RET                                     ; 0F31: C9
+
+; -----------------------------------------------
+; Parse hex number from user input buffer
+; Returns: E=value, Z if empty input
+; -----------------------------------------------
+parse_hex_input:
+	CALL read_user_input                    ; 0F32: CD E2 0E
+	RET Z                                   ; 0F35: C8
+	LD B,A                                  ; 0F36: 47
+	LD E,00H                                ; 0F37: 1E 00
+L0F39:
+	LD A,(HL)                               ; 0F39: 7E
+	INC HL                                  ; 0F3A: 23
+	CP 41H                                  ; 0F3B: FE 41
+	JR C,L0F41                              ; 0F3D: 38 02
+	SUB 07H                                 ; 0F3F: D6 07
+L0F41:
+	SUB 30H                                 ; 0F41: D6 30
+	JR C,L0F5B                              ; 0F43: 38 16
+	CP 10H                                  ; 0F45: FE 10
+	JR NC,L0F5B                             ; 0F47: 30 12
+	LD D,A                                  ; 0F49: 57
+	LD A,E                                  ; 0F4A: 7B
+	CP 11H                                  ; 0F4B: FE 11
+	JR NC,L0F5B                             ; 0F4D: 30 0C
+	ADD A,A                                 ; 0F4F: 87
+	ADD A,A                                 ; 0F50: 87
+	ADD A,A                                 ; 0F51: 87
+	ADD A,A                                 ; 0F52: 87
+	ADD A,D                                 ; 0F53: 82
+	LD E,A                                  ; 0F54: 5F
+	DJNZ L0F39                              ; 0F55: 10 E2
+	XOR A                                   ; 0F57: AF
+	INC A                                   ; 0F58: 3C
+	LD A,E                                  ; 0F59: 7B
+	RET                                     ; 0F5A: C9
+
+L0F5B:
+	LD DE,1462H                             ; 0F5B: 11 62 14
+	CALL print_string_inline                ; 0F5E: CD 1B 0E
+	JR parse_hex_input                      ; 0F61: 18 CF
+
+parse_dec_input:
+	CALL read_user_input                    ; 0F63: CD E2 0E
+	RET Z                                   ; 0F66: C8
+	LD B,A                                  ; 0F67: 47
+	LD E,00H                                ; 0F68: 1E 00
+L0F6A:
+	LD A,(HL)                               ; 0F6A: 7E
+	INC HL                                  ; 0F6B: 23
+	SUB 30H                                 ; 0F6C: D6 30
+	JR C,L0F88                              ; 0F6E: 38 18
+print_decimal_HL:
+	CP 0AH                                  ; 0F70: FE 0A
+	JR NC,L0F88                             ; 0F72: 30 14
+	LD D,A                                  ; 0F74: 57
+	LD A,E                                  ; 0F75: 7B
+	CP 1AH                                  ; 0F76: FE 1A
+	JR NC,L0F88                             ; 0F78: 30 0E
+	ADD A,A                                 ; 0F7A: 87
+	ADD A,A                                 ; 0F7B: 87
+	ADD A,E                                 ; 0F7C: 83
+	ADD A,A                                 ; 0F7D: 87
+	ADD A,D                                 ; 0F7E: 82
+	JR C,L0F88                              ; 0F7F: 38 07
+	LD E,A                                  ; 0F81: 5F
+	DJNZ L0F6A                              ; 0F82: 10 E6
+	XOR A                                   ; 0F84: AF
+	INC A                                   ; 0F85: 3C
+	LD A,E                                  ; 0F86: 7B
+	RET                                     ; 0F87: C9
+
+L0F88:
+	LD DE,1462H                             ; 0F88: 11 62 14
+	CALL print_string_inline                ; 0F8B: CD 1B 0E
+	JR parse_dec_input                      ; 0F8E: 18 D3
+
+; -----------------------------------------------
+; Restore ISR vectors and return to CP/M
+; -----------------------------------------------
+restore_isr_exit:
+	LD C,C8H                                ; 0F90: 0E C8
+L0F92:
+	CALL exit_program                       ; 0F92: CD 99 0F
+	DEC C                                   ; 0F95: 0D
+	JR NZ,L0F92                             ; 0F96: 20 FA
+	RET                                     ; 0F98: C9
+
+exit_program:
+	LD B,BDH                                ; 0F99: 06 BD
+L0F9B:
+	DJNZ L0F9B                              ; 0F9B: 10 FE
+	RET                                     ; 0F9D: C9
+
+exit_warm_boot:
+	LD HL,(0001H)                           ; 0F9E: 2A 01 00
+	LD DE,0018H                             ; 0FA1: 11 18 00
+	ADD HL,DE                               ; 0FA4: 19
+	LD E,00H                                ; 0FA5: 1E 00
+	JP (HL)                                 ; 0FA7: E9
+
+restore_isr:
+	LD HL,1C3AH                             ; 0FA8: 21 3A 1C
+; Call diskio with CDB at HL
+call_diskio_cdb:
+	LD A,21H                                ; 0FAB: 3E 21
+; -----------------------------------------------
+; Delay loop
+; -----------------------------------------------
+delay_loop:
+	PUSH HL                                 ; 0FAD: E5
+	LD HL,(004EH)                           ; 0FAE: 2A 4E 00
+	ADD A,L                                 ; 0FB1: 85
+	LD L,A                                  ; 0FB2: 6F
+	JR NC,L0FB6                             ; 0FB3: 30 01
+	INC H                                   ; 0FB5: 24
+L0FB6:
+	LD (0FBBH),HL                           ; 0FB6: 22 BB 0F
+	POP HL                                  ; 0FB9: E1
+	JP 0000H                                ; 0FBA: C3 00 00
+
+
+; ============================================================================
+; String Data Area
+; ============================================================================
+msg_version_error:
+	DB	0AH
+	DB	'Tut mir leid! System CP/A fuer Buerocomputer',0DH,0AH
+	DB	'mit Version ab 12/87 erforderlich!',0DH,0AH
+	DB	07H,'$'
+	DB	0AH
+	DB	'Tut mir leid! Zuwenig freier Hauptspeicherplatz (TPA-Ende >='
+	DB	' 9660H)!',0DH,0AH
+	DB	07H,'$'
+msg_banner:
+	DB	0CH                                               ; 105B | .
+	DB	'Disketten-FORMAT fuer Buerocomputer, Version 19.05.89',0DH,0AH
+	DB	'^C bricht die aktuelle FORMAT-Aktion ab!',0DH,0AH
+	DB	'$'
+	DB	0DH,0AH
+	DB	'0   - Formatieren einer Diskette',0DH,0AH
+	DB	'$'
+	DB	'1   - Formatieren einer Diskette mit Quelle (kopieren)',0DH,0AH
+	DB	'$'
+	DB	'2   - Pruefen einer Diskette auf Lesbarkeit',0DH,0AH
+	DB	'3   - Einstellen des Diskettenformats im BIOS',0DH,0AH
+	DB	0AH
+	DB	'q,x - Rueckkehr ins Betriebssystem',0DH,0AH
+	DB	0AH
+	DB	'Bitte FORMAT-Funktion auswaehlen (ENTER=0): ','$'
+	DB	0AH
+	DB	'Bitte Laufwerk angeben: ','$'
+	DB	0AH
+	DB	'Bitte Ziel-Laufwerk angeben: ','$'
+	DB	0AH
+	DB	'Bitte Quell-Laufwerk angeben: ','$'
+	DB	'Diskette bitte in Laufwerk x, dann ENTER oder ^C fuer Abbruc'
+	DB	'h!','$'
+	DB	0AH
+	DB	'Vergleichs-Lesen nach dem Schreiben? (n, ENTER=j): ','$'
+	DB	0AH
+	DB	'WARNUNG! Files auf Laufw. x werden zerstoert! Erlaubt? (j/n)'
+	DB	': ','$'
+	DB	0AH
+	DB	'Soll-Bytes auf Datenspuren (Abweichung <=2% zulaessig):','$'
+	DB	'ab Spur auf Quell-Laufwerk (dez., ENTER= wie Ziellaufwerk): '
+	DB	'$'
+	DB	83H                                               ; 134E | .
+msg_formatting:
+	DB	0DH,'FORMATIEREN','$'
+	DB	83H                                               ; 135C | .
+msg_copying:
+	DB	0DH,'KOPIEREN','$'
+	DB	83H                                               ; 1367 | .
+msg_checking_done:
+	DB	0DH,'PRUEFEN','$'
+	DB	' beendet',0DH,0AH
+	DB	82H                                               ; 137B | .
+msg_repeat:
+	DB	0AH
+	DB	'Wiederholung mit gleichen Parametern? (j/n): ','$'
+	DB	'   Fehler ''X'' SPUR DEFEKT!',0DH,0AH
+	DB	07H,'$'
+	DB	82H                                               ; 13C9 | .
+msg_return_menu:
+	DB	0AH
+	DB	'Rueckkehr in Funktionsauswahl? (j, sonst Ende):','$'
+	DB	0AH
+	DB	'Kein aktives Diskettenlaufwerk!',07H,'$'
+	DB	0AH
+	DB	'Diskette schreibgeschuetzt!',07H,'$'
+	DB	' von Spur','$'
+	DB	' auf Spur','$'
+	DB	', Laenge in Bytes:','$'
+	DB	'???, bitte noch einmal: ',07H,'$'
+	DB	'A= automatische Formaterkennung fuer dieses Laufwerk zulasse'
+	DB	'n','$'
+	DB	'+= Verify nach Schreiben fuer dieses Laufwerk ein','$'
+	DB	'-= Verify nach Schreiben fuer dieses Laufwerk aus','$'
+	DB	'B= eingestelltes Format benutzen','$'
+	DB	'@= Spezielles Format',0DH,0AH
+	DB	0AH
+	DB	'Bitte Format auswaehlen (ENTER= 0) : ','$'
+	DB	' von Spur (dez., 0..','$'
+	DB	', ENTER= Spur 0)     : ','$'
+	DB	' bis Spur (dez., 0..','$'
+	DB	', ENTER= letzte Spur): ','$'
+	DB	0AH
+	DB	'*ABBRUCH*',07H,'$'
+	DB	'   LESEFEHLER ''X'' Quelle',07H,0DH,0AH
+	DB	'   Sektor-Ident auf Spur (phys. trk,sid,sec,slc): ','$'
+	DB	'   FORMAT benutzt stattdessen ','$'
+	DB	'h! Taste oder ^C druecken!',0DH,0AH
+	DB	'$'
+	DB	'FM (single density) betreiben? (j, ENTER=n) :','$'
+	DB	'Anzahl phys. Spuren auf Diskette ( <=','$'
+	DB	'): ','$'
+	DB	'Anz. der phys. Sekt. fuer DatenSpuren pro Seite (1..52): ','$'
+	DB	'Sektorlaengencode (0=128,1=256,2=512,3=1024): ','$'
+	DB	'Luecke zwischen Daten und naechstem Sektor (','$'
+	DB	'..','$'
+	DB	'): ','$'
+	DB	'Luecke','$'
+	DB	' ist zu gross, Daten passen nicht in Spur!',07H,'$'
+	DB	'Offset fuer Sektornummern auf Rueckseite (hex, ENTER=0): ','$'
+	DB	'Physische Sektoranordnung auf der Spur','$'
+	DB	'SektorNr. (hex, ENTER fuer Rest monoton): ','$'
+	DB	'Doppelschritte von Spur zu Spur? (j, ENTER=n): ','$'
+	DB	'Einseitig (s) oder doppelseitig (d oder ENTER): ','$'
+	DB	'Erst Vorders. komplett (v) oder abwechselnd (a oder ENTER): '
+	DB	'$'
+	DB	'Log. SpurReihenf. Ruecks. von innen nach aussen (j, ENTER=n)'
+	DB	': ','$'
+	DB	'Logische Reihenfolge der physischen Sektoren','$'
+	DB	'Gesamtzahl Systemspuren (0..9, ENTER=0): ','$'
+	DB	'Anzahl abweichender Systemsp. mit 26*128 Sektoren (0..X, ENT'
+	DB	'ER=0): ','$'
+	DB	'Directory-Groesse in 64er Einheiten (1=64,2=128,3=192,4=256)'
+	DB	': ','$'
+	DB	'BDOS-Blockgroesse in kB (1,2,4): ','$'
+	DB	0AH
+	DB	'BDOS-Blockgroesse 1kB geht nur bis 255kB Kapazitaet!',07H,'$'
+	DB	0AH
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H       ; 1A31 | ...........
+default_params:
+	DB	C8H,21H,DFH,21H,37H,26H,91H,1CH,92H,00H,3EH,00H,6AH,18H,B4H,CDH; 1A3C | .!.!7&....>.j...
+	DB	1AH,28H                                           ; 1A4C | .(
+sector_table_1:
+	DB	01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H; 1A4E | ................
+	DB	11H,12H,13H,14H,15H,16H,17H,18H,19H,1AH,1BH,1CH,1DH,1EH,1FH; 1A5E | ...............
+	DB	' !"#','$'
+	DB	'%&''()*+,-./01234'
+	DB	A3H                                               ; 1A82 | .
+format_params_2:
+	DB	17H,80H,00H,01H,00H,91H,1CH,92H,00H,3EH,00H,6AH,18H,B4H,CDH; 1A83 | .........>.j...
+sector_table_2:
+	DB	8DH,3BH,A0H,3BH,0AH,3EH,96H,1CH,49H,00H,21H,00H,58H,14H,FFH,FFH; 1A92 | .;.;.>..I.!.X...
+	DB	1AH,1BH,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH; 1AA2 | ................
+	DB	0FH,10H,11H,12H,13H,14H,15H,16H,17H,18H,19H,1AH,1BH,1CH,1DH,1EH; 1AB2 | ................
+	DB	1FH                                               ; 1AC2 | .
+	DB	' !"#','$'
+	DB	'%&''()*+,-./01234^'
+	DB	13H,80H,00H,01H,00H,96H,1CH,49H,00H,21H,00H,58H,14H,FFH,FFH,8DH; 1AD9 | .......I.!.X....
+	DB	3BH,CBH,3FH,11H,42H,96H,1CH,49H,00H,21H,00H       ; 1AE9 | ;.?.B..I.!.
+sector_table_3:
+	DB	58H,14H,FFH,FFH,1AH,1BH,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH; 1AF4 | X...............
+	DB	0BH,0CH,0DH,0EH,0FH,10H,11H,12H,13H,14H,15H,16H,17H,18H,19H,1AH; 1B04 | ................
+	DB	1BH,1CH,1DH,1EH,1FH                               ; 1B14 | .....
+	DB	' !"#','$'
+	DB	'%&''()*+,-./01234^'
+	DB	13H                                               ; 1B2F | .
+
+; ============================================================================
+; Working Data Area (CDB, buffers, variables)
+; ============================================================================
+work_cdb:
+	DB	80H,00H,01H,00H,9BH,1CH,92H,00H,3EH,00H,B0H,28H,B4H,CDH,00H,00H; 1B30 | ........>..(....
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1B40 | ................
+format_buffer:
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1B50 | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1B60 | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1B70 | ................
+	DB	00H,00H,00H,00H,00H,00H,80H,00H,01H,00H,00H,00H,00H,00H,00H,00H; 1B80 | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1B90 | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1BA0 | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1BB0 | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1BC0 | ................
+active_cdb:
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1BD0 | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1BE0 | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1BF0 | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1C00 | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1C10 | ..............
+drive_a_params:
+	DB	10H,FFH,FFH,FFH,FFH,03H,01H,B0H,6CH,00H,00H,00H,00H,00H; 1C1E | ........l.....
+drive_b_params:
+	DB	10H,FFH,FFH,FFH,FFH,03H,01H,00H,44H,00H,00H,00H,00H,00H,20H,00H; 1C2C | ........D..... .
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1C3C | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1C4C | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1C5C | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1C6C | ................
+	DB	00H,00H,00H,00H,00H,00H,4EH,13H,00H,00H,FEH,00H,00H,00H,00H,00H; 1C7C | ......N.........
+	DB	00H,FBH                                           ; 1C8C | ..
+
+; ============================================================================
+; CPU2 (K2526) Format Code
+; This is the timing-critical code for physical disk formatting.
+; The K2526 second CPU executes this while main CPU waits in JR $ loop.
+; Index pulse interrupt triggers ISR that modifies the JR displacement
+; to break the loop when formatting is complete.
+; ============================================================================
+cpu2_init:
+	NOP                                     ; 1C8E: 00
+	NOP                                     ; 1C8F: 00
+	NOP                                     ; 1C90: 00
+	LD DE,1EEAH                             ; 1C91: 11 EA 1E
+	JR L1CA0                                ; 1C94: 18 0A
+
+	LD DE,1EEFH                             ; 1C96: 11 EF 1E
+	JR L1CA0                                ; 1C99: 18 05
+
+	LD DE,1EF4H                             ; 1C9B: 11 F4 1E
+	JR L1CA0                                ; 1C9E: 18 00
+
+L1CA0:
+	LD HL,cpu2_format_table                 ; 1CA0: 21 DF 1E
+	CALL sub_1ED2                           ; 1CA3: CD D2 1E
+	LD A,(1C8AH)                            ; 1CA6: 3A 8A 1C
+	LD B,A                                  ; 1CA9: 47
+	INC B                                   ; 1CAA: 04
+	LD DE,0008H                             ; 1CAB: 11 08 00
+	LD HL,1F02H                             ; 1CAE: 21 02 1F
+L1CB1:
+	ADD HL,DE                               ; 1CB1: 19
+	DJNZ L1CB1                              ; 1CB2: 10 FD
+	EX DE,HL                                ; 1CB4: EB
+	LD HL,1EF9H                             ; 1CB5: 21 F9 1E
+	CALL sub_1ED2                           ; 1CB8: CD D2 1E
+	LD A,(1C81H)                            ; 1CBB: 3A 81 1C
+	LD HL,1F2AH                             ; 1CBE: 21 2A 1F
+	LD B,(HL)                               ; 1CC1: 46
+L1CC2:
+	INC HL                                  ; 1CC2: 23
+	LD E,(HL)                               ; 1CC3: 5E
+	INC HL                                  ; 1CC4: 23
+	LD D,(HL)                               ; 1CC5: 56
+	EX DE,HL                                ; 1CC6: EB
+	OR A                                    ; 1CC7: B7
+	JR Z,L1CCE                              ; 1CC8: 28 04
+	RES 2,(HL)                              ; 1CCA: CB 96
+	JR cpu2_copy_data                       ; 1CCC: 18 02
+
+L1CCE:
+	SET 2,(HL)                              ; 1CCE: CB D6
+cpu2_copy_data:
+	EX DE,HL                                ; 1CD0: EB
+	DJNZ L1CC2                              ; 1CD1: 10 EF
+	LD (1D29H),SP                           ; 1CD3: ED 73 29 1D
+	CALL setup_isr                          ; 1CD7: CD 8E 1E
+	LD B,57H                                ; 1CDA: 06 57
+	JP Z,L1D28                              ; 1CDC: CA 28 1D
+	CALL sub_1E93                           ; 1CDF: CD 93 1E
+	LD HL,0000H                             ; 1CE2: 21 00 00
+	LD BC,(0001H)                           ; 1CE5: ED 4B 01 00
+	LD (0001H),HL                           ; 1CE9: 22 01 00
+	LD A,FEH                                ; 1CEC: 3E FE
+	LD (cpu2_format_end),A                  ; 1CEE: 32 22 1D
+	LD HL,1D50H                             ; 1CF1: 21 50 1D
+	LD DE,1DE5H                             ; 1CF4: 11 E5 1D
+	LD (HL),18H                             ; 1CF7: 36 18
+	EX DE,HL                                ; 1CF9: EB
+	LD (HL),18H                             ; 1CFA: 36 18
+	EX DE,HL                                ; 1CFC: EB
+	XOR A                                   ; 1CFD: AF
+	OUT (14H),A                             ; 1CFE: D3 14
+	OUT (04H),A                             ; 1D00: D3 04
+	DEC A                                   ; 1D02: 3D
+	OUT (17H),A                             ; 1D03: D3 17
+	OUT (17H),A                             ; 1D05: D3 17
+	LD A,B9H                                ; 1D07: 3E B9
+	OUT (10H),A                             ; 1D09: D3 10
+	LD A,A1H                                ; 1D0B: 3E A1
+	OUT (10H),A                             ; 1D0D: D3 10
+	LD A,7FH                                ; 1D0F: 3E 7F
+	OUT (17H),A                             ; 1D11: D3 17
+	IN A,(16H)                              ; 1D13: DB 16
+	LD (0001H),BC                           ; 1D15: ED 43 01 00
+	LD A,B4H                                ; 1D19: 3E B4
+	OUT (10H),A                             ; 1D1B: D3 10
+	LD A,83H                                ; 1D1D: 3E 83
+	OUT (11H),A                             ; 1D1F: D3 11
+L1D21:
+	JR L1D21                                ; 1D21: 18 FE
+
+	LD B,00H                                ; 1D23: 06 00
+	LD HL,0000H                             ; 1D25: 21 00 00
+L1D28:
+	LD SP,0000H                             ; 1D28: 31 00 00
+	LD A,03H                                ; 1D2B: 3E 03
+	OUT (11H),A                             ; 1D2D: D3 11
+	LD A,B                                  ; 1D2F: 78
+cpu2_check_ready:
+	PUSH HL                                 ; 1D30: E5
+	PUSH AF                                 ; 1D31: F5
+	CALL restore_isr_vecs                   ; 1D32: CD B6 1E
+	POP AF                                  ; 1D35: F1
+	POP HL                                  ; 1D36: E1
+	OR A                                    ; 1D37: B7
+	RET                                     ; 1D38: C9
+
+	EXX                                     ; 1D39: D9
+cpu2_format_5_sd:
+	LD HL,6CB0H                             ; 1D3A: 21 B0 6C
+	LD DE,B6B4H                             ; 1D3D: 11 B4 B6
+	EXX                                     ; 1D40: D9
+	LD BC,5014H                             ; 1D41: 01 14 50
+	LD A,(1C45H)                            ; 1D44: 3A 45 1C
+	LD D,A                                  ; 1D47: 57
+	LD E,4EH                                ; 1D48: 1E 4E
+L1D4A:
+	LD A,BDH                                ; 1D4A: 3E BD
+	OUT (10H),A                             ; 1D4C: D3 10
+L1D4E:
+	OUT (C),E                               ; 1D4E: ED 59
+	JR L1D4E                                ; 1D50: 18 FC
+
+L1D52:
+	OUT (C),E                               ; 1D52: ED 59
+	DJNZ L1D52                              ; 1D54: 10 FC
+	XOR A                                   ; 1D56: AF
+	LD B,0BH                                ; 1D57: 06 0B
+L1D59:
+	OUT (14H),A                             ; 1D59: D3 14
+	DJNZ L1D59                              ; 1D5B: 10 FC
+	EXX                                     ; 1D5D: D9
+	LD C,10H                                ; 1D5E: 0E 10
+	OUT (14H),A                             ; 1D60: D3 14
+	OUT (C),D                               ; 1D62: ED 51
+	LD A,C2H                                ; 1D64: 3E C2
+	OUT (14H),A                             ; 1D66: D3 14
+	OUT (14H),A                             ; 1D68: D3 14
+	OUT (14H),A                             ; 1D6A: D3 14
+	OUT (C),E                               ; 1D6C: ED 59
+	LD A,FCH                                ; 1D6E: 3E FC
+	OUT (14H),A                             ; 1D70: D3 14
+	EXX                                     ; 1D72: D9
+	LD B,32H                                ; 1D73: 06 32
+L1D75:
+	OUT (C),E                               ; 1D75: ED 59
+	DJNZ L1D75                              ; 1D77: 10 FC
+L1D79:
+	XOR A                                   ; 1D79: AF
+	LD B,0BH                                ; 1D7A: 06 0B
+L1D7C:
+	OUT (14H),A                             ; 1D7C: D3 14
+	DJNZ L1D7C                              ; 1D7E: 10 FC
+	EXX                                     ; 1D80: D9
+	LD C,10H                                ; 1D81: 0E 10
+	OUT (14H),A                             ; 1D83: D3 14
+	OUT (C),D                               ; 1D85: ED 51
+	LD A,A1H                                ; 1D87: 3E A1
+	OUT (14H),A                             ; 1D89: D3 14
+	OUT (14H),A                             ; 1D8B: D3 14
+	OUT (14H),A                             ; 1D8D: D3 14
+	OUT (C),E                               ; 1D8F: ED 59
+	LD A,FEH                                ; 1D91: 3E FE
+	OUT (14H),A                             ; 1D93: D3 14
+	LD BC,0614H                             ; 1D95: 01 14 06
+	OTIR                                    ; 1D98: ED B3
+	EXX                                     ; 1D9A: D9
+	LD B,16H                                ; 1D9B: 06 16
+L1D9D:
+	OUT (C),E                               ; 1D9D: ED 59
+	DJNZ L1D9D                              ; 1D9F: 10 FC
+	XOR A                                   ; 1DA1: AF
+	LD B,0BH                                ; 1DA2: 06 0B
+L1DA4:
+	OUT (14H),A                             ; 1DA4: D3 14
+	DJNZ L1DA4                              ; 1DA6: 10 FC
+	EXX                                     ; 1DA8: D9
+	LD C,10H                                ; 1DA9: 0E 10
+	OUT (14H),A                             ; 1DAB: D3 14
+	OUT (C),D                               ; 1DAD: ED 51
+	LD A,A1H                                ; 1DAF: 3E A1
+	OUT (14H),A                             ; 1DB1: D3 14
+	OUT (14H),A                             ; 1DB3: D3 14
+	OUT (14H),A                             ; 1DB5: D3 14
+	OUT (C),E                               ; 1DB7: ED 59
+	LD A,FBH                                ; 1DB9: 3E FB
+	OUT (14H),A                             ; 1DBB: D3 14
+	LD BC,8014H                             ; 1DBD: 01 14 80
+	OUTI                                    ; 1DC0: ED A3
+	OUTI                                    ; 1DC2: ED A3
+	OUTI                                    ; 1DC4: ED A3
+	OTIR                                    ; 1DC6: ED B3
+	OUTI                                    ; 1DC8: ED A3
+	OUTI                                    ; 1DCA: ED A3
+	EXX                                     ; 1DCC: D9
+	LD A,(1C46H)                            ; 1DCD: 3A 46 1C
+	OUT (C),E                               ; 1DD0: ED 59
+	LD B,A                                  ; 1DD2: 47
+	DEC B                                   ; 1DD3: 05
+	DEC B                                   ; 1DD4: 05
+L1DD5:
+	OUT (C),E                               ; 1DD5: ED 59
+	DJNZ L1DD5                              ; 1DD7: 10 FC
+	DEC D                                   ; 1DD9: 15
+	OUT (C),E                               ; 1DDA: ED 59
+	JP NZ,L1D79                             ; 1DDC: C2 79 1D
+L1DDF:
+	LD HL,0000H                             ; 1DDF: 21 00 00
+L1DE2:
+	OUT (C),E                               ; 1DE2: ED 59
+	INC HL                                  ; 1DE4: 23
+	JR L1DE2                                ; 1DE5: 18 FB
+
+	OUT (C),E                               ; 1DE7: ED 59
+	LD A,B1H                                ; 1DE9: 3E B1
+	OUT (10H),A                             ; 1DEB: D3 10
+	LD (1D26H),HL                           ; 1DED: 22 26 1D
+	XOR A                                   ; 1DF0: AF
+	LD (cpu2_format_end),A                  ; 1DF1: 32 22 1D
+	JP L1D4A                                ; 1DF4: C3 4A 1D
+
+cpu2_format_5_dd_wr:
+	EXX                                     ; 1DF7: D9
+	LD HL,6CB0H                             ; 1DF8: 21 B0 6C
+	LD DE,B6A4H                             ; 1DFB: 11 A4 B6
+	EXX                                     ; 1DFE: D9
+	LD BC,2814H                             ; 1DFF: 01 14 28
+	LD A,(1C45H)                            ; 1E02: 3A 45 1C
+	LD D,A                                  ; 1E05: 57
+	LD E,FFH                                ; 1E06: 1E FF
+	LD A,B9H                                ; 1E08: 3E B9
+	OUT (10H),A                             ; 1E0A: D3 10
+L1E0C:
+	OUT (C),E                               ; 1E0C: ED 59
+	JR L1E0C                                ; 1E0E: 18 FC
+
+L1E10:
+	OUT (C),E                               ; 1E10: ED 59
+	DJNZ L1E10                              ; 1E12: 10 FC
+	XOR A                                   ; 1E14: AF
+	LD B,05H                                ; 1E15: 06 05
+L1E17:
+	OUT (14H),A                             ; 1E17: D3 14
+	DJNZ L1E17                              ; 1E19: 10 FC
+	EXX                                     ; 1E1B: D9
+	LD C,10H                                ; 1E1C: 0E 10
+	OUT (14H),A                             ; 1E1E: D3 14
+	OUT (C),D                               ; 1E20: ED 51
+	LD A,FCH                                ; 1E22: 3E FC
+	OUT (14H),A                             ; 1E24: D3 14
+	OUT (C),E                               ; 1E26: ED 59
+	EXX                                     ; 1E28: D9
+	LD B,1AH                                ; 1E29: 06 1A
+L1E2B:
+	OUT (C),E                               ; 1E2B: ED 59
+	DJNZ L1E2B                              ; 1E2D: 10 FC
+L1E2F:
+	XOR A                                   ; 1E2F: AF
+	LD B,05H                                ; 1E30: 06 05
+L1E32:
+	OUT (14H),A                             ; 1E32: D3 14
+	DJNZ L1E32                              ; 1E34: 10 FC
+	EXX                                     ; 1E36: D9
+	LD C,10H                                ; 1E37: 0E 10
+	OUT (14H),A                             ; 1E39: D3 14
+	OUT (C),D                               ; 1E3B: ED 51
+	LD A,FEH                                ; 1E3D: 3E FE
+	OUT (14H),A                             ; 1E3F: D3 14
+	OUT (C),E                               ; 1E41: ED 59
+	LD BC,0614H                             ; 1E43: 01 14 06
+	OTIR                                    ; 1E46: ED B3
+	EXX                                     ; 1E48: D9
+	LD B,0BH                                ; 1E49: 06 0B
+L1E4B:
+	OUT (C),E                               ; 1E4B: ED 59
+	DJNZ L1E4B                              ; 1E4D: 10 FC
+	XOR A                                   ; 1E4F: AF
+	LD B,05H                                ; 1E50: 06 05
+L1E52:
+	OUT (14H),A                             ; 1E52: D3 14
+	DJNZ L1E52                              ; 1E54: 10 FC
+	EXX                                     ; 1E56: D9
+	LD C,10H                                ; 1E57: 0E 10
+	OUT (14H),A                             ; 1E59: D3 14
+	OUT (C),D                               ; 1E5B: ED 51
+	LD A,FBH                                ; 1E5D: 3E FB
+	OUT (14H),A                             ; 1E5F: D3 14
+	OUT (C),E                               ; 1E61: ED 59
+	LD BC,8014H                             ; 1E63: 01 14 80
+	OUTI                                    ; 1E66: ED A3
+	OUTI                                    ; 1E68: ED A3
+	OUTI                                    ; 1E6A: ED A3
+	OTIR                                    ; 1E6C: ED B3
+	OUTI                                    ; 1E6E: ED A3
+	OUTI                                    ; 1E70: ED A3
+	EXX                                     ; 1E72: D9
+	LD A,(1C46H)                            ; 1E73: 3A 46 1C
+	OUT (C),E                               ; 1E76: ED 59
+	LD B,A                                  ; 1E78: 47
+	DEC B                                   ; 1E79: 05
+	DEC B                                   ; 1E7A: 05
+L1E7B:
+	OUT (C),E                               ; 1E7B: ED 59
+	DJNZ L1E7B                              ; 1E7D: 10 FC
+	DEC D                                   ; 1E7F: 15
+	OUT (C),E                               ; 1E80: ED 59
+	JP NZ,L1E2F                             ; 1E82: C2 2F 1E
+	JP L1DDF                                ; 1E85: C3 DF 1D
+
+; --- Index pulse ISR ---
+; Modifies JR displacement in CPU2 loop to break out
+isr_index_handler:
+	LD (HL),3EH                             ; 1E88: 36 3E
+	EX DE,HL                                ; 1E8A: EB
+	EI                                      ; 1E8B: FB
+	RETI                                    ; 1E8C: ED 4D
+
+; --- Setup ISR vectors for format ---
+; Saves old vectors at F7E8/F7EA, installs format handlers
+setup_isr:
+	IN A,(12H)                              ; 1E8E: DB 12
+	BIT 5,A                                 ; 1E90: CB 6F
+	RET                                     ; 1E92: C9
+
+sub_1E93:
+	LD A,18H                                ; 1E93: 3E 18
+	CALL delay_loop                         ; 1E95: CD AD 0F
+	DI                                      ; 1E98: F3
+	LD A,03H                                ; 1E99: 3E 03
+	OUT (11H),A                             ; 1E9B: D3 11
+	LD A,I                                  ; 1E9D: ED 57
+	LD H,A                                  ; 1E9F: 67
+	LD L,E8H                                ; 1EA0: 2E E8
+	LD DE,1ECAH                             ; 1EA2: 11 CA 1E
+	LD BC,0004H                             ; 1EA5: 01 04 00
+	LDIR                                    ; 1EA8: ED B0
+	LD L,E8H                                ; 1EAA: 2E E8
+	EX DE,HL                                ; 1EAC: EB
+	LD HL,1ECEH                             ; 1EAD: 21 CE 1E
+	LD C,04H                                ; 1EB0: 0E 04
+	LDIR                                    ; 1EB2: ED B0
+	EI                                      ; 1EB4: FB
+	RET                                     ; 1EB5: C9
+
+; --- Restore original ISR vectors ---
+restore_isr_vecs:
+	DI                                      ; 1EB6: F3
+	LD A,I                                  ; 1EB7: ED 57
+	LD D,A                                  ; 1EB9: 57
+	LD E,E8H                                ; 1EBA: 1E E8
+	LD HL,1ECAH                             ; 1EBC: 21 CA 1E
+	LD BC,0004H                             ; 1EBF: 01 04 00
+	LDIR                                    ; 1EC2: ED B0
+	EI                                      ; 1EC4: FB
+	LD A,1BH                                ; 1EC5: 3E 1B
+	JP delay_loop                           ; 1EC7: C3 AD 0F
+
+	NOP                                     ; 1ECA: 00
+	NOP                                     ; 1ECB: 00
+	NOP                                     ; 1ECC: 00
+	NOP                                     ; 1ECD: 00
+	ADC A,B                                 ; 1ECE: 88
+	LD E,8BH                                ; 1ECF: 1E 8B
+	LD E,46H                                ; 1ED1: 1E 46
+L1ED3:
+	INC HL                                  ; 1ED3: 23
+	PUSH BC                                 ; 1ED4: C5
+	LD C,(HL)                               ; 1ED5: 4E
+	INC HL                                  ; 1ED6: 23
+	LD B,(HL)                               ; 1ED7: 46
+	LD A,(DE)                               ; 1ED8: 1A
+	INC DE                                  ; 1ED9: 13
+	LD (BC),A                               ; 1EDA: 02
+	POP BC                                  ; 1EDB: C1
+	DJNZ L1ED3                              ; 1EDC: 10 F5
+	RET                                     ; 1EDE: C9
+
+
+; ============================================================================
+; CPU2 Format Routine Pointer Table
+; ============================================================================
+cpu2_format_table:
+	DB	05H,E3H,1CH,E4H,1CH,1AH,1DH,F2H,1CH,F3H,1CH,39H,1DH,B4H,50H,1DH; 1EDF | ...........9..P.
+	DB	F7H,1DH,A4H,0EH,1EH,39H,1DH,B4H,50H,1DH,08H,BFH,1DH,C1H,1DH,C3H; 1EEF | .....9..P.......
+	DB	1DH,C5H,1DH,65H,1EH                               ; 1EFF | ...e.
+gap_fill_table:
+	DB	67H,1EH,69H,1EH,6BH,1EH,80H,A3H,A3H,A3H,80H,A3H,A3H,A3H,00H,A3H; 1F04 | g.i.k...........
+	DB	A3H,A3H,00H,A3H,A3H,A3H,00H,A3H,A3H,B3H,00H,A3H,A3H,B3H,00H,B3H; 1F14 | ................
+	DB	B3H,B3H,00H,B3H,B3H,B3H,07H                       ; 1F24 | .......
+
+; ============================================================================
+; Format Parameter/Pointer Tables
+; ============================================================================
+format_ptr_table:
+	DB	1AH,1DH,0CH,1DH,FDH,1DH,FCH,1DH,3EH,1DH,3FH,1DH,4BH,1DH,01H,00H; 1F2B | ........>.?.K...
+	DB	04H                                               ; 1F3B | .
+; DPB-like parameter blocks for different formats
+dpb_table:
+	DB	00H,07H,00H,0EH,00H,01H,00H,03H,00H,05H,00H,09H,00H,00H,02H,01H; 1F3C | ................
+	DB	01H,00H,02H,40H,00H,68H,01H,FCH,02H,00H,09H,00H,01H,00H,00H,00H; 1F4C | ...@.h..........
+	DB	01H,00H,03H,00H,05H,00H,0CH,00H,00H,02H,02H,01H,00H,02H,70H,00H; 1F5C | ..............p.
+	DB	D0H,02H,FDH,02H,00H,09H,00H,02H,00H,00H,00H,01H,00H,04H,00H,07H; 1F6C | ................
+	DB	00H,0EH,00H,00H,02H,02H,01H,00H,02H,70H,00H,A0H,05H,F9H,03H,00H; 1F7C | .........p......
+	DB	09H,00H,02H,00H,00H,00H,01H,00H,04H,00H,07H,00H,0FH,00H,00H,02H; 1F8C | ................
+	DB	02H,01H,00H,02H,80H,00H,40H,06H,F9H,03H,00H,0AH,00H,02H,00H,00H; 1F9C | ......@.........
+	DB	00H,05H,00H,06H,00H,07H,00H,0CH,00H,00H,04H,02H,05H,00H,02H,A0H; 1FAC | ................
+	DB	00H,20H,03H,FFH,01H,00H,05H,00H,02H,00H,00H,00H,EBH,34H,90H; 1FBC | . ...........4.
+; CPA version identification string
+cpa_version_str:
+	DB	'CP/A1188'
+dpb_default:
+	DB	00H,02H,02H,01H,00H,02H,70H,00H,A0H,05H,F9H,03H,00H,09H,00H,02H; 1FD3 | ......p.........
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 1FE3 | ................
+	DB	00H,00H,00H,00H,0FH,00H,00H,00H,00H,01H,00H,FAH,33H; 1FF3 | ............3
+
+; ============================================================================
+; Boot Sector Template (512 bytes)
+; Written to track 0 of formatted disks as system bootstrap
+; Contains x86-compatible boot code for MSDOS/CPA dual boot
+; ============================================================================
+boot_sector:
+	DB	C0H,8EH,D0H,BCH,00H,7CH,16H,07H,BBH,78H,00H,36H,C5H,37H,1EH,56H; 2000 | .....|...x.6.7.V
+	DB	16H,53H,BFH,2BH,7CH,B9H,0BH,00H,FCH,ACH,26H,80H,3DH,00H,74H,03H; 2010 | .S.+|.....&.=.t.
+	DB	26H,8AH,05H,AAH,8AH,C4H,E2H,F1H,06H,1FH,89H,47H,02H,C7H,07H,2BH; 2020 | &..........G...+
+	DB	7CH,FBH,CDH,13H,72H,67H,A0H,10H,7CH,98H,F7H,26H,16H,7CH,03H,06H; 2030 | |...rg..|..&.|..
+	DB	1CH,7CH,03H,06H,0EH,7CH,A3H,3FH,7CH,A3H,37H,7CH,B8H,20H,00H,F7H; 2040 | .|...|.?|.7|. ..
+	DB	26H,11H,7CH,8BH,1EH,0BH,7CH,03H,C3H,48H,F7H,F3H,01H,06H,37H,7CH; 2050 | &.|...|..H....7|
+	DB	BBH,00H,05H,A1H,3FH,7CH,E8H,96H,00H,B8H,01H,02H,E8H,AAH,00H,72H; 2060 | ....?|.........r
+	DB	19H,8BH,FBH,B9H,0BH,00H,BEH,E6H,7DH,F3H,A6H,75H,0DH,8DH,7FH,20H; 2070 | ........}..u... 
+	DB	BEH,F1H,7DH,B9H,0BH,00H,F3H,A6H,74H,18H,BEH,7FH,7DH,E8H,61H,00H; 2080 | ..}.....t...}.a.
+	DB	32H,E4H,CDH,16H,5EH,1FH,8FH,04H,8FH,44H,02H,CDH,19H,BEH,CFH,7DH; 2090 | 2...^....D.....}
+	DB	EBH,EBH,A1H,1CH,05H,33H,D2H,F7H,36H,0BH,7CH,FEH,C0H,A2H,3CH,7CH; 20A0 | .....3..6.|...<|
+	DB	A1H,37H,7CH,A3H,3DH,7CH,BBH,00H,07H,A1H,37H,7CH,E8H,40H,00H,A1H; 20B0 | .7|.=|....7|.@..
+	DB	18H,7CH,2AH,06H,3BH,7CH,40H,50H,E8H,4EH,00H,58H,72H,CFH,28H,06H; 20C0 | .|*.;|@P.N.Xr.(.
+	DB	3CH,7CH,76H,0CH,01H,06H,37H,7CH,F7H,26H,0BH,7CH,03H,D8H,EBH,D9H; 20D0 | <|v...7|.&.|....
+	DB	8AH,2EH,15H,7CH,8AH,16H,FDH,7DH,8BH,1EH,3DH,7CH,EAH,00H,00H,70H; 20E0 | ...|...}..=|...p
+	DB	00H,ACH,0AH,C0H,74H,22H,B4H,0EH,BBH,07H,00H,CDH,10H,EBH,F2H,33H; 20F0 | ....t".........3
+	DB	D2H,F7H,36H,18H,7CH,FEH,C2H,88H,16H,3BH,7CH,33H,D2H,F7H,36H,1AH; 2100 | ..6.|....;|3..6.
+	DB	7CH,88H,16H,2AH,7CH,A3H,39H,7CH,C3H,B9H,04H,00H,51H,B4H,02H,8BH; 2110 | |..*|.9|....Q...
+	DB	16H,39H,7CH,B1H,06H,D2H,E6H,0AH,36H,3BH,7CH,8BH,CAH,86H,E9H,8AH; 2120 | .9|.....6;|.....
+	DB	16H,FDH,7DH,8AH,36H,2AH,7CH,CDH,13H,59H,72H,01H,C3H,80H,FCH,11H; 2130 | ..}.6*|..Yr.....
+	DB	75H,01H,C3H,E2H,D7H,F9H,C3H                       ; 2140 | u......
+boot_msg_no_sys:
+	DB	0DH,0AH
+	DB	'Diskette: Kein System oder fehlerhaft',0DH,0AH
+	DB	'Austauschen und eine Taste bet'
+	DB	84H                                               ; 218E | .
+	DB	'tigen',0DH,0AH
+	DB	00H                                               ; 2196 | .
+boot_msg_load_err:
+	DB	0DH,0AH
+	DB	'Fehler beim Laden ',0DH,0AH
+	DB	00H                                               ; 21AD | .
+boot_filenames:
+	DB	'BIO     COMDOS     COM'
+	DB	00H                                               ; 21C4 | .
+boot_sector_end:
+	DB	00H,55H,AAH,0CH                                   ; 21C5 | .U..
+
+; ============================================================================
+; Format Definition Tables
+; Each table contains: menu text + DPB parameters + sector interleave tables
+; for a specific disk format (5.25"/8", SS/DS, SD/DD, etc.)
+; ============================================================================
+fmt_5_25_40_ss:
+	DB	'Formate fuer 5 1/4", ','$'
+	DB	'40 Sp., eins. ["A": autom. Formaterk.]',0AH
+	DB	0DH,0AH
+	DB	'0= 5*1024 Sp. 0-39                  ;0 System, 200k, CP/A   '
+	DB	';A',0DH,0AH
+	DB	'1= 26*128 Sp. 0-1; 5*1024 Sp. 2-39  ;2 System, 190k, CP/A S '
+	DB	';A',0DH,0AH
+	DB	'2= 26*128 Sp. 0-39;Sektorf. 1,7,13..;2 System, 123k         '
+	DB	';A',0DH,0AH
+	DB	'3= 26*128 Sp. 0-39;Sektorf. 1,7,13..;0 System, 130k         '
+	DB	';A',0DH,0AH
+	DB	'4= 16*256 Sp. 0-39;ohne ph. Sektorv.;3 System, 148k, SCP    '
+	DB	';A',0DH,0AH
+	DB	'5= 16*256 Sp. 0-39;mit  ph. Sektorv.;3 System, 148k         '
+	DB	';A',0DH,0AH
+	DB	'6= 15*256 Sp. 0-39;Sektorf. 1,4,7,..;3 System, 138k, BAP2001'
+	DB	0DH,0AH
+	DB	'7= 5*1024 Sp. 0-39;ohne ph. Sektorv.;3 System, 185k, Osborne'
+	DB	0DH,0AH
+	DB	'X= Menue #2','$'
+	DB	'40 Sp., eins. ["A": autom. Formaterk.]',0AH
+	DB	0DH,0AH
+	DB	'E=  9*512 Sp. 0-39;Sektorf. 1,3,5,..;2 System, 170k, DEC VT '
+	DB	0DH,0AH
+	DB	'F=  9*512 Sp. 0-39; 1k BDOS-Bloecke ;2 System, 171k, VPPC   '
+	DB	0DH,0AH
+	DB	'G=  9*512 Sp. 0-39;Sektorf. 41,42,..;2 System, 171k, Schn. S'
+	DB	0DH,0AH
+	DB	'H=  9*512 Sp. 0-39;Sektorf. c1,c2,..;0 System, 180k, Schn. D'
+	DB	0DH,0AH
+	DB	'I=  8*512 Sp. 0-39; 2k BDOS-Bloecke ;1 System, 156k, CP/M 86'
+	DB	0DH,0AH
+	DB	'J=  9*512 Sp. 0-39;                            180k, {MSDOS}'
+	DB	';A',0DH,0AH
+	DB	'K=  8*512 Sp. 0-39; 1k BDOS-Bloecke ;1 System, 156k, IBM CPC'
+	DB	0DH,0AH
+	DB	'L= 10*512 Sp. 0-39; Sektorf. 0,1,.. ;1 System, 195k, KAYPRO '
+	DB	0DH,0AH
+	DB	'Z= Menue #1','$'
+	DB	'0x&1'
+	DB	99H,26H,32H,BAH,26H,33H,05H                       ; 263B | .&2.&3.
+	DB	'''4P''5'
+	DB	87H,27H,36H,BEH,27H,37H,F3H,27H,45H,14H           ; 2647 | .'6.'7.'E.
+	DB	'(F=(Gf(H'
+	DB	8FH,28H,49H,B8H,28H,4AH,DFH,28H,4BH,08H           ; 2659 | .(I.(J.(K.
+	DB	')L/)Xn&Zs&'
+	DB	FFH,01H,10H,24H,37H,26H,01H,DFH,21H,37H,26H,05H,64H,01H,05H,04H; 266D | ...$7&..!7&.d...
+	DB	03H,02H,28H,00H,03H,07H,00H,C7H,00H,3FH,00H,C0H,00H,10H,00H,00H; 267D | ..(......?......
+	DB	00H,00H,03H,07H,01H,00H,28H,01H,02H,03H,04H,05H,05H,64H,01H,05H; 268D | ......(......d..
+	DB	04H,03H,02H,28H,00H,03H,07H,00H,BDH,00H,3FH,00H,C0H,00H,10H,00H; 269D | ...(......?.....
+	DB	02H,00H,02H,03H,07H,01H,00H,28H,01H,02H,03H,04H,05H,1AH,28H,01H; 26AD | .......(......(.
+	DB	02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,11H; 26BD | ................
+	DB	12H,13H,14H,15H,16H,17H,18H,19H,1AH,1AH,00H,03H,07H,00H,7AH,00H; 26CD | ..............z.
+	DB	3FH,00H,C0H,00H,10H,00H,02H,00H,00H,00H,07H,01H,00H,28H,01H,07H; 26DD | ?............(..
+	DB	0DH,13H,19H,05H,0BH,11H,17H,03H,09H,0FH,15H,02H,08H,0EH,14H,1AH; 26ED | ................
+	DB	06H,0CH,12H,18H,04H,0AH,10H,16H,1AH,28H,01H,02H,03H,04H,05H,06H; 26FD | .........(......
+	DB	07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,11H,12H,13H,14H,15H,16H; 270D | ................
+	DB	17H,18H,19H,1AH,1AH,00H,03H,07H,00H,81H,00H,3FH,00H,C0H,00H,10H; 271D | ...........?....
+	DB	00H,00H,00H,00H,00H,07H,01H,00H,28H,01H,07H,0DH,13H,19H,05H,0BH; 272D | ........(.......
+	DB	11H,17H,03H,09H,0FH,15H,02H,08H,0EH,14H,1AH,06H,0CH,12H,18H,04H; 273D | ................
+	DB	0AH,10H,16H,10H,35H,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH; 274D | ....5...........
+	DB	0CH,0DH,0EH,0FH,10H,20H,00H,04H,0FH,01H,49H,00H,3FH,00H,80H,00H; 275D | ..... ....I.?...
+	DB	10H,00H,03H,00H,00H,01H,01H,01H,00H,28H,01H,02H,03H,04H,05H,06H; 276D | .........(......
+	DB	07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,10H,35H,01H,02H,03H,04H; 277D | ...........5....
+	DB	0DH,0EH,0FH,10H,09H,0AH,0BH,0CH,05H,06H,07H,08H,20H,00H,04H,0FH; 278D | ............ ...
+	DB	01H,49H,00H,3FH,00H,80H,00H,10H,00H,03H,00H,00H,01H,07H,01H,00H; 279D | .I.?............
+	DB	28H,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH; 27AD | (...............
+	DB	10H,0FH,50H,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH; 27BD | ..P.............
+	DB	0EH,0FH,1EH,00H,03H,07H,00H,89H,00H,3FH,00H,C0H,00H,10H,00H,03H; 27CD | .........?......
+	DB	00H,00H,01H,01H,01H,00H,28H,01H,04H,07H,0AH,0DH,02H,05H,08H,0BH; 27DD | ......(.........
+	DB	0EH,03H,06H,09H,0CH,0FH,05H,64H,01H,02H,03H,04H,05H,28H,00H,03H; 27ED | .......d.....(..
+	DB	07H,00H,B8H,00H,3FH,00H,C0H,00H,10H,00H,03H,00H,00H,03H,07H,01H; 27FD | ....?...........
+	DB	00H,28H,01H,02H,03H,04H,05H,09H,46H,01H,02H,03H,04H,05H,06H,07H; 280D | .(......F.......
+	DB	08H,09H,24H,00H,04H,0FH,01H,54H,00H,3FH,00H,80H,00H,10H,00H,02H; 281D | ..$....T.?......
+	DB	00H,00H,02H,03H,01H,00H,28H,01H,03H,05H,07H,09H,02H,04H,06H,08H; 282D | ......(.........
+	DB	09H,46H,01H,02H,03H,04H,05H,06H,07H,08H,09H,24H,00H,03H,07H,00H; 283D | .F.........$....
+	DB	AAH,00H,3FH,00H,C0H,00H,10H,00H,02H,00H,00H,02H,03H,01H,00H,28H; 284D | ..?............(
+	DB	01H,02H,03H,04H,05H,06H,07H,08H,09H,09H           ; 285D | ..........
+	DB	'FAFBGCHDIE','$'
+	DB	00H,03H,07H,00H,AAH,00H,3FH,00H,C0H,00H,10H,00H,02H,00H,00H,02H; 2872 | ......?.........
+	DB	03H,01H,00H                                       ; 2882 | ...
+	DB	'(ABCDEFGHI'
+	DB	09H,46H,C1H,C6H,C2H,C7H,C3H,C8H,C4H,C9H,C5H,24H,00H,03H,07H,00H; 288F | .F.........$....
+	DB	B3H,00H,3FH,00H,C0H,00H,10H,00H,00H,00H,00H,02H,03H,01H,00H,28H; 289F | ..?............(
+	DB	C1H,C2H,C3H,C4H,C5H,C6H,C7H,C8H,C9H,08H,64H,01H,02H,03H,04H,05H; 28AF | ..........d.....
+	DB	06H,07H,08H,20H,00H,04H,0FH,01H,4DH,00H,3FH,00H,80H,00H,10H,00H; 28BF | ... ....M.?.....
+	DB	01H,00H,00H,02H,03H,01H,00H,28H,01H,02H,03H,04H,05H,06H,07H,08H; 28CF | .......(........
+	DB	09H,46H,01H,02H,03H,04H,05H,06H,07H,08H,09H,24H,00H,03H,07H,00H; 28DF | .F.........$....
+	DB	B3H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,02H,03H,01H,00H,28H; 28EF | ...............(
+	DB	01H,02H,03H,04H,05H,06H,07H,08H,09H,08H,64H,01H,02H,03H,04H,05H; 28FF | ..........d.....
+	DB	06H,07H,08H,20H,00H,03H,07H,00H,9BH,00H,3FH,00H,C0H,00H,10H,00H; 290F | ... ......?.....
+	DB	01H,00H,00H,02H,03H,01H,00H,28H,01H,02H,03H,04H,05H,06H,07H,08H; 291F | .......(........
+	DB	0AH,19H,00H,01H,02H,03H,04H,05H,06H,07H,08H,09H,28H,00H,03H,07H; 292F | ............(...
+	DB	00H,C2H,00H,7FH,00H,F0H,00H,20H,00H,01H,00H,00H,02H,03H,01H,00H; 293F | ....... ........
+	DB	28H,00H,01H,02H,03H,04H,05H,06H,07H,08H,09H       ; 294F | (..........
+; --- 5 1/4", 80 tracks, single-sided formats ---
+fmt_5_25_80_ss:
+	DB	'80 Sp., eins. ["A": autom. Formaterk.]',0AH
+	DB	0DH,0AH
+	DB	'0= 5*1024 Sp. 0-79                  ;0 System, 400k, CP/A   '
+	DB	';A',0DH,0AH
+	DB	'1= 26*128 Sp. 0-1; 5*1024 Sp. 2-79  ;2 System, 390k, CP/A S '
+	DB	';A',0DH,0AH
+	DB	'2= 26*128 Sp. 0-79;Sektorf. 1,7,13..;2 System, 253k         '
+	DB	';A',0DH,0AH
+	DB	'3= 26*128 Sp. 0-79;Sektorf. 1,7,13..;0 System, 260k         '
+	DB	';A',0DH,0AH
+	DB	'4= 16*256 Sp. 0-79;ohne ph. Sektorv.;3 System, 308k, SCP    '
+	DB	';A',0DH,0AH
+	DB	'5= 16*256 Sp. 0-79;mit ph. Sektorv. ;3 System, 308k         '
+	DB	';A',0DH,0AH
+	DB	'6= 16*256 Sp. 0-79;Sektorf. 1,3,5,..;3 System, 308k         '
+	DB	0DH,0AH
+	DB	'7=  9*512 Sp. 0-79                  ;0 System, 360k         '
+	DB	';A',0DH,0AH
+	DB	'U= 40 Spur mit Doppelschritten (Standard)',0DH,0AH
+	DB	'W= 40 Spur mit Einzelschritten (nur halbe Diskette)','$'
+	DB	'0'
+	DB	09H                                               ; 2BE1 | .
+	DB	',1*,2K,3'
+	DB	96H,2CH,34H,E1H,2CH,35H,18H                       ; 2BEA | .,4.,5.
+	DB	'-6O-7'
+	DB	86H,2DH,55H,FFH,2BH,57H,04H,2CH,FFH,02H,DFH,21H,37H,26H,01H,DFH; 2BF6 | .-U.+W.,...!7&..
+	DB	21H,37H,26H,05H,64H,01H,05H,04H,03H,02H,28H,00H,04H,0FH,01H,C7H; 2C06 | !7&.d.....(.....
+	DB	00H,7FH,00H,C0H,00H,20H,00H,00H,00H,00H,03H,07H,01H,00H,50H,01H; 2C16 | ..... ........P.
+	DB	02H,03H,04H,05H,05H,64H,01H,05H,04H,03H,02H,28H,00H,04H,0FH,01H; 2C26 | .....d.....(....
+	DB	C2H,00H,7FH,00H,C0H,00H,20H,00H,02H,00H,02H,03H,07H,01H,00H,50H; 2C36 | ...... ........P
+	DB	01H,02H,03H,04H,05H,1AH,28H,01H,02H,03H,04H,05H,06H,07H,08H,09H; 2C46 | ......(.........
+	DB	0AH,0BH,0CH,0DH,0EH,0FH,10H,11H,12H,13H,14H,15H,16H,17H,18H,19H; 2C56 | ................
+	DB	1AH,1AH,00H,04H,0FH,01H,7DH,00H,7FH,00H,C0H,00H,20H,00H,02H,00H; 2C66 | ......}..... ...
+	DB	00H,00H,07H,01H,00H,50H,01H,07H,0DH,13H,19H,05H,0BH,11H,17H,03H; 2C76 | .....P..........
+	DB	09H,0FH,15H,02H,08H,0EH,14H,1AH,06H,0CH,12H,18H,04H,0AH,10H,16H; 2C86 | ................
+	DB	1AH,28H,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH; 2C96 | .(..............
+	DB	0FH,10H,11H,12H,13H,14H,15H,16H,17H,18H,19H,1AH,1AH,00H,04H,0FH; 2CA6 | ................
+	DB	01H,81H,00H,7FH,00H,C0H,00H,20H,00H,00H,00H,00H,00H,07H,01H,00H; 2CB6 | ....... ........
+	DB	50H,01H,07H,0DH,13H,19H,05H,0BH,11H,17H,03H,09H,0FH,15H,02H,08H; 2CC6 | P...............
+	DB	0EH,14H,1AH,06H,0CH,12H,18H,04H,0AH,10H,16H,10H,35H,01H,02H,03H; 2CD6 | ............5...
+	DB	04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,20H,00H,04H; 2CE6 | ............. ..
+	DB	0FH,01H,99H,00H,3FH,00H,80H,00H,10H,00H,03H,00H,00H,01H,07H,01H; 2CF6 | ....?...........
+	DB	00H,50H,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH; 2D06 | .P..............
+	DB	0FH,10H,10H,35H,01H,02H,03H,04H,0DH,0EH,0FH,10H,09H,0AH,0BH,0CH; 2D16 | ...5............
+	DB	05H,06H,07H,08H,20H,00H,04H,0FH,01H,99H,00H,3FH,00H,80H,00H,10H; 2D26 | .... ......?....
+	DB	00H,03H,00H,00H,01H,01H,01H,00H,50H,01H,02H,03H,04H,05H,06H,07H; 2D36 | ........P.......
+	DB	08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,10H,35H,01H,02H,03H,04H,05H; 2D46 | ..........5.....
+	DB	06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,20H,00H,04H,0FH,01H; 2D56 | ........... ....
+	DB	99H,00H,7FH,00H,C0H,00H,20H,00H,03H,00H,00H,01H,01H,01H,00H,50H; 2D66 | ...... ........P
+	DB	01H,03H,05H,07H,09H,0BH,0DH,0FH,02H,04H,06H,08H,0AH,0CH,0EH,10H; 2D76 | ................
+	DB	09H,46H,01H,02H,03H,04H,05H,06H,07H,08H,09H,24H,00H,04H,0FH,01H; 2D86 | .F.........$....
+	DB	B3H,00H,7FH,00H,C0H,00H,20H,00H,00H,00H,00H,02H,03H,01H,00H,50H; 2D96 | ...... ........P
+	DB	01H,02H,03H,04H,05H,06H,07H,08H,09H               ; 2DA6 | .........
+; --- 5 1/4", 40 tracks, double-sided formats ---
+fmt_5_25_40_ds:
+	DB	'40 Sp., doppels. ["A": autom. Formaterk.]',0AH
+	DB	0DH,0AH
+	DB	'0= 5*1024 Sp. 0-79                  ;0 System, 400k, CP/A   '
+	DB	';A',0DH,0AH
+	DB	'3= 26*128 Sp. 0-79;Sektorf. 1,7,13..;0 System, 260k         '
+	DB	';A',0DH,0AH
+	DB	'4= 16*256 Sp. 0-79;ohne ph. Sektorv.;4 System, 304k, SCP    '
+	DB	';A',0DH,0AH
+	DB	'5= 16*256 Sp. 0-79;mit  ph. Sektorv.;4 System, 304k         '
+	DB	';A',0DH,0AH
+	DB	'6= 17*256 Sp. 0-79                  ;3 System, 326k, Spectra'
+	DB	0DH,0AH
+	DB	'7= 16*256 Sp. 0-79                  ;8 System, 288k, Epson  '
+	DB	0DH,0AH
+	DB	'S= einseitiges Format simulieren',0DH,0AH
+	DB	'Z= Menue #2','$'
+	DB	'40 Sp., doppels. ["A": autom. Formaterk.]',0AH
+	DB	0DH,0AH
+	DB	'E=  9*512 Sp. 0-79                  ;2 System, 350k         '
+	DB	0DH,0AH
+	DB	'F=  9*512 Sp. 0-79                  ;          360k, {MSDOS}'
+	DB	';A',0DH,0AH
+	DB	'G=  8*512 Sp. 0-79;Sp. 79-40 Ruecks.;1 System, 316k, CP/M 86'
+	DB	0DH,0AH
+	DB	'H= 20*512 Sp. 0-39;Sektorf. 0,1,..13;1 System, 390k, KAYPRO '
+	DB	0DH,0AH
+	DB	'S= einseitiges Format simulieren',0DH,0AH
+	DB	'X= Menue #1','$'
+	DB	'0'
+	DB	10H                                               ; 30DA | .
+	DB	'13114|15'
+	DB	B3H,31H,36H,EAH                                   ; 30E3 | .16.
+	DB	'17#2EZ2F'
+	DB	83H,32H,47H,ACH,32H,48H,D3H,32H,53H,01H,31H,58H,06H,31H,5AH,0BH; 30EF | .2G.2H.2S.1X.1Z.
+	DB	31H,FFH,01H,DFH,21H,37H,26H,01H,AFH,2DH,D9H,30H,01H,85H,2FH,D9H; 30FF | 1...!7&..-.0../.
+	DB	30H,05H,64H,01H,05H,04H,03H,02H,28H,00H,04H,0FH,01H,C7H,00H,7FH; 310F | 0.d.....(.......
+	DB	00H,C0H,00H,20H,00H,00H,00H,20H,03H,07H,01H,00H,50H,01H,02H,03H; 311F | ... ... ....P...
+	DB	04H,05H,1AH,28H,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH; 312F | ...(............
+	DB	0DH,0EH,0FH,10H,11H,12H,13H,14H,15H,16H,17H,18H,19H,1AH,1AH,00H; 313F | ................
+	DB	04H,0FH,01H,81H,00H,7FH,00H,C0H,00H,20H,00H,00H,00H,20H,00H,07H; 314F | ......... ... ..
+	DB	01H,00H,50H,01H,07H,0DH,13H,19H,05H,0BH,11H,17H,03H,09H,0FH,15H; 315F | ..P.............
+	DB	02H,08H,0EH,14H,1AH,06H,0CH,12H,18H,04H,0AH,10H,16H,10H,35H,01H; 316F | ..............5.
+	DB	02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,20H; 317F | ............... 
+	DB	00H,04H,0FH,01H,97H,00H,7FH,00H,C0H,00H,20H,00H,04H,00H,20H,01H; 318F | .......... ... .
+	DB	07H,01H,00H,50H,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH; 319F | ...P............
+	DB	0DH,0EH,0FH,10H,10H,35H,01H,02H,03H,04H,0DH,0EH,0FH,10H,09H,0AH; 31AF | .....5..........
+	DB	0BH,0CH,05H,06H,07H,08H,20H,00H,04H,0FH,01H,97H,00H,7FH,00H,C0H; 31BF | ...... .........
+	DB	00H,20H,00H,04H,00H,20H,01H,01H,01H,00H,50H,01H,02H,03H,04H,05H; 31CF | . ... ....P.....
+	DB	06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,11H,22H,01H,02H,03H; 31DF | ............"...
+	DB	04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,11H,22H,00H; 31EF | ..............".
+	DB	04H,0FH,01H,A2H,00H,3FH,00H,80H,00H,10H,00H,03H,00H,38H,01H,01H; 31FF | .....?.......8..
+	DB	01H,00H,50H,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH; 320F | ..P.............
+	DB	0EH,0FH,10H,11H,10H,35H,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH; 321F | .....5..........
+	DB	0BH,0CH,0DH,0EH,0FH,10H,20H,00H,04H,0FH,01H,8FH,00H,7FH,00H,C0H; 322F | ...... .........
+	DB	00H,20H,00H,08H,00H,20H,01H,07H,01H,00H,50H,01H,02H,03H,04H,05H; 323F | . ... ....P.....
+	DB	06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,09H,46H,01H,02H,03H; 324F | ............F...
+	DB	04H,05H,06H,07H,08H,09H,24H,00H,04H,0FH,01H,AEH,00H,7FH,00H,C0H; 325F | ......$.........
+	DB	00H,20H,00H,02H,00H,20H,02H,03H,01H,00H,50H,01H,02H,03H,04H,05H; 326F | . ... ....P.....
+	DB	06H,07H,08H,09H,09H,46H,01H,02H,03H,04H,05H,06H,07H,08H,09H,24H; 327F | .....F.........$
+	DB	00H,04H,0FH,01H,B3H,00H,00H,00H,00H,00H,00H,00H,00H,00H,20H,02H; 328F | .............. .
+	DB	03H,01H,00H,50H,01H,02H,03H,04H,05H,06H,07H,08H,09H,08H,64H,01H; 329F | ...P..........d.
+	DB	02H,03H,04H,05H,06H,07H,08H,20H,00H,04H,0FH,01H,9DH,00H,3FH,00H; 32AF | ....... ......?.
+	DB	80H,00H,10H,00H,01H,00H,30H,02H,03H,01H,00H,50H,01H,02H,03H,04H; 32BF | ......0....P....
+	DB	05H,06H,07H,08H,14H,19H,00H,01H,02H,03H,04H,05H,06H,07H,08H,09H; 32CF | ................
+	DB	0AH,0BH,0CH,0DH,0EH,0FH,10H,11H,12H,13H,28H,00H,04H,0FH,01H,C2H; 32DF | ..........(.....
+	DB	00H,7FH,00H,C0H,00H,20H,00H,01H,00H,20H,02H,03H,01H,0AH,50H,00H; 32EF | ..... ... ....P.
+	DB	01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H; 32FF | ................
+	DB	11H,12H,13H                                       ; 330F | ...
+; --- 5 1/4", 80 tracks, double-sided formats ---
+fmt_5_25_80_ds:
+	DB	'80 Sp., doppels. ["A": autom. Formaterk.]',0AH
+	DB	0DH,0AH
+	DB	'0= 5*1024 Sp. 0-159;192 Dir.eintr.   ;0 System, 800k, CP/A  '
+	DB	' ;A',0DH,0AH
+	DB	'1= 26*128 Sp. 0-2;  5*1024 Sp. 3-159 ;4 System, 780k, CP/A B'
+	DB	'C;A',0DH,0AH
+	DB	'2= 5*1024 Sp. 0-159                  ;4 System, 780k, SCP171'
+	DB	'5;A',0DH,0AH
+	DB	'3= 5*1024 Sp. 0-159;192 Dir.eintr.   ;2 System, 790k, HU Krz'
+	DB	' ',0DH,0AH
+	DB	'S= 80 Spuren, einseitig',0DH,0AH
+	DB	'T= 40 Spuren, doppelseitig, Doppelschritte (Standard)',0DH,0AH
+	DB	'U= 40 Spuren, einseitig,    Doppelschritte (Standard)',0DH,0AH
+	DB	'V= 40 Spuren, doppelseitig, Einzelschritte (nur halbe Disket'
+	DB	'te)',0DH,0AH
+	DB	'W= 40 Spuren, einseitig,    Einzelschritte (nur halbe Disket'
+	DB	'te)',0DH,0AH
+	DB	'X= Menue #2','$'
+	DB	'80 Sp., doppels. ["A": autom. Formaterk.]',0AH
+	DB	0DH,0AH
+	DB	'4= 16*256 Sp. 0-159;ohne ph. Sektorv.;4 System, 624k, SCP   '
+	DB	' ;A',0DH,0AH
+	DB	'5= 16*256 Sp. 0-159;mit  ph. Sektorv.;4 System, 624k        '
+	DB	' ;A',0DH,0AH
+	DB	'6= 26*128 Sp. 0-159;Sektorf. 1,7,13..;0 System, 520k        '
+	DB	' ;A',0DH,0AH
+	DB	'7= 16*256 Sp. 0-153;Sektorf. 1,4,7,..;4 System, 600k, ZIK-NK'
+	DB	' ',0DH,0AH
+	DB	'Y= Menue #3',0DH,0AH
+	DB	'Z= Menue #1','$'
+	DB	'80 Sp., doppels. ["A": autom. Formaterk.]',0AH
+	DB	0DH,0AH
+	DB	'E=  9*512 Sp. 0-159;                            720k, {MSDOS'
+	DB	'};A',0DH,0AH
+	DB	'F=  9*512 Sp. 0-159; 4K BDOS-Bloecke ;2 System, 708k, VORTEX'
+	DB	' ',0DH,0AH
+	DB	'G= 10*512 Sp. 0-159;Sektorf. 1,4,7,..;2 System, 788k, NGB   '
+	DB	' ',0DH,0AH
+	DB	'H= 5*1024 Sp. 0-159;Sekt.v. 1,4,2,5,3;0 System, 800k, FDC3 4'
+	DB	'M;A',0DH,0AH
+	DB	'I= 5*1024 Sp. 0-159;ohne ph. Sektorv.;0 System, 800k,       '
+	DB	' ;A',0DH,0AH
+	DB	'J= 10*512 Sp. 0-159, ITT;      SCOPY notwendig  800k, {MSDOS'
+	DB	'}',0DH,0AH
+	DB	'K= 5*1024 Sp. 0-159, P30/P40;  SCOPY notwendig  800k, {MSDOS'
+	DB	'}',0DH,0AH
+	DB	'X= Menue #2',0DH,0AH
+	DB	'Z= Menue #1','$'
+	DB	'0'
+	DB	0EH                                               ; 38A1 | .
+	DB	'91/92P93q94'
+	DB	92H,39H,35H,C9H,39H,36H,00H                       ; 38AD | .95.96.
+	DB	':7K:E'
+	DB	82H,3AH,46H,ABH,3AH,47H,D4H,3AH,48H,FFH           ; 38B9 | .:F.:G.:H.
+	DB	':I ;JA;Kl;S'
+	DB	E6H,38H,54H,EBH,38H,55H,F0H,38H,56H,F5H,38H,57H,FAH,38H,58H,FFH; 38CE | .8T.8U.8V.8W.8X.
+	DB	38H,59H,04H,39H,5AH,09H,39H,FFH,01H,5AH,29H,E0H,2BH,02H,AFH,2DH; 38DE | 8Y.9Z.9..Z).+..-
+	DB	D9H,30H,02H,DFH,21H,37H,26H,01H,AFH,2DH,D9H,30H,01H,DFH,21H,37H; 38EE | .0..!7&..-.0..!7
+	DB	26H,01H,55H,35H,A0H,38H,01H,9CH,36H,A0H,38H,01H,12H,33H,A0H,38H; 38FE | &.U5.8..6.8..3.8
+	DB	05H,64H,01H,05H,04H,03H,02H,28H,00H,04H,0FH,00H,8FH,01H,BFH,00H; 390E | .d.....(........
+	DB	E0H,00H,30H,00H,00H,00H,20H,03H,07H,01H,00H,A0H,01H,02H,03H,04H; 391E | ..0... .........
+	DB	05H,05H,64H,01H,05H,04H,03H,02H,28H,00H,04H,0FH,00H,85H,01H,7FH; 392E | ..d.....(.......
+	DB	00H,C0H,00H,20H,00H,04H,00H,23H,03H,07H,01H,00H,A0H,01H,02H,03H; 393E | ... ...#........
+	DB	04H,05H,05H,64H,01H,05H,04H,03H,02H,28H,00H,04H,0FH,00H,85H,01H; 394E | ...d.....(......
+	DB	7FH,00H,C0H,00H,20H,00H,04H,00H,20H,03H,07H,01H,00H,A0H,01H,02H; 395E | .... ... .......
+	DB	03H,04H,05H,05H,64H,01H,05H,04H,03H,02H,28H,00H,04H,0FH,00H,8AH; 396E | ....d.....(.....
+	DB	01H,BFH,00H,E0H,00H,30H,00H,02H,00H,20H,03H,07H,01H,00H,A0H,01H; 397E | .....0... ......
+	DB	02H,03H,04H,05H,10H,35H,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH; 398E | .....5..........
+	DB	0BH,0CH,0DH,0EH,0FH,10H,20H,00H,04H,0FH,00H,37H,01H,7FH,00H,C0H; 399E | ...... ....7....
+	DB	00H,20H,00H,04H,00H,20H,01H,07H,01H,00H,A0H,01H,02H,03H,04H,05H; 39AE | . ... ..........
+	DB	06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,10H,35H,01H,02H,03H; 39BE | ............5...
+	DB	04H,0DH,0EH,0FH,10H,09H,0AH,0BH,0CH,05H,06H,07H,08H,20H,00H,04H; 39CE | ............. ..
+	DB	0FH,00H,37H,01H,7FH,00H,C0H,00H,20H,00H,04H,00H,20H,01H,01H,01H; 39DE | ..7..... ... ...
+	DB	00H,A0H,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH; 39EE | ................
+	DB	0FH,10H,1AH,28H,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH; 39FE | ...(............
+	DB	0DH,0EH,0FH,10H,11H,12H,13H,14H,15H,16H,17H,18H,19H,1AH,1AH,00H; 3A0E | ................
+	DB	04H,0FH,00H,03H,01H,7FH,00H,C0H,00H,20H,00H,00H,00H,20H,00H,07H; 3A1E | ......... ... ..
+	DB	01H,00H,A0H,01H,07H,0DH,13H,19H,05H,0BH,11H,17H,03H,09H,0FH,15H; 3A2E | ................
+	DB	02H,08H,0EH,14H,1AH,06H,0CH,12H,18H,04H,0AH,10H,16H,10H,35H,01H; 3A3E | ..............5.
+	DB	02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,20H; 3A4E | ............... 
+	DB	00H,04H,0FH,00H,2BH,01H,FFH,00H,F0H,00H,40H,00H,04H,00H,38H,01H; 3A5E | ....+.....@...8.
+	DB	01H,01H,00H,9AH,01H,04H,07H,0AH,0DH,10H,03H,06H,09H,0CH,0FH,02H; 3A6E | ................
+	DB	05H,08H,0BH,0EH,09H,46H,01H,02H,03H,04H,05H,06H,07H,08H,09H,24H; 3A7E | .....F.........$
+	DB	00H,04H,0FH,00H,67H,01H,00H,00H,00H,00H,00H,00H,00H,00H,20H,02H; 3A8E | ....g......... .
+	DB	03H,01H,00H,A0H,01H,02H,03H,04H,05H,06H,07H,08H,09H,09H,46H,01H; 3A9E | ..............F.
+	DB	06H,02H,07H,03H,08H,04H,09H,05H,24H,00H,05H,1FH,03H,B0H,00H,7FH; 3AAE | ........$.......
+	DB	00H,80H,00H,20H,00H,02H,00H,20H,02H,03H,01H,00H,A0H,01H,02H,03H; 3ABE | ... ... ........
+	DB	04H,05H,06H,07H,08H,09H,0AH,19H,01H,02H,03H,04H,05H,06H,07H,08H; 3ACE | ................
+	DB	09H,0AH,28H,00H,05H,1FH,03H,C4H,00H,3FH,00H,80H,00H,10H,00H,02H; 3ADE | ..(......?......
+	DB	00H,20H,02H,03H,01H,00H,A0H,01H,04H,07H,0AH,03H,06H,09H,02H,05H; 3AEE | . ..............
+	DB	08H,05H,64H,01H,03H,05H,02H,04H,28H,00H,04H,0FH,00H,8FH,01H,BFH; 3AFE | ..d.....(.......
+	DB	00H,E0H,00H,30H,00H,00H,00H,20H,03H,07H,01H,00H,A0H,01H,02H,03H; 3B0E | ...0... ........
+	DB	04H,05H,05H,64H,01H,02H,03H,04H,05H,28H,00H,04H,0FH,00H,8FH,01H; 3B1E | ...d.....(......
+	DB	BFH,00H,E0H,00H,30H,00H,00H,00H,20H,03H,07H,01H,00H,A0H,01H,02H; 3B2E | ....0... .......
+	DB	03H,04H,05H,0AH,19H,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,28H; 3B3E | ...............(
+	DB	00H,04H,0FH,00H,8FH,01H,00H,00H,00H,00H,00H,00H,00H,00H,20H,02H; 3B4E | .............. .
+	DB	03H,01H,00H,A0H,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,05H,64H; 3B5E | ...............d
+	DB	01H,02H,03H,04H,05H,28H,00H,04H,0FH,00H,8FH,01H,00H,00H,00H,00H; 3B6E | .....(..........
+	DB	00H,00H,00H,00H,20H,03H,07H,01H,00H,A0H,01H,02H,03H,04H,05H,0CH; 3B7E | .... ...........
+; --- 8", single-sided, single density formats ---
+fmt_8_ss_sd:
+	DB	'Formate fuer 8", ','$'
+	DB	'eins., einf. Dichte ["A": autom. Formaterk.]',0DH,0AH
+	DB	'0= 4*1024 Sp. 0-76                  ;0 System, 308k         '
+	DB	';A',0DH,0AH
+	DB	'1= 26*128 Sp. 0-2; 4*1024 Sp. 3-76  ;3 System, 296k         '
+	DB	';A',0DH,0AH
+	DB	'2= 26*128 Sp. 0-76;Sektorf. 1,7,13..;2 System, 243k         '
+	DB	';A',0DH,0AH
+	DB	'3= 26*128 Sp. 0-76;Sektorf. 1,7,13..;0 System, 250k         '
+	DB	';A',0DH,0AH
+	DB	'4= 26*128 Sp. 0  ; 4*1024 Sp. 1-76  ;3 System, 296k, SCP    '
+	DB	';A',0DH,0AH
+	DB	'5=  9*512 Sp. 0-76                  ;0 System, 346k         '
+	DB	';A',0DH,0AH
+	DB	'6= 26*128 Sp. 0-1; 9*512 Sp. 2-76   ;2 System, 336k         '
+	DB	';A',0DH,0AH
+	DB	'7= 26*128 Sp. 0-2;16*256  Sp. 3-76  ;3 System, 296k         '
+	DB	';A',0DH,0AH
+	DB	'8=  9*512 Sp. 0-79;IH Mittweida fuer MSDOS-SicherheitsKopie','$'
+	DB	'0&>1E>2d>3'
+	DB	AFH,3EH,34H,FAH,3EH,35H,19H                       ; 3E14 | .>4.>5.
+	DB	'?6B?7k?8'
+	DB	A2H,3FH,FFH,04H,4CH,01H,02H,03H,04H,20H,00H,04H,0FH,01H,99H,00H; 3E23 | .?..L.... ......
+	DB	7FH,00H,C0H,00H,20H,00H,00H,00H,00H,03H,07H,01H,00H,4DH,01H,02H; 3E33 | .... ........M..
+	DB	03H,04H,04H,4CH,01H,02H,03H,04H,20H,00H,04H,0FH,01H,93H,00H,7FH; 3E43 | ...L.... .......
+	DB	00H,C0H,00H,20H,00H,03H,00H,03H,03H,07H,01H,00H,4DH,01H,02H,03H; 3E53 | ... ........M...
+	DB	04H,1AH,1BH,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH; 3E63 | ................
+	DB	0EH,0FH,10H,11H,12H,13H,14H,15H,16H,17H,18H,19H,1AH,1AH,00H,03H; 3E73 | ................
+	DB	07H,00H,F2H,00H,3FH,00H,C0H,00H,10H,00H,02H,00H,00H,00H,07H,01H; 3E83 | ....?...........
+	DB	00H,4DH,01H,07H,0DH,13H,19H,05H,0BH,11H,17H,03H,09H,0FH,15H,02H; 3E93 | .M..............
+	DB	08H,0EH,14H,1AH,06H,0CH,12H,18H,04H,0AH,10H,16H,1AH,1BH,01H,02H; 3EA3 | ................
+	DB	03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,11H,12H; 3EB3 | ................
+	DB	13H,14H,15H,16H,17H,18H,19H,1AH,1AH,00H,03H,07H,00H,F9H,00H,3FH; 3EC3 | ...............?
+	DB	00H,C0H,00H,10H,00H,00H,00H,00H,00H,07H,01H,00H,4DH,01H,07H,0DH; 3ED3 | ............M...
+	DB	13H,19H,05H,0BH,11H,17H,03H,09H,0FH,15H,02H,08H,0EH,14H,1AH,06H; 3EE3 | ................
+	DB	0CH,12H,18H,04H,0AH,10H,16H,04H,4CH,01H,02H,03H,04H,20H,00H,04H; 3EF3 | ........L.... ..
+	DB	0FH,01H,93H,00H,7FH,00H,C0H,00H,20H,00H,03H,00H,01H,03H,07H,01H; 3F03 | ........ .......
+	DB	00H,4DH,01H,02H,03H,04H,09H,0EH,01H,02H,03H,04H,05H,06H,07H,08H; 3F13 | .M..............
+	DB	09H,24H,00H,04H,0FH,01H,ACH,00H,7FH,00H,C0H,00H,20H,00H,00H,00H; 3F23 | .$.......... ...
+	DB	00H,02H,03H,01H,00H,4DH,01H,02H,03H,04H,05H,06H,07H,08H,09H,09H; 3F33 | .....M..........
+	DB	0EH,01H,02H,03H,04H,05H,06H,07H,08H,09H,24H,00H,04H,0FH,01H,A7H; 3F43 | ..........$.....
+	DB	00H,7FH,00H,C0H,00H,20H,00H,02H,00H,02H,02H,03H,01H,00H,4DH,01H; 3F53 | ..... ........M.
+	DB	02H,03H,04H,05H,06H,07H,08H,09H,10H,17H,01H,02H,03H,04H,05H,06H; 3F63 | ................
+	DB	07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,20H,00H,04H,0FH,01H,93H; 3F73 | .......... .....
+	DB	00H,3FH,00H,80H,00H,10H,00H,03H,00H,03H,01H,01H,01H,00H,4DH,01H; 3F83 | .?............M.
+	DB	02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,09H; 3F93 | ................
+	DB	0EH,01H,02H,03H,04H,05H,06H,07H,08H,09H,24H,00H,04H,0FH,01H,B3H; 3FA3 | ..........$.....
+	DB	00H,7FH,00H,C0H,00H,20H,00H,00H,00H,00H,02H,03H,01H,00H,50H,01H; 3FB3 | ..... ........P.
+	DB	02H,03H,04H,05H,06H,07H,08H,09H                   ; 3FC3 | ........
+; --- 8", single-sided, double density formats ---
+fmt_8_ss_dd:
+	DB	'eins., dopp. Dichte ["A": autom. Formaterk.]',0DH,0AH
+	DB	'0= 8*1024 Sp. 0-76                  ;0 System, 616k         '
+	DB	';A',0DH,0AH
+	DB	'1= 26*128 Sp. 0-1; 8*1024 Sp. 2-76  ;2 System, 600k         '
+	DB	';A',0DH,0AH
+	DB	'2= 26*128 Sp. 0-1; 40*128 Sp. 2-76  ;2 System, 374k         '
+	DB	';A',0DH,0AH
+	DB	'3= 40*128 Sp. 0-76;Sektorf. 1,2,3.. ;0 System, 384k         '
+	DB	';A',0DH,0AH
+	DB	'4= 26*128 Sp. 0  ; 8*1024 Sp. 1-76  ;2 System, 600k, SCP    '
+	DB	';A',0DH,0AH
+	DB	'5= 16*512 Sp. 0-76                  ;0 System, 616k         '
+	DB	';A',0DH,0AH
+	DB	'6= 26*128 Sp. 0-1;16*512 Sp. 2-76   ;2 System, 600k         '
+	DB	';A',0DH,0AH
+	DB	'7= 9*1024 Sp. 0-76                  ;0 System, 692k         '
+	DB	0DH,0AH
+	DB	0DH,0AH
+	DB	'V= einfache Dichte (SD)','$'
+	DB	'02B1YB2'
+	DB	80H,42H,33H,E7H                                   ; 4218 | .B3.
+	DB	'B4NC5uC6'
+	DB	ACH,43H,37H,E3H,43H,56H,2DH,42H,FFH,41H,A0H,3BH,0AH,3EH,08H,96H; 4224 | .C7.CV-B.A.;.>..
+	DB	01H,02H,03H,04H,05H,06H,07H,08H,40H,00H,04H,0FH,00H,33H,01H,7FH; 4234 | ........@....3..
+	DB	00H,C0H,00H,20H,00H,00H,00H,00H,03H,07H,01H,00H,4DH,01H,02H,03H; 4244 | ... ........M...
+	DB	04H,05H,06H,07H,08H,08H,96H,01H,02H,03H,04H,05H,06H,07H,08H,40H; 4254 | ...............@
+	DB	00H,04H,0FH,00H,2BH,01H,7FH,00H,C0H,00H,20H,00H,02H,00H,02H,03H; 4264 | ....+..... .....
+	DB	07H,01H,00H,4DH,01H,02H,03H,04H,05H,06H,07H,08H,28H,32H,01H,02H; 4274 | ...M........(2..
+	DB	03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,11H,12H; 4284 | ................
+	DB	13H,14H,15H,16H,17H,18H,19H,1AH,1BH,1CH,1DH,1EH,1FH; 4294 | .............
+	DB	' !"#','$'
+	DB	'%&''(('
+	DB	00H,04H,0FH,01H,76H,01H,7FH,00H,C0H,00H,20H,00H,02H,00H,02H,00H; 42AB | ....v..... .....
+	DB	07H,01H,00H,4DH,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH; 42BB | ...M............
+	DB	0DH,0EH,0FH,10H,11H,12H,13H,14H,15H,16H,17H,18H,19H,1AH,1BH,1CH; 42CB | ................
+	DB	1DH,1EH,1FH                                       ; 42DB | ...
+	DB	' !"#','$'
+	DB	'%&''((2'
+	DB	01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H; 42E9 | ................
+	DB	11H,12H,13H,14H,15H,16H,17H,18H,19H,1AH,1BH,1CH,1DH,1EH,1FH; 42F9 | ...............
+	DB	' !"#','$'
+	DB	'%&''(('
+	DB	00H,04H,0FH,01H,80H,01H,7FH,00H,C0H,00H,20H,00H,00H,00H,00H,00H; 4312 | .......... .....
+	DB	07H,01H,00H,4DH,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH; 4322 | ...M............
+	DB	0DH,0EH,0FH,10H,11H,12H,13H,14H,15H,16H,17H,18H,19H,1AH,1BH,1CH; 4332 | ................
+	DB	1DH,1EH,1FH                                       ; 4342 | ...
+	DB	' !"#','$'
+	DB	'%&''('
+	DB	08H,4CH,01H,02H,03H,04H,05H,06H,07H,08H,40H,00H,04H,0FH,00H,2BH; 434E | .L........@....+
+	DB	01H,7FH,00H,C0H,00H,20H,00H,02H,00H,01H,03H,07H,01H,00H,4DH,01H; 435E | ..... ........M.
+	DB	02H,03H,04H,05H,06H,07H,08H,10H,32H,01H,02H,03H,04H,05H,06H,07H; 436E | ........2.......
+	DB	08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,40H,00H,04H,0FH,00H,33H,01H; 437E | .........@....3.
+	DB	7FH,00H,C0H,00H,20H,00H,00H,00H,00H,02H,03H,01H,00H,4DH,01H,02H; 438E | .... ........M..
+	DB	03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,10H,32H; 439E | ...............2
+	DB	01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H; 43AE | ................
+	DB	40H,00H,04H,0FH,00H,2BH,01H,7FH,00H,C0H,00H,20H,00H,02H,00H,02H; 43BE | @....+..... ....
+	DB	02H,03H,01H,00H,4DH,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH; 43CE | ....M...........
+	DB	0CH,0DH,0EH,0FH,10H,09H,21H,01H,02H,03H,04H,05H,06H,07H,08H,09H; 43DE | ......!.........
+	DB	48H,00H,04H,0FH,00H,59H,01H,7FH,00H,C0H,00H,20H,00H,00H,00H,00H; 43EE | H....Y..... ....
+	DB	03H,07H,01H,00H,4DH,01H,02H,03H,04H,05H,06H,07H,08H,09H,33H,01H; 43FE | ....M.........3.
+	DB	7FH,00H,C0H,00H,20H,00H,00H,00H,00H,02H,03H,01H,00H,4DH,01H,02H; 440E | .... ........M..
+	DB	03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H,10H,32H; 441E | ...............2
+	DB	01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH,0CH,0DH,0EH,0FH,10H; 442E | ................
+	DB	40H,00H,04H,0FH,00H,2BH,01H,7FH,00H,C0H,00H,20H,00H,02H,00H,02H; 443E | @....+..... ....
+	DB	02H,03H,01H,00H,4DH,01H,02H,03H,04H,05H,06H,07H,08H,09H,0AH,0BH; 444E | ....M...........
+	DB	0CH,0DH,0EH,0FH,10H,09H,21H,01H,02H,03H,04H,05H,06H,07H,08H,09H; 445E | ......!.........
+	DB	48H,00H,04H,0FH,00H,59H,01H,7FH,00H,C0H,00H,20H,00H,00H,00H,00H; 446E | H....Y..... ....
+	DB	03H,07H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 447E | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 448E | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 449E | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 44AE | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 44BE | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 44CE | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 44DE | ................
+	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H; 44EE | ................
+	DB	00H,00H                                           ; 44FE | ..
+
+	END
