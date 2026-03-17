@@ -43,6 +43,15 @@ else()
     message(STATUS "SDL2 disabled by user")
 endif()
 
+# cparun: CP/M command-line runner (no SDL, no disk images, direct host filesystem)
+add_executable(cparun
+    src/cparun.cpp
+    src/cpm_bdos.cpp
+    src/z80.cpp
+    src/memory.cpp
+)
+target_include_directories(cparun PRIVATE src)
+
 # Test executable
 add_executable(a5120emu_test
     src/z80.cpp
@@ -53,4 +62,4 @@ add_executable(a5120emu_test
 target_include_directories(a5120emu_test PRIVATE src)
 
 # Install
-install(TARGETS a5120emu RUNTIME DESTINATION bin)
+install(TARGETS a5120emu cparun RUNTIME DESTINATION bin)
