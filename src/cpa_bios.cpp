@@ -137,6 +137,7 @@ CpaBios::CpaBios(Z80& cpu, Memory& mem, Terminal& term)
       tickCount_(0), running_(false),
       consoleLog_(nullptr), diagLog_(nullptr),
       autoExit_(false), execDone_(false),
+      bootOsPath_(), bootDrive_(-1),
       ccpBase(0), bdosBase(0), biosBase(0),
       cpmx21Addr_(0),
       fdcDriveSelect_(0), fdcTrack_(0), fdcSide_(0), fdcAtTrack0_(true),
@@ -260,16 +261,21 @@ bool CpaBios::bootFromFile(const std::string& osPath) {
     // Install our BIOS traps over the real BIOS jump table
     installTraps();
 
-    // Set CPU start point to CCP
+    // Start the CPU at the BIOS BOOT entry (biosBase+0).  The JP instruction
+    // there points to the real cold-boot code which outputs messages via
+    // CONOUT (trapped) and eventually reaches the CCP.
     cpu_.reset();
-    cpu_.PC = ccpBase;
-    cpu_.SP = ccpBase;
+    cpu_.PC = biosBase;
+    cpu_.SP = 0x0100;   // Temporary stack below TPA; BIOS will set its own
 
     // Set up Z80 interrupt mode 2 and I register (must be after cpu_.reset())
     cpu_.I = 0xF7;
     cpu_.IM = 2;
     cpu_.IFF1 = true;
     cpu_.IFF2 = true;
+
+    bootOsPath_ = osPath;
+    bootDrive_ = -1;
 
     return true;
 }
@@ -288,8 +294,95 @@ bool CpaBios::bootFromFile(const std::string& osPath) {
 bool CpaBios::bootFromDisk(int drive) {
     if (drive < 0 || drive >= 4 || !disks_[drive].isLoaded()) return false;
 
-    // Read system tracks (tracks 0 and 1) into TPA area at 0x0100
-    // This gives us the same @os.com content as a file boot
+    // --- SYL-Disk: @OS.COM aus dem CP/M-Filesystem lesen ---
+    // Eine SYL-Disk hat "SYL" in Sektor 0 (Systemlader-Kennung).
+    // CPA780-Format: 3 Systemspuren (26×128=3328 Bytes) + Datenspuren (5×1024=5120 Bytes).
+    // OFF=4: 3 Systemspuren + Cyl-1-H1 (erste Datenspur) werden übersprungen.
+    if (disks_[drive].isSylDisk()) {
+        diagf("SYL-Disk erkannt auf Laufwerk %c: – suche @OS.COM\n", 'A'+drive);
+
+        // 1. Versuche @OS.COM aus dem CP/M-Filesystem der Disk zu lesen
+        //    OFF=4: Verzeichnis beginnt an Spur 4 (nach 3 Systemspuren + Cyl1H1)
+        std::vector<uint8_t> osData = disks_[drive].readCpmFile("@OS     ", "COM", 4);
+
+        // 2. Fallback: @OS.COM aus Standard-Pfad laden (wie ein ROM-Bootlader
+        //    der das OS von einem EPROM oder einer separaten Quelle lädt)
+        if (osData.empty()) {
+            static const char* fallbacks[] = {
+                "boot_disk/@os.com", "@os.com", nullptr
+            };
+            for (int fi = 0; fallbacks[fi] != nullptr; fi++) {
+                FILE* f = fopen(fallbacks[fi], "rb");
+                if (f) {
+                    fseek(f, 0, SEEK_END);
+                    long sz = ftell(f);
+                    fseek(f, 0, SEEK_SET);
+                    osData.resize(sz);
+                    if (fread(osData.data(), 1, sz, f) != (size_t)sz)
+                        osData.clear();
+                    fclose(f);
+                    if (!osData.empty()) {
+                        diagf("SYL-Boot: @OS.COM aus '%s' geladen\n", fallbacks[fi]);
+                        break;
+                    }
+                }
+            }
+        } else {
+            diagf("@OS.COM aus Disk-Filesystem gelesen: %zu Bytes\n", osData.size());
+        }
+
+        if (osData.empty()) {
+            diagf("Fehler: @OS.COM nicht auf SYL-Disk und kein Fallback-Pfad gefunden\n");
+            return false;
+        }
+
+        // Wie bootFromFile: Loader in TPA laden und Relokation durchführen
+        for (size_t i = 0; i < osData.size() && i < 65535u; i++) {
+            mem_.write(TPA_START + (uint16_t)i, osData[i]);
+        }
+        // Relokationsparameter aus dem Loader (Offsets im @OS.COM-Loader):
+        uint16_t dest     = mem_.read(0x016D) | (mem_.read(0x016E) << 8);
+        uint16_t endAddr  = mem_.read(0x0170) | (mem_.read(0x0171) << 8);
+        uint16_t biosEntry= mem_.read(0x017B) | (mem_.read(0x017C) << 8);
+        uint16_t length   = endAddr - dest;
+        uint16_t source   = 0x0180;
+
+        diagf("SYL boot: dest=%04X endAddr=%04X biosEntry=%04X length=%u\n",
+              dest, endAddr, biosEntry, length);
+
+        if (dest < 0x8000 || dest > 0xFF00 || biosEntry < 0x8000) {
+            diagf("Fehler: Ungültige Relokationsparameter – kein @OS.COM-Format?\n");
+            return false;
+        }
+
+        for (uint16_t i = 0; i < length; i++) {
+            mem_.write(dest + i, mem_.read(source + i));
+        }
+
+        ccpBase  = dest;
+        bdosBase = ccpBase + 0x800;
+        biosBase = biosEntry;
+        currentDisk_ = drive;
+
+        ccpImage_.resize(0x800);
+        for (int i = 0; i < 0x800; i++)
+            ccpImage_[i] = mem_.read(ccpBase + i);
+
+        installTraps();
+        cpu_.reset();
+        cpu_.PC = biosBase;
+        cpu_.SP = 0x0100;
+        cpu_.I  = 0xF7;
+        cpu_.IM = 2;
+        cpu_.IFF1 = true;
+        cpu_.IFF2 = true;
+
+        bootOsPath_ = "";
+        bootDrive_  = drive;
+        return true;
+    }
+
+    // --- Fallback: System-Spuren lesen (nicht-SYL-Disk mit @OS.COM-Loader) ---
     uint8_t sector[128];
     uint16_t loadAddr = TPA_START;
 
@@ -326,14 +419,17 @@ bool CpaBios::bootFromDisk(int drive) {
     installTraps();
 
     cpu_.reset();
-    cpu_.PC = ccpBase;
-    cpu_.SP = ccpBase;
+    cpu_.PC = biosBase;   // Let real BIOS cold-boot run
+    cpu_.SP = 0x0100;
 
     // Set up Z80 interrupt mode 2 and I register (must be after cpu_.reset())
     cpu_.I = 0xF7;
     cpu_.IM = 2;
     cpu_.IFF1 = true;
     cpu_.IFF2 = true;
+
+    bootOsPath_ = "";
+    bootDrive_ = drive;
 
     return true;
 }
@@ -384,9 +480,12 @@ bool CpaBios::bootFromDisk(int drive) {
  * wird mit Leerzeichen gefuellt.
  */
 void CpaBios::installTraps() {
-    // Place HALT instructions only at the BIOS jump table entries (first 17*3 bytes)
-    // Preserve all original BIOS data after the jump table (version string, DPH/DPB, etc.)
-    for (int i = 0; i < BIOS_COUNT; i++) {
+    // Place HALT instructions at BIOS jump table entries 1..16 (WBOOT..SECTRAN).
+    // Entry 0 (BOOT) is deliberately left intact so the real BIOS cold-boot Z80
+    // code executes.  It outputs hardware messages and the time prompt via the
+    // already-trapped CONOUT/CONIN.  WBOOT (i=1) stays trapped so our C++
+    // biosWboot() handles CCP reload.
+    for (int i = 1; i < BIOS_COUNT; i++) {
         uint16_t entryAddr = biosBase + i * 3;
         mem_.write(entryAddr, TRAP_OPCODE);  // HALT
         mem_.write(entryAddr + 1, 0x00);     // NOP
@@ -563,6 +662,38 @@ void CpaBios::buildDiskParams() {
             dphAddr_[d] = 0;
         }
     }
+
+    // Detect CPA system disk (SYL boot-loader marker) on drive A and fix DPB.
+    //
+    // CPA780 mixed geometry: 3 system tracks (26×128=3328 B each) then data
+    // tracks (5×1024=5120 B each, starting at Cyl-1-H1).  The BIOS is compiled
+    // with @fsys=0 (OFF=0, DSM=399, DRM=191).  A system disk needs @fsys=1
+    // parameters: OFF=4, DSM=389, DRM=127, AL0=C0h, CKS=32.
+    if (disks_[0].isLoaded() && disks_[0].isSylDisk() && dphAddr_[0] != 0) {
+        uint16_t dph    = dphAddr_[0];
+        uint16_t dpbAddr = mem_.read(dph + 10) | (mem_.read(dph + 11) << 8);
+
+        if (dpbAddr != 0) {
+            // CPA780 @fsys=1: OFF=4, DSM=389, DRM=127, AL0=C0h, AL1=00h, CKS=32
+            const int off = 4;
+            const int dsm = 389;  // 780/2 - 1, verified: (813824-15104)/2048 - 1
+            const int drm = 127;  // 128 - 1 (128 Dir-Eintr. in 2 Bloecken)
+
+            mem_.write(dpbAddr + 5,  dsm & 0xFF);
+            mem_.write(dpbAddr + 6,  (dsm >> 8) & 0xFF);
+            mem_.write(dpbAddr + 7,  drm & 0xFF);
+            mem_.write(dpbAddr + 8,  0x00);
+            mem_.write(dpbAddr + 9,  0xC0);   // AL0: Bloecke 0+1 fuer Dir.
+            mem_.write(dpbAddr + 10, 0x00);   // AL1
+            mem_.write(dpbAddr + 11, 32);     // CKS = DRM/4 = 128/4
+            mem_.write(dpbAddr + 12, 0x00);
+            mem_.write(dpbAddr + 13, off & 0xFF);
+            mem_.write(dpbAddr + 14, 0x00);
+
+            diagf("SYL system disk: DPB @%04X patched OFF=%d DSM=%d DRM=%d\n",
+                  dpbAddr, off, dsm, drm);
+        }
+    }
 }
 
 /**
@@ -709,22 +840,15 @@ bool CpaBios::handleBdosTrap() {
 // ============================================================================
 
 /**
- * @brief BIOS 0: Kaltstart.
+ * @brief BIOS 0: Kaltstart (Fallback-Handler).
  *
- * Initialisiert das IOBYTE (0003h = 00h), setzt das aktuelle Laufwerk
- * auf A: und die DMA-Adresse auf den Standard (0080h). Loescht den
- * Bildschirm der K7027-Karte und fuehrt dann einen Warmstart aus.
+ * Wird normalerweise NICHT aufgerufen, da der BOOT-Eintrag in der
+ * BIOS-Sprungtabelle nicht durch einen HALT-Trap ersetzt wird -
+ * stattdessen laeuft der echte Z80-BIOS-Kaltstart-Code.
+ * Dieser Handler greift nur, falls der BOOT-Eintrag doch einmal
+ * ueber einen anderen Weg getriggert wird.
  */
 void CpaBios::biosBoot() {
-    // Cold boot - initialize everything
-    mem_.write(IOBYTE_ADDR, 0x00);
-    mem_.write(CDISK_ADDR, 0x00);
-    currentDisk_ = 0;
-    currentTrack_ = 0;
-    currentSector_ = 0;
-    dmaAddr_ = 0x0080;
-
-    crtClearScreen();
     biosWboot();
 }
 
@@ -1977,6 +2101,16 @@ void CpaBios::run() {
         // Update display
         term_.pollEvents();
         updateDisplay();
+
+        // Reset-Knopf: Kaltstart auslösen
+        if (term_.resetRequested()) {
+            diagf("Reset button: triggering cold boot\n");
+            if (!bootOsPath_.empty()) {
+                bootFromFile(bootOsPath_);
+            } else if (bootDrive_ >= 0) {
+                bootFromDisk(bootDrive_);
+            }
+        }
 
         // Timing control - maintain ~50Hz frame rate
         auto now = std::chrono::steady_clock::now();

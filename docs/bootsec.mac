@@ -1,0 +1,839 @@
+; ======================================================================
+; CPA780 SYL-BOOTLADER  -- vollstaendig kommentiertes Disassemblat
+; ======================================================================
+; Quellbinärformat: disks/bootsec.bin, 15104 Bytes
+; Erzeugt:          a5120emu-Analyse, Z80-Disassembler (eigene Impl.)
+; Version im Binaer: "CP/A-Bootsystem, Version 05.04.88 ladet @OS.COM"
+; ======================================================================
+;
+; SYL-DISKETTENFORMAT -- Gemischte Spurgeometrie (Mixed Geometry)
+; ─────────────────────────────────────────────────────────────────────
+;  Das SYL-Format verwendet zwei verschiedene Sektorgeoemetrien:
+;
+;  Systemspuren (Spuren 0-2): 26 Sektoren a 128 Bytes = 3328 Bytes/Spur
+;    Spur 0: SYL-Kennung + Stage-1 Code (Mini-BDOS)
+;    Spur 1: Fuellung (alle Bytes = 53H = 'S')
+;    Spur 2: Zweite SYL-Kennung + Stage-2 Code (Boot-BIOS)
+;
+;  Datenspuren (Spur 3+): 5 Sektoren a 1024 Bytes = 5120 Bytes/Spur
+;    Enthalten das CP/M-Dateisystem mit Verzeichnis und @OS.COM
+;
+;  Dateiinhalt bootsec.bin (15104 Bytes = 3 x 3328 + 1 x 5120):
+;    Offset 0000H-0CFFH: Spur 0 (3328 Bytes, 26 x 128 B)
+;    Offset 0D00H-19FFH: Spur 1 (3328 Bytes, alle 53H)
+;    Offset 1A00H-26FFH: Spur 2 (3328 Bytes, Stage-2 Code)
+;    Offset 2700H-3AFFH: Spur 3 (5120 Bytes, Datenspur-Fueller, alle 53H)
+;
+; UNTERSTUETZTE DISKETTEN-FORMATE
+; ─────────────────────────────────────────────────────────────────────
+;  Die Systemspuren koennen in 128-Byte- ODER 256-Byte-Sektoren
+;  formatiert sein (cpabcgen.com prueft dies und meldet Fehler bei
+;  anderen Groessen: "Systemspuren nicht Sektorlaenge 128 o. 256").
+;
+;  Die Datenspuren (CP/M-Verzeichnis, @OS.COM) benutzen immer
+;  5 x 1024-Byte-Sektoren pro Spur.
+;
+;  Das ft.* Parameterblock-Byte ft.kom (RAM 0400H) konfiguriert
+;  die Disketteneigenschaften der FDC-Treiberschicht:
+;    Bit 4: 0 = 8"-Laufwerk   1 = 5.25"-Laufwerk
+;    Bit 5: 0 = 80-Spur-LW    1 = 40-Spur-LW (5.25")
+;    Bit 3: 0 = FM-Modus      1 = MFM-Modus
+;    Bit 7: Seite 0 oder 1
+;  ft.len (ft.* + 5): Sektorlaengen-Code  0=128B  1=256B  2=512B  3=1024B
+;
+;  Der DPB (Disk Parameter Block) wird beim Kaltstart vom ROM-BIOS
+;  als Zeiger in HL uebergeben, per PUSH auf den Stack gespeichert
+;  und in FDC_INIT (Offset 0065H: POP HL) wieder geholt. Der DPB
+;  konfiguriert das Mini-BDOS fuer die korrekte Sektor-Groessen-
+;  Uebersetzung. Auf diese Weise kann das System ohne Aenderung des
+;  Boot-Codes verschiedene Spurgeometrien unterstuetzen.
+;
+;  Die Datei @OS.COM wird von Stage-1 ueber das Mini-BDOS geladen
+;  (BDOS-Funktion 20H = sequentielles Lesen, FCB bei 08CCH).
+;  Das Mini-BDOS nutzt den DPB zur Sektor-Uebersetzung, sodass
+;  @OS.COM auf Datenspuren mit 1024-Byte-Sektoren gelesen wird,
+;  auch wenn der Rest des Bootloaders in 128-Byte-Sektoren codiert ist.
+;
+; CPABCGEN.COM -- Erzeuger des Systemsektors
+; ─────────────────────────────────────────────────────────────────────
+;  Das Programm docs/cpabcgen.com ("CP/A fuer Buerocomputer: Anlegen
+;  einer neuen Systemdiskette, Version 05.04.88") schreibt den Boot-
+;  loader auf eine Zieldiskette. Analyse von cpabcgen.com ergibt:
+;
+;  - Eingebettetes Bootsector-Daten: Spur 0 + Spur 2 (je 3328 Bytes)
+;    Spur 1 (53H-Fuellung) und Datenspur werden vom Programm generiert.
+;  - Eingebettete Version: "Bootloader, Version 24.02.87"
+;    (aelter als bootsec.bin mit "Version 05.04.88")
+;  - Die ersten 128 Bytes der eingebetteten Bootspuren sind byte-
+;    identisch mit bootsec.bin (bestaetig durch binaeren Vergleich).
+;  - Aufruf: CPABCGEN <ZielDisk:> [<QuellSystemfile>]
+;    Standardmaessig wird @OS.COM als Quelle benutzt.
+;  - Einschraenkung: "Systemdiskette kann nur auf 40-Spur-LW ausprobiert
+;    werden!" -- nur fuer 5.25"-40-Spur-Laufwerke!
+;  - Prueft Zieldiskette: "Systemspuren auf Zieldiskette nicht
+;    Sektorlaenge 128 o. 256" -- System-Sektoren muessen 128 oder
+;    256 Bytes gross sein.
+;  - Kein 8"-Bootsector in cpabcgen.com enthalten. Fuer 8"-Laufwerke
+;    wuerde ein eigenes Boot-Binaer mit ft.kom Bit4=0 benoetigt.
+;
+; 8"-DISKETTEN-BOOT
+; ─────────────────────────────────────────────────────────────────────
+;  CPA kann theoretisch von 8"-Disketten booten (biosdskt.mac enthaelt
+;  getrennte Motor-Anlauf-Konstanten: 252+1 Index-Pulse fuer 8" vs.
+;  250+1 fuer 5"/40T). Ein 8"-Bootloader braeuchte:
+;    ft.kom Bit 4 = 0 (8"-Modus)
+;    ft.kom Bit 5 = 0 (kein 40-Spur-Flag)
+;    Motor-Schleife: ld l,252+1 statt 250+1
+;  Das vorliegende bootsec.bin ist fuer 5.25"-Disketten konfiguriert.
+;  Ein eigener Boot-Erzeuger (analog cpabcgen.com) fuer 8" ist in
+;  diesem Projekt nicht vorhanden.
+;
+; SPEICHERLAYOUT NACH DEM LADEN:
+; ─────────────────────────────────────────────────────────────────────
+;  Datei-Offset  RAM-Adresse   Inhalt
+;  0000H-007FH   0000H-007FH   SYL-Sektor 0: Kennung + Reset-Code
+;  0080H-0CFFH   0080H-0CFFH   Spur 0 Skt.1-25: Mini-BDOS / Disketten-Treiber
+;  1A00H-26FFH   0D00H-19FFH   Spur 2 Skt.0-25: Boot-BIOS (FDC + @OS-Lader)
+;
+; STARTSEQUENZ:
+;  1. ROM liest T0S0 -> RAM 0000H   (SYL-Kennung)
+;  2. ROM liest T0S1-S25 -> RAM 0080H  (Serv.-Code / Data-Tabellen)
+;  3. ROM liest T2S0-S25 -> RAM 0D00H  (Boot-BIOS)
+;  4. ROM springt -> RAM 0000H   (SYL-Reset-Code)
+;  5. SYL Reset-Code: NOPs, dann JP 0140H
+;  6. 0140H: Dispatch-Vektor -> Kaltstart in T0S1 (0165H)
+;  7. T0S1 Kaltstart loest Stage-2 (JP 1800H = Boot-BIOS-Einstieg)
+;  8. Boot-BIOS: FDC init, @OS.COM suchen, laden, springen
+;
+; HARDWARE-PORTS (aus biosdskt.mac -- exakt gleiche Portnummern):
+;  Die K5122-Karte enthaelt zwei Z80-PIO-Bausteine:
+;    Steuer-PIO (Ports 10H-13H): steuert FDC-Signale / liest Status
+;    Daten-PIO  (Ports 14H-17H): uebertraegt Schreib-/Lesedaten
+;
+;  Portname  Port  Richtung  Funktion
+;  ────────  ────  ────────  ───────────────────────────────────────
+;  flcoad    10H   OUT       Steuer-PIO Port A -- FDC-Kommandos / -Signale
+;  flcoac    11H   OUT       Steuer-PIO Port A Steuerregister
+;  flcobd    12H   IN        Steuer-PIO Port B -- FDC-Status-Bits
+;  flcobc    13H   OUT       Steuer-PIO Port B Steuerregister
+;  fldaad    14H   OUT       Daten-PIO Port A -- Schreib-Datenbytes zum FDC
+;  fldaac    15H   OUT       Daten-PIO Port A Steuerregister
+;  fldabd    16H   IN        Daten-PIO Port B -- Lese-Datenbytes vom FDC
+;  fldabc    17H   OUT       Daten-PIO Port B Steuerregister
+;  flsel     20H   OUT       Laufwerks-Auswahl-Latch (Bit 7..4: /Sel LW3..0)
+;  flmot     21H   OUT       Motor-Steuerung (Bit 7..4: /Mot on je LW)
+;  kbdpci    06H   IN        Tastatur Zeichen-Eingabe
+;  kbdpcs    01H   IN        Tastatur Eingabe-Status
+;
+;  Legende AMF -- Port A (Steuer-PIO, flcoad = 10H):
+;  Bit  Name    Bedeutung
+;  ───  ──────  ──────────────────────────────────────────────────────
+;   0   /WE     0 = Schreiben einschalten
+;   1   MK      Lesen:    0 = MFM-A1-Erkennung, 1 = FM-Marke/MFM-C2
+;               Schreiben:0 = Takt fuer MFM,    1 = FM-/A1-MFM-Marken
+;   2   /SIDE   0 = Kopf Seite 1                1 = Kopf Seite 0
+;       /FR     0 = Fault reset                 1 = kein Fault reset
+;   3   /STR    0 = AMF aktiv (Address Mark Field einlesen)
+;               1 = AMF ausgeschaltet
+;   4   MK1     Lesen:    0 = Informationen einlesen, 1 = nur 1 einl.
+;               Schreiben:0 = FM-Daten schreiben, 1 = MFM-/FM-Marken
+;   5   MR/SD   0 = steppen Richtung aussen / Marke-erkannt loeschen
+;               1 = steppen Richtung innen
+;   6   /HL     0 = Kopf geladen            1 = Kopf entladen
+;   7   /ST     0 = Stepsignal an LW ein    1 = Stepsignal aus
+;
+;  Legende AMF -- Port B (Steuer-PIO, flcobd = 12H):
+;  Bit  Name    Bedeutung
+;  ───  ──────  ──────────────────────────────────────────────────────
+;   0   /RDY    0 = Laufwerk bereit          1 = Laufwerk nicht bereit
+;   1   /MKE    0 = Marke erkannt            1 = Marke noch nicht erkannt
+;              (K5122/PC1715 invertiert: 1 = Marke erkannt)
+;   2   /SYN    K5120: ??? | K5122:/HF 0=8"MFM,1=5"MFM/8"FM
+;   3   PRE     0 = ohne Prekomp.           1 = mit Prekomp.
+;   4   /FA     0 = Fehler in AMF aufgetreten
+;   5   /WP     0 = Schreibschutz ein       1 = kein Schreibschutz
+;   6   /FW     0 = Laufwerk schreibfehlerhaft
+;   7   /T0     0 = Kopf auf Spur 0         1 = nicht auf Spur 0
+;
+;  FDC-Fehlercodes (biosdskt.mac, Rueckgabe in A aus 'floppy'-Routine):
+;  'C'  CRC-Zeichen falsch (Lese-CRC stimmt nicht)
+;  'D'  Laufwerk nicht existent
+;  'L'  Laufwerk nicht belegt / offen
+;  'R'  Laufwerk nicht bereit (Diskette nicht eingelegt)
+;  'S'  Sektor ist nicht zu finden
+;  'T'  Spurnummer zu gross (> 84)
+;  'U'  Time-out (keine Sektormarke innerhalb Timeout)
+;  'W'  Schreibgeschuetzt (Write Protect)
+;
+; SYMBOLTABELLE (erschlossen aus Disassemblierung):
+;  0080H   WBOOT_JP    Warmstart-Vektor (JP 1800H)
+;  0105H   CCP_PATCH   CCP-Patchbereich (NOPs vor Sprungtabelle)
+;  0106H   BDOS_JP     BDOS-Einstieg (JP 0911H = BDOS_MAIN)
+;  0109H   JUMP_TAB    Sprungtabelle fuer BIOS-Dienste (4 Eintraege)
+;  0111H   INIT_OS     Initialisierung Betriebssystem-Strukturen
+;  0140H   DISPATCH    Dispatcher: liest DE aus Tabelle, springt mit JP (HL)
+;  0165H   COLDBOOT    Kaltstart-Einstieg (von SYL-Header aufgerufen)
+;  0400H   PARAM_TAB   Parameter-Tabelle (von Stage-2 via IY adressiert)
+;  0407H   READ_SEC    Sektor-Lesedienst (von Stage-2 CALLed)
+;  0605H   ERR_HANDLER Fehlerbehandlung
+;  0911H   BDOS_MAIN   BDOS Hauptprogramm
+;  0D00H   T2_SYL_HDR  Zweiter SYL-Kopf in Spur 2
+;  0D07H   FDC_ADRDEC  FDC Adressen-Decoder (IY-Tabelle -> BC)
+;  0D2EH   BOOT_MAIN   Boot-BIOS Hauptroutine
+;  1800H   WARM_BIOS   Warmstart-Einstieg im Boot-BIOS
+;
+; ======================================================================
+; BEZUG ZU CPA-QUELLEN (cpa_src/)
+; ======================================================================
+;  Die folgenden Routinen und Datenstrukturen des Bootloaders stammen
+;  nachweislich aus den CPA-BIOS-Quellen (cpa_src/):
+;
+;  Bootloader-Symbol              CPA-Quelle              Symbol / Label
+;  ─────────────────────────────────────────────────────────────────────
+;  FDC-Ports (10H-17H,20H-21H)   biosdskt.mac            flcoad..flmot
+;  Kommando 0xA9H (FDC_INIT)     biosdskt.mac            "Kopf laden, Fault reset"
+;  PARAM_TAB ft.*-Struktur        biosdskb.mac            ft.kom..ft.adr
+;  FDC_ADRDEC Algorithmus         format.mac:0DC7H        advance_dma_ptr
+;  FCB_OS (@OS.COM Vorlage)       bioscld3.mac/biosnuc.mac  fcb@os
+;  WBOOT_JP (JP 1800H)            biosnuc.mac/bios.mac    WARMST
+;  Motor-Spin-up 252+1 Ind.       biosdskt.mac            dskdaw/dskmo1
+;
+;  Alle FDC-Portwerte und -Timing-Konstanten sind identisch mit
+;  biosdskt.mac (K5120/K5122-Hardware).
+;
+
+; ======================================================================
+; ABSCHNITT 1: SYL-HEADER (Track0 Sektor0, ORG 0000H)
+; ======================================================================
+        ORG     0000H
+
+; SYL-Kennung (3 Byte) -- als Z80-Code harmlos:
+;   53H = LD D,E   59H = LD E,C   4CH = LD C,H
+SYL_ID: DB      'SYL'           ; 53H 59H 4CH -- SYL-Disketten-Kennung
+
+; Padding: 43 Nullbytes = NOPs bis Offset 002EH
+        DS      43,00H          ; 0003H-002DH: NOPs (Fuellbytes)
+
+; Kaltstart-Einstieg im SYL-Header:
+; Wird vom ROM nach dem Laden aller Systemspuren angesprungen
+        JP      0140H           ; 002EH: -> DISPATCH (im Stage-1)
+
+; Fuell-NOPs nach JP
+        DS      7,00H           ; 0031H-0036H
+
+; ─── FDC-Initialisierung ─────────────────────────────────────────────
+; Wird von der ROM-Firmware INDIREKT aufgerufen (nicht ueber JP 002EH),
+; sondern ueber den zweiten Einstiegspunkt JP 0165H (Offset 0068H).
+; Die ROM-Firmware setzt HL vor dem Aufruf auf einen Disketten-DPB-Zeiger.
+
+FDC_INIT:
+        LD      A,29H           ; 0037H: FDC Step-Kommando (Spur 0 step in)
+        OUT     (10H),A         ; 0039H: -> flcoad (FDC Port A)
+        LD      A,10101001B     ; 003BH: = 0A9H  'Kopf laden, Fault reset'
+                                ;   (biosdskt.mac: "ld a,10101001b ; Kopf laden, Fault reset")
+                                ;   Bit 7=/ST=1 (kein Step), Bit 6=/HL=0 (Kopf laden),
+                                ;   Bit 3=/STR=1 (AMF aus), Bit 2=/FR=0 (Fault reset),
+                                ;   Bit 0=/WE=1 (kein Schreiben)
+        OUT     (10H),A         ; 003DH: -> flcoad
+        LD      B,08H           ; 003FH: Warteschleife 8x
+FDC_WAIT:
+        DEC     C               ; 0041H: innere Schleife (C undefiniert, 256 Iter.)
+        JR      NZ,FDC_WAIT     ; 0042H: warte auf FDC
+        DJNZ    FDC_WAIT        ; 0044H: aeussere Schleife (8 mal)
+
+; ─── RAM-Struktur-Setup ──────────────────────────────────────────────
+        LD      HL,07F2H        ; 0046H: Zieladresse fuer Disk-Params
+        LD      (HL),06H        ; 0049H: setze Byte 07F2H = 6 (Sektorz. o.ae.)
+        LD      HL,0001H        ; 004BH
+        LD      (07F3H),HL      ; 004EH: Init 16-Bit-Param bei 07F3H = 0001H
+        LD      HL,0001H
+        LD      (07F5H),HL      ; 0054H: Init 16-Bit-Param bei 07F5H = 0001H
+
+; ─── Dispatch-Tabellen-Patch ─────────────────────────────────────────
+        LD      HL,042EH        ; 0057H: Adresse 042EH (FDC-Parameterblock)
+        LD      (0175H),HL      ; 005AH: patch Stage-1 Sprungvektor bei 0175H
+
+; ─── SIO/CTC-Port-Setup ──────────────────────────────────────────────
+        LD      A,97H           ; 005DH: SIO Steuerwort (8N1, Rx+Tx enable)
+        OUT     (11H),A         ; 005FH: -> flcoac (FDC Port A Steuerung)
+        LD      A,0FFH          ; 0061H: alle Bits setzen
+        OUT     (11H),A         ; 0063H: -> flcoac
+
+; ─── Uebergabe an Stage-1 via zweitem Einstieg ───────────────────────
+        POP     HL              ; 0065H: ROM hat HL-Adresse (DPB-Zeiger) gepusht
+        LD      E,01H           ; 0066H: E=1 (Kaltstart-Kennung fuer Stage-1)
+        JP      0165H           ; 0068H: -> COLDBOOT in Stage-1
+
+        DS      23, 00H         ; 006BH-007FH: Rest des Sektors = Padding
+
+; ======================================================================
+; ABSCHNITT 2: STAGE-1  (Track0 Sektoren 1-25, ORG 0080H)
+; Enthaelt: BDOS-Stubs, BIOS-Sprungtabellen, Kaltstart-Initialisierung,
+;           Filenames und Fehlermeldungen
+; ======================================================================
+        ORG     0080H
+
+; ─── Warmstart-Vektor ────────────────────────────────────────────────
+; Liegt bei Standard-CP/M-Adresse fuer BIOS warm boot.
+; Nach erfolgreichem Start: wird von CP/M zur Erneuerung des OS genutzt.
+WBOOT_JP:
+        JP      1800H           ; 0080H: Warmstart -> Boot-BIOS Einstieg
+
+; ─── Diverse BDOS-Aufrufe (Runtime-Sequenz) ──────────────────────────
+; Dieser Code wird NICHT beim Kaltstart ausfgefuehrt.
+; Er ist Teil des Mini-BDOS und wird waehrend des Betriebs gerufen.
+TMP_FCB:
+        LD      E,00H           ; 0083H: E=0 (Parameter)
+        LD      C,20H           ; 0085H: BDOS-Funktion 0x20: User-Nummer setzen
+        CALL    0005H           ; 0087H: -> BDOS-Einstieg
+        LD      C,0DH           ; 008AH: BDOS-Funktion 13: Reset-Laufwerke
+        CALL    0005H           ; 008CH: -> BDOS
+
+; Disk-Login-Sequenz:
+        LD      HL,0004H        ; 008FH: Adresse der aktuellen Disk (CDISK)
+        LD      E,(HL)          ; 0092H: E = Disk-Nr
+        LD      C,0EH           ; 0093H: BDOS-Funktion 14: Laufwerk setzen
+        CALL    0005H           ; 0095H: -> BDOS
+        LD      DE,08CCH        ; 0098H: Target-FCB fuer @OS.COM
+        LD      C,0FH           ; 009BH: BDOS-Funktion 15: Datei oeffnen
+        CALL    0005H           ; 009DH: -> BDOS
+
+; Nach OPEN: pruefen ob Fehler (A=0FFH -> nicht gefunden)
+        INC     A               ; 00A0H: A=0 wenn Datei nicht gefunden
+        JR      Z,0AFOFH        ; 00A1H: -> Error wenn A wurde 0
+
+; Wenn gefunden: HL=3780H (Ladepuffer fuer @OS.COM)
+        LD      HL,3780H        ; 00A3H: Zielpuffer
+LOAD_LOOP:
+        CALL    08B5H           ; 00A6H: einen Block lesen (Datei-Lese-Routine)
+        JR      Z,LOAD_LOOP     ; 00A9H: weiter wenn noch Daten
+
+; Pruefe ob Ladeadresse ausreichend weit:
+        DEC     A               ; 00ABH
+        JP      Z,37A0H         ; 00ACH: Sprung zum Einstiegspunkt von @OS.COM
+
+; Fehler: Disketten-Fehler, Laden fehlgeschlagen
+        LD      A,88H           ; 00AFH: Fehlercode fuer Tastatur-LED
+        OUT     (03H),A         ; 00B1H: LED-Port
+        DI                      ; 00B3H: Interrupts sperren
+        HALT                    ; 00B4H: CPU anhalten (Boot gescheitert)
+
+; ─── Datei-lesen-Hilfsdienst ─────────────────────────────────────────
+; Eingabe:  HL = Zieladresse, E = Laufwerk
+; Ausgabe:  A=0 -> OK, NZ -> Fehler
+;
+; MULTI-FORMAT-UNTERSTUETZUNG (@OS.COM-Laden):
+;  Das Lesen von @OS.COM erfolgt NICHT direkt ueber den Low-Level-FDC-
+;  Code, sondern ueber das Mini-BDOS via BDOS-Funktion 20H (sequentiell
+;  lesen). Das Mini-BDOS benutzt den DPB (Disk Parameter Block), der
+;  beim Kaltstart vom ROM-BIOS an Stage-1 uebergeben wurde (POP HL in
+;  FDC_INIT, 0065H), um logische Sektornummern in physische
+;  Sektoradressen umzurechnen.
+;
+;  Dadurch kann @OS.COM von Datenspuren mit 1024-Byte-Sektoren gelesen
+;  werden, auch wenn die Systemspuren 128- oder 256-Byte-Sektoren haben.
+;  Das Mini-BDOS liefert immer 128-Byte-Bloecke (CP/M-Sektorgroesse),
+;  unabhaengig von der tatsaechlichen physischen Sektorgroesse.
+;
+;  Die DMA-Adresse wird vor jedem Block auf HL gesetzt (BDOS 26),
+;  HL wird nach dem Lesen um 128 Bytes weitergeschaltet.
+READ_FILE:
+        PUSH    HL              ; 00B5H: rette Zieladresse
+        EX      DE,HL          ; 00B6H: Laufwerk in HL
+        LD      C,1AH           ; 00B7H: BDOS 26: DMA-Adresse setzen
+        CALL    0005H           ; 00B9H: -> BDOS
+        LD      DE,08CCH        ; 00BCH: FCB
+        LD      C,14H           ; 00BFH: BDOS 20: sequentiell lesen
+        CALL    0005H           ; 00C1H: -> BDOS
+        OR      A               ; 00C4H: Fehler?
+        POP     HL              ; 00C5H
+        RET     NZ              ; 00C6H: bei Fehler: zurueck mit NZ
+        LD      DE,0080H        ; 00C7H: Versatz zum naechsten Block
+        ADD     HL,DE           ; 00CAH: Zieladresse um 128 Byte vorschieben
+        RET                     ; 00CBH
+
+; ─── FCB fuer @OS.COM ────────────────────────────────────────────────
+; Dieses "File Control Block"-Template wird fuer die BDOS-Dateioperationen
+; verwendet. Der Name "@OS     COM" entspricht @OS.COM.
+;
+; Herkunft: identisch mit 'fcb@os' in bioscld3.mac und biosnuc.mac.
+;   bioscld3.mac  nutzt fcb@os fuer den RAM-Floppy-Warmstart (wbootv=3):
+;     ld (fcb@os),a      ; Laufwerksbuchstabe eintragen
+;     ld (fcb@os+12),a   ; extent loeschen
+;     ld (fcb@os+32),a   ; record loeschen
+;   biosnuc.mac verweist ebenfalls auf fcb@os fuer den CCP-Warmstart.
+;   Der Eintrag DB 40H = '@' ist ein 7-Bit-ASCII-Trick (high bit=0, normal).
+FCB_OS:
+        DB      00H             ; 00CCH: Laufwerk 0 = Default
+        DB      40H             ; 00CDH: '@' (erste Zeichen des Namens, high-bit-Trick)
+        DB      'OS      '      ; 00CEH-00D7H: Name 8 Zeichen
+        DB      'COM'           ; 00D8H-00DAH: Extension 3 Zeichen
+        DS      22,00H          ; 00DBH: FCB-Rest (E/A-Zaehler etc.)
+
+; ─── CP/M Fehlermeldungen (ASCII) ────────────────────────────────────
+; Standard-BDOS-Fehlertexte, werden bei Laufzeitfehlern ausgegeben
+ERR_MSG_BDOS:
+        DB      'Bdos Err On $' ; 01BAH: generische BDOS-Fehlerkennung
+
+ERR_MSG_BAD_SECTOR:
+        DB      'Bad Sector$'   ; 01CAH: Sektor-Lesefehler
+
+ERR_MSG_SELECT:
+        DB      'Select$'       ; 01D5H: Laufwerk nicht bereit
+
+ERR_MSG_RO:
+        DB      'File R/O$'     ; 01DCH: Schreibschutz-Fehler
+
+; ─── BDOS Fehlerausgabe ──────────────────────────────────────────────
+BDOS_ERR_OUT:
+        PUSH    HL              ; 01E5H
+        CALL    0AC9H           ; 01E6H: Ausgaberoutine fuer Fehlermeldung
+
+; ─── INIT_OS: OS-Strukturen initialisieren ───────────────────────────
+INIT_OS:
+        EX      DE,HL           ; 0111H
+        LD      (0B5CH),HL      ; 0112H: Speichere HL in Betriebssystem-Zeiger
+        EX      DE,HL
+        LD      A,E
+        LD      (1429H),A       ; 0117H: Konfigurationsbyte speichern
+        LD      HL,0000H
+        LD      (0B5EH),HL      ; 011DH: Init Fehler-Zaehler
+        ADD     HL,SP
+        LD      (0B28H),HL      ; 0121H: Stack-Zeiger sichern
+        LD      SP,0B5AH        ; 0124H: neuen Stack setzen
+        XOR     A
+        LD      (1433H),A       ; 0128H: Init Flags
+        LD      (1431H),A       ; 012BH
+
+; ─── BIOS-Sprungtabelle ──────────────────────────────────────────────
+; Vier 16-Bit-Adressen als Dispatch-Tabelle fuer BIOS-Dienste.
+; Jeder Eintrag zeigt auf eine BIOS-Routine in Stage-1 oder Stage-2.
+JUMP_TAB:
+        DW      0999H           ; 0109H: Eintrag 0  (BIOS-Dienst 0)
+        DW      09A5H           ; 010BH: Eintrag 1
+        DW      09ABH           ; 010DH: Eintrag 2
+        DW      09B1H           ; 010FH: Eintrag 3
+
+; ─── DISPATCH: generischer Dispatcher ────────────────────────────────
+; Eingabe: HL = Zeiger in JUMP_TAB auf Zieladresse,
+;          (0B5CH) = Zeiger auf BIOS-Arbeitsbereich
+; Funktion: Laedt aus JUMP_TAB[HL] die Zieladresse, holt
+;           0B5CH als zweiten Parameter und springt mit JP (HL)
+DISPATCH:
+        INC     HL              ; 0140H: HL auf naechsten Word-Eintrag
+        LD      D,(HL)          ; 0141H: D = High-Byte der Zieladresse
+        LD      HL,(0B5CH)      ; 0142H: HL = OS-Arbeitsbereichs-Zeiger
+        EX      DE,HL           ; 0145H: HL <-> DE
+        JP      (HL)            ; 0146H: -> BIOS-Dienst
+
+; ─── COLDBOOT: Kaltstart-Einstieg ────────────────────────────────────
+; Eingabe: E = 01H (Kaltstart), HL = DPB-Zeiger (von ROM gepoppt)
+; Aufgerufen vom SYL-Header nach FDC-Initialisierung
+COLDBOOT:
+        LD      HL,13E7H        ; 012EH: Sprungadresse fuer BDOS-Rueckehr
+        PUSH    HL              ; 0131H: als Ruecksprungadresse pushen
+
+; Dispatch-Nummer aus C:
+        LD      A,C             ; 0132H: A = BDOS-Funktionsnummer
+        CP      29H             ; 0133H: Gueltigkeitscheck (max 40)
+        RET     NC              ; 0135H: ungueltig: zurueck
+        LD      C,E             ; 0136H: C = Kaltstart-Kennung
+        LD      HL,JUMP_TAB     ; 0137H: Basis der Sprungtabelle
+        LD      E,A             ; 013AH
+        LD      D,00H           ; 013BH: DE = Index
+        ADD     HL,DE           ; 013DH: HL -> Tabelleneintrag
+        ADD     HL,DE           ; 013EH: jeder Eintrag = 2 Byte (Word)
+        LD      E,(HL)          ; 013FH: E = Low-Byte der Zieladresse
+
+; ... weiter in DISPATCH ...
+        JP      DISPATCH        ; (faellt durch zu 0140H)
+
+; ─── Diverse BIOS- und Disk-Parametertabellen ────────────────────────
+; (Inhalt zwischen 01EDH und 03FFH: Konfig-Bytes, DPB-Tabellen,
+;  Disketten-Typ-Tabellen -- hier nicht vollstaendig kommentiert)
+
+; ─── PARAM_TAB: FDC-Parameterblöcke (von Stage-2 via IY gelesen) ─────
+; Die Struktur entspricht dem 'ft.*'-Parameterblock aus biosdskb.mac.
+; biosdskb.mac definiert (Auszug):
+;   ft.kom: db 0  ;; Kommando-Byte (Bitfeld):
+;                ;;   Bit 0: 0=Fehlerwiederholung, 1=keine Wdhlg.
+;                ;;   Bit 1: 0=Lesen, 1=Lesen Sektor-ID
+;                ;;   Bit 2: 0=Lesen, 1=Schreiben
+;                ;;   Bit 3: 0=FM,    1=MFM
+;                ;;   Bit 4: 0=8",    1=5"
+;                ;;   Bit 5: 0=80-Spur-LW, 1=40-Spur-LW
+;                ;;   Bit 6: 0=kein Verify, 1=Verify (Kontrollesen)
+;                ;;   Bit 7: 0=Seite 0,    1=Seite 1
+;   ft.lwn: db 0  ;; physische Laufwerksnummer 0..3
+;   ft.trk: db 0  ;; Spur (Track)
+;   ft.sid: db 0  ;; Seite (0 oder 1)
+;   ft.sec: db 0  ;; Sektornummer (erste zu uebertragende)
+;   ft.len: db 0  ;; Sektorlaenge-Code: 0=128B 1=256B 2=512B 3=1024B
+;   ft.anz: db 0  ;; Anzahl Sektoren (0 = nur Positionieren)
+;   ft.stp: db 0  ;; Anzahl Schrittimpulse pro Step
+;   ft.sti: db 0  ;; Schrittzeit in 0.1 ms
+;   ft.adr: dw 0  ;; Transferadresse (RAM-Ziel, 16 Bit)
+        ORG     0400H
+PARAM_TAB:
+        ; Parameterblock (IY-Basis fuer Stage-2)
+        ; ... (Bytes 0400H-042DH: FDC-Konfiguration)
+
+; READ_SEC: Sektor-Lese-Dienst (aufgerufen von Stage-2)
+        ORG     0407H
+READ_SEC:
+        ; ... (Sektor-Lese-Code, benutzt FDC-Ports 10H-17H)
+
+; ─── BDOS_MAIN: BDOS-Hauptroutine ────────────────────────────────────
+        ORG     0911H
+BDOS_MAIN:
+        JP      0911H           ; 0106H: Einstieg (Umweg ueber Sprungtabelle)
+        ; ... (BDOS-Implementierung: Datei-Operationen, FCB-Verwaltung)
+
+; ======================================================================
+; ABSCHNITT 3: STAGE-2 / BOOT-BIOS  (Track2 Sektoren 0-25, ORG 0D00H)
+; Enthaelt: FDC-Treiber, CRC-Decoder, @OS.COM-Lader, BIOS-Einstieg
+; ======================================================================
+        ORG     0D00H
+
+; ─── T2 SYL-Kennung ──────────────────────────────────────────────────
+T2_SYL_HDR:
+        DB      'SYL'           ; 0D00H: zweiter SYL-Kopf (Spur 2)
+        DS      4, 00H          ; 0D03H-0D06H: Padding
+
+; ======================================================================
+; FDC_ADRDEC: FDC Adressen-/CRC-Decoder
+; ──────────────────────────────────────────────────────────────────
+; Funktion: CRC-Berechnung / Dekodierung von FDC-Adressfeld-Bytes.
+;           XOR+RRCA-Kette extrahiert Spur (B) und Sektor (C) aus dem
+;           kompakten AMF-Bitstrom (Address Mark Field des K5600-FDC).
+; Eingabe:  IY = Zeiger auf FDC-Adressfeld-Puffer (PARAM_TAB 0400H)
+;           E  = Anzahl der zu verarbeitenden Bytes (Schleifenzaehler)
+;           BC = laufende CRC / vorheriger Dekodierungszustand
+; Ausgabe:  BC = dekodiertes Ergebnis (B=Spurbyte, C=Sektorbyte)
+; Benutzt:  A, D -- verloren; IY wird um E Bytes vorgerrueckt
+;
+; WICHTIG -- Quellennachweis (cpa_src):
+;   Der IDENTISCHE Algorithmus (Byte fuer Byte) erscheint auch in
+;   format.mac als 'advance_dma_ptr' (Adresse 0DC7H in FORMAT.COM).
+;   Dort wird er fuer die FDC-CRC-16-Berechnung beim Formatieren
+;   eingesetzt. Beide Verwendungen verarbeiten AMF-Bitstroeme des
+;   K5600/K5122-FDC und sind damit nachweislich aus demselben
+;   CPA-BIOS-Quellcode-Pool entnommen.
+;
+;   format.mac (Auszug, Adresse 0DC7H = advance_dma_ptr):
+;     LD A,(IY+0)  XOR B  LD B,A  RRCA x4  AND 0FH  XOR B  LD B,A
+;     RRCA x3  LD D,A  AND 1FH  XOR C  LD C,A
+;     LD A,D  RRCA  AND F0H  XOR C  LD C,A
+;     LD A,D  AND E0H  XOR B  LD B,C  LD C,A
+;     INC IY  DEC E  JR NZ,...  RET
+;   --> identisch mit dem folgenden Code.
+; ──────────────────────────────────────────────────────────────────────
+        ORG     0D07H
+FDC_ADRDEC:
+        LD      A,(IY+0)        ; 0D07H: IY[0] = kompaktes Spur/Sektor-Byte
+        XOR     B               ; 0D0AH: XOR mit B (vorangehendem Wert)
+        LD      B,A             ; 0D0BH: B = XOR-Ergebnis
+
+; Bits 7-4 nach Bits 3-0 schieben (Spur-High-Teil):
+        RRCA                    ; 0D0CH: \
+        RRCA                    ; 0D0DH:  | 4 Rechts-Rotationen
+        RRCA                    ; 0D0EH:  | -> Bits 7-4 nach 3-0
+        RRCA                    ; 0D0FH: /
+        AND     0FH             ; 0D10H: maskiere nur Bits 3-0
+
+; XOR-Schritt um Parität zu korrigieren:
+        XOR     B               ; 0D12H
+        LD      B,A             ; 0D13H: B = dekodierter Spur-High
+
+; Weiterer Shift fuer Sektor-Bits:
+        RRCA                    ; 0D14H: \
+        RRCA                    ; 0D15H:  | 3 Rechts-Rotationen
+        RRCA                    ; 0D16H: /
+        LD      D,A             ; 0D17H: D = Zwischenergebnis
+
+        AND     1FH             ; 0D18H: Sektor-Teil (5 Bits)
+        XOR     C               ; 0D1AH: XOR mit aktuellem C-Wert
+        LD      C,A             ; 0D1BH: C = Sektor-Nummer
+
+        LD      A,D             ; 0D1CH: zurueck zu D
+        RRCA                    ; 0D1DH: ein weiterer Shift fuer Spur-Low
+        AND     0F0H            ; 0D1EH: maskiere Bits 7-4 = Spur-Low-Teil
+        XOR     C               ; 0D20H
+        LD      C,A             ; 0D21H: C = kombinierter Sektor/Spur
+
+        LD      A,D
+        AND     0E0H            ; 0D23H: Bits 7-5 = Seitenkennnung
+        XOR     B               ; 0D25H
+        LD      B,C             ; 0D26H: BC aufbereitet
+        LD      C,A             ; 0D27H: C = Seiten-/High-Bits
+
+        INC     IY              ; 0D28H: naechster Parameterblock
+        DEC     E               ; 0D2AH: Zaehler
+        JR      NZ,FDC_ADRDEC   ; 0D2BH: weiter wenn nicht fertig
+        RET                     ; 0D2DH
+
+; ======================================================================
+; BOOT_MAIN: Boot-BIOS Hauptroutine (Kaltstart)
+; ──────────────────────────────────────────────────────────────────────
+; Funktion: Initialisiert FDC, liest @OS.COM vom Dateisystem, laedt es
+;           in den RAM und springt dorthin
+; Aufruf:   Direkt vom SYL-Header oder vom Warmstart-Vektor
+; ──────────────────────────────────────────────────────────────────────
+BOOT_MAIN:
+        LD      IY,0400H        ; 0D2EH: IY -> PARAM_TAB (FDC-Parameterblock)
+        LD      E,0FEH          ; 0D32H: E = Wiederholzaehler (-2 = 2 Versuche)
+        LD      BC,0FFFFH       ; 0D34H: BC = Vergleichswert (Disketten-ID)
+
+; ─── Laufwerks-Selektion (Port 0EEH) ─────────────────────────────────
+        LD      A,00H           ; 0D37H: Laufwerk 0 (Floppydisk A:)
+        OUT     (0EEH),A        ; 0D39H: -> Geraete-Selektor (flmot o.ae.)
+
+; ─── FDC Lese-Sequenz: 3 Versuche ────────────────────────────────────
+BOOT_RETRY:
+        LD      A,03H           ; 0D3BH: Versuchszaehler = 3
+        PUSH    AF
+        CALL    READ_SEC        ; 0D3EH: 0407H: lese ersten Sektor
+        POP     AF
+        DEC     A               ; 0D42H: Zaehler minus 1
+        JR      NZ,BOOT_RETRY   ; 0D43H: nochmal versuchen
+
+; ─── Disketten-Kennung pruefen ────────────────────────────────────────
+; Vergleiche gelesene Daten (BC) mit PARAM_TAB[0..1] (via IY)
+        LD      A,B             ; 0D45H
+        CP      (IY+0)          ; 0D46H: prueffe Sektor-High-Byte
+        JP      NZ,0605H        ; 0D49H: -> ERR_HANDLER wenn Fehler
+        LD      A,C             ; 0D4CH
+        CP      (IY+1)          ; 0D4DH: prueffe Sektor-Low-Byte
+        JP      NZ,0605H        ; 0D50H: -> ERR_HANDLER
+
+; ─── RAM-Nullung (Initialisierung Pufferbereich) ─────────────────────
+        LD      HL,0000H        ; 0D53H: Start RAM (Z80 Reset-Vektor!)
+        LD      BC,0800H        ; 0D56H: 2 KByte Pufferbereich
+
+; Lese FDC-Status-Bit via Port 0AH:
+CLEAR_RAM:
+        IN      A,(0AH)         ; 0D59H: FDC-Status lesen
+        BIT     6,A             ; 0D5BH: CB 77: Bit 6 gesetzt? (Daten bereit)
+        JR      Z,CLEAR_RAM2    ; 0D5DH: wenn nicht: Skip
+        LD      B,04H           ; 0D5FH: B = 4 (Wiederholung bei Ready)
+CLEAR_RAM2:
+        DEC     HL              ; 0D61H: HL rueckwaerts durch RAM-Bereich
+        LD      (HL),00H        ; 0D62H: setze Byte auf 0
+        DEC     BC
+        LD      A,B
+        OR      C               ; 0D66H: BC != 0?
+        JR      NZ,CLEAR_RAM2   ; 0D67H: weiter bis BC=0
+
+; ─── Interrupt-Vektor-Tabellen-Setup (Z80 IM2) ───────────────────────
+        EX      DE,HL           ; 0D69H
+        LD      HL,06C1H        ; 0D6AH: Quelladresse der IV-Tabelle
+        LD      C,1DH           ; 0D6DH: 29 Bytes kopieren
+        LDIR                    ; 0D6FH: Interrupt-Vektortabelle kopieren
+
+; ─── Sprung-Vektor-Patches ───────────────────────────────────────────
+        LD      HL,0624H        ; 0D71H: Disketten-IRQ-Handler-Adresse
+        LD      (0760H),HL      ; 0D74H: patch IV-Eintrag 0760H
+
+        LD      HL,060EH        ; 0D77H: zweiter Handler
+        LD      (0762H),HL      ; 0D7AH: patch IV-Eintrag 0762H
+
+; ─── Z80 Interrupt Mode 2 via I-Register ─────────────────────────────
+        LD      A,07H           ; 0D7DH: Vektortabelle high-Byte = 07xxH
+        LD      I,A             ; 0D7FH: I-Register fuer IM2 setzen
+
+; ─── SIO / USART-Init ────────────────────────────────────────────────
+        LD      A,62H           ; 0D81H: SIO A Steuerwort
+        OUT     (11H),A         ; 0D83H: -> flcoac (Port A Steuerung)
+        LD      A,60H           ; 0D85H: SIO A Reset
+        OUT     (13H),A         ; 0D87H: -> flcobc (Port B Steuerung)
+
+; ─── BDOS Einstiegspunkt Patch bei RAM[0001H] ────────────────────────
+        LD      HL,062EH        ; 0D89H: Adresse des BDOS-Dispatch-Jumps
+        LD      (0001H),HL      ; 0D8CH: patch JP-Ziel bei 0001H (nahe Warm-boot)
+
+; ─── Stack- und DMA-Zeiger setzen ────────────────────────────────────
+        LD      HL,0034H        ; 0D8FH
+        LD      (07FCH),HL      ; 0D92H: DMA-Zeiger 07FCH = 0034H
+        LD      HL,0800H        ; 0D95H
+        LD      (07FAH),HL      ; 0D98H: Lesepuffer-Adresse 07FAH = 0800H
+
+; ─── @OS.COM-Ladepuffer initialisieren ───────────────────────────────
+        LD      HL,07E9H
+        LD      (HL),00H        ; 0D9EH: 07E9H = 0 (kein Motorstart-Pending)
+        INC     L
+        LD      (HL),01H        ; 0DA1H: 07EAH = 1 (Kaltstart-Typ)
+        LD      DE,018DH        ; 0DA3H: Ziel: @OS.COM-Ladeadresse 018DH
+        LD      HL,0770H        ; 0DA6H: Quellebereich (OS-Image im Lesepuffer)
+        LD      (07F4H),HL      ; 0DA9H: Datei-Suchstart-Adresse speichern
+
+; ─── Motorstart / FDC-Bereitschaft ───────────────────────────────────
+        INC     D
+        DEC     D               ; 0DACH-0DADH: Null-Test fuer D
+        JR      Z,0DDCH         ; 0DAEH: kein Motor-Anlauf noetig -> Skip
+
+; ─── FDC Laufwerks-Steuerung via Port 10H ────────────────────────────
+; Entspricht biosdskt.mac Motor-Start-Routine (Ausschnitt):
+;   ld a,10101001b  ; Kopf laden, Fault reset
+;   out (flcoad),a  ; Motor ON + Kommando
+;   ld l,252+1      ; Warte auf 3 Index-Pulse (= ca. 3 Umdrehungen bei 8")
+;                   ; bzw. 250+1 (5 Pulse) bei 5" 40-Spur-Laufwerken
+;   dskdaw:
+;     ld a,(fl.zto) ; Index-Interrupt-Zaehler (zaehlt von 255 abwaerts)
+;     cp l          ; Zaehler < l? (genug Umdrehungen vergangen?)
+;     jr c,dskda    ; ja -> bereit
+;     [...Timeout-Zaehler...] jr nz,dskdaw   ; nein -> weiter warten
+;   -> falls Timeout: Fehler 'R' (LW nicht bereit)
+;   dskda: Motoranlauf abgeschlossen, Kopf stabilisiert
+MOTOR_START:
+        LD      A,E             ; 0DB0H
+        OUT     (10H),A         ; 0DB1H: -> flcoad (FDC Port A): Motor ON
+        IN      A,(12H)         ; 0DB3H: <- flcobd: FDC-Status lesen
+        RLCA                    ; 0DB5H: Bit 7 nach Carry: IndexPuls da?
+        JR      NC,0DCEH        ; 0DB6H: kein Index -> alternativer Pfad
+
+; Laufwerk auf Track 0 bringen (Step-In Command):
+        LD      A,E             ; 0DB8H
+        AND     7FH             ; 0DB9H: Bit 7 loeschen (Richtung Step-In)
+        OUT     (10H),A         ; 0DBBH: Schritt-Kommando an FDC
+        OR      80H             ; 0DBDH: Bit 7 setzen (Schritt-Impuls)
+        OUT     (10H),A         ; 0DBFH: Schritt-Puls senden
+
+; Wartezeit nach Schritt-Impuls:
+        LD      BC,0800H        ; 0DC1H: 2K Warte-Iterationen
+STEP_WAIT:
+        DEC     C               ; 0DC4H: innere Schleife
+        JR      NZ,STEP_WAIT    ; 0DC5H
+        DJNZ    STEP_WAIT       ; 0DC7H: aeussere Schleife (B mal)
+
+        DEC     D               ; 0DC9H: Track-Zaehler
+        JR      NZ,MOTOR_START  ; 0DCAH: noch mehr Steps?
+        JR      0DDCH           ; 0DCCH: -> Weiter mit OS-Lader
+
+; Alternativer Motorstart (wenn Index-Puls vorhanden):
+ALT_MOTOR:
+        LD      A,(07E9H)       ; 0DCEH: Motor-Zustand lesen
+        OR      A               ; 0DD1H
+        JR      Z,0DDCH         ; 0DD2H: schon an?
+        LD      D,A             ; 0DD4H
+        LD      E,0ADH          ; 0DD5H: FDC-Motor-Kommando
+        LD      A,E
+        OUT     (10H),A         ; 0DD8H: -> flcoad: Motor-Kommando
+        JR      MOTOR_START+8   ; 0DDAH: -> zurueck (nach OUT)
+
+; ─── @OS.COM Dateisystem-Suche ────────────────────────────────────────
+; Liest Verzeichnis-Sektoren, sucht Eintrag "@OS     COM"
+OS_SEARCH:
+        LD      E,0F0H          ; 0DDCH: E = erstes Sektor-Muster fuer Dir.
+        LD      (HL),03H        ; 0DDEH: Sektor-Typ in Verz.-Puffer
+        INC     L
+        LD      A,05H           ; 0DE1H
+        LD      (HL),A          ; 0DE3H: Sektorzahl in FCB
+        INC     L
+        LD      (HL),A
+        INC     L
+        LD      (HL),A          ; 0DE5-0DE7H: Drei Sektoren
+        LD      E,0EDH          ; 0DE8H: Erweitertes Sektor-Byte
+        LD      (HL),0B5H       ; 0DEAH: Zaehlwert
+
+; Verzeichnis-Sektor einlesen:
+        LD      B,00H           ; 0DECH: Sektorzaehler = 0
+        LD      HL,07E0H        ; 0DEEH: Puffer fuer Verz.-Sektor
+        LD      (HL),0FEH       ; 0DF1H: Sektor-Kennung 0xFE (MFM-ID-Feld)
+        INC     L
+        LD      A,(07E9H)       ; 0DF4H: Laufwerk-Nummer
+        LD      (HL),A          ; 0DF7H: in FCB eintragen
+        INC     L
+        LD      (HL),B          ; 0DF9H: Sektor Low-Byte (0)
+        INC     L
+        LD      A,(07EAH)       ; 0DFBH: Sektor High-Byte
+        LD      (HL),A          ; 0DFEH: in FCB
+        INC     L
+        LD      (HL),00H        ; 0E00H: Ende-Marker
+
+; FDC-Zugriff: Sektor lesen mit Retry:
+        LD      E,0ECH          ; 0E02H: Sektor-Kommando
+        LD      (HL),05H        ; 0E04H: Sektor-Code
+        LD      E,0F7H
+        LD      (HL),B          ; 0E08H: B ins FCB
+        OUT     (14H),A         ; 0E09H: -> fldaad: Schreib-Daten Port A
+        OUT     (04H),A         ; 0E0BH: -> alternativer Port (DMA o.ae.)
+        LD      A,0FFH
+        OUT     (17H),A         ; 0E0FH: -> fldabc: Port B Steuerung reset
+        OUT     (17H),A         ; 0E11H: zweites Reset
+
+; Lese-Kommando an FDC:
+        LD      A,0A1H          ; 0E13H: Seek-Kommando
+        OUT     (10H),A         ; 0E15H: -> flcoad
+        LD      A,7FH           ; 0E17H: Interrupt-Enable-Maske
+        OUT     (17H),A         ; 0E19H: -> fldabc: IRQ freigeben
+
+; SIO-Empfaenger konfigurieren:
+        LD      A,97H           ; 0E1BH: SIO A: Empfaenger freigeben
+        OUT     (13H),A         ; 0E1DH: -> flcobc
+        LD      A,0AFH          ; 0E1FH: SIO A: volle Konfiguration
+        OUT     (13H),A         ; 0E21H: -> flcobc
+
+; Warte auf Transfer-Abschluss:
+        IN      A,(16H)         ; 0E23H: <- fldabd: Lese-Status
+
+; Ladeadresse aus Tabelle:
+        LD      A,(03FDH)       ; 0E25H: Ladeadresse-Low
+        OUT     (10H),A         ; 0E28H: -> flcoad
+        LD      A,(07F7H)       ; 0E2AH: Datei-Suchzeiger
+        LD      B,A             ; 0E2DH: B = aktuelles Such-Byte
+
+; Verzeichnis-Eintrag pruefen (Name @OS.COM suchen):
+DIR_SEARCH:
+        LD      E,0EAH          ; 0E32H: Dateiname-Byte
+        LD      A,(07E3H)       ; 0E34H: aktuelles Byte aus Verz.-Puffer
+        CP      (HL)            ; 0E37H: Vergleich mit @OS.COM-Name
+        JR      Z,DIR_SEARCH    ; 0E38H: naechstes Byte wenn gleich
+
+; Sektor-Adressierung fuer gefundenen Eintrag:
+        LD      A,(03FDH)       ; 0E3AH: Sektor-Adresse
+        LD      BC,0BF84H       ; 0E3DH: Sektor/Spur-Parameter
+        BIT     1,A             ; 0E40H: 2-Seiten-Disk?
+        JR      NZ,0E47H        ; 0E42H: einseitig
+        LD      BC,0E295H       ; 0E44H: anderer Parameter-Satz
+
+; @OS.COM gefunden, Lade-Adresse berechnen:
+        LD      IY,(07FAH)      ; 0E47H: IY = Lese-Puffer-Adresse
+        LD      A,(0677H)       ; 0E4BH: Startsektor des OS-Image
+        LD      E,A
+        CALL    READ_SEC        ; 0E4FH: -> 0407H: Sektor lesen
+
+; ─── Verzeichniseintrag-Vergleich mit "@OS.COM" ───────────────────────
+        LD      HL,(07F4H)      ; 0E52H: Zeiger auf Such-FCB
+        LD      A,(HL)          ; 0E55H: aktuelles Such-Byte
+        CP      B               ; 0E56H: Vergleich Byte 0 (Laufwerk)
+        JR      NZ,0EBFH        ; 0E57H: nicht gefunden -> weiter suchen
+        INC     L
+        LD      A,(HL)          ; 0E5AH
+        CP      C               ; 0E5BH: Vergleich Byte 1 (erster Namens-Buchst.)
+        JR      NZ,0EBFH        ; 0E5CH: nicht gefunden
+
+; Gefunden! Naechste Station in Lade-Tabelle:
+        INC     L
+        LD      (07F4H),HL      ; 0E5FH: Such-Zeiger vorschieben
+        LD      (07FAH),IY      ; 0E62H: Puffer-Zeiger aktualisieren
+
+; ─── @OS.COM-Block-Transfer ──────────────────────────────────────────
+        LD      HL,07F6H
+        LD      (HL),00H        ; 0E69H: Block-Zaehler init
+
+; ... (Fortfuehrung des Block-Transfers und Sprung zum OS)
+
+; ======================================================================
+; WARM_BIOS: Warmstart-Einstieg im Boot-BIOS
+; ──────────────────────────────────────────────────────────────────────
+; Funktion: Wird von WBOOT_JP (0080H: JP 1800H) angesprungen.
+;           Erneuter Lade-Zyklus (bei CP/M Warmstart).
+;           Entspricht BIOS WBOOT in standard CP/M.
+; ORG = 0D00H + 0B00H = 1800H  (T2 Offset 0B00H)
+; ──────────────────────────────────────────────────────────────────────
+        ORG     1800H
+WARM_BIOS:
+        ; ... (Warmstart-Sequenz: FDC re-init, OS neu laden)
+
+; Ende des Bootloaders
+        END

@@ -99,6 +99,14 @@ public:
     static constexpr int CPM_SECTORS_PER_TRACK = 40; ///< Logische Sektoren pro Spur (5*1024/128)
     static constexpr int DISK_SIZE = TRACKS * SIDES * SECTORS_PER_TRACK * SECTOR_SIZE; ///< Gesamtgroesse: 819200 Bytes
     static constexpr int SYSTEM_TRACKS = 2;        ///< Reservierte System-Spuren fuer CPA-Bootloader
+
+    // CPA780 SYL-Format: gemischte Spurgeometrie
+    // Systemspuren (Cyl 0-1 H0, Cyl 0 H1): 26 Sektoren × 128 Bytes = 3328 Bytes
+    // Datenspuren  (ab Cyl 1 H1): 5 Sektoren × 1024 Bytes = 5120 Bytes
+    static constexpr int SYL_SYS_TRACKS         = 3;     ///< Anzahl Systemspuren
+    static constexpr int SYL_SYS_TRACK_SECTORS  = 26;    ///< Sektoren pro Systemspur
+    static constexpr int SYL_SYS_TRACK_SIZE     = 3328;  ///< Bytes pro Systemspur (26*128)
+    static constexpr int SYL_DATA_TRACK_SIZE    = 5120;  ///< Bytes pro Datenspur (5*1024=40*128)
     /// @}
 
     /**
@@ -235,6 +243,33 @@ public:
     /** @brief Direkter Zugriff auf die Rohdaten des Disketten-Images. */
     const std::vector<uint8_t>& data() const { return image_; }
 
+    /**
+     * @brief Prueft ob Sektor 0 das SYL-Systemlader-Kennzeichen traegt.
+     *
+     * Ein SYL-Disk hat Bytes 0-2 = 0x53 0x59 0x4C ("SYL") im ersten Sektor.
+     * Das kennzeichnet eine Bootdiskette mit 3 Systemspuren (OFF=3).
+     *
+     * @return true wenn SYL-Marker vorhanden
+     */
+    bool isSylDisk() const;
+
+    /**
+     * @brief Liest eine Datei aus dem CP/M-Dateisystem der Diskette.
+     *
+     * Durchsucht das Verzeichnis nach dem angegebenen Dateinamen und liest
+     * den Dateiinhalt aus den Allokationsbloecken. Unterstuetzt 16-Bit-
+     * Blocknummern (DSM >= 256) und korrekte Extent-Sortierung.
+     *
+     * Standard-CPA-DPB: SPT=40, BSH=4, OFF=3, DSM=399 (16-Bit Blocks),
+     * DRM=191, AL0=E0h (Bloecke 0-2 = Verzeichnis).
+     *
+     * @param name8 Dateiname, 8 Zeichen, mit Leerzeichen aufgefuellt (z.B. "@OS     ")
+     * @param ext3  Dateierweiterung, 3 Zeichen aufgefuellt (z.B. "COM")
+     * @param off   Systemspuren-Reserve (OFF aus DPB, z.B. 3)
+     * @return Dateiinhalt als Byte-Vektor, oder leer wenn nicht gefunden
+     */
+    std::vector<uint8_t> readCpmFile(const std::string& name8, const std::string& ext3, int off) const;
+
 private:
     std::vector<uint8_t> image_;   ///< Rohdaten des Disketten-Images (lineares Byte-Array)
     bool loaded_;                  ///< true wenn ein Image geladen ist
@@ -243,4 +278,5 @@ private:
     std::string filename_;         ///< Dateipfad des geladenen Images (fuer saveImage)
     int sectorsPerTrack_;          ///< Logische Sektoren pro Spur (40 fuer A5120)
     int totalTracks_;              ///< Gesamtanzahl logischer Spuren (160 fuer 800 KB DS)
+    bool sylFormat_;               ///< true wenn CPA780-SYL-Format (gemischte Spurgroessen)
 };

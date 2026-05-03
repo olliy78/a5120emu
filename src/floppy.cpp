@@ -70,7 +70,8 @@ constexpr int FloppyDisk::XLAT26[];
  */
 FloppyDisk::FloppyDisk()
     : loaded_(false), writeProtected_(false), modified_(false),
-      sectorsPerTrack_(CPM_SECTORS_PER_TRACK), totalTracks_(TRACKS * SIDES) {
+      sectorsPerTrack_(CPM_SECTORS_PER_TRACK), totalTracks_(TRACKS * SIDES),
+      sylFormat_(false) {
 }
 
 /**
@@ -125,6 +126,19 @@ bool FloppyDisk::loadImage(const std::string& filename) {
     filename_ = filename;
     loaded_ = true;
     modified_ = false;
+
+    // Detect CPA780 SYL format: mixed track geometry
+    // System tracks (0-2): 26 × 128 bytes each (3328 bytes)
+    // Data   tracks (3+):   5 × 1024 bytes each (5120 bytes)
+    sylFormat_ = (image_.size() >= 3 &&
+                  image_[0] == 0x53 && image_[1] == 0x59 && image_[2] == 0x4C);
+    if (sylFormat_) {
+        sectorsPerTrack_ = CPM_SECTORS_PER_TRACK;  // 40 logical sectors for data tracks
+        size_t dataBytes  = image_.size() - (size_t)SYL_SYS_TRACKS * SYL_SYS_TRACK_SIZE;
+        int    dataTracks = static_cast<int>(dataBytes / SYL_DATA_TRACK_SIZE);
+        totalTracks_ = SYL_SYS_TRACKS + dataTracks;
+    }
+
     return true;
 }
 
@@ -407,10 +421,26 @@ void FloppyDisk::logicalToPhysical(int logTrack, int logSector,
 bool FloppyDisk::readSector(int track, int sector, uint8_t* buffer) const {
     if (!loaded_) return false;
     if (track < 0 || track >= totalTracks_) return false;
-    if (sector < 0 || sector >= sectorsPerTrack_) return false;
 
-    size_t imageOffset = (size_t)track * sectorsPerTrack_ * CPM_SECTOR_SIZE
-                       + (size_t)sector * CPM_SECTOR_SIZE;
+    size_t imageOffset;
+    if (sylFormat_) {
+        if (track < SYL_SYS_TRACKS) {
+            // Systemspur: 26 Sektoren × 128 Bytes
+            if (sector < 0 || sector >= SYL_SYS_TRACK_SECTORS) return false;
+            imageOffset = (size_t)track * SYL_SYS_TRACK_SIZE
+                        + (size_t)sector * CPM_SECTOR_SIZE;
+        } else {
+            // Datenspur: 40 logische Sektoren × 128 Bytes (= 5 × 1024 Bytes)
+            if (sector < 0 || sector >= sectorsPerTrack_) return false;
+            imageOffset = (size_t)SYL_SYS_TRACKS * SYL_SYS_TRACK_SIZE
+                        + (size_t)(track - SYL_SYS_TRACKS) * SYL_DATA_TRACK_SIZE
+                        + (size_t)sector * CPM_SECTOR_SIZE;
+        }
+    } else {
+        if (sector < 0 || sector >= sectorsPerTrack_) return false;
+        imageOffset = (size_t)track * sectorsPerTrack_ * CPM_SECTOR_SIZE
+                   + (size_t)sector * CPM_SECTOR_SIZE;
+    }
 
     if (imageOffset + CPM_SECTOR_SIZE > image_.size()) {
         memset(buffer, 0xE5, CPM_SECTOR_SIZE);
@@ -437,10 +467,24 @@ bool FloppyDisk::readSector(int track, int sector, uint8_t* buffer) const {
 bool FloppyDisk::writeSector(int track, int sector, const uint8_t* buffer) {
     if (!loaded_ || writeProtected_) return false;
     if (track < 0 || track >= totalTracks_) return false;
-    if (sector < 0 || sector >= sectorsPerTrack_) return false;
 
-    size_t imageOffset = (size_t)track * sectorsPerTrack_ * CPM_SECTOR_SIZE
-                       + (size_t)sector * CPM_SECTOR_SIZE;
+    size_t imageOffset;
+    if (sylFormat_) {
+        if (track < SYL_SYS_TRACKS) {
+            if (sector < 0 || sector >= SYL_SYS_TRACK_SECTORS) return false;
+            imageOffset = (size_t)track * SYL_SYS_TRACK_SIZE
+                        + (size_t)sector * CPM_SECTOR_SIZE;
+        } else {
+            if (sector < 0 || sector >= sectorsPerTrack_) return false;
+            imageOffset = (size_t)SYL_SYS_TRACKS * SYL_SYS_TRACK_SIZE
+                        + (size_t)(track - SYL_SYS_TRACKS) * SYL_DATA_TRACK_SIZE
+                        + (size_t)sector * CPM_SECTOR_SIZE;
+        }
+    } else {
+        if (sector < 0 || sector >= sectorsPerTrack_) return false;
+        imageOffset = (size_t)track * sectorsPerTrack_ * CPM_SECTOR_SIZE
+                   + (size_t)sector * CPM_SECTOR_SIZE;
+    }
 
     if (imageOffset + CPM_SECTOR_SIZE > image_.size()) {
         image_.resize(imageOffset + CPM_SECTOR_SIZE, 0xE5);
@@ -449,4 +493,111 @@ bool FloppyDisk::writeSector(int track, int sector, const uint8_t* buffer) {
     memcpy(&image_[imageOffset], buffer, CPM_SECTOR_SIZE);
     modified_ = true;
     return true;
+}
+
+/**
+ * @brief Prueft ob Sektor 0 das SYL-Systemlader-Kennzeichen traegt.
+ */
+bool FloppyDisk::isSylDisk() const {
+    return sylFormat_;
+}
+
+/**
+ * @brief Liest eine benannte Datei aus dem CP/M-Dateisystem der Diskette.
+ *
+ * CPA-DPB: SPT=40, BSH=4 (16 Sektoren/Block = 2048 Bytes),
+ * DSM=399 (>= 256 → 16-Bit Blocknummern), DRM=191, AL0=E0h.
+ */
+std::vector<uint8_t> FloppyDisk::readCpmFile(const std::string& name8,
+                                              const std::string& ext3,
+                                              int off) const {
+    if (!loaded_) return {};
+
+    const int spt       = 40;         // Sektoren pro Spur
+    const int bsh       = 4;          // Block-Shift (2^4 = 16 Sektoren/Block)
+    const int blkSec    = 1 << bsh;   // 16 Sektoren pro Block
+    const bool big      = true;        // DSM = 399 >= 256 => 16-Bit Blocknummern
+    const int alPerExt  = big ? 8 : 16; // Eintraege im AL-Feld pro Extent
+
+    // Verzeichnis: Bloecke 0,1,2 (AL0=E0h → Bits 7,6,5 → Bloecke 0,1,2)
+    // Startsektor: off * spt
+    const int dirStartSec = off * spt;
+
+    // Hilfsfunktion: Sektor (linear) → Spur + Sektornummer
+    auto readLinSector = [&](int linSec, uint8_t* buf) -> bool {
+        int track  = linSec / spt;
+        int sector = linSec % spt;
+        return readSector(track, sector, buf);
+    };
+
+    // Alle Directory-Eintraege (Bloecke 0-2 = 48 Sektoren = 192 Eintraege)
+    // Extents nach Extent-Nummer sammeln
+    struct Extent {
+        int  extNum;
+        int  rc;        // Record Count
+        int  al[8];     // Block numbers (max 8 für big-disc)
+    };
+    std::vector<Extent> extents;
+
+    uint8_t sec[128];
+    for (int s = 0; s < 3 * blkSec; s++) {
+        if (!readLinSector(dirStartSec + s, sec)) continue;
+
+        for (int e = 0; e < 4; e++) {
+            const uint8_t* de = sec + e * 32;
+            if (de[0] != 0x00) continue;  // Nur User 0, kein gelöschter Eintrag
+
+            // Dateiname/Extension vergleichen (Attributbits ignorieren, Bit 0-6)
+            bool match = true;
+            for (int i = 0; i < 8 && match; i++)
+                if ((de[1+i] & 0x7F) != (uint8_t)name8[i]) match = false;
+            for (int i = 0; i < 3 && match; i++)
+                if ((de[9+i] & 0x7F) != (uint8_t)ext3[i]) match = false;
+            if (!match) continue;
+
+            Extent ex;
+            ex.extNum = de[12];  // Xl (low extent byte)
+            ex.rc     = de[15];  // Record count in this extent
+            for (int i = 0; i < alPerExt; i++) {
+                if (big) {
+                    ex.al[i] = de[16 + i*2] | (de[17 + i*2] << 8);
+                } else {
+                    ex.al[i] = de[16 + i];
+                }
+            }
+            extents.push_back(ex);
+        }
+    }
+
+    if (extents.empty()) return {};
+
+    // Extents nach Extent-Nummer sortieren
+    std::sort(extents.begin(), extents.end(),
+              [](const Extent& a, const Extent& b){ return a.extNum < b.extNum; });
+
+    // Dateidaten aus Blöcken lesen
+    std::vector<uint8_t> fileData;
+    for (const auto& ex : extents) {
+        int blocksLeft = alPerExt;
+        // Letzter Extent: rc gibt Anzahl 128-Byte-Records → ggf. kürzen
+        bool lastExtent = (&ex == &extents.back());
+        int  recordsLeft = lastExtent ? ex.rc : 128; // 128 Records = voller Extent (16KB)
+
+        for (int ai = 0; ai < blocksLeft && recordsLeft > 0; ai++) {
+            int blkNum = ex.al[ai];
+            if (blkNum == 0) continue;  // Not allocated (sparse)
+
+            // Erster logischer Sektor dieses Blocks
+            int startSec = dirStartSec + blkNum * blkSec;
+
+            for (int bs = 0; bs < blkSec && recordsLeft > 0; bs++, recordsLeft--) {
+                if (!readLinSector(startSec + bs, sec)) {
+                    memset(sec, 0x1A, 128); // EOF marker falls Lesefehler
+                }
+                fileData.insert(fileData.end(), sec, sec + 128);
+            }
+        }
+    }
+
+    return fileData;
 }

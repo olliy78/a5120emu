@@ -32,12 +32,25 @@
 #include <string>
 #include <csignal>
 
+/** @brief Globales Lauf-Flag; wird durch den Signal-Handler auf false gesetzt. */
 static volatile bool g_running = true;
 
+/**
+ * @brief Signal-Handler fuer SIGINT und SIGTERM.
+ *
+ * Setzt g_running auf false, damit der Aufrufer die Emulation sauber
+ * beenden kann.
+ *
+ * @param sig Signalnummer (wird nicht ausgewertet).
+ */
 static void signalHandler(int /*sig*/) {
     g_running = false;
 }
 
+/**
+ * @brief Gibt die Benutzerhilfe mit Optionen und Beispielen auf stdout aus.
+ * @param prog Programmname (argv[0]) fuer die Verwendungszeile.
+ */
 static void printUsage(const char* prog) {
     printf("CP/M Command-Line Runner\n");
     printf("Executes CP/M .com programs using the host filesystem.\n\n");
@@ -50,6 +63,25 @@ static void printUsage(const char* prog) {
     printf("  %s -dir cpa_src linkmt \"@OS=cpabas,ccp,bdos,bios/p:0BB80\"\n", prog);
 }
 
+/**
+ * @brief Einstiegspunkt des CP/M-Runners.
+ *
+ * Analysiert Kommandozeilenargumente, baut die Emulationsumgebung auf,
+ * laedt die angegebene .com-Datei und startet die Z80-Emulation.
+ *
+ * Ablauf:
+ * 1. Optionen parsen (-dir, -h/--help)
+ * 2. Signalhandler registrieren (SIGINT, SIGTERM)
+ * 3. Z80/Memory/CpmBdos-Objekte erstellen
+ * 4. Page Zero initialisieren (setup), .com laden (loadCom)
+ * 5. Kommandozeile in FCBs und Kommando-Tail parsen (parseCommandLine)
+ * 6. CPU-Speichercallbacks verknuepfen
+ * 7. Emulation starten und Exit-Code zurueckgeben (bdos.run())
+ *
+ * @param argc Anzahl der Kommandozeilenargumente.
+ * @param argv Zeigerliste auf die Argumentstrings.
+ * @return Exit-Code des ausgefuehrten CP/M-Programms oder 1 bei Fehler.
+ */
 int main(int argc, char* argv[]) {
     std::string workDir = ".";
     int cmdStart = -1;

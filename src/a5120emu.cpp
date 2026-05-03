@@ -1,19 +1,26 @@
-// a5120emu.cpp - Robotron A5120 Emulator Main Program
-// Emulates a Robotron A5120 (Z80 + 64KB RAM + 80x24 text CRT + 2x floppy)
-// running CPA (CP/M 2.2 derivative)
-//
-// Usage:
-//   a5120emu [options]
-//
-// Options:
-//   -os <file>        Boot from @os.com file (default: boot_disk/@os.com)
-//   -a <image>        Mount disk image on drive A:
-//   -b <image>        Mount disk image on drive B:
-//   -dir <path>       Mount directory as drive A: (creates virtual disk)
-//   -boot <drive>     Boot from disk image (0=A, 1=B)
-//   -sdl              Use SDL2 graphical window (default: ANSI terminal)
-//   -h, --help        Show help
-//
+/**
+ * @file a5120emu.cpp
+ * @brief Hauptprogramm des Robotron A5120 Emulators.
+ *
+ * Emuliert einen Robotron A5120 Burocomputer (DDR, 1984):
+ * - Z80 CPU (2,5 MHz), 64 KB RAM
+ * - 80×24 Textbildschirm (Baugruppe K7027)
+ * - Bis zu 2 Diskettenlaufwerke 5,25" DS DD (Baugruppe K2526/K5122)
+ * - CPA-Betriebssystem (CP/M 2.2 Ableitung)
+ *
+ * Das Programm setzt die Emulationskomponenten zusammen, verarbeitet
+ * die Kommandozeilenargumente, fuehrt den Boot-Vorgang durch und startet
+ * die Emulationsschleife. Die Hauptschleife laeuft in CpaBios::run().
+ *
+ * Startmodi:
+ * - `- os <datei>`: Bootet aus einer @os.com-Datei (BIOS + CCP geladen)
+ * - `-boot <0|1>`:  Bootet vom Disketten-Image (Laufwerk A oder B)
+ * - Standard:       Bootet automatisch aus boot_disk/@os.com
+ *
+ * @author Olaf Krieger
+ * @license MIT License
+ * @see https://opensource.org/licenses/MIT
+ */
 #include "z80.h"
 #include "memory.h"
 #include "terminal.h"
@@ -25,12 +32,25 @@
 #include <string>
 #include <csignal>
 
+/** @brief Globales Lauf-Flag; wird durch signalHandler() auf false gesetzt. */
 static volatile bool g_running = true;
 
+/**
+ * @brief Signal-Handler fuer SIGINT und SIGTERM.
+ *
+ * Setzt g_running auf false, damit die Emulationsschleife sauber beendet
+ * werden kann (kein harter Abbruch via exit()).
+ *
+ * @param sig Signalnummer (wird nicht ausgewertet).
+ */
 static void signalHandler(int /*sig*/) {
     g_running = false;
 }
 
+/**
+ * @brief Gibt die Benutzerhilfe mit allen Kommandozeilenoptionen auf stdout aus.
+ * @param prog Programmname (argv[0]) fuer die Verwendungszeile.
+ */
 static void printUsage(const char* prog) {
     printf("Robotron A5120 Emulator\n");
     printf("Usage: %s [options]\n\n", prog);
@@ -53,6 +73,17 @@ static void printUsage(const char* prog) {
     printf("  %s -os boot_disk/@os.com -dir boot_disk -exec \"dir\" -cout out.txt\n", prog);
 }
 
+/**
+ * @brief Einstiegspunkt des Emulators.
+ *
+ * Verarbeitet Kommandozeilenargumente, erstellt alle Emulationskomponenten
+ * (Z80, Memory, Terminal, CpaBios), haengt Disketten ein, fuehrt den
+ * Bootvorgang durch und uebergibt die Kontrolle an CpaBios::run().
+ *
+ * @param argc Anzahl der Kommandozeilenargumente.
+ * @param argv Zeigerliste auf die Argumentstrings.
+ * @return 0 bei normalem Ende, 1 bei einem Fehler.
+ */
 int main(int argc, char* argv[]) {
     std::string osFile;
     std::string diskA, diskB;
@@ -93,9 +124,15 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Default: boot from @os.com if no other boot source specified
+    // Default: boot from @os.com if no other boot source specified.
+    // Wenn eine Disk eingehängt aber kein expliziter Boot-Modus angegeben:
+    // vom Laufwerk A: booten (bootFromDisk erkennt SYL-Disk und liest @OS.COM).
     if (osFile.empty() && bootDrive < 0 && dirMount.empty()) {
-        osFile = "boot_disk/@os.com";
+        if (!diskA.empty()) {
+            bootDrive = 0;  // SYL-Disk-Boot von Laufwerk A:
+        } else {
+            osFile = "boot_disk/@os.com";
+        }
     }
 
     // Set up signal handler

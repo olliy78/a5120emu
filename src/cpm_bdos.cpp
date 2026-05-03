@@ -15,8 +15,53 @@
 #include <cstring>
 #include <algorithm>
 #include <cctype>
+
+#ifdef _WIN32
+// ---------------------------------------------------------------------------
+// Windows compatibility: dirent emulation via Win32 FindFirstFile/FindNextFile
+// ---------------------------------------------------------------------------
+#include <windows.h>
+#include <sys/stat.h>
+#define strcasecmp _stricmp
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)
+#endif
+
+struct dirent { char d_name[MAX_PATH]; };
+struct DIR {
+    HANDLE          handle;
+    WIN32_FIND_DATAA data;
+    dirent          entry;
+    bool            first;
+};
+static DIR* opendir(const char* path) {
+    char pat[MAX_PATH];
+    int n = snprintf(pat, sizeof(pat), "%s\\*", path);
+    if (n <= 0 || n >= static_cast<int>(sizeof(pat))) return nullptr;
+    DIR* d = new DIR();
+    d->handle = FindFirstFileA(pat, &d->data);
+    if (d->handle == INVALID_HANDLE_VALUE) { delete d; return nullptr; }
+    d->first = true;
+    return d;
+}
+static dirent* readdir(DIR* d) {
+    if (d->first) {
+        d->first = false;
+    } else {
+        if (!FindNextFileA(d->handle, &d->data)) return nullptr;
+    }
+    strncpy(d->entry.d_name, d->data.cFileName, MAX_PATH - 1);
+    d->entry.d_name[MAX_PATH - 1] = '\0';
+    return &d->entry;
+}
+static void closedir(DIR* d) {
+    if (d) { FindClose(d->handle); delete d; }
+}
+// ---------------------------------------------------------------------------
+#else
 #include <dirent.h>
 #include <sys/stat.h>
+#endif
 
 // =============================================================================
 // Konstruktor / Destruktor

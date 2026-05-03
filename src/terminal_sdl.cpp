@@ -39,7 +39,7 @@
  * updateScreen()-Aufruf eine vollständige Neuzeichnung zu erzwingen.
  */
 SDLTerminal::SDLTerminal()
-    : quit_(false), initialized_(false),
+    : quit_(false), resetRequested_(false), initialized_(false),
       window_(nullptr), renderer_(nullptr), font_(nullptr),
       screenTexture_(nullptr), screenPixels_(nullptr),
       cursorRow_(0), cursorCol_(0), cursorVisible_(true), cursorBlinkTime_(0) {
@@ -71,8 +71,8 @@ void SDLTerminal::init() {
         return;
     }
 
-    int winW = 80 * 8;   // 640
-    int winH = 24 * 16;  // 384
+    int winW = 80 * 8;       // 640
+    int winH = 24 * 16 + 30; // 384 + 30px Buttonleiste
 
     window_ = SDL_CreateWindow("Robotron A5120 Emulator",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -91,13 +91,13 @@ void SDLTerminal::init() {
 
     SDL_RenderSetLogicalSize((SDL_Renderer*)renderer_, winW, winH);
 
-    // Create screen texture for fast rendering
+    // Screen texture covers only the CRT area (640x384), not the button bar
     screenTexture_ = SDL_CreateTexture((SDL_Renderer*)renderer_,
-        SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, winW, winH);
+        SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 640, 384);
 
-    // Allocate pixel buffer
-    screenPixels_ = new uint32_t[winW * winH];
-    memset(screenPixels_, 0, winW * winH * sizeof(uint32_t));
+    // Allocate pixel buffer (CRT area only: 640x384)
+    screenPixels_ = new uint32_t[640 * 384];
+    memset(screenPixels_, 0, 640 * 384 * sizeof(uint32_t));
 
     // Force full redraw on first update
     memset(prevScreen_, -1, sizeof(prevScreen_));
@@ -215,11 +215,60 @@ void SDLTerminal::updateScreen(const uint8_t* screenBuf, int rows, int cols) {
         }
     }
 
+    // Always redraw button bar so it survives window resize / first frame
+    renderResetButton();
+
     if (anyChange) {
         auto* r = (SDL_Renderer*)renderer_;
+        SDL_Rect crtDst = {0, 0, 640, 384};
         SDL_UpdateTexture((SDL_Texture*)screenTexture_, NULL, screenPixels_, 640 * sizeof(uint32_t));
-        SDL_RenderCopy(r, (SDL_Texture*)screenTexture_, NULL, NULL);
+        SDL_RenderCopy(r, (SDL_Texture*)screenTexture_, NULL, &crtDst);
         SDL_RenderPresent(r);
+    }
+}
+
+/**
+ * @brief Zeichnet den Reset-Knopf in die untere Buttonleiste.
+ *
+ * Die Leiste liegt bei y=384..413 (30 Pixel). Der Knopf ist
+ * 80x22 Pixel groß und sitzt rechts (x=556..636).
+ */
+void SDLTerminal::renderResetButton() {
+    if (!renderer_) return;
+    auto* r = (SDL_Renderer*)renderer_;
+
+    // Buttonleiste (Hintergrund)
+    SDL_SetRenderDrawColor(r, 40, 40, 40, 255);
+    SDL_Rect bar = {0, 384, 640, 30};
+    SDL_RenderFillRect(r, &bar);
+
+    // Trennlinie zwischen CRT und Leiste
+    SDL_SetRenderDrawColor(r, 0, 180, 0, 255);
+    SDL_RenderDrawLine(r, 0, 384, 639, 384);
+
+    // Knopf-Rahmen
+    SDL_Rect btn = {556, 388, 80, 22};
+    SDL_SetRenderDrawColor(r, 0, 200, 0, 255);
+    SDL_RenderDrawRect(r, &btn);
+
+    // Knopf-Text "RESET" mit dem 8x8-Font
+    static const char label[] = "RESET";
+    int tx = btn.x + (btn.w - (int)(sizeof(label)-1)*8) / 2;
+    int ty = btn.y + (btn.h - 8) / 2;
+    for (int i = 0; label[i]; i++) {
+        uint8_t ch = (uint8_t)label[i];
+        if (ch >= 0x20 && ch < 0x7F) {
+            const uint8_t* glyph = font8x8_basic[ch - 0x20];
+            for (int y = 0; y < 8; y++) {
+                uint8_t row = glyph[y];
+                for (int x = 0; x < 8; x++) {
+                    if (row & (1 << x)) {
+                        SDL_SetRenderDrawColor(r, 0, 220, 0, 255);
+                        SDL_RenderDrawPoint(r, tx + i*8 + x, ty + y);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -391,6 +440,16 @@ void SDLTerminal::pollEvents() {
             case SDL_QUIT:
                 quit_ = true;
                 break;
+            case SDL_MOUSEBUTTONDOWN: {
+                // Prüfen ob der Reset-Knopf getroffen wurde
+                int mx = event.button.x;
+                int my = event.button.y;
+                // Logische Koordinaten (SDL_RenderSetLogicalSize skaliert)
+                if (mx >= 556 && mx <= 636 && my >= 388 && my <= 410) {
+                    resetRequested_ = true;
+                }
+                break;
+            }
             case SDL_KEYDOWN: {
                 // Only handle non-printable / control keys here
                 uint8_t key = translateSDLKey(event.key.keysym.sym, event.key.keysym.mod);
@@ -437,6 +496,17 @@ void SDLTerminal::injectKeys(const std::string& keys) {
  */
 bool SDLTerminal::shouldQuit() const {
     return quit_;
+}
+
+/**
+ * @brief Gibt true zurück wenn der Reset-Knopf gedrückt wurde, setzt Flag zurück.
+ */
+bool SDLTerminal::resetRequested() {
+    if (resetRequested_) {
+        resetRequested_ = false;
+        return true;
+    }
+    return false;
 }
 
 #endif // USE_SDL

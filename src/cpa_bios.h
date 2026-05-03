@@ -498,6 +498,8 @@ private:
     bool autoExit_;          ///< Automatisch beenden wenn Exec-Kommando fertig
     std::string execCommand_; ///< Automatisch auszufuehrendes Kommando nach dem Boot
     bool execDone_;          ///< Alle injizierten Tasten wurden verbraucht
+    std::string bootOsPath_; ///< Pfad zur @os.com-Datei (fuer Reset)
+    int bootDrive_;          ///< Boot-Laufwerk (-1 = keines, fuer Reset)
     /// @}
 
     /// @name Interne BIOS-Funktionen

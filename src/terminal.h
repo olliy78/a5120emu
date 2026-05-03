@@ -132,6 +132,9 @@ public:
     /** @brief Gibt true zurück, wenn das Terminal beendet werden soll (Quit-Signal). */
     virtual bool shouldQuit() const = 0;
 
+    /** @brief Gibt true zurück wenn der Reset-Knopf gedrückt wurde, und setzt das Flag zurück. */
+    virtual bool resetRequested() { return false; }
+
     ///@}
 
 protected:
@@ -223,9 +226,11 @@ public:
     void pollEvents() override;
     void injectKeys(const std::string& keys) override;
     bool shouldQuit() const override;
+    bool resetRequested() override;
 
 private:
     bool quit_;                        ///< Quit-Signal wurde empfangen
+    bool resetRequested_;              ///< Reset-Knopf wurde gedrückt
     bool initialized_;                 ///< SDL wurde initialisiert
     void* window_;                     ///< SDL_Window* – Hauptfenster
     void* renderer_;                   ///< SDL_Renderer* – Rendering-Kontext
@@ -237,6 +242,9 @@ private:
     int cursorRow_, cursorCol_;        ///< Aktuelle Cursorposition
     bool cursorVisible_;               ///< Aktueller Blink-Zustand des Cursors
     uint32_t cursorBlinkTime_;         ///< Zeitstempel des letzten Blink-Wechsels (SDL_GetTicks)
+
+    /** @brief Zeichnet den Reset-Knopf in den unteren Fensterrandbereich. */
+    void renderResetButton();
 
     /**
      * @brief Rendert ein einzelnes Zeichen in den Pixelpuffer.
