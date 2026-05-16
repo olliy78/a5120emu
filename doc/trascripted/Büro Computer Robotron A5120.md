@@ -1,5 +1,3 @@
-# Büro Computer Robotron A5120
-
 Quelle des Textes: https://www.robotrontechnik.de/
 
 Der Rechner A5120 (werksinterne Bezeichnung GBG=Großes Bildschirmgerät) war 1982 der Auftakt der Bürocomputer des [VEB Buchungsmaschinenwerk Karl-Marx-Stadt](https://www.robotrontechnik.de/html/standorte/buma.htm).  
@@ -265,3 +263,94 @@ Ab 1985 wurde der A5120 zunehmend durch den preiswerteren [PC1715](https://www.
 Der A5120 wurde (ebenso wie der [A5130](https://www.robotrontechnik.de/html/computer/a5130.htm)) wurde unter der Bezeichnung "EC8577" in das [ESER-System](https://www.robotrontechnik.de/html/standards/eser.htm) eingegliedert.  
   
 Heute ist der A5120 wegen seines markanten Aussehens und wegen seiner Vielseitigkeit ein geschätztes Sammlerstück.
+
+
+## Informationen zum Aufbau
+
+Beim K1520-Bus des Robotron A5120 ist die **Interrupt-Prioritätskette (Daisy-Chain)** nach [TGL 37271/01](https://www.tiffe.de/robotron/K1520/K1520-BUS/TGL_37271-01.pdf) ein absolut kritisches Element. Weil es sich um ein passives Bussystem handelt, bricht die Kette sofort ab, sobald ein Steckplatz leer bleibt oder eine Karte gezogen wird, die die Signale nicht durchschleift. Der Rechner friert dann meist beim Booten ein oder reagiert nicht mehr auf Tastatureingaben. [[1](https://www.robotrontechnik.de/index.htm?/html/standards/k1520.htm), [2](https://www.tiffe.de/robotron/K1520/K1520-BUS/TGL_37271-01.pdf), [3](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=14410)]
+
+Die genauen technischen Details zur Funktionsweise, den Pin-Belegungen und der Überbrückung der Kette gliedern sich wie folgt auf:
+
+1. Signalpins auf dem X1-Steckverbinder (Unten)
+
+Im Gegensatz zum oberen Koppelbus X2 (der für anlagenspezifische Fädelungen genutzt wird), liegen die primären Interrupt-Leitungen auf dem **unteren, 58-poligen Systembus-Steckverbinder (X1)** auf fest definierten Pins: [[1](https://www.robotrontechnik.de/index.htm?/html/standards/k1520.htm), [2](https://hc-ddr.hucki.net/wiki/doku.php/homecomputer/k1520)]
+
+- **Pin C10:** **`/IEI`** (Interrupt Enable In) – Der Eingang für das Freigabesignal von der vorherigen Karte.
+- **Pin A10:** **`/IEO`** (Interrupt Enable Out) – Der Ausgang, der das Signal an die nächstfolgende Karte weiterreicht.
+- **Pin C9:** **`/INT`** (Interrupt Request) – Die gemeinsame Sammelleitung, die von allen Karten im Open-Collector-Verfahren auf Masse gezogen werden kann, um der CPU einen Interrupt zu melden. [[1](https://www.robotrontechnik.de/index.htm?/html/standards/k1520.htm), [2](https://hc-ddr.hucki.net/wiki/doku.php/homecomputer/k1520), [3](https://www.tiffe.de/Robotron/K1520/K5020/AKB_K5020_Betriebsdokumentation.pdf)]
+
+2. Das Prinzip der Kette
+
+Die Signale verlaufen kettenförmig von der Karte mit der **höchsten Priorität** zur Karte mit der **niedrigsten Priorität**. [[1](https://www.tiffe.de/robotron/K1520/K1520-BUS/TGL_37271-01.pdf)]
+
+- Die physikalische Verdrahtung auf der Backplane verbindet immer den Ausgang **`/IEO` (Pin A10)** eines Slots mit dem Eingang **`/IEI` (Pin C10)** des _nächstfolgenden_ Slots.
+- Auf den Platinen selbst (z. B. ZRE, AFS oder ASS) wird dieses Signal intern durch die Peripheriebausteine (U855 / PIO und U857 / CTC) geschleift. Nur wenn kein interner Baustein einen Interrupt anfordert, wird das Signal an `/IEO` für die nächste Karte freigegeben. [[1](https://www.robotrontechnik.de/index.htm?/html/standards/k1520.htm), [2](https://hc-ddr.hucki.net/wiki/doku.php/homecomputer/k1520), [3](https://www.tiffe.de/robotron/K1520/K5120/AMF-K5120-betriebsdoku-hr.pdf), [4](https://www.tiffe.de/robotron/K1520/K1520-BUS/TGL_37271-01.pdf)]
+
+3. Fehlende Platinen überbrücken (Wickelbrücken / Jumper)
+
+Wenn du im A5120 Karten testweise entfernst (z. B. die Interfacekarte ASS oder den Floppy-Controller AFS) oder Slots in der Mitte frei lässt, **muss die Kette auf der Rückseite der Backplane manuell geschlossen werden**. [[1](https://www.robotrontechnik.de/index.htm?/html/standards/k1520.htm)]
+
+- **Die Brücke:** Um einen leeren Slot zu überbrücken, musst du auf der Rückseite der Backplane am entsprechenden Steckplatz **Pin A10 mit Pin C10 direkt verbinden** (per Drahtbrücke oder Löten/Wire-Wrap).
+- **Wichtig bei RAM-Karten:** Reine Speicherkarten (wie die OPS) nutzen in der Regel keine Interrupts. Manche K1520-Speicherplatinen haben ab Werk eine feste Leiterbahnbrücke zwischen A10 und C10 auf der Platine integriert, andere nicht. Wenn eine OPS-Karte auf einem Slot sitzt, der in der Kette liegt, und diese Brücke fehlt, ist die Kette unterbrochen. [[1](https://www.robotrontechnik.de/index.htm?/html/standards/k1520.htm), [2](https://hc-ddr.hucki.net/wiki/doku.php/homecomputer/k1520), [3](https://www.tiffe.de/robotron/K1520/K3820/K3520_K3820_K3620_Heft2.pdf)]
+
+4. Typischer Aufbau und Fehlerquelle im A5120
+
+In der Standard-Konfiguration besitzt die **ZRE (Zentrale Recheneinheit)** die höchste Priorität, gefolgt von zeitkritischen Peripheriegeräten wie der **AFS (Anschlusssteuerung Folienspeicher / Floppy)** und danach der **ASS (Schnittstellen)**. [[1](https://www.tiffe.de/robotron/K1520/K1520-BUS/TGL_37271-01.pdf), [2](https://www.tiffe.de/robotron/K1520/K5120/AMF-K5120-betriebsdoku-hr.pdf)]
+
+Bei der Fehlersuche im [Robotrontechnik-Forum](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=14410) wird häufig berichtet, dass oxidierte Kontakte an den EFS-Messerleisten der Backplane (insbesondere an den Pins A10/C10) exakt dieselben Symptome hervorrufen wie eine fehlende Karte. Der Signalpegel bricht ab, und das System blockiert, weil die CPU auf die Freigabe des Interrupt-Controllers wartet. [[1](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=14410)]
+
+Falls dein A5120 beim Einschalten hängen bleibt, empfiehlt es sich, mit einem Multimeter den Durchgang von **Pin A10 (Slot \(N\)) zu Pin C10 (Slot \(N+1\))** über die gesamte belegte Backplane hinweg durchzumessen. [[1](https://www.robotrontechnik.de/index.htm?/html/standards/k1520.htm), [2](https://hc-ddr.hucki.net/wiki/doku.php/homecomputer/k1520)]
+
+
+Die genaue Reihenfolge der Karten im **Robotron A5120** wird primär durch die **Rückverdrahtung (Backplane)** und die dort fest verlöteten Wire-Wrap-Verbindungen der Interrupt-Prioritätskette vorgegeben. [[1](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=3530)]
+
+Bei der typischen Standardkonfiguration (Blick von vorn in den geöffneten Rechner, **von links nach rechts gezählt**) ergibt sich folgende offizielle und funktionsfähige Bestückung:
+
+Standard-Reihenfolge der Platinen
+
+1. **Slot 1 (Ganz links):** **OPS** (Operationsspeicher)
+    - _Baugruppenbezeichnung:_ z. B. **K 3526** (64 KB RAM-Karte). Sie bildet den Hauptspeicher.
+2. **Slot 2:** **AFS** (Anschlusssteuerung Folienspeicher)
+    - _Baugruppenbezeichnung:_ **K 5122** (Floppy-Disk-Controller). Sie steuert die 5,25-Zoll- oder 8-Zoll-Diskettenlaufwerke an.
+3. **Slot 3:** **ASS** (Anschlusssteuerung Serielle Systeme)
+    - _Baugruppenbezeichnung:_ **K 8025** (Schnittstellenkarte). Hierüber läuft die Tastatur, der Drucker und die V.24-Kommunikation.
+4. **Slot 4:** **ZRE** (Zentrale Recheneinheit)
+    - _Baugruppenbezeichnung:_ **K 2526** (Die CPU-Karte). Das Herzstück mit den zwei U880-Prozessoren (Haupt-CPU und DMA-Prozessor).
+5. **Slot 5:** **ABS** (Anschlusssteuerung Bildschirm)
+    - _Baugruppenbezeichnung:_ **K 7024** (Grafik-/Videokarte). Erzeugt das Bildsignal für den integrierten Grünmonitor (80x24 Zeichen). [[1](https://www.youtube.com/watch?v=ypg-7UhpkXc&t=1)]
+
+
+Was passiert bei Abweichungen?
+
+- **Erweiterte Modelle (7 oder 11 Slots):** Bei den größeren Gehäusen sind die Slots **6 bis 11** für Systemerweiterungen reserviert (z. B. zusätzliche RAM-Karten, Netzwerkbaugruppen oder die 16-Bit-Erweiterungskarten für den A5120.16 mit U8000-Prozessor).
+- **Auswirkungen auf die Kette:** Wie im [Robotrontechnik-Forum](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=3530) dokumentiert ist, bestimmt das Layout der rückseitigen Verdrahtung die feste Reihenfolge. Tauschst du beispielsweise die Positionen von **AFS** und **ASS**, ohne die Wire-Wrap-Brücken auf der Rückseite der Backplane umzulöten, wird die Interrupt-Priorität manipuliert oder vollständig unterbrochen. Das System stürzt dann beim Zugriff auf die Laufwerke oder bei Tastatureingaben ab. [[1](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=3530), [2](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=3530)]
+
+Über den oberen **Koppelbus (Steckverbinder X2)** des Robotron A5120 laufen alle Signale, die _nicht_ universell zum standardisierten Z80/U880-Systembus gehören. Während der untere X1-Bus für Daten- und Adressleitungen komplett parallel gedruckt ist, dient der X2-Steckverbinder als **anlagenspezifisches Rangierfeld**. [[1](https://www.tiffe.de/robotron/K1520/K1520-BUS/TGL_37271-01.pdf)]
+
+Die über den Koppelbus geführten Signale lassen sich beim A5120 in drei funktionelle Gruppen unterteilen:
+
+1. Interne Baugruppen-Kopplungen (Direkte Signalwege)
+
+Einige Karten müssen extrem schnell oder mit speziellen Pegeln direkt miteinander kommunizieren, ohne den Haupt-Datenbus zu belasten. Diese Leitungen sind auf der Backplane als **feste Wickelverbindungen (Wire-Wrap)** zwischen den spezifischen Slots realisiert: [[1](https://www.tiffe.de/robotron/K1520/K1520-BUS/TGL_37271-01.pdf)]
+
+- **DMA-Steuerleitungen (Direct Memory Access):** Die Zentrale Recheneinheit **ZRE (K2526)** besitzt zwei Prozessoren – die Haupt-CPU und einen separaten DMA-Prozessor. Die dedizierten Synchronisations- und Freigabesignale zwischen dem DMA-Controller und dem Floppy-Controller **AFS (K5122)** werden über X2 direkt durchverbunden.
+- **Video-Synchronisation & Pixeltakt:** Zwischen der CPU/Systemlogik und der Bildschirmbaugruppe **ABS (K7024)** laufen über den Koppelbus die internen Timing-Signale für den Bildaufbau (wie vertikale/horizontale Synchronisation und Pixeltakt-Rückmeldungen). [[1](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=14410)]
+
+2. Externe Peripherie-Signale (Schnittstellen-Routing)
+
+Die Schnittstellen-Karten verarbeiten Signale, die an die Buchsen der Rechnerrückseite geführt werden müssen. Um zu verhindern, dass dicke Kabelbäume quer durch das Gehäuse fliegen, nutzt Robotron die Backplane als Brücke:
+
+- **Tastatur-Signale:** Die Tastatur des A5120 sendet serielle Daten. Diese gelangen über den Gehäuseanschluss zunächst auf die Backplane (X2) und werden von dort gezielt zur **ASS-Schnittstellenkarte (K8025)** geroutet.
+- **V.24 (RS-232) und IFSS (Stromschleife):** Die seriellen Sende- und Empfangsleitungen (`TxD`, `RxD`, `RTS`, `CTS` etc.) für Drucker oder Terminals werden über X2 von den Treiberbausteinen der ASS-Karte zu den Steckverbindern an der Gehäuserückseite geleitet.
+- **Floppy-Laufwerksbus:** Die analogen und digitalen Steuerleitungen für die 5,25-Zoll- bzw. 8-Zoll-Diskettenlaufwerke (z.B. `Motor On`, `Step`, `Write Data`, `Index-Impuls`) werden von der **AFS-Karte** über den X2-Stecker direkt an die internen Flachbandkabel der Laufwerke übergeben. [[1](https://www.tiffe.de/Robotron/K1520/K5122/K5122_Betriebsdokumentation.pdf), [2](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=14410), [3](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=6222)]
+
+3. Stromversorgung-Sonderfunktionen & Sicherheitsschaltkreis
+
+Der A5120 besitzt ein komplexes, ferngesteuertes Netzteilkonzept: [[1](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=14410)]
+
+- **Einschalt-Schleife (Sicherheitsrelais):** Der Rechner besitzt keinen klassischen, harten Netzschalter an der Vorderseite. Das Netzteil startet im "Standby". Erst wenn eine funktionierende Tastatur angeschlossen ist, wird eine Stromschleife über den Koppelbus der ASS-Karte geschlossen, die das Hauptrelais im Netzteil freischaltet.
+- **Zusätzliche Masseleitungen und Hilfsspannungen:** Um Spannungsabfälle bei stromhungrigen Erweiterungskarten zu minimieren, sind einige Pins des X2-Steckers zur Stabilisierung starr mit den Haupt-Stromschienen (+5V, Masse) der gedruckten Rückverdrahtung verbunden. [[1](https://www.tiffe.de/robotron/K1520/K1520-BUS/TGL_37271-01.pdf), [2](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=14410), [3](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=7939)]
+
+Wichtig für die Praxis:
+
+Wenn du eine Backplane reparierst oder Platinen tauschst, darfst du den X2-Bereich **nicht wie den X1-Bus einfach 1:1 parallel über alle Slots verbinden!** Ein Kurzschluss zwischen einer Floppy-Steuerleitung von Slot 2 und einer Videosignalleitung von Slot 5 auf derselben Pin-Nummer des Koppelbusses würde Bausteine zerstören.

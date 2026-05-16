@@ -61,5 +61,189 @@ add_executable(a5120emu_test
 )
 target_include_directories(a5120emu_test PRIVATE src)
 
-# Install
+# Install (legacy)
 install(TARGETS a5120emu cparun RUNTIME DESTINATION bin)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# K1520 core emulator (new modular implementation)
+# ─────────────────────────────────────────────────────────────────────────────
+
+option(BUILD_K1520 "Build new K1520 modular emulator" ON)
+
+if(BUILD_K1520)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+    # Bus library
+    add_library(k1520_bus STATIC
+        core/bus/k1520_bus.cpp
+    )
+    target_include_directories(k1520_bus PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # Floppy peripheral
+    add_library(k1520_floppy STATIC
+        core/peripherals/floppy_drive/format_parser.cpp
+        core/peripherals/floppy_drive/floppy_drive.cpp
+    )
+    target_include_directories(k1520_floppy PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # PIO primitive
+    add_library(k1520_pio STATIC
+        core/primitives/z80_pio.cpp
+    )
+    target_include_directories(k1520_pio PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # CTC primitive
+    add_library(k1520_ctc STATIC
+        core/primitives/z80_ctc.cpp
+    )
+    target_include_directories(k1520_ctc PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # SIO primitive
+    add_library(k1520_sio STATIC
+        core/primitives/z80_sio.cpp
+    )
+    target_link_libraries(k1520_sio PUBLIC k1520_bus)
+    target_include_directories(k1520_sio PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # K3526 OPS – Operationsspeicher (64KB DRAM card)
+    add_library(k1520_k3526 STATIC core/cards/k3526/k3526.cpp)
+    target_include_directories(k1520_k3526 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # K7637 serial keyboard peripheral
+    add_library(k1520_k7637 STATIC
+        core/peripherals/k7637/k7637.cpp
+    )
+    target_link_libraries(k1520_k7637 PUBLIC k1520_sio)
+    target_include_directories(k1520_k7637 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # K7024 ABS – Abbildsteuerung Bildschirm (screen controller card)
+    add_library(k1520_k7024 STATIC core/cards/k7024/k7024.cpp)
+    target_link_libraries(k1520_k7024 PUBLIC k1520_bus)
+    target_include_directories(k1520_k7024 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # K2526 ZRE – Zentrale Recheneinheit (CPU card)
+    add_library(k1520_k2526 STATIC core/cards/k2526/k2526.cpp)
+    target_link_libraries(k1520_k2526 PUBLIC k1520_pio k1520_ctc k1520_bus)
+    target_include_directories(k1520_k2526 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # K8025 ASS – Anschlußsteuerung Seriell (serial interface card)
+    add_library(k1520_k8025 STATIC core/cards/k8025/k8025.cpp)
+    target_link_libraries(k1520_k8025 PUBLIC k1520_sio k1520_ctc k1520_pio k1520_bus)
+    target_include_directories(k1520_k8025 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # K5122 AFS – Anschlusssteuerung Floppy-disk Speicher (floppy controller card)
+    add_library(k1520_k5122 STATIC core/cards/k5122/k5122.cpp)
+    target_link_libraries(k1520_k5122 PUBLIC k1520_pio k1520_floppy k1520_bus)
+    target_include_directories(k1520_k5122 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # A5120 machine (wires all cards + Z80 CPU)
+    add_library(k1520_a5120 STATIC
+        core/machines/a5120/a5120.cpp
+        src/z80.cpp
+    )
+    target_link_libraries(k1520_a5120 PUBLIC
+        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122
+        k1520_k7637 k1520_floppy k1520_bus
+    )
+    target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # libk1520core.so — stable C-API shared library
+    add_library(k1520core SHARED
+        core/api/k1520_api.cpp
+    )
+    target_link_libraries(k1520core PRIVATE k1520_a5120)
+    target_include_directories(k1520core PUBLIC ${CMAKE_SOURCE_DIR})
+    set_target_properties(k1520core PROPERTIES
+        CXX_STANDARD 17
+        POSITION_INDEPENDENT_CODE ON
+    )
+
+    option(BUILD_K1520_TESTS "Build K1520 GoogleTest unit tests" ON)
+
+    if(BUILD_K1520_TESTS)
+        include(FetchContent)
+        FetchContent_Declare(
+            googletest
+            URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        )
+        set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(googletest)
+
+        enable_testing()
+
+        add_executable(k1520_test_pio
+            tests/cpp/test_pio.cpp
+        )
+        target_link_libraries(k1520_test_pio PRIVATE k1520_pio GTest::gtest_main)
+        target_include_directories(k1520_test_pio PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_bus
+            tests/cpp/test_bus.cpp
+        )
+        target_link_libraries(k1520_test_bus PRIVATE k1520_bus GTest::gtest_main)
+        target_include_directories(k1520_test_bus PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_format_parser
+            tests/cpp/test_format_parser.cpp
+        )
+        target_link_libraries(k1520_test_format_parser PRIVATE k1520_floppy GTest::gtest_main)
+        target_include_directories(k1520_test_format_parser PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_floppy
+            tests/cpp/test_floppy.cpp
+        )
+        target_link_libraries(k1520_test_floppy PRIVATE k1520_floppy GTest::gtest_main)
+        target_include_directories(k1520_test_floppy PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_ctc
+            tests/cpp/test_ctc.cpp
+        )
+        target_link_libraries(k1520_test_ctc PRIVATE k1520_ctc GTest::gtest_main)
+        target_include_directories(k1520_test_ctc PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_sio
+            tests/cpp/test_sio.cpp
+        )
+        target_link_libraries(k1520_test_sio PRIVATE k1520_sio GTest::gtest_main)
+        target_include_directories(k1520_test_sio PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_k3526 tests/cpp/test_k3526.cpp)
+        target_link_libraries(k1520_test_k3526 PRIVATE k1520_k3526 k1520_bus GTest::gtest_main)
+        target_include_directories(k1520_test_k3526 PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_k7637 tests/cpp/test_k7637.cpp)
+        target_link_libraries(k1520_test_k7637 PRIVATE k1520_k7637 k1520_sio k1520_bus GTest::gtest_main)
+        target_include_directories(k1520_test_k7637 PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_k7024 tests/cpp/test_k7024.cpp)
+        target_link_libraries(k1520_test_k7024 PRIVATE k1520_k7024 k1520_bus GTest::gtest_main)
+        target_include_directories(k1520_test_k7024 PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_k2526 tests/cpp/test_k2526.cpp)
+        target_link_libraries(k1520_test_k2526 PRIVATE k1520_k2526 GTest::gtest_main)
+        target_include_directories(k1520_test_k2526 PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_k8025 tests/cpp/test_k8025.cpp)
+        target_link_libraries(k1520_test_k8025 PRIVATE k1520_k8025 GTest::gtest_main)
+        target_include_directories(k1520_test_k8025 PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_k5122 tests/cpp/test_k5122.cpp)
+        target_link_libraries(k1520_test_k5122 PRIVATE k1520_k5122 GTest::gtest_main)
+        target_include_directories(k1520_test_k5122 PRIVATE ${CMAKE_SOURCE_DIR})
+
+        include(GoogleTest)
+        gtest_discover_tests(k1520_test_pio)
+        gtest_discover_tests(k1520_test_bus)
+        gtest_discover_tests(k1520_test_format_parser)
+        gtest_discover_tests(k1520_test_floppy)
+        gtest_discover_tests(k1520_test_ctc)
+        gtest_discover_tests(k1520_test_sio)
+        gtest_discover_tests(k1520_test_k3526)
+        gtest_discover_tests(k1520_test_k7637)
+        gtest_discover_tests(k1520_test_k7024)
+        gtest_discover_tests(k1520_test_k2526)
+        gtest_discover_tests(k1520_test_k8025)
+        gtest_discover_tests(k1520_test_k5122)
+    endif()
+endif()
