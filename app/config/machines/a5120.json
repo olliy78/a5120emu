@@ -1,0 +1,72 @@
+{
+  "machine": {
+    "name": "Robotron A5120",
+    "year": 1985,
+    "origin": "DDR (East Germany)",
+    "description": "Robotron A5120 computer from the 1980s"
+  },
+  "hardware": {
+    "cpu": {
+      "type": "Z80",
+      "frequency": 4000000,
+      "description": "4 MHz Z80A microprocessor"
+    },
+    "memory": {
+      "ram": 65536,
+      "rom": 1024,
+      "description": "64 KB RAM (OPS card K3526) + 1 KB bootstrap ROM (ZRE card K2526)"
+    },
+    "display": {
+      "type": "K7024 (ABS)",
+      "columns": 80,
+      "rows": 24,
+      "resolution": "640x288",
+      "colors": "monochrome (green phosphor)",
+      "description": "80×24 character text display, 8×12 pixel per character"
+    },
+    "storage": {
+      "type": "K5122 (AFS)",
+      "drives": 4,
+      "formats": ["CPA800", "CPA780", "UDOS", "SCP", "MUTOS", "K7", "HDOS"],
+      "description": "Floppy disk controller supporting 4 drives"
+    },
+    "io": {
+      "type": "K8025 (ASS)",
+      "serial_channels": 3,
+      "description": "Serial interface with 3 SIO chips (keyboard, modem/printer, external)"
+    },
+    "keyboard": {
+      "type": "K7637",
+      "layout": "German QWERTZ",
+      "description": "Serial keyboard emulation with scan codes"
+    }
+  },
+  "drives": [
+    {
+      "number": 0,
+      "name": "Floppy A",
+      "default_format": "CPA800"
+    },
+    {
+      "number": 1,
+      "name": "Floppy B",
+      "default_format": "CPA800"
+    },
+    {
+      "number": 2,
+      "name": "Floppy C",
+      "default_format": "CPA800"
+    },
+    {
+      "number": 3,
+      "name": "Floppy D",
+      "default_format": "CPA800"
+    }
+  ],
+  "bios": {
+    "boot_rom": "bootstrap",
+    "description": "1 KB bootstrap ROM at 0x0000-0x03FF",
+    "disabled_after": 4096,
+    "note": "ROM automatically disabled after first 1 KB of RAM access to allow CP/M BIOS to run"
+  }
+}

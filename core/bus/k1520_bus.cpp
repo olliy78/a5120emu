@@ -87,4 +87,4 @@ void K1520Bus::assertNMI()    { nmi_pending_    = true; }
 void K1520Bus::assertRESET()  { reset_asserted_ = true; }
 void K1520Bus::assertWAIT()   { wait_asserted_  = true; }
 void K1520Bus::releaseWAIT()  { wait_asserted_  = false; }
-void K1520Bus::setMEMDI(bool d) { memdi_ = d; }
+// setMEMDI() is inline in header

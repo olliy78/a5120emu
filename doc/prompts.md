@@ -82,3 +82,16 @@ beim A5120.16:
 6: AFS K5122 Floppy
 7: OPS K2526 RAM
 
+
+Fahre mit der Implementierung fort. wenn der C++ Teil vollständig ist, implementiere den Python Teil. 
+Wenn alles Umgesetzt ist, müsste der Rechner starten und dabei nacheinander auf alle Diskettenlaufwerke zugreifen.
+Du kannst dann Versuchen die disk_b.img zu booten. Das ist eine A5120 CPA Bootdisk mit den Charakteristischen Bootsektoren (Diskettenformat beachten)
+Ich denke, es werden noch zusätzliche Integrationstests benötigt, um das Zusammenspiel der einzelnen Komponenten zu testen. Darüber hinnaus sollte noch eine Möglichkeit zum geziehlten Debuggen z.B. des Bootvorgangs zu implementieren
+Fahre selbständig fort
+
+Analysiere das Projekt. Ließ doc/K1520_architecture.md und doc/design/*. Die Spezifikation ist recht weit fortgeschritten, mit der Implementierung wurde begonnen. Es wurden auch bereits Tests für die Implementierung umgesetzt. Finde heraus, ob wichtige Informationen oder Architekturentscheidungen fehlen. Erstelle ein Dokument /doc/open_points.md mit Fragestellungen, die ich für dich beantworten soll, um das Projekt zu vervollständigen. Der bisher erstellte code ist nahezu unkommentiert. Ich möchte, das du den Code Analysierst und doxygen style (für C++) bzw. google style docstring (für Python) Kommentare zu allen Funktionen und Datenstrukturen Sowie Header-Kommentare für alle Dateien einfügst. Die Kommentare sollen in Englischer Sprache sein. Es soll der Sinn und Zweck der Dateien sofie Funktionen und Rückgabeparameter erklärt werden. Das gleiche gild auch für alle zukünftig angelegten Dateien 
+Ich denke, es werden noch zusätzliche Integrationstests benötigt, um das Zusammenspiel der einzelnen Komponenten zu testen. Darüber hinnaus sollte noch eine Möglichkeit zum geziehlten Debuggen z.B. des Bootvorgangs implementiert werden. Ich denke dabei an einen Logging Mechanismus mit einstellbarem Loglevel, den man per kompilerschalter geziehlt hochsetzen kann um interne Abläufe zu analysieren. bei nidrigem oder deaktiviertem log Level soll nichts gelogt werden. Ergänze Debug-Ausgaben auch in bestehendem Code.
+Viele Teile sind bereits vollständig spezifiziert und teilweise implementiert. Fahre mit der Implementierung fort. Implementiere auch den Python Teil des Projektes. 
+Wenn alles Umgesetzt ist, müsste der Rechner starten und dabei nacheinander auf alle Diskettenlaufwerke zugreifen.
+Du kannst dann Versuchen die disk_b.img zu booten. Das ist eine A5120 CPA Bootdisk mit den Charakteristischen Bootsektoren (Diskettenformat beachten). 
+Hast du die Aufgabe verstanden? Wenn es keine Fragen gibt, beginne selbständig mit Implementierung und Test
