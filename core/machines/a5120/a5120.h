@@ -1,3 +1,11 @@
+/**
+ * @file a5120.h
+ * @brief Top-level machine integration for the Robotron A5120 configuration.
+ *
+ * This class wires CPU, bus, cards, and peripherals into one runnable machine
+ * instance and provides thread-safe methods used by the C API and Python GUI.
+ */
+
 #pragma once
 #include "core/bus/k1520_bus.h"
 #include "core/bus/koppelbus.h"
@@ -8,7 +16,7 @@
 #include "core/cards/k5122/k5122.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/peripherals/floppy_drive/format_parser.h"
-#include "src/z80.h"
+#include "core/primitives/z80.h"
 #include <atomic>
 #include <mutex>
 #include <string>
@@ -17,15 +25,20 @@
 
 class A5120Machine {
 public:
+    /** @brief Construct and wire a full A5120 machine instance. */
     A5120Machine();
     ~A5120Machine() = default;
 
     // Lifecycle
+    /** @brief Power-on sequence with bootstrap ROM enabled. */
     void powerOn();
+    /** @brief Reset sequence with bootstrap ROM re-enabled. */
     void reset();
+    /** @brief Request emulation stop. */
     void stop() { stop_.store(true); }
 
     // Run up to max_cycles CPU cycles. Returns cycles actually executed.
+    /** @brief Execute up to max_cycles CPU cycles and return consumed cycles. */
     int  run(int max_cycles);
 
     // Disk management (thread-safe)
@@ -34,6 +47,8 @@ public:
     bool unmountDisk(int drive);
     bool isDiskActive(int drive) const;
     bool isDiskWriteProtected(int drive) const;
+    /** @brief Return transient drive activity LED state for GUI display. */
+    bool isDiskLedOn(int drive) const;
     void setDiskWriteProtect(int drive, bool wp);
 
     // Keyboard (enqueued thread-safely, consumed in run())
@@ -58,6 +73,14 @@ public:
     void setDFUECallback(SerialCb cb);
     void setPrinterCallback(SerialCb cb);
     void dfueSend(uint8_t byte);
+
+    // Debug bus passthrough helpers.
+    /** @brief Read memory through the machine bus for diagnostics. */
+    uint8_t memReadDebug(uint16_t addr) { return bus_.memRead(addr); }
+    /** @brief Write memory through the machine bus for diagnostics. */
+    void memWriteDebug(uint16_t addr, uint8_t data) { bus_.memWrite(addr, data); }
+    /** @brief Read I/O port through the machine bus for diagnostics. */
+    uint8_t ioReadDebug(uint8_t port) { return bus_.ioRead(port); }
 
     // Debug
     std::string lastError() const { return last_error_; }
@@ -87,6 +110,8 @@ private:
     mutable std::mutex disk_mutex_;
     mutable std::mutex key_mutex_;
     std::deque<KeyEvent> key_queue_;
+
+    int boot_trace_count_ = 0;
 
     std::string last_error_;
 };

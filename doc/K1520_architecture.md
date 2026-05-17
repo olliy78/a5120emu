@@ -40,16 +40,26 @@ Der K1520 ist ein genormter Backplane-Bus (TGL 37271/01) auf dem Karten mit Z80-
 ```
 A5120 Backplane (11 Slots)
 ┌────────────────────────────────────────────────────────────────┐
-│  Slot 1: K2526 (ZRE) – Zentrale Recheneinheit                 │
-│  Slot 2: K3526 (OPS) – Operationsspeicher 64 KB DRAM          │
+│  Slot 1: K3526 (OPS) – Operationsspeicher 64 KB DRAM          │
+│  Slot 2: K5122 (AFS) – Anschlußsteuerung Folienspeicher (FDC) │
 │  Slot 3: K8025 (ASS) – Anschlußsteuerung Seriell (V.24+IFSS)  │
-│  Slot 4: K5122 (AFS) – Anschlußsteuerung Folienspeicher (FDC) │
+│  Slot 4: K2526 (ZRE) – Zentrale Recheneinheit                 │
 │  Slot 5: K7024 (ABS) – Adapter Bildschirm (CRT-Controller)    │
 │  Slot 6-11: leer (erweiterbar)                                 │
 └────────────────────────────────────────────────────────────────┘
             │                    │
       Systembus               Koppelbus
       (X1, 58-pol.)          (X2, 58-pol.)
+
+Documented variant A5120.16 slot sequence:
+
+1. K8025 (ASS) - serial interfaces
+2. 062-9005 - Z8000 CPU card
+3. 062-9000 - Z8000 RAM card
+4. K2526 (ZRE) - central processing unit
+5. K7024 (ABS) - display
+6. K5122 (AFS) - floppy controller
+7. K3526 (OPS) - RAM
 ```
 
 ### 2.2 K1520 Systembus-Signale (TGL 37271/01)

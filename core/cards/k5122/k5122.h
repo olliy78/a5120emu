@@ -6,6 +6,8 @@
 #include <vector>
 #include <string>
 #include <cstdint>
+#include <array>
+#include <chrono>
 
 // ─── K5122 AFS – Anschlusssteuerung Floppy-disk Speicher ─────────────────────
 //
@@ -54,6 +56,7 @@ public:
     bool isDiskActive(int drive) const;
     bool isDiskWriteProtected(int drive) const;
     void setWriteProtect(int drive, bool wp);
+    bool isDriveLedOn(int drive) const;
 
     // Direct access for tests / C-API wrappers.
     FloppyDrive& drive(int idx) { return drives_[idx]; }
@@ -72,6 +75,7 @@ private:
     void doStep();
     void doReadSector();
     void doWriteSector();
+    void markDriveAccess(int drive);
 
     // ── Hardware objects ────────────────────────────────────────────────────
     Z80PIO      ctrl_pio_{"K5122-CTRL"};    // ports 0x10–0x13 (Steuer-PIO)
@@ -94,4 +98,8 @@ private:
 
     // ── Interrupt state ─────────────────────────────────────────────────────
     bool    iei_in_ = false;
+
+    // Per-drive activity LED emulation.
+    std::array<std::chrono::steady_clock::time_point, 4> led_until_{};
+    std::chrono::milliseconds led_hold_time_{180};
 };

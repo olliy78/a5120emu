@@ -1,6 +1,8 @@
 #include "core/cards/k7024/k7024.h"
 #include "core/cards/k7024/charset_latin.h"
 #include "core/cards/k7024/charset_cyrillic.h"
+#include <chrono>
+#include <random>
 
 // ─── Character-generator lookup ───────────────────────────────────────────────
 //
@@ -25,7 +27,18 @@ static inline uint8_t chargenLookup(uint8_t charCode, int pixelRow,
 K7024::K7024(K1520Bus& bus, const A5120Config& cfg)
     : bus_(bus), cfg_(cfg)
 {
+    // Real hardware powers up with undefined VRAM content. Initialize VRAM with
+    // pseudo-random bytes so that the first screen image resembles power-on noise.
+    const auto seed = static_cast<uint32_t>(
+        std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    std::minstd_rand rng(seed);
+    std::uniform_int_distribution<int> dist(0, 255);
+    for (auto& cell : vram_) {
+        cell = static_cast<uint8_t>(dist(rng));
+    }
+
     renderAll();
+    dirty_ = true;
     attachToBus(bus);
 }
 
@@ -55,6 +68,12 @@ void K7024::memWrite(uint16_t addr, uint8_t data)
 
     int col = static_cast<int>(offset % 80);
     int row = static_cast<int>(offset / 80);
+
+    // Only the first 80x24 bytes are visible screen memory. The remaining
+    // bytes in the 2 KB VRAM window are not rendered to the framebuffer.
+    if (row >= 24) {
+        return;
+    }
 
     renderChar(col, row);
     dirty_ = true;
@@ -94,6 +113,8 @@ uint8_t K7024::vramRead(int col, int row) const
 
 void K7024::vramWrite(int col, int row, uint8_t ch)
 {
+    if (col < 0 || col >= 80 || row < 0 || row >= 24) return;
+
     int offset = row * 80 + col;
     vram_[offset] = ch;
     renderChar(col, row);
@@ -104,6 +125,8 @@ void K7024::vramWrite(int col, int row, uint8_t ch)
 
 void K7024::renderChar(int col, int row)
 {
+    if (col < 0 || col >= 80 || row < 0 || row >= 24) return;
+
     const uint8_t* charset = cfg_.use_cyrillic ? CHARSET_CYRILLIC : CHARSET_LATIN;
 
     uint8_t vbyte    = vram_[row * 80 + col];

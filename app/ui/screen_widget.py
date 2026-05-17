@@ -78,25 +78,25 @@ class ScreenWidget(QWidget):
         self.update()
     
     def _render_framebuffer(self):
-        """Render framebuffer to QImage."""
-        # Each byte is 8 pixels (1 bit per pixel)
-        # Layout: 80 columns × 24 rows × 8 bits per byte
+        """Render framebuffer to QImage.
+        
+        The K7024 framebuffer is 640×288 pixels stored as:
+        - Each byte = 1 pixel (0x00 = off, 0xFF = on)
+        - Layout: 640 bytes per row, 288 rows total
+        - Index = row * 640 + col (in pixel coordinates)
+        """
         
         for byte_idx in range(len(self.framebuffer)):
             byte_val = self.framebuffer[byte_idx]
             
             # Convert byte index to pixel coordinates
-            x_start = (byte_idx % 80) * 8
-            y = (byte_idx // 80)
+            x = byte_idx % 640
+            y = byte_idx // 640
             
-            # Process each bit
-            for bit in range(8):
-                pixel_on = (byte_val >> (7 - bit)) & 1
-                x = x_start + bit
-                
-                if y < self.HEIGHT and x < self.WIDTH:
-                    color = self.COLOR_ON if pixel_on else self.COLOR_OFF
-                    self.image.setPixelColor(x, y, color)
+            if y < self.HEIGHT and x < self.WIDTH:
+                # Each byte is already a pixel value (0x00 = off, 0xFF = on)
+                color = self.COLOR_ON if byte_val else self.COLOR_OFF
+                self.image.setPixelColor(x, y, color)
         
         self.pixmap = QPixmap.fromImage(self.image)
     

@@ -23,7 +23,7 @@ import ctypes
 import os
 import sys
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 import threading
 import time
 
@@ -32,10 +32,21 @@ import time
 # ════════════════════════════════════════════════════════════════════════════
 
 def find_libk1520core() -> Path:
-    """Find libk1520core.so in common build locations."""
+    """Find libk1520core.so in common build locations.
+
+    Returns:
+        Absolute path to the shared library.
+
+    Raises:
+        FileNotFoundError: If no valid shared library candidate is found.
+    """
+    project_root = Path(__file__).resolve().parents[2]
+    app_root = Path(__file__).resolve().parents[1]
     search_paths = [
-        Path(__file__).parent.parent / "build" / "libk1520core.so",
-        Path(__file__).parent.parent / "build" / "libk1520core.so.1",
+        project_root / "build" / "libk1520core.so",
+        project_root / "build" / "libk1520core.so.1",
+        app_root / "build" / "libk1520core.so",
+        app_root / "build" / "libk1520core.so.1",
         Path("/usr/local/lib/libk1520core.so"),
         Path("/usr/lib/libk1520core.so"),
     ]
@@ -47,7 +58,7 @@ def find_libk1520core() -> Path:
     raise FileNotFoundError(
         f"libk1520core.so not found in:\n" +
         "\n".join(f"  {p}" for p in search_paths) +
-        f"\n\nBuild with: cd {Path(__file__).parent.parent} && "
+        f"\n\nBuild with: cd {project_root} && "
         "mkdir -p build && cd build && cmake .. && make -j4"
     )
 
@@ -69,16 +80,8 @@ except Exception as e:
 # Handle type (opaque pointer)
 K1520Handle = ctypes.c_void_p
 
-# Enum values for format names
-DISK_FORMATS = {
-    "CPA780": 0,    # CPABCGEN 780K format
-    "CPA800": 1,    # CPABCGEN 800K format
-    "SCP": 2,       # SCP (Symbolic Computer Protocol)
-    "UDOS": 3,      # Unified DOS
-    "MUTOS": 4,     # MU-DOS
-    "K7": 5,        # K7 format
-    "HDOS": 6,      # HDOS
-}
+# Supported format names in the current core implementation.
+DISK_FORMATS = ["cpa780", "cpa800", "cpa640", "cpa624"]
 
 # k1520_create(machine_type: int) -> K1520Handle
 _lib.k1520_create.argtypes = [ctypes.c_int]
@@ -147,6 +150,10 @@ _lib.k1520_disk_write_protected.restype = ctypes.c_bool
 # k1520_set_write_protect(K1520Handle, drive: int, wp: bool) -> void
 _lib.k1520_set_write_protect.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_bool]
 _lib.k1520_set_write_protect.restype = None
+
+# k1520_disk_led(K1520Handle, drive: int) -> bool
+_lib.k1520_disk_led.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_disk_led.restype = ctypes.c_bool
 
 # ════════════════════════════════════════════════════════════════════════════
 # K1520 Emulator Python Class
@@ -287,6 +294,10 @@ class K1520Emulator:
         """
         if not os.path.exists(path):
             raise FileNotFoundError(f"Disk image not found: {path}")
+
+        format_name = format_name.lower()
+        if format_name not in DISK_FORMATS:
+            raise ValueError(f"Unsupported format '{format_name}', expected one of: {', '.join(DISK_FORMATS)}")
         
         path_bytes = path.encode('utf-8')
         format_bytes = format_name.encode('utf-8')
@@ -315,3 +326,7 @@ class K1520Emulator:
     def set_disk_write_protect(self, drive: int, write_protect: bool):
         """Set write-protect status of a disk."""
         _lib.k1520_set_write_protect(self._handle, ctypes.c_int(drive), ctypes.c_bool(write_protect))
+
+    def is_disk_led_on(self, drive: int) -> bool:
+        """Return True while the selected drive activity LED should be lit."""
+        return _lib.k1520_disk_led(self._handle, ctypes.c_int(drive))

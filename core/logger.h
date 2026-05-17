@@ -55,13 +55,17 @@ public:
     static Logger& instance();
 
     /**
-     * @brief Log a message at the specified level.
-     * @param level Log level
-     * @param category Category/subsystem (e.g., "BUS", "K7024", "Z80")
-     * @param format Printf-style format string
-     * @param ... Variable arguments
+     * @brief Log a message at the specified level with source location.
+     * @param level    Log level
+     * @param category Category/subsystem (e.g. "BUS", "K7024", "Z80")
+     * @param file     Source file name (__FILE__)
+     * @param line     Source line number (__LINE__)
+     * @param format   Printf-style format string
+     * @param ...      Variable arguments
      */
-    void log(Level level, const char* category, const char* format, ...);
+    void log(Level level, const char* category,
+             const char* file, int line,
+             const char* format, ...);
 
     /**
      * @brief Set the output file path. Use "-" for stderr (default).
@@ -97,10 +101,17 @@ private:
 } // namespace k1520::logging
 
 // Convenience macros - these are only defined if logging is enabled
+// Helper: strip path prefix from __FILE__ at compile time to keep log output compact
+#ifdef __linux__
+#  define LOG_FILENAME ((__builtin_strrchr(__FILE__, '/') ? __builtin_strrchr(__FILE__, '/') + 1 : __FILE__))
+#else
+#  define LOG_FILENAME __FILE__
+#endif
+
 #if LOG_LEVEL >= 1
 #define LOG_ERROR(category, fmt, ...) \
     ::k1520::logging::Logger::instance().log( \
-        ::k1520::logging::Level::ERROR, category, fmt, ##__VA_ARGS__)
+        ::k1520::logging::Level::ERROR, category, LOG_FILENAME, __LINE__, fmt, ##__VA_ARGS__)
 #else
 #define LOG_ERROR(category, fmt, ...) (void)0
 #endif
@@ -108,7 +119,7 @@ private:
 #if LOG_LEVEL >= 2
 #define LOG_WARN(category, fmt, ...) \
     ::k1520::logging::Logger::instance().log( \
-        ::k1520::logging::Level::WARN, category, fmt, ##__VA_ARGS__)
+        ::k1520::logging::Level::WARN, category, LOG_FILENAME, __LINE__, fmt, ##__VA_ARGS__)
 #else
 #define LOG_WARN(category, fmt, ...) (void)0
 #endif
@@ -116,7 +127,7 @@ private:
 #if LOG_LEVEL >= 3
 #define LOG_INFO(category, fmt, ...) \
     ::k1520::logging::Logger::instance().log( \
-        ::k1520::logging::Level::INFO, category, fmt, ##__VA_ARGS__)
+        ::k1520::logging::Level::INFO, category, LOG_FILENAME, __LINE__, fmt, ##__VA_ARGS__)
 #else
 #define LOG_INFO(category, fmt, ...) (void)0
 #endif
@@ -124,7 +135,7 @@ private:
 #if LOG_LEVEL >= 4
 #define LOG_DEBUG(category, fmt, ...) \
     ::k1520::logging::Logger::instance().log( \
-        ::k1520::logging::Level::DEBUG, category, fmt, ##__VA_ARGS__)
+        ::k1520::logging::Level::DEBUG, category, LOG_FILENAME, __LINE__, fmt, ##__VA_ARGS__)
 #else
 #define LOG_DEBUG(category, fmt, ...) (void)0
 #endif
@@ -132,7 +143,7 @@ private:
 #if LOG_LEVEL >= 5
 #define LOG_TRACE(category, fmt, ...) \
     ::k1520::logging::Logger::instance().log( \
-        ::k1520::logging::Level::TRACE, category, fmt, ##__VA_ARGS__)
+        ::k1520::logging::Level::TRACE, category, LOG_FILENAME, __LINE__, fmt, ##__VA_ARGS__)
 #else
 #define LOG_TRACE(category, fmt, ...) (void)0
 #endif

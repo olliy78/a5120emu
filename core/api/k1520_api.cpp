@@ -1,7 +1,10 @@
 #include "k1520_api.h"
 #include "core/machines/a5120/a5120.h"
+#include "core/logger.h"
 #include <cstring>
 #include <memory>
+#include <ctime>
+#include <cstdio>
 
 #define VERSION "0.1.0"
 
@@ -9,10 +12,31 @@ static A5120Machine* toA5120(K1520Handle h) {
     return static_cast<A5120Machine*>(h);
 }
 
+// Helper to create and set up log file on first machine creation
+static void setup_logging() {
+    static bool logging_initialized_ = false;
+    if (logging_initialized_) return;
+    logging_initialized_ = true;
+
+#if LOG_LEVEL > 0
+    // Generate log filename with timestamp: k1520_YYYYMMDD_HHMMSS.log
+    std::time_t now = std::time(nullptr);
+    std::tm* tm = std::localtime(&now);
+    char log_path[256];
+    std::strftime(log_path, sizeof(log_path), "k1520_%Y%m%d_%H%M%S.log", tm);
+    
+    // Try to set output file; if it fails, keep stderr
+    k1520::logging::Logger::instance().setOutputFile(log_path);
+#endif
+}
+
 extern "C" {
 
 K1520Handle k1520_create(K1520MachineType type) {
     if (type != K1520_MACHINE_A5120) return nullptr;  // only A5120 for now
+    
+    setup_logging();
+    
     try {
         return new A5120Machine();
     } catch (...) {
@@ -95,6 +119,10 @@ bool k1520_disk_write_protected(K1520Handle h, int drive) {
     return toA5120(h)->isDiskWriteProtected(drive);
 }
 
+bool k1520_disk_led(K1520Handle h, int drive) {
+    return toA5120(h)->isDiskLedOn(drive);
+}
+
 void k1520_set_write_protect(K1520Handle h, int drive, bool wp) {
     toA5120(h)->setDiskWriteProtect(drive, wp);
 }
@@ -114,17 +142,16 @@ void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte) {
 }
 
 uint8_t k1520_mem_read(K1520Handle h, uint16_t addr) {
-    // Direct bus access for debugging (not thread-safe, call from run thread)
-    return static_cast<A5120Machine*>(h)->run(0), 0xFF;  // stub
+    // Direct bus access for debugging (not thread-safe, call from run thread).
+    return toA5120(h)->memReadDebug(addr);
 }
 
 void k1520_mem_write(K1520Handle h, uint16_t addr, uint8_t data) {
-    (void)h; (void)addr; (void)data;  // stub — expose bus directly if needed
+    toA5120(h)->memWriteDebug(addr, data);
 }
 
 uint8_t k1520_io_read(K1520Handle h, uint8_t port) {
-    (void)h; (void)port;
-    return 0xFF;
+    return toA5120(h)->ioReadDebug(port);
 }
 
 const char* k1520_last_error(K1520Handle h) {

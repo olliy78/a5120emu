@@ -27,6 +27,7 @@
 #include "k5122.h"
 #include <algorithm>
 #include <cassert>
+#include "core/logger.h"
 
 // ─── Construction ─────────────────────────────────────────────────────────────
 
@@ -39,41 +40,78 @@ K5122::K5122(K1520Bus& /*bus*/) {
 // ─── BusDevice ────────────────────────────────────────────────────────────────
 
 uint8_t K5122::ioRead(uint8_t port) {
+    uint8_t result = 0xFF;
+
     if (port >= 0x10 && port <= 0x13) {
-        return ctrl_pio_.ioRead(port - 0x10);
-    }
-    if (port >= 0x14 && port <= 0x17) {
+        result = ctrl_pio_.ioRead(port - 0x10);
+        LOG_DEBUG("K5122", "CTRL PIO read  port=0x%02X (sub=%u) => 0x%02X  [%s]",
+                  port, port - 0x10, result,
+                  port == 0x10 ? "CtrlA-data" : port == 0x11 ? "CtrlA-ctrl" :
+                  port == 0x12 ? "CtrlB-data" : "CtrlB-ctrl");
+    } else if (port >= 0x14 && port <= 0x17) {
         // Intercept data Port B reads (0x16) to stream sector data to the CPU.
         if (port == 0x16 && transferring_ && !write_mode_) {
             if (buf_pos_ < sector_buf_.size()) {
-                return sector_buf_[buf_pos_++];
+                result = sector_buf_[buf_pos_++];
+                LOG_TRACE("K5122", "DATA byte[%zu/%zu] => 0x%02X",
+                          buf_pos_ - 1, sector_buf_.size(), result);
+            } else {
+                transferring_ = false;
+                result = 0xFF;
+                LOG_DEBUG("K5122", "DATA transfer complete (all %zu bytes delivered)",
+                          sector_buf_.size());
             }
-            // All bytes delivered – transfer complete.
-            transferring_ = false;
-            return 0xFF;
+        } else {
+            result = data_pio_.ioRead(port - 0x14);
+            LOG_DEBUG("K5122", "DATA PIO read  port=0x%02X (sub=%u) => 0x%02X",
+                      port, port - 0x14, result);
         }
-        return data_pio_.ioRead(port - 0x14);
+    } else {
+        LOG_WARN("K5122", "ioRead unknown port=0x%02X", port);
     }
-    // Port 0x18 is write-only (8212 drive-select latch).
-    return 0xFF;
+
+    return result;
 }
 
 void K5122::ioWrite(uint8_t port, uint8_t data) {
     if (port >= 0x10 && port <= 0x13) {
+        const char* port_name =
+            port == 0x10 ? "CtrlA-data" : port == 0x11 ? "CtrlA-ctrl" :
+            port == 0x12 ? "CtrlB-data" : "CtrlB-ctrl";
+        if (port == 0x10) {
+            // Decode ctrl Port A signal bits for readability
+            LOG_DEBUG("K5122",
+                "CTRL PortA write 0x%02X  /ST=%d /HL=%d MK=%d /STR=%d /FR=%d MR/SD=%d MK1=%d /WE=%d",
+                data,
+                (data >> 7) & 1, (data >> 6) & 1, (data >> 5) & 1, (data >> 3) & 1,
+                (data >> 2) & 1, (data >> 1) & 1, (data >> 4) & 1, data & 1);
+        } else {
+            LOG_DEBUG("K5122", "CTRL PIO write port=0x%02X data=0x%02X [%s]",
+                      port, data, port_name);
+        }
         ctrl_pio_.ioWrite(port - 0x10, data);
         // Mirror ctrl Port A data writes to our handler regardless of PIO mode.
         if (port == 0x10) {
             handleCtrlPortAWrite(data);
         }
     } else if (port >= 0x14 && port <= 0x17) {
+        const char* port_name =
+            port == 0x14 ? "DataA-data" : port == 0x15 ? "DataA-ctrl" :
+            port == 0x16 ? "DataB-data" : "DataB-ctrl";
+        LOG_DEBUG("K5122", "DATA PIO write port=0x%02X data=0x%02X [%s]",
+                  port, data, port_name);
         data_pio_.ioWrite(port - 0x14, data);
         if (port == 0x14) {
             handleDataPortAWrite(data);
         }
     } else if (port == 0x18) {
-        // 8212 drive-select: simplified to bits [1:0].
+        // 8212 drive-select: bits [7:4]=/LCKx bits [3:0]=/SELx (simplified)
         selected_drive_ = data & 0x03;
+        LOG_INFO("K5122", "8212 drive-select write=0x%02X => D%d selected",
+                 data, selected_drive_);
         updateStatusPortB();
+    } else {
+        LOG_WARN("K5122", "ioWrite unknown port=0x%02X data=0x%02X", port, data);
     }
 }
 
@@ -124,6 +162,11 @@ bool K5122::unmountDisk(int drive) {
 bool K5122::isDiskActive(int drive) const {
     if (drive < 0 || drive > 3) return false;
     return drives_[drive].isMounted();
+}
+
+bool K5122::isDriveLedOn(int drive) const {
+    if (drive < 0 || drive > 3) return false;
+    return std::chrono::steady_clock::now() < led_until_[static_cast<size_t>(drive)];
 }
 
 bool K5122::isDiskWriteProtected(int drive) const {
@@ -205,12 +248,26 @@ void K5122::doStep() {
     if (!drv.isMounted()) return;
 
     drv.step(step_dir_in_);
+    markDriveAccess(selected_drive_);
+    LOG_TRACE("K5122", "STEP D%d dir=%s cyl=%u",
+              selected_drive_, step_dir_in_ ? "in" : "out",
+              static_cast<unsigned>(drv.currentCylinder()));
     current_cyl_[selected_drive_] = drv.currentCylinder();
 }
 
 void K5122::doReadSector() {
     FloppyDrive& drv = drives_[selected_drive_];
-    if (!drv.isMounted()) return;
+    if (!drv.isMounted()) {
+        LOG_WARN("K5122", "READ requested but D%d not mounted!", selected_drive_);
+        return;
+    }
+
+    markDriveAccess(selected_drive_);
+    LOG_INFO("K5122", ">>> READ  D%d C=%u H=%u S=%u",
+              selected_drive_,
+              static_cast<unsigned>(current_cyl_[selected_drive_]),
+              static_cast<unsigned>(current_head_),
+              static_cast<unsigned>(current_sector_));
 
     sector_buf_ = drv.readSector(current_cyl_[selected_drive_],
                                  current_head_,
@@ -218,13 +275,37 @@ void K5122::doReadSector() {
     buf_pos_      = 0;
     transferring_ = true;
     write_mode_   = false;
+
+    LOG_DEBUG("K5122", "    sector data: %zu bytes, first=0x%02X 0x%02X 0x%02X 0x%02X...",
+              sector_buf_.size(),
+              sector_buf_.size() > 0 ? sector_buf_[0] : 0xFF,
+              sector_buf_.size() > 1 ? sector_buf_[1] : 0xFF,
+              sector_buf_.size() > 2 ? sector_buf_[2] : 0xFF,
+              sector_buf_.size() > 3 ? sector_buf_[3] : 0xFF);
 }
 
 void K5122::doWriteSector() {
     FloppyDrive& drv = drives_[selected_drive_];
-    if (!drv.isMounted()) return;
-    if (drv.isWriteProtect()) return;
-    if (sector_buf_.empty()) return;
+    if (!drv.isMounted()) {
+        LOG_WARN("K5122", "WRITE requested but D%d not mounted!", selected_drive_);
+        return;
+    }
+    if (drv.isWriteProtect()) {
+        LOG_WARN("K5122", "WRITE aborted: D%d is write-protected", selected_drive_);
+        return;
+    }
+    if (sector_buf_.empty()) {
+        LOG_WARN("K5122", "WRITE aborted: sector buffer empty");
+        return;
+    }
+
+    markDriveAccess(selected_drive_);
+    LOG_INFO("K5122", ">>> WRITE D%d C=%u H=%u S=%u bytes=%u",
+              selected_drive_,
+              static_cast<unsigned>(current_cyl_[selected_drive_]),
+              static_cast<unsigned>(current_head_),
+              static_cast<unsigned>(current_sector_),
+              static_cast<unsigned>(sector_buf_.size()));
 
     drv.writeSector(current_cyl_[selected_drive_],
                     current_head_,
@@ -235,4 +316,10 @@ void K5122::doWriteSector() {
     buf_pos_      = 0;
     transferring_ = false;
     write_mode_   = false;
+}
+
+void K5122::markDriveAccess(int drive) {
+    if (drive < 0 || drive > 3) return;
+    led_until_[static_cast<size_t>(drive)] =
+        std::chrono::steady_clock::now() + led_hold_time_;
 }

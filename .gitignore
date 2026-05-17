@@ -1,4 +1,8 @@
 build/
 *.o
 *.d
+*.pyc
+*.pyo
+*.log
+*.tmp
 build_k1520/

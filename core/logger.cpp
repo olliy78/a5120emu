@@ -7,6 +7,8 @@
 
 #include "logger.h"
 #include <ctime>
+#include <cstdio>
+#include <cstring>
 #include <mutex>
 
 namespace k1520::logging {
@@ -22,11 +24,11 @@ Logger::~Logger() {
     closeOutputFile();
 }
 
-void Logger::log(Level level, const char* category, const char* format, ...) {
+void Logger::log(Level level, const char* category,
+                 const char* file, int line,
+                 const char* format, ...) {
 #if LOG_LEVEL == 0
-    (void)level;
-    (void)category;
-    (void)format;
+    (void)level; (void)category; (void)file; (void)line; (void)format;
     return;
 #else
     if (static_cast<int>(level) > LOG_LEVEL) {
@@ -38,11 +40,14 @@ void Logger::log(Level level, const char* category, const char* format, ...) {
 
     FILE* out = output_file_ ? output_file_ : stderr;
 
-    // Format timestamp
-    std::time_t now = std::time(nullptr);
-    std::tm* local_time = std::localtime(&now);
+    // Format timestamp with milliseconds
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    std::tm* local_time = std::localtime(&ts.tv_sec);
     char time_buffer[32];
-    std::strftime(time_buffer, sizeof(time_buffer), "%Y-%m-%d %H:%M:%S", local_time);
+    std::strftime(time_buffer, sizeof(time_buffer), "%H:%M:%S", local_time);
+    char full_time[48];
+    std::snprintf(full_time, sizeof(full_time), "%s.%03ld", time_buffer, ts.tv_nsec / 1000000L);
 
     // Level string
     const char* level_str = "?????";
@@ -55,8 +60,9 @@ void Logger::log(Level level, const char* category, const char* format, ...) {
         case Level::OFF:   level_str = "OFF  "; break;
     }
 
-    // Print header
-    std::fprintf(out, "[%s] %-5s [%-8s] ", time_buffer, level_str, category);
+    // Print header: time | level | category | file:line |
+    std::fprintf(out, "[%s] %s [%-8s] %s:%d | ",
+                 full_time, level_str, category, file, line);
 
     // Print user message
     va_list args;
@@ -64,7 +70,6 @@ void Logger::log(Level level, const char* category, const char* format, ...) {
     std::vfprintf(out, format, args);
     va_end(args);
 
-    // Newline
     std::fputc('\n', out);
     std::fflush(out);
 #endif

@@ -66,6 +66,8 @@ target_include_directories(k1520_bus PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 # ────────────────────────────────────────────────────────────────────────────
 
 add_library(k1520_primitives
+    primitives/z80.cpp
+    primitives/z80.h
     primitives/z80_pio.cpp
     primitives/z80_pio.h
     primitives/z80_sio.cpp
@@ -124,19 +126,12 @@ target_include_directories(k1520_peripherals PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/
 # Machines library (machine configurations)
 # ────────────────────────────────────────────────────────────────────────────
 
-# Link against legacy Z80 from src/
-find_library(Z80_LIB z80 PATHS ${CMAKE_SOURCE_DIR}/src REQUIRED)
-if(NOT Z80_LIB)
-    message(FATAL_ERROR "Z80 CPU library not found. Did you build src/z80.cpp first?")
-endif()
-
 add_library(k1520_machines
     machines/a5120/a5120.cpp
     machines/a5120/a5120.h
 )
 target_link_libraries(k1520_machines PUBLIC
     k1520_bus k1520_primitives k1520_cards k1520_peripherals k1520_logger
-    ${Z80_LIB}
 )
 target_include_directories(k1520_machines PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
@@ -150,7 +145,7 @@ add_library(k1520core
 )
 target_link_libraries(k1520core PUBLIC
     k1520_bus k1520_primitives k1520_cards k1520_peripherals k1520_machines
-    k1520_logger ${Z80_LIB}
+    k1520_logger
 )
 target_include_directories(k1520core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 

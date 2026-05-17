@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QComboBox,
     QLabel, QLineEdit, QCheckBox, QFileDialog, QGroupBox, QMessageBox
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 
 
 class DriveWidget(QWidget):
@@ -25,7 +25,12 @@ class DriveWidget(QWidget):
         """Initialize drive widget."""
         super().__init__(parent)
         self.emulator = emulator
+        self._drive_leds = {}
         self.setup_ui()
+
+        self._led_timer = QTimer(self)
+        self._led_timer.timeout.connect(self._refresh_leds)
+        self._led_timer.start(120)
     
     def setup_ui(self):
         """Setup UI layout."""
@@ -69,10 +74,21 @@ class DriveWidget(QWidget):
         format_label = QLabel("Format:")
         format_combo = QComboBox()
         format_combo.addItems(self.FORMATS)
-        format_combo.setCurrentText("CPA800")
+        format_combo.setCurrentText("cpa800")
         format_layout.addWidget(format_label)
         format_layout.addWidget(format_combo)
         layout.addLayout(format_layout)
+
+        # Activity LED
+        led_layout = QHBoxLayout()
+        led_layout.addWidget(QLabel("LED:"))
+        led = QLabel(" ")
+        led.setFixedSize(14, 14)
+        led.setStyleSheet("border-radius: 7px; background-color: #2b2b2b; border: 1px solid #666;")
+        led_layout.addWidget(led)
+        led_layout.addStretch()
+        layout.addLayout(led_layout)
+        self._drive_leds[drive] = led
         
         # Options
         options_layout = QHBoxLayout()
@@ -129,5 +145,24 @@ class DriveWidget(QWidget):
         group._unmount_btn = unmount_btn
         group._wp_check = wp_check
         group._format_combo = format_combo
+        group._led = led
         
         return group
+
+    def _refresh_leds(self):
+        """Update all drive LED indicators from emulator state."""
+        for drive, led in self._drive_leds.items():
+            is_on = False
+            try:
+                is_on = self.emulator.is_disk_led_on(drive)
+            except Exception:
+                is_on = False
+
+            if is_on:
+                led.setStyleSheet(
+                    "border-radius: 7px; background-color: #ff3b30; border: 1px solid #ff8a80;"
+                )
+            else:
+                led.setStyleSheet(
+                    "border-radius: 7px; background-color: #2b2b2b; border: 1px solid #666;"
+                )

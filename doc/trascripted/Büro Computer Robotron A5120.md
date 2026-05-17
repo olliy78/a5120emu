@@ -264,6 +264,9 @@ Der A5120 wurde (ebenso wie der [A5130](https://www.robotrontechnik.de/html/com
   
 Heute ist der A5120 wegen seines markanten Aussehens und wegen seiner Vielseitigkeit ein geschätztes Sammlerstück.
 
+## Anschluss der Tastatur
+
+Die Tastatur steckt an Anschluss X4 der K 8025 alo Kanal A des SIO A32
 
 ## Informationen zum Aufbau
 
@@ -354,3 +357,20 @@ Der A5120 besitzt ein komplexes, ferngesteuertes Netzteilkonzept: [[1](https://w
 Wichtig für die Praxis:
 
 Wenn du eine Backplane reparierst oder Platinen tauschst, darfst du den X2-Bereich **nicht wie den X1-Bus einfach 1:1 parallel über alle Slots verbinden!** Ein Kurzschluss zwischen einer Floppy-Steuerleitung von Slot 2 und einer Videosignalleitung von Slot 5 auf derselben Pin-Nummer des Koppelbusses würde Bausteine zerstören.
+
+Position der Karten im Rechner
+A5120 (links nach rechts):
+1: OPS K2526 RAM
+2: AFS K5122 Floppy
+3: ASS K8025 Serielle Schnittstellen
+4: ZRE K2626 Zentrale Recheneinheit
+5: ABS K7024 Bildschirm
+
+A5120.16 (links nach rechts):
+1: ASS K8025 Serielle Schnittstellen
+2: 062-9005 z8000 CPU
+3: 062-9000 z8000 RAM
+4: ZRE K2626 Zentrale Recheneinheit
+5: ABS K7024 Bildschirm
+6: AFS K5122 Floppy
+7: OPS K2526 RAM

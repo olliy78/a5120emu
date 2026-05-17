@@ -49,6 +49,10 @@ class MainWindow(QMainWindow):
         self.run_timer = QTimer()
         self.run_timer.timeout.connect(self._run_emulator)
         self.run_timer.setInterval(20)  # 50 Hz
+
+        # Default power state is ON.
+        self.run_timer.start()
+        self.screen_widget.start_display()
         
         self.resize(800, 600)
     

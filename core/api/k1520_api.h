@@ -54,13 +54,20 @@ void k1520_key_release(K1520Handle h, uint32_t keycode);
 void k1520_console_key(K1520Handle h, char c);
 
 /* ─── Disk drives ────────────────────────────────────────────────────────── */
+/** @brief Mount a disk image into a drive slot. */
 bool k1520_mount_disk(K1520Handle h, int drive,
                       const char* image_path,
                       const char* format_name,
                       bool write_protect);
+/** @brief Unmount disk image from a drive slot. */
 bool k1520_unmount_disk(K1520Handle h, int drive);
+/** @brief Return true if a disk image is mounted in the drive. */
 bool k1520_disk_active(K1520Handle h, int drive);
+/** @brief Return true if mounted image is write protected. */
 bool k1520_disk_write_protected(K1520Handle h, int drive);
+/** @brief Return true while recent activity should light the drive LED. */
+bool k1520_disk_led(K1520Handle h, int drive);
+/** @brief Update mounted image write-protect state. */
 void k1520_set_write_protect(K1520Handle h, int drive, bool wp);
 
 /* ─── Serial ports ───────────────────────────────────────────────────────── */
@@ -69,8 +76,11 @@ void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
 void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte);
 
 /* ─── Debug ──────────────────────────────────────────────────────────────── */
+/** @brief Read memory through the machine bus for diagnostics. */
 uint8_t     k1520_mem_read(K1520Handle h, uint16_t addr);
+/** @brief Write memory through the machine bus for diagnostics. */
 void        k1520_mem_write(K1520Handle h, uint16_t addr, uint8_t data);
+/** @brief Read I/O port through the machine bus for diagnostics. */
 uint8_t     k1520_io_read(K1520Handle h, uint8_t port);
 const char* k1520_last_error(K1520Handle h);
 const char* k1520_version(void);

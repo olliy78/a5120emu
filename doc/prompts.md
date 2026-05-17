@@ -95,3 +95,46 @@ Viele Teile sind bereits vollständig spezifiziert und teilweise implementiert. 
 Wenn alles Umgesetzt ist, müsste der Rechner starten und dabei nacheinander auf alle Diskettenlaufwerke zugreifen.
 Du kannst dann Versuchen die disk_b.img zu booten. Das ist eine A5120 CPA Bootdisk mit den Charakteristischen Bootsektoren (Diskettenformat beachten). 
 Hast du die Aufgabe verstanden? Wenn es keine Fragen gibt, beginne selbständig mit Implementierung und Test
+
+
+
+Ich denke, es gibt noch etliches zu tun, bis die Software verwendbar ist.
+Ich habe gesehen, das die meisten .cpp und .h Dateien noch keine englischen doxigen Komentare enthalten. Auch die Python Dateien und Tests sind unzureichend kommentiert. Bitte hole das nach, damit der code für mich und andere Verständlich ist.
+Der Emulator stürzt reproduzierbar ab mit der Meldung:
+[DEBUG] Loading library from: /home/olliy/projects/a5120emu/app/build/libk1520core.so
+[DEBUG] Library loaded successfully
+./run_gui.sh: line 39: 332245 Segmentation fault      python3 "$PROJECT_DIR/app/main.py"
+Ich vermute, irgendwas im C++ Code zerschießt den Speicher. 
+
+Fehlerhafte Reihenfolge der Karten im K1520 Rahmen. im Dokument doc/K1520_architecture.md ist die Reihenfolge der Karten falsch. die richtige Reihenfolge ist am Ende von doc/trascripted/Büro Computer Robotron A5120.md angegeben
+
+Ich habe den Inhalt des EPROMS der Tastatur abgelegt: doc/EPROMS/robotron-k7637_50-2716.bin Das ist ausführbarer Z80 code. analysiere ihn.
+
+ich habe das Dokument doc/open_points.md mit den offenen Fragen bearbeitet und diese beantwortet. Meine Antwort ist immer hinter **Lösung:** angegeben. Ließ das Dokument und aktualisiee es, falls weitere offene Fragen entstehen. Viele Dinge, die dort beschrieben sind, sind bereits geklärt und vielfach sogar umgesetzt. Aktualisiere das Dokument.
+
+Im Ordner core/primitives vermisse ich die Z80 CPU. Du sollst nicht code aus dem Altprojekt verwenden, sondern eine neue Codebasis aufbauen. Kopiere den vorhandenen Code dort hin und passe ihn so an, das er zum neuen Emulator passt. Füge auch entsprechende doxygen Kommentare ein. passe das CMake Buildsystem an.
+
+Beim Einschalten des Rechners enthällt der Video RAM zunächst zufallswerte. Implementiere das genauso. Erst das von der Diskette geladene Betriebssystem löscht den Speicher und gibt entsprechende Boot-Meldungen aus.
+
+In der GUI muss erkennbar sein, wenn der Computer auf ein Diskettenlaufwerk zugreift. Dafür besitzen echt Diskettenlaufwerke eine LED. Bitte Implementiere auch hier eine entsprechende Funktionalität. Der Floppy-Controller muss dafür entsprechende Informationen an die GUI übermitteln.
+
+Offensichtlich startet der Rechner nicht. Versuche im mit aktivierten Debugausgaben herrauszufinden. ob der Code aus dem EPROM der K2526 ausgeführt wird, und ob der Floppycontroller versucht die Bootsektoren von allen angeschlossenen Laufwerken zu lesen.
+
+Wir müssen systematisch analysieren, warum der Rechner nicht bootet. Dafür möchte ich, das du zunächst folgendes Vorbereitest:
+Vollständiges Dokumentieren aller .cpp, .h und .py Dateien (doxygen, docstring). Ich kann vielfach nicht nachvollziehen was der Code macht.
+Disassemblieren und analysiren K 2526 des Eproms. lege den Disassemblierten Code als .mac Datei ab und kommentiere ihn, damit wir nachvollziehen können, was der Code macht und wie er funktioniert.
+
+Erweitere das Logging dahingegen, dass in jeder Zeile steht, aus welcher Datei und welcher Zeile der Logeintrag kommt.
+Bei maximalem Log-level soll es möglich sein, alle vom z80 ausgeführten Befehle sowie den Wert der Register zu loggen, so dass wir nachvollziehen können was der Computer genau macht. Denke daran, das es zwei Z80 CPUs gibt. die zweite DMA CPU ist z.B. für die Kommunikation mit dem Floppy controler zuständig. dafür müsste es im EPROM entsprechende Routinen geben.
+
+Erweitere den Floppycontroler um Debug Meldungen, die alle Zugriffe der CPU oder der DMA-CPU protokollieren und gib aus, welcher Befehl an den Floppy-Controler abgesetzt wurde. Auch die tatsächlich von/auf Diskette gelesenen und geschriebenen Bytes sollen ausgegeben werden.
+
+Wärend der Computer läuft sehe ich aktuell zwar keinen Zugriff auf die Floppys (Floppy-LED), dafür schreibt aber etwas im videoram rum. Das kann nicht sein. Möglicherweise passt da was mit der Backplane konfiguration nicht.
+
+Eine Bildschirmausgabe durch den EPROM der K2526 gibt es nicht. Bildschirm Löschen und Bootmeldungen Passieren Erst durch die Ausführung des Codes aus dem Boot-Sector.
+
+Sieh dir noch mal doc/trascripted/Zentrale Recheneinheit_K2526_K2527.md und doc/trascripted/Floppy Anschlußsteuerung K 5122.md sowie den disassemblierten Eprom Inhalt und die Implementierung in core/cards/k2526 und core/cards/k5122 an. Ich denke, das passt irgendwie alles noch nicht zusammen. Sieh nach, ob es da architektur oder Implementierungsfehler gibt.
+
+Dann starte den Rechner mit maximalem Log-Level und analysire, was die beiden CPUs machen, und ob und in welcher Weise eine Kommunikation mit dem Floppy-Controller erfolgt.
+
+

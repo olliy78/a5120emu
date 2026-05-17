@@ -4,6 +4,12 @@ project(a5120emu VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if(NOT LOG_LEVEL)
+    set(LOG_LEVEL 3)
+endif()
+add_compile_definitions(LOG_LEVEL=${LOG_LEVEL})
+message(STATUS "Global LOG_LEVEL=${LOG_LEVEL}")
+
 # Auto-detect SDL2 (can be overridden with -DUSE_SDL=OFF)
 option(USE_SDL "Build with SDL2 graphical terminal support" ON)
 
@@ -73,6 +79,11 @@ option(BUILD_K1520 "Build new K1520 modular emulator" ON)
 if(BUILD_K1520)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+    add_library(k1520_logger STATIC
+        core/logger.cpp
+    )
+    target_include_directories(k1520_logger PUBLIC ${CMAKE_SOURCE_DIR})
+
     # Bus library
     add_library(k1520_bus STATIC
         core/bus/k1520_bus.cpp
@@ -102,6 +113,12 @@ if(BUILD_K1520)
     add_library(k1520_sio STATIC
         core/primitives/z80_sio.cpp
     )
+        # Z80 CPU primitive for the modular core
+        add_library(k1520_z80 STATIC
+            core/primitives/z80.cpp
+        )
+        target_include_directories(k1520_z80 PUBLIC ${CMAKE_SOURCE_DIR})
+
     target_link_libraries(k1520_sio PUBLIC k1520_bus)
     target_include_directories(k1520_sio PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -133,17 +150,17 @@ if(BUILD_K1520)
 
     # K5122 AFS – Anschlusssteuerung Floppy-disk Speicher (floppy controller card)
     add_library(k1520_k5122 STATIC core/cards/k5122/k5122.cpp)
-    target_link_libraries(k1520_k5122 PUBLIC k1520_pio k1520_floppy k1520_bus)
+    target_link_libraries(k1520_k5122 PUBLIC k1520_pio k1520_floppy k1520_bus k1520_logger)
     target_include_directories(k1520_k5122 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # A5120 machine (wires all cards + Z80 CPU)
     add_library(k1520_a5120 STATIC
         core/machines/a5120/a5120.cpp
-        src/z80.cpp
     )
     target_link_libraries(k1520_a5120 PUBLIC
+        k1520_z80
         k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122
-        k1520_k7637 k1520_floppy k1520_bus
+        k1520_k7637 k1520_floppy k1520_bus k1520_logger
     )
     target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -151,7 +168,7 @@ if(BUILD_K1520)
     add_library(k1520core SHARED
         core/api/k1520_api.cpp
     )
-    target_link_libraries(k1520core PRIVATE k1520_a5120)
+    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_logger)
     target_include_directories(k1520core PUBLIC ${CMAKE_SOURCE_DIR})
     set_target_properties(k1520core PROPERTIES
         CXX_STANDARD 17

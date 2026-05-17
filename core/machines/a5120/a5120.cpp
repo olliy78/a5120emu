@@ -1,5 +1,6 @@
 #include "a5120.h"
 #include <algorithm>
+#include "core/logger.h"
 
 A5120Machine::A5120Machine()
     : zre_(bus_)
@@ -53,12 +54,26 @@ void A5120Machine::powerOn() {
     stop_.store(false);
     zre_.powerOn();
     cpu_.reset();
+    boot_trace_count_ = 0;
+    LOG_INFO("A5120", "Power on: CPU reset, boot ROM enabled");
+
+    // Set up Z80 instruction trace callback at TRACE level (LOG_LEVEL=5).
+    // Captures PC and all registers before each instruction.
+#if LOG_LEVEL >= 5
+    cpu_.traceCallback = [](const Z80& z) {
+        LOG_TRACE("ZVE1",
+            "PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X IX=%04X IY=%04X",
+            z.PC, z.SP, z.AF, z.BC, z.DE, z.HL, z.IX, z.IY);
+    };
+#endif
 }
 
 void A5120Machine::reset() {
     stop_.store(false);
     zre_.powerOn();   // re-enable boot ROM
     cpu_.reset();
+    boot_trace_count_ = 0;
+    LOG_INFO("A5120", "Reset: CPU reset, boot ROM re-enabled");
 }
 
 int A5120Machine::run(int max_cycles) {
@@ -80,6 +95,17 @@ int A5120Machine::run(int max_cycles) {
         // Update interrupt chain
         bus_.updateInterruptChain();
 
+        if (bus_.isWAIT()) {
+            // External WAIT line holds the CPU. Consume no instruction and let
+            // peripherals progress on the next loop iteration.
+            continue;
+        }
+
+        if (bus_.isRESET()) {
+            LOG_INFO("A5120", "RESET line asserted by bus, resetting CPU");
+            cpu_.reset();
+        }
+
         // Deliver INT if CPU can accept
         if (bus_.isINT() && cpu_.IFF1) {
             uint8_t vec = bus_.interruptAcknowledge();
@@ -90,8 +116,14 @@ int A5120Machine::run(int max_cycles) {
             cpu_.nmi();
         }
 
+        const uint16_t pc_before = cpu_.PC;
         int used = cpu_.step();
         remaining -= used;
+
+        if (boot_trace_count_ < 80) {
+            LOG_DEBUG("BOOT", "step=%d PC=%04X used=%d", boot_trace_count_, pc_before, used);
+            ++boot_trace_count_;
+        }
 
         // Clock CTC on ZRE card
         zre_.clockTick();
@@ -130,6 +162,11 @@ bool A5120Machine::isDiskActive(int drive) const {
 bool A5120Machine::isDiskWriteProtected(int drive) const {
     if (drive < 0 || drive > 3) return false;
     return afs_.isDiskWriteProtected(drive);
+}
+
+bool A5120Machine::isDiskLedOn(int drive) const {
+    if (drive < 0 || drive > 3) return false;
+    return afs_.isDriveLedOn(drive);
 }
 
 void A5120Machine::setDiskWriteProtect(int drive, bool wp) {
