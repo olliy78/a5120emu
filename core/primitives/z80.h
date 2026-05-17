@@ -1,21 +1,20 @@
 /**
  * @file z80.h
- * @brief Zilog Z80 CPU Emulator – Headerdatei
+ * @brief Zilog Z80 CPU Emulator - Header File
  *
- * Vollständige Emulation des Z80-Mikroprozessors, wie er im Robotron A5120
- * Bürocomputer (DDR) verbaut wurde. Implementiert den kompletten dokumentierten
- * und undokumentierten Z80-Befehlssatz inklusive:
- * - Alle 8-Bit- und 16-Bit-ALU-Operationen mit korrektem Flag-Verhalten
- * - Rotations- und Schiebebefehle (CB-Präfix)
- * - Indexregister-Operationen mit IX/IY (DD/FD-Präfix)
- * - Erweiterte Befehle (ED-Präfix): Blockoperationen, I/O, NEG, RETI/RETN
- * - Undokumentierte Befehle: SLL, IXH/IXL/IYH/IYL-Register, DDCB/FDCB-Varianten
- * - Alle drei Interruptmodi (IM 0, IM 1, IM 2) sowie NMI
- * - Zyklengenau für korrekte Taktung der Emulation
+ * Complete emulation of the Z80 microprocessor as used in the Robotron A5120
+ * office computer (GDR). Implements the complete documented and undocumented
+ * Z80 instruction set including:
+ * - All 8-bit and 16-bit ALU operations with correct flag behavior
+ * - Rotation and shift instructions (CB prefix)
+ * - Index register operations with IX/IY (DD/FD prefix)
+ * - Extended instructions (ED prefix): block operations, I/O, NEG, RETI/RETN
+ * - Undocumented instructions: SLL, IXH/IXL/IYH/IYL registers, DDCB/FDCB variants
+ * - All three interrupt modes (IM 0, IM 1, IM 2) and NMI
+ * - Cycle-accurate timing for correct emulation
  *
- * Die Klasse verwendet Callback-Funktionen für Speicher- und I/O-Zugriffe,
- * sodass sie plattformunabhängig in beliebige Emulationsumgebungen eingebunden
- * werden kann.
+ * The class uses callback functions for memory and I/O access, making it
+ * platform-independent and embeddable in any emulation environment.
  *
  * @author Olaf Krieger
  * @license MIT License
@@ -27,15 +26,14 @@
 
 /**
  * @class Z80
- * @brief Emuliert einen Zilog Z80 Mikroprozessor.
+ * @brief Emulates a Zilog Z80 microprocessor.
  *
- * Diese Klasse bildet den vollständigen Z80-Prozessor nach, einschließlich
- * aller Register, Flags, Interrupt-Logik und des gesamten Befehlssatzes.
- * Speicher- und I/O-Zugriffe werden über konfigurierbare Callback-Funktionen
- * abstrahiert, wodurch die CPU-Emulation unabhängig von der konkreten
- * Hardwareumgebung bleibt.
+ * This class implements the complete Z80 processor, including all registers,
+ * flags, interrupt logic, and the entire instruction set. Memory and I/O
+ * accesses are abstracted through configurable callback functions, making
+ * the CPU emulation independent of the concrete hardware environment.
  *
- * Typische Verwendung:
+ * Typical usage:
  * @code
  *   Z80 cpu;
  *   cpu.readByte  = [&](uint16_t addr) -> uint8_t { return memory[addr]; };
@@ -51,37 +49,36 @@
 class Z80 {
 public:
     // =========================================================================
-    /// @name Hauptregistersatz
-    /// @brief Die vier 16-Bit-Registerpaare AF, BC, DE, HL, die auch als
-    ///        einzelne 8-Bit-Register angesprochen werden können.
-    ///        Die Anordnung der Bytes innerhalb der Union berücksichtigt
-    ///        die Endianness der Host-Plattform.
+    /// @name Main Register Set
+    /// @brief The four 16-bit register pairs AF, BC, DE, HL, which can also
+    ///        be accessed as individual 8-bit registers. The byte order within
+    ///        the union accounts for the host platform's endianness.
     // =========================================================================
     ///@{
 
     /**
-     * @brief Akkumulator (A) und Flagregister (F).
+     * @brief Accumulator (A) and Flag register (F).
      *
-     * A ist der Hauptakkumulator für arithmetische und logische Operationen.
-     * F enthält die Statusflags (S, Z, H, PV, N, C sowie undokumentiert Bit 3 und 5).
+     * A is the main accumulator for arithmetic and logical operations.
+     * F contains the status flags (S, Z, H, PV, N, C and undocumented bits 3 and 5).
      */
     union {
         struct {
             #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-            uint8_t F, A;   ///< Little-Endian: F liegt an niedrigerer Adresse
+            uint8_t F, A;   ///< Little-Endian: F is at lower address
             #else
-            uint8_t A, F;   ///< Big-Endian: A liegt an niedrigerer Adresse
+            uint8_t A, F;   ///< Big-Endian: A is at lower address
             #endif
         };
-        uint16_t AF;         ///< Zugriff auf das gesamte AF-Registerpaar
+        uint16_t AF;         ///< Access to the complete AF register pair
     };
 
     /**
-     * @brief Universalregister B und C.
+     * @brief General purpose registers B and C.
      *
-     * B wird häufig als Schleifenzähler verwendet (DJNZ-Befehl).
-     * C dient oft als Port-Nummer bei I/O-Operationen.
-     * BC wird als 16-Bit-Bytezähler bei Blockoperationen genutzt.
+     * B is frequently used as a loop counter (DJNZ instruction).
+     * C often serves as port number for I/O operations.
+     * BC is used as 16-bit byte counter for block operations.
      */
     union {
         struct {
@@ -91,13 +88,13 @@ public:
             uint8_t B, C;
             #endif
         };
-        uint16_t BC;         ///< Zugriff auf das gesamte BC-Registerpaar
+        uint16_t BC;         ///< Access to the complete BC register pair
     };
 
     /**
-     * @brief Universalregister D und E.
+     * @brief General purpose registers D and E.
      *
-     * DE dient häufig als Zieladresse bei Blockübertragungen (LDI, LDIR etc.).
+     * DE often serves as destination address for block transfers (LDI, LDIR, etc.).
      */
     union {
         struct {
@@ -107,15 +104,15 @@ public:
             uint8_t D, E;
             #endif
         };
-        uint16_t DE;         ///< Zugriff auf das gesamte DE-Registerpaar
+        uint16_t DE;         ///< Access to the complete DE register pair
     };
 
     /**
-     * @brief Universalregister H und L.
+     * @brief General purpose registers H and L.
      *
-     * HL ist das primäre 16-Bit-Adressregister und wird für indirekte
-     * Speicherzugriffe verwendet (z. B. LD A,(HL)). Bei DD/FD-präfixierten
-     * Befehlen wird HL durch IX bzw. IY ersetzt.
+     * HL is the primary 16-bit address register and is used for indirect
+     * memory accesses (e.g., LD A,(HL)). In DD/FD-prefixed instructions,
+     * HL is replaced by IX or IY respectively.
      */
     union {
         struct {
@@ -125,171 +122,181 @@ public:
             uint8_t H, L;
             #endif
         };
-        uint16_t HL;         ///< Zugriff auf das gesamte HL-Registerpaar
+        uint16_t HL;         ///< Access to the complete HL register pair
     };
 
     ///@}
 
     // =========================================================================
-    /// @name Schattenregistersatz
-    /// @brief Zweiter Registersatz, der durch EX AF,AF' und EXX-Befehle
-    ///        mit dem Hauptregistersatz ausgetauscht werden kann.
-    ///        Wird typischerweise in Interrupt-Routinen verwendet.
+    /// @name Shadow Register Set
+    /// @brief Second register set that can be exchanged with the main
+    ///        register set via EX AF,AF' and EXX instructions.
+    ///        Typically used in interrupt routines.
     // =========================================================================
     ///@{
-    uint16_t AF_;  ///< Schattenregister AF'
-    uint16_t BC_;  ///< Schattenregister BC'
-    uint16_t DE_;  ///< Schattenregister DE'
-    uint16_t HL_;  ///< Schattenregister HL'
+    uint16_t AF_;  ///< Shadow register AF'
+    uint16_t BC_;  ///< Shadow register BC'
+    uint16_t DE_;  ///< Shadow register DE'
+    uint16_t HL_;  ///< Shadow register HL'
     ///@}
 
     // =========================================================================
-    /// @name Indexregister
-    /// @brief Ermöglichen indizierte Adressierung mit Displacement (IX+d, IY+d).
-    ///        Undokumentiert können auch die oberen/unteren Bytes
-    ///        (IXH, IXL, IYH, IYL) einzeln angesprochen werden.
+    /// @name Index Registers
+    /// @brief Enable indexed addressing with displacement (IX+d, IY+d).
+    ///        Undocumented: the upper/lower bytes (IXH, IXL, IYH, IYL)
+    ///        can also be accessed individually.
     // =========================================================================
     ///@{
-    uint16_t IX;   ///< Indexregister X
-    uint16_t IY;   ///< Indexregister Y
+    uint16_t IX;   ///< Index register X
+    uint16_t IY;   ///< Index register Y
     ///@}
 
     // =========================================================================
-    /// @name Programmzähler und Stapelzeiger
+    /// @name Program Counter and Stack Pointer
     // =========================================================================
     ///@{
-    uint16_t PC;   ///< Programmzähler (Program Counter) – zeigt auf den nächsten Befehl
-    uint16_t SP;   ///< Stapelzeiger (Stack Pointer) – zeigt auf die Spitze des Stacks
+    uint16_t PC;   ///< Program Counter - points to the next instruction
+    uint16_t SP;   ///< Stack Pointer - points to the top of the stack
     ///@}
 
     // =========================================================================
-    /// @name Interrupt- und Auffrischungsregister
+    /// @name Interrupt and Refresh Registers
     // =========================================================================
     ///@{
-    uint8_t I;     ///< Interrupt-Vektorregister – oberes Byte der Vektortabelle im IM 2
-    uint8_t R;     ///< Speicher-Auffrischungsregister (Memory Refresh) – Bit 7 bleibt konstant
+    uint8_t I;     ///< Interrupt vector register - upper byte of vector table in IM 2
+    uint8_t R;     ///< Memory refresh register - bit 7 remains constant
     ///@}
 
     // =========================================================================
-    /// @name Interrupt-Zustand
+    /// @name Interrupt State
     // =========================================================================
     ///@{
-    bool IFF1;     ///< Interrupt-Flip-Flop 1 – steuert akzeptierte maskierbare Interrupts
-    bool IFF2;     ///< Interrupt-Flip-Flop 2 – Zwischenspeicher von IFF1 bei NMI
-    uint8_t IM;    ///< Interruptmodus (0, 1 oder 2)
-    bool halted;   ///< True, wenn CPU durch HALT-Befehl angehalten wurde
+    bool IFF1;     ///< Interrupt Flip-Flop 1 - controls acceptance of maskable interrupts
+    bool IFF2;     ///< Interrupt Flip-Flop 2 - backup of IFF1 during NMI
+    uint8_t IM;    ///< Interrupt mode (0, 1, or 2)
+    bool halted;   ///< True when CPU is halted by HALT instruction
     ///@}
 
     /**
-     * @brief Gesamtzähler der bisher ausgeführten Taktzyklen.
+     * @brief Total count of clock cycles executed so far.
      *
-     * Wird bei jedem step()-Aufruf und bei Interruptbehandlung inkrementiert.
-     * Kann zur Taktung von Peripheriegeräten und Timing-Synchronisation
-     * verwendet werden.
+     * Incremented with each step() call and during interrupt handling.
+     * Can be used for timing peripheral devices and timing synchronization.
      */
     uint64_t cycles;
 
     // =========================================================================
-    /// @name Z80-Statusflags
-    /// @brief Bitmasken für die einzelnen Bits des Flagregisters F.
+    /// @name Z80 Status Flags
+    /// @brief Bit masks for individual bits of flag register F.
     // =========================================================================
     ///@{
-    static constexpr uint8_t FLAG_C  = 0x01;  ///< Carry-Flag (Bit 0) – Übertrag bei Addition/Subtraktion
-    static constexpr uint8_t FLAG_N  = 0x02;  ///< Subtraktions-Flag (Bit 1) – gesetzt nach Subtraktionsbefehlen, für DAA
-    static constexpr uint8_t FLAG_PV = 0x04;  ///< Parity/Overflow-Flag (Bit 2) – Parität oder arithmetischer Überlauf
-    static constexpr uint8_t FLAG_3  = 0x08;  ///< Undokumentiertes Flag (Bit 3) – Kopie von Bit 3 des Ergebnisses
-    static constexpr uint8_t FLAG_H  = 0x10;  ///< Half-Carry-Flag (Bit 4) – Halbübertrag (BCD-Korrektur)
-    static constexpr uint8_t FLAG_5  = 0x20;  ///< Undokumentiertes Flag (Bit 5) – Kopie von Bit 5 des Ergebnisses
-    static constexpr uint8_t FLAG_Z  = 0x40;  ///< Zero-Flag (Bit 6) – gesetzt wenn Ergebnis Null ist
-    static constexpr uint8_t FLAG_S  = 0x80;  ///< Sign-Flag (Bit 7) – Vorzeichen (Kopie von Bit 7 des Ergebnisses)
+    static constexpr uint8_t FLAG_C  = 0x01;  ///< Carry flag (bit 0) - carry from addition/subtraction
+    static constexpr uint8_t FLAG_N  = 0x02;  ///< Subtraction flag (bit 1) - set after subtraction, used for DAA
+    static constexpr uint8_t FLAG_PV = 0x04;  ///< Parity/Overflow flag (bit 2) - parity or arithmetic overflow
+    static constexpr uint8_t FLAG_3  = 0x08;  ///< Undocumented flag (bit 3) - copy of bit 3 of result
+    static constexpr uint8_t FLAG_H  = 0x10;  ///< Half-carry flag (bit 4) - half-carry (BCD correction)
+    static constexpr uint8_t FLAG_5  = 0x20;  ///< Undocumented flag (bit 5) - copy of bit 5 of result
+    static constexpr uint8_t FLAG_Z  = 0x40;  ///< Zero flag (bit 6) - set when result is zero
+    static constexpr uint8_t FLAG_S  = 0x80;  ///< Sign flag (bit 7) - sign bit (copy of bit 7 of result)
     ///@}
 
     // =========================================================================
-    /// @name Callback-Funktionen für Speicher- und I/O-Zugriffe
-    /// @brief Müssen vor der Verwendung der CPU-Emulation gesetzt werden.
-    ///        Sie stellen die Verbindung zur emulierten Hardware her.
+    /// @name Callback Functions for Memory and I/O Access
+    /// @brief Must be set before using the CPU emulation.
+    ///        They provide the connection to the emulated hardware.
     // =========================================================================
     ///@{
-    std::function<uint8_t(uint16_t)> readByte;           ///< Callback: Byte aus dem Speicher lesen (Adresse → Wert)
-    std::function<void(uint16_t, uint8_t)> writeByte;    ///< Callback: Byte in den Speicher schreiben (Adresse, Wert)
-    std::function<uint8_t(uint16_t)> readPort;           ///< Callback: Byte von einem I/O-Port lesen (Portadresse → Wert)
-    std::function<void(uint16_t, uint8_t)> writePort;    ///< Callback: Byte auf einen I/O-Port schreiben (Portadresse, Wert)
+    std::function<uint8_t(uint16_t)> readByte;           ///< Callback: Read byte from memory (address → value)
+    std::function<void(uint16_t, uint8_t)> writeByte;    ///< Callback: Write byte to memory (address, value)
+    std::function<uint8_t(uint16_t)> readPort;           ///< Callback: Read byte from I/O port (port address → value)
+    std::function<void(uint16_t, uint8_t)> writePort;    ///< Callback: Write byte to I/O port (port address, value)
 
     /**
-     * @brief Optional: Instruction-Trace-Callback für maximales Debugging.
+     * @brief Optional: Instruction trace callback for detailed debugging.
      *
-     * Wenn gesetzt, wird diese Funktion VOR jeder Befehlsausführung aufgerufen.
-     * Sie empfängt einen Zeiger auf die CPU sowie die CPU-Instanz selbst,
-     * sodass alle Register und der aktuelle PC ausgelesen werden können.
-     * Nur aktiv wenn LOG_LEVEL >= 5 (TRACE), sonst nicht gesetzt.
+     * If set, this function is called BEFORE each instruction execution.
+     * It receives a pointer to the CPU and the CPU instance itself,
+     * allowing all registers and the current PC to be read.
+     * Only active if LOG_LEVEL >= 5 (TRACE), otherwise not set.
      *
-     * Signatur: void callback(const Z80& cpu)
+     * Signature: void callback(const Z80& cpu)
      */
-    std::function<void(const Z80&)> traceCallback;       ///< TRACE-Callback: vor jeder Instruktion aufgerufen (optional)
+    std::function<void(const Z80&)> traceCallback;       ///< TRACE callback: called before each instruction (optional)
+
+    /**
+     * @brief Optional: RETI callback to notify peripherals.
+     *
+     * If set, this function is called when the CPU executes a
+     * RETI instruction (Return from Interrupt). This allows peripheral
+     * devices to reset their "Interrupt Under Service" (IUS) flags.
+     *
+     * Signature: void callback()
+     */
+    std::function<void()> retiCallback;                  ///< RETI callback: called after RETI execution (optional)
     ///@}
 
     // =========================================================================
-    /// @name Öffentliche Methoden
+    /// @name Public Methods
     // =========================================================================
     ///@{
 
-    /** @brief Konstruktor – initialisiert die CPU durch Aufruf von reset(). */
+    /** @brief Constructor - initializes the CPU by calling reset(). */
     Z80();
 
     /**
-     * @brief Setzt die CPU in den Ausgangszustand zurück.
+     * @brief Resets the CPU to its initial state.
      *
-     * Alle Register werden auf 0 gesetzt, SP auf 0xFFFF, Interrupts werden
-     * deaktiviert, IM auf 0 gesetzt und der HALT-Zustand aufgehoben.
+     * All registers are set to 0, SP to 0xFFFF, interrupts are
+     * disabled, IM set to 0, and HALT state is cleared.
      */
     void reset();
 
     /**
-     * @brief Führt einen einzelnen Z80-Befehl aus.
+     * @brief Executes a single Z80 instruction.
      *
-     * Liest den Opcode an der Adresse PC, dekodiert und führt den Befehl aus.
-     * Im HALT-Zustand werden nur NOP-Zyklen verbraucht (4 Takte).
+     * Reads the opcode at address PC, decodes and executes the instruction.
+     * In HALT state, only NOP cycles are consumed (4 clocks).
      *
-     * @return Anzahl der verbrauchten Taktzyklen für diesen Befehl.
+     * @return Number of clock cycles consumed by this instruction.
      */
     int step();
 
     /**
-     * @brief Löst einen maskierbaren Interrupt (INT) aus.
+     * @brief Triggers a maskable interrupt (INT).
      *
-     * Wird nur akzeptiert, wenn IFF1 gesetzt ist. Das Verhalten hängt
-     * vom aktuellen Interruptmodus ab:
-     * - IM 0: Führt den Befehl auf dem Datenbus aus (typisch RST).
-     * - IM 1: Springt zu Adresse 0x0038.
-     * - IM 2: Liest die Zieladresse aus der Vektortabelle (I*256 + vector).
+     * Only accepted if IFF1 is set. Behavior depends on the current
+     * interrupt mode:
+     * - IM 0: Executes the instruction on the data bus (typically RST).
+     * - IM 1: Jumps to address 0x0038.
+     * - IM 2: Reads target address from vector table (I*256 + vector).
      *
-     * @param vector Interruptvektor – wird je nach IM unterschiedlich interpretiert.
+     * @param vector Interrupt vector - interpreted differently depending on IM.
      */
     void interrupt(uint8_t vector);
 
     /**
-     * @brief Löst einen nicht-maskierbaren Interrupt (NMI) aus.
+     * @brief Triggers a non-maskable interrupt (NMI).
      *
-     * Kann nicht deaktiviert werden. Sichert IFF1 in IFF2, deaktiviert
-     * Interrupts und springt zur festen Adresse 0x0066.
+     * Cannot be disabled. Saves IFF1 to IFF2, disables interrupts,
+     * and jumps to fixed address 0x0066.
      */
     void nmi();
 
     /**
-     * @brief Legt einen 16-Bit-Wert auf den Stack.
+     * @brief Pushes a 16-bit value onto the stack.
      *
-     * Dekrementiert SP um 2 und schreibt den Wert in Little-Endian-Reihenfolge.
+     * Decrements SP by 2 and writes the value in little-endian order.
      *
-     * @param val Der auf den Stack zu legende Wert.
+     * @param val The value to push onto the stack.
      */
     void push(uint16_t val);
 
     /**
-     * @brief Nimmt einen 16-Bit-Wert vom Stack.
+     * @brief Pops a 16-bit value from the stack.
      *
-     * Liest den Wert in Little-Endian-Reihenfolge und inkrementiert SP um 2.
+     * Reads the value in little-endian order and increments SP by 2.
      *
-     * @return Der vom Stack gelesene 16-Bit-Wert.
+     * @return The 16-bit value read from the stack.
      */
     uint16_t pop();
 
@@ -297,418 +304,430 @@ public:
 
 private:
     // =========================================================================
-    /// @name Interne Speicherzugriffshilfen
+    /// @name Internal Memory Access Helpers
     // =========================================================================
     ///@{
 
     /**
-     * @brief Liest ein 16-Bit-Wort aus dem Speicher (Little-Endian).
-     * @param addr Startadresse (niederwertiges Byte).
-     * @return Gelesenes 16-Bit-Wort.
+     * @brief Reads a 16-bit word from memory (little-endian).
+     * @param addr Start address (low byte).
+     * @return Read 16-bit word.
      */
     uint16_t readWord(uint16_t addr);
 
     /**
-     * @brief Schreibt ein 16-Bit-Wort in den Speicher (Little-Endian).
-     * @param addr Startadresse (niederwertiges Byte).
-     * @param val Zu schreibendes 16-Bit-Wort.
+     * @brief Writes a 16-bit word to memory (little-endian).
+     * @param addr Start address (low byte).
+     * @param val 16-bit word to write.
      */
     void writeWord(uint16_t addr, uint16_t val);
 
     /**
-     * @brief Liest das nächste Byte an PC und inkrementiert den Programmzähler.
-     * @return Gelesenes Byte.
+     * @brief Reads the next byte at PC and increments the program counter.
+     * @return Read byte.
      */
     uint8_t fetchByte();
 
     /**
-     * @brief Liest das nächste 16-Bit-Wort an PC und erhöht PC um 2.
-     * @return Gelesenes 16-Bit-Wort (Little-Endian).
+     * @brief Reads the next 16-bit word at PC and increments PC by 2.
+     * @return Read 16-bit word (little-endian).
      */
     uint16_t fetchWord();
 
     ///@}
 
     // =========================================================================
-    /// @name 8-Bit-ALU-Operationen
-    /// @brief Alle arithmetischen und logischen 8-Bit-Operationen mit korrekter
-    ///        Berechnung aller Flags (S, Z, H, PV, N, C sowie Bit 3 und 5).
+    /// @name 8-Bit ALU Operations
+    /// @brief All arithmetic and logical 8-bit operations with correct
+    ///        calculation of all flags (S, Z, H, PV, N, C and bits 3 and 5).
     // =========================================================================
     ///@{
 
     /**
-     * @brief 8-Bit-Addition: a + b.
-     * @param a Erster Operand.
-     * @param b Zweiter Operand.
-     * @return Ergebnis (8 Bit). Flags: S, Z, H, PV (Überlauf), C.
+     * @brief 8-bit addition: a + b.
+     * @param a First operand.
+     * @param b Second operand.
+     * @return Result (8 bits). Flags: S, Z, H, PV (overflow), C.
      */
     uint8_t add8(uint8_t a, uint8_t b);
 
     /**
-     * @brief 8-Bit-Addition mit Carry: a + b + Carry.
-     * @param a Erster Operand.
-     * @param b Zweiter Operand.
-     * @return Ergebnis (8 Bit). Flags: S, Z, H, PV (Überlauf), C.
+     * @brief 8-bit addition with carry: a + b + carry.
+     * @param a First operand.
+     * @param b Second operand.
+     * @return Result (8 bits). Flags: S, Z, H, PV (overflow), C.
      */
     uint8_t adc8(uint8_t a, uint8_t b);
 
     /**
-     * @brief 8-Bit-Subtraktion: a - b.
-     * @param a Erster Operand (Minuend).
-     * @param b Zweiter Operand (Subtrahend).
-     * @return Ergebnis (8 Bit). Flags: S, Z, H, PV (Überlauf), N=1, C.
+     * @brief 8-bit subtraction: a - b.
+     * @param a First operand (minuend).
+     * @param b Second operand (subtrahend).
+     * @return Result (8 bits). Flags: S, Z, H, PV (overflow), N=1, C.
      */
     uint8_t sub8(uint8_t a, uint8_t b);
 
     /**
-     * @brief 8-Bit-Subtraktion mit Carry: a - b - Carry.
-     * @param a Erster Operand (Minuend).
-     * @param b Zweiter Operand (Subtrahend).
-     * @return Ergebnis (8 Bit). Flags: S, Z, H, PV (Überlauf), N=1, C.
+     * @brief 8-bit subtraction with carry: a - b - carry.
+     * @param a First operand (minuend).
+     * @param b Second operand (subtrahend).
+     * @return Result (8 bits). Flags: S, Z, H, PV (overflow), N=1, C.
      */
     uint8_t sbc8(uint8_t a, uint8_t b);
 
     /**
-     * @brief Logisches UND: A = A & val.
+     * @brief Logical AND: A = A & val.
      *
-     * Setzt H-Flag, löscht N- und C-Flag. PV zeigt Parität an.
-     * @param val Operand für die UND-Verknüpfung.
+     * Sets H flag, clears N and C flags. PV indicates parity.
+     * @param val Operand for AND operation.
      */
     void and8(uint8_t val);
 
     /**
-     * @brief Logisches ODER: A = A | val.
+     * @brief Logical OR: A = A | val.
      *
-     * Löscht H-, N- und C-Flag. PV zeigt Parität an.
-     * @param val Operand für die ODER-Verknüpfung.
+     * Clears H, N, and C flags. PV indicates parity.
+     * @param val Operand for OR operation.
      */
     void or8(uint8_t val);
 
     /**
-     * @brief Logisches Exklusiv-ODER: A = A ^ val.
+     * @brief Logical XOR: A = A ^ val.
      *
-     * Löscht H-, N- und C-Flag. PV zeigt Parität an.
-     * @param val Operand für die XOR-Verknüpfung.
+     * Clears H, N, and C flags. PV indicates parity.
+     * @param val Operand for XOR operation.
      */
     void xor8(uint8_t val);
 
     /**
-     * @brief Vergleich (Compare): A - val, Ergebnis wird verworfen.
+     * @brief Compare (CP): A - val, result is discarded.
      *
-     * Setzt Flags wie SUB, aber der Akkumulator bleibt unverändert.
-     * Bits 3 und 5 der Flags werden vom Operanden (val) übernommen,
-     * nicht vom Ergebnis.
-     * @param val Vergleichsoperand.
+     * Sets flags like SUB, but accumulator remains unchanged.
+     * Bits 3 and 5 of flags are taken from the operand (val),
+     * not from the result.
+     * @param val Comparison operand.
      */
     void cp8(uint8_t val);
 
     /**
-     * @brief 8-Bit-Inkrement: val + 1.
+     * @brief 8-bit increment: val + 1.
      *
-     * C-Flag bleibt unverändert. PV wird gesetzt bei Überlauf von 0x7F.
-     * @param val Zu inkrementierender Wert.
-     * @return Ergebnis (8 Bit).
+     * C flag remains unchanged. PV is set on overflow from 0x7F.
+     * @param val Value to increment.
+     * @return Result (8 bits).
      */
     uint8_t inc8(uint8_t val);
 
     /**
-     * @brief 8-Bit-Dekrement: val - 1.
+     * @brief 8-bit decrement: val - 1.
      *
-     * C-Flag bleibt unverändert. PV wird gesetzt bei Unterlauf von 0x80.
-     * @param val Zu dekrementierender Wert.
-     * @return Ergebnis (8 Bit).
+     * C flag remains unchanged. PV is set on underflow from 0x80.
+     * @param val Value to decrement.
+     * @return Result (8 bits).
      */
     uint8_t dec8(uint8_t val);
 
     ///@}
 
     // =========================================================================
-    /// @name 16-Bit-ALU-Operationen
+    /// @name 16-Bit ALU Operations
     // =========================================================================
     ///@{
 
     /**
-     * @brief 16-Bit-Addition: a + b.
+     * @brief 16-bit addition: a + b.
      *
-     * S-, Z- und PV-Flags bleiben erhalten. H bezieht sich auf Bit 11.
-     * @param a Erster Operand.
-     * @param b Zweiter Operand.
-     * @return Ergebnis (16 Bit).
+     * S, Z, and PV flags are preserved. H refers to bit 11.
+     * @param a First operand.
+     * @param b Second operand.
+     * @return Result (16 bits).
      */
     uint16_t add16(uint16_t a, uint16_t b);
 
     /**
-     * @brief 16-Bit-Addition mit Carry: a + b + Carry.
+     * @brief 16-bit addition with carry: a + b + carry.
      *
-     * Alle Flags werden beeinflusst. PV zeigt 16-Bit-Überlauf an.
-     * @param a Erster Operand.
-     * @param b Zweiter Operand.
-     * @return Ergebnis (16 Bit).
+     * All flags are affected. PV indicates 16-bit overflow.
+     * @param a First operand.
+     * @param b Second operand.
+     * @return Result (16 bits).
      */
     uint16_t adc16(uint16_t a, uint16_t b);
 
     /**
-     * @brief 16-Bit-Subtraktion mit Carry: a - b - Carry.
+     * @brief 16-bit subtraction with carry: a - b - carry.
      *
-     * Alle Flags werden beeinflusst. PV zeigt 16-Bit-Überlauf an.
-     * @param a Erster Operand (Minuend).
-     * @param b Zweiter Operand (Subtrahend).
-     * @return Ergebnis (16 Bit).
+     * All flags are affected. PV indicates 16-bit overflow.
+     * @param a First operand (minuend).
+     * @param b Second operand (subtrahend).
+     * @return Result (16 bits).
      */
     uint16_t sbc16(uint16_t a, uint16_t b);
 
     ///@}
 
     // =========================================================================
-    /// @name Rotations- und Schiebebefehle
-    /// @brief Implementierung der CB-Präfix-Operationen.
-    ///        Alle Funktionen setzen S, Z, PV (Parität), Bit 3, Bit 5
-    ///        und C (herausgeschobenes Bit). H und N werden gelöscht.
+    /// @name Rotation and Shift Instructions
+    /// @brief Implementation of CB-prefix operations.
+    ///        All functions set S, Z, PV (parity), bit 3, bit 5,
+    ///        and C (shifted-out bit). H and N are cleared.
     // =========================================================================
     ///@{
 
     /**
-     * @brief Rotate Left Circular – Bit 7 wird nach Bit 0 und ins C-Flag rotiert.
-     * @param val Eingabewert.
-     * @return Rotiertes Ergebnis.
+     * @brief Rotate Left Circular - bit 7 rotates to bit 0 and C flag.
+     * @param val Input value.
+     * @return Rotated result.
      */
     uint8_t rlc(uint8_t val);
 
     /**
-     * @brief Rotate Right Circular – Bit 0 wird nach Bit 7 und ins C-Flag rotiert.
-     * @param val Eingabewert.
-     * @return Rotiertes Ergebnis.
+     * @brief Rotate Right Circular - bit 0 rotates to bit 7 and C flag.
+     * @param val Input value.
+     * @return Rotated result.
      */
     uint8_t rrc(uint8_t val);
 
     /**
-     * @brief Rotate Left durch Carry – Bit 7 → C-Flag, altes C-Flag → Bit 0.
-     * @param val Eingabewert.
-     * @return Rotiertes Ergebnis.
+     * @brief Rotate Left through Carry - bit 7 → C flag, old C flag → bit 0.
+     * @param val Input value.
+     * @return Rotated result.
      */
     uint8_t rl(uint8_t val);
 
     /**
-     * @brief Rotate Right durch Carry – Bit 0 → C-Flag, altes C-Flag → Bit 7.
-     * @param val Eingabewert.
-     * @return Rotiertes Ergebnis.
+     * @brief Rotate Right through Carry - bit 0 → C flag, old C flag → bit 7.
+     * @param val Input value.
+     * @return Rotated result.
      */
     uint8_t rr(uint8_t val);
 
     /**
-     * @brief Shift Left Arithmetic – Bit 7 → C-Flag, Bit 0 wird 0.
-     * @param val Eingabewert.
-     * @return Geschobenes Ergebnis.
+     * @brief Shift Left Arithmetic - bit 7 → C flag, bit 0 becomes 0.
+     * @param val Input value.
+     * @return Shifted result.
      */
     uint8_t sla(uint8_t val);
 
     /**
-     * @brief Shift Right Arithmetic – Bit 0 → C-Flag, Bit 7 bleibt erhalten (Vorzeichen).
-     * @param val Eingabewert.
-     * @return Geschobenes Ergebnis.
+     * @brief Shift Right Arithmetic - bit 0 → C flag, bit 7 preserved (sign).
+     * @param val Input value.
+     * @return Shifted result.
      */
     uint8_t sra(uint8_t val);
 
     /**
-     * @brief Shift Left Logical (undokumentiert) – Bit 7 → C-Flag, Bit 0 wird 1.
+     * @brief Shift Left Logical (undocumented) - bit 7 → C flag, bit 0 becomes 1.
      *
-     * Dies ist ein undokumentierter Z80-Befehl, manchmal auch als SL1 oder SLS bezeichnet.
-     * @param val Eingabewert.
-     * @return Geschobenes Ergebnis.
+     * This is an undocumented Z80 instruction, sometimes called SL1 or SLS.
+     * @param val Input value.
+     * @return Shifted result.
      */
     uint8_t sll(uint8_t val);
 
     /**
-     * @brief Shift Right Logical – Bit 0 → C-Flag, Bit 7 wird 0.
-     * @param val Eingabewert.
-     * @return Geschobenes Ergebnis.
+     * @brief Shift Right Logical - bit 0 → C flag, bit 7 becomes 0.
+     * @param val Input value.
+     * @return Shifted result.
      */
     uint8_t srl(uint8_t val);
 
     ///@}
 
     // =========================================================================
-    /// @name Bit-Operationen
-    /// @brief BIT, RES und SET aus dem CB-Präfix-Befehlssatz.
+    /// @name Bit Operations
+    /// @brief BIT, RES, and SET from the CB-prefix instruction set.
     // =========================================================================
     ///@{
 
     /**
-     * @brief BIT b,val – Testet das angegebene Bit.
+     * @brief BIT b,val - tests the specified bit.
      *
-     * Z-Flag wird gesetzt wenn das Bit 0 ist. H wird gesetzt, N gelöscht.
-     * C bleibt unverändert.
-     * @param bit Bitnummer (0–7).
-     * @param val Zu testender Wert.
+     * Z flag is set if the bit is 0. H is set, N is cleared.
+     * C remains unchanged.
+     * @param bit Bit number (0-7).
+     * @param val Value to test.
+     * @param flags_src Source for undocumented flags 3 and 5.
+     *                  For indexed BIT operations (IX+d, IY+d), the
+     *                  upper byte of the effective address is passed here.
+     */
+    void bit_op(uint8_t bit, uint8_t val, uint8_t flags_src);
+
+    /**
+     * @brief BIT b,val - tests the specified bit (standard version).
+     *
+     * Uses the value itself as source for undocumented flags.
+     * @param bit Bit number (0-7).
+     * @param val Value to test.
      */
     void bit_op(uint8_t bit, uint8_t val);
 
     /**
-     * @brief RES b,val – Setzt das angegebene Bit auf 0.
-     * @param bit Bitnummer (0–7).
-     * @param val Eingabewert.
-     * @return Ergebnis mit gelöschtem Bit.
+     * @brief RES b,val - clears the specified bit to 0.
+     * @param bit Bit number (0-7).
+     * @param val Input value.
+     * @return Result with cleared bit.
      */
     uint8_t res_op(uint8_t bit, uint8_t val);
 
     /**
-     * @brief SET b,val – Setzt das angegebene Bit auf 1.
-     * @param bit Bitnummer (0–7).
-     * @param val Eingabewert.
-     * @return Ergebnis mit gesetztem Bit.
+     * @brief SET b,val - sets the specified bit to 1.
+     * @param bit Bit number (0-7).
+     * @param val Input value.
+     * @return Result with set bit.
      */
     uint8_t set_op(uint8_t bit, uint8_t val);
 
     ///@}
 
     // =========================================================================
-    /// @name Hilfsfunktionen
+    /// @name Helper Functions
     // =========================================================================
     ///@{
 
     /**
-     * @brief Berechnet die Parität eines 8-Bit-Wertes.
-     * @param val Zu prüfender Wert.
-     * @return true bei gerader Parität (gerade Anzahl gesetzter Bits).
+     * @brief Calculates the parity of an 8-bit value.
+     * @param val Value to check.
+     * @return true for even parity (even number of set bits).
      */
     static bool parity(uint8_t val);
 
     ///@}
 
     // =========================================================================
-    /// @name Befehlsdekodierung und -ausführung
-    /// @brief Jede Funktion behandelt eine Gruppe von Z80-Opcodes,
-    ///        geordnet nach Präfix-Bytes.
+    /// @name Instruction Decoding and Execution
+    /// @brief Each function handles a group of Z80 opcodes,
+    ///        organized by prefix bytes.
     // =========================================================================
     ///@{
 
     /**
-     * @brief Hauptdekodierung – führt unpräfixierte Opcodes (0x00–0xFF) aus.
+     * @brief Main decoding - executes unprefixed opcodes (0x00-0xFF).
      *
-     * Umfasst: 8-Bit-Lade-/ALU-/Sprung-/Aufruf-/Rücksprungbefehle,
-     * 16-Bit-Lade- und Arithmetikbefehle, I/O, Austauschbefehle,
-     * sowie Verzweigung zu den Präfix-Handlern (CB, DD, ED, FD).
-     * @param opcode Der auszuführende Opcode.
-     * @return Verbrauchte Taktzyklen.
+     * Includes: 8-bit load/ALU/jump/call/return instructions,
+     * 16-bit load and arithmetic instructions, I/O, exchange instructions,
+     * and branching to prefix handlers (CB, DD, ED, FD).
+     * @param opcode The opcode to execute.
+     * @return Clock cycles consumed.
      */
     int execMain(uint8_t opcode);
 
     /**
-     * @brief CB-Präfix-Handler – Rotations-, Schiebe- und Bitoperationen.
+     * @brief CB-prefix handler - rotation, shift, and bit operations.
      *
-     * Dekodiert den zweiten Opcode nach dem CB-Präfix und führt die
-     * entsprechende Operation auf dem ausgewählten Register oder (HL) aus.
-     * @return Verbrauchte Taktzyklen (8 für Register, 12/15 für (HL)).
+     * Decodes the second opcode after the CB prefix and executes the
+     * corresponding operation on the selected register or (HL).
+     * @return Clock cycles consumed (8 for register, 12/15 for (HL)).
      */
     int execCB();
 
     /**
-     * @brief DD-Präfix-Handler – IX-Indexregister-Operationen.
+     * @brief DD-prefix handler - IX index register operations.
      *
-     * Ersetzt in den meisten Befehlen HL durch IX. Speicherzugriffe über
-     * (HL) werden zu (IX+d) mit vorzeichenbehaftetem 8-Bit-Displacement.
-     * Undokumentiert: IXH/IXL als einzelne 8-Bit-Register.
-     * @return Verbrauchte Taktzyklen.
+     * Replaces HL with IX in most instructions. Memory accesses via
+     * (HL) become (IX+d) with signed 8-bit displacement.
+     * Undocumented: IXH/IXL as individual 8-bit registers.
+     * @return Clock cycles consumed.
      */
     int execDD();
 
     /**
-     * @brief ED-Präfix-Handler – Erweiterte Befehle.
+     * @brief ED-prefix handler - extended instructions.
      *
-     * Umfasst: IN/OUT mit Register, SBC/ADC HL, LD (nn)/rr, NEG,
-     * RETN/RETI, IM-Modi, LD I,A / LD A,I / LD R,A / LD A,R,
-     * RRD/RLD und alle Blockoperationen (LDI, LDIR, CPI, CPIR etc.).
-     * @return Verbrauchte Taktzyklen.
+     * Includes: IN/OUT with register, SBC/ADC HL, LD (nn)/rr, NEG,
+     * RETN/RETI, IM modes, LD I,A / LD A,I / LD R,A / LD A,R,
+     * RRD/RLD, and all block operations (LDI, LDIR, CPI, CPIR, etc.).
+     * @return Clock cycles consumed.
      */
     int execED();
 
     /**
-     * @brief FD-Präfix-Handler – IY-Indexregister-Operationen.
+     * @brief FD-prefix handler - IY index register operations.
      *
-     * Funktional identisch zum DD-Präfix, verwendet aber IY statt IX.
-     * @return Verbrauchte Taktzyklen.
+     * Functionally identical to DD prefix, but uses IY instead of IX.
+     * @return Clock cycles consumed.
      */
     int execFD();
 
     /**
-     * @brief DDCB-Doppelpräfix-Handler – Bit-/Rotationsoperationen auf (IX+d).
+     * @brief DDCB double-prefix handler - bit/rotation operations on (IX+d).
      *
-     * Format: DD CB dd op – zuerst das Displacement, dann der Opcode.
-     * Bei Registeroperanden (z != 6) wird das Ergebnis zusätzlich zum
-     * Speicher auch in das angegebene Register geschrieben (undokumentiert).
-     * @return Verbrauchte Taktzyklen (20 für BIT, 23 für andere).
+     * Format: DD CB dd op - displacement first, then opcode.
+     * For register operands (z != 6), the result is written both to memory
+     * and also copied to the specified register (undocumented).
+     * @return Clock cycles consumed (20 for BIT, 23 for others).
      */
     int execDDCB();
 
     /**
-     * @brief FDCB-Doppelpräfix-Handler – Bit-/Rotationsoperationen auf (IY+d).
+     * @brief FDCB double-prefix handler - bit/rotation operations on (IY+d).
      *
-     * Funktional identisch zu DDCB, verwendet aber IY statt IX.
-     * @return Verbrauchte Taktzyklen (20 für BIT, 23 für andere).
+     * Functionally identical to DDCB, but uses IY instead of IX.
+     * @return Clock cycles consumed (20 for BIT, 23 for others).
      */
     int execFDCB();
 
     ///@}
 
     // =========================================================================
-    /// @name Bedingungsprüfung und Registerzugriff
+    /// @name Condition Checking and Register Access
     // =========================================================================
     ///@{
 
     /**
-     * @brief Prüft eine Sprung-/Aufruf-/Rücksprungbedingung.
+     * @brief Checks a jump/call/return condition.
      *
-     * @param cc Bedingungscode (0=NZ, 1=Z, 2=NC, 3=C, 4=PO, 5=PE, 6=P, 7=M).
-     * @return true, wenn die Bedingung erfüllt ist.
+     * @param cc Condition code (0=NZ, 1=Z, 2=NC, 3=C, 4=PO, 5=PE, 6=P, 7=M).
+     * @return true if the condition is satisfied.
      */
     bool checkCondition(uint8_t cc);
 
     /**
-     * @brief Liest ein 8-Bit-Register anhand seines Opcode-Index.
+     * @brief Reads an 8-bit register by its opcode index.
      *
-     * Kodierung: 0=B, 1=C, 2=D, 3=E, 4=H, 5=L, 6=(HL), 7=A.
-     * @param idx Registerindex (0–7).
-     * @return Registerwert (bei idx=6 wird aus dem Speicher an Adresse HL gelesen).
+     * Encoding: 0=B, 1=C, 2=D, 3=E, 4=H, 5=L, 6=(HL), 7=A.
+     * @param idx Register index (0-7).
+     * @return Register value (for idx=6, reads from memory at address HL).
      */
     uint8_t getReg8(uint8_t idx);
 
     /**
-     * @brief Schreibt einen Wert in ein 8-Bit-Register anhand seines Opcode-Index.
-     * @param idx Registerindex (0–7, siehe getReg8).
-     * @param val Zu schreibender Wert.
+     * @brief Writes a value to an 8-bit register by its opcode index.
+     * @param idx Register index (0-7, see getReg8).
+     * @param val Value to write.
      */
     void setReg8(uint8_t idx, uint8_t val);
 
     /**
-     * @brief Liest ein 16-Bit-Registerpaar anhand seines Opcode-Index (SP-Variante).
+     * @brief Reads a 16-bit register pair by its opcode index (SP variant).
      *
-     * Kodierung: 0=BC, 1=DE, 2=HL, 3=SP.
-     * @param idx Registerpaarindex (0–3).
-     * @return 16-Bit-Registerwert.
+     * Encoding: 0=BC, 1=DE, 2=HL, 3=SP.
+     * @param idx Register pair index (0-3).
+     * @return 16-bit register value.
      */
     uint16_t getReg16(uint8_t idx);
 
     /**
-     * @brief Schreibt einen Wert in ein 16-Bit-Registerpaar (SP-Variante).
-     * @param idx Registerpaarindex (0–3, siehe getReg16).
-     * @param val Zu schreibender 16-Bit-Wert.
+     * @brief Writes a value to a 16-bit register pair (SP variant).
+     * @param idx Register pair index (0-3, see getReg16).
+     * @param val Value to write.
      */
     void setReg16(uint8_t idx, uint16_t val);
 
     /**
-     * @brief Liest ein 16-Bit-Registerpaar anhand seines Opcode-Index (AF-Variante).
+     * @brief Reads a 16-bit register pair by its opcode index (AF variant).
      *
-     * Kodierung: 0=BC, 1=DE, 2=HL, 3=AF (statt SP).
-     * Wird für PUSH/POP-Befehle verwendet.
-     * @param idx Registerpaarindex (0–3).
-     * @return 16-Bit-Registerwert.
+     * Encoding: 0=BC, 1=DE, 2=HL, 3=AF (instead of SP).
+     * Used for PUSH/POP instructions.
+     * @param idx Register pair index (0-3).
+     * @return 16-bit register value.
      */
     uint16_t getReg16AF(uint8_t idx);
 
     /**
-     * @brief Schreibt einen Wert in ein 16-Bit-Registerpaar (AF-Variante).
-     * @param idx Registerpaarindex (0–3, siehe getReg16AF).
-     * @param val Zu schreibender 16-Bit-Wert.
+     * @brief Writes a value to a 16-bit register pair (AF variant).
+     * @param idx Register pair index (0-3, see getReg16AF).
+     * @param val Value to write.
      */
     void setReg16AF(uint8_t idx, uint16_t val);
 

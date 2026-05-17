@@ -1,20 +1,54 @@
 /**
  * @file z80_pio.h
- * @brief Z80 Parallel Input/Output (PIO) chip emulation.
- * 
- * The Z80 PIO (Zilog Q 301, DDR equivalent U 855) is a parallel interface chip
- * that provides two independent 8-bit ports (A and B) with:
- * - Four operating modes per port: Output, Input, Bidirectional, Bit Control
- * - Interrupt support with daisy-chain priority
- * - Handshake signals (ASTB, BSTB)
- * 
- * The PIO is accessed via 4 consecutive I/O ports:
- * - Base+0: Port A Data
- * - Base+1: Port A Control
- * - Base+2: Port B Data
- * - Base+3: Port B Control
- * 
- * Used in K2526 (BS-PIO for keyboard/button matrix) and other cards.
+ * @brief Z80 Parallel Input/Output (PIO) Chip Emulation - Header File
+ *
+ * Complete emulation of the Zilog Z8420 Parallel Input/Output (PIO) controller
+ * as used in the Robotron A5120 office computer. The Z80 PIO (DDR designation
+ * U 855 D) provides two independent 8-bit parallel I/O ports with programmable
+ * operating modes and interrupt generation capabilities.
+ *
+ * Key Features:
+ * - Two independent 8-bit ports (Port A and Port B)
+ * - Four operating modes per port:
+ *   - Mode 0: Output mode (CPU writes data to external device)
+ *   - Mode 1: Input mode (CPU reads data from external device)
+ *   - Mode 2: Bidirectional mode (Port A only, with handshake)
+ *   - Mode 3: Bit Control mode (per-bit input/output configuration)
+ * - Programmable interrupt generation with vectored interrupts
+ * - Handshake strobe signals (ASTB for Port A, BSTB for Port B)
+ * - Internal daisy-chain priority (Port A > Port B)
+ * - Interrupt logic: AND/OR combination of masked input bits
+ * - RETI instruction detection for nested interrupt support
+ *
+ * Port Configuration:
+ * The PIO occupies 4 consecutive I/O ports:
+ * - Base+0: Port A Data register (read/write)
+ * - Base+1: Port A Control register (write only)
+ * - Base+2: Port B Data register (read/write)
+ * - Base+3: Port B Control register (write only)
+ *
+ * Control Register Protocol:
+ * - D0=0: Sets interrupt vector (8-bit vector address)
+ * - D[3:0]=1111 (0x0F): Mode control word (mode in D[7:6])
+ * - D[3:0]=0111 (0x07): Interrupt control word (IE, AND/OR, H/L, Mask Follows)
+ * - D[3:0]=0011 (0x03): Simplified interrupt control (IE, AND/OR, H/L)
+ * - After mode 3 selection: I/O direction mask (1=input, 0=output)
+ * - After interrupt control with MaskFollows: Interrupt mask register
+ *
+ * Mode 2 Restriction:
+ * When Port A is configured for Mode 2 (Bidirectional), Port B is automatically
+ * forced to Mode 3 (Bit Control) as its control lines are used for Port A handshake.
+ *
+ * Typical Usage in A5120:
+ * - K2526 (BS-PIO): Keyboard and button matrix scanning
+ * - K8025 PIO-A/PIO-B: External device interfaces
+ * - Parallel printer port interface
+ *
+ * @author Olaf Krieger
+ * @date 2024-2025
+ * @license MIT License
+ * @see Zilog Z8420 PIO Technical Manual
+ * @see Robotron A5120 Technical Documentation (U855D Manual, pages 608-611)
  */
 
 #pragma once
@@ -104,12 +138,20 @@ public:
     
     /**
      * @brief Return the interrupt vector for this PIO (Z80 Mode 2).
-     * 
+     *
      * The vector is configured via the Port Control register.
-     * 
+     *
      * @return 8-bit interrupt vector
      */
     uint8_t getVector() const override;
+
+    /**
+     * @brief Notify PIO that RETI was executed.
+     *
+     * Clears the Interrupt Under Service (IUS) flag for the port
+     * that was being serviced, allowing lower-priority interrupts.
+     */
+    void    onRETI() override;
 
     // ─── External port access (from other devices or tests) ────────────────
     
@@ -244,6 +286,7 @@ private:
         uint8_t   int_mask      = 0xFF;    ///< Interrupt enable mask (1=enabled)
         bool      pending       = false;   ///< Interrupt pending
         bool      iei           = false;   ///< Interrupt Enable Input (daisy-chain)
+        bool      ius           = false;   ///< Interrupt Under Service flag
         CtrlState ctrl_state    = CtrlState::IDLE;
     };
 
@@ -293,8 +336,8 @@ private:
     void    checkInterrupt(Port& p, uint8_t new_input);
 
     // State
-    Port         porta_;        ///< Port A configuration and state
-    Port         portb_;        ///< Port B configuration and state
+    mutable Port porta_;        ///< Port A configuration and state (mutable for getVector)
+    mutable Port portb_;        ///< Port B configuration and state (mutable for getVector)
     std::string  name_;         ///< Device name for debugging
     PortCallback cb_a_;         ///< Callback for Port A output changes
     PortCallback cb_b_;         ///< Callback for Port B output changes

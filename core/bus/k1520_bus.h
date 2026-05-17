@@ -129,13 +129,22 @@ public:
     
     /**
      * @brief Return interrupt vector (Z80 Mode 2).
-     * 
+     *
      * Called when CPU acknowledges interrupt and this device blocks the chain.
      * Typical value is an 8-bit vector combined with I register.
-     * 
+     *
      * @return Interrupt vector (default 0xFF for open-drain)
      */
     virtual uint8_t getVector() const { return 0xFF; }
+
+    /**
+     * @brief Notify device that RETI instruction was executed.
+     *
+     * Called by the bus when the CPU executes a RETI instruction.
+     * Devices should clear their "Interrupt Under Service" (IUS) flag
+     * and allow lower-priority interrupts to proceed.
+     */
+    virtual void onRETI() {}
 };
 
 
@@ -287,11 +296,19 @@ public:
     
     /**
      * @brief Assert /RESET signal to reset the entire system.
-     * 
+     *
      * CPU returns to address 0x0000 and all devices re-initialize.
      */
     void assertRESET();
-    
+
+    /**
+     * @brief Signal all interrupt devices that RETI was executed.
+     *
+     * Called by the CPU/machine when RETI instruction completes.
+     * Propagates onRETI() to all devices in the interrupt chain.
+     */
+    void signalRETI();
+
     /**
      * @brief Assert /WAIT to stall the bus for one T-cycle.
      * 

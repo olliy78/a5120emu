@@ -85,6 +85,17 @@ void K1520Bus::assertINT()    { int_asserted_   = true; }
 void K1520Bus::releaseINT()   { int_asserted_   = false; }
 void K1520Bus::assertNMI()    { nmi_pending_    = true; }
 void K1520Bus::assertRESET()  { reset_asserted_ = true; }
+
+void K1520Bus::signalRETI() {
+    // Notify all interrupt slaves in daisy chain
+    for (auto* dev : int_chain_) {
+        dev->onRETI();
+    }
+
+    // Recalculate interrupt chain state after RETI
+    updateInterruptChain();
+}
+
 void K1520Bus::assertWAIT()   { wait_asserted_  = true; }
 void K1520Bus::releaseWAIT()  { wait_asserted_  = false; }
 // setMEMDI() is inline in header

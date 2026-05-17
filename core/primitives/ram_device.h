@@ -1,10 +1,65 @@
 /**
  * @file ram_device.h
- * @brief Dynamic RAM (DRAM) emulation for memory-mapped devices.
- * 
- * Provides a simple array-based RAM implementation that can be registered
- * with the K1520Bus for memory access. Used for main memory (K3526) and
- * VRAM (K7024), or any other RAM-based memory device.
+ * @brief Dynamic Random Access Memory (RAM) Emulation - Header File
+ *
+ * Provides a writable memory device implementation using a dynamically allocated
+ * byte array. RAMDevice is used throughout the A5120 emulator for main system
+ * RAM, video RAM (VRAM), and any other volatile memory regions that require
+ * read and write access.
+ *
+ * Key Features:
+ * - Dynamic allocation at construction time
+ * - Full read/write access with bounds checking
+ * - MemDevice interface compatible with K1520Bus memory mapping
+ * - Utility methods for initialization and bulk loading
+ * - Direct memory access for testing and debugging
+ * - Open-drain bus behavior for out-of-bounds reads
+ *
+ * Implementation Notes:
+ * - Backed by std::vector<uint8_t> for automatic memory management
+ * - Initialized to 0x00 on construction (simulating power-on state)
+ * - Bounds-checked access: out-of-range reads return 0xFF
+ * - Out-of-range writes are silently ignored
+ * - Thread-safety: not thread-safe, assumes single-threaded access
+ *
+ * Typical Usage in A5120:
+ * - K3526 Main System RAM: 64 KB of working memory
+ * - K7024 Video RAM (VRAM): 16 KB for character display buffer
+ * - K8025 Extension RAM: Optional additional memory on expansion cards
+ * - Workspace memory for user programs and operating system
+ *
+ * Memory Initialization:
+ * RAM is initialized to 0x00 on construction, but real DRAM contains
+ * unpredictable values at power-on. For more realistic testing, use
+ * fill() with random values or specific test patterns.
+ *
+ * Direct Access:
+ * The data() method provides raw pointer access for efficiency in
+ * specific cases (bulk operations, testing, debugger access). Use
+ * with caution - direct access bypasses bounds checking.
+ *
+ * Example Usage:
+ * @code
+ *   // Create 64 KB main RAM
+ *   RAMDevice main_ram(65536);
+ *   bus.registerMem(&main_ram, 0x0000, 65536);
+ *
+ *   // Initialize with test pattern
+ *   main_ram.fill(0xAA);
+ *
+ *   // Load program into RAM at 0x0100
+ *   uint8_t program[] = { 0x3E, 0x01, 0xC9 };  // LD A,1 : RET
+ *   main_ram.load(program, 0x0100, sizeof(program));
+ *
+ *   // Direct access for testing
+ *   uint8_t* ram_ptr = main_ram.data();
+ *   assert(ram_ptr[0x0100] == 0x3E);
+ * @endcode
+ *
+ * @author Olaf Krieger
+ * @date 2024-2025
+ * @license MIT License
+ * @see Robotron A5120 Technical Documentation (Memory Map, K3526 RAM Card)
  */
 
 #pragma once

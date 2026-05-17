@@ -16,6 +16,7 @@ A5120Machine::A5120Machine()
     cpu_.writeByte = [this](uint16_t a, uint8_t d){ bus_.memWrite(a, d); };
     cpu_.readPort  = [this](uint16_t p)           { return bus_.ioRead(p & 0xFF); };
     cpu_.writePort = [this](uint16_t p, uint8_t d){ bus_.ioWrite(p & 0xFF, d); };
+    cpu_.retiCallback = [this]()                  { bus_.signalRETI(); };
 
     wireBackplane();
 }

@@ -1,20 +1,20 @@
 /**
  * @file z80.cpp
- * @brief Zilog Z80 CPU Emulator – Implementierung
+ * @brief Zilog Z80 CPU Emulator - Implementation
  *
- * Enthält die vollständige Implementierung der Z80-CPU-Emulation für den
- * Robotron A5120 Bürocomputer. Alle Befehle werden zyklengenau ausgeführt
- * mit korrekter Behandlung aller dokumentierten und undokumentierten Flags.
+ * Contains the complete implementation of Z80 CPU emulation for the
+ * Robotron A5120 office computer. All instructions are executed cycle-accurately
+ * with correct handling of all documented and undocumented flags.
  *
- * Die Implementierung ist in folgende Abschnitte gegliedert:
- * - Initialisierung und Reset
- * - Speicherzugriff und Befehlsabruf
- * - 8-Bit- und 16-Bit-ALU-Operationen
- * - Rotations- und Schiebebefehle
- * - Bit-Operationen (BIT, RES, SET)
- * - Registerzugriff über Opcode-Index
- * - Interruptbehandlung (INT, NMI)
- * - Befehlsdekodierung nach Präfix (unpräfixiert, CB, DD, ED, FD, DDCB, FDCB)
+ * The implementation is organized into the following sections:
+ * - Initialization and reset
+ * - Memory access and instruction fetch
+ * - 8-bit and 16-bit ALU operations
+ * - Rotation and shift instructions
+ * - Bit operations (BIT, RES, SET)
+ * - Register access via opcode index
+ * - Interrupt handling (INT, NMI)
+ * - Instruction decoding by prefix (unprefixed, CB, DD, ED, FD, DDCB, FDCB)
  *
  * @author Olaf Krieger
  * @license MIT License
@@ -23,27 +23,27 @@
 #include "core/primitives/z80.h"
 
 // =============================================================================
-/// @name Initialisierung
+/// @name Initialization
 // =============================================================================
 
 /**
- * @brief Konstruktor – initialisiert die CPU durch Aufruf von reset().
+ * @brief Constructor - initializes the CPU by calling reset().
  */
 Z80::Z80() {
     reset();
 }
 
 /**
- * @brief Setzt alle CPU-Register und den internen Zustand auf Anfangswerte zurück.
+ * @brief Resets all CPU registers and internal state to initial values.
  *
- * Nach dem Reset:
- * - Alle Haupt- und Schattenregister sind 0
- * - SP ist 0xFFFF (oberste Speicheradresse)
- * - PC ist 0x0000 (Startadresse)
- * - Interrupts sind deaktiviert (IFF1=IFF2=false)
- * - Interruptmodus ist 0
- * - HALT-Zustand ist aufgehoben
- * - Taktzyklenzähler ist 0
+ * After reset:
+ * - All main and shadow registers are 0
+ * - SP is 0xFFFF (top of memory)
+ * - PC is 0x0000 (start address)
+ * - Interrupts are disabled (IFF1=IFF2=false)
+ * - Interrupt mode is 0
+ * - HALT state is cleared
+ * - Clock cycle counter is 0
  */
 void Z80::reset() {
     // The real Z80 (and Q300 clone) initialises A=0xFF, F=0xFF after /RESET.
@@ -64,17 +64,17 @@ void Z80::reset() {
 }
 
 // =============================================================================
-/// @name Hilfsfunktionen
+/// @name Helper Functions
 // =============================================================================
 
 /**
- * @brief Berechnet die Parität eines 8-Bit-Wertes mittels XOR-Faltung.
+ * @brief Calculates the parity of an 8-bit value using XOR folding.
  *
- * Durch schrittweises XOR-Falten (4→2→1 Bit) wird die Parität
- * effizient ohne Schleife berechnet.
+ * Through successive XOR folding (4→2→1 bit), parity is
+ * efficiently calculated without a loop.
  *
- * @param val Zu prüfender Wert.
- * @return true bei gerader Parität (gerade Anzahl gesetzter Bits).
+ * @param val Value to check.
+ * @return true for even parity (even number of set bits).
  */
 bool Z80::parity(uint8_t val) {
     val ^= val >> 4;
@@ -84,26 +84,26 @@ bool Z80::parity(uint8_t val) {
 }
 
 // =============================================================================
-/// @name Speicherzugriff und Befehlsabruf
+/// @name Memory Access and Instruction Fetch
 // =============================================================================
 
 /**
- * @brief Liest ein 16-Bit-Wort aus dem Speicher (Little-Endian).
+ * @brief Reads a 16-bit word from memory (little-endian).
  *
- * Das niederwertige Byte liegt an der niedrigeren Adresse,
- * das höherwertige Byte an addr+1 – entsprechend der Z80-Konvention.
+ * The low byte is at the lower address,
+ * the high byte at addr+1 - according to Z80 convention.
  *
- * @param addr Startadresse des zu lesenden Wortes.
- * @return Gelesenes 16-Bit-Wort.
+ * @param addr Start address of the word to read.
+ * @return Read 16-bit word.
  */
 uint16_t Z80::readWord(uint16_t addr) {
     return readByte(addr) | (readByte(addr + 1) << 8);
 }
 
 /**
- * @brief Schreibt ein 16-Bit-Wort in den Speicher (Little-Endian).
- * @param addr Startadresse.
- * @param val Zu schreibendes 16-Bit-Wort.
+ * @brief Writes a 16-bit word to memory (little-endian).
+ * @param addr Start address.
+ * @param val 16-bit word to write.
  */
 void Z80::writeWord(uint16_t addr, uint16_t val) {
     writeByte(addr, val & 0xFF);
@@ -111,11 +111,11 @@ void Z80::writeWord(uint16_t addr, uint16_t val) {
 }
 
 /**
- * @brief Liest das nächste Byte an der Adresse PC und inkrementiert PC.
+ * @brief Reads the next byte at address PC and increments PC.
  *
- * Wird für den Abruf von Opcodes und unmittelbaren Operanden verwendet.
+ * Used for fetching opcodes and immediate operands.
  *
- * @return Gelesenes Byte.
+ * @return Read byte.
  */
 uint8_t Z80::fetchByte() {
     uint8_t val = readByte(PC);
@@ -124,11 +124,11 @@ uint8_t Z80::fetchByte() {
 }
 
 /**
- * @brief Liest das nächste 16-Bit-Wort an PC und erhöht PC um 2.
+ * @brief Reads the next 16-bit word at PC and increments PC by 2.
  *
- * Wird für 16-Bit-Immediates und Adressen verwendet.
+ * Used for 16-bit immediates and addresses.
  *
- * @return Gelesenes 16-Bit-Wort (Little-Endian).
+ * @return Read 16-bit word (little-endian).
  */
 uint16_t Z80::fetchWord() {
     uint16_t val = readWord(PC);
@@ -137,16 +137,16 @@ uint16_t Z80::fetchWord() {
 }
 
 // =============================================================================
-/// @name Stack-Operationen
+/// @name Stack Operations
 // =============================================================================
 
 /**
- * @brief Legt einen 16-Bit-Wert auf den Stack (PUSH).
+ * @brief Pushes a 16-bit value onto the stack (PUSH).
  *
- * Der Stapelzeiger wird um 2 dekrementiert, dann wird der Wert
- * in Little-Endian-Reihenfolge geschrieben.
+ * The stack pointer is decremented by 2, then the value is
+ * written in little-endian order.
  *
- * @param val Der auf den Stack zu legende Wert.
+ * @param val The value to push onto the stack.
  */
 void Z80::push(uint16_t val) {
     SP -= 2;
@@ -154,11 +154,11 @@ void Z80::push(uint16_t val) {
 }
 
 /**
- * @brief Nimmt einen 16-Bit-Wert vom Stack (POP).
+ * @brief Pops a 16-bit value from the stack (POP).
  *
- * Liest den Wert an der aktuellen SP-Adresse und inkrementiert SP um 2.
+ * Reads the value at the current SP address and increments SP by 2.
  *
- * @return Der vom Stack gelesene 16-Bit-Wert.
+ * @return The 16-bit value read from the stack.
  */
 uint16_t Z80::pop() {
     uint16_t val = readWord(SP);
@@ -167,20 +167,20 @@ uint16_t Z80::pop() {
 }
 
 // =============================================================================
-/// @name 8-Bit-ALU-Operationen
-/// @brief Arithmetische und logische 8-Bit-Operationen mit vollständiger
-///        Flag-Berechnung (S, Z, H, PV, N, C sowie undokumentierte Bits 3 und 5).
+/// @name 8-Bit ALU Operations
+/// @brief Arithmetic and logical 8-bit operations with complete
+///        flag calculation (S, Z, H, PV, N, C and undocumented bits 3 and 5).
 // =============================================================================
 
 /**
- * @brief 8-Bit-Addition: a + b.
+ * @brief 8-bit addition: a + b.
  *
- * Flags: S, Z, H (Halbübertrag Bit 3→4), PV (Überlauf), C (Übertrag).
- * N wird gelöscht. Bits 3 und 5 werden vom Ergebnis übernommen.
+ * Flags: S, Z, H (half-carry bit 3→4), PV (overflow), C (carry).
+ * N is cleared. Bits 3 and 5 are taken from the result.
  *
- * @param a Erster Operand.
- * @param b Zweiter Operand.
- * @return Ergebnis der Addition (untere 8 Bit).
+ * @param a First operand.
+ * @param b Second operand.
+ * @return Result of addition (lower 8 bits).
  */
 uint8_t Z80::add8(uint8_t a, uint8_t b) {
     uint16_t result = a + b;
@@ -194,13 +194,13 @@ uint8_t Z80::add8(uint8_t a, uint8_t b) {
 }
 
 /**
- * @brief 8-Bit-Addition mit Carry: a + b + C.
+ * @brief 8-bit addition with carry: a + b + C.
  *
- * Wie add8(), aber das bestehende Carry-Flag wird als zusätzlicher Summand einbezogen.
+ * Like add8(), but the existing carry flag is included as an additional summand.
  *
- * @param a Erster Operand.
- * @param b Zweiter Operand.
- * @return Ergebnis der Addition (untere 8 Bit).
+ * @param a First operand.
+ * @param b Second operand.
+ * @return Result of addition (lower 8 bits).
  */
 uint8_t Z80::adc8(uint8_t a, uint8_t b) {
     uint8_t carry = (F & FLAG_C) ? 1 : 0;
@@ -215,13 +215,13 @@ uint8_t Z80::adc8(uint8_t a, uint8_t b) {
 }
 
 /**
- * @brief 8-Bit-Subtraktion: a - b.
+ * @brief 8-bit subtraction: a - b.
  *
- * Flags: S, Z, H (Halbübertrag), PV (Überlauf), C (Borgen). N wird gesetzt.
+ * Flags: S, Z, H (half-carry), PV (overflow), C (borrow). N is set.
  *
  * @param a Minuend.
  * @param b Subtrahend.
- * @return Ergebnis der Subtraktion (untere 8 Bit).
+ * @return Result of subtraction (lower 8 bits).
  */
 uint8_t Z80::sub8(uint8_t a, uint8_t b) {
     uint16_t result = a - b;
@@ -235,13 +235,13 @@ uint8_t Z80::sub8(uint8_t a, uint8_t b) {
 }
 
 /**
- * @brief 8-Bit-Subtraktion mit Carry: a - b - C.
+ * @brief 8-bit subtraction with carry: a - b - C.
  *
- * Wie sub8(), aber das bestehende Carry-Flag wird zusätzlich subtrahiert.
+ * Like sub8(), but the existing carry flag is additionally subtracted.
  *
  * @param a Minuend.
  * @param b Subtrahend.
- * @return Ergebnis der Subtraktion (untere 8 Bit).
+ * @return Result of subtraction (lower 8 bits).
  */
 uint8_t Z80::sbc8(uint8_t a, uint8_t b) {
     uint8_t carry = (F & FLAG_C) ? 1 : 0;
@@ -256,11 +256,11 @@ uint8_t Z80::sbc8(uint8_t a, uint8_t b) {
 }
 
 /**
- * @brief Logisches UND: A = A & val.
+ * @brief Logical AND: A = A & val.
  *
- * H-Flag wird gesetzt, N und C gelöscht. PV zeigt gerade Parität an.
+ * H flag is set, N and C cleared. PV indicates even parity.
  *
- * @param val Operand für die UND-Verknüpfung.
+ * @param val Operand for AND operation.
  */
 void Z80::and8(uint8_t val) {
     A &= val;
@@ -270,11 +270,11 @@ void Z80::and8(uint8_t val) {
 }
 
 /**
- * @brief Logisches ODER: A = A | val.
+ * @brief Logical OR: A = A | val.
  *
- * H, N und C werden gelöscht. PV zeigt gerade Parität an.
+ * H, N, and C are cleared. PV indicates even parity.
  *
- * @param val Operand für die ODER-Verknüpfung.
+ * @param val Operand for OR operation.
  */
 void Z80::or8(uint8_t val) {
     A |= val;
@@ -284,11 +284,11 @@ void Z80::or8(uint8_t val) {
 }
 
 /**
- * @brief Logisches Exklusiv-ODER: A = A ^ val.
+ * @brief Logical XOR: A = A ^ val.
  *
- * H, N und C werden gelöscht. PV zeigt gerade Parität an.
+ * H, N, and C are cleared. PV indicates even parity.
  *
- * @param val Operand für die XOR-Verknüpfung.
+ * @param val Operand for XOR operation.
  */
 void Z80::xor8(uint8_t val) {
     A ^= val;
@@ -298,13 +298,13 @@ void Z80::xor8(uint8_t val) {
 }
 
 /**
- * @brief Vergleich (Compare): A - val, ohne das Ergebnis zu speichern.
+ * @brief Compare (CP): A - val, without storing the result.
  *
- * Flags werden wie bei SUB gesetzt, A bleibt unverändert.
- * Besonderheit: Bits 3 und 5 der Flags werden vom Operanden val
- * übernommen, nicht vom Ergebnis – dies ist dokumentiertes Z80-Verhalten.
+ * Flags are set as with SUB, A remains unchanged.
+ * Special case: Bits 3 and 5 of flags are taken from the operand val,
+ * not from the result - this is documented Z80 behavior.
  *
- * @param val Vergleichswert.
+ * @param val Comparison value.
  */
 void Z80::cp8(uint8_t val) {
     uint16_t result = A - val;
@@ -317,13 +317,13 @@ void Z80::cp8(uint8_t val) {
 }
 
 /**
- * @brief 8-Bit-Inkrement: val + 1.
+ * @brief 8-bit increment: val + 1.
  *
- * Das C-Flag bleibt unverändert. PV wird gesetzt, wenn val == 0x7F
- * (Überlauf von positiv nach negativ im Zweierkomplement).
+ * The C flag remains unchanged. PV is set when val == 0x7F
+ * (overflow from positive to negative in two's complement).
  *
- * @param val Zu inkrementierender Wert.
- * @return Inkrementiertes Ergebnis.
+ * @param val Value to increment.
+ * @return Incremented result.
  */
 uint8_t Z80::inc8(uint8_t val) {
     uint8_t r = val + 1;
@@ -335,13 +335,13 @@ uint8_t Z80::inc8(uint8_t val) {
 }
 
 /**
- * @brief 8-Bit-Dekrement: val - 1.
+ * @brief 8-bit decrement: val - 1.
  *
- * Das C-Flag bleibt unverändert. N wird gesetzt. PV wird gesetzt,
- * wenn val == 0x80 (Unterlauf von negativ nach positiv).
+ * The C flag remains unchanged. N is set. PV is set
+ * when val == 0x80 (underflow from negative to positive).
  *
- * @param val Zu dekrementierender Wert.
- * @return Dekrementiertes Ergebnis.
+ * @param val Value to decrement.
+ * @return Decremented result.
  */
 uint8_t Z80::dec8(uint8_t val) {
     uint8_t r = val - 1;
@@ -376,14 +376,14 @@ uint16_t Z80::add16(uint16_t a, uint16_t b) {
 }
 
 /**
- * @brief 16-Bit-Addition mit Carry: a + b + C.
+ * @brief 16-bit addition with carry: a + b + C.
  *
- * Im Gegensatz zu add16() werden alle Flags neu gesetzt.
- * PV zeigt 16-Bit-Überlauf an (Vorzeichenüberlauf).
+ * In contrast to add16(), all flags are newly set.
+ * PV indicates 16-bit overflow (sign overflow).
  *
- * @param a Erster Operand.
- * @param b Zweiter Operand.
- * @return 16-Bit-Ergebnis.
+ * @param a First operand.
+ * @param b Second operand.
+ * @return 16-bit result.
  */
 uint16_t Z80::adc16(uint16_t a, uint16_t b) {
     uint8_t carry = (F & FLAG_C) ? 1 : 0;
@@ -398,14 +398,14 @@ uint16_t Z80::adc16(uint16_t a, uint16_t b) {
 }
 
 /**
- * @brief 16-Bit-Subtraktion mit Carry: a - b - C.
+ * @brief 16-bit subtraction with carry: a - b - C.
  *
- * Alle Flags werden gesetzt. N wird gesetzt.
- * PV zeigt 16-Bit-Vorzeichenüberlauf an.
+ * All flags are set. N is set.
+ * PV indicates 16-bit sign overflow.
  *
  * @param a Minuend.
  * @param b Subtrahend.
- * @return 16-Bit-Ergebnis.
+ * @return 16-bit result.
  */
 uint16_t Z80::sbc16(uint16_t a, uint16_t b) {
     uint8_t carry = (F & FLAG_C) ? 1 : 0;
@@ -420,19 +420,19 @@ uint16_t Z80::sbc16(uint16_t a, uint16_t b) {
 }
 
 // =============================================================================
-/// @name Rotations- und Schiebebefehle
-/// @brief CB-Präfix-Operationen. Alle Funktionen setzen S, Z, PV (Parität)
-///        sowie die undokumentierten Bits 3 und 5 vom Ergebnis.
-///        H und N werden gelöscht, C erhält das herausgeschobene Bit.
+/// @name Rotation and Shift Instructions
+/// @brief CB-prefix operations. All functions set S, Z, PV (parity)
+///        and the undocumented bits 3 and 5 from the result.
+///        H and N are cleared, C receives the shifted-out bit.
 // =============================================================================
 
 /**
- * @brief RLC – Rotate Left Circular.
+ * @brief RLC - Rotate Left Circular.
  *
- * Bit 7 wird gleichzeitig ins C-Flag und auf Bit-Position 0 rotiert.
+ * Bit 7 is simultaneously rotated to the C flag and to bit position 0.
  *
- * @param val Eingabewert.
- * @return Rotiertes Ergebnis.
+ * @param val Input value.
+ * @return Rotated result.
  */
 uint8_t Z80::rlc(uint8_t val) {
     uint8_t c = (val >> 7) & 1;
@@ -444,12 +444,12 @@ uint8_t Z80::rlc(uint8_t val) {
 }
 
 /**
- * @brief RRC – Rotate Right Circular.
+ * @brief RRC - Rotate Right Circular.
  *
- * Bit 0 wird gleichzeitig ins C-Flag und auf Bit-Position 7 rotiert.
+ * Bit 0 is simultaneously rotated to the C flag and to bit position 7.
  *
- * @param val Eingabewert.
- * @return Rotiertes Ergebnis.
+ * @param val Input value.
+ * @return Rotated result.
  */
 uint8_t Z80::rrc(uint8_t val) {
     uint8_t c = val & 1;
@@ -461,13 +461,13 @@ uint8_t Z80::rrc(uint8_t val) {
 }
 
 /**
- * @brief RL – Rotate Left durch Carry.
+ * @brief RL - Rotate Left through Carry.
  *
- * Bit 7 → C-Flag, altes C-Flag → Bit 0. Bildet mit dem C-Flag
- * einen 9-Bit-Ringschieberegister.
+ * Bit 7 → C flag, old C flag → bit 0. Forms a
+ * 9-bit ring shift register with the C flag.
  *
- * @param val Eingabewert.
- * @return Rotiertes Ergebnis.
+ * @param val Input value.
+ * @return Rotated result.
  */
 uint8_t Z80::rl(uint8_t val) {
     uint8_t c = (val >> 7) & 1;
@@ -479,13 +479,13 @@ uint8_t Z80::rl(uint8_t val) {
 }
 
 /**
- * @brief RR – Rotate Right durch Carry.
+ * @brief RR - Rotate Right through Carry.
  *
- * Bit 0 → C-Flag, altes C-Flag → Bit 7. Bildet mit dem C-Flag
- * einen 9-Bit-Ringschieberegister.
+ * Bit 0 → C flag, old C flag → bit 7. Forms a
+ * 9-bit ring shift register with the C flag.
  *
- * @param val Eingabewert.
- * @return Rotiertes Ergebnis.
+ * @param val Input value.
+ * @return Rotated result.
  */
 uint8_t Z80::rr(uint8_t val) {
     uint8_t c = val & 1;
@@ -497,12 +497,12 @@ uint8_t Z80::rr(uint8_t val) {
 }
 
 /**
- * @brief SLA – Shift Left Arithmetic.
+ * @brief SLA - Shift Left Arithmetic.
  *
- * Bit 7 → C-Flag, Bit 0 wird 0. Entspricht einer Multiplikation mit 2.
+ * Bit 7 → C flag, bit 0 becomes 0. Corresponds to multiplication by 2.
  *
- * @param val Eingabewert.
- * @return Geschobenes Ergebnis.
+ * @param val Input value.
+ * @return Shifted result.
  */
 uint8_t Z80::sla(uint8_t val) {
     uint8_t c = (val >> 7) & 1;
@@ -514,13 +514,13 @@ uint8_t Z80::sla(uint8_t val) {
 }
 
 /**
- * @brief SRA – Shift Right Arithmetic.
+ * @brief SRA - Shift Right Arithmetic.
  *
- * Bit 0 → C-Flag, Bit 7 bleibt erhalten (Vorzeichenerweiterung).
- * Entspricht einer vorzeichenbehafteten Division durch 2.
+ * Bit 0 → C flag, bit 7 preserved (sign extension).
+ * Corresponds to signed division by 2.
  *
- * @param val Eingabewert.
- * @return Geschobenes Ergebnis.
+ * @param val Input value.
+ * @return Shifted result.
  */
 uint8_t Z80::sra(uint8_t val) {
     uint8_t c = val & 1;
@@ -532,14 +532,14 @@ uint8_t Z80::sra(uint8_t val) {
 }
 
 /**
- * @brief SLL – Shift Left Logical (undokumentiert, auch SL1/SLS).
+ * @brief SLL - Shift Left Logical (undocumented, also SL1/SLS).
  *
- * Bit 7 → C-Flag, Bit 0 wird auf 1 gesetzt (nicht 0 wie bei SLA).
- * Dies ist ein undokumentierter Z80-Befehl, der in mancher Software
- * dennoch verwendet wird.
+ * Bit 7 → C flag, bit 0 is set to 1 (not 0 like SLA).
+ * This is an undocumented Z80 instruction that is
+ * nevertheless used in some software.
  *
- * @param val Eingabewert.
- * @return Geschobenes Ergebnis.
+ * @param val Input value.
+ * @return Shifted result.
  */
 uint8_t Z80::sll(uint8_t val) {
     uint8_t c = (val >> 7) & 1;
@@ -551,13 +551,13 @@ uint8_t Z80::sll(uint8_t val) {
 }
 
 /**
- * @brief SRL – Shift Right Logical.
+ * @brief SRL - Shift Right Logical.
  *
- * Bit 0 → C-Flag, Bit 7 wird 0. Entspricht einer vorzeichenlosen
- * Division durch 2.
+ * Bit 0 → C flag, bit 7 becomes 0. Corresponds to unsigned
+ * division by 2.
  *
- * @param val Eingabewert.
- * @return Geschobenes Ergebnis.
+ * @param val Input value.
+ * @return Shifted result.
  */
 uint8_t Z80::srl(uint8_t val) {
     uint8_t c = val & 1;
@@ -569,69 +569,83 @@ uint8_t Z80::srl(uint8_t val) {
 }
 
 // =============================================================================
-/// @name Bit-Operationen
+/// @name Bit Operations
 // =============================================================================
 
 /**
- * @brief BIT b,val – Testet, ob ein bestimmtes Bit gesetzt ist.
+ * @brief BIT b,val - tests whether a specific bit is set.
  *
- * Z- und PV-Flag werden gesetzt, wenn das Bit 0 ist.
- * S-Flag wird gesetzt, wenn Bit 7 getestet wird und gesetzt ist.
- * H wird gesetzt, N gelöscht. C bleibt unverändert.
- * Bits 3 und 5 werden vom Testoperanden (val) übernommen.
+ * Z and PV flags are set if the bit is 0.
+ * S flag is set if bit 7 is tested and is set.
+ * H is set, N is cleared. C remains unchanged.
+ * Bits 3 and 5 are taken from flags_src.
  *
- * @param b Bitnummer (0–7).
- * @param val Zu testender Wert.
+ * @param b Bit number (0-7).
+ * @param val Value to test.
+ * @param flags_src Source for undocumented flags 3 and 5.
  */
-void Z80::bit_op(uint8_t b, uint8_t val) {
+void Z80::bit_op(uint8_t b, uint8_t val, uint8_t flags_src) {
     uint8_t r = val & (1 << b);
-    F = (F & FLAG_C) | FLAG_H | (val & (FLAG_3 | FLAG_5));
+    F = (F & FLAG_C) | FLAG_H | (flags_src & (FLAG_3 | FLAG_5));
     if (r == 0) F |= (FLAG_Z | FLAG_PV);
     if (b == 7 && r) F |= FLAG_S;
 }
 
 /**
- * @brief RES b,val – Löscht (Reset) ein bestimmtes Bit.
+ * @brief BIT b,val - tests whether a specific bit is set (standard version).
  *
- * Keine Flags werden beeinflusst.
+ * Uses the value itself as source for undocumented flags.
+ * This is the normal behavior for non-indexed BIT operations.
  *
- * @param b Bitnummer (0–7).
- * @param val Eingabewert.
- * @return Wert mit gelöschtem Bit b.
+ * @param b Bit number (0-7).
+ * @param val Value to test.
+ */
+void Z80::bit_op(uint8_t b, uint8_t val) {
+    bit_op(b, val, val);
+}
+
+/**
+ * @brief RES b,val - clears (Reset) a specific bit.
+ *
+ * No flags are affected.
+ *
+ * @param b Bit number (0-7).
+ * @param val Input value.
+ * @return Value with cleared bit b.
  */
 uint8_t Z80::res_op(uint8_t b, uint8_t val) {
     return val & ~(1 << b);
 }
 
 /**
- * @brief SET b,val – Setzt ein bestimmtes Bit auf 1.
+ * @brief SET b,val - sets a specific bit to 1.
  *
- * Keine Flags werden beeinflusst.
+ * No flags are affected.
  *
- * @param b Bitnummer (0–7).
- * @param val Eingabewert.
- * @return Wert mit gesetztem Bit b.
+ * @param b Bit number (0-7).
+ * @param val Input value.
+ * @return Value with set bit b.
  */
 uint8_t Z80::set_op(uint8_t b, uint8_t val) {
     return val | (1 << b);
 }
 
 // =============================================================================
-/// @name Registerzugriff über Opcode-Index
-/// @brief Ermöglichen generischen Zugriff auf Register anhand der im
-///        Z80-Opcode kodierten 3-Bit-Register-Indizes.
+/// @name Register Access via Opcode Index
+/// @brief Enable generic access to registers based on the 3-bit
+///        register indices encoded in Z80 opcodes.
 // =============================================================================
 
 /**
- * @brief Liest ein 8-Bit-Register anhand seines Opcode-Index.
+ * @brief Reads an 8-bit register by its opcode index.
  *
- * Kodierung gemäß Z80-Befehlssatz:
+ * Encoding according to Z80 instruction set:
  * - 0=B, 1=C, 2=D, 3=E, 4=H, 5=L, 6=(HL), 7=A
  *
- * Bei Index 6 wird der Wert indirekt aus dem Speicher an Adresse HL gelesen.
+ * For index 6, the value is read indirectly from memory at address HL.
  *
- * @param idx Registerindex (untere 3 Bit werden verwendet).
- * @return Registerwert.
+ * @param idx Register index (lower 3 bits are used).
+ * @return Register value.
  */
 uint8_t Z80::getReg8(uint8_t idx) {
     switch (idx & 7) {
@@ -648,12 +662,12 @@ uint8_t Z80::getReg8(uint8_t idx) {
 }
 
 /**
- * @brief Schreibt einen Wert in ein 8-Bit-Register anhand seines Opcode-Index.
+ * @brief Writes a value to an 8-bit register by its opcode index.
  *
- * Bei Index 6 wird der Wert indirekt in den Speicher an Adresse HL geschrieben.
+ * For index 6, the value is written indirectly to memory at address HL.
  *
- * @param idx Registerindex (0–7, siehe getReg8).
- * @param val Zu schreibender Wert.
+ * @param idx Register index (0-7, see getReg8).
+ * @param val Value to write.
  */
 void Z80::setReg8(uint8_t idx, uint8_t val) {
     switch (idx & 7) {
@@ -669,13 +683,13 @@ void Z80::setReg8(uint8_t idx, uint8_t val) {
 }
 
 /**
- * @brief Liest ein 16-Bit-Registerpaar (SP-Variante).
+ * @brief Reads a 16-bit register pair (SP variant).
  *
- * Kodierung: 0=BC, 1=DE, 2=HL, 3=SP.
- * Wird für Befehle verwendet, die SP als viertes Registerpaar nutzen.
+ * Encoding: 0=BC, 1=DE, 2=HL, 3=SP.
+ * Used for instructions that use SP as the fourth register pair.
  *
- * @param idx Registerpaarindex (untere 2 Bit).
- * @return 16-Bit-Registerwert.
+ * @param idx Register pair index (lower 2 bits).
+ * @return 16-bit register value.
  */
 uint16_t Z80::getReg16(uint8_t idx) {
     switch (idx & 3) {
@@ -688,9 +702,9 @@ uint16_t Z80::getReg16(uint8_t idx) {
 }
 
 /**
- * @brief Schreibt einen Wert in ein 16-Bit-Registerpaar (SP-Variante).
- * @param idx Registerpaarindex (0–3).
- * @param val Zu schreibender 16-Bit-Wert.
+ * @brief Writes a value to a 16-bit register pair (SP variant).
+ * @param idx Register pair index (0-3).
+ * @param val 16-bit value to write.
  */
 void Z80::setReg16(uint8_t idx, uint16_t val) {
     switch (idx & 3) {
@@ -702,14 +716,14 @@ void Z80::setReg16(uint8_t idx, uint16_t val) {
 }
 
 /**
- * @brief Liest ein 16-Bit-Registerpaar (AF-Variante).
+ * @brief Reads a 16-bit register pair (AF variant).
  *
- * Kodierung: 0=BC, 1=DE, 2=HL, 3=AF.
- * Wird für PUSH/POP-Befehle verwendet, bei denen AF statt SP
- * das vierte Registerpaar ist.
+ * Encoding: 0=BC, 1=DE, 2=HL, 3=AF.
+ * Used for PUSH/POP instructions where AF instead of SP
+ * is the fourth register pair.
  *
- * @param idx Registerpaarindex (untere 2 Bit).
- * @return 16-Bit-Registerwert.
+ * @param idx Register pair index (lower 2 bits).
+ * @return 16-bit register value.
  */
 uint16_t Z80::getReg16AF(uint8_t idx) {
     switch (idx & 3) {
@@ -722,9 +736,9 @@ uint16_t Z80::getReg16AF(uint8_t idx) {
 }
 
 /**
- * @brief Schreibt einen Wert in ein 16-Bit-Registerpaar (AF-Variante).
- * @param idx Registerpaarindex (0–3).
- * @param val Zu schreibender 16-Bit-Wert.
+ * @brief Writes a value to a 16-bit register pair (AF variant).
+ * @param idx Register pair index (0-3).
+ * @param val 16-bit value to write.
  */
 void Z80::setReg16AF(uint8_t idx, uint16_t val) {
     switch (idx & 3) {
@@ -736,20 +750,20 @@ void Z80::setReg16AF(uint8_t idx, uint16_t val) {
 }
 
 /**
- * @brief Prüft eine Sprung-/Aufruf-/Rücksprungbedingung.
+ * @brief Checks a jump/call/return condition.
  *
- * Die 8 möglichen Bedingungscodes und ihre Bedeutung:
- * - 0: NZ (Not Zero) – Z-Flag ist nicht gesetzt
- * - 1: Z  (Zero) – Z-Flag ist gesetzt
- * - 2: NC (No Carry) – C-Flag ist nicht gesetzt
- * - 3: C  (Carry) – C-Flag ist gesetzt
- * - 4: PO (Parity Odd) – PV-Flag ist nicht gesetzt
- * - 5: PE (Parity Even) – PV-Flag ist gesetzt
- * - 6: P  (Positive/Plus) – S-Flag ist nicht gesetzt
- * - 7: M  (Minus) – S-Flag ist gesetzt
+ * The 8 possible condition codes and their meaning:
+ * - 0: NZ (Not Zero) - Z flag is not set
+ * - 1: Z  (Zero) - Z flag is set
+ * - 2: NC (No Carry) - C flag is not set
+ * - 3: C  (Carry) - C flag is set
+ * - 4: PO (Parity Odd) - PV flag is not set
+ * - 5: PE (Parity Even) - PV flag is set
+ * - 6: P  (Positive/Plus) - S flag is not set
+ * - 7: M  (Minus) - S flag is set
  *
- * @param cc Bedingungscode (0–7).
- * @return true, wenn die Bedingung erfüllt ist.
+ * @param cc Condition code (0-7).
+ * @return true if the condition is satisfied.
  */
 bool Z80::checkCondition(uint8_t cc) {
     switch (cc) {
@@ -766,24 +780,24 @@ bool Z80::checkCondition(uint8_t cc) {
 }
 
 // =============================================================================
-/// @name Interruptbehandlung
+/// @name Interrupt Handling
 // =============================================================================
 
 /**
- * @brief Löst einen maskierbaren Interrupt (INT) aus.
+ * @brief Triggers a maskable interrupt (INT).
  *
- * Der Interrupt wird nur akzeptiert, wenn IFF1 gesetzt ist.
- * Nach Akzeptanz:
- * - HALT wird aufgehoben
- * - IFF1 und IFF2 werden gelöscht (Interrupts gesperrt)
- * - R-Register wird inkrementiert
+ * The interrupt is only accepted if IFF1 is set.
+ * After acceptance:
+ * - HALT is cleared
+ * - IFF1 and IFF2 are cleared (interrupts disabled)
+ * - R register is incremented
  *
- * Das Verhalten hängt vom Interruptmodus ab:
- * - **IM 0**: Der Vektor wird als RST-Befehl interpretiert (vector & 0x38). 13 Takte.
- * - **IM 1**: Fester Sprung zu Adresse 0x0038, Vektor wird ignoriert. 13 Takte.
- * - **IM 2**: Vektortabelle – Zieladresse wird aus (I*256 + (vector & 0xFE)) gelesen. 19 Takte.
+ * The behavior depends on the interrupt mode:
+ * - **IM 0**: The vector is interpreted as RST instruction (vector & 0x38). 13 cycles.
+ * - **IM 1**: Fixed jump to address 0x0038, vector is ignored. 13 cycles.
+ * - **IM 2**: Vector table - target address is read from (I*256 + (vector & 0xFE)). 19 cycles.
  *
- * @param vector Interruptvektor vom Peripheriegerät.
+ * @param vector Interrupt vector from peripheral device.
  */
 void Z80::interrupt(uint8_t vector) {
     if (!IFF1) return;
@@ -814,14 +828,14 @@ void Z80::interrupt(uint8_t vector) {
 }
 
 /**
- * @brief Löst einen nicht-maskierbaren Interrupt (NMI) aus.
+ * @brief Triggers a non-maskable interrupt (NMI).
  *
- * Der NMI kann nicht deaktiviert werden und hat höchste Priorität.
- * - HALT wird aufgehoben
- * - IFF1 wird in IFF2 gesichert, dann IFF1 gelöscht
- * - PC wird auf den Stack gelegt
- * - Sprung zur festen Adresse 0x0066
- * - 11 Taktzyklen
+ * The NMI cannot be disabled and has highest priority.
+ * - HALT is cleared
+ * - IFF1 is saved to IFF2, then IFF1 is cleared
+ * - PC is pushed onto the stack
+ * - Jump to fixed address 0x0066
+ * - 11 clock cycles
  */
 void Z80::nmi() {
     halted = false;
@@ -834,18 +848,18 @@ void Z80::nmi() {
 }
 
 // =============================================================================
-/// @name Befehlsausführung
-/// @brief Hauptschleife und Dekodierungsfunktionen für den Z80-Befehlssatz.
+/// @name Instruction Execution
+/// @brief Main loop and decoding functions for the Z80 instruction set.
 // =============================================================================
 
 /**
- * @brief Führt einen einzelnen Z80-Befehl aus und gibt die verbrauchten Takte zurück.
+ * @brief Executes a single Z80 instruction and returns the consumed cycles.
  *
- * Im HALT-Zustand werden nur NOP-Zyklen verbraucht (4 Takte), ohne den
- * Programmzähler zu verändern. Der Prozessor verlässt HALT durch einen
- * Interrupt oder NMI.
+ * In HALT state, only NOP cycles are consumed (4 cycles) without
+ * changing the program counter. The processor leaves HALT through an
+ * interrupt or NMI.
  *
- * @return Anzahl der verbrauchten Taktzyklen.
+ * @return Number of clock cycles consumed.
  */
 int Z80::step() {
     if (halted) {
@@ -867,20 +881,20 @@ int Z80::step() {
 }
 
 /**
- * @brief Dekodiert und führt einen unpräfixierten Z80-Opcode aus.
+ * @brief Decodes and executes an unprefixed Z80 opcode.
  *
- * Dies ist der Haupt-Befehlsdekoder für alle Opcodes 0x00–0xFF.
- * Die Opcodes werden in folgende Gruppen unterteilt:
- * - 0x00–0x3F: Verschiedene Befehle (LD 16-Bit, INC/DEC, Rotationen, DAA, etc.)
- * - 0x40–0x7F: LD r,r' (Register-zu-Register-Laden, 0x76 = HALT)
- * - 0x80–0xBF: ALU-Operationen A,r (ADD, ADC, SUB, SBC, AND, XOR, OR, CP)
- * - 0xC0–0xFF: Sprünge, Aufrufe, Rücksprünge, I/O, Präfix-Weiterleitung
+ * This is the main instruction decoder for all opcodes 0x00-0xFF.
+ * The opcodes are divided into the following groups:
+ * - 0x00-0x3F: Various instructions (LD 16-bit, INC/DEC, rotations, DAA, etc.)
+ * - 0x40-0x7F: LD r,r' (register-to-register load, 0x76 = HALT)
+ * - 0x80-0xBF: ALU operations A,r (ADD, ADC, SUB, SBC, AND, XOR, OR, CP)
+ * - 0xC0-0xFF: Jumps, calls, returns, I/O, prefix forwarding
  *
- * Die Opcode-Felder x, y, z, p, q werden gemäß der Z80-Dekodierungstabelle
- * extrahiert, auch wenn die meisten Befehle direkt per case behandelt werden.
+ * The opcode fields x, y, z, p, q are extracted according to the Z80 decoding table,
+ * even though most instructions are handled directly via case statements.
  *
- * @param opcode Der auszuführende Opcode.
- * @return Verbrauchte Taktzyklen.
+ * @param opcode The opcode to execute.
+ * @return Clock cycles consumed.
  */
 int Z80::execMain(uint8_t opcode) {
     uint8_t x = (opcode >> 6) & 3;
@@ -1124,18 +1138,18 @@ int Z80::execMain(uint8_t opcode) {
 }
 
 /**
- * @brief CB-Präfix-Handler – Rotationen, Schiebebefehle und Bit-Operationen.
+ * @brief CB-prefix handler - rotations, shifts, and bit operations.
  *
- * Dekodiert den zweiten Opcode und führt die entsprechende Operation aus:
- * - x=0 (0x00–0x3F): Rotationen/Shifts (RLC, RRC, RL, RR, SLA, SRA, SLL, SRL)
- * - x=1 (0x40–0x7F): BIT-Test
- * - x=2 (0x80–0xBF): RES (Bit löschen)
- * - x=3 (0xC0–0xFF): SET (Bit setzen)
+ * Decodes the second opcode and executes the corresponding operation:
+ * - x=0 (0x00-0x3F): Rotations/Shifts (RLC, RRC, RL, RR, SLA, SRA, SLL, SRL)
+ * - x=1 (0x40-0x7F): BIT test
+ * - x=2 (0x80-0xBF): RES (clear bit)
+ * - x=3 (0xC0-0xFF): SET (set bit)
  *
- * z bestimmt das Quell-/Zielregister (0=B...6=(HL)...7=A).
- * y bestimmt je nach x die konkrete Operation bzw. die Bitnummer.
+ * z determines the source/destination register (0=B...6=(HL)...7=A).
+ * y determines the specific operation or bit number depending on x.
  *
- * @return Verbrauchte Taktzyklen (8 für Register, 12 für BIT (HL), 15 für andere (HL)).
+ * @return Clock cycles consumed (8 for register, 12 for BIT (HL), 15 for other (HL)).
  */
 int Z80::execCB() {
     R = (R & 0x80) | ((R + 1) & 0x7F);
@@ -1176,19 +1190,19 @@ int Z80::execCB() {
 }
 
 /**
- * @brief DD-Präfix-Handler – IX-Indexregister-Operationen.
+ * @brief DD-prefix handler - IX index register operations.
  *
- * Das DD-Präfix modifiziert nachfolgende Befehle wie folgt:
- * - HL-Referenzen werden durch IX ersetzt
- * - (HL)-Speicherzugriffe werden zu (IX+d) mit vorzeichenbehaftetem Displacement
- * - Undokumentiert: H/L können als IXH/IXL einzeln angesprochen werden
+ * The DD prefix modifies subsequent instructions as follows:
+ * - HL references are replaced by IX
+ * - (HL) memory accesses become (IX+d) with signed displacement
+ * - Undocumented: H/L can be addressed as IXH/IXL individually
  *
- * Bei nicht-IX-relevanten Opcodes wird der Befehl als normaler
- * unpräfixierter Befehl über execMain() ausgeführt.
+ * For non-IX-relevant opcodes, the instruction is executed as a normal
+ * unprefixed instruction via execMain().
  *
- * Spezialfall: DD CB leitet an execDDCB() weiter (Doppelpräfix).
+ * Special case: DD CB forwards to execDDCB() (double prefix).
  *
- * @return Verbrauchte Taktzyklen.
+ * @return Clock cycles consumed.
  */
 int Z80::execDD() {
     R = (R & 0x80) | ((R + 1) & 0x7F);
@@ -1292,14 +1306,14 @@ int Z80::execDD() {
 }
 
 /**
- * @brief FD-Präfix-Handler – IY-Indexregister-Operationen.
+ * @brief FD-prefix handler - IY index register operations.
  *
- * Funktional identisch zu execDD(), ersetzt aber IX durch IY.
- * Alle Kommentare und Erläuterungen aus execDD() gelten analog.
+ * Functionally identical to execDD(), but replaces IX with IY.
+ * All comments and explanations from execDD() apply analogously.
  *
- * Spezialfall: FD CB leitet an execFDCB() weiter (Doppelpräfix).
+ * Special case: FD CB forwards to execFDCB() (double prefix).
  *
- * @return Verbrauchte Taktzyklen.
+ * @return Clock cycles consumed.
  */
 int Z80::execFD() {
     R = (R & 0x80) | ((R + 1) & 0x7F);
@@ -1395,16 +1409,16 @@ int Z80::execFD() {
 }
 
 /**
- * @brief DDCB-Doppelpräfix-Handler – Bit-/Rotationsoperationen auf (IX+d).
+ * @brief DDCB double-prefix handler - bit/rotation operations on (IX+d).
  *
- * Besonderheit im Befehlsformat: Das Displacement-Byte kommt vor dem Opcode:
- * DD CB dd op (nicht DD CB op dd wie man erwarten könnte).
+ * Special feature in instruction format: The displacement byte comes before the opcode:
+ * DD CB dd op (not DD CB op dd as one might expect).
  *
- * Bei Registeroperanden (z != 6) wird das Ergebnis sowohl in den Speicher
- * geschrieben als auch zusätzlich in das angegebene Register kopiert.
- * Dies ist undokumentiertes, aber konsistentes Z80-Verhalten.
+ * For register operands (z != 6), the result is written both to memory
+ * and also copied to the specified register.
+ * This is undocumented but consistent Z80 behavior.
  *
- * @return Verbrauchte Taktzyklen (20 für BIT, 23 für Rotationen/RES/SET).
+ * @return Clock cycles consumed (20 for BIT, 23 for rotations/RES/SET).
  */
 int Z80::execDDCB() {
     int8_t d = (int8_t)fetchByte();
@@ -1433,7 +1447,9 @@ int Z80::execDDCB() {
             return 23;
         }
         case 1:
-            bit_op(y, val);
+            // BIT bei indizierten Operationen: Flags 3 und 5 kommen vom
+            // oberen Byte der Adresse (undokumentiertes Z80-Verhalten)
+            bit_op(y, val, (addr >> 8) & 0xFF);
             return 20;
         case 2: {
             uint8_t r = res_op(y, val);
@@ -1452,12 +1468,12 @@ int Z80::execDDCB() {
 }
 
 /**
- * @brief FDCB-Doppelpräfix-Handler – Bit-/Rotationsoperationen auf (IY+d).
+ * @brief FDCB double-prefix handler - bit/rotation operations on (IY+d).
  *
- * Funktional identisch zu execDDCB(), nutzt aber IY statt IX.
- * Siehe execDDCB() für Details zum Befehlsformat und undokumentierten Verhalten.
+ * Functionally identical to execDDCB(), but uses IY instead of IX.
+ * See execDDCB() for details on instruction format and undocumented behavior.
  *
- * @return Verbrauchte Taktzyklen (20 für BIT, 23 für Rotationen/RES/SET).
+ * @return Clock cycles consumed (20 for BIT, 23 for rotations/RES/SET).
  */
 int Z80::execFDCB() {
     int8_t d = (int8_t)fetchByte();
@@ -1486,7 +1502,9 @@ int Z80::execFDCB() {
             return 23;
         }
         case 1:
-            bit_op(y, val);
+            // BIT bei indizierten Operationen: Flags 3 und 5 kommen vom
+            // oberen Byte der Adresse (undokumentiertes Z80-Verhalten)
+            bit_op(y, val, (addr >> 8) & 0xFF);
             return 20;
         case 2: {
             uint8_t r = res_op(y, val);
@@ -1505,25 +1523,25 @@ int Z80::execFDCB() {
 }
 
 /**
- * @brief ED-Präfix-Handler – Erweiterte Z80-Befehle.
+ * @brief ED-prefix handler - extended Z80 instructions.
  *
- * Enthält spezielle Befehle, die nicht in das Hauptopcode-Schema passen:
- * - **I/O mit Register**: IN r,(C) / OUT (C),r – Port-Zugriffe über Registerpaar BC
- * - **16-Bit-Arithmetik**: SBC HL,rr / ADC HL,rr mit vollständigen Flags
- * - **16-Bit-Laden**: LD (nn),rr / LD rr,(nn) für alle Registerpaare
- * - **NEG**: Negiert den Akkumulator (0 - A)
- * - **RETN/RETI**: Rücksprung aus (nicht-)maskierbaren Interrupts
- * - **Interruptmodus**: IM 0/1/2
- * - **Spezialregister**: LD I,A / LD A,I / LD R,A / LD A,R
- * - **BCD-Rotation**: RRD / RLD – Rotation von BCD-Ziffern zwischen A und (HL)
- * - **Blockbefehle**: LDI, LDIR, LDD, LDDR – Speicherblockübertragung
- * - **Blocksuch**: CPI, CPIR, CPD, CPDR – Speicherblockvergleich
- * - **Block-I/O**: INI, INIR, IND, INDR, OUTI, OTIR, OUTD, OTDR
+ * Contains special instructions that don't fit the main opcode schema:
+ * - **I/O with register**: IN r,(C) / OUT (C),r - port access via BC register pair
+ * - **16-bit arithmetic**: SBC HL,rr / ADC HL,rr with complete flags
+ * - **16-bit load**: LD (nn),rr / LD rr,(nn) for all register pairs
+ * - **NEG**: Negates the accumulator (0 - A)
+ * - **RETN/RETI**: Return from (non-)maskable interrupts
+ * - **Interrupt mode**: IM 0/1/2
+ * - **Special registers**: LD I,A / LD A,I / LD R,A / LD A,R
+ * - **BCD rotation**: RRD / RLD - rotation of BCD digits between A and (HL)
+ * - **Block instructions**: LDI, LDIR, LDD, LDDR - memory block transfer
+ * - **Block search**: CPI, CPIR, CPD, CPDR - memory block comparison
+ * - **Block I/O**: INI, INIR, IND, INDR, OUTI, OTIR, OUTD, OTDR
  *
- * Die Repeat-Varianten (R-Suffix) wiederholen den Befehl durch Dekrementieren
- * von PC um 2, bis die Abbruchbedingung erfüllt ist.
+ * The repeat variants (R suffix) repeat the instruction by decrementing
+ * PC by 2 until the termination condition is met.
  *
- * @return Verbrauchte Taktzyklen.
+ * @return Clock cycles consumed.
  */
 int Z80::execED() {
     R = (R & 0x80) | ((R + 1) & 0x7F);
@@ -1589,10 +1607,11 @@ int Z80::execED() {
             PC = pop();
             return 14;
 
-        // RETI
+        // RETI (all aliases: 0x4D, 0x5D, 0x6D, 0x7D)
         case 0x4D: case 0x5D: case 0x6D: case 0x7D:
             IFF1 = IFF2;
             PC = pop();
+            if (retiCallback) retiCallback();  // Notify peripherals
             return 14;
 
         // IM

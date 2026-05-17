@@ -1,13 +1,55 @@
 /**
  * @file eprom_device.h
- * @brief Erasable Programmable Read-Only Memory (EPROM) emulation.
- * 
- * Provides a read-only memory device backed by a compile-time constant array.
- * Used for ROM data like bootstrap code (K2526), character generators (K7024),
- * and keyboard scan code tables (K7637).
- * 
- * EPROMDevice is a template class where the data is passed as a template argument,
- * allowing the entire ROM data to be embedded in the compiled binary with zero overhead.
+ * @brief Erasable Programmable Read-Only Memory (EPROM) Emulation - Header File
+ *
+ * Provides a read-only memory device implementation backed by compile-time
+ * constant arrays. EPROMDevice is used throughout the A5120 emulator for
+ * storing firmware, character generators, lookup tables, and other read-only
+ * data that would be stored in physical EPROMs in the real hardware.
+ *
+ * Key Features:
+ * - Template-based design for compile-time size specification
+ * - Zero runtime overhead - data embedded directly in binary
+ * - True ROM behavior - writes are silently ignored
+ * - Open-drain bus behavior - returns 0xFF for out-of-bounds reads
+ * - MemDevice interface compatible with K1520Bus memory mapping
+ *
+ * Implementation Notes:
+ * - Data is stored as const pointers to compile-time constant arrays
+ * - Template parameter N specifies array size at compile time
+ * - Compiler can optimize based on known size
+ * - Write operations are no-ops, matching real EPROM behavior
+ * - Out-of-bounds reads return 0xFF (typical open-bus behavior)
+ *
+ * Typical Usage in A5120:
+ * - K2526 Bootstrap ROM: System initialization code (2 KB)
+ * - K7024 Character Generator ROM: Display font data (2 KB)
+ * - K7637 Keyboard Scan Code Tables: Key mapping tables (1 KB)
+ * - K8025 Extension ROM: Optional firmware extensions
+ *
+ * Design Rationale:
+ * By using a template with compile-time constant arrays, the ROM data
+ * is embedded directly in the executable with no runtime allocation or
+ * initialization overhead. This is more efficient than runtime file loading
+ * and ensures the ROM data is always available.
+ *
+ * Example Usage:
+ * @code
+ *   // Define ROM data (typically in rom_k2526.h)
+ *   constexpr uint8_t K2526_BOOTSTRAP_ROM[2048] = {
+ *       0xC3, 0x00, 0x01,  // JP 0x0100 (boot vector)
+ *       // ... rest of bootstrap code
+ *   };
+ *
+ *   // Create EPROM device and register with bus
+ *   EPROMDevice<2048> bootstrap_rom(K2526_BOOTSTRAP_ROM);
+ *   bus.registerMem(&bootstrap_rom, 0x0000, 2048);
+ * @endcode
+ *
+ * @author Olaf Krieger
+ * @date 2024-2025
+ * @license MIT License
+ * @see Robotron A5120 Technical Documentation (Memory Map, K2526 Bootstrap ROM)
  */
 
 #pragma once

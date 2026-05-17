@@ -1,21 +1,55 @@
 /**
  * @file z80_ctc.h
- * @brief Z80 Counter/Timer Circuit (CTC) chip emulation.
- * 
- * The Z80 CTC (Zilog Z8430) is a programmable component with four independent
- * channels that can provide counting and timing functions.
- * 
- * Features per channel:
- * - Counter mode: Counts external clock pulses
- * - Timer mode: Divides internal system clock (prescaler 16 or 256)
- * - Interrupt generation on zero/time-out
- * - Zero Count/Timeout (ZC/TO) exit pulse
- * 
- * The CTC is typically accessed via 4 consecutive I/O ports:
- * - Base+0: Channel 0 Control/Time Constant
- * - Base+1: Channel 1 Control/Time Constant
- * - Base+2: Channel 2 Control/Time Constant
- * - Base+3: Channel 3 Control/Time Constant
+ * @brief Z80 Counter/Timer Circuit (CTC) Chip Emulation - Header File
+ *
+ * Complete emulation of the Zilog Z8430 Counter/Timer Circuit (CTC) as used in
+ * the Robotron A5120 office computer. The Z80 CTC is a programmable peripheral
+ * providing four independent channels for timing, counting, and interrupt generation.
+ *
+ * Key Features:
+ * - Four independent 8-bit down-counters
+ * - Each channel operates in either Timer or Counter mode
+ * - Timer mode: Divides system clock by prescaler (16 or 256) then by time constant
+ * - Counter mode: Counts external clock/trigger pulses (rising or falling edge)
+ * - Zero Count/Timeout (ZC/TO) output pulse generation
+ * - Programmable interrupt generation with vector support
+ * - Internal daisy-chain priority: Channel 0 > 1 > 2 > 3
+ * - RETI instruction detection for nested interrupt support
+ *
+ * Programming Model:
+ * Each channel has a control register and time constant register accessed via
+ * consecutive I/O ports (typically base+0 through base+3). Control word format:
+ * - D7: Interrupt enable
+ * - D6: Mode (0=Timer, 1=Counter)
+ * - D5: Prescaler (0=16, 1=256) for Timer mode
+ * - D4: Trigger edge (0=falling, 1=rising) for Counter mode
+ * - D3: Time constant follows / Trigger mode
+ * - D2: Time constant follows this control word
+ * - D1: Software reset
+ * - D0: Interrupt vector (channel 0 only) / Control word flag
+ *
+ * Typical Usage:
+ * @code
+ *   Z80CTC ctc("CTC");
+ *   bus.registerIO(&ctc, 0x00, 4);  // Map to ports 0x00-0x03
+ *
+ *   // Configure channel 0 as timer with interrupts
+ *   ctc.ioWrite(0, 0xE5);  // INT enabled, Timer mode, prescaler=16, TC follows
+ *   ctc.ioWrite(0, 100);   // Time constant = 100
+ *
+ *   // In main loop
+ *   ctc.clockTick();       // Advance timer state
+ *   if (ctc.hasInterrupt()) {
+ *       uint8_t vector = ctc.getVector();  // Get interrupt vector
+ *       cpu.interrupt(vector);
+ *   }
+ * @endcode
+ *
+ * @author Olaf Krieger
+ * @date 2024-2025
+ * @license MIT License
+ * @see Zilog Z8430 CTC Technical Manual
+ * @see Robotron A5120 Technical Documentation (U857D Manual, pages 612-616)
  */
 
 #pragma once
@@ -79,9 +113,21 @@ public:
     
     /**
      * @brief Get the interrupt vector for the highest priority requesting channel.
+     *
+     * Note: This clears the pending interrupt for the acknowledged channel.
+     * RETI detection is not implemented, so nested interrupts are not fully supported.
+     *
      * @return 8-bit vector.
      */
     uint8_t getVector() const override;
+
+    /**
+     * @brief Notify CTC that RETI was executed.
+     *
+     * Clears the Interrupt Under Service (IUS) flag for the channel
+     * that was being serviced, allowing lower-priority interrupts.
+     */
+    void    onRETI() override;
 
     /**
      * @brief Advance the internal timer counters (system clock).
@@ -128,14 +174,15 @@ public:
     const char* deviceName() const override { return name_.c_str(); }
 
 private:
-    // Control Word Bit Masks
-    static constexpr uint8_t CTRL_RESET       = 0x02; ///< Software reset
-    static constexpr uint8_t CTRL_TC_FOLLOWS  = 0x04; ///< Time Constant follows control word
-    static constexpr uint8_t CTRL_COUNTER     = 0x08; ///< 1=Counter mode, 0=Timer mode
-    static constexpr uint8_t CTRL_PRESCALE256 = 0x10; ///< 1=Prescale 256, 0=Prescale 16
-    static constexpr uint8_t CTRL_EDGE_RISE   = 0x20; ///< 1=Rising edge trigger, 0=Falling
-    static constexpr uint8_t CTRL_CLK_TRG    = 0x40; ///< 1=CLK/TRG pulses start timer, 0=Automatic
-    static constexpr uint8_t CTRL_INT_EN     = 0x80; ///< 1=Interrupt enabled
+    // Control Word Bit Masks (U857D manual page 612-613, Bild 3)
+    // D0 = 1 (always for control word)
+    static constexpr uint8_t CTRL_RESET       = 0x02; ///< D1: Software reset
+    static constexpr uint8_t CTRL_TC_FOLLOWS  = 0x04; ///< D2: Time Constant follows control word
+    static constexpr uint8_t CTRL_CLK_TRG     = 0x08; ///< D3: Timer trigger mode (0=passive, 1=C/TRG active)
+    static constexpr uint8_t CTRL_EDGE_RISE   = 0x10; ///< D4: Trigger edge (0=falling, 1=rising)
+    static constexpr uint8_t CTRL_PRESCALE256 = 0x20; ///< D5: Prescaler (0=16, 1=256)
+    static constexpr uint8_t CTRL_COUNTER     = 0x40; ///< D6: Mode (0=Timer, 1=Counter)
+    static constexpr uint8_t CTRL_INT_EN      = 0x80; ///< D7: Interrupt enabled
 
     /**
      * @struct Channel
@@ -150,6 +197,8 @@ private:
         bool    running     = false;      ///< Timer is active
         bool    zcto_active = false;      ///< ZC/TO line state
         bool    int_pending = false;      ///< Interrupt is waiting for ack
+        bool    ius         = false;      ///< Interrupt Under Service flag
+        bool    iei         = false;      ///< Interrupt Enable Input (daisy chain)
     };
 
     /**
@@ -164,9 +213,9 @@ private:
      */
     bool    anyPending() const;
 
-    Channel     ch_[4];           ///< Four CTC channels
-    uint8_t     vec_base_ = 0;    ///< Interrupt vector base address
-    bool        iei_      = false;///< Interrupt Enable Input
-    std::string name_;            ///< Device name
-    ZCTOCallback zcto_cb_;        ///< Output pulse callback
+    mutable Channel ch_[4];            ///< Four CTC channels (mutable for getVector)
+    uint8_t     vec_base_ = 0;         ///< Interrupt vector base address
+    bool        iei_      = false;     ///< Interrupt Enable Input
+    std::string name_;                 ///< Device name
+    ZCTOCallback zcto_cb_;             ///< Output pulse callback
 };
