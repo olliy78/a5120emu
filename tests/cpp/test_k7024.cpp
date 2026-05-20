@@ -98,8 +98,9 @@ TEST_F(K7024Test, CursorBit_DoesNotAffectRows0To9)
 
 TEST_F(K7024Test, FbDirty_SetAfterWrite)
 {
-    // The K7024 constructor renders all cells; check that dirty is initially false.
-    // (constructor doesn't set dirty_ since it's just the initial render)
+    // Constructor renders initial noise and sets dirty=true. Clear it first so
+    // we can test the write→dirty lifecycle independently.
+    screen.fbClearDirty();
     EXPECT_FALSE(screen.fbDirty());
 
     bus.memWrite(0xF800, 0x41);  // write 'A'
