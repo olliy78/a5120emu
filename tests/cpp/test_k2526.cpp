@@ -4,9 +4,10 @@
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// Write to BS-PIO Port B data register.
-// The PIO Port B data port is at sub-chip offset 2, so absolute port = base+2.
-static constexpr uint8_t BSPIO_PORTB_DATA = 0x02;  // relative to K2526 base 0x00
+// Write to BS-PIO Port A data register (port 0x08 = base 0x08 + sub-port 0).
+static constexpr uint8_t BSPIO_PORTA_DATA = 0x08;
+// Write to BS-PIO Port B data register (port 0x0A = base 0x08 + sub-port 2).
+static constexpr uint8_t BSPIO_PORTB_DATA = 0x0A;
 
 // ─── ROM: power-on state ──────────────────────────────────────────────────────
 
@@ -57,9 +58,9 @@ TEST(K2526, RomWriteIgnored)
     EXPECT_EQ(bus.memRead(0x0010), original);  // unchanged
 }
 
-// ─── ROM: disable via BS-PIO Port B bit 5 ────────────────────────────────────
+// ─── ROM: disable via BS-PIO Port B bit 0 (/LD-ROM, active low) ──────────────
 
-TEST(K2526, BSPioPortB_Bit5_DisablesRom)
+TEST(K2526, BSPioPortB_Bit0Low_DisablesRom)
 {
     K1520Bus bus;
     K2526 card(bus);
@@ -69,8 +70,8 @@ TEST(K2526, BSPioPortB_Bit5_DisablesRom)
     ASSERT_TRUE(card.isRomEnabled());
     ASSERT_NE(bus.memRead(0x0000), 0xFF);
 
-    // Write bit 5 to BS-PIO Port B data (port 0x02).
-    bus.ioWrite(BSPIO_PORTB_DATA, 0x20);
+    // B0=0 → /LD-ROM asserted (active low) → ROM disabled.
+    bus.ioWrite(BSPIO_PORTB_DATA, 0x00);
 
     EXPECT_FALSE(card.isRomEnabled());
     // After unregistering the ROM, the bus returns 0xFF for the address
@@ -85,30 +86,30 @@ TEST(K2526, BSPioPortB_DisableRom_IsIdempotent)
     card.attachToBus(bus);
     card.powerOn();
 
-    bus.ioWrite(BSPIO_PORTB_DATA, 0x20);
+    bus.ioWrite(BSPIO_PORTB_DATA, 0x00);  // B0=0 → ROM disabled
     EXPECT_FALSE(card.isRomEnabled());
 
     // Second write must not double-unregister (would crash or be harmless).
-    bus.ioWrite(BSPIO_PORTB_DATA, 0x20);
+    bus.ioWrite(BSPIO_PORTB_DATA, 0x00);
     EXPECT_FALSE(card.isRomEnabled());
 }
 
-TEST(K2526, BSPioPortB_Bit5_NotSet_RomStaysEnabled)
+TEST(K2526, BSPioPortB_Bit0High_RomStaysEnabled)
 {
     K1520Bus bus;
     K2526 card(bus);
     card.attachToBus(bus);
     card.powerOn();
 
-    // Write Port B with bit 5 clear – ROM must remain active.
-    bus.ioWrite(BSPIO_PORTB_DATA, 0x00);
+    // B0=1 → /LD-ROM not asserted → ROM stays active.
+    bus.ioWrite(BSPIO_PORTB_DATA, 0x01);
     EXPECT_TRUE(card.isRomEnabled());
     EXPECT_NE(bus.memRead(0x0000), 0xFF);
 }
 
-// ─── MEMDI signal via BS-PIO Port B bit 6 ────────────────────────────────────
+// ─── MEMDI signal via BS-PIO Port A bit 7 (MEMDI1/2 output) ─────────────────
 
-TEST(K2526, BSPioPortB_Bit6_SetsMEMDI)
+TEST(K2526, BSPioPortA_Bit7_SetsMEMDI)
 {
     K1520Bus bus;
     K2526 card(bus);
@@ -117,10 +118,10 @@ TEST(K2526, BSPioPortB_Bit6_SetsMEMDI)
 
     EXPECT_FALSE(bus.getMEMDI());
 
-    bus.ioWrite(BSPIO_PORTB_DATA, 0x40);   // bit 6 set
+    bus.ioWrite(BSPIO_PORTA_DATA, 0x80);   // A7=1 → MEMDI active
     EXPECT_TRUE(bus.getMEMDI());
 
-    bus.ioWrite(BSPIO_PORTB_DATA, 0x00);   // bit 6 clear
+    bus.ioWrite(BSPIO_PORTA_DATA, 0x00);   // A7=0 → MEMDI released
     EXPECT_FALSE(bus.getMEMDI());
 }
 
@@ -160,56 +161,41 @@ TEST(K2526, IODispatch_AllPortsWritable)
         bus.ioWrite(port, 0x00);  // must not crash
 }
 
-TEST(K2526, IODispatch_BsPioRange_0x00_0x03)
+TEST(K2526, IODispatch_UBusRange_0x00_0x07)
 {
     K1520Bus bus;
     K2526 card(bus);
     card.attachToBus(bus);
 
-    // Writing to ports 0x00-0x03 routes to BS-PIO and does not crash.
-    bus.ioWrite(0x00, 0x00);  // Port A data
-    bus.ioWrite(0x01, 0x00);  // Port A ctrl
-    bus.ioWrite(0x02, 0x00);  // Port B data
-    bus.ioWrite(0x03, 0x00);  // Port B ctrl
-    (void)bus.ioRead(0x00);
-    (void)bus.ioRead(0x01);
-    (void)bus.ioRead(0x02);
-    (void)bus.ioRead(0x03);
-}
-
-TEST(K2526, IODispatch_CtcRange_0x04_0x07)
-{
-    K1520Bus bus;
-    K2526 card(bus);
-    card.attachToBus(bus);
-
-    // CTC: write a reset control word to each channel, then read.
-    for (uint8_t port = 0x04; port <= 0x07; ++port) {
-        bus.ioWrite(port, 0x02);  // CTC reset
+    // Writing to ports 0x00-0x07 routes to U-Bus and does not crash.
+    for (uint8_t port = 0x00; port <= 0x07; ++port) {
+        bus.ioWrite(port, 0x00);
         (void)bus.ioRead(port);
     }
 }
 
-TEST(K2526, IODispatch_Zve1PioRange_0x08_0x0B)
+TEST(K2526, IODispatch_BsPioRange_0x08_0x0B)
 {
     K1520Bus bus;
     K2526 card(bus);
     card.attachToBus(bus);
 
+    // Writing to ports 0x08-0x0B routes to BS-PIO and does not crash.
     for (uint8_t port = 0x08; port <= 0x0B; ++port) {
         bus.ioWrite(port, 0x00);
         (void)bus.ioRead(port);
     }
 }
 
-TEST(K2526, IODispatch_Zve2PioRange_0x0C_0x0F)
+TEST(K2526, IODispatch_CtcRange_0x0C_0x0F)
 {
     K1520Bus bus;
     K2526 card(bus);
     card.attachToBus(bus);
 
+    // CTC: write a reset control word to each channel, then read.
     for (uint8_t port = 0x0C; port <= 0x0F; ++port) {
-        bus.ioWrite(port, 0x00);
+        bus.ioWrite(port, 0x02);  // CTC reset
         (void)bus.ioRead(port);
     }
 }
@@ -226,7 +212,7 @@ TEST(K2526, AttachToBus_RegistersPorts_0x00_to_0x0F)
     // the card. Writes to 0x00–0x0F must be dispatched to the card – verified
     // indirectly by checking ROM disable works through the bus I/O path.
     card.powerOn();
-    bus.ioWrite(0x02, 0x20);   // BS-PIO Port B: disable ROM via bus I/O
+    bus.ioWrite(0x0A, 0x00);   // BS-PIO Port B (0x0A): B0=0 → /LD-ROM → ROM disabled
     EXPECT_FALSE(card.isRomEnabled());
 }
 

@@ -289,11 +289,19 @@ public:
     
     /**
      * @brief Assert /NMI (non-maskable interrupt) signal.
-     * 
+     *
      * NMI is edge-triggered on the Z80. This is called once per NMI event.
      */
     void assertNMI();
-    
+
+    /**
+     * @brief Clear /NMI pending flag after delivery to CPU.
+     *
+     * Must be called by the run loop immediately after cpu_.nmi() so the
+     * NMI is not re-delivered on every subsequent step.
+     */
+    void clearNMI();
+
     /**
      * @brief Assert /RESET signal to reset the entire system.
      *

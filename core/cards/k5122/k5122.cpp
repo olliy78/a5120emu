@@ -58,8 +58,17 @@ uint8_t K5122::ioRead(uint8_t port) {
             } else {
                 transferring_ = false;
                 result = 0xFF;
-                LOG_DEBUG("K5122", "DATA transfer complete (all %zu bytes delivered)",
-                          sector_buf_.size());
+                // Advance to next sector on track (wraps at secs_per_track).
+                const FloppyDrive& drv = drives_[selected_drive_];
+                if (drv.isMounted()) {
+                    const TrackFormat* tf = drv.format().findTrack(
+                        current_cyl_[selected_drive_], current_head_);
+                    if (tf && tf->secs_per_track > 0) {
+                        current_sector_ = (current_sector_ % tf->secs_per_track) + 1;
+                    }
+                }
+                LOG_DEBUG("K5122", "DATA transfer complete (%zu bytes), next sector=%u",
+                          sector_buf_.size(), current_sector_);
             }
         } else {
             result = data_pio_.ioRead(port - 0x14);
@@ -311,6 +320,14 @@ void K5122::doWriteSector() {
                     current_head_,
                     current_sector_,
                     sector_buf_);
+
+    // Advance sector after write, same as after read.
+    {
+        const TrackFormat* tf = drv.format().findTrack(
+            current_cyl_[selected_drive_], current_head_);
+        if (tf && tf->secs_per_track > 0)
+            current_sector_ = (current_sector_ % tf->secs_per_track) + 1;
+    }
 
     sector_buf_.clear();
     buf_pos_      = 0;

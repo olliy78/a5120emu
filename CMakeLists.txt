@@ -89,6 +89,7 @@ if(BUILD_K1520)
         core/bus/k1520_bus.cpp
     )
     target_include_directories(k1520_bus PUBLIC ${CMAKE_SOURCE_DIR})
+    target_link_libraries(k1520_bus PUBLIC k1520_logger)
 
     # Floppy peripheral
     add_library(k1520_floppy STATIC

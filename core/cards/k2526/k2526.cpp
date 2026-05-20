@@ -1,4 +1,5 @@
 #include "core/cards/k2526/k2526.h"
+#include "core/logger.h"
 
 // ─── Construction ────────────────────────────────────────────────────────────
 
@@ -8,8 +9,14 @@ K2526::K2526(K1520Bus& bus)
 K2526::K2526(K1520Bus& bus, const A5120Config& cfg)
     : bus_(bus), cfg_(cfg)
 {
-    // Register BS-PIO Port B output callback so ROM/MEMDI control writes are
-    // intercepted immediately when the CPU writes to Port B data register.
+    // BS-PIO Port-A-Ausgangs-Callback: A7=MEMDI1/2 steuert Speicherzugriffssperre.
+    bs_pio_.setPortAOutputCallback([this](uint8_t data) {
+        bool memdi = (data >> 7) & 1;
+        bus_.setMEMDI(memdi);
+        LOG_DEBUG("K2526", "BS-PIO PortA out=0x%02X → MEMDI=%d", data, (int)memdi);
+    });
+
+    // BS-PIO Port-B-Ausgangs-Callback: reagiert auf /LD-ROM (B0) und /SA (B4).
     bs_pio_.setPortBOutputCallback([this](uint8_t data) {
         onBSPIOPortBOut(data);
     });
@@ -19,19 +26,39 @@ K2526::K2526(K1520Bus& bus, const A5120Config& cfg)
 
 void K2526::attachToBus(K1520Bus& bus)
 {
-    // Register this device to handle all 16 I/O ports (0x00–0x0F).
+    // Ports 00H–0FH registrieren (U-Bus + BS-PIO + CTC).
     bus.registerIO(this, cfg_.io_base, 16);
+    LOG_DEBUG("K2526", "attachToBus: I/O 00H-0FH registriert");
 }
 
 void K2526::powerOn()
 {
-    // Configure BS-PIO Port B as output mode (mode 0).
-    // Control word: 0x0F = bits[3:0]=1111 (mode word) | bits[7:6]=00 (mode 0 = output).
-    // This mirrors what the real boot ROM writes to the PIO at startup.
-    bs_pio_.ioWrite(3, 0x0F);  // Port B ctrl → mode 0 (output)
-
+    // ── Lade-ROM aktivieren ───────────────────────────────────────────────
     rom_enabled_ = true;
     bus_.registerMem(&rom_, 0x0000, 1024);
+    LOG_INFO("K2526", "Power-on: Lade-ROM aktiv (0000H-03FFH)");
+
+    // ── BS-PIO im Bitmode (Mode 3) initialisieren ─────────────────────────
+    // Laut Originalschaltung (Abschn. 6.10.2): beide Ports im Bitmode.
+    //
+    // Port A (08H Data, 09H Ctrl): Richtungsmaske 0x7F
+    //   A7=MEMDI1/2 = Ausgang(0), A6-A0 = Eingänge(1) → 0111 1111 = 0x7F
+    bs_pio_.ioWrite(1, 0xCF);  // Port A: Mode 3 (11xx1111)
+    bs_pio_.ioWrite(1, 0x7F);  // Port A: Richtungsmaske
+
+    // Port B (0AH Data, 0BH Ctrl): Richtungsmaske 0xE2
+    //   B0=/LD-ROM     Ausgang(0)
+    //   B1=/INT-BS     Eingang(1)
+    //   B2=/SPS-ESR    Ausgang(0)
+    //   B3=/WAIT-ZVE2  Ausgang(0)
+    //   B4=/SA         Ausgang(0)
+    //   B5-B7 Config   Eingänge(1) → 1110 0010 = 0xE2
+    bs_pio_.ioWrite(3, 0xCF);  // Port B: Mode 3
+    bs_pio_.ioWrite(3, 0xE2);  // Port B: Richtungsmaske
+
+    // Nach RESET hält Pull-up R3:4 /LD-ROM=high → ROM aktiv.
+    // Der Callback feuert erst, wenn CPU explizit Port B Data (0AH) beschreibt.
+    LOG_INFO("K2526", "BS-PIO Mode 3 init: PortA-dir=0x7F, PortB-dir=0xE2");
 }
 
 void K2526::clockTick()
@@ -39,88 +66,167 @@ void K2526::clockTick()
     ctc_.clockTick();
 }
 
-// ─── I/O dispatch ────────────────────────────────────────────────────────────
+// ─── I/O-Dispatch (Originalschaltung Abschn. 6.9.2) ─────────────────────────
 //
-// Port range → sub-chip mapping (using bits [3:2]):
-//   0x00–0x03 (00) → BS-PIO
-//   0x04–0x07 (01) → CTC
-//   0x08–0x0B (10) → ZVE1-PIO
-//   0x0C–0x0F (11) → ZVE2-PIO
+// Adressbelegung (AB7-AB4=0, AB3-AB0 unterscheiden):
+//   00H–07H  U-Bus    (bidirektionale Treiber A40/41, Tastatur X5)
+//   08H–0BH  BS-PIO   (Q301, AB3=1 AB2=0)
+//   0CH–0FH  CTC      (Q302, AB3=1 AB2=1)
 //
-// The sub-chip receives the low 2 bits as its internal port index.
+// Z80PIO und Z80CTC verwenden intern (port & 0x03) zur Sub-Port-Selektion,
+// daher kann der absolute Port direkt übergeben werden.
 
 uint8_t K2526::ioRead(uint8_t port)
 {
-    uint8_t sub_port = port & 0x03;
-    switch ((port & 0x0C) >> 2) {
-        case 0: return bs_pio_.ioRead(sub_port);
-        case 1: return ctc_.ioRead(sub_port);
-        case 2: return zve1_pio_.ioRead(sub_port);
-        case 3: return zve2_pio_.ioRead(sub_port);
-        default: break;
+    if (port <= 0x07) {
+        // ── U-Bus ──────────────────────────────────────────────────────────
+        uint8_t result = 0xFF;
+        switch (port) {
+            case 0x01:  // /UCS2: Tastengültigkeitsabfrage
+                result = ubus_kbd_valid_;
+                LOG_DEBUG("K2526", "U-Bus IN 01H (/UCS2 Kbd-Valid) => 0x%02X", result);
+                break;
+            case 0x06:  // /UCS1: Tastencode lesen
+                result = ubus_kbd_code_;
+                LOG_DEBUG("K2526", "U-Bus IN 06H (/UCS1 Kbd-Code)  => 0x%02X", result);
+                break;
+            default:
+                LOG_DEBUG("K2526", "U-Bus IN port=0x%02X => 0xFF (n.i.)", port);
+                break;
+        }
+        return result;
+    } else if (port <= 0x0B) {
+        // ── BS-PIO (Ports 08H–0BH) ─────────────────────────────────────────
+        uint8_t result = bs_pio_.ioRead(port);
+        LOG_DEBUG("K2526", "BS-PIO IN  port=0x%02X (sub=%u) => 0x%02X",
+                  port, port & 0x03u, result);
+        return result;
+    } else if (port <= 0x0F) {
+        // ── CTC (Ports 0CH–0FH) ────────────────────────────────────────────
+        uint8_t result = ctc_.ioRead(port);
+        LOG_DEBUG("K2526", "CTC    IN  port=0x%02X (ch=%u)  => 0x%02X",
+                  port, port & 0x03u, result);
+        return result;
     }
     return 0xFF;
 }
 
 void K2526::ioWrite(uint8_t port, uint8_t data)
 {
-    uint8_t sub_port = port & 0x03;
-    switch ((port & 0x0C) >> 2) {
-        case 0: bs_pio_.ioWrite(sub_port, data);   break;
-        case 1: ctc_.ioWrite(sub_port, data);       break;
-        case 2: zve1_pio_.ioWrite(sub_port, data);  break;
-        case 3: zve2_pio_.ioWrite(sub_port, data);  break;
-        default: break;
+    if (port <= 0x07) {
+        // ── U-Bus ──────────────────────────────────────────────────────────
+        switch (port) {
+            case 0x00:  // OUT 00H: /INT-BS – Aufruf Betriebssystemebene via BS-PIO B1
+                LOG_DEBUG("K2526", "U-Bus OUT 00H (/INT-BS trigger) data=0x%02X", data);
+                break;
+            case 0x02:  // /RES-SPA: Speicherschutz-Indikator zurücksetzen
+                LOG_DEBUG("K2526", "U-Bus OUT 02H (/RES-SPA) data=0x%02X", data);
+                break;
+            case 0x03:  // /UCS4: Fehlerlampe / INS-MODE-Anzeige
+                ubus_error_lamp_ = data;
+                LOG_DEBUG("K2526", "U-Bus OUT 03H (/UCS4 ErrLamp) data=0x%02X", data);
+                break;
+            case 0x04:  // /RES-ZVE2: DMA-CPU zurücksetzen
+                LOG_DEBUG("K2526", "U-Bus OUT 04H (/RES-ZVE2) data=0x%02X", data);
+                break;
+            case 0x05:  // /UCS3: Lampenansteuerung (Selektoren)
+                ubus_lamp_ = data;
+                LOG_DEBUG("K2526", "U-Bus OUT 05H (/UCS3 Lamps)  data=0x%02X", data);
+                break;
+            default:
+                LOG_DEBUG("K2526", "U-Bus OUT port=0x%02X data=0x%02X (n.i.)", port, data);
+                break;
+        }
+    } else if (port <= 0x0B) {
+        // ── BS-PIO (Ports 08H–0BH) ─────────────────────────────────────────
+        LOG_DEBUG("K2526", "BS-PIO OUT port=0x%02X (sub=%u) data=0x%02X",
+                  port, port & 0x03u, data);
+        bs_pio_.ioWrite(port, data);
+    } else if (port <= 0x0F) {
+        // ── CTC (Ports 0CH–0FH) ────────────────────────────────────────────
+        LOG_DEBUG("K2526", "CTC    OUT port=0x%02X (ch=%u)  data=0x%02X",
+                  port, port & 0x03u, data);
+        ctc_.ioWrite(port, data);
     }
 }
 
-// ─── BS-PIO Port B output handler ────────────────────────────────────────────
+// ─── BS-PIO Port-B-Ausgangs-Handler ──────────────────────────────────────────
 //
-// Port B bit assignments (outputs written by software):
-//   bit 5 – ROM disable: set → unregister boot ROM from bus
-//   bit 6 – /MEMDI: set → assert memory protection (bus.setMEMDI(true))
-//   bit 7 – /SA: power-off (not emulated)
+// /LD-ROM ist AKTIV LOW (Originalschaltung Abschn. 6.10.1 B0):
+//   B0=1 (high, Pull-up nach RESET) → /LD-ROM=1 → ROM AKTIV
+//   B0=0 (low, vom BIOS gesetzt)    → /LD-ROM=0 → ROM DEAKTIVIERT
+//
+// Das BIOS schreibt im 2. Teil des Startprogramms B0=0, um das ROM abzuschalten.
 
 void K2526::onBSPIOPortBOut(uint8_t data)
 {
-    // Bit 5: ROM disable (active high – writing 1 disables ROM)
-    if ((data & 0x20) && rom_enabled_) {
+    bool rom_should_be_disabled = !(data & 0x01);  // B0=0 → ROM aus
+
+    if (rom_should_be_disabled && rom_enabled_) {
         rom_enabled_ = false;
         bus_.unregisterMem(&rom_);
+        LOG_INFO("K2526", "Lade-ROM DEAKTIVIERT: BS-PIO B0=/LD-ROM=0 (PortB=0x%02X)", data);
+    } else if (!rom_should_be_disabled && !rom_enabled_) {
+        rom_enabled_ = true;
+        bus_.registerMem(&rom_, 0x0000, 1024);
+        LOG_INFO("K2526", "Lade-ROM REAKTIVIERT: BS-PIO B0=/LD-ROM=1 (PortB=0x%02X)", data);
     }
 
-    // Bit 6: /MEMDI – memory protection enable
-    bus_.setMEMDI((data & 0x40) != 0);
+    if (!(data & 0x10)) {
+        LOG_WARN("K2526", "BS-PIO B4=/SA aktiv (0x%02X) – Netzausschaltung!", data);
+    }
 }
 
-// ─── InterruptSlave – delegate to BS-PIO (head of local daisy chain) ─────────
+// ─── InterruptSlave – Interne Daisy-Chain: IEI → CTC → BS-PIO → IEO ─────────
+//
+// Originalschaltung (Abb. 1):
+//   CTC am Ende der 1. Prioritätenkette (Systembus)    – höhere Prio
+//   BS-PIO am Ende der 2. Prioritätenkette (Koppelbus) – niedrigere Prio
+//
+// Emulatorvereinfachung: Eine zusammengeführte Kette.
 
 void K2526::setIEI(bool iei)
 {
     iei_in_ = iei;
-    bs_pio_.setIEI(iei);
+    ctc_.setIEI(iei);
+    bs_pio_.setIEI(ctc_.getIEO());  // CTC-IEO → BS-PIO-IEI (Koppelbus)
+    LOG_TRACE("K2526", "setIEI(%d): CTC.IEI=%d → BS-PIO.IEI=%d",
+              (int)iei, (int)iei, (int)ctc_.getIEO());
 }
 
 bool K2526::getIEO() const
 {
-    // Forward through bs_pio_ → ctc_ → zve1_ → zve2_ and return last IEO.
-    // For now we expose bs_pio_'s IEO as the card's IEO.
     return bs_pio_.getIEO();
 }
 
 bool K2526::hasInterrupt() const
 {
-    return bs_pio_.hasInterrupt()  ||
-           ctc_.hasInterrupt()     ||
-           zve1_pio_.hasInterrupt() ||
-           zve2_pio_.hasInterrupt();
+    bool ctc_int = ctc_.hasInterrupt();
+    bool pio_int = bs_pio_.hasInterrupt();
+    if (ctc_int || pio_int) {
+        LOG_DEBUG("K2526", "hasInterrupt: CTC=%d BS-PIO=%d", (int)ctc_int, (int)pio_int);
+    }
+    return ctc_int || pio_int;
 }
 
 uint8_t K2526::getVector() const
 {
-    if (bs_pio_.hasInterrupt())   return bs_pio_.getVector();
-    if (ctc_.hasInterrupt())      return ctc_.getVector();
-    if (zve1_pio_.hasInterrupt()) return zve1_pio_.getVector();
-    if (zve2_pio_.hasInterrupt()) return zve2_pio_.getVector();
+    if (ctc_.hasInterrupt()) {
+        uint8_t v = ctc_.getVector();
+        LOG_DEBUG("K2526", "getVector: CTC-Vektor=0x%02X", v);
+        return v;
+    }
+    if (bs_pio_.hasInterrupt()) {
+        uint8_t v = bs_pio_.getVector();
+        LOG_DEBUG("K2526", "getVector: BS-PIO-Vektor=0x%02X", v);
+        return v;
+    }
     return 0xFF;
+}
+
+void K2526::onRETI()
+{
+    ctc_.onRETI();
+    bs_pio_.onRETI();
+    LOG_DEBUG("K2526", "RETI: weitergeleitet an CTC und BS-PIO");
 }

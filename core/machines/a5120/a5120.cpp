@@ -97,8 +97,9 @@ int A5120Machine::run(int max_cycles) {
         bus_.updateInterruptChain();
 
         if (bus_.isWAIT()) {
-            // External WAIT line holds the CPU. Consume no instruction and let
-            // peripherals progress on the next loop iteration.
+            // WAIT holds the CPU. Count one cycle consumed and loop so
+            // peripherals can run, otherwise remaining never decrements.
+            remaining--;
             continue;
         }
 
@@ -110,11 +111,14 @@ int A5120Machine::run(int max_cycles) {
         // Deliver INT if CPU can accept
         if (bus_.isINT() && cpu_.IFF1) {
             uint8_t vec = bus_.interruptAcknowledge();
+            LOG_DEBUG("A5120", "INT zugestellt: Vektor=0x%02X PC=%04X", vec, cpu_.PC);
             cpu_.interrupt(vec);
         }
 
         if (bus_.isNMI()) {
+            LOG_DEBUG("A5120", "NMI zugestellt: PC=%04X", cpu_.PC);
             cpu_.nmi();
+            bus_.clearNMI();  // Edge-triggered: clear after delivery or NMI fires every step
         }
 
         const uint16_t pc_before = cpu_.PC;
