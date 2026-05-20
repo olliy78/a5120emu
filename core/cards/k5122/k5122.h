@@ -88,7 +88,7 @@ class K5122 : public BusDevice, public InterruptSlave {
 public:
     /**
      * @brief Construct a K5122 floppy controller.
-     * @param bus K1520 system bus reference (unused but kept for interface uniformity)
+     * @param bus K1520 system bus reference (used for BUSRQ/BUSAK DMA protocol)
      */
     explicit K5122(K1520Bus& bus);
 
@@ -222,6 +222,22 @@ public:
      */
     FloppyDrive& drive(int idx) { return drives_[idx]; }
 
+    /**
+     * @brief Perform the pending DMA transfer and release /BUSRQ.
+     *
+     * Called by the A5120Machine run loop while /BUSRQ is asserted.
+     * Executes the deferred sector read or write that was triggered by
+     * the /STR edge, then calls bus_.releaseBUSRQ() so ZVE1 can resume.
+     *
+     * On real hardware ZVE2 would perform this transfer autonomously.
+     * In this emulation the transfer is performed synchronously here and
+     * the sector data is placed in sector_buf_ for subsequent reads via
+     * port 0x16 (byte-polling code) or written to the disk image (write).
+     *
+     * No-op if no DMA transfer is pending.
+     */
+    void dmaUpdate();
+
 private:
     // ─── PIO signal handlers ────────────────────────────────────────────────
 
@@ -292,6 +308,7 @@ private:
     void markDriveAccess(int drive);
 
     // ─── Hardware objects ────────────────────────────────────────────────────
+    K1520Bus&   bus_;                        ///< K1520 Systembus (für BUSRQ/BUSAK)
     Z80PIO      ctrl_pio_{"K5122-CTRL"};    ///< Steuer-PIO: ports 0x10–0x13
     Z80PIO      data_pio_{"K5122-DATA"};    ///< Daten-PIO:  ports 0x14–0x17
     FloppyDrive drives_[4];                 ///< Up to 4 floppy drives
@@ -309,6 +326,10 @@ private:
     size_t               buf_pos_      = 0; ///< Read index into sector_buf_
     bool                 transferring_ = false; ///< true while a read transfer is in progress
     bool                 write_mode_   = false; ///< true during a write transfer
+
+    // ─── DMA state machine ───────────────────────────────────────────────────
+    bool dma_pending_  = false;  ///< true: /BUSRQ asserted, DMA transfer waiting
+    bool dma_is_write_ = false;  ///< true = write sector, false = read sector
 
     // ─── Interrupt state ─────────────────────────────────────────────────────
     bool    iei_in_ = false;                ///< Last IEI value from upstream chain

@@ -9,6 +9,15 @@ K2526::K2526(K1520Bus& bus)
 K2526::K2526(K1520Bus& bus, const A5120Config& cfg)
     : bus_(bus), cfg_(cfg)
 {
+    // ── ZVE1 (Haupt-CPU) mit K1520-Bus verdrahten ────────────────────────────
+    // Die CPU liegt physisch auf der K2526-Karte. Alle Speicher- und I/O-
+    // Zugriffe laufen über den K1520-Bus.
+    cpu_.readByte     = [this](uint16_t a)           { return bus_.memRead(a); };
+    cpu_.writeByte    = [this](uint16_t a, uint8_t d){ bus_.memWrite(a, d); };
+    cpu_.readPort     = [this](uint16_t p)           { return bus_.ioRead(p & 0xFF); };
+    cpu_.writePort    = [this](uint16_t p, uint8_t d){ bus_.ioWrite(p & 0xFF, d); };
+    cpu_.retiCallback = [this]()                     { bus_.signalRETI(); };
+
     // BS-PIO Port-A-Ausgangs-Callback: A7=MEMDI1/2 steuert Speicherzugriffssperre.
     bs_pio_.setPortAOutputCallback([this](uint8_t data) {
         bool memdi = (data >> 7) & 1;

@@ -31,7 +31,7 @@
 
 // ─── Construction ─────────────────────────────────────────────────────────────
 
-K5122::K5122(K1520Bus& /*bus*/) {
+K5122::K5122(K1520Bus& bus) : bus_(bus) {
     // Pre-populate the ctrl PIO Port B with "no drive mounted" status so that
     // the very first read of port 0x12 returns something sensible.
     updateStatusPortB();
@@ -202,13 +202,17 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
     }
 
     // ── Start strobe: /STR (bit 3) falling edge ───────────────────────────────
+    // Real hardware: /STR=0 enables /BUSRQ generation. ZVE2 (DMA-CPU) takes
+    // over the bus and performs the sector transfer autonomously.
+    // Emulation: assert /BUSRQ immediately; defer the actual sector
+    // read/write to dmaUpdate(), which is called by the run loop while
+    // ZVE1 is suspended (BUSRQ asserted).
     if ((prev_ctrl_a_ & 0x08) && !(data & 0x08)) {
-        bool is_write = !(data & 0x01);  // /WE bit 0: 0 = write mode
-        if (is_write) {
-            doWriteSector();
-        } else {
-            doReadSector();
-        }
+        dma_is_write_ = !(data & 0x01);  // /WE bit 0: 0 = write mode
+        dma_pending_  = true;
+        bus_.assertBUSRQ();
+        LOG_DEBUG("K5122", "/STR Flanke: BUSRQ gesetzt, DMA %s ausstehend",
+                  dma_is_write_ ? "SCHREIBEN" : "LESEN");
     }
 
     // Update head/side select (bit 5 doubles as side select when not stepping).
@@ -339,4 +343,24 @@ void K5122::markDriveAccess(int drive) {
     if (drive < 0 || drive > 3) return;
     led_until_[static_cast<size_t>(drive)] =
         std::chrono::steady_clock::now() + led_hold_time_;
+}
+
+// ─── DMA-Update (wird vom Run-Loop aufgerufen während BUSRQ aktiv ist) ────────
+//
+// Führt den ausstehenden Sektortransfer durch (Lesen oder Schreiben) und
+// gibt den Bus durch releaseBUSRQ() wieder frei. ZVE1 darf danach weiter
+// arbeiten. Auf echter Hardware würde ZVE2 diese Aufgabe übernehmen.
+
+void K5122::dmaUpdate() {
+    if (!dma_pending_) return;
+
+    if (dma_is_write_) {
+        doWriteSector();
+    } else {
+        doReadSector();
+    }
+
+    dma_pending_ = false;
+    bus_.releaseBUSRQ();
+    LOG_DEBUG("K5122", "dmaUpdate: DMA-Transfer abgeschlossen, BUSRQ freigegeben");
 }

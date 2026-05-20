@@ -262,3 +262,77 @@ TEST(K2526, SubchipAccessors_ReturnValidRefs)
     EXPECT_STREQ(card.bsPio().deviceName(), "K2526-BS-PIO");
     EXPECT_STREQ(card.ctc().deviceName(),   "K2526-CTC");
 }
+
+// ─── ZVE1 (CPU) on K2526 card ────────────────────────────────────────────────
+
+TEST(K2526, CpuAccessor_ReturnsSameObject)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    // cpu() must return a stable reference (same address across calls).
+    EXPECT_EQ(&card.cpu(), &card.cpu());
+}
+
+TEST(K2526, CpuReset_SetsPCToZero)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+    card.cpuReset();
+    EXPECT_EQ(card.cpuPC(), 0x0000);
+}
+
+TEST(K2526, CpuIFF1_FalseAfterReset)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+    card.cpuReset();
+    // After a hardware reset the CPU starts with interrupts disabled.
+    EXPECT_FALSE(card.cpuIFF1());
+}
+
+TEST(K2526, CpuStep_WithBootRom_AdvancesPC)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+    card.cpuReset();
+
+    // Execute one instruction from the boot ROM at 0x0000.
+    int cycles = card.cpuStep();
+
+    // cpuStep() must return a positive cycle count and advance PC past 0.
+    EXPECT_GT(cycles, 0);
+    EXPECT_GT(card.cpuPC(), 0x0000);
+}
+
+TEST(K2526, CpuStep_ReturnsPositiveCycles)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+    card.cpuReset();
+
+    // Run 10 steps — each must return > 0 cycles (no infinite loops here
+    // because the boot ROM is valid Z80 code).
+    for (int i = 0; i < 10; ++i) {
+        int c = card.cpuStep();
+        EXPECT_GT(c, 0) << "step " << i << " returned 0 cycles";
+    }
+}
+
+TEST(K2526, CpuNMI_DoesNotCrash)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+    card.cpuReset();
+    // Just verify that cpuNMI() does not crash.
+    card.cpuNMI();
+}

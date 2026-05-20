@@ -5,9 +5,9 @@
  * Emulates the K2526 CPU card for the Robotron K1520/A5120 system.
  * The physical card contains two Z80 CPUs (ZVE1 main, ZVE2 DMA), a 1 KB
  * boot EPROM, a Z80 PIO (BS-PIO, Q301), a Z80 CTC (Q302), and U-Bus
- * keyboard/lamp interface logic.  In this emulation the Z80 CPU (ZVE1)
- * lives outside this class — it is owned by A5120Machine and wired to
- * K1520Bus directly.  This class manages all on-card I/O peripherals.
+ * keyboard/lamp interface logic.  ZVE1 is owned by this class (cpu_ member)
+ * and exposed via cpuStep()/cpuReset()/cpuInterrupt() etc.  ZVE2 is not
+ * implemented; its DMA role is handled by K5122::dmaUpdate().
  *
  * I/O port assignment (AB7–AB4 = 0, base 0x00, range 0x00–0x0F):
  * @code
@@ -64,6 +64,7 @@
 
 #pragma once
 #include "core/bus/k1520_bus.h"
+#include "core/primitives/z80.h"
 #include "core/primitives/z80_pio.h"
 #include "core/primitives/z80_ctc.h"
 #include "core/primitives/eprom_device.h"
@@ -229,6 +230,54 @@ public:
     // ─── Sub-chip accessors ─────────────────────────────────────────────────
 
     /**
+     * @brief Return a reference to the main CPU (ZVE1 / U880D).
+     *
+     * The Z80 (ZVE1) is physically on the K2526 card.  Exposed for:
+     *   - A5120Machine run loop (step, interrupt delivery)
+     *   - Unit tests that inspect CPU register state
+     *   - Trace callbacks (cpu().traceCallback = ...)
+     *
+     * @return Reference to the internal Z80 instance
+     */
+    Z80&     cpu()  { return cpu_; }
+
+    /**
+     * @brief Execute one Z80 instruction (ZVE1 step).
+     * @return Number of T-cycles consumed by the instruction
+     */
+    int      cpuStep()                { return cpu_.step(); }
+
+    /**
+     * @brief Reset ZVE1 to address 0x0000.
+     *
+     * Called on /RESET or at power-on (after powerOn() enables the boot ROM).
+     */
+    void     cpuReset()               { cpu_.reset(); }
+
+    /**
+     * @brief Deliver a maskable interrupt (INT) to ZVE1.
+     * @param vec Interrupt vector byte (combined with I register in Mode 2)
+     */
+    void     cpuInterrupt(uint8_t v)  { cpu_.interrupt(v); }
+
+    /**
+     * @brief Deliver a non-maskable interrupt (NMI) to ZVE1.
+     */
+    void     cpuNMI()                 { cpu_.nmi(); }
+
+    /**
+     * @brief Read ZVE1's interrupt-enable flag 1 (IFF1).
+     * @return true when ZVE1 will accept a maskable interrupt
+     */
+    bool     cpuIFF1()  const         { return cpu_.IFF1; }
+
+    /**
+     * @brief Read ZVE1's current program counter (for diagnostics).
+     * @return Current PC value
+     */
+    uint16_t cpuPC()    const         { return cpu_.PC; }
+
+    /**
      * @brief Return a reference to the BS-PIO (Q301).
      *
      * Used by A5120Machine to wire the CTC ZC/TO2 → CLK/TRG3 connection
@@ -284,8 +333,9 @@ private:
     K1520Bus&   bus_;           ///< K1520 system bus reference
     A5120Config cfg_;           ///< Hardware configuration (bridge bits, I/O base)
 
-    Z80PIO bs_pio_{"K2526-BS-PIO"};     ///< Q301: BS-PIO (Betriebssystem-PIO), ports 08H–0BH
-    Z80CTC ctc_   {"K2526-CTC"};        ///< Q302: CTC (Zähler/Zeitgeber),       ports 0CH–0FH
+    Z80    cpu_;                            ///< ZVE1: Haupt-Z80-CPU (U880D, 2.4576 MHz)
+    Z80PIO bs_pio_{"K2526-BS-PIO"};        ///< Q301: BS-PIO (Betriebssystem-PIO), ports 08H–0BH
+    Z80CTC ctc_   {"K2526-CTC"};           ///< Q302: CTC (Zähler/Zeitgeber),       ports 0CH–0FH
 
     EPROMDevice<1024> rom_{ZRE_BOOT_ROM};  ///< 1 KB boot EPROM at 0x0000–0x03FF
 

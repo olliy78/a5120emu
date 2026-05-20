@@ -11,13 +11,8 @@ A5120Machine::A5120Machine()
 {
     disk_formats_ = FormatParser::builtinFormats();
 
-    // Wire CPU callbacks to bus
-    cpu_.readByte  = [this](uint16_t a)           { return bus_.memRead(a); };
-    cpu_.writeByte = [this](uint16_t a, uint8_t d){ bus_.memWrite(a, d); };
-    cpu_.readPort  = [this](uint16_t p)           { return bus_.ioRead(p & 0xFF); };
-    cpu_.writePort = [this](uint16_t p, uint8_t d){ bus_.ioWrite(p & 0xFF, d); };
-    cpu_.retiCallback = [this]()                  { bus_.signalRETI(); };
-
+    // ZVE1 (Haupt-CPU) lebt jetzt auf der K2526-Karte.
+    // Verdrahtung mit dem Bus erfolgt im K2526-Konstruktor.
     wireBackplane();
 }
 
@@ -54,14 +49,12 @@ void A5120Machine::wireBackplane() {
 void A5120Machine::powerOn() {
     stop_.store(false);
     zre_.powerOn();
-    cpu_.reset();
+    zre_.cpuReset();
     boot_trace_count_ = 0;
-    LOG_INFO("A5120", "Power on: CPU reset, boot ROM enabled");
+    LOG_INFO("A5120", "Power on: ZVE1 Reset, Lade-ROM aktiv");
 
-    // Set up Z80 instruction trace callback at TRACE level (LOG_LEVEL=5).
-    // Captures PC and all registers before each instruction.
 #if LOG_LEVEL >= 5
-    cpu_.traceCallback = [](const Z80& z) {
+    zre_.cpu().traceCallback = [](const Z80& z) {
         LOG_TRACE("ZVE1",
             "PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X IX=%04X IY=%04X",
             z.PC, z.SP, z.AF, z.BC, z.DE, z.HL, z.IX, z.IY);
@@ -72,9 +65,9 @@ void A5120Machine::powerOn() {
 void A5120Machine::reset() {
     stop_.store(false);
     zre_.powerOn();   // re-enable boot ROM
-    cpu_.reset();
+    zre_.cpuReset();
     boot_trace_count_ = 0;
-    LOG_INFO("A5120", "Reset: CPU reset, boot ROM re-enabled");
+    LOG_INFO("A5120", "Reset: ZVE1 Reset, Lade-ROM reaktiviert");
 }
 
 int A5120Machine::run(int max_cycles) {
@@ -97,32 +90,40 @@ int A5120Machine::run(int max_cycles) {
         bus_.updateInterruptChain();
 
         if (bus_.isWAIT()) {
-            // WAIT holds the CPU. Count one cycle consumed and loop so
-            // peripherals can run, otherwise remaining never decrements.
             remaining--;
             continue;
         }
 
         if (bus_.isRESET()) {
-            LOG_INFO("A5120", "RESET line asserted by bus, resetting CPU");
-            cpu_.reset();
+            LOG_INFO("A5120", "RESET-Leitung gesetzt, ZVE1 wird zurückgesetzt");
+            zre_.cpuReset();
+        }
+
+        // BUSRQ: K5122 (ZVE2-DMA) hält den Bus. ZVE1 ist suspendiert.
+        // Der Run-Loop ruft afs_.dmaUpdate() auf, damit der ausstehende
+        // Sektor-Transfer abgeschlossen wird. Danach gibt K5122 den Bus
+        // wieder frei (releaseBUSRQ) und ZVE1 macht weiter.
+        if (bus_.isBUSRQ()) {
+            afs_.dmaUpdate();
+            remaining--;
+            continue;
         }
 
         // Deliver INT if CPU can accept
-        if (bus_.isINT() && cpu_.IFF1) {
+        if (bus_.isINT() && zre_.cpuIFF1()) {
             uint8_t vec = bus_.interruptAcknowledge();
-            LOG_DEBUG("A5120", "INT zugestellt: Vektor=0x%02X PC=%04X", vec, cpu_.PC);
-            cpu_.interrupt(vec);
+            LOG_DEBUG("A5120", "INT zugestellt: Vektor=0x%02X PC=%04X", vec, zre_.cpuPC());
+            zre_.cpuInterrupt(vec);
         }
 
         if (bus_.isNMI()) {
-            LOG_DEBUG("A5120", "NMI zugestellt: PC=%04X", cpu_.PC);
-            cpu_.nmi();
-            bus_.clearNMI();  // Edge-triggered: clear after delivery or NMI fires every step
+            LOG_DEBUG("A5120", "NMI zugestellt: PC=%04X", zre_.cpuPC());
+            zre_.cpuNMI();
+            bus_.clearNMI();
         }
 
-        const uint16_t pc_before = cpu_.PC;
-        int used = cpu_.step();
+        const uint16_t pc_before = zre_.cpuPC();
+        int used = zre_.cpuStep();
         remaining -= used;
 
         if (boot_trace_count_ < 80) {
@@ -130,7 +131,7 @@ int A5120Machine::run(int max_cycles) {
             ++boot_trace_count_;
         }
 
-        // Clock CTC on ZRE card
+        // Clock CTC on ZRE card and serial card
         zre_.clockTick();
         ass_.clockTick();
     }

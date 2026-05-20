@@ -16,7 +16,6 @@
 #include "core/cards/k5122/k5122.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/peripherals/floppy_drive/format_parser.h"
-#include "core/primitives/z80.h"
 #include <atomic>
 #include <mutex>
 #include <string>
@@ -93,15 +92,13 @@ private:
     K1520Bus      bus_;
     Koppelbus     koppel_;
 
-    K2526         zre_;       // slot 4: CPU card
+    K2526         zre_;       // slot 4: CPU card (enthält ZVE1)
     K3526         ops_;       // slot 1: RAM
     K7024         screen_;    // slot 5: video
     K8025         ass_;       // slot 3: serial
     K5122         afs_;       // slot 2: floppy
 
     K7637         kbd_;
-
-    Z80           cpu_;
 
     std::vector<DiskFormat> disk_formats_;
 

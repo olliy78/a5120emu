@@ -262,13 +262,112 @@ TEST_F(K5122Test, STRPulse_ReadMode_DoesNotCrash) {
 
     // /WE=1 (bit 0) = read mode; /STR (bit 3) falling edge = start read
     card.ioWrite(0x10, 0xFF);       // all inactive
-    card.ioWrite(0x10, 0xF7);       // /STR = 0, /WE = 1 (read mode)
+    card.ioWrite(0x10, 0xF7);       // /STR = 0, /WE = 1 (read mode): triggers BUSRQ
     card.ioWrite(0x10, 0xFF);       // release
 
-    // Attempt to drain a sector byte from data Port B (port 0x16).
+    // DMA completes (sector loaded into buffer) then BUSRQ is released.
+    card.dmaUpdate();
+
+    // Now drain a sector byte from data Port B (port 0x16).
     uint8_t b = card.ioRead(0x16);
     (void)b;   // value may be 0xFF if format returns no data; just no crash
     std::filesystem::remove(path);
+}
+
+// ─── 10. DMA protocol (BUSRQ/BUSAK) ─────────────────────────────────────────
+
+TEST_F(K5122Test, DMA_ReadMode_BUSRQAssertedOnSTR) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+
+    EXPECT_FALSE(bus.isBUSRQ());
+
+    card.ioWrite(0x10, 0xFF);   // prev: all inactive
+    card.ioWrite(0x10, 0xF7);   // /STR falling edge, /WE=1 = read mode
+    card.ioWrite(0x10, 0xFF);   // release
+
+    EXPECT_TRUE(bus.isBUSRQ()) << "BUSRQ must be asserted after /STR edge";
+    std::filesystem::remove(path);
+}
+
+TEST_F(K5122Test, DMA_ReadMode_BUSRQReleasedAfterDmaUpdate) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF7);   // /STR falling edge (read)
+    card.ioWrite(0x10, 0xFF);
+
+    ASSERT_TRUE(bus.isBUSRQ());
+    card.dmaUpdate();
+    EXPECT_FALSE(bus.isBUSRQ()) << "BUSRQ must be released after dmaUpdate()";
+    std::filesystem::remove(path);
+}
+
+TEST_F(K5122Test, DMA_ReadMode_SectorDataAvailableAfterDmaUpdate) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF7);   // /STR falling edge (read)
+    card.ioWrite(0x10, 0xFF);
+
+    card.dmaUpdate();
+
+    // After dmaUpdate() the sector buffer is filled; the first byte from port
+    // 0x16 must be consistent across two reads (i.e. buffer advances correctly).
+    uint8_t b0 = card.ioRead(0x16);
+    uint8_t b1 = card.ioRead(0x16);
+    // For a blank image (0xE5) both bytes must equal 0xE5.
+    EXPECT_EQ(b0, 0xE5) << "first sector byte should be 0xE5 (blank image)";
+    EXPECT_EQ(b1, 0xE5) << "second sector byte should be 0xE5 (blank image)";
+    std::filesystem::remove(path);
+}
+
+TEST_F(K5122Test, DMA_WriteMode_BUSRQAssertedOnSTR) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+
+    // Fill write buffer via port 0x14 (Data PIO Port A)
+    for (int i = 0; i < 4; ++i)
+        card.ioWrite(0x14, static_cast<uint8_t>(0xAA + i));
+
+    // /WE=0 (bit 0) = write mode; /STR falling edge triggers BUSRQ
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF6);   // /STR=0, /WE=0 = write mode
+    card.ioWrite(0x10, 0xFF);
+
+    EXPECT_TRUE(bus.isBUSRQ()) << "BUSRQ must be asserted for write DMA";
+    std::filesystem::remove(path);
+}
+
+TEST_F(K5122Test, DMA_WriteMode_BUSRQReleasedAfterDmaUpdate) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+
+    for (int i = 0; i < 4; ++i)
+        card.ioWrite(0x14, 0xCC);
+
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF6);   // /STR=0, /WE=0
+    card.ioWrite(0x10, 0xFF);
+
+    ASSERT_TRUE(bus.isBUSRQ());
+    card.dmaUpdate();
+    EXPECT_FALSE(bus.isBUSRQ()) << "BUSRQ released after write dmaUpdate()";
+    std::filesystem::remove(path);
+}
+
+TEST_F(K5122Test, DmaUpdate_NoPending_DoesNotCrash) {
+    // Calling dmaUpdate() when no DMA is pending must be a no-op.
+    EXPECT_FALSE(bus.isBUSRQ());
+    card.dmaUpdate();
+    EXPECT_FALSE(bus.isBUSRQ());
 }
 
 // ─── 8. InterruptSlave interface ─────────────────────────────────────────────

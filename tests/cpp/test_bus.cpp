@@ -194,3 +194,39 @@ TEST(K1520Bus, InterruptChain_NoInterrupt) {
 
     EXPECT_EQ(bus.interruptAcknowledge(), 0xFF);  // no interrupt
 }
+
+// ─── BUSRQ / BUSAK (DMA protocol) ─────────────────────────────────────────
+
+TEST(K1520Bus, BUSRQ_InitiallyFalse) {
+    K1520Bus bus;
+    EXPECT_FALSE(bus.isBUSRQ());
+}
+
+TEST(K1520Bus, AssertBUSRQ_IsBUSRQReturnsTrue) {
+    K1520Bus bus;
+    bus.assertBUSRQ();
+    EXPECT_TRUE(bus.isBUSRQ());
+}
+
+TEST(K1520Bus, ReleaseBUSRQ_AfterAssert_ReturnsFalse) {
+    K1520Bus bus;
+    bus.assertBUSRQ();
+    EXPECT_TRUE(bus.isBUSRQ());
+    bus.releaseBUSRQ();
+    EXPECT_FALSE(bus.isBUSRQ());
+}
+
+TEST(K1520Bus, AssertBUSRQ_Idempotent) {
+    K1520Bus bus;
+    bus.assertBUSRQ();
+    bus.assertBUSRQ();   // second assert must not crash or toggle
+    EXPECT_TRUE(bus.isBUSRQ());
+    bus.releaseBUSRQ();
+    EXPECT_FALSE(bus.isBUSRQ());
+}
+
+TEST(K1520Bus, ReleaseBUSRQ_WithoutAssert_DoesNotCrash) {
+    K1520Bus bus;
+    bus.releaseBUSRQ();  // release without prior assert
+    EXPECT_FALSE(bus.isBUSRQ());
+}

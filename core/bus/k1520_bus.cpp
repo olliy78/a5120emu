@@ -154,3 +154,13 @@ void K1520Bus::releaseWAIT() {
     if (wait_asserted_) LOG_DEBUG("K1520Bus", "releaseWAIT()");
     wait_asserted_ = false;
 }
+
+void K1520Bus::assertBUSRQ() {
+    if (!busrq_asserted_) LOG_DEBUG("K1520Bus", "assertBUSRQ(): ZVE2-DMA fordert Bus an");
+    busrq_asserted_ = true;
+}
+
+void K1520Bus::releaseBUSRQ() {
+    if (busrq_asserted_) LOG_DEBUG("K1520Bus", "releaseBUSRQ(): DMA abgeschlossen, ZVE1 übernimmt");
+    busrq_asserted_ = false;
+}

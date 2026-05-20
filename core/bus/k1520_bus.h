@@ -319,16 +319,39 @@ public:
 
     /**
      * @brief Assert /WAIT to stall the bus for one T-cycle.
-     * 
+     *
      * Used by slow devices to extend timing. Each assertion adds one T-cycle
      * to the current bus access.
      */
     void assertWAIT();
-    
+
     /**
      * @brief Release /WAIT signal.
      */
     void releaseWAIT();
+
+    /**
+     * @brief Assert /BUSRQ – DMA device requests the bus from ZVE1.
+     *
+     * Called by K5122 when /STR is asserted (start of DMA transfer).
+     * ZVE1 (in K2526) will finish its current instruction and then suspend
+     * (release the bus). The run loop checks isBUSRQ() each iteration and
+     * skips the CPU step while asserted.
+     */
+    void assertBUSRQ();
+
+    /**
+     * @brief Release /BUSRQ – DMA transfer complete, ZVE1 resumes.
+     *
+     * Called by K5122 after the DMA sector transfer has completed.
+     */
+    void releaseBUSRQ();
+
+    /**
+     * @brief Check whether /BUSRQ is currently asserted by a DMA device.
+     * @return true while DMA transfer is in progress (ZVE1 should pause)
+     */
+    bool isBUSRQ() const { return busrq_asserted_; }
     
     /**
      * @brief Disable memory access via /MEMDI signal (from BS-PIO).
@@ -431,6 +454,7 @@ private:
     bool reset_asserted_ = false;  ///< /RESET is asserted (system initializing)
     bool memdi_          = false;  ///< /MEMDI: memory access disabled
     bool iodi_           = false;  ///< /IODI: I/O access disabled
+    bool busrq_asserted_ = false;  ///< /BUSRQ: DMA device holds the bus (ZVE1 suspended)
 
     /// Optional trace callback for debugging
     BusTrace trace_cb_;
