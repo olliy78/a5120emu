@@ -1,3 +1,40 @@
+/**
+ * @file test_main.cpp
+ * @brief Legacy stand-alone test suite for the Robotron A5120 emulator.
+ *
+ * @details
+ * This file uses a custom lightweight test framework (TEST/END_TEST/CHECK macros)
+ * instead of Google Test.  It covers low-level emulator components that predate
+ * the GTest migration:
+ *
+ *  - **Z80 CPU** – core instruction set and flag behaviour via the Z80 class.
+ *  - **Memory** – flat 64 KiB RAM with screen buffer helpers (Memory class).
+ *  - **FloppyDisk** – legacy 5.25" image reader/writer (FloppyDisk class).
+ *  - **Integration** – small Z80 programs executed to completion in memory.
+ *  - **CP/M compatibility** – basic FCB and BDOS call structure checks.
+ *
+ * Build & run: the executable is produced by `CMakeLists.txt` as a stand-alone
+ * binary (not a CTest target).  Exit code 0 means all tests passed.
+ *
+ * ## Test groups
+ *
+ * | Group                          | Function            | Tests |
+ * |--------------------------------|---------------------|-------|
+ * | Z80 CPU Basic                  | testZ80Basic()      | 23    |
+ * | Z80 Extended Instructions      | testZ80Extended()   |  6    |
+ * | Z80 CB Prefix                  | testZ80CB()         |  6    |
+ * | Z80 IX Prefix                  | testZ80IX()         |  3    |
+ * | Z80 Interrupt (DI/EI/HALT/IM2) | testZ80DI_EI()      |  3    |
+ * | Memory                         | testMemory()        |  6    |
+ * | Floppy Disk                    | testFloppy()        |  4    |
+ * | Integration (Z80 + Memory)     | testIntegration()   |  5    |
+ * | CP/M Compatibility             | testCPM()           |  2    |
+ *
+ * @see core/primitives/z80.h  (Z80 CPU)
+ * @see core/memory/memory.h  (Memory)
+ * @see core/peripherals/floppy_drive/floppy.h  (FloppyDisk)
+ */
+
 // test_main.cpp - Tests for A5120 Emulator Components
 #include "z80.h"
 #include "memory.h"
@@ -42,6 +79,7 @@ void testZ80Basic() {
     Memory mem;
     setupCPU(cpu, mem);
 
+    /** @test NOP — NOP advances PC by 1 and takes 4 cycles. */
     TEST(NOP) {
         mem.write(0, 0x00); // NOP
         cpu.step();
@@ -49,6 +87,7 @@ void testZ80Basic() {
         CHECK(cpu.cycles == 4);
     } END_TEST;
 
+    /** @test LD_A_immediate — LD A,n loads the immediate byte into A and advances PC by 2. */
     TEST(LD_A_immediate) {
         cpu.reset();
         mem.write(0, 0x3E); // LD A, 42h
@@ -58,6 +97,7 @@ void testZ80Basic() {
         CHECK(cpu.PC == 2);
     } END_TEST;
 
+    /** @test LD_BC_immediate — LD BC,nn loads a 16-bit immediate; B and C hold the correct halves. */
     TEST(LD_BC_immediate) {
         cpu.reset();
         mem.write(0, 0x01); // LD BC, 1234h
@@ -69,6 +109,7 @@ void testZ80Basic() {
         CHECK(cpu.C == 0x34);
     } END_TEST;
 
+    /** @test LD_SP_immediate — LD SP,nn loads the 16-bit immediate into the stack pointer. */
     TEST(LD_SP_immediate) {
         cpu.reset();
         mem.write(0, 0x31); // LD SP, FFE0h
@@ -78,6 +119,7 @@ void testZ80Basic() {
         CHECK(cpu.SP == 0xFFE0);
     } END_TEST;
 
+    /** @test ADD_A_B — ADD A,B produces the correct sum; Zero and Carry flags are clear for no-overflow case. */
     TEST(ADD_A_B) {
         cpu.reset();
         cpu.A = 0x10;
@@ -89,6 +131,7 @@ void testZ80Basic() {
         CHECK(!(cpu.F & Z80::FLAG_C));
     } END_TEST;
 
+    /** @test ADD_A_overflow — Adding 0xFF + 0x01 wraps to 0x00; Zero and Carry flags are set. */
     TEST(ADD_A_overflow) {
         cpu.reset();
         cpu.A = 0xFF;
@@ -100,6 +143,7 @@ void testZ80Basic() {
         CHECK(cpu.F & Z80::FLAG_C);
     } END_TEST;
 
+    /** @test SUB_A_B — SUB B subtracts B from A; FLAG_N is set; Carry clear when A >= B. */
     TEST(SUB_A_B) {
         cpu.reset();
         cpu.A = 0x30;
@@ -111,6 +155,7 @@ void testZ80Basic() {
         CHECK(!(cpu.F & Z80::FLAG_C));
     } END_TEST;
 
+    /** @test AND_A — AND immediate masks A; result 0xF0 & 0x0F = 0x00; Zero flag set. */
     TEST(AND_A) {
         cpu.reset();
         cpu.A = 0xF0;
@@ -121,6 +166,7 @@ void testZ80Basic() {
         CHECK(cpu.F & Z80::FLAG_Z);
     } END_TEST;
 
+    /** @test OR_A — OR immediate ORs A; result 0xF0 | 0x0F = 0xFF; Sign flag set. */
     TEST(OR_A) {
         cpu.reset();
         cpu.A = 0xF0;
@@ -131,6 +177,7 @@ void testZ80Basic() {
         CHECK(cpu.F & Z80::FLAG_S);
     } END_TEST;
 
+    /** @test XOR_A — XOR A clears the accumulator; Zero flag set. */
     TEST(XOR_A) {
         cpu.reset();
         cpu.A = 0xFF;
@@ -140,6 +187,7 @@ void testZ80Basic() {
         CHECK(cpu.F & Z80::FLAG_Z);
     } END_TEST;
 
+    /** @test INC_DEC — INC B increments; DEC B decrements and sets Zero flag when result is 0. */
     TEST(INC_DEC) {
         cpu.reset();
         cpu.B = 0x00;
@@ -153,6 +201,7 @@ void testZ80Basic() {
         CHECK(cpu.F & Z80::FLAG_Z);
     } END_TEST;
 
+    /** @test JP — JP nn unconditionally sets PC to the 16-bit target address. */
     TEST(JP) {
         cpu.reset();
         mem.write(0, 0xC3); // JP 1234h
@@ -162,6 +211,7 @@ void testZ80Basic() {
         CHECK(cpu.PC == 0x1234);
     } END_TEST;
 
+    /** @test JR — JR e jumps forward by the signed offset; PC = 2 (instruction length) + offset. */
     TEST(JR) {
         cpu.reset();
         mem.write(0, 0x18); // JR +5
@@ -170,6 +220,7 @@ void testZ80Basic() {
         CHECK(cpu.PC == 7); // 2 + 5
     } END_TEST;
 
+    /** @test JR_backward — JR with a negative offset (0xFB = -5) jumps backward correctly. */
     TEST(JR_backward) {
         cpu.reset();
         cpu.PC = 0x10;
@@ -179,6 +230,7 @@ void testZ80Basic() {
         CHECK(cpu.PC == 0x0D); // 0x12 - 5
     } END_TEST;
 
+    /** @test CALL_RET — CALL pushes the return address and jumps; RET pops it and resumes execution. */
     TEST(CALL_RET) {
         cpu.reset();
         cpu.SP = 0x1000;
@@ -195,6 +247,7 @@ void testZ80Basic() {
         CHECK(cpu.SP == 0x1000);
     } END_TEST;
 
+    /** @test PUSH_POP — PUSH BC saves BC to stack (little-endian); POP BC restores it. */
     TEST(PUSH_POP) {
         cpu.reset();
         cpu.SP = 0x1000;
@@ -212,6 +265,7 @@ void testZ80Basic() {
         CHECK(cpu.SP == 0x1000);
     } END_TEST;
 
+    /** @test DJNZ — DJNZ decrements B and loops until B==0; PC advances past instruction when B reaches 0. */
     TEST(DJNZ) {
         cpu.reset();
         cpu.B = 3;
@@ -222,6 +276,7 @@ void testZ80Basic() {
         cpu.step(); CHECK(cpu.B == 0); CHECK(cpu.PC == 2);
     } END_TEST;
 
+    /** @test EX_AF — EX AF,AF' swaps the accumulator/flags register pair with its shadow. */
     TEST(EX_AF) {
         cpu.reset();
         cpu.AF = 0x1234;
@@ -232,6 +287,7 @@ void testZ80Basic() {
         CHECK(cpu.AF_ == 0x1234);
     } END_TEST;
 
+    /** @test EXX — EXX swaps BC, DE, HL with their shadow registers BC', DE', HL'. */
     TEST(EXX) {
         cpu.reset();
         cpu.BC = 0x1111;
@@ -250,6 +306,7 @@ void testZ80Basic() {
         CHECK(cpu.HL_ == 0x3333);
     } END_TEST;
 
+    /** @test LD_HL_indirect — LD HL,(nn) loads HL from two consecutive memory bytes at the given address. */
     TEST(LD_HL_indirect) {
         cpu.reset();
         mem.write(0x1000, 0x78);
@@ -261,6 +318,7 @@ void testZ80Basic() {
         CHECK(cpu.HL == 0x5678);
     } END_TEST;
 
+    /** @test LD_mem_A — LD (nn),A stores A to the specified absolute memory address. */
     TEST(LD_mem_A) {
         cpu.reset();
         cpu.A = 0x42;
@@ -271,6 +329,7 @@ void testZ80Basic() {
         CHECK(mem.read(0x2000) == 0x42);
     } END_TEST;
 
+    /** @test CP_equal — CP n sets Zero flag when A == operand; A is not modified. */
     TEST(CP_equal) {
         cpu.reset();
         cpu.A = 0x42;
@@ -281,6 +340,7 @@ void testZ80Basic() {
         CHECK(cpu.A == 0x42); // CP doesn't modify A
     } END_TEST;
 
+    /** @test CP_less — CP n sets Carry flag when A < operand; Zero flag is clear. */
     TEST(CP_less) {
         cpu.reset();
         cpu.A = 0x10;
@@ -298,6 +358,7 @@ void testZ80Extended() {
     Memory mem;
     setupCPU(cpu, mem);
 
+    /** @test LDIR — LDIR copies BC bytes from (HL) to (DE), incrementing both and decrementing BC; BC==0 on exit. */
     TEST(LDIR) {
         cpu.reset();
         // Source data at 0x1000
@@ -319,6 +380,7 @@ void testZ80Extended() {
         CHECK(cpu.BC == 0);
     } END_TEST;
 
+    /** @test CPIR — CPIR searches for A in memory; stops when found; Zero flag set and HL points past the byte. */
     TEST(CPIR) {
         cpu.reset();
         mem.write(0x1000, 'A');
@@ -334,6 +396,7 @@ void testZ80Extended() {
         CHECK(cpu.HL == 0x1002);    // Points past found byte
     } END_TEST;
 
+    /** @test IM2 — IM 2 sets interrupt mode 2 (vectored via I register). */
     TEST(IM2) {
         cpu.reset();
         mem.write(0, 0xED);
@@ -342,6 +405,7 @@ void testZ80Extended() {
         CHECK(cpu.IM == 2);
     } END_TEST;
 
+    /** @test LD_I_A — LD I,A copies the accumulator into the interrupt vector register I. */
     TEST(LD_I_A) {
         cpu.reset();
         cpu.A = 0xF7;
@@ -351,6 +415,7 @@ void testZ80Extended() {
         CHECK(cpu.I == 0xF7);
     } END_TEST;
 
+    /** @test NEG — NEG negates A (two's complement); 0x01 → 0xFF; Sign and Carry flags set. */
     TEST(NEG) {
         cpu.reset();
         cpu.A = 0x01;
@@ -362,6 +427,7 @@ void testZ80Extended() {
         CHECK(cpu.F & Z80::FLAG_C);
     } END_TEST;
 
+    /** @test SBC_HL_BC — SBC HL,BC subtracts BC and Carry from HL; result stored in HL. */
     TEST(SBC_HL_BC) {
         cpu.reset();
         cpu.HL = 0x1000;
@@ -380,6 +446,7 @@ void testZ80CB() {
     Memory mem;
     setupCPU(cpu, mem);
 
+    /** @test RLC_A — RLC A rotates A left through carry; old bit 7 goes to Carry and bit 0. */
     TEST(RLC_A) {
         cpu.reset();
         cpu.A = 0x85; // 10000101
@@ -391,6 +458,7 @@ void testZ80CB() {
         CHECK(cpu.F & Z80::FLAG_C); // Old bit 7 was 1
     } END_TEST;
 
+    /** @test BIT_7_A — BIT 7,A tests bit 7 of A; Zero flag clear when bit is set. */
     TEST(BIT_7_A) {
         cpu.reset();
         cpu.A = 0x80;
@@ -400,6 +468,7 @@ void testZ80CB() {
         CHECK(!(cpu.F & Z80::FLAG_Z)); // Bit 7 is set
     } END_TEST;
 
+    /** @test BIT_0_A_clear — BIT 0,A tests bit 0 of A; Zero flag set when bit is clear. */
     TEST(BIT_0_A_clear) {
         cpu.reset();
         cpu.A = 0xFE;
@@ -409,6 +478,7 @@ void testZ80CB() {
         CHECK(cpu.F & Z80::FLAG_Z); // Bit 0 is clear
     } END_TEST;
 
+    /** @test SET_3_A — SET 3,A sets bit 3 of A; result == 0x08. */
     TEST(SET_3_A) {
         cpu.reset();
         cpu.A = 0x00;
@@ -418,6 +488,7 @@ void testZ80CB() {
         CHECK(cpu.A == 0x08);
     } END_TEST;
 
+    /** @test RES_7_A — RES 7,A clears bit 7 of A; 0xFF → 0x7F. */
     TEST(RES_7_A) {
         cpu.reset();
         cpu.A = 0xFF;
@@ -427,6 +498,7 @@ void testZ80CB() {
         CHECK(cpu.A == 0x7F);
     } END_TEST;
 
+    /** @test SRL_A — SRL A shifts A right logically; old bit 0 goes to Carry; bit 7 cleared. */
     TEST(SRL_A) {
         cpu.reset();
         cpu.A = 0x81;
@@ -444,6 +516,7 @@ void testZ80IX() {
     Memory mem;
     setupCPU(cpu, mem);
 
+    /** @test LD_IX_immediate — LD IX,nn loads a 16-bit immediate into the IX index register. */
     TEST(LD_IX_immediate) {
         cpu.reset();
         mem.write(0, 0xDD);
@@ -454,6 +527,7 @@ void testZ80IX() {
         CHECK(cpu.IX == 0x1234);
     } END_TEST;
 
+    /** @test LD_A_IX_d — LD A,(IX+d) loads A from memory at IX+displacement. */
     TEST(LD_A_IX_d) {
         cpu.reset();
         cpu.IX = 0x1000;
@@ -465,6 +539,7 @@ void testZ80IX() {
         CHECK(cpu.A == 0x42);
     } END_TEST;
 
+    /** @test ADD_IX_BC — ADD IX,BC adds BC to IX and stores the result in IX. */
     TEST(ADD_IX_BC) {
         cpu.reset();
         cpu.IX = 0x1000;
@@ -482,6 +557,7 @@ void testZ80DI_EI() {
     Memory mem;
     setupCPU(cpu, mem);
 
+    /** @test DI_EI — DI clears IFF1/IFF2; EI sets them. */
     TEST(DI_EI) {
         cpu.reset();
         mem.write(0, 0xF3); // DI
@@ -495,6 +571,7 @@ void testZ80DI_EI() {
         CHECK(cpu.IFF2);
     } END_TEST;
 
+    /** @test HALT — HALT sets the cpu.halted flag; CPU stops executing new instructions. */
     TEST(HALT) {
         cpu.reset();
         mem.write(0, 0x76); // HALT
@@ -502,6 +579,7 @@ void testZ80DI_EI() {
         CHECK(cpu.halted);
     } END_TEST;
 
+    /** @test interrupt_mode2 — In IM 2 with I=0x10 and vector 0x20, cpu.interrupt() jumps to the ISR at 0x2000 and clears IFF1. */
     TEST(interrupt_mode2) {
         cpu.reset();
         // Set up IM 2
@@ -529,6 +607,7 @@ void testMemory() {
     printf("\n=== Memory Tests ===\n");
     Memory mem;
 
+    /** @test read_write — Single-byte write is readable at the same address; boundary addresses 0x0000 and 0xFFFF work. */
     TEST(read_write) {
         mem.write(0x0000, 0x42);
         CHECK(mem.read(0x0000) == 0x42);
@@ -536,12 +615,14 @@ void testMemory() {
         CHECK(mem.read(0xFFFF) == 0xAB);
     } END_TEST;
 
+    /** @test clear — mem.clear() zeroes the entire address space. */
     TEST(clear) {
         mem.write(0x1000, 0xFF);
         mem.clear();
         CHECK(mem.read(0x1000) == 0x00);
     } END_TEST;
 
+    /** @test fill — mem.fill(start, end, val) fills the inclusive range with val; bytes outside the range are not affected. */
     TEST(fill) {
         mem.fill(0x1000, 0x10FF, 0xE5);
         CHECK(mem.read(0x1000) == 0xE5);
@@ -549,6 +630,7 @@ void testMemory() {
         CHECK(mem.read(0x1100) != 0xE5);
     } END_TEST;
 
+    /** @test load_bulk — mem.load(addr, data, n) copies n bytes starting at addr; first and last bytes are correct. */
     TEST(load_bulk) {
         uint8_t data[] = {1, 2, 3, 4, 5};
         mem.load(0x2000, data, 5);
@@ -556,6 +638,7 @@ void testMemory() {
         CHECK(mem.read(0x2004) == 5);
     } END_TEST;
 
+    /** @test screen_buffer — Characters written at SCREEN_START are returned by getScreenChar(row, col). */
     TEST(screen_buffer) {
         mem.write(Memory::SCREEN_START, 'A');
         mem.write(Memory::SCREEN_START + 1, 'B');
@@ -563,6 +646,7 @@ void testMemory() {
         CHECK(mem.getScreenChar(0, 1) == 'B');
     } END_TEST;
 
+    /** @test screen_cursor_bit7 — getScreenChar() strips the hardware cursor bit (bit 7) from VRAM bytes. */
     TEST(screen_cursor_bit7) {
         mem.write(Memory::SCREEN_START, 'C' | 0x80);
         CHECK(mem.getScreenChar(0, 0) == 'C'); // Bit 7 stripped
@@ -577,6 +661,7 @@ void testFloppy() {
     printf("\n=== Floppy Disk Tests ===\n");
     FloppyDisk disk;
 
+    /** @test create_blank — createBlank() creates a 819200-byte image; drive is marked loaded. */
     TEST(create_blank) {
         bool ok = disk.createBlank("/tmp/test_a5120.img");
         CHECK(ok);
@@ -584,6 +669,7 @@ void testFloppy() {
         CHECK(disk.data().size() == 819200);
     } END_TEST;
 
+    /** @test read_write_sector — Data written to a sector (track 2, sector 0) can be read back unchanged. */
     TEST(read_write_sector) {
         uint8_t writeBuf[128];
         uint8_t readBuf[128];
@@ -597,12 +683,14 @@ void testFloppy() {
         CHECK(memcmp(writeBuf, readBuf, 128) == 0);
     } END_TEST;
 
+    /** @test blank_sector_content — Unwritten sectors of a blank image contain 0xE5 (standard blank marker). */
     TEST(blank_sector_content) {
         uint8_t readBuf[128];
         disk.readSector(10, 5, readBuf);
         CHECK(readBuf[0] == 0xE5); // Blank marker
     } END_TEST;
 
+    /** @test save_load — After writing, saving, and reloading the image, written sector data is preserved. */
     TEST(save_load) {
         uint8_t writeBuf[128] = {0};
         strcpy((char*)writeBuf, "Hello A5120!");
@@ -632,6 +720,7 @@ void testIntegration() {
     Memory mem;
     setupCPU(cpu, mem);
 
+    /** @test simple_program — A Z80 program summing 1..10 via DJNZ loop produces A=55 and halts. */
     TEST(simple_program) {
         // Program: Add numbers 1 to 10
         // LD B, 10
@@ -660,6 +749,7 @@ void testIntegration() {
         CHECK(cpu.halted);
     } END_TEST;
 
+    /** @test memory_copy_program — A program using LDIR copies "HELLO" from 0x100 to 0x200; CPU halts with correct data at destination. */
     TEST(memory_copy_program) {
         cpu.reset();
         mem.clear();
@@ -688,6 +778,7 @@ void testIntegration() {
         CHECK(cpu.halted);
     } END_TEST;
 
+    /** @test stack_operations — PUSH BC then PUSH DE followed by POP BC then POP DE reverses the values in the registers. */
     TEST(stack_operations) {
         cpu.reset();
         mem.clear();
@@ -713,6 +804,7 @@ void testIntegration() {
         CHECK(cpu.DE == 0x1234);
     } END_TEST;
 
+    /** @test subroutine_call — CALL jumps into a subroutine that sets A=0x42; RET returns to HALT. */
     TEST(subroutine_call) {
         cpu.reset();
         mem.clear();
@@ -737,6 +829,7 @@ void testIntegration() {
         CHECK(cpu.halted);
     } END_TEST;
 
+    /** @test conditional_jump — JR Z skips LD A,99 when A==0; A remains 0 at HALT. */
     TEST(conditional_jump) {
         cpu.reset();
         mem.clear();
@@ -770,6 +863,7 @@ void testCPM() {
     Memory mem;
     setupCPU(cpu, mem);
 
+    /** @test bdos_string_output_sim — A '$'-terminated string placed at 0x200 is readable byte-by-byte from memory (simulates BDOS func 9 setup). */
     TEST(bdos_string_output_sim) {
         // Simulate a program that would call BDOS func 9 (print string)
         // Set up string at 0x200
@@ -783,6 +877,7 @@ void testCPM() {
         CHECK(mem.read(0x20D) == '$');
     } END_TEST;
 
+    /** @test cpm_fcb_structure — FCB fields (drive byte, filename) placed at 0x005C are readable at the correct offsets. */
     TEST(cpm_fcb_structure) {
         // Verify FCB structure placement at default DMA
         // FCB at 0x005C: drive, filename(8), ext(3), extent, s1, s2, rc

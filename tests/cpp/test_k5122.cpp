@@ -1,3 +1,42 @@
+/**
+ * @file test_k5122.cpp
+ * @brief Unit tests for the K5122 AFS floppy controller card emulation.
+ *
+ * @details
+ * Emulator component under test: **K5122** (`core/cards/k5122/k5122.h`)
+ *
+ * The K5122 AFS (Anschaltung Flexible Speicher) card is the floppy disk
+ * controller of the Robotron A5120.  It connects up to four 5.25" floppy
+ * drives to the K1520 bus and communicates with them via two Z80-PIO chips
+ * (Ctrl-PIO and Data-PIO) plus a DMA channel using the BUSRQ/BUSAK protocol.
+ *
+ * The BIOS uses the following I/O port map:
+ *  - 0x10/0x11  Ctrl-PIO Port A data/ctrl  (step, head-load, write-enable, /STR)
+ *  - 0x12/0x13  Ctrl-PIO Port B data/ctrl  (status: /RDYL, /WP, /FW, /INDX)
+ *  - 0x14/0x15  Data-PIO Port A data/ctrl  (write data byte)
+ *  - 0x16/0x17  Data-PIO Port B data/ctrl  (read data byte)
+ *  - 0x18       Drive-select register (/LCK1–/LCK4, write-only)
+ *
+ * ## Test groups
+ *
+ * | Group                     | What is tested                                            |
+ * |---------------------------|-----------------------------------------------------------|
+ * | Mount / unmount lifecycle | mountDisk, unmountDisk, isDiskActive                      |
+ * | Write-protect flag        | mountDisk with WP, setWriteProtect, isDiskWriteProtected  |
+ * | Drive index bounds        | Out-of-range indices rejected                             |
+ * | Port 0x18 drive-select    | No crash on valid/invalid drive selection codes           |
+ * | PIO port I/O routing      | Ctrl and Data PIO read/write do not crash                 |
+ * | Status Port B             | /RDYL, /WP, /FW bits reflect drive state                  |
+ * | Step / ctrl signals       | Step pulse, /STR-pulse sequences do not crash             |
+ * | DMA protocol              | BUSRQ assert/release on /STR edge, dmaUpdate(), ZVE2 flow |
+ * | InterruptSlave interface  | IEI/IEO pass-through when no interrupt pending            |
+ * | drive() accessor          | Returns stable reference to the correct FloppyDrive       |
+ *
+ * @see core/cards/k5122/k5122.h
+ * @see core/bus/k1520_bus.h
+ * @see core/peripherals/floppy_drive/floppy_drive.h
+ */
+
 // tests/cpp/test_k5122.cpp
 // Unit tests for the K5122 AFS floppy controller card.
 //
@@ -55,6 +94,11 @@ protected:
 
 // ─── 1. Mount / unmount lifecycle ────────────────────────────────────────────
 
+/**
+ * @test K5122Test/MountValidDisk_DriveBecomesActive
+ * @brief Mounting a valid disk image activates the drive.
+ * @par Pass criterion  isDiskActive(0) == true after successful mountDisk().
+ */
 TEST_F(K5122Test, MountValidDisk_DriveBecomesActive) {
     auto path = tmpImage();
     EXPECT_TRUE(card.mountDisk(0, path, fmt));
@@ -62,11 +106,21 @@ TEST_F(K5122Test, MountValidDisk_DriveBecomesActive) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/MountNonexistentFile_ReturnsFalse
+ * @brief Mounting a non-existent file path returns false and leaves the drive inactive.
+ * @par Pass criterion  mountDisk() == false; isDiskActive(0) == false.
+ */
 TEST_F(K5122Test, MountNonexistentFile_ReturnsFalse) {
     EXPECT_FALSE(card.mountDisk(0, "/nonexistent/disk.img", fmt));
     EXPECT_FALSE(card.isDiskActive(0));
 }
 
+/**
+ * @test K5122Test/UnmountDisk_DriveBecomesInactive
+ * @brief unmountDisk() deactivates a previously mounted drive.
+ * @par Pass criterion  isDiskActive(0) == false after unmountDisk(0).
+ */
 TEST_F(K5122Test, UnmountDisk_DriveBecomesInactive) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
@@ -77,6 +131,11 @@ TEST_F(K5122Test, UnmountDisk_DriveBecomesInactive) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/UnmountNotMounted_NocrashRetursTrue
+ * @brief Calling unmountDisk() on a drive with no disk does not crash.
+ * @par Pass criterion  No exception; isDiskActive(0) == false.
+ */
 TEST_F(K5122Test, UnmountNotMounted_NocrashRetursTrue) {
     // Calling unmountDisk on a drive with no disk should not crash.
     EXPECT_TRUE(card.unmountDisk(0));
@@ -85,6 +144,11 @@ TEST_F(K5122Test, UnmountNotMounted_NocrashRetursTrue) {
 
 // ─── 2. Write-protect flag ───────────────────────────────────────────────────
 
+/**
+ * @test K5122Test/MountWithWriteProtect_IsWriteProtected
+ * @brief Mounting with write_protect=true sets the write-protect status.
+ * @par Pass criterion  isDiskWriteProtected(0) == true.
+ */
 TEST_F(K5122Test, MountWithWriteProtect_IsWriteProtected) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt, /*write_protect=*/true));
@@ -92,6 +156,11 @@ TEST_F(K5122Test, MountWithWriteProtect_IsWriteProtected) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/MountWithoutWriteProtect_IsNotWriteProtected
+ * @brief Mounting with write_protect=false leaves the drive writable.
+ * @par Pass criterion  isDiskWriteProtected(0) == false.
+ */
 TEST_F(K5122Test, MountWithoutWriteProtect_IsNotWriteProtected) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt, /*write_protect=*/false));
@@ -99,6 +168,11 @@ TEST_F(K5122Test, MountWithoutWriteProtect_IsNotWriteProtected) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/SetWriteProtect_ChangesFlag
+ * @brief setWriteProtect() can change the write-protect state after mounting.
+ * @par Pass criterion  Flag toggles correctly with true/false.
+ */
 TEST_F(K5122Test, SetWriteProtect_ChangesFlag) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt, /*write_protect=*/false));
@@ -114,6 +188,11 @@ TEST_F(K5122Test, SetWriteProtect_ChangesFlag) {
 
 // ─── 3. Drive index bounds ───────────────────────────────────────────────────
 
+/**
+ * @test K5122Test/MountDriveOutOfRange_ReturnsFalse
+ * @brief Drive indices outside 0–3 are rejected; mountDisk() returns false.
+ * @par Pass criterion  mountDisk(-1, ...) == false; mountDisk(4, ...) == false.
+ */
 TEST_F(K5122Test, MountDriveOutOfRange_ReturnsFalse) {
     auto path = tmpImage();
     EXPECT_FALSE(card.mountDisk(-1, path, fmt));
@@ -121,11 +200,21 @@ TEST_F(K5122Test, MountDriveOutOfRange_ReturnsFalse) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/IsDiskActiveOutOfRange_ReturnsFalse
+ * @brief isDiskActive() returns false for out-of-range drive indices.
+ * @par Pass criterion  isDiskActive(-1) == false; isDiskActive(4) == false.
+ */
 TEST_F(K5122Test, IsDiskActiveOutOfRange_ReturnsFalse) {
     EXPECT_FALSE(card.isDiskActive(-1));
     EXPECT_FALSE(card.isDiskActive(4));
 }
 
+/**
+ * @test K5122Test/MultipleDrivesMountIndependently
+ * @brief Two drives can be independently mounted without affecting each other.
+ * @par Pass criterion  isDiskActive(0) and isDiskActive(1) == true; 2 and 3 remain false.
+ */
 TEST_F(K5122Test, MultipleDrivesMountIndependently) {
     auto path0 = makeTmpImage(fmt);
     auto path1 = makeTmpImage(fmt);
@@ -144,6 +233,12 @@ TEST_F(K5122Test, MultipleDrivesMountIndependently) {
 
 // ─── 4. Port 0x18 drive-select (no crash) ────────────────────────────────────
 
+/**
+ * @test K5122Test/DriveSelectPort_WritesDoNotCrash
+ * @brief Writing drive-select codes 0x00–0x03 to port 0x18 does not crash.
+ * @details Port 0x18 is write-only; reading it returns 0xFF.
+ * @par Pass criterion  No exception; ioRead(0x18) == 0xFF.
+ */
 TEST_F(K5122Test, DriveSelectPort_WritesDoNotCrash) {
     // /LCK1 = 0 → select drive 0
     card.ioWrite(0x18, 0x00);
@@ -190,6 +285,12 @@ TEST_F(K5122Test, DataPIO_PortBRead_DoesNotCrash) {
 
 // ─── 6. Status Port B reflects drive state ───────────────────────────────────
 
+/**
+ * @test K5122Test/StatusPortB_NotMounted_RDYLInactive
+ * @brief Without a mounted disk, /RDYL (Ctrl Port B bit 0) is high (not ready).
+ * @details Select drive 0 via port 0x18; read Ctrl Port B (0x12).
+ * @par Pass criterion  status & 0x01 != 0  (/RDYL = 1 = inactive).
+ */
 TEST_F(K5122Test, StatusPortB_NotMounted_RDYLInactive) {
     // Drive 0 not mounted; after selecting it, /RDYL (bit 0) should be 1.
     card.ioWrite(0x18, 0x00);           // select drive 0
@@ -197,6 +298,11 @@ TEST_F(K5122Test, StatusPortB_NotMounted_RDYLInactive) {
     EXPECT_NE(status & 0x01, 0) << "Expected /RDYL=1 (not ready) when no disk mounted";
 }
 
+/**
+ * @test K5122Test/StatusPortB_Mounted_RDYLActive
+ * @brief With a mounted disk /RDYL (bit 0) is low (ready).
+ * @par Pass criterion  status & 0x01 == 0  (/RDYL = 0 = active/ready).
+ */
 TEST_F(K5122Test, StatusPortB_Mounted_RDYLActive) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
@@ -206,6 +312,11 @@ TEST_F(K5122Test, StatusPortB_Mounted_RDYLActive) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/StatusPortB_WriteProtected_WPActive
+ * @brief Write-protected drive: /WP (bit 5) is low (active-low, write-protected).
+ * @par Pass criterion  status & 0x20 == 0.
+ */
 TEST_F(K5122Test, StatusPortB_WriteProtected_WPActive) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt, /*write_protect=*/true));
@@ -216,6 +327,11 @@ TEST_F(K5122Test, StatusPortB_WriteProtected_WPActive) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/StatusPortB_NotWriteProtected_WPInactive
+ * @brief Non-write-protected drive: /WP (bit 5) is high (inactive).
+ * @par Pass criterion  status & 0x20 != 0.
+ */
 TEST_F(K5122Test, StatusPortB_NotWriteProtected_WPInactive) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt, /*write_protect=*/false));
@@ -225,6 +341,11 @@ TEST_F(K5122Test, StatusPortB_NotWriteProtected_WPInactive) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/StatusPortB_AtTrack0_FWActive
+ * @brief After mounting, the head is at track 0: /FW (bit 6) is low (active-low).
+ * @par Pass criterion  status & 0x40 == 0  (/FW = 0 = at track 0).
+ */
 TEST_F(K5122Test, StatusPortB_AtTrack0_FWActive) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
@@ -237,6 +358,13 @@ TEST_F(K5122Test, StatusPortB_AtTrack0_FWActive) {
 
 // ─── 7. Step and ctrl signal sequence (no crash) ─────────────────────────────
 
+/**
+ * @test K5122Test/StepPulse_WithMountedDrive_DoesNotCrash
+ * @brief Applying a step-pulse signal sequence via Ctrl Port A does not crash.
+ * @details Writes 0xFF (all inactive), then 0x5F (/ST=0 = step, MR/SD=0 = inward),
+ *   then 0xFF (release).  After one inward step from track 0 /FW (bit 6) must be 1.
+ * @par Pass criterion  No crash; status & 0x40 != 0 after inward step.
+ */
 TEST_F(K5122Test, StepPulse_WithMountedDrive_DoesNotCrash) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
@@ -255,6 +383,12 @@ TEST_F(K5122Test, StepPulse_WithMountedDrive_DoesNotCrash) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/STRPulse_ReadMode_DoesNotCrash
+ * @brief A /STR falling edge in read mode (/WE=1) followed by dmaUpdate() does not crash.
+ * @details Simulates the ZVE1 BIOS sequence: /STR low → dmaUpdate → read byte from port 0x16.
+ * @par Pass criterion  No crash; byte readable from port 0x16.
+ */
 TEST_F(K5122Test, STRPulse_ReadMode_DoesNotCrash) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
@@ -276,6 +410,12 @@ TEST_F(K5122Test, STRPulse_ReadMode_DoesNotCrash) {
 
 // ─── 10. DMA protocol (BUSRQ/BUSAK) ─────────────────────────────────────────
 
+/**
+ * @test K5122Test/DMA_ReadMode_BUSRQAssertedOnSTR
+ * @brief A /STR falling edge in read mode (/WE=1) causes the controller to assert BUSRQ.
+ * @details The K5122 asserts BUSRQ to halt the CPU and take bus ownership for DMA transfer.
+ * @par Pass criterion  bus.isBUSRQ() == true after the /STR edge.
+ */
 TEST_F(K5122Test, DMA_ReadMode_BUSRQAssertedOnSTR) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
@@ -291,6 +431,11 @@ TEST_F(K5122Test, DMA_ReadMode_BUSRQAssertedOnSTR) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/DMA_ReadMode_BUSRQReleasedAfterDmaUpdate
+ * @brief dmaUpdate() completes the DMA transfer and releases BUSRQ.
+ * @par Pass criterion  bus.isBUSRQ() == false after dmaUpdate().
+ */
 TEST_F(K5122Test, DMA_ReadMode_BUSRQReleasedAfterDmaUpdate) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
@@ -306,6 +451,12 @@ TEST_F(K5122Test, DMA_ReadMode_BUSRQReleasedAfterDmaUpdate) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/DMA_ReadMode_SectorDataAvailableAfterDmaUpdate
+ * @brief After dmaUpdate() the sector buffer can be read byte-by-byte via port 0x16.
+ * @details A blank image is filled with 0xE5; the first two bytes must equal 0xE5.
+ * @par Pass criterion  ioRead(0x16) == 0xE5 for the first two reads.
+ */
 TEST_F(K5122Test, DMA_ReadMode_SectorDataAvailableAfterDmaUpdate) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
@@ -327,6 +478,11 @@ TEST_F(K5122Test, DMA_ReadMode_SectorDataAvailableAfterDmaUpdate) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/DMA_WriteMode_BUSRQAssertedOnSTR
+ * @brief A /STR falling edge in write mode (/WE=0) also asserts BUSRQ.
+ * @par Pass criterion  bus.isBUSRQ() == true after the write-mode /STR edge.
+ */
 TEST_F(K5122Test, DMA_WriteMode_BUSRQAssertedOnSTR) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
@@ -345,6 +501,11 @@ TEST_F(K5122Test, DMA_WriteMode_BUSRQAssertedOnSTR) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/DMA_WriteMode_BUSRQReleasedAfterDmaUpdate
+ * @brief dmaUpdate() in write mode commits the sector and releases BUSRQ.
+ * @par Pass criterion  bus.isBUSRQ() == false after write dmaUpdate().
+ */
 TEST_F(K5122Test, DMA_WriteMode_BUSRQReleasedAfterDmaUpdate) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
@@ -363,6 +524,11 @@ TEST_F(K5122Test, DMA_WriteMode_BUSRQReleasedAfterDmaUpdate) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/DmaUpdate_NoPending_DoesNotCrash
+ * @brief Calling dmaUpdate() when no DMA is in progress is a safe no-op.
+ * @par Pass criterion  bus.isBUSRQ() remains false; no crash.
+ */
 TEST_F(K5122Test, DmaUpdate_NoPending_DoesNotCrash) {
     // Calling dmaUpdate() when no DMA is pending must be a no-op.
     EXPECT_FALSE(bus.isBUSRQ());
@@ -372,6 +538,11 @@ TEST_F(K5122Test, DmaUpdate_NoPending_DoesNotCrash) {
 
 // ─── 8. InterruptSlave interface ─────────────────────────────────────────────
 
+/**
+ * @test K5122Test/InterruptSlave_SetIEI_NocrashGetIEO
+ * @brief With IEI=true and no pending interrupt, IEO passes through (true).
+ * @par Pass criterion  getIEO() == true; hasInterrupt() == false.
+ */
 TEST_F(K5122Test, InterruptSlave_SetIEI_NocrashGetIEO) {
     card.setIEI(true);
     // With no interrupts pending, IEO should propagate through.
@@ -379,6 +550,11 @@ TEST_F(K5122Test, InterruptSlave_SetIEI_NocrashGetIEO) {
     EXPECT_FALSE(card.hasInterrupt());
 }
 
+/**
+ * @test K5122Test/InterruptSlave_IEIFalse_IEOFalse
+ * @brief With IEI=false, IEO is also false (daisy-chain blocked upstream).
+ * @par Pass criterion  getIEO() == false when setIEI(false).
+ */
 TEST_F(K5122Test, InterruptSlave_IEIFalse_IEOFalse) {
     card.setIEI(false);
     EXPECT_FALSE(card.getIEO());
@@ -386,6 +562,11 @@ TEST_F(K5122Test, InterruptSlave_IEIFalse_IEOFalse) {
 
 // ─── 9. drive() accessor ─────────────────────────────────────────────────────
 
+/**
+ * @test K5122Test/DriveAccessor_ReturnsValidReference
+ * @brief drive(0) returns a stable reference to the same FloppyDrive object operated on by mountDisk.
+ * @par Pass criterion  d0.isMounted() == false before mount; true after mount.
+ */
 TEST_F(K5122Test, DriveAccessor_ReturnsValidReference) {
     // Just verify the accessor doesn't crash and returns the same object.
     FloppyDrive& d0 = card.drive(0);
@@ -403,6 +584,12 @@ TEST_F(K5122Test, DriveAccessor_ReturnsValidReference) {
 // falls (not deferred to dmaUpdate()). This allows ZVE2 to drain the buffer via
 // its INIR program. ZVE1 byte-polling also works via dmaUpdate() fallback.
 
+/**
+ * @test K5122Test/DMA_Read_SectorImmediatelyAvailableAfterSTR
+ * @brief In the ZVE2-compatible design the sector buffer is filled synchronously on the /STR edge.
+ * @details BUSRQ is asserted and data is readable via port 0x16 before dmaUpdate() is called.
+ * @par Pass criterion  ioRead(0x16) == 0xE5 immediately after /STR edge (BUSRQ still held).
+ */
 TEST_F(K5122Test, DMA_Read_SectorImmediatelyAvailableAfterSTR) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
@@ -419,6 +606,12 @@ TEST_F(K5122Test, DMA_Read_SectorImmediatelyAvailableAfterSTR) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/DMA_Read_BUSRQAutoReleasedWhenLastByteRead
+ * @brief BUSRQ is automatically released after the last sector byte has been consumed via port 0x16.
+ * @details Reads up to 512 bytes; checks that BUSRQ is released before all 512 bytes are consumed.
+ * @par Pass criterion  bus.isBUSRQ() == false at some point before the 512th read.
+ */
 TEST_F(K5122Test, DMA_Read_BUSRQAutoReleasedWhenLastByteRead) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
@@ -443,6 +636,15 @@ TEST_F(K5122Test, DMA_Read_BUSRQAutoReleasedWhenLastByteRead) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/DMA_Write_ZVE2Style_CommitViaSeccondSTR
+ * @brief ZVE2 write DMA flow: ZVE1 asserts BUSRQ; ZVE2 fills the buffer; second /STR commits the sector.
+ * @details
+ *   1. ZVE1: /STR+/WE=0 → assertBUSRQ, sector buffer cleared.
+ *   2. ZVE2: writes 128 bytes to port 0x14.
+ *   3. ZVE2: second /STR+/WE=0 edge (while BUSRQ already held) → doWriteSector + releaseBUSRQ.
+ * @par Pass criterion  bus.isBUSRQ() == false after the ZVE2 commit /STR edge.
+ */
 TEST_F(K5122Test, DMA_Write_ZVE2Style_CommitViaSeccondSTR) {
     // Simulate ZVE2 write DMA:
     //   ZVE1: /STR+/WE=0 → assertBUSRQ, sector_buf_ cleared
