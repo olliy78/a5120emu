@@ -69,8 +69,9 @@ tests/
     ├── test_k7024.cpp     # K7024 ABS-Bildschirmkarte
     ├── test_k7637.cpp     # K7637-Tastaturcontroller
     ├── test_k8025.cpp     # K8025-Peripheriekarte
-    ├── test_pio.cpp       # Z80 PIO
-    └── test_sio.cpp       # Z80 SIO
+    ├── test_pio.cpp       # Z80 PIO (U855D)
+    ├── test_sio.cpp       # Z80 SIO (U856D)
+    └── test_z80.cpp       # Z80 CPU (U880D)
 ```
 
 ---
@@ -903,6 +904,373 @@ zwei unabhängigen Kanälen (A und B) und einem 3-tiefen RX-FIFO realisiert.
 ##### `Z80SIO/IEI_IEO_Blocked_WhenInterruptPending`
 - **Ziel:** IEO = false, wenn ein Interrupt aussteht.
 - **Erwartet (PASS):** `getIEO() == false`.
+
+---
+
+### Z80 CPU U880D (`test_z80.cpp`)
+
+Testet die neue modulare Z80-CPU-Emulation (`core/primitives/z80.h`), die im K1520-System
+als ZVE (Zentrale Verarbeitungseinheit) eingesetzt wird. Die Testsuite verwendet eine 64 KiB
+flache Speicherarray- und 256-Port-I/O-Simulation mit Callback-Funktionen. Jeder Test startet
+mit einem frischen `reset()` (AF=0xFFFF, SP=0xFFFF, PC=0, IFF1=IFF2=false).
+
+#### Reset-Zustand
+
+##### `Z80Test/Reset_RegistersAndFlags`
+- **Ziel:** Alle Register haben nach `reset()` definierte Anfangswerte gemäß Z80-Spezifikation.
+- **Testschritte:** `cpu.reset()` aufrufen; alle Felder prüfen.
+- **Erwartet (PASS):** AF=0xFFFF, BC=DE=HL=IX=IY=0, SP=0xFFFF, PC=0, I=R=0, IFF1=IFF2=false, IM=0, halted=false, cycles=0.
+
+#### NOP / Timing
+
+##### `Z80Test/NOP_AdvancesPC_Takes4Cycles`
+- **Ziel:** NOP (0x00) erhöht PC um 1 und verbraucht genau 4 Taktzyklen.
+- **Testschritte:** NOP in Speicher laden; `step()` einmalig aufrufen.
+- **Erwartet (PASS):** PC=1, Rückgabe von `step()`==4, `cycles`==4.
+
+#### 8-Bit-Register-Ladespeicherung
+
+##### `Z80Test/Load_LD_r_n_AllRegisters`
+- **Ziel:** `LD r,n` lädt das unmittelbare Byte in das Zielregister.
+- **Testschritte:** Sequenz `LD B,11h` … `LD A,77h` in Speicher; 7× `step()`.
+- **Erwartet (PASS):** B=0x11, C=0x22, D=0x33, E=0x44, H=0x55, L=0x66, A=0x77.
+
+##### `Z80Test/Load_LD_r_r_CopyRegister`
+- **Ziel:** `LD B,C` kopiert C nach B.
+- **Testschritte:** C=0xAB setzen; `LD C,0xAB`; `LD B,C` ausführen.
+- **Erwartet (PASS):** B=C=0xAB.
+
+##### `Z80Test/Load_LD_A_memHL_And_LD_memHL_A`
+- **Ziel:** `LD A,(HL)` liest aus Speicher; `LD (HL),A` schreibt dorthin.
+- **Erwartet (PASS):** A=0xCD nach erstem Lesen; 0xCE im Speicher nach Schreiben.
+
+##### `Z80Test/Load_LD_memHL_n`
+- **Ziel:** `LD (HL),n` schreibt unmittelbares Byte an Adresse HL.
+- **Erwartet (PASS):** `mem[HL] == 0x5A`.
+
+#### 8-Bit-Arithmetik
+
+##### `Z80Test/ADD_BasicResult_ClearsN_SetsFlags`
+- **Ziel:** ADD A,1 mit A=0x7F: Überlauf von +127 auf -128 setzt S, PV, H; löscht N und C.
+- **Erwartet (PASS):** A=0x80, S=1, Z=0, C=0, N=0, PV=1, H=1.
+
+##### `Z80Test/ADD_Carry`
+- **Ziel:** ADD A,1 mit A=0xFF erzeugt Übertrag; Ergebnis=0, C=1, Z=1.
+- **Erwartet (PASS):** A=0x00, C=1, Z=1, PV=0.
+
+##### `Z80Test/ADC_WithCarry`
+- **Ziel:** ADC A,n addiert n + Carry-Flag zu A.
+- **Erwartet (PASS):** A=0x02 nach 0x00 + 0x01 + C=1.
+
+##### `Z80Test/SUB_SetsN_Result` / `SUB_Borrow_SetsCarry`
+- **Ziel:** SUB setzt N-Flag; bei A < n wird C (Borrow) gesetzt.
+- **Erwartet (PASS):** N=1; A=0xFF, C=1 nach 0x01 − 0x02.
+
+##### `Z80Test/SBC_WithBorrow`
+- **Ziel:** SBC A,n subtrahiert n + Carry.
+- **Erwartet (PASS):** A=0x04 nach 0x06 − 0x01 − C=1.
+
+#### Logische Operationen
+
+##### `Z80Test/AND_SetsH_ClearsNC_PVParity`
+- **Ziel:** AND n setzt H, löscht N und C; PV spiegelt Parität.
+- **Erwartet (PASS):** A=0x0C, H=1, N=0, C=0, PV=1 (gerade Parität).
+
+##### `Z80Test/OR_ClearsHNC_PVParity`
+- **Ziel:** OR n löscht H, N und C.
+- **Erwartet (PASS):** A=0x07, H=0, N=0, C=0.
+
+##### `Z80Test/XOR_SelfClearsA_SetsZ`
+- **Ziel:** `XOR A` (0xAF) setzt A=0 und Z=1; löscht H, N, C.
+- **Erwartet (PASS):** A=0, Z=1, H=0, N=0, C=0.
+
+##### `Z80Test/CP_Equal_SetsZ_SetsN` / `CP_Less_SetsCarry`
+- **Ziel:** CP lässt A unverändert; setzt Z bei Gleichheit, C bei A < n.
+- **Erwartet (PASS):** A unverändert; Z=1 (gleich) bzw. C=1 (kleiner).
+
+#### INC / DEC
+
+##### `Z80Test/INC_Overflow_0x7F_to_0x80`
+- **Ziel:** INC B mit B=0x7F: PV gesetzt (Vorzeichenüberlauf); C-Flag bleibt erhalten.
+- **Erwartet (PASS):** B=0x80, PV=1, N=0, C unveränder.
+
+##### `Z80Test/INC_Wraps_0xFF_to_0x00_SetsZ`
+- **Ziel:** INC A von 0xFF → 0x00: Z gesetzt; kein Überlauf (−1 + 1 = 0).
+- **Erwartet (PASS):** A=0, Z=1, PV=0, C unveränder.
+
+##### `Z80Test/DEC_Overflow_0x80_to_0x7F`
+- **Ziel:** DEC B mit B=0x80: PV gesetzt (Unterlauf); N=1.
+- **Erwartet (PASS):** B=0x7F, PV=1, N=1.
+
+#### Akkumulator-Rotationen
+
+##### `Z80Test/RLCA_RotatesLeftAndSetsCarry` / `RRCA_RotatesRightAndSetsCarry`
+- **Ziel:** RLCA/RRCA rotieren A zyklisch; Bit 7/0 → C-Flag; H und N gelöscht.
+- **Erwartet (PASS):** RLCA: A=0x01, C=1 (aus 0x80). RRCA: A=0x80, C=1 (aus 0x01).
+
+##### `Z80Test/RLA_ThroughCarry` / `RRA_ThroughCarry`
+- **Ziel:** RLA/RRA rotieren durch das C-Flag; H und N gelöscht.
+- **Erwartet (PASS):** RLA: A=0x01, C=1 (aus A=0x80, alter C=1). RRA: A=0x80, C=1.
+
+#### CB-Präfix – Shifts und Rotationen
+
+##### `Z80Test/CB_RLC_SetsCarryAndWraps`
+- **Ziel:** RLC B (CB 0x00): Bit 7 → Bit 0 und C-Flag.
+- **Erwartet (PASS):** B=0x01, C=1 (aus B=0x80).
+
+##### `Z80Test/CB_SLA_ShiftsLeftZeroInBit0`
+- **Ziel:** SLA B (CB 0x20): Linksshift; Bit 0 = 0; Bit 7 → C.
+- **Erwartet (PASS):** B=0x02, C=0 (aus B=0x01).
+
+##### `Z80Test/CB_SRL_ShiftsRightZeroInBit7`
+- **Ziel:** SRL B (CB 0x38): Rechtsshift logisch; Bit 7 = 0; Bit 0 → C.
+- **Erwartet (PASS):** B=0x01 (aus 0x02); danach B=0x00, C=1, Z=1 (aus 0x01).
+
+##### `Z80Test/CB_SRA_PreservesSign`
+- **Ziel:** SRA B (CB 0x28): Arithmetischer Rechtsshift; Bit 7 erhalten (Vorzeichen).
+- **Erwartet (PASS):** B=0xC0, C=0 (aus B=0x80); S=1.
+
+#### CB-Präfix – Bit-Operationen
+
+##### `Z80Test/CB_BIT_SetsZ_WhenBitClear`
+- **Ziel:** BIT b,r (CB) setzt Z=1 wenn Bit=0; Z=0 wenn Bit=1.
+- **Erwartet (PASS):** Z=1 mit B=0x02 (Bit 0 = 0); Z=0 mit B=0x01.
+
+##### `Z80Test/CB_SET_SetsBit` / `CB_RES_ClearsBit`
+- **Ziel:** SET 3,B setzt Bit 3 auf 1; RES 3,B löscht es.
+- **Erwartet (PASS):** B=0xD8→Bit3=1; B=0xFF→0xF7 nach RES.
+
+#### 16-Bit-Laden
+
+##### `Z80Test/LD_rr_nn_LoadsWord`
+- **Ziel:** `LD rr,nn` lädt 16-Bit-Direktwert in Registerpaar.
+- **Erwartet (PASS):** BC=0x1234, DE=0x5678, HL=0x9ABC.
+
+##### `Z80Test/LD_nn_HL_And_LD_HL_nn`
+- **Ziel:** `LD (nn),HL` schreibt HL little-endian in Speicher; `LD HL,(nn)` liest es zurück.
+- **Erwartet (PASS):** Round-trip: HL=0xABCD erhalten.
+
+##### `Z80Test/LD_nn_BC_ED_Prefix`
+- **Ziel:** ED-Präfix `LD (nn),BC` / `LD BC,(nn)`: 16-Bit-Übertragung in/aus Speicher.
+- **Erwartet (PASS):** mem[0x0300]=0x34, mem[0x0301]=0x12; BC=0x1234 zurückgelesen.
+
+#### 16-Bit-Arithmetik
+
+##### `Z80Test/ADD_HL_rr_Basic`
+- **Ziel:** `ADD HL,BC` 16-Bit-Addition; N gelöscht; S/Z/PV unverändert.
+- **Erwartet (PASS):** HL=0x1235; N=0; S, Z, PV erhalten.
+
+##### `Z80Test/ADD_HL_rr_Carry_Out`
+- **Ziel:** Übertrag aus 16-Bit-Addition setzt C-Flag.
+- **Erwartet (PASS):** HL=0, C=1 nach 0x8000 + 0x8000.
+
+##### `Z80Test/INC_DEC_rr_16Bit`
+- **Ziel:** 16-Bit INC/DEC verändern keine Flags.
+- **Erwartet (PASS):** BC=1 nach INC; BC=0 nach DEC; F unverändert.
+
+##### `Z80Test/ADC_HL_BC_WithCarry`
+- **Ziel:** `ADC HL,BC` (ED 0x4A) addiert BC + C zu HL; alle Flags gesetzt.
+- **Erwartet (PASS):** HL=0x8001, S=1, PV=1, C=0 (0x7FFF + 0x0001 + C=1).
+
+##### `Z80Test/SBC_HL_BC_WithBorrow`
+- **Ziel:** `SBC HL,BC` (ED 0x42) subtrahiert BC + C; N=1.
+- **Erwartet (PASS):** HL=0xFFFE, C=1, N=1, S=1 (0x0000 − 0x0001 − C=1).
+
+#### Austauschbefehle
+
+##### `Z80Test/EX_AF_AF_SwapsAccAndFlags`
+- **Ziel:** `EX AF,AF'` (0x08) tauscht AF mit AF'; zweimalig stellt Original wieder her.
+- **Erwartet (PASS):** Nach erstem EX: A=0x33, F=0x44; nach zweitem: A=0x11, F=0x22.
+
+##### `Z80Test/EXX_SwapsBC_DE_HL`
+- **Ziel:** `EXX` (0xD9) tauscht BC/DE/HL mit Schattenregistern.
+- **Erwartet (PASS):** Hauptregister = alte Schattenwerte und umgekehrt.
+
+##### `Z80Test/EX_DE_HL_SwapsRegisters`
+- **Ziel:** `EX DE,HL` (0xEB) tauscht DE und HL.
+- **Erwartet (PASS):** DE=0x1234, HL=0xABCD nach Tausch.
+
+#### Stack (PUSH / POP)
+
+##### `Z80Test/PUSH_POP_Roundtrip`
+- **Ziel:** `PUSH BC` / `POP BC`: Wert bleibt durch Stack-Round-Trip erhalten; SP korrekt.
+- **Erwartet (PASS):** BC=0xBEEF; SP nach PUSH=SP−2; SP nach POP=original.
+
+##### `Z80Test/PUSH_POP_AF_PreservesFlags`
+- **Ziel:** `PUSH AF` / `POP AF` stellt A und F vollständig wieder her.
+- **Erwartet (PASS):** A=0x00, Z=1, C=0 nach Round-Trip.
+
+#### Sprung- und Verzweigungsbefehle
+
+##### `Z80Test/JP_nn_Unconditional`
+- **Ziel:** `JP nn` (0xC3): Sprung zur angegebenen 16-Bit-Adresse.
+- **Erwartet (PASS):** PC=0x0100 nach `JP 0x0100`.
+
+##### `Z80Test/JR_ForwardAndBackward`
+- **Ziel:** `JR e` (0x18): Vorwärts- und Rückwärtssprung mit vorzeichenbehaftetem Offset.
+- **Erwartet (PASS):** PC=5 (vorwärts); PC=2 (rückwärts).
+
+##### `Z80Test/JP_Conditional_Z_TakenAndNotTaken`
+- **Ziel:** `JP Z,nn` springt bei Z=1; fällt durch bei Z=0.
+- **Erwartet (PASS):** PC=0x0200 (Z=1); PC=3 (Z=0).
+
+##### `Z80Test/DJNZ_DecrementsBAndJumps`
+- **Ziel:** DJNZ dekrementiert B; springt bei B≠0; fällt durch bei B=0.
+- **Erwartet (PASS):** B=0, PC=2 (kein Sprung, B war 1); B=4, PC=7 (Sprung, B war 5).
+
+#### Unterprogramme (CALL / RET)
+
+##### `Z80Test/CALL_nn_And_RET`
+- **Ziel:** `CALL nn` legt Rücksprungadresse auf Stack; `RET` kehrt zurück.
+- **Testschritte:** `CALL 0x0100`; NOP; `RET`.
+- **Erwartet (PASS):** PC=0x0003 nach Rückkehr; SP wiederhergestellt.
+
+##### `Z80Test/RST_JumpsToFixedVector`
+- **Ziel:** `RST 38H` (0xFF) springt zu 0x0038 und legt PC auf Stack.
+- **Erwartet (PASS):** PC=0x0038; Return-Adresse 0x0001 auf Stack.
+
+#### HALT
+
+##### `Z80Test/HALT_SetsFlag_ReturnsNOPCycles`
+- **Ziel:** `HALT` (0x76) setzt `halted=true`; weitere `step()`-Aufrufe verbrauchen je 4 Takte.
+- **Erwartet (PASS):** halted=true; zweiter `step()` gibt 4 zurück; PC unverändert.
+
+##### `Z80Test/NMI_ExitsHalt` / `INT_IM1_ExitsHalt`
+- **Ziel:** NMI und INT heben den HALT-Zustand auf.
+- **Erwartet (PASS):** halted=false; PC=0x0066 (NMI) bzw. 0x0038 (INT IM1).
+
+#### I/O-Befehle
+
+##### `Z80Test/IN_A_n_ReadsPort`
+- **Ziel:** `IN A,(n)` liest den Portwert und speichert ihn in A.
+- **Erwartet (PASS):** A=0x42 nach `IN A,(0x10)` mit io[0x10]=0x42.
+
+##### `Z80Test/OUT_n_A_WritesPort`
+- **Ziel:** `OUT (n),A` schreibt A an den angegebenen Port.
+- **Erwartet (PASS):** io[0x20]=0x7E nach `OUT (0x20),A` mit A=0x7E.
+
+##### `Z80Test/IN_r_C_ED_Prefix`
+- **Ziel:** ED-Präfix `IN A,(C)` liest vom Port (C); setzt S, Z, PV; **löscht H und N** (gemäß Zilog-Spezifikation).
+- **Erwartet (PASS):** A=0x55; Z=0, H=0, N=0.
+
+##### `Z80Test/OUT_C_r_ED_Prefix`
+- **Ziel:** ED-Präfix `OUT (C),A` schreibt A an Port (C).
+- **Erwartet (PASS):** io[0x40]=0xAB.
+
+#### Spezielle Befehle
+
+##### `Z80Test/SCF_SetsClearHN` / `CCF_TogglesCarry`
+- **Ziel:** SCF setzt C, löscht H und N; CCF invertiert C (alter C → H).
+- **Erwartet (PASS):** SCF: C=1, H=0, N=0. CCF zweimal: C wieder im Ausgangszustand.
+
+##### `Z80Test/CPL_ComplementsAccumulator`
+- **Ziel:** CPL invertiert alle Bits von A; setzt H und N.
+- **Erwartet (PASS):** A=~0x5A=0xA5; H=1, N=1.
+
+##### `Z80Test/NEG_NegatesAccumulator` / `NEG_0x80_SetsOverflow`
+- **Ziel:** NEG negiert A (Zweierkomplement); PV=1 nur bei A=0x80.
+- **Erwartet (PASS):** A=0xFE, C=1, N=1 (aus 0x02). A=0x80, PV=1 (aus 0x80).
+
+##### `Z80Test/DAA_AfterBCDAddition`
+- **Ziel:** DAA korrigiert A nach BCD-Addition auf gültigen BCD-Wert.
+- **Testschritte:** A=0x19; `ADD A,0x01` → A=0x1A; `DAA` → A=0x20 (BCD 20).
+- **Erwartet (PASS):** A=0x20; C=0, N=0.
+
+#### Block-Übertragung und -Suche
+
+##### `Z80Test/LDI_CopiesAndDecrements`
+- **Ziel:** LDI kopiert (HL)→(DE); inkrementiert HL/DE; dekrementiert BC; PV=0 wenn BC=0.
+- **Erwartet (PASS):** mem[DE]=0xAB; HL/DE um 1 erhöht; BC=0, PV=0.
+
+##### `Z80Test/LDIR_CopiesBlock`
+- **Ziel:** LDIR wiederholt LDI bis BC=0; kopiert Block vollständig.
+- **Erwartet (PASS):** 3 Bytes kopiert; BC=0; PV=0.
+
+##### `Z80Test/LDD_CopiesAndDecrements`
+- **Ziel:** LDD wie LDI, aber HL/DE dekrementiert.
+- **Erwartet (PASS):** mem[DE]=0xBB; HL/DE um 1 erniedrigt; PV=1 (BC>0).
+
+##### `Z80Test/CPI_ComparesAndAdvances`
+- **Ziel:** CPI vergleicht A mit (HL), inkrementiert HL, dekrementiert BC.
+- **Erwartet (PASS):** Z=1 bei Übereinstimmung; HL/BC korrekt aktualisiert; PV=1 (BC>0).
+
+#### Interrupt-Steuerung
+
+##### `Z80Test/DI_DisablesInterrupts_EI_Enables`
+- **Ziel:** DI löscht IFF1/IFF2; EI setzt sie.
+- **Erwartet (PASS):** IFF1=IFF2=false nach DI; =true nach EI.
+
+##### `Z80Test/IM_Modes_SelectInterruptMode`
+- **Ziel:** ED-Befehle IM 0/1/2 setzen das Interrupt-Modus-Feld.
+- **Erwartet (PASS):** `cpu.IM` == 1, 2, 0 nach jeweiligen Befehlen.
+
+##### `Z80Test/LD_I_A_And_LD_A_I`
+- **Ziel:** `LD I,A` kopiert A→I; `LD A,I` kopiert I→A und setzt PV = IFF2.
+- **Erwartet (PASS):** I=0x5A; A=0x5A, PV=1 (IFF2=true).
+
+#### Maskierbarer Interrupt (INT)
+
+##### `Z80Test/INT_IM1_JumpsTo0038`
+- **Ziel:** `cpu.interrupt()` im IM-1-Modus springt zu 0x0038.
+- **Erwartet (PASS):** PC=0x0038; IFF1=false.
+
+##### `Z80Test/INT_Ignored_When_IFF1_False`
+- **Ziel:** Interrupt wird ignoriert, wenn IFF1=false (DI aktiv).
+- **Erwartet (PASS):** PC unverändert.
+
+##### `Z80Test/INT_IM2_UsesVectorTable`
+- **Ziel:** IM 2: CPU liest Sprungadresse aus Vektortabelle bei I×256+Vektor.
+- **Erwartet (PASS):** PC=0x0250 (aus Vektortabelle bei 0x0110).
+
+#### Nicht-maskierbarer Interrupt (NMI)
+
+##### `Z80Test/NMI_JumpsTo0066_SavesIFF`
+- **Ziel:** `cpu.nmi()` springt immer zu 0x0066; sichert IFF1→IFF2; löscht IFF1.
+- **Erwartet (PASS):** PC=0x0066; IFF1=false; IFF2=ursprüngliches IFF1.
+
+##### `Z80Test/NMI_PushesPC_OnStack`
+- **Ziel:** NMI legt aktuelle PC-Adresse auf den Stack.
+- **Erwartet (PASS):** SP−=2; mem[SP+0]=low(PC), mem[SP+1]=high(PC).
+
+#### IX/IY-Indexregister
+
+##### `Z80Test/LD_IX_nn_And_LD_A_IXpd`
+- **Ziel:** `LD IX,nn` (DD 0x21) lädt IX; `LD A,(IX+d)` (DD 0x7E) liest indizierten Speicher.
+- **Erwartet (PASS):** IX=0x0100; A=mem[IX+2]=0xCC.
+
+##### `Z80Test/LD_IXpd_n`
+- **Ziel:** `LD (IX+d),n` (DD 0x36) schreibt n in Speicher[IX+d].
+- **Erwartet (PASS):** mem[0x0105]=0xAB (IX=0x0103, d=2).
+
+##### `Z80Test/ADD_IX_BC`
+- **Ziel:** `ADD IX,BC` (DD 0x09): IX += BC; N gelöscht.
+- **Erwartet (PASS):** IX=0x0200; N=0.
+
+##### `Z80Test/LD_IY_nn_And_LD_A_IYpd`
+- **Ziel:** `LD IY,nn` (FD 0x21) lädt IY; `LD A,(IY+d)` mit negativem Offset.
+- **Erwartet (PASS):** A=mem[IY−1]=0x77.
+
+#### Taktgenaues Timing
+
+##### `Z80Test/Timing_NOP_4cycles`
+- **Ziel:** NOP kostet genau 4 Taktzyklen.
+- **Erwartet (PASS):** `step()` == 4.
+
+##### `Z80Test/Timing_LD_r_n_7cycles`
+- **Ziel:** `LD r,n` kostet genau 7 Taktzyklen.
+- **Erwartet (PASS):** `step()` == 7.
+
+##### `Z80Test/Timing_CALL_nn_17cycles`
+- **Ziel:** `CALL nn` kostet genau 17 Taktzyklen.
+- **Erwartet (PASS):** `step()` == 17.
+
+##### `Z80Test/Timing_LDIR_RepeatVsFinal`
+- **Ziel:** LDIR verbraucht 21 Takte pro Wiederholung (BC>0) und 16 Takte beim letzten Schritt.
+- **Erwartet (PASS):** erster `step()` == 21 (BC=2→1); zweiter == 16 (BC=1→0).
+
+##### `Z80Test/Timing_CyclesAccumulate`
+- **Ziel:** `cpu.cycles` akkumuliert korrekt über mehrere Befehle.
+- **Erwartet (PASS):** cycles == 15 nach NOP(4) + LD A,n(7) + NOP(4).
 
 ---
 

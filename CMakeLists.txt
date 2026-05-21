@@ -250,8 +250,13 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_k5122 PRIVATE k1520_k5122 GTest::gtest_main)
         target_include_directories(k1520_test_k5122 PRIVATE ${CMAKE_SOURCE_DIR})
 
+        add_executable(k1520_test_z80 tests/cpp/test_z80.cpp)
+        target_link_libraries(k1520_test_z80 PRIVATE k1520_z80 GTest::gtest_main)
+        target_include_directories(k1520_test_z80 PRIVATE ${CMAKE_SOURCE_DIR})
+
         include(GoogleTest)
         gtest_discover_tests(k1520_test_pio)
+
         gtest_discover_tests(k1520_test_bus)
         gtest_discover_tests(k1520_test_format_parser)
         gtest_discover_tests(k1520_test_floppy)
@@ -263,5 +268,13 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_k2526)
         gtest_discover_tests(k1520_test_k8025)
         gtest_discover_tests(k1520_test_k5122)
-    endif()
-endif()
+        gtest_discover_tests(k1520_test_z80)
+    endif() # BUILD_K1520_TESTS
+
+    # boot_trace: standalone boot diagnostic tool (LOG_LEVEL=5 for full trace)
+    add_executable(boot_trace tools/boot_trace.cpp)
+    target_link_libraries(boot_trace PRIVATE k1520_a5120 k1520_floppy k1520_logger)
+    target_include_directories(boot_trace PRIVATE ${CMAKE_SOURCE_DIR})
+    target_compile_definitions(boot_trace PRIVATE LOG_LEVEL=5)
+
+endif() # BUILD_K1520
