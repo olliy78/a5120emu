@@ -58,6 +58,12 @@ uint8_t K5122::ioRead(uint8_t port) {
             } else {
                 transferring_ = false;
                 result = 0xFF;
+                // Auto-release BUSRQ: all sector bytes consumed (ZVE2 INIR done)
+                if (bus_.isBUSRQ()) {
+                    dma_pending_ = false;
+                    bus_.releaseBUSRQ();
+                    LOG_DEBUG("K5122", "DATA letztes Byte gelesen, BUSRQ freigegeben");
+                }
                 // Advance to next sector on track (wraps at secs_per_track).
                 const FloppyDrive& drv = drives_[selected_drive_];
                 if (drv.isMounted()) {
@@ -202,17 +208,38 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
     }
 
     // ── Start strobe: /STR (bit 3) falling edge ───────────────────────────────
-    // Real hardware: /STR=0 enables /BUSRQ generation. ZVE2 (DMA-CPU) takes
-    // over the bus and performs the sector transfer autonomously.
-    // Emulation: assert /BUSRQ immediately; defer the actual sector
-    // read/write to dmaUpdate(), which is called by the run loop while
-    // ZVE1 is suspended (BUSRQ asserted).
+    // ZVE1 context: assert /BUSRQ so ZVE2 (or dmaUpdate fallback) can take over.
+    //   READ  (/WE=1): fill sector_buf_ immediately; ZVE2 drains it via INIR
+    //                  on port 0x16; last byte auto-releases BUSRQ.
+    //   WRITE (/WE=0): clear sector_buf_ for ZVE2 to fill via OTIR on port 0x14;
+    //                  ZVE2 triggers commit by writing /STR again while holding bus.
+    // ZVE2 context (bus already acquired): commit a completed write and release bus.
     if ((prev_ctrl_a_ & 0x08) && !(data & 0x08)) {
-        dma_is_write_ = !(data & 0x01);  // /WE bit 0: 0 = write mode
-        dma_pending_  = true;
-        bus_.assertBUSRQ();
-        LOG_DEBUG("K5122", "/STR Flanke: BUSRQ gesetzt, DMA %s ausstehend",
-                  dma_is_write_ ? "SCHREIBEN" : "LESEN");
+        bool is_write = !(data & 0x01);  // /WE=0 means write
+
+        if (bus_.isBUSRQ()) {
+            // ZVE2 is committing a write transfer (bus already held)
+            if (is_write) {
+                doWriteSector();
+            }
+            dma_pending_ = false;
+            bus_.releaseBUSRQ();
+            LOG_DEBUG("K5122", "/STR ZVE2-Commit: %s abgeschlossen, BUSRQ freigegeben",
+                      is_write ? "SCHREIBEN" : "LESEN");
+        } else {
+            // ZVE1 triggering a new DMA transfer
+            dma_is_write_ = is_write;
+            if (!is_write) {
+                doReadSector();   // fill sector_buf_ immediately for ZVE2 INIR
+            } else {
+                sector_buf_.clear();  // ZVE2 will fill via port 0x14 writes
+                buf_pos_ = 0;
+            }
+            dma_pending_ = true;
+            bus_.assertBUSRQ();
+            LOG_DEBUG("K5122", "/STR Flanke: BUSRQ gesetzt, DMA %s ausstehend",
+                      is_write ? "SCHREIBEN" : "LESEN");
+        }
     }
 
     // Update head/side select (bit 5 doubles as side select when not stepping).
@@ -345,22 +372,24 @@ void K5122::markDriveAccess(int drive) {
         std::chrono::steady_clock::now() + led_hold_time_;
 }
 
-// ─── DMA-Update (wird vom Run-Loop aufgerufen während BUSRQ aktiv ist) ────────
+// ─── DMA-Update Fallback (aufgerufen wenn ZVE2 im Reset, BUSRQ aktiv) ────────
 //
-// Führt den ausstehenden Sektortransfer durch (Lesen oder Schreiben) und
-// gibt den Bus durch releaseBUSRQ() wieder frei. ZVE1 darf danach weiter
-// arbeiten. Auf echter Hardware würde ZVE2 diese Aufgabe übernehmen.
+// Für READ-Transfers: sector_buf_ wurde bereits in handleCtrlPortAWrite() gefüllt.
+// ZVE1 (Boot-ROM Byte-Polling) liest danach selbst via IN A,(16h).
+// Für WRITE-Transfers: doWriteSector() wird hier ausgeführt.
+// Gibt BUSRQ frei, damit ZVE1 weiterläuft.
 
 void K5122::dmaUpdate() {
     if (!dma_pending_) return;
 
     if (dma_is_write_) {
         doWriteSector();
-    } else {
-        doReadSector();
     }
+    // For read: sector_buf_ was already filled in handleCtrlPortAWrite;
+    // ZVE1 (Boot ROM byte-polling via IN A,(16h)) will drain it after resume.
 
     dma_pending_ = false;
     bus_.releaseBUSRQ();
-    LOG_DEBUG("K5122", "dmaUpdate: DMA-Transfer abgeschlossen, BUSRQ freigegeben");
+    LOG_DEBUG("K5122", "dmaUpdate (ZVE2-Fallback): BUSRQ freigegeben (%s)",
+              dma_is_write_ ? "SCHREIBEN abgeschlossen" : "LESEN: ZVE1 pollt selbst");
 }

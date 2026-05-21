@@ -396,3 +396,78 @@ TEST_F(K5122Test, DriveAccessor_ReturnsValidReference) {
     EXPECT_TRUE(d0.isMounted());   // accessor returns same object as mountDisk operates on
     std::filesystem::remove(path);
 }
+
+// ─── 11. Immediate sector fill on /STR (new ZVE2-compatible design) ──────────
+
+// With the redesigned DMA flow, doReadSector() is called immediately when /STR
+// falls (not deferred to dmaUpdate()). This allows ZVE2 to drain the buffer via
+// its INIR program. ZVE1 byte-polling also works via dmaUpdate() fallback.
+
+TEST_F(K5122Test, DMA_Read_SectorImmediatelyAvailableAfterSTR) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF7);   // /STR falling edge, /WE=1 (read mode)
+    card.ioWrite(0x10, 0xFF);
+
+    // BUSRQ asserted and sector already in buffer — readable before dmaUpdate()
+    ASSERT_TRUE(bus.isBUSRQ());
+    uint8_t b = card.ioRead(0x16);
+    EXPECT_EQ(b, 0xE5) << "sector byte must be readable immediately after /STR";
+    std::filesystem::remove(path);
+}
+
+TEST_F(K5122Test, DMA_Read_BUSRQAutoReleasedWhenLastByteRead) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF7);   // /STR falling edge (read mode)
+    card.ioWrite(0x10, 0xFF);
+
+    ASSERT_TRUE(bus.isBUSRQ());
+
+    // Drain all sector bytes — when the last byte is consumed BUSRQ auto-releases.
+    bool released = false;
+    for (int i = 0; i < 512; ++i) {   // read beyond sector size
+        card.ioRead(0x16);
+        if (!bus.isBUSRQ()) {
+            released = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(released) << "BUSRQ must auto-release after last sector byte";
+    std::filesystem::remove(path);
+}
+
+TEST_F(K5122Test, DMA_Write_ZVE2Style_CommitViaSeccondSTR) {
+    // Simulate ZVE2 write DMA:
+    //   ZVE1: /STR+/WE=0 → assertBUSRQ, sector_buf_ cleared
+    //   ZVE2: writes bytes via port 0x14
+    //   ZVE2: writes /STR+/WE=0 again (bus already held) → doWriteSector + releaseBUSRQ
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+
+    // ZVE1 triggers write DMA (/WE=0, /STR falling)
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF6);   // /STR=0, /WE=0 (write mode)
+    card.ioWrite(0x10, 0xFF);
+    ASSERT_TRUE(bus.isBUSRQ());
+
+    // ZVE2 writes sector bytes to port 0x14
+    for (int i = 0; i < 128; ++i)
+        card.ioWrite(0x14, static_cast<uint8_t>(0xAB));
+
+    // ZVE2 commits: writes /STR=0 while BUSRQ is held → doWriteSector + releaseBUSRQ
+    // (bus_.isBUSRQ() is true, so handleCtrlPortAWrite takes the ZVE2 commit path)
+    card.ioWrite(0x10, 0xFF);   // prev state for ZVE2's ctrl_a
+    card.ioWrite(0x10, 0xF6);   // /STR falling, /WE=0 → ZVE2 commit
+    card.ioWrite(0x10, 0xFF);
+
+    EXPECT_FALSE(bus.isBUSRQ()) << "BUSRQ must be released after ZVE2 write commit";
+    std::filesystem::remove(path);
+}

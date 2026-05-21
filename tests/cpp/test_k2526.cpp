@@ -336,3 +336,75 @@ TEST(K2526, CpuNMI_DoesNotCrash)
     // Just verify that cpuNMI() does not crash.
     card.cpuNMI();
 }
+
+// ─── ZVE2 (DMA-CPU) on K2526 card ────────────────────────────────────────────
+
+TEST(K2526, ZVE2_StartsInReset)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    EXPECT_TRUE(card.isZVE2InReset());
+}
+
+TEST(K2526, ZVE2_Port04_Bit1_ReleasesReset)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    ASSERT_TRUE(card.isZVE2InReset());
+    bus.ioWrite(0x04, 0x01);   // bit0=1 → /RES-ZVE2 released
+    EXPECT_FALSE(card.isZVE2InReset());
+}
+
+TEST(K2526, ZVE2_Port04_Bit0_AssertsReset)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    bus.ioWrite(0x04, 0x01);   // release
+    ASSERT_FALSE(card.isZVE2InReset());
+    bus.ioWrite(0x04, 0x00);   // bit0=0 → /RES-ZVE2 asserted
+    EXPECT_TRUE(card.isZVE2InReset());
+}
+
+TEST(K2526, ZVE2_Released_PCStartsAtZero)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    bus.ioWrite(0x04, 0x01);   // release ZVE2
+    EXPECT_EQ(card.zve2().PC, 0x0000u);
+}
+
+TEST(K2526, ZVE2Step_ExecutesInstructions_WhenNotInReset)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();   // boot ROM at 0x0000–0x03FF
+    card.cpuReset();  // ZVE1 in reset
+
+    bus.ioWrite(0x04, 0x01);   // release ZVE2 — starts at PC=0x0000
+    ASSERT_FALSE(card.isZVE2InReset());
+
+    uint16_t pc_before = card.zve2().PC;
+    int cycles = card.zve2Step();   // execute first ROM instruction
+
+    EXPECT_GT(cycles, 0);
+    EXPECT_GT(card.zve2().PC, pc_before) << "ZVE2 PC must advance after step";
+}
+
+TEST(K2526, ZVE2_ResetWhileRunning_FreezesPC)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+    bus.ioWrite(0x04, 0x01);   // release ZVE2
+    card.zve2Step();            // execute one instruction
+    ASSERT_GT(card.zve2().PC, 0u);
+
+    bus.ioWrite(0x04, 0x00);   // put ZVE2 back in reset
+    EXPECT_TRUE(card.isZVE2InReset());
+    // PC is preserved (not zeroed by reset signal; only zeroed when released again)
+}

@@ -100,11 +100,16 @@ int A5120Machine::run(int max_cycles) {
         }
 
         // BUSRQ: K5122 (ZVE2-DMA) hält den Bus. ZVE1 ist suspendiert.
-        // Der Run-Loop ruft afs_.dmaUpdate() auf, damit der ausstehende
-        // Sektor-Transfer abgeschlossen wird. Danach gibt K5122 den Bus
-        // wieder frei (releaseBUSRQ) und ZVE1 macht weiter.
+        // Wenn ZVE2 nicht im Reset: ZVE2 führt den DMA-Transfer selbst durch
+        // (liest Sektor via INIR von Port 0x16 oder schreibt via OTIR auf Port 0x14).
+        // K5122 gibt BUSRQ automatisch frei, wenn ZVE2 den letzten Byte konsumiert.
+        // Fallback (ZVE2 im Reset, z.B. Boot-ROM-Phase): dmaUpdate() übernimmt.
         if (bus_.isBUSRQ()) {
-            afs_.dmaUpdate();
+            if (!zre_.isZVE2InReset()) {
+                zre_.zve2Step();
+            } else {
+                afs_.dmaUpdate();
+            }
             remaining--;
             continue;
         }

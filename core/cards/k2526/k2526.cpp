@@ -18,6 +18,14 @@ K2526::K2526(K1520Bus& bus, const A5120Config& cfg)
     cpu_.writePort    = [this](uint16_t p, uint8_t d){ bus_.ioWrite(p & 0xFF, d); };
     cpu_.retiCallback = [this]()                     { bus_.signalRETI(); };
 
+    // ── ZVE2 (DMA-CPU) mit K1520-Bus verdrahten ──────────────────────────────
+    // ZVE2 teilt den selben Bus mit ZVE1: gleiches RAM, gleiche I/O-Ports.
+    // kein retiCallback: ZVE2 führt keine Interrupt-Service-Routinen aus.
+    zve2_.readByte  = [this](uint16_t a)           { return bus_.memRead(a); };
+    zve2_.writeByte = [this](uint16_t a, uint8_t d){ bus_.memWrite(a, d); };
+    zve2_.readPort  = [this](uint16_t p)           { return bus_.ioRead(p & 0xFF); };
+    zve2_.writePort = [this](uint16_t p, uint8_t d){ bus_.ioWrite(p & 0xFF, d); };
+
     // BS-PIO Port-A-Ausgangs-Callback: A7=MEMDI1/2 steuert Speicherzugriffssperre.
     bs_pio_.setPortAOutputCallback([this](uint8_t data) {
         bool memdi = (data >> 7) & 1;
@@ -135,8 +143,17 @@ void K2526::ioWrite(uint8_t port, uint8_t data)
                 ubus_error_lamp_ = data;
                 LOG_DEBUG("K2526", "U-Bus OUT 03H (/UCS4 ErrLamp) data=0x%02X", data);
                 break;
-            case 0x04:  // /RES-ZVE2: DMA-CPU zurücksetzen
-                LOG_DEBUG("K2526", "U-Bus OUT 04H (/RES-ZVE2) data=0x%02X", data);
+            case 0x04:  // /RES-ZVE2: DMA-CPU reset (active-low, bit 0)
+                // bit0=0 → /RES-ZVE2 asserted → ZVE2 in reset
+                // bit0=1 → /RES-ZVE2 released → ZVE2 running from PC=0
+                if (!(data & 0x01) && !zve2_reset_) {
+                    zve2_reset_ = true;
+                    LOG_INFO("K2526", "ZVE2 in Reset versetzt (OUT 04H=0x%02X)", data);
+                } else if ((data & 0x01) && zve2_reset_) {
+                    zve2_reset_ = false;
+                    zve2_.reset();
+                    LOG_INFO("K2526", "ZVE2 gestartet: PC=0000H (OUT 04H=0x%02X)", data);
+                }
                 break;
             case 0x05:  // /UCS3: Lampenansteuerung (Selektoren)
                 ubus_lamp_ = data;

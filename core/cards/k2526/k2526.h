@@ -79,8 +79,17 @@
  * - Boot EPROM (1 KB, 0x0000–0x03FF), disabled by BS-PIO Port B bit 0 (/LD-ROM)
  * - BS-PIO (Q301): controls MEMDI1/2 (Port A bit 7) and system config bridges
  * - CTC (Q302): 4-channel timer, baud-rate source; ZC/TO2 feeds CLK/TRG3 internally
+ * - ZVE2: second Z80 DMA-CPU, shares the K1520 bus; controlled by port 0x04 (/RES-ZVE2)
  * - U-Bus registers: keyboard scan-code / valid-flag inputs, lamp outputs
  * - InterruptSlave: combined CTC → BS-PIO daisy-chain for the K1520 interrupt system
+ *
+ * ZVE2 DMA protocol:
+ *   Port 0x04 (/RES-ZVE2, active-low): writing bit0=0 holds ZVE2 in reset,
+ *   writing bit0=1 releases ZVE2 (ZVE2 starts/resumes from current PC).
+ *   While bus_.isBUSRQ() is true and ZVE2 is not in reset, the A5120Machine
+ *   run loop calls zve2Step() instead of afs_.dmaUpdate().
+ *   ZVE2 shares all memory and I/O with ZVE1 (same bus_ callbacks).
+ *   K5122 auto-releases /BUSRQ when the last sector byte is consumed.
  *
  * Typical usage:
  * @code
@@ -297,6 +306,31 @@ public:
      */
     Z80CTC& ctc()   { return ctc_; }
 
+    // ─── ZVE2 DMA-CPU interface ────────────────────────────────────────────
+
+    /**
+     * @brief Execute one ZVE2 instruction (DMA-CPU step).
+     *
+     * Called by the A5120Machine run loop while /BUSRQ is asserted and
+     * ZVE2 is not in reset. ZVE2 shares the K1520 bus with ZVE1.
+     *
+     * @return Number of T-cycles consumed by the ZVE2 instruction
+     */
+    int  zve2Step() { return zve2_.step(); }
+
+    /**
+     * @brief Check whether ZVE2 is held in reset.
+     *
+     * @return true if ZVE2 is in reset (port 0x04 bit0 = 0)
+     */
+    bool isZVE2InReset() const { return zve2_reset_; }
+
+    /**
+     * @brief Direct access to ZVE2 for unit tests.
+     * @return Reference to the ZVE2 Z80 instance
+     */
+    Z80& zve2() { return zve2_; }
+
     // ─── U-Bus interface (keyboard input from outside) ─────────────────────
 
     /**
@@ -334,6 +368,7 @@ private:
     A5120Config cfg_;           ///< Hardware configuration (bridge bits, I/O base)
 
     Z80    cpu_;                            ///< ZVE1: Haupt-Z80-CPU (U880D, 2.4576 MHz)
+    Z80    zve2_;                           ///< ZVE2: DMA-CPU (second Z80, shares bus_)
     Z80PIO bs_pio_{"K2526-BS-PIO"};        ///< Q301: BS-PIO (Betriebssystem-PIO), ports 08H–0BH
     Z80CTC ctc_   {"K2526-CTC"};           ///< Q302: CTC (Zähler/Zeitgeber),       ports 0CH–0FH
 
@@ -341,6 +376,7 @@ private:
 
     bool    rom_enabled_ = true;    ///< true while EPROM is registered on the bus
     bool    iei_in_      = false;   ///< Last IEI value received from upstream chain
+    bool    zve2_reset_  = true;    ///< true = ZVE2 held in reset (port 0x04 bit0=0)
 
     // U-Bus registers (keyboard/lamp interface, connector X5)
     uint8_t ubus_kbd_code_   = 0xFF;  ///< Port 06H IN:  keyboard scan code (/UCS1)
