@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "core/cards/k2526/k2526.h"
 #include "core/cards/k2526/rom_data.h"
+#include "core/cards/k3526/k3526.h"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -407,4 +408,335 @@ TEST(K2526, ZVE2_ResetWhileRunning_FreezesPC)
     bus.ioWrite(0x04, 0x00);   // put ZVE2 back in reset
     EXPECT_TRUE(card.isZVE2InReset());
     // PC is preserved (not zeroed by reset signal; only zeroed when released again)
+}
+
+// ─── /WAIT-ZVE2 (BS-PIO B3) ──────────────────────────────────────────────────
+//
+// Port B output bits (direction mask 0xE2: B0/B2/B3/B4 are outputs, active low):
+//   PORTB_SAFE_ROMON  = 0x1D: B0=1(ROM on),  B2=1, B3=1, B4=1  – all others inactive
+//   PORTB_SAFE_ROMOFF = 0x1C: B0=0(ROM off), B2=1, B3=1, B4=1  – all others inactive
+//   PORTB_WAIT_ACTIVE = 0x15: B0=1(ROM on),  B2=1, B3=0, B4=1  – /WAIT-ZVE2 asserted
+//   PORTB_SPSESR_ACT  = 0x18: B0=0(ROM off), B2=0, B3=1, B4=1  – /SPS-ESR asserted
+//   PORTB_SA_ACTIVE   = 0x0C: B0=0(ROM off), B2=1, B3=1, B4=0  – /SA asserted
+
+static constexpr uint8_t PORTB_SAFE_ROMON   = 0x1D;  ///< ROM on, all other outputs inactive
+static constexpr uint8_t PORTB_SAFE_ROMOFF  = 0x1C;  ///< ROM off, all other outputs inactive
+static constexpr uint8_t PORTB_WAIT_ACTIVE  = 0x15;  ///< ROM on, /WAIT-ZVE2 asserted (B3=0)
+static constexpr uint8_t PORTB_WAITZVE2_REL = 0x1D;  ///< ROM on, /WAIT-ZVE2 released (B3=1)
+static constexpr uint8_t PORTB_SPSESR_ACT   = 0x18;  ///< ROM off, /SPS-ESR asserted (B2=0)
+static constexpr uint8_t PORTB_SA_ACTIVE    = 0x0C;  ///< ROM off, /SA asserted (B4=0)
+
+TEST(K2526, ZVE2_WaitInactive_Initially)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+    EXPECT_FALSE(card.isZVE2Waiting());
+}
+
+TEST(K2526, ZVE2_Wait_PortB3Low_StallsZVE2)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+
+    // Release ZVE2 from reset so it would run if not stalled.
+    bus.ioWrite(0x04, 0x01);
+    ASSERT_FALSE(card.isZVE2InReset());
+
+    // Assert /WAIT-ZVE2 (B3=0): ROM on, SPS-ESR inactive, SA inactive.
+    bus.ioWrite(BSPIO_PORTB_DATA, PORTB_WAIT_ACTIVE);
+    EXPECT_TRUE(card.isZVE2Waiting());
+
+    // zve2Step() must return 0 (no instruction executed) while waiting.
+    EXPECT_EQ(card.zve2Step(), 0);
+}
+
+TEST(K2526, ZVE2_Wait_PortB3High_ResumesZVE2)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+
+    bus.ioWrite(0x04, 0x01);                            // release ZVE2
+    bus.ioWrite(BSPIO_PORTB_DATA, PORTB_WAIT_ACTIVE);  // stall ZVE2
+    ASSERT_TRUE(card.isZVE2Waiting());
+
+    bus.ioWrite(BSPIO_PORTB_DATA, PORTB_WAITZVE2_REL); // release ZVE2 wait
+    EXPECT_FALSE(card.isZVE2Waiting());
+
+    // zve2Step() should now execute an instruction from the boot ROM.
+    EXPECT_GT(card.zve2Step(), 0);
+}
+
+TEST(K2526, ZVE2_Wait_DoesNotAffectZVE1)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+    card.cpuReset();
+
+    // Stall ZVE2 via /WAIT-ZVE2 – must not prevent ZVE1 from running.
+    bus.ioWrite(BSPIO_PORTB_DATA, PORTB_WAIT_ACTIVE);
+    ASSERT_TRUE(card.isZVE2Waiting());
+
+    int cycles = card.cpuStep();
+    EXPECT_GT(cycles, 0);
+    EXPECT_GT(card.cpuPC(), 0x0000u);
+}
+
+// ─── Q240 Memory Protection (MemIOProtect / spa_) ────────────────────────────
+//
+// Fixture: K2526 + K3526 RAM on the bus.  The boot ROM is disabled so all
+// of the 64 KB address range can be accessed through K3526 RAM.
+// cpu().writeByte / cpu().readByte invoke the ZVE1 memory callbacks which
+// include the Q240 protection check (unlike bus.memWrite/Read which bypass it).
+
+class K2526Protection : public ::testing::Test {
+protected:
+    K1520Bus bus;
+    K2526    zre{bus};
+    K3526    ops;
+
+    void SetUp() override {
+        ops.attachToBus(bus);     // RAM 0x0000–0xFFFF
+        zre.attachToBus(bus);     // ports 0x00–0x0F
+        zre.powerOn();            // boot ROM at 0x0000–0x03FF; Q240 cleared
+        // Disable ROM with all other Port B outputs inactive (B2=1, B3=1, B4=1).
+        bus.ioWrite(BSPIO_PORTB_DATA, PORTB_SAFE_ROMOFF);
+        ops.fill(0xAA);           // pre-fill RAM with test pattern
+    }
+};
+
+TEST_F(K2526Protection, NoProtection_ReadWriteOk)
+{
+    // With an empty protection table ZVE1 accesses should be transparent.
+    zre.cpu().writeByte(0x0400, 0x55);
+    EXPECT_EQ(ops.rawPtr()[0x0400], 0x55);
+    EXPECT_EQ(zre.cpu().readByte(0x0400), 0x55);
+    EXPECT_FALSE(zre.isSPSViolation());
+}
+
+TEST_F(K2526Protection, SpsEsr_EnablesTableWrite)
+{
+    // B2=0 (active low, PORTB_SPSESR_ACT) must activate table-write mode.
+    bus.ioWrite(BSPIO_PORTB_DATA, PORTB_SPSESR_ACT);   // /SPS-ESR asserted
+    EXPECT_TRUE(zre.spa().isTableWriteEnabled());
+
+    bus.ioWrite(BSPIO_PORTB_DATA, PORTB_SAFE_ROMOFF);  // /SPS-ESR released
+    EXPECT_FALSE(zre.spa().isTableWriteEnabled());
+}
+
+TEST_F(K2526Protection, TableWrite_StoresProtectionFlags)
+{
+    // Activate table-write mode; ZVE1 write goes to Q240 SRAM, not RAM.
+    bus.ioWrite(BSPIO_PORTB_DATA, PORTB_SPSESR_ACT);   // /SPS-ESR active
+    zre.cpu().writeByte(0x0400, 0x01);                  // WP for segment 16
+    bus.ioWrite(BSPIO_PORTB_DATA, PORTB_SAFE_ROMOFF);  // /SPS-ESR released
+
+    EXPECT_EQ(zre.spa().readEntry(0x0400), 0x01);       // protection table written
+    EXPECT_EQ(ops.rawPtr()[0x0400], 0xAA);              // RAM unchanged
+}
+
+TEST_F(K2526Protection, TableWrite_ReadReturnsProtectionByte)
+{
+    // Pre-program entry; in table-write mode ZVE1 reads return the table byte.
+    zre.spa().writeEntry(0x0800, 0x03);                 // WP+RP at segment 32
+
+    bus.ioWrite(BSPIO_PORTB_DATA, PORTB_SPSESR_ACT);   // /SPS-ESR active
+    uint8_t val = zre.cpu().readByte(0x0800);
+    bus.ioWrite(BSPIO_PORTB_DATA, PORTB_SAFE_ROMOFF);  // /SPS-ESR released
+
+    EXPECT_EQ(val, 0x03);
+    EXPECT_FALSE(zre.isSPSViolation());                 // table-read: no violation
+}
+
+TEST_F(K2526Protection, WriteProtect_BlocksZVE1Write)
+{
+    zre.spa().writeEntry(0x0400, 0x01);   // WP for segment at 0x0400
+    ops.fill(0xBB);
+
+    zre.cpu().writeByte(0x0400, 0x55);    // blocked – protection violation
+    EXPECT_EQ(ops.rawPtr()[0x0400], 0xBB); // RAM unchanged
+    EXPECT_TRUE(zre.isSPSViolation());
+}
+
+TEST_F(K2526Protection, ReadProtect_BlocksZVE1Read)
+{
+    zre.spa().writeEntry(0x0800, 0x02);   // RP for segment at 0x0800
+    ops.fill(0xCC);
+
+    uint8_t val = zre.cpu().readByte(0x0800);
+    EXPECT_EQ(val, 0xFF);                 // blocked → open-drain 0xFF
+    EXPECT_TRUE(zre.isSPSViolation());
+}
+
+TEST_F(K2526Protection, Violation_SetsNMI)
+{
+    zre.spa().writeEntry(0x0400, 0x01);   // WP for segment at 0x0400
+    zre.cpu().writeByte(0x0400, 0x55);    // trigger violation
+
+    EXPECT_TRUE(zre.isSPSViolation());
+    EXPECT_TRUE(bus.isNMI());
+}
+
+TEST_F(K2526Protection, RESSPA_ClearsViolation)
+{
+    zre.spa().writeEntry(0x0400, 0x01);
+    zre.cpu().writeByte(0x0400, 0x55);    // trigger violation
+    ASSERT_TRUE(zre.isSPSViolation());
+
+    bus.ioWrite(0x02, 0x00);              // /RES-SPA clears violation
+    EXPECT_FALSE(zre.isSPSViolation());
+    EXPECT_FALSE(bus.isNMI());
+}
+
+TEST_F(K2526Protection, RESSPA_ClearsSPSIndOnBSPIO)
+{
+    // Trigger a violation – BS-PIO A3 (SPS-Ind) must be set.
+    zre.spa().writeEntry(0x0400, 0x01);
+    zre.cpu().writeByte(0x0400, 0x55);
+    ASSERT_TRUE(zre.isSPSViolation());
+
+    uint8_t port_a = bus.ioRead(BSPIO_PORTA_DATA);
+    EXPECT_NE(port_a & 0x08, 0) << "SPS-Ind (A3) must be set after violation";
+
+    bus.ioWrite(0x02, 0x00);              // /RES-SPA
+
+    port_a = bus.ioRead(BSPIO_PORTA_DATA);
+    EXPECT_EQ(port_a & 0x08, 0) << "SPS-Ind (A3) must be clear after /RES-SPA";
+}
+
+TEST_F(K2526Protection, ZVE2_BypassesProtection)
+{
+    // ZVE2 runs privileged DMA code and must bypass Q240 protection entirely.
+    zre.spa().writeEntry(0x0400, 0x03);   // WP+RP for segment at 0x0400
+    ops.fill(0xDD);
+
+    zre.zve2().writeByte(0x0400, 0x77);   // must succeed despite WP
+    EXPECT_EQ(ops.rawPtr()[0x0400], 0x77);
+    EXPECT_FALSE(zre.isSPSViolation());
+
+    uint8_t val = zre.zve2().readByte(0x0400);
+    EXPECT_EQ(val, 0x77);
+    EXPECT_FALSE(zre.isSPSViolation());
+}
+
+TEST_F(K2526Protection, SegmentBoundary_64ByteAligned)
+{
+    // Segment 0 covers bytes 0x0000–0x003F (64 bytes); segment 1 starts at 0x0040.
+    zre.spa().writeEntry(0x0000, 0x01);   // WP for segment 0
+
+    // Last byte of segment 0 (0x003F) must be protected.
+    zre.cpu().writeByte(0x003F, 0x11);
+    EXPECT_TRUE(zre.isSPSViolation());
+    bus.ioWrite(0x02, 0x00);              // clear violation
+
+    // First byte of segment 1 (0x0040) must be unprotected.
+    zre.cpu().writeByte(0x0040, 0x22);
+    EXPECT_FALSE(zre.isSPSViolation());
+    EXPECT_EQ(ops.rawPtr()[0x0040], 0x22);
+}
+
+TEST_F(K2526Protection, MultipleViolations_OnlyOneNMI)
+{
+    // Repeated violations must not re-assert NMI once it is already pending.
+    zre.spa().writeEntry(0x0400, 0x01);
+    zre.cpu().writeByte(0x0400, 0x11);    // first violation
+    ASSERT_TRUE(bus.isNMI());
+
+    // A second violation does not generate a second NMI edge (already pending).
+    zre.cpu().writeByte(0x0400, 0x22);
+    EXPECT_TRUE(zre.isSPSViolation());    // still set
+    EXPECT_TRUE(bus.isNMI());             // still pending
+}
+
+// ─── /INT-BS (port 00H) ───────────────────────────────────────────────────────
+
+TEST(K2526, IntBS_Port00_DoesNotCrash)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+
+    bus.ioWrite(0x00, 0x00);              // write port 00H
+    EXPECT_FALSE(card.isSPSViolation());  // must not trigger protection violation
+}
+
+TEST(K2526, IntBS_Port00_SetsBSPIOPortB1Low)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+
+    // After port 00H write, BS-PIO Port B input B1 (/INT-BS) must be 0 (asserted).
+    bus.ioWrite(0x00, 0x00);
+    uint8_t portb = bus.ioRead(BSPIO_PORTB_DATA);
+    EXPECT_EQ(portb & 0x02, 0) << "/INT-BS (B1) must be low after port 00H write";
+}
+
+TEST(K2526, IntBS_InitiallyInactive)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+
+    // Before port 00H write, /INT-BS (B1) must be high (inactive, pull-up).
+    uint8_t portb = bus.ioRead(BSPIO_PORTB_DATA);
+    EXPECT_NE(portb & 0x02, 0) << "/INT-BS (B1) must be high (inactive) at power-on";
+}
+
+TEST(K2526, IntBS_RESSPA_ClearsIntBs)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+
+    bus.ioWrite(0x00, 0x00);                         // assert /INT-BS
+    ASSERT_EQ(bus.ioRead(BSPIO_PORTB_DATA) & 0x02, 0); // verify B1=0
+
+    bus.ioWrite(0x02, 0x00);                         // /RES-SPA clears INT-BS latch
+    uint8_t portb = bus.ioRead(BSPIO_PORTB_DATA);
+    EXPECT_NE(portb & 0x02, 0) << "/INT-BS must be inactive (B1=1) after /RES-SPA";
+}
+
+// ─── /SA (power-off, BS-PIO B4) ───────────────────────────────────────────────
+
+TEST(K2526, SA_InitiallyNotRequested)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    EXPECT_FALSE(card.isShutdownRequested());
+}
+
+TEST(K2526, SA_PortB4Low_SetsShutdownFlag)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+
+    // B4=0 (active low) → /SA asserted → power-off requested.
+    bus.ioWrite(BSPIO_PORTB_DATA, PORTB_SA_ACTIVE);
+    EXPECT_TRUE(card.isShutdownRequested());
+}
+
+TEST(K2526, SA_PortB4High_NoShutdown)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+
+    // B4=1 → /SA not asserted (all safe: B2=1, B3=1, B4=1).
+    bus.ioWrite(BSPIO_PORTB_DATA, PORTB_SAFE_ROMON);
+    EXPECT_FALSE(card.isShutdownRequested());
 }

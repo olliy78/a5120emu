@@ -1,28 +1,41 @@
-// core/cards/k5122/k5122.cpp
-// K5122 AFS – Anschlusssteuerung Floppy-disk Speicher
-//
-// Two Z80 PIOs handle drive control signals and byte-level data transfer.
-// An 8212 equivalent (port 0x18) selects one of up to 4 drives.
-//
-// Ctrl Port A bit layout (CPU output → drive):
-//   bit 0  /WE   – Write Enable (active low)
-//   bit 1  MK    – Mark
-//   bit 2  /FR   – Fault Reset (active low)
-//   bit 3  /STR  – Start / Strobe (active low, edge-triggered)
-//   bit 4  MK1   – Mark 1
-//   bit 5  MR/SD – Step direction / side select (0 = inward / side 1)
-//   bit 6  /HL   – Head Load (active low)
-//   bit 7  /ST   – Step pulse (active low, edge-triggered)
-//
-// Ctrl Port B bit layout (drive → CPU input):
-//   bit 0  /RDYL – Ready (active low, 0 = drive ready)
-//   bit 1  MKE   – Index mark detected
-//   bit 2  /HF   – High Frequency indicator (output, 1 = FM/5")
-//   bit 3  PRE   – Pre-compensation (output)
-//   bit 4  /FA   – Fault Adapter (active low; 1 = no fault)
-//   bit 5  /WP   – Write Protect (active low, 0 = protected)
-//   bit 6  /FW   – Track 0 (active low, 0 = at track 0)
-//   bit 7  /TO   – Timeout (active low, 1 = no timeout)
+/**
+ * @file k5122.cpp
+ * @brief K5122 AFS – Anschlusssteuerung Floppy-disk Speicher (floppy controller card) implementation.
+ *
+ * Implements the floppy disk controller for the Robotron K1520/A5120 system.
+ * Two Z80 PIOs handle drive control signals and byte-level data transfer;
+ * an 8212-equivalent chip at port 0x18 selects one of up to four drives.
+ *
+ * Ctrl PIO Port A bit layout (CPU output → drive):
+ * @code
+ *   bit 0  /WE   – Write Enable (active low)
+ *   bit 1  MK    – Mark
+ *   bit 2  /FR   – Fault Reset (active low)
+ *   bit 3  /STR  – Start / Strobe (active low, edge-triggered)
+ *   bit 4  MK1   – Mark 1
+ *   bit 5  MR/SD – Step direction / side select (0 = inward / side 1)
+ *   bit 6  /HL   – Head Load (active low)
+ *   bit 7  /ST   – Step pulse (active low, edge-triggered)
+ * @endcode
+ *
+ * Ctrl PIO Port B bit layout (drive → CPU input):
+ * @code
+ *   bit 0  /RDYL – Ready (active low, 0 = drive ready)
+ *   bit 1  MKE   – Index mark detected
+ *   bit 2  /HF   – High Frequency indicator (output, 1 = FM/5")
+ *   bit 3  PRE   – Pre-compensation (output)
+ *   bit 4  /FA   – Fault Adapter (active low; 1 = no fault)
+ *   bit 5  /WP   – Write Protect (active low, 0 = protected)
+ *   bit 6  /FW   – Track 0 (active low, 0 = at track 0)
+ *   bit 7  /TO   – Timeout (active low, 1 = no timeout)
+ * @endcode
+ *
+ * @see k5122.h
+ * @see doc/design/07_k5122_afs.md
+ * @author Olaf Krieger
+ * @date 2024–2025
+ * @license MIT License
+ */
 
 #include "k5122.h"
 #include <algorithm>
@@ -31,6 +44,15 @@
 
 // ─── Construction ─────────────────────────────────────────────────────────────
 
+/**
+ * @brief Construct a K5122 floppy controller and initialise drive status.
+ *
+ * Pre-populates the ctrl PIO Port B with the "no drive mounted" status byte
+ * (0xF5) so that the first read of port 0x12 returns a sensible value before
+ * any disk is mounted.
+ *
+ * @param bus K1520 system bus reference (used for BUSRQ/BUSAK DMA protocol)
+ */
 K5122::K5122(K1520Bus& bus) : bus_(bus) {
     // Pre-populate the ctrl PIO Port B with "no drive mounted" status so that
     // the very first read of port 0x12 returns something sensible.
@@ -39,6 +61,17 @@ K5122::K5122(K1520Bus& bus) : bus_(bus) {
 
 // ─── BusDevice ────────────────────────────────────────────────────────────────
 
+/**
+ * @brief Handle an IN instruction to a K5122 I/O port.
+ *
+ * Dispatches to the ctrl PIO (0x10–0x13), data PIO (0x14–0x17), or returns
+ * 0xFF for unknown ports.  Special handling for port 0x16 (data Port B):
+ * during an active read transfer, returns the next byte from sector_buf_ and
+ * auto-releases BUSRQ after the last byte is consumed.
+ *
+ * @param port Port address (0x10–0x18)
+ * @return Data byte from the selected sub-device or sector buffer
+ */
 uint8_t K5122::ioRead(uint8_t port) {
     uint8_t result = 0xFF;
 
@@ -88,6 +121,17 @@ uint8_t K5122::ioRead(uint8_t port) {
     return result;
 }
 
+/**
+ * @brief Handle an OUT instruction to a K5122 I/O port.
+ *
+ * Dispatches to the ctrl PIO (0x10–0x13), data PIO (0x14–0x17), or the 8212
+ * drive-select (0x18).  Writing to ctrl Port A (0x10) additionally triggers
+ * handleCtrlPortAWrite() for step/strobe edge detection.  Writing to data Port
+ * A (0x14) additionally triggers handleDataPortAWrite() to accumulate write data.
+ *
+ * @param port Port address (0x10–0x18)
+ * @param data Byte written by CPU
+ */
 void K5122::ioWrite(uint8_t port, uint8_t data) {
     if (port >= 0x10 && port <= 0x13) {
         const char* port_name =
@@ -133,20 +177,46 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
 // ─── InterruptSlave ──────────────────────────────────────────────────────────
 // Daisy-chain order: IEI → ctrl_pio_ → data_pio_ → IEO (K5122 output).
 
+/**
+ * @brief Set /IEI from the upstream interrupt chain and propagate internally.
+ *
+ * Daisy-chain order: IEI → ctrl_pio_ → data_pio_ → IEO out.
+ *
+ * @param iei true when the upstream device passes the interrupt enable signal
+ */
 void K5122::setIEI(bool iei) {
     iei_in_ = iei;
     ctrl_pio_.setIEI(iei);
     data_pio_.setIEI(ctrl_pio_.getIEO());
 }
 
+/**
+ * @brief Return /IEO to pass to the downstream device in the daisy chain.
+ *
+ * Reflects data_pio_.getIEO(), which is false when either PIO has a pending
+ * interrupt that blocks further propagation.
+ *
+ * @return true to pass the enable signal downstream; false if chain is blocked
+ */
 bool K5122::getIEO() const {
     return data_pio_.getIEO();
 }
 
+/**
+ * @brief Check whether ctrl_pio_ or data_pio_ has a pending interrupt.
+ * @return true if either PIO requires CPU attention
+ */
 bool K5122::hasInterrupt() const {
     return ctrl_pio_.hasInterrupt() || data_pio_.hasInterrupt();
 }
 
+/**
+ * @brief Return the interrupt vector from the highest-priority PIO.
+ *
+ * ctrl_pio_ has priority over data_pio_ (it is first in the daisy chain).
+ *
+ * @return 8-bit interrupt vector, or 0xFF if no interrupt is pending
+ */
 uint8_t K5122::getVector() const {
     if (ctrl_pio_.hasInterrupt()) return ctrl_pio_.getVector();
     if (data_pio_.hasInterrupt()) return data_pio_.getVector();
@@ -155,6 +225,19 @@ uint8_t K5122::getVector() const {
 
 // ─── Disk management ─────────────────────────────────────────────────────────
 
+/**
+ * @brief Mount a disk image on a drive.
+ *
+ * Opens @p path with the given geometry @p fmt and associates it with @p drive.
+ * If @p drive is the currently selected drive, ctrl PIO Port B status is
+ * updated immediately so the CPU sees the drive as ready.
+ *
+ * @param drive         Drive number 0–3
+ * @param path          Path to disk image file
+ * @param fmt           Disk geometry and sector format
+ * @param write_protect true to prevent writes to the image (default false)
+ * @return true on success; false if the file is not found or @p drive is invalid
+ */
 bool K5122::mountDisk(int drive, const std::string& path,
                       const DiskFormat& fmt, bool write_protect) {
     if (drive < 0 || drive > 3) return false;
@@ -165,6 +248,15 @@ bool K5122::mountDisk(int drive, const std::string& path,
     return ok;
 }
 
+/**
+ * @brief Unmount the disk image from a drive.
+ *
+ * Marks the drive as empty and updates ctrl PIO Port B if @p drive is
+ * currently selected.
+ *
+ * @param drive Drive number 0–3
+ * @return true on success; false if @p drive is out of range
+ */
 bool K5122::unmountDisk(int drive) {
     if (drive < 0 || drive > 3) return false;
     drives_[drive].unmount();
@@ -174,21 +266,49 @@ bool K5122::unmountDisk(int drive) {
     return true;
 }
 
+/**
+ * @brief Check whether a disk image is mounted on a drive.
+ * @param drive Drive number 0–3
+ * @return true if a disk is currently mounted; false if drive is empty or index invalid
+ */
 bool K5122::isDiskActive(int drive) const {
     if (drive < 0 || drive > 3) return false;
     return drives_[drive].isMounted();
 }
 
+/**
+ * @brief Query the simulated drive activity LED state.
+ *
+ * Returns true for 180 ms after any step, read, or write operation on
+ * @p drive.  The time is measured from the last call to markDriveAccess().
+ *
+ * @param drive Drive number 0–3
+ * @return true if the drive LED should be shown as on
+ */
 bool K5122::isDriveLedOn(int drive) const {
     if (drive < 0 || drive > 3) return false;
     return std::chrono::steady_clock::now() < led_until_[static_cast<size_t>(drive)];
 }
 
+/**
+ * @brief Check the write-protect status of a mounted disk.
+ * @param drive Drive number 0–3
+ * @return true if the disk is write-protected; false if writable or index invalid
+ */
 bool K5122::isDiskWriteProtected(int drive) const {
     if (drive < 0 || drive > 3) return false;
     return drives_[drive].isWriteProtect();
 }
 
+/**
+ * @brief Set the write-protect flag on a mounted disk.
+ *
+ * Updates ctrl PIO Port B (bit 5 = /WP) immediately if @p drive is the
+ * currently selected drive.
+ *
+ * @param drive Drive number 0–3
+ * @param wp    true to enable write protection; false to allow writes
+ */
 void K5122::setWriteProtect(int drive, bool wp) {
     if (drive < 0 || drive > 3) return;
     drives_[drive].setWriteProtect(wp);
@@ -199,6 +319,25 @@ void K5122::setWriteProtect(int drive, bool wp) {
 
 // ─── Private: ctrl Port A handler ────────────────────────────────────────────
 
+/**
+ * @brief Decode and act on a write to ctrl Port A (port 0x10).
+ *
+ * Detects two falling-edge signals:
+ *
+ * - `/ST` (bit 7): Step pulse.  Calls doStep() to advance or retract the
+ *   head by one cylinder.  Direction from MR/SD (bit 5).
+ *
+ * - `/STR` (bit 3): Start / Strobe.
+ *   - If BUSRQ is already held (ZVE2 committing a write): calls doWriteSector()
+ *     and releases BUSRQ.
+ *   - Otherwise (ZVE1 triggering a new transfer): for read, calls doReadSector()
+ *     and fills sector_buf_; for write, clears sector_buf_ for ZVE2 to fill.
+ *     Then asserts BUSRQ.
+ *
+ * Also updates current_head_ from bit 5 (MR/SD) and refreshes ctrl Port B status.
+ *
+ * @param data Byte written to ctrl PIO Port A
+ */
 void K5122::handleCtrlPortAWrite(uint8_t data) {
     // ── Step pulse: /ST (bit 7) falling edge ─────────────────────────────────
     if ((prev_ctrl_a_ & 0x80) && !(data & 0x80)) {
@@ -251,6 +390,17 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
 
 // ─── Private: data Port A handler ────────────────────────────────────────────
 
+/**
+ * @brief Accumulate one byte into the sector write buffer.
+ *
+ * Called when the CPU writes to data Port A (port 0x14).  Bytes are appended
+ * to sector_buf_ for later commit by doWriteSector().  The read pointer
+ * buf_pos_ is reset to 0 on each call so a subsequent read would start from
+ * the beginning of the buffer (although reads and writes do not mix in
+ * normal operation).
+ *
+ * @param data Byte from the CPU to append to the sector buffer
+ */
 void K5122::handleDataPortAWrite(uint8_t data) {
     // Accumulate write data regardless of mode; doWriteSector() will consume it.
     sector_buf_.push_back(data);
@@ -259,6 +409,20 @@ void K5122::handleDataPortAWrite(uint8_t data) {
 
 // ─── Private: status ─────────────────────────────────────────────────────────
 
+/**
+ * @brief Compose the drive status byte and inject it into ctrl PIO Port B.
+ *
+ * Builds the Port B status byte for the currently selected drive:
+ * @code
+ *   Default (not mounted): 0xF5  = /TO=1, /FW=1, /WP=1, /FA=1, PRE=0, /HF=1, MKE=0, /RDYL=1
+ *   Drive mounted:         /RDYL cleared (bit 0 = 0)
+ *   At track 0:            /FW   cleared (bit 6 = 0)
+ *   Write-protected:       /WP   cleared (bit 5 = 0)
+ * @endcode
+ *
+ * The composed byte is pushed into ctrl_pio_.portBWrite() so the CPU can
+ * read it via IN port 0x12.  Called after every drive-state change.
+ */
 void K5122::updateStatusPortB() {
     // Compose Port B status byte (active-low signals are 0 when active).
     //
@@ -283,6 +447,14 @@ void K5122::updateStatusPortB() {
 
 // ─── Private: floppy operations ──────────────────────────────────────────────
 
+/**
+ * @brief Advance (or retract) the head of the selected drive by one cylinder.
+ *
+ * Direction is determined by step_dir_in_ (derived from MR/SD bit 5 of ctrl
+ * Port A): true = step inward (toward higher cylinder numbers), false = outward.
+ * No-op if no disk is mounted in the selected drive.
+ * Updates current_cyl_[selected_drive_] and records the access for LED simulation.
+ */
 void K5122::doStep() {
     FloppyDrive& drv = drives_[selected_drive_];
     if (!drv.isMounted()) return;
@@ -295,6 +467,18 @@ void K5122::doStep() {
     current_cyl_[selected_drive_] = drv.currentCylinder();
 }
 
+/**
+ * @brief Read one sector from the selected drive into sector_buf_.
+ *
+ * Uses current_cyl_[selected_drive_], current_head_, and current_sector_ to
+ * locate the sector in the disk image.  On success:
+ * - sector_buf_ contains the sector data
+ * - buf_pos_ = 0 (read from beginning)
+ * - transferring_ = true, write_mode_ = false
+ *
+ * No-op if no disk is mounted; logs a warning and returns without modifying
+ * sector_buf_.
+ */
 void K5122::doReadSector() {
     FloppyDrive& drv = drives_[selected_drive_];
     if (!drv.isMounted()) {
@@ -324,6 +508,19 @@ void K5122::doReadSector() {
               sector_buf_.size() > 3 ? sector_buf_[3] : 0xFF);
 }
 
+/**
+ * @brief Write the accumulated sector_buf_ to the selected drive.
+ *
+ * Commits the write buffer to the disk image at the current cylinder, head,
+ * and sector position.  After a successful write, current_sector_ is advanced
+ * (wrapping at secs_per_track), sector_buf_ is cleared, and the transfer
+ * state is reset.
+ *
+ * Early-exit conditions (logs a warning):
+ * - No disk mounted in the selected drive
+ * - Drive is write-protected
+ * - sector_buf_ is empty (no data accumulated)
+ */
 void K5122::doWriteSector() {
     FloppyDrive& drv = drives_[selected_drive_];
     if (!drv.isMounted()) {
@@ -366,6 +563,14 @@ void K5122::doWriteSector() {
     write_mode_   = false;
 }
 
+/**
+ * @brief Record the time of the most recent disk access to drive the LED simulation.
+ *
+ * Sets led_until_[drive] to now + led_hold_time_ (180 ms).  isDriveLedOn()
+ * returns true until this deadline passes.
+ *
+ * @param drive Drive number 0–3 (out-of-range values are silently ignored)
+ */
 void K5122::markDriveAccess(int drive) {
     if (drive < 0 || drive > 3) return;
     led_until_[static_cast<size_t>(drive)] =
@@ -373,12 +578,22 @@ void K5122::markDriveAccess(int drive) {
 }
 
 // ─── DMA-Update Fallback (aufgerufen wenn ZVE2 im Reset, BUSRQ aktiv) ────────
-//
-// Für READ-Transfers: sector_buf_ wurde bereits in handleCtrlPortAWrite() gefüllt.
-// ZVE1 (Boot-ROM Byte-Polling) liest danach selbst via IN A,(16h).
-// Für WRITE-Transfers: doWriteSector() wird hier ausgeführt.
-// Gibt BUSRQ frei, damit ZVE1 weiterläuft.
 
+/**
+ * @brief Perform the pending DMA transfer and release /BUSRQ (ZVE2 fallback).
+ *
+ * Called by the A5120Machine run loop while /BUSRQ is asserted and ZVE2 is in
+ * reset (boot-ROM phase).  Behaviour depends on the direction of the pending
+ * transfer:
+ *
+ * - **Write**: calls doWriteSector() to commit sector_buf_ to the disk image.
+ * - **Read**: sector_buf_ was already filled by doReadSector() in
+ *   handleCtrlPortAWrite(); ZVE1 (boot ROM, byte-polling via IN A,(16h))
+ *   drains the buffer after BUSRQ is released.
+ *
+ * After executing the transfer, clears dma_pending_ and calls
+ * bus_.releaseBUSRQ() so ZVE1 can resume.  No-op if dma_pending_ is false.
+ */
 void K5122::dmaUpdate() {
     if (!dma_pending_) return;
 
