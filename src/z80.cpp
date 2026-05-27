@@ -37,7 +37,8 @@ Z80::Z80() {
  * @brief Setzt alle CPU-Register und den internen Zustand auf Anfangswerte zurück.
  *
  * Nach dem Reset:
- * - Alle Haupt- und Schattenregister sind 0
+ * - AF = 0xFFFF (A=0xFF, F=0xFF – reales Z80-Power-on-Verhalten)
+ * - BC/DE/HL und Schattenregister sind 0
  * - SP ist 0xFFFF (oberste Speicheradresse)
  * - PC ist 0x0000 (Startadresse)
  * - Interrupts sind deaktiviert (IFF1=IFF2=false)
@@ -46,7 +47,11 @@ Z80::Z80() {
  * - Taktzyklenzähler ist 0
  */
 void Z80::reset() {
-    AF = BC = DE = HL = 0;
+    // Real Z80 hardware: registers indeterminate after reset.
+    // In practice A=0xFF, F=0xFF on power-on (observed on Z8400 chips).
+    // The A5120 boot ROM was designed with this assumption.
+    AF = 0xFFFF;
+    BC = DE = HL = 0;
     AF_ = BC_ = DE_ = HL_ = 0;
     IX = IY = 0;
     PC = 0;

@@ -38,10 +38,14 @@ uint8_t K1520Bus::memRead(uint16_t addr) {
         LOG_TRACE("K1520Bus", "memRead 0x%04X: /MEMDI aktiv → 0xFF", addr);
         return 0xFF;
     }
+    // Take the last READABLE device that covers this address.
+    // Devices with isReadable()=false (e.g. K7024 with Lesesperre active)
+    // do not drive the data bus and are skipped.
     MemDevice* hit = nullptr;
     for (auto& r : mem_regions_)
         if (addr >= r.base && addr < static_cast<uint32_t>(r.base + r.size))
-            hit = r.dev;
+            if (r.dev->isReadable())
+                hit = r.dev;
     uint8_t val = hit ? hit->memRead(addr) : 0xFF;
     if (trace_cb_) trace_cb_(false, true, addr, val);
     LOG_TRACE("K1520Bus", "MEM RD 0x%04X => 0x%02X%s", addr, val, hit ? "" : " (kein Gerät)");
@@ -53,19 +57,21 @@ void K1520Bus::memWrite(uint16_t addr, uint8_t data) {
         LOG_TRACE("K1520Bus", "memWrite 0x%04X=0x%02X: /MEMDI aktiv → ignoriert", addr, data);
         return;
     }
-    // Suche das letzte BESCHREIBBARE Gerät für diese Adresse.
-    // Damit können Schreibzugriffe in den ROM-Adressbereich (0000H-03FFH)
-    // korrekt an das Hintergrund-RAM (K3526) weitergeleitet werden,
-    // auch wenn das Lade-ROM für Lesezugriffe Vorrang hat.
-    MemDevice* hit = nullptr;
+    // Write to ALL writable devices that cover this address.
+    // On real K1520 hardware the write signal (/WR + /MREQ) is broadcast on the
+    // bus; every device whose address decoder fires will latch the data.
+    // This is required for the K7024 Lesesperre configuration:
+    //   - K7024 (isWritable=true, isReadable=false): receives write for screen update
+    //   - K3526 (isWritable=true, isReadable=true):  also receives write for storage
+    bool wrote = false;
     for (auto& r : mem_regions_)
         if (addr >= r.base && addr < static_cast<uint32_t>(r.base + r.size))
-            if (r.dev->isWritable())
-                hit = r.dev;
-    if (hit)
-        hit->memWrite(addr, data);
+            if (r.dev->isWritable()) {
+                r.dev->memWrite(addr, data);
+                wrote = true;
+            }
     if (trace_cb_) trace_cb_(false, false, addr, data);
-    LOG_TRACE("K1520Bus", "MEM WR 0x%04X <= 0x%02X%s", addr, data, hit ? "" : " (kein beschreibbares Gerät)");
+    LOG_TRACE("K1520Bus", "MEM WR 0x%04X <= 0x%02X%s", addr, data, wrote ? "" : " (kein beschreibbares Gerät)");
 }
 
 uint8_t K1520Bus::ioRead(uint8_t port) {

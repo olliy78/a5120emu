@@ -84,6 +84,17 @@ public:
     void setBusTrace(K1520Bus::BusTrace cb) { bus_.setTraceCallback(std::move(cb)); }
     /** @brief Current PC of the ZVE1 (main Z80). */
     uint16_t cpuPC() const { return zre_.cpuPC(); }
+    uint16_t cpuSP() const { return zre_.cpu().SP; }
+    uint16_t cpuAF() const { return zre_.cpu().AF; }
+    uint16_t cpuBC() const { return zre_.cpu().BC; }
+    uint16_t cpuDE() const { return zre_.cpu().DE; }
+    uint16_t cpuHL() const { return zre_.cpu().HL; }
+    bool     isRomEnabled() const { return zre_.isRomEnabled(); }
+
+    /** @brief Install a per-instruction trace callback on ZVE1. */
+    void setCpuTraceCallback(std::function<void(const Z80&)> cb) {
+        zre_.cpu().traceCallback = std::move(cb);
+    }
 
     // Debug
     std::string lastError() const { return last_error_; }

@@ -82,6 +82,17 @@ public:
      * @return true for RAM, false for ROM
      */
     virtual bool    isWritable() const { return true; }
+
+    /**
+     * @brief Check if this device drives the data bus during reads.
+     *
+     * When false (Lesesperre active on K7024), this device's memRead() is
+     * never called — a lower-priority device responds instead.  Writes still
+     * go to this device when isWritable() returns true.
+     *
+     * @return true by default; override to false for Lesesperre/read-inhibit
+     */
+    virtual bool    isReadable() const { return true; }
 };
 
 /**

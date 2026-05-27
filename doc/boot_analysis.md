@@ -157,10 +157,206 @@ Für spätere BIOS-Interrupt-Behandlung relevant.
 
 ## 5. Nächste Schritte
 
-1. Build + Lauf mit boot_trace prüfen, ob CALL 0303h (Floppy-Bootstrap) erreicht wird.
-2. Falls ja: Floppy-Emulation testen (K5122 AFS).
-3. Falls nein: PC-Histogramm aus boot_trace auswerten, um Schleifenkerne zu identifizieren.
+1. Build + Lauf mit boot_trace (-s -v -c 10000000) prüfen, ob CALL 0303h erreicht wird.
+2. Insbesondere: erscheint Milestone 0x003E (PUSH-AF-Sequenz) jemals?
+3. Falls 0x003E nie erscheint: Stack-Analyse aus dem Single-Step-Trace auswerten.
+4. Falls 0x003E erscheint: Wert von [0xFFFC] und Bedingungen für RLCA prüfen.
+5. Floppy-Emulation erst testen, wenn CALL 0x0303 bestätigt ist.
 
+---
+
+## 6. Detailanalyse des Boot-ROM-Ablaufs (Mai 2026)
+
+### 6.1 Disassembly der kritischen ROM-Bereiche (0x0000–0x006F)
+
+Die ROM-Bytes aus `ZRE_BOOT_ROM` wurden manuell disassembliert. Das ROM ist
+**doppelt-kodiert**: viele Bytes sind als Paar wiederholt (z.B. `F3 F3 = DI DI`).
+Tatsächliche Instruktionssequenz:
+
+```
+; Reset-Vektor und frühe Initialisierung
+0x0000: EE 77     XOR A, 0x77        ; A = 0xFF ^ 0x77 = 0x88, S=1
+0x0002: F3        DI
+0x0003: F3        DI
+0x0004: 19        ADD HL, DE
+0x0005: 19        ADD HL, DE
+0x0006: 27        DAA
+0x0007: 50        LD D, B            ; D = B (=0 nach Reset)
+0x0008: 04        INC B              ; RST-08h-Vektor: INC B
+0x0009: 45        LD B, L
+0x000A: F0        RET P              ; Return if Sign=0 (hier S=1 → kein Sprung)
+0x000B: F0        RET P
+0x000C: 11 11 50  LD DE, 0x5011
+0x000F: 50        LD D, B
+0x0010: 1B        DEC DE             ; DE = 0x500F
+0x0011: 1B        DEC DE             ; DE = 0x500E
+0x0012: F3        DI
+0x0013: F3        DI
+0x0014: 3D        DEC A              ; A = 0x87
+0x0015: 3D        DEC A              ; A = 0x86, S=1
+0x0016: F8        RET M              ; S=1 → AUSGEFÜHRT!
+                                     ; PCL = [0xFFFF] = 0xFF (K3526 init)
+                                     ; PCH = [0x0000] = 0xEE (ROM)
+                                     ; → PC = 0xEEFF, SP = 0x0001
+0x0017: F8        RET M (nicht erreicht)
+
+; RST-18h-Handler (Timing-Schleife, Kern)
+0x0018: 09        ADD HL, BC
+0x0019: 09        ADD HL, BC
+0x001A: D3 D3     OUT (0xD3), A      ; Timing-Delay (11 T-States, kein registr. Gerät)
+0x001C: 10 3E     DJNZ 0x5C          ; B-- / wenn B≠0: → 0x5C
+0x001E: D3 D3     OUT (0xD3), A      ; (nach DJNZ-Durchfall)
+0x0020: 30 FF     JR NC, 0x21        ; wenn Carry=0: → 0x21 (RST 38h)
+0x0022: FF        RST 38h            ; (wenn Carry=1: hier)
+
+; RST-20h-Vektor (zufällig in Codebereich)
+; 0x0020-0x0025: 0x30 FF FF FF FF FF → JR NC + 4× RST 38h
+0x0026: F8        RET M
+0x0027: F8        RET M
+
+; RST-28h-Handler
+0x0028: F7        RST 30h
+
+; RST-30h-Handler
+0x0030: 3F        CCF                ; Carry invertieren
+0x0031: 3E DF     LD A, 0xDF
+0x0033: DF        RST 18h            ; push 0x0034 → 0x0018
+
+; RST-38h-Handler (Entscheidungsknoten)
+0x0038: 87        ADD A, A           ; A = A*2, setzt S/Z/C
+0x0039: 28 0D     JR Z, 0x48         ; wenn Z=1 (A war 0x00 oder 0x80) → RLCA-Pfad
+0x003B: 0D        DEC C
+0x003C: F7        RST 30h            ; push 0x003D → 0x0030 (Hauptschleife)
+0x003D: F7        RST 30h            ; push 0x003E → 0x0030 (selten erreicht!)
+0x003E: F5        PUSH AF            ; schreibt A an [SP-1]
+0x003F: F5        PUSH AF
+0x0040: 3A FC FF  LD A, (0xFFFC)     ; liest Stack-Inhalt (K3526 mit Lesesperre)
+0x0043: FF        RST 38h            ; push 0x0044 → 0x0038
+
+; RLCA-Ausstiegspfad
+0x0048: 07        RLCA               ; A rotieren
+0x0049: 18 1D     JR 0x68            ; immer → 0x68
+
+; DJNZ-Sprungziel (innere Schleife)
+0x005C: 26 00     LD H, 0
+0x005E: F5        PUSH AF            ; A=0xDF an Stack
+0x005F: F5        PUSH AF
+0x0060: 7F        LD A, A (NOP)
+0x0061: FF        RST 38h            ; push 0x0062 → 0x0038
+
+; Ausstiegsprüfung
+0x0068: B7        OR A               ; Flags auf A setzen
+0x0069: B7        OR A
+0x006A: FC FC 28  CALL M, 0x28FC     ; wenn S=1 (A≥0x80): call in RAM (0xFF→RST38h)
+0x006D: 28 CB     JR Z, 0x3C        ; wenn Z=1 (A=0): zurück zur Schleife → LOOP
+0x006F: CD 03 03  CALL 0x0303        ; wenn A in 0x01–0x7F: FLOPPY-BOOTSTRAP!
+```
+
+### 6.2 Bedingung für den Boot-Ausstieg
+
+Für `CALL 0x0303` muss nach dem `RLCA` (0x0048) gelten:
+- `A ∈ 0x01..0x7F` (nicht-null, nicht-negativ)
+
+`RLCA` rotiert A zirkulär links. Da JR Z nach `ADD A,A` genau dann springt, wenn
+A=0x00 oder A=0x80 war (beides liefert A=0x00 nach ADD):
+
+- `[0xFFFC] = 0x00` → ADD A,A → 0x00 → RLCA(0x00) = 0x00 → `JR Z` zurück → **Loop**
+- `[0xFFFC] = 0x80` → ADD A,A → 0x00, C=1 → RLCA(0x00) = 0x00 → **Loop**
+- `[0xFFFC] = 0xDF` → ADD A,A → 0xBE, S=1, Z=0 → kein JR Z → DEC C, RST 30h → **Loop**
+- `[0xFFFC] = 0xFF` → ADD A,A → 0xFE, S=1, Z=0 → **Loop**
+
+**→ Kein normaler Wert in [0xFFFC] scheint den Ausstieg zu ermöglichen!**
+
+Das deutet auf eine der folgenden Ursachen hin:
+
+**Hypothese A: Der Code erreicht 0x003E nie (dominante Hypothese)**  
+0x003E wird nur durch RST 30h an 0x003D gepusht. 0x003D wird nur durch einen RET
+erreicht, der 0x003D vom Stack poppt. Das setzt voraus, dass RET M an 0x0026/0x0027
+feuert — und das setzt voraus, dass die Returnadressen 0x0025/0x0026 auf dem Stack
+liegen. Das PC-Histogramm bestätigt: 0x0040 erscheint NIE. Ursache unklar.
+
+**Hypothese B: Fehlende Hardware-Bedingung (CTC/Port 0xD3)**  
+Die `OUT (0xD3), A`-Instruktionen könnten auf echter Hardware einen CTC-Takteingang
+treiben, der dann per ZC/TO-Ausgang ein Signal für die nächste Stufe erzeugt.
+Im Emulator läuft OUT 0xD3 ins Leere (kein Gerät registriert).
+
+**Hypothese C: K3526-Schreibzugriff auf ROM-überlappten Bereich**  
+Beim RET M an 0x0016: PCH kommt aus ROM[0x0000]=0xEE. Aber RST 38h an 0xEEFF
+schreibt Rücksprungadresse 0xEF00 auf den Stack: [0x0000] = 0xEF in K3526.
+Wenn ROM deaktiviert wird, liest [0x0000] aus K3526 = 0xEF. Dieser Mechanismus
+ist korrekt im Emulator — K3526 isWritable=true bei allen Adressen.
+
+### 6.3 Bug in boot_trace.cpp (behoben)
+
+`fprintf(stderr, "Max cycles: %d\n\n", disk_path, total_limit)` — `disk_path`
+(const char*) war als erstes Argument übergeben, verschob `total_limit` aus dem
+Format. Der Wert für `%d` wurde aus dem Pointer-Wert von `disk_path` gelesen,
+nicht aus `total_limit`. Korrektur: überflüssiges `disk_path` entfernt.
+
+### 6.4 Erweiterungen des boot_trace.cpp (Mai 2026)
+
+Das Tool wurde grundlegend überarbeitet:
+
+| Neu | Beschreibung |
+|-----|-------------|
+| `-s` | Single-Step-Trace: jede ROM-Instruktion mit Registerzustand ausgeben |
+| `-n N` | Anzahl der Single-Step-Instruktionen (Standard: 200) |
+| `-v` | Verbose: jede Änderung von [0xFFFC] mit SP/PC ausgeben |
+| `-c N` | Maximale Zyklen (Standard: 5.000.000) |
+| Milestones | Erkennt 0x003E, 0x0040, 0x0048, 0x006F und meldet erstes Auftreten |
+| ROM-Disable | Erkennt wenn BS-PIO B0=/LD-ROM deaktiviert wird |
+| Register-Dump | Vollständiger CPU-Zustand bei Milestones |
+| [0xFFFC]-Tracking | Protokolliert jeden Wertwechsel mit Cycle-Nummer |
+| ROM-Labels | Disassembly-Kommentare bei PC-Histogramm-Ausgabe |
+
+Außerdem wurden Accessor-Methoden in `A5120Machine` ergänzt:
+`cpuSP()`, `cpuAF()`, `cpuBC()`, `cpuDE()`, `cpuHL()`, `isRomEnabled()`,
+`setCpuTraceCallback()`.
+
+---
+
+## 7. Aktueller Stand (Mai 2026)
+
+| Komponente | Status |
+|---|---|
+| K3526 RAM init 0xFF | ✅ behoben |
+| K7024 VRAM init 0xFF | ✅ behoben |
+| K7024 isWritable()=true | ✅ behoben |
+| Koppelbus ZRE CTC → zc_to | ✅ behoben |
+| Koppelbus zc_to[0] → K8025 CTC | ✅ behoben |
+| boot_trace.cpp fprintf-Bug | ✅ behoben |
+| boot_trace.cpp erweitert | ✅ Milestones, Single-Step, Register-Dump |
+| ROM-Disassembly 0x0000–0x006F | ✅ dokumentiert (Abschnitt 6.1) |
+| Boot-ROM läuft bis CALL 0303h | ⬜ zu verifizieren (Hypothese A/B) |
+| Floppy-Bootstrap lädt | ⬜ blockiert |
+
+---
+
+## 8. Nächste Analyse-Schritte
+
+1. **boot_trace mit Single-Step** ausführen: `./boot_trace -s -n 500 -v disk_b.img`
+   - Prüfen: erscheint 0x003E im Milestone-Log?
+   - Wenn nein: Wann feuert der erste RET M (0x0016)? Was ist auf dem Stack?
+   - Welchen Wert hat SP nach dem RET M an 0x0016?
+
+2. **Hypothese A verifizieren**: Warum erscheint 0x003E nie?
+   - Wohin springt der erste RET M (0x0016)? → PC = [SP] aus K3526 = 0xEEFF
+   - RST 38h an 0xEEFF: schreibt [0x0000]=0xEF in K3526, [0xFFFF] löscht Inhalt
+   - Dann: ADD A,A mit A=0x86 → 0x0C, S=0 → Z=0 → DEC C, RST 30h an 0x003C
+   - Erster RST 30h pushes 0x003D — enthält dieser nach dem tiefen Stapel-Aufbau
+     jemals den Pfad zurück zu 0x003E?
+
+3. **Hypothese B (Port 0xD3)**: Falls ein K2526-CTC-Kanal über interne Logik
+   auf Port 0xD3 reagiert (andere Adressdekodierung?), müsste das in der
+   K2526-Dokumentation nachgeprüft werden.
+
+4. **Längeren Trace** laufen lassen (50M Zyklen): `./boot_trace -c 50000000 disk_b.img`
+   - Reale Hardware braucht ~5M Zyklen bei 2.4576 MHz für ~2 Sekunden.
+   - Falls nach 50M immer noch kein 0x003E: systematisches Problem.
+
+
+
+### some ideas (Rohdaten aus früherer Analyse — siehe Abschnitt 6)
 
 The boot trace still shows the same pattern - just more iterations of the same loop. The 0x001E appears only 3 times (DJNZ falls through 3 times in 5M cycles), but we never escape the loop!
 
@@ -293,3 +489,202 @@ But here's the key insight: HL accumulates across iterations. Each time DJNZ fal
 The fact that 0x001E appears three times in the trace means three DJNZ fall-throughs occurred, which means three times the ADD HL,BC generated carry. Since JR NC at 0x0020 didn't jump those three times, execution fell through to RST 38h at 0x0022 each time.
 
 This creates a complex stack state with multiple return addresses (0x0023, 0x003D, 0x0034, 0x0062, 0xFFFE after wrapping) being pushed and later popped when RET conditions are met. The nested RST/RET trampoline creates an intricate timing sequence. I should try running with 50M or 100M cycles to see if CALL 0x0303 eventually gets reached, since the ROM might just be taking far longer than expected to complete its initialization loop.
+
+### some neuer idears (Rohdaten — siehe Abschnitt 6)
+
+memReadDebug calls bus_.memRead(addr). With Lesesperre active (K7024 isReadable=false), the bus reads from K3526 instead. So the VRAM dump at 0xFFFC-0xFFFF should be showing K3526's content (0xDF), which is what the CPU reads when executing LD A,(0xFFFC).
+
+So 0xFFFC in K3526 = 0xDF. The CPU reads 0xDF, then at 0x0038 does ADD A,A → 0xDF * 2 = 0x1BE → A = 0xBE, C flag set, Z flag clear.
+
+Since Z isn't set, the JR Z at 0x0039 doesn't execute. After DEC C and RST 30h at 0x003C, the boot timing loop would need 0xFFFC to contain 0x80 to get the Z flag set and jump to 0x0048, but it's 0xDF instead. That means 0x80 must be written there somehow—either through a PUSH AF with SP=0xFFFD and A=0x80, or via a direct write operation.
+
+For A to equal 0x80, I'd need ADD A,A with A=0x40 first. The real question is whether the boot ROM ever sets A to 0x40 and executes PUSH AF at the right stack pointer. Let me reconsider this from first principles—the boot ROM works on real hardware, so what's actually different between the emulator and real hardware? On real hardware A starts at 0xFF, while the old emulator had A=0x00, but the new one matches real hardware with A=0xFF. Yet both seem to hit the same loop, which suggests I need to trace through the execution path more carefully.
+
+Tracing with A=0xFF, I get XOR 0x77 producing A=0x88 with the sign flag set, so the conditional returns don't trigger. I need to check the actual ROM bytes to see what's really happening at those addresses rather than relying on my assumptions about the disassembly.
+
+analyse_bootrom.md
+analyse_bootrom.md
+Now I can see the structure more clearly. Let me trace through the critical path:
+
+From the histogram, the hottest addresses are:
+
+0x0019 (ADD HL,BC)
+
+0x003B (DEC C)
+
+0x005E (PUSH AF)
+
+0x0030 (CCF - RST 30h handler)
+
+0x001A (OUT (D3h),A)
+
+0x005F (PUSH AF)
+
+0x0038 (ADD A,A - RST 38h handler)
+
+0x001C (DJNZ 005Ch)
+
+0x0018 (ADD HL,BC - RST 18h handler)
+
+0x005C (LD H,0)
+
+0x0060 (LD A,A - NOP equivalent)
+
+0x0031 (LD A,DFh)
+
+The less frequently hit addresses include the RST handlers at 0x0033 and 0x0061, plus the DJNZ fall-through at 0x001E.
+
+Now I'm tracing through the boot ROM path to understand what happens after the CALL to 0x0303. Looking at the disassembly around 0x006F, I can see this call is reached after some conditional logic involving OR A and a conditional call to 28FCh, followed by a jump. I need to re-examine the exact sequence at 0x0068 to understand the control flow leading up to this critical call. I see that the jump at 0x0048 lands at 0x0068, which is actually the high byte operand of the LD BC instruction, so it executes as OR A. Then there's another OR A at 0x0069, followed by a CALL M instruction at 0x006A that uses the next two bytes as its address operand. 28FC is in K3526 RAM initialized to 0xFF, so if the CALL M is taken (S=1), it jumps there and executes RST 38h, pushing the return address and jumping to 0x0038. If not taken (S=0), execution continues to a conditional jump on the Z flag at 0x006D, and if that's also not taken, it calls 0x0303. To reach that final CALL, I need to trace back through the conditions starting from the RLCA at 0x0048.
+
+Now I'm working through the paths that lead to 0x0068 — specifically, when the ADD A,A result is zero, which happens if A starts as 0x00 or 0x80. If A=0x00, the ADD produces zero with Z=1, so the JR Z at 0x0039 jumps to 0x0048, the RLCA keeps A at 0x00, and then the JR to 0x0068 continues the chain. If A=0x80, the ADD also produces zero after wraparound.
+
+I need to clarify what RLCA actually does — it rotates A left circularly, moving bit 7 into both bit 0 and the carry flag, not rotating through carry. So when A=0x00 after the ADD, RLCA still leaves A at 0x00.
+
+Then the OR A instruction at 0x0068 sets the Z flag since the result is still zero, and the subsequent conditional jumps follow: CALL M doesn't execute because S=0, but JR Z does execute since Z=1, jumping back to 0x003C.
+
+Now with A=0x80 instead, ADD A,A produces 0x100, which wraps to A=0x00 with the carry flag set to 1 and Z=1. The JR Z at 0x0048 takes us to RLCA, but here's where I need to be careful: RLCA operates on the current value of A (which is now 0x00 after the ADD), not the carry flag from before. So bit 7 of 0x00 is 0, meaning RLCA sets C=0 and leaves A=0x00.
+
+Then OR A sets Z=1 again, so JR Z loops back to 0x003C. I'm trying to figure out what initial value at [0xFFFC] would actually break this loop instead of cycling through it. So if [0xFFFC] = 0x80, then ADD A,A produces 0x00 with the zero flag set and carry flag set, which triggers a conditional jump to 0x0048. I'm trying to trace through exactly what happens at each step of this instruction sequence.
+
+At 0x0048, I'm executing RLCA on A = 0x00. This rotates A left circularly—bit 7 wraps around to bit 0—so the result stays 0x00 with carry cleared. The key thing I'm realizing is that RLCA is a circular rotation, not a rotate-through-carry operation like RLA, so it doesn't preserve the carry flag from the previous ADD instruction.
+
+After the jump to 0x0068, I'm testing A with OR A, which sets the zero flag since A is still 0x00. The conditional call at 0x006A doesn't trigger because the sign flag isn't set, so I jump back to 0x003C and loop again. This means A = 0x80 at [0xFFFC] also fails to break out of the loop, so I need to figure out what value would actually allow the CALL at 0x0303 to execute.
+
+For that to happen, after the OR A instruction, I need A to be non-negative (bit 7 = 0) and non-zero. Working backwards through the RLCA and ADD A,A operations, A at [0xFFFC] needs to be in the range 0x01-0x7F to produce the right conditions after the rotation. So when V equals 0x00 or 0x80, the zero flag gets set and the loop continues with A becoming 0x00. But if V is anything else, the code falls through to decrement C and jump to the next routine. I see I misread the control flow earlier. Let me trace through this more carefully—after the RST 30h call at 0x003C pushes its return address, execution jumps to 0x0030 where it toggles the carry flag, loads 0xDF into A, then calls RST 18h which pushes 0x0034 and jumps to 0x0018.
+
+The real puzzle is what happens when those two PUSH AF instructions at 0x003E-0x003F execute—I need to figure out what's actually on the stack at that point and how these nested RST calls are building up the return addresses. After the ADD A,A operation produces 0xBE with carry set, the JR Z check doesn't trigger. Then C gets decremented and RST 30h jumps back to 0x0030, which toggles the carry flag and loads 0xDF into A before jumping to 0x0018 again—so this outer loop decrements C with each iteration while the inner loop keeps cycling through.
+
+Looking at the RST 18h handler, I see it's doing two consecutive ADD HL,BC operations, then an OUT instruction that outputs to port 0xD3, followed by what looks like a DJNZ at 0x001C to loop back. The RST 18h handler loops B times, adding HL to BC twice per iteration and outputting to port D3h, then falls through when B reaches zero. I'm trying to figure out what initializes B—it seems like BC might start at zero after reset, but I need to trace where B actually gets set in the execution flow. then execution continues to 0x0020 and hits another RST instruction at 0x0021 or 0x0022, which pushes yet another return address onto the stack before jumping to 0x0038. So by the time we reach the ADD A,A instruction at 0x0038, the stack is cluttered with multiple return addresses from the different RST calls—0x0034, 0x003D, and 0x0022 or 0x0023. With A already set to 0xBE from the previous ADD A,A operation, I'm now tracking what happens next with this accumulated stack state.
+
+The conditional jumps and RST calls keep stacking more addresses as the code loops, but I'm realizing I need to figure out where the RET instructions actually execute—they're scattered throughout the early initialization section at 0x000A, 0x0016, and 0x0026, but execution only passes through them once at startup, so I'm reconsidering how the control flow actually works here. RST 30h jumps to 0x0030 where CCF clears the carry, then loads 0xDF into A and calls RST 18h. That routine performs ADD HL,BC twice and outputs to port D3h in a loop of 256 iterations, then checks the carry flag from the last addition to determine whether to jump or fall through at 0x0020.
+
+Both paths lead to RST 38h at either 0x0021 or 0x0022, which jumps to 0x0038. There, A becomes 0xBE after doubling 0xDF, the zero flag isn't set so we skip the conditional jump, then C decrements and we loop back via RST 30h. This cycle continues until C reaches zero.
+
+Wait—I'm realizing that LD A,0xDF at 0x0031 reloads A every iteration, so ADD A,A always produces 0xBE. That means the zero flag is never set, so the conditional jump at 0x003A is never taken. The code block at 0x0040-0x0049 is unreachable through this path.
+
+The only way to reach that block would be if RST 30h at 0x003D executes instead, pushing return address 0x003E onto the stack. Then when a RET instruction fires later, it could pop that address and jump into the PUSH AF sequence. But I need to figure out when RST 30h at 0x003D actually gets called. So when RST 30h executes at 0x003C, it pushes 0x003D as the return address and jumps to 0x0030. The handler there runs CCF, loads 0xDF into A, then executes RST 18h—which pushes 0x0034 and jumps into the inner DJNZ loop. After that loop completes, execution continues to RST 38h.
+
+Now I'm seeing the pattern: RST 30h at 0x003C always executes because the JR Z condition is never taken (A is always 0xBE). This means 0x003D gets pushed onto the stack, and eventually some RET instruction pops it, landing back at 0x003D—which is another RST 30h instruction. That one pushes 0x003E and goes through the same handler sequence, creating a chain where each RST 30h invocation returns to the next one.
+
+Looking at the RET instructions scattered throughout the ROM, they're all conditional (RET P or RET M) and located in the RST vector areas—RST 08h has RET P at 0x000A and 0x000B, RST 10h is nearby, and so on. One of these conditional returns must be the one that pops 0x003D off the stack. Looking at where RET M instructions appear at 0x0026 and 0x0027 in the RST 38h area, I'm realizing these would only execute when a RET instruction is encountered with the sign flag set. The question is how execution actually reaches those addresses—tracing through the RST 38h handler at 0x0038, which adds A to itself, conditionally jumps if zero, decrements C, and calls RST 30h, I need to figure out what path leads back into that 0x0026-0x0027 region. Now I'm tracing through the actual execution when RST 38h gets called with the carry flag set during the DJNZ loop. The instruction at 0x0022 triggers RST 38h, which pushes the return address 0x0023 onto the stack and jumps to 0x0038. From there, the ADD A,A operation with A=0xDF produces 0xBE and sets the carry flag, so the conditional jump is skipped. Then DEC C executes, followed by RST 30h at 0x003C, which pushes 0x003D and jumps to 0x0030. At that point, CCF clears the carry, then A gets loaded with 0xDF, and RST 18h pushes 0x0034 before jumping to 0x0018.
+
+At 0x0018, the code performs two ADD HL,BC operations, outputs to port D3h, and runs a DJNZ loop 256 times. If the ADD HL,BC at 0x0019 causes an overflow and sets the carry, then the JR NC at 0x0020 doesn't branch, so execution falls through to RST 38h at 0x0022, which pushes another return address. This means multiple return addresses are accumulating on the stack with each iteration of the loop.
+
+The stack pointer starts at 0xFFFF and descends through K3526 RAM (where Lesesperre causes writes to go to both K7024 and K3526, but reads come from K3526). After the DJNZ/RST sequence completes, RET M at 0x0016 pops the top two bytes and jumps to 0xFFFF with SP at 0x0001. At that address, RST 38h executes (since K3526 RAM contains 0xFF), pushing 0x0000 and jumping to 0x0038. There, ADD A,A operates on A = 0x88 (the result of an earlier XOR with 0x77).
+
+The ADD A,A instruction doubles the accumulator to 0x110, leaving A = 0x10 with the carry flag set. The zero flag is clear since bit 7 of 0x10 is 0. The conditional jump JR Z doesn't execute, then DEC C decrements C from 0 to 0xFF. RST 30h at 0x003C pushes the return address 0x003D onto the stack (SP decrements from 0xFFFF to 0xFFFD) and jumps to 0x0030.
+
+Actually, let me restart the trace more carefully from the beginning with A = 0xFF. XOR A with 0x77 gives 0x88, which sets the sign flag but clears zero, half-carry, and the carry flag—XOR doesn't affect the carry bit the way I was thinking.
+
+Let me reconsider the Z80 flag register layout: bit 7 is sign, bit 6 is zero, bit 5 and 3 are undocumented copies of result bits, bit 4 is half-carry, bit 2 is parity/overflow, bit 1 is add/subtract, and bit 0 is carry.
+
+For the OR operation with result 0x88 (10001000b), I need to check the parity: two bits set means even parity, so PV should be 1. Setting S=1, Z=0, H=0, PV=1, N=0, C=0 gives me the flag byte value. The S flag gets set to 1 after the XOR operation, and then I'm tracing through a sequence of instructions: disabling interrupts twice, adding HL and DE (which doesn't change anything since both are zero), applying DAA to the accumulator, loading D from B, incrementing B, loading B from L, and finally hitting a conditional return that checks the S flag.
+
+Now I'm continuing through the next section where the return at 0x000B isn't taken, then loading DE with 0x5011 from the instruction bytes, which gets modified to 0x0011 after D is set to B (which is 0). DE then decrements twice down to 0x000F, interrupts are disabled again, and the accumulator decrements from 0x88 down to 0x86.
+
+The sign flag is set since 0x86 has bit 7 set to 1, so the RET M instruction at 0x0016 is taken. This triggers a return where the program counter is reconstructed from memory: PCL comes from [0xFFFF] which reads 0xFF from RAM, and PCH comes from [0x0000] which reads 0xEE from ROM, with the stack pointer incrementing to 0x0001 afterward.
+
+Now I'm at address 0xEEFF where there's another RST 38h instruction. I need to trace through what happens when RST executes—it pushes the next instruction's address onto the stack and then jumps to the reset vector at 0x0038. Since the instruction is at 0xEEFF, the next address would be 0xEF00, which gets pushed as the return address before the jump occurs. SP decrements to 0x0000, where the high byte of PC (0xEF) gets written—but 0x0000 is in the boot ROM which is read-only. The K3526 RAM card covers the full address space, so the write might broadcast to it instead of the ROM, or it might fail entirely depending on how the K1520 bus handles writes to shadowed memory regions.
+
+Actually, thinking through this more carefully: the Z80 PUSH instruction stores the high byte first at the higher address, then the low byte at the lower address. So I need to reconsider the order of what's being written where.
+
+For the RST instruction at 0xEEFF, the return address is 0xEF00. With SP starting at 0x0001, the high byte 0xEF gets written to address 0x0000, and the low byte 0x00 gets written to 0xFFFF. This means [0x0000] in K3526 becomes 0xEF (the ROM stays unchanged), and [0xFFFF] gets overwritten from 0xFF to 0x00. After the push, SP becomes 0xFFFF, and execution jumps to 0x0038 where the next instruction is ADD A,A with A = 0x86.
+
+The ADD A,A doubles A to 0x10C, so A becomes 0x0C with the carry flag set. The zero flag isn't set, so the conditional jump isn't taken. Now I'm tracing through the register state at DEC C—C is the low byte of BC, which started at 0, then B was incremented to 1 at 0x0008, but then immediately overwritten back to 0 at 0x0009 when LD B,L executed with L = 0. So BC is still 0 at this point.
+
+Following through the subsequent instructions—DEC DE, DI, DEC A, and RET M—BC remains unchanged at 0x0000. When RST 38h executes, BC is still 0x0000. At 0x003B, DEC C wraps C from 0 to 0xFF, then RST 30h pushes the return address and jumps to 0x0030. There, CCF toggles the carry flag from 1 to 0.
+
+Now loading A with 0xDF, then RST 18h pushes the next instruction address onto the stack and jumps to 0x0018. I'm executing a pair of ADD HL,BC operations that add 0x00FF to HL twice, resulting in 0x01FE with no carry. Then outputting 0xDF to port D3h, followed by DJNZ which decrements B and branches if non-zero.
+
+Since B starts at 0, decrementing gives 0xFF, so the jump to 0x005C executes. At 0x005C I'm clearing H while keeping L at 0xFE, then pushing the accumulator and flags onto the stack—A (0xDF) goes to 0xFFFA and F goes to 0xFFF9, leaving SP at 0xFFF9.
+
+Another PUSH AF follows, storing the same values at 0xFFF8 and 0xFFF7 with SP now at 0xFFF7. The LD A,A is a no-op, then RST 38h pushes the return address 0x0062 onto the stack and jumps to 0x0038. There, ADD A,A doubles 0xDF to get 0xBE with the carry flag set, and the zero flag isn't set so the conditional jump doesn't trigger. Then C gets decremented from 0xFF to 0xFE.
+
+Now RST 30h pushes 0x003D and jumps to 0x0030. After that, CCF clears the carry, A loads 0xDF, and RST 18h pushes 0x0034 before jumping to 0x0018. Then I'm performing ADD HL,BC operations where BC equals 0xFFFE, causing HL to overflow as it adds repeatedly—first from 0x00FE to 0x00FC, then to 0x00FA, with the carry flag staying set throughout.
+
+The next section outputs via D3h, then enters a DJNZ loop where B starts at 0xFF and decrements each iteration. Inside the loop, H gets zeroed, AF gets pushed twice, and RST 38h executes before more arithmetic and flag operations. This inner loop runs 255 times total as B counts down from 0xFF to 0x01, and during each iteration C also decrements by 1, so by the end C has dropped from 0xFE significantly. So the first DJNZ at 0x001C starts with B=0, which decrements to 0xFF and jumps back to 0x005C, giving us 255 total iterations before B wraps to 0x00 and the loop exits. I'm realizing that RST 18h gets called repeatedly from within the inner loop via RST 30h, so the stack keeps growing with each iteration. Let me trace through what happens after that first DJNZ jump: the code loads H with 0, pushes AF twice to the stack, then executes RST 38h, which triggers a chain of RST calls that eventually circles back to RST 30h. if B isn't zero, it loops back to 0x005C. I'm realizing each inner loop iteration pushes a lot onto the stack—between the PUSH AF instructions and the RST calls, that's 10 bytes per iteration. With 255 iterations, that's 2550 bytes being pushed, starting from an SP around 0xFFFB.
+
+After calculating the stack pointer movement, it ends up around 0xF605. Then DJNZ falls through when B reaches zero, continuing to 0x001E where an OUT instruction executes, followed by a conditional jump that depends on the carry flag. This triggers another RST call, pushing the return address and moving the stack pointer further down to around 0xF603.
+
+At the interrupt handler at 0x0038, I'm working through the arithmetic: A gets shifted left (0xDF becomes 0xBE), then C gets decremented. After 255 iterations of the inner loop, C wraps around—starting from 0xFE and subtracting 0xFF in 8-bit arithmetic gives -1, which wraps to 0xFF.
+
+The critical realization is that each inner iteration pushes 10 bytes onto the stack, so the stack grows and the return addresses stored at 0xFFFC keep changing. I need to trace what's actually at 0xFFFC after the RET M instruction at 0x0016 executes, since that's where the execution flow depends on the stack state. SP wraps to 0xFFFF after the push, writing the return address 0x003D across memory locations 0xFFFE and 0xFFFD, then PC jumps to 0x0038 where ADD A,A executes with A=0x86, followed by DEC C (bringing C from 0 to 0xFF), and finally RST 30h at 0x003C pushes the next return address.
+
+After CCF and LD A,0xDF, RST 18h at 0x0033 pushes return address 0x0034 to the stack, placing 0x00 at 0xFFFC and 0x34 at 0xFFFB with SP now at 0xFFFB. I notice that 0xFFFC now contains 0x00, which means when LD A,(0xFFFC) executes, it will read this value.
+
+The inner DJNZ loop starting at 0x0018 runs 255 times (since B=0 wraps to 0xFF). Each iteration pushes AF twice at 0x005E and 0x005F, decrementing SP each time, then executes RST 38h at 0x0061 which pushes the return address 0x0062 onto the stack, further reducing SP to 0xFFF5. I'm recalculating the stack pointer changes through the inner loop iterations—need to verify how many bytes are actually being pushed per cycle since my initial count of 10 bytes per iteration might be off. So that's 2550 bytes of stack space consumed, bringing SP down from 0xFFFB to 0xF605. When DJNZ finally exits with B at zero, execution continues to the next instruction, and I need to trace what happens to HL through all this—it starts at zero but L never gets reset each iteration, so I need to recalculate its actual value at this point.
+
+Now I'm working through the RST 18h calls and how they affect HL. BC starts as 0x00FF, so after two ADD HL,BC operations HL becomes 0x01FE. Then DJNZ jumps back and H gets cleared to zero while L stays at 0xFE, making HL = 0x00FE. The tricky part is tracking what BC becomes after the first RST 18h call, since DEC C happens at 0x003B and I need to figure out its value for the next iteration. written to [0xFFFC]? When SP = 0xFFFD, a PUSH AF operation decrements SP and writes A to the lower address and F to [0xFFFC]. So I need to trace when SP reaches 0xFFFD to understand how [0xFFFC] gets overwritten with 0xDF. Let me trace through the call chain more carefully. RST 18h at 0x003C decremented SP from 0xFFFD to 0xFFFB, writing the return address. Before that, RST 30h had already moved SP from 0xFFFF to 0xFFFD after the DEC C instruction. So I need to track where each RST instruction lands and how SP changes through the sequence. RST 30h at 0x003C triggers another stack write, then CCF and LD A load a value before RST 18h pushes the return address. The DJNZ loop continues decrementing B through 254 more iterations, each consuming 10 bytes of stack space, building up a deep recursion pattern. I need to reconsider the DJNZ behavior more carefully. When B starts at 0xFF, the first decrement gives 0xFE which is non-zero, so it jumps—that's iteration 1. Continuing down, when B reaches 0x01, decrementing gives 0x00, which causes the fall-through. So there are actually 254 inner loop iterations, not 255. Adding the initial pass through with B=0 that triggered the first jump, I'm getting tangled in the exact count. Let me step back and figure out what value needs to be at address 0xFFFC for the code to properly exit this nested loop structure. Let me re-examine the disassembly more carefully. It looks like the bytes are overlapping in a confusing way—the LD BC instruction at 0x0066 loads 0xB781, but then 0x0069 shows OR A, which means the third byte of that load (0xB7) is being reinterpreted as part of the next instruction. Then I'm seeing CALL M with address 0x28FC, followed by JR Z to 0x003C, and finally CALL 0x0303. us here when jumping from 0x0048. At 0x0068, I'm executing OR A using the 0xB7 byte from what looks like a LD BC instruction, which updates the flags based on the A register's value. Since A was 0x00 from the RLCA operation, the sign flag stays clear, so the CALL M at 0x006A won't trigger. The JR Z at 0x006D would be taken if A is 0x00 (setting the Z flag), but if A was 0x01 from rotating 0x80, then Z wouldn't be set.
+
+For the CALL 0x0303 at 0x006F to execute, I need A to be non-zero and positive. Tracing back, A at 0x0069 comes from RLCA at 0x0048, which gets its value from ADD A,A at 0x0038 (invoked via RST 38h at 0x0043), and that ultimately comes from loading a value at memory address 0xFFFC using the BUS.
+
+Now I'm realizing the constraint: [0xFFFC] must be either 0x00 or 0x80 for the JR Z at 0x0039 to jump to 0x0048. If it's 0x80, then ADD A,A produces 0x00 with the carry flag set, triggering the jump, and then RLCA operates on zero.
+
+If it's 0x00, ADD A,A also produces 0x00 but with carry clear, still triggering the jump. In both cases, OR A on the result keeps the zero flag set, so we loop back to 0x003C.
+
+Wait, both paths loop? Let me trace through what actually happens before the LD A,(FFFCh) instruction at 0x0040, because there's an RST 38h right after it at 0x0043 that I need to account for. I'm trying to figure out when execution actually reaches the RET M instruction at 0x0026/0x0027. The RST 38h handler at 0x0038 can't directly jump there, and the return addresses pushed by RST calls from 0x0021 or 0x0022 would be 0x0022 or 0x0023, not 0x0026. I'm realizing there might be an RST instruction at 0x0024 that I need to trace through. I need to trace through how execution actually reaches 0x0026 where that RET M instruction sits. The only ways are either a branch jumps there directly, or sequential execution falls through from 0x0025. If RST 38h at 0x0024 executes, it pushes the return address and jumps to 0x0038, where the code continues with a conditional jump and then decrements C.
+
+Now I'm working through what happens if RST 38h is at 0x0025 instead—it would push 0x0026 and jump to 0x0038, then the arithmetic and conditional logic plays out, eventually triggering RST 30h at 0x003C. That pushes another return address and jumps to 0x0030, which then chains to RST 18h at 0x0018. Meanwhile, at 0x001E there's an OUT instruction followed by a conditional jump, and if the carry flag is clear, it jumps to 0x0021 where another RST 38h executes, pushing 0x0022 onto the stack. The return addresses keep stacking up.
+
+But I'm realizing the core issue: 0x0026 only gets popped if it's at the top of the stack when a RET executes, and that only happens if execution reaches 0x0026 itself. I think I need to step back and consider whether the emulator is missing something fundamental about how the hardware works—maybe the CTC timer isn't triggering interrupts correctly, or the PIO status isn't being read properly, or there's something about port 0xD3 that I'm not accounting for. The histogram shows 0x001A executing around 828 times, which suggests the code is stuck in a loop at that output instruction. So 0xD3 is actually the port number in the OUT instruction—the bytes D3 D3 mean OUT to port 0xD3 with the accumulator. There are two of these instructions at 0x001A and 0x001E, both writing to the same port. Then there's a conditional jump at 0x0020 that uses JR NC with an offset of -1, which loops back to 0x0021.
+
+The interesting part is that both the taken and not-taken paths lead to RST 38h instructions, but they're at different addresses—0x0021 if the jump is taken, 0x0022 if it falls through. This means the return address pushed onto the stack differs depending on which path executes, which matters for what gets popped later.
+
+Now I'm working through what value needs to end up at [0xFFFC] to actually exit the loop. The trace shows 0xDF got stored there, but that doesn't satisfy the exit condition. Let me trace through the mechanics: loading from [0xFFFC] into A, then RST 38h pushes the return address and jumps to 0x0038, where ADD A,A doubles the value and sets flags based on the result. I need to figure out which value would actually trigger the loop exit. So the code jumps to 0x0068, performs an OR operation that sets Z=1, and then the conditional jump at 0x006A takes us back to 0x003C—creating an infinite loop regardless of whether the memory value was 0x00 or 0x80. Let me look more carefully at the actual disassembly around 0x0043 to make sure I'm reading the instruction boundaries correctly. I'm realizing there's a critical control flow issue here—the RST 30h instruction at 0x003D would jump away to 0x0030, so execution could never naturally fall through to reach the LD A,(FFFCh) instruction at 0x0040. This suggests either the code path is unreachable under normal conditions, or there's something about how these RST calls return that I'm not accounting for. 0x003E would only be a return address on the stack if RST 30h at 0x003D executed, which requires either a branch targeting 0x003D or a RET popping 0x003D from the stack. The return address 0x003D gets pushed onto the stack regularly in the main loop when RST 30h at 0x003C fires, so if a conditional RET like RET M executes with 0x003D at the top of the stack, the CPU would jump back to 0x003D and execute it.
+
+When RST 30h at 0x003D runs, it pushes 0x003E onto the stack. The handler then executes through its sequence—CCF, loading 0xDF into A, then RST 18h which triggers a DJNZ loop—and eventually hits RST 38h, which pushes the next return address (0x0022 or 0x0023 depending on where RST 38h is located). After the handler completes and returns, execution lands at PUSH AF at 0x003E.
+
+Now at 0x0038, ADD A,A with A=0xDF produces 0xBE, setting S=1 (since bit 7 is set). The Z flag is 0, so JR Z doesn't trigger. Then DEC C executes, followed by another RST 30h, which again pushes a return address and jumps back into the handler loop.
+
+I'm realizing the stack is accumulating multiple return addresses as the program cycles through these RST instructions. Each iteration of the main loop pushes addresses from RST 30h, RST 18h, and the nested DJNZ iterations with their own RST calls, creating a growing stack of 0x003D, 0x0034, and other return addresses.
+
+The RET M instructions at 0x0026/0x0027 would only execute if the code somehow reaches those addresses, but with A=0xDF producing S=1 after ADD A,A at 0x0038, the program falls through to DEC C and RST 30h instead. For those RET M instructions to trigger, I'd need ADD A,A to produce a result where bit 7 is clear, putting A in the 0x00-0x7F range.
+
+But here's the problem: A is always loaded as 0xDF at 0x0031 before reaching 0x0038, so it should always set S=1. Unless... the code reaches 0x0038 through a different entry point where A holds a different value. RST 38h is the only path to 0x0038, and the key question becomes what value A contains when RST 38h actually fires. Looking at where RST 38h can be triggered from, the initial call at 0xEEFF has A=0x86. So at 0x0034, which is the return address from RST 18h, there's another RST 38h instruction. The execution path gets there when RST 18h pushes 0x0034 and jumps to 0x0018, then after DJNZ falls through and RST 38h executes at 0x0020-0x0022, it eventually returns via RET and pops that 0x0034 address back, landing right at that next RST 38h.
+
+Now I'm trying to figure out when RET M would actually fire—it's at 0x0026 or 0x0027, and it only executes when the program counter reaches those addresses. The tricky part is understanding how execution gets there in the first place, since RST instructions push return addresses rather than directly reaching them. So the S flag is set to 1 when 0xDF becomes 0xBE, which means RET M won't trigger. Let me reconsider the RET P instruction at 0x000A instead. For execution to reach that address, I'd need RST 08h to fire, which would jump to 0x0008 where it loads B with L, then... I need to trace through what happens next. So RST 08h jumps to 0x0008, which executes INC B, then loads B with L, then conditionally returns if the sign flag is clear. Without knowing what L contains at that point, it's hard to trace the full effect, but I'm trying to figure out if RST 08h is actually called during normal execution or if it's just dead code in the ROM.
+
+Looking at RST 28h instead—it chains to RST 30h, which then calls RST 18h, creating this nested sequence of restarts that eventually flows into RST 38h. The manual trace is getting unwieldy with all these jumps and conditional returns, so I'm going to step back and think about this differently. The boot ROM timing loop might actually be working correctly, but it could just be taking an enormous number of cycles to complete—at the A5120's clock speed of 2.4576 MHz, a real boot might take several seconds, which translates to millions of cycles. The emulator could be running the code faithfully but just needs time to finish.
+
+Let me try pushing the cycle count much higher—50 million or even 100 million cycles—to see if the loop eventually breaks out. Or maybe I'm misunderstanding what this loop is actually doing. It might not be a timing loop at all, but rather waiting for some specific hardware condition—like a CTC interrupt signal, a ZC/TO output from the timer, or a PIO status flag. Port 0xD3 keeps appearing in the disassembly, and I should figure out what that port actually controls in the K2526 architecture. = 211 decimal. Port 0xD3 might actually be a STATUS register for the K2526 BS-PIO, but writing to it is puzzling. Actually, I think those OUT instructions to 0xD3 might be functioning as timing delays rather than actual device communication—on real hardware, even writes to non-existent ports consume T-states, so multiple OUT instructions could create a deliberate delay loop. If that's the case, the timing depends on how many iterations the inner loop runs, which would be 256 cycles per B register iteration.
+
+Looking at the histogram data, the hot addresses cluster around specific instructions that execute repeatedly. The DJNZ at 0x001C jumping back to 0x005C suggests a tight inner loop that dominates the execution profile, with those addresses accounting for roughly 8-9% of the total cycles. Tracing through that loop path—0x005E, 0x005F, 0x0060, 0x0061—would show where most of the time is actually spent. 8.5%). 0x001C appears 814 times (8.2%). These are sampled by PC at each batch. The slight difference is because 0x0018 (first ADD HL,BC) is counted separately from 0x0019 (second).
+
+OK so the inner DJNZ runs at a rate of about:
+
+814 (DJNZ at 0x001C) hits in 9883 samples
+If the DJNZ falls through only 3 times in 9883 samples (0x001E appears 3 times = 0.03%), then the ratio is:
+
+814 / 3 ≈ 271 DJNZ iterations per fall-through
+This makes sense: 256 inner iterations (B: 0xFF→0x00) per fall-through.
+Actually it's more: the fall-through at 0x001E happens when B reaches zero, and since B starts at some initial value and decrements each iteration, going from that value down through 0xFF, 0xFE, and so on until hitting 0x00 gives us 256 total DJNZ iterations before the fall-through—which aligns with the 814/3 ≈ 271 ratio I'm seeing. So across the 5M cycle window, the DJNZ falls through just 3 times, meaning each fall-through represents one complete pass through the outer timing loop with a full set of inner iterations and one DEC C operation. On real hardware running at 2.4576 MHz and booting in about 2 seconds, that's roughly 5M cycles total, and in that span the DJNZ falls through 3 times.
+
+But if the boot ROM actually exits after some fixed number of outer loop iterations—say 100—then I'd need about 167M cycles to match that, which seems impractical. I'm wondering now if the exit isn't based on a fixed count at all, but rather triggered by a hardware signal. The OUT instruction to port 0xD3 might be signaling a CTC or PIO, or maybe there's a CTC interrupt involved. Let me reconsider what port 0xD3 actually controls in the A5120's port decoding scheme.
+
+Looking back at the boot analysis, the CTC ports on K2526 are 0x0C-0x0F, but K8025 has additional CTCs and PIOs. The boot ROM does initialize the CTC later for serial baudrate around address 0x0303, so it's not active during the timing loop itself. I need to figure out what port 0xD3 maps to in the K2526 internal I/O space. by the R register, but there's no instruction in the traced code that actually reads it. I'm also wondering if an interrupt could be breaking out of the loop, though interrupts are disabled right after the DI instruction, so that doesn't seem likely either. Let me trace through when interrupts might actually be re-enabled.
+
+Looking at the boot ROM, I'm searching for the EI opcode (0xFB) to see where execution might resume with interrupts active, but I'm not finding it in the disassembly section I've examined so far. So the timing loop appears to run entirely with interrupts disabled.
+
+On actual hardware, the A register starts at 0xFF after reset, and after the XOR and subsequent decrements, it becomes 0x86, which determines how the RET P instruction behaves.
+
+Now I'm tracing through what happens after the ADD A,A operation sets A to 0x0C with the sign flag clear. The JR Z doesn't trigger, then DEC C wraps it to 0xFF, and execution jumps to RST 30h at 0x0030, which clears the carry flag and loads 0xDF into A before jumping to RST 18h.
+
+From there, I'm working through the HL arithmetic operations—adding BC (0x00FF) twice to get HL to 0x01FE—then DJNZ causes B to wrap and jump back. After pushing the accumulator and loading H with 0, another RST 38h triggers, this time with A=0xDF, which produces 0xBE with carry set and sign flag set, leading back through the same conditional jump and RST 30h sequence.
+
+Now I'm loading A with 0xDF and jumping to 0x0018 again, repeating the HL additions with BC=0x00FE to reach 0x01FC. The DJNZ loop continues, and I'm realizing that B actually decrements from 0xFF down through 255 iterations before reaching 0x00 and falling through—the decrement happens before the zero check. Now I'm focusing on the key question: what happens to HL after those 255 inner iterations, and does the ADD HL,BC instruction set the carry flag? I need to carefully track how C changes—it starts at 0xFE after the outer loop's decrement, then gets decremented once per inner iteration, so after 255 iterations C wraps around to 0xFF. Let me trace through the first iteration to verify this pattern. H gets reset to 0 at the start of each inner iteration, so HL becomes 0x00LL where L is the current low byte. Then two ADD HL,BC operations add the current C value (0x00CC) to HL twice, causing L to accumulate with potential carries into H. At the top of the loop, H gets reset to 0, then I'm adding BC to HL twice in succession—so HL accumulates 2*C each iteration, with the result staying within 16-bit bounds since both H and B are 0. the issue now—H gets reset to 0 at the start of each inner loop iteration, but L persists and accumulates. So after the first ADD HL,BC, L holds (L+C) mod 256 with a potential carry into H, and the second ADD HL,BC adds C again, making L grow by roughly 2C per iteration. The carry flag from that second ADD is what determines whether the loop continues.
+
+When H=1 after the first ADD (meaning the previous L plus C exceeded 255), the second ADD becomes 0x01LL + 0x00CC, which still can't overflow 16 bits since H maxes out at 1 and C is at most 255.
+
+But wait—I'm realizing L actually accumulates across iterations, not resetting each time. So at the start of iteration n, L already contains the sum from previous iterations, not just a single byte. That changes everything about whether the 16-bit carry can actually trigger. ADD HL,BC produces a carry only when the 16-bit sum exceeds 0xFFFF, but with H capped at 1 from the first ADD, B at 0, and both C and L at most 0xFF, the maximum possible value is 0x02FE—well below the overflow threshold, so no carry is generated from the second ADD.
+
+This means the conditional jump at 0x0020 always takes the no-carry path, which routes execution to RST 38h and pushes return address 0x0022 onto the stack. The RST 38h at 0x0021 never executes from the normal flow, so 0x0023 is never pushed as a return address—only 0x0022 comes from the DJNZ loop.
+
+Now I need to trace back to understand how [0xFFFC] gets written with a different value and how the boot ROM actually exits, which likely ties back to that first RST 18h call and the stack state it created.
+
+The RST 18h at 0x0033 decrements SP from 0xFFFD to 0xFFFB, writing the high byte 0x00 to [0xFFFC] and the low byte 0x34 to [0xFFFB]. So [0xFFFC] starts at 0x00, and then as the inner loop runs with repeated PUSH AF and RST instructions, the stack pointer keeps moving to lower addresses. The only way [0xFFFC] changes is if one of these pushes executes with SP positioned to write directly to that address. Looking at the trace after 5M cycles, [0xFFFC] has become 0xDF, which means a push operation must have hit that location.
+
+That 0xDF value came from a PUSH AF instruction when SP was 0xFFFD. For SP to reach 0xFFFD, it had to come from RST 30h at 0x003C decrementing from 0xFFFF. The only way SP could be 0xFFFF is if it wrapped around after the initial RST 38h at 0xEEFF brought it down from 0x0001 to 0xFFFF. Then RST 30h decrements it to 0xFFFD, writing the return address bytes to [0xFFFE] and [0xFFFD].
+
+Next, RST 18h at 0x0033 decrements SP again to 0xFFFB, and this is when [0xFFFC] gets written for the first time with the value 0x00. The inner DJNZ loop then runs 255 times, each iteration consuming 10 bytes of stack space, which brings SP down to around 0xF605. After the loop exits, RST 38h at 0x0021 pushes the return address 0x0022 onto the stack.
+
+Now at 0x0038, SP is at 0xF603. The code performs an ADD A,A operation that transforms A from 0xDF to 0xBE with the sign flag set, then checks the zero flag—which isn't set, so the conditional jump is skipped. Then it decrements C and continues.

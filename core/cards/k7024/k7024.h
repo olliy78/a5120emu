@@ -107,17 +107,27 @@ public:
     void    memWrite(uint16_t addr, uint8_t data) override;
 
     /**
-     * @brief Report whether VRAM accepts write cycles from the bus.
+     * @brief K7024 VRAM always accepts write cycles from the bus.
      *
-     * Controlled by jumper X13/X14 (Lesesperre):
-     *  - pos1 closed (read_protect=true):  VRAM is writable; the bus
-     *    routes writes here rather than to the underlying K3526 RAM.
-     *    Required when the top 2 KB of K3526 are in use (boot-ROM stack).
-     *  - pos2 closed (read_protect=false): writes fall through to K3526.
-     *
-     * @return cfg_.read_protect
+     * The Lesesperre (X15:1-X16:1) only blocks the read data path; writes
+     * always reach the VRAM so the screen is updated regardless of the
+     * Lesesperre setting.  K3526 also receives the write concurrently
+     * (broadcast on K1520 bus).
      */
-    bool    isWritable() const override { return cfg_.read_protect; }
+    bool    isWritable() const override { return true; }
+
+    /**
+     * @brief Whether K7024 drives the data bus during CPU read cycles.
+     *
+     * Lesesperre (X15:1-X16:1 geschlossen, read_protect=true): the /DIEN
+     * outputs of bus drivers A81/A121 are blocked → K7024 does NOT respond
+     * to reads; K3526 answers instead.
+     * Without Lesesperre (X15:2-X16:2, read_protect=false): K7024 drives
+     * the bus on reads, delivering VRAM content.
+     *
+     * @return false when Lesesperre is active (A5120 default), true otherwise
+     */
+    bool    isReadable() const override { return !cfg_.read_protect; }
 
     // ─── Bus registration ────────────────────────────────────────────────────
 
