@@ -62,11 +62,15 @@
  */
 class K7024 : public MemDevice {
 public:
-    /** @brief Hardware configuration for the K7024. */
+    /** @brief Hardware configuration for the K7024 — mirrors physical jumper settings. */
     struct A5120Config {
-        uint8_t vram_base_hi; ///< High byte of VRAM base address (default 0xF8 → 0xF800)
-        bool    use_cyrillic; ///< true to use Cyrillic character generator EPROM
-        A5120Config() : vram_base_hi(0xF8), use_cyrillic(false) {}
+        uint8_t vram_base_hi; ///< High byte of VRAM base (X11/X12 all closed → 0xF8 = 0xF800)
+        bool    use_cyrillic; ///< Charset: false=Latin (A103), true=Cyrillic (A123)
+        bool    cursor_blink; ///< X15/X16: pos1 closed → false (ruhend), pos2 → true (blinkend)
+        bool    read_protect; ///< X13/X14: pos1 closed → true (Lesesperre aktiv), pos2 → false
+        A5120Config()
+            : vram_base_hi(0xF8), use_cyrillic(false),
+              cursor_blink(false), read_protect(true) {}
     };
 
     /**
@@ -103,10 +107,17 @@ public:
     void    memWrite(uint16_t addr, uint8_t data) override;
 
     /**
-     * @brief Report that VRAM is writable.
-     * @return true (VRAM is read/write)
+     * @brief Report whether VRAM accepts write cycles from the bus.
+     *
+     * Controlled by jumper X13/X14 (Lesesperre):
+     *  - pos1 closed (read_protect=true):  VRAM is writable; the bus
+     *    routes writes here rather than to the underlying K3526 RAM.
+     *    Required when the top 2 KB of K3526 are in use (boot-ROM stack).
+     *  - pos2 closed (read_protect=false): writes fall through to K3526.
+     *
+     * @return cfg_.read_protect
      */
-    bool    isWritable() const override { return true; }
+    bool    isWritable() const override { return cfg_.read_protect; }
 
     // ─── Bus registration ────────────────────────────────────────────────────
 

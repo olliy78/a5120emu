@@ -65,10 +65,20 @@
  */
 class K8025 : public BusDevice, public InterruptSlave {
 public:
-    /** @brief Hardware configuration (I/O base address). */
+    /** @brief Hardware configuration — mirrors physical jumper/DIP settings. */
     struct A5120Config {
-        uint8_t io_base;             ///< Base I/O port (default 0x50)
-        A5120Config() : io_base(0x50) {}
+        uint8_t io_base;   ///< Base I/O port (default 0x50)
+        /**
+         * DIL-Schalter A41 value as read by the CPU via Register A31 (port 0x54).
+         * Encoding: EIN (closed) = 0, AUS (open) = 1; bit 0 = SW1, bit 7 = SW8.
+         *
+         * Default 0xAE = 0b10101110:
+         *   SW1=EIN(0) Schirmerdung,  SW2=AUS(1), SW3=AUS(1), SW4=AUS(1),
+         *   SW5=EIN(0) 1024B-block,   SW6=AUS(1), SW7=EIN(0) 1024B-block,
+         *   SW8=AUS(1) → 9600 Baud, 1024-Byte Blocklänge (SIOS 1526 Standard).
+         */
+        uint8_t dil_a41;
+        A5120Config() : io_base(0x50), dil_a41(0xAE) {}
     };
 
     /**

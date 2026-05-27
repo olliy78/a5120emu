@@ -33,7 +33,12 @@ K3526::K3526() : K3526(A5120Config{}) {}
  * @param cfg Group base addresses and /MEMDI source selectors
  */
 K3526::K3526(const A5120Config& cfg) : cfg_(cfg) {
-    mem_.fill(0x00);
+    // Real DRAM powers on to an indeterminate state, typically 0xFF.
+    // The boot ROM relies on this: after an intentional RET P at 0x000A the
+    // CPU lands in uninitialized RAM and hits 0xFF (RST 38h) which vectors
+    // back into the ROM's real boot entry at 0x0038.  With 0x00 (NOP) the
+    // CPU never returns to ROM and the boot sequence stalls.
+    mem_.fill(0xFF);
 }
 
 /**

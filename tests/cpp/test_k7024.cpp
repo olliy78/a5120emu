@@ -362,7 +362,53 @@ TEST_F(K7024Test, FramebufferDimensions)
     EXPECT_NE(screen.getFramebuffer(), nullptr);
 }
 
-// ─── 9. Row 1 vs row 0 of VRAM are independent ───────────────────────────────
+// ─── 10. A5120Config: read_protect steuert isWritable() ──────────────────────
+
+/**
+ * @test K7024Test/Config_ReadProtect_True_IsWritable
+ * @brief Default config (read_protect=true, X13/X14 pos1 closed) → isWritable() == true.
+ * @par Pass criterion  screen.isWritable() == true.
+ */
+TEST_F(K7024Test, Config_ReadProtect_True_IsWritable)
+{
+    EXPECT_TRUE(screen.isWritable());
+}
+
+/**
+ * @test K7024/Config_ReadProtect_False_IsNotWritable
+ * @brief read_protect=false (X13/X14 pos2, Lesesperre inaktiv) → isWritable() == false.
+ * @par Pass criterion  isWritable() == false.
+ */
+TEST(K7024, Config_ReadProtect_False_IsNotWritable)
+{
+    K1520Bus bus;
+    K7024::A5120Config cfg;
+    cfg.read_protect = false;
+    K7024 screen(bus, cfg);
+    EXPECT_FALSE(screen.isWritable());
+}
+
+/**
+ * @test K7024/Config_CursorBlink_DefaultFalse
+ * @brief Default A5120Config has cursor_blink == false (X15/X16 pos1 closed = ruhend).
+ * @par Pass criterion  A5120Config{}.cursor_blink == false.
+ */
+TEST(K7024, Config_CursorBlink_DefaultFalse)
+{
+    K7024::A5120Config cfg;
+    EXPECT_FALSE(cfg.cursor_blink);
+}
+
+/**
+ * @test K7024/Config_VramBase_DefaultF800
+ * @brief Default A5120Config places VRAM at 0xF800 (X11/X12 all closed).
+ * @par Pass criterion  A5120Config{}.vram_base_hi == 0xF8.
+ */
+TEST(K7024, Config_VramBase_DefaultF800)
+{
+    K7024::A5120Config cfg;
+    EXPECT_EQ(cfg.vram_base_hi, 0xF8);
+}
 
 /**
  * @test K7024Test/VramRows_AreIndependent

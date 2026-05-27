@@ -377,6 +377,46 @@ TEST(K8025, SubchipAccessors_ReturnCorrectChips)
                 !card.sioA33().channelA().rx_fifo.empty());
 }
 
+// ─── A5120Config: DIL-Schalter A41 ───────────────────────────────────────────
+
+/**
+ * @test K8025/Config_DilA41_DefaultIs0xAE
+ * @brief Default A5120Config has dil_a41 == 0xAE (9600 Baud, 1024B blocks).
+ * @par Pass criterion  A5120Config{}.dil_a41 == 0xAE.
+ */
+TEST(K8025, Config_DilA41_DefaultIs0xAE)
+{
+    K8025::A5120Config cfg;
+    EXPECT_EQ(cfg.dil_a41, 0xAE);
+}
+
+/**
+ * @test K8025/PIOPortA_ReturnsA41Value
+ * @brief Reading port 0x54 (Register A31 Port A) returns the A41 DIP switch value (0xAE).
+ * @details The BIOS reads port 0x54 to determine baud rate (9600) and block size (1024B).
+ * @par Pass criterion  ioRead(0x54) == 0xAE.
+ */
+TEST(K8025, PIOPortA_ReturnsA41Value)
+{
+    K1520Bus bus;
+    K8025 card(bus);
+    EXPECT_EQ(card.ioRead(0x54), 0xAE);
+}
+
+/**
+ * @test K8025/Config_CustomDilA41_IsReturned
+ * @brief A custom dil_a41 value in A5120Config is returned when reading port 0x54.
+ * @par Pass criterion  ioRead(0x54) == custom value.
+ */
+TEST(K8025, Config_CustomDilA41_IsReturned)
+{
+    K1520Bus bus;
+    K8025::A5120Config cfg;
+    cfg.dil_a41 = 0x12;
+    K8025 card(bus, cfg);
+    EXPECT_EQ(card.ioRead(0x54), 0x12);
+}
+
 // ─── setDFUERxCallback ────────────────────────────────────────────────────────
 
 /**

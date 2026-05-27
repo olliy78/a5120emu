@@ -42,6 +42,9 @@ K8025::K8025(K1520Bus& bus, const A5120Config& cfg)
     : cfg_(cfg)
 {
     bus.registerIO(this, cfg_.io_base, 16);
+    // Pre-load Register A31 (U212) with the A41 DIP-switch state so the
+    // BIOS reads the correct baud rate and block size from port 0x54.
+    pio_a31_.portAWrite(cfg_.dil_a41);
     updateInternalChain();
 }
 

@@ -37,9 +37,24 @@ void A5120Machine::wireBackplane() {
     // ZRE BS-PIO is on the second chain via Koppelbus (lowest priority)
     bus_.setInterruptChain({&afs_, &ass_, &zre_});
 
-    // Koppelbus wiring: CTC ZC/TO[2] → CTC channel 3 clock
+    // Koppelbus wiring:
+    // ZRE CTC ZC/TO outputs → Koppelbus zc_to[0..2] signals.
+    // zc_to[2] is also "fest verdrahtet" back to ZRE CTC CLK/TRG[3] (channel cascade).
+    // zc_to[0] feeds K8025 CTC A34 as external baud-rate clock source (W1:7 bridge).
+    zre_.ctc().setZCTOCallback([this](int ch, bool lvl) {
+        if (ch >= 0 && ch < 3)
+            koppel_.zc_to[ch].drive(lvl);
+    });
+
+    // ZRE CTC ZC/TO[2] → ZRE CTC CLK/TRG[3] (hardwired on K2526 via Koppelbus)
     koppel_.zc_to[2].connect([this](bool lvl) {
         zre_.ctc().clkTrg(3, lvl);
+    });
+
+    // ZRE CTC ZC/TO[0] → K8025 CTC A34 external clock input (W1:7 "gezeichnete Stellung")
+    koppel_.zc_to[0].connect([this](bool lvl) {
+        for (int i = 0; i < 4; ++i)
+            ass_.ctcA34().clkTrg(i, lvl);
     });
 
     // Connect keyboard to K8025 SIO A32, Channel A

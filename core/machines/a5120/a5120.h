@@ -80,6 +80,10 @@ public:
     void memWriteDebug(uint16_t addr, uint8_t data) { bus_.memWrite(addr, data); }
     /** @brief Read I/O port through the machine bus for diagnostics. */
     uint8_t ioReadDebug(uint8_t port) { return bus_.ioRead(port); }
+    /** @brief Install a bus trace callback (io, is_read, addr, data). */
+    void setBusTrace(K1520Bus::BusTrace cb) { bus_.setTraceCallback(std::move(cb)); }
+    /** @brief Current PC of the ZVE1 (main Z80). */
+    uint16_t cpuPC() const { return zre_.cpuPC(); }
 
     // Debug
     std::string lastError() const { return last_error_; }

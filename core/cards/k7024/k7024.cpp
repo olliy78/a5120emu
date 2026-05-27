@@ -27,8 +27,7 @@
 #include "core/cards/k7024/k7024.h"
 #include "core/cards/k7024/charset_latin.h"
 #include "core/cards/k7024/charset_cyrillic.h"
-#include <chrono>
-#include <random>
+#include <algorithm>
 
 // ─── Character-generator lookup ───────────────────────────────────────────────
 
@@ -67,15 +66,11 @@ static inline uint8_t chargenLookup(uint8_t charCode, int pixelRow,
 K7024::K7024(K1520Bus& bus, const A5120Config& cfg)
     : bus_(bus), cfg_(cfg)
 {
-    // Real hardware powers up with undefined VRAM content. Initialize VRAM with
-    // pseudo-random bytes so that the first screen image resembles power-on noise.
-    const auto seed = static_cast<uint32_t>(
-        std::chrono::high_resolution_clock::now().time_since_epoch().count());
-    std::minstd_rand rng(seed);
-    std::uniform_int_distribution<int> dist(0, 255);
-    for (auto& cell : vram_) {
-        cell = static_cast<uint8_t>(dist(rng));
-    }
+    // Real DRAM powers on to an indeterminate but typically 0xFF state.
+    // The boot ROM relies on this: the Z80 stack starts at 0xFFFF (in K7024
+    // VRAM), and RET M at ROM[0x0016] pops [0xFFFF] as PCL.  With 0xFF the
+    // CPU lands at 0xEEFF (K3526 RAM = 0xFF = RST 38h) → boot entry 0x0038.
+    std::fill(std::begin(vram_), std::end(vram_), uint8_t{0xFF});
 
     renderAll();
     dirty_ = true;

@@ -1,7 +1,4 @@
-# robotron
-
-**Anschlußsteuerung DFÜ / Drucker**
-**ASS K 8025.50 ... K 8025.80**
+# Anschlußsteuerung DFÜ / Drucker ASS K 8025.50 ... K 8025.80
 
 **Betriebsdokumentation**
 

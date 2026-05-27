@@ -112,8 +112,7 @@ uint8_t K1520Bus::interruptAcknowledge() {
     for (auto* dev : int_chain_)
         if (dev->hasInterrupt()) {
             uint8_t vec = dev->getVector();
-            LOG_DEBUG("K1520Bus", "INT-Quittung: Vektor=0x%02X von %s",
-                      vec, dev->deviceName());
+            LOG_DEBUG("K1520Bus", "INT-Quittung: Vektor=0x%02X", vec);
             return vec;
         }
     return 0xFF;
