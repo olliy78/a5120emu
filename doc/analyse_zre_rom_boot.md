@@ -786,6 +786,553 @@ Mit dem falschen Wert kIndexPeriodCycles=50.000:
 
 ---
 
+## 10. ZVE1 ↔ ZVE2 Handshake beim Lesen der Bootspur
+
+### 10.1 Zwei-CPU-Architektur der K2526-Karte
+
+Die K2526-Karte enthält zwei Z80-Prozessoren, die sich einen gemeinsamen Adressraum (RAM der K3526-Karte)
+teilen und über den Z80-Bus-Arbitrations-Mechanismus (BUSRQ/BUSACK) koordiniert werden:
+
+| CPU  | Rolle                          | Startadresse       |
+|------|--------------------------------|--------------------|
+| ZVE1 | Primäre CPU – führt Boot-ROM aus | 0x0000 (ROM/RAM)  |
+| ZVE2 | DMA-CPU – liest Sektordaten vom K5122 | 0x0000 → JP 0x01DD |
+
+ZVE1 hält den Bus, solange ZVE2 nicht aktiv ist. Wenn ZVE2 läuft und den Bus benötigt
+(um per `IN A,(16h)` / `INI` vom K5122-Puffer zu lesen), assertiert es BUSRQ. Solange
+BUSRQ aktiv ist, tritt ZVE1 den Bus an ZVE2 ab (BUSACK) und macht selbst keinen
+Fortschritt. In `a5120.cpp` ist dies implementiert als:
+
+```cpp
+if (bus_.isBUSRQ()) {
+    if (!zre_.isZVE2InReset() && !zre_.isZVE2Waiting()) {
+        zre_.zve2Step();   // ZVE2 läuft: Bus gehört ZVE2
+    } else {
+        afs_.dmaUpdate();  // ZVE2 gestoppt: BUSRQ direkt freigeben (Fallback)
+    }
+    remaining--;
+    continue;
+}
+```
+
+### 10.2 Gemeinsamer Speicher: Handshake-Variablen
+
+Beide CPUs kommunizieren ausschließlich über RAM-Variablen. Die kritischen Adressen
+(alle in `doc/EPROMS/zre_rom.asm` im Abschnitt `RAM-VARIABLEN-BEREICH 0x03EF–0x03FF`
+dokumentiert):
+
+| Adresse | Schreiber       | Leser | Bedeutung                                            |
+|---------|-----------------|-------|------------------------------------------------------|
+| 0x03F3  | ZVE1 (0x0162)  | ZVE2  | Erwarteter Zylinder für IDAM-Vergleich               |
+| 0x03F4  | ZVE1 (0x0162)  | ZVE2  | Erwarteter Kopf (Head)                               |
+| 0x03F5  | ZVE1 (0x015E)  | ZVE2  | Erwartete Sektor-ID (1-basiert)                      |
+| 0x03F6  | ZVE1 (0x015E)  | ZVE2  | Erwarteter Size-Code                                 |
+| 0x03F7  | ZVE1 (0x0197), ISR | ZVE1 | Indexpuls-Zähler / Timeout-Wächter                  |
+| 0x03F8  | ZVE1 (0x01B3), ZVE2 (0x026B), ISR (0x01D9) | ZVE1 | Abschluss-Flag |
+| 0x03F0  | ZVE1 (0x010A)  | ZVE2  | Ladeadresse für Sektordaten (init: 0x0400)           |
+| 0x03FD  | ZVE1 (0x0153)  | ZVE2  | IDAM-Pfad-Konfiguration (0x87 = korrekt)             |
+
+---
+
+### 10.3 Phase 1 – ZVE1 bereitet den Handshake vor
+
+Nachdem 4 Indexpulse empfangen wurden und `[0x03FD]` auf `0x87` gesetzt ist
+(Abschnitt `STORE_03FD` / `SEEK_SETUP` in `zre_rom.asm` ab Adresse `0x0153`), setzt ZVE1
+die IDAM-Vergleichsparameter und ruft `CALL 0194h` auf (Abschnitt
+`LAUFWERKS-INITIALISIERUNG` in `zre_rom.asm`):
+
+```
+; zre_rom.asm 0x015C–0x0165
+SEEK_SETUP:
+  LD H,00h
+  LD (03F5h),HL      ; [0x03F5]=0 (Sektor-ID), [0x03F6]=0 (Size-Code)
+  LD L,H
+  LD (03F3h),HL      ; [0x03F3]=0 (Zylinder),  [0x03F4]=0 (Kopf)
+  CALL 0194h         ; → Laufwerks-Initialisierung + ZVE2 starten
+```
+
+Die Subroutine `0x0194` führt folgende Schritte in dieser Reihenfolge aus
+(Abschnitt `LAUFWERKS-INITIALISIERUNG` in `zre_rom.asm` ab Adresse `0x0194`):
+
+| Adresse | Aktion | Bedeutung |
+|---------|--------|-----------|
+| `0x0197` | `LD (03F7h),10h` | Timeout-Zähler = 16 Indexpulse (≈ 3,2 s) |
+| `0x0199` | `OUT(14h),A` | Unbekanntes Steuersignal (ZVE2-Vorbereitung) |
+| `0x019B` | `OUT(04h),A` | **ZVE2 aus Reset freigeben** → ZVE2 startet bei PC=0x0000 → JP 0x01DD |
+| `0x019F` | `OUT(17h,FFh)` ×2 | K5122-Puffer reset / Sync |
+| `0x01A5` | `OUT(10h,A5h)` | **Erste /STR-Flanke** → K5122 `doReadSector()` |
+| `0x01AB` | `IN A,(16h)` | Dummy-Lese (positioniert Puffer-Zeiger) |
+| `0x01B0` | `OUT(10h,[03FDh])` | /STR-Pegel auf 0x87 setzen (kein Step, NZ-Pfad) |
+| `0x01B2` | `INC HL` | HL → 0x03F8 |
+| `0x01B3` | `LD (HL),00h` | **[0x03F8] = 0**: ZVE2 läuft, ZVE1 wartet |
+
+**Wichtige Reihenfolge:** `OUT(04h)` (ZVE2 starten) kommt *vor* `OUT(10h,A5h)` (erste
+/STR-Flanke). ZVE2 ist also bereits aktiv, bevor der erste `doReadSector()`-Aufruf erfolgt.
+`[0x03F8]=0` wird als letztes gesetzt – zu diesem Zeitpunkt ist der Startschuss für ZVE2
+bereits gefallen.
+
+---
+
+### 10.4 Phase 2 – ZVE1 wartet
+
+Nach `RET` aus `0x0194` zeigt HL weiterhin auf `[0x03F8]`. ZVE1 polt dieses Flag in einer
+Tight-Loop (Abschnitt `STROBE_INIT` in `zre_rom.asm`, Adresse `0x0168`):
+
+```
+; zre_rom.asm 0x0168–0x016F
+0168:  LD A,(HL)     ; A = [0x03F8]
+0169:  OR A          ; Z-Flag wenn 0
+016A:  JR Z,0168h   ; [0x03F8]=0 → ZVE2 läuft noch → weiter warten
+016C:  DEC A
+016D:  JR Z,014Bh   ; [0x03F8]=1 → ISR-Timeout → Retry-Pfad
+016F:  CALL 01B6h   ; [0x03F8]=3 (nach DEC: A=2) → ZVE2 fertig → Signatur prüfen
+```
+
+Während ZVE1 in dieser Schleife wartet, werden eingehende Indexpulse (K5122 ctrl PIO
+Port A Interrupt) vom ISR `ISR_DECREMENT_03F7` (Adresse `0x01C7` in `zre_rom.asm`)
+behandelt. Dieser ISR dekrementiert `[0x03F7]`. Falls `[0x03F7]` auf 0 fällt, bevor ZVE2
+fertig ist, setzt der ISR `[0x03F8]=1` (Timeout-Pfad, Adresse `0x01D9`).
+
+---
+
+### 10.5 Phase 3 – ZVE2 sucht und liest die Bootspur
+
+ZVE2 startet bei PC=0x0000 und springt sofort zu `STROBE_LOOP` (Adresse `0x01DD` in
+`zre_rom.asm`). Der STROBE_LOOP ist der Kern des Sektor-Lese-Protokolls:
+
+#### Schritt 1: IDAM-Parameter laden (0x01DD–0x01F6)
+
+```
+; zre_rom.asm STROBE_LOOP / LOAD_IDAM_REGS
+01DD:  LD HL,(03F0h)    ; HL = Ladeadresse (0x0400)
+01E7:  LD C,16h         ; C = Port 0x16 (K5122-Sektor-Puffer, für INI)
+01E9:  EXX              ; Wechsel in Alternativ-Registersatz
+01EA:  LD BC,FEA1h      ; B'=0xFE (IDAM-Marker)
+01ED:  LD DE,(03F3h)    ; D'=[0x03F4]=Kopf,      E'=[0x03F3]=Zylinder
+01F1:  LD HL,(03F5h)    ; H'=[0x03F6]=Size-Code, L'=[0x03F5]=Sektor-ID
+01F4:  OUT(10h, 0xBD)   ; /STR high (Rücksetzen)
+```
+
+#### Schritt 2: /STR assertieren → doReadSector() (0x01F8–0x01FC)
+
+```
+; zre_rom.asm ASSERT_STR
+01F8:  LD A,B5h
+01FA:  OUT(10h, 0xB5)   ; /STR low: fallende Flanke → K5122 doReadSector()
+01FC:  JR 025Ah         ; → STROBE_LOOP_BODY
+```
+
+Dies ist der **entscheidende /STR-Strobe**: Die fallende Flanke auf Bit3 von Port 0x10
+veranlasst K5122, den nächsten Sektor in seinen internen Puffer zu laden
+(`sector_buf_`), sodass ZVE2 ihn per `IN A,(16h)` / `INI` auslesen kann.
+
+#### Schritt 3: Pfad-Auswahl und buf[0] lesen (0x025A–0x0265)
+
+```
+; zre_rom.asm STROBE_LOOP_BODY
+025A:  LD A,(03FDh)     ; Lade Pfad-Konfiguration
+025D:  BIT 1,A          ; Bit1=1 → NZ-Pfad (0x87), Bit1=0 → Z-Pfad (0x00)
+025F:  OUT(10h),A       ; /STR-Pegel setzen (Bit7=1 → kein Step-Puls!)
+0261:  IN A,(16h)       ; liest buf[0] = 0x00
+0263:  JR Z,0205h       ; Z-Pfad (falsch)
+0265:  JR 020Bh         ; NZ-Pfad (korrekt, [0x03FD]=0x87)
+```
+
+#### Schritt 4: IDAM-Suche im NZ-Pfad (0x020B–0x0222)
+
+Der K5122-Puffer (`sector_buf_`) hat folgendes Layout:
+
+```
+buf[0]=0x00  buf[1]=0xFE  buf[2]=cyl  buf[3]=head  buf[4]=sector_id  buf[5]=size_code  buf[6..]=Daten
+```
+
+ZVE2 liest Byte für Byte und vergleicht mit den Alternativ-Registern
+(Abschnitt `CMP_IDAM_MARK` / `IDAM_MATCH` in `zre_rom.asm`, Adressen `0x020D–0x0222`):
+
+```
+020B:  IN A,(16h)       ; buf[1] = 0xFE
+020D:  CP B             ; vs. B'=0xFE → Treffer?
+020E:  JR NZ,01F8h      ; kein Treffer → neuer /STR-Strobe
+
+0210:  IN A,(16h)       ; buf[2] = Zylinder
+0212:  CP E             ; vs. E'=[0x03F3]=0 → Treffer?
+0213:  JR NZ,01F8h
+
+0215:  IN A,(16h)       ; buf[3] = Kopf
+0217:  CP D             ; vs. D'=[0x03F4]=0 → Treffer?
+0218:  JR NZ,01F8h
+
+021A:  IN A,(16h)       ; buf[4] = Sektor-ID
+021C:  CP L             ; vs. L'=[0x03F5]=1 → Treffer? (1-basiert!)
+021D:  JR NZ,01F8h
+
+021F:  IN A,(16h)       ; buf[5] = Size-Code
+0221:  CP H             ; vs. H'=[0x03F6]=0 → Treffer?
+0222:  JR NZ,01FEh      ; Size-Mismatch → Fehler-Pfad
+```
+
+Bei einem Mismatch löst `JR NZ,01F8h` einen erneuten /STR-Strobe aus: ZVE2 liest den
+nächsten Sektor und sucht weiter, bis IDAM-Marker + alle 4 Felder passen.
+
+#### Schritt 5: Datentransfer per INI/INIR (0x0224–0x0247)
+
+Nach vollständigem IDAM-Treffer folgt der Nutzdaten-Transfer
+(Abschnitt `IDAM vollstaendig gematcht` in `zre_rom.asm`, Adresse `0x0224`):
+
+```
+0224:  OUT(10h, 0xB5)   ; /STR für Datentransfer
+0239:  IN A,(16h)       ; erstes Datenbyte aus Puffer
+023B:  EXX              ; zurück zum Hauptregistersatz (HL=Ladeadresse, BC=Byte-Zähler)
+023C:  DB ED,A2         ; INI: 1 Byte Port(C=0x16) → (HL++), B--
+023E:  DB ED,A2         ; INI
+0240:  DB ED,A2         ; INI
+0242:  DB ED,B2         ; INIR: verbleibende B Bytes Port(C) → (HL++), bis B=0
+```
+
+Die Kombination aus 3 einzelnen `INI`-Befehlen gefolgt von `INIR` überträgt alle
+128 Byte des Sektors in den RAM ab der aktuellen Ladeadresse (0x0400 für den ersten
+Sektor, 0x0480 für den zweiten, usw.).
+
+#### Schritt 6: ZVE2 signalisiert Fertigstellung (0x0267–0x026B)
+
+Wenn alle Sektoren übertragen sind (Abschnitt `ZVE2 ABSCHLUSS` in `zre_rom.asm`):
+
+```
+0267:  LD A,03h
+0269:  OUT(11h, 03h)    ; K5122 ctrl PIO Port A: INTENA=0 (keine weiteren Interrupts)
+026B:  LD (03F8h),A     ; [0x03F8] = 3 → ZVE1 verlässt Warte-Schleife
+```
+
+---
+
+### 10.6 Phase 4 – ZVE1 übernimmt und validiert
+
+Sobald `[0x03F8] ≠ 0` gilt, verlässt ZVE1 die Warte-Schleife bei `0x016A`
+(Abschnitt `STROBE_INIT` in `zre_rom.asm`):
+
+```
+016C:  DEC A           ; [0x03F8]=3 → nach DEC: A=2 → nicht Z
+016D:  JR Z,014Bh      ; A=0 (d.h. war 1=Timeout) → Retry
+016F:  CALL 01B6h      ; A=2 (d.h. war 3=OK) → Signatur prüfen
+```
+
+`CALL 01B6h` prüft die Bootsektor-Signatur (Abschnitt `BOOTSEKTOR-SIGNATUR PRUEFEN`
+in `zre_rom.asm`, Adresse `0x01B6`):
+
+```
+01B6:  LD HL,(0400h)   ; lade RAM[0x0400,0x0401] als 16-Bit-Wert
+01B9:  LD BC,5953h     ; "YS" (little-endian)
+01BC:  SBC HL,BC       ; HL - 0x5953 = 0 → Signatur korrekt?
+01BE:  RET NZ          ; nein → NZ
+01BF:  LD HL,0402h
+01C2:  LD A,4Ch        ; 'L'
+01C4:  CP (HL)         ; RAM[0x0402] = 'L'?
+01C5:  RET NZ
+01C6:  RET             ; alles OK
+```
+
+Bei Erfolg springt ZVE1 mit `CALL 0437h` (`zre_rom.asm`, Adresse `0x0174`) in den
+geladenen Boot-Code. ZVE2 hat seine Aufgabe erfüllt und ist nicht mehr aktiv.
+
+---
+
+### 10.7 Vollständiges Sequenz-Diagramm
+
+```
+ZVE1 (Boot-ROM)                          ZVE2 (STROBE_LOOP)          K5122
+─────────────────────────────────────    ────────────────────────    ──────────────────
+
+SEEK_SETUP (0x015C):
+  [0x03F3..F6] = 0 (Cyl/Head/Sec/Size)
+  CALL 0x0194:
+    [0x03F7] = 16 (Timeout)
+    OUT(04h)  ──────────────────────────► PC=0x0000 → JP 0x01DD
+    OUT(10h, 0xA5)  ─────────────────────────────────────────────► doReadSector()
+    IN A,(16h)  ◄────────────────────────────────────────────────  buf[0] (Dummy)
+    OUT(10h, 0x87)
+    [0x03F8] = 0
+
+Warte-Schleife (0x0168):
+  while [0x03F8]=0: loop ◄──────────────────────────────────────┐
+                                                                 │
+                              STROBE_LOOP (0x01DD):             │
+                                LD HL,[0x03F0]  (=0x0400)       │
+                                EXX; LD BC/DE/HL (IDAM-Regs)    │
+                                OUT(10h, 0xBD)   /STR high      │  ──► (kein Edge)
+                                OUT(10h, 0xB5) ─────────────────────► doReadSector()
+                                JR 025Ah (STROBE_LOOP_BODY)     │
+                                                                 │
+                              STROBE_LOOP_BODY:                  │
+                                IN A,(16h) buf[0]=0x00          │  ◄── buf[0]
+                                JR 020Bh (NZ-Pfad)              │
+                                                                 │
+                              READ_IDAM_NZ:                      │
+                                IN A,(16h) ◄────────────────────────── buf[1]=0xFE
+                                CP B (0xFE) → Treffer?          │
+                                IN A,(16h) ◄────────────────────────── buf[2]=cyl
+                                CP E (0) → Treffer?             │
+                                IN A,(16h) ◄────────────────────────── buf[3]=head
+                                CP D (0) → Treffer?             │
+                                IN A,(16h) ◄────────────────────────── buf[4]=sec_id=1
+                                CP L (1) → Treffer?             │
+                                IN A,(16h) ◄────────────────────────── buf[5]=size=0
+                                CP H (0) → Treffer!             │
+                                                                 │
+                              INI/INIR (128 Byte):               │
+                                ← ← ← ← IN Port(16h) ──────────────── buf[6..133]
+                                → RAM[0x0400..0x047F]            │
+                                                                 │
+                              [0x03F8] = 3 ────────────────────►│
+                                                                 │
+  [0x03F8]=3 erkannt                                             │
+  DEC A → A=2, kein JR Z                                        │
+  CALL 01B6h: RAM[0x0400]="YSL"? → OK
+  CALL 0437h → Boot-Code
+```
+
+---
+
+### 10.8 Rolle des Indexpuls-ISR während des Handshakes
+
+Der ISR `ISR_DECREMENT_03F7` (Adresse `0x01C7` in `zre_rom.asm`) läuft parallel zu Phase 2
+und Phase 3. Er wird durch jeden Indexpuls der Diskette ausgelöst (K5122 ctrl PIO Port A,
+Vektor 0xBA → ISR 0x01C7):
+
+```
+; zre_rom.asm ISR_DECREMENT_03F7
+01C7:  EI               ; verschachtelte Interrupts erlauben
+01CD:  DEC (HL)         ; [0x03F7]--
+01CE:  JR Z,01D4h       ; 0 erreicht → Timeout-Pfad
+
+; zre_rom.asm ISR_ASSERT_STR
+01D4:  OUT(10h, 0xBD)   ; /STR high (Notfallmaßnahme)
+01D9:  LD (HL),01h      ; [0x03F8] = 1 → ZVE1: Timeout erkannt
+```
+
+Der ISR hat damit eine **Wächter-Funktion**: Wenn ZVE2 nicht innerhalb von 16 Umdrehungen
+(= 16 × 200 ms = 3,2 s) einen Sektor lesen kann, bricht er den Handshake mit Fehlercode 1 ab.
+ZVE1 erkennt `[0x03F8]=1` in der Warte-Schleife und geht in die Retry-Logik (`0x014Bh`).
+
+Während des normalen Boots (ZVE2 liest Sektor 1 in unter einer Umdrehung) erreicht
+`[0x03F7]` nie 0 über den ISR – ZVE2 schreibt `[0x03F8]=3` deutlich vor Ablauf des
+Timeouts.
+
+---
+
+## 11. Alternativer Boot-Pfad (0x027E–0x03AF)
+
+### 10.1 Auslösebedingung
+
+Der alternative Boot-Pfad wird bei `0x0145` (`JP Z,027Eh`) erreicht, wenn die Floppy-Boot-Schleife
+alle möglichen Ctrl-Byte-Werte erfolglos durchprobiert hat:
+
+```
+BOOT_FAIL (0x0140):
+  A = [0x03FC]   ; aktueller Ctrl-Wert (startet bei 0xEE, rotiert bei jedem Retry)
+  CP 77h         ; 0x77 = letzter möglicher Wert nach mehrfachem RLCA
+  JP Z, 027Eh   ; alle Floppy-Versuche erschöpft → alternativer Boot
+  RLCA           ; nächsten Ctrl-Wert berechnen
+  JR 0101h       ; nochmal versuchen
+```
+
+Die Rotation `0xEE → 0xDC → 0xB8 → 0x71 → 0xE2 → 0xC5 → 0x8B → 0x17 → ...` führt nach mehreren
+Schritten zu `0x77`. Damit sind es ca. 8–16 Floppy-Boot-Versuche, bevor der alternative Pfad
+aktiviert wird.
+
+---
+
+### 10.2 Hardware-Identifikation (Ports 0x30–0x37)
+
+Der alternative Boot-Pfad verwendet ausschließlich die Ports **0x30–0x37** und **0x31**.
+Im A5120-System sind diese Adressen keiner bekannten Karte auf Basis des vorliegenden Codes
+eindeutig zuzuordnen. Aus dem Verhalten lässt sich schließen:
+
+| Port | Richtung | Funktion (erschlossen)                              |
+|------|----------|-----------------------------------------------------|
+| 0x31 | IN       | Daten-Eingang (Sync-Byte / empfangenes Byte)        |
+| 0x33 | OUT      | Ctrl/Handshake (0x7F=Init, 0xF0=Reset, 0x97=Sync, 0x03=Stop, 0xF4=ACK) |
+| 0x34 | IN/OUT   | Cmd/Status-Register (Bit7=Bereit, Bit0=Typ, Bits6..2=Fehler) |
+| 0x35 | IN       | Status (Bit0=Gerät-Typ, Bit3/4=Bereit-Flags)       |
+| 0x36 | OUT      | Steuer-Register (Init-Sequenz)                      |
+| 0x37 | OUT      | Steuer-Register (Init-Sequenz)                      |
+
+Das Protokoll mit Sync-Bytes, Block-Zählern und einem dedizierten Daten-Eingang (Port 0x31)
+deutet auf eine **serielle oder bandbasierte Bootstrap-Schnittstelle** hin – möglicherweise
+eine K2521-Karte (Magnetband) oder eine serielle Ladeeinheit. Eine eindeutige Identifikation
+erfordert Abgleich mit dem A5120-Schaltplan.
+
+---
+
+### 10.3 Initialisierungssequenz (0x027E–0x02C1)
+
+```
+0x027E  LD A,FFh / OUT(18h)          ; Drive-Select deaktivieren (alle Drives weg)
+
+; ISR-Vektortabelle umkonfigurieren:
+0x0282  LD (03F0h), 03BCh            ; ISR Kanal 0: Byte lesen + ACK
+0x0288  LD (03F2h), 03D4h            ; ISR Kanal 1: Block-/Byte-Zähler
+0x028E  LD (03F4h), 03C7h            ; ISR Kanal 2: Byte-Transfer per INI
+
+0x0294  LD A,03h / LD I,A            ; I=3 → Vektor-Tabelle bei 0x0300
+
+; Sekundär-Controller initialisieren:
+0x0298  OUT(33h, 7Fh)                ; Ctrl reset
+0x029C  OUT(36h, 7Fh)                ; Steuer-Register A reset
+0x029E  OUT(37h, 7Fh)                ; Steuer-Register B reset
+0x02A2  OUT(34h, 03h)                ; Cmd-Register: Modus 3
+0x02A5  OUT(35h, 04h)                ; Daten-Register: 4
+0x02A9  OUT(37h, FFh)                ; Steuer-Register B: 0xFF
+0x02AD  OUT(37h, FDh)                ; Steuer-Register B: 0xFD
+0x02B1  OUT(36h, FFh)                ; Steuer-Register A: 0xFF
+0x02B5  OUT(36h, 80h)                ; Steuer-Register A: 0x80
+
+0x02B7  IN A,(34h) / AND 7Ch         ; Status lesen, Fehler-Bits 6..2 prüfen
+0x02BB  JP NZ, 03B0h                 ; Fehler → HALT
+```
+
+---
+
+### 10.4 CTC-Initialisierung und Bereit-Erkennung (0x02C2–0x02F1)
+
+```
+0x02C2  OUT(0Ch, F2h)                ; K2526 CTC Kanal 0: Timer, Prescaler 16
+0x02C6  LD (03FAh), 05h              ; Retry-Counter = 5
+0x02CA  OUT(34h, E)                  ; Sekundär-Ctrl: E=9 → Befehl
+0x02CE  CALL 03B6h (×2)              ; Delay
+0x02D7  LD (03F8h), 0400h            ; Ladeadresse = 0x0400
+0x02E9  LD (03F6h), 00h              ; Byte-Zähler = 0
+0x02EE  LD (03F7h), 14h              ; Block-Zähler = 20
+
+0x02F3  OUT(0Dh, A7h)                ; K2526 CTC Kanal 1: Timer, Prescaler 16
+0x02F7  OUT(0Dh, FFh)                ; Zeitkonstante = 0xFF (max. Timeout)
+```
+
+Anschließend wartet der Code auf Bit7 von Port 0x34 (Controller-Bereit-Signal). Falls nicht
+innerhalb von 3 Versuchen bereit, werden Bits 5/4 gesetzt um den Transfer-Modus zu erzwingen:
+
+```
+Bit7=0: OR 20h (Bit5 setzen) → OUT(34h) → warte 3× CALL 03B6h → nochmal prüfen
+Bit7=1: Bit5 rücksetzen → direkt zu Konfiguration (033Bh)
+```
+
+---
+
+### 10.5 Transfer-Protokoll (0x0355–0x0376)
+
+Das Kernelement des alternativen Boots ist eine **Sync-Schleife** (D=4 Durchläufe):
+
+```
+LOOP (D=4):
+  OUT(33h, F0h)               ; Ctrl: Reset/Init-Signal
+  OUT(33h, 97h) ×2            ; Ctrl: Sync-Signal
+  IN A,(31h)                  ; warte auf Sync-Byte von Port 0x31
+  XOR A / CP B                ; warte bis B-Zähler durch ISR auf 0 gesetzt wurde
+  JR NZ,0365h                 ; Polling (ISR setzt B=0 nach Sync)
+  OUT(33h, 03h)               ; ACK / Reset
+  [0x03F8] -= 3               ; Ladeadresse um 3 dekrementieren
+  DEC D / JR NZ, 0355h        ; nächster Sync-Zyklus
+```
+
+Nach 4 Sync-Zyklen: CTC Kanal 1 stoppen, Bootsektor-Signatur prüfen (identisch mit
+Floppy-Boot: RAM[0x0400]="YS", RAM[0x0402]='L'), bei Erfolg: `CALL 0x0434`.
+
+---
+
+### 10.6 ISR-Mechanismus im alternativen Boot-Pfad
+
+Mit I=3 zeigt die Vektor-Tabelle auf 0x0300. Die drei neuen ISR-Funktionen:
+
+#### ISR Kanal 0 (0x03BC) – Byte lesen + ACK
+```
+EI
+IN A,(31h)        ; Daten-Byte vom Controller lesen (verworfen – nur Trigger-Funktion)
+LD A,F4h
+OUT(33h, F4h)     ; Empfangs-Bestätigung an Controller
+RETI
+```
+Signalisiert dem Controller, dass ein Byte empfangen wurde.
+
+#### ISR Kanal 1 (0x03C7) – Byte-Transfer per INI
+```
+EI
+LD HL,(03F8h)     ; aktuelle Schreib-Adresse
+INI               ; 1 Byte Port C → (HL++), B--
+LD (03F8h),HL     ; neue Adresse sichern
+RETI
+```
+Führt pro Interrupt einen einzelnen INI-Transfer durch. Jeder Interrupt schreibt ein Byte
+aus dem Controller-Daten-Port in den RAM-Puffer bei `[0x03F8]` und inkrementiert den Zeiger.
+
+#### ISR Kanal 2 (0x03D4) – Block-/Byte-Zähler
+```
+EI
+HL = 0x03F6
+DEC (HL)               ; [0x03F6]-- (Byte-Zähler)
+JR NZ, RETI            ; noch Bytes im Block → fertig
+INC L                  ; HL → 0x03F7
+DEC (HL)               ; [0x03F7]-- (Block-Zähler)
+JR Z, ABSCHLUSS        ; alle Blöcke geladen → Abschluss-Pfad
+RETI
+```
+
+**Abschluss-Pfad (0x03E5):** Manipuliert den Stack um nach RETI zu `0x0393` zu springen
+(statt zum normalen Rücksprungziel). Technik: `EX (SP),HL` tauscht die RETI-Rücksprung-
+adresse gegen `0x0393` aus. Bei `0x0393` wird Port 0x33 zurückgesetzt und die Boot-Sequenz
+endet.
+
+---
+
+### 10.7 Flussdiagramm: Alternativer Boot-Pfad
+
+```
+JP Z,027Eh (alle Floppy-Retries erschöpft)
+  │
+  ├─ Drive-Select deaktivieren (OUT 18h, FFh)
+  ├─ ISR-Vektoren umbiegen (I=3, neue ISRs bei 0x03BC/0x03C7/0x03D4)
+  ├─ Sekundär-Controller Init (Ports 0x33-0x37)
+  ├─ Fehler-Check (AND 7Ch) → NZ → HALT (0x03B0)
+  │
+  ├─ CTC Kanal 0 init (Port 0x0C, 0xF2)
+  ├─ CTC Kanal 1 init (Port 0x0D, 0xA7 + 0xFF)
+  ├─ Retry-Counter [0x03FA] = 5
+  ├─ Ladeadresse [0x03F8] = 0x0400
+  ├─ Byte-Zähler [0x03F6] = 0, Block-Zähler [0x03F7] = 20
+  │
+  ├─ Controller Bereit-Erkennung (Bit7 Port 0x34, max. 3 Versuche)
+  │     → nicht bereit → Transfer-Modus erzwingen
+  │     → HALT wenn Status-Bits nicht gesetzt
+  │
+  ├─ SYNC-SCHLEIFE (D=4 Durchläufe):
+  │     OUT(33h): Reset → Sync-Signal
+  │     Warte auf Sync-Byte (Port 0x31, ISR setzt B=0)
+  │     ACK senden
+  │     [0x03F8] -= 3
+  │
+  ├─ CTC Kanal 1 stoppen (OUT 0Dh, 21h)
+  ├─ Bootsektor-Signatur prüfen (CALL 01B6h): RAM[0x0400]="YS", [0x0402]='L'
+  │     NZ → Retry: [0x03FA]--; NZ → nochmal; Z → HALT
+  │
+  └─ Signatur OK: CALL 0x0434 → geladener Boot-Code
+```
+
+---
+
+### 10.8 Retry-Logik und Endlosfall
+
+Bei Misserfolg (Signatur falsch oder Timeout):
+
+```
+0x039C  LD HL,03FAh / DEC (HL)    ; [0x03FA]--
+0x03A4  JP NZ, 02C9h              ; noch Retries → von vorn (CTC-Init)
+0x03A7  BIT 0,E / JR Z, 03B0h    ; E Bit0=0 → HALT
+0x03AB  LD E,06h / JP 02C4h       ; E Bit0=1 → anderen Geräte-Typ versuchen
+```
+
+Maximal 5 Retries pro Geräte-Typ (E Bit0=0 oder 1). Nach Erschöpfung aller Möglichkeiten:
+**HALT-Schleife** bei `0x03B4` mit Fehler-Code `0x9F` an Port `0x03`.
+
+---
+
 ## 9. Offene Aufgaben / Bug-Status
 
 | ID  | Beschreibung                                              | Datei        | Status     |
@@ -801,3 +1348,137 @@ Mit dem falschen Wert kIndexPeriodCycles=50.000:
 2. Verifizieren: ZVE2 liest alle Bytes aus sector_buf_, setzt [0x03F8]=3
 3. ZVE1 verlässt Warte-Schleife bei 0x0168, CALL 01B6h prüft Bootsektor-Signatur
 4. Ausführung erreicht 0x0437 (geladener Boot-Code)
+
+---
+
+## 12. Bug B7 – Analyse: Vorzeitige BUSRQ-Freigabe
+
+### 12.1 Problembeschreibung
+
+`K5122::handleCtrlPortAWrite()` behandelt **jede** fallende /STR-Flanke (Bit3: 1→0 an
+Port 0x10), die eintrifft, während `bus_.isBUSRQ()=true`, als ZVE2-Commit-Signal und
+ruft `bus_.releaseBUSRQ()` auf — unabhängig davon, ob es sich um einen Schreib-Commit
+oder einen Lese-Refresh handelt.
+
+ZVE2 erzeugt im normalen Lese-DMA jedoch **zwei** /STR-Flanken:
+
+| Flanke | Adresse | Wert | Kontext |
+|--------|---------|------|---------|
+| 1. | `0x01F6` | `OUT(10h, 0xBDh)` | /STR **deassertieren** (Bit3=1): Puffer zurücksetzen |
+| 2. | `0x01FA` | `OUT(10h, 0xB5h)` | /STR **assertieren** (Bit3=0, Bit0=1=/WE=read): **neue Sektor-Lese-Anforderung** |
+
+Die zweite Flanke (0xBD→0xB5 an Bit3) trifft ein, **während BUSRQ bereits gehalten
+wird** und **bevor** ZVE2 auch nur ein Byte über INIR gelesen hat. Die aktuelle
+Emulation gibt daraufhin BUSRQ sofort frei – ZVE1 übernimmt, ZVE2 erhält keine
+weiteren Bytes.
+
+### 12.2 EPROM-Kontext: /STR-Pulsfolge in `STROBE_LOOP` (0x01DD–0x01FC)
+
+```
+STROBE_LOOP: 01DD  LD HL,(03F0h)   ; Ladeadresse laden
+             ...
+             01E7  LD C,16h         ; C = K5122 Daten-Port (für INIR)
+LOAD_IDAM_REGS:
+             01E9  EXX
+             01EA  LD BC,FEA1h      ; B'=0xFE (IDAM-Marker)
+             01ED  LD DE,(03F3h)    ; D'=Kopf, E'=Zylinder
+             01F1  LD HL,(03F5h)    ; H'=Size-Code, L'=Sektor-ID
+
+             01F4  LD A,BDh         ; 0xBD = Bit3=1 → /STR DEASSERTIEREN
+             01F6  OUT (10h),A      ;   prev_ctrl_a_.bit3 wird 1
+                                    ;   → kein Trigger in handleCtrlPortAWrite
+
+ASSERT_STR:  01F8  LD A,B5h         ; 0xB5 = Bit3=0, Bit0=1 (/WE=read)
+             01FA  OUT (10h),A      ;   ← FALLENDE FLANKE (prev bit3=1 → jetzt 0)!
+                                    ;   bus_.isBUSRQ() = TRUE (ZVE2 hat Bus)
+                                    ;   is_write = !(0xB5 & 0x01) = false  → LESEN
+
+             01FC  JR 025Ah         ; → STROBE_LOOP_BODY
+```
+
+Wenn `handleCtrlPortAWrite(0xB5)` mit `bus_.isBUSRQ()=true` und `is_write=false`
+aufgerufen wird, führt der aktuelle Code aus:
+
+```cpp
+if (bus_.isBUSRQ()) {
+    if (is_write) doWriteSector();   // übersprungen (is_write=false)
+    dma_pending_ = false;
+    bus_.releaseBUSRQ();             // ← BUG: BUSRQ vorzeitig freigegeben!
+}
+```
+
+ZVE1 übernimmt den Bus, noch bevor ZVE2 den INIR-Transfer ausgeführt hat.
+
+### 12.3 Warum /STR bei 0x01FA kein Commit-Signal ist
+
+Der EPROM-Code zeigt klar die Bedeutung der /WE-Leitung (Bit0 von Port 0x10):
+
+| /WE (Bit0) | Bedeutung im ZVE2-Kontext |
+|------------|--------------------------|
+| `0` (write enable aktiv) | ZVE2 hat Schreib-DMA abgeschlossen → BUSRQ freigeben |
+| `1` (write enable inaktiv) | ZVE2 fordert neuen Sektor-Lese-Transfer an → BUSRQ **halten** |
+
+Alle /STR-Pulse von ZVE2 im Lese-DMA haben **Bit0=1** (/WE inaktiv = Lesen):
+- `0x01FA`: `0xB5 = 1011 0101` → Bit0=1, Bit3=0 → Lese-Refresh, **kein Commit**
+- `0x0224`: `0xB5` → gleiches Muster (kein falling edge da prev auch Bit3=0)
+- `0x022D`: `[0x03FD]`-Wert (= `0x87 = 1000 0111`) → Bit0=1 (kein Commit)
+
+Nur im **Schreib-DMA** schreibt ZVE2 am Ende mit `/WE=0` (Bit0=0), um den Commit
+zu signalisieren (z.B. `0xF6 = 1111 0110`: Bit3=0, Bit0=0).
+
+### 12.4 Korrekte BUSRQ-Freigabe laut EPROM
+
+Der EPROM-Code liest nach dem /STR-Refresh **128 Bytes** per INIR aus Port 0x16:
+
+```
+INIR-Transfer (ZVE2, nach IDAM-Treffer):
+  0239  IN A,(16h)    ; Dummy-Read (erstes Datenbyte)
+  023B  EXX
+  023C  INI           ; 1 Byte Port 0x16 → (HL++), B--
+  023E  INI
+  0240  INI
+  0242  INIR          ; restliche B Bytes bis B=0 → sector_buf_ vollständig gelesen
+```
+
+Erst wenn INIR das **letzte Byte** aus Port 0x16 liest, ist ZVE2 fertig.
+Die BUSRQ-Freigabe gehört deshalb in `K5122::ioRead(0x16)`, nach dem letzten Byte —
+**nicht** in `handleCtrlPortAWrite()` beim /STR-Refresh.
+
+Die bestehende Freigabe in `ioRead(0x16)` (k5122.cpp, ca. Zeile 95–99) ist korrekt:
+
+```cpp
+// Auto-release BUSRQ: all sector bytes consumed (ZVE2 INIR done)
+if (bus_.isBUSRQ()) {
+    dma_pending_ = false;
+    bus_.releaseBUSRQ();
+}
+```
+
+### 12.5 Erforderliche Korrektur in `handleCtrlPortAWrite()`
+
+Die Bedingung für BUSRQ-Freigabe muss um die Unterscheidung Lesen/Schreiben erweitert
+werden:
+
+```
+AKTUELL (fehlerhaft):
+  /STR-Flanke + bus_.isBUSRQ() = true
+    → immer releaseBUSRQ()
+
+KORREKT:
+  /STR-Flanke + bus_.isBUSRQ() = true + /WE=0 (is_write=true)
+    → doWriteSector() + releaseBUSRQ()        (Schreib-Commit)
+
+  /STR-Flanke + bus_.isBUSRQ() = true + /WE=1 (is_write=false)
+    → doReadSector()                          (Lese-Refresh: sector_buf_ neu laden)
+    → BUSRQ halten! Freigabe erfolgt in ioRead(0x16) nach dem letzten INIR-Byte.
+```
+
+### 12.6 Zusammenfassung der relevanten EPROM-Adressen für B7
+
+| Adresse | Instruktion | Bedeutung für B7 |
+|---------|-------------|------------------|
+| `0x01F4` | `OUT(10h, 0xBDh)` | /STR deassertieren (Bit3=1) — setzt prev_ctrl_a_.bit3=1 |
+| `0x01FA` | `OUT(10h, 0xB5h)` | /STR assertieren (Bit3=0, /WE=1) — erzeugt die Bug-Flanke |
+| `0x025F` | `OUT(10h, [0x03FD])` | Pfad-Byte schreiben (keine Flanke, Bit3 war bereits 0) |
+| `0x0239`–`0x0242` | `IN / INI / INIR` | Korrekte Stelle der BUSRQ-Freigabe (letztes Byte aus Port 0x16) |
+| `0x026B` | `LD (03F8h), 03h` | ZVE2-Fertigstellungs-Signal — erst nach INIR möglich |
