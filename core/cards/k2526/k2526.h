@@ -417,7 +417,8 @@ public:
      *
      * @return Reference to the internal Z80 instance
      */
-    Z80&     cpu()  { return cpu_; }
+    Z80&       cpu()       { return cpu_; }
+    const Z80& cpu() const { return cpu_; }
 
     /**
      * @brief Execute one Z80 instruction (ZVE1 step).

@@ -1,0 +1,803 @@
+# Analyse: ZRE Boot-ROM (K2526) – Bootsequenz und Fehleranalyse
+
+**Stand:** 2026-05-28  
+**ROM-Datei:** `doc/EPROMS/zre.rom` (1024 Byte, 0x0000–0x03FF)  
+**Disk-Image:** `disks/cpadisk.img`  
+**CPU:** Z80 (ZVE1 auf K2526-Karte), 2,45 MHz  
+**Laufwerk:** 5,25"-Floppy, 300 RPM → 200 ms / Umdrehung → **490.000 CPU-Takte / Umdrehung**
+
+---
+
+## 1. Speicher-Übersicht während des Boots
+
+| Adressbereich | Phase             | Inhalt                                              |
+|---------------|-------------------|-----------------------------------------------------|
+| 0x0000–0x03FF | ROM aktiv         | ZRE-Boot-EPROM (K2526, 1 KB)                        |
+| 0x0000–0xFFFF | nach ROM-Disable  | OPS-Karte (64 KB RAM, K3526)                        |
+| 0x0000–0x07FF | nach RAM-Clear    | Nullen (durch LDI-Schleife gelöscht)                |
+| 0x00BA–0x03FF | nach LDIR-Kopie   | ROM-Inhalt in RAM gespiegelt (838 Byte)             |
+| 0x0000–0x0002 | nach ROM-Disable  | `C3 DD 01` = `JP 0x01DDh` (Strobe-Loop-Einstieg)   |
+
+### RAM-Variablen des Boot-ROMs
+
+| Adresse | Bedeutung                                           | Initialwert |
+|---------|-----------------------------------------------------|-------------|
+| 0x03F0  | Ladeadresse (Sektordaten)                           | 0x0400      |
+| 0x03F3  | Erwarteter Zylinder für IDAM-Vergleich              | 0x00        |
+| 0x03F4  | Erwarteter Kopf (Head)                              | 0x00        |
+| 0x03F5  | Erwarteter Sektor (Sektor-ID)                       | 0x00        |
+| 0x03F6  | Erwarteter Size-Code                                | 0x00        |
+| 0x03F7  | Indexpuls-Zähler (startet bei 4, sinkt auf 0)       | 4           |
+| 0x03F8  | Flag: /STR-Strobe wurde ausgelöst                   | 0           |
+| 0x03FA  | Seek-Retry-Counter                                  | 5           |
+| 0x03FC  | Aktueller Ctrl-Byte-Wert für Port 0x10              | 0xEE        |
+| 0x03FD  | IDAM-Pfad / Step-Steuerung (**Kernproblem!**)       | 0x00        |
+
+---
+
+## 2. Boot-Sequenz (Überblick)
+
+```
+RESET (0x0000)
+  │
+  ├─ RAM[0x0000..0x07FF] löschen (LDI-Schleife, schreibt 0x00)
+  ├─ IM 2, I=0, SP=0x07E0
+  ├─ BS-PIO init: Vektor A=0xB8, Mode 3, Maske 0x7F
+  ├─ RAM-Test (62 Iterationen, IX-Schritte à 0x0400)
+  ├─ LDDR: Disk-Tabelle ROM[0x044C..0x046F] → RAM[0x004C..0x006F]
+  ├─ JR Z → ROM_COPY (Flag bei 0x044E = 0 beim ersten Boot)
+  │
+  ├─ ROM_COPY (0x00BC):
+  │     LDIR: ROM[0x00BA..0x03FF] → RAM[0x00BA..0x03FF]
+  │     → RAM[0x00BA]=0xC7, RAM[0x00BB]=0x01  ← ISR-Vektor!
+  │
+  ├─ POST_COPY_INIT (0x00C6):
+  │     Port B: Modus 3, Vektor 0xE2
+  │     ROM DISABLE: OUT(0Ah), A AND 0xF6  ← Bit0=0 deaktiviert ROM
+  │     EI
+  │     K5122 ctrl PIO Port A: Modus 1 → Modus 0 (Output) → Vektor=0xBA ← KRITISCH
+  │     RAM[0x0000..0x0002] = C3 DD 01  (JP 0x01DDh)
+  │     RAM[0x03FC] = 0xEE
+  │     Port 0x18 (8212 Drive Select) = 0xEE
+  │
+  ├─ DRIVE_DETECT_LOOP (0x0110):
+  │     Liest Port 0x12 (ctrl PIO Port B = Drive Status)
+  │     RLCA: Bit7 → Carry; JR NC → WAIT_INDEX_SETUP (Drive ready)
+  │     Kein Drive → Step-Pulse an Track 0 → Retry
+  │
+  ├─ WAIT_INDEX_SETUP (0x0128):
+  │     [0x03F7] = 4  (4 Indexpulse abwarten)
+  │     K5122 ctrl PIO Port A: Interrupt-Control (INTENA=1, OR, mask=0xFF)
+  │     → IE-Flag gesetzt; der nächste /ASTB-Puls (Indexpuls) ruft ISR 0x01C7
+  │
+  ├─ WAIT_INDEX_LOOP (0x0135):
+  │     Liest [0x03F7]; lädt A=0x87; JR Z → STORE_03FD
+  │     Timeout-Schleife (DEC C / DJNZ) → BOOT_FAIL
+  │
+  ├─ [ISR 0x01C7 – pro Indexpuls]:
+  │     [0x03F7]--; falls 0: OUT(0x10), 0xBD (/STR setzen), [0x03F8]=1
+  │     RETI
+  │
+  ├─ STORE_03FD (0x0153):
+  │     [0x03FD] = 0x87  ← Bit1=1 (NZ-Pfad), Bit7=1 (kein Step)
+  │
+  ├─ SEEK_SETUP (0x015C):
+  │     Zylinder 0, Sektor 0, Kopf 0 setzen
+  │     CALL 0x0194 (Laufwerks-Initialisierung)
+  │
+  └─ STROBE_LOOP / IDAM-Suche (0x01DD):
+        Sucht IDAM-Header im Sektor-Puffer
+        → Liest Bootsektor nach 0x0400
+        → Springt zu 0x0437 (geladener Code)
+```
+
+---
+
+## 3. Interrupt-Mechanismus: K5122 ctrl PIO → ISR 0x01C7
+
+**Dies ist der wichtigste und fehleranfälligste Teil des Boots.**
+
+### 3.1 Vektor-Tabelle (IM 2, I=0)
+
+Mit `IM 2` und `I=0` lautet die ISR-Adresse: `memory[(I<<8) | vector] = memory[vector]`.
+
+| Interrupt-Quelle          | Vektor  | ISR-Adresse (nach LDIR) | Ziel                     |
+|---------------------------|---------|--------------------------|--------------------------|
+| BS-PIO Port A (/ASTB)     | 0xB8    | RAM[0xB8,0xB9] = {7A,00} | 0x007A (ROM-Code)        |
+| K5122 ctrl PIO Port A     | **0xBA**| RAM[0xBA,0xBB] = {C7,01} | **0x01C7 (Dekrement-ISR)** |
+| K5122 ctrl PIO Port B     | 0xE2    | RAM[0xE2,0xE3]           | (nicht verwendet)        |
+
+**RAM[0xBA] = 0xC7, RAM[0xBB] = 0x01** wird durch den LDIR-Befehl bei 0x00C4 gesetzt:
+ROM[0x00BA]=0xC7 (RST-00h-Opcode im disassemblierten Code, aber hier Datenadresse)
+ROM[0x00BB]=0x01
+
+### 3.2 K5122 ctrl PIO Port A – Konfigurationssequenz
+
+| Adresse | Wert | OUT-Port | Bedeutung                                    |
+|---------|------|----------|----------------------------------------------|
+| 0x00DF  | 0x7F | 0x11     | Modus 1 (Input)                              |
+| 0x00E7  | 0x3F | 0x11     | **Modus 0 (Output)** ← entscheidend!         |
+| 0x00ED  | 0xBA | 0x11     | **Interrupt-Vektor = 0xBA** → ISR 0x01C7    |
+| 0x012F  | 0x97 | 0x11     | Interrupt-Control: INTENA=1, OR, mask follows |
+| 0x0133  | 0xFF | 0x11     | Interrupt-Maske (in Modus 0 ignoriert)       |
+
+**Modus 0 (Output) + /ASTB-Signal**: Im Z80-PIO Modus 0 löst die fallende Flanke des
+/ASTB-Eingangs einen Interrupt aus (wenn IE=1). Der Index-Puls des Laufwerks treibt /ASTB.
+
+### 3.3 Ablauf bei jedem Index-Puls
+
+```
+Laufwerk dreht → Index-Puls → k5122.cpp: ctrl_pio_.setASTB(false)
+  → Z80PIO::setASTB(false): porta_.mode==0 && porta_.ie → porta_.pending=true
+  → K5122::hasInterrupt() → true
+  → Bus INT-Leitung aktiv
+  → CPU akzeptiert INT (IFF1=1)
+  → interruptAcknowledge() → K5122::getVector() → ctrl_pio_.getVector()
+  → porta_.int_vector = 0xBA zurückgegeben
+  → CPU: ISR = memory[0x00BA, 0x00BB] = {0xC7, 0x01} = 0x01C7
+  → ISR_DECREMENT_03F7 (0x01C7): [0x03F7]--
+  → Nach 4 Pulsen: [0x03F7]=0 → [0x03FD]=0x87
+```
+
+---
+
+## 4. Das [0x03FD]-Problem: IDAM-Pfad-Auswahl
+
+### 4.1 Bedeutung von [0x03FD]
+
+| Wert  | Bit7 | Bit1 | Verhalten bei OUT(0x10),A | IDAM-Pfad        |
+|-------|------|------|---------------------------|------------------|
+| 0x00  | 0    | 0    | **Step-Puls!** (Bit7=0 → /ST fallende Flanke) | Z-Pfad (falsch!) |
+| 0x87  | 1    | 1    | Kein Step (Bit7=1)        | NZ-Pfad (richtig) |
+
+### 4.2 IDAM-Suchschleife (0x025A–0x0265)
+
+```
+STROBE_LOOP_BODY (0x025A):
+  A = [0x03FD]          ; Pfad-/Step-Konfigurationsbyte
+  BIT 1, A              ; Bit1 testen
+  OUT (0x10), A         ; GEFAHR: wenn Bit7=0 → Step-Puls ausgelöst!
+  IN A, (0x16)          ; buf[0] lesen
+  JR Z, READ_IDAM_Z     ; Bit1=0 → Z-Pfad
+  JR READ_IDAM_NZ       ; Bit1=1 → NZ-Pfad
+
+READ_IDAM_Z (0x0205):   ; FALSCH: liest 5 Bytes vor dem Vergleich
+  IN A, (0x16)          ; buf[1]
+  IN A, (0x16)          ; buf[2]  
+  IN A, (0x16)          ; buf[3]
+  → IN A, (0x16)        ; buf[4] = sector_id
+  CP B                  ; sector_id vs. B=0xFE → IMMER FALSCH!
+
+READ_IDAM_NZ (0x020B):  ; RICHTIG: liest 2 Bytes vor dem Vergleich
+  IN A, (0x16)          ; buf[1] = 0xFE (IDAM-Marker)
+  CP B                  ; 0xFE vs. B=0xFE → TREFFER!
+```
+
+### 4.3 IDAM-Puffer-Layout im Emulator
+
+```
+sector_buf_ = [0x00, 0xFE, cyl, head, sector_id, size_code, data...]
+               buf[0] buf[1] buf[2] buf[3] buf[4]    buf[5]
+```
+
+Mit dem **NZ-Pfad** ([0x03FD]=0x87):
+- Liest buf[0]=0x00 und buf[1]=0xFE → vergleicht 0xFE mit B=0xFE → ✓ Treffer
+- Dann: buf[2]=cyl vs. E, buf[3]=head vs. D, buf[4]=sector_id vs. L, buf[5]=size_code vs. H
+
+Mit dem **Z-Pfad** ([0x03FD]=0x00):
+- Liest buf[0]..buf[4] → vergleicht sector_id mit B=0xFE → immer Fehler → Endlosschleife
+
+### 4.4 ZVE2-Architektur: Sektor-Lade-Protokoll
+
+ZVE2 ist ein zweiter Z80-Prozessor auf der K2526-Karte, der als DMA-CPU für den Floppy-Transfer fungiert.
+ZVE2 startet bei PC=0x0000 → RAM[0x0000..0x0002] = `C3 DD 01` = JP 0x01DD (STROBE_LOOP).
+
+**Handshake-Protokoll ZVE1 → ZVE2 (CALL 0x0194, Zeilen 0x0194–0x01B5):**
+
+```
+0194: LD HL,03F8h              ; HL → [0x03F8] (Abschluss-Flag)
+      LD (HL), 0               ; [0x03F8] = 0 (löschen, ZVE2 noch nicht fertig)
+      LD (03F7h), 16           ; ISR-Timeout-Zähler auf 16 Indexpulse setzen
+      OUT (10h), 0xA5          ; /STR fallende Flanke → doReadSector() + BUSRQ assertieren
+      OUT (04h), xxx           ; ZVE2-Reset freigeben → ZVE2 startet bei PC=0x0000
+      RET                      ; HL zeigt weiterhin auf [0x03F8]
+```
+
+**Warte-Schleife ZVE1 (0x0168–0x016F):**
+
+```
+0168: LD A,(HL)     ; A = [0x03F8]  (HL gesetzt von CALL 0x0194)
+0169: OR A
+016A: JR Z,0168h   ; warten solange [0x03F8]=0 (ZVE2 läuft noch)
+016C: DEC A
+016D: JR Z,014Bh   ; [0x03F8]=1 → ISR-Timeout → Fehlerbehandlung
+016F: CALL 01B6h   ; [0x03F8]=3 → ZVE2 fertig → Bootsektor prüfen
+```
+
+**[0x03F8]-Semantik:**
+
+| Wert | Setzer                | Bedeutung                                          |
+|------|-----------------------|----------------------------------------------------|
+| 0    | CALL 0x0194 (ZVE1)    | ZVE2 läuft noch – ZVE1 wartet                      |
+| 1    | ISR 0x01C7 (bei ISR)  | Indexpuls-Timeout: Sektor nicht lesbar → Fehler    |
+| 3    | ZVE2 (ca. 0x026F)    | Alle Sektoren geladen, RAM[0x0400] bereit → weiter |
+
+**ZVE2 STROBE_LOOP – /STR-Flanken-Analyse:**
+
+ZVE2 generiert beim ersten Schleifendurchlauf genau **eine** fallende /STR-Flanke:
+
+| Adresse | Befehl              | Bit3 vorher→nachher | /STR-Flanke | Wirkung                        |
+|---------|---------------------|----------------------|-------------|--------------------------------|
+| 0x01F6  | `OUT(10h), 0xBD`   | 0→1                  | keine       | /STR high (prev_ctrl_a_=0xBD)  |
+| **0x01FA** | **`OUT(10h), 0xB5`** | **1→0**          | **FALLEND** | doReadSector() + Bug 7!        |
+| 0x024B  | `OUT(10h), 0xB5`   | 0→0                  | keine       | /STR bleibt low                |
+| 0x025F  | `OUT(10h), [03FD]` | 0→0                  | keine       | Kein Step, kein neues /STR     |
+
+Nach Abschluss aller Sektoren schreibt ZVE2 `[0x03F8]=3`, und ZVE1 verlässt die Warte-Schleife.
+
+---
+
+## 5. Identifizierte Fehler / Probleme
+
+### Problem 1: Index-Puls-Timing (KRITISCH – behoben)
+
+**Datei:** `core/cards/k5122/k5122.h`, Zeile ~355
+
+```cpp
+// FALSCH:
+static constexpr int kIndexPeriodCycles = 50000; // ~200ms/4 = pulse every ~50k cycles
+// Tatsächlich: 50000 / 2.45MHz = 20ms → ~49 Pulse/s statt 5!
+
+// RICHTIG:
+static constexpr int kIndexPeriodCycles = 490000; // 2.45MHz / 5Hz = 490000 Takte/Umdrehung
+```
+
+**Berechnung:**
+- CPU-Takt: 2,45 MHz = 2.450.000 Hz
+- 300 RPM = 5 Umdrehungen/s → Periode = 200 ms
+- Takte pro Umdrehung: 2.450.000 / 5 = **490.000**
+- Eine vollständige Spur muss gelesen werden können, bevor der nächste Puls kommt
+
+**Auswirkung:** Mit 50.000 Zyklen feuert der Puls ca. 49× pro Sekunde statt 5×. Das ISR
+`ISR_DECREMENT_03F7` wird viel zu schnell aufgerufen, bevor der Code in `WAIT_INDEX_SETUP`
+(0x0128) ausgeführt wurde und IE gesetzt ist. Außerdem wird das Timing gegenüber der
+Sektor-Lesezeit vollständig falsch.
+
+### Problem 2: [0x03FD] bleibt 0x00 bei fehlerhaftem Interrupt
+
+**Ursache:** Wenn der K5122 ctrl PIO Port A Interrupt nicht feuert (weil IE zum Zeitpunkt
+des Pulses noch nicht gesetzt ist), bleibt [0x03F7]=4 und [0x03FD]=0x00.
+
+**Symptom:**
+- Z-Pfad wird genommen: CP B vergleicht sector_id (≠ 0xFE) → Endlosschleife
+- Bei OUT(0x10) mit Bit7=0 wird Step-Puls erzeugt → Kopf springt auf falschen Zylinder
+
+**Lösung:** Nach Korrektur des Index-Puls-Timings auf 490.000 Zyklen ergibt sich:
+1. Boot-Code bis 0x012D ≈ 500-1000 Takte → lange vor erstem Puls
+2. IE wird gesetzt bei 0x012F (OUT(0x11), 0x97)
+3. Erster Puls nach ≈ 490.000 Takten → ISR feuert korrekt
+
+### Problem 3: Drive-Status / ctrl PIO Port B Initialisierung
+
+**Datei:** `core/cards/k5122/k5122.cpp`
+
+Die Drive-Detect-Schleife bei 0x0110:
+```
+IN A, (0x12)   ; liest ctrl PIO Port B
+RLCA           ; rotiert links: altes Bit7 → Carry
+JR NC, 0x0128  ; Jump if NC: Carry=0 → altes Bit7=0 → Drive bereit
+```
+
+Das `/RDYL`-Signal (Drive Ready, active low) muss in Port B korrekt gesetzt sein.
+Der Emulator muss sicherstellen, dass `/RDYL` (Bit0 von Port B = 0 wenn bereit) und
+dass Bit7 (/TO = kein Timeout = 1) korrekt gesetzt werden.
+
+**Zu prüfen:** Gibt `ctrl_pio_.portBWrite(s)` in `k5122.cpp` den korrekten Status zurück?
+Speziell: Wie verhält sich Bit7 bei einem gemounteten Disk-Image?
+
+### Problem 4: BUSRQ-Deadlock bei ZVE2 (behoben)
+
+**Datei:** `core/machines/a5120/a5120.cpp`
+
+```cpp
+// Nach Fix (korrekt):
+if (bus_.isBUSRQ()) {
+    if (!zre_.isZVE2InReset() && !zre_.isZVE2Waiting()) {
+        zre_.zve2Step();   // nur wenn ZVE2 wirklich läuft
+    } else {
+        afs_.dmaUpdate();  // Fallback: BUSRQ direkt freigeben
+    }
+    remaining--;
+    continue;
+}
+```
+
+**Hintergrund:** Wenn ZVE2 gestoppt ist (`zve2_wait_=true`), gibt `zve2Step()` 0 zurück
+und BUSRQ wird nie freigegeben. ZVE1 kann Port 0x16 nicht lesen.
+
+---
+
+## 6. Neue Fehler (entdeckt 2026-05-28, ZVE2-bezogen)
+
+### Bug 5: ZVE2 bleibt nach Reset-Freigabe im WAIT-Zustand (behoben)
+
+**Datei:** `core/cards/k2526/k2526.cpp`, Port-0x04-Handler
+
+**Ursache:** `onBSPIOPortBOut()` setzt `zve2_wait_=true`, wenn POST_COPY_INIT bit3=0 an BS-PIO Port B
+schreibt. Der Port-0x04-Handler gab ZVE2 aus dem Reset, löschte aber nicht `zve2_wait_`.
+
+```cpp
+// FALSCH (vorher):
+zve2_reset_ = false;
+zve2_.reset();
+
+// RICHTIG (nachher):
+} else if ((data & 0x01) && zve2_reset_) {
+    zve2_reset_ = false;
+    zve2_wait_ = false;  // /RESET-Freigabe löscht auch /WAIT
+    zve2_.reset();
+    LOG_INFO("K2526", "ZVE2 gestartet: PC=0000H (OUT 04H=0x%02X)", data);
+}
+```
+
+**Folge ohne Fix:** `zve2Step()` gibt sofort 0 zurück (ZVE2 im WAIT). `a5120.cpp` fällt auf
+`dmaUpdate()` zurück und gibt BUSRQ sofort frei. ZVE2 führt nie einen einzigen Befehl aus.
+
+---
+
+### Bug 6: sector_id im IDAM-Header 0-basiert statt 1-basiert (behoben)
+
+**Datei:** `core/cards/k5122/k5122.cpp`, `doReadSector()`, ca. Zeile 530
+
+**Ursache:** ZVE2 initialisiert L'=[0x03F5]=1 (1-basierte Sektor-ID für Sektor 1). Der IDAM-Header
+im `sector_buf_` enthielt jedoch `current_sector_ - 1` (0-basiert, Wert 0 für den ersten Sektor).
+
+```cpp
+// FALSCH:
+sector_buf_.push_back(current_sector_ - 1);  // sector ID 0-basiert → Wert 0
+
+// RICHTIG:
+sector_buf_.push_back(current_sector_);  // sector ID 1-basiert, stimmt mit L'=[0x03F5]=1 überein
+```
+
+**Folge ohne Fix:** IDAM-Vergleich bei 0x021C (`CP L`): sector_id=0 ≠ L'=1 → JR NZ,01F8h →
+Endlosschleife. ZVE2 findet nie einen passenden IDAM-Header.
+
+---
+
+### Bug 7: Vorzeitige BUSRQ-Freigabe in handleCtrlPortAWrite (offen)
+
+**Datei:** `core/cards/k5122/k5122.cpp`, `handleCtrlPortAWrite()` und `ioRead()`
+
+**Ursache:** ZVE2 führt als erste Aktion bei 0x01FA `OUT(10h, 0xB5)` aus.
+Zuvor hat ZVE1 via ISR 0x01D6 den Wert 0xBD (bit3=1, /STR high) geschrieben.
+ZVE2 schreibt 0xB5 (bit3=0, /STR low) → **fallende /STR-Flanke** bei bereits gehaltenem BUSRQ.
+
+In `handleCtrlPortAWrite()` löst exakt diese Konstellation den falschen Zweig aus:
+
+```cpp
+if ((prev_ctrl_a_ & 0x08) && !(data & 0x08)) {  // fallende /STR-Flanke erkannt
+    bool is_write = !(data & 0x01);
+    if (bus_.isBUSRQ()) {
+        // BUG: Dieser Zweig läuft auch wenn ZVE2 selbst /STR auslöst!
+        if (is_write) { doWriteSector(); }
+        dma_pending_ = false;
+        bus_.releaseBUSRQ();   // ← gibt BUSRQ nach ~14 ZVE2-Instruktionen frei
+    }
+    ...
+```
+
+**Folge:** Nach ca. 14 ZVE2-Instruktionen (bis zu `OUT(10h,0xB5)` bei 0x01FA) wird BUSRQ freigegeben.
+`a5120.cpp` ruft `zve2Step()` nicht mehr auf. ZVE2 kann Port 0x16 nicht lesen, schreibt
+nie [0x03F8]=3. ZVE1 bleibt in der Warte-Schleife bei 0x0168 hängen.
+
+**Zusätzliches Problem in `ioRead(0x16)`:**
+
+```cpp
+if (buf_pos_ >= sector_buf_.size()) {
+    transferring_ = false;
+    result = 0xFF;
+    if (bus_.isBUSRQ()) {
+        dma_pending_ = false;
+        bus_.releaseBUSRQ();   // ← feuert auch mitten in ZVE2's INIR-Schleife
+    }
+    current_sector_ = (current_sector_ % tf->secs_per_track) + 1;
+}
+```
+
+**Geplanter Fix:**
+1. Im „BUSRQ gehalten + READ /STR"-Zweig von `handleCtrlPortAWrite()`: BUSRQ **nicht** freigeben.
+   Stattdessen: wenn `sector_buf_` erschöpft, nächsten Sektor via `doReadSector()` laden; sonst
+   bestehenden Puffer behalten. BUSRQ bleibt gehalten, ZVE2 läuft weiter.
+2. BUSRQ-Auto-Freigabe in `ioRead(0x16)` entfernen oder auf `write_mode_` beschränken.
+3. ZVE2-Completion-Erkennung: wenn ZVE2 `OUT(11h, 0x03)` schreibt (ca. 0x0269) oder
+   [0x03F8]=3 setzt, dann BUSRQ freigeben, damit ZVE1 die Warte-Schleife verlässt.
+
+---
+
+## 7. Vollständig kommentiertes ROM-Disassembly
+
+```
+; =============================================================================
+; ZRE EPROM K2526 – Boot-ROM (1 KB, 0x0000–0x03FF)
+; CPU: Z80 (ZVE1), 2,45 MHz, IM 2, I=0
+; =============================================================================
+
+; ===== RESET ENTRY POINT =====
+RESET_ENTRY:           0000  NOP
+                       ; BC=0x0800 = 2048: Löscht 2KB RAM (Ziel- und Quelle-Ptr beginnen bei 0)
+                        0001  LD BC,0800h
+                        0004  LD D,C                         ; D=0
+                        0005  LD E,C                         ; E=0
+                        0006  LD H,C                         ; H=0
+                        0007  LD L,C                         ; L=0
+                       ; LDI-Trick: schreibt ROM[0]=0x00 (NOP) nach RAM[0..2047]
+                       ; DE=HL=0; LDI: (DE++)=(HL); DEC HL: hält HL bei 0; so bleibt Quelle=0
+CLEAR_LOOP:            0008  LDI
+                        000A  DEC HL
+                        000B  JP PE,0008h                    ; loop bis BC=0
+
+; ===== HARDWARE-INITIALISIERUNG =====
+INIT_PORTS:            000E  XOR A
+                        000F  OUT (02h),A                    ; Port 0x02: Bank-Select = 0 (Bank 0 aktiv)
+                        0011  LD SP,07E0h                    ; Stack-Pointer unterhalb 0x0800
+                        0014  IM 2                           ; Interrupt-Modus 2
+                        0016  LD A,00h
+                        0018  LD I,A                         ; I=0: Vektor-Tabelle bei 0x0000
+
+; ===== BS-PIO (K2526 PIO, Ports 0x08/09/0A/0B) INIT =====
+INIT_BS_PIO:           001A  LD A,7Fh
+                        001C  OUT (09h),A                    ; Port A Ctrl: 0x7F=mode1(Input)
+                        001E  OUT (0Bh),A                    ; Port B Ctrl: 0x7F=mode1(Input)
+                        0020  LD A,FFh
+                        0022  OUT (08h),A                    ; Port A Data = 0xFF
+                        0024  OUT (0Ah),A                    ; Port B Data = 0xFF
+                        0026  LD A,B8h
+                        0028  OUT (09h),A                    ; Port A: Interrupt-Vektor = 0xB8
+                        002A  LD A,FFh
+                        002C  OUT (09h),A                    ; Port A: Mode 3 (Bit-Control)
+                        002E  LD A,7Fh
+                        0030  OUT (09h),A                    ; Mode-3 I/O-Maske: Bit7=Output, Bits6..0=Input
+
+; ===== RAM-TEST / BANK-WALK (62 Durchläufe, je 1KB) =====
+RAM_TEST:              0032  LD IX,0800h                    ; Startadresse 0x0800
+                        0036  LD (0462h),IX                  ; IX für später sichern
+                        003A  LD HL,044Eh                    ; HL → Config-Flag (in RAM, =0 nach Clear)
+                        003D  LD DE,0400h                    ; DE = IX-Inkrement (1 KB pro Schritt)
+                        0040  LD B,3Eh                       ; B = 62 Iterationen
+
+RAM_TEST_LOOP:         0042  LD C,(IX+0)                    ; lese aktuellen Inhalt
+                        0045  LD A,D7h
+                        0047  OUT (09h),A                    ; BS-PIO Port A: Int-Ctrl INTENA=1, OR, H-level, mask follows
+                        0049  LD A,9Fh
+                        004B  OUT (09h),A                    ; Interrupt-Maske = 0x9F
+                        004D  EI                             ; Interrupts freigeben
+                        004E  LD (IX+0),FFh                  ; schreibe 0xFF → RAM-Test
+                        0052  NOP                            ; Wartetakt
+                        0053  DI                             ; Interrupts sperren
+                        0054  LD A,47h
+                        0056  OUT (09h),A                    ; BS-PIO Port A: INTENA=0 (Interrupt deaktivieren)
+                        0058  ADD IX,DE                      ; IX += 0x0400 (nächster 1KB-Block)
+                        005A  DJNZ 0042h                     ; B-- / loop
+
+; ===== DISK-TABELLE KOPIEREN (ROM → RAM) =====
+COPY_DISK_TBL:         005C  LD HL,046Fh                    ; ROM-Quelle (außerhalb 1KB → liest RAM = 0x00)
+                        005F  LD DE,006Fh                    ; RAM-Ziel
+                        0062  LD BC,0024h                    ; 36 Byte
+                        0065  LDDR                           ; kopiere abwärts
+
+; ===== BOOT-FLAG PRÜFEN =====
+CHECK_BOOT_FLAG:       0067  LD HL,044Eh                    ; Adresse des Boot-Flags (nach RAM-Clear = 0)
+                        006A  BIT 0,(HL)                     ; Bit0 testen
+                        006C  JR Z,00BCh                     ; = 0 → erster Boot → ROM_COPY
+
+; Wenn Flag gesetzt: ROM wurde bereits kopiert, direkt zu Hauptcode springen
+SKIP_ROM_COPY:         006E  LD HL,0800h
+                        0071  LD (004Ch),HL
+                        0074  LD HL,(0462h)
+                        0077  LD L,9Dh
+                        0079  JP (HL)                        ; Sprung zum Hauptprogramm
+
+; ===== ISR-CODE FÜR BS-PIO PORT A (Vektor 0xB8, ISR-Adresse RAM[0xB8,0xB9]={7A,00}=0x007A) =====
+; Wird aufgerufen wenn BS-PIO /ASTB während des RAM-Tests feuert (Zuverlässigkeitstest)
+ISR_BS_PIO_A:          007A  LD A,47h
+                        007C  OUT (09h),A                    ; BS-PIO Port A Interrupt abschalten
+                        007E  LD A,FFh
+                        0080  CP (IX+0)                      ; Prüfe ob RAM 0xFF enthält (Test bestanden?)
+                        0083  JR NZ,00A7h                    ; nicht 0xFF → Fehler-Pfad
+                        0085  LD (IX+0),C                    ; restore original value
+                        0088  BIT 0,(HL)
+                        008A  JR NZ,0092h
+                        008C  LD (0460h),IX
+                        0090  RETI
+                        0092  LD (0464h),IX
+                        0096  BIT 6,(HL)
+                        0098  JR NZ,00A5h
+                        009A  SET 6,(HL)
+                        009C  LD (046Ch),IX
+                        00A0  LD A,05h
+                        00A2  LD (046Ch),A
+                        00A5  RETI
+                        00A7  BIT 0,(HL)
+                        00A9  JR NZ,00B1h
+                        00AB  SET 0,(HL)
+                        00AD  LD (0462h),IX
+                        00B1  LD (0464h),IX
+                        00B5  RETI
+
+; ===== ROM-DATEN: ISR-VEKTOREN (werden durch LDIR nach RAM kopiert) =====
+; Nach LDIR bei 0x00C4:
+;   RAM[0xB8,0xB9] = {7A, 00} → ISR für BS-PIO-Vektor 0xB8 = 0x007A
+;   RAM[0xBA,0xBB] = {C7, 01} → ISR für K5122-Vektor  0xBA = 0x01C7  ← KRITISCH
+ROM_DATA_BA_BB:        00B7  NOP                            ; Byte = 0x00 = RAM[0xB7]
+                        00B8  LD A,D                         ; Byte = 0x7A = RAM[0xB8] ← ISR-Adresse low für vec 0xB8
+                        00B9  NOP                            ; Byte = 0x00 = RAM[0xB9] ← ISR-Adresse high = 0x007A
+                        00BA  RST 00h                        ; Byte = 0xC7 = RAM[0xBA] ← ISR-Adresse low für vec 0xBA
+                        00BB  LD BC,BA21h                    ; enthält 0x01 = RAM[0xBB] ← ISR-Adresse high = 0x01C7
+
+; ===== ROM → RAM KOPIEREN (erster Boot) =====
+; Ziel: Laufzeitcode im RAM verfügbar machen
+ROM_COPY:              00BC  LD HL,00BAh                    ; HL = 0x00BA (Quell-Start in ROM)
+                        00BF  LD D,H                         ; D = 0x00
+                        00C0  LD E,L                         ; E = 0xBA → DE = 0x00BA (Ziel in RAM)
+                        00C1  LD BC,0346h                    ; BC = 838 Byte (0x00BA..0x03FF)
+                        00C4  LDIR                           ; kopiere ROM[0x00BA..0x03FF] → RAM[0x00BA..0x03FF]
+
+; ===== POST-COPY HARDWARE-INIT =====
+POST_COPY_INIT:        00C6  LD A,FFh
+                        00C8  OUT (0Bh),A                    ; BS-PIO Port B: Mode 3 (bit control)
+                        00CA  OUT (13h),A                    ; K5122 ctrl PIO Port B ctrl = 0xFF → Mode 3
+                        00CC  LD A,E2h
+                        00CE  OUT (0Bh),A                    ; BS-PIO Port B: Interrupt-Vektor = 0xE2
+                        00D0  IN A,(0Ah)                     ; lese BS-PIO Port B Daten (Hardware-Config)
+                        00D2  AND F6h                        ; AND 0xF6 = ~0x09 → löscht Bit0 und Bit3
+                        00D4  OUT (0Ah),A                    ; Schreibe zurück: Bit0=0 → ROM DEAKTIVIERT
+
+ENABLE_INTS_INIT:      00D6  EI                             ; Interrupts freigeben (läuft jetzt aus RAM)
+                        00D7  LD A,F3h
+                        00D9  OUT (13h),A                    ; K5122 ctrl PIO Port B: 0xF3=int-ctrl (INTENA=1)
+                        00DB  LD A,7Fh
+                        00DD  OUT (12h),A                    ; K5122 ctrl PIO Port B Data = 0x7F
+                        00DF  OUT (11h),A                    ; K5122 ctrl PIO Port A ctrl: 0x7F = Mode 1 (Input)
+                        00E1  LD A,A9h
+                        00E3  OUT (10h),A                    ; K5122 ctrl PIO Port A Data = 0xA9 (Drive-Ctrl)
+                        00E5  LD A,3Fh
+                        00E7  OUT (11h),A                    ; K5122 ctrl PIO Port A: 0x3F = Mode 0 (Output)!
+                        00E9  OUT (15h),A                    ; K5122 data PIO Port A ctrl: Mode 0
+                        00EB  LD A,BAh
+                        00ED  OUT (11h),A                    ; *** K5122 ctrl PIO Port A: VEKTOR = 0xBA ***
+                                                             ; /ASTB-Flanke (Indexpuls) → ISR = 0x01C7
+
+                        00EF  LD A,04h
+                        00F1  LD (07F2h),A                   ; Seek-Retry-Count = 4
+                        00F4  LD A,C3h
+                        00F6  LD (0000h),A                   ; RAM[0x0000] = 0xC3 (JP-Opcode)
+                        00F9  LD HL,01DDh
+                        00FC  LD (0001h),HL                  ; RAM[0x0001,2] = 0x01DD → JP 0x01DD
+                        00FF  LD A,EEh
+                        0101  LD (03FCh),A                   ; [0x03FC] = 0xEE (initialer Ctrl-Wert)
+                        0104  OUT (18h),A                    ; 8212 Drive-Select = 0xEE (kein Drive)
+                        0106  LD HL,0400h
+                        0109  LD B,L                         ; B = 0x00
+                        010A  LD (03F0h),HL                  ; Ladeadresse = 0x0400
+                        010D  LD DE,5006h                    ; D=0x50 (Retry-Outer), E=0x06
+
+; ===== LAUFWERK-ERKENNUNG =====
+DRIVE_DETECT_LOOP:     0110  IN A,(12h)                     ; ctrl PIO Port B: Drive-Status
+                        0112  RLCA                           ; altes Bit7 → Carry
+                        0113  JR NC,0128h                    ; Carry=0 (Bit7=0) → Drive bereit → WAIT_INDEX
+                        0115  DEC D                          ; Outer-Retry--
+                        0116  JR Z,0140h                     ; 0 → BOOT_FAIL
+SEND_SEEK_TRACK0:      0118  LD A,09h
+                        011A  LD B,A
+                        011B  OUT (10h),A                    ; Step-Pulse für Track-0-Suche
+                        011D  LD A,89h
+                        011F  OUT (10h),A
+                        0121  DEC C
+                        0122  JR NZ,0121h                    ; innerer Delay
+                        0124  DJNZ 0121h
+                        0126  JR 0110h                       ; nächster Versuch
+
+; ===== 4 INDEXPULSE ABWARTEN =====
+WAIT_INDEX_SETUP:      0128  LD HL,03F7h
+                        012B  LD (HL),04h                    ; [0x03F7] = 4 (Puls-Zähler)
+                        012D  LD A,97h
+                        012F  OUT (11h),A                    ; K5122 ctrl PIO Port A: INTENA=1, OR, mask follows
+                        0131  LD A,FFh
+                        0133  OUT (11h),A                    ; Interrupt-Maske (in Modus 0 irrelevant; IE gesetzt)
+
+WAIT_INDEX_LOOP:       0135  LD A,(HL)                      ; A = [0x03F7] (Indexpuls-Zähler)
+                        0136  OR A                           ; Z-Flag wenn 0
+                        0137  LD A,87h                       ; A = 0x87 (vorgeladen für [0x03FD])
+                        0139  JR Z,0153h                     ; [0x03F7]=0 → 4 Pulse empfangen → weiter
+                        013B  DEC C                          ; Timeout-Zähler inner
+WAIT_INDEX_INNER:      013C  JR NZ,0135h
+                        013E  DJNZ 0135h                     ; Timeout-Zähler outer
+BOOT_FAIL:             0140  LD A,(03FCh)
+                        0143  CP 77h
+                        0145  JP Z,027Eh
+                        0148  RLCA
+                        0149  JR 0101h                       ; nächsten Drive-Ctrl-Wert versuchen
+                        014B  DEC E
+                        014C  JR Z,0140h
+WAIT_INDEX_OK:         014E  LD A,(03FDh)
+                        0151  XOR 02h
+
+; ===== [0x03FD] = 0x87 SETZEN =====
+STORE_03FD:            0153  LD (03FDh),A                   ; [0x03FD]=0x87: NZ-Pfad + kein Step
+
+                        0156  LD HL,8001h
+                        0159  LD (07F0h),HL
+SEEK_SETUP:            015C  LD H,00h
+                        015E  LD (03F5h),HL                  ; [0x03F5]=0, [0x03F6]=0 (Sektor, Size)
+                        0161  LD L,H
+                        0162  LD (03F3h),HL                  ; [0x03F3]=0, [0x03F4]=0 (Zylinder, Kopf)
+                        0165  CALL 0194h                     ; Laufwerks-Initialisierung
+                        0168  LD A,(HL)
+                        0169  OR A
+                        016A  JR Z,0168h                     ; warte auf [0x03F8] ≠ 0 (ZVE2 Abschluss oder ISR-Timeout)
+STROBE_INIT:           016C  DEC A
+                        016D  JR Z,014Bh
+                        016F  CALL 01B6h                     ; Bootsektor-Signatur prüfen
+                        0172  JR NZ,0140h                    ; Signatur falsch → Boot-Fail
+                        0174  CALL 0437h                     ; geladenen Code ausführen
+
+; ... (weiterer Code: Neustart, Kernel-Übergabe, etc.)
+
+; ===== ISR: INDEXPULS-ZÄHLER DEKREMENTIEREN =====
+; Aufgerufen durch: Interrupt-Vektor 0xBA → RAM[0xBA,0xBB] = {0xC7,0x01} = 0x01C7
+; Bedingung: K5122 ctrl PIO Port A in Modus 0, /ASTB feuert auf Indexpuls, IE=1
+ISR_DECREMENT_03F7:    01C7  EI                             ; verschachtelte Interrupts erlaubt
+                        01C8  PUSH AF
+                        01C9  PUSH HL
+                        01CA  LD HL,03F7h
+                        01CD  DEC (HL)                       ; [0x03F7]--
+                        01CE  JR Z,01D4h                     ; 0 erreicht → /STR-Strobe auslösen
+                        01D0  POP HL
+                        01D1  POP AF
+                        01D2  RETI
+
+ISR_ASSERT_STR:        01D4  LD A,BDh
+                        01D6  OUT (10h),A                    ; 0xBD: bit3=1 → /STR high (Leitstand), dann [0x03F8]=1
+                        01D8  INC HL                         ; HL → 0x03F8
+                        01D9  LD (HL),01h                    ; [0x03F8] = 1 (ISR-Timeout-Flag)
+                        01DB  JR 01D0h                       ; RETI
+
+; ===== HAUPT-STROBE/IDAM-SUCHSCHLEIFE (ZVE2-Code, Einstieg via JP 0x01DD) =====
+STROBE_LOOP:           01DD  LD HL,(03F0h)                  ; HL = Ladeadresse (0x0400)
+                        01E0  LD A,(07F1h)
+                        01E3  LD B,A
+                        01E4  LD DE,0700h
+                        01E7  LD C,16h                       ; C = Port 0x16 (Daten-Lese-Port)
+
+LOAD_IDAM_REGS:        01E9  EXX                            ; wechsle zum Alternativ-Registersatz
+                        01EA  LD BC,FEA1h                    ; B'=0xFE (IDAM-Marker), C'=0xA1
+                        01ED  LD DE,(03F3h)                  ; D'=[0x03F4]=head, E'=[0x03F3]=cyl
+                        01F1  LD HL,(03F5h)                  ; H'=[0x03F6]=size_code, L'=[0x03F5]=sector_id
+                        01F4  LD A,BDh
+                        01F6  OUT (10h),A                    ; /STR high (Vorbereitung)
+
+ASSERT_STR:            01F8  LD A,B5h
+                        01FA  OUT (10h),A                    ; /STR low (Bit3 fällt) → doReadSector()
+                        01FC  JR 025Ah                       ; → STROBE_LOOP_BODY
+
+; ... (Zwischen-Code bei 01FE-0204: Fehlerbehandlung)
+
+READ_IDAM_Z:           0205  IN A,(16h)                     ; Z-Pfad: liest buf[1]
+                        0207  IN A,(16h)                     ; buf[2]
+                        0209  IN A,(16h)                     ; buf[3]
+                                                             ; → weiter bei 020B (buf[4]) dann CMP
+READ_IDAM_NZ:          020B  IN A,(16h)                     ; NZ-Pfad: liest buf[1] (=0xFE nach NZ-Pfad)
+                                                             ; (Z-Pfad fällt hier ein nach buf[3])
+
+CMP_IDAM_MARK:         020D  CP B                           ; vergleiche mit B'=0xFE (IDAM-Marker)
+                        020E  JR NZ,01F8h                    ; kein Treffer → erneut /STR
+                        0210  IN A,(16h)                     ; buf[nächste] = Zylinder
+                        0212  CP E                           ; vs. E'=erwarteter Zylinder
+                        0213  JR NZ,01F8h
+                        0215  IN A,(16h)                     ; = Kopf
+                        0217  CP D                           ; vs. D'=erwarteter Kopf
+                        0218  JR NZ,01F8h
+IDAM_MATCH:            021A  IN A,(16h)                     ; = Sektor-ID
+                        021C  CP L                           ; vs. L'=erwarteter Sektor
+                        021D  JR NZ,01F8h
+                        021F  IN A,(16h)                     ; = Size-Code
+                        0221  CP H                           ; vs. H'=erwarteter Size-Code
+                        0222  JR NZ,01FEh                    ; → Sektor-Nummer-Fehler-Handling
+                        ; IDAM vollständig gematcht! Jetzt Sektor-Daten lesen...
+                        0224  LD A,B5h
+                        0226  OUT (10h),A
+                        ; ... (Daten-Transfer und Bootsektor-Übergabe)
+
+; ===== STROBE-LOOP KÖRPER =====
+STROBE_LOOP_BODY:      025A  LD A,(03FDh)                   ; Lade Pfad-/Step-Konfiguration
+                        025D  BIT 1,A                        ; teste Bit1 (0=Z-Pfad, 1=NZ-Pfad)
+                        025F  OUT (10h),A                    ; AN PORT SCHREIBEN: Bit7=0 → STEP-PULS!
+                        0261  IN A,(16h)                     ; Lese buf[0]
+                        0263  JR Z,0205h                     ; Bit1=0 → Z-Pfad (falsch wenn [03FD]=0x00)
+                        0265  JR 020Bh                       ; Bit1=1 → NZ-Pfad (korrekt)
+
+; ===== NACH IDAM-TREFFER: 128-BYTE-TRANSFER (ZVE2) =====
+; Nach erfolgreichem CP-Vergleich aller 4 IDAM-Felder (0x021A–0x0222):
+IDAM_DATA_LOAD:        0224  LD A,B5h
+                        0226  OUT (10h),A                    ; /STR low: Puffer für Datentransfer vorbereiten
+                        0228  LD A,C1h                       ; INIR-Vorbereitung
+                        022A  EXX                            ; zurück zum Hauptregistersatz
+                        022B  INIR                           ; 128 Bytes: port(C=0x16) → (HL++), B Mal
+                                                             ; lädt sector_buf_[6..133] → RAM[0x0400..0x047F]
+                        022D  EXX                            ; wieder zum Alt-Registersatz
+
+; ===== ZVE2-ABSCHLUSS / LOOP-KONTROLLE (0x0243–0x027F) =====
+POST_INIR:             0243  LD A,(03F5h)                   ; aktueller Sektor
+                        0246  INC A                          ; nächsten Sektor vorbereiten
+                        0247  LD HL,(03F0h)                  ; aktuelle Ladeadresse
+                        024A  LD A,B5h
+                        024B  OUT (10h),A                    ; /STR low (kein Edge, prev_ctrl_a_=0x87)
+                        024D  LD DE,0080h                    ; 128 Byte pro Sektor
+                        0250  ADD HL,DE                      ; Ladeadresse += 128
+                        0252  LD (03F0h),HL                  ; neue Ladeadresse sichern
+                        0255  LD A,(07F1h)                   ; Sektoren-pro-Spur Zähler
+                        0258  DEC A
+                        0259  LD (07F1h),A
+                        025B  JR NZ,01E9h                    ; noch Sektoren übrig → nächste IDAM-Suche
+
+; Alle Sektoren geladen: ZVE2 signalisiert Fertigstellung
+ZVE2_DONE:             026D  LD A,03h
+                        026F  LD (03F8h),A                   ; [0x03F8] = 3 → ZVE1 verlässt Warte-Schleife!
+                        0272  EXX
+                        0273  JP (HL)                        ; Sprung zur nächsten Aktion (o. Halt)
+
+; ... (restlicher Boot-Code: CTC-Init, Drive-Erkennung, Bootsektor-Übergabe)
+
+; ===== CTC-INIT (nur nach erfolgreichem Boot erreicht!) =====
+INIT_CTC:              02C2  OUT (0Ch),A                    ; K2526 CTC Kanal 0
+INIT_CTC2:             02F3  OUT (0Dh),A                    ; K2526 CTC Kanal 1
+                        02F7  OUT (0Dh),A
+
+; ... (0x03EF - 0x03FF: Daten-/Parameter-Bereich)
+; 0x03F0-0x03FF: RAM-Variablen (werden zur Laufzeit überschrieben)
+```
+
+---
+
+## 8. Zeitliche Analyse: Wann feuert der erste Index-Puls?
+
+| Ereignis                              | Zyklen nach RESET (ca.) |
+|---------------------------------------|-------------------------|
+| RAM-Clear (2048 × LDI+DEC+JP ≈ 25T)  | ~51.200                 |
+| BS-PIO Init (10 OUT-Befehle × 11T)   | ~51.310                 |
+| RAM-Test (62 × ~20 Befehle × 10T)    | ~63.710                 |
+| LDIR-Kopie (838 × ~21T)              | ~81.308                 |
+| Post-Copy Init (ca. 20 Befehle)       | ~81.500                 |
+| EI bei 0x00D6                         | ~81.510                 |
+| K5122 Vektor 0xBA bei 0x00ED         | ~81.600                 |
+| IE gesetzt bei 0x012F                 | ~82.000                 |
+| **Erster Index-Puls (490.000 Tz)**    | **490.000**             |
+
+→ IE wird bei ca. Takt 82.000 gesetzt, erster Index-Puls bei Takt 490.000.  
+→ Das ROM hat >400.000 Takte Zeit, die Schleife bei 0x0135 zu erreichen.  
+→ Nach 4 Pulsen (4 × 490.000 = 1.960.000 Takte): [0x03F7]=0, [0x03FD]=0x87.
+
+Mit dem falschen Wert kIndexPeriodCycles=50.000:
+- Erster Puls bei Takt 50.000 → IE noch NICHT gesetzt (erst bei ~82.000)!
+- → Puls wird ignoriert, Zähler sinkt nie!
+- Oder: Falls IE früher gesetzt würde, wären 4 Pulse in 200.000 Takten = 81ms statt 800ms.
+- In jedem Fall: falsches Timing → Code in WAIT_INDEX_LOOP läuft in Timeout.
+
+---
+
+## 9. Offene Aufgaben / Bug-Status
+
+| ID  | Beschreibung                                              | Datei        | Status     |
+|-----|-----------------------------------------------------------|--------------|------------|
+| P1  | Index-Puls-Timing: kIndexPeriodCycles = 490.000           | k5122.h      | ✓ behoben  |
+| P4  | BUSRQ-Deadlock in a5120.cpp (Fallback auf dmaUpdate)      | a5120.cpp    | ✓ behoben  |
+| B5  | ZVE2 bleibt im WAIT-Zustand nach Reset-Freigabe           | k2526.cpp    | ✓ behoben  |
+| B6  | sector_id im IDAM-Header 0-basiert statt 1-basiert        | k5122.cpp    | ✓ behoben  |
+| B7  | Vorzeitige BUSRQ-Freigabe in handleCtrlPortAWrite()       | k5122.cpp    | ✗ offen    |
+
+**Nächste Schritte (nach B7-Fix):**
+1. Rebuild + Boot-Trace ausführen
+2. Verifizieren: ZVE2 liest alle Bytes aus sector_buf_, setzt [0x03F8]=3
+3. ZVE1 verlässt Warte-Schleife bei 0x0168, CALL 01B6h prüft Bootsektor-Signatur
+4. Ausführung erreicht 0x0437 (geladener Boot-Code)

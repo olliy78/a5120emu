@@ -292,6 +292,7 @@ void K2526::ioWrite(uint8_t port, uint8_t data)
                     LOG_INFO("K2526", "ZVE2 in Reset versetzt (OUT 04H=0x%02X)", data);
                 } else if ((data & 0x01) && zve2_reset_) {
                     zve2_reset_ = false;
+                    zve2_wait_ = false;  // /RESET release also deasserts /WAIT
                     zve2_.reset();
                     LOG_INFO("K2526", "ZVE2 gestartet: PC=0000H (OUT 04H=0x%02X)", data);
                 }

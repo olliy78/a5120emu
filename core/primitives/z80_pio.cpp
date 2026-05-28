@@ -189,7 +189,10 @@ uint8_t Z80PIO::readPins(const Port& p) const {
  * Stores the written value in the output latch and invokes the port output
  * callback if registered. Behavior depends on operating mode:
  * - **Mode 0 (Output)**: Data is stored and driven to external pins
- * - **Mode 1 (Input)**: Write is silently ignored (no effect)
+ * - **Mode 1 (Input)**: Data is stored in the output latch but NOT driven to
+ *   external pins and the callback is NOT invoked. The latch retains the value
+ *   so that when the port later switches to Mode 0 or Mode 3, the pre-loaded
+ *   output values take effect immediately. (Real Z80 PIO behaviour.)
  * - **Mode 2 (Bidirectional)**: Data is stored and driven to external pins
  * - **Mode 3 (Bit Control)**: Data is stored; only output-configured bits
  *   are driven to external pins
@@ -202,8 +205,8 @@ uint8_t Z80PIO::readPins(const Port& p) const {
  * @param cb Output callback to invoke (if set)
  */
 void Z80PIO::writeDataCPU(Port& p, uint8_t data, PortCallback& cb) {
-    if (p.mode == 1) return;   // input mode: CPU writes silently ignored
     p.output_latch = data;
+    if (p.mode == 1) return;   // input mode: latch updated but outputs not driven
     if (cb) cb(data);
 }
 
@@ -478,9 +481,10 @@ uint8_t Z80PIO::portARead() const { return readPins(porta_); }
  * @param asserted true for high level, false for falling edge (data ready)
  */
 void Z80PIO::setASTB(bool asserted) {
-    // ASTB (Port A Strobe): signals data ready in Input/Bidirectional modes
-    // Typically falling-edge triggered
-    if (!asserted && porta_.mode >= 1) {  // falling edge, modes 1 or 2
+    // ASTB (Port A Strobe): falling edge triggers interrupt in all modes except Mode 3.
+    // In Mode 0 (output), ASTB serves as an acknowledge strobe from the peripheral;
+    // the falling edge fires an interrupt if IE is set (e.g. floppy index pulse on /ASTB).
+    if (!asserted && porta_.mode != 3) {
         if (porta_.ie) porta_.pending = true;
     }
 }

@@ -153,6 +153,14 @@ public:
      */
     uint8_t getVector() const override;
 
+    /**
+     * @brief Propagate RETI to internal PIOs so IUS flags are cleared.
+     *
+     * Without this, porta_.ius stays set after the first interrupt acknowledge
+     * and all subsequent getVector() calls return 0xFF instead of the real vector.
+     */
+    void onRETI() override;
+
     // ─── Disk management ───────────────────────────────────────────────────
 
     /**
@@ -237,6 +245,22 @@ public:
      * No-op if no DMA transfer is pending.
      */
     void dmaUpdate();
+
+    /**
+     * @brief Advance the floppy simulation by @p cycles Z80 clock cycles.
+     *
+     * Called every instruction from the A5120 run loop.  Generates periodic
+     * index-pulse strobes on ctrl PIO Port A /ASTB so that the boot-ROM
+     * index-wait loop (waiind) can count down its four-pulse counter.
+     *
+     * A real 5.25" floppy rotates at 300 RPM = 200 ms per revolution.
+     * At the emulated Z80 speed (~1 MHz effective in boot_trace) this is
+     * roughly 200 000 cycles.  We use a shorter interval so the four pulses
+     * arrive well within the ROM's timeout loop (B/C counters).
+     *
+     * @param cycles Instruction cycles elapsed since last call
+     */
+    void update(int cycles);
 
 private:
     // ─── PIO signal handlers ────────────────────────────────────────────────
@@ -333,6 +357,13 @@ private:
 
     // ─── Interrupt state ─────────────────────────────────────────────────────
     bool    iei_in_ = false;                ///< Last IEI value from upstream chain
+
+    // ─── Index pulse simulation ──────────────────────────────────────────────
+    int     index_cycle_acc_  = 0;          ///< Accumulated cycles for index timing
+    // 300 RPM = 5 rev/s → period = 200 ms; at 2.45 MHz: 2'450'000 / 5 = 490'000 cycles/rev.
+    // One full track must be readable before the next pulse (ROM waits for 4 pulses).
+    static constexpr int kIndexPeriodCycles = 490000;
+    bool    index_astb_high_  = true;       ///< Current /ASTB level (true=deasserted)
 
     // ─── LED simulation ──────────────────────────────────────────────────────
     std::array<std::chrono::steady_clock::time_point, 4> led_until_{};  ///< LED-on deadline per drive

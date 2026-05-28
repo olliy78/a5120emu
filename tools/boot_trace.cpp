@@ -33,77 +33,94 @@ struct Milestone {
 };
 
 static std::vector<Milestone> milestones = {
-    { 0x0038, "RST-38h handler",            true  },
-    { 0x0016, "RET M (first trampoline)",   true  },
-    { 0x005C, "DJNZ fall-through → 0x5C",  false },
-    { 0x001E, "DJNZ fall-through → 0x1E",  false },
-    { 0x003E, "PUSH AF sequence (0x003E)",  true  },
-    { 0x0040, "LD A,(0xFFFC)",              false },
-    { 0x0048, "RLCA (exit candidate)",      false },
-    { 0x0068, "OR A before CALL 0x0303",    false },
-    { 0x006F, "CALL 0x0303 → BOOT!",        true  },
+    { 0x0008, "LDI loop – zeroing RAM 0000-07FF",          true  },
+    { 0x000E, "XOR A after zeroing – PIO init start",       true  },
+    { 0x001C, "OUT BS-PIO A ctrl (Mode 1)",                 true  },
+    { 0x00BC, "ROM-to-RAM copy section (JR Z target)",      true  },
+    { 0x00C4, "LDIR: ROM[BA..3FF] → RAM[BA..3FF]",         true  },
+    { 0x00C8, "OUT BS-PIO B ctrl: Mode 3",                  true  },
+    { 0x00D0, "IN A, BS-PIO B – read-modify-write start",   true  },
+    { 0x00D4, "OUT BS-PIO B – ROM DISABLE",                 true  },
+    { 0x00D6, "EI after ROM disable",                       true  },
+    { 0x010F, "IN fcpiobd – start of disk seek loop",       false },
+    { 0x01DD, "ZVE2 DMA entry / boot sector load",          false },
 };
 
 // ─── ROM disassembly reference table (PC → mnemonic) ─────────────────────────
 // Hand-disassembled from ZRE_BOOT_ROM bytes. Used for single-step output.
 static const char* romLabel(uint16_t pc) {
     switch (pc) {
-        case 0x0000: return "XOR A,0x77";
-        case 0x0002: return "DI";
-        case 0x0004: return "ADD HL,DE";
-        case 0x0006: return "DAA";
-        case 0x0007: return "LD D,B";
-        case 0x0008: return "INC B";
-        case 0x0009: return "LD B,L";
-        case 0x000A: return "RET P";
-        case 0x000B: return "RET P";
-        case 0x000C: return "LD DE,0x5011";
-        case 0x000F: return "LD D,B";
-        case 0x0010: return "DEC DE";
-        case 0x0011: return "DEC DE";
-        case 0x0012: return "DI";
-        case 0x0014: return "DEC A";
-        case 0x0015: return "DEC A";
-        case 0x0016: return "RET M";
-        case 0x0017: return "RET M";
-        case 0x0018: return "ADD HL,BC [RST18h]";
-        case 0x0019: return "ADD HL,BC";
-        case 0x001A: return "OUT (0xD3),A";
-        case 0x001C: return "DJNZ 0x5C";
-        case 0x001E: return "OUT (0xD3),A [fall-thru]";
-        case 0x0020: return "JR NC,0x21";
-        case 0x0021: return "RST 38h [NC path]";
-        case 0x0022: return "RST 38h [C path]";
-        case 0x0026: return "RET M";
-        case 0x0027: return "RET M";
-        case 0x0028: return "RST 30h [RST28h]";
-        case 0x0030: return "CCF [RST30h]";
-        case 0x0031: return "LD A,0xDF";
-        case 0x0033: return "RST 18h";
-        case 0x0034: return "RST 38h [ret from RST18h]";
-        case 0x0038: return "ADD A,A [RST38h]";
-        case 0x0039: return "JR Z,0x48";
-        case 0x003B: return "DEC C";
-        case 0x003C: return "RST 30h";
-        case 0x003D: return "RST 30h";
-        case 0x003E: return "PUSH AF";
-        case 0x003F: return "PUSH AF";
-        case 0x0040: return "LD A,(0xFFFC)";
-        case 0x0043: return "RST 38h [after LD A,(0xFFFC)]";
-        case 0x0044: return "RST 38h [+1]";
-        case 0x0045: return "JP C,0x9696";
-        case 0x0048: return "RLCA";
-        case 0x0049: return "JR 0x68";
-        case 0x005C: return "LD H,0 [DJNZ target]";
-        case 0x005E: return "PUSH AF";
-        case 0x005F: return "PUSH AF";
-        case 0x0060: return "LD A,A (NOP)";
-        case 0x0061: return "RST 38h";
-        case 0x0068: return "OR A";
-        case 0x0069: return "OR A";
-        case 0x006A: return "CALL M,0x28FC";
-        case 0x006D: return "JR Z,0x3C";
-        case 0x006F: return "CALL 0x0303 → BOOT";
+        case 0x0000: return "NOP (reset entry)";
+        case 0x0001: return "LD BC,0x0800 (zero loop count)";
+        case 0x0004: return "LD D,C / LD E,C / LD H,C / LD L,C";
+        case 0x0008: return "LDI – zero RAM[DE++] from ROM[0]";
+        case 0x000A: return "DEC HL – keep HL=0";
+        case 0x000B: return "JP PE,0x0008 – loop while BC≠0";
+        case 0x000E: return "XOR A – A=0 after zero loop";
+        case 0x000F: return "OUT (0x02),A – reset Q240 (/RES-SPA)";
+        case 0x0011: return "LD SP,0x07E0";
+        case 0x0014: return "IM 2";
+        case 0x0016: return "LD A,0 / LD I,A – I=0";
+        case 0x001A: return "LD A,0x7F";
+        case 0x001C: return "OUT (0x09),A – BS-PIO A ctrl: Mode 1";
+        case 0x001E: return "OUT (0x0B),A – BS-PIO B ctrl: Mode 1";
+        case 0x0020: return "LD A,0xFF";
+        case 0x0022: return "OUT (0x08),A – BS-PIO A data: 0xFF";
+        case 0x0024: return "OUT (0x0A),A – BS-PIO B data: 0xFF (preload latch)";
+        case 0x0026: return "LD A,0xB8";
+        case 0x0028: return "OUT (0x09),A – BS-PIO A: interrupt vector 0xB8";
+        case 0x002A: return "LD A,0xFF";
+        case 0x002C: return "OUT (0x09),A – BS-PIO A ctrl: Mode 3";
+        case 0x002E: return "LD A,0x7F";
+        case 0x0030: return "OUT (0x09),A – BS-PIO A dir mask: 0x7F";
+        case 0x0032: return "LD IX,0x0800";
+        case 0x0036: return "LD (0x0462),IX";
+        case 0x003A: return "LD HL,0x044E";
+        case 0x003D: return "LD DE,0x0400";
+        case 0x0040: return "LD B,0x3E (loop counter=62)";
+        case 0x0042: return "LD C,(IX+0) – read page marker";
+        case 0x0045: return "LD A,0xD7";
+        case 0x0047: return "OUT (0x09),A – BS-PIO A ctrl (int mask)";
+        case 0x0049: return "LD A,0x9F";
+        case 0x004B: return "OUT (0x09),A – BS-PIO A: int enable";
+        case 0x004D: return "EI";
+        case 0x004E: return "LD (IX+0),0xFF – write page marker";
+        case 0x0052: return "NOP";
+        case 0x0053: return "DI";
+        case 0x0054: return "LD A,0x47";
+        case 0x0056: return "OUT (0x09),A – BS-PIO A: int disable";
+        case 0x0058: return "ADD IX,DE – IX += 0x400";
+        case 0x005A: return "DJNZ 0x0042 – page loop";
+        case 0x005C: return "LD HL,0x046F";
+        case 0x005F: return "LD DE,0x006F";
+        case 0x0062: return "LD BC,0x0024";
+        case 0x0065: return "LDDR – copy config from 0x046F downward";
+        case 0x0067: return "LD HL,0x044E";
+        case 0x006A: return "BIT 0,(HL) – check boot flag";
+        case 0x006C: return "JR Z,0x00BC – jump if normal boot";
+        case 0x006E: return "LD HL,0x0800";
+        case 0x0071: return "LD (0x004C),HL";
+        case 0x0074: return "LD HL,(0x0462)";
+        case 0x0077: return "LD L,0x9D";
+        case 0x0079: return "JP (HL) – alternate boot path";
+        case 0x007B: return "LD A,0x47 (int disable ctrl)";
+        case 0x007D: return "OUT (0x09),A";
+        case 0x007F: return "LD A,0xFF";
+        case 0x00BC: return "LD HL,0x00BA – ROM copy src";
+        case 0x00BF: return "LD D,H / LD E,L – DE=0x00BA";
+        case 0x00C1: return "LD BC,0x0346";
+        case 0x00C4: return "LDIR – copy ROM[BA..3FF] to RAM";
+        case 0x00C6: return "LD A,0xFF";
+        case 0x00C8: return "OUT (0x0B),A – BS-PIO B ctrl: Mode 3";
+        case 0x00CA: return "OUT (0x13),A – fcpiobc: Mode 3";
+        case 0x00CC: return "LD A,0xE2";
+        case 0x00CE: return "OUT (0x0B),A – BS-PIO B dir mask: 0xE2";
+        case 0x00D0: return "IN A,(0x0A) – read BS-PIO B";
+        case 0x00D2: return "AND 0xF6 – clear B0(/LD-ROM) and B3(/WAIT-ZVE2)";
+        case 0x00D4: return "OUT (0x0A),A – ROM DISABLE + ZVE2 stall";
+        case 0x00D6: return "EI – interrupts enabled after ROM disable";
+        case 0x00D7: return "LD A,0xF3";
+        case 0x00D9: return "OUT (0x13),A – fcpiobc: floppy PIO B setup";
         default:     return nullptr;
     }
 }
@@ -155,10 +172,10 @@ int main(int argc, char** argv) {
     uint32_t sample_count = 0;
 
     // ── Mount boot disk ───────────────────────────────────────────────────────
-    bool mounted = machine.mountDisk(0, disk_path, "cpa800", false);
+    // Try cpa780 first: boot ROM expects 128B sectors (size code 0x00 at [0x03F6])
+    bool mounted = machine.mountDisk(0, disk_path, "cpa780", false);
     if (!mounted) {
-        // Try cpa780 as fallback
-        mounted = machine.mountDisk(0, disk_path, "cpa780", false);
+        mounted = machine.mountDisk(0, disk_path, "cpa800", false);
     }
     if (!mounted) {
         fprintf(stderr, "ERROR: Could not mount disk '%s'\n", disk_path);
@@ -223,7 +240,7 @@ int main(int argc, char** argv) {
                         fprintf(stderr, "  [milestone] 0x%04X hit %u times (cycle %d)\n",
                                 m.pc, n, cycles_done);
                 }
-                if (m.pc == 0x006F) { boot_reached = true; }
+                if (m.pc == 0x01DD) { boot_reached = true; }
             }
         }
 

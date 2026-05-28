@@ -1,0 +1,302 @@
+.8080
+	TITLE	'Speichertest fuer  NEU K 2526'
+
+;**************************************************************
+; Version 1.0 vom 06.09.1992
+; Copyright by S.Simon
+;**************************************************************
+
+;	maclib	z80
+.XLIST
+INCLUDE Z80.LIB
+.LIST
+
+;**************************************************************
+; E/A - Vereinbarungen
+;**************************************************************
+
+; Tastatursteuerung K 7604 / K7634
+; nicht benutzt
+ucs1	equ	06h
+ucs2	equ	01h
+ucs3	equ	05h
+ucs4	equ	03h
+
+;**************************************************************
+
+; Steuer-Ports
+
+resspa	equ	02h	; Ausschalten Speicherschutz
+reszve2	equ	04h	; CPU 2 ins RESET steuern und halten
+bnkport	equ	07h	; Selektierung der Speicherseiten fuer
+			; die CPU
+
+;**************************************************************
+
+; Nachfolgende Schaltkreise sind nicht implementiert
+
+;ctc1	equ	0c-0fh
+;sio1	equ	50-53h
+;ctc2	equ	58-5bh
+;sio2	equ	5c-5fh
+
+;**************************************************************
+
+; Betriebssystem-PIO
+
+bspioad	equ	08h	; Systemsignale
+			; MEMDI1/2 RDY WR  EBF SPSIND NMI SUE M1
+bspioac	equ	09h
+bspiobd	equ	0ah	; Speicherumschaltung und Ein- / Ausschaltung
+			; LD-Rom
+			; cpu NB  NB  SA WAIT-ZVE2 SPS-ESR INT-BS LD-ROM
+bspiobc	equ	0bh	; spe
+
+;**************************************************************
+
+; Bildschirmsteuerung
+
+csfab	equ	40h	; RGB-Steuerung alphanum. Bildschirm
+			; A11EPROM / Vordergrund- / Hintergrundfarben
+			; I-H R-H G-H B-H  I-V R-V G-V B-V
+csraf	equ	41h	;  NB  NB  NB  NB  I-R R-R G-R B-R
+csctr	equ	42h	;  NB  NB  NB  NB   NB A12 FCP BPV
+
+;**************************************************************
+
+; Floppy-Disk-Steuerung K5122
+
+;fcpioad	equ	10h
+;fcpioac	equ	11h
+;fcpiobd	equ	12h
+;fcpiobc	equ	13h
+
+;fdpioad	equ	14h
+;fdpioac	equ	15h
+;fdpiobd	equ	16h
+;fdpiobc	equ	17h
+
+;fdsel	equ	18h
+
+;**************************************************************
+; Speicherseiten-Vereinbarungen
+;**************************************************************
+
+syspa0	equ	0	; Systempage 0
+syspa1	equ	1	; Systempage 1
+crpaga	equ	128	; alphanumerische Bildschirmseite
+			; 4000-47ffh Bildwiederholspeicher
+
+; Grafik-Bildschirm
+
+;crpagr	equ	13	; Rot
+;crpagg	equ	14	; Gruen
+;crpagb	equ	15	; Blau
+
+;**************************************************************
+; Programm
+;**************************************************************
+
+; Adressierung auf 100h fuer Assembler M80
+
+aseg
+	org	100h
+
+;**************************************************************
+
+; Abarbeitung dieses Programmteiles nach Reset ab Adresse 0000h
+
+.phase	0
+
+M0000:	di
+M0001:	xra	a
+	out	resspa
+	out	reszve2
+	out	bnkport
+
+	lxi	b,1000h
+mxx:	dcx	b
+	mov	a,b
+	ora	c
+	jrnz	mxx
+
+; Duplizieren EPROM in Rambereich
+
+	lxi	b,800h
+	mov	d,c
+	mov	e,c
+	mov	h,c
+	mov	l,c
+	ldir
+
+; Initialisieren der BS-Pio
+
+	mvi	a,4fh		; erst Eingabemode
+	out	bspioac
+	out	bspiobc
+	mvi	a,0ffh
+	out	bspioad
+	mvi	a,9fh
+	out	bspiobd		; Speicherseite 0 selektieren
+	mvi	a,0ffh		; Bitmode
+	out	bspioac		; Port A Bitmode
+	mvi	a,7fh
+	out	bspioac		; aeee eeee (Bitmaske Port A)
+	mvi	a,0ffh
+	out	bspiobc		; Port B Bitmode
+	mvi	a,062h
+	out	bspiobc		; aeea aaea (Bitmaske Port B)
+
+
+; Ausschalten LD-Rom
+
+	mvi	a,9eh
+	out	bspiobd		; LD-ROM aus, kein WAIT-ZVE2
+
+; Ruecksetzen des Bildschirms
+
+	xra	a
+	out	csctr
+	mvi	a,0fh	; weiss auf schwarz
+	out	csfab
+	rrc
+	rrc
+	rrc
+	rrc
+	out	csraf
+	lxi	h,0f800h
+	lxi	d,0f801h
+	lxi	b,7ffh
+	mvi	m,20h
+	ldir
+
+; Verschieben des Systemladers in den Arbeitsbereich
+
+	lxi	b,syslae-syslaa
+	lxi	h,syslar
+	lxi	d,syslaa
+	ldir
+	
+	mvi	a,1eh
+	out	bspiobd
+
+	jmp	syslaa
+
+syslar:
+
+.dephase
+
+;**************************************************************
+
+; Nachfolgendes Programm wird ab 0F000H abgearbeitet
+
+.phase	0f000h
+
+syslaa:
+	DI
+	mvi	a,8
+	out	csctr
+	lda	text0e-1
+	inr	a
+	sta	text0e-1
+	mvi	a,crpaga
+	out	bnkport
+	lxi	h,TEXT0
+	lxi	d,7800H
+	lxi	b,TEXT0E-TEXT0
+	LDIR
+	lxi	h,text1
+	lxi	d,78a0h
+	lxi	b,text1e-text1
+	ldir
+	lda	text0e-1
+	sui	30h
+	out	bnkport
+	jmp	aaa
+text0:	db	'Speicherseite  '
+	db	'0'-1
+text0e:
+TEXT1:	DB	'Pruefbyte  Fehleradresse  Read'
+TEXT1E:
+
+AAA:	lxi	sp,ANF
+	lxi	d,100H
+A0:	lxi	b,78f5h
+	mov	a,d
+	CALL	HEXBYT
+	lxi	h,0
+	lxi	b,0f000h
+	mov	m,d
+A1:	mov	a,m
+	cma
+	mov	m,a
+	mov	a,m
+	mov	m,e
+	xra	d
+	inr	A
+	jnz	ERROR
+;	cnz	error
+	inx	h
+	mov	m,d
+	dcx	b
+	mov	a,b
+	ora	c
+	JRNZ	A1
+	rlcr	d
+	mov	a,d
+	cpi	1
+	JRZ	NEU	
+	cpi	0FEH
+	jrnz	A0
+	jp	syslaa
+NEU:	lxi	d,0FEFFH
+	JR	A0
+ERROR:	PUSH	H
+	PUSH	D
+	PUSH	B
+	push	psw
+	lxi	B,78fdH
+	mov	a,h
+	CALL	HEXBYT
+	mov	a,l
+	CALL	HEXBYT
+	pop	psw
+	lxi	b,790bh
+	call	hexbyt
+	POP	B
+	POP	D
+	POP	H
+warte:	jr	warte
+;	RET
+
+HEXBYT:	PUSH	psw
+	RRC
+	RRC
+	RRC
+	RRC
+	CALL	HEXBY1
+	POP	psw
+HEXBY1:	ani	0FH
+	adi	30H
+	cpi	3AH
+	JRC	HEXBY2
+	adi	7
+HEXBY2:
+	push	psw
+	mvi	a,crpaga
+	out	bnkport
+	pop	psw
+	stax	b
+	inx	b
+	lda	text0e-1
+	sui	30h
+	out	bnkport
+	ret
+
+	DS	30
+ANF:
+syslae:
+
+.DEPHASE
+	END
+

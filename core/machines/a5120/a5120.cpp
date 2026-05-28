@@ -114,13 +114,12 @@ int A5120Machine::run(int max_cycles) {
             zre_.cpuReset();
         }
 
-        // BUSRQ: K5122 (ZVE2-DMA) hält den Bus. ZVE1 ist suspendiert.
-        // Wenn ZVE2 nicht im Reset: ZVE2 führt den DMA-Transfer selbst durch
-        // (liest Sektor via INIR von Port 0x16 oder schreibt via OTIR auf Port 0x14).
-        // K5122 gibt BUSRQ automatisch frei, wenn ZVE2 den letzten Byte konsumiert.
-        // Fallback (ZVE2 im Reset, z.B. Boot-ROM-Phase): dmaUpdate() übernimmt.
+        // BUSRQ: K5122 hält den Bus. ZVE1 ist suspendiert.
+        // ZVE2 führt DMA nur aus wenn er weder im Reset noch im WAIT steht.
+        // Im Boot-ROM (ZVE2 im Reset oder durch /WAIT-ZVE2 angehalten) übernimmt
+        // dmaUpdate() den BUSRQ-Release, damit ZVE1 weiter Bytes von Port 0x16 lesen kann.
         if (bus_.isBUSRQ()) {
-            if (!zre_.isZVE2InReset()) {
+            if (!zre_.isZVE2InReset() && !zre_.isZVE2Waiting()) {
                 zre_.zve2Step();
             } else {
                 afs_.dmaUpdate();
@@ -145,6 +144,9 @@ int A5120Machine::run(int max_cycles) {
         const uint16_t pc_before = zre_.cpuPC();
         int used = zre_.cpuStep();
         remaining -= used;
+
+        // Advance floppy index pulse simulation
+        afs_.update(used);
 
         if (boot_trace_count_ < 80) {
             LOG_DEBUG("BOOT", "step=%d PC=%04X used=%d", boot_trace_count_, pc_before, used);

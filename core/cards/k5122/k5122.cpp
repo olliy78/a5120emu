@@ -164,8 +164,17 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
             handleDataPortAWrite(data);
         }
     } else if (port == 0x18) {
-        // 8212 drive-select: bits [7:4]=/LCKx bits [3:0]=/SELx (simplified)
-        selected_drive_ = data & 0x03;
+        // 8212 drive-select: bits [3:0] = /SELx, active-low one-hot
+        // 0xEE → lower nibble 0xE = 1110, bit0=0 → drive 0
+        // 0xDD → lower nibble 0xD = 1101, bit1=0 → drive 1
+        // 0xBB → lower nibble 0xB = 1011, bit2=0 → drive 2
+        // 0x77 → lower nibble 0x7 = 0111, bit3=0 → drive 3
+        uint8_t sel = ~data & 0x0F;
+        selected_drive_ = (sel == 0) ? 0
+                        : (sel & 0x01) ? 0
+                        : (sel & 0x02) ? 1
+                        : (sel & 0x04) ? 2
+                        : 3;
         LOG_INFO("K5122", "8212 drive-select write=0x%02X => D%d selected",
                  data, selected_drive_);
         updateStatusPortB();
@@ -221,6 +230,11 @@ uint8_t K5122::getVector() const {
     if (ctrl_pio_.hasInterrupt()) return ctrl_pio_.getVector();
     if (data_pio_.hasInterrupt()) return data_pio_.getVector();
     return 0xFF;
+}
+
+void K5122::onRETI() {
+    ctrl_pio_.onRETI();
+    data_pio_.onRETI();
 }
 
 // ─── Disk management ─────────────────────────────────────────────────────────
@@ -382,7 +396,8 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
     }
 
     // Update head/side select (bit 5 doubles as side select when not stepping).
-    current_head_ = (data >> 5) & 0x01;
+    // MR/SD=0 → side 1 (head 1); MR/SD=1 → side 0 (head 0).
+    current_head_ = (data & 0x20) ? 0 : 1;
 
     prev_ctrl_a_ = data;
     updateStatusPortB();
@@ -435,7 +450,7 @@ void K5122::updateStatusPortB() {
     if (drv.isMounted()) {
         s &= ~(1u << 0);            // /RDYL = 0 (ready)
         if (drv.currentCylinder() == 0)
-            s &= ~(1u << 6);        // /FW = 0 (at track 0)
+            s &= ~(1u << 7);        // /TO = 0 (at track 0, bit 7)
         if (drv.isWriteProtect())
             s &= ~(1u << 5);        // /WP = 0 (write-protected)
     }
@@ -493,19 +508,36 @@ void K5122::doReadSector() {
               static_cast<unsigned>(current_head_),
               static_cast<unsigned>(current_sector_));
 
-    sector_buf_ = drv.readSector(current_cyl_[selected_drive_],
-                                 current_head_,
-                                 current_sector_);
+    auto data = drv.readSector(current_cyl_[selected_drive_],
+                               current_head_,
+                               current_sector_);
+
+    // Compute IDAM size code from sector bytes (128→0, 256→1, 512→2, 1024→3).
+    uint8_t size_code = 0;
+    const TrackFormat* tf = drv.format().findTrack(
+        current_cyl_[selected_drive_], current_head_);
+    if (tf) {
+        uint16_t bps = tf->bytes_per_sec;
+        while (bps > 128 && size_code < 3) { bps >>= 1; ++size_code; }
+    }
+
+    // Prepend IDAM header so boot ROM sector-header comparison succeeds.
+    sector_buf_.clear();
+    sector_buf_.push_back(0x00);                           // preamble (discarded)
+    sector_buf_.push_back(0xFE);                           // IDAM address mark
+    sector_buf_.push_back(current_cyl_[selected_drive_]);  // cylinder
+    sector_buf_.push_back(current_head_);                  // head/side
+    sector_buf_.push_back(current_sector_);                // sector ID (1-based, matches ROM L'=[0x03F5]=1)
+    sector_buf_.push_back(size_code);                      // sector size code
+    sector_buf_.insert(sector_buf_.end(), data.begin(), data.end());
+
     buf_pos_      = 0;
     transferring_ = true;
     write_mode_   = false;
 
-    LOG_DEBUG("K5122", "    sector data: %zu bytes, first=0x%02X 0x%02X 0x%02X 0x%02X...",
-              sector_buf_.size(),
-              sector_buf_.size() > 0 ? sector_buf_[0] : 0xFF,
-              sector_buf_.size() > 1 ? sector_buf_[1] : 0xFF,
-              sector_buf_.size() > 2 ? sector_buf_[2] : 0xFF,
-              sector_buf_.size() > 3 ? sector_buf_[3] : 0xFF);
+    LOG_DEBUG("K5122", "    IDAM: C=%u H=%u S=%u size_code=%u data=%zu bytes",
+              current_cyl_[selected_drive_], current_head_,
+              current_sector_, size_code, data.size());
 }
 
 /**
@@ -577,7 +609,21 @@ void K5122::markDriveAccess(int drive) {
         std::chrono::steady_clock::now() + led_hold_time_;
 }
 
-// ─── DMA-Update Fallback (aufgerufen wenn ZVE2 im Reset, BUSRQ aktiv) ────────
+// ─── Index pulse simulation ───────────────────────────────────────────────────
+
+void K5122::update(int cycles) {
+    if (!drives_[selected_drive_].isMounted()) return;
+
+    index_cycle_acc_ += cycles;
+    if (index_cycle_acc_ < kIndexPeriodCycles) return;
+    index_cycle_acc_ -= kIndexPeriodCycles;
+
+    // Pulse /ASTB low (index pulse) then high again.
+    // The falling edge (true→false) fires the ctrl PIO Port A interrupt.
+    ctrl_pio_.setASTB(false);   // falling edge → interrupt pending
+    ctrl_pio_.setASTB(true);    // return high (pulse complete)
+    LOG_TRACE("K5122", "Index pulse: ctrl PIO Port A /ASTB pulsed");
+}
 
 /**
  * @brief Perform the pending DMA transfer and release /BUSRQ (ZVE2 fallback).
