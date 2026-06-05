@@ -254,6 +254,16 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_z80 PRIVATE k1520_z80 GTest::gtest_main)
         target_include_directories(k1520_test_z80 PRIVATE ${CMAKE_SOURCE_DIR})
 
+        # Full-machine boot integration test (ZVE1+ZVE2 + K5122 DMA end-to-end).
+        # Quiet logging (WARN) keeps the multi-million-cycle boot run readable.
+        add_executable(k1520_test_boot_integration tests/cpp/test_boot_integration.cpp)
+        target_link_libraries(k1520_test_boot_integration
+            PRIVATE k1520_a5120 k1520_floppy k1520_logger GTest::gtest_main)
+        target_include_directories(k1520_test_boot_integration PRIVATE ${CMAKE_SOURCE_DIR})
+        target_compile_definitions(k1520_test_boot_integration PRIVATE
+            LOG_LEVEL=2
+            A5120_TEST_DISK_DIR="${CMAKE_SOURCE_DIR}/disks")
+
         include(GoogleTest)
         gtest_discover_tests(k1520_test_pio)
 
@@ -269,6 +279,7 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_k8025)
         gtest_discover_tests(k1520_test_k5122)
         gtest_discover_tests(k1520_test_z80)
+        gtest_discover_tests(k1520_test_boot_integration PROPERTIES TIMEOUT 60)
     endif() # BUILD_K1520_TESTS
 
     # boot_trace: standalone boot diagnostic tool (LOG_LEVEL=5 for full trace)

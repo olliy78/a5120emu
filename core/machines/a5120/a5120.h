@@ -144,5 +144,12 @@ private:
 
     int boot_trace_count_ = 0;
 
+    // ZVE2 DMA completion tracking (see run()): a chained bootloader re-runs the
+    // DMA, and the boot ROM's [0x03F8] done-flag still holds 3 from the previous
+    // round when the next starts. We therefore detect the 0→3 transition per
+    // round, not the level.
+    bool busrq_active_     = false;   // /BUSRQ was asserted last iteration
+    bool dma_saw_progress_ = false;   // [0x03F8] observed != 3 since this round began
+
     std::string last_error_;
 };

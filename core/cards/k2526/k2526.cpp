@@ -284,17 +284,26 @@ void K2526::ioWrite(uint8_t port, uint8_t data)
                 break;
 
             case 0x04:
-                // /RES-ZVE2: DMA-CPU reset (active-low, bit 0).
-                // bit0=0 → /RES-ZVE2 assertiert → ZVE2 in Reset versetzen.
-                // bit0=1 → /RES-ZVE2 freigegeben → ZVE2 starten (PC=0000H).
-                if (!(data & 0x01) && !zve2_reset_) {
-                    zve2_reset_ = true;
-                    LOG_INFO("K2526", "ZVE2 in Reset versetzt (OUT 04H=0x%02X)", data);
-                } else if ((data & 0x01) && zve2_reset_) {
+                // /RES-ZVE2: DMA-CPU reset/start strobe (Port 04H, /CST2).
+                //   bit0=0 → /RES-ZVE2 assertiert → ZVE2 in Reset.
+                //   bit0=1 → ZVE2 (neu) starten bei PC=0000H.
+                // Wichtig: Der Boot-ROM ruft CALL 0194 (mit OUT 04H, bit0=1) VOR
+                // JEDER DMA-Runde auf. ZVE2 muss daher bei bit0=1 IMMER neu von
+                // PC=0000H starten (→ JP 01DD lädt cyl/sector aus [03F3]/[03F5]
+                // frisch), nicht nur beim Übergang Reset→Lauf. Sonst liefe die
+                // zweite Runde mit veralteten IDAM-Registern (cyl der Vorrunde)
+                // und die IDAM-Suche fände nie einen Treffer. ZVE2 führt erst
+                // aus, sobald /BUSRQ assertiert ist (BUSAK-Freigabe, HW Abschn. 6.4).
+                if (!(data & 0x01)) {
+                    if (!zve2_reset_) {
+                        zve2_reset_ = true;
+                        LOG_INFO("K2526", "ZVE2 in Reset versetzt (OUT 04H=0x%02X)", data);
+                    }
+                } else {
                     zve2_reset_ = false;
-                    zve2_wait_ = false;  // /RESET release also deasserts /WAIT
-                    zve2_.reset();
-                    LOG_INFO("K2526", "ZVE2 gestartet: PC=0000H (OUT 04H=0x%02X)", data);
+                    zve2_wait_  = false;  // Start hebt auch /WAIT-ZVE2 auf
+                    zve2_.reset();        // Neustart bei PC=0000H (jede DMA-Runde)
+                    LOG_INFO("K2526", "ZVE2 (neu)gestartet: PC=0000H (OUT 04H=0x%02X)", data);
                 }
                 break;
 

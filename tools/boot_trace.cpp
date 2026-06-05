@@ -13,6 +13,9 @@
  *     -v             Verbose: log every ZVE2 DMA instruction (not just the first 600)
  *     -L <file>      Route the emulator LOG_* stream to <file> (keeps the trace
  *                    summary readable; the libs are built with LOG_LEVEL=5)
+ *     -p <cycles>    Keep tracing for <cycles> after the boot ROM hands off to the
+ *                    loaded code (0x0437). Reports I/O-port activity, VRAM writes,
+ *                    a loaded-code PC histogram, and the screen as text.
  *
  * Traces BOTH CPUs: ZVE1 (main, sampled at batch boundaries) and ZVE2 (DMA-CPU,
  * every instruction via a trace callback). ZVE2 runs only while /BUSRQ is held,
@@ -181,6 +184,10 @@ int main(int argc, char** argv) {
     bool  single_step       = false;
     int   single_step_count = 200;
     bool  verbose           = false;
+    int   post_cycles       = 0;         // -p: cycles to keep tracing after boot reached
+    int   dump_start        = -1;        // -d start:end: dump live RAM to file at end
+    int   dump_end          = -1;
+    const char* dump_path   = "/tmp/ram_dump.bin";
 
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
@@ -189,6 +196,11 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "-n") && i+1 < argc) { single_step_count = atoi(argv[++i]); }
         else if (!strcmp(argv[i], "-v"))            { verbose = true; }
         else if (!strcmp(argv[i], "-L") && i+1 < argc) { log_path = argv[++i]; }
+        else if (!strcmp(argv[i], "-p") && i+1 < argc) { post_cycles = atoi(argv[++i]); }
+        else if (!strcmp(argv[i], "-d") && i+1 < argc) {  // -d 0x0400:0x0600 [file]
+            sscanf(argv[++i], "%i:%i", &dump_start, &dump_end);
+            if (i+1 < argc && argv[i+1][0] != '-') dump_path = argv[++i];
+        }
         else                                        { disk_path = argv[i]; }
     }
     if (!disk_path) disk_path = "disk_b.img";
@@ -222,15 +234,28 @@ int main(int argc, char** argv) {
     int      cycles_done  = 0;                            // callbacks read this (approx)
     int      step_count   = 0;
     bool     boot_reached = false;                        // ZVE1 entered loaded code
+    int      boot_cycle   = -1;                            // cycle at which boot was reached
     std::unordered_map<uint16_t, uint32_t> milestone_counts;
+
+    // ── Post-boot (loaded-code) tracing ───────────────────────────────────────
+    // After the boot ROM hands off to the loaded boot record (0x0437), follow the
+    // loaded code: a separate PC histogram, an I/O-port R/W histogram, and VRAM
+    // (screen) write tracking — so we can see further sector loads, screen init,
+    // and BDOS/CP/M activity that loads @os.com.
+    std::unordered_map<uint16_t, uint32_t> post_pc_hist;
+    uint64_t io_rd[256] = {0}, io_wr[256] = {0};
+    uint64_t vram_writes = 0;
+    uint16_t vram_first = 0xFFFF, vram_last = 0x0000;
 
     machine.setCpuTraceCallback([&](const Z80& z) {
         ++sample_count;
         pc_hist[z.PC]++;
+        if (boot_reached) post_pc_hist[z.PC]++;
 
         // Boot success: ZVE1 executing loaded code (ROM <0x0400, VRAM >=0xF800).
         if (!boot_reached && z.PC >= 0x0400 && z.PC < 0xF800 && !machine.isRomEnabled()) {
             boot_reached = true;
+            boot_cycle   = cycles_done;
             fprintf(stderr, "\n*** BOOT SUCCESS: ZVE1 executing loaded code at PC=0x%04X (~cycle %d) ***\n",
                     z.PC, cycles_done);
         }
@@ -294,6 +319,19 @@ int main(int argc, char** argv) {
         }
     });
 
+    // ── Bus trace: I/O-port R/W histogram + VRAM (screen) write tracking ───────
+    machine.setBusTrace([&](bool isIO, bool isRead, uint16_t addr, uint8_t data) {
+        (void)data;
+        if (isIO) {
+            if (isRead) io_rd[addr & 0xFF]++;
+            else        io_wr[addr & 0xFF]++;
+        } else if (!isRead && addr >= 0xF800) {     // VRAM write (K7024 screen)
+            ++vram_writes;
+            if (addr < vram_first) vram_first = addr;
+            if (addr > vram_last)  vram_last  = addr;
+        }
+    });
+
     // ── Mount boot disk ───────────────────────────────────────────────────────
     // Try cpa780 first: boot ROM expects 128B sectors (size code 0x00 at [0x03F6])
     bool mounted = machine.mountDisk(0, disk_path, "cpa780", false);
@@ -354,7 +392,12 @@ int main(int argc, char** argv) {
             next_progress = cycles_done + 200000;
         }
 
-        if (done == 0 || boot_reached) break;
+        if (done == 0) break;
+        // Stop at boot unless -p asks to keep tracing the loaded code for N cycles.
+        if (boot_reached) {
+            if (post_cycles == 0) break;
+            if (cycles_done >= boot_cycle + post_cycles) break;
+        }
     }
 
     // ── Final summary ─────────────────────────────────────────────────────────
@@ -452,6 +495,75 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 80 * 24; i++)
             if (fb[i] != 0 && fb[i] != 0xFF) nonzero++;
         fprintf(stderr, "\nFramebuffer non-default bytes: %d / %d\n", nonzero, 80*24);
+    }
+
+    // ── Post-boot (loaded-code) analysis (only meaningful with -p) ─────────────
+    if (boot_reached && post_cycles > 0) {
+        fprintf(stderr, "\n=== Post-boot (loaded code, %d cycles after 0x%04X handoff) ===\n",
+                cycles_done - boot_cycle, 0x0437);
+
+        // I/O port activity (which cards the loaded code talks to)
+        fprintf(stderr, "\nI/O port activity (rd/wr counts):\n");
+        auto portName = [](int p) -> const char* {
+            if (p <= 0x07) return "ZRE U-Bus";
+            if (p <= 0x0B) return "ZRE BS-PIO";
+            if (p <= 0x0F) return "ZRE CTC";
+            if (p >= 0x10 && p <= 0x18) return "K5122 floppy";
+            if (p >= 0x50 && p <= 0x5F) return "K8025 serial";
+            return "";
+        };
+        for (int p = 0; p < 256; ++p) {
+            if (io_rd[p] || io_wr[p])
+                fprintf(stderr, "  port 0x%02X : rd=%-7llu wr=%-7llu  %s\n", p,
+                        (unsigned long long)io_rd[p], (unsigned long long)io_wr[p],
+                        portName(p));
+        }
+
+        // VRAM (screen) writes
+        fprintf(stderr, "\nVRAM (0xF800-0xFFFF) writes: %llu",
+                (unsigned long long)vram_writes);
+        if (vram_writes)
+            fprintf(stderr, "  (range 0x%04X-0x%04X)", vram_first, vram_last);
+        fprintf(stderr, "\n");
+
+        // Post-boot PC histogram (loaded-code hotspots)
+        std::vector<std::pair<uint32_t, uint16_t>> ph;
+        ph.reserve(post_pc_hist.size());
+        for (auto& kv : post_pc_hist) ph.push_back({kv.second, kv.first});
+        std::sort(ph.rbegin(), ph.rend());
+        fprintf(stderr, "\nLoaded-code PC histogram (top 20):\n");
+        int ps = 0;
+        for (auto& kv : ph) {
+            const char* lbl = romLabel(kv.second);
+            fprintf(stderr, "  0x%04X : %6u   %s\n", kv.second, kv.first, lbl ? lbl : "");
+            if (++ps >= 20) break;
+        }
+
+        // Screen content as text (VRAM bytes → ISO-8859 chars, 80 columns)
+        fprintf(stderr, "\nScreen (VRAM as text, 80 cols, '.' = 0x00/0xFF):\n");
+        for (int row = 0; row < 24; ++row) {
+            char line[81];
+            for (int col = 0; col < 80; ++col) {
+                uint8_t c = machine.memReadDebug(static_cast<uint16_t>(0xF800 + row * 80 + col));
+                line[col] = (c >= 0x20 && c < 0x7F) ? static_cast<char>(c) : '.';
+            }
+            line[80] = '\0';
+            fprintf(stderr, "  |%s|\n", line);
+        }
+    }
+
+    // Dump a live-RAM range to a binary file for offline disassembly. The loaded
+    // code is relocated/chained (and may be self-modified), so the on-disk image
+    // is not a faithful source — dump what is actually in memory.
+    if (dump_start >= 0 && dump_end > dump_start) {
+        FILE* df = fopen(dump_path, "wb");
+        if (df) {
+            for (int a = dump_start; a < dump_end; ++a)
+                fputc(machine.memReadDebug(static_cast<uint16_t>(a)), df);
+            fclose(df);
+            fprintf(stderr, "\nRAM dump 0x%04X-0x%04X (%d bytes) -> %s\n",
+                    dump_start, dump_end, dump_end - dump_start, dump_path);
+        }
     }
 
     return boot_reached ? 0 : 1;

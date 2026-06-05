@@ -342,43 +342,46 @@ TEST_F(K5122Test, StatusPortB_NotWriteProtected_WPInactive) {
 }
 
 /**
- * @test K5122Test/StatusPortB_AtTrack0_FWActive
- * @brief After mounting, the head is at track 0: /FW (bit 6) is low (active-low).
- * @par Pass criterion  status & 0x40 == 0  (/FW = 0 = at track 0).
+ * @test K5122Test/StatusPortB_AtTrack0_TOActive
+ * @brief After mounting, the head is at track 0: /TO (bit 7, /TRACK 00) is low.
+ * @par Pass criterion  status & 0x80 == 0  (/TO = 0 = at track 0).
  */
-TEST_F(K5122Test, StatusPortB_AtTrack0_FWActive) {
+TEST_F(K5122Test, StatusPortB_AtTrack0_TOActive) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
     card.ioWrite(0x18, 0x00);
     uint8_t status = card.ioRead(0x12);
-    // /FW = bit 6; active low → 0 when at track 0 (initial position).
-    EXPECT_EQ(status & 0x40, 0) << "Expected /FW=0 (at track 0) after mount";
+    // /TO = /TRACK 00 = bit 7 (per K5122 hardware doc); active low → 0 when the
+    // head is at track 0 (initial position after mount). bit 6 is /FW (Fault).
+    EXPECT_EQ(status & 0x80, 0) << "Expected /TO=0 (at track 0) after mount";
     std::filesystem::remove(path);
 }
 
 // ─── 7. Step and ctrl signal sequence (no crash) ─────────────────────────────
 
 /**
- * @test K5122Test/StepPulse_WithMountedDrive_DoesNotCrash
- * @brief Applying a step-pulse signal sequence via Ctrl Port A does not crash.
- * @details Writes 0xFF (all inactive), then 0x5F (/ST=0 = step, MR/SD=0 = inward),
- *   then 0xFF (release).  After one inward step from track 0 /FW (bit 6) must be 1.
- * @par Pass criterion  No crash; status & 0x40 != 0 after inward step.
+ * @test K5122Test/StepInward_LeavesTrack0
+ * @brief One inward step pulse moves the head off track 0 (/TO bit 7 goes high).
+ * @details MR/SD (bit 5) step direction matches the boot ROM: bit5=1 = inward
+ *   (toward higher cylinders), as the loaded boot record uses (0x29). A step
+ *   inward from track 0 reaches cylinder 1, so /TO (bit 7, /TRACK 00) becomes 1.
+ * @par Pass criterion  /TO=0 at track 0; /TO=1 after one inward step.
  */
-TEST_F(K5122Test, StepPulse_WithMountedDrive_DoesNotCrash) {
+TEST_F(K5122Test, StepInward_LeavesTrack0) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
     card.ioWrite(0x18, 0x00);       // select drive 0
 
-    // Step inward: /ST=0 (bit 7 = 0 = step pulse), MR/SD=0 (bit 5 = 0 = inward).
-    // 0x5F = 0b01011111 → bit 7=0, bit 5=0 (inward), all others inactive.
+    EXPECT_EQ(card.ioRead(0x12) & 0x80, 0) << "should start at track 0 (/TO=0)";
+
+    // Step inward: /ST pulse (bit 7 falling edge), MR/SD=1 (bit 5 = 1 = inward).
+    // 0x7F = 0b01111111 → bit 7=0 (step), bit 5=1 (inward).
     card.ioWrite(0x10, 0xFF);       // all high (inactive), establishes prev state
-    card.ioWrite(0x10, 0x5F);       // /ST = 0 (step pulse), MR/SD = 0 (inward)
+    card.ioWrite(0x10, 0x7F);       // /ST = 0 (step pulse), MR/SD = 1 (inward)
     card.ioWrite(0x10, 0xFF);       // release
 
-    // After one inward step from track 0, /FW (bit 6) should be 1 (not at track 0).
-    uint8_t status = card.ioRead(0x12);
-    EXPECT_NE(status & 0x40, 0) << "Expected /FW=1 (not at track 0) after inward step";
+    // After one inward step the head is at cylinder 1: /TO (bit 7) = 1.
+    EXPECT_NE(card.ioRead(0x12) & 0x80, 0) << "Expected /TO=1 (off track 0) after inward step";
 
     std::filesystem::remove(path);
 }

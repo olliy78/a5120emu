@@ -1345,7 +1345,8 @@ Maximal 5 Retries pro Geräte-Typ (E Bit0=0 oder 1). Nach Erschöpfung aller Mö
 | B8  | Kontinuierlicher Track-Stream, 138-Byte-Blöcke            | k5122.cpp    | ✓ behoben  |
 | B9  | BUSRQ-Freigabe erst bei [0x03F8]=3 (statt Puffer-Leer)    | a5120.cpp    | ✓ behoben  |
 | B10 | ZVE1/ZVE2 nebenläufig steppen während BUSRQ              | a5120.cpp    | ✓ behoben  |
-| —   | /FW-Statusbit (Bit6 statt Bit7) bei Spur 0               | k5122.cpp    | ✓ behoben  |
+| —   | Port-B-Statusbits korrigiert: Bit7=/TO=/TRACK00 (Boot-  | k5122.*      | ✓ behoben  |
+|     | Drive-Detect), Bit6=/FW=Fault (vorher in Code vertauscht)|              |            |
 
 **✓ GELÖST 2026-06-05:** `boot_trace -L … disks/cpadisk.img` meldet **Boot reached: YES**.
 ZVE2 kopiert alle 4 Bootsektoren, schreibt [0x03F8]=3; ZVE1 prüft die Signatur "SYL"
@@ -1494,3 +1495,33 @@ KORREKT:
 | `0x025F` | `OUT(10h, [0x03FD])` | Pfad-Byte schreiben (keine Flanke, Bit3 war bereits 0) |
 | `0x0239`–`0x0242` | `IN / INI / INIR` | Korrekte Stelle der BUSRQ-Freigabe (letztes Byte aus Port 0x16) |
 | `0x026B` | `LD (03F8h), 03h` | ZVE2-Fertigstellungs-Signal — erst nach INIR möglich |
+
+## 13. Übergabe an den geladenen Bootloader (`CALL [0x0175]` → 0x0437)
+
+Nachdem ZVE2 die ersten 4 Sektoren nach `0x0400` kopiert und `[0x03F8]=3` gesetzt hat,
+validiert ZVE1 die `"SYL"`-Signatur und ruft den geladenen Code über `CALL [0x0175]`
+(ROM `0x0174`) bei `0x0437` auf. Die Analyse dieses Codes steht in
+[`analyse_bootloader.md`](analyse_bootloader.md). Für die ROM-Seite sind zwei
+Wechselwirkungen wichtig:
+
+### 13.1 IM2-/IFF1-Vererbung
+
+Der Aufruf `CALL [0x0175]` erfolgt **ohne vorheriges `DI`**. Der geladene Loader erbt
+daher den Interrupt-Zustand des ROMs: `IFF1=1` und `IM 2`. Der Loader nutzt das aus —
+er stellt lediglich die IM2-Page um (`LD A,07 / LD I,A`) und programmiert eigene
+Vektoren (`0x60`/`0x62`) auf der K5122-`ctrl_pio_`. Es gibt im Loader **kein** `EI`
+und **kein** `IM 2`; beides kommt aus der ROM-Phase.
+
+### 13.2 Konflikt: ROM-Index-Interrupt (Vektor `0xBA`) in der Loader-Phase
+
+Die ZRE-CTC erzeugt den Index-Impuls-Interrupt mit Vektor `0xBA` (ROM-ISR `0x01C7`,
+in der ROM-Phase über die IM2-Tabelle bei `I=0x00`-Page erreichbar). Dieser Interrupt
+**läuft nach der Übergabe weiter**. Da der Loader `I=0x07` setzt, vektoriert `0xBA`
+jetzt über `[0x07BA]=0x0000` nach `0x0000` (`JP 0x01DD`) — also zurück in den
+ROM/ZVE2-Bereich. Das ist in der Loader-Phase unerwünscht.
+
+Offen (Hardware-Frage): Wie wird der `0xBA`-Index-Interrupt in der Loader-Phase
+ruhiggestellt? Kandidaten: das `OUT (EEH),0` am Loader-Anfang (`0x0437`), eine
+ZRE-CTC-Reprogrammierung, oder ein PIO-/Interrupt-Reset. Bis das geklärt und im
+Emulator abgebildet ist, stört der fortbestehende `0xBA`-Interrupt die Stufe-2-Analyse.
+Siehe `analyse_bootloader.md` §5.

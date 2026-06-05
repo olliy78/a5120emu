@@ -39,8 +39,8 @@
  *   bit 3  PRE   – Pre-compensation enable
  *   bit 4  /FA   – Fault Adapter (active low; 1 = no fault)
  *   bit 5  /WP   – Write Protect (active low, 0 = protected)
- *   bit 6  /FW   – Track 0 (active low, 0 = at track 0)
- *   bit 7  /TO   – Timeout (active low, 1 = no timeout)
+ *   bit 6  /FW   – Fault (active low, 1 = no fault)
+ *   bit 7  /TO   – Track 0 (active low, 0 = at track 0)
  * @endcode
  *
  * Simplified (non-DMA) sector transfer model:

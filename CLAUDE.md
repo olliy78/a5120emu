@@ -107,6 +107,44 @@ reset/wait clearing on port-04 release, 1-based IDAM `sector_id`, `/STR` read-re
 Full narrative and annotated disassembly: `doc/analyse_zre_rom_boot.md`; canonical
 `z80_disasm2.py` invocation for `zre.rom`: `tools/README.md`.
 
+### Multi-round chained bootloader (current frontier — reaches screen banner)
+
+The loaded code at `0x0437` is **stage-1 of a chained loader**: it re-uses the boot
+ROM's DMA machinery for further rounds instead of containing its own. It patches the
+operand of the ROM's `CALL [0x0175]` (at ROM `0x0174`) to point at the next stage,
+then re-enters the ROM DMA path via `JP 0x0165`. Each round reloads `[0x03F3]`=cyl /
+`[0x03F5]`=sector / `[0x03F0]`=load-addr and runs another ZVE2 transfer. Round 2+ reads
+**cyl 1, head 1** and several cylinders into `0x0600+`. With the three fixes below,
+`boot_trace -p 9000000 disks/cpadisk01.img` now completes **2+ DMA rounds**, does
+**~2079 VRAM writes**, and the screen shows **`Bootloader, Version 24.02.87`**.
+
+Three round-2+ fixes (all required, beyond the round-1 three above):
+
+1. **OUT(04H) bit0=1 always restarts ZVE2 from PC=0** (`K2526` port-04 handler). The
+   ROM's `CALL 0194` issues `OUT(04H)` with bit0=1 before *every* DMA round; ZVE2 must
+   `reset()` to PC=0 each round to reload its IDAM registers for the new cyl/sector —
+   not only on the first reset→run edge.
+2. **Step direction = bit5 of ctrl-port-A** (`K5122::handleCtrlPortAWrite`):
+   `step_dir_in_ = (data & 0x20) != 0` (bit5=1 → inward/toward higher cyl, bit5=0 →
+   outward/toward track 0). ROM track-0 seek writes `0x09` (bit5=0, outward); loaded
+   code writes `0x29` (bit5=1, inward to cyl 1). Getting this backwards hangs round 2.
+3. **Transition-based DMA-completion detection** (`A5120Machine::run`). `[0x03F8]`
+   still holds `3` from the prior round when the next begins, so the run loop arms
+   `dma_saw_progress_` only after seeing `[0x03F8]!=3` (ZVE1 cleared it) and *then*
+   treats a `→3` write as completion. Level-based detection fires on the stale 3.
+
+**Open problem:** after printing the banner, ZVE1 spins in a tight loop at
+`0x052E–0x0538` (122786× in the post-boot PC histogram). Unknown whether it is a
+keyboard/input poll waiting to select the OS, a not-yet-emulated device poll, or a
+display loop. Next: disassemble that loop from live RAM (it is relocated/chained, so
+dump via `memReadDebug`, not just the disk image) and correlate with the post-boot
+I/O-port histogram from `boot_trace -p`. Goal of the chain: load and execute `@os.com`
+from the filesystem. Running analysis: `doc/analyse_bootloader.md` (in progress).
+
+`boot_trace` post-boot tracing: `-p <cycles>` continues past `0x0437`; the summary then
+adds an I/O-port read/write histogram, VRAM write count + range, a loaded-code PC
+histogram, and an 80-col text dump of VRAM (`0xF800`) so the screen banner is visible.
+
 ## Conventions
 
 - Code comments and many log strings are in German; match the surrounding language of the file you edit.

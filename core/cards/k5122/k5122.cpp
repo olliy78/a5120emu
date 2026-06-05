@@ -26,8 +26,8 @@
  *   bit 3  PRE   – Pre-compensation (output)
  *   bit 4  /FA   – Fault Adapter (active low; 1 = no fault)
  *   bit 5  /WP   – Write Protect (active low, 0 = protected)
- *   bit 6  /FW   – Track 0 (active low, 0 = at track 0)
- *   bit 7  /TO   – Timeout (active low, 1 = no timeout)
+ *   bit 6  /FW   – Fault (active low, 1 = no fault)
+ *   bit 7  /TO   – Track 0 (active low, 0 = at track 0)
  * @endcode
  *
  * @see k5122.h
@@ -342,8 +342,12 @@ void K5122::setWriteProtect(int drive, bool wp) {
 void K5122::handleCtrlPortAWrite(uint8_t data) {
     // ── Step pulse: /ST (bit 7) falling edge ─────────────────────────────────
     if ((prev_ctrl_a_ & 0x80) && !(data & 0x80)) {
-        // MR/SD (bit 5): 0 = inward (toward higher cylinder), 1 = outward.
-        step_dir_in_ = !(data & 0x20);
+        // MR/SD (bit 5) step direction. Polarity from the boot ROM's own usage:
+        //   bit5=0 → outward (toward track 0): ROM drive-detect seeks track 0 with
+        //            0x09 (0000 1001, bit5=0).
+        //   bit5=1 → inward (toward higher cylinder): the loaded boot record steps
+        //            to cylinder 1 with 0x29 (0010 1001, bit5=1).
+        step_dir_in_ = (data & 0x20) != 0;
         doStep();
     }
 
@@ -443,14 +447,13 @@ void K5122::updateStatusPortB() {
     FloppyDrive& drv = drives_[selected_drive_];
     if (drv.isMounted()) {
         s &= ~(1u << 0);            // /RDYL = 0 (ready)
-        if (drv.currentCylinder() == 0) {
-            s &= ~(1u << 6);        // /FW = 0 (at track 0)
-            s &= ~(1u << 7);        // bit 7 = 0 at track 0: boot drive-detect
-                                    // (ROM 0x0110: IN 12H; RLCA; JR NC) proceeds
-                                    // only when bit 7 is clear.
-        }
+        if (drv.currentCylinder() == 0)
+            s &= ~(1u << 7);        // /TO = /TRACK 00 = 0 (head at track 0).
+                                    // The boot drive-detect (ROM 0x0110: IN 12H;
+                                    // RLCA; JR NC) proceeds only when bit 7 is clear.
         if (drv.isWriteProtect())
             s &= ~(1u << 5);        // /WP = 0 (write-protected)
+        // bit 6 (/FW = /FAULT) stays 1: no drive fault is modelled.
     }
 
     // Push status into the ctrl PIO Port B input latch so the CPU can read

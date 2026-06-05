@@ -135,12 +135,22 @@ int A5120Machine::run(int max_cycles) {
         // When ZVE2 is held in reset or /WAIT (legacy ZVE1 byte-poll boot path),
         // there is no second CPU to run, so dmaUpdate() releases the bus directly.
         if (bus_.isBUSRQ()) {
+            if (!busrq_active_) {            // a new DMA round just started
+                busrq_active_     = true;
+                dma_saw_progress_ = false;   // arm: ignore a stale [0x03F8]=3 from
+            }                                //      the previous round until ZVE1
+                                             //      clears it (CALL 0194, 0x01B3)
             if (!zre_.isZVE2InReset() && !zre_.isZVE2Waiting()) {
                 zre_.zve2Step();
-                // ZVE2 signals completion by writing [0x03F8]=3 (boot ROM 0x026B):
-                // all boot sectors copied → hand the bus back to ZVE1.
-                if (bus_.memRead(kZve2DoneFlagAddr) == kZve2DoneValue) {
-                    afs_.endDmaTransfer();
+                // ZVE2 signals completion by writing [0x03F8]=3 (boot ROM 0x026B).
+                // Detect the *transition* to 3 within this round, not the level:
+                // a multi-sector chain re-runs the DMA, and [0x03F8] still holds 3
+                // from the previous round when the next one starts.
+                uint8_t df = bus_.memRead(kZve2DoneFlagAddr);
+                if (df != kZve2DoneValue) {
+                    dma_saw_progress_ = true;            // ZVE1 cleared it → armed
+                } else if (dma_saw_progress_) {
+                    afs_.endDmaTransfer();               // 0→3 this round: done
                 }
                 // Fall through: also step ZVE1 concurrently (see comment above).
             } else {
@@ -148,6 +158,8 @@ int A5120Machine::run(int max_cycles) {
                 remaining--;
                 continue;
             }
+        } else {
+            busrq_active_ = false;          // bus idle → next assert is a new round
         }
 
         // Deliver INT if CPU can accept
