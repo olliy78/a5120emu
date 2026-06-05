@@ -96,6 +96,25 @@ public:
         zre_.cpu().traceCallback = std::move(cb);
     }
 
+    // ─── ZVE2 (DMA-CPU) diagnostics ──────────────────────────────────────────
+    /** @brief Current PC of the ZVE2 (DMA Z80). */
+    uint16_t zve2PC() const { return zre_.zve2PC(); }
+    uint16_t zve2SP() const { return zre_.zve2().SP; }
+    uint16_t zve2AF() const { return zre_.zve2().AF; }
+    uint16_t zve2BC() const { return zre_.zve2().BC; }
+    uint16_t zve2DE() const { return zre_.zve2().DE; }
+    uint16_t zve2HL() const { return zre_.zve2().HL; }
+    /** @brief True while ZVE2 is held in reset (port 04H bit0=0). */
+    bool     isZVE2InReset() const { return zre_.isZVE2InReset(); }
+    /** @brief True while ZVE2 is stalled by /WAIT-ZVE2 (BS-PIO B3=0). */
+    bool     isZVE2Waiting() const { return zre_.isZVE2Waiting(); }
+    /** @brief True while /BUSRQ is asserted (ZVE2/DMA owns the bus). */
+    bool     isBUSRQ() const { return bus_.isBUSRQ(); }
+    /** @brief Install a per-instruction trace callback on ZVE2. */
+    void setZVE2TraceCallback(std::function<void(const Z80&)> cb) {
+        zre_.setZVE2TraceCallback(std::move(cb));
+    }
+
     // Debug
     std::string lastError() const { return last_error_; }
 

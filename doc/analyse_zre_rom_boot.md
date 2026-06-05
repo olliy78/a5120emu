@@ -1341,13 +1341,25 @@ Maximal 5 Retries pro Geräte-Typ (E Bit0=0 oder 1). Nach Erschöpfung aller Mö
 | P4  | BUSRQ-Deadlock in a5120.cpp (Fallback auf dmaUpdate)      | a5120.cpp    | ✓ behoben  |
 | B5  | ZVE2 bleibt im WAIT-Zustand nach Reset-Freigabe           | k2526.cpp    | ✓ behoben  |
 | B6  | sector_id im IDAM-Header 0-basiert statt 1-basiert        | k5122.cpp    | ✓ behoben  |
-| B7  | Vorzeitige BUSRQ-Freigabe in handleCtrlPortAWrite()       | k5122.cpp    | ✗ offen    |
+| B7  | Vorzeitige BUSRQ-Freigabe (Puffer-Leer)                   | k5122.cpp    | ✓ behoben  |
+| B8  | Kontinuierlicher Track-Stream, 138-Byte-Blöcke            | k5122.cpp    | ✓ behoben  |
+| B9  | BUSRQ-Freigabe erst bei [0x03F8]=3 (statt Puffer-Leer)    | a5120.cpp    | ✓ behoben  |
+| B10 | ZVE1/ZVE2 nebenläufig steppen während BUSRQ              | a5120.cpp    | ✓ behoben  |
+| —   | /FW-Statusbit (Bit6 statt Bit7) bei Spur 0               | k5122.cpp    | ✓ behoben  |
 
-**Nächste Schritte (nach B7-Fix):**
-1. Rebuild + Boot-Trace ausführen
-2. Verifizieren: ZVE2 liest alle Bytes aus sector_buf_, setzt [0x03F8]=3
-3. ZVE1 verlässt Warte-Schleife bei 0x0168, CALL 01B6h prüft Bootsektor-Signatur
-4. Ausführung erreicht 0x0437 (geladener Boot-Code)
+**✓ GELÖST 2026-06-05:** `boot_trace -L … disks/cpadisk.img` meldet **Boot reached: YES**.
+ZVE2 kopiert alle 4 Bootsektoren, schreibt [0x03F8]=3; ZVE1 prüft die Signatur "SYL"
+(RAM[0x0400]=53 59 4C) und springt nach 0x0437 (geladener Boot-Code).
+
+Kernerkenntnis (mit verbessertem boot_trace gefunden): ZVE2 liest **138 Bytes pro
+Sektor** (6 Header + 2 IDAM-CRC + 128 Daten + 2 Daten-CRC), nicht 134 oder 136 —
+die 2 Daten-CRC stammen aus den nachgelagerten INIs bei ROM 0x0245/0x0247. Der
+K5122 liefert nun den gesamten Track als kontinuierlichen Stream solcher 138-Byte-
+Blöcke; BUSRQ wird gehalten bis ZVE2 [0x03F8]=3 setzt; ZVE1 läuft währenddessen
+nebenläufig weiter (sonst überschreibt ZVE1s spätes [0x03F8]=0 das =3).
+
+**Nächste Schritte:** den geladenen CPA-Sekundär-Bootstrap ab 0x0437 zum Laufen
+bringen (CTC-Init, K7024-Bildschirm, weitere K5122-Sektoren).
 
 ---
 

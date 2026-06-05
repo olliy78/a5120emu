@@ -7,9 +7,17 @@
  *   ./boot_trace [options] <disk_image>
  *   Options:
  *     -c <cycles>    Max cycles to simulate (default: 5000000)
- *     -s             Single-step trace: print every instruction in ROM (PC < 0x0400)
- *     -n <count>     Number of instructions to single-step trace (default: 200)
- *     -v             Verbose: also dump [0xFFFC] value on every change
+ *     -s             Single-step trace: print every ZVE1 ROM instruction (PC<0x0400)
+ *                    and every ZVE2 DMA instruction
+ *     -n <count>     Number of ZVE1 instructions to single-step trace (default: 200)
+ *     -v             Verbose: log every ZVE2 DMA instruction (not just the first 600)
+ *     -L <file>      Route the emulator LOG_* stream to <file> (keeps the trace
+ *                    summary readable; the libs are built with LOG_LEVEL=5)
+ *
+ * Traces BOTH CPUs: ZVE1 (main, sampled at batch boundaries) and ZVE2 (DMA-CPU,
+ * every instruction via a trace callback). ZVE2 runs only while /BUSRQ is held,
+ * so without the callback the boot-sector DMA is invisible. The tool reports
+ * where ZVE2 freezes and whether it reached completion ([03F8]=3).
  */
 
 #include "core/machines/a5120/a5120.h"
@@ -32,18 +40,30 @@ struct Milestone {
     bool        hit = false;
 };
 
+// ZVE1 (main CPU) milestones — matched against machine.cpuPC().
 static std::vector<Milestone> milestones = {
     { 0x0008, "LDI loop – zeroing RAM 0000-07FF",          true  },
     { 0x000E, "XOR A after zeroing – PIO init start",       true  },
     { 0x001C, "OUT BS-PIO A ctrl (Mode 1)",                 true  },
     { 0x00BC, "ROM-to-RAM copy section (JR Z target)",      true  },
     { 0x00C4, "LDIR: ROM[BA..3FF] → RAM[BA..3FF]",         true  },
-    { 0x00C8, "OUT BS-PIO B ctrl: Mode 3",                  true  },
-    { 0x00D0, "IN A, BS-PIO B – read-modify-write start",   true  },
     { 0x00D4, "OUT BS-PIO B – ROM DISABLE",                 true  },
-    { 0x00D6, "EI after ROM disable",                       true  },
     { 0x010F, "IN fcpiobd – start of disk seek loop",       false },
-    { 0x01DD, "ZVE2 DMA entry / boot sector load",          false },
+    { 0x0135, "ZVE1 WAIT_INDEX_LOOP (await 4 index pulses)", false },
+    { 0x0194, "ZVE1 CALL drive-init – releases & starts ZVE2", false },
+    { 0x0168, "ZVE1 STROBE_INIT wait loop (poll [03F8])",   false },
+    { 0x0174, "ZVE1 CALL 0437h – EXECUTE LOADED BOOT CODE",  true  },
+    { 0x027E, "ZVE1 alternate boot path (floppy retries done)", true },
+};
+
+// ZVE2 (DMA CPU) milestones — matched against the ZVE2 trace callback PC.
+static std::vector<Milestone> zve2_milestones = {
+    { 0x0000, "ZVE2 reset entry (PC=0000 → JP 01DD)",       true  },
+    { 0x01DD, "ZVE2 STROBE_LOOP entry (boot sector load)",  true  },
+    { 0x01FA, "ZVE2 /STR assert → doReadSector",            false },
+    { 0x020B, "ZVE2 IDAM compare loop",                     false },
+    { 0x0224, "ZVE2 IDAM matched → 128-byte INIR transfer", false },
+    { 0x0267, "ZVE2 DONE: OUT(11h,03)+[03F8]=3 (completion)", true  },
 };
 
 // ─── ROM disassembly reference table (PC → mnemonic) ─────────────────────────
@@ -121,6 +141,33 @@ static const char* romLabel(uint16_t pc) {
         case 0x00D6: return "EI – interrupts enabled after ROM disable";
         case 0x00D7: return "LD A,0xF3";
         case 0x00D9: return "OUT (0x13),A – fcpiobc: floppy PIO B setup";
+        // ── ZVE1 disk-seek / index-wait / handshake ──────────────────────────
+        case 0x0110: return "IN (0x12) – ctrl PIO B drive status";
+        case 0x0128: return "WAIT_INDEX_SETUP: [03F7]=4, enable ctrl PIO A int";
+        case 0x0135: return "WAIT_INDEX_LOOP: A=[03F7]; JR Z if 0";
+        case 0x0153: return "STORE_03FD: [03FD]=0x87 (NZ-path, no step)";
+        case 0x015C: return "SEEK_SETUP: cyl/head/sec/size = 0/0/1/0";
+        case 0x0165: return "CALL 0194h – drive init + start ZVE2";
+        case 0x0168: return "STROBE_INIT wait: A=[03F8]; JR Z,0168 (poll)";
+        case 0x016C: return "DEC A; JR Z,014Bh ([03F8]==1 → timeout)";
+        case 0x016F: return "CALL 01B6h – verify boot-sector signature";
+        case 0x0174: return "CALL 0437h – jump into loaded boot code";
+        case 0x0194: return "drive-init: [03F7]=16, OUT(04h) start ZVE2, /STR";
+        case 0x01B6: return "verify RAM[0400]='YS', RAM[0402]='L'";
+        // ── Index-pulse ISR (vector 0xBA → 0x01C7) ───────────────────────────
+        case 0x01C7: return "ISR: EI;PUSH;DEC [03F7];JR Z assert /STR";
+        case 0x01D4: return "ISR_ASSERT_STR: OUT(10h,BD); [03F8]=1 (timeout)";
+        // ── ZVE2 STROBE_LOOP (DMA program) ───────────────────────────────────
+        case 0x01DD: return "ZVE2 STROBE_LOOP: HL=[03F0] load addr";
+        case 0x01E9: return "ZVE2 LOAD_IDAM_REGS: EXX; B'=FE; DE'/HL'=cyl/sec";
+        case 0x01F4: return "ZVE2 OUT(10h,BD) /STR high";
+        case 0x01FA: return "ZVE2 OUT(10h,B5) /STR low → doReadSector";
+        case 0x020B: return "ZVE2 READ_IDAM_NZ: IN(16h); CP B' (0xFE marker)";
+        case 0x0224: return "ZVE2 IDAM matched → data transfer setup";
+        case 0x023C: return "ZVE2 INI/INIR: 128 data bytes → load addr";
+        case 0x0253: return "ZVE2 loop ctrl: CP L' vs [07F2]=4 (sector count)";
+        case 0x025A: return "ZVE2 STROBE_LOOP_BODY: [03FD] path byte";
+        case 0x0267: return "ZVE2 DONE: OUT(11h,03); [03F8]=3";
         default:     return nullptr;
     }
 }
@@ -129,6 +176,7 @@ static const char* romLabel(uint16_t pc) {
 
 int main(int argc, char** argv) {
     const char* disk_path   = nullptr;
+    const char* log_path    = nullptr;   // -L: route emulator LOG_* output to a file
     int   total_limit       = 5000000;
     bool  single_step       = false;
     int   single_step_count = 200;
@@ -140,9 +188,19 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "-s"))            { single_step = true; }
         else if (!strcmp(argv[i], "-n") && i+1 < argc) { single_step_count = atoi(argv[++i]); }
         else if (!strcmp(argv[i], "-v"))            { verbose = true; }
+        else if (!strcmp(argv[i], "-L") && i+1 < argc) { log_path = argv[++i]; }
         else                                        { disk_path = argv[i]; }
     }
     if (!disk_path) disk_path = "disk_b.img";
+
+    // Route the emulator's LOG_* stream to a file so it doesn't drown the
+    // trace tool's own stdout/stderr summary (the libs are built LOG_LEVEL=5).
+    if (log_path) {
+        if (k1520::logging::Logger::instance().setOutputFile(log_path))
+            fprintf(stderr, "Emulator log → %s\n", log_path);
+        else
+            fprintf(stderr, "WARN: could not open log file '%s'\n", log_path);
+    }
 
     fprintf(stderr, "=== A5120 Boot Trace ===\n");
     fprintf(stderr, "Disk:       %s\n", disk_path);
@@ -154,22 +212,87 @@ int main(int argc, char** argv) {
     A5120Machine machine;
     machine.powerOn();
 
-    // ── Single-step trace in ROM ───────────────────────────────────────────────
-    int step_count = 0;
-    if (single_step) {
-        machine.setCpuTraceCallback([&](const Z80& z) {
-            if (z.PC >= 0x0400 || step_count >= single_step_count) return;
+    // ── ZVE1 (main CPU) per-instruction trace ─────────────────────────────────
+    // Both CPUs are followed per instruction so milestone counts and PC
+    // histograms are exact. (ZVE1 was previously sampled once per batch, which
+    // missed short-lived PCs such as the 0x0194 handshake / 0x0168 wait entry.)
+    std::unordered_map<uint16_t, uint32_t> pc_hist;       // ZVE1 PC histogram
+    std::unordered_map<uint16_t, uint32_t> zve2_pc_hist;  // ZVE2 PC histogram
+    uint64_t sample_count = 0;                            // total ZVE1 instructions
+    int      cycles_done  = 0;                            // callbacks read this (approx)
+    int      step_count   = 0;
+    bool     boot_reached = false;                        // ZVE1 entered loaded code
+    std::unordered_map<uint16_t, uint32_t> milestone_counts;
+
+    machine.setCpuTraceCallback([&](const Z80& z) {
+        ++sample_count;
+        pc_hist[z.PC]++;
+
+        // Boot success: ZVE1 executing loaded code (ROM <0x0400, VRAM >=0xF800).
+        if (!boot_reached && z.PC >= 0x0400 && z.PC < 0xF800 && !machine.isRomEnabled()) {
+            boot_reached = true;
+            fprintf(stderr, "\n*** BOOT SUCCESS: ZVE1 executing loaded code at PC=0x%04X (~cycle %d) ***\n",
+                    z.PC, cycles_done);
+        }
+
+        for (auto& m : milestones) {
+            if (z.PC != m.pc) continue;
+            uint32_t n = ++milestone_counts[m.pc];
+            if (!m.hit) {
+                m.hit = true;
+                fprintf(stderr, "\n[MILESTONE] ~cycle=%d PC=0x%04X  %s\n",
+                        cycles_done, z.PC, m.label);
+                fprintf(stderr, "            SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X\n",
+                        z.SP, z.AF, z.BC, z.DE, z.HL);
+            } else if (!m.once && (n == 10 || n == 100 || (n % 500) == 0)) {
+                fprintf(stderr, "  [milestone] 0x%04X hit %u times (~cycle %d)\n",
+                        m.pc, n, cycles_done);
+            }
+        }
+
+        if (single_step && z.PC < 0x0400 && step_count < single_step_count) {
             const char* label = romLabel(z.PC);
             fprintf(stderr, "  [step %3d] PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X  %s\n",
-                    step_count, z.PC, z.SP, z.AF, z.BC, z.DE, z.HL,
-                    label ? label : "");
+                    step_count, z.PC, z.SP, z.AF, z.BC, z.DE, z.HL, label ? label : "");
             ++step_count;
-        });
-    }
+        }
+    });
 
-    // ── PC histogram ─────────────────────────────────────────────────────────
-    std::unordered_map<uint16_t, uint32_t> pc_hist;
-    uint32_t sample_count = 0;
+    // ── ZVE2 (DMA-CPU) per-instruction trace ──────────────────────────────────
+    // ZVE2 only runs while /BUSRQ is asserted. This callback follows every ZVE2
+    // instruction — the only way to see the DMA program and where it freezes.
+    uint64_t zve2_instr     = 0;          // total ZVE2 instructions executed
+    int      zve2_log_count = 0;
+    int      zve2_log_cap   = (single_step || verbose) ? 100000 : 600;  // -s/-v = log all ZVE2 instr
+    bool     zve2_done_seen = false;
+    std::unordered_map<uint16_t, uint32_t> zve2_ms_counts;
+
+    machine.setZVE2TraceCallback([&](const Z80& z) {
+        ++zve2_instr;
+        zve2_pc_hist[z.PC]++;
+
+        for (auto& m : zve2_milestones) {
+            if (z.PC == m.pc) {
+                zve2_ms_counts[m.pc]++;
+                if (!m.hit) {
+                    m.hit = true;
+                    fprintf(stderr, "\n[ZVE2 MILESTONE] ~cycle=%d PC=0x%04X  %s\n",
+                            cycles_done, z.PC, m.label);
+                    fprintf(stderr, "                 SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X\n",
+                            z.SP, z.AF, z.BC, z.DE, z.HL);
+                }
+                if (m.pc == 0x0267) zve2_done_seen = true;
+            }
+        }
+
+        if (zve2_log_count < zve2_log_cap) {
+            const char* label = romLabel(z.PC);
+            fprintf(stderr, "    [ZVE2 %5llu] PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X  %s\n",
+                    (unsigned long long)zve2_instr, z.PC, z.SP, z.AF, z.BC, z.DE, z.HL,
+                    label ? label : "");
+            ++zve2_log_count;
+        }
+    });
 
     // ── Mount boot disk ───────────────────────────────────────────────────────
     // Try cpa780 first: boot ROM expects 128B sectors (size code 0x00 at [0x03F6])
@@ -186,24 +309,18 @@ int main(int argc, char** argv) {
     }
 
     // ── Run loop ──────────────────────────────────────────────────────────────
-    int    cycles_done    = 0;
-    int    batch          = 500;
-    int    next_progress  = 0;
-    bool   boot_reached   = false;
-    bool   rom_was_active = true;
-
-    uint8_t last_fffc    = 0xFF;   // track [0xFFFC] changes
-
-    // Milestone hit counters (separate from the once-flag to count total hits)
-    std::unordered_map<uint16_t, uint32_t> milestone_counts;
+    // Per-instruction work (histogram, milestones, boot detection) happens in
+    // the trace callbacks above; the loop itself only handles batch-level events.
+    int     batch          = 500;
+    int     next_progress  = 0;
+    bool    rom_was_active = true;
+    uint8_t last_done = machine.memReadDebug(0x03F8);  // track [03F8] DMA done-flag
 
     while (cycles_done < total_limit) {
         int done = machine.run(batch);
         cycles_done += done;
 
         uint16_t pc = machine.cpuPC();
-        pc_hist[pc]++;
-        sample_count++;
 
         // ── ROM enable/disable transition ─────────────────────────────────────
         bool rom_now = machine.isRomEnabled();
@@ -213,43 +330,26 @@ int main(int argc, char** argv) {
         }
         rom_was_active = rom_now;
 
-        // ── [0xFFFC] change tracking ──────────────────────────────────────────
-        uint8_t cur_fffc = machine.memReadDebug(0xFFFC);
-        if (cur_fffc != last_fffc) {
-            if (verbose)
-                fprintf(stderr, "  [cycle %7d] [0xFFFC] changed: 0x%02X → 0x%02X  SP=0x%04X PC=0x%04X\n",
-                        cycles_done, last_fffc, cur_fffc, machine.cpuSP(), pc);
-            last_fffc = cur_fffc;
-        }
-
-        // ── Milestone detection ───────────────────────────────────────────────
-        for (auto& m : milestones) {
-            if (pc == m.pc) {
-                milestone_counts[m.pc]++;
-                if (!m.hit) {
-                    m.hit = true;
-                    fprintf(stderr, "\n[MILESTONE] cycle=%7d PC=0x%04X  %s\n",
-                            cycles_done, pc, m.label);
-                    fprintf(stderr, "            SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X\n",
-                            machine.cpuSP(), machine.cpuAF(),
-                            machine.cpuBC(), machine.cpuDE(), machine.cpuHL());
-                } else if (!m.once) {
-                    // Repeating milestone — show occasionally
-                    uint32_t n = milestone_counts[m.pc];
-                    if (n == 10 || n == 100 || (n % 500) == 0)
-                        fprintf(stderr, "  [milestone] 0x%04X hit %u times (cycle %d)\n",
-                                m.pc, n, cycles_done);
-                }
-                if (m.pc == 0x01DD) { boot_reached = true; }
-            }
+        // ── [0x03F8] DMA done-flag tracking ───────────────────────────────────
+        // 0 = ZVE2 running / ZVE1 waiting; 1 = index-pulse timeout (ISR);
+        // 3 = ZVE2 finished all sectors → ZVE1 leaves the wait loop at 0x0168.
+        uint8_t cur_done = machine.memReadDebug(0x03F8);
+        if (cur_done != last_done) {
+            fprintf(stderr, "  [cycle %7d] [03F8] done-flag: 0x%02X → 0x%02X  (ZVE1 PC=0x%04X, ZVE2 PC=0x%04X)\n",
+                    cycles_done, last_done, cur_done, pc, machine.zve2PC());
+            last_done = cur_done;
         }
 
         // ── Progress report ───────────────────────────────────────────────────
         if (cycles_done >= next_progress) {
-            fprintf(stderr, "\n[PROGRESS] cycles=%7d  PC=0x%04X  SP=0x%04X  ROM=%s  [0xFFFC]=0x%02X\n",
+            fprintf(stderr, "\n[PROGRESS] cycles=%7d  ZVE1 PC=0x%04X SP=0x%04X  ROM=%s  "
+                    "[03F8]=0x%02X  ZVE2 PC=0x%04X instr=%llu%s\n",
                     cycles_done, pc, machine.cpuSP(),
                     machine.isRomEnabled() ? "ON" : "OFF",
-                    machine.memReadDebug(0xFFFC));
+                    machine.memReadDebug(0x03F8), machine.zve2PC(),
+                    (unsigned long long)zve2_instr,
+                    machine.isZVE2InReset() ? " (ZVE2 reset)" :
+                    machine.isZVE2Waiting() ? " (ZVE2 wait)" : "");
             fflush(stderr);
             next_progress = cycles_done + 200000;
         }
@@ -262,11 +362,46 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Boot reached: %s\n", boot_reached ? "YES!" : "NO");
     fprintf(stderr, "ROM enabled:  %s\n", machine.isRomEnabled() ? "YES" : "NO (disabled by BIOS)");
 
+    // ZVE2 / DMA summary — the heart of the boot-sector load.
+    fprintf(stderr, "\n--- ZVE2 (DMA-CPU) ---\n");
+    fprintf(stderr, "  instructions executed: %llu\n", (unsigned long long)zve2_instr);
+    fprintf(stderr, "  ZVE2 final PC=0x%04X  reset=%d wait=%d  BUSRQ=%d\n",
+            machine.zve2PC(), machine.isZVE2InReset(),
+            machine.isZVE2Waiting(), machine.isBUSRQ());
+    fprintf(stderr, "  [03F8] done-flag = 0x%02X  (3 = ZVE2 signalled completion)\n",
+            machine.memReadDebug(0x03F8));
+    fprintf(stderr, "  ZVE2 reached 0x0267 (DONE): %s\n", zve2_done_seen ? "YES" : "NO");
+    if (zve2_instr > 0 && !zve2_done_seen) {
+        fprintf(stderr, "  >> DIAGNOSIS: ZVE2 ran but never reached completion. It froze at\n");
+        fprintf(stderr, "     PC=0x%04X — likely BUSRQ released mid-program (see k5122 ioRead 0x16).\n",
+                machine.zve2PC());
+    }
+
     // Milestone summary
-    fprintf(stderr, "\nMilestone hit counts:\n");
+    fprintf(stderr, "\nZVE1 milestone hit counts:\n");
     for (auto& m : milestones) {
         uint32_t n = milestone_counts[m.pc];
-        fprintf(stderr, "  0x%04X %-40s  %u\n", m.pc, m.label, n);
+        fprintf(stderr, "  0x%04X %-42s  %u\n", m.pc, m.label, n);
+    }
+    fprintf(stderr, "\nZVE2 milestone hit counts:\n");
+    for (auto& m : zve2_milestones) {
+        uint32_t n = zve2_ms_counts[m.pc];
+        fprintf(stderr, "  0x%04X %-42s  %u\n", m.pc, m.label, n);
+    }
+
+    // ZVE2 PC histogram (top 15)
+    if (!zve2_pc_hist.empty()) {
+        std::vector<std::pair<uint32_t, uint16_t>> zh;
+        zh.reserve(zve2_pc_hist.size());
+        for (auto& kv : zve2_pc_hist) zh.push_back({kv.second, kv.first});
+        std::sort(zh.rbegin(), zh.rend());
+        fprintf(stderr, "\nZVE2 PC histogram (top 15):\n");
+        int zs = 0;
+        for (auto& kv : zh) {
+            const char* lbl = romLabel(kv.second);
+            fprintf(stderr, "  0x%04X : %6u   %s\n", kv.second, kv.first, lbl ? lbl : "");
+            if (++zs >= 15) break;
+        }
     }
 
     // [0xFFFC..0xFFFF] dump
@@ -298,7 +433,8 @@ int main(int argc, char** argv) {
     for (auto& kv : pc_hist)
         hist_sorted.push_back({kv.second, kv.first});
     std::sort(hist_sorted.rbegin(), hist_sorted.rend());
-    fprintf(stderr, "\nPC histogram (top 30, %u samples total):\n", sample_count);
+    fprintf(stderr, "\nZVE1 PC histogram (top 30, %llu instructions total):\n",
+            (unsigned long long)sample_count);
     int shown = 0;
     for (auto& kv : hist_sorted) {
         const char* lbl = romLabel(kv.second);

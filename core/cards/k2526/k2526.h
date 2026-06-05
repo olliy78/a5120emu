@@ -513,6 +513,31 @@ public:
      */
     Z80& zve2() { return zve2_; }
 
+    /**
+     * @brief Const access to ZVE2 (diagnostics / boot tracing).
+     * @return Const reference to the ZVE2 Z80 instance
+     */
+    const Z80& zve2() const { return zve2_; }
+
+    /**
+     * @brief Current program counter of the ZVE2 DMA-CPU.
+     * @return ZVE2 PC value
+     */
+    uint16_t zve2PC() const { return zve2_.PC; }
+
+    /**
+     * @brief Install a per-instruction trace callback on ZVE2.
+     *
+     * Fires for every ZVE2 instruction executed by zve2Step().  Used by the
+     * boot-trace tool to follow the DMA program (which is otherwise invisible
+     * because it runs only while /BUSRQ is asserted).
+     *
+     * @param cb Callback invoked with the ZVE2 Z80 state before each step
+     */
+    void setZVE2TraceCallback(std::function<void(const Z80&)> cb) {
+        zve2_.traceCallback = std::move(cb);
+    }
+
     // ─── Q240 Memory Protection interface ─────────────────────────────────
 
     /**

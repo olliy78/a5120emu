@@ -82,32 +82,19 @@ uint8_t K5122::ioRead(uint8_t port) {
                   port == 0x10 ? "CtrlA-data" : port == 0x11 ? "CtrlA-ctrl" :
                   port == 0x12 ? "CtrlB-data" : "CtrlB-ctrl");
     } else if (port >= 0x14 && port <= 0x17) {
-        // Intercept data Port B reads (0x16) to stream sector data to the CPU.
+        // Intercept data Port B reads (0x16) to stream the rotating track to the
+        // CPU/DMA. The buffer holds the whole track (built by doReadSector); we
+        // stream it and wrap at the end, because the disk keeps spinning. BUSRQ
+        // is held throughout — it is released only when ZVE2 signals completion
+        // ([0x03F8]=3), detected by A5120Machine, which then calls endDmaTransfer().
         if (port == 0x16 && transferring_ && !write_mode_) {
-            if (buf_pos_ < sector_buf_.size()) {
+            if (sector_buf_.empty()) {
+                result = 0xFF;
+            } else {
+                if (buf_pos_ >= sector_buf_.size()) buf_pos_ = 0;   // track wraps
                 result = sector_buf_[buf_pos_++];
                 LOG_TRACE("K5122", "DATA byte[%zu/%zu] => 0x%02X",
                           buf_pos_ - 1, sector_buf_.size(), result);
-            } else {
-                transferring_ = false;
-                result = 0xFF;
-                // Auto-release BUSRQ: all sector bytes consumed (ZVE2 INIR done)
-                if (bus_.isBUSRQ()) {
-                    dma_pending_ = false;
-                    bus_.releaseBUSRQ();
-                    LOG_DEBUG("K5122", "DATA letztes Byte gelesen, BUSRQ freigegeben");
-                }
-                // Advance to next sector on track (wraps at secs_per_track).
-                const FloppyDrive& drv = drives_[selected_drive_];
-                if (drv.isMounted()) {
-                    const TrackFormat* tf = drv.format().findTrack(
-                        current_cyl_[selected_drive_], current_head_);
-                    if (tf && tf->secs_per_track > 0) {
-                        current_sector_ = (current_sector_ % tf->secs_per_track) + 1;
-                    }
-                }
-                LOG_DEBUG("K5122", "DATA transfer complete (%zu bytes), next sector=%u",
-                          sector_buf_.size(), current_sector_);
             }
         } else {
             result = data_pio_.ioRead(port - 0x14);
@@ -371,14 +358,21 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
         bool is_write = !(data & 0x01);  // /WE=0 means write
 
         if (bus_.isBUSRQ()) {
-            // ZVE2 is committing a write transfer (bus already held)
             if (is_write) {
+                // ZVE2 write-commit: OTIR finished, commit sector and release bus.
                 doWriteSector();
+                dma_pending_ = false;
+                bus_.releaseBUSRQ();
+                LOG_DEBUG("K5122", "/STR ZVE2-Commit SCHREIBEN abgeschlossen, BUSRQ freigegeben");
+            } else {
+                // ZVE2 read-refresh (ROM addr 0x01FA: OUT(10h,0xB5h) with /WE=1):
+                // ZVE2 deasserted /STR then re-asserted it to load the next sector
+                // into sector_buf_ while it still holds the bus.  Reload the buffer
+                // but keep BUSRQ asserted — release happens in ioRead(0x16) after
+                // the last INIR byte is consumed.
+                doReadSector();
+                LOG_DEBUG("K5122", "/STR ZVE2-Lese-Refresh: sector_buf_ neu geladen, BUSRQ gehalten");
             }
-            dma_pending_ = false;
-            bus_.releaseBUSRQ();
-            LOG_DEBUG("K5122", "/STR ZVE2-Commit: %s abgeschlossen, BUSRQ freigegeben",
-                      is_write ? "SCHREIBEN" : "LESEN");
         } else {
             // ZVE1 triggering a new DMA transfer
             dma_is_write_ = is_write;
@@ -449,8 +443,12 @@ void K5122::updateStatusPortB() {
     FloppyDrive& drv = drives_[selected_drive_];
     if (drv.isMounted()) {
         s &= ~(1u << 0);            // /RDYL = 0 (ready)
-        if (drv.currentCylinder() == 0)
-            s &= ~(1u << 7);        // /TO = 0 (at track 0, bit 7)
+        if (drv.currentCylinder() == 0) {
+            s &= ~(1u << 6);        // /FW = 0 (at track 0)
+            s &= ~(1u << 7);        // bit 7 = 0 at track 0: boot drive-detect
+                                    // (ROM 0x0110: IN 12H; RLCA; JR NC) proceeds
+                                    // only when bit 7 is clear.
+        }
         if (drv.isWriteProtect())
             s &= ~(1u << 5);        // /WP = 0 (write-protected)
     }
@@ -483,16 +481,33 @@ void K5122::doStep() {
 }
 
 /**
- * @brief Read one sector from the selected drive into sector_buf_.
+ * @brief Fill sector_buf_ with the whole current track as a continuous read stream.
  *
- * Uses current_cyl_[selected_drive_], current_head_, and current_sector_ to
- * locate the sector in the disk image.  On success:
- * - sector_buf_ contains the sector data
- * - buf_pos_ = 0 (read from beginning)
- * - transferring_ = true, write_mode_ = false
+ * The real K5122 streams the rotating track to the CPU/DMA; the ZVE2 DMA-CPU
+ * scans that stream for each sector's IDAM and copies the data.  We model this
+ * by concatenating every sector of the current (cylinder, head) track, in
+ * sector-ID order, as a sequence of 136-byte blocks:
  *
- * No-op if no disk is mounted; logs a warning and returns without modifying
- * sector_buf_.
+ * @code
+ *   byte 0       0x00  sync / gap                 (ROM reads & discards, addr 0x0261)
+ *   byte 1       0xFE  IDAM address mark          (ROM CP B' = 0xFE, addr 0x020B)
+ *   byte 2       cyl   cylinder                   (ROM CP E', addr 0x0210)
+ *   byte 3       head  head / side                (ROM CP D', addr 0x0215)
+ *   byte 4       sec   sector ID (1-based)        (ROM CP L', addr 0x021A)
+ *   byte 5       size  size code (128→0 …)        (ROM CP H', addr 0x021F)
+ *   byte 6..7    0x00  IDAM CRC / gap (2 bytes)   (ROM dummy reads, addr 0x022F, 0x0239)
+ *   byte 8..135  data  sector payload (128 bytes) (ROM INI/INIR, addr 0x023C…0x0242)
+ *   byte 136..137 0x00 data CRC (2 bytes)         (ROM trailing INI, addr 0x0245, 0x0247)
+ * @endcode
+ *
+ * The block is **138 bytes**, which is exactly how many bytes the boot ROM reads
+ * per sector: 6 header + 2 IDAM-CRC + 128 data + 2 data-CRC.  Getting this count
+ * right is critical — a continuous stream must align each sector's IDAM with the
+ * ROM's read sequence.  With a short block the stream drifts by the deficit per
+ * sector and the IDAM search never matches sectors 2…N.
+ *
+ * buf_pos_ is reset to 0; ioRead(0x16) streams the buffer and wraps at the end
+ * (the disk keeps spinning).  No-op if no disk is mounted.
  */
 void K5122::doReadSector() {
     FloppyDrive& drv = drives_[selected_drive_];
@@ -501,43 +516,46 @@ void K5122::doReadSector() {
         return;
     }
 
-    markDriveAccess(selected_drive_);
-    LOG_INFO("K5122", ">>> READ  D%d C=%u H=%u S=%u",
-              selected_drive_,
-              static_cast<unsigned>(current_cyl_[selected_drive_]),
-              static_cast<unsigned>(current_head_),
-              static_cast<unsigned>(current_sector_));
+    const uint8_t cyl  = current_cyl_[selected_drive_];
+    const uint8_t head = current_head_;
+    const TrackFormat* tf = drv.format().findTrack(cyl, head);
+    const uint8_t nsec = (tf && tf->secs_per_track > 0) ? tf->secs_per_track : 1;
 
-    auto data = drv.readSector(current_cyl_[selected_drive_],
-                               current_head_,
-                               current_sector_);
-
-    // Compute IDAM size code from sector bytes (128→0, 256→1, 512→2, 1024→3).
+    // Size code from bytes/sector (128→0, 256→1, 512→2, 1024→3).
     uint8_t size_code = 0;
-    const TrackFormat* tf = drv.format().findTrack(
-        current_cyl_[selected_drive_], current_head_);
     if (tf) {
         uint16_t bps = tf->bytes_per_sec;
         while (bps > 128 && size_code < 3) { bps >>= 1; ++size_code; }
     }
 
-    // Prepend IDAM header so boot ROM sector-header comparison succeeds.
+    markDriveAccess(selected_drive_);
+    LOG_INFO("K5122", ">>> READ  D%d C=%u H=%u (track: %u sectors, size_code=%u)",
+              selected_drive_, static_cast<unsigned>(cyl),
+              static_cast<unsigned>(head), static_cast<unsigned>(nsec), size_code);
+
     sector_buf_.clear();
-    sector_buf_.push_back(0x00);                           // preamble (discarded)
-    sector_buf_.push_back(0xFE);                           // IDAM address mark
-    sector_buf_.push_back(current_cyl_[selected_drive_]);  // cylinder
-    sector_buf_.push_back(current_head_);                  // head/side
-    sector_buf_.push_back(current_sector_);                // sector ID (1-based, matches ROM L'=[0x03F5]=1)
-    sector_buf_.push_back(size_code);                      // sector size code
-    sector_buf_.insert(sector_buf_.end(), data.begin(), data.end());
+    sector_buf_.reserve(static_cast<size_t>(nsec) * 138u);
+    for (uint8_t sec = 1; sec <= nsec; ++sec) {
+        auto data = drv.readSector(cyl, head, sec);
+        sector_buf_.push_back(0x00);       // sync / gap
+        sector_buf_.push_back(0xFE);       // IDAM address mark
+        sector_buf_.push_back(cyl);        // cylinder
+        sector_buf_.push_back(head);       // head / side
+        sector_buf_.push_back(sec);        // sector ID (1-based, matches ROM L')
+        sector_buf_.push_back(size_code);  // size code
+        sector_buf_.push_back(0x00);       // IDAM CRC / gap byte 1 (ROM discards)
+        sector_buf_.push_back(0x00);       // IDAM CRC / gap byte 2 (ROM discards)
+        sector_buf_.insert(sector_buf_.end(), data.begin(), data.end());
+        sector_buf_.push_back(0x00);       // data CRC byte 1 (ROM trailing INI 0x0245)
+        sector_buf_.push_back(0x00);       // data CRC byte 2 (ROM trailing INI 0x0247)
+    }
 
     buf_pos_      = 0;
     transferring_ = true;
     write_mode_   = false;
 
-    LOG_DEBUG("K5122", "    IDAM: C=%u H=%u S=%u size_code=%u data=%zu bytes",
-              current_cyl_[selected_drive_], current_head_,
-              current_sector_, size_code, data.size());
+    LOG_DEBUG("K5122", "    track stream: %u sectors, %zu bytes total",
+              static_cast<unsigned>(nsec), sector_buf_.size());
 }
 
 /**
@@ -653,4 +671,21 @@ void K5122::dmaUpdate() {
     bus_.releaseBUSRQ();
     LOG_DEBUG("K5122", "dmaUpdate (ZVE2-Fallback): BUSRQ freigegeben (%s)",
               dma_is_write_ ? "SCHREIBEN abgeschlossen" : "LESEN: ZVE1 pollt selbst");
+}
+
+/**
+ * @brief End an active read-DMA transfer and release /BUSRQ.
+ *
+ * Called by A5120Machine when it observes the ZVE2 DMA-CPU signalling
+ * completion (boot ROM writes [0x03F8]=3 at 0x026B after copying all sectors).
+ * The K5122 cannot see that memory write itself, so the machine arbitrates the
+ * handover: it detects completion and calls this to clear the transfer state
+ * and hand the bus back to ZVE1.  No-op if /BUSRQ is not held.
+ */
+void K5122::endDmaTransfer() {
+    if (!bus_.isBUSRQ()) return;
+    transferring_ = false;
+    dma_pending_  = false;
+    bus_.releaseBUSRQ();
+    LOG_DEBUG("K5122", "endDmaTransfer: ZVE2 DMA fertig, BUSRQ freigegeben");
 }

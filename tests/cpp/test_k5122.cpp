@@ -453,9 +453,10 @@ TEST_F(K5122Test, DMA_ReadMode_BUSRQReleasedAfterDmaUpdate) {
 
 /**
  * @test K5122Test/DMA_ReadMode_SectorDataAvailableAfterDmaUpdate
- * @brief After dmaUpdate() the sector buffer can be read byte-by-byte via port 0x16.
- * @details A blank image is filled with 0xE5; the first two bytes must equal 0xE5.
- * @par Pass criterion  ioRead(0x16) == 0xE5 for the first two reads.
+ * @brief After a read /STR the port-0x16 stream is the track as an IDAM stream.
+ * @details Each sector is [00 FE cyl head sec size CRC CRC <128 data> CRC CRC];
+ *          the blank image payload (offset 8) is 0xE5.
+ * @par Pass criterion  IDAM header bytes match and payload at offset 8 is 0xE5.
  */
 TEST_F(K5122Test, DMA_ReadMode_SectorDataAvailableAfterDmaUpdate) {
     auto path = tmpImage();
@@ -468,13 +469,19 @@ TEST_F(K5122Test, DMA_ReadMode_SectorDataAvailableAfterDmaUpdate) {
 
     card.dmaUpdate();
 
-    // After dmaUpdate() the sector buffer is filled; the first byte from port
-    // 0x16 must be consistent across two reads (i.e. buffer advances correctly).
-    uint8_t b0 = card.ioRead(0x16);
-    uint8_t b1 = card.ioRead(0x16);
-    // For a blank image (0xE5) both bytes must equal 0xE5.
-    EXPECT_EQ(b0, 0xE5) << "first sector byte should be 0xE5 (blank image)";
-    EXPECT_EQ(b1, 0xE5) << "second sector byte should be 0xE5 (blank image)";
+    // The read buffer is the rotating track as a continuous IDAM stream, each
+    // sector being [00 FE cyl head sec size CRC CRC <128 data> CRC CRC] (138 B).
+    EXPECT_EQ(card.ioRead(0x16), 0x00) << "byte0 = sync/gap";
+    EXPECT_EQ(card.ioRead(0x16), 0xFE) << "byte1 = IDAM address mark";
+    card.ioRead(0x16);                                    // byte2 = cylinder
+    card.ioRead(0x16);                                    // byte3 = head
+    EXPECT_EQ(card.ioRead(0x16), 0x01) << "byte4 = sector ID (1-based)";
+    card.ioRead(0x16);                                    // byte5 = size code
+    card.ioRead(0x16);                                    // byte6 = IDAM CRC
+    card.ioRead(0x16);                                    // byte7 = IDAM CRC
+    // Payload starts at offset 8; the blank image is filled with 0xE5.
+    EXPECT_EQ(card.ioRead(0x16), 0xE5) << "first payload byte (blank image)";
+    EXPECT_EQ(card.ioRead(0x16), 0xE5) << "second payload byte (blank image)";
     std::filesystem::remove(path);
 }
 
@@ -586,9 +593,10 @@ TEST_F(K5122Test, DriveAccessor_ReturnsValidReference) {
 
 /**
  * @test K5122Test/DMA_Read_SectorImmediatelyAvailableAfterSTR
- * @brief In the ZVE2-compatible design the sector buffer is filled synchronously on the /STR edge.
- * @details BUSRQ is asserted and data is readable via port 0x16 before dmaUpdate() is called.
- * @par Pass criterion  ioRead(0x16) == 0xE5 immediately after /STR edge (BUSRQ still held).
+ * @brief The track IDAM stream is filled synchronously on the /STR edge.
+ * @details BUSRQ is asserted and the stream is readable via port 0x16 before
+ *          dmaUpdate() is called.
+ * @par Pass criterion  ioRead(0x16) returns the IDAM header right after /STR.
  */
 TEST_F(K5122Test, DMA_Read_SectorImmediatelyAvailableAfterSTR) {
     auto path = tmpImage();
@@ -599,20 +607,24 @@ TEST_F(K5122Test, DMA_Read_SectorImmediatelyAvailableAfterSTR) {
     card.ioWrite(0x10, 0xF7);   // /STR falling edge, /WE=1 (read mode)
     card.ioWrite(0x10, 0xFF);
 
-    // BUSRQ asserted and sector already in buffer — readable before dmaUpdate()
+    // BUSRQ asserted and the track stream is already in the buffer.
     ASSERT_TRUE(bus.isBUSRQ());
-    uint8_t b = card.ioRead(0x16);
-    EXPECT_EQ(b, 0xE5) << "sector byte must be readable immediately after /STR";
+    EXPECT_EQ(card.ioRead(0x16), 0x00) << "byte0 = sync";
+    EXPECT_EQ(card.ioRead(0x16), 0xFE) << "byte1 = IDAM mark, readable immediately after /STR";
     std::filesystem::remove(path);
 }
 
 /**
- * @test K5122Test/DMA_Read_BUSRQAutoReleasedWhenLastByteRead
- * @brief BUSRQ is automatically released after the last sector byte has been consumed via port 0x16.
- * @details Reads up to 512 bytes; checks that BUSRQ is released before all 512 bytes are consumed.
- * @par Pass criterion  bus.isBUSRQ() == false at some point before the 512th read.
+ * @test K5122Test/DMA_Read_BUSRQHeldUntilCompletion
+ * @brief In the continuous-stream model BUSRQ is held while the track streams and
+ *        released only on completion via endDmaTransfer().
+ * @details The buffer no longer auto-releases when it drains — the rotating track
+ *          wraps and keeps streaming. The machine releases the bus when ZVE2
+ *          signals completion ([0x03F8]=3); endDmaTransfer() models that handover.
+ * @par Pass criterion  BUSRQ stays asserted across a full-track read; released
+ *                      only after endDmaTransfer().
  */
-TEST_F(K5122Test, DMA_Read_BUSRQAutoReleasedWhenLastByteRead) {
+TEST_F(K5122Test, DMA_Read_BUSRQHeldUntilCompletion) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
     card.ioWrite(0x18, 0x00);
@@ -623,16 +635,12 @@ TEST_F(K5122Test, DMA_Read_BUSRQAutoReleasedWhenLastByteRead) {
 
     ASSERT_TRUE(bus.isBUSRQ());
 
-    // Drain all sector bytes — when the last byte is consumed BUSRQ auto-releases.
-    bool released = false;
-    for (int i = 0; i < 512; ++i) {   // read beyond sector size
-        card.ioRead(0x16);
-        if (!bus.isBUSRQ()) {
-            released = true;
-            break;
-        }
-    }
-    EXPECT_TRUE(released) << "BUSRQ must auto-release after last sector byte";
+    // Read well past one sector; BUSRQ must remain held (stream wraps, no auto-release).
+    for (int i = 0; i < 512; ++i) card.ioRead(0x16);
+    EXPECT_TRUE(bus.isBUSRQ()) << "BUSRQ stays held while the track streams";
+
+    card.endDmaTransfer();
+    EXPECT_FALSE(bus.isBUSRQ()) << "endDmaTransfer() releases BUSRQ on completion";
     std::filesystem::remove(path);
 }
 

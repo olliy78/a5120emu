@@ -276,13 +276,13 @@ class Z80Disassembler:
             0x17: ("RLA", 1, False),
             0x1A: ("LD A,(DE)", 1, False),
             0x1F: ("RRA", 1, False),
-            0x22: (f"LD ({w(2):04X}H),HL", 3, False),
+            0x22: (f"LD ({w(1):04X}H),HL", 3, False),
             0x27: ("DAA", 1, False),
-            0x2A: (f"LD HL,({w(2):04X}H)", 3, False),
+            0x2A: (f"LD HL,({w(1):04X}H)", 3, False),
             0x2F: ("CPL", 1, False),
-            0x32: (f"LD ({w(2):04X}H),A", 3, False),
+            0x32: (f"LD ({w(1):04X}H),A", 3, False),
             0x37: ("SCF", 1, False),
-            0x3A: (f"LD A,({w(2):04X}H)", 3, False),
+            0x3A: (f"LD A,({w(1):04X}H)", 3, False),
             0x3F: ("CCF", 1, False),
             0x76: ("HALT", 1, True),
             0xC9: ("RET", 1, True),
@@ -513,208 +513,173 @@ def format_label(addr, call_targets, jump_targets):
         return f"L{addr:04X}"
 
 
-def main():
-    path = '/home/olliy/projects/a5120emu/boot_disk/format.com'
-    data = read_binary(path)
-    
-    dis = Z80Disassembler(data)
-    
-    # First: find the entry point and do recursive descent
-    print(f"; Recursive decode from entry point...", file=sys.stderr)
-    dis.recursive_decode(0x0100)
-    
-    # Also decode from all discovered call targets
-    all_targets = set(dis.jump_targets) | set(dis.call_targets)
-    for t in sorted(all_targets):
-        if t not in dis.instructions and dis.org <= t < dis.org + len(data):
-            dis.recursive_decode(t)
-    
-    # Linear decode code areas that might have been missed
-    # The main code area seems to be roughly 0x0100-0x0FBC based on string analysis
-    dis.linear_decode(0x0100, 0x0FC0)
-    
-    # Also linearly decode 0x1E00-0x2200 area which may have code (boot loader code)
-    dis.linear_decode(0x1E00, 0x2200)
-    
-    # Identify string/data areas
-    # Let's find strings in non-code areas
-    string_regions = []
-    i = 0
-    while i < len(data):
-        addr = i + dis.org
-        if addr not in dis.code_addrs:
-            slen = dis.find_string_at(i)
-            if slen >= 5:
-                string_regions.append((addr, slen))
-                i += slen
-                continue
-        i += 1
-    
-    # Build label map
-    all_label_addrs = dis.jump_targets | dis.call_targets
-    # Also add addresses that are referenced in LD instructions
+# ============================================================================
+# Generic listing renderer + CLI
+#
+# Originally hard-wired to FORMAT.COM (ORG 0100H, CP/M). Rewritten 2026-06-05
+# into a generic, scriptable disassembler so any K1520 image (boot ROMs at
+# ORG 0000H, .COM files at 0100H, EPROM dumps, ...) can be disassembled, with
+# user-supplied entry points, symbol labels and comments.
+# ============================================================================
+
+def _parse_int(s):
+    """Parse an int in hex (0x.., ..H) or decimal."""
+    s = s.strip()
+    if s.lower().endswith('h'):
+        return int(s[:-1], 16)
+    return int(s, 0)
+
+
+def render(dis, data, org, user_labels, user_comments, string_regions, title):
+    """Produce an assembler listing: 'ADDR  hexbytes  instruction  ; comment'."""
+    out = []
+    end_addr = org + len(data)
+
+    out.append("; " + "=" * 74)
+    out.append(f"; {title or 'Z80 disassembly'}")
+    out.append(f"; Size: {len(data)} bytes (0x{len(data):04X})")
+    out.append(f"; Address range: {org:04X}H - {end_addr-1:04X}H")
+    out.append("; Disassembled by tools/z80_disasm2.py (recursive descent + linear)")
+    out.append("; " + "=" * 74)
+    out.append("")
+    if user_labels:
+        out.append("; --- Symbolic labels (user-supplied) ---")
+        for a in sorted(user_labels):
+            out.append(f"{user_labels[a]:<16}EQU\t{a:04X}H")
+        out.append("")
+    out.append(f"\tORG\t{org:04X}H")
+    out.append("")
+
+    # Label map: auto labels for discovered targets, overridden by user labels.
     label_map = {}
-    for addr in sorted(all_label_addrs):
-        label_map[addr] = format_label(addr, dis.call_targets, dis.jump_targets)
-    
-    # Now produce the output
-    output_lines = []
-    
-    # Header
-    output_lines.append("; ============================================================================")
-    output_lines.append("; FORMAT.COM - Floppy Disk Formatter for Robotron A5120")
-    output_lines.append("; CPA/CP/M 2.2 System")
-    output_lines.append(f"; Size: {len(data)} bytes (0x{len(data):04X})")
-    output_lines.append(f"; Load address: {dis.org:04X}H - {dis.org+len(data)-1:04X}H")
-    output_lines.append("; ============================================================================")
-    output_lines.append("")
-    output_lines.append("; --- System Constants ---")
-    output_lines.append("BDOS\tEQU\t0005H\t\t; BDOS entry point")
-    output_lines.append("WBOOT\tEQU\t0000H\t\t; Warm boot entry")
-    output_lines.append("WBOOTV\tEQU\t0001H\t\t; Warm boot vector address")
-    output_lines.append("CPMEXT\tEQU\t004EH\t\t; CPA extensions pointer")
-    output_lines.append("FCB1\tEQU\t005CH\t\t; Default FCB 1")
-    output_lines.append("DMA\tEQU\t0080H\t\t; Default DMA buffer")
-    output_lines.append("")
-    output_lines.append("; --- BDOS Functions ---")
-    output_lines.append("C_WRITE\tEQU\t02H\t\t; Console output")
-    output_lines.append("C_RAWIO\tEQU\t06H\t\t; Direct console I/O")
-    output_lines.append("P_STR\tEQU\t09H\t\t; Print string ($-terminated)")
-    output_lines.append("C_READSTR\tEQU\t0AH\t; Read console buffer")
-    output_lines.append("C_STAT\tEQU\t0BH\t\t; Console status")
-    output_lines.append("S_BDOSVER\tEQU\t0CH\t; Return version number")
-    output_lines.append("DRV_SET\tEQU\t0EH\t\t; Select disk")
-    output_lines.append("F_SFIRST\tEQU\t11H\t; Search for first")
-    output_lines.append("")
-    output_lines.append("; --- FDC PIO Ports (K5122) ---")
-    output_lines.append("PIO_A_DATA\tEQU\t10H\t; Control PIO A data")
-    output_lines.append("PIO_A_CTRL\tEQU\t11H\t; Control PIO A control")
-    output_lines.append("PIO_B_DATA\tEQU\t12H\t; Control PIO B data (status)")
-    output_lines.append("PIO_DATA\tEQU\t14H\t; Data PIO (raw disk data)")
-    output_lines.append("DRV_SELECT\tEQU\t18H\t; Drive select latch")
-    output_lines.append("")
-    output_lines.append("; --- PIO A Bit Definitions ---")
-    output_lines.append("; Bit 0: /WE (write enable, active low)")
-    output_lines.append("; Bit 2: /SIDE (0=side 1, 1=side 0)")
-    output_lines.append("; Bit 5: SD (step direction: 0=out, 1=in)")
-    output_lines.append("; Bit 7: /ST (step pulse, active on rising edge)")
-    output_lines.append("")
-    output_lines.append("; --- PIO B Bit Definitions ---")
-    output_lines.append("; Bit 0: /RDY (0=drive ready)")
-    output_lines.append("; Bit 5: /WP (1=not write protected)")
-    output_lines.append("; Bit 7: /T0 (0=at track 0)")
-    output_lines.append("")
-    output_lines.append("; --- CDB (Command Descriptor Block) Offsets ---")
-    output_lines.append("CDBFL\tEQU\t0\t\t; Flags (bit2=write, bit5=head-up)")
-    output_lines.append("CDBDEV\tEQU\t1\t\t; Logical device 0-3")
-    output_lines.append("CDBTRK\tEQU\t2\t\t; Track number")
-    output_lines.append("CDBSID\tEQU\t3\t\t; Side number")
-    output_lines.append("CDBSEC\tEQU\t4\t\t; Sector number")
-    output_lines.append("CDBSLC\tEQU\t5\t\t; Sector length code")
-    output_lines.append("CDBSNB\tEQU\t6\t\t; Sector count (0=seek only)")
-    output_lines.append("CDBDMA\tEQU\t7\t\t; DMA address (2 bytes)")
-    output_lines.append("")
-    output_lines.append("; --- IM2 Interrupt Vectors ---")
-    output_lines.append("IV_INDEX\tEQU\t0F7E8H\t; Index pulse ISR vector")
-    output_lines.append("IV_MARK\tEQU\t0F7EAH\t; Mark ISR vector")
-    output_lines.append("")
-    output_lines.append("\tORG\t0100H")
-    output_lines.append("")
-    
-    # Now generate the disassembly
-    # Create a set of string start addresses for quick lookup
-    string_starts = {}
-    for (sa, sl) in string_regions:
-        string_starts[sa] = sl
-    
-    addr = dis.org
-    end_addr = dis.org + len(data)
-    
+    for a in sorted(dis.jump_targets | dis.call_targets):
+        label_map[a] = format_label(a, dis.call_targets, dis.jump_targets)
+    label_map.update(user_labels)
+
+    addr_re = re.compile(r'([0-9A-F]{4})H')
+
+    def sub_labels(text):
+        def repl(m):
+            v = int(m.group(1), 16)
+            return label_map.get(v, m.group(0))
+        return addr_re.sub(repl, text)
+
+    string_starts = {sa: sl for (sa, sl) in string_regions}
+
+    addr = org
     while addr < end_addr:
-        offset = addr - dis.org
-        
-        # Print label if this is a target
+        offset = addr - org
+
         if addr in label_map:
-            output_lines.append(f"{label_map[addr]}:")
-        
-        # Check if this is a string region
+            out.append(f"{label_map[addr]}:")
+
+        # String region (only if not decoded as code)
         if addr in string_starts and addr not in dis.instructions:
             slen = string_starts[addr]
-            # Output string as DB with text
-            raw = data[offset:offset+slen]
-            # Split into lines at CR/LF boundaries
-            line_start = 0
-            while line_start < len(raw):
-                # Find the end of this text segment
-                line_end = line_start
-                while line_end < len(raw):
-                    b = raw[line_end]
-                    if b == 0x24:  # '$' terminator
-                        line_end += 1
-                        break
-                    elif b == 0x00:
-                        break
-                    line_end += 1
-                
-                segment = raw[line_start:line_end]
-                if len(segment) > 0:
-                    parts = []
-                    text_buf = ""
-                    for b in segment:
-                        if 0x20 <= b <= 0x7E:
-                            text_buf += chr(b)
-                        else:
-                            if text_buf:
-                                parts.append(f"'{text_buf}'")
-                                text_buf = ""
-                            parts.append(f"{b:02X}H")
+            raw = data[offset:offset + slen]
+            parts, text_buf = [], ""
+            for b in raw:
+                if 0x20 <= b <= 0x7E:
+                    text_buf += chr(b)
+                else:
                     if text_buf:
-                        parts.append(f"'{text_buf}'")
-                    
-                    db_str = ",".join(parts)
-                    a = addr + line_start
-                    output_lines.append(f"\tDB\t{db_str}")
-                
-                line_start = line_end
-                # Skip null terminators
-                while line_start < len(raw) and raw[line_start] == 0x00:
-                    output_lines.append(f"\tDB\t00H")
-                    line_start += 1
-            
+                        parts.append(f"'{text_buf}'"); text_buf = ""
+                    parts.append(f"{b:02X}H")
+            if text_buf:
+                parts.append(f"'{text_buf}'")
+            out.append(f"{addr:04X}              \tDB\t{','.join(parts)}")
             addr += slen
             continue
-        
-        # Check if this is a decoded instruction
+
         if addr in dis.instructions:
             mnemonic, length, raw_bytes = dis.instructions[addr]
             hex_str = ' '.join(f'{b:02X}' for b in raw_bytes)
-            
-            # Replace address references with labels
-            display = mnemonic
-            # Find 4-digit hex addresses in the mnemonic and replace with labels
-            def replace_addr(m):
-                val_str = m.group(1)
-                val = int(val_str, 16)
-                if val in label_map:
-                    return label_map[val]
-                return f"{val:04X}H"
-            
-            display = re.sub(r'([0-9A-F]{4})H', replace_addr, display)
-            
-            output_lines.append(f"\t{display:40s}; {addr:04X}: {hex_str}")
+            display = sub_labels(mnemonic)
+            line = f"{addr:04X}  {hex_str:<11}\t{display}"
+            if addr in user_comments:
+                line = f"{line:<48}; {user_comments[addr]}"
+            out.append(line)
             addr += length
         else:
-            # Data byte
             b_val = data[offset]
-            output_lines.append(f"\tDB\t{b_val:02X}H\t\t\t\t\t; {addr:04X}")
+            line = f"{addr:04X}  {b_val:02X}         \tDB\t{b_val:02X}H"
+            if addr in user_comments:
+                line = f"{line:<48}; {user_comments[addr]}"
+            out.append(line)
             addr += 1
-    
-    output_lines.append("")
-    output_lines.append("\tEND")
-    
-    # Write output
-    result = '\n'.join(output_lines)
-    print(result)
+
+    out.append("")
+    out.append("\tEND")
+    return '\n'.join(out)
+
+
+def main():
+    import argparse
+    ap = argparse.ArgumentParser(
+        description="Generic Z80 disassembler for the a5120emu toolbox. "
+                    "Recursive-descent from entry points plus optional linear ranges.")
+    ap.add_argument("file", help="binary image to disassemble (ROM/.COM/EPROM dump)")
+    ap.add_argument("--org", default="0", help="origin/load address (hex 0x.. / ..H or dec). Default 0")
+    ap.add_argument("--entry", action="append", default=[], metavar="ADDR",
+                    help="extra recursive-descent entry point, e.g. an IM2 ISR or a "
+                         "runtime JP target (repeatable). ORG is always an entry.")
+    ap.add_argument("--range", action="append", default=[], dest="ranges", metavar="START:END",
+                    help="linear-decode this address range (repeatable)")
+    ap.add_argument("--linear", action="store_true",
+                    help="linear-decode the whole image after recursive descent")
+    ap.add_argument("--label", action="append", default=[], metavar="NAME=ADDR",
+                    help="symbolic label for an address (repeatable)")
+    ap.add_argument("--comment", action="append", default=[], metavar="ADDR=TEXT",
+                    help="inline comment at an address (repeatable)")
+    ap.add_argument("--no-strings", action="store_true", help="disable ASCII string detection")
+    ap.add_argument("--title", default=None, help="title line for the listing header")
+    args = ap.parse_args()
+
+    org = _parse_int(args.org)
+    data = read_binary(args.file)
+    dis = Z80Disassembler(data, org=org)
+
+    # Recursive descent from ORG plus user entry points.
+    for e in [org] + [_parse_int(x) for x in args.entry]:
+        if org <= e < org + len(data):
+            dis.recursive_decode(e)
+
+    # Decode any call/jump targets discovered but not yet visited.
+    for t in sorted(dis.jump_targets | dis.call_targets):
+        if t not in dis.instructions and org <= t < org + len(data):
+            dis.recursive_decode(t)
+
+    # User-requested linear ranges + optional whole-image linear pass.
+    for r in args.ranges:
+        a, b = r.split(":")
+        dis.linear_decode(_parse_int(a), _parse_int(b))
+    if args.linear:
+        dis.linear_decode(org, org + len(data))
+
+    user_labels = {}
+    for spec in args.label:
+        name, a = spec.split("=", 1)
+        user_labels[_parse_int(a)] = name.strip()
+
+    user_comments = {}
+    for spec in args.comment:
+        a, txt = spec.split("=", 1)
+        user_comments[_parse_int(a)] = txt
+
+    string_regions = []
+    if not args.no_strings:
+        i = 0
+        while i < len(data):
+            a = i + org
+            if a not in dis.code_addrs:
+                slen = dis.find_string_at(i)
+                if slen >= 5:
+                    string_regions.append((a, slen)); i += slen; continue
+            i += 1
+
+    print(render(dis, data, org, user_labels, user_comments, string_regions,
+                 args.title or args.file))
+
 
 if __name__ == '__main__':
     main()

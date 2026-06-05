@@ -1,0 +1,3 @@
+# Dev tooling for tools/ (separate from the app's root requirements.txt).
+# Install:  venv/bin/pip install -r tools/requirements.txt
+z80dis>=1.0.6   # independent Z80 decoder, used as oracle by disasm_difftest.py

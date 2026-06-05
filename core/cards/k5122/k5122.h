@@ -247,6 +247,15 @@ public:
     void dmaUpdate();
 
     /**
+     * @brief End an active read-DMA transfer and release /BUSRQ.
+     *
+     * Called by A5120Machine when the ZVE2 DMA-CPU signals completion (boot ROM
+     * writes [0x03F8]=3).  Clears the transfer state and hands the bus back to
+     * ZVE1.  No-op if /BUSRQ is not currently held.
+     */
+    void endDmaTransfer();
+
+    /**
      * @brief Advance the floppy simulation by @p cycles Z80 clock cycles.
      *
      * Called every instruction from the A5120 run loop.  Generates periodic

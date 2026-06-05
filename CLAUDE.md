@@ -1,0 +1,114 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Two emulators live in this repo — know which one you're touching
+
+This is the single most important thing to understand before editing.
+
+1. **Legacy emulator (`src/`)** — the original monolithic A5120 emulator. Emulates the Z80 plus a **CP/M BIOS HALT-trap** mechanism: BIOS jump-table targets are replaced with `HALT` opcodes, and the run loop dispatches C++ functions when the Z80 halts. Boots **only CPA/CP/M**. Builds the `a5120emu`, `cparun`, and `a5120emu_test` targets. `README.md` describes *this* emulator (its memory map, boot process, and disk format are CP/M-specific and do **not** apply to the new core).
+
+2. **New modular K1520 core (`core/`)** — a hardware-accurate, transaction-level emulation of the K1520 bus and its plug-in cards. **No BIOS traps**: real Z80 code (boot ROM, BIOS, OS) runs natively, so any K1520 OS can boot. Builds `libk1520core.so` (a stable C-ABI) consumed by a **Python/PySide6 GUI** (`app/`). This is where active development happens. `doc/K1520_architecture.md` and `doc/design/*.md` are the authoritative design references.
+
+The two share **no code** except the Z80 (legacy `src/z80.cpp`; the core has its own adapted `core/primitives/z80.cpp`). When a task mentions cards (K2526/K5122/...), the bus, ZVE1/ZVE2, the boot ROM, or the GUI, it is about the **new core**.
+
+## Build & test
+
+```sh
+# Build everything (legacy + core + tests). Default LOG_LEVEL=3 (INFO).
+cmake -B build
+cmake --build build -j
+
+# Legacy unit tests (custom harness in tests/test_main.cpp, NOT GoogleTest):
+./build/a5120emu_test
+
+# K1520 core unit tests (GoogleTest, auto-discovered via ctest):
+cd build && ctest --output-on-failure
+ctest -R K2526                       # one card's tests by name regex
+./build/k1520_test_k2526 --gtest_filter='*ZVE2*'   # a single test
+```
+
+`LOG_LEVEL` is a compile-time switch (0=off … 5=trace) baked in via `add_compile_definitions`; raise it to debug (`cmake -B build -DLOG_LEVEL=5`). GoogleTest is fetched on first configure (network required). Some core tests (K3526/K7024/K5122/CTC) are known-failing on the working branch independent of current work — confirm against the baseline before treating a red test as a regression.
+
+## Python GUI
+
+The GUI loads `libk1520core.so` through `ctypes` (`app/core_binding/k1520.py` searches `build/` first). It needs the shared lib built and on the library path:
+
+```sh
+python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
+bash run_gui.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
+```
+
+## K1520 core architecture (the part that needs multiple files to grasp)
+
+Strict layering — each layer only knows the one below (see `doc/K1520_architecture.md` §5):
+
+```
+machines/a5120  →  wires cards onto the bus, drives the run loop, exposes the machine API
+cards/          →  K2526 (ZRE/CPU), K3526 (RAM), K7024 (screen), K8025 (serial), K5122 (floppy)
+primitives/     →  Z80, Z80PIO, Z80CTC, Z80SIO, EPROM/RAM devices  (generic chips)
+bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, MEMDI) + Koppelbus (signal router)
+```
+
+- **Registration model**: cards register memory ranges and I/O port ranges on `K1520Bus`; the CPU's read/write/port callbacks route through the bus, which dispatches to the owning device. Interrupt priority is a daisy chain set via `bus.setInterruptChain(...)`; the Koppelbus models the A5120 backplane's hand-wired signal links (CTC clock cascades, second IEI/IEO chain).
+- **Dual Z80 on the K2526 (`core/cards/k2526/`)** — non-obvious and central to the boot path:
+  - **ZVE1** is the main CPU. Its memory accesses pass through the **Q240 protection logic** (`MemIOProtect`); a violation raises NMI.
+  - **ZVE2** is a second Z80 acting as the **DMA processor** for loading boot sectors. It shares the same bus (no Q240 filtering). The run loop in `a5120.cpp` steps **ZVE2 only while `/BUSRQ` is asserted**, otherwise it steps ZVE1; both CPUs coordinate purely through shared RAM variables. ZVE2 is held in reset (port `04H`) and stalled by `/WAIT-ZVE2` (BS-PIO B3) until ZVE1 releases it.
+  - The **boot ROM** is mapped at `0x0000–0x03FF` at power-on and unmapped by writing BS-PIO Port B bit0 (`/LD-ROM`); after that the low addresses are plain RAM shared by both CPUs.
+- **C-API boundary** (`core/api/k1520_api.{h,cpp}`): the only surface the Python side sees; keep it `extern "C"` and ABI-stable. `A5120Machine` (`core/machines/a5120/a5120.{h,cpp}`) is the integration point exposing `run()`, disk mounting, framebuffer, keyboard, and debug accessors.
+- **EPROM/charset data** are committed as generated C arrays (`*_data.h`, `charset_*.h`) produced from binaries by `tools/eprom_to_h.py`; they are not loaded at runtime.
+
+## Boot-ROM debugging workflow
+
+The ZRE boot ROM and the ZVE1↔ZVE2 DMA handshake are the current hard problem; `doc/analyse_zre_rom_boot.md` is the running analysis. Supporting tools live in `tools/` (see `tools/README.md` for full usage):
+
+- `tools/z80_disasm2.py` — the canonical generic Z80 disassembler (configurable `--org`, repeatable `--entry`/`--label`). The other two disassemblers are format.com-specific.
+- `tools/disasm_difftest.py` — cross-checks the disassembler against the `z80dis` pip package (in `venv`); run it before changing the disassembler engine.
+- `tools/boot_trace.cpp` (`boot_trace` target) — traces **both** ZVE1 and ZVE2 per instruction and reports where the DMA freezes. The libs it links are built `LOG_LEVEL=5`; use `-L <file>` to divert that log so the summary stays readable. A separate `build_trace/` build dir is conventionally configured with `-DLOG_LEVEL=5`.
+
+### Boot DMA model (fixed — `disks/cpadisk.img` boots to loaded code)
+
+`boot_trace -L /tmp/emu.log disks/cpadisk.img` reports **Boot reached: YES** — ZVE2
+copies all boot sectors, signals completion, and ZVE1 jumps into the loaded code at
+`0x0437`. Three coupled fixes made this work; keep all three intact:
+
+1. **Continuous rotating-track stream** (`K5122::doReadSector`). On a read `/STR`,
+   the whole `(cyl,head)` track is built as a byte stream of **138-byte** sector
+   blocks: `[sync 00][IDAM FE][cyl][head][sec][size][IDAM-CRC×2][128 data][data-CRC×2]`.
+   The 138 count is exact — it is how many port-0x16 reads the boot ROM does per
+   sector (6 header + 2 IDAM-CRC at 0x022F/0x0239 + 128 data + 2 data-CRC at the
+   trailing INIs 0x0245/0x0247). A short block drifts the stream and the IDAM
+   search fails on sector 2+. `ioRead(0x16)` streams this buffer and **wraps** at
+   the end (the disk keeps spinning); it no longer releases BUSRQ on drain.
+2. **BUSRQ released on completion, not on buffer-drain.** ZVE2 finishes by writing
+   the shared flag `[0x03F8]=3` (ROM `0x026B`). `A5120Machine::run()` watches that
+   RAM byte and calls `K5122::endDmaTransfer()` to release the bus.
+3. **Concurrent ZVE1/ZVE2 stepping during DMA.** While `/BUSRQ` is held and ZVE2 is
+   active, the run loop steps ZVE2 **and falls through to also step ZVE1** (the two
+   CPUs run in parallel on real hardware). This ordering is essential: ZVE1 must
+   finish `CALL 0194` — whose tail writes `[0x03F8]=0` at `0x01B3` — and reach its
+   poll loop at `0x0168` *before* ZVE2 writes `=3`, otherwise ZVE1's late `=0`
+   clobbers ZVE2's `=3` and the boot hangs.
+
+ZVE2 reads sectors until `sector_id == [0x07F2]` (=4 → sectors 1–4); its inner loop
+returns to `0x025A` (not `0x01E9`), emitting only one `/STR` edge per session, which
+is why the stream must contain the *whole* track up front.
+
+**Handshake RAM variables** (low memory is plain RAM here — ROM unmapped — and
+`RAM[0x0000..2] = C3 DD 01 = JP 0x01DD` is ZVE2's entry): `[0x03F8]` done-flag
+(0=running, 1=ISR timeout, 3=done), `[0x03F7]` index counter, `[0x03FD]` path byte
+(`0x87`=correct), `[0x07F2]` target sector count, `[0x03F0]` load address (`0x0400`).
+Boot sector 0 starts with the signature bytes `53 59 4C` ("SYL") that ZVE1 checks at
+`0x01B6`. Key addresses: ZVE1 wait `0x0168`, drive-init/ZVE2-start `0x0194`, ZVE2
+entry `0x01DD`, index-pulse ISR `0x01C7`, ZVE2 completion `0x0267`, loaded code `0x0437`.
+
+Earlier fixes also in place: index-pulse period (`kIndexPeriodCycles=490000`), ZVE2
+reset/wait clearing on port-04 release, 1-based IDAM `sector_id`, `/STR` read-refresh.
+Full narrative and annotated disassembly: `doc/analyse_zre_rom_boot.md`; canonical
+`z80_disasm2.py` invocation for `zre.rom`: `tools/README.md`.
+
+## Conventions
+
+- Code comments and many log strings are in German; match the surrounding language of the file you edit.
+- Card classes encode DIP switches / backplane bridges as compile-time config structs (e.g. `K2526::A5120Config`), not runtime settings.
+- `cparun/` is an independent sub-project (own `CMakeLists.txt`) and is kept unchanged.

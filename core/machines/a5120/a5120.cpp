@@ -2,6 +2,14 @@
 #include <algorithm>
 #include "core/logger.h"
 
+namespace {
+// ZVE1↔ZVE2 boot handshake: ZVE2 (DMA-CPU) writes [0x03F8]=3 once it has copied
+// all boot sectors into RAM (boot ROM ZVE2_DONE at 0x026B). The machine watches
+// this shared RAM flag to know when to release /BUSRQ back to ZVE1.
+constexpr uint16_t kZve2DoneFlagAddr = 0x03F8;
+constexpr uint8_t  kZve2DoneValue    = 0x03;
+}  // namespace
+
 A5120Machine::A5120Machine()
     : zre_(bus_)
     , ops_()
@@ -114,18 +122,32 @@ int A5120Machine::run(int max_cycles) {
             zre_.cpuReset();
         }
 
-        // BUSRQ: K5122 hält den Bus. ZVE1 ist suspendiert.
-        // ZVE2 führt DMA nur aus wenn er weder im Reset noch im WAIT steht.
-        // Im Boot-ROM (ZVE2 im Reset oder durch /WAIT-ZVE2 angehalten) übernimmt
-        // dmaUpdate() den BUSRQ-Release, damit ZVE1 weiter Bytes von Port 0x16 lesen kann.
+        // BUSRQ: the K5122 has a DMA transfer in progress and ZVE2 is driving it.
+        //
+        // On real K2526 hardware ZVE1 and ZVE2 run *concurrently*; /BUSRQ only
+        // gates the few bus cycles ZVE2 actually needs, not whole routines. We
+        // approximate that by interleaving: step ZVE2, then fall through and also
+        // step ZVE1 this iteration. This ordering matters — ZVE1 must finish
+        // CALL 0194 (whose tail writes [0x03F8]=0 at 0x01B3) and settle into its
+        // poll loop at 0x0168 *before* ZVE2 writes [0x03F8]=3 at 0x026B; otherwise
+        // ZVE1's late =0 would clobber ZVE2's =3 and the boot would hang.
+        //
+        // When ZVE2 is held in reset or /WAIT (legacy ZVE1 byte-poll boot path),
+        // there is no second CPU to run, so dmaUpdate() releases the bus directly.
         if (bus_.isBUSRQ()) {
             if (!zre_.isZVE2InReset() && !zre_.isZVE2Waiting()) {
                 zre_.zve2Step();
+                // ZVE2 signals completion by writing [0x03F8]=3 (boot ROM 0x026B):
+                // all boot sectors copied → hand the bus back to ZVE1.
+                if (bus_.memRead(kZve2DoneFlagAddr) == kZve2DoneValue) {
+                    afs_.endDmaTransfer();
+                }
+                // Fall through: also step ZVE1 concurrently (see comment above).
             } else {
                 afs_.dmaUpdate();
+                remaining--;
+                continue;
             }
-            remaining--;
-            continue;
         }
 
         // Deliver INT if CPU can accept
