@@ -355,10 +355,30 @@ private:
     uint8_t prev_ctrl_a_    = 0xFF;         ///< Previous ctrl Port A value (edge detection)
 
     // ─── Sector transfer buffer ──────────────────────────────────────────────
+    /// One IDAM-field block per sector in the rotating track stream:
+    /// [A1 sync][FE IDAM][cyl][head][sec][size][gap][gap][128 data][CRC][CRC] = 138 bytes.
+    static constexpr size_t kSectorBlock = 138;
+
     std::vector<uint8_t> sector_buf_;       ///< Sector data for current read/write transfer
     size_t               buf_pos_      = 0; ///< Read index into sector_buf_
     bool                 transferring_ = false; ///< true while a read transfer is in progress
     bool                 write_mode_   = false; ///< true during a write transfer
+
+    // ─── Data-field re-sync (second /STR strobe within a sector) ──────────────
+    // The boot ROM reads a sector with ONE /STR strobe (IDAM+data continuously).
+    // The loaded bootloader's ZVE2 routine issues a SECOND /STR strobe mid-sector
+    // to re-synchronise to the data address mark (0xFB).  On real K5122 hardware
+    // each /STR strobe makes the controller hunt the next address mark.  We model
+    // the second strobe by switching ioRead(0x16) to emit the current sector's
+    // data field framed as [A1][FB][128 data][CRC][CRC].
+    std::vector<uint8_t> data_field_buf_;   ///< Synthesised [A1 FB <data> CRC CRC]
+    size_t               data_field_pos_ = 0;   ///< Read index into data_field_buf_
+    bool                 in_data_field_  = false;///< true while streaming the data field
+    size_t               data_field_resume_pos_ = 0; ///< buf_pos_ to resume at after the data field
+
+    /// Build data_field_buf_ ([A1 FB <128 data> CRC CRC]) for the sector that
+    /// buf_pos_ currently points into and switch ioRead(0x16) into data-field mode.
+    void beginDataField();
 
     // ─── DMA state machine ───────────────────────────────────────────────────
     bool dma_pending_  = false;  ///< true: /BUSRQ asserted, DMA transfer waiting

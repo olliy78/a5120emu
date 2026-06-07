@@ -473,8 +473,10 @@ TEST_F(K5122Test, DMA_ReadMode_SectorDataAvailableAfterDmaUpdate) {
     card.dmaUpdate();
 
     // The read buffer is the rotating track as a continuous IDAM stream, each
-    // sector being [00 FE cyl head sec size CRC CRC <128 data> CRC CRC] (138 B).
-    EXPECT_EQ(card.ioRead(0x16), 0x00) << "byte0 = sync/gap";
+    // sector being [A1 FE cyl head sec size CRC CRC <128 data> CRC CRC] (138 B).
+    // byte0 is the 0xA1 address-mark sync prefix (the loaded bootloader's ZVE2
+    // routine skips 0xA1 and matches 0xFE; the boot ROM discards byte0).
+    EXPECT_EQ(card.ioRead(0x16), 0xA1) << "byte0 = 0xA1 sync / address-mark prefix";
     EXPECT_EQ(card.ioRead(0x16), 0xFE) << "byte1 = IDAM address mark";
     card.ioRead(0x16);                                    // byte2 = cylinder
     card.ioRead(0x16);                                    // byte3 = head
@@ -612,7 +614,7 @@ TEST_F(K5122Test, DMA_Read_SectorImmediatelyAvailableAfterSTR) {
 
     // BUSRQ asserted and the track stream is already in the buffer.
     ASSERT_TRUE(bus.isBUSRQ());
-    EXPECT_EQ(card.ioRead(0x16), 0x00) << "byte0 = sync";
+    EXPECT_EQ(card.ioRead(0x16), 0xA1) << "byte0 = 0xA1 sync / address-mark prefix";
     EXPECT_EQ(card.ioRead(0x16), 0xFE) << "byte1 = IDAM mark, readable immediately after /STR";
     std::filesystem::remove(path);
 }

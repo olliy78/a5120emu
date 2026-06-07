@@ -88,7 +88,19 @@ uint8_t K5122::ioRead(uint8_t port) {
         // is held throughout — it is released only when ZVE2 signals completion
         // ([0x03F8]=3), detected by A5120Machine, which then calls endDmaTransfer().
         if (port == 0x16 && transferring_ && !write_mode_) {
-            if (sector_buf_.empty()) {
+            if (in_data_field_) {
+                // Streaming the re-synced data field [A1 FB <128 data> CRC CRC].
+                if (data_field_pos_ < data_field_buf_.size()) {
+                    result = data_field_buf_[data_field_pos_++];
+                } else {
+                    // Data field drained: resume the rotating IDAM stream at the
+                    // next sector block.
+                    in_data_field_ = false;
+                    buf_pos_ = data_field_resume_pos_;
+                    if (buf_pos_ >= sector_buf_.size()) buf_pos_ = 0;
+                    result = sector_buf_[buf_pos_++];
+                }
+            } else if (sector_buf_.empty()) {
                 result = 0xFF;
             } else {
                 if (buf_pos_ >= sector_buf_.size()) buf_pos_ = 0;   // track wraps
@@ -372,18 +384,39 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
                 bus_.releaseBUSRQ();
                 LOG_DEBUG("K5122", "/STR ZVE2-Commit SCHREIBEN abgeschlossen, BUSRQ freigegeben");
             } else {
-                // ZVE2 read-refresh (ROM addr 0x01FA: OUT(10h,0xB5h) with /WE=1):
-                // ZVE2 deasserted /STR then re-asserted it to load the next sector
-                // into sector_buf_ while it still holds the bus.  Reload the buffer
-                // but keep BUSRQ asserted — release happens in ioRead(0x16) after
-                // the last INIR byte is consumed.
-                doReadSector();
-                LOG_DEBUG("K5122", "/STR ZVE2-Lese-Refresh: sector_buf_ neu geladen, BUSRQ gehalten");
+                // ZVE2 /STR re-strobe while a read is in progress.  Two cases:
+                //
+                //  (a) Mid-sector re-sync (loaded bootloader, ROM 0x066E): the IDAM
+                //      and header of the current sector have already been streamed
+                //      (buf_pos_ sits past the 6-byte header within the block).  On
+                //      real hardware this second strobe re-synchronises to the data
+                //      address mark.  We switch to emitting [A1 FB <data> CRC CRC]
+                //      for the current sector.  The boot ROM never does this — it
+                //      holds /STR low and reads IDAM+data continuously — so its path
+                //      is unaffected.
+                //
+                //  (b) Buffer refresh at a block boundary (boot ROM 0x01FA style):
+                //      reload the whole rotating track and keep streaming.
+                size_t off = sector_buf_.empty() ? 0 : (buf_pos_ % kSectorBlock);
+                if (transferring_ && !in_data_field_ && off > 6 && !sector_buf_.empty()) {
+                    beginDataField();
+                } else {
+                    doReadSector();
+                    LOG_DEBUG("K5122", "/STR ZVE2-Lese-Refresh: sector_buf_ neu geladen, BUSRQ gehalten");
+                }
             }
         } else {
             // ZVE1 triggering a new DMA transfer
             dma_is_write_ = is_write;
             if (!is_write) {
+                // The MR/SD bit (bit 5) of THIS start word is the side-select for
+                // the read.  Latch the head *before* building the track stream so
+                // the IDAM headers carry the correct side.  Previously current_head_
+                // was only updated after doReadSector() (below), so a read started
+                // by 0xA1 (bit5=1 → head 0) still streamed the stale head from the
+                // preceding control word — the loader's ZVE2 routine then rejected
+                // every IDAM (head mismatch) and span forever in its retry loop.
+                current_head_ = (data & 0x20) ? 0 : 1;
                 doReadSector();   // fill sector_buf_ immediately for ZVE2 INIR
             } else {
                 sector_buf_.clear();  // ZVE2 will fill via port 0x14 writes
@@ -543,7 +576,7 @@ void K5122::doReadSector() {
     sector_buf_.reserve(static_cast<size_t>(nsec) * 138u);
     for (uint8_t sec = 1; sec <= nsec; ++sec) {
         auto data = drv.readSector(cyl, head, sec);
-        sector_buf_.push_back(0x00);       // sync / gap
+        sector_buf_.push_back(0xA1);       // sync / address-mark prefix (loader skips 0xA1)
         sector_buf_.push_back(0xFE);       // IDAM address mark
         sector_buf_.push_back(cyl);        // cylinder
         sector_buf_.push_back(head);       // head / side
@@ -556,9 +589,10 @@ void K5122::doReadSector() {
         sector_buf_.push_back(0x00);       // data CRC byte 2 (ROM trailing INI 0x0247)
     }
 
-    buf_pos_      = 0;
-    transferring_ = true;
-    write_mode_   = false;
+    buf_pos_       = 0;
+    transferring_  = true;
+    write_mode_    = false;
+    in_data_field_ = false;   // fresh IDAM-field stream
 
     LOG_DEBUG("K5122", "    track stream: %u sectors, %zu bytes total",
               static_cast<unsigned>(nsec), sector_buf_.size());
@@ -631,6 +665,38 @@ void K5122::markDriveAccess(int drive) {
     if (drive < 0 || drive > 3) return;
     led_until_[static_cast<size_t>(drive)] =
         std::chrono::steady_clock::now() + led_hold_time_;
+}
+
+// ─── Data-field re-sync (second /STR strobe) ──────────────────────────────────
+
+void K5122::beginDataField() {
+    if (sector_buf_.empty()) return;
+
+    // Which sector block does buf_pos_ currently sit in?
+    const size_t idx   = (buf_pos_ / kSectorBlock) % (sector_buf_.size() / kSectorBlock);
+    const size_t start = idx * kSectorBlock;
+
+    // The 128 data bytes live at offset 8 within the 138-byte IDAM-field block
+    // ([A1 FE cyl head sec size][gap gap]<128 data>[CRC CRC]).
+    const size_t data_off = start + 8;
+
+    data_field_buf_.clear();
+    data_field_buf_.reserve(132);
+    data_field_buf_.push_back(0xA1);   // sync / address-mark prefix (loader skips 0xA1)
+    data_field_buf_.push_back(0xFB);   // data address mark (loader searches for 0xFB)
+    for (size_t i = 0; i < 128 && data_off + i < sector_buf_.size(); ++i)
+        data_field_buf_.push_back(sector_buf_[data_off + i]);
+    data_field_buf_.push_back(0x00);   // data CRC byte 1
+    data_field_buf_.push_back(0x00);   // data CRC byte 2
+
+    data_field_pos_        = 0;
+    in_data_field_         = true;
+    // After the data field is drained, resume the rotating IDAM stream at the
+    // next sector so the loader's next IDAM search aligns on a fresh block.
+    data_field_resume_pos_ = (start + kSectorBlock) % sector_buf_.size();
+
+    LOG_DEBUG("K5122", "/STR Datenfeld-Re-Sync: Sektor-Block %zu, [A1 FB <128> CRC], "
+              "resume @%zu", idx, data_field_resume_pos_);
 }
 
 // ─── Index pulse simulation ───────────────────────────────────────────────────

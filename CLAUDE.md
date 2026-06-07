@@ -133,13 +133,24 @@ Three round-2+ fixes (all required, beyond the round-1 three above):
    `dma_saw_progress_` only after seeing `[0x03F8]!=3` (ZVE1 cleared it) and *then*
    treats a `→3` write as completion. Level-based detection fires on the stale 3.
 
-**Open problem:** after printing the banner, ZVE1 spins in a tight loop at
-`0x052E–0x0538` (122786× in the post-boot PC histogram). Unknown whether it is a
-keyboard/input poll waiting to select the OS, a not-yet-emulated device poll, or a
-display loop. Next: disassemble that loop from live RAM (it is relocated/chained, so
-dump via `memReadDebug`, not just the disk image) and correlate with the post-boot
-I/O-port histogram from `boot_trace -p`. Goal of the chain: load and execute `@os.com`
-from the filesystem. Running analysis: `doc/analyse_bootloader.md` (in progress).
+**Post-banner spin at `0x052A–0x0538` — DIAGNOSED & largely fixed (2026-06-07).** The
+loop is the loader's interrupt/handshake wait for the next sector. It was NOT an
+interrupt-system bug (IM2/daisy-chain/RETI/index-int all verified working; vec 0x62 IS
+delivered). Root cause was a **K5122 sector-format/access mismatch**: the loaded
+bootloader's own ZVE2 routine (`0x062E`, installed via `[0x0000]=JP 0x062E`) reads sectors
+with TWO `/STR` strobes (1st → IDAM `0xFE`, 2nd mid-sector → data mark `0xFB`), whereas the
+boot ROM uses ONE strobe and reads IDAM+data continuously. Two fixes landed (all 40
+K5122/Boot tests green): (1) **head-latch** — `current_head_` is now latched from the start
+control word's MR/SD bit *before* `doReadSector` (was stale → IDAM head mismatch); (2)
+**data-field `/STR` re-sync** — `K5122::beginDataField()` models the 2nd strobe by emitting
+`A1 FB <128 data> CRC` for the current sector; sync byte changed `0x00`→`0xA1`. Now ZVE2
+reads real data, steps cyl0→cyl1, and loads the next stage to `0x0800` (**"SYL" signature +
+code present**, was 0 bytes). **Remaining open:** per-sector BUSRQ *pacing* — ZVE2 reads the
+whole rotating track in one BUSRQ session, but the loader expects a per-sector handshake
+(`[07E3]++` per sector), so the multi-sector load doesn't fully accumulate (`[07FC]`
+underflows). Model BUSRQ as a per-sector session (ZVE2 writes `/STR=1` via `OUT(10),0xAD` at
+each sector end). Full byte-level model: `doc/K1520_architecture.md` §14.6. Goal of the
+chain: load and execute `@os.com`. Interrupt-system spec: `K1520_architecture.md` §14.
 
 `boot_trace` post-boot tracing: `-p <cycles>` continues past `0x0437`; the summary then
 adds an I/O-port read/write histogram, VRAM write count + range, a loaded-code PC
