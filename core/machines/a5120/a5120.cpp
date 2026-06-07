@@ -150,7 +150,10 @@ int A5120Machine::run(int max_cycles) {
                 if (df != kZve2DoneValue) {
                     dma_saw_progress_ = true;            // ZVE1 cleared it → armed
                 } else if (dma_saw_progress_) {
+                    LOG_DEBUG("A5120", "endDmaTransfer: ZVE1.PC=%04X ZVE2.PC=%04X",
+                              zre_.cpuPC(), zre_.zve2PC());
                     afs_.endDmaTransfer();               // 0→3 this round: done
+                    LOG_DEBUG("A5120", "endDmaTransfer fertig: ZVE1.PC=%04X", zre_.cpuPC());
                 }
                 // Fall through: also step ZVE1 concurrently (see comment above).
             } else {

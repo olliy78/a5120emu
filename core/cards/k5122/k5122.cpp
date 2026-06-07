@@ -131,6 +131,9 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
                 data,
                 (data >> 7) & 1, (data >> 6) & 1, (data >> 5) & 1, (data >> 3) & 1,
                 (data >> 2) & 1, (data >> 1) & 1, (data >> 4) & 1, data & 1);
+        } else if (port == 0x11) {
+            LOG_DEBUG("K5122", "CTRL PIO write port=0x11 data=0x%02X [CtrlA-ctrl] busrq=%d",
+                      data, bus_.isBUSRQ() ? 1 : 0);
         } else {
             LOG_DEBUG("K5122", "CTRL PIO write port=0x%02X data=0x%02X [%s]",
                       port, data, port_name);
@@ -684,11 +687,24 @@ void K5122::dmaUpdate() {
  * The K5122 cannot see that memory write itself, so the machine arbitrates the
  * handover: it detects completion and calls this to clear the transfer state
  * and hand the bus back to ZVE1.  No-op if /BUSRQ is not held.
+ *
+ * ZVE2's completion code (ROM 0x0267) writes OUT(11H,03H) which is an interrupt
+ * control word with IE=0, disabling ctrl_pio_ Port A interrupt (Vektor 0xBA,
+ * Index-Puls-ISR).  The bootloader at 0x0437 reprogrammes the vector to 0x62
+ * (OUT(11H),0x62 — a vector word, not a control word) but does not re-enable IE.
+ * We restore IE here so that subsequent index pulses trigger the Timer-ISR
+ * (Vektor 0x62 → ISR 0x060E) which the bootloader waiting loop at 0x052A
+ * requires to make progress.
+ *
+ * 0x83 = 1000_0011: interrupt control word (bits[3:0]≠1111, bit0=1),
+ * IE=1 (bit7), OR mode (bit6=0), active LOW (bit5=0), no mask follows (bit4=0).
  */
 void K5122::endDmaTransfer() {
     if (!bus_.isBUSRQ()) return;
     transferring_ = false;
     dma_pending_  = false;
     bus_.releaseBUSRQ();
-    LOG_DEBUG("K5122", "endDmaTransfer: ZVE2 DMA fertig, BUSRQ freigegeben");
+    // Restore ctrl_pio_ Port A interrupt enable (cleared by ZVE2 OUT(11H,03H)).
+    ctrl_pio_.ioWrite(1, 0x83);
+    LOG_DEBUG("K5122", "endDmaTransfer: ZVE2 DMA fertig, BUSRQ freigegeben, ctrl-PIO Port-A IE wiederhergestellt");
 }
