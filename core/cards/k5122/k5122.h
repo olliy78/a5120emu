@@ -364,21 +364,30 @@ private:
     bool                 transferring_ = false; ///< true while a read transfer is in progress
     bool                 write_mode_   = false; ///< true during a write transfer
 
-    // ─── Data-field re-sync (second /STR strobe within a sector) ──────────────
-    // The boot ROM reads a sector with ONE /STR strobe (IDAM+data continuously).
-    // The loaded bootloader's ZVE2 routine issues a SECOND /STR strobe mid-sector
-    // to re-synchronise to the data address mark (0xFB).  On real K5122 hardware
-    // each /STR strobe makes the controller hunt the next address mark.  We model
-    // the second strobe by switching ioRead(0x16) to emit the current sector's
-    // data field framed as [A1][FB][128 data][CRC][CRC].
-    std::vector<uint8_t> data_field_buf_;   ///< Synthesised [A1 FB <data> CRC CRC]
-    size_t               data_field_pos_ = 0;   ///< Read index into data_field_buf_
-    bool                 in_data_field_  = false;///< true while streaming the data field
-    size_t               data_field_resume_pos_ = 0; ///< buf_pos_ to resume at after the data field
+    // ─── Address-mark field streaming (MK-strobe driven) ─────────────────────
+    // On real K5122 hardware the floppy data separator presents the decoded byte
+    // stream one *address-mark field* at a time; the controller re-synchronises to
+    // the next address mark when the CPU pulses the MK control bit (ctrl Port A
+    // bit1, 0xB5→0x87).  Both readers do this: the boot ROM (0x0224/0x022D,
+    // 0x0249/0x025F) and the loaded bootloader's ZVE2 routine (0x066E/0x0670,
+    // 0x06B9/0x06BB).  Each MK rising edge advances IDAM → DATA → next IDAM → …
+    //
+    //   IDAM field : [A1][FE][cyl][head][sec][size] + gap   (reader stops where it likes)
+    //   DATA field : [A1][FB][128 data][CRC][CRC]   + gap
+    //
+    // ioRead(0x16) streams the current field and pads with gap bytes on over-read,
+    // so the exact byte count each reader consumes within a field does not matter —
+    // only the MK strobe advances to the next field.
+    size_t field_sector_  = 0;       ///< current sector index within the track (0-based)
+    bool   field_is_data_ = false;   ///< false = IDAM field, true = DATA field
+    std::vector<uint8_t> field_buf_; ///< current field byte stream
+    size_t field_pos_     = 0;       ///< read index into field_buf_
+    static constexpr uint8_t kGapByte = 0x4E;  ///< MFM gap filler (over-read padding)
 
-    /// Build data_field_buf_ ([A1 FB <128 data> CRC CRC]) for the sector that
-    /// buf_pos_ currently points into and switch ioRead(0x16) into data-field mode.
-    void beginDataField();
+    /// Build field_buf_ for (field_sector_, field_is_data_) from sector_buf_.
+    void buildField();
+    /// Advance to the next address-mark field (called on an MK rising edge).
+    void advanceField();
 
     // ─── DMA state machine ───────────────────────────────────────────────────
     bool dma_pending_  = false;  ///< true: /BUSRQ asserted, DMA transfer waiting

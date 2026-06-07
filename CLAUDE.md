@@ -142,15 +142,20 @@ with TWO `/STR` strobes (1st → IDAM `0xFE`, 2nd mid-sector → data mark `0xFB
 boot ROM uses ONE strobe and reads IDAM+data continuously. Two fixes landed (all 40
 K5122/Boot tests green): (1) **head-latch** — `current_head_` is now latched from the start
 control word's MR/SD bit *before* `doReadSector` (was stale → IDAM head mismatch); (2)
-**data-field `/STR` re-sync** — `K5122::beginDataField()` models the 2nd strobe by emitting
-`A1 FB <128 data> CRC` for the current sector; sync byte changed `0x00`→`0xA1`. Now ZVE2
-reads real data, steps cyl0→cyl1, and loads the next stage to `0x0800` (**"SYL" signature +
-code present**, was 0 bytes). **Remaining open:** per-sector BUSRQ *pacing* — ZVE2 reads the
-whole rotating track in one BUSRQ session, but the loader expects a per-sector handshake
-(`[07E3]++` per sector), so the multi-sector load doesn't fully accumulate (`[07FC]`
-underflows). Model BUSRQ as a per-sector session (ZVE2 writes `/STR=1` via `OUT(10),0xAD` at
-each sector end). Full byte-level model: `doc/K1520_architecture.md` §14.6. Goal of the
-chain: load and execute `@os.com`. Interrupt-system spec: `K1520_architecture.md` §14.
+**MK-strobe field model** (`K5122::buildField()`/`advanceField()`) + **CRC-16**
+(`loaderCrc16()`). Each address-mark field advance is driven by an MK rising edge (ctrl Port A
+bit1, `0xB5`→`0x87`) — same for ROM and loader; `ioRead(0x16)` streams the current field
+(IDAM `A1 FE …` / DATA `A1 FB <128> CRC`) and pads over-reads with gap `0x4E`, so per-field
+byte counts don't matter. The loader CRC-verifies every sector (`CALL 0x0407`), so the synthesised
+DATA field carries the real CRC-16 (`loaderCrc16` = byte-exact `sub_0407`, start `BF84H`). Sync
+byte `0x00`→`0xA1`. **Result (all 40 K5122/Boot tests green, banner no-regression):** ZVE2 reads
+whole tracks, ZVE1 CRC-verifies each sector (error handler `0x0605` no longer hit), **~52 sectors
+(6672 B) of real OS/loader data load to `0x0800–0x2200`** (was 0). **Remaining open:** track
+transition — ZVE1 waits at `0x0532` instead of jumping to the next stage `0x0880`; ZVE2 runs into
+its track-end loop `L0696` after 26 sectors and corrupts handshake vars; trace shows re-reads of
+cyl0/head0 instead of advancing to head1. Model the ZVE2 reset (`OUT 04`) + seek between tracks.
+Full byte-level model: `doc/K1520_architecture.md` §14.6. Goal of the chain: load/execute `@os.com`.
+Interrupt-system spec: `K1520_architecture.md` §14.
 
 `boot_trace` post-boot tracing: `-p <cycles>` continues past `0x0437`; the summary then
 adds an I/O-port read/write histogram, VRAM write count + range, a loaded-code PC

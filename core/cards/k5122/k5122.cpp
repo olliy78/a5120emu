@@ -88,25 +88,17 @@ uint8_t K5122::ioRead(uint8_t port) {
         // is held throughout — it is released only when ZVE2 signals completion
         // ([0x03F8]=3), detected by A5120Machine, which then calls endDmaTransfer().
         if (port == 0x16 && transferring_ && !write_mode_) {
-            if (in_data_field_) {
-                // Streaming the re-synced data field [A1 FB <128 data> CRC CRC].
-                if (data_field_pos_ < data_field_buf_.size()) {
-                    result = data_field_buf_[data_field_pos_++];
-                } else {
-                    // Data field drained: resume the rotating IDAM stream at the
-                    // next sector block.
-                    in_data_field_ = false;
-                    buf_pos_ = data_field_resume_pos_;
-                    if (buf_pos_ >= sector_buf_.size()) buf_pos_ = 0;
-                    result = sector_buf_[buf_pos_++];
-                }
-            } else if (sector_buf_.empty()) {
+            // Stream the current address-mark field; pad with gap bytes on over-read.
+            // The reader advances to the next field by pulsing MK (see advanceField()).
+            if (field_buf_.empty()) {
                 result = 0xFF;
+            } else if (field_pos_ < field_buf_.size()) {
+                result = field_buf_[field_pos_++];
+                LOG_TRACE("K5122", "Feld[%zu/%zu] S%zu %s => 0x%02X",
+                          field_pos_ - 1, field_buf_.size(), field_sector_,
+                          field_is_data_ ? "DATA" : "IDAM", result);
             } else {
-                if (buf_pos_ >= sector_buf_.size()) buf_pos_ = 0;   // track wraps
-                result = sector_buf_[buf_pos_++];
-                LOG_TRACE("K5122", "DATA byte[%zu/%zu] => 0x%02X",
-                          buf_pos_ - 1, sector_buf_.size(), result);
+                result = kGapByte;   // over-read past the field → MFM gap filler
             }
         } else {
             result = data_pio_.ioRead(port - 0x14);
@@ -384,26 +376,12 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
                 bus_.releaseBUSRQ();
                 LOG_DEBUG("K5122", "/STR ZVE2-Commit SCHREIBEN abgeschlossen, BUSRQ freigegeben");
             } else {
-                // ZVE2 /STR re-strobe while a read is in progress.  Two cases:
-                //
-                //  (a) Mid-sector re-sync (loaded bootloader, ROM 0x066E): the IDAM
-                //      and header of the current sector have already been streamed
-                //      (buf_pos_ sits past the 6-byte header within the block).  On
-                //      real hardware this second strobe re-synchronises to the data
-                //      address mark.  We switch to emitting [A1 FB <data> CRC CRC]
-                //      for the current sector.  The boot ROM never does this — it
-                //      holds /STR low and reads IDAM+data continuously — so its path
-                //      is unaffected.
-                //
-                //  (b) Buffer refresh at a block boundary (boot ROM 0x01FA style):
-                //      reload the whole rotating track and keep streaming.
-                size_t off = sector_buf_.empty() ? 0 : (buf_pos_ % kSectorBlock);
-                if (transferring_ && !in_data_field_ && off > 6 && !sector_buf_.empty()) {
-                    beginDataField();
-                } else {
-                    doReadSector();
-                    LOG_DEBUG("K5122", "/STR ZVE2-Lese-Refresh: sector_buf_ neu geladen, BUSRQ gehalten");
-                }
+                // ZVE2 read-refresh: /STR re-strobed at a track boundary — reload
+                // the rotating track and present sector 0's IDAM field again.  The
+                // mid-sector field advances (IDAM→DATA→next IDAM) are driven by the
+                // MK strobe (see below), not by /STR.
+                doReadSector();
+                LOG_DEBUG("K5122", "/STR ZVE2-Lese-Refresh: Spur neu geladen, BUSRQ gehalten");
             }
         } else {
             // ZVE1 triggering a new DMA transfer
@@ -428,6 +406,14 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
                       is_write ? "SCHREIBEN" : "LESEN");
         }
     }
+
+    // ── MK strobe: ctrl Port A bit1 rising edge (0xB5→0x87) ──────────────────
+    // Both the boot ROM (0x0224/0x022D, 0x0249/0x025F) and the loaded bootloader's
+    // ZVE2 routine (0x066E/0x0670, 0x06B9/0x06BB) pulse MK to re-synchronise the
+    // data separator to the next address mark.  Each rising edge advances the
+    // presented field: IDAM → DATA (same sector) → IDAM of the next sector.
+    if (transferring_ && !write_mode_ && !(prev_ctrl_a_ & 0x02) && (data & 0x02))
+        advanceField();
 
     // Update head/side select (bit 5 doubles as side select when not stepping).
     // MR/SD=0 → side 1 (head 1); MR/SD=1 → side 0 (head 0).
@@ -592,7 +578,10 @@ void K5122::doReadSector() {
     buf_pos_       = 0;
     transferring_  = true;
     write_mode_    = false;
-    in_data_field_ = false;   // fresh IDAM-field stream
+    // Present the first sector's IDAM field; MK strobes advance from here.
+    field_sector_  = 0;
+    field_is_data_ = false;
+    buildField();
 
     LOG_DEBUG("K5122", "    track stream: %u sectors, %zu bytes total",
               static_cast<unsigned>(nsec), sector_buf_.size());
@@ -667,36 +656,91 @@ void K5122::markDriveAccess(int drive) {
         std::chrono::steady_clock::now() + led_hold_time_;
 }
 
-// ─── Data-field re-sync (second /STR strobe) ──────────────────────────────────
+// ─── Address-mark field streaming (MK-strobe driven) ──────────────────────────
 
-void K5122::beginDataField() {
+namespace {
+/**
+ * @brief Replicates the loaded bootloader's per-sector CRC-16 (sub_0407 @0x0407).
+ *
+ * The loader verifies every loaded sector by computing this CRC over its 128 data
+ * bytes (LD E,[0677]=0x80) and comparing the result (B=high, C=low) against the two
+ * CRC bytes the K5122 streamed after the data (table at [0x0770]).  The synthesised
+ * DATA field must therefore carry the *correct* CRC or the loader halts at its error
+ * handler (0x0605).  Start word BF84H is the normal boot path ([0x03FD]=0x87, bit1=1;
+ * the alternate E295H path is bit1=0).  Byte-for-byte translation of the Z80 routine.
+ */
+uint16_t loaderCrc16(const uint8_t* data, size_t n, uint8_t b, uint8_t c) {
+    auto ror = [](uint8_t x, int k) -> uint8_t {
+        return static_cast<uint8_t>((x >> k) | (x << (8 - k)));
+    };
+    for (size_t i = 0; i < n; ++i) {
+        uint8_t a = data[i] ^ b;        // A = byte XOR B
+        b = a;                          // t1
+        a = ror(a, 4) & 0x0F;
+        a ^= b;
+        b = a;                          // t2
+        a = ror(a, 3);
+        uint8_t d = a;
+        a = (a & 0x1F) ^ c;
+        c = a;
+        a = ror(d, 1) & 0xF0;
+        a ^= c;
+        c = a;
+        a = (d & 0xE0) ^ b;
+        b = c;
+        c = a;
+    }
+    return static_cast<uint16_t>((b << 8) | c);  // B = high CRC byte, C = low
+}
+}  // namespace
+
+void K5122::buildField() {
+    field_buf_.clear();
+    field_pos_ = 0;
     if (sector_buf_.empty()) return;
 
-    // Which sector block does buf_pos_ currently sit in?
-    const size_t idx   = (buf_pos_ / kSectorBlock) % (sector_buf_.size() / kSectorBlock);
-    const size_t start = idx * kSectorBlock;
+    const size_t nsec  = sector_buf_.size() / kSectorBlock;
+    if (nsec == 0) return;
+    const size_t start = (field_sector_ % nsec) * kSectorBlock;
+    // 138-byte IDAM-field block layout: [A1 FE cyl head sec size][gap gap]<128 data>[CRC CRC]
+    const uint8_t cyl  = sector_buf_[start + 2];
+    const uint8_t head = sector_buf_[start + 3];
+    const uint8_t sec  = sector_buf_[start + 4];
+    const uint8_t size = sector_buf_[start + 5];
 
-    // The 128 data bytes live at offset 8 within the 138-byte IDAM-field block
-    // ([A1 FE cyl head sec size][gap gap]<128 data>[CRC CRC]).
-    const size_t data_off = start + 8;
+    if (!field_is_data_) {
+        // IDAM field: address mark + header, then gap.  The reader (ROM or loader)
+        // stops after as many bytes as it wants and pulses MK to advance.
+        field_buf_ = {0xA1, 0xFE, cyl, head, sec, size};
+        field_buf_.insert(field_buf_.end(), 18, kGapByte);
+    } else {
+        // DATA field: address mark + 128 data bytes + CRC, then gap.
+        field_buf_ = {0xA1, 0xFB};
+        const size_t data_off = start + 8;
+        for (size_t i = 0; i < 128; ++i) field_buf_.push_back(sector_buf_[data_off + i]);
+        // Real CRC-16 over the 128 data bytes so the loader's per-sector verify
+        // (CALL 0x0407 → CP B / CP C) passes.  Start word BF84H = normal boot path.
+        const uint16_t crc = loaderCrc16(&sector_buf_[data_off], 128, 0xBF, 0x84);
+        field_buf_.push_back(static_cast<uint8_t>(crc >> 8));    // CRC high (→ CP B)
+        field_buf_.push_back(static_cast<uint8_t>(crc & 0xFF));  // CRC low  (→ CP C)
+        field_buf_.insert(field_buf_.end(), 8, kGapByte);
+    }
+}
 
-    data_field_buf_.clear();
-    data_field_buf_.reserve(132);
-    data_field_buf_.push_back(0xA1);   // sync / address-mark prefix (loader skips 0xA1)
-    data_field_buf_.push_back(0xFB);   // data address mark (loader searches for 0xFB)
-    for (size_t i = 0; i < 128 && data_off + i < sector_buf_.size(); ++i)
-        data_field_buf_.push_back(sector_buf_[data_off + i]);
-    data_field_buf_.push_back(0x00);   // data CRC byte 1
-    data_field_buf_.push_back(0x00);   // data CRC byte 2
+void K5122::advanceField() {
+    if (sector_buf_.empty()) return;
+    const size_t nsec = sector_buf_.size() / kSectorBlock;
+    if (nsec == 0) return;
 
-    data_field_pos_        = 0;
-    in_data_field_         = true;
-    // After the data field is drained, resume the rotating IDAM stream at the
-    // next sector so the loader's next IDAM search aligns on a fresh block.
-    data_field_resume_pos_ = (start + kSectorBlock) % sector_buf_.size();
-
-    LOG_DEBUG("K5122", "/STR Datenfeld-Re-Sync: Sektor-Block %zu, [A1 FB <128> CRC], "
-              "resume @%zu", idx, data_field_resume_pos_);
+    if (!field_is_data_) {
+        field_is_data_ = true;                          // IDAM → DATA (same sector)
+    } else {
+        field_is_data_ = false;                         // DATA → next sector's IDAM
+        field_sector_  = (field_sector_ + 1) % nsec;
+    }
+    buildField();
+    LOG_TRACE("K5122", "MK-Flanke: Feld → Sektor %zu %s", field_sector_,
+              field_is_data_ ? "DATA" : "IDAM");
 }
 
 // ─── Index pulse simulation ───────────────────────────────────────────────────

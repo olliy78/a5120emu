@@ -1107,19 +1107,35 @@ Byte in `doReadSector` ist von `0x00` auf `0xA1` gesetzt. Die ROM erzeugt keinen
 `/STR`-Abfall → ihr kontinuierlicher Lesepfad bleibt unberührt. **Alle 40 K5122/Boot-Tests grün**
 (2 Tests auf den neuen `0xA1`-Kontrakt angepasst).
 
-**Resultierender Fortschritt (Trace):** ZVE2 liest jetzt **echte Sektordaten** (statt sofort in
-die Fehlerschleife zu laufen), steppt über Track-Grenzen (cyl 0 → cyl 1) und **lädt die erste
-Stufe des Folge-Loaders nach `0x0800`** — dort steht jetzt die Signatur `53 59 4C` = `"SYL"`
-plus echter Z80-Code (vorher: 0 Bytes geladen, sofortiger Freeze).
+**Zweiter Fix — MK-flankengesteuertes Feld-Modell (UMGESETZT 2026-06-07).** Der ursprüngliche
+`/STR`-Re-Sync-Trigger feuerte nur für Sektor 1. Die vollständige Kontrollfluss-Analyse der
+ZVE2-Routine (`0x062E`–`0x06BF`) zeigt: **jeder Feldwechsel wird durch eine `MK`-Steigflanke
+ausgelöst** (Steuer-Port-A Bit1, `0xB5`→`0x87`) — bei ROM (`0x0224/022D`, `0x0249/025F`) **und**
+Loader (`0x066E/0670`, `0x06B9/06BB`) gleichermaßen. Jede `MK`-Flanke synchronisiert auf die
+nächste Adressmarke: IDAM → DATEN → nächstes IDAM. Der Emulator modelliert das jetzt als
+**Feld-Zustandsmaschine** (`K5122::buildField()`/`advanceField()`): `ioRead(0x16)` streamt das
+aktuelle Feld (`[A1 FE …]` bzw. `[A1 FB <128> CRC]`) und füllt bei Über-Lesen mit Gap-Bytes
+(`0x4E`); die `MK`-Flanke schaltet weiter. Dadurch ist die genaue Byte-Zahl, die jeder Leser pro
+Feld konsumiert, **egal** — ROM und Loader funktionieren beide.
 
-**Verbleibendes Problem [offen] — Per-Sektor-Pacing:** Der Mehrsektor-Load akkumuliert noch
-nicht vollständig. In der aktuellen Modellierung liest ZVE2 in **einer** BUSRQ-Session die ganze
-rotierende Spur kontinuierlich, der Loader erwartet aber ein **Per-Sektor-Handshake** (ZVE2 liest
-*einen* Sektor → signalisiert ZVE1 via `[07E3]++` → ZVE1 verarbeitet/CRC-prüft → nächster Sektor).
-Folge: nur ~1 Sektor landet sauber bei `0x0800`, der Sektorzähler `[07FC]` unterläuft (0x34→0xFD),
-ZVE1 spinnt weiter bei `0x052A`. Nächster Schritt: BUSRQ als **Per-Sektor-Session** modellieren
-(ZVE2-Routine `0x062E` setzt am Sektorende `/STR=1` via `OUT(10),0xAD` — als Session-Ende nutzen),
-statt der „ganze-Spur-am-Stück"-Session. Das ist ein eigenständiger, tieferer Umbau.
+**Dritter Fix — CRC-16 (UMGESETZT 2026-06-07).** Der Loader verifiziert **jeden** Sektor:
+`0x054F CALL 0407` berechnet CRC-16 über 128 Datenbytes und vergleicht (`CP B`/`CP C`) gegen die
+2 CRC-Bytes aus dem Stream (Tabelle `[0x0770]`). Der Emulator berechnet jetzt die echte CRC
+(`loaderCrc16()`, byte-genaue Übersetzung von `sub_0407`, Start-Wort `BF84H` für `[03FD]=0x87`)
+und setzt sie ins Datenfeld. Vorher: `0x00`-Platzhalter → Loader hielt am Fehler-Handler `0x0605`.
+
+**Resultierender Fortschritt (Trace, alle 40 K5122/Boot-Tests grün, Banner ohne Regression):**
+ZVE2 liest **ganze Spuren** korrekt; ZVE1 **verarbeitet und CRC-verifiziert** jeden Sektor
+(Fehler-Handler `0x0605` wird **nicht** mehr erreicht); **~52 Sektoren (6672 Byte) echter OS-/
+Loader-Daten werden nach `0x0800–0x2200` geladen** (vorher: 0 Bytes, Freeze am Banner).
+
+**Verbleibendes Problem [offen] — Track-Übergang/Completion:** ZVE1 erreicht noch nicht den
+Sprung zur nächsten Stufe (`0x0880`), sondern wartet bei `0x0532`. Symptome: ZVE2 läuft nach
+26 Sektoren in seine Track-Ende-Schleife `L0696` (`0x0696`) und überschreibt dort einige
+Handshake-Variablen (`[07E3..E8]` mit `0xAD`/Gap); der Trace zeigt 18× Re-Read von cyl0/head0
+statt des erwarteten Head-Wechsels auf cyl0/**head1**. Nächster Schritt: Track-Übergang model­lieren
+— ZVE1 muss ZVE2 nach jedem Track per `OUT(04)` zurücksetzen und auf die nächste (cyl,head)
+positionieren, bevor `L0696` Variablen korrumpiert; Head-Auswahl (MR/SD) beim Track-Wechsel prüfen.
 
 **Bereits umgesetzt (kein Hook, echter Bugfix):** `current_head_` wird jetzt **vor**
 `doReadSector` aus dem MR/SD-Bit (Bit5) des Start-Steuerworts gelatcht
@@ -1166,9 +1182,10 @@ schreibt Port 02H (/RES-SPA) zum Rücksetzen.
 
 | Lücke | Status | Auswirkung |
 |---|---|---|
-| **Per-Sektor-Pacing** (ZVE2 liest ganze Spur in 1 BUSRQ-Session statt 1 Sektor/Session) | **offen — aktuelle Freeze-Ursache** | Mehrsektor-Load akkumuliert nicht; nur ~1 Sektor bei 0x0800, `[07FC]` unterläuft (siehe §14.6) |
-| Sektorformat-Mismatch (0xA1-Sync + 0xFB-DAM via /STR-Re-Sync) | **erledigt** | `beginDataField()` modelliert den 2. /STR-Strobe; ZVE2 liest jetzt echte Daten, „SYL"-Stufe nach 0x0800 geladen |
-| Head-Latch vor doReadSector | **erledigt** | Runde 3 las mit veraltetem Head=1; jetzt korrekt Head 0 (alle 40 K5122/Boot-Tests grün) |
+| **Track-Übergang/Completion** (ZVE2-Reset + Head-Wechsel zwischen Tracks) | **offen — aktuelle Stelle** | ZVE1 wartet bei 0x0532 statt Sprung nach 0x0880; ZVE2-`L0696` korrumpiert Handshake-Vars (siehe §14.6) |
+| Sektorformat (0xA1-Sync + 0xFB-DAM) via MK-Feld-Modell | **erledigt** | `buildField()`/`advanceField()`; ROM+Loader lesen denselben Stream; ganze Spuren OK |
+| CRC-16-Verifikation pro Sektor | **erledigt** | `loaderCrc16()` (sub_0407, Start BF84); Loader-Verify passt, Fehler-Handler 0x0605 nicht mehr erreicht |
+| Head-Latch vor doReadSector | **erledigt** | Runde 3 las mit veraltetem Head=1; jetzt korrekt Head 0 |
 | DMA-Completion nur via `[0x03F8]=3` (ROM-Konvention) | offen (Folgeproblem) | greift erst, wenn der Format-Mismatch gelöst ist und ZVE2 die Runde beendet |
 | ctrl_pio_ Port A IE-Wiederherstellung nach DMA | **erledigt** (`endDmaTransfer` → `ioWrite(1,0x83)`) | Vektor 0x62 wird zugestellt (Trace bestätigt) |
 | ctrl_pio_ Port B Floppy-Events (`setBSTB`) | offen | Event-ISR 0x0624 (Vektor 0x60) feuert nie; physikal. Signalquelle [offen] |

@@ -467,24 +467,28 @@ TEST_F(K5122Test, DMA_ReadMode_SectorDataAvailableAfterDmaUpdate) {
     card.ioWrite(0x18, 0x00);
 
     card.ioWrite(0x10, 0xFF);
-    card.ioWrite(0x10, 0xF7);   // /STR falling edge (read)
-    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF7);   // /STR falling edge (read) → present sector 0 IDAM field
 
     card.dmaUpdate();
 
-    // The read buffer is the rotating track as a continuous IDAM stream, each
-    // sector being [A1 FE cyl head sec size CRC CRC <128 data> CRC CRC] (138 B).
-    // byte0 is the 0xA1 address-mark sync prefix (the loaded bootloader's ZVE2
-    // routine skips 0xA1 and matches 0xFE; the boot ROM discards byte0).
-    EXPECT_EQ(card.ioRead(0x16), 0xA1) << "byte0 = 0xA1 sync / address-mark prefix";
-    EXPECT_EQ(card.ioRead(0x16), 0xFE) << "byte1 = IDAM address mark";
-    card.ioRead(0x16);                                    // byte2 = cylinder
-    card.ioRead(0x16);                                    // byte3 = head
-    EXPECT_EQ(card.ioRead(0x16), 0x01) << "byte4 = sector ID (1-based)";
-    card.ioRead(0x16);                                    // byte5 = size code
-    card.ioRead(0x16);                                    // byte6 = IDAM CRC
-    card.ioRead(0x16);                                    // byte7 = IDAM CRC
-    // Payload starts at offset 8; the blank image is filled with 0xE5.
+    // Address-mark field model: after /STR the port-0x16 stream is the current
+    // sector's IDAM field [A1 FE cyl head sec size] followed by gap.  Pulsing MK
+    // (ctrl Port A bit1, 0→1) re-syncs to the next address-mark field (the DATA
+    // field [A1 FB <128 data> CRC CRC]).  See K5122 §14.6.
+    EXPECT_EQ(card.ioRead(0x16), 0xA1) << "IDAM byte0 = 0xA1 sync";
+    EXPECT_EQ(card.ioRead(0x16), 0xFE) << "IDAM byte1 = IDAM address mark";
+    card.ioRead(0x16);                                    // cylinder
+    card.ioRead(0x16);                                    // head
+    EXPECT_EQ(card.ioRead(0x16), 0x01) << "sector ID (1-based)";
+    card.ioRead(0x16);                                    // size code
+
+    // Pulse MK (0→1) with /STR held low to advance to the DATA field.
+    card.ioWrite(0x10, 0xF5);   // MK=0, /STR=0
+    card.ioWrite(0x10, 0xF7);   // MK=1 (rising) → advance IDAM → DATA
+
+    EXPECT_EQ(card.ioRead(0x16), 0xA1) << "DATA byte0 = 0xA1 sync";
+    EXPECT_EQ(card.ioRead(0x16), 0xFB) << "DATA byte1 = data address mark";
+    // Payload follows; the blank image is filled with 0xE5.
     EXPECT_EQ(card.ioRead(0x16), 0xE5) << "first payload byte (blank image)";
     EXPECT_EQ(card.ioRead(0x16), 0xE5) << "second payload byte (blank image)";
     std::filesystem::remove(path);

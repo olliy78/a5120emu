@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./build_trace/boot_trace -L /dev/null -p 9000000 -d 0x07E0:0x0800 /tmp/ram_f3.bin disks/cpadisk01.img)"
+    ]
+  }
+}
