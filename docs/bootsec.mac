@@ -6,6 +6,32 @@
 ; Version im Binaer: "CP/A-Bootsystem, Version 05.04.88 ladet @OS.COM"
 ; ======================================================================
 ;
+; VERIFIKATIONS-STATUS (Stand 2026-06, Emulator-Laufzeitanalyse)
+; ─────────────────────────────────────────────────────────────────────
+;  Die DISASSEMBLIERTEN BYTES dieser Datei sind gegen disks/bootsec.bin
+;  geprueft und korrekt (FDC_INIT @0037H, Stage-1 @0080H, Stage-2 SYL
+;  @1A00H stimmen byte-genau).  Die maßgebliche Beschreibung des TATSAECH-
+;  LICHEN Laufzeit-Bootablaufs steht in doc/K1520_architecture.md §14.5/§14.6.
+;
+;  WICHTIGE KORREKTUREN gegenueber aelteren Kommentaren in dieser Datei:
+;   * Die Ports 11H/13H sind die STEUERREGISTER der beiden Z80-PIO-Tore
+;     der K5122 (Steuer-PIO Port A bzw. Port B) — NICHT SIO/USART.
+;     Werte wie 97H/AFH/0FFH/0BFH sind Z80-PIO-Interrupt-Control-Words
+;     (Bit0=1), Werte mit Bit0=0 (62H/60H/0E8H) sind Interrupt-VEKTOREN.
+;   * Die Routine bei 0D07H (hier "FDC_ADRDEC") ist eine byteweise
+;     CRC-16-Berechnung (sub_0407 / format.mac advance_dma_ptr); der
+;     Emulator bildet sie als K5122::loaderCrc16() exakt nach. Sie
+;     extrahiert NICHT Spur/Sektor, sondern liefert die Sektor-Pruef-CRC.
+;   * @OS.COM wird zur Laufzeit NICHT ueber ein CP/M-BDOS geladen, sondern
+;     ueber eine nach 0100H relozierte Kopie des Boot-ROM-DMA-Treibers
+;     (ZVE2-DMA, [03F7]/[03F8]-Handshake, Index-Puls-Interrupt Vektor 0E8H).
+;     Die unten beschriebenen "BDOS-Funktion"-Aufrufe (CALL 0005H) sind im
+;     Binaer vorhanden, der bestaetigte Lade-Pfad nutzt sie aber nicht.
+;   * Die ORG-Adressen unten entsprechen dem DATEI-/On-Disk-Layout; die
+;     Laufzeit-RAM-Adressen weichen ab (Boot-Record nach 0400H, Sekundaer-
+;     Loader laedt 52 Sektoren nach 0800H, dritte Stufe ueber 0800H–1FFFH).
+; ─────────────────────────────────────────────────────────────────────
+;
 ; SYL-DISKETTENFORMAT -- Gemischte Spurgeometrie (Mixed Geometry)
 ; ─────────────────────────────────────────────────────────────────────
 ;  Das SYL-Format verwendet zwei verschiedene Sektorgeoemetrien:
@@ -253,10 +279,10 @@ FDC_WAIT:
         LD      HL,042EH        ; 0057H: Adresse 042EH (FDC-Parameterblock)
         LD      (0175H),HL      ; 005AH: patch Stage-1 Sprungvektor bei 0175H
 
-; ─── SIO/CTC-Port-Setup ──────────────────────────────────────────────
-        LD      A,97H           ; 005DH: SIO Steuerwort (8N1, Rx+Tx enable)
-        OUT     (11H),A         ; 005FH: -> flcoac (FDC Port A Steuerung)
-        LD      A,0FFH          ; 0061H: alle Bits setzen
+; ─── Steuer-PIO Port A Interrupt scharfschalten ──────────────────────
+        LD      A,97H           ; 005DH: Z80-PIO Interrupt-Control-Word (IE=1)
+        OUT     (11H),A         ; 005FH: -> flcoac (Steuer-PIO Port A Steuerreg.)
+        LD      A,0FFH          ; 0061H: Folge-Maske / Vektor-Word
         OUT     (11H),A         ; 0063H: -> flcoac
 
 ; ─── Uebergabe an Stage-1 via zweitem Einstieg ───────────────────────
@@ -501,16 +527,19 @@ T2_SYL_HDR:
         DS      4, 00H          ; 0D03H-0D06H: Padding
 
 ; ======================================================================
-; FDC_ADRDEC: FDC Adressen-/CRC-Decoder
+; CRC16: byteweise CRC-16 ueber einen Datenbereich  (= sub_0407)
 ; ──────────────────────────────────────────────────────────────────
-; Funktion: CRC-Berechnung / Dekodierung von FDC-Adressfeld-Bytes.
-;           XOR+RRCA-Kette extrahiert Spur (B) und Sektor (C) aus dem
-;           kompakten AMF-Bitstrom (Address Mark Field des K5600-FDC).
-; Eingabe:  IY = Zeiger auf FDC-Adressfeld-Puffer (PARAM_TAB 0400H)
-;           E  = Anzahl der zu verarbeitenden Bytes (Schleifenzaehler)
-;           BC = laufende CRC / vorheriger Dekodierungszustand
-; Ausgabe:  BC = dekodiertes Ergebnis (B=Spurbyte, C=Sektorbyte)
+; Funktion: Berechnet eine 16-Bit-Pruefsumme (CRC) ueber E Bytes ab IY.
+;           Die XOR+RRCA-Kette ist KEINE Spur/Sektor-Extraktion, sondern
+;           der CRC-Schritt pro Datenbyte. Der geladene Bootloader prueft
+;           damit jeden gelesenen Sektor (CALL → CP B / CP C gegen die
+;           vom FDC gelieferten 2 CRC-Bytes).
+; Eingabe:  IY = Zeiger auf die Datenbytes (z.B. Sektorpuffer)
+;           E  = Byteanzahl (Schleifenzaehler)
+;           BC = CRC-Startwort (BF84H Normalpfad bzw. E295H, je [03FD] Bit1)
+; Ausgabe:  BC = CRC-Ergebnis (B=High, C=Low)
 ; Benutzt:  A, D -- verloren; IY wird um E Bytes vorgerrueckt
+; Emulator: identisch nachgebildet als K5122::loaderCrc16() (k5122.cpp).
 ;
 ; WICHTIG -- Quellennachweis (cpa_src):
 ;   Der IDENTISCHE Algorithmus (Byte fuer Byte) erscheint auch in
@@ -641,11 +670,12 @@ CLEAR_RAM2:
         LD      A,07H           ; 0D7DH: Vektortabelle high-Byte = 07xxH
         LD      I,A             ; 0D7FH: I-Register fuer IM2 setzen
 
-; ─── SIO / USART-Init ────────────────────────────────────────────────
-        LD      A,62H           ; 0D81H: SIO A Steuerwort
-        OUT     (11H),A         ; 0D83H: -> flcoac (Port A Steuerung)
-        LD      A,60H           ; 0D85H: SIO A Reset
-        OUT     (13H),A         ; 0D87H: -> flcobc (Port B Steuerung)
+; ─── Steuer-PIO Interrupt-Vektoren setzen (IM2) ──────────────────────
+; Bit0=0 ⇒ diese Werte sind Z80-PIO-Interrupt-VEKTOREN (keine SIO-Worte).
+        LD      A,62H           ; 0D81H: Vektor 62H fuer Steuer-PIO Port A
+        OUT     (11H),A         ; 0D83H: -> flcoac  (Port A: Timer-ISR 060EH)
+        LD      A,60H           ; 0D85H: Vektor 60H fuer Steuer-PIO Port B
+        OUT     (13H),A         ; 0D87H: -> flcobc  (Port B: Event-ISR 0624H)
 
 ; ─── BDOS Einstiegspunkt Patch bei RAM[0001H] ────────────────────────
         LD      HL,062EH        ; 0D89H: Adresse des BDOS-Dispatch-Jumps
@@ -767,10 +797,10 @@ OS_SEARCH:
         LD      A,7FH           ; 0E17H: Interrupt-Enable-Maske
         OUT     (17H),A         ; 0E19H: -> fldabc: IRQ freigeben
 
-; SIO-Empfaenger konfigurieren:
-        LD      A,97H           ; 0E1BH: SIO A: Empfaenger freigeben
-        OUT     (13H),A         ; 0E1DH: -> flcobc
-        LD      A,0AFH          ; 0E1FH: SIO A: volle Konfiguration
+; Steuer-PIO Port B Interrupt scharfschalten (Z80-PIO-Control-Words):
+        LD      A,97H           ; 0E1BH: Interrupt-Control-Word (IE=1, Maske folgt)
+        OUT     (13H),A         ; 0E1DH: -> flcobc (Steuer-PIO Port B Steuerreg.)
+        LD      A,0AFH          ; 0E1FH: Interrupt-Maske
         OUT     (13H),A         ; 0E21H: -> flcobc
 
 ; Warte auf Transfer-Abschluss:

@@ -1,10 +1,20 @@
 # Analyse: ZRE Boot-ROM (K2526) – Bootsequenz und Fehleranalyse
 
-**Stand:** 2026-05-28  
+**Stand:** 2026-06-08  
 **ROM-Datei:** `doc/EPROMS/zre.rom` (1024 Byte, 0x0000–0x03FF)  
 **Disk-Image:** `disks/cpadisk.img`  
 **CPU:** Z80 (ZVE1 auf K2526-Karte), 2,45 MHz  
 **Laufwerk:** 5,25"-Floppy, 300 RPM → 200 ms / Umdrehung → **490.000 CPU-Takte / Umdrehung**
+
+> **Status:** Diese ROM-Phase (Stufe 1: Boot-ROM + ZVE2-DMA, Laden der Boot-Spur
+> nach `0x0400`, Sprung nach `0x0437`) **funktioniert vollständig**. Die in §5/§6
+> als „behoben" markierten Bugs sind erledigt; der zuvor offene **Bug 7
+> (vorzeitige BUSRQ-Freigabe)** ist ebenfalls gelöst (das K5122-Lesemodell wurde
+> komplett überarbeitet — Adressmarken-Felder, MK-Strobe, CRC-16, Track-Ende-
+> Freigabe). Die nachgelagerten Stufen (Sekundär-Loader, CP/A-Bootsystem, das
+> `@OS.COM` lädt) sind in [`K1520_architecture.md` §14.5/§14.6](K1520_architecture.md)
+> und [`analyse_bootloader.md`](analyse_bootloader.md) dokumentiert. Das ROM-
+> Disassemblat (§7) und der ZVE1↔ZVE2-Handshake (§10) sind weiterhin korrekt.
 
 ---
 
@@ -365,7 +375,13 @@ Endlosschleife. ZVE2 findet nie einen passenden IDAM-Header.
 
 ---
 
-### Bug 7: Vorzeitige BUSRQ-Freigabe in handleCtrlPortAWrite (offen)
+### Bug 7: Vorzeitige BUSRQ-Freigabe in handleCtrlPortAWrite (BEHOBEN 2026-06)
+
+> **Behoben:** Das gesamte K5122-Lesemodell wurde überarbeitet. ZVE2-Lese-Refreshes
+> und Feldwechsel laufen jetzt über das **MK-Strobe-Adressmarken-Feld-Modell**
+> (`buildField`/`advanceField`), die BUSRQ-Freigabe am Track-Ende über `OUT(13H),03H`.
+> Die unten beschriebene Konstellation ist damit gegenstandslos. Aktuelle
+> Spezifikation: [`K1520_architecture.md` §14.5](K1520_architecture.md).
 
 **Datei:** `core/cards/k5122/k5122.cpp`, `handleCtrlPortAWrite()` und `ioRead()`
 

@@ -8,6 +8,26 @@
 
 ---
 
+> **Status (2026-06):** Dieses Dokument analysiert das **On-Disk-Layout** von
+> `disks/bootsec.bin`. Die Byte-Disassemblate stimmen; einige funktionale
+> Deutungen sind jedoch durch die Emulator-Laufzeitanalyse korrigiert worden.
+> Maßgeblich für den **tatsächlichen Bootablauf** ist
+> [`K1520_architecture.md` §14.5/§14.6](K1520_architecture.md). Kurz:
+> - Die unten genannten RAM-Adressen (0000H-basiert) sind das *On-Disk*-Bild;
+>   zur Laufzeit liegt der Boot-Record bei `0400H`, der Sekundär-Loader lädt
+>   52 Sektoren nach `0800H`, die dritte Stufe arbeitet über `0800H–1FFFH`.
+> - Ports `11H`/`13H` sind die Steuerregister der beiden K5122-**Z80-PIO**-Tore
+>   (nicht SIO); `97H/AFH/0FFH` sind PIO-Interrupt-Control-Words, `62H/60H/0E8H`
+>   sind Interrupt-**Vektoren**.
+> - `@OS.COM` wird zur Laufzeit über eine nach `0100H` relozierte Kopie des
+>   **Boot-ROM-DMA-Treibers** (ZVE2-DMA, `[03F7]/[03F8]`-Handshake, Index-Puls-
+>   Interrupt) geladen — nicht über ein CP/M-BDOS (die `CALL 0005H`-Pfade im
+>   Binär werden im bestätigten Ladeweg nicht benutzt).
+> - Die Routine `FDC_ADRDEC` (`0D07H`) ist eine **CRC-16** (Sektor-Prüfsumme,
+>   = `K5122::loaderCrc16()`), kein Spur/Sektor-Dekoder.
+
+---
+
 ## 1. Überblick
 
 Der CPA780-Bootlader ist ein selbstständiges Minimal-Betriebssystem, das im ROM des Robotron A5120/A5130 Buerocomputers verankert ist. Es wird beim Einschalten von der Diskette geladen und hat die Aufgabe, die eigentliche Betriebssystem-Datei `@OS.COM` vom CP/M-Dateisystem zu lesen, in den Arbeitsspeicher zu laden und auszuführen.

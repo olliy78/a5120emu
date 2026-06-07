@@ -1041,22 +1041,52 @@ ROM `0x0224/0x022D` und `0x0249/0x025F`; Loader `0x066E/0x0670` und `0x06B9/0x06
 - Das **CRC-16** im Datenfeld wird real berechnet (`loaderCrc16()`, byte-genaue
   Übersetzung der Loader-Routine `sub_0407` @`0x0407`, Start-Wort `BF84H` bei
   `[03FD]=0x87`). Der Loader vergleicht es per `CALL 0x0407` → `CP B`/`CP C`.
+- **Track-Ende:** Nach 26 Sektoren fällt die ZVE2-Routine in ihre Idle-Schleife
+  `L0696` und disabled dort den ctrl-PIO-Port-B-Interrupt (`OUT(13H),03H` @`0x069C`).
+  Auf echter Hardware setzt `/STR=1` dann `/BUSRQ` zurück; im durchgängig gestepperten
+  Emulator würde ZVE2 stattdessen in `L0696` weiterlaufen und per `INIR` die Handshake-
+  Variablen `[07F8..07FC]` (Ladezeiger/Sektorzähler) mit Gap-Bytes überschreiben.
+  Deshalb gibt `K5122::ioWrite` bei `OUT(13H),03H` während eines laufenden Lese-Transfers
+  `/BUSRQ` frei → ZVE1 übernimmt, verarbeitet die Spur, sucht den nächsten Track und
+  setzt ZVE2 per `OUT(04)` zurück.
 
-Dieses Modell bedient **ROM und Loader mit demselben Stream**. Stand: ZVE2 liest ganze
-Spuren, ZVE1 verarbeitet und CRC-verifiziert jeden Sektor, und ~52 Sektoren echter OS-/
-Loader-Daten werden nach `0x0800–0x2200` geladen.
+Dieses Modell bedient **ROM und Loader mit demselben Stream** und trägt den **gesamten
+Sekundär-Bootloader**: ZVE2 liest ganze Spuren über mehrere Zylinder (cyl 0/1/2),
+ZVE1 verarbeitet und CRC-verifiziert jeden Sektor, der Sektorzähler `[07FC]` zählt sauber
+auf 0, und nach 52 Sektoren springt der Loader nach `0x0880` (`JP 0x1800`) in die
+dritte Stufe — das **CP/A-Bootsystem**, das `@OS.COM` lädt.
 
-### 14.6 Offenes Problem: Track-Übergang / Boot-Completion
+### 14.6 Offenes Problem: `@OS.COM`-Ladephase (dritte Stufe)
 
-ZVE1 springt noch **nicht** zur nächsten Loader-Stufe (`0x0880`), sondern wartet bei
-`0x0532`. Ursache: Nach 26 gelesenen Sektoren läuft die ZVE2-Routine in ihre
-Track-Ende-Schleife `L0696` (`0x0696`) und überschreibt dort Handshake-Variablen
-(`[07E3..E8]` mit `0xAD`/Gap). Der Trace zeigt wiederholte Re-Reads von cyl 0/head 0
-statt des erwarteten Wechsels auf den nächsten Track (cyl 0/**head 1**).
+Die dritte Stufe (CP/A-Bootsystem; Einsprung `0x1800` = `JP 0x08AF`-Bereich, Code/Sprung-
+tabelle über `0x0800–0x1FFF`, FCB `@OS   COM` @`0x08CD`) gibt ihren Banner aus
+(`CP/A-Bootsystem, Version 05.04.88 laedt @OS.COM …`) und lädt `@OS.COM`
+**interruptgesteuert** (Warteschleife `0x1F6C` = `JR $`).
 
-**Nächster Schritt:** Den Track-Übergang modellieren — ZVE1 muss ZVE2 nach jedem Track
-per `OUT(04)` zurücksetzen und auf den nächsten (cyl, head) positionieren, **bevor**
-`L0696` Variablen korrumpiert. Head-Auswahl (MR/SD) beim Track-Wechsel prüfen.
+Belegter Mechanismus (Trace + Live-Disasm, 30M-Zyklen-Lauf):
+- Die Stufe setzt `I=0x07`, programmiert den ctrl_pio_-Port-A-Interrupt (Vektor `0xE8`,
+  IE on) und installiert bei `0x0100` eine **relozierte Kopie des Boot-ROM-DMA-Treibers**
+  (Status-Wait `IN(12)`, Index-Zähler `[03F7]=4`, `CALL sub_0194`, `[03F8]`-Handshake).
+- Der Index-Interrupt (Vektor `0xE8` → `[0x07E8]=0x0100`) feuert **dauerhaft** (61 Pulse /
+  12 INTs in 30M Zyklen — der frühere „Stopp" war nur die 5M-Trace-Deckelung). Trotzdem
+  **kein Fortschritt**: nur 9 Disk-Reads insgesamt, ZVE1 spinnt zwischen `0x1F6C` (selbst-
+  modifizierende Warteschleife) und der **Timeout-Polling-Schleife `0x1C5B`** (pollt `[1E78]`,
+  bei Timeout → Fehlercode `'R'` = Laufwerk nicht bereit, `JP 0x1DAB`).
+
+**WURZEL (Trace 2026-06-08):** Der `@OS.COM`-Read ist in dieser Stufe **nicht** ZVE2-DMA:
+ZVE2 wird per `OUT(04H)=0x00` **im Reset gehalten** (letzter Restart davor; danach keiner mehr),
+und es treten **keine neuen `/STR`-Read-Trigger** auf (5 in 30M Zyklen, alle aus früheren
+Phasen). Der Index-Interrupt (Vektor `0xE8` → `0x0100`-ISR) feuert zwar dauerhaft, löst aber
+**keinen Disk-Read** aus. Folge: Die Polling-Schleife `0x1C5B` wartet auf Daten (`[1E78]`), läuft
+in den Timeout → Fehler `'R'` → Endlos-Retry; ZVE1 pendelt zwischen `0x1F6C` und `0x1C5B`.
+
+**Nächster Schritt:** Den Lesemechanismus der dritten Stufe rekonstruieren — die `0x0100`-ISR
+und die Routinen um `0x1C5B`/`0x1E04`/`0x1DAB` aus dem Live-RAM disassemblieren und klären,
+**wie** sie einen Sektor anfordern (welche `OUT(10)`/`/STR`-Sequenz, welche K5122-Statusbits in
+`[1E78]` erwartet werden) und warum der Emulator dort keine Daten/keinen `/STR` erzeugt.
+**Latente Lücke:** `@OS.COM` liegt im Datenbereich (cpa780: cyl 3–79 = 5×**1024 B**);
+`K5122::buildField()` fixiert das Datenfeld noch auf **128 Byte** und muss auf `128<<size_code`
+erweitert werden, sobald der Datenbereich gelesen wird.
 
 ### 14.7a Beobachtung: ctrl_pio_ Port B (Vektor 0x60) [offen, evtl. obsolet]
 
@@ -1099,7 +1129,7 @@ schreibt Port 02H (/RES-SPA) zum Rücksetzen.
 
 | Lücke | Auswirkung |
 |---|---|
-| **Track-Übergang / Boot-Completion** (ZVE2-Reset + Head/Cyl-Seek zwischen Tracks) | ZVE1 wartet bei 0x0532 statt Sprung nach 0x0880; ZVE2-`L0696` korrumpiert Handshake-Vars (§14.6) — **aktuelle Arbeitsstelle** |
+| **`@OS.COM`-Ladephase** (dritte Stufe, CP/A-Bootsystem ab 0x1800) | Lädt `@OS.COM` interruptgesteuert (Warteschleife 0x1F6C, Vektor 0xE8) nach 0x0100, bleibt aber stecken (§14.6) — **aktuelle Arbeitsstelle** |
 | ctrl_pio_ Port B Floppy-Events (`setBSTB`) | Event-ISR 0x0624 (Vektor 0x60) feuert nie; physikal. Signalquelle [offen], evtl. obsolet (§14.7a) |
 | Port 0xEE nicht dekodiert (vermutl. CTC-Alias 0x0E) | niedrige Priorität; 1 Schreibzugriff in 9M Zyklen, vermutl. Nebenwirkung |
 | Koppelbus-Kette (/IEI1–/IEO1) nicht verdrahtet | für Boot irrelevant; niedrigprioritäre BS-PIO-Interrupts nicht gereiht |

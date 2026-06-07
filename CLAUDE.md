@@ -148,14 +148,16 @@ bit1, `0xB5`→`0x87`) — same for ROM and loader; `ioRead(0x16)` streams the c
 (IDAM `A1 FE …` / DATA `A1 FB <128> CRC`) and pads over-reads with gap `0x4E`, so per-field
 byte counts don't matter. The loader CRC-verifies every sector (`CALL 0x0407`), so the synthesised
 DATA field carries the real CRC-16 (`loaderCrc16` = byte-exact `sub_0407`, start `BF84H`). Sync
-byte `0x00`→`0xA1`. **Result (all 40 K5122/Boot tests green, banner no-regression):** ZVE2 reads
-whole tracks, ZVE1 CRC-verifies each sector (error handler `0x0605` no longer hit), **~52 sectors
-(6672 B) of real OS/loader data load to `0x0800–0x2200`** (was 0). **Remaining open:** track
-transition — ZVE1 waits at `0x0532` instead of jumping to the next stage `0x0880`; ZVE2 runs into
-its track-end loop `L0696` after 26 sectors and corrupts handshake vars; trace shows re-reads of
-cyl0/head0 instead of advancing to head1. Model the ZVE2 reset (`OUT 04`) + seek between tracks.
-Full byte-level model: `doc/K1520_architecture.md` §14.6. Goal of the chain: load/execute `@os.com`.
-Interrupt-system spec: `K1520_architecture.md` §14.
+byte `0x00`→`0xA1`. A fourth fix (**track-end /BUSRQ release**: on `OUT(13H),03H` during a read, K5122 releases
+`/BUSRQ` so ZVE1 takes over before ZVE2's idle loop `L0696` corrupts `[07F8..07FC]`) completed
+the secondary bootloader. **Result (all 40 K5122/Boot tests green, banner no-regression):** the
+full secondary loader runs — ZVE2 reads whole tracks across cyl 0/1/2, ZVE1 CRC-verifies every
+sector, `[07FC]` counts to 0, and the loader jumps to `0x0880` (`JP 0x1800`) into the **third
+stage (CP/A boot system)**. The screen now shows `CP/A-Bootsystem, Version 05.04.88 laedt @OS.COM`
+and `@OS.COM` partially loads to `0x0100`. **Remaining open:** the `@OS.COM` load stalls — the
+third stage waits interrupt-driven at `0x1F6C` (`JR $`, ISR vector `0xE8`) and the load makes no
+progress past ~741 bytes. Next: disassemble the `0xE8` ISR from live RAM and find its handshake.
+Full model: `doc/K1520_architecture.md` §14.5/§14.6. Interrupt-system spec: §14.
 
 `boot_trace` post-boot tracing: `-p <cycles>` continues past `0x0437`; the summary then
 adds an I/O-port read/write histogram, VRAM write count + range, a loaded-code PC
