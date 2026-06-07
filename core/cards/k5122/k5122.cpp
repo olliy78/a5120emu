@@ -147,6 +147,18 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
         if (port == 0x10) {
             handleCtrlPortAWrite(data);
         }
+        // Track-end: the loader's ZVE2 routine disables the ctrl-PIO Port B
+        // interrupt (OUT(13H),03H at 0x069C) the moment it has read all sectors of
+        // a track and falls into its idle loop L0696.  On real hardware /STR=1 then
+        // suppresses /BUSRQ and ZVE2 loses the bus; in our continuously-stepped
+        // model ZVE2 would instead spin in L0696 and corrupt the handshake variables
+        // ([07F8..07FC] via INIR).  Release /BUSRQ here so ZVE1 takes over, processes
+        // the track, seeks and resets ZVE2 for the next track.
+        if (port == 0x13 && data == 0x03 && transferring_ && bus_.isBUSRQ()) {
+            transferring_ = false;
+            bus_.releaseBUSRQ();
+            LOG_DEBUG("K5122", "Track-Ende (ZVE2 L0696): BUSRQ freigegeben, ZVE1 übernimmt");
+        }
     } else if (port >= 0x14 && port <= 0x17) {
         const char* port_name =
             port == 0x14 ? "DataA-data" : port == 0x15 ? "DataA-ctrl" :

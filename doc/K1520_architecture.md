@@ -1008,145 +1008,62 @@ Nach Übergabe an 0x0437 setzt der Loader `LD A,07H / LD I,A`. Alle Vektoren wer
 
 Die Loader-Phase erbt `IFF1=1` und `IM 2` vom Boot-ROM (kein `DI` im Übergabepfad).
 
-### 14.5 ZVE2-Completion und ctrl_pio_ Port A IE — **gelöst (Stand Trace 2026-06)**
+### 14.5 K5122 Diskettenleseverfahren (Adressmarken-Feld-Modell)
 
-ZVE2 schreibt am Ende jedes ROM-DMA-Durchlaufs (ROM 0x0267) `OUT(11H),03H`
-(Interrupt-Control-Word, IE=0) und deaktiviert damit den ctrl_pio_-Port-A-Interrupt
-(Indexpuls, Vektor 0xBA). Der Bootloader programmiert anschließend nur den Vektor
-(`OUT(11H),0x62`, Bit0=0), aber kein IE-Enable.
+Der Bootvorgang nutzt zwei verschiedene Sektor-Leseroutinen auf demselben physischen
+Spurformat (cpa780-Boot-Spuren: cyl 0–2, 26×128 B):
 
-**Diese Lücke ist im Emulator bereits geschlossen:** `K5122::endDmaTransfer()`
-([`k5122.cpp:708`](../core/cards/k5122/k5122.cpp)) ruft nach jeder erkannten
-DMA-Completion `ctrl_pio_.ioWrite(1, 0x83)` auf (IE=1, OR, active-LOW) und stellt
-Port-A-IE wieder her.
+- **Boot-ROM** (`0x01DD`, läuft auf ZVE2): liest IDAM-Header und Daten mit *einem*
+  `/STR`-Strobe am Stück, mit festen Offsets, ohne Markensuche.
+- **Geladener Bootloader** (`0x062E`, eingehängt via `[0x0000]=JP 0x062E`): sucht aktiv
+  die Adressmarken (`0xFE` IDAM, `0xFB` Datenmarke), verträgt variable Gaps, und
+  verifiziert jeden Sektor per CRC-16.
 
-**Trace-Beleg (`boot_trace -p 9000000 disks/cpadisk01.img`):** In der Post-Banner-Phase
-werden Interrupts **mit Vektor 0x62 korrekt zugestellt** (an PC 052D/052E/0530/…), nicht
-mehr 0xBA. Damit ist die frühere Diagnose „Timer-ISR feuert nie / nur 0xBA" **überholt**.
-Die `analyse_bootloader.md` §5 beschreibt noch den alten Stand.
+Beide Routinen synchronisieren über das **`MK`-Steuersignal** (Steuer-Port-A Bit 1):
+jede `MK`-Steigflanke (`0xB5`→`0x87`) lässt den K5122-Datenseparator auf die **nächste
+Adressmarke** synchronisieren — `IDAM → DATEN → nächstes IDAM → …`. Belegstellen:
+ROM `0x0224/0x022D` und `0x0249/0x025F`; Loader `0x066E/0x0670` und `0x06B9/0x06BB`.
 
-### 14.6 Tatsächliche Freeze-Ursache: nicht erkannte DMA-Completion in Loader-Runden
+**Emulator-Modell** (`K5122::buildField()` / `advanceField()`):
 
-**Das Interrupt-System funktioniert in der Bootloader-Phase** (IM2, IFF1=1, Daisy-Chain,
-Vektor-Auflösung, RETI, Port-A-Index-Interrupt mit wiederhergestelltem IE — alles im Trace
-bestätigt). Der Freeze hat eine **andere** Ursache, die im Trace eindeutig belegt ist:
+| | Inhalt |
+|---|---|
+| **IDAM-Feld** | `[A1][FE][cyl][head][sec][size]` + Gap (`0x4E`) |
+| **DATEN-Feld** | `[A1][FB][128 Daten][CRC-hi][CRC-lo]` + Gap (`0x4E`) |
 
-1. Der Loader biegt bei `0x0489` den **ZVE2-Einsprungvektor** um:
-   `LD (0001H),062EH` ⇒ `[0x0000..2] = C3 2E 06 = JP 0x062E`. Ab jetzt führt ein
-   ZVE2-Neustart **nicht** mehr die Boot-ROM-DMA-Routine (`0x01DD`) aus, sondern die
-   **loader-eigene** Sektor-Leseroutine bei `0x062E` (liest via `IN A,(16H)`, kopiert per
-   `INIR`, inkrementiert den Empfangszähler `[0x07E3]`, schaltet am Ende die PIO-Interrupts
-   mit `OUT(11H),03 / OUT(13H),03` ab).
-2. Diese Loader-Routine schreibt **niemals `[0x03F8]`** (per Disassemblat verifiziert).
-3. `A5120Machine::run()` erkennt DMA-Completion **ausschließlich** über einen `0→3`-Übergang
-   von `[0x03F8]` (ROM-Konvention) und ruft nur dann `endDmaTransfer()` /
-   `bus_.releaseBUSRQ()`.
+- `doReadSector()` baut die ganze Spur (138-B-Blöcke je Sektor) und stellt das IDAM-Feld
+  von Sektor 0 bereit. Der Lese-Strobe latcht den Kopf aus dem MR/SD-Bit (Bit 5) des
+  Start-Steuerworts **vor** dem Aufbau (sonst veralteter Kopf → IDAM-Mismatch).
+- `ioRead(0x16)` streamt das aktuelle Feld und füllt bei Über-Lesen mit Gap-Bytes — die
+  genaue Byte-Zahl, die jeder Leser pro Feld konsumiert, ist dadurch **irrelevant**.
+- Eine `MK`-Steigflanke (`handleCtrlPortAWrite`, Bit 1: 0→1) ruft `advanceField()`:
+  `IDAM → DATEN` (gleicher Sektor) bzw. `DATEN → IDAM` des nächsten Sektors.
+- Das **CRC-16** im Datenfeld wird real berechnet (`loaderCrc16()`, byte-genaue
+  Übersetzung der Loader-Routine `sub_0407` @`0x0407`, Start-Wort `BF84H` bei
+  `[03FD]=0x87`). Der Loader vergleicht es per `CALL 0x0407` → `CP B`/`CP C`.
 
-**Folge:** Für die Loader-getriebenen Runden (ab Runde 3, Post-Banner) wird `/BUSRQ`
-**nie freigegeben**. Trace: `assertBUSRQ`=3, aber `releaseBUSRQ`=2 — die 3. Runde hängt.
-ZVE1 läuft nur dank des konkurrierenden Steppings (`a5120.cpp:158`) weiter, spinnt aber in
-seiner Warteschleife `0x052A`, weil der Empfangszähler `[0x07E3]` bei 1 stehen bleibt
-(`[0x07E3]==[0x07EA]==1`, `[0x07EC]=5`, `[0x07F7]=0`).
+Dieses Modell bedient **ROM und Loader mit demselben Stream**. Stand: ZVE2 liest ganze
+Spuren, ZVE1 verarbeitet und CRC-verifiziert jeden Sektor, und ~52 Sektoren echter OS-/
+Loader-Daten werden nach `0x0800–0x2200` geladen.
 
-**TIEFERE URSACHE (Trace 2026-06-07, nach dem Head-Fix):** Die fehlende `/BUSRQ`-Freigabe
-ist nur ein *Folgesymptom*. Der eigentliche Blocker ist ein **Sektorformat-Mismatch**:
-Die loader-eigene ZVE2-Leseroutine (`0x062E`) erwartet ein **realistisches MFM-Format**,
-der emulierte Spur-Stream liefert aber ein auf die **Boot-ROM zugeschnittenes,
-vereinfachtes** Format. ZVE2 hängt deshalb in seiner Fehler-/Retry-Schleife (`0x06B2`)
-fest (Trace: 22 792× Steuerwort `0x87` + 22 784× `0xB5`, `/STR` nie auf 1, daher auch
-nie BUSRQ-Freigabe).
+### 14.6 Offenes Problem: Track-Übergang / Boot-Completion
 
-**Byte-genaue Gegenüberstellung (ROM-Disassemblat `0x025A→0x020B→0x0249` vs. Loader `0x0648/0x0678`):**
+ZVE1 springt noch **nicht** zur nächsten Loader-Stufe (`0x0880`), sondern wartet bei
+`0x0532`. Ursache: Nach 26 gelesenen Sektoren läuft die ZVE2-Routine in ihre
+Track-Ende-Schleife `L0696` (`0x0696`) und überschreibt dort Handshake-Variablen
+(`[07E3..E8]` mit `0xAD`/Gap). Der Trace zeigt wiederholte Re-Reads von cyl 0/head 0
+statt des erwarteten Wechsels auf den nächsten Track (cyl 0/**head 1**).
 
-| Position | Boot-ROM-Routine (NZ-Pfad, `[03FD]=0x87`) | Loader-Routine (`0x062E`) |
-|---|---|---|
-| buf[0] | gelesen, **verworfen** (beliebig) | muss `0xA1` (skip) **oder** `0xFE` sein |
-| buf[1] | `0xFE` (IDAM, Vergleich) | `0xFE` (IDAM) |
-| buf[2..4] | cyl, head, sec (Vergleich) | cyl, head, sec (Vergleich) |
-| buf[5] | size (Vergleich) | size (gelesen, verworfen) |
-| Füll-/Gap | **2 Bytes** (buf[6], buf[7]) verworfen | **11 Gap-Bytes** + 1 Byte + `0xFB` DAM |
-| Daten | ab **buf[8]** (128 Bytes, INI×3+INIR) | ab **buf[19]** (128 Bytes, INIR) |
-| CRC | 2 Bytes | 2 Bytes |
-| Blocklänge | **138 Bytes** | **~149 Bytes** |
+**Nächster Schritt:** Den Track-Übergang modellieren — ZVE1 muss ZVE2 nach jedem Track
+per `OUT(04)` zurücksetzen und auf den nächsten (cyl, head) positionieren, **bevor**
+`L0696` Variablen korrumpiert. Head-Auswahl (MR/SD) beim Track-Wechsel prüfen.
 
-Was `K5122::doReadSector` baut (138-Byte-Block, exakt auf die ROM getunt):
-```
-0x00 0xFE cyl head sec size 0x00 0x00 <128 Daten> 0x00 0x00    ← KEIN 0xA1-Sync, KEIN 0xFB-DAM, nur 2-Byte-Gap
-```
+### 14.7a Beobachtung: ctrl_pio_ Port B (Vektor 0x60) [offen, evtl. obsolet]
 
-**Schlussfolgerung (ROM-Routine vollständig analysiert):** Die Boot-ROM liest mit **festen
-Offsets** und sucht **weder** `0xA1`-Sync **noch** die `0xFB`-Datenmarke; sie verträgt nur das
-2-Byte-Gap. Die Loader-Routine sucht aktiv Marken und erwartet ein langes Gap + `0xFB`-DAM,
-mit Daten bei Offset ~19 statt 8. **Ein einziger statischer Block kann beide nicht bedienen**
-(Daten können nicht gleichzeitig bei Offset 8 und 19 liegen). Der „ein-einheitliches-Format"-
-Ansatz ist damit **verworfen**.
-
-**Region-Hypothese widerlegt (2026-06-07).** Beide Routinen lesen **dieselbe Region**: cyl 0,
-head 0 = Boot-Spur (cpa780: cyl 0–2 = 26×128 B, `format_parser.cpp:109`). Es ist **kein**
-Format-/Region-Unterschied, sondern ein **unterschiedliches `/STR`-Zugriffsmuster**:
-
-| | Boot-ROM (`0x01DD`) | Loader-ZVE2 (`0x062E`) |
-|---|---|---|
-| Sektor-Start | `01F4` `/STR=1` → `01FA` `/STR=0` (1 Abfall) | ZVE1 `OUT(10),A1` `/STR=0` |
-| nach Header | `/STR` bleibt 0 → liest Header+Daten **kontinuierlich** | `0643` `/STR=1`, liest IDAM+Gap, dann **`066E` `/STR=0` (2. Abfall mitten im Sektor)** |
-| Daten | direkt (Offset 8) | **nach 2. Strobe** → sucht `0xFB`-DAM, dann Daten |
-
-**Korrektes Hardware-Modell:** Jeder `/STR`-Strobe lässt den K5122 **zur nächsten
-Adressmarke synchronisieren** — 1. Strobe → IDAM (`0xFE`), 2. Strobe → Datenmarke (`0xFB`).
-Die ROM liest mit *einem* Strobe IDAM+Daten am Stück (Minimal-Pfad); der Loader nutzt einen
-*zweiten* Strobe, um gezielt auf das Datenfeld zu re-synchronisieren. Der Emulator streamt
-dagegen nur einen **linearen Puffer** und ignoriert den 2. Strobe — daher findet der Loader
-nie sein `0xFB`-DAM.
-
-**Generischer Fix (UMGESETZT 2026-06-07):** In `K5122` wird ein `/STR`-Abfall, der **mitten in
-einem laufenden Lese-Transfer** auftritt (also *nachdem* die IDAM/Header bereits gestreamt
-wurden — das tut **nur** der Loader; die ROM hält `/STR` durchgehend auf 0), als **Re-Sync auf
-das Datenfeld** modelliert: `beginDataField()` gibt ab da `A1 FB <128 Daten> CRC CRC` des
-aktuellen Sektors aus (`k5122.cpp`, neue Member `in_data_field_`/`data_field_buf_`). Das Sync-
-Byte in `doReadSector` ist von `0x00` auf `0xA1` gesetzt. Die ROM erzeugt keinen zweiten
-`/STR`-Abfall → ihr kontinuierlicher Lesepfad bleibt unberührt. **Alle 40 K5122/Boot-Tests grün**
-(2 Tests auf den neuen `0xA1`-Kontrakt angepasst).
-
-**Zweiter Fix — MK-flankengesteuertes Feld-Modell (UMGESETZT 2026-06-07).** Der ursprüngliche
-`/STR`-Re-Sync-Trigger feuerte nur für Sektor 1. Die vollständige Kontrollfluss-Analyse der
-ZVE2-Routine (`0x062E`–`0x06BF`) zeigt: **jeder Feldwechsel wird durch eine `MK`-Steigflanke
-ausgelöst** (Steuer-Port-A Bit1, `0xB5`→`0x87`) — bei ROM (`0x0224/022D`, `0x0249/025F`) **und**
-Loader (`0x066E/0670`, `0x06B9/06BB`) gleichermaßen. Jede `MK`-Flanke synchronisiert auf die
-nächste Adressmarke: IDAM → DATEN → nächstes IDAM. Der Emulator modelliert das jetzt als
-**Feld-Zustandsmaschine** (`K5122::buildField()`/`advanceField()`): `ioRead(0x16)` streamt das
-aktuelle Feld (`[A1 FE …]` bzw. `[A1 FB <128> CRC]`) und füllt bei Über-Lesen mit Gap-Bytes
-(`0x4E`); die `MK`-Flanke schaltet weiter. Dadurch ist die genaue Byte-Zahl, die jeder Leser pro
-Feld konsumiert, **egal** — ROM und Loader funktionieren beide.
-
-**Dritter Fix — CRC-16 (UMGESETZT 2026-06-07).** Der Loader verifiziert **jeden** Sektor:
-`0x054F CALL 0407` berechnet CRC-16 über 128 Datenbytes und vergleicht (`CP B`/`CP C`) gegen die
-2 CRC-Bytes aus dem Stream (Tabelle `[0x0770]`). Der Emulator berechnet jetzt die echte CRC
-(`loaderCrc16()`, byte-genaue Übersetzung von `sub_0407`, Start-Wort `BF84H` für `[03FD]=0x87`)
-und setzt sie ins Datenfeld. Vorher: `0x00`-Platzhalter → Loader hielt am Fehler-Handler `0x0605`.
-
-**Resultierender Fortschritt (Trace, alle 40 K5122/Boot-Tests grün, Banner ohne Regression):**
-ZVE2 liest **ganze Spuren** korrekt; ZVE1 **verarbeitet und CRC-verifiziert** jeden Sektor
-(Fehler-Handler `0x0605` wird **nicht** mehr erreicht); **~52 Sektoren (6672 Byte) echter OS-/
-Loader-Daten werden nach `0x0800–0x2200` geladen** (vorher: 0 Bytes, Freeze am Banner).
-
-**Verbleibendes Problem [offen] — Track-Übergang/Completion:** ZVE1 erreicht noch nicht den
-Sprung zur nächsten Stufe (`0x0880`), sondern wartet bei `0x0532`. Symptome: ZVE2 läuft nach
-26 Sektoren in seine Track-Ende-Schleife `L0696` (`0x0696`) und überschreibt dort einige
-Handshake-Variablen (`[07E3..E8]` mit `0xAD`/Gap); der Trace zeigt 18× Re-Read von cyl0/head0
-statt des erwarteten Head-Wechsels auf cyl0/**head1**. Nächster Schritt: Track-Übergang model­lieren
-— ZVE1 muss ZVE2 nach jedem Track per `OUT(04)` zurücksetzen und auf die nächste (cyl,head)
-positionieren, bevor `L0696` Variablen korrumpiert; Head-Auswahl (MR/SD) beim Track-Wechsel prüfen.
-
-**Bereits umgesetzt (kein Hook, echter Bugfix):** `current_head_` wird jetzt **vor**
-`doReadSector` aus dem MR/SD-Bit (Bit5) des Start-Steuerworts gelatcht
-([`k5122.cpp` ZVE1-Read-Start-Zweig](../core/cards/k5122/k5122.cpp)). Vorher las Runde 3
-mit dem veralteten Head=1 → IDAM-Head-Mismatch. Jetzt lesen alle Anforderungen Head 0
-korrekt; alle 40 K5122/Boot-Tests bleiben grün. Dies beseitigt den *ersten* von zwei
-Format-Mismatches; der zweite (0xA1-Sync / 0xFB-DAM / Gap) bleibt offen.
-
-**Sekundär [offen]:** Der Loader bewaffnet zusätzlich ctrl_pio_ **Port B** (Vektor 0x60,
-Event-ISR 0x0624). Dieser Interrupt wird im Emulator nie ausgelöst (`setBSTB` nie
-aufgerufen). Erst nach Lösung des Format-Mismatches feststellbar, ob er benötigt wird.
+Der Loader bewaffnet zusätzlich ctrl_pio_ **Port B** (Vektor 0x60, Event-ISR `0x0624`)
+via `OUT(13H),97H/AFH`. Dieser Interrupt wird im Emulator nie ausgelöst (`setBSTB` nie
+aufgerufen). Ob er für den weiteren Bootverlauf benötigt wird, ist erst nach Lösung des
+Track-Übergangs (§14.6) feststellbar.
 
 ### 14.7 Zweite Interrupt-Kette (/IEI1–/IEO1, Koppelbus) — **[abgeleitet/spekulativ]**
 
@@ -1178,20 +1095,15 @@ führt zum NMI; die **Speicher**-Schreibschutzverletzung erzeugt einen *maskierb
 zur Quellenunterscheidung (low=Sonderbedingung permanent, high=E/A-Verletzung flüchtig) und
 schreibt Port 02H (/RES-SPA) zum Rücksetzen.
 
-### 14.9 Offene Implementierungslücken (Stand 2026-06)
+### 14.9 Offene Implementierungslücken
 
-| Lücke | Status | Auswirkung |
-|---|---|---|
-| **Track-Übergang/Completion** (ZVE2-Reset + Head-Wechsel zwischen Tracks) | **offen — aktuelle Stelle** | ZVE1 wartet bei 0x0532 statt Sprung nach 0x0880; ZVE2-`L0696` korrumpiert Handshake-Vars (siehe §14.6) |
-| Sektorformat (0xA1-Sync + 0xFB-DAM) via MK-Feld-Modell | **erledigt** | `buildField()`/`advanceField()`; ROM+Loader lesen denselben Stream; ganze Spuren OK |
-| CRC-16-Verifikation pro Sektor | **erledigt** | `loaderCrc16()` (sub_0407, Start BF84); Loader-Verify passt, Fehler-Handler 0x0605 nicht mehr erreicht |
-| Head-Latch vor doReadSector | **erledigt** | Runde 3 las mit veraltetem Head=1; jetzt korrekt Head 0 |
-| DMA-Completion nur via `[0x03F8]=3` (ROM-Konvention) | offen (Folgeproblem) | greift erst, wenn der Format-Mismatch gelöst ist und ZVE2 die Runde beendet |
-| ctrl_pio_ Port A IE-Wiederherstellung nach DMA | **erledigt** (`endDmaTransfer` → `ioWrite(1,0x83)`) | Vektor 0x62 wird zugestellt (Trace bestätigt) |
-| ctrl_pio_ Port B Floppy-Events (`setBSTB`) | offen | Event-ISR 0x0624 (Vektor 0x60) feuert nie; physikal. Signalquelle [offen] |
-| Port 0xEE nicht dekodiert (vermutl. CTC-Alias 0x0E) | niedrige Priorität | 1 Schreibzugriff in 9M Zyklen, vermutl. Nebenwirkung |
-| Koppelbus-Kette (/IEI1–/IEO1) nicht verdrahtet | für Boot irrelevant | niedrigprioritäre BS-PIO-Interrupts nicht gereiht |
-| RETI-Erkennung im Z80CTC | im Z80PIO vorhanden (`onRETI`/IUS) | verschachtelte CTC-Interrupts ggf. unvollständig |
+| Lücke | Auswirkung |
+|---|---|
+| **Track-Übergang / Boot-Completion** (ZVE2-Reset + Head/Cyl-Seek zwischen Tracks) | ZVE1 wartet bei 0x0532 statt Sprung nach 0x0880; ZVE2-`L0696` korrumpiert Handshake-Vars (§14.6) — **aktuelle Arbeitsstelle** |
+| ctrl_pio_ Port B Floppy-Events (`setBSTB`) | Event-ISR 0x0624 (Vektor 0x60) feuert nie; physikal. Signalquelle [offen], evtl. obsolet (§14.7a) |
+| Port 0xEE nicht dekodiert (vermutl. CTC-Alias 0x0E) | niedrige Priorität; 1 Schreibzugriff in 9M Zyklen, vermutl. Nebenwirkung |
+| Koppelbus-Kette (/IEI1–/IEO1) nicht verdrahtet | für Boot irrelevant; niedrigprioritäre BS-PIO-Interrupts nicht gereiht |
+| RETI-Erkennung im Z80CTC | im Z80PIO vorhanden (`onRETI`/IUS); verschachtelte CTC-Interrupts ggf. unvollständig |
 
 ---
 

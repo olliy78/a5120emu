@@ -5,18 +5,14 @@ das ZRE-Boot-ROM per DMA von der Diskette nach `0x0400` lädt und ab `0x0437`
 startet. Die erste Stufe (Boot-ROM + ZVE2-DMA) ist in
 [`analyse_zre_rom_boot.md`](analyse_zre_rom_boot.md) dokumentiert.
 
-> **Stand:** Der Bootloader läuft an, initialisiert den Bildschirm und gibt seinen
-> Banner aus (`Bootloader, Version 24.02.87`). Danach bleibt er in der Warteschleife
-> bei `0x052A` hängen.
->
-> **⚠️ Korrektur (Trace 2026-06):** Die ursprüngliche Diagnose unten in §5 („fehlende
-> Port-A-/Port-B-Interrupts") ist **überholt**. Der Port-A-IE-Fix
-> (`K5122::endDmaTransfer` → `ioWrite(1,0x83)`) ist implementiert, und der Trace zeigt,
-> dass Vektor **0x62 korrekt zugestellt** wird. Die **tatsächliche** Freeze-Ursache ist,
-> dass die Loader-eigene ZVE2-Routine bei `0x062E` (eingehängt via `[0x0000]=JP 0x062E`)
-> die ROM-Completion-Konvention `[0x03F8]=3` **nicht** verwendet, weshalb
-> `A5120Machine::run()` `/BUSRQ` für diese Runden nie freigibt (`assertBUSRQ`=3 /
-> `releaseBUSRQ`=2). Maßgebliche Analyse: `doc/K1520_architecture.md` §14.6.
+> **Stand:** Der Bootloader läuft an, gibt seinen Banner aus
+> (`Bootloader, Version 24.02.87`), und lädt anschließend per loader-eigener
+> ZVE2-Routine (`0x062E`) ~52 Sektoren echter OS-/Loader-Daten nach `0x0800–0x2200`
+> (CRC-verifiziert). Das Diskettenlese-Modell (Adressmarken-Felder, MK-Strobe, CRC-16)
+> ist in [`K1520_architecture.md` §14.5](K1520_architecture.md) spezifiziert.
+> **Offen:** der Track-Übergang — ZVE1 wartet bei `0x0532` statt zur nächsten Stufe
+> (`0x0880`) zu springen; siehe [`K1520_architecture.md` §14.6](K1520_architecture.md).
+> Das Interrupt-System selbst funktioniert (IM2, Daisy-Chain, RETI, Index-Interrupt).
 
 ## Werkzeuge / Reproduktion
 
@@ -172,75 +168,24 @@ soll. `0x0880` liegt außerhalb des aktuell geladenen Records und ist erst nach 
       JR 061C (… OUT(10),AD / RETI)
 ```
 
-## 5. Aktueller Befund — die Warteschleife bei `0x052A`
+## 5. Aktueller Stand — Sektor-Load funktioniert, Track-Übergang offen
 
-> **⚠️ Dieser Abschnitt beschreibt den Stand VOR dem Trace 2026-06 und ist in der
-> Schlussfolgerung überholt.** Der `0x83`-Fix für Port-A-IE ist inzwischen in
-> `K5122::endDmaTransfer()` implementiert; Vektor 0x62 wird laut Trace korrekt
-> zugestellt. Die wahre Ursache (nicht erkannte DMA-Completion der loader-eigenen
-> ZVE2-Routine bei `0x062E`, daher /BUSRQ in Runde 3+ nie freigegeben) steht in
-> `doc/K1520_architecture.md` §14.5/§14.6. Der nachfolgende Text bleibt zur
-> Nachvollziehbarkeit erhalten.
+Der Loader lädt per loader-eigener ZVE2-Routine (`0x062E`) die Folgesektoren in die
+Hauptschleife `0x052A` ein: pro empfangenem, **CRC-verifiziertem** Sektor wird der
+Ladezeiger `[07FA]` und der Sektorzähler `[07FC]` fortgeschaltet, `[07EA]` (verarbeitet)
+nachgezogen. So werden ~52 Sektoren echter Daten nach `0x0800–0x2200` geladen.
 
-Im PC-Histogramm (`boot_trace -p 9000000`) dominiert die 8-Instruktionen-Schleife
-`0x052A,052D,052E,0530,0532,0534,0537,0538` mit je ~38761 Durchläufen. Die
-Live-RAM-Werte nach dem Lauf:
+Das zugrunde liegende **Diskettenlese-Modell** (Adressmarken-Felder IDAM/DATEN,
+`MK`-Strobe-getriebener Feldwechsel, reale CRC-16) ist in
+[`K1520_architecture.md` §14.5](K1520_architecture.md) spezifiziert — es bedient die
+Boot-ROM (Stufe 1) und die Loader-Routine (Stufe 2) mit demselben Stream.
 
-```
-[07EC]=0x05  (unverändert!)   [07E3]=0x01   [07EA]=0x01   [07F7]=0x00   [07FC]=0x0034
-```
-
-`[07EC]` ist **unverändert 5** und `[07E3]==[07EA]` ⇒ **keine** ISR ist gefeuert.
-Die Schleife kann den Wartezustand also nie verlassen.
-
-**Diagnose:** Der Loader erwartet, dass die K5122-`ctrl_pio_` während des
-Folgesektor-Lesens periodisch Interrupts (Vektoren `0x60`/`0x62`) auslöst. Der
-Emulator liefert diese in der Post-Banner-Phase **nicht**:
-
-* Alle 96 vom Emulator zugestellten Interrupts tragen Vektor **`0xBA`** (der
-  Index-Impuls-Interrupt der **K5122 ctrl_pio_ Port A** aus Stufe 1), keiner trägt `0x60`/`0x62`.
-  *(Achtung: dieser Interrupt stammt vom K5122 ctrl_pio_ Port A, nicht vom ZRE-CTC — die /ASTB-Leitung
-  empfängt den Floppy-Indexpuls und triggert bei Mode-0 den Interrupt mit Vektor 0xBA.)*
-* Da der Loader `I=0x07` gesetzt hat, vektoriert dieser fortbestehende `0xBA`-Interrupt
-  jetzt über `[0x07BA]=0x0000` → `0x0000` (`JP 0x01DD`) zurück in den **ROM/ZVE2-Code**
-  — also nicht nur nutzlos, sondern störend. (Die ROM-Phase nutzte `0xBA` korrekt;
-  nach dem Wechsel auf `I=0x07` zeigt der Tabelleneintrag ins Leere.)
-
-Mit anderen Worten: zwei gekoppelte Lücken im Emulator:
-
-1. **K5122 ctrl_pio_ Port A IE nach DMA deaktiviert.** ZVE2 schreibt am Ende jedes
-   DMA-Durchlaufs `OUT(11H),03H` (Interrupt-Control-Word, IE=0), was den Port A Interrupt
-   (Indexpuls, Vektor 0xBA) deaktiviert. Der Bootloader schreibt `OUT(11H),0x62` (nur
-   Vektor-Word, kein IE-Enable) — Port A IE bleibt deaktiviert. Damit feuert die Timer-ISR
-   0x060E (Vektor 0x62) nie, [0x07EC] wird nie dekrementiert.
-   **Bekannte Ursache; ZVE2-Verhalten ist korrekt, aber der Bootloader muss Port A IE
-   explizit reaktivieren (fehlendes `OUT(11H),0x83` oder äquivalentes Control-Word).**
-2. **ctrl_pio_ Port B Floppy-Events nicht angebunden.** Die Event-ISR 0x0624 (Port B,
-   Vektor 0x60) erfordert, dass Floppy-Zustandsänderungen den Port-B-/BSTB-Eingang treiben.
-   Diese Kopplung fehlt im Emulator.
-
-**Resultat aus aktuellem Trace** (build_trace, 3M Zyklen, cpadisk01.img):  
-Alle 4 INT-Zustellungen geschehen **im ROM-Pfad** bei PC=0x0136/0x0137 (Indexpuls-Warteschleife).
-Nach Übergabe an 0x0437 wird kein einziger Interrupt mehr zugestellt. Port 0xEE-Schreibzugriff
-(1 Mal) ist eine RAM-Initialisierung, kein I/O-Schreibzugriff; Port-0xEE-I/O ist wahrscheinlich
-CTC-Kanal-2-Alias (falls K2526 nur A3:A0 auswertet), wird im Emulator jedoch ignoriert.
-
-### Nächste Schritte
-
-* **ctrl_pio_ Port A IE reaktivieren:** Nach Abschluss jedes DMA-Durchlaufs (Erkennung
-  [0x03F8]=3 in `A5120Machine::run()`) soll der Emulator `ctrl_pio_.setInterruptEnabled(Port::A, true)`
-  oder äquivalent aufrufen. Alternativ ist zu prüfen, ob der Bootloader auf echter Hardware
-  ein IE-Enable-Control-Word (`OUT(11H),0x83` ≙ IE=1, OR, HIGH) nach `OUT(11H),0x62` sendet,
-  das im aktuellen RAM-Dump noch nicht sichtbar ist.
-* **ctrl_pio_ Port B Floppy-Event-Ankopplung:** Wenn ein neuer Sektor gelesen oder ein
-  Statusübergang erkannt wurde, muss `ctrl_pio_.setBSTB(false)` aufgerufen werden, damit
-  Port B (Vektor 0x60 → ISR 0x0624) die Event-ISR auslöst.
-* **Klären, ob `OUT(EEH)` CTC-Alias:** Falls K2526 nur A3:A0 auswertet, ist 0xEE = CTC
-  Kanal 2 (0x0E). Im Emulator ggf. K2526-I/O-Dekodierung auf Partial-Decoding umstellen
-  oder 0xEE als registrierten Port hinzufügen. Aktuell: 1 Schreibzugriff in 3M Zyklen —
-  wahrscheinlich Nebenwirkung; Priorität niedrig.
-* Sobald die Schleife `0x052A` den Wartezustand verlässt: Trace bis `0x0880`
-  fortsetzen und die **dritte** Stufe (Laden/Starten von `@os.com`) analysieren.
+**Offen — Track-Übergang:** Nach 26 Sektoren (ein Track) läuft die ZVE2-Routine in ihre
+Track-Ende-Schleife `L0696` und überschreibt dort Handshake-Variablen; ZVE1 wartet
+weiter bei `0x0532` statt zur dritten Stufe (`0x0880`) zu springen. Es fehlt die
+Modellierung des Track-Wechsels (ZVE2-Reset via `OUT(04)` + Seek auf den nächsten
+(cyl, head)). Details und nächster Schritt:
+[`K1520_architecture.md` §14.6](K1520_architecture.md).
 
 ## 6. Neu genutzte ROM-/Hardware-Funktionen
 
