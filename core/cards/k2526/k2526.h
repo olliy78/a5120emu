@@ -491,6 +491,19 @@ public:
     int  zve2Step() { return zve2_wait_ ? 0 : zve2_.step(); }
 
     /**
+     * @brief Start ZVE2 from PC=0000H out of the reset state.
+     *
+     * Used when /BUSRQ is asserted while ZVE2 is still reset (OUT(04) bit0=0).
+     * The loaded OS-loader's data-area read path poises ZVE2 by writing its DMA
+     * routine entry to [0x0000] and resetting ZVE2 (bit0=0), then triggers /STR;
+     * the resulting /BUSRQ is what makes ZVE2 run from PC=0 (fetching the
+     * *current* [0x0000]) — there is no separate bit0=1 start in that path.
+     * Resets PC to 0, clears the reset latch and any /WAIT-ZVE2 so the run loop
+     * begins stepping ZVE2 immediately.
+     */
+    void zve2StartFromReset() { zve2_.reset(); zve2_reset_ = false; zve2_wait_ = false; }
+
+    /**
      * @brief Check whether ZVE2 is held in reset.
      *
      * @return true if ZVE2 is in reset (port 0x04 bit0 = 0)

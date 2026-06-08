@@ -140,6 +140,17 @@ int A5120Machine::run(int max_cycles) {
                 dma_saw_progress_ = false;   // arm: ignore a stale [0x03F8]=3 from
             }                                //      the previous round until ZVE1
                                              //      clears it (CALL 0194, 0x01B3)
+            // /BUSRQ asserted while ZVE2 is still reset: the OS-loader's data-area
+            // read path (3rd stage @0x1F36) poises ZVE2 by installing its DMA
+            // routine at [0x0000] and resetting ZVE2 (OUT(04)=0x00), then triggers
+            // /STR — the /BUSRQ is what runs ZVE2 from PC=0 (fetching the current
+            // [0x0000]).  Start it here so it fetches the routine before ZVE1
+            // restores [0x0000].  (Path-1/secondary rounds start ZVE2 explicitly
+            // with bit0=1, so they are not in reset when /BUSRQ asserts.)
+            if (zre_.isZVE2InReset()) {   // also clears any /WAIT-ZVE2
+                LOG_DEBUG("A5120", "ZVE2-Start aus Reset bei /BUSRQ: PC=0 → [0x0000]");
+                zre_.zve2StartFromReset();
+            }
             if (!zre_.isZVE2InReset() && !zre_.isZVE2Waiting()) {
                 zre_.zve2Step();
                 // ZVE2 signals completion by writing [0x03F8]=3 (boot ROM 0x026B).
