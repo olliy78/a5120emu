@@ -102,12 +102,17 @@ std::vector<DiskFormat> FormatParser::parseFile(const std::string& path) {
 std::vector<DiskFormat> FormatParser::builtinFormats() {
     std::vector<DiskFormat> fmts;
 
-    // cpa780: boot tracks 0-2 use 26×128B, data tracks 3-79 use 5×1024B
+    // cpa780: boot tracks 0-1 use 26×128B, data tracks 2-79 use 5×1024B.
+    // The CP/A boot chain reserves exactly TWO system tracks (cyl 0 = stage-1
+    // boot + stage-2 loader on cyl 1); the file system (allocation table at
+    // cyl 2 sec 1 = byte 0x3400, directory at 0x3b00) starts at cyl 2.  The
+    // 3rd-stage loader reads its data area at physical cyl 2 (IDAM cyl=2,
+    // size_code=3/1024B), so the data area must begin there.
     {
         DiskFormat f;
         f.name = "cpa780";
-        f.tracks.push_back({0, 2, 0, 1, 26, 128});  // boot
-        f.tracks.push_back({3, 79, 0, 1, 5, 1024}); // data
+        f.tracks.push_back({0, 1, 0, 1, 26, 128});  // boot (2 system tracks)
+        f.tracks.push_back({2, 79, 0, 1, 5, 1024}); // data + file system
         fmts.push_back(std::move(f));
     }
 
