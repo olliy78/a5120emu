@@ -448,16 +448,23 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
 /**
  * @brief Accumulate one byte into the sector write buffer.
  *
- * Called when the CPU writes to data Port A (port 0x14).  Bytes are appended
- * to sector_buf_ for later commit by doWriteSector().  The read pointer
- * buf_pos_ is reset to 0 on each call so a subsequent read would start from
- * the beginning of the buffer (although reads and writes do not mix in
- * normal operation).
+ * Called when the CPU writes to data Port A (port 0x14).  During a WRITE DMA
+ * the bytes are appended to sector_buf_ for later commit by doWriteSector().
+ *
+ * During a READ DMA, port-0x14 writes must be IGNORED: the 3rd-stage CP/A
+ * loader's ZVE2 read routine echoes every byte it reads back to data Port A
+ * (IN A,(16H); OUT (14H),A — ROM 0x1FB1/0x1FB3) to clock the data-separator/CRC
+ * hardware.  These are not write data.  Appending them grows sector_buf_ on the
+ * fly (nsec 5→6→7→…), which shifts buildField()'s per-sector offsets so the
+ * rotating stream serves the wrong IDAM — the loader then can never match the
+ * sector it wants on cyl ≥ 3 / head 1 and times out ('U', RU;T,Si,Se=…).
+ * dma_is_write_ is set false for every read /STR and true only for a write /STR,
+ * so it cleanly distinguishes the two.
  *
  * @param data Byte from the CPU to append to the sector buffer
  */
 void K5122::handleDataPortAWrite(uint8_t data) {
-    // Accumulate write data regardless of mode; doWriteSector() will consume it.
+    if (!dma_is_write_) return;   // read-echo (OUT(14H) during INIR) — not write data
     sector_buf_.push_back(data);
     buf_pos_ = 0;   // reset read pointer on new write data
 }
