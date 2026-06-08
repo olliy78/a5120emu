@@ -109,11 +109,18 @@ int A5120Machine::run(int max_cycles) {
 
     int remaining = max_cycles;
     while (remaining > 0 && !stop_.load(std::memory_order_relaxed)) {
+        // Evaluate dynamic log gates for this instruction (PC range / cycle
+        // window). Cheap early-out when no gates are registered. Feed both CPU
+        // PCs so a PC gate can match either ZVE1 or ZVE2.
+        k1520::logging::Logger::instance().update(
+            total_cycles_, zre_.cpuPC(), zre_.zve2PC());
+
         // Update interrupt chain
         bus_.updateInterruptChain();
 
         if (bus_.isWAIT()) {
             remaining--;
+            total_cycles_++;
             continue;
         }
 
@@ -170,6 +177,7 @@ int A5120Machine::run(int max_cycles) {
             } else {
                 afs_.dmaUpdate();
                 remaining--;
+                total_cycles_++;
                 continue;
             }
         } else {
@@ -192,6 +200,7 @@ int A5120Machine::run(int max_cycles) {
         const uint16_t pc_before = zre_.cpuPC();
         int used = zre_.cpuStep();
         remaining -= used;
+        total_cycles_ += used;
 
         // Advance floppy index pulse simulation
         afs_.update(used);

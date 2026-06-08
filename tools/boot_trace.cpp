@@ -201,9 +201,31 @@ int main(int argc, char** argv) {
     uint16_t watchio_port[16] = {0};
     int   trace_seq         = 0;         // global event sequence # (chronological order)
 
+    // Runtime log control (new gated logging). Default base = ERROR so a plain
+    // run is quiet and fast; raise globally with --log-level or, far better,
+    // boost only a PC range / cycle window with --log-pc / --log-cycle.
+    using k1520::logging::Level;
+    using k1520::logging::Logger;
+    Level log_base = Level::ERROR;
+    bool  log_base_set = false;
+
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-c") && i+1 < argc) { total_limit = atoi(argv[++i]); }
+        else if (!strcmp(argv[i], "--log-level") && i+1 < argc) {
+            log_base = Logger::levelFromString(argv[++i], Level::ERROR);
+            log_base_set = true;
+        }
+        else if (!strcmp(argv[i], "--log-pc") && i+1 < argc) {  // --log-pc 0x1F7D:0x2060[:trace]
+            unsigned lo = 0, hi = 0; char lvl[16] = "trace";
+            sscanf(argv[++i], "%x:%x:%15s", &lo, &hi, lvl);
+            Logger::instance().addPCGate(lo, hi, Logger::levelFromString(lvl, Level::TRACE));
+        }
+        else if (!strcmp(argv[i], "--log-cycle") && i+1 < argc) {  // --log-cycle 40000000:41000000[:debug]
+            unsigned long long from = 0, to = 0; char lvl[16] = "trace";
+            sscanf(argv[++i], "%llu:%llu:%15s", &from, &to, lvl);
+            Logger::instance().addCycleGate(from, to, Logger::levelFromString(lvl, Level::TRACE));
+        }
         else if (!strcmp(argv[i], "-s"))            { single_step = true; }
         else if (!strcmp(argv[i], "-n") && i+1 < argc) { single_step_count = atoi(argv[++i]); }
         else if (!strcmp(argv[i], "-v"))            { verbose = true; }
@@ -240,6 +262,14 @@ int main(int argc, char** argv) {
         else
             fprintf(stderr, "WARN: could not open log file '%s'\n", log_path);
     }
+
+    // Apply the runtime base level (default ERROR → quiet). Gates registered
+    // above raise the effective level only inside their PC range / cycle window.
+    Logger::instance().setBaseLevel(log_base);
+    fprintf(stderr, "Log: base=%s%s%s\n",
+            Logger::levelName(log_base),
+            log_base_set ? "" : " (default)",
+            Logger::instance().hasGates() ? "  +gates (--log-pc/--log-cycle)" : "");
 
     fprintf(stderr, "=== A5120 Boot Trace ===\n");
     fprintf(stderr, "Disk:       %s\n", disk_path);

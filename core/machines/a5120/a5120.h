@@ -151,5 +151,9 @@ private:
     bool busrq_active_     = false;   // /BUSRQ was asserted last iteration
     bool dma_saw_progress_ = false;   // [0x03F8] observed != 3 since this round began
 
+    // Monotonic cycle counter across all run() calls, fed to the Logger's gate
+    // evaluation (cycle windows) once per instruction.
+    uint64_t total_cycles_ = 0;
+
     std::string last_error_;
 };
