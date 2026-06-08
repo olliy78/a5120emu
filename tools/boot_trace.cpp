@@ -190,8 +190,16 @@ int main(int argc, char** argv) {
     const char* dump_path   = "/tmp/ram_dump.bin";
     int   win_start         = -1;        // -w start:end: live ZVE1 step trace in a PC window
     int   win_end           = -1;
-    int   win_cap           = 3000;      // -W <n>: max window-trace lines
+    int   win_cap           = 3000;      // -W <n>: max window-trace lines (shared -w/-z)
     int   win_count         = 0;
+    int   win2_start        = -1;        // -z start:end: live ZVE2 step trace in a PC window
+    int   win2_end          = -1;
+    int   win2_count        = 0;
+    int      watch_n        = 0;         // --watch a,b,..: log memory writes to these addrs
+    uint16_t watch_addr[16] = {0};
+    int      watchio_n      = 0;         // --watchio p,..: log OUT to these I/O ports
+    uint16_t watchio_port[16] = {0};
+    int   trace_seq         = 0;         // global event sequence # (chronological order)
 
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
@@ -205,10 +213,21 @@ int main(int argc, char** argv) {
             sscanf(argv[++i], "%i:%i", &dump_start, &dump_end);
             if (i+1 < argc && argv[i+1][0] != '-') dump_path = argv[++i];
         }
-        else if (!strcmp(argv[i], "-w") && i+1 < argc) {  // -w 0x1D00:0x1F80
+        else if (!strcmp(argv[i], "-w") && i+1 < argc) {  // -w 0x1D00:0x1F80 (ZVE1 window)
             sscanf(argv[++i], "%i:%i", &win_start, &win_end);
         }
+        else if (!strcmp(argv[i], "-z") && i+1 < argc) {  // -z 0x1F00:0x1FFF (ZVE2 window)
+            sscanf(argv[++i], "%i:%i", &win2_start, &win2_end);
+        }
         else if (!strcmp(argv[i], "-W") && i+1 < argc) { win_cap = atoi(argv[++i]); }
+        else if (!strcmp(argv[i], "--watch") && i+1 < argc) {   // --watch 0x0000,0x03F8,...
+            char* tok = strtok(argv[++i], ",");
+            while (tok && watch_n < 16) { watch_addr[watch_n++] = (uint16_t)strtol(tok, nullptr, 0); tok = strtok(nullptr, ","); }
+        }
+        else if (!strcmp(argv[i], "--watchio") && i+1 < argc) { // --watchio 0x04,0x10
+            char* tok = strtok(argv[++i], ",");
+            while (tok && watchio_n < 16) { watchio_port[watchio_n++] = (uint16_t)strtol(tok, nullptr, 0); tok = strtok(nullptr, ","); }
+        }
         else                                        { disk_path = argv[i]; }
     }
     if (!disk_path) disk_path = "disk_b.img";
@@ -299,8 +318,8 @@ int main(int argc, char** argv) {
             uint8_t b0 = machine.memReadDebug(z.PC);
             uint8_t b1 = machine.memReadDebug(z.PC + 1);
             uint8_t b2 = machine.memReadDebug(z.PC + 2);
-            fprintf(stderr, "  [w%4d] PC=%04X %02X %02X %02X  AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X\n",
-                    win_count, z.PC, b0, b1, b2, z.AF, z.BC, z.DE, z.HL, z.SP);
+            fprintf(stderr, "  [#%d w%4d] Z1 PC=%04X %02X %02X %02X  AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X\n",
+                    trace_seq++, win_count, z.PC, b0, b1, b2, z.AF, z.BC, z.DE, z.HL, z.SP);
             ++win_count;
         }
     });
@@ -339,18 +358,48 @@ int main(int argc, char** argv) {
                     label ? label : "");
             ++zve2_log_count;
         }
+
+        // ── ZVE2 window step trace (-z): live ZVE2 instructions in a PC range ─────
+        // The companion to -w; shows whether/when ZVE2 actually runs a given DMA
+        // routine (e.g. the 3rd stage's 0x1F7D vs the WBOOT/halt) after a restart.
+        if (win2_start >= 0 && boot_reached && z.PC >= win2_start && z.PC <= win2_end
+            && win2_count < win_cap) {
+            uint8_t b0 = machine.memReadDebug(z.PC);
+            uint8_t b1 = machine.memReadDebug(z.PC + 1);
+            uint8_t b2 = machine.memReadDebug(z.PC + 2);
+            fprintf(stderr, "  [#%d z%4d] Z2 PC=%04X %02X %02X %02X  AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X\n",
+                    trace_seq++, win2_count, z.PC, b0, b1, b2, z.AF, z.BC, z.DE, z.HL, z.SP);
+            ++win2_count;
+        }
     });
 
-    // ── Bus trace: I/O-port R/W histogram + VRAM (screen) write tracking ───────
+    // ── Bus trace: I/O-port R/W histogram + VRAM tracking + --watch/--watchio ──
+    // Watch lines are emitted on the actual write, in execution order, sharing the
+    // global trace_seq with -w/-z so the dual-CPU handshake reads as one timeline.
     machine.setBusTrace([&](bool isIO, bool isRead, uint16_t addr, uint8_t data) {
-        (void)data;
         if (isIO) {
             if (isRead) io_rd[addr & 0xFF]++;
             else        io_wr[addr & 0xFF]++;
-        } else if (!isRead && addr >= 0xF800) {     // VRAM write (K7024 screen)
-            ++vram_writes;
-            if (addr < vram_first) vram_first = addr;
-            if (addr > vram_last)  vram_last  = addr;
+            if (!isRead && boot_reached) {
+                for (int i = 0; i < watchio_n; ++i)
+                    if ((addr & 0xFF) == (watchio_port[i] & 0xFF))
+                        fprintf(stderr, "  [#%d cyc%d] OUT(%02X)=%02X  (Z1.PC=%04X Z2.PC=%04X)\n",
+                                trace_seq++, cycles_done, addr & 0xFF, data,
+                                machine.cpuPC(), machine.zve2PC());
+            }
+        } else if (!isRead) {
+            if (addr >= 0xF800) {                   // VRAM write (K7024 screen)
+                ++vram_writes;
+                if (addr < vram_first) vram_first = addr;
+                if (addr > vram_last)  vram_last  = addr;
+            }
+            if (boot_reached) {
+                for (int i = 0; i < watch_n; ++i)
+                    if (addr == watch_addr[i])
+                        fprintf(stderr, "  [#%d cyc%d] WR [%04X]=%02X  (Z1.PC=%04X Z2.PC=%04X)\n",
+                                trace_seq++, cycles_done, addr, data,
+                                machine.cpuPC(), machine.zve2PC());
+            }
         }
     });
 

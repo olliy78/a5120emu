@@ -1107,11 +1107,30 @@ nur cyl 0/1/2 (128 B) und erreicht den Datenbereich nicht — der Stall liegt **
    es nicht). Der genaue Übergang von „Boot-Reads OK" zu „eigener 1024-B-Read via 0x1F7D" und
    warum ZVE2 dort nicht startet, ist noch nicht vollständig rekonstruiert.
 
-**Nächster Schritt:** Den ZVE1-Kontrollfluss **unmittelbar nach der 2. erfolgreichen Boot-Read-
-Completion** (ZVE1 verlässt `0x01B6`/`0x0174`) weiter verfolgen (`boot_trace -w` ab dort) — wohin
-verzweigt er, welche Bedingung führt zur `0x1F6C`-Warteschleife statt zum Seek auf cyl 3+ /
-Start der `0x1F7D`-Routine. Das 1024-B-Datenfeld ist im K5122 bereits vorbereitet, wird aber erst
-relevant, sobald cyl 3+ tatsächlich gelesen wird.
+**Pfad-2-Setup byte-genau entschlüsselt (`0x1F36`, via `boot_trace --watch/--watchio/-z`):**
+```
+1F3C  HL=0x1F7D                 ; Adresse der ZVE2-DMA-Routine
+1F43  LD (0001),HL              ; [0x0000]=JP 0x1F7D
+1F4F  OUT(04),A=0               ; ZVE2 RESET (bit0=0, /RES-ZVE2 asserted, gehalten)
+1F5C  OUT(10),0xA5              ; /STR-Flanke → K5122 doReadSector (Feldpuffer gefüllt)
+1F62  IN(16)                    ; ZVE1 liest 1 Byte
+1F64  LD (0001),BC              ; [0x0000]=JP 0x1803 wiederhergestellt
+1F6C  JR $                      ; Warteschleife (vom Index-ISR auf Timeout gepatcht)
+```
+Chronologischer Trace bestätigt: nach `OUT(04)=0x00` folgt **kein** weiterer `OUT(04)` → ZVE2
+bleibt **dauerhaft im Reset**, führt `0x1F7D` **nie** aus (`-z`-Histogramm). Das Feld-Streaming
+(Port 0x16) stoppt nach 1 Byte (`sektor=0 IDAM pos=0`); **niemand konsumiert die Bulk-Daten**
+(ZVE2 reset, ZVE1 wartet) → der `[0x1E78]`-Poll bei `0x1C5B` zählt nie hoch → Timeout `'U'`.
+
+**Kernfrage / Hypothese:** Die dritte Stufe setzt `[0x0000]=JP 0x1F7D`, resettet ZVE2
+(`OUT(04)=0x00`) und stellt `[0x0000]` sofort wieder her — sie startet ZVE2 nie explizit
+(bit0=1). Damit `0x1F7D` läuft, müsste ZVE2 **im kurzen Fenster** zwischen `[0x0000]=JP 0x1F7D`
+(1F43) und der Wiederherstellung (1F64) von PC=0 starten — vermutlich getriggert durch das
+`/BUSRQ` aus dem `/STR` (1F5C). Der Emulator modelliert `OUT(04)=0x00` aber als *dauerhaftes*
+Reset-Halten (`zve2_reset_` bis bit0=1), sodass ZVE2 dieses Fenster verpasst. **Nächster Schritt:**
+prüfen, ob ein Reset (bit0=0) auf echter Hardware ZVE2 nur kurz zurücksetzt und es bei
+`/BUSRQ`-Assertion aus PC=0 (mit dem *aktuellen* `[0x0000]`) anläuft — und das ggf. nachbilden
+(ohne die funktionierenden Pfad-1-/Sekundär-Loader-Restarts mit bit0=1 zu brechen).
 
 ### 14.7a Beobachtung: ctrl_pio_ Port B (Vektor 0x60) [offen, evtl. obsolet]
 
