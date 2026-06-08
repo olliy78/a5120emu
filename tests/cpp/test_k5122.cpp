@@ -56,6 +56,7 @@
 #include "core/bus/k1520_bus.h"
 #include "core/cards/k5122/k5122.h"
 #include "core/peripherals/floppy_drive/format_parser.h"
+#include "core/logger.h"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -87,6 +88,13 @@ protected:
     K1520Bus bus;
     K5122    card{bus};
     DiskFormat fmt = getCPA780();
+
+    // Keep the multi-hundred-read stability tests quiet: drop the emulator log
+    // to ERROR at runtime (exercises the new gated Logger; the >>> READ INFO line
+    // would otherwise print once per doReadSector).
+    void SetUp() override {
+        k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
+    }
 
     // Returns a fresh temp image path; caller is responsible for cleanup.
     std::string tmpImage() { return makeTmpImage(fmt); }
@@ -688,5 +696,236 @@ TEST_F(K5122Test, DMA_Write_ZVE2Style_CommitViaSeccondSTR) {
     card.ioWrite(0x10, 0xFF);
 
     EXPECT_FALSE(bus.isBUSRQ()) << "BUSRQ must be released after ZVE2 write commit";
+    std::filesystem::remove(path);
+}
+
+// ─── 11. 1024B continuous-read stability (3rd-stage @OS.COM data area) ─────────
+//
+// The 3rd-stage CP/A loader reads the 1024B data area (cpa780 cyl 2+, size_code 3)
+// with the CONTINUOUS stream model: doReadSector() builds one full-sector block
+// [A1 FE cyl head sec size][27 gap][A1 FB][1024 data][CRC CRC][8 gap] = 1069 bytes,
+// and ioRead(0x16) auto-steps to the next sector on over-read.  The boot fails
+// because reads are not stable across REPEATED access — the loader re-reads the
+// same sector (fresh /STR → doReadSector) and sweeps sectors, and a later read of
+// an already-read sector must return the identical, correct field.  These tests
+// drive that pattern directly (deterministic; the emulator has no RNG, so the
+// value is exercising the read-over-read STATE, not repetition for chance).
+
+// Geometry constants for the cpa780 1024B data area (cyl 2+).
+static constexpr int      kSecs      = 5;       // sectors per 1024B track
+static constexpr uint16_t kSecLen    = 1024;
+static constexpr size_t   kFieldLen  = 6 + 27 + 2 + kSecLen + 2 + 8;  // 1069
+
+// Distinct per-(cyl,head,sec) data byte so a served field unambiguously
+// identifies which physical sector was streamed.
+static uint8_t dataByte(int cyl, int head, int sec) {
+    return static_cast<uint8_t>(0x40 + (cyl << 4) + (head << 3) + sec);
+}
+
+// Seek the head inward to `target` cylinder via /ST pulses (updates the K5122's
+// own current_cyl_ tracking through doStep()).  `head_bit5`=1 keeps head 0.
+static void seekToCyl(K5122& card, int target) {
+    for (int c = 0; c < target; ++c) {
+        card.ioWrite(0x10, 0xFF);   // prev high (establish /ST=1)
+        card.ioWrite(0x10, 0x7F);   // /ST=0 (step), MR/SD=1 (inward)
+        card.ioWrite(0x10, 0xFF);   // release
+    }
+}
+
+// Issue a read /STR falling edge (read mode) selecting `head` → fresh
+// doReadSector.  MR/SD (bit5): 1 → head 0, 0 → head 1.  Like the real loader,
+// the /STR pulse keeps every other bit (incl. the head select) stable and only
+// toggles /STR (bit3); the "release" word therefore preserves the head bit.
+static void strobeRead(K5122& card, int head = 0) {
+    const uint8_t hi   = (head == 0) ? 0xFF : 0xDF;  // /STR=1, head select held
+    const uint8_t low  = (head == 0) ? 0xF7 : 0xD7;  // /STR=0, head select held
+    card.ioWrite(0x10, hi);         // /STR=1 (head bit set)
+    card.ioWrite(0x10, low);        // /STR=0 → doReadSector
+    card.ioWrite(0x10, hi);         // /STR=1 (head bit preserved)
+}
+
+// Read n bytes from data Port B (0x16).
+static std::vector<uint8_t> readBytes(K5122& card, size_t n) {
+    std::vector<uint8_t> v;
+    v.reserve(n);
+    for (size_t i = 0; i < n; ++i) v.push_back(card.ioRead(0x16));
+    return v;
+}
+
+// Fill (cyl, head) sectors 1..5 each with a distinct constant byte.
+static void writeDistinctDataTrack(K5122& card, int cyl, int head) {
+    for (int sec = 1; sec <= kSecs; ++sec) {
+        std::vector<uint8_t> data(kSecLen, dataByte(cyl, head, sec));
+        ASSERT_TRUE(card.drive(0).writeSector(static_cast<uint8_t>(cyl),
+                                              static_cast<uint8_t>(head),
+                                              static_cast<uint8_t>(sec), data));
+    }
+}
+
+// Assert `f` is a well-formed continuous field for (cyl, head, sec).
+static void expectFieldForSector(const std::vector<uint8_t>& f, int cyl, int head, int sec) {
+    ASSERT_EQ(f.size(), kFieldLen);
+    EXPECT_EQ(f[0], 0xA1) << "IDAM sync";
+    EXPECT_EQ(f[1], 0xFE) << "IDAM mark";
+    EXPECT_EQ(f[2], static_cast<uint8_t>(cyl))  << "IDAM cyl";
+    EXPECT_EQ(f[3], static_cast<uint8_t>(head)) << "IDAM head";
+    EXPECT_EQ(f[4], static_cast<uint8_t>(sec))  << "IDAM sector id";
+    EXPECT_EQ(f[5], 3) << "IDAM size code (1024B)";
+    EXPECT_EQ(f[33], 0xA1) << "DATA sync";
+    EXPECT_EQ(f[34], 0xFB) << "DATA mark";
+    const uint8_t want = dataByte(cyl, head, sec);
+    for (size_t i = 0; i < kSecLen; ++i)
+        ASSERT_EQ(f[35 + i], want) << "data byte " << i
+            << " of cyl " << cyl << " head " << head << " sec " << sec;
+    for (size_t i = 0; i < 8; ++i)
+        EXPECT_EQ(f[kFieldLen - 8 + i], 0x4E) << "trailing gap " << i;
+}
+
+static constexpr uint8_t kDataCyl  = 2;
+static constexpr uint8_t kDataHead = 0;
+
+/**
+ * @test K5122Test/Continuous1024_Sector1_StableAcrossRestrobes
+ * @brief Re-reading sector 1 via repeated fresh /STR yields the identical field.
+ * @details Reproduces the loader re-reading the same data sector. Catches a
+ *   cross-read state leak (field_sector_/field_pos_/sector_buf_ not reset) that
+ *   would make a later read serve the wrong sector or a shifted field — the
+ *   '@OS.COM' boot symptom (a re-read times out / mis-syncs).
+ */
+TEST_F(K5122Test, Continuous1024_Sector1_StableAcrossRestrobes) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+    writeDistinctDataTrack(card, kDataCyl, kDataHead);
+    seekToCyl(card, kDataCyl);
+
+    strobeRead(card, kDataHead);
+    std::vector<uint8_t> ref = readBytes(card, kFieldLen);
+    expectFieldForSector(ref, kDataCyl, kDataHead, 1);
+
+    for (int i = 0; i < 256; ++i) {
+        strobeRead(card, kDataHead);
+        std::vector<uint8_t> f = readBytes(card, kFieldLen);
+        ASSERT_EQ(f, ref) << "sector-1 field differs on re-read #" << i
+                          << " — read-over-read state leak";
+    }
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/Continuous1024_AutoStepsThroughSectorsAndWraps
+ * @brief Over-reading auto-steps through all 5 sectors in order and wraps to 1.
+ * @par Pass criterion  Each consecutive 1069-byte block is the next sector
+ *   (1,2,3,4,5,1,2,…) with correct IDAM id and data, across several wraps.
+ */
+TEST_F(K5122Test, Continuous1024_AutoStepsThroughSectorsAndWraps) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+    writeDistinctDataTrack(card, kDataCyl, kDataHead);
+    seekToCyl(card, kDataCyl);
+
+    strobeRead(card, kDataHead);
+    for (int i = 0; i < kSecs * 4; ++i) {       // 4 full revolutions
+        int expect_sec = (i % kSecs) + 1;
+        std::vector<uint8_t> f = readBytes(card, kFieldLen);
+        SCOPED_TRACE("revolution byte-block #" + std::to_string(i));
+        expectFieldForSector(f, kDataCyl, kDataHead, expect_sec);
+    }
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/Continuous1024_RestrobeResetsToSector1
+ * @brief A fresh /STR always resets the stream to sector 1, regardless of how
+ *   far a previous read auto-stepped.
+ * @details Directly targets the observed bug where doReadSector served sector 2+
+ *   (stale field_sector_) right after a re-strobe. Advances a varying number of
+ *   sectors, then re-strobes and asserts sector 1 is served again — 100×.
+ */
+TEST_F(K5122Test, Continuous1024_RestrobeResetsToSector1) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+    writeDistinctDataTrack(card, kDataCyl, kDataHead);
+    seekToCyl(card, kDataCyl);
+
+    for (int round = 0; round < 100; ++round) {
+        strobeRead(card, kDataHead);
+        // Advance a round-dependent number of sectors via over-read auto-step.
+        int advance = round % (kSecs + 2);       // 0..6 sectors (incl. wrap)
+        readBytes(card, kFieldLen * (advance + 1));
+        // Fresh /STR must reset to sector 1.
+        strobeRead(card, kDataHead);
+        std::vector<uint8_t> f = readBytes(card, kFieldLen);
+        SCOPED_TRACE("round " + std::to_string(round) + " advance " + std::to_string(advance));
+        expectFieldForSector(f, kDataCyl, kDataHead, 1);
+    }
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/Continuous1024_Head1_ReadsCorrectSide
+ * @brief Reading cyl 2 HEAD 1 (the @OS.COM data side, exact error location
+ *   'RU;T,Si,Se=020101') serves the head-1 IDAM + data, stable across re-reads.
+ * @details The real boot fails reporting cyl 2 head 1. This drives a head-1
+ *   1024B read directly and checks the IDAM head byte and side data are correct.
+ */
+TEST_F(K5122Test, Continuous1024_Head1_ReadsCorrectSide) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+    writeDistinctDataTrack(card, /*cyl=*/2, /*head=*/0);
+    writeDistinctDataTrack(card, /*cyl=*/2, /*head=*/1);
+    seekToCyl(card, 2);
+
+    // Head 1 read.
+    strobeRead(card, /*head=*/1);
+    std::vector<uint8_t> ref = readBytes(card, kFieldLen);
+    expectFieldForSector(ref, /*cyl=*/2, /*head=*/1, /*sec=*/1);
+
+    // Stable across re-reads, and not confused with head 0.
+    for (int i = 0; i < 64; ++i) {
+        strobeRead(card, /*head=*/1);
+        ASSERT_EQ(readBytes(card, kFieldLen), ref) << "head-1 re-read #" << i;
+    }
+    // Switching back to head 0 must serve head-0 data, not stale head-1.
+    strobeRead(card, /*head=*/0);
+    expectFieldForSector(readBytes(card, kFieldLen), /*cyl=*/2, /*head=*/0, /*sec=*/1);
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/Continuous1024_CrossCylinderWithSeek
+ * @brief Seeking across cylinders (2→3→4) and re-reading reads each cylinder's
+ *   own data — the real boot's read pattern sweeps cylinders between reads.
+ * @par Pass criterion  After seeking to cyl C, the served IDAM cyl == C and the
+ *   data is cyl C's data; repeated forward/back seeks stay consistent.
+ */
+TEST_F(K5122Test, Continuous1024_CrossCylinderWithSeek) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+    for (int c = 2; c <= 4; ++c) writeDistinctDataTrack(card, c, /*head=*/0);
+
+    auto readCyl = [&](int cyl) {
+        strobeRead(card, /*head=*/0);
+        expectFieldForSector(readBytes(card, kFieldLen), cyl, /*head=*/0, /*sec=*/1);
+    };
+    auto stepInward = [&]{ card.ioWrite(0x10,0xFF); card.ioWrite(0x10,0x7F); card.ioWrite(0x10,0xFF); };
+    auto stepOutward = [&]{ card.ioWrite(0x10,0xFF); card.ioWrite(0x10,0x5F); card.ioWrite(0x10,0xFF); };  // bit5=0 outward
+
+    seekToCyl(card, 2);
+    readCyl(2);
+    stepInward(); readCyl(3);
+    stepInward(); readCyl(4);
+    stepOutward(); readCyl(3);
+    stepOutward(); readCyl(2);
+    // A few sweeps like the loader's retry/recalibrate pattern.
+    for (int r = 0; r < 20; ++r) {
+        stepInward(); readCyl(3);
+        stepInward(); readCyl(4);
+        stepOutward(); stepOutward(); readCyl(2);
+    }
     std::filesystem::remove(path);
 }
