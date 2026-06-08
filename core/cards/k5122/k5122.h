@@ -385,6 +385,11 @@ private:
     bool   field_is_data_ = false;   ///< false = IDAM field, true = DATA field
     std::vector<uint8_t> field_buf_; ///< current field byte stream
     size_t field_pos_     = 0;       ///< read index into field_buf_
+    bool   stream_continuous_ = false; ///< true = 1024B data-area read: IDAM+DATA are
+                                       ///< emitted as one contiguous block and ioRead
+                                       ///< auto-advances to the next sector on over-read
+                                       ///< (3rd-stage CP/A loader; uses MK1/bit4 re-sync,
+                                       ///< not the secondary loader's MK/bit1 field advance)
     static constexpr uint8_t kGapByte = 0x4E;  ///< MFM gap filler (over-read padding)
 
     /// Build field_buf_ for (field_sector_, field_is_data_) from sector_buf_.

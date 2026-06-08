@@ -92,6 +92,14 @@ uint8_t K5122::ioRead(uint8_t port) {
             // The reader advances to the next field by pulsing MK (see advanceField()).
             if (field_buf_.empty()) {
                 result = 0xFF;
+            } else if (field_pos_ >= field_buf_.size() && stream_continuous_) {
+                // Continuous data-area stream: the field holds a whole sector
+                // (IDAM+DATA). On over-read step to the next sector so the loader's
+                // IDAM re-search finds it in the rotating stream (no MK advance).
+                const size_t nsec = sector_buf_.size() / sector_block_;
+                field_sector_ = nsec ? (field_sector_ + 1) % nsec : 0;
+                buildField();
+                result = field_buf_.empty() ? kGapByte : field_buf_[field_pos_++];
             } else if (field_pos_ < field_buf_.size()) {
                 result = field_buf_[field_pos_++];
                 LOG_TRACE("K5122", "Feld[%zu/%zu] S%zu %s => 0x%02X",
@@ -570,6 +578,11 @@ void K5122::doReadSector() {
     // CP/M filesystem incl. @OS.COM lives there.
     sector_data_len_ = tf ? tf->bytes_per_sec : 128;
     sector_block_    = 10 + sector_data_len_;   // 8 header + data + 2 data-CRC
+    // The 3rd-stage CP/A loader reads the 1024B data area with a CONTINUOUS read
+    // (INIR, no per-byte strobe) and re-syncs via MK1 (ctrl Port A bit4), not the
+    // secondary loader's MK (bit1) field advance.  Stream IDAM+DATA contiguously
+    // for those reads.  128B boot tracks keep the discrete IDAM/DATA field model.
+    stream_continuous_ = (sector_data_len_ != 128);
 
     markDriveAccess(selected_drive_);
     LOG_INFO("K5122", ">>> READ  D%d C=%u H=%u (track: %u sectors, %u bytes/sec, size_code=%u)",
@@ -726,6 +739,40 @@ void K5122::buildField() {
     const uint8_t head = sector_buf_[start + 3];
     const uint8_t sec  = sector_buf_[start + 4];
     const uint8_t size = sector_buf_[start + 5];
+    const size_t  data_off = start + 8;
+
+    if (stream_continuous_) {
+        // CONTINUOUS full-sector block (3rd-stage 1024B data-area read).  Layout is
+        // tuned to the loader's read sequence (0x1F7D verify + 0x2038 data read):
+        //   [A1 FE cyl head sec size] (6, IDAM verify)
+        //   [27× gap]                 (IDAM-CRC + gap the loader reads before the DATA)
+        //   [A1 FB]                   (data address mark: A1 discarded, FB consumed)
+        //   [<N data>]                (INIR reads N bytes)
+        //   [CRC CRC]                 (2 INI; CRC the loader recomputes & compares)
+        //   [8× gap]                  (trailing gap before the next sector's IDAM)
+        // The loader re-syncs with MK1 (bit4); it never pulses MK (bit1), so the
+        // field never advances via advanceField() — instead ioRead(0x16) auto-steps
+        // to the next sector on over-read (see ioRead).  Its CRC routine (sub_1E44 =
+        // loaderCrc16) starts at 0xCDB4 and covers the data mark byte + the N data
+        // bytes, so the trailing CRC must be loaderCrc16([0xFB] + data, 0xCDB4).
+        field_buf_ = {0xA1, 0xFE, cyl, head, sec, size};
+        field_buf_.insert(field_buf_.end(), 27, kGapByte);
+        field_buf_.push_back(0xA1);
+        field_buf_.push_back(0xFB);
+        std::vector<uint8_t> crc_in;
+        crc_in.reserve(1 + sector_data_len_);
+        crc_in.push_back(0xFB);
+        for (size_t i = 0; i < sector_data_len_; ++i) {
+            uint8_t b = sector_buf_[data_off + i];
+            field_buf_.push_back(b);
+            crc_in.push_back(b);
+        }
+        const uint16_t crc = loaderCrc16(crc_in.data(), crc_in.size(), 0xCD, 0xB4);
+        field_buf_.push_back(static_cast<uint8_t>(crc >> 8));
+        field_buf_.push_back(static_cast<uint8_t>(crc & 0xFF));
+        field_buf_.insert(field_buf_.end(), 8, kGapByte);
+        return;
+    }
 
     if (!field_is_data_) {
         // IDAM field: address mark + header, then gap.  The reader (ROM or loader)
@@ -735,7 +782,6 @@ void K5122::buildField() {
     } else {
         // DATA field: address mark + N data bytes + CRC, then gap (N = sector size).
         field_buf_ = {0xA1, 0xFB};
-        const size_t data_off = start + 8;
         for (size_t i = 0; i < sector_data_len_; ++i)
             field_buf_.push_back(sector_buf_[data_off + i]);
         // Real CRC-16 over the data so the loader's per-sector verify passes.
@@ -750,6 +796,14 @@ void K5122::advanceField() {
     if (sector_buf_.empty()) return;
     const size_t nsec = sector_buf_.size() / sector_block_;
     if (nsec == 0) return;
+
+    if (stream_continuous_) {
+        // Continuous block already carries IDAM+DATA together; a strobe just
+        // advances to the next sector (rebuild from the start of its block).
+        field_sector_ = (field_sector_ + 1) % nsec;
+        buildField();
+        return;
+    }
 
     if (!field_is_data_) {
         field_is_data_ = true;                          // IDAM → DATA (same sector)
