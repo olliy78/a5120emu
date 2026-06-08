@@ -1122,15 +1122,34 @@ bleibt **dauerhaft im Reset**, führt `0x1F7D` **nie** aus (`-z`-Histogramm). Da
 (Port 0x16) stoppt nach 1 Byte (`sektor=0 IDAM pos=0`); **niemand konsumiert die Bulk-Daten**
 (ZVE2 reset, ZVE1 wartet) → der `[0x1E78]`-Poll bei `0x1C5B` zählt nie hoch → Timeout `'U'`.
 
-**Kernfrage / Hypothese:** Die dritte Stufe setzt `[0x0000]=JP 0x1F7D`, resettet ZVE2
+**GELÖST (2026-06-08):** Die dritte Stufe setzt `[0x0000]=JP 0x1F7D`, resettet ZVE2
 (`OUT(04)=0x00`) und stellt `[0x0000]` sofort wieder her — sie startet ZVE2 nie explizit
-(bit0=1). Damit `0x1F7D` läuft, müsste ZVE2 **im kurzen Fenster** zwischen `[0x0000]=JP 0x1F7D`
-(1F43) und der Wiederherstellung (1F64) von PC=0 starten — vermutlich getriggert durch das
-`/BUSRQ` aus dem `/STR` (1F5C). Der Emulator modelliert `OUT(04)=0x00` aber als *dauerhaftes*
-Reset-Halten (`zve2_reset_` bis bit0=1), sodass ZVE2 dieses Fenster verpasst. **Nächster Schritt:**
-prüfen, ob ein Reset (bit0=0) auf echter Hardware ZVE2 nur kurz zurücksetzt und es bei
-`/BUSRQ`-Assertion aus PC=0 (mit dem *aktuellen* `[0x0000]`) anläuft — und das ggf. nachbilden
-(ohne die funktionierenden Pfad-1-/Sekundär-Loader-Restarts mit bit0=1 zu brechen).
+(bit0=1); ZVE2 muss im kurzen Fenster zwischen `[0x0000]=JP 0x1F7D` (1F43) und der
+Wiederherstellung (1F64) aus PC=0 anlaufen, getriggert durch das `/BUSRQ` des `/STR` (1F5C).
+Fix: `A5120Machine::run()` startet ZVE2 aus dem Reset (`K2526::zve2StartFromReset()`, löscht
+Reset + `/WAIT`), sobald `/BUSRQ` assertiert ist und ZVE2 im Reset steht — so fetcht es das
+*aktuelle* `[0x0000]` vor der Wiederherstellung. **Ergebnis:** ZVE2 läuft jetzt `0x1F7D`, der
+`@OS.COM`-Read läuft an. Alle 94 K5122/Boot/K2526-Tests grün; Pfad-1/Sekundär-Loader (Start mit
+bit0=1) unberührt (nicht im Reset bei `/BUSRQ`).
+
+### 14.6a Offenes Problem: Disk-Geometrie der `@OS.COM`-Datenleseanforderung
+
+Mit dem ZVE2-Fix läuft `0x1F7D` und liest, scheitert aber an einem **Größen-/Geometrie-
+Mismatch**: die Routine vergleicht den IDAM-Header und erwartet bei `CP H` (H'=0x03)
+**size_code 3 = 1024 B** für `cyl 2, head 0, sec 1`. Im Emulator/Image ist cyl 2 jedoch eine
+**128-B-Boot-Spur** (die vom Sekundär-Loader geladene Stage-2). Der Bildschirm zeigt daraufhin
+die Loader-Fehlermeldung `…;T,Si,Se=020001`.
+
+Befund am Image (`disks/cpadisk01.img`, 813824 B): Boot-Spuren cyl 0–2 (je 3328 B, 128-B-Sektoren;
+cyl 1 = `0x53`-Füllung, cyl 2 = Stage-2-SYL @0x1A00), Datenbereich ab cyl 3 (1024 B); das CP/M-
+**Verzeichnis** mit dem `@OS   COM`-Eintrag liegt bei Offset ~`0x9018` (≈ **cyl 8**). Die dritte
+Stufe (Standard-CP/A) erwartet den Datenbereich aber bei **cyl 2** (d.h. nur **2** Boot-Spuren),
+während Image/`cpa780`-Format **3** Boot-Spuren haben. **Nächster Schritt:** klären, ob (a) das
+`cpa780`-Format auf 2 Boot-Spuren (cyl 0–1, 128 B) + Daten cyl 2–79 (1024 B) gehört (dann muss
+`cpadisk01.img` auch so aufgebaut sein), oder (b) `cpadisk01.img` ein Sonder-/Testimage mit 3
+Boot-Spuren ist und ein standardkonformes CP/A-Image (2 Boot-Spuren, Verzeichnis bei cyl 2)
+nötig ist. Die DPB-/Spur-Geometrie der CP/A-Boot-Doku (`docs/bootsec.mac` §SYL-Format) ist
+gegen die echte `@OS.COM`-Leseanforderung (cyl 2, 1024 B) abzugleichen.
 
 ### 14.7a Beobachtung: ctrl_pio_ Port B (Vektor 0x60) [offen, evtl. obsolet]
 
