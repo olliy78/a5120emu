@@ -102,17 +102,28 @@ std::vector<DiskFormat> FormatParser::parseFile(const std::string& path) {
 std::vector<DiskFormat> FormatParser::builtinFormats() {
     std::vector<DiskFormat> fmts;
 
-    // cpa780: boot tracks 0-1 use 26×128B, data tracks 2-79 use 5×1024B.
-    // The CP/A boot chain reserves exactly TWO system tracks (cyl 0 = stage-1
-    // boot + stage-2 loader on cyl 1); the file system (allocation table at
-    // cyl 2 sec 1 = byte 0x3400, directory at 0x3b00) starts at cyl 2.  The
-    // 3rd-stage loader reads its data area at physical cyl 2 (IDAM cyl=2,
-    // size_code=3/1024B), so the data area must begin there.
+    // cpa780: mixed geometry with an ASYMMETRIC transition mid-cylinder.
+    // Sides are interleaved (cyl0/A, cyl0/B, cyl1/A, cyl1/B, cyl2/A, ...).
+    // The system area is THREE physical 128B sides — cyl 0 (both sides) plus
+    // cyl 1 side A — and the 1024B data area begins at cyl 1 side B:
+    //   cyl0 A (0x0000) stage-1 boot + SYL   | 128B
+    //   cyl0 B (0x0D00) filler (0x53)         | 128B
+    //   cyl1 A (0x1A00) stage-2 loader + SYL  | 128B
+    //   cyl1 B (0x2700) first data track      | 1024B  (filler/reserved)
+    //   cyl2 A (0x3B00) CP/M directory        | 1024B  ("@OS     COM" ...)
+    //   cyl2 B (0x5000) @OS.COM data ...       | 1024B
+    // 3 × 3328 + 5120 = 0x3B00, so the directory lands exactly on the cyl 2
+    // side-A boundary; the 3rd-stage loader reads its data area at physical
+    // cyl 2 (IDAM cyl=2, size_code=3/1024B).  Modelling cyl 1 side B as 128B
+    // (a clean 2-cylinder boot area) would shift the whole data area 0x700
+    // earlier and misalign the @OS.COM allocation blocks.
     {
         DiskFormat f;
         f.name = "cpa780";
-        f.tracks.push_back({0, 1, 0, 1, 26, 128});  // boot (2 system tracks)
-        f.tracks.push_back({2, 79, 0, 1, 5, 1024}); // data + file system
+        f.tracks.push_back({0, 0, 0, 1, 26,  128});  // cyl 0, both sides: system
+        f.tracks.push_back({1, 1, 0, 0, 26,  128});  // cyl 1 side A: stage-2
+        f.tracks.push_back({1, 1, 1, 1,  5, 1024});  // cyl 1 side B: first data track
+        f.tracks.push_back({2, 79, 0, 1, 5, 1024});  // cyl 2-79: data + file system
         fmts.push_back(std::move(f));
     }
 

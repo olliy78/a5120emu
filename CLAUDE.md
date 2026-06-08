@@ -153,11 +153,40 @@ byte `0x00`→`0xA1`. A fourth fix (**track-end /BUSRQ release**: on `OUT(13H),0
 the secondary bootloader. **Result (all 40 K5122/Boot tests green, banner no-regression):** the
 full secondary loader runs — ZVE2 reads whole tracks across cyl 0/1/2, ZVE1 CRC-verifies every
 sector, `[07FC]` counts to 0, and the loader jumps to `0x0880` (`JP 0x1800`) into the **third
-stage (CP/A boot system)**. The screen now shows `CP/A-Bootsystem, Version 05.04.88 laedt @OS.COM`
-and `@OS.COM` partially loads to `0x0100`. **Remaining open:** the `@OS.COM` load stalls — the
-third stage waits interrupt-driven at `0x1F6C` (`JR $`, ISR vector `0xE8`) and the load makes no
-progress past ~741 bytes. Next: disassemble the `0xE8` ISR from live RAM and find its handshake.
-Full model: `doc/K1520_architecture.md` §14.5/§14.6. Interrupt-system spec: §14.
+stage (CP/A boot system)**. The screen shows `CP/A-Bootsystem, Version 05.04.88 laedt @OS.COM`.
+
+### Third stage — @OS.COM read from the 1024B data area (current frontier, 2026-06-08)
+
+The third stage reads `@OS.COM` from the **1024B data area**. Three fixes got it reading and
+loading `@OS.COM` to `0x0100` (all 94 K5122/Boot/K2526 tests green):
+
+1. **ZVE2-from-reset** (`K2526::zve2StartFromReset`, committed 9af4912). The stage poises ZVE2 by
+   `[0x0000]=JP 0x1F7D` + `OUT(04)=0x00` (reset) then immediately restores `[0x0000]`, never doing
+   an explicit bit0=1 start. `A5120Machine::run()` now starts ZVE2 from PC=0 when `/BUSRQ` asserts
+   while ZVE2 is reset (the `/STR`'s `/BUSRQ`), so it fetches the live `[0x0000]=JP 0x1F7D`. Gotcha:
+   fire on `isZVE2InReset()` ALONE (ZVE2 is both reset AND `/WAIT`-held in this path).
+2. **Disk geometry** (`format_parser.cpp`, **asymmetric mixed geometry**): sides interleave (cyl0/A,
+   cyl0/B, cyl1/A, cyl1/B, …); the system area is **three** 128B sides (cyl 0 both sides + cyl 1 side A)
+   and the **1024B data area begins at cyl 1 side B** (`0x2700`). `3×3328 + 5120 = 0x3B00`, so the CP/M
+   directory (`"@OS     COM"` + CPABCGEN/FORMAT/…) lands exactly on the **cyl 2 side A** boundary, where
+   `0x1F7D` reads (IDAM cyl=2, size_code=3). Format = `{0,0,0,1,26,128}` + `{1,1,0,0,26,128}` +
+   `{1,1,1,1,5,1024}` + `{2,79,0,1,5,1024}` (findTrack/sectorOffset honor the head range). Modelling
+   cyl 1 side B as 128B would shift the data area 0x700 early and misalign @OS.COM's allocation blocks.
+3. **Continuous-stream field model + CRC seed** (`k5122.cpp`, gated `sector_data_len_ != 128`). The 3rd
+   stage reads IDAM+DATA **continuously** (INIR, no per-byte strobe), re-syncs via **MK1 (ctrl Port A
+   bit4**, `0xB5↔0x85`), not MK/bit1 — so the discrete field model never advanced IDAM→DATA and served
+   gap (`0x4E`). Now `buildField()` emits one continuous full-sector block for 1024B and `ioRead(0x16)`
+   auto-steps to the next sector on over-read. Its CRC routine `sub_1E44` is **byte-identical to
+   `loaderCrc16`** but inits **`0xCDB4`** (not 0xBF84) over `[data-mark]+data`, so the DATA field CRC is
+   `loaderCrc16([0xFB]+data, 0xCDB4)`. (Verified `loaderCrc16([4E]+4E×1024, 0xCDB4)=0x87B3`.)
+
+**Result:** the 3rd stage reads the data area across cyl 2/3/4 (both heads, 1024B), CRC passes, `@OS.COM`
+loads to `0x0100`. **Remaining open:** a timeout `'U'` (`RU;T,Si,Se=020101`) at **cyl 2 head 1** — the
+head-1 (or a later) read makes no progress (`[0x1E78]` poll at `0x1C5B` times out). Key 3rd-stage addrs:
+read/verify `0x1F7D`/`0x2038`, CRC `sub_1E44`, CRC-compare `sub_1E20` (DE vs (IX+0/1)), retry loop
+`0x1D3C–0x1DDE`, error display `sub_1BF0` ('C'=CRC@`0x1DE1`, 'U'=timeout@`0x1E04`). Repro:
+`boot_trace -L /dev/null -c 40000000 -p 38000000 disks/cpadisk01.img` (use big `-c` AND `-p`).
+Full model: `doc/K1520_architecture.md` §14.5/§14.5b/§14.6/§14.6a/§14.6b; `doc/analyse_bootloader.md` §7.
 
 `boot_trace` post-boot tracing: `-p <cycles>` continues past `0x0437`; the summary then
 adds an I/O-port read/write histogram, VRAM write count + range, a loaded-code PC

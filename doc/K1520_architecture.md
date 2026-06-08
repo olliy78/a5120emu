@@ -1010,14 +1010,18 @@ Die Loader-Phase erbt `IFF1=1` und `IM 2` vom Boot-ROM (kein `DI` im Übergabepf
 
 ### 14.5 K5122 Diskettenleseverfahren (Adressmarken-Feld-Modell)
 
-Der Bootvorgang nutzt zwei verschiedene Sektor-Leseroutinen auf demselben physischen
-Spurformat (cpa780-Boot-Spuren: cyl 0–2, 26×128 B):
+Der Bootvorgang nutzt **drei** verschiedene Sektor-Leseroutinen. Boot-Spuren (cpa780:
+cyl 0–1, 26×128 B) bedient das diskrete Feld-Modell; der Datenbereich (cyl 2–79,
+5×**1024 B**) bedient das kontinuierliche Stream-Modell (§14.5b):
 
 - **Boot-ROM** (`0x01DD`, läuft auf ZVE2): liest IDAM-Header und Daten mit *einem*
   `/STR`-Strobe am Stück, mit festen Offsets, ohne Markensuche.
-- **Geladener Bootloader** (`0x062E`, eingehängt via `[0x0000]=JP 0x062E`): sucht aktiv
+- **Sekundär-Bootloader** (`0x062E`, eingehängt via `[0x0000]=JP 0x062E`): sucht aktiv
   die Adressmarken (`0xFE` IDAM, `0xFB` Datenmarke), verträgt variable Gaps, und
-  verifiziert jeden Sektor per CRC-16.
+  verifiziert jeden Sektor per CRC-16. Nutzt **`MK` = Steuer-Port-A Bit 1** (`0xB5`→`0x87`).
+- **Dritte Stufe / CP/A-Loader** (`0x1F7D`, 1024-B-Datenbereich): liest IDAM und Daten
+  **kontinuierlich** (`INIR`, kein Per-Byte-Strobe), re-synchronisiert über **`MK1` =
+  Steuer-Port-A Bit 4** (`0xB5`↔`0x85`), und nutzt einen **anderen CRC-Seed** (§14.5b).
 
 Beide Routinen synchronisieren über das **`MK`-Steuersignal** (Steuer-Port-A Bit 1):
 jede `MK`-Steigflanke (`0xB5`→`0x87`) lässt den K5122-Datenseparator auf die **nächste
@@ -1050,11 +1054,46 @@ ROM `0x0224/0x022D` und `0x0249/0x025F`; Loader `0x066E/0x0670` und `0x06B9/0x06
   `/BUSRQ` frei → ZVE1 übernimmt, verarbeitet die Spur, sucht den nächsten Track und
   setzt ZVE2 per `OUT(04)` zurück.
 
-Dieses Modell bedient **ROM und Loader mit demselben Stream** und trägt den **gesamten
-Sekundär-Bootloader**: ZVE2 liest ganze Spuren über mehrere Zylinder (cyl 0/1/2),
+Dieses (diskrete) Modell bedient **ROM und Sekundär-Loader mit demselben Stream** und
+trägt den **gesamten Sekundär-Bootloader**: ZVE2 liest ganze Boot-Spuren (cyl 0/1, 128 B),
 ZVE1 verarbeitet und CRC-verifiziert jeden Sektor, der Sektorzähler `[07FC]` zählt sauber
 auf 0, und nach 52 Sektoren springt der Loader nach `0x0880` (`JP 0x1800`) in die
 dritte Stufe — das **CP/A-Bootsystem**, das `@OS.COM` lädt.
+
+### 14.5b Kontinuierliches Stream-Modell (dritte Stufe, 1024-B-Datenbereich)
+
+Die dritte Stufe (CP/A-Loader) liest den **1024-B-Datenbereich** (cyl 2–79) anders als der
+Sekundär-Loader: ihre ZVE2-Routine `0x1F7D` (IDAM-Verify) + `0x2038` (Daten-Read) liest IDAM
+**und** Daten in **einem kontinuierlichen Strom** (`INIR`, kein Per-Byte-Strobe). Sie
+re-synchronisiert über **`MK1` (Steuer-Port-A Bit 4**, `0xB5`↔`0x85`-Toggle bei PC `1FAD/1FB1`),
+**nicht** über `MK` (Bit 1). Das diskrete Feld-Modell advanced nur bei `MK`-Steigflanke → für
+die dritte Stufe **nie** → das Datenfeld wurde nie erreicht, `ioRead(0x16)` lieferte Gap (`0x4E`).
+
+**Emulator-Modell** (gegated über `sector_data_len_ != 128`, Member `stream_continuous_`):
+
+- `buildField()` baut für 1024-B-Reads **einen kontinuierlichen Voll-Sektor-Block**:
+  `[A1 FE cyl head sec size]` + `27× Gap` + `[A1 FB]` + `<N Daten>` + `[CRC CRC]` + `8× Gap`.
+  Die 27-Gap-/Marken-Position ist exakt auf die Lese-Sequenz der dritten Stufe abgestimmt
+  (`0x1F7D`-Verify liest 6 Header-Bytes, dann 26 Bytes Gap/CRC, dann verbraucht `0x204C/0x204E`
+  die `A1 FB`-Datenmarke, dann `INIR` die N Daten).
+- `ioRead(0x16)` advanced bei **Über-Lesen** zum **nächsten Sektor** (rotierender Stream),
+  statt Gap zu padden — so findet die IDAM-Suche der dritten Stufe die Folgesektoren. `MK`/`MK1`
+  lösen für diesen Modus **kein** `advanceField()` aus (es gibt keine getrennten Felder).
+- **CRC-16 (anderer Seed!):** Die CRC-Routine der dritten Stufe `sub_1E44` (ZVE1, aufgerufen aus
+  `sub_1E2A`) ist **byte-identisch mit `loaderCrc16`** (D = High-, E = Low-Byte), startet aber bei
+  **`DE=0xCDB4`** (CCITT-Zustand nach `[A1 A1 A1]`), **nicht** `0xBF84`, und deckt **`[Datenmarke]
+  + N Daten`** ab (`LD B,01;CALL 1E44` für die Marke, dann 8×128 für die Daten). Das Datenfeld
+  muss daher `loaderCrc16([0xFB] + Daten, 0xCDB4)` tragen. `sub_1E20` vergleicht das berechnete
+  `DE` mit den 2 gelesenen CRC-Bytes `(IX+0/1)`. Verifiziert: `loaderCrc16([4E]+4E×1024, 0xCDB4)
+  = 0x87B3` = exakt der Wert, den die dritte Stufe über den (anfangs reinen Gap-)Puffer rechnete.
+- **Fehleranzeige** (`sub_1BF0`): baut `"RC;T,Si,Se=TTSSSS"`; 1. Zeichen `R`(Read, Bit2=0)/`W`,
+  2. Zeichen = Fehlercode-Byte (`'C'`=0x43 CRC, gesetzt bei `0x1DE1` nach erschöpften Retries
+  am Zähler `[0x1ED5]`; `'U'`=0x55 Timeout bei `0x1E04`). Retry-Schleife `0x1D3C…0x1DDE`:
+  Read = `CALL 1E2A`, Verify = `CALL 1E20`.
+
+**Ergebnis:** Die dritte Stufe liest jetzt den Datenbereich über cyl 2/3/4 (beide Köpfe, 1024 B),
+die CRC besteht, `@OS.COM` lädt nach `0x0100` (CP/M-TPA). Offen: ein verbleibender Timeout `'U'`
+bei `cyl 2, head 1` (§14.6).
 
 ### 14.6 Offenes Problem: `@OS.COM`-Ladephase (dritte Stufe)
 
@@ -1132,24 +1171,47 @@ Reset + `/WAIT`), sobald `/BUSRQ` assertiert ist und ZVE2 im Reset steht — so 
 `@OS.COM`-Read läuft an. Alle 94 K5122/Boot/K2526-Tests grün; Pfad-1/Sekundär-Loader (Start mit
 bit0=1) unberührt (nicht im Reset bei `/BUSRQ`).
 
-### 14.6a Offenes Problem: Disk-Geometrie der `@OS.COM`-Datenleseanforderung
+### 14.6a Disk-Geometrie der `@OS.COM`-Datenleseanforderung — **GELÖST 2026-06-08**
 
-Mit dem ZVE2-Fix läuft `0x1F7D` und liest, scheitert aber an einem **Größen-/Geometrie-
-Mismatch**: die Routine vergleicht den IDAM-Header und erwartet bei `CP H` (H'=0x03)
-**size_code 3 = 1024 B** für `cyl 2, head 0, sec 1`. Im Emulator/Image ist cyl 2 jedoch eine
-**128-B-Boot-Spur** (die vom Sekundär-Loader geladene Stage-2). Der Bildschirm zeigt daraufhin
-die Loader-Fehlermeldung `…;T,Si,Se=020001`.
+`0x1F7D` vergleicht den IDAM-Header und erwartet bei `CP H` (H'=0x03) **size_code 3 = 1024 B**
+für `cyl 2, head 0, sec 1` (Werte hardkodiert: `LD BC,0002`=cyl/head, `LD HL,0301`=size/sec).
+Ursache des ursprünglichen Fehlers `…;T,Si,Se=020001`: das `cpa780`-Format hatte fälschlich
+**3** Boot-Spuren (cyl 0–2, 128 B), sodass cyl 2 eine 128-B-Spur statt des 1024-B-Datenbereichs war.
 
-Befund am Image (`disks/cpadisk01.img`, 813824 B): Boot-Spuren cyl 0–2 (je 3328 B, 128-B-Sektoren;
-cyl 1 = `0x53`-Füllung, cyl 2 = Stage-2-SYL @0x1A00), Datenbereich ab cyl 3 (1024 B); das CP/M-
-**Verzeichnis** mit dem `@OS   COM`-Eintrag liegt bei Offset ~`0x9018` (≈ **cyl 8**). Die dritte
-Stufe (Standard-CP/A) erwartet den Datenbereich aber bei **cyl 2** (d.h. nur **2** Boot-Spuren),
-während Image/`cpa780`-Format **3** Boot-Spuren haben. **Nächster Schritt:** klären, ob (a) das
-`cpa780`-Format auf 2 Boot-Spuren (cyl 0–1, 128 B) + Daten cyl 2–79 (1024 B) gehört (dann muss
-`cpadisk01.img` auch so aufgebaut sein), oder (b) `cpadisk01.img` ein Sonder-/Testimage mit 3
-Boot-Spuren ist und ein standardkonformes CP/A-Image (2 Boot-Spuren, Verzeichnis bei cyl 2)
-nötig ist. Die DPB-/Spur-Geometrie der CP/A-Boot-Doku (`docs/bootsec.mac` §SYL-Format) ist
-gegen die echte `@OS.COM`-Leseanforderung (cyl 2, 1024 B) abzugleichen.
+**Korrektur (asymmetrische Mixed-Geometry).** Die Seiten sind interleaved (cyl0/A, cyl0/B,
+cyl1/A, cyl1/B, cyl2/A, …). Der Systembereich sind **drei** physische 128-B-Seiten — cyl 0
+(beide Seiten) + cyl 1 Seite A — und der **1024-B-Datenbereich beginnt bei cyl 1 Seite B**:
+
+| phys. Spur | Datei-Offset | Inhalt | Sektorgröße |
+|---|---|---|---|
+| cyl 0 A | `0x0000` | Stage-1-Boot + SYL | 128 B |
+| cyl 0 B | `0x0D00` | Füller (`0x53`) | 128 B |
+| cyl 1 A | `0x1A00` | Stage-2-Loader + SYL | 128 B |
+| cyl 1 B | `0x2700` | erste Datenspur (Füller) | **1024 B** |
+| cyl 2 A | `0x3B00` | CP/M-**Verzeichnis** (`"@OS     COM"` + CPABCGEN/FORMAT/…) | 1024 B |
+| cyl 2 B | `0x5000` | `@OS.COM`-Daten … | 1024 B |
+
+`3 × 3328 + 5120 = 0x3B00`, das Verzeichnis liegt also **exakt auf der cyl-2-Seite-A-Grenze**.
+Die dritte Stufe liest ihren Datenbereich hardkodiert bei phys. **cyl 2** (`0x1F7D`: IDAM cyl=2,
+size_code=3/1024 B) → `0x3B00` = cyl 2 head 0 sec 1 = Verzeichnis, sektor-aligned.
+
+Fix (`format_parser.cpp`, asymmetrisch): `{0,0,0,1,26,128}` + `{1,1,0,0,26,128}` +
+`{1,1,1,1,5,1024}` + `{2,79,0,1,5,1024}`. `findTrack`/`sectorOffset` werten den Head-Bereich aus,
+die mid-Zylinder-Asymmetrie (cyl 1 A = 128 B, cyl 1 B = 1024 B) greift also. Würde man cyl 1 B als
+128 B modellieren (saubere 2-Zylinder-Bootfläche), verschöbe sich der Datenbereich `0x700` nach
+vorn und die `@OS.COM`-Alloc-Blöcke wären fehlausgerichtet. Zusammen mit dem Stream-/CRC-Fix
+(§14.5b) liest die dritte Stufe nun cyl 1B/2/3/4 (1024 B) und lädt `@OS.COM`.
+
+### 14.6b Offen: verbleibender Timeout `'U'` bei `cyl 2, head 1`
+
+Nach den obigen Fixes liest die dritte Stufe erfolgreich cyl 2/3/4 (beide Köpfe, 1024 B) und lädt
+`@OS.COM` teilweise nach `0x0100` (≈125/128 echte Code-Bytes in der ersten Spur sichtbar). Sie
+scheitert dann mit `RU;T,Si,Se=020101` — Fehlercode `'U'` (Timeout, `0x1E04`) bei `cyl 2, head 1,
+sec 1`. **Nächster Schritt:** Untersuchen, warum der `head-1`-Read (oder ein späterer Daten-Read)
+keinen Fortschritt liefert (`[0x1E78]`-Poll bei `0x1C5B` läuft in Timeout) — vermutlich am
+Kontinuierlich-Stream-Modell für head 1 oder am Seek/Head-Latch über mehrere Spuren. Reproduktion:
+`boot_trace -L /dev/null -c 40000000 -p 38000000 disks/cpadisk01.img` (Screen-Dump zeigt die
+Meldung; `-d 0x0100:0x4000 datei` dumpt den `@OS.COM`-Ladebereich).
 
 ### 14.7a Beobachtung: ctrl_pio_ Port B (Vektor 0x60) [offen, evtl. obsolet]
 
@@ -1192,7 +1254,7 @@ schreibt Port 02H (/RES-SPA) zum Rücksetzen.
 
 | Lücke | Auswirkung |
 |---|---|
-| **`@OS.COM`-Ladephase** (dritte Stufe, CP/A-Bootsystem ab 0x1800) | Interruptgesteuerter Read läuft in Timeout `'U'`; Daten/`[0x1E78]`-Fortschritt fehlen (§14.6) — **aktuelle Arbeitsstelle**. 1024-B-Sektoren bereits umgesetzt, aber noch nicht erreicht |
+| **`@OS.COM`-Ladephase** (dritte Stufe, CP/A-Bootsystem ab 0x1800) | Datenbereich-Read funktioniert (cyl 2/3/4, 1024 B, CRC OK), `@OS.COM` lädt nach 0x0100; verbleibender Timeout `'U'` bei cyl 2 **head 1** (§14.6b) — **aktuelle Arbeitsstelle** |
 | ctrl_pio_ Port B Floppy-Events (`setBSTB`) | Event-ISR 0x0624 (Vektor 0x60) feuert nie; physikal. Signalquelle [offen], evtl. obsolet (§14.7a) |
 | Port 0xEE nicht dekodiert (vermutl. CTC-Alias 0x0E) | niedrige Priorität; 1 Schreibzugriff in 9M Zyklen, vermutl. Nebenwirkung |
 | Koppelbus-Kette (/IEI1–/IEO1) nicht verdrahtet | für Boot irrelevant; niedrigprioritäre BS-PIO-Interrupts nicht gereiht |

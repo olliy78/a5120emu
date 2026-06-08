@@ -30,6 +30,27 @@
 ;   * Die ORG-Adressen unten entsprechen dem DATEI-/On-Disk-Layout; die
 ;     Laufzeit-RAM-Adressen weichen ab (Boot-Record nach 0400H, Sekundaer-
 ;     Loader laedt 52 Sektoren nach 0800H, dritte Stufe ueber 0800H–1FFFH).
+;   * LOGISCHE (SYL-Datei) vs PHYSISCHE (cpa780-Image) Spurnummerierung:
+;     Die unten genannten "Spuren 0-2" sind die LOGISCHE single-sided-Zaehlung
+;     der SYL-Datei. Das Image disks/cpadisk01.img verwendet cpa780 mit ZWEI
+;     Koepfen (interleaved: cyl0/A, cyl0/B, cyl1/A, cyl1/B, cyl2/A, ...).
+;     Das Format ist ASYMMETRISCH: der Systembereich sind DREI 128-B-Seiten
+;     (cyl 0 beide Seiten + cyl 1 Seite A), der 1024-B-Datenbereich beginnt bei
+;     cyl 1 Seite B:
+;       cyl0 A (0000H) Stage-1 + SYL        128 B
+;       cyl0 B (0D00H) Fueller (53H)         128 B
+;       cyl1 A (1A00H) Stage-2 + SYL         128 B
+;       cyl1 B (2700H) 1. Datenspur (Fueller)1024 B
+;       cyl2 A (3B00H) CP/M-Verzeichnis      1024 B  ("@OS     COM" + CPABCGEN/
+;                                                      FORMAT/..., @OS.COM 1. Datei)
+;     3 x 3328 + 5120 = 3B00H -> das Verzeichnis liegt exakt auf der cyl-2-
+;     Seite-A-Grenze. Die dritte Stufe liest ihren Datenbereich bei phys. cyl 2
+;     (IDAM cyl=2, size_code 3 = 1024 B). Wuerde man cyl 1 Seite B als 128 B
+;     modellieren (saubere 2-Zylinder-Bootflaeche), verschoebe sich der ganze
+;     Datenbereich 0x700 nach vorn und die @OS.COM-Alloc-Bloecke waeren falsch
+;     ausgerichtet. bootsec.bin (15104 B) endet bei 3AFFH (= logische Spur 3 /
+;     phys. cyl 1 B), enthaelt das Verzeichnis (ab 3B00H) also NICHT.
+;     Details: doc/K1520_architecture.md §14.6a, format_parser.cpp (cpa780).
 ; ─────────────────────────────────────────────────────────────────────
 ;
 ; SYL-DISKETTENFORMAT -- Gemischte Spurgeometrie (Mixed Geometry)
@@ -191,6 +212,13 @@
 ;  'U'  Time-out (keine Sektormarke innerhalb Timeout)
 ;  'W'  Schreibgeschuetzt (Write Protect)
 ;
+;  LAUFZEIT-BELEGSTELLEN in der dritten Stufe (Boot-BIOS, RAM, Trace 2026-06-08):
+;   Anzeige sub_1BF0 baut "Rc;T,Si,Se=TTSSSS" (Rc = 'R'(Read,Bit2=0)/'W' + Code-
+;   Byte). 'C' = CRC wird bei RAM 1DE1H gesetzt (nach erschoepften Retries am
+;   Zaehler [1ED5H]); 'U' = Timeout bei RAM 1E04H. Retry-Schleife 1D3CH..1DDEH:
+;   Read = CALL 1E2A (liest Sektor, berechnet CRC in DE), Verify = CALL 1E20
+;   (CP D/E gegen die gelesenen CRC-Bytes (IX+0/1)).
+;
 ; SYMBOLTABELLE (erschlossen aus Disassemblierung):
 ;  0080H   WBOOT_JP    Warmstart-Vektor (JP 1800H)
 ;  0105H   CCP_PATCH   CCP-Patchbereich (NOPs vor Sprungtabelle)
@@ -204,9 +232,20 @@
 ;  0605H   ERR_HANDLER Fehlerbehandlung
 ;  0911H   BDOS_MAIN   BDOS Hauptprogramm
 ;  0D00H   T2_SYL_HDR  Zweiter SYL-Kopf in Spur 2
-;  0D07H   FDC_ADRDEC  FDC Adressen-Decoder (IY-Tabelle -> BC)
+;  0D07H   FDC_ADRDEC  CRC-16-Schritt (BC; Label historisch, KEINE Adress-Dekod.)
 ;  0D2EH   BOOT_MAIN   Boot-BIOS Hauptroutine
 ;  1800H   WARM_BIOS   Warmstart-Einstieg im Boot-BIOS
+;
+;  Dritte Stufe / Boot-BIOS -- Laufzeit-RAM-Adressen (Trace 2026-06-08,
+;  selbstmodifizierend; Adressen ggf. nicht 1:1 im statischen Disassemblat):
+;  1BF0H   ERR_SHOW    baut Fehlermeldung "Rc;T,Si,Se=..." (siehe oben)
+;  1C5BH   STAT_POLL   Status-/Timeout-Polling ([1E78H]); Timeout -> 'U'
+;  1D3CH   READ_RETRY  Read-Retry-Schleife (CALL 1E2A / CALL 1E20, Zaehler 1ED5H)
+;  1E20H   CRC_CMP     CP D/(IX+0), CP E/(IX+1): berechnete vs gelesene CRC
+;  1E2AH   CRC_CALC    Setup: LD DE,CDB4H; CALL 1E44 (Marke) + 8x128 (Daten)
+;  1E44H   CRC16_DE    CRC-16-Schritt mit DE-Registern (= 0D07H, anderer Seed)
+;  1F7DH   ZVE2_READ   ZVE2-DMA-Lese-/Verify-Routine fuer 1024-B-Datensektoren
+;                      (IDAM-Verify cyl/head/sec/size, dann kontinuierl. Daten)
 ;
 ; ======================================================================
 ; BEZUG ZU CPA-QUELLEN (cpa_src/)
@@ -557,49 +596,77 @@ T2_SYL_HDR:
 ;     INC IY  DEC E  JR NZ,...  RET
 ;   --> identisch mit dem folgenden Code.
 ; ──────────────────────────────────────────────────────────────────────
+; HINWEIS: Trotz des historischen Labels "FDC_ADRDEC" ist dies KEINE Spur/
+; Sektor-Extraktion, sondern der CRC-16-Schritt pro Datenbyte (siehe Header
+; oben).  B/C sind die laufenden CRC-Bytes (B=High, C=Low); A,D sind Arbeits-
+; register.  Die RRCA-Ketten + Masken sind die CRC-Polynom-Faltung, keine
+; Bitfeld-Dekodierung.  Identischer Algorithmus, andere Register/Seeds, an
+; DREI Stellen (siehe Block "CRC16 -- drei Verwendungen" unten).
         ORG     0D07H
 FDC_ADRDEC:
-        LD      A,(IY+0)        ; 0D07H: IY[0] = kompaktes Spur/Sektor-Byte
-        XOR     B               ; 0D0AH: XOR mit B (vorangehendem Wert)
-        LD      B,A             ; 0D0BH: B = XOR-Ergebnis
+        LD      A,(IY+0)        ; 0D07H: naechstes Datenbyte
+        XOR     B               ; 0D0AH: A ^= CRC-High (B)
+        LD      B,A             ; 0D0BH: t1 = A
 
-; Bits 7-4 nach Bits 3-0 schieben (Spur-High-Teil):
         RRCA                    ; 0D0CH: \
-        RRCA                    ; 0D0DH:  | 4 Rechts-Rotationen
-        RRCA                    ; 0D0EH:  | -> Bits 7-4 nach 3-0
+        RRCA                    ; 0D0DH:  | A = ror(A,4)
+        RRCA                    ; 0D0EH:  |
         RRCA                    ; 0D0FH: /
-        AND     0FH             ; 0D10H: maskiere nur Bits 3-0
+        AND     0FH             ; 0D10H: A &= 0x0F
 
-; XOR-Schritt um Parität zu korrigieren:
-        XOR     B               ; 0D12H
-        LD      B,A             ; 0D13H: B = dekodierter Spur-High
+        XOR     B               ; 0D12H: A ^= t1
+        LD      B,A             ; 0D13H: t2 = A
 
-; Weiterer Shift fuer Sektor-Bits:
         RRCA                    ; 0D14H: \
-        RRCA                    ; 0D15H:  | 3 Rechts-Rotationen
+        RRCA                    ; 0D15H:  | A = ror(A,3)
         RRCA                    ; 0D16H: /
-        LD      D,A             ; 0D17H: D = Zwischenergebnis
+        LD      D,A             ; 0D17H: d = A (Zwischenwert)
 
-        AND     1FH             ; 0D18H: Sektor-Teil (5 Bits)
-        XOR     C               ; 0D1AH: XOR mit aktuellem C-Wert
-        LD      C,A             ; 0D1BH: C = Sektor-Nummer
+        AND     1FH             ; 0D18H: A &= 0x1F
+        XOR     C               ; 0D1AH: A ^= CRC-Low (C)
+        LD      C,A             ; 0D1BH: C = A
 
-        LD      A,D             ; 0D1CH: zurueck zu D
-        RRCA                    ; 0D1DH: ein weiterer Shift fuer Spur-Low
-        AND     0F0H            ; 0D1EH: maskiere Bits 7-4 = Spur-Low-Teil
-        XOR     C               ; 0D20H
-        LD      C,A             ; 0D21H: C = kombinierter Sektor/Spur
+        LD      A,D             ; 0D1CH: A = d
+        RRCA                    ; 0D1DH: A = ror(d,1)
+        AND     0F0H            ; 0D1EH: A &= 0xF0
+        XOR     C               ; 0D20H: A ^= C
+        LD      C,A             ; 0D21H: C = A
 
-        LD      A,D
-        AND     0E0H            ; 0D23H: Bits 7-5 = Seitenkennnung
-        XOR     B               ; 0D25H
-        LD      B,C             ; 0D26H: BC aufbereitet
-        LD      C,A             ; 0D27H: C = Seiten-/High-Bits
+        LD      A,D             ; A = d
+        AND     0E0H            ; 0D23H: A = d & 0xE0
+        XOR     B               ; 0D25H: A ^= t2
+        LD      B,C             ; 0D26H: B = C  (CRC-High := altes Low)
+        LD      C,A             ; 0D27H: C = A  (neues CRC-Low)
 
-        INC     IY              ; 0D28H: naechster Parameterblock
-        DEC     E               ; 0D2AH: Zaehler
-        JR      NZ,FDC_ADRDEC   ; 0D2BH: weiter wenn nicht fertig
-        RET                     ; 0D2DH
+        INC     IY              ; 0D28H: naechstes Datenbyte
+        DEC     E               ; 0D2AH: Bytezaehler
+        JR      NZ,FDC_ADRDEC   ; 0D2BH: weiter
+        RET                     ; 0D2DH: BC = CRC-16
+
+; ======================================================================
+; CRC16 -- DREI VERWENDUNGEN DESSELBEN ALGORITHMUS (Analyse 2026-06-08)
+; ──────────────────────────────────────────────────────────────────────
+; Der obige byteweise CRC-16-Schritt (XOR + ror4/ror3/ror1 + Masken)
+; erscheint im Bootsystem an drei Stellen -- identische Faltung, aber
+; unterschiedliche Registerpaare, Seeds und abgedeckte Bytes.  Der Emulator
+; bildet alle als K5122::loaderCrc16(data, n, b, c) nach (b=High, c=Low):
+;
+;   (1) sub_0407 / READ_SEC-CRC (Sekundaer-Loader, RAM 0407H):
+;       Register BC, Seed BF84H (Normalpfad [03FD]=0x87 Bit1=1; sonst E295H),
+;       ueber die N Datenbytes des 128-B-Sektors. Vergleich CP B / CP C.
+;
+;   (2) FDC_ADRDEC (dieser Block, 0D07H): gleiche Faltung, Register BC.
+;
+;   (3) sub_1E44 (DRITTE STUFE / Boot-BIOS, RAM 1E44H, gerufen aus sub_1E2A):
+;       Register **DE** (D=High, E=Low) statt BC, Seed **CDB4H** (CCITT-Zustand
+;       nach [A1 A1 A1]) statt BF84H, und ueber **[Datenmarke 0FBH] + N
+;       Datenbytes** (LD B,01;CALL fuer die Marke, dann 8x128 fuer 1024 Byte).
+;       Der Vergleich macht sub_1E20 (CP gegen die 2 gelesenen CRC-Bytes
+;       (IX+0/1)).  Damit muss das DATEN-Feld eines 1024-B-Sektors die CRC
+;       loaderCrc16([0FBH]+Daten, CDB4H) tragen.  Verifiziert:
+;       loaderCrc16([4EH]+4EH x1024, CDB4H) = 87B3H = der Wert, den die dritte
+;       Stufe ueber einen reinen Gap-Puffer (0x4E) berechnete.
+; ──────────────────────────────────────────────────────────────────────
 
 ; ======================================================================
 ; BOOT_MAIN: Boot-BIOS Hauptroutine (Kaltstart)
@@ -864,6 +931,51 @@ DIR_SEARCH:
         ORG     1800H
 WARM_BIOS:
         ; ... (Warmstart-Sequenz: FDC re-init, OS neu laden)
+
+; ======================================================================
+; @OS.COM-LADEVERFAHREN DER DRITTEN STUFE (Laufzeit-Analyse 2026-06-08)
+; ──────────────────────────────────────────────────────────────────────
+; Die dritte Stufe (dieses Boot-BIOS, RAM ab 1800H) liest Verzeichnis und
+; @OS.COM aus dem 1024-B-DATENBEREICH der Diskette (cyl 1 Seite B aufwaerts).
+; Sie nutzt eine EIGENE ZVE2-DMA-Lese-Routine bei 1F7DH, die sich vom
+; Sekundaer-Loader (062EH) im Streaming UND im CRC-Seed unterscheidet.
+;
+; READ-SETUP (ZVE1, 1F36H) -- byte-genau aus Trace:
+;   1F43  LD (0001H),HL       [0000H]=JP 1F7D  (ZVE2-Einstieg setzen)
+;   1F4F  OUT (04H),A=0       ZVE2 RESET (bit0=0)
+;   1F5C  OUT (10H),0A5H      /STR-Flanke -> K5122 doReadSector (Feldpuffer)
+;   1F62  IN  (16H)           1 Byte
+;   1F64  LD (0001H),BC       [0000H]=JP 1803  (Einstieg zurueckgesetzt)
+;   1F6C  JR  $               Warteschleife (Index-ISR patcht auf Timeout)
+;   ZVE2 laeuft 1F7DH aus PC=0 an, getriggert durch das /BUSRQ des /STR
+;   (Emulator: K2526::zve2StartFromReset).
+;
+; ZVE2-LESE-/VERIFY-ROUTINE 1F7DH (1024-B-Sektor):
+;   - Erwartete IDAM-Werte in den Alt-Registern: C'=cyl(2), B'=head, L'=sec(1),
+;     H'=size_code(3=1024B), DE'=0FEA1H (Sync/IDAM-Marken A1 FE).
+;   - 1FB1H: liest Bytes von Port 16H, ueberspringt A1, prueft FE/cyl/head/sec/
+;     size (CP E/D/C/B/L/H). Bei Mismatch -> 2023H (Retry), nach Erschoepfung
+;     Fehlercode (siehe ERR_SHOW).
+;   - 2038H: liest die Daten KONTINUIERLICH (INIR, 4x256 + 2 INI fuer CRC), OHNE
+;     Per-Byte-Strobe; re-synchronisiert ueber MK1 (Steuer-Port-A Bit 4,
+;     0B5H<->85H), NICHT MK (Bit 1, wie der Sekundaer-Loader).
+;   Folge fuer den Emulator: das Adressmarken-Feld-Modell (MK/Bit1-Advance) griff
+;   hier nicht -> Datenfeld lieferte Gap (4EH). Fix: K5122 streamt fuer 1024-B-
+;   Sektoren IDAM+DATEN als EINEN kontinuierlichen Block und steppt bei Ueber-
+;   Lesen zum naechsten Sektor (K5122::stream_continuous_).
+;
+; CRC-PRUEFUNG (ZVE1):
+;   sub_1E2A (CRC_CALC): LD DE,CDB4H; CALL 1E44 fuer 1 Marken-Byte, dann 8x128
+;   ueber die 1024 Datenbytes -> DE = CRC (D=High, E=Low). sub_1E20 (CRC_CMP):
+;   CP D/(IX+0), CP E/(IX+1) gegen die 2 gelesenen CRC-Bytes. Bei Ungleichheit
+;   Retry; nach Erschoepfung 'C'. (Algorithmus = FDC_ADRDEC/0D07H, aber DE-Reg
+;   und Seed CDB4H statt BC/BF84H -- siehe Block "CRC16 -- drei Verwendungen".)
+;
+; STAND (2026-06-08): Datenbereich-Read laeuft ueber cyl 1B/2/3/4 (beide Seiten,
+; 1024 B), CRC besteht, @OS.COM-Bloecke werden gelesen. OFFEN: Timeout 'U'
+; (RU;T,Si,Se=020101) bei cyl 2 Seite B -- separates head-1-Read-Problem, nicht
+; Daten-Alignment. Vollmodell: doc/K1520_architecture.md §14.5b/§14.6b.
+; ======================================================================
 
 ; Ende des Bootloaders
         END

@@ -5,14 +5,16 @@ das ZRE-Boot-ROM per DMA von der Diskette nach `0x0400` lädt und ab `0x0437`
 startet. Die erste Stufe (Boot-ROM + ZVE2-DMA) ist in
 [`analyse_zre_rom_boot.md`](analyse_zre_rom_boot.md) dokumentiert.
 
-> **Stand:** Der Bootloader läuft an, gibt seinen Banner aus
-> (`Bootloader, Version 24.02.87`), und lädt anschließend per loader-eigener
-> ZVE2-Routine (`0x062E`) ~52 Sektoren echter OS-/Loader-Daten nach `0x0800–0x2200`
-> (CRC-verifiziert). Das Diskettenlese-Modell (Adressmarken-Felder, MK-Strobe, CRC-16)
-> ist in [`K1520_architecture.md` §14.5](K1520_architecture.md) spezifiziert.
-> **Offen:** der Track-Übergang — ZVE1 wartet bei `0x0532` statt zur nächsten Stufe
-> (`0x0880`) zu springen; siehe [`K1520_architecture.md` §14.6](K1520_architecture.md).
-> Das Interrupt-System selbst funktioniert (IM2, Daisy-Chain, RETI, Index-Interrupt).
+> **Stand (2026-06-08):** Der Bootloader läuft an, gibt seinen Banner aus
+> (`Bootloader, Version 24.02.87`), und lädt per loader-eigener ZVE2-Routine (`0x062E`)
+> ~52 Sektoren nach `0x0800–0x2200` (CRC-verifiziert). **Der Sekundär-Loader ist
+> vollständig** — er springt nach `0x0880` (`JP 0x1800`) in die **dritte Stufe**
+> (CP/A-Bootsystem), die ihren Banner ausgibt (`CP/A-Bootsystem, Version 05.04.88 laedt
+> @OS.COM …`) und `@OS.COM` aus dem 1024-B-Datenbereich lädt (siehe §7).
+> **Aktueller Stand der dritten Stufe:** Datenbereich-Read funktioniert (cyl 2/3/4, 1024 B,
+> CRC OK), `@OS.COM` lädt nach `0x0100`; **offen** ein Timeout `'U'` bei cyl 2 head 1.
+> Lesemodelle: [`K1520_architecture.md` §14.5/§14.5b](K1520_architecture.md). Das
+> Interrupt-System funktioniert (IM2, Daisy-Chain, RETI, Index-Interrupt).
 
 ## Werkzeuge / Reproduktion
 
@@ -168,7 +170,7 @@ soll. `0x0880` liegt außerhalb des aktuell geladenen Records und ist erst nach 
       JR 061C (… OUT(10),AD / RETI)
 ```
 
-## 5. Aktueller Stand — Sektor-Load funktioniert, Track-Übergang offen
+## 5. Sektor-Load + Track-Übergang — **funktioniert (gelöst)**
 
 Der Loader lädt per loader-eigener ZVE2-Routine (`0x062E`) die Folgesektoren in die
 Hauptschleife `0x052A` ein: pro empfangenem, **CRC-verifiziertem** Sektor wird der
@@ -177,15 +179,47 @@ nachgezogen. So werden ~52 Sektoren echter Daten nach `0x0800–0x2200` geladen.
 
 Das zugrunde liegende **Diskettenlese-Modell** (Adressmarken-Felder IDAM/DATEN,
 `MK`-Strobe-getriebener Feldwechsel, reale CRC-16) ist in
-[`K1520_architecture.md` §14.5](K1520_architecture.md) spezifiziert — es bedient die
-Boot-ROM (Stufe 1) und die Loader-Routine (Stufe 2) mit demselben Stream.
+[`K1520_architecture.md` §14.5](K1520_architecture.md) spezifiziert. Der Track-Übergang
+(ZVE2-Track-Ende `L0696`, `/BUSRQ`-Freigabe bei `OUT(13H),03H`, Seek, ZVE2-Reset via
+`OUT(04)`) ist gelöst — `[07FC]` zählt sauber auf 0, der Loader springt nach `0x0880`
+(`JP 0x1800`) in die dritte Stufe.
 
-**Offen — Track-Übergang:** Nach 26 Sektoren (ein Track) läuft die ZVE2-Routine in ihre
-Track-Ende-Schleife `L0696` und überschreibt dort Handshake-Variablen; ZVE1 wartet
-weiter bei `0x0532` statt zur dritten Stufe (`0x0880`) zu springen. Es fehlt die
-Modellierung des Track-Wechsels (ZVE2-Reset via `OUT(04)` + Seek auf den nächsten
-(cyl, head)). Details und nächster Schritt:
-[`K1520_architecture.md` §14.6](K1520_architecture.md).
+## 7. Dritte Stufe — CP/A-Bootsystem, `@OS.COM`-Load aus dem Datenbereich
+
+Die dritte Stufe (`0x1800` = `JP 0x08AF`-Bereich; Banner `CP/A-Bootsystem, Version
+05.04.88 laedt @OS.COM …`) lädt `@OS.COM` aus dem **1024-B-Datenbereich** der Diskette.
+
+**Disk-Geometrie (asymmetrisch, geklärt):** Die Seiten sind interleaved (cyl0/A, cyl0/B,
+cyl1/A, cyl1/B, …). Der Systembereich sind **drei** 128-B-Seiten (cyl 0 beide Seiten +
+cyl 1 Seite A); der **1024-B-Datenbereich beginnt bei cyl 1 Seite B** (`0x2700`, Füller),
+das CP/M-**Verzeichnis** liegt sauber bei **cyl 2 Seite A** (`0x3B00`,
+`00 40 4F 53 …"@OS     COM"` + `CPABCGEN`/`FORMAT`/…; `3×3328 + 5120 = 0x3B00`). `@OS.COM`
+ist die erste Datei (Allocation-Blocks 02–09, Record-Count `0x76`). Die dritte Stufe liest
+ihren Datenbereich hardkodiert bei physisch cyl 2 (`0x1F7D`: IDAM cyl=2, size_code=3). Frühere
+Fehlannahmen: 3 Boot-Spuren (cyl 2 = 128 B → Size-Mismatch `RU;…=020001`) bzw. cyl 1 B = 128 B
+(Datenbereich `0x700` zu früh, @OS.COM-Blöcke fehlausgerichtet).
+
+**Eigene ZVE2-DMA-Routine `0x1F7D`** (1024-B-Read): liest IDAM (Verify cyl/head/sec/size)
+und Daten **kontinuierlich** (`INIR`), re-syncht über `MK1` (Steuer-Port-A Bit 4), und
+**CRC-verifiziert** jeden Sektor mit der ZVE1-Routine `sub_1E44` (= `loaderCrc16`, aber
+Seed `0xCDB4` statt `0xBF84`, über `[Datenmarke]+1024 Daten`). Anders als der
+Sekundär-Loader (diskrete `MK`/Bit-1-Felder). Vollständige Spezifikation des Emulator-
+Modells: [`K1520_architecture.md` §14.5b](K1520_architecture.md).
+
+**Read-Setup `0x1F36`** (byte-genau): `[0x0000]=JP 0x1F7D`, `OUT(04)=0x00` (ZVE2-Reset),
+`/STR`-Flanke → `doReadSector`, `[0x0000]=JP 0x1803` wiederhergestellt, Warteschleife
+`0x1F6C`. ZVE2 läuft `0x1F7D` aus PC=0 an, getriggert durch das `/BUSRQ` des `/STR`
+(`K2526::zve2StartFromReset`).
+
+**Read-/Verify-Pfad (ZVE1):** Retry-Schleife `0x1D3C…0x1DDE` (Read = `CALL 1E2A`,
+Verify = `CALL 1E20`); CRC-Routine `sub_1E44`, CRC-Vergleich `sub_1E20` (`DE` vs
+`(IX+0/1)`); Timeout-/Status-Poll `0x1C5B` (`[0x1E78]`). Fehleranzeige `sub_1BF0`:
+`"RC;T,Si,Se=…"` — 2. Zeichen `'C'`=CRC (`0x1DE1`) / `'U'`=Timeout (`0x1E04`).
+
+**Aktueller Stand:** Datenbereich-Read funktioniert über cyl 2/3/4 (beide Köpfe, 1024 B),
+CRC besteht, `@OS.COM` lädt nach `0x0100` (≈125/128 echte Bytes in der ersten Spur).
+**Offen:** verbleibender Timeout `'U'` bei `cyl 2, head 1` (`RU;T,Si,Se=020101`); siehe
+[`K1520_architecture.md` §14.6b](K1520_architecture.md).
 
 ## 6. Neu genutzte ROM-/Hardware-Funktionen
 
