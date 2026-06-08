@@ -188,6 +188,10 @@ int main(int argc, char** argv) {
     int   dump_start        = -1;        // -d start:end: dump live RAM to file at end
     int   dump_end          = -1;
     const char* dump_path   = "/tmp/ram_dump.bin";
+    int   win_start         = -1;        // -w start:end: live ZVE1 step trace in a PC window
+    int   win_end           = -1;
+    int   win_cap           = 3000;      // -W <n>: max window-trace lines
+    int   win_count         = 0;
 
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
@@ -201,6 +205,10 @@ int main(int argc, char** argv) {
             sscanf(argv[++i], "%i:%i", &dump_start, &dump_end);
             if (i+1 < argc && argv[i+1][0] != '-') dump_path = argv[++i];
         }
+        else if (!strcmp(argv[i], "-w") && i+1 < argc) {  // -w 0x1D00:0x1F80
+            sscanf(argv[++i], "%i:%i", &win_start, &win_end);
+        }
+        else if (!strcmp(argv[i], "-W") && i+1 < argc) { win_cap = atoi(argv[++i]); }
         else                                        { disk_path = argv[i]; }
     }
     if (!disk_path) disk_path = "disk_b.img";
@@ -280,6 +288,20 @@ int main(int argc, char** argv) {
             fprintf(stderr, "  [step %3d] PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X  %s\n",
                     step_count, z.PC, z.SP, z.AF, z.BC, z.DE, z.HL, label ? label : "");
             ++step_count;
+        }
+
+        // ── Window step trace (-w): live ZVE1 instructions in a PC range ──────────
+        // Self-modifying loader stages are hard to disassemble statically; this logs
+        // every executed instruction in [win_start,win_end] (after boot) with its
+        // opcode bytes and registers so the live control flow can be followed.
+        if (win_start >= 0 && boot_reached && z.PC >= win_start && z.PC <= win_end
+            && win_count < win_cap) {
+            uint8_t b0 = machine.memReadDebug(z.PC);
+            uint8_t b1 = machine.memReadDebug(z.PC + 1);
+            uint8_t b2 = machine.memReadDebug(z.PC + 2);
+            fprintf(stderr, "  [w%4d] PC=%04X %02X %02X %02X  AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X\n",
+                    win_count, z.PC, b0, b1, b2, z.AF, z.BC, z.DE, z.HL, z.SP);
+            ++win_count;
         }
     });
 

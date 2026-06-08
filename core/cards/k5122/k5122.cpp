@@ -565,13 +565,20 @@ void K5122::doReadSector() {
         while (bps > 128 && size_code < 3) { bps >>= 1; ++size_code; }
     }
 
+    // Physical sector data size (128/256/512/1024) and resulting block stride.
+    // Data tracks of the cpa780 format use 1024-byte sectors (size_code 3); the
+    // CP/M filesystem incl. @OS.COM lives there.
+    sector_data_len_ = tf ? tf->bytes_per_sec : 128;
+    sector_block_    = 10 + sector_data_len_;   // 8 header + data + 2 data-CRC
+
     markDriveAccess(selected_drive_);
-    LOG_INFO("K5122", ">>> READ  D%d C=%u H=%u (track: %u sectors, size_code=%u)",
+    LOG_INFO("K5122", ">>> READ  D%d C=%u H=%u (track: %u sectors, %u bytes/sec, size_code=%u)",
               selected_drive_, static_cast<unsigned>(cyl),
-              static_cast<unsigned>(head), static_cast<unsigned>(nsec), size_code);
+              static_cast<unsigned>(head), static_cast<unsigned>(nsec),
+              static_cast<unsigned>(sector_data_len_), size_code);
 
     sector_buf_.clear();
-    sector_buf_.reserve(static_cast<size_t>(nsec) * 138u);
+    sector_buf_.reserve(static_cast<size_t>(nsec) * sector_block_);
     for (uint8_t sec = 1; sec <= nsec; ++sec) {
         auto data = drv.readSector(cyl, head, sec);
         sector_buf_.push_back(0xA1);       // sync / address-mark prefix (loader skips 0xA1)
@@ -711,10 +718,10 @@ void K5122::buildField() {
     field_pos_ = 0;
     if (sector_buf_.empty()) return;
 
-    const size_t nsec  = sector_buf_.size() / kSectorBlock;
+    const size_t nsec  = sector_buf_.size() / sector_block_;
     if (nsec == 0) return;
-    const size_t start = (field_sector_ % nsec) * kSectorBlock;
-    // 138-byte IDAM-field block layout: [A1 FE cyl head sec size][gap gap]<128 data>[CRC CRC]
+    const size_t start = (field_sector_ % nsec) * sector_block_;
+    // Block layout: [A1 FE cyl head sec size][gap gap]<N data>[CRC CRC], N = sector_data_len_.
     const uint8_t cyl  = sector_buf_[start + 2];
     const uint8_t head = sector_buf_[start + 3];
     const uint8_t sec  = sector_buf_[start + 4];
@@ -726,13 +733,13 @@ void K5122::buildField() {
         field_buf_ = {0xA1, 0xFE, cyl, head, sec, size};
         field_buf_.insert(field_buf_.end(), 18, kGapByte);
     } else {
-        // DATA field: address mark + 128 data bytes + CRC, then gap.
+        // DATA field: address mark + N data bytes + CRC, then gap (N = sector size).
         field_buf_ = {0xA1, 0xFB};
         const size_t data_off = start + 8;
-        for (size_t i = 0; i < 128; ++i) field_buf_.push_back(sector_buf_[data_off + i]);
-        // Real CRC-16 over the 128 data bytes so the loader's per-sector verify
-        // (CALL 0x0407 → CP B / CP C) passes.  Start word BF84H = normal boot path.
-        const uint16_t crc = loaderCrc16(&sector_buf_[data_off], 128, 0xBF, 0x84);
+        for (size_t i = 0; i < sector_data_len_; ++i)
+            field_buf_.push_back(sector_buf_[data_off + i]);
+        // Real CRC-16 over the data so the loader's per-sector verify passes.
+        const uint16_t crc = loaderCrc16(&sector_buf_[data_off], sector_data_len_, 0xBF, 0x84);
         field_buf_.push_back(static_cast<uint8_t>(crc >> 8));    // CRC high (→ CP B)
         field_buf_.push_back(static_cast<uint8_t>(crc & 0xFF));  // CRC low  (→ CP C)
         field_buf_.insert(field_buf_.end(), 8, kGapByte);
@@ -741,7 +748,7 @@ void K5122::buildField() {
 
 void K5122::advanceField() {
     if (sector_buf_.empty()) return;
-    const size_t nsec = sector_buf_.size() / kSectorBlock;
+    const size_t nsec = sector_buf_.size() / sector_block_;
     if (nsec == 0) return;
 
     if (!field_is_data_) {

@@ -1080,13 +1080,38 @@ Phasen). Der Index-Interrupt (Vektor `0xE8` → `0x0100`-ISR) feuert zwar dauerh
 **keinen Disk-Read** aus. Folge: Die Polling-Schleife `0x1C5B` wartet auf Daten (`[1E78]`), läuft
 in den Timeout → Fehler `'R'` → Endlos-Retry; ZVE1 pendelt zwischen `0x1F6C` und `0x1C5B`.
 
-**Nächster Schritt:** Den Lesemechanismus der dritten Stufe rekonstruieren — die `0x0100`-ISR
-und die Routinen um `0x1C5B`/`0x1E04`/`0x1DAB` aus dem Live-RAM disassemblieren und klären,
-**wie** sie einen Sektor anfordern (welche `OUT(10)`/`/STR`-Sequenz, welche K5122-Statusbits in
-`[1E78]` erwartet werden) und warum der Emulator dort keine Daten/keinen `/STR` erzeugt.
-**Latente Lücke:** `@OS.COM` liegt im Datenbereich (cpa780: cyl 3–79 = 5×**1024 B**);
-`K5122::buildField()` fixiert das Datenfeld noch auf **128 Byte** und muss auf `128<<size_code`
-erweitert werden, sobald der Datenbereich gelesen wird.
+**1024-Byte-Sektoren (UMGESETZT 2026-06-08):** Das ganze CP/M-Dateisystem inkl. `@OS.COM` liegt
+im Datenbereich (cpa780: cyl 3–79 = 5×**1024 B**). `K5122` modelliert die Blockgröße jetzt
+variabel: `sector_block_ = 10 + bytes_per_sec`, das Datenfeld liefert `bytes_per_sec` Bytes
+(`buildField`/`advanceField`/`doReadSector` nutzen `sector_block_`/`sector_data_len_`). Alle 40
+K5122/Boot-Tests bleiben grün. **Wird aber noch nicht ausgeübt:** die dritte Stufe liest weiterhin
+nur cyl 0/1/2 (128 B) und erreicht den Datenbereich nicht — der Stall liegt **davor**.
+
+**Befund (Live-Trace `-w`, [03F8]-Handshake, ZVE2-Histogramm 2026-06-08):**
+
+1. **Die Boot-Spur-Reads funktionieren.** Die dritte Stufe liest über die ROM-DMA-Mechanik
+   (`0x0165 CALL 0x0194` → ZVE2-Freigabe → `[03F8]`-Handshake → Warteschleife `0x0168`) erfolgreich
+   2 Sektoren der **SYL-Boot-Spuren** (cyl 0/1): `[03F8]` erreicht `0x03` (Completion, ZVE2 läuft
+   die ROM-Routine `0x0213→0x026E`), und `sub_01B6` (0x01B6) verifiziert die Signatur
+   `[0x0400..2]=53 59 4C ("SYL")` **erfolgreich**. `[03F3]` (Zielzylinder) ist nur 0x00/0x01.
+
+2. **Der Stall passiert danach** — die dritte Stufe wechselt **nicht** zum Datenbereich
+   (cyl 3+, 1024-B-Sektoren), wo Verzeichnis und `@OS.COM` liegen. Nach den 2 Boot-Reads bleibt
+   `[03F8]=3` stehen, ZVE1 pendelt in der selbstmodifizierenden Schleife `0x1F6C` und der
+   Timeout-Polling-Schleife `0x1C5B` (`[0x1E78]`), läuft in den Timeout `'U'` → Endlos-Retry.
+
+3. Die dritte Stufe besitzt eine **eigene ZVE2-DMA-Routine bei `0x1F7D`** (Disasm: `LD DE,FEA1`
+   IDAM/Sync-Marken, `OUT(10),0xBD`, port-0x16-Lesen — das ROM-`0x01DD`-Muster, vermutlich für
+   1024-B-Datensektoren). Sie installiert sie kurz via `[0x0000]=JP 0x1F7D`, `OUT(04)=0x00`
+   (ZVE2-Reset), `[0x0000]=JP 0x1803` — danach läuft `0x1F7D` aber **nie** (ZVE2-Histogramm zeigt
+   es nicht). Der genaue Übergang von „Boot-Reads OK" zu „eigener 1024-B-Read via 0x1F7D" und
+   warum ZVE2 dort nicht startet, ist noch nicht vollständig rekonstruiert.
+
+**Nächster Schritt:** Den ZVE1-Kontrollfluss **unmittelbar nach der 2. erfolgreichen Boot-Read-
+Completion** (ZVE1 verlässt `0x01B6`/`0x0174`) weiter verfolgen (`boot_trace -w` ab dort) — wohin
+verzweigt er, welche Bedingung führt zur `0x1F6C`-Warteschleife statt zum Seek auf cyl 3+ /
+Start der `0x1F7D`-Routine. Das 1024-B-Datenfeld ist im K5122 bereits vorbereitet, wird aber erst
+relevant, sobald cyl 3+ tatsächlich gelesen wird.
 
 ### 14.7a Beobachtung: ctrl_pio_ Port B (Vektor 0x60) [offen, evtl. obsolet]
 
@@ -1129,7 +1154,7 @@ schreibt Port 02H (/RES-SPA) zum Rücksetzen.
 
 | Lücke | Auswirkung |
 |---|---|
-| **`@OS.COM`-Ladephase** (dritte Stufe, CP/A-Bootsystem ab 0x1800) | Lädt `@OS.COM` interruptgesteuert (Warteschleife 0x1F6C, Vektor 0xE8) nach 0x0100, bleibt aber stecken (§14.6) — **aktuelle Arbeitsstelle** |
+| **`@OS.COM`-Ladephase** (dritte Stufe, CP/A-Bootsystem ab 0x1800) | Interruptgesteuerter Read läuft in Timeout `'U'`; Daten/`[0x1E78]`-Fortschritt fehlen (§14.6) — **aktuelle Arbeitsstelle**. 1024-B-Sektoren bereits umgesetzt, aber noch nicht erreicht |
 | ctrl_pio_ Port B Floppy-Events (`setBSTB`) | Event-ISR 0x0624 (Vektor 0x60) feuert nie; physikal. Signalquelle [offen], evtl. obsolet (§14.7a) |
 | Port 0xEE nicht dekodiert (vermutl. CTC-Alias 0x0E) | niedrige Priorität; 1 Schreibzugriff in 9M Zyklen, vermutl. Nebenwirkung |
 | Koppelbus-Kette (/IEI1–/IEO1) nicht verdrahtet | für Boot irrelevant; niedrigprioritäre BS-PIO-Interrupts nicht gereiht |

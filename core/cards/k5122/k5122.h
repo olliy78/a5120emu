@@ -356,8 +356,11 @@ private:
 
     // ─── Sector transfer buffer ──────────────────────────────────────────────
     /// One IDAM-field block per sector in the rotating track stream:
-    /// [A1 sync][FE IDAM][cyl][head][sec][size][gap][gap][128 data][CRC][CRC] = 138 bytes.
-    static constexpr size_t kSectorBlock = 138;
+    /// [A1 sync][FE IDAM][cyl][head][sec][size][gap][gap][N data][CRC][CRC]
+    /// = 10 + N bytes, where N = bytes-per-sector (128 / 256 / 512 / 1024).
+    /// Set per read in doReadSector() from the track format.
+    size_t sector_block_    = 138;   ///< stride per sector block (10 + sector_data_len_)
+    size_t sector_data_len_ = 128;   ///< physical sector data size (128<<size_code)
 
     std::vector<uint8_t> sector_buf_;       ///< Sector data for current read/write transfer
     size_t               buf_pos_      = 0; ///< Read index into sector_buf_
