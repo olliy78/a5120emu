@@ -162,7 +162,17 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
         // model ZVE2 would instead spin in L0696 and corrupt the handshake variables
         // ([07F8..07FC] via INIR).  Release /BUSRQ here so ZVE1 takes over, processes
         // the track, seeks and resets ZVE2 for the next track.
-        if (port == 0x13 && data == 0x03 && transferring_ && bus_.isBUSRQ()) {
+        //
+        // IMPORTANT: this only applies to the secondary loader's discrete 128B
+        // field reads.  The 3rd-stage CP/A loader also writes OUT(13H),03H during
+        // its 1024B continuous data-area read — there it is merely a ctrl-PIO
+        // Port-B interrupt-control word (IE=0), NOT a track end.  Treating it as a
+        // track end there clears transferring_ mid-read, after which ZVE2 reads
+        // PIO garbage (0xFF) instead of the field, spins its IDAM sync-search and
+        // the read times out ('U').  Gate on !stream_continuous_ so 1024B reads
+        // keep streaming.
+        if (port == 0x13 && data == 0x03 && transferring_ && bus_.isBUSRQ()
+                && !stream_continuous_) {
             transferring_ = false;
             bus_.releaseBUSRQ();
             LOG_DEBUG("K5122", "Track-Ende (ZVE2 L0696): BUSRQ freigegeben, ZVE1 übernimmt");
