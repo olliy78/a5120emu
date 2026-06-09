@@ -206,6 +206,20 @@ Seed `0xCDB4` statt `0xBF84`, über `[Datenmarke]+1024 Daten`). Anders als der
 Sekundär-Loader (diskrete `MK`/Bit-1-Felder). Vollständige Spezifikation des Emulator-
 Modells: [`K1520_architecture.md` §14.5b](K1520_architecture.md).
 
+**Struktur der ZVE2-Routine `0x1F7D` (2026-06-09 disassembliert):** liest **GENAU EINEN
+Sektor pro Aufruf** in den Staging-Puffer `0x21AE`. Register im Alt-Satz: gewünschter
+Sektor `L'` (Start `0x02` via `0x1F8E LD HL,0302`), Kopf `B'`, Cyl `C'`, Size `H'`(=3),
+Sync-Bytes `E'`=`A1`/`D'`=`FE`. Ablauf:
+* `0x1F99`/`0x1FA9`: ctrl-Write + **MK1-Toggle** (`0xB5`↔`0x85`), dann `0x1FB1` Sync-Suche.
+* `0x1FB7…0x1FD3`: Sync auf `A1 FE`, dann Verify `CP C/B/L/H` (cyl/head/sec/size). Bei
+  **Mismatch → `0x2023`**: dekrementiert `[0x1ED7]` (init `0x3C`=60), `JP NZ 0x1FA4` (Retry),
+  bei 0 → Fehler-Code 6. **Bei fehlendem `FE` → `0x1FA9`** (MK1-Toggle, Re-Sync) — dieser
+  Pfad dekrementiert **KEINEN** Zähler.
+* `0x2038…0x2061` (Datenlesen): nach IDAM-Match feste Gap-Reads, MK1, Datenmarken-Sync
+  (skip `A1`, konsumiere `FB`), dann `INIR`×4 = 1024 B + `INI`×2 CRC nach `0x21AE`.
+* Loop-Tail `0x2068`: Zähler `A'` (=1 ⇒ ein Sektor/Aufruf); bei `A'>1` `INC L` (`0x2070`,
+  nächster Sektor-ID) + `JP 0x1F9F`.
+
 **Read-Setup `0x1F36`** (byte-genau): `[0x0000]=JP 0x1F7D`, `OUT(04)=0x00` (ZVE2-Reset),
 `/STR`-Flanke → `doReadSector`, `[0x0000]=JP 0x1803` wiederhergestellt, Warteschleife
 `0x1F6C`. ZVE2 läuft `0x1F7D` aus PC=0 an, getriggert durch das `/BUSRQ` des `/STR`
@@ -216,10 +230,32 @@ Verify = `CALL 1E20`); CRC-Routine `sub_1E44`, CRC-Vergleich `sub_1E20` (`DE` vs
 `(IX+0/1)`); Timeout-/Status-Poll `0x1C5B` (`[0x1E78]`). Fehleranzeige `sub_1BF0`:
 `"RC;T,Si,Se=…"` — 2. Zeichen `'C'`=CRC (`0x1DE1`) / `'U'`=Timeout (`0x1E04`).
 
-**Aktueller Stand:** Datenbereich-Read funktioniert über cyl 2/3/4 (beide Köpfe, 1024 B),
-CRC besteht, `@OS.COM` lädt nach `0x0100` (≈125/128 echte Bytes in der ersten Spur).
-**Offen:** verbleibender Timeout `'U'` bei `cyl 2, head 1` (`RU;T,Si,Se=020101`); siehe
-[`K1520_architecture.md` §14.6b](K1520_architecture.md).
+**Aktueller Stand (2026-06-09):** Der **Seitenwahl-Fix** (K5122 Bit 2 statt Bit 5, Commit
+`ab59ee8`, s. [`doc/design/07_k5122_afs.md` §4](design/07_k5122_afs.md)) hat den früheren
+Timeout `'U'` bei `cyl 2, head 1` beseitigt — Kopf 1 wird jetzt korrekt gelesen. Das
+@OS.COM-Laden kommt damit deutlich weiter: ZVE2 liest **9 Sektoren erfolgreich** (cyl 2
+beide Köpfe + Anfang cyl 3, je `0x2038`/`INIR`).
+
+**Offen — neuer Frontier `RS;T,Si,Se=030002` (Fehlerzeichen `'S'`):**
+* `'S'` ist **kein CRC-Fehler** — der CRC-Retry-Zähler `[0x1ED5]` wird im Fehlerfall nie
+  angefasst; nur der **äußere** Read-Retry `[0x1ED6]` (init 5) zählt bei `Z1.PC=0x1DE9` von
+  5→0 herunter (Fehlerzyklen ~`8.8M / 9.8M / 10.8M / 13.1M / 14.9M`).
+* **Mechanismus (ZVE2-Seite, geklärt):** Nach dem 9. erfolgreichen Sektor hängt ZVE2
+  **unbegrenzt** in der Sync-Suche `0x1FA9…0x1FBF` und findet das `A1 FE` des 10.
+  gewünschten Sektors **nie**. Dieser Pfad dekrementiert keinen Zähler. (Der ggf. spät
+  sichtbare `0xFD`-/Gap-Spin ist nur ein Recalibrate-Symptom: ZVE1 sweept den Kopf bis
+  Track 0 auf die 128-B-System-Spuren, wo `stream_continuous_=false` und Over-Reads Gap
+  liefern.)
+* **Offen (ZVE1-Seite, zu klären):** Wie sequenziert ZVE1 cyl/head/sector über die
+  @OS.COM-Sektorfolge (Read-Setup `0x1F36`, Retry `0x1D3C…0x1DDE`, Quellen von `C'/B'/L'`)?
+  **Was fordert der 10. Read an** (der erste, der hängt) — existiert dieser Sektor (IDs 1–5,
+  beide Köpfe), oder läuft Sektor/Kopf/Cyl aus dem gültigen Bereich, bzw. fehlt ein
+  Seek/Kopfwechsel zwischen Read 9 und 10? Das ist der nächste konkrete Schritt.
+
+**Verworfener Fix-Versuch (nicht wiederholen):** „Kein Rewind beim Same-Track-`/STR`-Refresh
+im Continuous-Mode" (Guard in `doReadSector` über `built_cyl_/built_head_`) — feuerte nie,
+weil im Fehlerfenster gar keine `/STR`-Re-Strobes auftreten (nur MK1-Toggles), und brach 3
+K5122-Tests. Revertiert.
 
 ## 6. Neu genutzte ROM-/Hardware-Funktionen
 

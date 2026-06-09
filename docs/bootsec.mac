@@ -199,6 +199,14 @@
 ;  gesetzt, wenn die Lese-CRC nach mehreren Versuchen weiter abweicht; 'U', wenn
 ;  innerhalb des Timeouts keine Sektormarke gefunden wird.
 ;
+;  EMULATOR-FRONTIER (Stand 2026-06-09): Der Emulator bleibt bei 'S'
+;  (RS;T,Si,Se=030002) stehen — also "Sektor ist nicht zu finden", NICHT CRC.
+;  ZVE2 liest 9 Sektoren erfolgreich (cyl 2 beide Koepfe + Anfang cyl 3) und
+;  haengt dann unbegrenzt in der IDAM-Sync-Suche (DATA_READ, 1FA9H..1FBFH): es
+;  findet das A1 FE des 10. gewuenschten Sektors nie. Offene Frage ist die
+;  ZVE1-seitige Sektor-Sequenzierung (was fordert der 10. Read an, existiert er,
+;  fehlt ein Seek/Kopfwechsel?). Details: doc/analyse_bootloader.md §7, CLAUDE.md.
+;
 ; SYMBOLTABELLE (erschlossen aus Disassemblierung):
 ;  0080H   WBOOT_JP    Warmstart-Vektor (JP 1800H)
 ;  0105H   CCP_PATCH   CCP-Patchbereich (NOPs vor Sprungtabelle)
@@ -226,7 +234,15 @@
 ;                      + Sektordaten
 ;  1E44H   CRC16_DE    CRC-16-Schritt wie CRC16, aber Registerpaar DE
 ;  1F7DH   DATA_READ   Lese-/Verify-Routine fuer 1024-B-Datensektoren
-;                      (IDAM-Verify cyl/head/sec/size, dann fortlaufende Daten)
+;                      (IDAM-Verify cyl/head/sec/size, dann fortlaufende Daten).
+;                      Liest GENAU EINEN Sektor je Aufruf in den Staging-Puffer
+;                      21AEH. Gewuenschter Sektor = L' (Alt-Satz, Start 02H via
+;                      1F8EH LD HL,0302H), Kopf = B', Cyl = C', Size = H'(=3).
+;                      Sync auf A1 FE (E'=A1/D'=FE); Verify-Mismatch -> 2023H
+;                      (dekr. [1ED7H] init 3CH, sonst Fehler 6); fehlendes FE ->
+;                      1FA9H (MK1-Toggle B5H/85H, Re-Sync, KEIN Zaehler); Daten ab
+;                      2038H (INIR x4 = 1024B + CRC); Loop-Tail 2068H: bei Anzahl
+;                      >1 INC L (2070H) fuer den naechsten Sektor.
 ;
 ; ======================================================================
 ; BEZUG ZU CPA-QUELLEN (cpa_src/)

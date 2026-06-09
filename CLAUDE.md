@@ -155,10 +155,10 @@ full secondary loader runs — ZVE2 reads whole tracks across cyl 0/1/2, ZVE1 CR
 sector, `[07FC]` counts to 0, and the loader jumps to `0x0880` (`JP 0x1800`) into the **third
 stage (CP/A boot system)**. The screen shows `CP/A-Bootsystem, Version 05.04.88 laedt @OS.COM`.
 
-### Third stage — @OS.COM read from the 1024B data area (current frontier, 2026-06-08)
+### Third stage — @OS.COM read from the 1024B data area (current frontier, 2026-06-09)
 
-The third stage reads `@OS.COM` from the **1024B data area**. Three fixes got it reading and
-loading `@OS.COM` to `0x0100` (all 94 K5122/Boot/K2526 tests green):
+The third stage reads `@OS.COM` from the **1024B data area**. Four fixes got it reading and
+loading `@OS.COM` (all K5122/Boot/K2526 tests green, 111/111):
 
 1. **ZVE2-from-reset** (`K2526::zve2StartFromReset`, committed 9af4912). The stage poises ZVE2 by
    `[0x0000]=JP 0x1F7D` + `OUT(04)=0x00` (reset) then immediately restores `[0x0000]`, never doing
@@ -180,17 +180,56 @@ loading `@OS.COM` to `0x0100` (all 94 K5122/Boot/K2526 tests green):
    `loaderCrc16`** but inits **`0xCDB4`** (not 0xBF84) over `[data-mark]+data`, so the DATA field CRC is
    `loaderCrc16([0xFB]+data, 0xCDB4)`. (Verified `loaderCrc16([4E]+4E×1024, 0xCDB4)=0x87B3`.)
 
-**Result:** the 3rd stage reads the data area across cyl 2/3/4 (both heads, 1024B), CRC passes, `@OS.COM`
-loads to `0x0100`. **Remaining open:** a timeout `'U'` (`RU;T,Si,Se=020101`) at **cyl 2 head 1** — the
-head-1 (or a later) read makes no progress (`[0x1E78]` poll at `0x1C5B` times out). Key 3rd-stage addrs:
-read/verify `0x1F7D`/`0x2038`, CRC `sub_1E44`, CRC-compare `sub_1E20` (DE vs (IX+0/1)), retry loop
-`0x1D3C–0x1DDE`, error display `sub_1BF0` ('C'=CRC@`0x1DE1`, 'U'=timeout@`0x1E04`). Repro:
-`boot_trace -L /dev/null -c 40000000 -p 38000000 disks/cpadisk01.img` (use big `-c` AND `-p`).
+4. **K5122 side-select = ctrl Port A bit2 (/FR), NOT bit5 (committed `ab59ee8`).** bit5 (MR/SD) is
+   step DIRECTION only and toggles with the MK/MK1 re-sync strobes; using it as side-select flipped the
+   head mid-transfer so head-1 reads served head-0 data. Now `current_head_ = (data & 0x04) ? 0 : 1;`
+   latched ONLY at the `/STR` edge. This removed the `RU;…=020101` (cyl2 head1) timeout. See
+   `doc/design/07_k5122_afs.md §4` (signal table corrected) and `tests/cpp/test_k5122.cpp`
+   (`ReadStrobe_LatchesHeadFromBit2`, `Continuous1024_Head1_*`) + `test_k2526.cpp`
+   (`K2526ZVE2FloppyChain` — real ZVE2 reads K5122 field via the bus, head0 & head1).
+
+**Result (2026-06-09):** with the bit2 fix the 3rd stage reads cyl 2 (both heads) + start of cyl 3 —
+ZVE2 reads **9 sectors** successfully. **Current frontier: `RS;T,Si,Se=030002` ('S', NOT a CRC error).**
+DIAGNOSED (ZVE2 side): after the 9th sector ZVE2 spins **unbounded** in its IDAM sync-search
+`0x1FA9–0x1FBF` and never finds the `A1 FE` of the 10th wanted sector — that path decrements no counter
+(`[0x1ED7]` only counts on a *found-but-mismatched* IDAM at `0x2023`; `[0x1ED5]` CRC-retry is never
+touched → confirms not CRC). ZVE1's outer retry `[0x1ED6]` (init 5) then exhausts → 'S'. The routine
+`0x1F7D` reads ONE sector/call to staging buffer `0x21AE`, wanted sector `L'` (start 2), head `B'`,
+cyl `C'`. **OPEN (ZVE1 side — next concrete step):** how does ZVE1 sequence cyl/head/sector across the
+@OS.COM sectors (read-setup `0x1F36`, retry `0x1D3C–0x1DDE`, sources of `C'/B'/L'`), and **what does the
+10th read request** — does that sector exist (IDs 1–5, both heads) or does sector/head/cyl run out of
+range / is a seek or head-switch missing between read 9 and 10? **Tried & reverted (don't repeat):** a
+"no-rewind on same-track `/STR` refresh" guard in `doReadSector` — never fired (no `/STR` re-strobes in
+the failure window, only MK1 toggles) and broke 3 K5122 tests.
+Key 3rd-stage addrs: read/verify `0x1F7D`/`0x2038`, IDAM-mismatch `0x2023` (`[0x1ED7]`), data read
+`0x2038–0x2061` (INIR×4=1024B), loop-tail `0x2068` (`INC L`), CRC `sub_1E44` (seed 0xCDB4), CRC-compare
+`sub_1E20`, retry `0x1D3C–0x1DDE` (`[0x1ED6]`@`0x1DE9`), error display `sub_1BF0` ('C'=CRC@`0x1DE1`,
+'S'@`0x1E00`, 'U'=timeout@`0x1E04`). Repro: `boot_trace -L /dev/null -c 40000000 -p 38000000
+disks/cpadisk01.img` (big `-c` AND `-p`); ZVE2 instr trace: `-z 0x1F7D:0x2076 -W <n>`; RAM dump of the
+loaded stage: `-d 0x1C00:0x2080 /tmp/loader.bin` then `tools/z80_disasm2.py --org 0x1C00 --entry 0x1F7D`.
 Full model: `doc/K1520_architecture.md` §14.5/§14.5b/§14.6/§14.6a/§14.6b; `doc/analyse_bootloader.md` §7.
 
 `boot_trace` post-boot tracing: `-p <cycles>` continues past `0x0437`; the summary then
 adds an I/O-port read/write histogram, VRAM write count + range, a loaded-code PC
 histogram, and an 80-col text dump of VRAM (`0xF800`) so the screen banner is visible.
+
+## Subagenten / Delegation an günstigere Modelle
+
+Projektspezifische Subagenten liegen in `.claude/agents/`. **Delegiere abgrenzbare Teilaufgaben
+an diese Agenten, statt sie selbst zu erledigen** — das spart Kosten (Haiku/Sonnet statt Opus)
+und hält den Hauptkontext frei. Faustregel: kontextarme, gut umrissene Arbeit auslagern; eng mit
+dem laufenden Arbeitsstand verwobene Arbeit selbst behalten.
+
+| Agent | Modell | Wofür |
+|-------|--------|-------|
+| `log-trace-analyzer` | haiku | Auswertung großer `boot_trace`-/Emulator-Logs, Trace-/ctest-Ausgaben, VRAM-/Port-Histogramme — liefert nur die Schlussfolgerung. |
+| `code-explorer`      | haiku | Read-only Code-/Symbol-/Fundstellen-Suche über `src/` + `core/` + `tests/` + `tools/`. |
+| `test-runner`        | haiku | Bauen + `a5120emu_test` / `ctest` ausführen, Pass/Fail knapp berichten, gegen bekannte pre-existing Failures abgrenzen. |
+| `cpp-coder`          | sonnet | Umrissene C++-Implementierungen in `core/`/`src/` + zugehörige GoogleTests, im Stil der Umgebung. |
+| `boot-disasm-analyst`| sonnet | Z80-Disassembly + ZRE-Boot-ROM/ZVE1↔ZVE2-DMA-Analyse mit den `tools/`-Werkzeugen. |
+
+Konkret heißt das u.a.: breite Suchen → `code-explorer`; Log-/Trace-Auswertung → `log-trace-analyzer`;
+Build-&-Test-Durchläufe → `test-runner`. Opus bleibt für Orchestrierung, Entwurf und Entscheidungen.
 
 ## Conventions
 
