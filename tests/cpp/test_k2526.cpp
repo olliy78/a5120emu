@@ -49,9 +49,14 @@
  */
 
 #include <gtest/gtest.h>
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include "core/cards/k2526/k2526.h"
 #include "core/cards/k2526/rom_data.h"
 #include "core/cards/k3526/k3526.h"
+#include "core/cards/k5122/k5122.h"
+#include "core/peripherals/floppy_drive/format_parser.h"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1130,4 +1135,122 @@ TEST(K2526, ZVE2_Port04_Bit1_WhileRunning_RezeroesPC)
     EXPECT_EQ(card.zve2().PC, 0x0000u)
         << "OUT(04H) bit0=1 must restart ZVE2 from PC=0 every round";
     EXPECT_FALSE(card.isZVE2InReset());
+}
+
+// ─── K5122 → K1520 bus → ZVE2 data chain (floppy DMA read path) ───────────────
+//
+// The whole boot DMA chain — K5122 streams a sector field on port 0x16, the
+// K1520 bus routes the IN to it, and the REAL ZVE2 Z80 reads it — was only ever
+// exercised by the full multi-million-cycle boot, never as a focused unit test.
+// (The Continuous1024 K5122 tests drive ioRead(0x16) directly; the K2526 ZVE2
+// tests step ZVE2 over the boot ROM.)  This fixture wires K2526(+ZVE2) + K3526
+// RAM + K5122 on one bus and runs an actual ZVE2 program that reads port 0x16,
+// proving the field reaches ZVE2 byte-for-byte via the bus — the path where the
+// head-select (bit2) bug lived.
+
+namespace {
+std::string makeCpa780Image() {
+    auto fmts = FormatParser::builtinFormats();
+    auto it = std::find_if(fmts.begin(), fmts.end(),
+                           [](const DiskFormat& f){ return f.name == "cpa780"; });
+    auto path = (std::filesystem::temp_directory_path() / "k2526_chain_cpa780.img").string();
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    std::vector<uint8_t> buf(it->totalBytes(), 0xE5);
+    f.write(reinterpret_cast<const char*>(buf.data()), static_cast<std::streamsize>(buf.size()));
+    return path;
+}
+}  // namespace
+
+class K2526ZVE2FloppyChain : public ::testing::Test {
+protected:
+    K1520Bus bus;
+    K2526    zre{bus};
+    K3526    ops;
+    K5122    afs{bus};
+    DiskFormat fmt = []{
+        auto fmts = FormatParser::builtinFormats();
+        return *std::find_if(fmts.begin(), fmts.end(),
+                             [](const DiskFormat& f){ return f.name == "cpa780"; });
+    }();
+    std::string img;
+
+    void SetUp() override {
+        ops.attachToBus(bus);          // RAM 0x0000–0xFFFF
+        zre.attachToBus(bus);          // ports 0x00–0x0F (+ ZVE1/ZVE2)
+        bus.registerIO(&afs, 0x10, 9); // K5122 ports 0x10–0x18
+        zre.powerOn();
+        bus.ioWrite(BSPIO_PORTB_DATA, PORTB_SAFE_ROMOFF);  // ROM off → 0x0000 is RAM
+        img = makeCpa780Image();
+        ASSERT_TRUE(afs.mountDisk(0, img, fmt));
+        afs.ioWrite(0x18, 0x00);       // select drive 0
+    }
+    void TearDown() override { if (!img.empty()) std::filesystem::remove(img); }
+
+    void seekToCyl(int target) {
+        for (int c = 0; c < target; ++c) {
+            afs.ioWrite(0x10, 0xFF); afs.ioWrite(0x10, 0x7F); afs.ioWrite(0x10, 0xFF);
+        }
+    }
+};
+
+/**
+ * @test K2526ZVE2FloppyChain/ZVE2ReadsK5122FieldViaBus
+ * @brief A real ZVE2 program (IN A,(16H) loop) reads the K5122's continuous-read
+ *   IDAM field through the K1520 bus, byte-for-byte.
+ * @details Seek to the cyl-2 1024B data track, /STR a head-0 read (bit2=1) so the
+ *   K5122 builds the field and asserts BUSRQ, then release ZVE2 (PC=0) and step
+ *   it.  The ZVE2 code reads 6 bytes from port 0x16 into RAM 0x0100.  They must be
+ *   the IDAM [A1 FE cyl head sec size] = A1 FE 02 00 01 03 — exercising
+ *   K5122.ioRead(0x16) → bus.ioRead → ZVE2.readPort end to end.
+ */
+TEST_F(K2526ZVE2FloppyChain, ZVE2ReadsK5122FieldViaBus) {
+    seekToCyl(2);
+
+    // ZVE2 program at 0x0000: LD HL,0x0100; LD B,6; (IN A,(16);LD(HL),A;INC HL;DJNZ); HALT
+    const uint8_t prog[] = { 0x21,0x00,0x01, 0x06,0x06, 0xDB,0x16, 0x77, 0x23, 0x10,0xFA, 0x76 };
+    for (size_t i = 0; i < sizeof(prog); ++i)
+        bus.memWrite(static_cast<uint16_t>(i), prog[i]);
+
+    // /STR a head-0 read (bit3 falling, bit2=1 head 0, /WE=1): K5122 builds the
+    // field, sets transferring_, asserts BUSRQ.
+    afs.ioWrite(0x10, 0xFF);
+    afs.ioWrite(0x10, 0xF7);   // /STR=0, bit2=1 (head 0)
+    ASSERT_TRUE(bus.isBUSRQ());
+
+    bus.ioWrite(0x04, 0x01);   // release ZVE2 → runs from PC=0
+    for (int i = 0; i < 80 && !zre.zve2().halted; ++i) zre.zve2Step();
+
+    EXPECT_EQ(bus.memRead(0x0100), 0xA1) << "IDAM sync byte via ZVE2";
+    EXPECT_EQ(bus.memRead(0x0101), 0xFE) << "IDAM address mark";
+    EXPECT_EQ(bus.memRead(0x0102), 0x02) << "cylinder (2)";
+    EXPECT_EQ(bus.memRead(0x0103), 0x00) << "head (0)";
+    EXPECT_EQ(bus.memRead(0x0104), 0x01) << "sector (1)";
+    EXPECT_EQ(bus.memRead(0x0105), 0x03) << "size code (1024B)";
+}
+
+/**
+ * @test K2526ZVE2FloppyChain/ZVE2ReadsHead1FieldViaBus
+ * @brief Same chain for HEAD 1 (the @OS.COM side): bit2=0 must make the K5122
+ *   serve a head-1 IDAM to ZVE2 — the exact path the bit2 side-select fix
+ *   repaired (head 1 is first used by @OS.COM).
+ * @par Pass criterion  ZVE2 reads IDAM head byte == 1 from cyl 2.
+ */
+TEST_F(K2526ZVE2FloppyChain, ZVE2ReadsHead1FieldViaBus) {
+    seekToCyl(2);
+
+    const uint8_t prog[] = { 0x21,0x00,0x01, 0x06,0x06, 0xDB,0x16, 0x77, 0x23, 0x10,0xFA, 0x76 };
+    for (size_t i = 0; i < sizeof(prog); ++i)
+        bus.memWrite(static_cast<uint16_t>(i), prog[i]);
+
+    afs.ioWrite(0x10, 0xFF);
+    afs.ioWrite(0x10, 0xF3);   // /STR=0, bit2=0 (head 1)
+    ASSERT_TRUE(bus.isBUSRQ());
+
+    bus.ioWrite(0x04, 0x01);
+    for (int i = 0; i < 80 && !zre.zve2().halted; ++i) zre.zve2Step();
+
+    EXPECT_EQ(bus.memRead(0x0100), 0xA1) << "IDAM sync";
+    EXPECT_EQ(bus.memRead(0x0101), 0xFE) << "IDAM mark";
+    EXPECT_EQ(bus.memRead(0x0102), 0x02) << "cylinder (2)";
+    EXPECT_EQ(bus.memRead(0x0103), 0x01) << "head (1) — bit2=0 side-select via the bus";
 }

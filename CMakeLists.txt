@@ -239,7 +239,7 @@ if(BUILD_K1520)
         target_include_directories(k1520_test_k7024 PRIVATE ${CMAKE_SOURCE_DIR})
 
         add_executable(k1520_test_k2526 tests/cpp/test_k2526.cpp)
-        target_link_libraries(k1520_test_k2526 PRIVATE k1520_k2526 k1520_k3526 GTest::gtest_main)
+        target_link_libraries(k1520_test_k2526 PRIVATE k1520_k2526 k1520_k3526 k1520_k5122 k1520_floppy GTest::gtest_main)
         target_include_directories(k1520_test_k2526 PRIVATE ${CMAKE_SOURCE_DIR})
 
         add_executable(k1520_test_k8025 tests/cpp/test_k8025.cpp)
