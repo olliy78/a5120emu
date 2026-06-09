@@ -733,13 +733,14 @@ static void seekToCyl(K5122& card, int target) {
 }
 
 // Issue a read /STR falling edge (read mode) selecting `head` → fresh
-// doReadSector.  MR/SD (bit5): 1 → head 0, 0 → head 1.  Like the real loader,
-// the /STR pulse keeps every other bit (incl. the head select) stable and only
-// toggles /STR (bit3); the "release" word therefore preserves the head bit.
+// doReadSector.  SIDE-SELECT is bit2 (/FR): bit2=1 → head 0, bit2=0 → head 1
+// (NOT bit5, which is the step-direction/MK signal and toggles during re-sync).
+// Like the real loader, the /STR pulse keeps every other bit (incl. the side
+// select) stable and only toggles /STR (bit3); the "release" word preserves it.
 static void strobeRead(K5122& card, int head = 0) {
-    const uint8_t hi   = (head == 0) ? 0xFF : 0xDF;  // /STR=1, head select held
-    const uint8_t low  = (head == 0) ? 0xF7 : 0xD7;  // /STR=0, head select held
-    card.ioWrite(0x10, hi);         // /STR=1 (head bit set)
+    const uint8_t hi   = (head == 0) ? 0xFF : 0xFB;  // /STR=1; bit2: head0=1, head1=0
+    const uint8_t low  = (head == 0) ? 0xF7 : 0xF3;  // /STR=0; bit2 held
+    card.ioWrite(0x10, hi);         // /STR=1 (side-select bit2 set)
     card.ioWrite(0x10, low);        // /STR=0 → doReadSector
     card.ioWrite(0x10, hi);         // /STR=1 (head bit preserved)
 }
@@ -962,13 +963,14 @@ TEST_F(K5122Test, Step_Outward_DecrementsCylinder_ClampsAtTrack0) {
 }
 
 /**
- * @test K5122Test/ReadStrobe_LatchesHeadFromBit5
- * @brief A read /STR latches the side-select (MR/SD bit5) into the served IDAM:
- *   bit5=1 → head 0, bit5=0 → head 1.  Directly guards the head-select path that
- *   the @OS.COM read (first-ever head-1 access) depends on.
- * @par Pass criterion  IDAM head byte (field[3]) == the head selected by the /STR.
+ * @test K5122Test/ReadStrobe_LatchesHeadFromBit2
+ * @brief A read /STR latches the side-select from bit2 (/FR) into the served
+ *   IDAM: bit2=1 → head 0, bit2=0 → head 1.  (bit5 is the step-direction/MK
+ *   signal, NOT the side select.)  Directly guards the head-select path the
+ *   @OS.COM read (first-ever head-1 access) depends on.
+ * @par Pass criterion  IDAM head byte (field[3]) == the head selected by bit2.
  */
-TEST_F(K5122Test, ReadStrobe_LatchesHeadFromBit5) {
+TEST_F(K5122Test, ReadStrobe_LatchesHeadFromBit2) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
     card.ioWrite(0x18, 0x00);
@@ -977,25 +979,25 @@ TEST_F(K5122Test, ReadStrobe_LatchesHeadFromBit5) {
     seekToCyl(card, 2);
 
     strobeRead(card, /*head=*/0);
-    EXPECT_EQ(readBytes(card, 6)[3], 0) << "/STR with bit5=1 must serve head 0";
+    EXPECT_EQ(readBytes(card, 6)[3], 0) << "/STR with bit2=1 must serve head 0";
 
     strobeRead(card, /*head=*/1);
-    EXPECT_EQ(readBytes(card, 6)[3], 1) << "/STR with bit5=0 must serve head 1";
+    EXPECT_EQ(readBytes(card, 6)[3], 1) << "/STR with bit2=0 must serve head 1";
     std::filesystem::remove(path);
 }
 
 /**
  * @test K5122Test/Continuous1024_Head1_MK1ToggleKeepsHead1
- * @brief SUSPECT-2 guard: the 3rd-stage loader re-syncs the 1024B data with MK1
- *   toggles 0xB5<->0x85.  0xB5 has bit5=1 (head 0), 0x85 has bit5=0 (head 1):
- *   the toggle flips the emulator's side-select latch on EVERY ctrl-Port-A write
- *   (k5122.cpp updates current_head_ unconditionally).  These toggles hold /STR
- *   low (no falling edge → no doReadSector), so the in-progress head-1 field must
- *   keep serving HEAD-1 data and must never switch to head-0 data.
- * @par Pass criterion  After 20 MK1 toggles mid-read, the streamed data contains
- *   the head-1 marker byte and never the head-0 marker byte.
+ * @brief Side-select must follow bit2 (/FR), NOT bit5: the 3rd-stage loader
+ *   re-syncs the 1024B data with MK toggles 0xB1<->0x81 that flip bit5 (and bit4)
+ *   every write while holding the side-select bit2=0 (head 1) stable.  Driving
+ *   the head off bit5 made these toggles flip current_head_ to head 0 mid-read,
+ *   so the cyl2/head1 @OS.COM read served head-0 data → IDAM never matched →
+ *   timeout 'U' (the real boot bug; head 1 is first used by @OS.COM).
+ * @par Pass criterion  After 20 bit5-flipping MK toggles mid-read (bit2 held 0),
+ *   the streamed data still contains the head-1 marker byte and never head-0's.
  */
-TEST_F(K5122Test, Continuous1024_Head1_MK1ToggleKeepsHead1) {
+TEST_F(K5122Test, Continuous1024_Head1_MKToggleKeepsHead1) {
     auto path = tmpImage();
     ASSERT_TRUE(card.mountDisk(0, path, fmt));
     card.ioWrite(0x18, 0x00);
@@ -1003,17 +1005,17 @@ TEST_F(K5122Test, Continuous1024_Head1_MK1ToggleKeepsHead1) {
     writeDistinctDataTrack(card, 2, 1);
     seekToCyl(card, 2);
 
-    // Start a head-1 read and HOLD /STR low (as the real read does).
-    card.ioWrite(0x10, 0xDF);   // /STR=1, bit5=0 (head 1)
-    card.ioWrite(0x10, 0xD7);   // /STR=0 falling → doReadSector(head 1), held low
+    // Start a head-1 read (side-select bit2=0) and HOLD /STR low.
+    card.ioWrite(0x10, 0xFB);   // /STR=1, bit2=0 (head 1)
+    card.ioWrite(0x10, 0xF3);   // /STR=0 falling → doReadSector(head 1), held low
     ASSERT_EQ(readBytes(card, 6)[3], 1) << "head-1 IDAM expected";
 
-    // MK1 re-sync toggles with /STR held low (bit3=0 in both → no /STR edge):
-    // 0xB5 = bit5=1 (would latch head 0), 0x85 = bit5=0 (head 1).
+    // MK re-sync toggles, /STR held low (bit3=0), side-select bit2=0 held (head 1).
+    // 0xB1 has bit5=1, 0x81 has bit5=0 — the bit5 flip must NOT change the head.
     std::vector<uint8_t> streamed;
     for (int i = 0; i < 20; ++i) {
-        card.ioWrite(0x10, 0xB5); streamed.push_back(card.ioRead(0x16));
-        card.ioWrite(0x10, 0x85); streamed.push_back(card.ioRead(0x16));
+        card.ioWrite(0x10, 0xB1); streamed.push_back(card.ioRead(0x16));
+        card.ioWrite(0x10, 0x81); streamed.push_back(card.ioRead(0x16));
     }
     for (auto b : readBytes(card, 64)) streamed.push_back(b);
 
@@ -1021,7 +1023,7 @@ TEST_F(K5122Test, Continuous1024_Head1_MK1ToggleKeepsHead1) {
     const uint8_t h0 = dataByte(2, 0, 1);   // head-0 data marker
     bool sawH1 = false, sawH0 = false;
     for (uint8_t b : streamed) { if (b == h1) sawH1 = true; if (b == h0) sawH0 = true; }
-    EXPECT_TRUE(sawH1)  << "head-1 data must still stream after MK1 head-bit toggles";
-    EXPECT_FALSE(sawH0) << "head-0 data must NOT appear — head latch corrupted by MK1 toggle";
+    EXPECT_TRUE(sawH1)  << "head-1 data must still stream after bit5 MK toggles";
+    EXPECT_FALSE(sawH0) << "head-0 data must NOT appear — head wrongly driven off bit5";
     std::filesystem::remove(path);
 }

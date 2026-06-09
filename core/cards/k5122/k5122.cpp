@@ -10,10 +10,14 @@
  * @code
  *   bit 0  /WE   – Write Enable (active low)
  *   bit 1  MK    – Mark
- *   bit 2  /FR   – Fault Reset (active low)
+ *   bit 2  /FR   – Fault Reset; ALSO the side-select latched at /STR
+ *                  (1 → head 0, 0 → head 1).  Empirically verified against the
+ *                  3rd-stage @OS.COM read (head-0 strobes carry bit2=1, head-1
+ *                  strobes bit2=0, matching the loader's expected head).
  *   bit 3  /STR  – Start / Strobe (active low, edge-triggered)
  *   bit 4  MK1   – Mark 1
- *   bit 5  MR/SD – Step direction / side select (0 = inward / side 1)
+ *   bit 5  MR/SD – Step DIRECTION only (1 = inward; sampled on the /ST edge).
+ *                  NOT the side select — it toggles with the MK re-sync strobes.
  *   bit 6  /HL   – Head Load (active low)
  *   bit 7  /ST   – Step pulse (active low, edge-triggered)
  * @endcode
@@ -100,6 +104,11 @@ uint8_t K5122::ioRead(uint8_t port) {
                 field_sector_ = nsec ? (field_sector_ + 1) % nsec : 0;
                 buildField();
                 result = field_buf_.empty() ? kGapByte : field_buf_[field_pos_++];
+                // [DBG] served IDAM vs loader's expected (cyl[1F8C]/head[1F8D]/sec[1F8F])
+                if (field_buf_.size() >= 5)
+                    LOG_WARN("K5122", "[DBG] AUTOSTEP→served C=%u H=%u S=%u | loader wants C=%u H=%u S=%u",
+                             field_buf_[2], field_buf_[3], field_buf_[4],
+                             bus_.memRead(0x1F8C), bus_.memRead(0x1F8D), bus_.memRead(0x1F8F));
             } else if (field_pos_ < field_buf_.size()) {
                 result = field_buf_[field_pos_++];
                 LOG_TRACE("K5122", "Feld[%zu/%zu] S%zu %s => 0x%02X",
@@ -398,6 +407,22 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
     if ((prev_ctrl_a_ & 0x08) && !(data & 0x08)) {
         bool is_write = !(data & 0x01);  // /WE=0 means write
 
+        // Side-select is bit2 (/FR), NOT bit5 (MR/SD): bit2=1 → head 0,
+        // bit2=0 → head 1.  Latched HERE, only at the /STR strobe edge.  Two facts
+        // forced this (verified by tracing the 3rd-stage @OS.COM read, which is the
+        // first ever to use head 1):
+        //   (a) the loader's read strobes for head 0 carry bit2=1 (0xA5/0xB5) and
+        //       for head 1 carry bit2=0 (0xA1/0xB1/0x81), perfectly matching its
+        //       expected-head [1F8D]; bit5 is 1 in BOTH and only encodes the
+        //       step-direction / MK signal, which toggles during re-sync.
+        //   (b) bit2 is stable for the whole read, bit5 toggles with every MK
+        //       strobe.  Driving the head off bit5 (and updating it on every ctrl
+        //       write) made the MK toggles flip current_head_ to head 0 mid-read,
+        //       so the cyl2/head1 read rebuilt head 0 → IDAM never matched → retry
+        //       storm → timeout 'U' → error-HALT.  Latch once per strobe (covers
+        //       read-start, read-refresh, write-start, write-commit).
+        current_head_ = (data & 0x04) ? 0 : 1;
+
         if (bus_.isBUSRQ()) {
             if (is_write) {
                 // ZVE2 write-commit: OTIR finished, commit sector and release bus.
@@ -406,10 +431,9 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
                 bus_.releaseBUSRQ();
                 LOG_DEBUG("K5122", "/STR ZVE2-Commit SCHREIBEN abgeschlossen, BUSRQ freigegeben");
             } else {
-                // ZVE2 read-refresh: /STR re-strobed at a track boundary — reload
-                // the rotating track and present sector 0's IDAM field again.  The
-                // mid-sector field advances (IDAM→DATA→next IDAM) are driven by the
-                // MK strobe (see below), not by /STR.
+                // ZVE2 read-refresh: /STR re-strobed (e.g. head switch cyl2 head0→
+                // head1 for @OS.COM, or a new sector). Rebuild the track for the
+                // head latched above.  Mid-sector field advances are MK-driven.
                 doReadSector();
                 LOG_DEBUG("K5122", "/STR ZVE2-Lese-Refresh: Spur neu geladen, BUSRQ gehalten");
             }
@@ -417,14 +441,6 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
             // ZVE1 triggering a new DMA transfer
             dma_is_write_ = is_write;
             if (!is_write) {
-                // The MR/SD bit (bit 5) of THIS start word is the side-select for
-                // the read.  Latch the head *before* building the track stream so
-                // the IDAM headers carry the correct side.  Previously current_head_
-                // was only updated after doReadSector() (below), so a read started
-                // by 0xA1 (bit5=1 → head 0) still streamed the stale head from the
-                // preceding control word — the loader's ZVE2 routine then rejected
-                // every IDAM (head mismatch) and span forever in its retry loop.
-                current_head_ = (data & 0x20) ? 0 : 1;
                 doReadSector();   // fill sector_buf_ immediately for ZVE2 INIR
             } else {
                 sector_buf_.clear();  // ZVE2 will fill via port 0x14 writes
@@ -445,9 +461,9 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
     if (transferring_ && !write_mode_ && !(prev_ctrl_a_ & 0x02) && (data & 0x02))
         advanceField();
 
-    // Update head/side select (bit 5 doubles as side select when not stepping).
-    // MR/SD=0 → side 1 (head 1); MR/SD=1 → side 0 (head 0).
-    current_head_ = (data & 0x20) ? 0 : 1;
+    // NOTE: current_head_ (side-select) is latched only at the /STR strobe above,
+    // NOT here on every write — otherwise the loader's MK1 re-sync toggles
+    // (0xB5/0x85, which carry bit5) would flip the head mid-transfer.
 
     prev_ctrl_a_ = data;
     updateStatusPortB();
