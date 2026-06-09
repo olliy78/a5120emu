@@ -929,3 +929,99 @@ TEST_F(K5122Test, Continuous1024_CrossCylinderWithSeek) {
     }
     std::filesystem::remove(path);
 }
+
+// ─── 12. Control-line semantics: step direction + head-select latch ───────────
+//
+// These cover the ctrl-Port-A control lines that were only exercised indirectly
+// before (step OUTWARD was never tested; the head-select latch only via the
+// continuous-read tests).  head 1 is first used by the @OS.COM data read, so the
+// head-select path had no direct regression guard.
+
+/**
+ * @test K5122Test/Step_Outward_DecrementsCylinder_ClampsAtTrack0
+ * @brief Outward /ST pulses (MR/SD bit5=0) move the head toward track 0 and clamp.
+ * @par Pass criterion  /TO (ctrl Port B bit7) is 0 at track 0, 1 after stepping
+ *   in, 0 again after stepping back out, and stays 0 when over-stepping out.
+ */
+TEST_F(K5122Test, Step_Outward_DecrementsCylinder_ClampsAtTrack0) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+    auto atTrack0 = [&]{ return (card.ioRead(0x12) & 0x80) == 0; };       // /TO=0
+    auto stepIn   = [&]{ card.ioWrite(0x10,0xFF); card.ioWrite(0x10,0x7F); card.ioWrite(0x10,0xFF); }; // bit5=1
+    auto stepOut  = [&]{ card.ioWrite(0x10,0xFF); card.ioWrite(0x10,0x5F); card.ioWrite(0x10,0xFF); }; // bit5=0
+
+    EXPECT_TRUE(atTrack0());
+    stepIn(); stepIn();                    // → cyl 2
+    EXPECT_FALSE(atTrack0());
+    stepOut(); stepOut();                  // → cyl 0
+    EXPECT_TRUE(atTrack0());
+    stepOut();                             // over-step: must clamp at track 0
+    EXPECT_TRUE(atTrack0()) << "stepping out at track 0 must clamp, not underflow";
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/ReadStrobe_LatchesHeadFromBit5
+ * @brief A read /STR latches the side-select (MR/SD bit5) into the served IDAM:
+ *   bit5=1 → head 0, bit5=0 → head 1.  Directly guards the head-select path that
+ *   the @OS.COM read (first-ever head-1 access) depends on.
+ * @par Pass criterion  IDAM head byte (field[3]) == the head selected by the /STR.
+ */
+TEST_F(K5122Test, ReadStrobe_LatchesHeadFromBit5) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+    writeDistinctDataTrack(card, 2, 0);
+    writeDistinctDataTrack(card, 2, 1);
+    seekToCyl(card, 2);
+
+    strobeRead(card, /*head=*/0);
+    EXPECT_EQ(readBytes(card, 6)[3], 0) << "/STR with bit5=1 must serve head 0";
+
+    strobeRead(card, /*head=*/1);
+    EXPECT_EQ(readBytes(card, 6)[3], 1) << "/STR with bit5=0 must serve head 1";
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/Continuous1024_Head1_MK1ToggleKeepsHead1
+ * @brief SUSPECT-2 guard: the 3rd-stage loader re-syncs the 1024B data with MK1
+ *   toggles 0xB5<->0x85.  0xB5 has bit5=1 (head 0), 0x85 has bit5=0 (head 1):
+ *   the toggle flips the emulator's side-select latch on EVERY ctrl-Port-A write
+ *   (k5122.cpp updates current_head_ unconditionally).  These toggles hold /STR
+ *   low (no falling edge → no doReadSector), so the in-progress head-1 field must
+ *   keep serving HEAD-1 data and must never switch to head-0 data.
+ * @par Pass criterion  After 20 MK1 toggles mid-read, the streamed data contains
+ *   the head-1 marker byte and never the head-0 marker byte.
+ */
+TEST_F(K5122Test, Continuous1024_Head1_MK1ToggleKeepsHead1) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+    writeDistinctDataTrack(card, 2, 0);
+    writeDistinctDataTrack(card, 2, 1);
+    seekToCyl(card, 2);
+
+    // Start a head-1 read and HOLD /STR low (as the real read does).
+    card.ioWrite(0x10, 0xDF);   // /STR=1, bit5=0 (head 1)
+    card.ioWrite(0x10, 0xD7);   // /STR=0 falling → doReadSector(head 1), held low
+    ASSERT_EQ(readBytes(card, 6)[3], 1) << "head-1 IDAM expected";
+
+    // MK1 re-sync toggles with /STR held low (bit3=0 in both → no /STR edge):
+    // 0xB5 = bit5=1 (would latch head 0), 0x85 = bit5=0 (head 1).
+    std::vector<uint8_t> streamed;
+    for (int i = 0; i < 20; ++i) {
+        card.ioWrite(0x10, 0xB5); streamed.push_back(card.ioRead(0x16));
+        card.ioWrite(0x10, 0x85); streamed.push_back(card.ioRead(0x16));
+    }
+    for (auto b : readBytes(card, 64)) streamed.push_back(b);
+
+    const uint8_t h1 = dataByte(2, 1, 1);   // head-1 data marker
+    const uint8_t h0 = dataByte(2, 0, 1);   // head-0 data marker
+    bool sawH1 = false, sawH0 = false;
+    for (uint8_t b : streamed) { if (b == h1) sawH1 = true; if (b == h0) sawH0 = true; }
+    EXPECT_TRUE(sawH1)  << "head-1 data must still stream after MK1 head-bit toggles";
+    EXPECT_FALSE(sawH0) << "head-0 data must NOT appear — head latch corrupted by MK1 toggle";
+    std::filesystem::remove(path);
+}

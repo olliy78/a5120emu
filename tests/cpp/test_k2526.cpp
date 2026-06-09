@@ -1073,3 +1073,61 @@ TEST(K2526, SA_PortB4High_NoShutdown)
     bus.ioWrite(BSPIO_PORTB_DATA, PORTB_SAFE_ROMON);
     EXPECT_FALSE(card.isShutdownRequested());
 }
+
+// ─── ZVE2: start-from-reset + multi-round PC re-zero (boot DMA edge cases) ─────
+
+/**
+ * @test K2526/ZVE2_StartFromReset_ClearsResetWaitAndZeroesPC
+ * @brief zve2StartFromReset() releases reset + /WAIT and restarts ZVE2 at PC=0.
+ * @details This is the path the 3rd-stage @OS.COM read relies on: ZVE2 is poised
+ *   in reset (OUT 04H bit0=0) with its DMA-routine entry at [0x0000], and the
+ *   /BUSRQ of the /STR starts it from PC=0 without an explicit bit0=1.  The
+ *   function must clear BOTH the reset latch and /WAIT-ZVE2 and zero the PC.
+ * @par Pass criterion  after a run+reset, zve2StartFromReset() →
+ *   isZVE2InReset()==false, isZVE2Waiting()==false, PC==0.
+ */
+TEST(K2526, ZVE2_StartFromReset_ClearsResetWaitAndZeroesPC)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+
+    bus.ioWrite(0x04, 0x01);    // release + run ZVE2
+    card.zve2Step();            // PC advances off 0
+    ASSERT_GT(card.zve2().PC, 0u);
+    bus.ioWrite(0x04, 0x00);    // hold in reset again (PC preserved by HW)
+    ASSERT_TRUE(card.isZVE2InReset());
+
+    card.zve2StartFromReset();
+    EXPECT_FALSE(card.isZVE2InReset())  << "reset latch must be cleared";
+    EXPECT_FALSE(card.isZVE2Waiting())  << "/WAIT-ZVE2 must be cleared";
+    EXPECT_EQ(card.zve2().PC, 0x0000u)  << "ZVE2 must restart from PC=0";
+}
+
+/**
+ * @test K2526/ZVE2_Port04_Bit1_WhileRunning_RezeroesPC
+ * @brief OUT(04H) bit0=1 restarts ZVE2 from PC=0 even when it is already running.
+ * @details The boot ROM's CALL 0194 issues OUT(04H) bit0=1 before EVERY DMA
+ *   round; ZVE2 must reset to PC=0 each time so it reloads its IDAM registers for
+ *   the new cyl/sector — not only on a reset→run edge.  Regression guard for the
+ *   multi-round bootloader (see k2526.cpp port-04 handler).
+ * @par Pass criterion  after stepping ZVE2 (PC>0), a second bit0=1 zeroes PC.
+ */
+TEST(K2526, ZVE2_Port04_Bit1_WhileRunning_RezeroesPC)
+{
+    K1520Bus bus;
+    K2526 card(bus);
+    card.attachToBus(bus);
+    card.powerOn();
+
+    bus.ioWrite(0x04, 0x01);    // release + run
+    card.zve2Step();
+    card.zve2Step();
+    ASSERT_GT(card.zve2().PC, 0u);
+
+    bus.ioWrite(0x04, 0x01);    // bit0=1 AGAIN while running → must re-zero PC
+    EXPECT_EQ(card.zve2().PC, 0x0000u)
+        << "OUT(04H) bit0=1 must restart ZVE2 from PC=0 every round";
+    EXPECT_FALSE(card.isZVE2InReset());
+}
