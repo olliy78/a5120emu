@@ -104,11 +104,6 @@ uint8_t K5122::ioRead(uint8_t port) {
                 field_sector_ = nsec ? (field_sector_ + 1) % nsec : 0;
                 buildField();
                 result = field_buf_.empty() ? kGapByte : field_buf_[field_pos_++];
-                // [DBG] served IDAM vs loader's expected (cyl[1F8C]/head[1F8D]/sec[1F8F])
-                if (field_buf_.size() >= 5)
-                    LOG_WARN("K5122", "[DBG] AUTOSTEP→served C=%u H=%u S=%u | loader wants C=%u H=%u S=%u",
-                             field_buf_[2], field_buf_[3], field_buf_[4],
-                             bus_.memRead(0x1F8C), bus_.memRead(0x1F8D), bus_.memRead(0x1F8F));
             } else if (field_pos_ < field_buf_.size()) {
                 result = field_buf_[field_pos_++];
                 LOG_TRACE("K5122", "Feld[%zu/%zu] S%zu %s => 0x%02X",
