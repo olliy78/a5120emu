@@ -14,7 +14,6 @@
 #include "core/cards/k7024/k7024.h"
 #include "core/cards/k8025/k8025.h"
 #include "core/cards/k5122/k5122.h"
-#include "core/cards/k5122v2/k5122v2.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/peripherals/floppy_drive/format_parser.h"
 #include <atomic>
@@ -131,13 +130,7 @@ private:
     K3526         ops_;       // slot 1: RAM
     K7024         screen_;    // slot 5: video
     K8025         ass_;       // slot 3: serial
-    // Slot 2: AFS (Floppy-Controller).  Standard = neue formatagnostische K5122v2
-    // (Lesekopf-Streaming).  Mit -DUSE_LEGACY_K5122 auf die alte K5122 zurückschalten.
-#if defined(USE_LEGACY_K5122)
-    K5122         afs_;       // slot 2: floppy (Legacy)
-#else
-    K5122v2       afs_;       // slot 2: floppy (neuer formatagnostischer Stack)
-#endif
+    K5122         afs_;       // slot 2: floppy (formatagnostischer Streaming-Controller)
 
     K7637         kbd_;
 

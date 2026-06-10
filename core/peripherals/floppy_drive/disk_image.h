@@ -2,7 +2,7 @@
  * @file disk_image.h
  * @brief DiskImage – abstraktes Disketten-Backend (liefert/nimmt fertige TrackImages).
  *
- * Der neue Floppy-Controller (@ref K5122v2) sieht NUR @ref TrackImage — nie Sektoren,
+ * Der neue Floppy-Controller (@ref K5122) sieht NUR @ref TrackImage — nie Sektoren,
  * Offsets oder Dateiformat.  Hinter dieser Schnittstelle stehen austauschbare Backends:
  *   - @ref RawSectorImage — bestehendes .img + Geometriebeschreibung (synthetisiert den Track);
  *   - HfeImage (Folgearbeit) — .hfe mit echtem MFM/FM-Bitstrom pro Spur.

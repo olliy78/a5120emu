@@ -65,7 +65,7 @@ struct GapParams {
  *                  @ref GapParams). Standard für alle nicht-Robotron-Images.
  * - RobotronBoot — Robotron-A5120-Boot-Disketten-Layout: kein IAM, genau EIN A1 je Feld,
  *                  Marke liegt auf dem A1-Byte (nicht auf FE/FB), kompakte Gaps.
- *                  Wird von @ref K5122v2 für Raw-.img-Images der A5120-Bootdiskette benötigt,
+ *                  Wird von @ref K5122 für Raw-.img-Images der A5120-Bootdiskette benötigt,
  *                  weil die ZVE2-Leseroutinen genau dieses Byte-Layout erwarten:
  *                  nach Resync → buf[0]=A1, buf[1]=FE/FB (statt A1A1[FE-Marke]).
  *

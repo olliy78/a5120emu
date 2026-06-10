@@ -5,7 +5,7 @@
  * Nachfolger des alten @ref FloppyDrive für die neue Streaming-Architektur.  Hält ein
  * @ref DiskImage (statt Pfad+DiskFormat+Inline-IO), kennt sein @ref DriveProfile
  * (welches physische Laufwerk am Slot hängt) und cached die aktuelle Spur je Kopf.
- * Der Controller (@ref K5122v2) bezieht über @ref track() einen fertigen
+ * Der Controller (@ref K5122) bezieht über @ref track() einen fertigen
  * @ref TrackImage und kennt keine Sektoren/Offsets mehr.
  *
  * Der bestehende @ref FloppyDrive bleibt unverändert; diese Klasse existiert parallel,

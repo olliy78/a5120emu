@@ -293,7 +293,7 @@ TEST(BootIntegration, Stage3_FullyLoadsAndJumpsToOs) {
 // disks/cpadisk_02.img (raw cpa780) and disks/cpadisk_02.hfe (HxC HFE v1, produced
 // by real HxC tooling — track_encoding=0xFF, treated as MFM) are two encodings of
 // the SAME disk: a CP/A system *without* a real-time clock.  These two tests prove
-// that the new K5122v2 controller boots BOTH formats through every stage into the
+// that the new K5122 controller boots BOTH formats through every stage into the
 // running CP/A OS.  The HFE case additionally exercises the BitCodec/HfeImage
 // backend end-to-end on a *real* (not synthetic) disk image, and that it boots
 // byte-equivalently to the raw image (same OS banner, same TPA size 0C405H).
@@ -344,7 +344,7 @@ TEST(BootIntegrationCpa02, ImgBootsIntoRunningCpaOs) {
 /**
  * @test BootIntegrationCpa02/HfeBootsIntoRunningCpaOs
  * @brief cpadisk_02.hfe (HxC HFE v1) boots identically to the raw .img — proves the
- *        HFE/BitCodec backend boots a real disk through K5122v2 end-to-end.
+ *        HFE/BitCodec backend boots a real disk through K5122 end-to-end.
  */
 TEST(BootIntegrationCpa02, HfeBootsIntoRunningCpaOs) {
     A5120Machine machine;
@@ -365,7 +365,7 @@ TEST(BootIntegrationCpa02, HfeBootsIntoRunningCpaOs) {
 // disks/cpadisk_mitUhr_01.{img,hfe} are the same disk in two encodings, WITH an
 // active real-time clock — so (unlike cpadisk_02, §15.5) the OS does not hang in
 // the post-boot divide loop and boots all the way to the "Bitte Uhrzeit eingeben!"
-// time-entry prompt.  These tests additionally exercise the loader + the K5122v2
+// time-entry prompt.  These tests additionally exercise the loader + the K5122
 // 8212 drive-select for drives OTHER than A:: the disk is mounted on B: (drive 1)
 // or C: (drive 2) with the lower drives left empty.  The ZRE boot ROM's drive-
 // detect loop (0x0110) rotates the 8212 select 0xEE→0xDD→0xBB→0x77 (A:→B:→C:→D:,

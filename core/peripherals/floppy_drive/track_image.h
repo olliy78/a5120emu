@@ -5,7 +5,7 @@
  * Eine @ref TrackImage ist der *decodierte* Spurinhalt einer (Zylinder, Kopf)-Spur:
  * genau die Bytefolge, die der Datenseparator hinter dem Lesekopf liefert — inklusive
  * Gaps, Sync-/Adressmarken, ID-Feldern, Datenfeldern und **echten CRCs**.  Sie ist die
- * einzige Repräsentation, die der neue Floppy-Controller (@ref K5122v2) sieht; er kennt
+ * einzige Repräsentation, die der neue Floppy-Controller (@ref K5122) sieht; er kennt
  * keine Sektorgrößen, Sektoranzahl, CRC-Verfahren oder Boot-Stadien mehr.
  *
  * Diese Schicht ersetzt die mit der Lese-Routine verflochtene On-the-fly-Synthese der
@@ -29,7 +29,7 @@
 /**
  * @enum Encoding
  * @brief Aufzeichnungsverfahren einer Spur. Bestimmt NUR die Codec-Schicht, nicht
- *        den Controller.  Der Controller (@ref K5122v2) ist verfahrensneutral.
+ *        den Controller.  Der Controller (@ref K5122) ist verfahrensneutral.
  */
 enum class Encoding : uint8_t {
     FM,   ///< Frequenzmodulation (Single Density, 8″-Laufwerke)

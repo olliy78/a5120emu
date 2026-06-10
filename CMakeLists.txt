@@ -163,15 +163,11 @@ if(BUILD_K1520)
     target_link_libraries(k1520_k8025 PUBLIC k1520_sio k1520_ctc k1520_pio k1520_bus)
     target_include_directories(k1520_k8025 PUBLIC ${CMAKE_SOURCE_DIR})
 
-    # K5122 AFS – Anschlusssteuerung Floppy-disk Speicher (floppy controller card)
+    # K5122 AFS – Anschlusssteuerung Floppy-disk Speicher (formatagnostischer
+    # Streaming-Controller, TrackImage/DiskImage-basiert; bootet CP/A inkl. HFE)
     add_library(k1520_k5122 STATIC core/cards/k5122/k5122.cpp)
-    target_link_libraries(k1520_k5122 PUBLIC k1520_pio k1520_floppy k1520_bus k1520_logger)
+    target_link_libraries(k1520_k5122 PUBLIC k1520_pio k1520_floppy2 k1520_bus k1520_logger)
     target_include_directories(k1520_k5122 PUBLIC ${CMAKE_SOURCE_DIR})
-
-    # K5122v2 – neue, formatagnostische Floppy-Controller-Karte (TrackImage-basiert)
-    add_library(k1520_k5122v2 STATIC core/cards/k5122v2/k5122v2.cpp)
-    target_link_libraries(k1520_k5122v2 PUBLIC k1520_pio k1520_floppy2 k1520_bus k1520_logger)
-    target_include_directories(k1520_k5122v2 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # A5120 machine (wires all cards + Z80 CPU)
     add_library(k1520_a5120 STATIC
@@ -179,7 +175,7 @@ if(BUILD_K1520)
     )
     target_link_libraries(k1520_a5120 PUBLIC
         k1520_z80
-        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_k5122v2
+        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122
         k1520_k7637 k1520_floppy k1520_floppy2 k1520_bus k1520_logger
     )
     target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})
@@ -299,10 +295,6 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_k5122 PRIVATE k1520_k5122 GTest::gtest_main)
         target_include_directories(k1520_test_k5122 PRIVATE ${CMAKE_SOURCE_DIR})
 
-        add_executable(k1520_test_k5122v2 tests/cpp/test_k5122v2.cpp)
-        target_link_libraries(k1520_test_k5122v2 PRIVATE k1520_k5122v2 GTest::gtest_main)
-        target_include_directories(k1520_test_k5122v2 PRIVATE ${CMAKE_SOURCE_DIR})
-
         add_executable(k1520_test_z80 tests/cpp/test_z80.cpp)
         target_link_libraries(k1520_test_z80 PRIVATE k1520_z80 GTest::gtest_main)
         target_include_directories(k1520_test_z80 PRIVATE ${CMAKE_SOURCE_DIR})
@@ -338,7 +330,6 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_k2526)
         gtest_discover_tests(k1520_test_k8025)
         gtest_discover_tests(k1520_test_k5122)
-        gtest_discover_tests(k1520_test_k5122v2)
         gtest_discover_tests(k1520_test_z80)
         gtest_discover_tests(k1520_test_boot_integration PROPERTIES TIMEOUT 60)
     endif() # BUILD_K1520_TESTS

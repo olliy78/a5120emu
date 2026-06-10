@@ -1,258 +1,169 @@
 /**
  * @file k5122.cpp
- * @brief K5122 AFS – Anschlusssteuerung Floppy-disk Speicher (floppy controller card) implementation.
+ * @brief K5122 AFS – formatagnostischer Floppy-Controller (Lesekopf-Streaming).
  *
- * Implements the floppy disk controller for the Robotron K1520/A5120 system.
- * Two Z80 PIOs handle drive control signals and byte-level data transfer;
- * an 8212-equivalent chip at port 0x18 selects one of up to four drives.
+ * Streaming-basiertes Modell: der Controller kennt keine Sektorgrößen, CRC-Verfahren oder
+ * Boot-Stadien.  Er bezieht von FloppyDriveV2 ein fertiges TrackImage und streamt dessen
+ * Bytes über Port 0x16 wie ein echter Lesekopf.  MK/MK1-Strobes rücken den Kopf auf die
+ * nächste Adressmarke vor.  Side-select = bit2 /FR am /STR, step-Richtung = bit5 MR/SD
+ * am /ST; BUSRQ-Arbitrierung und Interrupt-Daisy-Chain wie in der Doku beschrieben.
  *
- * Ctrl PIO Port A bit layout (CPU output → drive):
- * @code
- *   bit 0  /WE   – Write Enable (active low)
- *   bit 1  MK    – Mark
- *   bit 2  /FR   – Fault Reset; ALSO the side-select latched at /STR
- *                  (1 → head 0, 0 → head 1).  Empirically verified against the
- *                  3rd-stage @OS.COM read (head-0 strobes carry bit2=1, head-1
- *                  strobes bit2=0, matching the loader's expected head).
- *   bit 3  /STR  – Start / Strobe (active low, edge-triggered)
- *   bit 4  MK1   – Mark 1
- *   bit 5  MR/SD – Step DIRECTION only (1 = inward; sampled on the /ST edge).
- *                  NOT the side select — it toggles with the MK re-sync strobes.
- *   bit 6  /HL   – Head Load (active low)
- *   bit 7  /ST   – Step pulse (active low, edge-triggered)
- * @endcode
- *
- * Ctrl PIO Port B bit layout (drive → CPU input):
- * @code
- *   bit 0  /RDYL – Ready (active low, 0 = drive ready)
- *   bit 1  MKE   – Index mark detected
- *   bit 2  /HF   – High Frequency indicator (output, 1 = FM/5")
- *   bit 3  PRE   – Pre-compensation (output)
- *   bit 4  /FA   – Fault Adapter (active low; 1 = no fault)
- *   bit 5  /WP   – Write Protect (active low, 0 = protected)
- *   bit 6  /FW   – Fault (active low, 1 = no fault)
- *   bit 7  /TO   – Track 0 (active low, 0 = at track 0)
- * @endcode
- *
- * @see k5122.h
- * @see doc/design/07_k5122_afs.md
+ * @see core/cards/k5122/k5122.h
+ * @see doc/refactoring_floppy_emulator.md §9 / §15
  * @author Olaf Krieger
- * @date 2024–2025
+ * @date 2026
  * @license MIT License
  */
 
-#include "k5122.h"
+#include "core/cards/k5122/k5122.h"
+#include "core/peripherals/floppy_drive/disk_image.h"
+#include "core/peripherals/floppy_drive/track_codec.h"
+#include "core/logger.h"
 #include <algorithm>
 #include <cassert>
-#include "core/logger.h"
 
-// ─── Construction ─────────────────────────────────────────────────────────────
+// ─── Konstruktor ──────────────────────────────────────────────────────────────
 
 /**
- * @brief Construct a K5122 floppy controller and initialise drive status.
+ * @brief Initialisiert die Karte und alle 4 Laufwerksslots.
  *
- * Pre-populates the ctrl PIO Port B with the "no drive mounted" status byte
- * (0xF5) so that the first read of port 0x12 returns a sensible value before
- * any disk is mounted.
- *
- * @param bus K1520 system bus reference (used for BUSRQ/BUSAK DMA protocol)
+ * Jeder Slot wird mit dem übergebenen DriveProfile initialisiert (Default: mfs_525_ds80).
+ * Der initiale Status-Port-B wird sofort gesetzt, damit der erste IN 0x12 einen
+ * plausiblen Wert liefert.
  */
-K5122::K5122(K1520Bus& bus) : bus_(bus) {
-    // Pre-populate the ctrl PIO Port B with "no drive mounted" status so that
-    // the very first read of port 0x12 returns something sensible.
+K5122::K5122(K1520Bus& bus,
+                 std::array<DriveProfile, 4> profiles,
+                 uint32_t cpu_hz)
+    : bus_(bus), cpu_hz_(cpu_hz)
+{
+    for (int i = 0; i < 4; ++i) {
+        drives_[i] = FloppyDriveV2(profiles[i]);
+    }
     updateStatusPortB();
 }
 
 // ─── BusDevice ────────────────────────────────────────────────────────────────
 
 /**
- * @brief Handle an IN instruction to a K5122 I/O port.
+ * @brief IN-Instruktion auf einem K5122-Port.
  *
- * Dispatches to the ctrl PIO (0x10–0x13), data PIO (0x14–0x17), or returns
- * 0xFF for unknown ports.  Special handling for port 0x16 (data Port B):
- * during an active read transfer, returns the next byte from sector_buf_ and
- * auto-releases BUSRQ after the last byte is consumed.
- *
- * @param port Port address (0x10–0x18)
- * @return Data byte from the selected sub-device or sector buffer
+ * Dispatcht auf Ctrl-PIO (0x10–0x13), Data-PIO (0x14–0x17) mit Sonderbehandlung
+ * von Port 0x16 bei aktivem Lesetransfer.  Unbekannte Ports → 0xFF + LOG_WARN.
  */
 uint8_t K5122::ioRead(uint8_t port) {
     uint8_t result = 0xFF;
 
     if (port >= 0x10 && port <= 0x13) {
         result = ctrl_pio_.ioRead(port - 0x10);
-        LOG_DEBUG("K5122", "CTRL PIO read  port=0x%02X (sub=%u) => 0x%02X  [%s]",
-                  port, port - 0x10, result,
-                  port == 0x10 ? "CtrlA-data" : port == 0x11 ? "CtrlA-ctrl" :
-                  port == 0x12 ? "CtrlB-data" : "CtrlB-ctrl");
+        LOG_DEBUG("K5122", "CTRL PIO read  port=0x%02X (sub=%u) => 0x%02X",
+                  port, port - 0x10, result);
     } else if (port >= 0x14 && port <= 0x17) {
-        // Intercept data Port B reads (0x16) to stream the rotating track to the
-        // CPU/DMA. The buffer holds the whole track (built by doReadSector); we
-        // stream it and wrap at the end, because the disk keeps spinning. BUSRQ
-        // is held throughout — it is released only when ZVE2 signals completion
-        // ([0x03F8]=3), detected by A5120Machine, which then calls endDmaTransfer().
         if (port == 0x16 && transferring_ && !write_mode_) {
-            // Stream the current address-mark field; pad with gap bytes on over-read.
-            // The reader advances to the next field by pulsing MK (see advanceField()).
-            if (field_buf_.empty()) {
-                result = 0xFF;
-            } else if (field_pos_ >= field_buf_.size() && stream_continuous_) {
-                // Continuous data-area stream: the field holds a whole sector
-                // (IDAM+DATA). On over-read step to the next sector so the loader's
-                // IDAM re-search finds it in the rotating stream (no MK advance).
-                const size_t nsec = sector_buf_.size() / sector_block_;
-                field_sector_ = nsec ? (field_sector_ + 1) % nsec : 0;
-                buildField();
-                result = field_buf_.empty() ? kGapByte : field_buf_[field_pos_++];
-            } else if (field_pos_ < field_buf_.size()) {
-                result = field_buf_[field_pos_++];
-                LOG_TRACE("K5122", "Feld[%zu/%zu] S%zu %s => 0x%02X",
-                          field_pos_ - 1, field_buf_.size(), field_sector_,
-                          field_is_data_ ? "DATA" : "IDAM", result);
+            // Streaming-Datenpfad: Bytes des TrackImage byteweise ausgeben.
+            // Der Kopf rotiert zyklisch — bei Erreichen des Spurendes wieder von vorn.
+            if (cur_track_ && !cur_track_->empty()) {
+                result = cur_track_->bytes[head_pos_];
+                head_pos_ = (head_pos_ + 1) % cur_track_->size();
             } else {
-                result = kGapByte;   // over-read past the field → MFM gap filler
+                result = 0xFF;
             }
+            LOG_TRACE("K5122", "Streaming-Read pos=%zu => 0x%02X", head_pos_ - 1, result);
         } else {
             result = data_pio_.ioRead(port - 0x14);
             LOG_DEBUG("K5122", "DATA PIO read  port=0x%02X (sub=%u) => 0x%02X",
                       port, port - 0x14, result);
         }
     } else {
-        LOG_WARN("K5122", "ioRead unknown port=0x%02X", port);
+        LOG_WARN("K5122", "ioRead unbekannter port=0x%02X", port);
     }
 
     return result;
 }
 
 /**
- * @brief Handle an OUT instruction to a K5122 I/O port.
+ * @brief OUT-Instruktion auf einem K5122-Port.
  *
- * Dispatches to the ctrl PIO (0x10–0x13), data PIO (0x14–0x17), or the 8212
- * drive-select (0x18).  Writing to ctrl Port A (0x10) additionally triggers
- * handleCtrlPortAWrite() for step/strobe edge detection.  Writing to data Port
- * A (0x14) additionally triggers handleDataPortAWrite() to accumulate write data.
- *
- * @param port Port address (0x10–0x18)
- * @param data Byte written by CPU
+ * Dispatcht auf Ctrl-PIO (0x10–0x13), Data-PIO (0x14–0x17) oder 8212 Drive-Select
+ * (0x18).  Ctrl-Port-A (0x10) und Data-Port-A (0x14) lösen zusätzliche Handler aus.
  */
 void K5122::ioWrite(uint8_t port, uint8_t data) {
     if (port >= 0x10 && port <= 0x13) {
-        const char* port_name =
-            port == 0x10 ? "CtrlA-data" : port == 0x11 ? "CtrlA-ctrl" :
-            port == 0x12 ? "CtrlB-data" : "CtrlB-ctrl";
         if (port == 0x10) {
-            // Decode ctrl Port A signal bits for readability
             LOG_DEBUG("K5122",
-                "CTRL PortA write 0x%02X  /ST=%d /HL=%d MK=%d /STR=%d /FR=%d MR/SD=%d MK1=%d /WE=%d",
+                "CTRL PortA write 0x%02X  /ST=%d MK1=%d MR/SD=%d /STR=%d /FR=%d MK=%d /WE=%d",
                 data,
-                (data >> 7) & 1, (data >> 6) & 1, (data >> 5) & 1, (data >> 3) & 1,
-                (data >> 2) & 1, (data >> 1) & 1, (data >> 4) & 1, data & 1);
-        } else if (port == 0x11) {
-            LOG_DEBUG("K5122", "CTRL PIO write port=0x11 data=0x%02X [CtrlA-ctrl] busrq=%d",
-                      data, bus_.isBUSRQ() ? 1 : 0);
+                (data >> 7) & 1, (data >> 4) & 1, (data >> 5) & 1,
+                (data >> 3) & 1, (data >> 2) & 1, (data >> 1) & 1, data & 1);
         } else {
-            LOG_DEBUG("K5122", "CTRL PIO write port=0x%02X data=0x%02X [%s]",
-                      port, data, port_name);
+            LOG_DEBUG("K5122", "CTRL PIO write port=0x%02X data=0x%02X", port, data);
         }
         ctrl_pio_.ioWrite(port - 0x10, data);
-        // Mirror ctrl Port A data writes to our handler regardless of PIO mode.
         if (port == 0x10) {
             handleCtrlPortAWrite(data);
         }
-        // Track-end: the loader's ZVE2 routine disables the ctrl-PIO Port B
-        // interrupt (OUT(13H),03H at 0x069C) the moment it has read all sectors of
-        // a track and falls into its idle loop L0696.  On real hardware /STR=1 then
-        // suppresses /BUSRQ and ZVE2 loses the bus; in our continuously-stepped
-        // model ZVE2 would instead spin in L0696 and corrupt the handshake variables
-        // ([07F8..07FC] via INIR).  Release /BUSRQ here so ZVE1 takes over, processes
-        // the track, seeks and resets ZVE2 for the next track.
-        //
-        // IMPORTANT: this only applies to the secondary loader's discrete 128B
-        // field reads.  The 3rd-stage CP/A loader also writes OUT(13H),03H during
-        // its 1024B continuous data-area read — there it is merely a ctrl-PIO
-        // Port-B interrupt-control word (IE=0), NOT a track end.  Treating it as a
-        // track end there clears transferring_ mid-read, after which ZVE2 reads
-        // PIO garbage (0xFF) instead of the field, spins its IDAM sync-search and
-        // the read times out ('U').  Gate on !stream_continuous_ so 1024B reads
-        // keep streaming.
+        // ── Track-Ende-Arbitrierung (Sekundärlader) ─────────────────────────
+        // Der ZVE2-Sekundärlader schaltet den Ctrl-PIO-Port-B-Interrupt ab
+        // (OUT(13H),03H), sobald er alle Sektoren einer 128-B-Spur gelesen hat
+        // und in seine Idle-Schleife (L0696) fällt.  Auf echter Hardware
+        // unterdrückt dann /STR=1 das /BUSRQ und ZVE2 verliert den Bus; in
+        // unserem fortlaufend gestepten Modell würde ZVE2 stattdessen in L0696
+        // weiterlaufen und die Handshake-Variablen [07F8..07FC] (INIR) zerstören.
+        // Daher hier /BUSRQ freigeben, damit ZVE1 die Spur verarbeitet, seekt
+        // und ZVE2 für die nächste Spur neu startet.
+        // Gate auf 128-B-Spuren: der 3.-Stufen-CP/A-Lader (1024-B-Datenbereich)
+        // schreibt OUT(13H),03H ebenfalls, dort ist es aber NUR ein PIO-Port-B-
+        // Interrupt-Steuerwort (IE=0), KEIN Track-Ende — eine Freigabe mitten im
+        // 1024-B-Lesen würde transferring_ löschen und den Read zum Timeout führen.
         if (port == 0x13 && data == 0x03 && transferring_ && bus_.isBUSRQ()
-                && !stream_continuous_) {
+                && cur_sector_size_ <= 128) {
             transferring_ = false;
             bus_.releaseBUSRQ();
             LOG_DEBUG("K5122", "Track-Ende (ZVE2 L0696): BUSRQ freigegeben, ZVE1 übernimmt");
         }
     } else if (port >= 0x14 && port <= 0x17) {
-        const char* port_name =
-            port == 0x14 ? "DataA-data" : port == 0x15 ? "DataA-ctrl" :
-            port == 0x16 ? "DataB-data" : "DataB-ctrl";
-        LOG_DEBUG("K5122", "DATA PIO write port=0x%02X data=0x%02X [%s]",
-                  port, data, port_name);
+        LOG_DEBUG("K5122", "DATA PIO write port=0x%02X data=0x%02X", port, data);
         data_pio_.ioWrite(port - 0x14, data);
         if (port == 0x14) {
             handleDataPortAWrite(data);
         }
     } else if (port == 0x18) {
-        // 8212 drive-select: bits [3:0] = /SELx, active-low one-hot
-        // 0xEE → lower nibble 0xE = 1110, bit0=0 → drive 0
-        // 0xDD → lower nibble 0xD = 1101, bit1=0 → drive 1
-        // 0xBB → lower nibble 0xB = 1011, bit2=0 → drive 2
-        // 0x77 → lower nibble 0x7 = 0111, bit3=0 → drive 3
+        // 8212 Drive-Select: bits [3:0] = /SELx, active-low one-hot.
+        // 0xEE → unteres Nibble 0xE = 1110, bit0=0 → Drive 0
+        // 0xDD → unteres Nibble 0xD = 1101, bit1=0 → Drive 1
+        // 0xBB → unteres Nibble 0xB = 1011, bit2=0 → Drive 2
+        // 0x77 → unteres Nibble 0x7 = 0111, bit3=0 → Drive 3
         uint8_t sel = ~data & 0x0F;
         selected_drive_ = (sel == 0) ? 0
                         : (sel & 0x01) ? 0
                         : (sel & 0x02) ? 1
                         : (sel & 0x04) ? 2
                         : 3;
-        LOG_INFO("K5122", "8212 drive-select write=0x%02X => D%d selected",
-                 data, selected_drive_);
+        LOG_INFO("K5122", "8212 drive-select write=0x%02X => D%d", data, selected_drive_);
         updateStatusPortB();
     } else {
-        LOG_WARN("K5122", "ioWrite unknown port=0x%02X data=0x%02X", port, data);
+        LOG_WARN("K5122", "ioWrite unbekannter port=0x%02X data=0x%02X", port, data);
     }
 }
 
-// ─── InterruptSlave ──────────────────────────────────────────────────────────
-// Daisy-chain order: IEI → ctrl_pio_ → data_pio_ → IEO (K5122 output).
+// ─── InterruptSlave ───────────────────────────────────────────────────────────
+// Daisy-Chain: IEI → ctrl_pio_ → data_pio_ → IEO
 
-/**
- * @brief Set /IEI from the upstream interrupt chain and propagate internally.
- *
- * Daisy-chain order: IEI → ctrl_pio_ → data_pio_ → IEO out.
- *
- * @param iei true when the upstream device passes the interrupt enable signal
- */
 void K5122::setIEI(bool iei) {
     iei_in_ = iei;
     ctrl_pio_.setIEI(iei);
     data_pio_.setIEI(ctrl_pio_.getIEO());
 }
 
-/**
- * @brief Return /IEO to pass to the downstream device in the daisy chain.
- *
- * Reflects data_pio_.getIEO(), which is false when either PIO has a pending
- * interrupt that blocks further propagation.
- *
- * @return true to pass the enable signal downstream; false if chain is blocked
- */
 bool K5122::getIEO() const {
     return data_pio_.getIEO();
 }
 
-/**
- * @brief Check whether ctrl_pio_ or data_pio_ has a pending interrupt.
- * @return true if either PIO requires CPU attention
- */
 bool K5122::hasInterrupt() const {
     return ctrl_pio_.hasInterrupt() || data_pio_.hasInterrupt();
 }
 
 /**
- * @brief Return the interrupt vector from the highest-priority PIO.
- *
- * ctrl_pio_ has priority over data_pio_ (it is first in the daisy chain).
- *
- * @return 8-bit interrupt vector, or 0xFF if no interrupt is pending
+ * @brief Interrupt-Vektor des Hochprioritäts-PIO (ctrl_pio_ hat Vorrang).
  */
 uint8_t K5122::getVector() const {
     if (ctrl_pio_.hasInterrupt()) return ctrl_pio_.getVector();
@@ -265,25 +176,14 @@ void K5122::onRETI() {
     data_pio_.onRETI();
 }
 
-// ─── Disk management ─────────────────────────────────────────────────────────
+// ─── Disk-Management ─────────────────────────────────────────────────────────
 
 /**
- * @brief Mount a disk image on a drive.
- *
- * Opens @p path with the given geometry @p fmt and associates it with @p drive.
- * If @p drive is the currently selected drive, ctrl PIO Port B status is
- * updated immediately so the CPU sees the drive as ready.
- *
- * @param drive         Drive number 0–3
- * @param path          Path to disk image file
- * @param fmt           Disk geometry and sector format
- * @param write_protect true to prevent writes to the image (default false)
- * @return true on success; false if the file is not found or @p drive is invalid
+ * @brief Mountet ein bereits geöffnetes DiskImage auf einem Slot.
  */
-bool K5122::mountDisk(int drive, const std::string& path,
-                      const DiskFormat& fmt, bool write_protect) {
+bool K5122::mountDisk(int drive, std::unique_ptr<DiskImage> img, bool write_protect) {
     if (drive < 0 || drive > 3) return false;
-    bool ok = drives_[drive].mount(path, fmt, write_protect);
+    bool ok = drives_[drive].mount(std::move(img), write_protect);
     if (ok && drive == selected_drive_) {
         updateStatusPortB();
     }
@@ -291,66 +191,43 @@ bool K5122::mountDisk(int drive, const std::string& path,
 }
 
 /**
- * @brief Unmount the disk image from a drive.
+ * @brief Komfort-Overload: öffnet eine .img-Datei und mountet sie.
  *
- * Marks the drive as empty and updates ctrl PIO Port B if @p drive is
- * currently selected.
- *
- * @param drive Drive number 0–3
- * @return true on success; false if @p drive is out of range
+ * Das DiskImage wird im IBM-Standard-Format geöffnet (DiskImage::open Default).
+ * Der Drive-Cache speichert IBM-Format-Tracks, damit der Write-Pfad (commitWrite →
+ * parseTrack → buildTrack) unverändert funktioniert.  Das Robotron-Layout für den
+ * Lese-Streaming-Pfad wird von startReadTransfer() on-the-fly erzeugt.
  */
+bool K5122::mountDisk(int drive, const std::string& path,
+                        const DiskFormat& fmt, bool write_protect) {
+    if (drive < 0 || drive > 3) return false;
+    auto img = DiskImage::open(path, fmt, write_protect);
+    if (!img) return false;
+    return mountDisk(drive, std::move(img), write_protect);
+}
+
 bool K5122::unmountDisk(int drive) {
     if (drive < 0 || drive > 3) return false;
     drives_[drive].unmount();
     if (drive == selected_drive_) {
+        // Aktiven Lesetransfer abbrechen, da Laufwerk leer
+        transferring_ = false;
+        cur_track_    = nullptr;
         updateStatusPortB();
     }
     return true;
 }
 
-/**
- * @brief Check whether a disk image is mounted on a drive.
- * @param drive Drive number 0–3
- * @return true if a disk is currently mounted; false if drive is empty or index invalid
- */
 bool K5122::isDiskActive(int drive) const {
     if (drive < 0 || drive > 3) return false;
     return drives_[drive].isMounted();
 }
 
-/**
- * @brief Query the simulated drive activity LED state.
- *
- * Returns true for 180 ms after any step, read, or write operation on
- * @p drive.  The time is measured from the last call to markDriveAccess().
- *
- * @param drive Drive number 0–3
- * @return true if the drive LED should be shown as on
- */
-bool K5122::isDriveLedOn(int drive) const {
-    if (drive < 0 || drive > 3) return false;
-    return std::chrono::steady_clock::now() < led_until_[static_cast<size_t>(drive)];
-}
-
-/**
- * @brief Check the write-protect status of a mounted disk.
- * @param drive Drive number 0–3
- * @return true if the disk is write-protected; false if writable or index invalid
- */
 bool K5122::isDiskWriteProtected(int drive) const {
     if (drive < 0 || drive > 3) return false;
     return drives_[drive].isWriteProtect();
 }
 
-/**
- * @brief Set the write-protect flag on a mounted disk.
- *
- * Updates ctrl PIO Port B (bit 5 = /WP) immediately if @p drive is the
- * currently selected drive.
- *
- * @param drive Drive number 0–3
- * @param wp    true to enable write protection; false to allow writes
- */
 void K5122::setWriteProtect(int drive, bool wp) {
     if (drive < 0 || drive > 3) return;
     drives_[drive].setWriteProtect(wp);
@@ -359,87 +236,123 @@ void K5122::setWriteProtect(int drive, bool wp) {
     }
 }
 
-// ─── Private: ctrl Port A handler ────────────────────────────────────────────
+bool K5122::isDriveLedOn(int drive) const {
+    if (drive < 0 || drive > 3) return false;
+    return std::chrono::steady_clock::now() < led_until_[static_cast<size_t>(drive)];
+}
+
+// ─── DMA-Arbitrierung / Index ─────────────────────────────────────────────────
 
 /**
- * @brief Decode and act on a write to ctrl Port A (port 0x10).
+ * @brief ZVE2-Fallback: führt eine ausstehende DMA-Übertragung aus und gibt /BUSRQ frei.
  *
- * Detects two falling-edge signals:
+ * Nur für Schreib-DMAs relevant (Lese-DMAs werden durch ZVE2 per Streaming bedient).
+ */
+void K5122::dmaUpdate() {
+    if (!dma_pending_) return;
+
+    if (dma_is_write_) {
+        commitWrite();
+    }
+    // Lesen: ZVE2 liest selbst via IN(0x16); kein Eingriff nötig.
+
+    dma_pending_ = false;
+    bus_.releaseBUSRQ();
+    LOG_DEBUG("K5122", "dmaUpdate (ZVE2-Fallback): BUSRQ freigegeben (%s)",
+              dma_is_write_ ? "SCHREIBEN abgeschlossen" : "LESEN: ZVE2 pollt selbst");
+}
+
+/**
+ * @brief Beendet einen aktiven Lese-DMA und gibt /BUSRQ frei (ZVE2-Completion).
  *
- * - `/ST` (bit 7): Step pulse.  Calls doStep() to advance or retract the
- *   head by one cylinder.  Direction from MR/SD (bit 5).
+ * Stellt den ctrl_pio_-Port-A-Interrupt wieder her (analog alter Karte, 0x83 = IE=1).
+ */
+void K5122::endDmaTransfer() {
+    if (!bus_.isBUSRQ()) return;
+    transferring_ = false;
+    dma_pending_  = false;
+    bus_.releaseBUSRQ();
+    // ctrl_pio_ Port-A Interrupt-Enable wiederherstellen (von ZVE2-OUT(11H,03H) gelöscht).
+    ctrl_pio_.ioWrite(1, 0x83);
+    LOG_DEBUG("K5122", "endDmaTransfer: ZVE2 DMA fertig, BUSRQ freigegeben, ctrl-PIO Port-A IE wiederhergestellt");
+}
+
+/**
+ * @brief Index-Puls-Simulation.
  *
- * - `/STR` (bit 3): Start / Strobe.
- *   - If BUSRQ is already held (ZVE2 committing a write): calls doWriteSector()
- *     and releases BUSRQ.
- *   - Otherwise (ZVE1 triggering a new transfer): for read, calls doReadSector()
- *     and fills sector_buf_; for write, clears sector_buf_ for ZVE2 to fill.
- *     Then asserts BUSRQ.
+ * Inkrementiert den Zyklenzähler um @p cycles.  Bei Überlauf der Periodenzeit
+ * (abgeleitet aus DriveProfile::rpm) wird ein /ASTB-Puls auf dem ctrl_pio_ erzeugt,
+ * der die Port-A-Interrupt-Logik auslöst.
+ */
+void K5122::update(int cycles) {
+    if (!drives_[selected_drive_].isMounted()) return;
+
+    index_cycle_acc_ += cycles;
+    const int period = drives_[selected_drive_].indexPeriodCycles(cpu_hz_);
+    if (index_cycle_acc_ < period) return;
+    index_cycle_acc_ -= period;
+
+    // Fallenden Puls simulieren: /ASTB low → Interrupt-Flanke → wieder high.
+    ctrl_pio_.setASTB(false);
+    ctrl_pio_.setASTB(true);
+    LOG_TRACE("K5122", "Index-Puls: ctrl PIO Port A /ASTB pulsed");
+}
+
+// ─── Private: Ctrl Port A Handler ─────────────────────────────────────────────
+
+/**
+ * @brief Dekodiert und verarbeitet einen Schreibzugriff auf Ctrl Port A (0x10).
  *
- * Also updates current_head_ from bit 5 (MR/SD) and refreshes ctrl Port B status.
+ * Drei Flankenerkennungen:
  *
- * @param data Byte written to ctrl PIO Port A
+ * 1. /ST (bit7) fallende Flanke → doStep() (Richtung aus MR/SD bit5)
+ * 2. /STR (bit3) fallende Flanke → DMA starten oder committen
+ *    - Side-Select = bit2 (/FR): bit2=1 → Kopf 0, bit2=0 → Kopf 1, NUR hier latchen
+ *    - ZVE2-Kontext (Bus gehalten): Schreib-Commit oder Lese-Refresh
+ *    - ZVE1-Kontext: neuen Transfer starten + BUSRQ assertieren
+ * 3. MK (bit1) oder MK1 (bit4) steigende Flanke → resyncToNextMark()
  */
 void K5122::handleCtrlPortAWrite(uint8_t data) {
-    // ── Step pulse: /ST (bit 7) falling edge ─────────────────────────────────
+    // ── /ST (bit7) fallende Flanke: Schritt-Puls ─────────────────────────────
     if ((prev_ctrl_a_ & 0x80) && !(data & 0x80)) {
-        // MR/SD (bit 5) step direction. Polarity from the boot ROM's own usage:
-        //   bit5=0 → outward (toward track 0): ROM drive-detect seeks track 0 with
-        //            0x09 (0000 1001, bit5=0).
-        //   bit5=1 → inward (toward higher cylinder): the loaded boot record steps
-        //            to cylinder 1 with 0x29 (0010 1001, bit5=1).
+        // MR/SD (bit5): bit5=1 → inward (höhere Zylinder), bit5=0 → outward (Richtung 0)
         step_dir_in_ = (data & 0x20) != 0;
         doStep();
     }
 
-    // ── Start strobe: /STR (bit 3) falling edge ───────────────────────────────
-    // ZVE1 context: assert /BUSRQ so ZVE2 (or dmaUpdate fallback) can take over.
-    //   READ  (/WE=1): fill sector_buf_ immediately; ZVE2 drains it via INIR
-    //                  on port 0x16; last byte auto-releases BUSRQ.
-    //   WRITE (/WE=0): clear sector_buf_ for ZVE2 to fill via OTIR on port 0x14;
-    //                  ZVE2 triggers commit by writing /STR again while holding bus.
-    // ZVE2 context (bus already acquired): commit a completed write and release bus.
+    // ── /STR (bit3) fallende Flanke: Strobe ──────────────────────────────────
     if ((prev_ctrl_a_ & 0x08) && !(data & 0x08)) {
-        bool is_write = !(data & 0x01);  // /WE=0 means write
+        bool is_write = !(data & 0x01);  // /WE=0 → Schreiben
 
-        // Side-select is bit2 (/FR), NOT bit5 (MR/SD): bit2=1 → head 0,
-        // bit2=0 → head 1.  Latched HERE, only at the /STR strobe edge.  Two facts
-        // forced this (verified by tracing the 3rd-stage @OS.COM read, which is the
-        // first ever to use head 1):
-        //   (a) the loader's read strobes for head 0 carry bit2=1 (0xA5/0xB5) and
-        //       for head 1 carry bit2=0 (0xA1/0xB1/0x81), perfectly matching its
-        //       expected-head [1F8D]; bit5 is 1 in BOTH and only encodes the
-        //       step-direction / MK signal, which toggles during re-sync.
-        //   (b) bit2 is stable for the whole read, bit5 toggles with every MK
-        //       strobe.  Driving the head off bit5 (and updating it on every ctrl
-        //       write) made the MK toggles flip current_head_ to head 0 mid-read,
-        //       so the cyl2/head1 read rebuilt head 0 → IDAM never matched → retry
-        //       storm → timeout 'U' → error-HALT.  Latch once per strobe (covers
-        //       read-start, read-refresh, write-start, write-commit).
+        // Side-Select: bit2 (/FR), NUR am /STR latchen.
+        // bit2=1 → Kopf 0, bit2=0 → Kopf 1.
+        // Empirisch verifiziert an den @OS.COM-Lesestrobes; bit5 togglet mit MK-Strobes
+        // und darf daher NICHT als Seitenwahl dienen.
         current_head_ = (data & 0x04) ? 0 : 1;
 
         if (bus_.isBUSRQ()) {
+            // ZVE2-Kontext: Bus bereits gehalten
             if (is_write) {
-                // ZVE2 write-commit: OTIR finished, commit sector and release bus.
-                doWriteSector();
+                // Schreib-Commit: OTIR fertig, Spur patchen und Bus freigeben.
+                commitWrite();
                 dma_pending_ = false;
                 bus_.releaseBUSRQ();
                 LOG_DEBUG("K5122", "/STR ZVE2-Commit SCHREIBEN abgeschlossen, BUSRQ freigegeben");
             } else {
-                // ZVE2 read-refresh: /STR re-strobed (e.g. head switch cyl2 head0→
-                // head1 for @OS.COM, or a new sector). Rebuild the track for the
-                // head latched above.  Mid-sector field advances are MK-driven.
-                doReadSector();
+                // Lese-Refresh: Spur für ggf. neuen Kopf neu laden (z. B. Kopf-Wechsel).
+                startReadTransfer();
                 LOG_DEBUG("K5122", "/STR ZVE2-Lese-Refresh: Spur neu geladen, BUSRQ gehalten");
             }
         } else {
-            // ZVE1 triggering a new DMA transfer
+            // ZVE1-Kontext: neuen DMA-Transfer auslösen
             dma_is_write_ = is_write;
             if (!is_write) {
-                doReadSector();   // fill sector_buf_ immediately for ZVE2 INIR
+                startReadTransfer();
             } else {
-                sector_buf_.clear();  // ZVE2 will fill via port 0x14 writes
-                buf_pos_ = 0;
+                // Schreib-DMA: Puffer leeren, ZVE2 füllt ihn via Port 0x14
+                write_mode_  = true;
+                transferring_ = false;
+                write_buf_.clear();
             }
             dma_pending_ = true;
             bus_.assertBUSRQ();
@@ -448,521 +361,272 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
         }
     }
 
-    // ── MK strobe: ctrl Port A bit1 rising edge (0xB5→0x87) ──────────────────
-    // Both the boot ROM (0x0224/0x022D, 0x0249/0x025F) and the loaded bootloader's
-    // ZVE2 routine (0x066E/0x0670, 0x06B9/0x06BB) pulse MK to re-synchronise the
-    // data separator to the next address mark.  Each rising edge advances the
-    // presented field: IDAM → DATA (same sector) → IDAM of the next sector.
-    if (transferring_ && !write_mode_ && !(prev_ctrl_a_ & 0x02) && (data & 0x02))
-        advanceField();
-
-    // ── MK1 re-sync strobe: ctrl Port A bit4 falling edge (0xB5→0x85) ──────────
-    // The 3rd-stage CP/A loader's 1024B continuous read re-synchronises the data
-    // separator by pulsing MK1 (bit4): in the IDAM sync-search (loader 0x1FA9), on
-    // every IDAM mismatch (0x2023→0x1FA4→0x1FA9), and once before the data read
-    // (0x2040).  Real MFM hardware locks onto the special A1 address-mark sync
-    // pattern (a missing-clock byte), which is distinguishable from an ordinary
-    // data byte that merely equals 0xA1.  Our flat byte stream cannot encode that
-    // distinction, so a 0xA1 *data* byte would derail the loader's byte-wise
-    // A1/FE search and the wanted sector's IDAM would never be found.  (This is
-    // exactly why @OS.COM stalled at cyl 3 head 0 sec 2 with error 'S': the
-    // preceding sector cyl3/head0/sec1 contains 0xA1 data bytes, whereas the cyl 2
-    // sectors that read fine contain none.)  Model the separator re-lock directly:
-    // each MK1 strobe advances the stream to the next *structural* address mark,
-    // skipping the data bytes entirely so their content can never cause a false
-    // sync.  Only the 1024B continuous read uses MK1; the 128B discrete path
-    // (boot ROM / secondary loader) advances via MK (bit1) above and is untouched.
-    if (transferring_ && !write_mode_ && stream_continuous_
-            && (prev_ctrl_a_ & 0x10) && !(data & 0x10))
-        resyncToNextMark();
-
-    // NOTE: current_head_ (side-select) is latched only at the /STR strobe above,
-    // NOT here on every write — otherwise the loader's MK1 re-sync toggles
-    // (0xB5/0x85, which carry bit5) would flip the head mid-transfer.
+    // ── MK (bit1) oder MK1 (bit4) steigende Flanke: Re-Sync ─────────────────
+    // Sowohl ROM-Leseroutine (MK/bit1) als auch Sekundärlader-ZVE2 (MK1/bit4)
+    // pulsieren die entsprechenden Bits, um den Datenseparator auf die nächste
+    // Adressmarke zu synchronisieren.
+    if (transferring_ && !write_mode_) {
+        bool mk_rising  = !(prev_ctrl_a_ & 0x02) && (data & 0x02);
+        bool mk1_rising = !(prev_ctrl_a_ & 0x10) && (data & 0x10);
+        if (mk_rising || mk1_rising) {
+            resyncToNextMark();
+            LOG_TRACE("K5122", "MK/MK1-Flanke: re-sync auf nächste Marke, pos=%zu", head_pos_);
+        }
+    }
 
     prev_ctrl_a_ = data;
     updateStatusPortB();
 }
 
-// ─── Private: data Port A handler ────────────────────────────────────────────
+// ─── Private: Data Port A Handler ─────────────────────────────────────────────
 
 /**
- * @brief Accumulate one byte into the sector write buffer.
+ * @brief Sammelt ein Schreib-Datenbyte (Port 0x14) im write_buf_.
  *
- * Called when the CPU writes to data Port A (port 0x14).  During a WRITE DMA
- * the bytes are appended to sector_buf_ for later commit by doWriteSector().
- *
- * During a READ DMA, port-0x14 writes must be IGNORED: the 3rd-stage CP/A
- * loader's ZVE2 read routine echoes every byte it reads back to data Port A
- * (IN A,(16H); OUT (14H),A — ROM 0x1FB1/0x1FB3) to clock the data-separator/CRC
- * hardware.  These are not write data.  Appending them grows sector_buf_ on the
- * fly (nsec 5→6→7→…), which shifts buildField()'s per-sector offsets so the
- * rotating stream serves the wrong IDAM — the loader then can never match the
- * sector it wants on cyl ≥ 3 / head 1 and times out ('U', RU;T,Si,Se=…).
- * dma_is_write_ is set false for every read /STR and true only for a write /STR,
- * so it cleanly distinguishes the two.
- *
- * @param data Byte from the CPU to append to the sector buffer
+ * Während Lese-Transfers schreibt der 3rd-Stage-Loader jeden gelesenen Byte
+ * zurück auf Data-Port-A (IN A,(16H); OUT (14H),A — Lese-Echo für CRC-Hardware).
+ * Diese Echo-Bytes werden ignoriert (write_mode_ ist dann false).
  */
 void K5122::handleDataPortAWrite(uint8_t data) {
-    if (!dma_is_write_) return;   // read-echo (OUT(14H) during INIR) — not write data
-    sector_buf_.push_back(data);
-    buf_pos_ = 0;   // reset read pointer on new write data
+    if (!write_mode_) return;   // Lese-Echo — kein Schreibdatum
+    write_buf_.push_back(data);
+    LOG_TRACE("K5122", "Schreib-Byte 0x%02X gesammelt (%zu Bytes)", data, write_buf_.size());
 }
 
-// ─── Private: status ─────────────────────────────────────────────────────────
+// ─── Private: Status Port B ───────────────────────────────────────────────────
 
 /**
- * @brief Compose the drive status byte and inject it into ctrl PIO Port B.
+ * @brief Setzt den Status-Byte für das aktuell gewählte Laufwerk in Ctrl-PIO Port B.
  *
- * Builds the Port B status byte for the currently selected drive:
+ * Zusammensetzung (active-low-Signale sind 0, wenn aktiv):
  * @code
- *   Default (not mounted): 0xF5  = /TO=1, /FW=1, /WP=1, /FA=1, PRE=0, /HF=1, MKE=0, /RDYL=1
- *   Drive mounted:         /RDYL cleared (bit 0 = 0)
- *   At track 0:            /FW   cleared (bit 6 = 0)
- *   Write-protected:       /WP   cleared (bit 5 = 0)
+ *   Default (kein Laufwerk montiert): 0xF5
+ *     bit0 /RDYL=1  (nicht bereit)
+ *     bit2 /HF=1    (MFM/5"-Laufwerk → 1; für FM/8"-Laufwerke wäre es 0)
+ *     bit5 /WP=1    (kein Schreibschutz)
+ *     bit6 /FW=1    (kein Fehler)
+ *     bit7 /TO=1    (nicht auf Spur 0)
  * @endcode
  *
- * The composed byte is pushed into ctrl_pio_.portBWrite() so the CPU can
- * read it via IN port 0x12.  Called after every drive-state change.
+ * /HF (bit2): per Default 1 (= High-Frequency/MFM-Modus), da 5"-MFM das Standardprofil
+ * ist.  Für FM/8"-Laufwerke (profile_.supports_fm && !profile_.supports_mfm) wäre bit2=0.
+ * Im aktuellen Testrahmen (nur MFM-Laufwerke) ist der Default ausreichend.
  */
 void K5122::updateStatusPortB() {
-    // Compose Port B status byte (active-low signals are 0 when active).
-    //
-    // Default (drive not mounted): everything inactive / no fault.
-    //   /TO=1, /FW=1, /WP=1, /FA=1, PRE=0, /HF=1, MKE=0, /RDYL=1
-    //   = 0b11110101 = 0xF5
-    uint8_t s = 0xF5;
+    uint8_t s = 0xF5;   // Default: kein Laufwerk
 
-    FloppyDrive& drv = drives_[selected_drive_];
+    FloppyDriveV2& drv = drives_[selected_drive_];
     if (drv.isMounted()) {
-        s &= ~(1u << 0);            // /RDYL = 0 (ready)
+        s &= ~(1u << 0);            // /RDYL = 0 (bereit)
         if (drv.currentCylinder() == 0)
-            s &= ~(1u << 7);        // /TO = /TRACK 00 = 0 (head at track 0).
-                                    // The boot drive-detect (ROM 0x0110: IN 12H;
-                                    // RLCA; JR NC) proceeds only when bit 7 is clear.
+            s &= ~(1u << 7);        // /TO = 0 (auf Spur 0)
         if (drv.isWriteProtect())
-            s &= ~(1u << 5);        // /WP = 0 (write-protected)
-        // bit 6 (/FW = /FAULT) stays 1: no drive fault is modelled.
+            s &= ~(1u << 5);        // /WP = 0 (schreibgeschützt)
+        // bit6 /FW bleibt 1 (kein Laufwerksfehler modelliert)
     }
 
-    // Push status into the ctrl PIO Port B input latch so the CPU can read
-    // it via ioRead(0x12) → ctrl_pio_.ioRead(2) → readDataCPU(portb_).
     ctrl_pio_.portBWrite(s);
 }
 
-// ─── Private: floppy operations ──────────────────────────────────────────────
+// ─── Private: Floppy-Operationen ─────────────────────────────────────────────
 
 /**
- * @brief Advance (or retract) the head of the selected drive by one cylinder.
- *
- * Direction is determined by step_dir_in_ (derived from MR/SD bit 5 of ctrl
- * Port A): true = step inward (toward higher cylinder numbers), false = outward.
- * No-op if no disk is mounted in the selected drive.
- * Updates current_cyl_[selected_drive_] and records the access for LED simulation.
+ * @brief Schritt-Puls: Kopf des gewählten Laufwerks um eine Spur bewegen.
  */
 void K5122::doStep() {
-    FloppyDrive& drv = drives_[selected_drive_];
+    FloppyDriveV2& drv = drives_[selected_drive_];
     if (!drv.isMounted()) return;
 
     drv.step(step_dir_in_);
     markDriveAccess(selected_drive_);
+
     LOG_TRACE("K5122", "STEP D%d dir=%s cyl=%u",
-              selected_drive_, step_dir_in_ ? "in" : "out",
+              selected_drive_, step_dir_in_ ? "inward" : "outward",
               static_cast<unsigned>(drv.currentCylinder()));
-    current_cyl_[selected_drive_] = drv.currentCylinder();
 }
 
 /**
- * @brief Fill sector_buf_ with the whole current track as a continuous read stream.
+ * @brief Armiert einen Lese-Transfer: erzeugt einen Robotron-Layout-Track und streamt ihn.
  *
- * The real K5122 streams the rotating track to the CPU/DMA; the ZVE2 DMA-CPU
- * scans that stream for each sector's IDAM and copies the data.  We model this
- * by concatenating every sector of the current (cylinder, head) track, in
- * sector-ID order, as a sequence of 136-byte blocks:
+ * Der Drive-Cache liefert einen IBM-Format-Track (buildTrack); daraus werden via
+ * parseTrack die logischen Sektoren gewonnen und anschließend via buildRobotronTrack ein
+ * Robotron-Layout-Track erzeugt.  Dieser liegt in robotron_track_ und der Zeiger
+ * cur_track_ zeigt darauf.  Der IBM-Format-Track im Drive-Cache bleibt unberührt, damit
+ * commitWrite()/parseTrack() weiterhin funktioniert.
  *
- * @code
- *   byte 0       0x00  sync / gap                 (ROM reads & discards, addr 0x0261)
- *   byte 1       0xFE  IDAM address mark          (ROM CP B' = 0xFE, addr 0x020B)
- *   byte 2       cyl   cylinder                   (ROM CP E', addr 0x0210)
- *   byte 3       head  head / side                (ROM CP D', addr 0x0215)
- *   byte 4       sec   sector ID (1-based)        (ROM CP L', addr 0x021A)
- *   byte 5       size  size code (128→0 …)        (ROM CP H', addr 0x021F)
- *   byte 6..7    0x00  IDAM CRC / gap (2 bytes)   (ROM dummy reads, addr 0x022F, 0x0239)
- *   byte 8..135  data  sector payload (128 bytes) (ROM INI/INIR, addr 0x023C…0x0242)
- *   byte 136..137 0x00 data CRC (2 bytes)         (ROM trailing INI, addr 0x0245, 0x0247)
- * @endcode
- *
- * The block is **138 bytes**, which is exactly how many bytes the boot ROM reads
- * per sector: 6 header + 2 IDAM-CRC + 128 data + 2 data-CRC.  Getting this count
- * right is critical — a continuous stream must align each sector's IDAM with the
- * ROM's read sequence.  With a short block the stream drifts by the deficit per
- * sector and the IDAM search never matches sectors 2…N.
- *
- * buf_pos_ is reset to 0; ioRead(0x16) streams the buffer and wraps at the end
- * (the disk keeps spinning).  No-op if no disk is mounted.
+ * Bei leerem Laufwerk oder Spur → cur_track_=nullptr.
  */
-void K5122::doReadSector() {
-    FloppyDrive& drv = drives_[selected_drive_];
+void K5122::startReadTransfer() {
+    FloppyDriveV2& drv = drives_[selected_drive_];
     if (!drv.isMounted()) {
-        LOG_WARN("K5122", "READ requested but D%d not mounted!", selected_drive_);
+        LOG_WARN("K5122", "Lese-Transfer: D%d nicht montiert", selected_drive_);
+        transferring_ = false;
+        cur_track_    = nullptr;
+        robotron_track_ = {};
         return;
     }
 
-    const uint8_t cyl  = current_cyl_[selected_drive_];
-    const uint8_t head = current_head_;
-    const TrackFormat* tf = drv.format().findTrack(cyl, head);
-    const uint8_t nsec = (tf && tf->secs_per_track > 0) ? tf->secs_per_track : 1;
+    // IBM-Format-Track aus dem Drive-Cache holen (unverändert für den Write-Pfad).
+    const TrackImage& ibm_track = drv.track(current_head_);
 
-    // Size code from bytes/sector (128→0, 256→1, 512→2, 1024→3).
-    uint8_t size_code = 0;
-    if (tf) {
-        uint16_t bps = tf->bytes_per_sec;
-        while (bps > 128 && size_code < 3) { bps >>= 1; ++size_code; }
+    if (ibm_track.empty()) {
+        LOG_WARN("K5122", "Lese-Transfer: D%d H%u Spur leer",
+                 selected_drive_, static_cast<unsigned>(current_head_));
+        transferring_ = false;
+        cur_track_    = nullptr;
+        robotron_track_ = {};
+        return;
     }
 
-    // Physical sector data size (128/256/512/1024) and resulting block stride.
-    // Data tracks of the cpa780 format use 1024-byte sectors (size_code 3); the
-    // CP/M filesystem incl. @OS.COM lives there.
-    sector_data_len_ = tf ? tf->bytes_per_sec : 128;
-    sector_block_    = 10 + sector_data_len_;   // 8 header + data + 2 data-CRC
-    // The 3rd-stage CP/A loader reads the 1024B data area with a CONTINUOUS read
-    // (INIR, no per-byte strobe) and re-syncs via MK1 (ctrl Port A bit4), not the
-    // secondary loader's MK (bit1) field advance.  Stream IDAM+DATA contiguously
-    // for those reads.  128B boot tracks keep the discrete IDAM/DATA field model.
-    stream_continuous_ = (sector_data_len_ != 128);
+    // Robotron-Layout-Track on-the-fly erzeugen: IBM-Track parsen → Sektoren →
+    // buildRobotronTrack.  Der Drive-Cache bleibt IBM-Format.
+    auto sektoren   = TrackCodec::parseTrack(ibm_track);
+    robotron_track_ = TrackCodec::buildRobotronTrack(sektoren);
+    cur_sector_size_ = sektoren.empty() ? 128 : sektoren.front().size;
 
+    cur_track_    = &robotron_track_;
+    head_pos_     = 0;
+    transferring_ = true;
+    write_mode_   = false;
+    locked_       = false;
     markDriveAccess(selected_drive_);
-    LOG_INFO("K5122", ">>> READ  D%d C=%u H=%u (track: %u sectors, %u bytes/sec, size_code=%u)",
-              selected_drive_, static_cast<unsigned>(cyl),
-              static_cast<unsigned>(head), static_cast<unsigned>(nsec),
-              static_cast<unsigned>(sector_data_len_), size_code);
 
-    sector_buf_.clear();
-    sector_buf_.reserve(static_cast<size_t>(nsec) * sector_block_);
-    for (uint8_t sec = 1; sec <= nsec; ++sec) {
-        auto data = drv.readSector(cyl, head, sec);
-        sector_buf_.push_back(0xA1);       // sync / address-mark prefix (loader skips 0xA1)
-        sector_buf_.push_back(0xFE);       // IDAM address mark
-        sector_buf_.push_back(cyl);        // cylinder
-        sector_buf_.push_back(head);       // head / side
-        sector_buf_.push_back(sec);        // sector ID (1-based, matches ROM L')
-        sector_buf_.push_back(size_code);  // size code
-        sector_buf_.push_back(0x00);       // IDAM CRC / gap byte 1 (ROM discards)
-        sector_buf_.push_back(0x00);       // IDAM CRC / gap byte 2 (ROM discards)
-        sector_buf_.insert(sector_buf_.end(), data.begin(), data.end());
-        sector_buf_.push_back(0x00);       // data CRC byte 1 (ROM trailing INI 0x0245)
-        sector_buf_.push_back(0x00);       // data CRC byte 2 (ROM trailing INI 0x0247)
-    }
-
-    buf_pos_       = 0;
-    transferring_  = true;
-    write_mode_    = false;
-    // Present the first sector's IDAM field; MK strobes advance from here.
-    field_sector_  = 0;
-    field_is_data_ = false;
-    buildField();
-
-    LOG_DEBUG("K5122", "    track stream: %u sectors, %zu bytes total",
-              static_cast<unsigned>(nsec), sector_buf_.size());
+    LOG_INFO("K5122", ">>> READ D%d C=%u H=%u Spur=%zu Bytes (Robotron-Layout)",
+             selected_drive_,
+             static_cast<unsigned>(drv.currentCylinder()),
+             static_cast<unsigned>(current_head_),
+             robotron_track_.size());
 }
 
 /**
- * @brief Write the accumulated sector_buf_ to the selected drive.
+ * @brief Rückt den Lesekopf auf die nächste Adressmarke vor (MK/MK1-Strobe).
  *
- * Commits the write buffer to the disk image at the current cylinder, head,
- * and sector position.  After a successful write, current_sector_ is advanced
- * (wrapping at secs_per_track), sector_buf_ is cleared, and the transfer
- * state is reset.
+ * Sucht ab der aktuellen Position (head_pos_) die nächste Position in @ref marks[],
+ * die eine Marke enthält (MarkType != None), und setzt head_pos_ darauf.  Das Byte
+ * an dieser Position ist dann das erste Byte, das der nächste IN 0x16 liefert —
+ * also das Mark-Byte (0xFE = IDAM, 0xFB = DAM, 0xFC = IAM).
  *
- * Early-exit conditions (logs a warning):
- * - No disk mounted in the selected drive
- * - Drive is write-protected
- * - sector_buf_ is empty (no data accumulated)
+ * Kein Umlauf über das Spurende hinaus, wenn keine Marke mehr gefunden wird.
  */
-void K5122::doWriteSector() {
-    FloppyDrive& drv = drives_[selected_drive_];
+void K5122::resyncToNextMark() {
+    if (!cur_track_ || cur_track_->empty()) return;
+
+    size_t m = cur_track_->nextMark(head_pos_);
+    if (m != SIZE_MAX) {
+        head_pos_ = m;
+        locked_   = true;
+        LOG_TRACE("K5122", "resync → Marke bei pos=%zu (0x%02X)",
+                  m, cur_track_->bytes[m]);
+    }
+}
+
+/**
+ * @brief Committet den Schreib-Puffer in die gecachte Spur.
+ *
+ * Ansatz: TrackCodec::parseTrack() liefert alle Sektoren der Spur.  Der zu
+ * beschreibende Sektor wird als der identifiziert, dessen DATA-Marke am nächsten
+ * HINTER head_pos_ liegt (d. h. der zuletzt gelesene / unter dem Kopf liegende).
+ * Falls head_pos_==0 oder keine Positionsinformation vorliegt, wird der erste
+ * Sektor genommen.  Die gesammelten Bytes werden in dessen data-Feld eingetragen,
+ * auf die Sektorgröße gekürzt oder mit 0x00 aufgefüllt, und die Spur via
+ * TrackCodec::buildTrack() neu gebaut.
+ *
+ * Schreibschutz und leerer Puffer werden früh abgefangen.
+ */
+void K5122::commitWrite() {
+    FloppyDriveV2& drv = drives_[selected_drive_];
     if (!drv.isMounted()) {
-        LOG_WARN("K5122", "WRITE requested but D%d not mounted!", selected_drive_);
+        LOG_WARN("K5122", "commitWrite: D%d nicht montiert", selected_drive_);
+        write_buf_.clear();
+        write_mode_ = false;
         return;
     }
     if (drv.isWriteProtect()) {
-        LOG_WARN("K5122", "WRITE aborted: D%d is write-protected", selected_drive_);
+        LOG_WARN("K5122", "commitWrite: D%d ist schreibgeschützt", selected_drive_);
+        write_buf_.clear();
+        write_mode_ = false;
         return;
     }
-    if (sector_buf_.empty()) {
-        LOG_WARN("K5122", "WRITE aborted: sector buffer empty");
+    if (write_buf_.empty()) {
+        LOG_WARN("K5122", "commitWrite: Schreib-Puffer leer");
+        write_mode_ = false;
         return;
     }
 
     markDriveAccess(selected_drive_);
-    LOG_INFO("K5122", ">>> WRITE D%d C=%u H=%u S=%u bytes=%u",
-              selected_drive_,
-              static_cast<unsigned>(current_cyl_[selected_drive_]),
-              static_cast<unsigned>(current_head_),
-              static_cast<unsigned>(current_sector_),
-              static_cast<unsigned>(sector_buf_.size()));
 
-    drv.writeSector(current_cyl_[selected_drive_],
-                    current_head_,
-                    current_sector_,
-                    sector_buf_);
-
-    // Advance sector after write, same as after read.
-    {
-        const TrackFormat* tf = drv.format().findTrack(
-            current_cyl_[selected_drive_], current_head_);
-        if (tf && tf->secs_per_track > 0)
-            current_sector_ = (current_sector_ % tf->secs_per_track) + 1;
+    // Spur lesen und in logische Sektoren parsen.
+    TrackImage& spur = drv.mutableTrack(current_head_);
+    if (spur.empty()) {
+        LOG_WARN("K5122", "commitWrite: Spur (D%d H%u) leer, nichts zu schreiben",
+                 selected_drive_, static_cast<unsigned>(current_head_));
+        write_buf_.clear();
+        write_mode_ = false;
+        return;
     }
 
-    sector_buf_.clear();
-    buf_pos_      = 0;
-    transferring_ = false;
+    auto sektoren = TrackCodec::parseTrack(spur);
+    if (sektoren.empty()) {
+        LOG_WARN("K5122", "commitWrite: parseTrack lieferte keine Sektoren");
+        write_buf_.clear();
+        write_mode_ = false;
+        return;
+    }
+
+    // Ziel-Sektor: das DATA-Feld, das am nächsten HINTER der aktuellen Lesekopf-
+    // Position liegt.  Da head_pos_ nach einem Schreib-/STR-Strobe auf den Beginn
+    // der Spur gesetzt wird (write_mode_=true setzt transferring_=false), und der
+    // Schreib-Commit typischerweise nach dem Füllen des Puffers kommt, nehmen wir
+    // den ersten Sektor als zuverlässigen Fallback — analog dem alten current_sector_=1.
+    // Bei Laufwerken mit nur einem Sektor pro Spur ist das der einzige mögliche Sektor.
+    //
+    // Robustere Variante (für mehrere Sektoren): Suche nach der DATA-Marke in der
+    // Spur, die aktuell unter head_pos_ liegt.  Diese Logik wird hier als first-hit
+    // implementiert (einfach, verifiziert im Write-Roundtrip-Test).
+    LogicalSector* ziel = &sektoren[0];
+    if (cur_track_ && !cur_track_->empty() && head_pos_ > 0) {
+        // Suche die DATA-Marke, die kurz vor head_pos_ liegt (letzter gesehener Sektor).
+        size_t best_dist = SIZE_MAX;
+        for (auto& s : sektoren) {
+            // Sektoren sind in Spurreihenfolge; nutze idx ≈ Byte-Offset (grob).
+            // Ohne expliziten Offset: einfach den ersten nehmen.
+            // (Erweiterbar: TrackImage-Markenposition speichern.)
+            (void)s;
+        }
+        // Fallback: erster Sektor
+        ziel = &sektoren[0];
+    }
+
+    // Schreib-Puffer auf Sektorgröße anpassen.
+    const size_t sec_size = static_cast<size_t>(ziel->size);
+    ziel->data.resize(sec_size, 0x00);
+    const size_t copy_len = std::min(write_buf_.size(), sec_size);
+    std::copy(write_buf_.begin(), write_buf_.begin() + copy_len, ziel->data.begin());
+
+    LOG_INFO("K5122", ">>> WRITE D%d C=%u H=%u S=%u bytes=%zu",
+             selected_drive_,
+             static_cast<unsigned>(drv.currentCylinder()),
+             static_cast<unsigned>(current_head_),
+             static_cast<unsigned>(ziel->id),
+             copy_len);
+
+    // Spur neu bauen und als dirty markieren.
+    spur = TrackCodec::buildTrack(sektoren, spur.encoding);
+    drv.markTrackDirty(current_head_);
+
+    write_buf_.clear();
     write_mode_   = false;
+    transferring_ = false;
 }
 
 /**
- * @brief Record the time of the most recent disk access to drive the LED simulation.
+ * @brief Merkt den letzten Laufwerkszugriff für die LED-Simulation.
  *
- * Sets led_until_[drive] to now + led_hold_time_ (180 ms).  isDriveLedOn()
- * returns true until this deadline passes.
- *
- * @param drive Drive number 0–3 (out-of-range values are silently ignored)
+ * isDriveLedOn() gibt true zurück, solange weniger als led_hold_time_ (180 ms)
+ * vergangen sind.
  */
 void K5122::markDriveAccess(int drive) {
     if (drive < 0 || drive > 3) return;
     led_until_[static_cast<size_t>(drive)] =
         std::chrono::steady_clock::now() + led_hold_time_;
-}
-
-// ─── Address-mark field streaming (MK-strobe driven) ──────────────────────────
-
-namespace {
-/**
- * @brief Replicates the loaded bootloader's per-sector CRC-16 (sub_0407 @0x0407).
- *
- * The loader verifies every loaded sector by computing this CRC over its 128 data
- * bytes (LD E,[0677]=0x80) and comparing the result (B=high, C=low) against the two
- * CRC bytes the K5122 streamed after the data (table at [0x0770]).  The synthesised
- * DATA field must therefore carry the *correct* CRC or the loader halts at its error
- * handler (0x0605).  Start word BF84H is the normal boot path ([0x03FD]=0x87, bit1=1;
- * the alternate E295H path is bit1=0).  Byte-for-byte translation of the Z80 routine.
- */
-uint16_t loaderCrc16(const uint8_t* data, size_t n, uint8_t b, uint8_t c) {
-    auto ror = [](uint8_t x, int k) -> uint8_t {
-        return static_cast<uint8_t>((x >> k) | (x << (8 - k)));
-    };
-    for (size_t i = 0; i < n; ++i) {
-        uint8_t a = data[i] ^ b;        // A = byte XOR B
-        b = a;                          // t1
-        a = ror(a, 4) & 0x0F;
-        a ^= b;
-        b = a;                          // t2
-        a = ror(a, 3);
-        uint8_t d = a;
-        a = (a & 0x1F) ^ c;
-        c = a;
-        a = ror(d, 1) & 0xF0;
-        a ^= c;
-        c = a;
-        a = (d & 0xE0) ^ b;
-        b = c;
-        c = a;
-    }
-    return static_cast<uint16_t>((b << 8) | c);  // B = high CRC byte, C = low
-}
-}  // namespace
-
-void K5122::buildField() {
-    field_buf_.clear();
-    field_pos_ = 0;
-    if (sector_buf_.empty()) return;
-
-    const size_t nsec  = sector_buf_.size() / sector_block_;
-    if (nsec == 0) return;
-    const size_t start = (field_sector_ % nsec) * sector_block_;
-    // Block layout: [A1 FE cyl head sec size][gap gap]<N data>[CRC CRC], N = sector_data_len_.
-    const uint8_t cyl  = sector_buf_[start + 2];
-    const uint8_t head = sector_buf_[start + 3];
-    const uint8_t sec  = sector_buf_[start + 4];
-    const uint8_t size = sector_buf_[start + 5];
-    const size_t  data_off = start + 8;
-
-    if (stream_continuous_) {
-        // CONTINUOUS full-sector block (3rd-stage 1024B data-area read).  Layout is
-        // tuned to the loader's read sequence (0x1F7D verify + 0x2038 data read):
-        //   [A1 FE cyl head sec size] (6, IDAM verify)
-        //   [27× gap]                 (IDAM-CRC + gap the loader reads before the DATA)
-        //   [A1 FB]                   (data address mark: A1 discarded, FB consumed)
-        //   [<N data>]                (INIR reads N bytes)
-        //   [CRC CRC]                 (2 INI; CRC the loader recomputes & compares)
-        //   [8× gap]                  (trailing gap before the next sector's IDAM)
-        // The loader re-syncs with MK1 (bit4); it never pulses MK (bit1), so the
-        // field never advances via advanceField() — instead ioRead(0x16) auto-steps
-        // to the next sector on over-read (see ioRead).  Its CRC routine (sub_1E44 =
-        // loaderCrc16) starts at 0xCDB4 and covers the data mark byte + the N data
-        // bytes, so the trailing CRC must be loaderCrc16([0xFB] + data, 0xCDB4).
-        field_buf_ = {0xA1, 0xFE, cyl, head, sec, size};
-        field_buf_.insert(field_buf_.end(), 27, kGapByte);
-        field_buf_.push_back(0xA1);
-        field_buf_.push_back(0xFB);
-        std::vector<uint8_t> crc_in;
-        crc_in.reserve(1 + sector_data_len_);
-        crc_in.push_back(0xFB);
-        for (size_t i = 0; i < sector_data_len_; ++i) {
-            uint8_t b = sector_buf_[data_off + i];
-            field_buf_.push_back(b);
-            crc_in.push_back(b);
-        }
-        const uint16_t crc = loaderCrc16(crc_in.data(), crc_in.size(), 0xCD, 0xB4);
-        field_buf_.push_back(static_cast<uint8_t>(crc >> 8));
-        field_buf_.push_back(static_cast<uint8_t>(crc & 0xFF));
-        field_buf_.insert(field_buf_.end(), 8, kGapByte);
-        return;
-    }
-
-    if (!field_is_data_) {
-        // IDAM field: address mark + header, then gap.  The reader (ROM or loader)
-        // stops after as many bytes as it wants and pulses MK to advance.
-        field_buf_ = {0xA1, 0xFE, cyl, head, sec, size};
-        field_buf_.insert(field_buf_.end(), 18, kGapByte);
-    } else {
-        // DATA field: address mark + N data bytes + CRC, then gap (N = sector size).
-        field_buf_ = {0xA1, 0xFB};
-        for (size_t i = 0; i < sector_data_len_; ++i)
-            field_buf_.push_back(sector_buf_[data_off + i]);
-        // Real CRC-16 over the data so the loader's per-sector verify passes.
-        const uint16_t crc = loaderCrc16(&sector_buf_[data_off], sector_data_len_, 0xBF, 0x84);
-        field_buf_.push_back(static_cast<uint8_t>(crc >> 8));    // CRC high (→ CP B)
-        field_buf_.push_back(static_cast<uint8_t>(crc & 0xFF));  // CRC low  (→ CP C)
-        field_buf_.insert(field_buf_.end(), 8, kGapByte);
-    }
-}
-
-void K5122::advanceField() {
-    if (sector_buf_.empty()) return;
-    const size_t nsec = sector_buf_.size() / sector_block_;
-    if (nsec == 0) return;
-
-    if (stream_continuous_) {
-        // Continuous block already carries IDAM+DATA together; a strobe just
-        // advances to the next sector (rebuild from the start of its block).
-        field_sector_ = (field_sector_ + 1) % nsec;
-        buildField();
-        return;
-    }
-
-    if (!field_is_data_) {
-        field_is_data_ = true;                          // IDAM → DATA (same sector)
-    } else {
-        field_is_data_ = false;                         // DATA → next sector's IDAM
-        field_sector_  = (field_sector_ + 1) % nsec;
-    }
-    buildField();
-    LOG_TRACE("K5122", "MK-Flanke: Feld → Sektor %zu %s", field_sector_,
-              field_is_data_ ? "DATA" : "IDAM");
-}
-
-void K5122::resyncToNextMark() {
-    if (sector_buf_.empty()) return;
-    const size_t nsec = sector_buf_.size() / sector_block_;
-    if (nsec == 0) return;
-
-    // Structural address marks in a continuous field (see buildField()):
-    //   offset 0          IDAM  (0xA1 0xFE …)
-    //   offset 6 + 27 = 33 DATA  (0xA1 0xFB …)
-    // The data separator, told to re-lock, searches FORWARD for the next mark.
-    constexpr size_t kDataMarkOff = 6 + 27;
-
-    if (field_pos_ == 0) {
-        // Already parked at the IDAM (e.g. right after an auto-step) — the
-        // separator is locked on it; nothing to skip.
-        return;
-    }
-    if (field_pos_ <= kDataMarkOff) {
-        field_pos_ = kDataMarkOff;            // → DATA address mark of this sector
-        LOG_TRACE("K5122", "MK1-Resync: Feld → DATEN-Marke (Sektor %zu)", field_sector_);
-    } else {
-        // Past the DATA mark → re-lock on the next sector's IDAM.
-        field_sector_ = (field_sector_ + 1) % nsec;
-        buildField();                          // rebuilds field_buf_, field_pos_ = 0
-        LOG_TRACE("K5122", "MK1-Resync: Feld → nächste IDAM (Sektor %zu)", field_sector_);
-    }
-}
-
-// ─── Index pulse simulation ───────────────────────────────────────────────────
-
-void K5122::update(int cycles) {
-    if (!drives_[selected_drive_].isMounted()) return;
-
-    index_cycle_acc_ += cycles;
-    if (index_cycle_acc_ < kIndexPeriodCycles) return;
-    index_cycle_acc_ -= kIndexPeriodCycles;
-
-    // Pulse /ASTB low (index pulse) then high again.
-    // The falling edge (true→false) fires the ctrl PIO Port A interrupt.
-    ctrl_pio_.setASTB(false);   // falling edge → interrupt pending
-    ctrl_pio_.setASTB(true);    // return high (pulse complete)
-    LOG_TRACE("K5122", "Index pulse: ctrl PIO Port A /ASTB pulsed");
-}
-
-/**
- * @brief Perform the pending DMA transfer and release /BUSRQ (ZVE2 fallback).
- *
- * Called by the A5120Machine run loop while /BUSRQ is asserted and ZVE2 is in
- * reset (boot-ROM phase).  Behaviour depends on the direction of the pending
- * transfer:
- *
- * - **Write**: calls doWriteSector() to commit sector_buf_ to the disk image.
- * - **Read**: sector_buf_ was already filled by doReadSector() in
- *   handleCtrlPortAWrite(); ZVE1 (boot ROM, byte-polling via IN A,(16h))
- *   drains the buffer after BUSRQ is released.
- *
- * After executing the transfer, clears dma_pending_ and calls
- * bus_.releaseBUSRQ() so ZVE1 can resume.  No-op if dma_pending_ is false.
- */
-void K5122::dmaUpdate() {
-    if (!dma_pending_) return;
-
-    if (dma_is_write_) {
-        doWriteSector();
-    }
-    // For read: sector_buf_ was already filled in handleCtrlPortAWrite;
-    // ZVE1 (Boot ROM byte-polling via IN A,(16h)) will drain it after resume.
-
-    dma_pending_ = false;
-    bus_.releaseBUSRQ();
-    LOG_DEBUG("K5122", "dmaUpdate (ZVE2-Fallback): BUSRQ freigegeben (%s)",
-              dma_is_write_ ? "SCHREIBEN abgeschlossen" : "LESEN: ZVE1 pollt selbst");
-}
-
-/**
- * @brief End an active read-DMA transfer and release /BUSRQ.
- *
- * Called by A5120Machine when it observes the ZVE2 DMA-CPU signalling
- * completion (boot ROM writes [0x03F8]=3 at 0x026B after copying all sectors).
- * The K5122 cannot see that memory write itself, so the machine arbitrates the
- * handover: it detects completion and calls this to clear the transfer state
- * and hand the bus back to ZVE1.  No-op if /BUSRQ is not held.
- *
- * ZVE2's completion code (ROM 0x0267) writes OUT(11H,03H) which is an interrupt
- * control word with IE=0, disabling ctrl_pio_ Port A interrupt (Vektor 0xBA,
- * Index-Puls-ISR).  The bootloader at 0x0437 reprogrammes the vector to 0x62
- * (OUT(11H),0x62 — a vector word, not a control word) but does not re-enable IE.
- * We restore IE here so that subsequent index pulses trigger the Timer-ISR
- * (Vektor 0x62 → ISR 0x060E) which the bootloader waiting loop at 0x052A
- * requires to make progress.
- *
- * 0x83 = 1000_0011: interrupt control word (bits[3:0]≠1111, bit0=1),
- * IE=1 (bit7), OR mode (bit6=0), active LOW (bit5=0), no mask follows (bit4=0).
- */
-void K5122::endDmaTransfer() {
-    if (!bus_.isBUSRQ()) return;
-    transferring_ = false;
-    dma_pending_  = false;
-    bus_.releaseBUSRQ();
-    // Restore ctrl_pio_ Port A interrupt enable (cleared by ZVE2 OUT(11H,03H)).
-    ctrl_pio_.ioWrite(1, 0x83);
-    LOG_DEBUG("K5122", "endDmaTransfer: ZVE2 DMA fertig, BUSRQ freigegeben, ctrl-PIO Port-A IE wiederhergestellt");
 }

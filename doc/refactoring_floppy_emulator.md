@@ -836,6 +836,13 @@ doc/design/07_k5122_afs.md, 09_floppy_drive.md  (Modell + FM/Laufwerksprofile ak
 
 ## 15. Implementierungsstand (2026-06-10)
 
+> **Konsolidierung (Endstand):** Die unten als „K5122v2" entwickelte Karte ist nach
+> erfolgreichem vollständigem CP/A-Boot zur **alleinigen `K5122`** (`core/cards/k5122/`,
+> Klasse `K5122`, Lib `k1520_k5122`, Test `test_k5122`) umbenannt; die alte monolithische
+> Synthese-K5122 wurde **entfernt**.  Die `-DUSE_LEGACY_K5122`-Weiche in `a5120.h` ist damit
+> ebenfalls entfallen.  Die folgenden Abschnitte nennen aus historischen Gründen weiter
+> „K5122v2" — gemeint ist die heutige `K5122`.
+
 Umgesetzt wurde die neue Datenpfad-Architektur als **eigenständige, parallele Karte
 `K5122v2`** — *nicht* als In-place-Umbau der alten `K5122`.  Begründung: Die alte Karte
 ist eng mit der timing-empfindlichen ZVE1↔ZVE2-Boot-Arbitrierung verflochten (Phase 4 =

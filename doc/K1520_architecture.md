@@ -650,17 +650,18 @@ k1520_mount_disk(h, 0, "/path/to/cpadisk.img");
 k1520_create_disk(h, 1, "cpa800", "/path/to/new.img");
 ```
 
-### 8.5 Formatagnostischer Floppy-Stack (K5122v2 + DiskImage/TrackImage) — 2026-06-10
+### 8.5 Formatagnostischer Floppy-Stack (K5122 + DiskImage/TrackImage) — 2026-06-10
 
-Die §8.1–§8.4 beschreiben die **ursprüngliche** `K5122` mit On-the-fly-Track-Synthese, die
-im Boot-Pfad verdrahtet bleibt.  Parallel existiert seit dem Floppy-Refactor eine zweite,
-**formatagnostische** Karte `K5122v2` (`core/cards/k5122v2/`) auf einer neuen Peripherie-
-Schicht.  Sie modelliert einen **Lesekopf über der rotierenden Spur** und kennt keine
-Sektorgrößen/CRCs/Boot-Stadien mehr.  Vollständiger Entwurf + Implementierungsstand:
+Die `K5122` (`core/cards/k5122/`) ist ein **formatagnostischer** Floppy-Controller auf der
+Peripherie-Schicht `core/peripherals/floppy_drive/`.  Sie modelliert einen **Lesekopf über der
+rotierenden Spur** und kennt keine Sektorgrößen/CRCs/Boot-Stadien mehr.  *(Sie ersetzte eine
+ältere monolithische On-the-fly-Synthese-K5122 — die §8.1–§8.4 beschreiben deren PIO-Protokoll,
+das auf Port-/Signalebene unverändert gilt; das dort skizzierte karten-interne Synthese-Modell
+ist nun durch den TrackImage-Stack ersetzt.)*  Vollständiger Entwurf + Implementierungsstand:
 `doc/refactoring_floppy_emulator.md` (§9 + §15).
 
 ```
-K5122v2 (Controller-Karte)                core/cards/k5122v2/
+K5122 (Controller-Karte)                  core/cards/k5122/
    │ PIO 10H–18H, /STR /ST MK MK1, BUSRQ-Arbitrierung, Index aus rpm
    │ streamt TrackImage byteweise über 16H; MK/MK1 → nextMark()
    ▼  fordert TrackImage(cyl,head)
@@ -693,17 +694,17 @@ DriveProfile[4] — Zoll/Spuren/Köpfe/U-min/Verfahren je Slot  drive_profile.*
   Die im Entwurf vermutete „eine CRC für beide Boot-Stadien" gilt nur halb — die Stadien
   erwarten physisch verschiedene Daten-CRC-Bytes; Details in `doc/refactoring_floppy_emulator.md`
   §15.2.
-- **Verdrahtung & Boot (2026-06-10):** `A5120Machine` nutzt **standardmäßig** `K5122v2` als
-  Slot-2-Floppy (`a5120.h`, `using`/`#if`-Weiche; Rückschalten mit `-DUSE_LEGACY_K5122`).  Damit
-  **bootet die A5120 die echte Diskette vollständig in CP/A** (`CP/A, Version 25.09.89 …`), alle 8
-  `test_boot_integration`-Stadien grün.  Zwei boot-spezifische Anpassungen waren nötig: ein
+- **Verdrahtung & Boot:** `A5120Machine` verdrahtet die `K5122` als Slot-2-Floppy (`a5120.h`).  Die
+  A5120 **bootet die echte Diskette vollständig in CP/A** (`CP/A, Version 25.09.89 …`), alle
+  `test_boot_integration`-Stadien grün — inkl. Boot von den Laufwerken **B: und C:** (leere niedrigere
+  Laufwerke werden vom ROM übersprungen, §15.6).  Zwei boot-spezifische Anpassungen waren nötig: ein
   **Robotron-Track-Layout** (`buildRobotronTrack`: single-A1, kein IAM, Marke auf dem A1, CRC-Seed
   pro Sektorgröße — passend zur idiosynkratischen IDAM-Suche des ZVE2-Lesers) und die **Track-Ende-
   /BUSRQ-Arbitrierung** (`OUT(13H),03H` → /BUSRQ frei, gegated auf 128-B-Spuren).  Details:
   `doc/refactoring_floppy_emulator.md` §15.4.  Das generische IBM-/HFE-Layout bleibt unberührt.
 - **Tests:** `test_track_codec`, `test_robotron_track`, `test_bit_codec`, `test_hfe_image`,
-  `test_disk_image_raw`, `test_drive_profile`, `test_floppy_drive2`, `test_k5122v2` (GoogleTest);
-  alle grün, ebenso `test_boot_integration` (Full-Machine mit K5122v2) und die alten K5122-Tests.
+  `test_disk_image_raw`, `test_drive_profile`, `test_floppy_drive2`, `test_k5122` (GoogleTest);
+  alle grün, ebenso `test_boot_integration` (Full-Machine) und `test_k2526` (ZVE2-Floppy-Kette).
 
 ---
 
