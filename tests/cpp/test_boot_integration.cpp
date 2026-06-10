@@ -287,3 +287,123 @@ TEST(BootIntegration, Stage3_FullyLoadsAndJumpsToOs) {
     EXPECT_TRUE(runUntilPC(machine, 0x37A0, 40'000'000))
         << "OS entry 0x37A0 never reached — @OS.COM read did not complete";
 }
+
+// ─── cpadisk_02 — same disk in two encodings (.img raw + .hfe HxC) ────────────
+//
+// disks/cpadisk_02.img (raw cpa780) and disks/cpadisk_02.hfe (HxC HFE v1, produced
+// by real HxC tooling — track_encoding=0xFF, treated as MFM) are two encodings of
+// the SAME disk: a CP/A system *without* a real-time clock.  These two tests prove
+// that the new K5122v2 controller boots BOTH formats through every stage into the
+// running CP/A OS.  The HFE case additionally exercises the BitCodec/HfeImage
+// backend end-to-end on a *real* (not synthetic) disk image, and that it boots
+// byte-equivalently to the raw image (same OS banner, same TPA size 0C405H).
+//
+// Pass milestone: the running OS prints its own banner "CP/A, Version 25.09.89"
+// — only the loaded OS prints this, so it proves the @OS.COM handoff (JP 0x37A0)
+// succeeded and the OS is executing — and then completes its BIOS cold-boot init
+// ("TPA ist OK!" after the RAM test).  Both encodings reach the exact same screen.
+//
+// KNOWN LIMIT — the disks' intended end state (auto-`dir` listing + interactive
+// prompt) is currently NOT reached: right after "TPA ist OK!" the OS spins in a
+// 16-bit divide routine (sub_C800 @0xC800) called with the divisor [0xD1BE]==0,
+// so DE never grows and the loop never terminates.  Both .img and .hfe hang at the
+// identical PC with the identical screen, i.e. this is a clock-/OS-runtime issue
+// (the disks are "ohne Uhr"), NOT a floppy/boot data-path difference between the
+// formats.  When that is resolved, tighten these tests to assert the dir output +
+// prompt.  Diagnosis: doc/refactoring_floppy_emulator.md §15.5.
+
+// Budget: "TPA ist OK!" appears well before this; runUntilVramContains stops early.
+constexpr int kCpa02BudgetCycles = 90'000'000;
+
+// Mount cpadisk_02 by name.  Raw .img and self-describing .hfe both mount via the
+// same call; for HFE the "cpa780" format name is looked up (must exist) but ignored
+// by the HFE backend, which reads geometry/encoding from the file header.
+void mountCpa02(A5120Machine& m, const char* name) {
+    ASSERT_TRUE(m.mountDisk(0, diskPath(name), "cpa780", /*wp=*/false))
+        << "could not mount " << name << ": " << m.lastError();
+}
+
+/**
+ * @test BootIntegrationCpa02/ImgBootsIntoRunningCpaOs
+ * @brief cpadisk_02.img boots through all stages into the running CP/A OS.
+ */
+TEST(BootIntegrationCpa02, ImgBootsIntoRunningCpaOs) {
+    A5120Machine machine;
+    mountCpa02(machine, "cpadisk_02.img");
+    machine.powerOn();
+
+    ASSERT_TRUE(runUntilVramContains(machine, "TPA ist OK!", kCpa02BudgetCycles))
+        << "cpadisk_02.img: OS BIOS cold-boot (RAM test) never completed — boot failed";
+    const std::string screen = vramText(machine);
+    EXPECT_NE(screen.find("CP/A, Version 25.09.89"), std::string::npos)
+        << "running CP/A OS banner missing — @OS.COM handoff did not run the OS";
+    EXPECT_NE(screen.find("TPA 100H - 0C405H"), std::string::npos)
+        << "expected TPA size 0C405H (this disk's OS) not on screen";
+}
+
+/**
+ * @test BootIntegrationCpa02/HfeBootsIntoRunningCpaOs
+ * @brief cpadisk_02.hfe (HxC HFE v1) boots identically to the raw .img — proves the
+ *        HFE/BitCodec backend boots a real disk through K5122v2 end-to-end.
+ */
+TEST(BootIntegrationCpa02, HfeBootsIntoRunningCpaOs) {
+    A5120Machine machine;
+    mountCpa02(machine, "cpadisk_02.hfe");
+    machine.powerOn();
+
+    ASSERT_TRUE(runUntilVramContains(machine, "TPA ist OK!", kCpa02BudgetCycles))
+        << "cpadisk_02.hfe: OS BIOS cold-boot never completed — HFE boot path failed";
+    const std::string screen = vramText(machine);
+    EXPECT_NE(screen.find("CP/A, Version 25.09.89"), std::string::npos)
+        << "running CP/A OS banner missing from HFE boot";
+    EXPECT_NE(screen.find("TPA 100H - 0C405H"), std::string::npos)
+        << "HFE boot reached a different OS than the raw image (TPA size differs)";
+}
+
+// ─── Booting from drives B: and C: (search starts at A:, lower drives empty) ──
+//
+// disks/cpadisk_mitUhr_01.{img,hfe} are the same disk in two encodings, WITH an
+// active real-time clock — so (unlike cpadisk_02, §15.5) the OS does not hang in
+// the post-boot divide loop and boots all the way to the "Bitte Uhrzeit eingeben!"
+// time-entry prompt.  These tests additionally exercise the loader + the K5122v2
+// 8212 drive-select for drives OTHER than A:: the disk is mounted on B: (drive 1)
+// or C: (drive 2) with the lower drives left empty.  The ZRE boot ROM's drive-
+// detect loop (0x0110) rotates the 8212 select 0xEE→0xDD→0xBB→0x77 (A:→B:→C:→D:,
+// L0140) and boots from the first drive that holds a disk — so the empty lower
+// drives are skipped and the disk in B:/C: is found.
+//
+// Budget: each empty lower drive costs the ROM ~80 not-ready retries with a step
+// delay (a few million cycles), so C: (two empty drives below it) reaches the
+// prompt later than B:.  runUntilVramContains stops as soon as the prompt appears.
+constexpr int kClockBootBudget = 90'000'000;
+
+// Boot cpadisk_mitUhr_01 from a non-A: drive, leaving the lower drives empty (a
+// fresh A5120Machine has nothing mounted — exactly the configuration to exercise
+// the drive search).  Passes when the OS reaches the time-entry prompt.
+void bootClockFromDrive(int drive, const char* name) {
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(drive, diskPath(name), "cpa780", /*wp=*/false))
+        << "could not mount " << name << " on drive " << drive
+        << ": " << machine.lastError();
+    machine.powerOn();
+    EXPECT_TRUE(runUntilVramContains(machine, "Bitte Uhrzeit eingeben!", kClockBootBudget))
+        << name << " on drive " << drive
+        << " never reached the time-entry prompt — boot from a non-A: drive failed";
+}
+
+/** @test BootIntegrationDriveBC/ClockImg_FromDriveB  Raw image boots from B:. */
+TEST(BootIntegrationDriveBC, ClockImg_FromDriveB) {
+    bootClockFromDrive(1, "cpadisk_mitUhr_01.img");
+}
+/** @test BootIntegrationDriveBC/ClockImg_FromDriveC  Raw image boots from C:. */
+TEST(BootIntegrationDriveBC, ClockImg_FromDriveC) {
+    bootClockFromDrive(2, "cpadisk_mitUhr_01.img");
+}
+/** @test BootIntegrationDriveBC/ClockHfe_FromDriveB  HFE image boots from B:. */
+TEST(BootIntegrationDriveBC, ClockHfe_FromDriveB) {
+    bootClockFromDrive(1, "cpadisk_mitUhr_01.hfe");
+}
+/** @test BootIntegrationDriveBC/ClockHfe_FromDriveC  HFE image boots from C:. */
+TEST(BootIntegrationDriveBC, ClockHfe_FromDriveC) {
+    bootClockFromDrive(2, "cpadisk_mitUhr_01.hfe");
+}

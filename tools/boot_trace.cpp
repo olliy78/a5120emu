@@ -181,6 +181,7 @@ int main(int argc, char** argv) {
     const char* disk_path   = nullptr;
     const char* log_path    = nullptr;   // -L: route emulator LOG_* output to a file
     int   total_limit       = 5000000;
+    int   mount_drive       = 0;         // --drive N: mount on drive N (lower drives empty)
     bool  single_step       = false;
     int   single_step_count = 200;
     bool  verbose           = false;
@@ -212,6 +213,7 @@ int main(int argc, char** argv) {
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-c") && i+1 < argc) { total_limit = atoi(argv[++i]); }
+        else if (!strcmp(argv[i], "--drive") && i+1 < argc) { mount_drive = atoi(argv[++i]); }
         else if (!strcmp(argv[i], "--log-level") && i+1 < argc) {
             log_base = Logger::levelFromString(argv[++i], Level::ERROR);
             log_base_set = true;
@@ -435,16 +437,17 @@ int main(int argc, char** argv) {
 
     // ── Mount boot disk ───────────────────────────────────────────────────────
     // Try cpa780 first: boot ROM expects 128B sectors (size code 0x00 at [0x03F6])
-    bool mounted = machine.mountDisk(0, disk_path, "cpa780", false);
+    // --drive N mounts on drive N; lower drives stay empty (drive search starts at A:).
+    bool mounted = machine.mountDisk(mount_drive, disk_path, "cpa780", false);
     if (!mounted) {
-        mounted = machine.mountDisk(0, disk_path, "cpa800", false);
+        mounted = machine.mountDisk(mount_drive, disk_path, "cpa800", false);
     }
     if (!mounted) {
         fprintf(stderr, "ERROR: Could not mount disk '%s'\n", disk_path);
         fprintf(stderr, "Last error: %s\n", machine.lastError().c_str());
         fprintf(stderr, "Continuing without disk...\n\n");
     } else {
-        fprintf(stderr, "Disk mounted OK\n\n");
+        fprintf(stderr, "Disk mounted OK (drive %d)\n\n", mount_drive);
     }
 
     // ── Run loop ──────────────────────────────────────────────────────────────
