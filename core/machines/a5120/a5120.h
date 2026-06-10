@@ -130,7 +130,7 @@ private:
     K3526         ops_;       // slot 1: RAM
     K7024         screen_;    // slot 5: video
     K8025         ass_;       // slot 3: serial
-    K5122         afs_;       // slot 2: floppy
+    K5122         afs_;       // slot 2: floppy (formatagnostischer Streaming-Controller)
 
     K7637         kbd_;
 

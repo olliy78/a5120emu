@@ -1,417 +1,177 @@
 /**
  * @file k5122.h
- * @brief K5122 AFS – Anschlusssteuerung Floppy-disk Speicher (floppy controller card).
+ * @brief K5122 AFS – formatagnostische Emulation des Floppy-Controllers (Lesekopf-Streaming).
  *
- * Emulates the K5122 floppy disk controller card for the Robotron K1520/A5120 system.
- * The physical card uses two Z80 PIOs for command/status and data transfer,
- * plus one 8212 chip for drive selection.
+ * Emulation der K5122 „Anschlusssteuerung Floppy-disk Speicher" für das Robotron-
+ * K1520/A5120-System.  Der Datenpfad arbeitet als **Lesekopf-über-rotierender-Spur-Modell**
+ * auf Basis der zentralen @ref TrackImage -Abstraktion (siehe
+ * doc/refactoring_floppy_emulator.md): der Controller kennt **keine** Sektorgrößen,
+ * Sektoranzahl, CRC-Verfahren oder Boot-Stadien.  Er bezieht von jedem @ref FloppyDriveV2
+ * eine fertig decodierte Spur (Gaps, Sync, IDAM, DATA, echte CRCs) und streamt deren Bytes
+ * über Port 0x16 wie ein echter Lesekopf; die Re-Sync-Strobes MK/MK1 rücken den Kopf auf
+ * die nächste Adressmarke vor.  Das Verfahren (FM/MFM) steckt allein in der Spur — der
+ * Controller ist verfahrensneutral.  Unterstützte Image-Backends (über @ref DiskImage):
+ * Raw-`.img` (@ref RawSectorImage) und HFE v1 (HfeImage).
  *
- * I/O port assignment (base 0x10):
- * @code
- *   0x10 R/W  Ctrl PIO Port A data  – drive control signals (CPU output)
- *   0x11 R/W  Ctrl PIO Port A ctrl  – PIO control register
- *   0x12 R/W  Ctrl PIO Port B data  – drive status signals (CPU input)
- *   0x13 R/W  Ctrl PIO Port B ctrl  – PIO control register
- *   0x14 R/W  Data PIO Port A data  – write data (byte-by-byte from CPU)
- *   0x15 R/W  Data PIO Port A ctrl
- *   0x16 R/W  Data PIO Port B data  – read data  (byte-by-byte to CPU)
- *   0x17 R/W  Data PIO Port B ctrl
- *   0x18 W    8212 drive select     – bits [1:0] = drive number 0–3
- * @endcode
+ * Für die A5120-Bootdiskette erzeugt @ref startReadTransfer() on-the-fly das
+ * Robotron-spezifische Spurlayout (@ref TrackCodec::buildRobotronTrack), das die
+ * idiosynkratische IDAM-Suche der ZVE2-Boot-/Loader-Leseroutinen erwartet.
  *
- * Ctrl PIO Port A bit layout (CPU output → drive):
- * @code
- *   bit 0  /WE   – Write Enable (active low)
- *   bit 1  MK    – Mark
- *   bit 2  /FR   – Fault Reset (active low)
- *   bit 3  /STR  – Start/Strobe (active low, edge-triggered)
- *   bit 4  MK1   – Mark 1
- *   bit 5  MR/SD – Step direction / side select (0 = inward / side 1)
- *   bit 6  /HL   – Head Load (active low)
- *   bit 7  /ST   – Step pulse (active low, edge-triggered)
- * @endcode
+ * I/O-Port-Belegung (Basis 0x10): zwei Z80-PIOs (Steuer 0x10–0x13, Daten 0x14–0x17) plus
+ * 8212-Drive-Select (0x18).  Side-Select = Port-A bit2 (/FR), am /STR-Strobe gelatcht;
+ * Step-Richtung = bit5 (MR/SD), am /ST-Puls gesampelt.
  *
- * Ctrl PIO Port B bit layout (drive → CPU status input):
- * @code
- *   bit 0  /RDYL – Ready (active low, 0 = drive ready)
- *   bit 1  MKE   – Index mark detected
- *   bit 2  /HF   – High Frequency indicator (FM/5")
- *   bit 3  PRE   – Pre-compensation enable
- *   bit 4  /FA   – Fault Adapter (active low; 1 = no fault)
- *   bit 5  /WP   – Write Protect (active low, 0 = protected)
- *   bit 6  /FW   – Fault (active low, 1 = no fault)
- *   bit 7  /TO   – Track 0 (active low, 0 = at track 0)
- * @endcode
- *
- * Simplified (non-DMA) sector transfer model:
- *   Read:  CPU asserts /STR (Port A bit 3 falling edge) → doReadSector() fills
- *          internal buffer from disk image; CPU drains buffer by reading port 0x16
- *          byte-by-byte.  After the last byte, current_sector_ auto-advances.
- *   Write: CPU writes bytes to port 0x14 to fill the buffer, then asserts /STR
- *          with /WE=0 → doWriteSector() commits buffer to disk image.
- *          current_sector_ auto-advances after the write.
- *
- * @note The real K5122 uses BUSRQ/BUSACK to perform DMA transfers.  This
- *       emulation replaces DMA with a simpler byte-polling model compatible
- *       with the A5120 BIOS sector-transfer routines.
- *
+ * @see doc/refactoring_floppy_emulator.md §9 / §15
  * @see doc/design/07_k5122_afs.md
  * @author Olaf Krieger
- * @date 2024–2025
+ * @date 2026
  * @license MIT License
  */
 
 #pragma once
 #include "core/bus/k1520_bus.h"
 #include "core/primitives/z80_pio.h"
-#include "core/peripherals/floppy_drive/floppy_drive.h"
+#include "core/peripherals/floppy_drive/floppy_drive2.h"
+#include "core/peripherals/floppy_drive/disk_image.h"
+#include "core/peripherals/floppy_drive/drive_profile.h"
 #include "core/peripherals/floppy_drive/format_parser.h"
-#include <vector>
-#include <string>
-#include <cstdint>
+#include "core/peripherals/floppy_drive/track_image.h"
 #include <array>
 #include <chrono>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
 
 /**
  * @class K5122
- * @brief Emulation of the K5122 AFS (Anschlusssteuerung Floppy-disk Speicher) card.
+ * @brief Streaming-basierte K5122-Emulation (Lesekopf über rotierender Spur).
  *
- * Features:
- * - Controls up to 4 floppy drives via two Z80 PIOs and one 8212 chip
- * - Ctrl PIO: drive control signals (step, head-load, strobe) and status readback
- * - Data PIO: byte-oriented sector data transfer (read and write)
- * - Drive-select via 8212 (port 0x18, bits [1:0])
- * - LED activity simulation per drive (isDriveLedOn())
- * - InterruptSlave: IEI → ctrl_pio_ → data_pio_ → IEO daisy-chain
+ * - Steuert bis zu 4 Laufwerke über zwei Z80-PIOs und ein 8212 (Port 0x18).
+ * - Jeder Slot trägt ein @ref DriveProfile (physisches Laufwerk, Maschinenkonfig).
+ * - Datenpfad: streamt die decodierte @ref TrackImage byteweise über Port 0x16;
+ *   MK/MK1-Strobes synchronisieren auf die nächste Adressmarke.
+ * - Index-Periode aus der Laufwerksdrehzahl; /HF-Statusbit aus dem Spur-Encoding.
+ * - BUSRQ-Arbitrierung (dmaUpdate/endDmaTransfer) und Interrupt-Daisy-Chain wie gehabt.
  */
 class K5122 : public BusDevice, public InterruptSlave {
 public:
     /**
-     * @brief Construct a K5122 floppy controller.
-     * @param bus K1520 system bus reference (used for BUSRQ/BUSAK DMA protocol)
+     * @brief Konstruiert die Karte mit je einem Laufwerksprofil pro Slot.
+     * @param bus      K1520-Systembus (für BUSRQ/BUSAK)
+     * @param profiles Laufwerksprofile der 4 Slots (Default: 4× mfs_525_ds80)
+     * @param cpu_hz   effektive Z80-Taktfrequenz für die Index-Periode (Default 2.45 MHz)
      */
-    explicit K5122(K1520Bus& bus);
+    explicit K5122(K1520Bus& bus,
+                     std::array<DriveProfile, 4> profiles = {},
+                     uint32_t cpu_hz = 2450000);
 
-    // ─── BusDevice interface (I/O ports 0x10–0x18) ────────────────────────
-
-    /**
-     * @brief Handle an IN instruction to a K5122 I/O port.
-     *
-     * Dispatches to ctrl PIO (0x10–0x13), data PIO (0x14–0x17), or warns
-     * on unknown port.  Reading data Port B (0x16) during an active read
-     * transfer returns the next byte from the sector buffer.
-     *
-     * @param port Port address (0x10–0x18)
-     * @return Data byte from the selected sub-device or sector buffer
-     */
+    // ─── BusDevice (Ports 0x10–0x18) ─────────────────────────────────────────
     uint8_t     ioRead(uint8_t port) override;
-
-    /**
-     * @brief Handle an OUT instruction to a K5122 I/O port.
-     *
-     * Dispatches to ctrl PIO (0x10–0x13), data PIO (0x14–0x17), or 8212
-     * drive-select (0x18).  Writing to ctrl Port A (0x10) triggers step and
-     * strobe detection; writing to data Port A (0x14) accumulates write data.
-     *
-     * @param port Port address (0x10–0x18)
-     * @param data Byte written by CPU
-     */
     void        ioWrite(uint8_t port, uint8_t data) override;
-
-    /**
-     * @brief Return the device name.
-     * @return "K5122"
-     */
     const char* deviceName() const override { return "K5122"; }
 
-    // ─── InterruptSlave interface (ctrl_pio → data_pio daisy-chain) ────────
-
-    /**
-     * @brief Set /IEI from the upstream interrupt chain.
-     *
-     * Propagates IEI through the internal ctrl_pio_ → data_pio_ chain.
-     *
-     * @param iei true when upstream allows this card to interrupt
-     */
+    // ─── InterruptSlave (ctrl_pio_ → data_pio_ Daisy-Chain) ──────────────────
     void    setIEI(bool iei) override;
-
-    /**
-     * @brief Get /IEO to pass to the downstream device.
-     * @return true to pass interrupt downstream, false if data_pio_ has IEO=false
-     */
     bool    getIEO() const override;
-
-    /**
-     * @brief Check whether this card has a pending interrupt.
-     * @return true if ctrl_pio_ or data_pio_ has a pending interrupt
-     */
     bool    hasInterrupt() const override;
-
-    /**
-     * @brief Return the active interrupt vector from the highest-priority PIO.
-     * @return 8-bit interrupt vector, or 0xFF if none
-     */
     uint8_t getVector() const override;
+    void    onRETI() override;
+
+    // ─── Disk management ─────────────────────────────────────────────────────
 
     /**
-     * @brief Propagate RETI to internal PIOs so IUS flags are cleared.
-     *
-     * Without this, porta_.ius stays set after the first interrupt acknowledge
-     * and all subsequent getVector() calls return 0xFF instead of the real vector.
+     * @brief Mountet ein bereits geöffnetes DiskImage auf einem Slot.
+     * @param drive 0–3
+     * @param img   DiskImage (Eigentum geht über)
+     * @param write_protect Schreibschutz
+     * @return false bei ungültigem Slot oder Inkompatibilität (siehe drive(d).lastError()).
      */
-    void onRETI() override;
-
-    // ─── Disk management ───────────────────────────────────────────────────
-
-    /**
-     * @brief Mount a disk image on a drive.
-     *
-     * Opens the file at @p path and associates it with @p drive.
-     * Updates the ctrl PIO Port B status register immediately.
-     *
-     * @param drive   Drive number 0–3
-     * @param path    Path to disk image file
-     * @param fmt     Disk geometry and sector format
-     * @param write_protect  true to prevent writes to the image
-     * @return true on success, false if file not found or drive index invalid
-     */
-    bool mountDisk(int drive, const std::string& path,
-                   const DiskFormat& fmt, bool write_protect = false);
+    bool mountDisk(int drive, std::unique_ptr<DiskImage> img, bool write_protect = false);
 
     /**
-     * @brief Unmount the disk image from a drive.
-     *
-     * Marks the drive as empty and updates the status register.
-     *
-     * @param drive Drive number 0–3
-     * @return true on success, false if drive index is invalid
+     * @brief Komfort-Overload: öffnet ein .img über @ref DiskImage::open und mountet es.
+     * @param drive 0–3
+     * @param path  Pfad zur Image-Datei
+     * @param fmt   Geometrie (für Raw/.img)
+     * @param write_protect Schreibschutz
+     * @return false bei Öffnungs-/Kompatibilitätsfehler
      */
+    bool mountDisk(int drive, const std::string& path, const DiskFormat& fmt,
+                   bool write_protect = false);
+
     bool unmountDisk(int drive);
-
-    /**
-     * @brief Check whether a disk image is mounted.
-     * @param drive Drive number 0–3
-     * @return true if a disk is mounted in the drive
-     */
     bool isDiskActive(int drive) const;
-
-    /**
-     * @brief Check the write-protect status of a mounted disk.
-     * @param drive Drive number 0–3
-     * @return true if the disk is write-protected
-     */
     bool isDiskWriteProtected(int drive) const;
-
-    /**
-     * @brief Set write-protect flag on a mounted disk.
-     *
-     * Updates the ctrl PIO Port B status bit immediately.
-     *
-     * @param drive Drive number 0–3
-     * @param wp    true to enable write protection
-     */
     void setWriteProtect(int drive, bool wp);
-
-    /**
-     * @brief Query the simulated drive activity LED.
-     *
-     * Returns true for 180 ms after each step, read, or write operation.
-     * Used by the UI to show disk activity.
-     *
-     * @param drive Drive number 0–3
-     * @return true if the LED should be shown as on
-     */
     bool isDriveLedOn(int drive) const;
 
-    /**
-     * @brief Direct access to a drive object (for tests and C-API wrappers).
-     * @param idx Drive index 0–3
-     * @return Reference to the FloppyDrive object
-     */
-    FloppyDrive& drive(int idx) { return drives_[idx]; }
+    /// @brief Direkter Zugriff auf ein Laufwerk (Tests/C-API).
+    FloppyDriveV2& drive(int idx) { return drives_[idx]; }
 
-    /**
-     * @brief Perform the pending DMA transfer and release /BUSRQ.
-     *
-     * Called by the A5120Machine run loop while /BUSRQ is asserted.
-     * Executes the deferred sector read or write that was triggered by
-     * the /STR edge, then calls bus_.releaseBUSRQ() so ZVE1 can resume.
-     *
-     * On real hardware ZVE2 would perform this transfer autonomously.
-     * In this emulation the transfer is performed synchronously here and
-     * the sector data is placed in sector_buf_ for subsequent reads via
-     * port 0x16 (byte-polling code) or written to the disk image (write).
-     *
-     * No-op if no DMA transfer is pending.
-     */
+    // ─── DMA-Arbitrierung / Index ────────────────────────────────────────────
+
+    /// @brief ZVE2-Fallback: führt eine ausstehende DMA-Übertragung aus und gibt /BUSRQ frei.
     void dmaUpdate();
-
-    /**
-     * @brief End an active read-DMA transfer and release /BUSRQ.
-     *
-     * Called by A5120Machine when the ZVE2 DMA-CPU signals completion (boot ROM
-     * writes [0x03F8]=3).  Clears the transfer state and hands the bus back to
-     * ZVE1.  No-op if /BUSRQ is not currently held.
-     */
+    /// @brief Beendet einen aktiven Lese-DMA und gibt /BUSRQ frei (ZVE2-Completion).
     void endDmaTransfer();
-
-    /**
-     * @brief Advance the floppy simulation by @p cycles Z80 clock cycles.
-     *
-     * Called every instruction from the A5120 run loop.  Generates periodic
-     * index-pulse strobes on ctrl PIO Port A /ASTB so that the boot-ROM
-     * index-wait loop (waiind) can count down its four-pulse counter.
-     *
-     * A real 5.25" floppy rotates at 300 RPM = 200 ms per revolution.
-     * At the emulated Z80 speed (~1 MHz effective in boot_trace) this is
-     * roughly 200 000 cycles.  We use a shorter interval so the four pulses
-     * arrive well within the ROM's timeout loop (B/C counters).
-     *
-     * @param cycles Instruction cycles elapsed since last call
-     */
+    /// @brief Schreitet die Floppy-Simulation um @p cycles Takte fort (Index-Puls).
     void update(int cycles);
 
 private:
-    // ─── PIO signal handlers ────────────────────────────────────────────────
-
-    /**
-     * @brief Decode and act on a write to ctrl Port A (port 0x10).
-     *
-     * Detects falling edges on /ST (bit 7) to perform a head step and on
-     * /STR (bit 3) to trigger a sector read or write.  Also tracks the
-     * current head/side (bit 5 = MR/SD).
-     *
-     * @param data Byte written to ctrl PIO Port A
-     */
+    // ─── PIO-/Signal-Handler ─────────────────────────────────────────────────
     void handleCtrlPortAWrite(uint8_t data);
-
-    /**
-     * @brief Accumulate a byte into the sector write buffer.
-     *
-     * Called when the CPU writes to data Port A (port 0x14).  Bytes are
-     * stored in sector_buf_; doWriteSector() flushes them to the image.
-     *
-     * @param data Byte from CPU to add to the sector buffer
-     */
     void handleDataPortAWrite(uint8_t data);
-
-    /**
-     * @brief Push current drive status into ctrl PIO Port B input latch.
-     *
-     * Composes the status byte from the selected drive's mounted/WP/track-0
-     * state and calls ctrl_pio_.portBWrite() so the CPU can read it via
-     * IN port 0x12.  Called after every drive-state change.
-     */
     void updateStatusPortB();
-
-    // ─── Low-level floppy operations ────────────────────────────────────────
-
-    /**
-     * @brief Advance (or retract) the head by one cylinder.
-     *
-     * Direction is determined by MR/SD bit (bit 5 of ctrl Port A):
-     * 0 = step inward (toward higher cylinder), 1 = step outward.
-     * No-op if no disk is mounted in the selected drive.
-     */
     void doStep();
 
-    /**
-     * @brief Read one sector from the selected drive into sector_buf_.
-     *
-     * Uses current_cyl_, current_head_, and current_sector_ to locate the
-     * sector in the disk image.  Sets transferring_=true and write_mode_=false.
-     * No-op if no disk is mounted.
-     */
-    void doReadSector();
-
-    /**
-     * @brief Write sector_buf_ to the selected drive.
-     *
-     * Commits the accumulated write buffer to the disk image at
-     * current_cyl_, current_head_, current_sector_, then advances
-     * current_sector_ (wrapping at secs_per_track).
-     * No-op if no disk is mounted, drive is write-protected, or buffer is empty.
-     */
-    void doWriteSector();
-
-    /**
-     * @brief Record the time of the most recent drive access for LED simulation.
-     * @param drive Drive number 0–3
-     */
+    /// @brief Wählt am /STR-Lese-Strobe die aktuelle Spur und armiert den Lesetransfer.
+    void startReadTransfer();
+    /// @brief Rückt den Lesekopf auf die nächste Adressmarke (MK/MK1-Strobe).
+    void resyncToNextMark();
+    /// @brief Committet einen abgeschlossenen Schreibtransfer in die gecachte Spur.
+    void commitWrite();
     void markDriveAccess(int drive);
 
-    // ─── Hardware objects ────────────────────────────────────────────────────
-    K1520Bus&   bus_;                        ///< K1520 Systembus (für BUSRQ/BUSAK)
-    Z80PIO      ctrl_pio_{"K5122-CTRL"};    ///< Steuer-PIO: ports 0x10–0x13
-    Z80PIO      data_pio_{"K5122-DATA"};    ///< Daten-PIO:  ports 0x14–0x17
-    FloppyDrive drives_[4];                 ///< Up to 4 floppy drives
+    // ─── Hardware-Objekte ────────────────────────────────────────────────────
+    K1520Bus&     bus_;
+    Z80PIO        ctrl_pio_{"K5122-CTRL"};   ///< Steuer-PIO: Ports 0x10–0x13
+    Z80PIO        data_pio_{"K5122-DATA"};   ///< Daten-PIO:  Ports 0x14–0x17
+    FloppyDriveV2 drives_[4];                  ///< bis zu 4 Laufwerke (je mit DriveProfile)
+    uint32_t      cpu_hz_ = 2450000;           ///< Taktfrequenz für Index-Periode
 
-    // ─── Controller state ────────────────────────────────────────────────────
-    int     selected_drive_ = 0;            ///< Currently selected drive (8212 output)
-    uint8_t current_cyl_[4] = {};           ///< Current cylinder number per drive
-    uint8_t current_head_   = 0;            ///< Currently active head/side (0 or 1)
-    uint8_t current_sector_ = 1;            ///< Current sector ID (1-based, auto-advances)
-    bool    step_dir_in_    = true;         ///< true = step toward higher cylinder number
-    uint8_t prev_ctrl_a_    = 0xFF;         ///< Previous ctrl Port A value (edge detection)
+    // ─── Controller-Zustand ──────────────────────────────────────────────────
+    int     selected_drive_ = 0;
+    uint8_t current_head_   = 0;               ///< am /STR gelatchte Seite (bit2/FR)
+    bool    step_dir_in_    = true;            ///< Step-Richtung (bit5 MR/SD, am /ST)
+    uint8_t prev_ctrl_a_    = 0xFF;            ///< vorheriger Port-A-Wert (Kantenerkennung)
 
-    // ─── Sector transfer buffer ──────────────────────────────────────────────
-    /// One IDAM-field block per sector in the rotating track stream:
-    /// [A1 sync][FE IDAM][cyl][head][sec][size][gap][gap][N data][CRC][CRC]
-    /// = 10 + N bytes, where N = bytes-per-sector (128 / 256 / 512 / 1024).
-    /// Set per read in doReadSector() from the track format.
-    size_t sector_block_    = 138;   ///< stride per sector block (10 + sector_data_len_)
-    size_t sector_data_len_ = 128;   ///< physical sector data size (128<<size_code)
+    // ─── Lesekopf-Streaming-Modell (ersetzt sector_buf_/field_*) ─────────────
+    const TrackImage* cur_track_    = nullptr; ///< aktive Spur (Zeiger auf robotron_track_)
+    TrackImage        robotron_track_;          ///< Robotron-Layout-Track für das Streaming;
+                                               ///< wird in startReadTransfer() aus dem IBM-Track
+                                               ///< des Drive-Cache erzeugt (on-the-fly).
+                                               ///< Der Drive-Cache bleibt immer IBM-Format,
+                                               ///< damit commitWrite()/parseTrack() funktioniert.
+    size_t            head_pos_     = 0;        ///< Lesekopf-Position (Byte) in der Spur
+    bool              locked_       = false;    ///< Datenseparator auf eine Marke synchronisiert
+    bool              transferring_ = false;    ///< Lesetransfer läuft
+    bool              write_mode_   = false;    ///< Schreibtransfer läuft
+    std::vector<uint8_t> write_buf_;            ///< gesammelte Schreibdaten (Port 0x14)
+    uint16_t          cur_sector_size_ = 128;   ///< Sektorgröße der aktiven Spur (für die
+                                                ///< Track-Ende-Arbitrierung, s. ioWrite 0x13)
 
-    std::vector<uint8_t> sector_buf_;       ///< Sector data for current read/write transfer
-    size_t               buf_pos_      = 0; ///< Read index into sector_buf_
-    bool                 transferring_ = false; ///< true while a read transfer is in progress
-    bool                 write_mode_   = false; ///< true during a write transfer
+    // ─── DMA-State ───────────────────────────────────────────────────────────
+    bool dma_pending_  = false;
+    bool dma_is_write_ = false;
 
-    // ─── Address-mark field streaming (MK-strobe driven) ─────────────────────
-    // On real K5122 hardware the floppy data separator presents the decoded byte
-    // stream one *address-mark field* at a time; the controller re-synchronises to
-    // the next address mark when the CPU pulses the MK control bit (ctrl Port A
-    // bit1, 0xB5→0x87).  Both readers do this: the boot ROM (0x0224/0x022D,
-    // 0x0249/0x025F) and the loaded bootloader's ZVE2 routine (0x066E/0x0670,
-    // 0x06B9/0x06BB).  Each MK rising edge advances IDAM → DATA → next IDAM → …
-    //
-    //   IDAM field : [A1][FE][cyl][head][sec][size] + gap   (reader stops where it likes)
-    //   DATA field : [A1][FB][128 data][CRC][CRC]   + gap
-    //
-    // ioRead(0x16) streams the current field and pads with gap bytes on over-read,
-    // so the exact byte count each reader consumes within a field does not matter —
-    // only the MK strobe advances to the next field.
-    size_t field_sector_  = 0;       ///< current sector index within the track (0-based)
-    bool   field_is_data_ = false;   ///< false = IDAM field, true = DATA field
-    std::vector<uint8_t> field_buf_; ///< current field byte stream
-    size_t field_pos_     = 0;       ///< read index into field_buf_
-    bool   stream_continuous_ = false; ///< true = 1024B data-area read: IDAM+DATA are
-                                       ///< emitted as one contiguous block and ioRead
-                                       ///< auto-advances to the next sector on over-read
-                                       ///< (3rd-stage CP/A loader; uses MK1/bit4 re-sync,
-                                       ///< not the secondary loader's MK/bit1 field advance)
-    static constexpr uint8_t kGapByte = 0x4E;  ///< MFM gap filler (over-read padding)
+    // ─── Interrupt ───────────────────────────────────────────────────────────
+    bool iei_in_ = false;
 
-    /// Build field_buf_ for (field_sector_, field_is_data_) from sector_buf_.
-    void buildField();
-    /// Advance to the next address-mark field (called on an MK rising edge).
-    void advanceField();
+    // ─── Index-Puls (Periode aus DriveProfile::rpm) ──────────────────────────
+    int  index_cycle_acc_ = 0;
 
-    // ─── DMA state machine ───────────────────────────────────────────────────
-    bool dma_pending_  = false;  ///< true: /BUSRQ asserted, DMA transfer waiting
-    bool dma_is_write_ = false;  ///< true = write sector, false = read sector
-
-    // ─── Interrupt state ─────────────────────────────────────────────────────
-    bool    iei_in_ = false;                ///< Last IEI value from upstream chain
-
-    // ─── Index pulse simulation ──────────────────────────────────────────────
-    int     index_cycle_acc_  = 0;          ///< Accumulated cycles for index timing
-    // 300 RPM = 5 rev/s → period = 200 ms; at 2.45 MHz: 2'450'000 / 5 = 490'000 cycles/rev.
-    // One full track must be readable before the next pulse (ROM waits for 4 pulses).
-    static constexpr int kIndexPeriodCycles = 490000;
-    bool    index_astb_high_  = true;       ///< Current /ASTB level (true=deasserted)
-
-    // ─── LED simulation ──────────────────────────────────────────────────────
-    std::array<std::chrono::steady_clock::time_point, 4> led_until_{};  ///< LED-on deadline per drive
-    std::chrono::milliseconds led_hold_time_{180};  ///< Duration to keep LED on after access
+    // ─── LED-Simulation ──────────────────────────────────────────────────────
+    std::array<std::chrono::steady_clock::time_point, 4> led_until_{};
+    std::chrono::milliseconds led_hold_time_{180};
 };

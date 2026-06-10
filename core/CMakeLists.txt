@@ -111,11 +111,9 @@ target_include_directories(k1520_cards PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 # ────────────────────────────────────────────────────────────────────────────
 
 add_library(k1520_peripherals
-    peripherals/floppy_drive/floppy_drive.cpp
-    peripherals/floppy_drive/floppy_drive.h
     peripherals/floppy_drive/format_parser.cpp
     peripherals/floppy_drive/format_parser.h
-    
+
     peripherals/k7637/k7637.cpp
     peripherals/k7637/k7637.h
 )

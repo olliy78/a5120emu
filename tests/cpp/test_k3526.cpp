@@ -102,18 +102,22 @@ TEST(K3526, ReadWrite_Arbitrary) {
 // ─── Initial state ────────────────────────────────────────────────────────────
 
 /**
- * @test K3526/InitialState_Zero
- * @brief After construction all 65536 bytes are zero-initialised.
- * @par Pass criterion  memRead returns 0x00 at all sampled addresses (start/end of each group).
+ * @test K3526/InitialState_FF
+ * @brief After construction all 65536 bytes read as 0xFF (DRAM power-on state).
+ * @details Real DRAM powers on to an indeterminate state, modelled as 0xFF — and the
+ *   A5120 boot ROM DEPENDS on this: after an intentional `RET P` at 0x000A the CPU
+ *   lands in uninitialised RAM, hits 0xFF (= RST 38h) and vectors back into the ROM's
+ *   real boot entry at 0x0038.  Zero-init (0x00 = NOP) would break the boot.  See
+ *   K3526::K3526() (`mem_.fill(0xFF)`).
+ * @par Pass criterion  memRead returns 0xFF at all sampled addresses (start/end of each group).
  */
-TEST(K3526, InitialState_Zero) {
+TEST(K3526, InitialState_FF) {
     K3526 ops;
-    // Default construction zeroes memory
-    EXPECT_EQ(ops.memRead(0x0000), 0x00);
-    EXPECT_EQ(ops.memRead(0x4000), 0x00);
-    EXPECT_EQ(ops.memRead(0x8000), 0x00);
-    EXPECT_EQ(ops.memRead(0xC000), 0x00);
-    EXPECT_EQ(ops.memRead(0xFFFF), 0x00);
+    EXPECT_EQ(ops.memRead(0x0000), 0xFF);
+    EXPECT_EQ(ops.memRead(0x4000), 0xFF);
+    EXPECT_EQ(ops.memRead(0x8000), 0xFF);
+    EXPECT_EQ(ops.memRead(0xC000), 0xFF);
+    EXPECT_EQ(ops.memRead(0xFFFF), 0xFF);
 }
 
 // ─── fill() ──────────────────────────────────────────────────────────────────

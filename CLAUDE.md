@@ -45,10 +45,23 @@ Strict layering — each layer only knows the one below (see `doc/K1520_architec
 
 ```
 machines/a5120  →  wires cards onto the bus, drives the run loop, exposes the machine API
-cards/          →  K2526 (ZRE/CPU), K3526 (RAM), K7024 (screen), K8025 (serial), K5122 (floppy)
+cards/          →  K2526 (ZRE/CPU), K3526 (RAM), K7024 (screen), K8025 (serial), K5122 / K5122v2 (floppy)
 primitives/     →  Z80, Z80PIO, Z80CTC, Z80SIO, EPROM/RAM devices  (generic chips)
 bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, MEMDI) + Koppelbus (signal router)
 ```
+
+> **Floppy controller — single formatagnostic K5122 (2026-06-10).** Slot 2 (`core/cards/k5122/`)
+> is a formatagnostic *read-head-over-rotating-track* controller on the `core/peripherals/floppy_drive/`
+> stack (TrackImage / TrackCodec / BitCodec / DiskImage + RawSectorImage + HfeImage / FloppyDriveV2 /
+> DriveProfile).  It **boots CP/A fully** (all `test_boot_integration` stages green, incl. boot from
+> drives B:/C:) and reads/writes **HFE v1** in addition to raw `.img`.  *(History: this replaced an
+> older monolithic on-the-fly-synthesis K5122, which was removed once this one booted; the change was
+> developed as a parallel card "K5122v2" and then renamed to K5122.)*  The boot ROM/loader read the
+> disk in a Robotron-specific layout (single A1, no IAM, mark on the A1, per-sector-size CRC); the
+> controller reproduces it on-the-fly via `TrackCodec::buildRobotronTrack` (the generic IBM/HFE
+> `buildTrack` layout is untouched).  Full model & boot fixes: `doc/refactoring_floppy_emulator.md`
+> §15, `doc/K1520_architecture.md` §8.5.  The boot-DMA narrative below still describes the data path
+> at the byte level (unchanged); the *card-internal* synthesis it mentions is now the TrackImage stack.
 
 - **Registration model**: cards register memory ranges and I/O port ranges on `K1520Bus`; the CPU's read/write/port callbacks route through the bus, which dispatches to the owning device. Interrupt priority is a daisy chain set via `bus.setInterruptChain(...)`; the Koppelbus models the A5120 backplane's hand-wired signal links (CTC clock cascades, second IEI/IEO chain).
 - **Dual Z80 on the K2526 (`core/cards/k2526/`)** — non-obvious and central to the boot path:

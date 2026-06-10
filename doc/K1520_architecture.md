@@ -149,16 +149,26 @@ a5120emu/
 │   │   │   └── charset_cyrillic.h # Zeichengenerator (A123 EPROM)
 │   │   ├── k8025/               # ASS – Anschlußsteuerung Seriell
 │   │   │   └── k8025.h/cpp
-│   │   └── k5122/               # AFS – Folienspeicher-Anschlußsteuerung
-│   │       └── k5122.h/cpp
+│   │   ├── k5122/               # AFS – Folienspeicher-Anschlußsteuerung (Original)
+│   │   │   └── k5122.h/cpp
+│   │   └── k5122v2/             # AFS – formatagnostisch (Lesekopf-Streaming, §8.5)
+│   │       └── k5122v2.h/cpp
 │   │
 │   ├── peripherals/             # Externe Peripheriegeräte
 │   │   ├── k7637/               # Serielle Tastatur
 │   │   │   ├── k7637.h/cpp
 │   │   │   └── keytable.h       # Scan-Code-Tabellen (aus .bin)
-│   │   └── floppy_drive/        # Diskettenlaufwerk (Image-Datei)
-│   │       ├── floppy_drive.h/cpp
-│   │       └── format_parser.h/cpp  # cpaFormates.cfg-Parser
+│   │   └── floppy_drive/        # Diskettenlaufwerk + neuer formatagnostischer Stack
+│   │       ├── floppy_drive.h/cpp      # Original (Inline-Sektor-IO, von K5122 genutzt)
+│   │       ├── format_parser.h/cpp     # cpaFormates.cfg-Parser
+│   │       ├── track_image.h/cpp       # NEU: zentrale TrackImage-Abstraktion
+│   │       ├── track_codec.h/cpp       # NEU: IBM-Track (FM/MFM) bauen/parsen + CRC
+│   │       ├── bit_codec.h/cpp         # NEU: Bitzellen ⇆ Bytes (MFM/FM, HFE)
+│   │       ├── drive_profile.h/cpp     # NEU: Laufwerksprofile (4 Slots)
+│   │       ├── disk_image.h/cpp        # NEU: DiskImage-Interface + open()/Sniffing
+│   │       ├── raw_sector_image.h/cpp  # NEU: .img-Backend
+│   │       ├── hfe_image.h/cpp         # NEU: HFE-v1-Backend (HxC, MFM/FM)
+│   │       └── floppy_drive2.h/cpp     # NEU: FloppyDriveV2 (DiskImage + Profil + Cache)
 │   │
 │   ├── machines/                # Maschinenkonfigurationen
 │   │   ├── machine.h            # Abstrakte Maschinenbasis
@@ -639,6 +649,62 @@ k1520_mount_disk(h, 0, "/path/to/cpadisk.img");
 // Laufwerk B: leeres Image erstellen
 k1520_create_disk(h, 1, "cpa800", "/path/to/new.img");
 ```
+
+### 8.5 Formatagnostischer Floppy-Stack (K5122 + DiskImage/TrackImage) — 2026-06-10
+
+Die `K5122` (`core/cards/k5122/`) ist ein **formatagnostischer** Floppy-Controller auf der
+Peripherie-Schicht `core/peripherals/floppy_drive/`.  Sie modelliert einen **Lesekopf über der
+rotierenden Spur** und kennt keine Sektorgrößen/CRCs/Boot-Stadien mehr.  *(Sie ersetzte eine
+ältere monolithische On-the-fly-Synthese-K5122 — die §8.1–§8.4 beschreiben deren PIO-Protokoll,
+das auf Port-/Signalebene unverändert gilt; das dort skizzierte karten-interne Synthese-Modell
+ist nun durch den TrackImage-Stack ersetzt.)*  Vollständiger Entwurf + Implementierungsstand:
+`doc/refactoring_floppy_emulator.md` (§9 + §15).
+
+```
+K5122 (Controller-Karte)                  core/cards/k5122/
+   │ PIO 10H–18H, /STR /ST MK MK1, BUSRQ-Arbitrierung, Index aus rpm
+   │ streamt TrackImage byteweise über 16H; MK/MK1 → nextMark()
+   ▼  fordert TrackImage(cyl,head)
+FloppyDriveV2  — DriveProfile + 1-Spur-Cache je Kopf    floppy_drive2.*
+   ▼  readTrack / writeTrack / geometry
+DiskImage (abstrakt)                      disk_image.* (open()/Sniffing)
+   ├── RawSectorImage  (.img + DiskFormat) ──► TrackCodec   raw_sector_image.*
+   └── HfeImage        (.hfe, HFE v1)       ──► BitCodec     hfe_image.*
+   ▼  liefert/nimmt
+TrackImage — zentrale Abstraktion (decodierter Byte- + Markenstrom, Encoding-Tag)  track_image.*
+TrackCodec — IBM-Track (FM/MFM) bauen/parsen + CRC-16        track_codec.*
+BitCodec   — Bitzellen ⇆ Bytes (MFM/FM) für HFE             bit_codec.*
+DriveProfile[4] — Zoll/Spuren/Köpfe/U-min/Verfahren je Slot  drive_profile.*
+```
+
+**Kernpunkte:**
+- **`TrackImage`** ist der einzige Berührungspunkt zwischen Controller und Dateiformat:
+  decodierte Spur-Bytes (Gaps/Sync/IDAM/DATA/echte CRCs) + paralleles `marks[]` (Adressmarken
+  aus dem fehlenden Clock-Bit, nicht aus dem Bytewert) + `encoding` (FM/MFM).
+- **Verfahrensneutral:** FM vs. MFM lebt allein in der Codec-Schicht (`TrackCodec`/`BitCodec`);
+  Controller und `TrackImage` sind agnostisch.  4 Laufwerksprofile (5,25″ 80×2 MFM, 5,25″ 40×1,
+  8″ 77×1 FM, 8″ 77×2 MFM) als compile-time-Config je Slot; Index-Periode aus `rpm`.
+- **HFE v1** (`HXCPICFE`, ISOIBM_MFM=0/FM=2) wird lesend+schreibend unterstützt; `DiskImage::open`
+  erkennt die Signatur und ist self-describing (kein `DiskFormat` nötig).  Die Bitebene
+  (`BitCodec`: 16 Zellen/Byte, HFE-LSB-first ↔ intern MSB-first via bytereverse, A1-Sync =
+  Zellwort `0x4489`, MFM-Clock `c_i=¬(d_{i-1}∨d_i)`, FM-Sondertakt C7/D7) ist nach der
+  Greaseweazle/HxC-Spec implementiert und per unabhängigem Python-Konverter (`tools/img_to_hfe.py`)
+  cross-validiert.
+- **CRC:** eine zentrale Primitive `TrackCodec::crc16` (= verifizierte Robotron-`loaderCrc16`).
+  Die im Entwurf vermutete „eine CRC für beide Boot-Stadien" gilt nur halb — die Stadien
+  erwarten physisch verschiedene Daten-CRC-Bytes; Details in `doc/refactoring_floppy_emulator.md`
+  §15.2.
+- **Verdrahtung & Boot:** `A5120Machine` verdrahtet die `K5122` als Slot-2-Floppy (`a5120.h`).  Die
+  A5120 **bootet die echte Diskette vollständig in CP/A** (`CP/A, Version 25.09.89 …`), alle
+  `test_boot_integration`-Stadien grün — inkl. Boot von den Laufwerken **B: und C:** (leere niedrigere
+  Laufwerke werden vom ROM übersprungen, §15.6).  Zwei boot-spezifische Anpassungen waren nötig: ein
+  **Robotron-Track-Layout** (`buildRobotronTrack`: single-A1, kein IAM, Marke auf dem A1, CRC-Seed
+  pro Sektorgröße — passend zur idiosynkratischen IDAM-Suche des ZVE2-Lesers) und die **Track-Ende-
+  /BUSRQ-Arbitrierung** (`OUT(13H),03H` → /BUSRQ frei, gegated auf 128-B-Spuren).  Details:
+  `doc/refactoring_floppy_emulator.md` §15.4.  Das generische IBM-/HFE-Layout bleibt unberührt.
+- **Tests:** `test_track_codec`, `test_robotron_track`, `test_bit_codec`, `test_hfe_image`,
+  `test_disk_image_raw`, `test_drive_profile`, `test_floppy_drive2`, `test_k5122` (GoogleTest);
+  alle grün, ebenso `test_boot_integration` (Full-Machine) und `test_k2526` (ZVE2-Floppy-Kette).
 
 ---
 
