@@ -42,16 +42,42 @@ TEST(FormatParser, BuiltinFormats_NotEmpty) {
 
 /**
  * @test FormatParser/Builtin_CPA780_Exists
- * @brief The built-in CPA780 format is present and has exactly two track format entries.
- * @details Two entries: one for the boot track (cyl 0) and one for data tracks.
- * @par Pass criterion  Format named "cpa780" found; tracks.size() == 2.
+ * @brief The built-in CPA780 format is present and has the four track-range entries of
+ *        the asymmetric mixed geometry required for the @OS.COM boot.
+ * @details The cpa780 boot disk has an ASYMMETRIC 128B/1024B transition mid-cylinder
+ *   (system area = cyl 0 both sides + cyl 1 side A as 128B; data area begins at
+ *   cyl 1 side B as 1024B).  This is modelled as four TrackFormat ranges:
+ *     {0,0,0,1,26,128} {1,1,0,0,26,128} {1,1,1,1,5,1024} {2,79,0,1,5,1024}
+ *   (see core/peripherals/floppy_drive/format_parser.cpp and
+ *   doc/K1520_architecture.md §14.6a).  The earlier 2-entry model misaligned the
+ *   @OS.COM allocation blocks; this test pins the corrected 4-entry geometry.
+ * @par Pass criterion  Format "cpa780" found; tracks.size() == 4; ranges as above.
  */
 TEST(FormatParser, Builtin_CPA780_Exists) {
     auto fmts = FormatParser::builtinFormats();
     auto it = std::find_if(fmts.begin(), fmts.end(),
                            [](const DiskFormat& f){ return f.name == "cpa780"; });
     ASSERT_NE(it, fmts.end());
-    EXPECT_EQ(it->tracks.size(), 2u);
+    ASSERT_EQ(it->tracks.size(), 4u);
+
+    // Asymmetrische gemischte Geometrie (cyl außen, head innen verschränkt):
+    const auto& t = it->tracks;
+    // cyl 0, beide Seiten: Systembereich 26×128 B
+    EXPECT_EQ(t[0].cyl_first, 0);  EXPECT_EQ(t[0].cyl_last, 0);
+    EXPECT_EQ(t[0].head_first, 0); EXPECT_EQ(t[0].head_last, 1);
+    EXPECT_EQ(t[0].secs_per_track, 26); EXPECT_EQ(t[0].bytes_per_sec, 128);
+    // cyl 1 Seite A: Stage-2-Lader, noch 26×128 B
+    EXPECT_EQ(t[1].cyl_first, 1);  EXPECT_EQ(t[1].cyl_last, 1);
+    EXPECT_EQ(t[1].head_first, 0); EXPECT_EQ(t[1].head_last, 0);
+    EXPECT_EQ(t[1].secs_per_track, 26); EXPECT_EQ(t[1].bytes_per_sec, 128);
+    // cyl 1 Seite B: erste Datenspur, 5×1024 B (Beginn des 1024-B-Datenbereichs)
+    EXPECT_EQ(t[2].cyl_first, 1);  EXPECT_EQ(t[2].cyl_last, 1);
+    EXPECT_EQ(t[2].head_first, 1); EXPECT_EQ(t[2].head_last, 1);
+    EXPECT_EQ(t[2].secs_per_track, 5); EXPECT_EQ(t[2].bytes_per_sec, 1024);
+    // cyl 2–79, beide Seiten: Daten + Dateisystem, 5×1024 B
+    EXPECT_EQ(t[3].cyl_first, 2);  EXPECT_EQ(t[3].cyl_last, 79);
+    EXPECT_EQ(t[3].head_first, 0); EXPECT_EQ(t[3].head_last, 1);
+    EXPECT_EQ(t[3].secs_per_track, 5); EXPECT_EQ(t[3].bytes_per_sec, 1024);
 }
 
 /**

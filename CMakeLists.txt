@@ -91,10 +91,9 @@ if(BUILD_K1520)
     target_include_directories(k1520_bus PUBLIC ${CMAKE_SOURCE_DIR})
     target_link_libraries(k1520_bus PUBLIC k1520_logger)
 
-    # Floppy peripheral
+    # Floppy peripheral: Disk-Format-Parser (Geometrie/cpaFormates.cfg)
     add_library(k1520_floppy STATIC
         core/peripherals/floppy_drive/format_parser.cpp
-        core/peripherals/floppy_drive/floppy_drive.cpp
     )
     target_include_directories(k1520_floppy PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -223,12 +222,6 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_format_parser PRIVATE k1520_floppy GTest::gtest_main)
         target_include_directories(k1520_test_format_parser PRIVATE ${CMAKE_SOURCE_DIR})
 
-        add_executable(k1520_test_floppy
-            tests/cpp/test_floppy.cpp
-        )
-        target_link_libraries(k1520_test_floppy PRIVATE k1520_floppy GTest::gtest_main)
-        target_include_directories(k1520_test_floppy PRIVATE ${CMAKE_SOURCE_DIR})
-
         add_executable(k1520_test_track_codec tests/cpp/test_track_codec.cpp)
         target_link_libraries(k1520_test_track_codec PRIVATE k1520_floppy2 GTest::gtest_main)
         target_include_directories(k1520_test_track_codec PRIVATE ${CMAKE_SOURCE_DIR})
@@ -314,7 +307,6 @@ if(BUILD_K1520)
 
         gtest_discover_tests(k1520_test_bus)
         gtest_discover_tests(k1520_test_format_parser)
-        gtest_discover_tests(k1520_test_floppy)
         gtest_discover_tests(k1520_test_track_codec)
         gtest_discover_tests(k1520_test_robotron_track)
         gtest_discover_tests(k1520_test_bit_codec)

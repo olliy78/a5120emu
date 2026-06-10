@@ -8,10 +8,10 @@
  * jeden Sektor an seinen Offset.
  *
  * Das Offset-/Interleave-Modell (Spuren verschränkt: cyl0/A, cyl0/B, cyl1/A, …)
- * ist identisch zur alten FloppyDrive::sectorOffset — Verhaltensgleichheit garantiert.
+ * entspricht dem ursprünglichen A5120-Diskettenlayout (vgl. doc/design/09_floppy_drive.md).
  *
  * @see core/peripherals/floppy_drive/raw_sector_image.h
- * @see core/peripherals/floppy_drive/floppy_drive.cpp (Referenz-Implementierung)
+ * @see doc/design/09_floppy_drive.md
  * @author Olaf Krieger
  * @date 2026
  * @license MIT License
@@ -50,7 +50,7 @@ RawSectorImage::RawSectorImage(const std::string& path, DiskFormat fmt,
  * Spuren sind verschränkt: (cyl0,head0), (cyl0,head1), (cyl1,head0), …
  * sector_id ist 1-basiert.  Gibt -1 bei ungültigem cyl/head/id zurück.
  *
- * Exakte Kopie der alten FloppyDrive::sectorOffset (floppy_drive.cpp).
+ * Verschränktes A5120-Diskettenlayout (vgl. doc/design/09_floppy_drive.md §2).
  */
 int64_t RawSectorImage::sectorOffset(uint8_t cyl, uint8_t head,
                                      uint8_t sector_id) const {

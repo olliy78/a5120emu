@@ -3,12 +3,14 @@
  * @brief GoogleTests für RawSectorImage und DiskImage::open.
  *
  * Getestete Komponenten:
- *   - RawSectorImage: readTrack → TrackCodec::parseTrack (Bitgleichheit mit alter FloppyDrive::readSector)
+ *   - RawSectorImage: readTrack → TrackCodec::parseTrack (Bitgleichheit mit der .img-Datei)
  *   - RawSectorImage: geometry()
  *   - DiskImage::open (HFE-Signatur → nullptr; Raw → RawSectorImage)
  *
- * Der Bitgleichheits-Vergleich beweist, dass readTrack + parseTrack dieselben
- * Nutzdaten liefert wie die alte FloppyDrive::readSector auf derselben Datei.
+ * Der Bitgleichheits-Vergleich beweist, dass readTrack + parseTrack für jede
+ * (cyl, head, id)-Kombination exakt die Nutzdaten an dem Byte-Offset liefert, den das
+ * verschränkte Spurlayout (cyl außen, head innen) in der .img-Datei vorgibt — gegen die
+ * Datei als Ground-Truth verglichen.
  *
  * @see core/peripherals/floppy_drive/raw_sector_image.h
  * @see core/peripherals/floppy_drive/disk_image.h
@@ -27,7 +29,6 @@
 #include "core/peripherals/floppy_drive/raw_sector_image.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
-#include "core/peripherals/floppy_drive/floppy_drive.h"
 #include "core/peripherals/floppy_drive/format_parser.h"
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
@@ -90,24 +91,63 @@ TEST(RawSectorImage, Geometry_KorrekteFelderSimpleFormat) {
     std::filesystem::remove(path);
 }
 
-// ─── Gruppe 2: readTrack → parseTrack bitgleich zu FloppyDrive::readSector ───
-
 /**
- * Kern-Test: RawSectorImage::readTrack(cyl, head) → TrackCodec::parseTrack liefert
- * für jede (cyl, head, id)-Kombination exakt dieselben Nutzdaten wie
- * FloppyDrive::readSector auf derselben Datei.
+ * @test RawSectorImage/WriteProtect_BlocktSchreiben
+ * @brief Mit write_protect=true ist das Image nicht beschreibbar und writeTrack() scheitert.
+ *        (Ersetzt die Schreibschutz-Abdeckung des entfernten FloppyDrive-Tests.)
  */
-TEST(RawSectorImage, ReadTrack_BitgleichMitAlterFloppyDrive) {
+TEST(RawSectorImage, WriteProtect_BlocktSchreiben) {
     auto fmt  = makeSimpleFormat();
     auto path = makeTmpImg(fmt);
 
-    // Neue Implementierung
+    RawSectorImage img(path, fmt, /*wp=*/true);
+    ASSERT_TRUE(img.isOpen());
+    EXPECT_FALSE(img.writable());
+
+    // writeTrack auf eine (egal welche) Spur muss abgelehnt werden.
+    TrackImage track = img.readTrack(0, 0);
+    EXPECT_FALSE(img.writeTrack(0, 0, track)) << "Schreiben trotz Write-Protect";
+
+    std::filesystem::remove(path);
+}
+
+// ─── Gruppe 2: readTrack → parseTrack bitgleich zur .img-Datei ───────────────
+
+/**
+ * @brief Byte-Offset von Sektor (cyl, head, id) in der .img — verschränktes Layout
+ *        (cyl außen, head innen), 1-basiertes id.  Ground-Truth-Referenz, unabhängig
+ *        von RawSectorImage::sectorOffset (deren Korrektheit hier gerade geprüft wird).
+ */
+static uint64_t expectedOffset(const DiskFormat& fmt, uint8_t cyl, uint8_t head, uint8_t id) {
+    uint64_t off = 0;
+    const uint8_t ncyls  = fmt.numCylinders();
+    const uint8_t nheads = fmt.numHeads();
+    for (uint8_t c = 0; c < ncyls; ++c)
+        for (uint8_t h = 0; h < nheads; ++h) {
+            if (c == cyl && h == head)
+                return off + static_cast<uint64_t>(id - 1) * fmt.findTrack(c, h)->bytes_per_sec;
+            if (const TrackFormat* t = fmt.findTrack(c, h)) off += t->trackBytes();
+        }
+    return off;
+}
+
+/**
+ * Kern-Test: RawSectorImage::readTrack(cyl, head) → TrackCodec::parseTrack liefert für
+ * jede (cyl, head, id)-Kombination exakt die Nutzdaten am Byte-Offset, den das
+ * verschränkte Spurlayout in der .img-Datei vorgibt (Datei = Ground-Truth).
+ */
+TEST(RawSectorImage, ReadTrack_BitgleichMitImageDatei) {
+    auto fmt  = makeSimpleFormat();
+    auto path = makeTmpImg(fmt);
+
     RawSectorImage newImg(path, fmt, /*wp=*/false);
     ASSERT_TRUE(newImg.isOpen());
 
-    // Alte Implementierung
-    FloppyDrive oldDrv;
-    ASSERT_TRUE(oldDrv.mount(path, fmt));
+    // Rohe Datei-Bytes als Vergleichsbasis einlesen.
+    std::ifstream f(path, std::ios::binary);
+    std::vector<uint8_t> fileBytes{std::istreambuf_iterator<char>(f),
+                                   std::istreambuf_iterator<char>()};
+    ASSERT_EQ(fileBytes.size(), fmt.totalBytes());
 
     const uint8_t ncyls  = fmt.numCylinders();
     const uint8_t nheads = fmt.numHeads();
@@ -117,7 +157,6 @@ TEST(RawSectorImage, ReadTrack_BitgleichMitAlterFloppyDrive) {
             const TrackFormat* tf = fmt.findTrack(cyl, head);
             ASSERT_NE(tf, nullptr);
 
-            // Neues Backend: komplette Spur → parsen → Sektoren
             TrackImage track = newImg.readTrack(cyl, head);
             ASSERT_FALSE(track.empty())
                 << "readTrack(" << (int)cyl << "," << (int)head << ") leer";
@@ -135,12 +174,12 @@ TEST(RawSectorImage, ReadTrack_BitgleichMitAlterFloppyDrive) {
                     << "Daten-CRC fehler bei cyl=" << (int)cyl
                     << " head=" << (int)head << " id=" << (int)ls.id;
 
-                // Vergleich mit alter FloppyDrive::readSector
-                auto altDaten = oldDrv.readSector(cyl, head, ls.id);
-                ASSERT_EQ(altDaten.size(), ls.data.size())
-                    << "Datenmenge weicht ab bei cyl=" << (int)cyl
-                    << " head=" << (int)head << " id=" << (int)ls.id;
-                EXPECT_EQ(ls.data, altDaten)
+                // Erwartete Nutzdaten direkt aus der Datei am verschränkten Offset.
+                const uint64_t off = expectedOffset(fmt, cyl, head, ls.id);
+                ASSERT_LE(off + ls.data.size(), fileBytes.size());
+                std::vector<uint8_t> expected(fileBytes.begin() + off,
+                                              fileBytes.begin() + off + ls.data.size());
+                EXPECT_EQ(ls.data, expected)
                     << "Nutzdaten weichen ab bei cyl=" << (int)cyl
                     << " head=" << (int)head << " id=" << (int)ls.id;
             }

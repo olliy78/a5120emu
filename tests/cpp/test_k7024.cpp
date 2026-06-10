@@ -282,17 +282,45 @@ TEST_F(K7024Test, ConsoleMode_Disabled_NoPollChanges)
 // ─── 5. memRead returns what was written ─────────────────────────────────────
 
 /**
- * @test K7024Test/MemRead_ReturnsWrittenValue
- * @brief VRAM data written via bus.memWrite() is correctly returned by bus.memRead().
+ * @test K7024/MemRead_ReturnsWrittenValue
+ * @brief With the read-lock disabled (read_protect=false), VRAM data written via
+ *        bus.memWrite() is returned by bus.memRead().
+ * @details Only when the Lesesperre is OFF does the K7024 drive the data bus on reads
+ *   (isReadable()==true), so the CPU can read VRAM back over the bus.  Under the A5120
+ *   default (read_protect=true) the bus read instead returns 0xFF — that case is pinned
+ *   by @ref MemRead_LesesperreAktiv_BusGibtFF below.
  * @par Pass criterion  bus.memRead(0xF800) == 0x41; bus.memRead(0xF8A0) == 0xBE.
  */
-TEST_F(K7024Test, MemRead_ReturnsWrittenValue)
+TEST(K7024, MemRead_ReturnsWrittenValue)
 {
+    K1520Bus bus;
+    K7024::A5120Config cfg;
+    cfg.read_protect = false;           // Lesesperre inaktiv → K7024 ist über den Bus lesbar
+    K7024 screen(bus, cfg);             // registriert sich im Ctor selbst am Bus (attachToBus)
+
     bus.memWrite(0xF800, 0x41);
     EXPECT_EQ(bus.memRead(0xF800), 0x41);
 
     bus.memWrite(0xF8A0, 0xBE);   // col=0,row=2 (offset 160 = 2×80)
     EXPECT_EQ(bus.memRead(0xF8A0), 0xBE);
+}
+
+/**
+ * @test K7024Test/MemRead_LesesperreAktiv_BusGibtFF
+ * @brief Under the A5120 default (read_protect=true, Lesesperre aktiv) the K7024 does NOT
+ *        drive the data bus on reads: a bus read of VRAM returns 0xFF, while the written
+ *        value is still stored (and readable via the direct vramRead() accessor).
+ * @details This is the real A5120 behaviour: the CPU writes the screen but cannot read it
+ *   back over the bus; the K3526 RAM underneath keeps a readable shadow (the bus broadcasts
+ *   writes to every writable device).  In this standalone fixture there is no K3526, so the
+ *   bus read finds no readable device and returns 0xFF.
+ * @par Pass criterion  bus.memRead(0xF800) == 0xFF; screen.vramRead(0,0) == 0x41.
+ */
+TEST_F(K7024Test, MemRead_LesesperreAktiv_BusGibtFF)
+{
+    bus.memWrite(0xF800, 0x41);
+    EXPECT_EQ(bus.memRead(0xF800), 0xFF) << "Lesesperre: K7024 treibt den Bus bei Reads nicht";
+    EXPECT_EQ(screen.vramRead(0, 0), 0x41) << "VRAM hat den Wert dennoch gespeichert";
 }
 
 /**
@@ -362,30 +390,38 @@ TEST_F(K7024Test, FramebufferDimensions)
     EXPECT_NE(screen.getFramebuffer(), nullptr);
 }
 
-// ─── 10. A5120Config: read_protect steuert isWritable() ──────────────────────
+// ─── 10. A5120Config: read_protect steuert isReadable() (Lesesperre) ─────────
+//
+// Korrektur: read_protect (X13/X14) ist die *Lesesperre* und steuert isReadable()
+// — ob der K7024 bei CPU-Lesezugriffen den Datenbus treibt (/DIEN).  isWritable()
+// ist davon UNABHÄNGIG und immer true (die CPU schreibt den Bildschirm stets).
 
 /**
- * @test K7024Test/Config_ReadProtect_True_IsWritable
- * @brief Default config (read_protect=true, X13/X14 pos1 closed) → isWritable() == true.
- * @par Pass criterion  screen.isWritable() == true.
+ * @test K7024Test/Config_ReadProtect_True_NotReadable
+ * @brief Default config (read_protect=true, X13/X14 pos1 closed, Lesesperre aktiv) →
+ *        isReadable() == false; isWritable() bleibt true.
+ * @par Pass criterion  screen.isReadable() == false; screen.isWritable() == true.
  */
-TEST_F(K7024Test, Config_ReadProtect_True_IsWritable)
+TEST_F(K7024Test, Config_ReadProtect_True_NotReadable)
 {
+    EXPECT_FALSE(screen.isReadable());
     EXPECT_TRUE(screen.isWritable());
 }
 
 /**
- * @test K7024/Config_ReadProtect_False_IsNotWritable
- * @brief read_protect=false (X13/X14 pos2, Lesesperre inaktiv) → isWritable() == false.
- * @par Pass criterion  isWritable() == false.
+ * @test K7024/Config_ReadProtect_False_IsReadable
+ * @brief read_protect=false (X13/X14 pos2, Lesesperre inaktiv) → isReadable() == true;
+ *        isWritable() bleibt true.
+ * @par Pass criterion  screen.isReadable() == true; screen.isWritable() == true.
  */
-TEST(K7024, Config_ReadProtect_False_IsNotWritable)
+TEST(K7024, Config_ReadProtect_False_IsReadable)
 {
     K1520Bus bus;
     K7024::A5120Config cfg;
     cfg.read_protect = false;
     K7024 screen(bus, cfg);
-    EXPECT_FALSE(screen.isWritable());
+    EXPECT_TRUE(screen.isReadable());
+    EXPECT_TRUE(screen.isWritable());
 }
 
 /**
