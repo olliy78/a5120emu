@@ -1027,3 +1027,180 @@ TEST_F(K5122Test, Continuous1024_Head1_MKToggleKeepsHead1) {
     EXPECT_FALSE(sawH0) << "head-0 data must NOT appear — head wrongly driven off bit5";
     std::filesystem::remove(path);
 }
+
+// ─── 13. ZVE2 access-pattern replay over data containing 0xA1 bytes ────────────
+//
+// The Continuous1024_* tests above read the served field DIRECTLY (ioRead in a
+// loop) and so never exercise the loader's actual byte-wise IDAM search.  The
+// real @OS.COM boot fails (cyl 3 head 0 sec 2, error 'S') ONLY when ZVE2 must
+// traverse a sector whose DATA contains 0xA1 bytes to reach the wanted sector:
+// a 0xA1 data byte is indistinguishable from the A1 address-mark sync in the flat
+// byte stream, so the loader's A1/FE search derails.  On hardware the loader
+// re-syncs the data separator with MK1 (ctrl Port A bit4) between marks, which
+// our model now honours (resyncToNextMark()).  These tests replay ZVE2's exact
+// port sequence so the field model is verified against the pattern that fails.
+
+// Faithful replay of the 3rd-stage ZVE2 1024B read routine (loader 0x1F7D IDAM
+// search + 0x2038 count-based data read).  Drives the K5122 exactly as ZVE2 does
+// (IN A,(16H) per byte; MK1 re-sync via OUT(10H) 0xB5→0x85) and returns the wanted
+// sector's 1024 data bytes, or empty{} if the search never locks onto the wanted
+// IDAM within the retry budget — which is precisely the real 'S' boot failure.
+static std::vector<uint8_t> zve2ReadSector1024(K5122& card, uint8_t wantCyl,
+                                               uint8_t wantHead, uint8_t wantSec) {
+    auto IN  = [&]{ return card.ioRead(0x16); };
+    auto MK1 = [&]{ card.ioWrite(0x10, 0xB5); card.ioWrite(0x10, 0x85); }; // bit4 1→0
+    int  idamRetry = 0x3C;                        // [1ED7] mismatch budget
+    long guard = 0;                               // the no-FE path has no counter on
+    const long kGuard = 16L * (long)kFieldLen;    // HW; bound it like the watchdog
+
+    card.ioWrite(0x10, 0xBD);                     // 1F99 OUT(10),BD
+    IN();                                         // 1FB1 throwaway/echo read
+    for (;;) {
+        if (++guard > kGuard) return {};
+        uint8_t b = IN();                         // 1FB7
+        while (b == 0xA1) { if (++guard > kGuard) return {}; b = IN(); }  // skip A1 run
+        uint8_t cyl = IN();                       // 1FBD (byte after the FE candidate)
+        if (b != 0xFE) { MK1(); IN(); continue; } // 1FBF no-FE → 1FA9 MK1 + 1FB1
+        uint8_t head = IN();                      // 1FC2
+        uint8_t sec  = IN();                      // 1FC7
+        uint8_t size = IN();                      // 1FCC
+        IN();                                     // 1FD1 (gap byte)
+        if (cyl != wantCyl || head != wantHead || sec != wantSec || size != 3) {
+            MK1();                                // 2023 → 1FA4 → 1FA9 MK1
+            if (--idamRetry == 0) return {};
+            IN();                                 // 1FB1 throwaway
+            continue;
+        }
+        // IDAM matched → count-based data read (loader 0x1FD6..0x2061).
+        IN();                                     // 1FD6
+        for (int i = 0; i < 17; ++i) IN();        // 1FDA ×17
+        IN();                                     // 1FDE
+        IN();                                     // 2038
+        for (int i = 0; i < 6; ++i) IN();         // 203C ×6
+        MK1();                                    // 2040 (re-sync to DATA mark)
+        IN();                                     // 204C
+        uint8_t d = IN();                         // 204E
+        while (d == 0xA1) d = IN();               // skip A1 sync up to the data mark
+        std::vector<uint8_t> data;
+        data.reserve(kSecLen);
+        for (int i = 0; i < (int)kSecLen; ++i) data.push_back(IN());  // INIR ×4 = 1024
+        return data;
+    }
+}
+
+// Sector data that carries 0xA1 bytes (like the real cyl3/head0/sec1 the loader
+// must read past to reach sec2) — including a worst-case A1 FE pair that looks
+// like an IDAM start mid-data.  None of these may be mistaken for an address mark.
+static std::vector<uint8_t> a1LadenSector(int cyl, int head, int sec) {
+    std::vector<uint8_t> d(kSecLen, dataByte(cyl, head, sec));
+    for (size_t i = 7; i < kSecLen; i += 53) d[i] = 0xA1;
+    d[0] = 0xA1; d[1] = 0xFE;
+    return d;
+}
+static void writeA1LadenTrack(K5122& card, int cyl, int head) {
+    for (int sec = 1; sec <= kSecs; ++sec) {
+        auto d = a1LadenSector(cyl, head, sec);
+        ASSERT_TRUE(card.drive(0).writeSector((uint8_t)cyl,(uint8_t)head,(uint8_t)sec,d));
+    }
+}
+
+/**
+ * @test K5122Test/Continuous1024_ZVE2Replay_FindsEverySectorWithA1Data
+ * @brief Replaying ZVE2's IDAM search + MK1 re-sync finds EVERY sector of a track
+ *   whose data contains 0xA1 bytes, and returns each sector's exact data.
+ * @details This is the @OS.COM cyl3/head0/sec2 'S' failure as a unit test: before
+ *   resyncToNextMark() the loader's byte-wise search traversed the data, where a
+ *   0xA1 data byte (sec1 has them) was mistaken for an address-mark sync, so sec2's
+ *   IDAM was never located and ZVE2 spun (→ 'S').  With MK1 modelled as a data-
+ *   separator re-lock that jumps mark-to-mark (skipping data), the search is
+ *   deterministic and data-independent.
+ */
+TEST_F(K5122Test, Continuous1024_ZVE2Replay_FindsEverySectorWithA1Data) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+    writeA1LadenTrack(card, /*cyl=*/3, /*head=*/0);   // cyl 3 = first seek in @OS.COM
+    seekToCyl(card, 3);
+
+    for (int sec = 1; sec <= kSecs; ++sec) {
+        strobeRead(card, /*head=*/0);
+        card.ioRead(0x16);                            // loader 0x1F61 read-setup pre-read
+        auto data = zve2ReadSector1024(card, 3, 0, (uint8_t)sec);
+        ASSERT_FALSE(data.empty())
+            << "ZVE2 never located cyl3/head0/sec" << sec
+            << " — a 0xA1 data byte derailed the IDAM search (the @OS.COM 'S' stall)";
+        EXPECT_EQ(data, a1LadenSector(3, 0, sec))
+            << "wrong data returned for cyl3/head0/sec" << sec;
+    }
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/Continuous1024_ZVE2Replay_NoA1DataControl
+ * @brief Control: with A1-free data (like the cyl 2 directory that read fine) the
+ *   ZVE2 replay also finds every sector — isolating the failure to A1-in-data.
+ */
+TEST_F(K5122Test, Continuous1024_ZVE2Replay_NoA1DataControl) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+    writeDistinctDataTrack(card, /*cyl=*/3, /*head=*/0);   // no 0xA1 bytes
+    seekToCyl(card, 3);
+
+    for (int sec = 1; sec <= kSecs; ++sec) {
+        strobeRead(card, /*head=*/0);
+        card.ioRead(0x16);
+        auto data = zve2ReadSector1024(card, 3, 0, (uint8_t)sec);
+        ASSERT_FALSE(data.empty()) << "ZVE2 lost cyl3/head0/sec" << sec << " (A1-free)";
+        EXPECT_EQ(data, std::vector<uint8_t>(kSecLen, dataByte(3, 0, sec)));
+    }
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/Continuous1024_MK1ResyncJumpsToNextAddressMark
+ * @brief An MK1 strobe (ctrl Port A bit4 falling edge, 0xB5→0x85) advances the
+ *   1024B continuous stream to the NEXT structural address mark — IDAM → DATA mark
+ *   → next sector's IDAM — skipping the data bytes, regardless of their content.
+ * @details This is the deterministic core of the @OS.COM fix: the loader re-syncs
+ *   its data separator with MK1, so the field model must too.  Without it (MK1
+ *   inert) a 0xA1 *data* byte is mistaken for an address-mark sync and the IDAM
+ *   search derails (cyl3/head0/sec2 → 'S').  The test holds /STR low like the real
+ *   loader and pulses MK1, asserting the served bytes are the next mark — even
+ *   though the sector data here is laden with 0xA1/0xFE pairs.
+ */
+TEST_F(K5122Test, Continuous1024_MK1ResyncJumpsToNextAddressMark) {
+    auto path = tmpImage();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0x00);
+    writeA1LadenTrack(card, /*cyl=*/3, /*head=*/0);   // data full of 0xA1/0xFE
+    seekToCyl(card, 3);
+
+    auto mk1 = [&]{ card.ioWrite(0x10, 0xB5); card.ioWrite(0x10, 0x85); };  // bit4 1→0
+    auto in  = [&]{ return card.ioRead(0x16); };
+
+    // Start a head-0 read and HOLD /STR low (bit3=0), as the loader does during
+    // the whole ZVE2 read — so the MK1 toggles carry no spurious /STR edge.
+    card.ioWrite(0x10, 0xFF);          // /STR=1, bit2=1 (head 0)
+    card.ioWrite(0x10, 0xF7);          // /STR=0 → doReadSector, held low
+
+    // Read the sec-1 IDAM header.
+    EXPECT_EQ(in(), 0xA1); EXPECT_EQ(in(), 0xFE);
+    EXPECT_EQ(in(), 3);  EXPECT_EQ(in(), 0);  EXPECT_EQ(in(), 1);  EXPECT_EQ(in(), 3);
+
+    // MK1 → must re-lock on the DATA address mark of the same sector (A1 FB),
+    // NOT serve gap/data bytes.
+    mk1();
+    EXPECT_EQ(in(), 0xA1) << "MK1 did not re-sync to the DATA address mark";
+    EXPECT_EQ(in(), 0xFB) << "expected DATA mark 0xFB after MK1 re-sync";
+
+    // MK1 again → must re-lock on the NEXT sector's IDAM (sec 2), skipping all the
+    // 1024 A1-laden data bytes of sector 1.
+    mk1();
+    EXPECT_EQ(in(), 0xA1); EXPECT_EQ(in(), 0xFE);
+    EXPECT_EQ(in(), 3) << "IDAM cyl"; EXPECT_EQ(in(), 0) << "IDAM head";
+    EXPECT_EQ(in(), 2) << "MK1 re-sync must reach sector 2's IDAM, not be lost in "
+                          "sector 1's A1-laden data";
+    EXPECT_EQ(in(), 3) << "IDAM size code";
+    std::filesystem::remove(path);
+}

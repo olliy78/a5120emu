@@ -456,6 +456,26 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
     if (transferring_ && !write_mode_ && !(prev_ctrl_a_ & 0x02) && (data & 0x02))
         advanceField();
 
+    // ── MK1 re-sync strobe: ctrl Port A bit4 falling edge (0xB5→0x85) ──────────
+    // The 3rd-stage CP/A loader's 1024B continuous read re-synchronises the data
+    // separator by pulsing MK1 (bit4): in the IDAM sync-search (loader 0x1FA9), on
+    // every IDAM mismatch (0x2023→0x1FA4→0x1FA9), and once before the data read
+    // (0x2040).  Real MFM hardware locks onto the special A1 address-mark sync
+    // pattern (a missing-clock byte), which is distinguishable from an ordinary
+    // data byte that merely equals 0xA1.  Our flat byte stream cannot encode that
+    // distinction, so a 0xA1 *data* byte would derail the loader's byte-wise
+    // A1/FE search and the wanted sector's IDAM would never be found.  (This is
+    // exactly why @OS.COM stalled at cyl 3 head 0 sec 2 with error 'S': the
+    // preceding sector cyl3/head0/sec1 contains 0xA1 data bytes, whereas the cyl 2
+    // sectors that read fine contain none.)  Model the separator re-lock directly:
+    // each MK1 strobe advances the stream to the next *structural* address mark,
+    // skipping the data bytes entirely so their content can never cause a false
+    // sync.  Only the 1024B continuous read uses MK1; the 128B discrete path
+    // (boot ROM / secondary loader) advances via MK (bit1) above and is untouched.
+    if (transferring_ && !write_mode_ && stream_continuous_
+            && (prev_ctrl_a_ & 0x10) && !(data & 0x10))
+        resyncToNextMark();
+
     // NOTE: current_head_ (side-select) is latched only at the /STR strobe above,
     // NOT here on every write — otherwise the loader's MK1 re-sync toggles
     // (0xB5/0x85, which carry bit5) would flip the head mid-transfer.
@@ -842,6 +862,33 @@ void K5122::advanceField() {
     buildField();
     LOG_TRACE("K5122", "MK-Flanke: Feld → Sektor %zu %s", field_sector_,
               field_is_data_ ? "DATA" : "IDAM");
+}
+
+void K5122::resyncToNextMark() {
+    if (sector_buf_.empty()) return;
+    const size_t nsec = sector_buf_.size() / sector_block_;
+    if (nsec == 0) return;
+
+    // Structural address marks in a continuous field (see buildField()):
+    //   offset 0          IDAM  (0xA1 0xFE …)
+    //   offset 6 + 27 = 33 DATA  (0xA1 0xFB …)
+    // The data separator, told to re-lock, searches FORWARD for the next mark.
+    constexpr size_t kDataMarkOff = 6 + 27;
+
+    if (field_pos_ == 0) {
+        // Already parked at the IDAM (e.g. right after an auto-step) — the
+        // separator is locked on it; nothing to skip.
+        return;
+    }
+    if (field_pos_ <= kDataMarkOff) {
+        field_pos_ = kDataMarkOff;            // → DATA address mark of this sector
+        LOG_TRACE("K5122", "MK1-Resync: Feld → DATEN-Marke (Sektor %zu)", field_sector_);
+    } else {
+        // Past the DATA mark → re-lock on the next sector's IDAM.
+        field_sector_ = (field_sector_ + 1) % nsec;
+        buildField();                          // rebuilds field_buf_, field_pos_ = 0
+        LOG_TRACE("K5122", "MK1-Resync: Feld → nächste IDAM (Sektor %zu)", field_sector_);
+    }
 }
 
 // ─── Index pulse simulation ───────────────────────────────────────────────────

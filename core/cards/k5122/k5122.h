@@ -396,6 +396,10 @@ private:
     void buildField();
     /// Advance to the next address-mark field (called on an MK rising edge).
     void advanceField();
+    /// Re-sync the continuous-stream read position to the next structural address
+    /// mark (IDAM → DATA-mark → next sector's IDAM), modelling the data separator
+    /// re-lock the 3rd-stage loader triggers via MK1 (ctrl Port A bit4 falling edge).
+    void resyncToNextMark();
 
     // ─── DMA state machine ───────────────────────────────────────────────────
     bool dma_pending_  = false;  ///< true: /BUSRQ asserted, DMA transfer waiting

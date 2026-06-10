@@ -268,20 +268,22 @@ TEST(BootIntegration, Stage3_StartsLoadingOsCom) {
 }
 
 /**
- * @test BootIntegration/DISABLED_Stage3_FullyLoadsAndJumpsToOs
- * @brief CURRENT FRONTIER (known-failing): stage 3 should read all of @OS.COM
- *        and jump into the OS at 0x37A0.  It does not yet: a 1024B data-area
- *        read times out ('U') part-way (~9 records at 0x3780), so the BDOS read
- *        returns an error instead of clean EOF and the loader falls into its
- *        error-HALT at 0x08AF instead of `JP 0x37A0`.  Enable with
- *        --gtest_also_run_disabled_tests once the read-completion bug is fixed.
+ * @test BootIntegration/Stage3_FullyLoadsAndJumpsToOs
+ * @brief End-to-end: stage 3 reads ALL of @OS.COM from the 1024B data area and
+ *        jumps into the OS at 0x37A0.  Previously stalled: a 1024B data-area read
+ *        derailed on cyl 3 head 0 sec 2 (error 'S') because the loader's byte-wise
+ *        IDAM search mistook a 0xA1 *data* byte (cyl3/head0/sec1 has them) for an
+ *        address-mark sync.  Fixed by modelling the loader's MK1 (ctrl Port A
+ *        bit4) strobe as a data-separator re-lock that jumps mark-to-mark, so the
+ *        search skips the data bytes (K5122::resyncToNextMark()).  The full
+ *        @OS.COM now loads and ZVE1 reaches the OS entry; the screen shows the
+ *        running CP/A banner ("CP/A, Version 25.09.89, TPA …").
  * @par Pass criterion  ZVE1 PC reaches the OS entry 0x37A0 (ROM unmapped).
  */
-TEST(BootIntegration, DISABLED_Stage3_FullyLoadsAndJumpsToOs) {
+TEST(BootIntegration, Stage3_FullyLoadsAndJumpsToOs) {
     A5120Machine machine;
     ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk01.img"), "cpa780", false));
     machine.powerOn();
     EXPECT_TRUE(runUntilPC(machine, 0x37A0, 40'000'000))
-        << "OS entry 0x37A0 never reached — @OS.COM read did not complete "
-           "(falls into error-HALT 0x08AF; current open bug)";
+        << "OS entry 0x37A0 never reached — @OS.COM read did not complete";
 }
