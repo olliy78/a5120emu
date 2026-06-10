@@ -693,12 +693,17 @@ DriveProfile[4] — Zoll/Spuren/Köpfe/U-min/Verfahren je Slot  drive_profile.*
   Die im Entwurf vermutete „eine CRC für beide Boot-Stadien" gilt nur halb — die Stadien
   erwarten physisch verschiedene Daten-CRC-Bytes; Details in `doc/refactoring_floppy_emulator.md`
   §15.2.
-- **Abgrenzung:** `K5122v2` ist (noch) **nicht** in die Maschinenkonfiguration verdrahtet — die
-  alte `K5122` bleibt im A5120-Boot-Pfad, daher null Boot-Regressionsrisiko.  Die Ablösung in
-  einer konkreten Maschinenkonfiguration ist dokumentierte Folgearbeit.
-- **Tests:** `test_track_codec`, `test_bit_codec`, `test_hfe_image`, `test_disk_image_raw`,
-  `test_drive_profile`, `test_floppy_drive2`, `test_k5122v2` (GoogleTest); alle grün, keine
-  Regression der bestehenden Boot-/K5122-Tests.
+- **Verdrahtung & Boot (2026-06-10):** `A5120Machine` nutzt **standardmäßig** `K5122v2` als
+  Slot-2-Floppy (`a5120.h`, `using`/`#if`-Weiche; Rückschalten mit `-DUSE_LEGACY_K5122`).  Damit
+  **bootet die A5120 die echte Diskette vollständig in CP/A** (`CP/A, Version 25.09.89 …`), alle 8
+  `test_boot_integration`-Stadien grün.  Zwei boot-spezifische Anpassungen waren nötig: ein
+  **Robotron-Track-Layout** (`buildRobotronTrack`: single-A1, kein IAM, Marke auf dem A1, CRC-Seed
+  pro Sektorgröße — passend zur idiosynkratischen IDAM-Suche des ZVE2-Lesers) und die **Track-Ende-
+  /BUSRQ-Arbitrierung** (`OUT(13H),03H` → /BUSRQ frei, gegated auf 128-B-Spuren).  Details:
+  `doc/refactoring_floppy_emulator.md` §15.4.  Das generische IBM-/HFE-Layout bleibt unberührt.
+- **Tests:** `test_track_codec`, `test_robotron_track`, `test_bit_codec`, `test_hfe_image`,
+  `test_disk_image_raw`, `test_drive_profile`, `test_floppy_drive2`, `test_k5122v2` (GoogleTest);
+  alle grün, ebenso `test_boot_integration` (Full-Machine mit K5122v2) und die alten K5122-Tests.
 
 ---
 

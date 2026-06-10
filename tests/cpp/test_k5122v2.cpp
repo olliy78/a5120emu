@@ -318,8 +318,12 @@ TEST_F(K5122v2Test, MKStrobe_SyncsAufMarkenbyte) {
     pulseMK(0xF1);
 
     // Das erste Byte nach MK-Puls muss ein Markenbyte sein.
+    // Im Robotron-Layout (K5122v2 verwendet on-the-fly buildRobotronTrack) ist
+    // das Markenbyte 0xA1 (Marke liegt auf dem A1-Byte, nicht auf FE/FB).
+    // Im IBM-Standard-Layout wären es 0xFE, 0xFB, 0xFC oder 0xF8.
     uint8_t first = card.ioRead(0x16);
-    bool ist_marke = (first == 0xFE || first == 0xFB || first == 0xFC || first == 0xF8);
+    bool ist_marke = (first == 0xFE || first == 0xFB || first == 0xFC || first == 0xF8
+                      || first == 0xA1);
     EXPECT_TRUE(ist_marke)
         << "Nach MK-Puls: erstes Byte sollte Markenbyte sein, got 0x"
         << std::hex << static_cast<int>(first);

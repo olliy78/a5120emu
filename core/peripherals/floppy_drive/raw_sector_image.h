@@ -20,6 +20,7 @@
 #pragma once
 #include "disk_image.h"
 #include "format_parser.h"
+#include "track_codec.h"   // TrackLayout
 #include "track_image.h"
 #include <cstdint>
 #include <string>
@@ -37,9 +38,12 @@ public:
      * @param fmt           Geometrie/Sektorbelegung
      * @param write_protect Schreibschutz
      * @param enc           Aufzeichnungsverfahren der Tracks (Default MFM)
+     * @param layout        Track-Layout für die Synthese (Default IbmStandard).
+     *                      RobotronBoot wählt buildRobotronTrack() statt buildTrack().
      */
     RawSectorImage(const std::string& path, DiskFormat fmt,
-                   bool write_protect, Encoding enc = Encoding::MFM);
+                   bool write_protect, Encoding enc = Encoding::MFM,
+                   TrackLayout layout = TrackLayout::IbmStandard);
 
     /// @brief true, wenn die Datei geöffnet werden konnte.
     bool isOpen() const { return is_open_; }
@@ -59,6 +63,7 @@ private:
     DiskFormat   fmt_;
     bool         write_protect_ = false;
     Encoding     enc_           = Encoding::MFM;
+    TrackLayout  layout_        = TrackLayout::IbmStandard;
     bool         is_open_       = false;
     std::string  last_error_;
 };

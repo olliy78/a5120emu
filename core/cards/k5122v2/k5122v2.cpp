@@ -104,6 +104,25 @@ void K5122v2::ioWrite(uint8_t port, uint8_t data) {
         if (port == 0x10) {
             handleCtrlPortAWrite(data);
         }
+        // ── Track-Ende-Arbitrierung (Sekundärlader) ─────────────────────────
+        // Der ZVE2-Sekundärlader schaltet den Ctrl-PIO-Port-B-Interrupt ab
+        // (OUT(13H),03H), sobald er alle Sektoren einer 128-B-Spur gelesen hat
+        // und in seine Idle-Schleife (L0696) fällt.  Auf echter Hardware
+        // unterdrückt dann /STR=1 das /BUSRQ und ZVE2 verliert den Bus; in
+        // unserem fortlaufend gestepten Modell würde ZVE2 stattdessen in L0696
+        // weiterlaufen und die Handshake-Variablen [07F8..07FC] (INIR) zerstören.
+        // Daher hier /BUSRQ freigeben, damit ZVE1 die Spur verarbeitet, seekt
+        // und ZVE2 für die nächste Spur neu startet.
+        // Gate auf 128-B-Spuren: der 3.-Stufen-CP/A-Lader (1024-B-Datenbereich)
+        // schreibt OUT(13H),03H ebenfalls, dort ist es aber NUR ein PIO-Port-B-
+        // Interrupt-Steuerwort (IE=0), KEIN Track-Ende — eine Freigabe mitten im
+        // 1024-B-Lesen würde transferring_ löschen und den Read zum Timeout führen.
+        if (port == 0x13 && data == 0x03 && transferring_ && bus_.isBUSRQ()
+                && cur_sector_size_ <= 128) {
+            transferring_ = false;
+            bus_.releaseBUSRQ();
+            LOG_DEBUG("K5122v2", "Track-Ende (ZVE2 L0696): BUSRQ freigegeben, ZVE1 übernimmt");
+        }
     } else if (port >= 0x14 && port <= 0x17) {
         LOG_DEBUG("K5122v2", "DATA PIO write port=0x%02X data=0x%02X", port, data);
         data_pio_.ioWrite(port - 0x14, data);
@@ -176,6 +195,11 @@ bool K5122v2::mountDisk(int drive, std::unique_ptr<DiskImage> img, bool write_pr
 
 /**
  * @brief Komfort-Overload: öffnet eine .img-Datei und mountet sie.
+ *
+ * Das DiskImage wird im IBM-Standard-Format geöffnet (DiskImage::open Default).
+ * Der Drive-Cache speichert IBM-Format-Tracks, damit der Write-Pfad (commitWrite →
+ * parseTrack → buildTrack) unverändert funktioniert.  Das Robotron-Layout für den
+ * Lese-Streaming-Pfad wird von startReadTransfer() on-the-fly erzeugt.
  */
 bool K5122v2::mountDisk(int drive, const std::string& path,
                         const DiskFormat& fmt, bool write_protect) {
@@ -425,10 +449,15 @@ void K5122v2::doStep() {
 }
 
 /**
- * @brief Armiert einen Lese-Transfer: holt das TrackImage und setzt head_pos_=0.
+ * @brief Armiert einen Lese-Transfer: erzeugt einen Robotron-Layout-Track und streamt ihn.
  *
- * Das TrackImage ist eine Referenz in den Drive-Cache; es bleibt gültig, solange der
- * Zylinder nicht wechselt.  Bei leerem Laufwerk → cur_track_=nullptr.
+ * Der Drive-Cache liefert einen IBM-Format-Track (buildTrack); daraus werden via
+ * parseTrack die logischen Sektoren gewonnen und anschließend via buildRobotronTrack ein
+ * Robotron-Layout-Track erzeugt.  Dieser liegt in robotron_track_ und der Zeiger
+ * cur_track_ zeigt darauf.  Der IBM-Format-Track im Drive-Cache bleibt unberührt, damit
+ * commitWrite()/parseTrack() weiterhin funktioniert.
+ *
+ * Bei leerem Laufwerk oder Spur → cur_track_=nullptr.
  */
 void K5122v2::startReadTransfer() {
     FloppyDriveV2& drv = drives_[selected_drive_];
@@ -436,21 +465,40 @@ void K5122v2::startReadTransfer() {
         LOG_WARN("K5122v2", "Lese-Transfer: D%d nicht montiert", selected_drive_);
         transferring_ = false;
         cur_track_    = nullptr;
+        robotron_track_ = {};
         return;
     }
 
-    cur_track_    = &drv.track(current_head_);
+    // IBM-Format-Track aus dem Drive-Cache holen (unverändert für den Write-Pfad).
+    const TrackImage& ibm_track = drv.track(current_head_);
+
+    if (ibm_track.empty()) {
+        LOG_WARN("K5122v2", "Lese-Transfer: D%d H%u Spur leer",
+                 selected_drive_, static_cast<unsigned>(current_head_));
+        transferring_ = false;
+        cur_track_    = nullptr;
+        robotron_track_ = {};
+        return;
+    }
+
+    // Robotron-Layout-Track on-the-fly erzeugen: IBM-Track parsen → Sektoren →
+    // buildRobotronTrack.  Der Drive-Cache bleibt IBM-Format.
+    auto sektoren   = TrackCodec::parseTrack(ibm_track);
+    robotron_track_ = TrackCodec::buildRobotronTrack(sektoren);
+    cur_sector_size_ = sektoren.empty() ? 128 : sektoren.front().size;
+
+    cur_track_    = &robotron_track_;
     head_pos_     = 0;
     transferring_ = true;
     write_mode_   = false;
     locked_       = false;
     markDriveAccess(selected_drive_);
 
-    LOG_INFO("K5122v2", ">>> READ D%d C=%u H=%u Spur=%zu Bytes",
+    LOG_INFO("K5122v2", ">>> READ D%d C=%u H=%u Spur=%zu Bytes (Robotron-Layout)",
              selected_drive_,
              static_cast<unsigned>(drv.currentCylinder()),
              static_cast<unsigned>(current_head_),
-             cur_track_ ? cur_track_->size() : 0u);
+             robotron_track_.size());
 }
 
 /**

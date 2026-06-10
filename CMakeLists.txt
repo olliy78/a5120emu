@@ -179,8 +179,8 @@ if(BUILD_K1520)
     )
     target_link_libraries(k1520_a5120 PUBLIC
         k1520_z80
-        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122
-        k1520_k7637 k1520_floppy k1520_bus k1520_logger
+        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_k5122v2
+        k1520_k7637 k1520_floppy k1520_floppy2 k1520_bus k1520_logger
     )
     target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -236,6 +236,10 @@ if(BUILD_K1520)
         add_executable(k1520_test_track_codec tests/cpp/test_track_codec.cpp)
         target_link_libraries(k1520_test_track_codec PRIVATE k1520_floppy2 GTest::gtest_main)
         target_include_directories(k1520_test_track_codec PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_robotron_track tests/cpp/test_robotron_track.cpp)
+        target_link_libraries(k1520_test_robotron_track PRIVATE k1520_floppy2 GTest::gtest_main)
+        target_include_directories(k1520_test_robotron_track PRIVATE ${CMAKE_SOURCE_DIR})
 
         add_executable(k1520_test_bit_codec tests/cpp/test_bit_codec.cpp)
         target_link_libraries(k1520_test_bit_codec PRIVATE k1520_floppy2 GTest::gtest_main)
@@ -320,6 +324,7 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_format_parser)
         gtest_discover_tests(k1520_test_floppy)
         gtest_discover_tests(k1520_test_track_codec)
+        gtest_discover_tests(k1520_test_robotron_track)
         gtest_discover_tests(k1520_test_bit_codec)
         gtest_discover_tests(k1520_test_drive_profile)
         gtest_discover_tests(k1520_test_disk_image_raw)

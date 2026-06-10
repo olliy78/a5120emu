@@ -150,12 +150,19 @@ private:
     uint8_t prev_ctrl_a_    = 0xFF;            ///< vorheriger Port-A-Wert (Kantenerkennung)
 
     // ─── Lesekopf-Streaming-Modell (ersetzt sector_buf_/field_*) ─────────────
-    const TrackImage* cur_track_    = nullptr; ///< aktive Spur (von FloppyDriveV2::track)
+    const TrackImage* cur_track_    = nullptr; ///< aktive Spur (Zeiger auf robotron_track_)
+    TrackImage        robotron_track_;          ///< Robotron-Layout-Track für das Streaming;
+                                               ///< wird in startReadTransfer() aus dem IBM-Track
+                                               ///< des Drive-Cache erzeugt (on-the-fly).
+                                               ///< Der Drive-Cache bleibt immer IBM-Format,
+                                               ///< damit commitWrite()/parseTrack() funktioniert.
     size_t            head_pos_     = 0;        ///< Lesekopf-Position (Byte) in der Spur
     bool              locked_       = false;    ///< Datenseparator auf eine Marke synchronisiert
     bool              transferring_ = false;    ///< Lesetransfer läuft
     bool              write_mode_   = false;    ///< Schreibtransfer läuft
     std::vector<uint8_t> write_buf_;            ///< gesammelte Schreibdaten (Port 0x14)
+    uint16_t          cur_sector_size_ = 128;   ///< Sektorgröße der aktiven Spur (für die
+                                                ///< Track-Ende-Arbitrierung, s. ioWrite 0x13)
 
     // ─── DMA-State ───────────────────────────────────────────────────────────
     bool dma_pending_  = false;

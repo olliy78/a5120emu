@@ -350,4 +350,84 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
     return result;
 }
 
+// ─── buildRobotronTrack ───────────────────────────────────────────────────────
+
+/**
+ * Robotron-A5120-Boot-Track-Layout: kein IAM, einzelner A1-Sync, Marke auf dem A1-Byte.
+ *
+ * Motivation: Die ZVE2-Leseroutinen der A5120-Boot-ROM (und des Sekundärladers) erwarten
+ * nach einem MK/MK1-Resync-Strobe:
+ *   buf[0] = A1  (das Marken-Byte, auf dem nextMark() steht)
+ *   buf[1] = FE  (IDAM-Marke-Byte) bzw. 0xFB (DAM-Marke-Byte)
+ *
+ * Das generische buildTrack-Layout hat die Marke auf dem FE/FB-Byte (nach drei A1-Bytes),
+ * was zu einem Off-by-one führt und die IDAM-Erkennung der ROM-Routine bricht.
+ *
+ * Hier: Marke liegt auf dem einzelnen A1-Byte; FE/FB ist das unmittelbar folgende Byte ohne
+ * Marke.  parseTrack() versteht dieses Layout NICHT (es sucht die Marke auf FE/FB); diese
+ * Funktion ist ausschließlich für den Vorwärts-Streaming-Pfad (ZVE2 liest, nie schreibt).
+ */
+TrackImage buildRobotronTrack(const std::vector<LogicalSector>& sectors) {
+    TrackImage t;
+    t.encoding = Encoding::MFM;
+    t.bitcells = 0;
+
+    // Hilfslambdas
+    auto push = [&](uint8_t byte) {
+        t.bytes.push_back(byte);
+        t.marks.push_back(MarkType::None);
+    };
+    auto pushMark = [&](uint8_t byte, MarkType mt) {
+        t.bytes.push_back(byte);
+        t.marks.push_back(mt);
+    };
+    auto fill = [&](uint8_t byte, size_t count) {
+        for (size_t i = 0; i < count; ++i) push(byte);
+    };
+
+    for (const auto& sec : sectors) {
+        const uint8_t sc = sizeCode(sec.size);
+
+        // ── IDAM: einzelner A1 mit Id-Marke ──────────────────────────────────
+        pushMark(0xA1, MarkType::Id);   // Marke auf dem A1, nicht auf FE
+        push(0xFE);
+        push(sec.cyl);
+        push(sec.head);
+        push(sec.id);
+        push(sc);
+
+        // id_gap: 18 Bytes für 128B-Sektoren, 27 Bytes für größere
+        const size_t id_gap = (sec.size <= 128u) ? 18u : 27u;
+        fill(0x4E, id_gap);
+
+        // ── DAM: einzelner A1 mit Data-Marke ─────────────────────────────────
+        pushMark(0xA1, MarkType::Data); // Marke auf dem A1, nicht auf FB
+        push(0xFB);
+
+        // Daten
+        for (uint8_t b : sec.data) push(b);
+
+        // CRC: size<=128 → Seed 0xBF84 über Datenbytes;
+        //      size> 128 → Seed 0xCDB4 über [0xFB]+Datenbytes
+        uint16_t crc;
+        if (sec.size <= 128u) {
+            crc = crc16(sec.data.data(), sec.data.size(), 0xBF, 0x84);
+        } else {
+            // Temporärer Puffer [FB] + data für die CRC
+            std::vector<uint8_t> tmp;
+            tmp.reserve(1 + sec.data.size());
+            tmp.push_back(0xFB);
+            tmp.insert(tmp.end(), sec.data.begin(), sec.data.end());
+            crc = crc16(tmp.data(), tmp.size(), 0xCD, 0xB4);
+        }
+        push(static_cast<uint8_t>(crc >> 8));
+        push(static_cast<uint8_t>(crc & 0xFF));
+
+        // 8 Bytes Gap nach dem Datenfeld
+        fill(0x4E, 8u);
+    }
+
+    return t;
+}
+
 }  // namespace TrackCodec
