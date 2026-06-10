@@ -4,6 +4,15 @@
 **Dateien:** `floppy_drive.h`, `floppy_drive.cpp`, `format_parser.h`, `format_parser.cpp`  
 **Format-Referenz:** `/home/olliy/projects/CPA_Workbench/cpaFormates.cfg`
 
+> **Hinweis (2026-06-10): neue Schicht daneben.** Dieses Dokument beschreibt das
+> ursprüngliche `FloppyDrive` (Inline-Sektor-IO über `.img`), das von der alten `K5122`
+> genutzt wird und unverändert bleibt.  Der Floppy-Refactor hat im selben Verzeichnis eine
+> **neue, DiskImage-basierte Schicht** ergänzt, die die neue Karte `K5122v2` nutzt:
+> `track_image.*` (zentrale `TrackImage`-Abstraktion), `track_codec.*` (FM/MFM-Track
+> bauen/parsen + CRC), `drive_profile.*` (physische Laufwerksprofile), `disk_image.*` +
+> `raw_sector_image.*` (austauschbare Backends) und `floppy_drive2.*` (`FloppyDriveV2` mit
+> Profil + Track-Cache).  Architektur/Status: `doc/refactoring_floppy_emulator.md` (§3–§8, §15).
+
 ---
 
 ## 1. Aufgabe

@@ -98,6 +98,20 @@ if(BUILD_K1520)
     )
     target_include_directories(k1520_floppy PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # Neue Peripherie-Schicht: Track-Bild-Abstraktion + FM/MFM-Codec + Drive/Image
+    add_library(k1520_floppy2 STATIC
+        core/peripherals/floppy_drive/track_image.cpp
+        core/peripherals/floppy_drive/track_codec.cpp
+        core/peripherals/floppy_drive/bit_codec.cpp
+        core/peripherals/floppy_drive/drive_profile.cpp
+        core/peripherals/floppy_drive/raw_sector_image.cpp
+        core/peripherals/floppy_drive/hfe_image.cpp
+        core/peripherals/floppy_drive/disk_image.cpp
+        core/peripherals/floppy_drive/floppy_drive2.cpp
+    )
+    target_link_libraries(k1520_floppy2 PUBLIC k1520_floppy)
+    target_include_directories(k1520_floppy2 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # PIO primitive
     add_library(k1520_pio STATIC
         core/primitives/z80_pio.cpp
@@ -153,6 +167,11 @@ if(BUILD_K1520)
     add_library(k1520_k5122 STATIC core/cards/k5122/k5122.cpp)
     target_link_libraries(k1520_k5122 PUBLIC k1520_pio k1520_floppy k1520_bus k1520_logger)
     target_include_directories(k1520_k5122 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # K5122v2 – neue, formatagnostische Floppy-Controller-Karte (TrackImage-basiert)
+    add_library(k1520_k5122v2 STATIC core/cards/k5122v2/k5122v2.cpp)
+    target_link_libraries(k1520_k5122v2 PUBLIC k1520_pio k1520_floppy2 k1520_bus k1520_logger)
+    target_include_directories(k1520_k5122v2 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # A5120 machine (wires all cards + Z80 CPU)
     add_library(k1520_a5120 STATIC
@@ -214,6 +233,32 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_floppy PRIVATE k1520_floppy GTest::gtest_main)
         target_include_directories(k1520_test_floppy PRIVATE ${CMAKE_SOURCE_DIR})
 
+        add_executable(k1520_test_track_codec tests/cpp/test_track_codec.cpp)
+        target_link_libraries(k1520_test_track_codec PRIVATE k1520_floppy2 GTest::gtest_main)
+        target_include_directories(k1520_test_track_codec PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_bit_codec tests/cpp/test_bit_codec.cpp)
+        target_link_libraries(k1520_test_bit_codec PRIVATE k1520_floppy2 GTest::gtest_main)
+        target_include_directories(k1520_test_bit_codec PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_drive_profile tests/cpp/test_drive_profile.cpp)
+        target_link_libraries(k1520_test_drive_profile PRIVATE k1520_floppy2 GTest::gtest_main)
+        target_include_directories(k1520_test_drive_profile PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_disk_image_raw tests/cpp/test_disk_image_raw.cpp)
+        target_link_libraries(k1520_test_disk_image_raw PRIVATE k1520_floppy2 GTest::gtest_main)
+        target_include_directories(k1520_test_disk_image_raw PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_floppy_drive2 tests/cpp/test_floppy_drive2.cpp)
+        target_link_libraries(k1520_test_floppy_drive2 PRIVATE k1520_floppy2 GTest::gtest_main)
+        target_include_directories(k1520_test_floppy_drive2 PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_hfe_image tests/cpp/test_hfe_image.cpp)
+        target_link_libraries(k1520_test_hfe_image PRIVATE k1520_floppy2 GTest::gtest_main)
+        target_include_directories(k1520_test_hfe_image PRIVATE ${CMAKE_SOURCE_DIR})
+        target_compile_definitions(k1520_test_hfe_image PRIVATE
+            FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures")
+
         add_executable(k1520_test_ctc
             tests/cpp/test_ctc.cpp
         )
@@ -250,6 +295,10 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_k5122 PRIVATE k1520_k5122 GTest::gtest_main)
         target_include_directories(k1520_test_k5122 PRIVATE ${CMAKE_SOURCE_DIR})
 
+        add_executable(k1520_test_k5122v2 tests/cpp/test_k5122v2.cpp)
+        target_link_libraries(k1520_test_k5122v2 PRIVATE k1520_k5122v2 GTest::gtest_main)
+        target_include_directories(k1520_test_k5122v2 PRIVATE ${CMAKE_SOURCE_DIR})
+
         add_executable(k1520_test_z80 tests/cpp/test_z80.cpp)
         target_link_libraries(k1520_test_z80 PRIVATE k1520_z80 GTest::gtest_main)
         target_include_directories(k1520_test_z80 PRIVATE ${CMAKE_SOURCE_DIR})
@@ -270,6 +319,12 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_bus)
         gtest_discover_tests(k1520_test_format_parser)
         gtest_discover_tests(k1520_test_floppy)
+        gtest_discover_tests(k1520_test_track_codec)
+        gtest_discover_tests(k1520_test_bit_codec)
+        gtest_discover_tests(k1520_test_drive_profile)
+        gtest_discover_tests(k1520_test_disk_image_raw)
+        gtest_discover_tests(k1520_test_floppy_drive2)
+        gtest_discover_tests(k1520_test_hfe_image)
         gtest_discover_tests(k1520_test_ctc)
         gtest_discover_tests(k1520_test_sio)
         gtest_discover_tests(k1520_test_k3526)
@@ -278,6 +333,7 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_k2526)
         gtest_discover_tests(k1520_test_k8025)
         gtest_discover_tests(k1520_test_k5122)
+        gtest_discover_tests(k1520_test_k5122v2)
         gtest_discover_tests(k1520_test_z80)
         gtest_discover_tests(k1520_test_boot_integration PROPERTIES TIMEOUT 60)
     endif() # BUILD_K1520_TESTS

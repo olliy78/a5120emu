@@ -831,3 +831,94 @@ doc/design/07_k5122_afs.md, 09_floppy_drive.md  (Modell + FM/Laufwerksprofile ak
 ```
 
 **Unverändert (bewusst):** Legacy-`src/`, `cparun/`.
+
+---
+
+## 15. Implementierungsstand (2026-06-10)
+
+Umgesetzt wurde die neue Datenpfad-Architektur als **eigenständige, parallele Karte
+`K5122v2`** — *nicht* als In-place-Umbau der alten `K5122`.  Begründung: Die alte Karte
+ist eng mit der timing-empfindlichen ZVE1↔ZVE2-Boot-Arbitrierung verflochten (Phase 4 =
+höchstes Boot-Regressionsrisiko, §13).  Indem die neue Karte **parallel** existiert und der
+A5120-Boot-Pfad (`a5120.cpp`) weiter die alte `K5122` verdrahtet, ist das Boot-Risiko
+**vollständig vermieden**: die Boot-Integrationstests laufen unverändert grün.  Die neue
+Karte tritt in einer künftigen Maschinenkonfiguration an die Stelle der alten (Phase 6/
+„ersetzt später") — diese Verdrahtung ist bewusst noch nicht erfolgt.
+
+### 15.1 Tatsächlich angelegte Dateien (getestet)
+
+```
+core/peripherals/floppy_drive/track_image.h / .cpp     TrackImage + Encoding + MarkType + nextMark
+core/peripherals/floppy_drive/drive_profile.h / .cpp   DriveProfile + builtinDriveProfile (4 Profile)
+core/peripherals/floppy_drive/track_codec.h / .cpp     buildTrack/parseTrack (MFM+FM) + crc16/crc16Ccitt
+core/peripherals/floppy_drive/disk_image.h / .cpp      DiskImage-Interface + open()/Sniffing (Raw+HFE)
+core/peripherals/floppy_drive/raw_sector_image.h / .cpp  RawSectorImage (.img + DiskFormat)
+core/peripherals/floppy_drive/bit_codec.h / .cpp       BitCodec: Bitzellen ⇆ Bytes (MFM+FM, HFE)
+core/peripherals/floppy_drive/hfe_image.h / .cpp       HfeImage: HFE v1 (HXCPICFE) lesen+schreiben
+core/peripherals/floppy_drive/floppy_drive2.h / .cpp   FloppyDriveV2 (DiskImage + Profil + Track-Cache)
+core/cards/k5122v2/k5122v2.h / .cpp                    K5122v2 (Lesekopf-Streaming-Controller)
+tools/img_to_hfe.py                                    eigenständiger .img→HFE-v1-MFM-Konverter (Fixtures)
+tests/fixtures/cpa_mini.img / cpa_mini.hfe             Test-Fixture (2 Zyl × 2 Köpfe × 4×128B)
+tests/cpp/test_track_codec.cpp        (21 Tests)
+tests/cpp/test_drive_profile.cpp      ( 9 Tests)
+tests/cpp/test_disk_image_raw.cpp     ( 8 Tests, inkl. Bitgleichheit vs. alte FloppyDrive)
+tests/cpp/test_floppy_drive2.cpp      (13 Tests)
+tests/cpp/test_bit_codec.cpp          (17 Tests, MFM+FM encode∘decode-Identität)
+tests/cpp/test_hfe_image.cpp          ( 9 Tests, inkl. unabhängiger Cross-Check HFE↔.img)
+tests/cpp/test_k5122v2.cpp            (22 Tests)
+```
+
+CMake: neue Libs `k1520_floppy2` (Peripherie, inkl. BitCodec/HfeImage) und `k1520_k5122v2`
+(Karte) + die sieben Test-Targets.  Voller `ctest`-Lauf: alle neuen Tests grün; nur die
+vorbekannten Baseline-Failures (FormatParser/CPA780, K3526, K7024) rot — **keine neue
+Regression**, `test_boot_integration` und `test_k5122` unverändert grün.
+
+**HFE-Backend (Recherche-gestützt, Greaseweazle/HxC).** `HfeImage` liest/schreibt HFE v1
+(„HXCPICFE", MFM=0/FM=2), `BitCodec` kapselt die Bitzellen-Ebene (16 Zellen/Byte,
+HFE-LSB-first ↔ intern MSB-first via bytereverse, A1-Sync = Zellwort `0x4489`, MFM-Clock
+`c_i=¬(d_{i-1}∨d_i)`, FM-Sondertakt C7/D7).  `DiskImage::open` öffnet HFE jetzt via `HfeImage`
+(HXCHFEV3/v3 weiterhin out-of-scope → nullptr).  Validierung: ein **eigenständig** aus der
+Spec geschriebener Python-Konverter (`tools/img_to_hfe.py`) erzeugt `cpa_mini.hfe`; der
+Cross-Check-Test beweist, dass `HfeImage::readTrack`→`BitCodec::decode`→`parseTrack`
+**dieselben Sektoren mit gültigen ID-/Daten-CRCs** liefert wie `RawSectorImage` aus der
+äquivalenten `.img`.  Nicht-offensichtlicher Fund: ein Daten-`0xC2`/Sync-Kollisionsfall an
+nicht-byte-alignierter Bitposition (`mfm_cell_word(0xC2)`=`0x52A4` kann ein spurioses
+`0x5224` bilden) — gelöst, indem C2-Syncs als Zellwort `0x5224` statt regulär kodiert werden.
+
+### 15.2 Abweichungen vom Entwurf
+
+- **Standalone-Karte `K5122v2`** statt Umbau von `K5122` (s. o.).  Die alte
+  `floppy_drive.{h,cpp}` und `format_parser.{h,cpp}` bleiben **unangetastet** — die neue
+  Schicht liegt vollständig daneben.  `RawSectorImage` nimmt das Encoding als
+  Konstruktorparameter (Default MFM), statt `TrackFormat` um ein Encoding-Feld zu erweitern,
+  damit der gemeinsam genutzte `format_parser`-Header nicht angefasst werden muss.
+- **CRC-Vereinheitlichung nur halb bestätigt (wichtig).** Der §4.1-Verifikationstest wurde
+  umgesetzt und empirisch geprüft:
+  - `crc16([A1,A1,A1], 0xFF,0xFF) == 0xCDB4` **hält** → der 3.-Stufe-Pfad (Seed 0xCDB4 über
+    `[FB]+Daten`) ist äquivalent zu einer CRC über `[A1,A1,A1,FB,Daten]` ab 0xFFFF.
+  - `crc16([A1,A1,A1,FB], 0xFF,0xFF) == 0xBF84` **hält NICHT** — ergibt `0xE295` (genau der in
+    der alten K5122 dokumentierte „alternate path, bit1=0").  Die beiden Boot-Stadien
+    erwarten also physisch **unterschiedliche** Daten-CRC-Bytes; eine einzige eingebackene
+    CRC kann nicht beide gleichzeitig befriedigen — das war der reale Grund für die alte
+    `stream_continuous_`-Verzweigung, kein Synthese-Artefakt.
+  - `TrackCodec`/`buildTrack` verwendet daher für die MFM-Daten-CRC den verifizierten
+    boot-kompatiblen Seed `crc16(Daten, 0xBF, 0x84)` über die reinen Datenbytes; der
+    `buildTrack`↔`parseTrack`-Roundtrip ist damit byte-genau und konsistent.
+  - **Folge für die spätere Maschinen-Verdrahtung:** Soll `K5122v2` den echten Boot-Pfad
+    bedienen, muss der Daten-CRC pro Lese-Stadium passend gewählt werden (wie die alte Karte
+    es über `stream_continuous_` tut) — die `crc16`-Primitive deckt beide Seeds ab.
+
+### 15.3 Bewusst noch offen (dokumentierte Folgearbeit)
+
+- **HFE v3 / EMU-FM**: nur HFE v1 (HXCPICFE, ISOIBM_MFM/FM) ist implementiert; HXCHFEV3
+  (opcode-basiert) bleibt out of scope (`open` → nullptr).
+- **FM-HFE-Fixture / 8″-Smoke** (§4.2/§5): der FM-Pfad ist in `BitCodec` und `HfeImage`
+  vollständig (encode∘decode-Identität getestet), aber `tools/img_to_hfe.py` erzeugt bislang
+  nur MFM; eine FM-Fixture + 8″-IBM-3740-Smoke fehlt noch.  `TrackCodec` baut/parst FM bereits
+  (mit `crc16Ccitt`).
+- **Schreibpfad** (`commitWrite`/`writeTrack`): funktionsfähiger Roundtrip vorhanden; die
+  Mehr-Sektor-Lokalisierung beim Schreiben ist vereinfacht (committet aktuell Sektor 0 bzw.
+  den unter dem Kopf liegenden Sektor) — für reale OS-Writes zu verfeinern.
+- **Maschinen-Verdrahtung + C-API + GUI** (§10): `a5120.cpp`, `k1520_api.*` und `app/` sind
+  unverändert; die Profil-/Geometrie-/HFE-API ist noch nicht angebunden.
+- **BUSRQ aus /STR** (§9.4/Phase 9): unverändert offen.
