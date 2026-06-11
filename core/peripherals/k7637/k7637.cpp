@@ -80,6 +80,14 @@ void K7637::processTxCommands() {
     while (ch.txAvailable()) {
         uint8_t byte = ch.txGet();
 
+        // The real K7637 acknowledges every command byte it receives by
+        // returning its type/status byte (high nibble 0x8x).  The BIOS relies
+        // on this for keyboard detection (reset 0x00 → type code) and for the
+        // LED-control handshake (`lmpout` waits for it after each command).
+        // A stray type-code byte read as a keystroke is harmless: it is not in
+        // the K7637 scan-code table and decodes to 0 (ignored).
+        sendByte(TYPE_CODE);
+
         if (expect_second_byte_) {
             expect_second_byte_ = false;
             // Handle second byte of a two-byte command.

@@ -213,6 +213,12 @@ int A5120Machine::run(int max_cycles) {
         // Clock CTC on ZRE card and serial card
         zre_.clockTick();
         ass_.clockTick();
+
+        // Service the keyboard: drain command bytes the BIOS sent to the K7637
+        // (reset / LED control) and let it return its type-code acknowledge.
+        // Without this the BIOS keyboard detection never sees the K7637 answer,
+        // mis-detects a parallel K7606, and no key ever reaches the OS.
+        kbd_.processTxCommands();
     }
 
     return max_cycles - remaining;

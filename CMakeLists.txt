@@ -332,4 +332,16 @@ if(BUILD_K1520)
     target_include_directories(boot_trace PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(boot_trace PRIVATE LOG_LEVEL=5)
 
+    # kbd_test: standalone keyboard smoke test (boot, type a command, dump screen)
+    add_executable(kbd_test tools/kbd_test.cpp)
+    target_link_libraries(kbd_test PRIVATE k1520_a5120 k1520_floppy k1520_logger)
+    target_include_directories(kbd_test PRIVATE ${CMAKE_SOURCE_DIR})
+    target_compile_definitions(kbd_test PRIVATE LOG_LEVEL=3)
+
+    # floppy_diag: running-OS floppy read diagnostic
+    add_executable(floppy_diag tools/floppy_diag.cpp)
+    target_link_libraries(floppy_diag PRIVATE k1520_a5120 k1520_floppy k1520_logger)
+    target_include_directories(floppy_diag PRIVATE ${CMAKE_SOURCE_DIR})
+    target_compile_definitions(floppy_diag PRIVATE LOG_LEVEL=3)
+
 endif() # BUILD_K1520

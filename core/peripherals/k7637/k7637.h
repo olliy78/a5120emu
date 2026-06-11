@@ -43,6 +43,16 @@ private:
     // Inject one byte into the connected SIO channel RX FIFO.
     void sendByte(uint8_t byte);
 
+    // K7637 type/status byte.  The real keyboard returns a byte whose high
+    // nibble (0x8x) identifies it as a K7637 in response to every command it
+    // receives (reset 0x00, LED control, …).  The BIOS keyboard-detection
+    // routine (`coityp` in bioskbdc.mac) sends a reset and waits for exactly
+    // this answer (`and 0F0h` / `cp typc37` with typc37=80h); without it the
+    // BIOS mis-detects the keyboard as a parallel K7606 and never reads the
+    // SIO ports, so no key ever reaches the OS.  The LED routine (`lmpout`)
+    // likewise polls for this acknowledge after every command byte.
+    static constexpr uint8_t TYPE_CODE = 0x80;
+
     // ── SIO connection ────────────────────────────────────────────────────
     Z80SIO* sio_    = nullptr;
     int     ch_idx_ = 0;         // 0 = Channel A, 1 = Channel B
