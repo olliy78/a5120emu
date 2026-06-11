@@ -85,6 +85,64 @@ Verifizierter Befund 2026-06-05 (cpadisk.img): ZVE2 startet, liest Sektor 1 und
 Warteschleife 0x0168. Das Tool druckt diese Diagnose automatisch. Siehe
 doc/analyse_zre_rom_boot.md.
 
+## k1520dbg.cpp — interaktiver Debugger (empfohlen für Post-Boot-Analyse)
+
+Ein gdb-artiger Debugger um `A5120Machine`. **Hauptvorteil gegenüber `boot_trace`:**
+boot_trace filtert nach **absoluten** Zyklen ab dem Einschalten — praktisch für die
+Boot-ROM-Phase, aber unhandlich, sobald das geladene OS oder ein Programm läuft
+(man muss erst die absolute Zyklenzahl finden, dann neu starten). k1520dbg löst das
+mit **Breakpoints**, einem **Marker für relative Zyklen** (`mark`) und einer
+interaktiven Sitzung.
+
+```
+# interaktiv:
+./build/k1520dbg disks/cpadisk_02.hfe
+# skript-/pipe-getrieben:
+printf 'mark 0x37A0\nb 0xC7A3\ng\nr\nq\n' | ./build/k1520dbg disks/cpadisk_02.hfe
+./build/k1520dbg disks/cpadisk_02.hfe -x mein_skript.dbg
+```
+
+Zeitbasis ist der **ZVE1-Taktzähler** (instruktionsgenau). Der traceCallback feuert
+*vor* der Instruktion → an einem Breakpoint zeigt `SP` auf die Rücksprungadresse
+(„break before execute"). Befehle:
+
+| Befehl | Wirkung |
+|--------|---------|
+| `g [N]` | bis zum nächsten Breakpoint laufen (oder N ZVE1-Zyklen) |
+| `gu <PC>` | bis ZVE1 PC erreicht (temporärer Breakpoint) |
+| `s [N]` | N ZVE1-Instruktionen einzelschritt-tracen (Default 1) |
+| `b <PC>` / `b2 <PC>` | Breakpoint auf ZVE1 / ZVE2; `bd`/`bd2` löschen; `bl` listen |
+| `mark [PC]` | **relativen Zyklenzähler** jetzt nullen, oder bei PC scharfschalten |
+| `r` | Register beider CPUs (inkl. Schattenregister `AF'..HL'`) + Status |
+| `d <A> [N]` | Hex+ASCII-Dump (Default 64); `e <A> <b..>` Bytes poken |
+| `u <A> [N]` | Disassemblieren via `z80_disasm2.py` (aus Repo-Wurzel starten) |
+| `t <lo> <hi> [N]` / `t2 ..` | ZVE1/ZVE2-Instruktionen im PC-Fenster tracen (Cap N); `t off` |
+| `wp <A>` / `wd <A>` / `wl` | RAM-Schreibzugriffe beobachten |
+| `keys <text>` | Text tippen (`\r`=Enter, `\t`, `\e`); treibt die Maschine weiter |
+| `screen` | 80×24-Text-VRAM ausgeben; `vars` benannte RAM-Variablen |
+| `reset` / `q` | Power-Cycle / beenden |
+
+**Der Marker ist der Kern:** `mark 0x37A0` nullt den Zähler beim Eintritt in das
+geladene OS; alle späteren Trace-/`r`-Ausgaben zeigen `+<relzyklen>`. Für die Analyse
+eines später geladenen **Programms** setzt man den Marker auf dessen Einsprungpunkt —
+so misst man Zyklen/Verhalten ab Programmstart, nicht ab Power-On. Beispiel
+(Lokalisierung des `dir`-Hangs):
+
+```
+mark 0x37A0        # Null-Marke = OS-Eintritt
+b 0xDB91           # SELDSK (BIOS-Vektor @D200[9])
+g ; r ; d 0xD1B2 16
+b 0xC7A3           # Divide-Schleife (Hang)
+g ; r ; vars
+```
+
+## kbd_test.cpp — Tastatur-/Boot-Smoke-Test (nicht-interaktiv)
+
+`./build/kbd_test <disk> [text]` bootet, tippt `text`+Enter und gibt den 80×24-
+Bildschirm + Tastatur-Port-Verkehr aus. Schneller Einzeltest, ob Tasten ankommen
+und ob ein Befehl Wirkung zeigt. (`floppy_diag.cpp` ist ein Scratch-Tracer für die
+ZVE2-Lesezugriffe des laufenden OS — durch k1520dbg weitgehend abgelöst.)
+
 ## Bekannte Lücken / Backlog
 
 - **z80_disasm2.py**: Behoben 2026-06-05 — war auf format.com (ORG 0100H) fest

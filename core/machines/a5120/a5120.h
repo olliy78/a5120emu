@@ -33,8 +33,12 @@ public:
     void powerOn();
     /** @brief Reset sequence with bootstrap ROM re-enabled. */
     void reset();
-    /** @brief Request emulation stop. */
+    /** @brief Request emulation stop (breaks out of run() after the current instr). */
     void stop() { stop_.store(true); }
+    /** @brief Clear a pending stop request so the next run() proceeds (debugger resume). */
+    void clearStop() { stop_.store(false); }
+    /** @brief ZVE1 (main CPU) total executed clock cycles — monotonic timeline for tools. */
+    uint64_t cpuCycles() const { return zre_.cpu().cycles; }
 
     // Run up to max_cycles CPU cycles. Returns cycles actually executed.
     /** @brief Execute up to max_cycles CPU cycles and return consumed cycles. */
