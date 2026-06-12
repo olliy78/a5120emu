@@ -118,6 +118,13 @@ public:
     bool     isZVE2Waiting() const { return zre_.isZVE2Waiting(); }
     /** @brief True while /BUSRQ is asserted (ZVE2/DMA owns the bus). */
     bool     isBUSRQ() const { return bus_.isBUSRQ(); }
+    /** @brief K5122 floppy-controller state snapshot (debugger `dev` command). */
+    K5122::DebugState k5122State() const { return afs_.debugState(); }
+    /** @brief Which CPU is the current bus master — true=ZVE2, false=ZVE1. Valid inside a
+     *  bus-trace callback to attribute a memory/IO access to the CPU that issued it. */
+    bool     busMasterIsZVE2() const { return bus_master_zve2_; }
+    /** @brief PC of the current bus-master CPU (ZVE2's PC during a ZVE2 step, else ZVE1's). */
+    uint16_t busMasterPC() const { return bus_master_zve2_ ? zre_.zve2PC() : zre_.cpuPC(); }
     /** @brief Install a per-instruction trace callback on ZVE2. */
     void setZVE2TraceCallback(std::function<void(const Z80&)> cb) {
         zre_.setZVE2TraceCallback(std::move(cb));
@@ -158,6 +165,8 @@ private:
     // round, not the level.
     bool busrq_active_     = false;   // /BUSRQ was asserted last iteration
     bool dma_saw_progress_ = false;   // [0x03F8] observed != 3 since this round began
+    bool bus_master_zve2_  = false;   // which CPU is currently stepping (for bus-trace
+                                      // attribution): true while ZVE2 steps, false for ZVE1
 
     // Monotonic cycle counter across all run() calls, fed to the Logger's gate
     // evaluation (cycle windows) once per instruction.

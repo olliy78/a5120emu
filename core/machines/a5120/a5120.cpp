@@ -159,7 +159,9 @@ int A5120Machine::run(int max_cycles) {
                 zre_.zve2StartFromReset();
             }
             if (!zre_.isZVE2InReset() && !zre_.isZVE2Waiting()) {
+                bus_master_zve2_ = true;
                 zre_.zve2Step();
+                bus_master_zve2_ = false;
                 // ZVE2 signals completion by writing [0x03F8]=3 (boot ROM 0x026B).
                 // Detect the *transition* to 3 within this round, not the level:
                 // a multi-sector chain re-runs the DMA, and [0x03F8] still holds 3

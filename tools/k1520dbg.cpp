@@ -246,23 +246,29 @@ int main(int argc, char** argv){
             stopAt(2,z,why);
         }
     });
+    // Attribute a bus access to the CPU that actually issued it. During a DMA the bus
+    // master is ZVE2, not ZVE1 — printing ZVE1's PC there is misleading. m.busMasterIsZVE2()
+    // is valid inside this callback (set by the run loop around each CPU step).
+    auto busWho = [&]{ static char s[20];
+        snprintf(s,sizeof s,"%s.PC=%04X", m.busMasterIsZVE2()?"ZVE2":"ZVE1", m.busMasterPC());
+        return s; };
     m.setBusTrace([&](bool isIO,bool isRead,uint16_t addr,uint8_t data){
         if (isIO){ uint8_t port=(uint8_t)addr;
             if (io_w.count(port))
-                fprintf(stderr,"[io] %c%-9lld %s (%02XH)=%02X  ZVE1.PC=%04X\n",
-                        rcpfx(),rc(m.cpuCycles()),isRead?"IN ":"OUT",port,data,m.cpuPC());
+                fprintf(stderr,"[io] %c%-9lld %s (%02XH)=%02X  %s\n",
+                        rcpfx(),rc(m.cpuCycles()),isRead?"IN ":"OUT",port,data,busWho());
             if (io_b.count(port)){ char w[40]; snprintf(w,sizeof w,"io %s (%02XH)=%02X",isRead?"IN":"OUT",port,data);
                 stopFromBus(w); }
             return;
         }
         if (isRead){ if (wp_r.count(addr))
-            fprintf(stderr,"[wr] %c%-9lld RD [%04X]=%02X  ZVE1.PC=%04X\n",
-                    rcpfx(),rc(m.cpuCycles()),addr,data,m.cpuPC());
+            fprintf(stderr,"[wr] %c%-9lld RD [%04X]=%02X  %s\n",
+                    rcpfx(),rc(m.cpuCycles()),addr,data,busWho());
             return; }
         if (wp_w.count(addr))
-            fprintf(stderr,"[wp] %c%-9lld WR [%04X]=%02X  ZVE1.PC=%04X\n",
-                    rcpfx(),rc(m.cpuCycles()),addr,data,m.cpuPC());
-        if (wb_w.count(addr)){ char w[40]; snprintf(w,sizeof w,"watch [%04X]=%02X",addr,data); stopFromBus(w); }
+            fprintf(stderr,"[wp] %c%-9lld WR [%04X]=%02X  %s\n",
+                    rcpfx(),rc(m.cpuCycles()),addr,data,busWho());
+        if (wb_w.count(addr)){ char w[40]; snprintf(w,sizeof w,"watch [%04X]=%02X by %s",addr,data,busWho()); stopFromBus(w); }
     });
 
     // ─── helpers ───────────────────────────────────────────────────────────────
@@ -417,6 +423,7 @@ int main(int argc, char** argv){
               "  INSPECT r [2]     registers (ZVE1, +ZVE2) ;  bt [N] backtrace\n"
               "          d <A> [N] hexdump ; u [A] [N] disasm ; e <A> <b..> poke\n"
               "          set [2] <reg> <v>   edit register ; vars   named RAM vars\n"
+              "          dev       K5122 controller state (drive/cyl/head/transfer)\n"
               "          disp <expr> | undisp <n> | disp   show expr at every stop\n"
               "  MEM     load <f> <A>   read binary into RAM ; save <f> <A> <N> dump RAM\n"
               "  MISC    mark [A]  zero relative cycle counter (now / armed at A)\n"
@@ -504,6 +511,11 @@ int main(int argc, char** argv){
         else if (cmd=="vars"){ auto wd=[&](uint16_t a){return (uint16_t)(m.memReadDebug(a)|(m.memReadDebug(a+1)<<8));};
             fprintf(stderr,"  [03F8]done=%02X  DPB: [D1B2]=%04X [D1B4]=%04X [D1B8]=%04X [D1BE]=%04X [D1CD]=%04X\n",
                     m.memReadDebug(0x03F8),wd(0xD1B2),wd(0xD1B4),wd(0xD1B8),wd(0xD1BE),wd(0xD1CD)); }
+        else if (cmd=="dev"){ auto k=m.k5122State();
+            fprintf(stderr,"  K5122: D%d %s  cyl=%u head=%u  %s%s  headPos=%zu/%zu secSize=%u  /BUSRQ-pend=%s\n",
+                    k.drive, k.mounted?"mounted":"EMPTY", k.cylinder, k.head,
+                    k.transferring?"READING":"idle", k.writeMode?"+WRITE":"",
+                    k.headPos, k.trackLen, k.sectorSize, k.busrq?"yes":"no"); }
         else if (cmd=="reset"){ m.reset(); fprintf(stderr,"  reset\n"); }
         else fprintf(stderr,"  ? unknown command '%s' (try help)\n",cmd.c_str());
     }

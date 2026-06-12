@@ -109,6 +109,30 @@ public:
     /// @brief Direkter Zugriff auf ein Laufwerk (Tests/C-API).
     FloppyDriveV2& drive(int idx) { return drives_[idx]; }
 
+    /// @brief Momentaufnahme des Controller-Zustands für Debugger (k1520dbg `dev`).
+    struct DebugState {
+        int      drive;        ///< aktuell gewähltes Laufwerk (8212 /SELx)
+        unsigned cylinder;     ///< physischer Zylinder des gewählten Laufwerks
+        unsigned head;         ///< am /STR gelatchte Seite (bit2 /FR)
+        bool     transferring; ///< Lese-Stream aktiv (ioRead 0x16 liefert Spurbytes)
+        bool     writeMode;    ///< Schreib-Transfer aktiv
+        size_t   headPos;      ///< Lesekopf-Position (Byte) in der Spur
+        size_t   trackLen;     ///< Länge der aktuell gestreamten Spur (0 = keine)
+        unsigned sectorSize;   ///< Sektorgröße der aktiven Spur
+        bool     mounted;      ///< Laufwerk gemountet?
+        bool     busrq;        ///< /STR-DMA ausstehend
+    };
+    DebugState debugState() const {
+        DebugState s{};
+        s.drive = selected_drive_; s.head = current_head_;
+        s.mounted = drives_[selected_drive_].isMounted();
+        s.cylinder = s.mounted ? drives_[selected_drive_].currentCylinder() : 0;
+        s.transferring = transferring_; s.writeMode = write_mode_;
+        s.headPos = head_pos_; s.trackLen = cur_track_ ? cur_track_->size() : 0;
+        s.sectorSize = cur_sector_size_; s.busrq = dma_pending_;
+        return s;
+    }
+
     // ─── DMA-Arbitrierung / Index ────────────────────────────────────────────
 
     /// @brief ZVE2-Fallback: führt eine ausstehende DMA-Übertragung aus und gibt /BUSRQ frei.
