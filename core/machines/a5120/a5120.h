@@ -99,6 +99,10 @@ public:
     void setCpuTraceCallback(std::function<void(const Z80&)> cb) {
         zre_.cpu().traceCallback = std::move(cb);
     }
+    /** @brief Mutable ZVE1 core for debuggers (register edit, flag inspection). */
+    Z80& cpuDebug() { return zre_.cpu(); }
+    /** @brief Mutable ZVE2 core for debuggers (register edit, flag inspection). */
+    Z80& zve2Debug() { return zre_.zve2(); }
 
     // ─── ZVE2 (DMA-CPU) diagnostics ──────────────────────────────────────────
     /** @brief Current PC of the ZVE2 (DMA Z80). */
