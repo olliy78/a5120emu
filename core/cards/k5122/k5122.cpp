@@ -64,6 +64,12 @@ uint8_t K5122::ioRead(uint8_t port) {
             if (cur_track_ && !cur_track_->empty()) {
                 result = cur_track_->bytes[head_pos_];
                 head_pos_ = (head_pos_ + 1) % cur_track_->size();
+                // Per-Byte-Drossel: Byte abgeholt → ZVE2 verliert den Bus, bis das
+                // nächste Byte ~1 Byteperiode später bereitliegt (s. update()).
+                // In der Lücke läuft ZVE1.
+                byte_ready_ = false;
+                byte_acc_   = 0;
+                bus_.releaseBUSRQ();
             } else {
                 result = 0xFF;
             }
@@ -101,25 +107,8 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
         if (port == 0x10) {
             handleCtrlPortAWrite(data);
         }
-        // ── Track-Ende-Arbitrierung (Sekundärlader) ─────────────────────────
-        // Der ZVE2-Sekundärlader schaltet den Ctrl-PIO-Port-B-Interrupt ab
-        // (OUT(13H),03H), sobald er alle Sektoren einer 128-B-Spur gelesen hat
-        // und in seine Idle-Schleife (L0696) fällt.  Auf echter Hardware
-        // unterdrückt dann /STR=1 das /BUSRQ und ZVE2 verliert den Bus; in
-        // unserem fortlaufend gestepten Modell würde ZVE2 stattdessen in L0696
-        // weiterlaufen und die Handshake-Variablen [07F8..07FC] (INIR) zerstören.
-        // Daher hier /BUSRQ freigeben, damit ZVE1 die Spur verarbeitet, seekt
-        // und ZVE2 für die nächste Spur neu startet.
-        // Gate auf 128-B-Spuren: der 3.-Stufen-CP/A-Lader (1024-B-Datenbereich)
-        // schreibt OUT(13H),03H ebenfalls, dort ist es aber NUR ein PIO-Port-B-
-        // Interrupt-Steuerwort (IE=0), KEIN Track-Ende — eine Freigabe mitten im
-        // 1024-B-Lesen würde transferring_ löschen und den Read zum Timeout führen.
-        if (port == 0x13 && data == 0x03 && transferring_ && bus_.isBUSRQ()
-                && cur_sector_size_ <= 128) {
-            transferring_ = false;
-            bus_.releaseBUSRQ();
-            LOG_DEBUG("K5122", "Track-Ende (ZVE2 L0696): BUSRQ freigegeben, ZVE1 übernimmt");
-        }
+        // (Kein OUT(13H)-Track-Ende-Hack mehr: ZVE2 verliert den Bus jetzt
+        //  hardware-echt über die Per-Byte-Drossel + /STR=1-Abtastung, s. update().)
     } else if (port >= 0x14 && port <= 0x17) {
         LOG_DEBUG("K5122", "DATA PIO write port=0x%02X data=0x%02X", port, data);
         data_pio_.ioWrite(port - 0x14, data);
@@ -285,6 +274,38 @@ void K5122::endDmaTransfer() {
  * der die Port-A-Interrupt-Logik auslöst.
  */
 void K5122::update(int cycles) {
+    // ── /STR=1 (gelatcht/abgetastet): Datenübertragung beenden ───────────────
+    // /STR=1 unterdrückt /BUSRQ (Anschluss inaktiv).  Nur ein über mehrere
+    // Byteperioden anhaltendes /STR=1 wird vom Datenseparator durchgetaktet —
+    // kurze Boot-ROM-Setup-Strobes (≤ ~18 Takte) werden verschluckt (Latch).
+    if (transferring_ && !write_mode_ && (prev_ctrl_a_ & 0x08)) {
+        str_inactive_cycles_ += cycles;
+        if (str_inactive_cycles_ >= kStrEndSampleCycles) {
+            transferring_        = false;
+            dma_pending_         = false;
+            byte_ready_          = false;
+            str_inactive_cycles_ = 0;
+            bus_.releaseBUSRQ();
+            LOG_DEBUG("K5122", "/STR=1 abgetastet: Datenübertragung beendet, BUSRQ frei");
+        }
+    } else {
+        str_inactive_cycles_ = 0;
+    }
+
+    // ── Per-Byte-/BUSRQ-Drossel: nächstes Byte nach 1 Byteperiode bereitstellen ──
+    // Solange ZVE2 liest, liegt nach jeder Byteperiode das nächste Byte bereit
+    // und /BUSRQ wird wieder assertiert.  Holt ZVE2 es nicht ab (fertig/idle),
+    // bleibt /BUSRQ zwar aktiv, aber sobald ZVE2 aufhört zu lesen, beendet das
+    // /STR=1 oben den Transfer — keine programm-/größenspezifische Erkennung nötig.
+    if (transferring_ && !write_mode_ && !byte_ready_) {
+        byte_acc_ += cycles;
+        if (byte_acc_ >= kBytePeriodCycles) {
+            byte_acc_   = 0;
+            byte_ready_ = true;
+            bus_.assertBUSRQ();
+        }
+    }
+
     if (!drives_[selected_drive_].isMounted()) return;
 
     index_cycle_acc_ += cycles;
@@ -323,6 +344,7 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
     // ── /STR (bit3) fallende Flanke: Strobe ──────────────────────────────────
     if ((prev_ctrl_a_ & 0x08) && !(data & 0x08)) {
         bool is_write = !(data & 0x01);  // /WE=0 → Schreiben
+        str_inactive_cycles_ = 0;        // neue Sitzung: /STR=1-Abtastung zurücksetzen
 
         // Side-Select: bit2 (/FR), NUR am /STR latchen.
         // bit2=1 → Kopf 0, bit2=0 → Kopf 1.
@@ -341,6 +363,8 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
             } else {
                 // Lese-Refresh: Spur für ggf. neuen Kopf neu laden (z. B. Kopf-Wechsel).
                 startReadTransfer();
+                byte_ready_ = true;          // erstes Byte der neuen Spur liegt bereit
+                byte_acc_   = 0;
                 LOG_DEBUG("K5122", "/STR ZVE2-Lese-Refresh: Spur neu geladen, BUSRQ gehalten");
             }
         } else {
@@ -348,6 +372,8 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
             dma_is_write_ = is_write;
             if (!is_write) {
                 startReadTransfer();
+                byte_ready_ = true;          // erstes Byte liegt bereit → /BUSRQ aktiv
+                byte_acc_   = 0;
             } else {
                 // Schreib-DMA: Puffer leeren, ZVE2 füllt ihn via Port 0x14
                 write_mode_  = true;

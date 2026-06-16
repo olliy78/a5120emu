@@ -182,12 +182,30 @@ private:
     bool              transferring_ = false;    ///< Lesetransfer läuft
     bool              write_mode_   = false;    ///< Schreibtransfer läuft
     std::vector<uint8_t> write_buf_;            ///< gesammelte Schreibdaten (Port 0x14)
-    uint16_t          cur_sector_size_ = 128;   ///< Sektorgröße der aktiven Spur (für die
-                                                ///< Track-Ende-Arbitrierung, s. ioWrite 0x13)
+    uint16_t          cur_sector_size_ = 128;   ///< Sektorgröße der aktiven Spur (nur Debug-Info)
 
     // ─── DMA-State ───────────────────────────────────────────────────────────
     bool dma_pending_  = false;
     bool dma_is_write_ = false;
+
+    // ─── Per-Byte-/BUSRQ-Drossel (hardware-echt, K5122-Doku §5.5/§5.6.1) ──────
+    // /BUSRQ entsteht pro Byte aus dem RDY des Daten-PIO: ZVE2 erhält den Bus,
+    // wenn ein Byte bereitliegt, holt es über Port 0x16 ab und verliert den Bus
+    // wieder, bis das nächste Byte ~1 Byteperiode später bereitliegt.  In diesen
+    // Lücken läuft ZVE1.  ZVE2 verliert den Bus damit automatisch, sobald es
+    // aufhört zu lesen (fertig/idle) — das ersetzt JEDE programm-/größen-
+    // spezifische Completion-Erkennung ([0x03F8]=3-Watch, OUT(13H)-Hack).
+    bool byte_ready_ = false;   ///< ein Byte liegt für ZVE2 bereit → /BUSRQ aktiv
+    int  byte_acc_   = 0;       ///< Takte seit dem letzten Byte (bis zur Bereitschaft)
+    static constexpr int kBytePeriodCycles = 150;  ///< ~1 MFM-Byte (16 Bitzellen) @ 2.45 MHz
+
+    // ─── /STR=1-Abtastung (Latch, formatagnostisches Transfer-Ende) ──────────
+    // K5122-Doku §5.5: „Beendigung der Datenübertragung … durch Abschalten von
+    // /STR".  Der Datenseparator tastet /STR nur am Lesetakt ab — ein /STR=1-Puls
+    // kürzer als ~1 Byteperiode wird NICHT durchgetaktet (erklärt die kurzen
+    // Boot-ROM-Setup-Strobes ≤ ~18 Takte, gegenüber echten Track-Enden ≥ 30000).
+    int  str_inactive_cycles_ = 0;              ///< Takte mit /STR=1 im aktiven Transfer
+    static constexpr int kStrEndSampleCycles = 320;  ///< ~2 MFM-Byte-Perioden @ 2.45 MHz
 
     // ─── Interrupt ───────────────────────────────────────────────────────────
     bool iei_in_ = false;

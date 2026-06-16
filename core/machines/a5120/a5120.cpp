@@ -129,53 +129,57 @@ int A5120Machine::run(int max_cycles) {
             zre_.cpuReset();
         }
 
-        // BUSRQ: the K5122 has a DMA transfer in progress and ZVE2 is driving it.
+        // BUSRQ: Bus-Verriegelung ZVE1↔ZVE2 (hardware-echt, K5122-Doku §5.6.1).
         //
-        // On real K2526 hardware ZVE1 and ZVE2 run *concurrently*; /BUSRQ only
-        // gates the few bus cycles ZVE2 actually needs, not whole routines. We
-        // approximate that by interleaving: step ZVE2, then fall through and also
-        // step ZVE1 this iteration. This ordering matters — ZVE1 must finish
-        // CALL 0194 (whose tail writes [0x03F8]=0 at 0x01B3) and settle into its
-        // poll loop at 0x0168 *before* ZVE2 writes [0x03F8]=3 at 0x026B; otherwise
-        // ZVE1's late =0 would clobber ZVE2's =3 and the boot would hang.
+        // /BUSRQ entsteht in der K5122 PRO BYTE aus dem RDY des Daten-PIO: ZVE2
+        // erhält den Bus, wenn ein Byte bereitliegt, holt es ab (Port 0x16) und
+        // verliert den Bus wieder, bis das nächste Byte ~1 Byteperiode später
+        // bereitliegt.  Während /BUSRQ aktiv ist, läuft AUSSCHLIESSLICH ZVE2; in
+        // den Byte-Lücken (BUSRQ frei) läuft ZVE1.  ZVE2 verliert den Bus damit
+        // automatisch, sobald es aufhört zu lesen (fertig/idle) bzw. /STR=1 zieht —
+        // es braucht KEINE programm-/größenspezifische Completion-Erkennung mehr
+        // ([0x03F8]=3-Watch und OUT(13H)-Hack sind entfernt).
         //
-        // When ZVE2 is held in reset or /WAIT (legacy ZVE1 byte-poll boot path),
-        // there is no second CPU to run, so dmaUpdate() releases the bus directly.
+        // Ist ZVE2 in Reset oder /WAIT (Legacy-ZVE1-Byte-Poll), gibt es keine
+        // zweite CPU; dmaUpdate() gibt den Bus direkt frei.
         if (bus_.isBUSRQ()) {
-            if (!busrq_active_) {            // a new DMA round just started
+            if (!busrq_active_) {            // neue DMA-Runde beginnt
                 busrq_active_     = true;
-                dma_saw_progress_ = false;   // arm: ignore a stale [0x03F8]=3 from
-            }                                //      the previous round until ZVE1
-                                             //      clears it (CALL 0194, 0x01B3)
-            // /BUSRQ asserted while ZVE2 is still reset: the OS-loader's data-area
-            // read path (3rd stage @0x1F36) poises ZVE2 by installing its DMA
-            // routine at [0x0000] and resetting ZVE2 (OUT(04)=0x00), then triggers
-            // /STR — the /BUSRQ is what runs ZVE2 from PC=0 (fetching the current
-            // [0x0000]).  Start it here so it fetches the routine before ZVE1
-            // restores [0x0000].  (Path-1/secondary rounds start ZVE2 explicitly
-            // with bit0=1, so they are not in reset when /BUSRQ asserts.)
+                dma_saw_progress_ = false;   // ein altes [0x03F8]=3 der Vorrunde ignorieren,
+            }                                // bis ZVE1 es löscht (CALL 0194, 0x01B3)
+            // /BUSRQ assertiert während ZVE2 noch in Reset: der 3.-Stufen-Lader
+            // (0x1F36) poist ZVE2 via [0x0000]=JP-Routine + OUT(04)=0 und löst /STR
+            // aus — das /BUSRQ startet ZVE2 ab PC=0 (holt das aktuelle [0x0000]),
+            // bevor ZVE1 [0x0000] restauriert.
             if (zre_.isZVE2InReset()) {   // also clears any /WAIT-ZVE2
                 LOG_DEBUG("A5120", "ZVE2-Start aus Reset bei /BUSRQ: PC=0 → [0x0000]");
                 zre_.zve2StartFromReset();
             }
             if (!zre_.isZVE2InReset() && !zre_.isZVE2Waiting()) {
                 bus_master_zve2_ = true;
-                zre_.zve2Step();
+                int used2 = zre_.zve2Step();
                 bus_master_zve2_ = false;
-                // ZVE2 signals completion by writing [0x03F8]=3 (boot ROM 0x026B).
-                // Detect the *transition* to 3 within this round, not the level:
-                // a multi-sector chain re-runs the DMA, and [0x03F8] still holds 3
-                // from the previous round when the next one starts.
+                if (used2 <= 0) used2 = 1;   // Sicherung gegen Endlosschleife
+                remaining     -= used2;
+                total_cycles_ += used2;
+                afs_.update(used2);          // Floppy-Timer (Byte-Bereitschaft, /STR-Abtastung)
+                // ZVE2-Completion-Handshake [0x03F8]=3 (Boot-ROM 0x026B; Sekundär- und
+                // 3.-Stufen-Lader nutzen denselben Flag).  Dies ist KEIN sektorgrößen-
+                // abhängiges Signal mehr (der OUT(13H)-Hack ist entfernt), sondern der
+                // programmweite „DMA fertig"-Handshake.  Nötig, weil der Chained Loader
+                // (round 2) die DMA per ZEITSCHLEIFE (0x0441 DEC C;JR NZ) abwartet; unter
+                // der Per-Byte-Verschränkung verschiebt sich das ZVE1:ZVE2-Tempo, sodass
+                // ZVE1s Zeitschleife vor ZVE2s DMA-Ende abläuft → /STR=1 zu früh → Retry.
+                // Der Flag-Watcher gibt den Bus exakt bei ZVE2-Completion frei (Transition
+                // 0→3 innerhalb der Runde; das Level allein träfe ein altes =3).
                 uint8_t df = bus_.memRead(kZve2DoneFlagAddr);
                 if (df != kZve2DoneValue) {
-                    dma_saw_progress_ = true;            // ZVE1 cleared it → armed
+                    dma_saw_progress_ = true;
                 } else if (dma_saw_progress_) {
-                    LOG_DEBUG("A5120", "endDmaTransfer: ZVE1.PC=%04X ZVE2.PC=%04X",
-                              zre_.cpuPC(), zre_.zve2PC());
-                    afs_.endDmaTransfer();               // 0→3 this round: done
-                    LOG_DEBUG("A5120", "endDmaTransfer fertig: ZVE1.PC=%04X", zre_.cpuPC());
+                    afs_.endDmaTransfer();
+                    LOG_DEBUG("A5120", "ZVE2 DMA fertig ([0x03F8]=3): BUSRQ frei, ZVE1.PC=%04X", zre_.cpuPC());
                 }
-                // Fall through: also step ZVE1 concurrently (see comment above).
+                continue;                    // Verriegelung: ZVE1 läuft NICHT während /BUSRQ
             } else {
                 afs_.dmaUpdate();
                 remaining--;
@@ -183,7 +187,7 @@ int A5120Machine::run(int max_cycles) {
                 continue;
             }
         } else {
-            busrq_active_ = false;          // bus idle → next assert is a new round
+            busrq_active_ = false;          // Bus frei → nächste Assertion ist neue Runde
         }
 
         // Deliver INT if CPU can accept
