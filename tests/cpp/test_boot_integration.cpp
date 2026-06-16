@@ -407,3 +407,26 @@ TEST(BootIntegrationDriveBC, ClockHfe_FromDriveB) {
 TEST(BootIntegrationDriveBC, ClockHfe_FromDriveC) {
     bootClockFromDrive(2, "cpadisk_mitUhr_01.hfe");
 }
+
+// ─── Voller CP/A-Boot bis zur Uhrzeit-Eingabe (per-Byte-/BUSRQ-Modell) ────────
+//
+// Kanonischer „bootet vollständig durch"-Test: cpadisk_mitUhr_01 (Boot-Disk MIT
+// Echtzeituhr, Format = cpa780 mit aktiver autom. Formaterkennung im Config) wird
+// auf A: (Laufwerk 0) gemountet und durchläuft ALLE Loader-Stufen (Boot-ROM →
+// Sekundärlader → 3. Stufe @OS.COM → CP/A-Kaltstart) bis zur Aufforderung
+// "Bitte Uhrzeit eingeben!".  Das ist der erwartete interaktive Endzustand des
+// Kaltstarts und der Regressionswächter für das hardware-echte per-Byte-/BUSRQ-
+// Modell der K5122 (07_k5122_afs.md §7.2): bricht eine Loader-Stufe oder die
+// Bus-Verriegelung, erreicht die VRAM diesen Text nie.
+//
+// Von A: entfällt der 8212-Laufwerkssuchlauf (B:/C:-Tests oben), daher deutlich
+// schneller als kClockBootBudget.
+TEST(BootIntegration, FullBootReachesTimeEntryPrompt) {
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_mitUhr_01.img"), "cpa780", /*wp=*/false))
+        << "could not mount cpadisk_mitUhr_01.img on A:: " << machine.lastError();
+    machine.powerOn();
+    EXPECT_TRUE(runUntilVramContains(machine, "Bitte Uhrzeit eingeben!", 40'000'000))
+        << "voller CP/A-Kaltstart erreichte die Uhrzeit-Eingabe nie — eine Loader-Stufe "
+           "oder die per-Byte-/BUSRQ-Verriegelung ist gebrochen";
+}
