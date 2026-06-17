@@ -14,19 +14,30 @@ The two share **no code** except the Z80 (legacy `src/z80.cpp`; the core has its
 
 ## Build & test
 
+> **ALWAYS go through `tools/dev.sh` — never run a binary straight from `build*/`.**
+> There are two build dirs with the SAME tool names (`build/` LOG_LEVEL=3,
+> `build_trace/` LOG_LEVEL=5). Running a tool/test from a dir you forgot to rebuild
+> tests **stale objects** and has repeatedly sent us down false trails (e.g. a
+> "working" `dir` listing that was leftover from a reverted experiment). `dev.sh`
+> rebuilds the right dir first (CMake's real dependency tracking — fast when nothing
+> changed) and reports `aktuell` vs `NEU GEBAUT`, so you always test current source.
+> There is no reliable read-only freshness check on CMake's Makefiles (`make -q` lies);
+> "is it clean?" therefore means "run `cmake --build` and see if it had work to do".
+
 ```sh
-# Build everything (legacy + core + tests). Default LOG_LEVEL=3 (INFO).
-cmake -B build
-cmake --build build -j
-
-# Legacy unit tests (custom harness in tests/test_main.cpp, NOT GoogleTest):
-./build/a5120emu_test
-
-# K1520 core unit tests (GoogleTest, auto-discovered via ctest):
-cd build && ctest --output-on-failure
-ctest -R K2526                       # one card's tests by name regex
-./build/k1520_test_k2526 --gtest_filter='*ZVE2*'   # a single test
+tools/dev.sh test [ctest-args]   # build build/, then ctest + a5120emu_test (the default)
+tools/dev.sh test -R K2526       #   one card's tests by name regex
+tools/dev.sh build [trace]       # just build build/ (+ build_trace/ with 'trace')
+tools/dev.sh trace <boot_trace-args>   # build build_trace/, then run boot_trace
+tools/dev.sh tool <name> [args]  # build build/, then run build/<name> (floppy_diag, k1520dbg, kbd_test…)
+tools/dev.sh check               # build both dirs + report freshness
+tools/dev.sh rebuild             # rm -rf build build_trace, then build from scratch
 ```
+
+After any experiment that touched build dirs (sanitizer builds, `-DLOG_LEVEL=…`,
+interrupted builds), run `tools/dev.sh rebuild` to be certain. Raw commands still work
+(`cmake -B build && cmake --build build -j`; `ctest --test-dir build`;
+`./build/k1520_test_k2526 --gtest_filter='*ZVE2*'`) but only `dev.sh` guarantees no stale binary.
 
 `LOG_LEVEL` is the compile-time **ceiling** (0=off … 5=trace) baked in via `add_compile_definitions`; call sites above it are removed (zero overhead), so build with `-DLOG_LEVEL=5` (the `build_trace/` dir) to make every site available. **The actual output level is now runtime-controlled and gated** (`core/logger.{h,cpp}`): a runtime *base level* (`Logger::setBaseLevel`, default = ceiling), plus dynamic *gates* that raise the effective level only inside a PC range (`addPCGate`) or cycle window (`addCycleGate`), plus a RAII scoped boost (`K1520_LOG_BOOST(Level::TRACE)` at a function top). The emit macros check `Logger::shouldLog()` before formatting, so disabled logs cost ~one atomic load. The run loop (`a5120.cpp`) calls `Logger::update(cycle, zve1pc, zve2pc)` per instruction (cheap early-out when no gates). This replaces "build at level 5 → multi-GB log → grep" with "run quietly, boost only the window of interest". GoogleTest is fetched on first configure (network required). Some core tests (FormatParser CPA780 / K3526 / K7024 / CTC) are known-failing on the working branch independent of current work — confirm against the baseline before treating a red test as a regression.
 
