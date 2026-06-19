@@ -180,9 +180,14 @@ void K2526::powerOn()
  * Must be called once per CPU step from the machine run loop.  Drives all
  * four CTC channels for baud-rate generation and timer interrupts.
  */
-void K2526::clockTick()
+void K2526::clockTick(int ticks)
 {
-    ctc_.clockTick();
+    // Advance the CTC by the number of CPU T-states the last instruction took
+    // (not once per instruction): the CTC prescaler divides the *system clock*,
+    // so ticking per-instruction ran every timer ~6x too slow.  Looping keeps
+    // the per-tick ZC/TO edge / cascade semantics intact.
+    for (int i = 0; i < ticks; ++i)
+        ctc_.clockTick();
 }
 
 // ─── I/O-Dispatch (Originalschaltung Abschn. 6.9.2) ─────────────────────────

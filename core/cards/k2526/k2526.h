@@ -386,12 +386,15 @@ public:
     void powerOn();
 
     /**
-     * @brief Advance CTC timers by one system clock tick.
+     * @brief Advance CTC timers by @p ticks system clock cycles.
      *
-     * Must be called once per CPU step from the machine run loop.
+     * Call once per CPU step with the number of T-states the instruction took,
+     * so the prescaler counts real clock cycles (not instructions).
      * Drives the CTC channels for baud-rate generation and timer interrupts.
+     *
+     * @param ticks Number of system clock cycles to advance (default 1).
      */
-    void clockTick();
+    void clockTick(int ticks = 1);
 
     // ─── State queries ─────────────────────────────────────────────────────
 

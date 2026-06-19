@@ -216,9 +216,12 @@ int A5120Machine::run(int max_cycles) {
             ++boot_trace_count_;
         }
 
-        // Clock CTC on ZRE card and serial card
-        zre_.clockTick();
-        ass_.clockTick();
+        // Clock CTC on ZRE card and serial card.  Advance by the T-states the
+        // instruction actually took — the CTC prescaler divides the system
+        // clock, so ticking once per instruction (avg ~6 T-states) ran the
+        // real-time clock and baud generators ~6x too slow.
+        zre_.clockTick(used);
+        ass_.clockTick(used);
 
         // Service the keyboard: advance the 9600-baud serial-transmit timing
         // (release any keyboard→host bytes whose transmission has completed) and

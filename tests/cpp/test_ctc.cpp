@@ -802,3 +802,55 @@ TEST(Z80CTC, TimerMode_ClkTrgStartsTimer) {
     ctc.clockTick();                  // tick 32 relative to trigger → zero crossing
     EXPECT_EQ(fired, 1);
 }
+
+// =============================================================================
+// Spurious-interrupt regression (A5120 real-time-clock runaway)
+// =============================================================================
+
+/**
+ * @brief A channel blocked by a higher-priority channel's IUS must NOT assert /INT.
+ *
+ * Regression for the A5120 real-time-clock runaway: while the keyboard timer
+ * (ch2) was Under Service (IUS set, awaiting its RETI), the cascaded 1 s clock
+ * channel (ch3) fired.  ch3 then had int_pending=true but iei=false (blocked by
+ * ch2's IUS in the internal daisy chain).  getVector() correctly skipped ch3 and
+ * returned 0xFF — but hasInterrupt() used the raw "any int_pending" test and so
+ * returned true.  The bus therefore asserted /INT, the CPU acknowledged, and read
+ * the spurious 0xFF vector every instruction; CP/A's handler for it bumped the
+ * clock by 1 s each time, running it ~1000x too fast.
+ *
+ * Contract: hasInterrupt() must be consistent with getVector() — it may only be
+ * true when a channel can actually be vectored (int_pending && iei && !ius).
+ */
+TEST(Z80CTC, NoSpuriousInterruptWhenLowerChannelBlockedByHigherIUS) {
+    Z80CTC ctc;
+    ctc.setIEI(true);
+    ctc.ioWrite(0, 0x20);  // vector base 0x20 (D0=0 → vector write)
+
+    // ch2: timer, IRQ enabled, ÷16, TC=1 → fires after 16 ticks.
+    configChannel(ctc, 2, 0x85, 1);
+    // ch3: counter, IRQ enabled, falling edge, TC=1 → fires on one CLK/TRG edge.
+    configChannel(ctc, 3, 0xC5, 1);
+
+    // ch2 reaches zero and requests an interrupt.
+    for (int i = 0; i < 16; ++i) ctc.clockTick();
+    ctc.setIEI(true);                       // propagate daisy chain (run loop does this)
+    EXPECT_TRUE(ctc.hasInterrupt());
+    EXPECT_EQ(ctc.getVector(), 0x24);       // ch2 acknowledged → ch2.ius set
+
+    // While ch2 is Under Service, the cascaded ch3 fires (1 s tick).
+    ctc.clkTrg(3, false);                   // falling edge → ch3 counter 1→0 → int_pending
+    ctc.setIEI(true);                       // re-propagate: ch2.ius blocks ch3.iei
+
+    // ch3 is pending but blocked — it must NOT pull /INT, and there is no vector.
+    EXPECT_FALSE(ctc.hasInterrupt());       // was true before the fix → spurious 0xFF
+    EXPECT_EQ(ctc.getVector(), 0xFF);
+
+    // ch2's ISR returns: RETI clears ch2.ius, unblocking ch3.
+    ctc.onRETI();
+    ctc.setIEI(true);                       // re-propagate
+
+    // Now ch3 is serviceable and delivers its own vector exactly once.
+    EXPECT_TRUE(ctc.hasInterrupt());
+    EXPECT_EQ(ctc.getVector(), 0x26);       // ch3: 0x20 | (3 << 1)
+}

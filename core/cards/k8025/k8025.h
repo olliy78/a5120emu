@@ -228,13 +228,15 @@ public:
     // ─── CTC clock ─────────────────────────────────────────────────────────
 
     /**
-     * @brief Advance the CTC A34 baud-rate generator by one system clock tick.
+     * @brief Advance the CTC A34 baud-rate generator by @p ticks clock cycles.
      *
-     * Must be called once per CPU step from the A5120Machine run loop.
+     * Call once per CPU step with the number of T-states the instruction took.
      * Without this the CTC counters never decrement and the SIO baud clocks
      * are never driven, preventing serial communication.
+     *
+     * @param ticks Number of system clock cycles to advance (default 1).
      */
-    void    clockTick();
+    void    clockTick(int ticks = 1);
 
     // ─── Sub-chip accessors ─────────────────────────────────────────────────
 

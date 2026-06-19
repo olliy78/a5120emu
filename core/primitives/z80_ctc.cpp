@@ -251,6 +251,24 @@ bool Z80CTC::anyPending() const {
 }
 
 /**
+ * @brief Check for a channel that can actually be vectored right now.
+ *
+ * A channel only pulls /INT low if it has a pending interrupt AND is enabled
+ * by the internal daisy chain (iei) AND is not already under service (ius).
+ * A channel whose interrupt is blocked by a higher-priority channel's IUS
+ * (iei=false) must NOT assert /INT — otherwise the CPU would acknowledge an
+ * interrupt for which getVector() has no valid vector and would read the
+ * spurious 0xFF, re-triggering every instruction.  This mirrors exactly the
+ * acceptance condition in getVector().
+ */
+bool Z80CTC::anyServiceable() const {
+    for (const auto& c : ch_) {
+        if (c.int_pending && c.iei && !c.ius) return true;
+    }
+    return false;
+}
+
+/**
  * @brief Set the Interrupt Enable Input (IEI) signal for daisy-chain operation.
  *
  * The IEI input controls whether this CTC can request interrupts. In a Z80
@@ -292,7 +310,7 @@ void Z80CTC::setIEI(bool v) {
  * @return true if requesting interrupt, false otherwise
  */
 bool Z80CTC::hasInterrupt() const {
-    return iei_ && anyPending();
+    return iei_ && anyServiceable();
 }
 
 /**

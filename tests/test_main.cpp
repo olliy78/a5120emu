@@ -389,6 +389,10 @@ void testZ80Extended() {
         cpu.A = 'B';
         cpu.HL = 0x1000;
         cpu.BC = 3;
+        // reset() leaves F=0xFF (real Z80 power-on state), so the Zero flag is
+        // already set; clear it before the search-loop guard, otherwise the
+        // loop sees Z=1 and never executes a single CPIR step.
+        cpu.F = 0;
         mem.write(0, 0xED);
         mem.write(1, 0xB1); // CPIR
         while (cpu.BC > 0 && !(cpu.F & Z80::FLAG_Z)) cpu.step();

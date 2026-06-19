@@ -82,6 +82,7 @@ int main(int argc, char** argv) {
     dumpScreen(machine, "After boot (before typing)");
     trace_on = true;
     fprintf(stderr, "\n[port trace ON]\n");
+    if (getenv("WRDBG")) Logger::instance().setBaseLevel(Level::INFO);  // TEMP: see K5122 >>> WRITE
 
     // Type the command, one key per run-batch so each is drained and the BIOS
     // 5 ms poll can pick it up before the next arrives.
@@ -120,6 +121,7 @@ int main(int argc, char** argv) {
         for (size_t i = 0; i < v.size() && i < 12; ++i)
             fprintf(stderr, "  0x%04X : %ld\n", v[i].first, v[i].second);
     }
+    if (getenv("WRDBG")) { Logger::instance().setBaseLevel(Level::ERROR); machine.unmountDisk(0); }  // TEMP: flush to host
     dumpScreen(machine, "After typing + Enter");
     fprintf(stderr, "\nKbd SIO port traffic during/after typing: 0x5D rd=%lld  0x5C rd=%lld wr=%lld\n",
             rd5d, rd5c, wr5c);

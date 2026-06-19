@@ -213,6 +213,12 @@ private:
      */
     bool    anyPending() const;
 
+    /**
+     * @brief Check if any channel can be vectored now (pending, iei, not under service).
+     * @return true if a channel would yield a valid vector via getVector().
+     */
+    bool    anyServiceable() const;
+
     mutable Channel ch_[4];            ///< Four CTC channels (mutable for getVector)
     uint8_t     vec_base_ = 0;         ///< Interrupt vector base address
     bool        iei_      = false;     ///< Interrupt Enable Input
