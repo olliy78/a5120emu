@@ -68,9 +68,20 @@ Engine-Umbau laufen lassen.
 ## kbd_test — Tastatur-/Boot-Smoke-Test (nicht-interaktiv)
 
 `./build/kbd_test <disk> [text]` bootet, tippt `text`+Enter und gibt den 80×24-
-Bildschirm + Tastatur-Port-Verkehr aus. Schneller Einzeltest, ob Tasten ankommen
-und ob ein Befehl Wirkung zeigt. (`floppy_diag.cpp` ist ein Scratch-Tracer für die
-ZVE2-Lesezugriffe des laufenden OS — durch `k1520dbg` weitgehend abgelöst.)
+Bildschirm + Tastatur-Port-Verkehr (Port 0x5C/0x5D, mit Quell-PC jedes Zugriffs)
++ ein Foreground-PC-Histogramm aus. Schneller Einzeltest, ob Tasten ankommen und
+ob ein Befehl Wirkung zeigt.
+
+**Sondersyntax im `text`:** `|` = Enter mittendrin (z.B. erst die Uhrzeit, dann
+ein Kommando in einem Lauf), `^X` = Ctrl+X, `~` = bare Ctrl+C. Beispiel:
+`kbd_test disks/cpadisk_mitUhr_01.img "120000|DIR"` (Uhr stellen, dann `DIR`).
+Auf der **Uhr-Disk nach Zeiteingabe** funktioniert die CCP-Eingabe vollständig
+(Echo/Kommando); cpadisk_02 erreicht keinen interaktiven CCP (eigenes Thema).
+Die K7637 modelliert die 9600-Baud-Latenz — Tasten erscheinen erst ~2604 Takte
+nach `keyPress` am SIO (`K7637::service()` aus der Run-Loop).
+
+(`floppy_diag.cpp` ist ein Scratch-Tracer für die ZVE2-Lesezugriffe des laufenden
+OS — durch `k1520dbg` weitgehend abgelöst.)
 
 ---
 

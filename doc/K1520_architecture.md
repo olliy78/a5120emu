@@ -544,15 +544,24 @@ PC-Tastatur (Host)
     │ Qt6 KeyPressEvent oder stdin
     ▼
 K7637-Emulation (C++ Klasse)
-    │ Tastenmatrix → IFSS seriell, 9600 Baud, 1+8+1
-    │ Tastencode-Tabellen aus Keyboard-EPROM
+    │ physischer K7637-Tastencode (NICHT ASCII), 9600 Baud, 1+8+1
+    │ Latenz: ~1 Byte-Zeit (~2604 Takte) bis das Byte am SIO ankommt
     ▼
-K8025 SIO (Kanal B, Port 50H/51H)
-    │ UART-Empfang, Interrupt (SIO-IEO/IEI-Kette)
+K8025 SIO A32 (Kanal A, Daten 0x5C / Status 0x5D)
+    │ UART-Empfang (4-fach-FIFO)
     ▼
-Z80 CPU: Interrupt-Handler liest Port 50H
-    │ Tastencode an OS übergeben
+Z80: 25ms-Timer-ISR pollt die Tastatur (kbdpin=0, KEIN eigener Tastatur-IRQ),
+    │ liest 0x5C, recodiert via BIOS-cp37-Tabelle, puffert in 0xF6D9
+    ▼
+CCP CONIN holt das Zeichen aus dem Puffer
 ```
+
+> **Real-HW-treues Timing (Fix 2026-06-18, s. `doc/design/08_k7637_keyboard.md`):** Tastatur→Host-
+> Bytes (Tastencodes UND die 0x80-Typcode-Quittungen) werden über `K7637::service(now_cycles)`
+> (pro Instruktion aus der Run-Loop) erst nach einer 9600-Baud-Byte-Zeit freigegeben — sonst
+> konkurrieren der ISR-Tastatur-Scan und der Vordergrund-LED-Handshake um dasselbe RX-Byte und
+> fluten den Tastaturpuffer. `translateKey()` liefert physische K7637-Codes (ET1 0xFF ≠ Enter 0xC0,
+> Cursor 0x94–0x97, F1–F8 0xC1–0xC8, …), die der OS-`cp37`-Treiber recodiert.
 
 ### 7.2 K7637 Emulationsklasse
 
