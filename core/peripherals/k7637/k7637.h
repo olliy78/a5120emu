@@ -1,6 +1,8 @@
 #pragma once
 #include "core/primitives/z80_sio.h"
 #include <cstdint>
+#include <deque>
+#include <utility>
 
 // K7637 – Serial keyboard peripheral for the A5120 / K1520 system.
 //
@@ -30,6 +32,19 @@ public:
     // Drain command bytes the K8025 sent to the keyboard (LED control,
     // beep, …).  Call whenever sio.channelX().txAvailable() is true.
     void processTxCommands();
+
+    // Per-instruction service: advance the serial-transmit timing (release any
+    // keyboard→host bytes whose 9600-baud transmission has completed) and drain
+    // host→keyboard command bytes.  @p now_cycles is the ZVE1 cycle counter.
+    //
+    // Real-HW fidelity: the K7637 talks to the K8025 SIO over a 9600-baud IFSS
+    // link, so every byte (type-code ack AND key code) takes ~one byte-time to
+    // arrive — it is NOT available the same instruction the command was sent.
+    // Without this delay the type-code acks appear instantly and the OS timer
+    // ISR's keyboard scan races the foreground LED-handshake for the same SIO
+    // RX byte; the loser reads an empty FIFO (0xFF → recoded to CR) and pollutes
+    // the keyboard buffer until it overflows and drops real keys.
+    void service(uint64_t now_cycles);
 
     // ── LED / lock state ──────────────────────────────────────────────────
     bool capsLock()   const { return caps_lock_;   }
@@ -75,6 +90,14 @@ private:
 
     bool    expect_second_byte_ = false;
     uint8_t first_cmd_byte_     = 0;
+
+    // ── Serial-transmit timing (keyboard → host) ──────────────────────────
+    // One byte at 9600 baud (1 start + 8 data + 1 stop) = 10 bit-times.
+    // At the A5120's 2.5 MHz ZVE1 clock that is ~2604 cycles per byte.
+    static constexpr uint64_t SERIAL_BYTE_CYCLES = 2604;
+    std::deque<std::pair<uint64_t, uint8_t>> tx_queue_;  // (release_cycle, byte)
+    uint64_t cur_cycle_      = 0;   // last cycle stamp seen via service()
+    uint64_t next_tx_cycle_  = 0;   // earliest cycle the line is free again
 
     // ── Qt keycode constants (no Qt headers needed) ───────────────────────
     static constexpr int QK_ESCAPE    = 0x01000000;

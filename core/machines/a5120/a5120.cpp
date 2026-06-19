@@ -220,11 +220,15 @@ int A5120Machine::run(int max_cycles) {
         zre_.clockTick();
         ass_.clockTick();
 
-        // Service the keyboard: drain command bytes the BIOS sent to the K7637
-        // (reset / LED control) and let it return its type-code acknowledge.
-        // Without this the BIOS keyboard detection never sees the K7637 answer,
-        // mis-detects a parallel K7606, and no key ever reaches the OS.
-        kbd_.processTxCommands();
+        // Service the keyboard: advance the 9600-baud serial-transmit timing
+        // (release any keyboard→host bytes whose transmission has completed) and
+        // drain command bytes the BIOS sent to the K7637 (reset / LED control),
+        // letting it return its type-code acknowledge.  The serial latency keeps
+        // the type-code acks from appearing the same instant the command is sent
+        // — otherwise the timer-ISR keyboard scan races the foreground LED
+        // handshake for the ack and the loser reads an empty SIO (0xFF → CR),
+        // which floods the keyboard buffer and drops real keystrokes at the CCP.
+        kbd_.service(total_cycles_);
     }
 
     return max_cycles - remaining;

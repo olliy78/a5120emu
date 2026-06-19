@@ -160,34 +160,59 @@ private:
 
 ### 5.1 Sondertasten (A5120-spezifisch)
 
-| PC-Taste | K7637-Code | Funktion |
-|----------|-----------|---------|
-| Escape | 0x1B | ESC |
-| Backspace | 0x08 | Cursor links |
-| Delete | 0x7F | Löschen |
-| Return | 0x0D | CR |
-| Tab | 0x09 | TAB |
-| Cursor ↑ | 0x1A | Cursor hoch |
-| Cursor ↓ | 0x18 | Cursor runter |
-| Cursor ← | 0x08 | Cursor links |
-| Cursor → | 0x15 | Cursor rechts |
-| Home | 0x01 | Zeilenanfang |
-| Ctrl+C | 0x03 | Abbruch |
-| F1–F10 | 0xF1–0xFA | Funktionstasten |
+Die K7637 sendet den **physischen** Tastencode aus ihrer ROM-Codetabelle; der
+A5120-BIOS-Treiber recodiert die hohen Codes (≥0x80 sowie 0xFF/0xFE) über die
+Tabelle **`cp37`** (`CPA_Workbench/.../bioskbdc.mac`) auf seine virtuellen Codes.
+Druckbares ASCII (0x20–0x7E) steht **nicht** in `cp37` und wird unverändert
+durchgereicht. `translateKey()` liefert daher den physischen Code — nicht einen
+vor-übersetzten ASCII-Wert, sonst fallen physisch verschiedene Tasten zusammen.
 
-Diese Zuordnung wird aus der bestehenden `src/terminal_ansi.cpp` übernommen und vervollständigt.
+| PC-Taste | physischer K7637-Code | cp37 → BIOS-Code |
+|----------|-----------------------|------------------|
+| **Return (Haupttaste = ET1)** | **0xFF** | 0x0D (CR) |
+| **Enter (Ziffernblock)** | **0xC0** | pf0c (≠ CR!) |
+| Escape (DELL) | 0xB3 | 0x1B (ESC) |
+| Tab (\|<-\|) | 0x9F | 0x09 (TAB) |
+| Delete (DELCH) | 0xBB | spcdel |
+| Backspace | 0x08 | — (ASCII, durchgereicht) |
+| Cursor ↑ / ↓ / ← / → | 0x94 / 0x95 / 0x96 / 0x97 | kcurup/kcurdw/kcurlf/kcurri |
+| F1 … F8 | 0xC1 … 0xC8 | pf1c … pf8c |
+| Ctrl+\<Taste\> | \<Taste\> & 0x1F | — (Steuercode <0x20, durchgereicht) |
+
+> **ET1 ≠ Enter.** Die Haupt-Return-Taste (ET1, physisch **0xFF**) und die
+> Ziffernblock-Enter-Taste (physisch **0xC0**) sind auf der echten K7637 zwei
+> verschiedene Tasten: ET1 wird zu CR recodiert, Enter zur Funktion pf0c.
+>
+> **CTRL** ist real die ET2-Taste (physisch **0xFE** beim *Loslassen*, setzt ein
+> Einmal-Flag für die nächste Taste). Das Modell nimmt die Abkürzung `Code & 0x1F`.
 
 ---
 
 ## 6. IFSS-Verbindung im Emulator
 
-Da im Emulator keine analoge Stromschleife existiert, wird die Verbindung durch direktes Aufrufen der SIO-API simuliert:
+Da im Emulator keine analoge Stromschleife existiert, wird die Verbindung über
+die SIO-API simuliert. **Wichtig: die 9600-Baud-Laufzeit wird modelliert** — ein
+Byte (Tastencode *oder* Typcode-Quittung) erscheint **nicht** im selben Befehl im
+SIO-RX, sondern erst nach einer Byte-Zeit (≈2604 ZVE1-Takte bei 2,5 MHz).
+`service(now_cycles)` (pro Instruktion aus der Run-Loop aufgerufen) gibt fällige
+Bytes frei; `sendByte()` reiht sie nur mit Freigabe-Zeitpunkt ein.
+
+> **Warum die Laufzeit nötig ist (Bug 2026-06):** Ohne Latenz erschien die
+> Typcode-Quittung (0x80) auf ein LED-Kommando sofort. Dann konkurrieren der
+> Tastatur-Scan in der Timer-ISR und der Vordergrund-LED-Handshake um dasselbe
+> SIO-RX-Byte; der Verlierer liest einen leeren FIFO (0xFF → vom BIOS zu CR
+> recodiert) und flutet den Tastaturpuffer (0xF6D9, 20 B), bis er überläuft und
+> echte Tasten verwirft → am CCP kam **keine Eingabe** an. Mit der Byte-Latenz
+> holt der aktiv pollende Handshake seine Quittung ab, die ISR sieht das Byte
+> noch „in Übertragung" und liest es nicht — kein Race, sauberer Puffer.
 
 ```cpp
-void K7637::sendCode(uint8_t code) {
-    if (!sio_) return;
-    sio_->rxByte(code);  // Direkte Übergabe an SIO-Empfangspuffer
-    // SIO erkennt empfangenes Byte und löst Interrupt aus
+void K7637::sendByte(uint8_t code) {
+    // Serialisieren: Byte wird erst nach einer 9600-Baud-Byte-Zeit zugestellt,
+    // Bytes hintereinander.  service() gibt sie zum Freigabe-Zeitpunkt frei.
+    uint64_t start   = std::max(cur_cycle_, next_tx_cycle_);
+    tx_queue_.push_back({start + SERIAL_BYTE_CYCLES, code});
+    next_tx_cycle_   = start + SERIAL_BYTE_CYCLES;
 }
 
 void K7637::tick(int ms_elapsed) {

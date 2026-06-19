@@ -10,6 +10,8 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <algorithm>
+#include <vector>
 
 using k1520::logging::Logger;
 using k1520::logging::Level;
@@ -32,12 +34,19 @@ static void dumpScreen(A5120Machine& m, const char* title) {
 
 // Run a number of cycles in small batches (batch granularity matters: the
 // keyboard queue is drained once per run() call).
-static void runFor(A5120Machine& m, long long cycles) {
+// When `hist` is non-null, sample the ZVE1 PC after each batch (skipping the
+// timer-ISR range 0xE600-0xE63F so the foreground/CCP wait is visible).
+#include <map>
+static void runFor(A5120Machine& m, long long cycles, std::map<uint16_t,long>* hist = nullptr) {
     long long done = 0;
     while (done < cycles) {
         int n = m.run(5000);
         if (n == 0) break;
         done += n;
+        if (hist) {
+            uint16_t pc = m.cpuPC();
+            if (!(pc >= 0xE600 && pc <= 0xE63F)) (*hist)[pc]++;
+        }
     }
 }
 
@@ -64,8 +73,8 @@ int main(int argc, char** argv) {
     machine.setBusTrace([&](bool isIO, bool isRead, uint16_t addr, uint8_t data) {
         if (!isIO || !trace_on) return;
         if (addr == 0x5D && isRead) rd5d++;
-        if (addr == 0x5C && isRead) { rd5c++; fprintf(stderr, "  RD 5C -> %02X\n", data); }
-        if (addr == 0x5C && !isRead) { wr5c++; fprintf(stderr, "  WR 5C <- %02X\n", data); }
+        if (addr == 0x5C && isRead) { rd5c++; fprintf(stderr, "  RD 5C -> %02X  @PC=%04X\n", data, machine.cpuPC()); }
+        if (addr == 0x5C && !isRead) { wr5c++; fprintf(stderr, "  WR 5C <- %02X  @PC=%04X\n", data, machine.cpuPC()); }
     });
 
     // Boot: run well past the @OS.COM load + CCP start.
@@ -76,19 +85,41 @@ int main(int argc, char** argv) {
 
     // Type the command, one key per run-batch so each is drained and the BIOS
     // 5 ms poll can pick it up before the next arrives.
+    // A '^' prefix sends the NEXT char with Ctrl held (so "^C" = Ctrl+C); '~'
+    // alone sends a bare Ctrl+C (line/submit abort) with no following char.
+    std::map<uint16_t,long> fg_hist;  // foreground PC histogram during typing
+    bool ctrl_next = false;
     for (char ch : text) {
-        machine.keyPress(static_cast<uint8_t>(ch), false, false);
-        runFor(machine, 1'000'000);
-        machine.keyRelease(static_cast<uint8_t>(ch));
-        runFor(machine, 200'000);
+        if (ch == '^') { ctrl_next = true; continue; }
+        bool ctrl = ctrl_next; ctrl_next = false;
+        // '|' = press Enter here (lets one run type e.g. the clock then a command);
+        // '~' = bare Ctrl+C; '^X' = Ctrl+X.
+        uint32_t kc;
+        if      (ch == '|') kc = QK_RETURN;
+        else if (ch == '~') { kc = static_cast<uint32_t>('C'); ctrl = true; }
+        else                kc = static_cast<uint8_t>(ch);
+        machine.keyPress(kc, false, ctrl);
+        runFor(machine, 1'000'000, &fg_hist);
+        machine.keyRelease(kc);
+        runFor(machine, 200'000, &fg_hist);
+        if (ch == '|') runFor(machine, 4'000'000, &fg_hist);  // let the command settle
     }
     // Enter
     machine.keyPress(QK_RETURN, false, false);
-    runFor(machine, 1'000'000);
+    runFor(machine, 1'000'000, &fg_hist);
     machine.keyRelease(QK_RETURN);
 
     // Let the command run.
-    runFor(machine, 40'000'000);
+    runFor(machine, 40'000'000, &fg_hist);
+
+    // Report the hottest foreground (non-ISR) PCs — the CCP/input wait location.
+    {
+        std::vector<std::pair<uint16_t,long>> v(fg_hist.begin(), fg_hist.end());
+        std::sort(v.begin(), v.end(), [](auto&a, auto&b){ return a.second > b.second; });
+        fprintf(stderr, "\nForeground PC histogram (top 12, ISR 0xE600-E63F excluded):\n");
+        for (size_t i = 0; i < v.size() && i < 12; ++i)
+            fprintf(stderr, "  0x%04X : %ld\n", v[i].first, v[i].second);
+    }
     dumpScreen(machine, "After typing + Enter");
     fprintf(stderr, "\nKbd SIO port traffic during/after typing: 0x5D rd=%lld  0x5C rd=%lld wr=%lld\n",
             rd5d, rd5c, wr5c);
