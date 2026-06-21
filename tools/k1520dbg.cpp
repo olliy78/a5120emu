@@ -27,6 +27,12 @@
 #include "tools/z80dis_min.h"
 #include "tools/prn_listing.h"
 #include "tools/callstack_tracker.h"
+#include "tools/dbg_commands.h"
+#ifdef HAVE_READLINE
+#include <readline/readline.h>
+#include <readline/history.h>
+#include <unistd.h>   // isatty
+#endif
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
@@ -64,6 +70,22 @@ static inline Snap grab(const Z80& z){
 // optional expression evaluated at each hit (empty = unconditional); `ignore`
 // counts down hits to skip before stopping; `temp` self-deletes on first stop.
 struct Bp { bool enabled=true; bool temp=false; std::string cond; long hits=0; long ignore=0; };
+
+#ifdef HAVE_READLINE
+// ─── readline tab-completion: complete the FIRST word against command names ───
+// (Args fall back to readline's default filename completion.) Command list +
+// matcher live in tools/dbg_commands.h so they are unit-testable.
+static char* dbgCmdGenerator(const char* text, int state){
+    static std::vector<std::string> matches; static size_t idx;
+    if (state == 0){ matches = dbgcmd::match(text); idx = 0; }
+    return (idx < matches.size()) ? strdup(matches[idx++].c_str()) : nullptr;
+}
+static char** dbgCompletion(const char* text, int start, int /*end*/){
+    if (start == 0){ rl_attempted_completion_over = 1;          // only our matches for the command word
+        return rl_completion_matches(text, dbgCmdGenerator); }
+    return nullptr;                                              // args → default (filename) completion
+}
+#endif
 
 // =============================================================================
 //  main() — structure
@@ -766,11 +788,25 @@ int main(int argc, char** argv){
     for (auto& pf : prnfiles) loadPrnSpec(pf);    // apply -l .prn listings (also imports labels)
 
     fprintf(stderr,"k1520dbg — type 'help'.  Clock = ZVE1 cycles.  Disassembler: built-in.\n");
+#ifdef HAVE_READLINE
+    rl_attempted_completion_function = dbgCompletion;   // Tab → command-name completion
+#endif
     std::string line;
     for (;;){
         // read one command (echo script lines so piped sessions are readable)
         if (!pending.empty()){ line=pending.front(); pending.pop_front(); fprintf(stderr,"(dbg) %s\n",line.c_str()); }
-        else { fprintf(stderr,"(dbg) "); if(!std::getline(std::cin,line)) break; }
+        else {
+            // interactive tty → readline (line editing, history, Tab-completion);
+            // pipes/scripts → plain getline with a manual prompt (unchanged behaviour).
+#ifdef HAVE_READLINE
+            if (isatty(0)) {
+                char* rl = readline("(dbg) ");
+                if (!rl) break;
+                line = rl; if (rl[0]) add_history(rl); free(rl);
+            } else
+#endif
+            { fprintf(stderr,"(dbg) "); if(!std::getline(std::cin,line)) break; }
+        }
         std::istringstream is(line); std::vector<std::string> t; std::string w;
         while (is>>w) t.push_back(w);
         if (t.empty()||t[0][0]=='#') continue;     // blank line or # comment

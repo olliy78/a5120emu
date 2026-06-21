@@ -127,5 +127,8 @@ Adressiert den Hauptschmerz: jeder Versuch = ~8 s Reboot, Analyse aus RAM-Dumps.
     - **✅ `source <file>`**: Skript mitten in der Sitzung abarbeiten (gdb `source`).
     - **Session-Log**: nicht eingebaut — die Ausgabe geht auf `stderr`, also per Shell
       `2>&1 | tee sitzung.log` (in `k1520dbg.md` dokumentiert).
-    - **Noch offen:** Readline (History/Pfeiltasten/Tab-Completion) — bräuchte
-      `libreadline` (externe Abhängigkeit + Build-Anpassung), bewusst zurückgestellt.
+    - **✅ Readline** *(implementiert 2026-06-22)*: **optionale** GNU-readline-Anbindung —
+      CMake erkennt `libreadline` (`find_library`); ist sie da, bietet die interaktive
+      Sitzung Zeileneditierung, History (Pfeiltasten) und **Tab-Completion der Kommandos**
+      (`tools/dbg_commands.h`, getestet). Ohne libreadline nahtloser `getline`-Fallback;
+      Pipe-/Skript-Betrieb unberührt. (Nur am TTY aktiv.)

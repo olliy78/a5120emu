@@ -15,6 +15,8 @@ eine Funktion fehlt oder falsch ist, wird sie hier ergänzt/gefixt und unter
 | `z80dis_min.h` | eingebauter Ein-Instruktions-Decoder (C++) für `k1520dbg` | [z80_disasm.md](z80_disasm.md) |
 | `prn_listing.h` | header-only Parser für MACRO-80-`.prn`-Listings (Adresse → kommentierte Quelle); von `k1520dbg` & `boot_trace` per `-l` genutzt | [k1520dbg.md](k1520dbg.md) §6a |
 | `callstack_tracker.h` | header-only exakter CALL/RST/RET-Aufrufstapel für den History-`bt` von `k1520dbg` | [k1520dbg.md](k1520dbg.md) §9 |
+| `coverage_diff.h` | header-only Parser+Diff für `boot_trace --coverage`-CSVs (eingebauter `--diff`) | [boot_trace.md](boot_trace.md) §2c |
+| `dbg_commands.h` | header-only Kommandoliste + Präfix-Matcher für die `k1520dbg`-Tab-Completion (readline) | [k1520dbg.md](k1520dbg.md) §1 |
 | `missing_features.md` | offene/erledigte Feature-Lücken beider Tools (Roadmap) | [missing_features.md](missing_features.md) |
 | `disasm_difftest.py` | Regressionswächter: `z80_disasm2.py` gegen `z80dis` | [z80_disasm.md](z80_disasm.md) |
 | `kbd_test` | Tastatur-/Boot-Smoke-Test (boot, tippe Befehl, dump Screen) | unten |

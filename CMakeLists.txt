@@ -307,6 +307,11 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_coverage_diff PRIVATE GTest::gtest_main)
         target_include_directories(k1520_test_coverage_diff PRIVATE ${CMAKE_SOURCE_DIR})
 
+        # Header-only k1520dbg command list + tab-completion matcher (tools/dbg_commands.h)
+        add_executable(k1520_test_dbg_commands tests/cpp/test_dbg_commands.cpp)
+        target_link_libraries(k1520_test_dbg_commands PRIVATE GTest::gtest_main)
+        target_include_directories(k1520_test_dbg_commands PRIVATE ${CMAKE_SOURCE_DIR})
+
         # Machine snapshot / reverse-debugging (A5120Machine::captureState/restoreState)
         add_executable(k1520_test_machine_snapshot tests/cpp/test_machine_snapshot.cpp)
         target_link_libraries(k1520_test_machine_snapshot
@@ -347,6 +352,7 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_prn_listing)
         gtest_discover_tests(k1520_test_callstack_tracker)
         gtest_discover_tests(k1520_test_coverage_diff)
+        gtest_discover_tests(k1520_test_dbg_commands)
         gtest_discover_tests(k1520_test_machine_snapshot)
         gtest_discover_tests(k1520_test_boot_integration PROPERTIES TIMEOUT 60)
     endif() # BUILD_K1520_TESTS
@@ -375,5 +381,17 @@ if(BUILD_K1520)
     target_link_libraries(k1520dbg PRIVATE k1520_a5120 k1520_floppy k1520_logger)
     target_include_directories(k1520dbg PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(k1520dbg PRIVATE LOG_LEVEL=5)
+    # Optional GNU readline: interactive line editing, history, command tab-completion.
+    # If not found, k1520dbg falls back to plain getline (unchanged behaviour).
+    find_path(READLINE_INCLUDE_DIR readline/readline.h)
+    find_library(READLINE_LIBRARY readline)
+    if (READLINE_INCLUDE_DIR AND READLINE_LIBRARY)
+        message(STATUS "k1520dbg: GNU readline found — interactive editing/history/completion enabled")
+        target_compile_definitions(k1520dbg PRIVATE HAVE_READLINE)
+        target_include_directories(k1520dbg PRIVATE ${READLINE_INCLUDE_DIR})
+        target_link_libraries(k1520dbg PRIVATE ${READLINE_LIBRARY})
+    else()
+        message(STATUS "k1520dbg: GNU readline not found — using plain getline (no history/completion)")
+    endif()
 
 endif() # BUILD_K1520
