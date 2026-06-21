@@ -52,9 +52,11 @@ Adressiert den Hauptschmerz: jeder Versuch = ~8 s Reboot, Analyse aus RAM-Dumps.
    - `wl` zeigt Trefferzähler, `wd <A>` löscht alle den Punkt abdeckenden Watches, `wd all`.
    - Auslösende CPU (`ZVE1`/`ZVE2.PC`) war bereits via `busWho()` korrekt.
 
-5. **Breakpoint-Verwaltung.** Fehlt: **enable/disable** (statt löschen),
-   **ignore-count / „beim N-ten Treffer"** (Trefferzähler existiert schon — das
-   Gegenstück fehlt).
+5. **✅ Breakpoint-Verwaltung** *(implementiert 2026-06-21)*
+   - `be <A>` / `bdis <A>` (ZVE2: `be2`/`bdis2`) — Breakpoint aktivieren/deaktivieren
+     (behalten, aber inaktiv) statt löschen.
+   - `bi <A> <N>` (ZVE2: `bi2`) — die nächsten `N` Treffer ignorieren (gdb `ignore`).
+   - `bl` zeigt `[disabled]` + `ignore=N`.
 
 6. **Bessere Daten-Inspektion.** Der Ausdrucks-Evaluator kann nur `REG/[mem]/(rr) OP wert`.
    Es fehlen Arithmetik und **`x/`-artige Formate** (`x/10i`, `x/8xw`, signed/word-Sicht);

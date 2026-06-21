@@ -56,7 +56,7 @@ static inline Snap grab(const Z80& z){
 }
 
 // ─── breakpoint record ────────────────────────────────────────────────────────
-struct Bp { bool enabled=true; bool temp=false; std::string cond; long hits=0; };
+struct Bp { bool enabled=true; bool temp=false; std::string cond; long hits=0; long ignore=0; };
 
 int main(int argc, char** argv){
     const char* disk = nullptr;
@@ -304,10 +304,14 @@ int main(int argc, char** argv){
         if (gu_pc>=0 && pc==(uint16_t)gu_pc){ gu_pc=-1; stopAt(1,z,"run-until"); return; }
         auto it=bp1.find(pc);
         if (it!=bp1.end() && it->second.enabled && evalCond(grab(z),it->second.cond)){
-            it->second.hits++; std::string why="bp ZVE1";
-            if(!it->second.cond.empty()) why+=" ["+it->second.cond+"]";
-            if(it->second.temp) bp1.erase(it);
-            stopAt(1,z,why);
+            it->second.hits++;
+            if (it->second.ignore>0){ it->second.ignore--; }   // skip this hit (gdb ignore)
+            else {
+                std::string why="bp ZVE1";
+                if(!it->second.cond.empty()) why+=" ["+it->second.cond+"]";
+                if(it->second.temp) bp1.erase(it);
+                stopAt(1,z,why);
+            }
         }
     });
     m.setZVE2TraceCallback([&](const Z80& z){
@@ -317,10 +321,13 @@ int main(int argc, char** argv){
         if (step2_rem>0){ traceLine(2,z); if(--step2_rem==0){stopAt(2,z,"step ZVE2");} return; }
         auto it=bp2.find(pc);
         if (it!=bp2.end() && it->second.enabled && evalCond(grab(z),it->second.cond)){
-            it->second.hits++; std::string why="bp ZVE2";
+            it->second.hits++;
+            if (it->second.ignore>0){ it->second.ignore--; }   // skip this hit (gdb ignore)
+            else {
+            std::string why="bp ZVE2";
             if(!it->second.cond.empty()) why+=" ["+it->second.cond+"]";
             if(it->second.temp) bp2.erase(it);
-            stopAt(2,z,why);
+            stopAt(2,z,why); }
         }
     });
     // Attribute a bus access to the CPU that actually issued it. During a DMA the bus
@@ -568,6 +575,7 @@ int main(int argc, char** argv){
               "          snap <name> | snap list ; restore <name>   named full snapshots\n"
               "  BREAK   b <A> [if <cond>] | b2 <A> ...   bp on ZVE1 / ZVE2\n"
               "          tb <A>    temporary (one-shot) bp ; bd/bd2 <A> delete ; bl list\n"
+              "          be/bdis <A> (be2/bdis2) enable/disable ; bi/bi2 <A> <N> ignore N hits\n"
               "          cond: REG/[addr]/[addr]w/(rr)  OP  value   OP: == != < > <= >=\n"
               "  WATCH   wp/wpr/wb <A|A..B> [==v|!=v|changed]   mem watch (range+cond):\n"
               "                          print-write / print-read / break-write\n"
@@ -619,14 +627,31 @@ int main(int argc, char** argv){
             fprintf(stderr,"  temp bp ZVE1 @%04X\n",a); }
         else if (cmd=="bd" && t.size()>1) bp1.erase((uint16_t)parseNum(t[1]));
         else if (cmd=="bd2"&& t.size()>1) bp2.erase((uint16_t)parseNum(t[1]));
+        // enable / disable (keep but inactive) — be/bdis (ZVE1), be2/bdis2 (ZVE2)
+        else if ((cmd=="be"||cmd=="bdis"||cmd=="be2"||cmd=="bdis2") && t.size()>1){
+            auto& tbl = (cmd=="be2"||cmd=="bdis2")? bp2 : bp1; uint16_t a=(uint16_t)parseNum(t[1]);
+            auto it=tbl.find(a);
+            if(it==tbl.end()) fprintf(stderr,"  no bp @%04X\n",a);
+            else { bool en=(cmd=="be"||cmd=="be2"); it->second.enabled=en;
+                fprintf(stderr,"  bp %s @%04X %s\n",(cmd=="be2"||cmd=="bdis2")?"ZVE2":"ZVE1",a,en?"enabled":"disabled"); } }
+        // ignore next N hits before stopping — bi/bi2 (gdb 'ignore')
+        else if ((cmd=="bi"||cmd=="bi2") && t.size()>2){
+            auto& tbl = (cmd=="bi2")? bp2 : bp1; uint16_t a=(uint16_t)parseNum(t[1]);
+            auto it=tbl.find(a);
+            if(it==tbl.end()) fprintf(stderr,"  no bp @%04X\n",a);
+            else { it->second.ignore=parseNum(t[2]);
+                fprintf(stderr,"  bp %s @%04X: ignore next %ld hit(s)\n",cmd=="bi2"?"ZVE2":"ZVE1",a,it->second.ignore); } }
         else if (cmd=="bl"){
-            fprintf(stderr,"  ZVE1 breakpoints:\n");
-            for(auto&kv:bp1){ std::string s=symFor(kv.first);
-                fprintf(stderr,"    %04X%s%s%s  hits=%ld%s\n",kv.first, s.empty()?"":" <",s.c_str(),s.empty()?"":">",
-                        kv.second.hits, kv.second.cond.empty()?"":(" if "+kv.second.cond).c_str()); }
-            fprintf(stderr,"  ZVE2 breakpoints:\n");
-            for(auto&kv:bp2){ fprintf(stderr,"    %04X  hits=%ld%s\n",kv.first,kv.second.hits,
-                        kv.second.cond.empty()?"":(" if "+kv.second.cond).c_str()); } }
+            auto show=[&](const std::map<uint16_t,Bp>& tbl,const char* cpu){
+                fprintf(stderr,"  %s breakpoints:\n",cpu);
+                if(tbl.empty()){ fprintf(stderr,"    (none)\n"); return; }
+                for(auto&kv:tbl){ std::string s=symFor(kv.first);
+                    fprintf(stderr,"    %04X%s%s%s  hits=%ld%s%s%s\n",kv.first,
+                        s.empty()?"":" <",s.c_str(),s.empty()?"":">", kv.second.hits,
+                        kv.second.enabled?"":" [disabled]",
+                        kv.second.ignore>0?(" ignore="+std::to_string(kv.second.ignore)).c_str():"",
+                        kv.second.cond.empty()?"":(" if "+kv.second.cond).c_str()); } };
+            show(bp1,"ZVE1"); show(bp2,"ZVE2"); }
         // logpoints (dprintf-style: print + continue, never stop) on ZVE1
         else if ((cmd=="logpoint"||cmd=="lp") && t.size()>1){
             uint16_t a=(uint16_t)parseNum(t[1]);
