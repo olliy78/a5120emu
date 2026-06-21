@@ -414,3 +414,21 @@ int Z80CTC::getCount(int channel) const {
 bool Z80CTC::isTimerMode(int channel) const {
     return (ch_[channel].control & CTRL_COUNTER) == 0;
 }
+
+Z80CTC::DebugState Z80CTC::debugState() const {
+    DebugState d;
+    d.vecBase = vec_base_;
+    d.iei     = iei_;
+    d.ieo     = getIEO();
+    for (int i = 0; i < 4; ++i) {
+        d.ch[i].control    = ch_[i].control;
+        d.ch[i].timeConst  = ch_[i].timeConst;
+        d.ch[i].counter    = ch_[i].counter;
+        d.ch[i].running    = ch_[i].running;
+        d.ch[i].intEn      = (ch_[i].control & CTRL_INT_EN) != 0;
+        d.ch[i].intPending = ch_[i].int_pending;
+        d.ch[i].ius        = ch_[i].ius;
+        d.ch[i].iei        = ch_[i].iei;
+    }
+    return d;
+}

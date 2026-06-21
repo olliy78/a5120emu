@@ -173,6 +173,20 @@ public:
      */
     const char* deviceName() const override { return name_.c_str(); }
 
+    /**
+     * @brief Read-only snapshot of all channel + daisy-chain state (debugger `dev ctc`).
+     */
+    struct DebugState {
+        uint8_t vecBase = 0;
+        bool    iei = false, ieo = false;
+        struct Ch {
+            uint8_t control = 0, timeConst = 0;
+            int     counter = 0;
+            bool    running = false, intEn = false, intPending = false, ius = false, iei = false;
+        } ch[4];
+    };
+    DebugState debugState() const;
+
 private:
     // Control Word Bit Masks (U857D manual page 612-613, Bild 3)
     // D0 = 1 (always for control word)

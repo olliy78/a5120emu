@@ -194,6 +194,27 @@ bool Z80SIO::getIEO() const {
     return true;
 }
 
+Z80SIO::DebugState Z80SIO::debugState() const {
+    DebugState d;
+    d.iei = iei_;
+    d.ieo = getIEO();
+    const Channel* c[2] = { &ch_a_, &ch_b_ };
+    for (int i = 0; i < 2; ++i) {
+        d.ch[i].wr1      = c[i]->wr[1];
+        d.ch[i].wr2      = c[i]->wr[2];   // interrupt vector (ch B programs it)
+        d.ch[i].rr0      = c[i]->rr0;
+        d.ch[i].rr1      = c[i]->rr1;
+        d.ch[i].irqRx    = c[i]->irq_rx;
+        d.ch[i].irqTx    = c[i]->irq_tx;
+        d.ch[i].irqExt   = c[i]->irq_ext;
+        d.ch[i].iei      = c[i]->iei;
+        d.ch[i].ius      = c[i]->ius;
+        d.ch[i].rxQueued = c[i]->rx_fifo.size();
+        d.ch[i].txBusy   = c[i]->tx_buf.has_value();
+    }
+    return d;
+}
+
 void Z80SIO::setIEI(bool iei) {
     iei_ = iei;
     // Propagate IEI through internal daisy chain (Ch A > Ch B)

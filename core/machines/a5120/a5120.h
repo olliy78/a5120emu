@@ -121,6 +121,14 @@ public:
     bool     isBUSRQ() const { return bus_.isBUSRQ(); }
     /** @brief K5122 floppy-controller state snapshot (debugger `dev` command). */
     K5122::DebugState k5122State() const { return afs_.debugState(); }
+    /** @brief K2526 system-CTC state snapshot (debugger `dev ctc`). */
+    Z80CTC::DebugState ctcState()   { return zre_.ctc().debugState(); }
+    /** @brief K2526 BS-PIO state snapshot (debugger `dev pio`). */
+    Z80PIO::DebugState bsPioState() { return zre_.bsPio().debugState(); }
+    /** @brief K8025 keyboard/printer SIO (A32) state snapshot (debugger `dev sio`). */
+    Z80SIO::DebugState kbdSioState()  { return ass_.sioA32().debugState(); }
+    /** @brief K8025 DFÜ SIO (A33) state snapshot (debugger `dev sio2`). */
+    Z80SIO::DebugState dfueSioState() { return ass_.sioA33().debugState(); }
     /** @brief Which CPU is the current bus master — true=ZVE2, false=ZVE1. Valid inside a
      *  bus-trace callback to attribute a memory/IO access to the CPU that issued it. */
     bool     busMasterIsZVE2() const { return bus_master_zve2_; }

@@ -688,7 +688,7 @@ int main(int argc, char** argv){
               "          x/<N><fmt><sz> <A>  examine (fmt x/d/u/c/t/o/a/i/s, sz b/w); x continues\n"
               "          list/l [A] [N]  .prn source lines around A (labels load as symbols)\n"
               "          set [2] <reg> <v>   edit register ; vars   named RAM vars\n"
-              "          dev       K5122 controller state (drive/cyl/head/transfer)\n"
+              "          dev [ctc|pio|sio|sio2]   chip state (default K5122); CTC/PIO/SIO + IUS/IEI\n"
               "          disp <expr> | undisp <n> | disp   show expr at every stop\n"
               "  MEM     load <f> <A>   read binary into RAM ; save <f> <A> <N> dump RAM\n"
               "  MISC    mark [A]  zero relative cycle counter (now / armed at A)\n"
@@ -894,11 +894,32 @@ int main(int argc, char** argv){
         else if (cmd=="vars"){ auto wd=[&](uint16_t a){return (uint16_t)(m.memReadDebug(a)|(m.memReadDebug(a+1)<<8));};
             fprintf(stderr,"  [03F8]done=%02X  DPB: [D1B2]=%04X [D1B4]=%04X [D1B8]=%04X [D1BE]=%04X [D1CD]=%04X\n",
                     m.memReadDebug(0x03F8),wd(0xD1B2),wd(0xD1B4),wd(0xD1B8),wd(0xD1BE),wd(0xD1CD)); }
-        else if (cmd=="dev"){ auto k=m.k5122State();
-            fprintf(stderr,"  K5122: D%d %s  cyl=%u head=%u  %s%s  headPos=%zu/%zu secSize=%u  /BUSRQ-pend=%s\n",
-                    k.drive, k.mounted?"mounted":"EMPTY", k.cylinder, k.head,
-                    k.transferring?"READING":"idle", k.writeMode?"+WRITE":"",
-                    k.headPos, k.trackLen, k.sectorSize, k.busrq?"yes":"no"); }
+        else if (cmd=="dev"){
+            std::string w = t.size()>1? t[1] : "k5122";
+            auto Y=[&](bool b){ return b?"1":"0"; };
+            if (w=="ctc"){ auto c=m.ctcState();
+                fprintf(stderr,"  CTC (K2526)  vecBase=%02X  IEI=%s IEO=%s\n",c.vecBase,Y(c.iei),Y(c.ieo));
+                for(int i=0;i<4;++i){ auto& ch=c.ch[i];
+                    fprintf(stderr,"    ch%d ctl=%02X TC=%02X cnt=%-3d run=%s  INT(en=%s pend=%s ius=%s iei=%s)\n",
+                        i,ch.control,ch.timeConst,ch.counter,Y(ch.running),Y(ch.intEn),Y(ch.intPending),Y(ch.ius),Y(ch.iei)); } }
+            else if (w=="pio"){ auto p=m.bsPioState();
+                fprintf(stderr,"  BS-PIO (K2526)  IEI=%s IEO=%s\n",Y(p.iei),Y(p.ieo));
+                for(int i=0;i<2;++i){ auto& pt=p.port[i];
+                    fprintf(stderr,"    %c mode=%u out=%02X in=%02X dir=%02X vec=%02X  INT(en=%s pend=%s ius=%s iei=%s)\n",
+                        i?'B':'A',pt.mode,pt.out,pt.in,pt.dir,pt.vector,Y(pt.ie),Y(pt.pending),Y(pt.ius),Y(pt.iei)); } }
+            else if (w=="sio" || w=="sio2"){
+                auto s = (w=="sio2")? m.dfueSioState() : m.kbdSioState();
+                fprintf(stderr,"  SIO %s (K8025 %s)  IEI=%s IEO=%s\n",
+                    w=="sio2"?"DFUE":"kbd/prn", w=="sio2"?"A33":"A32", Y(s.iei),Y(s.ieo));
+                for(int i=0;i<2;++i){ auto& ch=s.ch[i];
+                    fprintf(stderr,"    %c rr0=%02X rr1=%02X wr1=%02X vec=%02X  irq(rx=%s tx=%s ext=%s) ius=%s iei=%s  rxQ=%zu txBusy=%s\n",
+                        i?'B':'A',ch.rr0,ch.rr1,ch.wr1,ch.wr2,Y(ch.irqRx),Y(ch.irqTx),Y(ch.irqExt),Y(ch.ius),Y(ch.iei),ch.rxQueued,Y(ch.txBusy)); } }
+            else { auto k=m.k5122State();
+                fprintf(stderr,"  K5122: D%d %s  cyl=%u head=%u  %s%s  headPos=%zu/%zu secSize=%u  /BUSRQ-pend=%s\n",
+                        k.drive, k.mounted?"mounted":"EMPTY", k.cylinder, k.head,
+                        k.transferring?"READING":"idle", k.writeMode?"+WRITE":"",
+                        k.headPos, k.trackLen, k.sectorSize, k.busrq?"yes":"no");
+                fprintf(stderr,"  (dev ctc | dev pio | dev sio | dev sio2 for the other chips)\n"); } }
         else if (cmd=="reset"){ m.reset(); fprintf(stderr,"  reset\n"); }
         else fprintf(stderr,"  ? unknown command '%s' (try help)\n",cmd.c_str());
     }

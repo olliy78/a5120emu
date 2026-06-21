@@ -106,6 +106,18 @@ public:
      */
     const char* deviceName() const override { return name_.c_str(); }
 
+    /**
+     * @brief Read-only snapshot of both ports + daisy-chain state (debugger `dev pio`).
+     */
+    struct DebugState {
+        bool iei = false, ieo = false;
+        struct P {
+            uint8_t mode = 1, out = 0, in = 0xFF, dir = 0xFF, vector = 0xFF;
+            bool    ie = false, pending = false, iei = false, ius = false;
+        } port[2];   // [0]=A, [1]=B
+    };
+    DebugState debugState() const;
+
     // ─── InterruptSlave interface (daisy-chain) ──────────────────────────
     
     /**

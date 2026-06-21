@@ -377,6 +377,20 @@ public:
      */
     const char* deviceName() const override { return name_.c_str(); }
 
+    /**
+     * @brief Read-only snapshot of both channels + daisy-chain state (debugger `dev sio`).
+     */
+    struct DebugState {
+        bool iei = false, ieo = false;
+        struct Ch {
+            uint8_t wr1 = 0, wr2 = 0, rr0 = 0, rr1 = 0;
+            bool    irqRx = false, irqTx = false, irqExt = false, iei = false, ius = false;
+            size_t  rxQueued = 0;
+            bool    txBusy = false;
+        } ch[2];   // [0]=A, [1]=B
+    };
+    DebugState debugState() const;
+
 private:
     mutable Channel ch_a_;      ///< SIO Channel A (mutable for getVector)
     mutable Channel ch_b_;      ///< SIO Channel B (mutable for getVector)

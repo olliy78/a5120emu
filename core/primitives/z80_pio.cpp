@@ -366,6 +366,25 @@ bool Z80PIO::getIEO() const {
     return porta_.iei;
 }
 
+Z80PIO::DebugState Z80PIO::debugState() const {
+    DebugState d;
+    d.iei = porta_.iei;     // device IEI feeds Port A (highest priority)
+    d.ieo = getIEO();
+    const Port* p[2] = { &porta_, &portb_ };
+    for (int i = 0; i < 2; ++i) {
+        d.port[i].mode    = p[i]->mode;
+        d.port[i].out     = p[i]->output_latch;
+        d.port[i].in      = p[i]->input_latch;
+        d.port[i].dir     = p[i]->direction;
+        d.port[i].vector  = p[i]->int_vector;
+        d.port[i].ie      = p[i]->ie;
+        d.port[i].pending = p[i]->pending;
+        d.port[i].iei     = p[i]->iei;
+        d.port[i].ius     = p[i]->ius;
+    }
+    return d;
+}
+
 /**
  * @brief Check if the PIO is currently requesting an interrupt.
  *

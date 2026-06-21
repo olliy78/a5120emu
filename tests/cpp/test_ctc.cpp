@@ -854,3 +854,48 @@ TEST(Z80CTC, NoSpuriousInterruptWhenLowerChannelBlockedByHigherIUS) {
     EXPECT_TRUE(ctc.hasInterrupt());
     EXPECT_EQ(ctc.getVector(), 0x26);       // ch3: 0x20 | (3 << 1)
 }
+
+// =============================================================================
+// debugState() — read-only snapshot for the debugger's `dev ctc` command
+// =============================================================================
+
+/**
+ * @brief debugState reflects control/TC/intEn plus the IUS/IEI/IEO daisy-chain state.
+ */
+TEST(Z80CTC, DebugStateReflectsChannelAndDaisyChain) {
+    Z80CTC ctc("test");
+    ctc.setIEI(true);
+    ctc.ioWrite(0, 0x20);                   // vector base 0x20
+
+    configChannel(ctc, 2, 0x85, 1);         // ch2: timer, IRQ enabled, ÷16, TC=1
+    {
+        auto d = ctc.debugState();
+        EXPECT_EQ(d.vecBase, 0x20);
+        EXPECT_TRUE(d.ieo);                 // nothing in service yet → IEO high
+        EXPECT_EQ(d.ch[2].control, 0x85);
+        EXPECT_EQ(d.ch[2].timeConst, 1);
+        EXPECT_TRUE(d.ch[2].intEn);         // D7 set
+        EXPECT_FALSE(d.ch[2].intPending);
+        EXPECT_FALSE(d.ch[2].ius);
+        EXPECT_FALSE(d.ch[0].intEn);        // ch0 untouched (reset)
+    }
+
+    // Fire ch2: interrupt now PENDING (before ack) → IEO drops to block downstream.
+    for (int i = 0; i < 16; ++i) ctc.clockTick();
+    ctc.setIEI(true);
+    {
+        auto d = ctc.debugState();
+        EXPECT_TRUE(d.ch[2].intPending);
+        EXPECT_FALSE(d.ch[2].ius);
+        EXPECT_FALSE(d.ieo);                // pending → chain blocked (iei_ && !anyPending)
+    }
+
+    // Acknowledge → ch2 goes Under Service (ius), pending cleared.
+    EXPECT_EQ(ctc.getVector(), 0x24);
+    {
+        auto d = ctc.debugState();
+        EXPECT_TRUE(d.ch[2].ius);           // under service
+        EXPECT_FALSE(d.ch[2].intPending);   // cleared on acknowledge
+        EXPECT_TRUE(d.ieo);                 // no longer pending → IEO high again
+    }
+}

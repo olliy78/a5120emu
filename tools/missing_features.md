@@ -84,9 +84,13 @@ Adressiert den Hauptschmerz: jeder Versuch = ~8 s Reboot, Analyse aus RAM-Dumps.
      **kein Core-Eingriff**. Trifft genau die CTC-Interrupt-/Q240-NMI-Bug-Klasse.
    - **Noch offen:** Filter auf einen bestimmten Interrupt-Vektor.
 
-9. **Zustand der anderen Chips.** Es gibt nur `dev` (K5122). Es fehlt `dev ctc` / `dev pio`
-   / `dev sio`: Kanalzustände, **pending/IUS/IEI** der Interrupt-Daisy-Chain. Genau das
-   hätte die beiden CTC-Bugs sofort sichtbar gemacht.
+9. **✅ Zustand der anderen Chips** *(implementiert 2026-06-21)*
+   - `dev ctc` (System-CTC K2526), `dev pio` (BS-PIO K2526), `dev sio`/`dev sio2`
+     (K8025 Tastatur/DFÜ) — je Kanal/Port der Konfig- und Interrupt-Status inkl.
+     **pending/IUS/IEI** der Daisy-Chain + IEI/IEO. Genau die Sicht, die die beiden
+     CTC-Bugs sofort gezeigt hätte; kombiniert mit `bint`/`breti` (#8).
+   - Core: `Z80CTC/Z80PIO/Z80SIO::debugState()` + `A5120Machine`-Accessoren
+     (`ctcState`/`bsPioState`/`kbdSioState`/`dfueSioState`). Test: `Z80CTC.DebugState…`.
 
 ---
 
