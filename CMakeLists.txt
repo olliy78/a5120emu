@@ -302,6 +302,11 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_callstack_tracker PRIVATE GTest::gtest_main)
         target_include_directories(k1520_test_callstack_tracker PRIVATE ${CMAKE_SOURCE_DIR})
 
+        # Header-only coverage CSV parser + run-diff (tools/coverage_diff.h)
+        add_executable(k1520_test_coverage_diff tests/cpp/test_coverage_diff.cpp)
+        target_link_libraries(k1520_test_coverage_diff PRIVATE GTest::gtest_main)
+        target_include_directories(k1520_test_coverage_diff PRIVATE ${CMAKE_SOURCE_DIR})
+
         # Machine snapshot / reverse-debugging (A5120Machine::captureState/restoreState)
         add_executable(k1520_test_machine_snapshot tests/cpp/test_machine_snapshot.cpp)
         target_link_libraries(k1520_test_machine_snapshot
@@ -341,6 +346,7 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_z80)
         gtest_discover_tests(k1520_test_prn_listing)
         gtest_discover_tests(k1520_test_callstack_tracker)
+        gtest_discover_tests(k1520_test_coverage_diff)
         gtest_discover_tests(k1520_test_machine_snapshot)
         gtest_discover_tests(k1520_test_boot_integration PROPERTIES TIMEOUT 60)
     endif() # BUILD_K1520_TESTS

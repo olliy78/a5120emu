@@ -44,7 +44,9 @@ boot_trace [DISK] [optionen]
 |--------|---------|
 | `-c <zyklen>` | Boot-Zyklenlimit (vor Erreichen des geladenen Codes) |
 | `--until <cond>` | **Lauf anhalten, sobald `<cond>` gilt** (läuft dabei über den Boot-Handoff hinaus bis zur Bedingung oder zum `-c`-Limit), dann normaler Report. `cond`: `PC<op>A`, `[A]<op>V`, `[A]w<op>V` mit `<op> ∈ == != < > <= >=` (s. §2b) |
-| `--coverage [file]` | **Code-Coverage**: welche ZVE1-Bytes ausgeführt wurden (zusammengefasst als Ranges) + ZVE2-Adresszahl; mit `file` zusätzlich CSV-Export `cpu,pc,hits` (maschinenlesbar, per `diff`/`comm` als Run-Diff) (s. §2c) |
+| `--coverage [file]` | **Code-Coverage**: welche ZVE1-Bytes ausgeführt wurden (zusammengefasst als Ranges) + ZVE2-Adresszahl; mit `file` zusätzlich CSV-Export `cpu,pc,hits` (s. §2c) |
+| `--csv <file>` | **maschinenlesbarer Per-Instruktions-Trace** (`seq,cyc,cpu,pc,bytes,disasm,…regs`) jeder ausgeführten Instruktion; durch `-w`/`-z` (PC-Fenster) bzw. `--until` eingrenzbar, Cap 5 Mio. Zeilen (s. §2c) |
+| `--diff a.csv b.csv` | **Run-Diff**: zwei `--coverage`-CSVs vergleichen (nur-A / nur-B / hit-diff je CPU) — **ohne** Emulation, nur die beiden Dateien (s. §2c) |
 | `-p <zyklen>` | **nach** dem Boot weiterlaufen (`0x0437`+) — aktiviert den Post-Boot-Report (Port-Histogramm, VRAM-Schreibzähler + -Bereich, PC-Histogramm des geladenen Codes, 80-Spalten-VRAM-Textdump) |
 | `--drive <n>` | Disk auf Laufwerk `n` mounten (Default 0 = A:) |
 | `-L <datei>` | den (sehr ausführlichen) **Emulator-Log** in eine Datei umleiten, damit die Trace-Zusammenfassung lesbar bleibt (`-L /dev/null` verwirft ihn) |
@@ -134,17 +136,34 @@ plus die Zahl distinkter ZVE2-Adressen.
 ```
 
 Mit `--coverage <file.csv>` wird zusätzlich ein **maschinenlesbares CSV** `cpu,pc,hits`
-geschrieben (sortiert). Damit lässt sich auch ein **Run-Diff** bauen — zwei Läufe
-exportieren und vergleichen, z. B. „welche Adressen hat Lauf B getroffen, Lauf A nicht":
+geschrieben (sortiert). Zwei solche CSVs vergleicht der **eingebaute Run-Diff** —
+*ohne* Emulation, nur aus den beiden Dateien — und meldet je CPU `nur-A` / `nur-B` /
+`hit-diff`:
 
 ```sh
 boot_trace --until 'PC==0x0437' --coverage a.csv disk_a.img
 boot_trace --until 'PC==0x0437' --coverage b.csv disk_b.img
-comm -13 <(grep ^ZVE1 a.csv|cut -d, -f2|sort) <(grep ^ZVE1 b.csv|cut -d, -f2|sort)
+boot_trace --diff a.csv b.csv
+#  ZVE1: A=164 addrs, B=149 addrs | only-A=15 only-B=0 common=149 hit-diff=2
+#     only-A: 016C 016D … 0437
 ```
 
 (Selbstmodifizierender Code: die Instruktionslänge wird aus dem *finalen* Speicherabbild
 genommen — vernachlässigbarer Effekt auf die Byte-Ranges.)
+
+### 2d. Maschinenlesbarer Per-Instruktions-Trace (`--csv`)
+
+`--csv <file>` schreibt **jede** ausgeführte Instruktion (ZVE1 *und* ZVE2) als CSV-Zeile —
+für externe Auswertung/Diff statt der menschenlesbaren `-w`/`-z`-Zeilen:
+
+```
+seq,cyc,cpu,pc,bytes,disasm,af,bc,de,hl,ix,iy,sp
+3,92702,ZVE1,0x0109,45,"LD B,L",EE10,0000,0400,0400,0000,0000,07E0
+```
+
+`disasm` ist gequotet (kann Kommas enthalten, z. B. `"JP NZ,0x1234"`). Das ist ein
+**voller** Trace → mit `-w`/`-z` (PC-Fenster) und/oder `--until` eingrenzen; ein
+Sicherheits-Cap von 5 Mio. Zeilen verhindert Gigabyte-Dateien.
 
 ---
 

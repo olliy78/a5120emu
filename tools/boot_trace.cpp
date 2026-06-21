@@ -28,6 +28,7 @@
 #include "core/logger.h"
 #include "tools/prn_listing.h"
 #include "tools/z80dis_min.h"
+#include "tools/coverage_diff.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -213,9 +214,37 @@ static bool parseUntil(const std::string& spec, UntilCond& u) {
     return false;
 }
 
+// ─── --diff a.csv b.csv: compare two --coverage CSVs (no emulation) ────────────
+static int runCoverageDiff(const std::string& pa, const std::string& pb) {
+    covdiff::CovMap a, b;
+    if (!covdiff::loadCsv(pa, a)) { fprintf(stderr, "cannot open %s\n", pa.c_str()); return 1; }
+    if (!covdiff::loadCsv(pb, b)) { fprintf(stderr, "cannot open %s\n", pb.c_str()); return 1; }
+    auto d = covdiff::diff(a, b);
+    fprintf(stderr, "=== Coverage run-diff:  A=%s   B=%s ===\n", pa.c_str(), pb.c_str());
+    for (auto& kv : d) {
+        const auto& z = kv.second;
+        fprintf(stderr, "  %s: A=%zu addrs, B=%zu addrs  |  only-A=%zu  only-B=%zu  common=%zu  hit-diff=%zu\n",
+                kv.first.c_str(), z.a_count, z.b_count, z.only_a.size(), z.only_b.size(), z.common, z.changed.size());
+        auto list = [&](const char* tag, const std::vector<uint16_t>& v) {
+            if (v.empty()) return;
+            fprintf(stderr, "     %s:", tag);
+            for (size_t i = 0; i < v.size() && i < 24; ++i) fprintf(stderr, " %04X", v[i]);
+            if (v.size() > 24) fprintf(stderr, " … (%zu total)", v.size());
+            fprintf(stderr, "\n");
+        };
+        list("only-A", z.only_a); list("only-B", z.only_b); list("hit-diff", z.changed);
+    }
+    return 0;
+}
+
 // ─── main ─────────────────────────────────────────────────────────────────────
 
 int main(int argc, char** argv) {
+    // Standalone run-diff mode: `boot_trace --diff a.csv b.csv` (no machine, no disk).
+    for (int i = 1; i < argc; ++i)
+        if (!strcmp(argv[i], "--diff") && i + 2 < argc)
+            return runCoverageDiff(argv[i + 1], argv[i + 2]);
+
     const char* disk_path   = nullptr;
     const char* log_path    = nullptr;   // -L: route emulator LOG_* output to a file
     int   total_limit       = 5000000;
@@ -245,6 +274,9 @@ int main(int argc, char** argv) {
     int       until_cycle = 0; uint16_t until_pc = 0;
     bool      coverage_on   = false;     // --coverage [file]: executed-code report + CSV export
     const char* coverage_path = nullptr;
+    const char* csv_path    = nullptr;   // --csv <file>: per-instruction trace (machine-readable)
+    FILE*     csv_fp        = nullptr;
+    long      csv_rows = 0, csv_cap = 5000000; bool csv_capped = false;
 
     // Runtime log control (new gated logging). Default base = ERROR so a plain
     // run is quiet and fast; raise globally with --log-level or, far better,
@@ -297,6 +329,7 @@ int main(int argc, char** argv) {
             coverage_on = true;
             if (i+1 < argc && argv[i+1][0] != '-') coverage_path = argv[++i];
         }
+        else if (!strcmp(argv[i], "--csv") && i+1 < argc) { csv_path = argv[++i]; }
         else if (!strcmp(argv[i], "--watch") && i+1 < argc) {   // --watch 0x0000,0x03F8,...
             char* tok = strtok(argv[++i], ",");
             while (tok && watch_n < 16) { watch_addr[watch_n++] = (uint16_t)strtol(tok, nullptr, 0); tok = strtok(nullptr, ","); }
@@ -363,6 +396,31 @@ int main(int argc, char** argv) {
         return std::string(d.text);
     };
 
+    // --csv: one machine-readable row per executed instruction. Bounded by the -w/-z
+    // PC window when set (else all, up to csv_cap); pair with --until to trace-to-here.
+    if (csv_path) {
+        csv_fp = fopen(csv_path, "w");
+        if (!csv_fp) fprintf(stderr, "WARN: cannot write --csv '%s'\n", csv_path);
+        else fprintf(csv_fp, "seq,cyc,cpu,pc,bytes,disasm,af,bc,de,hl,ix,iy,sp\n");
+    }
+    auto csvRow = [&](int cpu, const Z80& z) {
+        if (!csv_fp) return;
+        if (cpu == 1 && win_start  >= 0 && (z.PC < win_start  || z.PC > win_end))  return;
+        if (cpu == 2 && win2_start >= 0 && (z.PC < win2_start || z.PC > win2_end)) return;
+        if (csv_rows >= csv_cap) {
+            if (!csv_capped) { fprintf(stderr, "[csv] cap %ld rows reached — stopped\n", csv_cap); csv_capped = true; }
+            return;
+        }
+        z80dis::Insn d = z80dis::decode([&](uint16_t x){ return machine.memReadDebug(x); }, z.PC);
+        char bytes[16] = {0};
+        for (int i = 0; i < d.len && i < 4; ++i) { char b[3]; snprintf(b, 3, "%02X", machine.memReadDebug((uint16_t)(z.PC + i))); strcat(bytes, b); }
+        // disasm is quoted (it can contain commas, e.g. "JP NZ,0x1234").
+        fprintf(csv_fp, "%d,%llu,ZVE%d,0x%04X,%s,\"%s\",%04X,%04X,%04X,%04X,%04X,%04X,%04X\n",
+                trace_seq++, (unsigned long long)z.cycles, cpu, z.PC, bytes, d.text,
+                z.AF, z.BC, z.DE, z.HL, z.IX, z.IY, z.SP);
+        ++csv_rows;
+    };
+
     // ── ZVE1 (main CPU) per-instruction trace ─────────────────────────────────
     // Both CPUs are followed per instruction so milestone counts and PC
     // histograms are exact. (ZVE1 was previously sampled once per batch, which
@@ -388,6 +446,7 @@ int main(int argc, char** argv) {
 
     machine.setCpuTraceCallback([&](const Z80& z) {
         ++sample_count;
+        csvRow(1, z);   // --csv machine-readable per-instruction trace (ZVE1)
         pc_hist[z.PC]++;
         if (boot_reached) post_pc_hist[z.PC]++;
 
@@ -470,6 +529,7 @@ int main(int argc, char** argv) {
     machine.setZVE2TraceCallback([&](const Z80& z) {
         ++zve2_instr;
         zve2_pc_hist[z.PC]++;
+        csvRow(2, z);   // --csv machine-readable per-instruction trace (ZVE2)
 
         for (auto& m : zve2_milestones) {
             if (z.PC == m.pc) {
@@ -606,6 +666,8 @@ int main(int argc, char** argv) {
             if (cycles_done >= boot_cycle + post_cycles) break;
         }
     }
+
+    if (csv_fp) { fclose(csv_fp); fprintf(stderr, "--csv: %ld row(s) → %s\n", csv_rows, csv_path); }
 
     // ── Final summary ─────────────────────────────────────────────────────────
     fprintf(stderr, "\n=== Boot Trace Complete: %d cycles ===\n", cycles_done);

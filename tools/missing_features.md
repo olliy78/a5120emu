@@ -107,14 +107,15 @@ Adressiert den Hauptschmerz: jeder Versuch = ~8 s Reboot, Analyse aus RAM-Dumps.
       dabei über den Boot-Handoff hinaus), dann normaler Report. `cond`: `PC<op>A`,
       `[A]<op>V`, `[A]w<op>V` mit `<op> ∈ == != < > <= >=`. Mit `-d`/`-w`/`-z` kombinierbar,
       um genau im erreichten Zustand zu dumpen/tracen.
-12. **✅ Coverage + CSV-Export** *(implementiert 2026-06-21)* / Run-Diff teilweise
-    - `boot_trace --coverage [file]`: zeigt die ausgeführten ZVE1-Byte-Ranges
-      (aus dem PC-Histogramm, je Instruktion einmal decodiert) + ZVE2-Adresszahl;
-      mit `file` zusätzlich CSV `cpu,pc,hits` (maschinenlesbar).
-    - **Run-Diff** über die CSVs zweier Läufe per `diff`/`comm` (dokumentiert), kein
-      eingebauter `--diff`-Befehl.
-    - **Noch offen:** vollständiger maschinenlesbarer *Per-Instruktions*-Trace (CSV/JSON
-      statt der menschenlesbaren `-w`/`-z`-Zeilen); eingebauter Run-Diff.
+12. **✅ Maschinenlesbarer Trace + Run-Diff + Coverage** *(implementiert 2026-06-21)*
+    - `boot_trace --coverage [file]`: ausgeführte ZVE1-Byte-Ranges + ZVE2-Adresszahl;
+      mit `file` CSV `cpu,pc,hits`.
+    - `boot_trace --csv <file>`: **maschinenlesbarer Per-Instruktions-Trace**
+      (`seq,cyc,cpu,pc,bytes,disasm,…regs`, disasm gequotet), durch `-w`/`-z`/`--until`
+      eingrenzbar, Cap 5 Mio. Zeilen.
+    - `boot_trace --diff a.csv b.csv`: **eingebauter Run-Diff** zweier coverage-CSVs
+      (nur-A / nur-B / hit-diff je CPU), ohne Emulation. Parser+Diff header-only
+      `tools/coverage_diff.h` (Tests `tests/cpp/test_coverage_diff.cpp`).
 
 ---
 
