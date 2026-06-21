@@ -77,9 +77,12 @@ Adressiert den Hauptschmerz: jeder Versuch = ~8 s Reboot, Analyse aus RAM-Dumps.
 
 ## Tier 3 — hardware-spezifisch, hoher Wert für genau dieses Projekt
 
-8. **Break-on-Interrupt / NMI / RETI.** Angesichts der Historie (CTC-Spurious-Interrupt-
-   Sturm, Q240-NMI-Schutzverletzung) wäre `break int [vec]`, `break nmi`, `break reti`
-   extrem wertvoll — heute gar nicht möglich.
+8. **✅ Break-on-Interrupt / NMI / RETI** *(implementiert 2026-06-21)*
+   - `bint` / `bnmi` / `breti` `[on|off]` — anhalten bei Annahme eines Interrupts
+     (IFF1 1→0 + SP-Push) bzw. NMI (Sprung `0x0066`) bzw. vor einem RETI/RETN
+     (Opcode `ED 4D`/`ED 45`). Erkennung per Zustands-Signatur im Trace-Callback,
+     **kein Core-Eingriff**. Trifft genau die CTC-Interrupt-/Q240-NMI-Bug-Klasse.
+   - **Noch offen:** Filter auf einen bestimmten Interrupt-Vektor.
 
 9. **Zustand der anderen Chips.** Es gibt nur `dev` (K5122). Es fehlt `dev ctc` / `dev pio`
    / `dev sio`: Kanalzustände, **pending/IUS/IEI** der Interrupt-Daisy-Chain. Genau das

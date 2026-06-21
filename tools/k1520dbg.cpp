@@ -125,6 +125,10 @@ int main(int argc, char** argv){
     // logpoints: at PC, print (PC + optional exprs) and CONTINUE — gdb dprintf.
     std::map<uint16_t,std::vector<std::string>> logpoints;
 
+    // ─── break on interrupt / NMI / RETI (event breakpoints, ZVE1) ─────────────
+    bool     brk_int=false, brk_nmi=false, brk_reti=false;
+    uint16_t bi_prev_sp=0; bool bi_prev_iff1=false, bi_have_prev=false;
+
     auto rc = [&](uint64_t cyc)->long long {            // relative-or-absolute cycle
         return rel_armed ? (long long)(cyc-rel_origin) : (long long)cyc;
     };
@@ -301,6 +305,20 @@ int main(int argc, char** argv){
         // "run and log" (no stopping): continuous file trace + logpoints fire first.
         traceToFile(1,z);
         { auto lit=logpoints.find(pc); if(lit!=logpoints.end()) logHit(z,lit->second); }
+        // event breakpoints: interrupt / NMI accepted (state signature) or RETI (opcode).
+        if (brk_int||brk_nmi||brk_reti){
+            // NMI: vectors to 0x0066 with SP just pushed (IFF1 may already be 0).
+            bool nmi = brk_nmi && pc==0x0066 && bi_have_prev && z.SP==(uint16_t)(bi_prev_sp-2);
+            // Maskable IM2 interrupt: IFF1 went 1→0 while pushing PC (not the NMI vector).
+            bool intr = brk_int && bi_have_prev && bi_prev_iff1 && !z.IFF1
+                        && z.SP==(uint16_t)(bi_prev_sp-2) && pc!=0x0066;
+            if (nmi){ stopAt(1,z,"NMI accepted (Q240/protection?)"); }
+            else if (intr){ char w[40]; snprintf(w,sizeof w,"interrupt → ISR %04X",pc); stopAt(1,z,w); }
+            else if (brk_reti && m.memReadDebug(pc)==0xED){
+                uint8_t o1=m.memReadDebug((uint16_t)(pc+1));
+                if(o1==0x4D) stopAt(1,z,"RETI"); else if(o1==0x45) stopAt(1,z,"RETN"); }
+        }
+        bi_prev_sp=z.SP; bi_prev_iff1=z.IFF1; bi_have_prev=true;
         if (rel_arm_pc>=0 && pc==(uint16_t)rel_arm_pc){
             rel_origin=z.cycles; rel_armed=true; rel_arm_pc=-1;
             fprintf(stderr,"[mark] relative origin set at PC=%04X (abs cyc=%llu)\n",
@@ -657,6 +675,7 @@ int main(int argc, char** argv){
               "  BREAK   b <A> [if <cond>] | b2 <A> ...   bp on ZVE1 / ZVE2\n"
               "          tb <A>    temporary (one-shot) bp ; bd/bd2 <A> delete ; bl list\n"
               "          be/bdis <A> (be2/bdis2) enable/disable ; bi/bi2 <A> <N> ignore N hits\n"
+              "          bint | bnmi | breti [on|off]   break on interrupt / NMI / RETI (ZVE1)\n"
               "          cond: REG/[addr]/[addr]w/(rr)  OP  value   OP: == != < > <= >=\n"
               "  WATCH   wp/wpr/wb <A|A..B> [==v|!=v|changed]   mem watch (range+cond):\n"
               "                          print-write / print-read / break-write\n"
@@ -734,7 +753,17 @@ int main(int argc, char** argv){
                         kv.second.enabled?"":" [disabled]",
                         kv.second.ignore>0?(" ignore="+std::to_string(kv.second.ignore)).c_str():"",
                         kv.second.cond.empty()?"":(" if "+kv.second.cond).c_str()); } };
-            show(bp1,"ZVE1"); show(bp2,"ZVE2"); }
+            show(bp1,"ZVE1"); show(bp2,"ZVE2");
+            if(brk_int||brk_nmi||brk_reti) fprintf(stderr,"  events:%s%s%s\n",
+                brk_int?" interrupt":"",brk_nmi?" nmi":"",brk_reti?" reti":""); }
+        // event breakpoints: break on interrupt / NMI / RETI (toggle; "off" disarms)
+        else if (cmd=="bint"||cmd=="bnmi"||cmd=="breti"){
+            bool on = !(t.size()>1 && t[1]=="off");
+            if(t.size()>1 && t[1]=="on") on=true;
+            bool& flag = cmd=="bint"?brk_int : cmd=="bnmi"?brk_nmi : brk_reti;
+            flag = (t.size()>1)? on : !flag;   // bare command toggles
+            fprintf(stderr,"  break-on-%s %s\n", cmd=="bint"?"interrupt":cmd=="bnmi"?"nmi":"reti",
+                    flag?"ON":"off"); }
         // logpoints (dprintf-style: print + continue, never stop) on ZVE1
         else if ((cmd=="logpoint"||cmd=="lp") && t.size()>1){
             uint16_t a=(uint16_t)parseNum(t[1]);
