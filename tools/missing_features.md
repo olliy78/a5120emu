@@ -63,8 +63,10 @@ Adressiert den Hauptschmerz: jeder Versuch = ~8 s Reboot, Analyse aus RAM-Dumps.
      Größen `b`/`w` (LE); `i` disassembliert (+`.prn`), `s` liest NUL-Strings,
      `a` zeigt Adresse + Symbol. Format/Größe/Count persistieren wie in gdb; jede
      Zeile mit Adress-Symbol. `x` läuft ab der letzten Adresse weiter.
-   - **Noch offen:** Arithmetik im Ausdrucks-Evaluator (`readOperand` kann weiterhin
-     nur `REG/[mem]/(rr) OP wert`, keine `+ - * /`).
+   - **✅ Arithmetik im Ausdrucks-Evaluator** *(nachgezogen 2026-06-21)*: vollwertiger
+     rekursiv-absteigender Parser — `+ - * / %`, `& | ^`, `<< >>`, unär `- ~`, Vergleiche,
+     Klammern, `[expr]`/`[expr]w` mit Ausdrucks-Index. Greift in `if`-Bedingungen, `disp`,
+     `logpoint` und der `x`-Adresse.
 
 7. **✅ Source-Sicht** *(implementiert 2026-06-21)*
    - `list`/`l [A] [N]` — zeigt die `.prn`-Quellzeilen *um* `A` (Default: PC bzw.

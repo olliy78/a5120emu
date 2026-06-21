@@ -194,48 +194,95 @@ int main(int argc, char** argv){
             return strtol(base.substr(0,base.size()-1).c_str(),nullptr,16)+off; }
         return strtol(base.c_str(),nullptr,0)+off; };
 
-    // readOperand: evaluate a register / [mem] / (rr) / number against a snapshot.
-    auto readOperand = [&](const Snap& s, std::string t, bool& ok)->long{
-        ok=true;
-        std::string u=t; for(auto&c:u) c=(char)toupper(c);
-        auto hi=[&](uint16_t v){return (v>>8)&0xFF;}; auto lo=[&](uint16_t v){return v&0xFF;};
-        if (u=="A") return hi(s.AF); if (u=="F") return lo(s.AF);
-        if (u=="B") return hi(s.BC); if (u=="C") return lo(s.BC);
-        if (u=="D") return hi(s.DE); if (u=="E") return lo(s.DE);
-        if (u=="H") return hi(s.HL); if (u=="L") return lo(s.HL);
-        if (u=="AF") return s.AF; if (u=="BC") return s.BC; if (u=="DE") return s.DE;
-        if (u=="HL") return s.HL; if (u=="IX") return s.IX; if (u=="IY") return s.IY;
-        if (u=="SP") return s.SP; if (u=="PC") return s.PC;
-        if (u=="I")  return s.I;  if (u=="R")  return s.R;
-        if (u=="(HL)") return m.memReadDebug(s.HL); if (u=="(DE)") return m.memReadDebug(s.DE);
-        if (u=="(BC)") return m.memReadDebug(s.BC); if (u=="(SP)") return m.memReadDebug(s.SP);
-        if (!t.empty() && t[0]=='['){
-            size_t r=t.find(']'); std::string inner=t.substr(1, r==std::string::npos? std::string::npos : r-1);
-            bool word = (r!=std::string::npos && r+1<t.size() && (t[r+1]=='w'||t[r+1]=='W'));
-            uint16_t a=(uint16_t)resolveAddr(inner);
-            return word ? (m.memReadDebug(a)|(m.memReadDebug(a+1)<<8)) : m.memReadDebug(a); }
-        // plain number / symbol
-        return resolveAddr(t);
+    // ─── expression evaluator (recursive descent) ─────────────────────────────
+    // Grammar (low→high precedence): cmp(== != < > <= >=) | ^ & shift(<< >>)
+    //   add(+ -) mul(* / %) unary(- ~) primary. Primary: number, symbol, register,
+    //   (rr) register-indirect, [expr]/[expr]w memory, ( expr ). Used by `if`-Bedingungen,
+    //   `disp`, `x`, `logpoint`. A local struct (aggregate) so methods can recurse.
+    struct ExprParser {
+        A5120Machine& m;
+        std::map<std::string,uint16_t>& syms;
+        const Snap& s;
+        const std::string& e;
+        size_t i = 0;
+        bool   ok = true;
+
+        void ws(){ while(i<e.size() && e[i]==' ') ++i; }
+        bool eat(const char* op){ ws(); size_t n=strlen(op);
+            if(i+n<=e.size() && e.compare(i,n,op)==0){ i+=n; return true; } return false; }
+        bool ciEat(const char* op){ ws(); size_t n=strlen(op); if(i+n>e.size()) return false;
+            for(size_t k=0;k<n;++k) if((char)toupper(e[i+k])!=(char)toupper(op[k])) return false;
+            i+=n; return true; }
+        bool nextIs(char c){ ws(); return i<e.size() && e[i]==c; }
+
+        long parseAll(){ long v=cmp(); ws(); if(i!=e.size()) ok=false; return v; }
+
+        long cmp(){ long v=bor();
+            for(;;){ if(eat("==")) v=(v==bor()); else if(eat("!=")) v=(v!=bor());
+                else if(eat("<=")) v=(v<=bor()); else if(eat(">=")) v=(v>=bor());
+                else { ws(); if(i<e.size()&&e[i]=='<'&&!(i+1<e.size()&&e[i+1]=='<')){ ++i; v=(v<bor()); }
+                       else if(i<e.size()&&e[i]=='>'&&!(i+1<e.size()&&e[i+1]=='>')){ ++i; v=(v>bor()); }
+                       else break; } }
+            return v; }
+        long bor(){  long v=bxor(); while(true){ ws();
+            if(i<e.size()&&e[i]=='|'){ ++i; v|=bxor(); } else break; } return v; }
+        long bxor(){ long v=band(); while(eat("^")) v^=band(); return v; }
+        long band(){ long v=shift(); while(true){ ws();
+            if(i<e.size()&&e[i]=='&'){ ++i; v&=shift(); } else break; } return v; }
+        long shift(){ long v=add(); for(;;){ if(eat("<<")) v<<=add(); else if(eat(">>")) v>>=add(); else break; } return v; }
+        long add(){ long v=mul(); for(;;){ if(eat("+")) v+=mul(); else if(eat("-")) v-=mul(); else break; } return v; }
+        long mul(){ long v=unary(); for(;;){
+            if(eat("*")) v*=unary();
+            else if(eat("/")){ long d=unary(); if(d==0){ok=false; } else v/=d; }
+            else if(eat("%")){ long d=unary(); if(d==0){ok=false; } else v%=d; }
+            else break; } return v; }
+        long unary(){ if(eat("-")) return -unary(); if(eat("~")) return ~unary(); return primary(); }
+
+        long regOr(const std::string& tok){
+            std::string U; for(char c:tok) U+=(char)toupper(c);
+            if(U=="A")return (s.AF>>8)&0xFF; if(U=="F")return s.AF&0xFF;
+            if(U=="B")return (s.BC>>8)&0xFF; if(U=="C")return s.BC&0xFF;
+            if(U=="D")return (s.DE>>8)&0xFF; if(U=="E")return s.DE&0xFF;
+            if(U=="H")return (s.HL>>8)&0xFF; if(U=="L")return s.HL&0xFF;
+            if(U=="AF")return s.AF; if(U=="BC")return s.BC; if(U=="DE")return s.DE;
+            if(U=="HL")return s.HL; if(U=="IX")return s.IX; if(U=="IY")return s.IY;
+            if(U=="SP")return s.SP; if(U=="PC")return s.PC; if(U=="I")return s.I; if(U=="R")return s.R;
+            auto it=syms.find(tok); if(it!=syms.end()) return (uint16_t)it->second;
+            // hex (..H) or base-0 number
+            if(!tok.empty() && (tok.back()=='H'||tok.back()=='h')){
+                char* end=nullptr; long v=strtol(tok.substr(0,tok.size()-1).c_str(),&end,16);
+                if(end && *end) ok=false; return v; }
+            char* end=nullptr; long v=strtol(tok.c_str(),&end,0);
+            if(end==tok.c_str() || (end&&*end)) ok=false; return v; }
+
+        long primary(){ ws();
+            if(i>=e.size()){ ok=false; return 0; }
+            if(nextIs('(')){
+                if(ciEat("(HL)")) return m.memReadDebug(s.HL);
+                if(ciEat("(DE)")) return m.memReadDebug(s.DE);
+                if(ciEat("(BC)")) return m.memReadDebug(s.BC);
+                if(ciEat("(SP)")) return m.memReadDebug(s.SP);
+                ++i; long v=cmp(); if(!eat(")")) ok=false; return v; }
+            if(nextIs('[')){ ++i; long a=cmp(); if(!eat("]")) ok=false;
+                bool w=false; if(i<e.size()&&(e[i]=='w'||e[i]=='W')){ w=true; ++i; }
+                uint16_t ad=(uint16_t)a;
+                return w ? (m.memReadDebug(ad)|(m.memReadDebug((uint16_t)(ad+1))<<8)) : m.memReadDebug(ad); }
+            // token: register / symbol / number
+            size_t st=i;
+            while(i<e.size()){ char c=e[i];
+                if((c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='_'||c=='@'||c=='?'||c=='$'||c=='.') ++i; else break; }
+            if(i==st){ ok=false; return 0; }
+            return regOr(e.substr(st,i-st)); }
     };
 
-    // evalCond: "LHS OP RHS" with OP in == != <= >= < > ; empty → true.
+    // readOperand / evalExpr: evaluate a full expression against a register snapshot.
+    auto readOperand = [&](const Snap& s, const std::string& t, bool& ok)->long{
+        ExprParser p{m, sym_by_name, s, t}; long v=p.parseAll(); ok=p.ok; return v; };
+
+    // evalCond: empty → always; else the expression must be non-zero (comparisons → 0/1).
     auto evalCond = [&](const Snap& s, const std::string& cond)->bool{
         if (cond.empty()) return true;
-        static const char* ops[]={"==","!=","<=",">=","<",">"};
-        for (const char* op: ops){
-            size_t pos=cond.find(op);
-            if (pos==std::string::npos) continue;
-            std::string ls=cond.substr(0,pos), rs=cond.substr(pos+strlen(op));
-            auto trim=[](std::string& x){ while(!x.empty()&&x.front()==' ')x.erase(x.begin());
-                                          while(!x.empty()&&x.back()==' ')x.pop_back(); };
-            trim(ls); trim(rs); bool ok1,ok2;
-            long a=readOperand(s,ls,ok1), b=readOperand(s,rs,ok2);
-            if(!strcmp(op,"==")) return a==b; if(!strcmp(op,"!=")) return a!=b;
-            if(!strcmp(op,"<=")) return a<=b; if(!strcmp(op,">=")) return a>=b;
-            if(!strcmp(op,"<"))  return a<b;  return a>b;
-        }
-        return true; // no operator → always
-    };
+        bool ok; long v=readOperand(s,cond,ok); return v!=0; };
 
     // ─── disassembly helpers ───────────────────────────────────────────────────
     auto disasmAt = [&](uint16_t a, char* out, size_t n)->int{
@@ -831,7 +878,9 @@ int main(int argc, char** argv){
             if (idx+1<t.size() && setReg(cpu,t[idx],parseNum(t[idx+1])))
                 fprintf(stderr,"  ZVE%d %s := 0x%lX\n",cpu,t[idx].c_str(),parseNum(t[idx+1])&0xFFFF);
             else fprintf(stderr,"  ? bad register\n"); }
-        else if (cmd=="disp"){ if(t.size()>1){ displays.push_back(t[1]); fprintf(stderr,"  disp[%zu] = %s\n",displays.size()-1,t[1].c_str()); }
+        else if (cmd=="disp"){ if(t.size()>1){
+                std::string ex; for(size_t i=1;i<t.size();++i){ if(i>1)ex+=" "; ex+=t[i]; } // join → spaces in exprs ok
+                displays.push_back(ex); fprintf(stderr,"  disp[%zu] = %s\n",displays.size()-1,ex.c_str()); }
             else { for(size_t i=0;i<displays.size();++i) fprintf(stderr,"  disp[%zu] %s\n",i,displays[i].c_str()); } }
         else if (cmd=="undisp" && t.size()>1){ size_t i=(size_t)parseNum(t[1]); if(i<displays.size()) displays.erase(displays.begin()+i); }
         else if ((cmd=="wp"||cmd=="wpr"||cmd=="wb") && t.size()>1){
