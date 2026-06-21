@@ -96,9 +96,10 @@ Adressiert den Hauptschmerz: jeder Versuch = ~8 s Reboot, Analyse aus RAM-Dumps.
 
 ## Tier 4 — Tracer (`boot_trace`)
 
-10. **Fenster-Traces disassemblieren.** `-w`/`-z` drucken rohe Bytes `b0 b1 b2`. `k1520dbg`
-    nutzt schon `z80dis_min.h` — denselben Decoder in die Fenster-Zeilen ziehen (zusätzlich
-    zur `.prn`-Annotation) wäre klein und nützlich.
+10. **✅ Fenster-Traces disassemblieren** *(implementiert 2026-06-21)*
+    - `-s`/`-w`/`-z`/Step zeigen die Instruktion jetzt **disassembliert** (aus dem
+      Live-Speicher via `tools/z80dis_min.h`, exakt auch bei selbstmodifizierendem
+      Code) statt roher `b0 b1 b2`-Bytes — zusätzlich zur `.prn`-Annotation.
 11. **Stop-/Trace-bis-Bedingung.** `boot_trace` hat Zyklen-/PC-Fenster nur fürs *Loggen*,
     kein „laufe bis `[A]==X`, dann dumpe".
 12. **Maschinenlesbarer Trace (CSV/JSON)**, **Run-Diff** (zwei Läufe vergleichen → wo

@@ -27,6 +27,7 @@
 #include "core/peripherals/floppy_drive/format_parser.h"
 #include "core/logger.h"
 #include "tools/prn_listing.h"
+#include "tools/z80dis_min.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -304,6 +305,13 @@ int main(int argc, char** argv) {
     A5120Machine machine;
     machine.powerOn();
 
+    // Live disassembly of the instruction at `a` (decoded from current memory — exact
+    // even for self-modifying loader stages). Used by the -w/-z window traces.
+    auto disz = [&](uint16_t a) -> std::string {
+        z80dis::Insn d = z80dis::decode([&](uint16_t x){ return machine.memReadDebug(x); }, a);
+        return std::string(d.text);
+    };
+
     // ── ZVE1 (main CPU) per-instruction trace ─────────────────────────────────
     // Both CPUs are followed per instruction so milestone counts and PC
     // histograms are exact. (ZVE1 was previously sampled once per batch, which
@@ -357,23 +365,20 @@ int main(int argc, char** argv) {
 
         if (single_step && z.PC < 0x0400 && step_count < single_step_count) {
             const char* label = romLabel(z.PC);
-            fprintf(stderr, "  [step %3d] PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X  %s%s\n",
-                    step_count, z.PC, z.SP, z.AF, z.BC, z.DE, z.HL, label ? label : "",
+            fprintf(stderr, "  [step %3d] PC=%04X %-16s SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X  %s%s\n",
+                    step_count, z.PC, disz(z.PC).c_str(), z.SP, z.AF, z.BC, z.DE, z.HL, label ? label : "",
                     prnTail(z.PC).c_str());
             ++step_count;
         }
 
         // ── Window step trace (-w): live ZVE1 instructions in a PC range ──────────
-        // Self-modifying loader stages are hard to disassemble statically; this logs
-        // every executed instruction in [win_start,win_end] (after boot) with its
-        // opcode bytes and registers so the live control flow can be followed.
+        // Logs every executed instruction in [win_start,win_end] (after boot),
+        // DISASSEMBLED from live memory (exact even for self-modifying loader stages)
+        // + registers + .prn annotation, so the live control flow reads directly.
         if (win_start >= 0 && boot_reached && z.PC >= win_start && z.PC <= win_end
             && win_count < win_cap) {
-            uint8_t b0 = machine.memReadDebug(z.PC);
-            uint8_t b1 = machine.memReadDebug(z.PC + 1);
-            uint8_t b2 = machine.memReadDebug(z.PC + 2);
-            fprintf(stderr, "  [#%d w%4d] Z1 PC=%04X %02X %02X %02X  AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X%s\n",
-                    trace_seq++, win_count, z.PC, b0, b1, b2, z.AF, z.BC, z.DE, z.HL, z.SP,
+            fprintf(stderr, "  [#%d w%4d] Z1 PC=%04X %-16s AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X%s\n",
+                    trace_seq++, win_count, z.PC, disz(z.PC).c_str(), z.AF, z.BC, z.DE, z.HL, z.SP,
                     prnTail(z.PC).c_str());
             ++win_count;
         }
@@ -408,8 +413,8 @@ int main(int argc, char** argv) {
 
         if (zve2_log_count < zve2_log_cap) {
             const char* label = romLabel(z.PC);
-            fprintf(stderr, "    [ZVE2 %5llu] PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X  %s%s\n",
-                    (unsigned long long)zve2_instr, z.PC, z.SP, z.AF, z.BC, z.DE, z.HL,
+            fprintf(stderr, "    [ZVE2 %5llu] PC=%04X %-16s SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X  %s%s\n",
+                    (unsigned long long)zve2_instr, z.PC, disz(z.PC).c_str(), z.SP, z.AF, z.BC, z.DE, z.HL,
                     label ? label : "", prnTail(z.PC).c_str());
             ++zve2_log_count;
         }
@@ -419,11 +424,8 @@ int main(int argc, char** argv) {
         // routine (e.g. the 3rd stage's 0x1F7D vs the WBOOT/halt) after a restart.
         if (win2_start >= 0 && boot_reached && z.PC >= win2_start && z.PC <= win2_end
             && win2_count < win_cap) {
-            uint8_t b0 = machine.memReadDebug(z.PC);
-            uint8_t b1 = machine.memReadDebug(z.PC + 1);
-            uint8_t b2 = machine.memReadDebug(z.PC + 2);
-            fprintf(stderr, "  [#%d z%4d] Z2 PC=%04X %02X %02X %02X  AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X%s\n",
-                    trace_seq++, win2_count, z.PC, b0, b1, b2, z.AF, z.BC, z.DE, z.HL, z.SP,
+            fprintf(stderr, "  [#%d z%4d] Z2 PC=%04X %-16s AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X%s\n",
+                    trace_seq++, win2_count, z.PC, disz(z.PC).c_str(), z.AF, z.BC, z.DE, z.HL, z.SP,
                     prnTail(z.PC).c_str());
             ++win2_count;
         }

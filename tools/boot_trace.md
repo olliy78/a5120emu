@@ -49,16 +49,23 @@ boot_trace [DISK] [optionen]
 | `--log-level <off\|error\|warn\|info\|debug\|trace>` | Laufzeit-**Basislevel** des Loggers |
 | `--log-pc LO:HI[:level]` | Log-**Gate**: effektives Level anheben, solange *einer* der beiden CPU-PCs im Bereich liegt |
 | `--log-cycle FROM:TO[:level]` | Log-Gate über ein **Zyklenfenster** |
-| `-s` | jede ZVE1-ROM- und ZVE2-Instruktion einzeln ausgeben (Single-Step-Trace) |
+| `-s` | jede ZVE1-ROM- und ZVE2-Instruktion einzeln ausgeben (Single-Step-Trace, **disassembliert**) |
 | `-n <anzahl>` | ZVE1-Single-Step-Limit |
 | `-v` | **alle** ZVE2-Instruktionen ausgeben (statt nur der ersten ~600) |
-| `-w LO:HI` | ZVE1-Instruktionsfenster tracen (PC-Bereich) |
-| `-z LO:HI` | ZVE2-Instruktionsfenster tracen (PC-Bereich) |
+| `-w LO:HI` | ZVE1-Instruktionsfenster tracen (PC-Bereich), **disassembliert** |
+| `-z LO:HI` | ZVE2-Instruktionsfenster tracen (PC-Bereich), **disassembliert** |
 | `-W <n>` | Cap für die `-w`/`-z`-Fenster (max. Zeilen) |
 | `-d LO:HI [datei]` | RAM-Bereich am Ende dumpen (optional in Datei, z. B. zum externen Disassemblieren) |
 | `--watch a,b,…` | Schreibzugriffe auf diese RAM-Adressen mitloggen (kommagetrennt) |
 | `--watchio p,q,…` | Zugriffe auf diese I/O-Ports mitloggen |
 | `-l <f.prn>[@off]` | MACRO-80-`.prn`-Listing laden → Trace-Zeilen & PC-Histogramme mit dem **kommentierten Original-Quelltext** annotieren (wiederholbar; s. §2a) |
+
+> **Per-Instruktions-Traces sind disassembliert.** `-s`/`-w`/`-z`/Step zeigen die
+> Instruktion direkt — aus dem **Live-Speicher** decodiert (`tools/z80dis_min.h`), also
+> exakt auch bei selbstmodifizierendem Loader-Code:
+> `[#3 w 3] Z1 PC=0420 XOR C  AF=… ; jr z,coitn2 ;;nein`.
+> (Die `.prn`-Annotation kommt aus dem *statischen* Listing an dieser Adresse; wo
+> geladener Code ≠ Listing-Code ist, ist die **Disassembly** maßgeblich.)
 
 ### 2a. Listing-Annotation (`-l`)
 
