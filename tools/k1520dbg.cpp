@@ -88,6 +88,7 @@ int main(int argc, char** argv){
     int  gu_pc=-1; long step_rem=0; long step2_rem=0;
     bool fin_active=false; uint16_t fin_sp=0;
     uint16_t last_u=0; bool last_u_set=false;
+    uint16_t last_list=0; bool last_list_set=false;   // `list` continue position
 
     // ─── reverse-debugging + history backtrace state ──────────────────────────
     cstrack::CallStackTracker callstack;                     // exact CALL/RST/RET stack
@@ -160,9 +161,16 @@ int main(int argc, char** argv){
         std::string path; long off=0;
         if (!prnlst::splitSpec(spec,path,off)){ fprintf(stderr,"  bad @offset in '%s'\n",spec.c_str()); return -1; }
         int n = prn.load(path,off);
-        if (n < 0) fprintf(stderr,"  cannot open %s\n",path.c_str());
-        else if (off) fprintf(stderr,"  loaded %d listing line(s) from %s (offset %+ld / %04X)\n",n,path.c_str(),off,(uint16_t)off);
-        else fprintf(stderr,"  loaded %d listing line(s) from %s\n",n,path.c_str());
+        if (n < 0){ fprintf(stderr,"  cannot open %s\n",path.c_str()); return n; }
+        // Labels (name:) aus dem Listing als Symbole importieren (b/u/list per Name),
+        // ohne bestehende (z.B. -s-/user-) Symbole zu überschreiben.
+        int li=0;
+        for (auto& kv : prn.by_addr){
+            std::string lab = prnlst::labelOf(kv.second);
+            if (!lab.empty() && sym_by_name.find(lab)==sym_by_name.end()){ symAdd(lab,kv.first); ++li; }
+        }
+        char off_s[32]={0}; if(off) snprintf(off_s,sizeof off_s," (offset %+ld / %04X)",off,(uint16_t)off);
+        fprintf(stderr,"  loaded %d listing line(s) from %s%s, %d label(s) → symbols\n",n,path.c_str(),off_s,li);
         return n; };
     // Annotation für eine Adresse (leer, wenn keine .prn-Quelle vorliegt).
     auto prnFor = [&](uint16_t a)->std::string{
@@ -455,6 +463,23 @@ int main(int argc, char** argv){
         xaddr=a;
     };
 
+    // ─── source view from the loaded .prn listing (gdb `list`) ─────────────────
+    // Show N listing lines around address `a`, marking the line covering `a` with =>.
+    auto listSrc = [&](uint16_t a, int n){
+        if (prn.by_addr.empty()){ fprintf(stderr,"  (no .prn loaded — use -l/lst)\n"); return; }
+        auto cur = prn.by_addr.upper_bound(a);     // first entry > a
+        if (cur != prn.by_addr.begin()) --cur;     // largest <= a (the line covering a)
+        uint16_t cur_addr = cur->first;
+        auto it = cur;
+        for (int b=0; b<n/2 && it!=prn.by_addr.begin(); ++b) --it;
+        uint16_t end = it->first;
+        for (int k=0; k<n && it!=prn.by_addr.end(); ++k,++it){
+            fprintf(stderr,"  %s %04X  %s\n", it->first==cur_addr?"=>":"  ", it->first, it->second.c_str());
+            end = it->first;
+        }
+        last_list = (uint16_t)(end+1); last_list_set = true;
+    };
+
     auto showDisplays = [&]{
         if (displays.empty()) return;
         Snap& s = (hit_cpu==2)?snap2:snap1;
@@ -642,6 +667,7 @@ int main(int argc, char** argv){
               "  INSPECT r [2]     registers (ZVE1, +ZVE2) ;  bt [N] backtrace (exact; bt scan = heuristic)\n"
               "          d <A> [N] hexdump ; u [A] [N] disasm ; e <A> <b..> poke\n"
               "          x/<N><fmt><sz> <A>  examine (fmt x/d/u/c/t/o/a/i/s, sz b/w); x continues\n"
+              "          list/l [A] [N]  .prn source lines around A (labels load as symbols)\n"
               "          set [2] <reg> <v>   edit register ; vars   named RAM vars\n"
               "          dev       K5122 controller state (drive/cyl/head/transfer)\n"
               "          disp <expr> | undisp <n> | disp   show expr at every stop\n"
@@ -765,6 +791,12 @@ int main(int argc, char** argv){
             if(have){ if(snap1.valid){ bool ok; a=(uint16_t)readOperand(snap1,t[1],ok); }
                       else a=(uint16_t)parseNum(t[1]); }
             examine(spec, have, a); }
+        else if (cmd=="list" || cmd=="l"){
+            // list [A|symbol] [N]  — .prn source around A (default: continue, else PC)
+            uint16_t a = t.size()>1? (uint16_t)parseNum(t[1])
+                                   : (last_list_set? last_list : m.cpuPC());
+            int n = t.size()>2? (int)parseNum(t[2]) : 10;
+            listSrc(a,n); }
         else if (cmd=="set" && t.size()>=3){
             int cpu=1; size_t idx=1; if(t[1]=="2"){cpu=2; idx=2;}
             if (idx+1<t.size() && setReg(cpu,t[idx],parseNum(t[idx+1])))

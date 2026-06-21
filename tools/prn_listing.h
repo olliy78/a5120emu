@@ -52,6 +52,20 @@ inline bool isIdentChar(char c){
  * @param src   [out] aufbereiteter Quelltext (Tabs→Space, Runs kollabiert, getrimmt).
  * @return true, wenn die Zeile eine emittierte Code-/Daten-Zeile ist.
  */
+/**
+ * Das führende Label einer aufbereiteten Quellzeile extrahieren (oder "").
+ * Eine Zeile "BIOS27: JP read ;…" liefert "BIOS27". Labels beginnen mit einem
+ * Bezeichner-Zeichen (kein Ziffernanfang) und enden mit ':'.
+ */
+inline std::string labelOf(const std::string& src){
+    if (src.empty()) return "";
+    if (!isIdentChar(src[0]) || (src[0]>='0' && src[0]<='9')) return "";
+    size_t i = 0;
+    while (i < src.size() && isIdentChar(src[i])) ++i;
+    if (i < src.size() && src[i] == ':') return src.substr(0, i);
+    return "";
+}
+
 inline bool parseLine(const std::string& line, uint16_t& addr, std::string& src){
     size_t i = 0, n = line.size();
     auto skipSp = [&]{ while(i<n && (line[i]==' '||line[i]=='\t')) ++i; };

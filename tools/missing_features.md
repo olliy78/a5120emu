@@ -66,9 +66,12 @@ Adressiert den Hauptschmerz: jeder Versuch = ~8 s Reboot, Analyse aus RAM-Dumps.
    - **Noch offen:** Arithmetik im Ausdrucks-Evaluator (`readOperand` kann weiterhin
      nur `REG/[mem]/(rr) OP wert`, keine `+ - * /`).
 
-7. **Source-Sicht (jetzt, wo `.prn` existiert).** Ein `list`/`l` zeigt die `.prn`-Quellzeilen
-   *um* den PC (nicht nur die eine) — gdb `list`. Und: **Labels aus der `.prn` automatisch
-   als Symbole importieren** (`b BIOS27` direkt nutzbar).
+7. **✅ Source-Sicht** *(implementiert 2026-06-21)*
+   - `list`/`l [A] [N]` — zeigt die `.prn`-Quellzeilen *um* `A` (Default: PC bzw.
+     weiter ab letzter Position), markiert die deckende Zeile mit `=>`.
+   - **`.prn`-Labels werden beim `-l`/`lst`-Laden automatisch als Symbole importiert**
+     (ohne bestehende `-s`-/User-Symbole zu überschreiben) → `b BIOS27`, `list BIOS27`,
+     `u BIOS27` direkt nutzbar; `bl`/Disasm zeigen die Namen.
 
 ---
 

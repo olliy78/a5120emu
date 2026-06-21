@@ -131,6 +131,17 @@ TEST(PrnListing, SplitSpecPathAndOffset){
     EXPECT_FALSE(prnlst::splitSpec("bios.prn@xyz", path, off));
 }
 
+// --- labelOf: führendes Label aus der Quellzeile -----------------------------
+
+TEST(PrnListing, LabelOfExtractsLeadingLabel){
+    EXPECT_EQ(prnlst::labelOf("BIOS27: JP read ;oA Resultat"), "BIOS27");
+    EXPECT_EQ(prnlst::labelOf("@write: db 1"), "@write");     // CP/A-@-Bezeichner
+    EXPECT_EQ(prnlst::labelOf("DB 4 ;;(2)"), "");             // label-los (Mnemonic)
+    EXPECT_EQ(prnlst::labelOf("db 'CP'"), "");
+    EXPECT_EQ(prnlst::labelOf(""), "");
+    EXPECT_EQ(prnlst::labelOf("3foo: x"), "");                // darf nicht mit Ziffer beginnen
+}
+
 TEST(PrnListing, LoadAppliesOffsetToKeys){
     // Eine Listing-Zeile via temp-Datei laden, einmal mit Offset.
     const char* tmp = "/tmp/k1520_prn_offset_test.prn";
