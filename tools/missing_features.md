@@ -120,5 +120,11 @@ Adressiert den Hauptschmerz: jeder Versuch = ~8 s Reboot, Analyse aus RAM-Dumps.
 
 ## Usability (beide)
 
-13. **Readline**: History/Pfeiltasten/Tab-Completion (heute rohes `getline`).
-    **Session-Log**, **Aliases/`define`-Makros**, `source` weiterer Skripte mitten in der Sitzung.
+13. **Usability** — teilweise *(implementiert 2026-06-21)*
+    - **✅ Aliases/`define`-Makros**: `alias <name> <expansion…>` / `unalias` / `alias`
+      (Liste); der erste Token einer Zeile wird ersetzt, eigene Args bleiben erhalten.
+    - **✅ `source <file>`**: Skript mitten in der Sitzung abarbeiten (gdb `source`).
+    - **Session-Log**: nicht eingebaut — die Ausgabe geht auf `stderr`, also per Shell
+      `2>&1 | tee sitzung.log` (in `k1520dbg.md` dokumentiert).
+    - **Noch offen:** Readline (History/Pfeiltasten/Tab-Completion) — bräuchte
+      `libreadline` (externe Abhängigkeit + Build-Anpassung), bewusst zurückgestellt.

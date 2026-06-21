@@ -150,6 +150,9 @@ int main(int argc, char** argv){
     std::map<std::string,uint16_t> sym_by_name;
     std::map<uint16_t,std::string> sym_by_addr;
 
+    // command aliases: first token of a line is replaced by its expansion (one level).
+    std::map<std::string,std::string> aliases;
+
     // display list (shown at every stop): each entry is a raw token
     std::vector<std::string> displays;
 
@@ -771,6 +774,13 @@ int main(int argc, char** argv){
         std::istringstream is(line); std::vector<std::string> t; std::string w;
         while (is>>w) t.push_back(w);
         if (t.empty()||t[0][0]=='#') continue;     // blank line or # comment
+        // alias expansion (one level, so an alias can't loop): replace t[0] by its
+        // expansion and keep the user's extra args, then re-tokenise.
+        { auto ait=aliases.find(t[0]);
+          if(ait!=aliases.end()){ std::string ex=ait->second;
+              for(size_t i=1;i<t.size();++i){ ex+=" "; ex+=t[i]; }
+              std::istringstream is2(ex); t.clear(); std::string w2;
+              while(is2>>w2) t.push_back(w2); if(t.empty()) continue; } }
         const std::string& cmd=t[0];
 
         // ── session ──
@@ -806,7 +816,8 @@ int main(int argc, char** argv){
               "  MISC    mark [A]  zero relative cycle counter (now / armed at A)\n"
               "          sym <f> | sym add <name> <A> | sym list\n"
               "          lst <f.prn>[@off] | lst <f.prn> <off> | lst list   MACRO-80 listing → annotate\n"
-              "          keys <text> (\\r \\t \\e) ; screen ; reset ; q\n");
+              "          keys <text> (\\r \\t \\e) ; screen ; reset ; q\n"
+              "          alias <name> <expansion..> | unalias <name> | alias ; source <file>\n");
         }
         // ══ RUN: continue / step (each snapshots first via pushHistory for `rs`) ══
         else if (cmd=="g"||cmd=="c"){ pushHistory(); go(t.size()>1? (uint64_t)parseNum(t[1]) : 0); }
@@ -1046,6 +1057,19 @@ int main(int argc, char** argv){
                         k.headPos, k.trackLen, k.sectorSize, k.busrq?"yes":"no");
                 fprintf(stderr,"  (dev ctc | dev pio | dev sio | dev sio2 for the other chips)\n"); } }
         else if (cmd=="reset"){ m.reset(); fprintf(stderr,"  reset\n"); }
+        // ── MISC: command aliases + sourcing a script mid-session ──
+        else if (cmd=="alias"){
+            if (t.size()>=3){ std::string ex; for(size_t i=2;i<t.size();++i){ if(i>2)ex+=" "; ex+=t[i]; }
+                aliases[t[1]]=ex; fprintf(stderr,"  alias %s = %s\n",t[1].c_str(),ex.c_str()); }
+            else if (aliases.empty()) fprintf(stderr,"  (no aliases)\n");
+            else for(auto&kv:aliases) fprintf(stderr,"  alias %s = %s\n",kv.first.c_str(),kv.second.c_str()); }
+        else if (cmd=="unalias" && t.size()>1){ aliases.erase(t[1]); }
+        else if (cmd=="source" && t.size()>1){   // queue a script file's lines to run next
+            std::ifstream f(t[1]);
+            if(!f) fprintf(stderr,"  cannot open %s\n",t[1].c_str());
+            else { std::vector<std::string> ls; std::string l; while(std::getline(f,l)) ls.push_back(l);
+                pending.insert(pending.begin(), ls.begin(), ls.end());
+                fprintf(stderr,"  sourced %zu line(s) from %s\n",ls.size(),t[1].c_str()); } }
         else fprintf(stderr,"  ? unknown command '%s' (try help)\n",cmd.c_str());
     }
     if (trace_fp){ fclose(trace_fp); fprintf(stderr,"trace closed (%ld line(s))\n",trace_lines); }
