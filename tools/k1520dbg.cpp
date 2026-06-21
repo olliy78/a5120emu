@@ -25,6 +25,8 @@
 #include "core/machines/a5120/a5120.h"
 #include "core/logger.h"
 #include "tools/z80dis_min.h"
+#include "tools/prn_listing.h"
+#include "tools/callstack_tracker.h"
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
@@ -60,9 +62,11 @@ int main(int argc, char** argv){
     const char* disk = nullptr;
     const char* script = nullptr;
     std::vector<std::string> symfiles;
+    std::vector<std::string> prnfiles;
     for (int i=1;i<argc;++i){
         if (!strcmp(argv[i],"-x") && i+1<argc) script=argv[++i];
         else if (!strcmp(argv[i],"-s") && i+1<argc) symfiles.push_back(argv[++i]);
+        else if (!strcmp(argv[i],"-l") && i+1<argc) prnfiles.push_back(argv[++i]);
         else disk=argv[i];
     }
     Logger::instance().setBaseLevel(Level::ERROR);
@@ -84,6 +88,13 @@ int main(int argc, char** argv){
     int  gu_pc=-1; long step_rem=0; long step2_rem=0;
     bool fin_active=false; uint16_t fin_sp=0;
     uint16_t last_u=0; bool last_u_set=false;
+
+    // ─── reverse-debugging + history backtrace state ──────────────────────────
+    cstrack::CallStackTracker callstack;                     // exact CALL/RST/RET stack
+    bool bt_use_history = true;                              // `bt scan` forces old heuristic
+    std::deque<A5120Machine::MachineSnapshot> rev_ring;      // auto snapshot before each fwd cmd
+    const size_t rev_cap = 200;                              // ring depth (≈13 MB)
+    std::map<std::string,A5120Machine::MachineSnapshot> named_snaps;   // snap <name>
 
     // watch/break sets
     std::set<uint16_t> wp_w, wp_r, wb_w;       // mem: print-on-write / print-on-read / break-on-write
@@ -123,6 +134,22 @@ int main(int argc, char** argv){
             ++n;
         }
         fprintf(stderr,"  loaded %d symbol(s) from %s\n",n,path.c_str()); return n; };
+
+    // ─── .prn listings (Adresse → kommentierte Original-Quellzeile) ─────────────
+    prnlst::Listing prn;
+    // spec = "PFAD[@OFFSET]"; OFFSET (signiert, hex 0x../..h oder dez) wird zu jeder
+    // Listing-Adresse addiert — für Code, der nicht an der .prn-Adresse läuft.
+    auto loadPrnSpec = [&](const std::string& spec)->int{
+        std::string path; long off=0;
+        if (!prnlst::splitSpec(spec,path,off)){ fprintf(stderr,"  bad @offset in '%s'\n",spec.c_str()); return -1; }
+        int n = prn.load(path,off);
+        if (n < 0) fprintf(stderr,"  cannot open %s\n",path.c_str());
+        else if (off) fprintf(stderr,"  loaded %d listing line(s) from %s (offset %+ld / %04X)\n",n,path.c_str(),off,(uint16_t)off);
+        else fprintf(stderr,"  loaded %d listing line(s) from %s\n",n,path.c_str());
+        return n; };
+    // Annotation für eine Adresse (leer, wenn keine .prn-Quelle vorliegt).
+    auto prnFor = [&](uint16_t a)->std::string{
+        const std::string* s = prn.find(a); return s ? *s : std::string(); };
 
     // ─── address / value resolution ──────────────────────────────────────────
     // resolveAddr: number (0x.., ..H, dec) OR a symbol name, optionally NAME+OFF.
@@ -192,7 +219,9 @@ int main(int argc, char** argv){
                  sym.empty()?"":" ", sym.empty()?"":("<"+sym+">").c_str(), hex, d.text, tgt.c_str());
         return d.len; };
     auto showInsn = [&](const char* tag, uint16_t a){
-        char l[120]; disasmAt(a,l,sizeof l); fprintf(stderr,"  %s %s\n",tag,l); };
+        char l[120]; disasmAt(a,l,sizeof l);
+        std::string p=prnFor(a);
+        fprintf(stderr,"  %s %s%s%s\n",tag,l, p.empty()?"":"  ; ", p.c_str()); };
 
     auto flagsStr = [&](uint16_t af, char* o){
         uint8_t f=af&0xFF; snprintf(o,12,"%c%c%c%c%c%c",
@@ -202,8 +231,11 @@ int main(int argc, char** argv){
     auto traceLine = [&](int cpu, const Z80& z){
         char dis[120]; disasmAt(z.PC,dis,sizeof dis);
         char fl[12]; flagsStr(z.AF,fl);
-        fprintf(stderr,"T%d %c%-9lld %-46s AF=%04X[%s] BC=%04X DE=%04X HL=%04X IX=%04X IY=%04X SP=%04X\n",
-                cpu,rcpfx(),rc(z.cycles),dis,z.AF,fl,z.BC,z.DE,z.HL,z.IX,z.IY,z.SP);
+        // .prn-Annotation ans Zeilenende, damit die Register-Spalten ausgerichtet bleiben.
+        std::string p=prnFor(z.PC);
+        fprintf(stderr,"T%d %c%-9lld %-46s AF=%04X[%s] BC=%04X DE=%04X HL=%04X IX=%04X IY=%04X SP=%04X%s%s\n",
+                cpu,rcpfx(),rc(z.cycles),dis,z.AF,fl,z.BC,z.DE,z.HL,z.IX,z.IY,z.SP,
+                p.empty()?"":"  ; ", p.c_str());
     };
 
     // central "we decided to stop" used by all callbacks
@@ -217,6 +249,9 @@ int main(int argc, char** argv){
     // ─── per-instruction callbacks ─────────────────────────────────────────────
     m.setCpuTraceCallback([&](const Z80& z){
         const uint16_t pc=z.PC;
+        // Maintain the exact CALL/RST/RET call stack (for the history backtrace).
+        // Cheap: 1 mem read/instr in the common (non-call/ret) case.
+        callstack.onInstruction(pc,[&](uint16_t a){ return m.memReadDebug(a); });
         if (rel_arm_pc>=0 && pc==(uint16_t)rel_arm_pc){
             rel_origin=z.cycles; rel_armed=true; rel_arm_pc=-1;
             fprintf(stderr,"[mark] relative origin set at PC=%04X (abs cyc=%llu)\n",
@@ -371,7 +406,9 @@ int main(int argc, char** argv){
         return true;
     };
     // heuristic backtrace: scan the stack for plausible return addresses
-    auto backtrace = [&](int depth){
+    // Heuristic backtrace: scan the stack for plausible return addresses (fallback /
+    // `bt scan`). Used when no call-stack history exists (e.g. right after restore).
+    auto backtraceScan = [&](int depth){
         uint16_t sp = snap1.valid? snap1.SP : m.cpuSP();
         fprintf(stderr,"  #0 %04X", snap1.valid? snap1.PC : m.cpuPC());
         { std::string s=symFor(snap1.valid?snap1.PC:m.cpuPC()); if(!s.empty()) fprintf(stderr," <%s>",s.c_str()); }
@@ -388,13 +425,60 @@ int main(int argc, char** argv){
             }
         }
     };
+    // Exact backtrace from the live CALL/RST/RET call-stack tracker (default `bt`).
+    auto backtraceHistory = [&](int depth){
+        uint16_t pc = snap1.valid? snap1.PC : m.cpuPC();
+        auto annot=[&](uint16_t a){ std::string s=symFor(a);
+            std::string p=prnFor(a);
+            std::string out; if(!s.empty()) out+=" <"+s+">"; if(!p.empty()) out+="  ; "+p; return out; };
+        fprintf(stderr,"  #0 %04X%s\n", pc, annot(pc).c_str());
+        const auto& f = callstack.frames();
+        int frame=1;
+        for (auto it=f.rbegin(); it!=f.rend() && frame<=depth; ++it,++frame){
+            // The caller's PC is the CALL site; show it (and its return address).
+            fprintf(stderr,"  #%d %04X (call → %04X, ret %04X)%s\n",
+                    frame, it->site, it->target, it->ret, annot(it->site).c_str());
+        }
+        if (f.empty())
+            fprintf(stderr,"  (call-stack history empty — try 'bt scan', or step/run to build it)\n");
+    };
+    auto backtrace = [&](int depth){
+        if (bt_use_history) backtraceHistory(depth); else backtraceScan(depth);
+    };
 
     auto parseNum=[&](const std::string& s)->long{ return resolveAddr(s); };
+
+    // ─── snapshot / reverse-step helpers ──────────────────────────────────────
+    // Push the current machine state onto the reverse-ring before a forward command.
+    auto pushHistory = [&]{
+        rev_ring.emplace_back();
+        m.captureState(rev_ring.back());
+        while (rev_ring.size() > rev_cap) rev_ring.pop_front();
+    };
+    // Restore a snapshot and re-sync the debugger's view (call-stack history is reset).
+    auto applySnapshot = [&](const A5120Machine::MachineSnapshot& s,const char* what){
+        bool ok = m.restoreState(s);
+        callstack.clear();                 // call history can't be reconstructed
+        snap1=grab(m.cpuDebug()); snap2=Snap{};
+        if(!ok) fprintf(stderr,"  note: ROM-mapping differs from snapshot — RAM+regs restored,"
+                               " but this snapshot predates/postdates the boot-ROM unmap.\n");
+        fprintf(stderr,"  restored %s\n",what);
+        showInsn("=>",m.cpuPC()); stateLine();
+    };
+    // Reverse-step: undo the last N forward commands.
+    auto reverseStep = [&](long n){
+        if (rev_ring.empty()){ fprintf(stderr,"  no reverse history (run/step something first)\n"); return; }
+        A5120Machine::MachineSnapshot s;
+        for (long i=0;i<n && !rev_ring.empty();++i){ s=rev_ring.back(); rev_ring.pop_back(); }
+        char w[48]; snprintf(w,sizeof w,"%ld step(s) back (%zu left)",n,rev_ring.size());
+        applySnapshot(s,w);
+    };
 
     // ─── command stream: optional script first, then stdin ─────────────────────
     std::deque<std::string> pending;
     if (script){ std::ifstream f(script); std::string l; while(std::getline(f,l)) pending.push_back(l); }
     for (auto& sf : symfiles) loadSyms(sf);
+    for (auto& pf : prnfiles) loadPrnSpec(pf);
 
     fprintf(stderr,"k1520dbg — type 'help'.  Clock = ZVE1 cycles.  Disassembler: built-in.\n");
     std::string line;
@@ -414,13 +498,15 @@ int main(int argc, char** argv){
               "          s [N]     step INTO N ZVE1 instrs ;  s2 [N] step ZVE2\n"
               "          n [N]     step OVER N ZVE1 instrs (skip CALL/blockrepeat)\n"
               "          fin       step OUT (run until SP rises above current frame)\n"
+              "  REVERSE rs [N]    reverse-step: undo last N forward commands (snapshot ring)\n"
+              "          snap <name> | snap list ; restore <name>   named full snapshots\n"
               "  BREAK   b <A> [if <cond>] | b2 <A> ...   bp on ZVE1 / ZVE2\n"
               "          tb <A>    temporary (one-shot) bp ; bd/bd2 <A> delete ; bl list\n"
               "          cond: REG/[addr]/[addr]w/(rr)  OP  value   OP: == != < > <= >=\n"
               "  WATCH   wp/wpr/wb <A>   mem watch: print-write / print-read / break-write\n"
               "          wd <A> wl       delete / list mem watches\n"
               "          iow/iob <P>     io port: print / break ; iod <P> wl-io: iol\n"
-              "  INSPECT r [2]     registers (ZVE1, +ZVE2) ;  bt [N] backtrace\n"
+              "  INSPECT r [2]     registers (ZVE1, +ZVE2) ;  bt [N] backtrace (exact; bt scan = heuristic)\n"
               "          d <A> [N] hexdump ; u [A] [N] disasm ; e <A> <b..> poke\n"
               "          set [2] <reg> <v>   edit register ; vars   named RAM vars\n"
               "          dev       K5122 controller state (drive/cyl/head/transfer)\n"
@@ -428,20 +514,34 @@ int main(int argc, char** argv){
               "  MEM     load <f> <A>   read binary into RAM ; save <f> <A> <N> dump RAM\n"
               "  MISC    mark [A]  zero relative cycle counter (now / armed at A)\n"
               "          sym <f> | sym add <name> <A> | sym list\n"
+              "          lst <f.prn>[@off] | lst <f.prn> <off> | lst list   MACRO-80 listing → annotate\n"
               "          keys <text> (\\r \\t \\e) ; screen ; reset ; q\n");
         }
-        else if (cmd=="g"||cmd=="c") go(t.size()>1? (uint64_t)parseNum(t[1]) : 0);
-        else if (cmd=="gu" && t.size()>1){ gu_pc=(int)(uint16_t)parseNum(t[1]); go(0); }
-        else if (cmd=="s"){ step_rem=t.size()>1?parseNum(t[1]):1; m.clearStop();
+        else if (cmd=="g"||cmd=="c"){ pushHistory(); go(t.size()>1? (uint64_t)parseNum(t[1]) : 0); }
+        else if (cmd=="gu" && t.size()>1){ pushHistory(); gu_pc=(int)(uint16_t)parseNum(t[1]); go(0); }
+        else if (cmd=="s"){ pushHistory(); step_rem=t.size()>1?parseNum(t[1]):1; m.clearStop();
             while(step_rem>0){ int n=m.run(20000); if(n==0||hit) break; }
             if(hit){ hit=false; onStop(); } else stateLine(); }
-        else if (cmd=="s2"){ step2_rem=t.size()>1?parseNum(t[1]):1; m.clearStop();
+        else if (cmd=="s2"){ pushHistory(); step2_rem=t.size()>1?parseNum(t[1]):1; m.clearStop();
             while(step2_rem>0){ int n=m.run(20000); if(n==0||hit) break; }
             if(hit){ hit=false; onStop(); } else { fprintf(stderr,"  (ZVE2 did not run — /BUSRQ not asserted?)\n"); stateLine(); } }
-        else if (cmd=="n"){ long k=t.size()>1?parseNum(t[1]):1;
+        else if (cmd=="n"){ pushHistory(); long k=t.size()>1?parseNum(t[1]):1;
             for(long i=0;i<k;++i){ stepOver(); if(hit) break; }
             if(hit){ hit=false; onStop(); } else { snap1=grab(m.cpuDebug()); showInsn("=>",m.cpuPC()); stateLine(); } }
-        else if (cmd=="fin"){ fin_sp=m.cpuSP(); fin_active=true; go(0); }
+        else if (cmd=="fin"){ pushHistory(); fin_sp=m.cpuSP(); fin_active=true; go(0); }
+        else if (cmd=="rs"||cmd=="bs") reverseStep(t.size()>1?parseNum(t[1]):1);
+        else if (cmd=="snap"){
+            if (t.size()>=2 && t[1]=="list"){
+                if(named_snaps.empty()) fprintf(stderr,"  (no named snapshots)\n");
+                for(auto&kv:named_snaps) fprintf(stderr,"  %-16s PC=%04X cyc=%llu\n",
+                        kv.first.c_str(),kv.second.zve1.PC,(unsigned long long)kv.second.zve1.cycles); }
+            else if (t.size()>=2){ m.captureState(named_snaps[t[1]]);
+                fprintf(stderr,"  snapshot '%s' saved (PC=%04X)\n",t[1].c_str(),m.cpuPC()); }
+            else fprintf(stderr,"  snap <name> | snap list   (restore with: restore <name>)\n"); }
+        else if (cmd=="restore" && t.size()>=2){
+            auto it=named_snaps.find(t[1]);
+            if(it==named_snaps.end()) fprintf(stderr,"  no snapshot '%s' (snap list)\n",t[1].c_str());
+            else { pushHistory(); applySnapshot(it->second,("snapshot '"+t[1]+"'").c_str()); } }
         else if ((cmd=="b"||cmd=="b2") && t.size()>1){
             auto& tbl = (cmd=="b2")? bp2 : bp1; uint16_t a=(uint16_t)parseNum(t[1]);
             Bp bp; if (t.size()>3 && t[2]=="if"){ for(size_t i=3;i<t.size();++i){ if(i>3)bp.cond+=" "; bp.cond+=t[i]; } }
@@ -462,7 +562,10 @@ int main(int argc, char** argv){
             else { rel_origin=m.cpuCycles(); rel_armed=true; fprintf(stderr,"  mark: origin=%llu (now)\n",(unsigned long long)rel_origin);} }
         else if (cmd=="r"){ snap1=grab(m.cpuDebug()); printSnap(1);
             if(t.size()>1){ snap2=grab(m.zve2Debug()); printSnap(2); } showInsn("=>",m.cpuPC()); stateLine(); }
-        else if (cmd=="bt") backtrace(t.size()>1?(int)parseNum(t[1]):8);
+        else if (cmd=="bt"){
+            if (t.size()>1 && t[1]=="scan"){ bool prev=bt_use_history; bt_use_history=false;
+                backtrace(t.size()>2?(int)parseNum(t[2]):8); bt_use_history=prev; }
+            else backtrace(t.size()>1?(int)parseNum(t[1]):8); }
         else if (cmd=="d" && t.size()>1) dump((uint16_t)parseNum(t[1]), t.size()>2?(int)parseNum(t[2]):64);
         else if (cmd=="e" && t.size()>2){ uint16_t a=(uint16_t)parseNum(t[1]);
             // poke values default to HEX (matches d/u output); strtol base 16 also accepts 0x..
@@ -472,7 +575,9 @@ int main(int argc, char** argv){
         else if (cmd=="u"){
             uint16_t a = t.size()>1? (uint16_t)parseNum(t[1]) : (last_u_set? last_u : m.cpuPC());
             int cnt = t.size()>2? (int)parseNum(t[2]) : 12;
-            for(int i=0;i<cnt;++i){ char l[120]; int len=disasmAt(a,l,sizeof l); fprintf(stderr,"  %s\n",l); a=(uint16_t)(a+len); }
+            for(int i=0;i<cnt;++i){ char l[120]; int len=disasmAt(a,l,sizeof l);
+                std::string p=prnFor(a);
+                fprintf(stderr,"  %s%s%s\n",l, p.empty()?"":"  ; ", p.c_str()); a=(uint16_t)(a+len); }
             last_u=a; last_u_set=true; }
         else if (cmd=="set" && t.size()>=3){
             int cpu=1; size_t idx=1; if(t[1]=="2"){cpu=2; idx=2;}
@@ -499,6 +604,13 @@ int main(int argc, char** argv){
             else if (t.size()>=2 && t[1]=="list"){ for(auto&kv:sym_by_addr) fprintf(stderr,"  %04X %s\n",kv.first,kv.second.c_str()); }
             else if (t.size()>=2) loadSyms(t[1]);
             else fprintf(stderr,"  sym <file> | sym add <name> <addr> | sym list\n"); }
+        else if (cmd=="lst"){
+            if (t.size()>=2 && t[1]=="list"){
+                fprintf(stderr,"  %zu listing line(s) loaded\n",prn.by_addr.size());
+                for(auto&kv:prn.by_addr) fprintf(stderr,"  %04X  %s\n",kv.first,kv.second.c_str()); }
+            else if (t.size()>=3) loadPrnSpec(t[1]+"@"+t[2]);   // lst <file.prn> <offset>
+            else if (t.size()>=2) loadPrnSpec(t[1]);            // lst <file.prn>[@offset]
+            else fprintf(stderr,"  lst <file.prn>[@offset] | lst <file.prn> <offset> | lst list\n"); }
         else if (cmd=="load" && t.size()>2){ std::ifstream f(t[1],std::ios::binary);
             if(!f){ fprintf(stderr,"  cannot open %s\n",t[1].c_str()); }
             else { uint16_t a=(uint16_t)parseNum(t[2]); int n=0; char b;
@@ -506,7 +618,7 @@ int main(int argc, char** argv){
         else if (cmd=="save" && t.size()>3){ std::ofstream f(t[1],std::ios::binary);
             uint16_t a=(uint16_t)parseNum(t[2]); int n=(int)parseNum(t[3]);
             for(int i=0;i<n;++i) f.put((char)m.memReadDebug(a+i)); fprintf(stderr,"  saved %d byte(s) from %04X to %s\n",n,a,t[1].c_str()); }
-        else if (cmd=="keys" && t.size()>1){ std::string s=line.substr(line.find("keys")+5); keys(s); }
+        else if (cmd=="keys" && t.size()>1){ pushHistory(); std::string s=line.substr(line.find("keys")+5); keys(s); }
         else if (cmd=="screen") screen();
         else if (cmd=="vars"){ auto wd=[&](uint16_t a){return (uint16_t)(m.memReadDebug(a)|(m.memReadDebug(a+1)<<8));};
             fprintf(stderr,"  [03F8]done=%02X  DPB: [D1B2]=%04X [D1B4]=%04X [D1B8]=%04X [D1BE]=%04X [D1CD]=%04X\n",

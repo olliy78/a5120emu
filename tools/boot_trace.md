@@ -58,6 +58,37 @@ boot_trace [DISK] [optionen]
 | `-d LO:HI [datei]` | RAM-Bereich am Ende dumpen (optional in Datei, z. B. zum externen Disassemblieren) |
 | `--watch a,b,…` | Schreibzugriffe auf diese RAM-Adressen mitloggen (kommagetrennt) |
 | `--watchio p,q,…` | Zugriffe auf diese I/O-Ports mitloggen |
+| `-l <f.prn>[@off]` | MACRO-80-`.prn`-Listing laden → Trace-Zeilen & PC-Histogramme mit dem **kommentierten Original-Quelltext** annotieren (wiederholbar; s. §2a) |
+
+### 2a. Listing-Annotation (`-l`)
+
+Die CP/A-Quellen (BIOS, BDOS, …) liegen als gut kommentierte **MACRO-80-`.prn`-Listings**
+vor (z. B. `CPA_Workbench/build/bios.prn`). Mit `-l <datei.prn>` hängt `boot_trace` an
+jede Trace-Zeile (`-s`/`-v`/`-w`/`-z`/Step) **und** an jeden PC im Histogramm (ZVE1, ZVE2,
+Loaded-code) die **Original-Quellzeile** (Label, Mnemonic, `;Kommentar`) an, deren Adresse
+im Listing steht — kein Raten mehr, was ein Codestück tut:
+
+```
+  0x041E :   7422     ; bit 0,a ;;Zeichen da?
+  0x0420 :   7422     ; jr z,coitn2 ;;nein
+  0x0426 :   7422     ; in a,(c)
+```
+
+`-l` ist **wiederholbar** — mehrere Listings decken zusammen unterschiedliche
+Adressbereiche ab. Wo keine `.prn`-Zeile passt, bleibt es bei der bisherigen Ausgabe.
+
+**Adress-Offset `@OFFSET`.** Das Listing trägt absolute Lade-Adressen. Läuft der Code
+reloziert an einer anderen Adresse, hängt man einen vorzeichenbehafteten Offset an, der
+zu jeder Listing-Adresse addiert wird (Listing-Adresse + Offset = Laufzeit-Adresse):
+
+```sh
+boot_trace -l bios.prn@0x100   …     # Listing-Adresse D227 → matcht Laufzeit-PC D327
+boot_trace -l stage3.prn@-0x800 …    # Offset darf negativ sein
+```
+
+`OFFSET` versteht `0x1F00`, `1800h`, `512`, `-0x100`. Parser & Grenzen wie bei `k1520dbg`
+(s. `tools/k1520dbg.md` §6a): nur absolute Adressen, ein BIOS-Listing deckt nur den
+BIOS-Bereich ab.
 
 ---
 

@@ -9,10 +9,13 @@ eine Funktion fehlt oder falsch ist, wird sie hier ergänzt/gefixt und unter
 
 | Werkzeug | Zweck | Detail-Doku |
 |----------|-------|-------------|
-| **`k1520dbg`** | interaktiver gdb-artiger Debugger (ZVE1 **und** ZVE2): Breakpoints, bedingte BPs, Step into/over/out, Watch mem/io, Symbole, Disassembly, Register-Edit, Backtrace | **[k1520dbg.md](k1520dbg.md)** |
-| **`boot_trace`** | nicht-interaktiver Boot-/DMA-Tracer mit Zusammenfassung (Histogramme, Done-Flag, VRAM-Banner) — findet *wo* die Kette hängt | **[boot_trace.md](boot_trace.md)** |
+| **`k1520dbg`** | interaktiver gdb-artiger Debugger (ZVE1 **und** ZVE2): Breakpoints, bedingte BPs, Step into/over/out, **Reverse-Step + Snapshots**, Watch mem/io, Symbole, Disassembly, **`.prn`-Listing-Annotation**, Register-Edit, **exakter History-Backtrace** | **[k1520dbg.md](k1520dbg.md)** |
+| **`boot_trace`** | nicht-interaktiver Boot-/DMA-Tracer mit Zusammenfassung (Histogramme, Done-Flag, VRAM-Banner) — findet *wo* die Kette hängt; Trace & Histogramme via `-l` mit `.prn`-Quelltext annotierbar | **[boot_trace.md](boot_trace.md)** |
 | **`z80_disasm2.py`** | generischer, vollständiger Z80-Disassembler für Listings (kanonisch) | **[z80_disasm.md](z80_disasm.md)** |
 | `z80dis_min.h` | eingebauter Ein-Instruktions-Decoder (C++) für `k1520dbg` | [z80_disasm.md](z80_disasm.md) |
+| `prn_listing.h` | header-only Parser für MACRO-80-`.prn`-Listings (Adresse → kommentierte Quelle); von `k1520dbg` & `boot_trace` per `-l` genutzt | [k1520dbg.md](k1520dbg.md) §6a |
+| `callstack_tracker.h` | header-only exakter CALL/RST/RET-Aufrufstapel für den History-`bt` von `k1520dbg` | [k1520dbg.md](k1520dbg.md) §9 |
+| `missing_features.md` | offene/erledigte Feature-Lücken beider Tools (Roadmap) | [missing_features.md](missing_features.md) |
 | `disasm_difftest.py` | Regressionswächter: `z80_disasm2.py` gegen `z80dis` | [z80_disasm.md](z80_disasm.md) |
 | `kbd_test` | Tastatur-/Boot-Smoke-Test (boot, tippe Befehl, dump Screen) | unten |
 | `eprom_to_h.py` | EPROM-Binär → committetes C-Array (`*_data.h`) | — |
@@ -34,6 +37,8 @@ cmake --build build --target k1520dbg -j
 ./build/k1520dbg disks/cpadisk01.img                 # interaktiv
 printf 'b 0xC7A3\ng\nr\nq\n' | ./build/k1520dbg disks/cpadisk01.img   # pipe
 ./build/k1520dbg disks/cpadisk_02.hfe -x skript.dbg -s symbole.sym
+./build/k1520dbg -l ~/projects/CPA_Workbench/build/bios.prn disks/cpadisk01.img  # Disasm mit Quelltext
+printf 'g 5000000\nbt\nsnap A\ns 3\nrs\nrestore A\nq\n' | ./build/k1520dbg disks/cpadisk01.img  # bt/snap/reverse
 ```
 
 Kann **beide CPUs** debuggen (ZVE1 ohne Suffix, ZVE2 mit `2`: `b2`, `s2`, `set 2`),
@@ -52,6 +57,8 @@ cmake -B build_trace -DLOG_LEVEL=5 -DCMAKE_BUILD_TYPE=Debug
 cmake --build build_trace --target boot_trace -j
 ./build_trace/boot_trace -L /tmp/emu.log disks/cpadisk01.img      # leiser Volllauf
 ./build_trace/boot_trace -p 9000000 disks/cpadisk01.img           # Post-Boot-Report
+./build_trace/boot_trace -p 9000000 -l ~/projects/CPA_Workbench/build/bios.prn \
+    disks/cpadisk01.img                                           # Histogramme mit BIOS-Quelltext
 ```
 
 Verfolgt ZVE1 **und** ZVE2 per Instruktion, meldet den DMA-Einfrierpunkt und den

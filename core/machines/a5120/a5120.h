@@ -20,6 +20,7 @@
 #include <mutex>
 #include <string>
 #include <deque>
+#include <array>
 #include <functional>
 
 class A5120Machine {
@@ -132,6 +133,44 @@ public:
 
     // Debug
     std::string lastError() const { return last_error_; }
+
+    // ─── Snapshot / reverse-debugging support ──────────────────────────────────
+    /**
+     * @brief Reproducible machine snapshot for the debugger (snap/restore, reverse-step).
+     *
+     * Contains the full 64 KB main RAM, both Z80 register files (registers only —
+     * the access callbacks are *not* part of the snapshot), and the run-loop
+     * coordination flags. It deliberately does **not** capture device-internal state
+     * (CTC/PIO/SIO counters, K5122 head position) nor the boot-ROM mapping. Capturing
+     * and restoring is therefore exact for **CPU + RAM** — the dominant inspection
+     * target during interactive stepping of loaded code — but restoring in the middle
+     * of an active DMA / timer phase may drift once execution resumes.
+     */
+    struct MachineSnapshot {
+        struct Z80Regs {
+            uint16_t AF=0,BC=0,DE=0,HL=0,IX=0,IY=0,PC=0,SP=0;
+            uint16_t AF_=0,BC_=0,DE_=0,HL_=0;
+            uint8_t  I=0,R=0,IM=0;
+            bool     IFF1=false,IFF2=false,halted=false;
+            uint64_t cycles=0;
+        };
+        std::array<uint8_t,65536> ram{};
+        Z80Regs  zve1, zve2;
+        bool     rom_enabled    = false;
+        bool     busrq_active   = false;
+        bool     dma_progress   = false;
+        bool     bus_master_zve2= false;
+        uint64_t total_cycles   = 0;
+    };
+    /** @brief Capture the current machine state into @p s. */
+    void captureState(MachineSnapshot& s) const;
+    /**
+     * @brief Restore a previously captured snapshot.
+     * @return true if fully applied; false if the boot-ROM mapping differs from the
+     *         snapshot (RAM+registers are still restored, but the ROM-mapping boundary
+     *         is not reproducible — snapshots are intended for the post-ROM phase).
+     */
+    bool restoreState(const MachineSnapshot& s);
 
 private:
     void wireBackplane();

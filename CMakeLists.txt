@@ -292,6 +292,22 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_z80 PRIVATE k1520_z80 GTest::gtest_main)
         target_include_directories(k1520_test_z80 PRIVATE ${CMAKE_SOURCE_DIR})
 
+        # Header-only MACRO-80 .prn listing parser (tools/prn_listing.h)
+        add_executable(k1520_test_prn_listing tests/cpp/test_prn_listing.cpp)
+        target_link_libraries(k1520_test_prn_listing PRIVATE GTest::gtest_main)
+        target_include_directories(k1520_test_prn_listing PRIVATE ${CMAKE_SOURCE_DIR})
+
+        # Header-only call-stack tracker for the history backtrace (tools/callstack_tracker.h)
+        add_executable(k1520_test_callstack_tracker tests/cpp/test_callstack_tracker.cpp)
+        target_link_libraries(k1520_test_callstack_tracker PRIVATE GTest::gtest_main)
+        target_include_directories(k1520_test_callstack_tracker PRIVATE ${CMAKE_SOURCE_DIR})
+
+        # Machine snapshot / reverse-debugging (A5120Machine::captureState/restoreState)
+        add_executable(k1520_test_machine_snapshot tests/cpp/test_machine_snapshot.cpp)
+        target_link_libraries(k1520_test_machine_snapshot
+            PRIVATE k1520_a5120 k1520_floppy k1520_logger GTest::gtest_main)
+        target_include_directories(k1520_test_machine_snapshot PRIVATE ${CMAKE_SOURCE_DIR})
+
         # Full-machine boot integration test (ZVE1+ZVE2 + K5122 DMA end-to-end).
         # Quiet logging (WARN) keeps the multi-million-cycle boot run readable.
         add_executable(k1520_test_boot_integration tests/cpp/test_boot_integration.cpp)
@@ -323,6 +339,9 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_k8025)
         gtest_discover_tests(k1520_test_k5122)
         gtest_discover_tests(k1520_test_z80)
+        gtest_discover_tests(k1520_test_prn_listing)
+        gtest_discover_tests(k1520_test_callstack_tracker)
+        gtest_discover_tests(k1520_test_machine_snapshot)
         gtest_discover_tests(k1520_test_boot_integration PROPERTIES TIMEOUT 60)
     endif() # BUILD_K1520_TESTS
 

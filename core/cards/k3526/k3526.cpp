@@ -21,6 +21,7 @@
  */
 
 #include "core/cards/k3526/k3526.h"
+#include <cstring>
 
 /** @brief Construct with default A5120 memory layout (four 16 KB groups, 0x0000–0xFFFF). */
 K3526::K3526() : K3526(A5120Config{}) {}
@@ -153,4 +154,16 @@ void K3526::load(uint16_t addr, const uint8_t* data, uint16_t len) {
  */
 const uint8_t* K3526::rawPtr() const {
     return mem_.data();
+}
+
+/**
+ * @brief Overwrite the entire 64 KB backing array (snapshot restore).
+ *
+ * Symmetric to rawPtr(): copies 65536 bytes from @p data directly into the
+ * backing array (no group-disable check).  Used by A5120Machine::restoreState.
+ *
+ * @param data Pointer to 65536 source bytes
+ */
+void K3526::restore(const uint8_t* data) {
+    std::memcpy(mem_.data(), data, mem_.size());
 }

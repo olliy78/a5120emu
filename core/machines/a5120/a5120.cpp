@@ -1,5 +1,6 @@
 #include "a5120.h"
 #include <algorithm>
+#include <cstring>
 #include "core/logger.h"
 
 namespace {
@@ -91,6 +92,46 @@ void A5120Machine::reset() {
     zre_.cpuReset();
     boot_trace_count_ = 0;
     LOG_INFO("A5120", "Reset: ZVE1 Reset, Lade-ROM reaktiviert");
+}
+
+// ─── Snapshot / reverse-debugging support ────────────────────────────────────
+// Capture/restore is exact for CPU + 64 KB RAM (see MachineSnapshot doc in a5120.h).
+// Z80 register pairs are unions, so copying the 16-bit views restores all sub-bytes.
+static void saveZ80(const Z80& z, A5120Machine::MachineSnapshot::Z80Regs& r) {
+    r.AF=z.AF; r.BC=z.BC; r.DE=z.DE; r.HL=z.HL; r.IX=z.IX; r.IY=z.IY;
+    r.PC=z.PC; r.SP=z.SP; r.AF_=z.AF_; r.BC_=z.BC_; r.DE_=z.DE_; r.HL_=z.HL_;
+    r.I=z.I; r.R=z.R; r.IM=z.IM; r.IFF1=z.IFF1; r.IFF2=z.IFF2;
+    r.halted=z.halted; r.cycles=z.cycles;
+}
+static void loadZ80(Z80& z, const A5120Machine::MachineSnapshot::Z80Regs& r) {
+    z.AF=r.AF; z.BC=r.BC; z.DE=r.DE; z.HL=r.HL; z.IX=r.IX; z.IY=r.IY;
+    z.PC=r.PC; z.SP=r.SP; z.AF_=r.AF_; z.BC_=r.BC_; z.DE_=r.DE_; z.HL_=r.HL_;
+    z.I=r.I; z.R=r.R; z.IM=r.IM; z.IFF1=r.IFF1; z.IFF2=r.IFF2;
+    z.halted=r.halted; z.cycles=r.cycles;
+}
+
+void A5120Machine::captureState(MachineSnapshot& s) const {
+    std::memcpy(s.ram.data(), ops_.rawPtr(), s.ram.size());
+    saveZ80(zre_.cpu(),  s.zve1);
+    saveZ80(zre_.zve2(), s.zve2);
+    s.rom_enabled     = zre_.isRomEnabled();
+    s.busrq_active    = busrq_active_;
+    s.dma_progress    = dma_saw_progress_;
+    s.bus_master_zve2 = bus_master_zve2_;
+    s.total_cycles    = total_cycles_;
+}
+
+bool A5120Machine::restoreState(const MachineSnapshot& s) {
+    ops_.restore(s.ram.data());
+    loadZ80(zre_.cpu(),  s.zve1);
+    loadZ80(zre_.zve2(), s.zve2);
+    busrq_active_    = s.busrq_active;
+    dma_saw_progress_= s.dma_progress;
+    bus_master_zve2_ = s.bus_master_zve2;
+    total_cycles_    = s.total_cycles;
+    // The boot-ROM mapping is not reproducible here (it is tied to the EPROM's bus
+    // registration on the K2526). Report a mismatch so callers can warn.
+    return zre_.isRomEnabled() == s.rom_enabled;
 }
 
 int A5120Machine::run(int max_cycles) {

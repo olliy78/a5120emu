@@ -189,6 +189,15 @@ public:
      */
     const uint8_t* rawPtr() const;
 
+    /**
+     * @brief Overwrite the entire 64 KB backing array (snapshot restore).
+     *
+     * Symmetric to rawPtr(); copies 65536 bytes directly (no group-disable check).
+     *
+     * @param data Pointer to 65536 source bytes
+     */
+    void restore(const uint8_t* data);
+
 private:
     A5120Config                cfg_;              ///< Group base addresses and /MEMDI sources
     std::array<uint8_t, 65536> mem_{};            ///< Flat 64 KB backing array

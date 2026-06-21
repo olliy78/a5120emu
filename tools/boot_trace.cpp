@@ -26,6 +26,7 @@
 #include "core/machines/a5120/a5120.h"
 #include "core/peripherals/floppy_drive/format_parser.h"
 #include "core/logger.h"
+#include "tools/prn_listing.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -201,6 +202,7 @@ int main(int argc, char** argv) {
     int      watchio_n      = 0;         // --watchio p,..: log OUT to these I/O ports
     uint16_t watchio_port[16] = {0};
     int   trace_seq         = 0;         // global event sequence # (chronological order)
+    std::vector<std::string> prn_specs;  // -l <file.prn>[@offset]: annotate traces/histograms
 
     // Runtime log control (new gated logging). Default base = ERROR so a plain
     // run is quiet and fast; raise globally with --log-level or, far better,
@@ -244,6 +246,7 @@ int main(int argc, char** argv) {
             sscanf(argv[++i], "%i:%i", &win2_start, &win2_end);
         }
         else if (!strcmp(argv[i], "-W") && i+1 < argc) { win_cap = atoi(argv[++i]); }
+        else if (!strcmp(argv[i], "-l") && i+1 < argc) { prn_specs.push_back(argv[++i]); }
         else if (!strcmp(argv[i], "--watch") && i+1 < argc) {   // --watch 0x0000,0x03F8,...
             char* tok = strtok(argv[++i], ",");
             while (tok && watch_n < 16) { watch_addr[watch_n++] = (uint16_t)strtol(tok, nullptr, 0); tok = strtok(nullptr, ","); }
@@ -272,6 +275,24 @@ int main(int argc, char** argv) {
             Logger::levelName(log_base),
             log_base_set ? "" : " (default)",
             Logger::instance().hasGates() ? "  +gates (--log-pc/--log-cycle)" : "");
+
+    // ── .prn listings: annotate per-instruction traces & PC histograms with the
+    //    original commented source. Spec = "PFAD[@OFFSET]" (OFFSET signed, hex
+    //    0x../..h or decimal) added to each listing address for relocated code.
+    prnlst::Listing prn;
+    for (auto& spec : prn_specs) {
+        std::string path; long off = 0;
+        if (!prnlst::splitSpec(spec, path, off)) { fprintf(stderr, "WARN: bad @offset in '%s'\n", spec.c_str()); continue; }
+        int n = prn.load(path, off);
+        if (n < 0) fprintf(stderr, "WARN: could not open listing '%s'\n", path.c_str());
+        else if (off) fprintf(stderr, "Listing:    %s — %d line(s), offset %+ld (0x%04X)\n", path.c_str(), n, off, (uint16_t)off);
+        else fprintf(stderr, "Listing:    %s — %d line(s)\n", path.c_str(), n);
+    }
+    // Fertiger Annotations-Anhang "  ; <quelle>" für eine (Laufzeit-)Adresse, oder
+    // "" wenn keine .prn-Quelle vorliegt. Direkt als printf-"%s" am Zeilenende.
+    auto prnTail = [&](uint16_t a) -> std::string {
+        const std::string* s = prn.find(a); return s ? ("  ; " + *s) : std::string();
+    };
 
     fprintf(stderr, "=== A5120 Boot Trace ===\n");
     fprintf(stderr, "Disk:       %s\n", disk_path);
@@ -336,8 +357,9 @@ int main(int argc, char** argv) {
 
         if (single_step && z.PC < 0x0400 && step_count < single_step_count) {
             const char* label = romLabel(z.PC);
-            fprintf(stderr, "  [step %3d] PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X  %s\n",
-                    step_count, z.PC, z.SP, z.AF, z.BC, z.DE, z.HL, label ? label : "");
+            fprintf(stderr, "  [step %3d] PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X  %s%s\n",
+                    step_count, z.PC, z.SP, z.AF, z.BC, z.DE, z.HL, label ? label : "",
+                    prnTail(z.PC).c_str());
             ++step_count;
         }
 
@@ -350,8 +372,9 @@ int main(int argc, char** argv) {
             uint8_t b0 = machine.memReadDebug(z.PC);
             uint8_t b1 = machine.memReadDebug(z.PC + 1);
             uint8_t b2 = machine.memReadDebug(z.PC + 2);
-            fprintf(stderr, "  [#%d w%4d] Z1 PC=%04X %02X %02X %02X  AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X\n",
-                    trace_seq++, win_count, z.PC, b0, b1, b2, z.AF, z.BC, z.DE, z.HL, z.SP);
+            fprintf(stderr, "  [#%d w%4d] Z1 PC=%04X %02X %02X %02X  AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X%s\n",
+                    trace_seq++, win_count, z.PC, b0, b1, b2, z.AF, z.BC, z.DE, z.HL, z.SP,
+                    prnTail(z.PC).c_str());
             ++win_count;
         }
     });
@@ -385,9 +408,9 @@ int main(int argc, char** argv) {
 
         if (zve2_log_count < zve2_log_cap) {
             const char* label = romLabel(z.PC);
-            fprintf(stderr, "    [ZVE2 %5llu] PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X  %s\n",
+            fprintf(stderr, "    [ZVE2 %5llu] PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X  %s%s\n",
                     (unsigned long long)zve2_instr, z.PC, z.SP, z.AF, z.BC, z.DE, z.HL,
-                    label ? label : "");
+                    label ? label : "", prnTail(z.PC).c_str());
             ++zve2_log_count;
         }
 
@@ -399,8 +422,9 @@ int main(int argc, char** argv) {
             uint8_t b0 = machine.memReadDebug(z.PC);
             uint8_t b1 = machine.memReadDebug(z.PC + 1);
             uint8_t b2 = machine.memReadDebug(z.PC + 2);
-            fprintf(stderr, "  [#%d z%4d] Z2 PC=%04X %02X %02X %02X  AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X\n",
-                    trace_seq++, win2_count, z.PC, b0, b1, b2, z.AF, z.BC, z.DE, z.HL, z.SP);
+            fprintf(stderr, "  [#%d z%4d] Z2 PC=%04X %02X %02X %02X  AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X%s\n",
+                    trace_seq++, win2_count, z.PC, b0, b1, b2, z.AF, z.BC, z.DE, z.HL, z.SP,
+                    prnTail(z.PC).c_str());
             ++win2_count;
         }
     });
@@ -546,7 +570,8 @@ int main(int argc, char** argv) {
         int zs = 0;
         for (auto& kv : zh) {
             const char* lbl = romLabel(kv.second);
-            fprintf(stderr, "  0x%04X : %6u   %s\n", kv.second, kv.first, lbl ? lbl : "");
+            fprintf(stderr, "  0x%04X : %6u   %s%s\n", kv.second, kv.first, lbl ? lbl : "",
+                    prnTail(kv.second).c_str());
             if (++zs >= 15) break;
         }
     }
@@ -585,10 +610,10 @@ int main(int argc, char** argv) {
     int shown = 0;
     for (auto& kv : hist_sorted) {
         const char* lbl = romLabel(kv.second);
-        fprintf(stderr, "  0x%04X : %6u  (%5.2f%%)  %s\n",
+        fprintf(stderr, "  0x%04X : %6u  (%5.2f%%)  %s%s\n",
                 kv.second, kv.first,
                 100.0 * kv.first / sample_count,
-                lbl ? lbl : "");
+                lbl ? lbl : "", prnTail(kv.second).c_str());
         if (++shown >= 30) break;
     }
 
@@ -639,7 +664,8 @@ int main(int argc, char** argv) {
         int ps = 0;
         for (auto& kv : ph) {
             const char* lbl = romLabel(kv.second);
-            fprintf(stderr, "  0x%04X : %6u   %s\n", kv.second, kv.first, lbl ? lbl : "");
+            fprintf(stderr, "  0x%04X : %6u   %s%s\n", kv.second, kv.first, lbl ? lbl : "",
+                    prnTail(kv.second).c_str());
             if (++ps >= 20) break;
         }
 
