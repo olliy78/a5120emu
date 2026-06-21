@@ -45,6 +45,10 @@ using k1520::logging::Logger;
 using k1520::logging::Level;
 
 // ─── Register snapshot captured at the start of an instruction ────────────────
+// Lightweight copy of the Z80 register file taken at a stop (or by `r`). Used so
+// printing/condition-evaluation works against a frozen view and to show shadow
+// registers. `valid` distinguishes "never captured yet". (Distinct from the
+// machine-wide A5120Machine::MachineSnapshot used by snap/restore/reverse-step.)
 struct Snap {
     uint16_t PC=0,SP=0,AF=0,BC=0,DE=0,HL=0,IX=0,IY=0,AF_=0,BC_=0,DE_=0,HL_=0;
     uint8_t  I=0,R=0; uint64_t cyc=0; bool halted=false; bool valid=false;
@@ -56,20 +60,48 @@ static inline Snap grab(const Z80& z){
 }
 
 // ─── breakpoint record ────────────────────────────────────────────────────────
+// One PC breakpoint (per-CPU maps bp1/bp2 are keyed by address). `cond` is an
+// optional expression evaluated at each hit (empty = unconditional); `ignore`
+// counts down hits to skip before stopping; `temp` self-deletes on first stop.
 struct Bp { bool enabled=true; bool temp=false; std::string cond; long hits=0; long ignore=0; };
 
+// =============================================================================
+//  main() — structure
+//  -----------------------------------------------------------------------------
+//  The whole debugger lives in one main() so that all state and helpers can be
+//  shared by reference through lambdas (no globals, no class boilerplate). It is
+//  organised in four phases, top to bottom:
+//
+//    1. CLI parsing + machine bring-up        (disk mount, log level)
+//    2. Debugger STATE                        (breakpoints, watchpoints, symbols,
+//                                              reverse-ring, trace/logpoint flags …)
+//    3. HELPER LAMBDAS                         (capture state by reference):
+//         · symbols / .prn listings / address + EXPRESSION evaluation
+//         · disassembly + trace formatting
+//         · the three machine CALLBACKS (per-ZVE1-instr, per-ZVE2-instr, bus access)
+//           — these run during m.run() and decide when to STOP (set `hit`)
+//         · inspection/output + run-control helpers (go, step, reverse, backtrace …)
+//    4. The REPL                               (read a line, tokenise, dispatch to a
+//                                              big if/else-if chain grouped like `help`)
+//
+//  Stop model: a callback that decides to stop calls stopAt()/stopFromBus(), which
+//  sets `hit=true` and m.stop(); the run helper then returns and onStop() prints.
+//  "Break-before-execute": callbacks fire BEFORE the instruction, so at a stop the
+//  PC sits ON the not-yet-executed instruction.
+// =============================================================================
 int main(int argc, char** argv){
+    // ── Phase 1: CLI parsing ── DISK [-x script] [-s symfile]… [-l listing.prn]…
     const char* disk = nullptr;
     const char* script = nullptr;
-    std::vector<std::string> symfiles;
-    std::vector<std::string> prnfiles;
+    std::vector<std::string> symfiles;     // -s: symbol tables (repeatable)
+    std::vector<std::string> prnfiles;     // -l: MACRO-80 .prn listings (repeatable)
     for (int i=1;i<argc;++i){
         if (!strcmp(argv[i],"-x") && i+1<argc) script=argv[++i];
         else if (!strcmp(argv[i],"-s") && i+1<argc) symfiles.push_back(argv[++i]);
         else if (!strcmp(argv[i],"-l") && i+1<argc) prnfiles.push_back(argv[++i]);
         else disk=argv[i];
     }
-    Logger::instance().setBaseLevel(Level::ERROR);
+    Logger::instance().setBaseLevel(Level::ERROR);   // quiet emulator log; tool prints its own
 
     A5120Machine m;
     m.powerOn();
@@ -79,16 +111,21 @@ int main(int argc, char** argv){
         else fprintf(stderr,"Mounted %s on A:\n",disk);
     }
 
-    // ─── debugger state ────────────────────────────────────────────────────────
-    std::map<uint16_t,Bp> bp1, bp2;            // breakpoints per CPU
-    int  tw1lo=-1,tw1hi=-1, tw2lo=-1,tw2hi=-1; long tw_cap=4000, tw_n=0;
-    uint64_t rel_origin=0; bool rel_armed=false; int rel_arm_pc=-1;
-    Snap snap1, snap2;
-    bool hit=false; int hit_cpu=0; uint16_t hit_pc=0; std::string stop_reason;
-    int  gu_pc=-1; long step_rem=0; long step2_rem=0;
-    bool fin_active=false; uint16_t fin_sp=0;
-    uint16_t last_u=0; bool last_u_set=false;
-    uint16_t last_list=0; bool last_list_set=false;   // `list` continue position
+    // ─── Phase 2: debugger state ───────────────────────────────────────────────
+    // Most of these are read/written by the run-control commands AND the per-instr
+    // callbacks (the callbacks decide when a `run` ends). "Pending" counters use the
+    // convention: a callback decrements/clears the field and stops when it reaches 0.
+    std::map<uint16_t,Bp> bp1, bp2;            // breakpoints, keyed by PC, per CPU (1=ZVE1, 2=ZVE2)
+    int  tw1lo=-1,tw1hi=-1, tw2lo=-1,tw2hi=-1; // -w/-z style live trace windows (PC range; <0 = off)
+    long tw_cap=4000, tw_n=0;                  //   cap + counter for window-trace lines
+    uint64_t rel_origin=0; bool rel_armed=false; int rel_arm_pc=-1;  // `mark`: relative-cycle origin / arm-at-PC
+    Snap snap1, snap2;                          // last captured ZVE1 / ZVE2 register view (for printing)
+    bool hit=false; int hit_cpu=0; uint16_t hit_pc=0; std::string stop_reason;  // "we stopped" signal from a callback
+    int  gu_pc=-1;                              // `gu`/temp-bp target PC (<0 = inactive)
+    long step_rem=0, step2_rem=0;               // remaining single-step count (ZVE1 / ZVE2); stop at 0
+    bool fin_active=false; uint16_t fin_sp=0;   // `fin`: stop once SP rises above this frame
+    uint16_t last_u=0; bool last_u_set=false;          // `u` continue position
+    uint16_t last_list=0; bool last_list_set=false;    // `list` continue position
 
     // ─── reverse-debugging + history backtrace state ──────────────────────────
     cstrack::CallStackTracker callstack;                     // exact CALL/RST/RET stack
@@ -129,7 +166,10 @@ int main(int argc, char** argv){
     bool     brk_int=false, brk_nmi=false, brk_reti=false;
     uint16_t bi_prev_sp=0; bool bi_prev_iff1=false, bi_have_prev=false;
 
-    auto rc = [&](uint64_t cyc)->long long {            // relative-or-absolute cycle
+    // ─── Phase 3: helper lambdas (capture all state above by reference) ─────────
+    // Small formatting/util helpers first, then symbols, .prn, the expression
+    // evaluator, disassembly, the machine callbacks, and finally run-control.
+    auto rc = [&](uint64_t cyc)->long long {            // cycle as shown: relative to `mark` origin, else absolute
         return rel_armed ? (long long)(cyc-rel_origin) : (long long)cyc;
     };
     auto rcpfx = [&]{ return rel_armed ? '+' : 'c'; };
@@ -343,7 +383,18 @@ int main(int argc, char** argv){
     auto stopFromBus = [&](const std::string& why){
         snap1=grab(m.cpuDebug()); hit=true; hit_cpu=1; hit_pc=m.cpuPC(); stop_reason=why; m.stop(); };
 
-    // ─── per-instruction callbacks ─────────────────────────────────────────────
+    // ─── per-instruction & bus callbacks ───────────────────────────────────────
+    // These fire from inside m.run(), once per executed instruction (ZVE1 / ZVE2)
+    // or per bus access. They are the ONLY place a run is ended: a stop decision
+    // calls stopAt()/stopFromBus() (sets `hit`, calls m.stop()). The run helper
+    // then returns to the REPL. Fires BEFORE the instruction executes.
+    //
+    // ZVE1 order matters and is, top to bottom:
+    //   1. bookkeeping that must see EVERY instruction (call-stack, file trace,
+    //      logpoints, event breakpoints, `mark` arming, window trace) — no early exit;
+    //   2. the run-terminating checks, highest priority first: single-step quota →
+    //      step-out (`fin`) → run-until (`gu`) → address breakpoint. Each of these
+    //      `return`s after acting, so a pending step is not also treated as a bp hit.
     m.setCpuTraceCallback([&](const Z80& z){
         const uint16_t pc=z.PC;
         // Maintain the exact CALL/RST/RET call stack (for the history backtrace).
@@ -583,12 +634,18 @@ int main(int argc, char** argv){
         else { fprintf(stderr,"   ran %llu cyc, no breakpoint (PC=%04X)\n",
                      (unsigned long long)ran,m.cpuPC()); stateLine(); }
     };
-    // single step-over of one ZVE1 instruction (silent — caller prints)
+    // Step OVER one ZVE1 instruction (silent — caller prints the result).
+    // For CALL and repeating block ops (LDIR/INIR…) "over" means: don't descend —
+    // set a one-shot run-until at the instruction's fall-through address and run.
+    // Everything else is a plain single step.
     auto stepOver = [&]{
         z80dis::Insn d = z80dis::decode(rd1, m.cpuPC());
         if (d.is_call || d.is_repeat){ gu_pc=(int)(uint16_t)(m.cpuPC()+d.len); goSilent(0); }
         else { step_rem=1; m.clearStop(); while(step_rem>0){int n=m.run(20000); if(n==0||hit)break;} }
     };
+    // Inject keystrokes while the machine keeps running. Each char is pressed, run a
+    // little (so the BIOS keyboard poll picks it up), released, run a little more.
+    // `\r`/`\n`→Enter, `\t`→Tab, `\e`→ESC; stops early if a breakpoint hits.
     auto keys = [&](const std::string& t){
         for (size_t i=0;i<t.size();++i){
             uint32_t code; char c=t[i];
@@ -693,22 +750,30 @@ int main(int argc, char** argv){
         applySnapshot(s,w);
     };
 
-    // ─── command stream: optional script first, then stdin ─────────────────────
-    std::deque<std::string> pending;
+    // ═══ Phase 4: the REPL ══════════════════════════════════════════════════════
+    // Commands come from the -x script first (queued in `pending`), then stdin.
+    // Each line is whitespace-tokenised into `t`; t[0] is the command, t[1..] the
+    // args. Dispatch is one big if/else-if chain below — grouped, in the same order
+    // as `help`: RUN · REVERSE · BREAK · WATCH · LOG · INSPECT · MEM · MISC. The
+    // section banners (// ── … ──) are navigation anchors only; add new commands to
+    // the matching group and mirror them in the `help` text and tools/k1520dbg.md.
+    std::deque<std::string> pending;       // -x script lines, consumed before stdin
     if (script){ std::ifstream f(script); std::string l; while(std::getline(f,l)) pending.push_back(l); }
-    for (auto& sf : symfiles) loadSyms(sf);
-    for (auto& pf : prnfiles) loadPrnSpec(pf);
+    for (auto& sf : symfiles) loadSyms(sf);       // apply -s symbol files
+    for (auto& pf : prnfiles) loadPrnSpec(pf);    // apply -l .prn listings (also imports labels)
 
     fprintf(stderr,"k1520dbg — type 'help'.  Clock = ZVE1 cycles.  Disassembler: built-in.\n");
     std::string line;
     for (;;){
+        // read one command (echo script lines so piped sessions are readable)
         if (!pending.empty()){ line=pending.front(); pending.pop_front(); fprintf(stderr,"(dbg) %s\n",line.c_str()); }
         else { fprintf(stderr,"(dbg) "); if(!std::getline(std::cin,line)) break; }
         std::istringstream is(line); std::vector<std::string> t; std::string w;
         while (is>>w) t.push_back(w);
-        if (t.empty()||t[0][0]=='#') continue;
+        if (t.empty()||t[0][0]=='#') continue;     // blank line or # comment
         const std::string& cmd=t[0];
 
+        // ── session ──
         if (cmd=="q"||cmd=="quit") break;
         else if (cmd=="help"||cmd=="h"||cmd=="?"){
             fprintf(stderr,
@@ -743,6 +808,7 @@ int main(int argc, char** argv){
               "          lst <f.prn>[@off] | lst <f.prn> <off> | lst list   MACRO-80 listing → annotate\n"
               "          keys <text> (\\r \\t \\e) ; screen ; reset ; q\n");
         }
+        // ══ RUN: continue / step (each snapshots first via pushHistory for `rs`) ══
         else if (cmd=="g"||cmd=="c"){ pushHistory(); go(t.size()>1? (uint64_t)parseNum(t[1]) : 0); }
         else if (cmd=="gu" && t.size()>1){ pushHistory(); gu_pc=(int)(uint16_t)parseNum(t[1]); go(0); }
         else if (cmd=="s"){ pushHistory(); step_rem=t.size()>1?parseNum(t[1]):1; m.clearStop();
@@ -755,6 +821,7 @@ int main(int argc, char** argv){
             for(long i=0;i<k;++i){ stepOver(); if(hit) break; }
             if(hit){ hit=false; onStop(); } else { snap1=grab(m.cpuDebug()); showInsn("=>",m.cpuPC()); stateLine(); } }
         else if (cmd=="fin"){ pushHistory(); fin_sp=m.cpuSP(); fin_active=true; go(0); }
+        // ══ REVERSE: reverse-step + named snapshots ══
         else if (cmd=="rs"||cmd=="bs") reverseStep(t.size()>1?parseNum(t[1]):1);
         else if (cmd=="snap"){
             if (t.size()>=2 && t[1]=="list"){
@@ -768,8 +835,10 @@ int main(int argc, char** argv){
             auto it=named_snaps.find(t[1]);
             if(it==named_snaps.end()) fprintf(stderr,"  no snapshot '%s' (snap list)\n",t[1].c_str());
             else { pushHistory(); applySnapshot(it->second,("snapshot '"+t[1]+"'").c_str()); } }
+        // ══ BREAK: PC breakpoints (+cond/temp/enable/ignore) and event breakpoints ══
         else if ((cmd=="b"||cmd=="b2") && t.size()>1){
             auto& tbl = (cmd=="b2")? bp2 : bp1; uint16_t a=(uint16_t)parseNum(t[1]);
+            // "b A if <expr…>" — the condition is all tokens after `if`, space-joined.
             Bp bp; if (t.size()>3 && t[2]=="if"){ for(size_t i=3;i<t.size();++i){ if(i>3)bp.cond+=" "; bp.cond+=t[i]; } }
             tbl[a]=bp; fprintf(stderr,"  bp %s @%04X%s\n",cmd=="b2"?"ZVE2":"ZVE1",a, bp.cond.empty()?"":(" if "+bp.cond).c_str()); }
         else if (cmd=="tb" && t.size()>1){ uint16_t a=(uint16_t)parseNum(t[1]); Bp bp; bp.temp=true; bp1[a]=bp;
@@ -811,6 +880,7 @@ int main(int argc, char** argv){
             flag = (t.size()>1)? on : !flag;   // bare command toggles
             fprintf(stderr,"  break-on-%s %s\n", cmd=="bint"?"interrupt":cmd=="bnmi"?"nmi":"reti",
                     flag?"ON":"off"); }
+        // ══ LOG: run-and-log without stopping (logpoints + trace-to-file) ══
         // logpoints (dprintf-style: print + continue, never stop) on ZVE1
         else if ((cmd=="logpoint"||cmd=="lp") && t.size()>1){
             uint16_t a=(uint16_t)parseNum(t[1]);
@@ -839,8 +909,10 @@ int main(int argc, char** argv){
                     fprintf(stderr,"  trace → %s%s (every executed instr; cap %ld lines, 'trace off' to stop)\n",
                             t[1].c_str(), trace_lo>=0?(" in ["+std::to_string(trace_lo)+","+std::to_string(trace_hi)+"]").c_str():"", trace_cap); } }
             else fprintf(stderr,"  trace <file> [lo hi] | trace off\n"); }
+        // ══ MISC: relative-cycle marker ══
         else if (cmd=="mark"){ if(t.size()>1){ rel_arm_pc=(int)(uint16_t)parseNum(t[1]); fprintf(stderr,"  mark armed at PC=%04X\n",rel_arm_pc);}
             else { rel_origin=m.cpuCycles(); rel_armed=true; fprintf(stderr,"  mark: origin=%llu (now)\n",(unsigned long long)rel_origin);} }
+        // ══ INSPECT: registers, backtrace, memory dump/poke, disasm, examine, source, set ══
         else if (cmd=="r"){ snap1=grab(m.cpuDebug()); printSnap(1);
             if(t.size()>1){ snap2=grab(m.zve2Debug()); printSnap(2); } showInsn("=>",m.cpuPC()); stateLine(); }
         else if (cmd=="bt"){
@@ -883,6 +955,7 @@ int main(int argc, char** argv){
                 displays.push_back(ex); fprintf(stderr,"  disp[%zu] = %s\n",displays.size()-1,ex.c_str()); }
             else { for(size_t i=0;i<displays.size();++i) fprintf(stderr,"  disp[%zu] %s\n",i,displays[i].c_str()); } }
         else if (cmd=="undisp" && t.size()>1){ size_t i=(size_t)parseNum(t[1]); if(i<displays.size()) displays.erase(displays.begin()+i); }
+        // ══ WATCH: memory watchpoints (range + value-cond) and I/O-port watches ══
         else if ((cmd=="wp"||cmd=="wpr"||cmd=="wb") && t.size()>1){
             MemWatch w; parseRange(t[1], w.lo, w.hi);
             w.rd = (cmd=="wpr"); w.wr = (cmd!="wpr"); w.brk = (cmd=="wb");
@@ -919,6 +992,7 @@ int main(int argc, char** argv){
         else if (cmd=="iod" && t.size()>1){ uint8_t p=(uint8_t)parseNum(t[1]); io_w.erase(p); io_b.erase(p); }
         else if (cmd=="iol"){ fprintf(stderr,"  io-watch:"); for(auto p:io_w)fprintf(stderr," %02X",p);
             fprintf(stderr,"\n  io-break:"); for(auto p:io_b)fprintf(stderr," %02X",p); fprintf(stderr,"\n"); }
+        // ══ SYMBOLS & LISTINGS: -s symbol tables and -l .prn listings ══
         else if (cmd=="sym"){
             if (t.size()>=4 && t[1]=="add"){ symAdd(t[2],(uint16_t)parseNum(t[3])); fprintf(stderr,"  sym %s=%04X\n",t[2].c_str(),(uint16_t)parseNum(t[3])); }
             else if (t.size()>=2 && t[1]=="list"){ for(auto&kv:sym_by_addr) fprintf(stderr,"  %04X %s\n",kv.first,kv.second.c_str()); }
@@ -931,6 +1005,7 @@ int main(int argc, char** argv){
             else if (t.size()>=3) loadPrnSpec(t[1]+"@"+t[2]);   // lst <file.prn> <offset>
             else if (t.size()>=2) loadPrnSpec(t[1]);            // lst <file.prn>[@offset]
             else fprintf(stderr,"  lst <file.prn>[@offset] | lst <file.prn> <offset> | lst list\n"); }
+        // ══ MEM: load/save raw binary to/from RAM ══
         else if (cmd=="load" && t.size()>2){ std::ifstream f(t[1],std::ios::binary);
             if(!f){ fprintf(stderr,"  cannot open %s\n",t[1].c_str()); }
             else { uint16_t a=(uint16_t)parseNum(t[2]); int n=0; char b;
@@ -938,6 +1013,7 @@ int main(int argc, char** argv){
         else if (cmd=="save" && t.size()>3){ std::ofstream f(t[1],std::ios::binary);
             uint16_t a=(uint16_t)parseNum(t[2]); int n=(int)parseNum(t[3]);
             for(int i=0;i<n;++i) f.put((char)m.memReadDebug(a+i)); fprintf(stderr,"  saved %d byte(s) from %04X to %s\n",n,a,t[1].c_str()); }
+        // ══ MISC: machine I/O — keystrokes, screen, named RAM vars, chip state, reset ══
         else if (cmd=="keys" && t.size()>1){ pushHistory(); std::string s=line.substr(line.find("keys")+5); keys(s); }
         else if (cmd=="screen") screen();
         else if (cmd=="vars"){ auto wd=[&](uint16_t a){return (uint16_t)(m.memReadDebug(a)|(m.memReadDebug(a+1)<<8));};
