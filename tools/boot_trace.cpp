@@ -177,6 +177,42 @@ static const char* romLabel(uint16_t pc) {
     }
 }
 
+// ─── --until <cond>: stop the run when a condition holds, then dump/summary ────
+// Supported: PC<op>ADDR, [ADDR]<op>VAL, [ADDR]w<op>VAL  with op ∈ == != < > <= >=
+// VAL/ADDR parse base-0 (0x.. hex, or decimal). Checked per ZVE1 instruction.
+struct UntilCond {
+    enum Kind { NONE, MEM, PC } kind = NONE;
+    enum Op   { EQ, NE, LT, GT, LE, GE } op = EQ;
+    bool      word = false;     // MEM: 16-bit little-endian
+    uint16_t  addr = 0;         // MEM address, or PC target
+    long      val  = 0;         // compared value (for PC: the target address)
+    std::string text;           // original spec, for reporting
+};
+
+static bool parseUntil(const std::string& spec, UntilCond& u) {
+    // Split on the comparison operator (try 2-char ops first so "<" ≠ "<=").
+    static const struct { const char* s; UntilCond::Op op; } ops[] = {
+        {"==",UntilCond::EQ},{"!=",UntilCond::NE},{"<=",UntilCond::LE},
+        {">=",UntilCond::GE},{"<",UntilCond::LT},{">",UntilCond::GT} };
+    size_t pos = std::string::npos, oplen = 0; UntilCond::Op op = UntilCond::EQ;
+    for (auto& o : ops){ size_t p = spec.find(o.s); if (p != std::string::npos){ pos=p; oplen=strlen(o.s); op=o.op; break; } }
+    if (pos == std::string::npos) return false;
+    std::string lhs = spec.substr(0, pos), rhs = spec.substr(pos + oplen);
+    auto trim=[](std::string& x){ while(!x.empty()&&x.front()==' ')x.erase(x.begin());
+                                  while(!x.empty()&&x.back()==' ')x.pop_back(); };
+    trim(lhs); trim(rhs);
+    u.op = op; u.text = spec; u.val = strtol(rhs.c_str(), nullptr, 0);
+    if (!lhs.empty() && lhs[0]=='[') {                       // [ADDR] / [ADDR]w
+        size_t r = lhs.find(']'); if (r == std::string::npos) return false;
+        u.kind = UntilCond::MEM;
+        u.addr = (uint16_t)strtol(lhs.substr(1, r-1).c_str(), nullptr, 0);
+        u.word = (r+1 < lhs.size() && (lhs[r+1]=='w' || lhs[r+1]=='W'));
+        return true;
+    }
+    if (lhs=="PC" || lhs=="pc") { u.kind = UntilCond::PC; u.addr = (uint16_t)u.val; return true; }
+    return false;
+}
+
 // ─── main ─────────────────────────────────────────────────────────────────────
 
 int main(int argc, char** argv) {
@@ -204,6 +240,9 @@ int main(int argc, char** argv) {
     uint16_t watchio_port[16] = {0};
     int   trace_seq         = 0;         // global event sequence # (chronological order)
     std::vector<std::string> prn_specs;  // -l <file.prn>[@offset]: annotate traces/histograms
+    UntilCond until;                     // --until <cond>: stop the run when it holds
+    bool      until_hit = false;         // set by the ZVE1 callback when `until` fires
+    int       until_cycle = 0; uint16_t until_pc = 0;
 
     // Runtime log control (new gated logging). Default base = ERROR so a plain
     // run is quiet and fast; raise globally with --log-level or, far better,
@@ -248,6 +287,10 @@ int main(int argc, char** argv) {
         }
         else if (!strcmp(argv[i], "-W") && i+1 < argc) { win_cap = atoi(argv[++i]); }
         else if (!strcmp(argv[i], "-l") && i+1 < argc) { prn_specs.push_back(argv[++i]); }
+        else if (!strcmp(argv[i], "--until") && i+1 < argc) {   // --until [03F8]==3 | PC==0x1800
+            if (!parseUntil(argv[++i], until))
+                fprintf(stderr, "WARN: bad --until '%s' (use PC<op>A | [A]<op>V | [A]w<op>V)\n", argv[i]);
+        }
         else if (!strcmp(argv[i], "--watch") && i+1 < argc) {   // --watch 0x0000,0x03F8,...
             char* tok = strtok(argv[++i], ",");
             while (tok && watch_n < 16) { watch_addr[watch_n++] = (uint16_t)strtol(tok, nullptr, 0); tok = strtok(nullptr, ","); }
@@ -298,6 +341,8 @@ int main(int argc, char** argv) {
     fprintf(stderr, "=== A5120 Boot Trace ===\n");
     fprintf(stderr, "Disk:       %s\n", disk_path);
     fprintf(stderr, "Max cycles: %d\n", total_limit);
+    if (until.kind != UntilCond::NONE)
+        fprintf(stderr, "Until:      %s  (runs past boot until this or the cycle limit)\n", until.text.c_str());
     fprintf(stderr, "Step trace: %s", single_step ? "ON" : "OFF");
     if (single_step) fprintf(stderr, " (first %d ROM instructions)", single_step_count);
     fprintf(stderr, "\n\n");
@@ -339,6 +384,29 @@ int main(int argc, char** argv) {
         ++sample_count;
         pc_hist[z.PC]++;
         if (boot_reached) post_pc_hist[z.PC]++;
+
+        // --until: stop the run when the condition holds (checked per ZVE1 instr).
+        if (until.kind != UntilCond::NONE && !until_hit) {
+            long cur = (until.kind == UntilCond::PC) ? z.PC
+                     : (until.word ? (machine.memReadDebug(until.addr) |
+                                      (machine.memReadDebug((uint16_t)(until.addr+1)) << 8))
+                                   :  machine.memReadDebug(until.addr));
+            bool fire = false;
+            switch (until.op) {
+                case UntilCond::EQ: fire = (cur == until.val); break;
+                case UntilCond::NE: fire = (cur != until.val); break;
+                case UntilCond::LT: fire = (cur <  until.val); break;
+                case UntilCond::GT: fire = (cur >  until.val); break;
+                case UntilCond::LE: fire = (cur <= until.val); break;
+                case UntilCond::GE: fire = (cur >= until.val); break;
+            }
+            if (fire) {
+                until_hit = true; until_cycle = cycles_done; until_pc = z.PC;
+                fprintf(stderr, "\n*** --until met at cycle %d (ZVE1 PC=0x%04X): %s ***\n",
+                        cycles_done, z.PC, until.text.c_str());
+                machine.stop();
+            }
+        }
 
         // Boot success: ZVE1 executing loaded code (ROM <0x0400, VRAM >=0xF800).
         if (!boot_reached && z.PC >= 0x0400 && z.PC < 0xF800 && !machine.isRomEnabled()) {
@@ -488,6 +556,8 @@ int main(int argc, char** argv) {
         int done = machine.run(batch);
         cycles_done += done;
 
+        if (until_hit) break;   // --until condition met (callback already reported + stopped)
+
         uint16_t pc = machine.cpuPC();
 
         // ── ROM enable/disable transition ─────────────────────────────────────
@@ -524,7 +594,8 @@ int main(int argc, char** argv) {
 
         if (done == 0) break;
         // Stop at boot unless -p asks to keep tracing the loaded code for N cycles.
-        if (boot_reached) {
+        // With --until active, keep running past boot until the condition (or -c limit).
+        if (boot_reached && until.kind == UntilCond::NONE) {
             if (post_cycles == 0) break;
             if (cycles_done >= boot_cycle + post_cycles) break;
         }
@@ -532,6 +603,11 @@ int main(int argc, char** argv) {
 
     // ── Final summary ─────────────────────────────────────────────────────────
     fprintf(stderr, "\n=== Boot Trace Complete: %d cycles ===\n", cycles_done);
+    if (until.kind != UntilCond::NONE)
+        fprintf(stderr, "--until (%s): %s\n", until.text.c_str(),
+                until_hit ? ("MET at cycle " + std::to_string(until_cycle) +
+                             " (PC=0x" + [&]{ char b[8]; snprintf(b,8,"%04X",until_pc); return std::string(b); }() + ")").c_str()
+                          : "not met (cycle/-c limit reached first)");
     fprintf(stderr, "Boot reached: %s\n", boot_reached ? "YES!" : "NO");
     fprintf(stderr, "ROM enabled:  %s\n", machine.isRomEnabled() ? "YES" : "NO (disabled by BIOS)");
 

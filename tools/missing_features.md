@@ -102,8 +102,11 @@ Adressiert den Hauptschmerz: jeder Versuch = ~8 s Reboot, Analyse aus RAM-Dumps.
     - `-s`/`-w`/`-z`/Step zeigen die Instruktion jetzt **disassembliert** (aus dem
       Live-Speicher via `tools/z80dis_min.h`, exakt auch bei selbstmodifizierendem
       Code) statt roher `b0 b1 b2`-Bytes — zusätzlich zur `.prn`-Annotation.
-11. **Stop-/Trace-bis-Bedingung.** `boot_trace` hat Zyklen-/PC-Fenster nur fürs *Loggen*,
-    kein „laufe bis `[A]==X`, dann dumpe".
+11. **✅ Stop-/Trace-bis-Bedingung** *(implementiert 2026-06-21)*
+    - `boot_trace --until <cond>` hält den Lauf an, sobald die Bedingung gilt (läuft
+      dabei über den Boot-Handoff hinaus), dann normaler Report. `cond`: `PC<op>A`,
+      `[A]<op>V`, `[A]w<op>V` mit `<op> ∈ == != < > <= >=`. Mit `-d`/`-w`/`-z` kombinierbar,
+      um genau im erreichten Zustand zu dumpen/tracen.
 12. **Maschinenlesbarer Trace (CSV/JSON)**, **Run-Diff** (zwei Läufe vergleichen → wo
     divergieren sie), **Coverage** (welche Adressen liefen / nie).
 

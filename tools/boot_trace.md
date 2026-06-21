@@ -43,6 +43,7 @@ boot_trace [DISK] [optionen]
 | Option | Wirkung |
 |--------|---------|
 | `-c <zyklen>` | Boot-Zyklenlimit (vor Erreichen des geladenen Codes) |
+| `--until <cond>` | **Lauf anhalten, sobald `<cond>` gilt** (läuft dabei über den Boot-Handoff hinaus bis zur Bedingung oder zum `-c`-Limit), dann normaler Report. `cond`: `PC<op>A`, `[A]<op>V`, `[A]w<op>V` mit `<op> ∈ == != < > <= >=` (s. §2b) |
 | `-p <zyklen>` | **nach** dem Boot weiterlaufen (`0x0437`+) — aktiviert den Post-Boot-Report (Port-Histogramm, VRAM-Schreibzähler + -Bereich, PC-Histogramm des geladenen Codes, 80-Spalten-VRAM-Textdump) |
 | `--drive <n>` | Disk auf Laufwerk `n` mounten (Default 0 = A:) |
 | `-L <datei>` | den (sehr ausführlichen) **Emulator-Log** in eine Datei umleiten, damit die Trace-Zusammenfassung lesbar bleibt (`-L /dev/null` verwirft ihn) |
@@ -96,6 +97,24 @@ boot_trace -l stage3.prn@-0x800 …    # Offset darf negativ sein
 `OFFSET` versteht `0x1F00`, `1800h`, `512`, `-0x100`. Parser & Grenzen wie bei `k1520dbg`
 (s. `tools/k1520dbg.md` §6a): nur absolute Adressen, ein BIOS-Listing deckt nur den
 BIOS-Bereich ab.
+
+### 2b. Lauf-bis-Bedingung (`--until`)
+
+Statt eine feste Zyklenzahl (`-c`/`-p`) zu raten, bis zu der getract werden soll, hält
+`--until <cond>` den Lauf an, **sobald die Bedingung gilt** — danach läuft der normale
+Report (Histogramme, VRAM, Dumps). Der Lauf geht dabei über den Boot-Handoff hinaus
+(bis zur Bedingung oder zum `-c`-Limit), man braucht also kein `-p`.
+
+```sh
+boot_trace --until '[0x03F8]==3'  disks/cpadisk01.img   # bis ZVE2 das Done-Flag setzt
+boot_trace --until 'PC==0x0437'   disks/cpadisk01.img   # bis ZVE1 den Boot-Handoff erreicht
+boot_trace --until '[0xD1BE]w!=0' -d 0xD1B0:0xD1D0 disks/cpadisk01.img  # … dann RAM dumpen
+```
+
+Bedingungen (pro ZVE1-Instruktion geprüft): `PC<op>A`, `[A]<op>V`, `[A]w<op>V` (16-Bit LE),
+`<op> ∈ == != < > <= >=`; `A`/`V` base-0 (`0x..`, dezimal). Die Statuszeile am Ende meldet
+`MET at cycle … (PC=…)` bzw. `not met`. Praktisch mit `-d`/`-w`/`-z`, um genau im
+erreichten Zustand zu dumpen/tracen.
 
 ---
 
