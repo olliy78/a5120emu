@@ -9,7 +9,7 @@ eine Funktion fehlt oder falsch ist, wird sie hier ergänzt/gefixt und unter
 
 | Werkzeug | Zweck | Detail-Doku |
 |----------|-------|-------------|
-| **`k1520dbg`** | interaktiver gdb-artiger Debugger (ZVE1 **und** ZVE2): Breakpoints, bedingte BPs, Step into/over/out, **Reverse-Step + Snapshots**, Watch mem/io, Symbole, Disassembly, **`.prn`-Listing-Annotation**, Register-Edit, **exakter History-Backtrace** | **[k1520dbg.md](k1520dbg.md)** |
+| **`k1520dbg`** | interaktiver gdb-artiger Debugger (ZVE1 **und** ZVE2): Breakpoints, bedingte BPs, Step into/over/out, **Reverse-Step + Snapshots**, Watch mem/io, **Logpoints + Trace-to-File**, Symbole, Disassembly, **`.prn`-Listing-Annotation**, Register-Edit, **exakter History-Backtrace** | **[k1520dbg.md](k1520dbg.md)** |
 | **`boot_trace`** | nicht-interaktiver Boot-/DMA-Tracer mit Zusammenfassung (Histogramme, Done-Flag, VRAM-Banner) — findet *wo* die Kette hängt; Trace & Histogramme via `-l` mit `.prn`-Quelltext annotierbar | **[boot_trace.md](boot_trace.md)** |
 | **`z80_disasm2.py`** | generischer, vollständiger Z80-Disassembler für Listings (kanonisch) | **[z80_disasm.md](z80_disasm.md)** |
 | `z80dis_min.h` | eingebauter Ein-Instruktions-Decoder (C++) für `k1520dbg` | [z80_disasm.md](z80_disasm.md) |

@@ -33,11 +33,13 @@ Adressiert den Hauptschmerz: jeder Versuch = ~8 s Reboot, Analyse aus RAM-Dumps.
      nicht im Stack (korrumpieren ihn aber auch nicht). Tracker: `tools/callstack_tracker.h`.
    - **Noch offen:** Interrupt-/RETI-Frames; Call/Return-Trace mit Einrückung.
 
-3. **Logpoints / Breakpoint-Commands (tracen ohne Anhalten)**
-   - gdb `dprintf` / `commands … continue`. In `k1520dbg` fehlt jeder
-     „laufen lassen **und** mitschreiben"-Modus — man steppt von Hand.
-   - Gewünscht: `trace on <file>` (jede ausgeführte Instruktion mit `.prn`-Annotation
-     in eine Datei) bzw. `logpoint <A> <expr>` (drucken + automatisch weiterlaufen).
+3. **✅ Logpoints / „tracen ohne Anhalten"** *(implementiert 2026-06-21)*
+   - `trace <file> [lo hi]` / `trace off` — schreibt **jede** ausgeführte Instruktion
+     (ZVE1 *und* ZVE2, lückenlos über DMA) disassembliert + `.prn`-annotiert in eine
+     Datei; optionales PC-Fenster, Sicherheits-Cap (2 M Zeilen).
+   - `logpoint <A> [expr..]` (`lp`) / `lpd <A>` / `lpl` — gdb `dprintf`: am PC drucken
+     (PC + Disasm + ausgewertete Ausdrücke) und **weiterlaufen**, nie anhalten.
+   - **Noch offen:** `commands`-Blöcke an Breakpoints; ZVE2-Logpoints (nur ZVE1).
 
 ---
 

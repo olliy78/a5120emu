@@ -107,6 +107,15 @@ int main(int argc, char** argv){
     // display list (shown at every stop): each entry is a raw token
     std::vector<std::string> displays;
 
+    // ─── trace-to-file + logpoints ("run and log", no stopping) ────────────────
+    FILE* trace_fp   = nullptr;                 // `trace <file>`: continuous instr trace
+    int   trace_lo   = -1, trace_hi = -1;       // optional PC window for the file trace
+    long  trace_lines= 0;                        // lines written this session
+    long  trace_cap  = 2000000;                  // safety cap (~prevents runaway files)
+    bool  trace_capped = false;
+    // logpoints: at PC, print (PC + optional exprs) and CONTINUE — gdb dprintf.
+    std::map<uint16_t,std::vector<std::string>> logpoints;
+
     auto rc = [&](uint64_t cyc)->long long {            // relative-or-absolute cycle
         return rel_armed ? (long long)(cyc-rel_origin) : (long long)cyc;
     };
@@ -228,14 +237,35 @@ int main(int argc, char** argv){
             f&Z80::FLAG_S?'S':'-', f&Z80::FLAG_Z?'Z':'-', f&Z80::FLAG_H?'H':'-',
             f&Z80::FLAG_PV?'P':'-', f&Z80::FLAG_N?'N':'-', f&Z80::FLAG_C?'C':'-'); };
 
-    auto traceLine = [&](int cpu, const Z80& z){
+    auto traceLineTo = [&](FILE* fp, int cpu, const Z80& z){
         char dis[120]; disasmAt(z.PC,dis,sizeof dis);
         char fl[12]; flagsStr(z.AF,fl);
         // .prn-Annotation ans Zeilenende, damit die Register-Spalten ausgerichtet bleiben.
         std::string p=prnFor(z.PC);
-        fprintf(stderr,"T%d %c%-9lld %-46s AF=%04X[%s] BC=%04X DE=%04X HL=%04X IX=%04X IY=%04X SP=%04X%s%s\n",
+        fprintf(fp,"T%d %c%-9lld %-46s AF=%04X[%s] BC=%04X DE=%04X HL=%04X IX=%04X IY=%04X SP=%04X%s%s\n",
                 cpu,rcpfx(),rc(z.cycles),dis,z.AF,fl,z.BC,z.DE,z.HL,z.IX,z.IY,z.SP,
                 p.empty()?"":"  ; ", p.c_str());
+    };
+    auto traceLine = [&](int cpu, const Z80& z){ traceLineTo(stderr,cpu,z); };
+    // Continuous trace-to-file for one CPU (honours the optional PC window + cap).
+    auto traceToFile = [&](int cpu, const Z80& z){
+        if (!trace_fp) return;
+        if (trace_lo>=0 && (z.PC<trace_lo || z.PC>trace_hi)) return;
+        if (trace_lines>=trace_cap){
+            if(!trace_capped){ fprintf(stderr,"  [trace] cap %ld lines reached — tracing stopped (trace off / raise cap)\n",trace_cap); trace_capped=true; }
+            return;
+        }
+        traceLineTo(trace_fp,cpu,z); ++trace_lines;
+    };
+    // Logpoint hit: print PC + disasm + evaluated exprs to the console, then continue.
+    auto logHit = [&](const Z80& z, const std::vector<std::string>& exprs){
+        Snap s=grab(z);
+        char dis[120]; disasmAt(z.PC,dis,sizeof dis);
+        fprintf(stderr,"[lp] %c%-9lld %s",rcpfx(),rc(z.cycles),dis);
+        for (auto& e: exprs){ bool ok; long v=readOperand(s,e,ok);
+            fprintf(stderr,"  %s=%ld(0x%lX)",e.c_str(),v,(unsigned long)(v&0xFFFF)); }
+        std::string p=prnFor(z.PC); if(!p.empty()) fprintf(stderr,"  ; %s",p.c_str());
+        fprintf(stderr,"\n");
     };
 
     // central "we decided to stop" used by all callbacks
@@ -252,6 +282,9 @@ int main(int argc, char** argv){
         // Maintain the exact CALL/RST/RET call stack (for the history backtrace).
         // Cheap: 1 mem read/instr in the common (non-call/ret) case.
         callstack.onInstruction(pc,[&](uint16_t a){ return m.memReadDebug(a); });
+        // "run and log" (no stopping): continuous file trace + logpoints fire first.
+        traceToFile(1,z);
+        { auto lit=logpoints.find(pc); if(lit!=logpoints.end()) logHit(z,lit->second); }
         if (rel_arm_pc>=0 && pc==(uint16_t)rel_arm_pc){
             rel_origin=z.cycles; rel_armed=true; rel_arm_pc=-1;
             fprintf(stderr,"[mark] relative origin set at PC=%04X (abs cyc=%llu)\n",
@@ -271,6 +304,7 @@ int main(int argc, char** argv){
     });
     m.setZVE2TraceCallback([&](const Z80& z){
         const uint16_t pc=z.PC;
+        traceToFile(2,z);   // gap-free trace across DMA phases (ZVE2 also logged)
         if (tw2lo>=0 && pc>=tw2lo && pc<=tw2hi && tw_n<tw_cap){ traceLine(2,z); ++tw_n; }
         if (step2_rem>0){ traceLine(2,z); if(--step2_rem==0){stopAt(2,z,"step ZVE2");} return; }
         auto it=bp2.find(pc);
@@ -506,6 +540,8 @@ int main(int argc, char** argv){
               "  WATCH   wp/wpr/wb <A>   mem watch: print-write / print-read / break-write\n"
               "          wd <A> wl       delete / list mem watches\n"
               "          iow/iob <P>     io port: print / break ; iod <P> wl-io: iol\n"
+              "  LOG     logpoint <A> [expr..]  print + CONTINUE (dprintf) ; lpd <A> ; lpl\n"
+              "          trace <file> [lo hi]   log every executed instr to file ; trace off\n"
               "  INSPECT r [2]     registers (ZVE1, +ZVE2) ;  bt [N] backtrace (exact; bt scan = heuristic)\n"
               "          d <A> [N] hexdump ; u [A] [N] disasm ; e <A> <b..> poke\n"
               "          set [2] <reg> <v>   edit register ; vars   named RAM vars\n"
@@ -558,6 +594,34 @@ int main(int argc, char** argv){
             fprintf(stderr,"  ZVE2 breakpoints:\n");
             for(auto&kv:bp2){ fprintf(stderr,"    %04X  hits=%ld%s\n",kv.first,kv.second.hits,
                         kv.second.cond.empty()?"":(" if "+kv.second.cond).c_str()); } }
+        // logpoints (dprintf-style: print + continue, never stop) on ZVE1
+        else if ((cmd=="logpoint"||cmd=="lp") && t.size()>1){
+            uint16_t a=(uint16_t)parseNum(t[1]);
+            std::vector<std::string> ex(t.begin()+2,t.end());
+            logpoints[a]=ex;
+            fprintf(stderr,"  logpoint @%04X%s%s\n",a, ex.empty()?"":" exprs:",
+                    ex.empty()?"":[&]{ std::string s; for(auto&e:ex){s+=" "+e;} return s; }().c_str()); }
+        else if (cmd=="lpd" && t.size()>1){ logpoints.erase((uint16_t)parseNum(t[1])); fprintf(stderr,"  logpoint deleted\n"); }
+        else if (cmd=="lpl"){
+            if(logpoints.empty()) fprintf(stderr,"  (no logpoints)\n");
+            for(auto&kv:logpoints){ std::string s=symFor(kv.first);
+                fprintf(stderr,"    %04X%s%s%s ",kv.first,s.empty()?"":" <",s.c_str(),s.empty()?"":">");
+                for(auto&e:kv.second) fprintf(stderr,"%s ",e.c_str()); fprintf(stderr,"\n"); } }
+        // continuous trace-to-file: `trace <file> [lo hi]` ; `trace off`
+        else if (cmd=="trace"){
+            if (t.size()>=2 && t[1]=="off"){
+                if(trace_fp){ fclose(trace_fp); fprintf(stderr,"  trace off (%ld line(s) written)\n",trace_lines); }
+                else fprintf(stderr,"  trace was not on\n");
+                trace_fp=nullptr; trace_lo=trace_hi=-1; trace_lines=0; trace_capped=false; }
+            else if (t.size()>=2){
+                if(trace_fp) fclose(trace_fp);
+                trace_fp=fopen(t[1].c_str(),"w"); trace_lines=0; trace_capped=false;
+                trace_lo=trace_hi=-1;
+                if(!trace_fp){ fprintf(stderr,"  cannot open %s for writing\n",t[1].c_str()); }
+                else { if(t.size()>=4){ trace_lo=(int)(uint16_t)parseNum(t[2]); trace_hi=(int)(uint16_t)parseNum(t[3]); }
+                    fprintf(stderr,"  trace → %s%s (every executed instr; cap %ld lines, 'trace off' to stop)\n",
+                            t[1].c_str(), trace_lo>=0?(" in ["+std::to_string(trace_lo)+","+std::to_string(trace_hi)+"]").c_str():"", trace_cap); } }
+            else fprintf(stderr,"  trace <file> [lo hi] | trace off\n"); }
         else if (cmd=="mark"){ if(t.size()>1){ rel_arm_pc=(int)(uint16_t)parseNum(t[1]); fprintf(stderr,"  mark armed at PC=%04X\n",rel_arm_pc);}
             else { rel_origin=m.cpuCycles(); rel_armed=true; fprintf(stderr,"  mark: origin=%llu (now)\n",(unsigned long long)rel_origin);} }
         else if (cmd=="r"){ snap1=grab(m.cpuDebug()); printSnap(1);
@@ -631,5 +695,6 @@ int main(int argc, char** argv){
         else if (cmd=="reset"){ m.reset(); fprintf(stderr,"  reset\n"); }
         else fprintf(stderr,"  ? unknown command '%s' (try help)\n",cmd.c_str());
     }
+    if (trace_fp){ fclose(trace_fp); fprintf(stderr,"trace closed (%ld line(s))\n",trace_lines); }
     return 0;
 }
