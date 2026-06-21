@@ -44,6 +44,7 @@ boot_trace [DISK] [optionen]
 |--------|---------|
 | `-c <zyklen>` | Boot-Zyklenlimit (vor Erreichen des geladenen Codes) |
 | `--until <cond>` | **Lauf anhalten, sobald `<cond>` gilt** (läuft dabei über den Boot-Handoff hinaus bis zur Bedingung oder zum `-c`-Limit), dann normaler Report. `cond`: `PC<op>A`, `[A]<op>V`, `[A]w<op>V` mit `<op> ∈ == != < > <= >=` (s. §2b) |
+| `--coverage [file]` | **Code-Coverage**: welche ZVE1-Bytes ausgeführt wurden (zusammengefasst als Ranges) + ZVE2-Adresszahl; mit `file` zusätzlich CSV-Export `cpu,pc,hits` (maschinenlesbar, per `diff`/`comm` als Run-Diff) (s. §2c) |
 | `-p <zyklen>` | **nach** dem Boot weiterlaufen (`0x0437`+) — aktiviert den Post-Boot-Report (Port-Histogramm, VRAM-Schreibzähler + -Bereich, PC-Histogramm des geladenen Codes, 80-Spalten-VRAM-Textdump) |
 | `--drive <n>` | Disk auf Laufwerk `n` mounten (Default 0 = A:) |
 | `-L <datei>` | den (sehr ausführlichen) **Emulator-Log** in eine Datei umleiten, damit die Trace-Zusammenfassung lesbar bleibt (`-L /dev/null` verwirft ihn) |
@@ -115,6 +116,35 @@ Bedingungen (pro ZVE1-Instruktion geprüft): `PC<op>A`, `[A]<op>V`, `[A]w<op>V` 
 `<op> ∈ == != < > <= >=`; `A`/`V` base-0 (`0x..`, dezimal). Die Statuszeile am Ende meldet
 `MET at cycle … (PC=…)` bzw. `not met`. Praktisch mit `-d`/`-w`/`-z`, um genau im
 erreichten Zustand zu dumpen/tracen.
+
+### 2c. Code-Coverage & CSV-Export (`--coverage`)
+
+`--coverage` zeigt am Ende, **welcher ZVE1-Code tatsächlich gelaufen ist**: aus dem
+PC-Histogramm wird jede ausgeführte Instruktion einmal decodiert (für ihre Länge), ihre
+Bytes als „abgedeckt" markiert und zu **zusammenhängenden Ranges** zusammengefasst —
+plus die Zahl distinkter ZVE2-Adressen.
+
+```
+=== Code coverage (ZVE1) ===
+  164 distinct instr addresses, 278 bytes covered in 46 range(s):
+    0x0000-0x0008  (9 bytes)
+    0x0400-0x04A2  (163 bytes)
+    …
+  ZVE2: 65 distinct instr addresses executed
+```
+
+Mit `--coverage <file.csv>` wird zusätzlich ein **maschinenlesbares CSV** `cpu,pc,hits`
+geschrieben (sortiert). Damit lässt sich auch ein **Run-Diff** bauen — zwei Läufe
+exportieren und vergleichen, z. B. „welche Adressen hat Lauf B getroffen, Lauf A nicht":
+
+```sh
+boot_trace --until 'PC==0x0437' --coverage a.csv disk_a.img
+boot_trace --until 'PC==0x0437' --coverage b.csv disk_b.img
+comm -13 <(grep ^ZVE1 a.csv|cut -d, -f2|sort) <(grep ^ZVE1 b.csv|cut -d, -f2|sort)
+```
+
+(Selbstmodifizierender Code: die Instruktionslänge wird aus dem *finalen* Speicherabbild
+genommen — vernachlässigbarer Effekt auf die Byte-Ranges.)
 
 ---
 

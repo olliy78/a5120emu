@@ -243,6 +243,8 @@ int main(int argc, char** argv) {
     UntilCond until;                     // --until <cond>: stop the run when it holds
     bool      until_hit = false;         // set by the ZVE1 callback when `until` fires
     int       until_cycle = 0; uint16_t until_pc = 0;
+    bool      coverage_on   = false;     // --coverage [file]: executed-code report + CSV export
+    const char* coverage_path = nullptr;
 
     // Runtime log control (new gated logging). Default base = ERROR so a plain
     // run is quiet and fast; raise globally with --log-level or, far better,
@@ -290,6 +292,10 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--until") && i+1 < argc) {   // --until [03F8]==3 | PC==0x1800
             if (!parseUntil(argv[++i], until))
                 fprintf(stderr, "WARN: bad --until '%s' (use PC<op>A | [A]<op>V | [A]w<op>V)\n", argv[i]);
+        }
+        else if (!strcmp(argv[i], "--coverage")) {   // --coverage [file.csv]
+            coverage_on = true;
+            if (i+1 < argc && argv[i+1][0] != '-') coverage_path = argv[++i];
         }
         else if (!strcmp(argv[i], "--watch") && i+1 < argc) {   // --watch 0x0000,0x03F8,...
             char* tok = strtok(argv[++i], ",");
@@ -693,6 +699,56 @@ int main(int argc, char** argv) {
                 100.0 * kv.first / sample_count,
                 lbl ? lbl : "", prnTail(kv.second).c_str());
         if (++shown >= 30) break;
+    }
+
+    // ── Code coverage (--coverage): which ZVE1 code actually executed ──────────
+    // Derived from pc_hist: decode each DISTINCT executed instruction once to learn
+    // its length, mark its bytes covered, then collapse covered bytes into ranges.
+    // (Self-modifying code: length is taken from the FINAL memory image — minor.)
+    if (coverage_on) {
+        std::vector<bool> cov(0x10000, false);
+        auto rd = [&](uint16_t x){ return machine.memReadDebug(x); };
+        for (auto& kv : pc_hist) {
+            int len = z80dis::decode(rd, kv.first).len;
+            for (int b = 0; b < len; ++b) cov[(uint16_t)(kv.first + b)] = true;
+        }
+        size_t bytes = 0; for (bool c : cov) if (c) ++bytes;
+        // collapse into contiguous covered ranges
+        std::vector<std::pair<int,int>> ranges;
+        for (int a = 0; a < 0x10000; ) {
+            if (!cov[a]) { ++a; continue; }
+            int s = a; while (a < 0x10000 && cov[a]) ++a;
+            ranges.push_back({s, a - 1});
+        }
+        fprintf(stderr, "\n=== Code coverage (ZVE1) ===\n");
+        fprintf(stderr, "  %zu distinct instr addresses, %zu bytes covered in %zu range(s):\n",
+                pc_hist.size(), bytes, ranges.size());
+        int rshown = 0;
+        for (auto& r : ranges) {
+            fprintf(stderr, "    0x%04X-0x%04X  (%d byte%s)\n", r.first, r.second,
+                    r.second - r.first + 1, (r.second - r.first) ? "s" : "");
+            if (++rshown >= 60) { fprintf(stderr, "    … (%zu ranges total)\n", ranges.size()); break; }
+        }
+        fprintf(stderr, "  ZVE2: %zu distinct instr addresses executed\n", zve2_pc_hist.size());
+
+        // CSV export: cpu,pc,hits (sorted) — machine-readable; two runs' CSVs diff
+        // (comm/diff) to see which addresses one run hit and the other did not.
+        if (coverage_path) {
+            FILE* cf = fopen(coverage_path, "w");
+            if (!cf) fprintf(stderr, "  WARN: cannot write coverage CSV '%s'\n", coverage_path);
+            else {
+                fprintf(cf, "cpu,pc,hits\n");
+                auto dump = [&](const std::unordered_map<uint16_t,uint32_t>& h, const char* cpu){
+                    std::vector<std::pair<uint16_t,uint32_t>> v(h.begin(), h.end());
+                    std::sort(v.begin(), v.end());
+                    for (auto& kv : v) fprintf(cf, "%s,0x%04X,%u\n", cpu, kv.first, kv.second);
+                };
+                dump(pc_hist, "ZVE1");
+                dump(zve2_pc_hist, "ZVE2");
+                fclose(cf);
+                fprintf(stderr, "  CSV written → %s (cpu,pc,hits)\n", coverage_path);
+            }
+        }
     }
 
     // Framebuffer activity check

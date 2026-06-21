@@ -107,8 +107,14 @@ Adressiert den Hauptschmerz: jeder Versuch = ~8 s Reboot, Analyse aus RAM-Dumps.
       dabei über den Boot-Handoff hinaus), dann normaler Report. `cond`: `PC<op>A`,
       `[A]<op>V`, `[A]w<op>V` mit `<op> ∈ == != < > <= >=`. Mit `-d`/`-w`/`-z` kombinierbar,
       um genau im erreichten Zustand zu dumpen/tracen.
-12. **Maschinenlesbarer Trace (CSV/JSON)**, **Run-Diff** (zwei Läufe vergleichen → wo
-    divergieren sie), **Coverage** (welche Adressen liefen / nie).
+12. **✅ Coverage + CSV-Export** *(implementiert 2026-06-21)* / Run-Diff teilweise
+    - `boot_trace --coverage [file]`: zeigt die ausgeführten ZVE1-Byte-Ranges
+      (aus dem PC-Histogramm, je Instruktion einmal decodiert) + ZVE2-Adresszahl;
+      mit `file` zusätzlich CSV `cpu,pc,hits` (maschinenlesbar).
+    - **Run-Diff** über die CSVs zweier Läufe per `diff`/`comm` (dokumentiert), kein
+      eingebauter `--diff`-Befehl.
+    - **Noch offen:** vollständiger maschinenlesbarer *Per-Instruktions*-Trace (CSV/JSON
+      statt der menschenlesbaren `-w`/`-z`-Zeilen); eingebauter Run-Diff.
 
 ---
 
