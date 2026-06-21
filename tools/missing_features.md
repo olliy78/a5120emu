@@ -58,9 +58,13 @@ Adressiert den Hauptschmerz: jeder Versuch = ~8 s Reboot, Analyse aus RAM-Dumps.
    - `bi <A> <N>` (ZVE2: `bi2`) — die nächsten `N` Treffer ignorieren (gdb `ignore`).
    - `bl` zeigt `[disabled]` + `ignore=N`.
 
-6. **Bessere Daten-Inspektion.** Der Ausdrucks-Evaluator kann nur `REG/[mem]/(rr) OP wert`.
-   Es fehlen Arithmetik und **`x/`-artige Formate** (`x/10i`, `x/8xw`, signed/word-Sicht);
-   `d` ist nur Hex+ASCII. Außerdem **Symbol-/`.prn`-Auflösung im Dump** und in Sprungzielen.
+6. **✅ Bessere Daten-Inspektion** *(implementiert 2026-06-21)*
+   - gdb-artiges **`x/<count><fmt><size> <addr>`**: Formate `x d u c t o a i s`,
+     Größen `b`/`w` (LE); `i` disassembliert (+`.prn`), `s` liest NUL-Strings,
+     `a` zeigt Adresse + Symbol. Format/Größe/Count persistieren wie in gdb; jede
+     Zeile mit Adress-Symbol. `x` läuft ab der letzten Adresse weiter.
+   - **Noch offen:** Arithmetik im Ausdrucks-Evaluator (`readOperand` kann weiterhin
+     nur `REG/[mem]/(rr) OP wert`, keine `+ - * /`).
 
 7. **Source-Sicht (jetzt, wo `.prn` existiert).** Ein `list`/`l` zeigt die `.prn`-Quellzeilen
    *um* den PC (nicht nur die eine) — gdb `list`. Und: **Labels aus der `.prn` automatisch

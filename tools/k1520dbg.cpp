@@ -399,6 +399,62 @@ int main(int argc, char** argv){
             fprintf(stderr," |%s|\n",asc);
         }
     };
+    // ─── gdb-style memory examine:  x/<count><fmt><size> <addr> ────────────────
+    // fmt: x hex · d signed-dec · u unsigned-dec · c char · t binary · o octal ·
+    //      a address(+symbol) · i instruction · s NUL-string.  size: b=1 · w/h=2 (LE).
+    struct XFmt { int count=1; char fmt='x'; int size=1; };
+    XFmt     xlast;
+    uint16_t xaddr=0; bool xaddr_set=false;
+    auto examine = [&](const std::string& spec, bool have_addr, uint16_t addr){
+        XFmt f = xlast;
+        if (!spec.empty()){
+            size_t i=0; std::string num;
+            while(i<spec.size() && spec[i]>='0' && spec[i]<='9') num+=spec[i++];
+            if(!num.empty()) f.count=atoi(num.c_str());
+            for(; i<spec.size(); ++i){ char c=spec[i];
+                if(c=='b') f.size=1; else if(c=='w'||c=='h') f.size=2;
+                else f.fmt=c; }
+        }
+        if(f.fmt=='a') f.size=2; else if(f.fmt=='c') f.size=1;
+        if(f.count<1) f.count=1;
+        xlast=f;
+        if(have_addr){ xaddr=addr; xaddr_set=true; }
+        else if(!xaddr_set){ xaddr=m.cpuPC(); xaddr_set=true; }
+        uint16_t a=xaddr;
+        if(f.fmt=='i'){
+            for(int k=0;k<f.count;++k){ char l[120]; int len=disasmAt(a,l,sizeof l);
+                std::string p=prnFor(a); fprintf(stderr,"  %s%s%s\n",l,p.empty()?"":"  ; ",p.c_str());
+                a=(uint16_t)(a+len); }
+        } else if(f.fmt=='s'){
+            for(int k=0;k<f.count;++k){ fprintf(stderr,"  %04X: \"",a); int n=0; uint8_t b;
+                while((b=m.memReadDebug(a))!=0 && n<255){ fputc((b>=0x20&&b<0x7F)?(char)b:'.',stderr); ++a; ++n; }
+                ++a; fprintf(stderr,"\"\n"); }
+        } else {
+            auto pv=[&](long u)->std::string{ char b[48];
+                switch(f.fmt){
+                    case 'd':{ long sv=(f.size==2)?(int16_t)u:(int8_t)u; snprintf(b,sizeof b,"%ld",sv); break; }
+                    case 'u': snprintf(b,sizeof b,"%lu",(unsigned long)u); break;
+                    case 'c': snprintf(b,sizeof b,"0x%02lX %s",u,(u>=0x20&&u<0x7F)?(std::string("'")+(char)u+"'").c_str():"  "); break;
+                    case 't':{ std::string s; for(int i=f.size*8-1;i>=0;--i) s+=((u>>i)&1)?'1':'0'; snprintf(b,sizeof b,"%s",s.c_str()); break; }
+                    case 'o': snprintf(b,sizeof b,"0%lo",(unsigned long)u); break;
+                    case 'a':{ std::string s=symFor((uint16_t)u); snprintf(b,sizeof b,"0x%04lX%s%s%s",u,s.empty()?"":" <",s.c_str(),s.empty()?"":">"); break; }
+                    default: snprintf(b,sizeof b, f.size==2?"%04lX":"%02lX", u); break;
+                } return std::string(b); };
+            int per = (f.fmt=='x') ? (f.size==2?8:8) : (f.fmt=='a'?4:8);
+            for(int k=0;k<f.count;){
+                std::string sym=symFor(a);
+                fprintf(stderr,"  %04X%s%s%s:",a,sym.empty()?"":" <",sym.c_str(),sym.empty()?"":">");
+                for(int col=0; col<per && k<f.count; ++col,++k){
+                    long v; if(f.size==2){ v=m.memReadDebug(a)|(m.memReadDebug((uint16_t)(a+1))<<8); a=(uint16_t)(a+2); }
+                            else { v=m.memReadDebug(a); a=(uint16_t)(a+1); }
+                    fprintf(stderr," %s",pv(v).c_str());
+                }
+                fprintf(stderr,"\n");
+            }
+        }
+        xaddr=a;
+    };
+
     auto showDisplays = [&]{
         if (displays.empty()) return;
         Snap& s = (hit_cpu==2)?snap2:snap1;
@@ -585,6 +641,7 @@ int main(int argc, char** argv){
               "          trace <file> [lo hi]   log every executed instr to file ; trace off\n"
               "  INSPECT r [2]     registers (ZVE1, +ZVE2) ;  bt [N] backtrace (exact; bt scan = heuristic)\n"
               "          d <A> [N] hexdump ; u [A] [N] disasm ; e <A> <b..> poke\n"
+              "          x/<N><fmt><sz> <A>  examine (fmt x/d/u/c/t/o/a/i/s, sz b/w); x continues\n"
               "          set [2] <reg> <v>   edit register ; vars   named RAM vars\n"
               "          dev       K5122 controller state (drive/cyl/head/transfer)\n"
               "          disp <expr> | undisp <n> | disp   show expr at every stop\n"
@@ -701,6 +758,13 @@ int main(int argc, char** argv){
                 std::string p=prnFor(a);
                 fprintf(stderr,"  %s%s%s\n",l, p.empty()?"":"  ; ", p.c_str()); a=(uint16_t)(a+len); }
             last_u=a; last_u_set=true; }
+        else if (cmd=="x" || cmd.rfind("x/",0)==0){
+            std::string spec = (cmd.find('/')!=std::string::npos)? cmd.substr(cmd.find('/')+1) : "";
+            bool have=t.size()>1; uint16_t a=0;
+            // address may be a register / (rr) / [mem] / symbol / number (readOperand superset)
+            if(have){ if(snap1.valid){ bool ok; a=(uint16_t)readOperand(snap1,t[1],ok); }
+                      else a=(uint16_t)parseNum(t[1]); }
+            examine(spec, have, a); }
         else if (cmd=="set" && t.size()>=3){
             int cpu=1; size_t idx=1; if(t[1]=="2"){cpu=2; idx=2;}
             if (idx+1<t.size() && setReg(cpu,t[idx],parseNum(t[idx+1])))
