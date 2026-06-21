@@ -45,10 +45,12 @@ Adressiert den Hauptschmerz: jeder Versuch = ~8 s Reboot, Analyse aus RAM-Dumps.
 
 ## Tier 2 — Debugger-Grundausstattung, die noch fehlt
 
-4. **Reichere Watchpoints.** Heute bricht `wb` bei *jedem* Schreibzugriff. Es fehlen:
-   - **Wert-Watchpoint** (`break when [A] changes` / `[A]==X`),
-   - **Bereichs-Watchpoint** (Region statt Einzelbyte),
-   - Angabe der *tatsächlich auslösenden CPU* (heute immer ZVE1-PC, auch wenn ZVE2 schrieb).
+4. **✅ Reichere Watchpoints** *(implementiert 2026-06-21)*
+   - **Wert-Watchpoint**: `wp/wpr/wb <A> [== NN | != NN | changed]` — feuert nur bei
+     passendem Byte bzw. echter Wertänderung.
+   - **Bereichs-Watchpoint**: `wp/wpr/wb <A..B>` überwacht eine ganze Region.
+   - `wl` zeigt Trefferzähler, `wd <A>` löscht alle den Punkt abdeckenden Watches, `wd all`.
+   - Auslösende CPU (`ZVE1`/`ZVE2.PC`) war bereits via `busWho()` korrekt.
 
 5. **Breakpoint-Verwaltung.** Fehlt: **enable/disable** (statt löschen),
    **ignore-count / „beim N-ten Treffer"** (Trefferzähler existiert schon — das

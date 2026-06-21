@@ -96,8 +96,16 @@ int main(int argc, char** argv){
     const size_t rev_cap = 200;                              // ring depth (≈13 MB)
     std::map<std::string,A5120Machine::MachineSnapshot> named_snaps;   // snap <name>
 
-    // watch/break sets
-    std::set<uint16_t> wp_w, wp_r, wb_w;       // mem: print-on-write / print-on-read / break-on-write
+    // memory watchpoints: address RANGE + optional VALUE-condition; print or break.
+    struct MemWatch {
+        uint16_t lo=0, hi=0;                   // address range (single byte → lo==hi)
+        bool wr=false, rd=false, brk=false;    // on write / on read ; brk=stop else print
+        enum Cond { ANY, EQ, NE, CHG } cond=ANY;
+        uint8_t val=0;                         // for EQ/NE
+        std::map<uint16_t,uint8_t> last;       // for CHG: last seen value per address
+        long hits=0;
+    };
+    std::vector<MemWatch> mwatch;
     std::set<uint8_t>  io_w, io_b;             // io : print-on-access / break-on-access
 
     // symbols
@@ -321,6 +329,30 @@ int main(int argc, char** argv){
     auto busWho = [&]{ static char s[20];
         snprintf(s,sizeof s,"%s.PC=%04X", m.busMasterIsZVE2()?"ZVE2":"ZVE1", m.busMasterPC());
         return s; };
+    // Evaluate a memory access against every watchpoint (range + value-condition).
+    auto hitMem = [&](bool isRead, uint16_t addr, uint8_t data){
+        for (auto& w : mwatch){
+            if (addr < w.lo || addr > w.hi) continue;
+            if (isRead ? !w.rd : !w.wr) continue;
+            bool fire;
+            switch (w.cond){
+                case MemWatch::EQ: fire = (data==w.val); break;
+                case MemWatch::NE: fire = (data!=w.val); break;
+                case MemWatch::CHG:{ auto it=w.last.find(addr);
+                    fire = (it==w.last.end()) || (it->second!=data);
+                    w.last[addr]=data; break; }
+                default: fire = true;
+            }
+            if (!fire) continue;
+            ++w.hits;
+            if (w.brk){ char wmsg[56];
+                snprintf(wmsg,sizeof wmsg,"watch %s [%04X]=%02X by %s",isRead?"RD":"WR",addr,data,busWho());
+                stopFromBus(wmsg); }
+            else
+                fprintf(stderr,"[%s] %c%-9lld %s [%04X]=%02X  %s\n", isRead?"wr":"wp",
+                        rcpfx(),rc(m.cpuCycles()),isRead?"RD":"WR",addr,data,busWho());
+        }
+    };
     m.setBusTrace([&](bool isIO,bool isRead,uint16_t addr,uint8_t data){
         if (isIO){ uint8_t port=(uint8_t)addr;
             if (io_w.count(port))
@@ -330,14 +362,7 @@ int main(int argc, char** argv){
                 stopFromBus(w); }
             return;
         }
-        if (isRead){ if (wp_r.count(addr))
-            fprintf(stderr,"[wr] %c%-9lld RD [%04X]=%02X  %s\n",
-                    rcpfx(),rc(m.cpuCycles()),addr,data,busWho());
-            return; }
-        if (wp_w.count(addr))
-            fprintf(stderr,"[wp] %c%-9lld WR [%04X]=%02X  %s\n",
-                    rcpfx(),rc(m.cpuCycles()),addr,data,busWho());
-        if (wb_w.count(addr)){ char w[40]; snprintf(w,sizeof w,"watch [%04X]=%02X by %s",addr,data,busWho()); stopFromBus(w); }
+        hitMem(isRead, addr, data);
     });
 
     // ─── helpers ───────────────────────────────────────────────────────────────
@@ -481,6 +506,13 @@ int main(int argc, char** argv){
     };
 
     auto parseNum=[&](const std::string& s)->long{ return resolveAddr(s); };
+    // "A" or "A..B" → address range (symbols/hex allowed on both ends).
+    auto parseRange=[&](const std::string& tok, uint16_t& lo, uint16_t& hi){
+        size_t dd=tok.find("..");
+        if (dd==std::string::npos){ lo=hi=(uint16_t)resolveAddr(tok); }
+        else { lo=(uint16_t)resolveAddr(tok.substr(0,dd)); hi=(uint16_t)resolveAddr(tok.substr(dd+2)); }
+        if (hi<lo) std::swap(lo,hi);
+    };
 
     // ─── snapshot / reverse-step helpers ──────────────────────────────────────
     // Push the current machine state onto the reverse-ring before a forward command.
@@ -537,8 +569,9 @@ int main(int argc, char** argv){
               "  BREAK   b <A> [if <cond>] | b2 <A> ...   bp on ZVE1 / ZVE2\n"
               "          tb <A>    temporary (one-shot) bp ; bd/bd2 <A> delete ; bl list\n"
               "          cond: REG/[addr]/[addr]w/(rr)  OP  value   OP: == != < > <= >=\n"
-              "  WATCH   wp/wpr/wb <A>   mem watch: print-write / print-read / break-write\n"
-              "          wd <A> wl       delete / list mem watches\n"
+              "  WATCH   wp/wpr/wb <A|A..B> [==v|!=v|changed]   mem watch (range+cond):\n"
+              "                          print-write / print-read / break-write\n"
+              "          wd <A>|all  wl  delete (covering A) / list mem watches\n"
               "          iow/iob <P>     io port: print / break ; iod <P> wl-io: iol\n"
               "  LOG     logpoint <A> [expr..]  print + CONTINUE (dprintf) ; lpd <A> ; lpl\n"
               "          trace <file> [lo hi]   log every executed instr to file ; trace off\n"
@@ -651,13 +684,37 @@ int main(int argc, char** argv){
         else if (cmd=="disp"){ if(t.size()>1){ displays.push_back(t[1]); fprintf(stderr,"  disp[%zu] = %s\n",displays.size()-1,t[1].c_str()); }
             else { for(size_t i=0;i<displays.size();++i) fprintf(stderr,"  disp[%zu] %s\n",i,displays[i].c_str()); } }
         else if (cmd=="undisp" && t.size()>1){ size_t i=(size_t)parseNum(t[1]); if(i<displays.size()) displays.erase(displays.begin()+i); }
-        else if ((cmd=="wp"||cmd=="wpr"||cmd=="wb") && t.size()>1){ uint16_t a=(uint16_t)parseNum(t[1]);
-            (cmd=="wp"?wp_w:cmd=="wpr"?wp_r:wb_w).insert(a);
-            fprintf(stderr,"  %s [%04X]\n",cmd=="wp"?"watch-write":cmd=="wpr"?"watch-read":"break-write",a); }
-        else if (cmd=="wd" && t.size()>1){ uint16_t a=(uint16_t)parseNum(t[1]); wp_w.erase(a);wp_r.erase(a);wb_w.erase(a); }
-        else if (cmd=="wl"){ fprintf(stderr,"  watch-write:"); for(auto a:wp_w)fprintf(stderr," %04X",a);
-            fprintf(stderr,"\n  watch-read :"); for(auto a:wp_r)fprintf(stderr," %04X",a);
-            fprintf(stderr,"\n  break-write:"); for(auto a:wb_w)fprintf(stderr," %04X",a); fprintf(stderr,"\n"); }
+        else if ((cmd=="wp"||cmd=="wpr"||cmd=="wb") && t.size()>1){
+            MemWatch w; parseRange(t[1], w.lo, w.hi);
+            w.rd = (cmd=="wpr"); w.wr = (cmd!="wpr"); w.brk = (cmd=="wb");
+            // optional value condition:  == N  |  != N  |  changed
+            // N is a memory BYTE → parsed as HEX (consistent with d/u/e), 0x.. also ok.
+            if (t.size()>=4 && t[2]=="=="){ w.cond=MemWatch::EQ; w.val=(uint8_t)strtol(t[3].c_str(),nullptr,16); }
+            else if (t.size()>=4 && t[2]=="!="){ w.cond=MemWatch::NE; w.val=(uint8_t)strtol(t[3].c_str(),nullptr,16); }
+            else if (t.size()>=3 && t[2]=="changed"){ w.cond=MemWatch::CHG;
+                for (uint32_t a=w.lo;a<=w.hi;++a) w.last[(uint16_t)a]=m.memReadDebug((uint16_t)a); }
+            const char* cs = w.cond==MemWatch::EQ?"==":w.cond==MemWatch::NE?"!=":w.cond==MemWatch::CHG?"changed":"";
+            char cond[24]={0}; if(w.cond==MemWatch::EQ||w.cond==MemWatch::NE) snprintf(cond,sizeof cond," %s %02X",cs,w.val);
+            else if(w.cond==MemWatch::CHG) snprintf(cond,sizeof cond," changed");
+            mwatch.push_back(std::move(w));
+            fprintf(stderr,"  [%zu] %s [%04X..%04X]%s\n", mwatch.size()-1,
+                    cmd=="wp"?"watch-write":cmd=="wpr"?"watch-read":"break-write",
+                    mwatch.back().lo,mwatch.back().hi,cond); }
+        else if (cmd=="wd" && t.size()>1){
+            if (t[1]=="all"){ mwatch.clear(); fprintf(stderr,"  all watchpoints cleared\n"); }
+            else { uint16_t a=(uint16_t)parseNum(t[1]); size_t before=mwatch.size();
+                mwatch.erase(std::remove_if(mwatch.begin(),mwatch.end(),
+                    [&](const MemWatch& w){ return a>=w.lo && a<=w.hi; }), mwatch.end());
+                fprintf(stderr,"  removed %zu watch(es) covering %04X\n",before-mwatch.size(),a); } }
+        else if (cmd=="wl"){
+            if(mwatch.empty()) fprintf(stderr,"  (no memory watchpoints)\n");
+            for(size_t i=0;i<mwatch.size();++i){ const MemWatch& w=mwatch[i];
+                const char* k = w.brk?"break":"print";
+                const char* dir = (w.rd&&w.wr)?"rw":w.rd?"rd":"wr";
+                char cond[24]={0}; if(w.cond==MemWatch::EQ) snprintf(cond,sizeof cond," == %02X",w.val);
+                else if(w.cond==MemWatch::NE) snprintf(cond,sizeof cond," != %02X",w.val);
+                else if(w.cond==MemWatch::CHG) snprintf(cond,sizeof cond," changed");
+                fprintf(stderr,"  [%zu] %s-%s [%04X..%04X]%s  hits=%ld\n",i,k,dir,w.lo,w.hi,cond,w.hits); } }
         else if ((cmd=="iow"||cmd=="iob") && t.size()>1){ uint8_t p=(uint8_t)parseNum(t[1]);
             (cmd=="iow"?io_w:io_b).insert(p); fprintf(stderr,"  %s io (%02XH)\n",cmd=="iow"?"watch":"break",p); }
         else if (cmd=="iod" && t.size()>1){ uint8_t p=(uint8_t)parseNum(t[1]); io_w.erase(p); io_b.erase(p); }
