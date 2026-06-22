@@ -471,6 +471,12 @@ if(BUILD_K1520)
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'g 5000000\\nrj\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
         add_cli_test(cli_bt_json "\"boot_reached\":false.*\"until\":.\"set\":true,\"met\":true"
             "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' --json \$D; rm -f \$D")
+        # --quiet suppresses the narrative: JSON present, but no banner/progress/summary.
+        add_test(NAME cli_bt_quiet COMMAND sh -c
+            "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --quiet --until '[0x03F8]==3' --json \$D; rm -f \$D")
+        set_tests_properties(cli_bt_quiet PROPERTIES TIMEOUT 120
+            PASS_REGULAR_EXPRESSION "boot_reached"
+            FAIL_REGULAR_EXPRESSION "Boot Trace Complete|PROGRESS|MILESTONE|histogram")
     endif()
 
 endif() # BUILD_K1520

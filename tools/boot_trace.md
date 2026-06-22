@@ -50,6 +50,7 @@ boot_trace [DISK] [optionen]
 | `--save-state <file>` | am Lauf-Ende (z. B. mit `--until` an einer Bedingung) den **Maschinenzustand** sichern — Checkpoint zum späteren Fortsetzen |
 | `--load-state <file>` | mit einem gesicherten Zustand **starten** statt zu booten (RAM+CPU+ROM-Mapping werden reproduziert); spart den ~Boot bei jedem Lauf |
 | `--json` | am Ende **eine maschinenlesbare JSON-Zeile** mit den Kernfakten (`boot_reached`, `cycles`, `rom_enabled`, `final_pc`, `zve1_addrs`/`zve2_addrs`, `zve2_instr`, `until{set,met,cycle,pc}`) — für Skript-/Agenten-Auswertung |
+| `--quiet` | **unterdrückt die menschliche Narrative** (Banner, Progress, Milestones, ZVE2-Log, Summary, Histogramme, VRAM/Screen). Es bleiben nur **explizit angeforderte** Ausgaben: `--coverage`-Report, `--json`-Zeile, `-d`-RAM-Dump sowie Warnungen/Fehler. Token-sparsam für den Agenten — `--quiet --json` liefert genau eine Zeile (statt ~880) |
 
 **Exit-Code** (für Skript-/Agenten-Verzweigung): mit `--until` → `0` wenn die Bedingung
 erreicht wurde, `2` wenn nicht (Limit zuerst). Ohne `--until` → `0` wenn der Lauf den

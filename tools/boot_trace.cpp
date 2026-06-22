@@ -248,6 +248,7 @@ int main(int argc, char** argv) {
     const char* save_state_path = nullptr;   // --save-state <file>: persist state at run end
     const char* load_state_path = nullptr;   // --load-state <file>: resume from saved state
     bool      json_summary  = false;         // --json: one machine-readable summary line at the end
+    bool      quiet         = false;          // --quiet: suppress the human narrative/report
 
     // Runtime log control (new gated logging). Default base = ERROR so a plain
     // run is quiet and fast; raise globally with --log-level or, far better,
@@ -304,6 +305,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--save-state") && i+1 < argc) { save_state_path = argv[++i]; }
         else if (!strcmp(argv[i], "--load-state") && i+1 < argc) { load_state_path = argv[++i]; }
         else if (!strcmp(argv[i], "--json")) { json_summary = true; }
+        else if (!strcmp(argv[i], "--quiet")) { quiet = true; }
         else if (!strcmp(argv[i], "--watch") && i+1 < argc) {   // --watch 0x0000,0x03F8,...
             char* tok = strtok(argv[++i], ",");
             while (tok && watch_n < 16) { watch_addr[watch_n++] = (uint16_t)strtol(tok, nullptr, 0); tok = strtok(nullptr, ","); }
@@ -320,7 +322,7 @@ int main(int argc, char** argv) {
     // trace tool's own stdout/stderr summary (the libs are built LOG_LEVEL=5).
     if (log_path) {
         if (k1520::logging::Logger::instance().setOutputFile(log_path))
-            fprintf(stderr, "Emulator log → %s\n", log_path);
+            { if(!quiet) fprintf(stderr, "Emulator log → %s\n", log_path); }
         else
             fprintf(stderr, "WARN: could not open log file '%s'\n", log_path);
     }
@@ -328,6 +330,7 @@ int main(int argc, char** argv) {
     // Apply the runtime base level (default ERROR → quiet). Gates registered
     // above raise the effective level only inside their PC range / cycle window.
     Logger::instance().setBaseLevel(log_base);
+    if (!quiet)
     fprintf(stderr, "Log: base=%s%s%s\n",
             Logger::levelName(log_base),
             log_base_set ? "" : " (default)",
@@ -351,6 +354,7 @@ int main(int argc, char** argv) {
         const std::string* s = prn.find(a); return s ? ("  ; " + *s) : std::string();
     };
 
+    if (!quiet) {   // --quiet: suppress the startup banner (and all narrative below)
     fprintf(stderr, "=== A5120 Boot Trace ===\n");
     fprintf(stderr, "Disk:       %s\n", disk_path);
     fprintf(stderr, "Max cycles: %d\n", total_limit);
@@ -359,6 +363,7 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Step trace: %s", single_step ? "ON" : "OFF");
     if (single_step) fprintf(stderr, " (first %d ROM instructions)", single_step_count);
     fprintf(stderr, "\n\n");
+    }
 
     A5120Machine machine;
     machine.powerOn();
@@ -432,8 +437,9 @@ int main(int argc, char** argv) {
                                    :  machine.memReadDebug(until.addr));
             if (until.compare(cur)) {
                 until_hit = true; until_cycle = cycles_done; until_pc = z.PC;
-                fprintf(stderr, "\n*** --until met at cycle %d (ZVE1 PC=0x%04X): %s ***\n",
-                        cycles_done, z.PC, until.text.c_str());
+                if (!quiet)
+                    fprintf(stderr, "\n*** --until met at cycle %d (ZVE1 PC=0x%04X): %s ***\n",
+                            cycles_done, z.PC, until.text.c_str());
                 machine.stop();
             }
         }
@@ -442,8 +448,9 @@ int main(int argc, char** argv) {
         if (!boot_reached && z.PC >= 0x0400 && z.PC < 0xF800 && !machine.isRomEnabled()) {
             boot_reached = true;
             boot_cycle   = cycles_done;
-            fprintf(stderr, "\n*** BOOT SUCCESS: ZVE1 executing loaded code at PC=0x%04X (~cycle %d) ***\n",
-                    z.PC, cycles_done);
+            if (!quiet)
+                fprintf(stderr, "\n*** BOOT SUCCESS: ZVE1 executing loaded code at PC=0x%04X (~cycle %d) ***\n",
+                        z.PC, cycles_done);
         }
 
         for (auto& m : milestones) {
@@ -451,11 +458,12 @@ int main(int argc, char** argv) {
             uint32_t n = ++milestone_counts[m.pc];
             if (!m.hit) {
                 m.hit = true;
+                if (!quiet) {
                 fprintf(stderr, "\n[MILESTONE] ~cycle=%d PC=0x%04X  %s\n",
                         cycles_done, z.PC, m.label);
                 fprintf(stderr, "            SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X\n",
-                        z.SP, z.AF, z.BC, z.DE, z.HL);
-            } else if (!m.once && (n == 10 || n == 100 || (n % 500) == 0)) {
+                        z.SP, z.AF, z.BC, z.DE, z.HL); }
+            } else if (!quiet && !m.once && (n == 10 || n == 100 || (n % 500) == 0)) {
                 fprintf(stderr, "  [milestone] 0x%04X hit %u times (~cycle %d)\n",
                         m.pc, n, cycles_done);
             }
@@ -501,16 +509,17 @@ int main(int argc, char** argv) {
                 zve2_ms_counts[m.pc]++;
                 if (!m.hit) {
                     m.hit = true;
+                    if (!quiet) {
                     fprintf(stderr, "\n[ZVE2 MILESTONE] ~cycle=%d PC=0x%04X  %s\n",
                             cycles_done, z.PC, m.label);
                     fprintf(stderr, "                 SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X\n",
-                            z.SP, z.AF, z.BC, z.DE, z.HL);
+                            z.SP, z.AF, z.BC, z.DE, z.HL); }
                 }
                 if (m.pc == 0x0267) zve2_done_seen = true;
             }
         }
 
-        if (zve2_log_count < zve2_log_cap) {
+        if (!quiet && zve2_log_count < zve2_log_cap) {
             const char* label = romLabel(z.PC);
             fprintf(stderr, "    [ZVE2 %5llu] PC=%04X %-16s SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X  %s%s\n",
                     (unsigned long long)zve2_instr, z.PC, disz(z.PC).c_str(), z.SP, z.AF, z.BC, z.DE, z.HL,
@@ -571,7 +580,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "ERROR: Could not mount disk '%s'\n", disk_path);
         fprintf(stderr, "Last error: %s\n", machine.lastError().c_str());
         fprintf(stderr, "Continuing without disk...\n\n");
-    } else {
+    } else if (!quiet) {
         fprintf(stderr, "Disk mounted OK (drive %d)\n\n", mount_drive);
     }
 
@@ -604,7 +613,7 @@ int main(int argc, char** argv) {
 
         // ── ROM enable/disable transition ─────────────────────────────────────
         bool rom_now = machine.isRomEnabled();
-        if (rom_was_active && !rom_now) {
+        if (!quiet && rom_was_active && !rom_now) {
             fprintf(stderr, "\n*** ROM DISABLED at cycle %d (PC=0x%04X) ***\n",
                     cycles_done, pc);
         }
@@ -615,13 +624,14 @@ int main(int argc, char** argv) {
         // 3 = ZVE2 finished all sectors → ZVE1 leaves the wait loop at 0x0168.
         uint8_t cur_done = machine.memReadDebug(0x03F8);
         if (cur_done != last_done) {
-            fprintf(stderr, "  [cycle %7d] [03F8] done-flag: 0x%02X → 0x%02X  (ZVE1 PC=0x%04X, ZVE2 PC=0x%04X)\n",
-                    cycles_done, last_done, cur_done, pc, machine.zve2PC());
+            if (!quiet)
+                fprintf(stderr, "  [cycle %7d] [03F8] done-flag: 0x%02X → 0x%02X  (ZVE1 PC=0x%04X, ZVE2 PC=0x%04X)\n",
+                        cycles_done, last_done, cur_done, pc, machine.zve2PC());
             last_done = cur_done;
         }
 
         // ── Progress report ───────────────────────────────────────────────────
-        if (cycles_done >= next_progress) {
+        if (!quiet && cycles_done >= next_progress) {
             fprintf(stderr, "\n[PROGRESS] cycles=%7d  ZVE1 PC=0x%04X SP=0x%04X  ROM=%s  "
                     "[03F8]=0x%02X  ZVE2 PC=0x%04X instr=%llu%s\n",
                     cycles_done, pc, machine.cpuSP(),
@@ -656,6 +666,8 @@ int main(int argc, char** argv) {
     }
 
     // ── Final summary ─────────────────────────────────────────────────────────
+    // --quiet suppresses this whole human report; --coverage / --json / -d still print.
+    if (!quiet) {
     fprintf(stderr, "\n=== Boot Trace Complete: %d cycles ===\n", cycles_done);
     if (until.kind != UntilCond::NONE)
         fprintf(stderr, "--until (%s): %s\n", until.text.c_str(),
@@ -748,6 +760,7 @@ int main(int argc, char** argv) {
                 lbl ? lbl : "", prnTail(kv.second).c_str());
         if (++shown >= 30) break;
     }
+    } // end if(!quiet) — summary prose
 
     // ── Code coverage (--coverage): which ZVE1 code actually executed ──────────
     // Derived from pc_hist: decode each DISTINCT executed instruction once to learn
@@ -796,7 +809,7 @@ int main(int argc, char** argv) {
 
     // Framebuffer activity check
     const uint8_t* fb = machine.framebuffer();
-    if (fb) {
+    if (!quiet && fb) {
         int nonzero = 0;
         for (int i = 0; i < 80 * 24; i++)
             if (fb[i] != 0 && fb[i] != 0xFF) nonzero++;
@@ -804,7 +817,7 @@ int main(int argc, char** argv) {
     }
 
     // ── Post-boot (loaded-code) analysis (only meaningful with -p) ─────────────
-    if (boot_reached && post_cycles > 0) {
+    if (!quiet && boot_reached && post_cycles > 0) {
         fprintf(stderr, "\n=== Post-boot (loaded code, %d cycles after 0x%04X handoff) ===\n",
                 cycles_done - boot_cycle, 0x0437);
 
