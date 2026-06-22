@@ -336,6 +336,22 @@ void K5122::update(int cycles) {
  * 3. MK (bit1) oder MK1 (bit4) steigende Flanke → resyncToNextMark()
  */
 void K5122::handleCtrlPortAWrite(uint8_t data) {
+    // ── /WE (bit0) Flanken: BIOS-Schreib-Datenfeld sammeln/committen ─────────
+    // Der CP/A-BIOS-dio-Pfad findet zuerst die IDAM (Lese-Strobe, /WE=1) und
+    // schaltet erst zum Schreiben des Datenfelds /WE auf 0 (Steuerwort B4/B0),
+    // am Feldende wieder auf 1 (B5/B1).  Nur im laufenden ZVE2-Streaming
+    // (transferring_, Bus gehalten) — der alte synthetische /STR-Schreibpfad
+    // setzt stattdessen write_mode_ und wird hiervon nicht berührt.
+    {
+        bool we_now  = !(data & 0x01);          // /WE aktiv (Schreiben) ⇔ bit0=0
+        bool we_prev = !(prev_ctrl_a_ & 0x01);
+        if (we_now && !we_prev && transferring_ && !write_mode_ && bus_.isBUSRQ()) {
+            beginWriteField();
+        } else if (!we_now && we_prev && we_writing_) {
+            commitWriteField();
+        }
+    }
+
     // ── /ST (bit7) fallende Flanke: Schritt-Puls ─────────────────────────────
     if ((prev_ctrl_a_ & 0x80) && !(data & 0x80)) {
         // MR/SD (bit5): bit5=1 → inward (höhere Zylinder), bit5=0 → outward (Richtung 0)
@@ -416,7 +432,9 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
  * Diese Echo-Bytes werden ignoriert (write_mode_ ist dann false).
  */
 void K5122::handleDataPortAWrite(uint8_t data) {
-    if (!write_mode_) return;   // Lese-Echo — kein Schreibdatum
+    // Sammeln, wenn der alte /STR-Schreibpfad (write_mode_) ODER der BIOS-
+    // /WE-Schreibpfad (we_writing_) aktiv ist.  Sonst Lese-Echo → ignorieren.
+    if (!write_mode_ && !we_writing_) return;   // Lese-Echo — kein Schreibdatum
     write_buf_.push_back(data);
     LOG_TRACE("K5122", "Schreib-Byte 0x%02X gesammelt (%zu Bytes)", data, write_buf_.size());
 }
@@ -645,6 +663,125 @@ void K5122::commitWrite() {
     write_buf_.clear();
     write_mode_   = false;
     transferring_ = false;
+}
+
+/**
+ * @brief Beginnt das Sammeln eines BIOS-Schreib-Datenfelds (/WE 1→0).
+ *
+ * Der Zielsektor ist derjenige, dessen IDAM (Id-Marke) zuletzt unter dem Lesekopf
+ * durchlief — also die letzte Id-Marke im Robotron-Streaming-Track @ref robotron_track_
+ * VOR (bzw. an) @ref head_pos_.  Aus dem IDAM-Feld werden Zylinder/Kopf/Sektor-ID und
+ * der Größencode (→ Sektorgröße) gelesen.  Anschließend sammelt @ref handleDataPortAWrite
+ * jedes OUT(0x14)-Byte in @ref write_buf_, bis /WE wieder auf 1 geht.
+ */
+void K5122::beginWriteField() {
+    we_writing_ = true;
+    write_buf_.clear();
+    wr_id_ = 0; wr_size_ = cur_sector_size_; wr_cyl_ = 0; wr_head_ = current_head_;
+
+    if (cur_track_ && !cur_track_->empty()) {
+        const size_t n = cur_track_->size();
+        for (size_t k = 0; k < n; ++k) {
+            const size_t p = (head_pos_ + n - k) % n;     // rückwärts ab head_pos_
+            if (cur_track_->marks[p] == MarkType::Id) {
+                wr_cyl_  = cur_track_->bytes[(p + 2) % n];
+                wr_head_ = cur_track_->bytes[(p + 3) % n];
+                wr_id_   = cur_track_->bytes[(p + 4) % n];
+                const uint8_t sc = cur_track_->bytes[(p + 5) % n] & 0x03;
+                wr_size_ = static_cast<uint16_t>(128u << sc);
+                break;
+            }
+        }
+    }
+    LOG_DEBUG("K5122", "Schreib-Datenfeld Beginn: Ziel C=%u H=%u S=%u sz=%u (hp=%zu)",
+              wr_cyl_, wr_head_, wr_id_, wr_size_, head_pos_);
+}
+
+/**
+ * @brief Committet ein gesammeltes BIOS-Schreib-Datenfeld (/WE 0→1) in den Zielsektor.
+ *
+ * Der Schreibstrom in @ref write_buf_ enthält das vollständige Datenfeld inkl. Gap/Sync:
+ * @code  …00 00 … A1 A1 A1 <DAM=FB/F8> <Datenbytes…> <CRC> <CRC> 00 00…  @endcode
+ * Das Datenfeld wird extrahiert (erste A1-A1-A1-Sync → DAM → Daten), auf @ref wr_size_
+ * Bytes begrenzt und in den per IDAM identifizierten Sektor des IBM-Cache-Tracks
+ * geschrieben; danach wird der Track neu gebaut und als dirty markiert.  @ref transferring_
+ * / @ref head_pos_ bleiben unberührt — das ZVE2-Streaming liest in derselben Sitzung weiter.
+ */
+void K5122::commitWriteField() {
+    we_writing_ = false;
+    FloppyDriveV2& drv = drives_[selected_drive_];
+
+    if (!drv.isMounted()) { write_buf_.clear(); return; }
+    if (drv.isWriteProtect()) {
+        LOG_WARN("K5122", "commitWriteField: D%d schreibgeschützt", selected_drive_);
+        write_buf_.clear();
+        return;
+    }
+    if (write_buf_.empty()) { write_buf_.clear(); return; }
+
+    // Datenfeld im Strom finden: erste A1-A1-A1-Sync, danach DAM-Byte, dann Daten.
+    size_t i = 0; bool found = false;
+    for (; i + 2 < write_buf_.size(); ++i) {
+        if (write_buf_[i] == 0xA1 && write_buf_[i + 1] == 0xA1 && write_buf_[i + 2] == 0xA1) {
+            found = true; break;
+        }
+    }
+    if (!found) {
+        LOG_WARN("K5122", "commitWriteField: keine A1-A1-A1-Sync im Schreibstrom (buf=%zu, S=%u)",
+                 write_buf_.size(), wr_id_);
+        write_buf_.clear();
+        return;
+    }
+    const size_t data_start = i + 4;            // 3×A1 + DAM(FB/F8)
+    if (data_start >= write_buf_.size()) {
+        LOG_WARN("K5122", "commitWriteField: Datenfeld leer (S=%u)", wr_id_);
+        write_buf_.clear();
+        return;
+    }
+    const size_t avail = write_buf_.size() - data_start;
+    const size_t take  = std::min<size_t>(wr_size_, avail);
+
+    markDriveAccess(selected_drive_);
+
+    // Ziel-Spur (IBM-Format im Drive-Cache) parsen und Sektor per ID ersetzen.
+    TrackImage& spur = drv.mutableTrack(current_head_);
+    if (spur.empty()) {
+        LOG_WARN("K5122", "commitWriteField: Spur (D%d H%u) leer",
+                 selected_drive_, static_cast<unsigned>(current_head_));
+        write_buf_.clear();
+        return;
+    }
+    auto sektoren = TrackCodec::parseTrack(spur);
+    LogicalSector* ziel = nullptr;
+    for (auto& s : sektoren) {
+        if (s.id == wr_id_) { ziel = &s; break; }
+    }
+    if (!ziel) {
+        LOG_WARN("K5122", "commitWriteField: Zielsektor S=%u nicht in Spur (C=%u H=%u)",
+                 wr_id_, wr_cyl_, static_cast<unsigned>(current_head_));
+        write_buf_.clear();
+        return;
+    }
+
+    ziel->data.assign(write_buf_.begin() + data_start,
+                      write_buf_.begin() + data_start + take);
+    ziel->data.resize(ziel->size, 0x00);
+
+    LOG_INFO("K5122", ">>> WRITE D%d C=%u H=%u S=%u bytes=%zu (buf=%zu)",
+             selected_drive_,
+             static_cast<unsigned>(drv.currentCylinder()),
+             static_cast<unsigned>(current_head_),
+             static_cast<unsigned>(ziel->id), take, write_buf_.size());
+
+    spur = TrackCodec::buildTrack(sektoren, spur.encoding);
+    drv.markTrackDirty(current_head_);
+
+    // Streaming-Track aktualisieren, damit ein evtl. Verify-Read in derselben Sitzung
+    // die frischen Daten sieht (Layout/Größen unverändert → head_pos_ bleibt gültig).
+    robotron_track_ = TrackCodec::buildRobotronTrack(sektoren);
+    cur_track_      = &robotron_track_;
+
+    write_buf_.clear();
 }
 
 /**

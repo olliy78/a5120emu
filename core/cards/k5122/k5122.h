@@ -170,6 +170,12 @@ private:
     void resyncToNextMark();
     /// @brief Committet einen abgeschlossenen Schreibtransfer in die gecachte Spur.
     void commitWrite();
+    /// @brief Beginnt das Sammeln eines Schreib-Datenfelds (/WE 1→0 im ZVE2-Streaming).
+    ///        Ermittelt den Zielsektor aus der letzten Id-Marke vor head_pos_.
+    void beginWriteField();
+    /// @brief Committet ein gesammeltes Schreib-Datenfeld (/WE 0→1) in den Zielsektor:
+    ///        extrahiert das Datenfeld (A1 A1 A1 DAM …) und schreibt es zurück.
+    void commitWriteField();
     void markDriveAccess(int drive);
 
     // ─── Hardware-Objekte ────────────────────────────────────────────────────
@@ -195,9 +201,20 @@ private:
     size_t            head_pos_     = 0;        ///< Lesekopf-Position (Byte) in der Spur
     bool              locked_       = false;    ///< Datenseparator auf eine Marke synchronisiert
     bool              transferring_ = false;    ///< Lesetransfer läuft
-    bool              write_mode_   = false;    ///< Schreibtransfer läuft
+    bool              write_mode_   = false;    ///< Schreibtransfer läuft (alter /STR-Schreibpfad)
     std::vector<uint8_t> write_buf_;            ///< gesammelte Schreibdaten (Port 0x14)
     uint16_t          cur_sector_size_ = 128;   ///< Sektorgröße der aktiven Spur (nur Debug-Info)
+
+    // ─── BIOS-Schreibpfad (/WE-flankengesteuert) ──────────────────────────────
+    // Der CP/A-BIOS-Schreibpfad startet den Transfer als /STR-Lesestrobe (IDAM-Suche)
+    // und schaltet erst beim Datenfeld /WE (bit0) auf 0.  write_mode_ (am /STR-Start
+    // gesetzt) greift hier also nicht; das Datenfeld wird stattdessen zwischen den
+    // /WE-Flanken 1→0 (Feldbeginn) und 0→1 (Feldende → Commit) gesammelt.
+    bool              we_writing_ = false;       ///< Datenfeld-Sammlung zwischen den /WE-Flanken
+    uint8_t           wr_cyl_  = 0;              ///< Zielsektor (aus IDAM vor head_pos_)
+    uint8_t           wr_head_ = 0;
+    uint8_t           wr_id_   = 1;
+    uint16_t          wr_size_ = 128;
 
     // ─── DMA-State ───────────────────────────────────────────────────────────
     bool dma_pending_  = false;

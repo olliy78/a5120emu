@@ -539,6 +539,75 @@ TEST_F(K5122Test, WriteRoundtrip_ErsteSektorÄnderung) {
     std::filesystem::remove(path);
 }
 
+/**
+ * @test K5122Test/WriteField_WEFlanke_TrifftZielsektorPerIDAM
+ * @brief BIOS-Schreibpfad: /WE-flankengesteuertes Datenfeld trifft den per IDAM
+ *        identifizierten Zielsektor (hier Sektor 2, NICHT der erste).
+ *
+ * Bildet den CP/A-BIOS-dio-Ablauf nach: Der Transfer startet als Lese-Strobe
+ * (IDAM-Suche, /WE=1); erst beim Datenfeld geht /WE (bit0) auf 0 (Steuerwort B4),
+ * am Feldende zurück auf 1.  Zwischen den /WE-Flanken streamt ZVE2 das Datenfeld
+ * (Gap, A1 A1 A1, DAM, Daten, CRC) über Port 0x14.  Der Controller muss daraus den
+ * reinen Sektorinhalt extrahieren und in den per letzter Id-Marke vor head_pos_
+ * bestimmten Sektor schreiben — hier Sektor 2 (head_pos_ im Bereich des 2. IDAM).
+ */
+TEST_F(K5122Test, WriteField_WEFlanke_TrifftZielsektorPerIDAM) {
+    auto path = makeTmpImg(fmt1, "_wefield");
+    ASSERT_TRUE(card.mountDisk(0, path, fmt1));
+    card.ioWrite(0x18, 0xEE);   // Laufwerk 0 wählen (wie WriteRoundtrip)
+
+    // Lese-Strobe (head0): Streaming an, head_pos_=0, BUSRQ assertiert.
+    strobeRead(0);
+    ASSERT_TRUE(bus.isBUSRQ());
+
+    // Kopf in den Bereich von Sektor 2 vorrücken.  Robotron-Layout 128B-Sektor =
+    // 164 Bytes (6 IDAM + 18 Gap + 2 DAM + 128 Daten + 2 CRC + 8 Gap) → 2. IDAM bei 164.
+    readStream(170);
+    // Lesen gibt /BUSRQ frei; die Per-Byte-Drossel reassertiert ihn (wie im echten Lauf).
+    card.update(1'000'000);
+    ASSERT_TRUE(bus.isBUSRQ());
+
+    // /WE 1→0 (nur bit0 wechselt; kein /STR-/MK-/Step-Edge — prev=0xF5, bit3=0):
+    card.ioWrite(0x10, 0xF4);
+
+    // Datenfeld streamen: Gap, A1 A1 A1, DAM(FB), 128×0xBB, CRC, Gap.
+    card.ioWrite(0x14, 0x00);
+    card.ioWrite(0x14, 0xA1); card.ioWrite(0x14, 0xA1); card.ioWrite(0x14, 0xA1);
+    card.ioWrite(0x14, 0xFB);
+    for (int i = 0; i < 128; ++i) card.ioWrite(0x14, 0xBB);
+    card.ioWrite(0x14, 0x12); card.ioWrite(0x14, 0x34);   // CRC (vom Controller ignoriert)
+    card.ioWrite(0x14, 0x00);
+
+    // /WE 0→1: Datenfeld committen.
+    card.ioWrite(0x10, 0xF5);
+
+    // flush → Host-Image, neu öffnen und prüfen.
+    card.drive(0).flush();
+    RawSectorImage check(path, fmt1, /*wp=*/false);
+    ASSERT_TRUE(check.isOpen());
+    auto parsed = TrackCodec::parseTrack(check.readTrack(0, 0));
+    ASSERT_GE(parsed.size(), 4u);
+
+    auto byId = [&](uint8_t id) -> LogicalSector* {
+        for (auto& s : parsed) if (s.id == id) return &s;
+        return nullptr;
+    };
+    LogicalSector* s2 = byId(2);
+    ASSERT_NE(s2, nullptr);
+    EXPECT_TRUE(std::all_of(s2->data.begin(), s2->data.end(),
+                            [](uint8_t b){ return b == 0xBB; }))
+        << "Sektor 2 sollte nach dem /WE-Schreibfeld alles 0xBB tragen";
+
+    // Targeting-Nachweis: Sektor 1 (Füllbyte 0x01) bleibt unverändert.
+    LogicalSector* s1 = byId(1);
+    ASSERT_NE(s1, nullptr);
+    EXPECT_TRUE(std::all_of(s1->data.begin(), s1->data.end(),
+                            [](uint8_t b){ return b == 0x01; }))
+        << "Sektor 1 darf nicht überschrieben werden (IDAM-basiertes Targeting)";
+
+    std::filesystem::remove(path);
+}
+
 // ─── 10. Ohne Laufwerk kein Absturz ──────────────────────────────────────────
 
 TEST_F(K5122Test, OhneLaufwerk_STRStrobeKeinAbsturz) {
