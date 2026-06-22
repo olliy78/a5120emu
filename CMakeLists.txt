@@ -456,6 +456,15 @@ if(BUILD_K1520)
         # save state at a condition, then resume from it (ROM mapping reproduced).
         add_cli_test(cli_bt_savestate "resuming at PC=0x0169"
             "D=$(mktemp); S=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' --save-state \$S \$D >/dev/null 2>&1; $<TARGET_FILE:boot_trace> -L /dev/null --load-state \$S -c 2000 \$D; rm -f \$D \$S")
+
+        # Exit-code semantics (for scripted/agent branching) — assert the code via `test`.
+        add_test(NAME cli_bt_exit_met COMMAND sh -c
+            "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' \$D >/dev/null 2>&1; r=\$?; rm -f \$D; test \$r -eq 0")
+        add_test(NAME cli_bt_exit_notmet COMMAND sh -c
+            "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null -c 50000 --until '[0x03F8]==3' \$D >/dev/null 2>&1; r=\$?; rm -f \$D; test \$r -eq 2")
+        add_test(NAME cli_dbg_exit_badisk COMMAND sh -c
+            "printf 'q\\n' | $<TARGET_FILE:k1520dbg> /no/such/disk.img >/dev/null 2>&1; test \$? -eq 1")
+        set_tests_properties(cli_bt_exit_met cli_bt_exit_notmet cli_dbg_exit_badisk PROPERTIES TIMEOUT 120)
     endif()
 
 endif() # BUILD_K1520

@@ -871,5 +871,8 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Exit code (for scripted/agent use): with --until → 0 if met, 2 if not met;
+    // otherwise 0 if the run reached the loaded code (boot handoff), else 1.
+    if (until.kind != UntilCond::NONE) return until_hit ? 0 : 2;
     return boot_reached ? 0 : 1;
 }

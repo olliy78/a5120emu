@@ -49,6 +49,10 @@ boot_trace [DISK] [optionen]
 | `--diff a.csv b.csv` | **Run-Diff**: zwei `--coverage`-CSVs vergleichen (nur-A / nur-B / hit-diff je CPU) — **ohne** Emulation, nur die beiden Dateien (s. §2c) |
 | `--save-state <file>` | am Lauf-Ende (z. B. mit `--until` an einer Bedingung) den **Maschinenzustand** sichern — Checkpoint zum späteren Fortsetzen |
 | `--load-state <file>` | mit einem gesicherten Zustand **starten** statt zu booten (RAM+CPU+ROM-Mapping werden reproduziert); spart den ~Boot bei jedem Lauf |
+
+**Exit-Code** (für Skript-/Agenten-Verzweigung): mit `--until` → `0` wenn die Bedingung
+erreicht wurde, `2` wenn nicht (Limit zuerst). Ohne `--until` → `0` wenn der Lauf den
+geladenen Code erreicht (Boot-Handoff), sonst `1`. (`--diff`: `0` ok, `1` Datei fehlt.)
 | `-p <zyklen>` | **nach** dem Boot weiterlaufen (`0x0437`+) — aktiviert den Post-Boot-Report (Port-Histogramm, VRAM-Schreibzähler + -Bereich, PC-Histogramm des geladenen Codes, 80-Spalten-VRAM-Textdump) |
 | `--drive <n>` | Disk auf Laufwerk `n` mounten (Default 0 = A:) |
 | `-L <datei>` | den (sehr ausführlichen) **Emulator-Log** in eine Datei umleiten, damit die Trace-Zusammenfassung lesbar bleibt (`-L /dev/null` verwirft ihn) |

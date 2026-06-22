@@ -130,9 +130,12 @@ int main(int argc, char** argv){
 
     A5120Machine m;
     m.powerOn();
+    bool mount_failed = false;
     if (disk){
-        if (!(m.mountDisk(0,disk,"cpa780",false) || m.mountDisk(0,disk,"cpa800",false)))
+        if (!(m.mountDisk(0,disk,"cpa780",false) || m.mountDisk(0,disk,"cpa800",false))){
             fprintf(stderr,"WARN: mount '%s' failed: %s\n",disk,m.lastError().c_str());
+            mount_failed = true;   // session still runs; reflected in the exit code
+        }
         else fprintf(stderr,"Mounted %s on A:\n",disk);
     }
 
@@ -1030,5 +1033,5 @@ int main(int argc, char** argv){
         else fprintf(stderr,"  ? unknown command '%s' (try help)\n",cmd.c_str());
     }
     if (trace_fp){ fclose(trace_fp); fprintf(stderr,"trace closed (%ld line(s))\n",trace_lines); }
-    return 0;
+    return mount_failed ? 1 : 0;   // non-zero exit if a requested disk failed to mount
 }
