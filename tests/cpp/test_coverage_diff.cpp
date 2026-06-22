@@ -59,3 +59,33 @@ TEST(CoverageDiff, DiffHandlesCpuPresentInOnlyOneRun){
     EXPECT_EQ(d["ZVE2"].b_count, 0u);
     ASSERT_EQ(d["ZVE2"].only_a.size(), 1u); EXPECT_EQ(d["ZVE2"].only_a[0], 0x01DD);
 }
+
+// ── collapseRanges: Abdeckungskarte → zusammenhängende Bereiche ──────────────
+
+namespace {
+std::vector<bool> covmap(size_t n, std::initializer_list<int> set){
+    std::vector<bool> v(n, false); for(int i:set) v[i]=true; return v;
+}
+}
+
+TEST(CoverageDiff, CollapseEmptyAndFull){
+    EXPECT_TRUE(covdiff::collapseRanges(std::vector<bool>(8,false)).empty());
+    auto full = covdiff::collapseRanges(std::vector<bool>(4,true));
+    ASSERT_EQ(full.size(), 1u);
+    EXPECT_EQ(full[0].first, 0); EXPECT_EQ(full[0].second, 3);   // [0,3] inklusiv
+}
+
+TEST(CoverageDiff, CollapseAdjacentAndGaps){
+    // gesetzt: 0,1,2 , 5 , 7,8
+    auto r = covdiff::collapseRanges(covmap(10, {0,1,2,5,7,8}));
+    ASSERT_EQ(r.size(), 3u);
+    EXPECT_EQ(r[0], std::make_pair(0,2));
+    EXPECT_EQ(r[1], std::make_pair(5,5));   // Einzelbyte
+    EXPECT_EQ(r[2], std::make_pair(7,8));
+}
+
+TEST(CoverageDiff, CollapseEndsAtLastByte){
+    auto r = covdiff::collapseRanges(covmap(4, {2,3}));   // bis zum letzten Index
+    ASSERT_EQ(r.size(), 1u);
+    EXPECT_EQ(r[0], std::make_pair(2,3));
+}

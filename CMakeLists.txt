@@ -322,6 +322,16 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_until_cond PRIVATE GTest::gtest_main)
         target_include_directories(k1520_test_until_cond PRIVATE ${CMAKE_SOURCE_DIR})
 
+        # Header-only event-breakpoint classifier for k1520dbg (tools/event_bp.h)
+        add_executable(k1520_test_event_bp tests/cpp/test_event_bp.cpp)
+        target_link_libraries(k1520_test_event_bp PRIVATE GTest::gtest_main)
+        target_include_directories(k1520_test_event_bp PRIVATE ${CMAKE_SOURCE_DIR})
+
+        # Header-only memory-watchpoint matcher for k1520dbg (tools/mem_watch.h)
+        add_executable(k1520_test_mem_watch tests/cpp/test_mem_watch.cpp)
+        target_link_libraries(k1520_test_mem_watch PRIVATE GTest::gtest_main)
+        target_include_directories(k1520_test_mem_watch PRIVATE ${CMAKE_SOURCE_DIR})
+
         # Machine snapshot / reverse-debugging (A5120Machine::captureState/restoreState)
         add_executable(k1520_test_machine_snapshot tests/cpp/test_machine_snapshot.cpp)
         target_link_libraries(k1520_test_machine_snapshot
@@ -365,6 +375,8 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_dbg_commands)
         gtest_discover_tests(k1520_test_expr_eval)
         gtest_discover_tests(k1520_test_until_cond)
+        gtest_discover_tests(k1520_test_event_bp)
+        gtest_discover_tests(k1520_test_mem_watch)
         gtest_discover_tests(k1520_test_machine_snapshot)
         gtest_discover_tests(k1520_test_boot_integration PROPERTIES TIMEOUT 60)
     endif() # BUILD_K1520_TESTS

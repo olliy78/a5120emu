@@ -734,13 +734,8 @@ int main(int argc, char** argv) {
             for (int b = 0; b < len; ++b) cov[(uint16_t)(kv.first + b)] = true;
         }
         size_t bytes = 0; for (bool c : cov) if (c) ++bytes;
-        // collapse into contiguous covered ranges
-        std::vector<std::pair<int,int>> ranges;
-        for (int a = 0; a < 0x10000; ) {
-            if (!cov[a]) { ++a; continue; }
-            int s = a; while (a < 0x10000 && cov[a]) ++a;
-            ranges.push_back({s, a - 1});
-        }
+        // collapse into contiguous covered ranges (tools/coverage_diff.h, unit-getestet)
+        std::vector<std::pair<int,int>> ranges = covdiff::collapseRanges(cov);
         fprintf(stderr, "\n=== Code coverage (ZVE1) ===\n");
         fprintf(stderr, "  %zu distinct instr addresses, %zu bytes covered in %zu range(s):\n",
                 pc_hist.size(), bytes, ranges.size());

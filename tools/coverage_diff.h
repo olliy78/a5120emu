@@ -17,11 +17,27 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include <utility>
 #include <map>
 #include <istream>
 #include <fstream>
 
 namespace covdiff {
+
+/**
+ * Eine Bool-Abdeckungskarte (true = Byte ausgeführt) in zusammenhängende
+ * [start,end]-Bereiche (inklusiv) zusammenfassen. Für `boot_trace --coverage`.
+ */
+inline std::vector<std::pair<int,int>> collapseRanges(const std::vector<bool>& cov) {
+    std::vector<std::pair<int,int>> ranges;
+    int n = (int)cov.size();
+    for (int a = 0; a < n; ) {
+        if (!cov[a]) { ++a; continue; }
+        int s = a; while (a < n && cov[a]) ++a;
+        ranges.push_back({s, a - 1});
+    }
+    return ranges;
+}
 
 /// cpu-Name → (PC → Trefferzahl)
 using CovMap = std::map<std::string, std::map<uint16_t, long>>;

@@ -29,6 +29,8 @@
 #include "tools/callstack_tracker.h"
 #include "tools/dbg_commands.h"
 #include "tools/expr_eval.h"
+#include "tools/event_bp.h"
+#include "tools/mem_watch.h"
 #ifdef HAVE_READLINE
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -157,15 +159,9 @@ int main(int argc, char** argv){
     const size_t rev_cap = 200;                              // ring depth (≈13 MB)
     std::map<std::string,A5120Machine::MachineSnapshot> named_snaps;   // snap <name>
 
-    // memory watchpoints: address RANGE + optional VALUE-condition; print or break.
-    struct MemWatch {
-        uint16_t lo=0, hi=0;                   // address range (single byte → lo==hi)
-        bool wr=false, rd=false, brk=false;    // on write / on read ; brk=stop else print
-        enum Cond { ANY, EQ, NE, CHG } cond=ANY;
-        uint8_t val=0;                         // for EQ/NE
-        std::map<uint16_t,uint8_t> last;       // for CHG: last seen value per address
-        long hits=0;
-    };
+    // memory watchpoints: address RANGE + optional VALUE-condition (tools/mem_watch.h,
+    // unit-getestet); print or break. Matching-Logik in MemWatch::matches().
+    using memwatch::MemWatch;
     std::vector<MemWatch> mwatch;
     std::set<uint8_t>  io_w, io_b;             // io : print-on-access / break-on-access
 
@@ -356,17 +352,17 @@ int main(int argc, char** argv){
         traceToFile(1,z);
         { auto lit=logpoints.find(pc); if(lit!=logpoints.end()) logHit(z,lit->second); }
         // event breakpoints: interrupt / NMI accepted (state signature) or RETI (opcode).
+        // Klassifikation in tools/event_bp.h (unit-getestet, inkl. NMI-bei-IFF1=0-Grenzfall).
         if (brk_int||brk_nmi||brk_reti){
-            // NMI: vectors to 0x0066 with SP just pushed (IFF1 may already be 0).
-            bool nmi = brk_nmi && pc==0x0066 && bi_have_prev && z.SP==(uint16_t)(bi_prev_sp-2);
-            // Maskable IM2 interrupt: IFF1 went 1→0 while pushing PC (not the NMI vector).
-            bool intr = brk_int && bi_have_prev && bi_prev_iff1 && !z.IFF1
-                        && z.SP==(uint16_t)(bi_prev_sp-2) && pc!=0x0066;
-            if (nmi){ stopAt(1,z,"NMI accepted (Q240/protection?)"); }
-            else if (intr){ char w[40]; snprintf(w,sizeof w,"interrupt → ISR %04X",pc); stopAt(1,z,w); }
-            else if (brk_reti && m.memReadDebug(pc)==0xED){
-                uint8_t o1=m.memReadDebug((uint16_t)(pc+1));
-                if(o1==0x4D) stopAt(1,z,"RETI"); else if(o1==0x45) stopAt(1,z,"RETN"); }
+            uint8_t o0=0,o1=0; if(brk_reti){ o0=m.memReadDebug(pc); o1=m.memReadDebug((uint16_t)(pc+1)); }
+            eventbp::Prev pv{bi_have_prev, bi_prev_sp, bi_prev_iff1};
+            switch (eventbp::classify(pc, z.SP, z.IFF1, pv, brk_int, brk_nmi, brk_reti, o0, o1)){
+                case eventbp::Event::NMI: stopAt(1,z,"NMI accepted (Q240/protection?)"); break;
+                case eventbp::Event::Interrupt:{ char w[40]; snprintf(w,sizeof w,"interrupt → ISR %04X",pc); stopAt(1,z,w); } break;
+                case eventbp::Event::RETI: stopAt(1,z,"RETI"); break;
+                case eventbp::Event::RETN: stopAt(1,z,"RETN"); break;
+                case eventbp::Event::None: break;
+            }
         }
         bi_prev_sp=z.SP; bi_prev_iff1=z.IFF1; bi_have_prev=true;
         if (rel_arm_pc>=0 && pc==(uint16_t)rel_arm_pc){
@@ -415,18 +411,7 @@ int main(int argc, char** argv){
     // Evaluate a memory access against every watchpoint (range + value-condition).
     auto hitMem = [&](bool isRead, uint16_t addr, uint8_t data){
         for (auto& w : mwatch){
-            if (addr < w.lo || addr > w.hi) continue;
-            if (isRead ? !w.rd : !w.wr) continue;
-            bool fire;
-            switch (w.cond){
-                case MemWatch::EQ: fire = (data==w.val); break;
-                case MemWatch::NE: fire = (data!=w.val); break;
-                case MemWatch::CHG:{ auto it=w.last.find(addr);
-                    fire = (it==w.last.end()) || (it->second!=data);
-                    w.last[addr]=data; break; }
-                default: fire = true;
-            }
-            if (!fire) continue;
+            if (!w.matches(isRead, addr, data)) continue;   // siehe tools/mem_watch.h
             ++w.hits;
             if (w.brk){ char wmsg[56];
                 snprintf(wmsg,sizeof wmsg,"watch %s [%04X]=%02X by %s",isRead?"RD":"WR",addr,data,busWho());
