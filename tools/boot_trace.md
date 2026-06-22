@@ -47,6 +47,8 @@ boot_trace [DISK] [optionen]
 | `--coverage [file]` | **Code-Coverage**: welche ZVE1-Bytes ausgeführt wurden (zusammengefasst als Ranges) + ZVE2-Adresszahl; mit `file` zusätzlich CSV-Export `cpu,pc,hits` (s. §2c) |
 | `--csv <file>` | **maschinenlesbarer Per-Instruktions-Trace** (`seq,cyc,cpu,pc,bytes,disasm,…regs`) jeder ausgeführten Instruktion; durch `-w`/`-z` (PC-Fenster) bzw. `--until` eingrenzbar, Cap 5 Mio. Zeilen (s. §2c) |
 | `--diff a.csv b.csv` | **Run-Diff**: zwei `--coverage`-CSVs vergleichen (nur-A / nur-B / hit-diff je CPU) — **ohne** Emulation, nur die beiden Dateien (s. §2c) |
+| `--save-state <file>` | am Lauf-Ende (z. B. mit `--until` an einer Bedingung) den **Maschinenzustand** sichern — Checkpoint zum späteren Fortsetzen |
+| `--load-state <file>` | mit einem gesicherten Zustand **starten** statt zu booten (RAM+CPU+ROM-Mapping werden reproduziert); spart den ~Boot bei jedem Lauf |
 | `-p <zyklen>` | **nach** dem Boot weiterlaufen (`0x0437`+) — aktiviert den Post-Boot-Report (Port-Histogramm, VRAM-Schreibzähler + -Bereich, PC-Histogramm des geladenen Codes, 80-Spalten-VRAM-Textdump) |
 | `--drive <n>` | Disk auf Laufwerk `n` mounten (Default 0 = A:) |
 | `-L <datei>` | den (sehr ausführlichen) **Emulator-Log** in eine Datei umleiten, damit die Trace-Zusammenfassung lesbar bleibt (`-L /dev/null` verwirft ihn) |

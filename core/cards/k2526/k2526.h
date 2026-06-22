@@ -408,6 +408,21 @@ public:
      */
     bool isRomEnabled() const { return rom_enabled_; }
 
+    /**
+     * @brief Force the boot-ROM mapping on/off directly (idempotent).
+     *
+     * Normally driven by BS-PIO Port B bit0 (/LD-ROM). Exposed so a snapshot
+     * RESTORE (A5120Machine::restoreState) can reproduce the ROM-mapping state —
+     * essential for resuming a saved state into a freshly powered machine where
+     * the ROM is still mapped.
+     */
+    void setRomMapped(bool mapped) {
+        if (mapped == rom_enabled_) return;
+        rom_enabled_ = mapped;
+        if (mapped) bus_.registerMem(&rom_, 0x0000, 1024);
+        else        bus_.unregisterMem(&rom_);
+    }
+
     // ─── Sub-chip accessors ─────────────────────────────────────────────────
 
     /**

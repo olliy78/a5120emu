@@ -453,6 +453,9 @@ if(BUILD_K1520)
         # --diff is standalone (no emulation): feed two hand-written coverage CSVs.
         add_cli_test(cli_bt_diff "only-A=1 .*only-B=1"
             "A=$(mktemp); B=$(mktemp); printf 'cpu,pc,hits\\nZVE1,0x0100,1\\nZVE1,0x0200,1\\n' > \$A; printf 'cpu,pc,hits\\nZVE1,0x0200,1\\nZVE1,0x0300,1\\n' > \$B; $<TARGET_FILE:boot_trace> --diff \$A \$B; rm -f \$A \$B")
+        # save state at a condition, then resume from it (ROM mapping reproduced).
+        add_cli_test(cli_bt_savestate "resuming at PC=0x0169"
+            "D=$(mktemp); S=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' --save-state \$S \$D >/dev/null 2>&1; $<TARGET_FILE:boot_trace> -L /dev/null --load-state \$S -c 2000 \$D; rm -f \$D \$S")
     endif()
 
 endif() # BUILD_K1520

@@ -245,6 +245,8 @@ int main(int argc, char** argv) {
     const char* csv_path    = nullptr;   // --csv <file>: per-instruction trace (machine-readable)
     FILE*     csv_fp        = nullptr;
     long      csv_rows = 0, csv_cap = 5000000; bool csv_capped = false;
+    const char* save_state_path = nullptr;   // --save-state <file>: persist state at run end
+    const char* load_state_path = nullptr;   // --load-state <file>: resume from saved state
 
     // Runtime log control (new gated logging). Default base = ERROR so a plain
     // run is quiet and fast; raise globally with --log-level or, far better,
@@ -298,6 +300,8 @@ int main(int argc, char** argv) {
             if (i+1 < argc && argv[i+1][0] != '-') coverage_path = argv[++i];
         }
         else if (!strcmp(argv[i], "--csv") && i+1 < argc) { csv_path = argv[++i]; }
+        else if (!strcmp(argv[i], "--save-state") && i+1 < argc) { save_state_path = argv[++i]; }
+        else if (!strcmp(argv[i], "--load-state") && i+1 < argc) { load_state_path = argv[++i]; }
         else if (!strcmp(argv[i], "--watch") && i+1 < argc) {   // --watch 0x0000,0x03F8,...
             char* tok = strtok(argv[++i], ",");
             while (tok && watch_n < 16) { watch_addr[watch_n++] = (uint16_t)strtol(tok, nullptr, 0); tok = strtok(nullptr, ","); }
@@ -569,6 +573,17 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Disk mounted OK (drive %d)\n\n", mount_drive);
     }
 
+    // --load-state: resume from a previously saved machine state (RAM+CPU) instead of
+    // re-running the boot. The trace then starts from that checkpoint.
+    if (load_state_path) {
+        if (machine.loadState(load_state_path))
+            fprintf(stderr, "Loaded state ← %s (resuming at PC=0x%04X)\n",
+                    load_state_path, machine.cpuPC());
+        else
+            fprintf(stderr, "WARN: could not load state '%s' (missing/invalid) — booting normally\n",
+                    load_state_path);
+    }
+
     // ── Run loop ──────────────────────────────────────────────────────────────
     // Per-instruction work (histogram, milestones, boot detection) happens in
     // the trace callbacks above; the loop itself only handles batch-level events.
@@ -627,6 +642,16 @@ int main(int argc, char** argv) {
     }
 
     if (csv_fp) { fclose(csv_fp); fprintf(stderr, "--csv: %ld row(s) → %s\n", csv_rows, csv_path); }
+
+    // --save-state: persist the machine state at the end of the run (e.g. paired with
+    // --until to checkpoint exactly at a condition) for cheap resume via --load-state.
+    if (save_state_path) {
+        if (machine.saveState(save_state_path))
+            fprintf(stderr, "Saved state → %s (PC=0x%04X, cycle %d)\n",
+                    save_state_path, machine.cpuPC(), cycles_done);
+        else
+            fprintf(stderr, "WARN: could not write state '%s'\n", save_state_path);
+    }
 
     // ── Final summary ─────────────────────────────────────────────────────────
     fprintf(stderr, "\n=== Boot Trace Complete: %d cycles ===\n", cycles_done);

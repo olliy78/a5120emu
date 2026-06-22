@@ -761,6 +761,7 @@ int main(int argc, char** argv){
               "          dev [ctc|pio|sio|sio2]   chip state (default K5122); CTC/PIO/SIO + IUS/IEI\n"
               "          disp <expr> | undisp <n> | disp   show expr at every stop\n"
               "  MEM     load <f> <A>   read binary into RAM ; save <f> <A> <N> dump RAM\n"
+              "          savestate <f> | loadstate <f>   full machine state (boot once, resume)\n"
               "  MISC    mark [A]  zero relative cycle counter (now / armed at A)\n"
               "          sym <f> | sym add <name> <A> | sym list\n"
               "          lst <f.prn>[@off] | lst <f.prn> <off> | lst list   MACRO-80 listing → annotate\n"
@@ -972,6 +973,14 @@ int main(int argc, char** argv){
         else if (cmd=="save" && t.size()>3){ std::ofstream f(t[1],std::ios::binary);
             uint16_t a=(uint16_t)parseNum(t[2]); int n=(int)parseNum(t[3]);
             for(int i=0;i<n;++i) f.put((char)m.memReadDebug(a+i)); fprintf(stderr,"  saved %d byte(s) from %04X to %s\n",n,a,t[1].c_str()); }
+        // full machine state (RAM+CPU) to/from a file — boot once, then resume cheaply
+        else if (cmd=="savestate" && t.size()>1){
+            if(m.saveState(t[1])) fprintf(stderr,"  state saved → %s (PC=%04X)\n",t[1].c_str(),m.cpuPC());
+            else fprintf(stderr,"  cannot write state %s\n",t[1].c_str()); }
+        else if (cmd=="loadstate" && t.size()>1){
+            if(m.loadState(t[1])){ snap1=grab(m.cpuDebug()); callstack.clear(); rev_ring.clear();
+                fprintf(stderr,"  state loaded ← %s\n",t[1].c_str()); showInsn("=>",m.cpuPC()); stateLine(); }
+            else fprintf(stderr,"  cannot load state %s (missing/invalid)\n",t[1].c_str()); }
         // ══ MISC: machine I/O — keystrokes, screen, named RAM vars, chip state, reset ══
         else if (cmd=="keys" && t.size()>1){ pushHistory(); std::string s=line.substr(line.find("keys")+5); keys(s); }
         else if (cmd=="screen") screen();

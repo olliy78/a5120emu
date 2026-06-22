@@ -173,12 +173,31 @@ public:
     /** @brief Capture the current machine state into @p s. */
     void captureState(MachineSnapshot& s) const;
     /**
-     * @brief Restore a previously captured snapshot.
-     * @return true if fully applied; false if the boot-ROM mapping differs from the
-     *         snapshot (RAM+registers are still restored, but the ROM-mapping boundary
-     *         is not reproducible — snapshots are intended for the post-ROM phase).
+     * @brief Restore a previously captured snapshot (RAM + both CPUs + ROM mapping).
+     *
+     * Also reproduces the boot-ROM mapping, so a state saved post-ROM resumes
+     * correctly even into a freshly powered machine. Device-internal state
+     * (CTC/PIO/SIO counters, K5122 head position) is still NOT captured.
+     * @return always true (the snapshot is fully applied).
      */
     bool restoreState(const MachineSnapshot& s);
+
+    /**
+     * @brief Save the current machine state to a file (captureState + binary serialise).
+     *
+     * Lets a host tool boot once, run to a point of interest and persist that state,
+     * then resume cheaply later via loadState() — instead of re-booting each time.
+     * Format: 8-byte magic+version, then RAM + both register files + flags. Same
+     * RAM+CPU scope (and ROM-mapping caveat) as captureState/restoreState.
+     * @return false if the file cannot be written.
+     */
+    bool saveState(const std::string& path) const;
+    /**
+     * @brief Load a machine state previously written by saveState().
+     * @return true if applied; false if the file is missing or not a valid state file
+     *         (then the machine is unchanged).
+     */
+    bool loadState(const std::string& path);
 
 private:
     void wireBackplane();

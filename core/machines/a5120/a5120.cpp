@@ -1,6 +1,7 @@
 #include "a5120.h"
 #include <algorithm>
 #include <cstring>
+#include <fstream>
 #include "core/logger.h"
 
 namespace {
@@ -129,9 +130,51 @@ bool A5120Machine::restoreState(const MachineSnapshot& s) {
     dma_saw_progress_= s.dma_progress;
     bus_master_zve2_ = s.bus_master_zve2;
     total_cycles_    = s.total_cycles;
-    // The boot-ROM mapping is not reproducible here (it is tied to the EPROM's bus
-    // registration on the K2526). Report a mismatch so callers can warn.
-    return zre_.isRomEnabled() == s.rom_enabled;
+    // Reproduce the boot-ROM mapping too, so a state saved post-ROM resumes correctly
+    // even into a freshly powered machine (where the ROM is still mapped at 0x0000).
+    zre_.setRomMapped(s.rom_enabled);
+    return true;
+}
+
+// On-disk state format: magic "K1520SS" + version, a regs-size guard, then the raw
+// MachineSnapshot fields. Written/read by the same build → POD memcpy is sufficient.
+namespace {
+const char kStateMagic[8] = {'K','1','5','2','0','S','S','\x01'};   // \x01 = version 1
+}
+
+bool A5120Machine::saveState(const std::string& path) const {
+    MachineSnapshot s; captureState(s);
+    std::ofstream f(path, std::ios::binary);
+    if (!f) return false;
+    uint32_t regsize = (uint32_t)sizeof(MachineSnapshot::Z80Regs);
+    f.write(kStateMagic, sizeof kStateMagic);
+    f.write(reinterpret_cast<const char*>(&regsize), sizeof regsize);
+    f.write(reinterpret_cast<const char*>(s.ram.data()), s.ram.size());
+    f.write(reinterpret_cast<const char*>(&s.zve1), sizeof s.zve1);
+    f.write(reinterpret_cast<const char*>(&s.zve2), sizeof s.zve2);
+    uint8_t flags[4] = { (uint8_t)s.rom_enabled, (uint8_t)s.busrq_active,
+                         (uint8_t)s.dma_progress, (uint8_t)s.bus_master_zve2 };
+    f.write(reinterpret_cast<const char*>(flags), 4);
+    f.write(reinterpret_cast<const char*>(&s.total_cycles), sizeof s.total_cycles);
+    return (bool)f;
+}
+
+bool A5120Machine::loadState(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+    char magic[8]; f.read(magic, sizeof magic);
+    if (!f || std::memcmp(magic, kStateMagic, sizeof magic) != 0) return false;
+    uint32_t regsize = 0; f.read(reinterpret_cast<char*>(&regsize), sizeof regsize);
+    if (!f || regsize != (uint32_t)sizeof(MachineSnapshot::Z80Regs)) return false;
+    MachineSnapshot s;
+    f.read(reinterpret_cast<char*>(s.ram.data()), s.ram.size());
+    f.read(reinterpret_cast<char*>(&s.zve1), sizeof s.zve1);
+    f.read(reinterpret_cast<char*>(&s.zve2), sizeof s.zve2);
+    uint8_t flags[4]; f.read(reinterpret_cast<char*>(flags), 4);
+    f.read(reinterpret_cast<char*>(&s.total_cycles), sizeof s.total_cycles);
+    if (!f) return false;
+    s.rom_enabled=flags[0]; s.busrq_active=flags[1]; s.dma_progress=flags[2]; s.bus_master_zve2=flags[3];
+    return restoreState(s);
 }
 
 int A5120Machine::run(int max_cycles) {
