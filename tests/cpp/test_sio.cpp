@@ -338,3 +338,47 @@ TEST(Z80SIO, ChannelB_RX_TX) {
     EXPECT_TRUE(chb.txAvailable());
     EXPECT_EQ(chb.txGet(), 0xEF);
 }
+
+// ─── debugState() — read-only snapshot for the debugger's `dev sio` command ─────
+
+/**
+ * @brief debugState reflects per-channel rr0/rx-queue/tx-busy/vector + daisy-chain.
+ */
+TEST(Z80SIO, DebugStateReflectsChannelBasics) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.channelA().rxByte(0xAB);          // RX FIFO: 1 byte queued, RR0 bit0 set
+    sio.ioWrite(0, 0xEF);                 // CPU writes Ch A data → TX buffer busy
+    sio.ioWrite(3, 0x02);                 // Ch B WR0: point to WR2 (vector)
+    sio.ioWrite(3, 0x40);                 // WR2 = interrupt vector base
+
+    auto d = sio.debugState();
+    EXPECT_TRUE(d.iei);                    // device IEI
+    EXPECT_TRUE(d.ieo);                    // no interrupt pending yet → chain open
+    // Channel A
+    EXPECT_EQ(d.ch[0].rr0 & 0x01, 0x01);  // Rx Character Available
+    EXPECT_EQ(d.ch[0].rxQueued, 1u);
+    EXPECT_TRUE(d.ch[0].txBusy);          // tx_buf set, not yet consumed
+    EXPECT_TRUE(d.ch[0].iei);             // IEI propagated to Ch A (highest priority)
+    EXPECT_FALSE(d.ch[0].irqRx);          // RX int mode disabled by default
+    // Channel B holds the programmed vector (WR2)
+    EXPECT_EQ(d.ch[1].wr2, 0x40);
+}
+
+/**
+ * @brief When TX interrupt fires, debugState shows irqTx and the chain blocks (IEO low).
+ */
+TEST(Z80SIO, DebugStateReflectsTxInterrupt) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(1, 0x01);                 // Ch A WR0: point to WR1
+    sio.ioWrite(1, 0x02);                 // WR1: Tx interrupt enable
+    sio.ioWrite(0, 0x55);                 // fill TX buffer
+    EXPECT_FALSE(sio.debugState().ch[0].irqTx);
+    sio.channelA().txGet();               // consume → TX-empty interrupt fires
+
+    auto d = sio.debugState();
+    EXPECT_TRUE(d.ch[0].irqTx);           // TX interrupt pending
+    EXPECT_FALSE(d.ch[0].txBusy);         // buffer consumed
+    EXPECT_FALSE(d.ieo);                  // pending interrupt blocks downstream
+}

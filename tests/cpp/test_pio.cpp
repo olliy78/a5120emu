@@ -445,3 +445,37 @@ TEST(Z80PIO, IsInterruptEnabled_AfterICW) {
     pio.ioWrite(1, icw(true));
     EXPECT_TRUE(pio.isInterruptEnabled());
 }
+
+// ─── debugState() — read-only snapshot for the debugger's `dev pio` command ─────
+
+/**
+ * @brief debugState reflects per-port mode/latches/vector + interrupt + daisy-chain.
+ */
+TEST(Z80PIO, DebugStateReflectsPortsAndInterrupt) {
+    Z80PIO pio;
+    // Port A: input mode 1, vector 0xC4, IRQ enabled, IEI high → external write → pending.
+    pio.ioWrite(1, 0xC4);                 // vector
+    pio.ioWrite(1, modeWord(1));          // mode 1 (input)
+    pio.ioWrite(1, icw(true));            // enable interrupt
+    pio.setIEI(true);
+    pio.portAWrite(0x55);                 // external data → readable + triggers pending
+    // Port B: output mode 0, CPU writes 0x99.
+    pio.ioWrite(3, modeWord(0));
+    pio.ioWrite(2, 0x99);
+
+    auto d = pio.debugState();
+    EXPECT_TRUE(d.iei);                   // device IEI feeds Port A
+    // Port A
+    EXPECT_EQ(d.port[0].mode, 1);
+    EXPECT_EQ(d.port[0].vector, 0xC4);
+    EXPECT_EQ(d.port[0].in, 0x55);        // external input latch
+    EXPECT_TRUE(d.port[0].ie);
+    EXPECT_TRUE(d.port[0].pending);
+    EXPECT_TRUE(d.port[0].iei);
+    EXPECT_FALSE(d.port[0].ius);
+    EXPECT_FALSE(d.ieo);                  // pending interrupt blocks the chain downstream
+    // Port B
+    EXPECT_EQ(d.port[1].mode, 0);
+    EXPECT_EQ(d.port[1].out, 0x99);       // CPU output latch
+    EXPECT_FALSE(d.port[1].ie);
+}

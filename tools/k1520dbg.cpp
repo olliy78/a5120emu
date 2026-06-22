@@ -28,6 +28,7 @@
 #include "tools/prn_listing.h"
 #include "tools/callstack_tracker.h"
 #include "tools/dbg_commands.h"
+#include "tools/expr_eval.h"
 #ifdef HAVE_READLINE
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -259,90 +260,16 @@ int main(int argc, char** argv){
             return strtol(base.substr(0,base.size()-1).c_str(),nullptr,16)+off; }
         return strtol(base.c_str(),nullptr,0)+off; };
 
-    // ─── expression evaluator (recursive descent) ─────────────────────────────
-    // Grammar (low→high precedence): cmp(== != < > <= >=) | ^ & shift(<< >>)
-    //   add(+ -) mul(* / %) unary(- ~) primary. Primary: number, symbol, register,
-    //   (rr) register-indirect, [expr]/[expr]w memory, ( expr ). Used by `if`-Bedingungen,
-    //   `disp`, `x`, `logpoint`. A local struct (aggregate) so methods can recurse.
-    struct ExprParser {
-        A5120Machine& m;
-        std::map<std::string,uint16_t>& syms;
-        const Snap& s;
-        const std::string& e;
-        size_t i = 0;
-        bool   ok = true;
-
-        void ws(){ while(i<e.size() && e[i]==' ') ++i; }
-        bool eat(const char* op){ ws(); size_t n=strlen(op);
-            if(i+n<=e.size() && e.compare(i,n,op)==0){ i+=n; return true; } return false; }
-        bool ciEat(const char* op){ ws(); size_t n=strlen(op); if(i+n>e.size()) return false;
-            for(size_t k=0;k<n;++k) if((char)toupper(e[i+k])!=(char)toupper(op[k])) return false;
-            i+=n; return true; }
-        bool nextIs(char c){ ws(); return i<e.size() && e[i]==c; }
-
-        long parseAll(){ long v=cmp(); ws(); if(i!=e.size()) ok=false; return v; }
-
-        long cmp(){ long v=bor();
-            for(;;){ if(eat("==")) v=(v==bor()); else if(eat("!=")) v=(v!=bor());
-                else if(eat("<=")) v=(v<=bor()); else if(eat(">=")) v=(v>=bor());
-                else { ws(); if(i<e.size()&&e[i]=='<'&&!(i+1<e.size()&&e[i+1]=='<')){ ++i; v=(v<bor()); }
-                       else if(i<e.size()&&e[i]=='>'&&!(i+1<e.size()&&e[i+1]=='>')){ ++i; v=(v>bor()); }
-                       else break; } }
-            return v; }
-        long bor(){  long v=bxor(); while(true){ ws();
-            if(i<e.size()&&e[i]=='|'){ ++i; v|=bxor(); } else break; } return v; }
-        long bxor(){ long v=band(); while(eat("^")) v^=band(); return v; }
-        long band(){ long v=shift(); while(true){ ws();
-            if(i<e.size()&&e[i]=='&'){ ++i; v&=shift(); } else break; } return v; }
-        long shift(){ long v=add(); for(;;){ if(eat("<<")) v<<=add(); else if(eat(">>")) v>>=add(); else break; } return v; }
-        long add(){ long v=mul(); for(;;){ if(eat("+")) v+=mul(); else if(eat("-")) v-=mul(); else break; } return v; }
-        long mul(){ long v=unary(); for(;;){
-            if(eat("*")) v*=unary();
-            else if(eat("/")){ long d=unary(); if(d==0){ok=false; } else v/=d; }
-            else if(eat("%")){ long d=unary(); if(d==0){ok=false; } else v%=d; }
-            else break; } return v; }
-        long unary(){ if(eat("-")) return -unary(); if(eat("~")) return ~unary(); return primary(); }
-
-        long regOr(const std::string& tok){
-            std::string U; for(char c:tok) U+=(char)toupper(c);
-            if(U=="A")return (s.AF>>8)&0xFF; if(U=="F")return s.AF&0xFF;
-            if(U=="B")return (s.BC>>8)&0xFF; if(U=="C")return s.BC&0xFF;
-            if(U=="D")return (s.DE>>8)&0xFF; if(U=="E")return s.DE&0xFF;
-            if(U=="H")return (s.HL>>8)&0xFF; if(U=="L")return s.HL&0xFF;
-            if(U=="AF")return s.AF; if(U=="BC")return s.BC; if(U=="DE")return s.DE;
-            if(U=="HL")return s.HL; if(U=="IX")return s.IX; if(U=="IY")return s.IY;
-            if(U=="SP")return s.SP; if(U=="PC")return s.PC; if(U=="I")return s.I; if(U=="R")return s.R;
-            auto it=syms.find(tok); if(it!=syms.end()) return (uint16_t)it->second;
-            // hex (..H) or base-0 number
-            if(!tok.empty() && (tok.back()=='H'||tok.back()=='h')){
-                char* end=nullptr; long v=strtol(tok.substr(0,tok.size()-1).c_str(),&end,16);
-                if(end && *end) ok=false; return v; }
-            char* end=nullptr; long v=strtol(tok.c_str(),&end,0);
-            if(end==tok.c_str() || (end&&*end)) ok=false; return v; }
-
-        long primary(){ ws();
-            if(i>=e.size()){ ok=false; return 0; }
-            if(nextIs('(')){
-                if(ciEat("(HL)")) return m.memReadDebug(s.HL);
-                if(ciEat("(DE)")) return m.memReadDebug(s.DE);
-                if(ciEat("(BC)")) return m.memReadDebug(s.BC);
-                if(ciEat("(SP)")) return m.memReadDebug(s.SP);
-                ++i; long v=cmp(); if(!eat(")")) ok=false; return v; }
-            if(nextIs('[')){ ++i; long a=cmp(); if(!eat("]")) ok=false;
-                bool w=false; if(i<e.size()&&(e[i]=='w'||e[i]=='W')){ w=true; ++i; }
-                uint16_t ad=(uint16_t)a;
-                return w ? (m.memReadDebug(ad)|(m.memReadDebug((uint16_t)(ad+1))<<8)) : m.memReadDebug(ad); }
-            // token: register / symbol / number
-            size_t st=i;
-            while(i<e.size()){ char c=e[i];
-                if((c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='_'||c=='@'||c=='?'||c=='$'||c=='.') ++i; else break; }
-            if(i==st){ ok=false; return 0; }
-            return regOr(e.substr(st,i-st)); }
-    };
-
-    // readOperand / evalExpr: evaluate a full expression against a register snapshot.
+    // ─── expression evaluator ──────────────────────────────────────────────────
+    // The recursive-descent parser lives in tools/expr_eval.h (maschinenfrei, unit-
+    // getestet). Hier nur die Brücke: Snap→RegView, Speicher- und Symbol-Callback.
+    // Genutzt von `b … if`, `disp`, `logpoint` und der `x`-Adresse.
+    expreval::ReadByte exprReadByte = [&](uint16_t a){ return m.memReadDebug(a); };
+    expreval::FindSym  exprFindSym  = [&](const std::string& n, uint16_t& v)->bool{
+        auto it=sym_by_name.find(n); if(it==sym_by_name.end()) return false; v=it->second; return true; };
     auto readOperand = [&](const Snap& s, const std::string& t, bool& ok)->long{
-        ExprParser p{m, sym_by_name, s, t}; long v=p.parseAll(); ok=p.ok; return v; };
+        expreval::RegView rv{ s.AF,s.BC,s.DE,s.HL,s.IX,s.IY,s.SP,s.PC,s.I,s.R };
+        return expreval::eval(t, rv, exprReadByte, exprFindSym, ok); };
 
     // evalCond: empty → always; else the expression must be non-zero (comparisons → 0/1).
     auto evalCond = [&](const Snap& s, const std::string& cond)->bool{

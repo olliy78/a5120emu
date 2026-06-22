@@ -29,6 +29,7 @@
 #include "tools/prn_listing.h"
 #include "tools/z80dis_min.h"
 #include "tools/coverage_diff.h"
+#include "tools/until_cond.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -178,41 +179,8 @@ static const char* romLabel(uint16_t pc) {
     }
 }
 
-// ─── --until <cond>: stop the run when a condition holds, then dump/summary ────
-// Supported: PC<op>ADDR, [ADDR]<op>VAL, [ADDR]w<op>VAL  with op ∈ == != < > <= >=
-// VAL/ADDR parse base-0 (0x.. hex, or decimal). Checked per ZVE1 instruction.
-struct UntilCond {
-    enum Kind { NONE, MEM, PC } kind = NONE;
-    enum Op   { EQ, NE, LT, GT, LE, GE } op = EQ;
-    bool      word = false;     // MEM: 16-bit little-endian
-    uint16_t  addr = 0;         // MEM address, or PC target
-    long      val  = 0;         // compared value (for PC: the target address)
-    std::string text;           // original spec, for reporting
-};
-
-static bool parseUntil(const std::string& spec, UntilCond& u) {
-    // Split on the comparison operator (try 2-char ops first so "<" ≠ "<=").
-    static const struct { const char* s; UntilCond::Op op; } ops[] = {
-        {"==",UntilCond::EQ},{"!=",UntilCond::NE},{"<=",UntilCond::LE},
-        {">=",UntilCond::GE},{"<",UntilCond::LT},{">",UntilCond::GT} };
-    size_t pos = std::string::npos, oplen = 0; UntilCond::Op op = UntilCond::EQ;
-    for (auto& o : ops){ size_t p = spec.find(o.s); if (p != std::string::npos){ pos=p; oplen=strlen(o.s); op=o.op; break; } }
-    if (pos == std::string::npos) return false;
-    std::string lhs = spec.substr(0, pos), rhs = spec.substr(pos + oplen);
-    auto trim=[](std::string& x){ while(!x.empty()&&x.front()==' ')x.erase(x.begin());
-                                  while(!x.empty()&&x.back()==' ')x.pop_back(); };
-    trim(lhs); trim(rhs);
-    u.op = op; u.text = spec; u.val = strtol(rhs.c_str(), nullptr, 0);
-    if (!lhs.empty() && lhs[0]=='[') {                       // [ADDR] / [ADDR]w
-        size_t r = lhs.find(']'); if (r == std::string::npos) return false;
-        u.kind = UntilCond::MEM;
-        u.addr = (uint16_t)strtol(lhs.substr(1, r-1).c_str(), nullptr, 0);
-        u.word = (r+1 < lhs.size() && (lhs[r+1]=='w' || lhs[r+1]=='W'));
-        return true;
-    }
-    if (lhs=="PC" || lhs=="pc") { u.kind = UntilCond::PC; u.addr = (uint16_t)u.val; return true; }
-    return false;
-}
+// --until <cond>: Bedingung (Parser + Auswertung) in tools/until_cond.h (unit-getestet).
+using untilcond::UntilCond;
 
 // ─── --diff a.csv b.csv: compare two --coverage CSVs (no emulation) ────────────
 static int runCoverageDiff(const std::string& pa, const std::string& pb) {
@@ -322,7 +290,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "-W") && i+1 < argc) { win_cap = atoi(argv[++i]); }
         else if (!strcmp(argv[i], "-l") && i+1 < argc) { prn_specs.push_back(argv[++i]); }
         else if (!strcmp(argv[i], "--until") && i+1 < argc) {   // --until [03F8]==3 | PC==0x1800
-            if (!parseUntil(argv[++i], until))
+            if (!untilcond::parse(argv[++i], until))
                 fprintf(stderr, "WARN: bad --until '%s' (use PC<op>A | [A]<op>V | [A]w<op>V)\n", argv[i]);
         }
         else if (!strcmp(argv[i], "--coverage")) {   // --coverage [file.csv]
@@ -456,16 +424,7 @@ int main(int argc, char** argv) {
                      : (until.word ? (machine.memReadDebug(until.addr) |
                                       (machine.memReadDebug((uint16_t)(until.addr+1)) << 8))
                                    :  machine.memReadDebug(until.addr));
-            bool fire = false;
-            switch (until.op) {
-                case UntilCond::EQ: fire = (cur == until.val); break;
-                case UntilCond::NE: fire = (cur != until.val); break;
-                case UntilCond::LT: fire = (cur <  until.val); break;
-                case UntilCond::GT: fire = (cur >  until.val); break;
-                case UntilCond::LE: fire = (cur <= until.val); break;
-                case UntilCond::GE: fire = (cur >= until.val); break;
-            }
-            if (fire) {
+            if (until.compare(cur)) {
                 until_hit = true; until_cycle = cycles_done; until_pc = z.PC;
                 fprintf(stderr, "\n*** --until met at cycle %d (ZVE1 PC=0x%04X): %s ***\n",
                         cycles_done, z.PC, until.text.c_str());

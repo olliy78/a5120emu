@@ -312,6 +312,16 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_dbg_commands PRIVATE GTest::gtest_main)
         target_include_directories(k1520_test_dbg_commands PRIVATE ${CMAKE_SOURCE_DIR})
 
+        # Header-only expression evaluator for k1520dbg (tools/expr_eval.h)
+        add_executable(k1520_test_expr_eval tests/cpp/test_expr_eval.cpp)
+        target_link_libraries(k1520_test_expr_eval PRIVATE GTest::gtest_main)
+        target_include_directories(k1520_test_expr_eval PRIVATE ${CMAKE_SOURCE_DIR})
+
+        # Header-only boot_trace --until condition parser/evaluator (tools/until_cond.h)
+        add_executable(k1520_test_until_cond tests/cpp/test_until_cond.cpp)
+        target_link_libraries(k1520_test_until_cond PRIVATE GTest::gtest_main)
+        target_include_directories(k1520_test_until_cond PRIVATE ${CMAKE_SOURCE_DIR})
+
         # Machine snapshot / reverse-debugging (A5120Machine::captureState/restoreState)
         add_executable(k1520_test_machine_snapshot tests/cpp/test_machine_snapshot.cpp)
         target_link_libraries(k1520_test_machine_snapshot
@@ -353,6 +363,8 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_callstack_tracker)
         gtest_discover_tests(k1520_test_coverage_diff)
         gtest_discover_tests(k1520_test_dbg_commands)
+        gtest_discover_tests(k1520_test_expr_eval)
+        gtest_discover_tests(k1520_test_until_cond)
         gtest_discover_tests(k1520_test_machine_snapshot)
         gtest_discover_tests(k1520_test_boot_integration PROPERTIES TIMEOUT 60)
     endif() # BUILD_K1520_TESTS
