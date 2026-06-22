@@ -68,7 +68,7 @@ sichern, dann disassemblieren:
 
 ```sh
 # RAM-Bereich sichern (boot_trace) …
-./build_trace/boot_trace -d 0x1C00:0x2080 /tmp/loader.bin disks/cpadisk01.img
+./build_trace/boot_trace -d 0x1C00:0x2080 /tmp/loader.bin disks/cpadisk_autofs_clock_noautoexec.img
 # … oder interaktiv (k1520dbg):  save /tmp/loader.bin 0x1C00 0x480
 python3 tools/z80_disasm2.py --org 0x1C00 --entry 0x1F7D /tmp/loader.bin
 ```
