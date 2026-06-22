@@ -19,7 +19,6 @@ eine Funktion fehlt oder falsch ist, wird sie hier ergänzt/gefixt und unter
 | `dbg_commands.h` | header-only Kommandoliste + Präfix-Matcher für die `k1520dbg`-Tab-Completion (readline) | [k1520dbg.md](k1520dbg.md) §1 |
 | `expr_eval.h` | header-only Ausdrucks-Evaluator (Arithmetik/Bit/Vergleiche/`[expr]`) für `k1520dbg` (`if`/`disp`/`x`/`logpoint`) | [k1520dbg.md](k1520dbg.md) §3 |
 | `until_cond.h` | header-only `--until`-Bedingung (Parser + Auswertung) für `boot_trace` | [boot_trace.md](boot_trace.md) §2b |
-| `missing_features.md` | offene/erledigte Feature-Lücken beider Tools (Roadmap) | [missing_features.md](missing_features.md) |
 | `disasm_difftest.py` | Regressionswächter: `z80_disasm2.py` gegen `z80dis` | [z80_disasm.md](z80_disasm.md) |
 | `kbd_test` | Tastatur-/Boot-Smoke-Test (boot, tippe Befehl, dump Screen) | unten |
 | `eprom_to_h.py` | EPROM-Binär → committetes C-Array (`*_data.h`) | — |
