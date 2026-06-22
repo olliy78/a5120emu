@@ -10,7 +10,7 @@ using k1520::logging::Logger;
 using k1520::logging::Level;
 
 int main(int argc, char** argv) {
-    const char* disk = (argc >= 2) ? argv[1] : "disks/cpadisk_02.hfe";
+    const char* disk = (argc >= 2) ? argv[1] : "disks/cpadisk_autofs_noclk_noautoexec.hfe";
     const char* tstr = (argc >= 3) ? argv[2] : nullptr;   // e.g. "12:00:00"
     Logger::instance().setBaseLevel(Level::ERROR);
 

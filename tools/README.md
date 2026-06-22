@@ -55,11 +55,11 @@ Vollständiges Handbuch: **[k1520dbg.md](k1520dbg.md)**. Kurz:
 
 ```sh
 cmake --build build --target k1520dbg -j
-./build/k1520dbg disks/cpadisk01.img                 # interaktiv
-printf 'b 0xC7A3\ng\nr\nq\n' | ./build/k1520dbg disks/cpadisk01.img   # pipe
-./build/k1520dbg disks/cpadisk_02.hfe -x skript.dbg -s symbole.sym
-./build/k1520dbg -l ~/projects/CPA_Workbench/build/bios.prn disks/cpadisk01.img  # Disasm mit Quelltext
-printf 'g 5000000\nbt\nsnap A\ns 3\nrs\nrestore A\nq\n' | ./build/k1520dbg disks/cpadisk01.img  # bt/snap/reverse
+./build/k1520dbg disks/cpadisk_autofs_clock_noautoexec.img                 # interaktiv
+printf 'b 0xC7A3\ng\nr\nq\n' | ./build/k1520dbg disks/cpadisk_autofs_clock_noautoexec.img   # pipe
+./build/k1520dbg disks/cpadisk_autofs_noclk_noautoexec.hfe -x skript.dbg -s symbole.sym
+./build/k1520dbg -l ~/projects/CPA_Workbench/build/bios.prn disks/cpadisk_autofs_clock_noautoexec.img  # Disasm mit Quelltext
+printf 'g 5000000\nbt\nsnap A\ns 3\nrs\nrestore A\nq\n' | ./build/k1520dbg disks/cpadisk_autofs_clock_noautoexec.img  # bt/snap/reverse
 ```
 
 Kann **beide CPUs** debuggen (ZVE1 ohne Suffix, ZVE2 mit `2`: `b2`, `s2`, `set 2`),
@@ -78,10 +78,10 @@ mit `LOG_LEVEL=5`):
 ```sh
 cmake -B build_trace -DLOG_LEVEL=5 -DCMAKE_BUILD_TYPE=Debug
 cmake --build build_trace --target boot_trace -j
-./build_trace/boot_trace -L /tmp/emu.log disks/cpadisk01.img      # leiser Volllauf
-./build_trace/boot_trace -p 9000000 disks/cpadisk01.img           # Post-Boot-Report
+./build_trace/boot_trace -L /tmp/emu.log disks/cpadisk_autofs_clock_noautoexec.img      # leiser Volllauf
+./build_trace/boot_trace -p 9000000 disks/cpadisk_autofs_clock_noautoexec.img           # Post-Boot-Report
 ./build_trace/boot_trace -p 9000000 -l ~/projects/CPA_Workbench/build/bios.prn \
-    disks/cpadisk01.img                                           # Histogramme mit BIOS-Quelltext
+    disks/cpadisk_autofs_clock_noautoexec.img                                           # Histogramme mit BIOS-Quelltext
 ```
 
 Verfolgt ZVE1 **und** ZVE2 per Instruktion, meldet den DMA-Einfrierpunkt und den
@@ -107,9 +107,9 @@ ob ein Befehl Wirkung zeigt.
 
 **Sondersyntax im `text`:** `|` = Enter mittendrin (z.B. erst die Uhrzeit, dann
 ein Kommando in einem Lauf), `^X` = Ctrl+X, `~` = bare Ctrl+C. Beispiel:
-`kbd_test disks/cpadisk_mitUhr_01.img "120000|DIR"` (Uhr stellen, dann `DIR`).
+`kbd_test disks/cpadisk_autofs_clock_noautoexec.img "120000|DIR"` (Uhr stellen, dann `DIR`).
 Auf der **Uhr-Disk nach Zeiteingabe** funktioniert die CCP-Eingabe vollständig
-(Echo/Kommando); cpadisk_02 erreicht keinen interaktiven CCP (eigenes Thema).
+(Echo/Kommando); cpadisk_autofs_noclk_noautoexec erreicht keinen interaktiven CCP (eigenes Thema).
 Die K7637 modelliert die 9600-Baud-Latenz — Tasten erscheinen erst ~2604 Takte
 nach `keyPress` am SIO (`K7637::service()` aus der Run-Loop).
 

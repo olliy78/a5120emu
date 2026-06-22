@@ -145,16 +145,16 @@ void typeString(A5120Machine& m, const std::string& s) {
 
 /**
  * @test BootIntegration/LoadsBootSectorsWithSYLSignature
- * @brief A5120 boots cpadisk01.img and ZVE2 DMAs the 4 boot sectors to 0x0400.
+ * @brief A5120 boots cpadisk_autofs_clock_noautoexec.img and ZVE2 DMAs the 4 boot sectors to 0x0400.
  *
  * Pass criteria:
  *   - ZVE2 signals completion ([0x03F8]=3) within the cycle budget.
  *   - RAM[0x0400..0x0402] == "SYL" (the boot-record signature ZVE1 checks at 0x01B6).
  *   - RAM[0x0400..0x05FF] (4×128 B) byte-for-byte equals the reference boot
- *     sectors disks/bootsec.bin[0:512] (== cpadisk01.img[0:512]).
+ *     sectors disks/bootsec.bin[0:512] (== cpadisk_autofs_clock_noautoexec.img[0:512]).
  */
 TEST(BootIntegration, LoadsBootSectorsWithSYLSignature) {
-    const std::string img = diskPath("cpadisk01.img");
+    const std::string img = diskPath("cpadisk_autofs_clock_noautoexec.img");
     const std::string ref = diskPath("bootsec.bin");
 
     std::vector<uint8_t> expected = readFile(ref);
@@ -199,7 +199,7 @@ TEST(BootIntegration, LoadsBootSectorsWithSYLSignature) {
  */
 TEST(BootIntegration, ReachesLoadedBootCode) {
     A5120Machine machine;
-    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk01.img"), "cpa780", false));
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", false));
     machine.powerOn();
 
     bool reached = false;
@@ -224,7 +224,7 @@ TEST(BootIntegration, ReachesLoadedBootCode) {
  */
 TEST(BootIntegration, Stage1_ReachesChainedLoaderEntry) {
     A5120Machine machine;
-    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk01.img"), "cpa780", false));
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", false));
     machine.powerOn();
     EXPECT_TRUE(runUntilPC(machine, 0x0437, 5'000'000))
         << "stage-1 loader entry 0x0437 never reached — boot ROM handoff failed";
@@ -237,7 +237,7 @@ TEST(BootIntegration, Stage1_ReachesChainedLoaderEntry) {
  */
 TEST(BootIntegration, Stage1_PrintsBootloaderBanner) {
     A5120Machine machine;
-    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk01.img"), "cpa780", false));
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", false));
     machine.powerOn();
     EXPECT_TRUE(runUntilVramContains(machine, "Version 24.02.87", 5'000'000))
         << "stage-1 banner 'Bootloader, Version 24.02.87' never appeared in VRAM";
@@ -252,7 +252,7 @@ TEST(BootIntegration, Stage1_PrintsBootloaderBanner) {
  */
 TEST(BootIntegration, Stage2_ReachesThirdStageEntry) {
     A5120Machine machine;
-    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk01.img"), "cpa780", false));
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", false));
     machine.powerOn();
     EXPECT_TRUE(runUntilPC(machine, 0x1800, 8'000'000))
         << "stage-3 entry 0x1800 never reached — secondary loader did not complete";
@@ -267,7 +267,7 @@ TEST(BootIntegration, Stage2_ReachesThirdStageEntry) {
  */
 TEST(BootIntegration, Stage3_PrintsCpaBootBanner) {
     A5120Machine machine;
-    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk01.img"), "cpa780", false));
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", false));
     machine.powerOn();
     EXPECT_TRUE(runUntilVramContains(machine, "CP/A-Bootsystem", 8'000'000))
         << "stage-3 banner 'CP/A-Bootsystem …' never appeared in VRAM";
@@ -284,7 +284,7 @@ TEST(BootIntegration, Stage3_PrintsCpaBootBanner) {
  */
 TEST(BootIntegration, Stage3_StartsLoadingOsCom) {
     A5120Machine machine;
-    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk01.img"), "cpa780", false));
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", false));
     machine.powerOn();
 
     // Run well into the @OS.COM read phase.
@@ -314,15 +314,15 @@ TEST(BootIntegration, Stage3_StartsLoadingOsCom) {
  */
 TEST(BootIntegration, Stage3_FullyLoadsAndJumpsToOs) {
     A5120Machine machine;
-    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk01.img"), "cpa780", false));
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", false));
     machine.powerOn();
     EXPECT_TRUE(runUntilPC(machine, 0x37A0, 40'000'000))
         << "OS entry 0x37A0 never reached — @OS.COM read did not complete";
 }
 
-// ─── cpadisk_02 — same disk in two encodings (.img raw + .hfe HxC) ────────────
+// ─── cpadisk_autofs_noclk_noautoexec — same disk in two encodings (.img raw + .hfe HxC) ────────────
 //
-// disks/cpadisk_02.img (raw cpa780) and disks/cpadisk_02.hfe (HxC HFE v1, produced
+// disks/cpadisk_autofs_noclk_noautoexec.img (raw cpa780) and disks/cpadisk_autofs_noclk_noautoexec.hfe (HxC HFE v1, produced
 // by real HxC tooling — track_encoding=0xFF, treated as MFM) are two encodings of
 // the SAME disk: a CP/A system *without* a real-time clock.  These two tests prove
 // that the new K5122 controller boots BOTH formats through every stage into the
@@ -335,19 +335,15 @@ TEST(BootIntegration, Stage3_FullyLoadsAndJumpsToOs) {
 // succeeded and the OS is executing — and then completes its BIOS cold-boot init
 // ("TPA ist OK!" after the RAM test).  Both encodings reach the exact same screen.
 //
-// KNOWN LIMIT — the disks' intended end state (auto-`dir` listing + interactive
-// prompt) is currently NOT reached: right after "TPA ist OK!" the OS spins in a
-// 16-bit divide routine (sub_C800 @0xC800) called with the divisor [0xD1BE]==0,
-// so DE never grows and the loop never terminates.  Both .img and .hfe hang at the
-// identical PC with the identical screen, i.e. this is a clock-/OS-runtime issue
-// (the disks are "ohne Uhr"), NOT a floppy/boot data-path difference between the
-// formats.  When that is resolved, tighten these tests to assert the dir output +
-// prompt.  Diagnosis: doc/refactoring_floppy_emulator.md §15.5.
+// Da diese Disk *ohne* Uhr ist (kein "Bitte Uhrzeit eingeben!"-Prompt), läuft der
+// Kaltstart direkt bis zum interaktiven CCP "A>" durch — die Tests stoppen aber
+// früh bei "TPA ist OK!" (runUntilVramContains hält an), das ist als Boot-Nachweis
+// ausreichend und schnell.
 
 // Budget: "TPA ist OK!" appears well before this; runUntilVramContains stops early.
 constexpr int kCpa02BudgetCycles = 90'000'000;
 
-// Mount cpadisk_02 by name.  Raw .img and self-describing .hfe both mount via the
+// Mount cpadisk_autofs_noclk_noautoexec by name.  Raw .img and self-describing .hfe both mount via the
 // same call; for HFE the "cpa780" format name is looked up (must exist) but ignored
 // by the HFE backend, which reads geometry/encoding from the file header.
 void mountCpa02(A5120Machine& m, const char* name) {
@@ -357,15 +353,15 @@ void mountCpa02(A5120Machine& m, const char* name) {
 
 /**
  * @test BootIntegrationCpa02/ImgBootsIntoRunningCpaOs
- * @brief cpadisk_02.img boots through all stages into the running CP/A OS.
+ * @brief cpadisk_autofs_noclk_noautoexec.img boots through all stages into the running CP/A OS.
  */
 TEST(BootIntegrationCpa02, ImgBootsIntoRunningCpaOs) {
     A5120Machine machine;
-    mountCpa02(machine, "cpadisk_02.img");
+    mountCpa02(machine, "cpadisk_autofs_noclk_noautoexec.img");
     machine.powerOn();
 
     ASSERT_TRUE(runUntilVramContains(machine, "TPA ist OK!", kCpa02BudgetCycles))
-        << "cpadisk_02.img: OS BIOS cold-boot (RAM test) never completed — boot failed";
+        << "cpadisk_autofs_noclk_noautoexec.img: OS BIOS cold-boot (RAM test) never completed — boot failed";
     const std::string screen = vramText(machine);
     EXPECT_NE(screen.find("CP/A, Version 25.09.89"), std::string::npos)
         << "running CP/A OS banner missing — @OS.COM handoff did not run the OS";
@@ -375,16 +371,16 @@ TEST(BootIntegrationCpa02, ImgBootsIntoRunningCpaOs) {
 
 /**
  * @test BootIntegrationCpa02/HfeBootsIntoRunningCpaOs
- * @brief cpadisk_02.hfe (HxC HFE v1) boots identically to the raw .img — proves the
+ * @brief cpadisk_autofs_noclk_noautoexec.hfe (HxC HFE v1) boots identically to the raw .img — proves the
  *        HFE/BitCodec backend boots a real disk through K5122 end-to-end.
  */
 TEST(BootIntegrationCpa02, HfeBootsIntoRunningCpaOs) {
     A5120Machine machine;
-    mountCpa02(machine, "cpadisk_02.hfe");
+    mountCpa02(machine, "cpadisk_autofs_noclk_noautoexec.hfe");
     machine.powerOn();
 
     ASSERT_TRUE(runUntilVramContains(machine, "TPA ist OK!", kCpa02BudgetCycles))
-        << "cpadisk_02.hfe: OS BIOS cold-boot never completed — HFE boot path failed";
+        << "cpadisk_autofs_noclk_noautoexec.hfe: OS BIOS cold-boot never completed — HFE boot path failed";
     const std::string screen = vramText(machine);
     EXPECT_NE(screen.find("CP/A, Version 25.09.89"), std::string::npos)
         << "running CP/A OS banner missing from HFE boot";
@@ -394,10 +390,10 @@ TEST(BootIntegrationCpa02, HfeBootsIntoRunningCpaOs) {
 
 // ─── Booting from drives B: and C: (search starts at A:, lower drives empty) ──
 //
-// disks/cpadisk_mitUhr_01.{img,hfe} are the same disk in two encodings, WITH an
-// active real-time clock — so (unlike cpadisk_02, §15.5) the OS does not hang in
-// the post-boot divide loop and boots all the way to the "Bitte Uhrzeit eingeben!"
-// time-entry prompt.  These tests additionally exercise the loader + the K5122
+// disks/cpadisk_autofs_clock_noautoexec.{img,hfe} are the same disk in two encodings, WITH an
+// active real-time clock — so (unlike the no-clock disk above) the OS boots all the
+// way to the "Bitte Uhrzeit eingeben!" time-entry prompt instead of straight to the
+// CCP.  These tests additionally exercise the loader + the K5122
 // 8212 drive-select for drives OTHER than A:: the disk is mounted on B: (drive 1)
 // or C: (drive 2) with the lower drives left empty.  The ZRE boot ROM's drive-
 // detect loop (0x0110) rotates the 8212 select 0xEE→0xDD→0xBB→0x77 (A:→B:→C:→D:,
@@ -409,7 +405,7 @@ TEST(BootIntegrationCpa02, HfeBootsIntoRunningCpaOs) {
 // prompt later than B:.  runUntilVramContains stops as soon as the prompt appears.
 constexpr int kClockBootBudget = 90'000'000;
 
-// Boot cpadisk_mitUhr_01 from a non-A: drive, leaving the lower drives empty (a
+// Boot cpadisk_autofs_clock_noautoexec from a non-A: drive, leaving the lower drives empty (a
 // fresh A5120Machine has nothing mounted — exactly the configuration to exercise
 // the drive search).  Passes when the OS reaches the time-entry prompt.
 void bootClockFromDrive(int drive, const char* name) {
@@ -425,24 +421,24 @@ void bootClockFromDrive(int drive, const char* name) {
 
 /** @test BootIntegrationDriveBC/ClockImg_FromDriveB  Raw image boots from B:. */
 TEST(BootIntegrationDriveBC, ClockImg_FromDriveB) {
-    bootClockFromDrive(1, "cpadisk_mitUhr_01.img");
+    bootClockFromDrive(1, "cpadisk_autofs_clock_noautoexec.img");
 }
 /** @test BootIntegrationDriveBC/ClockImg_FromDriveC  Raw image boots from C:. */
 TEST(BootIntegrationDriveBC, ClockImg_FromDriveC) {
-    bootClockFromDrive(2, "cpadisk_mitUhr_01.img");
+    bootClockFromDrive(2, "cpadisk_autofs_clock_noautoexec.img");
 }
 /** @test BootIntegrationDriveBC/ClockHfe_FromDriveB  HFE image boots from B:. */
 TEST(BootIntegrationDriveBC, ClockHfe_FromDriveB) {
-    bootClockFromDrive(1, "cpadisk_mitUhr_01.hfe");
+    bootClockFromDrive(1, "cpadisk_autofs_clock_noautoexec.hfe");
 }
 /** @test BootIntegrationDriveBC/ClockHfe_FromDriveC  HFE image boots from C:. */
 TEST(BootIntegrationDriveBC, ClockHfe_FromDriveC) {
-    bootClockFromDrive(2, "cpadisk_mitUhr_01.hfe");
+    bootClockFromDrive(2, "cpadisk_autofs_clock_noautoexec.hfe");
 }
 
 // ─── Voller CP/A-Boot bis zur Uhrzeit-Eingabe (per-Byte-/BUSRQ-Modell) ────────
 //
-// Kanonischer „bootet vollständig durch"-Test: cpadisk_mitUhr_01 (Boot-Disk MIT
+// Kanonischer „bootet vollständig durch"-Test: cpadisk_autofs_clock_noautoexec (Boot-Disk MIT
 // Echtzeituhr, Format = cpa780 mit aktiver autom. Formaterkennung im Config) wird
 // auf A: (Laufwerk 0) gemountet und durchläuft ALLE Loader-Stufen (Boot-ROM →
 // Sekundärlader → 3. Stufe @OS.COM → CP/A-Kaltstart) bis zur Aufforderung
@@ -455,8 +451,8 @@ TEST(BootIntegrationDriveBC, ClockHfe_FromDriveC) {
 // schneller als kClockBootBudget.
 TEST(BootIntegration, FullBootReachesTimeEntryPrompt) {
     A5120Machine machine;
-    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_mitUhr_01.img"), "cpa780", /*wp=*/false))
-        << "could not mount cpadisk_mitUhr_01.img on A:: " << machine.lastError();
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", /*wp=*/false))
+        << "could not mount cpadisk_autofs_clock_noautoexec.img on A:: " << machine.lastError();
     machine.powerOn();
     EXPECT_TRUE(runUntilVramContains(machine, "Bitte Uhrzeit eingeben!", 40'000'000))
         << "voller CP/A-Kaltstart erreichte die Uhrzeit-Eingabe nie — eine Loader-Stufe "
@@ -474,7 +470,7 @@ TEST(BootIntegration, FullBootReachesTimeEntryPrompt) {
 // checks that it is echoed AND processed (unknown command → "XY7?").
 //
 // DISABLED: the fix is verified end-to-end manually and reproducibly with
-//   build/kbd_test disks/cpadisk_mitUhr_01.img "120000|Xy7"
+//   build/kbd_test disks/cpadisk_autofs_clock_noautoexec.img "120000|Xy7"
 // → screen shows `A>Xy7` then `XY7?`.  But the *gtest* harness cannot reproduce
 // the interactive-CCP keyboard path reliably: the RTC clock in the status line
 // drifts to garbage (e.g. "E6:DA:56" instead of advancing from 12:00:00) and the
@@ -487,8 +483,8 @@ TEST(BootIntegration, FullBootReachesTimeEntryPrompt) {
 TEST(KeyboardIntegration, DISABLED_TypeCommandAtCcpEchoesAndProcesses) {
     A5120Machine machine;
     machine.powerOn();   // power on BEFORE mounting (matches the kbd_test order)
-    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_mitUhr_01.img"), "cpa780", /*wp=*/false))
-        << "could not mount cpadisk_mitUhr_01.img: " << machine.lastError();
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", /*wp=*/false))
+        << "could not mount cpadisk_autofs_clock_noautoexec.img: " << machine.lastError();
 
     // 1. Boot to the time-entry prompt (small batches — see runSmallUntil).
     ASSERT_TRUE(runSmallUntil(machine, "Bitte Uhrzeit eingeben!", 40'000'000))

@@ -424,7 +424,7 @@ if(BUILD_K1520)
     # tests don't reach. Each disk-using test copies the fixture to a PRIVATE temp file
     # first — the tools mount r/w and a run can otherwise corrupt the committed image.
     if (BUILD_K1520_TESTS)
-        set(_bbdisk "${CMAKE_SOURCE_DIR}/disks/cpadisk01.img")
+        set(_bbdisk "${CMAKE_SOURCE_DIR}/disks/cpadisk_autofs_clock_noautoexec.img")
         # add_cli_test(<name> <pass-regex> <shell-command>)
         macro(add_cli_test name regex cmd)
             add_test(NAME ${name} COMMAND sh -c "${cmd}")
@@ -467,7 +467,7 @@ if(BUILD_K1520)
         set_tests_properties(cli_bt_exit_met cli_bt_exit_notmet cli_dbg_exit_badisk PROPERTIES TIMEOUT 120)
 
         # machine-readable JSON output (agent ergonomics).
-        add_cli_test(cli_dbg_json "\"pc\":\"0x1E62\".*\"hl\":\"0x2402\""
+        add_cli_test(cli_dbg_json "\"pc\":\"0x1E44\".*\"hl\":\"0x23EA\""
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'g 5000000\\nrj\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
         add_cli_test(cli_bt_json "\"boot_reached\":false.*\"until\":.\"set\":true,\"met\":true"
             "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' --json \$D; rm -f \$D")

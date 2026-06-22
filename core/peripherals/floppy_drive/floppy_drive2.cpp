@@ -156,6 +156,10 @@ bool FloppyDriveV2::flush() {
             ct.dirty = false;
         }
     }
+    // Backend auf den Host persistieren: RawSectorImage schreibt bereits in
+    // writeTrack() synchron (flush() = no-op); HfeImage sammelt die Spuren intern
+    // und schreibt die Datei erst hier (flush() ist no-op, wenn nichts dirty ist).
+    if (!image_->flush()) ok = false;
     return ok;
 }
 
