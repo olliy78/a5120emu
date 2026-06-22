@@ -649,3 +649,34 @@ TEST(K7637, SerialLatency_BytesSerialiseInOrder) {
     ASSERT_TRUE(sio.ioRead(1) & 0x01);
     EXPECT_EQ(sio.ioRead(0), 'b');
 }
+
+/**
+ * @test K7637/SerializeRoundTrip
+ * @brief serialize() → deserialize() restores the pending serial-TX queue and
+ *        its 9600-baud timing into a fresh keyboard, so a byte typed just before
+ *        a savestate is still delivered after the matching loadstate.
+ * @par Pass criterion  The queued byte is delivered by service() on the restored
+ *      keyboard and the blob is fully consumed.
+ */
+TEST(K7637, SerializeRoundTrip) {
+    Z80SIO sio1; sio1.setIEI(true);
+    K7637 a; a.connect(sio1, 0);
+    a.keyPress(0x42, false, false);    // 'B' → queued in tx_queue_, not yet delivered
+
+    std::vector<uint8_t> blob;
+    a.serialize(blob);
+    ASSERT_FALSE(blob.empty());
+
+    // Fresh keyboard on a fresh SIO: the pending byte must survive the load.
+    Z80SIO sio2; sio2.setIEI(true);
+    K7637 b; b.connect(sio2, 0);
+    const uint8_t* p   = blob.data();
+    const uint8_t* end = p + blob.size();
+    ASSERT_TRUE(b.deserialize(p, end));
+    EXPECT_EQ(p, end);
+
+    EXPECT_FALSE(sio2.ioRead(1) & 0x01);   // RR0 bit0: nothing delivered yet
+    b.service(6000);                       // past the 9600-baud byte-time
+    ASSERT_TRUE(sio2.ioRead(1) & 0x01);
+    EXPECT_EQ(sio2.ioRead(0), 0x42);       // the restored byte arrives
+}

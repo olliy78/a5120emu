@@ -41,6 +41,8 @@
  * @see Robotron A5120 Technical Documentation (U855D Manual, pages 608-611)
  */
 #include "z80_pio.h"
+#include <cstring>
+#include <type_traits>
 
 // =============================================================================
 /// @name Initialization
@@ -383,6 +385,27 @@ Z80PIO::DebugState Z80PIO::debugState() const {
         d.port[i].ius     = p[i]->ius;
     }
     return d;
+}
+
+// ─── Snapshot serialisation ──────────────────────────────────────────────────
+// Both ports are POD (incl. their per-port iei/ius daisy-chain bits), so they
+// are dumped verbatim. Output callbacks and name are not part of the saved
+// state (re-established by wiring).
+void Z80PIO::serialize(std::vector<uint8_t>& out) const {
+    static_assert(std::is_trivially_copyable_v<Port>, "Port must be POD");
+    auto put = [&](const Port& p) {
+        const uint8_t* q = reinterpret_cast<const uint8_t*>(&p);
+        out.insert(out.end(), q, q + sizeof(Port));
+    };
+    put(porta_);
+    put(portb_);
+}
+
+bool Z80PIO::deserialize(const uint8_t*& p, const uint8_t* end) {
+    if (static_cast<size_t>(end - p) < 2 * sizeof(Port)) return false;
+    std::memcpy(&porta_, p, sizeof(Port)); p += sizeof(Port);
+    std::memcpy(&portb_, p, sizeof(Port)); p += sizeof(Port);
+    return true;
 }
 
 /**

@@ -382,3 +382,59 @@ TEST(Z80SIO, DebugStateReflectsTxInterrupt) {
     EXPECT_FALSE(d.ch[0].txBusy);         // buffer consumed
     EXPECT_FALSE(d.ieo);                  // pending interrupt blocks downstream
 }
+
+/**
+ * @test SIO/SerializeRoundTrip
+ * @brief serialize() → deserialize() restores both channels (registers, RX FIFO,
+ *        TX buffer) and the IEI line into a fresh chip. Underpins savestate so a
+ *        loadstate resumes with a working keyboard SIO.
+ * @par Pass criterion  All distinctive fields match and the blob is fully consumed.
+ */
+TEST(SIO, SerializeRoundTrip) {
+    Z80SIO a;
+    a.channelA().rxByte(0x11);
+    a.channelA().rxByte(0x22);
+    a.channelA().rxByte(0x33);
+    a.channelA().wr[1]        = 0x1C;
+    a.channelA().rx_enable    = true;
+    a.channelA().rx_int_mode  = SIORxIntMode::ALL_CHARS;
+    a.channelB().tx_buf       = 0x99;
+    a.channelB().wr[2]        = 0x40;
+    a.setIEI(true);
+
+    std::vector<uint8_t> blob;
+    a.serialize(blob);
+    ASSERT_FALSE(blob.empty());
+
+    Z80SIO b;                         // power-on defaults
+    const uint8_t* p   = blob.data();
+    const uint8_t* end = p + blob.size();
+    ASSERT_TRUE(b.deserialize(p, end));
+    EXPECT_EQ(p, end);                // consumed exactly
+
+    ASSERT_EQ(b.channelA().rx_fifo.size(), 3u);
+    EXPECT_EQ(b.channelA().rx_fifo.front(), 0x11);
+    EXPECT_EQ(b.channelA().rx_fifo.back(),  0x33);
+    EXPECT_EQ(b.channelA().wr[1], 0x1C);
+    EXPECT_TRUE(b.channelA().rx_enable);
+    EXPECT_EQ((int)b.channelA().rx_int_mode, (int)SIORxIntMode::ALL_CHARS);
+    ASSERT_TRUE(b.channelB().tx_buf.has_value());
+    EXPECT_EQ(*b.channelB().tx_buf, 0x99);
+    EXPECT_EQ(b.channelB().wr[2], 0x40);
+    EXPECT_TRUE(b.debugState().iei);
+}
+
+/**
+ * @test SIO/DeserializeRejectsTruncatedBlob
+ * @brief deserialize() reports failure on a short buffer rather than reading OOB.
+ */
+TEST(SIO, DeserializeRejectsTruncatedBlob) {
+    Z80SIO a;
+    std::vector<uint8_t> blob;
+    a.serialize(blob);
+    blob.resize(blob.size() / 2);     // truncate
+    Z80SIO b;
+    const uint8_t* p   = blob.data();
+    const uint8_t* end = p + blob.size();
+    EXPECT_FALSE(b.deserialize(p, end));
+}

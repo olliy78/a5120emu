@@ -55,6 +55,7 @@
 #include "../bus/k1520_bus.h"
 #include <functional>
 #include <string>
+#include <vector>
 
 /**
  * @class Z80PIO
@@ -117,6 +118,14 @@ public:
         } port[2];   // [0]=A, [1]=B
     };
     DebugState debugState() const;
+
+    // ─── Snapshot serialisation (savestate/loadstate) ────────────────────────
+    // Append the restorable chip state (both ports incl. their daisy-chain bits)
+    // to @p out. Output callbacks and bus/daisy-chain wiring are NOT serialised —
+    // they are re-established by the owning card, so deserialising into an
+    // already-wired chip keeps working.
+    void serialize(std::vector<uint8_t>& out) const;
+    bool deserialize(const uint8_t*& p, const uint8_t* end);
 
     // ─── InterruptSlave interface (daisy-chain) ──────────────────────────
     

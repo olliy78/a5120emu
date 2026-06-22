@@ -258,6 +258,8 @@ public:
      * @return Reference to sio_kbd_printer_ (Z80SIO)
      */
     Z80SIO& sioA32() { return sio_kbd_printer_; }
+    /** @brief const overload (snapshot serialisation from a const machine). */
+    const Z80SIO& sioA32() const { return sio_kbd_printer_; }
 
     /**
      * @brief Return a reference to CTC A34 (baud-rate generator).
@@ -267,6 +269,8 @@ public:
      * @return Reference to ctc_a34_ (Z80CTC)
      */
     Z80CTC& ctcA34() { return ctc_a34_; }
+    /** @brief const overload (snapshot serialisation from a const machine). */
+    const Z80CTC& ctcA34() const { return ctc_a34_; }
 
 private:
     /**

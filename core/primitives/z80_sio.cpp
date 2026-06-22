@@ -76,6 +76,8 @@
  * @see Robotron A5120 Technical Documentation (U856D Manual, pages 754-792)
  */
 #include "z80_sio.h"
+#include <cstring>
+#include <type_traits>
 
 /**
  * @brief Receive FIFO depth per channel.
@@ -213,6 +215,90 @@ Z80SIO::DebugState Z80SIO::debugState() const {
         d.ch[i].txBusy   = c[i]->tx_buf.has_value();
     }
     return d;
+}
+
+// ─── Snapshot serialisation ──────────────────────────────────────────────────
+//
+// We serialise every data member of Channel *except* the wiring callback
+// (clk_cb_) and the std::deque/std::optional members, which are handled
+// explicitly.  A single field-visitor (visitChannelPod) lists the POD fields
+// once and is reused for both write and read, so the two directions can never
+// drift out of sync.
+namespace {
+struct SioWriter {
+    std::vector<uint8_t>& o;
+    template <class T> void operator()(const T& v) {
+        static_assert(std::is_trivially_copyable_v<T>, "POD fields only");
+        const uint8_t* p = reinterpret_cast<const uint8_t*>(&v);
+        o.insert(o.end(), p, p + sizeof(T));
+    }
+};
+struct SioReader {
+    const uint8_t*& p;
+    const uint8_t*  end;
+    bool ok = true;
+    template <class T> void operator()(T& v) {
+        static_assert(std::is_trivially_copyable_v<T>, "POD fields only");
+        if (!ok || static_cast<size_t>(end - p) < sizeof(T)) { ok = false; return; }
+        std::memcpy(&v, p, sizeof(T));
+        p += sizeof(T);
+    }
+};
+// Visit the trivially-copyable fields of a Channel (const or mutable) in a
+// fixed order.  rx_fifo / tx_buf / clk_cb_ are intentionally excluded.
+template <class ChT, class F>
+void visitChannelPod(ChT& ch, F& f) {
+    f(ch.wr);
+    f(ch.rr0); f(ch.rr1); f(ch.reg_ptr);
+    f(ch.cts_); f(ch.rts_);
+    f(ch.irq_rx); f(ch.irq_tx); f(ch.irq_ext); f(ch.iei); f(ch.ius);
+    f(ch.mode); f(ch.sync_mode); f(ch.rx_int_mode); f(ch.stop_bits);
+    f(ch.hunt_mode); f(ch.sync_found); f(ch.sync1); f(ch.sync2); f(ch.sync_shift_reg);
+    f(ch.ones_count); f(ch.in_frame); f(ch.tx_abort);
+    f(ch.rx_bits_per_char); f(ch.tx_bits_per_char); f(ch.clock_multiplier);
+    f(ch.parity_enable); f(ch.parity_even);
+    f(ch.rx_enable); f(ch.tx_enable); f(ch.auto_enables); f(ch.send_break);
+    f(ch.sync_load_inhibit); f(ch.addr_search_mode);
+    f(ch.rx_crc_enable); f(ch.tx_crc_enable); f(ch.rx_crc); f(ch.tx_crc); f(ch.crc_ccitt);
+    f(ch.ext_int_enable); f(ch.tx_int_enable); f(ch.rx_int_first_only); f(ch.status_affects_vector);
+    f(ch.dtr_); f(ch.dcd_); f(ch.cts_latch); f(ch.dcd_latch); f(ch.sync_latch);
+    f(ch.rx_state); f(ch.rx_shift_reg); f(ch.rx_bit_count); f(ch.rx_sample_count);
+    f(ch.tx_underrun); f(ch.break_abort_detected);
+}
+}  // namespace
+
+void Z80SIO::serialize(std::vector<uint8_t>& out) const {
+    SioWriter w{out};
+    auto writeChannel = [&](const Channel& ch) {
+        visitChannelPod(ch, w);
+        uint32_t n = static_cast<uint32_t>(ch.rx_fifo.size());
+        w(n);
+        for (uint8_t b : ch.rx_fifo) w(b);
+        uint8_t has = ch.tx_buf.has_value() ? 1 : 0;
+        uint8_t val = ch.tx_buf.value_or(0);
+        w(has); w(val);
+    };
+    writeChannel(ch_a_);
+    writeChannel(ch_b_);
+    w(iei_);
+}
+
+bool Z80SIO::deserialize(const uint8_t*& p, const uint8_t* end) {
+    SioReader r{p, end};
+    auto readChannel = [&](Channel& ch) {
+        visitChannelPod(ch, r);
+        uint32_t n = 0; r(n);
+        ch.rx_fifo.clear();
+        for (uint32_t i = 0; i < n && r.ok; ++i) { uint8_t b = 0; r(b); ch.rx_fifo.push_back(b); }
+        uint8_t has = 0, val = 0; r(has); r(val);
+        if (has) ch.tx_buf = val; else ch.tx_buf.reset();
+    };
+    readChannel(ch_a_);
+    readChannel(ch_b_);
+    bool iei = false; r(iei);
+    iei_ = iei;
+    // r.p aliases the caller's p, so it is already advanced.
+    return r.ok;
 }
 
 void Z80SIO::setIEI(bool iei) {

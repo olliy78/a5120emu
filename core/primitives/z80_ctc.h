@@ -55,6 +55,7 @@
 #pragma once
 #include "../bus/k1520_bus.h"
 #include <cstdint>
+#include <vector>
 #include <functional>
 #include <string>
 
@@ -186,6 +187,15 @@ public:
         } ch[4];
     };
     DebugState debugState() const;
+
+    // ─── Snapshot serialisation (savestate/loadstate) ────────────────────────
+    // Append the restorable chip state (4 channels + vector base + IEI line) to
+    // @p out. The ZC/TO callback and bus/daisy-chain wiring are NOT serialised —
+    // they are re-established by the owning card, so deserialising into an
+    // already-wired chip keeps working. Captured so a loadstate resumes with the
+    // system timer (and thus the timer-driven keyboard scan) running.
+    void serialize(std::vector<uint8_t>& out) const;
+    bool deserialize(const uint8_t*& p, const uint8_t* end);
 
 private:
     // Control Word Bit Masks (U857D manual page 612-613, Bild 3)
