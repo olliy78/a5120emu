@@ -148,12 +148,13 @@ public:
      * @brief Reproducible machine snapshot for the debugger (snap/restore, reverse-step).
      *
      * Contains the full 64 KB main RAM, both Z80 register files (registers only —
-     * the access callbacks are *not* part of the snapshot), and the run-loop
-     * coordination flags. It deliberately does **not** capture device-internal state
-     * (CTC/PIO/SIO counters, K5122 head position) nor the boot-ROM mapping. Capturing
-     * and restoring is therefore exact for **CPU + RAM** — the dominant inspection
-     * target during interactive stepping of loaded code — but restoring in the middle
-     * of an active DMA / timer phase may drift once execution resumes.
+     * the access callbacks are *not* part of the snapshot), the run-loop coordination
+     * flags, the boot-ROM mapping, the keyboard subsystem (CTC/BS-PIO/baud-CTC/SIO/
+     * K7637) and the floppy controller (K5122 PIOs + per-drive head position). So a
+     * restore resumes with a working keyboard AND disk access (head on the right
+     * track). NOT captured: the mounted disk images themselves (mounted separately)
+     * and the K7024 screen VRAM. Restoring in the middle of an active DMA / timer
+     * phase may still drift once execution resumes.
      */
     struct MachineSnapshot {
         struct Z80Regs {
@@ -182,9 +183,10 @@ public:
      *
      * Also reproduces the boot-ROM mapping, so a state saved post-ROM resumes
      * correctly even into a freshly powered machine. The keyboard subsystem
-     * (K7637 + its SIO channel) IS captured/restored, so keyboard input works
-     * after a loadstate. Other device-internal state (CTC/PIO counters, the
-     * second SIO, K5122 head position) is still NOT captured.
+     * (system CTC + BS-PIO + baud CTC + keyboard SIO + K7637) and the floppy
+     * controller (K5122 PIOs + per-drive head position) ARE captured/restored, so
+     * keyboard input AND disk access work after a loadstate. Not captured: the
+     * mounted disk images and the K7024 screen VRAM.
      * @return always true (the snapshot is fully applied).
      */
     bool restoreState(const MachineSnapshot& s);

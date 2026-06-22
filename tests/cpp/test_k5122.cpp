@@ -549,3 +549,51 @@ TEST_F(K5122Test, OhneLaufwerk_STRStrobeKeinAbsturz) {
     (void)b;
     SUCCEED();
 }
+
+// ─── Snapshot-Serialisierung (savestate/loadstate) ────────────────────────────
+
+/**
+ * @test K5122Test/SerializeRoundTrip_RestoresHeadPosition
+ * @brief serialize() → deserialize() stellt die **mechanische Kopfposition**
+ *        (Zylinder) jedes Laufwerks wieder her, damit der Kopf nach einem
+ *        loadstate auf der richtigen Spur steht. Kernanforderung des Features.
+ * @par Pass criterion  currentCylinder() der frischen Karte == gesicherter Wert;
+ *      Blob vollständig konsumiert.
+ */
+TEST_F(K5122Test, SerializeRoundTrip_RestoresHeadPosition) {
+    auto path = tmpImg2();                         // 2 Zylinder, 2 Köpfe
+    ASSERT_TRUE(card.mountDisk(0, path, fmt2));
+    ASSERT_TRUE(card.drive(0).seek(1));            // Kopf auf Zylinder 1 bewegen
+    EXPECT_EQ(card.drive(0).currentCylinder(), 1);
+
+    std::vector<uint8_t> blob;
+    card.serialize(blob);
+    ASSERT_FALSE(blob.empty());
+
+    // Frische Karte mit demselben Image: Kopf steht zunächst auf Zylinder 0.
+    K1520Bus bus2;
+    K5122   card2{bus2};
+    ASSERT_TRUE(card2.mountDisk(0, path, fmt2));
+    EXPECT_EQ(card2.drive(0).currentCylinder(), 0);
+
+    const uint8_t* p   = blob.data();
+    const uint8_t* end = p + blob.size();
+    ASSERT_TRUE(card2.deserialize(p, end));
+    EXPECT_EQ(p, end);                             // exakt konsumiert
+    EXPECT_EQ(card2.drive(0).currentCylinder(), 1);  // Kopf auf der richtigen Spur
+}
+
+/**
+ * @test K5122Test/DeserializeRejectsTruncatedBlob
+ * @brief deserialize() meldet Fehler bei zu kurzem Puffer statt OOB zu lesen.
+ */
+TEST_F(K5122Test, DeserializeRejectsTruncatedBlob) {
+    std::vector<uint8_t> blob;
+    card.serialize(blob);
+    blob.resize(blob.size() / 2);
+    K1520Bus bus2;
+    K5122   card2{bus2};
+    const uint8_t* p   = blob.data();
+    const uint8_t* end = p + blob.size();
+    EXPECT_FALSE(card2.deserialize(p, end));
+}

@@ -21,6 +21,8 @@
 #include "core/logger.h"
 #include <algorithm>
 #include <cassert>
+#include <cstring>
+#include <type_traits>
 
 // ─── Konstruktor ──────────────────────────────────────────────────────────────
 
@@ -655,4 +657,80 @@ void K5122::markDriveAccess(int drive) {
     if (drive < 0 || drive > 3) return;
     led_until_[static_cast<size_t>(drive)] =
         std::chrono::steady_clock::now() + led_hold_time_;
+}
+
+// ─── Snapshot-Serialisierung ────────────────────────────────────────────────────
+namespace {
+template <class T> void putPod(std::vector<uint8_t>& o, const T& v) {
+    static_assert(std::is_trivially_copyable_v<T>, "POD only");
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(&v);
+    o.insert(o.end(), p, p + sizeof(T));
+}
+template <class T> bool getPod(const uint8_t*& p, const uint8_t* end, T& v) {
+    static_assert(std::is_trivially_copyable_v<T>, "POD only");
+    if (static_cast<size_t>(end - p) < sizeof(T)) return false;
+    std::memcpy(&v, p, sizeof(T));
+    p += sizeof(T);
+    return true;
+}
+}  // namespace
+
+void K5122::serialize(std::vector<uint8_t>& out) const {
+    // Controller-Chips (Register + Daisy-Chain-Bits).
+    ctrl_pio_.serialize(out);
+    data_pio_.serialize(out);
+    // Gelatchte Steuer-Signale.
+    putPod(out, static_cast<int32_t>(selected_drive_));
+    putPod(out, current_head_);
+    putPod(out, static_cast<uint8_t>(step_dir_in_ ? 1 : 0));
+    putPod(out, prev_ctrl_a_);
+    putPod(out, static_cast<int32_t>(index_cycle_acc_));
+    // Mechanische Kopfposition je Laufwerk (das Kernanliegen: Kopf steht nach
+    // dem Laden wieder auf der richtigen Spur).
+    for (int i = 0; i < 4; ++i) {
+        uint8_t mounted = drives_[i].isMounted() ? 1 : 0;
+        uint8_t cyl     = drives_[i].isMounted() ? drives_[i].currentCylinder() : 0;
+        putPod(out, mounted);
+        putPod(out, cyl);
+    }
+}
+
+bool K5122::deserialize(const uint8_t*& p, const uint8_t* end) {
+    if (!ctrl_pio_.deserialize(p, end)) return false;
+    if (!data_pio_.deserialize(p, end)) return false;
+    int32_t sel = 0, idx = 0;
+    uint8_t head = 0, stepdir = 0, prev = 0;
+    if (!getPod(p, end, sel))     return false;
+    if (!getPod(p, end, head))    return false;
+    if (!getPod(p, end, stepdir)) return false;
+    if (!getPod(p, end, prev))    return false;
+    if (!getPod(p, end, idx))     return false;
+    selected_drive_   = sel;
+    current_head_     = head;
+    step_dir_in_      = (stepdir != 0);
+    prev_ctrl_a_      = prev;
+    index_cycle_acc_  = idx;
+    for (int i = 0; i < 4; ++i) {
+        uint8_t mounted = 0, cyl = 0;
+        if (!getPod(p, end, mounted)) return false;
+        if (!getPod(p, end, cyl))     return false;
+        // Nur die Kopfposition setzen, wenn das Laufwerk auch jetzt gemountet ist
+        // (das Image wird separat über die Kommandozeile gemountet).
+        if (mounted && drives_[i].isMounted())
+            drives_[i].restoreHeadPosition(cyl);
+    }
+    // Einen evtl. laufenden Streaming-/Schreib-Transfer auf konsistenten Idle-
+    // Zustand zurücksetzen — der nächste /STR-Strobe baut die Spur frisch auf.
+    cur_track_           = nullptr;
+    transferring_        = false;
+    write_mode_          = false;
+    locked_              = false;
+    head_pos_            = 0;
+    write_buf_.clear();
+    byte_ready_          = false;
+    byte_acc_            = 0;
+    dma_pending_         = false;
+    dma_is_write_        = false;
+    str_inactive_cycles_ = 0;
+    return true;
 }

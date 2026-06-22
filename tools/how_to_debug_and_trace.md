@@ -199,31 +199,33 @@ b 0x0005 if C==0x15         # BDOS Write-Sequential — feuert, sobald PIP zu sc
 CP/M-BDOS-Funktionen (Reg C): `0F`=Open, `10`=Close, `13`=Delete, `14`=Read-Seq,
 **`15`=Write-Seq**, `16`=Make-File, `21`/`22`=Read/Write-Random.
 
-**Schnell iterieren — Checkpoint statt Vollboot.** `savestate`/`loadstate` sichern
-RAM+CPU+ROM-Mapping **und das Tastatur-Subsystem** (System-CTC, BS-PIO, Baud-CTC,
-Tastatur-SIO, K7637) — **frische Tastatureingabe funktioniert nach `loadstate`** (am
-CCP-Prompt gespeicherter Checkpoint → `keys user 0\r` etc. werden ausgeführt). **Noch
-nicht** mitgesichert: der **Floppy-Zustand (K5122)** und der **Bildschirm (K7024 VRAM)** —
-disk-zugreifende Befehle (`dir`, das Lesen der PIP-Quelle) können nach einem CCP-Checkpoint
-daher fehlschlagen. Fürs Schreib-Debugging deshalb den Checkpoint **am Schreib-Aufruf
-selbst** setzen (Disk-Zugriff bereits eingeleitet); das spart den Boot und umgeht den
-fehlenden Floppy-Snapshot:
+**Schnell iterieren — einmal booten, oft ab CCP-Checkpoint.** `savestate`/`loadstate`
+sichern RAM+CPU+ROM-Mapping, das **Tastatur-Subsystem** (System-CTC, BS-PIO, Baud-CTC,
+Tastatur-SIO, K7637) **und den Floppy-Controller K5122** (beide PIOs + die **mechanische
+Kopfposition** je Laufwerk). Damit funktionieren nach `loadstate` sowohl **Tastatureingabe
+als auch Disk-Zugriff**: einen Checkpoint am CCP-Prompt nehmen und danach beliebig oft
+frische Befehle tippen — `dir`, `pip …`, alles läuft (das gemountete Image selbst ist nicht
+im Snapshot, wird aber über die Kommandozeile gemountet). So entfällt der ~200-s-Vollboot:
 
 ```text
-# einmal (langsam): booten, tippen, am Schreib-Aufruf anhalten, sichern
+# einmal (langsam, ~200 s): booten + Uhr setzen, am CCP-Prompt sichern
 g 130000000
 keys 12:00:00\r
 g 8000000
-b 0x0005 if C==0x15
-keys pip x.txt=power.com\r
-g 40000000                  # hält am Write-Seq-Breakpoint
-savestate /tmp/pip_write.k1520ss
-# danach beliebig oft (schnell): ab dem Schreib-Aufruf weiter sezieren
-loadstate /tmp/pip_write.k1520ss
+savestate /tmp/ccp.k1520ss
+# danach beliebig oft (schnell, ~10-17 s): ab dem CCP-Prompt frisch tippen
+loadstate /tmp/ccp.k1520ss
+b 0x0005 if C==0x15         # BDOS Write-Seq (Schreib-Pfad)
 iow 0x16                    # Schreibdaten an den K5122-Datenport
 iow 0x10                    # Control-Port (Strobe = Bit7-Toggle, s. u.)
-g 20000000 ; dev            # K5122-Zustand
+keys pip x.txt=power.com\r  # PIP liest die Quelle von Disk + schreibt → löst den Pfad aus
+g 60000000 ; dev            # K5122-Zustand
 ```
+
+> **Hinweis:** Nicht im Snapshot ist der K7024-Bildschirmspeicher als Hardware-VRAM —
+> in der Praxis unkritisch (der OS-Bildschirmpuffer liegt im gesicherten RAM, `screen`
+> zeigt korrekt). Ein `restore`/`loadstate` *mitten in* einem aktiven Floppy-Transfer
+> setzt diesen auf Idle zurück (die Kopfposition bleibt) — Checkpoints im Leerlauf nehmen.
 
 > **Fremde `.prn`-Listings passen evtl. nicht zu *diesem* BIOS.** Adress-Labels aus einem
 > anderswo gebauten Listing (z. B. CPA_Workbench `bios.prn`) sind ggü. dem BIOS der
@@ -266,9 +268,9 @@ boot_trace -L /dev/null --load-state /tmp/ckpt.bin -p 200000 $D
 ```
 
 In k1520dbg analog: `savestate /tmp/ckpt.bin` / `loadstate /tmp/ckpt.bin`. (RAM+CPU+ROM-
-Mapping **plus Tastatur-Subsystem** — System-CTC/BS-PIO/Baud-CTC/Tastatur-SIO/K7637 —
-werden reproduziert, daher funktioniert die **Tastatur nach `loadstate`**. Noch nicht im
-Snapshot: Floppy-K5122 und Bildschirm-VRAM, s. §11.)
+Mapping, **Tastatur-Subsystem** — System-CTC/BS-PIO/Baud-CTC/Tastatur-SIO/K7637 — **und der
+Floppy-K5122** (PIOs + Kopfposition) werden reproduziert, daher funktionieren **Tastatur
+UND Disk-Zugriff nach `loadstate`**. Nicht im Snapshot: die gemounteten Images selbst, s. §11.)
 
 ---
 
@@ -322,11 +324,12 @@ Bausteine für den Agenten:
 * **Zahlenbasis**: Adressen/Zähler sind base-0 (`d 6000` = dezimal!), `e`-Pokes und
   Watch-Werte sind hex. Hex immer `0x…`/`…H` schreiben.
 * **`s2`** wirkt nur während aktiver DMA (`/BUSRQ`); ZVE2 mit `b2` am DMA-Einsprung fangen.
-* **Snapshot-Umfang**: erfasst sind RAM, beide Z80, ROM-Mapping und das **Tastatur-
-  Subsystem** (System-CTC, BS-PIO, Baud-CTC, Tastatur-SIO, K7637) → Tastatur funktioniert
-  nach `loadstate`. **Nicht** erfasst: Floppy-K5122 (Kopfposition/Format) und K7024-VRAM
-  → disk-zugreifende Befehle bzw. der Bildschirminhalt können nach `loadstate` abweichen;
-  `restore`/`loadstate` mitten in aktiver DMA kann driften (für stabile Post-Boot-Punkte gedacht).
+* **Snapshot-Umfang**: erfasst sind RAM, beide Z80, ROM-Mapping, das **Tastatur-Subsystem**
+  (System-CTC, BS-PIO, Baud-CTC, Tastatur-SIO, K7637) und der **Floppy-K5122** (PIOs +
+  Kopfposition je Laufwerk) → **Tastatur und Disk-Zugriff funktionieren nach `loadstate`**.
+  **Nicht** erfasst: die gemounteten Disk-Images selbst (separat gemountet) und das K7024-
+  VRAM (praktisch unkritisch, OS-Schirmpuffer liegt im RAM). `restore`/`loadstate` mitten in
+  aktiver DMA setzt einen Floppy-Transfer auf Idle (Kopfposition bleibt) — Idle-Punkte nehmen.
 
 ---
 

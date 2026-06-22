@@ -132,6 +132,10 @@ void A5120Machine::captureState(MachineSnapshot& s) const {
     ass_.ctcA34().serialize(s.device_state);     // K8025 baud CTC
     ass_.sioA32().serialize(s.device_state);     // K8025 keyboard/printer SIO
     kbd_.serialize(s.device_state);              // K7637 keyboard peripheral
+    // Floppy controller: both PIOs, the latched control signals and — the point
+    // of this — the mechanical head position (cylinder) of each drive, so disk
+    // access (dir, file reads/writes) resumes with the head on the right track.
+    afs_.serialize(s.device_state);              // K5122 floppy controller
 }
 
 bool A5120Machine::restoreState(const MachineSnapshot& s) {
@@ -156,18 +160,20 @@ bool A5120Machine::restoreState(const MachineSnapshot& s) {
         ass_.ctcA34().deserialize(p, end);
         ass_.sioA32().deserialize(p, end);
         kbd_.deserialize(p, end);
+        afs_.deserialize(p, end);
     }
     return true;
 }
 
 // On-disk state format: magic "K1520SS" + version, a regs-size guard, then the raw
 // MachineSnapshot fields. Written/read by the same build → POD memcpy is sufficient.
-// Version 2 appends a length-prefixed device_state blob (keyboard SIO + K7637);
-// version-1 files (no device state) still load — the keyboard simply keeps its
-// current state.
+// A length-prefixed device_state blob holds the serialised device-internal state.
+// It is parsed sequentially per chip with bounds checks, so a shorter (older) blob
+// loads fine — trailing chips simply keep their current state. Versions:
+//   1 = no device state, 2 = + keyboard subsystem, 3 = + K5122 floppy controller.
 namespace {
 const char    kStateMagicPrefix[7] = {'K','1','5','2','0','S','S'};
-constexpr uint8_t kStateVersion    = 2;   // 1 = no device state, 2 = + device_state
+constexpr uint8_t kStateVersion    = 3;
 }
 
 bool A5120Machine::saveState(const std::string& path) const {
@@ -198,7 +204,7 @@ bool A5120Machine::loadState(const std::string& path) {
     char magic[7]; f.read(magic, sizeof magic);
     if (!f || std::memcmp(magic, kStateMagicPrefix, sizeof magic) != 0) return false;
     uint8_t version = 0; f.read(reinterpret_cast<char*>(&version), 1);
-    if (!f || (version != 1 && version != 2)) return false;
+    if (!f || version < 1 || version > 3) return false;
     uint32_t regsize = 0; f.read(reinterpret_cast<char*>(&regsize), sizeof regsize);
     if (!f || regsize != (uint32_t)sizeof(MachineSnapshot::Z80Regs)) return false;
     MachineSnapshot s;

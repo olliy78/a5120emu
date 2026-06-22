@@ -50,6 +50,21 @@ public:
     bool    seek(uint8_t cyl);
     uint8_t currentCylinder() const { return cur_cyl_; }
 
+    /**
+     * @brief Snapshot-Restore: setzt die mechanische Kopfposition (@p cyl) direkt
+     *        und verwirft den Spur-Cache, ohne ihn zurückzuschreiben.
+     *
+     * Anders als seek() wird NICHT geflusht: beim loadstate gehört der aktuelle
+     * Cache zu einer verworfenen Sitzung; die nächste track()-Anfrage liest die
+     * Spur frisch aus dem (separat gemounteten) Image am wiederhergestellten
+     * Zylinder. So steht der Kopf nach dem Laden auf der richtigen Spur.
+     */
+    void restoreHeadPosition(uint8_t cyl) {
+        cur_cyl_ = (cyl < profile_.num_cyls) ? cyl
+                                             : static_cast<uint8_t>(profile_.num_cyls - 1);
+        for (auto& c : cache_) { c.valid = false; c.dirty = false; }
+    }
+
     const DriveProfile& profile() const { return profile_; }
     /// @brief Index-Periode in Z80-Takten aus profile_.rpm.
     int indexPeriodCycles(uint32_t cpu_hz) const { return profile_.indexPeriodCycles(cpu_hz); }
