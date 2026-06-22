@@ -75,6 +75,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 // ─── SIO Operating Modes ─────────────────────────────────────────────────────
 
@@ -390,6 +391,18 @@ public:
         } ch[2];   // [0]=A, [1]=B
     };
     DebugState debugState() const;
+
+    // ─── Snapshot serialisation (savestate/loadstate) ────────────────────────
+    // Append the complete, restorable chip state (both channels + IEI line) to
+    // @p out. The wiring callback (Channel::clk_cb_) and bus/daisy-chain
+    // registration are NOT serialised — they are re-established by the owning
+    // card's connect()/registration, so a deserialise into an already-wired
+    // chip keeps working. Used by A5120Machine::captureState so a loadstate
+    // resumes with a consistent SIO (e.g. the keyboard channel).
+    void serialize(std::vector<uint8_t>& out) const;
+    // Restore state previously written by serialize(). Advances @p p past the
+    // consumed bytes. Returns false on truncation/format error.
+    bool deserialize(const uint8_t*& p, const uint8_t* end);
 
 private:
     mutable Channel ch_a_;      ///< SIO Channel A (mutable for getVector)

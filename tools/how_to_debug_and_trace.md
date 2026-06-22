@@ -170,6 +170,71 @@ Trace-Aufnahme einer ZVE2-Routine eignet sich boot_trace `-z 0x1F7D:0x2076 -W 40
 
 ---
 
+## 6a. Höhere OS-Schichten debuggen (z. B. Diskettenschreibzugriff über PIP)
+
+Ziel: ein laufendes CP/A bedienen (Programm starten, Befehl absetzen) und beim
+eigentlichen BDOS/BIOS-Aufruf in den Debugger einsteigen — etwa um zu sehen, was beim
+Schreiben passiert (`PIP X.TXT=POWER.COM`).
+
+**Booten bis zum CCP, dann tippen.** Die Uhr-Disk `disks/cpadisk_mitUhr_01.img` bootet
+bis zum `A>`-Prompt, sobald man die Zeit eingibt. `keys` fährt die Maschine pro Zeichen
+weiter (`\r` = Enter):
+
+```text
+g 130000000                 # Kaltstart bis zum Uhrzeit-Prompt
+keys 12:00:00\r             # Zeit eingeben → CCP A>-Prompt
+g 8000000                   # CCP-Idle settlen
+keys pip x.txt=power.com\r  # Befehl absetzen (PIP kopiert POWER.COM → X.TXT, löst Schreiben aus)
+g 40000000                  # PIP laufen lassen
+screen                      # Ergebnis ablesen (z. B. "CANNOT CLOSE DESTINATION FILE")
+```
+
+**Am OS-Aufruf statt an einer Adresse anhalten.** Statt eine BIOS-Adresse zu raten, am
+**BDOS-Einsprung `0x0005` mit Funktionsbedingung** fangen (Funktion steht in Register C):
+
+```text
+b 0x0005 if C==0x15         # BDOS Write-Sequential — feuert, sobald PIP zu schreiben beginnt
+```
+
+CP/M-BDOS-Funktionen (Reg C): `0F`=Open, `10`=Close, `13`=Delete, `14`=Read-Seq,
+**`15`=Write-Seq**, `16`=Make-File, `21`/`22`=Read/Write-Random.
+
+**Schnell iterieren — einmal booten, oft ab CCP-Checkpoint.** `savestate`/`loadstate`
+sichern RAM+CPU+ROM-Mapping, das **Tastatur-Subsystem** (System-CTC, BS-PIO, Baud-CTC,
+Tastatur-SIO, K7637) **und den Floppy-Controller K5122** (beide PIOs + die **mechanische
+Kopfposition** je Laufwerk). Damit funktionieren nach `loadstate` sowohl **Tastatureingabe
+als auch Disk-Zugriff**: einen Checkpoint am CCP-Prompt nehmen und danach beliebig oft
+frische Befehle tippen — `dir`, `pip …`, alles läuft (das gemountete Image selbst ist nicht
+im Snapshot, wird aber über die Kommandozeile gemountet). So entfällt der ~200-s-Vollboot:
+
+```text
+# einmal (langsam, ~200 s): booten + Uhr setzen, am CCP-Prompt sichern
+g 130000000
+keys 12:00:00\r
+g 8000000
+savestate /tmp/ccp.k1520ss
+# danach beliebig oft (schnell, ~10-17 s): ab dem CCP-Prompt frisch tippen
+loadstate /tmp/ccp.k1520ss
+b 0x0005 if C==0x15         # BDOS Write-Seq (Schreib-Pfad)
+iow 0x16                    # Schreibdaten an den K5122-Datenport
+iow 0x10                    # Control-Port (Strobe = Bit7-Toggle, s. u.)
+keys pip x.txt=power.com\r  # PIP liest die Quelle von Disk + schreibt → löst den Pfad aus
+g 60000000 ; dev            # K5122-Zustand
+```
+
+> **Hinweis:** Nicht im Snapshot ist der K7024-Bildschirmspeicher als Hardware-VRAM —
+> in der Praxis unkritisch (der OS-Bildschirmpuffer liegt im gesicherten RAM, `screen`
+> zeigt korrekt). Ein `restore`/`loadstate` *mitten in* einem aktiven Floppy-Transfer
+> setzt diesen auf Idle zurück (die Kopfposition bleibt) — Checkpoints im Leerlauf nehmen.
+
+> **Fremde `.prn`-Listings passen evtl. nicht zu *diesem* BIOS.** Adress-Labels aus einem
+> anderswo gebauten Listing (z. B. CPA_Workbench `bios.prn`) sind ggü. dem BIOS der
+> gemounteten Disk **verschoben** — ein dortiges „write @ DD82" stimmt dann nicht. Immer
+> gegen den **Live-Speicher** prüfen: `u 0xE240` disassembliert den tatsächlich geladenen
+> Code; die K5122-Ports (`0x10` Control, `0x16` Daten) sind die verlässliche Referenz.
+
+---
+
 ## 7. „Einen Schritt zu weit" / „Wie kam ich hierher?"
 
 Der Emulator macht Reverse-Debugging billig:
@@ -203,7 +268,9 @@ boot_trace -L /dev/null --load-state /tmp/ckpt.bin -p 200000 $D
 ```
 
 In k1520dbg analog: `savestate /tmp/ckpt.bin` / `loadstate /tmp/ckpt.bin`. (RAM+CPU+ROM-
-Mapping werden reproduziert; für Post-Boot-Code exakt.)
+Mapping, **Tastatur-Subsystem** — System-CTC/BS-PIO/Baud-CTC/Tastatur-SIO/K7637 — **und der
+Floppy-K5122** (PIOs + Kopfposition) werden reproduziert, daher funktionieren **Tastatur
+UND Disk-Zugriff nach `loadstate`**. Nicht im Snapshot: die gemounteten Images selbst, s. §11.)
 
 ---
 
@@ -257,8 +324,12 @@ Bausteine für den Agenten:
 * **Zahlenbasis**: Adressen/Zähler sind base-0 (`d 6000` = dezimal!), `e`-Pokes und
   Watch-Werte sind hex. Hex immer `0x…`/`…H` schreiben.
 * **`s2`** wirkt nur während aktiver DMA (`/BUSRQ`); ZVE2 mit `b2` am DMA-Einsprung fangen.
-* **Geräte-Interna nicht im Snapshot**: `restore`/`loadstate` mitten in aktiver DMA/Timer
-  kann beim Weiterlaufen driften — für stabile Post-Boot-Punkte gedacht.
+* **Snapshot-Umfang**: erfasst sind RAM, beide Z80, ROM-Mapping, das **Tastatur-Subsystem**
+  (System-CTC, BS-PIO, Baud-CTC, Tastatur-SIO, K7637) und der **Floppy-K5122** (PIOs +
+  Kopfposition je Laufwerk) → **Tastatur und Disk-Zugriff funktionieren nach `loadstate`**.
+  **Nicht** erfasst: die gemounteten Disk-Images selbst (separat gemountet) und das K7024-
+  VRAM (praktisch unkritisch, OS-Schirmpuffer liegt im RAM). `restore`/`loadstate` mitten in
+  aktiver DMA setzt einen Floppy-Transfer auf Idle (Kopfposition bleibt) — Idle-Punkte nehmen.
 
 ---
 

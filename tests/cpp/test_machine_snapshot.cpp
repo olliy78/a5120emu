@@ -84,6 +84,57 @@ TEST(MachineSnapshot, SaveAndLoadStateRoundTrip){
     std::remove(path.c_str());
 }
 
+// ── Tastatur-Subsystem überlebt save/load (Kernanforderung) ──────────────────
+
+// Eine getippte Taste landet (nach der 9600-Baud-Serial-Latenz) im Tastatur-SIO
+// RX-FIFO. Genau dieser Geräteszustand muss einen savestate→loadstate überleben,
+// damit die Tastatur nach dem Laden funktioniert (RAM+CPU allein reichen nicht —
+// der SIO-/K7637-/Timer-Zustand lebt außerhalb des RAM).
+TEST(MachineSnapshot, KeyboardSioSurvivesSaveLoad){
+    std::string path = tmpStatePath();
+    A5120Machine a; a.powerOn();
+    a.keyPress('A', false, false);
+    a.run(20000);                              // Key-Queue leeren + Serial-Latenz → Byte im SIO-RX
+    auto before = a.kbdSioState();
+    ASSERT_GT(before.ch[0].rxQueued, 0u);      // Byte steht im Tastatur-SIO (Kanal A)
+
+    A5120Machine::MachineSnapshot s; a.captureState(s);
+    EXPECT_FALSE(s.device_state.empty());      // Geräteszustand wurde mitgesichert
+
+    ASSERT_TRUE(a.saveState(path));
+
+    A5120Machine b; b.powerOn();               // frische Maschine: SIO leer
+    EXPECT_EQ(b.kbdSioState().ch[0].rxQueued, 0u);
+    ASSERT_TRUE(b.loadState(path));
+    EXPECT_EQ(b.kbdSioState().ch[0].rxQueued, before.ch[0].rxQueued);   // wiederhergestellt
+    std::remove(path.c_str());
+}
+
+// In-Memory captureState/restoreState rollt den Tastatur-SIO-Zustand exakt zurück.
+TEST(MachineSnapshot, KeyboardSioRoundTripInMemory){
+    A5120Machine m; m.powerOn();
+    m.keyPress('Z', false, false);
+    m.run(20000);
+    auto before = m.kbdSioState();
+    ASSERT_GT(before.ch[0].rxQueued, 0u);
+
+    A5120Machine::MachineSnapshot s; m.captureState(s);
+    // SIO leeren (Byte auslesen) und prüfen, dass es weg ist …
+    m.run(2000000);                            // ZVE1 läuft weiter; FIFO kann sich ändern
+    // … dann zurückrollen und denselben FIFO-Füllstand erwarten.
+    EXPECT_TRUE(m.restoreState(s));
+    EXPECT_EQ(m.kbdSioState().ch[0].rxQueued, before.ch[0].rxQueued);
+}
+
+// Legacy-v1-Snapshots (ohne device_state) müssen weiterhin laden.
+TEST(MachineSnapshot, LegacyV1StateWithoutDeviceStateStillLoads){
+    // Ein leerer device_state (wie bei v1) wird von restoreState toleriert.
+    A5120Machine m; m.powerOn(); m.run(400000);
+    A5120Machine::MachineSnapshot s; m.captureState(s);
+    s.device_state.clear();                    // v1-Verhalten simulieren
+    EXPECT_TRUE(m.restoreState(s));            // kein Absturz, Geräte behalten ihren Zustand
+}
+
 TEST(MachineSnapshot, LoadStateRejectsMissingAndGarbage){
     A5120Machine m; m.powerOn();
     EXPECT_FALSE(m.loadState("/nonexistent/k1520/does-not-exist.bin"));

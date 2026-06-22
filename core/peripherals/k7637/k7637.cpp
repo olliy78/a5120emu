@@ -1,5 +1,7 @@
 #include "core/peripherals/k7637/k7637.h"
 #include <cstddef>
+#include <cstring>
+#include <type_traits>
 #include <algorithm>
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,6 +20,70 @@ static Z80SIO::Channel& pickChannel(Z80SIO& sio, int idx) {
 void K7637::connect(Z80SIO& sio, int channel_idx) {
     sio_    = &sio;
     ch_idx_ = channel_idx;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Snapshot serialisation
+// ─────────────────────────────────────────────────────────────────────────────
+namespace {
+template <class T> void putPod(std::vector<uint8_t>& o, const T& v) {
+    static_assert(std::is_trivially_copyable_v<T>, "POD only");
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(&v);
+    o.insert(o.end(), p, p + sizeof(T));
+}
+template <class T> bool getPod(const uint8_t*& p, const uint8_t* end, T& v) {
+    static_assert(std::is_trivially_copyable_v<T>, "POD only");
+    if (static_cast<size_t>(end - p) < sizeof(T)) return false;
+    std::memcpy(&v, p, sizeof(T));
+    p += sizeof(T);
+    return true;
+}
+}  // namespace
+
+void K7637::serialize(std::vector<uint8_t>& out) const {
+    putPod(out, pressed_key_);
+    putPod(out, pressed_scancode_);
+    putPod(out, shift_);
+    putPod(out, ctrl_);
+    putPod(out, repeat_delay_ms_);
+    putPod(out, repeat_period_ms_);
+    putPod(out, caps_lock_);
+    putPod(out, scroll_lock_);
+    putPod(out, num_lock_);
+    putPod(out, expect_second_byte_);
+    putPod(out, first_cmd_byte_);
+    putPod(out, cur_cycle_);
+    putPod(out, next_tx_cycle_);
+    uint32_t n = static_cast<uint32_t>(tx_queue_.size());
+    putPod(out, n);
+    for (const auto& e : tx_queue_) { putPod(out, e.first); putPod(out, e.second); }
+}
+
+bool K7637::deserialize(const uint8_t*& p, const uint8_t* end) {
+    bool ok = true;
+    ok = ok && getPod(p, end, pressed_key_);
+    ok = ok && getPod(p, end, pressed_scancode_);
+    ok = ok && getPod(p, end, shift_);
+    ok = ok && getPod(p, end, ctrl_);
+    ok = ok && getPod(p, end, repeat_delay_ms_);
+    ok = ok && getPod(p, end, repeat_period_ms_);
+    ok = ok && getPod(p, end, caps_lock_);
+    ok = ok && getPod(p, end, scroll_lock_);
+    ok = ok && getPod(p, end, num_lock_);
+    ok = ok && getPod(p, end, expect_second_byte_);
+    ok = ok && getPod(p, end, first_cmd_byte_);
+    ok = ok && getPod(p, end, cur_cycle_);
+    ok = ok && getPod(p, end, next_tx_cycle_);
+    uint32_t n = 0;
+    ok = ok && getPod(p, end, n);
+    tx_queue_.clear();
+    for (uint32_t i = 0; i < n && ok; ++i) {
+        uint64_t rel = 0; uint8_t byte = 0;
+        ok = ok && getPod(p, end, rel);
+        ok = ok && getPod(p, end, byte);
+        if (ok) tx_queue_.emplace_back(rel, byte);
+    }
+    return ok;
 }
 
 void K7637::keyPress(int qt_keycode, bool shift, bool ctrl) {

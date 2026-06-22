@@ -30,6 +30,8 @@
  * @see Robotron A5120 Technical Documentation (U857D Manual, pages 612-616)
  */
 #include "z80_ctc.h"
+#include <cstring>
+#include <type_traits>
 
 // =============================================================================
 /// @name Initialization and Configuration
@@ -431,4 +433,24 @@ Z80CTC::DebugState Z80CTC::debugState() const {
         d.ch[i].iei        = ch_[i].iei;
     }
     return d;
+}
+
+// ─── Snapshot serialisation ──────────────────────────────────────────────────
+// Channel is a plain POD struct, so the channel array is dumped verbatim; only
+// vec_base_ and the IEI line are appended. The ZC/TO callback and name are not
+// part of the saved state (re-established by wiring).
+void Z80CTC::serialize(std::vector<uint8_t>& out) const {
+    static_assert(std::is_trivially_copyable_v<Channel>, "Channel must be POD");
+    const uint8_t* chp = reinterpret_cast<const uint8_t*>(&ch_[0]);
+    out.insert(out.end(), chp, chp + sizeof(ch_));
+    out.push_back(vec_base_);
+    out.push_back(iei_ ? 1 : 0);
+}
+
+bool Z80CTC::deserialize(const uint8_t*& p, const uint8_t* end) {
+    if (static_cast<size_t>(end - p) < sizeof(ch_) + 2) return false;
+    std::memcpy(&ch_[0], p, sizeof(ch_)); p += sizeof(ch_);
+    vec_base_ = *p++;
+    iei_      = (*p++ != 0);
+    return true;
 }

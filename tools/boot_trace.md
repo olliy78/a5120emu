@@ -41,7 +41,7 @@ boot_trace [DISK] [optionen]
 | `--diff a.csv b.csv` | **Run-Diff** zweier `--coverage`-CSVs (nur-A/nur-B/hit-diff je CPU) — **ohne** Emulation (§4) |
 | `--csv <file>` | **maschinenlesbarer Per-Instruktions-Trace** (`seq,cyc,cpu,pc,bytes,disasm,…regs`); durch `-w`/`-z`/`--until` eingrenzbar, Cap 5 Mio. Zeilen (§4) |
 | `--save-state <file>` | am Lauf-Ende (z. B. mit `--until`) den **Maschinenzustand** sichern (Checkpoint) |
-| `--load-state <file>` | mit gesichertem Zustand **starten** statt zu booten (RAM+CPU+ROM-Mapping reproduziert) |
+| `--load-state <file>` | mit gesichertem Zustand **starten** statt zu booten (RAM+CPU+ROM-Mapping + Tastatur-Subsystem + Floppy-K5122/Kopfposition reproduziert; gemountete Images/VRAM nicht) |
 | `--json` | am Ende **eine JSON-Zeile** (`boot_reached,cycles,rom_enabled,final_pc,zve1_addrs,zve2_addrs,zve2_instr,until{set,met,cycle,pc}`) |
 | `--quiet` | **unterdrückt die menschliche Narrative** (Banner, Progress, Milestones, Summary, Histogramme, VRAM). Es bleiben nur `--coverage`/`--json`/`-d` und Warnungen/Fehler — `--quiet --json` = genau 1 Zeile statt ~880 |
 | `--drive <n>` | Disk auf Laufwerk `n` mounten (Default 0 = A:) |

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <deque>
 #include <utility>
+#include <vector>
 
 // K7637 – Serial keyboard peripheral for the A5120 / K1520 system.
 //
@@ -45,6 +46,18 @@ public:
     // RX byte; the loser reads an empty FIFO (0xFF → recoded to CR) and pollutes
     // the keyboard buffer until it overflows and drops real keys.
     void service(uint64_t now_cycles);
+
+    // ── Snapshot serialisation (savestate/loadstate) ──────────────────────
+    // Append the restorable keyboard state (key-repeat, LED/command latches,
+    // pending serial-TX queue + timing) to @p out. The SIO connection
+    // (sio_/ch_idx_) is NOT serialised — it is re-established by connect(), so
+    // a deserialise into an already-connected keyboard keeps working. Together
+    // with Z80SIO::serialize this lets a loadstate resume with a working
+    // keyboard (the byte stream + the SIO it feeds are both consistent).
+    void serialize(std::vector<uint8_t>& out) const;
+    // Restore state previously written by serialize(); advances @p p. Returns
+    // false on truncation.
+    bool deserialize(const uint8_t*& p, const uint8_t* end);
 
     // ── LED / lock state ──────────────────────────────────────────────────
     bool capsLock()   const { return caps_lock_;   }

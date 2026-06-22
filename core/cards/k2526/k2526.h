@@ -483,6 +483,8 @@ public:
      * @return Reference to the internal Z80PIO instance
      */
     Z80PIO& bsPio() { return bs_pio_; }
+    /** @brief const overload (snapshot serialisation from a const machine). */
+    const Z80PIO& bsPio() const { return bs_pio_; }
 
     /**
      * @brief Return a reference to the CTC (Q302).
@@ -493,6 +495,8 @@ public:
      * @return Reference to the internal Z80CTC instance
      */
     Z80CTC& ctc()   { return ctc_; }
+    /** @brief const overload (snapshot serialisation from a const machine). */
+    const Z80CTC& ctc() const { return ctc_; }
 
     // ─── ZVE2 DMA-CPU interface ────────────────────────────────────────────
 

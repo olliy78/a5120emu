@@ -479,3 +479,40 @@ TEST(Z80PIO, DebugStateReflectsPortsAndInterrupt) {
     EXPECT_EQ(d.port[1].out, 0x99);       // CPU output latch
     EXPECT_FALSE(d.port[1].ie);
 }
+
+/**
+ * @test PIO/SerializeRoundTrip
+ * @brief serialize() → deserialize() restores both ports (mode, latches, vector,
+ *        daisy-chain bits) into a fresh chip. Part of the savestate device set.
+ * @par Pass criterion  debugState matches on both ports; blob fully consumed.
+ */
+TEST(PIO, SerializeRoundTrip) {
+    Z80PIO a;
+    a.ioWrite(1, 0x4F);   // port A: mode 1 (input)
+    a.ioWrite(3, 0x0F);   // port B: mode 0 (output)
+    a.ioWrite(2, 0x99);   // port B output latch
+    a.ioWrite(1, 0x40);   // port A interrupt vector
+    a.setIEI(true);
+
+    auto da = a.debugState();
+
+    std::vector<uint8_t> blob;
+    a.serialize(blob);
+    ASSERT_FALSE(blob.empty());
+
+    Z80PIO b;
+    const uint8_t* p   = blob.data();
+    const uint8_t* end = p + blob.size();
+    ASSERT_TRUE(b.deserialize(p, end));
+    EXPECT_EQ(p, end);
+
+    auto db = b.debugState();
+    for (int i = 0; i < 2; ++i) {
+        EXPECT_EQ(db.port[i].mode,   da.port[i].mode)   << "port" << i;
+        EXPECT_EQ(db.port[i].out,    da.port[i].out)    << "port" << i;
+        EXPECT_EQ(db.port[i].vector, da.port[i].vector) << "port" << i;
+        EXPECT_EQ(db.port[i].iei,    da.port[i].iei)    << "port" << i;
+    }
+    EXPECT_EQ(db.port[1].out, 0x99);
+    EXPECT_EQ(db.port[0].mode, 1);
+}

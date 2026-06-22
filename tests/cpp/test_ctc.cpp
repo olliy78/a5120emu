@@ -899,3 +899,42 @@ TEST(Z80CTC, DebugStateReflectsChannelAndDaisyChain) {
         EXPECT_TRUE(d.ieo);                 // no longer pending → IEO high again
     }
 }
+
+/**
+ * @test CTC/SerializeRoundTrip
+ * @brief serialize() → deserialize() restores all four channels (control word,
+ *        time constant, running/IRQ state) plus vector base and IEI. Underpins
+ *        savestate so the system timer (and timer-driven keyboard scan) resumes.
+ * @par Pass criterion  debugState matches on the configured channel; blob fully consumed.
+ */
+TEST(CTC, SerializeRoundTrip) {
+    Z80CTC a;
+    a.ioWrite(0, 0x85);   // ch0: Timer, ÷16, IRQ enabled, TC follows
+    a.ioWrite(0, 0x50);   //      time constant = 0x50 → running
+    a.ioWrite(3, 0x05);   // ch3: Timer, ÷16, TC follows
+    a.ioWrite(3, 0x10);   //      time constant = 0x10
+    a.setIEI(true);
+
+    auto da = a.debugState();
+
+    std::vector<uint8_t> blob;
+    a.serialize(blob);
+    ASSERT_FALSE(blob.empty());
+
+    Z80CTC b;
+    const uint8_t* p   = blob.data();
+    const uint8_t* end = p + blob.size();
+    ASSERT_TRUE(b.deserialize(p, end));
+    EXPECT_EQ(p, end);
+
+    auto db = b.debugState();
+    EXPECT_EQ(db.iei, da.iei);
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_EQ(db.ch[i].control,   da.ch[i].control)   << "ch" << i;
+        EXPECT_EQ(db.ch[i].timeConst, da.ch[i].timeConst) << "ch" << i;
+        EXPECT_EQ(db.ch[i].running,   da.ch[i].running)   << "ch" << i;
+        EXPECT_EQ(db.ch[i].intEn,     da.ch[i].intEn)     << "ch" << i;
+    }
+    EXPECT_TRUE(db.ch[0].running);
+    EXPECT_EQ(db.ch[0].timeConst, 0x50);
+}

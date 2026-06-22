@@ -120,6 +120,22 @@ void A5120Machine::captureState(MachineSnapshot& s) const {
     s.dma_progress    = dma_saw_progress_;
     s.bus_master_zve2 = bus_master_zve2_;
     s.total_cycles    = total_cycles_;
+    // Device-internal state needed for a working keyboard after a loadstate.
+    // A working keyboard needs more than the keyboard SIO itself: the OS scans
+    // the keyboard from its timer ISR, so the system CTC (Q302) and its BS-PIO,
+    // plus the SIO's baud CTC (A34), must resume in phase too — otherwise the
+    // timer-scan vs serial-latency race re-appears and keystrokes are dropped.
+    // The serialise order here MUST match the deserialise order in restoreState().
+    s.device_state.clear();
+    zre_.ctc().serialize(s.device_state);        // K2526 Q302 system timer
+    zre_.bsPio().serialize(s.device_state);      // K2526 BS-PIO
+    ass_.ctcA34().serialize(s.device_state);     // K8025 baud CTC
+    ass_.sioA32().serialize(s.device_state);     // K8025 keyboard/printer SIO
+    kbd_.serialize(s.device_state);              // K7637 keyboard peripheral
+    // Floppy controller: both PIOs, the latched control signals and — the point
+    // of this — the mechanical head position (cylinder) of each drive, so disk
+    // access (dir, file reads/writes) resumes with the head on the right track.
+    afs_.serialize(s.device_state);              // K5122 floppy controller
 }
 
 bool A5120Machine::restoreState(const MachineSnapshot& s) {
@@ -133,13 +149,31 @@ bool A5120Machine::restoreState(const MachineSnapshot& s) {
     // Reproduce the boot-ROM mapping too, so a state saved post-ROM resumes correctly
     // even into a freshly powered machine (where the ROM is still mapped at 0x0000).
     zre_.setRomMapped(s.rom_enabled);
+    // Restore the keyboard subsystem (system CTC + BS-PIO + baud CTC + keyboard
+    // SIO + K7637) so input works after the load. Empty for legacy (v1)
+    // snapshots → the devices keep their current state. Order matches captureState().
+    if (!s.device_state.empty()) {
+        const uint8_t* p   = s.device_state.data();
+        const uint8_t* end = p + s.device_state.size();
+        zre_.ctc().deserialize(p, end);
+        zre_.bsPio().deserialize(p, end);
+        ass_.ctcA34().deserialize(p, end);
+        ass_.sioA32().deserialize(p, end);
+        kbd_.deserialize(p, end);
+        afs_.deserialize(p, end);
+    }
     return true;
 }
 
 // On-disk state format: magic "K1520SS" + version, a regs-size guard, then the raw
 // MachineSnapshot fields. Written/read by the same build → POD memcpy is sufficient.
+// A length-prefixed device_state blob holds the serialised device-internal state.
+// It is parsed sequentially per chip with bounds checks, so a shorter (older) blob
+// loads fine — trailing chips simply keep their current state. Versions:
+//   1 = no device state, 2 = + keyboard subsystem, 3 = + K5122 floppy controller.
 namespace {
-const char kStateMagic[8] = {'K','1','5','2','0','S','S','\x01'};   // \x01 = version 1
+const char    kStateMagicPrefix[7] = {'K','1','5','2','0','S','S'};
+constexpr uint8_t kStateVersion    = 3;
 }
 
 bool A5120Machine::saveState(const std::string& path) const {
@@ -147,7 +181,8 @@ bool A5120Machine::saveState(const std::string& path) const {
     std::ofstream f(path, std::ios::binary);
     if (!f) return false;
     uint32_t regsize = (uint32_t)sizeof(MachineSnapshot::Z80Regs);
-    f.write(kStateMagic, sizeof kStateMagic);
+    f.write(kStateMagicPrefix, sizeof kStateMagicPrefix);
+    f.write(reinterpret_cast<const char*>(&kStateVersion), 1);
     f.write(reinterpret_cast<const char*>(&regsize), sizeof regsize);
     f.write(reinterpret_cast<const char*>(s.ram.data()), s.ram.size());
     f.write(reinterpret_cast<const char*>(&s.zve1), sizeof s.zve1);
@@ -156,14 +191,20 @@ bool A5120Machine::saveState(const std::string& path) const {
                          (uint8_t)s.dma_progress, (uint8_t)s.bus_master_zve2 };
     f.write(reinterpret_cast<const char*>(flags), 4);
     f.write(reinterpret_cast<const char*>(&s.total_cycles), sizeof s.total_cycles);
+    // v2 tail: length-prefixed device-state blob (keyboard SIO + K7637).
+    uint32_t dev_len = (uint32_t)s.device_state.size();
+    f.write(reinterpret_cast<const char*>(&dev_len), sizeof dev_len);
+    if (dev_len) f.write(reinterpret_cast<const char*>(s.device_state.data()), dev_len);
     return (bool)f;
 }
 
 bool A5120Machine::loadState(const std::string& path) {
     std::ifstream f(path, std::ios::binary);
     if (!f) return false;
-    char magic[8]; f.read(magic, sizeof magic);
-    if (!f || std::memcmp(magic, kStateMagic, sizeof magic) != 0) return false;
+    char magic[7]; f.read(magic, sizeof magic);
+    if (!f || std::memcmp(magic, kStateMagicPrefix, sizeof magic) != 0) return false;
+    uint8_t version = 0; f.read(reinterpret_cast<char*>(&version), 1);
+    if (!f || version < 1 || version > 3) return false;
     uint32_t regsize = 0; f.read(reinterpret_cast<char*>(&regsize), sizeof regsize);
     if (!f || regsize != (uint32_t)sizeof(MachineSnapshot::Z80Regs)) return false;
     MachineSnapshot s;
@@ -173,6 +214,13 @@ bool A5120Machine::loadState(const std::string& path) {
     uint8_t flags[4]; f.read(reinterpret_cast<char*>(flags), 4);
     f.read(reinterpret_cast<char*>(&s.total_cycles), sizeof s.total_cycles);
     if (!f) return false;
+    if (version >= 2) {
+        uint32_t dev_len = 0; f.read(reinterpret_cast<char*>(&dev_len), sizeof dev_len);
+        if (!f) return false;
+        s.device_state.resize(dev_len);
+        if (dev_len) f.read(reinterpret_cast<char*>(s.device_state.data()), dev_len);
+        if (!f) return false;
+    }
     s.rom_enabled=flags[0]; s.busrq_active=flags[1]; s.dma_progress=flags[2]; s.bus_master_zve2=flags[3];
     return restoreState(s);
 }

@@ -109,6 +109,21 @@ public:
     /// @brief Direkter Zugriff auf ein Laufwerk (Tests/C-API).
     FloppyDriveV2& drive(int idx) { return drives_[idx]; }
 
+    // ─── Snapshot-Serialisierung (savestate/loadstate) ───────────────────────
+    /**
+     * @brief Hängt den restaurierbaren Controller-Zustand an @p out an: beide
+     *        PIOs (Steuer/Daten), die gelatchten Signale (Laufwerk/Seite/Step-
+     *        Richtung) und je Laufwerk die **mechanische Kopfposition** (Zylinder).
+     *
+     * Gemountete Images, der Spur-Cache und ein laufender Streaming-Transfer
+     * werden NICHT serialisiert: Letzterer wird beim deserialize() auf einen
+     * konsistenten Idle-Zustand zurückgesetzt (Checkpoints liegen im Leerlauf;
+     * der nächste /STR-Strobe streamt die Spur frisch aus dem Image). Callbacks
+     * und Bus-Wiring bleiben unberührt (durch Konstruktion/Registrierung gesetzt).
+     */
+    void serialize(std::vector<uint8_t>& out) const;
+    bool deserialize(const uint8_t*& p, const uint8_t* end);
+
     /// @brief Momentaufnahme des Controller-Zustands für Debugger (k1520dbg `dev`).
     struct DebugState {
         int      drive;        ///< aktuell gewähltes Laufwerk (8212 /SELx)
