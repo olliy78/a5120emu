@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CLI Tool Preferences
+<tool_preferences>
+ALWAYS check for and prioritize the following modern CLI tools over legacy ones:
+- Use `rg` instead of `grep` for any code or file text searching (faster and respects .gitignore).
+- Use `fd` (or `fdfind`) instead of `find` for finding files or directories.
+- Use `sd` instead of `sed` for complex string replacements or in-place file modifications.
+- Use `jq` for any JSON reading, querying, or manipulation tasks.
+- Use `yq` for any YAML configuration file reading or manipulation.
+
+CRITICAL: Do not use slow regex chains with grep/sed if rg/sd/jq/yq are available on the system.
+</tool_preferences>
+
+
 ## Two emulators live in this repo — know which one you're touching
 
 This is the single most important thing to understand before editing.
@@ -84,10 +97,40 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
 
 ## Boot-ROM debugging workflow
 
-The ZRE boot ROM and the ZVE1↔ZVE2 DMA handshake are the current hard problem; `doc/analyse_zre_rom_boot.md` is the running analysis. Supporting tools live in `tools/` (see `tools/README.md` for full usage):
+The ZRE boot ROM and the ZVE1↔ZVE2 DMA handshake are the current hard problem; `doc/analyse_zre_rom_boot.md` is the running analysis.
+
+> **Start here: `tools/how_to_debug_and_trace.md`** is the task-oriented guide for the two
+> debug/trace tools (which one when, with worked scenarios). Full references:
+> `tools/k1520dbg.md` and `tools/boot_trace.md`. Two tools, complementary:
+> - **`boot_trace`** — non-interactive: run a boot to a cycle limit / `--until <cond>`,
+>   get a report (milestones, `[03F8]` done-flag, PC histograms, VRAM banner). **Locates**
+>   *where* the DMA/boot hangs; also `--coverage`/`--diff`/`--csv` exports.
+> - **`k1520dbg`** — interactive gdb-style: breakpoints (incl. conditional / `bint`/`bnmi`/
+>   `breti` event BPs), step into/over/out, `rs` reverse-step + `snap`/`savestate`, watch
+>   mem/io, `logpoint`, `x` examine, exact history `bt`, `dev ctc/pio/sio` chip state.
+>   **Dissects** a located problem.
+>
+> **Run efficiently (this matters for the agent):**
+> - **Invoke via `tools/dev.sh`** (rebuilds first → never a stale binary, see Build & test):
+>   `tools/dev.sh trace <boot_trace-args>` and `tools/dev.sh tool k1520dbg <args>`. The bare
+>   tool names in the examples below stand for these wrappers.
+> - ⚠️ **Both tools mount the disk read/write — a run can CORRUPT the image.** Always run
+>   against a temp copy, never a committed fixture: `D=$(mktemp --suffix=.img); cp DISK $D; … $D; rm -f $D`.
+> - boot_trace: `-L /dev/null` discards the verbose emulator log; **`--quiet --json`** gives
+>   exactly one machine-readable result line (instead of ~880) + a meaningful exit code
+>   (`--until`: 0 met / 2 not met). Prefer **`--until <cond>`** over guessing cycle counts.
+> - k1520dbg: drive it in one shot via a pipe (`printf 'b 0x0437\ng\nrj\nq\n' | k1520dbg $D`)
+>   or `-x script.dbg`; `rj` prints registers as JSON. The interactive REPL/readline is for
+>   humans — the agent uses batch mode.
+> - **Boot once, resume often:** `--save-state`/`--load-state` (boot_trace) and
+>   `savestate`/`loadstate` (k1520dbg) persist RAM+CPU+ROM-mapping to a file, so the ~2 s
+>   boot is a one-time cost. Load `-l <bios.prn>` to see commented source instead of raw disasm.
+
+Supporting tools (`tools/`):
 
 - `tools/z80_disasm2.py` — the canonical generic Z80 disassembler (configurable `--org`, repeatable `--entry`/`--label`). The other two disassemblers are format.com-specific.
-- **`.prn`-Listing-Annotation (`-l`, both `k1520dbg` and `boot_trace`)** — instead of hand-disassembling RAM dumps, load the commented MACRO-80 source listing of the running code (e.g. `-l ~/projects/CPA_Workbench/build/bios.prn`) and every disassembly/trace line + PC-histogram entry whose address is in the listing gets the **original label+mnemonic+comment** appended. Repeatable (multiple listings cover different ranges); `@OFFSET` (signed, `0x..`/`..h`/dec) relocates a listing's addresses to the runtime load address. Only absolute addresses — a BIOS listing covers ~`0xD200+` (and BIOS pieces mapped low, e.g. the CONIN keyboard poll at `0x041C–0x042B`). Parser: header-only `tools/prn_listing.h` (tests `tests/cpp/test_prn_listing.cpp`, gtest suite `PrnListing`). See `tools/k1520dbg.md` §6a / `tools/boot_trace.md` §2a.
+- **`k1520dbg`** (`tools/k1520dbg.md`) — the interactive debugger; expression-conditioned breakpoints, reverse-step, save-state, and `.prn`/symbol annotation make hand-disassembling RAM dumps mostly unnecessary. Delegate heavy log/trace reads to the `log-trace-analyzer` subagent.
+- **`.prn`-Listing-Annotation (`-l`, both `k1520dbg` and `boot_trace`)** — instead of hand-disassembling RAM dumps, load the commented MACRO-80 source listing of the running code (e.g. `-l ~/projects/CPA_Workbench/build/bios.prn`) and every disassembly/trace line + PC-histogram entry whose address is in the listing gets the **original label+mnemonic+comment** appended. Repeatable (multiple listings cover different ranges); `@OFFSET` (signed, `0x..`/`..h`/dec) relocates a listing's addresses to the runtime load address. Only absolute addresses — a BIOS listing covers ~`0xD200+` (and BIOS pieces mapped low, e.g. the CONIN keyboard poll at `0x041C–0x042B`). Parser: header-only `tools/prn_listing.h` (tests `tests/cpp/test_prn_listing.cpp`, gtest suite `PrnListing`). See `tools/k1520dbg.md` §6 / `tools/boot_trace.md` §4.
 - `tools/disasm_difftest.py` — cross-checks the disassembler against the `z80dis` pip package (in `venv`); run it before changing the disassembler engine.
 - `tools/boot_trace.cpp` (`boot_trace` target) — traces **both** ZVE1 and ZVE2 per instruction and reports where the DMA freezes. Use `-L <file>` to divert the emulator log so the summary stays readable. A separate `build_trace/` build dir is conventionally configured with `-DLOG_LEVEL=5` (the compile ceiling). **Default base level is now ERROR — the run is quiet & fast.** Raise it with `--log-level <off|error|warn|info|debug|trace>`, or far better, boost only where it matters: `--log-pc LO:HI[:level]` (effective level while either CPU PC is in the range) and `--log-cycle FROM:TO[:level]` (while the cycle counter is in the window). **Gotcha:** a `--log-pc` gate on a *spin-loop* address fires for as long as the CPU parks there (can be tens of millions of cycles → multi-GB log) — pair it with a tight `--log-cycle`, or just use a cycle window. Reference: `boot_trace --log-level info …` (≈11 KB / 8 s for a full @OS.COM run) gives the K5122 `>>> READ` summaries; add a `--log-cycle` window for full TRACE only there.
 

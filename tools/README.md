@@ -26,10 +26,26 @@ eine Funktion fehlt oder falsch ist, wird sie hier ergänzt/gefixt und unter
 | `eprom_to_h.py` | EPROM-Binär → committetes C-Array (`*_data.h`) | — |
 | `img_to_hfe.py` | Roh-`.img` → HFE-v1-Diskettenabbild | — |
 
-**Empfohlene Reihenfolge bei einem Boot-/Lade-Problem:** mit `boot_trace` die grobe
-Phase und den Hang-Punkt **lokalisieren**, dann mit `k1520dbg` (Breakpoint + mark +
-Step) **sezieren**. Geladenen Code mit `boot_trace -d` / `k1520dbg save` sichern und
-mit `z80_disasm2.py` disassemblieren.
+**Einstieg & Reihenfolge.** Task-orientierte Anleitung mit Szenarien:
+**[how_to_debug_and_trace.md](how_to_debug_and_trace.md)**. Faustregel: mit `boot_trace` die
+grobe Phase / den Hang-Punkt **lokalisieren**, dann mit `k1520dbg` (Breakpoint + `mark` +
+Step, oder `b … if`/`bint`/`dev ctc`) **sezieren**.
+
+**Korrekt & effizient (gilt auch für KI-Agenten):**
+
+- ⚠️ **Beide Tools mounten die Disk schreibbar — ein Lauf kann das Image KORRUMPIEREN.**
+  Immer gegen eine **Temp-Kopie** laufen, nie gegen ein committetes Fixture:
+  `D=$(mktemp --suffix=.img); cp DISK $D;  boot_trace … $D;  rm -f $D`.
+- **Aufruf über `tools/dev.sh`** (baut zuerst → nie ein stale Binary):
+  `tools/dev.sh trace <args>` (boot_trace) bzw. `tools/dev.sh tool k1520dbg <args>`.
+- **boot_trace token-sparsam:** `-L /dev/null` verwirft den Emulator-Log; `--quiet --json`
+  liefert genau **eine** maschinenlesbare Ergebniszeile (statt ~880) + sinnvollen Exit-Code
+  (`--until`: 0 erreicht / 2 nicht). Statt Zyklen raten: **`--until <cond>`**.
+- **k1520dbg im Batch:** per Pipe (`printf 'b 0x0437\ng\nrj\nq\n' | k1520dbg $D`) oder
+  `-x skript.dbg`; `rj` druckt Register als JSON. REPL/readline ist für Menschen.
+- **Einmal booten, oft fortsetzen:** `--save-state`/`--load-state` (boot_trace) bzw.
+  `savestate`/`loadstate` (k1520dbg) sichern RAM+CPU+ROM-Mapping in eine Datei → der ~2-s-Boot
+  ist eine Einmal-Investition. `-l <bios.prn>` zeigt kommentierten Quelltext statt rohem Disasm.
 
 ---
 
@@ -47,10 +63,12 @@ printf 'g 5000000\nbt\nsnap A\ns 3\nrs\nrestore A\nq\n' | ./build/k1520dbg disks
 ```
 
 Kann **beide CPUs** debuggen (ZVE1 ohne Suffix, ZVE2 mit `2`: `b2`, `s2`, `set 2`),
-bedingte Breakpoints (`b A if [03F8]!=3`), Step into/over/out (`s`/`n`/`fin`),
-Speicher- und I/O-Watchpoints (`wp`/`wb`/`iow`/`iob`), Symbole (`sym`/`-s`),
-eingebautes Disassembly an jedem Stopp, Register-Edit (`set`), Backtrace (`bt`) und
-den relativen Zyklen-Marker (`mark`). `help` listet alle Befehle.
+bedingte Breakpoints (`b A if (HL&0xFF)==0xF7`, voller Ausdrucks-Evaluator),
+Ereignis-Breakpoints (`bint`/`bnmi`/`breti`), Step into/over/out (`s`/`n`/`fin`),
+**Reverse-Step + Snapshots + Save-State** (`rs`/`snap`/`savestate`), Watchpoints mit
+Bereich/Wert-Bedingung (`wp 0x6000..0x60FF changed`), Logpoints/Trace-to-File,
+`x`-Examine (gdb-Formate), Chip-Zustand (`dev ctc/pio/sio`), exakter History-`bt`,
+`.prn`-Quelltext-Annotation + Label-Import, JSON-Register (`rj`). `help` listet alles.
 
 ## boot_trace — Boot-/DMA-Tracer
 
@@ -67,8 +85,11 @@ cmake --build build_trace --target boot_trace -j
 ```
 
 Verfolgt ZVE1 **und** ZVE2 per Instruktion, meldet den DMA-Einfrierpunkt und den
-`[03F8]`-Done-Flag-Verlauf. Log-Gates (`--log-pc`, `--log-cycle`) heben das Level
-nur im interessanten Fenster an — leise laufen, gezielt boosten.
+`[03F8]`-Done-Flag-Verlauf. Weiter: `--until <cond>` (bis zu einem Zustand laufen),
+`--coverage`/`--diff` (welcher Code lief / zwei Läufe vergleichen), `--csv`
+(maschinenlesbarer Trace), `--save-state`/`--load-state` (Checkpoint statt Reboot),
+`--json`/`--quiet` (eine Ergebniszeile für Skript/Agent). Log-Gates (`--log-pc`,
+`--log-cycle`) heben das Level nur im interessanten Fenster an — leise laufen, gezielt boosten.
 
 ## z80_disasm2.py / Disassembler
 
