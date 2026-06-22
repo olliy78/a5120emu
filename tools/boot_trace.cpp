@@ -247,6 +247,7 @@ int main(int argc, char** argv) {
     long      csv_rows = 0, csv_cap = 5000000; bool csv_capped = false;
     const char* save_state_path = nullptr;   // --save-state <file>: persist state at run end
     const char* load_state_path = nullptr;   // --load-state <file>: resume from saved state
+    bool      json_summary  = false;         // --json: one machine-readable summary line at the end
 
     // Runtime log control (new gated logging). Default base = ERROR so a plain
     // run is quiet and fast; raise globally with --log-level or, far better,
@@ -302,6 +303,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--csv") && i+1 < argc) { csv_path = argv[++i]; }
         else if (!strcmp(argv[i], "--save-state") && i+1 < argc) { save_state_path = argv[++i]; }
         else if (!strcmp(argv[i], "--load-state") && i+1 < argc) { load_state_path = argv[++i]; }
+        else if (!strcmp(argv[i], "--json")) { json_summary = true; }
         else if (!strcmp(argv[i], "--watch") && i+1 < argc) {   // --watch 0x0000,0x03F8,...
             char* tok = strtok(argv[++i], ",");
             while (tok && watch_n < 16) { watch_addr[watch_n++] = (uint16_t)strtol(tok, nullptr, 0); tok = strtok(nullptr, ","); }
@@ -869,6 +871,21 @@ int main(int argc, char** argv) {
             fprintf(stderr, "\nRAM dump 0x%04X-0x%04X (%d bytes) -> %s\n",
                     dump_start, dump_end, dump_end - dump_start, dump_path);
         }
+    }
+
+    // --json: one machine-readable summary line (for scripted/agent consumption).
+    if (json_summary) {
+        fprintf(stderr,
+            "{\"boot_reached\":%s,\"cycles\":%d,\"rom_enabled\":%s,\"final_pc\":\"0x%04X\","
+            "\"zve1_addrs\":%zu,\"zve2_addrs\":%zu,\"zve2_instr\":%llu,",
+            boot_reached?"true":"false", cycles_done, machine.isRomEnabled()?"true":"false",
+            machine.cpuPC(), pc_hist.size(), zve2_pc_hist.size(),
+            (unsigned long long)zve2_instr);
+        if (until.kind != UntilCond::NONE)
+            fprintf(stderr, "\"until\":{\"set\":true,\"met\":%s,\"cycle\":%d,\"pc\":\"0x%04X\"}}\n",
+                    until_hit?"true":"false", until_cycle, until_pc);
+        else
+            fprintf(stderr, "\"until\":{\"set\":false}}\n");
     }
 
     // Exit code (for scripted/agent use): with --until → 0 if met, 2 if not met;

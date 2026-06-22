@@ -49,6 +49,7 @@ boot_trace [DISK] [optionen]
 | `--diff a.csv b.csv` | **Run-Diff**: zwei `--coverage`-CSVs vergleichen (nur-A / nur-B / hit-diff je CPU) — **ohne** Emulation, nur die beiden Dateien (s. §2c) |
 | `--save-state <file>` | am Lauf-Ende (z. B. mit `--until` an einer Bedingung) den **Maschinenzustand** sichern — Checkpoint zum späteren Fortsetzen |
 | `--load-state <file>` | mit einem gesicherten Zustand **starten** statt zu booten (RAM+CPU+ROM-Mapping werden reproduziert); spart den ~Boot bei jedem Lauf |
+| `--json` | am Ende **eine maschinenlesbare JSON-Zeile** mit den Kernfakten (`boot_reached`, `cycles`, `rom_enabled`, `final_pc`, `zve1_addrs`/`zve2_addrs`, `zve2_instr`, `until{set,met,cycle,pc}`) — für Skript-/Agenten-Auswertung |
 
 **Exit-Code** (für Skript-/Agenten-Verzweigung): mit `--until` → `0` wenn die Bedingung
 erreicht wurde, `2` wenn nicht (Limit zuerst). Ohne `--until` → `0` wenn der Lauf den

@@ -756,7 +756,7 @@ int main(int argc, char** argv){
               "          iow/iob <P>     io port: print / break ; iod <P> wl-io: iol\n"
               "  LOG     logpoint <A> [expr..]  print + CONTINUE (dprintf) ; lpd <A> ; lpl\n"
               "          trace <file> [lo hi]   log every executed instr to file ; trace off\n"
-              "  INSPECT r [2]     registers (ZVE1, +ZVE2) ;  bt [N] backtrace (exact; bt scan = heuristic)\n"
+              "  INSPECT r [2]     registers (ZVE1, +ZVE2) ; rj registers as JSON ; bt [N] backtrace\n"
               "          d <A> [N] hexdump ; u [A] [N] disasm ; e <A> <b..> poke\n"
               "          x/<N><fmt><sz> <A>  examine (fmt x/d/u/c/t/o/a/i/s, sz b/w); x continues\n"
               "          list/l [A] [N]  .prn source lines around A (labels load as symbols)\n"
@@ -878,6 +878,16 @@ int main(int argc, char** argv){
         // ══ INSPECT: registers, backtrace, memory dump/poke, disasm, examine, source, set ══
         else if (cmd=="r"){ snap1=grab(m.cpuDebug()); printSnap(1);
             if(t.size()>1){ snap2=grab(m.zve2Debug()); printSnap(2); } showInsn("=>",m.cpuPC()); stateLine(); }
+        // machine-readable registers (one JSON line) — for scripted/agent consumption
+        else if (cmd=="rj"){ const Z80& z=m.cpuDebug();
+            fprintf(stderr,"\n{\"pc\":\"0x%04X\",\"sp\":\"0x%04X\",\"af\":\"0x%04X\",\"bc\":\"0x%04X\","
+                "\"de\":\"0x%04X\",\"hl\":\"0x%04X\",\"ix\":\"0x%04X\",\"iy\":\"0x%04X\","
+                "\"i\":\"0x%02X\",\"r\":\"0x%02X\",\"iff1\":%s,\"cyc\":%llu,\"rom\":%s,\"busrq\":%s,"
+                "\"zve2\":\"%s\"}\n",
+                z.PC,z.SP,z.AF,z.BC,z.DE,z.HL,z.IX,z.IY,z.I,z.R, z.IFF1?"true":"false",
+                (unsigned long long)m.cpuCycles(), m.isRomEnabled()?"true":"false",
+                m.isBUSRQ()?"true":"false",
+                m.isZVE2InReset()?"reset":(m.isZVE2Waiting()?"wait":"run")); }
         else if (cmd=="bt"){
             if (t.size()>1 && t[1]=="scan"){ bool prev=bt_use_history; bt_use_history=false;
                 backtrace(t.size()>2?(int)parseNum(t[2]):8); bt_use_history=prev; }
