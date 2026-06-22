@@ -418,4 +418,41 @@ if(BUILD_K1520)
         message(STATUS "k1520dbg: GNU readline not found — using plain getline (no history/completion)")
     endif()
 
+    # ─── End-to-end (black-box) CLI tests ──────────────────────────────────────
+    # Run the built tool with a scripted session and match the output. This exercises
+    # the full stack (command dispatch + machine wiring), which the header-level unit
+    # tests don't reach. Each disk-using test copies the fixture to a PRIVATE temp file
+    # first — the tools mount r/w and a run can otherwise corrupt the committed image.
+    if (BUILD_K1520_TESTS)
+        set(_bbdisk "${CMAKE_SOURCE_DIR}/disks/cpadisk01.img")
+        # add_cli_test(<name> <pass-regex> <shell-command>)
+        macro(add_cli_test name regex cmd)
+            add_test(NAME ${name} COMMAND sh -c "${cmd}")
+            set_tests_properties(${name} PROPERTIES PASS_REGULAR_EXPRESSION "${regex}" TIMEOUT 120)
+        endmacro()
+
+        # k1520dbg — scripted sessions piped on stdin (temp disk copy).
+        # NB: regex uses '.' for literal []()*+ — escaped specials don't survive the macro.
+        add_cli_test(cli_dbg_breakpoint "bp ZVE1 : ZVE1 PC=0135"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\ng\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        add_cli_test(cli_dbg_watchpoint "WR .6005.=99"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'wp 0x6005 == 99\\ne 0x6005 99\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        add_cli_test(cli_dbg_expr_eval "= 10 .0xA."
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\ndisp 2*3+4\\ng\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        add_cli_test(cli_dbg_event_bp "ISR 01C7"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'bint\\ng\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        add_cli_test(cli_dbg_reverse_step "restored 1 step"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\ng\\ns 1\\nrs\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+
+        # boot_trace — standalone runs.
+        add_cli_test(cli_bt_until "MET at cycle [0-9]+ .PC=0x0168."
+            "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' \$D; rm -f \$D")
+        # --coverage BEFORE --until so it doesn't consume the disk path as its CSV file.
+        add_cli_test(cli_bt_coverage "Code coverage .ZVE1."
+            "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --coverage --until 'PC==0x0437' \$D; rm -f \$D")
+        # --diff is standalone (no emulation): feed two hand-written coverage CSVs.
+        add_cli_test(cli_bt_diff "only-A=1 .*only-B=1"
+            "A=$(mktemp); B=$(mktemp); printf 'cpu,pc,hits\\nZVE1,0x0100,1\\nZVE1,0x0200,1\\n' > \$A; printf 'cpu,pc,hits\\nZVE1,0x0200,1\\nZVE1,0x0300,1\\n' > \$B; $<TARGET_FILE:boot_trace> --diff \$A \$B; rm -f \$A \$B")
+    endif()
+
 endif() # BUILD_K1520
