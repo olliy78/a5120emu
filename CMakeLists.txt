@@ -393,6 +393,12 @@ if(BUILD_K1520)
     target_include_directories(kbd_test PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(kbd_test PRIVATE LOG_LEVEL=3)
 
+    # format_driver: scripted two-disk interactive driver (FORMAT.COM / FORMATB.COM)
+    add_executable(format_driver tools/format_driver.cpp)
+    target_link_libraries(format_driver PRIVATE k1520_a5120 k1520_floppy k1520_logger)
+    target_include_directories(format_driver PRIVATE ${CMAKE_SOURCE_DIR})
+    target_compile_definitions(format_driver PRIVATE LOG_LEVEL=3)
+
     # floppy_diag: running-OS floppy read diagnostic
     add_executable(floppy_diag tools/floppy_diag.cpp)
     target_link_libraries(floppy_diag PRIVATE k1520_a5120 k1520_floppy k1520_logger)

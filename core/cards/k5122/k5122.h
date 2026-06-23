@@ -36,6 +36,7 @@
 #include "core/peripherals/floppy_drive/drive_profile.h"
 #include "core/peripherals/floppy_drive/format_parser.h"
 #include "core/peripherals/floppy_drive/track_image.h"
+#include "core/peripherals/floppy_drive/track_codec.h"   // LogicalSector
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -109,6 +110,20 @@ public:
     /// @brief Direkter Zugriff auf ein Laufwerk (Tests/C-API).
     FloppyDriveV2& drive(int idx) { return drives_[idx]; }
 
+    /**
+     * @brief Parst einen Vollspur-FORMAT-Schreibstrom (wie ZVE2 ihn über Port 0x14
+     *        streamt) in logische Sektoren.
+     *
+     * Der Strom ist eine komplette IBM-MFM-Spur als Bytefolge: Gap (0x4E) / Sync (0x00)
+     * und je Sektor `A1 A1 A1 FE <cyl> <head> <sec> <sizecode> <crc16>` (IDAM) gefolgt von
+     * `A1 A1 A1 FB <datenbytes…> <crc16>` (DAM).  Sektorgröße = 128 << (sizecode & 3).
+     * Statisch + frei von Controller-Zustand, damit unit-testbar.
+     *
+     * @param stream gesammelter Schreibstrom (write_buf_)
+     * @return geparste Sektoren in Spurreihenfolge (leer, wenn keine IDAM/DAM-Paare).
+     */
+    static std::vector<LogicalSector> parseFormatStream(const std::vector<uint8_t>& stream);
+
     // ─── Snapshot-Serialisierung (savestate/loadstate) ───────────────────────
     /**
      * @brief Hängt den restaurierbaren Controller-Zustand an @p out an: beide
@@ -170,6 +185,10 @@ private:
     void resyncToNextMark();
     /// @brief Committet einen abgeschlossenen Schreibtransfer in die gecachte Spur.
     void commitWrite();
+    /// @brief Beendet einen Vollspur-FORMAT-Schreibtransfer am Index-Puls: parst den
+    ///        gesammelten Schreibstrom (IDAM/DAM/Daten) zu Sektoren, baut die Spur und
+    ///        schreibt sie ins Image; gibt /BUSRQ frei (ZVE1 wird über den Index-Int geweckt).
+    void commitFormatTrack();
     /// @brief Beginnt das Sammeln eines Schreib-Datenfelds (/WE 1→0 im ZVE2-Streaming).
     ///        Ermittelt den Zielsektor aus der letzten Id-Marke vor head_pos_.
     void beginWriteField();
@@ -238,6 +257,13 @@ private:
     // Boot-ROM-Setup-Strobes ≤ ~18 Takte, gegenüber echten Track-Enden ≥ 30000).
     int  str_inactive_cycles_ = 0;              ///< Takte mit /STR=1 im aktiven Transfer
     static constexpr int kStrEndSampleCycles = 320;  ///< ~2 MFM-Byte-Perioden @ 2.45 MHz
+
+    // ─── Vollspur-FORMAT: Schreib-Idle-Erkennung (Transfer-Ende) ──────────────
+    int  write_idle_acc_ = 0;                   ///< Takte mit angebotenem, aber nicht
+                                                ///< abgeholtem Schreib-Byte (ZVE2 idle)
+    static constexpr int kWriteEndSampleCycles = 20000; ///< ZVE2 schreibt nicht mehr → letzte Spur fertig
+    uint8_t fmt_cyl_  = 0;                       ///< Zyl. der gerade geschriebenen FORMAT-Spur
+    uint8_t fmt_head_ = 0;                       ///< Kopf der gerade geschriebenen FORMAT-Spur
 
     // ─── Interrupt ───────────────────────────────────────────────────────────
     bool iei_in_ = false;

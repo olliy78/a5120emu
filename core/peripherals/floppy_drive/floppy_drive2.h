@@ -83,6 +83,18 @@ public:
     /// @brief Schreibt dirty-Spur(en) via DiskImage::writeTrack zurück.
     bool flush();
 
+    /**
+     * @brief Schreibt eine fertige Spur an eine EXPLIZITE (cyl, head)-Position ins Image.
+     *
+     * Anders als @ref mutableTrack (das auf @ref cur_cyl_ arbeitet) adressiert dies eine
+     * beliebige Spur — nötig beim Vollspur-FORMAT, bei dem der Kopf zum Commit-Zeitpunkt
+     * bereits zur nächsten Spur weitergeschritten ist.  Hält den 1-Spur-Cache kohärent
+     * (invalidiert/aktualisiert einen passenden Cache-Eintrag).
+     *
+     * @return false bei nicht gemountetem / schreibgeschütztem Laufwerk oder writeTrack-Fehler.
+     */
+    bool writeTrackAt(uint8_t cyl, uint8_t head, const TrackImage& track);
+
     DiskGeometry geometry() const;
 
 private:

@@ -21,6 +21,8 @@
 #include "core/logger.h"
 #include <algorithm>
 #include <cassert>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <type_traits>
 
@@ -308,6 +310,41 @@ void K5122::update(int cycles) {
         }
     }
 
+    // ── Per-Byte-/BUSRQ-Drossel im Vollspur-FORMAT-Schreibmodus ──────────────
+    // Symmetrisch zum Lesen: nach jeder Byteperiode liegt der nächste Schreibtakt
+    // bereit, /BUSRQ wird (re)assertiert, ZVE2 schreibt ein Byte (Port 0x14 →
+    // handleDataPortAWrite löscht byte_ready_ + gibt /BUSRQ frei).  In der Lücke
+    // läuft ZVE1 bis zu seinem Interrupt-Wartepark.
+    //
+    // Schreib-Idle-Erkennung (Transfer-Ende): ZVE2 streamt die Spur und hört dann
+    // auf (es schreibt dtrret und kehrt in seine Idle-Schleife zurück).  Bleibt
+    // byte_ready_ über mehrere Byteperioden gesetzt (ZVE2 holt das angebotene Byte
+    // nicht mehr ab), ist der Spur-Schreibstrom komplett → commitFormatTrack().
+    if (write_mode_) {
+        if (!byte_ready_) {
+            byte_acc_ += cycles;
+            if (byte_acc_ >= kBytePeriodCycles) {
+                byte_acc_   = 0;
+                byte_ready_ = true;
+                bus_.assertBUSRQ();
+            }
+            write_idle_acc_ = 0;
+        } else {
+            // Byte bereitgestellt, aber noch nicht abgeholt → ZVE2 schreibt gerade
+            // nicht.  Hält das über kWriteEndSampleCycles an, hat ZVE2 das FORMAT
+            // beendet (keine Folgespur mehr) → letzte Spur abschließen + Transfer beenden.
+            write_idle_acc_ += cycles;
+            if (write_idle_acc_ >= kWriteEndSampleCycles) {
+                commitFormatTrack();
+                write_mode_   = false;
+                transferring_ = false;
+                byte_ready_   = false;
+                dma_pending_  = false;
+                bus_.releaseBUSRQ();
+            }
+        }
+    }
+
     if (!drives_[selected_drive_].isMounted()) return;
 
     index_cycle_acc_ += cycles;
@@ -316,6 +353,7 @@ void K5122::update(int cycles) {
     index_cycle_acc_ -= period;
 
     // Fallenden Puls simulieren: /ASTB low → Interrupt-Flanke → wieder high.
+    // (Weckt u. a. ZVE1 aus dem FORMAT-Wartepark JR 1D21 über den Index-Interrupt.)
     ctrl_pio_.setASTB(false);
     ctrl_pio_.setASTB(true);
     LOG_TRACE("K5122", "Index-Puls: ctrl PIO Port A /ASTB pulsed");
@@ -393,10 +431,25 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
                 byte_ready_ = true;          // erstes Byte liegt bereit → /BUSRQ aktiv
                 byte_acc_   = 0;
             } else {
-                // Schreib-DMA: Puffer leeren, ZVE2 füllt ihn via Port 0x14
-                write_mode_  = true;
+                // Schreib-DMA (Vollspur-FORMAT): ZVE2 streamt die komplette Spur
+                // byteweise via Port 0x14.  Per-Byte-/BUSRQ-Drossel wie beim Lesen
+                // → ZVE1 läuft in den Lücken bis zu seinem Wartepark (JR 1D21), aus
+                // dem ZVE2 es nach der Spur per dtrret-Byte befreit.  ZVE2 streamt
+                // dann weiter (Gap), bis ZVE1 die nächste Spur einleitet — DEREN
+                // Schreib-Strobe schließt die vorige Spur ab (commitFormatTrack).
+                if (!write_buf_.empty()) {
+                    commitFormatTrack();      // vorige Spur abschließen + ins Image
+                }
+                write_mode_   = true;
                 transferring_ = false;
                 write_buf_.clear();
+                byte_ready_   = true;     // erstes Schreib-Byte sofort anfordern
+                byte_acc_     = 0;
+                write_idle_acc_ = 0;
+                // Zielspur (Zyl/Kopf) JETZT latchen — ZVE1 seekt vor der nächsten Spur.
+                fmt_cyl_  = drives_[selected_drive_].isMounted()
+                          ? drives_[selected_drive_].currentCylinder() : 0;
+                fmt_head_ = current_head_;
             }
             dma_pending_ = true;
             bus_.assertBUSRQ();
@@ -432,10 +485,20 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
  * Diese Echo-Bytes werden ignoriert (write_mode_ ist dann false).
  */
 void K5122::handleDataPortAWrite(uint8_t data) {
-    // Sammeln, wenn der alte /STR-Schreibpfad (write_mode_) ODER der BIOS-
-    // /WE-Schreibpfad (we_writing_) aktiv ist.  Sonst Lese-Echo → ignorieren.
+    // Sammeln, wenn der Vollspur-FORMAT-Schreibpfad (write_mode_) ODER der BIOS-
+    // /WE-Datenfeld-Schreibpfad (we_writing_) aktiv ist.  Sonst Lese-Echo → ignorieren.
     if (!write_mode_ && !we_writing_) return;   // Lese-Echo — kein Schreibdatum
     write_buf_.push_back(data);
+
+    // Vollspur-FORMAT: Per-Byte-/BUSRQ-Drossel — Byte abgeholt → ZVE2 verliert den
+    // Bus, bis update() nach 1 Byteperiode das nächste anfordert.  In der Lücke läuft
+    // ZVE1.  (Der /WE-Datenfeldpfad sammelt dagegen innerhalb eines gehaltenen
+    // ZVE2-Streamings und lässt die Bus-Arbitrierung unberührt.)
+    if (write_mode_ && !we_writing_) {
+        byte_ready_ = false;
+        byte_acc_   = 0;
+        bus_.releaseBUSRQ();
+    }
     LOG_TRACE("K5122", "Schreib-Byte 0x%02X gesammelt (%zu Bytes)", data, write_buf_.size());
 }
 
@@ -663,6 +726,95 @@ void K5122::commitWrite() {
     write_buf_.clear();
     write_mode_   = false;
     transferring_ = false;
+}
+
+/**
+ * @brief Parst einen Vollspur-FORMAT-Schreibstrom in logische Sektoren (statisch, testbar).
+ */
+std::vector<LogicalSector> K5122::parseFormatStream(const std::vector<uint8_t>& b) {
+    std::vector<LogicalSector> sektoren;
+    LogicalSector cur{};
+    bool have_idam = false;
+
+    size_t i = 0;
+    while (i < b.size()) {
+        // Adressmarke = Sync-Folge aus ≥1 A1-Bytes + Mark-Byte.  Die A1-Anzahl variiert
+        // (echter ZVE2-Strom: 3×A1; TrackCodec::buildTrack: 2×A1) — daher A1-Folge
+        // überspringen und das erste Nicht-A1-Byte als Mark-Byte prüfen.
+        if (b[i] == 0xA1) {
+            size_t j = i;
+            while (j < b.size() && b[j] == 0xA1) ++j;
+            if (j < b.size()) {
+                const uint8_t mark = b[j];
+                if (mark == 0xFE && j + 5 <= b.size()) {        // IDAM: A1… FE c h s n
+                    cur = LogicalSector{};
+                    cur.cyl  = b[j + 1];
+                    cur.head = b[j + 2];
+                    cur.id   = b[j + 3];
+                    cur.size = static_cast<uint16_t>(128u << (b[j + 4] & 0x03));
+                    have_idam = true;
+                    i = j + 5;                                  // hinter die IDAM-Felder (CRC folgt)
+                    continue;
+                }
+                if ((mark == 0xFB || mark == 0xF8) && have_idam) {  // DAM: A1… FB <data…>
+                    const size_t data_start = j + 1;
+                    const size_t take = std::min<size_t>(cur.size, b.size() - data_start);
+                    cur.data.assign(b.begin() + data_start, b.begin() + data_start + take);
+                    cur.data.resize(cur.size, 0xE5);            // unvollständig → mit 0xE5 füllen
+                    sektoren.push_back(cur);
+                    have_idam = false;
+                    i = data_start + take;                      // hinter das Datenfeld (CRC folgt)
+                    continue;
+                }
+            }
+            i = j;                                              // A1-Folge ohne gültige Marke überspringen
+            continue;
+        }
+        ++i;
+    }
+    return sektoren;
+}
+
+/**
+ * @brief Schließt einen Vollspur-FORMAT-Schreibtransfer ab: parst den gesammelten
+ *        Schreibstrom (@ref write_buf_) zu Sektoren, baut die Spur und schreibt sie an
+ *        die gelatchte (@ref fmt_cyl_, @ref fmt_head_)-Position ins Image.
+ *
+ * Wird vom nächsten Schreib-/STR-Strobe (Folgespur schließt die vorige ab) bzw. von der
+ * Schreib-Idle-Erkennung in @ref update (letzte Spur) aufgerufen.  Optionaler Roh-Dump
+ * des Stroms über Env K5122_FMT_CAPTURE (Analyse/Debug).
+ */
+void K5122::commitFormatTrack() {
+    if (const char* fn = std::getenv("K5122_FMT_CAPTURE")) {
+        if (!write_buf_.empty()) {
+            if (FILE* f = std::fopen(fn, "ab")) {
+                uint8_t hdr[8] = {'F','T', fmt_cyl_, fmt_head_,
+                    static_cast<uint8_t>(write_buf_.size() & 0xFF),
+                    static_cast<uint8_t>((write_buf_.size() >> 8) & 0xFF),
+                    static_cast<uint8_t>((write_buf_.size() >> 16) & 0xFF), 0};
+                std::fwrite(hdr, 1, sizeof hdr, f);
+                std::fwrite(write_buf_.data(), 1, write_buf_.size(), f);
+                std::fclose(f);
+            }
+        }
+    }
+
+    auto sektoren = parseFormatStream(write_buf_);
+    if (!sektoren.empty()) {
+        TrackImage trk = TrackCodec::buildTrack(sektoren, Encoding::MFM);
+        bool ok = drives_[selected_drive_].writeTrackAt(fmt_cyl_, fmt_head_, trk);
+        LOG_INFO("K5122", ">>> FORMAT-WRITE D%d C=%u H=%u: %zu Sektoren à %uB %s",
+                 selected_drive_, static_cast<unsigned>(fmt_cyl_),
+                 static_cast<unsigned>(fmt_head_), sektoren.size(),
+                 sektoren.empty() ? 0u : sektoren.front().size, ok ? "OK" : "FEHLER");
+    } else {
+        LOG_WARN("K5122", "FORMAT-COMMIT D%d C=%u H=%u: keine Sektoren im Strom (%zu Bytes)",
+                 selected_drive_, static_cast<unsigned>(fmt_cyl_),
+                 static_cast<unsigned>(fmt_head_), write_buf_.size());
+    }
+
+    write_buf_.clear();
+    write_idle_acc_ = 0;
 }
 
 /**

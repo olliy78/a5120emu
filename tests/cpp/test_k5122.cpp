@@ -482,60 +482,216 @@ TEST_F(K5122Test, DaisyChain_GetVector_OhneInterrupt_0xFF) {
 
 /**
  * @test K5122Test/WriteRoundtrip_AenderungSichtbar
- * @brief Schreib-DMA über Port 0x14 und /STR-Commit schreibt in die Spur zurück.
+ * @brief Vollspur-FORMAT-Schreibpfad: ZVE2 streamt eine komplette Spur, der nächste
+ *        Schreib-Strobe schließt sie ab und schreibt sie ins Image zurück.
  *
- * Ablauf:
- * 1. Diskette mounten, /STR-Schreib-Strobe (bit0=0) → write_mode_=true, BUSRQ assertiert.
- * 2. Bytes via OUT(0x14) sammeln (Muster 0xBB).
- * 3. Zweiten /STR mit BUSRQ gehalten → commitWrite(); BUSRQ freigegeben.
- * 4. flush() + neu lesen → Muster im ersten Sektor.
- *
- * EINSCHRÄNKUNG: commitWrite() ersetzt aktuell den ersten Sektor (robuster Fallback).
- * Der Test prüft genau dieses dokumentierte Verhalten.
+ * Ablauf (entspricht dem realen FORMAT.COM-Pfad, vgl. doc/design/07_k5122_afs.md §7.3a):
+ * 1. Schreib-/STR-Strobe (bit0=0) → write_mode_=true, (cyl,head) gelatcht.
+ * 2. Komplette IBM-MFM-Spur (buildTrack) byteweise via OUT(0x14) streamen.
+ * 3. Zweiter Schreib-/STR-Strobe schließt die Spur ab → commitFormatTrack() parst den
+ *    Strom (A1A1A1 FE/FB), baut die Spur und schreibt sie ins Image.
+ * 4. flush() + neu lesen → alle Sektoren tragen ihre Daten zurück.
  */
-TEST_F(K5122Test, WriteRoundtrip_ErsteSektorÄnderung) {
-    auto path = makeTmpImg(fmt1, "_rw");
-    ASSERT_TRUE(card.mountDisk(0, path, fmt1));
+TEST_F(K5122Test, FormatWrite_VollspurRoundtrip) {
+    // 1024B-Format (Datenspur) → CRC-Rücklesepfad sauber (volle CRC).
+    DiskFormat fmt; fmt.name = "fmt_2c1h5x1024";
+    fmt.tracks.push_back({0, 1, 0, 0, 5, 1024});
+    auto path = makeTmpImg(fmt, "_fmt");
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0xEE);          // Laufwerk 0
+
+    // Soll-Sektoren der zu formatierenden Spur (Cyl 0, Head 0, IDs 1..5, je 1024B).
+    std::vector<LogicalSector> soll;
+    for (uint8_t id = 1; id <= 5; ++id) {
+        LogicalSector s; s.cyl = 0; s.head = 0; s.id = id; s.size = 1024;
+        s.data.assign(1024, static_cast<uint8_t>(0xE0 + id));   // pro Sektor andere Füllung
+        soll.push_back(s);
+    }
+    // Schreibstrom = komplette IBM-MFM-Spur (so streamt ZVE2 sie über Port 0x14).
+    TrackImage stream = TrackCodec::buildTrack(soll, Encoding::MFM);
+
+    // 1. Schreib-/STR-Strobe (bit0=0 /WE, bit2=1 head0, bit3 fallend /STR)
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF4);
+    ASSERT_TRUE(bus.isBUSRQ()) << "BUSRQ nach Schreib-/STR";
+
+    // 2. Spur streamen
+    for (uint8_t b : stream.bytes) card.ioWrite(0x14, b);
+
+    // 3. Folge-Schreib-Strobe schließt die Spur ab (commitFormatTrack).
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF4);
+
+    // 4. flush + neu lesen
+    card.drive(0).flush();
+    RawSectorImage check(path, fmt, /*wp=*/false);
+    ASSERT_TRUE(check.isOpen());
+    auto parsed = TrackCodec::parseTrack(check.readTrack(0, 0));
+    ASSERT_EQ(parsed.size(), 5u) << "5 Sektoren nach Vollspur-FORMAT";
+    for (size_t k = 0; k < parsed.size(); ++k) {
+        EXPECT_EQ(parsed[k].id, k + 1);
+        EXPECT_EQ(parsed[k].size, 1024u);
+        EXPECT_TRUE(std::all_of(parsed[k].data.begin(), parsed[k].data.end(),
+                    [k](uint8_t b){ return b == static_cast<uint8_t>(0xE0 + k + 1); }))
+            << "Sektor " << (k+1) << " trägt seine Füllung";
+    }
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/FormatWrite_IdleCommitLetzteSpur
+ * @brief Die Schreib-Idle-Erkennung in update() schließt die LETZTE FORMAT-Spur ab
+ *        (kein Folge-Strobe mehr) und gibt /BUSRQ frei.
+ */
+TEST_F(K5122Test, FormatWrite_IdleCommitLetzteSpur) {
+    DiskFormat fmt; fmt.name = "fmt_idle_2c1h4x256";
+    fmt.tracks.push_back({0, 1, 0, 0, 4, 256});
+    auto path = makeTmpImg(fmt, "_fmtidle");
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
     card.ioWrite(0x18, 0xEE);
 
-    // 1. /STR-Schreib-Strobe: bit0=0 (/WE=0), bit2=1 (head0), bit3=0 (/STR)
-    //    prev=0xFF → 0xF4: bit7=1, bit3=0 (fallende Flanke), bit2=1, bit0=0
-    card.ioWrite(0x10, 0xFF);          // Idle
-    card.ioWrite(0x10, 0xF4);          // /STR-Schreib-Strobe: /WE=0, /FR=1, /STR=0
-
-    ASSERT_TRUE(bus.isBUSRQ()) << "BUSRQ sollte nach Schreib-/STR assertiert sein";
-
-    // 2. Daten via Port 0x14 schreiben
-    const uint8_t MUSTER = 0xBB;
-    for (int i = 0; i < 128; ++i) {
-        card.ioWrite(0x14, MUSTER);
+    std::vector<LogicalSector> soll;
+    for (uint8_t id = 1; id <= 4; ++id) {
+        LogicalSector s; s.cyl = 0; s.head = 0; s.id = id; s.size = 256;
+        s.data.assign(256, static_cast<uint8_t>(0x10 * id)); soll.push_back(s);
     }
+    TrackImage stream = TrackCodec::buildTrack(soll, Encoding::MFM);
 
-    // 3. /STR-Commit: nochmal /STR mit BUSRQ gehalten → commitWrite()
-    //    bit0=0 (/WE=0, Schreiben), BUSRQ ist assertiert
-    card.ioWrite(0x10, 0xFF);          // /STR zurück auf high
-    card.ioWrite(0x10, 0xF4);          // nochmal /STR-Strobe mit bus_.isBUSRQ()==true
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF4);                       // Schreib-Strobe
+    for (uint8_t b : stream.bytes) card.ioWrite(0x14, b);
 
-    EXPECT_FALSE(bus.isBUSRQ()) << "BUSRQ sollte nach Commit freigegeben sein";
+    // Kein Folge-Strobe: Schreib-Idle (ZVE2 hört auf) → update() committet + BUSRQ frei.
+    for (int i = 0; i < 100; ++i) card.update(1000);   // > kWriteEndSampleCycles
+    EXPECT_FALSE(bus.isBUSRQ()) << "BUSRQ nach Idle-Commit der letzten Spur frei";
 
-    // 4. flush() und neu lesen
+    card.drive(0).flush();
+    RawSectorImage check(path, fmt, /*wp=*/false);
+    auto parsed = TrackCodec::parseTrack(check.readTrack(0, 0));
+    EXPECT_EQ(parsed.size(), 4u);
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/ParseFormatStream_RecoversSectors
+ * @brief Der FORMAT-Schreibstrom-Parser gewinnt Cyl/Head/ID/Größe/Daten je Sektor zurück
+ *        (IDAM A1A1A1 FE …, DAM A1A1A1 FB …) — verschiedene Sektorgrößen.
+ */
+TEST(K5122FormatStream, ParseFormatStream_RecoversSectors) {
+    for (uint16_t sz : {128u, 256u, 1024u}) {
+        std::vector<LogicalSector> soll;
+        const uint8_t n = (sz == 1024u) ? 5 : 8;
+        for (uint8_t id = 1; id <= n; ++id) {
+            LogicalSector s; s.cyl = 7; s.head = 1; s.id = id; s.size = sz;
+            s.data.assign(sz, static_cast<uint8_t>(id ^ 0x5A)); soll.push_back(s);
+        }
+        // buildTrack erzeugt genau das A1A1A1-FE/FB-Layout, das ZVE2 streamt.
+        TrackImage stream = TrackCodec::buildTrack(soll, Encoding::MFM);
+        auto got = K5122::parseFormatStream(stream.bytes);
+
+        ASSERT_EQ(got.size(), soll.size()) << "Sektorzahl, sz=" << sz;
+        for (size_t k = 0; k < got.size(); ++k) {
+            EXPECT_EQ(got[k].cyl, 7);
+            EXPECT_EQ(got[k].head, 1);
+            EXPECT_EQ(got[k].id, k + 1);
+            EXPECT_EQ(got[k].size, sz);
+            EXPECT_EQ(got[k].data, soll[k].data) << "Daten Sektor " << (k+1) << " sz=" << sz;
+        }
+    }
+}
+
+/**
+ * @test K5122Test/ParseFormatStream_EmptyAndGapOnly
+ * @brief Reiner Gap-Strom (kein IDAM/DAM) liefert keine Sektoren (kein Absturz).
+ */
+TEST(K5122FormatStream, ParseFormatStream_EmptyAndGapOnly) {
+    EXPECT_TRUE(K5122::parseFormatStream({}).empty());
+    std::vector<uint8_t> gap(3000, 0x4E);
+    EXPECT_TRUE(K5122::parseFormatStream(gap).empty());
+}
+
+/**
+ * @test K5122Test/WriteTrackAt_SchreibtExpliziteSpur
+ * @brief FloppyDriveV2::writeTrackAt schreibt an eine (cyl,head)-Position abseits der
+ *        aktuellen Kopfposition (nötig, weil der Kopf beim FORMAT-Commit schon weiterschritt).
+ */
+TEST_F(K5122Test, WriteTrackAt_SchreibtExpliziteSpur) {
+    DiskFormat fmt; fmt.name = "fmt_wta_3c1h4x256";
+    fmt.tracks.push_back({0, 2, 0, 0, 4, 256});
+    auto path = makeTmpImg(fmt, "_wta");
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+
+    // Kopf auf Cyl 2 fahren (abseits der Zielspur 1).
+    card.drive(0).seek(2);
+
+    std::vector<LogicalSector> soll;
+    for (uint8_t id = 1; id <= 4; ++id) {
+        LogicalSector s; s.cyl = 1; s.head = 0; s.id = id; s.size = 256;
+        s.data.assign(256, static_cast<uint8_t>(0xC0 | id)); soll.push_back(s);
+    }
+    TrackImage trk = TrackCodec::buildTrack(soll, Encoding::MFM);
+    ASSERT_TRUE(card.drive(0).writeTrackAt(1, 0, trk));   // Spur 1 schreiben, Kopf auf 2
     card.drive(0).flush();
 
-    // Neues Image-Objekt für Verifikation öffnen
-    RawSectorImage check(path, fmt1, /*wp=*/false);
+    RawSectorImage check(path, fmt, /*wp=*/false);
+    auto parsed = TrackCodec::parseTrack(check.readTrack(1, 0));
+    ASSERT_EQ(parsed.size(), 4u);
+    EXPECT_EQ(parsed[0].data[0], 0xC1);
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/FormatWhole_MehrspurIntegration
+ * @brief Integrationstest „Formatieren als Ganzes": formatiert alle Spuren einer Diskette
+ *        über den Controller wie FORMAT.COM (Seek → Schreib-Strobe → Spur streamen, der
+ *        Folge-Strobe schließt die vorige ab; die letzte über Schreib-Idle), und prüft,
+ *        dass jede Spur korrekt im Image steht.
+ *
+ * Modelliert den realen FORMAT-Ablauf auf Controller-Ebene (ZVE1 seekt zwischen den Spuren,
+ * der nächste Schreib-/STR schließt die vorige Spur ab — vgl. doc/design/07_k5122_afs.md §7.3a).
+ */
+TEST_F(K5122Test, FormatWhole_MehrspurIntegration) {
+    DiskFormat fmt; fmt.name = "fmt_whole_5c1h5x1024";
+    fmt.tracks.push_back({0, 4, 0, 0, 5, 1024});     // 5 Zylinder, 1 Kopf, 5×1024
+    auto path = makeTmpImg(fmt, "_whole");
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0xEE);
+
+    const uint8_t NCYL = fmt.numCylinders();
+    auto sollFor = [](uint8_t cyl) {
+        std::vector<LogicalSector> s;
+        for (uint8_t id = 1; id <= 5; ++id) {
+            LogicalSector x; x.cyl = cyl; x.head = 0; x.id = id; x.size = 1024;
+            x.data.assign(1024, static_cast<uint8_t>((cyl << 4) | id));   // cyl+id-eindeutig
+            s.push_back(x);
+        }
+        return s;
+    };
+
+    for (uint8_t cyl = 0; cyl < NCYL; ++cyl) {
+        card.drive(0).seek(cyl);                      // ZVE1 seekt zur Spur
+        card.ioWrite(0x10, 0xFF);
+        card.ioWrite(0x10, 0xF4);                     // Schreib-Strobe (schließt Vorspur ab)
+        TrackImage stream = TrackCodec::buildTrack(sollFor(cyl), Encoding::MFM);
+        for (uint8_t b : stream.bytes) card.ioWrite(0x14, b);
+    }
+    // Letzte Spur über Schreib-Idle abschließen.
+    for (int i = 0; i < 100; ++i) card.update(1000);
+    card.drive(0).flush();
+
+    // Verifikation: jede Spur trägt ihre eindeutige Füllung.
+    RawSectorImage check(path, fmt, /*wp=*/false);
     ASSERT_TRUE(check.isOpen());
-
-    TrackImage gelesen = check.readTrack(0, 0);
-    ASSERT_FALSE(gelesen.empty());
-
-    auto parsed = TrackCodec::parseTrack(gelesen);
-    ASSERT_GE(parsed.size(), 1u);
-
-    // Erster Sektor muss das Muster tragen
-    EXPECT_TRUE(std::all_of(parsed[0].data.begin(), parsed[0].data.end(),
-                            [MUSTER](uint8_t b){ return b == MUSTER; }))
-        << "Erster Sektor sollte nach Write-Roundtrip alles 0xBB enthalten";
-
+    for (uint8_t cyl = 0; cyl < NCYL; ++cyl) {
+        auto parsed = TrackCodec::parseTrack(check.readTrack(cyl, 0));
+        ASSERT_EQ(parsed.size(), 5u) << "Spur " << int(cyl);
+        for (uint8_t id = 1; id <= 5; ++id) {
+            const uint8_t want = static_cast<uint8_t>((cyl << 4) | id);
+            EXPECT_TRUE(std::all_of(parsed[id-1].data.begin(), parsed[id-1].data.end(),
+                        [want](uint8_t b){ return b == want; }))
+                << "Spur " << int(cyl) << " Sektor " << int(id);
+        }
+    }
     std::filesystem::remove(path);
 }
 

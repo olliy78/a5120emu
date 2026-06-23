@@ -117,6 +117,7 @@ static char** dbgCompletion(const char* text, int start, int /*end*/){
 int main(int argc, char** argv){
     // ── Phase 1: CLI parsing ── DISK [-x script] [-s symfile]… [-l listing.prn]…
     const char* disk = nullptr;
+    const char* diskB = nullptr;           // -b: second disk, mounted on B: (drive 1)
     const char* script = nullptr;
     std::vector<std::string> symfiles;     // -s: symbol tables (repeatable)
     std::vector<std::string> prnfiles;     // -l: MACRO-80 .prn listings (repeatable)
@@ -124,6 +125,7 @@ int main(int argc, char** argv){
         if (!strcmp(argv[i],"-x") && i+1<argc) script=argv[++i];
         else if (!strcmp(argv[i],"-s") && i+1<argc) symfiles.push_back(argv[++i]);
         else if (!strcmp(argv[i],"-l") && i+1<argc) prnfiles.push_back(argv[++i]);
+        else if (!strcmp(argv[i],"-b") && i+1<argc) diskB=argv[++i];
         else disk=argv[i];
     }
     Logger::instance().setBaseLevel(Level::ERROR);   // quiet emulator log; tool prints its own
@@ -137,6 +139,13 @@ int main(int argc, char** argv){
             mount_failed = true;   // session still runs; reflected in the exit code
         }
         else fprintf(stderr,"Mounted %s on A:\n",disk);
+    }
+    if (diskB){
+        if (!(m.mountDisk(1,diskB,"cpa780",false) || m.mountDisk(1,diskB,"cpa800",false))){
+            fprintf(stderr,"WARN: mount B '%s' failed: %s\n",diskB,m.lastError().c_str());
+            mount_failed = true;
+        }
+        else fprintf(stderr,"Mounted %s on B:\n",diskB);
     }
 
     // ─── Phase 2: debugger state ───────────────────────────────────────────────
