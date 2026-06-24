@@ -1,0 +1,534 @@
+; ============================================================================
+; zre.prn  -  ZRE/K2526 Boot-EPROM (Lade-ROM A26), 1 KB, 0000H-03FFH
+;
+; Kommentiertes MACRO-80-kompatibles Listing fuer k1520dbg / boot_trace (-l).
+; Erzeugt von tools/gen_zre_prn.py aus zre.rom (Bytes) + zre_rom.asm (Kommentare).
+; Bytes byte-bestaetigt gegen den realen Chip (Hauptteil 0100H-03FFH ==
+; A5120_ZRE_rom.bin[0000:0300], dem realen EPROM-Dump).
+;
+; Speicher:  0000-00FF Reset/Init-Prolog (loescht 2 KB RAM, IM2, PIO, ISR-Vekt.)
+;            0100-03FF Hauptteil (Drive-Probe, ZVE2-DMA-Bootloader, ISRs)
+; IM2-ISRs:  Vektor 0xB8 -> 007A (BS-PIO),  Vektor 0xBA -> 01C7 (Index-Puls)
+; RAM-Vars:  03F0 Ladeadr | 03F3 Zyl | 03F5 Kopf/Sektor | 03F7 Index-Zaehler
+;            03F8 Done-Flag(0/1/3) | 03FA Retry | 03FC Port10-Ctrl | 03FD IDAM-Pfad
+; ============================================================================
+
+	ORG	0000H
+
+0000  00            RESET_ENTRY:	NOP		;[RESET ENTRY POINT]
+0001  01 00 08      	LD BC,0800h		;BC=0x0800=2048: Byte-Zähler für LDI-Schleife (löscht 2 KB RAM)
+0004  51            	LD D,C		;DE=HL=0x0000: Quelle und Ziel zeigen beide auf Adresse 0
+0005  59            	LD E,C
+0006  61            	LD H,C
+0007  69            	LD L,C
+0008  ED A0         CLEAR_LOOP:	LDI		;LDI-Trick: ROM[0x0000]=NOP=0x00 wird nach RAM[DE++] geschrieben. | DEC HL haelt HL=0x0000 (Quelle bleibt immer bei NOP). | JP PE: PV-Flag von LDI zeigt BC!=0 (noch Bytes uebrig).
+000A  2B            	DEC HL
+000B  EA 08 00      	JP PE,0008h
+000E  AF            INIT_PORTS:	XOR A		;[HARDWARE-GRUNDINITIALISIERUNG]
+000F  D3 02         	OUT (02h),A		;Port 0x02 = Bank-Select: 0 → Bank 0 aktiv
+0011  31 E0 07      	LD SP,07E0h		;SP = 0x07E0: Stack unterhalb des 2 KB RAM-Bereichs
+0014  ED 5E         	IM 2		;IM 2: ISR-Adresse = memory[(I<<8) | device_vector]
+0016  3E 00         	LD A,00h		;I = 0x00 → Vektor-Tabelle beginnt bei RAM[0x0000]
+0018  ED 47         	LD I,A
+001A  3E 7F         INIT_BS_PIO:	LD A,7Fh		;[BS-PIO (K2526-interne PIO, Ports 0x08/09/0A/0B) INIT] | BS-PIO steuert RAM-Banken, ROM-Enable und Drive-Select. | Port 0x08=Port-A-Daten, 0x09=Port-A-Ctrl | Port 0x0A=Port-B-Daten, 0x0B=Port-B-Ctrl
+001C  D3 09         	OUT (09h),A		;Port A ctrl: 0x7F = Modus 1 (Input)
+001E  D3 0B         	OUT (0Bh),A		;Port B ctrl: 0x7F = Modus 1 (Input)
+0020  3E FF         	LD A,FFh
+0022  D3 08         	OUT (08h),A		;Port A Daten = 0xFF (alle Leitungen high)
+0024  D3 0A         	OUT (0Ah),A		;Port B Daten = 0xFF (alle Leitungen high)
+0026  3E B8         	LD A,B8h
+0028  D3 09         	OUT (09h),A		;Port A: Interrupt-Vektor = 0xB8 → ISR-Adresse aus RAM[0xB8,0xB9]
+002A  3E FF         	LD A,FFh
+002C  D3 09         	OUT (09h),A		;Port A: Modus 3 (Bit-Control: einzelne Bits konfigurierbar)
+002E  3E 7F         	LD A,7Fh
+0030  D3 09         	OUT (09h),A		;Modus-3 I/O-Maske: Bit7=Output (ROM-Disable/Drive-Ctrl), Bits6..0=Input
+0032  DD 21 00 08   RAM_TEST:	LD IX,0800h		;[RAM-TEST / BANK-WALK (62 Durchlaeufe, je 1 KB)] | Testet 62 x 1KB-Bloecke (IX=0x0800, 0x0C00, ..., 0xFC00). | Waehrend EI/DI-Fenster: falls /ASTB feuert → ISR_BS_PIO_A (0x007A).
+0036  DD 22 62 04   	LD (0462h),IX		;IX (Startadresse erste RAM-Bank) in RAM[0x0462] sichern
+003A  21 4E 04      	LD HL,044Eh		;HL → Config-Flag bei 0x044E (nach RAM-Clear = 0x00)
+003D  11 00 04      	LD DE,0400h		;DE = 0x0400 = IX-Inkrement (1 KB pro Bankschritt)
+0040  06 3E         	LD B,3Eh		;B = 62 Iterationen (0x3E)
+0042  DD 4E 00      RAM_TEST_LOOP:	LD C,(IX+0)		;C = aktueller RAM-Inhalt (wird nach ISR-Aufruf wiederhergestellt)
+0045  3E D7         	LD A,D7h		;BS-PIO Port A Int-Ctrl: 0xD7 = INTENA=1, OR-Modus, H-Level, Maske folgt
+0047  D3 09         	OUT (09h),A
+0049  3E 9F         	LD A,9Fh		;Interrupt-Maske = 0x9F
+004B  D3 09         	OUT (09h),A
+004D  FB            	EI		;EI: Interrupt-Fenster oeffnen
+004E  DD 36 00 FF   	LD (IX+0),FFh		;Schreibe 0xFF → RAM[IX+0]: RAM-Test-Markierung; ISR prueft ob Schreiben geklappt
+0052  00            	NOP
+0053  F3            	DI		;DI: Interrupt-Fenster schliessen
+0054  3E 47         	LD A,47h		;BS-PIO Port A: INTENA=0 (kein weiterer Interrupt von Port A)
+0056  D3 09         	OUT (09h),A
+0058  DD 19         	ADD IX,DE		;IX += 0x0400 → naechster 1 KB-Block
+005A  10 E6         	DJNZ 0042h
+005C  21 6F 04      COPY_DISK_TBL:	LD HL,046Fh		;[DISK-PARAMETER-TABELLE KOPIEREN (ROM → RAM)] | Quelle 0x046F liegt ausserhalb des 1 KB ROM (endet bei 0x03FF), | daher wird tatsaechlich RAM[0x046F..] gelesen (= 0x00 nach Clear).
+005F  11 6F 00      	LD DE,006Fh
+0062  01 24 00      	LD BC,0024h		;36 Byte rueckwaerts kopieren (LDDR)
+0065  ED B8         	LDDR
+0067  21 4E 04      CHECK_BOOT_FLAG:	LD HL,044Eh		;[BOOT-FLAG PRUEFEN] | RAM[0x044E] Bit0: 0=erster Boot (ROM aktiv), 1=ROM bereits deaktiviert
+006A  CB 46         	BIT 0,(HL)		;Bit0 testen
+006C  28 4E         	JR Z,00BCh		;Z (Bit0=0): erster Boot → springe zu ROM_COPY (0x00BC)
+006E  21 00 08      SKIP_ROM_COPY:	LD HL,0800h		;Bit0=1: ROM-Inhalt liegt bereits in RAM → direkt zum Hauptprogramm
+0071  22 4C 00      	LD (004Ch),HL		;[0x004C] = 0x0800 (Ladeadresse fuer naechste Stufe)
+0074  2A 62 04      	LD HL,(0462h)		;HL = gesicherter IX-Wert (erste gueltige RAM-Bank aus RAM-Test)
+0077  2E 9D         	LD L,9Dh		;L = 0x9D: Offset innerhalb der Bank → Sprung zu HL|0x9D
+0079  E9            	JP (HL)
+007A  3E 47         ISR_BS_PIO_A:	LD A,47h		;[ISR: BS-PIO PORT A (Vektor 0xB8 → ISR-Adresse RAM[0xB8,0xB9]={0x7A,0x00}=0x007A)] | Aufgerufen wenn /ASTB waehrend RAM-Test feuert. | Prueft ob RAM-Block korrekt beschrieben ist und protokolliert | erste/letzte gueltige RAM-Bank in RAM[0x0460]/RAM[0x0464].
+007C  D3 09         	OUT (09h),A		;BS-PIO Port A: INTENA=0 (kein weiterer Interrupt waehrend ISR)
+007E  3E FF         	LD A,FFh
+0080  DD BE 00      	CP (IX+0)		;CP (IX+0): ist RAM-Block korrekt mit 0xFF beschrieben?
+0083  20 22         	JR NZ,00A7h		;NZ: RAM nicht beschreibbar → Fehler-Pfad bei 0x00A7
+0085  DD 71 00      	LD (IX+0),C		;Originalwert (C) wiederherstellen
+0088  CB 46         	BIT 0,(HL)		;HL zeigt auf Config-Flag 0x044E; Bit0='erste Bank bereits gefunden'
+008A  20 06         	JR NZ,0092h		;Bit0 gesetzt → nicht erste gueltige Bank → bei 0x0092
+008C  DD 22 60 04   	LD (0460h),IX		;Erste gueltige Bank: speichere IX in RAM[0x0460]
+0090  ED 4D         	RETI
+0092  DD 22 64 04   	LD (0464h),IX		;Nicht erste Bank: speichere IX als letzte valide Bank in RAM[0x0464]
+0096  CB 76         	BIT 6,(HL)		;Bit6: 'bevorzugte Boot-Bank bereits gefunden'?
+0098  20 0B         	JR NZ,00A5h
+009A  CB F6         	SET 6,(HL)		;Bit6 noch nicht gesetzt: markiere diese Bank als Boot-Bank
+009C  DD 22 6C 04   	LD (046Ch),IX		;Speichere IX in RAM[0x046C] (Boot-Bank-Adresse)
+00A0  3E 05         	LD A,05h
+00A2  32 6C 04      	LD (046Ch),A		;[0x046C] = 5 (Bank-Qualitaets-Code / Retry-Zaehler)
+00A5  ED 4D         	RETI
+00A7  CB 46         	BIT 0,(HL)		;Fehler-Pfad: RAM-Block nicht beschreibbar
+00A9  20 06         	JR NZ,00B1h
+00AB  CB C6         	SET 0,(HL)		;Erster Fehler: Bit0 setzen, IX als erste Fehler-Bank sichern
+00AD  DD 22 62 04   	LD (0462h),IX
+00B1  DD 22 64 04   	LD (0464h),IX		;Immer: IX als letzte gesehene Bank sichern
+00B5  ED 4D         	RETI
+00B7  00            ROM_DATA_BA_BB:	NOP		;[ROM-DATEN: ISR-VEKTOR-EINTRAEGE (kein ausfuehrbarer Code!)] | Diese Bytes werden durch LDIR (bei 0x00C4) 1:1 in RAM kopiert | und bilden Eintraege in der IM-2-Vektor-Tabelle: | RAM[0xB8,0xB9] = {0x7A, 0x00} → Vektor 0xB8 → ISR 0x007A (BS-PIO) | RAM[0xBA,0xBB] = {0xC7, 0x01} → Vektor 0xBA → ISR 0x01C7 (K5122!) | ACHTUNG: Disassembler-Fehlausrichtung! ROM[0xBB]=0x01 (ISR-High-Byte) | wird als Beginn von 'LD BC,nn' fehlinterpretiert. ROM[0xBC]=0x21 ist | tatsaechlich der 'LD HL'-Opcode des ROM_COPY-Einstiegs (JR Z,00BCh).
+00B8  7A            	LD A,D		;[DATA] ROM[0xB8]=0x7A → ISR-Adresse-Low fuer Vektor 0xB8
+00B9  00            	NOP		;[DATA] ROM[0xB9]=0x00 → ISR-Adresse-High → ISR=0x007A (BS-PIO)
+00BA  C7            	RST 00h		;[DATA] ROM[0xBA]=0xC7 → ISR-Adresse-Low fuer Vektor 0xBA
+00BB  01 21 BA      	LD BC,BA21h		;[DATA+CODE] ROM[0xBB]=0x01 (ISR-High) | ROM[0xBC]=0x21 (LD HL Opcode) | Disassembler liest 0x01,0x21,0xBA faelschlich als 'LD BC,0xBA21' | Echter ROM_COPY-Einstieg: 0xBC=LD HL, 0xBD=0xBA, 0xBE=0x00 → HL=0x00BA
+00BE  00            	NOP		;[LD HL operand high = 0x00]; ROM_COPY-Code beginnt hier korrekt geparst
+00BF  54            	LD D,H		;[ROM → RAM KOPIEREN (erster Boot, Einstieg via JR Z von 0x006C)] | Kopiert 838 Byte ROM[0x00BA..0x03FF] → RAM[0x00BA..0x03FF]: | Enthaelt ISR-Vektor-Daten (0xBA/0xBB) und alle Laufzeit-Routinen. | DE = HL = 0x00BA: Quelle und Ziel identisch (ROM und RAM gleiche Adresse)
+00C0  5D            	LD E,L
+00C1  01 46 03      	LD BC,0346h		;BC = 0x0346 = 838 Byte (0x00BA bis 0x03FF inkl.)
+00C4  ED B0         	LDIR		;Nach LDIR: RAM[0xBA]=0xC7, RAM[0xBB]=0x01 → ISR-Vektor 0xBA fertig
+00C6  3E FF         POST_COPY_INIT:	LD A,FFh		;[POST-COPY HARDWARE-INITIALISIERUNG] | ROM-Kopie abgeschlossen. Alle Laufzeit-Routinen jetzt in RAM. | Naechster Schritt: ROM deaktivieren, K5122 (Floppy-Controller) konfigurieren.
+00C8  D3 0B         	OUT (0Bh),A		;BS-PIO Port B ctrl (0x0B): 0xFF = Modus 3 (Bit-Control)
+00CA  D3 13         	OUT (13h),A		;K5122 ctrl PIO Port B ctrl (Port 0x13): 0xFF = Modus 3
+00CC  3E E2         	LD A,E2h
+00CE  D3 0B         	OUT (0Bh),A		;BS-PIO Port B: Interrupt-Vektor = 0xE2 (nicht weiter genutzt)
+00D0  DB 0A         	IN A,(0Ah)		;Lese BS-PIO Port B Daten (Hardware-Konfigurations-Bits)
+00D2  E6 F6         	AND F6h		;AND 0xF6 = ~0x09: loescht Bit0 (ROM-Enable) und Bit3
+00D4  D3 0A         	OUT (0Ah),A		;Schreibe zurueck: Bit0=0 → ROM DEAKTIVIERT (laeuft jetzt aus RAM)
+00D6  FB            ENABLE_INTS_INIT:	EI		;EI: Interrupts freigeben (ROM aus, ISR-Vektoren in RAM bereit)
+00D7  3E F3         	LD A,F3h
+00D9  D3 13         	OUT (13h),A		;K5122 ctrl PIO Port B ctrl (Port 0x13): 0xF3 = Int-Control (INTENA=1)
+00DB  3E 7F         	LD A,7Fh
+00DD  D3 12         	OUT (12h),A		;K5122 ctrl PIO Port B Daten (Port 0x12): 0x7F
+00DF  D3 11         	OUT (11h),A		;K5122 ctrl PIO Port A ctrl (Port 0x11): 0x7F = Modus 1 (Input)
+00E1  3E A9         	LD A,A9h
+00E3  D3 10         	OUT (10h),A		;K5122 ctrl PIO Port A Daten (Port 0x10): 0xA9 = Drive-Steuer-Byte | Bit7=1 (kein Step), Bit3=1 (/STR high)
+00E5  3E 3F         	LD A,3Fh
+00E7  D3 11         	OUT (11h),A		;K5122 ctrl PIO Port A ctrl: 0x3F = MODUS 0 (Output)! | In Modus 0 loest /ASTB-Flanke (=Indexpuls) Interrupt aus.
+00E9  D3 15         	OUT (15h),A		;K5122 data PIO Port A ctrl (Port 0x15): 0x3F = Modus 0 (Output)
+00EB  3E BA         	LD A,BAh		;*** K5122 ctrl PIO Port A: INTERRUPT-VEKTOR = 0xBA *** | Indexpuls (/ASTB fallend) → CPU-Interrupt → ISR = RAM[0xBA,0xBB] = 0x01C7
+00ED  D3 11         	OUT (11h),A
+00EF  3E 04         	LD A,04h		;[0x07F2] = 4: Seek-Retry-Zaehler
+00F1  32 F2 07      	LD (07F2h),A
+00F4  3E C3         	LD A,C3h		;RAM[0x0000] = 0xC3 (JP-Opcode): ueberschreibt die geloopten NOPs
+00F6  32 00 00      	LD (0000h),A
+00F9  21 DD 01      	LD HL,01DDh		;RAM[0x0001,0x0002] = 0x01DD → JP 0x01DDh (STROBE_LOOP-Einstieg) | ZVE2 startet bei PC=0x0000 und springt damit sofort zu STROBE_LOOP
+00FC  22 01 00      	LD (0001h),HL
+00FF  3E EE         	LD A,EEh		;[0x03FC] = 0xEE: initialer Ctrl-Wert fuer Port 0x10 | 0xEE: Bit0=0 (Read-Modus), Bit3=1 (/STR high), kein Drive aktiv
+0101  32 FC 03      	LD (03FCh),A
+0104  D3 18         	OUT (18h),A		;Port 0x18 (8212-Latch Drive-Select): 0xEE → kein Drive selektiert
+0106  21 00 04      	LD HL,0400h		;HL = 0x0400: Ladeadresse fuer Bootsektor-Daten
+0109  45            	LD B,L		;B = 0x00 (= Low-Byte von HL)
+010A  22 F0 03      	LD (03F0h),HL		;[0x03F0] = 0x0400: Ladeadresse sichern
+010D  11 06 50      	LD DE,5006h		;D=0x50 (Outer-Retry-Zaehler), E=0x06
+0110  DB 12         DRIVE_DETECT_LOOP:	IN A,(12h)		;[LAUFWERK-ERKENNUNG] | Liest Drive-Status aus K5122 ctrl PIO Port B (Port 0x12). | RLCA rotiert Bit7 in Carry: Carry=0 → Bit7 war 0 → Drive bereit.
+0112  07            	RLCA		;altes Bit7 → Carry
+0113  30 13         	JR NC,0128h		;Carry=0 (Bit7=0) → Drive bereit → WAIT_INDEX_SETUP
+0115  15            	DEC D		;kein Drive bereit: Outer-Retry--
+0116  28 28         	JR Z,0140h		;Retry erschoepft → BOOT_FAIL
+0118  3E 09         SEND_SEEK_TRACK0:	LD A,09h		;Seek-to-Track-0: Step-Pulse senden um Kopf auf Track 0 zu setzen
+011A  47            	LD B,A
+011B  D3 10         	OUT (10h),A		;Port 0x10 Ctrl: Step-Puls ausloesen (Bit3 faellt)
+011D  3E 89         	LD A,89h
+011F  D3 10         	OUT (10h),A
+0121  0D            	DEC C		;Delay-Schleife (innerer Zaehler C)
+0122  20 FD         	JR NZ,0121h
+0124  10 FB         	DJNZ 0121h		;Delay-Schleife (aeusserer Zaehler B)
+0126  18 E8         	JR 0110h
+0128  21 F7 03      WAIT_INDEX_SETUP:	LD HL,03F7h		;[4 INDEX-PULSE ABWARTEN] | Jeder Indexpuls → ISR 0x01C7 → [0x03F7]--. | Nach 4 Pulsen (= 4 Umdrehungen x 200 ms = 800 ms) → STORE_03FD.
+012B  36 04         	LD (HL),04h		;[0x03F7] = 4: Puls-Zaehler (ISR dekrementiert auf 0)
+012D  3E 97         	LD A,97h		;Port 0x11 Int-Ctrl: 0x97 = INTENA=1, OR-Modus, H-Level, Maske folgt
+012F  D3 11         	OUT (11h),A
+0131  3E FF         	LD A,FFh		;Interrupt-Maske = 0xFF (in Modus 0 ignoriert; IE wird durch 0x97 gesetzt)
+0133  D3 11         	OUT (11h),A
+0135  7E            WAIT_INDEX_LOOP:	LD A,(HL)		;A = [0x03F7] lesen; A=0x87 vorladen fuer [0x03FD] (NZ-Pfad + kein Step)
+0136  B7            	OR A		;Z-Flag setzen wenn [0x03F7]=0
+0137  3E 87         	LD A,87h		;A = 0x87 vorladen: Bit7=1 (kein Step), Bit1=1 (NZ-Pfad)
+0139  28 18         	JR Z,0153h		;[0x03F7]=0 → 4 Pulse empfangen → springe zu STORE_03FD
+013B  0D            	DEC C		;Timeout-Zaehler dekrementieren
+013C  20 F7         WAIT_INDEX_INNER:	JR NZ,0135h
+013E  10 F5         	DJNZ 0135h
+0140  3A FC 03      BOOT_FAIL:	LD A,(03FCh)		;[BOOT-FEHLER / RETRY-LOGIK] | Kein Indexpuls nach Timeout. [0x03FC] enthaelt aktuellen Ctrl-Wert. | 0xEE, 0xDD, ... bis 0x77 = letzter moeglicher Wert → alternativer Boot.
+0143  FE 77         	CP 77h		;letzter moeglicher Ctrl-Wert? → zu alternativer Boot-Quelle (0x027E)
+0145  CA 7E 02      	JP Z,027Eh
+0148  07            	RLCA		;naechsten Ctrl-Wert durch Rotation berechnen und Drive-Init wiederholen
+0149  18 B6         	JR 0101h
+014B  1D            	DEC E
+014C  28 F2         	JR Z,0140h
+014E  3A FD 03      WAIT_INDEX_OK:	LD A,(03FDh)
+0151  EE 02         	XOR 02h
+0153  32 FD 03      STORE_03FD:	LD (03FDh),A		;[[0x03FD] = 0x87 SETZEN (korrekte IDAM-Pfad-Konfiguration)] | A=0x87 wurde bei 0x0137 vorgeladen. Ohne dieses Flag (Wert=0x00) | wuerde der falsche Z-Pfad genommen und OUT(10h) einen Step-Puls erzeugen!
+0156  21 01 80      	LD HL,8001h		;[0x07F0,0x07F1] = 0x8001 (Sektor-Count-Init fuer ZVE2)
+0159  22 F0 07      	LD (07F0h),HL
+015C  26 00         SEEK_SETUP:	LD H,00h		;Zylinder=0, Sektor=0, Size=0 fuer ersten IDAM-Vergleich setzen
+015E  22 F5 03      	LD (03F5h),HL		;[0x03F5]=0 (Sektor-ID), [0x03F6]=0 (Size-Code)
+0161  6C            	LD L,H
+0162  22 F3 03      	LD (03F3h),HL		;[0x03F3]=0 (Zylinder), [0x03F4]=0 (Kopf)
+0165  CD 94 01      	CALL 0194h		;Laufwerks-Init: setzt [0x03F8]=0, gibt ZVE2 aus Reset frei
+0168  7E            	LD A,(HL)		;HL zeigt nach CALL 0194h auf [0x03F8] (Abschluss-Flag)
+0169  B7            	OR A
+016A  28 FC         	JR Z,0168h		;warte solange [0x03F8]=0 (ZVE2 laeuft noch)
+016C  3D            STROBE_INIT:	DEC A		;[0x03F8]=1: ISR-Timeout → Retry; [0x03F8]=3: ZVE2 fertig → weiter
+016D  28 DC         	JR Z,014Bh		;A=1 (d.h. [0x03F8] war 1 = Timeout) → Retry-Pfad
+016F  CD B6 01      	CALL 01B6h		;[0x03F8]=3 (nach DEC: A=2): Bootsektor-Signatur pruefen
+0172  20 CC         	JR NZ,0140h		;NZ: Signatur falsch → BOOT_FAIL
+0174  CD 37 04      	CALL 0437h		;Signatur korrekt: Bootsektor-Code ausfuehren
+0177  2A FA 03      	LD HL,(03FAh)		;Nach Rueckkehr: Ladeadresse und Vektor-Tabelle aktualisieren (Neustart-Pfad)
+017A  22 62 04      	LD (0462h),HL
+017D  DB 0A         	IN A,(0Ah)		;ROM-Enable Bit setzen: OR 0x01 → Bit0=1
+017F  F6 01         	OR 01h
+0181  D3 0A         	OUT (0Ah),A
+0183  01 46 03      	LD BC,0346h		;Nochmalige LDI-Kopie (wie CLEAR_LOOP-Trick) fuer Neustart-Pfad
+0186  11 BA 00      	LD DE,00BAh
+0189  62            	LD H,D
+018A  6C            	LD L,H
+018B  ED A0         	LDI
+018D  2B            	DEC HL
+018E  EA 8B 01      	JP PE,018Bh
+0191  C3 74 00      	JP 0074h
+0194  21 F7 03      	LD HL,03F7h		;[LAUFWERKS-INITIALISIERUNG (CALL-Ziel von 0x0165)] | Bereitet ZVE2 fuer Sektor-Lesen vor: | [0x03F7] = 16 (ISR-Timeout-Zaehler) | OUT(04h): gibt ZVE2 aus Reset frei → ZVE2 startet bei PC=0x0000 → JP 0x01DD | OUT(10h,0xA5): /STR fallende Flanke → doReadSector() | INC HL: HL → [0x03F8]; [0x03F8] = 0 (ZVE2 laeuft)
+0197  36 10         	LD (HL),10h		;Timeout-Zaehler auf 16 Indexpulse
+0199  D3 14         	OUT (14h),A		;Port 0x14: unbekanntes Steuersignal (evtl. ZVE2-Vorbereitung)
+019B  D3 04         	OUT (04h),A		;Port 0x04: ZVE2 aus Reset freigeben (ZVE2 startet bei JP 0x01DD)
+019D  3E FF         	LD A,FFh
+019F  D3 17         	OUT (17h),A		;Port 0x17 = K5122 Daten-Port (Puffer-Reset oder Sync)
+01A1  D3 17         	OUT (17h),A
+01A3  3E A5         	LD A,A5h
+01A5  D3 10         	OUT (10h),A		;OUT(10h,0xA5): /STR fallende Flanke → doReadSector() ausloesen
+01A7  3E 7F         	LD A,7Fh
+01A9  D3 17         	OUT (17h),A
+01AB  DB 16         	IN A,(16h)		;Dummy-Lese aus Sektor-Puffer (Port 0x16)
+01AD  3A FD 03      	LD A,(03FDh)		;[0x03FD] in Port 0x10: konfiguriert /STR-Verhalten (NZ-Pfad / Step)
+01B0  D3 10         	OUT (10h),A
+01B2  23            	INC HL		;INC HL: HL → [0x03F8] (Abschluss-Flag)
+01B3  36 00         	LD (HL),00h		;[0x03F8] = 0: ZVE2 noch nicht fertig (ZVE1 wartet in Schleife 0x0168)
+01B5  C9            	RET
+01B6  2A 00 04      	LD HL,(0400h)		;[BOOTSEKTOR-SIGNATUR PRUEFEN (CALL-Ziel von 0x016F)] | Prueft RAM[0x0400,0x0401]="YS" (0x59,0x53) und RAM[0x0402]='L' (0x4C). | RET NZ wenn Signatur falsch, RET mit Z wenn korrekt.
+01B9  01 53 59      	LD BC,5953h		;BC = 0x5953 = "SY" (little-endian: "YS")
+01BC  ED 42         	SBC HL,BC		;SBC HL,BC: NZ wenn HL != 0x5953
+01BE  C0            	RET NZ
+01BF  21 02 04      	LD HL,0402h
+01C2  3E 4C         	LD A,4Ch		;A = 0x4C = 'L'
+01C4  BE            	CP (HL)		;CP (HL): [0x0402] = 'L'?
+01C5  C0            	RET NZ
+01C6  C9            	RET
+01C7  FB            ISR_DECREMENT_03F7:	EI		;[ISR: INDEXPULS-ZAEHLER DEKREMENTIEREN] | Vektor 0xBA → RAM[0xBA,0xBB]={0xC7,0x01} → ISR-Adresse 0x01C7 | Bedingung: K5122 ctrl PIO Port A Modus 0, /ASTB feuert pro Indexpuls, IE=1 | Ablauf: jeder Indexpuls dekrementiert [0x03F7]; nach 4 Pulsen /STR assertieren.
+01C8  F5            	PUSH AF		;verschachtelte Interrupts erlauben (naechster Puls nicht blockiert)
+01C9  E5            	PUSH HL
+01CA  21 F7 03      	LD HL,03F7h
+01CD  35            	DEC (HL)		;[0x03F7]--: Puls-Zaehler dekrementieren
+01CE  28 04         	JR Z,01D4h		;0 erreicht → nach 4 Pulsen → /STR-Strobe ausloesen
+01D0  E1            	POP HL
+01D1  F1            	POP AF
+01D2  ED 4D         	RETI
+01D4  3E BD         ISR_ASSERT_STR:	LD A,BDh		;[0x03F7]=0: 4 Indexpulse gezaehlt → /STR assertieren, [0x03F8]=1 setzen. | Dies ist der ISR-Timeout-Pfad; normaler Abschluss setzt [0x03F8]=3 durch ZVE2.
+01D6  D3 10         	OUT (10h),A		;Port 0x10: 0xBD = Bit3=1 → /STR high (Vorbereitungs-Phase)
+01D8  23            	INC HL		;INC HL: HL → 0x03F8
+01D9  36 01         	LD (HL),01h		;[0x03F8] = 1: ISR-Timeout-Flag (ZVE2 hat keinen Sektor geladen)
+01DB  18 F3         	JR 01D0h
+01DD  2A F0 03      STROBE_LOOP:	LD HL,(03F0h)		;[HAUPT-STROBE/IDAM-SUCHSCHLEIFE] | ZVE2 (zweite Z80-CPU) startet bei PC=0x0000 → JP 0x01DD. | Sucht IDAM-Marker (0xFE) im K5122-Sektorpuffer (Port 0x16). | Nach IDAM-Treffer: Sektor-Daten per INI/INIR in RAM-Ladeadresse. | Puffer-Layout: buf[0]=0x00, buf[1]=0xFE(IDAM), buf[2]=cyl, buf[3]=head, | buf[4]=sector_id(1-bas.), buf[5]=size_code, buf[6..]=Daten
+01E0  3A F1 07      	LD A,(07F1h)		;HL = aktuelle Ladeadresse (zu Beginn 0x0400)
+01E3  47            	LD B,A
+01E4  11 00 07      	LD DE,0700h
+01E7  0E 16         	LD C,16h		;C = 0x16 (K5122 Daten-Lese-Port fuer INI/INIR)
+01E9  D9            LOAD_IDAM_REGS:	EXX		;Lade IDAM-Vergleichswerte in Alternativ-Registersatz
+01EA  01 A1 FE      	LD BC,FEA1h		;B'=0xFE (IDAM-Marker), C'=0xA1
+01ED  ED 5B F3 03   	LD DE,(03F3h)		;D'=[0x03F4]=Kopf, E'=[0x03F3]=Zylinder
+01F1  2A F5 03      	LD HL,(03F5h)		;H'=[0x03F6]=Size-Code, L'=[0x03F5]=Sektor-ID (erwartet, 1-basiert)
+01F4  3E BD         	LD A,BDh		;Port 0x10: 0xBD = Bit3=1 → /STR high (Ruecksetzen)
+01F6  D3 10         	OUT (10h),A
+01F8  3E B5         ASSERT_STR:	LD A,B5h		;/STR assertieren: fallende Flanke Bit3 → K5122 doReadSector()
+01FA  D3 10         	OUT (10h),A		;Port 0x10: 0xB5 = Bit3=0 → /STR low (Sektor-Lese-Strobe)
+01FC  18 5C         	JR 025Ah		;springe zu STROBE_LOOP_BODY (liest [0x03FD] und prueft Pfad)
+01FE  67            	LD H,A		;Sektor-Nummern-Fehler-Handling (von 0x0222 JR NZ,01FEh)
+01FF  AF            	XOR A
+0200  D9            	EXX
+0201  47            	LD B,A
+0202  D9            	EXX
+0203  18 6E         	JR 0273h
+0205  DB 16         READ_IDAM_Z:	IN A,(16h)		;[IDAM-SUCHE: Z-PFAD (FALSCH wenn [0x03FD]=0x00)] | Liest 5 Bytes vor IDAM-Vergleich (buf[0..4] konsumiert). | Vergleicht buf[4]=sector_id mit B'=0xFE → immer Fehler → Endlosschleife!
+0207  DB 16         	IN A,(16h)
+0209  DB 16         	IN A,(16h)
+020B  DB 16         READ_IDAM_NZ:	IN A,(16h)		;[IDAM-SUCHE: NZ-PFAD (KORREKT wenn [0x03FD]=0x87)] | Liest 2 Bytes vor IDAM-Vergleich (buf[0], buf[1]). | Vergleicht buf[1]=0xFE mit B'=0xFE → Treffer bei korrektem Marker.
+020D  B8            CMP_IDAM_MARK:	CP B		;liest buf[1] (NZ-Pfad) oder buf[4] (Z-Pfad-Fall-through) | IDAM-Marker vergleichen (B'=0xFE)
+020E  20 E8         	JR NZ,01F8h		;kein Treffer → neuen /STR-Strobe (Puffer neu lesen)
+0210  DB 16         	IN A,(16h)		;Zylinder vergleichen (E'=erwarteter Zylinder)
+0212  BB            	CP E
+0213  20 E3         	JR NZ,01F8h
+0215  DB 16         	IN A,(16h)		;Kopf vergleichen (D'=erwarteter Kopf)
+0217  BA            	CP D
+0218  20 DE         	JR NZ,01F8h
+021A  DB 16         IDAM_MATCH:	IN A,(16h)		;Sektor-ID vergleichen (L'=erwarteter Sektor, 1-basiert)
+021C  BD            	CP L
+021D  20 D9         	JR NZ,01F8h
+021F  DB 16         	IN A,(16h)		;Size-Code vergleichen (H'=erwarteter Size-Code)
+0221  BC            	CP H
+0222  20 DA         	JR NZ,01FEh		;Size-Code falsch → Sektor-Nummern-Fehler-Pfad (0x01FE)
+0224  3E B5         	LD A,B5h		;IDAM vollstaendig gematcht! Nutzdaten folgen direkt im Puffer.
+0226  D3 10         	OUT (10h),A
+0228  3A FD 03      	LD A,(03FDh)		;[0x03FD] lesen um NZ/Z-Bit fuer Timing-Anpassung zu pruefen
+022B  CB 4F         	BIT 1,A
+022D  D3 10         	OUT (10h),A		;/STR nochmal pulsieren (Daten-Transfer-Modus vorbereiten)
+022F  DB 16         	IN A,(16h)		;Dummy-Reads fuer Timing (Z-Pfad: 4 Bytes, NZ-Pfad: 1 Byte)
+0231  20 06         	JR NZ,0239h
+0233  DB 16         	IN A,(16h)
+0235  DB 16         	IN A,(16h)
+0237  DB 16         	IN A,(16h)
+0239  DB 16         	IN A,(16h)		;Erstes Datenbyte einlesen
+023B  D9            	EXX		;Wechsle zum Hauptregistersatz (HL=Ladeadresse, BC=Byte-Zaehler)
+023C  ED A2         	DB EDh,A2h		;INI (ED A2): 1 Byte Port C → (HL++), B--
+023E  ED A2         	DB EDh,A2h
+0240  ED A2         	DB EDh,A2h
+0242  ED B2         	DB EDh,B2h		;INIR (ED B2): verbleibende B Bytes Port C → (HL++), bis B=0
+0244  EB            	EX DE,HL
+0245  ED A2         	DB EDh,A2h		;weitere INI-Transfers fuer Header-Abschluss
+0247  ED A2         	DB EDh,A2h
+0249  3E B5         	LD A,B5h		;/STR high
+024B  D3 10         	OUT (10h),A
+024D  EB            	EX DE,HL
+024E  3A F1 07      	LD A,(07F1h)		;Sektor-Zaehler aktualisieren
+0251  47            	LD B,A
+0252  D9            	EXX
+0253  3A F2 07      	LD A,(07F2h)		;[0x07F2] = max Sektor-Retry-Zaehler
+0256  BD            	CP L
+0257  28 0E         	JR Z,0267h		;alle Sektoren geladen? → ZVE2 Fertigstellung
+0259  2C            	INC L
+025A  3A FD 03      STROBE_LOOP_BODY:	LD A,(03FDh)		;[STROBE-LOOP KOERPER (Einstieg von JR 025Ah bei 0x01FC)] | Liest [0x03FD] und waehlt IDAM-Pfad: | [0x03FD]=0x87: Bit1=1 → NZ-Pfad (korrekt), Bit7=1 → kein Step | [0x03FD]=0x00: Bit1=0 → Z-Pfad (falsch!), Bit7=0 → STEP-PULS!
+025D  CB 4F         	BIT 1,A		;Bit1: NZ-Pfad-Flag testen
+025F  D3 10         	OUT (10h),A		;ACHTUNG: wenn Bit7=0 → Step-Puls auf Port 0x10!
+0261  DB 16         	IN A,(16h)		;Lese buf[0] aus Sektorpuffer
+0263  28 A0         	JR Z,0205h		;Z (Bit1=0) → Z-Pfad (falsch bei [0x03FD]=0x00)
+0265  18 A4         	JR 020Bh		;NZ (Bit1=1) → NZ-Pfad (korrekt bei [0x03FD]=0x87)
+0267  3E 03         	LD A,03h		;[ZVE2 ABSCHLUSS: alle Sektoren geladen] | ZVE2 setzt [0x03F8]=3 → ZVE1 verlässt Warte-Schleife bei 0x016A.
+0269  D3 11         	OUT (11h),A		;K5122 ctrl PIO Port A: INTENA=0 (kein weiterer Indexpuls-Interrupt)
+026B  32 F8 03      	LD (03F8h),A		;[0x03F8] = 3: ZVE2 fertig → ZVE1 wird geweckt
+026E  18 F5         	JR 0265h
+0270  01 DA 1E      	LD BC,1EDAh
+0273  32 F1 07      	LD (07F1h),A		;[0x07F1] = A (Sektor-Zaehler update)
+0276  3E 02         	LD A,02h		;[0x07F2] = 2 (Retry auf 2 setzen)
+0278  32 F2 07      	LD (07F2h),A
+027B  C3 F8 01      	JP 01F8h
+027E  3E FF         	LD A,FFh		;[ALTERNATIVER BOOT-PFAD (zweite Boot-Quelle)] | Erreicht wenn alle Floppy-Ctrl-Werte versucht wurden (CP 77h bei 0x0143). | Schaltet auf Sekundaer-Controller um (Ports 0x30-0x37: evtl. K2521 Seriell).
+0280  D3 18         	OUT (18h),A		;Port 0x18 (Drive-Select): 0xFF = alle Drives deselektiert
+0282  21 BC 03      	LD HL,03BCh		;ISR-Vektoren fuer alternativen Boot umbiegen: | [0x03F0] → 0x03BC (ISR Kanal 0 des Sekundaer-Controllers)
+0285  22 F0 03      	LD (03F0h),HL
+0288  21 D4 03      	LD HL,03D4h		;[0x03F2] → 0x03D4 (ISR Kanal 1: Block-Zaehler)
+028B  22 F2 03      	LD (03F2h),HL
+028E  21 C7 03      	LD HL,03C7h		;[0x03F4] → 0x03C7 (ISR: Byte-Transfer per INI in RAM)
+0291  22 F4 03      	LD (03F4h),HL
+0294  3E 03         	LD A,03h		;I = 3: Interrupt-Vektor-Tabelle jetzt bei 0x0300
+0296  ED 47         	LD I,A
+0298  3E 7F         	LD A,7Fh		;Init Sekundaer-Controller Ports (0x33-0x37): | Port 0x33=Ctrl, 0x34=Cmd/Status, 0x35=Daten, 0x36/37=weitere Ctrl
+029A  D3 33         	OUT (33h),A
+029C  D3 36         	OUT (36h),A
+029E  D3 37         	OUT (37h),A
+02A0  3E 03         	LD A,03h
+02A2  D3 34         	OUT (34h),A
+02A4  3C            	INC A
+02A5  D3 35         	OUT (35h),A		;A = 4
+02A7  3E FF         	LD A,FFh
+02A9  D3 37         	OUT (37h),A
+02AB  3E FD         	LD A,FDh
+02AD  D3 37         	OUT (37h),A
+02AF  3E FF         	LD A,FFh
+02B1  D3 36         	OUT (36h),A
+02B3  3E 80         	LD A,80h
+02B5  D3 36         	OUT (36h),A
+02B7  DB 34         	IN A,(34h)		;Status lesen und pruefen ob Controller bereit
+02B9  E6 7C         	AND 7Ch		;Maske Bits 6..2: Fehler-Bits
+02BB  C2 B0 03      	JP NZ,03B0h		;Fehler → HALT-Schleife (0x03B0)
+02BE  1E 09         	LD E,09h
+02C0  3E F2         	LD A,F2h
+02C2  D3 0C         INIT_CTC:	OUT (0Ch),A		;[K2526 CTC-INITIALISIERUNG (nur im alternativen Boot-Pfad)] | Port 0x0C = K2526 CTC Kanal 0, Port 0x0D = CTC Kanal 1
+02C4  3E 05         	LD A,05h		;CTC Kanal 0: 0xF2 konfigurieren (Timer-Modus, Prescaler 16)
+02C6  32 FA 03      	LD (03FAh),A		;[0x03FA] = 5 (Retry-Counter fuer Sekundaer-Boot)
+02C9  7B            	LD A,E
+02CA  D3 34         	OUT (34h),A		;Port 0x34: Sekundaer-Controller Cmd-Register
+02CC  06 00         	LD B,00h		;BC=0: maximale Delay-Schleife
+02CE  CD B6 03      	CALL 03B6h
+02D1  CD B6 03      	CALL 03B6h
+02D4  21 00 04      	LD HL,0400h		;HL = 0x0400: Ladeadresse fuer Sekundaer-Boot
+02D7  22 F8 03      	LD (03F8h),HL
+02DA  16 10         	LD D,10h
+02DC  DB 35         	IN A,(35h)		;Status Port 0x35 lesen
+02DE  CB 43         	BIT 0,E		;E Bit0: Laufwerks-Typ-Unterscheidung
+02E0  20 02         	JR NZ,02E4h
+02E2  16 08         	LD D,08h
+02E4  A2            	AND D
+02E5  CA 97 03      	JP Z,0397h		;Status-Bit fehlt → HALT bei 0x0397
+02E8  AF            	XOR A
+02E9  32 F6 03      	LD (03F6h),A		;[0x03F6] = 0 (Byte-Zaehler reset)
+02EC  3E 14         	LD A,14h
+02EE  32 F7 03      	LD (03F7h),A		;[0x03F7] = 0x14 = 20 (Block-Zaehler)
+02F1  3E A7         	LD A,A7h
+02F3  D3 0D         INIT_CTC2:	OUT (0Dh),A		;CTC Kanal 1: 0xA7 = Timer-Modus, Prescaler 16, kein Interrupt
+02F5  3E FF         	LD A,FFh		;Zeitkonstante = 0xFF (maximaler Timeout)
+02F7  D3 0D         	OUT (0Dh),A
+02F9  DB 34         	IN A,(34h)		;Sekundaer-Controller Status pruefen (Bit7 = Bereit-Signal)
+02FB  CB 7F         	BIT 7,A
+02FD  20 18         	JR NZ,0317h		;Bit7=1: bereit → Konfiguration abschliessen
+02FF  F6 20         	OR 20h		;Bit7=0: noch nicht bereit → Bit5 setzen und warten
+0301  D3 34         	OUT (34h),A
+0303  2E 03         	LD L,03h
+0305  CD B6 03      	CALL 03B6h
+0308  DB 34         	IN A,(34h)
+030A  CB 7F         	BIT 7,A
+030C  20 09         	JR NZ,0317h
+030E  2D            	DEC L
+030F  20 F4         	JR NZ,0305h
+0311  E6 DF         	AND DFh		;Bit5 ruecksetzen
+0313  D3 34         	OUT (34h),A
+0315  18 24         	JR 033Bh
+0317  E6 DF         	AND DFh		;Bit7=1 Pfad: Konfiguration abschliessen
+0319  D3 34         	OUT (34h),A
+031B  CD B6 03      	CALL 03B6h
+031E  F6 30         	OR 30h		;Transfer-Modus: Bits 5 und 4 setzen
+0320  D3 34         	OUT (34h),A
+0322  E6 C3         	AND C3h		;Nur Bits 7,6 behalten
+0324  D3 34         	OUT (34h),A
+0326  DB 35         	IN A,(35h)		;warte auf Status-Bit
+0328  A2            	AND D
+0329  28 FB         	JR Z,0326h
+032B  DB 34         	IN A,(34h)
+032D  CB 47         	BIT 0,A		;Bit0: Laufwerks-Typ-Unterscheidung
+032F  20 04         	JR NZ,0335h
+0331  C6 04         	ADD A,04h		;Typ A: +4
+0333  18 02         	JR 0337h
+0335  C6 08         	ADD A,08h		;Typ B: +8
+0337  D3 34         	OUT (34h),A
+0339  18 BE         	JR 02F9h
+033B  4F            	LD C,A		;Bereit: Transfer-Parameter einstellen
+033C  E6 F3         	AND F3h		;Bits 1,0 loeschen, Bit6 setzen
+033E  F6 40         	OR 40h
+0340  D3 34         	OUT (34h),A
+0342  79            	LD A,C
+0343  D3 34         	OUT (34h),A
+0345  F6 10         	OR 10h		;Bit4 setzen (Transfer Start)
+0347  D3 34         	OUT (34h),A
+0349  DB 34         	IN A,(34h)		;warte bis Bit7 gesetzt (Transfer laeuft)
+034B  17            	RLA
+034C  30 FB         	JR NC,0349h
+034E  06 00         	LD B,00h
+0350  CD B6 03      	CALL 03B6h
+0353  16 04         	LD D,04h
+0355  3E F0         	LD A,F0h
+0357  D3 33         	OUT (33h),A		;Port 0x33: Reset/Init-Sequenz fuer Sekundaer-Controller
+0359  01 31 83      	LD BC,8331h
+035C  3E 97         	LD A,97h
+035E  D3 33         	OUT (33h),A
+0360  D3 33         	OUT (33h),A
+0362  DB 31         	IN A,(31h)		;warte auf Sync-Byte von Port 0x31
+0364  AF            	XOR A
+0365  B8            	CP B		;warte bis B-Zaehler 0 (Sync)
+0366  20 FD         	JR NZ,0365h
+0368  3E 03         	LD A,03h		;Reset Port 0x33
+036A  D3 33         	OUT (33h),A
+036C  2A F8 03      	LD HL,(03F8h)		;Ladeadresse um 3 dekrementieren (je Sync-Schleife)
+036F  2B            	DEC HL
+0370  2B            	DEC HL
+0371  2B            	DEC HL
+0372  22 F8 03      	LD (03F8h),HL
+0375  15            	DEC D
+0376  20 DD         	JR NZ,0355h		;D Zyklen wiederholen
+0378  01 00 0D      	LD BC,0D00h
+037B  CD B6 03      	CALL 03B6h
+037E  DB 34         	IN A,(34h)		;Bit4 ruecksetzen (Transfer Ende)
+0380  E6 EF         	AND EFh
+0382  D3 34         	OUT (34h),A
+0384  3E 21         	LD A,21h		;CTC Kanal 1: 0x21 = Timer-Stop
+0386  D3 0D         	OUT (0Dh),A
+0388  CD B6 01      	CALL 01B6h		;Bootsektor-Signatur pruefen (wie bei Floppy-Boot)
+038B  20 0B         	JR NZ,0398h		;NZ: Signatur falsch → Fehler-Pfad
+038D  CD 34 04      	CALL 0434h		;Signatur OK: Bootsektor-Code ausfuehren
+0390  C3 77 01      	JP 0177h
+0393  3E 03         	LD A,03h		;Hilfs-Reset Port 0x33 (Rueckkehr-Ziel von ISR 0x03D4 via Stack-Trick)
+0395  D3 33         	OUT (33h),A
+0397  00            	NOP
+0398  3E 21         	LD A,21h		;Fehler: Signature-Mismatch oder Transfer-Fehler → Retry
+039A  D3 0D         	OUT (0Dh),A
+039C  21 FA 03      	LD HL,03FAh		;[0x03FA]-- (Retry-Counter)
+039F  35            	DEC (HL)
+03A0  3E 03         	LD A,03h
+03A2  D3 34         	OUT (34h),A
+03A4  C2 C9 02      	JP NZ,02C9h		;NZ: noch Retries uebrig → von vorn
+03A7  CB 43         	BIT 0,E		;Bit0 von E: weiteren Laufwerks-Typ versuchen
+03A9  28 05         	JR Z,03B0h
+03AB  1E 06         	LD E,06h
+03AD  C3 C4 02      	JP 02C4h
+03B0  3E 9F         	LD A,9Fh		;[HALT-SCHLEIFE (kein Boot moeglich)] | Alle Boot-Versuche erschoepft: Fehler-Code ausgeben und anhalten.
+03B2  D3 03         	OUT (03h),A		;Port 0x03: Fehler-/Status-Ausgabe (evtl. Frontplatten-LED oder Panel)
+03B4  18 FE         	JR 03B4h		;Endlosschleife: System bleibt stehen
+03B6  0D            	DEC C		;[DELAY-SUBROUTINE (CALL-Ziel von vielen Stellen)] | Zaehlt C runter, dann B x C - Dauer: ca. (B+1)x(C+1)x13 Takte
+03B7  20 FD         	JR NZ,03B6h
+03B9  10 FB         	DJNZ 03B6h
+03BB  C9            	RET
+03BC  FB            	EI		;[ISR: SEKUNDAERER CONTROLLER KANAL 0] | Liest Byte von Port 0x31, bestaetigt Empfang via Port 0x33. | Adresse in [0x03F0] (gesetzt bei 0x0285).
+03BD  F5            	PUSH AF
+03BE  DB 31         	IN A,(31h)		;Daten-Byte vom Sekundaer-Controller lesen
+03C0  3E F4         	LD A,F4h
+03C2  D3 33         	OUT (33h),A		;Empfangs-Bestaetigung an Port 0x33
+03C4  F1            	POP AF
+03C5  ED 4D         	RETI
+03C7  FB            	EI		;[ISR: BYTE-TRANSFER (Software-DMA via INI)] | Schreibt ein Byte vom Sekundaer-Controller (Port C) in RAM bei [0x03F8]. | Adresse in [0x03F4] (gesetzt bei 0x0291).
+03C8  F5            	PUSH AF
+03C9  E5            	PUSH HL
+03CA  2A F8 03      	LD HL,(03F8h)		;HL = aktuelle Schreib-Adresse im RAM
+03CD  ED A2         	DB EDh,A2h		;INI (ED A2): 1 Byte aus Port C → (HL++), B--
+03CF  22 F8 03      	LD (03F8h),HL		;neue Schreib-Adresse sichern
+03D2  18 0D         	JR 03E1h
+03D4  FB            	EI		;[ISR: SEKUNDAERER CONTROLLER KANAL 1 (Block-Zaehler)] | Dekrementiert Byte-Zaehler [0x03F6] und Block-Zaehler [0x03F7]. | Wenn beide 0: Bootvorgang abgeschlossen → springe zu 0x0393. | Adresse in [0x03F2] (gesetzt bei 0x028B).
+03D5  F5            	PUSH AF
+03D6  E5            	PUSH HL
+03D7  21 F6 03      	LD HL,03F6h		;HL → [0x03F6] = Byte-Zaehler
+03DA  35            	DEC (HL)		;Byte-Zaehler--
+03DB  20 04         	JR NZ,03E1h		;noch Bytes im Block → normal RETI
+03DD  2C            	INC L		;INC L: HL → [0x03F7] = Block-Zaehler
+03DE  35            	DEC (HL)		;Block-Zaehler--
+03DF  28 04         	JR Z,03E5h		;alle Bloecke geladen → Abschluss-Pfad
+03E1  E1            	POP HL
+03E2  F1            	POP AF
+03E3  ED 4D         	RETI
+03E5  E1            	POP HL		;[BOOT-ABSCHLUSS: Ruecksprung-Adresse manipulieren] | Ersetzt normale RETI-Ruecksprung-Adresse durch 0x0393 (Reset Port 0x33). | EX (SP),HL tauscht Ruecksprung-Adresse auf dem Stack.
+03E6  F1            	POP AF
+03E7  F1            	POP AF		;zweites POP AF: rauemt zusaetzlichen Stack-Frame ab
+03E8  21 93 03      	LD HL,0393h		;neues Sprungziel: 0x0393 (Reset-Code nach erfolgreichem Transfer)
+03EB  E3            	EX (SP),HL		;tausche [SP] mit HL: Ruecksprung geht jetzt nach 0x0393
+03EC  F5            	PUSH AF
+03ED  ED 4D         	RETI
+03EF  00            	NOP		;[RAM-VARIABLEN-BEREICH (0x03EF-0x03FF)] | Diese Adressen enthalten zur Laufzeit Boot-Variablen. | Der Disassembler zeigt zufaellige Opcodes, da die Bytes | nach dem Booten ueberschrieben werden.
+03F0  00            	NOP		;0x03F0-0x03F1: Ladeadresse Sektor-Daten (2 Byte, init: 0x0400)
+03F1  04            	INC B
+03F2  FE 00         	CP 00h		;0x03F2-0x03F3: ISR-Zeiger Kanal 1 (2 Byte) / erwarteter Zylinder
+03F4  00            	NOP		;0x03F4-0x03F5: ISR-Zeiger Kanal 2 (2 Byte) / erwarteter Kopf + Sektor-ID
+03F5  00            	NOP
+03F6  00            	NOP		;0x03F6: Byte-Zaehler (Sek.-Boot) / Size-Code (Floppy)
+03F7  00            	NOP		;0x03F7: Indexpuls-Zaehler (4→0) / Block-Zaehler (Sek.-Boot)
+03F8  00            	NOP		;0x03F8-0x03F9: Abschluss-Flag (0/1/3) oder Schreib-Adresse (2 Byte)
+03F9  00            	NOP
+03FA  00            	NOP		;0x03FA: Seek-/Retry-Counter (init: 5)
+03FB  08            	EX AF,AF'		;0x03FB: (unbenutzt)
+03FC  00            	NOP		;0x03FC: Ctrl-Wert fuer Port 0x10 (init: 0xEE, rotiert bei Retry)
+03FD  00            	NOP		;0x03FD: IDAM-Pfad/Step-Konfiguration (0x00=falsch, 0x87=korrekt)
+03FE  F7            	RST 30h		;0x03FE-0x03FF: Puffer-Ende / unbenutzt
+03FF  6B            	LD L,E
+
+	END
