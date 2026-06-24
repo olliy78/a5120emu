@@ -318,6 +318,12 @@ INSTALL_GTEST:BOOL=ON
 //No help, variable specified on the command line.
 LOG_LEVEL:UNINITIALIZED=5
 
+//Path to a file.
+READLINE_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a library.
+READLINE_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libreadline.so
+
 //The directory containing a CMake configuration file for SDL2.
 SDL2_DIR:PATH=/usr/lib/x86_64-linux-gnu/cmake/SDL2
 

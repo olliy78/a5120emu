@@ -1,0 +1,225 @@
+	TITLE	'A5120 Boot-EPROM Dumper v1.0'
+	.Z80
+;
+; romread.mac - Liest das Boot-EPROM (ZRE/K2526) eines A5120 aus und
+;               schreibt seinen Inhalt (1 KB, 0000H-03FFH) als Datei
+;               ROM.BIN auf das aktuelle Laufwerk.
+;
+; Funktionsweise
+; --------------
+; Das Boot-EPROM liegt nach dem Einschalten bei 0000H-03FFH und wird vom
+; Betriebssystem ueber das BS-PIO-Bit B0 (/LD-ROM) ausgeblendet, sodass dort
+; normales RAM erscheint. Zum Auslesen muss das EPROM also kurzzeitig wieder
+; eingeblendet werden. Da das laufende Programm selbst im TPA bei 0100H liegt,
+; wuerden Code (0100H-03FFH) UND der BDOS-Einsprung (0005H) vom EPROM verdeckt.
+;
+; Deshalb:
+;   1. Ein kurzes, lageunabhaengiges Lese-Stub wird nach 8400H kopiert
+;      (oberhalb des EPROM-Fensters, dort nicht verdeckt).
+;   2. Der Stub laeuft mit gesperrten Interrupts (DI) und hohem Stack:
+;        - BS-PIO Port B lesen, Bit0 setzen  -> EPROM einblenden
+;        - 1024 Bytes 0000H..03FFH nach BUFFER (8000H) kopieren (LDIR)
+;        - urspruenglichen Port-B-Wert zurueckschreiben -> EPROM ausblenden
+;        - EI, RET
+;      Der Read-Modify-Write erhaelt B2 (/SPS-ESR), B3 (/WAIT-ZVE2) und
+;      B4 (/SA), greift also weder Q240 noch ZVE2 noch die Netzlogik an.
+;   3. Zurueck im normalen Speicher (EPROM aus, BDOS sichtbar) wird BUFFER
+;      ueber das BDOS in die Datei ROM.BIN geschrieben.
+;
+; WICHTIG fuer echte Hardware:
+;   - Waehrend EPROM eingeblendet ist, sind 0000H-03FFH = EPROM. Stack, Stub
+;     und Zielpuffer liegen daher bewusst oberhalb 0400H (7Fxx/8000H/8400H).
+;   - Es duerfen in diesem Fenster KEINE Interrupts und KEINE BDOS-Aufrufe
+;     erfolgen (BDOS-Vektor 0005H ist verdeckt) -> DI ... EI.
+;
+; Assemblierung:
+;   python3 tools/romread/build.py        (M80 + LINKMT via cparun)
+;
+; Lizenz: MIT
+;
+
+; =============================================================================
+; CP/M / CP/A BDOS
+; =============================================================================
+BDOS	EQU	0005H		; BDOS-Einsprung
+WBOOT	EQU	0000H		; Warmstart (Rueckkehr zum CCP)
+
+F_PRINT	EQU	9		; String ausgeben (DE=Adresse, '$'-terminiert)
+F_CLOSE	EQU	16		; Datei schliessen   (DE=FCB)
+F_DELETE EQU	19		; Datei loeschen     (DE=FCB)
+F_WRITE	EQU	21		; Sequentiell schreiben (DE=FCB, aus DMA)
+F_MAKE	EQU	22		; Datei anlegen      (DE=FCB)
+F_DMA	EQU	26		; DMA-Adresse setzen (DE=Adresse)
+
+; =============================================================================
+; Hardware: BS-PIO des K2526 (ZRE)
+; =============================================================================
+; Die BS-PIO belegt I/O-Ports 08H-0BH (Sub = Port & 3):
+;   08H=PortA-Daten 09H=PortA-Ctrl 0AH=PortB-Daten 0BH=PortB-Ctrl
+; Port B (Richtungsmaske 0E2H): B0,B2,B3,B4 = Ausgang, B1,B5..B7 = Eingang.
+;   B0 /LD-ROM   (active high): 1 = EPROM eingeblendet, 0 = EPROM aus
+;   B2 /SPS-ESR  : Q240-Schutztabellen-Modus   } werden durch Read-Modify-Write
+;   B3 /WAIT-ZVE2: DMA-CPU halten/freigeben     } unveraendert durchgereicht
+;   B4 /SA       : Netzausschaltung             }
+BSPIO_B	EQU	0AH		; BS-PIO Port B Datenregister
+LDROM	EQU	01H		; Maske /LD-ROM (B0)
+
+; =============================================================================
+; Speicherlayout (alles oberhalb des EPROM-Fensters 0000H-03FFH)
+; =============================================================================
+BUFFER	EQU	8000H		; 1 KB Zielpuffer fuer den EPROM-Inhalt
+READER	EQU	8400H		; Ablageadresse des kopierten Lese-Stubs
+STKTOP	EQU	7F00H		; eigener Stack (sicher waehrend EPROM-Fenster)
+ROMLEN	EQU	0400H		; 1024 Bytes = EPROM-Groesse
+
+; =============================================================================
+	ORG	100H
+; =============================================================================
+START:
+	LD	SP, STKTOP		; eigener, hoch liegender Stack
+
+	LD	DE, MSG_BANNER
+	CALL	PUTS
+	LD	DE, MSG_READ
+	CALL	PUTS
+
+	; --- Lese-Stub nach READER (8400H) kopieren ---------------------------
+	LD	HL, STUB_SRC
+	LD	DE, READER
+	LD	BC, STUB_LEN
+	LDIR
+
+	; --- EPROM einblenden, kopieren, ausblenden (im hohen Speicher) -------
+	CALL	READER			; fuellt BUFFER mit 1024 EPROM-Bytes
+
+	; --- BUFFER als ROM.BIN auf Diskette schreiben ------------------------
+	; vorhandene Datei loeschen (Fehler ignorieren)
+	LD	DE, FCB
+	LD	C, F_DELETE
+	CALL	BDOS
+
+	; Datei anlegen
+	LD	DE, FCB
+	LD	C, F_MAKE
+	CALL	BDOS
+	INC	A			; 0FFH -> 00H bei Fehler
+	JP	Z, ERR_MAKE
+
+	; Current Record im FCB auf 0 (sequentielles Schreiben ab Anfang)
+	XOR	A
+	LD	(FCB+32), A
+
+	; 8 Datensaetze a 128 Bytes aus BUFFER schreiben
+	LD	HL, BUFFER
+	LD	B, ROMLEN/128		; = 8
+WLOOP:
+	PUSH	BC
+	PUSH	HL
+	; DMA-Adresse = HL
+	LD	D, H
+	LD	E, L
+	LD	C, F_DMA
+	CALL	BDOS
+	; Datensatz schreiben
+	LD	DE, FCB
+	LD	C, F_WRITE
+	CALL	BDOS
+	OR	A			; 0 = OK
+	JP	NZ, ERR_WRITE
+	POP	HL
+	LD	DE, 128
+	ADD	HL, DE
+	POP	BC
+	DJNZ	WLOOP
+
+	; Datei schliessen
+	LD	DE, FCB
+	LD	C, F_CLOSE
+	CALL	BDOS
+	INC	A			; 0FFH -> 00H bei Fehler
+	JP	Z, ERR_CLOSE
+
+	LD	DE, MSG_OK
+	CALL	PUTS
+	JP	WBOOT			; sauberer Warmstart -> zurueck zum CCP
+
+; -----------------------------------------------------------------------------
+ERR_MAKE:
+	LD	DE, MSG_E_MAKE
+	JP	FAIL
+ERR_WRITE:
+	LD	DE, MSG_E_WRITE
+	JP	FAIL
+ERR_CLOSE:
+	LD	DE, MSG_E_CLOSE
+	JP	FAIL
+FAIL:
+	CALL	PUTS
+	JP	WBOOT
+
+; =============================================================================
+; PUTS - '$'-terminierten String ausgeben (DE = Adresse)
+; =============================================================================
+PUTS:
+	LD	C, F_PRINT
+	JP	BDOS			; Tail-Call: BDOS RET kehrt zum Aufrufer zurueck
+
+; =============================================================================
+; STUB_SRC - lageunabhaengiges EPROM-Lese-Stub
+; -----------------------------------------------------------------------------
+; Wird zur Laufzeit nach READER (8400H) kopiert und von dort ausgefuehrt, weil
+; das EPROM beim Einblenden 0000H-03FFH (und damit dieses Programm bei 0100H)
+; verdeckt. Enthaelt KEINE eigenen absoluten Spruenge -> lageunabhaengig.
+; Liest BS-PIO Port B, blendet EPROM ein (B0=1), kopiert 1024 Bytes nach
+; BUFFER und stellt Port B exakt wieder her (EPROM aus).
+; =============================================================================
+STUB_SRC:
+	DI
+	LD	B, 0
+	LD	C, BSPIO_B
+	IN	A, (C)			; aktueller Port-B-Ausgabewert (B0=0)
+	PUSH	AF			; Original sichern (zum Wiederherstellen)
+	OR	LDROM			; B0=1
+	OUT	(C), A			; /LD-ROM=1 -> EPROM bei 0000H-03FFH ein
+	LD	HL, 0000H
+	LD	DE, BUFFER
+	LD	BC, ROMLEN
+	LDIR				; EPROM -> BUFFER (1024 Bytes)
+	POP	AF			; Original zurueck (B0=0)
+	LD	B, 0
+	LD	C, BSPIO_B
+	OUT	(C), A			; /LD-ROM=0 -> EPROM aus, RAM wieder sichtbar
+	EI
+	RET
+STUB_END:
+STUB_LEN EQU	STUB_END-STUB_SRC
+
+; =============================================================================
+; Texte
+; =============================================================================
+MSG_BANNER:
+	DB	'A5120 Boot-EPROM Dumper v1.0', 0DH, 0AH, '$'
+MSG_READ:
+	DB	'Lese Boot-EPROM 0000H-03FFH (1 KB) ...', 0DH, 0AH, '$'
+MSG_OK:
+	DB	'ROM.BIN geschrieben (1024 Bytes).', 0DH, 0AH, '$'
+MSG_E_MAKE:
+	DB	'FEHLER: ROM.BIN konnte nicht angelegt werden.', 0DH, 0AH, '$'
+MSG_E_WRITE:
+	DB	'FEHLER: Schreiben auf Diskette fehlgeschlagen.', 0DH, 0AH, '$'
+MSG_E_CLOSE:
+	DB	'FEHLER: Datei konnte nicht geschlossen werden.', 0DH, 0AH, '$'
+
+; =============================================================================
+; FCB fuer ROM.BIN auf dem aktuellen Laufwerk
+; =============================================================================
+FCB:
+	DB	0			; Laufwerk: 0 = aktuelles
+	DB	'ROM     '		; Dateiname (8, mit Leerzeichen aufgefuellt)
+	DB	'BIN'			; Typ (3)
+	DB	0, 0, 0, 0		; ex, s1, s2, rc
+	DS	16			; d0..d15 (Allokationsbloecke)
+	DB	0			; cr (current record)
+	DB	0, 0, 0			; r0, r1, r2
+
+	END	START
