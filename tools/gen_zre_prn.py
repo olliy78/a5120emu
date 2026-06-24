@@ -39,6 +39,19 @@ def clean_comment(c):
     return "[" + m.group(1) + "]" if m else c
 
 
+# CPU-Zuordnung der ROM-Adressen (empirisch via boot_trace --coverage cpu,pc + Kontrollfluss):
+#   ZVE2 (DMA-CPU) = die EINE STROBE_LOOP-Sektorlade-Routine 0x01DD..0x027D
+#                    (IDAM-Suche + INI/INIR-Transfer + DONE + Mehrsektor-Reentry JP 01F8h),
+#                    betreten nur ueber RAM[0]=JP 01DD.
+#   ZVE1 (Haupt-CPU) = alles andere (Reset/Init, Seek/Retry, Drive-Init, IM2-Index-ISR
+#                    0x01C7, Signatur-Check, Alt-Boot/Bildschirm/Fehler, RAM-Vars).
+ZVE2_LO, ZVE2_HI = 0x01DD, 0x027D
+
+
+def cpu_of(addr):
+    return "ZVE2" if ZVE2_LO <= addr <= ZVE2_HI else "ZVE1"
+
+
 def main():
     data = open(ROM, "rb").read()
     if len(data) != 1024:
@@ -85,7 +98,16 @@ def main():
         ";",
         "; Speicher:  0000-00FF Reset/Init-Prolog (loescht 2 KB RAM, IM2, PIO, ISR-Vekt.)",
         ";            0100-03FF Hauptteil (Drive-Probe, ZVE2-DMA-Bootloader, ISRs)",
-        "; IM2-ISRs:  Vektor 0xB8 -> 007A (BS-PIO),  Vektor 0xBA -> 01C7 (Index-Puls)",
+        ";",
+        "; CPU-Zuordnung (jede Code-Zeile traegt [ZVE1]/[ZVE2] im Kommentar;",
+        "; empirisch via boot_trace --coverage cpu,pc + Kontrollfluss bestaetigt):",
+        ";   ZVE2 (DMA-CPU):  0x01DD-0x027D  = die EINE STROBE_LOOP-Sektorlade-Routine",
+        ";        (IDAM-Suche, INI/INIR-Transfer, DONE [03F8]=3, Mehrsektor-Reentry),",
+        ";        betreten nur ueber RAM[0000]=C3 DD 01 = JP 01DD.",
+        ";   ZVE1 (Haupt-CPU): 0x0000-0x01DC + 0x027E-0x03FF = alles andere",
+        ";        (Reset/Init, Seek/Retry, Drive-Init das ZVE2 startet @0194,",
+        ";        IM2-Index-ISR @01C7, Signatur-Check @01B6, Alt-Boot @027E, RAM-Vars).",
+        "; IM2-ISRs (auf ZVE1): Vektor 0xB8 -> 007A (BS-PIO),  0xBA -> 01C7 (Index-Puls)",
         "; RAM-Vars:  03F0 Ladeadr | 03F3 Zyl | 03F5 Kopf/Sektor | 03F7 Index-Zaehler",
         ";            03F8 Done-Flag(0/1/3) | 03FA Retry | 03FC Port10-Ctrl | 03FD IDAM-Pfad",
         "; ============================================================================",
@@ -99,8 +121,9 @@ def main():
         ln = max(1, nxt - addr)
         hexb = " ".join(f"{b:02X}" for b in data[addr:addr + ln])
         body = (f"{label}:\t{mnem}" if label else f"\t{mnem}")
-        if comment:
-            body += f"\t\t;{comment}"
+        # jede Code-Zeile mit ausfuehrender CPU taggen
+        tag = f"[{cpu_of(addr)}]"
+        body += f"\t\t;{tag}" + (f" {comment}" if comment else "")
         lines.append(f"{addr:04X}  {hexb:<14}" + body)
     lines += ["", "\tEND"]
     open(OUT, "w", encoding="utf-8").write("\n".join(lines) + "\n")
