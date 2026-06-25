@@ -12,16 +12,26 @@ constexpr uint16_t kZve2DoneFlagAddr = 0x03F8;
 constexpr uint8_t  kZve2DoneValue    = 0x03;
 }  // namespace
 
-A5120Machine::A5120Machine()
+// Baut das DriveProfile-Array der 4 K5122-Slots aus den Profilnamen der Config.
+// Unbekannte Namen liefert builtinDriveProfile als Default-Profil (mfs_525_ds80).
+static std::array<DriveProfile, 4> profilesFromConfig(const A5120Machine::Config& cfg) {
+    return { builtinDriveProfile(cfg.drive_profiles[0]),
+             builtinDriveProfile(cfg.drive_profiles[1]),
+             builtinDriveProfile(cfg.drive_profiles[2]),
+             builtinDriveProfile(cfg.drive_profiles[3]) };
+}
+
+// Default-Konstruktor delegiert an die Config-Variante (Default = 4× K5601).
+A5120Machine::A5120Machine() : A5120Machine(Config{}) {}
+
+A5120Machine::A5120Machine(const Config& cfg)
     : zre_(bus_)
     , ops_()
     , screen_(bus_)
     , ass_(bus_)
-    // Standard-A5120-Bürokonfiguration: drei K5601-Laufwerke (5,25″, 80×2, MFM-fähig,
-    // ROM-/Loader-Lesepfad als FM verdrahtet); der vierte Slot ist physisch unbestückt,
-    // der Einfachheit halber ebenfalls als K5601 profiliert.
-    , afs_(bus_, { builtinDriveProfile("K5601"), builtinDriveProfile("K5601"),
-                   builtinDriveProfile("K5601"), builtinDriveProfile("K5601") })
+    // Laufwerksbestückung aus der Config; Default = A5120-Standard-Bürokonfiguration
+    // (4× K5601, 5,25"-MFM). Per C-API/GUI/Config-Datei überschreibbar.
+    , afs_(bus_, profilesFromConfig(cfg))
 {
     disk_formats_ = FormatParser::builtinFormats();
 

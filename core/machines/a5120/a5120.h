@@ -26,8 +26,22 @@
 
 class A5120Machine {
 public:
-    /** @brief Construct and wire a full A5120 machine instance. */
+    /**
+     * @brief Laufzeit-Konfiguration der Maschine (per C-API / später GUI / Config-Datei).
+     *
+     * Default = A5120-Standard-Bürokonfiguration: 4× 5,25"-MFM-Laufwerke (K5601).
+     * Wird über die C-API (`k1520_create_configured`) oder direkt (Tools) gesetzt.
+     */
+    struct Config {
+        /// DriveProfile-Namen je K5122-Slot (siehe builtinDriveProfile). Default: 4× K5601.
+        std::array<std::string, 4> drive_profiles = {"K5601", "K5601", "K5601", "K5601"};
+    };
+
+    /** @brief Construct with the default configuration (4× 5,25"-MFM, K5601). */
     A5120Machine();
+    /** @brief Construct and wire a full A5120 machine instance.
+     *  @param cfg Laufwerksbestückung etc. (per C-API/GUI/Config-Datei). */
+    explicit A5120Machine(const Config& cfg);
     ~A5120Machine() = default;
 
     // Lifecycle

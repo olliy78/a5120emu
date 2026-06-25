@@ -151,6 +151,7 @@ public:
         unsigned sectorSize;   ///< Sektorgröße der aktiven Spur
         bool     mounted;      ///< Laufwerk gemountet?
         bool     busrq;        ///< /STR-DMA ausstehend
+        std::string driveProfileName; ///< DriveProfile-Name des gewählten Laufwerks (Bestückung)
         Encoding readEncoding; ///< effektives Lesepfad-Verfahren (Override ?? Laufwerk-Default)
         bool     readEncFromCtrlWord; ///< true: per Steuerwort gewählt; false: Laufwerk-Default
         Encoding trackEncoding;  ///< echte Codierung der gemounteten Diskette (aus dem Image)
@@ -165,6 +166,7 @@ public:
         s.transferring = transferring_; s.writeMode = write_mode_;
         s.headPos = head_pos_; s.trackLen = cur_track_ ? cur_track_->size() : 0;
         s.sectorSize = cur_sector_size_; s.busrq = dma_pending_;
+        s.driveProfileName = drives_[selected_drive_].profile().name;
         s.readEncoding = read_enc_overridden_
                              ? read_enc_
                              : drives_[selected_drive_].profile().default_read_encoding;

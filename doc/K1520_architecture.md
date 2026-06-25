@@ -659,6 +659,26 @@ k1520_mount_disk(h, 0, "/path/to/cpadisk.img");
 k1520_create_disk(h, 1, "cpa800", "/path/to/new.img");
 ```
 
+**Laufwerksbestückung (Drive-Typen) — bei der Maschinen-Erzeugung:** Welche Laufwerks*typen*
+in den 4 K5122-Slots stecken, wird beim Erzeugen der Maschine festgelegt (Laufzeit, nicht
+compile-time):
+
+```c
+// Default-Bestückung (4× K5601, 5,25"-MFM):
+K1520Handle h  = k1520_create(K1520_MACHINE_A5120);
+
+// Explizite Bestückung (NULL/"" = Default K5601; unbekannter Name → Default-Profil):
+//   z. B. Slot 0 = 8"-FM-Laufwerk, Slots 1–3 = 5,25"-MFM:
+K1520Handle h2 = k1520_create_configured(K1520_MACHINE_A5120,
+                                         "mf3200_8_ss77", NULL, NULL, NULL);
+```
+
+Profilnamen: `K5601` / `mfs_525_ds80` / `ss_525_40` (5,25"), `mf3200_8_ss77` (8"-FM),
+`mf6400_8_ds77` (8"-MFM). C++-seitig direkt über `A5120Machine::Config` (Tools wie `k1520dbg`/
+`boot_trace` können das fest setzen), später per GUI (`config_dialog.py`) bzw. Config-Datei (CLI).
+**Ohne Konfiguration: 4× 5,25"-MFM.**  Der gewählte Profilname ist über `K5122::DebugState::
+driveProfileName` (Debugger `dev k5122`) beobachtbar.
+
 ### 8.5 Formatagnostischer Floppy-Stack (K5122 + DiskImage/TrackImage) — 2026-06-10
 
 Die `K5122` (`core/cards/k5122/`) ist ein **formatagnostischer** Floppy-Controller auf der
@@ -692,7 +712,8 @@ DriveProfile[4] — Zoll/Spuren/Köpfe/U-min/Verfahren je Slot  drive_profile.*
   aus dem fehlenden Clock-Bit, nicht aus dem Bytewert) + `encoding` (FM/MFM).
 - **Verfahrensneutral:** FM vs. MFM lebt allein in der Codec-Schicht (`TrackCodec`/`BitCodec`);
   Controller und `TrackImage` sind agnostisch.  4 Laufwerksprofile (5,25″ 80×2 MFM, 5,25″ 40×1,
-  8″ 77×1 FM, 8″ 77×2 MFM) als compile-time-Config je Slot; Index-Periode aus `rpm`.
+  8″ 77×1 FM, 8″ 77×2 MFM) je Slot **zur Laufzeit konfigurierbar** (`A5120Machine::Config` /
+  `k1520_create_configured`, Default 4× K5601, siehe §8.4); Index-Periode aus `rpm`.
 - **HFE v1** (`HXCPICFE`, ISOIBM_MFM=0/FM=2) wird lesend+schreibend unterstützt; `DiskImage::open`
   erkennt die Signatur und ist self-describing (kein `DiskFormat` nötig).  Die Bitebene
   (`BitCodec`: 16 Zellen/Byte, HFE-LSB-first ↔ intern MSB-first via bytereverse, A1-Sync =

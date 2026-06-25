@@ -44,6 +44,24 @@ K1520Handle k1520_create(K1520MachineType type) {
     }
 }
 
+K1520Handle k1520_create_configured(K1520MachineType type,
+                                    const char* d0, const char* d1,
+                                    const char* d2, const char* d3) {
+    if (type != K1520_MACHINE_A5120) return nullptr;  // only A5120 for now
+
+    setup_logging();
+
+    try {
+        A5120Machine::Config cfg;                      // Default = 4× K5601
+        const char* names[4] = { d0, d1, d2, d3 };
+        for (int i = 0; i < 4; ++i)
+            if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
+        return new A5120Machine(cfg);
+    } catch (...) {
+        return nullptr;
+    }
+}
+
 void k1520_destroy(K1520Handle h) {
     delete toA5120(h);
 }
