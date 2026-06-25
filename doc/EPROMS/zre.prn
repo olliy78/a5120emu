@@ -18,8 +18,16 @@
 ;        (Reset/Init, Seek/Retry, Drive-Init das ZVE2 startet @0194,
 ;        IM2-Index-ISR @01C7, Signatur-Check @01B6, Alt-Boot @027E, RAM-Vars).
 ; IM2-ISRs (auf ZVE1): Vektor 0xB8 -> 007A (BS-PIO),  0xBA -> 01C7 (Index-Puls)
+;
+; FM/MFM:  [0x03FD] bit1 = FM(1)/MFM(0)-Modus des K5122-Datenseparators.
+;          Default 0x87=FM @0137; Retry toggelt via XOR 02h @0151 zu 0x85=MFM;
+;          @01AD -> Port 0x10; ZVE2 testet BIT 1 @022B u. @025A. bit7=Step-Unterdr.
+; CRC:     Das Boot-ROM PRUEFT KEINE CRC. ZVE2 validiert nur das IDAM-Feld
+;          (cyl/head/sec/size) + Boot-Signatur @01B6; CRC-Bytes @0245/0247 werden
+;          nur gelesen. Echte CRC-Pruefung (sub_0407, Dual-Seed 0xBF84 FM/0xE295
+;          MFM via [0x03FD] bit1) liegt im GELADENEN Lader (RAM 0x04xx), nicht hier.
 ; RAM-Vars:  03F0 Ladeadr | 03F3 Zyl | 03F5 Kopf/Sektor | 03F7 Index-Zaehler
-;            03F8 Done-Flag(0/1/3) | 03FA Retry | 03FC Port10-Ctrl | 03FD IDAM-Pfad
+;            03F8 Done-Flag(0/1/3) | 03FA Retry | 03FC Port10-Ctrl | 03FD FM/MFM-Pfad
 ; ============================================================================
 
 	ORG	0000H
@@ -125,9 +133,9 @@
 00D4  D3 0A         	OUT (0Ah),A		;[ZVE1] Schreibe zurueck: Bit0=0 → ROM DEAKTIVIERT (laeuft jetzt aus RAM)
 00D6  FB            ENABLE_INTS_INIT:	EI		;[ZVE1] EI: Interrupts freigeben (ROM aus, ISR-Vektoren in RAM bereit)
 00D7  3E F3         	LD A,F3h		;[ZVE1]
-00D9  D3 13         	OUT (13h),A		;[ZVE1] K5122 ctrl PIO Port B ctrl (Port 0x13): 0xF3 = Int-Control (INTENA=1)
+00D9  D3 13         	OUT (13h),A		;[ZVE1] K5122 ctrl PIO Port B ctrl (Port 0x13): 0xF3 = E/A-Richtungsmaske (nach Modus 3): b2=/HF, b3=PRE = Ausgang
 00DB  3E 7F         	LD A,7Fh		;[ZVE1]
-00DD  D3 12         	OUT (12h),A		;[ZVE1] K5122 ctrl PIO Port B Daten (Port 0x12): 0x7F
+00DD  D3 12         	OUT (12h),A		;[ZVE1] K5122 ctrl PIO Port B Daten (Port 0x12): 0x7F || DATENRATE: Tor B (Port 0x12) = 0x7F -> bit2=/HF=1 = NIEDRIGE Frequenz. Laut K5122-Doku deckt /HF=1 sowohl FM-8"-Laufwerke (MF3200/6400) ALS AUCH MFM-5,25" (MFS) ab -> derselbe Takt fuer beide; nur die Markenart (MK, FM/MFM) wird per Trial-and-Error variiert. /HF wird hier FEST gesetzt, NICHT mitgetoggelt (MFM-8", das /HF=0/hohe Frequenz braeuchte, liefe damit NICHT).
 00DF  D3 11         	OUT (11h),A		;[ZVE1] K5122 ctrl PIO Port A ctrl (Port 0x11): 0x7F = Modus 1 (Input)
 00E1  3E A9         	LD A,A9h		;[ZVE1]
 00E3  D3 10         	OUT (10h),A		;[ZVE1] K5122 ctrl PIO Port A Daten (Port 0x10): 0xA9 = Drive-Steuer-Byte | Bit7=1 (kein Step), Bit3=1 (/STR high)
@@ -171,7 +179,7 @@
 0133  D3 11         	OUT (11h),A		;[ZVE1]
 0135  7E            WAIT_INDEX_LOOP:	LD A,(HL)		;[ZVE1] A = [0x03F7] lesen; A=0x87 vorladen fuer [0x03FD] (NZ-Pfad + kein Step)
 0136  B7            	OR A		;[ZVE1] Z-Flag setzen wenn [0x03F7]=0
-0137  3E 87         	LD A,87h		;[ZVE1] A = 0x87 vorladen: Bit7=1 (kein Step), Bit1=1 (NZ-Pfad)
+0137  3E 87         	LD A,87h		;[ZVE1] A = 0x87 vorladen: Bit7=1 (kein Step), Bit1=1 (NZ-Pfad) || FM/MFM: A=0x87 = Default-FM-Pfadbyte (Trial-and-Error-Startwert). [0x03FD] bit1 geht @01AD nach Port 0x10 = Signal MK des K5122 (Tor A bit1) und waehlt FM(1)/MFM(0). bit7=1 unterdrueckt Step-Puls. Abgelegt auf der Index-OK-Erfolgsstrecke (JR Z @0139 -> STORE_03FD @0153).
 0139  28 18         	JR Z,0153h		;[ZVE1] [0x03F7]=0 → 4 Pulse empfangen → springe zu STORE_03FD
 013B  0D            	DEC C		;[ZVE1] Timeout-Zaehler dekrementieren
 013C  20 F7         WAIT_INDEX_INNER:	JR NZ,0135h		;[ZVE1]
@@ -184,12 +192,12 @@
 014B  1D            	DEC E		;[ZVE1]
 014C  28 F2         	JR Z,0140h		;[ZVE1]
 014E  3A FD 03      WAIT_INDEX_OK:	LD A,(03FDh)		;[ZVE1]
-0151  EE 02         	XOR 02h		;[ZVE1]
-0153  32 FD 03      STORE_03FD:	LD (03FDh),A		;[ZVE1] [[0x03FD] = 0x87 SETZEN (korrekte IDAM-Pfad-Konfiguration)] | A=0x87 wurde bei 0x0137 vorgeladen. Ohne dieses Flag (Wert=0x00) | wuerde der falsche Z-Pfad genommen und OUT(10h) einen Step-Puls erzeugen!
+0151  EE 02         	XOR 02h		;[ZVE1] FM<->MFM-UMSCHALTUNG: XOR 02h kippt bit1 (0x87 FM <-> 0x85 MFM). WAIT_INDEX_OK-/Retry-Pfad probiert die jeweils andere Aufzeichnungsart.
+0153  32 FD 03      STORE_03FD:	LD (03FDh),A		;[ZVE1] [[0x03FD] SETZEN: FM/MFM-Pfadbyte (Default 0x87=FM, vorgeladen @0137)] | A=0x87 (bit7=1 → kein Step) wurde bei 0x0137 vorgeladen. Bei [0x03FD]=0x00 | (bit7=0) wuerde OUT(10h) faelschlich einen STEP-Puls erzeugen. || Speichert FM/MFM-Pfadbyte [0x03FD]: 0x87=FM (Default), 0x85=MFM (nach Toggle). Wird @01AD nach Port 0x10 geladen und von ZVE2 @022B/@025A (BIT 1) ausgewertet.
 0156  21 01 80      	LD HL,8001h		;[ZVE1] [0x07F0,0x07F1] = 0x8001 (Sektor-Count-Init fuer ZVE2)
 0159  22 F0 07      	LD (07F0h),HL		;[ZVE1]
-015C  26 00         SEEK_SETUP:	LD H,00h		;[ZVE1] Zylinder=0, Sektor=0, Size=0 fuer ersten IDAM-Vergleich setzen
-015E  22 F5 03      	LD (03F5h),HL		;[ZVE1] [0x03F5]=0 (Sektor-ID), [0x03F6]=0 (Size-Code)
+015C  26 00         SEEK_SETUP:	LD H,00h		;[ZVE1] Erwartetes IDAM fuer 1. Sektor: Zyl=0, Kopf=0, Sektor-ID=1, Size=0 || ERWARTETES IDAM 1. Sektor: [03F3]=Zyl=0, [03F4]=Kopf=0, [03F5]=Sektor-ID=1 (1-BASIERT, nicht 0!), [03F6]=Size-Code=0 (=128B). ZVE2 vergleicht alle vier Felder gegen das gelesene IDAM (FE cyl head sec size); Folgesektoren via INC L @0259 bis Sektor-ID==[07F2]=4 (Sektoren 1..4 auf Zyl0/Kopf0).
+015E  22 F5 03      	LD (03F5h),HL		;[ZVE1] HL=0x0001 (aus 0x8001, H:=0): [0x03F5]=1 (Sektor-ID, 1-basiert!), [0x03F6]=0 (Size, 0=128B)
 0161  6C            	LD L,H		;[ZVE1]
 0162  22 F3 03      	LD (03F3h),HL		;[ZVE1] [0x03F3]=0 (Zylinder), [0x03F4]=0 (Kopf)
 0165  CD 94 01      	CALL 0194h		;[ZVE1] Laufwerks-Init: setzt [0x03F8]=0, gibt ZVE2 aus Reset frei
@@ -197,7 +205,7 @@
 0169  B7            	OR A		;[ZVE1]
 016A  28 FC         	JR Z,0168h		;[ZVE1] warte solange [0x03F8]=0 (ZVE2 laeuft noch)
 016C  3D            STROBE_INIT:	DEC A		;[ZVE1] [0x03F8]=1: ISR-Timeout → Retry; [0x03F8]=3: ZVE2 fertig → weiter
-016D  28 DC         	JR Z,014Bh		;[ZVE1] A=1 (d.h. [0x03F8] war 1 = Timeout) → Retry-Pfad
+016D  28 DC         	JR Z,014Bh		;[ZVE1] A=1 (d.h. [0x03F8] war 1 = Timeout) → Retry-Pfad || FM/MFM-UMSCHALTUNG, WANN: [0x03F8]=1 = Read-Timeout (ZVE2 fand in 4 Indexpulsen kein gueltiges IDAM in der aktuellen FM-oder-MFM-Einstellung) -> 014B DEC E (init 6); E!=0 -> 014E XOR 02h (FM<->MFM kippen) + Re-Read; E=0 -> BOOT_FAIL (naechstes Laufwerk via [03FC]-Rotation). => Die Aufzeichnungsart wird NICHT am A1-Header erkannt, sondern per Trial-and-Error durchprobiert.
 016F  CD B6 01      	CALL 01B6h		;[ZVE1] [0x03F8]=3 (nach DEC: A=2): Bootsektor-Signatur pruefen
 0172  20 CC         	JR NZ,0140h		;[ZVE1] NZ: Signatur falsch → BOOT_FAIL
 0174  CD 37 04      	CALL 0437h		;[ZVE1] Signatur korrekt: Bootsektor-Code ausfuehren
@@ -226,7 +234,7 @@
 01A7  3E 7F         	LD A,7Fh		;[ZVE1]
 01A9  D3 17         	OUT (17h),A		;[ZVE1]
 01AB  DB 16         	IN A,(16h)		;[ZVE1] Dummy-Lese aus Sektor-Puffer (Port 0x16)
-01AD  3A FD 03      	LD A,(03FDh)		;[ZVE1] [0x03FD] in Port 0x10: konfiguriert /STR-Verhalten (NZ-Pfad / Step)
+01AD  3A FD 03      	LD A,(03FDh)		;[ZVE1] [0x03FD] in Port 0x10: konfiguriert /STR-Verhalten (NZ-Pfad / Step) || Laedt FM/MFM-Pfadbyte [0x03FD] in Port 0x10 = setzt FM/MFM-Modus des K5122-Datenseparators fuer den ZVE2-Sektor-Read.
 01B0  D3 10         	OUT (10h),A		;[ZVE1]
 01B2  23            	INC HL		;[ZVE1] INC HL: HL → [0x03F8] (Abschluss-Flag)
 01B3  36 00         	LD (HL),00h		;[ZVE1] [0x03F8] = 0: ZVE2 noch nicht fertig (ZVE1 wartet in Schleife 0x0168)
@@ -274,10 +282,10 @@
 0201  47            	LD B,A		;[ZVE2]
 0202  D9            	EXX		;[ZVE2]
 0203  18 6E         	JR 0273h		;[ZVE2]
-0205  DB 16         READ_IDAM_Z:	IN A,(16h)		;[ZVE2] [IDAM-SUCHE: Z-PFAD (FALSCH wenn [0x03FD]=0x00)] | Liest 5 Bytes vor IDAM-Vergleich (buf[0..4] konsumiert). | Vergleicht buf[4]=sector_id mit B'=0xFE → immer Fehler → Endlosschleife!
+0205  DB 16         READ_IDAM_Z:	IN A,(16h)		;[ZVE2] [IDAM-SUCHE: Z-PFAD = MFM-Lesepfad ([0x03FD] bit1=0, 0x85)] | Liest mehr Bytes vor dem FE-Vergleich (ueberspringt den A1-Sync vor FE). | Passt die Spur nicht (z.B. FM-Spur) → kein FE-Treffer → Re-Strobe/Timeout | → ROM toggelt MK (FM<->MFM). Welcher Pfad passt, haengt von der Spur ab.
 0207  DB 16         	IN A,(16h)		;[ZVE2]
 0209  DB 16         	IN A,(16h)		;[ZVE2]
-020B  DB 16         READ_IDAM_NZ:	IN A,(16h)		;[ZVE2] [IDAM-SUCHE: NZ-PFAD (KORREKT wenn [0x03FD]=0x87)] | Liest 2 Bytes vor IDAM-Vergleich (buf[0], buf[1]). | Vergleicht buf[1]=0xFE mit B'=0xFE → Treffer bei korrektem Marker.
+020B  DB 16         READ_IDAM_NZ:	IN A,(16h)		;[ZVE2] [IDAM-SUCHE: NZ-PFAD = FM-Lesepfad ([0x03FD] bit1=1, 0x87)] | Liest wenige Bytes vor dem FE-Vergleich (Marke FE liegt direkt, kein A1). | buf[1]=0xFE == B'=0xFE → Treffer auf einer FM-Spur.
 020D  B8            CMP_IDAM_MARK:	CP B		;[ZVE2] liest buf[1] (NZ-Pfad) oder buf[4] (Z-Pfad-Fall-through) | IDAM-Marker vergleichen (B'=0xFE)
 020E  20 E8         	JR NZ,01F8h		;[ZVE2] kein Treffer → neuen /STR-Strobe (Puffer neu lesen)
 0210  DB 16         	IN A,(16h)		;[ZVE2] Zylinder vergleichen (E'=erwarteter Zylinder)
@@ -294,8 +302,8 @@
 0222  20 DA         	JR NZ,01FEh		;[ZVE2] Size-Code falsch → Sektor-Nummern-Fehler-Pfad (0x01FE)
 0224  3E B5         	LD A,B5h		;[ZVE2] IDAM vollstaendig gematcht! Nutzdaten folgen direkt im Puffer.
 0226  D3 10         	OUT (10h),A		;[ZVE2]
-0228  3A FD 03      	LD A,(03FDh)		;[ZVE2] [0x03FD] lesen um NZ/Z-Bit fuer Timing-Anpassung zu pruefen
-022B  CB 4F         	BIT 1,A		;[ZVE2]
+0228  3A FD 03      	LD A,(03FDh)		;[ZVE2] [0x03FD] lesen um NZ/Z-Bit fuer Timing-Anpassung zu pruefen || FM/MFM-Verzweigung: liest [0x03FD] fuer den anschliessenden BIT-1-Test.
+022B  CB 4F         	BIT 1,A		;[ZVE2] BIT 1 von [0x03FD] = Port-0x10-Signal MK: bit1=1 FM (MK->/MK=0: K5122 erkennt FM-Marke, IDAM-FE direkt -> NZ-Pfad, wenige Bytes bis FE); bit1=0 MFM (/MK=1: K5122 erkennt MFM-A1-Sync, A1(A1A1) vor FE -> Z-Pfad, mehr Bytes bis FE). Die eigentliche FM/MFM-Demodulation macht der K5122 (PLL + Marken-ROM), nicht ZVE2.
 022D  D3 10         	OUT (10h),A		;[ZVE2] /STR nochmal pulsieren (Daten-Transfer-Modus vorbereiten)
 022F  DB 16         	IN A,(16h)		;[ZVE2] Dummy-Reads fuer Timing (Z-Pfad: 4 Bytes, NZ-Pfad: 1 Byte)
 0231  20 06         	JR NZ,0239h		;[ZVE2]
@@ -309,7 +317,7 @@
 0240  ED A2         	DB EDh,A2h		;[ZVE2]
 0242  ED B2         	DB EDh,B2h		;[ZVE2] INIR (ED B2): verbleibende B Bytes Port C → (HL++), bis B=0
 0244  EB            	EX DE,HL		;[ZVE2]
-0245  ED A2         	DB EDh,A2h		;[ZVE2] weitere INI-Transfers fuer Header-Abschluss
+0245  ED A2         	DB EDh,A2h		;[ZVE2] weitere INI-Transfers fuer Header-Abschluss || Die 2 nachlaufenden INI lesen die DATEN-CRC-Bytes in den Scratch 0x0700. WICHTIG: Das Boot-ROM LIEST die CRC nur ein, PRUEFT sie NICHT — Validierung allein per IDAM-Feldvergleich (cyl/head/sec/size) + Boot-Signatur @01B6. Echte CRC-Verifikation (sub_0407, Dual-Konvention 0xBF84 FM / 0xE295 MFM, gewaehlt ueber [0x03FD] bit1) erfolgt erst im GELADENEN Lader (RAM 0x04xx).
 0247  ED A2         	DB EDh,A2h		;[ZVE2]
 0249  3E B5         	LD A,B5h		;[ZVE2] /STR high
 024B  D3 10         	OUT (10h),A		;[ZVE2]
@@ -321,12 +329,12 @@
 0256  BD            	CP L		;[ZVE2]
 0257  28 0E         	JR Z,0267h		;[ZVE2] alle Sektoren geladen? → ZVE2 Fertigstellung
 0259  2C            	INC L		;[ZVE2]
-025A  3A FD 03      STROBE_LOOP_BODY:	LD A,(03FDh)		;[ZVE2] [STROBE-LOOP KOERPER (Einstieg von JR 025Ah bei 0x01FC)] | Liest [0x03FD] und waehlt IDAM-Pfad: | [0x03FD]=0x87: Bit1=1 → NZ-Pfad (korrekt), Bit7=1 → kein Step | [0x03FD]=0x00: Bit1=0 → Z-Pfad (falsch!), Bit7=0 → STEP-PULS!
+025A  3A FD 03      STROBE_LOOP_BODY:	LD A,(03FDh)		;[ZVE2] [STROBE-LOOP KOERPER (Einstieg von JR 025Ah bei 0x01FC)] | Liest [0x03FD] und waehlt FM/MFM-Lesepfad (MK = Port-0x10 bit1): | 0x87 FM:  Bit1=1 → NZ-Pfad (Marke FE direkt), Bit7=1 → kein Step | 0x85 MFM: Bit1=0 → Z-Pfad (A1-Sync vor FE).  (0x00: Bit7=0 → STEP-PULS!) || FM/MFM-Pfadwahl pro Schleifendurchlauf: liest [0x03FD]; bit1=1 FM(NZ)/bit1=0 MFM(Z). ACHTUNG: bit7=0 erzeugt am OUT(10h) zusaetzlich einen Step-Puls.
 025D  CB 4F         	BIT 1,A		;[ZVE2] Bit1: NZ-Pfad-Flag testen
 025F  D3 10         	OUT (10h),A		;[ZVE2] ACHTUNG: wenn Bit7=0 → Step-Puls auf Port 0x10!
 0261  DB 16         	IN A,(16h)		;[ZVE2] Lese buf[0] aus Sektorpuffer
-0263  28 A0         	JR Z,0205h		;[ZVE2] Z (Bit1=0) → Z-Pfad (falsch bei [0x03FD]=0x00)
-0265  18 A4         	JR 020Bh		;[ZVE2] NZ (Bit1=1) → NZ-Pfad (korrekt bei [0x03FD]=0x87)
+0263  28 A0         	JR Z,0205h		;[ZVE2] Z (Bit1=0) → Z-Pfad = MFM (A1-Sync vor FE)
+0265  18 A4         	JR 020Bh		;[ZVE2] NZ (Bit1=1) → NZ-Pfad = FM (Marke FE direkt)
 0267  3E 03         	LD A,03h		;[ZVE2] [ZVE2 ABSCHLUSS: alle Sektoren geladen] | ZVE2 setzt [0x03F8]=3 → ZVE1 verlässt Warte-Schleife bei 0x016A.
 0269  D3 11         	OUT (11h),A		;[ZVE2] K5122 ctrl PIO Port A: INTENA=0 (kein weiterer Indexpuls-Interrupt)
 026B  32 F8 03      	LD (03F8h),A		;[ZVE2] [0x03F8] = 3: ZVE2 fertig → ZVE1 wird geweckt
@@ -536,7 +544,7 @@
 03FA  00            	NOP		;[ZVE1] 0x03FA: Seek-/Retry-Counter (init: 5)
 03FB  08            	EX AF,AF'		;[ZVE1] 0x03FB: (unbenutzt)
 03FC  00            	NOP		;[ZVE1] 0x03FC: Ctrl-Wert fuer Port 0x10 (init: 0xEE, rotiert bei Retry)
-03FD  00            	NOP		;[ZVE1] 0x03FD: IDAM-Pfad/Step-Konfiguration (0x00=falsch, 0x87=korrekt)
+03FD  00            	NOP		;[ZVE1] 0x03FD: FM/MFM-Pfad (MK, Port 0x10 bit1): 0x87=FM, 0x85=MFM; bit7=Step-Unterdr.
 03FE  F7            	RST 30h		;[ZVE1] 0x03FE-0x03FF: Puffer-Ende / unbenutzt
 03FF  6B            	LD L,E		;[ZVE1]
 

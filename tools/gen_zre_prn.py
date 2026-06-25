@@ -52,6 +52,49 @@ def cpu_of(addr):
     return "ZVE2" if ZVE2_LO <= addr <= ZVE2_HI else "ZVE1"
 
 
+# Session-verifizierte Anreicherungen (2026-06-24, gegen echtes zre.rom + boot_trace
+# --coverage + analyse_zre_rom_boot.md geprueft). Werden an den Harvest-Kommentar
+# angehaengt. Schwerpunkt: FM/MFM-Umschaltung ([0x03FD] bit1) und CRC.
+EXTRA = {
+    0x0137: "FM/MFM: A=0x87 = Default-FM-Pfadbyte (Trial-and-Error-Startwert). [0x03FD] bit1 "
+            "geht @01AD nach Port 0x10 = Signal MK des K5122 (Tor A bit1) und waehlt FM(1)/MFM(0). "
+            "bit7=1 unterdrueckt Step-Puls. Abgelegt auf der Index-OK-Erfolgsstrecke "
+            "(JR Z @0139 -> STORE_03FD @0153).",
+    0x0151: "FM<->MFM-UMSCHALTUNG: XOR 02h kippt bit1 (0x87 FM <-> 0x85 MFM). "
+            "WAIT_INDEX_OK-/Retry-Pfad probiert die jeweils andere Aufzeichnungsart.",
+    0x0153: "Speichert FM/MFM-Pfadbyte [0x03FD]: 0x87=FM (Default), 0x85=MFM (nach Toggle). "
+            "Wird @01AD nach Port 0x10 geladen und von ZVE2 @022B/@025A (BIT 1) ausgewertet.",
+    0x01AD: "Laedt FM/MFM-Pfadbyte [0x03FD] in Port 0x10 = setzt FM/MFM-Modus des "
+            "K5122-Datenseparators fuer den ZVE2-Sektor-Read.",
+    0x0228: "FM/MFM-Verzweigung: liest [0x03FD] fuer den anschliessenden BIT-1-Test.",
+    0x022B: "BIT 1 von [0x03FD] = Port-0x10-Signal MK: bit1=1 FM (MK->/MK=0: K5122 erkennt "
+            "FM-Marke, IDAM-FE direkt -> NZ-Pfad, wenige Bytes bis FE); bit1=0 MFM (/MK=1: "
+            "K5122 erkennt MFM-A1-Sync, A1(A1A1) vor FE -> Z-Pfad, mehr Bytes bis FE). Die "
+            "eigentliche FM/MFM-Demodulation macht der K5122 (PLL + Marken-ROM), nicht ZVE2.",
+    0x0245: "Die 2 nachlaufenden INI lesen die DATEN-CRC-Bytes in den Scratch 0x0700. "
+            "WICHTIG: Das Boot-ROM LIEST die CRC nur ein, PRUEFT sie NICHT — Validierung "
+            "allein per IDAM-Feldvergleich (cyl/head/sec/size) + Boot-Signatur @01B6. "
+            "Echte CRC-Verifikation (sub_0407, Dual-Konvention 0xBF84 FM / 0xE295 MFM, "
+            "gewaehlt ueber [0x03FD] bit1) erfolgt erst im GELADENEN Lader (RAM 0x04xx).",
+    0x025A: "FM/MFM-Pfadwahl pro Schleifendurchlauf: liest [0x03FD]; bit1=1 FM(NZ)/bit1=0 "
+            "MFM(Z). ACHTUNG: bit7=0 erzeugt am OUT(10h) zusaetzlich einen Step-Puls.",
+    0x00DD: "DATENRATE: Tor B (Port 0x12) = 0x7F -> bit2=/HF=1 = NIEDRIGE Frequenz. Laut "
+            "K5122-Doku deckt /HF=1 sowohl FM-8\"-Laufwerke (MF3200/6400) ALS AUCH MFM-5,25\" "
+            "(MFS) ab -> derselbe Takt fuer beide; nur die Markenart (MK, FM/MFM) wird per "
+            "Trial-and-Error variiert. /HF wird hier FEST gesetzt, NICHT mitgetoggelt "
+            "(MFM-8\", das /HF=0/hohe Frequenz braeuchte, liefe damit NICHT).",
+    0x015C: "ERWARTETES IDAM 1. Sektor: [03F3]=Zyl=0, [03F4]=Kopf=0, [03F5]=Sektor-ID=1 "
+            "(1-BASIERT, nicht 0!), [03F6]=Size-Code=0 (=128B). ZVE2 vergleicht alle vier "
+            "Felder gegen das gelesene IDAM (FE cyl head sec size); Folgesektoren via INC L "
+            "@0259 bis Sektor-ID==[07F2]=4 (Sektoren 1..4 auf Zyl0/Kopf0).",
+    0x016D: "FM/MFM-UMSCHALTUNG, WANN: [0x03F8]=1 = Read-Timeout (ZVE2 fand in 4 Indexpulsen "
+            "kein gueltiges IDAM in der aktuellen FM-oder-MFM-Einstellung) -> 014B DEC E (init 6); "
+            "E!=0 -> 014E XOR 02h (FM<->MFM kippen) + Re-Read; E=0 -> BOOT_FAIL (naechstes "
+            "Laufwerk via [03FC]-Rotation). => Die Aufzeichnungsart wird NICHT am A1-Header "
+            "erkannt, sondern per Trial-and-Error durchprobiert.",
+}
+
+
 def main():
     data = open(ROM, "rb").read()
     if len(data) != 1024:
@@ -108,8 +151,16 @@ def main():
         ";        (Reset/Init, Seek/Retry, Drive-Init das ZVE2 startet @0194,",
         ";        IM2-Index-ISR @01C7, Signatur-Check @01B6, Alt-Boot @027E, RAM-Vars).",
         "; IM2-ISRs (auf ZVE1): Vektor 0xB8 -> 007A (BS-PIO),  0xBA -> 01C7 (Index-Puls)",
+        ";",
+        "; FM/MFM:  [0x03FD] bit1 = FM(1)/MFM(0)-Modus des K5122-Datenseparators.",
+        ";          Default 0x87=FM @0137; Retry toggelt via XOR 02h @0151 zu 0x85=MFM;",
+        ";          @01AD -> Port 0x10; ZVE2 testet BIT 1 @022B u. @025A. bit7=Step-Unterdr.",
+        "; CRC:     Das Boot-ROM PRUEFT KEINE CRC. ZVE2 validiert nur das IDAM-Feld",
+        ";          (cyl/head/sec/size) + Boot-Signatur @01B6; CRC-Bytes @0245/0247 werden",
+        ";          nur gelesen. Echte CRC-Pruefung (sub_0407, Dual-Seed 0xBF84 FM/0xE295",
+        ";          MFM via [0x03FD] bit1) liegt im GELADENEN Lader (RAM 0x04xx), nicht hier.",
         "; RAM-Vars:  03F0 Ladeadr | 03F3 Zyl | 03F5 Kopf/Sektor | 03F7 Index-Zaehler",
-        ";            03F8 Done-Flag(0/1/3) | 03FA Retry | 03FC Port10-Ctrl | 03FD IDAM-Pfad",
+        ";            03F8 Done-Flag(0/1/3) | 03FA Retry | 03FC Port10-Ctrl | 03FD FM/MFM-Pfad",
         "; ============================================================================",
         "",
         "\tORG\t0000H",
@@ -121,9 +172,12 @@ def main():
         ln = max(1, nxt - addr)
         hexb = " ".join(f"{b:02X}" for b in data[addr:addr + ln])
         body = (f"{label}:\t{mnem}" if label else f"\t{mnem}")
-        # jede Code-Zeile mit ausfuehrender CPU taggen
+        # jede Code-Zeile mit ausfuehrender CPU taggen + ggf. Anreicherung anhaengen
         tag = f"[{cpu_of(addr)}]"
-        body += f"\t\t;{tag}" + (f" {comment}" if comment else "")
+        full = comment
+        if addr in EXTRA:
+            full = (full + " || " if full else "") + EXTRA[addr]
+        body += f"\t\t;{tag}" + (f" {full}" if full else "")
         lines.append(f"{addr:04X}  {hexb:<14}" + body)
     lines += ["", "\tEND"]
     open(OUT, "w", encoding="utf-8").write("\n".join(lines) + "\n")
