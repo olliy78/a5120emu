@@ -873,3 +873,36 @@ TEST_F(K5122Test, ReadEncoding_StrobeUndStepWorteLatchenNicht) {
     card.ioWrite(0x10, 0xF4);   // /STR-artiges Wort
     EXPECT_FALSE(card.debugState().readEncFromCtrlWord);   // kein Override
 }
+
+// ─── Phase 0: echte Spur-Codierung beobachtbar + encodingMatch ─────────────────
+// debugState() liefert jetzt zusätzlich die ECHTE Codierung der gemounteten Diskette
+// (trackEncoding, aus dem Image) und encodingMatch = (readEncoding == trackEncoding).
+// Das ist die Grundlage für den treuen Lesepfad (Phase 1/2): bei Mismatch wird ZVE2
+// später kein IDAM finden → ROM-MK-Trial-and-Error. Hier nur Beobachtbarkeit, kein
+// Verhaltenswechsel am Datenstrom.
+
+TEST_F(K5122Test, TrackEncoding_AusImage_und_EncodingMatch) {
+    auto path = tmpImg1();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt1));
+
+    // Test-.img wird als RawSectorImage mit Default MFM gemountet.
+    auto s0 = card.debugState();
+    EXPECT_EQ(s0.trackEncoding, Encoding::MFM);
+    // Default-Profil mfs_525_ds80 → readEncoding FM → Mismatch.
+    EXPECT_EQ(s0.readEncoding, Encoding::FM);
+    EXPECT_FALSE(s0.encodingMatch);
+
+    // Steuerwort 0x85 → readEncoding MFM → passt zur MFM-Disk → Match.
+    card.ioWrite(0x10, 0x85);
+    EXPECT_TRUE(card.debugState().encodingMatch);
+
+    // Steuerwort 0x87 → readEncoding FM → Mismatch wieder.
+    card.ioWrite(0x10, 0x87);
+    EXPECT_FALSE(card.debugState().encodingMatch);
+}
+
+TEST_F(K5122Test, TrackEncoding_NichtGemountet_KeinMatch) {
+    auto s = card.debugState();
+    ASSERT_FALSE(s.mounted);
+    EXPECT_FALSE(s.encodingMatch);   // ohne Diskette nie Match
+}

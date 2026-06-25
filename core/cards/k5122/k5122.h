@@ -153,6 +153,9 @@ public:
         bool     busrq;        ///< /STR-DMA ausstehend
         Encoding readEncoding; ///< effektives Lesepfad-Verfahren (Override ?? Laufwerk-Default)
         bool     readEncFromCtrlWord; ///< true: per Steuerwort gewählt; false: Laufwerk-Default
+        Encoding trackEncoding;  ///< echte Codierung der gemounteten Diskette (aus dem Image)
+        bool     encodingMatch;  ///< readEncoding == trackEncoding (gemountet); Basis für den
+                                 ///< treuen Lesepfad: bei Mismatch findet ZVE2 später kein IDAM
     };
     DebugState debugState() const {
         DebugState s{};
@@ -166,6 +169,11 @@ public:
                              ? read_enc_
                              : drives_[selected_drive_].profile().default_read_encoding;
         s.readEncFromCtrlWord = read_enc_overridden_;
+        // Echte Codierung der Diskette (disk-weit; Phase 0). geometry() ist const +
+        // ohne Track-Decode (liefert das im Image hinterlegte Verfahren).
+        s.trackEncoding = s.mounted ? drives_[selected_drive_].geometry().encoding
+                                    : Encoding::MFM;
+        s.encodingMatch = s.mounted && (s.readEncoding == s.trackEncoding);
         return s;
     }
 
