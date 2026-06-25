@@ -17,7 +17,11 @@ A5120Machine::A5120Machine()
     , ops_()
     , screen_(bus_)
     , ass_(bus_)
-    , afs_(bus_)
+    // Standard-A5120-Bürokonfiguration: drei K5601-Laufwerke (5,25″, 80×2, MFM-fähig,
+    // ROM-/Loader-Lesepfad als FM verdrahtet); der vierte Slot ist physisch unbestückt,
+    // der Einfachheit halber ebenfalls als K5601 profiliert.
+    , afs_(bus_, { builtinDriveProfile("K5601"), builtinDriveProfile("K5601"),
+                   builtinDriveProfile("K5601"), builtinDriveProfile("K5601") })
 {
     disk_formats_ = FormatParser::builtinFormats();
 
