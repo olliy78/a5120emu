@@ -648,12 +648,14 @@ void K5122::startReadTransfer() {
 void K5122::resyncToNextMark() {
     if (!cur_track_ || cur_track_->empty()) return;
 
-    size_t m = cur_track_->nextMark(head_pos_);
-    if (m != SIZE_MAX) {
-        head_pos_ = m;
+    // Resync-Ziel aus der ROM-Lese-Kalibrierung (§10.5.1): Legacy-A1-Layout direkt auf
+    // die Marke, Faithful-Layout (buildTrack) mit Offset markPos-(1+nA1) und Encoding-
+    // Gate (read_enc_ vs Spur-Codierung). SIZE_MAX = kein MKE (Mismatch/keine Marke).
+    size_t t = TrackCodec::romReadResyncTarget(*cur_track_, head_pos_, effReadEnc());
+    if (t != SIZE_MAX) {
+        head_pos_ = t;
         locked_   = true;
-        LOG_TRACE("K5122", "resync → Marke bei pos=%zu (0x%02X)",
-                  m, cur_track_->bytes[m]);
+        LOG_TRACE("K5122", "resync → pos=%zu (0x%02X)", t, cur_track_->bytes[t]);
     }
 }
 

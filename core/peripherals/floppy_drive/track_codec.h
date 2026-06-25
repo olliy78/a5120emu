@@ -117,6 +117,22 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors, Encoding enc);
 std::vector<LogicalSector> parseTrack(const TrackImage& track);
 
 /**
+ * @brief Resync-Zielposition für den ZRE-ROM-Lesepfad (Kalibrierung, doc/design/07 §10.5.1).
+ *
+ * Findet ab @p fromPos die nächste Adressmarke und liefert die Position, auf die der
+ * K5122-Datenseparator re-synchronisiert, sodass der ROM-Read das Mark-Byte an der
+ * erwarteten buf[]-Position findet (FM: buf[1]=FE, MFM: buf[4]=FE):
+ *   - **Legacy single-A1-Layout** (Mark-Byte == 0xA1, @ref buildRobotronTrack): Resync direkt
+ *     auf die Marke (kein Offset, kein Encoding-Gate) — für den aktuellen Boot-Pfad.
+ *   - **Faithful-Layout** (Mark-Byte FE/FB, @ref buildTrack): nur wenn @p readEnc ==
+ *     `track.encoding` (sonst feuert kein MKE → @c SIZE_MAX); Resync landet bei
+ *     `markPos − (1 + nA1)` (FM: −1, MFM: −4) auf dem Sync-Byte vor der Markensequenz.
+ *
+ * @return Resync-Zielposition; @c SIZE_MAX = kein Resync (keine Marke ODER Encoding-Mismatch).
+ */
+size_t romReadResyncTarget(const TrackImage& track, size_t fromPos, Encoding readEnc);
+
+/**
  * @brief Robotron-MFM-CRC-16 (verifizierte loaderCrc16, byte-genau).
  *
  * Byte-für-Byte-Übersetzung von sub_0407/sub_1E44.  @p seed_hi/@p seed_lo sind der

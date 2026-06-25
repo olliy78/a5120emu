@@ -199,6 +199,11 @@ private:
     void startReadTransfer();
     /// @brief Rückt den Lesekopf auf die nächste Adressmarke (MK/MK1-Strobe).
     void resyncToNextMark();
+    /// @brief Effektives Lese-Verfahren: Steuerwort-Override (0x85/0x87) oder Laufwerk-Default.
+    Encoding effReadEnc() const {
+        return read_enc_overridden_ ? read_enc_
+                                    : drives_[selected_drive_].profile().default_read_encoding;
+    }
     /// @brief Committet einen abgeschlossenen Schreibtransfer in die gecachte Spur.
     void commitWrite();
     /// @brief Beendet einen Vollspur-FORMAT-Schreibtransfer am Index-Puls: parst den

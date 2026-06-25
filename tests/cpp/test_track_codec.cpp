@@ -413,3 +413,42 @@ TEST(RomReadKalibrierung, MFM_ZPfad_buf4_ist_FE_nach_3xA1) {
     EXPECT_EQ(t.bytes[r + 3], 0xA1) << "buf[3] = A1";
     EXPECT_EQ(t.bytes[r + 4], 0xFE) << "buf[4] = IDAM-Marke (CP B == 0xFE im ROM)";
 }
+
+// romReadResyncTarget: die K5122-Resync-Logik (Offset + Encoding-Gate + Legacy-A1).
+
+TEST(RomReadKalibrierung, ResyncTarget_FM_Match_markPos_minus_1) {
+    TrackImage t = TrackCodec::buildTrack({makeSector(0, 0, 1, 128)}, Encoding::FM);
+    size_t mark = findIdMark(t);
+    // Resync zur Id-Marke (von ihr aus gesucht; nextMark schließt pos ein).
+    size_t r = TrackCodec::romReadResyncTarget(t, mark, Encoding::FM);
+    ASSERT_NE(r, SIZE_MAX);
+    EXPECT_EQ(r, mark - 1);
+    EXPECT_EQ(t.bytes[r + 1], 0xFE);   // buf[1] = FE
+}
+
+TEST(RomReadKalibrierung, ResyncTarget_MFM_Match_markPos_minus_4) {
+    TrackImage t = TrackCodec::buildTrack({makeSector(0, 0, 1, 128)}, Encoding::MFM);
+    size_t mark = findIdMark(t);
+    size_t r = TrackCodec::romReadResyncTarget(t, mark, Encoding::MFM);
+    ASSERT_NE(r, SIZE_MAX);
+    EXPECT_EQ(r, mark - 4);
+    EXPECT_EQ(t.bytes[r + 4], 0xFE);   // buf[4] = FE
+}
+
+TEST(RomReadKalibrierung, ResyncTarget_Mismatch_keinMKE) {
+    // read_enc_ ≠ track.encoding → kein MKE → kein Resync (SIZE_MAX).
+    TrackImage tm = TrackCodec::buildTrack({makeSector(0, 0, 1, 128)}, Encoding::MFM);
+    EXPECT_EQ(TrackCodec::romReadResyncTarget(tm, 0, Encoding::FM), SIZE_MAX);
+    TrackImage tf = TrackCodec::buildTrack({makeSector(0, 0, 1, 128)}, Encoding::FM);
+    EXPECT_EQ(TrackCodec::romReadResyncTarget(tf, 0, Encoding::MFM), SIZE_MAX);
+}
+
+TEST(RomReadKalibrierung, ResyncTarget_LegacyA1_direktAufMarke_keinGate) {
+    // buildRobotronTrack (Boot-Pfad): Marke auf A1 → Resync direkt darauf, Encoding egal.
+    TrackImage t = TrackCodec::buildRobotronTrack({makeSector(0, 0, 1, 128)});
+    size_t mark = findIdMark(t);
+    ASSERT_NE(mark, SIZE_MAX);
+    ASSERT_EQ(t.bytes[mark], 0xA1);
+    EXPECT_EQ(TrackCodec::romReadResyncTarget(t, 0, Encoding::FM),  mark);
+    EXPECT_EQ(TrackCodec::romReadResyncTarget(t, 0, Encoding::MFM), mark);
+}

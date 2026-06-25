@@ -352,6 +352,28 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
     return result;
 }
 
+// ─── romReadResyncTarget (ROM-Lese-Kalibrierung §10.5.1) ───────────────────────
+
+size_t romReadResyncTarget(const TrackImage& track, size_t fromPos, Encoding readEnc) {
+    if (track.bytes.empty()) return SIZE_MAX;
+    const size_t m = track.nextMark(fromPos);
+    if (m == SIZE_MAX) return SIZE_MAX;
+
+    // Legacy single-A1-Layout (buildRobotronTrack): Marke auf dem A1 → direkt darauf
+    // re-synchronisieren (kein Offset, kein Encoding-Gate; aktueller Boot-Pfad).
+    if (track.bytes[m] == 0xA1) return m;
+
+    // Faithful-Layout (buildTrack): der Markendetektor erkennt nur die Marken der
+    // EINGESTELLTEN Aufzeichnungsart. Bei Mismatch feuert kein MKE → kein Resync.
+    if (readEnc != track.encoding) return SIZE_MAX;
+
+    // Resync landet VOR der Markensequenz: markPos-(1+nA1), nA1 = 3 (MFM) / 0 (FM)
+    // → FM markPos-1, MFM markPos-4. Zyklischer Umlauf am Spuranfang.
+    const size_t backoff = (track.encoding == Encoding::MFM) ? 4 : 1;
+    const size_t sz = track.bytes.size();
+    return (m >= backoff) ? (m - backoff) : (sz + m - backoff);
+}
+
 // ─── buildRobotronTrack ───────────────────────────────────────────────────────
 
 /**
