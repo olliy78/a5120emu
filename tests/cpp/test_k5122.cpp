@@ -822,3 +822,54 @@ TEST_F(K5122Test, DeserializeRejectsTruncatedBlob) {
     const uint8_t* end = p + blob.size();
     EXPECT_FALSE(card2.deserialize(p, end));
 }
+
+// ─── Aufzeichnungsverfahren: Laufwerk-Default + Steuerwort-Override ─────────────
+//
+// FM/MFM des Lesepfads kommt aus DriveProfile::default_read_encoding (Default-Card =
+// mfs_525_ds80 → FM); ein „Lesen-Marke"-Steuerwort 0x85(MFM)/0x87(FM) an Ctrl-Port A
+// übersteuert den Default.  Erkennung: (ctrlA & 0xFD) == 0x85 — NUR 0x85/0x87.
+
+TEST_F(K5122Test, ReadEncoding_DefaultAusLaufwerkProfil) {
+    auto s = card.debugState();
+    EXPECT_EQ(s.readEncoding, Encoding::FM);   // mfs_525_ds80-Default = FM (ROM-Phase)
+    EXPECT_FALSE(s.readEncFromCtrlWord);
+}
+
+TEST_F(K5122Test, ReadEncoding_DefaultK5601IstFM) {
+    K1520Bus b;
+    K5122 c{b, { builtinDriveProfile("K5601"), builtinDriveProfile("K5601"),
+                 builtinDriveProfile("K5601"), builtinDriveProfile("K5601") }};
+    EXPECT_EQ(c.debugState().readEncoding, Encoding::FM);
+    EXPECT_FALSE(c.debugState().readEncFromCtrlWord);
+}
+
+TEST_F(K5122Test, ReadEncoding_Steuerwort87WaehltFM) {
+    card.ioWrite(0x10, 0x87);   // Lesen-Marke FM (bit1=1)
+    auto s = card.debugState();
+    EXPECT_EQ(s.readEncoding, Encoding::FM);
+    EXPECT_TRUE(s.readEncFromCtrlWord);
+}
+
+TEST_F(K5122Test, ReadEncoding_Steuerwort85WaehltMFM) {
+    card.ioWrite(0x10, 0x85);   // Lesen-Marke MFM (bit1=0)
+    auto s = card.debugState();
+    EXPECT_EQ(s.readEncoding, Encoding::MFM);
+    EXPECT_TRUE(s.readEncFromCtrlWord);
+}
+
+TEST_F(K5122Test, ReadEncoding_ResetWortB5AendertVerfahrenNicht) {
+    card.ioWrite(0x10, 0x85);   // → MFM
+    ASSERT_EQ(card.debugState().readEncoding, Encoding::MFM);
+    card.ioWrite(0x10, 0xB5);   // „Lesen 1"/Reset — (0xB5 & 0xFD) != 0x85
+    EXPECT_EQ(card.debugState().readEncoding, Encoding::MFM);   // unverändert
+}
+
+TEST_F(K5122Test, ReadEncoding_StrobeUndStepWorteLatchenNicht) {
+    // Typische /STR-/Step-/Idle-Worte dürfen das Verfahren nicht setzen.
+    for (uint8_t w : {0xFF, 0xF5, 0xF4, 0xF1, 0x09, 0x29, 0xA5, 0xBD, 0x95}) {
+        EXPECT_NE((w & 0xFDu), 0x85u) << "Wort 0x" << std::hex << int(w)
+                                      << " kollidiert mit dem Lesen-Marke-Prädikat";
+    }
+    card.ioWrite(0x10, 0xF4);   // /STR-artiges Wort
+    EXPECT_FALSE(card.debugState().readEncFromCtrlWord);   // kein Override
+}

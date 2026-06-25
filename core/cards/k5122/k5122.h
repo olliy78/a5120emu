@@ -151,6 +151,8 @@ public:
         unsigned sectorSize;   ///< Sektorgröße der aktiven Spur
         bool     mounted;      ///< Laufwerk gemountet?
         bool     busrq;        ///< /STR-DMA ausstehend
+        Encoding readEncoding; ///< effektives Lesepfad-Verfahren (Override ?? Laufwerk-Default)
+        bool     readEncFromCtrlWord; ///< true: per Steuerwort gewählt; false: Laufwerk-Default
     };
     DebugState debugState() const {
         DebugState s{};
@@ -160,6 +162,10 @@ public:
         s.transferring = transferring_; s.writeMode = write_mode_;
         s.headPos = head_pos_; s.trackLen = cur_track_ ? cur_track_->size() : 0;
         s.sectorSize = cur_sector_size_; s.busrq = dma_pending_;
+        s.readEncoding = read_enc_overridden_
+                             ? read_enc_
+                             : drives_[selected_drive_].profile().default_read_encoding;
+        s.readEncFromCtrlWord = read_enc_overridden_;
         return s;
     }
 
@@ -209,6 +215,12 @@ private:
     uint8_t current_head_   = 0;               ///< am /STR gelatchte Seite (bit2/FR)
     bool    step_dir_in_    = true;            ///< Step-Richtung (bit5 MR/SD, am /ST)
     uint8_t prev_ctrl_a_    = 0xFF;            ///< vorheriger Port-A-Wert (Kantenerkennung)
+
+    // ── Aufzeichnungsverfahren des Lesepfads (Laufwerk-Default + Steuerwort-Override) ─
+    // Default kommt aus DriveProfile::default_read_encoding (ROM-Phase); ein Lesen-
+    // Marke-Steuerwort 0x85(MFM)/0x87(FM) latcht read_enc_ und übersteuert ab dann.
+    bool     read_enc_overridden_ = false;     ///< true, sobald ein 0x85/0x87-Steuerwort kam
+    Encoding read_enc_            = Encoding::FM; ///< gelatchtes Verfahren (gültig wenn overridden)
 
     // ─── Lesekopf-Streaming-Modell (ersetzt sector_buf_/field_*) ─────────────
     const TrackImage* cur_track_    = nullptr; ///< aktive Spur (Zeiger auf robotron_track_)

@@ -83,11 +83,26 @@ TEST(DriveProfileBuiltin, mf6400_8_ds77) {
     EXPECT_TRUE(p.supports_mfm);
 }
 
+TEST(DriveProfileBuiltin, K5601) {
+    const DriveProfile& p = builtinDriveProfile("K5601");
+    EXPECT_EQ(p.name,         "K5601");
+    EXPECT_EQ(p.num_cyls,     80u);
+    EXPECT_EQ(p.num_heads,     2u);
+    EXPECT_EQ(p.rpm,         300u);
+    EXPECT_EQ(p.medium_inch,   5u);
+    EXPECT_TRUE(p.supports_fm);    // FM-lesefähig (Loader als FM verdrahtet)
+    EXPECT_TRUE(p.supports_mfm);
+    // ROM-/Loader-Lesepfad als FM verdrahtet
+    EXPECT_EQ(p.default_read_encoding, Encoding::FM);
+}
+
 TEST(DriveProfileBuiltin, UnbekannterName_gibtStandardprofil) {
     // Unbekannter Name → mfs_525_ds80 (Standardprofil)
     const DriveProfile& p = builtinDriveProfile("unbekannt_xyz");
     EXPECT_EQ(p.name, "mfs_525_ds80");
     EXPECT_EQ(p.num_cyls, 80u);
+    // Default-Lesepfad-Verfahren = FM (ROM-Bootphase)
+    EXPECT_EQ(p.default_read_encoding, Encoding::FM);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

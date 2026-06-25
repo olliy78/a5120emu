@@ -54,9 +54,25 @@ const DriveProfile& builtinDriveProfile(const std::string& name) {
         /*supports_mfm=*/true
     };
 
+    // K5601 — das in der Standard-A5120-Bürokonfiguration dreifach verbaute 5,25″-
+    // Laufwerk (80 Spuren, doppelseitig, 800 KB/Diskette).  Physisch MFM-fähig, aber
+    // auch FM-lesefähig; der Boot-ROM-/Loader-Lesepfad ist als FM verdrahtet
+    // (default_read_encoding = FM).  Das OS schaltet zur Laufzeit per Steuerwort um.
+    static const DriveProfile k5601 = {
+        "K5601",
+        /*num_cyls=*/    80,
+        /*num_heads=*/    2,
+        /*rpm=*/        300,
+        /*medium_inch=*/  5,
+        /*supports_fm=*/ true,
+        /*supports_mfm=*/true,
+        /*default_read_encoding=*/ Encoding::FM
+    };
+
     if (name == "ss_525_40")      return ss_525_40;
     if (name == "mf3200_8_ss77")  return mf3200_8_ss77;
     if (name == "mf6400_8_ds77")  return mf6400_8_ds77;
+    if (name == "K5601")          return k5601;
 
     // Standardprofil für unbekannte Namen und "mfs_525_ds80"
     return mfs_525_ds80;

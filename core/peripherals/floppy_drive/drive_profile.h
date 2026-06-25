@@ -32,6 +32,11 @@
  * | ss_525_40       | 5,25″ | 40×1         | MFM       | 300   |
  * | mf3200_8_ss77   | 8″    | 77×1         | FM        | 360   |
  * | mf6400_8_ds77   | 8″    | 77×2         | MFM       | 360   |
+ * | K5601           | 5,25″ | 80×2         | MFM (*)   | 300   |
+ *
+ * (*) K5601 = das in der Standard-A5120-Bürokonfiguration dreifach verbaute 5,25″-
+ *     Laufwerk.  Physisch MFM-fähig; der Boot-ROM-/Loader-Lesepfad ist jedoch **als FM
+ *     verdrahtet** (default_read_encoding = FM), siehe Feld-Doku unten.
  */
 struct DriveProfile {
     std::string name        = "mfs_525_ds80";
@@ -41,6 +46,26 @@ struct DriveProfile {
     uint8_t  medium_inch    = 5;      ///< 5 / 8 (für /HF-Frequenzwahl, informativ)
     bool     supports_fm    = false;  ///< 8″-Laufwerke
     bool     supports_mfm   = true;
+
+    /**
+     * @brief Default-Aufzeichnungsverfahren des **ROM-/Loader-Lesepfads** dieses Laufwerks.
+     *
+     * Die K5122 ist verfahrensneutral; das Verfahren ist Eigenschaft von Laufwerk +
+     * Medium + Format (siehe Klassen-Doku).  Dieses Feld liefert das Verfahren, das der
+     * Controller annimmt, **solange noch kein „Lesen-Marke"-Steuerwort gesehen wurde** —
+     * also in der frühesten ROM-Bootphase.  Der Boot-ROM liest die Systemspur als FM
+     * (`OUT 10H,0x87` → bit1=1), daher ist FM der sinnvolle Default für bootfähige
+     * Laufwerke (z. B. K5601 „für den Loader als FM verdrahtet").
+     *
+     * **Override zur Laufzeit:** Sobald die Software ein Lesen-Marke-Steuerwort schreibt
+     * (`0x85` = MFM / `0x87` = FM, K5122 latcht `(ctrlA & 0xFD) == 0x85`), übersteuert
+     * dieses das Default — so kann das OS später für die MFM-Datenspuren auf MFM
+     * umschalten, ohne dass ein zweiter Pfad nötig ist.
+     *
+     * @see K5122::startReadTransfer (Auswahl Default vs. Override)
+     * @see doc/cpa_format_detection.md §„Lesen-Marke"-Steuerwort (0x85/0x87)
+     */
+    Encoding default_read_encoding = Encoding::FM;
 
     /**
      * @brief Index-Periode in Z80-Takten aus der Drehzahl ableiten.

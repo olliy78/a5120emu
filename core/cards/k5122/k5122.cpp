@@ -390,6 +390,19 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
         }
     }
 
+    // ── Lesen-Marke-Steuerwort (0x85 = MFM / 0x87 = FM): Verfahren latchen ───
+    // FM/MFM ist Eigenschaft von Laufwerk+Medium; die Software wählt es über das
+    // „Lesen-Marke"-Steuerwort (doc/cpa_format_detection.md §93).  bit1 trennt
+    // MFM(0)/FM(1).  (data & 0xFD) == 0x85 erkennt NUR die beiden Kommandoworte
+    // 0x85/0x87 — der 0xB5-Reset und alle Strobe-/Step-Worte erfüllen es nicht,
+    // sodass die als MK(bit1)/MK1(bit4) togglenden Strobes hier nicht stören.
+    // Latch übersteuert den DriveProfile-Default (Laufwerk-Default + Steuerwort-
+    // Override); damit kann das OS später auf MFM-Datenspuren umschalten.
+    if ((data & 0xFD) == 0x85) {
+        read_enc_            = (data & 0x02) ? Encoding::FM : Encoding::MFM;
+        read_enc_overridden_ = true;
+    }
+
     // ── /ST (bit7) fallende Flanke: Schritt-Puls ─────────────────────────────
     if ((prev_ctrl_a_ & 0x80) && !(data & 0x80)) {
         // MR/SD (bit5): bit5=1 → inward (höhere Zylinder), bit5=0 → outward (Richtung 0)
@@ -587,8 +600,21 @@ void K5122::startReadTransfer() {
         return;
     }
 
+    // Aufzeichnungsverfahren wählen: Steuerwort-Override (0x85/0x87) hat Vorrang,
+    // sonst der DriveProfile-Default des angeschlossenen Laufwerks (für K5601 = FM).
+    const Encoding eff_enc = read_enc_overridden_
+                                 ? read_enc_
+                                 : drv.profile().default_read_encoding;
+
     // Robotron-Layout-Track on-the-fly erzeugen: IBM-Track parsen → Sektoren →
     // buildRobotronTrack.  Der Drive-Cache bleibt IBM-Format.
+    //
+    // HINWEIS (Verfahrensumschaltung, in Arbeit): eff_enc wählt das Verfahren; die
+    // verfahrensspezifische Spur-Synthese für echtes 3×A1-MFM steht noch aus.  Bis
+    // dahin liefert buildRobotronTrack für BEIDE Verfahren das boot-kompatible
+    // single-A1-Layout (Marke auf dem A1, Seeds 0xBF84/0xCDB4) — der emulierte
+    // ROM/Loader-IDAM-Suchpfad erwartet genau dieses Layout.  Ein direktes
+    // Umschalten auf buildTrack (Marke auf FE) würde die 2-Byte-IDAM-Suche brechen.
     auto sektoren   = TrackCodec::parseTrack(ibm_track);
     robotron_track_ = TrackCodec::buildRobotronTrack(sektoren);
     cur_sector_size_ = sektoren.empty() ? 128 : sektoren.front().size;
@@ -600,11 +626,13 @@ void K5122::startReadTransfer() {
     locked_       = false;
     markDriveAccess(selected_drive_);
 
-    LOG_INFO("K5122", ">>> READ D%d C=%u H=%u Spur=%zu Bytes (Robotron-Layout)",
+    LOG_INFO("K5122", ">>> READ D%d C=%u H=%u Spur=%zu Bytes (Robotron-Layout, %s%s)",
              selected_drive_,
              static_cast<unsigned>(drv.currentCylinder()),
              static_cast<unsigned>(current_head_),
-             robotron_track_.size());
+             robotron_track_.size(),
+             eff_enc == Encoding::FM ? "FM" : "MFM",
+             read_enc_overridden_ ? "/Steuerwort" : "/Laufwerk-Default");
 }
 
 /**
