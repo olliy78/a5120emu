@@ -158,9 +158,10 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
         if (enc == Encoding::MFM) {
             // ── MFM IDAM ──────────────────────────────────────────────────────
             fill(0x00, gaps.sync_len);      // 12×00 Sync
-            push(0xA1);
-            push(0xA1);
-            pushMark(0xFE, MarkType::Id);   // letztes A1+Mark-Byte tragen Id-Marke
+            push(0xA1);                     // Standard-IBM-MFM: 3× A1-Sync (fehlendes
+            push(0xA1);                     // Clock-Bit) VOR dem Mark-Byte. Stimmt mit
+            push(0xA1);                     // der CRC-Annahme {A1,A1,A1,FE,…} überein.
+            pushMark(0xFE, MarkType::Id);   // Mark-Byte FE trägt die Id-Marke
 
             // ID-CRC über [A1,A1,A1,FE,cyl,head,id,sc], Seed 0xFF,0xFF
             const uint8_t idam_preamble[] = {0xA1, 0xA1, 0xA1, 0xFE,
@@ -179,9 +180,10 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
 
             // ── MFM DAM ────────────────────────────────────────────────────────
             fill(0x00, gaps.sync_len);      // 12×00 Sync
+            push(0xA1);                     // 3× A1-Sync vor dem Data-Mark-Byte (wie IDAM)
             push(0xA1);
             push(0xA1);
-            pushMark(0xFB, MarkType::Data); // Mark-Byte trägt Data-Marke
+            pushMark(0xFB, MarkType::Data); // Mark-Byte FB trägt die Data-Marke
 
             // Daten-CRC: Robotron-Boot-Kompatibilität erfordert Seed 0xBF84 über die
             // reinen Datenbytes — crc16([A1,A1,A1,FB,data],0xFF,0xFF) ergibt einen

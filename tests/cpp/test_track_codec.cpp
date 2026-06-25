@@ -366,3 +366,50 @@ TEST(TrackCodecMfm, DreiSektoren128B_AlleGruen) {
             << "Sektor " << k << ": Datenbytes weichen ab";
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GRUPPE: ROM-Lese-Kalibrierung (Phase 1 FM/MFM-Umbau, doc/design/07 §10.5.1)
+//
+// Das ZRE-Boot-ROM liest nach einem Resync (MK/MK1-Strobe) im IDAM-Suchpfad
+// (STROBE_LOOP_BODY @025A → buf[0] @0261, dann):
+//   - FM  (NZ-Pfad @020B): buf[0] verworfen, buf[1] mit FE verglichen.
+//   - MFM (Z-Pfad  @0205): buf[0..3] verworfen, buf[4] mit FE verglichen.
+// Damit das IDAM matcht, muss der Resync NICHT auf das FE-Mark-Byte landen,
+// sondern davor:  FM → markPos-1,  MFM → markPos-4 (1 Sync-Byte + 3×A1).
+// Empirisch via boot_trace -z bestätigt (FM-Default: buf[0]=A1, buf[1]=FE).
+// Diese Tests sichern, dass buildTrack genau dieses Layout liefert (Grundlage
+// für die Resync-Offset-Logik im K5122, Phase 2).
+// ─────────────────────────────────────────────────────────────────────────────
+
+static size_t findIdMark(const TrackImage& t) {
+    for (size_t i = 0; i < t.marks.size(); ++i)
+        if (t.marks[i] == MarkType::Id) return i;
+    return SIZE_MAX;
+}
+
+TEST(RomReadKalibrierung, FM_NZPfad_buf1_ist_FE) {
+    TrackImage t = TrackCodec::buildTrack({makeSector(0, 0, 1, 128)}, Encoding::FM);
+    size_t mark = findIdMark(t);
+    ASSERT_NE(mark, SIZE_MAX);
+    ASSERT_GE(mark, size_t{1});
+    EXPECT_EQ(t.bytes[mark], 0xFE);
+    // FM: kein A1; Resync landet 1 Byte vor FE → buf[0]=Sync (verworfen), buf[1]=FE.
+    const size_t r = mark - 1;
+    EXPECT_EQ(t.bytes[r + 0], 0x00) << "buf[0] (verworfen) = Sync-Byte";
+    EXPECT_EQ(t.bytes[r + 1], 0xFE) << "buf[1] = IDAM-Marke (CP B == 0xFE im ROM)";
+}
+
+TEST(RomReadKalibrierung, MFM_ZPfad_buf4_ist_FE_nach_3xA1) {
+    TrackImage t = TrackCodec::buildTrack({makeSector(0, 0, 1, 128)}, Encoding::MFM);
+    size_t mark = findIdMark(t);
+    ASSERT_NE(mark, SIZE_MAX);
+    ASSERT_GE(mark, size_t{4});
+    EXPECT_EQ(t.bytes[mark], 0xFE);
+    // MFM: 3×A1 vor FE; Resync landet 4 Byte vor FE (1 Sync + 3×A1).
+    const size_t r = mark - 4;
+    EXPECT_EQ(t.bytes[r + 0], 0x00) << "buf[0] (verworfen) = Sync-Byte vor A1A1A1";
+    EXPECT_EQ(t.bytes[r + 1], 0xA1) << "buf[1] = A1";
+    EXPECT_EQ(t.bytes[r + 2], 0xA1) << "buf[2] = A1";
+    EXPECT_EQ(t.bytes[r + 3], 0xA1) << "buf[3] = A1";
+    EXPECT_EQ(t.bytes[r + 4], 0xFE) << "buf[4] = IDAM-Marke (CP B == 0xFE im ROM)";
+}
