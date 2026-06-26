@@ -309,7 +309,10 @@ TEST_F(K5122Test, MKStrobe_SyncsAufMarkenbyte) {
     ASSERT_TRUE(card.mountDisk(0, path, fmt1));
     card.ioWrite(0x18, 0xEE);
 
-    strobeRead(0);
+    // MFM-Lesemodus latchen (Steuerwort 0x85 = MFM-Marke + /STR-Lese-Strobe head0).
+    // Der Lese-Stream ist dann das treue MFM-Layout (4×A1 vor FE/FB).
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0x85);
 
     // Einige Bytes lesen (ins Gap hinein), dann MK pulsieren.
     readStream(20);
@@ -317,15 +320,13 @@ TEST_F(K5122Test, MKStrobe_SyncsAufMarkenbyte) {
     // MK pulsieren: base_ctrl_a nach /STR-Strobe ist ~0xF1 (bit0=1, bit3=0, rest hoch)
     pulseMK(0xF1);
 
-    // Das erste Byte nach MK-Puls muss ein Markenbyte sein.
-    // Im Robotron-Layout (K5122 verwendet on-the-fly buildRobotronTrack) ist
-    // das Markenbyte 0xA1 (Marke liegt auf dem A1-Byte, nicht auf FE/FB).
-    // Im IBM-Standard-Layout wären es 0xFE, 0xFB, 0xFC oder 0xF8.
+    // Der K5122 streamt den treuen Lese-Stream (buildFaithfulReadTrack, 4×A1-Sync) und
+    // re-synchronisiert nach dem MK-Puls VOR die Markensequenz (markPos-4 für MFM) — das
+    // erste IN 0x16 liefert also das erste A1-Sync-Byte (der ROM/SYL-Lese-Pfad überliest
+    // die A1 und trifft danach die FE/FB-Marke).
     uint8_t first = card.ioRead(0x16);
-    bool ist_marke = (first == 0xFE || first == 0xFB || first == 0xFC || first == 0xF8
-                      || first == 0xA1);
-    EXPECT_TRUE(ist_marke)
-        << "Nach MK-Puls: erstes Byte sollte Markenbyte sein, got 0x"
+    EXPECT_EQ(first, 0xA1u)
+        << "Nach MK-Puls: erstes Byte = A1-Sync (Resync auf erstes A1), got 0x"
         << std::hex << static_cast<int>(first);
 
     std::filesystem::remove(path);
@@ -716,9 +717,9 @@ TEST_F(K5122Test, WriteField_WEFlanke_TrifftZielsektorPerIDAM) {
     strobeRead(0);
     ASSERT_TRUE(bus.isBUSRQ());
 
-    // Kopf in den Bereich von Sektor 2 vorrücken.  Robotron-Layout 128B-Sektor =
-    // 164 Bytes (6 IDAM + 18 Gap + 2 DAM + 128 Daten + 2 CRC + 8 Gap) → 2. IDAM bei 164.
-    readStream(170);
+    // Kopf in den Bereich von Sektor 2 vorrücken.  Treuer Lese-Stream 128B-Sektor =
+    // 196 Bytes (23 IDAM-Feld + 18 Gap + 147 DAM-Feld + 8 Gap), 2. IDAM-Marke bei 212.
+    readStream(220);
     // Lesen gibt /BUSRQ frei; die Per-Byte-Drossel reassertiert ihn (wie im echten Lauf).
     card.update(1'000'000);
     ASSERT_TRUE(bus.isBUSRQ());

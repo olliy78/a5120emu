@@ -356,51 +356,41 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
     return result;
 }
 
-// ─── romReadResyncTarget (ROM-Lese-Kalibrierung §10.5.1) ───────────────────────
+// ─── romReadResyncTarget (Resync-Offset des MK/MK1-Strobes) ────────────────────
 
+/**
+ * Zielposition des Lesekopfs nach einem MK/MK1-Resync-Strobe.  Der Marken-FF erkennt die
+ * nächste Adressmarke (FE/FB) und rückt davor, sodass der Lese-Stream danach
+ * `[A1×4][FE/FB]` (MFM, markPos-4) bzw. `[sync][FE/FB]` (FM, markPos-1) liefert.  Diese
+ * Ausrichtung passt für ROM-Boot-Read (1 Wegwerf-Byte + Vergleich) UND SYL-Lader
+ * (skip-A1-Schleife).  Der Lese-Stream stammt aus @ref buildFaithfulReadTrack.
+ */
 size_t romReadResyncTarget(const TrackImage& track, size_t fromPos, Encoding readEnc) {
     if (track.bytes.empty()) return SIZE_MAX;
     const size_t m = track.nextMark(fromPos);
     if (m == SIZE_MAX) return SIZE_MAX;
 
-    // Legacy single-A1-Layout (buildRobotronTrack): Marke auf dem A1 → direkt darauf
-    // re-synchronisieren (kein Offset, kein Encoding-Gate; aktueller Boot-Pfad).
-    if (track.bytes[m] == 0xA1) return m;
-
-    // Faithful-Layout (buildTrack): der Markendetektor erkennt nur die Marken der
-    // EINGESTELLTEN Aufzeichnungsart. Bei Mismatch feuert kein MKE → kein Resync.
-    if (readEnc != track.encoding) return SIZE_MAX;
-
-    // Resync landet VOR der Markensequenz: markPos-(1+nA1), nA1 = 3 (MFM) / 0 (FM)
-    // → FM markPos-1, MFM markPos-4. Zyklischer Umlauf am Spuranfang.
-    const size_t backoff = (track.encoding == Encoding::MFM) ? 4 : 1;
+    const size_t backoff = (readEnc == Encoding::MFM) ? 4 : 1;
     const size_t sz = track.bytes.size();
     return (m >= backoff) ? (m - backoff) : (sz + m - backoff);
 }
 
-// ─── buildRobotronTrack ───────────────────────────────────────────────────────
+// ─── buildFaithfulReadTrack ─────────────────────────────────────────────────────
 
 /**
- * Robotron-A5120-Boot-Track-Layout: kein IAM, einzelner A1-Sync, Marke auf dem A1-Byte.
+ * Treuer FM/MFM-Lese-Stream für den K5122-Boot-Lesepfad — siehe track_codec.h für die
+ * Begründung der 4×A1-Sync-Länge (gemeinsamer Modus für ROM-Boot-Read und SYL-Lader).
  *
- * Motivation: Die ZVE2-Leseroutinen der A5120-Boot-ROM (und des Sekundärladers) erwarten
- * nach einem MK/MK1-Resync-Strobe:
- *   buf[0] = A1  (das Marken-Byte, auf dem nextMark() steht)
- *   buf[1] = FE  (IDAM-Marke-Byte) bzw. 0xFB (DAM-Marke-Byte)
- *
- * Das generische buildTrack-Layout hat die Marke auf dem FE/FB-Byte (nach drei A1-Bytes),
- * was zu einem Off-by-one führt und die IDAM-Erkennung der ROM-Routine bricht.
- *
- * Hier: Marke liegt auf dem einzelnen A1-Byte; FE/FB ist das unmittelbar folgende Byte ohne
- * Marke.  parseTrack() versteht dieses Layout NICHT (es sucht die Marke auf FE/FB); diese
- * Funktion ist ausschließlich für den Vorwärts-Streaming-Pfad (ZVE2 liest, nie schreibt).
+ * Layout je Sektor (FM: kein A1-Sync, Marke FE/FB direkt; MFM: 4×A1 vor FE/FB):
+ *   [12×00 sync][A1×4][FE][cyl][head][id][sc][idcrc][gap][12×00][A1×4][FB][data][crc][gap]
+ * marks[] liegt auf dem FE/FB-Byte (wie buildTrack); CRC ist Standard-IBM-CCITT über die
+ * 3×A1-Spanne (identisch zu buildTrack/parseTrack).
  */
-TrackImage buildRobotronTrack(const std::vector<LogicalSector>& sectors) {
+TrackImage buildFaithfulReadTrack(const std::vector<LogicalSector>& sectors, Encoding enc) {
     TrackImage t;
-    t.encoding = Encoding::MFM;
+    t.encoding = enc;
     t.bitcells = 0;
 
-    // Hilfslambdas
     auto push = [&](uint8_t byte) {
         t.bytes.push_back(byte);
         t.marks.push_back(MarkType::None);
@@ -409,52 +399,55 @@ TrackImage buildRobotronTrack(const std::vector<LogicalSector>& sectors) {
         t.bytes.push_back(byte);
         t.marks.push_back(mt);
     };
-    auto fill = [&](uint8_t byte, size_t count) {
-        for (size_t i = 0; i < count; ++i) push(byte);
-    };
+    auto fill = [&](uint8_t byte, size_t count) { for (size_t i = 0; i < count; ++i) push(byte); };
+
+    const bool isMfm = (enc == Encoding::MFM);
+    const size_t kSync = isMfm ? 12u : 6u;
+    const size_t kReadA1 = 4u;          // 4×A1 = der für ROM UND SYL gemeinsame Modus
 
     for (const auto& sec : sectors) {
         const uint8_t sc = sizeCode(sec.size);
 
-        // ── IDAM: einzelner A1 mit Id-Marke ──────────────────────────────────
-        pushMark(0xA1, MarkType::Id);   // Marke auf dem A1, nicht auf FE
-        push(0xFE);
-        push(sec.cyl);
-        push(sec.head);
-        push(sec.id);
-        push(sc);
-
-        // id_gap: 18 Bytes für 128B-Sektoren, 27 Bytes für größere
-        const size_t id_gap = (sec.size <= 128u) ? 18u : 27u;
-        fill(0x4E, id_gap);
-
-        // ── DAM: einzelner A1 mit Data-Marke ─────────────────────────────────
-        pushMark(0xA1, MarkType::Data); // Marke auf dem A1, nicht auf FB
-        push(0xFB);
-
-        // Daten
-        for (uint8_t b : sec.data) push(b);
-
-        // CRC: size<=128 → Seed 0xBF84 über Datenbytes;
-        //      size> 128 → Seed 0xCDB4 über [0xFB]+Datenbytes
-        uint16_t crc;
-        if (sec.size <= 128u) {
-            crc = crc16(sec.data.data(), sec.data.size(), 0xBF, 0x84);
+        // ── IDAM ──────────────────────────────────────────────────────────────
+        fill(0x00, kSync);
+        if (isMfm) fill(0xA1, kReadA1);
+        pushMark(0xFE, MarkType::Id);
+        // ID-CRC: Standard-IBM-MFM über [A1,A1,A1,FE,…] bzw. FM über [FE,…]
+        uint16_t idCrc;
+        if (isMfm) {
+            const uint8_t in[] = {0xA1, 0xA1, 0xA1, 0xFE, sec.cyl, sec.head, sec.id, sc};
+            idCrc = crc16(in, sizeof(in), 0xFF, 0xFF);
         } else {
-            // Temporärer Puffer [FB] + data für die CRC
-            std::vector<uint8_t> tmp;
-            tmp.reserve(1 + sec.data.size());
-            tmp.push_back(0xFB);
-            tmp.insert(tmp.end(), sec.data.begin(), sec.data.end());
-            crc = crc16(tmp.data(), tmp.size(), 0xCD, 0xB4);
+            const uint8_t in[] = {0xFE, sec.cyl, sec.head, sec.id, sc};
+            idCrc = crc16Ccitt(in, sizeof(in));
         }
-        push(static_cast<uint8_t>(crc >> 8));
-        push(static_cast<uint8_t>(crc & 0xFF));
+        push(sec.cyl); push(sec.head); push(sec.id); push(sc);
+        push(static_cast<uint8_t>(idCrc >> 8));
+        push(static_cast<uint8_t>(idCrc & 0xFF));
 
-        // 8 Bytes Gap nach dem Datenfeld
+        fill(0x4E, (sec.size <= 128u) ? 18u : 27u);
+
+        // ── DAM ───────────────────────────────────────────────────────────────
+        fill(0x00, kSync);
+        if (isMfm) fill(0xA1, kReadA1);
+        pushMark(0xFB, MarkType::Data);
+        uint16_t dataCrc;
+        if (isMfm) {
+            std::vector<uint8_t> in = {0xA1, 0xA1, 0xA1, 0xFB};
+            in.insert(in.end(), sec.data.begin(), sec.data.end());
+            dataCrc = crc16(in.data(), in.size(), 0xFF, 0xFF);
+        } else {
+            std::vector<uint8_t> in; in.reserve(1 + sec.data.size());
+            in.push_back(0xFB);
+            in.insert(in.end(), sec.data.begin(), sec.data.end());
+            dataCrc = crc16Ccitt(in.data(), in.size());
+        }
+        for (uint8_t b : sec.data) push(b);
+        push(static_cast<uint8_t>(dataCrc >> 8));
+        push(static_cast<uint8_t>(dataCrc & 0xFF));
+
         fill(0x4E, 8u);
     }
-
     return t;
 }
 

@@ -725,14 +725,13 @@ DriveProfile[4] — Zoll/Spuren/Köpfe/U-min/Verfahren je Slot  drive_profile.*
   erwarten physisch verschiedene Daten-CRC-Bytes; Details in `doc/refactoring_floppy_emulator.md`
   §15.2.
 - **Verdrahtung & Boot:** `A5120Machine` verdrahtet die `K5122` als Slot-2-Floppy (`a5120.h`).  Die
-  A5120 **bootet die echte Diskette vollständig in CP/A** (`CP/A, Version 25.09.89 …`), alle
-  `test_boot_integration`-Stadien grün — inkl. Boot von den Laufwerken **B: und C:** (leere niedrigere
-  Laufwerke werden vom ROM übersprungen, §15.6).  Zwei boot-spezifische Anpassungen waren nötig: ein
-  **Robotron-Track-Layout** (`buildRobotronTrack`: single-A1, kein IAM, Marke auf dem A1, CRC-Seed
-  pro Sektorgröße — passend zur idiosynkratischen IDAM-Suche des ZVE2-Lesers) und die **Track-Ende-
-  /BUSRQ-Arbitrierung** (`OUT(13H),03H` → /BUSRQ frei, gegated auf 128-B-Spuren).  Details:
-  `doc/refactoring_floppy_emulator.md` §15.4.  Das generische IBM-/HFE-Layout bleibt unberührt.
-- **Tests:** `test_track_codec`, `test_robotron_track`, `test_bit_codec`, `test_hfe_image`,
+  A5120 **bootet die echte Standard-IBM-MFM-Diskette vollständig in CP/A** (`CP/A, Version 25.09.89 …`),
+  alle `test_boot_integration`-Stadien grün — inkl. Boot von den Laufwerken **B: und C:** (leere
+  niedrigere Laufwerke werden vom ROM übersprungen, §15.6).  Der Boot-Lesepfad ist **codierungstreu**
+  (keine Fake-Umwandlung): `startReadTransfer()` streamt `buildFaithfulReadTrack` (4×A1-Sync — der
+  gemeinsame Modus für Boot-ROM und SYL-Lader), Resync über `romReadResyncTarget`, eine
+  Standard-IBM-CCITT-CRC.  Vollständiges Modell: `doc/design/07_k5122_afs.md` §10.
+- **Tests:** `test_track_codec`, `test_bit_codec`, `test_hfe_image`,
   `test_disk_image_raw`, `test_drive_profile`, `test_floppy_drive2`, `test_k5122` (GoogleTest);
   alle grün, ebenso `test_boot_integration` (Full-Machine) und `test_k2526` (ZVE2-Floppy-Kette).
 

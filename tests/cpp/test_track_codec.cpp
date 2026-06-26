@@ -50,14 +50,12 @@ TEST(TrackCodecCrc, Vereinheitlichung_A1A1A1_gibt_CDB4) {
     EXPECT_EQ(TrackCodec::crc16(in, 3, 0xFF, 0xFF), 0xCDB4u);
 }
 
-TEST(TrackCodecCrc, Vereinheitlichung_A1A1A1FB_tatsaecklicherWert) {
-    // BEFUND: crc16([A1,A1,A1,FB], 4, 0xFF,0xFF) ergibt 0xE295, NICHT 0xBF84.
-    // Die Vereinheitlichung über [A1,A1,A1,FB] → 0xBF84 gilt NICHT — die
-    // Präambel-CRC-Kette hat an Position 4 (nach FB) einen anderen Zustand.
-    // buildTrack/parseTrack verwenden daher den Boot-kompatiblen Seed 0xBF84 direkt
-    // über die reinen Datenbytes (nicht über die Präambel).
+TEST(TrackCodecCrc, MFM_DatenCrc_Seed_A1A1A1FB_ist_E295) {
+    // Standard-IBM-MFM-Daten-CRC: crc16([A1,A1,A1,FB], 0xFF,0xFF) == 0xE295.
+    // Dieser Zwischenzustand ist der Seed, den der Lader im MFM-Modus ([03FD] bit1=0)
+    // über die Datenbytes weiterführt — Standard-CCITT über [A1,A1,A1,FB]+data.
     const uint8_t in[] = {0xA1, 0xA1, 0xA1, 0xFB};
-    EXPECT_EQ(TrackCodec::crc16(in, 4, 0xFF, 0xFF), 0xE295u);  // tatsächlicher Wert
+    EXPECT_EQ(TrackCodec::crc16(in, 4, 0xFF, 0xFF), 0xE295u);
 }
 
 TEST(TrackCodecCrc, CDB4_Pfad_aequivalent_zu_Seed_0xFF) {
@@ -79,25 +77,6 @@ TEST(TrackCodecCrc, CDB4_Pfad_aequivalent_zu_Seed_0xFF) {
     uint16_t new_crc = TrackCodec::crc16(new_input.data(), new_input.size(), 0xFF, 0xFF);
 
     EXPECT_EQ(old_crc, new_crc);
-}
-
-TEST(TrackCodecCrc, BF84_NICHT_aequivalent_zu_A1A1A1FB_Seed0xFF) {
-    // BEFUND: crc16(data, 0xBF,0x84) ist NICHT gleich crc16([A1A1A1FB]+data, 0xFF,0xFF).
-    // Die beiden Pfade divergieren (0xBF84 ist der Seed NACH dem DAM-FB-Byte,
-    // aber crc16([A1A1A1FB],4,0xFF,0xFF)==0xE295, nicht 0xBF84).
-    // buildTrack/parseTrack verwenden daher den direkten Seed 0xBF84 über Datenbytes.
-    std::vector<uint8_t> data(128, 0xCD);
-
-    uint16_t bf84_crc = TrackCodec::crc16(data.data(), data.size(), 0xBF, 0x84);
-
-    std::vector<uint8_t> new_input;
-    new_input.push_back(0xA1); new_input.push_back(0xA1);
-    new_input.push_back(0xA1); new_input.push_back(0xFB);
-    new_input.insert(new_input.end(), data.begin(), data.end());
-    uint16_t preamble_crc = TrackCodec::crc16(new_input.data(), new_input.size(), 0xFF, 0xFF);
-
-    // Nicht äquivalent — Dokumentation des tatsächlichen Befundes
-    EXPECT_NE(bf84_crc, preamble_crc);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -435,20 +414,45 @@ TEST(RomReadKalibrierung, ResyncTarget_MFM_Match_markPos_minus_4) {
     EXPECT_EQ(t.bytes[r + 4], 0xFE);   // buf[4] = FE
 }
 
-TEST(RomReadKalibrierung, ResyncTarget_Mismatch_keinMKE) {
-    // read_enc_ ≠ track.encoding → kein MKE → kein Resync (SIZE_MAX).
-    TrackImage tm = TrackCodec::buildTrack({makeSector(0, 0, 1, 128)}, Encoding::MFM);
-    EXPECT_EQ(TrackCodec::romReadResyncTarget(tm, 0, Encoding::FM), SIZE_MAX);
-    TrackImage tf = TrackCodec::buildTrack({makeSector(0, 0, 1, 128)}, Encoding::FM);
-    EXPECT_EQ(TrackCodec::romReadResyncTarget(tf, 0, Encoding::MFM), SIZE_MAX);
-}
+// buildFaithfulReadTrack ist der tatsächlich gestreamte Boot-Lese-Stream: 4×A1-Sync, der
+// gemeinsame Modus, den ROM-Boot-Read (1 Wegwerf + 3 Reads, FE bei buf[4]) UND SYL-Lader
+// (skip-A1-Schleife) gleichzeitig bedienen.
 
-TEST(RomReadKalibrierung, ResyncTarget_LegacyA1_direktAufMarke_keinGate) {
-    // buildRobotronTrack (Boot-Pfad): Marke auf A1 → Resync direkt darauf, Encoding egal.
-    TrackImage t = TrackCodec::buildRobotronTrack({makeSector(0, 0, 1, 128)});
+TEST(RomReadKalibrierung, FaithfulRead_MFM_4xA1_buf4_ist_FE) {
+    TrackImage t = TrackCodec::buildFaithfulReadTrack({makeSector(0, 0, 1, 128)}, Encoding::MFM);
     size_t mark = findIdMark(t);
     ASSERT_NE(mark, SIZE_MAX);
-    ASSERT_EQ(t.bytes[mark], 0xA1);
-    EXPECT_EQ(TrackCodec::romReadResyncTarget(t, 0, Encoding::FM),  mark);
-    EXPECT_EQ(TrackCodec::romReadResyncTarget(t, 0, Encoding::MFM), mark);
+    ASSERT_GE(mark, size_t{4});
+    EXPECT_EQ(t.bytes[mark], 0xFE);
+    // MFM: 4×A1 vor FE; Resync landet auf dem ERSTEN A1 (markPos-4).
+    size_t r = TrackCodec::romReadResyncTarget(t, mark, Encoding::MFM);
+    ASSERT_NE(r, SIZE_MAX);
+    EXPECT_EQ(r, mark - 4);
+    EXPECT_EQ(t.bytes[r + 0], 0xA1) << "buf[0] = A1 (ROM verwirft, SYL überspringt)";
+    EXPECT_EQ(t.bytes[r + 1], 0xA1) << "buf[1] = A1";
+    EXPECT_EQ(t.bytes[r + 2], 0xA1) << "buf[2] = A1";
+    EXPECT_EQ(t.bytes[r + 3], 0xA1) << "buf[3] = A1";
+    EXPECT_EQ(t.bytes[r + 4], 0xFE) << "buf[4] = IDAM-Marke (CP B == 0xFE im ROM)";
+}
+
+TEST(RomReadKalibrierung, FaithfulRead_FM_buf1_ist_FE) {
+    TrackImage t = TrackCodec::buildFaithfulReadTrack({makeSector(0, 0, 1, 128)}, Encoding::FM);
+    size_t mark = findIdMark(t);
+    ASSERT_NE(mark, SIZE_MAX);
+    ASSERT_GE(mark, size_t{1});
+    EXPECT_EQ(t.bytes[mark], 0xFE);   // FM: kein A1, Marke direkt
+    size_t r = TrackCodec::romReadResyncTarget(t, mark, Encoding::FM);
+    ASSERT_NE(r, SIZE_MAX);
+    EXPECT_EQ(r, mark - 1);
+    EXPECT_EQ(t.bytes[r + 1], 0xFE) << "buf[1] = FE";
+}
+
+TEST(RomReadKalibrierung, FaithfulRead_StandardCrc_parseTrackValidiert) {
+    // buildFaithfulReadTrack nutzt die Standard-IBM-CCITT-CRC (kein Sonderfall) →
+    // parseTrack akzeptiert IDAM- und Daten-CRC.
+    TrackImage t = TrackCodec::buildFaithfulReadTrack({makeSector(3, 1, 2, 1024)}, Encoding::MFM);
+    auto secs = TrackCodec::parseTrack(t);
+    ASSERT_EQ(secs.size(), 1u);
+    EXPECT_TRUE(secs[0].id_crc_ok);
+    EXPECT_TRUE(secs[0].data_crc_ok);
 }

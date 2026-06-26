@@ -13,9 +13,9 @@
  * Controller ist verfahrensneutral.  Unterstützte Image-Backends (über @ref DiskImage):
  * Raw-`.img` (@ref RawSectorImage) und HFE v1 (HfeImage).
  *
- * Für die A5120-Bootdiskette erzeugt @ref startReadTransfer() on-the-fly das
- * Robotron-spezifische Spurlayout (@ref TrackCodec::buildRobotronTrack), das die
- * idiosynkratische IDAM-Suche der ZVE2-Boot-/Loader-Leseroutinen erwartet.
+ * Für den Boot-Lesepfad erzeugt @ref startReadTransfer() on-the-fly einen treuen FM/MFM-
+ * Lese-Stream (@ref TrackCodec::buildFaithfulReadTrack, 4×A1-Sync) — die Sync-Länge, die
+ * ROM-Boot-Leseroutine und SYL-Lader gemeinsam bedienen.
  *
  * I/O-Port-Belegung (Basis 0x10): zwei Z80-PIOs (Steuer 0x10–0x13, Daten 0x14–0x17) plus
  * 8212-Drive-Select (0x18).  Side-Select = Port-A bit2 (/FR), am /STR-Strobe gelatcht;
@@ -228,6 +228,8 @@ private:
     // ─── Controller-Zustand ──────────────────────────────────────────────────
     int     selected_drive_ = 0;
     uint8_t current_head_   = 0;               ///< am /STR gelatchte Seite (bit2/FR)
+    uint8_t loaded_cyl_     = 0xFF;            ///< (Zyl,Kopf) der aktuell geladenen Lese-Spur —
+    uint8_t loaded_head_    = 0xFF;            ///<   /STR-Refresh lädt nur bei Wechsel neu (kein Rewind)
     bool    step_dir_in_    = true;            ///< Step-Richtung (bit5 MR/SD, am /ST)
     uint8_t prev_ctrl_a_    = 0xFF;            ///< vorheriger Port-A-Wert (Kantenerkennung)
 
@@ -237,9 +239,9 @@ private:
     bool     read_enc_overridden_ = false;     ///< true, sobald ein 0x85/0x87-Steuerwort kam
     Encoding read_enc_            = Encoding::FM; ///< gelatchtes Verfahren (gültig wenn overridden)
 
-    // ─── Lesekopf-Streaming-Modell (ersetzt sector_buf_/field_*) ─────────────
-    const TrackImage* cur_track_    = nullptr; ///< aktive Spur (Zeiger auf robotron_track_)
-    TrackImage        robotron_track_;          ///< Robotron-Layout-Track für das Streaming;
+    // ─── Lesekopf-Streaming-Modell ──────────────────────────────────────────
+    const TrackImage* cur_track_    = nullptr; ///< aktive Spur (Zeiger auf read_stream_track_)
+    TrackImage        read_stream_track_;       ///< treuer FM/MFM-Lese-Stream (4×A1-Sync);
                                                ///< wird in startReadTransfer() aus dem IBM-Track
                                                ///< des Drive-Cache erzeugt (on-the-fly).
                                                ///< Der Drive-Cache bleibt immer IBM-Format,

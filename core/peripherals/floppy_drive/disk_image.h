@@ -15,7 +15,6 @@
 
 #pragma once
 #include "track_image.h"
-#include "track_codec.h"     // TrackLayout
 #include "format_parser.h"   // DiskFormat
 #include <cstdint>
 #include <memory>
@@ -76,12 +75,9 @@ public:
      * @param path          Pfad zur Image-Datei
      * @param fmt           DiskFormat (nur Raw); std::nullopt für self-describing
      * @param write_protect Schreibschutz
-     * @param layout        Track-Layout für das Raw-Backend (Default IbmStandard).
-     *                      HFE-Dateien sind self-describing und ignorieren diesen Parameter.
      * @return DiskImage oder nullptr bei Fehler/unbekanntem Format
      */
     static std::unique_ptr<DiskImage> open(const std::string& path,
                                            std::optional<DiskFormat> fmt,
-                                           bool write_protect,
-                                           TrackLayout layout = TrackLayout::IbmStandard);
+                                           bool write_protect);
 };

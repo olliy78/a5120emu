@@ -21,8 +21,7 @@
 
 std::unique_ptr<DiskImage> DiskImage::open(const std::string& path,
                                            std::optional<DiskFormat> fmt,
-                                           bool write_protect,
-                                           TrackLayout layout) {
+                                           bool write_protect) {
     // Erste 8 Bytes lesen für Signaturerkennung.
     std::ifstream f(path, std::ios::binary);
     if (!f) return nullptr;
@@ -46,7 +45,7 @@ std::unique_ptr<DiskImage> DiskImage::open(const std::string& path,
     if (!fmt.has_value()) return nullptr;
 
     auto img = std::make_unique<RawSectorImage>(path, *fmt, write_protect,
-                                                Encoding::MFM, layout);
+                                                Encoding::MFM);
     if (!img->isOpen()) return nullptr;
 
     return img;

@@ -908,12 +908,12 @@ nicht-byte-alignierter Bitposition (`mfm_cell_word(0xC2)`=`0x52A4` kann ein spur
     erwarten also physisch **unterschiedliche** Daten-CRC-Bytes; eine einzige eingebackene
     CRC kann nicht beide gleichzeitig befriedigen — das war der reale Grund für die alte
     `stream_continuous_`-Verzweigung, kein Synthese-Artefakt.
-  - `TrackCodec`/`buildTrack` verwendet daher für die MFM-Daten-CRC den verifizierten
-    boot-kompatiblen Seed `crc16(Daten, 0xBF, 0x84)` über die reinen Datenbytes; der
-    `buildTrack`↔`parseTrack`-Roundtrip ist damit byte-genau und konsistent.
-  - **Im Boot-Pfad gelöst (§15.4):** `TrackCodec::buildRobotronTrack` wählt den Daten-CRC
-    pro Sektorgröße — 128 B → `crc16(Daten, 0xBF84)` (Sekundärlader), ≥1024 B →
-    `crc16([FB]+Daten, 0xCDB4)` (3. Stufe).  Damit verifizieren beide OS-Stadien korrekt.
+  > **Aktueller Stand:** `TrackCodec`/`buildTrack`/`buildFaithfulReadTrack` verwenden **eine**
+  > Standard-IBM-CCITT-Daten-CRC über `[A1 A1 A1 FB]+Daten` (Seed 0xFFFF) — die echte Disk-CRC,
+  > kein Sonderfall. Boot-ROM und SYL-Lader werden über den **4×A1-Lese-Stream** bedient
+  > (`buildFaithfulReadTrack`); das 4. A1 ist reines Sync und nicht in der CRC. Modell:
+  > `doc/design/07_k5122_afs.md` §10. Die Notizen oben dokumentieren den damaligen Untersuchungs-
+  > stand und sind durch §10 ersetzt.
 
 ### 15.3 Bewusst noch offen (dokumentierte Folgearbeit)
 

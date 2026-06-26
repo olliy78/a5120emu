@@ -66,11 +66,21 @@ uint8_t K5122::ioRead(uint8_t port) {
             // Streaming-Datenpfad: Bytes des TrackImage byteweise ausgeben.
             // Der Kopf rotiert zyklisch — bei Erreichen des Spurendes wieder von vorn.
             if (cur_track_ && !cur_track_->empty()) {
-                result = cur_track_->bytes[head_pos_];
+                const size_t pos     = head_pos_;
+                const bool   is_mark = cur_track_->marks[pos] != MarkType::None;
+                result = cur_track_->bytes[pos];
+                // Falscher Aufzeichnungsmodus (read_enc_ ≠ Spur-Codierung): der
+                // Datenseparator demoduliert die Marken-/Datenbytes als Müll → die
+                // Marke ist "ungültig" (≠ FE/FB/A1), ZVE2 findet kein IDAM.  Gaps
+                // sind weder FM noch MFM und kommen unverändert durch.  So scheitert
+                // ein Read im falschen Verfahren (z. B. ROM-FM-Probe auf MFM-Spur),
+                // das ROM läuft in den Index-Timeout und toggelt MK (FM↔MFM).
+                if (is_mark && effReadEnc() != cur_track_->encoding) {
+                    result = 0x00;
+                }
                 head_pos_ = (head_pos_ + 1) % cur_track_->size();
                 // Per-Byte-Drossel: Byte abgeholt → ZVE2 verliert den Bus, bis das
                 // nächste Byte ~1 Byteperiode später bereitliegt (s. update()).
-                // In der Lücke läuft ZVE1.
                 byte_ready_ = false;
                 byte_acc_   = 0;
                 bus_.releaseBUSRQ();
@@ -188,7 +198,7 @@ bool K5122::mountDisk(int drive, std::unique_ptr<DiskImage> img, bool write_prot
  *
  * Das DiskImage wird im IBM-Standard-Format geöffnet (DiskImage::open Default).
  * Der Drive-Cache speichert IBM-Format-Tracks, damit der Write-Pfad (commitWrite →
- * parseTrack → buildTrack) unverändert funktioniert.  Das Robotron-Layout für den
+ * parseTrack → buildTrack) unverändert funktioniert.  Der treue FM/MFM-Lese-Stream für den
  * Lese-Streaming-Pfad wird von startReadTransfer() on-the-fly erzeugt.
  */
 bool K5122::mountDisk(int drive, const std::string& path,
@@ -430,11 +440,19 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
                 bus_.releaseBUSRQ();
                 LOG_DEBUG("K5122", "/STR ZVE2-Commit SCHREIBEN abgeschlossen, BUSRQ freigegeben");
             } else {
-                // Lese-Refresh: Spur für ggf. neuen Kopf neu laden (z. B. Kopf-Wechsel).
-                startReadTransfer();
-                byte_ready_ = true;          // erstes Byte der neuen Spur liegt bereit
+                // Lese-Refresh (kontinuierliche Rotation): die Scheibe dreht weiter,
+                // ein erneutes /STR auf DERSELBEN (Zyl,Kopf) setzt den Kopf NICHT zurück
+                // (kein Rewind) — head_pos_ läuft weiter.  Nur bei Kopf-/Zylinderwechsel
+                // (Seek, Seitenumschaltung) wird die Spur neu geladen (head_pos_=0).
+                const bool same_track =
+                    cur_track_ != nullptr &&
+                    loaded_head_ == current_head_ &&
+                    loaded_cyl_  == drives_[selected_drive_].currentCylinder();
+                if (!same_track) startReadTransfer();
+                byte_ready_ = true;          // nächstes Byte liegt bereit
                 byte_acc_   = 0;
-                LOG_DEBUG("K5122", "/STR ZVE2-Lese-Refresh: Spur neu geladen, BUSRQ gehalten");
+                LOG_DEBUG("K5122", "/STR ZVE2-Lese-Refresh: %s, BUSRQ gehalten",
+                          same_track ? "weiter (kein Rewind)" : "Spur neu geladen");
             }
         } else {
             // ZVE1-Kontext: neuen DMA-Transfer auslösen
@@ -568,13 +586,14 @@ void K5122::doStep() {
 }
 
 /**
- * @brief Armiert einen Lese-Transfer: erzeugt einen Robotron-Layout-Track und streamt ihn.
+ * @brief Armiert einen Lese-Transfer: erzeugt den treuen FM/MFM-Lese-Stream und streamt ihn.
  *
  * Der Drive-Cache liefert einen IBM-Format-Track (buildTrack); daraus werden via
- * parseTrack die logischen Sektoren gewonnen und anschließend via buildRobotronTrack ein
- * Robotron-Layout-Track erzeugt.  Dieser liegt in robotron_track_ und der Zeiger
- * cur_track_ zeigt darauf.  Der IBM-Format-Track im Drive-Cache bleibt unberührt, damit
- * commitWrite()/parseTrack() weiterhin funktioniert.
+ * parseTrack die logischen Sektoren gewonnen und anschließend via buildFaithfulReadTrack
+ * (4×A1-Sync, Standard-CRC) der Lese-Stream erzeugt.  Dieser liegt in read_stream_track_ und
+ * der Zeiger cur_track_ zeigt darauf.  Der IBM-Format-Track im Drive-Cache bleibt unberührt,
+ * damit commitWrite()/parseTrack() weiterhin funktioniert.  Das Verfahren (FM/MFM) kommt aus
+ * dem Steuerwort-Override bzw. dem DriveProfile-Default (eff_enc).
  *
  * Bei leerem Laufwerk oder Spur → cur_track_=nullptr.
  */
@@ -584,7 +603,7 @@ void K5122::startReadTransfer() {
         LOG_WARN("K5122", "Lese-Transfer: D%d nicht montiert", selected_drive_);
         transferring_ = false;
         cur_track_    = nullptr;
-        robotron_track_ = {};
+        read_stream_track_ = {};
         return;
     }
 
@@ -596,7 +615,7 @@ void K5122::startReadTransfer() {
                  selected_drive_, static_cast<unsigned>(current_head_));
         transferring_ = false;
         cur_track_    = nullptr;
-        robotron_track_ = {};
+        read_stream_track_ = {};
         return;
     }
 
@@ -606,31 +625,29 @@ void K5122::startReadTransfer() {
                                  ? read_enc_
                                  : drv.profile().default_read_encoding;
 
-    // Robotron-Layout-Track on-the-fly erzeugen: IBM-Track parsen → Sektoren →
-    // buildRobotronTrack.  Der Drive-Cache bleibt IBM-Format.
-    //
-    // HINWEIS (Verfahrensumschaltung, in Arbeit): eff_enc wählt das Verfahren; die
-    // verfahrensspezifische Spur-Synthese für echtes 3×A1-MFM steht noch aus.  Bis
-    // dahin liefert buildRobotronTrack für BEIDE Verfahren das boot-kompatible
-    // single-A1-Layout (Marke auf dem A1, Seeds 0xBF84/0xCDB4) — der emulierte
-    // ROM/Loader-IDAM-Suchpfad erwartet genau dieses Layout.  Ein direktes
-    // Umschalten auf buildTrack (Marke auf FE) würde die 2-Byte-IDAM-Suche brechen.
-    auto sektoren   = TrackCodec::parseTrack(ibm_track);
-    robotron_track_ = TrackCodec::buildRobotronTrack(sektoren);
+    // Treuer FM/MFM-Lese-Stream mit 4×A1-Sync (der gemeinsame Modus für ROM-Boot-Read und
+    // SYL-Lader, s. buildFaithfulReadTrack).  Resync-Offset (markPos-4 MFM / -1 FM) und der
+    // FM/MFM-Verfahrens-Match stecken in romReadResyncTarget/ioRead; Codierung aus eff_enc.
+    auto sektoren    = TrackCodec::parseTrack(ibm_track);
+    read_stream_track_  = TrackCodec::buildFaithfulReadTrack(sektoren, eff_enc);
     cur_sector_size_ = sektoren.empty() ? 128 : sektoren.front().size;
 
-    cur_track_    = &robotron_track_;
+    cur_track_    = &read_stream_track_;
     head_pos_     = 0;
+    // Geladene (Zyl,Kopf) merken — der /STR-Lese-Refresh lädt nur bei Wechsel neu
+    // (sonst kontinuierliche Rotation, kein Rewind).
+    loaded_cyl_   = drv.currentCylinder();
+    loaded_head_  = current_head_;
     transferring_ = true;
     write_mode_   = false;
     locked_       = false;
     markDriveAccess(selected_drive_);
 
-    LOG_INFO("K5122", ">>> READ D%d C=%u H=%u Spur=%zu Bytes (Robotron-Layout, %s%s)",
+    LOG_INFO("K5122", ">>> READ D%d C=%u H=%u Spur=%zu Bytes (%s%s)",
              selected_drive_,
              static_cast<unsigned>(drv.currentCylinder()),
              static_cast<unsigned>(current_head_),
-             robotron_track_.size(),
+             read_stream_track_.size(),
              eff_enc == Encoding::FM ? "FM" : "MFM",
              read_enc_overridden_ ? "/Steuerwort" : "/Laufwerk-Default");
 }
@@ -851,7 +868,7 @@ void K5122::commitFormatTrack() {
  * @brief Beginnt das Sammeln eines BIOS-Schreib-Datenfelds (/WE 1→0).
  *
  * Der Zielsektor ist derjenige, dessen IDAM (Id-Marke) zuletzt unter dem Lesekopf
- * durchlief — also die letzte Id-Marke im Robotron-Streaming-Track @ref robotron_track_
+ * durchlief — also die letzte Id-Marke im Lese-Stream @ref read_stream_track_
  * VOR (bzw. an) @ref head_pos_.  Aus dem IDAM-Feld werden Zylinder/Kopf/Sektor-ID und
  * der Größencode (→ Sektorgröße) gelesen.  Anschließend sammelt @ref handleDataPortAWrite
  * jedes OUT(0x14)-Byte in @ref write_buf_, bis /WE wieder auf 1 geht.
@@ -866,10 +883,11 @@ void K5122::beginWriteField() {
         for (size_t k = 0; k < n; ++k) {
             const size_t p = (head_pos_ + n - k) % n;     // rückwärts ab head_pos_
             if (cur_track_->marks[p] == MarkType::Id) {
-                wr_cyl_  = cur_track_->bytes[(p + 2) % n];
-                wr_head_ = cur_track_->bytes[(p + 3) % n];
-                wr_id_   = cur_track_->bytes[(p + 4) % n];
-                const uint8_t sc = cur_track_->bytes[(p + 5) % n] & 0x03;
+                // Marke liegt auf dem FE-Byte; danach folgen cyl/head/id/sizecode.
+                wr_cyl_  = cur_track_->bytes[(p + 1) % n];
+                wr_head_ = cur_track_->bytes[(p + 2) % n];
+                wr_id_   = cur_track_->bytes[(p + 3) % n];
+                const uint8_t sc = cur_track_->bytes[(p + 4) % n] & 0x03;
                 wr_size_ = static_cast<uint16_t>(128u << sc);
                 break;
             }
@@ -960,8 +978,8 @@ void K5122::commitWriteField() {
 
     // Streaming-Track aktualisieren, damit ein evtl. Verify-Read in derselben Sitzung
     // die frischen Daten sieht (Layout/Größen unverändert → head_pos_ bleibt gültig).
-    robotron_track_ = TrackCodec::buildRobotronTrack(sektoren);
-    cur_track_      = &robotron_track_;
+    read_stream_track_ = TrackCodec::buildFaithfulReadTrack(sektoren, spur.encoding);
+    cur_track_      = &read_stream_track_;
 
     write_buf_.clear();
 }

@@ -226,10 +226,6 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_track_codec PRIVATE k1520_floppy2 GTest::gtest_main)
         target_include_directories(k1520_test_track_codec PRIVATE ${CMAKE_SOURCE_DIR})
 
-        add_executable(k1520_test_robotron_track tests/cpp/test_robotron_track.cpp)
-        target_link_libraries(k1520_test_robotron_track PRIVATE k1520_floppy2 GTest::gtest_main)
-        target_include_directories(k1520_test_robotron_track PRIVATE ${CMAKE_SOURCE_DIR})
-
         add_executable(k1520_test_bit_codec tests/cpp/test_bit_codec.cpp)
         target_link_libraries(k1520_test_bit_codec PRIVATE k1520_floppy2 GTest::gtest_main)
         target_include_directories(k1520_test_bit_codec PRIVATE ${CMAKE_SOURCE_DIR})
@@ -354,7 +350,6 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_bus)
         gtest_discover_tests(k1520_test_format_parser)
         gtest_discover_tests(k1520_test_track_codec)
-        gtest_discover_tests(k1520_test_robotron_track)
         gtest_discover_tests(k1520_test_bit_codec)
         gtest_discover_tests(k1520_test_drive_profile)
         gtest_discover_tests(k1520_test_disk_image_raw)
@@ -473,7 +468,7 @@ if(BUILD_K1520)
         set_tests_properties(cli_bt_exit_met cli_bt_exit_notmet cli_dbg_exit_badisk PROPERTIES TIMEOUT 120)
 
         # machine-readable JSON output (agent ergonomics).
-        add_cli_test(cli_dbg_json "\"pc\":\"0x1E44\".*\"hl\":\"0x23EA\""
+        add_cli_test(cli_dbg_json "\"pc\":\"0x1E60\".*\"hl\":\"0x23CE\""
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'g 5000000\\nrj\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
         add_cli_test(cli_bt_json "\"boot_reached\":false.*\"until\":.\"set\":true,\"met\":true"
             "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' --json \$D; rm -f \$D")

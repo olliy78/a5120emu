@@ -74,18 +74,22 @@ primitives/     →  Z80, Z80PIO, Z80CTC, Z80SIO, EPROM/RAM devices  (generic ch
 bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, MEMDI) + Koppelbus (signal router)
 ```
 
-> **Floppy controller — single formatagnostic K5122 (2026-06-10).** Slot 2 (`core/cards/k5122/`)
+> **Floppy controller — single formatagnostic K5122.** Slot 2 (`core/cards/k5122/`)
 > is a formatagnostic *read-head-over-rotating-track* controller on the `core/peripherals/floppy_drive/`
 > stack (TrackImage / TrackCodec / BitCodec / DiskImage + RawSectorImage + HfeImage / FloppyDriveV2 /
-> DriveProfile).  It **boots CP/A fully** (all `test_boot_integration` stages green, incl. boot from
-> drives B:/C:) and reads/writes **HFE v1** in addition to raw `.img`.  *(History: this replaced an
-> older monolithic on-the-fly-synthesis K5122, which was removed once this one booted; the change was
-> developed as a parallel card "K5122v2" and then renamed to K5122.)*  The boot ROM/loader read the
-> disk in a Robotron-specific layout (single A1, no IAM, mark on the A1, per-sector-size CRC); the
-> controller reproduces it on-the-fly via `TrackCodec::buildRobotronTrack` (the generic IBM/HFE
-> `buildTrack` layout is untouched).  Full model & boot fixes: `doc/refactoring_floppy_emulator.md`
-> §15, `doc/K1520_architecture.md` §8.5.  The boot-DMA narrative below still describes the data path
-> at the byte level (unchanged); the *card-internal* synthesis it mentions is now the TrackImage stack.
+> DriveProfile).  It **boots CP/A fully** from the **real standard-IBM-MFM disks** (all
+> `test_boot_integration` stages green, incl. boot from drives B:/C:) and reads/writes **HFE v1** in
+> addition to raw `.img`.  The controller is encoding-faithful: FM vs MFM is a property of the
+> drive+medium (`DriveProfile::default_read_encoding`, overridable by the OS via the read-mark control
+> word 0x85=MFM / 0x87=FM).  For the boot read path `startReadTransfer()` streams
+> `TrackCodec::buildFaithfulReadTrack` — the real sync/mark/CRC structure, but with **4×A1 sync** per
+> MFM field, which is the one sync length both the boot-ROM read routine (1 discard + 3 reads, FE at
+> buf[4]) and the SYL loader (skip-A1-until-FE) accept; the MK/MK1 resync lands on the first A1
+> (`romReadResyncTarget`, markPos-4 MFM / markPos-1 FM).  CRC is the single standard IBM-CCITT
+> (`TrackCodec::crc16`); there is **no** Robotron special-case (the old single-A1 / 0xBF84 layout is
+> gone).  Boot itself is the real FM/MFM trial-and-error: the ROM starts in FM, finds no IDAM on the
+> MFM disk → index timeout → toggles MK to MFM → reads.  Full model: `doc/design/07_k5122_afs.md`,
+> `doc/K1520_architecture.md` §8.5.  The boot-DMA narrative below describes the byte-level data path.
 
 - **Registration model**: cards register memory ranges and I/O port ranges on `K1520Bus`; the CPU's read/write/port callbacks route through the bus, which dispatches to the owning device. Interrupt priority is a daisy chain set via `bus.setInterruptChain(...)`; the Koppelbus models the A5120 backplane's hand-wired signal links (CTC clock cascades, second IEI/IEO chain).
 - **Dual Z80 on the K2526 (`core/cards/k2526/`)** — non-obvious and central to the boot path:
