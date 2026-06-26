@@ -1,0 +1,157 @@
+; ======================================================================
+; BOOTSEC_SYL -- SYL-Header + Bootloader (0000H-00FFH)
+; ======================================================================
+; Generiert aus bootsec.mac (monolithische Version)
+;
+; Adressbereich: 0000H-00FFH (256 Bytes, Track 0 Sektor 0-1)
+;
+; Inhalt:
+;   0000H-007FH  SYL-Header: Kennung, FDC_INIT, JP COLDBOOT
+;   0080H-00CBH  WBOOT-Vektor + @OS.COM-Ladesequenz + READ_FILE
+;   00CCH-00F0H  FCB fuer @OS.COM ("@OS     COM")
+;   00F1H-00FFH  Padding (Nullbytes, Teil 1)
+;
+; Dieses Modul wird zusammen mit mini_bdos_asm.mac und boot_bios.mac
+; assembliert, um die vollstaendige bootsec.bin zu erzeugen.
+; ======================================================================
+
+	.Z80
+	ASEG
+
+; ABSCHNITT 1: SYL-HEADER (Track0 Sektor0, ORG 0000H)
+; ======================================================================
+	ORG	0000H
+
+; --- SYL-Kennung (0000H-0002H) ---
+; Als Z80-Code harmlos: 53H=LD D,E  59H=LD E,C  4CH=LD C,H
+SYL_ID:
+	DB	'SYL'		; 0000: SYL-Disketten-Kennung
+
+; --- NOPs (Fuellbytes bis Kaltstart-Einstieg) (0003H-002DH) ---
+	DS	43		; 0003-002D: NOPs (Fuellbytes)
+
+; --- Kaltstart-Einstieg im SYL-Header (002EH-0030H) ---
+; Wird vom ROM nach dem Laden aller Systemspuren angesprungen
+	JP	0140H		; 002E: -> DISPATCH (im Stage-1)
+
+; --- Fuell-NOPs nach JP (0031H-0036H) ---
+	DS	6		; 0031-0036: Fuell-NOPs
+
+; --- FDC_INIT: FDC-Initialisierung (0037H-0045H) ---
+; Wird von der ROM-Firmware INDIREKT aufgerufen (nicht ueber JP 002EH),
+; sondern ueber den zweiten Einstiegspunkt JP 0165H (Offset 0068H).
+; Die ROM-Firmware setzt HL vor dem Aufruf auf einen Disketten-DPB-Zeiger.
+FDC_INIT:
+	LD	A,29H		; 0037: FDC Step-Kommando (Spur 0 step in)
+	OUT	(10H),A		; 0039: -> flcoad (FDC Port A)
+	LD	A,10101001B	; 003B: = 0A9H  'Kopf laden, Fault reset'
+				;   Bit 7=/ST=1 (kein Step), Bit 6=/HL=0 (Kopf laden),
+				;   Bit 3=/STR=1 (AMF aus), Bit 2=/FR=0 (Fault reset),
+				;   Bit 0=/WE=1 (kein Schreiben)
+	OUT	(10H),A		; 003D: -> flcoad
+	LD	B,08H		; 003F: Warteschleife 8x
+FDC_WAIT:
+	DEC	C		; 0041: innere Schleife (C undefiniert, 256 Iter.)
+	JR	NZ,FDC_WAIT	; 0042: warte auf FDC
+	DJNZ	FDC_WAIT	; 0044: aeussere Schleife (8 mal)
+
+; --- RAM-Struktur-Setup und Patches (0046H-0064H) ---
+	LD	HL,07F2H	; 0046: Zieladresse fuer Disk-Params
+	LD	(HL),06H	; 0049: setze Byte 07F2H = 6 (Sektorz. o.ae.)
+	LD	HL,0001H	; 004B
+	LD	(03F3H),HL	; 004E: Init 16-Bit-Param bei 03F3H = 0001H
+	LD	HL,0001H	; 0051
+	LD	(03F5H),HL	; 0054: Init 16-Bit-Param bei 03F5H = 0001H
+	LD	HL,042EH	; 0057: Adresse 042EH (FDC-Parameterblock)
+	LD	(0175H),HL	; 005A: patch Stage-1 Sprungvektor bei 0175H
+	LD	A,97H		; 005D: SIO Steuerwort (8N1, Rx+Tx enable)
+	OUT	(11H),A		; 005F: -> flcoac (FDC Port A Steuerung)
+	LD	A,0FFH		; 0061: alle Bits setzen
+	OUT	(11H),A		; 0063: -> flcoac
+
+; --- DPB-Uebergabe, JP 0165H (COLDBOOT) (0065H-006AH) ---
+	POP	HL		; 0065: ROM hat HL-Adresse (DPB-Zeiger) gepusht
+	LD	E,01H		; 0066: E=1 (Kaltstart-Kennung fuer Stage-1)
+	JP	0165H		; 0068: -> COLDBOOT in Stage-1
+
+; --- Padding Rest Sektor 0 (006BH-007FH) ---
+	DS	21		; 006B-007F: Rest des Sektors = Padding
+
+; ======================================================================
+; ABSCHNITT 2: STAGE-1 (Track0 Sektoren 1-25, ORG 0080H)
+; Enthaelt: BDOS-Stubs, BIOS-Sprungtabellen, Kaltstart-Initialisierung,
+;           Dateinamen und Fehlermeldungen
+; ======================================================================
+	ORG	0080H
+
+; --- WBOOT_JP: Warmstart-Vektor (0080H-0082H) ---
+; Liegt bei Standard-CP/M-Adresse fuer BIOS warm boot.
+WBOOT_JP:
+	JP	1800H		; 0080: Warmstart -> Boot-BIOS Einstieg
+
+; --- Diverse BDOS-Aufrufe (Runtime-Sequenz) (0083H-009FH) ---
+; Dieser Code wird NICHT beim Kaltstart ausgefuehrt.
+; Er ist Teil des Mini-BDOS und wird waehrend des Betriebs gerufen.
+TMP_FCB:
+	LD	E,00H		; 0083: E=0 (Parameter)
+	LD	C,20H		; 0085: BDOS-Funktion 0x20: User-Nummer setzen
+	CALL	0005H		; 0087: -> BDOS-Einstieg
+	LD	C,0DH		; 008A: BDOS-Funktion 13: Reset-Laufwerke
+	CALL	0005H		; 008C: -> BDOS
+	LD	HL,0004H	; 008F: Adresse der aktuellen Disk (CDISK)
+	LD	E,(HL)		; 0092: E = Disk-Nr
+	LD	C,0EH		; 0093: BDOS-Funktion 14: Laufwerk setzen
+	CALL	0005H		; 0095: -> BDOS
+	LD	DE,08CCH	; 0098: Target-FCB fuer @OS.COM
+	LD	C,0FH		; 009B: BDOS-Funktion 15: Datei oeffnen
+	CALL	0005H		; 009D: -> BDOS
+
+; --- Lade-Pruefung, Fehlerbehandlung (00A0H-00B4H) ---
+; Nach OPEN: pruefen ob Fehler (A=0FFH -> nicht gefunden)
+	INC	A		; 00A0: A=0 wenn Datei nicht gefunden
+	JR	Z,LOAD_ERR	; 00A1: -> Fehlerbehandlung wenn nicht gefunden
+	LD	HL,3780H	; 00A3: Zielpuffer fuer @OS.COM
+LOAD_LOOP:
+	CALL	08B5H		; 00A6: einen Block lesen (Datei-Lese-Routine)
+	JR	Z,LOAD_LOOP	; 00A9: weiter wenn noch Daten
+	DEC	A		; 00AB
+	JP	Z,37A0H		; 00AC: Sprung zum Einstiegspunkt von @OS.COM
+LOAD_ERR:
+	LD	A,88H		; 00AF: Fehlercode fuer Tastatur-LED
+	OUT	(03H),A		; 00B1: LED-Port
+	DI			; 00B3: Interrupts sperren
+	HALT			; 00B4: CPU anhalten (Boot gescheitert)
+
+; --- READ_FILE: Datei-Lese-Hilfsdienst (00B5H-00CBH) ---
+; Eingabe: HL = Zieladresse
+; Ausgabe: Z=OK (noch Daten), NZ=Fehler oder EOF
+READ_FILE:
+	PUSH	HL		; 00B5: rette Zieladresse
+	EX	DE,HL		; 00B6
+	LD	C,1AH		; 00B7: BDOS 26: DMA-Adresse setzen
+	CALL	0005H		; 00B9: -> BDOS
+	LD	DE,08CCH	; 00BC: FCB
+	LD	C,14H		; 00BF: BDOS 20: sequentiell lesen
+	CALL	0005H		; 00C1: -> BDOS
+	OR	A		; 00C4: Fehler?
+	POP	HL		; 00C5
+	RET	NZ		; 00C6: bei Fehler: zurueck mit NZ
+	LD	DE,0080H	; 00C7: Versatz zum naechsten Block
+	ADD	HL,DE		; 00CA: Zieladresse um 128 Byte vorschieben
+	RET			; 00CB
+
+; --- FCB_OS: FCB fuer @OS.COM (00CCH-00F0H) ---
+; File Control Block fuer die BDOS-Dateioperationen.
+; Der Name "@OS     COM" entspricht @OS.COM.
+; Herkunft: identisch mit 'fcb@os' in bioscld3.mac und biosnuc.mac.
+FCB_OS:
+	DB	00H		; 00CC: Laufwerk 0 = Default
+	DB	'@OS     '	; 00CD-00D4: Dateiname (8 Zeichen)
+	DB	'COM'		; 00D5-00D7: Extension
+	DS	25		; 00D8-00F0: FCB-Rest (E/A-Zaehler etc.)
+
+; --- Padding (Nullbytes) (00F1H-0105H) ---
+; --- Padding (Nullbytes) (00F1H-00FFH) ---
+	DS	15		; 00F1-00FF: Padding
+
+	END

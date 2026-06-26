@@ -1,0 +1,1768 @@
+; ======================================================================
+; MINI-BDOS — Kommentierte Disassemblierung des CPA780-SYL-Bootladers
+; ======================================================================
+;
+; Adressbereich: 0080H - 0CFFH (3200 Bytes, Track 0 Sektoren 1-25)
+; Erzeugt mit:   bdos_analyze.py (Z80-Disassembler + CP/M 2.2 Mapping)
+; Binaerquelle:  prebuilt/bc_a5120/bootsec.bin
+; CP/M-Referenz: doc/CPM_2_2/OS3BDOS.ASM + OS3BDOS1.ASM
+;
+; Dieses File ist eine SEPARATE ANALYSE des Mini-BDOS-Bereichs.
+; Es ist NICHT direkt assemblierbar, sondern dient der Dokumentation.
+; Die assemblierbare Version ist bootsec/src/bootsec.mac.
+;
+; Architektur:
+;   Das BDOS-Modul (0100H-0CFFH) wurde mit ORG 0900H assembliert.
+;   Alle internen Referenzen verwenden Laufzeit-Adressen (+0800H).
+;   @OS.COM verschiebt den Code zur Laufzeit von 0100H nach 0900H.
+;   BIOS-Aufrufe (18xxH) verweisen auf das von @OS.COM eingerichtete BIOS.
+;
+;   Phys. 0100H = Laufzeit 0900H   (BDOS-Modul-Anfang)
+;   Phys. 0111H = Laufzeit 0911H   (bdose Einstiegspunkt)
+;   Phys. 0147H = Laufzeit 0947H   (functab Dispatch-Tabelle)
+;   Phys. 0CFFH = Laufzeit 14FFH   (BDOS-Modul-Ende)
+;
+; Dies ist ein READ-ONLY Mini-BDOS fuer den Boot-Vorgang:
+;   - Schreib-Funktionen (func10/21/33/34/40) zeigen auf Stub (08AFH)
+;   - Console-I/O ist vollstaendig (func1-9, func11)
+;   - Disk-Lesen ist vollstaendig (func15/17/18/20)
+;
+; Inhalt:
+;   0080H-00CBH  WBOOT-Vektor + @OS.COM-Ladesequenz + READ_FILE
+;   00CCH-00F0H  FCB fuer @OS.COM
+;   00F1H-0105H  Padding
+;   0106H-0110H  BDOS-Modul-Kopf (JMP bdose + Fehler-Handler-Zeiger)
+;   0111H-0146H  bdose: BDOS-Einstiegspunkt + Dispatch-Code
+;   0147H-0197H  functab: 41 DW-Eintraege (Funktions-Dispatch)
+;   0198H-01B9H  Fehlerbehandlung (persub/selsub/rodsub/rofsub)
+;   01BAH-01E4H  ASCII-Fehlermeldungen
+;   01E5H-02E0H  Console-I/O (errflg, conin, conout, print, ...)
+;   02E1H-0322H  Funktions-Handler (func1..func11, sta$ret)
+;   0323H-035FH  BDOS-Variablen + lokaler Stack
+;   0360H-08CCH  Disk-Routinen (goerr..open..close..search..read)
+;   08CCH-08F0H  FCB @OS.COM (Runtime-Kopie)
+;   08F1H-0AEFH  Disk-Routinen (Fortsetzung, make..rseek..select)
+;   0AF0H-0BFEH  High-Level BDOS-Funktionen (func12..func32)
+;   0BFFH-0CF8H  BDOS-Arbeitsbereich (Variablen/Puffer)
+;   0CF9H-0CFFH  Padding (Ende Track 0)
+;
+; Label-Konvention:
+;   GROSSBUCHSTABEN = CP/M 2.2 Standard-Bezeichner
+;   Lxxxx          = automatisch generiertes Label (Sprungziel)
+; ======================================================================
+
+	ORG	0080H
+
+
+; ======================================================================
+; WBOOT-Code: @OS.COM Ladesequenz
+; ======================================================================
+; Wird beim Warmstart ausgefuehrt. Laedt @OS.COM von Disk ab 3780H.
+WBOOT_JP:
+	JP 1800H		; 0080H  Warmstart-Vektor -> BIOS CBOOT
+LOAD_OS:
+	LD E,00H		; 0083H  WBOOT: @OS.COM Laderoutine
+	LD C,20H		; 0085H  BDOS Func 32: Set User Code = 0
+	CALL 0005H		; 0087H  -> BDOS (0005H)
+	LD C,0DH		; 008AH  BDOS Func 13: Reset Disk System
+	CALL 0005H		; 008CH  -> BDOS
+	LD HL,0004H		; 008FH  Hole aktuelle Disknummer aus 0004H
+	LD E,(HL)		; 0092H
+	LD C,0EH		; 0093H  BDOS Func 14: Select Disk
+	CALL 0005H		; 0095H  -> BDOS
+	LD DE,08CCH		; 0098H  DE = FCB_OS (00CCH)
+	LD C,0FH		; 009BH  BDOS Func 15: Open File
+	CALL 0005H		; 009DH  -> BDOS
+	INC A		; 00A0H  FFH+1 = 0 -> Fehler?
+	JR Z,00AFH		; 00A1H  ja -> LOAD_ERR
+LOAD_ADDR:
+	LD HL,3780H		; 00A3H  Ladeadresse = 3780H (@OS.COM Ziel)
+LOAD_LOOP:
+	CALL 08B5H		; 00A6H  Naechsten Record lesen
+	JR Z,00A6H		; 00A9H  Schleife solange A=0 (kein EOF)
+	DEC A		; 00ABH  A=1 -> EOF (erfolgreich)
+	JP Z,37A0H		; 00ACH  Springe zu geladenem @OS.COM
+LOAD_ERR:
+	LD A,88H		; 00AFH  Fehlercode 88H (LED-Muster)
+	OUT (03H),A		; 00B1H  -> FDC Status-Port
+	DI		; 00B3H  Interrupts sperren
+	HALT		; 00B4H  System stoppen
+READ_FILE:
+	PUSH HL		; 00B5H  DMA-Adresse retten
+	EX DE,HL		; 00B6H
+	LD C,1AH		; 00B7H  BDOS Func 26: Set DMA Address
+	CALL 0005H		; 00B9H  -> BDOS
+	LD DE,08CCH		; 00BCH  DE = FCB_OS
+	LD C,14H		; 00BFH  BDOS Func 20: Read Sequential
+	CALL 0005H		; 00C1H  -> BDOS
+	OR A		; 00C4H  A=0 -> Erfolg
+	POP HL		; 00C5H
+	RET NZ		; 00C6H
+	LD DE,0080H		; 00C7H  DMA += 128 Bytes
+	ADD HL,DE		; 00CAH
+	RET		; 00CBH
+
+; --- FCB fuer @OS.COM (Template im ROM) ---
+FCB_OS:
+; --- FCB fuer @OS.COM ---
+	DB	00H		; 00CCH: Laufwerk (0=default)
+	DB	'@OS     '	; 00CDH: Dateiname (8 Zeichen)
+	DB	'COM'		; 00D5H: Extension
+	DS	25		; 00D8H-00F0H: FCB-Rest
+; --- Padding (21 Bytes) ---
+	DS	21		; 00F1H-0105H: Padding
+BDOS_ENTRY:
+	JP 0911H		; 0106H  JMP bdose (CP/M 2.2 Standard-Einstieg)
+PERERR:
+; --- Error-Handler-Zeiger (CP/M 2.2: pererr/selerr/roderr/roferr) ---
+	DW	0999H		; 0109H: Eintrag 00 -> 0999H (OPEN_NEXT)
+	DW	09A5H		; 010BH: Eintrag 01 -> 09A5H
+	DW	09ABH		; 010DH: Eintrag 02 -> 09ABH
+	DW	09B1H		; 010FH: Eintrag 03 -> 09B1H
+
+; --- bdose: BDOS-Einstiegspunkt (CP/M 2.2: arrive here from user) ---
+; Registerbelegung: C=Funktionsnummer, DE=Parameter
+BDOSE:
+	EX DE,HL		; 0111H  xchg (DE<->HL)
+	LD (0B5CH),HL		; 0112H  shld info ; info = Parameter-Adresse
+	EX DE,HL		; 0115H  xchg
+	LD A,E		; 0116H  mov a,e
+	LD (1429H),A		; 0117H  sta linfo ; low(info) merken
+	LD HL,0000H		; 011AH  lxi h,0
+	LD (0B5EH),HL		; 011DH  shld aret ; Rueckgabewert = 0000H
+	ADD HL,SP		; 0120H  dad sp ; SP merken
+	LD (0B28H),HL		; 0121H  shld entsp
+	LD SP,0B5AH		; 0124H  lxi sp,lstack ; lokaler Stack
+	XOR A		; 0127H  xra a
+	LD (1433H),A		; 0128H  sta fcbdsk ; fcbdsk = false
+BDOSE_RESEL:
+	LD (1431H),A		; 012BH  sta resel  ; resel = false
+BDOSE_DISP:
+	LD HL,13E7H		; 012EH  lxi h,goback ; Ruecksprung-Adresse
+	PUSH HL		; 0131H  push h ; -> Stack (funktioniert wie jmp goback bei RET)
+	LD A,C		; 0132H  mov a,c ; Funktionsnummer
+	CP 29H		; 0133H  cpi nfuncs (41) ; gueltige Funktion?
+	RET NC		; 0135H  ret nc ; nein -> goback
+	LD C,E		; 0136H  mov c,e ; Ausgabe-Zeichen nach C
+	LD HL,0947H		; 0137H  lxi h,functab ; Adresse der Dispatch-Tabelle
+	LD E,A		; 013AH  mov e,a ; DE = Funktionsnummer
+	LD D,00H		; 013BH  mvi d,0
+	ADD HL,DE		; 013DH  dad d
+	ADD HL,DE		; 013EH  dad d ; HL = functab + func*2
+	LD E,(HL)		; 013FH  mov e,m ; Low-Byte der Zieladresse
+BDOSE_PCHL:
+	INC HL		; 0140H  inx h
+L0141:
+	LD D,(HL)		; 0141H  mov d,m ; High-Byte der Zieladresse
+	LD HL,(0B5CH)		; 0142H  lhld info ; HL = info (Parameter)
+	EX DE,HL		; 0145H  xchg ; HL = Zieladresse, DE = info
+	JP (HL)		; 0146H  pchl ; -> Funktions-Handler
+
+; --- functab: 41 Dispatch-Eintraege (func00..func40) ---
+; Eintraege zeigen auf Laufzeit-Adressen (nach Relokation auf 0900H).
+; STUB-Eintraege (08AFH) verweisen auf mergezero (= Dummy-Ruecksprung).
+FUNCTAB:
+; --- functab: BDOS-Dispatch-Tabelle (41 DW-Eintraege) ---
+	DW	1803H		; 0147H: func00: wbootf (BIOS Warmstart)
+	DW	0AE1H		; 0149H: func01: conech (Konsoleingabe+Echo)
+	DW	0A90H		; 014BH: func02: tabout (Konsolausgabe+Tab)
+	DW	0AE7H		; 014DH: func03: readerf (Reader-Eingabe)
+	DW	1812H		; 014FH: func04: punchf (Punch-Ausgabe)
+	DW	180FH		; 0151H: func05: listf (List-Ausgabe)
+	DW	0AEDH		; 0153H: func06: direct I/O
+	DW	0B06H		; 0155H: func07: get IOBYTE
+	DW	0B0CH		; 0157H: func08: set IOBYTE
+	DW	0B11H		; 0159H: func09: print string
+	DW	08AFH		; 015BH: func10: read line (STUB)
+	DW	0B17H		; 015DH: func11: console status
+	DW	12F0H		; 015FH: func12: version (2.2)
+	DW	1441H		; 0161H: func13: reset disks
+	DW	1449H		; 0163H: func14: select disk
+	DW	1312H		; 0165H: func15: open file
+	DW	131BH		; 0167H: func16: close file
+	DW	1321H		; 0169H: func17: search first
+	DW	133EH		; 016BH: func18: search next
+	DW	134DH		; 016DH: func19: delete file
+	DW	1356H		; 016FH: func20: read sequential
+	DW	08AFH		; 0171H: func21: write seq (STUB)
+	DW	135CH		; 0173H: func22: make file
+	DW	1365H		; 0175H: func23: rename file
+	DW	136EH		; 0177H: func24: login vector
+	DW	1374H		; 0179H: func25: current disk
+	DW	137AH		; 017BH: func26: set DMA
+	DW	1381H		; 017DH: func27: alloc vector
+	DW	0D45H		; 017FH: func28: write protect
+	DW	1387H		; 0181H: func29: R/O vector
+	DW	138DH		; 0183H: func30: set indicators
+	DW	1396H		; 0185H: func31: DPB address
+	DW	139DH		; 0187H: func32: user code
+	DW	08AFH		; 0189H: func33: random read (STUB)
+	DW	08AFH		; 018BH: func34: random write (STUB)
+	DW	13B1H		; 018DH: func35: file size
+	DW	1280H		; 018FH: func36: set random
+	DW	13B7H		; 0191H: func37: reset drive
+	DW	0B1DH		; 0193H: func38: (unused)
+	DW	0B1DH		; 0195H: func39: (unused)
+	DW	08AFH		; 0197H: func40: rand write+zero (STUB)
+	LD HL,09CAH		; 0199H
+	CALL 09E5H		; 019CH  call errflg
+	CP 03H		; 019FH  cpi ctlc (03H)
+	JP Z,0000H		; 01A1H  jz reboot ; Ctrl-C -> Neustart
+	RET		; 01A4H  ret ; Fehler ignorieren
+SELSUB:
+	LD HL,09D5H		; 01A5H  lxi h,selmsg
+	JP 09B4H		; 01A8H  jmp wait$err
+RODSUB:
+	LD HL,09E1H		; 01ABH  lxi h,rodmsg
+	JP 09B4H		; 01AEH  jmp wait$err
+ROFSUB:
+	LD HL,09DCH		; 01B1H  lxi h,rofmsg
+WAIT_ERR:
+	CALL 09E5H		; 01B4H  call errflg
+	JP 0000H		; 01B7H  jmp reboot ; Neustart nach R/O-Fehler
+
+; --- Fehlermeldungen (ASCII, $-terminiert) ---
+DSKMSG:
+; --- ASCII: "Bdos Err On  : $" ---
+	DB	'Bdos Err On  : $'	; 01BAH
+PERMSG:
+; --- ASCII: "Bad Sector$" ---
+	DB	'Bad Sector$'	; 01CAH
+SELMSG:
+; --- ASCII: "Select$" ---
+	DB	'Select$'	; 01D5H
+ROFMSG:
+; --- ASCII: "File R/O$" ---
+	DB	'File R/O$'	; 01DCH
+
+; --- Console-I/O-Routinen (CP/M 2.2: errflg..print) ---
+; Identisch mit CP/M 2.2 BDOS, nur in Z80-Mnemonics.
+ERRFLG:
+	PUSH HL		; 01E5H  push h ; Fehlermeldung auf Stack
+	CALL 0AC9H		; 01E6H  call crlf ; neue Zeile
+	LD A,(0B5BH)		; 01E9H  lda curdsk ; aktuelles Laufwerk
+	ADD A,41H		; 01ECH  adi 'A' ; -> Buchstabe
+	LD (09C6H),A		; 01EEH  sta dskerr ; in Meldung einsetzen
+	LD BC,09BAH		; 01F1H  lxi b,dskmsg
+	CALL 0AD3H		; 01F4H  call print ; "Bdos Err On X : "
+	POP BC		; 01F7H  pop b ; Fehlermeldung vom Stack
+	CALL 0AD3H		; 01F8H  call print ; Fehlertext ausgeben
+CONIN:
+	LD HL,0B27H		; 01FBH  lxi h,kbchar ; gepuffertes Zeichen?
+	LD A,(HL)		; 01FEH  mov a,m
+	LD (HL),00H		; 01FFH  mvi m,0 ; Puffer loeschen
+	OR A		; 0201H  ora a
+	RET NZ		; 0202H  ret nz ; ja -> Zeichen zurueck
+	JP 1809H		; 0203H  jmp coninf ; BIOS: Konsole lesen
+CONECH:
+	CALL 09FBH		; 0206H  call conin ; Zeichen von Konsole
+	CALL 0A14H		; 0209H  call echoc ; Echo noetig?
+	RET C		; 020CH  ret c ; Steuerzeichen -> kein Echo
+	PUSH AF		; 020DH  push af
+	LD C,A		; 020EH  mov c,a
+	CALL 0A90H		; 020FH  call tabout ; Zeichen mit Tab-Expansion
+	POP AF		; 0212H  pop af
+L0213:
+	RET		; 0213H
+ECHOC:
+	CP 0DH		; 0214H  cpi cr ; Wagenruecklauf?
+	RET Z		; 0216H
+	CP 0AH		; 0217H  cpi lf ; Zeilenvorschub?
+	RET Z		; 0219H
+	CP 09H		; 021AH  cpi tab ; Tabulator?
+	RET Z		; 021CH
+	CP 08H		; 021DH  cpi ctlh ; Backspace?
+	RET Z		; 021FH
+	CP 20H		; 0220H  cpi ' ' ; Carry gesetzt wenn nicht druckbar
+L0222:
+	RET		; 0222H
+CONBRK:
+	LD A,(0B27H)		; 0223H  lda kbchar ; gepuffertes Zeichen?
+	OR A		; 0226H
+	JP NZ,0A45H		; 0227H  jnz conb1 ; ja -> return true
+	CALL 1806H		; 022AH  call constf ; BIOS: Status pruefen
+	AND 01H		; 022DH  ani 1
+	RET Z		; 022FH  ret z ; kein Zeichen bereit
+	CALL 1809H		; 0230H  call coninf ; BIOS: Zeichen lesen
+	CP 13H		; 0233H  cpi ctls (13H) ; Bildschirm-Stop?
+	JP NZ,0A42H		; 0235H  jnz conb0 ; nein -> Zeichen merken
+	CALL 1809H		; 0238H  call coninf ; naechstes Zeichen
+	CP 03H		; 023BH  cpi ctlc (03H) ; Ctrl-C?
+	JP Z,0000H		; 023DH  jz reboot ; ja -> Neustart
+	XOR A		; 0240H  xra a ; nichts passiert
+	RET		; 0241H
+CONB0:
+	LD (0B27H),A		; 0242H  sta kbchar ; Zeichen merken
+CONB1:
+	LD A,01H		; 0245H  mvi a,1 ; true zurueck
+	RET		; 0247H
+CONOUT:
+	LD A,(0B23H)		; 0248H  lda compcol ; nur Spalte berechnen?
+	OR A		; 024BH
+	JP NZ,0A62H		; 024CH  jnz compout ; ja -> nur Position
+	PUSH BC		; 024FH  push b ; Zeichen retten
+	CALL 0A23H		; 0250H  call conbrk ; Bildschirm-Stop pruefen
+	POP BC		; 0253H  pop b
+	PUSH BC		; 0254H  push b
+	CALL 180CH		; 0255H  call conoutf ; BIOS: Zeichen ausgeben
+	POP BC		; 0258H  pop b
+	PUSH BC		; 0259H  push b
+	LD A,(0B26H)		; 025AH  lda listcp ; Drucker-Kopie aktiv?
+	OR A		; 025DH
+	CALL NZ,180FH		; 025EH  cnz listf ; ja -> auch an Drucker
+	POP BC		; 0261H  pop b
+COMPOUT:
+	LD A,C		; 0262H  mov a,c ; Zeichen zurueck
+	LD HL,0B25H		; 0263H  lxi h,column ; Spaltenposition
+	CP 7FH		; 0266H  cpi rubout (7FH)
+	RET Z		; 0268H  ret z ; DEL -> keine Spaltenveraenderung
+	INC (HL)		; 0269H  inr m ; column++
+	CP 20H		; 026AH  cpi ' '
+	RET NC		; 026CH  ret nc ; druckbar -> fertig
+	DEC (HL)		; 026DH  dcr m ; column-- (nicht druckbar)
+	LD A,(HL)		; 026EH  mov a,m
+	OR A		; 026FH
+	RET Z		; 0270H  ret z ; Spalte 0 -> fertig
+	LD A,C		; 0271H  mov a,c
+	CP 08H		; 0272H  cpi ctlh (08H) ; Backspace?
+	JP NZ,0A79H		; 0274H  jnz notbacksp
+	DEC (HL)		; 0277H  dcr m ; column-- (Backspace)
+	RET		; 0278H
+	CP 0AH		; 0279H  cpi lf ; Zeilenende?
+	RET NZ		; 027BH
+	LD (HL),00H		; 027CH  mvi m,0 ; column = 0
+	RET		; 027EH
+CTLOUT:
+	LD A,C		; 027FH  mov a,c
+	CALL 0A14H		; 0280H  call echoc
+	JP NC,0A90H		; 0283H  jnc tabout ; druckbar -> normal ausgeben
+	PUSH AF		; 0286H  push af
+	LD C,5EH		; 0287H  mvi c,'^' ; Pfeil-Praefix
+	CALL 0A48H		; 0289H  call conout
+	POP AF		; 028CH  pop af
+	OR 40H		; 028DH  ori 40H ; Steuerzeichen -> Buchstabe
+	LD C,A		; 028FH  mov c,a
+TABOUT:
+	LD A,C		; 0290H  mov a,c
+	CP 09H		; 0291H  cpi tab (09H)
+	JP NZ,0A48H		; 0293H  jnz conout ; kein Tab -> direkt ausgeben
+TAB0:
+	LD C,20H		; 0296H  mvi c,' ' ; Leerzeichen
+	CALL 0A48H		; 0298H  call conout
+	LD A,(0B25H)		; 029BH  lda column
+	AND 07H		; 029EH  ani 7 ; column mod 8
+	JP NZ,0A96H		; 02A0H  jnz tab0 ; weiter bis Tabstop
+	RET		; 02A3H
+BACKUP:
+	CALL 0AACH		; 02A4H  call pctlh ; Backspace
+	LD C,20H		; 02A7H  mvi c,' '
+	CALL 180CH		; 02A9H  call conoutf ; Leerzeichen (BIOS direkt)
+PCTLH:
+	LD C,08H		; 02ACH  mvi c,ctlh (08H)
+	JP 180CH		; 02AEH  jmp conoutf ; nochmal Backspace
+CRLFP:
+	LD C,23H		; 02B1H  mvi c,'#'
+	CALL 0A48H		; 02B3H  call conout
+	CALL 0AC9H		; 02B6H  call crlf
+CRLFP0:
+	LD A,(0B25H)		; 02B9H  lda column
+	LD HL,0B24H		; 02BCH  lxi h,strtcol ; Startposition
+	CP (HL)		; 02BFH  cmp m ; Ziel erreicht?
+	RET NC		; 02C0H  ret nc
+	LD C,20H		; 02C1H  mvi c,' '
+	CALL 0A48H		; 02C3H  call conout
+	JP 0AB9H		; 02C6H  jmp crlfp0 ; weiter auffuellen
+CRLF:
+	LD C,0DH		; 02C9H  mvi c,cr (0DH)
+	CALL 0A48H		; 02CBH  call conout
+	LD C,0AH		; 02CEH  mvi c,lf (0AH)
+	JP 0A48H		; 02D0H  jmp conout
+PRINT:
+	LD A,(BC)		; 02D3H  ldax b ; Zeichen holen
+	CP 24H		; 02D4H  cpi '$' ; Ende?
+	RET Z		; 02D6H  ret z
+	INC BC		; 02D7H  inx b
+	PUSH BC		; 02D8H  push b
+	LD C,A		; 02D9H  mov c,a
+	CALL 0A90H		; 02DAH  call tabout ; Zeichen ausgeben
+	POP BC		; 02DDH  pop b
+	JP 0AD3H		; 02DEH  jmp print ; naechstes Zeichen
+
+; --- Funktions-Handler (func1..func11, sta$ret, func$ret) ---
+FUNC1:
+	CALL 0A06H		; 02E1H  call conech ; Zeichen mit Echo
+	JP 0B1AH		; 02E4H  jmp sta$ret ; -> Rueckgabe
+FUNC3:
+	CALL 1815H		; 02E7H  call readerf ; BIOS: Reader-Zeichen
+	JP 0B1AH		; 02EAH  jmp sta$ret
+FUNC6:
+	LD A,C		; 02EDH  mov a,c ; Func 6: Direct I/O
+	INC A		; 02EEH  inr a ; FFH -> 00 = Eingabe?
+	JP Z,0AF9H		; 02EFH  jz dirinp
+	INC A		; 02F2H  inr a ; FEH -> 00 = Status?
+	JP Z,1806H		; 02F3H  jz constf ; BIOS: Status
+	JP 180CH		; 02F6H  jmp conoutf ; direkte Ausgabe
+DIRINP:
+	CALL 1806H		; 02F9H  call constf ; Status pruefen
+	OR A		; 02FCH  ora a
+	JP Z,13F5H		; 02FDH  jz func$ret ; kein Zeichen -> 0 zurueck
+	CALL 1809H		; 0300H  call coninf ; Zeichen holen
+	JP 0B1AH		; 0303H  jmp sta$ret
+FUNC7:
+	LD A,(0003H)		; 0306H  lda ioloc (0003H)
+	JP 0B1AH		; 0309H  jmp sta$ret
+FUNC8:
+	LD HL,0003H		; 030CH  lxi h,ioloc (0003H)
+	LD (HL),C		; 030FH  mov m,c ; IOBYTE setzen
+	RET		; 0310H
+FUNC9:
+	EX DE,HL		; 0311H  xchg ; HL = info
+	LD C,L		; 0312H  mov c,l
+	LD B,H		; 0313H  mov b,h ; BC = info
+	JP 0AD3H		; 0314H  jmp print ; String ausgeben
+FUNC11:
+	CALL 0A23H		; 0317H  call conbrk ; Status pruefen
+STA_RET:
+	LD (0B5EH),A		; 031AH  sta aret ; Ergebnis speichern
+FUNC_RET:
+	RET		; 031DH
+SETLRET1:
+	LD A,01H		; 031EH  mvi a,1
+	JP 0B1AH		; 0320H  jmp sta$ret
+
+; --- BDOS-Variablenbereich + lokaler Stack ---
+COMPCOL:
+; --- BDOS-Variablen + lokaler Stack (compcol..lstack) ---
+	DS	61		; 0323H-035FH: BDOS-Variablen + lokaler Stack (compcol..lstack)
+
+; --- Disk-Routinen (CP/M 2.2: goerr..mergezero) ---
+; Low-Level Disk-I/O mit DPB-Verwaltung, Verzeichnis-Zugriff,
+; Allokations-Verwaltung und FCB-Operationen.
+GOERR:
+	LD HL,090BH		; 0360H  goerr: indirekte Fehleraufruf-Routine
+	LD E,(HL)		; 0363H
+	INC HL		; 0364H
+	LD D,(HL)		; 0365H
+	EX DE,HL		; 0366H
+	JP (HL)		; 0367H
+MOVE:
+	INC C		; 0368H  move: Speicherblock kopieren (C Bytes, DE->HL)
+	DEC C		; 0369H
+	RET Z		; 036AH
+	LD A,(DE)		; 036BH
+	LD (HL),A		; 036CH
+	INC DE		; 036DH
+	INC HL		; 036EH
+	JP 0B69H		; 036FH  -> L0B69
+SELECTDISK:
+	LD A,(0B5BH)		; 0372H  selectdisk: Laufwerk auswaehlen, DPB laden
+	LD C,A		; 0375H
+	CALL 181BH		; 0376H
+	LD A,H		; 0379H
+	OR L		; 037AH
+	RET Z		; 037BH
+	LD E,(HL)		; 037CH
+	INC HL		; 037DH
+	LD D,(HL)		; 037EH
+	INC HL		; 037FH
+	LD (1406H),HL		; 0380H
+	INC HL		; 0383H
+	INC HL		; 0384H
+	LD (1408H),HL		; 0385H
+	INC HL		; 0388H
+	INC HL		; 0389H
+	LD (140AH),HL		; 038AH
+	INC HL		; 038DH
+	INC HL		; 038EH
+	EX DE,HL		; 038FH
+	LD (1423H),HL		; 0390H
+	LD HL,140CH		; 0393H
+	LD C,08H		; 0396H
+	CALL 0B68H		; 0398H  -> L0B68
+	LD HL,(140EH)		; 039BH
+	EX DE,HL		; 039EH
+	LD HL,1414H		; 039FH
+	LD C,0FH		; 03A2H
+	CALL 0B68H		; 03A4H  -> L0B68
+	LD HL,(1419H)		; 03A7H
+	LD A,H		; 03AAH
+	LD HL,1430H		; 03ABH
+	LD (HL),FFH		; 03AEH
+	OR A		; 03B0H
+	JP Z,0BB6H		; 03B1H
+	LD (HL),00H		; 03B4H
+	LD A,FFH		; 03B6H
+	OR A		; 03B8H
+	RET		; 03B9H
+HOME:
+	CALL 1818H		; 03BAH  home: Kopf auf Spur 0
+	XOR A		; 03BDH
+	LD HL,(1408H)		; 03BEH
+	LD (HL),A		; 03C1H
+	INC HL		; 03C2H
+	LD (HL),A		; 03C3H
+	LD HL,(140AH)		; 03C4H
+	LD (HL),A		; 03C7H
+	INC HL		; 03C8H
+	LD (HL),A		; 03C9H
+	RET		; 03CAH
+RDBUFF:
+	CALL 1827H		; 03CBH  rdbuff: Sektor lesen mit Fehlerpruefung
+	JP 0BD4H		; 03CEH  -> L0BD4
+WRBUFF:
+	CALL 182AH		; 03D1H  wrbuff: Sektor schreiben mit Fehlerpruefung
+	OR A		; 03D4H
+	RET Z		; 03D5H
+	LD HL,0909H		; 03D6H
+	JP 0B63H		; 03D9H  -> L0B63
+SEEK:
+	LD HL,(143DH)		; 03DCH  seek: Spur/Sektor aus Recordnummer berechnen
+	LD C,02H		; 03DFH
+	CALL 0D03H		; 03E1H
+	LD (1438H),HL		; 03E4H
+	LD (143FH),HL		; 03E7H
+	LD HL,1438H		; 03EAH
+	LD C,(HL)		; 03EDH
+	INC HL		; 03EEH
+	LD B,(HL)		; 03EFH
+	LD HL,(140AH)		; 03F0H
+	LD E,(HL)		; 03F3H
+	INC HL		; 03F4H
+	LD D,(HL)		; 03F5H
+	LD HL,(1408H)		; 03F6H
+	LD A,(HL)		; 03F9H
+	INC HL		; 03FAH
+	LD H,(HL)		; 03FBH
+	LD L,A		; 03FCH
+	LD A,C		; 03FDH
+	SUB E		; 03FEH
+	LD A,B		; 03FFH
+	SBC A,D		; 0400H
+	JP NC,0C13H		; 0401H
+	PUSH HL		; 0404H
+	LD HL,(1414H)		; 0405H
+	LD A,E		; 0408H
+	SUB L		; 0409H
+	LD E,A		; 040AH
+	LD A,D		; 040BH
+	SBC A,H		; 040CH
+	LD D,A		; 040DH
+	POP HL		; 040EH
+	DEC HL		; 040FH
+	JP 0BFDH		; 0410H  -> L0BFD
+	PUSH HL		; 0413H
+	LD HL,(1414H)		; 0414H
+	ADD HL,DE		; 0417H
+	JP C,0C28H		; 0418H
+	LD A,C		; 041BH
+	SUB L		; 041CH
+	LD A,B		; 041DH
+	SBC A,H		; 041EH
+	JP C,0C28H		; 041FH
+	EX DE,HL		; 0422H
+	POP HL		; 0423H
+	INC HL		; 0424H
+	JP 0C13H		; 0425H  -> L0C13
+	POP HL		; 0428H
+	PUSH BC		; 0429H
+	PUSH DE		; 042AH
+	PUSH HL		; 042BH
+	EX DE,HL		; 042CH
+	LD HL,(1421H)		; 042DH
+	ADD HL,DE		; 0430H
+	LD B,H		; 0431H
+	LD C,L		; 0432H
+	CALL 181EH		; 0433H
+	POP DE		; 0436H
+	LD HL,(1408H)		; 0437H
+	LD (HL),E		; 043AH
+	INC HL		; 043BH
+	LD (HL),D		; 043CH
+	POP DE		; 043DH
+	LD HL,(140AH)		; 043EH
+	LD (HL),E		; 0441H
+	INC HL		; 0442H
+	LD (HL),D		; 0443H
+	POP BC		; 0444H
+	LD A,C		; 0445H
+	SUB E		; 0446H
+	LD C,A		; 0447H
+	LD A,B		; 0448H
+	SBC A,D		; 0449H
+	LD B,A		; 044AH
+	LD HL,(1423H)		; 044BH
+	EX DE,HL		; 044EH
+	CALL 1830H		; 044FH
+	LD C,L		; 0452H
+	LD B,H		; 0453H
+	JP 1821H		; 0454H
+DM_POSITION:
+	LD HL,1416H		; 0457H
+	LD C,(HL)		; 045AH
+	LD A,(1436H)		; 045BH
+	OR A		; 045EH
+	RRA		; 045FH
+	DEC C		; 0460H
+	JP NZ,0C5EH		; 0461H
+	LD B,A		; 0464H
+	LD A,08H		; 0465H
+	SUB (HL)		; 0467H
+	LD C,A		; 0468H
+	LD A,(1435H)		; 0469H
+	DEC C		; 046CH
+	JP Z,0C75H		; 046DH
+	OR A		; 0470H
+	RLA		; 0471H
+	JP 0C6CH		; 0472H  -> L0C6C
+	ADD A,B		; 0475H
+	RET		; 0476H
+GETDM:
+	LD HL,(0B5CH)		; 0477H
+	LD DE,0010H		; 047AH
+	ADD HL,DE		; 047DH
+	ADD HL,BC		; 047EH
+	LD A,(1430H)		; 047FH
+	OR A		; 0482H
+	JP Z,0C8AH		; 0483H
+	LD L,(HL)		; 0486H
+	LD H,00H		; 0487H
+	RET		; 0489H
+	ADD HL,BC		; 048AH
+	LD E,(HL)		; 048BH
+	INC HL		; 048CH
+	LD D,(HL)		; 048DH
+	EX DE,HL		; 048EH
+	RET		; 048FH
+INDEX:
+	CALL 0C57H		; 0490H  -> L0C57
+	LD C,A		; 0493H
+	LD B,00H		; 0494H
+	CALL 0C77H		; 0496H  -> L0C77
+	LD (1438H),HL		; 0499H
+	RET		; 049CH
+ALLOCATED:
+	LD HL,(1438H)		; 049DH
+	LD A,L		; 04A0H
+	OR H		; 04A1H
+	RET		; 04A2H
+ATRAN:
+	LD A,(1416H)		; 04A3H
+	LD HL,(1438H)		; 04A6H
+	ADD HL,HL		; 04A9H
+	DEC A		; 04AAH
+	JP NZ,0CA9H		; 04ABH
+	LD (143AH),HL		; 04AEH
+	LD A,(1417H)		; 04B1H
+	LD C,A		; 04B4H
+	LD A,(1436H)		; 04B5H
+	AND C		; 04B8H
+	OR L		; 04B9H
+	LD L,A		; 04BAH
+	LD (1438H),HL		; 04BBH
+	RET		; 04BEH
+GETEXTA:
+	LD HL,(0B5CH)		; 04BFH  getexta: Extent-Adresse im FCB holen
+	LD DE,000CH		; 04C2H
+	ADD HL,DE		; 04C5H
+	RET		; 04C6H
+GETFCBA:
+	LD HL,(0B5CH)		; 04C7H  getfcba: reccnt/nxtrec-Adressen holen
+	LD DE,000FH		; 04CAH
+	ADD HL,DE		; 04CDH
+	EX DE,HL		; 04CEH
+	LD HL,0011H		; 04CFH
+	ADD HL,DE		; 04D2H
+	RET		; 04D3H
+GETFCB:
+	CALL 0CC7H		; 04D4H  getfcb: FCB-Parameter in Variablen laden
+	LD A,(HL)		; 04D7H
+	LD (1436H),A		; 04D8H
+	EX DE,HL		; 04DBH
+	LD A,(HL)		; 04DCH
+	LD (1434H),A		; 04DDH
+	CALL 0CBFH		; 04E0H  -> L0CBF
+	LD A,(1418H)		; 04E3H
+	AND (HL)		; 04E6H
+	LD (1435H),A		; 04E7H
+	RET		; 04EAH
+SETFCB:
+	CALL 0CC7H		; 04EBH  setfcb: Variablen zurueck in FCB schreiben
+	LD A,(1428H)		; 04EEH
+	CP 02H		; 04F1H
+	JP NZ,0CF7H		; 04F3H
+	XOR A		; 04F6H
+	LD C,A		; 04F7H
+	LD A,(1436H)		; 04F8H
+	ADD A,C		; 04FBH
+	LD (HL),A		; 04FCH
+	EX DE,HL		; 04FDH
+	LD A,(1434H)		; 04FEH
+	LD (HL),A		; 0501H
+	RET		; 0502H
+HLROTR:
+	INC C		; 0503H
+	DEC C		; 0504H
+	RET Z		; 0505H
+	LD A,H		; 0506H
+	OR A		; 0507H
+	RRA		; 0508H
+	LD H,A		; 0509H
+	LD A,L		; 050AH
+	RRA		; 050BH
+	LD L,A		; 050CH
+	JP 0D04H		; 050DH
+COMPUTE_CS:
+	LD C,80H		; 0510H
+	LD HL,(140CH)		; 0512H
+	XOR A		; 0515H
+	ADD A,(HL)		; 0516H
+	INC HL		; 0517H
+	DEC C		; 0518H
+	JP NZ,0D16H		; 0519H
+	RET		; 051CH
+HLROTL:
+	INC C		; 051DH
+	DEC C		; 051EH
+	RET Z		; 051FH
+	ADD HL,HL		; 0520H
+	JP 0D1EH		; 0521H
+SET_CDISK:
+	PUSH BC		; 0524H
+	LD A,(0B5BH)		; 0525H
+	LD C,A		; 0528H
+	LD HL,0001H		; 0529H
+	CALL 0D1DH		; 052CH
+	POP BC		; 052FH
+	LD A,C		; 0530H
+	OR L		; 0531H
+	LD L,A		; 0532H
+	LD A,B		; 0533H
+	OR H		; 0534H
+	LD H,A		; 0535H
+	RET		; 0536H
+GETALLOCBIT:
+	LD HL,(1400H)		; 0537H
+	LD A,(0B5BH)		; 053AH
+	LD C,A		; 053DH
+	CALL 0D03H		; 053EH
+	LD A,L		; 0541H
+	AND 01H		; 0542H
+	RET		; 0544H
+SETALLOCBIT:
+	LD HL,1400H		; 0545H
+	LD C,(HL)		; 0548H
+	INC HL		; 0549H
+	LD B,(HL)		; 054AH
+	CALL 0D24H		; 054BH
+	LD (1400H),HL		; 054EH
+	LD HL,(141BH)		; 0551H
+	INC HL		; 0554H
+	EX DE,HL		; 0555H
+	LD HL,(1406H)		; 0556H
+	LD (HL),E		; 0559H
+	INC HL		; 055AH
+	LD (HL),D		; 055BH
+	RET		; 055CH
+CHECK_RODIR:
+	CALL 0D77H		; 055DH
+	LD DE,0009H		; 0560H
+	ADD HL,DE		; 0563H
+	LD A,(HL)		; 0564H
+	RLA		; 0565H
+	RET NC		; 0566H
+	LD HL,090FH		; 0567H
+	JP 0B63H		; 056AH  -> L0B63
+CHECK_WRITE:
+	CALL 0D37H		; 056DH
+	RET Z		; 0570H
+	LD HL,090DH		; 0571H
+	JP 0B63H		; 0574H  -> L0B63
+SETDIR:
+	LD HL,(140CH)		; 0577H
+	LD A,(143CH)		; 057AH
+	ADD A,L		; 057DH
+	LD L,A		; 057EH
+	RET NC		; 057FH
+	INC H		; 0580H
+	RET		; 0581H
+GETMODNUM:
+	LD HL,(0B5CH)		; 0582H
+	LD DE,000EH		; 0585H
+	ADD HL,DE		; 0588H
+	LD A,(HL)		; 0589H
+	RET		; 058AH
+CLRMODNUM:
+	CALL 0D82H		; 058BH
+	LD (HL),00H		; 058EH
+	RET		; 0590H
+SETFWF:
+	CALL 0D82H		; 0591H
+	OR 80H		; 0594H
+	LD (HL),A		; 0596H
+	RET		; 0597H
+COMPCDR:
+	LD HL,(143DH)		; 0598H
+	EX DE,HL		; 059BH
+	LD HL,(1406H)		; 059CH
+	LD A,E		; 059FH
+	SUB (HL)		; 05A0H
+	INC HL		; 05A1H
+	LD A,D		; 05A2H
+	SBC A,(HL)		; 05A3H
+	RET		; 05A4H
+SETCDR:
+	CALL 0D98H		; 05A5H
+	RET C		; 05A8H
+	INC DE		; 05A9H
+	LD (HL),D		; 05AAH
+	DEC HL		; 05ABH
+	LD (HL),E		; 05ACH
+	RET		; 05ADH
+SUBDH:
+	LD A,E		; 05AEH
+	SUB L		; 05AFH
+	LD L,A		; 05B0H
+	LD A,D		; 05B1H
+	SBC A,H		; 05B2H
+	LD H,A		; 05B3H
+	RET		; 05B4H
+GET_BLOCK:
+	LD C,FFH		; 05B5H  get$block: freien Allokations-Block suchen
+	LD HL,(143FH)		; 05B7H
+	EX DE,HL		; 05BAH
+	LD HL,(141FH)		; 05BBH
+	CALL 0DAEH		; 05BEH
+	RET NC		; 05C1H
+	PUSH BC		; 05C2H
+	CALL 0D10H		; 05C3H
+	LD HL,(1410H)		; 05C6H
+	EX DE,HL		; 05C9H
+	LD HL,(143FH)		; 05CAH
+	ADD HL,DE		; 05CDH
+	POP BC		; 05CEH
+	INC C		; 05CFH
+	JP Z,0DDDH		; 05D0H
+	CP (HL)		; 05D3H
+	RET Z		; 05D4H
+	CALL 0D98H		; 05D5H
+	RET NC		; 05D8H
+	CALL 0D45H		; 05D9H
+	RET		; 05DCH
+	LD (HL),A		; 05DDH
+	RET		; 05DEH
+SCANDM:
+	CALL 0DB5H		; 05DFH
+	CALL 0DF9H		; 05E2H
+	LD C,01H		; 05E5H
+	CALL 0BD1H		; 05E7H  -> L0BD1
+	JP 0DF3H		; 05EAH
+SETDATA:
+	CALL 0DF9H		; 05EDH
+	CALL 0BCBH		; 05F0H  -> L0BCB
+	LD HL,1404H		; 05F3H
+	JP 0DFCH		; 05F6H
+RD_DIR:
+	LD HL,140CH		; 05F9H
+	LD C,(HL)		; 05FCH
+	INC HL		; 05FDH
+	LD B,(HL)		; 05FEH
+	JP 1824H		; 05FFH
+WRDIR:
+	LD HL,(140CH)		; 0602H
+COPY_FCB:
+	EX DE,HL		; 0605H
+	LD HL,(1404H)		; 0606H
+	LD C,80H		; 0609H
+	JP 0B68H		; 060BH  -> L0B68
+END_OF_DIR:
+	LD HL,143DH		; 060EH  Verzeichnis-Ende pruefen
+	LD A,(HL)		; 0611H
+	INC HL		; 0612H
+	CP (HL)		; 0613H
+	RET NZ		; 0614H
+	INC A		; 0615H
+	RET		; 0616H
+SET_END_DIR:
+	LD HL,FFFFH		; 0617H
+	LD (143DH),HL		; 061AH
+	RET		; 061DH
+READ_DIR:
+	LD HL,(141BH)		; 061EH  Naechsten Verzeichnis-Eintrag lesen
+	EX DE,HL		; 0621H
+	LD HL,(143DH)		; 0622H
+	INC HL		; 0625H
+	LD (143DH),HL		; 0626H
+	CALL 0DAEH		; 0629H
+	JP NC,0E32H		; 062CH
+	JP 0E17H		; 062FH
+SEEKDIR:
+	LD A,(143DH)		; 0632H  Verzeichnis-Record anfahren
+	AND 03H		; 0635H
+	LD B,05H		; 0637H
+	ADD A,A		; 0639H
+	DEC B		; 063AH
+	JP NZ,0E39H		; 063BH
+	LD (143CH),A		; 063EH
+	OR A		; 0641H
+	RET NZ		; 0642H
+	PUSH BC		; 0643H
+	CALL 0BDCH		; 0644H  -> L0BDC
+	CALL 0DEDH		; 0647H
+	POP BC		; 064AH
+	JP 0DB7H		; 064BH
+COMPEXT:
+	LD A,C		; 064EH
+	AND 07H		; 064FH
+	INC A		; 0651H
+	LD E,A		; 0652H
+	LD D,A		; 0653H
+	LD A,C		; 0654H
+	RRCA		; 0655H
+	RRCA		; 0656H
+	RRCA		; 0657H
+	AND 1FH		; 0658H
+	LD C,A		; 065AH
+	LD A,B		; 065BH
+	ADD A,A		; 065CH
+	ADD A,A		; 065DH
+	ADD A,A		; 065EH
+	ADD A,A		; 065FH
+	ADD A,A		; 0660H
+	OR C		; 0661H
+	LD C,A		; 0662H
+	LD A,B		; 0663H
+	RRCA		; 0664H
+	RRCA		; 0665H
+	RRCA		; 0666H
+	AND 1FH		; 0667H
+	LD B,A		; 0669H
+	LD HL,(1412H)		; 066AH
+	ADD HL,BC		; 066DH
+	LD A,(HL)		; 066EH
+	RLCA		; 066FH
+	DEC E		; 0670H
+	JP NZ,0E6FH		; 0671H
+	RET		; 0674H
+ROTR:
+	PUSH DE		; 0675H
+	CALL 0E4EH		; 0676H
+	AND FEH		; 0679H
+	POP BC		; 067BH
+	OR C		; 067CH
+	RRCA		; 067DH
+	DEC D		; 067EH
+	JP NZ,0E7DH		; 067FH
+	LD (HL),A		; 0682H
+	RET		; 0683H
+SCANDM_LOOP:
+	CALL 0D77H		; 0684H
+	LD DE,0010H		; 0687H
+	ADD HL,DE		; 068AH
+	PUSH BC		; 068BH
+	LD C,11H		; 068CH
+	POP DE		; 068EH
+	DEC C		; 068FH
+	RET Z		; 0690H
+	PUSH DE		; 0691H
+	LD A,(1430H)		; 0692H
+	OR A		; 0695H
+	JP Z,0EA1H		; 0696H
+	PUSH BC		; 0699H
+	PUSH HL		; 069AH
+	LD C,(HL)		; 069BH
+	LD B,00H		; 069CH
+	JP 0EA7H		; 069EH
+	DEC C		; 06A1H
+	PUSH BC		; 06A2H
+	LD C,(HL)		; 06A3H
+	INC HL		; 06A4H
+	LD B,(HL)		; 06A5H
+	PUSH HL		; 06A6H
+	LD A,C		; 06A7H
+	OR B		; 06A8H
+	JP Z,0EB6H		; 06A9H
+	LD HL,(1419H)		; 06ACH
+	LD A,L		; 06AFH
+	SUB C		; 06B0H
+	LD A,H		; 06B1H
+	SBC A,B		; 06B2H
+	CALL NC,0E75H		; 06B3H
+	POP HL		; 06B6H
+	INC HL		; 06B7H
+	POP BC		; 06B8H
+	JP 0E8EH		; 06B9H
+INITIALIZE:
+	LD HL,(1419H)		; 06BCH  Disk initialisieren (Verzeichnis scannen)
+	LD C,03H		; 06BFH
+	CALL 0D03H		; 06C1H
+	INC HL		; 06C4H
+	LD B,H		; 06C5H
+	LD C,L		; 06C6H
+	LD HL,(1412H)		; 06C7H
+	LD (HL),00H		; 06CAH
+	INC HL		; 06CCH
+	DEC BC		; 06CDH
+	LD A,B		; 06CEH
+	OR C		; 06CFH
+	JP NZ,0ECAH		; 06D0H
+	LD HL,(141DH)		; 06D3H
+	EX DE,HL		; 06D6H
+	LD HL,(1412H)		; 06D7H
+	LD (HL),E		; 06DAH
+	INC HL		; 06DBH
+	LD (HL),D		; 06DCH
+	CALL 0BBAH		; 06DDH  -> L0BBA
+	LD HL,(1406H)		; 06E0H
+	LD (HL),03H		; 06E3H
+	INC HL		; 06E5H
+	LD (HL),00H		; 06E6H
+	CALL 0E17H		; 06E8H
+	LD C,FFH		; 06EBH
+	CALL 0E1EH		; 06EDH
+	CALL 0E0EH		; 06F0H
+	RET Z		; 06F3H
+	CALL 0D77H		; 06F4H
+	LD A,E5H		; 06F7H
+	CP (HL)		; 06F9H
+	JP Z,0EEBH		; 06FAH
+	LD A,(0B5AH)		; 06FDH
+	CP (HL)		; 0700H
+	JP NZ,0F0FH		; 0701H
+	INC HL		; 0704H
+	LD A,(HL)		; 0705H
+	SUB 24H		; 0706H
+	JP NZ,0F0FH		; 0708H
+	DEC A		; 070BH
+	LD (0B5EH),A		; 070CH
+	LD C,01H		; 070FH
+	CALL 0E84H		; 0711H
+	CALL 0DA5H		; 0714H
+	JP 0EEBH		; 0717H
+	LD A,(1427H)		; 071AH
+	JP 0B1AH		; 071DH  -> L0B1A
+	PUSH BC		; 0720H
+	PUSH AF		; 0721H
+	LD A,(1418H)		; 0722H
+	CPL		; 0725H
+	LD B,A		; 0726H
+	LD A,C		; 0727H
+	AND B		; 0728H
+	LD C,A		; 0729H
+	POP AF		; 072AH
+	AND B		; 072BH
+	SUB C		; 072CH
+	AND 1FH		; 072DH
+	POP BC		; 072FH
+	RET		; 0730H
+SEARCH:
+	LD A,FFH		; 0731H  Datei suchen (erstes Vorkommen)
+	LD (1427H),A		; 0733H
+	LD HL,142BH		; 0736H
+	LD (HL),C		; 0739H
+	LD HL,(0B5CH)		; 073AH
+	LD (142CH),HL		; 073DH
+	CALL 0E17H		; 0740H
+	CALL 0BBAH		; 0743H  -> L0BBA
+	LD C,00H		; 0746H
+	CALL 0E1EH		; 0748H
+	CALL 0E0EH		; 074BH
+	JP Z,0FADH		; 074EH
+	LD HL,(142CH)		; 0751H
+	EX DE,HL		; 0754H
+	LD A,(DE)		; 0755H
+	CP E5H		; 0756H
+	JP Z,0F63H		; 0758H
+	PUSH DE		; 075BH
+	CALL 0D98H		; 075CH
+	POP DE		; 075FH
+	JP NC,0FADH		; 0760H
+	CALL 0D77H		; 0763H
+	LD A,(142BH)		; 0766H
+	LD C,A		; 0769H
+	LD B,00H		; 076AH
+	LD A,C		; 076CH
+	OR A		; 076DH
+	JP Z,0F9CH		; 076EH
+	LD A,(DE)		; 0771H
+	CP 3FH		; 0772H
+	JP Z,0F95H		; 0774H
+	LD A,B		; 0777H
+	CP 0DH		; 0778H
+	JP Z,0F95H		; 077AH
+	CP 0CH		; 077DH
+	LD A,(DE)		; 077FH
+	JP Z,0F8CH		; 0780H
+	SUB (HL)		; 0783H
+	AND 7FH		; 0784H
+	JP NZ,0F46H		; 0786H
+	JP 0F95H		; 0789H
+	PUSH BC		; 078CH
+	LD C,(HL)		; 078DH
+	CALL 0F20H		; 078EH
+	POP BC		; 0791H
+	JP NZ,0F46H		; 0792H
+	INC DE		; 0795H
+	INC HL		; 0796H
+	INC B		; 0797H
+	DEC C		; 0798H
+	JP 0F6CH		; 0799H
+	LD A,(143DH)		; 079CH
+	AND 03H		; 079FH
+	LD (0B5EH),A		; 07A1H
+	LD HL,1427H		; 07A4H
+	LD A,(HL)		; 07A7H
+	RLA		; 07A8H
+	RET NC		; 07A9H
+	XOR A		; 07AAH
+	LD (HL),A		; 07ABH
+	RET		; 07ACH
+	CALL 0E17H		; 07ADH
+	LD A,FFH		; 07B0H
+	JP 0B1AH		; 07B2H  -> L0B1A
+DELETE:
+	CALL 0D6DH		; 07B5H  Datei loeschen
+	LD C,0CH		; 07B8H
+	CALL 0F31H		; 07BAH
+	CALL 0E0EH		; 07BDH
+	RET Z		; 07C0H
+	CALL 0D5DH		; 07C1H
+	CALL 0D77H		; 07C4H
+	LD (HL),E5H		; 07C7H
+	LD C,00H		; 07C9H
+	CALL 0E84H		; 07CBH
+	CALL 0DDFH		; 07CEH
+	CALL 0F46H		; 07D1H
+	JP 0FBDH		; 07D4H
+GETBLOCK_SUB:
+	LD D,B		; 07D7H
+	LD E,C		; 07D8H
+	LD A,C		; 07D9H
+	OR B		; 07DAH
+	JP Z,0FEAH		; 07DBH
+	DEC BC		; 07DEH
+	PUSH DE		; 07DFH
+	PUSH BC		; 07E0H
+	CALL 0E4EH		; 07E1H
+	RRA		; 07E4H
+	JP NC,1005H		; 07E5H
+	POP BC		; 07E8H
+	POP DE		; 07E9H
+	LD HL,(1419H)		; 07EAH
+	LD A,E		; 07EDH
+	SUB L		; 07EEH
+	LD A,D		; 07EFH
+	SBC A,H		; 07F0H
+	JP NC,100DH		; 07F1H
+	INC DE		; 07F4H
+	PUSH BC		; 07F5H
+	PUSH DE		; 07F6H
+	LD B,D		; 07F7H
+	LD C,E		; 07F8H
+	CALL 0E4EH		; 07F9H
+	RRA		; 07FCH
+	JP NC,1005H		; 07FDH
+READ_BUFFER:
+	POP DE		; 0800H
+	POP BC		; 0801H
+	JP 0FD9H		; 0802H
+	RLA		; 0805H
+	INC A		; 0806H
+	CALL 0E7DH		; 0807H
+	POP HL		; 080AH
+	POP DE		; 080BH
+	RET		; 080CH
+	LD A,C		; 080DH
+	OR B		; 080EH
+	JP NZ,0FD9H		; 080FH
+	LD HL,0000H		; 0812H
+	RET		; 0815H
+OPEN_COPY:
+	LD C,00H		; 0816H  FCB-Daten in Verzeichnis kopieren
+	LD E,20H		; 0818H
+	PUSH DE		; 081AH
+	LD B,00H		; 081BH
+	LD HL,(0B5CH)		; 081DH
+	ADD HL,BC		; 0820H
+	EX DE,HL		; 0821H
+	CALL 0D77H		; 0822H
+	POP BC		; 0825H
+	CALL 0B68H		; 0826H  -> L0B68
+	CALL 0BDCH		; 0829H  -> L0BDC
+	JP 0DDFH		; 082CH
+COPY_DIR:
+	CALL 0D6DH		; 082FH
+	LD C,0CH		; 0832H
+	CALL 0F31H		; 0834H
+	LD HL,(0B5CH)		; 0837H
+	LD A,(HL)		; 083AH
+	LD DE,0010H		; 083BH
+	ADD HL,DE		; 083EH
+	LD (HL),A		; 083FH
+	CALL 0E0EH		; 0840H
+	RET Z		; 0843H
+	CALL 0D5DH		; 0844H
+	LD C,10H		; 0847H
+	LD E,0CH		; 0849H
+	CALL 101AH		; 084BH
+	CALL 0F46H		; 084EH
+	JP 1040H		; 0851H
+SEEK_COPY:
+	LD C,0CH		; 0854H
+	CALL 0F31H		; 0856H
+	CALL 0E0EH		; 0859H
+	RET Z		; 085CH
+	LD C,00H		; 085DH
+	LD E,0CH		; 085FH
+	CALL 101AH		; 0861H
+	CALL 0F46H		; 0864H
+	JP 1059H		; 0867H
+OPEN:
+	LD C,0FH		; 086AH  Datei oeffnen (open)
+	CALL 0F31H		; 086CH
+	CALL 0E0EH		; 086FH
+	RET Z		; 0872H
+	CALL 0CBFH		; 0873H  -> L0CBF
+	LD A,(HL)		; 0876H
+	PUSH AF		; 0877H
+	PUSH HL		; 0878H
+	CALL 0D77H		; 0879H
+	EX DE,HL		; 087CH
+	LD HL,(0B5CH)		; 087DH
+	LD C,20H		; 0880H
+	PUSH DE		; 0882H
+	CALL 0B68H		; 0883H  -> L0B68
+	CALL 0D91H		; 0886H
+	POP DE		; 0889H
+	LD HL,000CH		; 088AH
+	ADD HL,DE		; 088DH
+	LD C,(HL)		; 088EH
+	LD HL,000FH		; 088FH
+	ADD HL,DE		; 0892H
+	LD B,(HL)		; 0893H
+	POP HL		; 0894H
+	POP AF		; 0895H
+	LD (HL),A		; 0896H
+	LD A,C		; 0897H
+	CP (HL)		; 0898H
+	LD A,B		; 0899H
+	JP Z,10A4H		; 089AH
+	LD A,00H		; 089DH
+	JP C,10A4H		; 089FH
+	LD A,80H		; 08A2H
+	LD HL,(0B5CH)		; 08A4H
+	LD DE,000FH		; 08A7H
+	ADD HL,DE		; 08AAH
+	LD (HL),A		; 08ABH
+	RET		; 08ACH
+MERGEZERO:
+	LD A,(HL)		; 08ADH  Null-Eintraege in Disk-Map zusammenfuehren
+	INC HL		; 08AEH
+MERGEZERO2:
+	OR (HL)		; 08AFH
+	DEC HL		; 08B0H
+	RET NZ		; 08B1H
+	LD A,(DE)		; 08B2H
+	LD (HL),A		; 08B3H
+	INC DE		; 08B4H
+OPEN_REEL:
+	INC HL		; 08B5H
+	LD A,(DE)		; 08B6H
+	LD (HL),A		; 08B7H
+	DEC DE		; 08B8H
+	DEC HL		; 08B9H
+	RET		; 08BAH
+CLOSE:
+	XOR A		; 08BBH  Datei schliessen (close)
+	LD (0B5EH),A		; 08BCH
+	LD (143DH),A		; 08BFH
+	LD (143EH),A		; 08C2H
+	CALL 0D37H		; 08C5H
+	RET NZ		; 08C8H
+	CALL 0D82H		; 08C9H
+
+; --- @OS.COM FCB (Runtime-Kopie) ---
+FCB_OS_RT:
+; --- FCB fuer @OS.COM (Runtime-Kopie) ---
+	DB	E6H		; 08CCH: Laufwerk (0=default)
+	DB	'.....1..'	; 08CDH: Dateiname (8 Zeichen)
+	DB	'...'		; 08D5H: Extension
+	DS	25		; 08D8H-08F0H: FCB-Rest
+DISKREAD_BODY:
+	LD (HL),A		; 08F3H
+	OR A		; 08F4H
+	JP NZ,10FAH		; 08F5H
+	LD A,(HL)		; 08F8H
+	LD (DE),A		; 08F9H
+	CP (HL)		; 08FAH
+	JP NZ,1138H		; 08FBH
+	JP 1116H		; 08FEH
+OPEN_REEL_2:
+	CALL 10ADH		; 0901H
+	EX DE,HL		; 0904H
+	CALL 10ADH		; 0905H
+	EX DE,HL		; 0908H
+	LD A,(DE)		; 0909H
+	CP (HL)		; 090AH
+	JP NZ,1138H		; 090BH
+	INC DE		; 090EH
+	INC HL		; 090FH
+	LD A,(DE)		; 0910H
+COMPEXT_MAIN:
+	CP (HL)		; 0911H
+	JP NZ,1138H		; 0912H
+	DEC C		; 0915H
+	INC DE		; 0916H
+	INC HL		; 0917H
+	DEC C		; 0918H
+	JP NZ,10E6H		; 0919H
+	LD BC,FFECH		; 091CH
+	ADD HL,BC		; 091FH
+	EX DE,HL		; 0920H
+	ADD HL,BC		; 0921H
+	LD A,(DE)		; 0922H
+	CP (HL)		; 0923H
+	JP C,1130H		; 0924H
+	LD (HL),A		; 0927H
+	LD BC,0003H		; 0928H
+	ADD HL,BC		; 092BH
+	EX DE,HL		; 092CH
+	ADD HL,BC		; 092DH
+	LD A,(HL)		; 092EH
+	LD (DE),A		; 092FH
+	LD A,FFH		; 0930H
+	LD (1425H),A		; 0932H
+	JP 1029H		; 0935H
+	LD HL,0B5EH		; 0938H
+	DEC (HL)		; 093BH
+	RET		; 093CH
+MAKE:
+	CALL 0D6DH		; 093DH  Neue Datei anlegen (make)
+	LD HL,(0B5CH)		; 0940H
+	PUSH HL		; 0943H
+	LD HL,13FFH		; 0944H
+	LD (0B5CH),HL		; 0947H
+	LD C,01H		; 094AH
+	CALL 0F31H		; 094CH
+	CALL 0E0EH		; 094FH
+	POP HL		; 0952H
+	LD (0B5CH),HL		; 0953H
+	RET Z		; 0956H
+	EX DE,HL		; 0957H
+	LD HL,000FH		; 0958H
+	ADD HL,DE		; 095BH
+	LD C,11H		; 095CH
+	XOR A		; 095EH
+	LD (HL),A		; 095FH
+	INC HL		; 0960H
+	DEC C		; 0961H
+	JP NZ,115FH		; 0962H
+	LD HL,000DH		; 0965H
+	ADD HL,DE		; 0968H
+	LD (HL),A		; 0969H
+	CALL 0DA5H		; 096AH
+	CALL 1016H		; 096DH
+	JP 0D91H		; 0970H
+SEQDISKREAD:
+	XOR A		; 0973H  Sequentielles Lesen vorbereiten
+	LD (1425H),A		; 0974H
+	CALL 10BBH		; 0977H
+	CALL 0E0EH		; 097AH
+	RET Z		; 097DH
+	LD HL,(0B5CH)		; 097EH
+	LD BC,000CH		; 0981H
+	ADD HL,BC		; 0984H
+	LD A,(HL)		; 0985H
+	INC A		; 0986H
+	AND 1FH		; 0987H
+	LD (HL),A		; 0989H
+	JP Z,119CH		; 098AH
+	LD B,A		; 098DH
+	LD A,(1418H)		; 098EH
+	AND B		; 0991H
+	LD HL,1425H		; 0992H
+	AND (HL)		; 0995H
+	JP Z,11A7H		; 0996H
+OPEN_NEXT:
+	JP 11C5H		; 0999H
+	LD BC,0002H		; 099CH
+	ADD HL,BC		; 099FH
+	INC (HL)		; 09A0H
+	LD A,(HL)		; 09A1H
+	AND 0FH		; 09A2H
+	JP Z,11CFH		; 09A4H
+	LD C,0FH		; 09A7H
+	CALL 0F31H		; 09A9H
+	CALL 0E0EH		; 09ACH
+	JP NZ,11C5H		; 09AFH
+	LD A,(1426H)		; 09B2H
+	INC A		; 09B5H
+	JP Z,11CFH		; 09B6H
+	CALL 113DH		; 09B9H
+	CALL 0E0EH		; 09BCH
+	JP Z,11CFH		; 09BFH
+	JP 11C8H		; 09C2H
+DISKREAD_END:
+	CALL 1073H		; 09C5H
+	CALL 0CD4H		; 09C8H  -> L0CD4
+	XOR A		; 09CBH
+	JP 0B1AH		; 09CCH  -> L0B1A
+SEQDISKWRITE:
+	CALL 0B1EH		; 09CFH  -> L0B1E
+	JP 0D91H		; 09D2H
+DISKWRITE_BODY:
+	LD A,01H		; 09D5H
+	LD (1428H),A		; 09D7H
+	LD A,FFH		; 09DAH
+	LD (1426H),A		; 09DCH
+	CALL 0CD4H		; 09DFH  -> L0CD4
+	LD A,(1436H)		; 09E2H
+RSEEK:
+	LD HL,1434H		; 09E5H
+	CP (HL)		; 09E8H
+	JP C,11FFH		; 09E9H
+	CP 80H		; 09ECH
+	JP NZ,1214H		; 09EEH
+	CALL 1173H		; 09F1H
+	XOR A		; 09F4H
+	LD (1436H),A		; 09F5H
+	LD A,(0B5EH)		; 09F8H
+L09FB:
+	OR A		; 09FBH
+	JP NZ,1214H		; 09FCH
+	CALL 0C90H		; 09FFH  -> L0C90
+	CALL 0C9DH		; 0A02H  -> L0C9D
+	JP Z,1214H		; 0A05H
+	CALL 0CA3H		; 0A08H  -> L0CA3
+	CALL 0BEAH		; 0A0BH  -> L0BEA
+	CALL 0BCBH		; 0A0EH  -> L0BCB
+	JP 0CEBH		; 0A11H  -> L0CEB
+COMPUTE_RR:
+	JP 0B1EH		; 0A14H  -> L0B1E
+	EX DE,HL		; 0A17H
+	ADD HL,DE		; 0A18H
+	LD C,(HL)		; 0A19H
+	LD B,00H		; 0A1AH
+	LD HL,000CH		; 0A1CH
+	ADD HL,DE		; 0A1FH
+	LD A,(HL)		; 0A20H
+	RRCA		; 0A21H
+	AND 80H		; 0A22H
+	ADD A,C		; 0A24H
+	LD C,A		; 0A25H
+	LD A,00H		; 0A26H
+	ADC A,B		; 0A28H
+	LD B,A		; 0A29H
+	LD A,(HL)		; 0A2AH
+	RRCA		; 0A2BH
+	AND 0FH		; 0A2CH
+	ADD A,B		; 0A2EH
+	LD B,A		; 0A2FH
+	LD HL,000EH		; 0A30H
+	ADD HL,DE		; 0A33H
+	LD A,(HL)		; 0A34H
+	ADD A,A		; 0A35H
+	ADD A,A		; 0A36H
+	ADD A,A		; 0A37H
+	ADD A,A		; 0A38H
+	PUSH AF		; 0A39H
+	ADD A,B		; 0A3AH
+	LD B,A		; 0A3BH
+	PUSH AF		; 0A3CH
+	POP HL		; 0A3DH
+	LD A,L		; 0A3EH
+	POP HL		; 0A3FH
+	OR L		; 0A40H
+	AND 01H		; 0A41H
+	RET		; 0A43H
+GETFILESIZE:
+	LD C,0CH		; 0A44H
+	CALL 0F31H		; 0A46H
+	LD HL,(0B5CH)		; 0A49H
+	LD DE,0021H		; 0A4CH
+	ADD HL,DE		; 0A4FH
+	PUSH HL		; 0A50H
+	LD (HL),D		; 0A51H
+	INC HL		; 0A52H
+	LD (HL),D		; 0A53H
+	INC HL		; 0A54H
+	LD (HL),D		; 0A55H
+	CALL 0E0EH		; 0A56H
+	JP Z,127EH		; 0A59H
+	CALL 0D77H		; 0A5CH
+	LD DE,000FH		; 0A5FH
+L0A62:
+	CALL 1217H		; 0A62H
+	POP HL		; 0A65H
+	PUSH HL		; 0A66H
+	LD E,A		; 0A67H
+	LD A,C		; 0A68H
+	SUB (HL)		; 0A69H
+	INC HL		; 0A6AH
+	LD A,B		; 0A6BH
+	SBC A,(HL)		; 0A6CH
+	INC HL		; 0A6DH
+	LD A,E		; 0A6EH
+	SBC A,(HL)		; 0A6FH
+	JP C,1278H		; 0A70H
+	LD (HL),E		; 0A73H
+	DEC HL		; 0A74H
+	LD (HL),B		; 0A75H
+	DEC HL		; 0A76H
+	LD (HL),C		; 0A77H
+	CALL 0F46H		; 0A78H
+	JP 1256H		; 0A7BH
+	POP HL		; 0A7EH
+	RET		; 0A7FH
+SETRANDOM:
+	LD HL,(0B5CH)		; 0A80H
+	LD DE,0020H		; 0A83H
+	CALL 1217H		; 0A86H
+	LD HL,0021H		; 0A89H
+	ADD HL,DE		; 0A8CH
+	LD (HL),C		; 0A8DH
+	INC HL		; 0A8EH
+	LD (HL),B		; 0A8FH
+L0A90:
+	INC HL		; 0A90H
+	LD (HL),A		; 0A91H
+	RET		; 0A92H
+SELECT:
+	LD HL,(1402H)		; 0A93H
+L0A96:
+	LD A,(0B5BH)		; 0A96H
+	LD C,A		; 0A99H
+	CALL 0D03H		; 0A9AH
+	PUSH HL		; 0A9DH
+	EX DE,HL		; 0A9EH
+	CALL 0B72H		; 0A9FH  -> L0B72
+	POP HL		; 0AA2H
+	CALL Z,0B60H		; 0AA3H
+	LD A,L		; 0AA6H
+	RRA		; 0AA7H
+	RET C		; 0AA8H
+	LD HL,(1402H)		; 0AA9H
+L0AAC:
+	LD C,L		; 0AACH
+	LD B,H		; 0AADH
+	CALL 0D24H		; 0AAEH
+	LD (1402H),HL		; 0AB1H
+	JP 0EBCH		; 0AB4H
+CURSELECT:
+	LD A,(1429H)		; 0AB7H
+	LD HL,0B5BH		; 0ABAH
+	CP (HL)		; 0ABDH
+	RET Z		; 0ABEH
+	LD (HL),A		; 0ABFH
+	JP 1293H		; 0AC0H
+RESELECT:
+	LD A,FFH		; 0AC3H
+	LD (1431H),A		; 0AC5H
+	LD HL,(0B5CH)		; 0AC8H
+	LD A,(HL)		; 0ACBH
+	AND 1FH		; 0ACCH
+	DEC A		; 0ACEH
+	CP 1EH		; 0ACFH
+	JP C,12DAH		; 0AD1H
+	CALL 145DH		; 0AD4H
+	JP 12E7H		; 0AD7H
+	CALL 13D8H		; 0ADAH
+	LD A,(HL)		; 0ADDH
+	LD (1433H),A		; 0ADEH
+	AND E0H		; 0AE1H
+	LD (HL),A		; 0AE3H
+	CALL 12B7H		; 0AE4H
+	LD A,(0B5AH)		; 0AE7H
+	LD HL,(0B5CH)		; 0AEAH
+	OR (HL)		; 0AEDH
+	LD (HL),A		; 0AEEH
+	RET		; 0AEFH
+
+; --- High-Level BDOS-Funktionen (func12..func32) ---
+FUNC12:
+	LD A,22H		; 0AF0H  Version 2.2 zurueck (22H)
+	JP 0B1AH		; 0AF2H  jmp sta$ret
+FUNC13:
+	LD HL,0000H		; 0AF5H  Reset: Login/R-O-Vektoren loeschen
+	LD (1400H),HL		; 0AF8H  lxi h,0 ; Vektoren = 0
+	LD (1402H),HL		; 0AFBH
+	LD A,(0004H)		; 0AFEH  lda cdisk ; aktuelles Laufwerk
+	AND 0FH		; 0B01H
+	LD (0B5BH),A		; 0B03H
+	LD HL,0080H		; 0B06H  DMA = 0080H (Default)
+	LD (1404H),HL		; 0B09H
+	CALL 0DF3H		; 0B0CH
+	JP 1293H		; 0B0FH
+FUNC14:
+	CALL 0D8BH		; 0B12H  CALL reselect ; Laufwerk aus FCB
+	CALL 12C3H		; 0B15H
+	JP 106AH		; 0B18H
+FUNC15:
+	CALL 12C3H		; 0B1BH  CALL reselect ; + open
+L0B1E:
+	JP 10BBH		; 0B1EH
+FUNC16:
+	LD C,00H		; 0B21H
+	EX DE,HL		; 0B23H
+	LD A,(HL)		; 0B24H
+	CP 3FH		; 0B25H
+	JP Z,1338H		; 0B27H
+FUNC17:
+	CALL 0CBFH		; 0B2AH  -> L0CBF
+	LD A,(HL)		; 0B2DH
+	CP 3FH		; 0B2EH
+	CALL NZ,0D8BH		; 0B30H
+	CALL 12C3H		; 0B33H
+	LD C,0FH		; 0B36H
+	CALL 0F31H		; 0B38H
+	JP 0E02H		; 0B3BH
+FUNC18:
+	LD HL,(142CH)		; 0B3EH
+	LD (0B5CH),HL		; 0B41H
+	CALL 12C3H		; 0B44H
+	CALL 0F46H		; 0B47H
+	JP 0E02H		; 0B4AH
+FUNC19:
+	CALL 12C3H		; 0B4DH
+	CALL 0FB5H		; 0B50H
+	JP 0F1AH		; 0B53H
+FUNC20:
+	CALL 12C3H		; 0B56H  CALL reselect ; + seqdiskread
+	JP 11D5H		; 0B59H
+FUNC21:
+	CALL 0D8BH		; 0B5CH  CALL reselect ; + seqdiskwrite (STUB)
+	CALL 12C3H		; 0B5FH
+	JP 113DH		; 0B62H
+FUNC22:
+	CALL 12C3H		; 0B65H  CALL reselect ; + make
+L0B68:
+	CALL 102FH		; 0B68H
+	JP 0F1AH		; 0B6BH
+FUNC23:
+	LD HL,(1402H)		; 0B6EH
+	JP 1399H		; 0B71H
+FUNC24:
+	CALL 1451H		; 0B74H  Login-Vektor zurueck
+	JP 0B1AH		; 0B77H  -> L0B1A
+FUNC25:
+	EX DE,HL		; 0B7AH  Aktuelles Laufwerk zurueck
+	LD (1404H),HL		; 0B7BH
+	JP 0DF3H		; 0B7EH
+FUNC26:
+	LD HL,(1412H)		; 0B81H  Allokations-Vektor zurueck
+	JP 1399H		; 0B84H
+FUNC27:
+	LD HL,(1400H)		; 0B87H
+	JP 1399H		; 0B8AH
+FUNC28:
+	CALL 12C3H		; 0B8DH
+	CALL 1054H		; 0B90H
+	JP 0F1AH		; 0B93H
+FUNC29:
+	LD HL,(140EH)		; 0B96H  DPB-Adresse zurueck
+	LD (0B5EH),HL		; 0B99H
+	RET		; 0B9CH
+FUNC30:
+	LD A,(1429H)		; 0B9DH  Func 30: User-Code Set/Get
+	CP FFH		; 0BA0H
+	JP NZ,13ABH		; 0BA2H
+	LD A,(0B5AH)		; 0BA5H
+	JP 0B1AH		; 0BA8H  -> L0B1A
+	AND 1FH		; 0BABH
+	LD (0B5AH),A		; 0BADH
+	RET		; 0BB0H
+FUNC31:
+	CALL 12C3H		; 0BB1H
+	JP 1244H		; 0BB4H
+FUNC32:
+	LD HL,(0B5CH)		; 0BB7H  File-Groesse berechnen
+L0BBA:
+	LD A,L		; 0BBAH
+	CPL		; 0BBBH
+	LD E,A		; 0BBCH
+	LD A,H		; 0BBDH
+	CPL		; 0BBEH
+	LD HL,(1402H)		; 0BBFH
+	AND H		; 0BC2H
+	LD D,A		; 0BC3H
+	LD A,L		; 0BC4H
+	AND E		; 0BC5H
+	LD E,A		; 0BC6H
+	LD HL,(1400H)		; 0BC7H
+	EX DE,HL		; 0BCAH
+L0BCB:
+	LD (1402H),HL		; 0BCBH
+	LD A,L		; 0BCEH
+	AND E		; 0BCFH
+	LD L,A		; 0BD0H
+L0BD1:
+	LD A,H		; 0BD1H
+	AND D		; 0BD2H
+	LD H,A		; 0BD3H
+L0BD4:
+	LD (1400H),HL		; 0BD4H
+	RET		; 0BD7H
+	LD (1429H),A		; 0BD8H
+	LD A,(1432H)		; 0BDBH
+	INC A		; 0BDEH
+	RET NZ		; 0BDFH
+	LD A,(0B5BH)		; 0BE0H
+	LD (1432H),A		; 0BE3H
+	RET		; 0BE6H
+	LD A,(1431H)		; 0BE7H
+L0BEA:
+	OR A		; 0BEAH
+	JP Z,13F5H		; 0BEBH
+	LD HL,(0B5CH)		; 0BEEH
+	LD A,(1433H)		; 0BF1H
+	LD (HL),A		; 0BF4H
+	LD HL,(0B28H)		; 0BF5H
+	LD SP,HL		; 0BF8H
+	LD HL,(0B5EH)		; 0BF9H
+	LD A,L		; 0BFCH
+L0BFD:
+	LD B,H		; 0BFDH
+	RET		; 0BFEH
+
+; --- BDOS-Arbeitsbereich (Variablen, Disk-Parameter) ---
+BDOS_WORKSPACE:
+; --- BDOS-Arbeitsbereich (Variablen/Puffer) ---
+	DS	66		; 0BFFH-0C40H: BDOS-Arbeitsbereich (Variablen/Puffer)
+DISK_INIT_A:
+	LD A,FFH		; 0C41H
+	LD (1432H),A		; 0C43H
+	JP 12F5H		; 0C46H
+DISK_INIT_B:
+	LD A,FFH		; 0C49H
+	LD (1432H),A		; 0C4BH
+	JP 12B7H		; 0C4EH
+CHECK_RESEL:
+	LD A,(1432H)		; 0C51H
+	INC A		; 0C54H
+	JR Z,0C59H		; 0C55H
+L0C57:
+	DEC A		; 0C57H
+	RET		; 0C58H
+L0C59:
+	LD A,(0B5BH)		; 0C59H
+	RET		; 0C5CH
+RESELECT_2:
+	LD HL,1432H		; 0C5DH
+	LD A,(HL)		; 0C60H
+	INC A		; 0C61H
+	RET Z		; 0C62H
+	LD (HL),FFH		; 0C63H
+	DEC A		; 0C65H
+	LD (1429H),A		; 0C66H
+	CALL 12B7H		; 0C69H
+L0C6C:
+	JP 12E7H		; 0C6CH
+; --- BDOS-Arbeitsbereich (Disk-Parameter / unbenutzt) ---
+	DS	138		; 0C6FH-0CF8H: BDOS-Arbeitsbereich (Disk-Parameter / unbenutzt)
+; --- Padding (Ende Track 0) (7 Bytes) ---
+	DS	7		; 0CF9H-0CFFH: Padding (Ende Track 0)
+
+; ======================================================================
+; Statistik: 1893 Eintraege, 1893 Befehle, 0 Datenbytes
+; Erkannte Labels: 164 manuell + 59 automatisch
+; ======================================================================
+	END
