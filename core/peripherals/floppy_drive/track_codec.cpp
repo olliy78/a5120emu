@@ -2,14 +2,15 @@
  * @file track_codec.cpp
  * @brief TrackCodec – IBM-Track (FM/MFM) aufbauen/parsen und CRC-Primitive.
  *
- * CRC-Vereinheitlichung: loaderCrc16 (aus core/cards/k5122/k5122.cpp) byte-genau
- * als TrackCodec::crc16 übernommen.  Die frühere Zwei-Seed-Logik der alten K5122
- * (0xBF84 über reine Datenbytes / 0xCDB4 über [0xFB]+Daten) entsteht daraus
- * automatisch:
+ * TrackCodec::crc16 IST CRC-16-CCITT (Poly 0x1021) — die ror-basierte Implementierung
+ * (byte-genau zur Lader-Routine sub_0407) ist äquivalent zum Standard-CCITT.  Es gibt
+ * KEINE „Robotron-Spezial-CRC"; die echten A5120-Disks sind Standard-IBM-MFM.  Die
+ * vermeintlichen „Sonderseeds" sind nur CCITT-Zwischenstände:
  *   crc16([A1,A1,A1],     3, 0xFF,0xFF) == 0xCDB4
- *   crc16([A1,A1,A1,FB], 4, 0xFF,0xFF) == 0xBF84
- * buildTrack startet daher die komplette CRC immer mit [A1,A1,A1,FE/FB, ...] und
- * Seed 0xFF,0xFF.
+ *   crc16([A1,A1,A1,FB],  4, 0xFF,0xFF) == 0xE295   (Seed der MFM-Daten-CRC, MIT A1)
+ *   crc16([FB],           1, 0xFF,0xFF) == 0xBF84   (FM-Daten-CRC, OHNE A1)
+ * buildTrack startet die komplette CRC daher immer mit [A1,A1,A1,FE/FB, ...] (MFM) bzw.
+ * [FE/FB, ...] (FM) und Seed 0xFF,0xFF — exakt die natürliche IBM-FM-vs-MFM-Differenz.
  *
  * @see core/peripherals/floppy_drive/track_codec.h
  * @see doc/refactoring_floppy_emulator.md §4
@@ -185,12 +186,13 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
             push(0xA1);
             pushMark(0xFB, MarkType::Data); // Mark-Byte FB trägt die Data-Marke
 
-            // Daten-CRC: Robotron-Boot-Kompatibilität erfordert Seed 0xBF84 über die
-            // reinen Datenbytes — crc16([A1,A1,A1,FB,data],0xFF,0xFF) ergibt einen
-            // anderen Wert (0xE295 nach 4 Bytes; die Kette stimmt erst ab dem 5. Byte
-            // mit dem 0xBF84-Pfad überein, NICHT ab Byte 4).  Daher: Boot-kompatibler
-            // Pfad = crc16(data, 0xBF, 0x84).
-            uint16_t dataCrc = crc16(sec.data.data(), sec.data.size(), 0xBF, 0x84);
+            // Standard-IBM-MFM-Daten-CRC (CRC-16-CCITT) über [A1,A1,A1,FB] + Daten,
+            // Seed 0xFFFF — exakt wie die echten A5120-Disks (disks/cpadisk_*, z.B.
+            // Sektor 0 = 0x233D) und wie der Lader im MFM-Modus ([03FD] bit1=0,
+            // Seed 0xE295 = crc16([A1A1A1 FB],0xFFFF) über die Datenbytes).
+            std::vector<uint8_t> dataCrcIn = {0xA1, 0xA1, 0xA1, 0xFB};
+            dataCrcIn.insert(dataCrcIn.end(), sec.data.begin(), sec.data.end());
+            uint16_t dataCrc = crc16(dataCrcIn.data(), dataCrcIn.size(), 0xFF, 0xFF);
 
             // Datenbytes
             for (uint8_t b : sec.data) push(b);
@@ -321,9 +323,11 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
             const uint8_t dCrcLo = track.bytes[dataPos + 1 + secSize + 1];
 
             if (isMfm) {
-                // Daten-CRC: Boot-kompatibler Seed 0xBF84 über reine Datenbytes
-                // (identisch zu buildTrack — sieh Kommentar dort).
-                uint16_t calc = crc16(data.data(), data.size(), 0xBF, 0x84);
+                // Standard-IBM-MFM-Daten-CRC (CCITT) über [A1,A1,A1,FB] + Daten,
+                // Seed 0xFFFF — identisch zu buildTrack (siehe Kommentar dort).
+                std::vector<uint8_t> dataCrcIn = {0xA1, 0xA1, 0xA1, 0xFB};
+                dataCrcIn.insert(dataCrcIn.end(), data.begin(), data.end());
+                uint16_t calc = crc16(dataCrcIn.data(), dataCrcIn.size(), 0xFF, 0xFF);
                 data_crc_ok = (calc == static_cast<uint16_t>((dCrcHi << 8) | dCrcLo));
             } else {
                 // FM: CRC über [FB, <data>]

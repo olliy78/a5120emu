@@ -19,7 +19,7 @@ HFE-v1-Bit-Konvention (kompatibel zu BitCodec):
 
 CRC-Kompatibilität zu TrackCodec::crc16 und parseTrack:
   - IDCRC  = crc16([A1,A1,A1,FE,cyl,head,sec,sizecode], seed=0xFF,0xFF)
-  - DATACRC = crc16(data, seed=0xBF,0x84)   (Boot-kompatibler Seed)
+  - DATACRC = crc16([A1,A1,A1,FB]+data, seed=0xFF,0xFF)  (Standard-IBM-MFM/CCITT)
 
 Verwendung:
   python3 tools/img_to_hfe.py tests/fixtures/cpa_mini.img tests/fixtures/cpa_mini.hfe
@@ -234,9 +234,9 @@ def build_side(cyl: int, head: int, sectors: list[bytes]) -> bytes:
         enc.sync_a1()
         enc.byte(0xFB)          # DAM-Mark
 
-        # Daten-CRC: Boot-kompatibler Seed 0xBF,0x84 über reine Datenbytes
-        # (identisch zu buildTrack / parseTrack)
-        data_crc = crc16(sec_data, 0xBF, 0x84)
+        # Standard-IBM-MFM-Daten-CRC (CCITT) über [A1,A1,A1,FB] + Daten, Seed 0xFFFF
+        # (identisch zu TrackCodec::buildTrack / parseTrack).
+        data_crc = crc16(bytes([0xA1, 0xA1, 0xA1, 0xFB]) + sec_data, 0xFF, 0xFF)
 
         for b in sec_data:
             enc.byte(b)
