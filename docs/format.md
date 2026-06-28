@@ -299,12 +299,12 @@ Der Verify-Prompt von FORMAT.COM lautet wörtlich:
 
 ---
 
-## 8. Status im Emulator (Stand 2026-06-27, Branch `formating-disks`)
+## 8. Status im Emulator (Stand 2026-06-28, Branch `formating-disks`)
 
 | Programm      | Ergebnis |
 |---------------|----------|
 | **FORMAT.COM**  | ✅ **Funktioniert** — formatiert **mit Verify** fehlerfrei. Verifiziert für alle vier Sektorgrößen: **128 B** (Format 1, Systemspuren 0-2), **256 B** (Format 4), **512 B** (Format E), **1024 B** (Format 1, Datenspuren). Voller Lauf Format 1 über **alle 160 Spuren**: `FORMATIEREN beendet` ohne eine einzige `SPUR DEFEKT`-Meldung; `DIR` der frischen Disk → `No File` (gültige, leere CP/A-Disk). |
-| **FORMATB.COM** | ❌ **Hängt bei „FORMATIEREN auf Spur 0"** — kommt nie zu „beendet". Ursache: anderes Schreibprotokoll (kontinuierlicher Stream + MK-Strobes, index-puls-delimitierte Spuren statt /STR-Schreibstrobe), das der K5122 noch nicht committet. Der korrekte Spurinhalt + CRC wird erzeugt, aber nie ins Image geschrieben. |
+| **FORMATB.COM** | ⚠️ **Hängt nicht mehr** (Hang gelöst, s. §8.1) — schreibt die Spur korrekt (`>>> FORMAT-WRITE`, Image-md5 identisch zu FORMAT.COM) und läuft bis `FORMATIEREN beendet`. **Offen:** FORMATBs eigenes Rücklese-Verify meldet noch `Fehler 'V' SPUR DEFEKT!` (s. §8.1, „Schritt 2"). Zusätzlich adressiert FORMATB den Format-Write **immer physisch Laufwerk 0**. |
 
 **Getestet:** nur die **80-Spur-DS-Geometrie** (Default), dort alle vier Sektorgrößen.
 **Noch nicht im Emulator verifiziert:** die einseitigen und 40-Spur-Geometrien (S/T/U/V/W,
@@ -314,10 +314,90 @@ nur eine Seite, 40-Spur = Doppelschritt), sind aber ungetestet. **Nicht möglich
 
 > **Ziel** (alle Formate fehlerfrei): FORMAT.COM erfüllt das für die getesteten
 > Sektorgrößen der 80-Spur-DS-Geometrie bereits. Offen: (a) einseitige/40-Spur-Geometrien
-> verifizieren, (b) für FORMATB.COM fehlt im K5122 der index-/MK-delimitierte Vollspur-
-> Commit (Byte-Rate an die Index-Periode gekoppelt), (c) 8″-Laufwerk im Emulator
+> verifizieren, (b) **FORMATB.COM-Verify** (s. §8.1), (c) 8″-Laufwerk im Emulator
 > modellieren. Details/RE-Stand: `doc/design/07_k5122_afs.md §7.3a` und die Memory-Notiz
 > `project_formatb_different_protocol`.
+
+### 8.1 FORMATB.COM — vollständige Diagnose (Stand 2026-06-28)
+
+Per Disassembly (FORMATB.COM + BIOS-Quelle `cpadisk_*.prn`) und gezielten Trace-Experimenten
+vollständig aufgeklärt. Es gibt **zwei** voneinander unabhängige Probleme.
+
+#### Wie FORMATB eine Spur formatiert (Mechanismus)
+
+FORMATB formatiert **nicht** über das normale BIOS-`dio`, sondern fährt ZVE2 direkt mit einer
+selbstmodifizierenden Co-Routine. Ablauf einer Spur:
+
+1. **Eintritt:** ein `/STR`-Schreibstrobe (`OUT(10H)=B4`, /WE=0, mit sauberer /STR-Flanke nach
+   `B9/BD`) setzt `write_mode_`; ZVE2 streamt die Spur über `OUT(14H)`.
+2. **Drei `JR $`-Schleifen**, vom BIOS (PC `0xDEEA`) als Opcode `0x18` „scharf gemacht":
+   ZVE2-Leading-Gap `0x38F6`, ZVE2-Trailing-Gap `0x398B`, und **ZVE1-Wartepark `0x38C7`**
+   (`18 FE`).
+3. **FORMATB hängt seine eigene ISR an den Disketten-Index-Interrupt** (`ivdsk1`, Vektor
+   `0xE8`, lt. BIOS-Quelle; IM2-Tabellen-Slot per `LDIR` mit `0x3A2E` überschrieben). Die ISR
+   `0x3A2E` = `LD (HL),3E; EX DE,HL; EI; RETI` patcht **eine** Gap-Schleife (Opcode `18`→`3E`,
+   d.h. fällt durch) und **vertauscht HL↔DE** — der **erste** Index patcht so die Leading-,
+   der **zweite** die Trailing-Schleife.
+4. Nach beiden Patches läuft ZVE2 zu Ende, schreibt sein **dtrret** bei `0x3897`
+   (`XOR A; LD (38C8H),A` → ZVE1-`JR $` `18 FE`→`18 00`, fällt durch) und **weckt damit ZVE1**.
+
+ZVE2 läuft mit **IFF=0** (kein EI/IM); seine Gap-Schleifen sind also **nur per Speicher-Patch
+durch ZVE1s Index-ISR** brechbar, nicht per ZVE2-Interrupt. Das Ganze braucht also **mehrere
+Index-Interrupts pro Spur**.
+
+#### Problem 1 — Hang: der Index-Interrupt wird mitten im Format abgeschaltet ✅ GELÖST
+
+FORMATB hängte bei `FORMATIEREN auf Spur 0`, weil der Index-Interrupt nach dem **ersten** Mal
+abgeschaltet wurde → die ISR feuerte nie ein zweites Mal → Trailing-Schleife nie gepatcht →
+ZVE2 hängt in `0x3988`, ZVE1 ewig im `JR $`-Park.
+
+**Ursache (BIOS-Quelle):** Der BIOS-1-Sekunden-Timer `tim1uu` (`0xE682`) zählt den
+Index-Watchdog `fl.zto` herunter (`SUB 4`/s) und ruft bei Ablauf `headup` (`0xE3BF`:
+`LD A,3; OUT (flcoac=11H),A` = **Index-Interrupt sperren** + Motor aus). Normalerweise frischt
+die **BIOS**-Index-ISR `fl.zto` bei jedem Index auf — FORMATBs ISR (`0x3A2E`) tut das nicht.
+Auf echter Hardware ist dieser Motor-Abschalt-Watchdog während einer laufenden Übertragung
+unterdrückt (`pretx+1 == 0` → `tim1uu` überspringt `headup`); da FORMATBs Format-Write am
+BIOS-`dio` vorbeiläuft, wird dieser „Transfer läuft"-Zustand nicht gesetzt → `headup` schlägt
+mitten im Format zu.
+
+**Fix (K5122, `k5122.cpp::ioWrite`):** Solange ein Vollspur-FORMAT-Write läuft (`write_mode_`),
+ignoriert die Karte das Port-A-Interrupt-**Sperr**-Wort (`OUT(11H)` mit Bits3-0=`0011`, Bit7=0).
+Der Index-Interrupt bleibt damit über die ganze Format-Übertragung aktiv, FORMATBs ISR patcht
+beide Gap-Schleifen, ZVE2 erreicht sein dtrret, ZVE1 wird geweckt. Tightly-scoped (nur im
+`write_mode_`, nur das Sperrwort) → Boot/Read/FORMAT.COM unberührt; alle Tests grün
+(569 gtest + 58 Harness). Ergebnis: FORMATB schreibt die Spur korrekt (Image-md5 identisch zu
+FORMAT.COM) und läuft bis `FORMATIEREN beendet`.
+
+#### Problem 2 — Verify: `'V' SPUR DEFEKT` ⚠️ OFFEN
+
+Nach dem Format schreibt FORMATB ein Testmuster in Sektor 1 (`>>> WRITE S=1 bytes=128`) und
+liest es zur Kontrolle zurück (Vergleich Rücklese-Puffer `0x63B7` vs. Soll `0x3B07` = lauter
+`0x53`; Mismatch → `'V'`@`0x08D5`). Im Emulator wird der Rücklese-Puffer **nicht** gefüllt:
+nach dem Format folgt **kein** Lese-`/STR`-Strobe und damit kein `>>> READ` mehr — der
+Verify-Read erreicht den K5122-Lesepfad nicht. (Hypothese: nach dem Format streamt ZVE2 die
+**nächste** Leading-Gap-Schleife weiter und hält den Bus/`write_mode_`-Reststand, sodass der
+Lesepfad blockiert bzw. der Verify über den noch laufenden ZVE2 statt über einen frischen
+Lese-Transfer liest → Müll. Sauberes Spur-Ende nach **einer** Spur ist noch zu modellieren.)
+Nächster Schritt: FORMATBs Verify-Leseroutine (`0x088B` → `sub_09AF`/`(37E6H)` →
+`sub_09C5`/`sub_0A30` → BIOS-Read `sub_0D26`) und das Spur-Ende-Verhalten von `write_mode_`
+nach Abschluss einer einzelnen Format-Spur untersuchen.
+
+#### Sekundär — Laufwerkswahl
+
+FORMATB adressiert den Format-Write **immer physisch Laufwerk 0** (`OUT(18H)` mit drive=0,
+unabhängig vom Buchstaben); FORMAT.COM re-selektiert `0xDD` (D1) für „B". Auf dem
+Mehr-Laufwerk-Emulator formatiert FORMATB damit das Bootlaufwerk statt B/C.
+
+#### Reproduktion / Schlüssel-Adressen
+
+`tools/format_driver` mit `FD_LOGLEVEL=info` (zeigt `>>> READ/WRITE/FORMAT-WRITE`);
+Script-Sequenz FORMATB Spur 0: `boot / type 12:00:00 / FORMATB / ENTER (=Fkt 0) / B / 1 /
+ENTER (von 0) / 0 (bis 0) / j`. FORMATB: ZVE2-Routine `0x38DF`, Leading-Gap `0x38F4/0x38F6`,
+Trailing-Gap `0x3988/0x398B`, dtrret `0x3897` (→ `0x38C8`), ZVE1-`JR $` `0x38C7`, Disk-ISR
+`0x3A2E` (`EI;RETI`@`0x3A31`, IM2-Slot `0xE8`/`0xEA`), BIOS-Loop-Arm PC `0xDEEA`. BIOS:
+Index-Vektor `ivdsk1=0xE8`/`ivdsk2=0xEA`, Motor-Watchdog `headup=0xE3BD/0xE3BF`,
+1-s-Timer `tim1uu=0xE682`, Watchdog-Zähler `fl.zto=0xE3A3`, Transfer-Suppression
+`pretx+1=0xE3AB`.
 
 Der frühere CRC-Konventionskonflikt auf den **128-B-Systemspuren** (FORMAT-Verify
 meldete `'C' SPUR DEFEKT`) ist mit dem codierungstreuen Ein-CRC-Lesepfad

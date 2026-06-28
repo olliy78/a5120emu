@@ -12,7 +12,13 @@
 //   enter              press Return
 //   key  <name>        press a named key: return esc space bs del up down left right
 //   dump <label>       print the current 80x24 screen with <label>
+//   ramdump <lo> <hi> <file>  dump RAM [lo,hi) (hex addrs) to a binary file
 //   wp   <0|1>         set write-protect on drive B (1=protected)
+//
+// Env (debug aids for the FORMAT/FORMATB analysis):
+//   FD_LOGLEVEL=info|debug|warn|trace   raise the core log level (default ERROR)
+//                                       — shows the K5122 >>> READ/WRITE/FORMAT-WRITE lines
+//   FD_PCHIST=1        per-boot-batch ZVE1/busMaster PC histogram + /BUSRQ share to stderr
 //
 // Each printable char and Enter is sent one-per-run-batch (1M cycles) so the BIOS
 // 5 ms keyboard poll picks it up before the next arrives — same cadence kbd_test
@@ -20,10 +26,14 @@
 #include "core/machines/a5120/a5120.h"
 #include "core/logger.h"
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <fstream>
 #include <sstream>
+#include <map>
+#include <vector>
+#include <algorithm>
 
 using k1520::logging::Logger;
 using k1520::logging::Level;
@@ -55,10 +65,26 @@ static void dumpScreen(A5120Machine& m, const char* label) {
 
 static void runFor(A5120Machine& m, long long cycles) {
     long long done = 0;
+    static const bool pchist = std::getenv("FD_PCHIST") != nullptr;
+    static std::map<uint16_t,long> h1, h2;
+    static long busrq_cnt=0, samp=0;
     while (done < cycles) {
         int n = m.run(5000);
         if (n == 0) break;
         done += n;
+        if (pchist) { h1[m.cpuPC()]++; h2[m.busMasterPC()]++; ++samp; if(m.isBUSRQ())++busrq_cnt; }
+    }
+    if (pchist && cycles >= 5'000'000) {
+        auto top=[](std::map<uint16_t,long>& h,const char* tag){
+            std::vector<std::pair<uint16_t,long>> v(h.begin(),h.end());
+            std::sort(v.begin(),v.end(),[](auto&a,auto&b){return a.second>b.second;});
+            fprintf(stderr,"[%s top]",tag);
+            for(int i=0;i<8&&i<(int)v.size();++i) fprintf(stderr," %04X:%ld",v[i].first,v[i].second);
+            fprintf(stderr,"\n"); h.clear();
+        };
+        fprintf(stderr,"[busrq %ld/%ld = %.0f%%]\n", busrq_cnt, samp, 100.0*busrq_cnt/(samp?samp:1));
+        top(h1,"cpuPC(ZVE1)"); top(h2,"busMaster");
+        busrq_cnt=samp=0;
     }
 }
 
@@ -75,7 +101,13 @@ int main(int argc, char** argv) {
     const char* diskB = argv[2];
     const char* script = argv[3];
 
-    Logger::instance().setBaseLevel(Level::ERROR);
+    Level lvl = Level::ERROR;
+    if (const char* e = std::getenv("FD_LOGLEVEL")) {
+        std::string s = e;
+        if (s=="info") lvl=Level::INFO; else if (s=="debug") lvl=Level::DEBUG;
+        else if (s=="warn") lvl=Level::WARN; else if (s=="trace") lvl=Level::TRACE;
+    }
+    Logger::instance().setBaseLevel(lvl);
 
     A5120Machine machine;
     machine.powerOn();
@@ -134,6 +166,14 @@ int main(int argc, char** argv) {
         } else if (cmd == "dump") {
             std::string lbl; std::getline(ls, lbl);
             dumpScreen(machine, lbl.c_str());
+        } else if (cmd == "ramdump") {
+            std::string los, his, fn; ls >> los >> his >> fn;
+            unsigned lo = std::stoul(los, nullptr, 16);
+            unsigned hi = std::stoul(his, nullptr, 16);
+            std::ofstream of(fn, std::ios::binary);
+            for (unsigned a = lo; a < hi; ++a)
+                of.put(static_cast<char>(machine.memReadDebug(static_cast<uint16_t>(a))));
+            fprintf(stderr, "[ramdump 0x%04X..0x%04X -> %s]\n", lo, hi, fn.c_str());
         } else if (cmd == "wp") {
             int v = 0; ls >> v;
             machine.setDiskWriteProtect(1, v != 0);

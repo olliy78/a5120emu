@@ -117,7 +117,24 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
         } else {
             LOG_DEBUG("K5122", "CTRL PIO write port=0x%02X data=0x%02X", port, data);
         }
-        ctrl_pio_.ioWrite(port - 0x10, data);
+        // ── Vollspur-FORMAT: Disketten-Index-Interrupt aktiv halten ──────────────
+        // FORMAT-Programme (FORMATB.COM) treiben den Format-Abschluss über den
+        // Disketten-Index-Interrupt (ivdsk1, Vektor 0xE8): das Programm hängt eine
+        // eigene ISR ein, die bei jedem Index eine ZVE2-Warteschleife per Selbst-
+        // modifikation freigibt — erst nach mehreren Index-Interrupts läuft ZVE2 zu
+        // Ende und weckt ZVE1.  Der BIOS-Motor-Abschalt-Watchdog (headup, 0xE3BF)
+        // schreibt jedoch beim Ablauf seines Index-Zählers `OUT(11H)=0x03` (Port-A-
+        // Interrupt sperren).  Auf echter Hardware ist dieser Watchdog während einer
+        // laufenden Übertragung unterdrückt; da unser Vollspur-FORMAT-Write am BIOS-
+        // dio vorbeiläuft, wird der Zustand nicht gesetzt und der Index würde nach dem
+        // ersten Interrupt abgeschaltet → Deadlock (ZVE2 hängt in der Trailing-Gap-
+        // Schleife, ZVE1 ewig im JR$-Wartepark).  Solange ein FORMAT-Write läuft,
+        // ignorieren wir daher das Port-A-Interrupt-Sperrwort (Bits3-0=0011, Bit7=0).
+        if (port == 0x11 && write_mode_ && (data & 0x8F) == 0x03) {
+            LOG_DEBUG("K5122", "FORMAT: OUT(11H)=0x%02X (Index-INT-Sperre) ignoriert", data);
+        } else {
+            ctrl_pio_.ioWrite(port - 0x10, data);
+        }
         if (port == 0x10) {
             handleCtrlPortAWrite(data);
         }
