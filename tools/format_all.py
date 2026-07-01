@@ -81,9 +81,52 @@ FORMATS = {
 }
 
 
-def make_script(fmt_key, full, upto_track, dir_verify):
+# ─── §3.4-Geometrien (S/T/U/V/W) ─────────────────────────────────────────────
+#
+# Ein Geometrie-Umschalter (Taste S/T/U/V/W) im Format-Menü stellt die logische
+# Geometrie um; die Formatliste wechselt (docs/format.md §3.4).  Jede Geometrie:
+#   switch_key, header, {format_key: (submenu_nav, format_key, beschreibung, img_format)}
+#
+# .img-Regel (RawSectorImage nutzt die PHYSISCHE Kopfposition cur_cyl_ als Offset):
+#   - einseitig (S, U, W)      → 1-Kopf-Format
+#   - 40-Spur EINZELschritt    → physisch = logisch → 40-Zyl-Format
+#   - 40-Spur DOPPELschritt    → physisch = 2×logisch (Zyl 0,2,…,78): KEIN sauberes
+#     logisches .img → img_format=None ⇒ .img wird übersprungen, nur .hfe (physisch
+#     verify-konsistent).  T/V bzw. U/W teilen dieselbe Formatliste (§3.4).
+_SS40 = {'0': 'k5601_ss40_5x1024', '2': 'k5601_ss40_26x128', '3': 'k5601_ss40_26x128',
+         '4': 'k5601_ss40_16x256', '5': 'k5601_ss40_16x256', '6': 'k5601_ss40_15x256',
+         '7': 'k5601_ss40_5x1024'}
+_DS40 = {'0': 'k5601_ds40_5x1024', '3': 'k5601_ds40_26x128', '4': 'k5601_ds40_16x256',
+         '5': 'k5601_ds40_16x256', '6': 'k5601_ds40_17x256', '7': 'k5601_ds40_16x256'}
+_SS80 = {'0': 'cpa200', '2': 'k5601_ss80_26x128', '3': 'k5601_ss80_26x128',
+         '4': 'cpa640', '5': 'cpa640', '7': 'k5601_ss80_9x512'}
+
+def _geo_table(header, keys, img_map):
+    """Baut die Formattabelle einer Geometrie (Menü #1, keine Sub-Navigation)."""
+    return {k: ([], k, f'{header:22} Format {k}', img_map.get(k)) for k in keys}
+
+GEO_FORMATS = {
+    # geo: (switch_key, {format_key: entry})   — img_format=None bei Doppelschritt
+    'S': ('S', _geo_table('80 Sp. einseitig',  '023457',   _SS80)),
+    'W': ('W', _geo_table('40 Sp. einseitig',  '0234567',  _SS40)),
+    'U': ('U', _geo_table('40 Sp. eins. Dopp.', '0234567', {k: None for k in '0234567'})),
+    'V': ('V', _geo_table('40 Sp. doppels.',   '034567',   _DS40)),
+    'T': ('T', _geo_table('40 Sp. dopp. Dopp.', '034567',  {k: None for k in '034567'})),
+}
+
+
+def resolve_table(geo):
+    """Liefert (switch_key, formats_dict) für eine Geometrie ('' = Default 80 DS)."""
+    if not geo:
+        return (None, FORMATS)
+    if geo not in GEO_FORMATS:
+        raise ValueError(f"unbekannte Geometrie '{geo}' (S/T/U/V/W)")
+    return GEO_FORMATS[geo]
+
+
+def make_script(entry, switch_key, full, upto_track, dir_verify):
     """Erzeugt das format_driver-Tastatur-Script für ein Format."""
-    menu_nav, sel, _desc, _img = FORMATS[fmt_key]
+    menu_nav, sel, _desc, _img = entry
     lines = [
         'boot 80', 'type 12:00:00', 'enter',   # Uhrzeit-Prompt beim Kaltstart
         'boot 5', 'type FORMAT', 'enter',       # FORMAT.COM starten
@@ -92,6 +135,8 @@ def make_script(fmt_key, full, upto_track, dir_verify):
         'boot 10', 'enter',                     # Vergleichs-Lesen = j (mit Verify)
         'boot 8',
     ]
+    if switch_key:                              # §3.4: Geometrie umschalten
+        lines += [f'type {switch_key}', 'boot 4']
     for k in menu_nav:                          # zur richtigen Menüseite blättern
         lines += [f'type {k}', 'boot 3']
     lines += [f'type {sel}', 'boot 6']          # Format auswählen
@@ -136,14 +181,24 @@ def prepare_target(path, filetype, img_format):
     return img_format
 
 
-def run_format(fmt_key, filetype, full, upto_track, outdir, dir_verify, keep_bad):
-    menu_nav, sel, desc, img_format = FORMATS[fmt_key]
-    script = make_script(fmt_key, full, upto_track, dir_verify)
+def run_format(fmt_key, geo, filetype, full, upto_track, outdir, dir_verify, keep_bad):
+    switch_key, table = resolve_table(geo)
+    entry = table[fmt_key]
+    menu_nav, sel, desc, img_format = entry
+
+    if filetype == 'img' and img_format is None:
+        # Doppelschritt-Geometrie (T/U): kein sauberes logisches .img → überspringen.
+        return {'key': fmt_key, 'desc': desc, 'status': 'SKIP(.img)',
+                'beendet': False, 'defekt': False, 'dir_ok': None,
+                'target': '-', 'stdout': '', 'stderr': ''}
+
+    script = make_script(entry, switch_key, full, upto_track, dir_verify)
 
     with tempfile.NamedTemporaryFile(suffix='.img', delete=False) as ta:
         diskA = ta.name
     shutil.copyfile(BOOT_IMG, diskA)
-    diskB = os.path.join(outdir, f'k5601_fmt_{fmt_key}.{filetype}')
+    tag = (geo or 'DS') + '_' + fmt_key
+    diskB = os.path.join(outdir, f'k5601_{tag}.{filetype}')
     createB = prepare_target(diskB, filetype, img_format)   # None → B: öffnen
 
     with tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False) as ts:
@@ -185,7 +240,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('formats', nargs='*', help="Format-Tasten (0-7, E-K); leer = --all")
-    p.add_argument('--all', action='store_true', help="alle §3-Formate")
+    p.add_argument('--all', action='store_true', help="alle Formate der Geometrie")
+    p.add_argument('--geo', default='', choices=['', 'S', 'T', 'U', 'V', 'W'],
+                   help="§3.4-Geometrie-Umschalter (leer = 80-Spur-DS Default)")
     p.add_argument('--type', choices=['hfe', 'img'], default='hfe', help="Zieldateityp")
     p.add_argument('--full', action='store_true',
                    help="volle 160 Spuren (Default: Schnell-Smoke bis --upto)")
@@ -198,9 +255,14 @@ def main():
     p.add_argument('--keep-log', action='store_true', help="Treiber-stdout je Format ablegen")
     args = p.parse_args()
 
+    switch_key, table = resolve_table(args.geo)
+
     if args.list:
+        geo_label = args.geo or '(Default 80-Spur-DS)'
+        print(f"Geometrie {geo_label}"
+              + (f" — Umschalter '{switch_key}'" if switch_key else "") + "\n")
         print("Taste  Menü-Nav  Beschreibung                          .img-Format")
-        for k, (nav, sel, desc, img) in FORMATS.items():
+        for k, (nav, sel, desc, img) in table.items():
             print(f"  {k}     {''.join(nav) or '-':<6}  {desc:<38} {img or '-'}")
         return 0
 
@@ -209,20 +271,22 @@ def main():
               file=sys.stderr)
         return 2
 
-    keys = list(FORMATS.keys()) if (args.all or not args.formats) else args.formats
-    bad_keys = [k for k in keys if k not in FORMATS]
+    keys = list(table.keys()) if (args.all or not args.formats) else args.formats
+    bad_keys = [k for k in keys if k not in table]
     if bad_keys:
-        print(f"FEHLER: unbekannte Format-Tasten: {bad_keys}", file=sys.stderr)
+        print(f"FEHLER: unbekannte Format-Tasten für Geometrie '{args.geo or 'DS'}': "
+              f"{bad_keys}", file=sys.stderr)
         return 2
 
     os.makedirs(args.outdir, exist_ok=True)
-    print(f"Ziel-Typ: .{args.type}  |  {'VOLL (0-159)' if args.full else f'SMOKE (0-{args.upto})'}"
+    print(f"Geometrie: {args.geo or '80-Spur-DS'}  |  Ziel-Typ: .{args.type}  |  "
+          f"{'VOLL (0-159)' if args.full else f'SMOKE (0-{args.upto})'}"
           f"  |  Verify: ein  |  outdir: {args.outdir}\n")
 
     results = []
     for k in keys:
-        print(f"[{k}] {FORMATS[k][2]} … ", end='', flush=True)
-        r = run_format(k, args.type, args.full, args.upto, args.outdir,
+        print(f"[{args.geo or 'DS'}:{k}] {table[k][2]} … ", end='', flush=True)
+        r = run_format(k, args.geo, args.type, args.full, args.upto, args.outdir,
                        args.dir_verify and args.full, keep_bad=True)
         results.append(r)
         extra = ''
@@ -234,12 +298,14 @@ def main():
                 lf.write(r['stdout'])
 
     print("\n=== Zusammenfassung ===")
-    n_ok = sum(1 for r in results if r['status'] == 'OK')
+    n_ok   = sum(1 for r in results if r['status'] == 'OK')
+    n_skip = sum(1 for r in results if r['status'].startswith('SKIP'))
+    n_eval = len(results) - n_skip
     for r in results:
-        print(f"  {r['key']}: {r['status']:<7} beendet={r['beendet']} defekt={r['defekt']}"
+        print(f"  {r['key']}: {r['status']:<10} beendet={r['beendet']} defekt={r['defekt']}"
               + (f" dir_ok={r['dir_ok']}" if r['dir_ok'] is not None else ''))
-    print(f"\n{n_ok}/{len(results)} Formate OK")
-    return 0 if n_ok == len(results) else 1
+    print(f"\n{n_ok}/{n_eval} Formate OK" + (f" ({n_skip} übersprungen)" if n_skip else ""))
+    return 0 if n_ok == n_eval else 1
 
 
 if __name__ == '__main__':

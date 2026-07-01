@@ -374,11 +374,44 @@ Sektorfolge 1,4,7…, ZIK-NK) → `Fehler 'S'` — bounded Interleave-Sonderfall
 
 **Nicht möglich:** die 8″-Formate (§5), da der Emulator kein 8″-Laufwerk modelliert.
 
-> **Ziel** (alle Formate fehlerfrei): FORMAT.COM erfüllt das für die getesteten
-> Sektorgrößen der 80-Spur-DS-Geometrie bereits. Offen: (a) einseitige/40-Spur-Geometrien
-> verifizieren, (b) **FORMATB.COM-Verify** (s. §8.1), (c) 8″-Laufwerk im Emulator
-> modellieren. Details/RE-Stand: `doc/design/07_k5122_afs.md §7.3a` und die Memory-Notiz
-> `project_formatb_different_protocol`.
+### 8.3 §3.4-Geometrien S/T/U/V/W (einseitig / 40-Spur) — Stand 2026-07-02
+
+Der Runner schaltet die Geometrie per `--geo {S,T,U,V,W}` um (sendet den Umschalt-Buchstaben
+im Format-Menü); die §3.4-Formatliste erscheint.  Empirisch bestätigtes Stepping-Modell
+(FORMAT-WRITE-Positionen, Smoke Format 0):
+
+| Geo | Kopfzeile im Emulator            | phys. Zylinder (Format 0) | Modell |
+|-----|----------------------------------|---------------------------|--------|
+| `S` | 80 Sp., einseitig                | 0,1,2,…  (Kopf 0)         | einseitig |
+| `W` | 40 Sp., einseitig                | 0,1,2,…  (Kopf 0)         | Einzelschritt, physisch=logisch |
+| `U` | 40 Sp., einseitig                | 0,2,4,…  (Kopf 0)         | Doppelschritt |
+| `V` | 40 Sp., doppelseitig             | 0,1,2,…                   | Einzelschritt |
+| `T` | 40 Sp., doppelseitig             | 0,2,4,…                   | Doppelschritt |
+
+**`.hfe`: alle fünf Geometrien formatieren+verifizieren** (S/W/U/V/T, Format 0 bestätigt).  Der
+Verify ist **physisch-positions-konsistent** — Schreiben und Rücklesen nutzen dieselbe
+Kopfposition, daher spielt Einzel- vs. Doppelschritt für `.hfe` keine Rolle (das 80×2-Template
+deckt alle physischen Positionen ab).
+
+**`.img`: einseitig/Einzelschritt sauber** (RawSectorImage-Offset = phys. `cur_cyl_`):
+- `S` (einseitig 80): **3/3** — `cpa200`(400k)/`cpa640`(320k)/`k5601_ss80_9x512`(360k).
+- `W` (einseitig 40, Einzelschritt): **2/3** — `k5601_ss40_5x1024`(200k)/`_16x256`(160k) OK;
+  `W:6` (15×256 „Sektorfolge 1,4,7") scheitert = **derselbe Interleave-Sonderfall** wie Format 7.
+- `V` (doppelseitig 40, Einzelschritt): **2/2** — `k5601_ds40_5x1024`(400k)/`_16x256`(320k).
+- `T`/`U` (**Doppelschritt**): als `.img` **übersprungen** (`SKIP(.img)`).  Grund: die Karte kennt
+  nur Step-Impulse, nicht „doppelt"; `cur_cyl_` = 2×logisch (0,2,…,78) → ein logisch-40-spuriges
+  `.img` bräuchte ein Physisch→Logisch-Mapping.  Für Doppelschritt-Disketten daher **`.hfe`**
+  verwenden (physisches Bit-Spur-Modell, faithful).
+
+Neue `DiskFormat`s in `FormatParser::builtinFormats()`: `k5601_ss80_26x128`, `k5601_ss80_9x512`,
+`k5601_ss40_5x1024`/`_26x128`/`_16x256`/`_15x256`, `k5601_ds40_5x1024`/`_26x128`/`_16x256`/`_17x256`
+(+ vorhandene `cpa200`/`cpa640`).  Aufruf z. B. `python3 tools/format_all.py --geo W --type img 0 4`.
+
+> **Ziel-Status:** 80-Spur-DS (§3) + §3.4-Geometrien (S/V/W einseitig/Einzelschritt) formatieren
+> +verifizieren als `.hfe`/`.img`; Doppelschritt (T/U) als `.hfe`.  Offen: (a) Interleave-Formate
+> (Sektorfolge 1,4,7… — Format 7, W:6) auf beiden Backends; (b) Doppelschritt-`.img` (Mapping);
+> (c) **FORMATB.COM-Verify** (§8.1); (d) 8″-Laufwerk (§5).  RE-Stand: `doc/design/07_k5122_afs.md`,
+> Memory `project_format_all_pipeline`/`project_formatb_different_protocol`.
 
 ### 8.1 FORMATB.COM — vollständige Diagnose (Stand 2026-06-28)
 

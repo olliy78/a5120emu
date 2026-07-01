@@ -221,5 +221,34 @@ std::vector<DiskFormat> FormatParser::builtinFormats() {
         fmts.push_back(std::move(f));
     }
 
+    // ── §3.4-Geometrien: einseitig (S) / 40-Spur Einzelschritt (V/W) ───────────
+    // Für .img (RawSectorImage nutzt die PHYSISCHE Kopfposition cur_cyl_ als Offset):
+    //   - einseitig (S, W)          → 1 Kopf  (head 0)
+    //   - 40-Spur EINZELschritt     → physisch = logisch → 40 Zylinder (0-39)
+    // Doppelschritt (T/U) ist NICHT dabei: dort ist physisch = 2×logisch (Zyl 0,2,…,78)
+    // → für .img wäre ein Physisch→Logisch-Mapping nötig; Doppelschritt bitte als .hfe
+    // (physisches Bit-Spur-Modell, verify-konsistent).  cpa200 (SS80 5×1024) und cpa640
+    // (SS80 16×256) existieren bereits.
+    {   DiskFormat f; f.name = "k5601_ss80_26x128";              // S: 26×128 einseitig
+        f.tracks.push_back({0, 79, 0, 0, 26, 128}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ss80_9x512";               // S: 9×512 einseitig
+        f.tracks.push_back({0, 79, 0, 0, 9, 512});  fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ss40_5x1024";              // W: 5×1024 40 einseitig
+        f.tracks.push_back({0, 39, 0, 0, 5, 1024}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ss40_26x128";              // W: 26×128 40 einseitig
+        f.tracks.push_back({0, 39, 0, 0, 26, 128}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ss40_16x256";              // W: 16×256 40 einseitig
+        f.tracks.push_back({0, 39, 0, 0, 16, 256}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ss40_15x256";              // W: 15×256 40 einseitig
+        f.tracks.push_back({0, 39, 0, 0, 15, 256}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ds40_5x1024";              // V: 5×1024 40 doppels.
+        f.tracks.push_back({0, 39, 0, 1, 5, 1024}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ds40_26x128";              // V: 26×128 40 doppels.
+        f.tracks.push_back({0, 39, 0, 1, 26, 128}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ds40_16x256";              // V: 16×256 40 doppels.
+        f.tracks.push_back({0, 39, 0, 1, 16, 256}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ds40_17x256";              // V: 17×256 40 doppels.
+        f.tracks.push_back({0, 39, 0, 1, 17, 256}); fmts.push_back(std::move(f)); }
+
     return fmts;
 }
