@@ -337,6 +337,16 @@ im Format-Write→TrackImage→Rücklese-Pfad (der physisch versetzte Sektor wir
 nicht gefunden/gelesen).  **Offen (Folgearbeit):** `parseFormatStream`/`buildTrack`-Reihenfolge
 für ph. Sektorversatz prüfen.
 
+**Phase B — `.img` (Stand 2026-07-01): 14 von 15 §3-Formaten OK.**  Das B:-Ziel wird per
+**`create`** als 0xE5-`.img` in der Geometrie des passenden `DiskFormat` angelegt (`format_all.py
+--type img`, s. §9.0) — eine frische 0xE5-`.img` liest über `RawSectorImage` als gültig
+formatierte Disk, daher **kein BUSRQ-Hänger**.  Alle Sektorgrößen + Menüseiten verifizieren;
+Dateigrößen passen (z. B. `0`=819200, `4`=655360, `6`=532480, `E`=737280 B).  **Interleave im
+Rohspeicher unkritisch:** Format `5` (16×256 *mit* ph. Sektorversatz) verifiziert als `.img`
+fehlerfrei (Sektoren nach logischer ID am Offset abgelegt), obwohl es als `.hfe` (bit-genaue
+physische Ablage) scheitert.  **Einzige Ausnahme (beide Dateitypen):** Format `7` (16×256,
+Sektorfolge 1,4,7…, ZIK-NK) → `Fehler 'S'` — bounded Interleave-Sonderfall, Folgearbeit.
+
 **Zwei Emulator-Erkenntnisse dieser Arbeit:**
 
 1. **Unformatierte-Spur-Lesung terminiert per Index-Timeout (K5122-Fix,
