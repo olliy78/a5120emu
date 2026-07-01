@@ -186,5 +186,40 @@ std::vector<DiskFormat> FormatParser::builtinFormats() {
         fmts.push_back(std::move(f));
     }
 
+    // ── K5601-§3-Geometrien (5¼″, 80 Spuren, doppelseitig) für .img-Ziele ──────
+    // Viele §3-Formate teilen dieselbe ROHgeometrie — System-Spuren/Verzeichnis-
+    // Einträge/Sektor-Interleave ändern das Sektor-Offset-Layout der .img nicht.
+    // Namensschema: k5601_<Sektoren>x<Größe>[_<Zyl>].  Siehe docs/format.md §3.
+    {
+        DiskFormat f;                                   // Formate 4, 5 (16×256)
+        f.name = "k5601_16x256";
+        f.tracks.push_back({0, 79, 0, 1, 16, 256});
+        fmts.push_back(std::move(f));
+    }
+    {
+        DiskFormat f;                                   // Format 7 (ZIK-NK, Sp.0-153)
+        f.name = "k5601_16x256_77";
+        f.tracks.push_back({0, 76, 0, 1, 16, 256});
+        fmts.push_back(std::move(f));
+    }
+    {
+        DiskFormat f;                                   // Format 6 (26×128)
+        f.name = "k5601_26x128";
+        f.tracks.push_back({0, 79, 0, 1, 26, 128});
+        fmts.push_back(std::move(f));
+    }
+    {
+        DiskFormat f;                                   // Formate E, F (9×512)
+        f.name = "k5601_9x512";
+        f.tracks.push_back({0, 79, 0, 1, 9, 512});
+        fmts.push_back(std::move(f));
+    }
+    {
+        DiskFormat f;                                   // Formate G, J (10×512)
+        f.name = "k5601_10x512";
+        f.tracks.push_back({0, 79, 0, 1, 10, 512});
+        fmts.push_back(std::move(f));
+    }
+
     return fmts;
 }

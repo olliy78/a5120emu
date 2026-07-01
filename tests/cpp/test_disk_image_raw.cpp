@@ -25,6 +25,7 @@
 #include <fstream>
 #include <vector>
 #include <cstdint>
+#include <cstring>
 
 #include "core/peripherals/floppy_drive/raw_sector_image.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
@@ -282,4 +283,54 @@ TEST(DiskImageOpen, NichtExistenteDatei_gibtNullptr) {
     auto fmt = makeSimpleFormat();
     auto img = DiskImage::open("/nicht/vorhanden.img", fmt, false);
     EXPECT_EQ(img, nullptr);
+}
+
+// ─── DiskImage::create ───────────────────────────────────────────────────────
+
+TEST(DiskImageCreate, ImgMitFmt_LegtDateiInFormatGroesseAn) {
+    auto fmt = makeSimpleFormat();                 // 2 Zyl × 1 Kopf × 2 × 128 = 512 B
+    std::string path = std::filesystem::temp_directory_path() / "create_test.img";
+    std::filesystem::remove(path);
+
+    auto img = DiskImage::create(path, fmt, false);
+    ASSERT_NE(img, nullptr);
+    EXPECT_TRUE(std::filesystem::exists(path));
+    EXPECT_EQ(std::filesystem::file_size(path), fmt.totalBytes());
+    // Frisch angelegt → 0xE5 (leere CP/M-Sektoren).
+    std::ifstream f(path, std::ios::binary);
+    uint8_t b = 0; f.read(reinterpret_cast<char*>(&b), 1);
+    EXPECT_EQ(b, 0xE5);
+    auto g = img->geometry();
+    EXPECT_EQ(g.num_cyls, 2);
+    EXPECT_EQ(g.num_heads, 1);
+
+    std::filesystem::remove(path);
+}
+
+TEST(DiskImageCreate, ImgOhneFmt_gibtNullptr) {
+    std::string path = std::filesystem::temp_directory_path() / "create_nofmt.img";
+    std::filesystem::remove(path);
+    auto img = DiskImage::create(path, std::nullopt, false);
+    EXPECT_EQ(img, nullptr);
+}
+
+TEST(DiskImageCreate, Hfe_LegtLeeresFormatagnostischesTemplateAn) {
+    std::string path = std::filesystem::temp_directory_path() / "create_test.hfe";
+    std::filesystem::remove(path);
+
+    // .hfe braucht kein Format (selbstbeschreibend) → std::nullopt genügt.
+    auto img = DiskImage::create(path, std::nullopt, false);
+    ASSERT_NE(img, nullptr);
+    EXPECT_TRUE(std::filesystem::exists(path));
+    // HFE-Signatur an Offset 0.
+    std::ifstream f(path, std::ios::binary);
+    char sig[8] = {};
+    f.read(sig, 8);
+    EXPECT_EQ(std::memcmp(sig, "HXCPICFE", 8), 0);
+    // K5601-Default-Geometrie 80×2.
+    auto g = img->geometry();
+    EXPECT_EQ(g.num_cyls, 80);
+    EXPECT_EQ(g.num_heads, 2);
+
+    std::filesystem::remove(path);
 }

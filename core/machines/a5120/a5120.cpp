@@ -398,6 +398,27 @@ bool A5120Machine::mountDisk(int drive, const std::string& path,
     return afs_.mountDisk(drive, path, *it, wp);
 }
 
+bool A5120Machine::createDisk(int drive, const std::string& path,
+                              const std::string& format_name, bool write_protect) {
+    if (drive < 0 || drive > 3) { last_error_ = "Invalid drive"; return false; }
+
+    // DiskFormat auflösen (für .img Pflicht; für .hfe ignoriert → optional).
+    std::optional<DiskFormat> fmt;
+    auto it = std::find_if(disk_formats_.begin(), disk_formats_.end(),
+                           [&](const DiskFormat& f){ return f.name == format_name; });
+    if (it != disk_formats_.end()) fmt = *it;
+
+    auto img = DiskImage::create(path, fmt, write_protect);
+    if (!img) {
+        last_error_ = "createDisk fehlgeschlagen (fehlt für .img das Format '"
+                      + format_name + "'?): " + path;
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lk(disk_mutex_);
+    return afs_.mountDisk(drive, std::move(img), write_protect);
+}
+
 bool A5120Machine::unmountDisk(int drive) {
     if (drive < 0 || drive > 3) return false;
     std::lock_guard<std::mutex> lk(disk_mutex_);

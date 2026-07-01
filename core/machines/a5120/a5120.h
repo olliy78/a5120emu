@@ -63,6 +63,16 @@ public:
     // Disk management (thread-safe)
     bool mountDisk(int drive, const std::string& path,
                    const std::string& format_name, bool write_protect);
+    /**
+     * @brief Legt eine NEUE, leere Image-Datei an und mountet sie (create statt open).
+     *
+     * Endung `.hfe` → leeres formatierbares HFE-Template (@p format_name egal);
+     * sonst `.img` → rohes 0xE5-Sektorimage in der Geometrie von @p format_name
+     * (muss ein bekanntes DiskFormat sein).  Überschreibt eine vorhandene Datei.
+     * @see DiskImage::create
+     */
+    bool createDisk(int drive, const std::string& path,
+                    const std::string& format_name, bool write_protect);
     bool unmountDisk(int drive);
     bool isDiskActive(int drive) const;
     bool isDiskWriteProtected(int drive) const;

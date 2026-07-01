@@ -96,10 +96,19 @@ static void pressKey(A5120Machine& m, uint32_t kc) {
 }
 
 int main(int argc, char** argv) {
-    if (argc < 4) { fprintf(stderr, "usage: %s <diskA> <diskB> <script>\n", argv[0]); return 1; }
+    if (argc < 4) {
+        fprintf(stderr,
+            "usage: %s <diskA> <diskB> <script> [createB_format]\n"
+            "  createB_format: wenn angegeben, wird diskB NEU angelegt (create) statt\n"
+            "                  geöffnet — .hfe = leeres Template (Format egal, z.B. '-'),\n"
+            "                  .img = 0xE5-Image in der Geometrie des DiskFormat-Namens.\n",
+            argv[0]);
+        return 1;
+    }
     const char* diskA = argv[1];
     const char* diskB = argv[2];
     const char* script = argv[3];
+    const char* createB = (argc >= 5) ? argv[4] : nullptr;   // nullptr = B: öffnen
 
     Level lvl = Level::ERROR;
     if (const char* e = std::getenv("FD_LOGLEVEL")) {
@@ -117,8 +126,16 @@ int main(int argc, char** argv) {
         fprintf(stderr, "ERROR: mount A '%s': %s\n", diskA, machine.lastError().c_str());
         return 1;
     }
-    if (!(machine.mountDisk(1, diskB, "cpa780", false) ||
-          machine.mountDisk(1, diskB, "cpa800", false))) {
+    if (createB) {
+        // B: NEU anlegen (create): .hfe = leeres Template, .img = 0xE5 in Format-Geometrie.
+        if (!machine.createDisk(1, diskB, createB, false)) {
+            fprintf(stderr, "ERROR: create B '%s' (Format '%s'): %s\n",
+                    diskB, createB, machine.lastError().c_str());
+            return 1;
+        }
+        fprintf(stderr, "Created B=%s (Format '%s')\n", diskB, createB);
+    } else if (!(machine.mountDisk(1, diskB, "cpa780", false) ||
+                 machine.mountDisk(1, diskB, "cpa800", false))) {
         fprintf(stderr, "ERROR: mount B '%s': %s\n", diskB, machine.lastError().c_str());
         return 1;
     }

@@ -80,4 +80,25 @@ public:
     static std::unique_ptr<DiskImage> open(const std::string& path,
                                            std::optional<DiskFormat> fmt,
                                            bool write_protect);
+
+    /**
+     * @brief Legt eine NEUE, leere Image-Datei an und öffnet sie (Fabrik).
+     *
+     * Der Dateityp wird an der Endung erkannt:
+     *   - `.hfe` → leeres, formatierbares HFE-v1-MFM-Template der K5601-Geometrie
+     *     (80 Spuren × 2 Seiten, Gap-gefüllt).  @p fmt wird NICHT benötigt (HFE ist
+     *     selbstbeschreibend/formatagnostisch) und ignoriert.
+     *   - sonst (`.img`) → rohes Sektorimage: @p fmt ist ERFORDERLICH (bestimmt Größe
+     *     und Geometrie); die Datei wird mit `0xE5` (leere CP/M-Sektoren) gefüllt.
+     *
+     * Eine vorhandene Datei am @p path wird überschrieben.
+     *
+     * @param path          Zielpfad (Endung `.hfe` → HFE, sonst Raw/.img)
+     * @param fmt           DiskFormat (Pflicht für .img; für .hfe optional/ignoriert)
+     * @param write_protect Schreibschutz des zurückgegebenen Images
+     * @return DiskImage oder nullptr bei Fehler (z. B. .img ohne @p fmt, Schreibfehler)
+     */
+    static std::unique_ptr<DiskImage> create(const std::string& path,
+                                             std::optional<DiskFormat> fmt,
+                                             bool write_protect);
 };

@@ -535,10 +535,27 @@ python3 tools/format_all.py 0 --full --dir-verify --outdir out/formats
 ```
 
 Der Runner erzeugt je Format eine **Temp-Kopie der Boot-Disk (A:)** und ein
-**B:-Ziel aus einem gültigen Template** (`disks/cpadisk_*.hfe`, s. §8.2 — **kein**
-gap-leeres Blank!), generiert das FORMAT.COM-Script (Menü-Navigation + Verify),
-fährt `format_driver` und prüft `FORMATIEREN beendet` ohne `SPUR DEFEKT`.  Menü:
+**B:-Ziel**, generiert das FORMAT.COM-Script (Menü-Navigation + Verify), fährt
+`format_driver` und prüft `FORMATIEREN beendet` ohne `SPUR DEFEKT`.  Menü:
 `0-3` direkt · `4-7` nach `X` · `E-K` nach `X`,`Y`.  Ergebnis-Images unter `--outdir`.
+
+**`.img` vs `.hfe` (`--type`):**
+- `--type img` (Phase B): `format_driver` **legt** die `.img` per **`create`** in der
+  Geometrie des passenden `DiskFormat` an (0xE5-gefüllt; kein Python-Vorbau).  Eine frische
+  0xE5-`.img` liest über `RawSectorImage` als **gültig formatierte** Disk → FORMAT.COMs
+  Vorlesung findet echte Sektoren → **kein** BUSRQ-Hänger.  Format→`DiskFormat`-Zuordnung:
+  s. `FORMATS`-Tabelle in `tools/format_all.py` bzw. `k5601_16x256`/`k5601_26x128`/
+  `k5601_9x512`/`k5601_10x512`/`cpa800`/`cpa780` in `FormatParser::builtinFormats()`.
+- `--type hfe` (Phase A): B: ist eine **Kopie eines gültigen HFE-Templates**
+  (`disks/cpadisk_*.hfe`, s. §8.2 — **kein** gap-leeres Blank, das würde formatabhängig
+  hängen).
+
+**`create` statt `open` (Emulator-API):** `DiskImage::create(path, fmt, wp)` /
+`A5120Machine::createDisk(drive, path, format_name, wp)` legen eine **neue leere** Disk an:
+Endung `.hfe` → leeres, formatagnostisches Template (80×2, Format egal); sonst `.img` →
+0xE5-Sektorimage in der Geometrie von `format_name` (Pflicht).  So muss man Testimages nicht
+mehr vorab per Skript erzeugen.  `tools/format_driver <A> <B> <script> [createB_format]` legt
+B: via `create` an, wenn der 4. Parameter gegeben ist.
 
 ### 9.1 Direkter Treiber-Aufruf
 

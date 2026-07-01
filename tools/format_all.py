@@ -65,19 +65,19 @@ TEMPLATE_HFE = os.path.join(ROOT, 'disks', 'cpadisk_autofs_clock_noautoexec.hfe'
 FORMATS = {
     '0': ([],          '0', 'CP/A        5x1024 Sp.0-159   800k', 'cpa800'),
     '1': ([],          '1', 'CP/A BC     26x128+5x1024     780k', 'cpa780'),
-    '2': ([],          '2', 'SCP1715     5x1024 Sp.0-159   780k', None),
-    '3': ([],          '3', 'HU Krz      5x1024 Sp.0-159   790k', None),
-    '4': (['X'],       '4', 'SCP         16x256 Sp.0-159   624k', 'cpa640'),
-    '5': (['X'],       '5', '            16x256 Sp.0-159   624k', None),
-    '6': (['X'],       '6', '            26x128 Sp.0-159   520k', None),
-    '7': (['X'],       '7', 'ZIK-NK      16x256 Sp.0-153   600k', None),
-    'E': (['X', 'Y'],  'E', 'MSDOS       9x512  Sp.0-159   720k', None),
-    'F': (['X', 'Y'],  'F', 'VORTEX      9x512  Sp.0-159   708k', None),
-    'G': (['X', 'Y'],  'G', 'NGB         10x512 Sp.0-159   788k', None),
-    'H': (['X', 'Y'],  'H', 'FDC3 4M     5x1024 Sp.0-159   800k', None),
-    'I': (['X', 'Y'],  'I', '            5x1024 Sp.0-159   800k', None),
-    'J': (['X', 'Y'],  'J', 'MSDOS ITT   10x512 (SCOPY)    800k', None),
-    'K': (['X', 'Y'],  'K', 'MSDOS P30/P40 5x1024 (SCOPY)  800k', None),
+    '2': ([],          '2', 'SCP1715     5x1024 Sp.0-159   780k', 'cpa800'),
+    '3': ([],          '3', 'HU Krz      5x1024 Sp.0-159   790k', 'cpa800'),
+    '4': (['X'],       '4', 'SCP         16x256 Sp.0-159   624k', 'k5601_16x256'),
+    '5': (['X'],       '5', '            16x256 Sp.0-159   624k', 'k5601_16x256'),
+    '6': (['X'],       '6', '            26x128 Sp.0-159   520k', 'k5601_26x128'),
+    '7': (['X'],       '7', 'ZIK-NK      16x256 Sp.0-153   600k', 'k5601_16x256_77'),
+    'E': (['X', 'Y'],  'E', 'MSDOS       9x512  Sp.0-159   720k', 'k5601_9x512'),
+    'F': (['X', 'Y'],  'F', 'VORTEX      9x512  Sp.0-159   708k', 'k5601_9x512'),
+    'G': (['X', 'Y'],  'G', 'NGB         10x512 Sp.0-159   788k', 'k5601_10x512'),
+    'H': (['X', 'Y'],  'H', 'FDC3 4M     5x1024 Sp.0-159   800k', 'cpa800'),
+    'I': (['X', 'Y'],  'I', '            5x1024 Sp.0-159   800k', 'cpa800'),
+    'J': (['X', 'Y'],  'J', 'MSDOS ITT   10x512 (SCOPY)    800k', 'k5601_10x512'),
+    'K': (['X', 'Y'],  'K', 'MSDOS P30/P40 5x1024 (SCOPY)  800k', 'cpa800'),
 }
 
 
@@ -115,12 +115,25 @@ def make_script(fmt_key, full, upto_track, dir_verify):
     return '\n'.join(lines) + '\n'
 
 
-def make_blank_target(path, filetype, img_format):
-    """Legt das B:-Zielimage als Kopie eines GÜLTIGEN Templates an (s. TEMPLATE_HFE)."""
+def prepare_target(path, filetype, img_format):
+    """
+    Bereitet das B:-Zielimage vor und liefert den `createB`-Formatnamen für
+    format_driver zurück (oder None = B: nur öffnen).
+
+    - .hfe: Kopie eines GÜLTIGEN Templates (kein Gap-Blank — s. §8.2/TEMPLATE_HFE).
+            format_driver ÖFFNET diese Datei (createB=None).
+    - .img: format_driver LEGT die Datei via `create` NEU an (0xE5 in der Geometrie
+            des DiskFormat) → createB = img_format.  Kein Python-Vorbau nötig.
+    """
     if filetype == 'hfe':
         shutil.copyfile(TEMPLATE_HFE, path)
-    else:
-        raise NotImplementedError(".img-Ziel wird in Phase B ergänzt")
+        return None
+    if not img_format:
+        raise ValueError(f"kein .img-DiskFormat für dieses Format definiert")
+    # Datei wird von format_driver (create) angelegt; alten Rest entfernen.
+    if os.path.exists(path):
+        os.remove(path)
+    return img_format
 
 
 def run_format(fmt_key, filetype, full, upto_track, outdir, dir_verify, keep_bad):
@@ -131,16 +144,18 @@ def run_format(fmt_key, filetype, full, upto_track, outdir, dir_verify, keep_bad
         diskA = ta.name
     shutil.copyfile(BOOT_IMG, diskA)
     diskB = os.path.join(outdir, f'k5601_fmt_{fmt_key}.{filetype}')
-    make_blank_target(diskB, filetype, img_format)
+    createB = prepare_target(diskB, filetype, img_format)   # None → B: öffnen
 
     with tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False) as ts:
         ts.write(script)
         script_path = ts.name
 
+    cmd = [DRIVER, diskA, diskB, script_path]
+    if createB is not None:            # .img: format_driver legt B: via create an
+        cmd.append(createB)
     env = dict(os.environ, FD_LOGLEVEL=os.environ.get('FD_LOGLEVEL', 'warn'))
     try:
-        proc = subprocess.run([DRIVER, diskA, diskB, script_path],
-                              capture_output=True, text=True, env=env)
+        proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     finally:
         os.unlink(diskA)
         os.unlink(script_path)
