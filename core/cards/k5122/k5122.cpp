@@ -628,11 +628,34 @@ void K5122::startReadTransfer() {
     const TrackImage& ibm_track = drv.track(current_head_);
 
     if (ibm_track.empty()) {
-        LOG_WARN("K5122", "Lese-Transfer: D%d H%u Spur leer",
-                 selected_drive_, static_cast<unsigned>(current_head_));
-        transferring_ = false;
-        cur_track_    = nullptr;
-        read_stream_track_ = {};
+        // Unformatierte/leere Spur: eine echte Diskette liefert hier reinen Gap-Flux
+        // OHNE Adressmarken.  Wir streamen genau das (markenloser 0x4E-Fluss), damit
+        // die Leseroutine kein IDAM findet und über den Index-Timeout terminiert
+        // ("record not found") — wie auf echter Hardware.  Würde der Transfer hier
+        // (wie früher) einfach abgebrochen, bliebe das vom Lese-/STR assertierte
+        // /BUSRQ hängen: ZVE2 verklemmt in seiner Warteschleife (z. B. FORMAT.COMs
+        // ZVE2-Koroutine JR 0x1D21), weil kein Byte kommt und /BUSRQ nie freigegeben
+        // wird → der Formatier-Vorlese-Schritt auf einer frischen Blank-Disk hängt.
+        const Encoding eff_enc = read_enc_overridden_
+                                     ? read_enc_
+                                     : drv.profile().default_read_encoding;
+        read_stream_track_          = {};
+        read_stream_track_.bytes.assign(kUnformattedTrackBytes, 0x4E);
+        read_stream_track_.marks.assign(kUnformattedTrackBytes, MarkType::None);
+        read_stream_track_.encoding = eff_enc;
+        cur_sector_size_ = 128;
+        cur_track_       = &read_stream_track_;
+        head_pos_        = 0;
+        loaded_cyl_      = drv.currentCylinder();
+        loaded_head_     = current_head_;
+        transferring_    = true;
+        write_mode_      = false;
+        locked_          = false;
+        markDriveAccess(selected_drive_);
+        LOG_INFO("K5122", ">>> READ D%d C=%u H=%u UNFORMATIERT → %zu B Gap-Flux (%s, Index-Timeout)",
+                 selected_drive_, static_cast<unsigned>(drv.currentCylinder()),
+                 static_cast<unsigned>(current_head_), read_stream_track_.size(),
+                 eff_enc == Encoding::FM ? "FM" : "MFM");
         return;
     }
 

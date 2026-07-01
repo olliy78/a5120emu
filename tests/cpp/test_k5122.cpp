@@ -268,6 +268,30 @@ TEST_F(K5122Test, StreamingRead_EnthältIDAM) {
 }
 
 /**
+ * @test K5122Test/StreamingRead_UnformatierteSpur_GapFluss
+ * @brief Ein Lese-Strobe auf eine leere/unformatierte Spur streamt markenlosen Gap-Fluss.
+ *
+ * fmt1 hat nur EINEN Kopf; ein Lesen von Kopf 1 trifft daher eine nicht existierende
+ * (unformatierte) Spur.  Früher brach der Transfer sofort ab (kein Datenstrom, /BUSRQ
+ * blieb hängen) — jetzt liefert die Karte reinen Gap-Fluss (0x4E) OHNE Adressmarke
+ * (kein IDAM 0xFE), damit die Leseroutine kein IDAM findet und per Index-Timeout endet.
+ */
+TEST_F(K5122Test, StreamingRead_UnformatierteSpur_GapFluss) {
+    auto path = tmpImg1();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt1));   // fmt1: 2 Zyl, 1 Kopf
+    card.ioWrite(0x18, 0xEE);                     // D0
+    strobeRead(1);                                // Kopf 1 → unformatierte Spur
+
+    auto stream = readStream(2000);
+    bool hat_gap = std::find(stream.begin(), stream.end(), 0x4E) != stream.end();
+    bool hat_fe  = std::find(stream.begin(), stream.end(), 0xFE) != stream.end();
+    EXPECT_TRUE(hat_gap) << "Unformatierte Spur sollte Gap-Bytes 0x4E streamen";
+    EXPECT_FALSE(hat_fe) << "Unformatierte Spur darf KEIN IDAM (0xFE) enthalten";
+
+    std::filesystem::remove(path);
+}
+
+/**
  * @test K5122Test/StreamingRead_ZyklischWrapAround
  * @brief Nach dem Ende der Spur beginnt der Strom erneut von vorn (Wrap-around).
  *

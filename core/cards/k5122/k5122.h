@@ -253,6 +253,13 @@ private:
     std::vector<uint8_t> write_buf_;            ///< gesammelte Schreibdaten (Port 0x14)
     uint16_t          cur_sector_size_ = 128;   ///< Sektorgröße der aktiven Spur (nur Debug-Info)
 
+    /// @brief Byte-Länge des synthetischen Gap-Stroms einer unformatierten Spur
+    ///        (≈ eine Umdrehung; reiner 0x4E-Gap ohne Adressmarken).  Ein Lese-Strobe
+    ///        auf eine leere/unformatierte Spur streamt diesen markenlosen Fluss, damit
+    ///        die Leseroutine kein IDAM findet und per Index-Timeout terminiert (wie
+    ///        echte HW), statt in einem gehaltenen /BUSRQ zu verklemmen.
+    static constexpr size_t kUnformattedTrackBytes = 6250;
+
     // ─── BIOS-Schreibpfad (/WE-flankengesteuert) ──────────────────────────────
     // Der CP/A-BIOS-Schreibpfad startet den Transfer als /STR-Lesestrobe (IDAM-Suche)
     // und schaltet erst beim Datenfeld /WE (bit0) auf 0.  write_mode_ (am /STR-Start

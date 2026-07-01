@@ -304,13 +304,65 @@ Der Verify-Prompt von FORMAT.COM lautet wörtlich:
 | Programm      | Ergebnis |
 |---------------|----------|
 | **FORMAT.COM**  | ✅ **Funktioniert** — formatiert **mit Verify** fehlerfrei. Verifiziert für alle vier Sektorgrößen: **128 B** (Format 1, Systemspuren 0-2), **256 B** (Format 4), **512 B** (Format E), **1024 B** (Format 1, Datenspuren). Voller Lauf Format 1 über **alle 160 Spuren**: `FORMATIEREN beendet` ohne eine einzige `SPUR DEFEKT`-Meldung; `DIR` der frischen Disk → `No File` (gültige, leere CP/A-Disk). |
-| **FORMATB.COM** | ⚠️ **Hängt nicht mehr** (Hang gelöst, s. §8.1) — schreibt die Spur korrekt (`>>> FORMAT-WRITE`, Image-md5 identisch zu FORMAT.COM) und läuft bis `FORMATIEREN beendet`. **Offen:** FORMATBs eigenes Rücklese-Verify meldet noch `Fehler 'V' SPUR DEFEKT!` (s. §8.1, „Schritt 2"). Zusätzlich adressiert FORMATB den Format-Write **immer physisch Laufwerk 0**. |
+| **FORMATB.COM** | ✅ **Format OK**, ⚠️ **Verify-Meldung `'V'` = echte Versionsinkompatibilität (kein Emu-Bug)**. Schreibt die Spur korrekt (`>>> FORMAT-WRITE`, Image-md5 identisch zu FORMAT.COM) und läuft bis `FORMATIEREN beendet`. **Wurzelursache 2026-06-30 geklärt** (s. §8.1, Problem 2): FORMATB.COM ist V**02.04.87**, das BIOS V**25.09.89**; die CDB-Flag-Konvention wurde dazwischen umorganisiert (BIOS-Quelle: „Bit 0 Verify nach Schreiben auf Bit 6 verlegt", „Struktur angepasst an ft.kom"). FORMATBs einkompiliertes CDB-Template (`[0]=0x60`, Bit 5 gesetzt) wird vom 1989er-BIOS als `diofhd` (Kopf-hoch, **kein Transfer**) gedeutet → Verify-Read füllt `0x63B7` nicht → `'V'`. Träte auf echter HW mit dieser BIOS-Version genauso auf. **FORMAT.COM (1989) passt zur Konvention und verifiziert fehlerfrei.** Zusätzlich adressiert FORMATB den Format-Write **immer physisch Laufwerk 0**. |
 
 **Getestet:** nur die **80-Spur-DS-Geometrie** (Default), dort alle vier Sektorgrößen.
 **Noch nicht im Emulator verifiziert:** die einseitigen und 40-Spur-Geometrien (S/T/U/V/W,
 §3.4) — sie sollten auf dem 80-Spur-DS-Laufwerk physisch schreibbar sein (einseitig =
 nur eine Seite, 40-Spur = Doppelschritt), sind aber ungetestet. **Nicht möglich:** die
 8″-Formate (§5), da der Emulator kein 8″-Laufwerk modelliert.
+
+### 8.2 Scriptgesteuerte Formatier-Pipeline für alle §3-Formate (Stand 2026-07-01)
+
+`tools/format_all.py` formatiert die nativen K5601-Formate aus §3 (Menü #1/#2/#3)
+scriptgesteuert nach Laufwerk **B:** und wertet Verify + Endstatus aus (Treiber:
+`tools/format_driver`).  Ergebnis als **.hfe** (formatagnostisch; Phase A) — `.img`
+folgt (Phase B).
+
+**Ergebnis (Verify = ein, je Format Smoke über Spur 0-5, deckt System- + Datenspuren
+beider Köpfe ab): 13 von 15 §3-Formaten OK** — `FORMATIEREN beendet` ohne `SPUR DEFEKT`.
+Abgedeckt: **alle vier Sektorgrößen und alle drei Menüseiten** (`0`/`H`/`I`/`2`/`3`=1024 B,
+`1`=gemischt 128+1024 B, `4`=256 B, `6`=128 B, `E`/`F`/`G`/`J`/`K`=512 B; Menü #1 `0-3`,
+#2 `4-7`, #3 `E-K`).
+
+**Voll-Disk-Nachweis (`format_all.py 0 --full --dir-verify`):** Format `0` über **alle 160
+Spuren** → `FORMATIEREN beendet` ohne `SPUR DEFEKT`; anschließend `A>DIR B:` → **`No File`**
+= gültige, leere CP/A-Disk (unabhängig re-gemountetes .hfe).
+
+**Zwei Ausnahmen — Formate mit physischem Sektor-Interleave (`5`, `7`) schlagen im Verify
+fehl:** `5` (16×256 **mit** ph. Sektorversatz) → `Fehler 'U'` (Timeout), `7` (16×256,
+Sektorfolge 1,4,7…) → `Fehler 'S'`.  Das interleave-**freie** Gegenstück `4` (16×256 ohne
+Versatz) verifiziert dagegen fehlerfrei — d. h. die Wurzel ist die **Interleave-Behandlung**
+im Format-Write→TrackImage→Rücklese-Pfad (der physisch versetzte Sektor wird beim Verify
+nicht gefunden/gelesen).  **Offen (Folgearbeit):** `parseFormatStream`/`buildTrack`-Reihenfolge
+für ph. Sektorversatz prüfen.
+
+**Zwei Emulator-Erkenntnisse dieser Arbeit:**
+
+1. **Unformatierte-Spur-Lesung terminiert per Index-Timeout (K5122-Fix,
+   `startReadTransfer`).**  FORMAT.COM **liest jede Zielspur vor** dem Neuformatieren
+   (Rotations-/Längenmessung).  Bisher lieferte eine leere/unformatierte Spur *keinen*
+   Datenstrom → das vom Lese-`/STR` gesetzte `/BUSRQ` blieb hängen, ZVE2 verklemmte in
+   seiner Lese-Koroutine (`IN(16H)`+`JR $` @ `0x1D0F/0x1D21`).  Jetzt streamt die Karte
+   für eine unformatierte Spur reinen markenlosen **Gap-Fluss** (`6250 B`, `0x4E`), damit
+   die Leseroutine kein IDAM findet und wie auf echter HW über den Index-Timeout endet
+   („record not found").  Alle K5122/Boot/Format-Tests bleiben grün.
+
+2. **Das B:-Ausgangs-Template muss eine GÜLTIGE, bereits formatierte Disk sein — kein
+   gap-leeres Blank.**  Auf einem gap-leeren Template zwingt der obige Fix zwar jede
+   Vorlesung sauber in den Index-Timeout, aber die dadurch verschobene ZVE1↔ZVE2-Bus-
+   Arbitrierung führt **formatabhängig zu einem BUSRQ-Hänger** (kleinsektorige Formate
+   128/256 B hingen bei Spur 2, 1024 B lief weiter, ein Voll-Lauf hing bei Spur 7 —
+   Spin @ `0x1D0F/0x1D21`, `busrq≈96 %`).  Mit einem **gültigen** Template finden die
+   Vorlesungen echte Sektoren (schnell, kein Timeout), der Bus bleibt stabil (bewährter
+   §8-Lese-/Schreib-Pfad) → **alle Sektorgrößen formatieren+verifizieren zuverlässig**.
+   `format_all.py` kopiert daher ein gültiges Template (`disks/cpadisk_*.hfe`) als B:;
+   beim Voll-Format wird es komplett überschrieben (sauberes Ziel), beim Smoke behalten
+   die nicht formatierten Spuren die lesbaren Template-Daten.  **Offen (Folgearbeit):**
+   der restliche BUSRQ-Hänger auf *gap-leerem* Medium (nur relevant, falls man ohne
+   gültiges Template formatieren will) — tiefes ZVE1↔ZVE2-Arbitrierungs-Timing.
+
+**Nicht möglich:** die 8″-Formate (§5), da der Emulator kein 8″-Laufwerk modelliert.
 
 > **Ziel** (alle Formate fehlerfrei): FORMAT.COM erfüllt das für die getesteten
 > Sektorgrößen der 80-Spur-DS-Geometrie bereits. Offen: (a) einseitige/40-Spur-Geometrien
@@ -368,19 +420,68 @@ beide Gap-Schleifen, ZVE2 erreicht sein dtrret, ZVE1 wird geweckt. Tightly-scope
 (569 gtest + 58 Harness). Ergebnis: FORMATB schreibt die Spur korrekt (Image-md5 identisch zu
 FORMAT.COM) und läuft bis `FORMATIEREN beendet`.
 
-#### Problem 2 — Verify: `'V' SPUR DEFEKT` ⚠️ OFFEN
+#### Problem 2 — Verify: `'V' SPUR DEFEKT` — WURZELURSACHE GEKLÄRT 2026-06-30: FORMATB(1987)↔BIOS(1989)-Versionskonflikt (KEIN Emulator-Bug)
 
-Nach dem Format schreibt FORMATB ein Testmuster in Sektor 1 (`>>> WRITE S=1 bytes=128`) und
-liest es zur Kontrolle zurück (Vergleich Rücklese-Puffer `0x63B7` vs. Soll `0x3B07` = lauter
-`0x53`; Mismatch → `'V'`@`0x08D5`). Im Emulator wird der Rücklese-Puffer **nicht** gefüllt:
-nach dem Format folgt **kein** Lese-`/STR`-Strobe und damit kein `>>> READ` mehr — der
-Verify-Read erreicht den K5122-Lesepfad nicht. (Hypothese: nach dem Format streamt ZVE2 die
-**nächste** Leading-Gap-Schleife weiter und hält den Bus/`write_mode_`-Reststand, sodass der
-Lesepfad blockiert bzw. der Verify über den noch laufenden ZVE2 statt über einen frischen
-Lese-Transfer liest → Müll. Sauberes Spur-Ende nach **einer** Spur ist noch zu modellieren.)
-Nächster Schritt: FORMATBs Verify-Leseroutine (`0x088B` → `sub_09AF`/`(37E6H)` →
-`sub_09C5`/`sub_0A30` → BIOS-Read `sub_0D26`) und das Spur-Ende-Verhalten von `write_mode_`
-nach Abschluss einer einzelnen Format-Spur untersuchen.
+Per Instruktions-Trace (ZVE1-PC ab Format-Ende) + Disassembly der jetzt residenten FORMATB-
+Verify-Routine **vollständig aufgeklärt** — die frühere „kein /STR / ZVE2 hält den Bus"-Hypothese
+war falsch. Korrigiertes Bild:
+
+1. **Der `>>> WRITE S=1 bytes=128` ist ein PHANTOM, kein Testmuster-Write.** Der Schreib-Puffer
+   `write_buf_` enthält an dieser Stelle **6357 Bytes `0x4E`** (Format-Gap, nicht das vermutete
+   `0x53`-Muster). Auslöser ist eine **streunende `/STR`-Flanke** (`OUT(10H)=0xB6`, /WE=0, mit
+   `busrq=1`, `write_mode_=1`) während FORMATBs Format-Ende: unsere `/STR`-Flanken-Logik deutet
+   sie im ZVE2-Kontext als Sektor-Schreib-Commit (`commitWrite`), schreibt 128 Gap-Bytes in
+   Sektor 1 und reißt `write_mode_`/`transferring_` vorzeitig ab. **Es gibt kein echtes
+   Testmuster-Schreiben.**
+
+2. **Die Verify-Routine läuft korrekt durch — sie liest über den NORMALEN BIOS-Lesepfad.**
+   Schleife `0x088B` (Wiederhol-Zähler `[0x383A]`=2), `CALL sub_09C5` (`0x08A2`) → `sub_0A30`
+   (Lese-Eintrag, `RES 4,(IY+0)`) → `sub_0D26` → BIOS `diskio`. `sub_0D26` springt über den
+   BIOS-Erweiterungs-Sprungvektor `(004EH)+0x21` → `cpmx21` (`0xD329`: `JP diskio`).
+
+3. **Der BIOS `diskio` (`0xDF1E`) ÜBERSPRINGT den Transfer, weil im Verify-CDB das
+   `diofhd`-Bit (Bit 5, „Kopf hochnehmen") GESETZT ist.** `diskio` kopiert das CDB nach
+   `diocdb`, testet `bit diofhd,(hl)` (`0xDF2A`) und macht bei gesetztem Bit `jp nz,headup`
+   (`0xDF2C`, Kommentar: *„ja, kein Transfer"*). `headup` (`0xE3BD`) sperrt nur den Index-
+   Interrupt (`OUT(11H)=3`), schaltet den Motor aus (`OUT(18H)=0xFF`) und kehrt zurück — **ohne
+   jeden Plattenzugriff**. Daher **kein Lese-`/STR`, kein `>>> READ`**, der Rücklese-Puffer
+   `0x63B7` bleibt ungefüllt → Vergleich `0x63B7` vs. Soll `0x3B07` (`CPI`-Schleife `0x08B1–08C1`)
+   schlägt fehl → `JP NZ 0x08D5` → `A=56H` (`'V'`) → `[0x10BC]`. Das CDB bei `0x37CA` zeigt
+   `[0]=0x60` = `diofhd`(Bit5) **und** `diofps`(Bit6, „trk/sid/sec schon physisch") gesetzt.
+
+**Wurzelursache (Schritt (a) erledigt 2026-06-30): Das `diofhd`-Bit ist NICHT von FORMATB gesetzt —
+es ist Teil des BAKED-IN-CDB-Templates und wird vom NEUEREN BIOS umgedeutet.** Befund-Kette:
+
+- Das CDB bei `0x37CA` hat `[0]=0x60` (bit5+bit6) **bereits beim frischen FORMATB-Menü, vor jedem
+  Format** — also ein in `FORMATB.COM` einkompilierter Template-Wert. FORMATB setzt/löscht Bit 5
+  des CDB **nirgends** (verifiziert: kein `SET/RES 5` auf `(IY+0)`/`(HL)=37CA` im ganzen Programm;
+  das einzige `RES 5,(HL)` @`0x0CA9` ist Text-Großschreibung). Die beiden CDBs sind
+  `37CA: 60 FF FF FF 01 00 B7 63` (Adresse `0x63B7` = Rücklese-Puffer) und
+  `37D7: 60 FF FF FF 01 00 07 3B` (Adresse `0x3B07` = Soll-Muster).
+- **Die CDB-Flag-Konvention wurde zwischen den BIOS-Versionen umorganisiert** — die BIOS-Quelle
+  (`cpadisk_*.prn`) dokumentiert es wörtlich:
+  - `diof00 equ 0  ;** frei fuer Anw. ** (frueher Verify nach Schreiben)` — Bit 0 war **früher**
+    „Verify nach Schreiben", ist jetzt frei.
+  - `; +0: cdbfl ;Flags (Struktur angepasst an ft.kom)` — die Flag-Struktur wurde angepasst.
+  - `; ft.kom, Bit 7 eingefuehrt: =0 Vorderseite, =1 Rueckseite` / `; ft.kom, Bit 0 (Verify nach
+    Schreiben) auf Bit 6 verlegt` — Bits wurden **verschoben/neu eingeführt**.
+  - In der **neuen** (1989er) Konvention ist Bit 5 = `diofhd` („Kopf hochnehmen, kein Transfer").
+- **FORMATB.COM ist V02.04.87 (1987)**, das laufende BIOS V25.09.89 (1989). FORMATB prüft nur
+  „System CP/A … Version ab **3/87** erforderlich" (`0x0D38`) und setzt seine CDB-Flags nach der
+  **3/87-Konvention**; die hier laufende 9/89-BIOS-Konvention deutet das (in 3/87 anders gemeinte)
+  Bit 5 als `diofhd` → `diskio` macht Kopf-hoch statt Lesen → `0x63B7` leer → `'V'`.
+
+**Fazit:** Die FORMATB-Verify-Fehlmeldung ist eine **echte Software-Versionsinkompatibilität
+zwischen FORMATB.COM (02.04.87) und dem BIOS (25.09.89)** — sie träte auf **echter Hardware mit
+dieser BIOS-Version genauso** auf und ist **kein Emulationsfehler**. Das Formatieren selbst gelingt,
+weil FORMATB es über ZVE2 direkt (am BIOS-`dio` vorbei) fährt; nur der Verify nutzt den BIOS-`dio`
+und trifft so auf die geänderte CDB-Konvention. **FORMAT.COM (V19.05.89) passt zur 1989er-BIOS-
+Konvention und verifiziert daher fehlerfrei.**
+
+**Restpunkte (keine Blocker mehr):** (b) optional zur Absicherung FORMAT.COMs Verify-CDB-Flags
+dumpen (Erwartung: Bit 5 = 0); (c) die streunende `0xB6`-`/STR` (Phantom-`commitWrite` mit
+Gap-Bytes) im `write_mode_`-Reststand abfangen — kosmetisch (korrumpiert nur kurz Sektor 1 der
+ohnehin frisch formatierten Spur, ändert am Verify-Ergebnis nichts).
 
 #### Sekundär — Laufwerkswahl
 
@@ -390,14 +491,27 @@ Mehr-Laufwerk-Emulator formatiert FORMATB damit das Bootlaufwerk statt B/C.
 
 #### Reproduktion / Schlüssel-Adressen
 
-`tools/format_driver` mit `FD_LOGLEVEL=info` (zeigt `>>> READ/WRITE/FORMAT-WRITE`);
-Script-Sequenz FORMATB Spur 0: `boot / type 12:00:00 / FORMATB / ENTER (=Fkt 0) / B / 1 /
-ENTER (von 0) / 0 (bis 0) / j`. FORMATB: ZVE2-Routine `0x38DF`, Leading-Gap `0x38F4/0x38F6`,
-Trailing-Gap `0x3988/0x398B`, dtrret `0x3897` (→ `0x38C8`), ZVE1-`JR $` `0x38C7`, Disk-ISR
-`0x3A2E` (`EI;RETI`@`0x3A31`, IM2-Slot `0xE8`/`0xEA`), BIOS-Loop-Arm PC `0xDEEA`. BIOS:
+`tools/format_driver` mit `FD_LOGLEVEL=info` (zeigt `>>> READ/WRITE/FORMAT-WRITE`).
+⚠️ **IMMER Temp-Kopien für BEIDE Disks (A: UND B:)** — FORMATB adressiert physisch Laufwerk 0,
+formatiert also das als A: gemountete Boot-Image, wenn man es direkt nutzt (korrumpiert →
+Blank-Screen, `git checkout disks/…`). Script-Sequenz FORMATB Spur 0: `boot / type 12:00:00 /
+FORMATB / ENTER (=Fkt 0) / B / 1 / ENTER (von 0) / 0 (bis 0) / j`. Den Verify-Pfad tracen: nach
+dem `>>> FORMAT-WRITE` die ZVE1-PC mitschreiben (temporärer `LOG_INFO` in der A5120-Run-Loop,
+mit `disks/cpadisk_autofs_clock_noautoexec.prn` als `-l`-Listing annotierbar).
+
+FORMATB ZVE2-Format: ZVE2-Routine `0x38DF`, Leading-Gap `0x38F4/0x38F6`, Trailing-Gap
+`0x3988/0x398B`, dtrret `0x3897` (→ `0x38C8`), ZVE1-`JR $` `0x38C7`, Disk-ISR `0x3A2E`
+(`EI;RETI`@`0x3A31`, IM2-Slot `0xE8`/`0xEA`), BIOS-Loop-Arm PC `0xDEEA`.
+FORMATB Verify (Problem 2): Schleife `0x088B`, Wiederhol-Zähler `[0x383A]`, `CALL sub_09C5`
+@`0x08A2`, Vergleichsschleife `0x08B1–08C1` (`CPI`, Rücklese-Puffer `0x63B7` vs. Soll `0x3B07`),
+`'V'`-Fehler `0x08D5` (`A=56H`→`[0x10BC]`); Verify-CDB `0x37CA` (`[0]=0x60`: `diofhd`+`diofps`);
+Lese-/Schreib-Eintrag `sub_0A30`(`RES 4,(IY+0)`)/`sub_0A39`(`SET 4,(IY+0)`), BIOS-Aufruf
+`sub_0D26` (`JP (004EH)+0x21`).
+BIOS: `cpmx21=0xD329` (`JP diskio`), `diskio=0xDF1E`, Head-up-Abzweig `0xDF2A` (`bit diofhd,(hl)`)
+/`0xDF2C` (`jp nz,headup` = „kein Transfer"), `diofhd`=Bit5 / `diofps`=Bit6, `diocdb=0xE0F9`,
 Index-Vektor `ivdsk1=0xE8`/`ivdsk2=0xEA`, Motor-Watchdog `headup=0xE3BD/0xE3BF`,
 1-s-Timer `tim1uu=0xE682`, Watchdog-Zähler `fl.zto=0xE3A3`, Transfer-Suppression
-`pretx+1=0xE3AB`.
+`pretx+1=0xE3AB`, Timer-5-ISR `tim5it=0xE5FD`, 1ms-Warteschleife `wait1z=0xE7F8`.
 
 Der frühere CRC-Konventionskonflikt auf den **128-B-Systemspuren** (FORMAT-Verify
 meldete `'C' SPUR DEFEKT`) ist mit dem codierungstreuen Ein-CRC-Lesepfad
@@ -407,6 +521,26 @@ Systemspuren.
 ---
 
 ## 9. Nachstellen im Emulator
+
+### 9.0 Komfort-Runner `tools/format_all.py` (alle §3-Formate)
+
+Für das Formatieren **mehrerer** §3-Formate am Stück (Phase A, .hfe):
+
+```sh
+tools/dev.sh tool format_driver                 # Treiber bauen (einmalig)
+python3 tools/format_all.py --list              # Formattabelle
+python3 tools/format_all.py 0 1 4 6 E --upto 5  # Smoke (Spur 0-5) je Format, mit Verify
+python3 tools/format_all.py --all --full        # alle 15, volle 160 Spuren
+python3 tools/format_all.py 0 --full --dir-verify --outdir out/formats
+```
+
+Der Runner erzeugt je Format eine **Temp-Kopie der Boot-Disk (A:)** und ein
+**B:-Ziel aus einem gültigen Template** (`disks/cpadisk_*.hfe`, s. §8.2 — **kein**
+gap-leeres Blank!), generiert das FORMAT.COM-Script (Menü-Navigation + Verify),
+fährt `format_driver` und prüft `FORMATIEREN beendet` ohne `SPUR DEFEKT`.  Menü:
+`0-3` direkt · `4-7` nach `X` · `E-K` nach `X`,`Y`.  Ergebnis-Images unter `--outdir`.
+
+### 9.1 Direkter Treiber-Aufruf
 
 Treiber `tools/format_driver` (scriptgesteuerter Zwei-Disk-Treiber, Tastatur-Script;
 mountet Disk B: **schreibend**, FORMAT-Writes landen in der diskB-Datei):
