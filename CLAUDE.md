@@ -303,6 +303,27 @@ dem laufenden Arbeitsstand verwobene Arbeit selbst behalten.
 Konkret heißt das u.a.: breite Suchen → `code-explorer`; Log-/Trace-Auswertung → `log-trace-analyzer`;
 Build-&-Test-Durchläufe → `test-runner`. Opus bleibt für Orchestrierung, Entwurf und Entscheidungen.
 
+## Diskettenformatierung (FORMAT.COM) — Scope
+
+Scriptgesteuerte Formatier-Pipeline: `tools/format_all.py` (Runner) + `tools/format_driver`
+formatieren mit **FORMAT.COM (V19.05.89)** die K5601-Formate nach Laufwerk B: und verifizieren
+(§3 80-Spur-DS: .hfe 13/15, .img 14/15; §3.4-Geometrien S/V/W als .hfe+.img, T/U als .hfe).
+`DiskImage::create` legt leere Ziele an (`.hfe` Template / `.img` 0xE5 in Format-Geometrie).
+Voller Stand + offene Punkte: `docs/format.md` §8–§9.
+
+> **FORMATB.COM ist OUT OF SCOPE — nicht weiter untersuchen/testen.** Seine Verify-Routine
+> passt nicht zum verwendeten CP/A-BIOS (V02.04.87 vs. 25.09.89: die CDB-Flag-Konvention wurde
+> zwischen den Versionen umorganisiert → `'V' SPUR DEFEKT`, s. `docs/format.md §8.1`).  Das ist
+> eine **echte Software-Versionsinkompatibilität, kein Emulatorfehler** (träte auf realer HW mit
+> diesem BIOS genauso auf).  Für Formatier-Arbeiten ausschließlich **FORMAT.COM** verwenden.
+
+> **Bekannte Grenze — Gap-Blank-`.hfe`-Hänger (FORMAT.COM):** Ein FRISCH per `create` erzeugtes,
+> gap-leeres `.hfe` direkt zu formatieren hängt (ZVE2-Lese-Koroutine `0x1D0F/0x1D21` beim Vorlesen
+> einer unformatierten Datenspur; Index-Interrupt-Timing-Race mit dem BIOS-Motor-Watchdog).
+> Hypothese „Index maskenunabhängig halten" wurde getestet & widerlegt (`docs/format.md §8.2`).
+> **Workaround (in der Pipeline aktiv):** B: aus einem GÜLTIGEN Template kopieren bzw. `.img` via
+> `create` (0xE5 liest als gültig) — dann kein Hänger.  Echte Lösung braucht cycle-level Dual-CPU-Tracing.
+
 ## Conventions
 
 - Code comments and many log strings are in German; match the surrounding language of the file you edit.
