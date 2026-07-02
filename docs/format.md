@@ -379,15 +379,23 @@ Sektorfolge 1,4,7…, ZIK-NK) → `Fehler 'S'` — bounded Interleave-Sonderfall
    Keepalive (§8.1) greift nur im `write_mode_`.  Mit gesperrtem Index kann die Koroutine nie
    timeouten → ZVE2 dreht ewig, hält `/BUSRQ` (≈96 %).  Verifiziert am System→Daten-Übergang:
    Format 6 (26×128) formatiert die 3 System-Spuren + 4 Datenspuren, hängt an C=3 H=1
-   (Spur 7); Format 0 identisch.  **Versuchter Fix (verworfen):** den Index auch während
-   `unformatted_read_` aktiv halten — greift nicht, weil die Sperre **bereits vor** dem
-   Lese-Start gesetzt wird und nicht wieder eingeschaltet wird (das Wieder-Aktivieren
-   erfordert das genaue Z80PIO-Interrupt-Enable-Verhalten von `OUT(11H)` → cycle-level
-   Dual-CPU-Analyse).  **Offen (Folgearbeit):** entweder den Index-Timeout einer unformatierten
-   Lesung **unabhängig vom CPU-Interrupt-Mask** modellieren (echte HW: FDC-record-not-found ist
-   maskenunabhängig), oder den Index bei Start einer unformatierten Lesung erzwungen
-   re-aktivieren.  **Nur relevant, wenn man ohne gültiges Template formatieren will** — die
-   Pipeline nutzt ein gültiges Template und ist davon nicht betroffen.
+   (Spur 7); Format 0 identisch.
+
+   **Fix-Versuch „Index maskenunabhängig halten" — GETESTET & WIDERLEGT (2026-07-02):** Zwei
+   Varianten implementiert und verworfen: (a) die `write_mode_`-Keepalive auf einen
+   `unformatted_read_`-Zustand erweitern (Port-A-`0x03`-Sperre auch beim unformatierten Lesen
+   ignorieren) — **keine Änderung**, weil `ie` schon **vor** dem Lese-Start auf 0 steht; (b)
+   zusätzlich den Port-A-Interrupt beim Start der unformatierten Lesung erzwungen re-aktivieren
+   (`ctrl_pio_.ioWrite(1, 0x83)`, sauberes `ie=1` ohne Nebeneffekt) — **verschlimmert** den
+   Hänger (Format 6 hängt dann schon bei **Spur 4** statt 7).  Damit ist die
+   Index-Masken-Hypothese **widerlegt**: die Maskierung ist **legitim** — der Index erzwungen
+   an lässt ihn zu einem von FORMAT.COMs ISR **nicht erwarteten** Zeitpunkt feuern und
+   korrumpiert dessen Zustand.  D. h. der Read-Koroutine-Abbruch läuft **nicht** über den
+   (maskierten) Index-Interrupt, sondern über einen anderen/subtileren Mechanismus.
+   **Offen (Folgearbeit):** erfordert **cycle-level Dual-CPU-Tracing** (welche ZVE1-Interruptquelle
+   bricht die working-case-Read-Koroutine, warum feuert sie am Stall nicht) — nicht per
+   Black-Box/Hypothese lösbar.  **Nur relevant, wenn man ohne gültiges Template formatieren
+   will** — die Pipeline nutzt ein gültiges Template und ist davon nicht betroffen.
 
 **Nicht möglich:** die 8″-Formate (§5), da der Emulator kein 8″-Laufwerk modelliert.
 
