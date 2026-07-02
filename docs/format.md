@@ -409,9 +409,36 @@ Neue `DiskFormat`s in `FormatParser::builtinFormats()`: `k5601_ss80_26x128`, `k5
 
 > **Ziel-Status:** 80-Spur-DS (§3) + §3.4-Geometrien (S/V/W einseitig/Einzelschritt) formatieren
 > +verifizieren als `.hfe`/`.img`; Doppelschritt (T/U) als `.hfe`.  Offen: (a) Interleave-Formate
-> (Sektorfolge 1,4,7… — Format 7, W:6) auf beiden Backends; (b) Doppelschritt-`.img` (Mapping);
+> (Sektorfolge 1,4,7… — Format 7, W:6), s. §8.4; (b) Doppelschritt-`.img` (Mapping);
 > (c) **FORMATB.COM-Verify** (§8.1); (d) 8″-Laufwerk (§5).  RE-Stand: `doc/design/07_k5122_afs.md`,
 > Memory `project_format_all_pipeline`/`project_formatb_different_protocol`.
+
+### 8.4 „Sektorfolge 1,4,7"-Formate (Format 7 „ZIK-NK", W:6 „BAP2001") — Diagnose 2026-07-02
+
+Format 7 (`16×256, Sp.0-153, Sektorfolge 1,4,7…, 4 System`) und W:6 (`15×256, Sektorfolge
+1,4,7…`) melden im Verify `Fehler 'S' SPUR DEFEKT` — auf **beiden** Dateitypen (`.hfe` UND
+`.img`).  Black-Box-Diagnose (Stream-Capture via `K5122_FMT_CAPTURE`, IDAM-Parsing, K5122-Log):
+
+- **Der Emulator schreibt provably korrekt:** jede Spur 16 (bzw. 15) Sektoren, IDAM
+  `(cyl=phys, head=0, id=1..16, size=1)`, IDs **1–16 sequenziell** im ZVE2-Schreibstrom.
+- **Der Fehler beginnt exakt am System→Daten-Übergang:** Format 7 hat **4 System-Spuren** (0–3).
+  `bis Spur 3` (nur System) → `FORMATIEREN beendet` ohne Fehler; `bis Spur 4` → `'S'` **bei
+  Spur 4 = der ersten DATEN-Spur**.  Die System-Spuren verifizieren also fehlerfrei.
+- **Das K5122-Verhalten ist für bestandene (0–3) und fehlgeschlagene (4,5) Spuren IDENTISCH**
+  (gleiche READ/FORMAT-WRITE-Sequenz, gleiche Bytezahl) — es ist **kein differenzieller
+  Emulator-Bug** an bestimmten Spuren.
+- **Nicht die Interleave-Reihenfolge:** `.hfe` (`HfeImage`) bewahrt die physische Sektorfolge
+  **bit-genau** und scheitert trotzdem → das `'S'` hängt nicht daran, dass der Raw-Pfad
+  (`RawSectorImage`) Sektoren nach logischer ID zurückliest.  (Format 5 „mit ph. Sektorversatz,
+  4 System" verifiziert dagegen als `.img` fehlerfrei — dieselbe 16×256-Geometrie, gleiche
+  4 System-Spuren, nur andere Interleave-Notation.)
+
+**Fazit:** Das `'S'` ist ein **FORMAT.COM-internes Verdikt im Daten-Spur-Verify** dieser beiden
+exotischen Formate, nicht durch abweichendes Emulator-Read/Write ausgelöst.  Die definitive
+Ursache erfordert die **Disassemblierung von FORMAT.COMs `'S'`-Verify-Pfad** (analog zur
+FORMATB-Analyse §8.1) — ein abgegrenzter, aber substanzieller RE-Schritt für **2 von ~30**
+K5601-Formaten (alle Standard-Formate + S/V/W-Geometrien verifizieren fehlerfrei).
+Repro: `python3 tools/format_all.py 7 --type img --upto 5` bzw. `--geo W 6`.
 
 ### 8.1 FORMATB.COM — vollständige Diagnose (Stand 2026-06-28)
 
