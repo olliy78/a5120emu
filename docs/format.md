@@ -381,20 +381,25 @@ Sektorfolge 1,4,7…, ZIK-NK) → `Fehler 'S'` — bounded Interleave-Sonderfall
    Format 6 (26×128) formatiert die 3 System-Spuren + 4 Datenspuren, hängt an C=3 H=1
    (Spur 7); Format 0 identisch.
 
-   **Fix-Versuch „Index maskenunabhängig halten" — GETESTET & WIDERLEGT (2026-07-02):** Zwei
-   Varianten implementiert und verworfen: (a) die `write_mode_`-Keepalive auf einen
-   `unformatted_read_`-Zustand erweitern (Port-A-`0x03`-Sperre auch beim unformatierten Lesen
-   ignorieren) — **keine Änderung**, weil `ie` schon **vor** dem Lese-Start auf 0 steht; (b)
-   zusätzlich den Port-A-Interrupt beim Start der unformatierten Lesung erzwungen re-aktivieren
-   (`ctrl_pio_.ioWrite(1, 0x83)`, sauberes `ie=1` ohne Nebeneffekt) — **verschlimmert** den
-   Hänger (Format 6 hängt dann schon bei **Spur 4** statt 7).  Damit ist die
-   Index-Masken-Hypothese **widerlegt**: die Maskierung ist **legitim** — der Index erzwungen
-   an lässt ihn zu einem von FORMAT.COMs ISR **nicht erwarteten** Zeitpunkt feuern und
-   korrumpiert dessen Zustand.  D. h. der Read-Koroutine-Abbruch läuft **nicht** über den
-   (maskierten) Index-Interrupt, sondern über einen anderen/subtileren Mechanismus.
-   **Offen (Folgearbeit):** erfordert **cycle-level Dual-CPU-Tracing** (welche ZVE1-Interruptquelle
-   bricht die working-case-Read-Koroutine, warum feuert sie am Stall nicht) — nicht per
-   Black-Box/Hypothese lösbar.  **Nur relevant, wenn man ohne gültiges Template formatieren
+   **Der `headup`-Watchdog ist BIOS-Code, kein Emulator-Teil.** `tim1uu` (BIOS `0xE682`, 1-s-Timer)
+   zählt `fl.zto` herunter und ruft `headup` (BIOS `0xE3BF`: `OUT(11H)=0x03` = Port-A-Index-INT
+   sperren + Motor aus).  Standard-Z80-PIO: der Index-Puls (den `K5122::update()` alle ~200 ms
+   erzeugt) wird nur zum CPU-Interrupt, wenn Port A `ie=1` — sowohl auf echter HW als auch bei uns.
+
+   **Fix-Versuche „Index-Sperre unterdrücken" — GETESTET & WIDERLEGT (2026-07-02):** Messung
+   (Index-Puls-Zähler + `OUT(11H)`-Log): der **angewendete** `headup`-Disable (`wmode=0`) feuert
+   ca. **alle 7–9 Index-Pulse** — ein **plausibles Verhältnis** (kein grober Timing-Fehler wie beim
+   Uhr-Bug).  Drei Keepalive-Varianten (Sperre `0x03` ignorieren während …) verschlimmern den
+   Hänger **monoton, je mehr geblockt wird**: nur `write_mode_` → Spur 7 · `+ transferring_` →
+   Spur 5 · `+ index_armed_` (Puls-Garantie nach `0x83`) → Spur 2.  ⇒ **Die Index-Sperre ist
+   LEGITIM und für den korrekten Ablauf NÖTIG** — sie zu blockieren stört FORMAT.COMs/OS-Index-
+   Protokoll und bricht früher.  Der `OUT(11H)=0x03` am Stall ist also **Korrelation, keine
+   Ursache**.  Die „Index-Masken/Watchdog-Timing"-Hypothese ist damit **widerlegt** — die Wurzel
+   liegt tiefer in der **ZVE1↔ZVE2-Koordination** (welcher Interrupt/welche Bedingung die Read-
+   Koroutine im Erfolgsfall bricht, und warum das am Stall ausbleibt).
+   **Offen (Folgearbeit):** erfordert **cycle-level Dual-CPU-Tracing** (k1520dbg `bint`/`breti`-
+   Event-BPs am Stall + ZVE2-Instruktions-Trace `-z`) — nicht per Black-Box/Hypothese lösbar.
+   **Nur relevant, wenn man ohne gültiges Template formatieren
    will** — die Pipeline nutzt ein gültiges Template und ist davon nicht betroffen.
 
 **Nicht möglich:** die 8″-Formate (§5), da der Emulator kein 8″-Laufwerk modelliert.
