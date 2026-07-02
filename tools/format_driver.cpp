@@ -13,12 +13,20 @@
 //   key  <name>        press a named key: return esc space bs del up down left right
 //   dump <label>       print the current 80x24 screen with <label>
 //   ramdump <lo> <hi> <file>  dump RAM [lo,hi) (hex addrs) to a binary file
+//   savestate <file>   freeze RAM+both Z80+floppy to <file> (loadable by k1520dbg/
+//                      boot_trace, which cannot drive the keyboard themselves)
 //   wp   <0|1>         set write-protect on drive B (1=protected)
 //
 // Env (debug aids for the FORMAT/FORMATB analysis):
 //   FD_LOGLEVEL=info|debug|warn|trace   raise the core log level (default ERROR)
 //                                       — shows the K5122 >>> READ/WRITE/FORMAT-WRITE lines
+//   FD_GATE=from:to[:level]    raise the level (default TRACE) only in a cycle window
+//   FD_PCGATE=lo:hi[:level]    raise the level while either CPU PC is in [lo,hi] (hex)
 //   FD_PCHIST=1        per-boot-batch ZVE1/busMaster PC histogram + /BUSRQ share to stderr
+//
+//   NOTE: DEBUG/TRACE lines live in the CORE libraries (k5122/a5120), which build/ compiles
+//   at LOG_LEVEL=3 (DEBUG/TRACE stripped).  Run build_trace/format_driver (LOG_LEVEL=5) for
+//   FD_LOGLEVEL=debug/trace and the FD_GATE/FD_PCGATE windows to produce any output.
 //
 // Each printable char and Enter is sent one-per-run-batch (1M cycles) so the BIOS
 // 5 ms keyboard poll picks it up before the next arrives — same cadence kbd_test
@@ -118,6 +126,31 @@ int main(int argc, char** argv) {
     }
     Logger::instance().setBaseLevel(lvl);
 
+    // FD_GATE="from:to[:level]"  → TRACE (o. Level) nur im Zyklusfenster.
+    // Erlaubt gezieltes Instruktions-Tracing des Stall-Fensters ohne GB-Log.
+    if (const char* g = std::getenv("FD_GATE")) {
+        unsigned long long from = 0, to = 0; char lv[16] = "trace";
+        if (sscanf(g, "%llu:%llu:%15s", &from, &to, lv) >= 2) {
+            Level gl = Level::TRACE;
+            std::string s = lv;
+            if (s=="info") gl=Level::INFO; else if (s=="debug") gl=Level::DEBUG;
+            else if (s=="warn") gl=Level::WARN; else if (s=="trace") gl=Level::TRACE;
+            Logger::instance().addCycleGate(from, to, gl);
+            fprintf(stderr, "[FD_GATE cyc %llu..%llu lvl=%s]\n", from, to, s.c_str());
+        }
+    }
+    if (const char* g = std::getenv("FD_PCGATE")) {
+        unsigned lo = 0, hi = 0; char lv[16] = "trace";
+        if (sscanf(g, "%x:%x:%15s", &lo, &hi, lv) >= 2) {
+            Level gl = Level::TRACE;
+            std::string s = lv;
+            if (s=="info") gl=Level::INFO; else if (s=="debug") gl=Level::DEBUG;
+            else if (s=="warn") gl=Level::WARN;
+            Logger::instance().addPCGate(lo, hi, gl);
+            fprintf(stderr, "[FD_PCGATE pc %04X..%04X lvl=%s]\n", lo, hi, s.c_str());
+        }
+    }
+
     A5120Machine machine;
     machine.powerOn();
 
@@ -191,6 +224,10 @@ int main(int argc, char** argv) {
             for (unsigned a = lo; a < hi; ++a)
                 of.put(static_cast<char>(machine.memReadDebug(static_cast<uint16_t>(a))));
             fprintf(stderr, "[ramdump 0x%04X..0x%04X -> %s]\n", lo, hi, fn.c_str());
+        } else if (cmd == "savestate") {
+            std::string fn; ls >> fn;
+            bool ok = machine.saveState(fn);
+            fprintf(stderr, "[savestate -> %s : %s]\n", fn.c_str(), ok ? "OK" : "FAIL");
         } else if (cmd == "wp") {
             int v = 0; ls >> v;
             machine.setDiskWriteProtect(1, v != 0);

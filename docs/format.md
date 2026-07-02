@@ -405,36 +405,64 @@ Sektorfolge 1,4,7…, ZIK-NK) → `Fehler 'S'` — bounded Interleave-Sonderfall
 **Ziel:** FORMAT.COM formatiert ein FRISCH per `create` erzeugtes, gap-leeres `.hfe` direkt
 (ohne gültiges Template) ohne Hänger.
 
-**Was bereits FESTSTEHT / was NICHT die Ursache ist (nicht erneut versuchen):**
-- Der Stall ist die ZVE2-Lese-Koroutine `0x1D0F/0x1D21` (`IN(16H)`+`JR $`), busrq≈96 %, beim
-  Vorlesen einer unformatierten Datenspur (System→Daten-Übergang; Format 6/0: Spur 7=C3H1).
-- **Die Index-Sperre (`headup` → `OUT(11H)=0x03`) ist NICHT die Ursache** (Korrelation): sie zu
-  blockieren verschlimmert den Hänger monoton (write_mode_→Spur7 · +transferring_→Spur5 ·
-  +index_armed_→Spur2). `headup` (BIOS `0xE3BF`) ist BIOS-Code, kein Emu-Teil; Disable-Rate
-  gemessen ~7–9 Index-Pulse (plausibel). Index maskenunabhängig zu halten wurde getestet & verworfen.
-- Der `.img`/Valid-Template-Pfad ist NICHT betroffen (dort findet die Vorlesung echte Sektoren).
+**★ Diagnose vertieft & korrigiert (2026-07-02, Session B — DEBUG/TRACE-Trace + RAM-Disasm):**
 
-**Konkrete Leads (in dieser Reihenfolge prüfen):**
-1. **ZVE1↔ZVE2-Koordination cycle-level:** Womit bricht die Read-Koroutine im ERFOLGSfall (Spur 0-6)
-   ihr `JR $` (welcher Interrupt/Speicher-Patch), und warum bleibt das am Stall (Spur 7) aus?
-   Tool: `k1520dbg` mit `bint`/`bnmi`/`breti`-Event-BPs am Stall + ZVE2-Instruktions-Trace
-   (`boot_trace -z 0x1D00:0x1D30`).
-2. **Modell-Lücke „Motor nicht simuliert" (Verdacht):** `K5122::update()` erzeugt Index-Pulse
-   **frei laufend** (nur an `isMounted()`+RPM), **unabhängig vom BIOS-Motorzustand**. Real: `headup`
-   schaltet den Motor ab → **keine** physischen Index-Pulse bis Wieder-Anlauf (mit Spin-up +
-   Teilperiode). Bei uns laufen die Pulse (maskiert) weiter → die **Index-Zeitlage** relativ zum
-   BIOS-Motorzustand weicht von echter HW ab und könnte die Koroutine desynchronisieren.
-   Zu prüfen: Motor-Zustand modellieren (OUT(18H)/`headup` → Index anhalten; bei Wieder-Anlauf
-   Spin-up + fortgesetzte Phase) und ob der Hänger dann verschwindet.
-3. **`fl.zto`/`pretx` beobachten:** Setzt FORMAT.COMs ZVE2-Format `pretx` (`0xE3AB`) bzw. frischt es
-   `fl.zto` (`0xE3A3`) auf? Wenn nicht, feuert `headup` bei uns wie auf realer HW — dann muss der
-   Unterschied im Index-Timing (Lead 2) oder in der Bus-/Interrupt-Reihenfolge liegen.
+- **Es ist KEIN toter Spin, sondern ein UNENDLICHER RETRY-Loop.** Der Ablauf pro Spur (Format 6,
+  26×128, Blank-`.hfe`): Blank-Vorlesung (`>>> READ … UNFORMATIERT → 6250 B Gap-Flux`) **wenige
+  Male** → `>>> FORMAT-WRITE` (Spur geschrieben) → 6× Verify-Read der jetzt formatierten Spur. Für
+  **cyl0/head0, cyl0/head1, cyl1/head0, cyl1/head1** (= log. Spuren 0-3) läuft das sauber durch.
+  Bei **cyl2/head0** (log. Spur 4, erster Seek **über cyl1 hinaus**) **retriet die Blank-Vorlesung
+  endlos** — nie ein `FORMAT-WRITE C=2`. ZVE2 wird dabei ständig neu resettet+gestartet
+  (`OUT 04H=0x00` → `Start aus Reset`), `/STR=1` beendet den Read, ZVE1 retriet. Der Diskriminator
+  ist der **cyl1→cyl2-Übergang**, nicht „System→Daten".
+- **★ Der Index-Interrupt (`0xE8`) feuert während des Stalls WEITER** (letzte 0xE8-Zustellung +0,9 s
+  NACH Stall-Onset, an ZVE1-PC `E48A`/`0DDA`). Gemessen: 294× INT-Quittung `0xE8` über den Lauf,
+  davon viele nach dem Stall-Beginn. ⇒ **Sowohl die „Index-Maske"-Hypothese (§8.2) ALS AUCH Lead 2
+  („Motor/Index stoppt") sind damit ENDGÜLTIG WIDERLEGT** — der Index erreicht ZVE1 laufend, der
+  Retry terminiert trotzdem nicht. (0xFC = CTC-Uhr-Tick dominiert die INT-Statistik mit ~11000×.)
+- **Die Koroutine ist eine umdrehungsbasierte SPURLÄNGEN-Messung** (RAM-Disasm der geladenen
+  FORMAT-Routine `0x1CEC–0x1D38`, Dump via neuem `format_driver`-`ramdump`):
+  `1CEE LD (1D22H),FE` **schärft** die Spin-Falle `1D21 JR $`, ebenso `1CF7/1CFA LD (HL),18H` die
+  Fallen `0x1D50`/`0x1DE5`; dann `OUT(04H)=0` (ZVE2-Reset), `IN A,(16H)` (1 Stream-Byte),
+  `OUT(11H)=0x83` (Index-INT scharf), `JR $`. Die **Index-ISR patcht `[0x1D22]`** (FE→…), bricht den
+  Spin → `1D23` weiter → `CALL 1EB6` (Ergebnis verarbeiten) → `RET`. Die Längenmessung selbst
+  **funktioniert** (Screen zeigt korrekt `Laenge: 6127` für Spur 4, Soll 6250) — der Hänger sitzt
+  **danach** in der Format-/Retry-Schleife dieser Spur.
 
-**Repro:** `D=$(mktemp --suffix=.hfe); python3 tools/img_to_hfe.py --blank --cyls 80 --heads 2 $D;`
-`A=$(mktemp --suffix=.img); cp disks/cpadisk_autofs_clock_noautoexec.img $A;` Skript: boot / `type 12:00:00`
-/ FORMAT / Fkt 0 / B / Verify j / Menü `X`,`6` (26×128) / von 0 / bis 9 / `j` / `boot 1500`.
-Hängt bei „FORMATIEREN auf Spur 7". Schlüssel-Adressen: Koroutine `0x1D0F/0x1D21`, `headup 0xE3BF`,
-`tim1uu 0xE682`, `fl.zto 0xE3A3`, `pretx 0xE3AB`, BIOS-Index-Vektor `ivdsk1 0xE8`. Voller Stand: §8.2.
+**Was NICHT die Ursache ist (nicht erneut versuchen):**
+- Index-Sperre `headup`→`OUT(11H)=0x03` (§8.2, monoton widerlegt) **und** „Motor/Index stoppt"
+  (Lead 2) — beide durch die laufenden 0xE8-INTs im Stall widerlegt.
+- Der `.img`/Valid-Template-Pfad (dort findet die Vorlesung echte Sektoren, kein Retry).
+- **Byte-Periode:** Emulator liefert `indexPeriod/kBytePeriodCycles = 490000/150 ≈ 3267` Bytes/Umdr.,
+  real ~6250 (`kBytePeriodCycles` evtl. ~2× zu langsam, s. Kommentar k5122.h:287). **ABER** die
+  Messung ergibt korrekt 6127 → dieser Wert ist NICHT der Stall-Grund; `kBytePeriodCycles` NICHT
+  blind ändern (bricht die getunte Boot-DMA).
+
+**Konkreter nächster Schritt (EINZIGER offener Lead):** Disassembliere die **`0xE8`-Index-ISR** und die
+FORMAT-Retry-Schleife der geladenen Routine (RAM-Dumps liegen bereit, s. Repro). Finde den **Zähler/die
+Bedingung**, die `[0x1D22]` patcht bzw. „Vorlesung akzeptiert → schreiben" entscheidet, und **warum sie
+bei cyl0/cyl1 nach ~4 Versuchen greift, bei cyl2 nie**. Kandidaten: ein von der ISR dekrementierter
+Retry-/Umdrehungszähler, der nach dem cyl1→cyl2-Seek anders initialisiert/nicht dekrementiert wird; oder
+eine emulator-seitige Zustandsabweichung, die exakt der erste Seek jenseits cyl1 auslöst (Kopfposition,
+Statusbit, Index-**Phase** relativ zum Gap-Stream nach frischem Seek). Vergleiche einen ERFOLGREICHEN
+cyl1-Retry-Zyklus mit dem cyl2-Zyklus instruktionsweise.
+
+**Werkzeuge (in dieser Session gebaut, `tools/format_driver`):**
+- **`savestate <file>`** friert den Stall-Zustand ein (RAM+beide Z80+Floppy), damit `k1520dbg`/
+  `boot_trace` ihn ohne Tastatur-Treiber laden können. **`ramdump <lo> <hi> <file>`** dumpt RAM-Regionen.
+- **`FD_LOGLEVEL=debug`** + **`FD_GATE=from:to[:level]`** / **`FD_PCGATE=lo:hi[:level]`** öffnen ein
+  gezieltes DEBUG/TRACE-Fenster. ⚠️ **DEBUG/TRACE nur aus `build_trace/format_driver`** (LOG_LEVEL=5;
+  in `build/` mit LOG_LEVEL=3 sind DEBUG/TRACE in den **Bibliotheken** wegkompiliert — das per-Target-
+  Define greift dort nicht).
+
+**Repro (Format 6, Blank-`.hfe`, hängt bei „FORMATIEREN auf Spur 4"):**
+`python3 tools/img_to_hfe.py --blank --cyls 80 --heads 2 B.hfe; cp disks/cpadisk_autofs_clock_noautoexec.img A.img;`
+Script: `boot 80`/`type 12:00:00`/enter / `boot 5`/`type FORMAT`/enter / `boot 30`/enter (Fkt 0) /
+`boot 6`/`type B`/enter / `boot 10`/enter (Verify j) / `boot 8`/`type X`/`boot 3`/`type 6`/`boot 6`/enter /
+`boot 5`/`type 9`/enter / `boot 6`/`type j` / `boot 250` / `ramdump 0100 2200 tpa.bin` /
+`ramdump 1C00 2100 coro.bin`. Disasm: `python3 tools/z80_disasm2.py --org 0x1C00 --entry 0x1D0F coro.bin`.
+Schlüssel-Adressen: Mess-/Retry-Routine `0x1CEC–0x1D38`, Spin-Fallen `0x1D21`/`0x1D50`/`0x1DE5`
+(Arm via `[0x1D22]=FE`), Ergebnis `CALL 1EB6`, BIOS-Index-Vektor `ivdsk1 0xE8`. Voller Stand: §8.2.
 
 **Nicht möglich:** die 8″-Formate (§5), da der Emulator kein 8″-Laufwerk modelliert.
 
