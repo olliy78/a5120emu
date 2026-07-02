@@ -440,6 +440,11 @@ bool A5120Machine::isDiskLedOn(int drive) const {
     return afs_.isDriveLedOn(drive);
 }
 
+bool A5120Machine::isMotorOn(int drive) const {
+    if (drive < 0 || drive > 3) return false;
+    return afs_.isMotorOn(drive);
+}
+
 void A5120Machine::setDiskWriteProtect(int drive, bool wp) {
     if (drive < 0 || drive > 3) return;
     afs_.setWriteProtect(drive, wp);

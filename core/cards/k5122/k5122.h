@@ -38,7 +38,6 @@
 #include "core/peripherals/floppy_drive/track_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"   // LogicalSector
 #include <array>
-#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -106,6 +105,8 @@ public:
     bool isDiskWriteProtected(int drive) const;
     void setWriteProtect(int drive, bool wp);
     bool isDriveLedOn(int drive) const;
+    /// @brief Motor-Zustand (Spindel) des Laufwerks — /LCK aus dem 8212 (Port 0x18).
+    bool isMotorOn(int drive) const;
 
     /// @brief Direkter Zugriff auf ein Laufwerk (Tests/C-API).
     FloppyDriveV2& drive(int idx) { return drives_[idx]; }
@@ -216,7 +217,6 @@ private:
     /// @brief Committet ein gesammeltes Schreib-Datenfeld (/WE 0→1) in den Zielsektor:
     ///        extrahiert das Datenfeld (A1 A1 A1 DAM …) und schreibt es zurück.
     void commitWriteField();
-    void markDriveAccess(int drive);
 
     // ─── Hardware-Objekte ────────────────────────────────────────────────────
     K1520Bus&     bus_;
@@ -307,7 +307,11 @@ private:
     // ─── Index-Puls (Periode aus DriveProfile::rpm) ──────────────────────────
     int  index_cycle_acc_ = 0;
 
-    // ─── LED-Simulation ──────────────────────────────────────────────────────
-    std::array<std::chrono::steady_clock::time_point, 4> led_until_{};
-    std::chrono::milliseconds led_hold_time_{180};
+    // ─── Motor-/LED-Zustand (aus dem 8212, Port 0x18) ────────────────────────
+    // Der 8212 (A4) latcht je Laufwerk ein /SE (Select) und ein /LCK (= /Motor On,
+    // MFS) — beide active-low (K5122-Doku §4.2).  Der Motor läuft, solange /LCK=0;
+    // die Laufwerks-LED leuchtet, solange das Laufwerk selektiert ODER sein Motor an
+    // ist.  Beide werden allein aus dem letzten OUT(18H) abgeleitet (keine Wanduhr).
+    std::array<bool, 4> drive_selected_{};   ///< /SE0../SE3 (low nibble, 0 = selektiert)
+    std::array<bool, 4> motor_on_{};         ///< /LCK0../LCK3 (high nibble, 0 = Motor an)
 };

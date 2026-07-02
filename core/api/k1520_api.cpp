@@ -141,6 +141,10 @@ bool k1520_disk_led(K1520Handle h, int drive) {
     return toA5120(h)->isDiskLedOn(drive);
 }
 
+bool k1520_disk_motor(K1520Handle h, int drive) {
+    return toA5120(h)->isMotorOn(drive);
+}
+
 void k1520_set_write_protect(K1520Handle h, int drive, bool wp) {
     toA5120(h)->setDiskWriteProtect(drive, wp);
 }

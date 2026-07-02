@@ -147,18 +147,28 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
             handleDataPortAWrite(data);
         }
     } else if (port == 0x18) {
-        // 8212 Drive-Select: bits [3:0] = /SELx, active-low one-hot.
-        // 0xEE → unteres Nibble 0xE = 1110, bit0=0 → Drive 0
-        // 0xDD → unteres Nibble 0xD = 1101, bit1=0 → Drive 1
-        // 0xBB → unteres Nibble 0xB = 1011, bit2=0 → Drive 2
-        // 0x77 → unteres Nibble 0x7 = 0111, bit3=0 → Drive 3
+        // 8212 (A4): low nibble = /SE0../SE3 (Select), high nibble = /LCK0../LCK3
+        // (= /Motor On), beide active-low.  selected_drive_ (Transferpfad) aus dem
+        // low-nibble-One-Hot; Motor/Select je Laufwerk separat unten (LED/Motor).
+        // 0xEE → low 1110, bit0=0 → Drive 0   (0xDD→D1, 0xBB→D2, 0x77→D3)
         uint8_t sel = ~data & 0x0F;
         selected_drive_ = (sel == 0) ? 0
                         : (sel & 0x01) ? 0
                         : (sel & 0x02) ? 1
                         : (sel & 0x04) ? 2
                         : 3;
-        LOG_INFO("K5122", "8212 drive-select write=0x%02X => D%d", data, selected_drive_);
+        // Der 8212 latcht je Laufwerk /SE (Select, low nibble) und /LCK (= /Motor On,
+        // high nibble), beide active-low (K5122-Doku §4.2).  Daraus den echten
+        // Select-/Motor-Zustand je Laufwerk ableiten (RESET → 0xFF → alles aus).  Der
+        // Motor läuft, solange /LCK=0; die LED folgt „selektiert ODER Motor an".
+        for (int d = 0; d < 4; ++d) {
+            drive_selected_[static_cast<size_t>(d)] = ((data >> d)       & 1) == 0;
+            motor_on_[static_cast<size_t>(d)]       = ((data >> (4 + d)) & 1) == 0;
+        }
+        LOG_INFO("K5122", "8212 write=0x%02X => sel D%d | SE=%d%d%d%d MotorOn=%d%d%d%d",
+                 data, selected_drive_,
+                 drive_selected_[0], drive_selected_[1], drive_selected_[2], drive_selected_[3],
+                 motor_on_[0], motor_on_[1], motor_on_[2], motor_on_[3]);
         updateStatusPortB();
     } else {
         LOG_WARN("K5122", "ioWrite unbekannter port=0x%02X data=0x%02X", port, data);
@@ -258,7 +268,14 @@ void K5122::setWriteProtect(int drive, bool wp) {
 
 bool K5122::isDriveLedOn(int drive) const {
     if (drive < 0 || drive > 3) return false;
-    return std::chrono::steady_clock::now() < led_until_[static_cast<size_t>(drive)];
+    // Signal-treu: LED an, solange das Laufwerk selektiert (/SE) ODER sein Motor
+    // (/LCK) an ist — abgeleitet aus dem letzten OUT(18H) (8212), keine Wanduhr.
+    return drive_selected_[static_cast<size_t>(drive)] || motor_on_[static_cast<size_t>(drive)];
+}
+
+bool K5122::isMotorOn(int drive) const {
+    if (drive < 0 || drive > 3) return false;
+    return motor_on_[static_cast<size_t>(drive)];
 }
 
 // ─── DMA-Arbitrierung / Index ─────────────────────────────────────────────────
@@ -595,7 +612,6 @@ void K5122::doStep() {
     if (!drv.isMounted()) return;
 
     drv.step(step_dir_in_);
-    markDriveAccess(selected_drive_);
 
     LOG_TRACE("K5122", "STEP D%d dir=%s cyl=%u",
               selected_drive_, step_dir_in_ ? "inward" : "outward",
@@ -651,7 +667,6 @@ void K5122::startReadTransfer() {
         transferring_    = true;
         write_mode_      = false;
         locked_          = false;
-        markDriveAccess(selected_drive_);
         LOG_INFO("K5122", ">>> READ D%d C=%u H=%u UNFORMATIERT → %zu B Gap-Flux (%s, Index-Timeout)",
                  selected_drive_, static_cast<unsigned>(drv.currentCylinder()),
                  static_cast<unsigned>(current_head_), read_stream_track_.size(),
@@ -681,7 +696,6 @@ void K5122::startReadTransfer() {
     transferring_ = true;
     write_mode_   = false;
     locked_       = false;
-    markDriveAccess(selected_drive_);
 
     LOG_INFO("K5122", ">>> READ D%d C=%u H=%u Spur=%zu Bytes (%s%s)",
              selected_drive_,
@@ -749,7 +763,6 @@ void K5122::commitWrite() {
         return;
     }
 
-    markDriveAccess(selected_drive_);
 
     // Spur lesen und in logische Sektoren parsen.
     TrackImage& spur = drv.mutableTrack(current_head_);
@@ -981,7 +994,6 @@ void K5122::commitWriteField() {
     const size_t avail = write_buf_.size() - data_start;
     const size_t take  = std::min<size_t>(wr_size_, avail);
 
-    markDriveAccess(selected_drive_);
 
     // Ziel-Spur (IBM-Format im Drive-Cache) parsen und Sektor per ID ersetzen.
     TrackImage& spur = drv.mutableTrack(current_head_);
@@ -1024,18 +1036,6 @@ void K5122::commitWriteField() {
     write_buf_.clear();
 }
 
-/**
- * @brief Merkt den letzten Laufwerkszugriff für die LED-Simulation.
- *
- * isDriveLedOn() gibt true zurück, solange weniger als led_hold_time_ (180 ms)
- * vergangen sind.
- */
-void K5122::markDriveAccess(int drive) {
-    if (drive < 0 || drive > 3) return;
-    led_until_[static_cast<size_t>(drive)] =
-        std::chrono::steady_clock::now() + led_hold_time_;
-}
-
 // ─── Snapshot-Serialisierung ────────────────────────────────────────────────────
 namespace {
 template <class T> void putPod(std::vector<uint8_t>& o, const T& v) {
@@ -1070,6 +1070,11 @@ void K5122::serialize(std::vector<uint8_t>& out) const {
         putPod(out, mounted);
         putPod(out, cyl);
     }
+    // Motor-/Select-Zustand je Laufwerk (8212, Port 0x18) — treibt LED + Motor-Abfrage.
+    for (int i = 0; i < 4; ++i) {
+        putPod(out, static_cast<uint8_t>(drive_selected_[static_cast<size_t>(i)] ? 1 : 0));
+        putPod(out, static_cast<uint8_t>(motor_on_[static_cast<size_t>(i)] ? 1 : 0));
+    }
 }
 
 bool K5122::deserialize(const uint8_t*& p, const uint8_t* end) {
@@ -1095,6 +1100,14 @@ bool K5122::deserialize(const uint8_t*& p, const uint8_t* end) {
         // (das Image wird separat über die Kommandozeile gemountet).
         if (mounted && drives_[i].isMounted())
             drives_[i].restoreHeadPosition(cyl);
+    }
+    // Motor-/Select-Zustand je Laufwerk (8212, Port 0x18).
+    for (int i = 0; i < 4; ++i) {
+        uint8_t sel_on = 0, mot_on = 0;
+        if (!getPod(p, end, sel_on)) return false;
+        if (!getPod(p, end, mot_on)) return false;
+        drive_selected_[static_cast<size_t>(i)] = (sel_on != 0);
+        motor_on_[static_cast<size_t>(i)]       = (mot_on != 0);
     }
     // Einen evtl. laufenden Streaming-/Schreib-Transfer auf konsistenten Idle-
     // Zustand zurücksetzen — der nächste /STR-Strobe baut die Spur frisch auf.

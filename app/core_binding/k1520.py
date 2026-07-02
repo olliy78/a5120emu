@@ -155,6 +155,10 @@ _lib.k1520_set_write_protect.restype = None
 _lib.k1520_disk_led.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_disk_led.restype = ctypes.c_bool
 
+# k1520_disk_motor(K1520Handle, drive: int) -> bool
+_lib.k1520_disk_motor.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_disk_motor.restype = ctypes.c_bool
+
 # ════════════════════════════════════════════════════════════════════════════
 # K1520 Emulator Python Class
 # ════════════════════════════════════════════════════════════════════════════
@@ -328,5 +332,9 @@ class K1520Emulator:
         _lib.k1520_set_write_protect(self._handle, ctypes.c_int(drive), ctypes.c_bool(write_protect))
 
     def is_disk_led_on(self, drive: int) -> bool:
-        """Return True while the selected drive activity LED should be lit."""
+        """Return True while the drive LED should be lit (drive selected or motor on)."""
         return _lib.k1520_disk_led(self._handle, ctypes.c_int(drive))
+
+    def is_motor_on(self, drive: int) -> bool:
+        """Return True while the drive's spindle motor is running (/LCK, port 0x18)."""
+        return _lib.k1520_disk_motor(self._handle, ctypes.c_int(drive))

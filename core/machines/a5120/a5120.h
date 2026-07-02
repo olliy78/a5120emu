@@ -76,8 +76,10 @@ public:
     bool unmountDisk(int drive);
     bool isDiskActive(int drive) const;
     bool isDiskWriteProtected(int drive) const;
-    /** @brief Return transient drive activity LED state for GUI display. */
+    /** @brief Return drive activity LED state (select OR motor) for GUI display. */
     bool isDiskLedOn(int drive) const;
+    /** @brief Return the drive's spindle-motor state (/LCK from the 8212, port 0x18). */
+    bool isMotorOn(int drive) const;
     void setDiskWriteProtect(int drive, bool wp);
 
     // Keyboard (enqueued thread-safely, consumed in run())

@@ -174,6 +174,81 @@ TEST_F(K5122Test, DriveSelect_AlleVierLaufwerke) {
     SUCCEED();
 }
 
+// ─── 2a. Motor-/LED-Steuerung (8212, Port 0x18) ──────────────────────────────
+
+/**
+ * @test K5122Test/DriveSelect_DekodiertSelectMotorUndLed
+ * @brief Die vier Boot-Bytes selektieren Laufwerk N UND schalten seinen Motor
+ *        (/LCK) an; alle anderen Laufwerke sind aus.  Die LED folgt „Select ODER
+ *        Motor" — hier für das aktive Laufwerk an, für die übrigen aus.
+ */
+TEST_F(K5122Test, DriveSelect_DekodiertSelectMotorUndLed) {
+    const uint8_t codes[4] = {0xEE, 0xDD, 0xBB, 0x77};
+    for (int active = 0; active < 4; ++active) {
+        card.ioWrite(0x18, codes[active]);
+        for (int d = 0; d < 4; ++d) {
+            const bool on = (d == active);
+            EXPECT_EQ(card.isMotorOn(d), on)    << "Motor D" << d << " bei Code 0x"
+                                                << std::hex << int(codes[active]);
+            EXPECT_EQ(card.isDriveLedOn(d), on) << "LED D"   << d << " bei Code 0x"
+                                                << std::hex << int(codes[active]);
+        }
+    }
+}
+
+/**
+ * @test K5122Test/Led_FolgtSelectOderMotor
+ * @brief LED = /SE ODER /LCK: ein Byte, das D0 selektiert (/SE0=0) und ZUGLEICH
+ *        den Motor von D1 (/LCK1=0) hält, lässt beide LEDs leuchten — aber nur
+ *        D1 gilt als „Motor an", D0 nicht.
+ */
+TEST_F(K5122Test, Led_FolgtSelectOderMotor) {
+    // low nibble = /SE0..3, high nibble = /LCK0..3 (active-low).
+    // /SE0=0 (Bit0) + /LCK1=0 (Bit5), alle anderen 1  →  ~((1<<0)|(1<<5)) = 0xDE
+    card.ioWrite(0x18, 0xDE);
+    EXPECT_TRUE(card.isDriveLedOn(0))  << "D0 selektiert → LED an";
+    EXPECT_FALSE(card.isMotorOn(0))    << "D0 Motor bleibt aus";
+    EXPECT_TRUE(card.isDriveLedOn(1))  << "D1 Motor an → LED an";
+    EXPECT_TRUE(card.isMotorOn(1))     << "D1 Motor an";
+    EXPECT_FALSE(card.isDriveLedOn(2));
+    EXPECT_FALSE(card.isDriveLedOn(3));
+}
+
+/**
+ * @test K5122Test/Reset_MotorUndLedAus
+ * @brief RESET des 8212 (alle Ausgänge 1 = 0xFF): kein Laufwerk selektiert oder
+ *        verriegelt → alle Motoren aus, alle LEDs aus.
+ */
+TEST_F(K5122Test, Reset_MotorUndLedAus) {
+    card.ioWrite(0x18, 0xEE);       // erst D0 aktivieren …
+    card.ioWrite(0x18, 0xFF);       // … dann alles abwählen
+    for (int d = 0; d < 4; ++d) {
+        EXPECT_FALSE(card.isMotorOn(d))    << "Motor D" << d;
+        EXPECT_FALSE(card.isDriveLedOn(d)) << "LED D"   << d;
+    }
+}
+
+/**
+ * @test K5122Test/SerializeRoundTrip_RestoresMotorState
+ * @brief serialize()/deserialize() stellen den Motor-/Select-Zustand wieder her.
+ */
+TEST_F(K5122Test, SerializeRoundTrip_RestoresMotorState) {
+    card.ioWrite(0x18, 0xDD);       // D1 selektiert + Motor an
+    std::vector<uint8_t> blob;
+    card.serialize(blob);
+
+    K1520Bus bus2;
+    K5122   card2{bus2};
+    const uint8_t* p   = blob.data();
+    const uint8_t* end = p + blob.size();
+    ASSERT_TRUE(card2.deserialize(p, end));
+    EXPECT_EQ(p, end);
+    EXPECT_TRUE(card2.isMotorOn(1));
+    EXPECT_TRUE(card2.isDriveLedOn(1));
+    EXPECT_FALSE(card2.isMotorOn(0));
+    EXPECT_FALSE(card2.isDriveLedOn(0));
+}
+
 TEST_F(K5122Test, DriveSelect_StatusPortBReflectiertGewähltesLaufwerk) {
     auto path0 = tmpImg1();
     auto path1 = tmpImg1();

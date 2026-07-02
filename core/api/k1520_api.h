@@ -80,8 +80,10 @@ bool k1520_unmount_disk(K1520Handle h, int drive);
 bool k1520_disk_active(K1520Handle h, int drive);
 /** @brief Return true if mounted image is write protected. */
 bool k1520_disk_write_protected(K1520Handle h, int drive);
-/** @brief Return true while recent activity should light the drive LED. */
+/** @brief Return true while the drive LED should be lit (drive selected or motor on). */
 bool k1520_disk_led(K1520Handle h, int drive);
+/** @brief Return true while the drive's spindle motor is running (/LCK, port 0x18). */
+bool k1520_disk_motor(K1520Handle h, int drive);
 /** @brief Update mounted image write-protect state. */
 void k1520_set_write_protect(K1520Handle h, int drive, bool wp);
 
