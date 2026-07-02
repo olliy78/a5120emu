@@ -368,9 +368,26 @@ Sektorfolge 1,4,7…, ZIK-NK) → `Fehler 'S'` — bounded Interleave-Sonderfall
    §8-Lese-/Schreib-Pfad) → **alle Sektorgrößen formatieren+verifizieren zuverlässig**.
    `format_all.py` kopiert daher ein gültiges Template (`disks/cpadisk_*.hfe`) als B:;
    beim Voll-Format wird es komplett überschrieben (sauberes Ziel), beim Smoke behalten
-   die nicht formatierten Spuren die lesbaren Template-Daten.  **Offen (Folgearbeit):**
-   der restliche BUSRQ-Hänger auf *gap-leerem* Medium (nur relevant, falls man ohne
-   gültiges Template formatieren will) — tiefes ZVE1↔ZVE2-Arbitrierungs-Timing.
+   die nicht formatierten Spuren die lesbaren Template-Daten.
+
+   **Wurzelursache des Gap-Blank-Hängers (Diagnose 2026-07-02, DIAG-Instrumentierung):**
+   FORMAT.COM **liest jede Zielspur vor** dem Formatieren.  Auf einer noch UNFORMATIERTEN
+   Datenspur liefert der Gap-Fluss kein IDAM → die ZVE2-Lese-Koroutine (`IN(16H)`+`JR $` @
+   `0x1D0F/0x1D21`) muss über den **Index-Interrupt** abbrechen (ZVE1s Index-ISR patcht das
+   `JR $`).  Der BIOS-Motor-Watchdog (`headup`) schreibt aber **kurz VOR** der Vorlesung
+   `OUT(11H)=0x03` = **Index-Interrupt sperren** (`wmode=0`, kein Write) — die FORMATB-
+   Keepalive (§8.1) greift nur im `write_mode_`.  Mit gesperrtem Index kann die Koroutine nie
+   timeouten → ZVE2 dreht ewig, hält `/BUSRQ` (≈96 %).  Verifiziert am System→Daten-Übergang:
+   Format 6 (26×128) formatiert die 3 System-Spuren + 4 Datenspuren, hängt an C=3 H=1
+   (Spur 7); Format 0 identisch.  **Versuchter Fix (verworfen):** den Index auch während
+   `unformatted_read_` aktiv halten — greift nicht, weil die Sperre **bereits vor** dem
+   Lese-Start gesetzt wird und nicht wieder eingeschaltet wird (das Wieder-Aktivieren
+   erfordert das genaue Z80PIO-Interrupt-Enable-Verhalten von `OUT(11H)` → cycle-level
+   Dual-CPU-Analyse).  **Offen (Folgearbeit):** entweder den Index-Timeout einer unformatierten
+   Lesung **unabhängig vom CPU-Interrupt-Mask** modellieren (echte HW: FDC-record-not-found ist
+   maskenunabhängig), oder den Index bei Start einer unformatierten Lesung erzwungen
+   re-aktivieren.  **Nur relevant, wenn man ohne gültiges Template formatieren will** — die
+   Pipeline nutzt ein gültiges Template und ist davon nicht betroffen.
 
 **Nicht möglich:** die 8″-Formate (§5), da der Emulator kein 8″-Laufwerk modelliert.
 
