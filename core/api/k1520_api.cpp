@@ -145,6 +145,10 @@ bool k1520_disk_motor(K1520Handle h, int drive) {
     return toA5120(h)->isMotorOn(drive);
 }
 
+bool k1520_head_loaded(K1520Handle h) {
+    return toA5120(h)->isHeadLoaded();
+}
+
 void k1520_set_write_protect(K1520Handle h, int drive, bool wp) {
     toA5120(h)->setDiskWriteProtect(drive, wp);
 }

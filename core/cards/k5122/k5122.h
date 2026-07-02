@@ -119,6 +119,8 @@ public:
     /// @brief True, wenn der Motor läuft UND den Spin-up beendet hat („auf Drehzahl").
     ///        Nur dann rotiert die Scheibe → Index-Pulse + lesbare Daten.
     bool motorAtSpeed(int drive) const;
+    /// @brief Kopf aufgesetzt? — /HL (Head Load, Steuer-PIO Port A Bit 6, active-low).
+    bool isHeadLoaded() const { return head_loaded_; }
 
     /// @brief Direkter Zugriff auf ein Laufwerk (Tests/C-API).
     FloppyDriveV2& drive(int idx) { return drives_[idx]; }
@@ -327,6 +329,7 @@ private:
     std::array<bool, 4> drive_selected_{};   ///< /SE0../SE3 (low nibble, 0 = selektiert)
     std::array<bool, 4> motor_on_{};         ///< /LCK0../LCK3 (high nibble, 0 = Motor an)
     std::array<int, 4>  motor_spinup_cycles_{};  ///< Restlaufzeit bis „auf Drehzahl" (>0 = läuft an)
+    bool                head_loaded_ = false;    ///< /HL (Port A Bit 6, active-low): Kopf aufgesetzt
 
     /// @brief Spin-up-Dauer in CPU-Takten (aus K5122_MOTOR_SPINUP_MS + cpu_hz_).
     int motorSpinupCycles() const {

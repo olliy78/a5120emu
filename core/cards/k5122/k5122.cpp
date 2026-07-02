@@ -122,9 +122,9 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
     if (port >= 0x10 && port <= 0x13) {
         if (port == 0x10) {
             LOG_DEBUG("K5122",
-                "CTRL PortA write 0x%02X  /ST=%d MK1=%d MR/SD=%d /STR=%d /FR=%d MK=%d /WE=%d",
+                "CTRL PortA write 0x%02X  /ST=%d /HL=%d MR/SD=%d MK1=%d /STR=%d /FR=%d MK=%d /WE=%d",
                 data,
-                (data >> 7) & 1, (data >> 4) & 1, (data >> 5) & 1,
+                (data >> 7) & 1, (data >> 6) & 1, (data >> 5) & 1, (data >> 4) & 1,
                 (data >> 3) & 1, (data >> 2) & 1, (data >> 1) & 1, data & 1);
         } else {
             LOG_DEBUG("K5122", "CTRL PIO write port=0x%02X data=0x%02X", port, data);
@@ -420,7 +420,12 @@ void K5122::update(int cycles) {
         int& rem = motor_spinup_cycles_[static_cast<size_t>(d)];
         if (motor_on_[static_cast<size_t>(d)] && rem > 0) {
             rem -= cycles;
-            if (rem < 0) rem = 0;
+            if (rem <= 0) {
+                rem = 0;
+                // Auf Drehzahl → /RDYL des selektierten Laufwerks nachziehen (der
+                // Statusbyte-Latch wird sonst nur bei Port-Schreibzugriffen erneuert).
+                if (d == selected_drive_) updateStatusPortB();
+            }
         }
     }
 
@@ -462,6 +467,11 @@ void K5122::update(int cycles) {
  * 3. MK (bit1) oder MK1 (bit4) steigende Flanke → resyncToNextMark()
  */
 void K5122::handleCtrlPortAWrite(uint8_t data) {
+    // ── /HL (bit6, active-low): Kopf-Aufsetz-Zustand latchen ─────────────────
+    // 0 = Kopf aufgesetzt (Head Load), 1 = Kopf abgehoben.  Reiner Zustand für
+    // Statusabfrage/GUI; das Lese-/Index-Gating hängt (noch) am Motor, nicht am /HL.
+    head_loaded_ = !(data & 0x40);
+
     // ── /WE (bit0) Flanken: BIOS-Schreib-Datenfeld sammeln/committen ─────────
     // Der CP/A-BIOS-dio-Pfad findet zuerst die IDAM (Lese-Strobe, /WE=1) und
     // schaltet erst zum Schreiben des Datenfelds /WE auf 0 (Steuerwort B4/B0),
@@ -626,6 +636,10 @@ void K5122::handleDataPortAWrite(uint8_t data) {
  *     bit7 /TO=1    (nicht auf Spur 0)
  * @endcode
  *
+ * /RDYL (bit0): „Laufwerk bereit" = gemountet UND Motor auf Drehzahl (motorAtSpeed).
+ * Während des Spin-ups oder bei stehendem Motor meldet das Laufwerk NICHT bereit — wie
+ * echte HW (MFS gibt /RDYL erst nach dem Anlauf frei).
+ *
  * /HF (bit2): per Default 1 (= High-Frequency/MFM-Modus), da 5"-MFM das Standardprofil
  * ist.  Für FM/8"-Laufwerke (profile_.supports_fm && !profile_.supports_mfm) wäre bit2=0.
  * Im aktuellen Testrahmen (nur MFM-Laufwerke) ist der Default ausreichend.
@@ -635,7 +649,8 @@ void K5122::updateStatusPortB() {
 
     FloppyDriveV2& drv = drives_[selected_drive_];
     if (drv.isMounted()) {
-        s &= ~(1u << 0);            // /RDYL = 0 (bereit)
+        if (motorAtSpeed(selected_drive_))
+            s &= ~(1u << 0);        // /RDYL = 0 (bereit) — nur auf Drehzahl
         if (drv.currentCylinder() == 0)
             s &= ~(1u << 7);        // /TO = 0 (auf Spur 0)
         if (drv.isWriteProtect())
@@ -1121,6 +1136,8 @@ void K5122::serialize(std::vector<uint8_t>& out) const {
         putPod(out, static_cast<uint8_t>(motor_on_[static_cast<size_t>(i)] ? 1 : 0));
         putPod(out, static_cast<int32_t>(motor_spinup_cycles_[static_cast<size_t>(i)]));
     }
+    // Head-Load-Zustand (/HL, Port A Bit 6).
+    putPod(out, static_cast<uint8_t>(head_loaded_ ? 1 : 0));
 }
 
 bool K5122::deserialize(const uint8_t*& p, const uint8_t* end) {
@@ -1157,6 +1174,10 @@ bool K5122::deserialize(const uint8_t*& p, const uint8_t* end) {
         motor_on_[static_cast<size_t>(i)]           = (mot_on != 0);
         motor_spinup_cycles_[static_cast<size_t>(i)] = spin;
     }
+    // Head-Load-Zustand (/HL, Port A Bit 6).
+    uint8_t hl = 0;
+    if (!getPod(p, end, hl)) return false;
+    head_loaded_ = (hl != 0);
     // Einen evtl. laufenden Streaming-/Schreib-Transfer auf konsistenten Idle-
     // Zustand zurücksetzen — der nächste /STR-Strobe baut die Spur frisch auf.
     cur_track_           = nullptr;

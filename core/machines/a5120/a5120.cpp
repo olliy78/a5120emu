@@ -445,6 +445,10 @@ bool A5120Machine::isMotorOn(int drive) const {
     return afs_.isMotorOn(drive);
 }
 
+bool A5120Machine::isHeadLoaded() const {
+    return afs_.isHeadLoaded();
+}
+
 void A5120Machine::setDiskWriteProtect(int drive, bool wp) {
     if (drive < 0 || drive > 3) return;
     afs_.setWriteProtect(drive, wp);

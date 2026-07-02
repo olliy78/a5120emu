@@ -80,6 +80,8 @@ public:
     bool isDiskLedOn(int drive) const;
     /** @brief Return the drive's spindle-motor state (/LCK from the 8212, port 0x18). */
     bool isMotorOn(int drive) const;
+    /** @brief Return whether the read/write head is loaded (/HL, ctrl port A bit6). */
+    bool isHeadLoaded() const;
     void setDiskWriteProtect(int drive, bool wp);
 
     // Keyboard (enqueued thread-safely, consumed in run())

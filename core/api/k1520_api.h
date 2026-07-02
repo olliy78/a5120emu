@@ -84,6 +84,8 @@ bool k1520_disk_write_protected(K1520Handle h, int drive);
 bool k1520_disk_led(K1520Handle h, int drive);
 /** @brief Return true while the drive's spindle motor is running (/LCK, port 0x18). */
 bool k1520_disk_motor(K1520Handle h, int drive);
+/** @brief Return true while the read/write head is loaded (/HL, ctrl port A bit6). */
+bool k1520_head_loaded(K1520Handle h);
 /** @brief Update mounted image write-protect state. */
 void k1520_set_write_protect(K1520Handle h, int drive, bool wp);
 

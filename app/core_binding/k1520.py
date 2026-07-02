@@ -159,6 +159,10 @@ _lib.k1520_disk_led.restype = ctypes.c_bool
 _lib.k1520_disk_motor.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_disk_motor.restype = ctypes.c_bool
 
+# k1520_head_loaded(K1520Handle) -> bool
+_lib.k1520_head_loaded.argtypes = [K1520Handle]
+_lib.k1520_head_loaded.restype = ctypes.c_bool
+
 # ════════════════════════════════════════════════════════════════════════════
 # K1520 Emulator Python Class
 # ════════════════════════════════════════════════════════════════════════════
@@ -338,3 +342,7 @@ class K1520Emulator:
     def is_motor_on(self, drive: int) -> bool:
         """Return True while the drive's spindle motor is running (/LCK, port 0x18)."""
         return _lib.k1520_disk_motor(self._handle, ctypes.c_int(drive))
+
+    def is_head_loaded(self) -> bool:
+        """Return True while the read/write head is loaded (/HL, ctrl port A bit6)."""
+        return _lib.k1520_head_loaded(self._handle)

@@ -319,13 +319,16 @@ TEST_F(K5122Test, DriveSelect_StatusPortBReflectiertGewähltesLaufwerk) {
     auto path0 = tmpImg1();
     auto path1 = tmpImg1();
     ASSERT_TRUE(card.mountDisk(0, path0, fmt1));
-    // D1 ist nicht gemountet
+    // D1 ist nicht gemountet.  /RDYL wird erst „bereit", wenn der Motor auf Drehzahl
+    // ist → nach dem Select den Spin-up abschließen (update()).
     card.ioWrite(0x18, 0xEE);   // D0 wählen
+    card.update(10000);         // Motor auf Drehzahl
     uint8_t s0 = card.ioRead(0x12);
     card.ioWrite(0x18, 0xDD);   // D1 wählen
+    card.update(10000);
     uint8_t s1 = card.ioRead(0x12);
 
-    EXPECT_EQ(s0 & 0x01, 0) << "/RDYL sollte 0 sein (D0 montiert)";
+    EXPECT_EQ(s0 & 0x01, 0) << "/RDYL sollte 0 sein (D0 montiert, auf Drehzahl)";
     EXPECT_NE(s1 & 0x01, 0) << "/RDYL sollte 1 sein (D1 nicht montiert)";
 
     std::filesystem::remove(path0);
@@ -344,9 +347,40 @@ TEST_F(K5122Test, StatusPortB_Montiert_RDYLAktiv) {
     auto path = tmpImg1();
     ASSERT_TRUE(card.mountDisk(0, path, fmt1));
     card.ioWrite(0x18, 0xEE);
+    card.update(10000);         // Motor auf Drehzahl → /RDYL wird bereit
     uint8_t status = card.ioRead(0x12);
-    EXPECT_EQ(status & 0x01, 0) << "/RDYL=0 erwartet (Laufwerk montiert)";
+    EXPECT_EQ(status & 0x01, 0) << "/RDYL=0 erwartet (Laufwerk montiert, auf Drehzahl)";
     std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/StatusPortB_RDYL_ErstAufDrehzahl
+ * @brief /RDYL meldet „bereit" (0) erst, wenn der Motor den Spin-up beendet hat —
+ *        während des Anlaufs ist das Laufwerk NICHT bereit.
+ */
+TEST_F(K5122Test, StatusPortB_RDYL_ErstAufDrehzahl) {
+    auto path = tmpImg1();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt1));
+    card.ioWrite(0x18, 0xEE);                       // Motor an → Anlauf startet
+    EXPECT_NE(card.ioRead(0x12) & 0x01, 0) << "/RDYL=1 im Anlauf (noch nicht bereit)";
+    card.update(10000);                             // Spin-up abschließen
+    EXPECT_EQ(card.ioRead(0x12) & 0x01, 0) << "/RDYL=0 nach Spin-up (bereit)";
+    // Motor abschalten → sofort wieder nicht bereit
+    card.ioWrite(0x18, 0xFF);
+    EXPECT_NE(card.ioRead(0x12) & 0x01, 0) << "/RDYL=1 bei Motor-Stillstand";
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/HeadLoad_Bit6_Zustand
+ * @brief /HL (Port A Bit 6, active-low) latcht den Kopf-Aufsetz-Zustand.
+ */
+TEST_F(K5122Test, HeadLoad_Bit6_Zustand) {
+    // 0xA9 hat Bit6=0 → Kopf geladen; 0xFF hat Bit6=1 → Kopf oben.
+    card.ioWrite(0x10, 0xA9);
+    EXPECT_TRUE(card.isHeadLoaded())  << "Bit6=0 → Kopf aufgesetzt";
+    card.ioWrite(0x10, 0xFF);
+    EXPECT_FALSE(card.isHeadLoaded()) << "Bit6=1 → Kopf abgehoben";
 }
 
 TEST_F(K5122Test, StatusPortB_Schreibschutz_WPGesetzt) {
