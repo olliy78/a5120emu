@@ -66,19 +66,31 @@ uint8_t K5122::ioRead(uint8_t port) {
             // Streaming-Datenpfad: Bytes des TrackImage byteweise ausgeben.
             // Der Kopf rotiert zyklisch — bei Erreichen des Spurendes wieder von vorn.
             if (cur_track_ && !cur_track_->empty()) {
-                const size_t pos     = head_pos_;
-                const bool   is_mark = cur_track_->marks[pos] != MarkType::None;
-                result = cur_track_->bytes[pos];
-                // Falscher Aufzeichnungsmodus (read_enc_ ≠ Spur-Codierung): der
-                // Datenseparator demoduliert die Marken-/Datenbytes als Müll → die
-                // Marke ist "ungültig" (≠ FE/FB/A1), ZVE2 findet kein IDAM.  Gaps
-                // sind weder FM noch MFM und kommen unverändert durch.  So scheitert
-                // ein Read im falschen Verfahren (z. B. ROM-FM-Probe auf MFM-Spur),
-                // das ROM läuft in den Index-Timeout und toggelt MK (FM↔MFM).
-                if (is_mark && effReadEnc() != cur_track_->encoding) {
-                    result = 0x00;
+                if (!motor_on_[static_cast<size_t>(selected_drive_)]) {
+                    // Motor steht (nicht selektiert/verriegelt): die Scheibe rotiert nicht →
+                    // unter dem Kopf liegen keine kohärenten Daten.  Wir liefern reinen
+                    // Gap-Fluss (kein Marken-Byte) und halten die Kopfposition (kein Vorlauf)
+                    // — die Byte-Drossel/BUSRQ bleibt unberührt (kein Hang).  Sobald der Motor
+                    // wieder läuft, läuft der Strom ab head_pos_ normal weiter.
+                    // (Das Index-Gating berücksichtigt zusätzlich den Spin-up, s. update();
+                    //  die kurze Anlaufphase ist für den byteweisen Lesestrom vernachlässigbar
+                    //  und liegt real ohnehin lange vor dem ersten Read.)
+                    result = 0x4E;
+                } else {
+                    const size_t pos     = head_pos_;
+                    const bool   is_mark = cur_track_->marks[pos] != MarkType::None;
+                    result = cur_track_->bytes[pos];
+                    // Falscher Aufzeichnungsmodus (read_enc_ ≠ Spur-Codierung): der
+                    // Datenseparator demoduliert die Marken-/Datenbytes als Müll → die
+                    // Marke ist "ungültig" (≠ FE/FB/A1), ZVE2 findet kein IDAM.  Gaps
+                    // sind weder FM noch MFM und kommen unverändert durch.  So scheitert
+                    // ein Read im falschen Verfahren (z. B. ROM-FM-Probe auf MFM-Spur),
+                    // das ROM läuft in den Index-Timeout und toggelt MK (FM↔MFM).
+                    if (is_mark && effReadEnc() != cur_track_->encoding) {
+                        result = 0x00;
+                    }
+                    head_pos_ = (head_pos_ + 1) % cur_track_->size();
                 }
-                head_pos_ = (head_pos_ + 1) % cur_track_->size();
                 // Per-Byte-Drossel: Byte abgeholt → ZVE2 verliert den Bus, bis das
                 // nächste Byte ~1 Byteperiode später bereitliegt (s. update()).
                 byte_ready_ = false;
@@ -162,8 +174,13 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
         // Select-/Motor-Zustand je Laufwerk ableiten (RESET → 0xFF → alles aus).  Der
         // Motor läuft, solange /LCK=0; die LED folgt „selektiert ODER Motor an".
         for (int d = 0; d < 4; ++d) {
-            drive_selected_[static_cast<size_t>(d)] = ((data >> d)       & 1) == 0;
-            motor_on_[static_cast<size_t>(d)]       = ((data >> (4 + d)) & 1) == 0;
+            const size_t di  = static_cast<size_t>(d);
+            const bool   mot = ((data >> (4 + d)) & 1) == 0;
+            // Motor-Anlaufflanke (aus→an): Spin-up armieren.  Ein bereits laufender
+            // Motor (an→an) läuft weiter, kein Neu-Anlauf.
+            if (mot && !motor_on_[di]) motor_spinup_cycles_[di] = motorSpinupCycles();
+            drive_selected_[di] = ((data >> d) & 1) == 0;
+            motor_on_[di]       = mot;
         }
         LOG_INFO("K5122", "8212 write=0x%02X => sel D%d | SE=%d%d%d%d MotorOn=%d%d%d%d",
                  data, selected_drive_,
@@ -278,6 +295,12 @@ bool K5122::isMotorOn(int drive) const {
     return motor_on_[static_cast<size_t>(drive)];
 }
 
+bool K5122::motorAtSpeed(int drive) const {
+    if (drive < 0 || drive > 3) return false;
+    return motor_on_[static_cast<size_t>(drive)] &&
+           motor_spinup_cycles_[static_cast<size_t>(drive)] <= 0;
+}
+
 // ─── DMA-Arbitrierung / Index ─────────────────────────────────────────────────
 
 /**
@@ -389,7 +412,28 @@ void K5122::update(int cycles) {
         }
     }
 
+    // ── Motor-Anlauf (Spin-up) je Laufwerk fortschreiben ─────────────────────
+    // Nach dem Motor-On (/LCK) läuft die Scheibe erst nach der Spin-up-Zeit auf
+    // Drehzahl.  Auch nicht selektierte Laufwerke laufen an (das BIOS spinnt sie
+    // vor), damit sie beim späteren Selektieren bereits „auf Drehzahl" sind.
+    for (int d = 0; d < 4; ++d) {
+        int& rem = motor_spinup_cycles_[static_cast<size_t>(d)];
+        if (motor_on_[static_cast<size_t>(d)] && rem > 0) {
+            rem -= cycles;
+            if (rem < 0) rem = 0;
+        }
+    }
+
     if (!drives_[selected_drive_].isMounted()) return;
+
+    // ── Index-Gating: keine Rotation ⇒ kein Index ────────────────────────────
+    // Steht der Motor des selektierten Laufwerks (aus oder noch im Anlauf), dreht
+    // die Scheibe nicht → kein Index-Puls.  Die Phase startet nach dem Anlauf frisch
+    // (index_cycle_acc_ auf 0), wie auf echter HW nach dem Motor-Neuanlauf.
+    if (!motorAtSpeed(selected_drive_)) {
+        index_cycle_acc_ = 0;
+        return;
+    }
 
     index_cycle_acc_ += cycles;
     const int period = drives_[selected_drive_].indexPeriodCycles(cpu_hz_);
@@ -1070,10 +1114,12 @@ void K5122::serialize(std::vector<uint8_t>& out) const {
         putPod(out, mounted);
         putPod(out, cyl);
     }
-    // Motor-/Select-Zustand je Laufwerk (8212, Port 0x18) — treibt LED + Motor-Abfrage.
+    // Motor-/Select-Zustand + Spin-up je Laufwerk (8212, Port 0x18) — treibt LED,
+    // Motor-Abfrage und das Index-/Lese-Gating.
     for (int i = 0; i < 4; ++i) {
         putPod(out, static_cast<uint8_t>(drive_selected_[static_cast<size_t>(i)] ? 1 : 0));
         putPod(out, static_cast<uint8_t>(motor_on_[static_cast<size_t>(i)] ? 1 : 0));
+        putPod(out, static_cast<int32_t>(motor_spinup_cycles_[static_cast<size_t>(i)]));
     }
 }
 
@@ -1101,13 +1147,15 @@ bool K5122::deserialize(const uint8_t*& p, const uint8_t* end) {
         if (mounted && drives_[i].isMounted())
             drives_[i].restoreHeadPosition(cyl);
     }
-    // Motor-/Select-Zustand je Laufwerk (8212, Port 0x18).
+    // Motor-/Select-Zustand + Spin-up je Laufwerk (8212, Port 0x18).
     for (int i = 0; i < 4; ++i) {
-        uint8_t sel_on = 0, mot_on = 0;
+        uint8_t sel_on = 0, mot_on = 0; int32_t spin = 0;
         if (!getPod(p, end, sel_on)) return false;
         if (!getPod(p, end, mot_on)) return false;
-        drive_selected_[static_cast<size_t>(i)] = (sel_on != 0);
-        motor_on_[static_cast<size_t>(i)]       = (mot_on != 0);
+        if (!getPod(p, end, spin))   return false;
+        drive_selected_[static_cast<size_t>(i)]     = (sel_on != 0);
+        motor_on_[static_cast<size_t>(i)]           = (mot_on != 0);
+        motor_spinup_cycles_[static_cast<size_t>(i)] = spin;
     }
     // Einen evtl. laufenden Streaming-/Schreib-Transfer auf konsistenten Idle-
     // Zustand zurücksetzen — der nächste /STR-Strobe baut die Spur frisch auf.

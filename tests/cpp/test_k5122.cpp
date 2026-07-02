@@ -249,6 +249,72 @@ TEST_F(K5122Test, SerializeRoundTrip_RestoresMotorState) {
     EXPECT_FALSE(card2.isDriveLedOn(0));
 }
 
+/**
+ * @test K5122Test/Motor_SpinupBisAufDrehzahl
+ * @brief Nach Motor-On läuft die Spindel erst nach der Spin-up-Zeit „auf Drehzahl".
+ */
+TEST_F(K5122Test, Motor_SpinupBisAufDrehzahl) {
+    card.ioWrite(0x18, 0xEE);                  // D0: Select + Motor an → Anlauf startet
+    EXPECT_TRUE(card.isMotorOn(0));
+    EXPECT_FALSE(card.motorAtSpeed(0)) << "unmittelbar nach Motor-On noch im Anlauf";
+    card.update(500);                           // deutlich < Spin-up (~4900 Zyklen @2ms/2,45MHz)
+    EXPECT_FALSE(card.motorAtSpeed(0));
+    card.update(10000);                         // > restlicher Spin-up
+    EXPECT_TRUE(card.motorAtSpeed(0)) << "nach Spin-up auf Drehzahl";
+    // Motor aus → sofort nicht mehr auf Drehzahl
+    card.ioWrite(0x18, 0xFF);
+    EXPECT_FALSE(card.isMotorOn(0));
+    EXPECT_FALSE(card.motorAtSpeed(0));
+}
+
+/**
+ * @test K5122Test/Motor_IndexNurBeiLaufendemMotor
+ * @brief Der Index-Puls entsteht nur, wenn der Motor des selektierten Laufwerks auf
+ *        Drehzahl ist — steht er (aus oder im Anlauf), gibt es keinen Index.
+ */
+TEST_F(K5122Test, Motor_IndexNurBeiLaufendemMotor) {
+    auto path = tmpImg1();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt1));
+    card.ioWrite(0x11, 0x62);                   // Interrupt-Vektor
+    card.ioWrite(0x11, 0x83);                   // IE=1
+    card.setIEI(true);
+    const int P = builtinDriveProfile("mfs_525_ds80").indexPeriodCycles(2450000);
+
+    // D0 selektiert, aber Motor AUS (0xFE: /SE0=0, /LCK0=1) → kein Index trotz voller Periode
+    card.ioWrite(0x18, 0xFE);
+    card.update(P + 1);
+    EXPECT_FALSE(card.hasInterrupt()) << "Motor steht → kein Index-Puls";
+
+    // Motor an: im Anlauf noch kein Index …
+    card.ioWrite(0x18, 0xEE);
+    card.update(P + 1);                          // verbraucht Spin-up UND eine Periode → Index
+    EXPECT_TRUE(card.hasInterrupt()) << "Motor auf Drehzahl → Index-Puls";
+
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/Motor_LesenLiefertGapWennMotorSteht
+ * @brief Steht der Motor, liefert der Lese-Stream reinen Gap-Fluss (keine Marken) —
+ *        das Spurlesen „hält an", ohne die Byte-Drossel/BUSRQ zu blockieren.
+ */
+TEST_F(K5122Test, Motor_LesenLiefertGapWennMotorSteht) {
+    auto path = tmpImg1();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt1));
+    card.ioWrite(0x18, 0xEE);                   // D0: Select + Motor
+    strobeRead(0);                               // Lese-Transfer starten
+    // Motor abschalten, D0 bleibt selektiert (0xFE), Transfer bleibt aktiv.
+    card.ioWrite(0x18, 0xFE);
+    auto stream = readStream(2000);
+    bool hat_idam = std::find(stream.begin(), stream.end(), 0xFE) != stream.end();
+    EXPECT_FALSE(hat_idam) << "Motor steht → kein IDAM (0xFE) im Strom";
+    bool nur_gap = std::all_of(stream.begin(), stream.end(),
+                               [](uint8_t b) { return b == 0x4E; });
+    EXPECT_TRUE(nur_gap) << "Motor steht → reiner 0x4E-Gap-Fluss";
+
+    std::filesystem::remove(path);
+}
+
 TEST_F(K5122Test, DriveSelect_StatusPortBReflectiertGewähltesLaufwerk) {
     auto path0 = tmpImg1();
     auto path1 = tmpImg1();

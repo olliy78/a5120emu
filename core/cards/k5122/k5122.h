@@ -43,6 +43,15 @@
 #include <string>
 #include <vector>
 
+// Motor-Anlaufzeit (Spin-up): Dauer vom Motor-On (/LCK) bis „auf Drehzahl".  Erst dann
+// dreht die Scheibe → erst dann Index-Pulse und lesbare Daten.  Reale 5,25"-Laufwerke
+// (K5601/MFS) laufen in ~50 ms an; hier bewusst SEHR KLEIN gewählt, damit das getunte
+// Boot-/Format-Timing unberührt bleibt.  Über -DK5122_MOTOR_SPINUP_MS=<ms> übersteuerbar
+// (z. B. =50 für realistische Anlaufzeit).
+#ifndef K5122_MOTOR_SPINUP_MS
+#define K5122_MOTOR_SPINUP_MS 2
+#endif
+
 /**
  * @class K5122
  * @brief Streaming-basierte K5122-Emulation (Lesekopf über rotierender Spur).
@@ -107,6 +116,9 @@ public:
     bool isDriveLedOn(int drive) const;
     /// @brief Motor-Zustand (Spindel) des Laufwerks — /LCK aus dem 8212 (Port 0x18).
     bool isMotorOn(int drive) const;
+    /// @brief True, wenn der Motor läuft UND den Spin-up beendet hat („auf Drehzahl").
+    ///        Nur dann rotiert die Scheibe → Index-Pulse + lesbare Daten.
+    bool motorAtSpeed(int drive) const;
 
     /// @brief Direkter Zugriff auf ein Laufwerk (Tests/C-API).
     FloppyDriveV2& drive(int idx) { return drives_[idx]; }
@@ -314,4 +326,10 @@ private:
     // ist.  Beide werden allein aus dem letzten OUT(18H) abgeleitet (keine Wanduhr).
     std::array<bool, 4> drive_selected_{};   ///< /SE0../SE3 (low nibble, 0 = selektiert)
     std::array<bool, 4> motor_on_{};         ///< /LCK0../LCK3 (high nibble, 0 = Motor an)
+    std::array<int, 4>  motor_spinup_cycles_{};  ///< Restlaufzeit bis „auf Drehzahl" (>0 = läuft an)
+
+    /// @brief Spin-up-Dauer in CPU-Takten (aus K5122_MOTOR_SPINUP_MS + cpu_hz_).
+    int motorSpinupCycles() const {
+        return static_cast<int>(static_cast<uint64_t>(K5122_MOTOR_SPINUP_MS) * cpu_hz_ / 1000);
+    }
 };
