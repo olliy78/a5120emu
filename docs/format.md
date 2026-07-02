@@ -397,10 +397,44 @@ Sektorfolge 1,4,7…, ZIK-NK) → `Fehler 'S'` — bounded Interleave-Sonderfall
    Ursache**.  Die „Index-Masken/Watchdog-Timing"-Hypothese ist damit **widerlegt** — die Wurzel
    liegt tiefer in der **ZVE1↔ZVE2-Koordination** (welcher Interrupt/welche Bedingung die Read-
    Koroutine im Erfolgsfall bricht, und warum das am Stall ausbleibt).
-   **Offen (Folgearbeit):** erfordert **cycle-level Dual-CPU-Tracing** (k1520dbg `bint`/`breti`-
-   Event-BPs am Stall + ZVE2-Instruktions-Trace `-z`) — nicht per Black-Box/Hypothese lösbar.
-   **Nur relevant, wenn man ohne gültiges Template formatieren
-   will** — die Pipeline nutzt ein gültiges Template und ist davon nicht betroffen.
+   **Nur relevant, wenn man ohne gültiges Template formatieren will** — die Pipeline nutzt ein
+   gültiges Template und ist davon nicht betroffen.
+
+#### 8.2.1 Folge-Task (nächste Session): Gap-Blank-Hänger cycle-level lösen
+
+**Ziel:** FORMAT.COM formatiert ein FRISCH per `create` erzeugtes, gap-leeres `.hfe` direkt
+(ohne gültiges Template) ohne Hänger.
+
+**Was bereits FESTSTEHT / was NICHT die Ursache ist (nicht erneut versuchen):**
+- Der Stall ist die ZVE2-Lese-Koroutine `0x1D0F/0x1D21` (`IN(16H)`+`JR $`), busrq≈96 %, beim
+  Vorlesen einer unformatierten Datenspur (System→Daten-Übergang; Format 6/0: Spur 7=C3H1).
+- **Die Index-Sperre (`headup` → `OUT(11H)=0x03`) ist NICHT die Ursache** (Korrelation): sie zu
+  blockieren verschlimmert den Hänger monoton (write_mode_→Spur7 · +transferring_→Spur5 ·
+  +index_armed_→Spur2). `headup` (BIOS `0xE3BF`) ist BIOS-Code, kein Emu-Teil; Disable-Rate
+  gemessen ~7–9 Index-Pulse (plausibel). Index maskenunabhängig zu halten wurde getestet & verworfen.
+- Der `.img`/Valid-Template-Pfad ist NICHT betroffen (dort findet die Vorlesung echte Sektoren).
+
+**Konkrete Leads (in dieser Reihenfolge prüfen):**
+1. **ZVE1↔ZVE2-Koordination cycle-level:** Womit bricht die Read-Koroutine im ERFOLGSfall (Spur 0-6)
+   ihr `JR $` (welcher Interrupt/Speicher-Patch), und warum bleibt das am Stall (Spur 7) aus?
+   Tool: `k1520dbg` mit `bint`/`bnmi`/`breti`-Event-BPs am Stall + ZVE2-Instruktions-Trace
+   (`boot_trace -z 0x1D00:0x1D30`).
+2. **Modell-Lücke „Motor nicht simuliert" (Verdacht):** `K5122::update()` erzeugt Index-Pulse
+   **frei laufend** (nur an `isMounted()`+RPM), **unabhängig vom BIOS-Motorzustand**. Real: `headup`
+   schaltet den Motor ab → **keine** physischen Index-Pulse bis Wieder-Anlauf (mit Spin-up +
+   Teilperiode). Bei uns laufen die Pulse (maskiert) weiter → die **Index-Zeitlage** relativ zum
+   BIOS-Motorzustand weicht von echter HW ab und könnte die Koroutine desynchronisieren.
+   Zu prüfen: Motor-Zustand modellieren (OUT(18H)/`headup` → Index anhalten; bei Wieder-Anlauf
+   Spin-up + fortgesetzte Phase) und ob der Hänger dann verschwindet.
+3. **`fl.zto`/`pretx` beobachten:** Setzt FORMAT.COMs ZVE2-Format `pretx` (`0xE3AB`) bzw. frischt es
+   `fl.zto` (`0xE3A3`) auf? Wenn nicht, feuert `headup` bei uns wie auf realer HW — dann muss der
+   Unterschied im Index-Timing (Lead 2) oder in der Bus-/Interrupt-Reihenfolge liegen.
+
+**Repro:** `D=$(mktemp --suffix=.hfe); python3 tools/img_to_hfe.py --blank --cyls 80 --heads 2 $D;`
+`A=$(mktemp --suffix=.img); cp disks/cpadisk_autofs_clock_noautoexec.img $A;` Skript: boot / `type 12:00:00`
+/ FORMAT / Fkt 0 / B / Verify j / Menü `X`,`6` (26×128) / von 0 / bis 9 / `j` / `boot 1500`.
+Hängt bei „FORMATIEREN auf Spur 7". Schlüssel-Adressen: Koroutine `0x1D0F/0x1D21`, `headup 0xE3BF`,
+`tim1uu 0xE682`, `fl.zto 0xE3A3`, `pretx 0xE3AB`, BIOS-Index-Vektor `ivdsk1 0xE8`. Voller Stand: §8.2.
 
 **Nicht möglich:** die 8″-Formate (§5), da der Emulator kein 8″-Laufwerk modelliert.
 
