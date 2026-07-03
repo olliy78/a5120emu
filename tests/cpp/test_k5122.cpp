@@ -811,6 +811,47 @@ TEST(K5122FormatStream, ParseFormatStream_EmptyAndGapOnly) {
 }
 
 /**
+ * @test K5122Test/ParseFormatStream_FM_RecoversSectors
+ * @brief FM-FORMAT-Strom (8″-SD-Laufwerke, z. B. MF3200): die Marken folgen OHNE A1-Sync
+ *        direkt auf 0x00-Sync (`00…00 FE …` / `00…00 FB …`).  Der Parser gewinnt die
+ *        Sektoren zurück UND meldet Encoding::FM (Basis für codierungstreuen FORMAT-Write).
+ */
+TEST(K5122FormatStream, ParseFormatStream_FM_RecoversSectors) {
+    for (uint16_t sz : {128u, 256u, 512u, 1024u}) {
+        std::vector<LogicalSector> soll;
+        const uint8_t n = (sz >= 1024u) ? 4 : 6;
+        for (uint8_t id = 1; id <= n; ++id) {
+            LogicalSector s; s.cyl = 3; s.head = 0; s.id = id; s.size = sz;
+            s.data.assign(sz, static_cast<uint8_t>(id ^ 0x33)); soll.push_back(s);
+        }
+        // FM-Layout (kein A1-Sync, Marke direkt hinter 0x00-Sync) — so streamt ZVE2 die
+        // Spur auf einem 8″-SD-Laufwerk.
+        TrackImage stream = TrackCodec::buildTrack(soll, Encoding::FM);
+        Encoding enc = Encoding::MFM;
+        auto got = K5122::parseFormatStream(stream.bytes, &enc);
+
+        EXPECT_EQ(enc, Encoding::FM) << "FM erkannt, sz=" << sz;
+        ASSERT_EQ(got.size(), soll.size()) << "Sektorzahl (FM), sz=" << sz;
+        for (size_t k = 0; k < got.size(); ++k) {
+            EXPECT_EQ(got[k].cyl, 3);
+            EXPECT_EQ(got[k].id, k + 1);
+            EXPECT_EQ(got[k].size, sz);
+            EXPECT_EQ(got[k].data, soll[k].data) << "Daten Sektor " << (k+1) << " (FM) sz=" << sz;
+        }
+    }
+    // Gegenprobe: MFM-Strom wird weiterhin als MFM erkannt.
+    std::vector<LogicalSector> mfm;
+    for (uint8_t id = 1; id <= 5; ++id) {
+        LogicalSector s; s.cyl = 0; s.head = 0; s.id = id; s.size = 1024;
+        s.data.assign(1024, 0xE5); mfm.push_back(s);
+    }
+    Encoding menc = Encoding::FM;
+    auto g2 = K5122::parseFormatStream(TrackCodec::buildTrack(mfm, Encoding::MFM).bytes, &menc);
+    EXPECT_EQ(menc, Encoding::MFM);
+    EXPECT_EQ(g2.size(), 5u);
+}
+
+/**
  * @test K5122Test/WriteTrackAt_SchreibtExpliziteSpur
  * @brief FloppyDriveV2::writeTrackAt schreibt an eine (cyl,head)-Position abseits der
  *        aktuellen Kopfposition (nötig, weil der Kopf beim FORMAT-Commit schon weiterschritt).

@@ -890,47 +890,69 @@ void K5122::commitWrite() {
 /**
  * @brief Parst einen Vollspur-FORMAT-Schreibstrom in logische Sektoren (statisch, testbar).
  */
-std::vector<LogicalSector> K5122::parseFormatStream(const std::vector<uint8_t>& b) {
+std::vector<LogicalSector> K5122::parseFormatStream(const std::vector<uint8_t>& b,
+                                                    Encoding* out_enc) {
     std::vector<LogicalSector> sektoren;
     LogicalSector cur{};
     bool have_idam = false;
+    Encoding enc = Encoding::MFM;   // Default; auf FM gesetzt, sobald eine 0x00-Sync-Marke fällt
+
+    // Verarbeitet die Marke bei Offset j (Mark-Byte); liefert den neuen Lese-Index
+    // hinter das verarbeitete Feld bzw. SIZE_MAX, wenn j keine gültige Marke ist.
+    auto handleMark = [&](size_t j) -> size_t {
+        if (j >= b.size()) return SIZE_MAX;
+        const uint8_t mark = b[j];
+        if (mark == 0xFE && j + 5 <= b.size()) {            // IDAM: … FE c h s n
+            cur = LogicalSector{};
+            cur.cyl  = b[j + 1];
+            cur.head = b[j + 2];
+            cur.id   = b[j + 3];
+            cur.size = static_cast<uint16_t>(128u << (b[j + 4] & 0x03));
+            have_idam = true;
+            return j + 5;                                   // hinter die IDAM-Felder (CRC folgt)
+        }
+        if ((mark == 0xFB || mark == 0xF8) && have_idam) {  // DAM: … FB <data…>
+            const size_t data_start = j + 1;
+            const size_t take = std::min<size_t>(cur.size, b.size() - data_start);
+            cur.data.assign(b.begin() + data_start, b.begin() + data_start + take);
+            cur.data.resize(cur.size, 0xE5);                // unvollständig → mit 0xE5 füllen
+            sektoren.push_back(cur);
+            have_idam = false;
+            return data_start + take;                       // hinter das Datenfeld (CRC folgt)
+        }
+        return SIZE_MAX;
+    };
 
     size_t i = 0;
     while (i < b.size()) {
-        // Adressmarke = Sync-Folge aus ≥1 A1-Bytes + Mark-Byte.  Die A1-Anzahl variiert
-        // (echter ZVE2-Strom: 3×A1; TrackCodec::buildTrack: 2×A1) — daher A1-Folge
-        // überspringen und das erste Nicht-A1-Byte als Mark-Byte prüfen.
+        // ── MFM: Adressmarke = Sync-Folge aus ≥1 A1-Bytes + Mark-Byte ──────────────
+        // Die A1-Anzahl variiert (echter ZVE2-Strom: 3×A1; buildTrack: 2×A1) — daher
+        // A1-Folge überspringen und das erste Nicht-A1-Byte als Mark-Byte prüfen.
         if (b[i] == 0xA1) {
             size_t j = i;
             while (j < b.size() && b[j] == 0xA1) ++j;
-            if (j < b.size()) {
-                const uint8_t mark = b[j];
-                if (mark == 0xFE && j + 5 <= b.size()) {        // IDAM: A1… FE c h s n
-                    cur = LogicalSector{};
-                    cur.cyl  = b[j + 1];
-                    cur.head = b[j + 2];
-                    cur.id   = b[j + 3];
-                    cur.size = static_cast<uint16_t>(128u << (b[j + 4] & 0x03));
-                    have_idam = true;
-                    i = j + 5;                                  // hinter die IDAM-Felder (CRC folgt)
-                    continue;
-                }
-                if ((mark == 0xFB || mark == 0xF8) && have_idam) {  // DAM: A1… FB <data…>
-                    const size_t data_start = j + 1;
-                    const size_t take = std::min<size_t>(cur.size, b.size() - data_start);
-                    cur.data.assign(b.begin() + data_start, b.begin() + data_start + take);
-                    cur.data.resize(cur.size, 0xE5);            // unvollständig → mit 0xE5 füllen
-                    sektoren.push_back(cur);
-                    have_idam = false;
-                    i = data_start + take;                      // hinter das Datenfeld (CRC folgt)
-                    continue;
-                }
+            size_t ni = handleMark(j);
+            i = (ni == SIZE_MAX) ? j : ni;                  // A1-Folge ohne Marke: überspringen
+            continue;
+        }
+        // ── FM: Adressmarke folgt OHNE A1 direkt auf eine 0x00-Sync-Folge ─────────
+        // FM (IBM-3740) hat kein A1-Sync; die Marke (FE/FB/F8) steht direkt hinter den
+        // 0x00-Sync-Bytes (typ. 6×).  Eine Mindest-Sync-Länge (≥3) verhindert Fehl-
+        // treffer auf 0x00-Bytes in Daten/CRC.  FC = Indexmark → überspringen.
+        if (b[i] == 0x00) {
+            size_t j = i;
+            while (j < b.size() && b[j] == 0x00) ++j;
+            if (j - i >= 3 && j < b.size()) {
+                if (b[j] == 0xFC) { i = j + 1; continue; }   // Indexmark (nur FM), ignorieren
+                size_t ni = handleMark(j);
+                if (ni != SIZE_MAX) { enc = Encoding::FM; i = ni; continue; }
             }
-            i = j;                                              // A1-Folge ohne gültige Marke überspringen
+            i = j;
             continue;
         }
         ++i;
     }
+    if (out_enc) *out_enc = enc;
     return sektoren;
 }
 
@@ -958,14 +980,19 @@ void K5122::commitFormatTrack() {
         }
     }
 
-    auto sektoren = parseFormatStream(write_buf_);
+    Encoding fmt_enc = Encoding::MFM;
+    auto sektoren = parseFormatStream(write_buf_, &fmt_enc);
     if (!sektoren.empty()) {
-        TrackImage trk = TrackCodec::buildTrack(sektoren, Encoding::MFM);
+        // Verfahren aus dem Schreibstrom übernehmen (FM = 0x00-Sync-Marken, MFM = A1-Sync):
+        // 8″-SD-Laufwerke (MF3200) formatieren FM, 5¼″/8″-DD MFM.  So bleibt die gecachte
+        // Spur codierungstreu → der anschließende Verify-Read (FM-Steuerwort) findet sie.
+        TrackImage trk = TrackCodec::buildTrack(sektoren, fmt_enc);
         bool ok = drives_[selected_drive_].writeTrackAt(fmt_cyl_, fmt_head_, trk);
-        LOG_INFO("K5122", ">>> FORMAT-WRITE D%d C=%u H=%u: %zu Sektoren à %uB %s",
+        LOG_INFO("K5122", ">>> FORMAT-WRITE D%d C=%u H=%u: %zu Sektoren à %uB %s %s",
                  selected_drive_, static_cast<unsigned>(fmt_cyl_),
                  static_cast<unsigned>(fmt_head_), sektoren.size(),
-                 sektoren.empty() ? 0u : sektoren.front().size, ok ? "OK" : "FEHLER");
+                 sektoren.empty() ? 0u : sektoren.front().size,
+                 fmt_enc == Encoding::FM ? "FM" : "MFM", ok ? "OK" : "FEHLER");
     } else {
         LOG_WARN("K5122", "FORMAT-COMMIT D%d C=%u H=%u: keine Sektoren im Strom (%zu Bytes)",
                  selected_drive_, static_cast<unsigned>(fmt_cyl_),

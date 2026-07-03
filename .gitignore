@@ -7,3 +7,4 @@ build_trace/
 *.log
 *.tmp
 build_k1520/
+out/

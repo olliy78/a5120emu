@@ -129,15 +129,21 @@ public:
      * @brief Parst einen Vollspur-FORMAT-Schreibstrom (wie ZVE2 ihn über Port 0x14
      *        streamt) in logische Sektoren.
      *
-     * Der Strom ist eine komplette IBM-MFM-Spur als Bytefolge: Gap (0x4E) / Sync (0x00)
-     * und je Sektor `A1 A1 A1 FE <cyl> <head> <sec> <sizecode> <crc16>` (IDAM) gefolgt von
-     * `A1 A1 A1 FB <datenbytes…> <crc16>` (DAM).  Sektorgröße = 128 << (sizecode & 3).
-     * Statisch + frei von Controller-Zustand, damit unit-testbar.
+     * Der Strom ist eine komplette IBM-Spur als Bytefolge; der Parser erkennt **beide
+     * Aufzeichnungsverfahren**:
+     *   - **MFM** (Gap 0x4E / Sync 0x00): je Sektor `A1 A1 A1 FE …` (IDAM) + `A1 A1 A1 FB …`
+     *     (DAM) — die Marke folgt auf eine A1-Sync-Folge.
+     *   - **FM** (Gap 0xFF / Sync 0x00): je Sektor `00…00 FE …` (IDAM) + `00…00 FB …` (DAM) —
+     *     die Marke folgt **ohne A1** direkt auf eine 0x00-Sync-Folge (FM hat kein A1-Sync);
+     *     ein `FC`-Indexmark wird übersprungen.
+     * Sektorgröße = 128 << (sizecode & 3).  Statisch + frei von Controller-Zustand (unit-testbar).
      *
-     * @param stream gesammelter Schreibstrom (write_buf_)
+     * @param stream  gesammelter Schreibstrom (write_buf_)
+     * @param out_enc optional: erkanntes Verfahren (MFM bei A1-Sync, FM bei reinem 0x00-Sync).
      * @return geparste Sektoren in Spurreihenfolge (leer, wenn keine IDAM/DAM-Paare).
      */
-    static std::vector<LogicalSector> parseFormatStream(const std::vector<uint8_t>& stream);
+    static std::vector<LogicalSector> parseFormatStream(const std::vector<uint8_t>& stream,
+                                                        Encoding* out_enc = nullptr);
 
     // ─── Snapshot-Serialisierung (savestate/loadstate) ───────────────────────
     /**

@@ -41,7 +41,18 @@ HERE     = os.path.dirname(os.path.abspath(__file__))
 ROOT     = os.path.dirname(HERE)
 DRIVER   = os.path.join(ROOT, 'build', 'format_driver')
 IMG2HFE  = os.path.join(HERE, 'img_to_hfe.py')
-BOOT_IMG = os.path.join(ROOT, 'disks', 'cpadisk_autofs_clock_noautoexec.img')
+DISKS    = os.path.join(ROOT, 'disks')
+BOOT_IMG = os.path.join(DISKS, 'cpadisk_autofs_clock_noautoexec.img')
+
+# ─── Boot-Disketten ──────────────────────────────────────────────────────────
+# name: (img-Basename, needs_clock)  needs_clock=True → Uhr-Abfrage beim Kaltstart.
+# Die Combo-Disks konfigurieren B:/C: als Fremd-Laufwerkstypen (docs/format.md §11).
+BOOT_DISKS = {
+    'clock':      ('cpadisk_autofs_clock_noautoexec.img', True),
+    'noclk':      ('cpadisk_autofs_noclk_noautoexec.img',  False),
+    '5inchCombo': ('cpadisk_autofs_noclock_5inchCombo.img', False),
+    '8inchCombo': ('cpadisk_autofs_noclock_8inchCombo.img', False),
+}
 
 # B:-Ausgangs-Template: eine GÜLTIGE, bereits formatierte Disk (nicht leer!).
 # FORMAT.COM liest jede Zielspur VOR dem Neuformatieren (Rotations-/Längenmessung).
@@ -115,6 +126,83 @@ GEO_FORMATS = {
 }
 
 
+# ─── Native Formattabellen der Fremd-Laufwerkstypen (docs/format.md §3.5/§5) ──
+#
+# Diese Menüs sind Live-Emulator-Mitschnitte (tools/capture_format_menus.py).  Anders
+# als die §3.4-Geometrie-Umschalter (die ein K5601 auf andere Geometrien zwingen)
+# präsentiert das echte Laufwerk seine Formatliste NATIV — ohne Umschalt-Buchstaben.
+#   img_format=None ⇒ (noch) keine passende RawSectorImage-Geometrie in FormatParser
+#   definiert → nur .hfe (formatagnostisch).  Neue Geometrien in builtinFormats() ergänzen.
+def _tbl(entries):
+    """entries: Liste (key, menu_nav, beschreibung[, img_format])."""
+    return {e[0]: (list(e[1]), e[0], e[2], e[3] if len(e) > 3 else None) for e in entries}
+
+# K5600.10 — 5" 40 Sp. einseitig (DPB 10540); Seite 2 (E-L) via 'X'.
+K5600_10 = _tbl([
+    ('0', [],    '5x1024 Sp.0-39            200k CP/A'),
+    ('1', [],    '26x128+5x1024 Sp.2-39     190k CP/A S'),
+    ('2', [],    '26x128 Sf.1,7 Sp.0-39     123k'),
+    ('3', [],    '26x128 Sf.1,7 Sp.0-39     130k'),
+    ('4', [],    '16x256 ohne Sv. Sp.0-39   148k SCP'),
+    ('5', [],    '16x256 mit  Sv. Sp.0-39   148k'),
+    ('6', [],    '15x256 Sf.1,4,7 Sp.0-39   138k BAP2001'),
+    ('7', [],    '5x1024 ohne Sv. Sp.0-39   185k Osborne'),
+    ('E', ['X'], '9x512 Sf.1,3,5 Sp.0-39    170k DEC VT'),
+    ('F', ['X'], '9x512 1k-BDOS Sp.0-39     171k VPPC'),
+    ('G', ['X'], '9x512 Sf.41,42 Sp.0-39    171k Schn. S'),
+    ('H', ['X'], '9x512 Sf.c1,c2 Sp.0-39    180k Schn. D'),
+    ('I', ['X'], '8x512 2k-BDOS Sp.0-39     156k CP/M 86'),
+    ('J', ['X'], '9x512 Sp.0-39             180k {MSDOS}'),
+    ('K', ['X'], '8x512 1k-BDOS Sp.0-39     156k IBM CPC'),
+    ('L', ['X'], '10x512 Sf.0,1 Sp.0-39     195k KAYPRO'),
+])
+
+# K5600.20 — 5" 80 Sp. einseitig (DPB 10580); eine Menüseite, U/W-Umschalter.
+K5600_20 = _tbl([
+    ('0', [], '5x1024 Sp.0-79            400k CP/A'),
+    ('1', [], '26x128+5x1024 Sp.2-79     390k CP/A S'),
+    ('2', [], '26x128 Sf.1,7 Sp.0-79     253k'),
+    ('3', [], '26x128 Sf.1,7 Sp.0-79     260k'),
+    ('4', [], '16x256 ohne Sv. Sp.0-79   308k SCP'),
+    ('5', [], '16x256 mit  Sv. Sp.0-79   308k'),
+    ('6', [], '16x256 Sf.1,3,5 Sp.0-79   308k'),
+    ('7', [], '9x512 Sp.0-79             360k'),
+])
+
+# MF3200 — 8" 77 Sp. einfache Dichte (SD/FM, DPB 00877); eine Menüseite.
+MF3200 = _tbl([
+    ('0', [], '4x1024 Sp.0-76            308k CP/A'),
+    ('1', [], '26x128+4x1024 Sp.3-76     296k CP/A BC'),
+    ('2', [], '26x128 Sf.1,7 Sp.0-76     243k'),
+    ('3', [], '26x128 Sf.1,7 Sp.0-76     250k'),
+    ('4', [], '26x128+4x1024 (SCP)       296k SCP'),
+    ('5', [], '9x512 Sp.0-76             346k'),
+    ('6', [], '26x128+9x512 Sp.2-76      336k'),
+    ('7', [], '26x128+16x256 Sp.3-76     296k'),
+    ('8', [], '9x512 Sp.0-79 IH Mittweida    -'),
+])
+
+# MF6400 / K5602.10 — 8" 77 Sp. doppelte Dichte (DD/MFM, DPB 10877); V=SD-Umschalter.
+MF6400 = _tbl([
+    ('0', [], '8x1024 Sp.0-76            616k CP/A'),
+    ('1', [], '26x128+8x1024 Sp.2-76     600k'),
+    ('2', [], '26x128+40x128 Sp.2-76     374k'),
+    ('3', [], '40x128 Sf.1,2,3 Sp.0-76   384k'),
+    ('4', [], '26x128+8x1024 (SCP)       600k SCP'),
+    ('5', [], '16x512 Sp.0-76            616k'),
+    ('6', [], '26x128+16x512 Sp.2-76     600k'),
+    ('7', [], '9x1024 Sp.0-76            692k'),
+])
+
+# (boot_disk_name, drive_letter) → (drivetype_label, format_table)
+DRIVE_TABLES = {
+    ('5inchCombo', 'B'): ('K5600.10 (5\" 40 SS)',  K5600_10),
+    ('5inchCombo', 'C'): ('K5600.20 (5\" 80 SS)',  K5600_20),
+    ('8inchCombo', 'B'): ('MF3200 (8\" 77 SD)',    MF3200),
+    ('8inchCombo', 'C'): ('MF6400 (8\" 77 DD)',    MF6400),
+}
+
+
 def resolve_table(geo):
     """Liefert (switch_key, formats_dict) für eine Geometrie ('' = Default 80 DS)."""
     if not geo:
@@ -124,14 +212,38 @@ def resolve_table(geo):
     return GEO_FORMATS[geo]
 
 
-def make_script(entry, switch_key, full, upto_track, dir_verify):
+def resolve_drive(boot, drive, geo):
+    """
+    Liefert (boot_img, needs_clock, drive_letter, switch_key, table).
+    Für die Combo-Disks + B:/C: wird die native Fremd-Laufwerks-Tabelle gewählt;
+    sonst die K5601-Default/Geometrie-Tabelle (§3/§3.4) auf dem gewählten Laufwerk.
+    """
+    if boot not in BOOT_DISKS:
+        raise ValueError(f"unbekannte Boot-Disk '{boot}' ({list(BOOT_DISKS)})")
+    img_base, needs_clock = BOOT_DISKS[boot]
+    boot_img = os.path.join(DISKS, img_base)
+    key = (boot, drive)
+    if key in DRIVE_TABLES:
+        if geo:
+            raise ValueError("--geo gilt nur für das K5601-Default-Laufwerk, "
+                             "nicht für native Fremdtypen (deren Menü ist bereits nativ)")
+        _label, table = DRIVE_TABLES[key]
+        return (boot_img, needs_clock, drive, None, table)
+    switch_key, table = resolve_table(geo)
+    return (boot_img, needs_clock, drive, switch_key, table)
+
+
+def make_script(entry, switch_key, full, upto_track, dir_verify,
+                drive_letter='B', needs_clock=True):
     """Erzeugt das format_driver-Tastatur-Script für ein Format."""
     menu_nav, sel, _desc, _img = entry
-    lines = [
-        'boot 80', 'type 12:00:00', 'enter',   # Uhrzeit-Prompt beim Kaltstart
+    lines = ['boot 80']
+    if needs_clock:
+        lines += ['type 12:00:00', 'enter']     # Uhrzeit-Prompt beim Kaltstart
+    lines += [
         'boot 5', 'type FORMAT', 'enter',       # FORMAT.COM starten
         'boot 30', 'enter',                     # Funktion 0 = Formatieren
-        'boot 6', 'type B', 'enter',            # Laufwerk B + Einlege-Quittung
+        'boot 6', f'type {drive_letter}', 'enter',  # Laufwerk + Einlege-Quittung
         'boot 10', 'enter',                     # Vergleichs-Lesen = j (mit Verify)
         'boot 8',
     ]
@@ -156,7 +268,7 @@ def make_script(entry, switch_key, full, upto_track, dir_verify):
         #   "Rueckkehr in Funktionsauswahl? (j, sonst Ende)"   -> n  (= Ende -> CCP)
         lines += ['type n', 'boot 20',
                   'type n', 'boot 30',
-                  'type DIR B:', 'enter', 'boot 100', 'dump dir_b']
+                  f'type DIR {drive_letter}:', 'enter', 'boot 100', 'dump dir_b']
     return '\n'.join(lines) + '\n'
 
 
@@ -181,39 +293,57 @@ def prepare_target(path, filetype, img_format):
     return img_format
 
 
-def run_format(fmt_key, geo, filetype, full, upto_track, outdir, dir_verify, keep_bad):
-    switch_key, table = resolve_table(geo)
+def run_format(fmt_key, boot, drive, geo, filetype, full, upto_track, outdir,
+               dir_verify, keep_bad):
+    boot_img, needs_clock, drive_letter, switch_key, table = resolve_drive(boot, drive, geo)
     entry = table[fmt_key]
     menu_nav, sel, desc, img_format = entry
 
     if filetype == 'img' and img_format is None:
-        # Doppelschritt-Geometrie (T/U): kein sauberes logisches .img → überspringen.
+        # Kein sauberes logisches .img (Doppelschritt-Geo T/U oder Fremdtyp ohne
+        # definierte RawSectorImage-Geometrie) → überspringen, .hfe verwenden.
         return {'key': fmt_key, 'desc': desc, 'status': 'SKIP(.img)',
                 'beendet': False, 'defekt': False, 'dir_ok': None,
                 'target': '-', 'stdout': '', 'stderr': ''}
 
-    script = make_script(entry, switch_key, full, upto_track, dir_verify)
+    script = make_script(entry, switch_key, full, upto_track, dir_verify,
+                         drive_letter=drive_letter, needs_clock=needs_clock)
 
     with tempfile.NamedTemporaryFile(suffix='.img', delete=False) as ta:
         diskA = ta.name
-    shutil.copyfile(BOOT_IMG, diskA)
-    tag = (geo or 'DS') + '_' + fmt_key
-    diskB = os.path.join(outdir, f'k5601_{tag}.{filetype}')
-    createB = prepare_target(diskB, filetype, img_format)   # None → B: öffnen
+    shutil.copyfile(boot_img, diskA)
+    tag = f'{boot}_{drive_letter}_' + (geo or 'DS') + '_' + fmt_key
+    target = os.path.join(outdir, f'fmt_{tag}.{filetype}')
+    create_fmt = prepare_target(target, filetype, img_format)   # None → nur öffnen
 
     with tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False) as ts:
         ts.write(script)
         script_path = ts.name
 
-    cmd = [DRIVER, diskA, diskB, script_path]
-    if createB is not None:            # .img: format_driver legt B: via create an
-        cmd.append(createB)
     env = dict(os.environ, FD_LOGLEVEL=os.environ.get('FD_LOGLEVEL', 'warn'))
+    if drive_letter == 'C':
+        # Ziel liegt in Laufwerk C: (FD_DISKC).  B: braucht nur einen belegten,
+        # gültigen Slot (Template), damit FORMATs Laufwerkswahl sauber durchläuft.
+        with tempfile.NamedTemporaryFile(suffix='.hfe', delete=False) as tb:
+            diskB = tb.name
+        shutil.copyfile(TEMPLATE_HFE, diskB)
+        env['FD_DISKC'] = target
+        if create_fmt is not None:
+            env['FD_DISKC_FMT'] = create_fmt
+        cmd = [DRIVER, diskA, diskB, script_path]
+    else:
+        diskB = target
+        cmd = [DRIVER, diskA, diskB, script_path]
+        if create_fmt is not None:     # .img: format_driver legt B: via create an
+            cmd.append(create_fmt)
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     finally:
         os.unlink(diskA)
         os.unlink(script_path)
+        if drive_letter == 'C':
+            os.unlink(diskB)
+    diskB = target   # für Ergebnis-Reporting
 
     out = proc.stdout
     ok  = 'FORMATIEREN beendet' in out
@@ -241,8 +371,12 @@ def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('formats', nargs='*', help="Format-Tasten (0-7, E-K); leer = --all")
     p.add_argument('--all', action='store_true', help="alle Formate der Geometrie")
+    p.add_argument('--boot', default='clock', choices=list(BOOT_DISKS),
+                   help="Boot-Disk (clock/noclk/5inchCombo/8inchCombo; §11)")
+    p.add_argument('--drive', default='B', choices=['B', 'C'],
+                   help="Ziel-Laufwerk; bei Combo-Disks bestimmt es den Laufwerkstyp")
     p.add_argument('--geo', default='', choices=['', 'S', 'T', 'U', 'V', 'W'],
-                   help="§3.4-Geometrie-Umschalter (leer = 80-Spur-DS Default)")
+                   help="§3.4-Geometrie-Umschalter (nur K5601-Default-Laufwerk)")
     p.add_argument('--type', choices=['hfe', 'img'], default='hfe', help="Zieldateityp")
     p.add_argument('--full', action='store_true',
                    help="volle 160 Spuren (Default: Schnell-Smoke bis --upto)")
@@ -255,11 +389,12 @@ def main():
     p.add_argument('--keep-log', action='store_true', help="Treiber-stdout je Format ablegen")
     args = p.parse_args()
 
-    switch_key, table = resolve_table(args.geo)
+    _bi, _nc, drive_letter, switch_key, table = resolve_drive(args.boot, args.drive, args.geo)
+    dtype = DRIVE_TABLES.get((args.boot, args.drive), (None, None))[0]
 
     if args.list:
-        geo_label = args.geo or '(Default 80-Spur-DS)'
-        print(f"Geometrie {geo_label}"
+        label = dtype or ('Geometrie ' + (args.geo or '(Default 80-Spur-DS)'))
+        print(f"Boot={args.boot}  Laufwerk {drive_letter}:  →  {label}"
               + (f" — Umschalter '{switch_key}'" if switch_key else "") + "\n")
         print("Taste  Menü-Nav  Beschreibung                          .img-Format")
         for k, (nav, sel, desc, img) in table.items():
@@ -274,20 +409,21 @@ def main():
     keys = list(table.keys()) if (args.all or not args.formats) else args.formats
     bad_keys = [k for k in keys if k not in table]
     if bad_keys:
-        print(f"FEHLER: unbekannte Format-Tasten für Geometrie '{args.geo or 'DS'}': "
+        print(f"FEHLER: unbekannte Format-Tasten für {dtype or ('Geometrie ' + (args.geo or 'DS'))}: "
               f"{bad_keys}", file=sys.stderr)
         return 2
 
     os.makedirs(args.outdir, exist_ok=True)
-    print(f"Geometrie: {args.geo or '80-Spur-DS'}  |  Ziel-Typ: .{args.type}  |  "
-          f"{'VOLL (0-159)' if args.full else f'SMOKE (0-{args.upto})'}"
+    print(f"Boot: {args.boot}  |  Laufwerk {drive_letter}: ({dtype or ('K5601 ' + (args.geo or '80-DS'))})"
+          f"  |  Ziel-Typ: .{args.type}  |  "
+          f"{'VOLL' if args.full else f'SMOKE (0-{args.upto})'}"
           f"  |  Verify: ein  |  outdir: {args.outdir}\n")
 
     results = []
     for k in keys:
-        print(f"[{args.geo or 'DS'}:{k}] {table[k][2]} … ", end='', flush=True)
-        r = run_format(k, args.geo, args.type, args.full, args.upto, args.outdir,
-                       args.dir_verify and args.full, keep_bad=True)
+        print(f"[{args.boot}/{drive_letter}:{k}] {table[k][2]} … ", end='', flush=True)
+        r = run_format(k, args.boot, args.drive, args.geo, args.type, args.full,
+                       args.upto, args.outdir, args.dir_verify and args.full, keep_bad=True)
         results.append(r)
         extra = ''
         if r['dir_ok'] is not None:

@@ -23,6 +23,8 @@
 //   FD_GATE=from:to[:level]    raise the level (default TRACE) only in a cycle window
 //   FD_PCGATE=lo:hi[:level]    raise the level while either CPU PC is in [lo,hi] (hex)
 //   FD_PCHIST=1        per-boot-batch ZVE1/busMaster PC histogram + /BUSRQ share to stderr
+//   FD_DISKC=<path>    zusätzlich Laufwerk C: (Index 2) mounten (für FORMAT auf C:).
+//                      FD_DISKC_FMT=<DiskFormat> → C: via create NEU anlegen statt öffnen.
 //
 //   NOTE: DEBUG/TRACE lines live in the CORE libraries (k5122/a5120), which build/ compiles
 //   at LOG_LEVEL=3 (DEBUG/TRACE stripped).  Run build_trace/format_driver (LOG_LEVEL=5) for
@@ -173,6 +175,24 @@ int main(int argc, char** argv) {
         return 1;
     }
     fprintf(stderr, "Mounted A=%s  B=%s\n", diskA, diskB);
+
+    // Optionales Laufwerk C: (Index 2) — für Menü-Capture / Format auf C:.
+    if (const char* diskC = std::getenv("FD_DISKC")) {
+        const char* createC = std::getenv("FD_DISKC_FMT");
+        if (createC) {
+            if (!machine.createDisk(2, diskC, createC, false)) {
+                fprintf(stderr, "ERROR: create C '%s' (Format '%s'): %s\n",
+                        diskC, createC, machine.lastError().c_str());
+                return 1;
+            }
+            fprintf(stderr, "Created C=%s (Format '%s')\n", diskC, createC);
+        } else if (!(machine.mountDisk(2, diskC, "cpa780", false) ||
+                     machine.mountDisk(2, diskC, "cpa800", false))) {
+            fprintf(stderr, "ERROR: mount C '%s': %s\n", diskC, machine.lastError().c_str());
+            return 1;
+        }
+        fprintf(stderr, "Mounted C=%s\n", diskC);
+    }
 
     std::ifstream in(script);
     if (!in) { fprintf(stderr, "ERROR: cannot open script '%s'\n", script); return 1; }

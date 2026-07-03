@@ -41,9 +41,13 @@ Laufwerkstyp aus dem BIOS und zeigt ihn in der **Kopfzeile** des Format-Menüs:
 | `FORMAT.COM`  | `Formate fuer 5 1/4", 80 Sp., doppels. ["A": autom. Formaterk.]` |
 | `FORMATB.COM` | `Formate fuer 5 1/4", 80 Spuren, doppelseitig` |
 
-Der emulierte A5120 besitzt ein festes **K5122-Laufwerk vom Typ K5601 / „MFS 1.6"
-(5¼″ / 80 Spuren / doppelseitig, DD/DS)** — die Boot-Meldung bestätigt
-`A:5"(80,DD,DS)/B:.../C:...`. Deshalb zeigt der Emulator immer die **5¼″-Menüs**.
+**Der Laufwerkstyp ist eine BIOS-Eigenschaft, kein K5122-Hardware-Limit.** FORMAT.COM
+liest den Typ des gewählten Laufwerks aus dem BIOS-DPB (Feld `dpbtyp`, gesetzt aus dem
+Generierungswert `diskA/B/C/D`, z. B. `11580` = K5601); die K5122-Karte streamt
+formatagnostisch Bits und kümmert sich nicht um „5¼″ vs. 8″". Deshalb bestimmt allein
+die **BIOS-Konfiguration der Boot-Diskette**, welche Menüs erscheinen — und mit den
+**Combo-Boot-Disketten** (§11) melden sich B:/C: als Fremdtypen, sodass sich **alle**
+Menüs (inkl. der 8″-Menüs) **live im Emulator abgreifen** lassen.
 
 **Zwei Wege zu anderen Formaten:**
 
@@ -52,15 +56,17 @@ Der emulierte A5120 besitzt ein festes **K5122-Laufwerk vom Typ K5601 / „MFS 1
    Einzelschritt). Kopfzeile und Formatliste passen sich an (alle 5¼″-Varianten:
    §3.4). Ein 80-Spur-DS-Laufwerk kann so 40-Spur-Disketten und einseitige Formate
    physisch ebenfalls schreiben.
-2. **Anderes physisches Laufwerk** am realen Rechner: Mit einem **8″-Laufwerk
-   (K5602 bzw. MF6400, 77 Spuren)** zeigt die Kopfzeile `8"` und es erscheinen die
-   **8″-/77-Spuren-Formate** (§5). Auch ein echtes 40-Spur- oder einseitiges
-   5¼″-Laufwerk (K5600.10/.20) meldet sich entsprechend.
+2. **Anderer Laufwerkstyp im BIOS** — auf realer Hardware das physische Laufwerk, im
+   Emulator die **Combo-Boot-Diskette** (§11), die B:/C: als K5600.10/.20 (5¼″ SS)
+   bzw. MF3200/MF6400 (8″, 77 Spuren) konfiguriert. Die Kopfzeile zeigt dann `8"`
+   bzw. `40 Sp./einseitig` und es erscheinen die passenden Formate (§3.5, §5).
 
-> **Im Emulator nicht reproduzierbar:** Da die emulierte K5122 fest ein 80-Spur-DS-
-> 5¼″-Laufwerk ist, lassen sich die **8″-Menüs hier nicht abgreifen** — §5 dokumentiert
-> sie aus den Laufwerks-Eckdaten. Selbst „@ Spezielles Format" ist drive-begrenzt
-> (fragt „Anzahl phys. Spuren … `<= 80`"), kann also kein 8″-77-Spuren-Layout erzeugen.
+> **✅ Seit den Combo-Disks (2026-07-02) im Emulator reproduzierbar:** Die früher hier
+> vermerkte Einschränkung „8″-Menüs nicht abgreifbar" ist **überholt**. Alle fünf
+> Laufwerkstypen-Menüs sind jetzt **live abgegriffen** (`tools/capture_format_menus.py`,
+> §11) — die 8″-Tabellen in §5 sind **keine abgeleiteten Schätzungen mehr, sondern
+> Emulator-Mitschnitte**. (Hinweis: „@ Spezielles Format" fragt weiterhin „Anzahl phys.
+> Spuren … `<= N`" mit dem laufwerksabhängigen `N`.)
 
 > **Spalten in den Tabellen:** `Sektoren×Größe`, betroffene `Spuren`, Anzahl der
 > `System`-Spuren, `Kapazität`, `Bezeichnung`. Ein **`A`** am Zeilenende markiert
@@ -183,6 +189,24 @@ Menü #2 (Taste `X`):
 | `K`  | 8×512, Sp. 0-39; 1k-BDOS-Blöcke          | 1      | 156k      | IBM CPC     |   |
 | `L`  | 10×512, Sp. 0-39; Sektorfolge 0,1,…      | 1      | 195k      | KAYPRO      |   |
 
+### 3.5 Native 5¼″-Einzelseiten-Laufwerke K5600.10 / K5600.20 — Emulator-Mitschnitt
+
+Die Combo-Boot-Disk `…_5inchCombo` (§11) konfiguriert **B: = K5600.10** (5¼″, 40 Sp.,
+DD, **einseitig**, DPB `10540`) und **C: = K5600.20** (5¼″, 80 Sp., DD, **einseitig**,
+DPB `10580`). FORMAT.COM zeigt für diese Laufwerke **nativ** dieselben Formatlisten, die
+das K5601 nur per Geometrie-Umschalter simuliert — hier als **Live-Abgriff bestätigt**
+(`tools/capture_format_menus.py K5600.10 K5600.20`):
+
+| Laufwerk | DPB | Kopfzeile | Formatliste = §3.4 | Umschalter |
+|----------|-----|-----------|--------------------|-----------|
+| **K5600.10** (MFS 1.2) | `10540` | `Formate fuer 5 1/4", 40 Sp., eins.` | **`U`/`W`** (40 Sp. einseitig, `0-7` + `E-L`) | `X`/`Z`, `@` |
+| **K5600.20** (MFS 1.4) | `10580` | `Formate fuer 5 1/4", 80 Sp., eins.` | **`S`** (80 Sp. einseitig, `0-7`) | `U`/`W`, `@` |
+
+Das bestätigt das §3.4-Modell empirisch: Der reale 40-/80-Spur-**Einzelseiten**-Antrieb
+liefert byte-identisch dieselbe Formatliste wie das per `U`/`W` bzw. `S` „simulierte"
+K5601. K5600.20 bietet zusätzlich die Umschalter `U`/`W` (auf 40 Spuren herunter);
+K5600.10 blättert mit `X` auf seine zweite Menüseite (`E-L`).
+
 ---
 
 ## 4. FORMATB.COM (V02.04.87) — Formatliste
@@ -222,36 +246,54 @@ Geometrie-Umschalter: `S` 80 Sp. einseitig · `T` 40 Sp. Doppelschritt doppelsei
 
 ---
 
-## 5. 8″-Laufwerke (K5602 / MF6400) — 77 Spuren
+## 5. 8″-Laufwerke (MF3200 / K5602.10 / MF6400) — 77 Spuren
 
 Schließt man an einen A5110/A5120 ein **8″-Laufwerk** an, melden FORMAT.COM/FORMATB.COM
 in der Kopfzeile `8"` mit **77 Spuren** und bieten die passenden 8″-Formate an. Diese
 Geräte zeichnen **einseitig** auf (Rückseite nur über doppelt gelochte Disketten nach
-Umdrehen):
+Umdrehen). Zwei Dichten:
 
-| Laufwerk | Aufzeichnung | Kapazität (pro Seite) |
-|----------|--------------|-----------------------|
-| **K5602**  | 8″, 77 Spuren, **FM** (Single Density)        | bis ~300 KByte |
-| **MF6400** (FS 6400) | 8″, 77 Spuren, **FM oder MFM**     | bis ~600 KByte |
+| Laufwerk | DPB | Aufzeichnung | Kapazität (pro Seite) |
+|----------|-----|--------------|-----------------------|
+| **MF3200**           | `00877` | 8″, 77 Spuren, **einfache Dichte (SD/FM)** | bis ~350 KByte |
+| **K5602.10 / MF6400** (FS 6400) | `10877` | 8″, 77 Spuren, **doppelte Dichte (DD/MFM)** | bis ~690 KByte |
 
-Typische 8″-Sektorlayouts (77 Spuren, einseitig), wie sie FORMAT.COM/FORMATB.COM mit
-angeschlossenem 8″-Laufwerk schreiben:
+> ✅ **Live aus dem Emulator abgegriffen** (Combo-Boot-Disk `…_8inchCombo`, §11;
+> `tools/capture_format_menus.py MF3200 MF6400`). Die folgenden Tabellen sind
+> **Emulator-Mitschnitte** der FORMAT.COM-V19.05.89-Menüs, keine abgeleiteten Schätzungen.
 
-| Aufzeichnung | Sektoren×Größe / Spuren | ≈ Kapazität | Bemerkung |
-|--------------|-------------------------|------------:|-----------|
-| FM (SD)  | 26×128, Sp. 0-76        | ~250 KByte | IBM-3740-kompatibel, K5602 |
-| FM (SD)  | 15×256, Sp. 0-76        | ~290 KByte | K5602 (größere Sektoren)   |
-| MFM (DD) | 26×256, Sp. 0-76        | ~500 KByte | MF6400                     |
-| MFM (DD) | 15×512, Sp. 0-76        | ~580 KByte | MF6400                     |
-| MFM (DD) | 8×1024, Sp. 0-76        | ~620 KByte | MF6400                     |
+### 5.1 MF3200 — 8″, einseitig, **einfache Dichte (SD)** (`00877`, eine Menüseite)
 
-> ⚠️ **Nicht aus dem Emulator abgegriffen.** Die emulierte K5122 ist fest ein
-> 5¼″-K5601-Laufwerk; die 8″-Menüs erscheinen nur auf echter Hardware mit 8″-Laufwerk.
-> Die obige Tabelle ist aus den Laufwerks-Eckdaten (§10) und den Standard-8″-Formaten
-> abgeleitet — die **exakten Menü-Buchstaben/Kapazitäten** der jeweiligen FORMAT-Version
-> sind dort abzulesen, wo ein 8″-Laufwerk angeschlossen ist. Der Nutzer hat 8″/77-Spuren
-> auf realer Hardware erfolgreich mit FORMAT.COM/FORMATB.COM formatiert; im Emulator ist
-> dieses Format mangels 8″-Laufwerk (noch) nicht nachstellbar.
+Kopfzeile: `Formate fuer 8", eins., einf. Dichte ["A": autom. Formaterk.]`
+
+| Wahl | Sektoren×Größe / Layout                 | System | Kapazität | A |
+|------|-----------------------------------------|:------:|----------:|:-:|
+| `0`  | 4×1024, Sp. 0-76                        | 0      | 308k      | A |
+| `1`  | 26×128 Sp. 0-2; 4×1024 Sp. 3-76         | 3      | 296k      | A |
+| `2`  | 26×128, Sp. 0-76; Sektorfolge 1,7,13…   | 2      | 243k      | A |
+| `3`  | 26×128, Sp. 0-76; Sektorfolge 1,7,13…   | 0      | 250k      | A |
+| `4`  | 26×128 Sp. 0; 4×1024 Sp. 1-76 (SCP)     | 3      | 296k      | A |
+| `5`  | 9×512, Sp. 0-76                         | 0      | 346k      | A |
+| `6`  | 26×128 Sp. 0-1; 9×512 Sp. 2-76          | 2      | 336k      | A |
+| `7`  | 26×128 Sp. 0-2; 16×256 Sp. 3-76         | 3      | 296k      | A |
+| `8`  | 9×512, Sp. 0-79; IH Mittweida (MSDOS-SicherheitsKopie) | – | – | |
+
+### 5.2 K5602.10 / MF6400 — 8″, einseitig, **doppelte Dichte (DD)** (`10877`, `V` = SD)
+
+Kopfzeile: `Formate fuer 8", eins., dopp. Dichte ["A": autom. Formaterk.]`
+
+| Wahl | Sektoren×Größe / Layout                 | System | Kapazität | A |
+|------|-----------------------------------------|:------:|----------:|:-:|
+| `0`  | 8×1024, Sp. 0-76                        | 0      | 616k      | A |
+| `1`  | 26×128 Sp. 0-1; 8×1024 Sp. 2-76         | 2      | 600k      | A |
+| `2`  | 26×128 Sp. 0-1; 40×128 Sp. 2-76         | 2      | 374k      | A |
+| `3`  | 40×128, Sp. 0-76; Sektorfolge 1,2,3…    | 0      | 384k      | A |
+| `4`  | 26×128 Sp. 0; 8×1024 Sp. 1-76 (SCP)     | 2      | 600k      | A |
+| `5`  | 16×512, Sp. 0-76                        | 0      | 616k      | A |
+| `6`  | 26×128 Sp. 0-1; 16×512 Sp. 2-76         | 2      | 600k      | A |
+| `7`  | 9×1024, Sp. 0-76                        | 0      | 692k      |   |
+
+Umschalter: `V` = **einfache Dichte (SD)** (wechselt zur MF3200-Liste §5.1), `@` = Spezielles Format.
 
 ---
 
@@ -532,6 +574,37 @@ FORMATB-Analyse §8.1) — ein abgegrenzter, aber substanzieller RE-Schritt für
 K5601-Formaten (alle Standard-Formate + S/V/W-Geometrien verifizieren fehlerfrei).
 Repro: `python3 tools/format_all.py 7 --type img --upto 5` bzw. `--geo W 6`.
 
+### 8.5 Fremd-Laufwerkstypen (Combo-Disks) — Teststand 2026-07-02
+
+Mit den Combo-Boot-Disketten (§11) und `format_all.py --boot/--drive` (native
+Formattabellen je Laufwerkstyp) ist das Formatieren+Verifizieren auf den vier
+Fremd-Laufwerkstypen erstmals im Emulator testbar. Smoke (Format 0, Spur 0-2, `.hfe`,
+mit Verify):
+
+| Laufwerk | DPB | Aufz. | Format 0 (Verify) | Bemerkung |
+|----------|-----|-------|-------------------|-----------|
+| **K5600.10** (5″ 40 SS) | `10540` | DD/MFM | ✅ OK | native 40-Sp.-eins.-Liste = §3.4 U/W |
+| **K5600.20** (5″ 80 SS) | `10580` | DD/MFM | ✅ OK | native 80-Sp.-eins.-Liste = §3.4 S; über C: |
+| **MF6400/K5602.10** (8″ 77 DD) | `10877` | DD/MFM | ✅ **OK** | **8″-Format im Emulator neu möglich!** Soll 10416 B, gemessen 10035 |
+| **MF3200** (8″ 77 SD)   | `00877` | **SD/FM** | ✅ **OK** (Fix 2026-07-02) | Soll **5208 B**, gemessen 4606 |
+
+**Befund:** Alle vier Fremd-Laufwerkstypen formatieren+verifizieren fehlerfrei — die
+Bestätigung, dass der Laufwerkstyp reine BIOS-Software ist und die formatagnostische
+K5122 alle Geometrien **und beide Aufzeichnungsverfahren** schreibt.
+
+**FM-8″-Fix (2026-07-02, MF3200):** Der Verify scheiterte anfangs mit `Fehler 'S'` schon
+auf Spur 0 — **encoding-, nicht interleave-bedingt**. Wurzelursache: `K5122::parseFormatStream`
+erkannte nur **MFM**-Adressmarken (`A1 A1 A1 FE/FB …`). Der FM-FORMAT-Schreibstrom (8″-SD)
+trägt die Marken aber **ohne A1-Sync** direkt hinter 0x00-Sync (`00…00 FE …` / `00…00 FB …`,
+Gap `0xFF`, Indexmark `FC`), sodass der Parser **0 Sektoren** lieferte → `FORMAT-COMMIT: keine
+Sektoren im Strom` → nie geschrieben → Verify findet nichts. **Fix:** `parseFormatStream`
+erkennt jetzt beide Verfahren (0x00-Sync-Marken = FM, A1-Sync = MFM) und **detektiert das
+Verfahren aus dem Strom**; `commitFormatTrack` baut die gecachte Spur codierungstreu
+(`buildTrack(sektoren, fmt_enc)` statt hart MFM). Der Verify-Read nutzte bereits korrekt FM
+(Steuerwort `0x87`). Regression: 78 ctest + 58 Harness grün, neuer Test
+`K5122FormatStream.ParseFormatStream_FM_RecoversSectors`. Repro:
+`python3 tools/format_all.py --boot 8inchCombo --drive B 0 --upto 1`.
+
 ### 8.1 FORMATB.COM — vollständige Diagnose (Stand 2026-06-28)
 
 Per Disassembly (FORMATB.COM + BIOS-Quelle `cpadisk_*.prn`) und gezielten Trace-Experimenten
@@ -792,3 +865,79 @@ Die Aufzeichnung erfolgte einseitig mit 77 Spuren im FM-Verfahren und ermöglich
 Auch dieses 8-Zoll-Diskettenlaufwerk war, wie sein Vorgänger, das MF3200, ein Importgerät, hergestellt von der Firma MOM.
 
 Die Aufzeichnung erfolgte einseitig mit 77 Spuren im FM- oder MFM-Verfahren und gestattete damit Kapazitäten bis 600 KByte pro Diskettenseite. Durch Verwendung doppelt gelochter Disketten oder nachträglicher Doppellochung konnte die Diskette nach Umdrehen auch auf der anderen Seite benutzt werden, was eine Kapazitätsverdoppelung bedeutete.
+
+### Diskettenlaufwerk MF3200
+Ein 8-Zoll-Importgerät (Firma MOM), Vorgänger des MF6400. Aufzeichnung **einseitig,
+77 Spuren, einfache Dichte (SD/FM)** — bis ~350 KByte pro Seite.
+
+### 10.1 BIOS-Laufwerkstyp-Codes (`dpbtyp` / Generierungswert `diskA/B/C/D`)
+
+Der Generierungswert im BIOS (`.prn`-Zeile `diskX equ …`) kodiert Verify/Dichte/Seiten/
+Zoll/Spuren; FORMAT.COM leitet daraus die Kopfzeile und die Formatliste ab:
+
+| Code    | Aufzeichnung             | Beispiel-Laufwerk        | Kopfzeile FORMAT.COM               |
+|---------|--------------------------|--------------------------|------------------------------------|
+| `10540` | DD, SS, 5″, 40 Spuren    | K5600.10 (MFS 1.2)       | `5 1/4", 40 Sp., eins.`            |
+| `10580` | DD, SS, 5″, 80 Spuren    | K5600.20 (MFS 1.4)       | `5 1/4", 80 Sp., eins.`            |
+| `11580` | DD, DS, 5″, 80 Spuren    | K5601 (MFS 1.6)          | `5 1/4", 80 Sp., doppels.`         |
+| `00877` | SD, SS, 8″, 77 Spuren    | MF3200                   | `8", eins., einf. Dichte`          |
+| `10877` | DD, SS, 8″, 77 Spuren    | K5602.10 / MF6400        | `8", eins., dopp. Dichte`          |
+
+(Führende Ziffer `1…` = mit Verify nach Schreiben; z. B. `13580` = K5601 mit Verify.)
+
+---
+
+## 11. Laufwerkstypen im Emulator (Combo-Boot-Disketten)
+
+Der Laufwerkstyp ist eine reine **BIOS-Software-Eigenschaft** (§2). Um alle fünf
+relevanten Laufwerkstypen ohne echte Hardware im Emulator abzufragen, gibt es zwei
+**Combo-Boot-Disketten**, deren BIOS die Laufwerke B:/C: als Fremdtypen konfiguriert:
+
+| Boot-Disk (`disks/…`)                     | A:      | B:                  | C:                        |
+|-------------------------------------------|---------|---------------------|---------------------------|
+| `cpadisk_autofs_noclk_noautoexec`         | K5601   | K5601               | K5601                     |
+| `cpadisk_autofs_noclock_5inchCombo`       | K5601   | **K5600.10** `10540`| **K5600.20** `10580`      |
+| `cpadisk_autofs_noclock_8inchCombo`       | K5601   | **MF3200** `00877`  | **K5602.10/MF6400** `10877` |
+
+Alle `noclock`/`noclk`-Disks booten ohne Uhr-Abfrage direkt nach `A>`. Die Boot-Meldung
+zeigt die Laufwerkskonfiguration, z. B. für die 5inchCombo:
+`A:5"(80,DD,DS)/B:5"(40,DD,SS)/C:5"(80,DD,SS)`.
+
+### 11.1 Menüs live abgreifen — `tools/capture_format_menus.py`
+
+Der Runner bootet die passende Combo-Disk, startet FORMAT.COM, wählt das Laufwerk,
+blättert mit `X`/`Y`/`Z` durch alle Menüseiten und dumpt jeden Bildschirm — **ohne zu
+formatieren** (reines Menü-Capturing, es wird kein Format-Key gesendet):
+
+```sh
+tools/dev.sh tool format_driver               # Treiber bauen (einmalig)
+python3 tools/capture_format_menus.py --list  # Laufwerks-Matrix
+python3 tools/capture_format_menus.py --all --outdir out/menus
+python3 tools/capture_format_menus.py MF3200 MF6400   # nur die 8″-Laufwerke
+```
+
+Technik: `format_driver` mountet jetzt optional ein drittes Laufwerk **C:** über die
+Env-Var `FD_DISKC=<pfad>` (bzw. `FD_DISKC_FMT=<DiskFormat>` zum Neu-Anlegen). Der
+gewählte Laufwerksbuchstabe liefert FORMAT.COM den Typ aus dem BIOS-DPB — für die reine
+Menüanzeige muss der Slot nur belegt sein, das Medium wird nicht gelesen.
+
+Ergebnis: **alle fünf Laufwerkstypen-Menüs sind Emulator-Mitschnitte** — K5601 (§3),
+K5600.10/.20 (§3.5), MF3200/MF6400 (§5). Die K5601-Kontrollmessung stimmt byte-genau mit
+§3 überein (Tool-Validierung).
+
+### 11.2 Formate auf den neuen Laufwerkstypen testen (Vorbereitung)
+
+`tools/format_all.py` formatiert+verifiziert scriptgesteuert. Für die neuen
+Laufwerkstypen wählt man Boot-Disk und Ziel-Laufwerk über `--boot`/`--drive`:
+
+```sh
+# K5600.20 (C:, 5" 80 SS) — Smoke über Spur 0-5, mit Verify, als .hfe:
+python3 tools/format_all.py --boot 5inchCombo --drive C 0 4 7
+# MF3200 (B:, 8" SD) — 8″-Formate:
+python3 tools/format_all.py --boot 8inchCombo --drive B 0 5
+```
+
+Der Format-Write landet dann physisch im gewählten Laufwerk (B: bzw. C:). Für `.img`-
+Ziele braucht jedes neue 8″/SS-Format eine passende `DiskFormat`-Geometrie in
+`FormatParser::builtinFormats()` (analog zu den bestehenden `k5601_*`); solange die noch
+fehlt, `--type hfe` (formatagnostisch) verwenden. Status/offene Punkte s. §8.5.
