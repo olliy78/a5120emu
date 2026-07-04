@@ -1,87 +1,113 @@
 # K1520 Emulator - Open Points
 
-Updated: 2026-05-16
-Status: most initial architecture blockers are resolved.
+Updated: 2026-07-04
+Branch: `formating-disks`
+Status: A5120 boots CP/A fully to the interactive prompt; keyboard, clock, disk
+read **and** write, and FORMAT.COM disk formatting all work. Remaining work is a
+short tail of exotic disk formats plus a few known limits — not architecture blockers.
 
-## Resolved points
+> The 2026-05-16 version of this file listed the boot/display path, GUI validation
+> and keyboard extraction as the open frontier. **All of that is resolved** (see
+> below). This rewrite reflects the current state.
 
-1. Backplane slot order for A5120 is clarified and implemented in machine wiring.
-2. Keyboard serial channel mapping is clarified (K8025, SIO A32 channel A).
-3. Z80 CPU has been moved into core/primitives and is no longer linked from legacy src for the modular core.
-4. Logging system with compile-time log level is available and active.
-5. Python GUI, ctypes binding, and integration tests are implemented.
-6. Disk formats needed for current boot path are narrowed to cpa780 and cpa800.
-7. K7637 EPROM file is available and has been inspected at binary level.
+## Resolved since 2026-05-16 (the old "remaining open points")
 
-## New technical findings
-
-### K7637 keyboard EPROM quick analysis
-
-File: doc/EPROMS/robotron-k7637_50-2716.bin
-
-- Size: 2048 bytes (2716 class EPROM)
-- SHA256: e24c31033ee729a9bef9f73a3f1f6a8c1de7e73b38ea5a31974e1449715e59af
-- Byte distribution contains significant code-like patterns (JP/CALL/CB-prefixed opcodes) mixed with data tables.
-- High frequency of 0xFF and sparse printable text indicates firmware + lookup tables rather than plain text resources.
-
-Interpretation:
-- This is executable Z80 firmware with embedded tables.
-- For exact behavioral emulation, a dedicated disassembly pass with code/data separation is still recommended.
+1. **Full CP/A cold boot.** The A5120 boots the complete chained bootloader (boot ROM
+   → SYL loader → secondary loader → CP/A boot system → `@OS.COM`) and reaches the
+   running OS and its interactive prompt (`CP/A, Version 25.09.89`; "Bitte Uhrzeit
+   eingeben!"). The old blockers #1 (no screen output) and the whole ZVE1↔ZVE2 DMA
+   handshake are done. Milestone detail: `doc/analyse_zre_rom_boot.md`,
+   `doc/analyse_bootloader.md`, `doc/K1520_architecture.md` §8.5/§14.
+2. **Keyboard (K7637 serial) works** — cold-start time entry, key echo, commands,
+   Ctrl+C, cursor/function keys, all with realistic 9600-baud serial latency. Old
+   open points #4 (firmware-level extraction) resolved by modelling the physical
+   K7637 code set. Smoke tool: `build/kbd_test`.
+3. **Clock runs in real time.** Two Z80CTC bugs fixed (IEI/IUS interrupt gating +
+   per-T-state tick); the CP/A clock no longer runs ~1100× too fast.
+4. **Disk write end-to-end** (`.img` and HFE), incl. cold-start from a freshly
+   written HFE. `/WE`-edge-triggered write path + `FloppyDriveV2::flush()` fix.
+5. **FORMAT.COM formatting works** — formats all 160 tracks with Verify, all four
+   sector sizes (128/256/512/1024 B), `DIR` of a fresh disk → `No File`.
+6. **GUI** builds and runs against the current `libk1520core.so` (old open point #2).
 
 ## Remaining open points
 
-### 1) Boot sequence still not producing expected screen output
+### 1) Disk formatting — exotic-format tail (active work on this branch)
 
-Observed:
-- CPU cycles execute.
-- Disk mount works.
-- Boot image cpa800 mounts.
-- Display output still does not show expected boot messages in current run.
+The formatting pipeline (`tools/format_all.py` + `tools/format_driver`) covers the
+native K5601 §3 formats and the §3.4 single-sided / 40-track geometries as both `.hfe`
+and `.img`, plus the four foreign drive types via combo-boot disks. Full status:
+`docs/format.md` §8. What is left:
 
-Need to verify:
-- Is K2526 boot ROM execution path reaching the floppy bootstrap routine?
-- Are floppy read attempts issued in the expected drive scan order?
-- Are reads targeting correct C/H/S values for the CPA boot tracks?
+- **(a) "Sektorfolge 1,4,7" interleave formats — Format 7 ("ZIK-NK") and W:6
+  ("BAP2001")** report `Fehler 'S' SPUR DEFEKT` in Verify, on **both** `.hfe` and
+  `.img`. Black-box diagnosis shows the emulator writes provably-correct sectors
+  (IDs 1–16 sequential) and behaves identically on passing and failing tracks — the
+  `'S'` is a FORMAT.COM-internal data-track verdict, not a differential emulator bug.
+  Definitive root cause needs **disassembly of FORMAT.COM's `'S'`-verify path**
+  (analogous to the FORMATB analysis in §8.1). Scope: 2 of ~30 formats.
+  `docs/format.md` §8.4. Repro: `python3 tools/format_all.py 7 --type img --upto 5`.
+- **(b) Double-step 40-track geometries T/U as `.img`** are skipped: the card only
+  knows step pulses, so `cur_cyl_` = 2×logical and a logical-40-track `.img` would
+  need a physical→logical mapping. Workaround: use `.hfe` (faithful bit-track model)
+  for double-step disks. `docs/format.md` §8.3.
+- **(c) Commit the CPABCGEN bootdisk deliverables** — currently untracked:
+  `disks/empty_cpa780.hfe`, `disks/bootdisk_cpabcgen.hfe`, `tools/cpa_tools/`
+  (`make_bootdisk.py` + CPABCGEN.COM/FORMAT.COM). Pipeline works (format → CPABCGEN
+  → bootable disk that boots CP/A to `A>`); needs a commit.
 
-Action in progress:
-- Additional boot logs were added in CPU step trace and K5122 read/write/step paths.
+### 2) Fresh gap-blank `.hfe` format hang (known limit, workaround active)
 
-### 2) GUI stability validation in desktop mode
+Formatting a **freshly `create`d, gap-empty `.hfe`** directly hangs (ZVE2 read
+co-routine `0x1D0F/0x1D21` pre-reading an unformatted data track; index-interrupt
+timing race with the BIOS motor watchdog). The "keep index mask-independent"
+hypothesis was tested and disproved (`docs/format.md` §8.2). **Workaround in the
+pipeline:** copy B: from a valid template, or use `.img` via `create` (0xE5 reads as
+valid). A real fix needs cycle-level dual-CPU tracing.
 
-Observed:
-- Offscreen smoke test of MainWindow passes.
-- User previously reported a Qt layout segfault.
+### 3) FORMATB.COM Verify — OUT OF SCOPE (not an emulator bug)
 
-Need to verify:
-- Re-test on local desktop session with rebuilt libk1520core.so and updated Python binding path resolution.
-- Confirm that no stale app/build symlink target is used after rebuild.
+FORMATB.COM (V02.04.87) formats correctly (image identical to FORMAT.COM) but its
+Verify reports `'V'`: a genuine **software version incompatibility** with the CP/A
+BIOS (V25.09.89) — the CDB flag convention was reorganised between the versions
+(BIOS source: "Bit 0 Verify-nach-Schreiben auf Bit 6 verlegt"). Would fail on real
+hardware with this BIOS too. **Do not investigate further — use FORMAT.COM.** Full
+diagnosis: `docs/format.md` §8.1.
 
-### 3) Documentation coverage gap
+### 4) Native 8″ drive not modelled (8″ formats work via combo disks)
 
-Status:
-- Several files now include comments, but full English Doxygen/Google-style coverage is still incomplete across the entire codebase.
+The emulator has no dedicated 8″ drive, but 8″ formats (MF3200 SD/FM, MF6400 DD/MFM)
+are now testable via the combo-boot disks (`docs/format.md` §8.5, §11) because the
+K5122 is format-agnostic and drive type is pure BIOS software. Remaining: a real 8″
+`DriveProfile`/geometry if native 8″ boot media ever matters.
 
-Need to finish:
-- Remaining C++ headers and implementations with missing API-level comments.
-- Python tests and helper scripts docstrings.
+### 5) `cpadisk_02` reaches no interactive CCP (needs real-HW cross-check)
 
-### 4) K7637 firmware-level behavior extraction
+The autostart-directory disk `cpadisk_02` (no clock) never reaches an interactive CCP
+in the emulator (foreground stays in TPA, `CONIN`/`0xD41E` never hit) — keys are
+buffered but not echoed. This is **not** a keyboard-model issue (the clock disk works
+fully after time entry). TODO (user): check on real A5120 whether `cpadisk_02` itself
+is faulty.
 
-To finalize keyboard emulation accuracy:
-- Identify command parser entry points.
-- Confirm LED command encoding and repeat timing from ROM logic.
-- Cross-check scan code tables against firmware tables.
+### 6) Post-boot VRAM wipe after ~50–65M idle cycles
 
-## Suggested next implementation block
+After reaching the prompt, VRAM is wiped after tens of millions of idle cycles —
+suspected leftover clock/timing drift and/or spurious residual ZVE2 floppy activity.
+Low priority (cosmetic, well past the reached-prompt milestone).
+`project_os_boot_reaches_prompt` memory has trace hints.
 
-1. Run boot with LOG_LEVEL=4 and capture first 200 instruction PCs plus K5122 access logs.
-2. Add a focused boot diagnostic test that asserts:
-   - PC enters ROM region early.
-   - At least one floppy sector read command is issued.
-   - Drive LED activity toggles during boot.
-3. Continue documentation pass on remaining high-impact modules:
-   - core/cards/k2526
-   - core/cards/k8025
-   - core/peripherals/floppy_drive
-   - app/ui/main_window.py
-   - tests/*.py
+### 7) Real ZRE ROM 0x0000-layout rebuild (separate task)
+
+`zre.rom` (the faithful A26 load ROM) has a 256-byte preamble + code from 0x0100; the
+real physical layout is code from 0x0000. Reframing the emulator to the 0x0000 layout
+is a standalone task; blocker is the drive-probe at `0x0040` (`[0x03FC]==0x77`). The
+committed `A5120_ZRE_rom.bin` is a corrupt/shifted dump — do not use it as a boot ROM.
+Detail: memory `project_real_zre_rom_dump`, `doc/analyse_zre_rom_boot.md`.
+
+## Non-blocking / housekeeping
+
+- **Pre-existing red tests** (independent of current work; confirm against baseline
+  before treating as a regression): FormatParser CPA780 / K3526 / K7024, and 6 Z80CTC
+  tests on `main`. See CLAUDE.md "Build & test".
+- **Documentation coverage** (old open point #3): English API-level comments still
+  incomplete across some headers; low priority.
