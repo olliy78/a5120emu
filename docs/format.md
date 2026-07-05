@@ -605,6 +605,63 @@ Verfahren aus dem Strom**; `commitFormatTrack` baut die gecachte Spur codierungs
 `K5122FormatStream.ParseFormatStream_FM_RecoversSectors`. Repro:
 `python3 tools/format_all.py --boot 8inchCombo --drive B 0 --upto 1`.
 
+### 8.6 8″-SD/FM-BOOTdiskette komplett — formatieren → CPABCGEN → booten (Stand 2026-07-05)
+
+Der §8.5-Fix ließ FORMAT.COM zwar „beendet" melden, das Ergebnis war aber **physisch
+falsch**: die Spuren landeten auf **Kopf 1** (das einseitige MF3200 hat nur Kopf 0),
+und `CPABCGEN` lehnte die Zieldiskette ab (`Systemspuren … nicht Sektorlaenge 128 o.
+256` bzw. `Bdos Err On B: Select`). Ursache: der 8″-Slot wurde als 2-Kopf-K5601
+gemountet, und die HFE-Spurablage passte nicht zum einseitigen Medium. Drei weitere
+Bugs gefixt — jetzt **bootet der A5120 von einer selbst erzeugten 8″-FM-Diskette** voll
+bis `A>` (CP/A 25.09.89):
+
+1. **Single-Sided-Head-Forcing** (`K5122::handleCtrlPortAWrite`, /STR-Latch): bei
+   `profile().num_heads <= 1` wird `current_head_ = 0` erzwungen — die Seitenwahl `/FR`
+   hat auf einem physisch einseitigen Laufwerk keine Wirkung (das Combo-BIOS fährt `/FR`
+   trotzdem und schrieb sonst auf den nicht existierenden Kopf 1). **Voraussetzung:** der
+   8″-Slot muss mit dem einseitigen Profil `mf3200_8_ss77` gemountet sein (dazu neu
+   `format_driver`-Env `FD_PROFILES="p0,p1,p2,p3"`).
+
+2. **HFE-Single-Sided-Layout** (`HfeImage::read/writeSideBytes`): HFE verschränkt zwei
+   Seiten zu je 256 B pro 512-Byte-Block. Bei `num_sides_ == 1` gibt es keine zweite Seite
+   — die Spur liegt **kontinuierlich** (volle 512 B/Block). Vorher las/schrieb der Code
+   auch einseitig nur 256 B je 512-Block und lief damit **über das Spurende in die
+   Folgespur**: eine 26-Sektor-FM-Spur dekodierte als ~35 Sektoren (IDs 1-18, dann 1-…),
+   jeder Schreibzugriff korrumpierte die Spur. (Nur `num_sides_==1` betroffen; zwei­seitige/
+   5¼″-Disks unverändert.)
+
+3. **FM-Datenfeld-Schreiben** (`K5122::commitWriteField`): FM hat **kein A1-Sync**; das
+   Datenfeld beginnt bei der DAM (`FB`/`F8`) direkt hinter dem 0x00-Sync. Der BIOS-dio-
+   Schreibpfad (den `CPABCGEN` nutzt) suchte nur `A1 A1 A1` → FM-Schreiben fand kein Sync →
+   `CPABCGEN`-`Schreibfehler`. Jetzt verfahrensabhängig (Encoding der Zielspur).
+
+**Gap-Blank-Grenze / Vorlage:** FORMAT.COM kann eine **frische, gap-leere** `.hfe` weiterhin
+nicht direkt formatieren (Gap-Blank-Hänger, §8.2/§8.2.1). Wie die 5¼″-Pipeline startet die
+8″-Variante daher von einer **gültigen vorformatierten Vorlage**. Da es keine 8″-Disk gab,
+erzeugt sie das neue Tool **`mk_fm8_template`** (Target, nutzt dieselbe `TrackCodec`-Schicht
+wie der K5122-Schreibpfad) → committet als **`disks/empty_mf3200_296k.hfe`** (MF3200 Format 7:
+26×128 FM Sp.0-2 + 16×256 FM Sp.3-76, einseitig). Auf dieser Vorlage formatiert FORMAT.COM
+bis Spur 76 (`beendet`, Verify-clean, Soll 5208 B / gemessen 5066 B), `CPABCGEN B:` meldet
+`OK`, der Boot läuft durch.
+
+**Pipeline-Tool** `tools/cpa_tools/make_bootdisk.py` — Presets `cpa780` (5¼″-MFM) und
+`mf3200` (8″-FM): kopiert die Leer-Vorlage, fährt `CPABCGEN` (Tastatur-getrieben über
+`format_driver` + passende `FD_PROFILES`) und bootet die erzeugte Disk kalt zurück; Exit 0 +
+`BOOTDISK OK`.
+
+**Zwei Integrationstests** (`CMakeLists.txt`, `BUILD_K1520_TESTS`, TIMEOUT 300):
+`bootdisk_cpa780` und `bootdisk_mf3200_fm` — leere Diskette erstellen/formatieren →
+`CPABCGEN` → Kaltboot-Verify. Beide grün; **volle Suite 585/585 grün, keine Regression**.
+
+Repro (8″-FM, ganze Kette):
+```sh
+tools/dev.sh tool format_driver
+tools/dev.sh tool mk_fm8_template
+build/mk_fm8_template /tmp/empty8.hfe                 # erstellen + formatieren
+python3 tools/cpa_tools/make_bootdisk.py --preset mf3200 --formatted /tmp/empty8.hfe --out /tmp/boot8.hfe
+# → "BOOTDISK OK: /tmp/boot8.hfe"
+```
+
 ### 8.1 FORMATB.COM — vollständige Diagnose (Stand 2026-06-28)
 
 Per Disassembly (FORMATB.COM + BIOS-Quelle `cpadisk_*.prn`) und gezielten Trace-Experimenten

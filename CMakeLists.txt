@@ -396,6 +396,12 @@ if(BUILD_K1520)
     target_link_libraries(format_driver PRIVATE k1520_a5120 k1520_floppy k1520_logger)
     target_include_directories(format_driver PRIVATE ${CMAKE_SOURCE_DIR})
 
+    # mk_fm8_template: erzeugt die gültig vorformatierte 8″-SD/FM-Leerdiskette
+    # (MF3200 fmt7) für die 8″-Boot-Pipeline (disks/empty_mf3200_296k.hfe).
+    add_executable(mk_fm8_template tools/mk_fm8_template.cpp)
+    target_link_libraries(mk_fm8_template PRIVATE k1520_floppy2 k1520_logger)
+    target_include_directories(mk_fm8_template PRIVATE ${CMAKE_SOURCE_DIR})
+
     # floppy_diag: running-OS floppy read diagnostic
     add_executable(floppy_diag tools/floppy_diag.cpp)
     target_link_libraries(floppy_diag PRIVATE k1520_a5120 k1520_floppy k1520_logger)
@@ -483,6 +489,25 @@ if(BUILD_K1520)
         set_tests_properties(cli_bt_quiet PROPERTIES TIMEOUT 120
             PASS_REGULAR_EXPRESSION "boot_reached"
             FAIL_REGULAR_EXPRESSION "Boot Trace Complete|PROGRESS|MILESTONE|histogram")
+
+        # ─── Boot-Disk-Erstellung: leere Diskette → formatieren → bootfähig → boot ──
+        # Voller Anwender-Workflow (Tastatur-getrieben über format_driver): eine leere,
+        # als Systemformat formatierte Diskette wird mit CPABCGEN.COM bootfähig gemacht
+        # und der Rechner davon kalt gebootet (make_bootdisk.py, Exit 0 = "BOOTDISK OK").
+        # FORMAT_DRIVER zeigt auf den frisch gebauten Treiber DIESES Build-Verzeichnisses.
+        set(_mkboot "${CMAKE_SOURCE_DIR}/tools/cpa_tools/make_bootdisk.py")
+
+        # 1) cpa780 (5¼″-MFM): committete Leer-Vorlage disks/empty_cpa780.hfe.
+        add_test(NAME bootdisk_cpa780 COMMAND sh -c
+            "O=$(mktemp --suffix=.hfe); FORMAT_DRIVER=$<TARGET_FILE:format_driver> python3 ${_mkboot} --preset cpa780 --out \$O --quiet; r=\$?; rm -f \$O; exit \$r")
+
+        # 2) mf3200 fmt7 (8″-SD/FM, 296k): die 8″-FM-Leerdiskette wird IM TEST erzeugt
+        #    (mk_fm8_template = erstellen+formatieren), dann bootfähig gemacht + gebootet.
+        add_test(NAME bootdisk_mf3200_fm COMMAND sh -c
+            "T=$(mktemp --suffix=.hfe); O=$(mktemp --suffix=.hfe); $<TARGET_FILE:mk_fm8_template> \$T >/dev/null; FORMAT_DRIVER=$<TARGET_FILE:format_driver> python3 ${_mkboot} --preset mf3200 --formatted \$T --out \$O --quiet; r=\$?; rm -f \$T \$O; exit \$r")
+
+        set_tests_properties(bootdisk_cpa780 bootdisk_mf3200_fm PROPERTIES
+            TIMEOUT 300 PASS_REGULAR_EXPRESSION "BOOTDISK OK")
     endif()
 
 endif() # BUILD_K1520

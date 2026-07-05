@@ -518,6 +518,12 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
         // Empirisch verifiziert an den @OS.COM-Lesestrobes; bit5 togglet mit MK-Strobes
         // und darf daher NICHT als Seitenwahl dienen.
         current_head_ = (data & 0x04) ? 0 : 1;
+        // Einseitige Laufwerke (8″-SD wie MF3200) haben physisch nur EINEN Kopf; die
+        // Seitenwahl /FR ist dort ohne Wirkung (es gibt keine Rückseite).  Das BIOS des
+        // Combo-Systems fährt /FR trotzdem, was sonst auf den nicht existierenden Kopf 1
+        // schreiben würde (leere Vorderseite → cpabcgen/Boot scheitern).  Kopf hart auf 0.
+        if (drives_[selected_drive_].profile().num_heads <= 1)
+            current_head_ = 0;
 
         if (bus_.isBUSRQ()) {
             // ZVE2-Kontext: Bus bereits gehalten
@@ -1058,20 +1064,34 @@ void K5122::commitWriteField() {
     }
     if (write_buf_.empty()) { write_buf_.clear(); return; }
 
-    // Datenfeld im Strom finden: erste A1-A1-A1-Sync, danach DAM-Byte, dann Daten.
-    size_t i = 0; bool found = false;
-    for (; i + 2 < write_buf_.size(); ++i) {
-        if (write_buf_[i] == 0xA1 && write_buf_[i + 1] == 0xA1 && write_buf_[i + 2] == 0xA1) {
-            found = true; break;
+    // Datenfeld-Beginn im Schreibstrom finden — verfahrensabhängig:
+    //   MFM: …00 00 A1 A1 A1 <DAM=FB/F8> <Daten…>   → nach 3×A1-Sync + DAM
+    //   FM : …00 00 00 00 00 00 <DAM=FB/F8> <Daten…>  → KEIN A1-Sync (FM-DAM steht
+    //        allein mit Sonder-Clock); die DAM ist das erste FB/F8 nach dem 0x00-Sync.
+    // Das Verfahren richtet sich nach der Zielspur (FM-Systemspuren der 8″-SD-Disk).
+    const bool is_fm = drv.track(current_head_).encoding == Encoding::FM;
+    size_t data_start = 0; bool found = false;
+    if (is_fm) {
+        // Erste DAM (FB=Daten / F8=gelöscht) — davor nur 0x00-Sync, nie FB/F8.
+        for (size_t i = 0; i < write_buf_.size(); ++i) {
+            if (write_buf_[i] == 0xFB || write_buf_[i] == 0xF8) {
+                data_start = i + 1; found = true; break;
+            }
+        }
+    } else {
+        for (size_t i = 0; i + 2 < write_buf_.size(); ++i) {
+            if (write_buf_[i] == 0xA1 && write_buf_[i + 1] == 0xA1 && write_buf_[i + 2] == 0xA1) {
+                data_start = i + 4;             // 3×A1 + DAM(FB/F8)
+                found = true; break;
+            }
         }
     }
     if (!found) {
-        LOG_WARN("K5122", "commitWriteField: keine A1-A1-A1-Sync im Schreibstrom (buf=%zu, S=%u)",
-                 write_buf_.size(), wr_id_);
+        LOG_WARN("K5122", "commitWriteField: kein Datenfeld-Sync im Schreibstrom "
+                 "(%s, buf=%zu, S=%u)", is_fm ? "FM" : "MFM", write_buf_.size(), wr_id_);
         write_buf_.clear();
         return;
     }
-    const size_t data_start = i + 4;            // 3×A1 + DAM(FB/F8)
     if (data_start >= write_buf_.size()) {
         LOG_WARN("K5122", "commitWriteField: Datenfeld leer (S=%u)", wr_id_);
         write_buf_.clear();

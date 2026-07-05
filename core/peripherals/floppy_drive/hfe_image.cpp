@@ -129,6 +129,13 @@ std::vector<uint8_t> HfeImage::readSideBytes(uint8_t cyl, uint8_t head,
 
     bitcells_out = side_len * 8;
 
+    // Seitenaufteilung im 512-Byte-Block: HFE verschränkt zwei Seiten zu je 256 B
+    // ([S0_256][S1_256]).  Bei EINSEITIGEN Medien (num_sides_==1, z. B. 8″-SD) gibt es
+    // keine zweite Seite — die Spur liegt dann KONTINUIERLICH (volle 512 B/Block), sonst
+    // würden 256 B/Block über das Spurende hinaus in die Folgespur lesen (Sektor-Doppelung).
+    const uint32_t slot     = (num_sides_ == 1) ? 512u : 256u;
+    const size_t   head_off = (num_sides_ == 1) ? 0u : static_cast<size_t>(head) * 256;
+
     std::vector<uint8_t> side;
     side.reserve(side_len);
 
@@ -136,9 +143,9 @@ std::vector<uint8_t> HfeImage::readSideBytes(uint8_t cyl, uint8_t head,
     for (uint32_t blk = 0; done < side_len; ++blk) {
         const size_t blk_start = track_start
                                  + static_cast<size_t>(blk) * 512
-                                 + static_cast<size_t>(head) * 256;
+                                 + head_off;
         const uint32_t remaining = side_len - done;
-        const uint32_t copy_len  = (remaining < 256) ? remaining : 256;
+        const uint32_t copy_len  = (remaining < slot) ? remaining : slot;
 
         if (blk_start + copy_len > file_.size()) break;  // Datei kürzer als erwartet
 
@@ -166,17 +173,22 @@ bool HfeImage::writeSideBytes(uint8_t cyl, uint8_t head,
     const size_t track_start = static_cast<size_t>(e.offset_blocks) * 512;
     const uint32_t side_len  = e.len_bytes / num_sides_;
 
+    // Siehe readSideBytes(): einseitige Medien (num_sides_==1) speichern die Spur
+    // KONTINUIERLICH (volle 512 B/Block), doppelseitige verschränkt (256 B/Seite).
+    const uint32_t slot     = (num_sides_ == 1) ? 512u : 256u;
+    const size_t   head_off = (num_sides_ == 1) ? 0u : static_cast<size_t>(head) * 256;
+
     uint32_t src_off = 0;    // Byte-Offset in side
     for (uint32_t blk = 0; src_off < side_len; ++blk) {
         const size_t blk_start = track_start
                                  + static_cast<size_t>(blk) * 512
-                                 + static_cast<size_t>(head) * 256;
+                                 + head_off;
         const uint32_t remaining = side_len - src_off;
-        const uint32_t copy_len  = (remaining < 256) ? remaining : 256;
+        const uint32_t copy_len  = (remaining < slot) ? remaining : slot;
 
         if (blk_start + copy_len > file_.size()) return false;
 
-        for (uint32_t i = 0; i < 256; ++i) {
+        for (uint32_t i = 0; i < slot; ++i) {
             const size_t dst = blk_start + i;
             if (dst >= file_.size()) break;
             if (i < copy_len) {
