@@ -81,28 +81,24 @@ are now testable via the combo-boot disks (`docs/format.md` §8.5, §11) because
 K5122 is format-agnostic and drive type is pure BIOS software. Remaining: a real 8″
 `DriveProfile`/geometry if native 8″ boot media ever matters.
 
-### 5) `cpadisk_02` reaches no interactive CCP (needs real-HW cross-check)
-
-The autostart-directory disk `cpadisk_02` (no clock) never reaches an interactive CCP
-in the emulator (foreground stays in TPA, `CONIN`/`0xD41E` never hit) — keys are
-buffered but not echoed. This is **not** a keyboard-model issue (the clock disk works
-fully after time entry). TODO (user): check on real A5120 whether `cpadisk_02` itself
-is faulty.
-
-### 6) Post-boot VRAM wipe after ~50–65M idle cycles
+### 5) Post-boot VRAM wipe after ~50–65M idle cycles
 
 After reaching the prompt, VRAM is wiped after tens of millions of idle cycles —
 suspected leftover clock/timing drift and/or spurious residual ZVE2 floppy activity.
 Low priority (cosmetic, well past the reached-prompt milestone).
 `project_os_boot_reaches_prompt` memory has trace hints.
 
-### 7) Real ZRE ROM 0x0000-layout rebuild (separate task)
+### 6) Real ZRE ROM 0x0000-layout rebuild (optional faithfulness, NOT a bug)
 
-`zre.rom` (the faithful A26 load ROM) has a 256-byte preamble + code from 0x0100; the
-real physical layout is code from 0x0000. Reframing the emulator to the 0x0000 layout
-is a standalone task; blocker is the drive-probe at `0x0040` (`[0x03FC]==0x77`). The
-committed `A5120_ZRE_rom.bin` is a corrupt/shifted dump — do not use it as a boot ROM.
-Detail: memory `project_real_zre_rom_dump`, `doc/analyse_zre_rom_boot.md`.
+**The boot ROM works** — `zre.rom` boots CP/A fully. This point is only about physical
+faithfulness: our `zre.rom` is framed with a 256-byte preamble + code from `0x0100`,
+whereas the real A26 chip has code from `0x0000`. The current boot path was reverse-
+engineered around the `+0x100` framing, so it is functionally correct but not a
+byte-for-byte match of the real chip's address layout. Reframing the emulator to the
+true `0x0000` layout is a standalone, optional task (blocker: drive-probe at `0x0040`,
+`[0x03FC]==0x77`). Note: the committed `A5120_ZRE_rom.bin` is a corrupt/shifted dump —
+do not use it as a boot ROM. Detail: memory `project_real_zre_rom_dump`,
+`doc/analyse_zre_rom_boot.md`.
 
 ## Non-blocking / housekeeping
 
