@@ -88,18 +88,6 @@ suspected leftover clock/timing drift and/or spurious residual ZVE2 floppy activ
 Low priority (cosmetic, well past the reached-prompt milestone).
 `project_os_boot_reaches_prompt` memory has trace hints.
 
-### 6) Real ZRE ROM 0x0000-layout rebuild (optional faithfulness, NOT a bug)
-
-**The boot ROM works** — `zre.rom` boots CP/A fully. This point is only about physical
-faithfulness: our `zre.rom` is framed with a 256-byte preamble + code from `0x0100`,
-whereas the real A26 chip has code from `0x0000`. The current boot path was reverse-
-engineered around the `+0x100` framing, so it is functionally correct but not a
-byte-for-byte match of the real chip's address layout. Reframing the emulator to the
-true `0x0000` layout is a standalone, optional task (blocker: drive-probe at `0x0040`,
-`[0x03FC]==0x77`). Note: the committed `A5120_ZRE_rom.bin` is a corrupt/shifted dump —
-do not use it as a boot ROM. Detail: memory `project_real_zre_rom_dump`,
-`doc/analyse_zre_rom_boot.md`.
-
 ## Non-blocking / housekeeping
 
 - **Pre-existing red tests** (independent of current work; confirm against baseline
