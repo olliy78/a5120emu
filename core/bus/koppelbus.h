@@ -4,6 +4,10 @@
 #include <string>
 #include <unordered_map>
 
+// A single hand-wired backplane signal line: a level that any number of
+// receivers subscribe to.  drive() only notifies on an actual level change,
+// so callbacks model edge-driven wiring (e.g. a CTC ZC/TO feeding another
+// channel's CLK/TRG input).  Default level is inactive (positive logic).
 class KoppelbusSignal {
 public:
     using Callback = std::function<void(bool level)>;
@@ -24,6 +28,11 @@ private:
     std::vector<Callback> receivers_;
 };
 
+// Signal router modelling the A5120 backplane's hand-wired links between
+// cards — the connections that are not part of the regular K1520 bus:
+// the CTC clock cascades (ZC/TO -> CLK/TRG), the second IEI/IEO interrupt
+// chain, MEMDI for OPS groups, and the power-monitor lines.  Cards connect()
+// to the named signals; machine wiring is what actually cross-links them.
 class Koppelbus {
 public:
     // A5120 named signals

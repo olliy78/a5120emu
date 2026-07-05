@@ -90,8 +90,12 @@ Low priority (cosmetic, well past the reached-prompt milestone).
 
 ## Non-blocking / housekeeping
 
-- **Pre-existing red tests** (independent of current work; confirm against baseline
-  before treating as a regression): FormatParser CPA780 / K3526 / K7024, and 6 Z80CTC
-  tests on `main`. See CLAUDE.md "Build & test".
-- **Documentation coverage** (old open point #3): English API-level comments still
-  incomplete across some headers; low priority.
+- **Test suite is fully green on this branch** — 583/583 ctest + 58 legacy-harness
+  tests pass (2026-07-05). The formerly "known-failing" tests (FormatParser
+  CPA780 / K3526 / K7024, the Z80CTC group) now pass here: the CTC tests were fixed
+  by the 2026-06-19 clock/interrupt work, the FormatParser tests by the formatting
+  work on this branch. The stale caveat has been removed from CLAUDE.md.
+- **Documentation coverage** (old open point #3): essentially done. All non-generated
+  `core/` headers carry file/class-level comments; the last gap (`koppelbus.h`) was
+  filled on 2026-07-05. Remaining low-priority nicety: fuller Doxygen on some Python
+  helpers.
