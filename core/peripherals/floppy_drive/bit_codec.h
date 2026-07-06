@@ -17,7 +17,7 @@
  *        `0x4489` (→ Datenbyte 0xA1, fehlendes Clock-Bit), C2-Sync (IAM) = `0x5224`.
  *   FM : Clock-Zelle immer 1; Marken-Bytes mit Sondertakt (FE/FB/F8 Clock C7, FC Clock D7).
  *
- * @see doc/refactoring_floppy_emulator.md §5
+ * @see doc/design/07_k5122_afs.md
  * @see https://github.com/keirf/greaseweazle  (image/hfe.py, codec/ibm/ibm.py)
  * @author Olaf Krieger
  * @date 2026

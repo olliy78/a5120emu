@@ -5,7 +5,7 @@
  * Emulation der K5122 „Anschlusssteuerung Floppy-disk Speicher" für das Robotron-
  * K1520/A5120-System.  Der Datenpfad arbeitet als **Lesekopf-über-rotierender-Spur-Modell**
  * auf Basis der zentralen @ref TrackImage -Abstraktion (siehe
- * doc/refactoring_floppy_emulator.md): der Controller kennt **keine** Sektorgrößen,
+ * doc/design/07_k5122_afs.md): der Controller kennt **keine** Sektorgrößen,
  * Sektoranzahl, CRC-Verfahren oder Boot-Stadien.  Er bezieht von jedem @ref FloppyDriveV2
  * eine fertig decodierte Spur (Gaps, Sync, IDAM, DATA, echte CRCs) und streamt deren Bytes
  * über Port 0x16 wie ein echter Lesekopf; die Re-Sync-Strobes MK/MK1 rücken den Kopf auf
@@ -13,15 +13,15 @@
  * Controller ist verfahrensneutral.  Unterstützte Image-Backends (über @ref DiskImage):
  * Raw-`.img` (@ref RawSectorImage) und HFE v1 (HfeImage).
  *
- * Für die A5120-Bootdiskette erzeugt @ref startReadTransfer() on-the-fly das
- * Robotron-spezifische Spurlayout (@ref TrackCodec::buildRobotronTrack), das die
- * idiosynkratische IDAM-Suche der ZVE2-Boot-/Loader-Leseroutinen erwartet.
+ * Für den Boot-Lesepfad erzeugt @ref startReadTransfer() on-the-fly einen treuen FM/MFM-
+ * Lese-Stream (@ref TrackCodec::buildFaithfulReadTrack, 4×A1-Sync) — die Sync-Länge, die
+ * ROM-Boot-Leseroutine und SYL-Lader gemeinsam bedienen.
  *
  * I/O-Port-Belegung (Basis 0x10): zwei Z80-PIOs (Steuer 0x10–0x13, Daten 0x14–0x17) plus
  * 8212-Drive-Select (0x18).  Side-Select = Port-A bit2 (/FR), am /STR-Strobe gelatcht;
  * Step-Richtung = bit5 (MR/SD), am /ST-Puls gesampelt.
  *
- * @see doc/refactoring_floppy_emulator.md §9 / §15
+ * @see doc/design/07_k5122_afs.md
  * @see doc/design/07_k5122_afs.md
  * @author Olaf Krieger
  * @date 2026
@@ -36,12 +36,21 @@
 #include "core/peripherals/floppy_drive/drive_profile.h"
 #include "core/peripherals/floppy_drive/format_parser.h"
 #include "core/peripherals/floppy_drive/track_image.h"
+#include "core/peripherals/floppy_drive/track_codec.h"   // LogicalSector
 #include <array>
-#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
+
+// Motor-Anlaufzeit (Spin-up): Dauer vom Motor-On (/LCK) bis „auf Drehzahl".  Erst dann
+// dreht die Scheibe → erst dann Index-Pulse und lesbare Daten.  Reale 5,25"-Laufwerke
+// (K5601/MFS) laufen in ~50 ms an; hier bewusst SEHR KLEIN gewählt, damit das getunte
+// Boot-/Format-Timing unberührt bleibt.  Über -DK5122_MOTOR_SPINUP_MS=<ms> übersteuerbar
+// (z. B. =50 für realistische Anlaufzeit).
+#ifndef K5122_MOTOR_SPINUP_MS
+#define K5122_MOTOR_SPINUP_MS 2
+#endif
 
 /**
  * @class K5122
@@ -105,9 +114,36 @@ public:
     bool isDiskWriteProtected(int drive) const;
     void setWriteProtect(int drive, bool wp);
     bool isDriveLedOn(int drive) const;
+    /// @brief Motor-Zustand (Spindel) des Laufwerks — /LCK aus dem 8212 (Port 0x18).
+    bool isMotorOn(int drive) const;
+    /// @brief True, wenn der Motor läuft UND den Spin-up beendet hat („auf Drehzahl").
+    ///        Nur dann rotiert die Scheibe → Index-Pulse + lesbare Daten.
+    bool motorAtSpeed(int drive) const;
+    /// @brief Kopf aufgesetzt? — /HL (Head Load, Steuer-PIO Port A Bit 6, active-low).
+    bool isHeadLoaded() const { return head_loaded_; }
 
     /// @brief Direkter Zugriff auf ein Laufwerk (Tests/C-API).
     FloppyDriveV2& drive(int idx) { return drives_[idx]; }
+
+    /**
+     * @brief Parst einen Vollspur-FORMAT-Schreibstrom (wie ZVE2 ihn über Port 0x14
+     *        streamt) in logische Sektoren.
+     *
+     * Der Strom ist eine komplette IBM-Spur als Bytefolge; der Parser erkennt **beide
+     * Aufzeichnungsverfahren**:
+     *   - **MFM** (Gap 0x4E / Sync 0x00): je Sektor `A1 A1 A1 FE …` (IDAM) + `A1 A1 A1 FB …`
+     *     (DAM) — die Marke folgt auf eine A1-Sync-Folge.
+     *   - **FM** (Gap 0xFF / Sync 0x00): je Sektor `00…00 FE …` (IDAM) + `00…00 FB …` (DAM) —
+     *     die Marke folgt **ohne A1** direkt auf eine 0x00-Sync-Folge (FM hat kein A1-Sync);
+     *     ein `FC`-Indexmark wird übersprungen.
+     * Sektorgröße = 128 << (sizecode & 3).  Statisch + frei von Controller-Zustand (unit-testbar).
+     *
+     * @param stream  gesammelter Schreibstrom (write_buf_)
+     * @param out_enc optional: erkanntes Verfahren (MFM bei A1-Sync, FM bei reinem 0x00-Sync).
+     * @return geparste Sektoren in Spurreihenfolge (leer, wenn keine IDAM/DAM-Paare).
+     */
+    static std::vector<LogicalSector> parseFormatStream(const std::vector<uint8_t>& stream,
+                                                        Encoding* out_enc = nullptr);
 
     // ─── Snapshot-Serialisierung (savestate/loadstate) ───────────────────────
     /**
@@ -136,6 +172,12 @@ public:
         unsigned sectorSize;   ///< Sektorgröße der aktiven Spur
         bool     mounted;      ///< Laufwerk gemountet?
         bool     busrq;        ///< /STR-DMA ausstehend
+        std::string driveProfileName; ///< DriveProfile-Name des gewählten Laufwerks (Bestückung)
+        Encoding readEncoding; ///< effektives Lesepfad-Verfahren (Override ?? Laufwerk-Default)
+        bool     readEncFromCtrlWord; ///< true: per Steuerwort gewählt; false: Laufwerk-Default
+        Encoding trackEncoding;  ///< echte Codierung der gemounteten Diskette (aus dem Image)
+        bool     encodingMatch;  ///< readEncoding == trackEncoding (gemountet); Basis für den
+                                 ///< treuen Lesepfad: bei Mismatch findet ZVE2 später kein IDAM
     };
     DebugState debugState() const {
         DebugState s{};
@@ -145,6 +187,16 @@ public:
         s.transferring = transferring_; s.writeMode = write_mode_;
         s.headPos = head_pos_; s.trackLen = cur_track_ ? cur_track_->size() : 0;
         s.sectorSize = cur_sector_size_; s.busrq = dma_pending_;
+        s.driveProfileName = drives_[selected_drive_].profile().name;
+        s.readEncoding = read_enc_overridden_
+                             ? read_enc_
+                             : drives_[selected_drive_].profile().default_read_encoding;
+        s.readEncFromCtrlWord = read_enc_overridden_;
+        // Echte Codierung der Diskette (disk-weit; Phase 0). geometry() ist const +
+        // ohne Track-Decode (liefert das im Image hinterlegte Verfahren).
+        s.trackEncoding = s.mounted ? drives_[selected_drive_].geometry().encoding
+                                    : Encoding::MFM;
+        s.encodingMatch = s.mounted && (s.readEncoding == s.trackEncoding);
         return s;
     }
 
@@ -168,15 +220,23 @@ private:
     void startReadTransfer();
     /// @brief Rückt den Lesekopf auf die nächste Adressmarke (MK/MK1-Strobe).
     void resyncToNextMark();
+    /// @brief Effektives Lese-Verfahren: Steuerwort-Override (0x85/0x87) oder Laufwerk-Default.
+    Encoding effReadEnc() const {
+        return read_enc_overridden_ ? read_enc_
+                                    : drives_[selected_drive_].profile().default_read_encoding;
+    }
     /// @brief Committet einen abgeschlossenen Schreibtransfer in die gecachte Spur.
     void commitWrite();
+    /// @brief Beendet einen Vollspur-FORMAT-Schreibtransfer am Index-Puls: parst den
+    ///        gesammelten Schreibstrom (IDAM/DAM/Daten) zu Sektoren, baut die Spur und
+    ///        schreibt sie ins Image; gibt /BUSRQ frei (ZVE1 wird über den Index-Int geweckt).
+    void commitFormatTrack();
     /// @brief Beginnt das Sammeln eines Schreib-Datenfelds (/WE 1→0 im ZVE2-Streaming).
     ///        Ermittelt den Zielsektor aus der letzten Id-Marke vor head_pos_.
     void beginWriteField();
     /// @brief Committet ein gesammeltes Schreib-Datenfeld (/WE 0→1) in den Zielsektor:
     ///        extrahiert das Datenfeld (A1 A1 A1 DAM …) und schreibt es zurück.
     void commitWriteField();
-    void markDriveAccess(int drive);
 
     // ─── Hardware-Objekte ────────────────────────────────────────────────────
     K1520Bus&     bus_;
@@ -188,12 +248,20 @@ private:
     // ─── Controller-Zustand ──────────────────────────────────────────────────
     int     selected_drive_ = 0;
     uint8_t current_head_   = 0;               ///< am /STR gelatchte Seite (bit2/FR)
+    uint8_t loaded_cyl_     = 0xFF;            ///< (Zyl,Kopf) der aktuell geladenen Lese-Spur —
+    uint8_t loaded_head_    = 0xFF;            ///<   /STR-Refresh lädt nur bei Wechsel neu (kein Rewind)
     bool    step_dir_in_    = true;            ///< Step-Richtung (bit5 MR/SD, am /ST)
     uint8_t prev_ctrl_a_    = 0xFF;            ///< vorheriger Port-A-Wert (Kantenerkennung)
 
-    // ─── Lesekopf-Streaming-Modell (ersetzt sector_buf_/field_*) ─────────────
-    const TrackImage* cur_track_    = nullptr; ///< aktive Spur (Zeiger auf robotron_track_)
-    TrackImage        robotron_track_;          ///< Robotron-Layout-Track für das Streaming;
+    // ── Aufzeichnungsverfahren des Lesepfads (Laufwerk-Default + Steuerwort-Override) ─
+    // Default kommt aus DriveProfile::default_read_encoding (ROM-Phase); ein Lesen-
+    // Marke-Steuerwort 0x85(MFM)/0x87(FM) latcht read_enc_ und übersteuert ab dann.
+    bool     read_enc_overridden_ = false;     ///< true, sobald ein 0x85/0x87-Steuerwort kam
+    Encoding read_enc_            = Encoding::FM; ///< gelatchtes Verfahren (gültig wenn overridden)
+
+    // ─── Lesekopf-Streaming-Modell ──────────────────────────────────────────
+    const TrackImage* cur_track_    = nullptr; ///< aktive Spur (Zeiger auf read_stream_track_)
+    TrackImage        read_stream_track_;       ///< treuer FM/MFM-Lese-Stream (4×A1-Sync);
                                                ///< wird in startReadTransfer() aus dem IBM-Track
                                                ///< des Drive-Cache erzeugt (on-the-fly).
                                                ///< Der Drive-Cache bleibt immer IBM-Format,
@@ -204,6 +272,13 @@ private:
     bool              write_mode_   = false;    ///< Schreibtransfer läuft (alter /STR-Schreibpfad)
     std::vector<uint8_t> write_buf_;            ///< gesammelte Schreibdaten (Port 0x14)
     uint16_t          cur_sector_size_ = 128;   ///< Sektorgröße der aktiven Spur (nur Debug-Info)
+
+    /// @brief Byte-Länge des synthetischen Gap-Stroms einer unformatierten Spur
+    ///        (≈ eine Umdrehung; reiner 0x4E-Gap ohne Adressmarken).  Ein Lese-Strobe
+    ///        auf eine leere/unformatierte Spur streamt diesen markenlosen Fluss, damit
+    ///        die Leseroutine kein IDAM findet und per Index-Timeout terminiert (wie
+    ///        echte HW), statt in einem gehaltenen /BUSRQ zu verklemmen.
+    static constexpr size_t kUnformattedTrackBytes = 6250;
 
     // ─── BIOS-Schreibpfad (/WE-flankengesteuert) ──────────────────────────────
     // Der CP/A-BIOS-Schreibpfad startet den Transfer als /STR-Lesestrobe (IDAM-Suche)
@@ -239,13 +314,31 @@ private:
     int  str_inactive_cycles_ = 0;              ///< Takte mit /STR=1 im aktiven Transfer
     static constexpr int kStrEndSampleCycles = 320;  ///< ~2 MFM-Byte-Perioden @ 2.45 MHz
 
+    // ─── Vollspur-FORMAT: Schreib-Idle-Erkennung (Transfer-Ende) ──────────────
+    int  write_idle_acc_ = 0;                   ///< Takte mit angebotenem, aber nicht
+                                                ///< abgeholtem Schreib-Byte (ZVE2 idle)
+    static constexpr int kWriteEndSampleCycles = 20000; ///< ZVE2 schreibt nicht mehr → letzte Spur fertig
+    uint8_t fmt_cyl_  = 0;                       ///< Zyl. der gerade geschriebenen FORMAT-Spur
+    uint8_t fmt_head_ = 0;                       ///< Kopf der gerade geschriebenen FORMAT-Spur
+
     // ─── Interrupt ───────────────────────────────────────────────────────────
     bool iei_in_ = false;
 
     // ─── Index-Puls (Periode aus DriveProfile::rpm) ──────────────────────────
     int  index_cycle_acc_ = 0;
 
-    // ─── LED-Simulation ──────────────────────────────────────────────────────
-    std::array<std::chrono::steady_clock::time_point, 4> led_until_{};
-    std::chrono::milliseconds led_hold_time_{180};
+    // ─── Motor-/LED-Zustand (aus dem 8212, Port 0x18) ────────────────────────
+    // Der 8212 (A4) latcht je Laufwerk ein /SE (Select) und ein /LCK (= /Motor On,
+    // MFS) — beide active-low (K5122-Doku §4.2).  Der Motor läuft, solange /LCK=0;
+    // die Laufwerks-LED leuchtet, solange das Laufwerk selektiert ODER sein Motor an
+    // ist.  Beide werden allein aus dem letzten OUT(18H) abgeleitet (keine Wanduhr).
+    std::array<bool, 4> drive_selected_{};   ///< /SE0../SE3 (low nibble, 0 = selektiert)
+    std::array<bool, 4> motor_on_{};         ///< /LCK0../LCK3 (high nibble, 0 = Motor an)
+    std::array<int, 4>  motor_spinup_cycles_{};  ///< Restlaufzeit bis „auf Drehzahl" (>0 = läuft an)
+    bool                head_loaded_ = false;    ///< /HL (Port A Bit 6, active-low): Kopf aufgesetzt
+
+    /// @brief Spin-up-Dauer in CPU-Takten (aus K5122_MOTOR_SPINUP_MS + cpu_hz_).
+    int motorSpinupCycles() const {
+        return static_cast<int>(static_cast<uint64_t>(K5122_MOTOR_SPINUP_MS) * cpu_hz_ / 1000);
+    }
 };

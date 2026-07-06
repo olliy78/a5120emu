@@ -5,16 +5,12 @@
  * Erzeugt aus logischen Sektoren einen normgerechten Track-Bytestrom (FM oder MFM)
  * mit echten Adressmarken, Gaps und CRCs und parst ihn zurück.  Wird vom
  * @ref RawSectorImage -Backend benutzt (.img → @ref TrackImage) und in Tests.
- * **Hier ist die CRC zentralisiert** — es gibt genau eine CRC-Primitive.
+ * **Hier ist die CRC zentralisiert** — es gibt genau eine CRC-Primitive
+ * (@ref TrackCodec::crc16, Standard-IBM-CRC-16-CCITT, Poly 0x1021).  FM vs. MFM
+ * unterscheiden sich nur durch die A1-Präambel im CRC-Bereich (FM: kein A1, MFM: 3×A1),
+ * nicht durch ein zweites Verfahren.
  *
- * CRC-Vereinheitlichung (siehe doc/refactoring_floppy_emulator.md §4.1): Die früheren
- * zwei „Startwerte" 0xBF84 (über 128 B Daten) und 0xCDB4 (über [FB]+Daten) der alten
- * K5122 sind KEIN zweites Verfahren, sondern dieselbe CRC an verschiedenen Stellen der
- * Präambel angesetzt.  @ref TrackCodec::crc16 ist die byte-genaue Übersetzung der
- * verifizierten Z80-Routinen sub_0407 (Sekundärlader) und sub_1E44 (3. Stufe), unverändert
- * aus der alten K5122 (loaderCrc16) übernommen.
- *
- * @see doc/refactoring_floppy_emulator.md §4
+ * @see doc/design/07_k5122_afs.md
  * @see doc/analyse_bootloader.md
  * @author Olaf Krieger
  * @date 2026
@@ -58,27 +54,6 @@ struct GapParams {
 };
 
 /**
- * @enum TrackLayout
- * @brief Wählt das physische Track-Layout, mit dem @ref RawSectorImage Tracks synthetisiert.
- *
- * - IbmStandard  — generisches IBM-MFM-/FM-Layout (3×A1 + Mark-Byte, IAM, Gaps nach
- *                  @ref GapParams). Standard für alle nicht-Robotron-Images.
- * - RobotronBoot — Robotron-A5120-Boot-Disketten-Layout: kein IAM, genau EIN A1 je Feld,
- *                  Marke liegt auf dem A1-Byte (nicht auf FE/FB), kompakte Gaps.
- *                  Wird von @ref K5122 für Raw-.img-Images der A5120-Bootdiskette benötigt,
- *                  weil die ZVE2-Leseroutinen genau dieses Byte-Layout erwarten:
- *                  nach Resync → buf[0]=A1, buf[1]=FE/FB (statt A1A1[FE-Marke]).
- *
- * @see TrackCodec::buildRobotronTrack
- * @see RawSectorImage (Ctor-Parameter)
- * @see DiskImage::open (Layout-Parameter)
- */
-enum class TrackLayout : uint8_t {
-    IbmStandard,   ///< Generisches IBM-MFM/FM-Layout (buildTrack)
-    RobotronBoot   ///< Robotron-A5120-Boot-Layout (buildRobotronTrack)
-};
-
-/**
  * @namespace TrackCodec
  * @brief Verfahrensabhängige Track-Synthese/-Analyse + CRC-Primitive.
  */
@@ -117,6 +92,22 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors, Encoding enc);
 std::vector<LogicalSector> parseTrack(const TrackImage& track);
 
 /**
+ * @brief Resync-Zielposition für den ZRE-ROM-Lesepfad (Kalibrierung, doc/design/07 §10.5.1).
+ *
+ * Findet ab @p fromPos die nächste Adressmarke und liefert die Position, auf die der
+ * K5122-Datenseparator re-synchronisiert, sodass der ROM-Read das Mark-Byte an der
+ * erwarteten buf[]-Position findet (FM: buf[1]=FE, MFM: buf[4]=FE):
+ *   - **Legacy single-A1-Layout** (Mark-Byte == 0xA1, @ref buildRobotronTrack): Resync direkt
+ *     auf die Marke (kein Offset, kein Encoding-Gate) — für den aktuellen Boot-Pfad.
+ *   - **Faithful-Layout** (Mark-Byte FE/FB, @ref buildTrack): nur wenn @p readEnc ==
+ *     `track.encoding` (sonst feuert kein MKE → @c SIZE_MAX); Resync landet bei
+ *     `markPos − (1 + nA1)` (FM: −1, MFM: −4) auf dem Sync-Byte vor der Markensequenz.
+ *
+ * @return Resync-Zielposition; @c SIZE_MAX = kein Resync (keine Marke ODER Encoding-Mismatch).
+ */
+size_t romReadResyncTarget(const TrackImage& track, size_t fromPos, Encoding readEnc);
+
+/**
  * @brief Robotron-MFM-CRC-16 (verifizierte loaderCrc16, byte-genau).
  *
  * Byte-für-Byte-Übersetzung von sub_0407/sub_1E44.  @p seed_hi/@p seed_lo sind der
@@ -140,35 +131,23 @@ uint16_t crc16(const uint8_t* data, size_t n, uint8_t seed_hi, uint8_t seed_lo);
 uint16_t crc16Ccitt(const uint8_t* data, size_t n, uint16_t seed = 0xFFFF);
 
 /**
- * @brief Robotron-A5120-Boot-Track-Layout: einzelner A1-Sync, kein IAM, Marke auf dem A1.
+ * @brief Treuer FM/MFM-Lese-Stream für den K5122-Boot-Lesepfad (kein IAM, Marke auf FE/FB,
+ *        Standard-IBM-CCITT-CRC), mit 4×A1-Sync je MFM-Feld.
  *
- * Erzeugt einen Bytestrom, den die ZVE2-Boot-ROM- und Sekundärlader-Leseroutinen erwarten:
- * Nach einem MK/MK1-Resync-Strobe liegt @ref TrackImage::nextMark auf dem A1-Byte;
- * der erste IN(0x16) liefert A1, der zweite liefert 0xFE bzw. 0xFB.
+ * Die 4×A1-Sync-Länge ist die, die ROM-Boot-Leseroutine UND SYL-Lader gleichzeitig bedienen:
+ * der ROM-Z-Pfad liest 1 Wegwerf-Byte + 3 Bytes und vergleicht buf[4] mit FE; der SYL-Lader
+ * überspringt A1-Bytes per Schleife und vergleicht dann mit FE.  Mit `[A1 A1 A1 A1 FE]` nach
+ * dem Resync trifft buf[4]=FE für das ROM, und die Skip-Schleife findet FE für den Lader.
+ * Das 4. A1 ist reines Sync und geht NICHT in die CRC ein (Lader seeden ab der Marke), sodass
+ * die echte 3×A1-Standard-CRC unverändert gilt.
  *
- * Layout je Sektor (in Sektorreihenfolge, KEIN führendes Gap, KEIN IAM):
- * @code
- *   [A1]   ← marks[]=Id   (Marke auf dem A1; nächstes Byte = FE)
- *   [FE] [cyl] [head] [id] [sizecode]
- *   [id_gap × 0x4E]    (18 Bytes für size<=128, 27 Bytes für size>128)
- *   [A1]   ← marks[]=Data (Marke auf dem A1; nächstes Byte = FB)
- *   [FB] [<size> Datenbytes]
- *   [CRC_hi] [CRC_lo]
- *   [8 × 0x4E]
- * @endcode
- *
- * CRC-Berechnung:
- *   - size <= 128: @ref crc16(data, n, 0xBF, 0x84)
- *   - size  > 128: @ref crc16([0xFB]+data, n+1, 0xCD, 0xB4)
- *
- * Alle anderen Bytes tragen @ref MarkType::None.  encoding=MFM, bitcells=0.
+ * Layout je Sektor (MFM; FM: ohne A1, Marke FE/FB direkt):
+ *   [12×00][A1×4][FE c h id sc][idcrc][gap][12×00][A1×4][FB][data][crc][gap]
+ * marks[] liegt auf dem FE/FB-Byte (wie @ref buildTrack).
  *
  * @param sectors Logische Sektoren in Spurreihenfolge.
- * @return Fertig aufgebautes TrackImage (MFM, Robotron-Layout).
- * @see TrackLayout::RobotronBoot
- * @see doc/refactoring_floppy_emulator.md §4 (CRC-Vereinheitlichung)
- * @see CLAUDE.md (ZVE2-Leseroutinen, Resync-Mechanismus)
+ * @param enc     Aufzeichnungsverfahren (MFM = 4×A1-Sync, FM = ohne A1).
  */
-TrackImage buildRobotronTrack(const std::vector<LogicalSector>& sectors);
+TrackImage buildFaithfulReadTrack(const std::vector<LogicalSector>& sectors, Encoding enc);
 
 }  // namespace TrackCodec

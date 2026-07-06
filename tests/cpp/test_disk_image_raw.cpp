@@ -25,6 +25,7 @@
 #include <fstream>
 #include <vector>
 #include <cstdint>
+#include <cstring>
 
 #include "core/peripherals/floppy_drive/raw_sector_image.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
@@ -282,4 +283,114 @@ TEST(DiskImageOpen, NichtExistenteDatei_gibtNullptr) {
     auto fmt = makeSimpleFormat();
     auto img = DiskImage::open("/nicht/vorhanden.img", fmt, false);
     EXPECT_EQ(img, nullptr);
+}
+
+// ─── DiskImage::create ───────────────────────────────────────────────────────
+
+TEST(DiskImageCreate, ImgMitFmt_LegtDateiInFormatGroesseAn) {
+    auto fmt = makeSimpleFormat();                 // 2 Zyl × 1 Kopf × 2 × 128 = 512 B
+    std::string path = std::filesystem::temp_directory_path() / "create_test.img";
+    std::filesystem::remove(path);
+
+    auto img = DiskImage::create(path, fmt, false);
+    ASSERT_NE(img, nullptr);
+    EXPECT_TRUE(std::filesystem::exists(path));
+    EXPECT_EQ(std::filesystem::file_size(path), fmt.totalBytes());
+    // Frisch angelegt → 0xE5 (leere CP/M-Sektoren).
+    std::ifstream f(path, std::ios::binary);
+    uint8_t b = 0; f.read(reinterpret_cast<char*>(&b), 1);
+    EXPECT_EQ(b, 0xE5);
+    auto g = img->geometry();
+    EXPECT_EQ(g.num_cyls, 2);
+    EXPECT_EQ(g.num_heads, 1);
+
+    std::filesystem::remove(path);
+}
+
+TEST(DiskImageCreate, ImgOhneFmt_gibtNullptr) {
+    std::string path = std::filesystem::temp_directory_path() / "create_nofmt.img";
+    std::filesystem::remove(path);
+    auto img = DiskImage::create(path, std::nullopt, false);
+    EXPECT_EQ(img, nullptr);
+}
+
+TEST(DiskImageCreate, HfeOhneFmt_gibtNullptr) {
+    std::string path = std::filesystem::temp_directory_path() / "create_nofmt.hfe";
+    std::filesystem::remove(path);
+    // .hfe braucht jetzt ein Format (Geometrie) → nullopt gibt nullptr.
+    auto img = DiskImage::create(path, std::nullopt, false);
+    EXPECT_EQ(img, nullptr);
+    std::filesystem::remove(path);
+}
+
+// Zählt IDAM/DAM-Marken einer Spur.
+static size_t countMarks(const TrackImage& t) {
+    size_t n = 0;
+    for (MarkType m : t.marks)
+        if (m == MarkType::Id || m == MarkType::Data) ++n;
+    return n;
+}
+
+// Gemeinsame Prüfung: frisch erzeugtes .hfe ist gültig formatiert (Marken vorhanden,
+// parseTrack liefert die erwarteten 0xE5-Sektoren) und übersteht open().
+static void checkFormattedHfe(Encoding enc) {
+    auto fmt = makeSimpleFormat();  // 2 Zyl × 1 Kopf × 2 × 128
+    std::string path = std::filesystem::temp_directory_path() / "create_fmt.hfe";
+    std::filesystem::remove(path);
+
+    auto img = DiskImage::create(path, fmt, false, enc);
+    ASSERT_NE(img, nullptr);
+    auto g = img->geometry();
+    EXPECT_EQ(g.num_cyls, 2);
+    EXPECT_EQ(g.num_heads, 1);
+    EXPECT_EQ(g.encoding, enc);
+
+    // Spur trägt echte Marken; parseTrack liefert 2 Sektoren à 128 B = 0xE5, CRC ok.
+    TrackImage t = img->readTrack(1, 0);
+    EXPECT_GT(countMarks(t), 0u);
+    auto secs = TrackCodec::parseTrack(t);
+    ASSERT_EQ(secs.size(), 2u);
+    for (const auto& s : secs) {
+        EXPECT_EQ(s.size, 128);
+        EXPECT_TRUE(s.data_crc_ok);
+        EXPECT_TRUE(s.id_crc_ok);
+        ASSERT_EQ(s.data.size(), 128u);
+        EXPECT_TRUE(std::all_of(s.data.begin(), s.data.end(),
+                                [](uint8_t b){ return b == 0xE5; }));
+    }
+
+    // Öffnen (Modus 1) akzeptiert die formatierte Datei.
+    auto reopened = DiskImage::open(path, std::nullopt, false);
+    EXPECT_NE(reopened, nullptr);
+
+    std::filesystem::remove(path);
+}
+
+TEST(DiskImageCreate, HfeMfm_GueltigFormatiert) { checkFormattedHfe(Encoding::MFM); }
+TEST(DiskImageCreate, HfeFm_GueltigFormatiert)  { checkFormattedHfe(Encoding::FM); }
+
+// Ein gap-leeres (unformatiertes) .hfe muss von open() abgelehnt werden (kein Hänger).
+TEST(DiskImageCreate, OpenLehntGapLeeresHfeAb) {
+    std::string path = std::filesystem::temp_directory_path() / "gap_blank.hfe";
+    std::filesystem::remove(path);
+
+    // Minimales HFE v1: 1 Zyl, 1 Kopf, MFM; Spurdaten komplett Gap (0x88).
+    std::vector<uint8_t> file(512 * 3, 0x00);
+    std::memcpy(file.data(), "HXCPICFE", 8);
+    file[0x09] = 1;      // num_cyls
+    file[0x0A] = 1;      // num_heads
+    file[0x0B] = 0;      // MFM
+    file[0x12] = 1;      // track_list_block = 1
+    file[0x14] = 0xFF;   // write_allowed
+    // LUT bei Block 1: offset_blocks=2, len_bytes=512.
+    file[512 + 0] = 2; file[512 + 1] = 0;
+    file[512 + 2] = 0; file[512 + 3] = 2;
+    for (size_t i = 1024; i < file.size(); ++i) file[i] = 0x88;  // Gap
+    { std::ofstream f(path, std::ios::binary | std::ios::trunc);
+      f.write(reinterpret_cast<const char*>(file.data()), file.size()); }
+
+    auto img = DiskImage::open(path, std::nullopt, false);
+    EXPECT_EQ(img, nullptr);  // markenlos → abgelehnt statt Hänger
+
+    std::filesystem::remove(path);
 }

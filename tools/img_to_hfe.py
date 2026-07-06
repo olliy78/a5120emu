@@ -19,7 +19,7 @@ HFE-v1-Bit-Konvention (kompatibel zu BitCodec):
 
 CRC-Kompatibilität zu TrackCodec::crc16 und parseTrack:
   - IDCRC  = crc16([A1,A1,A1,FE,cyl,head,sec,sizecode], seed=0xFF,0xFF)
-  - DATACRC = crc16(data, seed=0xBF,0x84)   (Boot-kompatibler Seed)
+  - DATACRC = crc16([A1,A1,A1,FB]+data, seed=0xFF,0xFF)  (Standard-IBM-MFM/CCITT)
 
 Verwendung:
   python3 tools/img_to_hfe.py tests/fixtures/cpa_mini.img tests/fixtures/cpa_mini.hfe
@@ -41,7 +41,7 @@ BITRATE    = 250   # kbit/s
 RPM        = 300
 
 
-# ─── Robotron-CRC-16 (byte-genau zu loaderCrc16 / TrackCodec::crc16) ─────────
+# ─── CRC-16-CCITT (byte-genau zu loaderCrc16 / TrackCodec::crc16) ─────────
 
 def crc16(data: bytes, seed_hi: int = 0xFF, seed_lo: int = 0xFF) -> int:
     """
@@ -234,9 +234,9 @@ def build_side(cyl: int, head: int, sectors: list[bytes]) -> bytes:
         enc.sync_a1()
         enc.byte(0xFB)          # DAM-Mark
 
-        # Daten-CRC: Boot-kompatibler Seed 0xBF,0x84 über reine Datenbytes
-        # (identisch zu buildTrack / parseTrack)
-        data_crc = crc16(sec_data, 0xBF, 0x84)
+        # Standard-IBM-MFM-Daten-CRC (CCITT) über [A1,A1,A1,FB] + Daten, Seed 0xFFFF
+        # (identisch zu TrackCodec::buildTrack / parseTrack).
+        data_crc = crc16(bytes([0xA1, 0xA1, 0xA1, 0xFB]) + sec_data, 0xFF, 0xFF)
 
         for b in sec_data:
             enc.byte(b)
@@ -383,21 +383,110 @@ def load_img(path: str, num_cyls: int, num_heads: int,
     return sides
 
 
+# ─── Blank-HFE (leerer, formatierbarer Container) ─────────────────────────────
+
+# Seiten-Bytes je Spur des K5601-Blank-Templates.  Muss den größten §3-Track
+# (5×1024 B MFM ≈ 11 KB HFE-Bytes/Seite) fassen; Wert = wie das funktionierende
+# disks/cpadisk_*.hfe (len_bytes 25000 → 12500 B/Seite).
+BLANK_SIDE_LEN = 12500
+HFE_GAP        = 0x88   # HFE-Gap-Füllbyte (unformatierte Spur)
+
+
+def write_blank_hfe(out_path: str, num_cyls: int, num_heads: int,
+                    side_len: int = BLANK_SIDE_LEN) -> None:
+    """
+    Schreibt ein leeres, mountbares HFE-v1-MFM-Template (Header + LUT + Gap-Spuren).
+
+    Der Inhalt jeder Spur ist reines HFE-Gap (0x88) — FORMAT.COM überschreibt beim
+    Formatieren jede Spur bitgenau, sodass nur die Geometrie (Spuren/Seiten/Kapazität
+    pro Spur) und ein gültiger Header/LUT relevant sind.  Damit nimmt EIN Template
+    jedes §3-Format der K5601-Geometrie auf.
+    """
+    track_len_bytes = side_len * num_heads          # beide Seiten zusammen
+    track_blocks    = (track_len_bytes + 511) // 512
+    track_len_pad   = track_blocks * 512
+
+    # ── Header (512 B) ────────────────────────────────────────────────────────
+    hdr = bytearray(512)
+    hdr[0:8]  = b'HXCPICFE'
+    hdr[0x08] = 0                       # formatrevision = 0 (v1)
+    hdr[0x09] = num_cyls                # number_of_tracks
+    hdr[0x0A] = num_heads               # number_of_sides
+    hdr[0x0B] = 0                       # track_encoding: 0 = ISOIBM_MFM
+    struct.pack_into('<H', hdr, 0x0C, BITRATE)   # bitrate [kbit/s]
+    struct.pack_into('<H', hdr, 0x0E, RPM)       # rpm
+    hdr[0x10] = 0                       # iface (IBMPC_HD_FLOPPYMODE)
+    hdr[0x11] = 1                       # dnu
+    struct.pack_into('<H', hdr, 0x12, 1)         # track_list_block = 1
+    hdr[0x14] = 0xFF                    # write_allowed
+    hdr[0x15] = 0xFF                    # single_step
+    for i in range(0x16, 512):
+        hdr[i] = 0xFF
+
+    # ── LUT-Block (512 B) ─────────────────────────────────────────────────────
+    lut_block = bytearray(b'\xFF' * 512)
+    current_block = 2                   # Spurdaten ab Block 2
+    for cyl in range(num_cyls):
+        struct.pack_into('<H', lut_block, cyl * 4 + 0, current_block)
+        struct.pack_into('<H', lut_block, cyl * 4 + 2, track_len_bytes)
+        current_block += track_blocks
+
+    # ── Datei schreiben ────────────────────────────────────────────────────────
+    with open(out_path, 'wb') as f:
+        f.write(hdr)
+        f.write(lut_block)
+        gap_track = bytes([HFE_GAP]) * track_len_pad
+        for _ in range(num_cyls):
+            f.write(gap_track)
+
+
 # ─── main ─────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    if len(sys.argv) != 3:
-        print(f"Verwendung: {sys.argv[0]} <in.img> <out.hfe>", file=sys.stderr)
-        sys.exit(1)
+    import argparse
+    p = argparse.ArgumentParser(
+        description="Erzeugt HFE-v1-MFM-Dateien: aus einer .img ODER als leeres "
+                    "formatierbares Template (--blank).")
+    p.add_argument('out', help="Ausgabe-.hfe")
+    p.add_argument('img', nargs='?',
+                   help="Eingabe-.img (Mini-Fixture-Geometrie); entfällt bei --blank")
+    p.add_argument('--blank', action='store_true',
+                   help="Leeres, formatierbares HFE-Template statt Konvertierung")
+    p.add_argument('--cyls', type=int, default=NUM_CYLS,
+                   help=f"Zylinder (Default {NUM_CYLS}; K5601: 80)")
+    p.add_argument('--heads', type=int, default=NUM_HEADS,
+                   help=f"Köpfe/Seiten (Default {NUM_HEADS}; K5601: 2)")
+    p.add_argument('--side-len', type=int, default=BLANK_SIDE_LEN,
+                   help=f"HFE-Bytes je Spurseite im Blank (Default {BLANK_SIDE_LEN})")
 
-    in_path  = sys.argv[1]
-    out_path = sys.argv[2]
+    # Rückwärtskompatibilität: `img_to_hfe.py <in.img> <out.hfe>` (2 Positionals).
+    argv = sys.argv[1:]
+    if len(argv) == 2 and not argv[0].startswith('-') and not argv[1].startswith('-') \
+            and argv[0].endswith('.img'):
+        in_path, out_path = argv[0], argv[1]
+        print(f"Lese {in_path} ({NUM_CYLS}×{NUM_HEADS}×{SECS_TRACK}×{SEC_SIZE}B) …")
+        sides = load_img(in_path, NUM_CYLS, NUM_HEADS, SECS_TRACK, SEC_SIZE)
+        print(f"Erzeuge HFE-v1 MFM {BITRATE} kbit/s {RPM} U/min → {out_path} …")
+        write_hfe(out_path, sides, NUM_CYLS, NUM_HEADS)
+        print("Fertig.")
+        return
 
-    print(f"Lese {in_path} ({NUM_CYLS}×{NUM_HEADS}×{SECS_TRACK}×{SEC_SIZE}B) …")
-    sides = load_img(in_path, NUM_CYLS, NUM_HEADS, SECS_TRACK, SEC_SIZE)
+    args = p.parse_args(argv)
 
-    print(f"Erzeuge HFE-v1 MFM {BITRATE} kbit/s {RPM} U/min → {out_path} …")
-    write_hfe(out_path, sides, NUM_CYLS, NUM_HEADS)
+    if args.blank:
+        print(f"Erzeuge leeres HFE-Template {args.cyls}×{args.heads} "
+              f"(side_len={args.side_len}) → {args.out} …")
+        write_blank_hfe(args.out, args.cyls, args.heads, args.side_len)
+        print("Fertig.")
+        return
+
+    if not args.img:
+        p.error("ohne --blank wird eine Eingabe-.img benötigt")
+
+    print(f"Lese {args.img} ({NUM_CYLS}×{NUM_HEADS}×{SECS_TRACK}×{SEC_SIZE}B) …")
+    sides = load_img(args.img, NUM_CYLS, NUM_HEADS, SECS_TRACK, SEC_SIZE)
+    print(f"Erzeuge HFE-v1 MFM {BITRATE} kbit/s {RPM} U/min → {args.out} …")
+    write_hfe(args.out, sides, NUM_CYLS, NUM_HEADS)
     print("Fertig.")
 
 

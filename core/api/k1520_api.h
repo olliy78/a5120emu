@@ -29,6 +29,21 @@ typedef void (*K1520SerialCallback)(void* ctx, uint8_t byte);
 
 /* ─── Lifecycle ──────────────────────────────────────────────────────────── */
 K1520Handle k1520_create(K1520MachineType type);
+
+/**
+ * Create a machine with an explicit drive-bay configuration.
+ *
+ * @param drive0..3  DriveProfile name per K5122 slot, e.g. "K5601" (5.25" MFM,
+ *                   default), "mfs_525_ds80", "ss_525_40", "mf3200_8_ss77"
+ *                   (8" FM), "mf6400_8_ds77" (8" MFM).  NULL or "" keeps the
+ *                   default (K5601); unknown names fall back to the built-in
+ *                   default profile.
+ * @return handle, or NULL on error.  Equivalent to k1520_create() when all four
+ *         names are NULL/"".
+ */
+K1520Handle k1520_create_configured(K1520MachineType type,
+                                    const char* drive0, const char* drive1,
+                                    const char* drive2, const char* drive3);
 void        k1520_destroy(K1520Handle h);
 void        k1520_reset(K1520Handle h);
 void        k1520_power_on(K1520Handle h);
@@ -59,14 +74,30 @@ bool k1520_mount_disk(K1520Handle h, int drive,
                       const char* image_path,
                       const char* format_name,
                       bool write_protect);
+/**
+ * @brief Create a NEW, validly-formatted blank disk image and mount it.
+ *
+ * `.hfe` → formatted HFE (real IDAM/DATA/CRC, 0xE5 data); otherwise `.img`.
+ * @p format_name selects the geometry; NULL or "" picks the drive-type default of
+ * the slot (K5601→cpa800, K5600.10→200K, K5600.20→400K, MF3200→308K/FM, MF6400→616K).
+ * Overwrites an existing file.  Returns false on error.
+ */
+bool k1520_create_disk(K1520Handle h, int drive,
+                       const char* image_path,
+                       const char* format_name,
+                       bool write_protect);
 /** @brief Unmount disk image from a drive slot. */
 bool k1520_unmount_disk(K1520Handle h, int drive);
 /** @brief Return true if a disk image is mounted in the drive. */
 bool k1520_disk_active(K1520Handle h, int drive);
 /** @brief Return true if mounted image is write protected. */
 bool k1520_disk_write_protected(K1520Handle h, int drive);
-/** @brief Return true while recent activity should light the drive LED. */
+/** @brief Return true while the drive LED should be lit (drive selected or motor on). */
 bool k1520_disk_led(K1520Handle h, int drive);
+/** @brief Return true while the drive's spindle motor is running (/LCK, port 0x18). */
+bool k1520_disk_motor(K1520Handle h, int drive);
+/** @brief Return true while the read/write head is loaded (/HL, ctrl port A bit6). */
+bool k1520_head_loaded(K1520Handle h);
 /** @brief Update mounted image write-protect state. */
 void k1520_set_write_protect(K1520Handle h, int drive, bool wp);
 

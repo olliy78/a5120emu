@@ -44,6 +44,24 @@ K1520Handle k1520_create(K1520MachineType type) {
     }
 }
 
+K1520Handle k1520_create_configured(K1520MachineType type,
+                                    const char* d0, const char* d1,
+                                    const char* d2, const char* d3) {
+    if (type != K1520_MACHINE_A5120) return nullptr;  // only A5120 for now
+
+    setup_logging();
+
+    try {
+        A5120Machine::Config cfg;                      // Default = 4× K5601
+        const char* names[4] = { d0, d1, d2, d3 };
+        for (int i = 0; i < 4; ++i)
+            if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
+        return new A5120Machine(cfg);
+    } catch (...) {
+        return nullptr;
+    }
+}
+
 void k1520_destroy(K1520Handle h) {
     delete toA5120(h);
 }
@@ -107,6 +125,15 @@ bool k1520_mount_disk(K1520Handle h, int drive,
     return toA5120(h)->mountDisk(drive, image_path, format_name, write_protect);
 }
 
+bool k1520_create_disk(K1520Handle h, int drive,
+                       const char* image_path, const char* format_name,
+                       bool write_protect) {
+    if (!image_path) return false;
+    // NULL/"" format_name → drive-type default (createDisk resolves it).
+    return toA5120(h)->createDisk(drive, image_path,
+                                  format_name ? format_name : "", write_protect);
+}
+
 bool k1520_unmount_disk(K1520Handle h, int drive) {
     return toA5120(h)->unmountDisk(drive);
 }
@@ -121,6 +148,14 @@ bool k1520_disk_write_protected(K1520Handle h, int drive) {
 
 bool k1520_disk_led(K1520Handle h, int drive) {
     return toA5120(h)->isDiskLedOn(drive);
+}
+
+bool k1520_disk_motor(K1520Handle h, int drive) {
+    return toA5120(h)->isMotorOn(drive);
+}
+
+bool k1520_head_loaded(K1520Handle h) {
+    return toA5120(h)->isHeadLoaded();
 }
 
 void k1520_set_write_protect(K1520Handle h, int drive, bool wp) {

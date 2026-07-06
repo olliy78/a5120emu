@@ -144,3 +144,27 @@ TEST(MachineSnapshot, LoadStateRejectsMissingAndGarbage){
     EXPECT_FALSE(m.loadState(path));
     std::remove(path.c_str());
 }
+
+// ─── Laufwerksbestückung (A5120Machine::Config / C-API) ────────────────────────
+// Default = 4× 5,25"-MFM (K5601); per Config (C-API/GUI/Config-Datei) überschreibbar.
+// k5122State() liefert den Zustand des aktuell gewählten Laufwerks (Default: Slot 0).
+
+TEST(MachineConfig, DefaultIst4xK5601){
+    A5120Machine m;   // ohne Config → Default-Bürokonfiguration
+    EXPECT_EQ(m.k5122State().driveProfileName, "K5601");
+}
+
+TEST(MachineConfig, CustomProfilWirdUebernommen){
+    A5120Machine::Config cfg;
+    cfg.drive_profiles[0] = "mf3200_8_ss77";   // 8"-FM-Laufwerk auf Slot 0
+    A5120Machine m(cfg);
+    EXPECT_EQ(m.k5122State().driveProfileName, "mf3200_8_ss77");
+}
+
+TEST(MachineConfig, UnbekanntesProfilFaelltAufDefault){
+    A5120Machine::Config cfg;
+    cfg.drive_profiles[0] = "gibtsnicht";
+    A5120Machine m(cfg);
+    // builtinDriveProfile liefert für unbekannte Namen das Default-Profil.
+    EXPECT_EQ(m.k5122State().driveProfileName, "mfs_525_ds80");
+}

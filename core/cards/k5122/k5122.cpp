@@ -9,7 +9,7 @@
  * am /ST; BUSRQ-Arbitrierung und Interrupt-Daisy-Chain wie in der Doku beschrieben.
  *
  * @see core/cards/k5122/k5122.h
- * @see doc/refactoring_floppy_emulator.md §9 / §15
+ * @see doc/design/07_k5122_afs.md
  * @author Olaf Krieger
  * @date 2026
  * @license MIT License
@@ -21,6 +21,8 @@
 #include "core/logger.h"
 #include <algorithm>
 #include <cassert>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <type_traits>
 
@@ -64,11 +66,33 @@ uint8_t K5122::ioRead(uint8_t port) {
             // Streaming-Datenpfad: Bytes des TrackImage byteweise ausgeben.
             // Der Kopf rotiert zyklisch — bei Erreichen des Spurendes wieder von vorn.
             if (cur_track_ && !cur_track_->empty()) {
-                result = cur_track_->bytes[head_pos_];
-                head_pos_ = (head_pos_ + 1) % cur_track_->size();
+                if (!motor_on_[static_cast<size_t>(selected_drive_)]) {
+                    // Motor steht (nicht selektiert/verriegelt): die Scheibe rotiert nicht →
+                    // unter dem Kopf liegen keine kohärenten Daten.  Wir liefern reinen
+                    // Gap-Fluss (kein Marken-Byte) und halten die Kopfposition (kein Vorlauf)
+                    // — die Byte-Drossel/BUSRQ bleibt unberührt (kein Hang).  Sobald der Motor
+                    // wieder läuft, läuft der Strom ab head_pos_ normal weiter.
+                    // (Das Index-Gating berücksichtigt zusätzlich den Spin-up, s. update();
+                    //  die kurze Anlaufphase ist für den byteweisen Lesestrom vernachlässigbar
+                    //  und liegt real ohnehin lange vor dem ersten Read.)
+                    result = 0x4E;
+                } else {
+                    const size_t pos     = head_pos_;
+                    const bool   is_mark = cur_track_->marks[pos] != MarkType::None;
+                    result = cur_track_->bytes[pos];
+                    // Falscher Aufzeichnungsmodus (read_enc_ ≠ Spur-Codierung): der
+                    // Datenseparator demoduliert die Marken-/Datenbytes als Müll → die
+                    // Marke ist "ungültig" (≠ FE/FB/A1), ZVE2 findet kein IDAM.  Gaps
+                    // sind weder FM noch MFM und kommen unverändert durch.  So scheitert
+                    // ein Read im falschen Verfahren (z. B. ROM-FM-Probe auf MFM-Spur),
+                    // das ROM läuft in den Index-Timeout und toggelt MK (FM↔MFM).
+                    if (is_mark && effReadEnc() != cur_track_->encoding) {
+                        result = 0x00;
+                    }
+                    head_pos_ = (head_pos_ + 1) % cur_track_->size();
+                }
                 // Per-Byte-Drossel: Byte abgeholt → ZVE2 verliert den Bus, bis das
                 // nächste Byte ~1 Byteperiode später bereitliegt (s. update()).
-                // In der Lücke läuft ZVE1.
                 byte_ready_ = false;
                 byte_acc_   = 0;
                 bus_.releaseBUSRQ();
@@ -98,14 +122,31 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
     if (port >= 0x10 && port <= 0x13) {
         if (port == 0x10) {
             LOG_DEBUG("K5122",
-                "CTRL PortA write 0x%02X  /ST=%d MK1=%d MR/SD=%d /STR=%d /FR=%d MK=%d /WE=%d",
+                "CTRL PortA write 0x%02X  /ST=%d /HL=%d MR/SD=%d MK1=%d /STR=%d /FR=%d MK=%d /WE=%d",
                 data,
-                (data >> 7) & 1, (data >> 4) & 1, (data >> 5) & 1,
+                (data >> 7) & 1, (data >> 6) & 1, (data >> 5) & 1, (data >> 4) & 1,
                 (data >> 3) & 1, (data >> 2) & 1, (data >> 1) & 1, data & 1);
         } else {
             LOG_DEBUG("K5122", "CTRL PIO write port=0x%02X data=0x%02X", port, data);
         }
-        ctrl_pio_.ioWrite(port - 0x10, data);
+        // ── Vollspur-FORMAT: Disketten-Index-Interrupt aktiv halten ──────────────
+        // Manche FORMAT-Programme treiben den Format-Abschluss über den
+        // Disketten-Index-Interrupt (ivdsk1, Vektor 0xE8): das Programm hängt eine
+        // eigene ISR ein, die bei jedem Index eine ZVE2-Warteschleife per Selbst-
+        // modifikation freigibt — erst nach mehreren Index-Interrupts läuft ZVE2 zu
+        // Ende und weckt ZVE1.  Der BIOS-Motor-Abschalt-Watchdog (headup, 0xE3BF)
+        // schreibt jedoch beim Ablauf seines Index-Zählers `OUT(11H)=0x03` (Port-A-
+        // Interrupt sperren).  Auf echter Hardware ist dieser Watchdog während einer
+        // laufenden Übertragung unterdrückt; da unser Vollspur-FORMAT-Write am BIOS-
+        // dio vorbeiläuft, wird der Zustand nicht gesetzt und der Index würde nach dem
+        // ersten Interrupt abgeschaltet → Deadlock (ZVE2 hängt in der Trailing-Gap-
+        // Schleife, ZVE1 ewig im JR$-Wartepark).  Solange ein FORMAT-Write läuft,
+        // ignorieren wir daher das Port-A-Interrupt-Sperrwort (Bits3-0=0011, Bit7=0).
+        if (port == 0x11 && write_mode_ && (data & 0x8F) == 0x03) {
+            LOG_DEBUG("K5122", "FORMAT: OUT(11H)=0x%02X (Index-INT-Sperre) ignoriert", data);
+        } else {
+            ctrl_pio_.ioWrite(port - 0x10, data);
+        }
         if (port == 0x10) {
             handleCtrlPortAWrite(data);
         }
@@ -118,18 +159,33 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
             handleDataPortAWrite(data);
         }
     } else if (port == 0x18) {
-        // 8212 Drive-Select: bits [3:0] = /SELx, active-low one-hot.
-        // 0xEE → unteres Nibble 0xE = 1110, bit0=0 → Drive 0
-        // 0xDD → unteres Nibble 0xD = 1101, bit1=0 → Drive 1
-        // 0xBB → unteres Nibble 0xB = 1011, bit2=0 → Drive 2
-        // 0x77 → unteres Nibble 0x7 = 0111, bit3=0 → Drive 3
+        // 8212 (A4): low nibble = /SE0../SE3 (Select), high nibble = /LCK0../LCK3
+        // (= /Motor On), beide active-low.  selected_drive_ (Transferpfad) aus dem
+        // low-nibble-One-Hot; Motor/Select je Laufwerk separat unten (LED/Motor).
+        // 0xEE → low 1110, bit0=0 → Drive 0   (0xDD→D1, 0xBB→D2, 0x77→D3)
         uint8_t sel = ~data & 0x0F;
         selected_drive_ = (sel == 0) ? 0
                         : (sel & 0x01) ? 0
                         : (sel & 0x02) ? 1
                         : (sel & 0x04) ? 2
                         : 3;
-        LOG_INFO("K5122", "8212 drive-select write=0x%02X => D%d", data, selected_drive_);
+        // Der 8212 latcht je Laufwerk /SE (Select, low nibble) und /LCK (= /Motor On,
+        // high nibble), beide active-low (K5122-Doku §4.2).  Daraus den echten
+        // Select-/Motor-Zustand je Laufwerk ableiten (RESET → 0xFF → alles aus).  Der
+        // Motor läuft, solange /LCK=0; die LED folgt „selektiert ODER Motor an".
+        for (int d = 0; d < 4; ++d) {
+            const size_t di  = static_cast<size_t>(d);
+            const bool   mot = ((data >> (4 + d)) & 1) == 0;
+            // Motor-Anlaufflanke (aus→an): Spin-up armieren.  Ein bereits laufender
+            // Motor (an→an) läuft weiter, kein Neu-Anlauf.
+            if (mot && !motor_on_[di]) motor_spinup_cycles_[di] = motorSpinupCycles();
+            drive_selected_[di] = ((data >> d) & 1) == 0;
+            motor_on_[di]       = mot;
+        }
+        LOG_INFO("K5122", "8212 write=0x%02X => sel D%d | SE=%d%d%d%d MotorOn=%d%d%d%d",
+                 data, selected_drive_,
+                 drive_selected_[0], drive_selected_[1], drive_selected_[2], drive_selected_[3],
+                 motor_on_[0], motor_on_[1], motor_on_[2], motor_on_[3]);
         updateStatusPortB();
     } else {
         LOG_WARN("K5122", "ioWrite unbekannter port=0x%02X data=0x%02X", port, data);
@@ -186,7 +242,7 @@ bool K5122::mountDisk(int drive, std::unique_ptr<DiskImage> img, bool write_prot
  *
  * Das DiskImage wird im IBM-Standard-Format geöffnet (DiskImage::open Default).
  * Der Drive-Cache speichert IBM-Format-Tracks, damit der Write-Pfad (commitWrite →
- * parseTrack → buildTrack) unverändert funktioniert.  Das Robotron-Layout für den
+ * parseTrack → buildTrack) unverändert funktioniert.  Der treue FM/MFM-Lese-Stream für den
  * Lese-Streaming-Pfad wird von startReadTransfer() on-the-fly erzeugt.
  */
 bool K5122::mountDisk(int drive, const std::string& path,
@@ -229,7 +285,20 @@ void K5122::setWriteProtect(int drive, bool wp) {
 
 bool K5122::isDriveLedOn(int drive) const {
     if (drive < 0 || drive > 3) return false;
-    return std::chrono::steady_clock::now() < led_until_[static_cast<size_t>(drive)];
+    // Signal-treu: LED an, solange das Laufwerk selektiert (/SE) ODER sein Motor
+    // (/LCK) an ist — abgeleitet aus dem letzten OUT(18H) (8212), keine Wanduhr.
+    return drive_selected_[static_cast<size_t>(drive)] || motor_on_[static_cast<size_t>(drive)];
+}
+
+bool K5122::isMotorOn(int drive) const {
+    if (drive < 0 || drive > 3) return false;
+    return motor_on_[static_cast<size_t>(drive)];
+}
+
+bool K5122::motorAtSpeed(int drive) const {
+    if (drive < 0 || drive > 3) return false;
+    return motor_on_[static_cast<size_t>(drive)] &&
+           motor_spinup_cycles_[static_cast<size_t>(drive)] <= 0;
 }
 
 // ─── DMA-Arbitrierung / Index ─────────────────────────────────────────────────
@@ -308,7 +377,68 @@ void K5122::update(int cycles) {
         }
     }
 
+    // ── Per-Byte-/BUSRQ-Drossel im Vollspur-FORMAT-Schreibmodus ──────────────
+    // Symmetrisch zum Lesen: nach jeder Byteperiode liegt der nächste Schreibtakt
+    // bereit, /BUSRQ wird (re)assertiert, ZVE2 schreibt ein Byte (Port 0x14 →
+    // handleDataPortAWrite löscht byte_ready_ + gibt /BUSRQ frei).  In der Lücke
+    // läuft ZVE1 bis zu seinem Interrupt-Wartepark.
+    //
+    // Schreib-Idle-Erkennung (Transfer-Ende): ZVE2 streamt die Spur und hört dann
+    // auf (es schreibt dtrret und kehrt in seine Idle-Schleife zurück).  Bleibt
+    // byte_ready_ über mehrere Byteperioden gesetzt (ZVE2 holt das angebotene Byte
+    // nicht mehr ab), ist der Spur-Schreibstrom komplett → commitFormatTrack().
+    if (write_mode_) {
+        if (!byte_ready_) {
+            byte_acc_ += cycles;
+            if (byte_acc_ >= kBytePeriodCycles) {
+                byte_acc_   = 0;
+                byte_ready_ = true;
+                bus_.assertBUSRQ();
+            }
+            write_idle_acc_ = 0;
+        } else {
+            // Byte bereitgestellt, aber noch nicht abgeholt → ZVE2 schreibt gerade
+            // nicht.  Hält das über kWriteEndSampleCycles an, hat ZVE2 das FORMAT
+            // beendet (keine Folgespur mehr) → letzte Spur abschließen + Transfer beenden.
+            write_idle_acc_ += cycles;
+            if (write_idle_acc_ >= kWriteEndSampleCycles) {
+                commitFormatTrack();
+                write_mode_   = false;
+                transferring_ = false;
+                byte_ready_   = false;
+                dma_pending_  = false;
+                bus_.releaseBUSRQ();
+            }
+        }
+    }
+
+    // ── Motor-Anlauf (Spin-up) je Laufwerk fortschreiben ─────────────────────
+    // Nach dem Motor-On (/LCK) läuft die Scheibe erst nach der Spin-up-Zeit auf
+    // Drehzahl.  Auch nicht selektierte Laufwerke laufen an (das BIOS spinnt sie
+    // vor), damit sie beim späteren Selektieren bereits „auf Drehzahl" sind.
+    for (int d = 0; d < 4; ++d) {
+        int& rem = motor_spinup_cycles_[static_cast<size_t>(d)];
+        if (motor_on_[static_cast<size_t>(d)] && rem > 0) {
+            rem -= cycles;
+            if (rem <= 0) {
+                rem = 0;
+                // Auf Drehzahl → /RDYL des selektierten Laufwerks nachziehen (der
+                // Statusbyte-Latch wird sonst nur bei Port-Schreibzugriffen erneuert).
+                if (d == selected_drive_) updateStatusPortB();
+            }
+        }
+    }
+
     if (!drives_[selected_drive_].isMounted()) return;
+
+    // ── Index-Gating: keine Rotation ⇒ kein Index ────────────────────────────
+    // Steht der Motor des selektierten Laufwerks (aus oder noch im Anlauf), dreht
+    // die Scheibe nicht → kein Index-Puls.  Die Phase startet nach dem Anlauf frisch
+    // (index_cycle_acc_ auf 0), wie auf echter HW nach dem Motor-Neuanlauf.
+    if (!motorAtSpeed(selected_drive_)) {
+        index_cycle_acc_ = 0;
+        return;
+    }
 
     index_cycle_acc_ += cycles;
     const int period = drives_[selected_drive_].indexPeriodCycles(cpu_hz_);
@@ -316,6 +446,7 @@ void K5122::update(int cycles) {
     index_cycle_acc_ -= period;
 
     // Fallenden Puls simulieren: /ASTB low → Interrupt-Flanke → wieder high.
+    // (Weckt u. a. ZVE1 aus dem FORMAT-Wartepark JR 1D21 über den Index-Interrupt.)
     ctrl_pio_.setASTB(false);
     ctrl_pio_.setASTB(true);
     LOG_TRACE("K5122", "Index-Puls: ctrl PIO Port A /ASTB pulsed");
@@ -336,6 +467,11 @@ void K5122::update(int cycles) {
  * 3. MK (bit1) oder MK1 (bit4) steigende Flanke → resyncToNextMark()
  */
 void K5122::handleCtrlPortAWrite(uint8_t data) {
+    // ── /HL (bit6, active-low): Kopf-Aufsetz-Zustand latchen ─────────────────
+    // 0 = Kopf aufgesetzt (Head Load), 1 = Kopf abgehoben.  Reiner Zustand für
+    // Statusabfrage/GUI; das Lese-/Index-Gating hängt (noch) am Motor, nicht am /HL.
+    head_loaded_ = !(data & 0x40);
+
     // ── /WE (bit0) Flanken: BIOS-Schreib-Datenfeld sammeln/committen ─────────
     // Der CP/A-BIOS-dio-Pfad findet zuerst die IDAM (Lese-Strobe, /WE=1) und
     // schaltet erst zum Schreiben des Datenfelds /WE auf 0 (Steuerwort B4/B0),
@@ -350,6 +486,19 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
         } else if (!we_now && we_prev && we_writing_) {
             commitWriteField();
         }
+    }
+
+    // ── Lesen-Marke-Steuerwort (0x85 = MFM / 0x87 = FM): Verfahren latchen ───
+    // FM/MFM ist Eigenschaft von Laufwerk+Medium; die Software wählt es über das
+    // „Lesen-Marke"-Steuerwort (doc/cpa_format_detection.md §93).  bit1 trennt
+    // MFM(0)/FM(1).  (data & 0xFD) == 0x85 erkennt NUR die beiden Kommandoworte
+    // 0x85/0x87 — der 0xB5-Reset und alle Strobe-/Step-Worte erfüllen es nicht,
+    // sodass die als MK(bit1)/MK1(bit4) togglenden Strobes hier nicht stören.
+    // Latch übersteuert den DriveProfile-Default (Laufwerk-Default + Steuerwort-
+    // Override); damit kann das OS später auf MFM-Datenspuren umschalten.
+    if ((data & 0xFD) == 0x85) {
+        read_enc_            = (data & 0x02) ? Encoding::FM : Encoding::MFM;
+        read_enc_overridden_ = true;
     }
 
     // ── /ST (bit7) fallende Flanke: Schritt-Puls ─────────────────────────────
@@ -369,6 +518,12 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
         // Empirisch verifiziert an den @OS.COM-Lesestrobes; bit5 togglet mit MK-Strobes
         // und darf daher NICHT als Seitenwahl dienen.
         current_head_ = (data & 0x04) ? 0 : 1;
+        // Einseitige Laufwerke (8″-SD wie MF3200) haben physisch nur EINEN Kopf; die
+        // Seitenwahl /FR ist dort ohne Wirkung (es gibt keine Rückseite).  Das BIOS des
+        // Combo-Systems fährt /FR trotzdem, was sonst auf den nicht existierenden Kopf 1
+        // schreiben würde (leere Vorderseite → cpabcgen/Boot scheitern).  Kopf hart auf 0.
+        if (drives_[selected_drive_].profile().num_heads <= 1)
+            current_head_ = 0;
 
         if (bus_.isBUSRQ()) {
             // ZVE2-Kontext: Bus bereits gehalten
@@ -379,11 +534,19 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
                 bus_.releaseBUSRQ();
                 LOG_DEBUG("K5122", "/STR ZVE2-Commit SCHREIBEN abgeschlossen, BUSRQ freigegeben");
             } else {
-                // Lese-Refresh: Spur für ggf. neuen Kopf neu laden (z. B. Kopf-Wechsel).
-                startReadTransfer();
-                byte_ready_ = true;          // erstes Byte der neuen Spur liegt bereit
+                // Lese-Refresh (kontinuierliche Rotation): die Scheibe dreht weiter,
+                // ein erneutes /STR auf DERSELBEN (Zyl,Kopf) setzt den Kopf NICHT zurück
+                // (kein Rewind) — head_pos_ läuft weiter.  Nur bei Kopf-/Zylinderwechsel
+                // (Seek, Seitenumschaltung) wird die Spur neu geladen (head_pos_=0).
+                const bool same_track =
+                    cur_track_ != nullptr &&
+                    loaded_head_ == current_head_ &&
+                    loaded_cyl_  == drives_[selected_drive_].currentCylinder();
+                if (!same_track) startReadTransfer();
+                byte_ready_ = true;          // nächstes Byte liegt bereit
                 byte_acc_   = 0;
-                LOG_DEBUG("K5122", "/STR ZVE2-Lese-Refresh: Spur neu geladen, BUSRQ gehalten");
+                LOG_DEBUG("K5122", "/STR ZVE2-Lese-Refresh: %s, BUSRQ gehalten",
+                          same_track ? "weiter (kein Rewind)" : "Spur neu geladen");
             }
         } else {
             // ZVE1-Kontext: neuen DMA-Transfer auslösen
@@ -393,10 +556,25 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
                 byte_ready_ = true;          // erstes Byte liegt bereit → /BUSRQ aktiv
                 byte_acc_   = 0;
             } else {
-                // Schreib-DMA: Puffer leeren, ZVE2 füllt ihn via Port 0x14
-                write_mode_  = true;
+                // Schreib-DMA (Vollspur-FORMAT): ZVE2 streamt die komplette Spur
+                // byteweise via Port 0x14.  Per-Byte-/BUSRQ-Drossel wie beim Lesen
+                // → ZVE1 läuft in den Lücken bis zu seinem Wartepark (JR 1D21), aus
+                // dem ZVE2 es nach der Spur per dtrret-Byte befreit.  ZVE2 streamt
+                // dann weiter (Gap), bis ZVE1 die nächste Spur einleitet — DEREN
+                // Schreib-Strobe schließt die vorige Spur ab (commitFormatTrack).
+                if (!write_buf_.empty()) {
+                    commitFormatTrack();      // vorige Spur abschließen + ins Image
+                }
+                write_mode_   = true;
                 transferring_ = false;
                 write_buf_.clear();
+                byte_ready_   = true;     // erstes Schreib-Byte sofort anfordern
+                byte_acc_     = 0;
+                write_idle_acc_ = 0;
+                // Zielspur (Zyl/Kopf) JETZT latchen — ZVE1 seekt vor der nächsten Spur.
+                fmt_cyl_  = drives_[selected_drive_].isMounted()
+                          ? drives_[selected_drive_].currentCylinder() : 0;
+                fmt_head_ = current_head_;
             }
             dma_pending_ = true;
             bus_.assertBUSRQ();
@@ -432,10 +610,20 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
  * Diese Echo-Bytes werden ignoriert (write_mode_ ist dann false).
  */
 void K5122::handleDataPortAWrite(uint8_t data) {
-    // Sammeln, wenn der alte /STR-Schreibpfad (write_mode_) ODER der BIOS-
-    // /WE-Schreibpfad (we_writing_) aktiv ist.  Sonst Lese-Echo → ignorieren.
+    // Sammeln, wenn der Vollspur-FORMAT-Schreibpfad (write_mode_) ODER der BIOS-
+    // /WE-Datenfeld-Schreibpfad (we_writing_) aktiv ist.  Sonst Lese-Echo → ignorieren.
     if (!write_mode_ && !we_writing_) return;   // Lese-Echo — kein Schreibdatum
     write_buf_.push_back(data);
+
+    // Vollspur-FORMAT: Per-Byte-/BUSRQ-Drossel — Byte abgeholt → ZVE2 verliert den
+    // Bus, bis update() nach 1 Byteperiode das nächste anfordert.  In der Lücke läuft
+    // ZVE1.  (Der /WE-Datenfeldpfad sammelt dagegen innerhalb eines gehaltenen
+    // ZVE2-Streamings und lässt die Bus-Arbitrierung unberührt.)
+    if (write_mode_ && !we_writing_) {
+        byte_ready_ = false;
+        byte_acc_   = 0;
+        bus_.releaseBUSRQ();
+    }
     LOG_TRACE("K5122", "Schreib-Byte 0x%02X gesammelt (%zu Bytes)", data, write_buf_.size());
 }
 
@@ -454,6 +642,10 @@ void K5122::handleDataPortAWrite(uint8_t data) {
  *     bit7 /TO=1    (nicht auf Spur 0)
  * @endcode
  *
+ * /RDYL (bit0): „Laufwerk bereit" = gemountet UND Motor auf Drehzahl (motorAtSpeed).
+ * Während des Spin-ups oder bei stehendem Motor meldet das Laufwerk NICHT bereit — wie
+ * echte HW (MFS gibt /RDYL erst nach dem Anlauf frei).
+ *
  * /HF (bit2): per Default 1 (= High-Frequency/MFM-Modus), da 5"-MFM das Standardprofil
  * ist.  Für FM/8"-Laufwerke (profile_.supports_fm && !profile_.supports_mfm) wäre bit2=0.
  * Im aktuellen Testrahmen (nur MFM-Laufwerke) ist der Default ausreichend.
@@ -463,7 +655,8 @@ void K5122::updateStatusPortB() {
 
     FloppyDriveV2& drv = drives_[selected_drive_];
     if (drv.isMounted()) {
-        s &= ~(1u << 0);            // /RDYL = 0 (bereit)
+        if (motorAtSpeed(selected_drive_))
+            s &= ~(1u << 0);        // /RDYL = 0 (bereit) — nur auf Drehzahl
         if (drv.currentCylinder() == 0)
             s &= ~(1u << 7);        // /TO = 0 (auf Spur 0)
         if (drv.isWriteProtect())
@@ -484,7 +677,6 @@ void K5122::doStep() {
     if (!drv.isMounted()) return;
 
     drv.step(step_dir_in_);
-    markDriveAccess(selected_drive_);
 
     LOG_TRACE("K5122", "STEP D%d dir=%s cyl=%u",
               selected_drive_, step_dir_in_ ? "inward" : "outward",
@@ -492,13 +684,14 @@ void K5122::doStep() {
 }
 
 /**
- * @brief Armiert einen Lese-Transfer: erzeugt einen Robotron-Layout-Track und streamt ihn.
+ * @brief Armiert einen Lese-Transfer: erzeugt den treuen FM/MFM-Lese-Stream und streamt ihn.
  *
  * Der Drive-Cache liefert einen IBM-Format-Track (buildTrack); daraus werden via
- * parseTrack die logischen Sektoren gewonnen und anschließend via buildRobotronTrack ein
- * Robotron-Layout-Track erzeugt.  Dieser liegt in robotron_track_ und der Zeiger
- * cur_track_ zeigt darauf.  Der IBM-Format-Track im Drive-Cache bleibt unberührt, damit
- * commitWrite()/parseTrack() weiterhin funktioniert.
+ * parseTrack die logischen Sektoren gewonnen und anschließend via buildFaithfulReadTrack
+ * (4×A1-Sync, Standard-CRC) der Lese-Stream erzeugt.  Dieser liegt in read_stream_track_ und
+ * der Zeiger cur_track_ zeigt darauf.  Der IBM-Format-Track im Drive-Cache bleibt unberührt,
+ * damit commitWrite()/parseTrack() weiterhin funktioniert.  Das Verfahren (FM/MFM) kommt aus
+ * dem Steuerwort-Override bzw. dem DriveProfile-Default (eff_enc).
  *
  * Bei leerem Laufwerk oder Spur → cur_track_=nullptr.
  */
@@ -508,7 +701,7 @@ void K5122::startReadTransfer() {
         LOG_WARN("K5122", "Lese-Transfer: D%d nicht montiert", selected_drive_);
         transferring_ = false;
         cur_track_    = nullptr;
-        robotron_track_ = {};
+        read_stream_track_ = {};
         return;
     }
 
@@ -516,32 +709,66 @@ void K5122::startReadTransfer() {
     const TrackImage& ibm_track = drv.track(current_head_);
 
     if (ibm_track.empty()) {
-        LOG_WARN("K5122", "Lese-Transfer: D%d H%u Spur leer",
-                 selected_drive_, static_cast<unsigned>(current_head_));
-        transferring_ = false;
-        cur_track_    = nullptr;
-        robotron_track_ = {};
+        // Unformatierte/leere Spur: eine echte Diskette liefert hier reinen Gap-Flux
+        // OHNE Adressmarken.  Wir streamen genau das (markenloser 0x4E-Fluss), damit
+        // die Leseroutine kein IDAM findet und über den Index-Timeout terminiert
+        // ("record not found") — wie auf echter Hardware.  Würde der Transfer hier
+        // (wie früher) einfach abgebrochen, bliebe das vom Lese-/STR assertierte
+        // /BUSRQ hängen: ZVE2 verklemmt in seiner Warteschleife (z. B. FORMAT.COMs
+        // ZVE2-Koroutine JR 0x1D21), weil kein Byte kommt und /BUSRQ nie freigegeben
+        // wird → der Formatier-Vorlese-Schritt auf einer frischen Blank-Disk hängt.
+        const Encoding eff_enc = read_enc_overridden_
+                                     ? read_enc_
+                                     : drv.profile().default_read_encoding;
+        read_stream_track_          = {};
+        read_stream_track_.bytes.assign(kUnformattedTrackBytes, 0x4E);
+        read_stream_track_.marks.assign(kUnformattedTrackBytes, MarkType::None);
+        read_stream_track_.encoding = eff_enc;
+        cur_sector_size_ = 128;
+        cur_track_       = &read_stream_track_;
+        head_pos_        = 0;
+        loaded_cyl_      = drv.currentCylinder();
+        loaded_head_     = current_head_;
+        transferring_    = true;
+        write_mode_      = false;
+        locked_          = false;
+        LOG_INFO("K5122", ">>> READ D%d C=%u H=%u UNFORMATIERT → %zu B Gap-Flux (%s, Index-Timeout)",
+                 selected_drive_, static_cast<unsigned>(drv.currentCylinder()),
+                 static_cast<unsigned>(current_head_), read_stream_track_.size(),
+                 eff_enc == Encoding::FM ? "FM" : "MFM");
         return;
     }
 
-    // Robotron-Layout-Track on-the-fly erzeugen: IBM-Track parsen → Sektoren →
-    // buildRobotronTrack.  Der Drive-Cache bleibt IBM-Format.
-    auto sektoren   = TrackCodec::parseTrack(ibm_track);
-    robotron_track_ = TrackCodec::buildRobotronTrack(sektoren);
+    // Aufzeichnungsverfahren wählen: Steuerwort-Override (0x85/0x87) hat Vorrang,
+    // sonst der DriveProfile-Default des angeschlossenen Laufwerks (für K5601 = FM).
+    const Encoding eff_enc = read_enc_overridden_
+                                 ? read_enc_
+                                 : drv.profile().default_read_encoding;
+
+    // Treuer FM/MFM-Lese-Stream mit 4×A1-Sync (der gemeinsame Modus für ROM-Boot-Read und
+    // SYL-Lader, s. buildFaithfulReadTrack).  Resync-Offset (markPos-4 MFM / -1 FM) und der
+    // FM/MFM-Verfahrens-Match stecken in romReadResyncTarget/ioRead; Codierung aus eff_enc.
+    auto sektoren    = TrackCodec::parseTrack(ibm_track);
+    read_stream_track_  = TrackCodec::buildFaithfulReadTrack(sektoren, eff_enc);
     cur_sector_size_ = sektoren.empty() ? 128 : sektoren.front().size;
 
-    cur_track_    = &robotron_track_;
+    cur_track_    = &read_stream_track_;
     head_pos_     = 0;
+    // Geladene (Zyl,Kopf) merken — der /STR-Lese-Refresh lädt nur bei Wechsel neu
+    // (sonst kontinuierliche Rotation, kein Rewind).
+    loaded_cyl_   = drv.currentCylinder();
+    loaded_head_  = current_head_;
     transferring_ = true;
     write_mode_   = false;
     locked_       = false;
-    markDriveAccess(selected_drive_);
 
-    LOG_INFO("K5122", ">>> READ D%d C=%u H=%u Spur=%zu Bytes (Robotron-Layout)",
+    LOG_INFO("K5122", ">>> READ D%d C=%u H=%u Spur=%zu Bytes (%s%s)",
              selected_drive_,
              static_cast<unsigned>(drv.currentCylinder()),
              static_cast<unsigned>(current_head_),
-             robotron_track_.size());
+             read_stream_track_.size(),
+             eff_enc == Encoding::FM ? "FM" : "MFM",
+             read_enc_overridden_ ? "/Steuerwort" : "/Laufwerk-Default");
 }
 
 /**
@@ -557,12 +784,14 @@ void K5122::startReadTransfer() {
 void K5122::resyncToNextMark() {
     if (!cur_track_ || cur_track_->empty()) return;
 
-    size_t m = cur_track_->nextMark(head_pos_);
-    if (m != SIZE_MAX) {
-        head_pos_ = m;
+    // Resync-Ziel aus der ROM-Lese-Kalibrierung (§10.5.1): Legacy-A1-Layout direkt auf
+    // die Marke, Faithful-Layout (buildTrack) mit Offset markPos-(1+nA1) und Encoding-
+    // Gate (read_enc_ vs Spur-Codierung). SIZE_MAX = kein MKE (Mismatch/keine Marke).
+    size_t t = TrackCodec::romReadResyncTarget(*cur_track_, head_pos_, effReadEnc());
+    if (t != SIZE_MAX) {
+        head_pos_ = t;
         locked_   = true;
-        LOG_TRACE("K5122", "resync → Marke bei pos=%zu (0x%02X)",
-                  m, cur_track_->bytes[m]);
+        LOG_TRACE("K5122", "resync → pos=%zu (0x%02X)", t, cur_track_->bytes[t]);
     }
 }
 
@@ -599,7 +828,6 @@ void K5122::commitWrite() {
         return;
     }
 
-    markDriveAccess(selected_drive_);
 
     // Spur lesen und in logische Sektoren parsen.
     TrackImage& spur = drv.mutableTrack(current_head_);
@@ -666,10 +894,126 @@ void K5122::commitWrite() {
 }
 
 /**
+ * @brief Parst einen Vollspur-FORMAT-Schreibstrom in logische Sektoren (statisch, testbar).
+ */
+std::vector<LogicalSector> K5122::parseFormatStream(const std::vector<uint8_t>& b,
+                                                    Encoding* out_enc) {
+    std::vector<LogicalSector> sektoren;
+    LogicalSector cur{};
+    bool have_idam = false;
+    Encoding enc = Encoding::MFM;   // Default; auf FM gesetzt, sobald eine 0x00-Sync-Marke fällt
+
+    // Verarbeitet die Marke bei Offset j (Mark-Byte); liefert den neuen Lese-Index
+    // hinter das verarbeitete Feld bzw. SIZE_MAX, wenn j keine gültige Marke ist.
+    auto handleMark = [&](size_t j) -> size_t {
+        if (j >= b.size()) return SIZE_MAX;
+        const uint8_t mark = b[j];
+        if (mark == 0xFE && j + 5 <= b.size()) {            // IDAM: … FE c h s n
+            cur = LogicalSector{};
+            cur.cyl  = b[j + 1];
+            cur.head = b[j + 2];
+            cur.id   = b[j + 3];
+            cur.size = static_cast<uint16_t>(128u << (b[j + 4] & 0x03));
+            have_idam = true;
+            return j + 5;                                   // hinter die IDAM-Felder (CRC folgt)
+        }
+        if ((mark == 0xFB || mark == 0xF8) && have_idam) {  // DAM: … FB <data…>
+            const size_t data_start = j + 1;
+            const size_t take = std::min<size_t>(cur.size, b.size() - data_start);
+            cur.data.assign(b.begin() + data_start, b.begin() + data_start + take);
+            cur.data.resize(cur.size, 0xE5);                // unvollständig → mit 0xE5 füllen
+            sektoren.push_back(cur);
+            have_idam = false;
+            return data_start + take;                       // hinter das Datenfeld (CRC folgt)
+        }
+        return SIZE_MAX;
+    };
+
+    size_t i = 0;
+    while (i < b.size()) {
+        // ── MFM: Adressmarke = Sync-Folge aus ≥1 A1-Bytes + Mark-Byte ──────────────
+        // Die A1-Anzahl variiert (echter ZVE2-Strom: 3×A1; buildTrack: 2×A1) — daher
+        // A1-Folge überspringen und das erste Nicht-A1-Byte als Mark-Byte prüfen.
+        if (b[i] == 0xA1) {
+            size_t j = i;
+            while (j < b.size() && b[j] == 0xA1) ++j;
+            size_t ni = handleMark(j);
+            i = (ni == SIZE_MAX) ? j : ni;                  // A1-Folge ohne Marke: überspringen
+            continue;
+        }
+        // ── FM: Adressmarke folgt OHNE A1 direkt auf eine 0x00-Sync-Folge ─────────
+        // FM (IBM-3740) hat kein A1-Sync; die Marke (FE/FB/F8) steht direkt hinter den
+        // 0x00-Sync-Bytes (typ. 6×).  Eine Mindest-Sync-Länge (≥3) verhindert Fehl-
+        // treffer auf 0x00-Bytes in Daten/CRC.  FC = Indexmark → überspringen.
+        if (b[i] == 0x00) {
+            size_t j = i;
+            while (j < b.size() && b[j] == 0x00) ++j;
+            if (j - i >= 3 && j < b.size()) {
+                if (b[j] == 0xFC) { i = j + 1; continue; }   // Indexmark (nur FM), ignorieren
+                size_t ni = handleMark(j);
+                if (ni != SIZE_MAX) { enc = Encoding::FM; i = ni; continue; }
+            }
+            i = j;
+            continue;
+        }
+        ++i;
+    }
+    if (out_enc) *out_enc = enc;
+    return sektoren;
+}
+
+/**
+ * @brief Schließt einen Vollspur-FORMAT-Schreibtransfer ab: parst den gesammelten
+ *        Schreibstrom (@ref write_buf_) zu Sektoren, baut die Spur und schreibt sie an
+ *        die gelatchte (@ref fmt_cyl_, @ref fmt_head_)-Position ins Image.
+ *
+ * Wird vom nächsten Schreib-/STR-Strobe (Folgespur schließt die vorige ab) bzw. von der
+ * Schreib-Idle-Erkennung in @ref update (letzte Spur) aufgerufen.  Optionaler Roh-Dump
+ * des Stroms über Env K5122_FMT_CAPTURE (Analyse/Debug).
+ */
+void K5122::commitFormatTrack() {
+    if (const char* fn = std::getenv("K5122_FMT_CAPTURE")) {
+        if (!write_buf_.empty()) {
+            if (FILE* f = std::fopen(fn, "ab")) {
+                uint8_t hdr[8] = {'F','T', fmt_cyl_, fmt_head_,
+                    static_cast<uint8_t>(write_buf_.size() & 0xFF),
+                    static_cast<uint8_t>((write_buf_.size() >> 8) & 0xFF),
+                    static_cast<uint8_t>((write_buf_.size() >> 16) & 0xFF), 0};
+                std::fwrite(hdr, 1, sizeof hdr, f);
+                std::fwrite(write_buf_.data(), 1, write_buf_.size(), f);
+                std::fclose(f);
+            }
+        }
+    }
+
+    Encoding fmt_enc = Encoding::MFM;
+    auto sektoren = parseFormatStream(write_buf_, &fmt_enc);
+    if (!sektoren.empty()) {
+        // Verfahren aus dem Schreibstrom übernehmen (FM = 0x00-Sync-Marken, MFM = A1-Sync):
+        // 8″-SD-Laufwerke (MF3200) formatieren FM, 5¼″/8″-DD MFM.  So bleibt die gecachte
+        // Spur codierungstreu → der anschließende Verify-Read (FM-Steuerwort) findet sie.
+        TrackImage trk = TrackCodec::buildTrack(sektoren, fmt_enc);
+        bool ok = drives_[selected_drive_].writeTrackAt(fmt_cyl_, fmt_head_, trk);
+        LOG_INFO("K5122", ">>> FORMAT-WRITE D%d C=%u H=%u: %zu Sektoren à %uB %s %s",
+                 selected_drive_, static_cast<unsigned>(fmt_cyl_),
+                 static_cast<unsigned>(fmt_head_), sektoren.size(),
+                 sektoren.empty() ? 0u : sektoren.front().size,
+                 fmt_enc == Encoding::FM ? "FM" : "MFM", ok ? "OK" : "FEHLER");
+    } else {
+        LOG_WARN("K5122", "FORMAT-COMMIT D%d C=%u H=%u: keine Sektoren im Strom (%zu Bytes)",
+                 selected_drive_, static_cast<unsigned>(fmt_cyl_),
+                 static_cast<unsigned>(fmt_head_), write_buf_.size());
+    }
+
+    write_buf_.clear();
+    write_idle_acc_ = 0;
+}
+
+/**
  * @brief Beginnt das Sammeln eines BIOS-Schreib-Datenfelds (/WE 1→0).
  *
  * Der Zielsektor ist derjenige, dessen IDAM (Id-Marke) zuletzt unter dem Lesekopf
- * durchlief — also die letzte Id-Marke im Robotron-Streaming-Track @ref robotron_track_
+ * durchlief — also die letzte Id-Marke im Lese-Stream @ref read_stream_track_
  * VOR (bzw. an) @ref head_pos_.  Aus dem IDAM-Feld werden Zylinder/Kopf/Sektor-ID und
  * der Größencode (→ Sektorgröße) gelesen.  Anschließend sammelt @ref handleDataPortAWrite
  * jedes OUT(0x14)-Byte in @ref write_buf_, bis /WE wieder auf 1 geht.
@@ -684,10 +1028,11 @@ void K5122::beginWriteField() {
         for (size_t k = 0; k < n; ++k) {
             const size_t p = (head_pos_ + n - k) % n;     // rückwärts ab head_pos_
             if (cur_track_->marks[p] == MarkType::Id) {
-                wr_cyl_  = cur_track_->bytes[(p + 2) % n];
-                wr_head_ = cur_track_->bytes[(p + 3) % n];
-                wr_id_   = cur_track_->bytes[(p + 4) % n];
-                const uint8_t sc = cur_track_->bytes[(p + 5) % n] & 0x03;
+                // Marke liegt auf dem FE-Byte; danach folgen cyl/head/id/sizecode.
+                wr_cyl_  = cur_track_->bytes[(p + 1) % n];
+                wr_head_ = cur_track_->bytes[(p + 2) % n];
+                wr_id_   = cur_track_->bytes[(p + 3) % n];
+                const uint8_t sc = cur_track_->bytes[(p + 4) % n] & 0x03;
                 wr_size_ = static_cast<uint16_t>(128u << sc);
                 break;
             }
@@ -719,20 +1064,34 @@ void K5122::commitWriteField() {
     }
     if (write_buf_.empty()) { write_buf_.clear(); return; }
 
-    // Datenfeld im Strom finden: erste A1-A1-A1-Sync, danach DAM-Byte, dann Daten.
-    size_t i = 0; bool found = false;
-    for (; i + 2 < write_buf_.size(); ++i) {
-        if (write_buf_[i] == 0xA1 && write_buf_[i + 1] == 0xA1 && write_buf_[i + 2] == 0xA1) {
-            found = true; break;
+    // Datenfeld-Beginn im Schreibstrom finden — verfahrensabhängig:
+    //   MFM: …00 00 A1 A1 A1 <DAM=FB/F8> <Daten…>   → nach 3×A1-Sync + DAM
+    //   FM : …00 00 00 00 00 00 <DAM=FB/F8> <Daten…>  → KEIN A1-Sync (FM-DAM steht
+    //        allein mit Sonder-Clock); die DAM ist das erste FB/F8 nach dem 0x00-Sync.
+    // Das Verfahren richtet sich nach der Zielspur (FM-Systemspuren der 8″-SD-Disk).
+    const bool is_fm = drv.track(current_head_).encoding == Encoding::FM;
+    size_t data_start = 0; bool found = false;
+    if (is_fm) {
+        // Erste DAM (FB=Daten / F8=gelöscht) — davor nur 0x00-Sync, nie FB/F8.
+        for (size_t i = 0; i < write_buf_.size(); ++i) {
+            if (write_buf_[i] == 0xFB || write_buf_[i] == 0xF8) {
+                data_start = i + 1; found = true; break;
+            }
+        }
+    } else {
+        for (size_t i = 0; i + 2 < write_buf_.size(); ++i) {
+            if (write_buf_[i] == 0xA1 && write_buf_[i + 1] == 0xA1 && write_buf_[i + 2] == 0xA1) {
+                data_start = i + 4;             // 3×A1 + DAM(FB/F8)
+                found = true; break;
+            }
         }
     }
     if (!found) {
-        LOG_WARN("K5122", "commitWriteField: keine A1-A1-A1-Sync im Schreibstrom (buf=%zu, S=%u)",
-                 write_buf_.size(), wr_id_);
+        LOG_WARN("K5122", "commitWriteField: kein Datenfeld-Sync im Schreibstrom "
+                 "(%s, buf=%zu, S=%u)", is_fm ? "FM" : "MFM", write_buf_.size(), wr_id_);
         write_buf_.clear();
         return;
     }
-    const size_t data_start = i + 4;            // 3×A1 + DAM(FB/F8)
     if (data_start >= write_buf_.size()) {
         LOG_WARN("K5122", "commitWriteField: Datenfeld leer (S=%u)", wr_id_);
         write_buf_.clear();
@@ -741,7 +1100,6 @@ void K5122::commitWriteField() {
     const size_t avail = write_buf_.size() - data_start;
     const size_t take  = std::min<size_t>(wr_size_, avail);
 
-    markDriveAccess(selected_drive_);
 
     // Ziel-Spur (IBM-Format im Drive-Cache) parsen und Sektor per ID ersetzen.
     TrackImage& spur = drv.mutableTrack(current_head_);
@@ -778,22 +1136,10 @@ void K5122::commitWriteField() {
 
     // Streaming-Track aktualisieren, damit ein evtl. Verify-Read in derselben Sitzung
     // die frischen Daten sieht (Layout/Größen unverändert → head_pos_ bleibt gültig).
-    robotron_track_ = TrackCodec::buildRobotronTrack(sektoren);
-    cur_track_      = &robotron_track_;
+    read_stream_track_ = TrackCodec::buildFaithfulReadTrack(sektoren, spur.encoding);
+    cur_track_      = &read_stream_track_;
 
     write_buf_.clear();
-}
-
-/**
- * @brief Merkt den letzten Laufwerkszugriff für die LED-Simulation.
- *
- * isDriveLedOn() gibt true zurück, solange weniger als led_hold_time_ (180 ms)
- * vergangen sind.
- */
-void K5122::markDriveAccess(int drive) {
-    if (drive < 0 || drive > 3) return;
-    led_until_[static_cast<size_t>(drive)] =
-        std::chrono::steady_clock::now() + led_hold_time_;
 }
 
 // ─── Snapshot-Serialisierung ────────────────────────────────────────────────────
@@ -830,6 +1176,15 @@ void K5122::serialize(std::vector<uint8_t>& out) const {
         putPod(out, mounted);
         putPod(out, cyl);
     }
+    // Motor-/Select-Zustand + Spin-up je Laufwerk (8212, Port 0x18) — treibt LED,
+    // Motor-Abfrage und das Index-/Lese-Gating.
+    for (int i = 0; i < 4; ++i) {
+        putPod(out, static_cast<uint8_t>(drive_selected_[static_cast<size_t>(i)] ? 1 : 0));
+        putPod(out, static_cast<uint8_t>(motor_on_[static_cast<size_t>(i)] ? 1 : 0));
+        putPod(out, static_cast<int32_t>(motor_spinup_cycles_[static_cast<size_t>(i)]));
+    }
+    // Head-Load-Zustand (/HL, Port A Bit 6).
+    putPod(out, static_cast<uint8_t>(head_loaded_ ? 1 : 0));
 }
 
 bool K5122::deserialize(const uint8_t*& p, const uint8_t* end) {
@@ -856,6 +1211,20 @@ bool K5122::deserialize(const uint8_t*& p, const uint8_t* end) {
         if (mounted && drives_[i].isMounted())
             drives_[i].restoreHeadPosition(cyl);
     }
+    // Motor-/Select-Zustand + Spin-up je Laufwerk (8212, Port 0x18).
+    for (int i = 0; i < 4; ++i) {
+        uint8_t sel_on = 0, mot_on = 0; int32_t spin = 0;
+        if (!getPod(p, end, sel_on)) return false;
+        if (!getPod(p, end, mot_on)) return false;
+        if (!getPod(p, end, spin))   return false;
+        drive_selected_[static_cast<size_t>(i)]     = (sel_on != 0);
+        motor_on_[static_cast<size_t>(i)]           = (mot_on != 0);
+        motor_spinup_cycles_[static_cast<size_t>(i)] = spin;
+    }
+    // Head-Load-Zustand (/HL, Port A Bit 6).
+    uint8_t hl = 0;
+    if (!getPod(p, end, hl)) return false;
+    head_loaded_ = (hl != 0);
     // Einen evtl. laufenden Streaming-/Schreib-Transfer auf konsistenten Idle-
     // Zustand zurücksetzen — der nächste /STR-Strobe baut die Spur frisch auf.
     cur_track_           = nullptr;

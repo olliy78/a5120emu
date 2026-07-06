@@ -26,8 +26,22 @@
 
 class A5120Machine {
 public:
-    /** @brief Construct and wire a full A5120 machine instance. */
+    /**
+     * @brief Laufzeit-Konfiguration der Maschine (per C-API / später GUI / Config-Datei).
+     *
+     * Default = A5120-Standard-Bürokonfiguration: 4× 5,25"-MFM-Laufwerke (K5601).
+     * Wird über die C-API (`k1520_create_configured`) oder direkt (Tools) gesetzt.
+     */
+    struct Config {
+        /// DriveProfile-Namen je K5122-Slot (siehe builtinDriveProfile). Default: 4× K5601.
+        std::array<std::string, 4> drive_profiles = {"K5601", "K5601", "K5601", "K5601"};
+    };
+
+    /** @brief Construct with the default configuration (4× 5,25"-MFM, K5601). */
     A5120Machine();
+    /** @brief Construct and wire a full A5120 machine instance.
+     *  @param cfg Laufwerksbestückung etc. (per C-API/GUI/Config-Datei). */
+    explicit A5120Machine(const Config& cfg);
     ~A5120Machine() = default;
 
     // Lifecycle
@@ -49,11 +63,27 @@ public:
     // Disk management (thread-safe)
     bool mountDisk(int drive, const std::string& path,
                    const std::string& format_name, bool write_protect);
+    /**
+     * @brief Legt eine NEUE, GÜLTIG FORMATIERTE, leere Diskette an und mountet sie.
+     *
+     * Endung `.hfe` → formatiertes HFE (echte IDAM/DATA/CRC, Daten 0xE5); sonst `.img`
+     * → 0xE5-Sektorimage.  @p format_name bestimmt die Geometrie; ist er LEER, wird das
+     * laufwerkstyp-spezifische Standardformat des Slots gewählt (K5601→cpa800,
+     * K5600.10→200K, K5600.20→400K, MF3200→308K/FM, MF6400→616K).  Das Aufzeichnungs-
+     * verfahren folgt aus dem DriveProfile (reines FM-Laufwerk → FM, sonst MFM).
+     * Überschreibt eine vorhandene Datei.  @see DiskImage::create
+     */
+    bool createDisk(int drive, const std::string& path,
+                    const std::string& format_name, bool write_protect);
     bool unmountDisk(int drive);
     bool isDiskActive(int drive) const;
     bool isDiskWriteProtected(int drive) const;
-    /** @brief Return transient drive activity LED state for GUI display. */
+    /** @brief Return drive activity LED state (select OR motor) for GUI display. */
     bool isDiskLedOn(int drive) const;
+    /** @brief Return the drive's spindle-motor state (/LCK from the 8212, port 0x18). */
+    bool isMotorOn(int drive) const;
+    /** @brief Return whether the read/write head is loaded (/HL, ctrl port A bit6). */
+    bool isHeadLoaded() const;
     void setDiskWriteProtect(int drive, bool wp);
 
     // Keyboard (enqueued thread-safely, consumed in run())
@@ -225,6 +255,7 @@ private:
     K7637         kbd_;
 
     std::vector<DiskFormat> disk_formats_;
+    std::array<DriveProfile, 4> drive_profiles_;  // Bestückung je Slot (für create-Default)
 
     std::atomic<bool>  stop_{false};
 

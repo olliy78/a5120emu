@@ -159,6 +159,24 @@ std::vector<DiskFormat> FormatParser::builtinFormats() {
         fmts.push_back(std::move(f));
     }
 
+    // mf3200: 8″-Laufwerk K5602 (mf3200_8_ss77), einseitig 77 Spuren, 4×1024B, FM.
+    // Default-Datenformat einer NEU angelegten MF3200-Diskette (308 KB, ohne Bootspur).
+    {
+        DiskFormat f;
+        f.name = "mf3200";
+        f.tracks.push_back({0, 76, 0, 0, 4, 1024});
+        fmts.push_back(std::move(f));
+    }
+
+    // mf6400: 8″-Laufwerk (mf6400_8_ss77), einseitig 77 Spuren, 8×1024B, MFM.
+    // Default-Datenformat einer NEU angelegten MF6400-Diskette (616 KB, ohne Bootspur).
+    {
+        DiskFormat f;
+        f.name = "mf6400";
+        f.tracks.push_back({0, 76, 0, 0, 8, 1024});
+        fmts.push_back(std::move(f));
+    }
+
     // cpa200_boot: single-sided, boot tracks 26×128B, data 5×1024B
     {
         DiskFormat f;
@@ -185,6 +203,70 @@ std::vector<DiskFormat> FormatParser::builtinFormats() {
         f.tracks.push_back({3, 79, 0, 1, 5, 1024});
         fmts.push_back(std::move(f));
     }
+
+    // ── K5601-§3-Geometrien (5¼″, 80 Spuren, doppelseitig) für .img-Ziele ──────
+    // Viele §3-Formate teilen dieselbe ROHgeometrie — System-Spuren/Verzeichnis-
+    // Einträge/Sektor-Interleave ändern das Sektor-Offset-Layout der .img nicht.
+    // Namensschema: k5601_<Sektoren>x<Größe>[_<Zyl>].  Siehe docs/format.md §3.
+    {
+        DiskFormat f;                                   // Formate 4, 5 (16×256)
+        f.name = "k5601_16x256";
+        f.tracks.push_back({0, 79, 0, 1, 16, 256});
+        fmts.push_back(std::move(f));
+    }
+    {
+        DiskFormat f;                                   // Format 7 (ZIK-NK, Sp.0-153)
+        f.name = "k5601_16x256_77";
+        f.tracks.push_back({0, 76, 0, 1, 16, 256});
+        fmts.push_back(std::move(f));
+    }
+    {
+        DiskFormat f;                                   // Format 6 (26×128)
+        f.name = "k5601_26x128";
+        f.tracks.push_back({0, 79, 0, 1, 26, 128});
+        fmts.push_back(std::move(f));
+    }
+    {
+        DiskFormat f;                                   // Formate E, F (9×512)
+        f.name = "k5601_9x512";
+        f.tracks.push_back({0, 79, 0, 1, 9, 512});
+        fmts.push_back(std::move(f));
+    }
+    {
+        DiskFormat f;                                   // Formate G, J (10×512)
+        f.name = "k5601_10x512";
+        f.tracks.push_back({0, 79, 0, 1, 10, 512});
+        fmts.push_back(std::move(f));
+    }
+
+    // ── §3.4-Geometrien: einseitig (S) / 40-Spur Einzelschritt (V/W) ───────────
+    // Für .img (RawSectorImage nutzt die PHYSISCHE Kopfposition cur_cyl_ als Offset):
+    //   - einseitig (S, W)          → 1 Kopf  (head 0)
+    //   - 40-Spur EINZELschritt     → physisch = logisch → 40 Zylinder (0-39)
+    // Doppelschritt (T/U) ist NICHT dabei: dort ist physisch = 2×logisch (Zyl 0,2,…,78)
+    // → für .img wäre ein Physisch→Logisch-Mapping nötig; Doppelschritt bitte als .hfe
+    // (physisches Bit-Spur-Modell, verify-konsistent).  cpa200 (SS80 5×1024) und cpa640
+    // (SS80 16×256) existieren bereits.
+    {   DiskFormat f; f.name = "k5601_ss80_26x128";              // S: 26×128 einseitig
+        f.tracks.push_back({0, 79, 0, 0, 26, 128}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ss80_9x512";               // S: 9×512 einseitig
+        f.tracks.push_back({0, 79, 0, 0, 9, 512});  fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ss40_5x1024";              // W: 5×1024 40 einseitig
+        f.tracks.push_back({0, 39, 0, 0, 5, 1024}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ss40_26x128";              // W: 26×128 40 einseitig
+        f.tracks.push_back({0, 39, 0, 0, 26, 128}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ss40_16x256";              // W: 16×256 40 einseitig
+        f.tracks.push_back({0, 39, 0, 0, 16, 256}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ss40_15x256";              // W: 15×256 40 einseitig
+        f.tracks.push_back({0, 39, 0, 0, 15, 256}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ds40_5x1024";              // V: 5×1024 40 doppels.
+        f.tracks.push_back({0, 39, 0, 1, 5, 1024}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ds40_26x128";              // V: 26×128 40 doppels.
+        f.tracks.push_back({0, 39, 0, 1, 26, 128}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ds40_16x256";              // V: 16×256 40 doppels.
+        f.tracks.push_back({0, 39, 0, 1, 16, 256}); fmts.push_back(std::move(f)); }
+    {   DiskFormat f; f.name = "k5601_ds40_17x256";              // V: 17×256 40 doppels.
+        f.tracks.push_back({0, 39, 0, 1, 17, 256}); fmts.push_back(std::move(f)); }
 
     return fmts;
 }

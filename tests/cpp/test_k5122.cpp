@@ -174,17 +174,161 @@ TEST_F(K5122Test, DriveSelect_AlleVierLaufwerke) {
     SUCCEED();
 }
 
+// ─── 2a. Motor-/LED-Steuerung (8212, Port 0x18) ──────────────────────────────
+
+/**
+ * @test K5122Test/DriveSelect_DekodiertSelectMotorUndLed
+ * @brief Die vier Boot-Bytes selektieren Laufwerk N UND schalten seinen Motor
+ *        (/LCK) an; alle anderen Laufwerke sind aus.  Die LED folgt „Select ODER
+ *        Motor" — hier für das aktive Laufwerk an, für die übrigen aus.
+ */
+TEST_F(K5122Test, DriveSelect_DekodiertSelectMotorUndLed) {
+    const uint8_t codes[4] = {0xEE, 0xDD, 0xBB, 0x77};
+    for (int active = 0; active < 4; ++active) {
+        card.ioWrite(0x18, codes[active]);
+        for (int d = 0; d < 4; ++d) {
+            const bool on = (d == active);
+            EXPECT_EQ(card.isMotorOn(d), on)    << "Motor D" << d << " bei Code 0x"
+                                                << std::hex << int(codes[active]);
+            EXPECT_EQ(card.isDriveLedOn(d), on) << "LED D"   << d << " bei Code 0x"
+                                                << std::hex << int(codes[active]);
+        }
+    }
+}
+
+/**
+ * @test K5122Test/Led_FolgtSelectOderMotor
+ * @brief LED = /SE ODER /LCK: ein Byte, das D0 selektiert (/SE0=0) und ZUGLEICH
+ *        den Motor von D1 (/LCK1=0) hält, lässt beide LEDs leuchten — aber nur
+ *        D1 gilt als „Motor an", D0 nicht.
+ */
+TEST_F(K5122Test, Led_FolgtSelectOderMotor) {
+    // low nibble = /SE0..3, high nibble = /LCK0..3 (active-low).
+    // /SE0=0 (Bit0) + /LCK1=0 (Bit5), alle anderen 1  →  ~((1<<0)|(1<<5)) = 0xDE
+    card.ioWrite(0x18, 0xDE);
+    EXPECT_TRUE(card.isDriveLedOn(0))  << "D0 selektiert → LED an";
+    EXPECT_FALSE(card.isMotorOn(0))    << "D0 Motor bleibt aus";
+    EXPECT_TRUE(card.isDriveLedOn(1))  << "D1 Motor an → LED an";
+    EXPECT_TRUE(card.isMotorOn(1))     << "D1 Motor an";
+    EXPECT_FALSE(card.isDriveLedOn(2));
+    EXPECT_FALSE(card.isDriveLedOn(3));
+}
+
+/**
+ * @test K5122Test/Reset_MotorUndLedAus
+ * @brief RESET des 8212 (alle Ausgänge 1 = 0xFF): kein Laufwerk selektiert oder
+ *        verriegelt → alle Motoren aus, alle LEDs aus.
+ */
+TEST_F(K5122Test, Reset_MotorUndLedAus) {
+    card.ioWrite(0x18, 0xEE);       // erst D0 aktivieren …
+    card.ioWrite(0x18, 0xFF);       // … dann alles abwählen
+    for (int d = 0; d < 4; ++d) {
+        EXPECT_FALSE(card.isMotorOn(d))    << "Motor D" << d;
+        EXPECT_FALSE(card.isDriveLedOn(d)) << "LED D"   << d;
+    }
+}
+
+/**
+ * @test K5122Test/SerializeRoundTrip_RestoresMotorState
+ * @brief serialize()/deserialize() stellen den Motor-/Select-Zustand wieder her.
+ */
+TEST_F(K5122Test, SerializeRoundTrip_RestoresMotorState) {
+    card.ioWrite(0x18, 0xDD);       // D1 selektiert + Motor an
+    std::vector<uint8_t> blob;
+    card.serialize(blob);
+
+    K1520Bus bus2;
+    K5122   card2{bus2};
+    const uint8_t* p   = blob.data();
+    const uint8_t* end = p + blob.size();
+    ASSERT_TRUE(card2.deserialize(p, end));
+    EXPECT_EQ(p, end);
+    EXPECT_TRUE(card2.isMotorOn(1));
+    EXPECT_TRUE(card2.isDriveLedOn(1));
+    EXPECT_FALSE(card2.isMotorOn(0));
+    EXPECT_FALSE(card2.isDriveLedOn(0));
+}
+
+/**
+ * @test K5122Test/Motor_SpinupBisAufDrehzahl
+ * @brief Nach Motor-On läuft die Spindel erst nach der Spin-up-Zeit „auf Drehzahl".
+ */
+TEST_F(K5122Test, Motor_SpinupBisAufDrehzahl) {
+    card.ioWrite(0x18, 0xEE);                  // D0: Select + Motor an → Anlauf startet
+    EXPECT_TRUE(card.isMotorOn(0));
+    EXPECT_FALSE(card.motorAtSpeed(0)) << "unmittelbar nach Motor-On noch im Anlauf";
+    card.update(500);                           // deutlich < Spin-up (~4900 Zyklen @2ms/2,45MHz)
+    EXPECT_FALSE(card.motorAtSpeed(0));
+    card.update(10000);                         // > restlicher Spin-up
+    EXPECT_TRUE(card.motorAtSpeed(0)) << "nach Spin-up auf Drehzahl";
+    // Motor aus → sofort nicht mehr auf Drehzahl
+    card.ioWrite(0x18, 0xFF);
+    EXPECT_FALSE(card.isMotorOn(0));
+    EXPECT_FALSE(card.motorAtSpeed(0));
+}
+
+/**
+ * @test K5122Test/Motor_IndexNurBeiLaufendemMotor
+ * @brief Der Index-Puls entsteht nur, wenn der Motor des selektierten Laufwerks auf
+ *        Drehzahl ist — steht er (aus oder im Anlauf), gibt es keinen Index.
+ */
+TEST_F(K5122Test, Motor_IndexNurBeiLaufendemMotor) {
+    auto path = tmpImg1();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt1));
+    card.ioWrite(0x11, 0x62);                   // Interrupt-Vektor
+    card.ioWrite(0x11, 0x83);                   // IE=1
+    card.setIEI(true);
+    const int P = builtinDriveProfile("mfs_525_ds80").indexPeriodCycles(2450000);
+
+    // D0 selektiert, aber Motor AUS (0xFE: /SE0=0, /LCK0=1) → kein Index trotz voller Periode
+    card.ioWrite(0x18, 0xFE);
+    card.update(P + 1);
+    EXPECT_FALSE(card.hasInterrupt()) << "Motor steht → kein Index-Puls";
+
+    // Motor an: im Anlauf noch kein Index …
+    card.ioWrite(0x18, 0xEE);
+    card.update(P + 1);                          // verbraucht Spin-up UND eine Periode → Index
+    EXPECT_TRUE(card.hasInterrupt()) << "Motor auf Drehzahl → Index-Puls";
+
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/Motor_LesenLiefertGapWennMotorSteht
+ * @brief Steht der Motor, liefert der Lese-Stream reinen Gap-Fluss (keine Marken) —
+ *        das Spurlesen „hält an", ohne die Byte-Drossel/BUSRQ zu blockieren.
+ */
+TEST_F(K5122Test, Motor_LesenLiefertGapWennMotorSteht) {
+    auto path = tmpImg1();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt1));
+    card.ioWrite(0x18, 0xEE);                   // D0: Select + Motor
+    strobeRead(0);                               // Lese-Transfer starten
+    // Motor abschalten, D0 bleibt selektiert (0xFE), Transfer bleibt aktiv.
+    card.ioWrite(0x18, 0xFE);
+    auto stream = readStream(2000);
+    bool hat_idam = std::find(stream.begin(), stream.end(), 0xFE) != stream.end();
+    EXPECT_FALSE(hat_idam) << "Motor steht → kein IDAM (0xFE) im Strom";
+    bool nur_gap = std::all_of(stream.begin(), stream.end(),
+                               [](uint8_t b) { return b == 0x4E; });
+    EXPECT_TRUE(nur_gap) << "Motor steht → reiner 0x4E-Gap-Fluss";
+
+    std::filesystem::remove(path);
+}
+
 TEST_F(K5122Test, DriveSelect_StatusPortBReflectiertGewähltesLaufwerk) {
     auto path0 = tmpImg1();
     auto path1 = tmpImg1();
     ASSERT_TRUE(card.mountDisk(0, path0, fmt1));
-    // D1 ist nicht gemountet
+    // D1 ist nicht gemountet.  /RDYL wird erst „bereit", wenn der Motor auf Drehzahl
+    // ist → nach dem Select den Spin-up abschließen (update()).
     card.ioWrite(0x18, 0xEE);   // D0 wählen
+    card.update(10000);         // Motor auf Drehzahl
     uint8_t s0 = card.ioRead(0x12);
     card.ioWrite(0x18, 0xDD);   // D1 wählen
+    card.update(10000);
     uint8_t s1 = card.ioRead(0x12);
 
-    EXPECT_EQ(s0 & 0x01, 0) << "/RDYL sollte 0 sein (D0 montiert)";
+    EXPECT_EQ(s0 & 0x01, 0) << "/RDYL sollte 0 sein (D0 montiert, auf Drehzahl)";
     EXPECT_NE(s1 & 0x01, 0) << "/RDYL sollte 1 sein (D1 nicht montiert)";
 
     std::filesystem::remove(path0);
@@ -203,9 +347,40 @@ TEST_F(K5122Test, StatusPortB_Montiert_RDYLAktiv) {
     auto path = tmpImg1();
     ASSERT_TRUE(card.mountDisk(0, path, fmt1));
     card.ioWrite(0x18, 0xEE);
+    card.update(10000);         // Motor auf Drehzahl → /RDYL wird bereit
     uint8_t status = card.ioRead(0x12);
-    EXPECT_EQ(status & 0x01, 0) << "/RDYL=0 erwartet (Laufwerk montiert)";
+    EXPECT_EQ(status & 0x01, 0) << "/RDYL=0 erwartet (Laufwerk montiert, auf Drehzahl)";
     std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/StatusPortB_RDYL_ErstAufDrehzahl
+ * @brief /RDYL meldet „bereit" (0) erst, wenn der Motor den Spin-up beendet hat —
+ *        während des Anlaufs ist das Laufwerk NICHT bereit.
+ */
+TEST_F(K5122Test, StatusPortB_RDYL_ErstAufDrehzahl) {
+    auto path = tmpImg1();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt1));
+    card.ioWrite(0x18, 0xEE);                       // Motor an → Anlauf startet
+    EXPECT_NE(card.ioRead(0x12) & 0x01, 0) << "/RDYL=1 im Anlauf (noch nicht bereit)";
+    card.update(10000);                             // Spin-up abschließen
+    EXPECT_EQ(card.ioRead(0x12) & 0x01, 0) << "/RDYL=0 nach Spin-up (bereit)";
+    // Motor abschalten → sofort wieder nicht bereit
+    card.ioWrite(0x18, 0xFF);
+    EXPECT_NE(card.ioRead(0x12) & 0x01, 0) << "/RDYL=1 bei Motor-Stillstand";
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/HeadLoad_Bit6_Zustand
+ * @brief /HL (Port A Bit 6, active-low) latcht den Kopf-Aufsetz-Zustand.
+ */
+TEST_F(K5122Test, HeadLoad_Bit6_Zustand) {
+    // 0xA9 hat Bit6=0 → Kopf geladen; 0xFF hat Bit6=1 → Kopf oben.
+    card.ioWrite(0x10, 0xA9);
+    EXPECT_TRUE(card.isHeadLoaded())  << "Bit6=0 → Kopf aufgesetzt";
+    card.ioWrite(0x10, 0xFF);
+    EXPECT_FALSE(card.isHeadLoaded()) << "Bit6=1 → Kopf abgehoben";
 }
 
 TEST_F(K5122Test, StatusPortB_Schreibschutz_WPGesetzt) {
@@ -268,6 +443,30 @@ TEST_F(K5122Test, StreamingRead_EnthältIDAM) {
 }
 
 /**
+ * @test K5122Test/StreamingRead_UnformatierteSpur_GapFluss
+ * @brief Ein Lese-Strobe auf eine leere/unformatierte Spur streamt markenlosen Gap-Fluss.
+ *
+ * fmt1 hat nur EINEN Kopf; ein Lesen von Kopf 1 trifft daher eine nicht existierende
+ * (unformatierte) Spur.  Früher brach der Transfer sofort ab (kein Datenstrom, /BUSRQ
+ * blieb hängen) — jetzt liefert die Karte reinen Gap-Fluss (0x4E) OHNE Adressmarke
+ * (kein IDAM 0xFE), damit die Leseroutine kein IDAM findet und per Index-Timeout endet.
+ */
+TEST_F(K5122Test, StreamingRead_UnformatierteSpur_GapFluss) {
+    auto path = tmpImg1();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt1));   // fmt1: 2 Zyl, 1 Kopf
+    card.ioWrite(0x18, 0xEE);                     // D0
+    strobeRead(1);                                // Kopf 1 → unformatierte Spur
+
+    auto stream = readStream(2000);
+    bool hat_gap = std::find(stream.begin(), stream.end(), 0x4E) != stream.end();
+    bool hat_fe  = std::find(stream.begin(), stream.end(), 0xFE) != stream.end();
+    EXPECT_TRUE(hat_gap) << "Unformatierte Spur sollte Gap-Bytes 0x4E streamen";
+    EXPECT_FALSE(hat_fe) << "Unformatierte Spur darf KEIN IDAM (0xFE) enthalten";
+
+    std::filesystem::remove(path);
+}
+
+/**
  * @test K5122Test/StreamingRead_ZyklischWrapAround
  * @brief Nach dem Ende der Spur beginnt der Strom erneut von vorn (Wrap-around).
  *
@@ -309,7 +508,10 @@ TEST_F(K5122Test, MKStrobe_SyncsAufMarkenbyte) {
     ASSERT_TRUE(card.mountDisk(0, path, fmt1));
     card.ioWrite(0x18, 0xEE);
 
-    strobeRead(0);
+    // MFM-Lesemodus latchen (Steuerwort 0x85 = MFM-Marke + /STR-Lese-Strobe head0).
+    // Der Lese-Stream ist dann das treue MFM-Layout (4×A1 vor FE/FB).
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0x85);
 
     // Einige Bytes lesen (ins Gap hinein), dann MK pulsieren.
     readStream(20);
@@ -317,15 +519,13 @@ TEST_F(K5122Test, MKStrobe_SyncsAufMarkenbyte) {
     // MK pulsieren: base_ctrl_a nach /STR-Strobe ist ~0xF1 (bit0=1, bit3=0, rest hoch)
     pulseMK(0xF1);
 
-    // Das erste Byte nach MK-Puls muss ein Markenbyte sein.
-    // Im Robotron-Layout (K5122 verwendet on-the-fly buildRobotronTrack) ist
-    // das Markenbyte 0xA1 (Marke liegt auf dem A1-Byte, nicht auf FE/FB).
-    // Im IBM-Standard-Layout wären es 0xFE, 0xFB, 0xFC oder 0xF8.
+    // Der K5122 streamt den treuen Lese-Stream (buildFaithfulReadTrack, 4×A1-Sync) und
+    // re-synchronisiert nach dem MK-Puls VOR die Markensequenz (markPos-4 für MFM) — das
+    // erste IN 0x16 liefert also das erste A1-Sync-Byte (der ROM/SYL-Lese-Pfad überliest
+    // die A1 und trifft danach die FE/FB-Marke).
     uint8_t first = card.ioRead(0x16);
-    bool ist_marke = (first == 0xFE || first == 0xFB || first == 0xFC || first == 0xF8
-                      || first == 0xA1);
-    EXPECT_TRUE(ist_marke)
-        << "Nach MK-Puls: erstes Byte sollte Markenbyte sein, got 0x"
+    EXPECT_EQ(first, 0xA1u)
+        << "Nach MK-Puls: erstes Byte = A1-Sync (Resync auf erstes A1), got 0x"
         << std::hex << static_cast<int>(first);
 
     std::filesystem::remove(path);
@@ -482,60 +682,257 @@ TEST_F(K5122Test, DaisyChain_GetVector_OhneInterrupt_0xFF) {
 
 /**
  * @test K5122Test/WriteRoundtrip_AenderungSichtbar
- * @brief Schreib-DMA über Port 0x14 und /STR-Commit schreibt in die Spur zurück.
+ * @brief Vollspur-FORMAT-Schreibpfad: ZVE2 streamt eine komplette Spur, der nächste
+ *        Schreib-Strobe schließt sie ab und schreibt sie ins Image zurück.
  *
- * Ablauf:
- * 1. Diskette mounten, /STR-Schreib-Strobe (bit0=0) → write_mode_=true, BUSRQ assertiert.
- * 2. Bytes via OUT(0x14) sammeln (Muster 0xBB).
- * 3. Zweiten /STR mit BUSRQ gehalten → commitWrite(); BUSRQ freigegeben.
- * 4. flush() + neu lesen → Muster im ersten Sektor.
- *
- * EINSCHRÄNKUNG: commitWrite() ersetzt aktuell den ersten Sektor (robuster Fallback).
- * Der Test prüft genau dieses dokumentierte Verhalten.
+ * Ablauf (entspricht dem realen FORMAT.COM-Pfad, vgl. doc/design/07_k5122_afs.md §7.3a):
+ * 1. Schreib-/STR-Strobe (bit0=0) → write_mode_=true, (cyl,head) gelatcht.
+ * 2. Komplette IBM-MFM-Spur (buildTrack) byteweise via OUT(0x14) streamen.
+ * 3. Zweiter Schreib-/STR-Strobe schließt die Spur ab → commitFormatTrack() parst den
+ *    Strom (A1A1A1 FE/FB), baut die Spur und schreibt sie ins Image.
+ * 4. flush() + neu lesen → alle Sektoren tragen ihre Daten zurück.
  */
-TEST_F(K5122Test, WriteRoundtrip_ErsteSektorÄnderung) {
-    auto path = makeTmpImg(fmt1, "_rw");
-    ASSERT_TRUE(card.mountDisk(0, path, fmt1));
+TEST_F(K5122Test, FormatWrite_VollspurRoundtrip) {
+    // 1024B-Format (Datenspur) → CRC-Rücklesepfad sauber (volle CRC).
+    DiskFormat fmt; fmt.name = "fmt_2c1h5x1024";
+    fmt.tracks.push_back({0, 1, 0, 0, 5, 1024});
+    auto path = makeTmpImg(fmt, "_fmt");
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0xEE);          // Laufwerk 0
+
+    // Soll-Sektoren der zu formatierenden Spur (Cyl 0, Head 0, IDs 1..5, je 1024B).
+    std::vector<LogicalSector> soll;
+    for (uint8_t id = 1; id <= 5; ++id) {
+        LogicalSector s; s.cyl = 0; s.head = 0; s.id = id; s.size = 1024;
+        s.data.assign(1024, static_cast<uint8_t>(0xE0 + id));   // pro Sektor andere Füllung
+        soll.push_back(s);
+    }
+    // Schreibstrom = komplette IBM-MFM-Spur (so streamt ZVE2 sie über Port 0x14).
+    TrackImage stream = TrackCodec::buildTrack(soll, Encoding::MFM);
+
+    // 1. Schreib-/STR-Strobe (bit0=0 /WE, bit2=1 head0, bit3 fallend /STR)
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF4);
+    ASSERT_TRUE(bus.isBUSRQ()) << "BUSRQ nach Schreib-/STR";
+
+    // 2. Spur streamen
+    for (uint8_t b : stream.bytes) card.ioWrite(0x14, b);
+
+    // 3. Folge-Schreib-Strobe schließt die Spur ab (commitFormatTrack).
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF4);
+
+    // 4. flush + neu lesen
+    card.drive(0).flush();
+    RawSectorImage check(path, fmt, /*wp=*/false);
+    ASSERT_TRUE(check.isOpen());
+    auto parsed = TrackCodec::parseTrack(check.readTrack(0, 0));
+    ASSERT_EQ(parsed.size(), 5u) << "5 Sektoren nach Vollspur-FORMAT";
+    for (size_t k = 0; k < parsed.size(); ++k) {
+        EXPECT_EQ(parsed[k].id, k + 1);
+        EXPECT_EQ(parsed[k].size, 1024u);
+        EXPECT_TRUE(std::all_of(parsed[k].data.begin(), parsed[k].data.end(),
+                    [k](uint8_t b){ return b == static_cast<uint8_t>(0xE0 + k + 1); }))
+            << "Sektor " << (k+1) << " trägt seine Füllung";
+    }
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/FormatWrite_IdleCommitLetzteSpur
+ * @brief Die Schreib-Idle-Erkennung in update() schließt die LETZTE FORMAT-Spur ab
+ *        (kein Folge-Strobe mehr) und gibt /BUSRQ frei.
+ */
+TEST_F(K5122Test, FormatWrite_IdleCommitLetzteSpur) {
+    DiskFormat fmt; fmt.name = "fmt_idle_2c1h4x256";
+    fmt.tracks.push_back({0, 1, 0, 0, 4, 256});
+    auto path = makeTmpImg(fmt, "_fmtidle");
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
     card.ioWrite(0x18, 0xEE);
 
-    // 1. /STR-Schreib-Strobe: bit0=0 (/WE=0), bit2=1 (head0), bit3=0 (/STR)
-    //    prev=0xFF → 0xF4: bit7=1, bit3=0 (fallende Flanke), bit2=1, bit0=0
-    card.ioWrite(0x10, 0xFF);          // Idle
-    card.ioWrite(0x10, 0xF4);          // /STR-Schreib-Strobe: /WE=0, /FR=1, /STR=0
-
-    ASSERT_TRUE(bus.isBUSRQ()) << "BUSRQ sollte nach Schreib-/STR assertiert sein";
-
-    // 2. Daten via Port 0x14 schreiben
-    const uint8_t MUSTER = 0xBB;
-    for (int i = 0; i < 128; ++i) {
-        card.ioWrite(0x14, MUSTER);
+    std::vector<LogicalSector> soll;
+    for (uint8_t id = 1; id <= 4; ++id) {
+        LogicalSector s; s.cyl = 0; s.head = 0; s.id = id; s.size = 256;
+        s.data.assign(256, static_cast<uint8_t>(0x10 * id)); soll.push_back(s);
     }
+    TrackImage stream = TrackCodec::buildTrack(soll, Encoding::MFM);
 
-    // 3. /STR-Commit: nochmal /STR mit BUSRQ gehalten → commitWrite()
-    //    bit0=0 (/WE=0, Schreiben), BUSRQ ist assertiert
-    card.ioWrite(0x10, 0xFF);          // /STR zurück auf high
-    card.ioWrite(0x10, 0xF4);          // nochmal /STR-Strobe mit bus_.isBUSRQ()==true
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF4);                       // Schreib-Strobe
+    for (uint8_t b : stream.bytes) card.ioWrite(0x14, b);
 
-    EXPECT_FALSE(bus.isBUSRQ()) << "BUSRQ sollte nach Commit freigegeben sein";
+    // Kein Folge-Strobe: Schreib-Idle (ZVE2 hört auf) → update() committet + BUSRQ frei.
+    for (int i = 0; i < 100; ++i) card.update(1000);   // > kWriteEndSampleCycles
+    EXPECT_FALSE(bus.isBUSRQ()) << "BUSRQ nach Idle-Commit der letzten Spur frei";
 
-    // 4. flush() und neu lesen
+    card.drive(0).flush();
+    RawSectorImage check(path, fmt, /*wp=*/false);
+    auto parsed = TrackCodec::parseTrack(check.readTrack(0, 0));
+    EXPECT_EQ(parsed.size(), 4u);
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/ParseFormatStream_RecoversSectors
+ * @brief Der FORMAT-Schreibstrom-Parser gewinnt Cyl/Head/ID/Größe/Daten je Sektor zurück
+ *        (IDAM A1A1A1 FE …, DAM A1A1A1 FB …) — verschiedene Sektorgrößen.
+ */
+TEST(K5122FormatStream, ParseFormatStream_RecoversSectors) {
+    for (uint16_t sz : {128u, 256u, 1024u}) {
+        std::vector<LogicalSector> soll;
+        const uint8_t n = (sz == 1024u) ? 5 : 8;
+        for (uint8_t id = 1; id <= n; ++id) {
+            LogicalSector s; s.cyl = 7; s.head = 1; s.id = id; s.size = sz;
+            s.data.assign(sz, static_cast<uint8_t>(id ^ 0x5A)); soll.push_back(s);
+        }
+        // buildTrack erzeugt genau das A1A1A1-FE/FB-Layout, das ZVE2 streamt.
+        TrackImage stream = TrackCodec::buildTrack(soll, Encoding::MFM);
+        auto got = K5122::parseFormatStream(stream.bytes);
+
+        ASSERT_EQ(got.size(), soll.size()) << "Sektorzahl, sz=" << sz;
+        for (size_t k = 0; k < got.size(); ++k) {
+            EXPECT_EQ(got[k].cyl, 7);
+            EXPECT_EQ(got[k].head, 1);
+            EXPECT_EQ(got[k].id, k + 1);
+            EXPECT_EQ(got[k].size, sz);
+            EXPECT_EQ(got[k].data, soll[k].data) << "Daten Sektor " << (k+1) << " sz=" << sz;
+        }
+    }
+}
+
+/**
+ * @test K5122Test/ParseFormatStream_EmptyAndGapOnly
+ * @brief Reiner Gap-Strom (kein IDAM/DAM) liefert keine Sektoren (kein Absturz).
+ */
+TEST(K5122FormatStream, ParseFormatStream_EmptyAndGapOnly) {
+    EXPECT_TRUE(K5122::parseFormatStream({}).empty());
+    std::vector<uint8_t> gap(3000, 0x4E);
+    EXPECT_TRUE(K5122::parseFormatStream(gap).empty());
+}
+
+/**
+ * @test K5122Test/ParseFormatStream_FM_RecoversSectors
+ * @brief FM-FORMAT-Strom (8″-SD-Laufwerke, z. B. MF3200): die Marken folgen OHNE A1-Sync
+ *        direkt auf 0x00-Sync (`00…00 FE …` / `00…00 FB …`).  Der Parser gewinnt die
+ *        Sektoren zurück UND meldet Encoding::FM (Basis für codierungstreuen FORMAT-Write).
+ */
+TEST(K5122FormatStream, ParseFormatStream_FM_RecoversSectors) {
+    for (uint16_t sz : {128u, 256u, 512u, 1024u}) {
+        std::vector<LogicalSector> soll;
+        const uint8_t n = (sz >= 1024u) ? 4 : 6;
+        for (uint8_t id = 1; id <= n; ++id) {
+            LogicalSector s; s.cyl = 3; s.head = 0; s.id = id; s.size = sz;
+            s.data.assign(sz, static_cast<uint8_t>(id ^ 0x33)); soll.push_back(s);
+        }
+        // FM-Layout (kein A1-Sync, Marke direkt hinter 0x00-Sync) — so streamt ZVE2 die
+        // Spur auf einem 8″-SD-Laufwerk.
+        TrackImage stream = TrackCodec::buildTrack(soll, Encoding::FM);
+        Encoding enc = Encoding::MFM;
+        auto got = K5122::parseFormatStream(stream.bytes, &enc);
+
+        EXPECT_EQ(enc, Encoding::FM) << "FM erkannt, sz=" << sz;
+        ASSERT_EQ(got.size(), soll.size()) << "Sektorzahl (FM), sz=" << sz;
+        for (size_t k = 0; k < got.size(); ++k) {
+            EXPECT_EQ(got[k].cyl, 3);
+            EXPECT_EQ(got[k].id, k + 1);
+            EXPECT_EQ(got[k].size, sz);
+            EXPECT_EQ(got[k].data, soll[k].data) << "Daten Sektor " << (k+1) << " (FM) sz=" << sz;
+        }
+    }
+    // Gegenprobe: MFM-Strom wird weiterhin als MFM erkannt.
+    std::vector<LogicalSector> mfm;
+    for (uint8_t id = 1; id <= 5; ++id) {
+        LogicalSector s; s.cyl = 0; s.head = 0; s.id = id; s.size = 1024;
+        s.data.assign(1024, 0xE5); mfm.push_back(s);
+    }
+    Encoding menc = Encoding::FM;
+    auto g2 = K5122::parseFormatStream(TrackCodec::buildTrack(mfm, Encoding::MFM).bytes, &menc);
+    EXPECT_EQ(menc, Encoding::MFM);
+    EXPECT_EQ(g2.size(), 5u);
+}
+
+/**
+ * @test K5122Test/WriteTrackAt_SchreibtExpliziteSpur
+ * @brief FloppyDriveV2::writeTrackAt schreibt an eine (cyl,head)-Position abseits der
+ *        aktuellen Kopfposition (nötig, weil der Kopf beim FORMAT-Commit schon weiterschritt).
+ */
+TEST_F(K5122Test, WriteTrackAt_SchreibtExpliziteSpur) {
+    DiskFormat fmt; fmt.name = "fmt_wta_3c1h4x256";
+    fmt.tracks.push_back({0, 2, 0, 0, 4, 256});
+    auto path = makeTmpImg(fmt, "_wta");
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+
+    // Kopf auf Cyl 2 fahren (abseits der Zielspur 1).
+    card.drive(0).seek(2);
+
+    std::vector<LogicalSector> soll;
+    for (uint8_t id = 1; id <= 4; ++id) {
+        LogicalSector s; s.cyl = 1; s.head = 0; s.id = id; s.size = 256;
+        s.data.assign(256, static_cast<uint8_t>(0xC0 | id)); soll.push_back(s);
+    }
+    TrackImage trk = TrackCodec::buildTrack(soll, Encoding::MFM);
+    ASSERT_TRUE(card.drive(0).writeTrackAt(1, 0, trk));   // Spur 1 schreiben, Kopf auf 2
     card.drive(0).flush();
 
-    // Neues Image-Objekt für Verifikation öffnen
-    RawSectorImage check(path, fmt1, /*wp=*/false);
+    RawSectorImage check(path, fmt, /*wp=*/false);
+    auto parsed = TrackCodec::parseTrack(check.readTrack(1, 0));
+    ASSERT_EQ(parsed.size(), 4u);
+    EXPECT_EQ(parsed[0].data[0], 0xC1);
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/FormatWhole_MehrspurIntegration
+ * @brief Integrationstest „Formatieren als Ganzes": formatiert alle Spuren einer Diskette
+ *        über den Controller wie FORMAT.COM (Seek → Schreib-Strobe → Spur streamen, der
+ *        Folge-Strobe schließt die vorige ab; die letzte über Schreib-Idle), und prüft,
+ *        dass jede Spur korrekt im Image steht.
+ *
+ * Modelliert den realen FORMAT-Ablauf auf Controller-Ebene (ZVE1 seekt zwischen den Spuren,
+ * der nächste Schreib-/STR schließt die vorige Spur ab — vgl. doc/design/07_k5122_afs.md §7.3a).
+ */
+TEST_F(K5122Test, FormatWhole_MehrspurIntegration) {
+    DiskFormat fmt; fmt.name = "fmt_whole_5c1h5x1024";
+    fmt.tracks.push_back({0, 4, 0, 0, 5, 1024});     // 5 Zylinder, 1 Kopf, 5×1024
+    auto path = makeTmpImg(fmt, "_whole");
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0xEE);
+
+    const uint8_t NCYL = fmt.numCylinders();
+    auto sollFor = [](uint8_t cyl) {
+        std::vector<LogicalSector> s;
+        for (uint8_t id = 1; id <= 5; ++id) {
+            LogicalSector x; x.cyl = cyl; x.head = 0; x.id = id; x.size = 1024;
+            x.data.assign(1024, static_cast<uint8_t>((cyl << 4) | id));   // cyl+id-eindeutig
+            s.push_back(x);
+        }
+        return s;
+    };
+
+    for (uint8_t cyl = 0; cyl < NCYL; ++cyl) {
+        card.drive(0).seek(cyl);                      // ZVE1 seekt zur Spur
+        card.ioWrite(0x10, 0xFF);
+        card.ioWrite(0x10, 0xF4);                     // Schreib-Strobe (schließt Vorspur ab)
+        TrackImage stream = TrackCodec::buildTrack(sollFor(cyl), Encoding::MFM);
+        for (uint8_t b : stream.bytes) card.ioWrite(0x14, b);
+    }
+    // Letzte Spur über Schreib-Idle abschließen.
+    for (int i = 0; i < 100; ++i) card.update(1000);
+    card.drive(0).flush();
+
+    // Verifikation: jede Spur trägt ihre eindeutige Füllung.
+    RawSectorImage check(path, fmt, /*wp=*/false);
     ASSERT_TRUE(check.isOpen());
-
-    TrackImage gelesen = check.readTrack(0, 0);
-    ASSERT_FALSE(gelesen.empty());
-
-    auto parsed = TrackCodec::parseTrack(gelesen);
-    ASSERT_GE(parsed.size(), 1u);
-
-    // Erster Sektor muss das Muster tragen
-    EXPECT_TRUE(std::all_of(parsed[0].data.begin(), parsed[0].data.end(),
-                            [MUSTER](uint8_t b){ return b == MUSTER; }))
-        << "Erster Sektor sollte nach Write-Roundtrip alles 0xBB enthalten";
-
+    for (uint8_t cyl = 0; cyl < NCYL; ++cyl) {
+        auto parsed = TrackCodec::parseTrack(check.readTrack(cyl, 0));
+        ASSERT_EQ(parsed.size(), 5u) << "Spur " << int(cyl);
+        for (uint8_t id = 1; id <= 5; ++id) {
+            const uint8_t want = static_cast<uint8_t>((cyl << 4) | id);
+            EXPECT_TRUE(std::all_of(parsed[id-1].data.begin(), parsed[id-1].data.end(),
+                        [want](uint8_t b){ return b == want; }))
+                << "Spur " << int(cyl) << " Sektor " << int(id);
+        }
+    }
     std::filesystem::remove(path);
 }
 
@@ -560,9 +957,9 @@ TEST_F(K5122Test, WriteField_WEFlanke_TrifftZielsektorPerIDAM) {
     strobeRead(0);
     ASSERT_TRUE(bus.isBUSRQ());
 
-    // Kopf in den Bereich von Sektor 2 vorrücken.  Robotron-Layout 128B-Sektor =
-    // 164 Bytes (6 IDAM + 18 Gap + 2 DAM + 128 Daten + 2 CRC + 8 Gap) → 2. IDAM bei 164.
-    readStream(170);
+    // Kopf in den Bereich von Sektor 2 vorrücken.  Treuer Lese-Stream 128B-Sektor =
+    // 196 Bytes (23 IDAM-Feld + 18 Gap + 147 DAM-Feld + 8 Gap), 2. IDAM-Marke bei 212.
+    readStream(220);
     // Lesen gibt /BUSRQ frei; die Per-Byte-Drossel reassertiert ihn (wie im echten Lauf).
     card.update(1'000'000);
     ASSERT_TRUE(bus.isBUSRQ());
@@ -665,4 +1062,88 @@ TEST_F(K5122Test, DeserializeRejectsTruncatedBlob) {
     const uint8_t* p   = blob.data();
     const uint8_t* end = p + blob.size();
     EXPECT_FALSE(card2.deserialize(p, end));
+}
+
+// ─── Aufzeichnungsverfahren: Laufwerk-Default + Steuerwort-Override ─────────────
+//
+// FM/MFM des Lesepfads kommt aus DriveProfile::default_read_encoding (Default-Card =
+// mfs_525_ds80 → FM); ein „Lesen-Marke"-Steuerwort 0x85(MFM)/0x87(FM) an Ctrl-Port A
+// übersteuert den Default.  Erkennung: (ctrlA & 0xFD) == 0x85 — NUR 0x85/0x87.
+
+TEST_F(K5122Test, ReadEncoding_DefaultAusLaufwerkProfil) {
+    auto s = card.debugState();
+    EXPECT_EQ(s.readEncoding, Encoding::FM);   // mfs_525_ds80-Default = FM (ROM-Phase)
+    EXPECT_FALSE(s.readEncFromCtrlWord);
+}
+
+TEST_F(K5122Test, ReadEncoding_DefaultK5601IstFM) {
+    K1520Bus b;
+    K5122 c{b, { builtinDriveProfile("K5601"), builtinDriveProfile("K5601"),
+                 builtinDriveProfile("K5601"), builtinDriveProfile("K5601") }};
+    EXPECT_EQ(c.debugState().readEncoding, Encoding::FM);
+    EXPECT_FALSE(c.debugState().readEncFromCtrlWord);
+}
+
+TEST_F(K5122Test, ReadEncoding_Steuerwort87WaehltFM) {
+    card.ioWrite(0x10, 0x87);   // Lesen-Marke FM (bit1=1)
+    auto s = card.debugState();
+    EXPECT_EQ(s.readEncoding, Encoding::FM);
+    EXPECT_TRUE(s.readEncFromCtrlWord);
+}
+
+TEST_F(K5122Test, ReadEncoding_Steuerwort85WaehltMFM) {
+    card.ioWrite(0x10, 0x85);   // Lesen-Marke MFM (bit1=0)
+    auto s = card.debugState();
+    EXPECT_EQ(s.readEncoding, Encoding::MFM);
+    EXPECT_TRUE(s.readEncFromCtrlWord);
+}
+
+TEST_F(K5122Test, ReadEncoding_ResetWortB5AendertVerfahrenNicht) {
+    card.ioWrite(0x10, 0x85);   // → MFM
+    ASSERT_EQ(card.debugState().readEncoding, Encoding::MFM);
+    card.ioWrite(0x10, 0xB5);   // „Lesen 1"/Reset — (0xB5 & 0xFD) != 0x85
+    EXPECT_EQ(card.debugState().readEncoding, Encoding::MFM);   // unverändert
+}
+
+TEST_F(K5122Test, ReadEncoding_StrobeUndStepWorteLatchenNicht) {
+    // Typische /STR-/Step-/Idle-Worte dürfen das Verfahren nicht setzen.
+    for (uint8_t w : {0xFF, 0xF5, 0xF4, 0xF1, 0x09, 0x29, 0xA5, 0xBD, 0x95}) {
+        EXPECT_NE((w & 0xFDu), 0x85u) << "Wort 0x" << std::hex << int(w)
+                                      << " kollidiert mit dem Lesen-Marke-Prädikat";
+    }
+    card.ioWrite(0x10, 0xF4);   // /STR-artiges Wort
+    EXPECT_FALSE(card.debugState().readEncFromCtrlWord);   // kein Override
+}
+
+// ─── Phase 0: echte Spur-Codierung beobachtbar + encodingMatch ─────────────────
+// debugState() liefert jetzt zusätzlich die ECHTE Codierung der gemounteten Diskette
+// (trackEncoding, aus dem Image) und encodingMatch = (readEncoding == trackEncoding).
+// Das ist die Grundlage für den treuen Lesepfad (Phase 1/2): bei Mismatch wird ZVE2
+// später kein IDAM finden → ROM-MK-Trial-and-Error. Hier nur Beobachtbarkeit, kein
+// Verhaltenswechsel am Datenstrom.
+
+TEST_F(K5122Test, TrackEncoding_AusImage_und_EncodingMatch) {
+    auto path = tmpImg1();
+    ASSERT_TRUE(card.mountDisk(0, path, fmt1));
+
+    // Test-.img wird als RawSectorImage mit Default MFM gemountet.
+    auto s0 = card.debugState();
+    EXPECT_EQ(s0.trackEncoding, Encoding::MFM);
+    // Default-Profil mfs_525_ds80 → readEncoding FM → Mismatch.
+    EXPECT_EQ(s0.readEncoding, Encoding::FM);
+    EXPECT_FALSE(s0.encodingMatch);
+
+    // Steuerwort 0x85 → readEncoding MFM → passt zur MFM-Disk → Match.
+    card.ioWrite(0x10, 0x85);
+    EXPECT_TRUE(card.debugState().encodingMatch);
+
+    // Steuerwort 0x87 → readEncoding FM → Mismatch wieder.
+    card.ioWrite(0x10, 0x87);
+    EXPECT_FALSE(card.debugState().encodingMatch);
+}
+
+TEST_F(K5122Test, TrackEncoding_NichtGemountet_KeinMatch) {
+    auto s = card.debugState();
+    ASSERT_FALSE(s.mounted);
+    EXPECT_FALSE(s.encodingMatch);   // ohne Diskette nie Match
 }

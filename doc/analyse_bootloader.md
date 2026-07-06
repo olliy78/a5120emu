@@ -69,8 +69,8 @@ L0407: LD A,(IY+0)   ; Datenbyte
 
 Klassische byteweise CRC-16 über `E` Bytes ab `IY`, Ergebnis in `BC`. Der Loader
 nutzt sie an mehreren Stellen, um geladene Sektoren bzw. Header zu verifizieren
-(`CP B` / `CP C` gegen abgelegte Soll-CRC). Das CRC-Polynom-Startwort wird je nach
-Pfad-Byte `[03FD]` Bit1 gewählt (`BF84H` vs `E295H` / `CDB4H`).
+(`CP B` / `CP C` gegen abgelegte Soll-CRC). Es ist die **Standard-IBM-CRC-16-CCITT**
+(Poly 0x1021, Seed 0xFFFF) — FM ohne, MFM mit A1-Präambel im CRC-Bereich.
 
 ## 3. Initialisierung ab `0x0437`
 
@@ -201,8 +201,8 @@ Fehlannahmen: 3 Boot-Spuren (cyl 2 = 128 B → Size-Mismatch `RU;…=020001`) bz
 
 **Eigene ZVE2-DMA-Routine `0x1F7D`** (1024-B-Read): liest IDAM (Verify cyl/head/sec/size)
 und Daten **kontinuierlich** (`INIR`), re-syncht über `MK1` (Steuer-Port-A Bit 4), und
-**CRC-verifiziert** jeden Sektor mit der ZVE1-Routine `sub_1E44` (= `loaderCrc16`, aber
-Seed `0xCDB4` statt `0xBF84`, über `[Datenmarke]+1024 Daten`). Anders als der
+**CRC-verifiziert** jeden Sektor mit der ZVE1-Routine `sub_1E44` (Standard-IBM-CCITT
+über `[Datenmarke]+1024 Daten`). Anders als der
 Sekundär-Loader (diskrete `MK`/Bit-1-Felder). Vollständige Spezifikation des Emulator-
 Modells: [`K1520_architecture.md` §14.5b](K1520_architecture.md).
 

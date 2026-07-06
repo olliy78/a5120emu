@@ -1206,26 +1206,30 @@ protected:
 TEST_F(K2526ZVE2FloppyChain, ZVE2ReadsK5122FieldViaBus) {
     seekToCyl(2);
 
-    // ZVE2 program at 0x0000: LD HL,0x0100; LD B,6; (IN A,(16);LD(HL),A;INC HL;DJNZ); HALT
-    const uint8_t prog[] = { 0x21,0x00,0x01, 0x06,0x06, 0xDB,0x16, 0x77, 0x23, 0x10,0xFA, 0x76 };
+    // ZVE2 program at 0x0000: LD HL,0x0100; LD B,9; (IN A,(16);LD(HL),A;INC HL;DJNZ); HALT
+    const uint8_t prog[] = { 0x21,0x00,0x01, 0x06,0x09, 0xDB,0x16, 0x77, 0x23, 0x10,0xFA, 0x76 };
     for (size_t i = 0; i < sizeof(prog); ++i)
         bus.memWrite(static_cast<uint16_t>(i), prog[i]);
 
-    // /STR a head-0 read (bit3 falling, bit2=1 head 0, /WE=1): K5122 builds the
-    // field, sets transferring_, asserts BUSRQ.
+    // MFM-Lesemodus latchen (0x85 = MFM-Marke + /STR head0 → startReadTransfer baut den
+    // treuen 4×A1-MFM-Lese-Stream, setzt transferring_, assertiert BUSRQ).
     afs.ioWrite(0x10, 0xFF);
-    afs.ioWrite(0x10, 0xF7);   // /STR=0, bit2=1 (head 0)
+    afs.ioWrite(0x10, 0x85);   // MFM-Marke, /STR=0, bit2=1 (head 0)
     ASSERT_TRUE(bus.isBUSRQ());
+    // MK1-Resync-Strobe: Kopf vor die erste IDAM-Markensequenz (markPos-4 = erstes A1).
+    afs.ioWrite(0x10, 0x95);   // MK1 steigende Flanke
 
     bus.ioWrite(0x04, 0x01);   // release ZVE2 → runs from PC=0
     for (int i = 0; i < 80 && !zre.zve2().halted; ++i) zre.zve2Step();
 
-    EXPECT_EQ(bus.memRead(0x0100), 0xA1) << "IDAM sync byte via ZVE2";
-    EXPECT_EQ(bus.memRead(0x0101), 0xFE) << "IDAM address mark";
-    EXPECT_EQ(bus.memRead(0x0102), 0x02) << "cylinder (2)";
-    EXPECT_EQ(bus.memRead(0x0103), 0x00) << "head (0)";
-    EXPECT_EQ(bus.memRead(0x0104), 0x01) << "sector (1)";
-    EXPECT_EQ(bus.memRead(0x0105), 0x03) << "size code (1024B)";
+    // Treuer MFM-Lese-Stream nach Resync: [A1 A1 A1 A1 FE cyl head sec size].
+    EXPECT_EQ(bus.memRead(0x0100), 0xA1) << "A1 sync 1/4 via ZVE2";
+    EXPECT_EQ(bus.memRead(0x0103), 0xA1) << "A1 sync 4/4";
+    EXPECT_EQ(bus.memRead(0x0104), 0xFE) << "IDAM address mark";
+    EXPECT_EQ(bus.memRead(0x0105), 0x02) << "cylinder (2)";
+    EXPECT_EQ(bus.memRead(0x0106), 0x00) << "head (0)";
+    EXPECT_EQ(bus.memRead(0x0107), 0x01) << "sector (1)";
+    EXPECT_EQ(bus.memRead(0x0108), 0x03) << "size code (1024B)";
 }
 
 /**
@@ -1238,19 +1242,25 @@ TEST_F(K2526ZVE2FloppyChain, ZVE2ReadsK5122FieldViaBus) {
 TEST_F(K2526ZVE2FloppyChain, ZVE2ReadsHead1FieldViaBus) {
     seekToCyl(2);
 
-    const uint8_t prog[] = { 0x21,0x00,0x01, 0x06,0x06, 0xDB,0x16, 0x77, 0x23, 0x10,0xFA, 0x76 };
+    const uint8_t prog[] = { 0x21,0x00,0x01, 0x06,0x09, 0xDB,0x16, 0x77, 0x23, 0x10,0xFA, 0x76 };
     for (size_t i = 0; i < sizeof(prog); ++i)
         bus.memWrite(static_cast<uint16_t>(i), prog[i]);
 
+    // MFM-Lesemodus latchen (0x85), dann /STR head1 (bit2=0): das MFM-Latch bleibt,
+    // current_head_ wird am /STR aus bit2=0 → head 1 gelatcht.
     afs.ioWrite(0x10, 0xFF);
-    afs.ioWrite(0x10, 0xF3);   // /STR=0, bit2=0 (head 1)
+    afs.ioWrite(0x10, 0x85);   // MFM-Marke latchen (+ /STR head0, gleich überschrieben)
+    afs.ioWrite(0x10, 0xFF);
+    afs.ioWrite(0x10, 0xF3);   // /STR=0, bit2=0 (head 1) — MFM bleibt gelatcht
     ASSERT_TRUE(bus.isBUSRQ());
+    afs.ioWrite(0x10, 0xE3);   // MK1=0
+    afs.ioWrite(0x10, 0xF3);   // MK1=1 steigende Flanke → Resync auf erstes A1
 
     bus.ioWrite(0x04, 0x01);
     for (int i = 0; i < 80 && !zre.zve2().halted; ++i) zre.zve2Step();
 
-    EXPECT_EQ(bus.memRead(0x0100), 0xA1) << "IDAM sync";
-    EXPECT_EQ(bus.memRead(0x0101), 0xFE) << "IDAM mark";
-    EXPECT_EQ(bus.memRead(0x0102), 0x02) << "cylinder (2)";
-    EXPECT_EQ(bus.memRead(0x0103), 0x01) << "head (1) — bit2=0 side-select via the bus";
+    EXPECT_EQ(bus.memRead(0x0103), 0xA1) << "A1 sync (4/4)";
+    EXPECT_EQ(bus.memRead(0x0104), 0xFE) << "IDAM mark";
+    EXPECT_EQ(bus.memRead(0x0105), 0x02) << "cylinder (2)";
+    EXPECT_EQ(bus.memRead(0x0106), 0x01) << "head (1) — bit2=0 side-select via the bus";
 }

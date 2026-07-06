@@ -22,7 +22,7 @@
 ;   0x03F8  Abschluss-Flag: 0=läuft, 1=Timeout, 3=OK  (init: 0)
 ;   0x03FA  Seek-Retry-Counter                        (init: 5)
 ;   0x03FC  Aktueller Ctrl-Wert für Port 0x10         (init: 0xEE)
-;   0x03FD  IDAM-Pfad/Step-Steuerung: 0x00=falsch, 0x87=korrekt
+;   0x03FD  FM/MFM-Pfad (MK, Port 0x10 bit1): 0x87=FM, 0x85=MFM; bit7=Step-Unterdrueckung
 ; =============================================================================
 
 ; ===== RESET ENTRY POINT =====
@@ -225,7 +225,7 @@
                         ; EI: Interrupts freigeben (ROM aus, ISR-Vektoren in RAM bereit)
   ENABLE_INTS_INIT:      00D6  EI
                          00D7  LD A,F3h
-                        ; K5122 ctrl PIO Port B ctrl (Port 0x13): 0xF3 = Int-Control (INTENA=1)
+                        ; K5122 ctrl PIO Port B ctrl (Port 0x13): 0xF3 = E/A-Richtungsmaske (nach Modus 3): b2=/HF, b3=PRE = Ausgang
                          00D9  OUT (13h),A
                          00DB  LD A,7Fh
                         ; K5122 ctrl PIO Port B Daten (Port 0x12): 0x7F
@@ -333,16 +333,16 @@
                          014C  JR Z,0140h
   WAIT_INDEX_OK:         014E  LD A,(03FDh)
                          0151  XOR 02h
-                        ; ===== [0x03FD] = 0x87 SETZEN (korrekte IDAM-Pfad-Konfiguration) =====
-                        ; A=0x87 wurde bei 0x0137 vorgeladen. Ohne dieses Flag (Wert=0x00)
-                        ; wuerde der falsche Z-Pfad genommen und OUT(10h) einen Step-Puls erzeugen!
+                        ; ===== [0x03FD] SETZEN: FM/MFM-Pfadbyte (Default 0x87=FM, vorgeladen @0137) =====
+                        ; A=0x87 (bit7=1 → kein Step) wurde bei 0x0137 vorgeladen. Bei [0x03FD]=0x00
+                        ; (bit7=0) wuerde OUT(10h) faelschlich einen STEP-Puls erzeugen.
   STORE_03FD:            0153  LD (03FDh),A
                         ; [0x07F0,0x07F1] = 0x8001 (Sektor-Count-Init fuer ZVE2)
                          0156  LD HL,8001h
                          0159  LD (07F0h),HL
-                        ; Zylinder=0, Sektor=0, Size=0 fuer ersten IDAM-Vergleich setzen
+                        ; Erwartetes IDAM fuer 1. Sektor: Zyl=0, Kopf=0, Sektor-ID=1, Size=0
   SEEK_SETUP:            015C  LD H,00h
-                        ; [0x03F5]=0 (Sektor-ID), [0x03F6]=0 (Size-Code)
+                        ; HL=0x0001 (aus 0x8001, H:=0): [0x03F5]=1 (Sektor-ID, 1-basiert!), [0x03F6]=0 (Size, 0=128B)
                          015E  LD (03F5h),HL
                          0161  LD L,H
                         ; [0x03F3]=0 (Zylinder), [0x03F4]=0 (Kopf)
@@ -491,15 +491,16 @@
                          0201  LD B,A
                          0202  EXX
                          0203  JR 0273h
-                        ; ===== IDAM-SUCHE: Z-PFAD (FALSCH wenn [0x03FD]=0x00) =====
-                        ; Liest 5 Bytes vor IDAM-Vergleich (buf[0..4] konsumiert).
-                        ; Vergleicht buf[4]=sector_id mit B'=0xFE → immer Fehler → Endlosschleife!
+                        ; ===== IDAM-SUCHE: Z-PFAD = MFM-Lesepfad ([0x03FD] bit1=0, 0x85) =====
+                        ; Liest mehr Bytes vor dem FE-Vergleich (ueberspringt den A1-Sync vor FE).
+                        ; Passt die Spur nicht (z.B. FM-Spur) → kein FE-Treffer → Re-Strobe/Timeout
+                        ; → ROM toggelt MK (FM<->MFM). Welcher Pfad passt, haengt von der Spur ab.
   READ_IDAM_Z:           0205  IN A,(16h)
                          0207  IN A,(16h)
                          0209  IN A,(16h)
-                        ; ===== IDAM-SUCHE: NZ-PFAD (KORREKT wenn [0x03FD]=0x87) =====
-                        ; Liest 2 Bytes vor IDAM-Vergleich (buf[0], buf[1]).
-                        ; Vergleicht buf[1]=0xFE mit B'=0xFE → Treffer bei korrektem Marker.
+                        ; ===== IDAM-SUCHE: NZ-PFAD = FM-Lesepfad ([0x03FD] bit1=1, 0x87) =====
+                        ; Liest wenige Bytes vor dem FE-Vergleich (Marke FE liegt direkt, kein A1).
+                        ; buf[1]=0xFE == B'=0xFE → Treffer auf einer FM-Spur.
   READ_IDAM_NZ:          020B  IN A,(16h)
                         ; liest buf[1] (NZ-Pfad) oder buf[4] (Z-Pfad-Fall-through)
                         ; IDAM-Marker vergleichen (B'=0xFE)
@@ -566,9 +567,9 @@
                          0257  JR Z,0267h
                          0259  INC L
                         ; ===== STROBE-LOOP KOERPER (Einstieg von JR 025Ah bei 0x01FC) =====
-                        ; Liest [0x03FD] und waehlt IDAM-Pfad:
-                        ;   [0x03FD]=0x87: Bit1=1 → NZ-Pfad (korrekt), Bit7=1 → kein Step
-                        ;   [0x03FD]=0x00: Bit1=0 → Z-Pfad (falsch!), Bit7=0 → STEP-PULS!
+                        ; Liest [0x03FD] und waehlt FM/MFM-Lesepfad (MK = Port-0x10 bit1):
+                        ;   0x87 FM:  Bit1=1 → NZ-Pfad (Marke FE direkt), Bit7=1 → kein Step
+                        ;   0x85 MFM: Bit1=0 → Z-Pfad (A1-Sync vor FE).  (0x00: Bit7=0 → STEP-PULS!)
   STROBE_LOOP_BODY:      025A  LD A,(03FDh)
                         ; Bit1: NZ-Pfad-Flag testen
                          025D  BIT 1,A
@@ -576,9 +577,9 @@
                          025F  OUT (10h),A
                         ; Lese buf[0] aus Sektorpuffer
                          0261  IN A,(16h)
-                        ; Z (Bit1=0) → Z-Pfad (falsch bei [0x03FD]=0x00)
+                        ; Z (Bit1=0) → Z-Pfad = MFM (A1-Sync vor FE)
                          0263  JR Z,0205h
-                        ; NZ (Bit1=1) → NZ-Pfad (korrekt bei [0x03FD]=0x87)
+                        ; NZ (Bit1=1) → NZ-Pfad = FM (Marke FE direkt)
                          0265  JR 020Bh
                         ; ===== ZVE2 ABSCHLUSS: alle Sektoren geladen =====
                         ; ZVE2 setzt [0x03F8]=3 → ZVE1 verlässt Warte-Schleife bei 0x016A.
@@ -901,7 +902,7 @@
                          03FB  EX AF,AF'
                         ; 0x03FC: Ctrl-Wert fuer Port 0x10 (init: 0xEE, rotiert bei Retry)
                          03FC  NOP
-                        ; 0x03FD: IDAM-Pfad/Step-Konfiguration (0x00=falsch, 0x87=korrekt)
+                        ; 0x03FD: FM/MFM-Pfad (MK, Port 0x10 bit1): 0x87=FM, 0x85=MFM; bit7=Step-Unterdr.
                          03FD  NOP
                         ; 0x03FE-0x03FF: Puffer-Ende / unbenutzt
                          03FE  RST 30h

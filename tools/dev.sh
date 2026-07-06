@@ -20,7 +20,10 @@
 #
 # Benutzung:
 #   tools/dev.sh build [trace]        build/ bauen (+ build_trace/ bei 'trace')
-#   tools/dev.sh test  [ctest-args]   build/ bauen, dann ALLE Tests (ctest + a5120emu_test)
+#   tools/dev.sh test  [ctest-args]   build/ bauen, dann Regression (ctest + a5120emu_test)
+#                                     OHNE die langsamen format_integration-Tests
+#   tools/dev.sh test-all [ctest-args] wie test, ABER inkl. format_integration
+#   tools/dev.sh test-format [args]   NUR die langsamen format_integration-Boot-Disk-Tests
 #   tools/dev.sh trace [boot_trace…]  build_trace/ bauen, dann boot_trace starten
 #   tools/dev.sh tool  <name> [args]  build/ bauen, dann build/<name> starten
 #                                     (floppy_diag, k1520dbg, kbd_test, boot_trace…)
@@ -71,10 +74,25 @@ case "$cmd" in
         if [ "${1:-}" = "trace" ] || [ "${1:-}" = "all" ]; then build_dir build_trace; fi ;;
     test)
         build_dir build
-        c_ylw ">> ctest (build/)"; ctest --test-dir build --output-on-failure "$@"
+        # Standard-Regression: die langsamen Format-Boot-Disk-Integrationstests
+        # (LABEL format_integration) NICHT mit ausführen.  Für nur diese: test-format;
+        # für ALLE inkl. langsamer: test-all.
+        c_ylw ">> ctest (build/) [ohne format_integration]"
+        ctest --test-dir build --output-on-failure -LE format_integration "$@"
         if [ -x build/a5120emu_test ]; then
             c_ylw ">> a5120emu_test (Legacy-Harness)"; ./build/a5120emu_test
         fi ;;
+    test-all)
+        build_dir build
+        c_ylw ">> ctest (build/) ALLE inkl. format_integration"
+        ctest --test-dir build --output-on-failure "$@"
+        if [ -x build/a5120emu_test ]; then
+            c_ylw ">> a5120emu_test (Legacy-Harness)"; ./build/a5120emu_test
+        fi ;;
+    test-format)
+        build_dir build
+        c_ylw ">> ctest (build/) NUR format_integration (langsam)"
+        ctest --test-dir build --output-on-failure -L format_integration "$@" ;;
     trace)
         build_dir build_trace
         c_ylw ">> build_trace/boot_trace $*"; exec build_trace/boot_trace "$@" ;;

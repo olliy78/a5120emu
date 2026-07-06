@@ -1,0 +1,565 @@
+ .8080
+	TITLE	'LROMK2526'
+
+;**************************************************************
+; Version 0.1 vom 10.09.1992
+; Copyright by S.Simon
+;**************************************************************
+
+;	maclib	z80
+ .XLIST
+INCLUDE Z80.LIB
+ .LIST
+
+;**************************************************************
+; E/A - Vereinbarungen
+;**************************************************************
+
+; Tastatursteuerung K 7604 / K7634
+; nicht benutzt
+ucs1	equ	06h
+ucs2	equ	01h
+ucs3	equ	05h
+ucs4	equ	03h
+
+;**************************************************************
+
+; Steuer-Ports
+
+resspa	equ	02h	; ruecksetzen Speicherschutzzugriff
+reszve2	equ	04h	; CPU 2 ins RESET steuern und halten
+bnkport equ	07h	; Selektierung der Speicherseiten fuer
+			; die CPU
+
+;**************************************************************
+
+;ctc1	equ	0c-0fh
+
+;**************************************************************
+
+; Schaltkreise auf der K 6028
+
+;sio1	equ	50-53h
+;pio2	equ	54-57h
+;ctc2	equ	58-5bh
+
+;**************************************************************
+
+; Betriebssystem-PIO
+
+bspioad	equ	08h	; Systemsignale und Speicherschutz
+		;BIT 7	  6     5    4     3     2     1     0
+		;  MEMDI /RDY  /WR  /EBF  /SPS  /NMI  /SUE  /M1
+		;  -1/2                   -Ind.
+bspioac	equ	09h
+bspiobd	equ	0Ah	; Steuersignale
+		;BIT 7    6     5    4     3     2     1     0
+		;    CPU   NB    NB  /SA   /WAIT /SPS  /INT  /LD
+		;    -0SEL                 -ZVE2 -ESR  -BS   -ROM
+bspiobc	equ	0Bh
+
+;**************************************************************
+
+; Bildschirmsteuerung
+
+csfab	equ	40h	; RGB-Steuerung alphanum. Bildschirm
+			; A11EPROM / Vordergrund- / Hintergrundfarben
+			; I-H R-H G-H B-H  I-V R-V G-V B-V
+csraf	equ	41h	;  ne  ne  ne  ne  I-R R-R G-R B-R
+csctr	equ	42h	;  ne  ne  ne  ne  BAB A12 FCP BPV
+			;		  -SEL
+;**************************************************************
+
+; Floppy-Disk-Steuerung K5122
+
+fcpioad	equ	10h
+fcpioac	equ	11h
+fcpiobd	equ	12h
+fcpiobc	equ	13h
+
+fdpioad	equ	14h
+fdpioac	equ	15h
+fdpiobd	equ	16h
+fdpiobc	equ	17h
+
+fdsel	equ	18h
+
+;**************************************************************
+; Speicherseiten-Vereinbarungen
+;**************************************************************
+
+syspa0	equ	0	; Systempage 0
+syspa1	equ	1	; Systempage 1
+
+; Fr die CPU's befindet sich der folgende Speicherbereich
+; immer auf der Speicherseite 0 abhaengig vom Signal
+; CPU0SEL = 0 E000H - FFFFH
+; CPU0SEL = 1 0000H - 1FFFH
+
+; Der Bildschirm ist umschaltbar und befindet sich bei
+; BABSEL = 0 auf der Speicherseite   0 im Bereich F800H - FFFFH
+; BABSEL = 1 auf der Speicherseite 128 im Bereich 7800H - 7FFFH
+
+;**************************************************************
+; Programm
+;**************************************************************
+
+; Adressierung auf 100h fuer Assembler M80
+
+aseg
+	org	100h
+
+;**************************************************************
+
+; Abarbeitung dieses Programmteiles nach Reset ab Adresse 0000h
+
+  .phase	0
+
+M0000:	di
+M0001:	xra	a
+	out	resspa
+	out	reszve2
+	out	bnkport
+
+; Ruecksetzen der DMA
+
+;	mvi a,0c3h
+;	out 43h
+;	out 43h
+;	out 43h
+;	out 43h
+;	out 43h
+;	out 43h
+
+; Initialisieren der BS-Pio und Ausschalten des LD-ROM
+
+	mvi	a,4fh		; erst Eingabemode
+	out	bspioac
+	out	bspiobc
+	mvi	a,0ffh
+	out	bspioad
+	mvi	a,9fh		; Speicherbereich 0-1fff
+				; selektieren
+	out	bspiobd
+	mvi	a,0ffh
+	out	bspioac		; Port A Bitmode
+	mvi	a,7fh
+	out	bspioac		; aeee eeee (Bitmaske)
+	mvi	a,0ffh
+	out	bspiobc		; Port B Bitmode
+;	mvi	a,2
+	mvi	a,062h		; aeea aaea
+	out	bspiobc		; aaaa aaea (Bitmaske)
+
+; Duplizieren EPROM in Rambereich
+
+	lxi	b,800h
+	mov	d,c
+	mov	e,c
+	mov	h,c
+	mov	l,c
+	ldir
+
+; Ausschalten LD-Rom
+
+	mvi	a,1eh		; Speicherbereich ab E000H
+	out	bspiobd
+
+; Ruecksetzen des Bildschirms
+
+	xra	a
+	out	csctr		; Adresse 0/0F800-0FFFFH
+	mvi	a,0fh		; weiss auf schwarz
+	out	csfab
+	rrc
+	rrc
+	rrc
+	rrc
+	out	csraf
+	lxi	h,0f800h
+	lxi	d,0f801h
+	lxi	b,07ffh
+	mvi	m,20h
+	ldir
+
+; Verschieben des Systemladers in den Arbeitsbereich
+
+	lxi	b,syslae-syslaa
+	lxi	h,syslar
+	lxi	d,syslaa
+	ldir
+
+	jmp	sysla1
+
+syslar:
+
+  .dephase
+
+;**************************************************************
+
+; Nachfolgendes Programm wird ab 0F000H abgearbeitet
+
+  .phase	0f000h
+
+syslaa:
+
+ivdsk1:	dw	itimeo
+
+sysla1:	di
+	LXI	SP,stacke
+	IM2
+	MVI	A,high(ivdsk1)
+	STAI
+	lxi	d,loetex
+	call	crtout
+	lxi	d,catex
+	call	crtout
+
+; Hier spaeter den Speichertest einfuegen
+
+; Initialisierung der Floppy-Disk Steuerung
+
+; Steuer-PIO B
+	MVI	A,0FFH		; Bitmode
+	OUT	fcpiobc
+	MVI	A,0F3H		; eeee aaee
+	OUT	fcpiobc
+	MVI	A,7FH		; zunaechst Eingabemode
+; Steuer-PIO B (Daten)
+	out	fcpiobd		; Ausgabeleitungen auf high
+; Steuer-PIO A
+	OUT	fcpioac		; zunaechst Eingabemode
+
+	mvi	a,0a9h
+	out	fcpioad
+
+	MVI	A,3FH		; ab jetzt Ausgabemode
+	OUT	fcpioac
+; Daten-PIO A (Schreiben)
+	OUT	fdpioac		; Ausgabemode
+; Steuer-PIO A
+	MVI	A,low(ivdsk1)	; Interrupt bei Indexpunkt
+	OUT	fcpioac
+
+	ei
+
+; Vorbereiten Start CPU2
+
+	MVI	A,0C3H
+	STA	0
+	LXI	H,dio
+	SHLD	1
+
+	MVI	A,0EEH		; mit Laufwerk 1 beginnen
+nextlw:	STA	alwn		; akt. Laufwerk
+	OUT	FDSEL
+	LXI	H,lamc80	; Ladeadresse 'MC80'
+	SHLD	diodma
+	mvi	d,85		; max. 85 Step-Impulse
+nexstp:	IN	fcpiobd
+	RLC
+	JRNC	dischk		; --> Spur 0 gefunden
+	DCR	D
+	JRZ	selnlw		; --> max. Schrittzahl vorbei
+	MVI	A,09H		; Positionieren zur Spur 0
+	OUT	fcpioad
+	MVI	A,89H
+	OUT	fcpioad
+
+	lxi	b,1000h		; 4 MHz
+
+;	lxi	b,800H		; Schrittzeit abwarten
+waistp:	dcr	c		; Zeitschleife
+	jrnz	waistp
+	djnz	waistp
+	jr	nexstp
+
+; Spur 0 gefunden
+
+dischk:
+	mvi	d,2		; 4 MHz
+
+	LXI	B,0
+	LXI	H,indcou
+	MVI	M,04H		; Indexinterruptzaehler
+	MVI	A,97H		; Interruptfreigabe /ASTB
+	OUT	fcpioac
+	MVI	A,0FFH		; Anhaengige Int. Loeschen
+	OUT	fcpioac
+
+; Test ob Diskette gesteckt
+
+waiind:	MOV	A,M		; nach 4 Umdrehungen stabil
+	ORA	A
+	JRZ	lesver
+	DCR	C		; Zeitschleife
+	JRNZ	waiind
+	DJNZ	waiind
+
+	dcr	d
+	jrnz	waiind
+				; keine Diskette
+
+; naechstes Laufwerk aktualisieren
+
+selnlw:	LDA	alwn
+	RLC
+	JR	nextlw
+
+; Starten Leseversuch
+
+lesver:
+	MVI	A,85H		; Vorbereiten Markenlesen MFM
+	sta	diom01		; 85/81 MFM (87/83 FM n.b.)
+	lxi	h,0		; HWT=Seite NWT=Spur
+	call	lesspu
+
+; Laden der ersten Spur beendet
+
+	CALL	loachk		; Test auf 'MC80'
+	JRNZ	selnlw		; --> kein MC80-Lader
+
+; Berechnen aktuelle Werte fuer naechste Spur und laden
+
+nexspu:	LDA	lamc80+6	; Anzahl zu ladender Sektoren
+	SUI	5
+	STA	lamc80+6
+	jrc	loaend		; --> Ladeende
+	jrz	loaend
+	
+	mvi	a,0a9h		; eine Spur weiter positionieren
+	out	fcpioad
+	mvi	a,29h
+	out	fcpioad
+	mvi	a,0a9h
+	out	fcpioad
+	lxi	b,800h		; Schrittzeit abwarten
+wait:	dcr	c
+	jrnz	wait
+	djnz	wait
+
+	lhld	diodma		; neuen Anfang berechnen
+	lxi	d,1400h
+	dad	d
+	shld	diodma
+	lhld	sidtr		; naechste Spur einstellen
+	inr	l
+	call	lesspu
+	jr	nexspu
+
+; Ladevorgang beendet
+
+loaend:	DI
+	MVI	A,3
+	OUT	FCPIOAC
+	MVI	A,0FFH
+	OUT	FDSEL
+	lxi	h,errret
+	push	h
+	lhld	lamc80+4
+	pchl			; Uebergang in Systemlader
+
+; ERRORRETURN aus Systemlader
+
+errret:	lxi	d,tersys
+	call	crtout
+m1:	jr	m1
+
+tersys:	db	'Error encountered in systemloader',0
+	db	'Return from this Error only by Reset'
+loetex:	db	0,0
+catex:	db	'Laderom ZRE K 2526 V 1.0',0,0
+
+; Spur lesen
+
+lesspu:	SHLD	sidtr
+	lxi	h,0301h		; HWT=Laengencode NWT=sektor
+	SHLD	sidsec
+	lxi	h,secanz
+	mvi	m,5		; Letzter zu lesender Sektor
+	LXI	H,seclen
+	mvi	m,0		; Sektorlaenge 0 fuer 1024 Byte
+	lda	diom01
+	CALL	cpu2i		; Initialisieren Lesesteuerung
+
+; Warten auf Ende des Leseversuches
+
+wairea:	MOV	A,M		; Warten auf Int.
+	ORA	A
+	JRZ	wairea
+	DCR	A
+	jrz	selnlw
+;	JRZ	marerr		; keine Marke gefunden
+	ret
+
+
+cpu2i:	LXI	H,indcou
+	MVI	M,10H		; 16 Indexinterrupts
+	OUT	fdpioad
+	OUT	reszve2
+	mvi	a,0ffh
+	OUT	fdpiobc		; Bitmode
+	OUT	fdpiobc		; alles Eingabe
+	mvi	a,0A5H		; Seite einstellen, Mark reset
+				; AMF aktiv
+diom02	equ	$-1		; A5/A1
+	out	fcpioad
+	MVI	A,7FH		; Eingabemode
+	OUT	fdpiobc
+	IN	fdpiobd		; CPU2 starten ueber BUSRQ
+
+; durch Anfangsinitialisierung der CPU2 vergehen die
+; notwendigen 100 Mikrosekunden fuer Seitenumschaltung
+
+	LDA	diom01		; Lesen Marke
+	OUT	fcpioad		; weiter bei CPU2 nach
+				; Anfangsinit
+	inx	h
+	MVI	M,00H
+	RET
+
+; Test auf 'MC80'
+
+loachk:	LHLD	lamc80
+	LXI	B,'CM'
+	ora	a
+	dsbc	bc
+	rnz
+	Lhld	lamc80+2
+	lxi	b,'08'
+	dsbc	bc
+	RET
+
+; Indexinterrupt
+
+itimeo:	EI
+	push	psw
+	push	h
+	LXI	H,indcou	; Reihenfolge indcou / M03F8
+	DCR	M
+	JRZ	timou
+itimen:	pop	h
+	pop	psw
+	RETI
+timou:	MVI	A,0BDH		; TIMEOUT keine Marke gefunden
+	OUT	fcpioad
+	INX	H
+	MVI	M,01H
+	JR	itimen
+
+; Start CPU2
+
+dio:	lxi	h,80h
+diodma	equ	$-2		; Ladebereichanfang
+	mvi	b,0
+seclen	equ	$-1
+	LXI	D,crcwer	; CRC-Bereich
+	mvi	c,fdpiobd
+	EXX
+	LXI	B,0FEA1H
+	LXI	h,0
+sidsec	equ	$-2		; HWT=Laengencode NWT=Sektor
+	lxi	d,0
+sidtr	equ	$-2		; HWT=Side NWT=Spur
+	MVI	A,0BDH
+	OUT	fcpioad
+M01F8:	MVI	A,0B5H
+	OUT	fcpioad
+	JR	M025A
+M0205:	in	fdpiobd		; 3 * A1
+	in	fdpiobd
+	in	fdpiobd
+	in	fdpiobd		; 1 * FE
+	cmp	b
+	jrnz	m01f8
+	IN	fdpiobd
+	CMP	E		; Spur
+	JRNZ	M01F8
+	IN	fdpiobd
+	CMP	D		; Side
+	JRNZ	M01F8
+	IN	fdpiobd
+	CMP	L		; Sector
+	JRNZ	M01F8
+	IN	fdpiobd
+	CMP	H		; Sectorlaengencode
+	jrnz	m01f8
+;	JRNZ	M01FE
+	MVI	A,0B5H
+	OUT	fcpioad
+	mvi	a,85h		; 85h/81h
+diom01	equ	$-1
+	OUT	fcpioad
+	IN	fdpiobd		; Mist ignorieren
+m0238:	IN	fdpiobd		; 3 * A1
+	in	fdpiobd
+	in	fdpiobd
+	in	fdpiobd		; 1 *FB
+	EXX
+	inir			; Sector lesen
+	inir
+	inir
+	INIR
+	xchg
+	INI			; CRC lesen
+	INI
+	MVI	A,0B5H
+	OUT	fcpioad
+	xchg
+	LDA	seclen
+	MOV	B,A
+	EXX
+	LDA	secanz
+	CMP	L
+	JRZ	M0267
+	inr	l
+M025A:	LDA	diom01
+	OUT	fcpioad
+	IN	fdpiobd
+	JR	M0205
+
+M0267:	MVI	A,03H		; Ende der CPU2-Routine
+	OUT	fcpioac
+	sta	M03F8
+	JR	M0205
+
+; Bildschirmausgabe
+
+crtout:
+	lxi	h,0f800H
+	lxi	b,800h
+crtou1:	mvi	m,' '
+	inx	h
+	dcx	b
+	mov	a,b
+	ora	c
+	jrnz	crtou1
+	xchg
+	lxi	d,0f800h
+	call	crtou2
+	lxi	d,0f8a0h
+crtou2:
+	mov	a,m
+	inx	h
+	ora	a
+	rz
+	stax	d
+	inx	d
+	jr	crtou2	
+
+stack:	ds	32
+stacke:
+
+syslae:
+
+lamc80	equ	0080H
+
+indcou:	db	0
+M03F8:	db	0
+alwn:	db	0
+crcwer:	ds	128
+secanz:	db	0
+
+ .dephase
+	end
+

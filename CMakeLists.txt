@@ -226,10 +226,6 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_track_codec PRIVATE k1520_floppy2 GTest::gtest_main)
         target_include_directories(k1520_test_track_codec PRIVATE ${CMAKE_SOURCE_DIR})
 
-        add_executable(k1520_test_robotron_track tests/cpp/test_robotron_track.cpp)
-        target_link_libraries(k1520_test_robotron_track PRIVATE k1520_floppy2 GTest::gtest_main)
-        target_include_directories(k1520_test_robotron_track PRIVATE ${CMAKE_SOURCE_DIR})
-
         add_executable(k1520_test_bit_codec tests/cpp/test_bit_codec.cpp)
         target_link_libraries(k1520_test_bit_codec PRIVATE k1520_floppy2 GTest::gtest_main)
         target_include_directories(k1520_test_bit_codec PRIVATE ${CMAKE_SOURCE_DIR})
@@ -354,7 +350,6 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_bus)
         gtest_discover_tests(k1520_test_format_parser)
         gtest_discover_tests(k1520_test_track_codec)
-        gtest_discover_tests(k1520_test_robotron_track)
         gtest_discover_tests(k1520_test_bit_codec)
         gtest_discover_tests(k1520_test_drive_profile)
         gtest_discover_tests(k1520_test_disk_image_raw)
@@ -392,6 +387,22 @@ if(BUILD_K1520)
     target_link_libraries(kbd_test PRIVATE k1520_a5120 k1520_floppy k1520_logger)
     target_include_directories(kbd_test PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(kbd_test PRIVATE LOG_LEVEL=3)
+
+    # format_driver: scripted two-disk interactive driver (FORMAT.COM / FORMATB.COM)
+    # Für DEBUG/TRACE aus build_trace/ laufen lassen (dort ist der ganze Build inkl.
+    # Bibliotheken LOG_LEVEL=5); FD_GATE/FD_PCGATE + FD_LOGLEVEL öffnen zur Laufzeit
+    # ein gezieltes Fenster.  In build/ (LOG_LEVEL=3) sind DEBUG/TRACE wegkompiliert.
+    add_executable(format_driver tools/format_driver.cpp)
+    target_link_libraries(format_driver PRIVATE k1520_a5120 k1520_floppy k1520_logger)
+    target_include_directories(format_driver PRIVATE ${CMAKE_SOURCE_DIR})
+
+    # mk_disk_template: erzeugt gültig vorformatierte EINSEITIGE Leerdisketten (HFE)
+    # für die Boot-Pipeline der einseitigen Formate (MF3200 8″-FM, MF6400 8″-MFM,
+    # K5600.10/.20 5″-SS) — FORMAT.COM kann eine gap-leere .hfe nicht direkt formatieren
+    # (Gap-Blank-Hänger, docs/format.md §8.2/§8.6).
+    add_executable(mk_disk_template tools/mk_disk_template.cpp)
+    target_link_libraries(mk_disk_template PRIVATE k1520_floppy2 k1520_logger)
+    target_include_directories(mk_disk_template PRIVATE ${CMAKE_SOURCE_DIR})
 
     # floppy_diag: running-OS floppy read diagnostic
     add_executable(floppy_diag tools/floppy_diag.cpp)
@@ -467,7 +478,10 @@ if(BUILD_K1520)
         set_tests_properties(cli_bt_exit_met cli_bt_exit_notmet cli_dbg_exit_badisk PROPERTIES TIMEOUT 120)
 
         # machine-readable JSON output (agent ergonomics).
-        add_cli_test(cli_dbg_json "\"pc\":\"0x1E44\".*\"hl\":\"0x23EA\""
+        # Golden-Register-Snapshot bei 5M Zyklen.  Die exakte Zeitlage hängt vom
+        # Floppy-Timing ab (u. a. Motor-Spin-up, K5122_MOTOR_SPINUP_MS) — bei
+        # Timing-Änderungen hier den neuen deterministischen Wert eintragen.
+        add_cli_test(cli_dbg_json "\"pc\":\"0x1F6C\".*\"hl\":\"0x1F7D\""
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'g 5000000\\nrj\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
         add_cli_test(cli_bt_json "\"boot_reached\":false.*\"until\":.\"set\":true,\"met\":true"
             "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' --json \$D; rm -f \$D")
@@ -477,6 +491,35 @@ if(BUILD_K1520)
         set_tests_properties(cli_bt_quiet PROPERTIES TIMEOUT 120
             PASS_REGULAR_EXPRESSION "boot_reached"
             FAIL_REGULAR_EXPRESSION "Boot Trace Complete|PROGRESS|MILESTONE|histogram")
+
+        # ─── Boot-Disk-Erstellung: leere Diskette → formatieren → bootfähig → boot ──
+        # Voller Anwender-Workflow (Tastatur-getrieben über format_driver): eine leere,
+        # als Systemformat formatierte Diskette wird mit CPABCGEN.COM bootfähig gemacht
+        # und der Rechner davon kalt gebootet (make_bootdisk.py, Exit 0 = "BOOTDISK OK").
+        # Diese Tests dauern LANGE (voller Boot je Schritt) → LABEL "format_integration";
+        # sie laufen bei den Standard-Regressionstests NICHT mit (tools/dev.sh test schließt
+        # sie via `-LE format_integration` aus; `tools/dev.sh test-format` führt nur sie aus).
+        # FORMAT_DRIVER/MK_DISK_TEMPLATE zeigen auf die Tools DIESES Build-Verzeichnisses.
+        set(_mkboot "${CMAKE_SOURCE_DIR}/tools/cpa_tools/make_bootdisk.py")
+        # Ein Boot-Disk-Test je Preset: erstellen+formatieren (mk_disk_template bzw.
+        # committete cpa780-Vorlage) → CPABCGEN → Kaltboot-Verify.
+        macro(add_bootdisk_test name preset)
+            add_test(NAME ${name} COMMAND sh -c
+                "FORMAT_DRIVER=$<TARGET_FILE:format_driver> MK_DISK_TEMPLATE=$<TARGET_FILE:mk_disk_template> python3 ${_mkboot} --preset ${preset} --quiet")
+            set_tests_properties(${name} PROPERTIES
+                TIMEOUT 600 PASS_REGULAR_EXPRESSION "BOOTDISK OK"
+                LABELS "format_integration")
+        endmacro()
+
+        add_bootdisk_test(bootdisk_cpa780        cpa780)         # 5¼″-MFM   cpa780
+        add_bootdisk_test(bootdisk_mf3200_fmt7   mf3200_fmt7)    # 8″-SD/FM  26×128+16×256
+        add_bootdisk_test(bootdisk_mf6400_fmt1   mf6400_fmt1)    # 8″-DD Mischd. 26×128FM+8×1024MFM (C:)
+        add_bootdisk_test(bootdisk_k5600_10_fmt1 k5600_10_fmt1)  # 5¼″-40-SS 26×128+5×1024
+        add_bootdisk_test(bootdisk_k5600_20_fmt1 k5600_20_fmt1)  # 5¼″-80-SS 26×128+5×1024 (C:)
+        # HINWEIS: Preset mf3200_fmt1 (8″-SD/FM 26×128+4×1024) ist bewusst NICHT als Test
+        # registriert — die 1024-B-FM-Datensektoren werden korrekt geschrieben (CRC gültig),
+        # aber das laufende OS liest sie nicht (256-B-FM funktioniert): offener 1024-B-FM-SD-
+        # Lesepfad, seltenes Format.  Preset bleibt für manuelle Analyse verfügbar (§8.6).
     endif()
 
 endif() # BUILD_K1520

@@ -12,7 +12,7 @@
 > `disks/bootsec.bin`. Die Byte-Disassemblate stimmen; einige funktionale
 > Deutungen sind jedoch durch die Emulator-Laufzeitanalyse korrigiert worden.
 > Maßgeblich für den **tatsächlichen Bootablauf** ist
-> [`K1520_architecture.md` §14.5/§14.6](K1520_architecture.md). Kurz:
+> [`K1520_architecture.md` §14.5/§14.5b](K1520_architecture.md). Kurz:
 > - Die unten genannten RAM-Adressen (0000H-basiert) sind das *On-Disk*-Bild;
 >   zur Laufzeit liegt der Boot-Record bei `0400H`, der Sekundär-Loader lädt
 >   52 Sektoren nach `0800H`, die dritte Stufe arbeitet über `0800H–1FFFH`.

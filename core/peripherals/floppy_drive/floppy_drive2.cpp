@@ -163,6 +163,21 @@ bool FloppyDriveV2::flush() {
     return ok;
 }
 
+bool FloppyDriveV2::writeTrackAt(uint8_t cyl, uint8_t head, const TrackImage& track) {
+    if (head > 1 || !image_ || write_protect_) return false;
+
+    bool ok = image_->writeTrack(cyl, head, track);
+
+    // Cache kohärent halten: hält der Cache (head) genau diesen Zylinder, ersetzen;
+    // sonst unangetastet lassen (Image ist die Wahrheit, beim nächsten readTrack frisch).
+    CachedTrack& ct = cache_[head];
+    if (ct.valid && ct.cyl == cyl) {
+        ct.img   = track;
+        ct.dirty = false;
+    }
+    return ok;
+}
+
 // ─── Geometrie ────────────────────────────────────────────────────────────────
 
 DiskGeometry FloppyDriveV2::geometry() const {

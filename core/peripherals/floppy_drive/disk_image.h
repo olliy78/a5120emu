@@ -7,7 +7,7 @@
  *   - @ref RawSectorImage — bestehendes .img + Geometriebeschreibung (synthetisiert den Track);
  *   - HfeImage (Folgearbeit) — .hfe mit echtem MFM/FM-Bitstrom pro Spur.
  *
- * @see doc/refactoring_floppy_emulator.md §6
+ * @see doc/design/07_k5122_afs.md
  * @author Olaf Krieger
  * @date 2026
  * @license MIT License
@@ -15,7 +15,6 @@
 
 #pragma once
 #include "track_image.h"
-#include "track_codec.h"     // TrackLayout
 #include "format_parser.h"   // DiskFormat
 #include <cstdint>
 #include <memory>
@@ -76,12 +75,35 @@ public:
      * @param path          Pfad zur Image-Datei
      * @param fmt           DiskFormat (nur Raw); std::nullopt für self-describing
      * @param write_protect Schreibschutz
-     * @param layout        Track-Layout für das Raw-Backend (Default IbmStandard).
-     *                      HFE-Dateien sind self-describing und ignorieren diesen Parameter.
      * @return DiskImage oder nullptr bei Fehler/unbekanntem Format
      */
     static std::unique_ptr<DiskImage> open(const std::string& path,
                                            std::optional<DiskFormat> fmt,
-                                           bool write_protect,
-                                           TrackLayout layout = TrackLayout::IbmStandard);
+                                           bool write_protect);
+
+    /**
+     * @brief Legt eine NEUE, GÜLTIG FORMATIERTE, leere Image-Datei an und öffnet sie (Fabrik).
+     *
+     * Das Ergebnis ist eine formatierte Leerdiskette (echte IDAM/DATA-Felder mit CRC,
+     * Nutzdaten = `0xE5`) — direkt les-/beschreibbar UND durch FORMAT.COM neu formatierbar.
+     * Kein gap-leeres Template mehr (das beim Lesen/Formatieren hängen konnte).
+     *
+     * Der Dateityp wird an der Endung erkannt; @p fmt ist für BEIDE Typen ERFORDERLICH
+     * (bestimmt Geometrie und Sektorlayout):
+     *   - `.hfe` → HFE-v1: je Spur ein per @ref TrackCodec::buildTrack synthetisierter,
+     *     in @p enc kodierter Bitzellen-Strom (Header trägt das Verfahren).
+     *   - sonst (`.img`) → rohes Sektorimage in Format-Größe, mit `0xE5` gefüllt.
+     *
+     * Eine vorhandene Datei am @p path wird überschrieben.
+     *
+     * @param path          Zielpfad (Endung `.hfe` → HFE, sonst Raw/.img)
+     * @param fmt           DiskFormat (Pflicht; Geometrie + Sektorlayout)
+     * @param write_protect Schreibschutz des zurückgegebenen Images
+     * @param enc           Aufzeichnungsverfahren (MFM = 5,25″/8″-DD, FM = 8″-SD)
+     * @return DiskImage oder nullptr bei Fehler (fehlendes @p fmt, Schreibfehler)
+     */
+    static std::unique_ptr<DiskImage> create(const std::string& path,
+                                             std::optional<DiskFormat> fmt,
+                                             bool write_protect,
+                                             Encoding enc = Encoding::MFM);
 };

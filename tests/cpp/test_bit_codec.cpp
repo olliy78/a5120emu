@@ -12,7 +12,7 @@
  *
  * @see core/peripherals/floppy_drive/bit_codec.h
  * @see core/peripherals/floppy_drive/track_codec.h
- * @see doc/refactoring_floppy_emulator.md §5
+ * @see doc/design/07_k5122_afs.md
  */
 
 #include <gtest/gtest.h>

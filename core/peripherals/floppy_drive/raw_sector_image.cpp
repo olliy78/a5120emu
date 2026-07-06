@@ -25,13 +25,11 @@
 // ─── Konstruktor ─────────────────────────────────────────────────────────────
 
 RawSectorImage::RawSectorImage(const std::string& path, DiskFormat fmt,
-                               bool write_protect, Encoding enc,
-                               TrackLayout layout)
+                               bool write_protect, Encoding enc)
     : path_(path)
     , fmt_(std::move(fmt))
     , write_protect_(write_protect)
     , enc_(enc)
-    , layout_(layout)
 {
     std::ifstream f(path_, std::ios::binary);
     if (!f) {
@@ -120,9 +118,6 @@ TrackImage RawSectorImage::readTrack(uint8_t cyl, uint8_t head) {
         sektoren.push_back(std::move(ls));
     }
 
-    if (layout_ == TrackLayout::RobotronBoot) {
-        return TrackCodec::buildRobotronTrack(sektoren);
-    }
     return TrackCodec::buildTrack(sektoren, enc_);
 }
 
