@@ -24,6 +24,7 @@
 
 #include <cstring>
 #include <fstream>
+#include <utility>
 
 // ─── Konstruktor ─────────────────────────────────────────────────────────────
 
@@ -216,7 +217,25 @@ TrackImage HfeImage::readTrack(uint8_t cyl, uint8_t head) {
     uint32_t bitcells = 0;
     auto side = readSideBytes(cyl, head, bitcells);
 
+    // Per-Spur-Verfahrenserkennung für MISCHDICHTE-Medien (z. B. 8″-DD System-34:
+    // FM-Systemspuren + MFM-Datenspuren).  HFE v1 trägt nur EIN Header-Verfahren; FM-
+    // und MFM-Sync-Zellworte sind aber disjunkt, sodass ein Decode im falschen Verfahren
+    // KEINE Adressmarke findet.  Erst mit dem Header-Verfahren decodieren; bringt das
+    // keine IDAM/DAM (leere/gap-Spur ODER Fremdverfahren), das andere Verfahren versuchen
+    // und die Variante mit Marken übernehmen.  Reine FM-/MFM-Disks bleiben unverändert.
+    auto marks_count = [](const TrackImage& t) {
+        size_t n = 0;
+        for (MarkType m : t.marks)
+            if (m == MarkType::Id || m == MarkType::Data) ++n;
+        return n;
+    };
     TrackImage t = BitCodec::decode(side, bitcells, encoding_);
+    if (marks_count(t) == 0) {
+        const Encoding other = (encoding_ == Encoding::MFM) ? Encoding::FM : Encoding::MFM;
+        TrackImage alt = BitCodec::decode(side, bitcells, other);
+        if (marks_count(alt) > 0)
+            t = std::move(alt);
+    }
     return t;
 }
 

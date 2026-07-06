@@ -637,10 +637,10 @@ bis `A>` (CP/A 25.09.89):
 
 **Gap-Blank-Grenze / Vorlage:** FORMAT.COM kann eine **frische, gap-leere** `.hfe` weiterhin
 nicht direkt formatieren (Gap-Blank-Hänger, §8.2/§8.2.1). Wie die 5¼″-Pipeline startet die
-8″-Variante daher von einer **gültigen vorformatierten Vorlage**. Da es keine 8″-Disk gab,
-erzeugt sie das neue Tool **`mk_fm8_template`** (Target, nutzt dieselbe `TrackCodec`-Schicht
-wie der K5122-Schreibpfad) → committet als **`disks/empty_mf3200_296k.hfe`** (MF3200 Format 7:
-26×128 FM Sp.0-2 + 16×256 FM Sp.3-76, einseitig). Auf dieser Vorlage formatiert FORMAT.COM
+8″-Variante daher von einer **gültigen vorformatierten Vorlage**. Da es keine einseitige
+8″/FM-Disk gab, erzeugt sie das Tool **`mk_disk_template`** (§8.6.1, nutzt dieselbe
+`TrackCodec`-Schicht wie der K5122-Schreibpfad; für MF3200 Format 7:
+`mk_disk_template x.hfe fm 77 3 26 128 16 256`). Auf dieser Vorlage formatiert FORMAT.COM
 bis Spur 76 (`beendet`, Verify-clean, Soll 5208 B / gemessen 5066 B), `CPABCGEN B:` meldet
 `OK`, der Boot läuft durch.
 
@@ -649,18 +649,63 @@ bis Spur 76 (`beendet`, Verify-clean, Soll 5208 B / gemessen 5066 B), `CPABCGEN 
 `format_driver` + passende `FD_PROFILES`) und bootet die erzeugte Disk kalt zurück; Exit 0 +
 `BOOTDISK OK`.
 
-**Zwei Integrationstests** (`CMakeLists.txt`, `BUILD_K1520_TESTS`, TIMEOUT 300):
-`bootdisk_cpa780` und `bootdisk_mf3200_fm` — leere Diskette erstellen/formatieren →
-`CPABCGEN` → Kaltboot-Verify. Beide grün; **volle Suite 585/585 grün, keine Regression**.
+#### 8.6.1 Mehr Formate + einseitige Laufwerkstypen (Stand 2026-07-06)
 
-Repro (8″-FM, ganze Kette):
+Die Boot-Disk-Pipeline wurde auf weitere Formate/Laufwerkstypen ausgebaut. Dazu:
+
+- **Zwei neue einseitige Laufwerksprofile** (`drive_profile.cpp`): `ss_525_80` (5¼″,
+  80 Spuren, 1 Kopf, MFM — **K5600.20**) und `mf6400_8_ss77` (8″, 77 Spuren, 1 Kopf,
+  MFM — **K5602.10**, einseitig; das bestehende `mf6400_8_ds77` hat 2 Köpfe und greift
+  nicht ins Kopf-0-Forcing).
+- **Verallgemeinertes Template-Tool** `mk_disk_template` (ersetzt `mk_fm8_template`):
+  `mk_disk_template <out.hfe> <fm|mfm|sys/data> <cyls> <sys_cyls> <sys_nsec> <sys_size>
+  <data_nsec> <data_size>` erzeugt eine gültig vorformatierte EINSEITIGE Leerdiskette
+  (Systemspuren + Datenspuren, beliebige Sektorgrößen). Die HFE-Seitenlänge wird aus der
+  längsten gebauten Spur bestimmt (1 Spur-Byte = 2 HFE-Bytes; sonst würden große Spuren
+  wie 8×1024 abgeschnitten).
+- **Mischdichte-Unterstützung (System-34):** 8″-DD-Disks (MF6400) haben **FM-Systemspuren
+  + MFM-Datenspuren**. Zwei Bausteine machen das lauffähig: (a) `mk_disk_template`
+  akzeptiert `fm/mfm` (Sys/Daten getrennt); (b) `HfeImage::readTrack` erkennt das
+  Verfahren **pro Spur** automatisch — FM- und MFM-Sync-Zellworte sind disjunkt, also wird
+  erst mit dem Header-Verfahren decodiert und bei fehlender Adressmarke das andere
+  versucht. Reine FM-/MFM-Disks bleiben unverändert.
+- **C:-Laufwerk-Ziele** in `make_bootdisk.py` (MF6400, K5600.20 liegen laut Combo-BIOS auf
+  C:): der B:-Slot wird mit einer gültigen Combo-B:-Dummy-Disk belegt (FD_DISKC = Ziel).
+
+**Sechs Presets** in `make_bootdisk.py` (`--preset`); Test-Registrierung als
+`format_integration` (langsam, in der Standard-Regression ausgeschlossen — `tools/dev.sh
+test` überspringt sie via `-LE format_integration`, `tools/dev.sh test-format` führt nur
+sie aus):
+
+| Preset (Test)            | Laufwerk / Verfahren            | Format                         | Status |
+|--------------------------|---------------------------------|--------------------------------|:------:|
+| `cpa780`                 | 5¼″ MFM (K5601, 2-seitig)       | 26×128 + 5×1024                | ✅ |
+| `mf3200_fmt7`            | 8″ SD/FM (MF3200)               | 26×128 + 16×256   (296k)       | ✅ |
+| `mf6400_fmt1`            | 8″ DD Mischd. (K5602.10, C:)    | 26×128 FM + 8×1024 MFM (600k)  | ✅ |
+| `k5600_10_fmt1`          | 5¼″ 40-Sp. SS/MFM (K5600.10)    | 26×128 + 5×1024   (190k)       | ✅ |
+| `k5600_20_fmt1`          | 5¼″ 80-Sp. SS/MFM (K5600.20, C:)| 26×128 + 5×1024   (390k)       | ✅ |
+| `mf3200_fmt1`            | 8″ SD/FM (MF3200)               | 26×128 + 4×1024   (296k)       | ⚠️ offen |
+
+**Offen — `mf3200_fmt1` (1024-B-FM-SD-Lesepfad):** Formatieren + `CPABCGEN` laufen durch
+(die 1024-B-FM-Datensektoren werden mit gültiger CRC geschrieben, per parseTrack
+`datacrc_bad=0`), und das OS bootet und läuft an — aber ein `DIR` scheitert mit
+`Bdos Err On A: Bad Sector` beim Lesen der 1024-B-FM-Datenspur (6 Leseversuche auf Spur 3,
+dann Abbruch). **256-B-FM (mf3200_fmt7) funktioniert**, der Lese-Stream-Aufbau ist für
+256 B und 1024 B identisch — der Unterschied ist reine Sektorgröße. Der Loader liest
+@OS.COM aus 1024-B-FM erfolgreich (OS läuft), nur der BIOS-Lesepfad des laufenden OS
+scheitert bei 1024-B-FM. Rares Format (SD normalerweise 128/256 B). Nicht als Test
+registriert; Preset bleibt für die Analyse.
+
+Repro (ganze Kette, z. B. MF6400-Mischdichte):
 ```sh
 tools/dev.sh tool format_driver
-tools/dev.sh tool mk_fm8_template
-build/mk_fm8_template /tmp/empty8.hfe                 # erstellen + formatieren
-python3 tools/cpa_tools/make_bootdisk.py --preset mf3200 --formatted /tmp/empty8.hfe --out /tmp/boot8.hfe
-# → "BOOTDISK OK: /tmp/boot8.hfe"
+tools/dev.sh tool mk_disk_template
+python3 tools/cpa_tools/make_bootdisk.py --preset mf6400_fmt1        # → "BOOTDISK OK"
+tools/dev.sh test-format                                             # alle 5 Boot-Disk-Tests
 ```
+
+**Regression:** volle Suite **583/583** (ohne die 5 `format_integration`-Tests) grün; die
+5 Boot-Disk-Tests grün.
 
 ### 8.1 FORMATB.COM — vollständige Diagnose (Stand 2026-06-28)
 

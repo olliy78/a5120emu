@@ -396,11 +396,13 @@ if(BUILD_K1520)
     target_link_libraries(format_driver PRIVATE k1520_a5120 k1520_floppy k1520_logger)
     target_include_directories(format_driver PRIVATE ${CMAKE_SOURCE_DIR})
 
-    # mk_fm8_template: erzeugt die gültig vorformatierte 8″-SD/FM-Leerdiskette
-    # (MF3200 fmt7) für die 8″-Boot-Pipeline (disks/empty_mf3200_296k.hfe).
-    add_executable(mk_fm8_template tools/mk_fm8_template.cpp)
-    target_link_libraries(mk_fm8_template PRIVATE k1520_floppy2 k1520_logger)
-    target_include_directories(mk_fm8_template PRIVATE ${CMAKE_SOURCE_DIR})
+    # mk_disk_template: erzeugt gültig vorformatierte EINSEITIGE Leerdisketten (HFE)
+    # für die Boot-Pipeline der einseitigen Formate (MF3200 8″-FM, MF6400 8″-MFM,
+    # K5600.10/.20 5″-SS) — FORMAT.COM kann eine gap-leere .hfe nicht direkt formatieren
+    # (Gap-Blank-Hänger, docs/format.md §8.2/§8.6).
+    add_executable(mk_disk_template tools/mk_disk_template.cpp)
+    target_link_libraries(mk_disk_template PRIVATE k1520_floppy2 k1520_logger)
+    target_include_directories(mk_disk_template PRIVATE ${CMAKE_SOURCE_DIR})
 
     # floppy_diag: running-OS floppy read diagnostic
     add_executable(floppy_diag tools/floppy_diag.cpp)
@@ -494,20 +496,30 @@ if(BUILD_K1520)
         # Voller Anwender-Workflow (Tastatur-getrieben über format_driver): eine leere,
         # als Systemformat formatierte Diskette wird mit CPABCGEN.COM bootfähig gemacht
         # und der Rechner davon kalt gebootet (make_bootdisk.py, Exit 0 = "BOOTDISK OK").
-        # FORMAT_DRIVER zeigt auf den frisch gebauten Treiber DIESES Build-Verzeichnisses.
+        # Diese Tests dauern LANGE (voller Boot je Schritt) → LABEL "format_integration";
+        # sie laufen bei den Standard-Regressionstests NICHT mit (tools/dev.sh test schließt
+        # sie via `-LE format_integration` aus; `tools/dev.sh test-format` führt nur sie aus).
+        # FORMAT_DRIVER/MK_DISK_TEMPLATE zeigen auf die Tools DIESES Build-Verzeichnisses.
         set(_mkboot "${CMAKE_SOURCE_DIR}/tools/cpa_tools/make_bootdisk.py")
+        # Ein Boot-Disk-Test je Preset: erstellen+formatieren (mk_disk_template bzw.
+        # committete cpa780-Vorlage) → CPABCGEN → Kaltboot-Verify.
+        macro(add_bootdisk_test name preset)
+            add_test(NAME ${name} COMMAND sh -c
+                "FORMAT_DRIVER=$<TARGET_FILE:format_driver> MK_DISK_TEMPLATE=$<TARGET_FILE:mk_disk_template> python3 ${_mkboot} --preset ${preset} --quiet")
+            set_tests_properties(${name} PROPERTIES
+                TIMEOUT 600 PASS_REGULAR_EXPRESSION "BOOTDISK OK"
+                LABELS "format_integration")
+        endmacro()
 
-        # 1) cpa780 (5¼″-MFM): committete Leer-Vorlage disks/empty_cpa780.hfe.
-        add_test(NAME bootdisk_cpa780 COMMAND sh -c
-            "O=$(mktemp --suffix=.hfe); FORMAT_DRIVER=$<TARGET_FILE:format_driver> python3 ${_mkboot} --preset cpa780 --out \$O --quiet; r=\$?; rm -f \$O; exit \$r")
-
-        # 2) mf3200 fmt7 (8″-SD/FM, 296k): die 8″-FM-Leerdiskette wird IM TEST erzeugt
-        #    (mk_fm8_template = erstellen+formatieren), dann bootfähig gemacht + gebootet.
-        add_test(NAME bootdisk_mf3200_fm COMMAND sh -c
-            "T=$(mktemp --suffix=.hfe); O=$(mktemp --suffix=.hfe); $<TARGET_FILE:mk_fm8_template> \$T >/dev/null; FORMAT_DRIVER=$<TARGET_FILE:format_driver> python3 ${_mkboot} --preset mf3200 --formatted \$T --out \$O --quiet; r=\$?; rm -f \$T \$O; exit \$r")
-
-        set_tests_properties(bootdisk_cpa780 bootdisk_mf3200_fm PROPERTIES
-            TIMEOUT 300 PASS_REGULAR_EXPRESSION "BOOTDISK OK")
+        add_bootdisk_test(bootdisk_cpa780        cpa780)         # 5¼″-MFM   cpa780
+        add_bootdisk_test(bootdisk_mf3200_fmt7   mf3200_fmt7)    # 8″-SD/FM  26×128+16×256
+        add_bootdisk_test(bootdisk_mf6400_fmt1   mf6400_fmt1)    # 8″-DD Mischd. 26×128FM+8×1024MFM (C:)
+        add_bootdisk_test(bootdisk_k5600_10_fmt1 k5600_10_fmt1)  # 5¼″-40-SS 26×128+5×1024
+        add_bootdisk_test(bootdisk_k5600_20_fmt1 k5600_20_fmt1)  # 5¼″-80-SS 26×128+5×1024 (C:)
+        # HINWEIS: Preset mf3200_fmt1 (8″-SD/FM 26×128+4×1024) ist bewusst NICHT als Test
+        # registriert — die 1024-B-FM-Datensektoren werden korrekt geschrieben (CRC gültig),
+        # aber das laufende OS liest sie nicht (256-B-FM funktioniert): offener 1024-B-FM-SD-
+        # Lesepfad, seltenes Format.  Preset bleibt für manuelle Analyse verfügbar (§8.6).
     endif()
 
 endif() # BUILD_K1520
