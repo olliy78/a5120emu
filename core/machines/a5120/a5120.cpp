@@ -32,6 +32,7 @@ A5120Machine::A5120Machine(const Config& cfg)
     // Laufwerksbestückung aus der Config; Default = A5120-Standard-Bürokonfiguration
     // (4× K5601, 5,25"-MFM). Per C-API/GUI/Config-Datei überschreibbar.
     , afs_(bus_, profilesFromConfig(cfg))
+    , drive_profiles_(profilesFromConfig(cfg))
 {
     disk_formats_ = FormatParser::builtinFormats();
 
@@ -398,20 +399,39 @@ bool A5120Machine::mountDisk(int drive, const std::string& path,
     return afs_.mountDisk(drive, path, *it, wp);
 }
 
+// Default-DiskFormat einer NEU angelegten Diskette je Laufwerkstyp (DriveProfile).
+// Wird benutzt, wenn createDisk ohne expliziten Formatnamen aufgerufen wird.
+static std::string defaultFormatFor(const DriveProfile& p) {
+    if (p.name == "ss_525_40")     return "k5601_ss40_5x1024";  // K5600.10 (200K)
+    if (p.name == "ss_525_80")     return "cpa200";             // K5600.20 (400K)
+    if (p.name == "mf3200_8_ss77") return "mf3200";             // MF3200 (308K, FM)
+    if (p.name.rfind("mf6400", 0) == 0) return "mf6400";        // MF6400 (616K)
+    return "cpa800";  // K5601 / mfs_525_ds80: 800K, ohne Bootspur
+}
+
 bool A5120Machine::createDisk(int drive, const std::string& path,
                               const std::string& format_name, bool write_protect) {
     if (drive < 0 || drive > 3) { last_error_ = "Invalid drive"; return false; }
 
-    // DiskFormat auflösen (für .img Pflicht; für .hfe ignoriert → optional).
-    std::optional<DiskFormat> fmt;
-    auto it = std::find_if(disk_formats_.begin(), disk_formats_.end(),
-                           [&](const DiskFormat& f){ return f.name == format_name; });
-    if (it != disk_formats_.end()) fmt = *it;
+    const DriveProfile& prof = drive_profiles_[drive];
 
-    auto img = DiskImage::create(path, fmt, write_protect);
+    // Leerer Formatname → laufwerkstyp-spezifisches Standardformat.
+    const std::string fname = format_name.empty() ? defaultFormatFor(prof)
+                                                   : format_name;
+
+    auto it = std::find_if(disk_formats_.begin(), disk_formats_.end(),
+                           [&](const DiskFormat& f){ return f.name == fname; });
+    if (it == disk_formats_.end()) {
+        last_error_ = "createDisk: unbekanntes Format '" + fname + "'";
+        return false;
+    }
+
+    // Verfahren aus dem Laufwerk ableiten: reine FM-Laufwerke (8″-SD) → FM, sonst MFM.
+    const Encoding enc = prof.supports_mfm ? Encoding::MFM : Encoding::FM;
+
+    auto img = DiskImage::create(path, *it, write_protect, enc);
     if (!img) {
-        last_error_ = "createDisk fehlgeschlagen (fehlt für .img das Format '"
-                      + format_name + "'?): " + path;
+        last_error_ = "createDisk fehlgeschlagen (Format '" + fname + "'): " + path;
         return false;
     }
 

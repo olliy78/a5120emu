@@ -23,6 +23,7 @@
 //   k5600.20 f1 :  mk_disk_template x.hfe mfm 80 2 26 128  5 1024
 
 #include "core/peripherals/floppy_drive/disk_image.h"
+#include "core/peripherals/floppy_drive/hfe_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
 
 #include <algorithm>
@@ -162,8 +163,11 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    auto img = DiskImage::open(out, std::nullopt, /*write_protect=*/false);
-    if (!img) {
+    // Schreibbares Handle auf das noch gap-leere Template direkt über HfeImage holen
+    // (NICHT DiskImage::open — dessen Mount-Guard lehnt eine unformatierte Datei zu
+    // Recht ab; hier formatieren wir sie ja gerade erst).
+    auto img = std::make_unique<HfeImage>(out, /*write_protect=*/false);
+    if (!img->isOpen()) {
         std::fprintf(stderr, "FEHLER: erzeugtes HFE nicht öffenbar: %s\n", out.c_str());
         return 1;
     }

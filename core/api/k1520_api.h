@@ -74,6 +74,18 @@ bool k1520_mount_disk(K1520Handle h, int drive,
                       const char* image_path,
                       const char* format_name,
                       bool write_protect);
+/**
+ * @brief Create a NEW, validly-formatted blank disk image and mount it.
+ *
+ * `.hfe` → formatted HFE (real IDAM/DATA/CRC, 0xE5 data); otherwise `.img`.
+ * @p format_name selects the geometry; NULL or "" picks the drive-type default of
+ * the slot (K5601→cpa800, K5600.10→200K, K5600.20→400K, MF3200→308K/FM, MF6400→616K).
+ * Overwrites an existing file.  Returns false on error.
+ */
+bool k1520_create_disk(K1520Handle h, int drive,
+                       const char* image_path,
+                       const char* format_name,
+                       bool write_protect);
 /** @brief Unmount disk image from a drive slot. */
 bool k1520_unmount_disk(K1520Handle h, int drive);
 /** @brief Return true if a disk image is mounted in the drive. */

@@ -125,6 +125,15 @@ bool k1520_mount_disk(K1520Handle h, int drive,
     return toA5120(h)->mountDisk(drive, image_path, format_name, write_protect);
 }
 
+bool k1520_create_disk(K1520Handle h, int drive,
+                       const char* image_path, const char* format_name,
+                       bool write_protect) {
+    if (!image_path) return false;
+    // NULL/"" format_name → drive-type default (createDisk resolves it).
+    return toA5120(h)->createDisk(drive, image_path,
+                                  format_name ? format_name : "", write_protect);
+}
+
 bool k1520_unmount_disk(K1520Handle h, int drive) {
     return toA5120(h)->unmountDisk(drive);
 }

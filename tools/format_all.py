@@ -277,16 +277,19 @@ def prepare_target(path, filetype, img_format):
     Bereitet das B:-Zielimage vor und liefert den `createB`-Formatnamen für
     format_driver zurück (oder None = B: nur öffnen).
 
-    - .hfe: Kopie eines GÜLTIGEN Templates (kein Gap-Blank — s. §8.2/TEMPLATE_HFE).
-            format_driver ÖFFNET diese Datei (createB=None).
-    - .img: format_driver LEGT die Datei via `create` NEU an (0xE5 in der Geometrie
-            des DiskFormat) → createB = img_format.  Kein Python-Vorbau nötig.
+    format_driver legt das Ziel bei angegebenem createB-Format via `create` NEU an —
+    für .hfe jetzt als GÜLTIG FORMATIERTE Leerdiskette (echte IDAM/DATA/CRC), nicht mehr
+    gap-leer.  Damit ist die frühere Template-Kopie (§8.2-Workaround) überflüssig.
+
+    - .hfe/.img mit img_format → createB = img_format (kein Python-Vorbau).
+    - .hfe OHNE img_format (Doppelschritt-Geo T/U oder Fremdtyp ohne definierte
+      RawSectorImage-Geometrie) → Fallback: Kopie eines gültigen Templates, B: nur öffnen.
     """
-    if filetype == 'hfe':
-        shutil.copyfile(TEMPLATE_HFE, path)
-        return None
     if not img_format:
-        raise ValueError(f"kein .img-DiskFormat für dieses Format definiert")
+        if filetype == 'hfe':
+            shutil.copyfile(TEMPLATE_HFE, path)   # keine Geometrie → Template-Kopie
+            return None
+        raise ValueError("kein .img-DiskFormat für dieses Format definiert")
     # Datei wird von format_driver (create) angelegt; alten Rest entfernen.
     if os.path.exists(path):
         os.remove(path)

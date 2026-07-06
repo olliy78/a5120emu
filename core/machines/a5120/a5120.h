@@ -64,12 +64,14 @@ public:
     bool mountDisk(int drive, const std::string& path,
                    const std::string& format_name, bool write_protect);
     /**
-     * @brief Legt eine NEUE, leere Image-Datei an und mountet sie (create statt open).
+     * @brief Legt eine NEUE, GÜLTIG FORMATIERTE, leere Diskette an und mountet sie.
      *
-     * Endung `.hfe` → leeres formatierbares HFE-Template (@p format_name egal);
-     * sonst `.img` → rohes 0xE5-Sektorimage in der Geometrie von @p format_name
-     * (muss ein bekanntes DiskFormat sein).  Überschreibt eine vorhandene Datei.
-     * @see DiskImage::create
+     * Endung `.hfe` → formatiertes HFE (echte IDAM/DATA/CRC, Daten 0xE5); sonst `.img`
+     * → 0xE5-Sektorimage.  @p format_name bestimmt die Geometrie; ist er LEER, wird das
+     * laufwerkstyp-spezifische Standardformat des Slots gewählt (K5601→cpa800,
+     * K5600.10→200K, K5600.20→400K, MF3200→308K/FM, MF6400→616K).  Das Aufzeichnungs-
+     * verfahren folgt aus dem DriveProfile (reines FM-Laufwerk → FM, sonst MFM).
+     * Überschreibt eine vorhandene Datei.  @see DiskImage::create
      */
     bool createDisk(int drive, const std::string& path,
                     const std::string& format_name, bool write_protect);
@@ -253,6 +255,7 @@ private:
     K7637         kbd_;
 
     std::vector<DiskFormat> disk_formats_;
+    std::array<DriveProfile, 4> drive_profiles_;  // Bestückung je Slot (für create-Default)
 
     std::atomic<bool>  stop_{false};
 

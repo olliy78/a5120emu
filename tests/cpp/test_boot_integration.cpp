@@ -18,6 +18,7 @@
 #include "core/machines/a5120/a5120.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -515,4 +516,57 @@ TEST(KeyboardIntegration, DISABLED_TypeCommandAtCcpEchoesAndProcesses) {
     EXPECT_NE(screen.find("XY7?"), std::string::npos)
         << "CCP did not process the typed command (no unknown-command error).\n"
         << "Screen:\n" << screen;
+}
+
+// ─── createDisk: laufwerkstyp-spezifisches Standardformat ────────────────────
+//
+// Ein leerer Formatname wählt je Slot-DriveProfile das passende Default-Format;
+// die erzeugte, GÜLTIG FORMATIERTE Diskette wird gemountet.  Wir prüfen die
+// resultierende .img-Größe (= Geometrie) je Laufwerkstyp.
+namespace {
+std::string tmpImg(const char* tag) {
+    return (std::filesystem::temp_directory_path()
+            / (std::string("k1520_create_default_") + tag + ".img")).string();
+}
+}  // namespace
+
+TEST(CreateDiskDefault, K5601_DefaultIstCpa800) {
+    const std::string path = tmpImg("k5601");
+    std::filesystem::remove(path);
+    A5120Machine machine;                       // Default: 4× K5601
+    ASSERT_TRUE(machine.createDisk(0, path, /*format=*/"", /*wp=*/false))
+        << machine.lastError();
+    EXPECT_TRUE(machine.isDiskActive(0));
+    EXPECT_EQ(std::filesystem::file_size(path), 80u * 2 * 5 * 1024);  // cpa800 = 800K
+    std::filesystem::remove(path);
+}
+
+TEST(CreateDiskDefault, K560010_ss40_200K) {
+    const std::string path = tmpImg("k560010");
+    std::filesystem::remove(path);
+    A5120Machine::Config cfg;
+    cfg.drive_profiles = {"ss_525_40", "K5601", "K5601", "K5601"};
+    A5120Machine machine(cfg);
+    ASSERT_TRUE(machine.createDisk(0, path, "", false)) << machine.lastError();
+    EXPECT_EQ(std::filesystem::file_size(path), 40u * 5 * 1024);      // 200K
+    std::filesystem::remove(path);
+}
+
+TEST(CreateDiskDefault, MF3200_fm_308K) {
+    const std::string path = tmpImg("mf3200");
+    std::filesystem::remove(path);
+    A5120Machine::Config cfg;
+    cfg.drive_profiles = {"mf3200_8_ss77", "K5601", "K5601", "K5601"};
+    A5120Machine machine(cfg);
+    ASSERT_TRUE(machine.createDisk(0, path, "", false)) << machine.lastError();
+    EXPECT_EQ(std::filesystem::file_size(path), 77u * 4 * 1024);      // 308K
+    std::filesystem::remove(path);
+}
+
+TEST(CreateDiskDefault, UnbekanntesFormat_gibtFalse) {
+    const std::string path = tmpImg("bad");
+    std::filesystem::remove(path);
+    A5120Machine machine;
+    EXPECT_FALSE(machine.createDisk(0, path, "gibt_es_nicht", false));
+    std::filesystem::remove(path);
 }

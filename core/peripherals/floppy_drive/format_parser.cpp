@@ -159,6 +159,24 @@ std::vector<DiskFormat> FormatParser::builtinFormats() {
         fmts.push_back(std::move(f));
     }
 
+    // mf3200: 8″-Laufwerk K5602 (mf3200_8_ss77), einseitig 77 Spuren, 4×1024B, FM.
+    // Default-Datenformat einer NEU angelegten MF3200-Diskette (308 KB, ohne Bootspur).
+    {
+        DiskFormat f;
+        f.name = "mf3200";
+        f.tracks.push_back({0, 76, 0, 0, 4, 1024});
+        fmts.push_back(std::move(f));
+    }
+
+    // mf6400: 8″-Laufwerk (mf6400_8_ss77), einseitig 77 Spuren, 8×1024B, MFM.
+    // Default-Datenformat einer NEU angelegten MF6400-Diskette (616 KB, ohne Bootspur).
+    {
+        DiskFormat f;
+        f.name = "mf6400";
+        f.tracks.push_back({0, 76, 0, 0, 8, 1024});
+        fmts.push_back(std::move(f));
+    }
+
     // cpa200_boot: single-sided, boot tracks 26×128B, data 5×1024B
     {
         DiskFormat f;
