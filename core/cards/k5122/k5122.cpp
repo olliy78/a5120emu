@@ -488,17 +488,31 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
         }
     }
 
-    // ── Lesen-Marke-Steuerwort (0x85 = MFM / 0x87 = FM): Verfahren latchen ───
-    // FM/MFM ist Eigenschaft von Laufwerk+Medium; die Software wählt es über das
-    // „Lesen-Marke"-Steuerwort (doc/cpa_format_detection.md §93).  bit1 trennt
-    // MFM(0)/FM(1).  (data & 0xFD) == 0x85 erkennt NUR die beiden Kommandoworte
-    // 0x85/0x87 — der 0xB5-Reset und alle Strobe-/Step-Worte erfüllen es nicht,
-    // sodass die als MK(bit1)/MK1(bit4) togglenden Strobes hier nicht stören.
-    // Latch übersteuert den DriveProfile-Default (Laufwerk-Default + Steuerwort-
-    // Override); damit kann das OS später auf MFM-Datenspuren umschalten.
-    if ((data & 0xFD) == 0x85) {
+    // ── „Lesen-Marke"-/Pfadbyte [0x03FD] (0x81/0x83/0x85/0x87): Verfahren + Seite ──
+    // Das Boot-ROM/der Lader schreibt vor JEDER Sektor-Lese-Iteration ein Pfadbyte nach
+    // Port 0x10 (ZVE2 @0x025F, ROM @0x01AD).  Es trägt die PERSISTENTE Wahl von
+    //   bit1 = Verfahren  (0 = MFM / 1 = FM),   doc/cpa_format_detection.md §93
+    //   bit2 = /FR-Seite  (1 = Kopf 0 / 0 = Kopf 1)
+    // Muster: bit7=1, bit0=1, bits6..3 = 0  →  (data & 0xF9) == 0x81 (= 0x81/0x83/0x85/0x87).
+    // Die /STR-/Step-Strobes (0xB5/0xBD/0xA5/0xAD/0x2D…) erfüllen es NICHT und stören daher
+    // weder Verfahren noch Seite.  Wichtig für die Seitenwahl: die /STR-Strobes haben bit2
+    // fest = 1 (Kopf 0); die ECHTE Seite steht nur im Pfadbyte, das ERST NACH dem /STR-Strobe
+    // geschrieben wird (und unmittelbar vor dem IN(16) gilt).  Deshalb muss die Seite hier
+    // (aus dem Pfadbyte) gelatcht werden, nicht am /STR-Edge (dort immer Kopf 0) — sonst ist
+    // die zweiseitige Boot-Lesung (ROBOTRON-/SCPX-Lader liest Kopf 1) unerreichbar.
+    if ((data & 0xF9) == 0x81) {
         read_enc_            = (data & 0x02) ? Encoding::FM : Encoding::MFM;
         read_enc_overridden_ = true;
+
+        uint8_t path_head = (data & 0x04) ? 0 : 1;
+        // Einseitige Laufwerke haben physisch nur Kopf 0 (vgl. /STR-Latch unten).
+        if (drives_[selected_drive_].profile().num_heads <= 1) path_head = 0;
+        if (path_head != current_head_) {
+            current_head_ = path_head;
+            // Seitenwechsel während laufender Lesung → Spur der neuen Seite laden
+            // (kontinuierliche Rotation, head_pos_ startet frisch auf der neuen Seite).
+            if (transferring_ && !write_mode_) startReadTransfer();
+        }
     }
 
     // ── /ST (bit7) fallende Flanke: Schritt-Puls ─────────────────────────────

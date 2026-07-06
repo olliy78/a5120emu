@@ -31,9 +31,23 @@ bool FloppyDriveV2::mount(std::unique_ptr<DiskImage> img, bool write_protect) {
     DiskGeometry geo = img->geometry();
 
     // Geometrie gegen das physische Laufwerk prüfen.
+    // Überzählige Zylinder jenseits von profile_.num_cyls sind zulässig, SOLANGE sie
+    // unformatiert sind: ein physisches Laufwerk erreicht sie nicht (step() clampt auf
+    // num_cyls-1), sie werden also nie gelesen. Viele HFE-Images hängen 1–3 leere
+    // Gap-Spuren an (Über-Reise des Kopfs beim Erzeugen). Trägt ein solcher Zylinder
+    // dagegen echte Marken, ist es ein echter Kapazitäts-Konflikt → ablehnen.
     if (geo.num_cyls > profile_.num_cyls) {
-        last_error_ = "zu viele Spuren für Laufwerk";
-        return false;
+        for (uint8_t c = profile_.num_cyls; c < geo.num_cyls; ++c) {
+            for (uint8_t h = 0; h < geo.num_heads; ++h) {
+                const TrackImage t = img->readTrack(c, h);
+                for (MarkType m : t.marks) {
+                    if (m == MarkType::Id || m == MarkType::Data) {
+                        last_error_ = "zu viele Spuren für Laufwerk";
+                        return false;
+                    }
+                }
+            }
+        }
     }
     if (geo.num_heads > profile_.num_heads) {
         last_error_ = "zu viele Köpfe";
