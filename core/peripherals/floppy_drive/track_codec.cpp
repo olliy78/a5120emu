@@ -2,18 +2,14 @@
  * @file track_codec.cpp
  * @brief TrackCodec – IBM-Track (FM/MFM) aufbauen/parsen und CRC-Primitive.
  *
- * TrackCodec::crc16 IST CRC-16-CCITT (Poly 0x1021) — die ror-basierte Implementierung
- * (byte-genau zur Lader-Routine sub_0407) ist äquivalent zum Standard-CCITT.  Es gibt
- * KEINE „Robotron-Spezial-CRC"; die echten A5120-Disks sind Standard-IBM-MFM.  Die
- * vermeintlichen „Sonderseeds" sind nur CCITT-Zwischenstände:
- *   crc16([A1,A1,A1],     3, 0xFF,0xFF) == 0xCDB4
- *   crc16([A1,A1,A1,FB],  4, 0xFF,0xFF) == 0xE295   (Seed der MFM-Daten-CRC, MIT A1)
- *   crc16([FB],           1, 0xFF,0xFF) == 0xBF84   (FM-Daten-CRC, OHNE A1)
- * buildTrack startet die komplette CRC daher immer mit [A1,A1,A1,FE/FB, ...] (MFM) bzw.
- * [FE/FB, ...] (FM) und Seed 0xFF,0xFF — exakt die natürliche IBM-FM-vs-MFM-Differenz.
+ * TrackCodec::crc16 IST die Standard-IBM-CRC-16-CCITT (Poly 0x1021) — die ror-basierte
+ * Implementierung (byte-genau zur Lader-Routine sub_0407) ist äquivalent zum Standard-CCITT.
+ * Die echten A5120-Disks sind Standard-IBM-MFM.  buildTrack berechnet die komplette CRC immer
+ * über [A1,A1,A1,FE/FB, ...] (MFM) bzw. [FE/FB, ...] (FM) mit Seed 0xFF,0xFF — die natürliche
+ * IBM-FM-vs-MFM-Differenz (FM ohne, MFM mit A1-Präambel im CRC-Bereich).
  *
  * @see core/peripherals/floppy_drive/track_codec.h
- * @see doc/refactoring_floppy_emulator.md §4
+ * @see doc/design/07_k5122_afs.md
  * @author Olaf Krieger
  * @date 2026
  * @license MIT License

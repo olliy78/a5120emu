@@ -5,7 +5,7 @@
  * Emulation der K5122 „Anschlusssteuerung Floppy-disk Speicher" für das Robotron-
  * K1520/A5120-System.  Der Datenpfad arbeitet als **Lesekopf-über-rotierender-Spur-Modell**
  * auf Basis der zentralen @ref TrackImage -Abstraktion (siehe
- * doc/refactoring_floppy_emulator.md): der Controller kennt **keine** Sektorgrößen,
+ * doc/design/07_k5122_afs.md): der Controller kennt **keine** Sektorgrößen,
  * Sektoranzahl, CRC-Verfahren oder Boot-Stadien.  Er bezieht von jedem @ref FloppyDriveV2
  * eine fertig decodierte Spur (Gaps, Sync, IDAM, DATA, echte CRCs) und streamt deren Bytes
  * über Port 0x16 wie ein echter Lesekopf; die Re-Sync-Strobes MK/MK1 rücken den Kopf auf
@@ -21,7 +21,7 @@
  * 8212-Drive-Select (0x18).  Side-Select = Port-A bit2 (/FR), am /STR-Strobe gelatcht;
  * Step-Richtung = bit5 (MR/SD), am /ST-Puls gesampelt.
  *
- * @see doc/refactoring_floppy_emulator.md §9 / §15
+ * @see doc/design/07_k5122_afs.md
  * @see doc/design/07_k5122_afs.md
  * @author Olaf Krieger
  * @date 2026

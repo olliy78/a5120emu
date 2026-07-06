@@ -10,7 +10,7 @@
  * Die K5122 ist konstruktiv verfahrensagnostisch (Marken-ROM A2.2 erkennt MFM-Sync
  * *und* FM-Marken); das Verfahren ist Eigenschaft von Laufwerk + Medium + Format.
  *
- * @see doc/refactoring_floppy_emulator.md §3.A
+ * @see doc/design/07_k5122_afs.md
  * @see doc/design/09_floppy_drive.md
  * @author Olaf Krieger
  * @date 2026

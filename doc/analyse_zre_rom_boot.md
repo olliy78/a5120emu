@@ -160,9 +160,8 @@ ohne Umkonfiguration (gleiche Datenrate, Encoding auto-erkannt); ein **MFM-8"-La
 ZVE2 validiert einen Sektor **nur über das IDAM-Feld** (Vergleich Zyl/Kopf/Sektor/Size) und ZVE1
 später über die **Boot-Signatur** `@01B6`. Die nachlaufenden INI `@0245/0247` **lesen die
 Daten-CRC-Bytes nur ein** (in den Scratch `0x0700`), prüfen sie aber nicht. Die eigentliche
-CRC-Verifikation (`sub_0407`, Dual-Konvention 0xBF84 FM / 0xE295 MFM, gewählt über `[03FD]` bit1)
-liegt erst im **geladenen Lader** (RAM `0x04xx`), nicht im ROM. Details:
-Erinnerung `project_crc_128b_dual_convention`.
+CRC-Verifikation (`sub_0407`, Standard-IBM-CCITT) liegt erst im **geladenen Lader**
+(RAM `0x04xx`), nicht im ROM.
 
 ---
 
@@ -205,7 +204,7 @@ dort. Im A5120-Standardbetrieb i.d.R. nicht relevant; Detail-Annotation in der `
 Codierung `eff_enc` (Steuerwort-Override `0x85`/`0x87` via `read_enc_`, sonst
 `DriveProfile::default_read_encoding`), **benutzt sie aber nur in der Log-Zeile**. Der Lese-Stream
 entsteht über `TrackCodec::buildRobotronTrack()` und liefert für FM **und** MFM **dasselbe**
-boot-kompatible **Single-A1-Layout** (Marke auf dem A1, Seeds 0xBF84/0xCDB4) — unabhängig von MK
+boot-kompatible **Single-A1-Layout** (Marke auf dem A1) — unabhängig von MK
 *und* von der echten Codierung des `.hfe`/`.img`. Folge: das ROM liest mit dem FM-Default sofort
 erfolgreich, **die MFM-Umschaltung wird nie ausgelöst**; ein Modus-Mismatch erzeugt nie ungültige
 Daten.
@@ -277,7 +276,6 @@ Danach trägt der Datenpfad (single-A1-Stream + treue FM/MFM-Synthese aus §7) a
   `doc/trascripted/Floppy Anschlußsteuerung K 5122.md` (Tor A/B-Signale, Markenerkennung §5.3).
 - **Emulator-Modell:** `core/cards/k5122/`, `core/cards/k2526/`, `core/machines/a5120/a5120.cpp`,
   `core/peripherals/floppy_drive/` (DriveProfile, TrackCodec).
-- **Erinnerungen:** `project_crc_128b_dual_convention` (FM/MFM + CRC-Mechanismus),
-  `project_fm_mfm_faithful_readpath` (treuer Lesepfad-Umbau), `project_fm_mfm_drive_property`
+- **Erinnerungen:** `project_fm_mfm_faithful_readpath` (treuer Lesepfad-Umbau), `project_fm_mfm_drive_property`
   (Emulator-FM/MFM-Modell), `project_real_zre_rom_dump` (ROM-Image-Herkunft).
 - **Debug-Workflow:** `tools/how_to_debug_and_trace.md`, `tools/boot_trace.md`, `tools/k1520dbg.md`.

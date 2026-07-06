@@ -11,7 +11,7 @@
 > (HFE-Bitzellen), `drive_profile.*` (physische Laufwerksprofile), `disk_image.*` + `raw_sector_image.*`
 > + `hfe_image.*` (austauschbare Backends) und `floppy_drive2.*` (`FloppyDriveV2` mit Profil +
 > Track-Cache).  `FloppyDrive` bleibt nur noch als Referenz/Test-Vergleich (`test_floppy`,
-> `test_disk_image_raw`) erhalten.  Architektur/Status: `doc/refactoring_floppy_emulator.md` (§3–§8, §15).
+> `test_disk_image_raw`) erhalten.  Architektur/Status: `doc/design/07_k5122_afs.md`, `doc/K1520_architecture.md` §8.5.
 
 ---
 

@@ -19,7 +19,7 @@
  *   Spurdaten (ab offset*512): 256-B-Blöcke seitenverschränkt [S0][S1][S0][S1]… , Zellen LSB-first
  * @endcode
  *
- * @see doc/refactoring_floppy_emulator.md §6.2 / §7
+ * @see doc/design/07_k5122_afs.md
  * @see https://hxc2001.com/floppy_drive_emulator/HFE-file-format.html
  * @author Olaf Krieger
  * @date 2026

@@ -149,26 +149,23 @@ a5120emu/
 │   │   │   └── charset_cyrillic.h # Zeichengenerator (A123 EPROM)
 │   │   ├── k8025/               # ASS – Anschlußsteuerung Seriell
 │   │   │   └── k8025.h/cpp
-│   │   ├── k5122/               # AFS – Folienspeicher-Anschlußsteuerung (Original)
-│   │   │   └── k5122.h/cpp
-│   │   └── k5122v2/             # AFS – formatagnostisch (Lesekopf-Streaming, §8.5)
-│   │       └── k5122v2.h/cpp
+│   │   └── k5122/               # AFS – Folienspeicher-Anschlußsteuerung
+│   │       └── k5122.h/cpp      #      formatagnostischer Lesekopf-Streaming-Controller (§8.5)
 │   │
 │   ├── peripherals/             # Externe Peripheriegeräte
 │   │   ├── k7637/               # Serielle Tastatur
 │   │   │   ├── k7637.h/cpp
 │   │   │   └── keytable.h       # Scan-Code-Tabellen (aus .bin)
-│   │   └── floppy_drive/        # Diskettenlaufwerk + neuer formatagnostischer Stack
-│   │       ├── floppy_drive.h/cpp      # Original (Inline-Sektor-IO, von K5122 genutzt)
-│   │       ├── format_parser.h/cpp     # cpaFormates.cfg-Parser
-│   │       ├── track_image.h/cpp       # NEU: zentrale TrackImage-Abstraktion
-│   │       ├── track_codec.h/cpp       # NEU: IBM-Track (FM/MFM) bauen/parsen + CRC
-│   │       ├── bit_codec.h/cpp         # NEU: Bitzellen ⇆ Bytes (MFM/FM, HFE)
-│   │       ├── drive_profile.h/cpp     # NEU: Laufwerksprofile (4 Slots)
-│   │       ├── disk_image.h/cpp        # NEU: DiskImage-Interface + open()/Sniffing
-│   │       ├── raw_sector_image.h/cpp  # NEU: .img-Backend
-│   │       ├── hfe_image.h/cpp         # NEU: HFE-v1-Backend (HxC, MFM/FM)
-│   │       └── floppy_drive2.h/cpp     # NEU: FloppyDriveV2 (DiskImage + Profil + Cache)
+│   │   └── floppy_drive/        # formatagnostischer Floppy-Stack (§8.5)
+│   │       ├── format_parser.h/cpp     # DiskFormat/Geometrie (builtinFormats + .cfg)
+│   │       ├── track_image.h/cpp       # zentrale TrackImage-Abstraktion (Byte-+Markenstrom)
+│   │       ├── track_codec.h/cpp       # IBM-Track (FM/MFM) bauen/parsen + CRC
+│   │       ├── bit_codec.h/cpp         # Bitzellen ⇆ Bytes (MFM/FM, HFE)
+│   │       ├── drive_profile.h/cpp     # Laufwerksprofile (4 Slots)
+│   │       ├── disk_image.h/cpp        # DiskImage-Interface + open()/create()/Sniffing
+│   │       ├── raw_sector_image.h/cpp  # .img-Backend
+│   │       ├── hfe_image.h/cpp         # HFE-v1-Backend (HxC, MFM/FM, Mischdichte)
+│   │       └── floppy_drive2.h/cpp     # FloppyDriveV2 (DiskImage + Profil + Track-Cache)
 │   │
 │   ├── machines/                # Maschinenkonfigurationen
 │   │   ├── machine.h            # Abstrakte Maschinenbasis
@@ -664,7 +661,7 @@ in den 4 K5122-Slots stecken, wird beim Erzeugen der Maschine festgelegt (Laufze
 compile-time):
 
 ```c
-// Default-Bestückung (4× K5601, 5,25"-MFM):
+// Default-Bestückung (4× K5601, 5,25"-MFM, doppelseitig):
 K1520Handle h  = k1520_create(K1520_MACHINE_A5120);
 
 // Explizite Bestückung (NULL/"" = Default K5601; unbekannter Name → Default-Profil):
@@ -673,21 +670,31 @@ K1520Handle h2 = k1520_create_configured(K1520_MACHINE_A5120,
                                          "mf3200_8_ss77", NULL, NULL, NULL);
 ```
 
-Profilnamen: `K5601` / `mfs_525_ds80` / `ss_525_40` (5,25"), `mf3200_8_ss77` (8"-FM),
-`mf6400_8_ds77` (8"-MFM). C++-seitig direkt über `A5120Machine::Config` (Tools wie `k1520dbg`/
-`boot_trace` können das fest setzen), später per GUI (`config_dialog.py`) bzw. Config-Datei (CLI).
-**Ohne Konfiguration: 4× 5,25"-MFM.**  Der gewählte Profilname ist über `K5122::DebugState::
-driveProfileName` (Debugger `dev k5122`) beobachtbar.
+Profilnamen (`builtinDriveProfile`): `K5601` (5,25" 80×2 MFM, **Default**), `ss_525_40`
+(5,25" 40×1), `ss_525_80` (5,25" 80×1, K5600.20), `mf3200_8_ss77` (8" 77×1 **FM**, MF3200),
+`mf6400_8_ss77` / `mf6400_8_ds77` (8" 77×1/×2 MFM, MF6400). Das Verfahren (FM/MFM) ist
+Laufwerks-Default (`DriveProfile::default_read_encoding`), das OS schaltet zur Laufzeit per
+Steuerwort um (0x85=MFM / 0x87=FM). C++-seitig direkt über `A5120Machine::Config` (Tools wie
+`k1520dbg`/`boot_trace` können das fest setzen), später per GUI bzw. Config-Datei (CLI).
+Der gewählte Profilname ist über `K5122::DebugState::driveProfileName` (Debugger `dev k5122`)
+beobachtbar.
+
+> **Laufwerkstyp = reine BIOS-Software-Eigenschaft, kein K5122-Limit.** Welche Formate die
+> CP/A-Formatierprogramme anbieten und welche Geometrie das OS erwartet, entscheidet allein
+> der BIOS-DPB (`dpbtyp`, aus dem Generierungswert `diskA/B/C/D`); die K5122 streamt
+> formatagnostisch Bits. Deshalb lassen sich mit **Combo-Boot-Disketten** (B:/C: als
+> Fremdtypen konfiguriert) alle Laufwerkstypen-Menüs — inkl. der 8″-FM/MFM-Formate — ohne
+> echte Hardware im Emulator abgreifen. Katalog + Pipeline: `docs/format.md`.
 
 ### 8.5 Formatagnostischer Floppy-Stack (K5122 + DiskImage/TrackImage) — 2026-06-10
 
-Die `K5122` (`core/cards/k5122/`) ist ein **formatagnostischer** Floppy-Controller auf der
-Peripherie-Schicht `core/peripherals/floppy_drive/`.  Sie modelliert einen **Lesekopf über der
-rotierenden Spur** und kennt keine Sektorgrößen/CRCs/Boot-Stadien mehr.  *(Sie ersetzte eine
-ältere monolithische On-the-fly-Synthese-K5122 — die §8.1–§8.4 beschreiben deren PIO-Protokoll,
-das auf Port-/Signalebene unverändert gilt; das dort skizzierte karten-interne Synthese-Modell
-ist nun durch den TrackImage-Stack ersetzt.)*  Vollständiger Entwurf + Implementierungsstand:
-`doc/refactoring_floppy_emulator.md` (§9 + §15).
+Die `K5122` (`core/cards/k5122/`) ist der **formatagnostische** Floppy-Controller (einzige
+Floppy-Karte) auf der Peripherie-Schicht `core/peripherals/floppy_drive/`.  Sie modelliert einen
+**Lesekopf über der rotierenden Spur** und kennt keine Sektorgrößen/CRCs/Boot-Stadien mehr.  *(Sie
+ersetzte eine ältere monolithische On-the-fly-Synthese-K5122 — die §8.1–§8.4 beschreiben deren
+PIO-Protokoll, das auf Port-/Signalebene unverändert gilt; das dort skizzierte karten-interne
+Synthese-Modell ist durch den TrackImage-Stack ersetzt.)*  Vollständiges Modell:
+`doc/design/07_k5122_afs.md`.
 
 ```
 K5122 (Controller-Karte)                  core/cards/k5122/
@@ -720,17 +727,25 @@ DriveProfile[4] — Zoll/Spuren/Köpfe/U-min/Verfahren je Slot  drive_profile.*
   Zellwort `0x4489`, MFM-Clock `c_i=¬(d_{i-1}∨d_i)`, FM-Sondertakt C7/D7) ist nach der
   Greaseweazle/HxC-Spec implementiert und per unabhängigem Python-Konverter (`tools/img_to_hfe.py`)
   cross-validiert.
-- **CRC:** eine zentrale Primitive `TrackCodec::crc16` (= verifizierte Robotron-`loaderCrc16`).
-  Die im Entwurf vermutete „eine CRC für beide Boot-Stadien" gilt nur halb — die Stadien
-  erwarten physisch verschiedene Daten-CRC-Bytes; Details in `doc/refactoring_floppy_emulator.md`
-  §15.2.
+- **CRC:** eine zentrale Primitive `TrackCodec::crc16` (Standard-IBM-CCITT, Poly 0x1021, Seed
+  0xFFFF). Der Boot-Lesepfad benutzt die Daten-CRC über `[A1 A1 A1 FB]+Daten` — die echte
+  Disk-CRC; beide Boot-Leser werden über den gemeinsamen 4×A1-Stream bedient (s. u.).
 - **Verdrahtung & Boot:** `A5120Machine` verdrahtet die `K5122` als Slot-2-Floppy (`a5120.h`).  Die
-  A5120 **bootet die echte Standard-IBM-MFM-Diskette vollständig in CP/A** (`CP/A, Version 25.09.89 …`),
-  alle `test_boot_integration`-Stadien grün — inkl. Boot von den Laufwerken **B: und C:** (leere
-  niedrigere Laufwerke werden vom ROM übersprungen, §15.6).  Der Boot-Lesepfad ist **codierungstreu**
-  (keine Fake-Umwandlung): `startReadTransfer()` streamt `buildFaithfulReadTrack` (4×A1-Sync — der
-  gemeinsame Modus für Boot-ROM und SYL-Lader), Resync über `romReadResyncTarget`, eine
-  Standard-IBM-CCITT-CRC.  Vollständiges Modell: `doc/design/07_k5122_afs.md` §10.
+  A5120 **bootet die echte Standard-IBM-MFM-Diskette vollständig in CP/A** (`CP/A, Version 25.09.89 …`)
+  bis zum interaktiven Prompt, alle `test_boot_integration`-Stadien grün — inkl. Boot von den
+  Laufwerken **B: und C:** (leere niedrigere Laufwerke werden vom ROM übersprungen).  Der Boot-Lesepfad
+  ist **codierungstreu** (keine Fake-Umwandlung): `startReadTransfer()` streamt
+  `buildFaithfulReadTrack` (4×A1-Sync — der gemeinsame Modus für Boot-ROM und SYL-Lader), Resync über
+  `romReadResyncTarget`; das 4. A1 ist reines Sync und nicht in der CRC. Die MK/MK1-Re-Sync-Strobes
+  (`resyncToNextMark`) springen IDAM→DATEN→nächstes IDAM. Vollständiges Modell:
+  `doc/design/07_k5122_afs.md` §10; Boot-Kette (ROM → SYL → Sekundärlader → CP/A-Bootsystem →
+  `@OS.COM`) im Detail: §14.5.
+- **Schreiben & Formatieren:** Der `/WE`-flankengesteuerte Schreibpfad (`beginWriteField`/
+  `commitWriteField`) und der Vollspur-FORMAT-Schreibpfad (`parseFormatStream`/`commitFormatTrack`/
+  `writeTrackAt`) sind implementiert und codierungstreu (FM ohne A1-Sync, MFM mit); `FORMAT.COM`
+  formatiert+verifiziert alle Sektorgrößen. `HfeImage::readTrack` erkennt das Verfahren **pro Spur**
+  (Mischdichte-Disks: FM-Systemspuren + MFM-Datenspuren, z. B. 8″-MF6400). Details + Formatkatalog:
+  `docs/format.md`.
 - **Tests:** `test_track_codec`, `test_bit_codec`, `test_hfe_image`,
   `test_disk_image_raw`, `test_drive_profile`, `test_floppy_drive2`, `test_k5122` (GoogleTest);
   alle grün, ebenso `test_boot_integration` (Full-Machine) und `test_k2526` (ZVE2-Floppy-Kette).
@@ -1103,11 +1118,10 @@ Nach Übergabe an 0x0437 setzt der Loader `LD A,07H / LD I,A`. Alle Vektoren wer
 
 Die Loader-Phase erbt `IFF1=1` und `IM 2` vom Boot-ROM (kein `DI` im Übergabepfad).
 
-### 14.5 K5122 Diskettenleseverfahren (Adressmarken-Feld-Modell)
+### 14.5 K5122 Diskettenleseverfahren (Adressmarken-Streaming)
 
-Der Bootvorgang nutzt **drei** verschiedene Sektor-Leseroutinen. Boot-Spuren (cpa780:
-cyl 0–1, 26×128 B) bedient das diskrete Feld-Modell; der Datenbereich (cyl 2–79,
-5×**1024 B**) bedient das kontinuierliche Stream-Modell (§14.5b):
+Der Bootvorgang nutzt **drei** verschiedene Sektor-Leseroutinen (Z80-seitig, RE-Befund) —
+der Emulator bedient alle drei über **einen** codierungstreuen Streaming-Lesekopf:
 
 - **Boot-ROM** (`0x01DD`, läuft auf ZVE2): liest IDAM-Header und Daten mit *einem*
   `/STR`-Strobe am Stück, mit festen Offsets, ohne Markensuche.
@@ -1115,167 +1129,67 @@ cyl 0–1, 26×128 B) bedient das diskrete Feld-Modell; der Datenbereich (cyl 2�
   die Adressmarken (`0xFE` IDAM, `0xFB` Datenmarke), verträgt variable Gaps, und
   verifiziert jeden Sektor per CRC-16. Nutzt **`MK` = Steuer-Port-A Bit 1** (`0xB5`→`0x87`).
 - **Dritte Stufe / CP/A-Loader** (`0x1F7D`, 1024-B-Datenbereich): liest IDAM und Daten
-  **kontinuierlich** (`INIR`, kein Per-Byte-Strobe), re-synchronisiert über **`MK1` =
-  Steuer-Port-A Bit 4** (`0xB5`↔`0x85`), und nutzt einen **anderen CRC-Seed** (§14.5b).
+  **kontinuierlich** (`INIR`, kein Per-Byte-Strobe) und re-synchronisiert über **`MK1` =
+  Steuer-Port-A Bit 4** (`0xB5`↔`0x85`) statt `MK` (§14.5b).
 
-Beide Routinen synchronisieren über das **`MK`-Steuersignal** (Steuer-Port-A Bit 1):
-jede `MK`-Steigflanke (`0xB5`→`0x87`) lässt den K5122-Datenseparator auf die **nächste
+Alle Routinen synchronisieren über die **`MK`/`MK1`-Steuersignale** (Steuer-Port-A Bit 1
+bzw. Bit 4): jede Re-Sync-Flanke lässt den K5122-Datenseparator auf die **nächste
 Adressmarke** synchronisieren — `IDAM → DATEN → nächstes IDAM → …`. Belegstellen:
 ROM `0x0224/0x022D` und `0x0249/0x025F`; Loader `0x066E/0x0670` und `0x06B9/0x06BB`.
 
-**Emulator-Modell** (`K5122::buildField()` / `advanceField()`):
+**Emulator-Modell (aktuell — TrackImage-Streaming, `doc/design/07_k5122_afs.md` §10).** Die
+oben unterschiedenen Feld-/Stream-Modelle sind zu **einem** codierungstreuen Lesekopf-Streaming
+vereinheitlicht: die aktive Spur ist eine fertige `TrackImage` (reale Gaps/Sync/Marken/CRC),
+`ioRead(0x16)` streamt sie byteweise rotierend, und **jede MK/MK1-Re-Sync-Flanke**
+(`resyncToNextMark`) springt zur nächsten Adressmarke (IDAM→DATEN→nächstes IDAM). Damit
+bedient **ein** Stream ROM, Sekundärlader **und** dritte Stufe; die früheren
+`buildField`/`advanceField`/`stream_continuous_`-Sonderfälle sind entfallen (eine
+Standard-IBM-CCITT-Daten-CRC, §8.5). Für den Boot-Read materialisiert
+`startReadTransfer()` den 4×A1-`buildFaithfulReadTrack`, der Boot-ROM (1 Wegwerf + 3 Reads,
+FE@buf[4]) **und** SYL-Lader (skip-A1-bis-FE) zugleich akzeptiert.
 
-| | Inhalt |
-|---|---|
-| **IDAM-Feld** | `[A1][FE][cyl][head][sec][size]` + Gap (`0x4E`) |
-| **DATEN-Feld** | `[A1][FB][128 Daten][CRC-hi][CRC-lo]` + Gap (`0x4E`) |
+**Track-Ende / BUSRQ-Arbitrierung** (weiterhin nötig): Nach einer voll gelesenen 128-B-Spur
+fällt die ZVE2-Routine in ihre Idle-Schleife `L0696` und disabled dort den ctrl-PIO-Port-B-
+Interrupt (`OUT(13H),03H`). Auf echter HW setzt `/STR=1` dann `/BUSRQ` zurück; im durchgängig
+gestepperten Emulator gibt `K5122::ioWrite` bei `OUT(13H),03H` während eines Lese-Transfers
+`/BUSRQ` frei → ZVE1 übernimmt, verarbeitet die Spur und setzt ZVE2 per `OUT(04)` zurück.
 
-- `doReadSector()` baut die ganze Spur (138-B-Blöcke je Sektor) und stellt das IDAM-Feld
-  von Sektor 0 bereit. Der Lese-Strobe latcht den Kopf aus dem MR/SD-Bit (Bit 5) des
-  Start-Steuerworts **vor** dem Aufbau (sonst veralteter Kopf → IDAM-Mismatch).
-- `ioRead(0x16)` streamt das aktuelle Feld und füllt bei Über-Lesen mit Gap-Bytes — die
-  genaue Byte-Zahl, die jeder Leser pro Feld konsumiert, ist dadurch **irrelevant**.
-- Eine `MK`-Steigflanke (`handleCtrlPortAWrite`, Bit 1: 0→1) ruft `advanceField()`:
-  `IDAM → DATEN` (gleicher Sektor) bzw. `DATEN → IDAM` des nächsten Sektors.
-- Das **CRC-16** im Datenfeld wird real berechnet (`loaderCrc16()`, byte-genaue
-  Übersetzung der Loader-Routine `sub_0407` @`0x0407`, Start-Wort `BF84H` bei
-  `[03FD]=0x87`). Der Loader vergleicht es per `CALL 0x0407` → `CP B`/`CP C`.
-- **Track-Ende:** Nach 26 Sektoren fällt die ZVE2-Routine in ihre Idle-Schleife
-  `L0696` und disabled dort den ctrl-PIO-Port-B-Interrupt (`OUT(13H),03H` @`0x069C`).
-  Auf echter Hardware setzt `/STR=1` dann `/BUSRQ` zurück; im durchgängig gestepperten
-  Emulator würde ZVE2 stattdessen in `L0696` weiterlaufen und per `INIR` die Handshake-
-  Variablen `[07F8..07FC]` (Ladezeiger/Sektorzähler) mit Gap-Bytes überschreiben.
-  Deshalb gibt `K5122::ioWrite` bei `OUT(13H),03H` während eines laufenden Lese-Transfers
-  `/BUSRQ` frei → ZVE1 übernimmt, verarbeitet die Spur, sucht den nächsten Track und
-  setzt ZVE2 per `OUT(04)` zurück.
+So trägt der Stream die ganze Boot-Kette: ZVE2 liest ganze Boot-Spuren (cyl 0/1, 128 B), ZVE1
+CRC-verifiziert jeden Sektor, und nach 52 Sektoren springt der Loader nach `0x0880` (`JP 0x1800`)
+in die dritte Stufe — das **CP/A-Bootsystem**, das `@OS.COM` aus dem 1024-B-Datenbereich lädt.
 
-Dieses (diskrete) Modell bedient **ROM und Sekundär-Loader mit demselben Stream** und
-trägt den **gesamten Sekundär-Bootloader**: ZVE2 liest ganze Boot-Spuren (cyl 0/1, 128 B),
-ZVE1 verarbeitet und CRC-verifiziert jeden Sektor, der Sektorzähler `[07FC]` zählt sauber
-auf 0, und nach 52 Sektoren springt der Loader nach `0x0880` (`JP 0x1800`) in die
-dritte Stufe — das **CP/A-Bootsystem**, das `@OS.COM` lädt.
+### 14.5b Dritte Stufe: `@OS.COM`-Ladephase (1024-B-Datenbereich) — GELÖST
 
-### 14.5b Kontinuierliches Stream-Modell (dritte Stufe, 1024-B-Datenbereich)
+Die dritte Stufe (CP/A-Bootsystem, Einsprung `0x1800`, FCB `@OS   COM` @`0x08CD`) gibt ihren
+Banner aus (`CP/A-Bootsystem, Version 05.04.88 laedt @OS.COM …`) und liest `@OS.COM` aus dem
+1024-B-Datenbereich. Ihre ZVE2-Routine `0x1F7D` (IDAM-Verify) + `0x2038` (Daten-Read) liest IDAM
+**und** Daten in **einem kontinuierlichen Strom** (`INIR`) und re-synchronisiert über **`MK1`
+(Steuer-Port-A Bit 4**, `0xB5`↔`0x85`) statt `MK` (Bit 1). Fehleranzeige `sub_1BF0` baut
+`"RC;T,Si,Se=TTSSSS"` (`'C'`=CRC, `'S'`=Suche, `'U'`=Timeout).
 
-Die dritte Stufe (CP/A-Loader) liest den **1024-B-Datenbereich** (cyl 2–79) anders als der
-Sekundär-Loader: ihre ZVE2-Routine `0x1F7D` (IDAM-Verify) + `0x2038` (Daten-Read) liest IDAM
-**und** Daten in **einem kontinuierlichen Strom** (`INIR`, kein Per-Byte-Strobe). Sie
-re-synchronisiert über **`MK1` (Steuer-Port-A Bit 4**, `0xB5`↔`0x85`-Toggle bei PC `1FAD/1FB1`),
-**nicht** über `MK` (Bit 1). Das diskrete Feld-Modell advanced nur bei `MK`-Steigflanke → für
-die dritte Stufe **nie** → das Datenfeld wurde nie erreicht, `ioRead(0x16)` lieferte Gap (`0x4E`).
+Drei Ursachen mussten dafür gelöst werden — alle im aktuellen Stand behoben:
 
-**Emulator-Modell** (gegated über `sector_data_len_ != 128`, Member `stream_continuous_`):
+1. **ZVE2-Start aus dem Reset** (`K2526::zve2StartFromReset`). Die Stufe setzt `[0x0000]=JP 0x1F7D`,
+   resettet ZVE2 (`OUT(04)=0x00`) und stellt `[0x0000]` sofort wieder her — sie startet ZVE2 nie
+   explizit (bit0=1). `A5120Machine::run()` startet ZVE2 aus dem Reset, sobald `/BUSRQ` (das `/STR`)
+   assertiert und ZVE2 im Reset steht, sodass es das *aktuelle* `[0x0000]=JP 0x1F7D` fetcht.
+2. **Asymmetrische Mixed-Geometrie** (`format_parser.cpp`, §14.5c).
+3. **MK1-Re-Sync** (`K5122::resyncToNextMark` auf der MK1-Fallflanke). Der letzte Stall (Timeout `'U'`
+   bei cyl 2/3 head 1) war ein **K5122-Feldmodell-Bug**: ZVE2s MK1-Datenseparator-Resync wurde
+   ignoriert, sodass ein Daten-`0xA1` als A1-Adressmarken-Sync missverstanden wurde und die
+   IDAM-Suche entgleiste. Der Fix springt bei MK1 IDAM→DATEN→nächstes IDAM (überspringt die
+   Daten). **Kein** ZVE1↔ZVE2-Handshake-Bug (das war eine falsche Fährte). Guards: Boot-Test
+   `Stage3_FullyLoadsAndJumpsToOs` + `K5122 Continuous1024_MK1ResyncJumpsToNextAddressMark`.
 
-- `buildField()` baut für 1024-B-Reads **einen kontinuierlichen Voll-Sektor-Block**:
-  `[A1 FE cyl head sec size]` + `27× Gap` + `[A1 FB]` + `<N Daten>` + `[CRC CRC]` + `8× Gap`.
-  Die 27-Gap-/Marken-Position ist exakt auf die Lese-Sequenz der dritten Stufe abgestimmt
-  (`0x1F7D`-Verify liest 6 Header-Bytes, dann 26 Bytes Gap/CRC, dann verbraucht `0x204C/0x204E`
-  die `A1 FB`-Datenmarke, dann `INIR` die N Daten).
-- `ioRead(0x16)` advanced bei **Über-Lesen** zum **nächsten Sektor** (rotierender Stream),
-  statt Gap zu padden — so findet die IDAM-Suche der dritten Stufe die Folgesektoren. `MK`/`MK1`
-  lösen für diesen Modus **kein** `advanceField()` aus (es gibt keine getrennten Felder).
-- **CRC-16 (anderer Seed!):** Die CRC-Routine der dritten Stufe `sub_1E44` (ZVE1, aufgerufen aus
-  `sub_1E2A`) ist **byte-identisch mit `loaderCrc16`** (D = High-, E = Low-Byte), startet aber bei
-  **`DE=0xCDB4`** (CCITT-Zustand nach `[A1 A1 A1]`), **nicht** `0xBF84`, und deckt **`[Datenmarke]
-  + N Daten`** ab (`LD B,01;CALL 1E44` für die Marke, dann 8×128 für die Daten). Das Datenfeld
-  muss daher `loaderCrc16([0xFB] + Daten, 0xCDB4)` tragen. `sub_1E20` vergleicht das berechnete
-  `DE` mit den 2 gelesenen CRC-Bytes `(IX+0/1)`. Verifiziert: `loaderCrc16([4E]+4E×1024, 0xCDB4)
-  = 0x87B3` = exakt der Wert, den die dritte Stufe über den (anfangs reinen Gap-)Puffer rechnete.
-- **Fehleranzeige** (`sub_1BF0`): baut `"RC;T,Si,Se=TTSSSS"`; 1. Zeichen `R`(Read, Bit2=0)/`W`,
-  2. Zeichen = Fehlercode-Byte (`'C'`=0x43 CRC, gesetzt bei `0x1DE1` nach erschöpften Retries
-  am Zähler `[0x1ED5]`; `'U'`=0x55 Timeout bei `0x1E04`). Retry-Schleife `0x1D3C…0x1DDE`:
-  Read = `CALL 1E2A`, Verify = `CALL 1E20`.
+**Ergebnis:** `@OS.COM` lädt vollständig, die dritte Stufe springt ins OS, und der A5120 bootet
+den vollen CP/A-Kaltstart bis zum interaktiven Prompt (`CP/A, Version 25.09.89 …`).
 
-**Ergebnis:** Die dritte Stufe liest jetzt den Datenbereich über cyl 2/3/4 (beide Köpfe, 1024 B),
-die CRC besteht, `@OS.COM` lädt nach `0x0100` (CP/M-TPA). Offen: ein verbleibender Timeout `'U'`
-bei `cyl 2, head 1` (§14.6).
+### 14.5c Disk-Geometrie der cpa780-Diskette (asymmetrische Mixed-Geometry)
 
-### 14.6 Offenes Problem: `@OS.COM`-Ladephase (dritte Stufe)
-
-Die dritte Stufe (CP/A-Bootsystem; Einsprung `0x1800` = `JP 0x08AF`-Bereich, Code/Sprung-
-tabelle über `0x0800–0x1FFF`, FCB `@OS   COM` @`0x08CD`) gibt ihren Banner aus
-(`CP/A-Bootsystem, Version 05.04.88 laedt @OS.COM …`) und lädt `@OS.COM`
-**interruptgesteuert** (Warteschleife `0x1F6C` = `JR $`).
-
-Belegter Mechanismus (Trace + Live-Disasm, 30M-Zyklen-Lauf):
-- Die Stufe setzt `I=0x07`, programmiert den ctrl_pio_-Port-A-Interrupt (Vektor `0xE8`,
-  IE on) und installiert bei `0x0100` eine **relozierte Kopie des Boot-ROM-DMA-Treibers**
-  (Status-Wait `IN(12)`, Index-Zähler `[03F7]=4`, `CALL sub_0194`, `[03F8]`-Handshake).
-- Der Index-Interrupt (Vektor `0xE8` → `[0x07E8]=0x0100`) feuert **dauerhaft** (61 Pulse /
-  12 INTs in 30M Zyklen — der frühere „Stopp" war nur die 5M-Trace-Deckelung). Trotzdem
-  **kein Fortschritt**: nur 9 Disk-Reads insgesamt, ZVE1 spinnt zwischen `0x1F6C` (selbst-
-  modifizierende Warteschleife) und der **Timeout-Polling-Schleife `0x1C5B`** (pollt `[1E78]`,
-  bei Timeout → Fehlercode `'R'` = Laufwerk nicht bereit, `JP 0x1DAB`).
-
-**WURZEL (Trace 2026-06-08):** Der `@OS.COM`-Read ist in dieser Stufe **nicht** ZVE2-DMA:
-ZVE2 wird per `OUT(04H)=0x00` **im Reset gehalten** (letzter Restart davor; danach keiner mehr),
-und es treten **keine neuen `/STR`-Read-Trigger** auf (5 in 30M Zyklen, alle aus früheren
-Phasen). Der Index-Interrupt (Vektor `0xE8` → `0x0100`-ISR) feuert zwar dauerhaft, löst aber
-**keinen Disk-Read** aus. Folge: Die Polling-Schleife `0x1C5B` wartet auf Daten (`[1E78]`), läuft
-in den Timeout → Fehler `'R'` → Endlos-Retry; ZVE1 pendelt zwischen `0x1F6C` und `0x1C5B`.
-
-**1024-Byte-Sektoren (UMGESETZT 2026-06-08):** Das ganze CP/M-Dateisystem inkl. `@OS.COM` liegt
-im Datenbereich (cpa780: cyl 3–79 = 5×**1024 B**). `K5122` modelliert die Blockgröße jetzt
-variabel: `sector_block_ = 10 + bytes_per_sec`, das Datenfeld liefert `bytes_per_sec` Bytes
-(`buildField`/`advanceField`/`doReadSector` nutzen `sector_block_`/`sector_data_len_`). Alle 40
-K5122/Boot-Tests bleiben grün. **Wird aber noch nicht ausgeübt:** die dritte Stufe liest weiterhin
-nur cyl 0/1/2 (128 B) und erreicht den Datenbereich nicht — der Stall liegt **davor**.
-
-**Befund (Live-Trace `-w`, [03F8]-Handshake, ZVE2-Histogramm 2026-06-08):**
-
-1. **Die Boot-Spur-Reads funktionieren.** Die dritte Stufe liest über die ROM-DMA-Mechanik
-   (`0x0165 CALL 0x0194` → ZVE2-Freigabe → `[03F8]`-Handshake → Warteschleife `0x0168`) erfolgreich
-   2 Sektoren der **SYL-Boot-Spuren** (cyl 0/1): `[03F8]` erreicht `0x03` (Completion, ZVE2 läuft
-   die ROM-Routine `0x0213→0x026E`), und `sub_01B6` (0x01B6) verifiziert die Signatur
-   `[0x0400..2]=53 59 4C ("SYL")` **erfolgreich**. `[03F3]` (Zielzylinder) ist nur 0x00/0x01.
-
-2. **Der Stall passiert danach** — die dritte Stufe wechselt **nicht** zum Datenbereich
-   (cyl 3+, 1024-B-Sektoren), wo Verzeichnis und `@OS.COM` liegen. Nach den 2 Boot-Reads bleibt
-   `[03F8]=3` stehen, ZVE1 pendelt in der selbstmodifizierenden Schleife `0x1F6C` und der
-   Timeout-Polling-Schleife `0x1C5B` (`[0x1E78]`), läuft in den Timeout `'U'` → Endlos-Retry.
-
-3. Die dritte Stufe besitzt eine **eigene ZVE2-DMA-Routine bei `0x1F7D`** (Disasm: `LD DE,FEA1`
-   IDAM/Sync-Marken, `OUT(10),0xBD`, port-0x16-Lesen — das ROM-`0x01DD`-Muster, vermutlich für
-   1024-B-Datensektoren). Sie installiert sie kurz via `[0x0000]=JP 0x1F7D`, `OUT(04)=0x00`
-   (ZVE2-Reset), `[0x0000]=JP 0x1803` — danach läuft `0x1F7D` aber **nie** (ZVE2-Histogramm zeigt
-   es nicht). Der genaue Übergang von „Boot-Reads OK" zu „eigener 1024-B-Read via 0x1F7D" und
-   warum ZVE2 dort nicht startet, ist noch nicht vollständig rekonstruiert.
-
-**Pfad-2-Setup byte-genau entschlüsselt (`0x1F36`, via `boot_trace --watch/--watchio/-z`):**
-```
-1F3C  HL=0x1F7D                 ; Adresse der ZVE2-DMA-Routine
-1F43  LD (0001),HL              ; [0x0000]=JP 0x1F7D
-1F4F  OUT(04),A=0               ; ZVE2 RESET (bit0=0, /RES-ZVE2 asserted, gehalten)
-1F5C  OUT(10),0xA5              ; /STR-Flanke → K5122 doReadSector (Feldpuffer gefüllt)
-1F62  IN(16)                    ; ZVE1 liest 1 Byte
-1F64  LD (0001),BC              ; [0x0000]=JP 0x1803 wiederhergestellt
-1F6C  JR $                      ; Warteschleife (vom Index-ISR auf Timeout gepatcht)
-```
-Chronologischer Trace bestätigt: nach `OUT(04)=0x00` folgt **kein** weiterer `OUT(04)` → ZVE2
-bleibt **dauerhaft im Reset**, führt `0x1F7D` **nie** aus (`-z`-Histogramm). Das Feld-Streaming
-(Port 0x16) stoppt nach 1 Byte (`sektor=0 IDAM pos=0`); **niemand konsumiert die Bulk-Daten**
-(ZVE2 reset, ZVE1 wartet) → der `[0x1E78]`-Poll bei `0x1C5B` zählt nie hoch → Timeout `'U'`.
-
-**GELÖST (2026-06-08):** Die dritte Stufe setzt `[0x0000]=JP 0x1F7D`, resettet ZVE2
-(`OUT(04)=0x00`) und stellt `[0x0000]` sofort wieder her — sie startet ZVE2 nie explizit
-(bit0=1); ZVE2 muss im kurzen Fenster zwischen `[0x0000]=JP 0x1F7D` (1F43) und der
-Wiederherstellung (1F64) aus PC=0 anlaufen, getriggert durch das `/BUSRQ` des `/STR` (1F5C).
-Fix: `A5120Machine::run()` startet ZVE2 aus dem Reset (`K2526::zve2StartFromReset()`, löscht
-Reset + `/WAIT`), sobald `/BUSRQ` assertiert ist und ZVE2 im Reset steht — so fetcht es das
-*aktuelle* `[0x0000]` vor der Wiederherstellung. **Ergebnis:** ZVE2 läuft jetzt `0x1F7D`, der
-`@OS.COM`-Read läuft an. Alle 94 K5122/Boot/K2526-Tests grün; Pfad-1/Sekundär-Loader (Start mit
-bit0=1) unberührt (nicht im Reset bei `/BUSRQ`).
-
-### 14.6a Disk-Geometrie der `@OS.COM`-Datenleseanforderung — **GELÖST 2026-06-08**
-
-`0x1F7D` vergleicht den IDAM-Header und erwartet bei `CP H` (H'=0x03) **size_code 3 = 1024 B**
-für `cyl 2, head 0, sec 1` (Werte hardkodiert: `LD BC,0002`=cyl/head, `LD HL,0301`=size/sec).
-Ursache des ursprünglichen Fehlers `…;T,Si,Se=020001`: das `cpa780`-Format hatte fälschlich
-**3** Boot-Spuren (cyl 0–2, 128 B), sodass cyl 2 eine 128-B-Spur statt des 1024-B-Datenbereichs war.
-
-**Korrektur (asymmetrische Mixed-Geometry).** Die Seiten sind interleaved (cyl0/A, cyl0/B,
-cyl1/A, cyl1/B, cyl2/A, …). Der Systembereich sind **drei** physische 128-B-Seiten — cyl 0
-(beide Seiten) + cyl 1 Seite A — und der **1024-B-Datenbereich beginnt bei cyl 1 Seite B**:
+`0x1F7D` erwartet den 1024-B-Datenbereich hardkodiert ab **cyl 2** (IDAM cyl=2, size_code=3).
+Die Seiten sind interleaved (cyl0/A, cyl0/B, cyl1/A, cyl1/B, …); der Systembereich sind **drei**
+physische 128-B-Seiten (cyl 0 beide Seiten + cyl 1 Seite A), der **1024-B-Datenbereich beginnt
+bei cyl 1 Seite B**:
 
 | phys. Spur | Datei-Offset | Inhalt | Sektorgröße |
 |---|---|---|---|
@@ -1286,34 +1200,18 @@ cyl1/A, cyl1/B, cyl2/A, …). Der Systembereich sind **drei** physische 128-B-Se
 | cyl 2 A | `0x3B00` | CP/M-**Verzeichnis** (`"@OS     COM"` + CPABCGEN/FORMAT/…) | 1024 B |
 | cyl 2 B | `0x5000` | `@OS.COM`-Daten … | 1024 B |
 
-`3 × 3328 + 5120 = 0x3B00`, das Verzeichnis liegt also **exakt auf der cyl-2-Seite-A-Grenze**.
-Die dritte Stufe liest ihren Datenbereich hardkodiert bei phys. **cyl 2** (`0x1F7D`: IDAM cyl=2,
-size_code=3/1024 B) → `0x3B00` = cyl 2 head 0 sec 1 = Verzeichnis, sektor-aligned.
+`3 × 3328 + 5120 = 0x3B00` → das Verzeichnis liegt exakt auf der cyl-2-Seite-A-Grenze,
+sektor-aligned. Format (`format_parser.cpp`, asymmetrisch): `{0,0,0,1,26,128}` +
+`{1,1,0,0,26,128}` + `{1,1,1,1,5,1024}` + `{2,79,0,1,5,1024}`; `findTrack`/`sectorOffset` werten
+den Head-Bereich aus (mid-Zylinder-Asymmetrie cyl 1 A = 128 B, cyl 1 B = 1024 B). Würde man cyl 1 B
+als 128 B modellieren, verschöbe sich der Datenbereich `0x700` nach vorn und die `@OS.COM`-Alloc-
+Blöcke wären fehlausgerichtet.
 
-Fix (`format_parser.cpp`, asymmetrisch): `{0,0,0,1,26,128}` + `{1,1,0,0,26,128}` +
-`{1,1,1,1,5,1024}` + `{2,79,0,1,5,1024}`. `findTrack`/`sectorOffset` werten den Head-Bereich aus,
-die mid-Zylinder-Asymmetrie (cyl 1 A = 128 B, cyl 1 B = 1024 B) greift also. Würde man cyl 1 B als
-128 B modellieren (saubere 2-Zylinder-Bootfläche), verschöbe sich der Datenbereich `0x700` nach
-vorn und die `@OS.COM`-Alloc-Blöcke wären fehlausgerichtet. Zusammen mit dem Stream-/CRC-Fix
-(§14.5b) liest die dritte Stufe nun cyl 1B/2/3/4 (1024 B) und lädt `@OS.COM`.
-
-### 14.6b Offen: verbleibender Timeout `'U'` bei `cyl 2, head 1`
-
-Nach den obigen Fixes liest die dritte Stufe erfolgreich cyl 2/3/4 (beide Köpfe, 1024 B) und lädt
-`@OS.COM` teilweise nach `0x0100` (≈125/128 echte Code-Bytes in der ersten Spur sichtbar). Sie
-scheitert dann mit `RU;T,Si,Se=020101` — Fehlercode `'U'` (Timeout, `0x1E04`) bei `cyl 2, head 1,
-sec 1`. **Nächster Schritt:** Untersuchen, warum der `head-1`-Read (oder ein späterer Daten-Read)
-keinen Fortschritt liefert (`[0x1E78]`-Poll bei `0x1C5B` läuft in Timeout) — vermutlich am
-Kontinuierlich-Stream-Modell für head 1 oder am Seek/Head-Latch über mehrere Spuren. Reproduktion:
-`boot_trace -L /dev/null -c 40000000 -p 38000000 disks/cpadisk01.img` (Screen-Dump zeigt die
-Meldung; `-d 0x0100:0x4000 datei` dumpt den `@OS.COM`-Ladebereich).
-
-### 14.7a Beobachtung: ctrl_pio_ Port B (Vektor 0x60) [offen, evtl. obsolet]
+### 14.7a Beobachtung: ctrl_pio_ Port B (Vektor 0x60) [evtl. obsolet]
 
 Der Loader bewaffnet zusätzlich ctrl_pio_ **Port B** (Vektor 0x60, Event-ISR `0x0624`)
 via `OUT(13H),97H/AFH`. Dieser Interrupt wird im Emulator nie ausgelöst (`setBSTB` nie
-aufgerufen). Ob er für den weiteren Bootverlauf benötigt wird, ist erst nach Lösung des
-Track-Übergangs (§14.6) feststellbar.
+aufgerufen) — der volle Boot gelingt trotzdem (§14.5b), er ist also offenbar nicht nötig.
 
 ### 14.7 Zweite Interrupt-Kette (/IEI1–/IEO1, Koppelbus) — **[abgeleitet/spekulativ]**
 
@@ -1347,13 +1245,16 @@ schreibt Port 02H (/RES-SPA) zum Rücksetzen.
 
 ### 14.9 Offene Implementierungslücken
 
+Der volle CP/A-Kaltstart (Boot-Kette bis interaktiver Prompt) funktioniert; die Restpunkte sind
+nicht boot-kritisch:
+
 | Lücke | Auswirkung |
 |---|---|
-| **`@OS.COM`-Ladephase** (dritte Stufe, CP/A-Bootsystem ab 0x1800) | Datenbereich-Read funktioniert (cyl 2/3/4, 1024 B, CRC OK), `@OS.COM` lädt nach 0x0100; verbleibender Timeout `'U'` bei cyl 2 **head 1** (§14.6b) — **aktuelle Arbeitsstelle** |
-| ctrl_pio_ Port B Floppy-Events (`setBSTB`) | Event-ISR 0x0624 (Vektor 0x60) feuert nie; physikal. Signalquelle [offen], evtl. obsolet (§14.7a) |
+| ctrl_pio_ Port B Floppy-Events (`setBSTB`) | Event-ISR 0x0624 (Vektor 0x60) feuert nie; für den Boot nicht nötig, evtl. obsolet (§14.7a) |
 | Port 0xEE nicht dekodiert (vermutl. CTC-Alias 0x0E) | niedrige Priorität; 1 Schreibzugriff in 9M Zyklen, vermutl. Nebenwirkung |
 | Koppelbus-Kette (/IEI1–/IEO1) nicht verdrahtet | für Boot irrelevant; niedrigprioritäre BS-PIO-Interrupts nicht gereiht |
 | RETI-Erkennung im Z80CTC | im Z80PIO vorhanden (`onRETI`/IUS); verschachtelte CTC-Interrupts ggf. unvollständig |
+| Post-Boot VRAM-Wipe nach ~50–65M Idle-Takten | kosmetisch; vermutl. Uhr-/Timing-Drift + streunende ZVE2-Floppy-Aktivität (`doc/open_points.md`) |
 
 ---
 

@@ -9,7 +9,7 @@
  * am /ST; BUSRQ-Arbitrierung und Interrupt-Daisy-Chain wie in der Doku beschrieben.
  *
  * @see core/cards/k5122/k5122.h
- * @see doc/refactoring_floppy_emulator.md §9 / §15
+ * @see doc/design/07_k5122_afs.md
  * @author Olaf Krieger
  * @date 2026
  * @license MIT License
@@ -130,7 +130,7 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
             LOG_DEBUG("K5122", "CTRL PIO write port=0x%02X data=0x%02X", port, data);
         }
         // ── Vollspur-FORMAT: Disketten-Index-Interrupt aktiv halten ──────────────
-        // FORMAT-Programme (FORMATB.COM) treiben den Format-Abschluss über den
+        // Manche FORMAT-Programme treiben den Format-Abschluss über den
         // Disketten-Index-Interrupt (ivdsk1, Vektor 0xE8): das Programm hängt eine
         // eigene ISR ein, die bei jedem Index eine ZVE2-Warteschleife per Selbst-
         // modifikation freigibt — erst nach mehreren Index-Interrupts läuft ZVE2 zu

@@ -7,7 +7,7 @@
  *   - @ref RawSectorImage — bestehendes .img + Geometriebeschreibung (synthetisiert den Track);
  *   - HfeImage (Folgearbeit) — .hfe mit echtem MFM/FM-Bitstrom pro Spur.
  *
- * @see doc/refactoring_floppy_emulator.md §6
+ * @see doc/design/07_k5122_afs.md
  * @author Olaf Krieger
  * @date 2026
  * @license MIT License
@@ -82,23 +82,28 @@ public:
                                            bool write_protect);
 
     /**
-     * @brief Legt eine NEUE, leere Image-Datei an und öffnet sie (Fabrik).
+     * @brief Legt eine NEUE, GÜLTIG FORMATIERTE, leere Image-Datei an und öffnet sie (Fabrik).
      *
-     * Der Dateityp wird an der Endung erkannt:
-     *   - `.hfe` → leeres, formatierbares HFE-v1-MFM-Template der K5601-Geometrie
-     *     (80 Spuren × 2 Seiten, Gap-gefüllt).  @p fmt wird NICHT benötigt (HFE ist
-     *     selbstbeschreibend/formatagnostisch) und ignoriert.
-     *   - sonst (`.img`) → rohes Sektorimage: @p fmt ist ERFORDERLICH (bestimmt Größe
-     *     und Geometrie); die Datei wird mit `0xE5` (leere CP/M-Sektoren) gefüllt.
+     * Das Ergebnis ist eine formatierte Leerdiskette (echte IDAM/DATA-Felder mit CRC,
+     * Nutzdaten = `0xE5`) — direkt les-/beschreibbar UND durch FORMAT.COM neu formatierbar.
+     * Kein gap-leeres Template mehr (das beim Lesen/Formatieren hängen konnte).
+     *
+     * Der Dateityp wird an der Endung erkannt; @p fmt ist für BEIDE Typen ERFORDERLICH
+     * (bestimmt Geometrie und Sektorlayout):
+     *   - `.hfe` → HFE-v1: je Spur ein per @ref TrackCodec::buildTrack synthetisierter,
+     *     in @p enc kodierter Bitzellen-Strom (Header trägt das Verfahren).
+     *   - sonst (`.img`) → rohes Sektorimage in Format-Größe, mit `0xE5` gefüllt.
      *
      * Eine vorhandene Datei am @p path wird überschrieben.
      *
      * @param path          Zielpfad (Endung `.hfe` → HFE, sonst Raw/.img)
-     * @param fmt           DiskFormat (Pflicht für .img; für .hfe optional/ignoriert)
+     * @param fmt           DiskFormat (Pflicht; Geometrie + Sektorlayout)
      * @param write_protect Schreibschutz des zurückgegebenen Images
-     * @return DiskImage oder nullptr bei Fehler (z. B. .img ohne @p fmt, Schreibfehler)
+     * @param enc           Aufzeichnungsverfahren (MFM = 5,25″/8″-DD, FM = 8″-SD)
+     * @return DiskImage oder nullptr bei Fehler (fehlendes @p fmt, Schreibfehler)
      */
     static std::unique_ptr<DiskImage> create(const std::string& path,
                                              std::optional<DiskFormat> fmt,
-                                             bool write_protect);
+                                             bool write_protect,
+                                             Encoding enc = Encoding::MFM);
 };

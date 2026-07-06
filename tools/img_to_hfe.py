@@ -41,7 +41,7 @@ BITRATE    = 250   # kbit/s
 RPM        = 300
 
 
-# ─── Robotron-CRC-16 (byte-genau zu loaderCrc16 / TrackCodec::crc16) ─────────
+# ─── CRC-16-CCITT (byte-genau zu loaderCrc16 / TrackCodec::crc16) ─────────
 
 def crc16(data: bytes, seed_hi: int = 0xFF, seed_lo: int = 0xFF) -> int:
     """

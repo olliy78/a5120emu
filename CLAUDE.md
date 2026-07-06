@@ -69,7 +69,7 @@ Strict layering — each layer only knows the one below (see `doc/K1520_architec
 
 ```
 machines/a5120  →  wires cards onto the bus, drives the run loop, exposes the machine API
-cards/          →  K2526 (ZRE/CPU), K3526 (RAM), K7024 (screen), K8025 (serial), K5122 / K5122v2 (floppy)
+cards/          →  K2526 (ZRE/CPU), K3526 (RAM), K7024 (screen), K8025 (serial), K5122 (floppy)
 primitives/     →  Z80, Z80PIO, Z80CTC, Z80SIO, EPROM/RAM devices  (generic chips)
 bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, MEMDI) + Koppelbus (signal router)
 ```
@@ -85,11 +85,10 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
 > `TrackCodec::buildFaithfulReadTrack` — the real sync/mark/CRC structure, but with **4×A1 sync** per
 > MFM field, which is the one sync length both the boot-ROM read routine (1 discard + 3 reads, FE at
 > buf[4]) and the SYL loader (skip-A1-until-FE) accept; the MK/MK1 resync lands on the first A1
-> (`romReadResyncTarget`, markPos-4 MFM / markPos-1 FM).  CRC is the single standard IBM-CCITT
-> (`TrackCodec::crc16`); there is **no** Robotron special-case (the old single-A1 / 0xBF84 layout is
-> gone).  Boot itself is the real FM/MFM trial-and-error: the ROM starts in FM, finds no IDAM on the
+> (`romReadResyncTarget`, markPos-4 MFM / markPos-1 FM).  CRC is the standard IBM-CCITT
+> (`TrackCodec::crc16`) — the A5120 disks are plain standard IBM-MFM.  Boot itself is the real FM/MFM trial-and-error: the ROM starts in FM, finds no IDAM on the
 > MFM disk → index timeout → toggles MK to MFM → reads.  Full model: `doc/design/07_k5122_afs.md`,
-> `doc/K1520_architecture.md` §8.5.  The boot-DMA narrative below describes the byte-level data path.
+> `doc/K1520_architecture.md` §8.5.  The boot invariants that must not regress are listed below.
 
 - **Registration model**: cards register memory ranges and I/O port ranges on `K1520Bus`; the CPU's read/write/port callbacks route through the bus, which dispatches to the owning device. Interrupt priority is a daisy chain set via `bus.setInterruptChain(...)`; the Koppelbus models the A5120 backplane's hand-wired signal links (CTC clock cascades, second IEI/IEO chain).
 - **Dual Z80 on the K2526 (`core/cards/k2526/`)** — non-obvious and central to the boot path:
@@ -101,7 +100,10 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
 
 ## Boot-ROM debugging workflow
 
-The ZRE boot ROM and the ZVE1↔ZVE2 DMA handshake are the current hard problem; `doc/analyse_zre_rom_boot.md` is the running analysis.
+The full CP/A cold boot works (boot ROM → SYL loader → secondary loader → CP/A boot system →
+`@OS.COM` → running OS at the interactive prompt); the ZVE1↔ZVE2 DMA handshake is **solved**.
+This section is the reusable debug/trace toolkit for the boot path (still the trickiest code to
+poke at); `doc/analyse_zre_rom_boot.md` + `doc/K1520_architecture.md` §14 hold the analysis.
 
 > **Start here: `tools/how_to_debug_and_trace.md`** is the task-oriented guide for the two
 > debug/trace tools (which one when, with worked scenarios). Full references:
@@ -138,148 +140,44 @@ Supporting tools (`tools/`):
 - `tools/disasm_difftest.py` — cross-checks the disassembler against the `z80dis` pip package (in `venv`); run it before changing the disassembler engine.
 - `tools/boot_trace.cpp` (`boot_trace` target) — traces **both** ZVE1 and ZVE2 per instruction and reports where the DMA freezes. Use `-L <file>` to divert the emulator log so the summary stays readable. A separate `build_trace/` build dir is conventionally configured with `-DLOG_LEVEL=5` (the compile ceiling). **Default base level is now ERROR — the run is quiet & fast.** Raise it with `--log-level <off|error|warn|info|debug|trace>`, or far better, boost only where it matters: `--log-pc LO:HI[:level]` (effective level while either CPU PC is in the range) and `--log-cycle FROM:TO[:level]` (while the cycle counter is in the window). **Gotcha:** a `--log-pc` gate on a *spin-loop* address fires for as long as the CPU parks there (can be tens of millions of cycles → multi-GB log) — pair it with a tight `--log-cycle`, or just use a cycle window. Reference: `boot_trace --log-level info …` (≈11 KB / 8 s for a full @OS.COM run) gives the K5122 `>>> READ` summaries; add a `--log-cycle` window for full TRACE only there.
 
-### Boot DMA model (fixed — `disks/cpadisk.img` boots to loaded code)
+### Boot chain — SOLVED (don't regress these invariants)
 
-`boot_trace -L /tmp/emu.log disks/cpadisk.img` reports **Boot reached: YES** — ZVE2
-copies all boot sectors, signals completion, and ZVE1 jumps into the loaded code at
-`0x0437`. Three coupled fixes made this work; keep all three intact:
+The full chained boot (ROM `0x01DD` → SYL loader `0x0437` → secondary loader `0x062E` → CP/A
+boot system `0x1800` → `@OS.COM`) runs end-to-end into the running OS. The read path was
+refactored to the format-agnostic TrackImage stack (§ "K1520 core architecture" and
+`doc/K1520_architecture.md` §8.5/§14.5); the load-bearing boot invariants a future editor
+must **not** break:
 
-1. **Continuous rotating-track stream** (`K5122::doReadSector`). On a read `/STR`,
-   the whole `(cyl,head)` track is built as a byte stream of **138-byte** sector
-   blocks: `[sync 00][IDAM FE][cyl][head][sec][size][IDAM-CRC×2][128 data][data-CRC×2]`.
-   The 138 count is exact — it is how many port-0x16 reads the boot ROM does per
-   sector (6 header + 2 IDAM-CRC at 0x022F/0x0239 + 128 data + 2 data-CRC at the
-   trailing INIs 0x0245/0x0247). A short block drifts the stream and the IDAM
-   search fails on sector 2+. `ioRead(0x16)` streams this buffer and **wraps** at
-   the end (the disk keeps spinning); it no longer releases BUSRQ on drain.
-2. **BUSRQ released on completion, not on buffer-drain.** ZVE2 finishes by writing
-   the shared flag `[0x03F8]=3` (ROM `0x026B`). `A5120Machine::run()` watches that
-   RAM byte and calls `K5122::endDmaTransfer()` to release the bus.
-3. **Concurrent ZVE1/ZVE2 stepping during DMA.** While `/BUSRQ` is held and ZVE2 is
-   active, the run loop steps ZVE2 **and falls through to also step ZVE1** (the two
-   CPUs run in parallel on real hardware). This ordering is essential: ZVE1 must
-   finish `CALL 0194` — whose tail writes `[0x03F8]=0` at `0x01B3` — and reach its
-   poll loop at `0x0168` *before* ZVE2 writes `=3`, otherwise ZVE1's late `=0`
-   clobbers ZVE2's `=3` and the boot hangs.
+1. **Concurrent ZVE1/ZVE2 stepping during DMA** (`A5120Machine::run`): while `/BUSRQ` is held
+   and ZVE2 active, step ZVE2 **and fall through to also step ZVE1** (parallel on real HW). ZVE1
+   must finish `CALL 0194` (tail writes `[0x03F8]=0`) and reach its poll loop `0x0168` before ZVE2
+   writes `[0x03F8]=3`, else the late `=0` clobbers the `=3` and boot hangs.
+2. **Transition-based completion watch** on `[0x03F8]` (0=running / 1=timeout / 3=done): the run
+   loop arms only after seeing `[0x03F8]!=3` (ZVE1 cleared it) and *then* treats `→3` as completion
+   — level detection fires on the stale `3` left from the previous round.
+3. **ZVE2 start-from-reset** (`K2526::zve2StartFromReset`): the 3rd stage poises ZVE2 via
+   `[0x0000]=JP 0x1F7D` + `OUT(04)=0x00` and restores `[0x0000]` immediately (no explicit bit0=1
+   start), so `run()` starts ZVE2 from PC=0 when `/BUSRQ` asserts while ZVE2 is in reset. `OUT(04H)`
+   bit0=1 also restarts ZVE2 from PC=0 every DMA round (reloads its IDAM regs).
+4. **Faithful read stream + MK/MK1 resync** (`K5122`): `startReadTransfer()` streams
+   `buildFaithfulReadTrack` (4×A1 sync — serves boot ROM *and* SYL loader); MK (ctrl Port A bit1) and
+   **MK1 (bit4)** re-sync edges call `resyncToNextMark` (IDAM→DATA→next IDAM). The **MK1 resync was
+   the final `@OS.COM` fix** — without it a data `0xA1` was mistaken for the A1 address-mark sync.
+   Standard IBM-CCITT CRC throughout.
+5. **Head-select = ctrl Port A bit2 (/FR)**, latched only at the `/STR` edge (bit5 is step DIRECTION
+   only, toggles with MK/MK1). **Track-end `/BUSRQ` release** on `OUT(13H),03H` during a 128-B read
+   (ZVE1 takes over before ZVE2's idle loop `L0696` corrupts `[07F8..07FC]`).
+6. **Asymmetric mixed geometry** in `format_parser.cpp` (cpa780: `{0,0,0,1,26,128}` +
+   `{1,1,0,0,26,128}` + `{1,1,1,1,5,1024}` + `{2,79,0,1,5,1024}`); index period `≈490000` cycles.
 
-ZVE2 reads sectors until `sector_id == [0x07F2]` (=4 → sectors 1–4); its inner loop
-returns to `0x025A` (not `0x01E9`), emitting only one `/STR` edge per session, which
-is why the stream must contain the *whole* track up front.
-
-**Handshake RAM variables** (low memory is plain RAM here — ROM unmapped — and
-`RAM[0x0000..2] = C3 DD 01 = JP 0x01DD` is ZVE2's entry): `[0x03F8]` done-flag
-(0=running, 1=ISR timeout, 3=done), `[0x03F7]` index counter, `[0x03FD]` path byte
-(`0x87`=correct), `[0x07F2]` target sector count, `[0x03F0]` load address (`0x0400`).
-Boot sector 0 starts with the signature bytes `53 59 4C` ("SYL") that ZVE1 checks at
-`0x01B6`. Key addresses: ZVE1 wait `0x0168`, drive-init/ZVE2-start `0x0194`, ZVE2
-entry `0x01DD`, index-pulse ISR `0x01C7`, ZVE2 completion `0x0267`, loaded code `0x0437`.
-
-Earlier fixes also in place: index-pulse period (`kIndexPeriodCycles=490000`), ZVE2
-reset/wait clearing on port-04 release, 1-based IDAM `sector_id`, `/STR` read-refresh.
-Full narrative and annotated disassembly: `doc/analyse_zre_rom_boot.md`; canonical
-`z80_disasm2.py` invocation for `zre.rom`: `tools/README.md`.
-
-### Multi-round chained bootloader (current frontier — reaches screen banner)
-
-The loaded code at `0x0437` is **stage-1 of a chained loader**: it re-uses the boot
-ROM's DMA machinery for further rounds instead of containing its own. It patches the
-operand of the ROM's `CALL [0x0175]` (at ROM `0x0174`) to point at the next stage,
-then re-enters the ROM DMA path via `JP 0x0165`. Each round reloads `[0x03F3]`=cyl /
-`[0x03F5]`=sector / `[0x03F0]`=load-addr and runs another ZVE2 transfer. Round 2+ reads
-**cyl 1, head 1** and several cylinders into `0x0600+`. With the three fixes below,
-`boot_trace -p 9000000 disks/cpadisk01.img` now completes **2+ DMA rounds**, does
-**~2079 VRAM writes**, and the screen shows **`Bootloader, Version 24.02.87`**.
-
-Three round-2+ fixes (all required, beyond the round-1 three above):
-
-1. **OUT(04H) bit0=1 always restarts ZVE2 from PC=0** (`K2526` port-04 handler). The
-   ROM's `CALL 0194` issues `OUT(04H)` with bit0=1 before *every* DMA round; ZVE2 must
-   `reset()` to PC=0 each round to reload its IDAM registers for the new cyl/sector —
-   not only on the first reset→run edge.
-2. **Step direction = bit5 of ctrl-port-A** (`K5122::handleCtrlPortAWrite`):
-   `step_dir_in_ = (data & 0x20) != 0` (bit5=1 → inward/toward higher cyl, bit5=0 →
-   outward/toward track 0). ROM track-0 seek writes `0x09` (bit5=0, outward); loaded
-   code writes `0x29` (bit5=1, inward to cyl 1). Getting this backwards hangs round 2.
-3. **Transition-based DMA-completion detection** (`A5120Machine::run`). `[0x03F8]`
-   still holds `3` from the prior round when the next begins, so the run loop arms
-   `dma_saw_progress_` only after seeing `[0x03F8]!=3` (ZVE1 cleared it) and *then*
-   treats a `→3` write as completion. Level-based detection fires on the stale 3.
-
-**Post-banner spin at `0x052A–0x0538` — DIAGNOSED & largely fixed (2026-06-07).** The
-loop is the loader's interrupt/handshake wait for the next sector. It was NOT an
-interrupt-system bug (IM2/daisy-chain/RETI/index-int all verified working; vec 0x62 IS
-delivered). Root cause was a **K5122 sector-format/access mismatch**: the loaded
-bootloader's own ZVE2 routine (`0x062E`, installed via `[0x0000]=JP 0x062E`) reads sectors
-with TWO `/STR` strobes (1st → IDAM `0xFE`, 2nd mid-sector → data mark `0xFB`), whereas the
-boot ROM uses ONE strobe and reads IDAM+data continuously. Two fixes landed (all 40
-K5122/Boot tests green): (1) **head-latch** — `current_head_` is now latched from the start
-control word's MR/SD bit *before* `doReadSector` (was stale → IDAM head mismatch); (2)
-**MK-strobe field model** (`K5122::buildField()`/`advanceField()`) + **CRC-16**
-(`loaderCrc16()`). Each address-mark field advance is driven by an MK rising edge (ctrl Port A
-bit1, `0xB5`→`0x87`) — same for ROM and loader; `ioRead(0x16)` streams the current field
-(IDAM `A1 FE …` / DATA `A1 FB <128> CRC`) and pads over-reads with gap `0x4E`, so per-field
-byte counts don't matter. The loader CRC-verifies every sector (`CALL 0x0407`), so the synthesised
-DATA field carries the real CRC-16 (`loaderCrc16` = byte-exact `sub_0407`, start `BF84H`). Sync
-byte `0x00`→`0xA1`. A fourth fix (**track-end /BUSRQ release**: on `OUT(13H),03H` during a read, K5122 releases
-`/BUSRQ` so ZVE1 takes over before ZVE2's idle loop `L0696` corrupts `[07F8..07FC]`) completed
-the secondary bootloader. **Result (all 40 K5122/Boot tests green, banner no-regression):** the
-full secondary loader runs — ZVE2 reads whole tracks across cyl 0/1/2, ZVE1 CRC-verifies every
-sector, `[07FC]` counts to 0, and the loader jumps to `0x0880` (`JP 0x1800`) into the **third
-stage (CP/A boot system)**. The screen shows `CP/A-Bootsystem, Version 05.04.88 laedt @OS.COM`.
-
-### Third stage — @OS.COM read from the 1024B data area (current frontier, 2026-06-09)
-
-The third stage reads `@OS.COM` from the **1024B data area**. Four fixes got it reading and
-loading `@OS.COM` (all K5122/Boot/K2526 tests green, 111/111):
-
-1. **ZVE2-from-reset** (`K2526::zve2StartFromReset`, committed 9af4912). The stage poises ZVE2 by
-   `[0x0000]=JP 0x1F7D` + `OUT(04)=0x00` (reset) then immediately restores `[0x0000]`, never doing
-   an explicit bit0=1 start. `A5120Machine::run()` now starts ZVE2 from PC=0 when `/BUSRQ` asserts
-   while ZVE2 is reset (the `/STR`'s `/BUSRQ`), so it fetches the live `[0x0000]=JP 0x1F7D`. Gotcha:
-   fire on `isZVE2InReset()` ALONE (ZVE2 is both reset AND `/WAIT`-held in this path).
-2. **Disk geometry** (`format_parser.cpp`, **asymmetric mixed geometry**): sides interleave (cyl0/A,
-   cyl0/B, cyl1/A, cyl1/B, …); the system area is **three** 128B sides (cyl 0 both sides + cyl 1 side A)
-   and the **1024B data area begins at cyl 1 side B** (`0x2700`). `3×3328 + 5120 = 0x3B00`, so the CP/M
-   directory (`"@OS     COM"` + CPABCGEN/FORMAT/…) lands exactly on the **cyl 2 side A** boundary, where
-   `0x1F7D` reads (IDAM cyl=2, size_code=3). Format = `{0,0,0,1,26,128}` + `{1,1,0,0,26,128}` +
-   `{1,1,1,1,5,1024}` + `{2,79,0,1,5,1024}` (findTrack/sectorOffset honor the head range). Modelling
-   cyl 1 side B as 128B would shift the data area 0x700 early and misalign @OS.COM's allocation blocks.
-3. **Continuous-stream field model + CRC seed** (`k5122.cpp`, gated `sector_data_len_ != 128`). The 3rd
-   stage reads IDAM+DATA **continuously** (INIR, no per-byte strobe), re-syncs via **MK1 (ctrl Port A
-   bit4**, `0xB5↔0x85`), not MK/bit1 — so the discrete field model never advanced IDAM→DATA and served
-   gap (`0x4E`). Now `buildField()` emits one continuous full-sector block for 1024B and `ioRead(0x16)`
-   auto-steps to the next sector on over-read. Its CRC routine `sub_1E44` is **byte-identical to
-   `loaderCrc16`** but inits **`0xCDB4`** (not 0xBF84) over `[data-mark]+data`, so the DATA field CRC is
-   `loaderCrc16([0xFB]+data, 0xCDB4)`. (Verified `loaderCrc16([4E]+4E×1024, 0xCDB4)=0x87B3`.)
-
-4. **K5122 side-select = ctrl Port A bit2 (/FR), NOT bit5 (committed `ab59ee8`).** bit5 (MR/SD) is
-   step DIRECTION only and toggles with the MK/MK1 re-sync strobes; using it as side-select flipped the
-   head mid-transfer so head-1 reads served head-0 data. Now `current_head_ = (data & 0x04) ? 0 : 1;`
-   latched ONLY at the `/STR` edge. This removed the `RU;…=020101` (cyl2 head1) timeout. See
-   `doc/design/07_k5122_afs.md §4` (signal table corrected) and `tests/cpp/test_k5122.cpp`
-   (`ReadStrobe_LatchesHeadFromBit2`, `Continuous1024_Head1_*`) + `test_k2526.cpp`
-   (`K2526ZVE2FloppyChain` — real ZVE2 reads K5122 field via the bus, head0 & head1).
-
-**Result (2026-06-09):** with the bit2 fix the 3rd stage reads cyl 2 (both heads) + start of cyl 3 —
-ZVE2 reads **9 sectors** successfully. **Current frontier: `RS;T,Si,Se=030002` ('S', NOT a CRC error).**
-DIAGNOSED (ZVE2 side): after the 9th sector ZVE2 spins **unbounded** in its IDAM sync-search
-`0x1FA9–0x1FBF` and never finds the `A1 FE` of the 10th wanted sector — that path decrements no counter
-(`[0x1ED7]` only counts on a *found-but-mismatched* IDAM at `0x2023`; `[0x1ED5]` CRC-retry is never
-touched → confirms not CRC). ZVE1's outer retry `[0x1ED6]` (init 5) then exhausts → 'S'. The routine
-`0x1F7D` reads ONE sector/call to staging buffer `0x21AE`, wanted sector `L'` (start 2), head `B'`,
-cyl `C'`. **OPEN (ZVE1 side — next concrete step):** how does ZVE1 sequence cyl/head/sector across the
-@OS.COM sectors (read-setup `0x1F36`, retry `0x1D3C–0x1DDE`, sources of `C'/B'/L'`), and **what does the
-10th read request** — does that sector exist (IDs 1–5, both heads) or does sector/head/cyl run out of
-range / is a seek or head-switch missing between read 9 and 10? **Tried & reverted (don't repeat):** a
-"no-rewind on same-track `/STR` refresh" guard in `doReadSector` — never fired (no `/STR` re-strobes in
-the failure window, only MK1 toggles) and broke 3 K5122 tests.
-Key 3rd-stage addrs: read/verify `0x1F7D`/`0x2038`, IDAM-mismatch `0x2023` (`[0x1ED7]`), data read
-`0x2038–0x2061` (INIR×4=1024B), loop-tail `0x2068` (`INC L`), CRC `sub_1E44` (seed 0xCDB4), CRC-compare
-`sub_1E20`, retry `0x1D3C–0x1DDE` (`[0x1ED6]`@`0x1DE9`), error display `sub_1BF0` ('C'=CRC@`0x1DE1`,
-'S'@`0x1E00`, 'U'=timeout@`0x1E04`). Repro: `boot_trace -L /dev/null -c 40000000 -p 38000000
-disks/cpadisk01.img` (big `-c` AND `-p`); ZVE2 instr trace: `-z 0x1F7D:0x2076 -W <n>`; RAM dump of the
-loaded stage: `-d 0x1C00:0x2080 /tmp/loader.bin` then `tools/z80_disasm2.py --org 0x1C00 --entry 0x1F7D`.
-Full model: `doc/K1520_architecture.md` §14.5/§14.5b/§14.6/§14.6a/§14.6b; `doc/analyse_bootloader.md` §7.
+Handshake RAM: `[0x03F8]` done-flag, `[0x03F7]` index counter, `[0x03FD]` path byte (`0x87`),
+`[0x07F2]` target sector count, `[0x03F0]` load address. Key addresses: ZVE1 wait `0x0168`,
+ZVE2-start `0x0194`, ZVE2 entry `0x01DD`, index ISR `0x01C7`, SYL sig check `0x01B6`, loaded code
+`0x0437`, secondary loader `0x062E`, 3rd stage `0x1800`/read `0x1F7D`. Guard tests:
+`test_boot_integration` (`Stage3_FullyLoadsAndJumpsToOs`), `test_k5122`
+(`Continuous1024_MK1ResyncJumpsToNextAddressMark`), `test_k2526` (`K2526ZVE2FloppyChain`). Full
+analysis: `doc/analyse_zre_rom_boot.md`, `doc/analyse_bootloader.md`, `doc/K1520_architecture.md`
+§14.5/§14.5b/§14.5c.
 
 `boot_trace` post-boot tracing: `-p <cycles>` continues past `0x0437`; the summary then
 adds an I/O-port read/write histogram, VRAM write count + range, a loaded-code PC
@@ -308,21 +206,24 @@ Build-&-Test-Durchläufe → `test-runner`. Opus bleibt für Orchestrierung, Ent
 Scriptgesteuerte Formatier-Pipeline: `tools/format_all.py` (Runner) + `tools/format_driver`
 formatieren mit **FORMAT.COM (V19.05.89)** die K5601-Formate nach Laufwerk B: und verifizieren
 (§3 80-Spur-DS: .hfe 13/15, .img 14/15; §3.4-Geometrien S/V/W als .hfe+.img, T/U als .hfe).
-`DiskImage::create` legt leere Ziele an (`.hfe` Template / `.img` 0xE5 in Format-Geometrie).
-Voller Stand + offene Punkte: `docs/format.md` §8–§9.
+Über **Combo-Boot-Disketten** (B:/C: als Fremdtypen) sind auch die 5,25″-SS- und 8″-FM/MFM-
+Formate testbar (Laufwerkstyp = reine BIOS-Software). `tools/cpa_tools/make_bootdisk.py` fährt
+zusätzlich die ganze Kette *format → CPABCGEN → bootfähige Disk* (6 Presets, als langsame
+`format_integration`-Tests registriert — via `tools/dev.sh test-format`). `DiskImage::create` legt
+**gültig formatierte** Leerdisketten an (echte IDAM/DATA/CRC, Daten 0xE5): `.hfe` je Spur per
+`TrackCodec::buildTrack`→`BitCodec::encode`, `.img` als 0xE5 in Format-Geometrie. `.hfe`/`.img`
+brauchen dafür ein `DiskFormat` (Geometrie); `A5120Machine::createDisk` wählt bei leerem Formatnamen
+das laufwerkstyp-spezifische Standardformat (K5601→cpa800, K5600.10→200K, K5600.20→400K,
+MF3200→308K/FM, MF6400→616K) und leitet das Verfahren aus dem `DriveProfile` ab. C-API:
+`k1520_create_disk`. Voller Stand + offene Punkte: `docs/format.md` §8–§11.
 
-> **FORMATB.COM ist OUT OF SCOPE — nicht weiter untersuchen/testen.** Seine Verify-Routine
-> passt nicht zum verwendeten CP/A-BIOS (V02.04.87 vs. 25.09.89: die CDB-Flag-Konvention wurde
-> zwischen den Versionen umorganisiert → `'V' SPUR DEFEKT`, s. `docs/format.md §8.1`).  Das ist
-> eine **echte Software-Versionsinkompatibilität, kein Emulatorfehler** (träte auf realer HW mit
-> diesem BIOS genauso auf).  Für Formatier-Arbeiten ausschließlich **FORMAT.COM** verwenden.
-
-> **Bekannte Grenze — Gap-Blank-`.hfe`-Hänger (FORMAT.COM):** Ein FRISCH per `create` erzeugtes,
-> gap-leeres `.hfe` direkt zu formatieren hängt (ZVE2-Lese-Koroutine `0x1D0F/0x1D21` beim Vorlesen
-> einer unformatierten Datenspur; Index-Interrupt-Timing-Race mit dem BIOS-Motor-Watchdog).
-> Hypothese „Index maskenunabhängig halten" wurde getestet & widerlegt (`docs/format.md §8.2`).
-> **Workaround (in der Pipeline aktiv):** B: aus einem GÜLTIGEN Template kopieren bzw. `.img` via
-> `create` (0xE5 liest als gültig) — dann kein Hänger.  Echte Lösung braucht cycle-level Dual-CPU-Tracing.
+> **Gap-Blank-`.hfe`-Hänger — GELÖST (2026-07-06):** `DiskImage::create` erzeugt für `.hfe` jetzt
+> eine *voll formatierte* Diskette statt eines gap-leeren Templates → FORMAT.COM formatiert sie ohne
+> Hänger (End-to-End verifiziert). `DiskImage::open` lehnt zusätzlich ein markenloses/unformatiertes
+> Image (leere/gap-lose `.hfe`) mit Fehler ab, statt in die ZVE2-Lese-Koroutine `0x1D0F` zu laufen.
+> Template-Kopie/Python-Vorbau sind damit nicht mehr nötig (`tools/format_all.py` legt `.hfe`-Ziele mit
+> bekannter Geometrie direkt via `create` an). Interne Create-then-Format-Tools (`mk_disk_template`)
+> öffnen ihr noch-leeres Handle direkt über `HfeImage` (umgeht bewusst den Mount-Guard).
 
 ## Conventions
 

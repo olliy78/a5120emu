@@ -9,12 +9,11 @@
  * keine Sektorgrößen, Sektoranzahl, CRC-Verfahren oder Boot-Stadien mehr.
  *
  * Diese Schicht ersetzt die mit der Lese-Routine verflochtene On-the-fly-Synthese der
- * alten K5122 (siehe doc/refactoring_floppy_emulator.md §3).  Sie arbeitet auf
+ * alten K5122 (siehe doc/design/07_k5122_afs.md).  Sie arbeitet auf
  * **decodierten Bytes**, weil der K5122 hinter dem Datenseparator ebenfalls byteweise
  * arbeitet (Ports 0x14/0x16).  Die Bitebene (MFM/FM) lebt ausschließlich in den
  * Bit-Codecs des HFE-Backends.
  *
- * @see doc/refactoring_floppy_emulator.md §3
  * @see doc/design/07_k5122_afs.md
  * @author Olaf Krieger
  * @date 2026

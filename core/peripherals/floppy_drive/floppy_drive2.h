@@ -11,7 +11,7 @@
  * Der bestehende @ref FloppyDrive bleibt unverändert; diese Klasse existiert parallel,
  * bis die neue Karte die alte in einer Maschinenkonfiguration ablöst.
  *
- * @see doc/refactoring_floppy_emulator.md §8
+ * @see doc/design/07_k5122_afs.md
  * @author Olaf Krieger
  * @date 2026
  * @license MIT License

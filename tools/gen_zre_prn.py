@@ -74,8 +74,8 @@ EXTRA = {
     0x0245: "Die 2 nachlaufenden INI lesen die DATEN-CRC-Bytes in den Scratch 0x0700. "
             "WICHTIG: Das Boot-ROM LIEST die CRC nur ein, PRUEFT sie NICHT — Validierung "
             "allein per IDAM-Feldvergleich (cyl/head/sec/size) + Boot-Signatur @01B6. "
-            "Echte CRC-Verifikation (sub_0407, Dual-Konvention 0xBF84 FM / 0xE295 MFM, "
-            "gewaehlt ueber [0x03FD] bit1) erfolgt erst im GELADENEN Lader (RAM 0x04xx).",
+            "Echte CRC-Verifikation (sub_0407, Standard-IBM-CCITT) erfolgt erst im "
+            "GELADENEN Lader (RAM 0x04xx).",
     0x025A: "FM/MFM-Pfadwahl pro Schleifendurchlauf: liest [0x03FD]; bit1=1 FM(NZ)/bit1=0 "
             "MFM(Z). ACHTUNG: bit7=0 erzeugt am OUT(10h) zusaetzlich einen Step-Puls.",
     0x00DD: "DATENRATE: Tor B (Port 0x12) = 0x7F -> bit2=/HF=1 = NIEDRIGE Frequenz. Laut "
@@ -157,8 +157,8 @@ def main():
         ";          @01AD -> Port 0x10; ZVE2 testet BIT 1 @022B u. @025A. bit7=Step-Unterdr.",
         "; CRC:     Das Boot-ROM PRUEFT KEINE CRC. ZVE2 validiert nur das IDAM-Feld",
         ";          (cyl/head/sec/size) + Boot-Signatur @01B6; CRC-Bytes @0245/0247 werden",
-        ";          nur gelesen. Echte CRC-Pruefung (sub_0407, Dual-Seed 0xBF84 FM/0xE295",
-        ";          MFM via [0x03FD] bit1) liegt im GELADENEN Lader (RAM 0x04xx), nicht hier.",
+        ";          nur gelesen. Echte CRC-Pruefung (sub_0407, Standard-IBM-CCITT)",
+        ";          liegt im GELADENEN Lader (RAM 0x04xx), nicht hier.",
         "; RAM-Vars:  03F0 Ladeadr | 03F3 Zyl | 03F5 Kopf/Sektor | 03F7 Index-Zaehler",
         ";            03F8 Done-Flag(0/1/3) | 03FA Retry | 03FC Port10-Ctrl | 03FD FM/MFM-Pfad",
         "; ============================================================================",

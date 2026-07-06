@@ -49,7 +49,7 @@ TEST(FormatParser, BuiltinFormats_NotEmpty) {
  *   cyl 1 side B as 1024B).  This is modelled as four TrackFormat ranges:
  *     {0,0,0,1,26,128} {1,1,0,0,26,128} {1,1,1,1,5,1024} {2,79,0,1,5,1024}
  *   (see core/peripherals/floppy_drive/format_parser.cpp and
- *   doc/K1520_architecture.md §14.6a).  The earlier 2-entry model misaligned the
+ *   doc/K1520_architecture.md §14.5c).  The earlier 2-entry model misaligned the
  *   @OS.COM allocation blocks; this test pins the corrected 4-entry geometry.
  * @par Pass criterion  Format "cpa780" found; tracks.size() == 4; ranges as above.
  */

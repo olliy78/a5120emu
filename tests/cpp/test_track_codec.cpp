@@ -4,16 +4,16 @@
  *
  * @details
  * Getestete Komponenten:
- *   - TrackCodec::crc16 (Robotron-CRC-Vereinheitlichung)
+ *   - TrackCodec::crc16 (Standard-IBM-CRC-16-CCITT)
  *   - TrackCodec::crc16Ccitt
  *   - TrackCodec::buildTrack / parseTrack (MFM + FM, verschiedene Sektorgrößen)
  *   - TrackImage::nextMark (zyklische Markensuche)
  *
- * ERSTES Ziel: CRC-Vereinheitlichung empirisch absichern (Abschnitt unten).
+ * ERSTES Ziel: die Standard-CCITT-CRC empirisch absichern (Abschnitt unten).
  *
  * @see core/peripherals/floppy_drive/track_codec.h
  * @see core/peripherals/floppy_drive/track_image.h
- * @see doc/refactoring_floppy_emulator.md §4.1
+ * @see doc/design/07_k5122_afs.md
  */
 
 #include <gtest/gtest.h>
@@ -38,38 +38,36 @@ static LogicalSector makeSector(uint8_t cyl, uint8_t head, uint8_t id,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GRUPPE 1: CRC-Vereinheitlichung
-// Absicherung, dass eine einzige CRC über [A1,A1,A1,FB,...] 0xFF,0xFF die
-// frühere Zwei-Seed-Logik der alten K5122 reproduziert.
+// GRUPPE 1: CRC-16-CCITT-Zwischenzustände
+// Absicherung, dass die Standard-CCITT-crc16 die erwarteten Zwischenwerte an den
+// Feldgrenzen liefert (eine CRC über [A1,A1,A1,FB,...] mit Seed 0xFF,0xFF).
 // ─────────────────────────────────────────────────────────────────────────────
 
-TEST(TrackCodecCrc, Vereinheitlichung_A1A1A1_gibt_CDB4) {
-    // Zustand der CRC nach [A1,A1,A1] mit Seed 0xFF,0xFF muss 0xCDB4 ergeben.
-    // Das ist der alte Seed, mit dem loaderCrc16 über [0xFB]+data gestartet wurde.
+TEST(TrackCodecCrc, CCITT_Zustand_nach_A1A1A1_ist_CDB4) {
+    // CCITT-Zustand nach der 3×A1-Sync-Präambel (Seed 0xFF,0xFF) ist 0xCDB4.
     const uint8_t in[] = {0xA1, 0xA1, 0xA1};
     EXPECT_EQ(TrackCodec::crc16(in, 3, 0xFF, 0xFF), 0xCDB4u);
 }
 
 TEST(TrackCodecCrc, MFM_DatenCrc_Seed_A1A1A1FB_ist_E295) {
-    // Standard-IBM-MFM-Daten-CRC: crc16([A1,A1,A1,FB], 0xFF,0xFF) == 0xE295.
-    // Dieser Zwischenzustand ist der Seed, den der Lader im MFM-Modus ([03FD] bit1=0)
-    // über die Datenbytes weiterführt — Standard-CCITT über [A1,A1,A1,FB]+data.
+    // Standard-IBM-MFM-Daten-CRC: crc16([A1,A1,A1,FB], 0xFF,0xFF) == 0xE295 —
+    // Standard-CCITT über [A1,A1,A1,FB]+data.
     const uint8_t in[] = {0xA1, 0xA1, 0xA1, 0xFB};
     EXPECT_EQ(TrackCodec::crc16(in, 4, 0xFF, 0xFF), 0xE295u);
 }
 
-TEST(TrackCodecCrc, CDB4_Pfad_aequivalent_zu_Seed_0xFF) {
-    // GILT: loaderCrc16([FB]+data, 0xCDB4) == loaderCrc16([A1A1A1FB]+data, 0xFFFF).
-    // Der CDB4-Pfad ist äquivalent zu Seed 0xFFFF über [A1,A1,A1,FB]+data.
+TEST(TrackCodecCrc, CCITT_ist_praeambelunabhaengig) {
+    // Standard-CCITT: die CRC über [A1,A1,A1,FB]+data ab Seed 0xFFFF entspricht der
+    // Fortführung ab dem Zwischenzustand nach [A1,A1,A1] über [FB]+data.
     std::vector<uint8_t> data(128, 0xAB);
 
-    // Alter Pfad: Seed 0xCDB4 über [FB] + data
+    // Fortführung ab dem CCITT-Zwischenzustand nach [A1,A1,A1] über [FB]+data
     std::vector<uint8_t> old_input;
     old_input.push_back(0xFB);
     old_input.insert(old_input.end(), data.begin(), data.end());
     uint16_t old_crc = TrackCodec::crc16(old_input.data(), old_input.size(), 0xCD, 0xB4);
 
-    // Äquivalenter Pfad: Seed 0xFFFF über [A1,A1,A1,FB] + data
+    // Volle CRC: Seed 0xFFFF über [A1,A1,A1,FB] + data
     std::vector<uint8_t> new_input;
     new_input.push_back(0xA1); new_input.push_back(0xA1);
     new_input.push_back(0xA1); new_input.push_back(0xFB);
@@ -448,7 +446,7 @@ TEST(RomReadKalibrierung, FaithfulRead_FM_buf1_ist_FE) {
 }
 
 TEST(RomReadKalibrierung, FaithfulRead_StandardCrc_parseTrackValidiert) {
-    // buildFaithfulReadTrack nutzt die Standard-IBM-CCITT-CRC (kein Sonderfall) →
+    // buildFaithfulReadTrack nutzt die Standard-IBM-CCITT-CRC →
     // parseTrack akzeptiert IDAM- und Daten-CRC.
     TrackImage t = TrackCodec::buildFaithfulReadTrack({makeSector(3, 1, 2, 1024)}, Encoding::MFM);
     auto secs = TrackCodec::parseTrack(t);

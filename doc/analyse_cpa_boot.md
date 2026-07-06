@@ -31,8 +31,8 @@ Mit den Testdisketten `disks/cpadisk_02.{img,hfe}` (System **ohne Uhr**, Autosta
    durch 0 (Hang `@0xC7A3`), SELDSK kehrt nie zurück. Per Experiment bestätigt: DPB
    nach `[0xD1BE]` poken → Hang löst sich, Lauf erreicht den TPA. §4–§5a.
 
-Das widerlegt zwei frühere Annahmen: weder „fehlende Uhr" (doc
-`refactoring_floppy_emulator.md` §15.5) noch „Floppy-Read scheitert" — beide Disketten
+Das widerlegt zwei frühere Annahmen: weder „fehlende Uhr" noch
+„Floppy-Read scheitert" — beide Disketten
 (mit/ohne Uhr) haben `[0xD1BE]==0`, und die Reads gelingen.
 
 4. **NEU 2026-06-11 (§6a):** `disks/cpadisk_noFormatDetect_01.img` (Formaterkennung im OS
@@ -122,9 +122,9 @@ Mit `tools/floppy_diag` bzw. `k1520dbg` nachgewiesen (cpadisk_02 + mitUhr):
   Spuren `c2h0/c2h1/c3h0/c3h1` Sektoren 1–5 **sequentiell, ohne Sektor-Wiederholung**
   → die Daten-CRC stimmt ebenfalls (ein CRC-Fehler würde denselben Sektor erneut lesen).
 - Die Geometrie stimmt: `(cyl2,head0,sec1)` → Image-Offset `0x3B00` = echte CP/M-
-  Directory (`@OS COM`, `CPABCGEN COM`, `FORMAT COM`, …). Der K5122-Feldmodell-Pfad
-  (`buildRobotronTrack`, IDAM `A1 FE cyl head id sc`, Daten-CRC Seed `0xCDB4`) liefert
-  diese 1024-B-Spuren korrekt.
+  Directory (`@OS COM`, `CPABCGEN COM`, `FORMAT COM`, …). Der K5122-Lesepfad
+  (`buildFaithfulReadTrack`, IDAM `A1 FE cyl head id sc`, Standard-IBM-CCITT-Daten-CRC)
+  liefert diese 1024-B-Spuren korrekt.
 - **Diese 20 Reads passieren VOR dem OS-Eintritt** (≈5,5–8,6 Mio. Zyklen; OS-Eintritt
   bei ≈8,5 Mio.) — es ist der **Boot-Loader**, der das System lädt. **Nach** dem
   OS-Eintritt liest das OS bis zum Hang **gar nicht** mehr.
