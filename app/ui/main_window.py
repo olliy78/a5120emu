@@ -45,10 +45,19 @@ class MainWindow(QMainWindow):
         self.status_timer.timeout.connect(self._update_status)
         self.status_timer.start(1000)  # Update every second
         
-        # Emulator loop
+        # Emulator loop.
+        # The A5120 U880 runs at ~2.45 MHz (matches the core's K5122 cpu_hz default).
+        # To emulate at real time we must execute cpu_hz * frame_interval cycles per
+        # frame — with a 20 ms tick that is 49000 cycles, NOT the old 10000 (which ran
+        # the machine at only 0.2x speed, so a boot that takes ~13.8M cycles dragged on
+        # for ~28 s instead of ~5.6 s, and the CP/A clock ran 5x too slow).
+        self.CPU_HZ = 2_450_000
+        self.frame_interval_ms = 20  # 50 Hz
+        # speed_factor > 1.0 fast-forwards (e.g. to shorten the boot); 1.0 = real time.
+        self.speed_factor = 1.0
         self.run_timer = QTimer()
         self.run_timer.timeout.connect(self._run_emulator)
-        self.run_timer.setInterval(20)  # 50 Hz
+        self.run_timer.setInterval(self.frame_interval_ms)
 
         # Default power state is ON.
         self.run_timer.start()
@@ -166,10 +175,14 @@ class MainWindow(QMainWindow):
         # This is handled by DriveWidget
         self.drives_widget.setFocus()
     
+    def _cycles_per_frame(self) -> int:
+        """CPU cycles to run per frame for the current speed (real time * speed_factor)."""
+        return int(self.CPU_HZ * self.frame_interval_ms / 1000 * self.speed_factor)
+
     def _run_emulator(self):
         """Run emulator for one frame."""
         try:
-            cycles = self.emulator.run(10000)
+            cycles = self.emulator.run(self._cycles_per_frame())
             self.cycles += cycles
             self.frame_count += 1
         except Exception as e:
@@ -191,18 +204,26 @@ class MainWindow(QMainWindow):
         self.status_widget.update_status(self.cycles, fps, disk_status)
     
     def _set_speed(self, speed: float):
-        """Set emulation speed."""
+        """Set emulation speed. 1.0 = real time, >1.0 = fast-forward, 0.0 = unlimited."""
         if speed == 0.0:
             self.run_timer.stop()  # Unlimited
             self._run_unlimited()
         else:
-            # For now, just use fixed frame rate
+            self.speed_factor = speed
             self.run_timer.start()
     
     def _run_unlimited(self):
-        """Run emulator as fast as possible."""
+        """Run emulator as fast as the host allows (fast-forward)."""
+        # One real-time frame worth of cycles per iteration keeps per-call overhead
+        # low while still pumping the Qt event loop often enough to stay responsive.
+        chunk = int(self.CPU_HZ * self.frame_interval_ms / 1000)
         while self.power_btn.isChecked():
-            self._run_emulator()
+            try:
+                self.cycles += self.emulator.run(chunk)
+                self.frame_count += 1
+            except Exception as e:
+                self._on_error(f"Emulator error: {e}")
+                break
             QApplication.processEvents()
     
     def _on_error(self, message: str):
