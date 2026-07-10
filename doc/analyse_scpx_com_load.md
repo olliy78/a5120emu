@@ -3,18 +3,22 @@
 **Stand:** 2026-07-10. Branch `scpx_boot`, Fixture `disks/scpx_boot.hfe`.
 
 Das OS **SCPX 1526 V1.7** bootet vollständig bis zum `A>`-Prompt; Tastatur und der CCP-eingebaute
-`DIR` funktionieren. **Transiente Programme (`STAT`, `PIP`, …) laden jedoch nicht** — sie enden mit
-`SCPX ERR ON A: BAD SECTOR`. Dieses Dokument hält die vollständige Diagnose fest (die Ursache wird
-gefixt, sobald der Laufzeit-Read auf den *gehaltenen Bus* umgestellt ist — s. §6).
+`DIR` funktionieren. **Transiente Programme (`STAT`, `PIP`, …) luden zunächst nicht** — sie endeten mit
+`SCPX ERR ON A: BAD SECTOR`. Dieses Dokument hält die vollständige Diagnose (§1–§9) **und die
+Lösung (§10)** fest.
 
-> **Update 2026-07-10 (§6.2-Umsetzungsversuch):** Schicht 1 + 2 wurden gefixt und einzeln
-> verifiziert — der Kopf steht danach korrekt (cyl4/head1) und der EC0D-Mini-Stack wird nicht mehr
-> vom Interrupt korrumpiert. `BAD SECTOR` verschwindet, aber `STAT` **hängt** dann: eine **dritte,
-> tiefere Schicht** wird sichtbar (ZVE1 restauriert den Warmstart-Vektor `[0x0000]=JP DE03`
-> **vorzeitig**, während ZVE2 noch im Matcher steht → ZVE2 loopt mit Müll-Kontext). Voller Befund
-> unten in **§9**. Der surgische Weg allein genügt nicht; es braucht den gehaltenen Bus — der aber
-> nicht per Koroutine gatebar ist (SCPX-Boot nutzt dieselbe Koroutine). Code-Änderungen wurden
-> revertiert (Hänger = schlechtere UX als der Fehler, vgl. §4).
+> ## ✅ GELÖST (2026-07-10) — os-gated „gehaltener Bus" für den Laufzeit-Read (§10)
+> Der in §6/§9 als richtig erkannte Fix (gehaltener Bus **nur** für den Laufzeit-Read) ist jetzt
+> umgesetzt, indem er auf einen **„OS-läuft"-Zustand** gated wird (§9.4b): ein `os_running_`-Flag
+> wird gesetzt, sobald ZVE1 den interaktiven Prompt `E079` **das erste Mal** erreicht. Ab da hält
+> der Emulator `/BUSRQ` für den **ganzen** Laufzeit-Read über an (nur ZVE2 liest), ausgelöst am
+> **read-eindeutigen** Poll-Wait `E8B5` (mit `[EC0B]==E8B5` und aktivem Lese-Transfer), beendet,
+> sobald ZVE2 das Ergebnis über `[EC0B]!=E8B5` signalisiert. Während des Boots (`os_running_==false`)
+> ist der Mechanismus **komplett inert** → er umgeht die §6.1-Boot-Sackgassen (der Boot behält die
+> Per-Byte-Drossel). **Verifiziert:** `A>STAT` → `A: R/W, Space: 522k`, `A>PIP` → `*`-Prompt; alle
+> Tests grün (ctest inkl. boot_integration/k5122/k2526 + 5 format_integration, Legacy 58/58).
+> Die frühere Aussage „nicht per Koroutine gatebar" bleibt korrekt — der **temporale** Gate
+> (`os_running_`) statt eines zustandsbasierten Diskriminators ist genau der Ausweg aus §9.4.
 
 ---
 
@@ -252,3 +256,48 @@ Die Code-Änderungen (doStep-Guard, SP-Guard) wurden nach der Diagnose **reverti
 resultierende Hänger schlechtere UX ist als der `BAD SECTOR`-Fehler (vgl. §4) — der Committed-Stand
 bleibt grün. Diese Analyse ist die aktualisierte Arbeitsgrundlage; §9.4(b) ist der empfohlene
 nächste Schritt.
+
+## 10. LÖSUNG (2026-07-10) — os-gated „gehaltener Bus" (§9.4b umgesetzt)
+
+Der in §9.4(b) empfohlene Weg löst alle drei Schichten **auf einen Schlag**, weil er ihre
+gemeinsame Wurzel beseitigt: ZVE1 läuft während des Laufzeit-Reads **gar nicht mehr** in den
+Byte-Lücken mit. Kein ZVE1-Kopf-Stepping (Schicht 1), kein CTC-Interrupt an ZVE1 im Matcher
+(Schicht 2), kein verfrühter `[0x0000]`-Restore durch ZVE1 (Schicht 3).
+
+### 10.1 Warum der Gate funktioniert, wo §6.1 scheiterte
+§6.1 scheiterte, weil kein **zustandsbasierter** Diskriminator „Boot-Read vs. Laufzeit-Read"
+existiert (beide nutzen Koroutine `E9C8`, Poll-Wait `E8B5`, Warmstart-Restore). Der Unterschied ist
+rein **temporal**: Laufzeit-Reads passieren *nach* dem ersten Erreichen des Prompts. Genau darauf
+gated der Fix — `os_running_` wird gesetzt, sobald ZVE1 `E079` erreicht. Der gehaltene Bus ist
+damit während des **gesamten** Boots inaktiv (der Boot behält unverändert die getunte
+Per-Byte-Drossel, `project_per_byte_busrq_model`), und die §6.1-Boot-Sackgassen entfallen.
+
+### 10.2 Der Engage/Release-Automat (`core/machines/a5120/a5120.cpp`, `run()`)
+Nur wenn `os_running_`:
+- **Engage:** ZVE1 `PC==E8B5` **und** `[EC0B]==E8B5` **und** `K5122::isReadTransferActive()`. Das
+  ist **read-eindeutig** (ZVE1 hat gerade in `E8B1` `[EC0B]=E8B5` geschrieben und parkt am Poll-Wait,
+  ein Lese-Stream läuft) — im Gegensatz zur „generischen Schleife `E8B5`" aus §6.1(3). Ab hier wird
+  `/BUSRQ` jede Iteration **gehalten** (`bus_.assertBUSRQ()`), sodass der bestehende BUSRQ-Block nur
+  ZVE2 steppt und ZVE1 eingefroren bei `PC==E8B5` stehen bleibt (führt die Poll-Instruktion nicht aus).
+- **Release:** `[EC0B]!=E8B5` (ZVE2 hat seinen Fortsetzungs-Vektor geschrieben = Read fertig). Dann
+  `K5122::releaseHeldRead()` (stoppt die Per-Byte-Drossel + gibt `/BUSRQ` frei, **ohne** die
+  ctrl-PIO-Interrupt-Freigabe anzufassen — anders als `endDmaTransfer()`, weil SCPX' ZVE2 sie nicht
+  löscht) und ZVE1 fährt mit `JP (HL)` fort und verarbeitet die gelesenen Daten. Für den nächsten
+  Sektor durchläuft ZVE1 das Setup erneut → sauberer Zyklus, keine Oszillation.
+- Der bestehende **`[0x03F8]`-Completion-Watcher** (CP/A-Boot) ist während `held_read_active_`
+  ausgeblendet — SCPX signalisiert über `[EC0B]`, nicht `[0x03F8]`.
+
+### 10.3 Verifikation
+```
+b 0xE079 ; g ; bd 0xE079 ; keys STAT\r ; g 40000000 ; screen   # → "A: R/W, Space: 522k", zurück zu A>
+b 0xE079 ; g ; bd 0xE079 ; keys PIP\r  ; g 40000000 ; screen   # → "*"-Prompt (PIP wartet auf Eingabe)
+```
+Beide vormals fehlschlagenden Programme laden jetzt. Regressionsfrei: ctest (inkl.
+`boot_integration`, `k5122`, `k2526`, 5× `format_integration`) grün, Legacy-Harness 58/58.
+
+### 10.4 Betroffene Dateien
+- `core/machines/a5120/a5120.cpp` — `os_running_`-Erkennung + Engage/Release-Automat in `run()`;
+  `[0x03F8]`-Watcher gegen den gehaltenen Read geguardet. Konstanten `kScpx*` (E079/E8B5/EC0B).
+- `core/machines/a5120/a5120.h` — Member `os_running_`, `held_read_active_`.
+- `core/cards/k5122/k5122.{h,cpp}` — `isReadTransferActive()` (Engage-Bedingung) und
+  `releaseHeldRead()` (interrupt-neutrales Transfer-Ende).

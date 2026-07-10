@@ -338,6 +338,23 @@ void K5122::endDmaTransfer() {
 }
 
 /**
+ * @brief Beendet den os-gated „gehaltenen" Laufzeit-Lese-Transfer (analyse_scpx_com_load §9.4b).
+ *
+ * Stoppt die Per-Byte-/BUSRQ-Drossel und gibt /BUSRQ frei, sodass ZVE1 aus seinem Poll-Wait
+ * fortfährt (JP (HL)).  Anders als endDmaTransfer() wird die ctrl-PIO-Port-A-Interrupt-Freigabe
+ * NICHT verändert — SCPX' ZVE2-Lese-Koroutine löscht sie nicht (kein OUT(11H,03H)), also darf
+ * sie hier nicht spurios wiederhergestellt werden.
+ */
+void K5122::releaseHeldRead() {
+    transferring_        = false;
+    dma_pending_         = false;
+    byte_ready_          = false;
+    str_inactive_cycles_ = 0;
+    if (bus_.isBUSRQ()) bus_.releaseBUSRQ();
+    LOG_DEBUG("K5122", "releaseHeldRead: gehaltener Laufzeit-Read beendet, BUSRQ freigegeben");
+}
+
+/**
  * @brief Index-Puls-Simulation.
  *
  * Inkrementiert den Zyklenzähler um @p cycles.  Bei Überlauf der Periodenzeit

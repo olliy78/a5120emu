@@ -274,6 +274,19 @@ private:
     bool bus_master_zve2_  = false;   // which CPU is currently stepping (for bus-trace
                                       // attribution): true while ZVE2 steps, false for ZVE1
 
+    // ── Os-gated „gehaltener Bus" für den SCPX-Laufzeit-Read (doc/analyse_scpx_com_load.md §9.4b) ──
+    // Der Boot nutzt die Per-Byte-/BUSRQ-Drossel (getunt, s. project_per_byte_busrq_model);
+    // die Laufzeit-.COM-Reads scheitern aber daran, weil ZVE1 in den Byte-Lücken mitläuft und
+    // (1) den Kopf mit-steppt, (2) den Matcher-Mini-Stack per INT korrumpiert, (3) den
+    // Warmstart-Vektor [0x0000] verfrüht restauriert.  Sobald der interaktive Prompt (ZVE1 @E079)
+    // das erste Mal erreicht ist (os_running_), wird der Laufzeit-Read wie echte HW gefahren:
+    // /BUSRQ über den GANZEN Transfer halten (nur ZVE2 liest), ausgelöst am read-eindeutigen
+    // Poll-Wait (ZVE1 @E8B5 mit [EC0B]==E8B5 und aktivem Lese-Transfer), beendet, sobald ZVE2
+    // das Ergebnis über [EC0B] signalisiert.  Während des Boots (os_running_==false) inaktiv →
+    // keine Boot-Regression.
+    bool os_running_       = false;   // ZVE1 hat den interaktiven Prompt (E079) erreicht
+    bool held_read_active_ = false;   // gehaltener Laufzeit-Read läuft (ZVE1 eingefroren)
+
     // Monotonic cycle counter across all run() calls, fed to the Logger's gate
     // evaluation (cycle windows) once per instruction.
     uint64_t total_cycles_ = 0;

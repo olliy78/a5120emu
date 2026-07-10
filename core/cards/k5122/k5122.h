@@ -160,6 +160,15 @@ public:
     void serialize(std::vector<uint8_t>& out) const;
     bool deserialize(const uint8_t*& p, const uint8_t* end);
 
+    /// @brief Läuft gerade ein Lese-Streaming-Transfer (kein FORMAT-Schreiben)?
+    ///        Genutzt vom os-gated „gehaltenen Bus" (SCPX-Laufzeit-Read, a5120.cpp).
+    bool isReadTransferActive() const { return transferring_ && !write_mode_; }
+
+    /// @brief Beendet den os-gated „gehaltenen" Laufzeit-Lese-Transfer (a5120.cpp §9.4b):
+    ///        stoppt die Per-Byte-Drossel + gibt /BUSRQ frei, ohne die Interrupt-Freigabe
+    ///        zu verändern.  ZVE1 fährt danach mit JP (HL) fort.
+    void releaseHeldRead();
+
     /// @brief Momentaufnahme des Controller-Zustands für Debugger (k1520dbg `dev`).
     struct DebugState {
         int      drive;        ///< aktuell gewähltes Laufwerk (8212 /SELx)

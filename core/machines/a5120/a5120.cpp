@@ -10,6 +10,17 @@ namespace {
 // this shared RAM flag to know when to release /BUSRQ back to ZVE1.
 constexpr uint16_t kZve2DoneFlagAddr = 0x03F8;
 constexpr uint8_t  kZve2DoneValue    = 0x03;
+
+// ── SCPX 1526 Laufzeit-Read: Adressen für den os-gated „gehaltenen Bus" ──────
+// (doc/analyse_scpx_com_load.md §7/§9.4b).  ZVE1 erreicht den CONIN-Wartepunkt
+// E079, sobald der interaktive A>-Prompt bereit ist (= „OS läuft").  Der Laufzeit-
+// BIOS-Read poist eine ZVE2-Lese-Koroutine, setzt [EC0B]=E8B5 und wartet an der
+// Poll-Schleife E8B5; ZVE2 signalisiert das Read-Ende, indem es [EC0B] auf einen
+// Fortsetzungs-Vektor != E8B5 schreibt (ZVE1 macht dann JP (HL)).
+constexpr uint16_t kScpxPromptPC     = 0xE079;  // interaktiver Prompt erreicht → os_running_
+constexpr uint16_t kScpxPollWaitPC   = 0xE8B5;  // ZVE1-Poll-Wait auf [EC0B]
+constexpr uint16_t kScpxContVecAddr  = 0xEC0B;  // ZVE2→ZVE1 Fortsetzungs-Vektor (16-Bit)
+constexpr uint16_t kScpxPollWaitArm  = 0xE8B5;  // [EC0B]-Wert während des Wartens (== PollWaitPC)
 }  // namespace
 
 // Baut das DriveProfile-Array der 4 K5122-Slots aus den Profilnamen der Config.
@@ -276,6 +287,41 @@ int A5120Machine::run(int max_cycles) {
             zre_.cpuReset();
         }
 
+        // ── Os-gated „gehaltener Bus" für den SCPX-Laufzeit-Read (§9.4b) ──────────
+        // Der Boot nutzt die Per-Byte-Drossel (getunt, s. project_per_byte_busrq_model);
+        // Laufzeit-.COM-Reads scheitern aber daran, weil ZVE1 in den Byte-Lücken mitläuft
+        // (Kopf-Divergenz, Matcher-INT-Korruption, verfrühter [0x0000]-Restore — analyse §4/5/9).
+        // Sobald der interaktive Prompt (ZVE1 @E079) einmal erreicht ist, fahren wir den
+        // Laufzeit-Read wie echte HW: /BUSRQ über den GANZEN Transfer halten (nur ZVE2 liest).
+        // Während des Boots (os_running_==false) ist dieser Block komplett inert → keine Regression.
+        if (!os_running_ && zre_.cpuPC() == kScpxPromptPC) {
+            os_running_ = true;
+            LOG_INFO("A5120", "SCPX: Prompt E079 erreicht → gehaltener Bus für Laufzeit-Reads aktiv");
+        }
+        if (os_running_) {
+            const uint16_t contVec = (uint16_t)(bus_.memRead(kScpxContVecAddr) |
+                                     (bus_.memRead((uint16_t)(kScpxContVecAddr + 1)) << 8));
+            if (held_read_active_) {
+                if (contVec != kScpxPollWaitArm) {
+                    // ZVE2 hat das Read-Ende signalisiert ([EC0B]!=E8B5) → Bus freigeben;
+                    // ZVE1 fährt mit JP (HL) fort und verarbeitet die gelesenen Daten.
+                    held_read_active_ = false;
+                    afs_.releaseHeldRead();
+                    LOG_DEBUG("A5120", "SCPX gehaltener Read fertig ([EC0B]=%04X): ZVE1 fährt fort", contVec);
+                } else {
+                    bus_.assertBUSRQ();   // Bus gehalten → ZVE1 bleibt eingefroren (nur ZVE2)
+                }
+            } else if (zre_.cpuPC() == kScpxPollWaitPC &&
+                       contVec == kScpxPollWaitArm &&
+                       afs_.isReadTransferActive()) {
+                // ZVE1 parkt read-eindeutig am Poll-Wait (Setup fertig, [EC0B]=E8B5) und ein
+                // Lese-Transfer läuft → ab hier den Bus halten (nur ZVE2 bis zur Completion).
+                held_read_active_ = true;
+                bus_.assertBUSRQ();
+                LOG_DEBUG("A5120", "SCPX gehaltener Read: ZVE1@E8B5 eingefroren, ZVE2 liest");
+            }
+        }
+
         // BUSRQ: Bus-Verriegelung ZVE1↔ZVE2 (hardware-echt, K5122-Doku §5.6.1).
         //
         // /BUSRQ entsteht in der K5122 PRO BYTE aus dem RDY des Daten-PIO: ZVE2
@@ -319,8 +365,13 @@ int A5120Machine::run(int max_cycles) {
                 // ZVE1s Zeitschleife vor ZVE2s DMA-Ende abläuft → /STR=1 zu früh → Retry.
                 // Der Flag-Watcher gibt den Bus exakt bei ZVE2-Completion frei (Transition
                 // 0→3 innerhalb der Runde; das Level allein träfe ein altes =3).
-                uint8_t df = bus_.memRead(kZve2DoneFlagAddr);
-                if (df != kZve2DoneValue) {
+                // Der SCPX-Laufzeit-Read („gehaltener Bus") signalisiert sein Ende über [EC0B],
+                // nicht über [0x03F8]; der Boot-ROM/CP-A-Watcher darf ihm nicht dazwischenfunken.
+                uint8_t df = held_read_active_ ? kZve2DoneValue
+                                               : bus_.memRead(kZve2DoneFlagAddr);
+                if (held_read_active_) {
+                    // Watcher inaktiv während des gehaltenen Reads (Completion via [EC0B] oben).
+                } else if (df != kZve2DoneValue) {
                     dma_saw_progress_ = true;
                 } else if (dma_saw_progress_) {
                     afs_.endDmaTransfer();
