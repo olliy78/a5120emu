@@ -19,19 +19,19 @@ namespace dbgcmd {
 inline const std::vector<std::string>& names() {
     static const std::vector<std::string> n = {
         // run / step / reverse
-        "g","c","gu","s","s2","n","fin","rs","bs","snap","restore",
+        "g","c","gu","s","s2","n","fin","rs","bs","rc","snap","restore",
         // breakpoints + events
         "b","b2","tb","bd","bd2","be","bdis","be2","bdis2","bi","bi2","bl",
-        "bint","bnmi","breti",
+        "bint","bnmi","breti","bbusrq","bxfer",
         // watch / log
         "wp","wpr","wb","wd","wl","iow","iob","iod","iol",
-        "logpoint","lp","lpd","lpl","trace",
+        "logpoint","lp","lpd","lpl","trace","itrace",
         // inspect
-        "r","bt","d","e","u","x","list","l","set","disp","undisp","vars","dev",
+        "r","rj","rj2","where","w","hist","bt","d","e","u","x","list","l","set","disp","undisp","vars","dev",
         // memory / symbols / listings
         "load","save","sym","lst",
         // misc
-        "mark","keys","screen","reset","alias","unalias","source","help","q","quit",
+        "mark","keys","screen","reset","disk","alias","unalias","source","help","q","quit",
     };
     return n;
 }

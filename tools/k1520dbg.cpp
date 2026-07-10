@@ -24,6 +24,8 @@
  */
 #include "core/machines/a5120/a5120.h"
 #include "core/logger.h"
+#include "core/peripherals/floppy_drive/disk_image.h"
+#include "core/peripherals/floppy_drive/track_codec.h"
 #include "tools/z80dis_min.h"
 #include "tools/prn_listing.h"
 #include "tools/callstack_tracker.h"
@@ -43,12 +45,17 @@
 #include <string>
 #include <vector>
 #include <deque>
+#include <tuple>
 #include <map>
 #include <set>
 #include <sstream>
 #include <fstream>
 #include <iostream>
 #include <algorithm>
+#include <filesystem>
+#include <system_error>
+#include <optional>
+#include <unistd.h>   // getpid
 
 using k1520::logging::Logger;
 using k1520::logging::Level;
@@ -121,11 +128,19 @@ int main(int argc, char** argv){
     const char* script = nullptr;
     std::vector<std::string> symfiles;     // -s: symbol tables (repeatable)
     std::vector<std::string> prnfiles;     // -l: MACRO-80 .prn listings (repeatable)
+    // Disk-mount mode (§6): COW is the DEFAULT — the disk is copied to a temp file and
+    // that copy is mounted read/write, so a committed fixture can never be corrupted
+    // (no more manual `mktemp; cp DISK $T; … $T; rm $T` ritual). `--rw` mounts the
+    // original writable (writes persist); `--read-only`/`--ro` mounts write-protected.
+    enum { MOUNT_COW=0, MOUNT_RW=1, MOUNT_RO=2 } mount_mode = MOUNT_COW;
     for (int i=1;i<argc;++i){
         if (!strcmp(argv[i],"-x") && i+1<argc) script=argv[++i];
         else if (!strcmp(argv[i],"-s") && i+1<argc) symfiles.push_back(argv[++i]);
         else if (!strcmp(argv[i],"-l") && i+1<argc) prnfiles.push_back(argv[++i]);
         else if (!strcmp(argv[i],"-b") && i+1<argc) diskB=argv[++i];
+        else if (!strcmp(argv[i],"--rw")) mount_mode=MOUNT_RW;
+        else if (!strcmp(argv[i],"--cow")) mount_mode=MOUNT_COW;
+        else if (!strcmp(argv[i],"--read-only")||!strcmp(argv[i],"--ro")) mount_mode=MOUNT_RO;
         else disk=argv[i];
     }
     Logger::instance().setBaseLevel(Level::ERROR);   // quiet emulator log; tool prints its own
@@ -133,19 +148,41 @@ int main(int argc, char** argv){
     A5120Machine m;
     m.powerOn();
     bool mount_failed = false;
-    if (disk){
-        if (!(m.mountDisk(0,disk,"cpa780",false) || m.mountDisk(0,disk,"cpa800",false))){
+    // COW temp copies to unlink at exit (empty unless mount_mode==MOUNT_COW).
+    std::vector<std::string> cow_temps;
+    // Resolve a requested disk path to the path actually mounted + the write-protect flag.
+    // COW: copy to a temp file keeping the extension (so .hfe/.img format detection is
+    // unchanged) and mount that; RW: the original; RO: the original, write-protected.
+    auto prepareDisk = [&](const std::string& path, bool& wp_out)->std::string{
+        if (mount_mode==MOUNT_RW){ wp_out=false; return path; }
+        if (mount_mode==MOUNT_RO){ wp_out=true;  return path; }
+        wp_out=false;                                   // COW
+        std::error_code ec;
+        std::filesystem::path src(path);
+        std::filesystem::path tmp = std::filesystem::temp_directory_path() /
+            ("k1520dbg_cow_"+std::to_string((long)getpid())+"_"+
+             std::to_string(cow_temps.size())+src.extension().string());
+        std::filesystem::copy_file(src,tmp,std::filesystem::copy_options::overwrite_existing,ec);
+        if (ec){ fprintf(stderr,"WARN: COW copy of '%s' failed (%s) — mounting original writable\n",
+                         path.c_str(),ec.message().c_str()); return path; }
+        cow_temps.push_back(tmp.string());
+        fprintf(stderr,"COW: '%s' → %s (writes discarded; use --rw to persist)\n",
+                path.c_str(),tmp.string().c_str());
+        return tmp.string();
+    };
+    if (disk){ bool wp; std::string mp=prepareDisk(disk,wp);
+        if (!(m.mountDisk(0,mp,"cpa780",wp) || m.mountDisk(0,mp,"cpa800",wp))){
             fprintf(stderr,"WARN: mount '%s' failed: %s\n",disk,m.lastError().c_str());
             mount_failed = true;   // session still runs; reflected in the exit code
         }
-        else fprintf(stderr,"Mounted %s on A:\n",disk);
+        else fprintf(stderr,"Mounted %s on A:%s\n",disk,wp?" (read-only)":"");
     }
-    if (diskB){
-        if (!(m.mountDisk(1,diskB,"cpa780",false) || m.mountDisk(1,diskB,"cpa800",false))){
+    if (diskB){ bool wp; std::string mp=prepareDisk(diskB,wp);
+        if (!(m.mountDisk(1,mp,"cpa780",wp) || m.mountDisk(1,mp,"cpa800",wp))){
             fprintf(stderr,"WARN: mount B '%s' failed: %s\n",diskB,m.lastError().c_str());
             mount_failed = true;
         }
-        else fprintf(stderr,"Mounted %s on B:\n",diskB);
+        else fprintf(stderr,"Mounted %s on B:%s\n",diskB,wp?" (read-only)":"");
     }
 
     // ─── Phase 2: debugger state ───────────────────────────────────────────────
@@ -170,6 +207,8 @@ int main(int argc, char** argv){
     std::deque<A5120Machine::MachineSnapshot> rev_ring;      // auto snapshot before each fwd cmd
     const size_t rev_cap = 200;                              // ring depth (≈13 MB)
     std::map<std::string,A5120Machine::MachineSnapshot> named_snaps;   // snap <name>
+    std::deque<A5120Machine::MachineSnapshot> bphit_ring;    // §17: full state at each PC-bp stop (for `rc`)
+    const size_t bphit_cap = 60;
 
     // memory watchpoints: address RANGE + optional VALUE-condition (tools/mem_watch.h,
     // unit-getestet); print or break. Matching-Logik in MemWatch::matches().
@@ -187,6 +226,10 @@ int main(int argc, char** argv){
     // display list (shown at every stop): each entry is a raw token
     std::vector<std::string> displays;
 
+    // §16 loadable variable dashboard: (name, addr, word?) watch-set for `vars`
+    // (vars -f <file> / vars add …). Empty → `vars` shows the built-in CP/A defaults.
+    std::vector<std::tuple<std::string,uint16_t,bool>> var_watch;
+
     // ─── trace-to-file + logpoints ("run and log", no stopping) ────────────────
     FILE* trace_fp   = nullptr;                 // `trace <file>`: continuous instr trace
     int   trace_lo   = -1, trace_hi = -1;       // optional PC window for the file trace
@@ -195,10 +238,29 @@ int main(int argc, char** argv){
     bool  trace_capped = false;
     // logpoints: at PC, print (PC + optional exprs) and CONTINUE — gdb dprintf.
     std::map<uint16_t,std::vector<std::string>> logpoints;
+    // §11 interrupt trace: log every ACCEPTED INT/NMI (no stopping) — the SCPX .COM bug
+    // is a CTC-interrupt corrupting the EC0D mini-stack, so a timeline of INTs vs the
+    // matcher window is exactly what's needed. Reuses eventbp::classify (like `bint`).
+    FILE* itrace_fp=nullptr; long itrace_n=0;
 
     // ─── break on interrupt / NMI / RETI (event breakpoints, ZVE1) ─────────────
     bool     brk_int=false, brk_nmi=false, brk_reti=false;
     uint16_t bi_prev_sp=0; bool bi_prev_iff1=false, bi_have_prev=false;
+
+    // ─── floppy/bus event breakpoints (§5/§15): /BUSRQ edge + K5122 read/write xfer edge ─
+    // Polled once per executed instruction (either CPU) — the K5122/bus state is read
+    // through the machine accessors, so no core callback is needed. 0=off / 1=assert /
+    // 2=release / 3=both edges (bare command → both). Each carries an OPTIONAL condition
+    // (§15: `bxfer if [EBFA]==4`) evaluated at the edge before stopping.
+    int  brk_busrq=0, brk_xfer=0, brk_wxfer=0;
+    bool fev_prev_busrq=false, fev_prev_xfer=false, fev_prev_wxfer=false, fev_have_prev=false;
+    std::string ev_busrq_cond, ev_xfer_cond, ev_wxfer_cond;
+
+    // ─── PC-hotspot profiler (§9 `hist`): count PCs of BOTH CPUs over a cycle window ─
+    // While hist_on, the per-instr callbacks ONLY tally (they skip all stop logic), so
+    // `hist` profiles straight through breakpoints instead of tripping them.
+    bool hist_on=false; int hist_lo=-1, hist_hi=-1;
+    std::map<uint16_t,uint32_t> hist1, hist2;
 
     // ─── Phase 3: helper lambdas (capture all state above by reference) ─────────
     // Small formatting/util helpers first, then symbols, .prn, the expression
@@ -343,6 +405,39 @@ int main(int argc, char** argv){
     auto stopFromBus = [&](const std::string& why){
         snap1=grab(m.cpuDebug()); hit=true; hit_cpu=1; hit_pc=m.cpuPC(); stop_reason=why; m.stop(); };
 
+    // §5 floppy/bus event breakpoints: sample /BUSRQ and the K5122 read-transfer flag
+    // each instruction and stop on the requested edge. Called from BOTH per-instr
+    // callbacks (so an edge is caught whichever CPU is stepping). Returns true if it stopped.
+    auto checkFloppyEv = [&](int cpu, const Z80& z)->bool{
+        auto k = m.k5122State();
+        bool busrq = m.isBUSRQ();
+        bool xfer  = k.transferring;
+        bool wxfer = k.writeMode;
+        bool stopped=false;
+        if (fev_have_prev){
+            if (brk_busrq && busrq!=fev_prev_busrq &&
+                ((busrq && (brk_busrq&1)) || (!busrq && (brk_busrq&2))) &&
+                evalCond(grab(z), ev_busrq_cond)){
+                char w[40]; snprintf(w,sizeof w,"/BUSRQ %s", busrq?"asserted":"released");
+                stopAt(cpu,z,w); stopped=true;
+            }
+            if (!stopped && brk_xfer && xfer!=fev_prev_xfer &&
+                ((xfer && (brk_xfer&1)) || (!xfer && (brk_xfer&2))) &&
+                evalCond(grab(z), ev_xfer_cond)){
+                char w[48]; snprintf(w,sizeof w,"K5122 read-xfer %s", xfer?"start":"end");
+                stopAt(cpu,z,w); stopped=true;
+            }
+            if (!stopped && brk_wxfer && wxfer!=fev_prev_wxfer &&
+                ((wxfer && (brk_wxfer&1)) || (!wxfer && (brk_wxfer&2))) &&
+                evalCond(grab(z), ev_wxfer_cond)){
+                char w[48]; snprintf(w,sizeof w,"K5122 write-xfer %s", wxfer?"start":"end");
+                stopAt(cpu,z,w); stopped=true;
+            }
+        }
+        fev_prev_busrq=busrq; fev_prev_xfer=xfer; fev_prev_wxfer=wxfer; fev_have_prev=true;
+        return stopped;
+    };
+
     // ─── per-instruction & bus callbacks ───────────────────────────────────────
     // These fire from inside m.run(), once per executed instruction (ZVE1 / ZVE2)
     // or per bus access. They are the ONLY place a run is ended: a stop decision
@@ -357,6 +452,8 @@ int main(int argc, char** argv){
     //      `return`s after acting, so a pending step is not also treated as a bp hit.
     m.setCpuTraceCallback([&](const Z80& z){
         const uint16_t pc=z.PC;
+        // §9 hist: profiling mode only tallies PCs and skips ALL stop logic below.
+        if (hist_on){ if(hist_lo<0 || (pc>=hist_lo && pc<=hist_hi)) hist1[pc]++; return; }
         // Maintain the exact CALL/RST/RET call stack (for the history backtrace).
         // Cheap: 1 mem read/instr in the common (non-call/ret) case.
         callstack.onInstruction(pc,[&](uint16_t a){ return m.memReadDebug(a); });
@@ -376,6 +473,20 @@ int main(int argc, char** argv){
                 case eventbp::Event::None: break;
             }
         }
+        // §11 interrupt trace (non-stopping): classify with INT+NMI always armed and log.
+        if (itrace_fp){
+            eventbp::Prev pv{bi_have_prev, bi_prev_sp, bi_prev_iff1};
+            eventbp::Event e = eventbp::classify(pc, z.SP, z.IFF1, pv, true, true, false, 0, 0);
+            if (e==eventbp::Event::Interrupt || e==eventbp::Event::NMI){
+                uint16_t ret=(uint16_t)(m.memReadDebug(z.SP)|(m.memReadDebug((uint16_t)(z.SP+1))<<8));
+                std::string p=prnFor(pc), isr=symFor(pc);
+                fprintf(itrace_fp,"IT %c%-9lld %-3s int@%04X → ISR %04X%s%s%s SP=%04X%s%s\n",
+                        rcpfx(), rc(z.cycles), e==eventbp::Event::NMI?"NMI":"INT", ret, pc,
+                        isr.empty()?"":" <",isr.c_str(),isr.empty()?"":">", z.SP,
+                        p.empty()?"":"  ; ", p.c_str());
+                ++itrace_n;
+            }
+        }
         bi_prev_sp=z.SP; bi_prev_iff1=z.IFF1; bi_have_prev=true;
         if (rel_arm_pc>=0 && pc==(uint16_t)rel_arm_pc){
             rel_origin=z.cycles; rel_armed=true; rel_arm_pc=-1;
@@ -383,6 +494,7 @@ int main(int argc, char** argv){
                     pc,(unsigned long long)z.cycles);
         }
         if (tw1lo>=0 && pc>=tw1lo && pc<=tw1hi && tw_n<tw_cap){ traceLine(1,z); ++tw_n; }
+        if ((brk_busrq||brk_xfer||brk_wxfer) && checkFloppyEv(1,z)) return;   // §5/§15 /BUSRQ / xfer edge
         if (step_rem>0){ traceLine(1,z); if(--step_rem==0){stopAt(1,z,"step");} return; }
         if (fin_active && z.SP > fin_sp){ fin_active=false; stopAt(1,z,"step-out"); return; }
         if (gu_pc>=0 && pc==(uint16_t)gu_pc){ gu_pc=-1; stopAt(1,z,"run-until"); return; }
@@ -400,7 +512,9 @@ int main(int argc, char** argv){
     });
     m.setZVE2TraceCallback([&](const Z80& z){
         const uint16_t pc=z.PC;
+        if (hist_on){ if(hist_lo<0 || (pc>=hist_lo && pc<=hist_hi)) hist2[pc]++; return; }  // §9
         traceToFile(2,z);   // gap-free trace across DMA phases (ZVE2 also logged)
+        if ((brk_busrq||brk_xfer||brk_wxfer) && checkFloppyEv(2,z)) return;   // §5/§15 (edge, either CPU)
         if (tw2lo>=0 && pc>=tw2lo && pc<=tw2hi && tw_n<tw_cap){ traceLine(2,z); ++tw_n; }
         if (step2_rem>0){ traceLine(2,z); if(--step2_rem==0){stopAt(2,z,"step ZVE2");} return; }
         auto it=bp2.find(pc);
@@ -559,12 +673,127 @@ int main(int argc, char** argv){
         showInsn("=>", hit_pc);
         showDisplays();
         stateLine();
+        // §17: remember the full state at each PC-breakpoint stop so `rc` can jump back
+        // to the previous hit (the snapshot ring only holds coarse pre-command states).
+        if (stop_reason.rfind("bp",0)==0){
+            bphit_ring.emplace_back(); m.captureState(bphit_ring.back());
+            while (bphit_ring.size()>bphit_cap) bphit_ring.pop_front();
+        }
     };
     auto screen = [&]{
         for (int row=0;row<24;++row){ char ln[81];
             for (int c=0;c<80;++c){ uint8_t ch=m.memReadDebug((uint16_t)(0xF800+row*80+c));
                 ln[c]=(ch>=0x20&&ch<0x7F)?(char)ch:'.'; }
             ln[80]=0; fprintf(stderr,"  |%s|\n",ln); }
+    };
+    // ZVE2 is the active bus master when /BUSRQ is asserted and it is neither in reset
+    // nor waiting. Used by the discoverability hint (§0) and `where` (§4).
+    auto zve2Active = [&]{ return m.isBUSRQ() && !m.isZVE2InReset() && !m.isZVE2Waiting(); };
+    // §13 disk verify: read the ORIGINAL image file (not the mounted COW copy) track by
+    // track and report sector-ID + CRC health — answers "is the medium good?" in one
+    // command (replaces the ad-hoc scpx_dump.cpp harness). Only problem tracks are listed.
+    auto diskVerify = [&](const char* path, const char* label){
+        if (!path){ fprintf(stderr,"  (kein Image auf %s)\n",label); return; }
+        auto img = DiskImage::open(path, std::nullopt, /*write_protect=*/true);
+        if (!img){ fprintf(stderr,"  '%s' nicht öffenbar (self-describing .hfe ok; rohe .img "
+                                  "braucht ein bekanntes Format)\n",path); return; }
+        DiskGeometry g = img->geometry();
+        fprintf(stderr,"  %s %s — Geometrie %u Zyl × %u Kopf, %s\n",label,path,
+                (unsigned)g.num_cyls,(unsigned)g.num_heads, g.encoding==Encoding::FM?"FM":"MFM");
+        long total_sec=0, bad_crc=0; int bad_tracks=0, empty_tracks=0;
+        for (uint8_t c=0;c<g.num_cyls;++c) for (uint8_t h=0;h<g.num_heads;++h){
+            TrackImage t = img->readTrack(c,h);
+            if (t.empty()){ ++empty_tracks; continue; }
+            auto secs = TrackCodec::parseTrack(t);
+            int tbad=0; for (auto& s: secs) if(!s.id_crc_ok || !s.data_crc_ok) ++tbad;
+            total_sec += (long)secs.size(); bad_crc += tbad;
+            if (secs.empty() || tbad){ ++bad_tracks;
+                fprintf(stderr,"    C%2u H%u: %zu Sekt, %d CRC-Fehler%s\n",
+                        (unsigned)c,(unsigned)h,secs.size(),tbad,
+                        secs.empty()?" (KEINE Marken!)":""); }
+        }
+        fprintf(stderr,"  → %d Spuren, %ld Sektoren, %ld CRC-Fehler, %d Problem-Spuren, %d leer%s\n",
+                g.num_cyls*g.num_heads, total_sec, bad_crc, bad_tracks, empty_tracks,
+                (bad_crc==0 && bad_tracks==0)?"   ✓ OK":"");
+    };
+    // §14 snap diff: which registers (both CPUs) and which RAM ranges changed between two
+    // named snapshots — nails "ZVE1 ran ahead and clobbered [0000]" type divergences.
+    auto snapDiff = [&](const std::string& na, const std::string& nb,
+                        const A5120Machine::MachineSnapshot& a,
+                        const A5120Machine::MachineSnapshot& b){
+        fprintf(stderr,"  diff %s → %s   (Δcyc=%lld)\n", na.c_str(), nb.c_str(),
+                (long long)(b.zve1.cycles - a.zve1.cycles));
+        auto dumpRegs=[&](const char* who,
+                          const A5120Machine::MachineSnapshot::Z80Regs& ra,
+                          const A5120Machine::MachineSnapshot::Z80Regs& rb){
+            struct R{ const char* n; uint16_t va,vb; };
+            R rs[]={{"PC",ra.PC,rb.PC},{"SP",ra.SP,rb.SP},{"AF",ra.AF,rb.AF},{"BC",ra.BC,rb.BC},
+                    {"DE",ra.DE,rb.DE},{"HL",ra.HL,rb.HL},{"IX",ra.IX,rb.IX},{"IY",ra.IY,rb.IY}};
+            bool any=false;
+            for (auto& r: rs) if (r.va!=r.vb){ if(!any){fprintf(stderr,"    %s:",who);any=true;}
+                fprintf(stderr," %s %04X→%04X",r.n,r.va,r.vb); }
+            if (any) fprintf(stderr,"\n");
+        };
+        dumpRegs("ZVE1",a.zve1,b.zve1); dumpRegs("ZVE2",a.zve2,b.zve2);
+        long changed=0; int runs=0; int rlo=-1; const int SHOW=40;
+        for (int i=0;i<=65536;++i){ bool d = (i<65536) && (a.ram[i]!=b.ram[i]);
+            if (d){ ++changed; if(rlo<0) rlo=i; }
+            else if (rlo>=0){ if(runs<SHOW) fprintf(stderr,"    RAM %04X..%04X (%d B)\n",rlo,i-1,i-rlo);
+                              ++runs; rlo=-1; } }
+        fprintf(stderr,"  → %ld RAM-Byte(s) in %d Bereich(en)%s\n",changed,runs,
+                runs>SHOW?"  (nur erste 40 gelistet)":"");
+    };
+    // §4 `where`/`w`: one glance at BOTH CPUs + the floppy — ZVE1/ZVE2 PC+disasm, /BUSRQ,
+    // current bus master, and the K5122 head/transfer state. `--json` for agents.
+    auto whereShow = [&](bool json){
+        auto k=m.k5122State();
+        uint16_t pc1=m.cpuPC(); const Z80& z2=m.zve2Debug(); uint16_t pc2=z2.PC;
+        const char* z2s = m.isZVE2InReset()?"reset":(m.isZVE2Waiting()?"wait":"run");
+        if (json){
+            fprintf(stderr,
+              "\n{\"zve1_pc\":\"0x%04X\",\"zve2_pc\":\"0x%04X\",\"zve2\":\"%s\",\"busrq\":%s,"
+              "\"busmaster\":\"%s\",\"k5122\":{\"drive\":%u,\"mounted\":%s,\"cyl\":%u,\"head\":%u,"
+              "\"transferring\":%s,\"write\":%s,\"headPos\":%zu,\"trackLen\":%zu}}\n",
+              pc1,pc2,z2s, m.isBUSRQ()?"true":"false", zve2Active()?"ZVE2":"ZVE1",
+              (unsigned)k.drive,k.mounted?"true":"false",(unsigned)k.cylinder,(unsigned)k.head,
+              k.transferring?"true":"false",k.writeMode?"true":"false",k.headPos,k.trackLen);
+            return;
+        }
+        char l1[120],l2[120]; disasmAt(pc1,l1,sizeof l1); disasmAt(pc2,l2,sizeof l2);
+        std::string p1=prnFor(pc1), p2=prnFor(pc2);
+        fprintf(stderr,"  ZVE1 %s%s%s\n",l1,p1.empty()?"":"  ; ",p1.c_str());
+        fprintf(stderr,"  ZVE2 %s%s%s   [%s]\n",l2,p2.empty()?"":"  ; ",p2.c_str(),z2s);
+        fprintf(stderr,"  BUSRQ=%s  bus-master=%s  K5122: D%d %s cyl=%u head=%u %s%s headPos=%zu/%zu\n",
+                m.isBUSRQ()?"yes":"no", zve2Active()?"ZVE2":"ZVE1",
+                k.drive,k.mounted?"mounted":"EMPTY",(unsigned)k.cylinder,(unsigned)k.head,
+                k.transferring?"READING":"idle",k.writeMode?"+WRITE":"",k.headPos,k.trackLen);
+    };
+    // §9 `hist <cycles> [lo hi]`: run N cycles profiling BOTH CPUs' PCs, print the
+    // hotspots (with symbol/.prn annotation). One glance instead of reading a trace file.
+    auto runHist = [&](uint64_t cycles, int lo, int hi){
+        hist1.clear(); hist2.clear(); hist_lo=lo; hist_hi=hi; hist_on=true;
+        uint64_t start=m.cpuCycles(); m.clearStop(); hit=false;
+        while (m.cpuCycles()-start < cycles){ int n=m.run(50000); if(n==0) break; }
+        hist_on=false;
+        uint64_t ran=m.cpuCycles()-start;
+        fprintf(stderr,"hist over %llu cyc",(unsigned long long)ran);
+        if(lo>=0) fprintf(stderr," in [%04X..%04X]",(uint16_t)lo,(uint16_t)hi);
+        fprintf(stderr,":\n");
+        auto top=[&](std::map<uint16_t,uint32_t>& h, const char* who){
+            if(h.empty()){ fprintf(stderr,"  %s: (no samples)\n",who); return; }
+            std::vector<std::pair<uint32_t,uint16_t>> v; uint64_t tot=0;
+            for(auto&kv:h){ v.push_back({kv.second,kv.first}); tot+=kv.second; }
+            std::sort(v.rbegin(),v.rend());
+            fprintf(stderr,"  %s top (%llu instrs, %zu distinct PCs):\n",
+                    who,(unsigned long long)tot,h.size());
+            for(size_t i=0;i<v.size() && i<15;++i){ uint16_t a=v[i].second;
+                std::string s=symFor(a), p=prnFor(a);
+                fprintf(stderr,"    %6.2f%%  %6u  %04X%s%s%s%s%s\n",
+                    100.0*v[i].first/(double)tot, v[i].first, a,
+                    s.empty()?"":" <",s.c_str(),s.empty()?"":">",
+                    p.empty()?"":"  ; ",p.c_str()); }
+        };
+        top(hist1,"ZVE1"); top(hist2,"ZVE2");
     };
     // silent run kernel: runs until a stop is signalled or budget/cap reached.
     auto goSilent = [&](uint64_t budget)->uint64_t{
@@ -698,6 +927,18 @@ int main(int argc, char** argv){
         char w[48]; snprintf(w,sizeof w,"%ld step(s) back (%zu left)",n,rev_ring.size());
         applySnapshot(s,w);
     };
+    // §17 reverse-continue: jump back to the PREVIOUS breakpoint hit (from the dedicated
+    // bp-hit ring filled in onStop). The last entry is the CURRENT hit, so drop it and
+    // restore the one before. Reliable — no PC guessing against post-instruction snapshots.
+    auto reverseContinue = [&](){
+        if (bphit_ring.size() < 2){
+            fprintf(stderr,"  no earlier breakpoint hit in history (need ≥2 bp stops)\n"); return; }
+        bphit_ring.pop_back();                                 // discard the current hit
+        A5120Machine::MachineSnapshot s = bphit_ring.back();   // the previous one
+        char w[64]; snprintf(w,sizeof w,"reverse-continue → previous bp hit PC=%04X (%zu left)",
+                             s.zve1.PC,bphit_ring.size());
+        applySnapshot(s,w);
+    };
 
     // ═══ Phase 4: the REPL ══════════════════════════════════════════════════════
     // Commands come from the -x script first (queued in `pending`), then stdin.
@@ -743,8 +984,45 @@ int main(int argc, char** argv){
               while(is2>>w2) t.push_back(w2); if(t.empty()) continue; } }
         const std::string& cmd=t[0];
 
+        // §0 discoverability: when ZVE2 is the current bus master, a ZVE1-only command is
+        // almost always a mistake (the DMA/read runs on ZVE2). Nudge toward the 2-variants.
+        if (zve2Active()){
+            static const std::set<std::string> zve1only={"b","s","n","fin","gu","rj"};
+            if (zve1only.count(cmd))
+                fprintf(stderr,"  [hint] bus-master is ZVE2 now — '%s' acts on ZVE1; "
+                               "you may want b2/s2/rj2/r 2. ('where' shows both.)\n",cmd.c_str());
+        }
+
         // ── session ──
         if (cmd=="q"||cmd=="quit") break;
+        // §0.4 topic help: `help floppy` / `help dualcpu` — the two recipes that were
+        // the least discoverable (this session cost 8+ runs for want of them).
+        else if ((cmd=="help"||cmd=="h"||cmd=="?") && t.size()>1 &&
+                 (t[1]=="floppy"||t[1]=="disk"||t[1]=="k5122")){
+            fprintf(stderr,
+              "  FLOPPY / K5122 recipes\n"
+              "    where             both CPUs + K5122 head/xfer at a glance (--json for agents)\n"
+              "    dev               K5122 state: drive/cyl/head/READING/headPos ; dev ctc|pio|sio\n"
+              "    bxfer [start|end] break when a K5122 read-transfer begins / ends\n"
+              "    bbusrq [assert|release]  break on a /BUSRQ edge (DMA hand-off)\n"
+              "    wp EBFA           watch the SCPX track register ; wp EC00..EC0F changed  (template)\n"
+              "    iow 16 ; iow 14   watch the K5122 data / ctrl ports\n"
+              "    -s tools/scpx1526.sym   load SCPX BIOS labels (matcher/poll_wait/…)\n"
+              "  Read fails (BAD SECTOR)? head+sectors are on the card; the target-compare is CPU-side:\n"
+              "    b2 <matcher>  (NOT b — the matcher runs on ZVE2!) ; r 2 ; wp EC0C..EC0E changed\n");
+        }
+        else if ((cmd=="help"||cmd=="h"||cmd=="?") && t.size()>1 &&
+                 (t[1]=="dualcpu"||t[1]=="zve2"||t[1]=="dma")){
+            fprintf(stderr,
+              "  DUAL-CPU (ZVE1 main / ZVE2 DMA) recipes\n"
+              "    During a DMA the bus master is ZVE2 — ZVE1-only commands act on the wrong CPU:\n"
+              "      b2 <A>          breakpoint on ZVE2 (b = ZVE1 only!)\n"
+              "      s2 [N]          step ZVE2 ;  r 2 / rj2   ZVE2 registers (text / JSON)\n"
+              "      where           ZVE1 PC + ZVE2 PC + /BUSRQ + bus master in one line\n"
+              "      hist <cyc>      PC hotspots of BOTH CPUs (finds the spin loop instantly)\n"
+              "    bbusrq / bxfer    stop exactly at the DMA hand-off / read-transfer edge\n"
+              "    A ZVE1-only command while ZVE2 is bus master prints a [hint].\n");
+        }
         else if (cmd=="help"||cmd=="h"||cmd=="?"){
             fprintf(stderr,
               "  RUN     g/c [N]   run to breakpoint (or N ZVE1-cycles)\n"
@@ -753,11 +1031,13 @@ int main(int argc, char** argv){
               "          n [N]     step OVER N ZVE1 instrs (skip CALL/blockrepeat)\n"
               "          fin       step OUT (run until SP rises above current frame)\n"
               "  REVERSE rs [N]    reverse-step: undo last N forward commands (snapshot ring)\n"
-              "          snap <name> | snap list ; restore <name>   named full snapshots\n"
+              "          rc        reverse-continue: jump back to the previous breakpoint hit\n"
+              "          snap <name> | snap list | snap diff <a> <b> ; restore <name>   full snapshots\n"
               "  BREAK   b <A> [if <cond>] | b2 <A> ...   bp on ZVE1 / ZVE2\n"
               "          tb <A>    temporary (one-shot) bp ; bd/bd2 <A> delete ; bl list\n"
               "          be/bdis <A> (be2/bdis2) enable/disable ; bi/bi2 <A> <N> ignore N hits\n"
               "          bint | bnmi | breti [on|off]   break on interrupt / NMI / RETI (ZVE1)\n"
+              "          bbusrq | bxfer [read|write] [assert|release|off] [if <cond>]   /BUSRQ / K5122-xfer edge\n"
               "          cond: REG/[addr]/[addr]w/(rr)  OP  value   OP: == != < > <= >=\n"
               "  WATCH   wp/wpr/wb <A|A..B> [==v|!=v|changed]   mem watch (range+cond):\n"
               "                          print-write / print-read / break-write\n"
@@ -765,12 +1045,16 @@ int main(int argc, char** argv){
               "          iow/iob <P>     io port: print / break ; iod <P> wl-io: iol\n"
               "  LOG     logpoint <A> [expr..]  print + CONTINUE (dprintf) ; lpd <A> ; lpl\n"
               "          trace <file> [lo hi]   log every executed instr to file ; trace off\n"
-              "  INSPECT r [2]     registers (ZVE1, +ZVE2) ; rj registers as JSON ; bt [N] backtrace\n"
+              "          itrace <file>          log every accepted INT/NMI (cycle, int@PC, ISR, SP) ; itrace off\n"
+              "  INSPECT r [2]     registers (ZVE1, +ZVE2) ; rj / rj2 registers as JSON (ZVE1/ZVE2)\n"
+              "          where/w [--json]   BOTH CPUs + /BUSRQ + K5122 head/xfer at a glance\n"
+              "          hist <cyc> [lo hi] PC hotspots of both CPUs over a cycle window ; bt [N] backtrace\n"
               "          d <A> [N] hexdump ; u [A] [N] disasm ; e <A> <b..> poke\n"
               "          x/<N><fmt><sz> <A>  examine (fmt x/d/u/c/t/o/a/i/s, sz b/w); x continues\n"
               "          list/l [A] [N]  .prn source lines around A (labels load as symbols)\n"
-              "          set [2] <reg> <v>   edit register ; vars   named RAM vars\n"
+              "          set [2] <reg> <v>   edit register ; vars [-f <f>|add <n> <A> [w]|clear]  RAM dashboard\n"
               "          dev [ctc|pio|sio|sio2]   chip state (default K5122); CTC/PIO/SIO + IUS/IEI\n"
+              "          disk verify [B]   Sektor-/CRC-Health aller Spuren des Images\n"
               "          disp <expr> | undisp <n> | disp   show expr at every stop\n"
               "  MEM     load <f> <A>   read binary into RAM ; save <f> <A> <N> dump RAM\n"
               "          savestate <f> | loadstate <f>   full machine state (boot once, resume)\n"
@@ -795,11 +1079,17 @@ int main(int argc, char** argv){
         else if (cmd=="fin"){ pushHistory(); fin_sp=m.cpuSP(); fin_active=true; go(0); }
         // ══ REVERSE: reverse-step + named snapshots ══
         else if (cmd=="rs"||cmd=="bs") reverseStep(t.size()>1?parseNum(t[1]):1);
+        else if (cmd=="rc") reverseContinue();   // §17 reverse-continue to previous bp hit
         else if (cmd=="snap"){
             if (t.size()>=2 && t[1]=="list"){
                 if(named_snaps.empty()) fprintf(stderr,"  (no named snapshots)\n");
                 for(auto&kv:named_snaps) fprintf(stderr,"  %-16s PC=%04X cyc=%llu\n",
                         kv.first.c_str(),kv.second.zve1.PC,(unsigned long long)kv.second.zve1.cycles); }
+            else if (t.size()>=4 && t[1]=="diff"){   // §14 snap diff <a> <b>
+                auto ia=named_snaps.find(t[2]), ib=named_snaps.find(t[3]);
+                if(ia==named_snaps.end()||ib==named_snaps.end())
+                    fprintf(stderr,"  snapshot '%s' oder '%s' fehlt (snap list)\n",t[2].c_str(),t[3].c_str());
+                else snapDiff(t[2],t[3],ia->second,ib->second); }
             else if (t.size()>=2){ m.captureState(named_snaps[t[1]]);
                 fprintf(stderr,"  snapshot '%s' saved (PC=%04X)\n",t[1].c_str(),m.cpuPC()); }
             else fprintf(stderr,"  snap <name> | snap list   (restore with: restore <name>)\n"); }
@@ -842,8 +1132,10 @@ int main(int argc, char** argv){
                         kv.second.ignore>0?(" ignore="+std::to_string(kv.second.ignore)).c_str():"",
                         kv.second.cond.empty()?"":(" if "+kv.second.cond).c_str()); } };
             show(bp1,"ZVE1"); show(bp2,"ZVE2");
-            if(brk_int||brk_nmi||brk_reti) fprintf(stderr,"  events:%s%s%s\n",
-                brk_int?" interrupt":"",brk_nmi?" nmi":"",brk_reti?" reti":""); }
+            if(brk_int||brk_nmi||brk_reti||brk_busrq||brk_xfer||brk_wxfer)
+                fprintf(stderr,"  events:%s%s%s%s%s%s\n",
+                brk_int?" interrupt":"",brk_nmi?" nmi":"",brk_reti?" reti":"",
+                brk_busrq?" busrq":"",brk_xfer?" read-xfer":"",brk_wxfer?" write-xfer":""); }
         // event breakpoints: break on interrupt / NMI / RETI (toggle; "off" disarms)
         else if (cmd=="bint"||cmd=="bnmi"||cmd=="breti"){
             bool on = !(t.size()>1 && t[1]=="off");
@@ -852,6 +1144,27 @@ int main(int argc, char** argv){
             flag = (t.size()>1)? on : !flag;   // bare command toggles
             fprintf(stderr,"  break-on-%s %s\n", cmd=="bint"?"interrupt":cmd=="bnmi"?"nmi":"reti",
                     flag?"ON":"off"); }
+        // §5/§15 floppy/bus event breakpoints: break on /BUSRQ edge (bbusrq) or K5122
+        // transfer edge (bxfer). Args (in any order):
+        //   [read|write]  (bxfer: read=default)   [assert|start | release|end | both | off]
+        //   [if <cond…>]  (only stop when the expression holds at the edge)
+        else if (cmd=="bbusrq"||cmd=="bxfer"){
+            bool write=false; int mode=3; std::string cond;
+            for (size_t i=1;i<t.size();++i){ const std::string& a=t[i];
+                if (a=="if"){ for(size_t j=i+1;j<t.size();++j){ if(j>i+1)cond+=" "; cond+=t[j]; } break; }
+                else if (a=="write") write=true;
+                else if (a=="read")  write=false;
+                else if (a=="off") mode=0;
+                else if (a=="assert"||a=="start"||a=="on") mode=1;
+                else if (a=="release"||a=="end") mode=2;
+                else if (a=="both") mode=3; }
+            fev_have_prev=false;   // re-baseline on next instruction
+            const char* ms = mode==0?"off":mode==1?"assert/start":mode==2?"release/end":"both edges";
+            const char* what;
+            if (cmd=="bbusrq"){ brk_busrq=mode; ev_busrq_cond=cond; what="/BUSRQ"; }
+            else if (write)   { brk_wxfer=mode; ev_wxfer_cond=cond; what="K5122-write-xfer"; }
+            else              { brk_xfer =mode; ev_xfer_cond =cond; what="K5122-read-xfer"; }
+            fprintf(stderr,"  break-on-%s %s%s%s\n", what, ms, cond.empty()?"":" if ", cond.c_str()); }
         // ══ LOG: run-and-log without stopping (logpoints + trace-to-file) ══
         // logpoints (dprintf-style: print + continue, never stop) on ZVE1
         else if ((cmd=="logpoint"||cmd=="lp") && t.size()>1){
@@ -881,6 +1194,17 @@ int main(int argc, char** argv){
                     fprintf(stderr,"  trace → %s%s (every executed instr; cap %ld lines, 'trace off' to stop)\n",
                             t[1].c_str(), trace_lo>=0?(" in ["+std::to_string(trace_lo)+","+std::to_string(trace_hi)+"]").c_str():"", trace_cap); } }
             else fprintf(stderr,"  trace <file> [lo hi] | trace off\n"); }
+        // §11 interrupt trace to file (non-stopping)
+        else if (cmd=="itrace"){
+            if (t.size()>=2 && t[1]=="off"){
+                if(itrace_fp){ fclose(itrace_fp); fprintf(stderr,"  itrace off (%ld INT/NMI logged)\n",itrace_n); }
+                else fprintf(stderr,"  itrace was not on\n");
+                itrace_fp=nullptr; itrace_n=0; }
+            else if (t.size()>=2){ if(itrace_fp) fclose(itrace_fp);
+                itrace_fp=fopen(t[1].c_str(),"w"); itrace_n=0;
+                if(!itrace_fp) fprintf(stderr,"  cannot open %s for writing\n",t[1].c_str());
+                else fprintf(stderr,"  itrace → %s (each accepted INT/NMI: cycle, int@PC, ISR, SP)\n",t[1].c_str()); }
+            else fprintf(stderr,"  itrace <file> | itrace off\n"); }
         // ══ MISC: relative-cycle marker ══
         else if (cmd=="mark"){ if(t.size()>1){ rel_arm_pc=(int)(uint16_t)parseNum(t[1]); fprintf(stderr,"  mark armed at PC=%04X\n",rel_arm_pc);}
             else { rel_origin=m.cpuCycles(); rel_armed=true; fprintf(stderr,"  mark: origin=%llu (now)\n",(unsigned long long)rel_origin);} }
@@ -897,6 +1221,21 @@ int main(int argc, char** argv){
                 (unsigned long long)m.cpuCycles(), m.isRomEnabled()?"true":"false",
                 m.isBUSRQ()?"true":"false",
                 m.isZVE2InReset()?"reset":(m.isZVE2Waiting()?"wait":"run")); }
+        // ZVE2 registers as one JSON line (§0.3) — the DMA CPU's view for scripted analysis.
+        else if (cmd=="rj2"){ const Z80& z=m.zve2Debug();
+            fprintf(stderr,"\n{\"cpu\":\"zve2\",\"pc\":\"0x%04X\",\"sp\":\"0x%04X\",\"af\":\"0x%04X\","
+                "\"bc\":\"0x%04X\",\"de\":\"0x%04X\",\"hl\":\"0x%04X\",\"ix\":\"0x%04X\",\"iy\":\"0x%04X\","
+                "\"af_\":\"0x%04X\",\"bc_\":\"0x%04X\",\"de_\":\"0x%04X\",\"hl_\":\"0x%04X\","
+                "\"i\":\"0x%02X\",\"r\":\"0x%02X\",\"iff1\":%s,\"active\":%s}\n",
+                z.PC,z.SP,z.AF,z.BC,z.DE,z.HL,z.IX,z.IY,z.AF_,z.BC_,z.DE_,z.HL_,z.I,z.R,
+                z.IFF1?"true":"false", zve2Active()?"true":"false"); }
+        // §4 dual-CPU status line: where do BOTH CPUs stand + the floppy? (`where --json` for agents)
+        else if (cmd=="where"||cmd=="w"){ whereShow(t.size()>1 && t[1]=="--json"); }
+        // §9 PC-hotspot profiler: hist <cycles> [lo hi]
+        else if (cmd=="hist" && t.size()>1){
+            uint64_t cyc=(uint64_t)parseNum(t[1]);
+            int lo=-1,hi=-1; if(t.size()>3){ lo=(int)(uint16_t)parseNum(t[2]); hi=(int)(uint16_t)parseNum(t[3]); }
+            pushHistory(); runHist(cyc,lo,hi); }
         else if (cmd=="bt"){
             if (t.size()>1 && t[1]=="scan"){ bool prev=bt_use_history; bt_use_history=false;
                 backtrace(t.size()>2?(int)parseNum(t[2]):8); bt_use_history=prev; }
@@ -1007,7 +1346,26 @@ int main(int argc, char** argv){
         else if (cmd=="keys" && t.size()>1){ pushHistory(); std::string s=line.substr(line.find("keys")+5); keys(s); }
         else if (cmd=="screen") screen();
         else if (cmd=="vars"){ auto wd=[&](uint16_t a){return (uint16_t)(m.memReadDebug(a)|(m.memReadDebug(a+1)<<8));};
-            fprintf(stderr,"  [03F8]done=%02X  DPB: [D1B2]=%04X [D1B4]=%04X [D1B8]=%04X [D1BE]=%04X [D1CD]=%04X\n",
+            if (t.size()>=3 && (t[1]=="-f"||t[1]=="load")){   // §16 vars -f <file>: name addr [w]
+                std::ifstream f(t[2]);
+                if(!f){ fprintf(stderr,"  cannot open %s\n",t[2].c_str()); }
+                else { std::string l; int n=0;
+                    while(std::getline(f,l)){ std::istringstream is(l); std::string nm,ad,wf;
+                        if(!(is>>nm)||nm[0]=='#') continue; if(!(is>>ad)) continue;
+                        bool word=(bool)(is>>wf) && (wf=="w"||wf=="W");
+                        var_watch.emplace_back(nm,(uint16_t)resolveAddr(ad),word); ++n; }
+                    fprintf(stderr,"  loaded %d var(s) from %s\n",n,t[2].c_str()); } }
+            else if (t.size()>=4 && t[1]=="add"){
+                bool word = t.size()>=5 && (t[4]=="w"||t[4]=="W");
+                uint16_t a=(uint16_t)resolveAddr(t[3]); var_watch.emplace_back(t[2],a,word);
+                fprintf(stderr,"  var %s = [%04X]%s\n",t[2].c_str(),a,word?" (word)":""); }
+            else if (t.size()>=2 && t[1]=="clear"){ var_watch.clear(); fprintf(stderr,"  vars cleared\n"); }
+            else if (!var_watch.empty()){
+                for(auto& v: var_watch){ uint16_t a=std::get<1>(v);
+                    if(std::get<2>(v)) fprintf(stderr,"  %-14s [%04X] = %04X\n",std::get<0>(v).c_str(),a,wd(a));
+                    else               fprintf(stderr,"  %-14s [%04X] = %02X\n",std::get<0>(v).c_str(),a,m.memReadDebug(a)); } }
+            else fprintf(stderr,"  [03F8]done=%02X  DPB: [D1B2]=%04X [D1B4]=%04X [D1B8]=%04X [D1BE]=%04X [D1CD]=%04X\n"
+                                "  (vars -f <datei> | vars add <name> <addr> [w] | vars clear)\n",
                     m.memReadDebug(0x03F8),wd(0xD1B2),wd(0xD1B4),wd(0xD1B8),wd(0xD1BE),wd(0xD1CD)); }
         else if (cmd=="dev"){
             std::string w = t.size()>1? t[1] : "k5122";
@@ -1035,6 +1393,11 @@ int main(int argc, char** argv){
                         k.transferring?"READING":"idle", k.writeMode?"+WRITE":"",
                         k.headPos, k.trackLen, k.sectorSize, k.busrq?"yes":"no");
                 fprintf(stderr,"  (dev ctc | dev pio | dev sio | dev sio2 for the other chips)\n"); } }
+        else if (cmd=="disk"){   // §13 disk verify [B]: Sektor-/CRC-Health aller Spuren
+            if (t.size()>=2 && t[1]=="verify"){
+                bool wantB = t.size()>=3 && (t[2]=="B"||t[2]=="b"||t[2]=="1");
+                diskVerify(wantB?diskB:disk, wantB?"B:":"A:");
+            } else fprintf(stderr,"  disk verify [B]   Sektor-/CRC-Health aller Spuren des Originals\n"); }
         else if (cmd=="reset"){ m.reset(); fprintf(stderr,"  reset\n"); }
         // ── MISC: command aliases + sourcing a script mid-session ──
         else if (cmd=="alias"){
@@ -1052,5 +1415,7 @@ int main(int argc, char** argv){
         else fprintf(stderr,"  ? unknown command '%s' (try help)\n",cmd.c_str());
     }
     if (trace_fp){ fclose(trace_fp); fprintf(stderr,"trace closed (%ld line(s))\n",trace_lines); }
+    if (itrace_fp){ fclose(itrace_fp); fprintf(stderr,"itrace closed (%ld INT/NMI)\n",itrace_n); }
+    for (auto& t : cow_temps){ std::error_code ec; std::filesystem::remove(t,ec); }   // drop COW temps
     return mount_failed ? 1 : 0;   // non-zero exit if a requested disk failed to mount
 }

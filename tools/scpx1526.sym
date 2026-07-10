@@ -1,0 +1,67 @@
+# SCPX 1526 V1.7 — BIOS-Symbole im RAM (Branch scpx_boot)
+#
+# Adressen aus doc/analyse_scpx_com_load.md §7 ("Schlüssel-Adressen") + §9.
+# Laden:  k1520dbg -s tools/scpx1526.sym disks/scpx_boot.hfe
+# Danach bekommen Disasm, Trace, Backtrace, `where`/`hist` und PC-Histogramme die Namen
+# automatisch. (boot_trace hat KEINE Symboldatei-Option — dort `-l <listing.prn>` für .prn.)
+# Companion: `-l doc/EPROMS/scpx_readpath.prn` = kommentiertes Listing des Lesepfads
+# (Matcher E9E6-EA1A mit Feld-/Fehler-Semantik), erzeugt von tools/gen_scpx_readpath_prn.py.
+#
+# Format:  <ADDR-hex>  <name>   (auch "name addr" und "name = addr" akzeptiert)
+
+# ── CCP / Prompt ─────────────────────────────────────────────────────────────
+E079  conin_wait        # CONIN-Wartepunkt (interaktiver Prompt bereit)
+E07C  conin_wait2       # zweiter CONIN-Wartepunkt
+
+# ── Laufzeit-Read-Kette ZVE1 (§3, §7) ────────────────────────────────────────
+D853  bios_read_1       # BIOS-Read-Kette D853→D718→D605→D5D4→DE24→E40D
+D718  bios_read_2
+D605  bios_read_3
+D5D4  bios_read_4
+DE24  bios_read_5
+E40D  bios_read_6
+DE03  warmstart_vec     # Warmstart-Vektor (JP DE03), verfrüht nach [0000] restauriert (Schicht 3)
+
+# ── Read-Setup / Poll-Handshake ZVE1 (§7) ────────────────────────────────────
+E88C  read_setup        # Read-Setup-Block E88C–E8C0
+E858  poke_0001         # poist [0001] (ZVE2-Koroutine)
+E8A0  restore_0001      # restauriert [0001]
+E8B5  poll_wait         # ZVE1-Poll-Wait auf [EC0B]  (generisch, NICHT read-eindeutig!)
+E8B8  poll_wait2
+E8C1  read_setup_end
+
+# ── ZVE2-Lese-Koroutine + Matcher (an [0x0000] gepoist, §7/§9) ────────────────
+E9C8  read_coro         # ZVE2-Lese-Koroutine (JP E9C8), Matcher-Setup LD SP,EC0D
+E9D1  matcher_setup     # POP DE / EXX (D'/E' = [EC0D/0E])
+E9DD  ld_de_fea1        # LD DE,FEA1H  (Soll-Adressmarke FE + Sync A1)
+E9E6  matcher           # Matcher-Schleife (IDAM-Marken-Suche) E9E6–EA1A
+E9FB  matcher_loop      # JR NZ E9E6  (Marke nicht gefunden → weiter suchen)
+E9FD  match_cyl         # Vergleich Zylinder
+EA02  match_head        # Vergleich Kopf
+EA07  match_sec         # Vergleich Sektor
+EA0C  match_size        # Vergleich Größe
+EA12  match_crc_hi      # IDAM-CRC-Vergleich (hi)
+EA15  match_fail        # → Fail (Marke passt nicht)
+EA17  match_crc_lo      # IDAM-CRC-Vergleich (lo)
+EA1A  matcher_end
+EA9A  data_field_read   # DATA-Feld-Lesung
+
+# ── Seek / Positionierung (§7) ───────────────────────────────────────────────
+E6E2  seek              # Seek-Routine E6E2–E742
+E701  to_reset          # /TO-Reset (Timeout)
+E706  seek_write_track  # schreibt Spurregister [EBFA]
+
+# ── Fehlerbehandlung (§7) ────────────────────────────────────────────────────
+D098  bad_sector        # BAD-SECTOR-Handler
+D0BA  msg_table_1       # Meldungstabelle
+D0CA  msg_table_2
+
+# ── RAM-Variablen / Datenblöcke (§7) ─────────────────────────────────────────
+# (Als Symbole für wp/x/disp; keine Instruktionsadressen.)
+EC00  template_blk      # Template-/Mini-Stack-Block EC00–EC0F: FE cyl head sec size CRChi CRClo
+EC01  tpl_cyl
+EC02  tpl_head
+EC03  tpl_sec
+EC0B  handshake_flag    # ZVE1↔ZVE2-Handshake-Zelle (Poll-Wait E8B5 wartet hierauf)
+EC0D  ministack_sp      # Mini-Stack-SP (LD SP,EC0D) — Korruptionsziel Schicht 2
+EBFA  track_reg         # Spurregister (per Laufwerk, aus IX+2/+3)

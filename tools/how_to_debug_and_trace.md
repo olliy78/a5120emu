@@ -9,12 +9,15 @@ Alle Beispiele laufen über `tools/dev.sh` oder direkt gegen ein gebautes Binary
 `build/`. Pfad-Platzhalter: `DISK` = ein A5120-Image (`.img`/`.hfe`), `BIOS` =
 `~/projects/CPA_Workbench/build/bios.prn` (kommentiertes BIOS-Listing).
 
-> ⚠️ **Schreib-Korruption vermeiden.** Beide Tools mounten die Disk **nicht**
-> schreibgeschützt — ein Lauf kann das Image verändern/zerstören. Arbeite gegen eine
-> **Kopie**, nie gegen ein committetes Fixture:
-> ```sh
-> D=$(mktemp --suffix=.img); cp DISK $D;  boot_trace … $D;  rm -f $D
-> ```
+> ✅ **Schreib-Korruption: seit 2026-07-10 standardmäßig entschärft.** Beide Tools mounten
+> jetzt **Copy-on-Write** (COW) als Default: die Disk wird in eine Temp-Datei kopiert und
+> nur diese gemountet — ein committetes Fixture kann **nicht** mehr korrumpiert werden. Das
+> `mktemp; cp DISK $D; … $D; rm $D`-Ritual entfällt: einfach `boot_trace … DISK` bzw.
+> `k1520dbg DISK`.
+> * `--rw` mountet das **Original** schreibend (Writes bleiben erhalten — für Format-/
+>   Schreibtests, in denen die Änderung persistieren *soll*).
+> * `--read-only` (`--ro`) mountet das Original schreibgeschützt (Laufwerk meldet /WP).
+> * `--cow` erzwingt COW explizit (ist ohnehin Default).
 
 ---
 
@@ -31,6 +34,66 @@ Alle Beispiele laufen über `tools/dev.sh` oder direkt gegen ein gebautes Binary
 | „Interrupt-/Uhr-Problem, Chip-Zustand." | **k1520dbg** `bint`/`breti` + `dev ctc/pio/sio` |
 
 Faustregel: **boot_trace lokalisiert die grobe Phase → k1520dbg seziert sie.**
+
+---
+
+## 0b. Dual-CPU-/Floppy-Read-Rezept (Cheat-Sheet)
+
+> **Der eine Abschnitt, der die meiste Zeit spart.** Wenn ein BIOS-Read hängt oder scheitert
+> (`BAD SECTOR`, Boot-Hänger), ist der Klassiker: der Lese-Matcher läuft auf **ZVE2**, aber man
+> greift versehentlich zu den **ZVE1**-Kommandos. `k1520dbg` warnt inzwischen aktiv
+> (`[hint] bus-master is ZVE2 …`), aber merke dir die 2-Varianten:
+
+| Willst du … | ZVE1 (Haupt-CPU) | ZVE2 (DMA/Read) |
+|---|---|---|
+| Breakpoint | `b <A>` | **`b2 <A>`** |
+| Single-Step | `s` / `n` | **`s2`** |
+| Register | `r` · `rj` | **`r 2`** · **`rj2`** |
+| „wo stehen beide?" | — | **`where`** (`where --json`) |
+| Hotspot beider CPUs | — | **`hist <cyc> [lo hi]`** |
+| zum vorigen BP zurück | `rc` | — |
+
+**Weitere Werkzeuge für genau diese Bug-Klasse (Runde 2):**
+- **`disk verify [B]`** — „ist das Medium gut?" in einem Befehl: alle Spuren, Sektor-IDs + CRC-Health.
+- **`itrace <file>`** (k1520dbg) / **`boot_trace --itrace <file>`** — Timeline jeder angenommenen
+  INT/NMI (Zyklus, unterbrochene PC, ISR, SP). Für den SCPX-`.COM`-Bug zentral (CTC-INT korrumpiert
+  den EC0D-Mini-Stack) — gegen ein Matcher-Fenster (`-w`/`--log-cycle`) legen.
+- **`snap a` … `snap b` … `snap diff a b`** — welche Register/RAM-Zellen sich zwischen zwei Stopps
+  änderten (nagelt „ZVE1 lief voraus und überschrieb [0000]" fest).
+- **`vars -f tools/scpx.vars`** — Handshake-Dashboard (`[EC0B]`,`[0000]`,`EBFA`,Kopf) pro OS laden.
+- **`-l doc/EPROMS/scpx_readpath.prn`** — kommentiertes Listing des SCPX-Lesepfads (Matcher
+  `E9E6–EA1A` mit Feld- und Fehler-Semantik) → Disasm/Trace zeigen die Original-Bedeutung inline.
+- **`boot_trace --fold`** — kollabiert auch registerändernde Hot-Loops (Matcher/Delay) zu `↻ loop ×N`.
+
+**Rezept „ein BIOS-Read hängt/scheitert" (früher 8+ Läufe, jetzt 1–2):**
+
+```sh
+# einmal booten bis zum Prompt, dann interaktiv (COW-Default → Fixture sicher)
+printf 'b 0xE079\ng\nbd 0xE079\nwhere\nq\n' | k1520dbg -s tools/scpx1526.sym DISK
+
+# den Read anhalten, sobald er startet, und beide CPUs + Kopf ansehen:
+#   bxfer            → hält bei Start/Ende eines K5122-Lesetransfers
+#   bbusrq           → hält an der /BUSRQ-Übergabe (DMA-Hand-off)
+#   where            → ZVE1-PC + ZVE2-PC + /BUSRQ + K5122 Kopf/Transfer in EINER Zeile
+#   dev              → K5122: Laufwerk/cyl/head/READING/headPos
+#   b2 <matcher>     → Breakpoint auf den ZVE2-Matcher (NICHT b — der läuft auf ZVE2!)
+#   r 2 / rj2        → ZVE2-Register (der Matcher vergleicht DE gegen die Adressmarke)
+#   wp EC0C..EC0E changed   → Range-Watch auf den Mini-Stack/CRC-Template
+#   hist 400000      → falls es endlos loopt: sofort sichtbar, in welcher Schleife
+```
+
+**„Liegen die richtigen Sektoren unter dem Kopf?"** — die K5122-Karte protokolliert das jetzt
+selbst (kein Handdekodieren des Matchers mehr). Im **Trace-Build** (`build_trace/`, LOG_LEVEL=5):
+
+```sh
+boot_trace --log-level info  … DISK   # Einzeiler je Read: ">>> READ D0 C=4 H=1 … 26 Sekt, 0 CRC-Fehler"
+boot_trace --log-level debug … DISK   #   + je Adressmarke: "RD-ID[i] cyl= head= sec= size= id_crc=OK data_crc=OK"
+```
+Zeigt in **einem** Lauf: Kopf richtig (C/H) + alle Sektor-IDs + CRC gültig → wenn ja und der Read
+scheitert trotzdem, liegt der Fehler **CPU-seitig** (ZVE2-Matcher/Handshake), nicht am Medium.
+(Das Soll-Ist, also *welchen* Sektor das OS sucht, kennt nur ZVE2 → `b2 <matcher>`/`r 2`.)
+
+`k1520dbg`: **`help floppy`** und **`help dualcpu`** fassen genau diese Rezepte im Tool zusammen.
 
 ---
 
@@ -316,7 +379,8 @@ Bausteine für den Agenten:
 
 ## 11. Tipps & Fallstricke
 
-* **Disk-Korruption** (s. o.): immer gegen eine Temp-Kopie laufen.
+* **Disk-Korruption**: standardmäßig durch den COW-Default entschärft (s. o.). Nur mit
+  `--rw` schreibt ein Lauf ins Original — dann bewusst eine Temp-Kopie nutzen.
 * **Log-Gate auf Spin-Loop** → Multi-GB-Log: `--log-pc` immer mit engem `--log-cycle`
   koppeln, oder nur ein Zyklenfenster nutzen.
 * **Low-RAM `0x0000–0x07FF`** ist die ZVE1/ZVE2-Boot-/DMA-Region — Pokes dorthin werden

@@ -30,6 +30,7 @@
 #include "tools/z80dis_min.h"
 #include "tools/coverage_diff.h"
 #include "tools/until_cond.h"
+#include "tools/event_bp.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -37,6 +38,10 @@
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
+#include <deque>
+#include <filesystem>
+#include <system_error>
+#include <unistd.h>   // getpid
 
 // ─── Milestone detection ──────────────────────────────────────────────────────
 
@@ -244,11 +249,20 @@ int main(int argc, char** argv) {
     const char* coverage_path = nullptr;
     const char* csv_path    = nullptr;   // --csv <file>: per-instruction trace (machine-readable)
     FILE*     csv_fp        = nullptr;
+    const char* itrace_path = nullptr;   // --itrace <file>: log every accepted INT/NMI (§11)
+    FILE*     itrace_fp     = nullptr;
+    long      itrace_n      = 0;
+    uint16_t  it_prev_sp    = 0; bool it_prev_iff1 = false, it_have_prev = false;
     long      csv_rows = 0, csv_cap = 5000000; bool csv_capped = false;
     const char* save_state_path = nullptr;   // --save-state <file>: persist state at run end
     const char* load_state_path = nullptr;   // --load-state <file>: resume from saved state
     bool      json_summary  = false;         // --json: one machine-readable summary line at the end
     bool      quiet         = false;          // --quiet: suppress the human narrative/report
+    bool      fold_on       = false;          // --fold: collapse identical consecutive -w/-z lines
+    // Disk-mount mode (§6): COW default → the disk is copied to a temp file and that copy
+    // is mounted, so a committed fixture is never modified (no more `mktemp; cp` ritual).
+    // --rw mounts the original writable; --read-only/--ro mounts it write-protected.
+    enum { MOUNT_COW=0, MOUNT_RW=1, MOUNT_RO=2 } mount_mode = MOUNT_COW;
 
     // Runtime log control (new gated logging). Default base = ERROR so a plain
     // run is quiet and fast; raise globally with --log-level or, far better,
@@ -302,9 +316,14 @@ int main(int argc, char** argv) {
             if (i+1 < argc && argv[i+1][0] != '-') coverage_path = argv[++i];
         }
         else if (!strcmp(argv[i], "--csv") && i+1 < argc) { csv_path = argv[++i]; }
+        else if (!strcmp(argv[i], "--itrace") && i+1 < argc) { itrace_path = argv[++i]; }
         else if (!strcmp(argv[i], "--save-state") && i+1 < argc) { save_state_path = argv[++i]; }
         else if (!strcmp(argv[i], "--load-state") && i+1 < argc) { load_state_path = argv[++i]; }
         else if (!strcmp(argv[i], "--json")) { json_summary = true; }
+        else if (!strcmp(argv[i], "--fold")) { fold_on = true; }
+        else if (!strcmp(argv[i], "--rw")) { mount_mode = MOUNT_RW; }
+        else if (!strcmp(argv[i], "--cow")) { mount_mode = MOUNT_COW; }
+        else if (!strcmp(argv[i], "--read-only")||!strcmp(argv[i], "--ro")) { mount_mode = MOUNT_RO; }
         else if (!strcmp(argv[i], "--quiet")) { quiet = true; }
         else if (!strcmp(argv[i], "--watch") && i+1 < argc) {   // --watch 0x0000,0x03F8,...
             char* tok = strtok(argv[++i], ",");
@@ -375,12 +394,70 @@ int main(int argc, char** argv) {
         return std::string(d.text);
     };
 
+    // ── -w/-z window-trace emitter with optional loop-collapse (--fold, §3/§12) ────
+    // Without --fold this reproduces the old per-line output. With --fold the emitter
+    // detects a repeating PC-CYCLE online (period p ≤ 32) and collapses further passes to
+    // "↻ loop ×N". Detection is on the PC stream ONLY (registers ignored) — so it crushes
+    // not just register-unchanged idle spins but also register-VARYING hot loops like the
+    // ZVE2 IDAM matcher or a delay counter (the 12 000-line case §3 couldn't handle). The
+    // loop body is printed on its first two passes (real registers), then folded. The tag
+    // is part of the signature, so -w (ZVE1) and -z (ZVE2) lines never merge.
+    const int FOLD_MAXP = 32;
+    std::deque<uint32_t> fold_recent;     // recent line signatures (cap 2*MAXP) for detection
+    std::vector<uint32_t> fold_loop;      // current detected loop body (signatures)
+    int  fold_pos = 0;                    // expected index within fold_loop
+    long fold_iters = 0;                  // extra full passes collapsed (beyond the 2 printed)
+    auto flushFold = [&]{
+        if (!fold_loop.empty() && fold_iters > 0)
+            fprintf(stderr, "    ↻ loop @%04X period=%zu ×%ld more pass(es)\n",
+                    (uint16_t)(fold_loop.front() & 0xFFFF), fold_loop.size(), fold_iters);
+        fold_loop.clear(); fold_pos = 0; fold_iters = 0;
+    };
+    auto emitWin = [&](char tag, const Z80& z){
+        char payload[176];
+        snprintf(payload,sizeof payload,"Z%c PC=%04X %-16s AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X%s",
+                 tag=='w'?'1':'2', z.PC, disz(z.PC).c_str(), z.AF,z.BC,z.DE,z.HL,z.SP, prnTail(z.PC).c_str());
+        int& cnt = (tag=='w')? win_count : win2_count;
+        auto printLine = [&]{ fprintf(stderr,"  [#%d %c%4d] %s\n", trace_seq++, tag, cnt, payload); ++cnt; };
+        if (!fold_on){ printLine(); return; }
+        uint32_t sig = ((tag=='w'?0u:1u) << 16) | z.PC;
+        if (!fold_loop.empty()){
+            if (sig == fold_loop[fold_pos]){                 // loop continues → suppress
+                if (++fold_pos == (int)fold_loop.size()){ fold_pos = 0; ++fold_iters; }
+                return;
+            }
+            flushFold();                                     // loop broke → report, then print this line
+        }
+        printLine();
+        fold_recent.push_back(sig);
+        while ((int)fold_recent.size() > 2*FOLD_MAXP) fold_recent.pop_front();
+        int n = (int)fold_recent.size();
+        for (int p = 1; p <= FOLD_MAXP && 2*p <= n; ++p){    // smallest period whose last 2p sigs are AA
+            bool match = true;
+            for (int k = 0; k < p; ++k)
+                if (fold_recent[n-1-k] != fold_recent[n-1-p-k]){ match = false; break; }
+            if (match){                                      // two bodies already printed → fold the rest
+                fold_loop.assign(fold_recent.end()-p, fold_recent.end());
+                fold_pos = 0; fold_iters = 0; fold_recent.clear();
+                break;
+            }
+        }
+    };
+
     // --csv: one machine-readable row per executed instruction. Bounded by the -w/-z
     // PC window when set (else all, up to csv_cap); pair with --until to trace-to-here.
     if (csv_path) {
         csv_fp = fopen(csv_path, "w");
         if (!csv_fp) fprintf(stderr, "WARN: cannot write --csv '%s'\n", csv_path);
         else fprintf(csv_fp, "seq,cyc,cpu,pc,bytes,disasm,af,bc,de,hl,ix,iy,sp\n");
+    }
+    // --itrace: one line per accepted INT/NMI (cycle, interrupted PC, ISR, SP). The
+    // SCPX .COM bug is a CTC interrupt corrupting the EC0D mini-stack → this timeline
+    // (vs a matcher window) is exactly the diagnostic. Reuses eventbp::classify.
+    if (itrace_path) {
+        itrace_fp = fopen(itrace_path, "w");
+        if (!itrace_fp) fprintf(stderr, "WARN: cannot write --itrace '%s'\n", itrace_path);
+        else fprintf(itrace_fp, "seq,cyc,kind,int_pc,isr_pc,sp\n");
     }
     auto csvRow = [&](int cpu, const Z80& z) {
         if (!csv_fp) return;
@@ -428,6 +505,21 @@ int main(int argc, char** argv) {
         csvRow(1, z);   // --csv machine-readable per-instruction trace (ZVE1)
         pc_hist[z.PC]++;
         if (boot_reached) post_pc_hist[z.PC]++;
+
+        // --itrace: classify an accepted INT/NMI and log it (non-stopping). CSV row.
+        if (itrace_fp) {
+            eventbp::Prev pv{it_have_prev, it_prev_sp, it_prev_iff1};
+            eventbp::Event e = eventbp::classify(z.PC, z.SP, z.IFF1, pv, true, true, false, 0, 0);
+            if (e == eventbp::Event::Interrupt || e == eventbp::Event::NMI) {
+                uint16_t ret = (uint16_t)(machine.memReadDebug(z.SP) |
+                                          (machine.memReadDebug((uint16_t)(z.SP + 1)) << 8));
+                fprintf(itrace_fp, "%d,%d,%s,0x%04X,0x%04X,0x%04X\n",
+                        trace_seq++, cycles_done, e == eventbp::Event::NMI ? "NMI" : "INT",
+                        ret, z.PC, z.SP);
+                ++itrace_n;
+            }
+            it_prev_sp = z.SP; it_prev_iff1 = z.IFF1; it_have_prev = true;
+        }
 
         // --until: stop the run when the condition holds (checked per ZVE1 instr).
         if (until.kind != UntilCond::NONE && !until_hit) {
@@ -483,10 +575,7 @@ int main(int argc, char** argv) {
         // + registers + .prn annotation, so the live control flow reads directly.
         if (win_start >= 0 && boot_reached && z.PC >= win_start && z.PC <= win_end
             && win_count < win_cap) {
-            fprintf(stderr, "  [#%d w%4d] Z1 PC=%04X %-16s AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X%s\n",
-                    trace_seq++, win_count, z.PC, disz(z.PC).c_str(), z.AF, z.BC, z.DE, z.HL, z.SP,
-                    prnTail(z.PC).c_str());
-            ++win_count;
+            emitWin('w', z);
         }
     });
 
@@ -532,10 +621,7 @@ int main(int argc, char** argv) {
         // routine (e.g. the 3rd stage's 0x1F7D vs the WBOOT/halt) after a restart.
         if (win2_start >= 0 && boot_reached && z.PC >= win2_start && z.PC <= win2_end
             && win2_count < win_cap) {
-            fprintf(stderr, "  [#%d z%4d] Z2 PC=%04X %-16s AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X%s\n",
-                    trace_seq++, win2_count, z.PC, disz(z.PC).c_str(), z.AF, z.BC, z.DE, z.HL, z.SP,
-                    prnTail(z.PC).c_str());
-            ++win2_count;
+            emitWin('z', z);
         }
     });
 
@@ -572,16 +658,33 @@ int main(int argc, char** argv) {
     // ── Mount boot disk ───────────────────────────────────────────────────────
     // Try cpa780 first: boot ROM expects 128B sectors (size code 0x00 at [0x03F6])
     // --drive N mounts on drive N; lower drives stay empty (drive search starts at A:).
-    bool mounted = machine.mountDisk(mount_drive, disk_path, "cpa780", false);
+    // §6: default COW — copy the disk to a temp file (same extension → format detection
+    // unchanged) and mount that, so a committed fixture can never be corrupted.
+    std::string mount_path = disk_path;
+    std::string cow_temp;                          // non-empty → unlink at exit
+    bool wp = (mount_mode == MOUNT_RO);
+    if (mount_mode == MOUNT_COW) {
+        std::error_code ec;
+        std::filesystem::path src(disk_path);
+        std::filesystem::path tmp = std::filesystem::temp_directory_path() /
+            ("boot_trace_cow_"+std::to_string((long)getpid())+src.extension().string());
+        std::filesystem::copy_file(src, tmp, std::filesystem::copy_options::overwrite_existing, ec);
+        if (ec) fprintf(stderr, "WARN: COW copy of '%s' failed (%s) — mounting original writable\n",
+                        disk_path, ec.message().c_str());
+        else { mount_path = tmp.string(); cow_temp = mount_path;
+               if (!quiet) fprintf(stderr, "COW: '%s' → %s (writes discarded; --rw to persist)\n",
+                                   disk_path, mount_path.c_str()); }
+    }
+    bool mounted = machine.mountDisk(mount_drive, mount_path, "cpa780", wp);
     if (!mounted) {
-        mounted = machine.mountDisk(mount_drive, disk_path, "cpa800", false);
+        mounted = machine.mountDisk(mount_drive, mount_path, "cpa800", wp);
     }
     if (!mounted) {
         fprintf(stderr, "ERROR: Could not mount disk '%s'\n", disk_path);
         fprintf(stderr, "Last error: %s\n", machine.lastError().c_str());
         fprintf(stderr, "Continuing without disk...\n\n");
     } else if (!quiet) {
-        fprintf(stderr, "Disk mounted OK (drive %d)\n\n", mount_drive);
+        fprintf(stderr, "Disk mounted OK (drive %d)%s\n\n", mount_drive, wp?" [read-only]":"");
     }
 
     // --load-state: resume from a previously saved machine state (RAM+CPU) instead of
@@ -654,6 +757,7 @@ int main(int argc, char** argv) {
     }
 
     if (csv_fp) { fclose(csv_fp); fprintf(stderr, "--csv: %ld row(s) → %s\n", csv_rows, csv_path); }
+    if (itrace_fp) { fclose(itrace_fp); fprintf(stderr, "--itrace: %ld INT/NMI → %s\n", itrace_n, itrace_path); }
 
     // --save-state: persist the machine state at the end of the run (e.g. paired with
     // --until to checkpoint exactly at a condition) for cheap resume via --load-state.
@@ -664,6 +768,8 @@ int main(int argc, char** argv) {
         else
             fprintf(stderr, "WARN: could not write state '%s'\n", save_state_path);
     }
+
+    flushFold();   // report any trailing folded run of window-trace lines (--fold)
 
     // ── Final summary ─────────────────────────────────────────────────────────
     // --quiet suppresses this whole human report; --coverage / --json / -d still print.
@@ -900,6 +1006,8 @@ int main(int argc, char** argv) {
         else
             fprintf(stderr, "\"until\":{\"set\":false}}\n");
     }
+
+    if (!cow_temp.empty()) { std::error_code ec; std::filesystem::remove(cow_temp, ec); }  // drop COW temp
 
     // Exit code (for scripted/agent use): with --until → 0 if met, 2 if not met;
     // otherwise 0 if the run reached the loaded code (boot handoff), else 1.

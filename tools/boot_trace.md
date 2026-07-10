@@ -50,9 +50,12 @@ boot_trace [DISK] [optionen]
 | `-s` / `-n <anzahl>` | jede ZVE1-ROM- & ZVE2-Instruktion einzeln (disassembliert) / Single-Step-Limit |
 | `-v` | **alle** ZVE2-Instruktionen (statt nur der ersten ~600) |
 | `-w LO:HI` / `-z LO:HI` / `-W <n>` | ZVE1- / ZVE2-Instruktionsfenster tracen (disassembliert) / Zeilencap |
+| `--fold` | **Schleifen-Kollaps** für `-w`/`-z`: erkennt online einen sich wiederholenden **PC-Zyklus** (Periode ≤ 32, nur PC — Register egal) und fasst weitere Durchläufe zu `↻ loop @A period=P ×N` zusammen. Der Loop-Rumpf wird bei den ersten zwei Durchläufen (mit echten Registern) gedruckt, danach gefaltet. Zerschlägt sowohl Idle-/Poll-Spins **als auch registerändernde Hot-Loops** (IDAM-Matcher, Delay-Counter — der 12 000-Zeilen-Fall). |
+| `--itrace <file>` | **Interrupt-Trace**: jede angenommene INT/NMI als CSV-Zeile (`seq,cyc,kind,int_pc,isr_pc,sp`). Für Interrupt-Timing-Bugs (z. B. CTC-INT, der den SCPX-Mini-Stack korrumpiert) — gegen ein `-w`/`--log-cycle`-Fenster korrelieren. |
 | `-d LO:HI [datei]` | RAM-Bereich am Ende dumpen (optional in Datei) |
 | `--watch a,b,…` / `--watchio p,q,…` | Schreibzugriffe auf RAM-Adressen / Zugriffe auf I/O-Ports mitloggen |
 | `-l <f.prn>[@off]` | `.prn`-Listing → Trace-Zeilen & Histogramme mit kommentiertem Original-Quelltext annotieren (wiederholbar, §4) |
+| Mount-Modus | **Default = Copy-on-Write** (Disk wird in Temp kopiert, nur die Kopie gemountet, Writes verworfen, Temp beim Beenden gelöscht → committetes Fixture strukturell sicher, kein `mktemp`-Ritual). `--rw` = Original schreibend · `--read-only`/`--ro` = schreibgeschützt · `--cow` = COW explizit |
 
 **Exit-Code** (Skript-/Agenten-Verzweigung): mit `--until` → `0` erreicht / `2` nicht
 (Limit zuerst); sonst `0` wenn der Boot-Handoff erreicht wurde, sonst `1`. (`--diff`: `0`/`1`.)
@@ -135,6 +138,19 @@ Multi-GB-Log → grep" gilt: **leise laufen, nur das interessante Fenster booste
 > **Fallstrick:** Ein `--log-pc` auf eine **Spin-Loop**-Adresse feuert, solange die CPU dort
 > parkt (zig Mio. Zyklen → Multi-GB-Log). Immer mit engem `--log-cycle` koppeln — oder gleich
 > nur ein Zyklenfenster verwenden.
+
+**K5122-Read-Attempt-Log** (Diagnose „warum scheitert ein Read?"): Die Floppy-Karte
+protokolliert jeden Lese-Transfer strukturiert — kein Handdekodieren des ZVE2-Matchers mehr.
+
+* `--log-level info` → je Read ein Einzeiler: `>>> READ D0 C=4 H=1 … 26 Sekt, 0 CRC-Fehler`
+  (Kopfposition + Sektorzahl + CRC-Gesundheit auf einen Blick).
+* `--log-level debug` (nur im **Trace-Build**, `LOG_LEVEL=5`) → zusätzlich je Adressmarke:
+  `RD-ID[i] cyl= head= sec= size= id_crc=OK data_crc=OK`. Gezielt boosten mit
+  `--log-cycle <read-fenster>:debug`.
+
+Damit sieht man in **einem** Lauf: Kopf richtig (C/H), alle Sektor-IDs, CRC gültig → wenn der
+Read trotzdem scheitert, liegt der Fehler **CPU-seitig** (ZVE2-Matcher/Handshake), nicht am
+Medium. *Welchen* Sektor das OS sucht (das Soll), kennt nur ZVE2 → dafür `k1520dbg b2 <matcher>`.
 
 ---
 

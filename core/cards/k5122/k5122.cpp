@@ -776,13 +776,34 @@ void K5122::startReadTransfer() {
     write_mode_   = false;
     locked_       = false;
 
-    LOG_INFO("K5122", ">>> READ D%d C=%u H=%u Spur=%zu Bytes (%s%s)",
+    // §1 Strukturiertes Read-Attempt-Log: WELCHE Adressmarken unter dem Kopf liegen
+    // und ob ihre CRCs gültig sind — beantwortet "Kopf richtig? Sektoren gültig?" in
+    // EINEM Read (statt den ZVE2-Matcher von Hand zu dekodieren).  Der Soll-Ist-
+    // Vergleich mit dem vom OS gesuchten Sektor läuft CPU-seitig auf ZVE2 (die Karte
+    // kennt das Soll nicht) — dort per k1520dbg `b2 <matcher>`/`hist` sichtbar.
+    // INFO: Einzeiler-Health (Sektorzahl + CRC-Fehler).  DEBUG: eine Zeile je Marke
+    // (per --log-level debug / --log-cycle <fenster>:debug gezielt einschaltbar).
+    int crc_bad = 0;
+    for (const auto& s : sektoren)
+        if (!s.id_crc_ok || !s.data_crc_ok) ++crc_bad;
+
+    LOG_INFO("K5122", ">>> READ D%d C=%u H=%u Spur=%zu Bytes (%s%s) — %zu Sekt, %d CRC-Fehler",
              selected_drive_,
              static_cast<unsigned>(drv.currentCylinder()),
              static_cast<unsigned>(current_head_),
              read_stream_track_.size(),
              eff_enc == Encoding::FM ? "FM" : "MFM",
-             read_enc_overridden_ ? "/Steuerwort" : "/Laufwerk-Default");
+             read_enc_overridden_ ? "/Steuerwort" : "/Laufwerk-Default",
+             sektoren.size(), crc_bad);
+
+    for (size_t i = 0; i < sektoren.size(); ++i) {
+        const auto& s = sektoren[i];
+        LOG_DEBUG("K5122",
+                  "  RD-ID[%zu] cyl=%u head=%u sec=%u size=%u  id_crc=%s data_crc=%s",
+                  i, static_cast<unsigned>(s.cyl), static_cast<unsigned>(s.head),
+                  static_cast<unsigned>(s.id), static_cast<unsigned>(s.size),
+                  s.id_crc_ok ? "OK" : "BAD", s.data_crc_ok ? "OK" : "BAD");
+    }
 }
 
 /**
