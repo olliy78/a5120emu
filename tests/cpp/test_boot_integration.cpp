@@ -518,6 +518,60 @@ TEST(KeyboardIntegration, DISABLED_TypeCommandAtCcpEchoesAndProcesses) {
         << "Screen:\n" << screen;
 }
 
+// ─── SCPX 1526 — Boot + interaktives DIR/STAT/PIP (.COM-Laden über den Held-Bus) ─────
+//
+// disks/scpx_boot.hfe (SCPX 1526 V1.7, ROBOTRON-Loader / SYL-Format) bootet vollautomatisch
+// bis zum interaktiven A>-Prompt (KEIN Uhrzeit-Prompt).  Dieser Test übt den *Laufzeit*-
+// Lesepfad: nach dem Prompt werden drei Programme ausgeführt — DIR (CCP-Built-in) sowie
+// STAT und PIP (transiente .COM-Dateien, die von Diskette geladen werden).
+//
+// Regressionswächter für den os-gated „gehaltenen Bus" (core/machines/a5120/a5120.cpp run(),
+// doc/analyse_scpx_com_load.md §9.4b/§10): STAT/PIP luden früher NICHT (`SCPX ERR ON A: BAD
+// SECTOR`), weil ZVE1 im Per-Byte-/BUSRQ-Modell in den Byte-Lücken des Laufzeit-Reads mitlief
+// (Kopf-Divergenz / Matcher-INT-Korruption / verfrühter [0x0000]-Restore).  Sobald der Prompt
+// (ZVE1 @E079) einmal erreicht ist, hält der Emulator /BUSRQ über den ganzen Laufzeit-Read
+// (nur ZVE2 liest) — bricht das, meldet STAT wieder BAD SECTOR und "Space: 522k" erscheint nie.
+//
+// Anders als der DISABLED CP/A-Keyboard-Test unten ist die interaktive CCP-Eingabe hier stabil:
+// SCPX hat keine driftende RTC-Statuszeile (der Grund, aus dem jener Test flakt).
+TEST(ScpxIntegration, BootThenDirStatPipLoadComFiles) {
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("scpx_boot.hfe"), "cpa780", /*wp=*/false))
+        << "konnte scpx_boot.hfe nicht mounten: " << machine.lastError();
+    machine.powerOn();
+
+    // 1. Vollautomatischer Boot bis SCPX-Banner + A>-Prompt.
+    ASSERT_TRUE(runSmallUntil(machine, "SCPX 1526 - V 1.7", 40'000'000))
+        << "SCPX-Banner nie erschienen — Boot der scpx_boot.hfe gebrochen";
+    ASSERT_TRUE(runSmallUntil(machine, "A>", 5'000'000))
+        << "A>-Prompt nach dem Banner nie erreicht";
+    runCycles(machine, 2'000'000);   // in die CONIN-Leseschleife einschwingen
+
+    // 2. DIR (CCP-Built-in): listet das Directory (BIOSG617 SYS ist ein distinktiver Eintrag).
+    typeString(machine, "DIR");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "BIOSG617", 30'000'000))
+        << "DIR listete das Directory nicht (Eintrag BIOSG617 SYS fehlt)";
+
+    // 3. STAT.COM: wird geladen + ausgeführt → "A: R/W, Space: 522k".  Kern-Regressionscheck:
+    //    scheitert der Held-Bus, endet STAT mit BAD SECTOR und diese Zeile erscheint nie.
+    typeString(machine, "STAT");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "Space: 522k", 30'000'000))
+        << "STAT lud/lief nicht (kein 'Space: 522k') — vermutlich BAD SECTOR: "
+           "os-gated Held-Bus für Laufzeit-Reads gebrochen";
+
+    // 4. PIP.COM: wird geladen → zeigt seinen '*'-Prompt (früher korrupt als '.>PIP').
+    typeString(machine, "PIP");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "*", 30'000'000))
+        << "PIP lud nicht (kein '*'-Prompt) — Laufzeit-.COM-Laden gebrochen";
+
+    // STAT-Ausgabe steht weiterhin auf dem Schirm (nichts weggescrollt): finaler Sanity-Check.
+    EXPECT_NE(vramText(machine).find("Space: 522k"), std::string::npos)
+        << "STAT-Ausgabe unerwartet verschwunden:\n" << vramText(machine);
+}
+
 // ─── createDisk: laufwerkstyp-spezifisches Standardformat ────────────────────
 //
 // Ein leerer Formatname wählt je Slot-DriveProfile das passende Default-Format;
