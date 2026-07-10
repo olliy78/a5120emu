@@ -1,0 +1,179 @@
+; ============================================================================
+; scpx_readpath.prn  -  SCPX 1526 V1.7 Laufzeit-Lesepfad (BIOS im RAM)
+;
+; Kommentiertes Listing fuer k1520dbg / boot_trace (-l). Erzeugt von
+; tools/gen_scpx_readpath_prn.py aus einem SCPX-RAM-Dump (Boot bis A>, savestate).
+; Semantik: doc/analyse_scpx_com_load.md 3/5/7 + tools/scpx1526.sym.
+;
+; Herz: Lese-Koroutine E9C8 (an [0000] gepoist) + IDAM-Matcher E9E6-EA1A.
+;   Matcher-Felder: cyl E9FD / head EA02 / sec EA07 / size EA0C / CRC EA12+EA17.
+;   Fail-Ruecksprung EA15/EA1A. Der Read laeuft auf ZVE2 (b2, nicht b!).
+; ============================================================================
+
+;  ---- E9C8..EA2A ----
+E9C8  21 B9 20    	LD HL,20B9H		;[ZVE1/ZVE2 Lese-Koroutine, an [0000]=JP E9C8 gepoist] Selbstmod-Setup: HL=20B9
+E9CB  22 FD E9    	LD (E9FDH),HL		;self-modifying: schreibt nach E9FD (Matcher-Rumpf wird gepatcht)
+E9CE  2A FE EB    	LD HL,(EBFEH)		;HL = Laufwerks-Deskriptor (aus [EBFE]) — liefert u.a. Spurregister [EBFA]
+E9D1  31 0D EC    	LD SP,EC0DH		;LD SP,EC0D → Mini-Stack auf den Template-Block (SCHICHT-2-KORRUPTIONSZIEL: ein CTC-INT pusht hierhin die Matcher-PC, s. analyse §5)
+E9D4  D1          	POP DE		;POP DE: DE = [EC0D/EC0E] = IDAM-CRC-Sollwert (16-Bit)
+E9D5  D9          	EXX		;EXX → CRC-Soll ins Schattenregister D'/E' (Vergleich später @EA12/EA17)
+E9D6  2A 03 EC    	LD HL,(EC03H)		;HL = [EC03/EC04] = Soll Sektor-ID / Größe-Code
+E9D9  ED 4B 01    	EC	LD BC,(EC01H)		;BC = [EC01/EC02] = Soll Zylinder / Kopf
+E9DD  11 A1 FE    	LD DE,FEA1H		;DE = FE / A1: FE = IDAM-Adressmarke, A1 = MFM-Sync (Sollbytes)
+E9E0  3E B9       	LD A,B9H		;K5122-Steuerwort B9 → Port 10 (Lesekopf/Verfahren scharf)
+E9E2  D3 10       	OUT (10H),A
+E9E4  D9          	EXX
+E9E5  D9          	EXX
+E9E6  3E B5       	LD A,B5H		;MATCHER-Schleifenkopf: LD A,B5 (0x85 = MFM-Lesemarke) → Port 10
+E9E8  D3 10       	OUT (10H),A
+E9EA  3A 05 EC    	LD A,(EC05H)		;CRC-Steuerwort [EC05] → Port 10
+E9ED  D3 10       	OUT (10H),A
+E9EF  DB 16       	IN A,(16H)		;IN (16H): nächstes Stream-Byte vom K5122-Datenseparator lesen
+E9F1  D3 14       	OUT (14H),A		;OUT (14H): Byte quittieren/durchreichen
+E9F3  DB 16       	IN A,(16H)		;IN (16H) / CP E: auf A1-Sync (E=A1) prüfen …
+E9F5  BB          	CP E
+E9F6  28 FB       	JR Z,LE9F3		;… JR Z: A1-Sync-Bytes überspringen (Schleife bis != A1)
+E9F8  BA          	CP D		;CP D: auf FE (IDAM-Adressmarke, D=FE) prüfen
+E9F9  DB 16       	IN A,(16H)
+E9FB  20 E9       	JR NZ,LE9E6		;JR NZ,E9E6: keine Marke → Matcher weiter (Byte-für-Byte-Suche)
+E9FD  B9          	CP C		;CP C: ZYLINDER-Vergleich (Soll C=[EC01]) — SCHICHT-1-Mismatch schlägt HIER zu (Kopf divergiert → cyl passt nicht → 43× Retry → BAD SECTOR)
+E9FE  20 E6       	JR NZ,LE9E6		;JR NZ,E9E6: Zylinder falsch → nächste Marke suchen
+EA00  DB 16       	IN A,(16H)
+EA02  B8          	CP B		;CP B: KOPF-Vergleich (Soll B=[EC02])
+EA03  20 E1       	JR NZ,LE9E6
+EA05  DB 16       	IN A,(16H)
+EA07  BD          	CP L		;CP L: SEKTOR-Vergleich (Soll L=[EC03])
+EA08  20 DC       	JR NZ,LE9E6
+EA0A  DB 16       	IN A,(16H)
+EA0C  BC          	CP H		;CP H: GRÖSSE-Vergleich (Soll H=[EC04])
+EA0D  20 D7       	JR NZ,LE9E6
+EA0F  DB 16       	IN A,(16H)
+EA11  D9          	EXX		;EXX: auf CRC-Schattenregister (D'/E' = IDAM-CRC-Soll) umschalten
+EA12  BA          	CP D		;CP D': IDAM-CRC-Hi gegen [EC0D] — SCHICHT-2-Korruption trifft HIER (Stream-CRC korrekt, D' vom INT überschrieben → Fail)
+EA13  DB 16       	IN A,(16H)
+EA15  20 CE       	JR NZ,LE9E5		;JR NZ,E9E5: CRC-Hi falsch → Matcher-Neustart
+EA17  BB          	CP E		;CP E': IDAM-CRC-Lo gegen [EC0E]
+EA18  DB 16       	IN A,(16H)
+EA1A  20 C9       	JR NZ,LE9E5		;JR NZ,E9E5: CRC-Lo falsch → Matcher-Neustart
+EA1C  DB 16       	IN A,(16H)
+EA1E  06 0F       	LD B,0FH
+EA20  1E 00       	LD E,00H
+EA22  DB 16       	IN A,(16H)
+EA24  10 FC       	DJNZ LEA22
+EA26  DB 16       	IN A,(16H)
+EA28  18 70       	JR LEA9A
+EA2A  DB          	DB	DBH
+
+;  ---- EA9A..EAB0 ----
+EA9A  DB 16       	IN A,(16H)		;DATA-Feld-Lesung (nach erfolgreichem IDAM-Match)
+EA9C  06 06       	LD B,06H
+EA9E  DB 16       	IN A,(16H)
+EAA0  10 FC       	DJNZ LEA9E
+EAA2  3E B5       	LD A,B5H
+EAA4  D3 10       	OUT (10H),A
+EAA6  3A 05 EC    	LD A,(EC05H)
+EAA9  43          	LD B,E
+EAAA  0E 16       	LD C,16H
+EAAC  1E A1       	LD E,A1H
+EAAE  D3 10       	OUT (10H),A
+EAB0  DB 16       	IN A,(16H)
+
+;  ---- E6E2..E742 ----
+E6E2  DD 6E 02    	LD L,(IX+2)		;SEEK: Positionierung; schreibt Spurregister [EBFA] @E706, /TO-Reset @E701
+E6E5  DD 66 03    	LD H,(IX+3)
+E6E8  22 01 EC    	LD (EC01H),HL
+E6EB  3E FF       	LD A,FFH
+E6ED  06 04       	LD B,04H
+E6EF  BD          	CP L
+E6F0  30 02       	JR NC,LE6F4
+E6F2  CB D8       	SET 3,B
+E6F4  78          	LD A,B
+E6F5  D3 12       	OUT (12H),A
+E6F7  ED 53 F8    	EB	LD (EBF8H),DE
+E6FB  DB 12       	IN A,(12H)
+E6FD  07          	RLCA
+E6FE  38 02       	JR C,LE702
+E700  AF          	XOR A
+E701  12          	LD (DE),A		;/TO-Reset (Timeout-Flip-Flop)
+E702  1A          	LD A,(DE)
+E703  67          	LD H,A
+E704  7D          	LD A,L
+E705  12          	LD (DE),A
+E706  94          	SUB H		;Spurregister [EBFA] = Zielzylinder (per Laufwerk aus IX+2/+3)
+E707  18 0C       	JR LE715
+E709  DD CB 00    	66	BIT 4,(IX+0)
+E70D  28 1F       	JR Z,LE72E
+E70F  CB 04       	RLC H
+E711  18 1B       	JR LE72E
+E713  7D          	LD A,L
+E714  B7          	OR A
+E715  1E A9       	LD E,A9H
+E717  28 2B       	JR Z,LE744
+E719  67          	LD H,A
+E71A  30 ED       	JR NC,LE709
+E71C  ED 44       	NEG
+E71E  67          	LD H,A
+E71F  1E 89       	LD E,89H
+E721  DD CB 00    	66	BIT 4,(IX+0)
+E725  28 02       	JR Z,LE729
+E727  CB 04       	RLC H
+E729  DB 12       	IN A,(12H)
+E72B  07          	RLCA
+E72C  30 E5       	JR NC,LE713
+E72E  7B          	LD A,E
+E72F  D3 10       	OUT (10H),A
+E731  E6 7F       	AND 7FH
+E733  D3 10       	OUT (10H),A
+E735  F6 80       	OR 80H
+E737  D3 10       	OUT (10H),A
+E739  01 00 02    	LD BC,0200H
+E73C  0D          	DEC C
+E73D  20 FD       	JR NZ,LE73C
+E73F  10 FB       	DJNZ LE73C
+E741  25          	DEC H
+E742  20 E5       	JR NZ,LE729
+
+;  ---- E88C..E8C0 ----
+E88C  D3 14       	OUT (14H),A		;READ-SETUP: poist die Lese-Koroutine nach [0001] (@E858) / restauriert (@E8A0)
+E88E  D3 04       	OUT (04H),A
+E890  3E FF       	LD A,FFH
+E892  D3 17       	OUT (17H),A
+E894  D3 17       	OUT (17H),A
+E896  3E A5       	LD A,A5H
+E898  D3 10       	OUT (10H),A
+E89A  3E 7F       	LD A,7FH
+E89C  D3 17       	OUT (17H),A
+E89E  DB 16       	IN A,(16H)
+E8A0  ED 43 01    	00	LD (0001H),BC
+E8A4  3E 03       	LD A,03H
+E8A6  32 0A EC    	LD (EC0AH),A
+E8A9  3A 05 EC    	LD A,(EC05H)
+E8AC  D3 10       	OUT (10H),A
+E8AE  01 B5 E8    	LD BC,LE8B5
+E8B1  ED 43 0B    	EC	LD (EC0BH),BC
+E8B5  2A 0B EC    	LD HL,(EC0BH)		;POLL-WAIT: ZVE1 wartet auf [EC0B] (ZVE2-Signal) — GENERISCH, nicht read-eindeutig
+E8B8  AF          	XOR A
+E8B9  ED 42       	SBC HL,BC
+E8BB  28 F8       	JR Z,LE8B5
+E8BD  2A 0B EC    	LD HL,(EC0BH)
+E8C0  E9          	JP (HL)
+
+;  ---- D098..D0B0 ----
+D098  DD 21 CA    	D0	LD IX,D0CAH		;BAD-SECTOR-Handler (LD IX,D0CA; CALL D0E5; …): Meldung 'BAD SECTOR'
+D09C  CD E5 D0    	CALL sub_D0E5
+D09F  FE 03       	CP 03H
+D0A1  CA 00 00    	JP Z,L0000
+D0A4  C9          	RET
+D0A5  21          	DB	21H
+D0A6  D5          	DB	D5H
+D0A7  D0          	DB	D0H
+D0A8  C3          	DB	C3H
+D0A9  B4          	DB	B4H
+D0AA  D0          	DB	D0H
+D0AB  21          	DB	21H
+D0AC  E1          	DB	E1H
+D0AD  D0          	DB	D0H
+D0AE  C3          	DB	C3H
+D0AF  B4          	DB	B4H
+D0B0  D0          	DB	D0H
+
