@@ -12,20 +12,35 @@ SCPX-Laufzeit-**Schreiben** ist repariert: `ERA B:STAT.COM` löscht sauber (kein
 B:-HFE-md5 ändert sich, Boot von B: zeigt `STAT $$$`). **Offen:** PIP **hängt** beim finalen atomaren
 Rename `STAT.$$$` → `STAT.COM` und kehrt nie zum `A>`-Prompt zurück.
 
-> **★ WICHTIGE EINGRENZUNG (2026-07-11): Der Hänger ist SPEZIFISCH der Gleichnamen-Fall.**
-> Kopieren auf einen **anderen/neuen Zielnamen** läuft komplett sauber durch:
-> ```
-> A>ERA B:STAT.COM               ← löscht (ok)
-> A>PIP B:STAT2.COM=A:STAT.COM    ← kopiert VOLLSTÄNDIG, kein Hänger, zurück zu A>
-> A>DIR B:  → … STAT2  COM …      ← neue Datei da; und B:STAT2 ist lauffähig
-> ```
-> (Verifiziert: `B>STAT2` gibt „A: R/W, Space: 522k / B: R/W …" aus — byte-gültige, ausführbare Kopie;
-> B:-HFE persistiert.) Der Hänger tritt nur auf, wenn PIP den Zielnamen `STAT.COM` schreibt, der auf B:
-> als (gerade per ERA gelöschter bzw. vorhandener) Directory-Eintrag existiert — also der Rename-über-
-> vorhandenen-Eintrag-Pfad (`E671`, §4). **Damit ist das offene RE-Ziel klar eingegrenzt.** Noch offen
-> zum vollständigen Isolieren des exakten Triggers: Hängt auch `PIP B:=A:STAT.COM` OHNE vorheriges ERA
-> (Overwrite eines LEBENDEN gleichnamigen Eintrags)? Falls nein → Trigger ist der GELÖSCHTE Eintrag;
-> falls ja → Trigger ist jeder gleichnamige Ziel-Eintrag.
+> **★ PRÄZISE EINGRENZUNG (2026-07-11, per Ausschluss-Tests) — ZWEI spezifische Directory-Kollisionen:**
+> Der Hänger ist NICHT „jedes Schreiben von STAT.COM" und NICHT „jeder gelöschte Eintrag", sondern eng:
+>
+> | Kommando (B: = Kopie von scpx_boot.hfe) | Ergebnis |
+> |---|---|
+> | `PIP B:=A:STAT.COM` bzw. `PIP B:STAT.COM=A:STAT.COM` (Quelle- **UND** Zielname = STAT.COM) | **HÄNGT** |
+> | `PIP B:STAT.COM=A:MODF.COM` (Ziel STAT.COM, andere Quelle) | läuft |
+> | `PIP B:MODF.COM=A:STAT.COM` (andere Ziel-Datei überschreiben) | läuft |
+> | `PIP B:STAT2.COM=A:STAT.COM` (anderer Zielname) | läuft |
+> | `PIP B:STAT.COM=B:STAT2.COM` (STAT2→STAT.COM auf B:, auch mit gelöschtem STAT.COM-Eintrag) | läuft |
+> | `PIP B:STAT2` → `ERA B:STAT2` → `PIP B:STAT2` (recreate nach Löschen) | läuft |
+> | `REN B:STAT3.COM=B:STAT2.COM` (Rename auf frischen Namen) | läuft |
+> | `REN B:STAT.COM=B:STAT2.COM` (Rename auf STAT.COM mit gelöschtem STAT.COM-Eintrag; auch 250 M Takte) | **HÄNGT** |
+>
+> ⇒ **Trigger A:** Cross-Drive-Kopie mit **identischem Quell- UND Zielnamen** (`A:STAT.COM → B:STAT.COM`).
+> Weicht *irgendein* Name ab, läuft es. **Trigger B:** `REN` auf einen Zielnamen, für den ein **gelöschter**
+> Directory-Eintrag existiert. Bemerkenswert: **PIP** schreibt denselben Ziel-Eintrag `STAT.COM` (mit
+> gelöschtem Vorgänger) PROBLEMLOS — nur **REN** hängt dort ⇒ PIP/REN nehmen verschiedene Directory-
+> Schreibpfade; beide Trigger führen aber in denselben `E671`/stale-`[EC0D]`-Hänger (§4).
+>
+> **Nutzbarer Weg zu `STAT.COM` auf B:** (umgeht beide Trigger):
+> `ERA B:STAT.COM` → `PIP B:STAT2.COM=A:STAT.COM` → `PIP B:STAT.COM=B:STAT2.COM` (→ STAT.COM zurück;
+> `B>STAT` verifiziert lauffähig) → optional `ERA B:STAT2.COM`.
+>
+> **Für die RE bedeutet das:** Der auslösende Code-Pfad hängt vom **Vergleich Quell-/Ziel-Dateiname**
+> (Trigger A) bzw. vom Antreffen eines **gelöschten Eintrags mit dem Zielnamen im REN-Pfad** (Trigger B)
+> ab — nicht von der Datei-Allokation. Das ist ein starker Filter für die Suche nach der fehlenden
+> `[EC0D]`-Priming-Stelle (§6): den `E671`-Aufruf im Directory-**Match**-Pfad (Quell=Ziel-Vergleich /
+> gelöschter-Eintrag-Skip) untersuchen, nicht im Daten-Kopier-Pfad.
 
 ## 2. Was schon gefixt & committet ist (b1184c3) — NICHT erneut anfassen
 
