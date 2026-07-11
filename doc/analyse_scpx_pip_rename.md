@@ -12,6 +12,21 @@ SCPX-Laufzeit-**Schreiben** ist repariert: `ERA B:STAT.COM` löscht sauber (kein
 B:-HFE-md5 ändert sich, Boot von B: zeigt `STAT $$$`). **Offen:** PIP **hängt** beim finalen atomaren
 Rename `STAT.$$$` → `STAT.COM` und kehrt nie zum `A>`-Prompt zurück.
 
+> **★ WICHTIGE EINGRENZUNG (2026-07-11): Der Hänger ist SPEZIFISCH der Gleichnamen-Fall.**
+> Kopieren auf einen **anderen/neuen Zielnamen** läuft komplett sauber durch:
+> ```
+> A>ERA B:STAT.COM               ← löscht (ok)
+> A>PIP B:STAT2.COM=A:STAT.COM    ← kopiert VOLLSTÄNDIG, kein Hänger, zurück zu A>
+> A>DIR B:  → … STAT2  COM …      ← neue Datei da; und B:STAT2 ist lauffähig
+> ```
+> (Verifiziert: `B>STAT2` gibt „A: R/W, Space: 522k / B: R/W …" aus — byte-gültige, ausführbare Kopie;
+> B:-HFE persistiert.) Der Hänger tritt nur auf, wenn PIP den Zielnamen `STAT.COM` schreibt, der auf B:
+> als (gerade per ERA gelöschter bzw. vorhandener) Directory-Eintrag existiert — also der Rename-über-
+> vorhandenen-Eintrag-Pfad (`E671`, §4). **Damit ist das offene RE-Ziel klar eingegrenzt.** Noch offen
+> zum vollständigen Isolieren des exakten Triggers: Hängt auch `PIP B:=A:STAT.COM` OHNE vorheriges ERA
+> (Overwrite eines LEBENDEN gleichnamigen Eintrags)? Falls nein → Trigger ist der GELÖSCHTE Eintrag;
+> falls ja → Trigger ist jeder gleichnamige Ziel-Eintrag.
+
 ## 2. Was schon gefixt & committet ist (b1184c3) — NICHT erneut anfassen
 
 Der Write-Fix aus §11 (drei Schichten + INT-Guard) ist regressionsfrei (voller ctest + 58/58 Legacy,
