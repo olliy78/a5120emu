@@ -318,6 +318,10 @@ int A5120Machine::run(int max_cycles) {
                 // Lese-Transfer läuft → ab hier den Bus halten (nur ZVE2 bis zur Completion).
                 held_read_active_ = true;
                 bus_.assertBUSRQ();
+                // Der Verify-Read hat engagiert → das Post-Write-Gnadenfenster hat seinen
+                // Zweck erfüllt und wird sofort geschlossen, damit es nicht in einen
+                // späteren normalen Read leckt (sonst hinge dort transferring_ fälschlich).
+                afs_.endPostWriteGrace();
                 LOG_DEBUG("A5120", "SCPX gehaltener Read: ZVE1@E8B5 eingefroren, ZVE2 liest");
             }
         }
@@ -388,8 +392,22 @@ int A5120Machine::run(int max_cycles) {
             busrq_active_ = false;          // Bus frei → nächste Assertion ist neue Runde
         }
 
-        // Deliver INT if CPU can accept
-        if (bus_.isINT() && zre_.cpuIFF1()) {
+        // Deliver INT if CPU can accept.
+        //
+        // SCPX-Mini-Stack-Guard (doc/analyse_scpx_com_load.md §5/§11, „Schicht 2"): SCPX
+        // ruft die IDAM-Matcher-Routine u.a. DIREKT auf ZVE1 auf (nicht nur über die
+        // ZVE2-DMA-Koroutine) — z.B. aus PIP.COMs Kopier-Verify beim Laufwerkswechsel
+        // Write B: → Read A:.  Deren Setup biegt SP auf den Mini-Stack `0xEC0D` und liest
+        // von dort per POP den CRC-Sollwert.  Wird in diesem Fenster ein Interrupt
+        // zugestellt, PUSHt der Z80 die Rücksprungadresse auf `[0xEC0D/0E]` und überschreibt
+        // genau diesen Sollwert → der CRC-Vergleich schlägt ewig fehl → Endlos-Retry (Hänger).
+        // Solange SP im Mini-Stack-Fenster liegt, wird die Zustellung daher verzögert (der
+        // Interrupt bleibt anstehend und kommt zu, sobald SP das Fenster verlässt — kein
+        // Verlust).  ZVE2 und der held-bus-Lesepfad sind unberührt (dort steht ZVE1 auf
+        // seinem normalen BIOS-Stack, nie in `[0xEC00,0xEC10]`) → keine Regression.
+        const uint16_t zve1_sp = zre_.cpuSP();
+        const bool sp_in_scpx_mini_stack = (zve1_sp >= 0xEC00 && zve1_sp <= 0xEC10);
+        if (bus_.isINT() && zre_.cpuIFF1() && !sp_in_scpx_mini_stack) {
             uint8_t vec = bus_.interruptAcknowledge();
             LOG_DEBUG("A5120", "INT zugestellt: Vektor=0x%02X PC=%04X", vec, zre_.cpuPC());
             zre_.cpuInterrupt(vec);

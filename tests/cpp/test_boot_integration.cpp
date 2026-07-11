@@ -572,6 +572,63 @@ TEST(ScpxIntegration, BootThenDirStatPipLoadComFiles) {
         << "STAT-Ausgabe unerwartet verschwunden:\n" << vramText(machine);
 }
 
+// ─── SCPX Laufzeit-SCHREIBEN: ERA löscht auf B: OHNE „BAD SECTOR" ─────────────
+//
+// Regressionswächter für den SCPX-Write-Fix (K5122 post_write_grace_ +
+// releaseHeldRead-Guard, a5120 endPostWriteGrace + ZVE1-INT-Guard SP∈[EC00,EC10];
+// s. doc/analyse_scpx_com_load.md §11).  VOR dem Fix meldete JEDER Laufzeit-Write
+// auf B: „SCPX ERR ON B: BAD SECTOR" (der os-gated „gehaltene Bus" deckte nur den
+// Read-, nicht den Post-Write-Verify-Pfad ab → ZVE2 blieb im Reset, ein Index-ISR
+// kaperte den Handshake-Vektor).  Der Test bootet SCPX, löscht STAT.COM auf B:
+// (schreibender Directory-Zugriff) und prüft, dass KEIN BAD SECTOR erscheint und die
+// Datei tatsächlich weg ist (gefiltertes DIR → „NO FILE").
+//
+// Beide Laufwerke werden aus BESCHREIBBAREN TEMP-KOPIEN gemountet, damit die
+// committete Fixture disks/scpx_boot.hfe garantiert unangetastet bleibt.
+TEST(ScpxIntegration, EraDeletesFileOnDriveBWithoutBadSector) {
+    namespace fs = std::filesystem;
+    const std::string aPath = (fs::temp_directory_path() / "scpx_write_guard_A.hfe").string();
+    const std::string bPath = (fs::temp_directory_path() / "scpx_write_guard_B.hfe").string();
+    fs::copy_file(diskPath("scpx_boot.hfe"), aPath, fs::copy_options::overwrite_existing);
+    fs::copy_file(diskPath("scpx_boot.hfe"), bPath, fs::copy_options::overwrite_existing);
+
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, aPath, "cpa780", /*wp=*/false)) << machine.lastError();
+    ASSERT_TRUE(machine.mountDisk(1, bPath, "cpa780", /*wp=*/false)) << machine.lastError();
+    machine.powerOn();
+
+    ASSERT_TRUE(runSmallUntil(machine, "SCPX 1526 - V 1.7", 40'000'000))
+        << "SCPX-Banner nie erschienen";
+    ASSERT_TRUE(runSmallUntil(machine, "A>", 5'000'000)) << "A>-Prompt nie erreicht";
+    runCycles(machine, 2'000'000);   // in die CONIN-Leseschleife einschwingen
+
+    // Baseline: STAT.COM liegt auf B: (gefiltertes DIR listet „B: STAT     COM" —
+    // das Leerzeichen nach „B:" unterscheidet die Listing-Zeile vom Kommando-Echo).
+    typeString(machine, "DIR B:STAT.COM");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "B: STAT", 30'000'000))
+        << "STAT.COM nicht auf B: (Baseline gebrochen):\n" << vramText(machine);
+
+    // Schreibender Zugriff: STAT.COM auf B: löschen.  Der eigentliche Regressionscheck.
+    typeString(machine, "ERA B:STAT.COM");
+    typeKey(machine, QK_RETURN);
+    runCycles(machine, 30'000'000);   // Write + Post-Write-Verify abwarten
+    EXPECT_EQ(vramText(machine).find("BAD SECTOR"), std::string::npos)
+        << "ERA meldete BAD SECTOR — SCPX-Write-Fix gebrochen:\n" << vramText(machine);
+
+    // Die Datei ist tatsächlich gelöscht: gefiltertes DIR → „NO FILE".
+    typeString(machine, "DIR B:STAT.COM");
+    typeKey(machine, QK_RETURN);
+    EXPECT_TRUE(runSmallUntil(machine, "NO FILE", 30'000'000))
+        << "STAT.COM nach ERA nicht gelöscht (kein 'NO FILE'):\n" << vramText(machine);
+
+    machine.unmountDisk(0);
+    machine.unmountDisk(1);
+    std::error_code ec;
+    fs::remove(aPath, ec);
+    fs::remove(bPath, ec);
+}
+
 // ─── createDisk: laufwerkstyp-spezifisches Standardformat ────────────────────
 //
 // Ein leerer Formatname wählt je Slot-DriveProfile das passende Default-Format;

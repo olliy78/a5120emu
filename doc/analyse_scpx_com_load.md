@@ -301,3 +301,66 @@ Beide vormals fehlschlagenden Programme laden jetzt. Regressionsfrei: ctest (ink
 - `core/machines/a5120/a5120.h` — Member `os_running_`, `held_read_active_`.
 - `core/cards/k5122/k5122.{h,cpp}` — `isReadTransferActive()` (Engage-Bedingung) und
   `releaseHeldRead()` (interrupt-neutrales Transfer-Ende).
+
+## 11. SCPX-Laufzeit-SCHREIBEN (`ERA`/`PIP`) — Analyse & Fix (2026-07-11)
+
+> **Kurz:** `ERA`/Löschen auf B: ist GELÖST (kein `BAD SECTOR` mehr, Datei wird gelöscht);
+> `PIP`-Kopie schreibt die Dateidaten korrekt nach B: (als Temp-Datei `STAT.$$$`), hängt aber
+> in der finalen Rename-Stufe (`$$$`→`COM`) an einer 4., andersartigen Schicht (§11.4).
+
+### 11.1 Symptom
+Jeder Laufzeit-Schreibzugriff auf B: (`ERA B:STAT.COM`, `PIP B:=A:STAT.COM`) endete mit
+`SCPX ERR ON B: BAD SECTOR`. Die K5122-Schreibmechanik selbst war korrekt (Log `>>> WRITE D1
+C=2 S=1..4` + Verify-`READ … 0 CRC-Fehler`), SCPX verwarf das Ergebnis aber wegen eines falschen
+Completion-Status.
+
+### 11.2 Wurzel (drei Schichten, alle im Post-Write-Verify)
+Der Fix aus §10 hält den Bus nur für den *Read*. Der SCPX-Datenfeld-Write (`beginWriteField`/
+`commitWriteField`, greift bei `transferring_ && !write_mode_ && BUSRQ` auf der `/WE`-Flanke)
+läuft INNERHALB eines gehaltenen Transfers; direkt danach dispatcht ZVE1 über eine lange Kette
+(`E929→…→E88C`) zum Nachfolge-*Verify-Read*, bevor er dessen `/STR` ausgibt.
+1. Der `/STR=1`-Abtast-Timeout (`kStrEndSampleCycles=320`) ist zu kurz für diese ~2000-Takt-
+   Dispatch-Lücke — er beendete `transferring_` mittendrin.
+2. **Eigentlicher Übeltäter:** `K5122::releaseHeldRead()` setzte `transferring_` beim Schreib-Ende
+   (`[EC0B]:E8B5→E929`) UNBEDINGT auf `false`. Damit fehlte der Verify-Runde das
+   `isReadTransferActive()`-Signal → der os-Gate engagierte nie → ZVE2 blieb im Reset (kein
+   Byte-Throttle-`/BUSRQ`, das `zve2StartFromReset` triggert).
+3. ~1 Mio Takte später kaperte der Index-ISR (`EB74-EB81`, schreibt unbedingt `[EC0B]=E998`) den
+   Handshake-Vektor → degradierter Blindscan (`E9A9`, self-mod `E9FD`→`JR E9B8`, ungeprüfter
+   IDAM-Accept) → Fehlercode `[EC0A]=0x10` → `BAD SECTOR`.
+
+### 11.3 Fix
+- **Post-Write-Gnadenfenster** (`K5122::post_write_grace_`, 6000 Takte): `commitWriteField()` öffnet
+  es; `releaseHeldRead()` lässt `transferring_` darin am Leben (`if (post_write_grace_<=0)
+  transferring_=false;`), sodass der os-Gate den Verify sofort engagiert und ZVE2 aus dem Reset
+  neu startet. `dma_pending_`/`byte_ready_` werden weiter IMMER zurückgesetzt (sonst Write-Runaway
+  auf Port 0x14). Der `/STR=1`-Timeout nutzt im Fenster `kPostWriteStrEndCycles=4000`.
+  `a5120.cpp` schließt das Fenster beim Verify-Engage (`afs_.endPostWriteGrace()`), damit es nicht
+  in Folge-Reads leckt. (Nur nach einem Write aktiv → Boot/Read-Pfad unberührt.)
+- **ZVE1-Interrupt-Guard** (`a5120.cpp`): keine INT-Zustellung an ZVE1, solange `SP∈[0xEC00,0xEC10]`
+  (SCPX-Mini-Stack). Dort liest der IDAM-Matcher per `LD SP,EC0D; POP DE` seinen CRC-Sollwert; ein
+  ISR-PUSH würde `[EC0D/0E]` überschreiben und den CRC-Vergleich dauerhaft brechen. Der Interrupt
+  bleibt anstehend (kein Verlust). Neuer `K2526::cpuSP()`. Verifiziert wirksam (0 Korruption über
+  400 M Takte).
+
+Guard-Test `ScpxIntegration.EraDeletesFileOnDriveBWithoutBadSector`: bootet SCPX, `ERA B:STAT.COM`,
+prüft KEIN `BAD SECTOR` + gefiltertes `DIR B:STAT.COM` → `NO FILE`.
+
+### 11.4 NOCH OFFEN — PIP-Rename-Finalisierung (4. Schicht)
+`PIP B:=A:STAT.COM` schreibt die Daten vollständig nach B: (verifiziert: B:-HFE ändert sich, Boot
+von B: zeigt `STAT $$$`), hängt aber beim finalen Rename `$$$`→`COM`. Dieser Pfad ist **kategorisch
+verschieden** von §11.2: PIP.COMs eigener `E671`-SEEK/Read läuft als **ZVE1-programmierte E/A**
+(`bt`: `E671←E65E←E526←…`, `busrq=0%`), durchläuft NIE das reguläre `E8B5`-DMA-Setup, und der
+Matcher-CRC-Sollwert `[EC0D/EC0E]` ist dabei **statisch falsch** (`E295`, ändert sich nicht mit dem
+Ziel-C/H/S) → `EA12 CP D'` scheitert ewig → 12× Neu-Read-Spin, kein Prompt. K5122-CRC ist korrekt
+(berechnet `EA32` = geliefert). `[EC0B]` bleibt konstant `E8C1` (nie `E8B5`). Offen ist, ob PIP.COMs
+(nicht quelloffener) Pfad ein CRC-Priming vergisst = NICHT core-fixbar ohne Guest-RAM-Eingriff, oder
+ob `E671` den `E8B5`-DMA-Pfad erreichen SOLLTE (fehlender Branch). Nächster Diagnoseschritt:
+`wp 0xEC0B..0xEC0C` über `E671→E9E6`. KEIN Blind-Patch (würde in Guest-RAM schreiben).
+
+### 11.5 Betroffene Dateien
+- `core/cards/k5122/k5122.{h,cpp}` — `post_write_grace_`/`endPostWriteGrace()`, `releaseHeldRead()`-
+  Guard, `commitWriteField()` öffnet das Fenster, `/STR`-Timeout-Schwelle.
+- `core/machines/a5120/a5120.cpp` — `endPostWriteGrace()` beim Engage, ZVE1-INT-Guard.
+- `core/cards/k2526/k2526.h` — `cpuSP()`.
+- `tests/cpp/test_boot_integration.cpp` — Guard-Test `EraDeletesFileOnDriveBWithoutBadSector`.

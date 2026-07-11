@@ -473,6 +473,7 @@ public:
      * @return Current PC value
      */
     uint16_t cpuPC()    const         { return cpu_.PC; }
+    uint16_t cpuSP()    const         { return cpu_.SP; }
 
     /**
      * @brief Return a reference to the BS-PIO (Q301).

@@ -169,6 +169,13 @@ public:
     ///        zu verändern.  ZVE1 fährt danach mit JP (HL) fort.
     void releaseHeldRead();
 
+    /// @brief Post-Write-Verify-Gnadenfenster schließen (a5120.cpp, sobald der os-Gate
+    ///        für die Verify-Runde engagiert hat).  Seine Aufgabe (transferring_ über die
+    ///        Dispatch-Lücke bis zum Verify-Engage am Leben halten) ist dann erfüllt; das
+    ///        sofortige Schließen verhindert, dass es in einen nachfolgenden normalen Read
+    ///        „leckt" und dort transferring_ fälschlich hält.
+    void endPostWriteGrace() { post_write_grace_ = 0; }
+
     /// @brief Momentaufnahme des Controller-Zustands für Debugger (k1520dbg `dev`).
     struct DebugState {
         int      drive;        ///< aktuell gewähltes Laufwerk (8212 /SELx)
@@ -322,6 +329,21 @@ private:
     // Boot-ROM-Setup-Strobes ≤ ~18 Takte, gegenüber echten Track-Enden ≥ 30000).
     int  str_inactive_cycles_ = 0;              ///< Takte mit /STR=1 im aktiven Transfer
     static constexpr int kStrEndSampleCycles = 320;  ///< ~2 MFM-Byte-Perioden @ 2.45 MHz
+
+    // ─── Post-Write-Verify-Gnadenfenster (SCPX-Laufzeit-Schreiben) ────────────
+    // Nach einem BIOS-Datenfeld-Write (commitWriteField) dispatcht SCPX' ZVE1 über
+    // eine längere Kette (E929→…→E88C) zum Nachfolge-„Verify-Read", bevor er dessen
+    // /STR ausgibt — deutlich länger als kStrEndSampleCycles.  Ohne Schutz beendet
+    // die /STR=1-Abtastung den Transfer in dieser Lücke (transferring_→false), ZVE2
+    // bleibt im Reset (kein Byte-Throttle-/BUSRQ, das ihn neu startet), und ein
+    // Index-ISR kapert schließlich den Handshake-Vektor [EC0B] → degradierter
+    // Blindscan → „BAD SECTOR" (doc/analyse_scpx_com_load.md §11).  Deshalb wird die
+    // Abtastschwelle NUR in diesem Fenster (nach einem Write, nie beim Boot-Read)
+    // verlängert, sodass der Stream lebt, bis der Byte-Throttle ZVE2 aus dem Reset
+    // neu startet und der Verify-Read wieder Bytes zieht.
+    int  post_write_grace_ = 0;                  ///< verbleibende Takte des Gnadenfensters
+    static constexpr int kPostWriteGraceCycles   = 6000;  ///< Dauer des Fensters
+    static constexpr int kPostWriteStrEndCycles  = 4000;  ///< Schwelle darin (überbrückt die ~2000-Takt-Dispatch-Lücke, << echte Track-Enden ≥30000)
 
     // ─── Vollspur-FORMAT: Schreib-Idle-Erkennung (Transfer-Ende) ──────────────
     int  write_idle_acc_ = 0;                   ///< Takte mit angebotenem, aber nicht

@@ -346,12 +346,27 @@ void K5122::endDmaTransfer() {
  * sie hier nicht spurios wiederhergestellt werden.
  */
 void K5122::releaseHeldRead() {
-    transferring_        = false;
+    // Im Post-Write-Verify-Gnadenfenster den Streaming-Zustand NICHT abreißen: SCPX
+    // ruft direkt nach dem Schreib-Commit diese Release-Kante ([EC0B]:E8B5→E929),
+    // dispatcht dann aber ZVE1 zum Nachfolge-Verify-Read auf DERSELBEN Spur.  Bleibt
+    // transferring_ hier erhalten, engagiert der os-Gate beim ersten E8B5-Besuch der
+    // Verify-Runde sofort wieder (isReadTransferActive()==true → assertBUSRQ →
+    // zve2StartFromReset), und ZVE2 setzt die Suche mit noch gültigem head_pos_/
+    // cur_track_ fort (kontinuierliche Rotation, kein Rewind).  Ohne diese Ausnahme
+    // bleibt ZVE2 im Reset (kein /BUSRQ-Restart), ~1 Mio Takte später kapert der
+    // Index-ISR den Handshake-Vektor [EC0B]=E998 → ungeprüfter Blindscan → E975 →
+    // „BAD SECTOR" (doc/analyse_scpx_com_load.md §11).  Normale Lese-Completions
+    // (post_write_grace_==0) verhalten sich unverändert → keine Read-Regression.
+    // Nur transferring_ (das isReadTransferActive-Signal) wird im Gnadenfenster
+    // erhalten; dma_pending_/byte_ready_ werden IMMER zurückgesetzt, damit die
+    // aktuelle Byte-DMA sauber terminiert (sonst streamt ZVE2 endlos weiter).
+    if (post_write_grace_ <= 0) transferring_ = false;
     dma_pending_         = false;
     byte_ready_          = false;
     str_inactive_cycles_ = 0;
     if (bus_.isBUSRQ()) bus_.releaseBUSRQ();
-    LOG_DEBUG("K5122", "releaseHeldRead: gehaltener Laufzeit-Read beendet, BUSRQ freigegeben");
+    LOG_DEBUG("K5122", "releaseHeldRead: gehaltener Laufzeit-Read beendet, BUSRQ frei%s",
+              post_write_grace_ > 0 ? " (Post-Write-Gnadenfenster: Stream bleibt engaged)" : "");
 }
 
 /**
@@ -366,9 +381,14 @@ void K5122::update(int cycles) {
     // /STR=1 unterdrückt /BUSRQ (Anschluss inaktiv).  Nur ein über mehrere
     // Byteperioden anhaltendes /STR=1 wird vom Datenseparator durchgetaktet —
     // kurze Boot-ROM-Setup-Strobes (≤ ~18 Takte) werden verschluckt (Latch).
+    if (post_write_grace_ > 0) post_write_grace_ -= cycles;
     if (transferring_ && !write_mode_ && (prev_ctrl_a_ & 0x08)) {
         str_inactive_cycles_ += cycles;
-        if (str_inactive_cycles_ >= kStrEndSampleCycles) {
+        // Im Post-Write-Verify-Fenster längere Schwelle (s. k5122.h): der Stream
+        // muss die Dispatch-Lücke bis zum ZVE2-Neustart überleben.
+        const int str_end_thr = post_write_grace_ > 0 ? kPostWriteStrEndCycles
+                                                       : kStrEndSampleCycles;
+        if (str_inactive_cycles_ >= str_end_thr) {
             transferring_        = false;
             dma_pending_         = false;
             byte_ready_          = false;
@@ -1191,6 +1211,12 @@ void K5122::commitWriteField() {
     read_stream_track_ = TrackCodec::buildFaithfulReadTrack(sektoren, spur.encoding);
     cur_track_      = &read_stream_track_;
 
+    // Gnadenfenster für den SCPX-Nachfolge-Verify-Read öffnen: verhindert, dass die
+    // /STR=1-Abtastung den Transfer in der langen ZVE1-Dispatch-Lücke vorzeitig
+    // beendet (s. k5122.h / doc/analyse_scpx_com_load.md §11).
+    post_write_grace_    = kPostWriteGraceCycles;
+    str_inactive_cycles_ = 0;
+
     write_buf_.clear();
 }
 
@@ -1290,5 +1316,6 @@ bool K5122::deserialize(const uint8_t*& p, const uint8_t* end) {
     dma_pending_         = false;
     dma_is_write_        = false;
     str_inactive_cycles_ = 0;
+    post_write_grace_    = 0;
     return true;
 }
