@@ -110,18 +110,26 @@ poke at); `doc/analyse_zre_rom_boot.md` + `doc/K1520_architecture.md` §14 hold 
 > `tools/k1520dbg.md` and `tools/boot_trace.md`. Two tools, complementary:
 > - **`boot_trace`** — non-interactive: run a boot to a cycle limit / `--until <cond>`,
 >   get a report (milestones, `[03F8]` done-flag, PC histograms, VRAM banner). **Locates**
->   *where* the DMA/boot hangs; also `--coverage`/`--diff`/`--csv` exports.
+>   *where* the DMA/boot hangs; also `--coverage`/`--diff`/`--csv` exports, `--fold`
+>   (PC-period loop-collapse — crushes even register-varying hot loops), `--itrace`
+>   (accepted-INT/NMI CSV), and a K5122 read-attempt log via `--log-level info|debug`.
 > - **`k1520dbg`** — interactive gdb-style: breakpoints (incl. conditional / `bint`/`bnmi`/
->   `breti` event BPs), step into/over/out, `rs` reverse-step + `snap`/`savestate`, watch
->   mem/io, `logpoint`, `x` examine, exact history `bt`, `dev ctc/pio/sio` chip state.
->   **Dissects** a located problem.
+>   `breti` and floppy `bbusrq`/`bxfer` event BPs), step into/over/out, `rs` reverse-step +
+>   `rc` reverse-continue + `snap`/`snap diff`/`savestate`, watch mem/io, `logpoint`,
+>   `itrace`, `x` examine, exact history `bt`, `where` (both CPUs at a glance), `hist`
+>   (PC hotspots of both CPUs), `disk verify` (medium CRC health), `vars -f` (loadable
+>   dashboard), `dev ctc/pio/sio` chip state, `help floppy`/`help dualcpu`. **Dissects** a
+>   located problem. Full command list + the Dual-CPU/Floppy-read recipe:
+>   `tools/how_to_debug_and_trace.md` §0b.
 >
 > **Run efficiently (this matters for the agent):**
 > - **Invoke via `tools/dev.sh`** (rebuilds first → never a stale binary, see Build & test):
 >   `tools/dev.sh trace <boot_trace-args>` and `tools/dev.sh tool k1520dbg <args>`. The bare
 >   tool names in the examples below stand for these wrappers.
-> - ⚠️ **Both tools mount the disk read/write — a run can CORRUPT the image.** Always run
->   against a temp copy, never a committed fixture: `D=$(mktemp --suffix=.img); cp DISK $D; … $D; rm -f $D`.
+> - ✅ **Disk safety is now the default (Copy-on-Write).** Both tools copy the disk to a
+>   temp file and mount that, so a committed fixture can't be corrupted — no more
+>   `mktemp; cp DISK $D; … $D; rm $D` ritual; just pass the disk directly. Use `--rw` only
+>   when a write must persist (e.g. FORMAT tests), then work on your own temp copy.
 > - boot_trace: `-L /dev/null` discards the verbose emulator log; **`--quiet --json`** gives
 >   exactly one machine-readable result line (instead of ~880) + a meaningful exit code
 >   (`--until`: 0 met / 2 not met). Prefer **`--until <cond>`** over guessing cycle counts.
@@ -185,10 +193,11 @@ histogram, and an 80-col text dump of VRAM (`0xF800`) so the screen banner is vi
 
 ## Subagenten / Delegation an günstigere Modelle
 
-Projektspezifische Subagenten liegen in `.claude/agents/`. **Delegiere abgrenzbare Teilaufgaben
-an diese Agenten, statt sie selbst zu erledigen** — das spart Kosten (Haiku/Sonnet statt Opus)
-und hält den Hauptkontext frei. Faustregel: kontextarme, gut umrissene Arbeit auslagern; eng mit
-dem laufenden Arbeitsstand verwobene Arbeit selbst behalten.
+Projektspezifische Subagenten liegen in `.claude/agents/`. **Standing rule: soweit sinnvoll,
+abgrenzbare Teilaufgaben an Agenten auf Basis GÜNSTIGERER Modelle delegieren, statt sie selbst
+(Opus) zu erledigen** — das spart Kosten (Haiku/Sonnet statt Opus) und hält den Hauptkontext frei.
+Faustregel: kontextarme, gut umrissene Arbeit auslagern; eng mit dem laufenden Arbeitsstand
+verwobene Arbeit selbst behalten. Opus bleibt für Orchestrierung, Entwurf und Entscheidungen.
 
 | Agent | Modell | Wofür |
 |-------|--------|-------|
@@ -199,7 +208,16 @@ dem laufenden Arbeitsstand verwobene Arbeit selbst behalten.
 | `boot-disasm-analyst`| sonnet | Z80-Disassembly + ZRE-Boot-ROM/ZVE1↔ZVE2-DMA-Analyse mit den `tools/`-Werkzeugen. |
 
 Konkret heißt das u.a.: breite Suchen → `code-explorer`; Log-/Trace-Auswertung → `log-trace-analyzer`;
-Build-&-Test-Durchläufe → `test-runner`. Opus bleibt für Orchestrierung, Entwurf und Entscheidungen.
+Build-&-Test-Durchläufe → `test-runner`; umrissene C++-Teile → `cpp-coder`; Boot-Disasm/RE →
+`boot-disasm-analyst`.
+
+**Parallelität — Bau-Kollision beachten:** Mehrere Agenten, die gleichzeitig `build/` (oder
+`build_trace/`) anfassen, kollidieren beim `cmake --build` (Race/kaputte Binaries). Daher: build-/
+test-berührende Delegationen **sequenziell** laufen lassen ODER dem Agenten ein eigenes Worktree
+geben (`isolation: "worktree"`). Read-only-Agenten (`code-explorer`, `log-trace-analyzer`,
+`boot-disasm-analyst` gegen ein bereits gebautes `./build/…`) parallelisieren gefahrlos. Hintergrund-
+Agenten sind langsam (ein voller Boot unter `k1520dbg`/`boot_trace` ~2 s bis Minuten je Aufgabe) —
+nicht mit „hängt" verwechseln; sie melden sich bei Abschluss selbst.
 
 ## Diskettenformatierung (FORMAT.COM) — Scope
 
