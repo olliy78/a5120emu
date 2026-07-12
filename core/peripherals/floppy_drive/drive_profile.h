@@ -39,12 +39,28 @@
  * (*) K5601 = das in der Standard-A5120-Bürokonfiguration dreifach verbaute 5,25″-
  *     Laufwerk.  Physisch MFM-fähig; der Boot-ROM-/Loader-Lesepfad ist jedoch **als FM
  *     verdrahtet** (default_read_encoding = FM), siehe Feld-Doku unten.
+ *
+ * ### K5601-Datenblatt (5,25″-DS-Standardlaufwerk, Default-Profil mfs_525_ds80)
+ * | Größe | Wert |
+ * |-------|------|
+ * | Diskettendrehzahl | **300 min⁻¹ ± 2 %** (→ Index-Periode 490000 Takte @ 2,45 MHz) |
+ * | Aufzeichnungsverfahren | FM / MFM (SD / DD) |
+ * | Übertragungsrate | **125 / 250 kbit/s** (FM / MFM) → Byteperiode 156 / 78 Takte |
+ * | Kapazität unformatiert | 1 MByte (MFM) |
+ * | Motorstartzeit | ≤ 500 ms |
+ * | Kopfzustellzeit | 0 ms |
+ * | Kopfberuhigungszeit | 15 ms |
+ * | Schrittzeit Spur/Spur | 3 ms |
+ *
+ * Die Drehzahl 300 min⁻¹ ist **datenblattbelegt** — Grundlage der Index-Periode 490000
+ * (Boot-Invariant).  Übertragungsraten → @ref bytePeriodCycles.  Die Motor-/Kopf-Zeiten
+ * sind bewusst nicht taktgenau modelliert (Boot-Timing, siehe K5122_MOTOR_SPINUP_MS).
  */
 struct DriveProfile {
     std::string name        = "mfs_525_ds80";
     uint8_t  num_cyls       = 80;     ///< 40 / 77 / 80
     uint8_t  num_heads      = 2;      ///< 1 / 2
-    uint16_t rpm            = 300;    ///< 300 (5,25″) / 360 (8″) → Index-Periode
+    uint16_t rpm            = 300;    ///< K5601: 300 min⁻¹ ±2 % (Datenblatt); 8″ = 360 → Index-Periode
     uint8_t  medium_inch    = 5;      ///< 5 / 8 (für /HF-Frequenzwahl, informativ)
     bool     supports_fm    = false;  ///< 8″-Laufwerke
     bool     supports_mfm   = true;
@@ -86,10 +102,12 @@ struct DriveProfile {
      * @brief Byte-Periode in Z80-Takten aus der **Datenrate des Verfahrens** ableiten.
      *
      * Die Datenrate ist eine Eigenschaft der Aufzeichnungselektronik (Encoding),
-     * **nicht** der Drehzahl: MFM 250 kbit/s, FM 125 kbit/s.  Ein Datenbyte (8 Bit)
-     * belegt daher einen festen Zeitschlitz, unabhängig von @ref rpm.  Bei schnellerer
-     * Drehung passen entsprechend weniger Bytes pro Umdrehung — genau wie auf realer HW,
-     * wo der Controller die CPU je Datenport-Zugriff per `/WAIT` an diesen Takt bindet.
+     * **nicht** der Drehzahl.  Werte aus dem **K5601-Datenblatt** (Übertragungsrate
+     * FM/MFM = 125 / 250 kbit/s): MFM 250 kbit/s = 31250 B/s, FM 125 kbit/s = 15625 B/s.
+     * Ein Datenbyte (8 Bit) belegt daher einen festen Zeitschlitz, unabhängig von @ref rpm;
+     * bei schnellerer Drehung passen entsprechend weniger Bytes pro Umdrehung — genau wie
+     * auf realer HW, wo der Controller die 2. CPU (ZVE2) je Byte über den Daten-PIO-RDY per
+     * `/BUSRQ` an diesen Takt bindet (K5122-Handbuch §5.6.1, DMA-Betrieb/Simultanarbeit).
      *
      * Damit ist das **Verhältnis Drehzahl↔Takt konstant** (siehe indexPeriodCycles),
      * die **Datenrate FM vs. MFM aber unterschiedlich** — die Grundlage dafür, dass
@@ -100,7 +118,8 @@ struct DriveProfile {
      * @return Z80-Takte pro Datenbyte (@ 2,45 MHz: MFM 78, FM 156)
      */
     int bytePeriodCycles(Encoding enc, uint32_t cpu_hz) const {
-        // Datenrate → Bytes/s: MFM 250 kbit/s = 31250 B/s, FM 125 kbit/s = 15625 B/s
+        // Datenrate → Bytes/s (K5601-Datenblatt): MFM 250 kbit/s = 31250 B/s,
+        // FM 125 kbit/s = 15625 B/s.
         const uint32_t bytes_per_sec = (enc == Encoding::FM) ? 15625u : 31250u;
         return static_cast<int>(cpu_hz / bytes_per_sec);
     }

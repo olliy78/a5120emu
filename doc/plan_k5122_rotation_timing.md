@@ -42,33 +42,41 @@ physikalische Byteperiode:
 - **HF=1 = niedrige Frequenz (500 kHz)** für FM-8″ **und MFM-5″ (MFS/K5601)** — unser Laufwerk (Z.259/260).
 - **Alle 16 Takte = 1 Byte** (Bitzähler A13, Z.427). ⇒ MFM-5″: 500 kHz / 16 = 31250 Byte/s = 32 µs/Byte
   = **78 CPU-Takte @ 2,45 MHz** — deckt sich exakt mit unserem `bytePeriodCycles(MFM)=78`.
-- Das Handbuch beschreibt die **/WAIT-Synchronisation** (§5.6.2, Z.484–493): der Controller hält die CPU
-  je Datenport-Zugriff an, bis das nächste Byte (16 Takte) bereitsteht — ein **echtes Spacing-Modell**.
+- Betriebsart: Das Handbuch kennt ZWEI per Lötbrücke wählbare Synchronisationen (§5.6.3): **§5.6.1
+  „DMA-Betrieb/Simultanarbeit"** (ZRE K2526 mit 2 CPUs, ZVE2 = programmgesteuerter DMA-Kanal; /BUSRQ
+  aus dem Daten-PIO-RDY, durch /STR unterdrückt) und **§5.6.2 „mit /WAIT — *ohne* Simultanarbeit"**
+  (eine CPU, zeitkritische Geräte). **Der A5120 nutzt §5.6.1 (/BUSRQ, Dual-CPU)** — genau unser Modell.
+  Ein „/WAIT-Modell" wäre die *falsche* Betriebsart.
 
-**Empirischer Byteperioden-Sweep (INIT-`[12A6]` live gemessen), MFM-Periode variiert:**
+**K5601-Datenblatt (vom Nutzer beschafft):** Diskettendrehzahl **300 min⁻¹ ±2 %**, Übertragungsrate
+**125 / 250 kbit/s** (FM/MFM), Kapazität unformatiert 1 MByte (MFM), Motorstart ≤500 ms, Kopfzustellzeit
+0 ms, Kopfberuhigung 15 ms, Schrittzeit Spur/Spur 3 ms. ⇒ **300 rpm und MFM-Byteperiode 78 sind
+datenblattbelegt korrekt** — die frühere „~360 rpm"-Hypothese ist damit **widerlegt**. (Werte in
+`drive_profile.h` übernommen.)
 
-| Periode | 78 | 77 | 76 | 75 | **74** | 71 | 68 | 65 |
-|---------|----|----|----|----|--------|----|----|----|
-| `[12A6]`| 4902 | 4902 | 4904 | 4904 | **5470** | 5474 | 5474 | 5478 |
+**★INITs Fenster live nachgemessen (k1520dbg, `b 0x0E2E`):** Für unser Laufwerk lädt INIT
+**`BC=1868H` (6248), `DE=7D` (125) → Fenster 6248–6373**, weil `(IX+0)=0xE5` → **Bit 7 = 1** den Default
+`BC=1463H` (5219) bei `0x0E28` überschreibt. **Der frühere Analystenbefund „5219–5323" war falsch** (er
+las nur den Default vor dem Bit7-Override). Ist-Wert `[12A6]≈4900` liegt weit unter 6248 → BAD DRIVE SPEED.
 
-Die Zählung ist **quantisiert** und springt bei 75→74 um +566 (4904→5470) **über das Fenster
-5219–5323 hinweg** — es gibt **keine** Byteperiode, die hineintrifft. Ursache: unser Per-Byte-`/BUSRQ`-
-Drossel liefert **additiven** Overhead (Byteperiode + ZVE2-Instruktionszeit) statt echtem /WAIT-**Spacing**
-(max, Overhead absorbiert) und rastet dadurch in Plateaus. Auch die rpm-Achse hilft mit diesem Modell
-nicht (bewegt sich in die falsche Richtung).
+**Das erklärt alles — es ist Spacing vs. additiv, NICHT rpm oder Byteperiode:**
+- Fenster **6248–6373 ≈ 490000/78 = 6282** = die **Spacing-Zählung** (ein `OUT` je Byte-Slot, Schleifen-
+  Overhead *absorbiert*) für unser Laufwerk bei den korrekten Werten 300 rpm / 78 Takte.
+- Unser Per-Byte-`/BUSRQ`-Drossel ist **additiv** (friert ZVE2 im Byte-Wait ein und *addiert* danach den
+  Schleifen-Overhead) → `[12A6]≈4900 = 490000/(78+~22)`. Ein Byteperioden-Sweep bestätigt: der Wert ist
+  **quantisiert** (Plateaus 4902/4904 → Sprung 5470 bei Periode 74) und trifft das Fenster nie.
+- Reale /BUSRQ-HW (§5.6.1): der Byte-Slot ist ein freilaufendes Quarz-Raster; ZVE2s Nicht-Port-
+  Instruktionen (INC/CP/JR) laufen innerhalb des Slots → Overhead **absorbiert** → **Spacing** → 6282.
 
-**Physikalisch konsistente Deutung:** INITs MFM-Fenster (Mitte 5271) entspricht `indexPeriode/78` bei
-**~357–360 rpm** (490000/78≈6282 bei 300 rpm ist zu hoch; 408333/78≈5235 bei 360 rpm liegt im Fenster) —
-unter einem **echten /WAIT-Spacing-Modell**. Das erklärt zugleich den FM/MFM-„Widerspruch": das
-bit7-(IX+0)-Flag wählt Fenster, die zu **rpm×HF-Kombinationen** passen (8″-360-rpm vs. 5″), nicht zu
-FM-vs-MFM-Datenrate. Unser Modell hat **zwei** Abweichungen von dieser Deutung: (1) Drossel ≠ echtes
-/WAIT-Spacing (quantisiert), (2) MFS-`rpm=300` (validiertes Boot-Invariant 490000) evtl. real ~360.
-
-**Fazit:** INIT-Format ist **nicht per Parameter-Tuning** im heutigen Drossel-Modell lösbar. Ein
-belastbarer Fix = **echtes /WAIT-Spacing-Datenport-Modell** (Plan §3.1 Variante A) + Klärung der realen
-MFS-Drehzahl — beides berührt den an `rpm=300`/`490000` validierten Boot und ist ein eigener, riskanter
-Umbau, kein Feinjustieren. Bis dahin bleibt INIT-Format ein dokumentierter offener Punkt; die
-**Byteperiode 78 ist korrekt** (Handbuch) und der Boot ist damit taktrobust grün.
+**Fazit (korrigiert):** INIT erwartet für unser Laufwerk die **Spacing-Rate 6282**. Byteperiode (78),
+Drehzahl (300) und Betriebsart (/BUSRQ §5.6.1) sind **korrekt** — die einzige Abweichung ist, dass unsere
+Drossel den ZVE2-Schleifen-Overhead **addiert** statt ihn (wie die reale freilaufend-getaktete /BUSRQ-HW)
+im Byte-Slot zu **absorbieren**. Der belastbare Fix ist daher **kein** /WAIT-Umbau und **keine** rpm-/
+Byteperioden-Änderung, sondern die **Drossel auf ein freilaufendes Byte-Raster mit Overhead-Absorption
+(Spacing)** umzustellen — innerhalb der bereits korrekten /BUSRQ-Betriebsart. Das berührt den geteilten
+Byte-Takt (Boot-Neuvalidierung nötig), ist aber vermutlich boot-arm: der Boot-DMA nutzt `INIR` mit ~0
+Per-Byte-Overhead, wo additiv ≈ spacing. Offen zu bestätigen: ob (IX+0)-Bit7=1 datenblattkonform für die
+K5601 ist (Deskriptor-Quelle noch nicht abschließend lokalisiert) — falls ja, ist Spacing der ganze Fix.
 
 ---
 
