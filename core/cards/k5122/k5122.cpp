@@ -387,7 +387,7 @@ void K5122::update(int cycles) {
         // Im Post-Write-Verify-Fenster längere Schwelle (s. k5122.h): der Stream
         // muss die Dispatch-Lücke bis zum ZVE2-Neustart überleben.
         const int str_end_thr = post_write_grace_ > 0 ? kPostWriteStrEndCycles
-                                                       : kStrEndSampleCycles;
+                                                       : strEndSampleCycles();
         if (str_inactive_cycles_ >= str_end_thr) {
             transferring_        = false;
             dma_pending_         = false;
@@ -407,7 +407,7 @@ void K5122::update(int cycles) {
     // /STR=1 oben den Transfer — keine programm-/größenspezifische Erkennung nötig.
     if (transferring_ && !write_mode_ && !byte_ready_) {
         byte_acc_ += cycles;
-        if (byte_acc_ >= kBytePeriodCycles) {
+        if (byte_acc_ >= currentBytePeriod()) {
             byte_acc_   = 0;
             byte_ready_ = true;
             bus_.assertBUSRQ();
@@ -427,7 +427,7 @@ void K5122::update(int cycles) {
     if (write_mode_) {
         if (!byte_ready_) {
             byte_acc_ += cycles;
-            if (byte_acc_ >= kBytePeriodCycles) {
+            if (byte_acc_ >= currentBytePeriod()) {
                 byte_acc_   = 0;
                 byte_ready_ = true;
                 bus_.assertBUSRQ();

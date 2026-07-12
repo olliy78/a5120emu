@@ -456,7 +456,7 @@ if(BUILD_K1520)
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\ng\\ns 1\\nrs\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
 
         # boot_trace — standalone runs.
-        add_cli_test(cli_bt_until "MET at cycle [0-9]+ .PC=0x0168."
+        add_cli_test(cli_bt_until "MET at cycle [0-9]+ .PC=0x0169."
             "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' \$D; rm -f \$D")
         # --coverage BEFORE --until so it doesn't consume the disk path as its CSV file.
         add_cli_test(cli_bt_coverage "Code coverage .ZVE1."
@@ -465,7 +465,7 @@ if(BUILD_K1520)
         add_cli_test(cli_bt_diff "only-A=1 .*only-B=1"
             "A=$(mktemp); B=$(mktemp); printf 'cpu,pc,hits\\nZVE1,0x0100,1\\nZVE1,0x0200,1\\n' > \$A; printf 'cpu,pc,hits\\nZVE1,0x0200,1\\nZVE1,0x0300,1\\n' > \$B; $<TARGET_FILE:boot_trace> --diff \$A \$B; rm -f \$A \$B")
         # save state at a condition, then resume from it (ROM mapping reproduced).
-        add_cli_test(cli_bt_savestate "resuming at PC=0x0169"
+        add_cli_test(cli_bt_savestate "resuming at PC=0x016A"
             "D=$(mktemp); S=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' --save-state \$S \$D >/dev/null 2>&1; $<TARGET_FILE:boot_trace> -L /dev/null --load-state \$S -c 2000 \$D; rm -f \$D \$S")
 
         # Exit-code semantics (for scripted/agent branching) — assert the code via `test`.

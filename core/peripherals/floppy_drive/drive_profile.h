@@ -82,6 +82,29 @@ struct DriveProfile {
         return static_cast<int>(static_cast<uint64_t>(cpu_hz) * 60 / rpm);
     }
 
+    /**
+     * @brief Byte-Periode in Z80-Takten aus der **Datenrate des Verfahrens** ableiten.
+     *
+     * Die Datenrate ist eine Eigenschaft der Aufzeichnungselektronik (Encoding),
+     * **nicht** der Drehzahl: MFM 250 kbit/s, FM 125 kbit/s.  Ein Datenbyte (8 Bit)
+     * belegt daher einen festen Zeitschlitz, unabhängig von @ref rpm.  Bei schnellerer
+     * Drehung passen entsprechend weniger Bytes pro Umdrehung — genau wie auf realer HW,
+     * wo der Controller die CPU je Datenport-Zugriff per `/WAIT` an diesen Takt bindet.
+     *
+     * Damit ist das **Verhältnis Drehzahl↔Takt konstant** (siehe indexPeriodCycles),
+     * die **Datenrate FM vs. MFM aber unterschiedlich** — die Grundlage dafür, dass
+     * drehzahlmessende Programme (z. B. SCPX `INIT.COM`) die reale Byte-Rate sehen.
+     *
+     * @param enc    FM oder MFM
+     * @param cpu_hz effektive Z80-Taktfrequenz in Hz
+     * @return Z80-Takte pro Datenbyte (@ 2,45 MHz: MFM 78, FM 156)
+     */
+    int bytePeriodCycles(Encoding enc, uint32_t cpu_hz) const {
+        // Datenrate → Bytes/s: MFM 250 kbit/s = 31250 B/s, FM 125 kbit/s = 15625 B/s
+        const uint32_t bytes_per_sec = (enc == Encoding::FM) ? 15625u : 31250u;
+        return static_cast<int>(cpu_hz / bytes_per_sec);
+    }
+
     /// @brief Prüft, ob ein Verfahren von diesem Laufwerk unterstützt wird.
     bool supports(Encoding enc) const {
         return enc == Encoding::FM ? supports_fm : supports_mfm;

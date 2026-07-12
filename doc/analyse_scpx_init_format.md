@@ -189,23 +189,37 @@ W A I T !           (FORMATTING CYL.: 00)
 BAD DRIVE SPEED !
 ```
 
-**INIT bricht sofort auf Zylinder 00 mit `BAD DRIVE SPEED !` ab.** Ursache (verifiziert):
+**INIT bricht auf Zylinder 00 mit `BAD DRIVE SPEED !` ab.** Ursache (durch k1520dbg-Trace
+schrittweise verifiziert — s. Handoff `doc/plan_k5122_rotation_timing.md`):
 
-- Vor dem Formatieren misst INIT die Drehzahl (Routine `0x0DC4`–`0x0DE9`): es strobt in einer
-  81er-Schleife `OUT(10H),E` · `OUT(10H),E&7F` · `OUT(10H),E|80` (E=`0x89`, Bit 7 wechselt) und
-  pollt dabei `IN(12H)` Bit 7. Erwartet wird, dass Bit 7 (Index-/Statuswechsel) innerhalb der
-  Messzeit fällt; sonst → Fehlercode `0x54` = BAD DRIVE SPEED.
-- Unser **K5122 wertet eine fallende Flanke von Port-10H Bit 7 als Schrittpuls** (`/ST`,
-  `k5122.cpp:556 doStep()`). INITs Strobe-Muster erzeugt genau solche Flanken → der Kopf **wird von
-  Spur 0 weggesteppt** (im Test bis `cyl=3` beobachtet). Damit bleibt `IN(12H)` Bit 7 = `/TO` = 1
-  (nicht auf Spur 0) dauerhaft gesetzt → Schleife läuft durch → BAD DRIVE SPEED.
-- **Kern:** INIT.COM fährt ein **eigenes Low-Level-Format-Protokoll** (index-getaktete Drehzahl-
-  messung + strobe-serialisierte Formatbytes), das sich grundlegend vom **CP/A-BIOS-Format-/Lese-
-  pfad** unterscheidet, den das format-agnostische K5122-Modell abbildet. Port-10H-Bit7 ist im
-  BIOS-Pfad `/ST` (Step), im INIT-Format-Pfad aber ein Serialisierer-Strobe; Port-12H-Bit7 ist bei
-  uns statisch `/TO`, INIT erwartet dort das rotierende Index-Signal.
+> ⚠️ **Korrektur einer früheren Fehldiagnose.** Zuerst vermutet: INITs Strobes würden über
+> `doStep()` den Kopf von Spur 0 wegsteppen (Port-10H-Bit7 = `/ST`). **Falsch** — die
+> Rekalibrier-Routine `sub_0DC4` liest beim ersten `IN(12H)` sofort `/TO=0` (Kopf auf Spur 0,
+> `handleCtrlPortAWrite` refresht Port B in Zeile 651) und INIT erreicht die echte Format-Engine
+> bei `0x0E14`. Der Fehler kommt **nicht** aus dem Recalibrate, sondern aus der **Drehzahlmessung**.
 
-**Folge:** Ein per INIT frisch formatierter Datenträger lässt sich derzeit **nicht** erzeugen.
+- **Fehlercode = `0x55`** (nicht `0x54`; `0x54`=UNDEFINED, `0x53`=WRITE PROTECTED). `0x55` wird bei
+  **`0x0E36`** gesetzt, erreicht über die JP-(HL)-State-Machine (`0x0F01`/`0x0F13`).
+- **Drehzahl-Fenster-Prüfung `0x0E19`–`0x0E36`:** INIT liest `[12A6]` (gemessener Zählwert) und
+  verlangt **`5219 ≤ [12A6] ≤ 5323`** für MFM (`BC=1463H`, Toleranz `DE=0068H`; FM-Zweig
+  `BC=1868H`/`DE=007DH` = `6248…6373`). Außerhalb → `LD B,55H` → BAD DRIVE SPEED (nach `[129F]`
+  Retries).
+- **Messung `0x0FF2`–`0x1012`:** eine Schleife `OUT(14H),A · INC BC · CP (HL) · OUT(14H),A · INC BC ·
+  JR Z` läuft, bis die **Index-ISR** `[12A8]` umschaltet, und legt `BC` (= Anzahl akzeptierter
+  Datenport-Schreibzugriffe pro **Umdrehung**) in `[12A6]` ab. Also: **wie viele `OUT(14H)`-Bytes
+  passen in eine Index→Index-Periode.**
+- **Warum es scheitert:** Die Index-Periode ist bei uns **korrekt** (`indexPeriodCycles = 2450000·60/300
+  = 490000 Takte` = reale 300 rpm @ 2,45 MHz). Aber die **Datenport-Schreibzugriffe (`OUT 14H`)
+  werden NICHT rotationsgetaktet**: real hält der Controller die CPU je Byte per `/WAIT`/`/BUSRQ` an,
+  bis die Scheibe ein Byte-Slot weitergedreht hat (~93 Takte/Byte bei MFM); unser Modell taktet
+  entweder gar nicht (CPU läuft frei) oder über die **boot-getunte Per-Byte-Drossel
+  `kBytePeriodCycles = 150`** — beides liefert einen `[12A6]`-Wert außerhalb `5219…5323` → BAD DRIVE
+  SPEED. Der Kern ist **kein programmspezifischer Sonderfall**, sondern eine fehlende
+  Hardware-Eigenschaft: der rotationsgekoppelte, per CPU-`/WAIT` erzwungene **reale Byte-Takt**.
+
+**Folge:** Ein per INIT frisch formatierter Datenträger lässt sich derzeit **nicht** erzeugen. Der
+saubere Fix (Umbau des K5122 auf einen rotationsgekoppelten realen Byte-Takt) ist geplant in
+**`doc/plan_k5122_rotation_timing.md`**.
 
 **Zugriffstest auf eine korrekt formatierte DD-DS-16×256-B: — ✓ funktioniert.** Statt der
 (fehlgeschlagenen) INIT-Formatierung eine via `tools/mk_blank … k5601_16x256` erzeugte Leerdiskette
@@ -222,11 +236,12 @@ BAD DRIVE SPEED !
 beschreiben (PIP) — nur INIT.COMs *eigener* Formatierer läuft (noch) nicht. Für Formatier-Tests bis
 zum K5122-Format-Protokoll-Fix daher `mk_blank`/`createDisk` als Format-Ersatz nutzen.
 
-**Fix-Aufwand (nicht umgesetzt):** INITs Format-Port-Protokoll im K5122 nachbilden — eigener
-Format-Modus (via `OUT(11H)`-Kommandowort erkannt), in dem Port-10H-Strobes **nicht** als Step
-gelten, Port-12H ein rotierendes Index-Bit liefert und die Formatbytes über den Strobe seriell in
-`parseFormatStream`/`commitFormatTrack` laufen. Substanziell und regressionsträchtig (der /STR-/Step-
-Pfad trägt Boot + CP/A-FORMAT [[project_format_track_write_missing]]) — daher offener Punkt.
+**Fix (geplant, nicht umgesetzt):** kein programmspezifischer Sonderfall, sondern
+Hardware-treue nachrüsten — den K5122 auf einen **rotationsgekoppelten realen Byte-Takt** umbauen,
+der ALLE Datenport-Transfers (`OUT 14H` schreiben / `IN 16H` lesen) per CPU-`/WAIT` an die reale
+Byte-Rate der drehenden Scheibe bindet (die boot-getunte `kBytePeriodCycles`-Drossel ersetzt). Dann
+sieht **jedes** Programm (CP/A-BIOS, INIT, künftige OS) automatisch die echte Drehzahl. Vollständiger
+Umbauplan mit Phasen/Regressionsschutz: **`doc/plan_k5122_rotation_timing.md`**.
 
 ## 8. Werkzeuge
 

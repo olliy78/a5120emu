@@ -241,6 +241,19 @@ private:
         return read_enc_overridden_ ? read_enc_
                                     : drives_[selected_drive_].profile().default_read_encoding;
     }
+    /// @brief Aktuelle Byte-Periode (Takte/Datenbyte) — rotationsgekoppelt aus der
+    ///        Datenrate des effektiven Verfahrens (MFM 78 / FM 156 @ 2,45 MHz).
+    ///        Ersetzt die frühere boot-getunte Konstante kBytePeriodCycles.
+    int currentBytePeriod() const {
+        return drives_[selected_drive_].profile().bytePeriodCycles(effReadEnc(), cpu_hz_);
+    }
+    /// @brief /STR=1-Abtastschwelle für das Lese-Transfer-Ende — ~2 Byteperioden,
+    ///        MITSKALIERT mit dem rotationsgekoppelten Byte-Takt (statt fix 320).
+    ///        Muss > kurzer /STR=1-Blips (Boot-ROM-Setup-Strobes ≤ ~18 Takte) und
+    ///        << echte Track-Enden (≥30000) bleiben — beides gilt für 2×Byteperiode.
+    int strEndSampleCycles() const {
+        return 2 * currentBytePeriod();
+    }
     /// @brief Committet einen abgeschlossenen Schreibtransfer in die gecachte Spur.
     void commitWrite();
     /// @brief Beendet einen Vollspur-FORMAT-Schreibtransfer am Index-Puls: parst den
@@ -320,7 +333,8 @@ private:
     // spezifische Completion-Erkennung ([0x03F8]=3-Watch, OUT(13H)-Hack).
     bool byte_ready_ = false;   ///< ein Byte liegt für ZVE2 bereit → /BUSRQ aktiv
     int  byte_acc_   = 0;       ///< Takte seit dem letzten Byte (bis zur Bereitschaft)
-    static constexpr int kBytePeriodCycles = 150;  ///< ~1 MFM-Byte (16 Bitzellen) @ 2.45 MHz
+    // Byte-Periode ist jetzt rotationsgekoppelt/encoding-abhängig → currentBytePeriod()
+    // (früher: feste boot-getunte Konstante kBytePeriodCycles = 150).
 
     // ─── /STR=1-Abtastung (Latch, formatagnostisches Transfer-Ende) ──────────
     // K5122-Doku §5.5: „Beendigung der Datenübertragung … durch Abschalten von
@@ -328,7 +342,8 @@ private:
     // kürzer als ~1 Byteperiode wird NICHT durchgetaktet (erklärt die kurzen
     // Boot-ROM-Setup-Strobes ≤ ~18 Takte, gegenüber echten Track-Enden ≥ 30000).
     int  str_inactive_cycles_ = 0;              ///< Takte mit /STR=1 im aktiven Transfer
-    static constexpr int kStrEndSampleCycles = 320;  ///< ~2 MFM-Byte-Perioden @ 2.45 MHz
+    // Lese-Transfer-Ende-Schwelle: jetzt mitskaliert → strEndSampleCycles() = 2×Byteperiode
+    // (früher fix 320 ≈ 2×150; bei Byte-Takt 78 wären 320 fälschlich ~4 Perioden).
 
     // ─── Post-Write-Verify-Gnadenfenster (SCPX-Laufzeit-Schreiben) ────────────
     // Nach einem BIOS-Datenfeld-Write (commitWriteField) dispatcht SCPX' ZVE1 über
