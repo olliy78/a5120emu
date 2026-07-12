@@ -32,12 +32,43 @@ Status: **Phase 1 umgesetzt + Boot taktrobust (Hauptrisiko gelöst).** Branch `s
 >   (Mitte 5271 ≙ ~187 Takte/Iter). **Gap ≈ 6 %** (200 vs 187) — reiner Modell-Overhead der Drossel.
 >   ⇒ Ein **separates ZVE1-Datenport-Pacing (Phase 2) hilft INIT NICHT** (Messung ist ZVE2/bereits
 >   gepaced) und wurde nach Test wieder entfernt.
-> - **Zwei offene Punkte (brauchen K5122-Diagnose-Timing-Doku, nicht aus INIT allein ableitbar):**
->   (a) der ~6 %-Overhead-Gap (200→187 Takte/Iter) — physikalisch impliziert INITs Fenster ~93
->   Takte/Byte, nicht die 78 des Boot-MFM; (b) der **FM/MFM-Fensterwiderspruch** (FM 6248–6373 >
->   MFM 5219–5323, obwohl FM halbe Datenrate — gleiche Schleife, nur Schwellwert wechselt). Beide
->   deuten auf eine Diagnose-Modus-Datenrate der realen K5122, die ≠ effektive MFM-Datenrate ist.
 > - Der `kWriteEndSampleCycles`/`kPostWriteStrEndCycles`-Schreibpfad blieb absolut (FORMAT-Tests grün).
+
+## 7a. Doku-Recherche + empirisches Feinjustieren (2026-07-12) — INIT-Format nicht per Tuning lösbar
+
+**K5122-Handbuch `doc/trascripted/Floppy Anschlußsteuerung K 5122.md` ausgewertet** — bestätigt die
+physikalische Byteperiode:
+- Schreib-/Lesetakt quarzgesteuert **1 MHz bzw. 500 kHz** (§4.4, Z.402/429), Grundquarz 10 MHz.
+- **HF=1 = niedrige Frequenz (500 kHz)** für FM-8″ **und MFM-5″ (MFS/K5601)** — unser Laufwerk (Z.259/260).
+- **Alle 16 Takte = 1 Byte** (Bitzähler A13, Z.427). ⇒ MFM-5″: 500 kHz / 16 = 31250 Byte/s = 32 µs/Byte
+  = **78 CPU-Takte @ 2,45 MHz** — deckt sich exakt mit unserem `bytePeriodCycles(MFM)=78`.
+- Das Handbuch beschreibt die **/WAIT-Synchronisation** (§5.6.2, Z.484–493): der Controller hält die CPU
+  je Datenport-Zugriff an, bis das nächste Byte (16 Takte) bereitsteht — ein **echtes Spacing-Modell**.
+
+**Empirischer Byteperioden-Sweep (INIT-`[12A6]` live gemessen), MFM-Periode variiert:**
+
+| Periode | 78 | 77 | 76 | 75 | **74** | 71 | 68 | 65 |
+|---------|----|----|----|----|--------|----|----|----|
+| `[12A6]`| 4902 | 4902 | 4904 | 4904 | **5470** | 5474 | 5474 | 5478 |
+
+Die Zählung ist **quantisiert** und springt bei 75→74 um +566 (4904→5470) **über das Fenster
+5219–5323 hinweg** — es gibt **keine** Byteperiode, die hineintrifft. Ursache: unser Per-Byte-`/BUSRQ`-
+Drossel liefert **additiven** Overhead (Byteperiode + ZVE2-Instruktionszeit) statt echtem /WAIT-**Spacing**
+(max, Overhead absorbiert) und rastet dadurch in Plateaus. Auch die rpm-Achse hilft mit diesem Modell
+nicht (bewegt sich in die falsche Richtung).
+
+**Physikalisch konsistente Deutung:** INITs MFM-Fenster (Mitte 5271) entspricht `indexPeriode/78` bei
+**~357–360 rpm** (490000/78≈6282 bei 300 rpm ist zu hoch; 408333/78≈5235 bei 360 rpm liegt im Fenster) —
+unter einem **echten /WAIT-Spacing-Modell**. Das erklärt zugleich den FM/MFM-„Widerspruch": das
+bit7-(IX+0)-Flag wählt Fenster, die zu **rpm×HF-Kombinationen** passen (8″-360-rpm vs. 5″), nicht zu
+FM-vs-MFM-Datenrate. Unser Modell hat **zwei** Abweichungen von dieser Deutung: (1) Drossel ≠ echtes
+/WAIT-Spacing (quantisiert), (2) MFS-`rpm=300` (validiertes Boot-Invariant 490000) evtl. real ~360.
+
+**Fazit:** INIT-Format ist **nicht per Parameter-Tuning** im heutigen Drossel-Modell lösbar. Ein
+belastbarer Fix = **echtes /WAIT-Spacing-Datenport-Modell** (Plan §3.1 Variante A) + Klärung der realen
+MFS-Drehzahl — beides berührt den an `rpm=300`/`490000` validierten Boot und ist ein eigener, riskanter
+Umbau, kein Feinjustieren. Bis dahin bleibt INIT-Format ein dokumentierter offener Punkt; die
+**Byteperiode 78 ist korrekt** (Handbuch) und der Boot ist damit taktrobust grün.
 
 ---
 
