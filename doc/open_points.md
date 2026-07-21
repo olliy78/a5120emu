@@ -1,10 +1,13 @@
 # K1520 Emulator - Open Points
 
-Updated: 2026-07-06
-Branch: `formating-disks`
+Updated: 2026-07-12
+Branch: `formating-disks` (baseline) / `scpx_boot` (SCPX 1526, items §4 + disabled-tests)
 Status: A5120 boots CP/A fully to the interactive prompt; keyboard, clock, disk
 read **and** write, and FORMAT.COM disk formatting all work — including self-made
 bootable disks (format → CPABCGEN → boot) for 5¼″-MFM and 8″-FM/mixed-density.
+On `scpx_boot`, SCPX 1526 also boots to `A>` with keyboard, `DIR`, `.COM` loading and
+runtime writes working; the former `PIP`/`REN` same-name rename hang is now resolved
+(§4) — only a regression guard test is still to be added.
 Remaining work is a short tail of exotic disk formats plus a few known limits — not
 architecture blockers.
 
@@ -60,6 +63,34 @@ suspected leftover clock/timing drift and/or spurious residual ZVE2 floppy activ
 Low priority (cosmetic, well past the reached-prompt milestone).
 `project_os_boot_reaches_prompt` memory has trace hints.
 
+### 4) SCPX runtime `PIP`/`REN` rename hang (branch `scpx_boot`) — ✅ RESOLVED 2026-07-12, needs a guard test
+
+> Branch `scpx_boot` (SCPX 1526 V1.7). SCPX boots to `A>`; keyboard, `DIR`, `.COM`
+> loading and runtime disk writes all work. Full analysis: `doc/analyse_scpx_pip_rename.md`.
+
+**Was hanging (never returned to `A>`):**
+- `PIP B:=A:STAT.COM` — cross-drive copy with **identical source AND destination name**.
+- `REN B:STAT.COM=B:STAT2.COM` — rename onto a name with a **deleted** directory entry.
+
+**Now fixed** — the fix was **not** a dedicated change but a **side effect of the K5122
+rotation-coupled, encoding-dependent byte-timing rework** (commit `1d547d0` **plus the ongoing
+working-tree refinements** to `k5122.cpp/.h` — `consumeByteSlot()`/`currentBytePeriod()`, the
+byte-slot spacing — that were uncommitted when this was verified; verify against the committed
+state once those land). This matches the diagnosed root cause exactly: the hang lived in
+the K5122 read-stream **byte pacing / `resyncToNextMark`** for the `E671` read that ZVE1 drives
+unpaced (see `doc/analyse_scpx_pip_rename.md` §4d/§4e — `[EC0D]=0xE295` was the *constant*
+data-CRC seed, never stale; the real issue was `head_pos_` pinning under the old flat
+`kBytePeriodCycles=150` timing). The new rotation-coupled timing unpins it.
+
+**Verified 2026-07-12** (k1520dbg, fresh boot + keystrokes): both `PIP B:=A:STAT.COM` and
+`REN B:STAT.COM=B:STAT2.COM` complete, `DIR B:` shows `STAT COM`, and the `A>` prompt returns.
+
+**Remaining action (small):** there is **no automated regression guard** for this path. Add one
+to `ScpxIntegration` (`tests/cpp/test_boot_integration.cpp`): boot → `ERA B:STAT.COM` →
+`PIP B:=A:STAT.COM` → assert return-to-`A>` + `STAT COM` present on B: (and/or the `REN` variant).
+This locks in the fix so a future timing change can't silently re-break it. Repro script in
+`doc/analyse_scpx_pip_rename.md` §3.
+
 ## Known non-issues (do not re-investigate)
 
 - **Native 8″ drive** — the K5122 is format-agnostic and drive type is pure BIOS
@@ -76,3 +107,20 @@ Low priority (cosmetic, well past the reached-prompt milestone).
 - **Documentation coverage**: essentially done. All non-generated `core/` headers
   carry file/class-level comments. Remaining low-priority nicety: fuller Doxygen on
   some Python helpers.
+- **Review the disabled/skipped tests** — go through the `DISABLED_`/skipped tests and
+  decide re-enable vs. delete vs. keep-as-documentation:
+  - `KeyboardIntegration.DISABLED_TypeCommandAtCcpEchoesAndProcesses`
+    (`tests/cpp/test_boot_integration.cpp:484`) — CP/A "type a command at the CCP,
+    expect echo + processing" check. Disabled because of a harness clock / timer-ISR
+    timing peculiarity (the CCP drops the command while time-entry input works). The
+    serial-latency mechanism itself is regression-guarded by the K7637 unit tests, so
+    this is a *harness* gap, not a product bug. Re-enable once the harness clock issue
+    is understood; note that on `scpx_boot` the interactive CCP input path
+    (`ScpxIntegration`) *is* exercised, so check whether that already covers the intent.
+  - **Stale comment to clean up**: `tests/cpp/test_boot_integration.cpp:282` still
+    references "`DISABLED_Stage3_FullyLoadsAndJumpsToOs`", but that test is now
+    **enabled and passing** (`BootIntegration.Stage3_FullyLoadsAndJumpsToOs`, line 316).
+    Update the comment.
+  - Sweep for any other deactivation forms while here (`GTEST_SKIP`, `#if 0`,
+    commented-out `TEST(...)`), and confirm the `format_integration`-labelled slow
+    tests are *excluded-by-label*, not broken (run `tools/dev.sh test-format`).

@@ -1,5 +1,18 @@
 # SCPX `PIP`-Kopie — Rename-Finalisierung hängt (Handoff / Weitermachen)
 
+> ## ✅ GELÖST 2026-07-12 (verifiziert)
+> `PIP B:=A:STAT.COM` (Gleichname) UND `REN B:STAT.COM=B:STAT2.COM` (gelöschter Eintrag) laufen jetzt
+> vollständig durch: DIR B: zeigt `STAT COM`, der `A>`-Prompt kehrt zurück (k1520dbg, frischer Boot +
+> keys, beide Trigger). Der Fix war KEINE gezielte Änderung, sondern ein **Seiteneffekt des
+> rotationsgekoppelten, encoding-abhängigen K5122-Byte-Takts (Commit `1d547d0` + laufende, bei der
+> Verifikation noch uncommittete `k5122.cpp/.h`-Verfeinerungen `consumeByteSlot()`/`currentBytePeriod()`,
+> ursprünglich für INIT-Format).** Das
+> bestätigt die Wurzelanalyse unten (§4d/§4e): der Hänger lag in der K5122-Byte-Taktung/`resyncToNextMark`
+> für den ungetakteten ZVE1-`E671`-Read — unter dem alten flachen `kBytePeriodCycles=150` pinnte
+> `head_pos_`; der neue rotationsgekoppelte Takt löst den Pin. **Offen nur noch:** ein Regressions-Guard-
+> Test in `ScpxIntegration` (s. doc/open_points.md §4). Der Rest dieses Dokuments ist die (weiterhin
+> korrekte) Wurzelanalyse — historisch für das Verständnis, warum der Timing-Fix wirkt.
+
 > **Zweck dieses Dokuments:** In sich geschlossener Wiedereinstieg für eine NEUE Session.
 > Alle Kernbefunde stehen inline (die Trace-Artefakte im `/tmp`-Scratchpad überleben nicht).
 > Voraussetzung ist der Commit **`b1184c3`** (`feat(scpx): Laufzeit-Schreiben repariert`) auf

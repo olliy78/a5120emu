@@ -254,6 +254,32 @@ private:
     int strEndSampleCycles() const {
         return 2 * currentBytePeriod();
     }
+    /// @brief Speist den freilaufenden Byte-Takt fort (Spacing-Modell, §5.6.1).
+    ///        Wird pro update() aufgerufen: @ref byte_acc_ läuft KONTINUIERLICH (auch
+    ///        während ZVE2 seine Nicht-Port-Instruktionen ausführt) und rastet bei jedem
+    ///        Byte-Slot ein. So wird der ZVE2-Schleifen-Overhead IM Slot absorbiert
+    ///        (Spacing → 1 Zugriff/Byteperiode), statt nach dem Warten addiert zu werden.
+    void advanceByteClock(int cycles) {
+        const int period = currentBytePeriod();
+        byte_acc_ += cycles;
+        if (!byte_ready_ && byte_acc_ >= period) {
+            byte_ready_ = true;
+            bus_.assertBUSRQ();
+        }
+        // Gegen Überlauf/Runaway bei stehendem ZVE2 (Overrun) begrenzen — hält die
+        // Rasterphase beschränkt; die Schreib-Idle-Erkennung (byte_ready_ bleibt) läuft weiter.
+        if (byte_acc_ > 2 * period) byte_acc_ = 2 * period;
+    }
+    /// @brief Konsumiert einen Byte-Slot beim Datenport-Zugriff (Spacing):
+    ///        Phase um eine Byteperiode zurücksetzen (statt hart auf 0), damit die
+    ///        während des ZVE2-Fensters aufgelaufenen Overhead-Takte erhalten bleiben.
+    void consumeByteSlot() {
+        const int period = currentBytePeriod();
+        byte_acc_ -= period;
+        if (byte_acc_ < 0) byte_acc_ = 0;
+        byte_ready_ = (byte_acc_ >= period);   // ggf. noch ein Byte „gestaut"
+        if (!byte_ready_) bus_.releaseBUSRQ();
+    }
     /// @brief Committet einen abgeschlossenen Schreibtransfer in die gecachte Spur.
     void commitWrite();
     /// @brief Beendet einen Vollspur-FORMAT-Schreibtransfer am Index-Puls: parst den

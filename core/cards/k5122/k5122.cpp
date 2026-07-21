@@ -91,11 +91,9 @@ uint8_t K5122::ioRead(uint8_t port) {
                     }
                     head_pos_ = (head_pos_ + 1) % cur_track_->size();
                 }
-                // Per-Byte-Drossel: Byte abgeholt → ZVE2 verliert den Bus, bis das
-                // nächste Byte ~1 Byteperiode später bereitliegt (s. update()).
-                byte_ready_ = false;
-                byte_acc_   = 0;
-                bus_.releaseBUSRQ();
+                // Byte abgeholt → einen Byte-Slot konsumieren (Spacing: die im
+                // ZVE2-Fenster aufgelaufene Phase bleibt erhalten, s. consumeByteSlot()).
+                consumeByteSlot();
             } else {
                 result = 0xFF;
             }
@@ -405,13 +403,8 @@ void K5122::update(int cycles) {
     // und /BUSRQ wird wieder assertiert.  Holt ZVE2 es nicht ab (fertig/idle),
     // bleibt /BUSRQ zwar aktiv, aber sobald ZVE2 aufhört zu lesen, beendet das
     // /STR=1 oben den Transfer — keine programm-/größenspezifische Erkennung nötig.
-    if (transferring_ && !write_mode_ && !byte_ready_) {
-        byte_acc_ += cycles;
-        if (byte_acc_ >= currentBytePeriod()) {
-            byte_acc_   = 0;
-            byte_ready_ = true;
-            bus_.assertBUSRQ();
-        }
+    if (transferring_ && !write_mode_) {
+        advanceByteClock(cycles);   // freilaufendes Raster (Spacing): auch während ZVE2 läuft
     }
 
     // ── Per-Byte-/BUSRQ-Drossel im Vollspur-FORMAT-Schreibmodus ──────────────
@@ -425,18 +418,12 @@ void K5122::update(int cycles) {
     // byte_ready_ über mehrere Byteperioden gesetzt (ZVE2 holt das angebotene Byte
     // nicht mehr ab), ist der Spur-Schreibstrom komplett → commitFormatTrack().
     if (write_mode_) {
-        if (!byte_ready_) {
-            byte_acc_ += cycles;
-            if (byte_acc_ >= currentBytePeriod()) {
-                byte_acc_   = 0;
-                byte_ready_ = true;
-                bus_.assertBUSRQ();
-            }
-            write_idle_acc_ = 0;
-        } else {
-            // Byte bereitgestellt, aber noch nicht abgeholt → ZVE2 schreibt gerade
+        advanceByteClock(cycles);   // freilaufendes Raster (Spacing), wie beim Lesen
+        if (byte_ready_) {
+            // Byte bereitgestellt, aber (noch) nicht abgeholt → ZVE2 schreibt gerade
             // nicht.  Hält das über kWriteEndSampleCycles an, hat ZVE2 das FORMAT
             // beendet (keine Folgespur mehr) → letzte Spur abschließen + Transfer beenden.
+            // (Im laufenden FORMAT holt ZVE2 jedes Byte binnen ~1 Byteperiode ab → ~0.)
             write_idle_acc_ += cycles;
             if (write_idle_acc_ >= kWriteEndSampleCycles) {
                 commitFormatTrack();
@@ -446,6 +433,8 @@ void K5122::update(int cycles) {
                 dma_pending_  = false;
                 bus_.releaseBUSRQ();
             }
+        } else {
+            write_idle_acc_ = 0;
         }
     }
 
@@ -671,9 +660,7 @@ void K5122::handleDataPortAWrite(uint8_t data) {
     // ZVE1.  (Der /WE-Datenfeldpfad sammelt dagegen innerhalb eines gehaltenen
     // ZVE2-Streamings und lässt die Bus-Arbitrierung unberührt.)
     if (write_mode_ && !we_writing_) {
-        byte_ready_ = false;
-        byte_acc_   = 0;
-        bus_.releaseBUSRQ();
+        consumeByteSlot();   // Spacing: Phase des freilaufenden Byte-Rasters erhalten
     }
     LOG_TRACE("K5122", "Schreib-Byte 0x%02X gesammelt (%zu Bytes)", data, write_buf_.size());
 }
