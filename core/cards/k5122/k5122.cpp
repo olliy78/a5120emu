@@ -498,6 +498,21 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
     // Statusabfrage/GUI; das Lese-/Index-Gating hängt (noch) am Motor, nicht am /HL.
     head_loaded_ = !(data & 0x40);
 
+    // ── Seitenwahl /FR (bit2): GEHALTENER PIO-Ausgangspegel ──────────────────
+    // Handbuch K5122 (Steckerbelegung A2 = /FAULT-RESET, bei Doppelkopf umgewidmet zu
+    // /HS = Kopfauswahl): /FR ist ein Ausgangs-PEGEL, der bei JEDEM Port-A-Schreiben aus
+    // bit2 übernommen wird (nicht nur am /STR-Edge) und bis zum nächsten Schreiben hält.
+    //   bit2 = 1 → Kopf 0,  bit2 = 0 → Kopf 1.
+    // So stimmt die Seite konsistent für ALLE Zugriffsarten: Format-Write (0xB4=Kopf0 /
+    // 0xB0=Kopf1), Boot-/CP-A-Pfadbyte (0x85=Kopf0 / 0x81=Kopf1) UND INIT.COMs Verify mit
+    // konstantem Read-Wort (0x85=Kopf0 / 0xA1=Kopf1) — dessen bit2 die zuvor formatierte
+    // Seite spiegelt.  (Ein separater /STR- oder Write-only-Latch traf INITs Verify falsch.)
+    // Einseitige Laufwerke (8″-SD wie MF3200) haben physisch nur Kopf 0 → /FR wirkungslos.
+    if (drives_[selected_drive_].profile().num_heads <= 1)
+        current_head_ = 0;
+    else
+        current_head_ = (data & 0x04) ? 0 : 1;
+
     // ── /WE (bit0) Flanken: BIOS-Schreib-Datenfeld sammeln/committen ─────────
     // Der CP/A-BIOS-dio-Pfad findet zuerst die IDAM (Lese-Strobe, /WE=1) und
     // schaltet erst zum Schreiben des Datenfelds /WE auf 0 (Steuerwort B4/B0),
@@ -529,15 +544,28 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
     if ((data & 0xF9) == 0x81) {
         read_enc_            = (data & 0x02) ? Encoding::FM : Encoding::MFM;
         read_enc_overridden_ = true;
+        // current_head_ ist oben bereits aus bit2 (/FR-Pegel) gesetzt.
 
-        uint8_t path_head = (data & 0x04) ? 0 : 1;
-        // Einseitige Laufwerke haben physisch nur Kopf 0 (vgl. /STR-Latch unten).
-        if (drives_[selected_drive_].profile().num_heads <= 1) path_head = 0;
-        if (path_head != current_head_) {
-            current_head_ = path_head;
-            // Seitenwechsel während laufender Lesung → Spur der neuen Seite laden
-            // (kontinuierliche Rotation, head_pos_ startet frisch auf der neuen Seite).
-            if (transferring_ && !write_mode_) startReadTransfer();
+        // Ein Pfad-/Lese-Steuerwort (bit0=/WE=1 → Lese-Absicht) armiert den Streaming-Read
+        // DIREKT — auch OHNE vorangehenden bit3-/STR-Lese-Strobe.  Boot-ROM/BIOS fahren zwar
+        // stets erst den /STR-Read-Strobe (der armiert) und dann das Pfadbyte (Seitenwahl);
+        // INIT.COM (SCPX) verifiziert dagegen unmittelbar nach dem Format-Write mit
+        // OUT(10H),0x85 + IN(16H) OHNE /STR-Read-Strobe.  Läge dann noch write_mode_ an,
+        // fiele IN(16H) auf den 0xFF-PIO-Fallback (kein Streaming) → INIT sähe statt des
+        // A1/FE-Syncs 0xFF und verwürfe JEDE Spur (alle „bad").  Daher hier (neu) armieren,
+        // sofern wir nicht ohnehin schon korrekt für (Zyl,Kopf) streamen — der Boot-
+        // Seitenwechsel (transferring_, nur Kopf ändert sich) verhält sich wie zuvor.
+        const bool streaming_ok =
+            transferring_ && !write_mode_ && cur_track_ != nullptr &&
+            loaded_head_ == current_head_ &&
+            loaded_cyl_  == drives_[selected_drive_].currentCylinder();
+        if (!streaming_ok) {
+            // Steht noch ein ungeschriebener Format-Strom an (Verify direkt nach dem
+            // Write, bevor die write-idle-Erkennung committet hat), zuerst die Spur sichern
+            // — sonst läse der Verify die alte (Vor-Format-)Spur.
+            if (write_mode_ && !write_buf_.empty()) commitFormatTrack();
+            write_mode_ = false;
+            startReadTransfer();
         }
     }
 
@@ -552,18 +580,8 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
     if ((prev_ctrl_a_ & 0x08) && !(data & 0x08)) {
         bool is_write = !(data & 0x01);  // /WE=0 → Schreiben
         str_inactive_cycles_ = 0;        // neue Sitzung: /STR=1-Abtastung zurücksetzen
-
-        // Side-Select: bit2 (/FR), NUR am /STR latchen.
-        // bit2=1 → Kopf 0, bit2=0 → Kopf 1.
-        // Empirisch verifiziert an den @OS.COM-Lesestrobes; bit5 togglet mit MK-Strobes
-        // und darf daher NICHT als Seitenwahl dienen.
-        current_head_ = (data & 0x04) ? 0 : 1;
-        // Einseitige Laufwerke (8″-SD wie MF3200) haben physisch nur EINEN Kopf; die
-        // Seitenwahl /FR ist dort ohne Wirkung (es gibt keine Rückseite).  Das BIOS des
-        // Combo-Systems fährt /FR trotzdem, was sonst auf den nicht existierenden Kopf 1
-        // schreiben würde (leere Vorderseite → cpabcgen/Boot scheitern).  Kopf hart auf 0.
-        if (drives_[selected_drive_].profile().num_heads <= 1)
-            current_head_ = 0;
+        // Seitenwahl current_head_ ist oben bereits aus bit2 (/FR-Pegel) gesetzt — hier
+        // NICHT erneut latchen (bit2 gilt schon für dieses Strobe-Wort).
 
         if (bus_.isBUSRQ()) {
             // ZVE2-Kontext: Bus bereits gehalten
@@ -791,7 +809,14 @@ void K5122::startReadTransfer() {
     cur_sector_size_ = sektoren.empty() ? 128 : sektoren.front().size;
 
     cur_track_    = &read_stream_track_;
-    head_pos_     = 0;
+    // HW-Sync-Detektor-Modell: nach einem Read-Kommando liefert die PLL/Marken-Erkennung
+    // die Bytes erst AB dem Sync/der ersten Marke — die führenden Gap-/00-Sync-Bytes werden
+    // verschluckt (Handbuch §Marken-FF/MKE).  head_pos_ daher direkt auf das erste Resync-
+    // Ziel (markPos-nA1 = erstes A1) setzen statt auf 0.  Nötig für INIT.COMs enge Verify-
+    // Resync-Routine (überspringt nur A1, erwartet dann FE — verträgt keine 00-Sync davor);
+    // deckt sich mit der ROM-Boot-Leseannahme „1 verwerfen + 3 lesen, FE bei buf[4]".
+    { size_t t = TrackCodec::romReadResyncTarget(read_stream_track_, 0, eff_enc);
+      head_pos_ = (t != SIZE_MAX) ? t : 0; }
     // Geladene (Zyl,Kopf) merken — der /STR-Lese-Refresh lädt nur bei Wechsel neu
     // (sonst kontinuierliche Rotation, kein Rewind).
     loaded_cyl_   = drv.currentCylinder();

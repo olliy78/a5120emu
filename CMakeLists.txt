@@ -481,7 +481,7 @@ if(BUILD_K1520)
         # Golden-Register-Snapshot bei 5M Zyklen.  Die exakte Zeitlage hängt vom
         # Floppy-Timing ab (u. a. Motor-Spin-up, K5122_MOTOR_SPINUP_MS) — bei
         # Timing-Änderungen hier den neuen deterministischen Wert eintragen.
-        add_cli_test(cli_dbg_json "\"pc\":\"0x1E55\".*\"hl\":\"0x234D\""
+        add_cli_test(cli_dbg_json "\"pc\":\"0x1E5D\".*\"hl\":\"0x234F\""
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'g 5000000\\nrj\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
         add_cli_test(cli_bt_json "\"boot_reached\":false.*\"until\":.\"set\":true,\"met\":true"
             "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' --json \$D; rm -f \$D")

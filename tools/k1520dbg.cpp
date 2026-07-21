@@ -143,7 +143,18 @@ int main(int argc, char** argv){
         else if (!strcmp(argv[i],"--read-only")||!strcmp(argv[i],"--ro")) mount_mode=MOUNT_RO;
         else disk=argv[i];
     }
-    Logger::instance().setBaseLevel(Level::ERROR);   // quiet emulator log; tool prints its own
+    // Emulator-Log standardmäßig still (das Tool druckt selbst); für Diagnose per
+    // K1520DBG_LOGLEVEL=off|error|warn|info|debug|trace anhebbar (z. B. K5122 >>> READ/FORMAT).
+    Level baseLvl = Level::ERROR;
+    if (const char* lv = getenv("K1520DBG_LOGLEVEL")) {
+        if      (!strcmp(lv,"off"))   baseLvl = Level::OFF;
+        else if (!strcmp(lv,"error")) baseLvl = Level::ERROR;
+        else if (!strcmp(lv,"warn"))  baseLvl = Level::WARN;
+        else if (!strcmp(lv,"info"))  baseLvl = Level::INFO;
+        else if (!strcmp(lv,"debug")) baseLvl = Level::DEBUG;
+        else if (!strcmp(lv,"trace")) baseLvl = Level::TRACE;
+    }
+    Logger::instance().setBaseLevel(baseLvl);
 
     A5120Machine m;
     m.powerOn();
