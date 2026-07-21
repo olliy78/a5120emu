@@ -123,15 +123,41 @@ seek/head **pipeline** interaction (INIT may format/verify heads or cylinders in
 that our step/head timing mis-aligns for odd cylinders and head 1), not at the sector data
 (IDs 1..16 + `0xE5` fill read back byte-identical with 0 CRC errors).
 
-**Next step:** instruction-level RE of INIT's outer format→seek→verify loop (delegate to
-`boot-disasm-analyst`): for each track, what physical `(cyl,head)` does INIT *intend* to
-verify, does it seek between format and verify, and which of the two late bad-branches
-(`0x1173` DAM≠`0xFB` vs `0x1188` checksum) actually fires for an **even-cyl-head-1** verify
-(the simplest failing case: head matches, so it isolates the DATA-field / resync problem
-from the head/seek problem). Live recipe (K5122 read log): `K1520DBG_LOGLEVEL=info
-./build/k1520dbg disks/scpx_boot.hfe -x <script>` with `gu 0xE079` → `keys INIT\r`/`g …`/
-`keys A\r`/…/`keys Y\r`; breakpoints `b2 0x1173`/`b2 0x1188`/`b2 0x11A8` (bad-DAM / bad-CRC
-/ success). No regression guard exists yet (nothing to guard until it passes).
+**RE session findings (2026-07-21, deeper dive — the read path is NOT the culprit):**
+Disassembled INIT's per-sector verify inner loop and traced the K5122 stream byte-by-byte.
+- INIT's inner loop (`0x1150`–`0x1195`): `INIR` reads the 5-byte ID (`cyl,head,sec,size,+`)
+  into `0x13E4`; MK1-strobe resync ID→DATA; `0x1170/0x1172 CP L`(`L=0xFB`) = **DAM check**;
+  then read data **while `==0xFA`… no, while `== H` (`H=0xE5`)** (`L1175` loop), capture the
+  first two non-`0xE5` bytes (the data-CRC) into `HL`, `0x1186 SBC HL,DE` vs the expected
+  data-CRC `DE` (=`0x7827` for a passing sector), `JR NZ 0x119C` = **bad**. Success falls
+  through to `0x11A8` (`[12A4]:=0x0F14`).
+- **For an even-cyl-head-1 verify, the K5122 serves ALL 16 sectors byte-perfectly**: every
+  IDAM `FE` and DATA `FB` at the correct stream offsets (16/66, 349/399, 682/732, … 5011/
+  5061), the ID reads back `cyl=0,head=1,sec=1,size=1` (head byte correct!), data = `0xE5`.
+  The head-select fix works; the resync landings (`romReadResyncTarget` → first `A1`, mark
+  at +4) are all correct. **So the failure is NOT wrong bytes from the card.**
+- Yet INIT still rejects and retries. Two failure sites seen: some tracks reach `0x1186`
+  with `HL≠DE` (data-CRC mismatch); others (e.g. `C=2/C=3 H1`) fail earlier at `0x1173`
+  (DAM≠`0xFB`) — i.e. the failure point itself varies per attempt.
+- **Prime suspect = dual-CPU BUSRQ arbitration during the verify, not the read decode.**
+  The per-`IN(16H)` trace showed occasional reads happening while **`/BUSRQ`=0** (ZVE1 has
+  the bus) interspersed with the ZVE2 reads — i.e. **ZVE1 appears to consume/step the stream
+  too**, so a byte gets "stolen" and ZVE2's read alignment slips by one → its captured
+  data-CRC (or even the DAM byte) is off. The arm-time `/BUSRQ` state correlates roughly
+  (passing even-cyl-head0 arms with `busrq=1`; failing odd/head1 often `busrq=0`) but not
+  perfectly, and retries re-arm with `head_pos` reset to the first mark (12). This looks like
+  the **same ZVE1↔ZVE2 stepping/arbitration** subtlety as the boot DMA (CLAUDE.md invariants),
+  but exercised by INIT's own verify loop rather than the boot ROM.
+
+**Next step:** confirm the byte-steal hypothesis — instrument `IN(16H)` (port 0x16) to log
+`head_pos`+byte+`/BUSRQ`+which CPU's PC issued it, and check whether ZVE1 (INIT's main loop)
+reads the data port concurrently with the ZVE2 verify coroutine. If so, the fix is in the
+run-loop/`/BUSRQ` arbitration (`A5120Machine::run` / K5122 `consumeByteSlot` releasing BUSRQ
+mid-verify), NOT in the read decode. Cross-check against the boot invariants so any change
+stays boot-safe. Live recipe: `K1520DBG_LOGLEVEL=info ./build/k1520dbg disks/scpx_boot.hfe
+-x <script>` (`gu 0xE079` → `keys INIT\r`/`g …`/`keys A\r`/…/`keys Y\r`); useful ZVE2
+breakpoints `b2 0x1173`/`0x1186`/`0x1197`/`0x119C`/`0x11A8` and `dev` for the K5122 head
+position. No regression guard exists yet (nothing to guard until it passes).
 
 ## Known non-issues (do not re-investigate)
 
