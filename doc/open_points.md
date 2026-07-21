@@ -1,7 +1,7 @@
 # K1520 Emulator - Open Points
 
-Updated: 2026-07-12
-Branch: `formating-disks` (baseline) / `scpx_boot` (SCPX 1526, items §4 + disabled-tests)
+Updated: 2026-07-21
+Branch: `formating-disks` (baseline) / `scpx_boot` (SCPX 1526, items §4/§5 + disabled-tests)
 Status: A5120 boots CP/A fully to the interactive prompt; keyboard, clock, disk
 read **and** write, and FORMAT.COM disk formatting all work — including self-made
 bootable disks (format → CPABCGEN → boot) for 5¼″-MFM and 8″-FM/mixed-density.
@@ -90,6 +90,48 @@ to `ScpxIntegration` (`tests/cpp/test_boot_integration.cpp`): boot → `ERA B:ST
 `PIP B:=A:STAT.COM` → assert return-to-`A>` + `STAT COM` present on B: (and/or the `REN` variant).
 This locks in the fix so a future timing change can't silently re-break it. Repro script in
 `doc/analyse_scpx_pip_rename.md` §3.
+
+### 5) SCPX `INIT.COM` disk formatting — verify fails on half the tracks (branch `scpx_boot`)
+
+> `INIT.COM` is SCPX's FORMAT.COM equivalent (dialog-driven formatter that programs the
+> K5122 **directly**, no BIOS call). Full analysis: `doc/analyse_scpx_init_format.md`;
+> memory `project_scpx_init_format`.
+
+**Done / working:** the drive-speed gate is solved (commit `feaae01`, rotation-coupled
+byte-spacing → `[12A6]≈6282` in window 6248–6373); INIT formats all 80 cylinders. Three
+HW-faithful K5122 read-path/head-model corrections (commit `939dda5`) then got INIT's own
+write-then-verify read to work for **(even cylinder, head 0)** tracks — the first ID mark
+is now found on **all** tracks (previously `IN(16H)` returned the `0xFF` PIO-fallback and
+the verify failed immediately). Those three fixes: (1) `/FR` head-select = **held bit2
+level on every Port-A write** (not a `/STR`-edge latch); (2) a path/read control word
+(`0x81/83/85/87`) **arms the streaming read directly** (INIT verifies without a `/STR`
+read strobe); (3) `startReadTransfer` positions `head_pos_` at the **first sync mark**
+(HW sync-detector model), so INIT's tight "skip-A1-then-expect-FE" resync doesn't choke on
+leading `0x00` sync bytes.
+
+**Still failing:** `INIT` reports `BAD TRACKS = {cyl 0} ∪ {all odd cylinders}` (even cyls
+2–78 good). Per-`(cyl,head)` retry counts show **only (even cyl, head 0) verifies pass**;
+head 1 (all cyls) and head 0 on odd cyls fail (5 retries → bad). Ground truth gathered:
+the verify read reads the **correct (cyl,head)** in most failing cases (head-select is
+fixed) yet still fails, so the remaining cause is **inside INIT's verify pipeline past the
+first ID mark** — the ID→DATA resync (`0x1170/0x1173`: after an MK1 resync, expects DAM
+`0xFB` in `L`), the data checksum (`0x1186 SBC HL,DE`), or the sector-loop / format-verify
+ordering (INIT's per-track engine is a self-modifying coroutine dispatcher via `[12A4]`,
+states `0x0E57`/`0x0F14`/`0x0FD1`/`0x0F2D`). The even/odd-cylinder + head-1 parity is the
+key clue and is **robust across all four head/read-model variants tried** — it points at a
+seek/head **pipeline** interaction (INIT may format/verify heads or cylinders in an order
+that our step/head timing mis-aligns for odd cylinders and head 1), not at the sector data
+(IDs 1..16 + `0xE5` fill read back byte-identical with 0 CRC errors).
+
+**Next step:** instruction-level RE of INIT's outer format→seek→verify loop (delegate to
+`boot-disasm-analyst`): for each track, what physical `(cyl,head)` does INIT *intend* to
+verify, does it seek between format and verify, and which of the two late bad-branches
+(`0x1173` DAM≠`0xFB` vs `0x1188` checksum) actually fires for an **even-cyl-head-1** verify
+(the simplest failing case: head matches, so it isolates the DATA-field / resync problem
+from the head/seek problem). Live recipe (K5122 read log): `K1520DBG_LOGLEVEL=info
+./build/k1520dbg disks/scpx_boot.hfe -x <script>` with `gu 0xE079` → `keys INIT\r`/`g …`/
+`keys A\r`/…/`keys Y\r`; breakpoints `b2 0x1173`/`b2 0x1188`/`b2 0x11A8` (bad-DAM / bad-CRC
+/ success). No regression guard exists yet (nothing to guard until it passes).
 
 ## Known non-issues (do not re-investigate)
 
