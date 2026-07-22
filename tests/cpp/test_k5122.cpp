@@ -778,6 +778,56 @@ TEST_F(K5122Test, FormatWrite_IdleCommitLetzteSpur) {
 }
 
 /**
+ * @test K5122Test/FormatWrite_CommitResetsIndexPhase
+ * @brief Regressionswächter: commitFormatTrack() koppelt die Index-Phase ans Spur-Ende
+ *        (setzt index_cycle_acc_ = 0).
+ *
+ * Auf echter HW endet der Vollspur-FORMAT-Write GENAU am Disketten-Index (eine Umdrehung
+ * = Index zu Index).  SCPX INIT.COM verlässt sich darauf: sein Per-Spur-Verify prüft, dass
+ * das Index-Interrupt-Flag am Spur-Beginn noch clear ist, und wartet dann auf den nächsten
+ * Index.  Lief unser Index-Puls frei relativ zum Byte-Takt, fiel er in dieses Prüffenster
+ * → BAD TRACKS.  Der Fix (K5122::commitFormatTrack) resettet die Index-Phase am Spur-Ende.
+ * Dieser Test hält genau diese Invariante fest; End-to-End siehe
+ * ScpxInit.InitFormatsDriveAWithNoBadTracks (tests/cpp/test_scpx_init.cpp).
+ */
+TEST_F(K5122Test, FormatWrite_CommitResetsIndexPhase) {
+    DiskFormat fmt; fmt.name = "fmt_idx_2c1h4x256";
+    fmt.tracks.push_back({0, 1, 0, 0, 4, 256});
+    auto path = makeTmpImg(fmt, "_idxphase");
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0xEE);                       // D0: Select + Motor an
+
+    // Motor auf Drehzahl bringen (sonst wird die Index-Phase gar nicht akkumuliert) und
+    // dann eine NICHT-triviale Index-Phase auflaufen lassen (< Periode → kein Wrap auf 0).
+    for (int i = 0; i < 10 && !card.motorAtSpeed(0); ++i) card.update(1000);
+    ASSERT_TRUE(card.motorAtSpeed(0)) << "Motor kam nicht auf Drehzahl";
+    card.update(50'000);
+    ASSERT_GT(card.debugState().indexAccum, 0)
+        << "Index-Phase sollte bei laufendem Motor akkumulieren (Vorbedingung)";
+
+    // Vollspur-FORMAT streamen (Cyl 0, Head 0, IDs 1..4) und mit dem Folge-Schreib-Strobe
+    // abschließen → commitFormatTrack().  Während des Streamens/Commits KEIN update() →
+    // die Index-Phase ändert sich nur durch den Commit-Reset selbst.
+    std::vector<LogicalSector> soll;
+    for (uint8_t id = 1; id <= 4; ++id) {
+        LogicalSector s; s.cyl = 0; s.head = 0; s.id = id; s.size = 256;
+        s.data.assign(256, static_cast<uint8_t>(0x10 * id)); soll.push_back(s);
+    }
+    TrackImage stream = TrackCodec::buildTrack(soll, Encoding::MFM);
+
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF4);                       // Schreib-/STR-Strobe
+    for (uint8_t b : stream.bytes) card.ioWrite(0x14, b);
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF4);                       // Folge-Strobe → commitFormatTrack()
+
+    EXPECT_EQ(card.debugState().indexAccum, 0)
+        << "commitFormatTrack() muss die Index-Phase ans Spur-Ende koppeln (=0)";
+
+    std::filesystem::remove(path);
+}
+
+/**
  * @test K5122Test/ParseFormatStream_RecoversSectors
  * @brief Der FORMAT-Schreibstrom-Parser gewinnt Cyl/Head/ID/Größe/Daten je Sektor zurück
  *        (IDAM A1A1A1 FE …, DAM A1A1A1 FB …) — verschiedene Sektorgrößen.

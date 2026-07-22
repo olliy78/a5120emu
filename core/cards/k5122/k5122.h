@@ -194,6 +194,8 @@ public:
         Encoding trackEncoding;  ///< echte Codierung der gemounteten Diskette (aus dem Image)
         bool     encodingMatch;  ///< readEncoding == trackEncoding (gemountet); Basis für den
                                  ///< treuen Lesepfad: bei Mismatch findet ZVE2 später kein IDAM
+        int      indexAccum;     ///< aufgelaufene Index-Phase (Takte seit letztem Index-Puls);
+                                 ///< commitFormatTrack setzt sie auf 0 (Index ans Spur-Ende koppeln)
     };
     DebugState debugState() const {
         DebugState s{};
@@ -213,6 +215,7 @@ public:
         s.trackEncoding = s.mounted ? drives_[selected_drive_].geometry().encoding
                                     : Encoding::MFM;
         s.encodingMatch = s.mounted && (s.readEncoding == s.trackEncoding);
+        s.indexAccum = index_cycle_acc_;
         return s;
     }
 

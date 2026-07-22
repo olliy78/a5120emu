@@ -76,6 +76,14 @@ void typeString(A5120Machine& m, const std::string& s) {
     for (char c : s) typeKey(m, static_cast<uint8_t>(c));
 }
 
+// Ctrl-<c> senden (K7637: Ctrl-Buchstabe → keycode & 0x1F, z. B. Ctrl-C = 0x03).
+void typeCtrl(A5120Machine& m, char c) {
+    m.keyPress(static_cast<uint8_t>(c), /*shift=*/false, /*ctrl=*/true);
+    runCycles(m, 1'000'000);
+    m.keyRelease(static_cast<uint8_t>(c));
+    runCycles(m, 300'000);
+}
+
 }  // namespace
 
 /**
@@ -140,4 +148,98 @@ TEST(ScpxInit, InitFormatsDriveAWithNoBadTracks) {
     machine.unmountDisk(0);
     std::error_code ec;
     fs::remove(aPath, ec);
+}
+
+/**
+ * @test ScpxInit/CreateFormatBThenPipCopyFromBootDisk
+ * @brief Voller SCPX-Formatier-Workflow end-to-end: eine FRISCH erzeugte, leere `.hfe`
+ *        wird mit INIT.COM formatiert und anschließend per PIP beschrieben.
+ *
+ * Ablauf:
+ *   1. A: = beschreibbare Kopie der Bootdiskette (Quelle für STAT.COM).
+ *   2. B: = frisch via `A5120Machine::createDisk(..., "k5601_16x256", ...)` erzeugte LEERE
+ *      Diskette (Geometrie DD-DS 16×256 = 80 Zyl ×2 Köpfe ×16 Sekt ×256 B).
+ *   3. SCPX booten, mit INIT B: **formatieren** (Default DD-DS 16×256) → `BAD TRACKS: - NO -`.
+ *   4. Ctrl-C-Warmstart, damit CP/A B: nach dem Direkt-Format neu einloggt (sonst R/O).
+ *   5. `PIP B:=A:STAT.COM` kopiert STAT.COM von der Bootdiskette auf die neue Diskette.
+ *   6. `DIR B:` zeigt die kopierte Datei → Format+Schreiben+Lesen der neuen Diskette ok,
+ *      KEIN `BAD SECTOR`.
+ *
+ * Beide Disketten kommen aus beschreibbaren TEMP-Dateien; die committete Fixture bleibt
+ * unangetastet.  Langsam (INIT formatiert 160 Spuren) → Label `format_integration`.
+ */
+TEST(ScpxInit, CreateFormatBThenPipCopyFromBootDisk) {
+    namespace fs = std::filesystem;
+    const std::string aPath = (fs::temp_directory_path() / "scpx_pip_guard_A.hfe").string();
+    const std::string bPath = (fs::temp_directory_path() / "scpx_pip_guard_B.hfe").string();
+    fs::copy_file(diskPath("scpx_boot.hfe"), aPath, fs::copy_options::overwrite_existing);
+    std::error_code ec;
+    fs::remove(bPath, ec);
+
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, aPath, "cpa780", /*wp=*/false)) << machine.lastError();
+    // Leere Zieldiskette DD-DS 16×256 erzeugen UND auf B: mounten (createDisk mountet gleich).
+    ASSERT_TRUE(machine.createDisk(1, bPath, "k5601_16x256", /*wp=*/false)) << machine.lastError();
+    machine.powerOn();
+
+    ASSERT_TRUE(runSmallUntil(machine, "SCPX 1526 - V 1.7", 40'000'000))
+        << "SCPX-Banner nie erschienen";
+    ASSERT_TRUE(runSmallUntil(machine, "A>", 5'000'000)) << "A>-Prompt nie erreicht";
+    runCycles(machine, 2'000'000);
+
+    // ── INIT: Laufwerk B: formatieren (Default DD-DS 16×256) ─────────────────
+    typeString(machine, "INIT");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "PLEASE ENTER DRIVE NAME", 30'000'000))
+        << "INIT startete nicht:\n" << vramText(machine);
+    typeString(machine, "B");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "HIT <ENTER> FOR DEFAULT", 20'000'000))
+        << "Format-Menü nach Laufwerkswahl B: nicht erschienen:\n" << vramText(machine);
+    typeKey(machine, QK_RETURN);   // Default-Format DD-DS 16×256
+    ASSERT_TRUE(runSmallUntil(machine, "PRESS <ENTER>", 20'000'000))
+        << "Disk-einlegen-Prompt nicht erschienen:\n" << vramText(machine);
+    typeKey(machine, QK_RETURN);   // Disk eingelegt
+    ASSERT_TRUE(runSmallUntil(machine, "(Y/N)", 20'000'000))
+        << "Scratch-Warnung nicht erschienen:\n" << vramText(machine);
+    typeString(machine, "Y");
+    typeKey(machine, QK_RETURN);   // Formatieren starten
+
+    ASSERT_TRUE(runSmallUntil(machine, "FORMATTING COMPLETE", 300'000'000))
+        << "INIT beendete das Formatieren von B: nicht:\n" << vramText(machine);
+    ASSERT_TRUE(runSmallUntil(machine, "ONCE MORE", 10'000'000))
+        << "INIT gab kein Bad-Track-Verdikt aus:\n" << vramText(machine);
+    ASSERT_NE(vramText(machine).find("BAD TRACKS: - NO -"), std::string::npos)
+        << "INIT meldete BAD TRACKS beim Formatieren von B::\n" << vramText(machine);
+
+    // ── INIT verlassen (ONCE MORE? → N) + Ctrl-C-Warmstart ───────────────────
+    // Der Warmstart lässt CP/A B: nach dem BIOS-fremden Direkt-Format neu einloggen
+    // (sonst bleibt B: als „gewechselte" Diskette R/O → PIP-Write scheiterte).
+    typeString(machine, "N");
+    typeKey(machine, QK_RETURN);
+    runCycles(machine, 5'000'000);          // INIT kehrt zum CCP zurück
+    typeCtrl(machine, 'C');                  // Warmstart → Laufwerke neu einloggen
+    runCycles(machine, 5'000'000);
+
+    // ── PIP: STAT.COM von A: auf die frisch formatierte B: kopieren ──────────
+    typeString(machine, "PIP B:=A:STAT.COM");
+    typeKey(machine, QK_RETURN);
+    runCycles(machine, 40'000'000);          // Kopier-Read (A:) + Write (B:) abwarten
+    EXPECT_EQ(vramText(machine).find("BAD SECTOR"), std::string::npos)
+        << "PIP meldete BAD SECTOR beim Schreiben auf die frisch formatierte B::\n"
+        << vramText(machine);
+
+    // ── Verifikation: DIR B: listet die kopierte Datei ───────────────────────
+    // Gefiltertes DIR listet „B: STAT     COM" (das Leerzeichen nach „B:" unterscheidet
+    // die Listing-Zeile vom Kommando-Echo, vgl. ScpxIntegration.EraDeletes…).
+    typeString(machine, "DIR B:STAT.COM");
+    typeKey(machine, QK_RETURN);
+    EXPECT_TRUE(runSmallUntil(machine, "B: STAT", 30'000'000))
+        << "STAT.COM nach PIP nicht auf der neuen B: (Format/Write/Read-Pfad gebrochen):\n"
+        << vramText(machine);
+
+    machine.unmountDisk(0);
+    machine.unmountDisk(1);
+    fs::remove(aPath, ec);
+    fs::remove(bPath, ec);
 }
