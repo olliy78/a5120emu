@@ -374,6 +374,19 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_mem_watch)
         gtest_discover_tests(k1520_test_machine_snapshot)
         gtest_discover_tests(k1520_test_boot_integration PROPERTIES TIMEOUT 60)
+
+        # Langsamer SCPX-INIT.COM-Formatier-Guard (~35 s, 160 Spuren) in eigenem
+        # Executable → per Label "format_integration" aus dem Default-Lauf (via
+        # `-LE format_integration`) ausgeschlossen; läuft mit `dev.sh test-format`.
+        add_executable(k1520_test_scpx_init tests/cpp/test_scpx_init.cpp)
+        target_link_libraries(k1520_test_scpx_init
+            PRIVATE k1520_a5120 k1520_floppy k1520_logger GTest::gtest_main)
+        target_include_directories(k1520_test_scpx_init PRIVATE ${CMAKE_SOURCE_DIR})
+        target_compile_definitions(k1520_test_scpx_init PRIVATE
+            LOG_LEVEL=2
+            A5120_TEST_DISK_DIR="${CMAKE_SOURCE_DIR}/disks")
+        gtest_discover_tests(k1520_test_scpx_init
+            PROPERTIES TIMEOUT 120 LABELS "format_integration")
     endif() # BUILD_K1520_TESTS
 
     # boot_trace: standalone boot diagnostic tool (LOG_LEVEL=5 for full trace)

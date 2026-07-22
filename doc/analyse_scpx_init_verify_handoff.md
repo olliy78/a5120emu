@@ -1,20 +1,45 @@
-# SCPX INIT.COM — Verify-Problem (BAD TRACKS): Handoff für neue Sessions
+# SCPX INIT.COM — Verify-Problem (BAD TRACKS): ✅ GELÖST 2026-07-22
 
-> **Zweck:** In sich geschlossene Beschreibung des offenen „INIT meldet BAD TRACKS"-Problems
-> samt allem, was bereits ausgeschlossen ist, und dem entscheidenden nächsten Experiment.
-> Als frische Chat-Session startbar. Stand: 2026-07-22, Branch `scpx_boot`, alle Tests grün.
+> **STATUS: GELÖST.** INIT.COM formatiert Laufwerk A: (Default DD-DS 16×256) jetzt
+> vollständig und meldet **`BAD TRACKS: - NO -`**. Ursache war ein **Index-Puls-Phasen-
+> Problem** (NICHT der Read-Pfad, NICHT die Vergleichslogik — s. u.). Fix: `K5122::commitFormatTrack`
+> setzt `index_cycle_acc_ = 0` (koppelt die Index-Phase ans Spur-Ende, wie auf echter HW).
+> Guard: `ScpxInit.InitFormatsDriveAWithNoBadTracks` (`tests/cpp/test_scpx_init.cpp`, Label
+> `format_integration`). 592/592 ctest + 58/58 Legacy + 6/6 format_integration grün (CP/A
+> FORMAT.COM unversehrt). Die unten stehende Analyse ist als **Fallstudie** aufbewahrt.
+>
+> ## Root Cause & Fix (Kurzfassung)
+>
+> INITs Per-Spur-Verify synchronisiert über das **Index-Interrupt-Flag `[0x12A8]`**:
+> - Index-ISR (`0x124D`, läuft auf **ZVE1**) setzt `[0x12A8]=0xFF` bei jedem Disketten-Index.
+> - Pro Spur löscht ZVE1 das Flag (`0x0EF0`, `LD (12A8H),0`), dann verlangt ZVE2 am Spur-Beginn
+>   `[0x12A8]` **clear** (`0x1115 BIT 0,(HL); 0x1119 JR NZ,L1197` = bad) und wartet anschließend
+>   auf den Index (`0x111B`, bit0 muss gesetzt werden).
+>
+> Der Index-Puls lief **frei** (`index_cycle_acc_`, Periode 490000) relativ zum Byte-Takt.
+> Das Fenster **ZVE1-Clear (`0x0EF0`) → ZVE2-Check (`0x1115`)** ist ≈ eine Index-Periode lang,
+> sodass pro Spur genau ein Index **ins Fenster** fiel → `[0x12A8]` gesetzt → 0x1119 = bad.
+> Da die Phase stabil war, scheiterten alle Spuren außer der ersten deterministisch (Kopf 1 /
+> ungerade Zylinder). Auf echter HW endet der Vollspur-FORMAT-Write **genau am Index** (Schreiben
+> von Index zu Index = 1 Umdrehung), sodass der Clear direkt hinter einem Index liegt und der
+> nächste Index erst in die 0x111B-Warteschleife fällt. Der Fix koppelt die Index-Phase daran:
+> `commitFormatTrack()` (Format-Write-Ende) setzt `index_cycle_acc_ = 0`. (Restliche Erst-Versuch-
+> Fehlschläge werden von INITs 5-fach-Retry abgefangen → am Ende keine Bad-Tracks.)
+>
+> ---
+>
+> ## Historische Analyse (Fallstudie — Read-Pfad/Vergleichslogik waren NICHT die Ursache)
 >
 > Kontext & Vorgeschichte: `doc/analyse_scpx_init_format.md` (Dialog, Formatblöcke, Drehzahl-
-> Gate), `doc/open_points.md §5`, Memory `project_scpx_init_format`. Commits dieser Arbeit:
-> `feaae01` (Drehzahl-Gate gelöst), `939dda5` (HW-treues Kopf-/Lese-Modell, Teilfortschritt).
+> Gate), `doc/open_points.md §5`, Memory `project_scpx_init_format`. Commits:
+> `feaae01` (Drehzahl-Gate), `939dda5` (HW-treues Kopf-/Lese-Modell), `f96ea01` (Head-Latch).
 >
-> **Voraussetzung erledigt:** Der isolierte Read-Pfad-/Head-Select-Bug (INITs `/WE`=0-Verify-
-> Strobe wurde als Vollspur-FORMAT fehlklassifiziert; das committete „bit2-Pegel bei jedem
-> Port-A-Write"-Kopfmodell flippte INITs Kopf-1-Verify) ist **gefixt**: die Seitenwahl wird nur
-> noch am Pfad-/Lese-Steuerwort und am `/STR`-Format-Write-Edge aus bit2 gelatcht
-> (`K5122::setHead`), der Kopf-1-Verify-Read **streamt jetzt korrekt** (`>>> READ … 16 Sekt,
-> 0 CRC`). Guard-Tests: `K5122Test.HeadLatch_*`, `K2526ZVE2FloppyChain.ZVE2ReadsHead1FieldViaBus`.
-> Das behebt das BAD-TRACKS-Problem **nicht** (die gelesenen Bytes waren nie der Blocker, s.u.).
+> **Read-Pfad/Head-Select war ein Nebenschauplatz** (INITs `/WE`=0-Verify-Strobe wurde als
+> Vollspur-FORMAT fehlklassifiziert; das „bit2-Pegel bei jedem Port-A-Write"-Kopfmodell flippte
+> INITs Kopf-1-Verify): gefixt in `f96ea01` (`K5122::setHead` latcht nur am Pfad-/Lese-Steuerwort
+> und `/STR`-Format-Write-Edge). Der Kopf-1-Verify-Read streamt seitdem korrekt (`16 Sekt, 0 CRC`),
+> was aber die BAD TRACKS **nicht** behob — weil die gelesenen Bytes nie der Blocker waren (der
+> Fehlschlag kam VOR dem Read, am Index-Flag-Check 0x1119).
 
 ## Grundlagen
 

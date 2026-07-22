@@ -1091,6 +1091,18 @@ void K5122::commitFormatTrack() {
 
     write_buf_.clear();
     write_idle_acc_ = 0;
+
+    // ── Index-Phase an das Spur-Ende koppeln ─────────────────────────────────
+    // Auf echter HW endet der Vollspur-FORMAT-Write GENAU am Disketten-Index
+    // (Schreiben von Index zu Index = eine Umdrehung).  Der nächste Index-Puls
+    // liegt dann eine volle Umdrehung später — genau im Fenster, in dem der
+    // anschließende Verify auf ihn wartet.  Unser Index-Zähler läuft dagegen
+    // frei relativ zum Byte-Takt, sodass der Index sonst mitten in INITs (SCPX)
+    // Verify-Vorbereitung (Flag-Clear [12A8]@0x0EF0 → Check@0x1115) fällt und den
+    // „Index-Flag muss clear sein"-Test scheitern lässt (BAD TRACKS auf Kopf 1 /
+    // ungeraden Zylindern).  Durch Phasen-Reset am Commit fällt der Index wieder
+    // hinter den Check in die 0x111B-Warteschleife — wie auf echter Hardware.
+    index_cycle_acc_ = 0;
 }
 
 /**

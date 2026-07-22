@@ -91,46 +91,35 @@ to `ScpxIntegration` (`tests/cpp/test_boot_integration.cpp`): boot → `ERA B:ST
 This locks in the fix so a future timing change can't silently re-break it. Repro script in
 `doc/analyse_scpx_pip_rename.md` §3.
 
-### 5) SCPX `INIT.COM` disk formatting — verify fails on half the tracks (branch `scpx_boot`)
+### 5) SCPX `INIT.COM` disk formatting — verify fails on half the tracks — ✅ RESOLVED 2026-07-22
 
-> **→ Selbstständiges Handoff für neue Sessions: `doc/analyse_scpx_init_verify_handoff.md`**
-> (das Verify-Problem mit dem entscheidenden nächsten Experiment + allem, was bereits
-> ausgeschlossen ist).
->
+> **→ Fallstudie/Analyse: `doc/analyse_scpx_init_verify_handoff.md`.**
 > `INIT.COM` is SCPX's FORMAT.COM equivalent (dialog-driven formatter that programs the
 > K5122 **directly**, no BIOS call). Full analysis: `doc/analyse_scpx_init_format.md`;
 > memory `project_scpx_init_format`.
 
-**Done / working:** the drive-speed gate is solved (commit `feaae01`, rotation-coupled
-byte-spacing → `[12A6]≈6282` in window 6248–6373); INIT formats all 80 cylinders. The K5122
-read-path/head-select model is HW-faithful: head/side (`bit2`/`/FR`) is latched **only** at the
-path/read control word (`(data&0xF9)==0x81`) and the `/STR`-format-write edge (`K5122::setHead`),
-so INIT's head-1 verify read **streams correctly** (`>>> READ … 16 Sekt, 0 CRC`) instead of the
-`0xFF` PIO-fallback. Guard tests: `K5122Test.HeadLatch_*`, `K2526ZVE2FloppyChain.ZVE2ReadsHead1FieldViaBus`.
+**Fixed:** `INIT` formats drive A: (default DD-DS 16×256) fully and reports
+**`BAD TRACKS: - NO -`**. Root cause was an **index-pulse phase** problem — **not** the read
+path (already HW-faithful via `f96ea01`) and **not** the compare logic. INIT's per-track verify
+index-syncs on the flag `[0x12A8]`: the index ISR (`0x124D`, on **ZVE1**) sets `[0x12A8]=0xFF`
+each disk index; ZVE1 clears it per track (`0x0EF0`), then ZVE2 requires it **clear** at the
+track start (`0x1115 BIT 0,(HL); 0x1119 JR NZ → bad`) before waiting for the next index
+(`0x111B`). Our index pulse ran **free** (`index_cycle_acc_`, period 490000) relative to the byte
+clock, and the ZVE1-clear→ZVE2-check window is ≈ one index period long, so exactly one index fell
+**inside** the window → `[0x12A8]` set → bad. The phase was stable ⇒ every track but the first
+failed deterministically (head 1 / odd cylinders). On real HW the full-track format write ends
+**exactly at the index** (write is index-to-index = one rotation), so the clear sits right after
+an index and the next index lands in the `0x111B` wait. **Fix:** `K5122::commitFormatTrack` sets
+`index_cycle_acc_ = 0` (couples the index phase to the track end). Remaining first-attempt misses
+are absorbed by INIT's 5× retry → no bad tracks. Guard test:
+`ScpxInit.InitFormatsDriveAWithNoBadTracks` (`tests/cpp/test_scpx_init.cpp`, own executable,
+label `format_integration`). 592/592 ctest + 58/58 legacy + 6/6 format_integration green (CP/A
+FORMAT.COM unaffected).
 
-**Still failing:** `INIT` reports `BAD TRACKS = {cyl 0} ∪ {all odd cylinders}` (even cyls
-2–78 good). Per-`(cyl,head)` retry counts show **only (even cyl, head 0) verifies pass**;
-head 1 (all cyls) and head 0 on odd cyls fail (5 retries → bad). **The read bytes are not the
-blocker** — with the head-select model in place, the K5122 serves every failing `(cyl,head)`
-byte-perfectly: all IDAM `FE` / DATA `FB` at the correct offsets, the ID reads back the correct
-`cyl/head/sec/size`, data = `0xE5`, 0 CRC errors. Yet INIT still rejects the track. This has
-**two robust, read-byte-independent factors** — head-1-always-fails AND head-0-fails-on-odd-
-cylinders — that survive every read-path/head-select variant tried, so the cause is **inside
-INIT's verify pipeline past the first ID mark**: its **compare logic** (DAM check `0x1172 CP L`
-with `L=0xFB`; data-CRC `0x1186 SBC HL,DE` vs expected `DE=0x7827`; ID compare) and/or a
-**dual-CPU pacing-phase / seek** factor. The even/odd + head parity smells like a per-track
-rotational/pacing phase or a seek interaction (INIT double-step vs. our single-step?) that only
-aligns for even-cyl-head-0. INIT's per-track engine is a self-modifying coroutine dispatcher via
-`[12A4]` (states `0x0E57`/`0x0F14`/`0x0FD1`/`0x0F2D`); the sector-verify inner loop is `0x1150–0x1195`.
-
-**Next step (next session):** cycle-accurate trace of INIT's per-track *decision*, side by side for
-an even-cyl-head-0 (pass) vs even-cyl-head-1 (fail) verify — same cylinder, so it isolates the head
-factor from the seek factor. Break ZVE2 at the bad-branch (`b2 0x1197`/`0x119C`) and the success
-(`0x11A8`), and dump *everything INIT compares*: the ID scratch buffer `0x13E4` (cyl/head/sec/size),
-the data-CRC `HL` vs expected `DE` at `0x1186`, the physical cylinder (`dev` → `cur_cyl_`), and the
-`/BUSRQ` phase. Then repeat for even-cyl-head-0 (pass) vs odd-cyl-head-0 (fail) to isolate the seek
-factor. Live recipe: `K1520DBG_LOGLEVEL=info ./build/k1520dbg disks/scpx_boot.hfe -x <script>`
-(`gu 0xE079` → `keys INIT\r`/`g …`/`keys A\r`/…/`keys Y\r`). No regression guard exists yet.
+**Earlier partial work (context):** drive-speed gate solved (`feaae01`, `[12A6]≈6282`);
+HW-faithful read-path/head-select (`f96ea01`, `K5122::setHead`) — a necessary side fix, but the
+BAD TRACKS failure happened **before** the read (at the index-flag check `0x1119`), so the read
+bytes were never the blocker.
 
 ## Known non-issues (do not re-investigate)
 
