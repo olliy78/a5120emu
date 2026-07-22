@@ -7,7 +7,7 @@ Dialog and controls for mounting/unmounting disk images.
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QComboBox,
-    QLabel, QLineEdit, QCheckBox, QFileDialog, QGroupBox, QMessageBox
+    QLabel, QLineEdit, QCheckBox, QFileDialog, QFrame, QMessageBox
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 
@@ -26,39 +26,52 @@ class DriveWidget(QWidget):
         super().__init__(parent)
         self.emulator = emulator
         self._drive_leds = {}
+        # Aktuell gemountete Images je Laufwerk: drive -> (path, fmt, wp).
+        # Wird beim Kaltstart (Power ON) neu gemountet, weil das den K5122-
+        # Laufwerkszustand zurücksetzt (nötig, damit das Boot-ROM neu bootet).
+        self._mounts = {}
         self.setup_ui()
 
         self._led_timer = QTimer(self)
         self._led_timer.timeout.connect(self._refresh_leds)
         self._led_timer.start(120)
     
+    # Nur drei Laufwerke (Drive 0..2).
+    NUM_DRIVES = 3
+
     def setup_ui(self):
         """Setup UI layout."""
         layout = QVBoxLayout(self)
-        
-        # Title
-        title = QLabel("<b>Disk Drives</b>")
-        layout.addWidget(title)
-        
-        # Drive 0
-        layout.addWidget(self._create_drive_panel(0))
-        
-        # Drive 1
-        layout.addWidget(self._create_drive_panel(1))
-        
-        # Drive 2
-        layout.addWidget(self._create_drive_panel(2))
-        
-        # Drive 3
-        layout.addWidget(self._create_drive_panel(3))
-        
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(6)
+
+        for drive in range(self.NUM_DRIVES):
+            layout.addWidget(self._create_drive_panel(drive))
+
         layout.addStretch()
-    
-    def _create_drive_panel(self, drive: int) -> QGroupBox:
-        """Create panel for one drive."""
-        group = QGroupBox(f"Drive {drive}", self)
+
+    def _create_drive_panel(self, drive: int) -> QFrame:
+        """Create panel for one drive (no title; LED+Name+Write-Protect in einer
+        Zeile, darunter Image/Format/Buttons)."""
+        group = QFrame(self)
+        group.setFrameShape(QFrame.StyledPanel)
         layout = QVBoxLayout(group)
-        
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(4)
+
+        # Kopfzeile: LED + "Drive N" + Write-Protect (alles in einer Zeile).
+        head_layout = QHBoxLayout()
+        led = QLabel(" ")
+        led.setFixedSize(14, 14)
+        led.setStyleSheet("border-radius: 7px; background-color: #2b2b2b; border: 1px solid #666;")
+        head_layout.addWidget(led)
+        head_layout.addWidget(QLabel(f"<b>Drive {drive}</b>"))
+        head_layout.addStretch()
+        wp_check = QCheckBox("Write-Protect")
+        head_layout.addWidget(wp_check)
+        layout.addLayout(head_layout)
+        self._drive_leds[drive] = led
+
         # Path display
         path_layout = QHBoxLayout()
         path_label = QLabel("Image:")
@@ -68,7 +81,7 @@ class DriveWidget(QWidget):
         path_layout.addWidget(path_label)
         path_layout.addWidget(path_display)
         layout.addLayout(path_layout)
-        
+
         # Format selection
         format_layout = QHBoxLayout()
         format_label = QLabel("Format:")
@@ -79,24 +92,6 @@ class DriveWidget(QWidget):
         format_layout.addWidget(format_combo)
         layout.addLayout(format_layout)
 
-        # Activity LED
-        led_layout = QHBoxLayout()
-        led_layout.addWidget(QLabel("LED:"))
-        led = QLabel(" ")
-        led.setFixedSize(14, 14)
-        led.setStyleSheet("border-radius: 7px; background-color: #2b2b2b; border: 1px solid #666;")
-        led_layout.addWidget(led)
-        led_layout.addStretch()
-        layout.addLayout(led_layout)
-        self._drive_leds[drive] = led
-        
-        # Options
-        options_layout = QHBoxLayout()
-        wp_check = QCheckBox("Write-Protect")
-        options_layout.addWidget(wp_check)
-        options_layout.addStretch()
-        layout.addLayout(options_layout)
-        
         # Mount/Unmount buttons
         buttons_layout = QHBoxLayout()
         mount_btn = QPushButton("Mount")
@@ -117,6 +112,7 @@ class DriveWidget(QWidget):
                         path_display.setText(path)
                         mount_btn.setEnabled(False)
                         unmount_btn.setEnabled(True)
+                        self._mounts[drive] = (path, fmt, wp)
                         self.disk_mounted.emit(drive, path)
                     else:
                         QMessageBox.critical(self, "Error", f"Failed to mount disk on drive {drive}")
@@ -128,6 +124,7 @@ class DriveWidget(QWidget):
                 path_display.setText("")
                 mount_btn.setEnabled(True)
                 unmount_btn.setEnabled(False)
+                self._mounts.pop(drive, None)
                 self.disk_unmounted.emit(drive)
             else:
                 QMessageBox.critical(self, "Error", f"Failed to unmount drive {drive}")
@@ -148,6 +145,15 @@ class DriveWidget(QWidget):
         group._led = led
         
         return group
+
+    def remount_all(self):
+        """Alle aktuell gemounteten Images neu mounten (setzt den K5122-
+        Laufwerkszustand zurück — für den Kaltstart bei Power ON)."""
+        for drive, (path, fmt, wp) in list(self._mounts.items()):
+            try:
+                self.emulator.mount_disk(drive, path, fmt, wp)
+            except Exception:
+                pass
 
     def _refresh_leds(self):
         """Update all drive LED indicators from emulator state."""
