@@ -94,117 +94,42 @@ This locks in the fix so a future timing change can't silently re-break it. Repr
 ### 5) SCPX `INIT.COM` disk formatting — verify fails on half the tracks (branch `scpx_boot`)
 
 > **→ Selbstständiges Handoff für neue Sessions: `doc/analyse_scpx_init_verify_handoff.md`**
-> (Teil A = isolierter Read-Pfad-`/WE`=0-Bug, fixbar standalone; Teil B = das Verify-Problem
-> mit dem entscheidenden nächsten Experiment + allem, was bereits ausgeschlossen ist).
+> (das Verify-Problem mit dem entscheidenden nächsten Experiment + allem, was bereits
+> ausgeschlossen ist).
 >
 > `INIT.COM` is SCPX's FORMAT.COM equivalent (dialog-driven formatter that programs the
 > K5122 **directly**, no BIOS call). Full analysis: `doc/analyse_scpx_init_format.md`;
 > memory `project_scpx_init_format`.
 
 **Done / working:** the drive-speed gate is solved (commit `feaae01`, rotation-coupled
-byte-spacing → `[12A6]≈6282` in window 6248–6373); INIT formats all 80 cylinders. Three
-HW-faithful K5122 read-path/head-model corrections (commit `939dda5`) then got INIT's own
-write-then-verify read to work for **(even cylinder, head 0)** tracks — the first ID mark
-is now found on **all** tracks (previously `IN(16H)` returned the `0xFF` PIO-fallback and
-the verify failed immediately). Those three fixes: (1) `/FR` head-select = **held bit2
-level on every Port-A write** (not a `/STR`-edge latch); (2) a path/read control word
-(`0x81/83/85/87`) **arms the streaming read directly** (INIT verifies without a `/STR`
-read strobe); (3) `startReadTransfer` positions `head_pos_` at the **first sync mark**
-(HW sync-detector model), so INIT's tight "skip-A1-then-expect-FE" resync doesn't choke on
-leading `0x00` sync bytes.
+byte-spacing → `[12A6]≈6282` in window 6248–6373); INIT formats all 80 cylinders. The K5122
+read-path/head-select model is HW-faithful: head/side (`bit2`/`/FR`) is latched **only** at the
+path/read control word (`(data&0xF9)==0x81`) and the `/STR`-format-write edge (`K5122::setHead`),
+so INIT's head-1 verify read **streams correctly** (`>>> READ … 16 Sekt, 0 CRC`) instead of the
+`0xFF` PIO-fallback. Guard tests: `K5122Test.HeadLatch_*`, `K2526ZVE2FloppyChain.ZVE2ReadsHead1FieldViaBus`.
 
 **Still failing:** `INIT` reports `BAD TRACKS = {cyl 0} ∪ {all odd cylinders}` (even cyls
 2–78 good). Per-`(cyl,head)` retry counts show **only (even cyl, head 0) verifies pass**;
-head 1 (all cyls) and head 0 on odd cyls fail (5 retries → bad). Ground truth gathered:
-the verify read reads the **correct (cyl,head)** in most failing cases (head-select is
-fixed) yet still fails, so the remaining cause is **inside INIT's verify pipeline past the
-first ID mark** — the ID→DATA resync (`0x1170/0x1173`: after an MK1 resync, expects DAM
-`0xFB` in `L`), the data checksum (`0x1186 SBC HL,DE`), or the sector-loop / format-verify
-ordering (INIT's per-track engine is a self-modifying coroutine dispatcher via `[12A4]`,
-states `0x0E57`/`0x0F14`/`0x0FD1`/`0x0F2D`). The even/odd-cylinder + head-1 parity is the
-key clue and is **robust across all four head/read-model variants tried** — it points at a
-seek/head **pipeline** interaction (INIT may format/verify heads or cylinders in an order
-that our step/head timing mis-aligns for odd cylinders and head 1), not at the sector data
-(IDs 1..16 + `0xE5` fill read back byte-identical with 0 CRC errors).
-
-**RE session findings (2026-07-21, deeper dive — the read path is NOT the culprit):**
-Disassembled INIT's per-sector verify inner loop and traced the K5122 stream byte-by-byte.
-- INIT's inner loop (`0x1150`–`0x1195`): `INIR` reads the 5-byte ID (`cyl,head,sec,size,+`)
-  into `0x13E4`; MK1-strobe resync ID→DATA; `0x1170/0x1172 CP L`(`L=0xFB`) = **DAM check**;
-  then read data **while `==0xFA`… no, while `== H` (`H=0xE5`)** (`L1175` loop), capture the
-  first two non-`0xE5` bytes (the data-CRC) into `HL`, `0x1186 SBC HL,DE` vs the expected
-  data-CRC `DE` (=`0x7827` for a passing sector), `JR NZ 0x119C` = **bad**. Success falls
-  through to `0x11A8` (`[12A4]:=0x0F14`).
-- **For an even-cyl-head-1 verify, the K5122 serves ALL 16 sectors byte-perfectly**: every
-  IDAM `FE` and DATA `FB` at the correct stream offsets (16/66, 349/399, 682/732, … 5011/
-  5061), the ID reads back `cyl=0,head=1,sec=1,size=1` (head byte correct!), data = `0xE5`.
-  The head-select fix works; the resync landings (`romReadResyncTarget` → first `A1`, mark
-  at +4) are all correct. **So the failure is NOT wrong bytes from the card.**
-- Yet INIT still rejects and retries. Two failure sites seen: some tracks reach `0x1186`
-  with `HL≠DE` (data-CRC mismatch); others (e.g. `C=2/C=3 H1`) fail earlier at `0x1173`
-  (DAM≠`0xFB`) — i.e. the failure point itself varies per attempt.
-**RE session 2 (2026-07-22): byte-steal FALSIFIED — TRUE root cause found & verified.**
-Instrumented `IN(16H)` (port 0x16) with the issuing CPU (`bus_master_zve2_`): **all verify
-reads are ZVE2, ZERO ZVE1 reads** → no byte-steal. The real mechanism, traced end-to-end:
-
-- **INIT's head-1 sector-verify read loop issues control words with `/WE`=0** (`0xB0`/`0xB2`,
-  = the density-table entries `0xB4`/`0xB6` with the head-bit2 cleared; head-0 uses
-  `0x85`/`0xB5` with `/WE`=1). Our K5122's **synthetic full-track FORMAT-write path** (the
-  "alter /STR-Schreibpfad", `handleCtrlPortAWrite` ~line 616) treats **any /STR-falling-edge
-  with bit0(`/WE`)=0 as a full-track format** → `write_mode_=true, transferring_=false`.
-- So INIT's head-1 verify `IN(16H)` then hits the **`0xFF` PIO fallback** (`ioRead`, port 0x16
-  requires `transferring_ && !write_mode_`) → `head_pos_` never advances → the MK1 ID→DATA
-  resync (`resyncToNextMark`→`romReadResyncTarget`) stays on the **IDAM** (`from=12→t=12`) →
-  INIT reads `FE` where it expects the DAM `FB` (`0x1172 CP L`) → `JR NZ 0x1197` → bad → 5
-  retries → track "bad". Head-0 works because its `/WE`=1 read-strobes go through the normal
-  read arm. The head-1 read is **never armed as a read** (no `0x81/0x85` path byte, no bit0=1
-  strobe). Confirmed: `WRITE-STR data=0xB0` fires for head-1 verifies, **zero** for head-0.
-- Note on real HW: `/WE`=0 (manual A0) enables the write clock; INIT's verify loop pulses
-  `/WE`=0 and re-writes the just-read bytes (`IN(16H); OUT(14H),A`) = a **read-verify-by-
-  rewrite** that leaves data unchanged. Our synthetic format path can't model that and instead
-  latches full write mode, destroying the read.
-
-**Fix attempts that did NOT work (learnings for next time):**
-1. Gate the format path on `!transferring_` → fails: `transferring_`=0 at the `/STR`-write
-   edge (the head-1 read is never armed).
-2. Defer `write_mode_` until the first `OUT(14H)` format byte → fails: INIT writes ONE setup
-   byte to `OUT(14H)` *before* its `IN(16H)` (`0x113D OUT(14H),A; 0x113F IN A,(16H)`), which
-   engages `write_mode_` prematurely.
-3. Defer + speculatively arm a read at the `/STR`-write edge + "2nd consecutive `OUT(14H)`
-   without an `IN(16H)` = real format" discriminator → fails: the speculative read is **torn
-   down by the `/STR`=1 read-end detection** (`update()` ~line 390: `str_inactive_cycles_ >=
-   strEndSampleCycles()` → `transferring_=false`) because INIT raises `/STR` again (`0xB0→0xB9`)
-   between the arm and the read.
-
-**RE session 3 (2026-07-22): the read path is NOT the (sole) blocker — 6+ fixes fail identically.**
-Tried, all with the **exact same** `BAD TRACKS` result and **identical** per-`(cyl,head)` retry
-counts (only `(even cyl, head 0)`=1 pass; everything else=5=fail): (1) `!transferring_` gate;
-(2) deferred `write_mode_` on 1st `OUT(14H)`; (3) deferred + speculative read-arm + "2nd `OUT` =
-format"; (4) `ioRead` switch-to-read when `write_mode_`; (5) a `str_write_pending_` flag surviving
-the write-idle clear, switched by `IN(16H)`; (6) **head-select from bit2 only on the path byte +
-`/STR`-write edge** (not every write — because INIT's head-1 verify alternates `0x81`(path,head1) /
-`0xB5`(resync strobe, bit2=1) and the committed bit2-level model flips the head to 0 on every
-`0xB5`). Key result: with fix (6) the head-1 verify **read now streams correctly** — `>>> READ …
-16 Sekt, 0 CRC-Fehler`, 18 streaming reads vs 11 fallbacks — **yet INIT still rejects the track**.
-`buildTrack` preserves physical sector order (no interleave loss). So: **the read decode is not the
-blocker; the bytes INIT reads are correct.**
-
-**Redirected conclusion:** the failure has **two robust, read-byte-independent factors** —
-head-1-always-fails AND head-0-fails-on-odd-cylinders (only even-cyl-head-0 passes) — that survive
-every read-path/head-select change. This points at INIT's **verify comparison logic** (what it
-checks beyond the sector bytes) and/or a **dual-CPU pacing-phase / seek** factor, NOT the read
-decode. (The `/WE`=0 `0xFF`-fallback traced in RE session 2 is a real bug but fixing it does not
-change the outcome.) The even/odd-cylinder + head parity smells like a per-track **rotational /
-pacing phase** or a **seek** interaction that only aligns for even-cyl-head-0.
+head 1 (all cyls) and head 0 on odd cyls fail (5 retries → bad). **The read bytes are not the
+blocker** — with the head-select model in place, the K5122 serves every failing `(cyl,head)`
+byte-perfectly: all IDAM `FE` / DATA `FB` at the correct offsets, the ID reads back the correct
+`cyl/head/sec/size`, data = `0xE5`, 0 CRC errors. Yet INIT still rejects the track. This has
+**two robust, read-byte-independent factors** — head-1-always-fails AND head-0-fails-on-odd-
+cylinders — that survive every read-path/head-select variant tried, so the cause is **inside
+INIT's verify pipeline past the first ID mark**: its **compare logic** (DAM check `0x1172 CP L`
+with `L=0xFB`; data-CRC `0x1186 SBC HL,DE` vs expected `DE=0x7827`; ID compare) and/or a
+**dual-CPU pacing-phase / seek** factor. The even/odd + head parity smells like a per-track
+rotational/pacing phase or a seek interaction (INIT double-step vs. our single-step?) that only
+aligns for even-cyl-head-0. INIT's per-track engine is a self-modifying coroutine dispatcher via
+`[12A4]` (states `0x0E57`/`0x0F14`/`0x0FD1`/`0x0F2D`); the sector-verify inner loop is `0x1150–0x1195`.
 
 **Next step (next session):** cycle-accurate trace of INIT's per-track *decision*, side by side for
 an even-cyl-head-0 (pass) vs even-cyl-head-1 (fail) verify — same cylinder, so it isolates the head
 factor from the seek factor. Break ZVE2 at the bad-branch (`b2 0x1197`/`0x119C`) and the success
 (`0x11A8`), and dump *everything INIT compares*: the ID scratch buffer `0x13E4` (cyl/head/sec/size),
-the data-CRC `HL` vs expected `DE` at `0x1186`, the physical cylinder (`dev`), and the `/BUSRQ`
-phase. Determine what differs between the passing and failing verify when the read bytes are
-identical. Only after that is understood should the `/WE`=0 read-arm fix (design above) be
-revisited. Live recipe: `K1520DBG_LOGLEVEL=info ./build/k1520dbg disks/scpx_boot.hfe -x <script>`
+the data-CRC `HL` vs expected `DE` at `0x1186`, the physical cylinder (`dev` → `cur_cyl_`), and the
+`/BUSRQ` phase. Then repeat for even-cyl-head-0 (pass) vs odd-cyl-head-0 (fail) to isolate the seek
+factor. Live recipe: `K1520DBG_LOGLEVEL=info ./build/k1520dbg disks/scpx_boot.hfe -x <script>`
 (`gu 0xE079` → `keys INIT\r`/`g …`/`keys A\r`/…/`keys Y\r`). No regression guard exists yet.
 
 ## Known non-issues (do not re-investigate)

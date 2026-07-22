@@ -498,20 +498,17 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
     // Statusabfrage/GUI; das Lese-/Index-Gating hängt (noch) am Motor, nicht am /HL.
     head_loaded_ = !(data & 0x40);
 
-    // ── Seitenwahl /FR (bit2): GEHALTENER PIO-Ausgangspegel ──────────────────
+    // ── Seitenwahl /FR (bit2): NUR am Pfad-/Lese-Steuerwort und am /STR-Schreib-Edge ──
     // Handbuch K5122 (Steckerbelegung A2 = /FAULT-RESET, bei Doppelkopf umgewidmet zu
-    // /HS = Kopfauswahl): /FR ist ein Ausgangs-PEGEL, der bei JEDEM Port-A-Schreiben aus
-    // bit2 übernommen wird (nicht nur am /STR-Edge) und bis zum nächsten Schreiben hält.
-    //   bit2 = 1 → Kopf 0,  bit2 = 0 → Kopf 1.
-    // So stimmt die Seite konsistent für ALLE Zugriffsarten: Format-Write (0xB4=Kopf0 /
-    // 0xB0=Kopf1), Boot-/CP-A-Pfadbyte (0x85=Kopf0 / 0x81=Kopf1) UND INIT.COMs Verify mit
-    // konstantem Read-Wort (0x85=Kopf0 / 0xA1=Kopf1) — dessen bit2 die zuvor formatierte
-    // Seite spiegelt.  (Ein separater /STR- oder Write-only-Latch traf INITs Verify falsch.)
+    // /HS = Kopfauswahl): bit2 = 1 → Kopf 0,  bit2 = 0 → Kopf 1.  Die Seite wird NICHT
+    // bei jedem Port-A-Schreiben aus bit2 übernommen — das flippte INITs (SCPX) Kopf-1-
+    // Verify falsch: dessen Schleife alterniert das Pfadbyte 0x81 (bit2=0 → Kopf 1) mit dem
+    // Resync-Strobe 0xB5 (bit4/5 = MK1/MR; bit2 inzidentell 1 → würde Kopf auf 0 kippen).
+    // Die ECHTE Seitenwahl trägt nur das Pfad-/Lese-Steuerwort ((data&0xF9)==0x81, s.u.)
+    // und der /STR-Format-Write-Edge (is_write, s.u.); die /STR-Lese-/Resync-Strobes haben
+    // bit2 inzidentell und dürfen die gewählte Seite NICHT überschreiben.  Kopf-Latching
+    // erfolgt daher unten via setHead() an genau diesen beiden Stellen.
     // Einseitige Laufwerke (8″-SD wie MF3200) haben physisch nur Kopf 0 → /FR wirkungslos.
-    if (drives_[selected_drive_].profile().num_heads <= 1)
-        current_head_ = 0;
-    else
-        current_head_ = (data & 0x04) ? 0 : 1;
 
     // ── /WE (bit0) Flanken: BIOS-Schreib-Datenfeld sammeln/committen ─────────
     // Der CP/A-BIOS-dio-Pfad findet zuerst die IDAM (Lese-Strobe, /WE=1) und
@@ -544,7 +541,7 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
     if ((data & 0xF9) == 0x81) {
         read_enc_            = (data & 0x02) ? Encoding::FM : Encoding::MFM;
         read_enc_overridden_ = true;
-        // current_head_ ist oben bereits aus bit2 (/FR-Pegel) gesetzt.
+        setHead(data);   // ECHTE Seitenwahl (bit2/FR) — nur am Pfad-/Lese-Steuerwort
 
         // Ein Pfad-/Lese-Steuerwort (bit0=/WE=1 → Lese-Absicht) armiert den Streaming-Read
         // DIREKT — auch OHNE vorangehenden bit3-/STR-Lese-Strobe.  Boot-ROM/BIOS fahren zwar
@@ -580,8 +577,11 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
     if ((prev_ctrl_a_ & 0x08) && !(data & 0x08)) {
         bool is_write = !(data & 0x01);  // /WE=0 → Schreiben
         str_inactive_cycles_ = 0;        // neue Sitzung: /STR=1-Abtastung zurücksetzen
-        // Seitenwahl current_head_ ist oben bereits aus bit2 (/FR-Pegel) gesetzt — hier
-        // NICHT erneut latchen (bit2 gilt schon für dieses Strobe-Wort).
+        // Seitenwahl NUR am Format-Schreib-Edge aus bit2 latchen (Format-Steuerwort trägt
+        // die echte Seite: 0xB4=Kopf0 / 0xB0=Kopf1).  Am /STR-LESE-Edge (Resync-Strobe)
+        // NICHT latchen — dessen bit2 ist inzidentell und würde die vom Pfadbyte gewählte
+        // Seite überschreiben (INITs Kopf-1-Verify).
+        if (is_write) setHead(data);
 
         if (bus_.isBUSRQ()) {
             // ZVE2-Kontext: Bus bereits gehalten

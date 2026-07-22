@@ -232,6 +232,14 @@ private:
     void updateStatusPortB();
     void doStep();
 
+    /// @brief Latcht die Kopf-/Seitenwahl aus bit2 (/FR).  bit2=1 → Kopf 0, bit2=0 → Kopf 1;
+    ///        einseitige Laufwerke werden auf Kopf 0 gezwungen.  Wird NUR am Pfad-/Lese-
+    ///        Steuerwort und am /STR-Schreib-(Format-)Edge aufgerufen, nicht bei jedem Write.
+    void setHead(uint8_t ctrl) {
+        current_head_ = (drives_[selected_drive_].profile().num_heads <= 1)
+                      ? 0 : ((ctrl & 0x04) ? 0 : 1);
+    }
+
     /// @brief Wählt am /STR-Lese-Strobe die aktuelle Spur und armiert den Lesetransfer.
     void startReadTransfer();
     /// @brief Rückt den Lesekopf auf die nächste Adressmarke (MK/MK1-Strobe).

@@ -1246,15 +1246,15 @@ TEST_F(K2526ZVE2FloppyChain, ZVE2ReadsHead1FieldViaBus) {
     for (size_t i = 0; i < sizeof(prog); ++i)
         bus.memWrite(static_cast<uint16_t>(i), prog[i]);
 
-    // MFM-Lesemodus latchen (0x85), dann /STR head1 (bit2=0): das MFM-Latch bleibt,
-    // current_head_ wird am /STR aus bit2=0 → head 1 gelatcht.
+    // Head-1-Lesemodus über das Pfad-/Lese-Steuerwort 0x81 (MFM-Marke + bit2=0 → Kopf 1):
+    // es wählt die Seite (setHead), armiert den head-1-Read (startReadTransfer baut den
+    // treuen 4×A1-MFM-Stream) und assertiert als /STR-Fallflanke BUSRQ.  Die Seitenwahl
+    // trägt seit dem Fix NUR das Pfad-Byte, nicht der /STR-Strobe (dessen bit2 inzidentell).
     afs.ioWrite(0x10, 0xFF);
-    afs.ioWrite(0x10, 0x85);   // MFM-Marke latchen (+ /STR head0, gleich überschrieben)
-    afs.ioWrite(0x10, 0xFF);
-    afs.ioWrite(0x10, 0xF3);   // /STR=0, bit2=0 (head 1) — MFM bleibt gelatcht
+    afs.ioWrite(0x10, 0x81);   // MFM-Marke + /STR head1 (bit2=0) → head-1 Read armiert
     ASSERT_TRUE(bus.isBUSRQ());
-    afs.ioWrite(0x10, 0xE3);   // MK1=0
-    afs.ioWrite(0x10, 0xF3);   // MK1=1 steigende Flanke → Resync auf erstes A1
+    // MK1-Resync-Strobe: Kopf vor die erste IDAM-Markensequenz (bit2 hier egal — kein Flip).
+    afs.ioWrite(0x10, 0x91);   // MK1 steigende Flanke → Resync auf erstes A1
 
     bus.ioWrite(0x04, 0x01);
     for (int i = 0; i < 80 && !zre.zve2().halted; ++i) zre.zve2Step();

@@ -103,13 +103,18 @@ protected:
     std::string tmpImg2() { return makeTmpImg(fmt2); }
 
     // /STR-Lese-Strobe (bit3 fallende Flanke): prev=0xFF→data
-    // bit0=1 (/WE=1) → Lesen; bit2 kodiert Kopfwahl (/FR: 1→head0, 0→head1)
-    // Reihenfolge: erst idle-Wert schreiben (alle hoch), dann mit /STR low.
+    // bit0=1 (/WE=1) → Lesen.  Die Kopf-/Seitenwahl trägt seit dem Pfad-Byte-Modell
+    // NICHT mehr der /STR-Strobe (dessen bit2 ist inzidentell), sondern ein vorangestelltes
+    // Pfad-/Lese-Steuerwort 0x85 (Kopf 0) bzw. 0x81 (Kopf 1) — bit7=1,bit1=0(MFM),bit2=/FR.
+    // Reihenfolge: Pfad-Byte (Seitenwahl + Read-Arm), dann idle (alle hoch für die
+    // /STR-Fallflanke), dann /STR low.
     void strobeRead(uint8_t head) {
-        uint8_t fr_bit = (head == 0) ? 0x04 : 0x00;   // bit2=1→head0, bit2=0→head1
-        // Sicherstellen, dass prev_ctrl_a_ = 0xFF (Initialisierung)
-        card.ioWrite(0x10, 0xFF);                       // alle Signale inaktiv
-        // /STR (bit3) auf low ziehen; /WE=1 (bit0=1) = Lesen
+        uint8_t pathbyte = (head == 0) ? 0x85 : 0x81;   // bit2=1→head0, bit2=0→head1
+        card.ioWrite(0x10, pathbyte);                   // Seitenwahl + Read armieren
+        card.ioWrite(0x10, 0xFF);                       // alle Signale inaktiv (prev=0xFF)
+        // /STR (bit3) auf low ziehen; /WE=1 (bit0=1) = Lesen.  bit2 folgt der gewählten
+        // Seite (konsistent), latcht den Kopf aber nicht mehr.
+        uint8_t fr_bit = (head == 0) ? 0x04 : 0x00;
         uint8_t strobe = static_cast<uint8_t>(0xF0 | fr_bit | 0x01);  // /STR=0, /WE=1
         card.ioWrite(0x10, strobe);
     }
