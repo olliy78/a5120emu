@@ -93,6 +93,10 @@ This locks in the fix so a future timing change can't silently re-break it. Repr
 
 ### 5) SCPX `INIT.COM` disk formatting — verify fails on half the tracks (branch `scpx_boot`)
 
+> **→ Selbstständiges Handoff für neue Sessions: `doc/analyse_scpx_init_verify_handoff.md`**
+> (Teil A = isolierter Read-Pfad-`/WE`=0-Bug, fixbar standalone; Teil B = das Verify-Problem
+> mit dem entscheidenden nächsten Experiment + allem, was bereits ausgeschlossen ist).
+>
 > `INIT.COM` is SCPX's FORMAT.COM equivalent (dialog-driven formatter that programs the
 > K5122 **directly**, no BIOS call). Full analysis: `doc/analyse_scpx_init_format.md`;
 > memory `project_scpx_init_format`.
