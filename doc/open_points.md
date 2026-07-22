@@ -172,17 +172,36 @@ reads are ZVE2, ZERO ZVE1 reads** → no byte-steal. The real mechanism, traced 
    strEndSampleCycles()` → `transferring_=false`) because INIT raises `/STR` again (`0xB0→0xB9`)
    between the arm and the read.
 
-**Real fix (next session):** model INIT's `/WE`=0 verify strobe as a **read that persists
-through the brief `/STR` pulse** (don't enter the synthetic full-track write mode for it, and
-don't let the `/STR`=1 end-detection kill it while INIT is mid-verify), OR model the HW read-
-with-rewrite. It MUST NOT break the working full-track FORMAT path (CP/A FORMAT.COM,
-`format_integration` 5/5) or boot — those legitimately use `/STR`+`/WE`=0 to write. The clean
-discriminator remains "a real format streams the whole track via `OUT(14H)` and never reads
-`IN(16H)`; INIT's verify interleaves `OUT(14H)`/`IN(16H)`". Live recipe: `K1520DBG_LOGLEVEL=
-info ./build/k1520dbg disks/scpx_boot.hfe -x <script>` (`gu 0xE079` → `keys INIT\r`/`g …`/
-`keys A\r`/…/`keys Y\r`); ZVE2 breakpoints `b2 0x1173`/`0x1197`; key K5122 sites:
-`handleCtrlPortAWrite` /STR-write (~616), `handleDataPortAWrite` (~670), `ioRead` port-0x16
-gate (~65), `update()` /STR=1 end (~390). No regression guard exists yet.
+**RE session 3 (2026-07-22): the read path is NOT the (sole) blocker — 6+ fixes fail identically.**
+Tried, all with the **exact same** `BAD TRACKS` result and **identical** per-`(cyl,head)` retry
+counts (only `(even cyl, head 0)`=1 pass; everything else=5=fail): (1) `!transferring_` gate;
+(2) deferred `write_mode_` on 1st `OUT(14H)`; (3) deferred + speculative read-arm + "2nd `OUT` =
+format"; (4) `ioRead` switch-to-read when `write_mode_`; (5) a `str_write_pending_` flag surviving
+the write-idle clear, switched by `IN(16H)`; (6) **head-select from bit2 only on the path byte +
+`/STR`-write edge** (not every write — because INIT's head-1 verify alternates `0x81`(path,head1) /
+`0xB5`(resync strobe, bit2=1) and the committed bit2-level model flips the head to 0 on every
+`0xB5`). Key result: with fix (6) the head-1 verify **read now streams correctly** — `>>> READ …
+16 Sekt, 0 CRC-Fehler`, 18 streaming reads vs 11 fallbacks — **yet INIT still rejects the track**.
+`buildTrack` preserves physical sector order (no interleave loss). So: **the read decode is not the
+blocker; the bytes INIT reads are correct.**
+
+**Redirected conclusion:** the failure has **two robust, read-byte-independent factors** —
+head-1-always-fails AND head-0-fails-on-odd-cylinders (only even-cyl-head-0 passes) — that survive
+every read-path/head-select change. This points at INIT's **verify comparison logic** (what it
+checks beyond the sector bytes) and/or a **dual-CPU pacing-phase / seek** factor, NOT the read
+decode. (The `/WE`=0 `0xFF`-fallback traced in RE session 2 is a real bug but fixing it does not
+change the outcome.) The even/odd-cylinder + head parity smells like a per-track **rotational /
+pacing phase** or a **seek** interaction that only aligns for even-cyl-head-0.
+
+**Next step (next session):** cycle-accurate trace of INIT's per-track *decision*, side by side for
+an even-cyl-head-0 (pass) vs even-cyl-head-1 (fail) verify — same cylinder, so it isolates the head
+factor from the seek factor. Break ZVE2 at the bad-branch (`b2 0x1197`/`0x119C`) and the success
+(`0x11A8`), and dump *everything INIT compares*: the ID scratch buffer `0x13E4` (cyl/head/sec/size),
+the data-CRC `HL` vs expected `DE` at `0x1186`, the physical cylinder (`dev`), and the `/BUSRQ`
+phase. Determine what differs between the passing and failing verify when the read bytes are
+identical. Only after that is understood should the `/WE`=0 read-arm fix (design above) be
+revisited. Live recipe: `K1520DBG_LOGLEVEL=info ./build/k1520dbg disks/scpx_boot.hfe -x <script>`
+(`gu 0xE079` → `keys INIT\r`/`g …`/`keys A\r`/…/`keys Y\r`). No regression guard exists yet.
 
 ## Known non-issues (do not re-investigate)
 
