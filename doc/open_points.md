@@ -1,6 +1,6 @@
 # K1520 Emulator - Open Points
 
-Updated: 2026-07-21
+Updated: 2026-07-22
 Branch: `formating-disks` (baseline) / `scpx_boot` (SCPX 1526, items §4/§5 + disabled-tests)
 Status: A5120 boots CP/A fully to the interactive prompt; keyboard, clock, disk
 read **and** write, and FORMAT.COM disk formatting all work — including self-made
@@ -139,25 +139,50 @@ Disassembled INIT's per-sector verify inner loop and traced the K5122 stream byt
 - Yet INIT still rejects and retries. Two failure sites seen: some tracks reach `0x1186`
   with `HL≠DE` (data-CRC mismatch); others (e.g. `C=2/C=3 H1`) fail earlier at `0x1173`
   (DAM≠`0xFB`) — i.e. the failure point itself varies per attempt.
-- **Prime suspect = dual-CPU BUSRQ arbitration during the verify, not the read decode.**
-  The per-`IN(16H)` trace showed occasional reads happening while **`/BUSRQ`=0** (ZVE1 has
-  the bus) interspersed with the ZVE2 reads — i.e. **ZVE1 appears to consume/step the stream
-  too**, so a byte gets "stolen" and ZVE2's read alignment slips by one → its captured
-  data-CRC (or even the DAM byte) is off. The arm-time `/BUSRQ` state correlates roughly
-  (passing even-cyl-head0 arms with `busrq=1`; failing odd/head1 often `busrq=0`) but not
-  perfectly, and retries re-arm with `head_pos` reset to the first mark (12). This looks like
-  the **same ZVE1↔ZVE2 stepping/arbitration** subtlety as the boot DMA (CLAUDE.md invariants),
-  but exercised by INIT's own verify loop rather than the boot ROM.
+**RE session 2 (2026-07-22): byte-steal FALSIFIED — TRUE root cause found & verified.**
+Instrumented `IN(16H)` (port 0x16) with the issuing CPU (`bus_master_zve2_`): **all verify
+reads are ZVE2, ZERO ZVE1 reads** → no byte-steal. The real mechanism, traced end-to-end:
 
-**Next step:** confirm the byte-steal hypothesis — instrument `IN(16H)` (port 0x16) to log
-`head_pos`+byte+`/BUSRQ`+which CPU's PC issued it, and check whether ZVE1 (INIT's main loop)
-reads the data port concurrently with the ZVE2 verify coroutine. If so, the fix is in the
-run-loop/`/BUSRQ` arbitration (`A5120Machine::run` / K5122 `consumeByteSlot` releasing BUSRQ
-mid-verify), NOT in the read decode. Cross-check against the boot invariants so any change
-stays boot-safe. Live recipe: `K1520DBG_LOGLEVEL=info ./build/k1520dbg disks/scpx_boot.hfe
--x <script>` (`gu 0xE079` → `keys INIT\r`/`g …`/`keys A\r`/…/`keys Y\r`); useful ZVE2
-breakpoints `b2 0x1173`/`0x1186`/`0x1197`/`0x119C`/`0x11A8` and `dev` for the K5122 head
-position. No regression guard exists yet (nothing to guard until it passes).
+- **INIT's head-1 sector-verify read loop issues control words with `/WE`=0** (`0xB0`/`0xB2`,
+  = the density-table entries `0xB4`/`0xB6` with the head-bit2 cleared; head-0 uses
+  `0x85`/`0xB5` with `/WE`=1). Our K5122's **synthetic full-track FORMAT-write path** (the
+  "alter /STR-Schreibpfad", `handleCtrlPortAWrite` ~line 616) treats **any /STR-falling-edge
+  with bit0(`/WE`)=0 as a full-track format** → `write_mode_=true, transferring_=false`.
+- So INIT's head-1 verify `IN(16H)` then hits the **`0xFF` PIO fallback** (`ioRead`, port 0x16
+  requires `transferring_ && !write_mode_`) → `head_pos_` never advances → the MK1 ID→DATA
+  resync (`resyncToNextMark`→`romReadResyncTarget`) stays on the **IDAM** (`from=12→t=12`) →
+  INIT reads `FE` where it expects the DAM `FB` (`0x1172 CP L`) → `JR NZ 0x1197` → bad → 5
+  retries → track "bad". Head-0 works because its `/WE`=1 read-strobes go through the normal
+  read arm. The head-1 read is **never armed as a read** (no `0x81/0x85` path byte, no bit0=1
+  strobe). Confirmed: `WRITE-STR data=0xB0` fires for head-1 verifies, **zero** for head-0.
+- Note on real HW: `/WE`=0 (manual A0) enables the write clock; INIT's verify loop pulses
+  `/WE`=0 and re-writes the just-read bytes (`IN(16H); OUT(14H),A`) = a **read-verify-by-
+  rewrite** that leaves data unchanged. Our synthetic format path can't model that and instead
+  latches full write mode, destroying the read.
+
+**Fix attempts that did NOT work (learnings for next time):**
+1. Gate the format path on `!transferring_` → fails: `transferring_`=0 at the `/STR`-write
+   edge (the head-1 read is never armed).
+2. Defer `write_mode_` until the first `OUT(14H)` format byte → fails: INIT writes ONE setup
+   byte to `OUT(14H)` *before* its `IN(16H)` (`0x113D OUT(14H),A; 0x113F IN A,(16H)`), which
+   engages `write_mode_` prematurely.
+3. Defer + speculatively arm a read at the `/STR`-write edge + "2nd consecutive `OUT(14H)`
+   without an `IN(16H)` = real format" discriminator → fails: the speculative read is **torn
+   down by the `/STR`=1 read-end detection** (`update()` ~line 390: `str_inactive_cycles_ >=
+   strEndSampleCycles()` → `transferring_=false`) because INIT raises `/STR` again (`0xB0→0xB9`)
+   between the arm and the read.
+
+**Real fix (next session):** model INIT's `/WE`=0 verify strobe as a **read that persists
+through the brief `/STR` pulse** (don't enter the synthetic full-track write mode for it, and
+don't let the `/STR`=1 end-detection kill it while INIT is mid-verify), OR model the HW read-
+with-rewrite. It MUST NOT break the working full-track FORMAT path (CP/A FORMAT.COM,
+`format_integration` 5/5) or boot — those legitimately use `/STR`+`/WE`=0 to write. The clean
+discriminator remains "a real format streams the whole track via `OUT(14H)` and never reads
+`IN(16H)`; INIT's verify interleaves `OUT(14H)`/`IN(16H)`". Live recipe: `K1520DBG_LOGLEVEL=
+info ./build/k1520dbg disks/scpx_boot.hfe -x <script>` (`gu 0xE079` → `keys INIT\r`/`g …`/
+`keys A\r`/…/`keys Y\r`); ZVE2 breakpoints `b2 0x1173`/`0x1197`; key K5122 sites:
+`handleCtrlPortAWrite` /STR-write (~616), `handleDataPortAWrite` (~670), `ioRead` port-0x16
+gate (~65), `update()` /STR=1 end (~390). No regression guard exists yet.
 
 ## Known non-issues (do not re-investigate)
 
