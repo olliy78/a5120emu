@@ -322,15 +322,16 @@ python tools/eprom_to_h.py \
     ZRE_BOOT_ROM \
     core/cards/k2526/rom_data.h
 
+# Zeichengenerator: zwei EPROM-Ebenen (A103 = Zeilen 0–7, A123 = Zeilen 8–11)
 python tools/eprom_to_h.py \
-    doc/EPROMS/Bildschirm_ABS_K7024_A103.bin \
-    CHARSET_LATIN \
-    core/cards/k7024/charset_latin.h
+    doc/EPROMS/K7024/v171.bin \
+    CHARGEN_ZG1_LATIN \
+    core/cards/k7024/chargen_zg1.h
 
 python tools/eprom_to_h.py \
-    doc/EPROMS/Bildschirm_ABS_K7024_A123.bin \
-    CHARSET_CYRILLIC \
-    core/cards/k7024/charset_cyrillic.h
+    doc/EPROMS/K7024/v172.bin \
+    CHARGEN_ZG2_LATIN \
+    core/cards/k7024/chargen_zg2.h
 ```
 
 ---

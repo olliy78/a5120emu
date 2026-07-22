@@ -145,8 +145,8 @@ a5120emu/
 │   │   │   └── k3526.h/cpp
 │   │   ├── k7024/               # ABS – Bildschirmkarte
 │   │   │   ├── k7024.h/cpp
-│   │   │   ├── charset_latin.h  # Zeichengenerator (A103 EPROM)
-│   │   │   └── charset_cyrillic.h # Zeichengenerator (A123 EPROM)
+│   │   │   ├── chargen_zg1.h    # Zeichengenerator obere Zeilen 0–7  (EPROM A103)
+│   │   │   └── chargen_zg2.h    # Zeichengenerator untere Zeilen 8–11 (EPROM A123)
 │   │   ├── k8025/               # ASS – Anschlußsteuerung Seriell
 │   │   │   └── k8025.h/cpp
 │   │   └── k5122/               # AFS – Folienspeicher-Anschlußsteuerung
@@ -482,9 +482,9 @@ K7024-Emulation
     │
     │ VRAM-Schreibzugriff (0xF800–0xFFFF, 1920 Bytes)
     ▼
-Zeichengenerator-ROM (EPROM A103/A123, 1024 Bytes)
-    │ Adressierung: [Bit6:0 = Zeichencode] + [Bit9:7 = Zeilen-Nr]
-    │ → 8 Pixel pro Zeile
+Zeichengenerator: 2 EPROMs A103 (Zeilen 0–7) + A123 (Zeilen 8–11), je 1024 Bytes
+    │ Adressierung: [Bit9:3 = Zeichencode 0x00–0x7F] + [Bit2:0 = Zeilen-Nr]
+    │ → 8 Pixel pro Zeile; ein lateinischer Satz (kein Kyrillisch)
     ▼
 Pixel-Framebuffer (intern in K7024)
     640 × 288 Pixel (80 Zeichen × 8px, 24 Zeilen × 12px)
