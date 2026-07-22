@@ -151,6 +151,10 @@ void K2526::powerOn()
     port_a_inputs_= 0xFF;   // all input lines pull-high at power-on
     int_bs_active_= false;
     zve2_wait_    = false;
+    zve2_reset_   = true;    // ZVE2 (DMA-CPU) am Power-on in Reset halten (Port 04H
+                            //   bit0=0) — sonst würde ein Neustart aus einem bereits
+                            //   gebooteten Zustand die alte ZVE2 stehen lassen und der
+                            //   Boot-DMA-Handshake nicht neu anlaufen (Kaltstart-Fix).
     shutdown_req_ = false;
     LOG_INFO("K2526", "Q240: Schutztabelle zurückgesetzt (alle Segmente ungeschützt)");
 

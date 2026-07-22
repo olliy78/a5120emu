@@ -101,6 +101,15 @@ void A5120Machine::powerOn() {
     stop_.store(false);
     zre_.powerOn();
     zre_.cpuReset();
+    // Run-Loop-Koppelzustand ZVE1↔ZVE2 auf Kaltstart bringen, sonst hängt ein
+    // Neustart aus laufendem Betrieb im halb offenen DMA-Handshake fest.
+    busrq_active_     = false;
+    dma_saw_progress_ = false;
+    bus_master_zve2_  = false;
+    os_running_       = false;   // (SCPX) os-gated Laufzeit-Read-Gate zurücksetzen
+    held_read_active_ = false;
+    afs_.endDmaTransfer();
+    screen_.clearScreen();   // Bildschirm sichtbar löschen (Kaltstart)
     boot_trace_count_ = 0;
     LOG_INFO("A5120", "Power on: ZVE1 Reset, Lade-ROM aktiv");
 
@@ -117,6 +126,13 @@ void A5120Machine::reset() {
     stop_.store(false);
     zre_.powerOn();   // re-enable boot ROM
     zre_.cpuReset();
+    busrq_active_     = false;
+    dma_saw_progress_ = false;
+    bus_master_zve2_  = false;
+    os_running_       = false;   // (SCPX) os-gated Laufzeit-Read-Gate zurücksetzen
+    held_read_active_ = false;
+    afs_.endDmaTransfer();
+    screen_.clearScreen();   // Bildschirm sichtbar löschen (Reset)
     boot_trace_count_ = 0;
     LOG_INFO("A5120", "Reset: ZVE1 Reset, Lade-ROM reaktiviert");
 }

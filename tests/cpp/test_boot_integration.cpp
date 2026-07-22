@@ -16,6 +16,8 @@
 
 #include <gtest/gtest.h>
 #include "core/machines/a5120/a5120.h"
+#include "core/cards/k7024/chargen_zg1.h"   // CHARGEN_ZG1_LATIN — Pixelzeilen 0–7
+#include "core/cards/k7024/chargen_zg2.h"   // CHARGEN_ZG2_LATIN — Pixelzeilen 8–11
 
 #include <cstdint>
 #include <filesystem>
@@ -368,6 +370,76 @@ TEST(BootIntegrationCpa02, ImgBootsIntoRunningCpaOs) {
         << "running CP/A OS banner missing — @OS.COM handoff did not run the OS";
     EXPECT_NE(screen.find("TPA 100H - 0C405H"), std::string::npos)
         << "expected TPA size 0C405H (this disk's OS) not on screen";
+}
+
+// ── Display-Pfad end-to-end: gerenderter Framebuffer == Zeichengenerator(VRAM) ──
+//
+// Die Banner-Tests oben prüfen nur die VRAM-*Zeichencodes* (0xF800-Bytes), nicht
+// die tatsächlich gerenderten Pixel. Ein falscher Zeichengenerator (die drei
+// historischen Charset-Bugs) ließe sie alle grün. Dieser Test schließt die Lücke:
+// nachdem das OS-Banner steht, wird für jede Zelle der Banner-Zeile der gerenderte
+// Framebuffer-Block gegen die Chargen-Erwartung aus VRAM verglichen — Beweis, dass
+// der komplette Pfad VRAM → renderChar → Framebuffer korrekt verdrahtet ist.
+
+// Spiegelt K7024::chargenLookupLatin (dort static/intern): 8-Bit-Pixelzeile
+// (Bit7 = links) für Code+Pixelzeile aus dem verifizierten v171/v172-Satz.
+static uint8_t expectedGlyphRow(uint8_t charCode, int pixelRow) {
+    uint8_t code = charCode & 0x7F;
+    if (pixelRow >= 12 || code < 0x20) return 0x00;
+    if (pixelRow < 8) return CHARGEN_ZG1_LATIN[code * 8 + pixelRow];
+    return CHARGEN_ZG2_LATIN[code * 8 + (pixelRow - 8)];
+}
+
+/**
+ * @test BootIntegrationCpa02/RenderedBannerMatchesCharacterGenerator
+ * @brief Der gerenderte Framebuffer der OS-Banner-Zeile stimmt Pixel-für-Pixel mit dem Zeichengenerator überein.
+ * @details Selbstkonsistenz-Prüfung des Display-Pfads: für die 80 Zellen der Zeile mit
+ *   "CP/A, Version 25.09.89" wird jede der 12 Pixelzeilen aus dem Framebuffer mit
+ *   chargenLookupLatin(VRAM-Code) verglichen (inkl. Cursor-Invertierung Zeilen 10–11).
+ * @par Pass criterion  Alle 80×12 Pixelzeilen der Banner-Zeile == Zeichengenerator-Erwartung.
+ */
+TEST(BootIntegrationCpa02, RenderedBannerMatchesCharacterGenerator) {
+    A5120Machine machine;
+    mountCpa02(machine, "cpadisk_autofs_noclk_noautoexec.img");
+    machine.powerOn();
+
+    ASSERT_TRUE(runUntilVramContains(machine, "CP/A, Version 25.09.89", kCpa02BudgetCycles))
+        << "OS-Banner nie erschienen — Boot fehlgeschlagen";
+
+    // Banner-Zeile (0–23) suchen, deren 80-Zeichen-Text das Banner enthält.
+    int bannerRow = -1;
+    for (int row = 0; row < 24 && bannerRow < 0; ++row) {
+        std::string line;
+        for (int col = 0; col < 80; ++col) {
+            uint8_t c = machine.memReadDebug(static_cast<uint16_t>(0xF800 + row * 80 + col)) & 0x7F;
+            line.push_back((c >= 0x20 && c < 0x7F) ? char(c) : ' ');
+        }
+        if (line.find("CP/A, Version 25.09.89") != std::string::npos) bannerRow = row;
+    }
+    ASSERT_GE(bannerRow, 0) << "Banner-Zeile in VRAM nicht lokalisiert";
+
+    const uint8_t* fb = machine.framebuffer();
+    int mismatches = 0;
+    for (int col = 0; col < 80; ++col) {
+        uint8_t vbyte  = machine.memReadDebug(static_cast<uint16_t>(0xF800 + bannerRow * 80 + col));
+        uint8_t code   = vbyte & 0x7F;
+        bool    cursor = (vbyte & 0x80) != 0;
+        for (int pr = 0; pr < 12; ++pr) {
+            uint8_t exp = expectedGlyphRow(code, pr);
+            if (cursor && pr >= 10) exp ^= 0xFF;   // Cursor invertiert Zeilen 10–11
+            int fb_y = bannerRow * 12 + pr;
+            uint8_t got = 0;
+            for (int px = 0; px < 8; ++px)
+                if (fb[fb_y * 640 + col * 8 + px]) got |= static_cast<uint8_t>(1u << (7 - px));
+            EXPECT_EQ(got, exp)
+                << "Framebuffer weicht vom Zeichengenerator ab: Zelle col=" << col
+                << " code=0x" << std::hex << int(code) << std::dec
+                << " Pixelzeile " << pr;
+            if (got != exp) ++mismatches;
+        }
+    }
+    EXPECT_EQ(mismatches, 0)
+        << mismatches << " Pixelzeilen der Banner-Zeile stimmen nicht mit dem Zeichengenerator überein";
 }
 
 /**

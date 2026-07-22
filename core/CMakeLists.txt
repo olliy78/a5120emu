@@ -97,8 +97,8 @@ add_library(k1520_cards
     
     cards/k7024/k7024.cpp
     cards/k7024/k7024.h
-    cards/k7024/charset_latin.h
-    cards/k7024/charset_cyrillic.h
+    cards/k7024/chargen_zg1.h
+    cards/k7024/chargen_zg2.h
     
     cards/k8025/k8025.cpp
     cards/k8025/k8025.h

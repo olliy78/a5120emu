@@ -13,7 +13,8 @@
  *   Screen   : 80 columns × 24 rows = 1920 character cells (bytes used)
  *   Cell size: 8×12 pixels
  *   Output   : 640×288 pixel monochrome framebuffer (0x00 = black, 0xFF = white)
- *   Charset  : ASCII 0x20–0x7F from built-in character generator (Latin or Cyrillic)
+ *   Charset  : ASCII 0x20–0x7F from the two-EPROM character generator (A103 upper
+ *              rows + A123 lower rows), Latin — this machine has no Cyrillic ROM
  * @endcode
  *
  * Memory registration:
@@ -48,7 +49,6 @@
  * Features:
  * - 2 KB VRAM at configurable base (default 0xF800–0xFFFF)
  * - Renders characters into a 640×288 pixel monochrome framebuffer
- * - Two character sets: Latin (default) and Cyrillic
  * - Console mode: text changes queued for ANSI terminal output
  * - Direct VRAM helpers for unit test access (vramRead / vramWrite)
  *
@@ -65,11 +65,10 @@ public:
     /** @brief Hardware configuration for the K7024 — mirrors physical jumper settings. */
     struct A5120Config {
         uint8_t vram_base_hi; ///< High byte of VRAM base (X11/X12 all closed → 0xF8 = 0xF800)
-        bool    use_cyrillic; ///< Charset: false=Latin (A103), true=Cyrillic (A123)
         bool    cursor_blink; ///< X15/X16: pos1 closed → false (ruhend), pos2 → true (blinkend)
         bool    read_protect; ///< X13/X14: pos1 closed → true (Lesesperre aktiv), pos2 → false
         A5120Config()
-            : vram_base_hi(0xF8), use_cyrillic(false),
+            : vram_base_hi(0xF8),
               cursor_blink(false), read_protect(true) {}
     };
 
@@ -79,7 +78,7 @@ public:
      * Calls attachToBus() internally; no need to call it again after construction.
      *
      * @param bus K1520 system bus reference (must outlive this object)
-     * @param cfg Hardware configuration (VRAM base address, character set)
+     * @param cfg Hardware configuration (VRAM base address, cursor blink, read protect)
      */
     explicit K7024(K1520Bus& bus, const A5120Config& cfg = A5120Config{});
 
@@ -220,6 +219,17 @@ public:
      */
     void    vramWrite(int col, int row, uint8_t ch);
 
+    /**
+     * @brief Fill the whole screen with a blank character and re-render.
+     *
+     * Used on power-on / reset so a cold start visibly clears the tube (the
+     * VRAM is otherwise never wiped, so a reboot would re-render the same text
+     * over the old image and look like nothing happened).
+     *
+     * @param blank Character code to fill with (default 0x20 = space)
+     */
+    void    clearScreen(uint8_t blank = 0x20);
+
 private:
     /**
      * @brief Render one character cell into the framebuffer.
@@ -241,7 +251,7 @@ private:
     void renderAll();
 
     K1520Bus&   bus_;           ///< K1520 system bus reference
-    A5120Config cfg_;           ///< Hardware configuration (VRAM base, charset)
+    A5120Config cfg_;           ///< Hardware configuration (VRAM base, cursor, read protect)
     uint8_t     vram_[2048]{};  ///< 2 KB VRAM backing array (character codes)
     uint8_t     framebuffer_[640 * 288]{}; ///< Rendered pixel framebuffer (0/0xFF per pixel)
     bool        dirty_        = false;     ///< true if framebuffer has unseen changes

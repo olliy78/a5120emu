@@ -8,13 +8,14 @@
  *
  * Character rendering:
  *   Each VRAM byte encodes one character cell: bits [6:0] = ASCII code,
- *   bit 7 = cursor (inverts pixel rows 10–11).  The character generator
- *   EPROM provides 8×8 glyphs for codes 0x20–0x7F; codes 0x00–0x1F render
- *   as blank.  Each 8×8 glyph is padded to 8×12 pixels (rows 8–11 blank).
+ *   bit 7 = cursor (inverts pixel rows 10–11).  The character generator is
+ *   formed by two 1 KB EPROMs (A103 = pixel rows 0–7, A123 = rows 8–11); each
+ *   character occupies 12 bytes.  Codes 0x00–0x1F render as blank.  This is a
+ *   Latin font with real lower- and upper-case; the machine has no Cyrillic ROM.
  *
- * EPROM address formula:
+ * EPROM address formula (both EPROMs, per Robotron K7024 manual):
  * @code
- *   addr = (charCode - 0x20) * 8 + pixelRow   for charCode 0x20..0x7F
+ *   addr = (charCode & 0x7F) * 8 + row     row 0..7 → A103, row 8..11 → A123[0..3]
  * @endcode
  *
  * @see k7024.h
@@ -25,30 +26,38 @@
  */
 
 #include "core/cards/k7024/k7024.h"
-#include "core/cards/k7024/charset_latin.h"
-#include "core/cards/k7024/charset_cyrillic.h"
+#include "core/cards/k7024/chargen_zg1.h"      // obere Zeilen 0–7  (EPROM A103 / v171)
+#include "core/cards/k7024/chargen_zg2.h"      // untere Zeilen 8–11 (EPROM A123 / v172)
 #include <algorithm>
 
 // ─── Character-generator lookup ───────────────────────────────────────────────
 
 /**
- * @brief Look up one pixel row of a character glyph in the character-generator ROM.
+ * @brief Zeichengenerator-Lookup für den lateinischen Zeichensatz (A5120 v171/v172).
  *
- * The EPROM stores 96 printable characters starting at code 0x20 (space).
- * Each character occupies 8 consecutive bytes, one per pixel row 0–7.
- * Characters 0x00–0x1F and pixel rows 8–11 always return 0x00 (blank).
+ * Zweistufiger Zeichengenerator, roh nach 7-Bit-Code adressiert (Design-Doc §4:
+ * `EPROM-Adresse = (code & 0x7F) << 3 | zeile`):
+ *   - Pixelzeilen 0–7 : obere EPROM-Ebene @ref CHARGEN_ZG1_LATIN (v171, /LP3 = 0)
+ *   - Pixelzeilen 8–11: untere Ebene @ref CHARGEN_ZG2_LATIN (v172, /LP3 = 1; deren
+ *                       Zeilen 0–3, liefert Descender g/j/p/q/y + Punkt/Komma)
  *
- * @param charCode  ASCII character code (0x00–0x7F)
- * @param pixelRow  Pixel row within the cell (0–11; rows 8–11 always blank)
- * @param charset   Pointer to the 1024-byte character generator ROM data
- * @return 8-bit pixel row bitmap (bit 7 = leftmost pixel)
+ * v171/v172 sind der **vollständige** A5120-Satz mit echten Klein- **und**
+ * Großbuchstaben (Codes 0x20–0x7F direkt programmiert) — daher kein Versal-Fold.
+ * Steuerzeichen < 0x20 bleiben leer.
+ *
+ * @param charCode  Zeichencode (0x00–0x7F)
+ * @param pixelRow  Pixelzeile in der Zelle (0–11)
+ * @return 8-Bit-Pixelzeile (Bit 7 = linkestes Pixel)
  */
-static inline uint8_t chargenLookup(uint8_t charCode, int pixelRow,
-                                    const uint8_t* charset)
+static inline uint8_t chargenLookupLatin(uint8_t charCode, int pixelRow)
 {
-    if (pixelRow >= 8 || charCode < 0x20) return 0x00;
-    uint16_t addr = static_cast<uint16_t>((charCode - 0x20) * 8 + pixelRow);
-    return (addr < 1024) ? charset[addr] : 0x00;
+    if (pixelRow >= 12) return 0x00;
+    uint8_t code = charCode & 0x7F;
+    if (code < 0x20) return 0x00;
+
+    if (pixelRow < 8)
+        return CHARGEN_ZG1_LATIN[code * 8 + pixelRow];
+    return CHARGEN_ZG2_LATIN[code * 8 + (pixelRow - 8)];  // Zeilen 8–11 ← v172 0–3
 }
 
 // ─── K7024 implementation ─────────────────────────────────────────────────────
@@ -246,6 +255,13 @@ void K7024::vramWrite(int col, int row, uint8_t ch)
     dirty_ = true;
 }
 
+void K7024::clearScreen(uint8_t blank)
+{
+    for (auto& b : vram_) b = blank;
+    renderAll();
+    dirty_ = true;
+}
+
 // ─── Rendering ────────────────────────────────────────────────────────────────
 
 /**
@@ -265,15 +281,13 @@ void K7024::renderChar(int col, int row)
 {
     if (col < 0 || col >= 80 || row < 0 || row >= 24) return;
 
-    const uint8_t* charset = cfg_.use_cyrillic ? CHARSET_CYRILLIC : CHARSET_LATIN;
-
     uint8_t vbyte    = vram_[row * 80 + col];
     uint8_t charCode = vbyte & 0x7F;
     bool    cursor   = (vbyte & 0x80) != 0;
 
     for (int pixRow = 0; pixRow < 12; ++pixRow) {
         int     fb_y       = row * 12 + pixRow;
-        uint8_t eprom_byte = chargenLookup(charCode, pixRow, charset);
+        uint8_t eprom_byte = chargenLookupLatin(charCode, pixRow);
 
         for (int pixCol = 0; pixCol < 8; ++pixCol) {
             int     bit   = (eprom_byte >> (7 - pixCol)) & 1;

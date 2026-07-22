@@ -467,3 +467,118 @@ TEST_F(K7024Test, VramRows_AreIndependent)
             EXPECT_EQ(fb[py * 640 + px], 0x00)
                 << "Cell (0,1) should be blank at fb_y=" << py;
 }
+
+// ─── 10. Zeichengenerator-Inhalt: Golden-Glyphen + Charset-Integrität ─────────
+//
+// Diese Gruppe nagelt den *Inhalt* des Zeichengenerators fest (Codepfad
+// charCode → v171/v172-Lookup → Framebuffer-Pixel). Die bisherigen Tests prüften
+// nur die Karten-Mechanik bzw. "irgendein Pixel gesetzt" — das ließ die drei
+// historischen Charset-Bugs (Versalschrift-ROM ohne Kleinbuchstaben, Kyrillisch-
+// Verwechslung, falsche untere Zeilenebene) allesamt grün durchlaufen. Die
+// Golden-Werte stammen aus dem verifizierten v171/v172-Satz (fb_ocr: 0 Abweichungen).
+
+// Packt die 8 Pixel einer Framebuffer-Zeile der Zelle (col,row) in ein Byte
+// (Bit7 = linkestes Pixel) — die Umkehrung der renderChar()-Bit-Verteilung.
+static uint8_t glyphRow(const uint8_t* fb, int col, int row, int pixRow)
+{
+    const int fb_y = row * 12 + pixRow;
+    uint8_t b = 0;
+    for (int px = 0; px < 8; ++px)
+        if (fb[fb_y * 640 + col * 8 + px]) b |= static_cast<uint8_t>(1u << (7 - px));
+    return b;
+}
+
+// Extrahiert alle 12 Pixelzeilen der Zelle (col,row) nach out[12].
+static void glyphBitmap(const uint8_t* fb, int col, int row, uint8_t out[12])
+{
+    for (int pr = 0; pr < 12; ++pr) out[pr] = glyphRow(fb, col, row, pr);
+}
+
+// Golden-Bitmaps (12 Pixelzeilen, Bit7 = links) aus v171/v172.
+static const uint8_t kGlyphSpace[12] = { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 };
+static const uint8_t kGlyphA[12]     = { 0x00,0x10,0x28,0x44,0x82,0x82,0xFE,0x82,0x82,0x82,0x00,0x00 };
+static const uint8_t kGlyph_a[12]    = { 0x00,0x00,0x00,0x00,0x78,0x04,0x7C,0x8C,0x8C,0x74,0x00,0x00 };
+static const uint8_t kGlyph_g[12]    = { 0x00,0x00,0x00,0x00,0x74,0x8C,0x84,0x8C,0x74,0x04,0x78,0x00 };
+static const uint8_t kGlyph0[12]     = { 0x00,0x7C,0x82,0x86,0x8A,0x92,0xA2,0xC2,0x82,0x7C,0x00,0x00 };
+static const uint8_t kGlyphDot[12]   = { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x10,0x00,0x00 };
+
+// Rendert einen Code in Zelle (0,0) und vergleicht die 12 Pixelzeilen mit golden.
+static void expectGlyph(K7024& screen, uint8_t code, const uint8_t golden[12], const char* name)
+{
+    screen.vramWrite(0, 0, code);
+    uint8_t got[12];
+    glyphBitmap(screen.getFramebuffer(), 0, 0, got);
+    for (int pr = 0; pr < 12; ++pr)
+        EXPECT_EQ(got[pr], golden[pr])
+            << "Glyph '" << name << "' (0x" << std::hex << int(code) << std::dec
+            << ") Pixelzeile " << pr << " weicht ab";
+}
+
+/**
+ * @test K7024Test/GoldenGlyph_SpaceUppercaseLowercaseDigitPunct
+ * @brief Die exakten 12-Zeilen-Bitmaps repräsentativer Glyphen entsprechen dem v171/v172-Satz.
+ * @details Deckt alle Bug-Klassen ab: Versal 'A', echter Klein-Glyph 'a', Descender 'g'
+ *   (Zeilen 8–11), Ziffer '0' und Punktuation '.' (untere Ebene v172), sowie das leere Space.
+ * @par Pass criterion  Alle 12 gerenderten Pixelzeilen == Golden-Bitmap je Glyph.
+ */
+TEST_F(K7024Test, GoldenGlyph_SpaceUppercaseLowercaseDigitPunct)
+{
+    expectGlyph(screen, 0x20, kGlyphSpace, "space");
+    expectGlyph(screen, 0x41, kGlyphA,     "A");
+    expectGlyph(screen, 0x61, kGlyph_a,    "a");
+    expectGlyph(screen, 0x67, kGlyph_g,    "g");
+    expectGlyph(screen, 0x30, kGlyph0,     "0");
+    expectGlyph(screen, 0x2E, kGlyphDot,   ".");
+}
+
+/**
+ * @test K7024Test/Charset_LowercaseDiffersFromUppercase
+ * @brief Jeder Kleinbuchstabe 0x61–0x7A rendert eine andere Glyphe als sein Großbuchstabe 0x41–0x5A.
+ * @details Direkter Guard gegen das Versalschrift-ROM (Kleinbuchstaben unprogrammiert → würden
+ *   auf die Großbuchstaben-Bitmap zurückfallen). Beim korrekten A5120-Satz sind 0 Paare identisch.
+ * @par Pass criterion  Für alle 26 Buchstaben unterscheidet sich mind. eine Pixelzeile.
+ */
+TEST_F(K7024Test, Charset_LowercaseDiffersFromUppercase)
+{
+    for (int c = 0x41; c <= 0x5A; ++c) {
+        uint8_t upper[12], lower[12];
+        screen.vramWrite(0, 0, static_cast<uint8_t>(c));
+        glyphBitmap(screen.getFramebuffer(), 0, 0, upper);
+        screen.vramWrite(0, 0, static_cast<uint8_t>(c + 0x20));
+        glyphBitmap(screen.getFramebuffer(), 0, 0, lower);
+
+        bool differs = false;
+        for (int pr = 0; pr < 12; ++pr)
+            if (upper[pr] != lower[pr]) differs = true;
+        EXPECT_TRUE(differs)
+            << "Kleinbuchstabe '" << char(c + 0x20) << "' rendert identisch zu '"
+            << char(c) << "' — Versalschrift-Regression?";
+    }
+}
+
+/**
+ * @test K7024Test/Charset_DescendersUseLowerRows
+ * @brief Descender-Glyphen (g/p/y) haben gesetzte Pixel in den unteren Zeilen 8–11, Versal 'A' nicht in 10–11.
+ * @details Guard gegen fehlende/falsche untere Ebene (v172): ohne sie blieben Descender in
+ *   Zeilen 8–11 leer. 'A' als Gegenprobe (nutzt Zeilen 10–11 nicht).
+ * @par Pass criterion  g/p/y je ≥1 gesetztes Pixel in Zeilen 8–11; 'A' Zeilen 10–11 komplett leer.
+ */
+TEST_F(K7024Test, Charset_DescendersUseLowerRows)
+{
+    for (uint8_t code : { uint8_t(0x67), uint8_t(0x70), uint8_t(0x79) }) {  // g p y
+        screen.vramWrite(0, 0, code);
+        uint8_t g[12];
+        glyphBitmap(screen.getFramebuffer(), 0, 0, g);
+        int set = 0;
+        for (int pr = 8; pr < 12; ++pr) if (g[pr]) ++set;
+        EXPECT_GT(set, 0)
+            << "Descender 0x" << std::hex << int(code) << std::dec
+            << " hat keine Pixel in Zeilen 8–11 — untere Ebene v172 fehlt?";
+    }
+
+    screen.vramWrite(0, 0, 0x41);  // 'A' — kein Descender
+    uint8_t a[12];
+    glyphBitmap(screen.getFramebuffer(), 0, 0, a);
+    EXPECT_EQ(a[10], 0x00) << "'A' sollte in Zeile 10 leer sein";
+    EXPECT_EQ(a[11], 0x00) << "'A' sollte in Zeile 11 leer sein";
+}
