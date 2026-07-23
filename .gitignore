@@ -4,7 +4,11 @@ build_trace/
 *.d
 *.pyc
 *.pyo
+__pycache__/
 *.log
 *.tmp
 build_k1520/
 out/
+
+# Temporäre Disk-Kopien der Debug-/Format-Tools
+disks/*_tmp*.hfe
