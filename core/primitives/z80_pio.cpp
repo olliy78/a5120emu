@@ -95,6 +95,12 @@ void Z80PIO::writeCtrl(Port& p, uint8_t data) {
     if (p.ctrl_state == CtrlState::EXPECT_MASK) {
         p.int_mask   = data;
         p.ctrl_state = CtrlState::IDLE;
+        // Der reale Z80PIO wertet die Mode-3-Bedingung fortlaufend (pegelbasiert)
+        // aus: sobald die Maske geladen ist und der aktuelle Eingangspegel die
+        // Bedingung erfüllt, wird SOFORT ein Interrupt angefordert — auch ohne
+        // dass sich ein Eingangspin danach noch ändert. (HARDYs System-PIO- und
+        // MEMDI-RDY-Test verlassen sich genau darauf.)
+        if (p.mode == 3) checkInterrupt(p, p.input_latch);
         return;
     }
 
@@ -113,7 +119,9 @@ void Z80PIO::writeCtrl(Port& p, uint8_t data) {
         p.int_and          = (data >> 6) & 1;
         p.int_active_high  = (data >> 5) & 1;
         if ((data >> 4) & 1)
-            p.ctrl_state = CtrlState::EXPECT_MASK;
+            p.ctrl_state = CtrlState::EXPECT_MASK;   // Neubewertung erst nach Maske
+        else if (p.mode == 3)
+            checkInterrupt(p, p.input_latch);        // sonst sofort pegelbasiert prüfen
         return;
     }
     if ((data & 0x0F) == 0x03) {
@@ -121,6 +129,7 @@ void Z80PIO::writeCtrl(Port& p, uint8_t data) {
         p.ie               = (data >> 7) & 1;
         p.int_and          = (data >> 6) & 1;
         p.int_active_high  = (data >> 5) & 1;
+        if (p.mode == 3) checkInterrupt(p, p.input_latch);
         return;
     }
 }

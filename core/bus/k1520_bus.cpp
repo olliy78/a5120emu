@@ -34,10 +34,17 @@ void K1520Bus::setInterruptChain(std::initializer_list<InterruptSlave*> chain) {
 }
 
 uint8_t K1520Bus::memRead(uint16_t addr) {
-    if (memdi_) {
-        LOG_TRACE("K1520Bus", "memRead 0x%04X: /MEMDI aktiv → 0xFF", addr);
-        return 0xFF;
-    }
+    // Das globale /MEMDI (BS-PIO Q301 Port A Bit7 → MEMDI1/2 auf dem Backplane)
+    // gatet den Speicher NICHT: es ist die „Speicherbereichsumschaltung", die nur
+    // OPS-Gruppen abschaltet, die per Jumper auf MEMDI1/2 verdrahtet sind. Auf dem
+    // hier modellierten Standard-A5120 ist KEINE Gruppe darauf verdrahtet → /MEMDI
+    // bleibt für Lesen, Fetch UND Schreiben wirkungslos (eine per Jumper geschaltete
+    // Gruppe würde über K3526::setMemDI abgebildet, nicht über dieses globale Gate).
+    // Wichtig: Der laufende Code muss weiterlaufen, während /MEMDI aktiv ist —
+    // HARDYs MEMDI-Test setzt /MEMDI und führt danach EI/RET sowie Stack-/BDOS-
+    // Operationen aus. Ein Read-Gate (→0xFF) ließe die CPU 0xFF (=RST 38H) holen
+    // → Endlos-RST-38-Schleife; ein Write-Gate blockierte die Stack-Writes.
+
     // Take the last READABLE device that covers this address.
     // Devices with isReadable()=false (e.g. K7024 with Lesesperre active)
     // do not drive the data bus and are skipped.
@@ -53,10 +60,8 @@ uint8_t K1520Bus::memRead(uint16_t addr) {
 }
 
 void K1520Bus::memWrite(uint16_t addr, uint8_t data) {
-    if (memdi_) {
-        LOG_TRACE("K1520Bus", "memWrite 0x%04X=0x%02X: /MEMDI aktiv → ignoriert", addr, data);
-        return;
-    }
+    // /MEMDI gatet auch Schreibzugriffe nicht — siehe ausführliche Begründung in
+    // memRead(): das globale /MEMDI ist auf dem Standard-A5120 wirkungslos.
     // Write to ALL writable devices that cover this address.
     // On real K1520 hardware the write signal (/WR + /MREQ) is broadcast on the
     // bus; every device whose address decoder fires will latch the data.

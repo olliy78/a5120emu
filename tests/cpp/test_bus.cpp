@@ -203,18 +203,29 @@ TEST(K1520Bus, MemDispatch_ROMIgnoresWrite) {
 }
 
 /**
- * @test K1520Bus/MEMDI_BlocksRead
- * @brief The global MEMDI (memory disable) signal blocks all memory reads, returning 0xFF.
- * @par Pass criterion  memRead(0x1000) == 0xFF after setMEMDI(true).
+ * @test K1520Bus/MEMDI_DoesNotGateMemory
+ * @brief The global /MEMDI signal does not gate memory access on the standard
+ *   A5120 — it only disables OPS groups jumpered onto MEMDI1/2, and none are.
+ *   While asserted, reads, instruction fetch AND writes all pass through. This
+ *   mirrors the real A5120, where code keeps executing while /MEMDI is active
+ *   (HARDYs MEMDI test sets /MEMDI and then runs EI/RET plus stack/BDOS ops).
+ *   A read gate would make the CPU fetch 0xFF (=RST 38H) and loop forever; a
+ *   write gate would block the stack.
+ * @par Pass criterion  with /MEMDI asserted, reads and writes behave normally;
+ *   getMEMDI still reflects the signal level.
  */
-TEST(K1520Bus, MEMDI_BlocksRead) {
+TEST(K1520Bus, MEMDI_DoesNotGateMemory) {
     K1520Bus bus;
     MockMem mem(0x1000);
     mem.buf[0] = 0x42;
     bus.registerMem(&mem, 0x1000, 256);
     bus.setMEMDI(true);
 
-    EXPECT_EQ(bus.memRead(0x1000), 0xFF);
+    EXPECT_TRUE(bus.getMEMDI());          // signal level tracked
+    EXPECT_EQ(bus.memRead(0x1000), 0x42); // read/fetch passes
+    bus.memWrite(0x1000, 0x99);           // write passes (not gated)
+    EXPECT_EQ(mem.buf[0], 0x99);
+    EXPECT_EQ(bus.memRead(0x1000), 0x99);
 }
 
 /**

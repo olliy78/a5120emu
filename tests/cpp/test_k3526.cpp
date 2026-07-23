@@ -403,21 +403,31 @@ TEST(K3526, AttachToBus_MemDI_ViaDirectControl) {
 }
 
 /**
- * @test K3526/AttachToBus_BusMemDI_BlocksAll
- * @brief The global bus-level MEMDI signal (bus.setMEMDI) blocks all memory reads.
- * @par Pass criterion  All bus.memRead calls return 0xFF after bus.setMEMDI(true).
+ * @test K3526/AttachToBus_BusMemDI_DoesNotGateMemory
+ * @brief The global bus-level /MEMDI signal (bus.setMEMDI) does not gate memory:
+ *   on the standard A5120 no OPS group is jumpered onto MEMDI1/2, so reads AND
+ *   writes pass through while /MEMDI is asserted. (Per-group disable is done via
+ *   K3526::setMemDI, tested separately above.)
+ * @par Pass criterion  with /MEMDI asserted, writes still land and reads return
+ *   them.
  */
-TEST(K3526, AttachToBus_BusMemDI_BlocksAll) {
+TEST(K3526, AttachToBus_BusMemDI_DoesNotGateMemory) {
     K3526 ops;
     K1520Bus bus;
     ops.attachToBus(bus);
 
     bus.memWrite(0x0000, 0x11);
     bus.memWrite(0x4000, 0x22);
-    bus.setMEMDI(true); // global bus-level disable
+    bus.setMEMDI(true); // global bus signal — no memory-gating effect
 
-    EXPECT_EQ(bus.memRead(0x0000), 0xFF);
-    EXPECT_EQ(bus.memRead(0x4000), 0xFF);
+    // Reads pass through unchanged
+    EXPECT_EQ(bus.memRead(0x0000), 0x11);
+    EXPECT_EQ(bus.memRead(0x4000), 0x22);
+    // Writes still land while /MEMDI is asserted
+    bus.memWrite(0x0000, 0xEE);
+    bus.memWrite(0x4000, 0xEE);
+    EXPECT_EQ(bus.memRead(0x0000), 0xEE);
+    EXPECT_EQ(bus.memRead(0x4000), 0xEE);
 }
 
 /**

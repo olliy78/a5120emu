@@ -229,8 +229,9 @@ public:
      * @brief Perform a memory read access.
      * 
      * Dispatched to the MemDevice containing the address.
-     * If /MEMDI is asserted, returns 0xFF (open drain).
-     * 
+     * The global /MEMDI signal does NOT gate memory access (see setMEMDI):
+     * reads, fetch and writes always reach the memory on the standard A5120.
+     *
      * @param addr Address to read (0x0000–0xFFFF)
      * @return Data byte at that address
      */
@@ -365,12 +366,18 @@ public:
     bool isBUSRQ() const { return busrq_asserted_; }
     
     /**
-     * @brief Disable memory access via /MEMDI signal (from BS-PIO).
-     * 
-     * When /MEMDI is asserted by the BS-PIO, memory accesses return 0xFF
-     * and writes are blocked. Used during initialization to prevent
-     * uncontrolled memory access.
-     * 
+     * @brief Assert/release the global /MEMDI signal (from BS-PIO Q301 Port A
+     *        bit7 → backplane MEMDI1/MEMDI2).
+     *
+     * /MEMDI is the K1520 "Speicherbereichsumschaltung": it only disables OPS
+     * memory groups that are jumpered onto MEMDI1/MEMDI2. On the standard A5120
+     * modeled here NO group is wired to it, so asserting /MEMDI has NO effect on
+     * memory — reads, instruction fetch and writes all pass through. The flag is
+     * still tracked (getMEMDI) and driven by the BS-PIO so HARDYs MEMDI test can
+     * read it back, but it does not gate memRead/memWrite. (A jumpered group
+     * would be modeled via K3526::setMemDI, not this global signal.) Real
+     * hardware likewise keeps executing code while /MEMDI is asserted.
+     *
      * @param disabled true to assert /MEMDI, false to release
      */
     void setMEMDI(bool disabled) { memdi_ = disabled; }

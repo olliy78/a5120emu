@@ -148,7 +148,16 @@ void K2526::powerOn()
     // ── Q240 Schutztabelle zurücksetzen ────────────────────────────────────
     spa_.reset();
     sps_ind_      = false;
-    port_a_inputs_= 0xFF;   // all input lines pull-high at power-on
+    // Port-A-Eingänge: pull-high, ABER die dynamischen Bus-Strobes /M1 (A0),
+    // /WR (A5) und /RDY (A6) liegen im laufenden System praktisch dauernd aktiv
+    // (aktiv-LOW): /M1 pulst bei jedem Opcode-Fetch, /WR bei jedem Schreibzyklus,
+    // /RDY bei jeder Speicherantwort. Der PIO tastet sie pegelbasiert ab; damit
+    // HARDYs PIO-Selbsttest (Maske FEH: A0 aktiv-LOW → Interrupt) und der
+    // MEMDI-RDY-Test (Maske 9FH: A5&A6 aktiv-LOW → Interrupt) auslösen, werden
+    // diese drei Bits als aktiv (0) modelliert. Sie sind ausschließlich
+    // Interruptquellen — HARDY liest Port A sonst nur in seiner MEMDI-Toggle-
+    // Routine, wo dank Richtungsmaske (0x7F) nur Bit7 (Ausgang) zählt.
+    port_a_inputs_= 0xFF & ~0x61u;   // A0=/M1, A5=/WR, A6=/RDY aktiv-LOW; Rest high
     int_bs_active_= false;
     zve2_wait_    = false;
     zve2_reset_   = true;    // ZVE2 (DMA-CPU) am Power-on in Reset halten (Port 04H
