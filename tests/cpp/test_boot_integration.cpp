@@ -701,6 +701,66 @@ TEST(ScpxIntegration, EraDeletesFileOnDriveBWithoutBadSector) {
     fs::remove(bPath, ec);
 }
 
+// ─── SCPX Fremdformat-Read friert NICHT ein (held-bus No-Progress-Watchdog) ──
+//
+// Regressionswächter für den No-Progress-Watchdog im gehaltenen Laufzeit-Read
+// (a5120.cpp: kHeldReadWatchdogCycles / held_read_watchdog_; s.
+// doc/analyse_scpx_5x1024_read.md).  SCPX ist Single-Format: ein aus einer
+// 16×256-Systemdiskette gebootetes SCPX kann eine 5×1024-Diskette NICHT lesen
+// (die Laufzeit-Leseroutine E9C8 liest fest 256-B-Datenfelder).  Der ZVE2-Matcher
+// findet dann sein IDAM nie und signalisiert nie [EC0B]≠E8B5.  OHNE den Watchdog
+// blieb ZVE1 dabei EWIG am Poll-Wait 0xE8B5 eingefroren (Rechner tot — das vom
+// Anwender gemeldete Symptom).  MIT dem Watchdog wird der Bus nach ~3 Umdrehungen
+// ohne Fortschritt freigegeben; ZVE1 nimmt seinen Index-Interrupt (Record-not-found)
+// und der Zugriff TERMINIERT sauber mit „SCPX ERR ON B: BAD SECTOR" — das System
+// bleibt bedienbar (echte HW-Semantik: der FM/MFM-Test darf nicht einfrieren).
+//
+// Trigger: leere 5×1024-Disk (createDisk cpa800) auf B:, dann DIR B: vom
+// 16×256-System.  Kernprüfung: die BAD-SECTOR-Meldung erscheint (Read terminierte)
+// UND das System reagiert danach noch (DIR A: listet weiter).  Ohne den Watchdog
+// erschiene die Meldung nie → runSmallUntil liefe in sein Limit → Test rot.
+TEST(ScpxIntegration, WrongFormatReadTerminatesInsteadOfFreezing) {
+    namespace fs = std::filesystem;
+    const std::string bPath =
+        (fs::temp_directory_path() / "scpx_wrongfmt_guard_B.hfe").string();
+
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("scpx_boot.hfe"), "cpa780", /*wp=*/false))
+        << "konnte scpx_boot.hfe nicht mounten: " << machine.lastError();
+    // Leere 5×1024-Diskette (Fremdformat für das 16×256-System) auf B: erzeugen+mounten.
+    ASSERT_TRUE(machine.createDisk(1, bPath, "cpa800", /*wp=*/false)) << machine.lastError();
+    machine.powerOn();
+
+    ASSERT_TRUE(runSmallUntil(machine, "SCPX 1526 - V 1.7", 40'000'000))
+        << "SCPX-Banner nie erschienen";
+    ASSERT_TRUE(runSmallUntil(machine, "A>", 5'000'000)) << "A>-Prompt nie erreicht";
+    runCycles(machine, 2'000'000);   // in die CONIN-Leseschleife einschwingen
+
+    // 5×1024-Disk vom 16×256-System aus lesen → muss TERMINIEREN (BAD SECTOR),
+    // nicht einfrieren.  OHNE Watchdog bliebe ZVE1 ewig @0xE8B5 → Meldung nie.
+    typeString(machine, "DIR B:");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "BAD SECTOR", 40'000'000))
+        << "Fremdformat-Read terminierte nicht — No-Progress-Watchdog gebrochen (Freeze):\n"
+        << vramText(machine);
+
+    // Das System läuft weiter (kein Dauer-Hänger): SCPX wiederholt den Fehl-Read
+    // einige Male, dann kehrt ZVE1 in seine CONIN-Poll-Schleife (0xE079/E07x) zurück —
+    // es bleibt NICHT am Held-Bus-Poll-Wait 0xE8B5 hängen (das wäre der Freeze).
+    runCycles(machine, 40'000'000);   // SCPX-Retries auslaufen lassen
+    EXPECT_NE(machine.cpuPC(), 0xE8B5)
+        << "ZVE1 hängt weiter am Poll-Wait 0xE8B5 fest — Freeze nicht behoben";
+    EXPECT_GE(machine.cpuPC(), 0xE079u);   // in der Prompt-/CONIN-Region, nicht im Read-Setup
+    EXPECT_LE(machine.cpuPC(), 0xE0FFu)
+        << "ZVE1 nach dem Fehler nicht zurück am Prompt (PC=0x" << std::hex << machine.cpuPC()
+        << ") — System nicht wieder bedienbar";
+
+    machine.unmountDisk(0);
+    machine.unmountDisk(1);
+    std::error_code ec;
+    fs::remove(bPath, ec);
+}
+
 // ─── createDisk: laufwerkstyp-spezifisches Standardformat ────────────────────
 //
 // Ein leerer Formatname wählt je Slot-DriveProfile das passende Default-Format;

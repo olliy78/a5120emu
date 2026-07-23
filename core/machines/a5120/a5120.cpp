@@ -21,6 +21,13 @@ constexpr uint16_t kScpxPromptPC     = 0xE079;  // interaktiver Prompt erreicht 
 constexpr uint16_t kScpxPollWaitPC   = 0xE8B5;  // ZVE1-Poll-Wait auf [EC0B]
 constexpr uint16_t kScpxContVecAddr  = 0xEC0B;  // ZVE2→ZVE1 Fortsetzungs-Vektor (16-Bit)
 constexpr uint16_t kScpxPollWaitArm  = 0xE8B5;  // [EC0B]-Wert während des Wartens (== PollWaitPC)
+// No-Progress-Watchdog: findet ZVE2 sein IDAM nicht (z. B. FM/MFM-Erkennung einer nicht
+// passenden Diskette), re-armt der Matcher (E9C8) endlos und signalisiert nie [EC0B]≠E8B5.
+// Nach so vielen gehaltenen Takten ohne Fortschritt geben wir den Bus frei, damit ZVE1 läuft
+// und der Index-Interrupt (Record-not-found → [EC0B]=E998, FM/MFM-Retry) greift — wie beim Boot.
+// ~3 Umdrehungen (Index-Periode ≈490000 Takte); ein erfolgreicher Sektor-Read (inkl. IDAM-Suche
+// über max. 1 Umdrehung + 1024-B-Streaming) liegt deutlich darunter → Watchdog trifft nur Fehler.
+constexpr long long kHeldReadWatchdogCycles = 1'500'000;
 }  // namespace
 
 // Baut das DriveProfile-Array der 4 K5122-Slots aus den Profilnamen der Config.
@@ -108,6 +115,8 @@ void A5120Machine::powerOn() {
     bus_master_zve2_  = false;
     os_running_       = false;   // (SCPX) os-gated Laufzeit-Read-Gate zurücksetzen
     held_read_active_ = false;
+    held_read_cycles_   = 0;
+    held_read_watchdog_ = false;
     afs_.endDmaTransfer();
     screen_.clearScreen();   // Bildschirm sichtbar löschen (Kaltstart)
     boot_trace_count_ = 0;
@@ -131,6 +140,8 @@ void A5120Machine::reset() {
     bus_master_zve2_  = false;
     os_running_       = false;   // (SCPX) os-gated Laufzeit-Read-Gate zurücksetzen
     held_read_active_ = false;
+    held_read_cycles_   = 0;
+    held_read_watchdog_ = false;
     afs_.endDmaTransfer();
     screen_.clearScreen();   // Bildschirm sichtbar löschen (Reset)
     boot_trace_count_ = 0;
@@ -317,22 +328,39 @@ int A5120Machine::run(int max_cycles) {
         if (os_running_) {
             const uint16_t contVec = (uint16_t)(bus_.memRead(kScpxContVecAddr) |
                                      (bus_.memRead((uint16_t)(kScpxContVecAddr + 1)) << 8));
+            // Fortschritt ([EC0B]≠E8B5) hebt eine etwaige Watchdog-Sperre wieder auf.
+            if (contVec != kScpxPollWaitArm) held_read_watchdog_ = false;
             if (held_read_active_) {
                 if (contVec != kScpxPollWaitArm) {
                     // ZVE2 hat das Read-Ende signalisiert ([EC0B]!=E8B5) → Bus freigeben;
                     // ZVE1 fährt mit JP (HL) fort und verarbeitet die gelesenen Daten.
                     held_read_active_ = false;
+    held_read_cycles_   = 0;
+    held_read_watchdog_ = false;
                     afs_.releaseHeldRead();
                     LOG_DEBUG("A5120", "SCPX gehaltener Read fertig ([EC0B]=%04X): ZVE1 fährt fort", contVec);
+                } else if (held_read_cycles_ > kHeldReadWatchdogCycles) {
+                    // No-Progress-Watchdog: ZVE2 findet sein IDAM nicht (Endlos-Re-Arm im
+                    // Matcher E9C8, z. B. FM-Probe auf MFM-Spur).  Bus freigeben und Re-Engage
+                    // sperren, bis ZVE1 fortschreitet — so nimmt ZVE1 seinen Index-Interrupt
+                    // (Record-not-found → [EC0B]=E998 → FM/MFM-Retry) und der Read terminiert
+                    // statt einzufrieren.  Trifft nur fehlschlagende Reads (Erfolg << Schwelle).
+                    held_read_active_   = false;
+                    held_read_watchdog_ = true;
+                    afs_.releaseHeldRead();
+                    LOG_INFO("A5120", "SCPX gehaltener Read: kein Fortschritt nach %lld Takten "
+                             "→ Bus frei, ZVE1 nimmt Index-Timeout (FM/MFM-Retry)", held_read_cycles_);
                 } else {
                     bus_.assertBUSRQ();   // Bus gehalten → ZVE1 bleibt eingefroren (nur ZVE2)
                 }
-            } else if (zre_.cpuPC() == kScpxPollWaitPC &&
+            } else if (!held_read_watchdog_ &&
+                       zre_.cpuPC() == kScpxPollWaitPC &&
                        contVec == kScpxPollWaitArm &&
                        afs_.isReadTransferActive()) {
                 // ZVE1 parkt read-eindeutig am Poll-Wait (Setup fertig, [EC0B]=E8B5) und ein
                 // Lese-Transfer läuft → ab hier den Bus halten (nur ZVE2 bis zur Completion).
                 held_read_active_ = true;
+                held_read_cycles_ = 0;   // Watchdog-Fenster neu starten
                 bus_.assertBUSRQ();
                 // Der Verify-Read hat engagiert → das Post-Write-Gnadenfenster hat seinen
                 // Zweck erfüllt und wird sofort geschlossen, damit es nicht in einen
@@ -375,6 +403,7 @@ int A5120Machine::run(int max_cycles) {
                 if (used2 <= 0) used2 = 1;   // Sicherung gegen Endlosschleife
                 remaining     -= used2;
                 total_cycles_ += used2;
+                if (held_read_active_) held_read_cycles_ += used2;   // No-Progress-Watchdog
                 afs_.update(used2);          // Floppy-Timer (Byte-Bereitschaft, /STR-Abtastung)
                 // ZVE2-Completion-Handshake [0x03F8]=3 (Boot-ROM 0x026B; Sekundär- und
                 // 3.-Stufen-Lader nutzen denselben Flag).  Dies ist KEIN sektorgrößen-

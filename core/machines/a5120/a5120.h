@@ -286,6 +286,16 @@ private:
     // keine Boot-Regression.
     bool os_running_       = false;   // ZVE1 hat den interaktiven Prompt (E079) erreicht
     bool held_read_active_ = false;   // gehaltener Laufzeit-Read läuft (ZVE1 eingefroren)
+    // No-Progress-Watchdog für den gehaltenen Read: findet ZVE2 sein Sektor-IDAM nicht
+    // (z. B. FM-Probe 0x87 auf einer MFM-Spur → Matcher E9C8 re-armt endlos), signalisiert es
+    // NIE [EC0B]≠E8B5 → ZVE1 bliebe ewig @E8B5 eingefroren.  Auf echter HW terminiert hier der
+    // Index-Interrupt (Record-not-found → [EC0B]=E998, FM/MFM-Retry).  Der wird beim gehaltenen
+    // Read aber nie zugestellt (ZVE1 eingefroren, INT-Zustellung übersprungen).  Nach ~2 Umdrehungen
+    // ohne Fortschritt geben wir daher den Bus frei (und sperren die Wieder-Engage bis [EC0B]
+    // wechselt), sodass ZVE1 läuft, seinen Index-ISR nimmt und der Timeout/Retry greift — wie beim
+    // Boot.  Verhindert das Einfrieren bei der FM/MFM-Erkennung einer nicht passenden Diskette.
+    long long held_read_cycles_   = 0;      // Takte seit Engage des gehaltenen Reads
+    bool      held_read_watchdog_ = false;  // Watchdog ausgelöst → Bus frei, kein Re-Engage bis Fortschritt
 
     // Monotonic cycle counter across all run() calls, fed to the Logger's gate
     // evaluation (cycle windows) once per instruction.
