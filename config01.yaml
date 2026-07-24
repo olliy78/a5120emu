@@ -1,0 +1,22 @@
+version: 1
+crt:
+  phosphor_on: '#78D41D'
+  phosphor_off: '#050F05'
+  brightness: 4.0
+  contrast: 2.0
+  scanline_strength: 1.4
+  scanline_count: 288.0
+  glow_strength: 1.0
+  glow_radius: 2.5
+  mask_strength: 0.0
+  mask_pitch: 1.0
+  curvature:
+  - 0.1
+  - 0.1
+  corner_radius: 0.1
+  vignette_strength: 0.35
+  flicker_strength: 0.0
+  scale_x: 0.98
+  scale_y: 0.98
+  offset_x: 0.0
+  offset_y: 0.0

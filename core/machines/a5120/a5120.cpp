@@ -531,7 +531,15 @@ bool A5120Machine::mountDisk(int drive, const std::string& path,
     }
 
     std::lock_guard<std::mutex> lk(disk_mutex_);
-    return afs_.mountDisk(drive, path, *it, wp);
+    if (afs_.mountDisk(drive, path, *it, wp)) return true;
+
+    // Grund aus dem Laufwerk übernehmen (Geometrie-/Verfahrenskonflikt); wurde das
+    // Image gar nicht erst geöffnet, ist die Laufwerks-Meldung leer → Fallback.
+    const std::string drv_err = afs_.drive(drive).lastError();
+    last_error_ = drv_err.empty()
+                      ? ("Image konnte nicht geöffnet werden: " + path)
+                      : drv_err;
+    return false;
 }
 
 // Default-DiskFormat einer NEU angelegten Diskette je Laufwerkstyp (DriveProfile).
@@ -571,7 +579,12 @@ bool A5120Machine::createDisk(int drive, const std::string& path,
     }
 
     std::lock_guard<std::mutex> lk(disk_mutex_);
-    return afs_.mountDisk(drive, std::move(img), write_protect);
+    if (afs_.mountDisk(drive, std::move(img), write_protect)) return true;
+    const std::string drv_err = afs_.drive(drive).lastError();
+    last_error_ = drv_err.empty()
+                      ? ("createDisk: Mounten fehlgeschlagen: " + path)
+                      : drv_err;
+    return false;
 }
 
 bool A5120Machine::unmountDisk(int drive) {

@@ -5,6 +5,8 @@ K1520 Emulator - Drive/Disk Management Widget
 Dialog and controls for mounting/unmounting disk images.
 """
 
+import os
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QComboBox,
     QLabel, QLineEdit, QCheckBox, QFileDialog, QFrame, QMessageBox
@@ -26,6 +28,8 @@ class DriveWidget(QWidget):
         super().__init__(parent)
         self.emulator = emulator
         self._drive_leds = {}
+        # Laufwerks-Panels je Laufwerk (für programmatisches Restore aus Config).
+        self._panels = {}
         # Aktuell gemountete Images je Laufwerk: drive -> (path, fmt, wp).
         # Wird beim Kaltstart (Power ON) neu gemountet, weil das den K5122-
         # Laufwerkszustand zurücksetzt (nötig, damit das Boot-ROM neu bootet).
@@ -38,6 +42,27 @@ class DriveWidget(QWidget):
     
     # Nur drei Laufwerke (Drive 0..2).
     NUM_DRIVES = 3
+
+    # Dateifilter für Öffnen/Erstellen: sowohl .img als auch .hfe.
+    DISK_FILTER = "Disk Images (*.img *.hfe);;All Files (*)"
+
+    def _fail_msg(self, drive: int, action: str) -> str:
+        """Fehlermeldung mit dem konkreten Grund aus dem Core (falls vorhanden)."""
+        verb = "mount" if action == "mount" else "create"
+        base = f"Failed to {verb} disk on drive {drive}"
+        try:
+            reason = self.emulator.last_error()
+        except Exception:
+            reason = ""
+        return f"{base}:\n{reason}" if reason else base
+
+    def _default_disk_dir(self) -> str:
+        """Startverzeichnis für Datei-Dialoge: Unterordner 'disks' im Projekt-
+        Hauptverzeichnis, sonst das Projekt-Hauptverzeichnis selbst."""
+        # app/ui/drive_widget.py → Projekt-Hauptverzeichnis
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        disks = os.path.join(root, "disks")
+        return disks if os.path.isdir(disks) else root
 
     def setup_ui(self):
         """Setup UI layout."""
@@ -92,59 +117,144 @@ class DriveWidget(QWidget):
         format_layout.addWidget(format_combo)
         layout.addLayout(format_layout)
 
-        # Mount/Unmount buttons
+        # Buttons: eine Toggle-Taste (Mount ⇄ Unmount) + "Leere Diskette erstellen".
         buttons_layout = QHBoxLayout()
-        mount_btn = QPushButton("Mount")
-        unmount_btn = QPushButton("Unmount")
-        unmount_btn.setEnabled(False)
-        
-        def on_mount():
+        toggle_btn = QPushButton("Mount")
+        create_btn = QPushButton("Leere Diskette erstellen")
+
+        def set_mounted(path: str, fmt: str, wp: bool):
+            """UI-Zustand nach erfolgreichem Mount setzen."""
+            path_display.setText(path)
+            toggle_btn.setText("Unmount")
+            self._mounts[drive] = (path, fmt, wp)
+            self.disk_mounted.emit(drive, path)
+
+        def set_unmounted():
+            """UI-Zustand nach Unmount setzen."""
+            path_display.setText("")
+            toggle_btn.setText("Mount")
+            self._mounts.pop(drive, None)
+            self.disk_unmounted.emit(drive)
+
+        def on_toggle():
+            # Ist ein Image gemountet → Unmount, sonst Mount-Dialog.
+            if drive in self._mounts:
+                if self.emulator.unmount_disk(drive):
+                    set_unmounted()
+                else:
+                    QMessageBox.critical(self, "Error", f"Failed to unmount drive {drive}")
+                return
+
             path, _ = QFileDialog.getOpenFileName(
                 self, f"Mount Disk Image - Drive {drive}",
-                "", "Disk Images (*.img);;All Files (*)"
+                self._default_disk_dir(), self.DISK_FILTER
             )
-            if path:
-                fmt = format_combo.currentText()
-                wp = wp_check.isChecked()
-                
-                try:
-                    if self.emulator.mount_disk(drive, path, fmt, wp):
-                        path_display.setText(path)
-                        mount_btn.setEnabled(False)
-                        unmount_btn.setEnabled(True)
-                        self._mounts[drive] = (path, fmt, wp)
-                        self.disk_mounted.emit(drive, path)
-                    else:
-                        QMessageBox.critical(self, "Error", f"Failed to mount disk on drive {drive}")
-                except Exception as e:
-                    QMessageBox.critical(self, "Error", str(e))
-        
-        def on_unmount():
-            if self.emulator.unmount_disk(drive):
-                path_display.setText("")
-                mount_btn.setEnabled(True)
-                unmount_btn.setEnabled(False)
-                self._mounts.pop(drive, None)
-                self.disk_unmounted.emit(drive)
-            else:
-                QMessageBox.critical(self, "Error", f"Failed to unmount drive {drive}")
-        
-        mount_btn.clicked.connect(on_mount)
-        unmount_btn.clicked.connect(on_unmount)
-        
-        buttons_layout.addWidget(mount_btn)
-        buttons_layout.addWidget(unmount_btn)
+            if not path:
+                return
+            fmt = format_combo.currentText()
+            wp = wp_check.isChecked()
+            try:
+                if self.emulator.mount_disk(drive, path, fmt, wp):
+                    set_mounted(path, fmt, wp)
+                else:
+                    QMessageBox.critical(self, "Error", self._fail_msg(drive, "mount"))
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
+
+        def on_create():
+            # Neue Datei anlegen; .img/.hfe erlaubt. Bei .img wird das Format aus
+            # dem Auswahlfeld verwendet; .hfe kann ein beliebiges Format aufnehmen.
+            path, _ = QFileDialog.getSaveFileName(
+                self, f"Leere Diskette erstellen - Drive {drive}",
+                self._default_disk_dir(), self.DISK_FILTER
+            )
+            if not path:
+                return
+            # Ohne Endung → .img annehmen.
+            if not os.path.splitext(path)[1]:
+                path += ".img"
+            fmt = format_combo.currentText()
+            wp = wp_check.isChecked()
+            try:
+                if self.emulator.create_disk(drive, path, fmt, wp):
+                    set_mounted(path, fmt, wp)
+                else:
+                    QMessageBox.critical(self, "Error", self._fail_msg(drive, "create"))
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
+
+        toggle_btn.clicked.connect(on_toggle)
+        create_btn.clicked.connect(on_create)
+
+        buttons_layout.addWidget(toggle_btn)
+        buttons_layout.addWidget(create_btn)
         layout.addLayout(buttons_layout)
-        
+
         # Store references for updates
         group._path_display = path_display
-        group._mount_btn = mount_btn
-        group._unmount_btn = unmount_btn
+        group._toggle_btn = toggle_btn
+        group._create_btn = create_btn
         group._wp_check = wp_check
         group._format_combo = format_combo
         group._led = led
-        
+        self._panels[drive] = group
+
         return group
+
+    # ── Config-Persistenz (gemountete Disketten) ─────────────────────────────
+
+    def get_mounts(self) -> list:
+        """Aktuell gemountete Images als serialisierbare Liste (für die Config)."""
+        out = []
+        for drive in sorted(self._mounts):
+            path, fmt, wp = self._mounts[drive]
+            out.append({
+                "drive": drive,
+                "path": path,
+                "format": fmt,
+                "write_protect": bool(wp),
+            })
+        return out
+
+    def load_mounts(self, mounts: list):
+        """Alle Laufwerke gemäß Config-Liste neu belegen (erst leeren, dann mounten).
+
+        Fehlende Dateien werden übersprungen.  Aktualisiert die UI (Pfad, Toggle-
+        Beschriftung, Format, Write-Protect) ohne die mount/unmount-Signale
+        auszulösen — das Restore ist keine Nutzeraktion."""
+        # 1) Alles aushängen, damit ein Config-Wechsel nicht alte Disks stehen lässt.
+        for drive in list(self._mounts):
+            try:
+                self.emulator.unmount_disk(drive)
+            except Exception:
+                pass
+            panel = self._panels.get(drive)
+            if panel is not None:
+                panel._path_display.setText("")
+                panel._toggle_btn.setText("Mount")
+        self._mounts.clear()
+
+        # 2) Aus der Config mounten.
+        for m in mounts or []:
+            try:
+                drive = int(m.get("drive"))
+            except (TypeError, ValueError):
+                continue
+            path = m.get("path")
+            fmt = m.get("format") or "cpa800"
+            wp = bool(m.get("write_protect", False))
+            panel = self._panels.get(drive)
+            if panel is None or not path or not os.path.exists(path):
+                continue
+            try:
+                if self.emulator.mount_disk(drive, path, fmt, wp):
+                    panel._format_combo.setCurrentText(fmt)
+                    panel._wp_check.setChecked(wp)
+                    panel._path_display.setText(path)
+                    panel._toggle_btn.setText("Unmount")
+                    self._mounts[drive] = (path, fmt, wp)
+            except Exception:
+                pass
 
     def remount_all(self):
         """Alle aktuell gemounteten Images neu mounten (setzt den K5122-
