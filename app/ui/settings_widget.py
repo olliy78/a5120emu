@@ -24,6 +24,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 
 from app.ui.screen_widget import CRTParams
+from app import drive_types as dt
 
 
 class SettingsWidget(QWidget):
@@ -34,6 +35,9 @@ class SettingsWidget(QWidget):
     # Emitted when the speed dropdown selection changes; carries the factor
     # (1.0 = real time, >1.0 = fast-forward, 0.0 = unlimited).
     speedChanged = Signal(float)
+    # Emitted when a drive-type dropdown changes; carries the list of 4 core
+    # DriveProfile names (one per K5122 slot, "none" = empty slot).
+    driveTypesChanged = Signal(list)
 
     # (label, factor) — factor 0.0 means "unlimited / as fast as possible".
     SPEED_OPTIONS = [
@@ -52,12 +56,16 @@ class SettingsWidget(QWidget):
         self._refreshers: List[Callable[[], None]] = []
         # Guards the speed combo against emitting while set programmatically.
         self._speed_guard = False
+        # Guards the drive-type combos against emitting while set programmatically.
+        self._drive_guard = False
+        self._drive_combos: List[QComboBox] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_general_tab(), "Allgemein")
+        self.tabs.addTab(self._build_drives_tab(), "Laufwerke")
         self.tabs.addTab(self._build_crt_tab(), "CRT")
         layout.addWidget(self.tabs)
 
@@ -197,6 +205,45 @@ class SettingsWidget(QWidget):
                 break
         self.speed_combo.setCurrentIndex(idx)
         self._speed_guard = False
+
+    # ── Laufwerke tab ────────────────────────────────────────────────────────
+
+    def _build_drives_tab(self) -> QWidget:
+        """One dropdown per K5122 slot to pick the drive type (or 'kein Laufwerk')."""
+        inner = QWidget()
+        form = QFormLayout(inner)
+
+        for slot in range(dt.NUM_SLOTS):
+            combo = QComboBox()
+            for _short, core, _desc in dt.DRIVE_TYPES:
+                combo.addItem(dt.combo_label(core), core)
+            combo.addItem(dt.NO_DRIVE_LABEL, dt.NO_DRIVE)
+            combo.currentIndexChanged.connect(self._on_drive_combo)
+            self._drive_combos.append(combo)
+            form.addRow(f"Laufwerk {slot}:", combo)
+
+        # Start from the standard configuration until a config restore sets it.
+        self.set_drive_types(dt.DEFAULT_DRIVE_TYPES)
+        return inner
+
+    def _on_drive_combo(self, _idx: int):
+        if self._drive_guard:
+            return
+        self.driveTypesChanged.emit(self.drive_types())
+
+    def drive_types(self) -> list:
+        """Current per-slot core DriveProfile names (length :data:`dt.NUM_SLOTS`)."""
+        return [c.currentData() for c in self._drive_combos]
+
+    def set_drive_types(self, types: list):
+        """Select the dropdown entries for *types* (no signal emitted)."""
+        types = dt.normalize_list(types)
+        self._drive_guard = True
+        for slot, combo in enumerate(self._drive_combos):
+            core = types[slot]
+            idx = combo.findData(core)
+            combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._drive_guard = False
 
     # ── CRT tab ──────────────────────────────────────────────────────────────
 

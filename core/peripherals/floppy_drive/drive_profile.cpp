@@ -98,6 +98,22 @@ const DriveProfile& builtinDriveProfile(const std::string& name) {
         /*default_read_encoding=*/ Encoding::FM
     };
 
+    // "none" — leerer Slot (kein Laufwerk gesteckt).  Geometrie bleibt auf sinnvollen
+    // Defaults (falls der Slot doch selektiert würde, keine Division/Bereichsfehler);
+    // entscheidend ist present=false: mountDisk/createDisk verweigern, GUI blendet aus.
+    static const DriveProfile none = {
+        "none",
+        /*num_cyls=*/    80,
+        /*num_heads=*/    2,
+        /*rpm=*/        300,
+        /*medium_inch=*/  5,
+        /*supports_fm=*/ true,
+        /*supports_mfm=*/true,
+        /*default_read_encoding=*/ Encoding::FM,
+        /*present=*/     false
+    };
+
+    if (name == "none")           return none;
     if (name == "ss_525_40")      return ss_525_40;
     if (name == "ss_525_80")      return ss_525_80;
     if (name == "mf3200_8_ss77")  return mf3200_8_ss77;

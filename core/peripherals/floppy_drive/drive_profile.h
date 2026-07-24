@@ -86,6 +86,18 @@ struct DriveProfile {
     Encoding default_read_encoding = Encoding::FM;
 
     /**
+     * @brief Ist an diesem K5122-Slot überhaupt ein Laufwerk gesteckt?
+     *
+     * `false` markiert einen **leeren Slot** („kein Laufwerk", Sonderprofil
+     * `builtinDriveProfile("none")`).  Ein leerer Slot nimmt keine Diskette auf
+     * (`A5120Machine::mountDisk`/`createDisk` verweigern) und die GUI blendet sein
+     * Bedien-Panel aus.  Der Boot-/Lesepfad ist unberührt, weil ein leerer Slot nie
+     * gemountet und im Normalbetrieb nicht selektiert wird.  Alle bestückten Profile
+     * lassen dieses Feld auf dem Default `true`.
+     */
+    bool present = true;
+
+    /**
      * @brief Index-Periode in Z80-Takten aus der Drehzahl ableiten.
      *
      * Ersetzt die feste Konstante kIndexPeriodCycles der alten K5122.
@@ -133,9 +145,11 @@ struct DriveProfile {
 /**
  * @brief Eingebautes Standardprofil per Name auflösen (analog FormatParser::builtinFormats()).
  *
- * Unbekannte Namen liefern das Default-Profil mfs_525_ds80.
+ * Unbekannte Namen liefern das Default-Profil mfs_525_ds80.  Der Sondername
+ * `"none"` liefert ein **leeres** Profil (present=false) — der Slot ist unbestückt.
  *
- * @param name "mfs_525_ds80" | "ss_525_40" | "mf3200_8_ss77" | "mf6400_8_ds77"
+ * @param name "mfs_525_ds80" | "ss_525_40" | "ss_525_80" | "mf3200_8_ss77" |
+ *             "mf6400_8_ds77" | "mf6400_8_ss77" | "K5601" | "none"
  * @return Referenz auf ein statisches DriveProfile.
  */
 const DriveProfile& builtinDriveProfile(const std::string& name);

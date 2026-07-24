@@ -13,20 +13,29 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 
+from app import drive_types as dt
+
 
 class DriveWidget(QWidget):
-    """Widget for managing disk drives."""
-    
+    """Widget for managing disk drives.
+
+    The number and labelling of drive panels follows the machine's drive-bay
+    configuration (:data:`drive_types`): only *present* K5122 slots get a panel;
+    a slot set to "kein Laufwerk" is omitted.
+    """
+
     # Disk format list (from C-API)
     FORMATS = ["cpa800", "cpa780", "cpa640", "cpa624"]
-    
+
     disk_mounted = Signal(int, str)  # (drive, path)
     disk_unmounted = Signal(int)      # (drive)
-    
-    def __init__(self, emulator, parent=None):
+
+    def __init__(self, emulator, drive_types=None, parent=None):
         """Initialize drive widget."""
         super().__init__(parent)
         self.emulator = emulator
+        # Per-slot core DriveProfile names (length dt.NUM_SLOTS).
+        self.drive_types = dt.normalize_list(drive_types or dt.DEFAULT_DRIVE_TYPES)
         self._drive_leds = {}
         # Laufwerks-Panels je Laufwerk (für programmatisches Restore aus Config).
         self._panels = {}
@@ -39,12 +48,13 @@ class DriveWidget(QWidget):
         self._led_timer = QTimer(self)
         self._led_timer.timeout.connect(self._refresh_leds)
         self._led_timer.start(120)
-    
-    # Nur drei Laufwerke (Drive 0..2).
-    NUM_DRIVES = 3
 
     # Dateifilter für Öffnen/Erstellen: sowohl .img als auch .hfe.
     DISK_FILTER = "Disk Images (*.img *.hfe);;All Files (*)"
+
+    def present_drives(self) -> list:
+        """Indices of the K5122 slots that carry a drive (in slot order)."""
+        return [i for i, t in enumerate(self.drive_types) if dt.is_present(t)]
 
     def _fail_msg(self, drive: int, action: str) -> str:
         """Fehlermeldung mit dem konkreten Grund aus dem Core (falls vorhanden)."""
@@ -65,15 +75,45 @@ class DriveWidget(QWidget):
         return disks if os.path.isdir(disks) else root
 
     def setup_ui(self):
-        """Setup UI layout."""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(6)
+        """Setup UI layout (panels are (re)built from the drive-bay config)."""
+        self._main_layout = QVBoxLayout(self)
+        self._main_layout.setContentsMargins(4, 4, 4, 4)
+        self._main_layout.setSpacing(6)
+        self._rebuild_panels()
 
-        for drive in range(self.NUM_DRIVES):
-            layout.addWidget(self._create_drive_panel(drive))
+    def _rebuild_panels(self):
+        """Clear and recreate the drive panels from :attr:`drive_types`."""
+        # Remove every existing item (panels + stretch) from the layout.
+        while self._main_layout.count():
+            item = self._main_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        self._panels.clear()
+        self._drive_leds.clear()
 
-        layout.addStretch()
+        present = self.present_drives()
+        for drive in present:
+            self._main_layout.addWidget(self._create_drive_panel(drive))
+
+        if not present:
+            self._main_layout.addWidget(
+                QLabel("Kein Laufwerk bestückt.\nSiehe Einstellungen → Laufwerke."))
+
+        self._main_layout.addStretch()
+
+    def set_drive_types(self, drive_types, emulator=None):
+        """Adopt a new drive-bay configuration (and optionally a new emulator).
+
+        Rebuilds the panels for the now-present slots and forgets all mounts (the
+        caller supplies a freshly created machine, so the K5122 state is empty).
+        Restore any surviving disks afterwards via :meth:`load_mounts`.
+        """
+        if emulator is not None:
+            self.emulator = emulator
+        self.drive_types = dt.normalize_list(drive_types)
+        self._mounts.clear()
+        self._rebuild_panels()
 
     def _create_drive_panel(self, drive: int) -> QFrame:
         """Create panel for one drive (no title; LED+Name+Write-Protect in einer
@@ -90,7 +130,8 @@ class DriveWidget(QWidget):
         led.setFixedSize(14, 14)
         led.setStyleSheet("border-radius: 7px; background-color: #2b2b2b; border: 1px solid #666;")
         head_layout.addWidget(led)
-        head_layout.addWidget(QLabel(f"<b>Drive {drive}</b>"))
+        type_label = dt.short_label(self.drive_types[drive])
+        head_layout.addWidget(QLabel(f"<b>Drive {drive}</b> — {type_label}"))
         head_layout.addStretch()
         wp_check = QCheckBox("Write-Protect")
         head_layout.addWidget(wp_check)

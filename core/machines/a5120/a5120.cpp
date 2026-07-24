@@ -506,6 +506,10 @@ int A5120Machine::run(int max_cycles) {
 bool A5120Machine::mountDisk(int drive, const std::string& path,
                               const std::string& format_name, bool wp) {
     if (drive < 0 || drive > 3) { last_error_ = "Invalid drive"; return false; }
+    if (!drive_profiles_[drive].present) {
+        last_error_ = "Kein Laufwerk an Slot " + std::to_string(drive);
+        return false;
+    }
 
     auto it = std::find_if(disk_formats_.begin(), disk_formats_.end(),
                            [&](const DiskFormat& f){ return f.name == format_name; });
@@ -541,6 +545,10 @@ bool A5120Machine::createDisk(int drive, const std::string& path,
     if (drive < 0 || drive > 3) { last_error_ = "Invalid drive"; return false; }
 
     const DriveProfile& prof = drive_profiles_[drive];
+    if (!prof.present) {
+        last_error_ = "Kein Laufwerk an Slot " + std::to_string(drive);
+        return false;
+    }
 
     // Leerer Formatname → laufwerkstyp-spezifisches Standardformat.
     const std::string fname = format_name.empty() ? defaultFormatFor(prof)

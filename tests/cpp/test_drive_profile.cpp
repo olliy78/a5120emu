@@ -96,6 +96,24 @@ TEST(DriveProfileBuiltin, K5601) {
     EXPECT_EQ(p.default_read_encoding, Encoding::FM);
 }
 
+TEST(DriveProfileBuiltin, none_leererSlot) {
+    // "none" markiert einen unbestückten Slot (present=false).
+    const DriveProfile& p = builtinDriveProfile("none");
+    EXPECT_EQ(p.name, "none");
+    EXPECT_FALSE(p.present);
+}
+
+TEST(DriveProfileBuiltin, bestueckteProfile_present) {
+    // Alle bestückten Profile sind present=true (Default), nur "none" ist leer.
+    EXPECT_TRUE(builtinDriveProfile("K5601").present);
+    EXPECT_TRUE(builtinDriveProfile("ss_525_40").present);
+    EXPECT_TRUE(builtinDriveProfile("ss_525_80").present);
+    EXPECT_TRUE(builtinDriveProfile("mf3200_8_ss77").present);
+    EXPECT_TRUE(builtinDriveProfile("mf6400_8_ds77").present);
+    EXPECT_TRUE(builtinDriveProfile("mfs_525_ds80").present);
+    EXPECT_TRUE(builtinDriveProfile("unbekannt_xyz").present);  // Fallback-Standardprofil
+}
+
 TEST(DriveProfileBuiltin, UnbekannterName_gibtStandardprofil) {
     // Unbekannter Name → mfs_525_ds80 (Standardprofil)
     const DriveProfile& p = builtinDriveProfile("unbekannt_xyz");

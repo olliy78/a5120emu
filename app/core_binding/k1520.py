@@ -83,9 +83,19 @@ K1520Handle = ctypes.c_void_p
 # Supported format names in the current core implementation.
 DISK_FORMATS = ["cpa780", "cpa800", "cpa640", "cpa624"]
 
+# Core DriveProfile names per K5122 slot (see core builtinDriveProfile).
+# "none" marks an empty slot ("kein Laufwerk"); "" / None keeps the default (K5601).
+DRIVE_NONE = "none"
+
 # k1520_create(machine_type: int) -> K1520Handle
 _lib.k1520_create.argtypes = [ctypes.c_int]
 _lib.k1520_create.restype = K1520Handle
+
+# k1520_create_configured(machine_type, d0, d1, d2, d3: const char*) -> K1520Handle
+_lib.k1520_create_configured.argtypes = [
+    ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p
+]
+_lib.k1520_create_configured.restype = K1520Handle
 
 # k1520_destroy(K1520Handle) -> void
 _lib.k1520_destroy.argtypes = [K1520Handle]
@@ -178,10 +188,19 @@ _lib.k1520_head_loaded.restype = ctypes.c_bool
 class K1520Emulator:
     """Python wrapper for K1520 A5120 emulator."""
     
-    def __init__(self):
-        """Initialize emulator instance."""
+    def __init__(self, drive_types: Optional[list] = None):
+        """Initialize emulator instance.
+
+        Args:
+            drive_types: optional list of up to 4 core DriveProfile names, one per
+                K5122 slot (e.g. ``["K5601", "K5601", "K5601", "none"]``).  An entry
+                that is ``None`` or ``""`` keeps the slot default (K5601); ``"none"``
+                marks an empty slot ("kein Laufwerk").  ``None`` (the default) builds
+                the standard machine (4× K5601).
+        """
+        self._drive_types = list(drive_types) if drive_types else None
         try:
-            handle = _lib.k1520_create(0)  # K1520_MACHINE_A5120 = 0
+            handle = self._create_handle(self._drive_types)
             if not handle:
                 raise RuntimeError("k1520_create returned NULL - possible constructor exception")
             self._handle = handle
@@ -189,6 +208,25 @@ class K1520Emulator:
             raise RuntimeError(f"Failed to create K1520 emulator: {e}")
         self._running = False
         self._thread: Optional[threading.Thread] = None
+
+    @staticmethod
+    def _create_handle(drive_types: Optional[list]):
+        """Create a core handle, configured with per-slot drive profiles if given."""
+        if not drive_types:
+            return _lib.k1520_create(0)  # K1520_MACHINE_A5120 = 0, default 4× K5601
+
+        names = list(drive_types)[:4] + [None] * (4 - len(drive_types))
+
+        def enc(name):
+            return name.encode("utf-8") if name else None  # None/"" → core keeps default
+
+        return _lib.k1520_create_configured(
+            0, enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
+
+    @property
+    def drive_types(self) -> Optional[list]:
+        """The per-slot DriveProfile names this machine was created with (or None)."""
+        return list(self._drive_types) if self._drive_types else None
     
     def __del__(self):
         """Cleanup on deletion."""
