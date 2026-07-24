@@ -135,6 +135,23 @@ public:
      * Call this at system clock frequency.
      */
     void    clockTick();
+
+    /**
+     * @brief Advance the internal timer counters by @p ticks system-clock cycles.
+     *
+     * Semantik-identisch zu @p ticks aufeinanderfolgenden clockTick()-Aufrufen,
+     * aber schnell: solange KEIN Kanal innerhalb des Fensters eine ZC/TO-Flanke
+     * erzeugen kann (der häufige Fall — Timer feuern nur alle zehntausende
+     * T-States), werden die Prescaler/Zähler rein arithmetisch fortgeschrieben
+     * (ohne Callback).  Kann in diesem Fenster eine Flanke fallen (zcto_active
+     * gesetzt oder ein Zähler erreicht 0), fällt die Methode für dieses eine
+     * Fenster auf die exakte Pro-Takt-Schleife zurück — die Kaskaden-/Interrupt-
+     * Flankentiming bleibt damit bit-genau erhalten.
+     *
+     * @return true, wenn in diesem Fenster eine ZC/TO-Flanke fallen konnte
+     *         (Slow-Path) — der Aufrufer markiert die Interrupt-Chain dann dirty.
+     */
+    bool    clockTick(int ticks);
     
     /**
      * @brief Trigger an external clock/trigger event for a channel.

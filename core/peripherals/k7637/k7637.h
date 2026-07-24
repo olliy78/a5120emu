@@ -32,7 +32,9 @@ public:
 
     // Drain command bytes the K8025 sent to the keyboard (LED control,
     // beep, …).  Call whenever sio.channelX().txAvailable() is true.
-    void processTxCommands();
+    /// @return true, wenn mindestens ein Kommando-Byte verarbeitet wurde
+    ///         (kann den SIO-Interruptzustand ändern).
+    bool processTxCommands();
 
     // Per-instruction service: advance the serial-transmit timing (release any
     // keyboard→host bytes whose 9600-baud transmission has completed) and drain
@@ -45,7 +47,9 @@ public:
     // ISR's keyboard scan races the foreground LED-handshake for the same SIO
     // RX byte; the loser reads an empty FIFO (0xFF → recoded to CR) and pollutes
     // the keyboard buffer until it overflows and drops real keys.
-    void service(uint64_t now_cycles);
+    /// @return true, wenn ein Empfangsbyte an den SIO zugestellt oder ein
+    ///         Kommando verarbeitet wurde (→ Interrupt-Chain neu bewerten).
+    bool service(uint64_t now_cycles);
 
     // ── Snapshot serialisation (savestate/loadstate) ──────────────────────
     // Append the restorable keyboard state (key-repeat, LED/command latches,

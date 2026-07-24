@@ -6,7 +6,14 @@
 
 namespace {
 A5120Machine::MachineSnapshot* heapSnap(){ return new A5120Machine::MachineSnapshot(); }
-std::string tmpStatePath(){ return std::string(::testing::TempDir()) + "k1520_state_test.bin"; }
+// Pro Test EINDEUTIGER Pfad: bei paralleler Ausführung (ctest -j) würden sonst
+// mehrere Save/Load-Tests dieselbe Datei gleichzeitig schreiben/lesen → Race →
+// sporadische Fehlschläge.  Der Testname macht den Pfad kollisionsfrei.
+std::string tmpStatePath(){
+    const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+    std::string name = info ? info->name() : "unknown";
+    return std::string(::testing::TempDir()) + "k1520_state_test_" + name + ".bin";
+}
 }
 
 TEST(MachineSnapshot, RamRoundTrip){

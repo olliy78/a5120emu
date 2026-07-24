@@ -16,6 +16,7 @@ void K1520Bus::registerIO(BusDevice* dev, uint8_t basePort, uint8_t numPorts) {
 
 void K1520Bus::registerMem(MemDevice* dev, uint16_t base, uint16_t size) {
     mem_regions_.push_back({base, size, dev});
+    rebuildPageTable();
     LOG_DEBUG("K1520Bus", "registerMem: Gerät @0x%04X-0x%04X (Größe=%u)",
               base, (uint16_t)(base + size - 1), size);
 }
@@ -25,11 +26,46 @@ void K1520Bus::unregisterMem(MemDevice* dev) {
         std::remove_if(mem_regions_.begin(), mem_regions_.end(),
             [dev](const MemRegion& r) { return r.dev == dev; }),
         mem_regions_.end());
+    rebuildPageTable();
     LOG_DEBUG("K1520Bus", "unregisterMem: Gerät entfernt");
+}
+
+// Baut die 256-B-Seiten-Dispatch-Tabelle aus mem_regions_ neu auf.  Nur bei
+// register/unregisterMem aufgerufen (selten).  Repliziert exakt die Semantik
+// des linearen Scans: Lesen = LETZTES registriertes lesbares Gerät gewinnt;
+// Schreiben = Broadcast an ALLE schreibbaren Geräte.  Wird eine Region gefunden,
+// die nicht 256-B-ausgerichtet ist oder mehr als kMaxWriteFanout Schreiber auf
+// eine Seite legt, wird die Tabelle als ungültig markiert → Zugriffe nutzen den
+// linearen Fallback (immer korrekt).
+void K1520Bus::rebuildPageTable() {
+    page_table_.fill(PageEntry{});
+    page_table_valid_ = true;
+    for (const auto& r : mem_regions_) {
+        if ((r.base & ((1 << kPageShift) - 1)) || (r.size & ((1 << kPageShift) - 1))) {
+            page_table_valid_ = false;   // nicht seitenausgerichtet → Fallback
+            return;
+        }
+        const bool readable = r.dev->isReadable();
+        const bool writable = r.dev->isWritable();
+        const int first = r.base >> kPageShift;
+        const int last  = (int)((uint32_t)r.base + r.size - 1) >> kPageShift;
+        for (int p = first; p <= last; ++p) {
+            PageEntry& e = page_table_[p];
+            if (readable) e.read = r.dev;                 // last-registered wins
+            if (writable) {
+                if (e.write_count >= kMaxWriteFanout) {   // zu viele Broadcast-Ziele
+                    page_table_valid_ = false;
+                    return;
+                }
+                e.write[e.write_count++] = r.dev;
+            }
+        }
+    }
 }
 
 void K1520Bus::setInterruptChain(std::initializer_list<InterruptSlave*> chain) {
     int_chain_.assign(chain.begin(), chain.end());
+    int_dirty_ = true;
     LOG_DEBUG("K1520Bus", "Interrupt-Daisy-Chain: %zu Geräte gesetzt", int_chain_.size());
 }
 
@@ -48,11 +84,17 @@ uint8_t K1520Bus::memRead(uint16_t addr) {
     // Take the last READABLE device that covers this address.
     // Devices with isReadable()=false (e.g. K7024 with Lesesperre active)
     // do not drive the data bus and are skipped.
-    MemDevice* hit = nullptr;
-    for (auto& r : mem_regions_)
-        if (addr >= r.base && addr < static_cast<uint32_t>(r.base + r.size))
-            if (r.dev->isReadable())
-                hit = r.dev;
+    // Schnellpfad: O(1) über die Seiten-Dispatch-Tabelle (Aufbau s. rebuildPageTable).
+    MemDevice* hit;
+    if (page_table_valid_) {
+        hit = page_table_[addr >> kPageShift].read;
+    } else {
+        hit = nullptr;                       // linearer Fallback (nicht seitenausgerichtet)
+        for (auto& r : mem_regions_)
+            if (addr >= r.base && addr < static_cast<uint32_t>(r.base + r.size))
+                if (r.dev->isReadable())
+                    hit = r.dev;
+    }
     uint8_t val = hit ? hit->memRead(addr) : 0xFF;
     if (trace_cb_) trace_cb_(false, true, addr, val);
     LOG_TRACE("K1520Bus", "MEM RD 0x%04X => 0x%02X%s", addr, val, hit ? "" : " (kein Gerät)");
@@ -69,12 +111,19 @@ void K1520Bus::memWrite(uint16_t addr, uint8_t data) {
     //   - K7024 (isWritable=true, isReadable=false): receives write for screen update
     //   - K3526 (isWritable=true, isReadable=true):  also receives write for storage
     bool wrote = false;
-    for (auto& r : mem_regions_)
-        if (addr >= r.base && addr < static_cast<uint32_t>(r.base + r.size))
-            if (r.dev->isWritable()) {
-                r.dev->memWrite(addr, data);
-                wrote = true;
-            }
+    if (page_table_valid_) {                 // Schnellpfad: O(1) Broadcast-Ziele
+        const PageEntry& e = page_table_[addr >> kPageShift];
+        for (uint8_t i = 0; i < e.write_count; ++i)
+            e.write[i]->memWrite(addr, data);
+        wrote = e.write_count != 0;
+    } else {
+        for (auto& r : mem_regions_)         // linearer Fallback
+            if (addr >= r.base && addr < static_cast<uint32_t>(r.base + r.size))
+                if (r.dev->isWritable()) {
+                    r.dev->memWrite(addr, data);
+                    wrote = true;
+                }
+    }
     if (trace_cb_) trace_cb_(false, false, addr, data);
     LOG_TRACE("K1520Bus", "MEM WR 0x%04X <= 0x%02X%s", addr, data, wrote ? "" : " (kein beschreibbares Gerät)");
 }
@@ -85,6 +134,7 @@ uint8_t K1520Bus::ioRead(uint8_t port) {
         return 0xFF;
     }
     uint8_t val = io_map_[port] ? io_map_[port]->ioRead(port) : 0xFF;
+    if (io_map_[port]) int_dirty_ = true;   // Status-/Daten-Read kann IRQ löschen
     if (trace_cb_) trace_cb_(true, true, port, val);
     if (!io_map_[port])
         LOG_DEBUG("K1520Bus", "I/O RD 0x%02X => 0xFF (kein Gerät registriert)", port);
@@ -98,11 +148,17 @@ void K1520Bus::ioWrite(uint8_t port, uint8_t data) {
     }
     if (!io_map_[port])
         LOG_DEBUG("K1520Bus", "I/O WR 0x%02X <= 0x%02X (kein Gerät registriert)", port, data);
-    if (io_map_[port]) io_map_[port]->ioWrite(port, data);
+    if (io_map_[port]) { io_map_[port]->ioWrite(port, data); int_dirty_ = true; }
     if (trace_cb_) trace_cb_(true, false, port, data);
 }
 
 void K1520Bus::updateInterruptChain() {
+    // Schnellpfad: Ohne Zustandsänderung (kein I/O, kein CTC-ZC/TO, keine
+    // serielle/Floppy-IRQ, keine Quittung/RETI seit dem letzten Walk) ist der
+    // gecachte Chain-Zustand (int_asserted_ + iei je Gerät) noch gültig.
+    if (!int_dirty_) return;
+    int_dirty_ = false;
+
     bool iei = true;
     for (auto* dev : int_chain_) {
         dev->setIEI(iei);
@@ -120,6 +176,7 @@ void K1520Bus::updateInterruptChain() {
 }
 
 uint8_t K1520Bus::interruptAcknowledge() {
+    int_dirty_ = true;   // IUS gesetzt → Chain neu bewerten
     for (auto* dev : int_chain_)
         if (dev->hasInterrupt()) {
             uint8_t vec = dev->getVector();
@@ -132,17 +189,21 @@ uint8_t K1520Bus::interruptAcknowledge() {
 void K1520Bus::assertINT()    {
     if (!int_asserted_) LOG_DEBUG("K1520Bus", "assertINT()");
     int_asserted_ = true;
+    int_dirty_    = true;
 }
 void K1520Bus::releaseINT()   {
     if (int_asserted_) LOG_DEBUG("K1520Bus", "releaseINT()");
     int_asserted_ = false;
+    int_dirty_    = true;
 }
 void K1520Bus::assertNMI()    {
     LOG_DEBUG("K1520Bus", "assertNMI()");
     nmi_pending_ = true;
+    int_dirty_   = true;
 }
 void K1520Bus::clearNMI()     {
     nmi_pending_ = false;
+    int_dirty_   = true;
 }
 void K1520Bus::assertRESET()  {
     LOG_INFO("K1520Bus", "assertRESET()");
@@ -153,6 +214,7 @@ void K1520Bus::signalRETI() {
     LOG_DEBUG("K1520Bus", "RETI-Signal: alle Geräte in Daisy-Chain benachrichtigt");
     for (auto* dev : int_chain_)
         dev->onRETI();
+    int_dirty_ = true;   // IUS gelöscht → Chain neu bewerten
     updateInterruptChain();
 }
 

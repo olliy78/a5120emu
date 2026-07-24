@@ -273,6 +273,8 @@ private:
     // round, not the level.
     bool busrq_active_     = false;   // /BUSRQ was asserted last iteration
     bool dma_saw_progress_ = false;   // [0x03F8] observed != 3 since this round began
+    bool prev_floppy_int_  = false;   // letzter K5122-Interruptzustand (zeitgetriebene
+                                      // Index-IRQ) → Flankenerkennung markiert Chain dirty
     bool bus_master_zve2_  = false;   // which CPU is currently stepping (for bus-trace
                                       // attribution): true while ZVE2 steps, false for ZVE1
 

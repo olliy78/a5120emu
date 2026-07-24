@@ -4,6 +4,15 @@ project(a5120emu VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Default-Build-Type: OHNE dies baut GCC mit -O0 (keine Optimierung) — für einen
+# Z80-Interpreter der mit Abstand größte Performance-Verlust (~5-8x langsamer).
+# Wird nur gesetzt, wenn der Aufrufer keinen expliziten Typ vorgibt.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING
+        "Build type (Release/RelWithDebInfo/Debug)" FORCE)
+    message(STATUS "CMAKE_BUILD_TYPE nicht gesetzt → Release (-O3)")
+endif()
+
 if(NOT LOG_LEVEL)
     set(LOG_LEVEL 3)
 endif()
@@ -407,6 +416,11 @@ if(BUILD_K1520)
     target_link_libraries(boot_trace PRIVATE k1520_a5120 k1520_floppy k1520_logger)
     target_include_directories(boot_trace PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(boot_trace PRIVATE LOG_LEVEL=5)
+
+    # bench_run: fixed-workload Performance-Benchmark (Mcycles/s, x-Echtzeit)
+    add_executable(bench_run tools/bench_run.cpp)
+    target_link_libraries(bench_run PRIVATE k1520_a5120 k1520_floppy k1520_logger)
+    target_include_directories(bench_run PRIVATE ${CMAKE_SOURCE_DIR})
 
     # kbd_test: standalone keyboard smoke test (boot, type a command, dump screen)
     add_executable(kbd_test tools/kbd_test.cpp)

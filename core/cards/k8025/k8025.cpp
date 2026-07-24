@@ -336,12 +336,16 @@ uint8_t K8025::printerTxGet()
  * Updates the internal daisy chain after the tick in case the CTC raised an
  * interrupt.
  */
-void K8025::clockTick(int ticks)
+bool K8025::clockTick(int ticks)
 {
     // Advance by the CPU T-states elapsed (see K2526::clockTick): the baud-rate
     // CTC divides the system clock, so it must tick once per clock cycle, not
     // once per instruction.
-    for (int i = 0; i < ticks; ++i)
-        ctc_a34_.clockTick();
-    updateInternalChain();
+    // updateInternalChain() NICHT pro Instruktion: die interne Daisy-Chain
+    // (iei-Propagation der 3 Teilbausteine) wird ohnehin bei jedem Bus-Chain-Walk
+    // über setIEI() aufgefrischt (der Walk ruft setIEI VOR hasInterrupt/getIEO).
+    // Der Walk läuft nur noch, wenn die Chain dirty ist — dann ist der interne
+    // Zustand frisch.  Der Baud-CTC ohne INT_EN feuert ständig, ändert aber keinen
+    // Interrupt (clockTick(int) liefert dann false → kein unnötiges Dirty).
+    return ctc_a34_.clockTick(ticks);   // batched, semantik-identisch
 }
