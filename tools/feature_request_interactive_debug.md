@@ -121,3 +121,59 @@ den dominanten Zeitfresser und macht interaktive Emulator-Arbeit erst skriptbar.
 hochfrequente Ergonomie-Gewinne. Alle vier zusammen hätten die HARDY-Rechner-Test-Arbeit
 schätzungsweise um die Hälfte verkürzt und stünden für die restlichen 6 Testabschnitte
 direkt bereit.
+
+---
+
+## 6. Weitere Ideen (aus früheren Analysen / Erinnerungen)
+
+Beim Durchsehen der bisherigen Bug-Analysen (SCPX INIT-Format, PIP/REN, 5×1024-Read, HARDY)
+tauchte immer dasselbe Muster auf: **ein .COM booten und einen mehrstufigen Bildschirm-Dialog
+abarbeiten** (INIT.COM: `A\r \r \r Y\r` auf nacheinander erscheinende Menüs; HARDY: Banner →
+Dialog → Menü → Test). Das ist mehr als „warte auf EINEN Screen":
+
+- **`dialog <file>` (Menü-Treiber).** Eine Datei mit Zeilen `"<screen-text>" "<keys>" [maxcyc]`:
+  je Zeile *warte bis der Screen `<screen-text>` zeigt, dann tippe `<keys>`*. Fährt einen
+  ganzen Wizard (INIT-Format, HARDY-Testauswahl) in **einem** Kommando statt einer manuellen
+  `gscreen`+`keys`-Kette. Baut auf #1/#3 auf, ~kostenlos.
+- **CONIN-Wait / `until prompt` (screen-unabhängig).** Statt auf einen bekannten Prompt-Text
+  zu warten, bis zum ersten **CONIN-Poll** (OS wartet auf Tastatur) laufen — landet
+  deterministisch am interaktiven Prompt, auch ohne den Prompt-String zu kennen. (Adresse je
+  BIOS bekannt, z.B. CP/A CONIN-Schleife ~`0x041C`; SCPX/HARDY analog.)
+- **`gchange` (warte auf Screen-Änderung).** Wenn man das Zieltext nicht kennt, nur *dass sich
+  etwas tut*: bis zur ersten Änderung des 80×24-VRAMs ggü. dem Ist-Stand laufen.
+- **Savestate-Disk-Referenz.** #2 nennt neben VRAM auch die *gemountete Disk*. Kopfposition
+  (K5122, v3) + VRAM (v4) sind serialisiert; der Image-Pfad selbst nicht — die Disk wird beim
+  Start via COW gemountet, `loadstate` funktioniert also solange dieselbe Disk übergeben wird.
+  Ein Pfad-Feld im State-File (self-remounting) bliebe ein Komfort-Plus.
+
+---
+
+## Umsetzungsstand (2026-07-24)
+
+Umgesetzt und mit Guard-Tests / Smoke-Läufen (auf `disks/scpx_boot.hfe`) verifiziert:
+
+| Item | Status | Umsetzung / Verifikation |
+|------|--------|--------------------------|
+| #1 Screen-konditioniertes Laufen | ✅ | k1520dbg **`gscreen "txt"\|/re/ [maxcyc]`** (läuft bis Screen-Match; Substring oder Regex, pro Zeile), **`bscreen "txt"\|off`** (armt: jedes `g`/`gu`/`n` hält beim Match — Prüfung in `goSilent`), boot_trace **`--until 'screen ~ "txt"'`** (neuer `SCREEN`-Kind in `until_cond.h`, per ~64k-Zyklen gepollt). Smoke: `gscreen "A>"` hält nach ~12 M Takten am SCPX-Prompt; boot_trace meldet `until met at cycle 17956864`. |
+| #2 Savestate inkl. VRAM | ✅ | Save-Format **v4**: `K7024::serialize/deserialize` (2 KB VRAM, `renderAll()` beim Laden) via `A5120Machine::captureState/restoreState` mitgesichert. `loadstate` → `screen` zeigt wieder Banner+`A>` statt Leerschirm. Guard: `MachineSnapshot.ScreenVramSurvivesSaveLoad`; v1–v3-Snapshots laden weiter (`LegacyV1…`). |
+| #3 keys-Verbesserungen | ✅ | `keys` versteht jetzt **`\s`** (Space) und **`\xNN`** (Roh-Code); neu **`keyuntil "<key>" "txt" [maxcyc]`** (drückt EINE Taste wiederholt bis der Screen `txt` zeigt — robust gegen Direkt-Poll-Verlust). Smoke: `keyuntil "D" "A>D"` liefert das Echo zuverlässig. |
+| #4 Mehr-Byte-Dump | ✅ | **`x <A> N`** (N dezimal, ohne `/N`-Spec) dumpt jetzt N Werte; `d`/**`dump`** (Alias) unverändert Hex+ASCII. Smoke: `x 0xF800 16` / `dump 0xF800 32`. |
+| #5a `screen find` | ✅ | **`screen find "txt"\|/re/`** → `row/col` bzw. „not found". |
+| #5b `bt`-Fold | ✅ | `backtraceHistory` kollabiert identische Folge-Frames zu `… ↻ ×N` (RST-38-Flut). |
+| #5c RST-38-Hinweis | ✅ | `where`/Stop geben bei PC=`0x0038` && `[0x0038]==0xFF` automatisch den „Fetch liest 0xFF (Speicher gegated?)"-Hinweis aus. |
+| #6 `dialog <file>` (Menü-Treiber) | ✅ | Neues Kommando; fährt einen ganzen Screen-Dialog (`"pat" "keys" [cap]` pro Zeile). Smoke: `"A>" "DIR\r"` → wartet, tippt, wartet auf die Verzeichnisliste. |
+| #6 CONIN-Wait / `gchange` / Disk-Pfad im State | ⏸ offen | Nice-to-have; von den obigen Bausteinen abgedeckt genug für den akuten Bedarf. |
+
+Guard-/Unit-Tests neu: `MachineSnapshot.ScreenVramSurvivesSaveLoad` (test_machine_snapshot.cpp),
+`UntilCond.ParsesScreenSubstring` / `ScreenMatchSubstringAndRegex` / `RejectsEmptyScreenPattern`
+(test_until_cond.cpp). **CLI-Black-Box-Regression** (CMakeLists `add_cli_test`, gegen die CP/A-
+Fixture): `cli_dbg_gscreen`, `cli_dbg_screen_find`, `cli_dbg_examine_count` (der #4-Fix),
+`cli_bt_until_screen`. Kein Core-Card-Bruch (voller ctest + Legacy-Harness grün). Doku aktualisiert:
+`how_to_debug_and_trace.md`, `k1520dbg.md`, `boot_trace.md`.
+
+> **Beim Testschreiben gefundener + behobener Bug:** `boot_trace --until 'screen ~ …'` schlug
+> nie an, weil die Screen-Pollung auf `cycles_done & 0xFFFF` gated war — `cycles_done` wird aber
+> nur einmal **pro `run()`-Batch** aktualisiert (im Callback „approx"), nicht pro Instruktion, und
+> traf die 64k-Grenze faktisch nie. Fix: auf den per-Instruktion hochgezählten `sample_count`
+> gaten (`& 0xFFF`). Genau die Art stiller Regression, für die `cli_bt_until_screen` jetzt Wache
+> steht — starkes Argument für die CLI-Tests.

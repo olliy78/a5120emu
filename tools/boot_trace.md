@@ -77,10 +77,15 @@ Lauf geht über den Boot-Handoff hinaus, man braucht also kein `-p`.
 boot_trace --until '[0x03F8]==3'  disk.img            # bis ZVE2 das Done-Flag setzt
 boot_trace --until 'PC==0x0437'   disk.img            # bis ZVE1 den Boot-Handoff erreicht
 boot_trace --until '[0xD1BE]w!=0' -d 0xD1B0:0xD1D0 disk.img   # … dann RAM dumpen
+boot_trace --until 'screen ~ "A>"'      disk.img      # bis der Bildschirm den Prompt zeigt
+boot_trace --until 'screen ~ /V 1\.[0-9]/' disk.img   # … oder ein Regex-Muster
 ```
 
 Bedingungen (pro ZVE1-Instruktion geprüft): `PC<op>A`, `[A]<op>V`, `[A]w<op>V` (16-Bit LE),
-`<op> ∈ == != < > <= >=`; `A`/`V` base-0. Am Ende: `MET at cycle … (PC=…)` bzw. `not met`.
+`<op> ∈ == != < > <= >=`; `A`/`V` base-0. Zusätzlich `screen ~ "text"` / `screen ~ /regex/`
+— hält an, sobald der 80×24-Text-VRAM (ab `0xF800`) das Muster enthält (Substring bzw.
+ECMAScript-Regex); der Bildschirm wird dabei nur periodisch (~alle 64k Zyklen) gerendert.
+Am Ende: `MET at cycle … (PC=…)` bzw. `not met`.
 Kombinierbar mit `-d`/`-w`/`-z`/`--coverage`/`--csv`, um genau im erreichten Zustand zu
 dumpen/tracen, und mit `--save-state`, um dort einen Checkpoint zu setzen.
 

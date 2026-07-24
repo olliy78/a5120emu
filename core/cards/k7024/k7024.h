@@ -40,6 +40,7 @@
 #pragma once
 #include <cstdint>
 #include <deque>
+#include <vector>
 #include "core/bus/k1520_bus.h"
 
 /**
@@ -229,6 +230,21 @@ public:
      * @param blank Character code to fill with (default 0x20 = space)
      */
     void    clearScreen(uint8_t blank = 0x20);
+
+    // ─── State serialisation (savestate incl. VRAM) ──────────────────────────
+
+    /**
+     * @brief Append the 2 KB VRAM to @p out so `screen`/framebuffer survive a
+     *        savestate (the screen contents are otherwise lost on loadstate).
+     */
+    void serialize(std::vector<uint8_t>& out) const;
+
+    /**
+     * @brief Restore VRAM previously written by serialize() and re-render the
+     *        whole framebuffer. Bounds-checked, so a truncated/older blob fails
+     *        gracefully (returns false, VRAM unchanged).
+     */
+    bool deserialize(const uint8_t*& p, const uint8_t* end);
 
 private:
     /**

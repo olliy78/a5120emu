@@ -63,6 +63,33 @@ TEST(UntilCond, RejectsBadInput){
     EXPECT_EQ(u.kind, UntilCond::NONE);
 }
 
+// ── screen ~ "text" / /regex/  (feature_request_interactive_debug #1) ────────
+
+TEST(UntilCond, ParsesScreenSubstring){
+    UntilCond u;
+    ASSERT_TRUE(parse("screen ~ \"A>\"", u));
+    EXPECT_EQ(u.kind, UntilCond::SCREEN);
+    EXPECT_EQ(u.pattern, "A>");
+    // Ohne Tilde und ohne Anführungszeichen ebenso zulässig.
+    UntilCond v; ASSERT_TRUE(parse("screen READY", v));
+    EXPECT_EQ(v.pattern, "READY");
+}
+
+TEST(UntilCond, ScreenMatchSubstringAndRegex){
+    std::string scr = "ROBOTRON LOADER    SCPX 1526 - V 1.7    A>";
+    EXPECT_TRUE (P("screen ~ \"SCPX\"").screenMatch(scr));
+    EXPECT_FALSE(P("screen ~ \"CP/A\"").screenMatch(scr));
+    EXPECT_TRUE (P("screen ~ /V 1\\.[0-9]/").screenMatch(scr));
+    EXPECT_FALSE(P("screen ~ /V 2\\.[0-9]/").screenMatch(scr));
+}
+
+TEST(UntilCond, RejectsEmptyScreenPattern){
+    UntilCond u;
+    EXPECT_FALSE(parse("screen ~ \"\"", u));
+    EXPECT_FALSE(parse("screen", u));
+    EXPECT_EQ(u.kind, UntilCond::NONE);
+}
+
 // ── Auswertung (compare) — alle Operatoren ───────────────────────────────────
 
 TEST(UntilCond, CompareEvaluatesAllOperators){

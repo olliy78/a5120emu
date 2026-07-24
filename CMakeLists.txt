@@ -480,10 +480,23 @@ if(BUILD_K1520)
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'bint\\ng\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
         add_cli_test(cli_dbg_reverse_step "restored 1 step"
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\ng\\ns 1\\nrs\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # feature_request_interactive_debug: screen-konditioniertes Laufen, Screen-Suche,
+        # Mehr-Byte-Examine (#4) — Wortlaut = die Meldezeilen der Kommandos.
+        add_cli_test(cli_dbg_gscreen "screen matched after [0-9]+ cyc"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'gscreen \"Bootloader\" 8000000\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        add_cli_test(cli_dbg_screen_find "found at row [0-9]+ col [0-9]+"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'gscreen \"Bootloader\" 8000000\\nscreen find \"Bootloader\"\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # x <A> N (ohne /N-Spec) muss N Bytes dumpen — der behobene #4-Bug (gab nur 1 Byte).
+        add_cli_test(cli_dbg_examine_count "6000: 41 42 43 44"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'e 0x6000 41 42 43 44\\nx 0x6000 4\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
 
         # boot_trace — standalone runs.
         add_cli_test(cli_bt_until "MET at cycle [0-9]+ .PC=0x0168."
             "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' \$D; rm -f \$D")
+        # feature_request_interactive_debug: --until 'screen ~ "txt"' (Text-VRAM als Bedingung).
+        # Deckt zugleich die per-Instruktions-Pollung (sample_count, NICHT cycles_done) ab.
+        add_cli_test(cli_bt_until_screen "MET at cycle [0-9]+"
+            "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until 'screen ~ \"Bootloader\"' \$D; rm -f \$D")
         # --coverage BEFORE --until so it doesn't consume the disk path as its CSV file.
         add_cli_test(cli_bt_coverage "Code coverage .ZVE1."
             "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --coverage --until 'PC==0x0437' \$D; rm -f \$D")

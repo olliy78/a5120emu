@@ -97,6 +97,49 @@ scheitert trotzdem, liegt der Fehler **CPU-seitig** (ZVE2-Matcher/Handshake), ni
 
 ---
 
+## 0c. Interaktive / bildschirmgetriebene Programme (Menüs, Wizards)
+
+> **Der Zeitfresser bei interaktiven Test-/Dienstprogrammen** (INIT.COM-Format, HARDY-
+> Rechnertest, jedes menügeführte `.COM`) war: `keys X` + `g <geratene Zyklen>` + `screen`
+> in Endlosschleife und die Zyklenzahl raten. Ab jetzt **screen-konditioniert** — deterministisch.
+
+| Willst du … | Befehl |
+|---|---|
+| bis ein Screen-Text erscheint laufen | **`gscreen "A>"`** (oder `/regex/`, optional `maxcyc`) |
+| jedes `g`/`gu`/`n` beim Screen-Text stoppen | **`bscreen "MENÜ"`** … `bscreen off` |
+| eine Taste bis zur Screen-Reaktion drücken (poll-robust) | **`keyuntil "x" "Untermenü"`** |
+| einen ganzen Menü-Dialog abfahren | **`dialog wizard.txt`** |
+| Screen-Text finden (row/col) | **`screen find "BAD"`** |
+| Space / Roh-Code tippen | `keys \s` · `keys \x1B` |
+| boot_trace bis Screen-Text | `boot_trace --until 'screen ~ "A>"'` |
+
+**Rezept „menügeführtes .COM ans Laufen bringen":**
+
+```sh
+# einmal booten + Programm starten, dann Schritt für Schritt screen-konditioniert
+printf '%s\n' \
+  'gu 0xE079' 'keys INIT\r' \
+  'gscreen "Laufwerk"' 'keys A\r' \
+  'gscreen "Format"'   'keys \r' \
+  'gscreen "sicher"'   'keys Y\r' \
+  'gscreen "NO -"'     'screen' 'q' | k1520dbg DISK
+
+# ODER als ein Dialog-Skript (wizard.txt), je Zeile:  "<screen-text>" "<keys>" [maxcyc]
+#   "A>"        "INIT\r"
+#   "Laufwerk"  "A\r"
+#   "Format"    "\r"
+#   "sicher"    "Y\r"
+#   "NO -"      ""
+printf 'gu 0xE079\ndialog wizard.txt\nq\n' | k1520dbg DISK
+```
+
+**Boot einmal, dann oft:** `savestate` sichert seit v4 auch das **VRAM** → nach `loadstate`
+stimmt `screen` (Banner + Prompt), d.h. der ~100-M-Zyklen-Boot ist Einmalkosten und man setzt
+je Testabschnitt am selben Menü neu auf. **RST-38-Falle:** steht die CPU bei `0x0038` mit
+`[0x0038]==0xFF`, weist `where`/Stop automatisch auf ein Speicher-Gate-Problem hin.
+
+---
+
 ## 1. Schnellstart
 
 ```sh

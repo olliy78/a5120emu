@@ -309,7 +309,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "-l") && i+1 < argc) { prn_specs.push_back(argv[++i]); }
         else if (!strcmp(argv[i], "--until") && i+1 < argc) {   // --until [03F8]==3 | PC==0x1800
             if (!untilcond::parse(argv[++i], until))
-                fprintf(stderr, "WARN: bad --until '%s' (use PC<op>A | [A]<op>V | [A]w<op>V)\n", argv[i]);
+                fprintf(stderr, "WARN: bad --until '%s' (use PC<op>A | [A]<op>V | [A]w<op>V | screen ~ \"txt\")\n", argv[i]);
         }
         else if (!strcmp(argv[i], "--coverage")) {   // --coverage [file.csv]
             coverage_on = true;
@@ -523,11 +523,28 @@ int main(int argc, char** argv) {
 
         // --until: stop the run when the condition holds (checked per ZVE1 instr).
         if (until.kind != UntilCond::NONE && !until_hit) {
-            long cur = (until.kind == UntilCond::PC) ? z.PC
-                     : (until.word ? (machine.memReadDebug(until.addr) |
-                                      (machine.memReadDebug((uint16_t)(until.addr+1)) << 8))
-                                   :  machine.memReadDebug(until.addr));
-            if (until.compare(cur)) {
+            bool met = false;
+            if (until.kind == UntilCond::SCREEN) {
+                // Rendering the 80×24 text VRAM every instruction would be far too
+                // slow — the screen changes slowly, so poll it only every ~4096
+                // ZVE1 instructions. (cycles_done is only refreshed once per run()
+                // batch, so gate on the per-instruction sample_count instead.)
+                if ((sample_count & 0xFFF) == 0) {
+                    std::string scr;
+                    for (int r = 0; r < 24; ++r) for (int c = 0; c < 80; ++c) {
+                        uint8_t ch = machine.memReadDebug((uint16_t)(0xF800 + r*80 + c));
+                        scr += (ch >= 0x20 && ch < 0x7F) ? (char)ch : ' ';
+                    }
+                    met = until.screenMatch(scr);
+                }
+            } else {
+                long cur = (until.kind == UntilCond::PC) ? z.PC
+                         : (until.word ? (machine.memReadDebug(until.addr) |
+                                          (machine.memReadDebug((uint16_t)(until.addr+1)) << 8))
+                                       :  machine.memReadDebug(until.addr));
+                met = until.compare(cur);
+            }
+            if (met) {
                 until_hit = true; until_cycle = cycles_done; until_pc = z.PC;
                 if (!quiet)
                     fprintf(stderr, "\n*** --until met at cycle %d (ZVE1 PC=0x%04X): %s ***\n",

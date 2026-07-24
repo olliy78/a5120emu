@@ -29,6 +29,7 @@
 #include "core/cards/k7024/chargen_zg1.h"      // obere Zeilen 0–7  (EPROM A103 / v171)
 #include "core/cards/k7024/chargen_zg2.h"      // untere Zeilen 8–11 (EPROM A123 / v172)
 #include <algorithm>
+#include <cstring>
 
 // ─── Character-generator lookup ───────────────────────────────────────────────
 
@@ -260,6 +261,26 @@ void K7024::clearScreen(uint8_t blank)
     for (auto& b : vram_) b = blank;
     renderAll();
     dirty_ = true;
+}
+
+// ─── State serialisation (savestate incl. VRAM) ────────────────────────────────
+
+void K7024::serialize(std::vector<uint8_t>& out) const
+{
+    // Nur der VRAM-Inhalt (Zeichencodes) — das Pixel-Framebuffer wird beim
+    // deserialize() aus dem VRAM neu gerendert, muss also nicht mitgespeichert
+    // werden. Roh-Bytes reichen (fester 2-KB-Block).
+    out.insert(out.end(), vram_, vram_ + sizeof(vram_));
+}
+
+bool K7024::deserialize(const uint8_t*& p, const uint8_t* end)
+{
+    if (end - p < static_cast<long>(sizeof(vram_))) return false;
+    std::memcpy(vram_, p, sizeof(vram_));
+    p += sizeof(vram_);
+    renderAll();          // Framebuffer aus dem geladenen VRAM neu aufbauen
+    dirty_ = true;
+    return true;
 }
 
 // ─── Rendering ────────────────────────────────────────────────────────────────

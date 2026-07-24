@@ -84,6 +84,27 @@ TEST(MachineSnapshot, SaveAndLoadStateRoundTrip){
     std::remove(path.c_str());
 }
 
+// ── K7024-VRAM überlebt save/load (feature_request_interactive_debug #2) ─────
+
+// Der Bildschirminhalt (VRAM 0xF800–0xFFFF, im K7024 gehalten, nicht im OPS-RAM)
+// muss einen savestate→loadstate überleben, sonst ist `screen` nach dem Laden leer
+// und bildschirmbasiertes Weiterarbeiten (gscreen/keyuntil) unmöglich.
+TEST(MachineSnapshot, ScreenVramSurvivesSaveLoad){
+    std::string path = tmpStatePath();
+    A5120Machine a; a.powerOn(); a.run(400000);
+    const char* banner = "HELLO K7024";
+    for (int i=0; banner[i]; ++i) a.memWriteDebug((uint16_t)(0xF800+i), (uint8_t)banner[i]);
+    ASSERT_EQ(a.memReadDebug(0xF800), (uint8_t)'H');   // Schreibpfad routet zum K7024
+    ASSERT_TRUE(a.saveState(path));
+
+    A5120Machine b; b.powerOn(); b.run(400000);        // frische Maschine: Schirm leer
+    ASSERT_NE(b.memReadDebug(0xF800), (uint8_t)'H');
+    ASSERT_TRUE(b.loadState(path));
+    for (int i=0; banner[i]; ++i)
+        EXPECT_EQ(b.memReadDebug((uint16_t)(0xF800+i)), (uint8_t)banner[i]);
+    std::remove(path.c_str());
+}
+
 // ── Tastatur-Subsystem überlebt save/load (Kernanforderung) ──────────────────
 
 // Eine getippte Taste landet (nach der 9600-Baud-Serial-Latenz) im Tastatur-SIO

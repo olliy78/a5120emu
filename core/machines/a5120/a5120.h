@@ -182,8 +182,9 @@ public:
      * flags, the boot-ROM mapping, the keyboard subsystem (CTC/BS-PIO/baud-CTC/SIO/
      * K7637) and the floppy controller (K5122 PIOs + per-drive head position). So a
      * restore resumes with a working keyboard AND disk access (head on the right
-     * track). NOT captured: the mounted disk images themselves (mounted separately)
-     * and the K7024 screen VRAM. Restoring in the middle of an active DMA / timer
+     * track), and the K7024 screen VRAM (so `screen`/framebuffer are correct after
+     * a restore). NOT captured: the mounted disk images themselves (mounted
+     * separately). Restoring in the middle of an active DMA / timer
      * phase may still drift once execution resumes.
      */
     struct MachineSnapshot {
@@ -201,9 +202,10 @@ public:
         bool     dma_progress   = false;
         bool     bus_master_zve2= false;
         uint64_t total_cycles   = 0;
-        // Serialised device-internal state (keyboard SIO + K7637). Empty when a
-        // legacy (v1) snapshot without device state is restored. Captured so a
-        // loadstate resumes with a working keyboard. See captureState().
+        // Serialised device-internal state (keyboard SIO + K7637 + K5122 floppy +
+        // K7024 VRAM). Empty when a legacy (v1) snapshot without device state is
+        // restored. Captured so a loadstate resumes with a working keyboard, disk
+        // access and a correct screen. See captureState().
         std::vector<uint8_t> device_state;
     };
     /** @brief Capture the current machine state into @p s. */
@@ -214,9 +216,9 @@ public:
      * Also reproduces the boot-ROM mapping, so a state saved post-ROM resumes
      * correctly even into a freshly powered machine. The keyboard subsystem
      * (system CTC + BS-PIO + baud CTC + keyboard SIO + K7637) and the floppy
-     * controller (K5122 PIOs + per-drive head position) ARE captured/restored, so
-     * keyboard input AND disk access work after a loadstate. Not captured: the
-     * mounted disk images and the K7024 screen VRAM.
+     * controller (K5122 PIOs + per-drive head position) plus the K7024 screen VRAM
+     * ARE captured/restored, so keyboard input, disk access AND the screen work
+     * after a loadstate. Not captured: the mounted disk images (mounted separately).
      * @return always true (the snapshot is fully applied).
      */
     bool restoreState(const MachineSnapshot& s);

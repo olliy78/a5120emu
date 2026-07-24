@@ -52,6 +52,7 @@
 #include <fstream>
 #include <iostream>
 #include <algorithm>
+#include <regex>
 #include <filesystem>
 #include <system_error>
 #include <optional>
@@ -206,6 +207,7 @@ int main(int argc, char** argv){
     uint64_t rel_origin=0; bool rel_armed=false; int rel_arm_pc=-1;  // `mark`: relative-cycle origin / arm-at-PC
     Snap snap1, snap2;                          // last captured ZVE1 / ZVE2 register view (for printing)
     bool hit=false; int hit_cpu=0; uint16_t hit_pc=0; std::string stop_reason;  // "we stopped" signal from a callback
+    std::string screen_bp;   // #1: if set, any `g`/`gu`/`n` stops once the text VRAM shows this pattern
     int  gu_pc=-1;                              // `gu`/temp-bp target PC (<0 = inactive)
     long step_rem=0, step2_rem=0;               // remaining single-step count (ZVE1 / ZVE2); stop at 0
     bool fin_active=false; uint16_t fin_sp=0;   // `fin`: stop once SP rises above this frame
@@ -678,12 +680,21 @@ int main(int argc, char** argv){
             fprintf(stderr,"  disp[%zu] %-10s = %ld (0x%lX)\n",i,displays[i].c_str(),v,(unsigned long)(v&0xFFFF));
         }
     };
+    // #5: a CPU parked at 0x0038 executing 0xFF (RST 38H) is the classic signature
+    // of a memory-disable / read-gate problem (the fetch reads 0xFF because RAM is
+    // gated off) — flag it automatically so it needn't be deduced by hand.
+    auto rst38Hint = [&]{
+        if (m.cpuPC()==0x0038 && m.memReadDebug(0x0038)==0xFF)
+            fprintf(stderr,"  ⚠ ZVE1 @0038 mit [0038]=FF — RST-38-Schleife: "
+                           "Fetch liest 0xFF (Speicher gegated/disabled?), kein echter RST-Handler\n");
+    };
     auto onStop = [&]{
         fprintf(stderr,"** %s : ZVE%d PC=%04X\n",stop_reason.c_str(),hit_cpu,hit_pc);
         printSnap(hit_cpu);
         showInsn("=>", hit_pc);
         showDisplays();
         stateLine();
+        rst38Hint();
         // §17: remember the full state at each PC-breakpoint stop so `rc` can jump back
         // to the previous hit (the snapshot ring only holds coarse pre-command states).
         if (stop_reason.rfind("bp",0)==0){
@@ -697,6 +708,28 @@ int main(int argc, char** argv){
                 ln[c]=(ch>=0x20&&ch<0x7F)?(char)ch:'.'; }
             ln[80]=0; fprintf(stderr,"  |%s|\n",ln); }
     };
+    // ── screen text as a condition (feature_request_interactive_debug #1/#5) ──
+    // Render one 80-char row of the text VRAM (0xF800) into `out` (no trailing NUL
+    // handling needed by callers — 80 chars). Non-printable → space (so matches
+    // survive control bytes / the cursor-flag high bit).
+    auto vramRow = [&](int row, char* out){
+        for (int c=0;c<80;++c){ uint8_t ch=m.memReadDebug((uint16_t)(0xF800+row*80+c));
+            out[c]=(ch>=0x20&&ch<0x7F)?(char)ch:' '; } out[80]=0;
+    };
+    // A `pat` of the form /re/ is treated as an ECMAScript regex, otherwise a
+    // literal substring. `pat` is matched per-row (so it need not span the 80-col
+    // wrap). Returns true and (if row/col given) the first hit position.
+    auto screenFind = [&](const std::string& pat, int* hitRow, int* hitCol)->bool{
+        bool rx = pat.size()>=2 && pat.front()=='/' && pat.back()=='/';
+        std::regex re; if (rx){ try{ re.assign(pat.substr(1,pat.size()-2)); }catch(...){ rx=false; } }
+        for (int row=0;row<24;++row){ char ln[81]; vramRow(row,ln); std::string s(ln);
+            if (rx){ std::smatch mo; if(std::regex_search(s,mo,re)){
+                        if(hitRow)*hitRow=row; if(hitCol)*hitCol=(int)mo.position(0); return true; } }
+            else   { size_t p=s.find(pat); if(p!=std::string::npos){
+                        if(hitRow)*hitRow=row; if(hitCol)*hitCol=(int)p; return true; } } }
+        return false;
+    };
+    auto screenContains = [&](const std::string& pat)->bool{ return screenFind(pat,nullptr,nullptr); };
     // ZVE2 is the active bus master when /BUSRQ is asserted and it is neither in reset
     // nor waiting. Used by the discoverability hint (§0) and `where` (§4).
     auto zve2Active = [&]{ return m.isBUSRQ() && !m.isZVE2InReset() && !m.isZVE2Waiting(); };
@@ -778,6 +811,7 @@ int main(int argc, char** argv){
                 m.isBUSRQ()?"yes":"no", zve2Active()?"ZVE2":"ZVE1",
                 k.drive,k.mounted?"mounted":"EMPTY",(unsigned)k.cylinder,(unsigned)k.head,
                 k.transferring?"READING":"idle",k.writeMode?"+WRITE":"",k.headPos,k.trackLen);
+        rst38Hint();
     };
     // §9 `hist <cycles> [lo hi]`: run N cycles profiling BOTH CPUs' PCs, print the
     // hotspots (with symbol/.prn annotation). One glance instead of reading a trace file.
@@ -814,6 +848,9 @@ int main(int argc, char** argv){
         while (!hit){
             if (m.cpuCycles()-start>=cap) break;
             int n=m.run(50000); if(n==0) break;
+            // #1 bscreen: stop as soon as the screen shows the armed pattern.
+            if (!screen_bp.empty() && screenContains(screen_bp))
+                stopFromBus("bscreen \""+screen_bp+"\"");
         }
         return m.cpuCycles()-start;
     };
@@ -822,6 +859,22 @@ int main(int argc, char** argv){
         if (hit){ fprintf(stderr,"   (ran %llu cyc)\n",(unsigned long long)ran); onStop(); }
         else { fprintf(stderr,"   ran %llu cyc, no breakpoint (PC=%04X)\n",
                      (unsigned long long)ran,m.cpuPC()); stateLine(); }
+    };
+    // #1 screen-conditioned run: run until the text VRAM contains `pat` (literal or
+    // /regex/), a breakpoint hits, or the cycle cap is reached. Returns cycles run;
+    // sets `matched`/`hit` so the caller can report which happened. Makes menu
+    // navigation deterministic instead of guessing `g <cycles>`.
+    auto goUntilScreen = [&](const std::string& pat, uint64_t cap, bool& matched)->uint64_t{
+        hit=false; matched=false; m.clearStop(); tw_n=0;
+        uint64_t start=m.cpuCycles();
+        if (cap==0) cap=400000000ULL;
+        if (screenContains(pat)){ matched=true; return 0; }
+        while (!hit){
+            if (m.cpuCycles()-start>=cap) break;
+            int n=m.run(50000); if(n==0) break;
+            if (screenContains(pat)){ matched=true; break; }
+        }
+        return m.cpuCycles()-start;
     };
     // Step OVER one ZVE1 instruction (silent — caller prints the result).
     // For CALL and repeating block ops (LDIR/INIR…) "over" means: don't descend —
@@ -832,18 +885,58 @@ int main(int argc, char** argv){
         if (d.is_call || d.is_repeat){ gu_pc=(int)(uint16_t)(m.cpuPC()+d.len); goSilent(0); }
         else { step_rem=1; m.clearStop(); while(step_rem>0){int n=m.run(20000); if(n==0||hit)break;} }
     };
+    // Decode the key token starting at s[i], advancing i past it (the caller's for-loop
+    // does the final ++i). Escapes: `\r`/`\n`→Enter, `\t`→Tab, `\e`→ESC, `\s`→Space
+    // (#3: sending a bare space is otherwise awkward), `\xNN`→raw hex code.
+    auto decodeKey = [&](const std::string& s, size_t& i)->uint32_t{
+        char c=s[i];
+        if (c=='\\' && i+1<s.size()){ char e=s[++i];
+            if (e=='x' && i+2<s.size()){
+                auto hx=[&](char h)->int{ if(h>='0'&&h<='9')return h-'0'; h=(char)tolower(h);
+                    return (h>='a'&&h<='f')?10+h-'a':-1; };
+                int hi=hx(s[i+1]), lo=hx(s[i+2]);
+                if(hi>=0&&lo>=0){ i+=2; return (uint32_t)(hi*16+lo); } }
+            switch(e){ case 'r': case 'n': return 0x01000004; case 't': return 0x09;
+                       case 'e': return 0x1B; case 's': return 0x20; default: return (uint8_t)e; } }
+        return (uint8_t)c;
+    };
+    // Extract one argument from `s` starting at index `i`: a "quoted"/'quoted'
+    // string (kept verbatim, spaces allowed) or a bare whitespace-delimited token.
+    // Returns the index just past the argument. Used by gscreen/bscreen/keyuntil,
+    // whose screen-text args may contain spaces (the plain tokenizer would split).
+    auto extractArg = [](const std::string& s, size_t i, std::string& out)->size_t{
+        while(i<s.size() && isspace((unsigned char)s[i])) ++i;
+        out.clear();
+        if(i<s.size() && (s[i]=='"'||s[i]=='\'')){ char q=s[i++];
+            while(i<s.size() && s[i]!=q) out+=s[i++]; if(i<s.size()) ++i; }
+        else while(i<s.size() && !isspace((unsigned char)s[i])) out+=s[i++];
+        return i;
+    };
     // Inject keystrokes while the machine keeps running. Each char is pressed, run a
     // little (so the BIOS keyboard poll picks it up), released, run a little more.
-    // `\r`/`\n`→Enter, `\t`→Tab, `\e`→ESC; stops early if a breakpoint hits.
+    // Stops early if a breakpoint hits.
     auto keys = [&](const std::string& t){
         for (size_t i=0;i<t.size();++i){
-            uint32_t code; char c=t[i];
-            if (c=='\\' && i+1<t.size()){ char e=t[++i];
-                code = (e=='r'||e=='n')?0x01000004 : e=='t'?0x09 : e=='e'?0x1B : (uint8_t)e; }
-            else code=(uint8_t)c;
+            uint32_t code=decodeKey(t,i);
             m.keyPress(code,false,false); go(600000); if(hit) return;
             m.keyRelease(code);          go(150000); if(hit) return;
         }
+    };
+    // #3 keyuntil: press ONE key repeatedly until the screen shows `pat` (robust
+    // against direct-poll keyboard loss — HARDY polls the SIO directly, so a
+    // single fixed-timing key can be missed if the program is not polling right
+    // then). Returns true if `pat` appeared, false on cap/breakpoint.
+    auto keyUntil = [&](const std::string& keyspec, const std::string& pat, uint64_t cap)->bool{
+        size_t i=0; uint32_t code=decodeKey(keyspec,i);
+        uint64_t start=m.cpuCycles(); if(cap==0) cap=200000000ULL; bool matched=false;
+        while (m.cpuCycles()-start < cap){
+            if (screenContains(pat)) return true;
+            m.keyPress(code,false,false);
+            goUntilScreen(pat,700000,matched); if(hit) return false; if(matched){ m.keyRelease(code); return true; }
+            m.keyRelease(code);
+            goUntilScreen(pat,200000,matched); if(hit) return false; if(matched) return true;
+        }
+        return screenContains(pat);
     };
     // set a register (ZVE1 default, cpu=2 → ZVE2)
     auto setReg = [&](int cpu, std::string name, long v)->bool{
@@ -892,10 +985,17 @@ int main(int argc, char** argv){
         fprintf(stderr,"  #0 %04X%s\n", pc, annot(pc).c_str());
         const auto& f = callstack.frames();
         int frame=1;
-        for (auto it=f.rbegin(); it!=f.rend() && frame<=depth; ++it,++frame){
-            // The caller's PC is the CALL site; show it (and its return address).
-            fprintf(stderr,"  #%d %04X (call → %04X, ret %04X)%s\n",
-                    frame, it->site, it->target, it->ret, annot(it->site).c_str());
+        // #5 bt-fold: collapse runs of identical consecutive frames (e.g. an
+        // endless RST 38H fetch-crash floods `bt` with 0038-frames and buries the
+        // real callers). `… ×N` keeps the relevant frame visible.
+        for (auto it=f.rbegin(); it!=f.rend() && frame<=depth; ){
+            uint16_t site=it->site, tgt=it->target, ret=it->ret; int reps=0;
+            auto j=it; while (j!=f.rend() && j->site==site && j->target==tgt && j->ret==ret){ ++reps; ++j; }
+            if (reps>1) fprintf(stderr,"  #%d %04X (call → %04X, ret %04X)%s   ↻ ×%d\n",
+                    frame, site, tgt, ret, annot(site).c_str(), reps);
+            else        fprintf(stderr,"  #%d %04X (call → %04X, ret %04X)%s\n",
+                    frame, site, tgt, ret, annot(site).c_str());
+            it=j; ++frame;
         }
         if (f.empty())
             fprintf(stderr,"  (call-stack history empty — try 'bt scan', or step/run to build it)\n");
@@ -1060,8 +1160,8 @@ int main(int argc, char** argv){
               "  INSPECT r [2]     registers (ZVE1, +ZVE2) ; rj / rj2 registers as JSON (ZVE1/ZVE2)\n"
               "          where/w [--json]   BOTH CPUs + /BUSRQ + K5122 head/xfer at a glance\n"
               "          hist <cyc> [lo hi] PC hotspots of both CPUs over a cycle window ; bt [N] backtrace\n"
-              "          d <A> [N] hexdump ; u [A] [N] disasm ; e <A> <b..> poke\n"
-              "          x/<N><fmt><sz> <A>  examine (fmt x/d/u/c/t/o/a/i/s, sz b/w); x continues\n"
+              "          d/dump <A> [N] hexdump ; u [A] [N] disasm ; e <A> <b..> poke\n"
+              "          x/<N><fmt><sz> <A> | x <A> [N]  examine (fmt x/d/u/c/t/o/a/i/s, sz b/w); x continues\n"
               "          list/l [A] [N]  .prn source lines around A (labels load as symbols)\n"
               "          set [2] <reg> <v>   edit register ; vars [-f <f>|add <n> <A> [w]|clear]  RAM dashboard\n"
               "          dev [ctc|pio|sio|sio2]   chip state (default K5122); CTC/PIO/SIO + IUS/IEI\n"
@@ -1072,7 +1172,11 @@ int main(int argc, char** argv){
               "  MISC    mark [A]  zero relative cycle counter (now / armed at A)\n"
               "          sym <f> | sym add <name> <A> | sym list\n"
               "          lst <f.prn>[@off] | lst <f.prn> <off> | lst list   MACRO-80 listing → annotate\n"
-              "          keys <text> (\\r \\t \\e) ; screen ; reset ; q\n"
+              "          keys <text> (\\r \\t \\e \\s \\xNN) ; screen [find \"txt\"] ; reset ; q\n"
+              "          gscreen \"txt\"|/re/ [maxcyc]   run until screen shows txt (deterministic menus)\n"
+              "          bscreen \"txt\"|/re/ | off      arm: any g/gu/n stops on screen match\n"
+              "          keyuntil \"<key>\" \"txt\" [maxcyc]  press key until screen shows txt (poll-robust)\n"
+              "          dialog <file>   drive a menu: per line  \"screen-txt\" \"keys\" [maxcyc]\n"
               "          alias <name> <expansion..> | unalias <name> | alias ; source <file>\n");
         }
         // ══ RUN: continue / step (each snapshots first via pushHistory for `rs`) ══
@@ -1251,7 +1355,7 @@ int main(int argc, char** argv){
             if (t.size()>1 && t[1]=="scan"){ bool prev=bt_use_history; bt_use_history=false;
                 backtrace(t.size()>2?(int)parseNum(t[2]):8); bt_use_history=prev; }
             else backtrace(t.size()>1?(int)parseNum(t[1]):8); }
-        else if (cmd=="d" && t.size()>1) dump((uint16_t)parseNum(t[1]), t.size()>2?(int)parseNum(t[2]):64);
+        else if ((cmd=="d"||cmd=="dump") && t.size()>1) dump((uint16_t)parseNum(t[1]), t.size()>2?(int)parseNum(t[2]):64);
         else if (cmd=="e" && t.size()>2){ uint16_t a=(uint16_t)parseNum(t[1]);
             // poke values default to HEX (matches d/u output); strtol base 16 also accepts 0x..
             for(size_t i=2;i<t.size();++i)
@@ -1270,6 +1374,9 @@ int main(int argc, char** argv){
             // address may be a register / (rr) / [mem] / symbol / number (readOperand superset)
             if(have){ if(snap1.valid){ bool ok; a=(uint16_t)readOperand(snap1,t[1],ok); }
                       else a=(uint16_t)parseNum(t[1]); }
+            // #4: `x ADDR N` (no /count/ spec) — take N (decimal) as the count, so a
+            // plain multi-byte dump works without the /N syntax.
+            if (spec.empty() && t.size()>2) spec = t[2];
             examine(spec, have, a); }
         else if (cmd=="list" || cmd=="l"){
             // list [A|symbol] [N]  — .prn source around A (default: continue, else PC)
@@ -1355,7 +1462,60 @@ int main(int argc, char** argv){
             else fprintf(stderr,"  cannot load state %s (missing/invalid)\n",t[1].c_str()); }
         // ══ MISC: machine I/O — keystrokes, screen, named RAM vars, chip state, reset ══
         else if (cmd=="keys" && t.size()>1){ pushHistory(); std::string s=line.substr(line.find("keys")+5); keys(s); }
-        else if (cmd=="screen") screen();
+        else if (cmd=="screen"){
+            if (t.size()>=3 && t[1]=="find"){   // #5 screen find "<text>"|/regex/
+                std::string pat; extractArg(line, line.find("find")+4, pat);
+                int r=-1,c=-1;
+                if(screenFind(pat,&r,&c)) fprintf(stderr,"  found at row %d col %d\n",r,c);
+                else fprintf(stderr,"  not found\n"); }
+            else screen(); }
+        // #1 screen-conditioned run / breakpoint (deterministic menu navigation)
+        else if (cmd=="gscreen"){
+            std::string pat; size_t p=extractArg(line, line.find("gscreen")+7, pat);
+            if(pat.empty()){ fprintf(stderr,"  gscreen \"<text>\"|/regex/ [maxcyc]\n"); }
+            else { uint64_t cap=0; { std::istringstream r(line.substr(p)); std::string cw; if(r>>cw) cap=(uint64_t)parseNum(cw); }
+                pushHistory(); bool matched=false; uint64_t ran=goUntilScreen(pat,cap,matched);
+                if(hit){ fprintf(stderr,"   (ran %llu cyc — breakpoint before screen matched)\n",(unsigned long long)ran); onStop(); }
+                else if(matched){ fprintf(stderr,"   screen matched after %llu cyc\n",(unsigned long long)ran); screen(); }
+                else { fprintf(stderr,"   ran %llu cyc, screen NOT matched (cap)\n",(unsigned long long)ran); screen(); } } }
+        else if (cmd=="bscreen"){
+            if (t.size()>=2 && t[1]=="off"){ screen_bp.clear(); fprintf(stderr,"  screen breakpoint cleared\n"); }
+            else { std::string pat; extractArg(line, line.find("bscreen")+7, pat);
+                if(pat.empty()) fprintf(stderr,"  bscreen \"<text>\"|/regex/ | bscreen off   (any g/gu/n then stops on match)\n");
+                else { screen_bp=pat; fprintf(stderr,"  screen bp armed: %s\n",pat.c_str()); } } }
+        // #3 keyuntil: press a key repeatedly until the screen shows <text> (robust
+        // against direct-poll key loss)
+        else if (cmd=="keyuntil"){
+            std::string keyspec,pat; size_t p=extractArg(line, line.find("keyuntil")+8, keyspec);
+            p=extractArg(line,p,pat);
+            if(keyspec.empty()||pat.empty()){ fprintf(stderr,"  keyuntil \"<key>\" \"<screen-text>\" [maxcyc]\n"); }
+            else { uint64_t cap=0; { std::istringstream r(line.substr(p)); std::string cw; if(r>>cw) cap=(uint64_t)parseNum(cw); }
+                pushHistory(); bool ok=keyUntil(keyspec,pat,cap);
+                if(hit){ onStop(); }
+                else { fprintf(stderr,"   key '%s' → screen %s\n",keyspec.c_str(),ok?"matched":"NOT matched (cap)"); screen(); } } }
+        // dialog <file>: drive a whole menu/wizard non-interactively. Each line is
+        //   "<screen-pattern>" "<keys>" [maxcyc]
+        // → wait until the text VRAM shows <screen-pattern> (empty = don't wait),
+        // then inject <keys> (same escapes as `keys`). Exactly the "wait for the
+        // menu, then answer" loop that INIT.COM / HARDY navigation needs.
+        else if (cmd=="dialog" && t.size()>1){
+            std::ifstream f(t[1]);
+            if(!f){ fprintf(stderr,"  cannot open %s\n",t[1].c_str()); }
+            else { std::string l; int step=0; pushHistory();
+                while(std::getline(f,l)){
+                    size_t i=0; while(i<l.size()&&isspace((unsigned char)l[i]))++i;
+                    if(i>=l.size()||l[i]=='#') continue;         // blank / comment
+                    std::string pat,ks; size_t p=extractArg(l,i,pat); p=extractArg(l,p,ks);
+                    uint64_t cap=0; { std::istringstream r(l.substr(p)); std::string cw; if(r>>cw) cap=(uint64_t)parseNum(cw); }
+                    if(!pat.empty()){ bool matched=false; goUntilScreen(pat,cap,matched);
+                        if(hit){ onStop(); break; }
+                        if(!matched){ fprintf(stderr,"  dialog step %d: screen '%s' NOT reached (cap) — abort\n",step,pat.c_str()); break; } }
+                    fprintf(stderr,"  dialog step %d: '%s' ✓%s%s\n",step,pat.c_str(),
+                            ks.empty()?"":" → keys ",ks.c_str());
+                    if(!ks.empty()){ keys(ks); if(hit){ onStop(); break; } }
+                    ++step;
+                }
+                fprintf(stderr,"  dialog: %d step(s) done\n",step); screen(); } }
         else if (cmd=="vars"){ auto wd=[&](uint16_t a){return (uint16_t)(m.memReadDebug(a)|(m.memReadDebug(a+1)<<8));};
             if (t.size()>=3 && (t[1]=="-f"||t[1]=="load")){   // §16 vars -f <file>: name addr [w]
                 std::ifstream f(t[2]);
