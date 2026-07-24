@@ -135,9 +135,17 @@ _lib.k1520_key_release.restype = None
 _lib.k1520_mount_disk.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_bool]
 _lib.k1520_mount_disk.restype = ctypes.c_bool
 
+# k1520_create_disk(K1520Handle, drive: int, path: const char*, format: const char*, wp: bool) -> bool
+_lib.k1520_create_disk.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_bool]
+_lib.k1520_create_disk.restype = ctypes.c_bool
+
 # k1520_unmount_disk(K1520Handle, drive: int) -> bool
 _lib.k1520_unmount_disk.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_unmount_disk.restype = ctypes.c_bool
+
+# k1520_last_error(K1520Handle) -> const char*
+_lib.k1520_last_error.argtypes = [K1520Handle]
+_lib.k1520_last_error.restype = ctypes.c_char_p
 
 # k1520_is_disk_active(K1520Handle, drive: int) -> bool
 _lib.k1520_disk_active.argtypes = [K1520Handle, ctypes.c_int]
@@ -311,6 +319,36 @@ class K1520Emulator:
         format_bytes = format_name.encode('utf-8')
         return _lib.k1520_mount_disk(self._handle, ctypes.c_int(drive), path_bytes, format_bytes, ctypes.c_bool(write_protect))
     
+    def create_disk(self, drive: int, path: str, format_name: str, write_protect: bool = False) -> bool:
+        """
+        Create a NEW, validly-formatted blank disk image and mount it.
+
+        `.hfe` → formatted HFE (real IDAM/DATA/CRC); otherwise `.img` in the
+        given format geometry. The disk is mounted into the drive on success.
+
+        Args:
+            drive: Drive number (0-3)
+            path: Path of the new disk image file (overwrites if it exists)
+            format_name: Disk format name (cpa800, cpa780, cpa640, cpa624);
+                         empty string picks the drive-type default.
+            write_protect: Whether disk is write-protected
+
+        Returns:
+            True if successful
+        """
+        format_name = (format_name or "").lower()
+        if format_name and format_name not in DISK_FORMATS:
+            raise ValueError(f"Unsupported format '{format_name}', expected one of: {', '.join(DISK_FORMATS)}")
+
+        path_bytes = path.encode('utf-8')
+        format_bytes = format_name.encode('utf-8')
+        return _lib.k1520_create_disk(self._handle, ctypes.c_int(drive), path_bytes, format_bytes, ctypes.c_bool(write_protect))
+
+    def last_error(self) -> str:
+        """Return the last error message reported by the core (empty if none)."""
+        err = _lib.k1520_last_error(self._handle)
+        return err.decode('utf-8', 'replace') if err else ""
+
     def unmount_disk(self, drive: int) -> bool:
         """
         Unmount a disk.

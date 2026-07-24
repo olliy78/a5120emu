@@ -2,27 +2,47 @@
 K1520 Emulator - Settings Widget
 ================================
 
-Dockable settings panel with tabbed categories.  The first tab, "CRT",
-exposes every :class:`~app.ui.screen_widget.CRTParams` field as a live control
-(slider + spin box, or colour picker), so the picture-tube look can be dialled
-in interactively.  Every change is applied to the live ``ScreenWidget.params``
-and triggers an immediate repaint.
+Dockable settings panel with tabbed categories:
+
+* **Allgemein** — general emulator settings (emulation speed dropdown).
+* **CRT** — every :class:`~app.ui.screen_widget.CRTParams` field as a live
+  control (slider + spin box, or colour picker), so the picture-tube look can be
+  dialled in interactively.
+
+Every change is applied to the live emulator/``ScreenWidget.params`` and emits a
+signal (:attr:`crtChanged` / :attr:`speedChanged`) so the main window can persist
+the configuration automatically.
 """
 
 from typing import Callable, List
 
 from PySide6.QtWidgets import (
     QWidget, QTabWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QScrollArea,
-    QSlider, QDoubleSpinBox, QPushButton, QLabel, QColorDialog,
+    QSlider, QDoubleSpinBox, QComboBox, QPushButton, QLabel, QColorDialog,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 
 from app.ui.screen_widget import CRTParams
 
 
 class SettingsWidget(QWidget):
-    """Tabbed settings panel; currently the CRT (picture-tube) parameters."""
+    """Tabbed settings panel: general (speed) + CRT (picture-tube) parameters."""
+
+    # Emitted after any CRT parameter change (colour/slider/reset).
+    crtChanged = Signal()
+    # Emitted when the speed dropdown selection changes; carries the factor
+    # (1.0 = real time, >1.0 = fast-forward, 0.0 = unlimited).
+    speedChanged = Signal(float)
+
+    # (label, factor) — factor 0.0 means "unlimited / as fast as possible".
+    SPEED_OPTIONS = [
+        ("1× (Echtzeit)", 1.0),
+        ("2×", 2.0),
+        ("5×", 5.0),
+        ("10×", 10.0),
+        ("Unbegrenzt", 0.0),
+    ]
 
     def __init__(self, screen_widget, parent=None):
         super().__init__(parent)
@@ -30,19 +50,23 @@ class SettingsWidget(QWidget):
 
         # Refreshers re-read control values from params (used by "Reset").
         self._refreshers: List[Callable[[], None]] = []
+        # Guards the speed combo against emitting while set programmatically.
+        self._speed_guard = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
 
         self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_general_tab(), "Allgemein")
         self.tabs.addTab(self._build_crt_tab(), "CRT")
         layout.addWidget(self.tabs)
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
     def _apply(self):
-        """Push params to the screen and force an immediate repaint."""
+        """Push params to the screen, force a repaint, and notify listeners."""
         self.screen.update()
+        self.crtChanged.emit()
 
     def _add_float(self, form: QFormLayout, label: str, minv: float, maxv: float,
                    step: float, getter: Callable[[], float],
@@ -138,6 +162,41 @@ class SettingsWidget(QWidget):
         rl.addWidget(hexlbl)
         rl.addStretch(1)
         form.addRow(label, row)
+
+    # ── Allgemein tab ────────────────────────────────────────────────────────
+
+    def _build_general_tab(self) -> QWidget:
+        inner = QWidget()
+        form = QFormLayout(inner)
+
+        self.speed_combo = QComboBox()
+        for label, factor in self.SPEED_OPTIONS:
+            self.speed_combo.addItem(label, float(factor))
+        self.speed_combo.currentIndexChanged.connect(self._on_speed_combo)
+        form.addRow("Geschwindigkeit:", self.speed_combo)
+
+        return inner
+
+    def _on_speed_combo(self, _idx: int):
+        if self._speed_guard:
+            return
+        self.speedChanged.emit(self.speed_value())
+
+    def speed_value(self) -> float:
+        """Current speed factor from the dropdown (0.0 = unlimited)."""
+        data = self.speed_combo.currentData()
+        return float(data) if data is not None else 1.0
+
+    def set_speed_value(self, factor: float):
+        """Select the dropdown entry matching *factor* (no signal emitted)."""
+        self._speed_guard = True
+        idx = 0
+        for i in range(self.speed_combo.count()):
+            if abs(float(self.speed_combo.itemData(i)) - float(factor)) < 1e-9:
+                idx = i
+                break
+        self.speed_combo.setCurrentIndex(idx)
+        self._speed_guard = False
 
     # ── CRT tab ──────────────────────────────────────────────────────────────
 

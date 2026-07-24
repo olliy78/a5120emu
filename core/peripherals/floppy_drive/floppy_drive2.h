@@ -45,6 +45,7 @@ public:
     bool isWriteProtect() const { return write_protect_; }
     void setWriteProtect(bool wp) { write_protect_ = wp; }
     const char* lastError() const { return last_error_.c_str(); }
+    void setLastError(std::string msg) { last_error_ = std::move(msg); }
 
     bool    step(bool inward);            ///< begrenzt durch profile_.num_cyls
     bool    seek(uint8_t cyl);

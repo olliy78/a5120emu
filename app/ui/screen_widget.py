@@ -91,8 +91,8 @@ class CRTParams:
     phosphor_off: Tuple[float, float, float] = hex_to_rgb("#050f05")  # dark pixel
 
     # Overall image (adjustable).
-    brightness: float = 1.4
-    contrast: float = 1.6
+    brightness: float = 2.5
+    contrast: float = 2.0
 
     # Scanlines: strength, count = number of horizontal lines (image rows).
     # Fixed (no GUI control).
@@ -219,9 +219,15 @@ vec2 curve(vec2 uv) {
 }
 
 // Sample the (binary) screen texture; 0 outside the raster rectangle.
+// The fetch is kept in *uniform* control flow (clamp + multiply instead of an
+// early return) so the screen-space derivatives — and thus automatic mipmap LOD
+// selection — stay well-defined when the widget is minified.  Without mipmaps a
+// downscaled tube drops thin glyph strokes (parts of letters "swallowed"); the
+// trilinear mip chain averages them down instead.
 float sampleOn(vec2 uv) {
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
-    return texture2D(uScreen, uv).r;   // 0.0 or 1.0
+    float inside = (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
+                   ? 0.0 : 1.0;
+    return texture2D(uScreen, clamp(uv, 0.0, 1.0)).r * inside;
 }
 
 void main() {
@@ -241,6 +247,22 @@ void main() {
     // Sharp pixel core plus a normalised gaussian halo (soft phosphor aura).
     // sigma = uGlowRadius in texels; ±3 sigma window.  A monochrome tube has no
     // shadow mask, so this halo — not a mask — is what softens the pixels.
+    // How hard the brightness knob is pushed past the "normal" full-scale range.
+    // 0 for brightness <= 2.0 (the well-behaved region), growing to 2.0 at the
+    // slider max (4.0).  Above 2.0 the tube is "overdriven": whiter/blooming
+    // pixels and eventually a faintly glowing raster (see below).  Everything
+    // keyed off this is exactly 0 at 2.0, so the <=2.0 look is bit-identical.
+    float drive = max(uBrightness - 2.0, 0.0);
+    // 0 at brightness 2.0, ramps to 1.0 at the slider max (4.0).  Drives the
+    // fade-out of the darkening filters (scanlines / vignette) so cranking the
+    // brightness removes the "grey veil" instead of adding to it.
+    float od = clamp(drive * 0.5, 0.0, 1.0);
+    // Fade for the darkening filters: 0 at brightness 2.0, fully 1.0 at 3.0, so
+    // scanlines and the vignette are completely gone from 3.0 upward.
+    float veilFade = clamp(drive, 0.0, 1.0);
+    // Glow overdrive only kicks in above brightness 3.0.
+    float glowDrive = max(uBrightness - 3.0, 0.0);
+
     float base = sampleOn(uv);
     float lit = base;
     if (uGlow > 0.0) {
@@ -255,24 +277,52 @@ void main() {
                 wsum += w;
             }
         }
-        lit = base + (acc / wsum) * uGlow;   // sharp core + soft halo
+        // Overdrive slightly widens the phosphor aura (subtle bloom / over-steer),
+        // but only above brightness 3.0.
+        lit = base + (acc / wsum) * uGlow * (1.0 + glowDrive * 0.18);
     }
 
-    // Brightness / contrast operate on the *intensity* (not RGB), so the output
-    // always stays on the phosphor off<->on line and can never turn white/grey.
+    // Brightness / contrast operate on the *intensity* (not RGB).  Up to full
+    // scale the output stays on the phosphor off<->on line; the overdrive terms
+    // below take over once the beam is driven past that point.
     // Contrast pivots around the "on" level: contrast=0 -> whole screen "on".
     lit = (lit - 1.0) * uContrast + 1.0;
-    lit *= uBrightness;
-    lit = clamp(lit, 0.0, 1.0);
+    float inten = lit * uBrightness;         // may exceed 1.0 (overdrive headroom)
+    float litC = clamp(inten, 0.0, 1.0);
 
-    vec3 col = mix(uPhosphorOff, uPhosphorOn, lit);
+    vec3 col = mix(uPhosphorOff, uPhosphorOn, litC);
+
+    // Overdrive #1 — white core: a harder-driven beam reads whiter.  Weighted by
+    // litC so only lit pixels/halos gain white, never the dark background.
+    float white = od * litC;
+    col = mix(col, vec3(1.0), white * 0.5);
+
+    // Overdrive #2 — ambient raster glow: past ~3.5 the whole tube (incl. unlit
+    // cells) starts to glow *faintly* toward the phosphor colour, the way a real
+    // CRT's brightness knob eventually makes the blanked raster visible.  Kept
+    // low so the text/background contrast (readability) survives.
+    float ambient = clamp((uBrightness - 3.5) / 0.5, 0.0, 1.0) * 0.18;
+    col = max(col, uPhosphorOn * ambient);
 
     // Outside the raster (but inside the tube) is unlit -> black.
     col *= inR;
 
     // Scanlines: one bright hump per image row (locked to the raster rows).
-    float f = fract(uv.y * uScanlineCount);
-    float scan = 1.0 - uScanline * (1.0 - sin(f * PI));
+    // Faded out with overdrive (veilFade) so high brightness lifts the "grey
+    // veil" instead of banding the image darker.
+    //
+    // Resolution-aware attenuation: uScanlineCount humps are fixed to the raster,
+    // so when the widget is scaled down a single output pixel can span a whole
+    // scanline period (or more).  Below the Nyquist limit the pattern can't be
+    // drawn faithfully and instead beats against the host display's pixel rows
+    // (moiré / bright-dark banding) while eating the glyphs.  fwidth(sp) is the
+    // number of scanline periods covered by one output pixel; once that reaches
+    // ~0.5 (i.e. < 2 output px per line) we fade the scanlines out entirely.
+    float sp = uv.y * uScanlineCount;
+    float scanVis = 1.0 - smoothstep(0.5, 1.0, fwidth(sp));
+    float scanStr = uScanline * (1.0 - veilFade) * scanVis;
+    float f = fract(sp);
+    float scan = 1.0 - scanStr * (1.0 - sin(f * PI));
     col *= scan;
 
     // Aperture-grille style vertical mask (subtle for a monochrome tube).
@@ -280,9 +330,12 @@ void main() {
     float mask = mix(1.0, 0.75 + 0.25 * sin(mphase * 2.0 * PI), uMask);
     col *= mask;
 
-    // Vignette (darken toward the edges of the tube face).
+    // Vignette (darken toward the edges of the tube face).  Faded out with
+    // overdrive (gone from 3.0 up); and below brightness 1.0 it *increases*
+    // continuously (up to 3x at brightness 0), dimming the tube from the edges in.
     vec2 d = tube - 0.5;
-    float vig = 1.0 - uVignette * dot(d, d) * 4.0;
+    float vigBoost = 1.0 + clamp(1.0 - uBrightness, 0.0, 1.0) * 2.0;
+    float vig = 1.0 - (uVignette * vigBoost * (1.0 - veilFade)) * dot(d, d) * 4.0;
     col *= clamp(vig, 0.0, 1.0);
 
     // Rounded corners (mask out the tube corners).
@@ -537,7 +590,11 @@ class ScreenWidget(QOpenGLWidget):
         tex = QOpenGLTexture(QOpenGLTexture.Target2D)
         tex.setFormat(QOpenGLTexture.R8_UNorm)
         tex.setSize(FB_WIDTH, FB_HEIGHT)
-        tex.setMinificationFilter(QOpenGLTexture.Linear)
+        # Full mip chain so minification (small/scaled-down window) samples an
+        # averaged level instead of dropping thin glyph strokes.  Trilinear
+        # (LinearMipMapLinear) min filter, plain Linear when magnifying.
+        tex.setMipLevels(tex.maximumMipLevels())
+        tex.setMinificationFilter(QOpenGLTexture.LinearMipMapLinear)
         tex.setMagnificationFilter(QOpenGLTexture.Linear)
         tex.setWrapMode(QOpenGLTexture.ClampToEdge)
         tex.allocateStorage(QOpenGLTexture.Red, QOpenGLTexture.UInt8)
@@ -548,19 +605,22 @@ class ScreenWidget(QOpenGLWidget):
         if self._fb_bytes is None or self._texture is None:
             return
         try:
-            # Fast path: sub-image the raw single-channel bytes in place.
+            # Fast path: sub-image the raw single-channel bytes in place, then
+            # rebuild the mip chain so the downscaled view stays anti-aliased.
             self._texture.setData(
                 QOpenGLTexture.Red, QOpenGLTexture.UInt8, self._fb_bytes
             )
+            self._texture.generateMipMaps()
         except (TypeError, RuntimeError):
             # Fallback: rebuild the texture from a grayscale QImage.  QImage is
             # top-row-first while QOpenGLTexture uploads bottom-first, so mirror.
+            # The QImage ctor generates a full mip chain by default.
             img = QImage(self._fb_bytes, FB_WIDTH, FB_HEIGHT, FB_WIDTH,
                          QImage.Format_Grayscale8).mirrored(False, True)
             if self._texture is not None:
                 self._texture.destroy()
             tex = QOpenGLTexture(img)
-            tex.setMinificationFilter(QOpenGLTexture.Linear)
+            tex.setMinificationFilter(QOpenGLTexture.LinearMipMapLinear)
             tex.setMagnificationFilter(QOpenGLTexture.Linear)
             tex.setWrapMode(QOpenGLTexture.ClampToEdge)
             self._texture = tex

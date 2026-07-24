@@ -247,7 +247,12 @@ bool K5122::mountDisk(int drive, const std::string& path,
                         const DiskFormat& fmt, bool write_protect) {
     if (drive < 0 || drive > 3) return false;
     auto img = DiskImage::open(path, fmt, write_protect);
-    if (!img) return false;
+    if (!img) {
+        // Öffnen/Erkennen fehlgeschlagen (unbekanntes/leeres/kaputtes Image) — für
+        // eine aussagekräftige GUI-Meldung im Laufwerks-Fehler hinterlegen.
+        drives_[drive].setLastError("Image konnte nicht geoeffnet werden: " + path);
+        return false;
+    }
     return mountDisk(drive, std::move(img), write_protect);
 }
 
