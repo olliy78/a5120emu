@@ -195,8 +195,15 @@ bool Z80CTC::clockTick(int ticks) {
     }
 
     if (event_in_window) {                 // exakte Pro-Takt-Schleife (selten)
+        // Nur eine ECHTE Interrupt-Änderung (ein INT_EN-Kanal setzt int_pending —
+        // inkl. interner Kaskade ch2→ch3) muss die Bus-Interrupt-Chain dirty
+        // markieren.  Reine Takt-/Kaskadenkanäle OHNE INT_EN (z.B. der Baud-Takt-
+        // teiler) feuern zwar ständig ihr ZC/TO, ändern aber keinen Interrupt —
+        // sie sollen den teuren Chain-Walk NICHT auslösen.  anyPending()-Delta
+        // erfasst genau das (billig: vier bool-Prüfungen).
+        const bool pending_before = anyPending();
         for (int t = 0; t < ticks; ++t) clockTick();
-        return true;                       // Flanke möglich → Chain dirty markieren
+        return anyPending() != pending_before;
     }
 
     // Schnellpfad: keine Flanke im Fenster → Prescaler/Zähler rein arithmetisch
