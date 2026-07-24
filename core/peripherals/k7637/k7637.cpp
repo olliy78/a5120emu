@@ -140,11 +140,13 @@ void K7637::tick(int ms_elapsed) {
     processTxCommands();
 }
 
-void K7637::processTxCommands() {
-    if (!sio_) return;
+bool K7637::processTxCommands() {
+    if (!sio_) return false;
     Z80SIO::Channel& ch = pickChannel(*sio_, ch_idx_);
 
+    bool touched = false;
     while (ch.txAvailable()) {
+        touched = true;
         uint8_t byte = ch.txGet();
 
         // The real K7637 acknowledges every command byte it receives by
@@ -203,6 +205,7 @@ void K7637::processTxCommands() {
             }
         }
     }
+    return touched;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -268,15 +271,17 @@ void K7637::sendByte(uint8_t byte) {
     next_tx_cycle_ = release;
 }
 
-void K7637::service(uint64_t now_cycles) {
+bool K7637::service(uint64_t now_cycles) {
     cur_cycle_ = now_cycles;
+    bool touched = false;
     // Deliver every byte whose serial transmission has completed.
     while (!tx_queue_.empty() && tx_queue_.front().first <= now_cycles) {
         uint8_t b = tx_queue_.front().second;
         tx_queue_.pop_front();
-        if (sio_) pickChannel(*sio_, ch_idx_).rxByte(b);
+        if (sio_) { pickChannel(*sio_, ch_idx_).rxByte(b); touched = true; }
     }
     // Then drain host→keyboard command bytes (their type-code acks are queued
     // by processTxCommands() → sendByte() and likewise delivered with delay).
-    processTxCommands();
+    touched |= processTxCommands();
+    return touched;
 }

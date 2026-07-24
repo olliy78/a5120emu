@@ -37,6 +37,11 @@ cd "$PROJECT_DIR"
 
 # Build-Dir → LOG_LEVEL
 declare -A LOG_LEVEL=( [build]=3 [build_trace]=5 )
+# Build-Dir → CMAKE_BUILD_TYPE.  Ohne Typ baut GCC mit -O0 (keine Optimierung) →
+# der Z80-Interpreter läuft ~5-8x zu langsam.  build/ = Release (-O3, Normalbetrieb
+# + Tests), build_trace/ = RelWithDebInfo (-O2 -g, schnell UND mit Host-Symbolen
+# fürs Trace-Werkzeug).
+declare -A BUILD_TYPE=( [build]=Release [build_trace]=RelWithDebInfo )
 
 c_red() { printf '\033[31m%s\033[0m\n' "$*"; }
 c_grn() { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -45,8 +50,9 @@ c_ylw() { printf '\033[33m%s\033[0m\n' "$*"; }
 configure_if_needed() {
     local dir="$1"
     if [ ! -f "$dir/CMakeCache.txt" ]; then
-        c_ylw ">> konfiguriere $dir (LOG_LEVEL=${LOG_LEVEL[$dir]})"
-        cmake -B "$dir" -DLOG_LEVEL="${LOG_LEVEL[$dir]}" >/dev/null
+        c_ylw ">> konfiguriere $dir (LOG_LEVEL=${LOG_LEVEL[$dir]}, ${BUILD_TYPE[$dir]})"
+        cmake -B "$dir" -DLOG_LEVEL="${LOG_LEVEL[$dir]}" \
+              -DCMAKE_BUILD_TYPE="${BUILD_TYPE[$dir]}" >/dev/null
     fi
 }
 

@@ -174,6 +174,44 @@ void Z80CTC::clockTick() {
     }
 }
 
+bool Z80CTC::clockTick(int ticks) {
+    if (ticks <= 0) return false;
+
+    // Kann in diesem Fenster IRGENDEIN Kanal eine ZC/TO-Flanke erzeugen?
+    // (a) ein bereits gesetztes zcto_active → Flanke auf dem 1. Takt; oder
+    // (b) ein laufender Timer-Kanal erreicht innerhalb `ticks` T-States die 0.
+    // Nur dann ist die genaue Kaskaden-/Interrupt-Reihenfolge relevant.
+    bool event_in_window = false;
+    for (int i = 0; i < 4 && !event_in_window; i++) {
+        const Channel& c = ch_[i];
+        if (c.zcto_active) { event_in_window = true; break; }
+        if (!c.running || (c.control & CTRL_COUNTER)) continue;
+        const int prescale = (c.control & CTRL_PRESCALE256) ? 256 : 16;
+        // T-States bis zur nächsten 0: erst den Prescaler auffüllen, dann
+        // (counter-1) volle Prescaler-Perioden.
+        const long long to_zero =
+            (long long)(prescale - c.prescaleCnt) + (long long)(c.counter - 1) * prescale;
+        if (to_zero <= ticks) event_in_window = true;
+    }
+
+    if (event_in_window) {                 // exakte Pro-Takt-Schleife (selten)
+        for (int t = 0; t < ticks; ++t) clockTick();
+        return true;                       // Flanke möglich → Chain dirty markieren
+    }
+
+    // Schnellpfad: keine Flanke im Fenster → Prescaler/Zähler rein arithmetisch
+    // fortschreiben, ohne Callback (semantisch identisch zu `ticks` Einzeltakten).
+    for (int i = 0; i < 4; i++) {
+        Channel& c = ch_[i];
+        if (!c.running || (c.control & CTRL_COUNTER)) continue;
+        const int prescale = (c.control & CTRL_PRESCALE256) ? 256 : 16;
+        const long long total = (long long)c.prescaleCnt + ticks;
+        c.prescaleCnt = (int)(total % prescale);
+        c.counter    -= (int)(total / prescale);   // bleibt > 0 (keine Flanke)
+    }
+    return false;
+}
+
 /**
  * @brief Handle external clock/trigger pulse for a specific channel.
  *

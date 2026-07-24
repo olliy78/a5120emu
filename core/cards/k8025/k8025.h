@@ -236,7 +236,9 @@ public:
      *
      * @param ticks Number of system clock cycles to advance (default 1).
      */
-    void    clockTick(int ticks = 1);
+    /// @return true, wenn der Baud-CTC in diesem Fenster eine ZC/TO-Flanke
+    ///         erzeugte (→ Aufrufer markiert die Interrupt-Chain dirty).
+    bool    clockTick(int ticks = 1);
 
     // ─── Sub-chip accessors ─────────────────────────────────────────────────
 

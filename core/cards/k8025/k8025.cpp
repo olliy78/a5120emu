@@ -336,12 +336,12 @@ uint8_t K8025::printerTxGet()
  * Updates the internal daisy chain after the tick in case the CTC raised an
  * interrupt.
  */
-void K8025::clockTick(int ticks)
+bool K8025::clockTick(int ticks)
 {
     // Advance by the CPU T-states elapsed (see K2526::clockTick): the baud-rate
     // CTC divides the system clock, so it must tick once per clock cycle, not
     // once per instruction.
-    for (int i = 0; i < ticks; ++i)
-        ctc_a34_.clockTick();
+    const bool fired = ctc_a34_.clockTick(ticks);   // batched, semantik-identisch
     updateInternalChain();
+    return fired;
 }

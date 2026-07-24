@@ -453,6 +453,21 @@ public:
      */
     void updateInterruptChain();
 
+    /**
+     * @brief Markiert die Interrupt-Daisy-Chain als „neu zu berechnen".
+     *
+     * updateInterruptChain() lief bisher PRO INSTRUKTION den ganzen Chain-Walk
+     * ab (setIEI/hasInterrupt/getIEO über alle Geräte) — obwohl sich der
+     * Interruptzustand nur bei wenigen Ereignissen ändert.  Der Zustand kann
+     * sich ändern durch: I/O-Zugriff (Konfig/Status-Read löscht IRQ), CTC-ZC/TO,
+     * serielle Empfangs-IRQ (Tastatur/DFÜ), Floppy-Index-IRQ (K5122-PIO) sowie
+     * INT-Quittung/RETI/NMI.  Die Bus-internen Pfade (I/O, ack, RETI, NMI/INT)
+     * setzen das Flag selbst; die zeitgetriebenen Quellen (CTC, Tastatur,
+     * Floppy) meldet die Run-Loop über markIntDirty().  Solange das Flag nicht
+     * gesetzt ist, ist der gecachte Chain-Zustand gültig und der Walk entfällt.
+     */
+    void markIntDirty() { int_dirty_ = true; }
+
 
 private:
     /// Array of I/O devices indexed by port address
@@ -462,10 +477,32 @@ private:
     struct MemRegion { uint16_t base, size; MemDevice* dev; };
     std::vector<MemRegion> mem_regions_;
 
+    // ── Page-Dispatch-Tabelle (256-B-Seiten): O(1) statt Linearscan ──────────
+    // memRead/memWrite liefen bisher PRO BYTE linear über mem_regions_ (mit
+    // virtuellem isReadable()/isWritable() je Region) — der teuerste Posten im
+    // Speicherpfad.  isReadable()/isWritable() sind pro Gerät statisch (DIP-
+    // Konfiguration), der einzige Laufzeit-Wechsel der Regionenmenge ist das
+    // Ein-/Ausblenden des Lade-ROMs (register/unregisterMem).  Daher wird die
+    // Tabelle nur bei genau diesen (seltenen) Ereignissen neu aufgebaut.
+    // Gültig nur, wenn alle Regionen 256-B-ausgerichtet sind; sonst fällt der
+    // Zugriff auf den (immer korrekten) linearen Scan zurück.
+    static constexpr int kPageShift      = 8;             ///< 256-B-Seiten
+    static constexpr int kNumPages       = 1 << (16 - kPageShift);   // 256
+    static constexpr int kMaxWriteFanout = 4;             ///< max. Broadcast-Ziele/Seite
+    struct PageEntry {
+        MemDevice* read = nullptr;                        ///< letztes lesbares Gerät
+        MemDevice* write[kMaxWriteFanout] = {};           ///< schreibbare Broadcast-Ziele
+        uint8_t    write_count = 0;
+    };
+    std::array<PageEntry, kNumPages> page_table_{};
+    bool page_table_valid_ = false;
+    void rebuildPageTable();
+
     /// Interrupt priority chain (first = highest priority)
     std::vector<InterruptSlave*> int_chain_;
 
     // Signal flags
+    bool int_dirty_      = true;   ///< Interrupt-Chain muss neu berechnet werden (s. markIntDirty)
     bool int_asserted_   = false;  ///< /INT is currently asserted
     bool nmi_pending_    = false;  ///< /NMI edge was detected
     bool wait_asserted_  = false;  ///< /WAIT is asserted (stall access)

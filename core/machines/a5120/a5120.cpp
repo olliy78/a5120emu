@@ -305,7 +305,16 @@ int A5120Machine::run(int max_cycles) {
         k1520::logging::Logger::instance().update(
             total_cycles_, zre_.cpuPC(), zre_.zve2PC());
 
-        // Update interrupt chain
+        // Zeitgetriebene Floppy-Interrupt-Flanke (K5122-Index-IRQ) erkennen: sie
+        // entsteht ausserhalb von I/O innerhalb von afs_.update() und muss die
+        // Interrupt-Chain dirty markieren (sonst würde updateInterruptChain sie
+        // im Schnellpfad überspringen). Der Read ist billig (zwei PIO-Flags).
+        {
+            const bool fi = afs_.hasInterrupt();
+            if (fi != prev_floppy_int_) { bus_.markIntDirty(); prev_floppy_int_ = fi; }
+        }
+
+        // Update interrupt chain (Schnellpfad: no-op solange nicht dirty)
         bus_.updateInterruptChain();
 
         if (bus_.isWAIT()) {
@@ -317,6 +326,7 @@ int A5120Machine::run(int max_cycles) {
         if (bus_.isRESET()) {
             LOG_INFO("A5120", "RESET-Leitung gesetzt, ZVE1 wird zurückgesetzt");
             zre_.cpuReset();
+            bus_.markIntDirty();
         }
 
         // ── Os-gated „gehaltener Bus" für den SCPX-Laufzeit-Read (§9.4b) ──────────
@@ -486,8 +496,12 @@ int A5120Machine::run(int max_cycles) {
         // instruction actually took — the CTC prescaler divides the system
         // clock, so ticking once per instruction (avg ~6 T-states) ran the
         // real-time clock and baud generators ~6x too slow.
-        zre_.clockTick(used);
-        ass_.clockTick(used);
+        // clockTick meldet zurück, ob ein CTC in diesem Fenster eine ZC/TO-Flanke
+        // erzeugte (→ Interruptzustand kann sich geändert haben). Nur dann muss die
+        // Interrupt-Chain neu berechnet werden.
+        bool ctc_fired = zre_.clockTick(used);
+        ctc_fired      = ass_.clockTick(used) || ctc_fired;
+        if (ctc_fired) bus_.markIntDirty();
 
         // Service the keyboard: advance the 9600-baud serial-transmit timing
         // (release any keyboard→host bytes whose transmission has completed) and
@@ -497,7 +511,9 @@ int A5120Machine::run(int max_cycles) {
         // — otherwise the timer-ISR keyboard scan races the foreground LED
         // handshake for the ack and the loser reads an empty SIO (0xFF → CR),
         // which floods the keyboard buffer and drops real keystrokes at the CCP.
-        kbd_.service(total_cycles_);
+        // Tastatur-Service kann ein Empfangsbyte an den SIO zustellen (irq_rx) oder
+        // ein Kommando verarbeiten (irq_tx) — beides ändert den Interruptzustand.
+        if (kbd_.service(total_cycles_)) bus_.markIntDirty();
     }
 
     return max_cycles - remaining;
@@ -612,7 +628,8 @@ void A5120Machine::setDFUECallback(SerialCb cb) {
 }
 
 void A5120Machine::dfueSend(uint8_t byte) {
-    ass_.dfueRxByte(byte);
+    ass_.dfueRxByte(byte);       // externer serieller Empfang → SIO irq_rx möglich
+    bus_.markIntDirty();
 }
 
 void A5120Machine::setPrinterCallback(SerialCb cb) {
