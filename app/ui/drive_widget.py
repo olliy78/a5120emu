@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QTimer
 
 from app import drive_types as dt
+from app.ui.focus import release_focus
 
 
 class DriveWidget(QWidget):
@@ -139,6 +140,10 @@ class DriveWidget(QWidget):
                 QLabel("Kein Laufwerk bestückt.\nSiehe Einstellungen → Laufwerke."))
 
         self._main_layout.addStretch()
+
+        # Die frisch erzeugten Bedienelemente dürfen dem emulierten Rechner den
+        # Tastaturfokus nicht abnehmen (siehe app/ui/focus.py).
+        release_focus(self)
 
     def set_drive_types(self, drive_types, emulator=None):
         """Adopt a new drive-bay configuration (and optionally a new emulator).

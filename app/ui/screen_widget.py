@@ -433,6 +433,16 @@ class ScreenWidget(QOpenGLWidget):
 
     # ── Fullscreen (handled by the main window; see signals above) ────────────
 
+    def focusNextPrevChild(self, next_widget: bool) -> bool:
+        """Kein Fokuswechsel per Tabulator — TAB gehört dem emulierten Rechner.
+
+        Qt wertet Tab/Shift-Tab normalerweise VOR :meth:`keyPressEvent` als
+        Fokusweiterschaltung aus; die Taste käme dann nie beim K7637 an
+        (``qt_event_to_core_key`` bildet ``Key_Tab`` bewusst ab).  ``False``
+        heißt „nicht weitergeschaltet" — die Taste läuft normal weiter.
+        """
+        return False
+
     def keyPressEvent(self, event):
         key = event.key()
         # F11 toggelt Vollbild und wird NICHT an den Emulator weitergereicht.

@@ -19,6 +19,7 @@ from app.ui.screen_widget import ScreenWidget, StatusWidget
 from app.ui.settings_widget import SettingsWidget
 from app.ui.drive_widget import DriveWidget
 from app.ui.keyboard import KeyboardWidget
+from app.ui.focus import release_focus, ScreenFocusGuard
 from app.core_binding.k1520 import K1520Emulator
 from app import config_io
 from app import drive_types as dt
@@ -227,6 +228,14 @@ class MainWindow(QMainWindow):
         self.resizeDocks([self.screen_dock, self.drives_dock],
                          [900, self._drives_width], Qt.Horizontal)
         self._shrink_keyboard()
+
+        # ── Tastaturfokus gehört dem emulierten Rechner ──────────────────────
+        # Alle Bedienelemente auf NoFocus (ein Klick auf Power/Mount/… bedient
+        # sie, nimmt dem Bildschirm aber nicht die Tastatur weg) und ein
+        # Wächter, der den Fokus nach Klicks/Fensterwechsel zurückholt — sonst
+        # müsste man vor jeder Eingabe erst wieder in die Röhre klicken.
+        release_focus(self)
+        self._focus_guard = ScreenFocusGuard(self, self.screen_widget)
 
         # The screen must hold focus to receive F11 / Esc and host keystrokes.
         self.screen_widget.setFocus()
@@ -585,8 +594,10 @@ class MainWindow(QMainWindow):
     
     def _on_mount_disk(self):
         """Show mount dialog."""
-        # This is handled by DriveWidget
-        self.drives_widget.setFocus()
+        # Das Mounten selbst erledigt das DriveWidget — hier nur dessen Dock
+        # nach vorn holen (der Tastaturfokus bleibt beim Bildschirm).
+        self.drives_dock.show()
+        self.drives_dock.raise_()
     
     def _cycles_per_frame(self) -> int:
         """CPU cycles to run per timer tick.
