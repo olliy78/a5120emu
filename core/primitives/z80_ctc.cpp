@@ -174,6 +174,11 @@ void Z80CTC::clockTick() {
     }
 }
 
+void Z80CTC::reset() {
+    for (auto& c : ch_) c = Channel{};
+    vec_base_ = 0;
+}
+
 bool Z80CTC::clockTick(int ticks) {
     if (ticks <= 0) return false;
 

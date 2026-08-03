@@ -228,6 +228,16 @@ public:
     /// @brief Schreitet die Floppy-Simulation um @p cycles Takte fort (Index-Puls).
     void update(int cycles);
 
+    /**
+     * @brief Hardware-Reset (/RESET des K1520-Backplane).
+     *
+     * Bricht einen laufenden Lese-/Schreibtransfer ab, gibt /BUSRQ frei und setzt
+     * beide PIOs sowie die gelatchten Steuersignale in den Einschaltzustand.
+     * NICHT zurückgesetzt werden die eingelegten Disketten und die mechanische
+     * Kopfposition — ein Reset bewegt auf echter Hardware kein Laufwerk.
+     */
+    void reset();
+
 private:
     // ─── PIO-/Signal-Handler ─────────────────────────────────────────────────
     void handleCtrlPortAWrite(uint8_t data);

@@ -518,7 +518,10 @@ if(BUILD_K1520)
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'wp 0x6005 == 99\\ne 0x6005 99\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
         add_cli_test(cli_dbg_expr_eval "= 10 .0xA."
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\ndisp 2*3+4\\ng\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
-        add_cli_test(cli_dbg_event_bp "ISR 01C7"
+        # Erster angenommener Interrupt ist die ISR der Speicher-Ausbaumessung des
+        # Lade-ROMs (007AH, ausgelöst vom /WR-Strobe des Testschreibens) — lange vor
+        # dem Floppy-Index-IRQ (01C7H).
+        add_cli_test(cli_dbg_event_bp "ISR 007A"
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'bint\\ng\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
         add_cli_test(cli_dbg_reverse_step "restored 1 step"
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\ng\\ns 1\\nrs\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")

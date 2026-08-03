@@ -122,22 +122,49 @@ void A5120Machine::wireBackplane() {
     kbd_.connect(ass_.sioA32(), 0);
 }
 
-void A5120Machine::powerOn() {
+// Systemweiter /RESET des K1520-Backplane: ZVE1 + ALLE peripheren Bausteine.
+//
+// Nur die CPU zurückzusetzen genügt nicht.  Ein Reset aus dem laufenden Betrieb
+// liess sonst den System-CTC mit den IM2-Vektoren des alten OS weiterzählen
+// (`vecBase=F8`, Interrupts frei): sobald das Lade-ROM `IM 2`/`LD I,0` setzt und
+// `EI` gibt, landet der erste Timer-Interrupt auf einem Fantasie-Vektor aus der
+// ROM-Seite 0 → die Boot-Kette entgleist.  Dasselbe gilt für die SIOs (halb
+// gesendete Tastaturbytes, IUS in der Daisy-Chain) und den K5122 (offener
+// Lesetransfer + gehaltenes /BUSRQ).  Auf echter Hardware räumt die /RESET-
+// Leitung des Backplane genau das ab.
+void A5120Machine::resetHardware() {
     stop_.store(false);
-    zre_.powerOn();
+    zre_.powerOn();     // K2526: Lade-ROM mappen, BS-PIO/CTC/Q240 zurücksetzen
     zre_.cpuReset();
+    afs_.reset();       // K5122: Transfer abbrechen, /BUSRQ frei, PIOs zurück
+    ass_.reset();       // K8025: Baud-CTC + beide SIOs
+    kbd_.reset();       // K7637: Tastenwiederholung/LEDs/serielle Warteschlange
+    bus_.clearNMI();
+    bus_.releaseINT();
+    bus_.releaseWAIT();
+    bus_.markIntDirty();   // Daisy-Chain nach dem Reset neu bewerten
+
     // Run-Loop-Koppelzustand ZVE1↔ZVE2 auf Kaltstart bringen, sonst hängt ein
     // Neustart aus laufendem Betrieb im halb offenen DMA-Handshake fest.
     busrq_active_     = false;
     dma_saw_progress_ = false;
+    prev_floppy_int_  = false;
     bus_master_zve2_  = false;
     os_running_       = false;   // (SCPX) os-gated Laufzeit-Read-Gate zurücksetzen
     held_read_active_ = false;
     held_read_cycles_   = 0;
     held_read_watchdog_ = false;
-    afs_.endDmaTransfer();
-    screen_.clearScreen();   // Bildschirm sichtbar löschen (Kaltstart)
+    screen_.clearScreen();   // Bildschirm sichtbar löschen
     boot_trace_count_ = 0;
+}
+
+void A5120Machine::powerOn() {
+    // Echter Netz-Aus/Ein: das DRAM verliert seinen Inhalt (K3526 modelliert den
+    // unbestimmten Einschaltzustand als 0xFF, s. K3526-Konstruktor). Ohne dieses
+    // Löschen liefe ein Power-Cycle aus dem laufenden Betrieb auf altem RAM-Inhalt
+    // weiter — inklusive der Reste des vorherigen OS.
+    ops_.fill(0xFF);
+    resetHardware();
     LOG_INFO("A5120", "Power on: ZVE1 Reset, Lade-ROM aktiv");
 
 #if LOG_LEVEL >= 5
@@ -150,19 +177,9 @@ void A5120Machine::powerOn() {
 }
 
 void A5120Machine::reset() {
-    stop_.store(false);
-    zre_.powerOn();   // re-enable boot ROM
-    zre_.cpuReset();
-    busrq_active_     = false;
-    dma_saw_progress_ = false;
-    bus_master_zve2_  = false;
-    os_running_       = false;   // (SCPX) os-gated Laufzeit-Read-Gate zurücksetzen
-    held_read_active_ = false;
-    held_read_cycles_   = 0;
-    held_read_watchdog_ = false;
-    afs_.endDmaTransfer();
-    screen_.clearScreen();   // Bildschirm sichtbar löschen (Reset)
-    boot_trace_count_ = 0;
+    // Reset-Taste: wie /RESET auf echter Hardware — CPU + alle Bausteine, aber
+    // der RAM-Inhalt bleibt stehen (nur Netz-Aus verliert ihn, s. powerOn()).
+    resetHardware();
     LOG_INFO("A5120", "Reset: ZVE1 Reset, Lade-ROM reaktiviert");
 }
 

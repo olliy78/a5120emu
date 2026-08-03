@@ -269,6 +269,9 @@ public:
 private:
     void wireBackplane();
 
+    /** @brief Systemweiter /RESET (ZVE1 + alle peripheren Bausteine); s. .cpp. */
+    void resetHardware();
+
     struct KeyEvent { uint32_t keycode; bool shift, ctrl, is_press; };
 
     K1520Bus      bus_;

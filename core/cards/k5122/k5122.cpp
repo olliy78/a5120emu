@@ -332,6 +332,33 @@ void K5122::dmaUpdate() {
  *
  * Stellt den ctrl_pio_-Port-A-Interrupt wieder her (analog alter Karte, 0x83 = IE=1).
  */
+void K5122::reset() {
+    // Laufenden Transfer abbrechen und den Bus freigeben — sonst startet die neue
+    // Boot-Kette in einen halb offenen DMA-Handshake des alten OS hinein.
+    transferring_ = write_mode_ = we_writing_ = false;
+    dma_pending_  = dma_is_write_ = false;
+    byte_ready_   = false;
+    byte_acc_     = 0;
+    str_inactive_cycles_ = 0;
+    write_idle_acc_      = 0;
+    post_write_grace_    = 0;
+    write_buf_.clear();
+    cur_track_ = nullptr;
+    head_pos_  = 0;
+    locked_    = false;
+    if (bus_.isBUSRQ()) bus_.releaseBUSRQ();
+
+    // Beide PIOs und die gelatchten Steuersignale in den Einschaltzustand.
+    ctrl_pio_.reset();
+    data_pio_.reset();
+    prev_ctrl_a_ = 0xFF;
+    loaded_cyl_  = loaded_head_ = 0xFF;   // Lese-Spur beim nächsten /STR neu laden
+    read_enc_overridden_ = false;
+    head_loaded_ = false;
+    index_cycle_acc_ = 0;
+    LOG_INFO("K5122", "Hardware-Reset: Transfer abgebrochen, /BUSRQ frei, PIOs zurückgesetzt");
+}
+
 void K5122::endDmaTransfer() {
     if (!bus_.isBUSRQ()) return;
     transferring_ = false;

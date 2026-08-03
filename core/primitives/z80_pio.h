@@ -108,6 +108,24 @@ public:
     const char* deviceName() const override { return name_.c_str(); }
 
     /**
+     * @brief Ist die Interrupterzeugung von Port A scharf (IE-Bit im Steuerwort)?
+     *
+     * Für Karten, die einen Eingangs-Strobe an Port A nur dann pulsen müssen,
+     * wenn er überhaupt einen Interrupt auslösen kann (heißer Pfad, s.
+     * K2526::pulseWriteStrobe()).
+     */
+    bool    portAIntEnabled() const { return porta_.ie; }
+
+    /**
+     * @brief Hardware-Reset (/RESET-Leitung des K1520-Backplane).
+     *
+     * Beide Ports gehen in den Einschaltzustand zurück (Eingabemodus, Interrupts
+     * gesperrt, keine anstehende/bediente Anforderung).  Ausgangs-Callbacks und
+     * Name bleiben erhalten — die Karte bleibt also verdrahtet.
+     */
+    void    reset() { porta_ = Port{}; portb_ = Port{}; }
+
+    /**
      * @brief Read-only snapshot of both ports + daisy-chain state (debugger `dev pio`).
      */
     struct DebugState {

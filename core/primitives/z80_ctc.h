@@ -152,6 +152,18 @@ public:
      *         (Slow-Path) — der Aufrufer markiert die Interrupt-Chain dann dirty.
      */
     bool    clockTick(int ticks);
+
+    /**
+     * @brief Hardware-Reset (/RESET-Leitung des K1520-Backplane).
+     *
+     * Versetzt alle vier Kanäle in den Einschaltzustand: Zähler gestoppt,
+     * Interrupts gesperrt, keine anstehende/bediente Anforderung, Vektorbasis 0.
+     * Verdrahtung (ZC/TO-Callback, Name) bleibt erhalten.  Ohne dieses Zurück-
+     * setzen liefe nach einem Reset aus dem Betrieb der System-Timer mit den
+     * IM2-Vektoren des alten OS weiter und würde die neu startende Boot-Kette
+     * auf einen Fantasie-Vektor schicken.
+     */
+    void    reset();
     
     /**
      * @brief Trigger an external clock/trigger event for a channel.
