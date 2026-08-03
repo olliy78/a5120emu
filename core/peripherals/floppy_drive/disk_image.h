@@ -79,7 +79,8 @@ public:
      */
     static std::unique_ptr<DiskImage> open(const std::string& path,
                                            std::optional<DiskFormat> fmt,
-                                           bool write_protect);
+                                           bool write_protect,
+                                           Encoding raw_encoding = Encoding::MFM);
 
     /**
      * @brief Legt eine NEUE, GÜLTIG FORMATIERTE, leere Image-Datei an und öffnet sie (Fabrik).

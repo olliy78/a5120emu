@@ -285,6 +285,23 @@ TEST(DiskImageOpen, NichtExistenteDatei_gibtNullptr) {
     EXPECT_EQ(img, nullptr);
 }
 
+TEST(DiskImageOpen, RawEncoding_DefaultMFM_UndFMUeberschreibbar) {
+    // Raw-.img trägt kein Verfahren in sich; open() nimmt ohne Angabe MFM an und
+    // übernimmt sonst das übergebene Verfahren (K5122 leitet es aus dem Laufwerk ab).
+    auto fmt  = makeSimpleFormat();
+    auto path = makeTmpImg(fmt);
+
+    auto mfm = DiskImage::open(path, fmt, false);                 // Default
+    ASSERT_NE(mfm, nullptr);
+    EXPECT_EQ(mfm->geometry().encoding, Encoding::MFM);
+
+    auto fm = DiskImage::open(path, fmt, false, Encoding::FM);    // erzwungen FM
+    ASSERT_NE(fm, nullptr);
+    EXPECT_EQ(fm->geometry().encoding, Encoding::FM);
+
+    std::filesystem::remove(path);
+}
+
 // ─── DiskImage::create ───────────────────────────────────────────────────────
 
 TEST(DiskImageCreate, ImgMitFmt_LegtDateiInFormatGroesseAn) {

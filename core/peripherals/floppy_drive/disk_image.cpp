@@ -45,7 +45,8 @@ bool hasFormattedData(DiskImage& img) {
 
 std::unique_ptr<DiskImage> DiskImage::open(const std::string& path,
                                            std::optional<DiskFormat> fmt,
-                                           bool write_protect) {
+                                           bool write_protect,
+                                           Encoding raw_encoding) {
     // Erste 8 Bytes lesen für Signaturerkennung.
     std::ifstream f(path, std::ios::binary);
     if (!f) return nullptr;
@@ -70,8 +71,11 @@ std::unique_ptr<DiskImage> DiskImage::open(const std::string& path,
     // Raw-Sektorimage: DiskFormat muss übergeben werden.
     if (!fmt.has_value()) return nullptr;
 
+    // Raw-Images tragen kein Verfahren in sich — es ist Eigenschaft von Laufwerk+Medium.
+    // Der Aufrufer (K5122::mountDisk) übergibt das Laufwerks-Datenverfahren; Default MFM
+    // erhält das bisherige Verhalten für formatagnostische Aufrufer/Tools.
     auto img = std::make_unique<RawSectorImage>(path, *fmt, write_protect,
-                                                Encoding::MFM);
+                                                raw_encoding);
     if (!img->isOpen()) return nullptr;
     if (!hasFormattedData(*img)) return nullptr;
 

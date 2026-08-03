@@ -75,6 +75,25 @@ public:
      */
     bool createDisk(int drive, const std::string& path,
                     const std::string& format_name, bool write_protect);
+
+    /**
+     * @brief Name des laufwerkstyp-spezifischen Standardformats für einen Slot.
+     *
+     * Das Format, das @ref createDisk bei leerem @p format_name wählt (K5601→cpa800,
+     * K5600.10→200K, …).  Leerer String, wenn der Slot unbestückt ist.
+     */
+    std::string defaultFormatName(int drive) const;
+
+    /**
+     * @brief Formatnamen, die geometrisch auf das Laufwerk dieses Slots passen.
+     *
+     * Ein eingebautes Format passt, wenn seine Spurzahl ≤ profile.num_cyls und seine
+     * Kopfzahl ≤ profile.num_heads ist (das Aufzeichnungsverfahren leitet createDisk
+     * aus dem Laufwerk ab).  Das Standardformat des Slots steht an erster Stelle.
+     * Leere Liste bei unbestücktem Slot.  Für die GUI-Formatauswahl.
+     */
+    std::vector<std::string> compatibleFormats(int drive) const;
+
     bool unmountDisk(int drive);
     bool isDiskActive(int drive) const;
     bool isDiskWriteProtected(int drive) const;

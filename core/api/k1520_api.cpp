@@ -138,6 +138,24 @@ bool k1520_unmount_disk(K1520Handle h, int drive) {
     return toA5120(h)->unmountDisk(drive);
 }
 
+int k1520_drive_format_count(K1520Handle h, int drive) {
+    return static_cast<int>(toA5120(h)->compatibleFormats(drive).size());
+}
+
+const char* k1520_drive_format_name(K1520Handle h, int drive, int index) {
+    static thread_local std::string buf;
+    const auto v = toA5120(h)->compatibleFormats(drive);
+    if (index < 0 || index >= static_cast<int>(v.size())) return nullptr;
+    buf = v[static_cast<size_t>(index)];
+    return buf.c_str();
+}
+
+const char* k1520_drive_default_format(K1520Handle h, int drive) {
+    static thread_local std::string buf;
+    buf = toA5120(h)->defaultFormatName(drive);
+    return buf.c_str();
+}
+
 bool k1520_disk_active(K1520Handle h, int drive) {
     return toA5120(h)->isDiskActive(drive);
 }

@@ -90,6 +90,17 @@ bool k1520_create_disk(K1520Handle h, int drive,
                        bool write_protect);
 /** @brief Unmount disk image from a drive slot. */
 bool k1520_unmount_disk(K1520Handle h, int drive);
+
+/* ─── Disk formats per drive ─────────────────────────────────────────────────
+ * The built-in disk formats that geometrically fit the drive configured in a
+ * slot (for the GUI format selection).  The drive-type default is index 0.
+ * Returned name pointers stay valid until the next call on the same thread. */
+/** @brief Number of built-in formats compatible with the drive in @p drive. */
+int         k1520_drive_format_count(K1520Handle h, int drive);
+/** @brief Name of the @p index-th compatible format (NULL if out of range). */
+const char* k1520_drive_format_name(K1520Handle h, int drive, int index);
+/** @brief Drive-type default format name for @p drive (what empty-create uses). */
+const char* k1520_drive_default_format(K1520Handle h, int drive);
 /** @brief Return true if a disk image is mounted in the drive. */
 bool k1520_disk_active(K1520Handle h, int drive);
 /** @brief Return true if mounted image is write protected. */

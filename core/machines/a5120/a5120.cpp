@@ -595,6 +595,37 @@ bool A5120Machine::createDisk(int drive, const std::string& path,
     return false;
 }
 
+std::string A5120Machine::defaultFormatName(int drive) const {
+    if (drive < 0 || drive > 3) return "";
+    const DriveProfile& prof = drive_profiles_[drive];
+    if (!prof.present) return "";
+    return defaultFormatFor(prof);
+}
+
+std::vector<std::string> A5120Machine::compatibleFormats(int drive) const {
+    std::vector<std::string> out;
+    if (drive < 0 || drive > 3) return out;
+    const DriveProfile& prof = drive_profiles_[drive];
+    if (!prof.present) return out;
+
+    // Standardformat des Laufwerkstyps zuerst (bevorzugte Auswahl).
+    const std::string def = defaultFormatFor(prof);
+
+    auto fits = [&](const DiskFormat& f) {
+        return f.numCylinders() <= prof.num_cyls && f.numHeads() <= prof.num_heads;
+    };
+
+    if (!def.empty()) {
+        auto it = std::find_if(disk_formats_.begin(), disk_formats_.end(),
+                               [&](const DiskFormat& f){ return f.name == def; });
+        if (it != disk_formats_.end() && fits(*it)) out.push_back(def);
+    }
+    for (const DiskFormat& f : disk_formats_) {
+        if (f.name != def && fits(f)) out.push_back(f.name);
+    }
+    return out;
+}
+
 bool A5120Machine::unmountDisk(int drive) {
     if (drive < 0 || drive > 3) return false;
     std::lock_guard<std::mutex> lk(disk_mutex_);

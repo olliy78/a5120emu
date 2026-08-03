@@ -24,9 +24,6 @@ class DriveWidget(QWidget):
     a slot set to "kein Laufwerk" is omitted.
     """
 
-    # Disk format list (from C-API)
-    FORMATS = ["cpa800", "cpa780", "cpa640", "cpa624"]
-
     disk_mounted = Signal(int, str)  # (drive, path)
     disk_unmounted = Signal(int)      # (drive)
 
@@ -55,6 +52,36 @@ class DriveWidget(QWidget):
     def present_drives(self) -> list:
         """Indices of the K5122 slots that carry a drive (in slot order)."""
         return [i for i, t in enumerate(self.drive_types) if dt.is_present(t)]
+
+    def _populate_format_combo(self, combo, drive: int):
+        """Fill *combo* with the formats that fit the drive in *drive* (from core).
+
+        Entry 0 is the drive-type default (labelled "Standard (<name>)"); the
+        remaining geometry-compatible formats follow.  Each entry's userData is the
+        concrete core format name passed to mount/create.
+        """
+        combo.clear()
+        try:
+            formats = self.emulator.drive_formats(drive)
+            default = self.emulator.drive_default_format(drive)
+        except Exception:
+            formats, default = [], ""
+
+        if default:
+            combo.addItem(f"Standard ({default})", default)
+        for name in formats:
+            if name != default:
+                combo.addItem(name, name)
+        if combo.count() == 0:
+            # Fallback (should not happen for a present drive): plain default name.
+            combo.addItem(default or "cpa800", default or "cpa800")
+        combo.setCurrentIndex(0)
+
+    @staticmethod
+    def _selected_format(combo, drive: int) -> str:
+        """Concrete core format name currently selected in *combo*."""
+        data = combo.currentData()
+        return data if data else (combo.currentText() or "")
 
     def _fail_msg(self, drive: int, action: str) -> str:
         """Fehlermeldung mit dem konkreten Grund aus dem Core (falls vorhanden)."""
@@ -148,12 +175,13 @@ class DriveWidget(QWidget):
         path_layout.addWidget(path_display)
         layout.addLayout(path_layout)
 
-        # Format selection
+        # Format selection — populated from the core with the formats that fit
+        # this slot's drive type (default first), so a non-K5601 drive offers its
+        # own geometries instead of the fixed K5601 CP/A set.
         format_layout = QHBoxLayout()
         format_label = QLabel("Format:")
         format_combo = QComboBox()
-        format_combo.addItems(self.FORMATS)
-        format_combo.setCurrentText("cpa800")
+        self._populate_format_combo(format_combo, drive)
         format_layout.addWidget(format_label)
         format_layout.addWidget(format_combo)
         layout.addLayout(format_layout)
@@ -192,7 +220,7 @@ class DriveWidget(QWidget):
             )
             if not path:
                 return
-            fmt = format_combo.currentText()
+            fmt = self._selected_format(format_combo, drive)
             wp = wp_check.isChecked()
             try:
                 if self.emulator.mount_disk(drive, path, fmt, wp):
@@ -214,7 +242,7 @@ class DriveWidget(QWidget):
             # Ohne Endung → .img annehmen.
             if not os.path.splitext(path)[1]:
                 path += ".img"
-            fmt = format_combo.currentText()
+            fmt = self._selected_format(format_combo, drive)
             wp = wp_check.isChecked()
             try:
                 if self.emulator.create_disk(drive, path, fmt, wp):
@@ -289,7 +317,8 @@ class DriveWidget(QWidget):
                 continue
             try:
                 if self.emulator.mount_disk(drive, path, fmt, wp):
-                    panel._format_combo.setCurrentText(fmt)
+                    idx = panel._format_combo.findData(fmt)
+                    panel._format_combo.setCurrentIndex(idx if idx >= 0 else 0)
                     panel._wp_check.setChecked(wp)
                     panel._path_display.setText(path)
                     panel._toggle_btn.setText("Unmount")
