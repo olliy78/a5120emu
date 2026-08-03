@@ -100,9 +100,15 @@ if(BUILD_K1520)
     target_include_directories(k1520_bus PUBLIC ${CMAKE_SOURCE_DIR})
     target_link_libraries(k1520_bus PUBLIC k1520_logger)
 
-    # Floppy peripheral: Disk-Format-Parser (Geometrie/cpaFormates.cfg)
+    # Minimaler YAML-Subset-Parser (Konfigurationsdateien des Kerns, §8.6.2)
+    add_library(k1520_util STATIC
+        core/util/yaml_lite.cpp
+    )
+    target_include_directories(k1520_util PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # Floppy peripheral: Diskettenformat-Datenmodell (DiskFormat/TrackFormat)
     add_library(k1520_floppy STATIC
-        core/peripherals/floppy_drive/format_parser.cpp
+        core/peripherals/floppy_drive/disk_format.cpp
     )
     target_include_directories(k1520_floppy PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -116,9 +122,18 @@ if(BUILD_K1520)
         core/peripherals/floppy_drive/hfe_image.cpp
         core/peripherals/floppy_drive/disk_image.cpp
         core/peripherals/floppy_drive/floppy_drive2.cpp
+        core/peripherals/floppy_drive/format_catalog.cpp
     )
-    target_link_libraries(k1520_floppy2 PUBLIC k1520_floppy)
+    target_link_libraries(k1520_floppy2 PUBLIC k1520_floppy k1520_util)
     target_include_directories(k1520_floppy2 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # Fallback-Fundort des Diskettenformat-Katalogs (§8.6.4, Priorität 1).  Zeigt im
+    # Entwicklungsbaum auf die Quelldatei, damit ctest und die Tools den Katalog ohne
+    # gesetzte Umgebungsvariable finden.
+    set(K1520_FORMATS_DEFAULT "${CMAKE_SOURCE_DIR}/data/formats.yaml"
+        CACHE FILEPATH "Fallback-Pfad der formats.yaml")
+    target_compile_definitions(k1520_floppy2
+        PRIVATE K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")
 
     # PIO primitive
     add_library(k1520_pio STATIC
@@ -225,11 +240,16 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_bus PRIVATE k1520_bus GTest::gtest_main)
         target_include_directories(k1520_test_bus PRIVATE ${CMAKE_SOURCE_DIR})
 
-        add_executable(k1520_test_format_parser
-            tests/cpp/test_format_parser.cpp
-        )
-        target_link_libraries(k1520_test_format_parser PRIVATE k1520_floppy GTest::gtest_main)
-        target_include_directories(k1520_test_format_parser PRIVATE ${CMAKE_SOURCE_DIR})
+        add_executable(k1520_test_yaml_lite tests/cpp/test_yaml_lite.cpp)
+        target_link_libraries(k1520_test_yaml_lite PRIVATE k1520_util GTest::gtest_main)
+        target_include_directories(k1520_test_yaml_lite PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_format_catalog tests/cpp/test_format_catalog.cpp)
+        target_link_libraries(k1520_test_format_catalog PRIVATE k1520_floppy2 GTest::gtest_main)
+        target_include_directories(k1520_test_format_catalog PRIVATE ${CMAKE_SOURCE_DIR})
+        # Katalogpfad auch dem Test bekannt machen (prüft die ausgelieferte data/formats.yaml)
+        target_compile_definitions(k1520_test_format_catalog
+            PRIVATE K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")
 
         add_executable(k1520_test_track_codec tests/cpp/test_track_codec.cpp)
         target_link_libraries(k1520_test_track_codec PRIVATE k1520_floppy2 GTest::gtest_main)
@@ -343,6 +363,12 @@ if(BUILD_K1520)
             PRIVATE k1520_a5120 k1520_floppy k1520_logger GTest::gtest_main)
         target_include_directories(k1520_test_machine_snapshot PRIVATE ${CMAKE_SOURCE_DIR})
 
+        # Disketten-API auf Maschinenebene (Formatkatalog-Verdrahtung, §8.6)
+        add_executable(k1520_test_a5120_disk_api tests/cpp/test_a5120_disk_api.cpp)
+        target_link_libraries(k1520_test_a5120_disk_api
+            PRIVATE k1520_a5120 k1520_floppy k1520_logger GTest::gtest_main)
+        target_include_directories(k1520_test_a5120_disk_api PRIVATE ${CMAKE_SOURCE_DIR})
+
         # Full-machine boot integration test (ZVE1+ZVE2 + K5122 DMA end-to-end).
         # Quiet logging (WARN) keeps the multi-million-cycle boot run readable.
         add_executable(k1520_test_boot_integration tests/cpp/test_boot_integration.cpp)
@@ -357,7 +383,8 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_pio)
 
         gtest_discover_tests(k1520_test_bus)
-        gtest_discover_tests(k1520_test_format_parser)
+        gtest_discover_tests(k1520_test_yaml_lite)
+        gtest_discover_tests(k1520_test_format_catalog)
         gtest_discover_tests(k1520_test_track_codec)
         gtest_discover_tests(k1520_test_bit_codec)
         gtest_discover_tests(k1520_test_drive_profile)
@@ -382,6 +409,7 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_event_bp)
         gtest_discover_tests(k1520_test_mem_watch)
         gtest_discover_tests(k1520_test_machine_snapshot)
+        gtest_discover_tests(k1520_test_a5120_disk_api)
         gtest_discover_tests(k1520_test_boot_integration PROPERTIES TIMEOUT 60)
 
         # Langsamer SCPX-INIT.COM-Formatier-Guard (~35 s, 160 Spuren) in eigenem
@@ -490,7 +518,10 @@ if(BUILD_K1520)
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'wp 0x6005 == 99\\ne 0x6005 99\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
         add_cli_test(cli_dbg_expr_eval "= 10 .0xA."
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\ndisp 2*3+4\\ng\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
-        add_cli_test(cli_dbg_event_bp "ISR 01C7"
+        # Erster angenommener Interrupt ist die ISR der Speicher-Ausbaumessung des
+        # Lade-ROMs (007AH, ausgelöst vom /WR-Strobe des Testschreibens) — lange vor
+        # dem Floppy-Index-IRQ (01C7H).
+        add_cli_test(cli_dbg_event_bp "ISR 007A"
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'bint\\ng\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
         add_cli_test(cli_dbg_reverse_step "restored 1 step"
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\ng\\ns 1\\nrs\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")

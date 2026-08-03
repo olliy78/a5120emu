@@ -56,7 +56,8 @@
 #include "core/cards/k2526/rom_data.h"
 #include "core/cards/k3526/k3526.h"
 #include "core/cards/k5122/k5122.h"
-#include "core/peripherals/floppy_drive/format_parser.h"
+#include "core/peripherals/floppy_drive/disk_format.h"
+#include "core/peripherals/floppy_drive/format_catalog.h"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -64,6 +65,8 @@
 static constexpr uint8_t BSPIO_PORTA_DATA = 0x08;
 // Write to BS-PIO Port B data register (port 0x0A = base 0x08 + sub-port 2).
 static constexpr uint8_t BSPIO_PORTB_DATA = 0x0A;
+// BS-PIO Port A control register (port 0x09 = base 0x08 + sub-port 1).
+static constexpr uint8_t BSPIO_PORTA_CTRL = 0x09;
 
 // ─── ROM: power-on state ──────────────────────────────────────────────────────
 
@@ -1149,13 +1152,21 @@ TEST(K2526, ZVE2_Port04_Bit1_WhileRunning_RezeroesPC)
 // head-select (bit2) bug lived.
 
 namespace {
+/// cpa780 aus dem YAML-Katalog (data/formats.yaml, §8.6) holen.
+DiskFormat cpa780Format() {
+    std::string fatal;
+    FormatCatalog cat = FormatCatalog::loadDefault(&fatal);
+    EXPECT_TRUE(fatal.empty()) << fatal;
+    const DiskFormat* f = cat.find("cpa780");
+    EXPECT_NE(f, nullptr) << "Format 'cpa780' fehlt im Katalog";
+    return f ? *f : DiskFormat{};
+}
+
 std::string makeCpa780Image() {
-    auto fmts = FormatParser::builtinFormats();
-    auto it = std::find_if(fmts.begin(), fmts.end(),
-                           [](const DiskFormat& f){ return f.name == "cpa780"; });
+    const DiskFormat fmt = cpa780Format();
     auto path = (std::filesystem::temp_directory_path() / "k2526_chain_cpa780.img").string();
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
-    std::vector<uint8_t> buf(it->totalBytes(), 0xE5);
+    std::vector<uint8_t> buf(fmt.totalBytes(), 0xE5);
     f.write(reinterpret_cast<const char*>(buf.data()), static_cast<std::streamsize>(buf.size()));
     return path;
 }
@@ -1167,11 +1178,7 @@ protected:
     K2526    zre{bus};
     K3526    ops;
     K5122    afs{bus};
-    DiskFormat fmt = []{
-        auto fmts = FormatParser::builtinFormats();
-        return *std::find_if(fmts.begin(), fmts.end(),
-                             [](const DiskFormat& f){ return f.name == "cpa780"; });
-    }();
+    DiskFormat fmt = cpa780Format();
     std::string img;
 
     void SetUp() override {
@@ -1263,4 +1270,75 @@ TEST_F(K2526ZVE2FloppyChain, ZVE2ReadsHead1FieldViaBus) {
     EXPECT_EQ(bus.memRead(0x0104), 0xFE) << "IDAM mark";
     EXPECT_EQ(bus.memRead(0x0105), 0x02) << "cylinder (2)";
     EXPECT_EQ(bus.memRead(0x0106), 0x01) << "head (1) — bit2=0 side-select via the bus";
+}
+
+// ─── BS-PIO Port A: /WR als Schreib-Strobe (A5) ──────────────────────────────
+//
+// Die Speicher-Ausbaumessung des Lade-ROMs (0040H–005AH) und HARDYs MEMDI-RDY-Test
+// schärfen Port A im Bitmodus mit Maske 9FH (A5 /WR AND A6 /RDY, aktiv-LOW), geben
+// `EI` und erwarten den Interrupt DURCH den nachfolgenden Schreibbefehl; ihre ISR
+// prüft, ob das Testbyte im Speicher gelandet ist.  Lag /WR dauerhaft aktiv, kam
+// der Interrupt schon vor dem Schreiben — bei frischem DRAM (0xFF) unauffällig,
+// bei einem Neustart aus dem laufenden Betrieb meldete die Messung „kein Speicher".
+
+class K2526WriteStrobe : public ::testing::Test {
+protected:
+    K1520Bus bus;
+    K2526    zre{bus};
+    K3526    ops;
+
+    void SetUp() override {
+        ops.attachToBus(bus);
+        zre.attachToBus(bus);
+        zre.powerOn();
+        bus.ioWrite(BSPIO_PORTB_DATA, PORTB_SAFE_ROMOFF);   // ROM aus → RAM ab 0x0000
+        zre.setIEI(true);   // Daisy-Chain freigeben (in der Maschine macht das der Bus)
+    }
+    /// Port A wie das Lade-ROM scharf schalten: D7H (IE, AND, aktiv-LOW, Maske folgt) + Maske 9FH.
+    void armPortA() {
+        bus.ioWrite(BSPIO_PORTA_CTRL, 0xD7);
+        bus.ioWrite(BSPIO_PORTA_CTRL, 0x9F);
+    }
+};
+
+/**
+ * @test K2526WriteStrobe/ArmingAloneRequestsNoInterrupt
+ * @brief Scharfschalten allein löst nichts aus — /WR ruht (HIGH), bis geschrieben wird.
+ */
+TEST_F(K2526WriteStrobe, ArmingAloneRequestsNoInterrupt) {
+    armPortA();
+    EXPECT_FALSE(zre.hasInterrupt())
+        << "Port A meldet Interrupt ohne Schreibzugriff — /WR (A5) ist faelschlich "
+           "dauerhaft aktiv; die ROM-Ausbaumessung liefe dann VOR ihrem Testschreiben";
+}
+
+/**
+ * @test K2526WriteStrobe/Zve1WriteRequestsInterrupt
+ * @brief Ein ZVE1-Schreibzugriff pulst /WR und fordert damit den Interrupt an.
+ */
+TEST_F(K2526WriteStrobe, Zve1WriteRequestsInterrupt) {
+    armPortA();
+    zre.cpu().writeByte(0x0800, 0xFF);
+    EXPECT_TRUE(zre.hasInterrupt())
+        << "Schreibzugriff loeste den /WR-Strobe-Interrupt nicht aus";
+    EXPECT_EQ(bus.memRead(0x0800), 0xFF)
+        << "das Testbyte muss VOR der ISR im Speicher stehen — genau das prueft sie";
+}
+
+/**
+ * @test K2526WriteStrobe/DisablingClearsPendingRequest
+ * @brief Das Sperren (Steuerwort 47H) verwirft die anstehende Anforderung.
+ *
+ * Die ISR des Lade-ROMs sperrt Port A als erstes wieder — und wird damit die
+ * Anforderung los, die der Stack-Push der Interruptannahme gerade neu gesetzt hat.
+ * Ohne dieses Verwerfen bliebe sie stehen und schlüge beim nächsten `EI` los.
+ */
+TEST_F(K2526WriteStrobe, DisablingClearsPendingRequest) {
+    armPortA();
+    zre.cpu().writeByte(0x0800, 0xFF);
+    ASSERT_TRUE(zre.hasInterrupt());
+    bus.ioWrite(BSPIO_PORTA_CTRL, 0x47);   // Interruptsteuerwort, IE=0
+    EXPECT_FALSE(zre.hasInterrupt())
+        << "gesperrter Port A haelt die Anforderung weiter — sie schluege beim "
+           "naechsten EI los (Boot-Kette entgleist)";
 }

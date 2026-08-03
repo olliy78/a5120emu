@@ -532,6 +532,128 @@ TEST(BootIntegration, FullBootReachesTimeEntryPrompt) {
            "oder die per-Byte-/BUSRQ-Verriegelung ist gebrochen";
 }
 
+// ─── Neustart aus dem laufenden Betrieb: Reset & Power-Cycle ────────────────
+//
+// Beide Wege der GUI (Reset-Taste, Power OFF→ON) starten die Maschine aus einem
+// bereits gebooteten CP/A neu.  Der Knackpunkt ist die Speicher-Ausbaumessung des
+// Lade-ROMs (0040H–005AH): sie schreibt ein Testbyte, lässt sich vom /WR-Strobe an
+// BS-PIO Port A unterbrechen und prüft in der ISR, ob das Byte angekommen ist.
+// Wurde /WR als DAUERND aktiv modelliert, kam der Interrupt schon beim `EI` davor,
+// die ISR verglich den ALTEN Speicherinhalt — bei frischem DRAM (0xFF) unauffällig,
+// nach einem Neustart aus dem Betrieb (echte Daten im RAM) meldete die Messung
+// „kein Speicher" und der Neustart lief in Zufallscode.  Beide Tests booten daher
+// erst vollständig und starten DANN neu.
+namespace {
+// Meilenstein des VOLLSTÄNDIGEN Neustarts (@OS.COM läuft und meldet sich).
+constexpr const char* kRebootNeedle = "Bitte Uhrzeit eingeben!";
+
+// Bildschirmspeicher vor dem Neustart unkenntlich machen.  Nötig, weil der
+// Textbildschirm für die CPU schreib-only ist: Lesen (und damit vramText())
+// bedient das K3526-Schattenram, das reset() NICHT löscht — ohne dieses Wischen
+// würde der Text des vorigen Laufs sofort „gefunden" und der Test wäre blind.
+void blankVram(A5120Machine& m) {
+    for (int a = 0xF800; a <= 0xFFFF; ++a)
+        m.memWriteDebug(static_cast<uint16_t>(a), 0x00);
+    ASSERT_EQ(vramText(m).find(kRebootNeedle), std::string::npos)
+        << "Bildschirm-Wischen wirkungslos — der Neustart-Test wäre blind";
+}
+
+// Die 62 Prüfzellen der ROM-Ausbaumessung (0800H, +400H …) mit „benutztem" RAM
+// belegen.  Sie ist die Stelle, an der ein Neustart aus dem Betrieb scheiterte:
+// die ISR vergleicht die Zelle gegen FFH, und stand ihr Interrupt VOR dem
+// Testschreiben, entschied der Altinhalt über „Speicher da/nicht da".  Ein frisch
+// gebootetes CP/A hinterlässt dort zufällig FFH — ohne dieses Verschmutzen liefe
+// der Test auch mit dem Fehler durch.
+void dirtyMemorySizingProbes(A5120Machine& m) {
+    for (int i = 0; i < 62; ++i)
+        m.memWriteDebug(static_cast<uint16_t>(0x0800 + i * 0x0400), 0x5A);
+}
+
+// Vollständiger Kaltstart bis zur Uhrzeit-Eingabe (gemeinsamer Vorlauf beider Tests).
+void bootToTimePrompt(A5120Machine& m) {
+    ASSERT_TRUE(m.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", /*wp=*/false))
+        << "could not mount cpadisk_autofs_clock_noautoexec.img on A:: " << m.lastError();
+    m.powerOn();
+    ASSERT_TRUE(runUntilVramContains(m, kRebootNeedle, 40'000'000))
+        << "Kaltstart erreichte die Uhrzeit-Eingabe nie";
+}
+}  // namespace
+
+TEST(BootIntegration, ResetFromRunningSystemRebootsFromRom) {
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", /*wp=*/false))
+        << machine.lastError();
+    machine.powerOn();
+    // Reset mitten im Betrieb — hier, während das CP/A-Bootsystem @OS.COM lädt.
+    // Bewusst NICHT am fertigen Prompt: ein durchgebootetes CP/A hinterlässt in den
+    // Prüfzellen der Ausbaumessung zufällig FFH und fängt sich selbst mit defekter
+    // Messung noch über Restcode ab — der Fehler wäre unsichtbar.
+    ASSERT_TRUE(runUntilVramContains(machine, "CP/A-Bootsystem", 40'000'000))
+        << "Kaltstart erreichte das CP/A-Bootsystem nie";
+
+    ASSERT_NO_FATAL_FAILURE(blankVram(machine));
+    // Genau die Reihenfolge der GUI-Reset-Taste: Images neu mounten (setzt den
+    // K5122-Laufwerkszustand zurück), dann reset().  RAM behält dabei den Inhalt
+    // des laufenden OS — anders als beim Netz-Aus.
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", /*wp=*/false))
+        << machine.lastError();
+    machine.reset();
+    // Die ganze Boot-Kette muss erneut laufen: Stufe 3 (0x1800) ist der eindeutige
+    // Meilenstein — mit defekter Ausbaumessung endet der Neustart vorher in
+    // Zufallscode (Stufe 1/2 werden noch erreicht).
+    EXPECT_TRUE(runUntilPC(machine, 0x1800, 40'000'000))
+        << "Reset aus dem laufenden CP/A erreichte Boot-Stufe 3 nicht (Ausbaumessung "
+           "des Lade-ROMs auf benutztem RAM?)";
+    EXPECT_TRUE(runUntilVramContains(machine, kRebootNeedle, 40'000'000))
+        << "Reset aus dem laufenden CP/A bootete nicht durch:\n" << vramText(machine);
+}
+
+// Der vom Nutzer gemeldete Fall: Uhrzeit bestätigen, am `A>`-Prompt stehen, dann
+// Reset bzw. Power OFF→ON.  Hier läuft der System-CTC (Q302) des OS mit eigener
+// IM2-Vektorbasis (F8H) und freigegebenen Interrupts; ohne systemweiten /RESET
+// aller Bausteine schickt der erste Timer-Interrupt nach dem `EI` des Lade-ROMs
+// die neue Boot-Kette auf einen Fantasie-Vektor aus der ROM-Seite 0.
+TEST(BootIntegration, RestartFromInteractivePromptRebootsFromRom) {
+    for (bool power_cycle : {false, true}) {
+        SCOPED_TRACE(power_cycle ? "Power OFF→ON" : "Reset-Taste");
+        A5120Machine machine;
+        ASSERT_NO_FATAL_FAILURE(bootToTimePrompt(machine));
+
+        // Uhrzeit bestätigen → CP/A erreicht den interaktiven `A>`-Prompt.
+        typeString(machine, "12:00:00");
+        typeKey(machine, QK_RETURN);
+        ASSERT_TRUE(runSmallUntil(machine, "A>", 20'000'000))
+            << "CP/A erreichte nach der Uhrzeit-Eingabe den A>-Prompt nicht:\n"
+            << vramText(machine);
+
+        ASSERT_NO_FATAL_FAILURE(blankVram(machine));
+        ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"),
+                                      "cpa780", /*wp=*/false)) << machine.lastError();
+        if (power_cycle) machine.powerOn(); else machine.reset();
+
+        EXPECT_TRUE(runUntilPC(machine, 0x1800, 40'000'000))
+            << "Neustart vom A>-Prompt erreichte Boot-Stufe 3 nicht (laufender "
+               "System-CTC des alten OS nicht zurückgesetzt?)";
+        EXPECT_TRUE(runUntilVramContains(machine, kRebootNeedle, 40'000'000))
+            << "Neustart vom A>-Prompt bootete nicht durch:\n" << vramText(machine);
+    }
+}
+
+TEST(BootIntegration, PowerCycleFromRunningOsRebootsFromRom) {
+    A5120Machine machine;
+    ASSERT_NO_FATAL_FAILURE(bootToTimePrompt(machine));
+
+    dirtyMemorySizingProbes(machine);
+    ASSERT_NO_FATAL_FAILURE(blankVram(machine));
+    machine.powerOn();   // Netz aus/ein: DRAM verliert seinen Inhalt (0xFF)
+    EXPECT_EQ(machine.memReadDebug(0x8000), 0xFF)
+        << "powerOn() liess alten RAM-Inhalt stehen — kein echter Kaltstart";
+    EXPECT_TRUE(runUntilPC(machine, 0x1800, 40'000'000))
+        << "Power-Cycle aus dem laufenden CP/A erreichte Boot-Stufe 3 nicht";
+    EXPECT_TRUE(runUntilVramContains(machine, kRebootNeedle, 40'000'000))
+        << "Power-Cycle aus dem laufenden CP/A bootete nicht neu:\n" << vramText(machine);
+}
+
 // ─── Keyboard input at the interactive CCP (end-to-end) ──────────────────────
 //
 // Exercises the full keyboard path that the K7637 serial-latency fix unblocked
@@ -788,7 +910,7 @@ TEST(CreateDiskDefault, K560010_ss40_200K) {
     const std::string path = tmpImg("k560010");
     std::filesystem::remove(path);
     A5120Machine::Config cfg;
-    cfg.drive_profiles = {"ss_525_40", "K5601", "K5601", "K5601"};
+    cfg.drive_profiles = {"K5600.10", "K5601", "K5601", "K5601"};
     A5120Machine machine(cfg);
     ASSERT_TRUE(machine.createDisk(0, path, "", false)) << machine.lastError();
     EXPECT_EQ(std::filesystem::file_size(path), 40u * 5 * 1024);      // 200K
@@ -799,7 +921,7 @@ TEST(CreateDiskDefault, MF3200_fm_308K) {
     const std::string path = tmpImg("mf3200");
     std::filesystem::remove(path);
     A5120Machine::Config cfg;
-    cfg.drive_profiles = {"mf3200_8_ss77", "K5601", "K5601", "K5601"};
+    cfg.drive_profiles = {"MF3200", "K5601", "K5601", "K5601"};
     A5120Machine machine(cfg);
     ASSERT_TRUE(machine.createDisk(0, path, "", false)) << machine.lastError();
     EXPECT_EQ(std::filesystem::file_size(path), 77u * 4 * 1024);      // 308K

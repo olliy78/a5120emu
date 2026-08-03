@@ -13,20 +13,27 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 
+from app import drive_types as dt
+from app.ui.focus import release_focus
+
 
 class DriveWidget(QWidget):
-    """Widget for managing disk drives."""
-    
-    # Disk format list (from C-API)
-    FORMATS = ["cpa800", "cpa780", "cpa640", "cpa624"]
-    
+    """Widget for managing disk drives.
+
+    The number and labelling of drive panels follows the machine's drive-bay
+    configuration (:data:`drive_types`): only *present* K5122 slots get a panel;
+    a slot set to "kein Laufwerk" is omitted.
+    """
+
     disk_mounted = Signal(int, str)  # (drive, path)
     disk_unmounted = Signal(int)      # (drive)
-    
-    def __init__(self, emulator, parent=None):
+
+    def __init__(self, emulator, drive_types=None, parent=None):
         """Initialize drive widget."""
         super().__init__(parent)
         self.emulator = emulator
+        # Per-slot core DriveProfile names (length dt.NUM_SLOTS).
+        self.drive_types = dt.normalize_list(drive_types or dt.DEFAULT_DRIVE_TYPES)
         self._drive_leds = {}
         # Laufwerks-Panels je Laufwerk (für programmatisches Restore aus Config).
         self._panels = {}
@@ -39,12 +46,54 @@ class DriveWidget(QWidget):
         self._led_timer = QTimer(self)
         self._led_timer.timeout.connect(self._refresh_leds)
         self._led_timer.start(120)
-    
-    # Nur drei Laufwerke (Drive 0..2).
-    NUM_DRIVES = 3
 
     # Dateifilter für Öffnen/Erstellen: sowohl .img als auch .hfe.
     DISK_FILTER = "Disk Images (*.img *.hfe);;All Files (*)"
+
+    def present_drives(self) -> list:
+        """Indices of the K5122 slots that carry a drive (in slot order)."""
+        return [i for i, t in enumerate(self.drive_types) if dt.is_present(t)]
+
+    def _populate_format_combo(self, combo, drive: int):
+        """Fill *combo* with the formats that fit the drive in *drive* (from core).
+
+        Entry 0 is the drive-type default (labelled "Standard (<name>)"); the
+        remaining geometry-compatible formats follow.  Each entry's userData is the
+        concrete core format name passed to mount/create.
+        """
+        combo.clear()
+        try:
+            formats = self.emulator.drive_formats(drive)
+            default = self.emulator.drive_default_format(drive)
+        except Exception:
+            formats, default = [], ""
+
+        def add(name: str):
+            """Eintrag mit dem reinen Formatnamen; die Katalogbeschreibung wird
+            nur als Tooltip angeboten, damit das Auswahlfeld schmal bleibt."""
+            combo.addItem(name, name)
+            try:
+                desc = self.emulator.format_description(name)
+            except Exception:
+                desc = ""
+            if desc:
+                combo.setItemData(combo.count() - 1, desc, Qt.ToolTipRole)
+
+        if default:
+            add(default)
+        for name in formats:
+            if name != default:
+                add(name)
+        if combo.count() == 0:
+            # Fallback (should not happen for a present drive): plain default name.
+            combo.addItem(default or "cpa800", default or "cpa800")
+        combo.setCurrentIndex(0)
+
+    @staticmethod
+    def _selected_format(combo, drive: int) -> str:
+        """Concrete core format name currently selected in *combo*."""
+        data = combo.currentData()
+        return data if data else (combo.currentText() or "")
 
     def _fail_msg(self, drive: int, action: str) -> str:
         """Fehlermeldung mit dem konkreten Grund aus dem Core (falls vorhanden)."""
@@ -65,15 +114,49 @@ class DriveWidget(QWidget):
         return disks if os.path.isdir(disks) else root
 
     def setup_ui(self):
-        """Setup UI layout."""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(6)
+        """Setup UI layout (panels are (re)built from the drive-bay config)."""
+        self._main_layout = QVBoxLayout(self)
+        self._main_layout.setContentsMargins(4, 4, 4, 4)
+        self._main_layout.setSpacing(6)
+        self._rebuild_panels()
 
-        for drive in range(self.NUM_DRIVES):
-            layout.addWidget(self._create_drive_panel(drive))
+    def _rebuild_panels(self):
+        """Clear and recreate the drive panels from :attr:`drive_types`."""
+        # Remove every existing item (panels + stretch) from the layout.
+        while self._main_layout.count():
+            item = self._main_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        self._panels.clear()
+        self._drive_leds.clear()
 
-        layout.addStretch()
+        present = self.present_drives()
+        for drive in present:
+            self._main_layout.addWidget(self._create_drive_panel(drive))
+
+        if not present:
+            self._main_layout.addWidget(
+                QLabel("Kein Laufwerk bestückt.\nSiehe Einstellungen → Laufwerke."))
+
+        self._main_layout.addStretch()
+
+        # Die frisch erzeugten Bedienelemente dürfen dem emulierten Rechner den
+        # Tastaturfokus nicht abnehmen (siehe app/ui/focus.py).
+        release_focus(self)
+
+    def set_drive_types(self, drive_types, emulator=None):
+        """Adopt a new drive-bay configuration (and optionally a new emulator).
+
+        Rebuilds the panels for the now-present slots and forgets all mounts (the
+        caller supplies a freshly created machine, so the K5122 state is empty).
+        Restore any surviving disks afterwards via :meth:`load_mounts`.
+        """
+        if emulator is not None:
+            self.emulator = emulator
+        self.drive_types = dt.normalize_list(drive_types)
+        self._mounts.clear()
+        self._rebuild_panels()
 
     def _create_drive_panel(self, drive: int) -> QFrame:
         """Create panel for one drive (no title; LED+Name+Write-Protect in einer
@@ -90,7 +173,8 @@ class DriveWidget(QWidget):
         led.setFixedSize(14, 14)
         led.setStyleSheet("border-radius: 7px; background-color: #2b2b2b; border: 1px solid #666;")
         head_layout.addWidget(led)
-        head_layout.addWidget(QLabel(f"<b>Drive {drive}</b>"))
+        type_label = dt.short_label(self.drive_types[drive])
+        head_layout.addWidget(QLabel(f"<b>Drive {drive}</b> — {type_label}"))
         head_layout.addStretch()
         wp_check = QCheckBox("Write-Protect")
         head_layout.addWidget(wp_check)
@@ -107,12 +191,13 @@ class DriveWidget(QWidget):
         path_layout.addWidget(path_display)
         layout.addLayout(path_layout)
 
-        # Format selection
+        # Format selection — populated from the core with the formats that fit
+        # this slot's drive type (default first), so a non-K5601 drive offers its
+        # own geometries instead of the fixed K5601 CP/A set.
         format_layout = QHBoxLayout()
         format_label = QLabel("Format:")
         format_combo = QComboBox()
-        format_combo.addItems(self.FORMATS)
-        format_combo.setCurrentText("cpa800")
+        self._populate_format_combo(format_combo, drive)
         format_layout.addWidget(format_label)
         format_layout.addWidget(format_combo)
         layout.addLayout(format_layout)
@@ -151,7 +236,7 @@ class DriveWidget(QWidget):
             )
             if not path:
                 return
-            fmt = format_combo.currentText()
+            fmt = self._selected_format(format_combo, drive)
             wp = wp_check.isChecked()
             try:
                 if self.emulator.mount_disk(drive, path, fmt, wp):
@@ -173,7 +258,7 @@ class DriveWidget(QWidget):
             # Ohne Endung → .img annehmen.
             if not os.path.splitext(path)[1]:
                 path += ".img"
-            fmt = format_combo.currentText()
+            fmt = self._selected_format(format_combo, drive)
             wp = wp_check.isChecked()
             try:
                 if self.emulator.create_disk(drive, path, fmt, wp):
@@ -248,7 +333,8 @@ class DriveWidget(QWidget):
                 continue
             try:
                 if self.emulator.mount_disk(drive, path, fmt, wp):
-                    panel._format_combo.setCurrentText(fmt)
+                    idx = panel._format_combo.findData(fmt)
+                    panel._format_combo.setCurrentIndex(idx if idx >= 0 else 0)
                     panel._wp_check.setChecked(wp)
                     panel._path_display.setText(path)
                     panel._toggle_btn.setText("Unmount")

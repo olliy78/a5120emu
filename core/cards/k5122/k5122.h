@@ -34,7 +34,7 @@
 #include "core/peripherals/floppy_drive/floppy_drive2.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/drive_profile.h"
-#include "core/peripherals/floppy_drive/format_parser.h"
+#include "core/peripherals/floppy_drive/disk_format.h"
 #include "core/peripherals/floppy_drive/track_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"   // LogicalSector
 #include <array>
@@ -68,7 +68,7 @@ public:
     /**
      * @brief Konstruiert die Karte mit je einem Laufwerksprofil pro Slot.
      * @param bus      K1520-Systembus (für BUSRQ/BUSAK)
-     * @param profiles Laufwerksprofile der 4 Slots (Default: 4× mfs_525_ds80)
+     * @param profiles Laufwerksprofile der 4 Slots (Default: 4× K5601)
      * @param cpu_hz   effektive Z80-Taktfrequenz für die Index-Periode (Default 2.45 MHz)
      */
     explicit K5122(K1520Bus& bus,
@@ -227,6 +227,16 @@ public:
     void endDmaTransfer();
     /// @brief Schreitet die Floppy-Simulation um @p cycles Takte fort (Index-Puls).
     void update(int cycles);
+
+    /**
+     * @brief Hardware-Reset (/RESET des K1520-Backplane).
+     *
+     * Bricht einen laufenden Lese-/Schreibtransfer ab, gibt /BUSRQ frei und setzt
+     * beide PIOs sowie die gelatchten Steuersignale in den Einschaltzustand.
+     * NICHT zurückgesetzt werden die eingelegten Disketten und die mechanische
+     * Kopfposition — ein Reset bewegt auf echter Hardware kein Laufwerk.
+     */
+    void reset();
 
 private:
     // ─── PIO-/Signal-Handler ─────────────────────────────────────────────────

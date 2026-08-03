@@ -15,7 +15,8 @@
 #include "core/cards/k8025/k8025.h"
 #include "core/cards/k5122/k5122.h"
 #include "core/peripherals/k7637/k7637.h"
-#include "core/peripherals/floppy_drive/format_parser.h"
+#include "core/peripherals/floppy_drive/disk_format.h"
+#include "core/peripherals/floppy_drive/format_catalog.h"
 #include <atomic>
 #include <mutex>
 #include <string>
@@ -75,6 +76,31 @@ public:
      */
     bool createDisk(int drive, const std::string& path,
                     const std::string& format_name, bool write_protect);
+
+    /**
+     * @brief Name des laufwerkstyp-spezifischen Standardformats für einen Slot.
+     *
+     * Das Format, das @ref createDisk bei leerem @p format_name wählt (K5601→cpa800,
+     * K5600.10→200K, …).  Leerer String, wenn der Slot unbestückt ist.
+     */
+    std::string defaultFormatName(int drive) const;
+
+    /**
+     * @brief Formatnamen, die geometrisch auf das Laufwerk dieses Slots passen.
+     *
+     * Ein eingebautes Format passt, wenn seine Spurzahl ≤ profile.num_cyls und seine
+     * Kopfzahl ≤ profile.num_heads ist (das Aufzeichnungsverfahren leitet createDisk
+     * aus dem Laufwerk ab).  Das Standardformat des Slots steht an erster Stelle.
+     * Leere Liste bei unbestücktem Slot.  Für die GUI-Formatauswahl.
+     */
+    std::vector<std::string> compatibleFormats(int drive) const;
+
+    /** @brief Klartextbeschreibung eines Katalogformats (leer, wenn unbekannt). */
+    std::string formatDescription(const std::string& format_name) const;
+
+    /** @brief Geladener Formatkatalog (Diagnose: Quelldateien, übersprungene Formate). */
+    const FormatCatalog& formatCatalog() const { return disk_formats_; }
+
     bool unmountDisk(int drive);
     bool isDiskActive(int drive) const;
     bool isDiskWriteProtected(int drive) const;
@@ -243,6 +269,9 @@ public:
 private:
     void wireBackplane();
 
+    /** @brief Systemweiter /RESET (ZVE1 + alle peripheren Bausteine); s. .cpp. */
+    void resetHardware();
+
     struct KeyEvent { uint32_t keycode; bool shift, ctrl, is_press; };
 
     K1520Bus      bus_;
@@ -256,7 +285,7 @@ private:
 
     K7637         kbd_;
 
-    std::vector<DiskFormat> disk_formats_;
+    FormatCatalog disk_formats_;                  // aus data/formats.yaml (§8.6)
     std::array<DriveProfile, 4> drive_profiles_;  // Bestückung je Slot (für create-Default)
 
     std::atomic<bool>  stop_{false};

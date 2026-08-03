@@ -24,7 +24,7 @@
  */
 
 #include "core/machines/a5120/a5120.h"
-#include "core/peripherals/floppy_drive/format_parser.h"
+#include "core/peripherals/floppy_drive/disk_format.h"
 #include "core/logger.h"
 #include "tools/prn_listing.h"
 #include "tools/z80dis_min.h"

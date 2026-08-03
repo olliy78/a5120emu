@@ -252,6 +252,16 @@ public:
     Z80SIO& sioA33() { return sio_dfue_; }
 
     /**
+     * @brief Hardware-Reset (/RESET des K1520-Backplane): Baudraten-CTC und beide
+     *        SIOs in den Einschaltzustand.  Bus-/Koppelbus-Verdrahtung bleibt.
+     */
+    void reset() {
+        ctc_a34_.reset();
+        sio_kbd_printer_.reset();
+        sio_dfue_.reset();
+    }
+
+    /**
      * @brief Return a reference to SIO A32 (keyboard + printer channels).
      *
      * Used by A5120Machine to connect the K7637 keyboard peripheral and by

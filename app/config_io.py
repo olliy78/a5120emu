@@ -7,6 +7,8 @@ added over time.  Sections carried today:
 
 * ``crt``     — picture-tube look (see :class:`~app.ui.screen_widget.CRTParams`)
 * ``general`` — general emulator settings (currently the emulation ``speed``)
+* ``drive_types`` — the drive-bay configuration: one core ``DriveProfile`` name
+  per K5122 slot (``"none"`` = empty slot), restored on the next start
 * ``disks``   — the mounted disk images, so they are restored on the next start
 * ``window``  — window size + dock layout (which panels are active, their
   arrangement and sizes), so the previous look is restored on the next start
@@ -56,12 +58,18 @@ def default_config_path() -> str:
 
 
 def build_config(crt: CRTParams, general: dict, disks: list,
-                 window: dict = None) -> dict:
-    """Assemble the full configuration dict from the live application state."""
+                 window: dict = None, drive_types: list = None) -> dict:
+    """Assemble the full configuration dict from the live application state.
+
+    ``drive_types`` is the per-slot list of core ``DriveProfile`` names (one per
+    K5122 slot, ``"none"`` = empty slot), so the drive-bay configuration is
+    restored on the next start.
+    """
     return {
         "version": CONFIG_VERSION,
         "crt": crt.to_dict(),
         "general": dict(general or {}),
+        "drive_types": list(drive_types) if drive_types else [],
         "disks": list(disks or []),
         "window": dict(window or {}),
     }

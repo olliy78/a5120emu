@@ -1,0 +1,250 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Diskettenformat-Katalog des K1520-Kerns
+#
+#  Vollständige Schema-Beschreibung: doc/K1520_architecture.md §8.6
+#  Geladen von FormatCatalog (core/peripherals/floppy_drive/format_catalog.cpp).
+#
+#  Format-Ebene
+#    name         (Pflicht)  eindeutiger Katalogname — C-API, GUI, Tools
+#    description  (optional) Klartext für die GUI
+#    drives       (Pflicht)  kompatible Laufwerksprofile; NUR diese bieten das Format an
+#                            gültig: K5601, K5600.10, K5600.20, MF3200, MF6400
+#    default_for  (optional) Profile, für die dies das Standardformat beim Anlegen ist
+#    encoding     (optional) fm | mfm — Vorgabe für Spuren ohne eigenes encoding
+#    containers   (optional) img | hfe — darstellbare Dateitypen (Default: beide)
+#    tracks       (Pflicht)  Liste disjunkter Spurbereiche
+#
+#  Spurbereich
+#    cyls / heads   Bereich, INKLUSIVE ("0", "2-79", "0-1")
+#    sectors        Sektoren je Spur
+#    size           Bytes/Sektor (128 | 256 | 512 | 1024)
+#    encoding       (optional) fm | mfm — überschreibt die Format-Vorgabe (Mischdichte)
+#    first_sector   (optional) erste Sektor-ID (Default 1)
+#
+#  ┌───────────────────────────────────────────────────────────────────────────┐
+#  │ ACHTUNG — Verfahren nicht „aufhübschen".                                  │
+#  │ Die A5120-Bootdisketten sind reines Standard-IBM-MFM: der Boot-ROM        │
+#  │ startet in FM, findet keine Adressmarke und schaltet per MK auf MFM um    │
+#  │ (doc/K1520_architecture.md §14.5).  Würde man die 128-B-Systemspuren von  │
+#  │ cpa780/scpx780 als `encoding: fm` deklarieren — was intuitiv plausibel    │
+#  │ wirkt —, bräche der verifizierte Bootpfad.  Alle 5,25″-Formate sind       │
+#  │ deshalb durchgängig MFM; FM benutzt nur das echte 8″-SD-Format mf3200.    │
+#  └───────────────────────────────────────────────────────────────────────────┘
+# ─────────────────────────────────────────────────────────────────────────────
+version: 1
+
+formats:
+
+  # ══ CP/A-Standardformate (5,25″, K5601) ════════════════════════════════════
+
+  - name:        cpa780
+    description: "CP/A 780K Bootdiskette — 128B-Systembereich, 1024B-Daten"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      # Der Systembereich sind DREI physische 128-B-Seiten (Zyl 0 beidseitig +
+      # Zyl 1 Kopf 0); der 1024-B-Datenbereich beginnt asymmetrisch bei Zyl 1
+      # Kopf 1, damit das Verzeichnis exakt auf die Zyl-2-Grenze fällt.
+      - { cyls: 0,    heads: 0-1, sectors: 26, size: 128  }
+      - { cyls: 1,    heads: 0,   sectors: 26, size: 128  }
+      - { cyls: 1,    heads: 1,   sectors: 5,  size: 1024 }
+      - { cyls: 2-79, heads: 0-1, sectors: 5,  size: 1024 }
+
+  - name:        cpa800
+    description: "CP/A 800K — 80 Spuren doppelseitig, durchgängig 5×1024"
+    drives:      [K5601]
+    default_for: [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-79, heads: 0-1, sectors: 5, size: 1024 }
+
+  # 640K bzw. 624K passen nur DOPPELSEITIG: 80 × 2 × 16 × 256 B = 640 KB.
+  # (Einseitig wären es 320 KB — so stand es bis 2026-08-03 fälschlich im Katalog
+  # und davor in den einkompilierten builtinFormats().)  Damit sind beide Formate
+  # ausschließlich am zweiköpfigen K5601 fahrbar.
+  - name:        cpa640
+    description: "CP/A 640K — 80 Spuren doppelseitig, 16×256"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-79, heads: 0-1, sectors: 16, size: 256 }
+
+  - name:        cpa624
+    description: "CP/A 624K — 78 Spuren doppelseitig, 16×256 (reduzierte Kapazität)"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-77, heads: 0-1, sectors: 16, size: 256 }
+
+  - name:        cpa200
+    description: "CP/A 400K — 80 Spuren einseitig, 5×1024 (K5600.20)"
+    drives:      [K5601, K5600.20]
+    default_for: [K5600.20]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-79, heads: 0, sectors: 5, size: 1024 }
+
+  - name:        cpa200_boot
+    description: "CP/A 400K bootfähig — 128B-Systemspuren 0-2, danach 5×1024"
+    drives:      [K5601, K5600.20]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-2,  heads: 0, sectors: 26, size: 128  }
+      - { cyls: 3-79, heads: 0, sectors: 5,  size: 1024 }
+
+  # ══ SCPX-Varianten (5,25″, doppelseitig) ═══════════════════════════════════
+
+  - name:        scpx780
+    description: "SCPX 780K — Systemspuren 0-2 mit 26×128, Daten 5×1024"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-2,  heads: 0-1, sectors: 26, size: 128  }
+      - { cyls: 3-79, heads: 0-1, sectors: 5,  size: 1024 }
+
+  - name:        scpx780_b
+    description: "SCPX 780K Variante B — Geometrie wie scpx780"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-2,  heads: 0-1, sectors: 26, size: 128  }
+      - { cyls: 3-79, heads: 0-1, sectors: 5,  size: 1024 }
+
+  # ══ 8″-Laufwerke ═══════════════════════════════════════════════════════════
+
+  # Beide 8″-Laufwerke sind einseitig mit 77 Spuren.  Das MF3200 beherrscht NUR FM
+  # (~300K), das MF6400 zusätzlich MFM (~600K) — deshalb ist das FM-Format auf beiden
+  # fahrbar, das MFM-Format nur auf dem MF6400.  Das K5602 ist zum MF3200 voll
+  # kompatibel und hat kein eigenes Profil.
+
+  - name:        mf3200
+    description: "8″ 308K — 77 Spuren einseitig, 4×1024 FM (Einfachdichte)"
+    drives:      [MF3200, MF6400]
+    default_for: [MF3200]
+    encoding:    fm
+    tracks:
+      - { cyls: 0-76, heads: 0, sectors: 4, size: 1024 }
+
+  - name:        mf6400
+    description: "8″ 616K — 77 Spuren einseitig, 8×1024 MFM (Doppeldichte)"
+    drives:      [MF6400]
+    default_for: [MF6400]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-76, heads: 0, sectors: 8, size: 1024 }
+
+  # ══ K5601 §3 — 80 Spuren doppelseitig ══════════════════════════════════════
+  # Viele §3-Formate teilen dieselbe ROHgeometrie; Systemspuren, Verzeichnis-
+  # einträge und Sektor-Interleave ändern das Offset-Layout der .img nicht.
+
+  - name:        k5601_16x256
+    description: "K5601 §3 Formate 4/5 — 80 Spuren doppelseitig, 16×256"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-79, heads: 0-1, sectors: 16, size: 256 }
+
+  - name:        k5601_16x256_77
+    description: "K5601 §3 Format 7 (ZIK-NK) — 77 Spuren doppelseitig, 16×256"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-76, heads: 0-1, sectors: 16, size: 256 }
+
+  - name:        k5601_26x128
+    description: "K5601 §3 Format 6 — 80 Spuren doppelseitig, 26×128"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-79, heads: 0-1, sectors: 26, size: 128 }
+
+  - name:        k5601_9x512
+    description: "K5601 §3 Formate E/F — 80 Spuren doppelseitig, 9×512"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-79, heads: 0-1, sectors: 9, size: 512 }
+
+  - name:        k5601_10x512
+    description: "K5601 §3 Formate G/J — 80 Spuren doppelseitig, 10×512"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-79, heads: 0-1, sectors: 10, size: 512 }
+
+  # ══ K5601 §3.4 — einseitig (S) ═════════════════════════════════════════════
+
+  - name:        k5601_ss80_26x128
+    description: "K5601 §3.4 Format S — 80 Spuren einseitig, 26×128"
+    drives:      [K5601, K5600.20]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-79, heads: 0, sectors: 26, size: 128 }
+
+  - name:        k5601_ss80_9x512
+    description: "K5601 §3.4 Format S — 80 Spuren einseitig, 9×512"
+    drives:      [K5601, K5600.20]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-79, heads: 0, sectors: 9, size: 512 }
+
+  # ══ K5601 §3.4 — 40 Spuren Einzelschritt, einseitig (W) ════════════════════
+
+  - name:        k5601_ss40_5x1024
+    description: "K5601 §3.4 Format W — 40 Spuren einseitig, 5×1024 (K5600.10, 200K)"
+    drives:      [K5600.10, K5600.20, K5601]
+    default_for: [K5600.10]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-39, heads: 0, sectors: 5, size: 1024 }
+
+  - name:        k5601_ss40_26x128
+    description: "K5601 §3.4 Format W — 40 Spuren einseitig, 26×128"
+    drives:      [K5600.10, K5600.20, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-39, heads: 0, sectors: 26, size: 128 }
+
+  - name:        k5601_ss40_16x256
+    description: "K5601 §3.4 Format W — 40 Spuren einseitig, 16×256"
+    drives:      [K5600.10, K5600.20, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-39, heads: 0, sectors: 16, size: 256 }
+
+  - name:        k5601_ss40_15x256
+    description: "K5601 §3.4 Format W — 40 Spuren einseitig, 15×256"
+    drives:      [K5600.10, K5600.20, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-39, heads: 0, sectors: 15, size: 256 }
+
+  # ══ K5601 §3.4 — 40 Spuren Einzelschritt, doppelseitig (V) ═════════════════
+
+  - name:        k5601_ds40_5x1024
+    description: "K5601 §3.4 Format V — 40 Spuren doppelseitig, 5×1024"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-39, heads: 0-1, sectors: 5, size: 1024 }
+
+  - name:        k5601_ds40_26x128
+    description: "K5601 §3.4 Format V — 40 Spuren doppelseitig, 26×128"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-39, heads: 0-1, sectors: 26, size: 128 }
+
+  - name:        k5601_ds40_16x256
+    description: "K5601 §3.4 Format V — 40 Spuren doppelseitig, 16×256"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-39, heads: 0-1, sectors: 16, size: 256 }
+
+  - name:        k5601_ds40_17x256
+    description: "K5601 §3.4 Format V — 40 Spuren doppelseitig, 17×256"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-39, heads: 0-1, sectors: 17, size: 256 }

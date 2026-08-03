@@ -81,6 +81,10 @@ K2526::K2526(K1520Bus& bus, const A5120Config& cfg)
             return;                            // blocked write silently dropped
         }
         bus_.memWrite(a, d);
+        // /WR-Strobe (Port A A5) NACH dem Schreiben pulsen: die Speicher-Ausbau-
+        // messung des Lade-ROMs und HARDYs RDY-Test lösen ihren Interrupt genau
+        // hierüber aus und prüfen in der ISR, ob das Byte angekommen ist.
+        pulseWriteStrobe();
     };
     cpu_.readPort     = [this](uint16_t p)           { return bus_.ioRead(p & 0xFF); };
     cpu_.writePort    = [this](uint16_t p, uint8_t d){ bus_.ioWrite(p & 0xFF, d); };
@@ -145,19 +149,28 @@ void K2526::powerOn()
     bus_.registerMem(&rom_, 0x0000, 1024);
     LOG_INFO("K2526", "Power-on: Lade-ROM aktiv (0000H-03FFH)");
 
+    // ── Periphere Bausteine der Karte auf /RESET-Zustand ───────────────────
+    // Der System-CTC (Q302) muss mit: sonst zählt er nach einem Reset aus dem
+    // laufenden Betrieb mit der IM2-Vektorbasis des alten OS weiter und der erste
+    // Timer-Interrupt nach dem `EI` des Lade-ROMs springt ins Leere.
+    ctc_.reset();
+    bs_pio_.reset();   // wird direkt darunter neu programmiert (Mode 3 + Richtungen)
+
     // ── Q240 Schutztabelle zurücksetzen ────────────────────────────────────
     spa_.reset();
     sps_ind_      = false;
-    // Port-A-Eingänge: pull-high, ABER die dynamischen Bus-Strobes /M1 (A0),
-    // /WR (A5) und /RDY (A6) liegen im laufenden System praktisch dauernd aktiv
-    // (aktiv-LOW): /M1 pulst bei jedem Opcode-Fetch, /WR bei jedem Schreibzyklus,
-    // /RDY bei jeder Speicherantwort. Der PIO tastet sie pegelbasiert ab; damit
-    // HARDYs PIO-Selbsttest (Maske FEH: A0 aktiv-LOW → Interrupt) und der
-    // MEMDI-RDY-Test (Maske 9FH: A5&A6 aktiv-LOW → Interrupt) auslösen, werden
-    // diese drei Bits als aktiv (0) modelliert. Sie sind ausschließlich
-    // Interruptquellen — HARDY liest Port A sonst nur in seiner MEMDI-Toggle-
-    // Routine, wo dank Richtungsmaske (0x7F) nur Bit7 (Ausgang) zählt.
-    port_a_inputs_= 0xFF & ~0x61u;   // A0=/M1, A5=/WR, A6=/RDY aktiv-LOW; Rest high
+    // Port-A-Eingänge: pull-high, ABER die dynamischen Bus-Strobes /M1 (A0) und
+    // /RDY (A6) liegen im laufenden System praktisch dauernd aktiv (aktiv-LOW):
+    // /M1 pulst bei jedem Opcode-Fetch, /RDY bei jeder Speicherantwort. Der PIO
+    // tastet sie pegelbasiert ab; damit HARDYs PIO-Selbsttest (Maske FEH: A0
+    // aktiv-LOW → Interrupt) auslöst, werden sie als aktiv (0) modelliert.
+    // /WR (A5) ist dagegen ein echter STROBE und bleibt hier inaktiv (high) — er
+    // wird pro ZVE1-Schreibzyklus gepulst (pulseWriteStrobe()). Nur so löst die
+    // Ausbaumessung des Lade-ROMs bzw. HARDYs MEMDI-RDY-Test (Maske 9FH: A5&A6
+    // aktiv-LOW → Interrupt) DURCH den Schreibbefehl aus statt schon beim EI davor.
+    // Die Bits sind ausschließlich Interruptquellen — HARDY liest Port A sonst nur
+    // in seiner MEMDI-Toggle-Routine, wo dank Richtungsmaske (0x7F) nur Bit7 zählt.
+    port_a_inputs_= 0xFF & ~0x41u;   // A0=/M1, A6=/RDY aktiv-LOW; A5=/WR ruhend high
     int_bs_active_= false;
     zve2_wait_    = false;
     zve2_reset_   = true;    // ZVE2 (DMA-CPU) am Power-on in Reset halten (Port 04H
@@ -446,6 +459,29 @@ void K2526::updatePortAInputs()
     else
         port_a_inputs_ &= ~0x08u;  // A3=0: no violation
     bs_pio_.portAWrite(port_a_inputs_);
+}
+
+/**
+ * @brief /WR-Strobe (Port A A5) für einen ZVE1-Schreibzyklus pulsen.
+ *
+ * LOW während des Zyklus, danach wieder HIGH. Der PIO latcht im Bitmodus eine
+ * einmal erfüllte Interruptbedingung (`pending`), das kurze Fenster genügt also.
+ */
+void K2526::pulseWriteStrobe()
+{
+    // Heißer Pfad (jeder ZVE1-Schreibzugriff): nur arbeiten, wenn Port A überhaupt
+    // scharf ist. Im Normalbetrieb ist die Port-A-Interruptquelle abgeschaltet.
+    if (!bs_pio_.portAIntEnabled()) return;
+
+    const bool int_before = bs_pio_.hasInterrupt();
+    port_a_inputs_ &= ~0x20u;              // /WR aktiv (LOW) — Schreibzyklus läuft
+    bs_pio_.portAWrite(port_a_inputs_);
+    port_a_inputs_ |= 0x20u;               // /WR wieder inaktiv (HIGH)
+    bs_pio_.portAWrite(port_a_inputs_);
+    // Der Strobe entsteht ausserhalb eines I/O-Zugriffs; die Interrupt-Chain der
+    // Run-Loop würde ihn im Schnellpfad überspringen (vgl. K5122-Index-IRQ).
+    if (!int_before && bs_pio_.hasInterrupt())
+        bus_.markIntDirty();
 }
 
 /**

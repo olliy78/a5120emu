@@ -27,7 +27,7 @@
 
 #include "core/bus/k1520_bus.h"
 #include "core/cards/k5122/k5122.h"
-#include "core/peripherals/floppy_drive/format_parser.h"
+#include "core/peripherals/floppy_drive/disk_format.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
 #include "core/peripherals/floppy_drive/raw_sector_image.h"
@@ -283,7 +283,7 @@ TEST_F(K5122Test, Motor_IndexNurBeiLaufendemMotor) {
     card.ioWrite(0x11, 0x62);                   // Interrupt-Vektor
     card.ioWrite(0x11, 0x83);                   // IE=1
     card.setIEI(true);
-    const int P = builtinDriveProfile("mfs_525_ds80").indexPeriodCycles(2450000);
+    const int P = builtinDriveProfile("K5601").indexPeriodCycles(2450000);
 
     // D0 selektiert, aber Motor AUS (0xFE: /SE0=0, /LCK0=1) → kein Index trotz voller Periode
     card.ioWrite(0x18, 0xFE);
@@ -628,7 +628,7 @@ TEST_F(K5122Test, IndexPuls_NachAusreichendCycles_HasInterrupt) {
     card.setIEI(true);
 
     // Genügend Zyklen für eine volle Umdrehung (300 U/min, 2,45 MHz → ~490 000 Zyklen)
-    const int PERIODE = builtinDriveProfile("mfs_525_ds80").indexPeriodCycles(2450000);
+    const int PERIODE = builtinDriveProfile("K5601").indexPeriodCycles(2450000);
     card.update(PERIODE + 1);
 
     EXPECT_TRUE(card.hasInterrupt()) << "Nach Index-Puls sollte hasInterrupt() true sein";
@@ -645,7 +645,7 @@ TEST_F(K5122Test, IndexPuls_NichtMontiert_KeinInterrupt) {
     card.setIEI(true);
     card.ioWrite(0x11, 0x83);
 
-    const int PERIODE = builtinDriveProfile("mfs_525_ds80").indexPeriodCycles(2450000);
+    const int PERIODE = builtinDriveProfile("K5601").indexPeriodCycles(2450000);
     card.update(PERIODE * 3);
 
     // Kein Absturz, kein Interrupt ohne gemountete Diskette
@@ -1122,12 +1122,12 @@ TEST_F(K5122Test, DeserializeRejectsTruncatedBlob) {
 // ─── Aufzeichnungsverfahren: Laufwerk-Default + Steuerwort-Override ─────────────
 //
 // FM/MFM des Lesepfads kommt aus DriveProfile::default_read_encoding (Default-Card =
-// mfs_525_ds80 → FM); ein „Lesen-Marke"-Steuerwort 0x85(MFM)/0x87(FM) an Ctrl-Port A
+// K5601 → FM); ein „Lesen-Marke"-Steuerwort 0x85(MFM)/0x87(FM) an Ctrl-Port A
 // übersteuert den Default.  Erkennung: (ctrlA & 0xFD) == 0x85 — NUR 0x85/0x87.
 
 TEST_F(K5122Test, ReadEncoding_DefaultAusLaufwerkProfil) {
     auto s = card.debugState();
-    EXPECT_EQ(s.readEncoding, Encoding::FM);   // mfs_525_ds80-Default = FM (ROM-Phase)
+    EXPECT_EQ(s.readEncoding, Encoding::FM);   // K5601-Default = FM (ROM-Phase)
     EXPECT_FALSE(s.readEncFromCtrlWord);
 }
 
@@ -1184,7 +1184,7 @@ TEST_F(K5122Test, TrackEncoding_AusImage_und_EncodingMatch) {
     // Test-.img wird als RawSectorImage mit Default MFM gemountet.
     auto s0 = card.debugState();
     EXPECT_EQ(s0.trackEncoding, Encoding::MFM);
-    // Default-Profil mfs_525_ds80 → readEncoding FM → Mismatch.
+    // Default-Profil K5601 → readEncoding FM → Mismatch.
     EXPECT_EQ(s0.readEncoding, Encoding::FM);
     EXPECT_FALSE(s0.encodingMatch);
 

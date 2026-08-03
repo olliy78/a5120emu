@@ -19,7 +19,7 @@
 
 #pragma once
 #include "disk_image.h"
-#include "format_parser.h"
+#include "disk_format.h"
 #include "track_codec.h"   // LogicalSector, TrackCodec::buildTrack
 #include "track_image.h"
 #include <cstdint>

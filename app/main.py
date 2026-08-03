@@ -59,6 +59,9 @@ def main():
         window = MainWindow()
         window.show()
     except Exception as e:
+        # Startabbrüche des Cores (z. B. fehlender Diskettenformat-Katalog
+        # data/formats.yaml) tragen eine mehrzeilige, erklärende Meldung —
+        # unverändert ausgeben und den Emulator beenden.
         print(f"Failed to start emulator: {e}", file=sys.stderr)
         return 1
 

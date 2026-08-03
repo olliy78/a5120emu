@@ -175,8 +175,36 @@ must **not** break:
 5. **Head-select = ctrl Port A bit2 (/FR)**, latched only at the `/STR` edge (bit5 is step DIRECTION
    only, toggles with MK/MK1). **Track-end `/BUSRQ` release** on `OUT(13H),03H` during a 128-B read
    (ZVE1 takes over before ZVE2's idle loop `L0696` corrupts `[07F8..07FC]`).
-6. **Asymmetric mixed geometry** in `format_parser.cpp` (cpa780: `{0,0,0,1,26,128}` +
-   `{1,1,0,0,26,128}` + `{1,1,1,1,5,1024}` + `{2,79,0,1,5,1024}`); index period `≈490000` cycles.
+6. **Asymmetric mixed geometry** — now declared in **`data/formats.yaml`** (`cpa780`:
+   `{0,0,0,1,26,128}` + `{1,1,0,0,26,128}` + `{1,1,1,1,5,1024}` + `{2,79,0,1,5,1024}`, all MFM);
+   index period `≈490000` cycles. Guarded by `test_format_catalog`
+   (`BootKritischeGeometrien_Unveraendert`). **Do not declare the 128-B system tracks as
+   `encoding: fm`** — the disks are plain IBM-MFM and the ROM's FM→MFM trial-and-error depends on
+   it (§14.5).
+7. **/WR (BS-PIO Port A, A5) ist ein Strobe, kein Dauerpegel** (`K2526::pulseWriteStrobe`, pro
+   ZVE1-Schreibzyklus gepulst; A0 `/M1` und A6 `/RDY` bleiben dauernd aktiv). Die
+   Speicher-Ausbaumessung des Lade-ROMs (`0040H–005AH`) schärft Port A mit Maske `9FH`
+   (A5 AND A6, aktiv-LOW), gibt `EI` und will den Interrupt **durch** das Testschreiben —
+   ihre ISR (`007AH`) prüft, ob das Byte ankam. Dauerpegel ⇒ Interrupt schon beim `EI` ⇒
+   die ISR sieht den ALTEN Speicherinhalt: bei frischem DRAM (0xFF) unauffällig, bei
+   **Reset/Power-Cycle aus dem laufenden Betrieb** meldet sie „kein Speicher" und der
+   Neustart entgleist. Dazu gehört, dass ein Interruptsteuerwort mit IE=0 eine anstehende
+   Anforderung **verwirft** (`Z80PIO::writeCtrl`) — sonst bleibt die vom Stack-Push der
+   Interruptannahme neu gesetzte Anforderung liegen. Guards: `test_k2526`
+   (`K2526WriteStrobe.*`), `test_hardy` (MEMDI-RDY-Test nutzt dieselbe Maske).
+8. **Reset ist ein SYSTEMWEITER /RESET, nicht nur die CPU** (`A5120Machine::resetHardware()`,
+   von `reset()` **und** `powerOn()` benutzt). Die /RESET-Leitung des Backplane räumt alle
+   Bausteine ab: `Z80CTC::reset` / `Z80PIO::reset` / `Z80SIO::reset` (neu),
+   `K2526::powerOn` (Q302-CTC + BS-PIO), `K5122::reset` (Transfer abbrechen, /BUSRQ frei,
+   PIOs; Disketten/Kopfposition bleiben), `K8025::reset`, `K7637::reset`, dazu
+   NMI/INT/WAIT lösen + `markIntDirty()`. **Ohne das** zählte nach einem Reset aus dem
+   laufenden Betrieb der System-CTC mit der IM2-Vektorbasis des alten OS (`vecBase=F8`,
+   INT frei) weiter → der erste Timer-Interrupt nach dem `EI` des Lade-ROMs landet auf
+   einem Fantasie-Vektor aus der ROM-Seite 0 → Boot-Kette entgleist (genau der Fall
+   „nach der Uhrzeit-Eingabe am `A>` geht weder Reset noch Power ON"). `powerOn()` löscht
+   zusätzlich das DRAM (`ops_.fill(0xFF)`) — Netz-Aus verliert den Inhalt, `reset()` nicht.
+   Guards: `test_boot_integration` (`RestartFromInteractivePromptRebootsFromRom`,
+   `ResetFromRunningSystemRebootsFromRom`, `PowerCycleFromRunningOsRebootsFromRom`).
 
 Handshake RAM: `[0x03F8]` done-flag, `[0x03F7]` index counter, `[0x03FD]` path byte (`0x87`),
 `[0x07F2]` target sector count, `[0x03F0]` load address. Key addresses: ZVE1 wait `0x0168`,

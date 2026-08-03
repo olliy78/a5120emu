@@ -54,7 +54,9 @@ int64_t RawSectorImage::sectorOffset(uint8_t cyl, uint8_t head,
                                      uint8_t sector_id) const {
     const TrackFormat* tf = fmt_.findTrack(cyl, head);
     if (!tf) return -1;
-    if (sector_id < 1 || sector_id > tf->secs_per_track) return -1;
+    // Sektor-IDs laufen von first_sector_id (IBM-üblich 1) fortlaufend.
+    const int first = tf->first_sector_id;
+    if (sector_id < first || sector_id >= first + tf->secs_per_track) return -1;
 
     // Alle Spur-Bytes vor (cyl, head) in Layout-Reihenfolge aufsummieren.
     uint64_t offset = 0;
@@ -64,7 +66,7 @@ int64_t RawSectorImage::sectorOffset(uint8_t cyl, uint8_t head,
     for (uint8_t c = 0; c < ncyls; ++c) {
         for (uint8_t h = 0; h < nheads; ++h) {
             if (c == cyl && h == head) {
-                offset += static_cast<uint64_t>(sector_id - 1) * tf->bytes_per_sec;
+                offset += static_cast<uint64_t>(sector_id - first) * tf->bytes_per_sec;
                 return static_cast<int64_t>(offset);
             }
             const TrackFormat* t = fmt_.findTrack(c, h);
@@ -80,7 +82,8 @@ DiskGeometry RawSectorImage::geometry() const {
     DiskGeometry g;
     g.num_cyls  = fmt_.numCylinders();
     g.num_heads = fmt_.numHeads();
-    g.encoding  = enc_;
+    // Vorherrschendes Verfahren der Diskette (Mischdichte trägt das Format spurweise).
+    g.encoding  = fmt_.tracks.empty() ? enc_ : fmt_.predominantEncoding();
     g.uniform   = (fmt_.tracks.size() == 1);
     return g;
 }
@@ -99,8 +102,9 @@ TrackImage RawSectorImage::readTrack(uint8_t cyl, uint8_t head) {
     std::vector<LogicalSector> sektoren;
     sektoren.reserve(tf->secs_per_track);
 
-    for (uint8_t id = 1; id <= tf->secs_per_track; ++id) {
-        int64_t off = sectorOffset(cyl, head, id);
+    for (uint8_t i = 0; i < tf->secs_per_track; ++i) {
+        const uint8_t id  = static_cast<uint8_t>(tf->first_sector_id + i);
+        const int64_t off = sectorOffset(cyl, head, id);
 
         LogicalSector ls;
         ls.cyl  = cyl;
@@ -118,7 +122,9 @@ TrackImage RawSectorImage::readTrack(uint8_t cyl, uint8_t head) {
         sektoren.push_back(std::move(ls));
     }
 
-    return TrackCodec::buildTrack(sektoren, enc_);
+    // Verfahren kommt aus dem SPURBEREICH (Mischdichte-Disketten: FM-Systemspur +
+    // MFM-Datenspuren).  enc_ ist nur noch der Rückfall für Formate ohne Angabe.
+    return TrackCodec::buildTrack(sektoren, tf->encoding);
 }
 
 bool RawSectorImage::writeTrack(uint8_t cyl, uint8_t head,

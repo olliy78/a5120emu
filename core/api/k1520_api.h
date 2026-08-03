@@ -33,17 +33,31 @@ K1520Handle k1520_create(K1520MachineType type);
 /**
  * Create a machine with an explicit drive-bay configuration.
  *
- * @param drive0..3  DriveProfile name per K5122 slot, e.g. "K5601" (5.25" MFM,
- *                   default), "mfs_525_ds80", "ss_525_40", "mf3200_8_ss77"
- *                   (8" FM), "mf6400_8_ds77" (8" MFM).  NULL or "" keeps the
- *                   default (K5601); unknown names fall back to the built-in
- *                   default profile.
+ * @param drive0..3  DriveProfile name per K5122 slot — the real drive names:
+ *                   "K5601" (5.25" DS 80 tracks, 800K, default), "K5600.10"
+ *                   (5.25" SS 40 tracks, 200K), "K5600.20" (5.25" SS 80 tracks,
+ *                   400K), "MF3200" (8" SS 77 tracks, FM only, 300K), "MF6400"
+ *                   (8" SS 77 tracks, FM+MFM, 600K).  The special name "none"
+ *                   marks an EMPTY slot (no drive wired: mounting/creating a disk
+ *                   there is refused).  NULL or "" keeps the default (K5601);
+ *                   unknown names fall back to K5601.  Former technical names
+ *                   (e.g. "mf3200_8_ss77") still resolve as aliases.
  * @return handle, or NULL on error.  Equivalent to k1520_create() when all four
  *         names are NULL/"".
  */
 K1520Handle k1520_create_configured(K1520MachineType type,
                                     const char* drive0, const char* drive1,
                                     const char* drive2, const char* drive3);
+
+/**
+ * @brief Reason the last k1520_create*() returned NULL ("" if none).
+ *
+ * A startup abort (e.g. missing/broken disk format catalog `formats.yaml`) yields
+ * no handle, so the message cannot be fetched via k1520_last_error(). The returned
+ * pointer stays valid until the next k1520_create*() call.
+ */
+const char* k1520_last_init_error(void);
+
 void        k1520_destroy(K1520Handle h);
 void        k1520_reset(K1520Handle h);
 void        k1520_power_on(K1520Handle h);
@@ -88,6 +102,21 @@ bool k1520_create_disk(K1520Handle h, int drive,
                        bool write_protect);
 /** @brief Unmount disk image from a drive slot. */
 bool k1520_unmount_disk(K1520Handle h, int drive);
+
+/* ─── Disk formats per drive ─────────────────────────────────────────────────
+ * The built-in disk formats that geometrically fit the drive configured in a
+ * slot (for the GUI format selection).  The drive-type default is index 0.
+ * Returned name pointers stay valid until the next call on the same thread. */
+/** @brief Number of built-in formats compatible with the drive in @p drive. */
+int         k1520_drive_format_count(K1520Handle h, int drive);
+/** @brief Name of the @p index-th compatible format (NULL if out of range). */
+const char* k1520_drive_format_name(K1520Handle h, int drive, int index);
+/** @brief Drive-type default format name for @p drive (what empty-create uses). */
+const char* k1520_drive_default_format(K1520Handle h, int drive);
+/** @brief Human-readable description of a catalog format ("" if unknown). */
+const char* k1520_format_description(K1520Handle h, const char* name);
+/** @brief Colon-separated list of the loaded formats.yaml file(s) — diagnostics. */
+const char* k1520_formats_source(K1520Handle h);
 /** @brief Return true if a disk image is mounted in the drive. */
 bool k1520_disk_active(K1520Handle h, int drive);
 /** @brief Return true if mounted image is write protected. */
