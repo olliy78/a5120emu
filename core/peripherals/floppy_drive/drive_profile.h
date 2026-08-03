@@ -25,23 +25,34 @@
 
 /**
  * @struct DriveProfile
- * @brief Physisches Laufwerk an einem K5122-Slot (Startumfang: 4 Profile).
+ * @brief Physisches Laufwerk an einem K5122-Slot.
  *
- * | Profil          | Zoll  | Spuren×Köpfe | Verfahren | U/min |
- * |-----------------|-------|--------------|-----------|-------|
- * | mfs_525_ds80    | 5,25″ | 80×2         | MFM       | 300   |
- * | ss_525_40       | 5,25″ | 40×1         | MFM       | 300   |  (K5600.10)
- * | ss_525_80       | 5,25″ | 80×1         | MFM       | 300   |  (K5600.20)
- * | mf3200_8_ss77   | 8″    | 77×1         | FM        | 360   |  (MF3200)
- * | mf6400_8_ds77   | 8″    | 77×2         | MFM       | 360   |
- * | mf6400_8_ss77   | 8″    | 77×1         | MFM       | 360   |  (K5602.10, einseitig)
- * | K5601           | 5,25″ | 80×2         | MFM (*)   | 300   |
+ * Die Profile heißen wie die realen Laufwerke:
+ *
+ * | Profil     | Zoll  | Spuren×Köpfe | Verfahren   | U/min | Kapazität |
+ * |------------|-------|--------------|-------------|-------|-----------|
+ * | K5601      | 5,25″ | 80×2         | MFM + FM(*) | 300   | 800 KB    |
+ * | K5600.10   | 5,25″ | 40×1         | MFM         | 300   | 200 KB    |
+ * | K5600.20   | 5,25″ | 80×1         | MFM + FM(*) | 300   | 400 KB    |
+ * | MF3200     | 8″    | 77×1         | **nur FM**  | 360   | ~300 KB   |
+ * | MF6400     | 8″    | 77×1         | FM + MFM    | 360   | ~600 KB   |
+ * | none       | —     | —            | —           | —     | leerer Slot |
  *
  * (*) K5601 = das in der Standard-A5120-Bürokonfiguration dreifach verbaute 5,25″-
  *     Laufwerk.  Physisch MFM-fähig; der Boot-ROM-/Loader-Lesepfad ist jedoch **als FM
  *     verdrahtet** (default_read_encoding = FM), siehe Feld-Doku unten.
  *
- * ### K5601-Datenblatt (5,25″-DS-Standardlaufwerk, Default-Profil mfs_525_ds80)
+ * Beide 8″-Laufwerke sind **einseitig mit 77 Spuren** und unterscheiden sich allein im
+ * beherrschten Verfahren: das MF3200 kann nur FM (Einfachdichte), das MF6400 zusätzlich
+ * MFM und damit die doppelte Kapazität.  Das **K5602 ist zum MF3200 voll kompatibel**
+ * und hat deshalb kein eigenes Profil.
+ *
+ * Frühere technische Profilnamen (`K5600.10`, `K5600.20`, `MF3200`,
+ * `MF6400`, `MF6400`, `K5601`) werden von
+ * @ref builtinDriveProfile weiterhin als **Alias** aufgelöst, damit gespeicherte
+ * Konfigurationen nicht still auf ein anderes Laufwerk zurückfallen.
+ *
+ * ### K5601-Datenblatt (5,25″-DS-Standardlaufwerk, Default-Profil K5601)
  * | Größe | Wert |
  * |-------|------|
  * | Diskettendrehzahl | **300 min⁻¹ ± 2 %** (→ Index-Periode 490000 Takte @ 2,45 MHz) |
@@ -58,7 +69,7 @@
  * sind bewusst nicht taktgenau modelliert (Boot-Timing, siehe K5122_MOTOR_SPINUP_MS).
  */
 struct DriveProfile {
-    std::string name        = "mfs_525_ds80";
+    std::string name        = "K5601";
     uint8_t  num_cyls       = 80;     ///< 40 / 77 / 80
     uint8_t  num_heads      = 2;      ///< 1 / 2
     uint16_t rpm            = 300;    ///< K5601: 300 min⁻¹ ±2 % (Datenblatt); 8″ = 360 → Index-Periode
@@ -144,13 +155,13 @@ struct DriveProfile {
 };
 
 /**
- * @brief Eingebautes Standardprofil per Name auflösen (analog FormatParser::builtinFormats()).
+ * @brief Eingebautes Laufwerksprofil per Name auflösen.
  *
- * Unbekannte Namen liefern das Default-Profil mfs_525_ds80.  Der Sondername
- * `"none"` liefert ein **leeres** Profil (present=false) — der Slot ist unbestückt.
+ * Unbekannte Namen liefern das Standardprofil **K5601**.  Der Sondername `"none"`
+ * liefert ein **leeres** Profil (present=false) — der Slot ist unbestückt.
+ * Alte Profilnamen werden als Alias aufgelöst (siehe Klassen-Doku).
  *
- * @param name "mfs_525_ds80" | "ss_525_40" | "ss_525_80" | "mf3200_8_ss77" |
- *             "mf6400_8_ds77" | "mf6400_8_ss77" | "K5601" | "none"
+ * @param name "K5601" | "K5600.10" | "K5600.20" | "MF3200" | "MF6400" | "none"
  * @return Referenz auf ein statisches DriveProfile.
  */
 const DriveProfile& builtinDriveProfile(const std::string& name);
@@ -160,7 +171,7 @@ const DriveProfile& builtinDriveProfile(const std::string& name);
  *
  * Nötig für die Validierung des Formatkatalogs: @ref builtinDriveProfile liefert für
  * **unbekannte** Namen stillschweigend das Default-Profil — ein Tippfehler in
- * `formats.yaml` würde also unbemerkt als `mfs_525_ds80` durchgehen.  Gegen diese
+ * `formats.yaml` würde also unbemerkt als `K5601` durchgehen.  Gegen diese
  * Liste wird deshalb explizit geprüft.
  *
  * @see FormatCatalog (Validierung V3)

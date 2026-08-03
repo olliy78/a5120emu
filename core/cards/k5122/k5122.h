@@ -68,7 +68,7 @@ public:
     /**
      * @brief Konstruiert die Karte mit je einem Laufwerksprofil pro Slot.
      * @param bus      K1520-Systembus (für BUSRQ/BUSAK)
-     * @param profiles Laufwerksprofile der 4 Slots (Default: 4× mfs_525_ds80)
+     * @param profiles Laufwerksprofile der 4 Slots (Default: 4× K5601)
      * @param cpu_hz   effektive Z80-Taktfrequenz für die Index-Periode (Default 2.45 MHz)
      */
     explicit K5122(K1520Bus& bus,

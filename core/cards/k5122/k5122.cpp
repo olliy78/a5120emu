@@ -31,7 +31,7 @@
 /**
  * @brief Initialisiert die Karte und alle 4 Laufwerksslots.
  *
- * Jeder Slot wird mit dem übergebenen DriveProfile initialisiert (Default: mfs_525_ds80).
+ * Jeder Slot wird mit dem übergebenen DriveProfile initialisiert (Default: K5601).
  * Der initiale Status-Port-B wird sofort gesetzt, damit der erste IN 0x12 einen
  * plausiblen Wert liefert.
  */

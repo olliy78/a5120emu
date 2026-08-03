@@ -33,13 +33,15 @@ K1520Handle k1520_create(K1520MachineType type);
 /**
  * Create a machine with an explicit drive-bay configuration.
  *
- * @param drive0..3  DriveProfile name per K5122 slot, e.g. "K5601" (5.25" MFM,
- *                   default), "mfs_525_ds80", "ss_525_40", "ss_525_80",
- *                   "mf3200_8_ss77" (8" FM), "mf6400_8_ds77" (8" MFM).  The
- *                   special name "none" marks an EMPTY slot (no drive wired:
- *                   mounting/creating a disk there is refused).  NULL or "" keeps
- *                   the default (K5601); unknown names fall back to the built-in
- *                   default profile.
+ * @param drive0..3  DriveProfile name per K5122 slot — the real drive names:
+ *                   "K5601" (5.25" DS 80 tracks, 800K, default), "K5600.10"
+ *                   (5.25" SS 40 tracks, 200K), "K5600.20" (5.25" SS 80 tracks,
+ *                   400K), "MF3200" (8" SS 77 tracks, FM only, 300K), "MF6400"
+ *                   (8" SS 77 tracks, FM+MFM, 600K).  The special name "none"
+ *                   marks an EMPTY slot (no drive wired: mounting/creating a disk
+ *                   there is refused).  NULL or "" keeps the default (K5601);
+ *                   unknown names fall back to K5601.  Former technical names
+ *                   (e.g. "mf3200_8_ss77") still resolve as aliases.
  * @return handle, or NULL on error.  Equivalent to k1520_create() when all four
  *         names are NULL/"".
  */

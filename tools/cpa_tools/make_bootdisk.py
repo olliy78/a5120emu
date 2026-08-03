@@ -78,30 +78,30 @@ PRESETS = {
         committed=os.path.join(DISKS, 'empty_cpa780.hfe'),
     ),
     'mf3200_fmt7': dict(
-        boot=BOOT_8INCHCOMBO, drive='B', prof='mf3200_8_ss77',
-        b_prof='mf3200_8_ss77', c_prof='mf6400_8_ss77', needs_clock=False,
+        boot=BOOT_8INCHCOMBO, drive='B', prof='MF3200',
+        b_prof='MF3200', c_prof='MF6400', needs_clock=False,
         template=('fm', 77, 3, 26, 128, 16, 256), b_dummy=None,
     ),
     'mf3200_fmt1': dict(
-        boot=BOOT_8INCHCOMBO, drive='B', prof='mf3200_8_ss77',
-        b_prof='mf3200_8_ss77', c_prof='mf6400_8_ss77', needs_clock=False,
+        boot=BOOT_8INCHCOMBO, drive='B', prof='MF3200',
+        b_prof='MF3200', c_prof='MF6400', needs_clock=False,
         template=('fm', 77, 3, 26, 128, 4, 1024), b_dummy=None,
     ),
     'mf6400_fmt1': dict(
-        boot=BOOT_8INCHCOMBO, drive='C', prof='mf6400_8_ss77',
-        b_prof='mf3200_8_ss77', c_prof='mf6400_8_ss77', needs_clock=False,
+        boot=BOOT_8INCHCOMBO, drive='C', prof='MF6400',
+        b_prof='MF3200', c_prof='MF6400', needs_clock=False,
         # 8″-DD ist MISCHDICHTE (System-34): FM-Systemspuren + MFM-Datenspuren.
         template=('fm/mfm', 77, 2, 26, 128, 8, 1024),
         b_dummy=('fm', 77, 3, 26, 128, 16, 256),   # gültige MF3200-FM-Disk für B:
     ),
     'k5600_10_fmt1': dict(
-        boot=BOOT_5INCHCOMBO, drive='B', prof='ss_525_40',
-        b_prof='ss_525_40', c_prof='ss_525_80', needs_clock=False,
+        boot=BOOT_5INCHCOMBO, drive='B', prof='K5600.10',
+        b_prof='K5600.10', c_prof='K5600.20', needs_clock=False,
         template=('mfm', 40, 2, 26, 128, 5, 1024), b_dummy=None,
     ),
     'k5600_20_fmt1': dict(
-        boot=BOOT_5INCHCOMBO, drive='C', prof='ss_525_80',
-        b_prof='ss_525_40', c_prof='ss_525_80', needs_clock=False,
+        boot=BOOT_5INCHCOMBO, drive='C', prof='K5600.20',
+        b_prof='K5600.10', c_prof='K5600.20', needs_clock=False,
         template=('mfm', 80, 2, 26, 128, 5, 1024),
         b_dummy=('mfm', 40, 2, 26, 128, 5, 1024),  # gültige K5600.10-Disk für B:
     ),

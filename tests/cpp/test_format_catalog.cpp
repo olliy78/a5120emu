@@ -169,7 +169,7 @@ TEST(FormatCatalog, AchtZollFormate_VerfahrenWieBisher) {
     EXPECT_EQ(fm->predominantEncoding(), Encoding::FM);
     EXPECT_EQ(fm->numCylinders(), 77);
     EXPECT_EQ(fm->numHeads(), 1);
-    EXPECT_TRUE(fm->supportsDrive("mf3200_8_ss77"));
+    EXPECT_TRUE(fm->supportsDrive("MF3200"));
 
     const DiskFormat* mfm = cat.find("mf6400");
     ASSERT_NE(mfm, nullptr);
@@ -216,7 +216,7 @@ TEST(FormatCatalog, ForDrive_NurExplizitGelisteteFormate) {
     }
 
     // Einseitiges Laufwerk bekommt kein doppelseitiges Format angeboten.
-    for (const DiskFormat* f : cat.forDrive(builtinDriveProfile("ss_525_80")))
+    for (const DiskFormat* f : cat.forDrive(builtinDriveProfile("K5600.20")))
         EXPECT_LE(f->numHeads(), 1) << f->name;
 
     // Unbestückter Slot bietet nichts an.
@@ -293,7 +293,7 @@ TEST(FormatCatalog, GeometrieKonflikt_WirdAbgelehnt) {
     FormatCatalog cat = loadText("geo",
         "formats:\n"
         "  - name: zweiseitig_an_einseitig\n"
-        "    drives: [ss_525_80]\n"
+        "    drives: [K5600.20]\n"
         "    tracks:\n"
         "      - { cyls: 0-79, heads: 0-1, sectors: 5, size: 1024 }\n"
         "  - name: gut\n"
@@ -304,7 +304,7 @@ TEST(FormatCatalog, GeometrieKonflikt_WirdAbgelehnt) {
 
     EXPECT_EQ(cat.find("zweiseitig_an_einseitig"), nullptr);
     ASSERT_EQ(cat.issues().size(), 1u);
-    EXPECT_NE(cat.issues()[0].find("ss_525_80"), std::string::npos);
+    EXPECT_NE(cat.issues()[0].find("K5600.20"), std::string::npos);
     EXPECT_NE(cat.issues()[0].find("Köpfe"), std::string::npos);
 }
 
@@ -318,12 +318,12 @@ TEST(FormatCatalog, VerfahrensKonflikt_WirdAbgelehnt) {
     FormatCatalog cat = loadText("enc",
         "formats:\n"
         "  - name: mfm_an_fm_laufwerk\n"
-        "    drives: [mf3200_8_ss77]\n"
+        "    drives: [MF3200]\n"
         "    encoding: mfm\n"
         "    tracks:\n"
         "      - { cyls: 0-76, heads: 0, sectors: 4, size: 1024 }\n"
         "  - name: gut\n"
-        "    drives: [mf3200_8_ss77]\n"
+        "    drives: [MF3200]\n"
         "    encoding: fm\n"
         "    tracks:\n"
         "      - { cyls: 0-76, heads: 0, sectors: 4, size: 1024 }\n",
@@ -469,7 +469,7 @@ TEST(FormatCatalog, Mischdichte_VerfahrenProSpurbereich) {
         "formats:\n"
         "  - name: mischdichte\n"
         "    description: \"8″ System-34 — FM-Systemspur, MFM-Daten\"\n"
-        "    drives: [mf6400_8_ss77]\n"
+        "    drives: [MF6400]\n"
         "    tracks:\n"
         "      - { cyls: 0,    heads: 0, sectors: 26, size: 128,  encoding: fm  }\n"
         "      - { cyls: 1-76, heads: 0, sectors: 8,  size: 1024, encoding: mfm }\n",
@@ -501,7 +501,7 @@ TEST(FormatCatalog, EncodingVorgabe_WirdVonSpurUeberschrieben) {
     FormatCatalog cat = loadText("encdefault",
         "formats:\n"
         "  - name: vorgabe\n"
-        "    drives: [mf6400_8_ss77]\n"
+        "    drives: [MF6400]\n"
         "    encoding: fm\n"
         "    tracks:\n"
         "      - { cyls: 0,    heads: 0, sectors: 26, size: 128 }\n"

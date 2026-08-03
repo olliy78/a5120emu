@@ -33,7 +33,7 @@ constexpr long long kHeldReadWatchdogCycles = 1'500'000;
 }  // namespace
 
 // Baut das DriveProfile-Array der 4 K5122-Slots aus den Profilnamen der Config.
-// Unbekannte Namen liefert builtinDriveProfile als Default-Profil (mfs_525_ds80).
+// Unbekannte Namen liefert builtinDriveProfile als Default-Profil (K5601).
 static std::array<DriveProfile, 4> profilesFromConfig(const A5120Machine::Config& cfg) {
     return { builtinDriveProfile(cfg.drive_profiles[0]),
              builtinDriveProfile(cfg.drive_profiles[1]),

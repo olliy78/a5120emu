@@ -788,7 +788,7 @@ TEST(CreateDiskDefault, K560010_ss40_200K) {
     const std::string path = tmpImg("k560010");
     std::filesystem::remove(path);
     A5120Machine::Config cfg;
-    cfg.drive_profiles = {"ss_525_40", "K5601", "K5601", "K5601"};
+    cfg.drive_profiles = {"K5600.10", "K5601", "K5601", "K5601"};
     A5120Machine machine(cfg);
     ASSERT_TRUE(machine.createDisk(0, path, "", false)) << machine.lastError();
     EXPECT_EQ(std::filesystem::file_size(path), 40u * 5 * 1024);      // 200K
@@ -799,7 +799,7 @@ TEST(CreateDiskDefault, MF3200_fm_308K) {
     const std::string path = tmpImg("mf3200");
     std::filesystem::remove(path);
     A5120Machine::Config cfg;
-    cfg.drive_profiles = {"mf3200_8_ss77", "K5601", "K5601", "K5601"};
+    cfg.drive_profiles = {"MF3200", "K5601", "K5601", "K5601"};
     A5120Machine machine(cfg);
     ASSERT_TRUE(machine.createDisk(0, path, "", false)) << machine.lastError();
     EXPECT_EQ(std::filesystem::file_size(path), 77u * 4 * 1024);      // 308K

@@ -72,7 +72,7 @@ TEST(FloppyDriveV2, Mount_Erfolg) {
     auto fmt  = makeFormat_2cyl_1head_2sec();
     auto path = makeTmpImg(fmt);
 
-    FloppyDriveV2 drv(builtinDriveProfile("mfs_525_ds80"));
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
     auto img = openImg(path, fmt);
     ASSERT_NE(img, nullptr);
 
@@ -84,14 +84,14 @@ TEST(FloppyDriveV2, Mount_Erfolg) {
 }
 
 TEST(FloppyDriveV2, Mount_KeinImage_Fehler) {
-    FloppyDriveV2 drv(builtinDriveProfile("mfs_525_ds80"));
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
     EXPECT_FALSE(drv.mount(nullptr));
     EXPECT_FALSE(drv.isMounted());
     EXPECT_NE(std::string(drv.lastError()), "");
 }
 
 TEST(FloppyDriveV2, Mount_ZuVieleSpuren_Inkompatibel) {
-    // ss_525_40 hat nur 40 Zylinder; ein 80-Zylinderformat ist zu groß.
+    // K5600.10 hat nur 40 Zylinder; ein 80-Zylinderformat ist zu groß.
     auto fmt  = makeFormat_2cyl_1head_2sec();
     // Neues Format mit 80 Zylindern bauen
     DiskFormat fmt80;
@@ -107,7 +107,7 @@ TEST(FloppyDriveV2, Mount_ZuVieleSpuren_Inkompatibel) {
         f.write(reinterpret_cast<const char*>(buf.data()), buf.size());
     }
 
-    FloppyDriveV2 drv(builtinDriveProfile("ss_525_40")); // nur 40 Zylinder
+    FloppyDriveV2 drv(builtinDriveProfile("K5600.10")); // nur 40 Zylinder
     auto img = openImg(path, fmt80);
     ASSERT_NE(img, nullptr);
 
@@ -119,11 +119,11 @@ TEST(FloppyDriveV2, Mount_ZuVieleSpuren_Inkompatibel) {
 }
 
 TEST(FloppyDriveV2, Mount_FalschesVerfahren_Inkompatibel) {
-    // mf3200_8_ss77 unterstützt nur FM; ein MFM-Image passt nicht.
+    // MF3200 unterstützt nur FM; ein MFM-Image passt nicht.
     auto fmt  = makeFormat_2cyl_1head_2sec();
     auto path = makeTmpImg(fmt);
 
-    FloppyDriveV2 drv(builtinDriveProfile("mf3200_8_ss77")); // FM only
+    FloppyDriveV2 drv(builtinDriveProfile("MF3200")); // FM only
     // RawSectorImage mit MFM (Default-Encoding) anlegen
     auto img = std::make_unique<RawSectorImage>(path, fmt, false, Encoding::MFM);
     ASSERT_TRUE(img->isOpen());
@@ -141,7 +141,7 @@ TEST(FloppyDriveV2, Track_NichtLeerNachMount) {
     auto fmt  = makeFormat_2cyl_1head_2sec();
     auto path = makeTmpImg(fmt);
 
-    FloppyDriveV2 drv(builtinDriveProfile("mfs_525_ds80"));
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
     ASSERT_TRUE(drv.mount(openImg(path, fmt)));
 
     const TrackImage& spur = drv.track(0);
@@ -167,7 +167,7 @@ TEST(FloppyDriveV2, Track_UngueltigerKopf_LeereSpur) {
     auto fmt  = makeFormat_2cyl_1head_2sec();
     auto path = makeTmpImg(fmt);
 
-    FloppyDriveV2 drv(builtinDriveProfile("mfs_525_ds80"));
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
     ASSERT_TRUE(drv.mount(openImg(path, fmt)));
 
     // Kopf 2 existiert nicht (nur Kopf 0 im Format), track() muss leer sein
@@ -183,7 +183,7 @@ TEST(FloppyDriveV2, Step_InwardIncrement) {
     auto fmt  = makeFormat_2cyl_1head_2sec();
     auto path = makeTmpImg(fmt);
 
-    FloppyDriveV2 drv(builtinDriveProfile("mfs_525_ds80"));
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
     ASSERT_TRUE(drv.mount(openImg(path, fmt)));
 
     EXPECT_EQ(drv.currentCylinder(), 0u);
@@ -197,7 +197,7 @@ TEST(FloppyDriveV2, Step_InwardBegrenztAufMaxCyl) {
     auto fmt  = makeFormat_2cyl_1head_2sec();
     auto path = makeTmpImg(fmt);
 
-    FloppyDriveV2 drv(builtinDriveProfile("mfs_525_ds80")); // num_cyls=80
+    FloppyDriveV2 drv(builtinDriveProfile("K5601")); // num_cyls=80
     ASSERT_TRUE(drv.mount(openImg(path, fmt)));
 
     // Bis ans Ende fahren
@@ -215,7 +215,7 @@ TEST(FloppyDriveV2, Step_OutwardBegrenztAuf0) {
     auto fmt  = makeFormat_2cyl_1head_2sec();
     auto path = makeTmpImg(fmt);
 
-    FloppyDriveV2 drv(builtinDriveProfile("mfs_525_ds80"));
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
     ASSERT_TRUE(drv.mount(openImg(path, fmt)));
 
     EXPECT_EQ(drv.currentCylinder(), 0u);
@@ -229,7 +229,7 @@ TEST(FloppyDriveV2, Step_InOutRoundtrip) {
     auto fmt  = makeFormat_2cyl_1head_2sec();
     auto path = makeTmpImg(fmt);
 
-    FloppyDriveV2 drv(builtinDriveProfile("mfs_525_ds80"));
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
     ASSERT_TRUE(drv.mount(openImg(path, fmt)));
 
     drv.step(true);    // 0 → 1
@@ -269,7 +269,7 @@ TEST(FloppyDriveV2, SchreibRoundtrip_AenderungPersistiert) {
 
     // Laufwerk mounten, Spur ersetzen und zurückschreiben.
     {
-        FloppyDriveV2 drv(builtinDriveProfile("mfs_525_ds80"));
+        FloppyDriveV2 drv(builtinDriveProfile("K5601"));
         ASSERT_TRUE(drv.mount(openImg(path, fmt)));
 
         drv.mutableTrack(0) = neueSpur;
@@ -300,7 +300,7 @@ TEST(FloppyDriveV2, Geometry_NachMount) {
     auto fmt  = makeFormat_2cyl_1head_2sec();
     auto path = makeTmpImg(fmt);
 
-    FloppyDriveV2 drv(builtinDriveProfile("mfs_525_ds80"));
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
     ASSERT_TRUE(drv.mount(openImg(path, fmt)));
 
     DiskGeometry g = drv.geometry();
@@ -311,7 +311,7 @@ TEST(FloppyDriveV2, Geometry_NachMount) {
 }
 
 TEST(FloppyDriveV2, Geometry_OhneMount_Leer) {
-    FloppyDriveV2 drv(builtinDriveProfile("mfs_525_ds80"));
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
     DiskGeometry g = drv.geometry();
     EXPECT_EQ(g.num_cyls,  0u);
     EXPECT_EQ(g.num_heads, 0u);

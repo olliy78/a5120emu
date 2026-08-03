@@ -184,9 +184,9 @@ TEST(MachineConfig, DefaultIst4xK5601){
 
 TEST(MachineConfig, CustomProfilWirdUebernommen){
     A5120Machine::Config cfg;
-    cfg.drive_profiles[0] = "mf3200_8_ss77";   // 8"-FM-Laufwerk auf Slot 0
+    cfg.drive_profiles[0] = "MF3200";   // 8"-FM-Laufwerk auf Slot 0
     A5120Machine m(cfg);
-    EXPECT_EQ(m.k5122State().driveProfileName, "mf3200_8_ss77");
+    EXPECT_EQ(m.k5122State().driveProfileName, "MF3200");
 }
 
 TEST(MachineConfig, UnbekanntesProfilFaelltAufDefault){
@@ -194,5 +194,5 @@ TEST(MachineConfig, UnbekanntesProfilFaelltAufDefault){
     cfg.drive_profiles[0] = "gibtsnicht";
     A5120Machine m(cfg);
     // builtinDriveProfile liefert für unbekannte Namen das Default-Profil.
-    EXPECT_EQ(m.k5122State().driveProfileName, "mfs_525_ds80");
+    EXPECT_EQ(m.k5122State().driveProfileName, "K5601");
 }

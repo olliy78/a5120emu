@@ -56,17 +56,17 @@ std::string tmpPath(const std::string& name) {
  *
  * Ersetzt die früher hartkodierte if-Kette `defaultFormatFor()`; die Zuordnung muss
  * unverändert bleiben, sonst legt „Neue Diskette" plötzlich eine andere Geometrie an.
- * @par Kriterium  K5601→cpa800, ss_525_80→cpa200, ss_525_40→k5601_ss40_5x1024,
- *                 mf3200_8_ss77→mf3200, mf6400_8_ss77→mf6400.
+ * @par Kriterium  K5601→cpa800, K5600.20→cpa200, K5600.10→k5601_ss40_5x1024,
+ *                 MF3200→mf3200, MF6400→mf6400.
  */
 TEST(A5120DiskApi, DefaultFormat_KommtAusDefaultFor) {
-    A5120Machine m(withDrives("K5601", "ss_525_80", "ss_525_40", "mf3200_8_ss77"));
+    A5120Machine m(withDrives("K5601", "K5600.20", "K5600.10", "MF3200"));
     EXPECT_EQ(m.defaultFormatName(0), "cpa800");
     EXPECT_EQ(m.defaultFormatName(1), "cpa200");
     EXPECT_EQ(m.defaultFormatName(2), "k5601_ss40_5x1024");
     EXPECT_EQ(m.defaultFormatName(3), "mf3200");
 
-    A5120Machine m2(withDrives("mf6400_8_ss77"));
+    A5120Machine m2(withDrives("MF6400"));
     EXPECT_EQ(m2.defaultFormatName(0), "mf6400");
 }
 
@@ -93,7 +93,7 @@ TEST(A5120DiskApi, LeererSlot_HatWederStandardNochAuswahl) {
  *                 kein doppelseitiges Format und kein 8″-Format angeboten.
  */
 TEST(A5120DiskApi, CompatibleFormats_StandardZuerstUndNurPassende) {
-    A5120Machine m(withDrives("ss_525_80"));
+    A5120Machine m(withDrives("K5600.20"));
     const auto list = m.compatibleFormats(0);
 
     ASSERT_FALSE(list.empty());
@@ -119,7 +119,7 @@ TEST(A5120DiskApi, CompatibleFormats_StandardZuerstUndNurPassende) {
  * @par Kriterium  createDisk() == true; die Datei entsteht und ist gemountet.
  */
 TEST(A5120DiskApi, CreateDisk_LeererNameNutztStandardformat) {
-    A5120Machine m(withDrives("ss_525_40"));
+    A5120Machine m(withDrives("K5600.10"));
     const std::string path = tmpPath("default.img");
 
     ASSERT_TRUE(m.createDisk(0, path, "", /*wp=*/false)) << m.lastError();
@@ -144,12 +144,12 @@ TEST(A5120DiskApi, CreateDisk_LeererNameNutztStandardformat) {
  *                 Datei wird nicht angelegt.
  */
 TEST(A5120DiskApi, CreateDisk_LehntInkompatiblesFormatAb) {
-    A5120Machine m(withDrives("ss_525_80"));           // 80 Spuren, EINSEITIG
+    A5120Machine m(withDrives("K5600.20"));           // 80 Spuren, EINSEITIG
     const std::string path = tmpPath("incompatible.img");
 
     EXPECT_FALSE(m.createDisk(0, path, "cpa800", /*wp=*/false));
     EXPECT_NE(m.lastError().find("cpa800"), std::string::npos)     << m.lastError();
-    EXPECT_NE(m.lastError().find("ss_525_80"), std::string::npos)  << m.lastError();
+    EXPECT_NE(m.lastError().find("K5600.20"), std::string::npos)  << m.lastError();
     EXPECT_FALSE(std::filesystem::exists(path));
 }
 
@@ -169,10 +169,10 @@ TEST(A5120DiskApi, CreateDisk_LehntUnbekanntesFormatAb) {
 /**
  * @test A5120DiskApi/CreateDisk_AchtZollFmLaufwerkErzeugtFmMedium
  * @brief Das Verfahren kommt aus dem FORMAT, nicht mehr aus dem Laufwerkstyp.
- * @par Kriterium  Die für mf3200_8_ss77 angelegte Diskette meldet Encoding::FM.
+ * @par Kriterium  Die für MF3200 angelegte Diskette meldet Encoding::FM.
  */
 TEST(A5120DiskApi, CreateDisk_AchtZollFmLaufwerkErzeugtFmMedium) {
-    A5120Machine m(withDrives("mf3200_8_ss77"));
+    A5120Machine m(withDrives("MF3200"));
     const std::string path = tmpPath("fm.hfe");
 
     ASSERT_TRUE(m.createDisk(0, path, "", /*wp=*/false)) << m.lastError();
@@ -206,7 +206,7 @@ TEST(A5120DiskApi, CreateDisk_AchtZollFmLaufwerkErzeugtFmMedium) {
  * @par Kriterium  mountDisk() mit "cpa780" auf einem 8″-FM-Slot == true.
  */
 TEST(A5120DiskApi, MountDisk_ErzwingtLaufwerksKompatibilitaetBewusstNicht) {
-    A5120Machine m(withDrives("mf3200_8_ss77"));
+    A5120Machine m(withDrives("MF3200"));
     const std::string path = tmpPath("combo.hfe");
 
     // Gültige 8″-FM-Diskette im Standardformat des Slots anlegen …

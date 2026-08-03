@@ -67,20 +67,22 @@ class DriveWidget(QWidget):
         except Exception:
             formats, default = [], ""
 
-        def label(name: str, prefix: str = "") -> str:
-            """Klartext aus dem Katalog, sonst der nackte Formatname."""
+        def add(name: str):
+            """Eintrag mit dem reinen Formatnamen; die Katalogbeschreibung wird
+            nur als Tooltip angeboten, damit das Auswahlfeld schmal bleibt."""
+            combo.addItem(name, name)
             try:
                 desc = self.emulator.format_description(name)
             except Exception:
                 desc = ""
-            base = f"{name} — {desc}" if desc else name
-            return f"{prefix}{base}" if prefix else base
+            if desc:
+                combo.setItemData(combo.count() - 1, desc, Qt.ToolTipRole)
 
         if default:
-            combo.addItem(label(default, "Standard: "), default)
+            add(default)
         for name in formats:
             if name != default:
-                combo.addItem(label(name), name)
+                add(name)
         if combo.count() == 0:
             # Fallback (should not happen for a present drive): plain default name.
             combo.addItem(default or "cpa800", default or "cpa800")

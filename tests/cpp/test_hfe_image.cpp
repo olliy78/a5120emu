@@ -284,8 +284,8 @@ TEST(HfeImage, FloppyDriveV2_Mount_HFE_ErfolgreicherMount) {
     auto img = DiskImage::open(kHfePath, std::nullopt, false);
     ASSERT_NE(img, nullptr);
 
-    // mfs_525_ds80: 80 Zylindern × 2 Köpfe, MFM
-    FloppyDriveV2 drv(builtinDriveProfile("mfs_525_ds80"));
+    // K5601: 80 Zylindern × 2 Köpfe, MFM
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
     ASSERT_TRUE(drv.mount(std::move(img)))
         << "FloppyDriveV2::mount fehlgeschlagen: " << drv.lastError();
     ASSERT_TRUE(drv.isMounted());

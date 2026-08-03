@@ -681,12 +681,28 @@ K1520Handle h  = k1520_create(K1520_MACHINE_A5120);
 // Explizite Bestückung (NULL/"" = Default K5601; unbekannter Name → Default-Profil):
 //   z. B. Slot 0 = 8"-FM-Laufwerk, Slots 1–3 = 5,25"-MFM:
 K1520Handle h2 = k1520_create_configured(K1520_MACHINE_A5120,
-                                         "mf3200_8_ss77", NULL, NULL, NULL);
+                                         "MF3200", NULL, NULL, NULL);
 ```
 
-Profilnamen (`builtinDriveProfile`): `K5601` (5,25" 80×2 MFM, **Default**), `ss_525_40`
-(5,25" 40×1), `ss_525_80` (5,25" 80×1, K5600.20), `mf3200_8_ss77` (8" 77×1 **FM**, MF3200),
-`mf6400_8_ss77` / `mf6400_8_ds77` (8" 77×1/×2 MFM, MF6400). Das Verfahren (FM/MFM) ist
+Die Profile heißen wie die realen Laufwerke (`builtinDriveProfile`):
+
+| Profil | Zoll | Spuren×Köpfe | Verfahren | Kapazität |
+|--------|------|--------------|-----------|-----------|
+| `K5601` (**Default**) | 5,25″ | 80×2 | MFM + FM | 800 KB |
+| `K5600.10` | 5,25″ | 40×1 | MFM | 200 KB |
+| `K5600.20` | 5,25″ | 80×1 | MFM + FM | 400 KB |
+| `MF3200` | 8″ | 77×1 | **nur FM** | ~300 KB |
+| `MF6400` | 8″ | 77×1 | FM + MFM | ~600 KB |
+| `none` | — | — | — | leerer Slot |
+
+Beide 8″-Laufwerke sind **einseitig mit 77 Spuren** und unterscheiden sich allein im
+beherrschten Verfahren — das MF6400 kann zusätzlich MFM und damit die doppelte Kapazität;
+es fährt deshalb auch die FM-Formate des MF3200. Das **K5602 ist zum MF3200 voll kompatibel**
+und hat kein eigenes Profil. Frühere technische Namen (`ss_525_40`, `mf6400_8_ss77`, …) lösen
+`builtinDriveProfile` weiterhin als **Alias** auf, damit gespeicherte Konfigurationen
+(`app/config_io.py`) nicht still auf ein anderes Laufwerk zurückfallen.
+
+Das Verfahren (FM/MFM) ist
 Laufwerks-Default (`DriveProfile::default_read_encoding`), das OS schaltet zur Laufzeit per
 Steuerwort um (0x85=MFM / 0x87=FM). C++-seitig direkt über `A5120Machine::Config` (Tools wie
 `k1520dbg`/`boot_trace` können das fest setzen), später per GUI bzw. Config-Datei (CLI).
@@ -802,8 +818,8 @@ formats:
   # ── Einfaches Format: alle Spuren gleich ─────────────────────────────────
   - name:        cpa800
     description: "CP/A 800K — 80 Spuren, doppelseitig, 5×1024 MFM"
-    drives:      [K5601, mfs_525_ds80]
-    default_for: [K5601, mfs_525_ds80]     # Standard beim Anlegen (leerer Formatname)
+    drives:      [K5601]
+    default_for: [K5601]     # Standard beim Anlegen (leerer Formatname)
     encoding:    mfm                        # Vorgabe für alle Spurbereiche
     tracks:
       - { cyls: 0-79, heads: 0-1, sectors: 5, size: 1024 }
@@ -811,7 +827,7 @@ formats:
   # ── Asymmetrischer Systembereich (boot-kritisch, exakt wie der Builtin) ──
   - name:        cpa780
     description: "CP/A 780K Bootdiskette — 128B-Systembereich + 1024B-Daten"
-    drives:      [K5601, mfs_525_ds80]
+    drives:      [K5601]
     encoding:    mfm
     tracks:
       - { cyls: 0,    heads: 0-1, sectors: 26, size: 128  }   # System
@@ -822,7 +838,7 @@ formats:
   # ── MISCHDICHTE: FM-Systemspur + MFM-Datenspuren (neu ausdrückbar) ───────
   - name:        mf6400_sys
     description: "8″ MF6400 600K — FM-Systemspur, MFM-Daten"
-    drives:      [mf6400_8_ss77]
+    drives:      [MF6400]
     tracks:
       - { cyls: 0,    heads: 0, sectors: 26, size: 128,  encoding: fm  }
       - { cyls: 1-76, heads: 0, sectors: 8,  size: 1024, encoding: mfm }
@@ -830,7 +846,7 @@ formats:
   # ── Nur als .hfe darstellbar ─────────────────────────────────────────────
   - name:        k5601_ds40_5x1024
     description: "K5601 §3.4 Format V — 40 Spuren, doppelseitig, 5×1024"
-    drives:      [ss_525_40]
+    drives:      [K5600.10]
     encoding:    mfm
     containers:  [hfe]                      # .img nicht erzeugbar (Doppelschritt)
     tracks:
@@ -955,7 +971,7 @@ ctest, `boot_trace` und `k1520dbg` ohne jede Umgebungsvariable funktionieren.
 
 > **V3 — Fallstrick:** `builtinDriveProfile()` (`drive_profile.h:155`) liefert für **unbekannte
 > Namen stillschweigend das Default-Profil**. Die Validierung darf daher *nicht* über den
-> Rückgabewert prüfen, sonst geht jeder Tippfehler als `mfs_525_ds80` durch. Nötig ist ein neuer
+> Rückgabewert prüfen, sonst geht jeder Tippfehler als `K5601` durch. Nötig ist ein neuer
 > Accessor `knownDriveProfileNames()`, gegen den geprüft wird.
 
 > **V5 — nur Warnung, und warum:** `DriveProfile::bytePeriodCycles()` (`drive_profile.h:132`)
