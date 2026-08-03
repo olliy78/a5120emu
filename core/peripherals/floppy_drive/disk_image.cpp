@@ -45,8 +45,7 @@ bool hasFormattedData(DiskImage& img) {
 
 std::unique_ptr<DiskImage> DiskImage::open(const std::string& path,
                                            std::optional<DiskFormat> fmt,
-                                           bool write_protect,
-                                           Encoding raw_encoding) {
+                                           bool write_protect) {
     // Erste 8 Bytes lesen für Signaturerkennung.
     std::ifstream f(path, std::ios::binary);
     if (!f) return nullptr;
@@ -71,11 +70,13 @@ std::unique_ptr<DiskImage> DiskImage::open(const std::string& path,
     // Raw-Sektorimage: DiskFormat muss übergeben werden.
     if (!fmt.has_value()) return nullptr;
 
-    // Raw-Images tragen kein Verfahren in sich — es ist Eigenschaft von Laufwerk+Medium.
-    // Der Aufrufer (K5122::mountDisk) übergibt das Laufwerks-Datenverfahren; Default MFM
-    // erhält das bisherige Verhalten für formatagnostische Aufrufer/Tools.
+    // Raw-Images tragen kein Verfahren in sich — es steht im DiskFormat, und zwar pro
+    // Spurbereich (Mischdichte).  Der ctor-Parameter dient nur noch als Rückfall für
+    // Formate ganz ohne Spurbereiche.
     auto img = std::make_unique<RawSectorImage>(path, *fmt, write_protect,
-                                                raw_encoding);
+                                                fmt->tracks.empty()
+                                                    ? Encoding::MFM
+                                                    : fmt->predominantEncoding());
     if (!img->isOpen()) return nullptr;
     if (!hasFormattedData(*img)) return nullptr;
 
@@ -168,11 +169,11 @@ bool writeBlankImg(const std::string& path, const DiskFormat& fmt) {
 std::vector<LogicalSector> emptySectors(const TrackFormat& tf, uint8_t cyl, uint8_t head) {
     std::vector<LogicalSector> secs;
     secs.reserve(tf.secs_per_track);
-    for (uint8_t id = 1; id <= tf.secs_per_track; ++id) {
+    for (uint8_t i = 0; i < tf.secs_per_track; ++i) {
         LogicalSector ls;
         ls.cyl  = cyl;
         ls.head = head;
-        ls.id   = id;
+        ls.id   = static_cast<uint8_t>(tf.first_sector_id + i);
         ls.size = tf.bytes_per_sec;
         ls.data.assign(tf.bytes_per_sec, 0xE5);
         secs.push_back(std::move(ls));
@@ -196,7 +197,9 @@ std::unique_ptr<DiskImage> createFormattedHfe(const std::string& path,
         for (uint8_t h = 0; h < num_heads; ++h) {
             const TrackFormat* tf = fmt.findTrack(c, h);
             if (!tf) continue;   // Spur existiert nicht → bleibt Gap
-            TrackImage t = TrackCodec::buildTrack(emptySectors(*tf, c, h), enc);
+            // Verfahren PRO SPURBEREICH (Mischdichte); @p enc trägt nur den
+            // HFE-Header (= vorherrschendes Verfahren, s. u.).
+            TrackImage t = TrackCodec::buildTrack(emptySectors(*tf, c, h), tf->encoding);
             max_track_bytes = std::max(max_track_bytes, t.bytes.size());
             tracks[static_cast<size_t>(c) * num_heads + h] = std::move(t);
         }
@@ -238,9 +241,13 @@ std::unique_ptr<DiskImage> DiskImage::create(const std::string& path,
     // Beide Zieltypen brauchen jetzt die Geometrie (formatierte Leerdiskette).
     if (!fmt.has_value()) return nullptr;
 
-    // HFE (.hfe): gültig formatiertes Bitzellen-Image im Verfahren enc.
-    if (endsWithCI(path, ".hfe"))
-        return createFormattedHfe(path, *fmt, write_protect, enc);
+    // HFE (.hfe): gültig formatiertes Bitzellen-Image.  Der HFE-v1-Header trägt nur
+    // EIN Verfahren — bei Mischdichte das vorherrschende; die abweichenden Spuren
+    // erkennt HfeImage::readTrack pro Spur selbst.
+    if (endsWithCI(path, ".hfe")) {
+        const Encoding hdr_enc = fmt->tracks.empty() ? enc : fmt->predominantEncoding();
+        return createFormattedHfe(path, *fmt, write_protect, hdr_enc);
+    }
 
     // Raw .img: rohes Sektorimage in Format-Größe, 0xE5-gefüllt.
     if (!writeBlankImg(path, *fmt)) return nullptr;

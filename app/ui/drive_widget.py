@@ -67,11 +67,20 @@ class DriveWidget(QWidget):
         except Exception:
             formats, default = [], ""
 
+        def label(name: str, prefix: str = "") -> str:
+            """Klartext aus dem Katalog, sonst der nackte Formatname."""
+            try:
+                desc = self.emulator.format_description(name)
+            except Exception:
+                desc = ""
+            base = f"{name} — {desc}" if desc else name
+            return f"{prefix}{base}" if prefix else base
+
         if default:
-            combo.addItem(f"Standard ({default})", default)
+            combo.addItem(label(default, "Standard: "), default)
         for name in formats:
             if name != default:
-                combo.addItem(name, name)
+                combo.addItem(label(name), name)
         if combo.count() == 0:
             # Fallback (should not happen for a present drive): plain default name.
             combo.addItem(default or "cpa800", default or "cpa800")

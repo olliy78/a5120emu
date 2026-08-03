@@ -98,6 +98,10 @@ _lib.k1520_create_configured.argtypes = [
 ]
 _lib.k1520_create_configured.restype = K1520Handle
 
+# k1520_last_init_error() -> const char*   (Grund eines fehlgeschlagenen create)
+_lib.k1520_last_init_error.argtypes = []
+_lib.k1520_last_init_error.restype = ctypes.c_char_p
+
 # k1520_destroy(K1520Handle) -> void
 _lib.k1520_destroy.argtypes = [K1520Handle]
 _lib.k1520_destroy.restype = None
@@ -166,6 +170,14 @@ _lib.k1520_drive_format_name.restype = ctypes.c_char_p
 _lib.k1520_drive_default_format.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_drive_default_format.restype = ctypes.c_char_p
 
+# k1520_format_description(K1520Handle, name: const char*) -> const char*
+_lib.k1520_format_description.argtypes = [K1520Handle, ctypes.c_char_p]
+_lib.k1520_format_description.restype = ctypes.c_char_p
+
+# k1520_formats_source(K1520Handle) -> const char*
+_lib.k1520_formats_source.argtypes = [K1520Handle]
+_lib.k1520_formats_source.restype = ctypes.c_char_p
+
 # k1520_last_error(K1520Handle) -> const char*
 _lib.k1520_last_error.argtypes = [K1520Handle]
 _lib.k1520_last_error.restype = ctypes.c_char_p
@@ -211,14 +223,22 @@ class K1520Emulator:
                 marks an empty slot ("kein Laufwerk").  ``None`` (the default) builds
                 the standard machine (4× K5601).
         """
+        # Zuerst setzen: schlägt die Erzeugung fehl, läuft __del__ trotzdem und
+        # darf nicht über ein fehlendes Attribut stolpern.
+        self._handle = None
         self._drive_types = list(drive_types) if drive_types else None
         try:
             handle = self._create_handle(self._drive_types)
-            if not handle:
-                raise RuntimeError("k1520_create returned NULL - possible constructor exception")
-            self._handle = handle
         except Exception as e:
             raise RuntimeError(f"Failed to create K1520 emulator: {e}")
+        if not handle:
+            # Startabbruch im Core (z. B. fehlender/kaputter Diskettenformat-Katalog
+            # data/formats.yaml).  Ohne Handle ist last_error() nicht erreichbar —
+            # der Grund kommt deshalb aus k1520_last_init_error().
+            reason = _lib.k1520_last_init_error()
+            reason = reason.decode("utf-8", "replace") if reason else ""
+            raise RuntimeError(reason or "k1520_create lieferte NULL (unbekannter Grund)")
+        self._handle = handle
         self._running = False
         self._thread: Optional[threading.Thread] = None
 
@@ -428,6 +448,16 @@ class K1520Emulator:
         """Drive-type default format name (what an empty-format create uses)."""
         name = _lib.k1520_drive_default_format(self._handle, ctypes.c_int(drive))
         return name.decode("utf-8") if name else ""
+
+    def format_description(self, name: str) -> str:
+        """Human-readable description of a catalog format ("" if unknown)."""
+        d = _lib.k1520_format_description(self._handle, name.encode("utf-8"))
+        return d.decode("utf-8") if d else ""
+
+    def formats_source(self) -> str:
+        """Path(s) of the loaded formats.yaml — diagnostics."""
+        s = _lib.k1520_formats_source(self._handle)
+        return s.decode("utf-8") if s else ""
 
     def is_disk_active(self, drive: int) -> bool:
         """Check if disk is currently mounted."""

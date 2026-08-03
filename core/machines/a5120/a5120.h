@@ -15,7 +15,8 @@
 #include "core/cards/k8025/k8025.h"
 #include "core/cards/k5122/k5122.h"
 #include "core/peripherals/k7637/k7637.h"
-#include "core/peripherals/floppy_drive/format_parser.h"
+#include "core/peripherals/floppy_drive/disk_format.h"
+#include "core/peripherals/floppy_drive/format_catalog.h"
 #include <atomic>
 #include <mutex>
 #include <string>
@@ -93,6 +94,12 @@ public:
      * Leere Liste bei unbestücktem Slot.  Für die GUI-Formatauswahl.
      */
     std::vector<std::string> compatibleFormats(int drive) const;
+
+    /** @brief Klartextbeschreibung eines Katalogformats (leer, wenn unbekannt). */
+    std::string formatDescription(const std::string& format_name) const;
+
+    /** @brief Geladener Formatkatalog (Diagnose: Quelldateien, übersprungene Formate). */
+    const FormatCatalog& formatCatalog() const { return disk_formats_; }
 
     bool unmountDisk(int drive);
     bool isDiskActive(int drive) const;
@@ -275,7 +282,7 @@ private:
 
     K7637         kbd_;
 
-    std::vector<DiskFormat> disk_formats_;
+    FormatCatalog disk_formats_;                  // aus data/formats.yaml (§8.6)
     std::array<DriveProfile, 4> drive_profiles_;  // Bestückung je Slot (für create-Default)
 
     std::atomic<bool>  stop_{false};

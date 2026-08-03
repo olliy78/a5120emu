@@ -100,9 +100,15 @@ if(BUILD_K1520)
     target_include_directories(k1520_bus PUBLIC ${CMAKE_SOURCE_DIR})
     target_link_libraries(k1520_bus PUBLIC k1520_logger)
 
-    # Floppy peripheral: Disk-Format-Parser (Geometrie/cpaFormates.cfg)
+    # Minimaler YAML-Subset-Parser (Konfigurationsdateien des Kerns, §8.6.2)
+    add_library(k1520_util STATIC
+        core/util/yaml_lite.cpp
+    )
+    target_include_directories(k1520_util PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # Floppy peripheral: Diskettenformat-Datenmodell (DiskFormat/TrackFormat)
     add_library(k1520_floppy STATIC
-        core/peripherals/floppy_drive/format_parser.cpp
+        core/peripherals/floppy_drive/disk_format.cpp
     )
     target_include_directories(k1520_floppy PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -116,9 +122,18 @@ if(BUILD_K1520)
         core/peripherals/floppy_drive/hfe_image.cpp
         core/peripherals/floppy_drive/disk_image.cpp
         core/peripherals/floppy_drive/floppy_drive2.cpp
+        core/peripherals/floppy_drive/format_catalog.cpp
     )
-    target_link_libraries(k1520_floppy2 PUBLIC k1520_floppy)
+    target_link_libraries(k1520_floppy2 PUBLIC k1520_floppy k1520_util)
     target_include_directories(k1520_floppy2 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # Fallback-Fundort des Diskettenformat-Katalogs (§8.6.4, Priorität 1).  Zeigt im
+    # Entwicklungsbaum auf die Quelldatei, damit ctest und die Tools den Katalog ohne
+    # gesetzte Umgebungsvariable finden.
+    set(K1520_FORMATS_DEFAULT "${CMAKE_SOURCE_DIR}/data/formats.yaml"
+        CACHE FILEPATH "Fallback-Pfad der formats.yaml")
+    target_compile_definitions(k1520_floppy2
+        PRIVATE K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")
 
     # PIO primitive
     add_library(k1520_pio STATIC
@@ -225,11 +240,16 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_bus PRIVATE k1520_bus GTest::gtest_main)
         target_include_directories(k1520_test_bus PRIVATE ${CMAKE_SOURCE_DIR})
 
-        add_executable(k1520_test_format_parser
-            tests/cpp/test_format_parser.cpp
-        )
-        target_link_libraries(k1520_test_format_parser PRIVATE k1520_floppy GTest::gtest_main)
-        target_include_directories(k1520_test_format_parser PRIVATE ${CMAKE_SOURCE_DIR})
+        add_executable(k1520_test_yaml_lite tests/cpp/test_yaml_lite.cpp)
+        target_link_libraries(k1520_test_yaml_lite PRIVATE k1520_util GTest::gtest_main)
+        target_include_directories(k1520_test_yaml_lite PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_format_catalog tests/cpp/test_format_catalog.cpp)
+        target_link_libraries(k1520_test_format_catalog PRIVATE k1520_floppy2 GTest::gtest_main)
+        target_include_directories(k1520_test_format_catalog PRIVATE ${CMAKE_SOURCE_DIR})
+        # Katalogpfad auch dem Test bekannt machen (prüft die ausgelieferte data/formats.yaml)
+        target_compile_definitions(k1520_test_format_catalog
+            PRIVATE K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")
 
         add_executable(k1520_test_track_codec tests/cpp/test_track_codec.cpp)
         target_link_libraries(k1520_test_track_codec PRIVATE k1520_floppy2 GTest::gtest_main)
@@ -357,7 +377,8 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_pio)
 
         gtest_discover_tests(k1520_test_bus)
-        gtest_discover_tests(k1520_test_format_parser)
+        gtest_discover_tests(k1520_test_yaml_lite)
+        gtest_discover_tests(k1520_test_format_catalog)
         gtest_discover_tests(k1520_test_track_codec)
         gtest_discover_tests(k1520_test_bit_codec)
         gtest_discover_tests(k1520_test_drive_profile)

@@ -34,7 +34,7 @@
 #include "core/peripherals/floppy_drive/floppy_drive2.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/drive_profile.h"
-#include "core/peripherals/floppy_drive/format_parser.h"
+#include "core/peripherals/floppy_drive/disk_format.h"
 #include "core/peripherals/floppy_drive/track_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"   // LogicalSector
 #include <array>

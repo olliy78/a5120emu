@@ -27,7 +27,7 @@
 
 #include "core/bus/k1520_bus.h"
 #include "core/cards/k5122/k5122.h"
-#include "core/peripherals/floppy_drive/format_parser.h"
+#include "core/peripherals/floppy_drive/disk_format.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
 #include "core/peripherals/floppy_drive/raw_sector_image.h"

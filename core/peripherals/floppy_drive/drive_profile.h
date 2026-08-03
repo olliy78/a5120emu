@@ -21,6 +21,7 @@
 #include "track_image.h"   // Encoding
 #include <cstdint>
 #include <string>
+#include <vector>
 
 /**
  * @struct DriveProfile
@@ -153,3 +154,15 @@ struct DriveProfile {
  * @return Referenz auf ein statisches DriveProfile.
  */
 const DriveProfile& builtinDriveProfile(const std::string& name);
+
+/**
+ * @brief Alle gültigen Profilnamen (inkl. `"none"`).
+ *
+ * Nötig für die Validierung des Formatkatalogs: @ref builtinDriveProfile liefert für
+ * **unbekannte** Namen stillschweigend das Default-Profil — ein Tippfehler in
+ * `formats.yaml` würde also unbemerkt als `mfs_525_ds80` durchgehen.  Gegen diese
+ * Liste wird deshalb explizit geprüft.
+ *
+ * @see FormatCatalog (Validierung V3)
+ */
+const std::vector<std::string>& knownDriveProfileNames();

@@ -30,7 +30,7 @@
 #include "core/peripherals/floppy_drive/raw_sector_image.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
-#include "core/peripherals/floppy_drive/format_parser.h"
+#include "core/peripherals/floppy_drive/disk_format.h"
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
@@ -285,19 +285,56 @@ TEST(DiskImageOpen, NichtExistenteDatei_gibtNullptr) {
     EXPECT_EQ(img, nullptr);
 }
 
-TEST(DiskImageOpen, RawEncoding_DefaultMFM_UndFMUeberschreibbar) {
-    // Raw-.img trägt kein Verfahren in sich; open() nimmt ohne Angabe MFM an und
-    // übernimmt sonst das übergebene Verfahren (K5122 leitet es aus dem Laufwerk ab).
+TEST(DiskImageOpen, RawVerfahren_KommtAusDemSpurbereich) {
+    // Ein rohes .img trägt kein Verfahren in sich — es steht im DiskFormat, und zwar
+    // PRO SPURBEREICH (§8.6).  Die synthetisierte Spur muss dieses Verfahren tragen.
     auto fmt  = makeSimpleFormat();
     auto path = makeTmpImg(fmt);
 
-    auto mfm = DiskImage::open(path, fmt, false);                 // Default
+    auto mfm = DiskImage::open(path, fmt, false);                 // Default MFM
     ASSERT_NE(mfm, nullptr);
     EXPECT_EQ(mfm->geometry().encoding, Encoding::MFM);
+    EXPECT_EQ(mfm->readTrack(0, 0).encoding, Encoding::MFM);
 
-    auto fm = DiskImage::open(path, fmt, false, Encoding::FM);    // erzwungen FM
+    for (auto& t : fmt.tracks) t.encoding = Encoding::FM;
+    auto fm = DiskImage::open(path, fmt, false);
     ASSERT_NE(fm, nullptr);
     EXPECT_EQ(fm->geometry().encoding, Encoding::FM);
+    EXPECT_EQ(fm->readTrack(0, 0).encoding, Encoding::FM);
+
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test DiskImageOpen/RawMischdichte_VerfahrenJeSpur
+ * @brief Ein Format mit FM-Systemspur und MFM-Datenspur liefert je Spur das richtige
+ *        Verfahren (das eigentliche Ziel des YAML-Katalog-Umbaus, §8.6).
+ * @par Kriterium  readTrack(0,0) ist FM, readTrack(1,0) ist MFM; beide mit gültigen CRCs.
+ */
+TEST(DiskImageOpen, RawMischdichte_VerfahrenJeSpur) {
+    DiskFormat fmt;
+    fmt.name = "test_mixed";
+    fmt.tracks.push_back({0, 0, 0, 0, 2, 128,  Encoding::FM,  1});   // Systemspur
+    fmt.tracks.push_back({1, 1, 0, 0, 2, 128,  Encoding::MFM, 1});   // Datenspur
+    auto path = makeTmpImg(fmt);
+
+    auto img = DiskImage::open(path, fmt, false);
+    ASSERT_NE(img, nullptr);
+
+    TrackImage sys = img->readTrack(0, 0);
+    TrackImage dat = img->readTrack(1, 0);
+    EXPECT_EQ(sys.encoding, Encoding::FM);
+    EXPECT_EQ(dat.encoding, Encoding::MFM);
+
+    // Beide Spuren sind trotz unterschiedlicher Verfahren gültig lesbar.
+    for (const TrackImage* t : {&sys, &dat}) {
+        auto secs = TrackCodec::parseTrack(*t);
+        ASSERT_EQ(secs.size(), 2u);
+        for (const auto& s : secs) {
+            EXPECT_TRUE(s.id_crc_ok);
+            EXPECT_TRUE(s.data_crc_ok);
+        }
+    }
 
     std::filesystem::remove(path);
 }
@@ -352,6 +389,9 @@ static size_t countMarks(const TrackImage& t) {
 // parseTrack liefert die erwarteten 0xE5-Sektoren) und übersteht open().
 static void checkFormattedHfe(Encoding enc) {
     auto fmt = makeSimpleFormat();  // 2 Zyl × 1 Kopf × 2 × 128
+    // Das Verfahren ist Eigenschaft des SPURBEREICHS (DiskFormat), nicht des
+    // Aufrufs — create() baut jede Spur in ihrem eigenen Verfahren (§8.6).
+    for (auto& t : fmt.tracks) t.encoding = enc;
     std::string path = std::filesystem::temp_directory_path() / "create_fmt.hfe";
     std::filesystem::remove(path);
 

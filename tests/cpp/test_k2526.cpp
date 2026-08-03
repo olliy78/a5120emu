@@ -56,7 +56,8 @@
 #include "core/cards/k2526/rom_data.h"
 #include "core/cards/k3526/k3526.h"
 #include "core/cards/k5122/k5122.h"
-#include "core/peripherals/floppy_drive/format_parser.h"
+#include "core/peripherals/floppy_drive/disk_format.h"
+#include "core/peripherals/floppy_drive/format_catalog.h"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1149,13 +1150,21 @@ TEST(K2526, ZVE2_Port04_Bit1_WhileRunning_RezeroesPC)
 // head-select (bit2) bug lived.
 
 namespace {
+/// cpa780 aus dem YAML-Katalog (data/formats.yaml, §8.6) holen.
+DiskFormat cpa780Format() {
+    std::string fatal;
+    FormatCatalog cat = FormatCatalog::loadDefault(&fatal);
+    EXPECT_TRUE(fatal.empty()) << fatal;
+    const DiskFormat* f = cat.find("cpa780");
+    EXPECT_NE(f, nullptr) << "Format 'cpa780' fehlt im Katalog";
+    return f ? *f : DiskFormat{};
+}
+
 std::string makeCpa780Image() {
-    auto fmts = FormatParser::builtinFormats();
-    auto it = std::find_if(fmts.begin(), fmts.end(),
-                           [](const DiskFormat& f){ return f.name == "cpa780"; });
+    const DiskFormat fmt = cpa780Format();
     auto path = (std::filesystem::temp_directory_path() / "k2526_chain_cpa780.img").string();
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
-    std::vector<uint8_t> buf(it->totalBytes(), 0xE5);
+    std::vector<uint8_t> buf(fmt.totalBytes(), 0xE5);
     f.write(reinterpret_cast<const char*>(buf.data()), static_cast<std::streamsize>(buf.size()));
     return path;
 }
@@ -1167,11 +1176,7 @@ protected:
     K2526    zre{bus};
     K3526    ops;
     K5122    afs{bus};
-    DiskFormat fmt = []{
-        auto fmts = FormatParser::builtinFormats();
-        return *std::find_if(fmts.begin(), fmts.end(),
-                             [](const DiskFormat& f){ return f.name == "cpa780"; });
-    }();
+    DiskFormat fmt = cpa780Format();
     std::string img;
 
     void SetUp() override {

@@ -46,6 +46,16 @@ K1520Handle k1520_create(K1520MachineType type);
 K1520Handle k1520_create_configured(K1520MachineType type,
                                     const char* drive0, const char* drive1,
                                     const char* drive2, const char* drive3);
+
+/**
+ * @brief Reason the last k1520_create*() returned NULL ("" if none).
+ *
+ * A startup abort (e.g. missing/broken disk format catalog `formats.yaml`) yields
+ * no handle, so the message cannot be fetched via k1520_last_error(). The returned
+ * pointer stays valid until the next k1520_create*() call.
+ */
+const char* k1520_last_init_error(void);
+
 void        k1520_destroy(K1520Handle h);
 void        k1520_reset(K1520Handle h);
 void        k1520_power_on(K1520Handle h);
@@ -101,6 +111,10 @@ int         k1520_drive_format_count(K1520Handle h, int drive);
 const char* k1520_drive_format_name(K1520Handle h, int drive, int index);
 /** @brief Drive-type default format name for @p drive (what empty-create uses). */
 const char* k1520_drive_default_format(K1520Handle h, int drive);
+/** @brief Human-readable description of a catalog format ("" if unknown). */
+const char* k1520_format_description(K1520Handle h, const char* name);
+/** @brief Colon-separated list of the loaded formats.yaml file(s) — diagnostics. */
+const char* k1520_formats_source(K1520Handle h);
 /** @brief Return true if a disk image is mounted in the drive. */
 bool k1520_disk_active(K1520Handle h, int drive);
 /** @brief Return true if mounted image is write protected. */

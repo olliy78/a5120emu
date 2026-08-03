@@ -1,7 +1,9 @@
 #include "a5120.h"
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <stdexcept>
 #include "core/logger.h"
 
 namespace {
@@ -52,7 +54,23 @@ A5120Machine::A5120Machine(const Config& cfg)
     , afs_(bus_, profilesFromConfig(cfg))
     , drive_profiles_(profilesFromConfig(cfg))
 {
-    disk_formats_ = FormatParser::builtinFormats();
+    // Diskettenformate aus data/formats.yaml laden (§8.6).  Fehlt die Datei oder ist
+    // sie syntaktisch kaputt, kann die Maschine keine Diskette mounten/anlegen — das
+    // ist ein Startabbruch mit klarer Meldung, kein stiller Weiterlauf.  Einzelne
+    // FEHLERHAFTE Formatdefinitionen sind dagegen nicht fatal: sie werden übersprungen
+    // und über formatCatalog().issues() gemeldet.
+    {
+        std::string fatal;
+        disk_formats_ = FormatCatalog::loadDefault(&fatal);
+        if (!fatal.empty()) throw std::runtime_error(fatal);
+
+        // Übersprungene Definitionen zusätzlich auf stderr — eine Konfigurationspanne
+        // muss sichtbar sein, auch wenn das Logging aus ist oder in eine Datei geht.
+        for (const auto& issue : disk_formats_.issues()) {
+            LOG_WARN("Formate", "%s", issue.c_str());
+            std::fprintf(stderr, "[Formatkatalog] %s\n", issue.c_str());
+        }
+    }
 
     // ZVE1 (Haupt-CPU) lebt jetzt auf der K2526-Karte.
     // Verdrahtung mit dem Bus erfolgt im K2526-Konstruktor.
@@ -527,15 +545,21 @@ bool A5120Machine::mountDisk(int drive, const std::string& path,
         return false;
     }
 
-    auto it = std::find_if(disk_formats_.begin(), disk_formats_.end(),
-                           [&](const DiskFormat& f){ return f.name == format_name; });
-    if (it == disk_formats_.end()) {
-        last_error_ = "Unknown format: " + format_name;
+    const DiskFormat* fmt = disk_formats_.find(format_name);
+    if (!fmt) {
+        last_error_ = "Unbekanntes Format: " + format_name;
         return false;
     }
-
+    // BEWUSST KEINE drives:-Prüfung beim Mounten eines VORHANDENEN Images:
+    //  - bei self-describing Containern (.hfe) ist der Formatname nur ein Platzhalter,
+    //    die Geometrie kommt aus der Datei (so mountet z. B. tools/format_driver alle
+    //    Slots nominell als "cpa780");
+    //  - der Laufwerkstyp ist auf der A5120 reine BIOS-Software, Combo-Boot-Disketten
+    //    betreiben an B:/C: bewusst Fremdtypen (CLAUDE.md, docs/format.md §11).
+    // Die Kompatibilität wird dort erzwungen, wo das Format die Struktur wirklich
+    // bestimmt: in createDisk() und in der angebotenen Auswahl (compatibleFormats()).
     std::lock_guard<std::mutex> lk(disk_mutex_);
-    if (afs_.mountDisk(drive, path, *it, wp)) return true;
+    if (afs_.mountDisk(drive, path, *fmt, wp)) return true;
 
     // Grund aus dem Laufwerk übernehmen (Geometrie-/Verfahrenskonflikt); wurde das
     // Image gar nicht erst geöffnet, ist die Laufwerks-Meldung leer → Fallback.
@@ -544,16 +568,6 @@ bool A5120Machine::mountDisk(int drive, const std::string& path,
                       ? ("Image konnte nicht geöffnet werden: " + path)
                       : drv_err;
     return false;
-}
-
-// Default-DiskFormat einer NEU angelegten Diskette je Laufwerkstyp (DriveProfile).
-// Wird benutzt, wenn createDisk ohne expliziten Formatnamen aufgerufen wird.
-static std::string defaultFormatFor(const DriveProfile& p) {
-    if (p.name == "ss_525_40")     return "k5601_ss40_5x1024";  // K5600.10 (200K)
-    if (p.name == "ss_525_80")     return "cpa200";             // K5600.20 (400K)
-    if (p.name == "mf3200_8_ss77") return "mf3200";             // MF3200 (308K, FM)
-    if (p.name.rfind("mf6400", 0) == 0) return "mf6400";        // MF6400 (616K)
-    return "cpa800";  // K5601 / mfs_525_ds80: 800K, ohne Bootspur
 }
 
 bool A5120Machine::createDisk(int drive, const std::string& path,
@@ -566,23 +580,36 @@ bool A5120Machine::createDisk(int drive, const std::string& path,
         return false;
     }
 
-    // Leerer Formatname → laufwerkstyp-spezifisches Standardformat.
-    const std::string fname = format_name.empty() ? defaultFormatFor(prof)
-                                                   : format_name;
-
-    auto it = std::find_if(disk_formats_.begin(), disk_formats_.end(),
-                           [&](const DiskFormat& f){ return f.name == fname; });
-    if (it == disk_formats_.end()) {
-        last_error_ = "createDisk: unbekanntes Format '" + fname + "'";
-        return false;
+    // Leerer Formatname → Standardformat des Laufwerkstyps (`default_for:` im Katalog).
+    const DiskFormat* fmt = nullptr;
+    if (format_name.empty()) {
+        fmt = disk_formats_.defaultFor(prof);
+        if (!fmt) {
+            last_error_ = "createDisk: kein Standardformat für Laufwerk '" + prof.name
+                          + "' im Katalog (default_for)";
+            return false;
+        }
+    } else {
+        fmt = disk_formats_.find(format_name);
+        if (!fmt) {
+            last_error_ = "createDisk: unbekanntes Format '" + format_name + "'";
+            return false;
+        }
+        if (!fmt->supportsDrive(prof.name)) {
+            last_error_ = "createDisk: Format '" + format_name + "' passt nicht zum Laufwerk '"
+                          + prof.name + "'";
+            return false;
+        }
     }
 
-    // Verfahren aus dem Laufwerk ableiten: reine FM-Laufwerke (8″-SD) → FM, sonst MFM.
-    const Encoding enc = prof.supports_mfm ? Encoding::MFM : Encoding::FM;
+    // Verfahren kommt jetzt aus dem FORMAT (pro Spurbereich).  Für den HFE-Header und
+    // rohe .img zählt das vorherrschende Verfahren; Mischdichte trägt DiskImage::create
+    // spurweise ein.
+    const Encoding enc = fmt->predominantEncoding();
 
-    auto img = DiskImage::create(path, *it, write_protect, enc);
+    auto img = DiskImage::create(path, *fmt, write_protect, enc);
     if (!img) {
-        last_error_ = "createDisk fehlgeschlagen (Format '" + fname + "'): " + path;
+        last_error_ = "createDisk fehlgeschlagen (Format '" + fmt->name + "'): " + path;
         return false;
     }
 
@@ -597,33 +624,24 @@ bool A5120Machine::createDisk(int drive, const std::string& path,
 
 std::string A5120Machine::defaultFormatName(int drive) const {
     if (drive < 0 || drive > 3) return "";
-    const DriveProfile& prof = drive_profiles_[drive];
-    if (!prof.present) return "";
-    return defaultFormatFor(prof);
+    const DiskFormat* f = disk_formats_.defaultFor(drive_profiles_[drive]);
+    return f ? f->name : "";
 }
 
 std::vector<std::string> A5120Machine::compatibleFormats(int drive) const {
     std::vector<std::string> out;
     if (drive < 0 || drive > 3) return out;
-    const DriveProfile& prof = drive_profiles_[drive];
-    if (!prof.present) return out;
 
-    // Standardformat des Laufwerkstyps zuerst (bevorzugte Auswahl).
-    const std::string def = defaultFormatFor(prof);
-
-    auto fits = [&](const DiskFormat& f) {
-        return f.numCylinders() <= prof.num_cyls && f.numHeads() <= prof.num_heads;
-    };
-
-    if (!def.empty()) {
-        auto it = std::find_if(disk_formats_.begin(), disk_formats_.end(),
-                               [&](const DiskFormat& f){ return f.name == def; });
-        if (it != disk_formats_.end() && fits(*it)) out.push_back(def);
-    }
-    for (const DiskFormat& f : disk_formats_) {
-        if (f.name != def && fits(f)) out.push_back(f.name);
-    }
+    // Kompatibilität ist jetzt EXPLIZIT im Katalog deklariert (`drives:`), keine
+    // Geometrie-Heuristik mehr — das Standardformat des Slots steht an erster Stelle.
+    for (const DiskFormat* f : disk_formats_.forDrive(drive_profiles_[drive]))
+        out.push_back(f->name);
     return out;
+}
+
+std::string A5120Machine::formatDescription(const std::string& format_name) const {
+    const DiskFormat* f = disk_formats_.find(format_name);
+    return f ? f->description : "";
 }
 
 bool A5120Machine::unmountDisk(int drive) {

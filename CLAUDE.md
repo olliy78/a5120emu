@@ -175,8 +175,12 @@ must **not** break:
 5. **Head-select = ctrl Port A bit2 (/FR)**, latched only at the `/STR` edge (bit5 is step DIRECTION
    only, toggles with MK/MK1). **Track-end `/BUSRQ` release** on `OUT(13H),03H` during a 128-B read
    (ZVE1 takes over before ZVE2's idle loop `L0696` corrupts `[07F8..07FC]`).
-6. **Asymmetric mixed geometry** in `format_parser.cpp` (cpa780: `{0,0,0,1,26,128}` +
-   `{1,1,0,0,26,128}` + `{1,1,1,1,5,1024}` + `{2,79,0,1,5,1024}`); index period `≈490000` cycles.
+6. **Asymmetric mixed geometry** — now declared in **`data/formats.yaml`** (`cpa780`:
+   `{0,0,0,1,26,128}` + `{1,1,0,0,26,128}` + `{1,1,1,1,5,1024}` + `{2,79,0,1,5,1024}`, all MFM);
+   index period `≈490000` cycles. Guarded by `test_format_catalog`
+   (`BootKritischeGeometrien_Unveraendert`). **Do not declare the 128-B system tracks as
+   `encoding: fm`** — the disks are plain IBM-MFM and the ROM's FM→MFM trial-and-error depends on
+   it (§14.5).
 
 Handshake RAM: `[0x03F8]` done-flag, `[0x03F7]` index counter, `[0x03FD]` path byte (`0x87`),
 `[0x07F2]` target sector count, `[0x03F0]` load address. Key addresses: ZVE1 wait `0x0168`,

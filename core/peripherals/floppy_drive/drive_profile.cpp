@@ -124,3 +124,12 @@ const DriveProfile& builtinDriveProfile(const std::string& name) {
     // Standardprofil für unbekannte Namen und "mfs_525_ds80"
     return mfs_525_ds80;
 }
+
+const std::vector<std::string>& knownDriveProfileNames() {
+    // Muss mit der Auflösung in builtinDriveProfile() übereinstimmen.
+    static const std::vector<std::string> names = {
+        "mfs_525_ds80", "K5601", "ss_525_40", "ss_525_80",
+        "mf3200_8_ss77", "mf6400_8_ss77", "mf6400_8_ds77", "none"
+    };
+    return names;
+}

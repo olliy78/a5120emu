@@ -246,12 +246,9 @@ bool K5122::mountDisk(int drive, std::unique_ptr<DiskImage> img, bool write_prot
 bool K5122::mountDisk(int drive, const std::string& path,
                         const DiskFormat& fmt, bool write_protect) {
     if (drive < 0 || drive > 3) return false;
-    // Raw-.img trägt kein Verfahren in sich → aus dem Laufwerks-Datenverfahren ableiten
-    // (reine FM-Laufwerke wie MF3200 → FM, sonst MFM), konsistent mit createDisk.  Für
-    // .hfe ist der Parameter belanglos (HFE beschreibt sein Verfahren selbst).
-    const Encoding raw_enc = drives_[drive].profile().supports_mfm ? Encoding::MFM
-                                                                   : Encoding::FM;
-    auto img = DiskImage::open(path, fmt, write_protect, raw_enc);
+    // Das Verfahren steht im DiskFormat (pro Spurbereich, §8.6) — für .hfe ohnehin in
+    // der Datei selbst.  Es wird nicht mehr aus dem Laufwerk abgeleitet.
+    auto img = DiskImage::open(path, fmt, write_protect);
     if (!img) {
         // Öffnen/Erkennen fehlgeschlagen (unbekanntes/leeres/kaputtes Image) — für
         // eine aussagekräftige GUI-Meldung im Laufwerks-Fehler hinterlegen.

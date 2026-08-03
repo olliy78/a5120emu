@@ -157,7 +157,8 @@ a5120emu/
 │   │   │   ├── k7637.h/cpp
 │   │   │   └── keytable.h       # Scan-Code-Tabellen (aus .bin)
 │   │   └── floppy_drive/        # formatagnostischer Floppy-Stack (§8.5)
-│   │       ├── format_parser.h/cpp     # DiskFormat/Geometrie (builtinFormats + .cfg)
+│   │       ├── disk_format.h/cpp       # DiskFormat/TrackFormat (Geometrie + Verfahren je Spur)
+│   │       ├── format_catalog.h/cpp    # lädt data/formats.yaml + Validierung (§8.6)
 │   │       ├── track_image.h/cpp       # zentrale TrackImage-Abstraktion (Byte-+Markenstrom)
 │   │       ├── track_codec.h/cpp       # IBM-Track (FM/MFM) bauen/parsen + CRC
 │   │       ├── bit_codec.h/cpp         # Bitzellen ⇆ Bytes (MFM/FM, HFE)
@@ -176,9 +177,15 @@ a5120emu/
 │   │       ├── prg710.h/cpp
 │   │       └── backplane.h
 │   │
+│   ├── util/                    # Querschnitts-Helfer
+│   │   └── yaml_lite.h/cpp      # minimaler YAML-Subset-Parser für Config-Dateien (§8.6.2)
+│   │
 │   └── api/                     # C-API (öffentliche Schnittstelle)
 │       ├── k1520_api.h          # Stabiles C-ABI
 │       └── k1520_api.cpp
+│
+├── data/                        # ══ LAUFZEIT-KONFIGURATION ══
+│   └── formats.yaml             # Diskettenformat-Katalog (§8.6)
 │
 ├── app/                         # ══ PYTHON QT6 ANWENDUNG ══
 │   ├── requirements.txt         # PySide6
@@ -614,7 +621,14 @@ FloppyDrive (C++ Klasse, pro Laufwerk)
 Host-Dateisystem
 ```
 
-### 8.2 Disk-Format-Konfiguration
+### 8.2 Disk-Format-Konfiguration (ABGELÖST → §8.6)
+
+> **Historisch.** Das hier skizzierte `cpaFormates.cfg`-Format stammt aus dem CP/A-Umfeld und ist
+> **nie produktiv benutzt worden**: `FormatParser::parseFile()` wird ausschließlich von
+> `test_format_parser.cpp` aufgerufen, und seine reale Grammatik (`[name]`-Sektionen +
+> `track cf cl hf hl sp bps`) weicht vom unten gezeigten `disk … end`-Stil ab. Produktiv gelten
+> die einkompilierten `FormatParser::builtinFormats()`. Beides wird durch den YAML-Katalog
+> **§8.6** ersetzt (Etappe E3).
 
 Das Format einer Diskette ist in einer Konfigurationsdatei im `cpaFormates.cfg`-Stil definiert:
 
@@ -749,6 +763,318 @@ DriveProfile[4] — Zoll/Spuren/Köpfe/U-min/Verfahren je Slot  drive_profile.*
 - **Tests:** `test_track_codec`, `test_bit_codec`, `test_hfe_image`,
   `test_disk_image_raw`, `test_drive_profile`, `test_floppy_drive2`, `test_k5122` (GoogleTest);
   alle grün, ebenso `test_boot_integration` (Full-Machine) und `test_k2526` (ZVE2-Floppy-Kette).
+
+### 8.6 Diskettenformat-Katalog aus YAML (`formats.yaml`) — 2026-08-03
+
+> **Status: umgesetzt.** `FormatParser::builtinFormats()` und `parseFile()` sind entfallen;
+> die Formate stehen in `data/formats.yaml`. Neue Dateien: `core/util/yaml_lite.{h,cpp}`
+> (Parser), `core/peripherals/floppy_drive/format_catalog.{h,cpp}` (Laden/Validieren),
+> `disk_format.{h,cpp}` (Datenmodell, ehem. `format_parser.*`). Guard-Tests:
+> `test_yaml_lite` (16), `test_format_catalog` (19); Gesamtstand 644/644 ctest grün.
+
+#### 8.6.0 Ausgangslage — warum der Umbau
+
+Die Formatdefinitionen sind heute **fest einkompiliert**: `FormatParser::builtinFormats()`
+(`format_parser.cpp:102`) baut ~25 `DiskFormat`-Structs im Code auf, `A5120Machine` übernimmt sie
+im Konstruktor (`a5120.cpp:55`). Daneben existiert `FormatParser::parseFile()` — ein INI-artiger
+Parser für ein aus dem CP/A-Umfeld stammendes Fremdformat, der **ausschließlich in Tests**
+aufgerufen wird (`test_format_parser.cpp`) und dessen tatsächliche Grammatik (`[name]` +
+`track cf cl hf hl sp bps`) nicht einmal dem in §8.2 dokumentierten `disk … end`-Stil entspricht.
+Beide Altformate können das Entscheidende nicht ausdrücken:
+
+| Fehlt heute | Konsequenz |
+|-------------|------------|
+| **Verfahren (FM/MFM) pro Spurbereich** | `TrackFormat` (`format_parser.h:7`) hat kein `encoding`-Feld. Das Verfahren gilt **pro Image**: `RawSectorImage::enc_` (`raw_sector_image.h:62`) und der `enc`-Parameter von `DiskImage::create` (`disk_image.h:109`). Mischdichte-Disketten (FM-Systemspur + MFM-Daten) können daher zwar **gelesen** werden (`HfeImage::readTrack` probiert beide Verfahren, `hfe_image.cpp:220-238`), aber weder angelegt noch sauber zurückgeschrieben werden. |
+| **Laufwerks-Kompatibilität** | `A5120Machine::compatibleFormats()` (`a5120.cpp:608`) rät über eine reine Geometrie-Heuristik (`numCylinders ≤ prof.num_cyls && numHeads ≤ prof.num_heads`). Ein 8″-FM-Format erscheint damit im Dropdown eines 5,25″-Laufwerks. |
+| **Standardformat je Laufwerkstyp** | `defaultFormatFor()` (`a5120.cpp:551`) ist eine hartkodierte `if`-Kette. |
+| **Klartextbeschreibung** | Die GUI zeigt nur nackte Katalognamen (`k5601_ds40_17x256`). |
+
+Ziel: **eine** menschenlesbare YAML-Datei als alleinige Quelle, die Mischdichte, Sektorgrößen-Mix
+und Laufwerks-Kompatibilität ausdrückt; beide Altparser entfallen.
+
+#### 8.6.1 Dateiformat — `data/formats.yaml`
+
+```yaml
+# Katalog der Diskettenformate.  Schema-Version für spätere Migrationen.
+version: 1
+
+formats:
+  # ── Einfaches Format: alle Spuren gleich ─────────────────────────────────
+  - name:        cpa800
+    description: "CP/A 800K — 80 Spuren, doppelseitig, 5×1024 MFM"
+    drives:      [K5601, mfs_525_ds80]
+    default_for: [K5601, mfs_525_ds80]     # Standard beim Anlegen (leerer Formatname)
+    encoding:    mfm                        # Vorgabe für alle Spurbereiche
+    tracks:
+      - { cyls: 0-79, heads: 0-1, sectors: 5, size: 1024 }
+
+  # ── Asymmetrischer Systembereich (boot-kritisch, exakt wie der Builtin) ──
+  - name:        cpa780
+    description: "CP/A 780K Bootdiskette — 128B-Systembereich + 1024B-Daten"
+    drives:      [K5601, mfs_525_ds80]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0,    heads: 0-1, sectors: 26, size: 128  }   # System
+      - { cyls: 1,    heads: 0,   sectors: 26, size: 128  }   # Stage-2-Lader
+      - { cyls: 1,    heads: 1,   sectors: 5,  size: 1024 }   # 1. Datenspur
+      - { cyls: 2-79, heads: 0-1, sectors: 5,  size: 1024 }   # Daten + Dateisystem
+
+  # ── MISCHDICHTE: FM-Systemspur + MFM-Datenspuren (neu ausdrückbar) ───────
+  - name:        mf6400_sys
+    description: "8″ MF6400 600K — FM-Systemspur, MFM-Daten"
+    drives:      [mf6400_8_ss77]
+    tracks:
+      - { cyls: 0,    heads: 0, sectors: 26, size: 128,  encoding: fm  }
+      - { cyls: 1-76, heads: 0, sectors: 8,  size: 1024, encoding: mfm }
+
+  # ── Nur als .hfe darstellbar ─────────────────────────────────────────────
+  - name:        k5601_ds40_5x1024
+    description: "K5601 §3.4 Format V — 40 Spuren, doppelseitig, 5×1024"
+    drives:      [ss_525_40]
+    encoding:    mfm
+    containers:  [hfe]                      # .img nicht erzeugbar (Doppelschritt)
+    tracks:
+      - { cyls: 0-39, heads: 0-1, sectors: 5, size: 1024 }
+```
+
+**Format-Ebene:**
+
+| Feld | Pflicht | Typ | Bedeutung |
+|------|---------|-----|-----------|
+| `name` | ja | string | Eindeutiger Katalogname (C-API, GUI, Tools, `--format`) |
+| `description` | nein | string | Klartext fürs GUI-Dropdown |
+| `drives` | ja | list\<string\> | Kompatible `DriveProfile`-Namen (§8.4). **Nur** diese Formate bietet ein Slot an. |
+| `default_for` | nein | list\<string\> | Profile, für die dies das Standardformat ist — ersetzt `defaultFormatFor()` |
+| `encoding` | nein | `fm`\|`mfm` | Vorgabe für Spurbereiche ohne eigenes `encoding` |
+| `containers` | nein | list | `hfe`, `img` — darstellbare Dateitypen (Default: beide) |
+| `tracks` | ja | list | ≥ 1 Spurbereich |
+
+**Spurbereich (`tracks[]`):**
+
+| Feld | Pflicht | Typ | Bedeutung |
+|------|---------|-----|-----------|
+| `cyls` | ja | `N` oder `N-M` | Zylinderbereich, **inklusive** |
+| `heads` | ja | `N` oder `N-M` | Kopfbereich, inklusive |
+| `sectors` | ja | int | Sektoren je Spur |
+| `size` | ja | int | Bytes/Sektor (128/256/512/1024) |
+| `encoding` | nein | `fm`\|`mfm` | **Pro Spurbereich** — überschreibt die Format-Vorgabe |
+| `first_sector` | nein | int | Erste Sektor-ID (Default 1) |
+| `interleave` | nein | int | Sektor-Verschränkung (Default 1) — *Phase 2* |
+| `gaps` | nein | map | Überschreibt `GapParams` (§`track_codec.h`) — *Phase 2* |
+
+**Auflösungsregeln:** Verfahren = `tracks[].encoding` → `formats[].encoding` → Laufwerks-Default
+(`prof.supports_mfm ? MFM : FM`, heutiges Verhalten). Bereiche sind inklusive und müssen
+**überlappungsfrei** sein (V2); `DiskFormat::findTrack()` behält seine „erster Treffer"-Semantik.
+
+#### 8.6.2 YAML-Subset (handgeschriebener Parser)
+
+Bewusst **kein** yaml-cpp: keine externe Abhängigkeit für `libk1520core.so`, offline baubar,
+konsistent mit dem vorhandenen handgeschriebenen Parser. Der Parser (`core/util/yaml_lite.{h,cpp}`,
+~300 Zeilen) unterstützt genau:
+
+| Unterstützt | Nicht unterstützt (→ Ladefehler mit Zeilennummer) |
+|-------------|--------------------------------------------------|
+| Kommentare `#` bis Zeilenende | Anchors/Aliases `&a` / `*a`, Merge-Keys `<<:` |
+| Einrückungs-Verschachtelung (**nur Leerzeichen**) | Tabs als Einrückung |
+| Block-Maps `key: value`, Block-Listen `- item` | Mehrzeilige Skalare `|` / `>` |
+| Flow-Maps `{ a: 1, b: 2 }` (einzeilig) | Mehrere Dokumente (`---`), Tags (`!!str`) |
+| Flow-Listen `[a, b, c]` | Komplexe Keys (`? …`) |
+| Skalare: bare, `'…'`, `"…"`; int dez/`0x`; bool `true`/`false` | Zeitstempel, Sets, Ordered-Maps |
+
+Das Ergebnis ist ein generischer `YamlNode` (Map/List/Scalar); `FormatCatalog` bildet ihn auf
+`DiskFormat` ab. Damit ist der Parser eigenständig testbar (`test_yaml_lite`) und für spätere
+Konfigurationsdateien (z. B. `drives.yaml`, §8.6.8/E6) wiederverwendbar.
+
+#### 8.6.3 Datenmodell (C++)
+
+```cpp
+struct TrackFormat {                     // disk_format.h (ehem. format_parser.h)
+    uint8_t  cyl_first, cyl_last;
+    uint8_t  head_first, head_last;
+    uint8_t  secs_per_track;
+    uint16_t bytes_per_sec;
+    Encoding encoding        = Encoding::MFM;   // NEU — pro Spurbereich
+    uint8_t  first_sector_id = 1;               // NEU
+    // Phase 2: uint8_t interleave; std::optional<GapParams> gaps;
+};
+
+struct DiskFormat {
+    std::string              name, description;
+    std::vector<std::string> drives, default_for;   // NEU
+    bool                     allow_img = true, allow_hfe = true;  // NEU (containers)
+    std::vector<TrackFormat> tracks;
+
+    uint8_t  numHeads() const;  uint8_t numCylinders() const;  uint64_t totalBytes() const;
+    const TrackFormat* findTrack(uint8_t cyl, uint8_t head) const;
+    Encoding predominantEncoding() const;   // NEU — HFE-Header, DiskGeometry
+    bool     isMixedEncoding()     const;   // NEU
+    bool     fitsDrive(const DriveProfile&) const;   // NEU — Validierung V4
+};
+
+class FormatCatalog {                    // NEU — ersetzt FormatParser
+public:
+    static std::vector<std::string> searchPaths();
+    static FormatCatalog             load(const std::vector<std::string>& files,
+                                          std::string* error);
+    const DiskFormat*                find(const std::string& name) const;
+    std::vector<const DiskFormat*>   forDrive(const DriveProfile&) const;  // explizite Liste
+    const DiskFormat*                defaultFor(const DriveProfile&) const;
+    const std::vector<std::string>&  warnings() const;   // nicht-fatale Befunde
+    const std::vector<std::string>&  sources()  const;   // geladene Dateien (Diagnose)
+};
+```
+
+#### 8.6.4 Suchpfad und Laden
+
+Der Katalog ist eine **reine Laufzeitdatei** (kein Build-Codegen). Geladen wird in
+**aufsteigender Priorität** — alle gefundenen Dateien werden gelesen, ein späterer `name`
+**ersetzt** einen früheren gleichen Namens (User-Override):
+
+1. `K1520_FORMATS_DEFAULT` — Compile-Define via `add_compile_definitions` (CMake setzt es im
+   Dev-Build auf `${CMAKE_SOURCE_DIR}/data/formats.yaml`, im Install-Build auf den Install-Pfad)
+2. `<Verzeichnis von libk1520core.so>/../share/a5120emu/formats.yaml`
+3. `./data/formats.yaml` (CWD)
+4. `${XDG_CONFIG_HOME:-~/.config}/a5120emu/formats.yaml`
+5. `$K1520_FORMATS` (Datei **oder** Verzeichnis; mehrere `:`-getrennt) — höchste Priorität
+
+Wird **keine** Datei gefunden, schlägt die `A5120Machine`-Konstruktion **laut** fehl:
+`last_error_` listet **alle durchsuchten Pfade** auf, `k1520dbg`/`boot_trace` drucken sie.
+Das ist die bewusste Kehrseite der Laufzeitdatei (siehe R2) — Schritt 1 sorgt dafür, dass
+ctest, `boot_trace` und `k1520dbg` ohne jede Umgebungsvariable funktionieren.
+
+#### 8.6.5 Validierung beim Laden
+
+| # | Regel | Verstoß |
+|---|-------|---------|
+| V1 | Pflichtfelder vorhanden, `name` katalogweit eindeutig | **Fehler** |
+| V1b | Unbekannte Felder | **Warnung** (vorwärtskompatibel) |
+| V2 | Spurbereiche eines Formats überlappungsfrei; `cyl_first ≤ cyl_last`, `head ≤ 1` | **Fehler** |
+| V3 | `drives`/`default_for` verweisen auf existierende Profilnamen | **Fehler** |
+| V4 | Für **jedes** `drives`-Profil: `numHeads ≤ prof.num_heads`, `numCylinders ≤ prof.num_cyls`, und jedes verwendete Verfahren von `prof.supports(enc)` gedeckt | **Fehler** |
+| V5 | Spurkapazität: `sectors × size` + Gaps ≤ `indexPeriodCycles / bytePeriodCycles` | **Warnung** (s. u.) |
+
+> **V3 — Fallstrick:** `builtinDriveProfile()` (`drive_profile.h:155`) liefert für **unbekannte
+> Namen stillschweigend das Default-Profil**. Die Validierung darf daher *nicht* über den
+> Rückgabewert prüfen, sonst geht jeder Tippfehler als `mfs_525_ds80` durch. Nötig ist ein neuer
+> Accessor `knownDriveProfileNames()`, gegen den geprüft wird.
+
+> **V5 — nur Warnung, und warum:** `DriveProfile::bytePeriodCycles()` (`drive_profile.h:132`)
+> hat die Datenrate fest auf FM = 125 kbit/s / MFM = 250 kbit/s verdrahtet — die **5,25″-Werte
+> aus dem K5601-Datenblatt**. Reale 8″-FM-Laufwerke arbeiten mit 250 kbit/s. Rechnet man V5
+> mit dem heutigen Modell, ergibt sich für das existierende `mf3200`-Format (8″, 360 min⁻¹, FM,
+> 4×1024) eine Kapazität von nur `408333 / 156 ≈ 2617` Bytes gegenüber 4096 Bytes Nutzdaten —
+> das **bestehende, funktionierende Format würde abgelehnt**. V5 bleibt deshalb Warnung, bis
+> `DriveProfile` die Datenrate als eigenes Feld führt (Folgearbeit, nicht Teil dieses Umbaus).
+
+#### 8.6.6 Schichten-Umbau — Verfahren pro Spur durchziehen
+
+Das ist der eigentliche Eingriff; die YAML ist nur die Eingabe dafür. Betroffen:
+
+| Ort | Heute | Nachher |
+|-----|-------|---------|
+| `raw_sector_image.cpp:121` | `buildTrack(sektoren, enc_)` — Image-weites Verfahren | `buildTrack(sektoren, tf->encoding, gaps)` aus `fmt_.findTrack(cyl, head)` |
+| `raw_sector_image.h:62` | `enc_` bestimmt alles | `enc_` nur noch **Fallback** für Formate ohne `encoding` |
+| `raw_sector_image.cpp:83` | `geometry().encoding = enc_` | `= fmt_.predominantEncoding()` |
+| `disk_image.cpp:199` | `buildTrack(emptySectors(*tf,c,h), enc)` | `…, tf->encoding` — Mischdichte anlegbar |
+| `disk_image.cpp:207` | `side_len` aus max. Spurlänge | unverändert **max über alle Spuren**, aber Mischdichte-Test nötig (R3) |
+| `disk_image.cpp:122` | HFE-Header `enc` | `fmt.predominantEncoding()`; die andere Dichte deckt der vorhandene Dual-Decode ab (`hfe_image.cpp:220-238`) |
+| `disk_image.h` | `open(…, raw_encoding)` (2026-08-03 ergänzt) | Parameter **entfernt** — das Format ist jetzt die Autorität (s. u.) |
+| `k5122.cpp` | Verfahren aus `profile().supports_mfm` abgeleitet | entfällt — `DiskImage::open(path, fmt, wp)` |
+| `a5120.cpp` | `disk_formats_ = builtinFormats()` | `FormatCatalog::loadDefault(&fatal)`, wirft bei fatalem Fehler |
+| `a5120.cpp` | `defaultFormatFor()` (if-Kette) | `disk_formats_.defaultFor(prof)` — aus `default_for:` |
+| `a5120.cpp` | `compatibleFormats()` (Geometrie-Heuristik) | `disk_formats_.forDrive(prof)` — **explizite** `drives:`-Liste |
+| `format_parser.{h,cpp}` | `builtinFormats()` + `parseFile()` | **entfallen** beide; Datei → `disk_format.{h,cpp}` + `format_catalog.{h,cpp}` |
+
+`writeTrack` braucht keine Änderung: `TrackCodec::parseTrack` liest das Verfahren bereits aus
+`TrackImage::encoding` — der Controller liefert die Spur in der Codierung, in der er sie gelesen
+bzw. geschrieben hat.
+
+> **Abweichung 1 vom Entwurf — `raw_encoding` ganz entfernt statt „Fallback".** Der Plan wollte
+> den 2026-08-03 ergänzten Parameter als Rückfall behalten. Das ist nicht darstellbar:
+> `TrackFormat::encoding` hat immer einen Wert, „nicht deklariert" ist von „MFM" nicht
+> unterscheidbar — der Parameter wäre wirkungslose Ballast-API geworden. Das Verfahren kommt
+> jetzt ausschließlich aus dem Format (pro Spurbereich). Für Formate ganz ohne Spurbereiche
+> bleibt intern MFM.
+>
+> **Abweichung 2 — `drives:` wird beim MOUNTEN nicht erzwungen**, nur bei `createDisk()` und in
+> der angebotenen Auswahl (`compatibleFormats()`). Grund: bei self-describing `.hfe` ist der
+> übergebene Formatname nur ein Platzhalter (die Geometrie steht in der Datei) — `tools/format_driver`
+> mountet z. B. **alle** Slots nominell als `"cpa780"`, auch die 8″-Laufwerke der Combo-Boot-Tests.
+> Zudem ist der Laufwerkstyp auf der A5120 reine BIOS-Software (§8.4), Combo-Disketten betreiben an
+> B:/C: bewusst Fremdtypen. Eine Prüfung beim Mounten hat genau diese vier `format_integration`-Tests
+> zerlegt. Das Ziel „kein doppelseitiges Format an einseitigem Laufwerk **auswählbar**" wird dort
+> erzwungen, wo das Format die Struktur wirklich bestimmt: beim Anlegen und in der GUI-Liste.
+
+#### 8.6.7 C-API und GUI
+
+Die C-ABI bleibt **stabil** — `DiskFormat` wandert nie über die Grenze, nur Namen/Strings.
+Bestehend bleiben `k1520_drive_format_count/_name/_default_format` (ihre *Semantik* wird
+präziser: explizite Kompatibilität statt Geometrie-Heuristik). Neu:
+
+```c
+const char* k1520_format_description(K1520Handle h, const char* name);  /* GUI-Dropdown */
+const char* k1520_formats_source(K1520Handle h);   /* geladene Datei(en) — Diagnose */
+const char* k1520_last_init_error(void);           /* Grund eines fehlgeschlagenen create */
+```
+
+**Startabbruch ohne Handle.** Fehlt der Katalog oder ist er syntaktisch kaputt, wirft der
+`A5120Machine`-Konstruktor; `k1520_create*` fängt das, gibt `NULL` zurück und legt den Grund in
+`k1520_last_init_error()` ab — `k1520_last_error(h)` ist mangels Handle nicht erreichbar. Die
+Python-Bindung (`K1520Emulator.__init__`) macht daraus ein `RuntimeError`, `app/main.py` gibt es
+aus und beendet mit Exit-Code 1. Beispielausgabe:
+
+```
+Keine Formatkatalog-Datei (formats.yaml) gefunden.
+Gesucht wurde in:
+  - /home/…/a5120emu_ui/data/formats.yaml
+  - /usr/bin/../share/a5120emu/formats.yaml
+  - data/formats.yaml
+  - /home/…/.config/a5120emu/formats.yaml
+Abhilfe: data/formats.yaml bereitstellen oder K1520_FORMATS=<datei> setzen.
+```
+
+**Einzelne fehlerhafte Definitionen** sind dagegen nicht fatal — sie werden übersprungen und mit
+Datei, Zeile, Name und Grund auf stderr (und ins Log) gemeldet, die übrigen Formate bleiben nutzbar:
+
+```
+[Formatkatalog] …/formats.yaml:8: Format 'kaputt' übersprungen — 'size': 777 — erlaubt sind 128, 256, 512, 1024
+```
+
+GUI (`app/ui/drive_widget.py`): `_populate_format_combo()` zeigt `"<name> — <description>"` als
+Label (Standard mit Präfix `Standard: `) und behält den Katalognamen in `userData`.
+
+#### 8.6.8 Etappen
+
+| # | Inhalt | Status |
+|---|--------|--------|
+| **E1** | `yaml_lite` + Tests, ohne jede Verdrahtung | ✅ `test_yaml_lite` (16 Tests) |
+| **E2** | `FormatCatalog` + `data/formats.yaml` als **1:1-Abbild** der 25 Builtins (`encoding: mfm` durchgängig; nur `mf3200` ist FM — wie die bisherige Ableitung aus dem FM-Laufwerk) | ✅ `BootKritischeGeometrien_Unveraendert` prüft cpa780 Spurbereich für Spurbereich |
+| **E3** | `A5120Machine` auf Katalog umstellen; `builtinFormats()`/`parseFile()` **entfernt**; §8.2 als abgelöst markiert | ✅ 644/644 ctest, `test_boot_integration` grün |
+| **E4** | Verfahren pro Spur durch `RawSectorImage`/`DiskImage::create` gezogen | ✅ `RawMischdichte_VerfahrenJeSpur`, `Mischdichte_VerfahrenProSpurbereich` |
+| **E5** | C-API `_description`/`_source`/`_last_init_error`, GUI-Labels, Startabbruch | ✅ end-to-end geprüft |
+| **E6** | *offen, optional:* `DriveProfile` ebenfalls aus YAML (`drives.yaml`) — derselbe Parser | — |
+
+#### 8.6.9 Risiken
+
+- **R1 — Boot-Regression durch Encoding-Deklaration (größtes Risiko).** Die A5120-Bootdisketten
+  sind **reines Standard-IBM-MFM**; der Boot-ROM startet in FM, findet keine IDAM und schaltet
+  per MK auf MFM um (§14.5, CLAUDE.md „Boot-Invarianten"). Würde `cpa780` seine 128-B-Systemspuren
+  als `encoding: fm` deklarieren — was intuitiv plausibel wirkt —, bräche der verifizierte
+  Bootpfad. **Deshalb ist E2 strikt verfahrens-neutral** (`encoding: mfm` überall, exakt wie heute);
+  Mischdichte kommt erst in E4 und nur an **neuen** Formaten. Guard: `test_boot_integration`
+  (`Stage3_FullyLoadsAndJumpsToOs`).
+- **R2 — Laufzeit-Dateiabhängigkeit** (bewusste Entscheidung): Fehlt `formats.yaml`, kennt die
+  Maschine **kein einziges** Format — auch die boot-kritischen `cpa780`/`cpa800` nicht. Mitigation:
+  Compile-Define als letzter Rückfall (§8.6.4 Schritt 1) + laute, alle Pfade nennende Fehlermeldung.
+- **R3 — HFE-Mischdichte.** HFE v1 trägt nur **eine** `bitrate` und **ein** Verfahren im Header.
+  Lesen ist gelöst (Dual-Decode). Beim **Anlegen** ist zu beachten: `BitCodec` kodiert FM *und* MFM
+  mit 16 Zellen/Byte (`bit_codec.h:15`), die reale Zeitkapazität je Umdrehung unterscheidet sich
+  aber. `side_len` muss nach der **dichtesten** Spur bemessen werden; per Test absichern.
+- **R4 — Doppelschritt-Formate** (40 Spuren in 80-Spur-Laufwerk, physisch = 2 × logisch) bleiben
+  ungelöst; das Feld `containers: [hfe]` kann die Einschränkung jetzt **explizit** ausdrücken,
+  statt sie wie früher nur als Kommentar im Quelltext zu führen. Im ausgelieferten Katalog ist es
+  bewusst noch nirgends gesetzt (alle Formate erlauben `img` und `hfe`), damit der Umbau
+  verhaltensneutral bleibt.
 
 ---
 
