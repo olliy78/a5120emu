@@ -27,6 +27,63 @@ zuerst eine Fehlermeldung und danach wurde der Bildschirm mit wirren Zeichen
 
 ---
 
+## 0. Stand & Einstieg für die nächste Session
+
+**Branch `boot_udos`**, gemergt mit `origin/main` (YAML-Formatkatalog, Laufwerksprofil-
+Umbenennungen, Reset/Power-Cycle, GUI). Testlage nach Komplett-Neubau:
+**662/662 ctest + 58/58 Legacy-Harness + 8/8 `format_integration`**.
+
+**Erledigt:** Der Pseudo-Interrupt-Sturm (§4/§5) ist gefixt und regressionsfrei. UDOS
+durchläuft jetzt die komplette Ladekette bis zum geladenen Systemabbild.
+
+**Offen:** §8.1 (ein Index-Interrupt `0xBA` ohne IM-2-Eintrag) und §8.2 (DMA in den
+Bildschirmspeicher). UDOS erreicht **noch keinen** Bedienzustand.
+
+### Reststand in einem Kommando reproduzieren
+
+```sh
+tools/dev.sh trace disks/udos_boot_scp.hfe -c 45000000 -p 45000000 \
+    --itrace /tmp/u.csv -L /dev/null --quiet --json
+cut -d, -f5 /tmp/u.csv | sort | uniq -c      # 7× 0x01C7, 22× 0x0A0A, 62× 0x007A, 1× 0xFFFF
+```
+
+Das eine `0xFFFF` ist der Rest-Fehlschlag: Takt **13 027 481**, unterbrochener PC
+`0x071D`, Vektor **`0xBA`** (K5122-Indexpuls), Tabelleneintrag `[0x0FBA]` = `FFFF`.
+Diese Werte sind **vor und nach dem main-Merge identisch**.
+
+### Was bereits widerlegt oder verworfen ist (nicht erneut probieren)
+
+| Idee | Ergebnis |
+|---|---|
+| NMI / Q240-Schutzverletzung als Auslöser | ❌ `bnmi` bleibt stumm — es ist der `RST 38H`-Pfad |
+| Lesepfad / Diskettenfehler | ❌ `disk verify`: 160 Spuren, 4057 Sektoren, **0 CRC-Fehler** |
+| `pending` beim Sperren der IE löschen | ✅ **ist inzwischen in `main`** (`z80_pio.cpp:127/139`) — ändert am Reststand **nichts** |
+| IE-Zustand beim DMA-Rundenstart merken und wiederherstellen | ❌ wirkungslos (der Löscher *ist* ZVE2) |
+| Restore nur, wenn die Sperre von ZVE2 kam (I/O-Urheber-Flag am Bus) | ❌ wirkungslos, gleiche Begründung |
+| `ctrl_pio_.ioWrite(1, 0x83)` in `endDmaTransfer()` ersatzlos streichen | ⚠ UDOS kommt am BREAK vorbei, der Lesevorgang wird aber **nie fertig** (`0x0719/0x071D`: 11 838 → 94 770 Treffer) |
+| K7024 verhalte sich unrealistisch wie RAM | ❌ falsch — Lesesperre ist korrekt modelliert, s. §8.2 |
+
+### Nächste konkrete Schritte
+
+1. **Wer setzt das Fertig-Bit?** Der Treiber wartet auf `BIT 7,(IY+0AH)` = `[0x0E93]`.
+   `--watch 0x0E93` zeigt, welche ISR es setzt. Das ist der Schlüssel zu der Frage,
+   warum der Lesevorgang ohne den `0x83`-Restore nie fertig wird — und damit dazu, ob
+   dieser Emulator-Eingriff überhaupt entfallen kann.
+2. **Wird `[0x0FBA]` jemals gefüllt?** `--watch 0x0FBA,0x0FBB` über einen langen Lauf.
+   Falls ja, kommt unser Indexpuls schlicht zu früh (Timing statt Logik).
+3. **Vektor `0xE8` gegenprüfen:** Im residenten System (`0x0000–0x0BFF`) und in
+   `NDOS.MAC` nach einem Schreiben von `0xE8` auf Port `0x11` suchen. Erwartet wird er
+   laut `UNFLOPPY.MAC` und unserem eigenen `k5122.cpp`-Kommentar (*ivdsk1*).
+4. **Speicherausbau (§8.2):** Ermitteln, ob UDOS die Obergrenze selbst misst oder vom
+   Lade-ROM übernimmt, und was dabei herauskommt.
+
+> **Werkzeug-Warnung:** `k1520dbg` ist auf dieser Disk ab ca. 15 Mio. Takten praktisch
+> unbenutzbar (`g 15000000` = 0,3 s, `g 15500000` > 90 s) — Ursache und Messwerte in
+> §10 bzw. `tools/feature_request_source_annotation.md` §7. Für lange Läufe
+> `boot_trace` nehmen, `k1520dbg` nur mit Breakpoint.
+
+---
+
 ## 1. Symptom & Reproduktion
 
 Kurz nach dem Start erscheint oben links ein Registerauszug, danach füllt sich der
@@ -431,12 +488,35 @@ Warteschleife `0x0719` hängen lassen (ersatzloses Streichen):
 ```
 
 Ob das legitim ist (UDOS legt Puffer hoch) oder Folge einer falsch berechneten
-Zieladresse, ist **nicht geklärt**. Unser K7024 verhält sich an `0xF800–0xFFFF` wie
-gewöhnliches Schreib-/Lese-RAM (`k7024.cpp`, 2 KB Puffer) — ein Speichertest von
-UDOS findet dort also volle 64 KB. Falls die echte Karte dort abweicht (nur
-1920 sichtbare Zellen, Sonderbedeutung von Bit 7 / Lesesperre), würde UDOS seinen
-Speicher anders dimensionieren. Das ist der nächste Ansatzpunkt, wenn nach §8.1 der
-Bildschirm immer noch zerschrieben wird.
+Zieladresse, ist **nicht geklärt**.
+
+**Korrektur einer naheliegenden Fehlannahme:** Der K7024 ist bei uns **kein**
+gewöhnliches Schreib-/Lese-RAM, sondern bereits hardwaretreu modelliert. Die
+**Lesesperre** (Brücken X13/X14) ist im A5120 der Normalfall und in
+`K7024::A5120Config` per Default gesetzt (`read_protect(true)`, `k7024.h:73`):
+
+```cpp
+/// @return false when Lesesperre is active (A5120 default), true otherwise
+bool isReadable() const override { return !cfg_.read_protect; }
+```
+
+Der K7024 **antwortet also gar nicht auf Lesezugriffe** — das tut der K3526
+darunter; Schreibzugriffe erreichen **beide** (`k7024.h:112–130`). `0xF800–0xFFFF`
+ist für UDOS damit ganz normaler Speicher, und das ist **korrekt so**: Auf echter
+Hardware ist es genauso. Die Konsequenz ist unbequem: Auch ein realer A5120 müsste
+den Bildschirm zerschreiben, wenn dort Daten abgelegt werden. Damit verschiebt sich
+die Frage von „wie verhält sich unsere Karte?" auf **„warum landen die Daten
+überhaupt dort?"** — mögliche Richtungen:
+
+1. Die **Speicher-Ausbaumessung** liefert bei uns ein anderes Ergebnis als real.
+   Das Lade-ROM misst den Ausbau über den PIO-Interrupt (deshalb die
+   `pending`-Löschung beim Sperren, `z80_pio.cpp:127/139`); UDOS könnte dieses
+   Resultat übernehmen oder selbst messen und bei uns fälschlich bis `0xFFFF`
+   kommen.
+2. Die Zieladresse des Ladevorgangs ist falsch — dann müsste sich zeigen, woher
+   der Treiber sie bezieht (Auftragsblock `IY`, s. §7.2).
+3. Es ist tatsächlich normal, und UDOS löscht den Bildschirm später wieder — dann
+   ist §8.1 die einzige echte Baustelle.
 
 ### 8.3 Konsole
 
