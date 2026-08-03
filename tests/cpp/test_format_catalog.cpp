@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 #include "core/peripherals/floppy_drive/format_catalog.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 
@@ -63,6 +64,47 @@ TEST(FormatCatalog, AusgelieferterKatalog_LaedtOhneBeanstandung) {
     EXPECT_TRUE(fatal.empty()) << fatal;
     for (const auto& i : cat.issues()) ADD_FAILURE() << "Beanstandung: " << i;
     EXPECT_GE(cat.formats().size(), 25u);
+}
+
+/**
+ * @test FormatCatalog/Formatnamen_SindEinStabilerVertrag
+ * @brief Der Katalog enthält **exakt** die erwarteten Formatnamen.
+ *
+ * Die Namen sind eine öffentliche Schnittstelle: Werkzeuge und Skripte
+ * referenzieren sie als Zeichenkette (`tools/format_all.py`, `make_bootdisk.py`,
+ * `tools/format_driver.cpp` mounten nominell als "cpa780"/"cpa800", die
+ * `format_integration`-Presets nennen die k5601_*-Geometrien beim Namen).  Ein
+ * Tippfehler oder ein versehentlich entfernter Eintrag in `data/formats.yaml`
+ * bricht diese Werkzeuge erst zur LAUFZEIT — eine reine Mengenprüfung
+ * (`size() >= 25`) würde das nicht bemerken.
+ * @par Kriterium  Namensmenge stimmt exakt; fehlende und zusätzliche werden benannt.
+ */
+TEST(FormatCatalog, Formatnamen_SindEinStabilerVertrag) {
+    std::string fatal;
+    FormatCatalog cat = FormatCatalog::load({shippedCatalog()}, &fatal);
+    ASSERT_TRUE(fatal.empty()) << fatal;
+
+    const std::vector<std::string> expected = {
+        "cpa780", "cpa800", "cpa640", "cpa624", "cpa200", "cpa200_boot",
+        "scpx780", "scpx780_b", "mf3200", "mf6400",
+        "k5601_16x256", "k5601_16x256_77", "k5601_26x128",
+        "k5601_9x512", "k5601_10x512",
+        "k5601_ss80_26x128", "k5601_ss80_9x512",
+        "k5601_ss40_5x1024", "k5601_ss40_26x128",
+        "k5601_ss40_16x256", "k5601_ss40_15x256",
+        "k5601_ds40_5x1024", "k5601_ds40_26x128",
+        "k5601_ds40_16x256", "k5601_ds40_17x256",
+    };
+
+    for (const auto& name : expected)
+        EXPECT_NE(cat.find(name), nullptr)
+            << "Format '" << name << "' fehlt im Katalog — Werkzeuge referenzieren es";
+
+    for (const auto& f : cat.formats())
+        EXPECT_NE(std::find(expected.begin(), expected.end(), f.name), expected.end())
+            << "Unerwartetes Format '" << f.name << "' — Erwartungsliste mitpflegen";
+
+    EXPECT_EQ(cat.formats().size(), expected.size());
 }
 
 /**

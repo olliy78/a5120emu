@@ -363,6 +363,12 @@ if(BUILD_K1520)
             PRIVATE k1520_a5120 k1520_floppy k1520_logger GTest::gtest_main)
         target_include_directories(k1520_test_machine_snapshot PRIVATE ${CMAKE_SOURCE_DIR})
 
+        # Disketten-API auf Maschinenebene (Formatkatalog-Verdrahtung, §8.6)
+        add_executable(k1520_test_a5120_disk_api tests/cpp/test_a5120_disk_api.cpp)
+        target_link_libraries(k1520_test_a5120_disk_api
+            PRIVATE k1520_a5120 k1520_floppy k1520_logger GTest::gtest_main)
+        target_include_directories(k1520_test_a5120_disk_api PRIVATE ${CMAKE_SOURCE_DIR})
+
         # Full-machine boot integration test (ZVE1+ZVE2 + K5122 DMA end-to-end).
         # Quiet logging (WARN) keeps the multi-million-cycle boot run readable.
         add_executable(k1520_test_boot_integration tests/cpp/test_boot_integration.cpp)
@@ -403,6 +409,7 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_event_bp)
         gtest_discover_tests(k1520_test_mem_watch)
         gtest_discover_tests(k1520_test_machine_snapshot)
+        gtest_discover_tests(k1520_test_a5120_disk_api)
         gtest_discover_tests(k1520_test_boot_integration PROPERTIES TIMEOUT 60)
 
         # Langsamer SCPX-INIT.COM-Formatier-Guard (~35 s, 160 Spuren) in eigenem
