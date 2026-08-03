@@ -45,6 +45,12 @@ namespace BitCodec {
  * Bytes mit Marke None — analog zur Ausgabe von @ref TrackCodec::buildTrack, damit
  * @ref TrackCodec::parseTrack auf beiden Quellen identisch arbeitet.
  *
+ * **Re-Sync wie ein echter Datenseparator:** Der Decoder rastet an JEDER Sync-Gruppe neu
+ * ein, nicht nur an der ersten.  Synthetisch erzeugte Spuren liegen zwar komplett in einer
+ * Bytephase, real eingelesene aber nicht: jedes Feld wurde einzeln geschrieben, sodass
+ * Schreib-Splices und Drehzahl-Jitter die Folgefelder um beliebige Zellzahlen (auch halbe
+ * Bytes) verschieben.  Mit fester Phase decodiert alles nach dem ersten Feld zu Rauschen.
+ *
  * @param cells          Spurseiten-Bytes (LSB-first Zellstrom)
  * @param bitcell_count  Zahl gültiger Bitzellen (≤ cells.size()*8)
  * @param enc            erwartetes Verfahren (MFM/FM)
@@ -66,5 +72,25 @@ TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count, Enc
  * @return Spurseiten-Bytes (LSB-first), Länge = ceil(target_bitcells/8)
  */
 std::vector<uint8_t> encode(const TrackImage& track, uint32_t target_bitcells);
+
+/**
+ * @brief Rechnet einen ÜBERABGETASTETEN Zellstrom auf die nominale Zellrate herunter.
+ *
+ * Manche Flux-Reader (Greaseweazle & Co.) exportieren eine DD-Diskette mit doppelter
+ * Abtastrate (HFE-Header `bitrate` = 500 statt 250 kbit/s): jede MFM-Zelle belegt dann
+ * @p factor Abtastwerte, und das Flankenbit liegt jitterbedingt mal im ersten, mal im
+ * zweiten davon.  Ein simples Ausdünnen jeder n-ten Position verliert deshalb Flanken;
+ * stattdessen wird hier **flankenintervall-quantisiert**: der Abstand zweier Flanken in
+ * Abtastwerten wird durch @p factor geteilt und auf ganze Zellen gerundet.
+ *
+ * @param cells          Spurseiten-Bytes (LSB-first Zellstrom, wie in HFE)
+ * @param bitcell_count  Zahl gültiger Abtastwerte
+ * @param factor         Überabtastfaktor (>1; 1 gibt die Eingabe unverändert zurück)
+ * @param out_bitcells   liefert die Zahl der erzeugten Zellen
+ * @return Zellstrom bei nominaler Rate (LSB-first, HFE-kompatibel)
+ */
+std::vector<uint8_t> downsampleCells(const std::vector<uint8_t>& cells,
+                                     uint32_t bitcell_count, uint32_t factor,
+                                     uint32_t& out_bitcells);
 
 }  // namespace BitCodec
