@@ -428,7 +428,14 @@ bool Z80PIO::deserialize(const uint8_t*& p, const uint8_t* end) {
  * @return true if requesting interrupt, false otherwise
  */
 bool Z80PIO::hasInterrupt() const {
-    return (porta_.iei && porta_.pending) || (portb_.iei && portb_.pending);
+    // WICHTIG: dieselbe Bedingung wie getVector() — inklusive `!ius`.  Ein Port,
+    // der bereits bedient wird (IUS=1, noch kein RETI), darf KEINEN Interrupt
+    // mehr anfordern, auch wenn inzwischen ein neues `pending` aufgelaufen ist.
+    // Sonst zieht die Karte /INT, die Quittung findet in getVector() aber keinen
+    // vektorfähigen Port und liefert den Fallback 0xFF → Endlos-Sturm mit
+    // Pseudo-Vektor (s. doc/analyse_udos.md).  Analog zu Z80CTC::anyServiceable().
+    return (porta_.iei && porta_.pending && !porta_.ius) ||
+           (portb_.iei && portb_.pending && !portb_.ius);
 }
 
 /**
