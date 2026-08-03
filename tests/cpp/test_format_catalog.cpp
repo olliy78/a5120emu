@@ -22,6 +22,8 @@
 #include "core/peripherals/floppy_drive/format_catalog.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 
@@ -105,6 +107,51 @@ TEST(FormatCatalog, Formatnamen_SindEinStabilerVertrag) {
             << "Unerwartetes Format '" << f.name << "' — Erwartungsliste mitpflegen";
 
     EXPECT_EQ(cat.formats().size(), expected.size());
+}
+
+/**
+ * @test FormatCatalog/KapazitaetInDerBeschreibung_PasstZurGeometrie
+ * @brief Eine Kapazitätsangabe wie „640K" in `description:` muss zur tatsächlichen
+ *        Geometrie passen.
+ *
+ * Hintergrund: `cpa640`/`cpa624` waren jahrelang **einseitig** deklariert (schon in den
+ * früheren einkompilierten `builtinFormats()`) und lieferten damit 320 statt 640 KB —
+ * der Widerspruch zum eigenen Namen fiel niemandem auf, weil ihn nichts geprüft hat.
+ * Der Test liest die erste Zahl vor einem „K" aus der Beschreibung und vergleicht sie
+ * mit `totalBytes()`; Formate ohne solche Angabe werden übersprungen.
+ * @par Kriterium  |Angabe·1024 − totalBytes()| < 5 % für jedes Format mit K-Angabe.
+ */
+TEST(FormatCatalog, KapazitaetInDerBeschreibung_PasstZurGeometrie) {
+    std::string fatal;
+    FormatCatalog cat = FormatCatalog::load({shippedCatalog()}, &fatal);
+    ASSERT_TRUE(fatal.empty()) << fatal;
+
+    // Erste Zahl, der unmittelbar ein 'K' folgt (z. B. "CP/A 640K — …").
+    auto statedKiB = [](const std::string& d) -> long {
+        for (size_t i = 0; i < d.size(); ++i) {
+            if (!std::isdigit(static_cast<unsigned char>(d[i]))) continue;
+            size_t j = i;
+            while (j < d.size() && std::isdigit(static_cast<unsigned char>(d[j]))) ++j;
+            if (j < d.size() && (d[j] == 'K' || d[j] == 'k'))
+                return std::stol(d.substr(i, j - i));
+            i = j;
+        }
+        return 0;
+    };
+
+    int geprueft = 0;
+    for (const auto& f : cat.formats()) {
+        const long kib = statedKiB(f.description);
+        if (kib == 0) continue;
+        ++geprueft;
+        const double soll = static_cast<double>(kib) * 1024.0;
+        const double ist  = static_cast<double>(f.totalBytes());
+        EXPECT_LT(std::abs(soll - ist) / soll, 0.05)
+            << "Format '" << f.name << "': Beschreibung nennt " << kib
+            << "K, Geometrie ergibt " << f.totalBytes() << " B ("
+            << int(f.numCylinders()) << " Zyl × " << int(f.numHeads()) << " Kopf/Köpfe)";
+    }
+    EXPECT_GT(geprueft, 5) << "kaum Formate mit Kapazitätsangabe geprüft";
 }
 
 /**

@@ -58,19 +58,23 @@ formats:
     tracks:
       - { cyls: 0-79, heads: 0-1, sectors: 5, size: 1024 }
 
+  # 640K bzw. 624K passen nur DOPPELSEITIG: 80 × 2 × 16 × 256 B = 640 KB.
+  # (Einseitig wären es 320 KB — so stand es bis 2026-08-03 fälschlich im Katalog
+  # und davor in den einkompilierten builtinFormats().)  Damit sind beide Formate
+  # ausschließlich am zweiköpfigen K5601 fahrbar.
   - name:        cpa640
-    description: "CP/A 640K — 80 Spuren einseitig, 16×256"
-    drives:      [K5601, K5600.20]
+    description: "CP/A 640K — 80 Spuren doppelseitig, 16×256"
+    drives:      [K5601]
     encoding:    mfm
     tracks:
-      - { cyls: 0-79, heads: 0, sectors: 16, size: 256 }
+      - { cyls: 0-79, heads: 0-1, sectors: 16, size: 256 }
 
   - name:        cpa624
-    description: "CP/A 624K — 78 Spuren einseitig, 16×256 (reduzierte Kapazität)"
-    drives:      [K5601, K5600.20]
+    description: "CP/A 624K — 78 Spuren doppelseitig, 16×256 (reduzierte Kapazität)"
+    drives:      [K5601]
     encoding:    mfm
     tracks:
-      - { cyls: 0-77, heads: 0, sectors: 16, size: 256 }
+      - { cyls: 0-77, heads: 0-1, sectors: 16, size: 256 }
 
   - name:        cpa200
     description: "CP/A 400K — 80 Spuren einseitig, 5×1024 (K5600.20)"

@@ -36,14 +36,14 @@ const DriveProfile& builtinDriveProfile(const std::string& name) {
         /*default_read_encoding=*/ Encoding::FM
     };
 
-    // K5600.10 — 5,25″, 40 Spuren, einseitig, MFM (200 KB, DPB-Typ 200K).
+    // K5600.10 — 5,25″, 40 Spuren, einseitig, FM und MFM (200 KB, DPB-Typ 200K).
     static const DriveProfile k5600_10 = {
         "K5600.10",
         /*num_cyls=*/    40,
         /*num_heads=*/    1,
         /*rpm=*/        300,
         /*medium_inch=*/  5,
-        /*supports_fm=*/ false,
+        /*supports_fm=*/ true,
         /*supports_mfm=*/true
     };
 

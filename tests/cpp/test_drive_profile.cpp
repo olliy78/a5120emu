@@ -60,6 +60,7 @@ TEST(DriveProfileBuiltin, K5600_10_5Zoll_40Spuren_einseitig) {
     EXPECT_EQ(p.num_heads,     1u);
     EXPECT_EQ(p.rpm,         300u);
     EXPECT_EQ(p.medium_inch,   5u);
+    EXPECT_TRUE(p.supports_fm);
     EXPECT_TRUE(p.supports_mfm);
 }
 
@@ -174,8 +175,12 @@ TEST(DriveProfileSupports, MF6400_beideVerfahren) {
     EXPECT_TRUE(p.supports(Encoding::MFM));
 }
 
-TEST(DriveProfileSupports, K5600_10_nurMFM) {
-    const DriveProfile& p = builtinDriveProfile("K5600.10");
-    EXPECT_FALSE(p.supports(Encoding::FM));
-    EXPECT_TRUE(p.supports(Encoding::MFM));
+TEST(DriveProfileSupports, FuenfZollLaufwerke_beideVerfahren) {
+    // Alle drei 5,25″-Laufwerke beherrschen FM und MFM; nur das 8″-MF3200 ist
+    // auf FM beschränkt.
+    for (const char* n : {"K5601", "K5600.10", "K5600.20"}) {
+        const DriveProfile& p = builtinDriveProfile(n);
+        EXPECT_TRUE(p.supports(Encoding::FM))  << n;
+        EXPECT_TRUE(p.supports(Encoding::MFM)) << n;
+    }
 }
