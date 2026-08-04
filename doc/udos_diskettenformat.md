@@ -551,6 +551,33 @@ genau nach diesem Dokument. `1988 = 77·26 − 14` bestätigt die Systembereiche
 > steht eben kein UDOS-Dateisystem. Mit einer beidseitig UDOS-formatierten Diskette
 > ist die Meldung weg und `STATUS` listet 0, 1, 4 und 5.
 
+### 12.1 `COPY.DISK` — der schärfste Test des Schreibpfads
+
+`COPY.DISK` (ohne Parameter: Laufwerk 0 → 1) kopiert **sektorweise**, am Dateisystem
+vorbei — es reicht also genau das durch, was §1.1 beschreibt, Kontrollblock inklusive.
+Ergebnis auf einer zuvor mit `FORMAT` geleerten Zieldiskette:
+
+```
+%COPY.DISK
+DRIVES READY ?Y
+ERROR C4 ON TRACK 33 DRIVE 00
+%STATUS
+DRIVE 1   UDOS.SYS.4.3    1152 SECTORS USED    850 SECTORS AVAILABLE
+```
+
+Laufwerk 1 trägt danach Kennung und Belegung der Quelle; `CAT D=1` listet die kopierten
+Dateien. Der Abgleich der Abbilder (Sektordaten **und** Kontrollblock, Seite 0):
+**2001 von 2001 Sektoren identisch**, 0 Abweichungen.
+
+> ⚠ **`ERROR C4 ON TRACK 33 DRIVE 00` ist echt und kein Emulatorfehler.** Die
+> Referenzdiskette `disks/udos_boot_scp.hfe` wurde von echter Hardware eingelesen und
+> hat auf **Spur `0x33` = 51, Seite 0** einen physisch fehlenden Sektor (**S13**; die
+> übrigen 25 sind ID- und Daten-CRC-sauber). UDOS meldet ihn und kopiert weiter — daher
+> 2001 statt 2002 Sektoren. Spur- und Laufwerksnummer stehen in der Meldung **hexadezimal**.
+
+Guards: `UdosFormat.FormatsDriveOneIntoUsableZdosDisk` und
+`UdosFormat.CopyDiskDuplicatesSystemDiskSectorBySector` (`tools/dev.sh test-format`).
+
 ---
 
 ## 13. Offene Punkte

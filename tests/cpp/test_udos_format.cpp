@@ -92,6 +92,37 @@ void antworte(A5120Machine& m, const std::string& prompt, const std::string& ant
     typeKey(m, QK_RETURN);
 }
 
+// A: und B: als beschreibbare Kopien der UDOS-Bootdiskette anlegen.
+void legeDisketten(const std::string& aPath, const std::string& bPath) {
+    namespace fs = std::filesystem;
+    fs::copy_file(diskPath("udos_boot_scp.hfe"), aPath, fs::copy_options::overwrite_existing);
+    fs::copy_file(diskPath("udos_boot_scp.hfe"), bPath, fs::copy_options::overwrite_existing);
+}
+
+// UDOS booten und das Datum setzen; danach steht der `%`-Prompt.
+void booteUdos(A5120Machine& m) {
+    ASSERT_TRUE(runSmallUntil(m, "Neues Datum", 120'000'000))
+        << "UDOS-Datumsabfrage nie erschienen:\n" << vramText(m);
+    typeString(m, "150388");                // formatiertes Feld, kein ENTER noetig
+    ASSERT_TRUE(runSmallUntil(m, "UDOS BC.5120", 40'000'000))
+        << "UDOS-Prompt nie erreicht:\n" << vramText(m);
+    // Ein sauberer Start heisst: BEIDE Disketten sind als ZDOS-Datentraeger eingelesen.
+    ASSERT_EQ(vramText(m).find("DISK INITIALIZATION ERROR"), std::string::npos)
+        << "UDOS konnte eine der beiden Disketten nicht einlesen:\n" << vramText(m);
+    runCycles(m, 3'000'000);
+}
+
+// `FORMAT` auf Laufwerk 1 fahren (Datentraegername TESTDISK, keine Systemdiskette).
+void formatiereLaufwerk1(A5120Machine& m) {
+    typeString(m, "format");
+    typeKey(m, QK_RETURN);
+    antworte(m, "SYSTEMDISK", "n");
+    antworte(m, "DRIVE",      "1");
+    antworte(m, "ID?",        "testdisk");
+    antworte(m, "READY",      "y");
+    runCycles(m, 400'000'000);              // 77 Spuren formatieren + verifizieren
+}
+
 }  // namespace
 
 /**
@@ -115,8 +146,7 @@ TEST(UdosFormat, FormatsDriveOneIntoUsableZdosDisk) {
     namespace fs = std::filesystem;
     const std::string aPath = (fs::temp_directory_path() / "udos_format_guard_A.hfe").string();
     const std::string bPath = (fs::temp_directory_path() / "udos_format_guard_B.hfe").string();
-    fs::copy_file(diskPath("udos_boot_scp.hfe"), aPath, fs::copy_options::overwrite_existing);
-    fs::copy_file(diskPath("udos_boot_scp.hfe"), bPath, fs::copy_options::overwrite_existing);
+    legeDisketten(aPath, bPath);
 
     // Emulator-Log auf ERROR drosseln — der Lauf erzeugt sonst Tausende
     // K5122-INFO-Zeilen (77 FORMAT-Writes + jeder Spur-Read).
@@ -127,28 +157,11 @@ TEST(UdosFormat, FormatsDriveOneIntoUsableZdosDisk) {
     ASSERT_TRUE(machine.mountDisk(1, bPath, "cpa780", /*wp=*/false)) << machine.lastError();
     machine.powerOn();
 
-    // ── Boot + Datumsabfrage ────────────────────────────────────────────────
-    ASSERT_TRUE(runSmallUntil(machine, "Neues Datum", 120'000'000))
-        << "UDOS-Datumsabfrage nie erschienen:\n" << vramText(machine);
-    typeString(machine, "150388");          // formatiertes Feld, kein ENTER noetig
-    ASSERT_TRUE(runSmallUntil(machine, "UDOS BC.5120", 40'000'000))
-        << "UDOS-Prompt nie erreicht:\n" << vramText(machine);
-    // Ein sauberer Start heisst: BEIDE Disketten sind als ZDOS-Datentraeger eingelesen.
-    EXPECT_EQ(vramText(machine).find("DISK INITIALIZATION ERROR"), std::string::npos)
-        << "UDOS konnte eine der beiden Disketten nicht einlesen:\n" << vramText(machine);
-    runCycles(machine, 3'000'000);
-
-    // ── FORMAT-Dialog ───────────────────────────────────────────────────────
-    typeString(machine, "format");
-    typeKey(machine, QK_RETURN);
-    antworte(machine, "SYSTEMDISK", "n");
-    antworte(machine, "DRIVE",      "1");
-    antworte(machine, "ID?",        "testdisk");
-    antworte(machine, "READY",      "y");
+    booteUdos(machine);
 
     // 77 Spuren formatieren + verifizieren.  Bei falscher Laufwerksauswahl liefe der
     // Verify gegen Laufwerk 0 und fuellte den Schirm mit „DEFEKTIVE TRACK".
-    runCycles(machine, 400'000'000);
+    formatiereLaufwerk1(machine);
     const std::string nachFormat = vramText(machine);
     EXPECT_EQ(nachFormat.find("DEFEKTIVE TRACK"), std::string::npos)
         << "FORMAT meldete defekte Spuren:\n" << nachFormat;
@@ -166,6 +179,84 @@ TEST(UdosFormat, FormatsDriveOneIntoUsableZdosDisk) {
     const std::string status = vramText(machine);
     EXPECT_NE(status.find("DRIVE 1   TESTDISK"), std::string::npos)
         << "Laufwerk 1 traegt nicht den frisch vergebenen Datentraegernamen:\n" << status;
+
+    machine.unmountDisk(0);
+    machine.unmountDisk(1);
+    std::error_code ec;
+    fs::remove(aPath, ec);
+    fs::remove(bPath, ec);
+}
+
+/**
+ * @test UdosFormat/CopyDiskDuplicatesSystemDiskSectorBySector
+ * @brief `COPY.DISK` kopiert Laufwerk 0 sektorweise auf Laufwerk 1 — samt der
+ *        Sektorkontrollblöcke, sodass das Duplikat ein lesbares Dateisystem hat.
+ *
+ * Der schärfste Test des Schreibpfads: 77 Spuren × 26 Sektoren werden gelesen und
+ * ohne Umweg über das Dateisystem zurückgeschrieben.  Ginge dabei die Verkettung
+ * verloren (doc/udos_bug1.md), wäre das Duplikat unbrauchbar; zeigte die
+ * Laufwerksauswahl auf das falsche Laufwerk, kopierte UDOS die Bootdiskette auf
+ * sich selbst.
+ *
+ * Damit ein erfolgreicher Kopiervorgang überhaupt nachweisbar ist, wird B: zuvor mit
+ * `FORMAT` geleert (Datenträgername `TESTDISK`, 1988 frei).  Nach `COPY.DISK` muss
+ * Laufwerk 1 exakt die Kennung von Laufwerk 0 tragen (`UDOS.SYS.4.3`, 850 frei) und
+ * `CAT D=1` muss die kopierten Dateien auflisten.
+ *
+ * ⚠ **`ERROR C4 ON TRACK 33 DRIVE 00` ist hier ERWARTET und kein Emulatorfehler:**
+ * die Referenzdiskette wurde von echter Hardware eingelesen und hat auf Spur 0x33=51,
+ * Seite 0 einen physisch fehlenden Sektor (S13; die übrigen 25 sind CRC-sauber).
+ * UDOS meldet den defekten Sektor und kopiert weiter — der Test prüft genau das.
+ */
+TEST(UdosFormat, CopyDiskDuplicatesSystemDiskSectorBySector) {
+    namespace fs = std::filesystem;
+    const std::string aPath = (fs::temp_directory_path() / "udos_copydisk_guard_A.hfe").string();
+    const std::string bPath = (fs::temp_directory_path() / "udos_copydisk_guard_B.hfe").string();
+    legeDisketten(aPath, bPath);
+
+    k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
+
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, aPath, "cpa780", /*wp=*/false)) << machine.lastError();
+    ASSERT_TRUE(machine.mountDisk(1, bPath, "cpa780", /*wp=*/false)) << machine.lastError();
+    machine.powerOn();
+
+    booteUdos(machine);
+
+    // ── Ausgangslage schaffen: B: leer formatieren ──────────────────────────
+    formatiereLaufwerk1(machine);
+    typeString(machine, "status");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "1988 SECTORS AVAILABLE", 100'000'000))
+        << "Vorbedingung: B: wurde nicht leer formatiert:\n" << vramText(machine);
+
+    // ── COPY.DISK (ohne Parameter: Laufwerk 0 → Laufwerk 1) ─────────────────
+    typeString(machine, "copy.disk");
+    typeKey(machine, QK_RETURN);
+    antworte(machine, "DRIVES READY", "y", 60'000'000);
+    runCycles(machine, 250'000'000);        // 77 Spuren lesen + schreiben
+
+    // ── Gegenprobe: Laufwerk 1 ist jetzt die Systemdiskette ─────────────────
+    typeString(machine, "status");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "DRIVE 1   UDOS.SYS.4.3", 100'000'000))
+        << "Laufwerk 1 traegt nach COPY.DISK nicht die Kennung der Quelle:\n"
+        << vramText(machine);
+    ASSERT_TRUE(runSmallUntil(machine, "1152 SECTORS USED", 20'000'000))
+        << "Belegung von Laufwerk 1 stimmt nicht mit der Quelle ueberein:\n"
+        << vramText(machine);
+
+    // Das Dateisystem des Duplikats muss begehbar sein: CAT laeuft die Satzkette der
+    // Datei DIRECTORY entlang — das gelingt nur, wenn die Sektorkontrollbloecke
+    // mitkopiert wurden.  „OVR.PROG" ist der LETZTE Eintrag des Verzeichnisses, steht
+    // also erst am Ende der Kette.
+    typeString(machine, "cat d=1");
+    typeKey(machine, QK_RETURN);
+    EXPECT_TRUE(runSmallUntil(machine, "OVR.PROG", 100'000'000))
+        << "CAT auf dem Duplikat kommt nicht bis zum letzten Verzeichniseintrag — "
+           "Verkettung beim Kopieren verloren:\n" << vramText(machine);
+    EXPECT_EQ(vramText(machine).find("ERROR CA"), std::string::npos)
+        << "POINTER CHECK ERROR auf dem Duplikat:\n" << vramText(machine);
 
     machine.unmountDisk(0);
     machine.unmountDisk(1);
