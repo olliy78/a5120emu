@@ -255,7 +255,7 @@ Die belegten Felder:
 | 22…23 | 2 LE | **Bytes im letzten Satz** | `0000` = letzter Satz leer |
 | 24…29 | 6 | **Erstellung**: `JJMMTT` **oder** Versionstext (`V 4.3 `) | ASCII, frei wählbar |
 | 30…31 | 2 | `FF 00` | Trenner |
-| 32…37 | 6 | **Letzte Änderung**: `JJMMTT` | ASCII |
+| 32…37 | 6 | **Letzte Änderung**: `JJMMTT` | ASCII; UDOS überschreibt das Feld bei jeder Änderung mit dem Systemdatum (nachgewiesen: `900808` → `880315` nach einem `SET`) |
 | 38…39 | 2 | `FF 00` bzw. `FF FF` | Trenner |
 | 40…41 | 2 LE | Anfang des 1. **Speichersegments** | |
 | 42…43 | 2 LE | Länge des 1. Speichersegments | weitere Segmente folgen paarweise |
@@ -298,12 +298,14 @@ Der Typ ist **nicht** Teil des Namens (anders als bei SCP/CP/M).
 | `0x40` | `E` | ERASE PROTECTED — löschgeschützt |
 | `0x20` | `L` | LOCKED — Eigenschaften nicht änderbar |
 | `0x10` | `S` | SECRET — geheim (wird ohne `P=&` nicht gelistet) |
-| — | `R` | RANDOM — wahlfreier Zugriff |
-| — | `F` | FORCE MEMORY ALLOCATION |
+| `0x08` | `R` | RANDOM — wahlfreier Zugriff |
+| `0x04` | `F` | FORCE MEMORY ALLOCATION |
 | — | `&` | (kein Bit, sondern der Suchoperator „alle Eigenschaften") |
 
-Die Bitlage von `R` und `F` ließ sich am Referenzdatenträger nicht bestimmen (keine Datei
-trägt sie); die vier oberen Bits sind über `WELS`/`WES`/`WS` eindeutig belegt.
+Die vier oberen Bits sind über die Kombinationen `WELS`/`WES`/`WS` eindeutig belegt.
+`R` und `F` trägt keine Datei des Referenzdatenträgers; ihre Bitlage wurde durch
+**Setzen im laufenden System** bestimmt (`SET PROPERTIES OF CODE TO R` → Offset 19 von
+`00` auf `08`; `SET PROPERTIES OF TAST TO F` → `00` auf `04`).
 
 ---
 
@@ -507,60 +509,47 @@ daraus Großschrift (`doc/analyse_udos.md` §14.2).
 
 ---
 
-## 12. ⚠ Der Emulator kann UDOS-Disketten (noch) nicht beschreiben
+## 12. Schreiben und Formatieren im Emulator (Stand 2026-08-04: ✅)
 
-Beim Versuch, das Schreibmodell aus §8 gegen das laufende System zu prüfen, ist ein
-**Emulatorfehler** aufgefallen — das Spiegelbild des in `doc/analyse_udos.md` §13.4
-behobenen Lesefehlers. Wer mit einem eigenen Werkzeug erzeugte Disketten im Emulator
-gegenprüfen will, muss das kennen.
+Beim Prüfen des Schreibmodells aus §8 sind **zwei Emulatorfehler** aufgefallen; beide
+sind behoben, Schreibzugriffe und `FORMAT` funktionieren.
 
-**Beobachtung.** In UDOS auf einer beschreibbaren Kopie:
+1. **Sektorkontrollblock ging beim Schreiben verloren** — ein einziger Schreibzugriff
+   (`SET PROPERTIES …`, `COPY`, `MOVE` …) ersetzte **alle 26 Kontrollblöcke der
+   betroffenen Spur** durch Gap-Füllbytes (`ERROR CA = POINTER CHECK ERROR`). Ursache:
+   `TrackCodec::buildTrack()` gab `LogicalSector::tail` nicht aus, und
+   `K5122::commitWriteField()` verwarf den neu geschriebenen Block — das Spiegelbild
+   des in `doc/analyse_udos.md` §13.4 behobenen Lesefehlers.
+   Volle Beschreibung, Messwerte und Regressionsliste: **`doc/udos_bug1.md`**.
+2. **Laufwerksauswahl nibbelvertauscht** (Port 18H des K5122) — UDOS bildet sein
+   Anwahlbyte mit `AND 0F0H` (`0xD0` = Laufwerk 1); der Emulator las das High-Nibble
+   als Motor statt als Select und landete auf Laufwerk 0. `FORMAT` beschrieb damit B:
+   und verifizierte anschließend A: → „DEFEKTIVE TRACK" auf jeder Spur, am Ende
+   `NOT FOR UDOS USEABLE`. Details: `doc/design/07_k5122_afs.md` §8.
 
-```
-%SET PROPERTIES OF CODE TO R
-%CAT CODE P=& F=L
-CODE                 0  P     2  0080       4000  870413 900808
-CODE                 4                 ***   OPEN ERROR CA
-%ERROR CA
-CA: POINTER CHECK ERROR
-```
-
-Ein einziger Schreibzugriff macht die Datei unlesbar. Der Abgleich der Diskettenabbilder
-vorher/nachher zeigt warum: auf den beiden beschriebenen Spuren (Seite 1, Spur 17 und
-Spur 23) sind **alle 26 Kontrollblöcke** durch Gap-Füllbytes ersetzt:
+**Verifiziert am laufenden System** (Boot-Diskette auf A:, Leerdiskette auf B:):
 
 ```
-vorher:  C17 h1 S01 tail=16 11 0E 11 …      nachher:  C17 h1 S01 tail=4E 4E 4E 4E …
-         C17 h1 S02 tail=18 11 0F 11 …                C17 h1 S02 tail=4E 4E 4E 4E …
-         … (alle 26 Sektoren der Spur)
+%FORMAT
+SYSTEMDISK? N        DRIVE? 1        ID? TESTDISK        READY? Y
+%STATUS
+DRIVE 1   TESTDISK      14 SECTORS USED    1988 SECTORS AVAILABLE
+%MOVE CAT S=0 D=1 P=&
+%CAT D=1 F=L P=&
+DIRECTORY            1  D    10  0080  WELS
+CAT                  1  P     4  0400  WS   4000  791019
 ```
 
-**Ursache.** `K5122::commitWriteField()` (`core/cards/k5122/k5122.cpp:1258 ff.`) baut die
-Spur nach dem Schreiben komplett neu auf:
+77 Spuren à 26 × 128 B, Belegungskarte auf Spur 23 mit dem 24-Byte-Datenträgernamen und
+`00 00 00 3F` je freier Spur (§4), Verzeichnis auf Spur 22 mit Interleave 5 — alles
+genau nach diesem Dokument. `1988 = 77·26 − 14` bestätigt die Systembereiche aus §3.
 
-```cpp
-auto sektoren = TrackCodec::parseTrack(spur);   // füllt sec.tail korrekt
-ziel->data.assign(…);                           // neue Nutzdaten
-spur = TrackCodec::buildTrack(sektoren, spur.encoding);   // ← verliert alle tails
-```
-
-`TrackCodec::buildTrack()` schreibt hinter die Daten-CRC unbesehen
-`fill(gaps.gap_fill, gaps.gap3)` und gibt `sec.tail` nie aus —
-`buildFaithfulReadTrack()` wurde dafür seinerzeit nachgezogen, `buildTrack()` nicht.
-
-**Nötig wären zwei Ergänzungen:**
-
-1. `buildTrack()` stellt `sec.tail` unverändert hinter die Daten-CRC und kürzt Gap 3
-   entsprechend — bei Standard-IBM-Spuren sind das 8× `0x4E`, also **bitgleich** zum
-   heutigen Verhalten (dasselbe Argument wie in §13.4 für den Lesepfad; CP/A und SCPX
-   bleiben unberührt).
-2. `commitWriteField()` übernimmt den **neu geschriebenen** Kontrollblock aus
-   `write_buf_` (die Bytes hinter dem Datenfeld) nach `ziel->tail`; heute wird alles
-   jenseits von `wr_size_` verworfen (`take = min(wr_size_, avail)`), sodass der
-   Zielsektor selbst dann seine alte Verkettung behielte.
-
-Bis dahin gilt: **Disketten im Emulator nur lesen.** Ein unter Linux erzeugtes Abbild
-lässt sich davon unabhängig testen — Booten und Lesen funktionieren einwandfrei.
+> **Rückseite nicht vergessen.** `FORMAT` fragt nur nach Laufwerk 0…3 und formatiert
+> bei einseitiger `SET DISKCON`-Einstellung (`41`) nur Seite 0. Steckt in dem Laufwerk
+> eine physisch zweiseitige Diskette, meldet UDOS beim Start für das zugehörige
+> Rückseiten-Laufwerk (*n*+4, §2) folgerichtig `DISK INITIALIZATION ERROR C8` — dort
+> steht eben kein UDOS-Dateisystem. Mit einer beidseitig UDOS-formatierten Diskette
+> ist die Meldung weg und `STATUS` listet 0, 1, 4 und 5.
 
 ---
 

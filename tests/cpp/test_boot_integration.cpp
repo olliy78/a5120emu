@@ -272,7 +272,12 @@ TEST(BootIntegration, Stage3_PrintsCpaBootBanner) {
     A5120Machine machine;
     ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", false));
     machine.powerOn();
-    EXPECT_TRUE(runUntilVramContains(machine, "CP/A-Bootsystem", 8'000'000))
+    // Budget: the banner appears at ~12.4M cycles.  The BIOS drive-detect loop
+    // (boot sector 0x021E) steps EVERY drive 85× toward track 0 and only the
+    // mounted one reports /TO — with the corrected 8212 select nibble the three
+    // absent drives really are stepped (≈6.7M cycles) instead of drive 0 four
+    // times over.  See K5122Test.DriveSelect_HighNibbleIstSelect.
+    EXPECT_TRUE(runUntilVramContains(machine, "CP/A-Bootsystem", 25'000'000))
         << "stage-3 banner 'CP/A-Bootsystem …' never appeared in VRAM";
 }
 

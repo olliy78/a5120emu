@@ -345,6 +345,62 @@ TEST(TrackCodecMfm, DreiSektoren128B_AlleGruen) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GRUPPE: Sektor-Nachspann (LogicalSector::tail) — der UDOS-Sektorkontrollblock
+//
+// UDOS/ZDOS legt die Dateiverkettung NICHT im Datenfeld ab, sondern in 4 Bytes
+// unmittelbar hinter der Daten-CRC (doc/udos_diskettenformat.md §1.1).  Baut
+// buildTrack() eine Spur aus geparsten Sektoren neu auf — das tut der K5122 bei
+// JEDEM Schreibzugriff —, muss dieser Nachspann erhalten bleiben, sonst verlieren
+// auch die nicht angefassten Sektoren ihre Verkettung („POINTER CHECK ERROR CA",
+// doc/udos_bug1.md).
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(TrackCodecTail, BuildParse_ErhaeltUdosKontrollblock) {
+    std::vector<LogicalSector> sektoren;
+    for (uint8_t i = 1; i <= 3; ++i) {
+        LogicalSector s = makeSector(22, 0, i, 128, static_cast<uint8_t>(i));
+        // UDOS-artiger Kontrollblock: zurueck (5,22), vor (i+4,22), dann Gap-Naht
+        s.tail = {0x05, 0x16, static_cast<uint8_t>(i + 4), 0x16, 0x41, 0xFF, 0x4E, 0x4E};
+        sektoren.push_back(std::move(s));
+    }
+
+    auto parsed = TrackCodec::parseTrack(TrackCodec::buildTrack(sektoren, Encoding::MFM));
+    ASSERT_EQ(parsed.size(), 3u);
+    for (size_t k = 0; k < 3; ++k) {
+        EXPECT_TRUE(parsed[k].data_crc_ok) << "Sektor " << k;
+        EXPECT_EQ(parsed[k].data, sektoren[k].data) << "Sektor " << k;
+        EXPECT_EQ(parsed[k].tail, sektoren[k].tail)
+            << "Sektor " << k << ": Kontrollblock hinter der Daten-CRC verloren";
+    }
+}
+
+TEST(TrackCodecTail, FM_ErhaeltNachspannEbenso) {
+    LogicalSector s = makeSector(3, 0, 1, 128);
+    s.tail = {0x01, 0x02, 0x03, 0x04, 0xFF, 0xFF, 0xFF, 0xFF};
+    auto parsed = TrackCodec::parseTrack(TrackCodec::buildTrack({s}, Encoding::FM));
+    ASSERT_EQ(parsed.size(), 1u);
+    EXPECT_TRUE(parsed[0].data_crc_ok);
+    EXPECT_EQ(parsed[0].tail, s.tail);
+}
+
+TEST(TrackCodecTail, OhneTail_BitgleichZuReinemGap) {
+    // Frisch erzeugte Sektoren (DiskImage::create, Formatierstrom) haben KEINEN
+    // tail — dort muss buildTrack byteweise dasselbe liefern wie vor der
+    // Nachspann-Ausgabe, sonst aendert sich jede Standard-IBM-Spur.
+    std::vector<LogicalSector> ohne;
+    for (uint8_t i = 1; i <= 4; ++i) ohne.push_back(makeSector(0, 0, i, 256));
+
+    std::vector<LogicalSector> mit_gap = ohne;
+    const uint8_t gap = TrackCodec::gapsFor(Encoding::MFM).gap_fill;
+    for (auto& s : mit_gap) s.tail.assign(kSectorTailBytes, gap);
+
+    const TrackImage a = TrackCodec::buildTrack(ohne, Encoding::MFM);
+    const TrackImage b = TrackCodec::buildTrack(mit_gap, Encoding::MFM);
+    EXPECT_EQ(a.bytes, b.bytes);
+    EXPECT_EQ(a.marks, b.marks);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GRUPPE: ROM-Lese-Kalibrierung (Phase 1 FM/MFM-Umbau, doc/design/07 §10.5.1)
 //
 // Das ZRE-Boot-ROM liest nach einem Resync (MK/MK1-Strobe) im IDAM-Suchpfad

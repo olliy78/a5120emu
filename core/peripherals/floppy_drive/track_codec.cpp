@@ -231,7 +231,19 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
             push(static_cast<uint8_t>(dataCrc & 0xFF));
         }
 
-        fill(gaps.gap_fill, gaps.gap3);
+        // Nachspann wie auf dem Medium (LogicalSector::tail) — symmetrisch zu
+        // buildFaithfulReadTrack.  Bei einer Standard-IBM-Spur ist tail schlicht
+        // 8× Gap-Fuellbyte, das Ergebnis also bitgleich zum frueheren
+        // fill(gap_fill, gap3).  Fremdformate behalten so ihren Sektorkontroll-
+        // block: **UDOS** legt hinter der Daten-CRC vier Zeigerbytes ab; ohne
+        // diese Ausgabe verlor JEDER Schreibzugriff die Verkettung ALLER Sektoren
+        // der Spur (commitWriteField baut die ganze Spur neu) → „POINTER CHECK
+        // ERROR CA".  Sektoren ohne tail (frisch erzeugt: DiskImage::create,
+        // Formatierstrom) fallen auf das Gap-Fuellbyte zurueck.
+        const size_t tail_n = std::min<size_t>(kSectorTailBytes, gaps.gap3);
+        for (size_t i = 0; i < tail_n; ++i)
+            push(i < sec.tail.size() ? sec.tail[i] : gaps.gap_fill);
+        fill(gaps.gap_fill, gaps.gap3 - tail_n);
     }
 
     return t;

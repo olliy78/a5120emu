@@ -157,27 +157,36 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
             handleDataPortAWrite(data);
         }
     } else if (port == 0x18) {
-        // 8212 (A4): low nibble = /SE0../SE3 (Select), high nibble = /LCK0../LCK3
-        // (= /Motor On), beide active-low.  selected_drive_ (Transferpfad) aus dem
-        // low-nibble-One-Hot; Motor/Select je Laufwerk separat unten (LED/Motor).
-        // 0xEE → low 1110, bit0=0 → Drive 0   (0xDD→D1, 0xBB→D2, 0x77→D3)
-        uint8_t sel = ~data & 0x0F;
+        // 8212 (A4): **high** nibble = /SE0../SE3 (Select), **low** nibble =
+        // /LCK0../LCK3 (Lock = /Motor On), beide active-low (K5122-Doku §4.2).
+        // 0xEE → high 1110, bit4=0 → Drive 0 selektiert (0xDD→D1, 0xBB→D2, 0x77→D3);
+        // die BIOSse bilden das Byte als `LD A,77H / RLCA (LW+1)×` — dabei fällt je
+        // ein /SE- UND ein /LCK-Bit, deshalb ist die Nibbelzuordnung an 0xEE/0xDD
+        // NICHT ablesbar.  Entschieden wird sie von den Aufrufern, die genau EIN
+        // Nibble maskieren:
+        //   CP/A-Laufwerkserkennung (Bootsektor 0x021E): `LD A,0F7H` „ohne lock",
+        //     RLCA je Laufwerk → 0xEF/0xDF/0xBF/0x77 und steppt dann GENAU DIESES
+        //     Laufwerk (Spur-0-Signal) → das variierende High-Nibble-Bit ist /SE.
+        //   UDOS-Floppytreiber (UNFLOPPY.MAC): `OR 0FH` („LW EIN") → 0xEF/0xDF/…,
+        //     UDOS 4.3 auf dem A5120: `AND 0F0H` → 0xE0/0xD0/… (alle /LCK aktiv).
+        // Beide Varianten variieren ausschließlich das High-Nibble ⇒ /SE.  Mit der
+        // früheren (vertauschten) Zuordnung landete UDOS' 0xD0 auf „alle vier
+        // selektiert" → Laufwerk 0 statt 1 (FORMAT schrieb B:, verifizierte A:).
+        uint8_t sel = ~(data >> 4) & 0x0F;
         selected_drive_ = (sel == 0) ? 0
                         : (sel & 0x01) ? 0
                         : (sel & 0x02) ? 1
                         : (sel & 0x04) ? 2
                         : 3;
-        // Der 8212 latcht je Laufwerk /SE (Select, low nibble) und /LCK (= /Motor On,
-        // high nibble), beide active-low (K5122-Doku §4.2).  Daraus den echten
         // Select-/Motor-Zustand je Laufwerk ableiten (RESET → 0xFF → alles aus).  Der
         // Motor läuft, solange /LCK=0; die LED folgt „selektiert ODER Motor an".
         for (int d = 0; d < 4; ++d) {
             const size_t di  = static_cast<size_t>(d);
-            const bool   mot = ((data >> (4 + d)) & 1) == 0;
+            const bool   mot = ((data >> d) & 1) == 0;
             // Motor-Anlaufflanke (aus→an): Spin-up armieren.  Ein bereits laufender
             // Motor (an→an) läuft weiter, kein Neu-Anlauf.
             if (mot && !motor_on_[di]) motor_spinup_cycles_[di] = motorSpinupCycles();
-            drive_selected_[di] = ((data >> d) & 1) == 0;
+            drive_selected_[di] = ((data >> (4 + d)) & 1) == 0;
             motor_on_[di]       = mot;
         }
         LOG_INFO("K5122", "8212 write=0x%02X => sel D%d | SE=%d%d%d%d MotorOn=%d%d%d%d",
@@ -1246,7 +1255,6 @@ void K5122::commitWriteField() {
     const size_t avail = write_buf_.size() - data_start;
     const size_t take  = std::min<size_t>(wr_size_, avail);
 
-
     // Ziel-Spur (IBM-Format im Drive-Cache) parsen und Sektor per ID ersetzen.
     TrackImage& spur = drv.mutableTrack(current_head_);
     if (spur.empty()) {
@@ -1270,6 +1278,22 @@ void K5122::commitWriteField() {
     ziel->data.assign(write_buf_.begin() + data_start,
                       write_buf_.begin() + data_start + take);
     ziel->data.resize(ziel->size, 0x00);
+
+    // ── Sektor-Nachspann aus dem Schreibstrom uebernehmen ────────────────────
+    // Der Strom eines Datenfelds lautet gemessen (UDOS, 128-B-Sektor):
+    //   [12×00 Sync][A1 A1 A1][FB][128 Daten][CRC CRC][bb bb ff ff][41 FF]
+    //                          └ data_start        └ +2      └ Sektorkontrollblock
+    // d. h. der schreibende Treiber liefert die 2 CRC-Bytes selbst mit (der
+    // Emulator rechnet sie in buildTrack ohnehin neu) und legt DAHINTER die
+    // Verkettung ab.  Ohne diese Uebernahme behielte der geschriebene Sektor
+    // seinen ALTEN Kontrollblock (doc/udos_bug1.md §5.1).  Standard-IBM-Formate
+    // (CP/A, SCPX) schreiben dort schlicht Gap-Bytes — folgenlos.
+    const size_t nach_crc = data_start + take + 2;
+    if (write_buf_.size() > nach_crc) {
+        const size_t ende = std::min(write_buf_.size(), nach_crc + kSectorTailBytes);
+        ziel->tail.assign(write_buf_.begin() + static_cast<long>(nach_crc),
+                          write_buf_.begin() + static_cast<long>(ende));
+    }
 
     LOG_INFO("K5122", ">>> WRITE D%d C=%u H=%u S=%u bytes=%zu (buf=%zu)",
              selected_drive_,

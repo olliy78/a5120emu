@@ -89,6 +89,14 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
 > (`TrackCodec::crc16`) — the A5120 disks are plain standard IBM-MFM.  Boot itself is the real FM/MFM trial-and-error: the ROM starts in FM, finds no IDAM on the
 > MFM disk → index timeout → toggles MK to MFM → reads.  Full model: `doc/design/07_k5122_afs.md`,
 > `doc/K1520_architecture.md` §8.5.  The boot invariants that must not regress are listed below.
+>
+> **Drive select (8212, port 18H): the HIGH nibble is /SE, the low nibble /LCK (motor)** —
+> both active-low, `drive_selected_[d] = !(data>>(4+d) & 1)`.  Not readable off the usual
+> select byte (`LD A,77H / RLCA (drv+1)×` → `0xEE`/`0xDD`/… drops one bit of *each* nibble);
+> decided by the callers that mask exactly one nibble — CP/A's drive-detect `LD A,0F7H`
+> "ohne lock" and UDOS' `OR 0FH` / `AND 0F0H`.  Swapping them silently redirects **every**
+> foreign-OS access to drive 1…3 onto drive 0.  `doc/design/07_k5122_afs.md` §8, guard
+> `K5122Test.DriveSelect_HighNibbleIstSelect`.
 
 - **Registration model**: cards register memory ranges and I/O port ranges on `K1520Bus`; the CPU's read/write/port callbacks route through the bus, which dispatches to the owning device. Interrupt priority is a daisy chain set via `bus.setInterruptChain(...)`; the Koppelbus models the A5120 backplane's hand-wired signal links (CTC clock cascades, second IEI/IEO chain).
 - **Dual Z80 on the K2526 (`core/cards/k2526/`)** — non-obvious and central to the boot path:

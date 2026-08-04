@@ -431,6 +431,19 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_scpx_init
             PROPERTIES TIMEOUT 120 LABELS "format_integration")
 
+        # UDOS-FORMAT-Guard (Boot + 77 Spuren formatieren/verifizieren, ~20 s) —
+        # sichert die 8212-Laufwerksauswahl und den Sektorkontrollblock im
+        # Schreibpfad ab.  Ebenfalls Label „format_integration".
+        add_executable(k1520_test_udos_format tests/cpp/test_udos_format.cpp)
+        target_link_libraries(k1520_test_udos_format
+            PRIVATE k1520_a5120 k1520_floppy k1520_logger GTest::gtest_main)
+        target_include_directories(k1520_test_udos_format PRIVATE ${CMAKE_SOURCE_DIR})
+        target_compile_definitions(k1520_test_udos_format PRIVATE
+            LOG_LEVEL=2
+            A5120_TEST_DISK_DIR="${CMAKE_SOURCE_DIR}/disks")
+        gtest_discover_tests(k1520_test_udos_format
+            PROPERTIES TIMEOUT 300 LABELS "format_integration")
+
         # HARDY-Hardware-Testprogramm: „Rechner"-Test läuft clean durch (Guard für
         # den /MEMDI- + BS-PIO-Bus-Strobe-Fix).  Ebenfalls langsam (Boot + Testlauf)
         # → Label „format_integration“, läuft mit `dev.sh test-format` / `test-all`.
@@ -719,7 +732,7 @@ if(BUILD_K1520)
         # ZVE1).  Die exakte Zeitlage hängt zusätzlich vom Floppy-Timing ab (u. a.
         # Motor-Spin-up, K5122_MOTOR_SPINUP_MS) — bei Timing-Änderungen hier den
         # neuen deterministischen Wert eintragen.
-        add_cli_test(cli_dbg_json "\"pc\":\"0x19CF\".*\"hl\":\"0x1BCF\""
+        add_cli_test(cli_dbg_json "\"pc\":\"0x2182\".*\"hl\":\"0x0297\""
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'g 5000000\\nrj\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
         add_cli_test(cli_bt_json "\"boot_reached\":false.*\"until\":.\"set\":true,\"met\":true"
             "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' --json \$D; rm -f \$D")
