@@ -766,6 +766,49 @@ TEST(ScpxIntegration, BootThenDirStatPipLoadComFiles) {
         << "STAT-Ausgabe unerwartet verschwunden:\n" << vramText(machine);
 }
 
+// ─── UDOS 4.3 — Kaltstart bis zur Datumsabfrage ──────────────────────────────
+//
+// disks/udos_boot_scp.hfe trägt UDOS 4.3 (Zilog-RIO-Abkömmling, KEIN CP/M) und ist
+// bitgenau von echter Hardware eingelesen.  Der Test fährt den kompletten Kaltstart:
+// Lade-ROM → SYL-Lader (0x0400) → Systemlader (0x4000) → residentes System → Anzeige
+// „UDOS 4.3" + „Neues Datum :".
+//
+// Regressionswächter für drei voneinander unabhängige Emulator-Korrekturen, die von
+// den drei Betriebssystemen nur UDOS trifft (doc/analyse_udos.md §13):
+//   1. Z80-Block-E/A lässt das Carry-Flag stehen (INI/IND/OUTI/OUTD + Repeat-Varianten).
+//      UDOS' ZVE2-Lesekoroutine zählt ihre 128-B-Blöcke mit `SUB 01H` / `INI` / `JR NC` —
+//      mit gelöschtem Carry lief die Schleife endlos bis in den Bildschirmspeicher.
+//   2. K5122::endDmaTransfer() schaltet den ctrl-PIO-Port-A-Interrupt NICHT mehr
+//      eigenmächtig scharf — sonst kam ein Indexpuls-Interrupt mit Vektor 0xBA ohne
+//      IM-2-Eintrag → RST 38H → UDOS-Monitor („BREAK …").
+//   3. LogicalSector::tail: der Sektorkontrollblock hinter der Daten-CRC (Rückwärts-/
+//      Vorwärtszeiger) überlebt den Aufbau des Lese-Streams — sonst las der Lader
+//      Gap-Füllbytes als Zeiger und brach mit „BAD POINTER IN OS" ab.
+// Fällt eine davon zurück, bleibt der Bildschirm bei der jeweiligen Fehlermeldung
+// stehen und dieser Test wird rot.
+TEST(UdosIntegration, ColdBootReachesDatePrompt) {
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("udos_boot_scp.hfe"), "cpa780", /*wp=*/false))
+        << "konnte udos_boot_scp.hfe nicht mounten: " << machine.lastError();
+    machine.powerOn();
+
+    ASSERT_TRUE(runSmallUntil(machine, "UDOS 4.3", 45'000'000))
+        << "UDOS-Banner nie erschienen — Kaltstart der udos_boot_scp.hfe gebrochen:\n"
+        << vramText(machine);
+    ASSERT_TRUE(runSmallUntil(machine, "Neues Datum", 10'000'000))
+        << "Datumsabfrage nie erreicht — residentes System startet nicht:\n"
+        << vramText(machine);
+
+    const std::string screen = vramText(machine);
+    EXPECT_EQ(screen.find("BAD POINTER"), std::string::npos)
+        << "Sektorkontrollblock (LogicalSector::tail) geht im Lese-Stream verloren:\n" << screen;
+    EXPECT_EQ(screen.find("ERROR: C6"), std::string::npos)
+        << "CRC-Fehler beim Lesen — ZVE2 laeuft ueber das Ende seiner Koroutine hinaus:\n"
+        << screen;
+    EXPECT_EQ(screen.find("BREAK"), std::string::npos)
+        << "UDOS-Monitor DEBUBC43 aktiv — Interrupt-Vektor ohne IM-2-Eintrag:\n" << screen;
+}
+
 // ─── SCPX Laufzeit-SCHREIBEN: ERA löscht auf B: OHNE „BAD SECTOR" ─────────────
 //
 // Regressionswächter für den SCPX-Write-Fix (K5122 post_write_grace_ +

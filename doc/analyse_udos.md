@@ -1,6 +1,21 @@
-# UDOS bootet nicht — Fehlermeldung + zerschriebener Bildschirm: Analyse
+# UDOS-Kaltstart — Analyse (GELÖST)
 
-**Stand:** 2026-08-03. Branch `boot_udos`, Fixture `disks/udos_boot_scp.hfe`
+> ## ✅✅ UDOS 4.3 bootet (2026-08-04)
+> `disks/udos_boot_scp.hfe` fährt vollständig hoch bis zur Datumsabfrage:
+> ```
+> UDOS 4.3
+> FEBRUAR  1987
+> Neues Datum :._.__.19__
+> ```
+> Vier voneinander unabhängige **Emulatorfehler** standen im Weg; keiner davon war
+> UDOS-spezifisch, CP/A und SCPX haben sie nur nicht getroffen. Reihenfolge des
+> Auftretens: §5/§6 (PIO-IUS), §13.1 (PIO-Interrupt-Fremdeingriff), §13.2 (Z80-Carry
+> bei Block-E/A), §13.3 (ZVE2 lief über das Ende seiner Koroutine hinaus), §13.4
+> (Sektorkontrollblock ging im Lese-Stream verloren). Details in **§13**.
+> Regressionstest: `UdosIntegration.ColdBootReachesDatePrompt`
+> (`tests/cpp/test_boot_integration.cpp`). Testlage: **728/728 ctest + 58/58 Legacy**.
+
+**Stand:** 2026-08-04. Branch `boot_udos`, Fixture `disks/udos_boot_scp.hfe`
 (HFE v1, 80 Spuren, 2 Seiten, 249 kbit/s — von echter Hardware eingelesen, s.
 [[project_real_disk_hfe_readpath]] bzw. §9).
 
@@ -28,6 +43,10 @@ zuerst eine Fehlermeldung und danach wurde der Bildschirm mit wirren Zeichen
 ---
 
 ## 0. Stand & Einstieg für die nächste Session
+
+> **VERALTET ab hier bis §12** — §0/§8 beschreiben den Stand vom 2026-08-03, als UDOS
+> noch nicht durchbootete. Der abschließende Befund steht in **§13**; die Werkzeug- und
+> Methodikabschnitte (§7, §10, §11) gelten unverändert.
 
 **Branch `boot_udos`**, gemergt mit `origin/main` (YAML-Formatkatalog, Laufwerksprofil-
 Umbenennungen, Reset/Power-Cycle, GUI). Testlage nach Komplett-Neubau:
@@ -685,3 +704,139 @@ Quelle wäre das ein naheliegender, aber falscher Verdächtiger gewesen.
   setzt den K5122-Indexvektor `0xBA`, `0x0269` sperrt ihn auf ZVE2 wieder.
 - `doc/analyse_zre_rom_boot.md`, `doc/K1520_architecture.md` §14.5 — Boot-Kette.
 - `doc/analyse_scpx_com_load.md` — verwandte ZVE1/ZVE2-Arbitrierungsanalyse.
+
+---
+
+## 13. Die vier restlichen Emulatorfehler (2026-08-04) — UDOS bootet
+
+Nach dem PIO-IUS-Fix (§5) blieben vier Ursachen. Alle vier sind **hardwareunabhängig
+falsch** — CP/A und SCPX haben sie schlicht nicht getroffen. Sie wurden in dieser
+Reihenfolge sichtbar, jede erst nachdem die vorige weg war.
+
+### 13.1 `endDmaTransfer()` schärfte den Indexpuls-Interrupt eigenmächtig
+
+`K5122::endDmaTransfer()` schrieb bedingungslos `ctrl_pio_.ioWrite(1, 0x83)` (IE=1) —
+ein Fremdeingriff des Emulators in einen PIO, den nur Software programmieren darf.
+
+Die Messung (`boot_trace --watchio 0x11`) zeigt, dass **jedes** OS die Freigabe selbst
+vornimmt, wenn es sie braucht:
+
+| Wer | Wo | Wert |
+|---|---|---|
+| Lade-ROM | ZVE1 `0x00EB` | Vektor `0xBA` |
+| Lade-ROM | ZVE1 `0x012D/0x0131` | `97` + Maske (IE=1) vor der Index-Wartschleife |
+| ZVE2-Leseroutine | `0x0269` | `03` (IE=0) am Ende jeder DMA-Runde |
+| CP/A-BIOS | ZVE1 `0x214C` / `0x1E6E` | Vektor `0xE8`, dann `83` **vor jedem Zugriff** |
+| UDOS | — | **nie** (`UDOSFLOP.700` enthält kein einziges `OUT (11H)`) |
+
+UDOS lief dadurch mit einem scharfen Indexpuls-Interrupt, dessen Vektor `0xBA` noch vom
+Lade-ROM stammte, während `I` längst auf `0x0F` stand — `[0x0FBA]` ist leer ⇒ `PC=0xFFFF`
+⇒ `RST 38H` ⇒ Monitor. **Fix:** den Eingriff ersatzlos streichen. Damit ist §8.1 erledigt.
+
+### 13.2 Block-E/A löschte das Carry-Flag
+
+`INI/IND/OUTI/OUTD` und die Repeat-Varianten schrieben `F` komplett neu. Laut
+Z80-Handbuch bleibt **C bei allen acht Befehlen unverändert** (S/H/P/V sind undefiniert,
+N wird gesetzt, Z aus B).
+
+UDOS' ZVE2-Lesekoroutine zählt ihre 128-Byte-Blöcke genau darüber:
+
+```asm
+0AD2: INI              ; 1 Byte
+0AD4: LD B,7EH
+0AD6: INIR             ; 126 Bytes
+0AD8: SUB 01H          ; Blockzähler--   → Carry = fertig
+0ADA: INI              ; 1 Byte  (darf C NICHT anfassen)
+0ADC: JR NC,0AD2H      ; nächster Block
+```
+
+Mit gelöschtem Carry lief die Schleife endlos: der Zielzeiger wanderte in ~3,7 Mio Takten
+von `0x4000` über 47 KB bis `0xF900` — mitten in den Bildschirmspeicher (das war §8.2,
+die vermeintliche „DMA in den Bildschirm"). **Fix:** `F = (F & FLAG_C) | …` in allen acht
+Fällen (`core/primitives/z80.cpp`).
+
+### 13.3 ZVE2 lief eine Instruktion über das Ende seiner Koroutine hinaus
+
+Symptom: `ERROR: C6` (CRC-Fehler) nach 16 Leseversuchen, obwohl alle 6 Sektoren
+byteidentisch zur Diskette im Puffer lagen und 5 der 6 CRC-Slots stimmten. Nur Slot 0
+war falsch (`28 C1` statt `27 C1`).
+
+Der Urheber (`boot_trace --watch 0x0E50`): **ZVE2 bei `PC=0xC128`.** Die Koroutine endet
+mit
+
+```asm
+0B07: OUT (10H),A      ; /STR=1 → „Anschluss inaktiv", Übertragung beendet
+0B09: RET              ; totes Byte — läuft auf echter HW nie
+```
+
+Der Prolog setzt `LD SP,0E50H` (der CRC-Puffer; PUSHs wachsen nach unten, ins Leere).
+Führt der `RET` doch aus, holt er `[0x0E50/51]` = die CRC des **ersten** Sektors als
+Rücksprungadresse → `PC=0xC127` → dort `0xFF` = `RST 38H` → dessen PUSH schreibt `28 C1`
+zurück nach `0x0E50` und zerstört genau diesen Slot.
+
+Bisher endete der Transfer erst über die `/STR=1`-Abtastung (~2 Byteperioden) — in diesem
+Fenster lief ZVE2 munter weiter. **Fix:** setzt **ZVE2 selbst** `/STR=1` während seines
+Lesetransfers, fällt `/BUSRQ` sofort und ZVE2 friert im `/WAIT` ein. Dafür kennt der Bus
+jetzt den aktuellen Busmaster (`K1520Bus::busMasterIsZVE2()`, gesetzt von
+`A5120Machine::run`).
+
+> **Warum nur ZVE2?** Der Boot-ROM setzt `/STR=1` ebenfalls (ZVE2 `0x01F4`), aber
+> **vor** dem Transfer — in der Retry-Schleife (`0x01F8` ← `0x020E`) bleibt `/STR` tief.
+> ZVE1-Schreibzugriffe mit `/STR=1` während laufender DMA sind dagegen ein Artefakt
+> unserer verschränkten Ausführung (echte HW hält ZVE1 an) und bleiben von der bisherigen
+> Abtastung abgedeckt. Ein **generelles** sofortiges `/BUSRQ`-Fallen bei `/STR=1` wurde
+> gemessen und ist eine **Sackgasse**: 13 CP/A-/SCPX-Tests brechen.
+
+### 13.4 Der Sektorkontrollblock ging im Lese-Stream verloren
+
+Danach meldete der Systemlader `BAD POINTER IN OS`. Der Prüfcode (im geladenen Abbild):
+
+```asm
+4227: CALL 0BFDH          ; = JP 0700H  → einen Satz lesen
+422A: LD HL,(4456H)       ; erwarteter Rückwärtszeiger
+422D: CALL 424DH
+424E:   LD DE,(0E9FH)     ; gelesener Zeiger
+4252:   SBC HL,DE / RET Z ; gleich → ok
+4257:   LD A,0CAH → [4314]; sonst „BAD POINTER"
+```
+
+`0x0E9F` füllt ZVE2 unmittelbar nach der Daten-CRC: `LD BC,0416H / INIR` — **4 Bytes
+direkt hinter der CRC**. Auf der echten Diskette stehen dort auch welche:
+
+```
+IDAM cyl=21 head=0 sec=1 size=0
+DAM fb  crc=c127  danach: 0e 16 ff ff 41 f2  12 12 12 …
+                          └ Rück-/Vorwärtszeiger ┘ └CRC┘ └ Gap 0x12 (nicht 0x4E!) ┘
+```
+
+UDOS hängt also an **jedes** Datenfeld einen Sektorkontrollblock (4 Zeigerbytes + eigene
+CRC) und benutzt `0x12` als Gap-Füller. Unser Lesepfad baut die Spur aber aus den
+geparsten Sektoren neu auf (`TrackCodec::buildFaithfulReadTrack`) und schrieb dort
+stumpf `fill(0x4E, 8)` — der Lader las Gap-Füllbytes (`0x4E4E`) als Zeiger.
+
+**Fix:** `LogicalSector::tail` — `parseTrack` merkt sich die `kSectorTailBytes = 8` Bytes
+hinter der Daten-CRC, `buildFaithfulReadTrack` stellt sie unverändert in den Stream.
+Bei einer Standard-IBM-Spur sind das 8× `0x4E`, also **bitgleich** zum bisherigen
+`fill(0x4E, 8)` — daher keine Auswirkung auf CP/A und SCPX.
+
+> **Verworfene Alternative:** die bitgenau eingelesene HFE-Spur *komplett* unverändert
+> streamen (statt sie neu aufzubauen) ist zwar konzeptionell sauberer und lässt UDOS
+> ebenfalls booten, bricht aber die HFE-Bootpfade von CP/A und SCPX (6 Tests): die echte
+> Spur hat 3×A1-Sync statt 4 und ist 6234 statt 4576 Bytes lang, worauf die
+> Resync-/Timing-Annahmen der dortigen Lader reagieren. Ein adaptiver Rückversatz
+> (A1-Anzahl aus der Spur zählen) reicht dafür **nicht**. Wer das angehen will, braucht
+> einen eigenen Durchgang durch `doc/analyse_zre_rom_boot.md` §14.5.
+
+### 13.5 Werkzeug-Rezepte, die hier den Ausschlag gaben
+
+- `--watchio 0x11` / `0x0F` mit `von=ZVE1|ZVE2` — beantwortete „wer schärft den
+  Interrupt?" und „wer stoppt den CTC?" in je einem Lauf.
+- `b2 <adr>` + `rj2` (ZVE2-Breakpoints) — zeigte den Blockzähler `A` beim `SUB 01H`
+  monoton fallen statt zu terminieren ⇒ Carry-Verdacht.
+- `wb <adr> == <wert>` (bedingter Schreib-Watchpoint) — nannte `ZVE2.PC=0xC128` als
+  Zerstörer des CRC-Slots; ohne das wäre der tote `RET` kaum auffindbar gewesen.
+- `dump <adr> <len> <datei>` + ein 40-zeiliger Python-HFE-Dekoder — der Soll-Ist-
+  Vergleich Puffer↔Medium bewies, dass die **Daten** stimmen und nur die CRC-Bytes
+  danebenlagen; derselbe Dekoder deckte dann den Sektorkontrollblock auf.
+- `bscreen "BAD POINTER"` + `bt` — führte in drei Schritten vom Bildschirmtext zur
+  Vergleichsroutine `0x424D`.
