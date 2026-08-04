@@ -809,6 +809,84 @@ TEST(UdosIntegration, ColdBootReachesDatePrompt) {
         << "UDOS-Monitor DEBUBC43 aktiv — Interrupt-Vektor ohne IM-2-Eintrag:\n" << screen;
 }
 
+// ─── UDOS 4.3 — interaktiv: Datumseingabe + CAT lädt von Diskette ────────────
+//
+// Fortsetzung des Kaltstart-Tests oben: hier läuft UDOS *bedient*.  Geprüft wird die
+// ganze Kette Tastatur → Konsoltreiber → Kommandointerpreter → Dateisystem:
+//
+//   1. Datumsmaske `__.__.19__` mit „150388" füllen (der Cursor springt selbst über
+//      die Punkte).  UDOS rechnet den Wochentag selbst aus — der 15.3.1988 war ein
+//      Dienstag; steht dort etwas anderes, rechnet die Datumsroutine falsch.
+//   2. ⚠ **UDOS invertiert die Buchstabenschreibung** (Konsoltreiber ab 0x063F):
+//      ungeshiftet getippte Kleinbuchstaben erscheinen GROSS, mit Shift klein.  Das
+//      ist Verhalten des realen A5120 (doc/analyse_udos.md §14.2).  Der Test friert
+//      beide Richtungen ein: „CAT" getippt → echot `%cat` → NONEXISTENT COMMAND;
+//      „cat" getippt → echot `%CAT` → das Kommando läuft.  Ohne diese Zusicherung
+//      merkt niemand, wenn die Wandlung kippt — die Kommandos scheitern dann nur
+//      scheinbar grundlos.
+//   3. `CAT *.* P=& F=L` lädt das transiente Programm CAT von der Diskette und gibt
+//      die Detailliste aus.  Das ist der einzige Test, der den UDOS-Lesepfad im
+//      LAUFENDEN System übt (der Kaltstart-Test deckt nur die Ladekette ab) — er
+//      hängt damit an denselben drei Korrekturen wie ColdBootReachesDatePrompt.
+//
+// Die Diskette wird aus einer TEMP-KOPIE gemountet: CAT liest zwar nur, aber das
+// Fixture ist committet und darf unter keinen Umständen verändert werden.
+TEST(UdosIntegration, DateEntryAndCatListsDirectory) {
+    namespace fs = std::filesystem;
+    const std::string aPath = (fs::temp_directory_path() / "udos_interactive_A.hfe").string();
+    fs::copy_file(diskPath("udos_boot_scp.hfe"), aPath, fs::copy_options::overwrite_existing);
+
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, aPath, "cpa780", /*wp=*/false)) << machine.lastError();
+    machine.powerOn();
+
+    // 1. Kaltstart bis zur Datumsabfrage.
+    ASSERT_TRUE(runSmallUntil(machine, "Neues Datum", 45'000'000))
+        << "Datumsabfrage nie erreicht:\n" << vramText(machine);
+    runCycles(machine, 2'000'000);            // in die Eingabeschleife einschwingen
+
+    // 2. Datum 15.03.1988 — nur die Ziffern, die Punkte stehen fest in der Maske.
+    typeString(machine, "150388");
+    ASSERT_TRUE(runSmallUntil(machine, "Dienstag, der 15. Maerz 1988", 15'000'000))
+        << "Datum nicht uebernommen oder Wochentag falsch gerechnet:\n" << vramText(machine);
+    ASSERT_TRUE(runSmallUntil(machine, "UDOS BC.5120", 5'000'000))
+        << "Systemkennung nach der Datumseingabe fehlt:\n" << vramText(machine);
+    runCycles(machine, 2'000'000);
+
+    // 3. GROSS getippt = die falsche Richtung: UDOS macht daraus Kleinschrift und
+    //    findet das Kommando nicht.  Beides wird geprueft — die Meldung UND das Echo.
+    typeString(machine, "CAT");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "NONEXISTENT COMMAND", 25'000'000))
+        << "GROSS getipptes Kommando wurde unerwartet gefunden — Schreibwandlung "
+           "des Konsoltreibers gekippt?\n" << vramText(machine);
+    EXPECT_NE(vramText(machine).find("%cat"), std::string::npos)
+        << "Echo von \"CAT\" ist nicht \"%cat\" — UDOS invertiert die Schreibung "
+           "nicht mehr (doc/analyse_udos.md §14.2):\n" << vramText(machine);
+    runCycles(machine, 1'000'000);
+
+    // 4. KLEIN getippt = die richtige Richtung: `CAT *.* P=& F=L` wird von Diskette
+    //    geladen und listet mit Detailausgabe.
+    typeString(machine, "cat *.* p=& f=l");
+    typeKey(machine, QK_RETURN);
+    // Auf die LETZTE Zusammenfassungszeile warten (sie kommt nach „FILES LISTED"),
+    // sonst prueft der Test die Zusammenfassung, waehrend CAT sie noch schreibt.
+    ASSERT_TRUE(runSmallUntil(machine, "TOTAL SECTORS FOR LISTED FILES", 60'000'000))
+        << "CAT lief nicht durch — transientes Programm nicht von Diskette geladen "
+           "oder Verzeichnis nicht lesbar:\n" << vramText(machine);
+
+    const std::string screen = vramText(machine);
+    EXPECT_NE(screen.find("FILES EXAMINED"), std::string::npos)
+        << "CAT-Zusammenfassung unvollstaendig:\n" << screen;
+    EXPECT_NE(screen.find("FILES LISTED"), std::string::npos)
+        << "CAT-Zusammenfassung unvollstaendig:\n" << screen;
+    EXPECT_EQ(screen.find("NONEXISTENT COMMAND"), std::string::npos)
+        << "KLEIN getipptes Kommando wurde nicht gefunden — Schreibwandlung gekippt:\n"
+        << screen;
+
+    fs::remove(aPath);
+}
+
 // ─── SCPX Laufzeit-SCHREIBEN: ERA löscht auf B: OHNE „BAD SECTOR" ─────────────
 //
 // Regressionswächter für den SCPX-Write-Fix (K5122 post_write_grace_ +

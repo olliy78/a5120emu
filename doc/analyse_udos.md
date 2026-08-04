@@ -823,6 +823,13 @@ hinter der Daten-CRC, `buildFaithfulReadTrack` stellt sie unverändert in den St
 Bei einer Standard-IBM-Spur sind das 8× `0x4E`, also **bitgleich** zum bisherigen
 `fill(0x4E, 8)` — daher keine Auswirkung auf CP/A und SCPX.
 
+Der Befund deckt sich exakt mit der Formatbeschreibung in §15 („Diskettenzugriff"):
+der ZDOS-Treiber hängt an jeden 128-B-Sektor **6 zusätzliche Bytes** mit der Verkettung
+zum vorigen und nächsten Sektor — dadurch braucht UDOS keine FAT und kann Dateien
+trotzdem fragmentieren. Dort steht auch der Nachteil: *„Inkompatibilität mit
+PC-Floppycontrollern, die diese ‚überzähligen' 6 Bytes wegschneiden würden."* Genau das
+tat unser Lesepfad — er hat sich verhalten wie ein PC-Controller.
+
 > **Verworfene Alternative:** die bitgenau eingelesene HFE-Spur *komplett* unverändert
 > streamen (statt sie neu aufzubauen) ist zwar konzeptionell sauberer und lässt UDOS
 > ebenfalls booten, bricht aber die HFE-Bootpfade von CP/A und SCPX (6 Tests): die echte
@@ -942,6 +949,13 @@ Wurde der Befehl auf keinem Laufwerk gefunden, kam eine Fehlermeldung.
 
 Es gab Programme, die keine Parameter benötigen. Damit verkürzte sich der Programmaufruf auf:
 programmname	z.B. CAT
+
+
+
+
+
+Diskettenzugriff
+Bei UDOS1526 bis Version 4 benutzte man mit dem Treiber ZDOS eine seltsame Art der Disketten-Formatierung: An jeden 128-Byte-Sektor waren 6 zusätzliche Bytes angehängt, die die Verkettung zum nächsten Sektor bzw. zum vorhergehenden Sektor enthielten. Dadurch sparte man im UDOS die Benutzung einer FAT und ermöglichte trotzdem die Fragmentierung von Dateien. Nachteil dieses Effektes war die Inkompatibilität mit PC-Floppycontrollern, die diese die "überzähligen" 6 Bytes wegschneiden würden.
 
 
 Wichtige Befehle
