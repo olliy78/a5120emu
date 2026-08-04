@@ -1689,7 +1689,8 @@ int Z80::execED() {
             uint8_t v = readPort(BC);
             writeByte(HL, v);
             HL++; B--;
-            F = (B & (FLAG_S | FLAG_3 | FLAG_5));
+            // Carry bleibt bei den Block-E/A-Befehlen UNVERAENDERT (Z80-Handbuch).
+            F = (F & FLAG_C) | (B & (FLAG_S | FLAG_3 | FLAG_5));
             if (B == 0) F |= (FLAG_Z | FLAG_N);
             else F |= FLAG_N;
             return 16;
@@ -1699,7 +1700,8 @@ int Z80::execED() {
             B--;
             writePort(BC, v);
             HL++;
-            F = (B & (FLAG_S | FLAG_3 | FLAG_5));
+            // Carry bleibt bei den Block-E/A-Befehlen UNVERAENDERT (Z80-Handbuch).
+            F = (F & FLAG_C) | (B & (FLAG_S | FLAG_3 | FLAG_5));
             if (B == 0) F |= (FLAG_Z | FLAG_N);
             else F |= FLAG_N;
             return 16;
@@ -1732,7 +1734,8 @@ int Z80::execED() {
             uint8_t v = readPort(BC);
             writeByte(HL, v);
             HL--; B--;
-            F = (B & (FLAG_S | FLAG_3 | FLAG_5));
+            // Carry bleibt bei den Block-E/A-Befehlen UNVERAENDERT (Z80-Handbuch).
+            F = (F & FLAG_C) | (B & (FLAG_S | FLAG_3 | FLAG_5));
             if (B == 0) F |= (FLAG_Z | FLAG_N);
             else F |= FLAG_N;
             return 16;
@@ -1742,7 +1745,8 @@ int Z80::execED() {
             B--;
             writePort(BC, v);
             HL--;
-            F = (B & (FLAG_S | FLAG_3 | FLAG_5));
+            // Carry bleibt bei den Block-E/A-Befehlen UNVERAENDERT (Z80-Handbuch).
+            F = (F & FLAG_C) | (B & (FLAG_S | FLAG_3 | FLAG_5));
             if (B == 0) F |= (FLAG_Z | FLAG_N);
             else F |= FLAG_N;
             return 16;
@@ -1776,7 +1780,8 @@ int Z80::execED() {
             uint8_t v = readPort(BC);
             writeByte(HL, v);
             HL++; B--;
-            F = FLAG_Z | FLAG_N;
+            // Carry bleibt bei den Block-E/A-Befehlen UNVERAENDERT (Z80-Handbuch).
+            F = (F & FLAG_C) | FLAG_Z | FLAG_N;
             if (B != 0) { F &= ~FLAG_Z; PC -= 2; return 21; }
             return 16;
         }
@@ -1785,7 +1790,8 @@ int Z80::execED() {
             B--;
             writePort(BC, v);
             HL++;
-            F = FLAG_Z | FLAG_N;
+            // Carry bleibt bei den Block-E/A-Befehlen UNVERAENDERT (Z80-Handbuch).
+            F = (F & FLAG_C) | FLAG_Z | FLAG_N;
             if (B != 0) { F &= ~FLAG_Z; PC -= 2; return 21; }
             return 16;
         }
@@ -1818,7 +1824,8 @@ int Z80::execED() {
             uint8_t v = readPort(BC);
             writeByte(HL, v);
             HL--; B--;
-            F = FLAG_Z | FLAG_N;
+            // Carry bleibt bei den Block-E/A-Befehlen UNVERAENDERT (Z80-Handbuch).
+            F = (F & FLAG_C) | FLAG_Z | FLAG_N;
             if (B != 0) { F &= ~FLAG_Z; PC -= 2; return 21; }
             return 16;
         }
@@ -1827,7 +1834,8 @@ int Z80::execED() {
             B--;
             writePort(BC, v);
             HL--;
-            F = FLAG_Z | FLAG_N;
+            // Carry bleibt bei den Block-E/A-Befehlen UNVERAENDERT (Z80-Handbuch).
+            F = (F & FLAG_C) | FLAG_Z | FLAG_N;
             if (B != 0) { F &= ~FLAG_Z; PC -= 2; return 21; }
             return 16;
         }

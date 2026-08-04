@@ -522,8 +522,10 @@ int A5120Machine::run(int max_cycles) {
             }
             if (!zre_.isZVE2InReset() && !zre_.isZVE2Waiting()) {
                 bus_master_zve2_ = true;
+                bus_.setBusMasterZVE2(true);
                 int used2 = zre_.zve2Step();
                 bus_master_zve2_ = false;
+                bus_.setBusMasterZVE2(false);
                 // Debugger-Halt VOR der Instruktion (abortBeforeExecute): nichts
                 // ausgeführt, nichts zu verbuchen — Lauf hier beenden.
                 if (used2 == 0 && stop_.load(std::memory_order_relaxed)) break;

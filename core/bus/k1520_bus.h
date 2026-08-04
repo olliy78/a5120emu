@@ -392,6 +392,18 @@ public:
      * @return true while DMA transfer is in progress (ZVE1 should pause)
      */
     bool isBUSRQ() const { return busrq_asserted_; }
+
+    /**
+     * @brief Welche CPU führt gerade den Buszyklus aus (ZVE1 oder der DMA-Prozessor ZVE2)?
+     *
+     * Die Maschine setzt das Flag um den ZVE2-Schritt herum.  Karten brauchen es, wenn
+     * ein Portzugriff je nach Urheber eine andere Wirkung hat — beim K5122 beendet
+     * **nur ZVE2s eigenes** /STR=1 dessen Busbesitz sofort (ZVE1-Schreibzugriffe während
+     * einer laufenden DMA gibt es auf echter Hardware nicht; sie sind ein Artefakt der
+     * verschränkten Ausführung, s. K5122::handleCtrlPortAWrite).
+     */
+    void setBusMasterZVE2(bool z2) { bus_master_zve2_ = z2; }
+    bool busMasterIsZVE2() const   { return bus_master_zve2_; }
     
     /**
      * @brief Assert/release the global /MEMDI signal (from BS-PIO Q301 Port A
@@ -538,6 +550,7 @@ private:
     bool memdi_          = false;  ///< /MEMDI: memory access disabled
     bool iodi_           = false;  ///< /IODI: I/O access disabled
     bool busrq_asserted_ = false;  ///< /BUSRQ: DMA device holds the bus (ZVE1 suspended)
+    bool bus_master_zve2_ = false; ///< aktueller Buszyklus stammt von ZVE2 (DMA-Prozessor)
 
     /// Protokoll der letzten Interrupt-Quittung (Debugger, s. lastIntAck()).
     IntAck last_int_ack_{};
