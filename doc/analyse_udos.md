@@ -14,6 +14,10 @@
 > (Sektorkontrollblock ging im Lese-Stream verloren). Details in **§13**.
 > Regressionstest: `UdosIntegration.ColdBootReachesDatePrompt`
 > (`tests/cpp/test_boot_integration.cpp`). Testlage: **728/728 ctest + 58/58 Legacy**.
+>
+> **Interaktiv bestätigt (§14):** Datumseingabe, residente Kommandos und das
+> Nachladen transienter Programme von Diskette (`CAT` listet das Verzeichnis).
+> ⚠ Kommandos werden **klein** getippt — UDOS invertiert die Schreibung (§14.2).
 
 **Stand:** 2026-08-04. Branch `boot_udos`, Fixture `disks/udos_boot_scp.hfe`
 (HFE v1, 80 Spuren, 2 Seiten, 249 kbit/s — von echter Hardware eingelesen, s.
@@ -840,3 +844,172 @@ Bei einer Standard-IBM-Spur sind das 8× `0x4E`, also **bitgleich** zum bisherig
   danebenlagen; derselbe Dekoder deckte dann den Sektorkontrollblock auf.
 - `bscreen "BAD POINTER"` + `bt` — führte in drei Schritten vom Bildschirmtext zur
   Vergleichsroutine `0x424D`.
+
+---
+
+## 14. Interaktivbetrieb — bestätigt
+
+### 14.1 Datumsabfrage
+
+Getippt `150388` (ohne Punkte, der Cursor springt selbst über die Maskenpunkte):
+
+```
+Dienstag, der 15. Maerz 1988
+UDOS BC.5120
+%
+```
+
+Der Wochentag ist selbst gerechnet und korrekt (15.3.1988 war ein Dienstag).
+
+### 14.2 ⚠ Schreibkonvention: die Tastatur wird INVERTIERT
+
+**Kommandos werden im Debugger *klein* getippt** — UDOS' Konsoltreiber (ab `0x063F`)
+dreht die Buchstabenschreibung um. Ungeshiftet (Klein-ASCII) ergibt Großbuchstaben,
+mit Shift Kleinbuchstaben. Das ist Verhalten des realen A5120, kein Emulator-Artefakt.
+Gemessen mit `iow 0x5C` + Bildschirmspeicher:
+
+| `keys …` | am Konsolport | im VRAM | Ergebnis |
+|---|---|---|---|
+| `cat` | `63 61 74` | `25 43 41 54` = `%CAT` | ✔ Kommando läuft |
+| `CAT` | `43 41 54` | `25 63 61 74` = `%cat` | ✘ `NONEXISTENT COMMAND` |
+
+Die Befehlsreferenz unten schreibt Kommandos deshalb groß, obwohl man sie klein tippt.
+Wer das nicht weiß, hält die Kleinschrift im Echo für einen Werkzeugfehler und sucht
+tagelang im K7637-Modell (Feature Request: `tools/feature_request_keyboard_diagnostics.md`).
+
+### 14.3 Was läuft
+
+- **Residente Kommandos** aus dem Nukleus: `ALLOCATE` → `MISSING OR INVALID OPERAND(S)`
+  (also gefunden **und** ausgeführt), `DEBUG` → Übergang in den Monitor-Prompt `+`.
+- **Transiente Kommandos** von Diskette: `cat` listet das Verzeichnis; mit den
+  Parametern der Referenz unten die Detailausgabe —
+  `keys cat\s*.*\sp=&\sf=l\r` liefert
+  `69 FILES EXAMINED / 26 FILES LISTED / 712 TOTAL SECTORS FOR LISTED FILES`
+  (u. a. `HELP`, `HELP.DAT.00…04`, `DRUCK.V24`, `SD.OBJ`, `LINK.SD`, `IMAGE.OBJ`,
+  `NOTE.TO.UDOS.4.3`). Der Dateisystemzugriff funktioniert also vollständig.
+
+### 14.4 ★ Nebenertrag: der Nukleus `0x1000–0x25FF` liegt im RAM
+
+`~/projects/UDOS/README.md` §8 führt den UDOS-Nukleus als „fehlt in allen Quellen, muss
+aus dem Dateisystem einer echten Systemdiskette zurückgewonnen werden" und vermerkt den
+Nachladeversuch als „scheitert derzeit im Emulator". **Er läuft jetzt durch** — genau
+das ist die `'O'`-Ladesequenz des Monitors (Spur 21, Sektor 17, 700 B nach `0x4000`,
+Signatur `BO`), deren Lesefehler §13.3/§13.4 waren. Extrahieren:
+
+```sh
+printf 'gscreen "Neues Datum" 45000000\ng 2000000\nkeys 150388\ng 8000000\ndump 0x1000 5632 nukleus.bin\nq\n' \
+  | tools/dev.sh tool k1520dbg disks/udos_boot_scp.hfe
+```
+
+Enthalten sind die residente Kommandotabelle (`DEBUG PAUSE ALLOCATE DEALLOCATE RELEASE
+FORCE CLOSE`), die vollständige Meldungstabelle (`NONEXISTENT COMMAND`, `MEMORY PROTECT
+VIOLATION`, `ILLEGAL FILE NAME` …) und die Versionsstempel `900320` / `900808`.
+
+---
+
+## 15. Befehlsreferenz UDOS (übernommen)
+
+
+Befehlsausführung / Dateien
+UDOS unterschied bei seinen Befehlen zwischen Groß- und Kleinschreibung.
+Die meisten Befehle lagen in Form ausführbarer Programme auf dem Datenträger vor und waren in der Regel in Großbuchstaben zu schreiben.
+Welche Datei ein ausführbares Programm war, wurde durch den Dateityp festgelegt. UDOS kannte folgende Dateitypen:
+D (Directory): Das (eine) Diskettenverzeichnis selbst
+A (ASCII): Textdatei
+B (Binary): Binäre Datei
+P (Procedure): Ausführbares Programm
+Der Dateityp war (im Gegensatz zu SCP und DCP) nicht Teil des Dateinamens.
+Die Dateinamen konnten max. 32 Zeichen lang sein und neben Buchstaben und Ziffern auch Punkte enthalten.
+
+Die Diskettenlaufwerke manifestierten sich mit Ziffern:
+0: das erste Laufwerk
+1: das zweite Laufwerk
+2: das dritte Laufwerk
+3: das vierte Laufwerk
+Weiterhin konnten unter den Laufwerksziffern 4-10 logische Laufwerke mit anderen Zugriffsmethoden generiert werden. Da viele UDOS-Dateisysteme die Disketten nur einseitig nutzten, konnten einige UDOS-Varianten die Diskettenrückseiten (2. Kopf) der Laufwerke "0"-"3" unter den Bezeichnungen "4"-"7" als separate Dateisysteme ansprechen.
+
+Der Start der Befehle erfolgte über eine Eingabezeile mit rollender Bildschirmausgabe.
+Die Befehle hatten folgende Struktur:
+¤treibername:laufwerk/befehl parameter	z.B. ¤ZDOS:0/CAT *.TXT
+
+Wurde kein Treibername angegeben, wurde der Standardtreiber (in der Regel ZDOS) verwendet.
+Der Programmaufruf verkürzte sich damit auf:
+laufwerk/programmname parameter	z.B. 2/CAT *.TXT
+
+Wurde kein Laufwerk angegeben, suchte UDOS den Befehl auf allen Laufwerken und startete es beim ersten Finden. Der Programmaufruf verkürzte sich damit auf:
+programmname parameter	z.B. CAT *.TXT
+Wurde der Befehl auf keinem Laufwerk gefunden, kam eine Fehlermeldung.
+
+Es gab Programme, die keine Parameter benötigen. Damit verkürzte sich der Programmaufruf auf:
+programmname	z.B. CAT
+
+
+Wichtige Befehle
+CAT
+Listet den Inhalt der Diskette(n) auf.
+Sollen nur bestimmte Dateien aufgelistet werden, kann deren Name mit Hilfe des Wildcard-Zeichens "*" festgelegt werden (z.B. cat *.txt)
+Versteckte Dateien können mit dem Parameter P=& angezeigt werden.
+Eine Detailausgabe erhält man mit dem Parameter F=L.
+FORMAT
+Dieser Befehl formatiert eine Diskette.
+Als erstes ist festzulegen, ob die Diskette bootfähig gemacht werden soll. Nicht-bootfähige Disketten bieten mehr freien Platz.
+Als nächstes ist die Laufwerksnummer anzugeben und eine Datenträgerbezeichnung (Label) kann vergeben werden.
+Nach einer Sicherheitsabfrage beginnt dann die Formatierung.
+Die Art der Formatierung (Sektorlänge,...) wird der Laufwerkskonfiguration entnommen (SET DISKCON)
+COPY.DISK
+Kopiert eine Diskette sektorweise.
+Als Parameter können angegeben werden: quelllaufwerk TO ziellaufwerk.
+z.B.: COPY.DISK 2 TO 3
+Werden keine Parameter angegeben, wird von Laufwerk 0 auf Laufwerk 1 kopiert.
+MOVE
+Kopiert einzelne Dateien.
+mit dem Parameter S=laufwerk ist das Quelllaufwerk und mit D=laufwerk das Ziellaufwerk anzugeben.
+z.B.: MOVE *.TXT S=0 D=2
+Handelte es sich bei der zu kopierenden Datei um eine versteckte Datei, war (ebenso wie bei CAT) der Parameter P=& anzufügen.
+DELETE
+Löscht Dateien.
+z.B.: DELETE *.TMP D=1
+PRINT
+Zeigt eine Textdatei auf dem Bildschirm an. Die Textdatei ist als Parameter anzugeben.
+z.B.: PRINT TEST.TXT
+SET DISKCON=
+Dieser Befehl konfiguriert die Diskettenlaufwerke und unterscheidet sich in den Versionsnummer:
+UDOS 3.x
+Die Konfiguration der Laufwerke erfolgt mit einer Ziffer
+0=deaktiviert
+2=5¼-Zoll-77-Spuren
+5=5¼-Zoll-40-Spuren
+8=8-Zoll-77-Spuren
+Die Sektorlänge beträgt immer 128 Bytes.
+z.B. SET DISKCON=2 2 8
+UDOS 4.x
+Die Konfiguration der Laufwerke erfolgt mit einer 2-stelligen Zahl.
+Die erste Ziffer legt die Art des Laufwerks fest:
+1=8-Zoll FM
+2=8-Zoll MFM
+3=5¼-Zoll 40 Spuren
+4=5¼-Zoll 80Spuren SS
+5=5¼-Zoll 80 Spuren DS
+6=5¼-Zoll 40 Spuren im 80-Spur-Laufwerk
+Die zweite Ziffer legt die Sektorlänge fest: 1=128 Bytes, 2=256 Bytes, 4=512 Bytes, 5=1024 Bytes.
+z.B. SET DISKCON=41 41 11
+Die einzelnen Laufwerke waren durch Leerzeichen zu trennen.
+TEXT
+Ein Editor für Textdateien.
+Mit der Taste RESET kann man ein Menü aufrufen, in dem man Dateien öffnen und speichern sowie das Programm verlassen kann. Der TEXT-Editor arbeitet beim Schreiben generell im Einfügungsmodus. Mit der Taste DEL-CH kann man einzelne Zeichen löschen und mit der Taste DEL-L eine gesamte Zeile löschen. Neue Zeilen erzeugt man mit ENTER. Die Taste INS-L erzeugt eine Umwandlung von Kleinbuchstaben in Großbuchstaben und zurück bei bereits geschriebenem Text. Die Taste INSMOD hat die selbe Wirkung wie die CAPS-Taste: Umschaltung zwischen Groß- und Kleinschrift.
+DO
+Führt eine Stapelverarbeitungsdatei (Batchdatei) aus, die als Parameter anzugeben war. Die Stapelverarbeitungsdatei war eine Textdatei, die normale UDOS-Kommandos enthielt und diente dazu, den Start häufig benötigter Befehle oder Befehlsgruppen zu erleichtern.
+z.B. DO STARTEMICH
+KEY
+Ermöglicht es, Befehle auf Funktionstasten zu legen. Stil: KEY FunktionstastenNr="Befehl"
+z.B. KEY 1="CAT P=& F=L D=0"
+X oder XEQ
+Wiederholt das letzte Kommando, ohne es erneut vom Datentraeger zu laden (Dank Speicherschutz kann das Programm im RAM ja nicht überschreiben werden). Wurden beim letzten Kommando Parameter angegeben, sind diese beim X-Kommando auch wieder anzugeben (z.B. X 1 to 2 ), ansonsten wird das Kommando ohne Parameter wiederholt. Das X-Kommando kann auch benutzt werden, um Kommandos, die vorher geladen, aber noch nicht ausgeführt wurden (Stil: Befehl,), zu starten.
+
+
+Drucken
+Um drucken zu können, musste als erstes ein in Programmform vorliegender Treiber geladen werden. Unter UDOS1526 hieß der standardmäßig PRINTER und bediente die IFSS-Druckerschnittstelle mit 9600 Baud, 8Bit (Es gab auch Treiber für andere Druckerschnittstellen). Befehl: ACTIVATE $PRINTER.
+Danach war es möglich, die Druckerschnittstelle beliebig zu nutzen. Einige Programme boten intern die die Möglichkeit, ein Ausgabegerät festzulegen, z.B. CAT L=$PRINTER (Druckt die Liste der Dateinamen).
+Bei anderen konnte der Druckertreiber anstelle von Dateinamen verwendet werden,
+z.B. MOVE TEST.TXT S=0 D=$PRINTER (druckt eine Textdatei).
+

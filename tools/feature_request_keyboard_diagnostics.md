@@ -2,18 +2,29 @@
 
 Entstanden aus dem UDOS-Interaktivtest (`doc/analyse_udos.md` §13, Sitzung 2026-08-04).
 
-> **Vorab, damit niemand dieselbe Fehlspur läuft: Großbuchstaben funktionieren.**
-> `keys ABZ` liefert am Konsolport tatsächlich `41 42 5A`. Der Weg ist durchgängig
-> korrekt: die REPL schreibt die Eingabezeile **nicht** klein (kein `tolower` auf
-> `line`), `keys` reicht jedes Zeichen als ASCII-Keycode weiter, und
-> `K7637::translateKey` gibt druckbares ASCII (`0x20..0x7E`) unverändert aus
-> („Shift is presumed already encoded in the keycode value supplied by the caller").
-> Die GUI ist ebenso korrekt — `qt_event_to_core_key` nimmt `event.text()`, also das
-> vom Host-Layout tatsächlich erzeugte Zeichen.
+> **Vorab, damit niemand dieselbe Fehlspur läuft: an der Kodierung ist nichts kaputt.**
+> `keys` sendet exakt die getippten ASCII-Codes. Der Weg ist durchgängig korrekt: die
+> REPL schreibt die Eingabezeile **nicht** klein (kein `tolower` auf `line`), `keys`
+> reicht jedes Zeichen als ASCII-Keycode weiter, und `K7637::translateKey` gibt
+> druckbares ASCII (`0x20..0x7E`) unverändert aus („Shift is presumed already encoded
+> in the keycode value supplied by the caller"). Die GUI ist ebenso korrekt —
+> `qt_event_to_core_key` nimmt `event.text()`, also das vom Host-Layout tatsächlich
+> erzeugte Zeichen.
 >
-> Was in der UDOS-Sitzung nach einem Werkzeugfehler aussah, war **UDOS**: sein
-> Konsoltreiber (ab `0x063F`) faltet die Eingabe selbst auf Kleinschrift, deshalb
-> echot der `%`-Prompt `directory`, obwohl `DIRECTORY` getippt wurde.
+> Was in der UDOS-Sitzung nach einem Werkzeugfehler aussah, war die
+> **Schreibkonvention der Maschine**: UDOS' Konsoltreiber (ab `0x063F`) **invertiert**
+> die Buchstabenschreibung — ungeshiftet (Klein-ASCII) ergibt Großbuchstaben, mit
+> Shift Kleinbuchstaben. Gemessen (`iow 0x5C` + Bildschirmspeicher):
+>
+> ```
+> keys cat   → IN(5CH)=63 61 74        VRAM: 25 43 41 54   = "%CAT"   ✔ Kommando läuft
+> keys CAT   → IN(5CH)=43 41 54        VRAM: 25 63 61 74   = "%cat"   ✘ NONEXISTENT COMMAND
+> ```
+>
+> **Konsequenz für Skripte:** UDOS treibt man aus dem Debugger mit *klein* getippten
+> Kommandos (`keys cat\s*.*\sp=&\sf=l\r`). Das ist kein Emulator-Artefakt, sondern das
+> Verhalten des realen A5120 — die Befehlsreferenz in `doc/analyse_udos.md` schreibt
+> Kommandos deshalb groß, obwohl man sie klein tippt.
 
 **Der eigentliche Schmerz ist also nicht die Kodierung, sondern die Beobachtbarkeit:**
 Man sieht dem Debugger nicht an, welches Byte die Tastatur abliefert. Steht auf dem
@@ -25,12 +36,18 @@ Frage am Ende über einen Umweg entschieden, auf den man erst kommen muss:
 ```
 (dbg) iow 0x5C
 (dbg) keys Z
-[io] c37745051  IN (5CH)=5A  ZVE1.PC=063F      ← 0x5A = 'Z' kommt an ⇒ das OS faltet
+[io] c38495088  IN (5CH)=61  ZVE1.PC=063F      ← 'a' kommt unveraendert an
+                                                 ⇒ die Wandlung passiert IM OS
 ```
 
 Das setzt voraus, dass man (a) den Konsolport des laufenden OS kennt (bei UDOS `0x5C`,
 bei CP/A ein anderer) und (b) auf die Idee kommt, einen I/O-Watch statt des Bildschirms
 zu befragen. Beides ist genau das Wissen, das man in dem Moment nicht hat.
+
+Genau dieser Vergleich — **gesendetes Byte gegen angezeigtes Byte** — ist die Diagnose,
+die hier gefehlt hat. Er haette die Case-Inversion sofort als Software-Verhalten des
+Betriebssystems ausgewiesen (Byte kommt unveraendert an, wird erst danach gedreht),
+statt sie als Werkzeugfehler erscheinen zu lassen.
 
 Sortiert nach Nutzen.
 
@@ -123,13 +140,13 @@ vielen Fällen überflüssig.
   (s. Kasten oben); eine Option würde die Fehlspur nur zementieren. Der richtige Ort
   für die Klarstellung ist Punkt 1 (man sieht den Code) und `tools/k1520dbg.md`.
 - **Ein Caps-Lock-Modell im K7637.** Der reale K7637 hat eine Umschaltung, aber kein
-  bekanntes Programm im Projekt hängt davon ab, und die Konsoltreiber der drei
-  Betriebssysteme falten ohnehin selbst.
+  bekanntes Programm im Projekt hängt davon ab — die Konsoltreiber der Betriebssysteme
+  legen die Schreibung ohnehin selbst fest (UDOS invertiert, CP/M-artige großen auf).
 
 ## Regressionsnetz
 
 Neue Kommandos gehören in **beide** Netze (s. `tools/k1520dbg.md` §9):
 `tests/dbg/all_commands_smoke.dbg` (Dispatch) **und** ein gezielter CLI-Test auf den
 Meldungs-Wortlaut. Für Punkt 1/2 bietet sich `disks/udos_boot_scp.hfe` an: UDOS zeigt
-am `%`-Prompt reproduzierbar den Fall „gesendet `0x44`, angezeigt `d`" — genau die
+am `%`-Prompt reproduzierbar den Fall „gesendet `0x63`, angezeigt `C`" — genau die
 Konstellation, die diesen Feature Request ausgelöst hat.
