@@ -322,6 +322,11 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_prn_listing PRIVATE GTest::gtest_main)
         target_include_directories(k1520_test_prn_listing PRIVATE ${CMAKE_SOURCE_DIR})
 
+        # Header-only MACRO-80 .MAC/.ASM source assembler + offset matcher (tools/mac_listing.h)
+        add_executable(k1520_test_mac_listing tests/cpp/test_mac_listing.cpp)
+        target_link_libraries(k1520_test_mac_listing PRIVATE GTest::gtest_main)
+        target_include_directories(k1520_test_mac_listing PRIVATE ${CMAKE_SOURCE_DIR})
+
         # Header-only call-stack tracker for the history backtrace (tools/callstack_tracker.h)
         add_executable(k1520_test_callstack_tracker tests/cpp/test_callstack_tracker.cpp)
         target_link_libraries(k1520_test_callstack_tracker PRIVATE GTest::gtest_main)
@@ -401,6 +406,7 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_k5122)
         gtest_discover_tests(k1520_test_z80)
         gtest_discover_tests(k1520_test_prn_listing)
+        gtest_discover_tests(k1520_test_mac_listing)
         gtest_discover_tests(k1520_test_callstack_tracker)
         gtest_discover_tests(k1520_test_coverage_diff)
         gtest_discover_tests(k1520_test_dbg_commands)
@@ -535,6 +541,138 @@ if(BUILD_K1520)
         add_cli_test(cli_dbg_examine_count "6000: 41 42 43 44"
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'e 0x6000 41 42 43 44\\nx 0x6000 4\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
 
+        # feature_request_source_annotation: Fremdquellen-Annotation, Datei↔RAM-Abgleich,
+        # IM-2-Vektortabelle, alle drei PIOs, Uhrenwahl.
+        # `.MAC`-Quelltext (ORG/Opcode-Längen) wird assembliert und annotiert die Disasm.
+        add_cli_test(cli_dbg_lst_mac "1002: E6 0F +AND 0FH +; AND 0FH"
+            "D=$(mktemp); M=$(mktemp --suffix=.mac); cp ${_bbdisk} \$D; printf '\\tORG\\t1000H\\n\\tLD\\tA,05H\\n\\tAND\\t0FH\\n' > \$M; printf 'e 0x1000 3E 05 E6 0F\\nlst %s\\nu 0x1000 2\\nq\\n' \$M | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D \$M")
+        # dump A N datei  →  verify datei @A  muss 100 % identisch sein (Rundlauf).
+        add_cli_test(cli_dbg_verify_roundtrip "64 Bytes @0100, 64 identisch .100.0 %."
+            "D=$(mktemp); F=$(mktemp); cp ${_bbdisk} \$D; printf 'g 1000000\\ndump 0x0100 64 %s\\nverify %s @0x0100\\nq\\n' \$F \$F | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D \$F")
+        # ivt: IM-2-Tabelle inkl. Fallback-Zeile für den geräteloses-0xFF-Fall.
+        add_cli_test(cli_dbg_ivt "0xFF +0x[0-9A-F]+ +[0-9A-F]+ +.Fallback: kein Geraet."
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'g 5000000\\nivt\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # dev pio zeigt jetzt auch die beiden K5122-PIOs (vorher nur die BS-PIO).
+        add_cli_test(cli_dbg_dev_pio "K5122 ctrl-PIO .Ports 10-13."
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'g 1000000\\ndev pio\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # Lauf-Budgets zählen die Maschinenuhr; `clock` zeigt beide Stände.
+        add_cli_test(cli_dbg_clock "Lauf-Uhr = Maschine .beide CPUs.   ZVE1=[0-9]+  Maschine=[0-9]+"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'g 1000000\\nclock\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+
+        # ── Debugger-Regressionsnetz ───────────────────────────────────────────
+        # Der Dispatch in k1520dbg.cpp ist eine ~90-Zweige-if/else-Kette in EINEM
+        # main(); die Header-Bausteine (expr_eval, event_bp, mem_watch, prn/mac_listing,
+        # callstack_tracker, until_cond) sind unit-getestet, die Kommandos selbst waren
+        # es bis auf eine Handvoll nicht. Die folgenden Tests sichern (a) die Existenz
+        # ALLER Kommandos (Smoke) und (b) den Wortlaut der Meldungen ab, auf die
+        # Skripte/Agenten und die Doku sich stützen.
+        #
+        # Determinismus-Regel: NICHT auf zyklusabhängigen Maschinenzustand prüfen
+        # (das brach schon einmal bei einer Timing-Änderung), sondern auf die
+        # Kommando-Semantik — Zustand wird per `e`/`set`/`gu`/Breakpoint gezielt
+        # hergestellt statt „nach N Takten".
+
+        # (a) Dispatch-Smoke: jedes Kommando einmal. Schlägt fehl, sobald ein Zweig
+        #     verschwindet (Tool meldet das Kommando als unbekannt) oder das Tool
+        #     abstürzt. Läuft in einem eigenen Temp-Verzeichnis (das Skript schreibt
+        #     Trace-/State-Dateien).
+        add_test(NAME cli_dbg_all_commands_smoke COMMAND sh -c
+            "T=$(mktemp -d); cd \$T; cp ${_bbdisk} disk.img; $<TARGET_FILE:k1520dbg> disk.img -x ${CMAKE_SOURCE_DIR}/tests/dbg/all_commands_smoke.dbg < /dev/null; r=\$?; cd /; rm -rf \$T; test \$r -eq 0")
+        set_tests_properties(cli_dbg_all_commands_smoke PROPERTIES
+            FAIL_REGULAR_EXPRESSION "unknown command" TIMEOUT 300)
+
+        # (b0) break-before-execute (k1520dbg.md §2): der Halt greift VOR der Instruktion.
+        # Die Haltezeile UND jede Folgeabfrage müssen denselben PC/Taktstand zeigen —
+        # vorher lief die Instruktion noch zu Ende und `r`/`rj`/`where` sahen den
+        # Folgezustand (PC=0136 statt 0135).
+        # Haltezeile, die Register des Halts und ein anschließendes `r` müssen
+        # dieselbe Adresse UND denselben Taktstand zeigen (drei Zeilen in Folge).
+        # Haltezeile, die Register des Halts und ein anschließendes `r` müssen
+        # DIESELBE Adresse zeigen. Hätte die Instruktion (0135: LD A,(HL)) noch
+        # ausgeführt, stünde `r` auf 0136 — genau der behobene Fehler.
+        add_cli_test(cli_dbg_stop_is_before_instruction "bp ZVE1 : ZVE1 PC=0135\n  ZVE1 PC=0135 .*\n  => 0135: 7E .*\n  state: .*\n.*ZVE1 PC=0135 .*\n  => 0135: 7E "
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\ng\\nr\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        add_cli_test(cli_dbg_stop_json_matches_banner ".pc.:.0x0135."
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\ng\\nrj\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # Fortsetzen VON einem Breakpoint darf nicht sofort wieder dort halten
+        # (sonst käme `g` nie von der Stelle): 3× `g` = 3 Treffer derselben Schleife.
+        add_cli_test(cli_dbg_resume_past_breakpoint "0135  hits=3"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\ng\\ng\\ng\\nbl\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # `s` muss vorankommen UND (gdb-Semantik) den NÄCHSTEN Befehl zeigen.
+        add_cli_test(cli_dbg_step_shows_next_instruction "=> 0136: B7 +OR A\n.*\n.*\n  => 0137: 3E 87 +LD A,87H"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\ng\\ns\\ns\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # breti: nach dem Halt auf einem RETI muss `g` das nächste finden, nicht dasselbe.
+        add_cli_test(cli_dbg_resume_past_reti "RETI : ZVE1 PC=0090\n.*\n.*\n.*\n.*ran [0-9]+ cyc.*\n.. RETI : ZVE1 PC=0090"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'breti on\\ng\\ng\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+
+        # (b1) Neue Diagnose-Ausgaben (feature_request_source_annotation).
+        # bint nennt jetzt Vektor + Quellbaustein + aufgelöste Tabellenadresse.
+        add_cli_test(cli_dbg_bint_vector_device "ISR 007A  Vektor=B8 von K2526 BS-PIO  Tabelle .00B8."
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'bint\\ng\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # itrace schreibt Vektor + Gerät je Quittung mit.
+        add_cli_test(cli_dbg_itrace_device "ISR 007A SP=[0-9A-F]+ vec=B8 dev=K2526 BS-PIO"
+            "D=$(mktemp); T=$(mktemp); cp ${_bbdisk} \$D; printf 'itrace %s\\ng 300000\\nitrace off\\nq\\n' \$T | $<TARGET_FILE:k1520dbg> \$D >/dev/null 2>&1; cat \$T; rm -f \$D \$T")
+        # u bricht in unbeschriebenem Speicher ab statt 40 Zeilen RST 38H zu drucken.
+        add_cli_test(cli_dbg_u_unwritten_hint "ab C000 unbeschriebener Speicher .0xFF. — Ausgabe abgebrochen"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'u 0xC000 40\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # Ein zweites u-Argument > 256 ist als ENDadresse gemeint — und wird so gemeldet.
+        add_cli_test(cli_dbg_u_end_address "2. Argument als END-Adresse 6003 gelesen"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'e 0x6000 00 00 00 00\\nu 0x6000 0x6003\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # clock schaltet die Lauf-Uhr auf die alte ZVE1-Zählung zurück.
+        add_cli_test(cli_dbg_clock_zve1 "Lauf-Uhr = ZVE1   ZVE1=[0-9]+  Maschine=[0-9]+"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'clock zve1\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # verify meldet Quote UND die konkrete Abweichung (hier absichtlich erzeugt).
+        add_cli_test(cli_dbg_verify_mismatch "0104  Datei D3   RAM AA"
+            "D=$(mktemp); F=$(mktemp); cp ${_bbdisk} \$D; printf 'g 500000\\ndump 0x0100 32 %s\\ne 0x0104 AA\\nverify %s @0x0100\\nq\\n' \$F \$F | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D \$F")
+        # @auto darf einen schwachen Treffer NICHT anwenden (sonst lägen die Kommentare
+        # auf fremdem Code) — die Verweigerung ist die eigentliche Zusage.
+        # Aufbau: 24 Bytes stehen im RAM (findbarer Anker), die folgenden 30 nicht →
+        # 44 % Übereinstimmung = „anderer Build" ⇒ Versatz darf NICHT angewandt werden.
+        add_cli_test(cli_dbg_lst_auto_reject "44.4 %.*\n.*Versatz NICHT angewandt .zu unsicher."
+            "D=$(mktemp); M=$(mktemp --suffix=.mac); cp ${_bbdisk} \$D; printf '\\tORG\\t6000H\\n\\tDB\\t3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H\\n\\tDB\\t0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0\\n' > \$M; printf 'e 0x6000 3E 05 3E 05 3E 05 3E 05 3E 05 3E 05 3E 05 3E 05 3E 05 3E 05 3E 05 3E 05\\nlst %s@auto\\nq\\n' \$M | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D \$M")
+
+        # (b2) Länger bestehende Kommandos ohne bisherige Absicherung.
+        add_cli_test(cli_dbg_cond_bp_list "0135  hits=0 if A==0"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135 if A==0\\nbl\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        add_cli_test(cli_dbg_bp_delete "ZVE1 breakpoints:\n    .none."
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\nbd 0x0135\\nbl\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        add_cli_test(cli_dbg_snap_diff "RAM 6000..6001 .2 B."
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'snap a\\ne 0x6000 11 22\\nsnap b\\nsnap diff a b\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # savestate/loadstate: nach dem Zwischenlauf muss loadstate genau den
+        # gesicherten Punkt (PC=013B) wiederherstellen.
+        add_cli_test(cli_dbg_savestate_roundtrip "state loaded ← .*\n  => 0139:"
+            "D=$(mktemp); S=$(mktemp); cp ${_bbdisk} \$D; printf 'gu 0x0139\\nsavestate %s\\ng 200000\\nloadstate %s\\nq\\n' \$S \$S | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D \$S")
+        add_cli_test(cli_dbg_logpoint ".lp. c[0-9]+ +0135: 7E +LD A,.HL.  A="
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'logpoint 0x0135 A\\ng 200000\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        add_cli_test(cli_dbg_trace_file "T1 c[0-9]+ +013[0-9]:"
+            "D=$(mktemp); T=$(mktemp); cp ${_bbdisk} \$D; printf 'trace %s 0x0130 0x0140\\ng 200000\\ntrace off\\nq\\n' \$T | $<TARGET_FILE:k1520dbg> \$D >/dev/null 2>&1; head -3 \$T; rm -f \$D \$T")
+        add_cli_test(cli_dbg_hist "ZVE1 top .[0-9]+ instrs, [0-9]+ distinct PCs."
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'hist 200000\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        add_cli_test(cli_dbg_where_json ".zve1_pc.:.0x[0-9A-F]+.,.zve2_pc.:.*.busmaster.:.ZVE1."
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'g 200000\\nwhere --json\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # Symbol → Disasm-Annotation UND als Breakpoint-Adresse verwendbar.
+        add_cli_test(cli_dbg_symbols "0135 <START>: 7E +LD A,.HL."
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'sym add START 0x0135\\nu 0x0135 1\\nb START\\nbl\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # alias + source: das Kürzel muss auch aus einer gesourceten Datei greifen.
+        add_cli_test(cli_dbg_alias_source "6000: 3E 05 +LD A,05H"
+            "D=$(mktemp); S=$(mktemp); cp ${_bbdisk} \$D; printf 'zeig 0x6000 1\\n' > \$S; printf 'e 0x6000 3E 05\\nalias zeig u\\nsource %s\\nq\\n' \$S | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D \$S")
+        # Range-Watchpoint mit Bedingung feuert auf den Schreibzugriff im Bereich.
+        add_cli_test(cli_dbg_watch_range ".wp. c[0-9]+ +WR .6006.=42"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'wp 0x6005..0x6007 changed\\ne 0x6006 42\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # I/O-Watch: erster Port-11-Schreibzugriff des Lade-ROMs (Steuerwort 7FH @00E1).
+        add_cli_test(cli_dbg_io_watch ".io. c[0-9]+ +OUT .11H.=7F  ZVE1.PC=00E1"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'iow 0x11\\ng 150000\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        add_cli_test(cli_dbg_dev_ctc "CTC .K2526.  vecBase=[0-9A-F]+  IEI=[01] IEO=[01]"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'g 200000\\ndev ctc\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        add_cli_test(cli_dbg_mark_relative "mark: origin=[0-9]+ .now."
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'g 100000\\nmark\\ng 50000\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # disk verify braucht ein selbstbeschreibendes Image (.hfe) — Medien-Health.
+        add_cli_test(cli_dbg_disk_verify "164 Spuren, 2560 Sektoren, 0 CRC-Fehler"
+            "D=$(mktemp --suffix=.hfe); cp ${CMAKE_SOURCE_DIR}/disks/scpx_boot.hfe \$D; printf 'disk verify\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+        # Step-over: `n` über ein 1-Byte-LD hinweg landet auf dem Folgebefehl.
+        add_cli_test(cli_dbg_step_over "=> 0137: 3E 87 +LD A,87H"
+            "D=$(mktemp); cp ${_bbdisk} \$D; printf 'b 0x0135\\ng\\nn\\nn\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
+
         # boot_trace — standalone runs.
         add_cli_test(cli_bt_until "MET at cycle [0-9]+ .PC=0x0168."
             "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' \$D; rm -f \$D")
@@ -542,6 +680,18 @@ if(BUILD_K1520)
         # Deckt zugleich die per-Instruktions-Pollung (sample_count, NICHT cycles_done) ab.
         add_cli_test(cli_bt_until_screen "MET at cycle [0-9]+"
             "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until 'screen ~ \"Bootloader\"' \$D; rm -f \$D")
+        # --itrace: Vektor + Quellgerät je Quittung (feature_request_source_annotation §5).
+        add_cli_test(cli_bt_itrace_device "INT,0x[0-9A-F]+,0x[0-9A-F]+,0x[0-9A-F]+,0x[0-9A-F][0-9A-F],K2526"
+            "D=$(mktemp); T=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --itrace \$T --until '[0x03F8]==3' \$D >/dev/null 2>&1; cat \$T; rm -f \$D \$T")
+        # --watchio zeichnet ab Takt 0 auf und nennt die schreibende CPU (§8).
+        add_cli_test(cli_bt_watchio_origin "OUT.11.=[0-9A-F]+  von=ZVE1"
+            "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --watchio 0x11 -c 300000 \$D; rm -f \$D")
+        # Fremdquelle (.MAC) auch in boot_trace: wird assembliert statt geparst.
+        add_cli_test(cli_bt_lst_mac "Quelle: .*[.]mac — 2 Zeile.n. assembliert .1000[.][.]1002."
+            "D=$(mktemp); M=$(mktemp --suffix=.mac); cp ${_bbdisk} \$D; printf '\\tORG\\t1000H\\n\\tLD\\tA,05H\\n\\tAND\\t0FH\\n' > \$M; $<TARGET_FILE:boot_trace> -L /dev/null -l \$M -c 100000 \$D; rm -f \$D \$M")
+        # Per-Instruktions-CSV (Kopfzeile + erste Instruktion des Lade-ROMs).
+        add_cli_test(cli_bt_csv "0,0,ZVE1,0x0000,00,.NOP."
+            "D=$(mktemp); C=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --csv \$C --until 'PC==0x0437' \$D >/dev/null 2>&1; head -3 \$C; rm -f \$D \$C")
         # --coverage BEFORE --until so it doesn't consume the disk path as its CSV file.
         add_cli_test(cli_bt_coverage "Code coverage .ZVE1."
             "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --coverage --until 'PC==0x0437' \$D; rm -f \$D")
@@ -549,7 +699,9 @@ if(BUILD_K1520)
         add_cli_test(cli_bt_diff "only-A=1 .*only-B=1"
             "A=$(mktemp); B=$(mktemp); printf 'cpu,pc,hits\\nZVE1,0x0100,1\\nZVE1,0x0200,1\\n' > \$A; printf 'cpu,pc,hits\\nZVE1,0x0200,1\\nZVE1,0x0300,1\\n' > \$B; $<TARGET_FILE:boot_trace> --diff \$A \$B; rm -f \$A \$B")
         # save state at a condition, then resume from it (ROM mapping reproduced).
-        add_cli_test(cli_bt_savestate "resuming at PC=0x0169"
+        # PC = GENAU die Adresse, an der die Bedingung gemeldet wurde (break-before-execute,
+        # s. k1520dbg.md §2) — vor dieser Semantik war es die Folgeinstruktion (0x0169).
+        add_cli_test(cli_bt_savestate "resuming at PC=0x0168"
             "D=$(mktemp); S=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' --save-state \$S \$D >/dev/null 2>&1; $<TARGET_FILE:boot_trace> -L /dev/null --load-state \$S -c 2000 \$D; rm -f \$D \$S")
 
         # Exit-code semantics (for scripted/agent branching) — assert the code via `test`.
@@ -562,10 +714,12 @@ if(BUILD_K1520)
         set_tests_properties(cli_bt_exit_met cli_bt_exit_notmet cli_dbg_exit_badisk PROPERTIES TIMEOUT 120)
 
         # machine-readable JSON output (agent ergonomics).
-        # Golden-Register-Snapshot bei 5M Zyklen.  Die exakte Zeitlage hängt vom
-        # Floppy-Timing ab (u. a. Motor-Spin-up, K5122_MOTOR_SPINUP_MS) — bei
-        # Timing-Änderungen hier den neuen deterministischen Wert eintragen.
-        add_cli_test(cli_dbg_json "\"pc\":\"0x1E52\".*\"hl\":\"0x231A\""
+        # Golden-Register-Snapshot bei 5M Zyklen der MASCHINENUHR (beide CPUs; seit
+        # FR §7 die Voreinstellung von `g` — `clock zve1` zählt wieder wie früher nur
+        # ZVE1).  Die exakte Zeitlage hängt zusätzlich vom Floppy-Timing ab (u. a.
+        # Motor-Spin-up, K5122_MOTOR_SPINUP_MS) — bei Timing-Änderungen hier den
+        # neuen deterministischen Wert eintragen.
+        add_cli_test(cli_dbg_json "\"pc\":\"0x0EA7\".*\"hl\":\"0x2137\""
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'g 5000000\\nrj\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
         add_cli_test(cli_bt_json "\"boot_reached\":false.*\"until\":.\"set\":true,\"met\":true"
             "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' --json \$D; rm -f \$D")

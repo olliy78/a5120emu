@@ -177,12 +177,25 @@ void K1520Bus::updateInterruptChain() {
 
 uint8_t K1520Bus::interruptAcknowledge() {
     int_dirty_ = true;   // IUS gesetzt → Chain neu bewerten
+    ++last_int_ack_.count;
     for (auto* dev : int_chain_)
         if (dev->hasInterrupt()) {
+            // Namen VOR getVector() holen — die Quittung löscht die Anforderung.
+            const char* who = dev->intDeviceName();
             uint8_t vec = dev->getVector();
-            LOG_DEBUG("K1520Bus", "INT-Quittung: Vektor=0x%02X", vec);
+            last_int_ack_.vector   = vec;
+            last_int_ack_.spurious = false;
+            last_int_ack_.device   = who;
+            LOG_DEBUG("K1520Bus", "INT-Quittung: Vektor=0x%02X (%s)", vec, who);
             return vec;
         }
+    // Kein Gerät hat geantwortet: der 0xFF ist der offene Bus, KEIN programmierter
+    // Vektor.  Ein Fremd-OS ohne Tabelleneintrag für 0xFF läuft damit ins Leere —
+    // deshalb hier ausdrücklich als „spurious" protokolliert (Debugger `bint`).
+    last_int_ack_.vector   = 0xFF;
+    last_int_ack_.spurious = true;
+    last_int_ack_.device   = nullptr;
+    LOG_DEBUG("K1520Bus", "INT-Quittung: SPURIOUS (kein Gerät) → 0xFF");
     return 0xFF;
 }
 

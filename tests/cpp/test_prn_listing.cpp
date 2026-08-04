@@ -4,6 +4,8 @@
 // die Quellfeld-Erkennung (mit Label / label-los hinter Tab) und die db/DB-Falle.
 #include "tools/prn_listing.h"
 #include <gtest/gtest.h>
+#include <fstream>
+#include <cstdio>
 
 using prnlst::parseLine;
 
@@ -156,4 +158,34 @@ TEST(PrnListing, LoadAppliesOffsetToKeys){
     EXPECT_EQ(b.find(0xD200), nullptr);
     ASSERT_NE(b.find(0xD000), nullptr);
     EXPECT_EQ(*b.find(0xD000), "BIOS00: JP kaltst");
+}
+
+// --- Objektbytes (für den Versatz-Abgleich `@auto`) --------------------------
+
+TEST(PrnListing, ExtractsObjectBytes){
+    uint16_t a; std::string src; std::vector<uint8_t> b;
+    // MACRO-80 druckt 16-Bit-Operanden als EIN Wort: "C3 E860" = C3 60 E8.
+    ASSERT_TRUE(parseLine("  D100    C3 E860               BIOS00: JP\tkaltst", a, src, &b));
+    EXPECT_EQ(a, 0xD100);
+    EXPECT_EQ(b, (std::vector<uint8_t>{0xC3,0x60,0xE8}));
+}
+
+TEST(PrnListing, ExtractsObjectBytesOnePerColumn){
+    uint16_t a; std::string src; std::vector<uint8_t> b;
+    // Selbst erzeugte Listings (zre.prn) drucken jedes Byte einzeln.
+    ASSERT_TRUE(parseLine("0001  01 00 08      \tLD BC,0800h\t\t;[ZVE1] Zaehler", a, src, &b));
+    EXPECT_EQ(a, 0x0001);
+    EXPECT_EQ(b, (std::vector<uint8_t>{0x01,0x00,0x08}));
+}
+
+TEST(PrnListing, LoadCollectsBytesUnderRuntimeAddresses){
+    const char* p = "/tmp/k1520_prn_bytes_test.prn";
+    { std::ofstream f(p); f << "  0100    C3 0605               START: JP\tX\n"; }
+    prnlst::Listing l;
+    ASSERT_EQ(l.load(p, 0x0400, /*want_bytes=*/true), 1);
+    ASSERT_EQ(l.bytes_by_addr.size(), 3u);
+    EXPECT_EQ(l.bytes_by_addr[0x0500], 0xC3);
+    EXPECT_EQ(l.bytes_by_addr[0x0501], 0x05);
+    EXPECT_EQ(l.bytes_by_addr[0x0502], 0x06);
+    std::remove(p);
 }

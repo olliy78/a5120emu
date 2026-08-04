@@ -1498,3 +1498,63 @@ TEST_F(Z80Test, Timing_CyclesAccumulate) {
     cpu.step(); cpu.step(); cpu.step();
     EXPECT_EQ(cpu.cycles, 15u);
 }
+
+// ─── break-before-execute (Debugger-Halt VOR der Instruktion) ─────────────────
+
+/**
+ * @test Z80Test/AbortBeforeExecute_LeavesStateUntouched
+ * @brief abortBeforeExecute==true → step() führt die Instruktion NICHT aus.
+ * @details Grundlage des Debugger-Halts: der Trace-Callback sieht den Zustand vor
+ *   der Instruktion; fordert er einen Halt an, muss genau dieser Zustand stehen
+ *   bleiben (sonst zeigt die Haltezeile den einen und jede Folgeabfrage den
+ *   nächsten Zustand).
+ * @par Pass criterion  step() liefert 0; PC, A, R und cycles unverändert.
+ */
+TEST_F(Z80Test, AbortBeforeExecute_LeavesStateUntouched) {
+    load({0x3E, 0xAB});                       // LD A,0xAB
+    cpu.A = 0x11;
+    uint8_t  r_before  = cpu.R;
+    uint64_t cyc_before = cpu.cycles;
+    uint16_t pc_seen = 0xFFFF;
+    cpu.traceCallback      = [&](const Z80& z){ pc_seen = z.PC; };
+    cpu.abortBeforeExecute = []{ return true; };
+
+    EXPECT_EQ(cpu.step(), 0);                 // keine Takte verbraucht
+    EXPECT_EQ(pc_seen, 0x0000);               // Callback hat die Instruktion gesehen …
+    EXPECT_EQ(cpu.PC, 0x0000);                // … sie ist aber nicht gelaufen
+    EXPECT_EQ(cpu.A, 0x11);
+    EXPECT_EQ(cpu.R, r_before);               // auch der Refresh-Zähler steht still
+    EXPECT_EQ(cpu.cycles, cyc_before);
+}
+
+/**
+ * @test Z80Test/AbortBeforeExecute_FalseRunsNormally
+ * @brief Liefert die Rückfrage false, läuft die Instruktion wie immer.
+ * @par Pass criterion  A=0xAB, PC=2, 7 Takte.
+ */
+TEST_F(Z80Test, AbortBeforeExecute_FalseRunsNormally) {
+    load({0x3E, 0xAB});
+    int calls = 0;
+    cpu.traceCallback      = [&](const Z80&){ ++calls; };
+    cpu.abortBeforeExecute = []{ return false; };
+    EXPECT_EQ(cpu.step(), 7);
+    EXPECT_EQ(calls, 1);
+    EXPECT_EQ(cpu.A, 0xAB);
+    EXPECT_EQ(cpu.PC, 0x0002);
+}
+
+/**
+ * @test Z80Test/AbortBeforeExecute_IgnoredWithoutTraceCallback
+ * @brief Ohne traceCallback wird die Rückfrage gar nicht erst gestellt.
+ * @details Der Produktivlauf (GUI/Emulation) installiert keinen Trace-Callback und
+ *   soll die Kosten der Rückfrage nicht tragen — und keinesfalls anhalten.
+ * @par Pass criterion  Instruktion läuft; die Rückfrage wurde nie aufgerufen.
+ */
+TEST_F(Z80Test, AbortBeforeExecute_IgnoredWithoutTraceCallback) {
+    load({0x3E, 0xAB});
+    int asked = 0;
+    cpu.abortBeforeExecute = [&]{ ++asked; return true; };
+    EXPECT_EQ(cpu.step(), 7);
+    EXPECT_EQ(asked, 0);
+    EXPECT_EQ(cpu.A, 0xAB);
+}

@@ -51,9 +51,9 @@ boot_trace [DISK] [optionen]
 | `-v` | **alle** ZVE2-Instruktionen (statt nur der ersten ~600) |
 | `-w LO:HI` / `-z LO:HI` / `-W <n>` | ZVE1- / ZVE2-Instruktionsfenster tracen (disassembliert) / Zeilencap |
 | `--fold` | **Schleifen-Kollaps** für `-w`/`-z`: erkennt online einen sich wiederholenden **PC-Zyklus** (Periode ≤ 32, nur PC — Register egal) und fasst weitere Durchläufe zu `↻ loop @A period=P ×N` zusammen. Der Loop-Rumpf wird bei den ersten zwei Durchläufen (mit echten Registern) gedruckt, danach gefaltet. Zerschlägt sowohl Idle-/Poll-Spins **als auch registerändernde Hot-Loops** (IDAM-Matcher, Delay-Counter — der 12 000-Zeilen-Fall). |
-| `--itrace <file>` | **Interrupt-Trace**: jede angenommene INT/NMI als CSV-Zeile (`seq,cyc,kind,int_pc,isr_pc,sp`). Für Interrupt-Timing-Bugs (z. B. CTC-INT, der den SCPX-Mini-Stack korrumpiert) — gegen ein `-w`/`--log-cycle`-Fenster korrelieren. |
+| `--itrace <file>` | **Interrupt-Trace**: jede angenommene INT/NMI als CSV-Zeile (`seq,cyc,kind,int_pc,isr_pc,sp,vector,device`). `vector`/`device` kommen aus der Bus-Quittung; `device=SPURIOUS` heißt **kein Gerät hat geantwortet** (der 0xFF ist der offene Bus, kein programmierter Vektor) — genau die Verwechslung, an der ein Fremd-OS-Interruptsturm hängt. Für Interrupt-Timing-Bugs gegen ein `-w`/`--log-cycle`-Fenster korrelieren. |
 | `-d LO:HI [datei]` | RAM-Bereich am Ende dumpen (optional in Datei) |
-| `--watch a,b,…` / `--watchio p,q,…` | Schreibzugriffe auf RAM-Adressen / Zugriffe auf I/O-Ports mitloggen |
+| `--watch a,b,…` / `--watchio p[:zve1\|zve2],…` | Schreibzugriffe auf RAM-Adressen / I/O-Ports mitloggen — **ab Takt 0** (also inkl. Boot-ROM; die Zahl stimmt jetzt mit dem Port-Histogramm überein) und mit **`von=ZVE1/ZVE2`** (Bus-Master, nicht raten). Optionaler CPU-Filter je Port: `--watchio 0x11:zve2` |
 | `-l <f.prn>[@off]` | `.prn`-Listing → Trace-Zeilen & Histogramme mit kommentiertem Original-Quelltext annotieren (wiederholbar, §4) |
 | Mount-Modus | **Default = Copy-on-Write** (Disk wird in Temp kopiert, nur die Kopie gemountet, Writes verworfen, Temp beim Beenden gelöscht → committetes Fixture strukturell sicher, kein `mktemp`-Ritual). `--rw` = Original schreibend · `--read-only`/`--ro` = schreibgeschützt · `--cow` = COW explizit |
 
@@ -93,9 +93,13 @@ dumpen/tracen, und mit `--save-state`, um dort einen Checkpoint zu setzen.
 
 ## 4. Maschinenlesbare Ausgaben: `.prn`, Coverage, Diff, CSV
 
-**`.prn`-Annotation (`-l`).** Hängt an jede Trace-Zeile und jeden PC im Histogramm die
-kommentierte Original-Quellzeile aus dem MACRO-80-Listing an (`-l bios.prn`). Wiederholbar;
-Offset `@OFFSET` reloziert die Listing-Adressen (Details wie bei `k1520dbg`, dort §6).
+**Quell-Annotation (`-l`).** Hängt an jede Trace-Zeile und jeden PC im Histogramm die
+kommentierte Original-Quellzeile an (`-l bios.prn`). Wiederholbar; Offset `@OFFSET`
+reloziert die Adressen (Details wie bei `k1520dbg`, dort §6). Neben `.prn`-Listings werden
+auch **Fremdquellen** `.MAC`/`.ASM`/`.z80`/`.src` angenommen: sie werden von
+`tools/mac_listing.h` assembliert (Opcode-Längen, `ORG`/`EQU`/`DB`/`DW`/`DS`, `Mxxxx`-
+Adressanker) und ergeben dieselbe Tabelle — s. `k1520dbg.md` §6.1. Den Ladeversatz
+selbst bestimmen (`@auto`) kann nur `k1520dbg` (dazu muss die Maschine schon laufen).
 
 ```
   0x0420 :   7422     ; jr z,coitn2 ;;nein

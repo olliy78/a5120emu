@@ -110,7 +110,18 @@ public:
 class InterruptSlave {
 public:
     virtual ~InterruptSlave() = default;
-    
+
+    /**
+     * @brief Name der Interruptquelle für Diagnose-Ausgaben (Debugger `bint`/`itrace`).
+     *
+     * Karten liefern hier den **gerade anfordernden Baustein** (z.B. "K5122 ctrl-PIO"),
+     * nicht nur den Kartennamen — die Zuordnung Vektor→Baustein ist die eigentliche
+     * Frage bei einer unerwarteten Quittung.  Muss VOR getVector() abgefragt werden
+     * (getVector() löscht die Anforderung).
+     */
+    virtual const char* intDeviceName() const { return "?"; }
+
+
     /**
      * @brief Set the Interrupt Enable Input (/IEI) line.
      * 
@@ -281,6 +292,23 @@ public:
      * @return Interrupt vector (8-bit) to use with I register, or 0xFF if none
      */
     uint8_t interruptAcknowledge();
+
+    /**
+     * @brief Protokoll der letzten Interrupt-Quittung (Debugger `bint`/`itrace`).
+     *
+     * Der entscheidende Unterschied, den ein reines Vektor-Log verschluckt:
+     * `0xFF` kann ein **programmierter** Gerätevektor sein ODER der Bus-Fallback
+     * „kein Gerät hat geantwortet" (@ref spurious) — genau diese Verwechslung war
+     * die Wurzel des UDOS-Interruptsturms.
+     */
+    struct IntAck {
+        uint64_t    count    = 0;        ///< Zahl der Quittungen seit Reset
+        uint8_t     vector   = 0xFF;     ///< zuletzt gelieferter Vektor
+        bool        spurious = true;     ///< true: kein Gerät hatte eine Anforderung
+        const char* device   = nullptr;  ///< Quellgerät (Kartenname) oder nullptr
+    };
+    /** @brief Letzte Interrupt-Quittung (siehe @ref IntAck). */
+    const IntAck& lastIntAck() const { return last_int_ack_; }
 
     // ─── Signal control ──────────────────────────────────────────────────
     
@@ -510,6 +538,9 @@ private:
     bool memdi_          = false;  ///< /MEMDI: memory access disabled
     bool iodi_           = false;  ///< /IODI: I/O access disabled
     bool busrq_asserted_ = false;  ///< /BUSRQ: DMA device holds the bus (ZVE1 suspended)
+
+    /// Protokoll der letzten Interrupt-Quittung (Debugger, s. lastIntAck()).
+    IntAck last_int_ack_{};
 
     /// Optional trace callback for debugging
     BusTrace trace_cb_;

@@ -364,6 +364,13 @@ public:
      */
     void    onRETI() override;
 
+    /// @brief Anfordernder Baustein (Debugger): System-CTC oder BS-PIO.
+    const char* intDeviceName() const override {
+        if (ctc_.hasInterrupt())    return "K2526 CTC";
+        if (bs_pio_.hasInterrupt()) return "K2526 BS-PIO";
+        return "K2526";
+    }
+
     // ─── Lifecycle ─────────────────────────────────────────────────────────
 
     /**

@@ -32,6 +32,7 @@
 #include <cstdlib>
 #include <string>
 #include <map>
+#include <vector>
 #include <fstream>
 
 namespace prnlst {
@@ -66,7 +67,19 @@ inline std::string labelOf(const std::string& src){
     return "";
 }
 
+/**
+ * Wie @ref parseLine, liefert zusätzlich die emittierten Objektbytes der Zeile.
+ * @param bytes [out] die Bytes der linken Marge (für den Versatz-Abgleich `@auto`).
+ */
+inline bool parseLine(const std::string& line, uint16_t& addr, std::string& src,
+                      std::vector<uint8_t>* bytes);
+
 inline bool parseLine(const std::string& line, uint16_t& addr, std::string& src){
+    return parseLine(line, addr, src, nullptr);
+}
+
+inline bool parseLine(const std::string& line, uint16_t& addr, std::string& src,
+                      std::vector<uint8_t>* bytes){
     size_t i = 0, n = line.size();
     auto skipSp = [&]{ while(i<n && (line[i]==' '||line[i]=='\t')) ++i; };
 
@@ -87,6 +100,29 @@ inline bool parseLine(const std::string& line, uint16_t& addr, std::string& src)
     size_t blen = i - b0;
     bool byteFollows = (blen==2) && (i>=n || line[i]==' ' || line[i]=='\t');
     if (!byteFollows) return false;                  // equ/aset/Makro-Def/leer → raus
+
+    // --- Objektbytes einsammeln (optional; für den Versatz-Abgleich `@auto`) --
+    // Die linke Marge enthält NIE Tab/':' — die Byte-Tokens (exakt 2 Hexziffern)
+    // enden also spätestens am Quellfeld.
+    // MACRO-80 druckt 16-Bit-Operanden als EIN Wort ("C3 E860" für JP 0E860H) —
+    // ein 4-stelliges Token liefert also zwei Bytes (lo, hi).
+    if (bytes){
+        bytes->clear();
+        bytes->push_back((uint8_t)strtol(line.substr(b0,2).c_str(), nullptr, 16));
+        size_t k = i;
+        for (;;){
+            while (k<n && line[k]==' ') ++k;
+            size_t s0=k; while (k<n && isHexDigit(line[k])) ++k;
+            size_t tl = k - s0;
+            if (tl != 2 && tl != 4) break;
+            if (k<n && line[k]=='\'') ++k;                 // relozierbar-Marker
+            if (k<n && line[k]!=' ' && line[k]!='\t') break;
+            long v = strtol(line.substr(s0,tl).c_str(), nullptr, 16);
+            if (tl == 2) bytes->push_back((uint8_t)v);
+            else { bytes->push_back((uint8_t)(v & 0xFF)); bytes->push_back((uint8_t)((v>>8)&0xFF)); }
+            if (k>=n || line[k]=='\t') break;
+        }
+    }
 
     // --- Quellfeld-Anfang finden: erstes ':' (Label) ODER erster Tab ----------
     size_t tabPos = line.find('\t');
@@ -163,21 +199,29 @@ inline bool splitSpec(const std::string& spec, std::string& path, long& offset){
 /// Eine geladene .prn-Tabelle: Adresse → kommentierte Quellzeile.
 struct Listing {
     std::map<uint16_t, std::string> by_addr;
+    /// Objektbytes je (Laufzeit-)Adresse — nur gefüllt, wenn load(…, want_bytes=true).
+    std::map<uint16_t, uint8_t>     bytes_by_addr;
 
     /**
      * Lädt eine .prn-Datei.
      * @param path         Listing-Datei.
      * @param addr_offset  zu jeder Listing-Adresse addiert (für reloziert geladenen Code);
      *                     die Tabelle wird also unter der LAUFZEIT-Adresse abgelegt.
+     * @param want_bytes   zusätzlich die Objektbytes in @ref bytes_by_addr ablegen
+     *                     (Versatz-Abgleich `@auto`).
      * @return Zahl aufgenommener Code-Zeilen (-1 = Datei fehlt).
      */
-    int load(const std::string& path, long addr_offset = 0){
+    int load(const std::string& path, long addr_offset = 0, bool want_bytes = false){
         std::ifstream f(path);
         if (!f) return -1;
         std::string l; int n = 0;
         uint16_t a; std::string src;
+        std::vector<uint8_t> bs;
         while (std::getline(f, l)){
-            if (parseLine(l, a, src)){
+            if (parseLine(l, a, src, want_bytes? &bs : nullptr)){
+                if (want_bytes)
+                    for (size_t k=0;k<bs.size();++k)
+                        bytes_by_addr.emplace((uint16_t)((long)a + addr_offset + (long)k), bs[k]);
                 uint16_t key = (uint16_t)((long)a + addr_offset);
                 // Erste Quelle pro Adresse gewinnt (Conditionals/Makro-Reexpansion).
                 if (by_addr.find(key) == by_addr.end()){ by_addr[key] = src; ++n; }

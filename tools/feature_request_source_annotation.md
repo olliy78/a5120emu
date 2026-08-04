@@ -213,3 +213,132 @@ Instruktionen ausführt — kriecht diese Uhr, die Maschine läuft aber weiter.
   `0xBA`). Die Differenz war zunächst verwirrend und ließ mich den Vektor `0xBA`
   fälschlich für unprogrammiert halten. Entweder aufzeichnen ab Takt 0 oder in der
   Ausgabe vermerken, ab wann aufgezeichnet wurde.
+
+---
+
+## Umsetzungsstand (2026-08-04)
+
+Alle acht Punkte umgesetzt; verifiziert an genau dem Fall, der den Request ausgelöst hat
+(`disks/udos_boot_scp.hfe` + `~/projects/UDOS/UDOS_/*.MAC`).
+
+| Item | Status | Umsetzung / Verifikation |
+|------|--------|--------------------------|
+| 1 `.MAC`/`.ASM` als Annotationsquelle | ✅ | Neuer header-only Assembler **`tools/mac_listing.h`**: Opcode-Längen **und** Objektbytes aus reinem Quelltext (`ORG 0`, keine Adressspalte). Die Opcode-Tabelle wird zur Laufzeit **aus dem Disassembler `z80dis_min.h` rückwärts** erzeugt (jede Kodierung mit Platzhalter-Operanden dekodieren, Operandenfelder per Byte-Variation lokalisieren, normalisierten Text als Schlüssel) → per Konstruktion derselbe Befehlsvorrat wie in der Anzeige, keine handgepflegte Tabelle. Direktiven: `ORG`, `.PHASE`, `EQU`/`SET`, `DB`/`DEFB`/`DEFM`/`DC`, `DW`, `DS`, `END` + Listing-Pseudobefehle; `IF`/`ELSE`/`ENDIF` werden ignoriert (alle Zweige assembliert). Eingehängt in `k1520dbg -l/lst` **und** `boot_trace -l` → alle bestehenden Konsumenten (`u`, `bt`, Trace, PC-Histogramme, `list`) profitieren unverändert. **Verifikation:** alle 13 UDOS-Quellen assemblieren mit ≤2 unbekannten Zeilen (DEBUBC43/UNFLOPPY/POSIBC43/SYL*: **0**); `UDBC43PO.MAC` deckt sich zu **99,5 %** (197/198 Byte) mit dem laufenden RAM. |
+| 1b **`Mxxxx`-Adressanker** | ✅ | Umgesetzt als **Selbstkorrektur** statt als eigener Modus: der Adresszähler wird an jedem `M03F8:`-Label nachgeführt und die Zahl der Nachführungen gemeldet — ein einzelner nicht erkannter Befehl verschiebt damit nicht mehr alles Folgende. `@noanchor` schaltet ab, `@labels` erzwingt. |
+| 2 `@auto` (Versatz-Abgleich) | ✅ | `lst QUELLE@auto` / `-l QUELLE@auto`: mehrere relokationsunabhängige Bytefolgen (Adressoperanden sind als **Wildcards** markiert) werden im 64-KB-RAM gesucht, **alle** Kandidaten über das ganze Assemblat bewertet, der beste gewinnt. Ausgabe = Versatz + Trefferquote + Klartext-Urteil (`identischer Build` … `schwacher Treffer`). Unter 60 % wird der Versatz **nicht** angewandt (sonst lägen Kommentare auf fremdem Code). Gilt auch für `.prn` (deren Objektbytes liest `prn_listing.h` jetzt mit, inkl. der M80-Wort-Schreibweise `C3 E860`). **Verifikation:** `UDBC43PO.MAC@auto` → `Versatz +0 — identischer Build, 99,5 %`, Disasm danach zeilengenau annotiert; `DEBUBC43.MAC@auto` → `gleiches Programm, ANDERER Build (28,6 %)` + Verweigerung — genau die Frage „passt die Quelle zu diesem Image?". |
+| 3 `verify` / `dump` Datei↔RAM | ✅ | `verify <datei> @<adr> [len]` (Trefferquote + Liste `Adresse Datei-Byte RAM-Byte`, erste 32) und `dump <adr> <len> <datei>` (RAM→Binärdatei; die 2-Argument-Form bleibt der Hexdump). Guard: `cli_dbg_verify_roundtrip` (dump→verify = 100 %). |
+| 4 `dev pio` inkl. K5122-PIOs | ✅ | `dev pio [all\|bs\|k5122ctrl\|k5122data]`, Default `all`. Zwei Accessoren `K5122::ctrlPio()/dataPio()` + `A5120Machine::k5122CtrlPioState()/k5122DataPioState()`. **Verifikation:** genau die Zeile aus dem Request ist jetzt ein Einzeiler — `A mode=0 … vec=BA INT(en=1 pend=1 ius=1 iei=1)`. |
+| 5 Vektor + Quelle in `itrace`/`bint` | ✅ | `K1520Bus::interruptAcknowledge()` protokolliert Vektor + **Quellbaustein** (neues `InterruptSlave::intDeviceName()`, von K5122/K8025/K2526 auf den *anfordernden Chip* aufgelöst) und unterscheidet ausdrücklich **`SPURIOUS`** (kein Gerät hat geantwortet, 0xFF = offener Bus) vom programmierten Vektor 0xFF. `boot_trace --itrace`-CSV um `vector,device` erweitert; `bint` zeigt beim Halt Vektor + Gerät + aufgelöste Tabellenadresse. |
+| 6 `ivt` | ✅ | Neues Kommando; `A5120Machine::interruptSources()` faltet die Daisy-Chain baustein-fein auf (K5122 ctrl/data-PIO → K8025 SIO A33/A32/CTC A34 → K2526 CTC/BS-PIO) mit programmiertem Vektor, `IE/pending/ius/iei`. Ausgabe = Vektor → Tabellenadresse → Eintrag → Gerät → Status, inkl. Fallback-Zeile 0xFF und letzter Quittung. **Verifikation:** zeigt auf der UDOS-Disk `0xBA K5122 ctrl-PIO A` mit `IE=1` — die Ursache aus `doc/analyse_udos.md` in einem Screen. |
+| 7 `g` auf der Maschinenuhr | ✅ | `A5120Machine::machineCycles()`; alle Lauf-Kernel (`g`/`gu`/`gscreen`/`keyuntil`/`hist`) zählen sie. `clock [zve1\|machine]` schaltet um, Startbanner + `where` zeigen die Wahl und beide Stände. Dazu **Fortschrittszeile alle 2 s** (Takte, beide PCs, `/BUSRQ`) und **Ctrl-C** bricht nur den Lauf ab, nicht die Sitzung. |
+| 8a `u` in unbeschriebenem Speicher | ✅ | Nach 4 Zeilen `FF`/`00` bricht `u` mit „ab XXXX unbeschriebener Speicher" ab. Zusätzlich: ein zweites Argument > 256 wird als **End**adresse gelesen (und das gesagt) — die Verwechslung aus dem Request. |
+| 8b `--watchio` Herkunft + Filter | ✅ | Zeile enthält `von=ZVE1`/`von=ZVE2` (Bus-Master); Filter `--watchio 0x11:zve2`. |
+| 8c `--watchio` ab Takt 0 | ✅ | Ursache war das `boot_reached`-Gate (galt auch für `--watch`). Jetzt ab Takt 0 → die 6 fehlenden Boot-ROM-Zugriffe (u. a. das Setzen von Vektor `0xBA` bei `0x00EF`) erscheinen, die Zählung deckt sich mit dem Port-Histogramm. |
+
+**Neue/aktualisierte Tests:** `k1520_test_mac_listing` (17 GoogleTests: Zahlen/Ausdrücke,
+Opcode-Längen, repräsentative Kodierungen inkl. `FD CB d 76`, relative Sprünge, Direktiven,
+Anker, `@auto` inkl. Mehrdeutigkeit/Abweichung/Urteil), 3 neue `PrnListing`-Tests
+(Objektbytes, M80-Wortform), CLI-Black-Box: `cli_dbg_lst_mac`, `cli_dbg_verify_roundtrip`,
+`cli_dbg_ivt`, `cli_dbg_dev_pio`, `cli_dbg_clock`, `cli_bt_itrace_device`,
+`cli_bt_watchio_origin`. Angepasst: `cli_dbg_json` (Golden-Snapshot jetzt auf der
+Maschinenuhr). Stand: **689/689 ctest + 58/58 Legacy-Harness grün.**
+
+**Doku:** `tools/k1520dbg.md` (§1/§2/§4/§6.1 neu/Spickzettel), `tools/boot_trace.md`
+(`--itrace`, `--watchio`, `-l`), `tools/how_to_debug_and_trace.md` (**neues §0d
+„Fremd-Betriebssystem mit seinen Originalquellen sezieren"**, §0-Tabelle, §4, §5).
+
+**Bekannte Grenzen** (bewusst, dokumentiert): bedingte Assemblierung wird ignoriert (alle
+Zweige assembliert, Anker fangen den Versatz ab), keine Makro-Expansion; `@auto` liefert
+**einen** globalen Versatz — ist ein Fremd-Build nur *stellenweise* verschoben (eingefügte
+Befehle), gibt es keinen, und das Urteil sagt es. Bereichsweise hilft dann `verify`.
+
+---
+
+## Nachtrag: Regressionsnetz für den Debugger (2026-08-04)
+
+Anlass: Die Kommandos aus diesem Request (und den beiden früheren) hatten je einen
+Smoke-Test, der ~90-Zweige-Dispatch in `k1520dbg.cpp` sonst keinen. Ein Refactoring der
+if/else-Kette hätte also stillschweigend Kommandos verlieren können — beim wichtigsten
+Analysewerkzeug der teuerste denkbare Ausfall.
+
+**Umgesetzt:**
+
+- **`cli_dbg_all_commands_smoke`** — `tests/dbg/all_commands_smoke.dbg` ruft **jedes**
+  Kommando einmal auf (Reihenfolge so, dass nichts hängt). Der Test scheitert per
+  `FAIL_REGULAR_EXPRESSION`, sobald das Tool ein Kommando als unbekannt meldet, und per
+  Exit-Code bei Absturz. Negativprobe durchgeführt: ein umbenanntes Kommando lässt den
+  Test fallen.
+- **~30 gezielte CLI-Tests** auf den *Wortlaut* der Meldungen (nicht auf zyklusabhängigen
+  Maschinenzustand — die Golden-Register-Falle von `cli_dbg_json`): bedingter BP + `bl`,
+  `bd`, `snap diff`, `savestate`/`loadstate`-Rundlauf, `logpoint`, `trace`-Datei, `hist`,
+  `where --json`, Symbole, `alias`+`source`, Range-Watchpoint, I/O-Watch, `dev ctc`,
+  `mark`, `disk verify`, `n` (step-over) sowie alle neuen Ausgaben dieses Requests
+  (`bint`-Vektor/Gerät, `itrace`-Gerätespalte, `u`-Hinweise, `clock zve1`,
+  `verify`-Abweichung, `@auto`-Verweigerung) und für boot_trace `-l *.mac` + `--csv`.
+- **`MacListing.RoundTripsEveryDecodableInstruction`** — die stärkste Invariante:
+  für **jede** dekodierbare Kodierung (1160 Stück über alle Präfixe) wird das
+  Disassemblat als Quellzeile assembliert und wieder disassembliert; der Text muss
+  identisch sein. Prüft damit die von Hand geschriebene Hälfte des Assemblers
+  (Schlüssel-Normalisierung, Operanden-Klassifikation, Byte-Patching) über den ganzen
+  Befehlssatz statt an Stichproben.
+
+**Dabei gefundener + behobener Bug:** `SET` ist doppelt belegt — MACRO-80-Pseudobefehl
+(`NAME SET wert`) *und* Z80-Befehl `SET b,r`. `mac_listing.h` behandelte den Mnemonic
+unbedingt als Pseudobefehl → **jedes `SET b,r` verschwand spurlos aus dem Assemblat**.
+In `DEBUBC43.MAC` verschob das die Adressen an 7 Stellen, bis ein `Mxxxx`-Anker sie
+zurückzog (Nachführungen 7 → **1** nach dem Fix). Unterscheidung jetzt am Label; Guard
+`MacListing.SetIsInstructionWithoutLabelAndPseudoOpWithOne`.
+
+**Dabei gefundene, NICHT geänderte Unstimmigkeit** (dokumentiert in `k1520dbg.md` §8):
+Die Stopp-Zeile eines Breakpoints zeigt „break-before-execute" (`PC=0135`), die Maschine
+hat die Instruktion aber bereits ausgeführt — jede anschließende Abfrage (`r`, `rj`,
+`where`, `snap`, `savestate`) sieht `PC=0136`. Ursache: `Z80::step()` ruft den
+Trace-Callback vor der Ausführung, die Stopp-Anforderung wirkt erst an der nächsten
+Runde von `A5120Machine::run`. Eine Korrektur müsste die Abbruch-Semantik im Z80-Kern
+einführen und die Schrittzählung in `k1520dbg` umbauen — bewusst nicht im Rahmen dieses
+Requests, aber jetzt wenigstens dokumentiert statt überraschend.
+
+Stand danach: **725/725 ctest** (auch unter `-j8`) **+ 58/58 Legacy-Harness** grün.
+
+---
+
+## Nachtrag 2: break-before-execute wirklich hergestellt (2026-08-04)
+
+Die im vorigen Nachtrag nur dokumentierte Unstimmigkeit ist behoben.
+
+**Vorher:** Die Haltezeile zeigte `PC=0135`, die Maschine hatte die Instruktion aber schon
+ausgeführt — `r`/`rj`/`where`/`snap`/`savestate` sahen `PC=0136`. Ursache: `Z80::step()`
+ruft den Trace-Callback vor der Ausführung, die dort gesetzte Stopp-Anforderung wirkte
+aber erst an der nächsten Runde von `A5120Machine::run`.
+
+**Kern (3 Stellen):**
+- `Z80::abortBeforeExecute` — optionale Rückfrage direkt nach dem `traceCallback`; liefert
+  sie true, kehrt `step()` mit **0 Takten** zurück, ohne die Instruktion auszuführen
+  (PC, Register, Speicher, Refresh-Zähler unberührt). Gefragt wird **nur**, wenn überhaupt
+  ein `traceCallback` installiert ist — der GUI-/Produktivlauf zahlt nichts.
+- `A5120Machine` verdrahtet sie für beide CPUs auf `stop_` und behandelt `step()==0` in
+  `run()` als Laufende (keine Takt-, Floppy-, CTC- oder Tastatur-Zeit verbucht).
+- Watchpoints bleiben bewusst „Halt **nach** dem Zugriff": sie feuern aus dem Bus-Callback
+  mitten in der Instruktion, ein Abbruch würde den beobachteten Schreibzugriff aufheben.
+
+**Debugger (2 Folgeänderungen, ohne die der Halt sich selbst blockiert):**
+- **Fortsetzen von einem Haltepunkt**: die erste Instruktion nach `g`/`gu`/`n`/`gscreen`
+  ist einmalig von der Halteprüfung ausgenommen (PC-Breakpoints, `gu`, `breti`) — sonst
+  hielte `g` sofort wieder auf derselben Adresse. Genau das macht gdb auch.
+- **`s`/`s2`**: das Kontingent zählt jetzt *auszuführende* Instruktionen und hält **vor**
+  der (N+1)-ten. Nebeneffekt: `s` zeigt endlich den **nächsten** Befehl (gdb-Semantik)
+  statt des gerade ausgeführten.
+
+**Verhaltensänderungen (beide zum Besseren, Goldenwerte angepasst):** `savestate` an einem
+Haltepunkt sichert jetzt genau diesen Punkt — `cli_dbg_savestate_roundtrip` 013B → **0139**,
+`cli_bt_savestate` 0x0169 → **0x0168**. Sonst hat sich nichts verschoben (717 Tests).
+
+**Neue Guards:** `Z80Test.AbortBeforeExecute_LeavesStateUntouched` /
+`_FalseRunsNormally` / `_IgnoredWithoutTraceCallback`;
+`MachineRunControl.StopFromTraceCallbackHaltsBeforeTheInstruction` /
+`.TraceCallbackWithoutStopRunsNormally`; CLI: `cli_dbg_stop_is_before_instruction`,
+`cli_dbg_stop_json_matches_banner`, `cli_dbg_resume_past_breakpoint`,
+`cli_dbg_step_shows_next_instruction`, `cli_dbg_resume_past_reti`.
+
+**Doku:** `k1520dbg.md` §2 (neu formuliert) + §8 (Watchpoint-Ausnahme),
+`how_to_debug_and_trace.md` §11, `CLAUDE.md`.

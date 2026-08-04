@@ -871,6 +871,11 @@ int Z80::step() {
     // The callback captures PC (before fetch), all registers, and flags.
     if (traceCallback) {
         traceCallback(*this);
+        // Hat der Callback einen Halt angefordert, wird die Instruktion NICHT mehr
+        // ausgeführt (break-before-execute, s. abortBeforeExecute): 0 Takte zurück,
+        // Zustand unverändert. Nur relevant, wenn ein Debugger mitläuft.
+        if (abortBeforeExecute && abortBeforeExecute())
+            return 0;
     }
 
     R = (R & 0x80) | ((R + 1) & 0x7F);
