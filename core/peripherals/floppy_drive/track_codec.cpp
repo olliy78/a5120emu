@@ -16,6 +16,7 @@
  */
 
 #include "core/peripherals/floppy_drive/track_codec.h"
+#include <algorithm>
 #include <cassert>
 #include <climits>
 #include <stdexcept>
@@ -311,6 +312,7 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
 
         bool data_crc_ok = false;
         std::vector<uint8_t> data;
+        std::vector<uint8_t> tail;   // Bytes hinter der Daten-CRC (s. LogicalSector::tail)
 
         if (dataPos != SIZE_MAX && dataPos + 1 + secSize + 2 <= n) {
             data.assign(track.bytes.begin() + dataPos + 1,
@@ -334,6 +336,14 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
                 uint16_t calc = crc16Ccitt(crcIn.data(), crcIn.size());
                 data_crc_ok = (calc == static_cast<uint16_t>((dCrcHi << 8) | dCrcLo));
             }
+
+            // Sektor-Nachspann mitnehmen: die naechsten kSectorTailBytes Bytes so, wie
+            // sie auf dem Medium stehen.  Standard-IBM = Gap (0x4E/0xFF, folgenlos);
+            // UDOS legt hier seinen Sektorkontrollblock ab (s. LogicalSector::tail).
+            const size_t tailStart = dataPos + 1 + secSize + 2;
+            const size_t tailEnd   = std::min(tailStart + kSectorTailBytes, n);
+            tail.assign(track.bytes.begin() + static_cast<long>(tailStart),
+                        track.bytes.begin() + static_cast<long>(tailEnd));
         }
 
         LogicalSector ls;
@@ -344,6 +354,7 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
         ls.data         = std::move(data);
         ls.id_crc_ok    = id_crc_ok;
         ls.data_crc_ok  = data_crc_ok;
+        ls.tail         = std::move(tail);
         result.push_back(std::move(ls));
 
         // Weiter hinter dem aktuellen IDAM
@@ -442,7 +453,13 @@ TrackImage buildFaithfulReadTrack(const std::vector<LogicalSector>& sectors, Enc
         push(static_cast<uint8_t>(dataCrc >> 8));
         push(static_cast<uint8_t>(dataCrc & 0xFF));
 
-        fill(0x4E, 8u);
+        // Nachspann: die Bytes hinter der Daten-CRC so uebernehmen, wie sie auf dem
+        // Medium standen (LogicalSector::tail, genau kSectorTailBytes = 8 Bytes).  Bei
+        // einer Standard-IBM-Spur ist das 8x Gap 0x4E — bitgleich zum bisherigen
+        // fill(0x4E, 8).  Fremdformate behalten so ihren Sektorkontrollblock: UDOS
+        // liest direkt hinter der Daten-CRC 4 Zeigerbytes weiter (s. tail).
+        for (size_t i = 0; i < kSectorTailBytes; ++i)
+            push(i < sec.tail.size() ? sec.tail[i] : 0x4E);
     }
     return t;
 }

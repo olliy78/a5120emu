@@ -31,7 +31,8 @@ Alle Beispiele laufen über `tools/dev.sh` oder direkt gegen ein gebautes Binary
 | „Halte *hier* an, zeig mir Register/Speicher, lass mich steppen." | **k1520dbg** (Breakpoints, `s`/`n`, `r`/`x`) |
 | „Ich war einen Schritt zu weit." / „Wie kam ich hierher?" | **k1520dbg** `rs` / `bt` |
 | „Bedingt anhalten, Watchpoint, Logpoint." | **k1520dbg** `b … if`, `wp`/`wb`, `logpoint` |
-| „Interrupt-/Uhr-Problem, Chip-Zustand." | **k1520dbg** `bint`/`breti` + `dev ctc/pio/sio` |
+| „Interrupt-/Uhr-Problem, Chip-Zustand." | **k1520dbg** `bint`/`breti` + `dev ctc/pio/sio` + **`ivt`** |
+| „Fremd-OS mit seinen Originalquellen (`.MAC`) lesen." | **k1520dbg** `lst quelle.mac[@auto]`, `verify`, `dump` (§0d) |
 
 Faustregel: **boot_trace lokalisiert die grobe Phase → k1520dbg seziert sie.**
 
@@ -140,6 +141,48 @@ je Testabschnitt am selben Menü neu auf. **RST-38-Falle:** steht die CPU bei `0
 
 ---
 
+## 0d. Fremd-Betriebssystem mit seinen Originalquellen sezieren
+
+> Zu UDOS/SCPX & Co. liegen oft die **kommentierten Quellen** vor — aber als reiner
+> `.MAC`-Text ohne Adressspalte (`ORG 0`) und aus einem **anderen Build** als die Diskette.
+> Früher hieß das: Opcode-Längen von Hand zählen und Hex-Dumps per Auge vergleichen.
+
+| Willst du … | Befehl |
+|---|---|
+| Quelltext-Annotation aus `.MAC`/`.ASM` | **`lst QUELLE.MAC`** (bzw. `-l QUELLE.MAC`) — wird assembliert |
+| … und den Ladeversatz nicht kennen | **`lst QUELLE.MAC@auto`** → Versatz + Trefferquote + Urteil |
+| passt die Datei zu diesem Image? | **`verify DATEI @0x0700`** → „1278 von 1280 gleich, 2 Abweichungen" |
+| RAM-Bereich für ein externes Werkzeug | **`dump 0x0700 1280 treiber.bin`** |
+| welches Gerät hat den Interrupt ausgelöst? | **`bint`** (Vektor + Gerät + Tabellenadresse im Halt) · `itrace f` |
+| wer darf überhaupt Interrupts auslösen? | **`ivt`** — Vektor → Tabelleneintrag → Gerät + Status |
+| Zustand der **K5122**-PIOs | **`dev pio`** (`all`, sonst `bs`/`k5122ctrl`/`k5122data`) |
+
+**Rezept „unerwarteter Interrupt / Sprung ins Leere":**
+
+```sh
+printf '%s\n' 'g 15000000' 'ivt' 'dev pio' 'bint' 'g' 'where' 'q' | k1520dbg DISK
+```
+
+`ivt` zeigt in einem Screen, ob eine **scharfe** Quelle (`IE=1`) auf einen leeren
+IM-2-Tabelleneintrag zeigt — die klassische Ursache eines Fremd-OS-Interruptsturms:
+
+```text
+(dbg) ivt
+  ZVE1: I=0F  IM 2  IFF1=1
+  Vektor Tabelle Eintrag Geraet                     Status
+   0xBA  0x0FBA  FFFF    K5122 ctrl-PIO A           ZEIGT INS LEERE  <-- IE=1!
+   0xE6  0x0FE6  0A0A    K2526 CTC ch3              ok
+   0xFF  0x0FFE  FFFF    (Fallback: kein Geraet)    zeigt ins Leere
+  letzte Quittung: K5122 ctrl-PIO Vektor=BA (92 gesamt)
+```
+
+**Achtung Uhr:** `g N` zählt die **Maschinenuhr** (beide CPUs). Dreht ein abgestürztes ZVE2
+Millionen Instruktionen, kroch früher die ZVE1-Uhr und `g 20000000` wirkte wie ein Hänger.
+Lange Läufe drucken jetzt alle 2 s eine Fortschrittszeile; **Ctrl-C** bricht den Lauf ab
+(nicht die Sitzung). `clock zve1` stellt das alte Verhalten wieder her.
+
+---
+
 ## 1. Schnellstart
 
 ```sh
@@ -215,7 +258,7 @@ wird), `vars` (benannte CP/A-RAM-Variablen).
 
 ---
 
-## 4. Quelltext statt rohem Disassembly (`.prn`-Listing)
+## 4. Quelltext statt rohem Disassembly (`.prn`-Listing / `.MAC`-Quelle)
 
 Statt Maschinencode von Hand zu lesen, das passende MACRO-80-Listing laden — der Debugger
 hängt die **Original-Quellzeile mit Kommentar** an und macht alle Labels zu Symbolen:
@@ -231,9 +274,14 @@ k1520dbg -l $BIOS $D
 ```
 
 Läuft der Code reloziert (andere Adresse als im Listing), Offset anhängen:
-`-l stage3.prn@-0x800`. Genauso für boot_trace: `boot_trace -l $BIOS …` annotiert Trace-
+`-l stage3.prn@-0x800`; kennt man den Versatz nicht, bestimmt ihn **`@auto`** selbst
+(`lst stage3.prn@auto`). Genauso für boot_trace: `boot_trace -l $BIOS …` annotiert Trace-
 Zeilen **und** PC-Histogramme. (Ein BIOS-Listing deckt nur den BIOS-Bereich ab — für andere
 Stages deren eigene `.prn` dazuladen.)
+
+Für **Fremdquellen ohne Listing** (`.MAC`/`.ASM`, `ORG 0`, keine Adressspalte) nimmt `-l`
+den Quelltext direkt: er wird assembliert (Opcode-Längen + `Mxxxx`-Adressanker), s. §0d und
+`tools/k1520dbg.md` §6.1.
 
 ---
 
@@ -252,8 +300,15 @@ breti ; bint off ; g    # bis zum RETI weiterlaufen → ISR-Dauer/-Verschachtelu
 
 `dev ctc`/`dev pio`/`dev sio` zeigen je Kanal/Port den Konfig- und Interrupt-Status inkl.
 `pending`/`ius`/`iei` und der Daisy-Chain `IEI/IEO` — die Sicht, die einen Spurious-
-Interrupt-Sturm oder eine blockierte Kette sofort sichtbar macht. `bnmi` fängt Q240-
+Interrupt-Sturm oder eine blockierte Kette sofort sichtbar macht. **`dev pio` deckt alle
+drei PIOs ab** (Default `all`: K5122-Steuer/-Daten + BS-PIO). `bnmi` fängt Q240-
 Schutzverletzungen (NMI auf `0x0066`).
+
+`bint` meldet beim Halt zusätzlich **Vektor, Quellgerät und die aufgelöste
+Tabellenadresse**; `itrace <file>` schreibt beides je Interrupt mit. Wichtig ist dabei der
+Unterschied `dev=SPURIOUS` (kein Gerät hat die Quittung beantwortet → 0xFF ist der offene
+Bus) gegenüber einem echten Gerätevektor `0xFF`. **`ivt`** zeigt die ganze IM-2-Tabelle auf
+einen Blick (§0d).
 
 ---
 
@@ -421,6 +476,13 @@ Bausteine für den Agenten:
 ---
 
 ## 11. Tipps & Fallstricke
+
+
+> **Halt = VOR der Instruktion.** Ein PC-Breakpoint hält, bevor der Befehl läuft;
+> Haltezeile und jede Folgeabfrage (`r`, `rj`, `where`, `savestate`) zeigen denselben
+> Zustand. `g` direkt danach hält nicht sofort wieder am selben Breakpoint, `s` zeigt den
+> nächsten Befehl. Watchpoints dagegen halten NACH dem Zugriff (sonst wäre der
+> beobachtete Wert nicht geschrieben). Details: `k1520dbg.md` §2/§8.
 
 * **Disk-Korruption**: standardmäßig durch den COW-Default entschärft (s. o.). Nur mit
   `--rw` schreibt ein Lauf ins Original — dann bewusst eine Temp-Kopie nutzen.

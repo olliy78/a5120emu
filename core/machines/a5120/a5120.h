@@ -15,7 +15,8 @@
 #include "core/cards/k8025/k8025.h"
 #include "core/cards/k5122/k5122.h"
 #include "core/peripherals/k7637/k7637.h"
-#include "core/peripherals/floppy_drive/format_parser.h"
+#include "core/peripherals/floppy_drive/disk_format.h"
+#include "core/peripherals/floppy_drive/format_catalog.h"
 #include <atomic>
 #include <mutex>
 #include <string>
@@ -55,6 +56,14 @@ public:
     void clearStop() { stop_.store(false); }
     /** @brief ZVE1 (main CPU) total executed clock cycles — monotonic timeline for tools. */
     uint64_t cpuCycles() const { return zre_.cpu().cycles; }
+    /**
+     * @brief Maschinenweite Taktuhr — Takte BEIDER CPUs (und der DMA-Wartetakte).
+     *
+     * Im Gegensatz zu cpuCycles() (nur ZVE1) kriecht sie nicht, während ZVE2 den Bus
+     * hält und ZVE1 geparkt ist.  Werkzeuge, die "laufe N Takte" anbieten, sollten
+     * darauf laufen — sonst wirkt ein ZVE2-lastiger Abschnitt wie ein Hänger.
+     */
+    uint64_t machineCycles() const { return total_cycles_; }
 
     // Run up to max_cycles CPU cycles. Returns cycles actually executed.
     /** @brief Execute up to max_cycles CPU cycles and return consumed cycles. */
@@ -75,6 +84,31 @@ public:
      */
     bool createDisk(int drive, const std::string& path,
                     const std::string& format_name, bool write_protect);
+
+    /**
+     * @brief Name des laufwerkstyp-spezifischen Standardformats für einen Slot.
+     *
+     * Das Format, das @ref createDisk bei leerem @p format_name wählt (K5601→cpa800,
+     * K5600.10→200K, …).  Leerer String, wenn der Slot unbestückt ist.
+     */
+    std::string defaultFormatName(int drive) const;
+
+    /**
+     * @brief Formatnamen, die geometrisch auf das Laufwerk dieses Slots passen.
+     *
+     * Ein eingebautes Format passt, wenn seine Spurzahl ≤ profile.num_cyls und seine
+     * Kopfzahl ≤ profile.num_heads ist (das Aufzeichnungsverfahren leitet createDisk
+     * aus dem Laufwerk ab).  Das Standardformat des Slots steht an erster Stelle.
+     * Leere Liste bei unbestücktem Slot.  Für die GUI-Formatauswahl.
+     */
+    std::vector<std::string> compatibleFormats(int drive) const;
+
+    /** @brief Klartextbeschreibung eines Katalogformats (leer, wenn unbekannt). */
+    std::string formatDescription(const std::string& format_name) const;
+
+    /** @brief Geladener Formatkatalog (Diagnose: Quelldateien, übersprungene Formate). */
+    const FormatCatalog& formatCatalog() const { return disk_formats_; }
+
     bool unmountDisk(int drive);
     bool isDiskActive(int drive) const;
     bool isDiskWriteProtected(int drive) const;
@@ -156,6 +190,10 @@ public:
     Z80CTC::DebugState ctcState()   { return zre_.ctc().debugState(); }
     /** @brief K2526 BS-PIO state snapshot (debugger `dev pio`). */
     Z80PIO::DebugState bsPioState() { return zre_.bsPio().debugState(); }
+    /** @brief K5122 Steuer-PIO (Ports 0x10–0x13) snapshot (debugger `dev pio k5122ctrl`). */
+    Z80PIO::DebugState k5122CtrlPioState() const { return afs_.ctrlPio().debugState(); }
+    /** @brief K5122 Daten-PIO (Ports 0x14–0x17) snapshot (debugger `dev pio k5122data`). */
+    Z80PIO::DebugState k5122DataPioState() const { return afs_.dataPio().debugState(); }
     /** @brief K8025 keyboard/printer SIO (A32) state snapshot (debugger `dev sio`). */
     Z80SIO::DebugState kbdSioState()  { return ass_.sioA32().debugState(); }
     /** @brief K8025 DFÜ SIO (A33) state snapshot (debugger `dev sio2`). */
@@ -169,6 +207,30 @@ public:
     void setZVE2TraceCallback(std::function<void(const Z80&)> cb) {
         zre_.setZVE2TraceCallback(std::move(cb));
     }
+
+    // ─── Interrupt-Diagnose (Debugger `ivt`, `bint`, `itrace`) ────────────────
+    /**
+     * @brief Eine einzelne Interruptquelle der Daisy-Chain (PIO-Port, CTC-Kanal, SIO-Kanal).
+     *
+     * Zusammen ergeben sie die Vektor-Landkarte, die ein Fremd-OS mit eigener
+     * IM-2-Tabelle beim Hochlauf programmiert: Wer darf einen Interrupt auslösen,
+     * mit welchem Vektor — und zeigt der zugehörige Tabelleneintrag ins Leere?
+     */
+    struct IntSource {
+        std::string device;          ///< z.B. "K5122 ctrl-PIO A"
+        uint8_t     vector  = 0xFF;  ///< programmierter Vektor (Basis bei SIO)
+        bool        exact   = true;  ///< false: SIO — Subtyp-Bits variieren je Anlass
+        bool        ie      = false; ///< Interrupterzeugung freigegeben
+        bool        pending = false; ///< Anforderung steht an
+        bool        ius     = false; ///< in Bedienung (IUS)
+        bool        iei     = false; ///< von der Chain freigegeben
+        int         chain   = 0;     ///< Position in der Daisy-Chain (0 = höchste Priorität)
+    };
+    /** @brief Alle Interruptquellen der Daisy-Chain in Prioritätsreihenfolge. */
+    std::vector<IntSource> interruptSources() const;
+
+    /** @brief Letzte Interrupt-Quittung des Busses (Vektor + Quellgerät, `SPURIOUS`-Fall). */
+    const K1520Bus::IntAck& lastIntAck() const { return bus_.lastIntAck(); }
 
     // Debug
     std::string lastError() const { return last_error_; }
@@ -243,6 +305,9 @@ public:
 private:
     void wireBackplane();
 
+    /** @brief Systemweiter /RESET (ZVE1 + alle peripheren Bausteine); s. .cpp. */
+    void resetHardware();
+
     struct KeyEvent { uint32_t keycode; bool shift, ctrl, is_press; };
 
     K1520Bus      bus_;
@@ -256,7 +321,7 @@ private:
 
     K7637         kbd_;
 
-    std::vector<DiskFormat> disk_formats_;
+    FormatCatalog disk_formats_;                  // aus data/formats.yaml (§8.6)
     std::array<DriveProfile, 4> drive_profiles_;  // Bestückung je Slot (für create-Default)
 
     std::atomic<bool>  stop_{false};

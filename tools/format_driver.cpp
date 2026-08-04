@@ -155,7 +155,7 @@ int main(int argc, char** argv) {
 
     // Optionale Laufwerksbestückung je Slot (A,B,C,D) via FD_PROFILES="p0,p1,p2,p3".
     // Default = 4× K5601 (5,25"-MFM).  Für 8"-Combo-Tests: die B:/C:-Slots auf die
-    // vom Combo-BIOS gemeldeten Fremdtypen (mf3200_8_ss77 / mf6400_8_ds77) setzen,
+    // vom Combo-BIOS gemeldeten Fremdtypen (MF3200 / MF6400) setzen,
     // damit die PHYSISCHE Laufwerksgeometrie (Kopfzahl/Spuren/Verfahren) zum BIOS passt.
     A5120Machine::Config cfg;
     if (const char* p = std::getenv("FD_PROFILES")) {

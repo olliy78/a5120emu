@@ -24,9 +24,10 @@
  */
 
 #include "core/machines/a5120/a5120.h"
-#include "core/peripherals/floppy_drive/format_parser.h"
+#include "core/peripherals/floppy_drive/disk_format.h"
 #include "core/logger.h"
 #include "tools/prn_listing.h"
+#include "tools/mac_listing.h"
 #include "tools/z80dis_min.h"
 #include "tools/coverage_diff.h"
 #include "tools/until_cond.h"
@@ -238,8 +239,9 @@ int main(int argc, char** argv) {
     int   win2_count        = 0;
     int      watch_n        = 0;         // --watch a,b,..: log memory writes to these addrs
     uint16_t watch_addr[16] = {0};
-    int      watchio_n      = 0;         // --watchio p,..: log OUT to these I/O ports
+    int      watchio_n      = 0;         // --watchio p[:zve1|zve2],..: log OUT to these I/O ports
     uint16_t watchio_port[16] = {0};
+    uint8_t  watchio_cpu[16]  = {0};     //   0 = beide CPUs, 1 = nur ZVE1, 2 = nur ZVE2
     int   trace_seq         = 0;         // global event sequence # (chronological order)
     std::vector<std::string> prn_specs;  // -l <file.prn>[@offset]: annotate traces/histograms
     UntilCond until;                     // --until <cond>: stop the run when it holds
@@ -329,9 +331,20 @@ int main(int argc, char** argv) {
             char* tok = strtok(argv[++i], ",");
             while (tok && watch_n < 16) { watch_addr[watch_n++] = (uint16_t)strtol(tok, nullptr, 0); tok = strtok(nullptr, ","); }
         }
-        else if (!strcmp(argv[i], "--watchio") && i+1 < argc) { // --watchio 0x04,0x10
+        else if (!strcmp(argv[i], "--watchio") && i+1 < argc) { // --watchio 0x04,0x10:zve2
+            // §8: optionaler CPU-Filter je Port ("0x11:zve2"). Ohne Suffix: beide CPUs.
             char* tok = strtok(argv[++i], ",");
-            while (tok && watchio_n < 16) { watchio_port[watchio_n++] = (uint16_t)strtol(tok, nullptr, 0); tok = strtok(nullptr, ","); }
+            while (tok && watchio_n < 16) {
+                uint8_t who = 0;
+                if (char* c = strchr(tok, ':')) {
+                    *c = '\0';
+                    if      (!strcmp(c+1,"zve2") || !strcmp(c+1,"2")) who = 2;
+                    else if (!strcmp(c+1,"zve1") || !strcmp(c+1,"1")) who = 1;
+                }
+                watchio_cpu[watchio_n]    = who;
+                watchio_port[watchio_n++] = (uint16_t)strtol(tok, nullptr, 0);
+                tok = strtok(nullptr, ",");
+            }
         }
         else                                        { disk_path = argv[i]; }
     }
@@ -358,10 +371,23 @@ int main(int argc, char** argv) {
     // ── .prn listings: annotate per-instruction traces & PC histograms with the
     //    original commented source. Spec = "PFAD[@OFFSET]" (OFFSET signed, hex
     //    0x../..h or decimal) added to each listing address for relocated code.
+    //    Fremdquellen (`.MAC`/`.ASM`, kein Listing mit Adressspalte) werden dazu
+    //    von tools/mac_listing.h assembliert — s. k1520dbg `lst`.
     prnlst::Listing prn;
     for (auto& spec : prn_specs) {
         std::string path; long off = 0;
         if (!prnlst::splitSpec(spec, path, off)) { fprintf(stderr, "WARN: bad @offset in '%s'\n", spec.c_str()); continue; }
+        if (maclst::isSourceFile(path)) {
+            maclst::Result mr;
+            if (!maclst::assemble(path, off, prn, mr))
+                fprintf(stderr, "WARN: %s\n", mr.error.c_str());
+            else
+                fprintf(stderr, "Quelle:     %s — %d Zeile(n) assembliert (%04X..%04X), "
+                                "%d Anker/%d Nachführung(en), %d unbekannt%s\n",
+                        path.c_str(), mr.code, mr.first, mr.last, mr.anchors, mr.resyncs,
+                        mr.unknown, "");
+            continue;
+        }
         int n = prn.load(path, off);
         if (n < 0) fprintf(stderr, "WARN: could not open listing '%s'\n", path.c_str());
         else if (off) fprintf(stderr, "Listing:    %s — %d line(s), offset %+ld (0x%04X)\n", path.c_str(), n, off, (uint16_t)off);
@@ -457,7 +483,7 @@ int main(int argc, char** argv) {
     if (itrace_path) {
         itrace_fp = fopen(itrace_path, "w");
         if (!itrace_fp) fprintf(stderr, "WARN: cannot write --itrace '%s'\n", itrace_path);
-        else fprintf(itrace_fp, "seq,cyc,kind,int_pc,isr_pc,sp\n");
+        else fprintf(itrace_fp, "seq,cyc,kind,int_pc,isr_pc,sp,vector,device\n");
     }
     auto csvRow = [&](int cpu, const Z80& z) {
         if (!csv_fp) return;
@@ -513,9 +539,17 @@ int main(int argc, char** argv) {
             if (e == eventbp::Event::Interrupt || e == eventbp::Event::NMI) {
                 uint16_t ret = (uint16_t)(machine.memReadDebug(z.SP) |
                                           (machine.memReadDebug((uint16_t)(z.SP + 1)) << 8));
-                fprintf(itrace_fp, "%d,%d,%s,0x%04X,0x%04X,0x%04X\n",
+                // §5: Vektor + Quellgerät mit protokollieren. `SPURIOUS` heißt: kein
+                // Gerät hat die Quittung beantwortet, der 0xFF ist der offene Bus —
+                // NICHT ein programmierter Vektor 0xFF (das war der UDOS-Trugschluss).
+                const auto& ia = machine.lastIntAck();
+                const char* dev = (e == eventbp::Event::NMI) ? "-"
+                                : ia.spurious ? "SPURIOUS" : (ia.device ? ia.device : "?");
+                char vec[8] = "-";
+                if (e == eventbp::Event::Interrupt) snprintf(vec, sizeof vec, "0x%02X", ia.vector);
+                fprintf(itrace_fp, "%d,%d,%s,0x%04X,0x%04X,0x%04X,%s,%s\n",
                         trace_seq++, cycles_done, e == eventbp::Event::NMI ? "NMI" : "INT",
-                        ret, z.PC, z.SP);
+                        ret, z.PC, z.SP, vec, dev);
                 ++itrace_n;
             }
             it_prev_sp = z.SP; it_prev_iff1 = z.IFF1; it_have_prev = true;
@@ -649,12 +683,17 @@ int main(int argc, char** argv) {
         if (isIO) {
             if (isRead) io_rd[addr & 0xFF]++;
             else        io_wr[addr & 0xFF]++;
-            if (!isRead && boot_reached) {
+            // §8: ab Takt 0 aufzeichnen (nicht erst ab `boot_reached`) — sonst fehlen
+            // genau die Boot-ROM-Zugriffe, und die Zählung weicht vom Port-Histogramm ab.
+            // Und: WER geschrieben hat, steht mit dabei (Bus-Master), statt nur beide PCs.
+            if (!isRead) {
+                bool z2 = machine.busMasterIsZVE2();
                 for (int i = 0; i < watchio_n; ++i)
-                    if ((addr & 0xFF) == (watchio_port[i] & 0xFF))
-                        fprintf(stderr, "  [#%d cyc%d] OUT(%02X)=%02X  (Z1.PC=%04X Z2.PC=%04X)\n",
+                    if ((addr & 0xFF) == (watchio_port[i] & 0xFF)
+                        && (watchio_cpu[i] == 0 || watchio_cpu[i] == (z2 ? 2 : 1)))
+                        fprintf(stderr, "  [#%d cyc%d] OUT(%02X)=%02X  von=%s (Z1.PC=%04X Z2.PC=%04X)\n",
                                 trace_seq++, cycles_done, addr & 0xFF, data,
-                                machine.cpuPC(), machine.zve2PC());
+                                z2 ? "ZVE2" : "ZVE1", machine.cpuPC(), machine.zve2PC());
             }
         } else if (!isRead) {
             if (addr >= 0xF800) {                   // VRAM write (K7024 screen)
@@ -662,12 +701,13 @@ int main(int argc, char** argv) {
                 if (addr < vram_first) vram_first = addr;
                 if (addr > vram_last)  vram_last  = addr;
             }
-            if (boot_reached) {
+            {   // §8: ebenfalls ab Takt 0, mit Herkunft (Bus-Master).
+                bool z2 = machine.busMasterIsZVE2();
                 for (int i = 0; i < watch_n; ++i)
                     if (addr == watch_addr[i])
-                        fprintf(stderr, "  [#%d cyc%d] WR [%04X]=%02X  (Z1.PC=%04X Z2.PC=%04X)\n",
+                        fprintf(stderr, "  [#%d cyc%d] WR [%04X]=%02X  von=%s (Z1.PC=%04X Z2.PC=%04X)\n",
                                 trace_seq++, cycles_done, addr, data,
-                                machine.cpuPC(), machine.zve2PC());
+                                z2 ? "ZVE2" : "ZVE1", machine.cpuPC(), machine.zve2PC());
             }
         }
     });

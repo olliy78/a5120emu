@@ -532,6 +532,128 @@ TEST(BootIntegration, FullBootReachesTimeEntryPrompt) {
            "oder die per-Byte-/BUSRQ-Verriegelung ist gebrochen";
 }
 
+// ─── Neustart aus dem laufenden Betrieb: Reset & Power-Cycle ────────────────
+//
+// Beide Wege der GUI (Reset-Taste, Power OFF→ON) starten die Maschine aus einem
+// bereits gebooteten CP/A neu.  Der Knackpunkt ist die Speicher-Ausbaumessung des
+// Lade-ROMs (0040H–005AH): sie schreibt ein Testbyte, lässt sich vom /WR-Strobe an
+// BS-PIO Port A unterbrechen und prüft in der ISR, ob das Byte angekommen ist.
+// Wurde /WR als DAUERND aktiv modelliert, kam der Interrupt schon beim `EI` davor,
+// die ISR verglich den ALTEN Speicherinhalt — bei frischem DRAM (0xFF) unauffällig,
+// nach einem Neustart aus dem Betrieb (echte Daten im RAM) meldete die Messung
+// „kein Speicher" und der Neustart lief in Zufallscode.  Beide Tests booten daher
+// erst vollständig und starten DANN neu.
+namespace {
+// Meilenstein des VOLLSTÄNDIGEN Neustarts (@OS.COM läuft und meldet sich).
+constexpr const char* kRebootNeedle = "Bitte Uhrzeit eingeben!";
+
+// Bildschirmspeicher vor dem Neustart unkenntlich machen.  Nötig, weil der
+// Textbildschirm für die CPU schreib-only ist: Lesen (und damit vramText())
+// bedient das K3526-Schattenram, das reset() NICHT löscht — ohne dieses Wischen
+// würde der Text des vorigen Laufs sofort „gefunden" und der Test wäre blind.
+void blankVram(A5120Machine& m) {
+    for (int a = 0xF800; a <= 0xFFFF; ++a)
+        m.memWriteDebug(static_cast<uint16_t>(a), 0x00);
+    ASSERT_EQ(vramText(m).find(kRebootNeedle), std::string::npos)
+        << "Bildschirm-Wischen wirkungslos — der Neustart-Test wäre blind";
+}
+
+// Die 62 Prüfzellen der ROM-Ausbaumessung (0800H, +400H …) mit „benutztem" RAM
+// belegen.  Sie ist die Stelle, an der ein Neustart aus dem Betrieb scheiterte:
+// die ISR vergleicht die Zelle gegen FFH, und stand ihr Interrupt VOR dem
+// Testschreiben, entschied der Altinhalt über „Speicher da/nicht da".  Ein frisch
+// gebootetes CP/A hinterlässt dort zufällig FFH — ohne dieses Verschmutzen liefe
+// der Test auch mit dem Fehler durch.
+void dirtyMemorySizingProbes(A5120Machine& m) {
+    for (int i = 0; i < 62; ++i)
+        m.memWriteDebug(static_cast<uint16_t>(0x0800 + i * 0x0400), 0x5A);
+}
+
+// Vollständiger Kaltstart bis zur Uhrzeit-Eingabe (gemeinsamer Vorlauf beider Tests).
+void bootToTimePrompt(A5120Machine& m) {
+    ASSERT_TRUE(m.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", /*wp=*/false))
+        << "could not mount cpadisk_autofs_clock_noautoexec.img on A:: " << m.lastError();
+    m.powerOn();
+    ASSERT_TRUE(runUntilVramContains(m, kRebootNeedle, 40'000'000))
+        << "Kaltstart erreichte die Uhrzeit-Eingabe nie";
+}
+}  // namespace
+
+TEST(BootIntegration, ResetFromRunningSystemRebootsFromRom) {
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", /*wp=*/false))
+        << machine.lastError();
+    machine.powerOn();
+    // Reset mitten im Betrieb — hier, während das CP/A-Bootsystem @OS.COM lädt.
+    // Bewusst NICHT am fertigen Prompt: ein durchgebootetes CP/A hinterlässt in den
+    // Prüfzellen der Ausbaumessung zufällig FFH und fängt sich selbst mit defekter
+    // Messung noch über Restcode ab — der Fehler wäre unsichtbar.
+    ASSERT_TRUE(runUntilVramContains(machine, "CP/A-Bootsystem", 40'000'000))
+        << "Kaltstart erreichte das CP/A-Bootsystem nie";
+
+    ASSERT_NO_FATAL_FAILURE(blankVram(machine));
+    // Genau die Reihenfolge der GUI-Reset-Taste: Images neu mounten (setzt den
+    // K5122-Laufwerkszustand zurück), dann reset().  RAM behält dabei den Inhalt
+    // des laufenden OS — anders als beim Netz-Aus.
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"), "cpa780", /*wp=*/false))
+        << machine.lastError();
+    machine.reset();
+    // Die ganze Boot-Kette muss erneut laufen: Stufe 3 (0x1800) ist der eindeutige
+    // Meilenstein — mit defekter Ausbaumessung endet der Neustart vorher in
+    // Zufallscode (Stufe 1/2 werden noch erreicht).
+    EXPECT_TRUE(runUntilPC(machine, 0x1800, 40'000'000))
+        << "Reset aus dem laufenden CP/A erreichte Boot-Stufe 3 nicht (Ausbaumessung "
+           "des Lade-ROMs auf benutztem RAM?)";
+    EXPECT_TRUE(runUntilVramContains(machine, kRebootNeedle, 40'000'000))
+        << "Reset aus dem laufenden CP/A bootete nicht durch:\n" << vramText(machine);
+}
+
+// Der vom Nutzer gemeldete Fall: Uhrzeit bestätigen, am `A>`-Prompt stehen, dann
+// Reset bzw. Power OFF→ON.  Hier läuft der System-CTC (Q302) des OS mit eigener
+// IM2-Vektorbasis (F8H) und freigegebenen Interrupts; ohne systemweiten /RESET
+// aller Bausteine schickt der erste Timer-Interrupt nach dem `EI` des Lade-ROMs
+// die neue Boot-Kette auf einen Fantasie-Vektor aus der ROM-Seite 0.
+TEST(BootIntegration, RestartFromInteractivePromptRebootsFromRom) {
+    for (bool power_cycle : {false, true}) {
+        SCOPED_TRACE(power_cycle ? "Power OFF→ON" : "Reset-Taste");
+        A5120Machine machine;
+        ASSERT_NO_FATAL_FAILURE(bootToTimePrompt(machine));
+
+        // Uhrzeit bestätigen → CP/A erreicht den interaktiven `A>`-Prompt.
+        typeString(machine, "12:00:00");
+        typeKey(machine, QK_RETURN);
+        ASSERT_TRUE(runSmallUntil(machine, "A>", 20'000'000))
+            << "CP/A erreichte nach der Uhrzeit-Eingabe den A>-Prompt nicht:\n"
+            << vramText(machine);
+
+        ASSERT_NO_FATAL_FAILURE(blankVram(machine));
+        ASSERT_TRUE(machine.mountDisk(0, diskPath("cpadisk_autofs_clock_noautoexec.img"),
+                                      "cpa780", /*wp=*/false)) << machine.lastError();
+        if (power_cycle) machine.powerOn(); else machine.reset();
+
+        EXPECT_TRUE(runUntilPC(machine, 0x1800, 40'000'000))
+            << "Neustart vom A>-Prompt erreichte Boot-Stufe 3 nicht (laufender "
+               "System-CTC des alten OS nicht zurückgesetzt?)";
+        EXPECT_TRUE(runUntilVramContains(machine, kRebootNeedle, 40'000'000))
+            << "Neustart vom A>-Prompt bootete nicht durch:\n" << vramText(machine);
+    }
+}
+
+TEST(BootIntegration, PowerCycleFromRunningOsRebootsFromRom) {
+    A5120Machine machine;
+    ASSERT_NO_FATAL_FAILURE(bootToTimePrompt(machine));
+
+    dirtyMemorySizingProbes(machine);
+    ASSERT_NO_FATAL_FAILURE(blankVram(machine));
+    machine.powerOn();   // Netz aus/ein: DRAM verliert seinen Inhalt (0xFF)
+    EXPECT_EQ(machine.memReadDebug(0x8000), 0xFF)
+        << "powerOn() liess alten RAM-Inhalt stehen — kein echter Kaltstart";
+    EXPECT_TRUE(runUntilPC(machine, 0x1800, 40'000'000))
+        << "Power-Cycle aus dem laufenden CP/A erreichte Boot-Stufe 3 nicht";
+    EXPECT_TRUE(runUntilVramContains(machine, kRebootNeedle, 40'000'000))
+        << "Power-Cycle aus dem laufenden CP/A bootete nicht neu:\n" << vramText(machine);
+}
+
 // ─── Keyboard input at the interactive CCP (end-to-end) ──────────────────────
 //
 // Exercises the full keyboard path that the K7637 serial-latency fix unblocked
@@ -642,6 +764,127 @@ TEST(ScpxIntegration, BootThenDirStatPipLoadComFiles) {
     // STAT-Ausgabe steht weiterhin auf dem Schirm (nichts weggescrollt): finaler Sanity-Check.
     EXPECT_NE(vramText(machine).find("Space: 522k"), std::string::npos)
         << "STAT-Ausgabe unerwartet verschwunden:\n" << vramText(machine);
+}
+
+// ─── UDOS 4.3 — Kaltstart bis zur Datumsabfrage ──────────────────────────────
+//
+// disks/udos_boot_scp.hfe trägt UDOS 4.3 (Zilog-RIO-Abkömmling, KEIN CP/M) und ist
+// bitgenau von echter Hardware eingelesen.  Der Test fährt den kompletten Kaltstart:
+// Lade-ROM → SYL-Lader (0x0400) → Systemlader (0x4000) → residentes System → Anzeige
+// „UDOS 4.3" + „Neues Datum :".
+//
+// Regressionswächter für drei voneinander unabhängige Emulator-Korrekturen, die von
+// den drei Betriebssystemen nur UDOS trifft (doc/analyse_udos.md §13):
+//   1. Z80-Block-E/A lässt das Carry-Flag stehen (INI/IND/OUTI/OUTD + Repeat-Varianten).
+//      UDOS' ZVE2-Lesekoroutine zählt ihre 128-B-Blöcke mit `SUB 01H` / `INI` / `JR NC` —
+//      mit gelöschtem Carry lief die Schleife endlos bis in den Bildschirmspeicher.
+//   2. K5122::endDmaTransfer() schaltet den ctrl-PIO-Port-A-Interrupt NICHT mehr
+//      eigenmächtig scharf — sonst kam ein Indexpuls-Interrupt mit Vektor 0xBA ohne
+//      IM-2-Eintrag → RST 38H → UDOS-Monitor („BREAK …").
+//   3. LogicalSector::tail: der Sektorkontrollblock hinter der Daten-CRC (Rückwärts-/
+//      Vorwärtszeiger) überlebt den Aufbau des Lese-Streams — sonst las der Lader
+//      Gap-Füllbytes als Zeiger und brach mit „BAD POINTER IN OS" ab.
+// Fällt eine davon zurück, bleibt der Bildschirm bei der jeweiligen Fehlermeldung
+// stehen und dieser Test wird rot.
+TEST(UdosIntegration, ColdBootReachesDatePrompt) {
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("udos_boot_scp.hfe"), "cpa780", /*wp=*/false))
+        << "konnte udos_boot_scp.hfe nicht mounten: " << machine.lastError();
+    machine.powerOn();
+
+    ASSERT_TRUE(runSmallUntil(machine, "UDOS 4.3", 45'000'000))
+        << "UDOS-Banner nie erschienen — Kaltstart der udos_boot_scp.hfe gebrochen:\n"
+        << vramText(machine);
+    ASSERT_TRUE(runSmallUntil(machine, "Neues Datum", 10'000'000))
+        << "Datumsabfrage nie erreicht — residentes System startet nicht:\n"
+        << vramText(machine);
+
+    const std::string screen = vramText(machine);
+    EXPECT_EQ(screen.find("BAD POINTER"), std::string::npos)
+        << "Sektorkontrollblock (LogicalSector::tail) geht im Lese-Stream verloren:\n" << screen;
+    EXPECT_EQ(screen.find("ERROR: C6"), std::string::npos)
+        << "CRC-Fehler beim Lesen — ZVE2 laeuft ueber das Ende seiner Koroutine hinaus:\n"
+        << screen;
+    EXPECT_EQ(screen.find("BREAK"), std::string::npos)
+        << "UDOS-Monitor DEBUBC43 aktiv — Interrupt-Vektor ohne IM-2-Eintrag:\n" << screen;
+}
+
+// ─── UDOS 4.3 — interaktiv: Datumseingabe + CAT lädt von Diskette ────────────
+//
+// Fortsetzung des Kaltstart-Tests oben: hier läuft UDOS *bedient*.  Geprüft wird die
+// ganze Kette Tastatur → Konsoltreiber → Kommandointerpreter → Dateisystem:
+//
+//   1. Datumsmaske `__.__.19__` mit „150388" füllen (der Cursor springt selbst über
+//      die Punkte).  UDOS rechnet den Wochentag selbst aus — der 15.3.1988 war ein
+//      Dienstag; steht dort etwas anderes, rechnet die Datumsroutine falsch.
+//   2. ⚠ **UDOS invertiert die Buchstabenschreibung** (Konsoltreiber ab 0x063F):
+//      ungeshiftet getippte Kleinbuchstaben erscheinen GROSS, mit Shift klein.  Das
+//      ist Verhalten des realen A5120 (doc/analyse_udos.md §14.2).  Der Test friert
+//      beide Richtungen ein: „CAT" getippt → echot `%cat` → NONEXISTENT COMMAND;
+//      „cat" getippt → echot `%CAT` → das Kommando läuft.  Ohne diese Zusicherung
+//      merkt niemand, wenn die Wandlung kippt — die Kommandos scheitern dann nur
+//      scheinbar grundlos.
+//   3. `CAT *.* P=& F=L` lädt das transiente Programm CAT von der Diskette und gibt
+//      die Detailliste aus.  Das ist der einzige Test, der den UDOS-Lesepfad im
+//      LAUFENDEN System übt (der Kaltstart-Test deckt nur die Ladekette ab) — er
+//      hängt damit an denselben drei Korrekturen wie ColdBootReachesDatePrompt.
+//
+// Die Diskette wird aus einer TEMP-KOPIE gemountet: CAT liest zwar nur, aber das
+// Fixture ist committet und darf unter keinen Umständen verändert werden.
+TEST(UdosIntegration, DateEntryAndCatListsDirectory) {
+    namespace fs = std::filesystem;
+    const std::string aPath = (fs::temp_directory_path() / "udos_interactive_A.hfe").string();
+    fs::copy_file(diskPath("udos_boot_scp.hfe"), aPath, fs::copy_options::overwrite_existing);
+
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, aPath, "cpa780", /*wp=*/false)) << machine.lastError();
+    machine.powerOn();
+
+    // 1. Kaltstart bis zur Datumsabfrage.
+    ASSERT_TRUE(runSmallUntil(machine, "Neues Datum", 45'000'000))
+        << "Datumsabfrage nie erreicht:\n" << vramText(machine);
+    runCycles(machine, 2'000'000);            // in die Eingabeschleife einschwingen
+
+    // 2. Datum 15.03.1988 — nur die Ziffern, die Punkte stehen fest in der Maske.
+    typeString(machine, "150388");
+    ASSERT_TRUE(runSmallUntil(machine, "Dienstag, der 15. Maerz 1988", 15'000'000))
+        << "Datum nicht uebernommen oder Wochentag falsch gerechnet:\n" << vramText(machine);
+    ASSERT_TRUE(runSmallUntil(machine, "UDOS BC.5120", 5'000'000))
+        << "Systemkennung nach der Datumseingabe fehlt:\n" << vramText(machine);
+    runCycles(machine, 2'000'000);
+
+    // 3. GROSS getippt = die falsche Richtung: UDOS macht daraus Kleinschrift und
+    //    findet das Kommando nicht.  Beides wird geprueft — die Meldung UND das Echo.
+    typeString(machine, "CAT");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "NONEXISTENT COMMAND", 25'000'000))
+        << "GROSS getipptes Kommando wurde unerwartet gefunden — Schreibwandlung "
+           "des Konsoltreibers gekippt?\n" << vramText(machine);
+    EXPECT_NE(vramText(machine).find("%cat"), std::string::npos)
+        << "Echo von \"CAT\" ist nicht \"%cat\" — UDOS invertiert die Schreibung "
+           "nicht mehr (doc/analyse_udos.md §14.2):\n" << vramText(machine);
+    runCycles(machine, 1'000'000);
+
+    // 4. KLEIN getippt = die richtige Richtung: `CAT *.* P=& F=L` wird von Diskette
+    //    geladen und listet mit Detailausgabe.
+    typeString(machine, "cat *.* p=& f=l");
+    typeKey(machine, QK_RETURN);
+    // Auf die LETZTE Zusammenfassungszeile warten (sie kommt nach „FILES LISTED"),
+    // sonst prueft der Test die Zusammenfassung, waehrend CAT sie noch schreibt.
+    ASSERT_TRUE(runSmallUntil(machine, "TOTAL SECTORS FOR LISTED FILES", 60'000'000))
+        << "CAT lief nicht durch — transientes Programm nicht von Diskette geladen "
+           "oder Verzeichnis nicht lesbar:\n" << vramText(machine);
+
+    const std::string screen = vramText(machine);
+    EXPECT_NE(screen.find("FILES EXAMINED"), std::string::npos)
+        << "CAT-Zusammenfassung unvollstaendig:\n" << screen;
+    EXPECT_NE(screen.find("FILES LISTED"), std::string::npos)
+        << "CAT-Zusammenfassung unvollstaendig:\n" << screen;
+    EXPECT_EQ(screen.find("NONEXISTENT COMMAND"), std::string::npos)
+        << "KLEIN getipptes Kommando wurde nicht gefunden — Schreibwandlung gekippt:\n"
+        << screen;
+
+    fs::remove(aPath);
 }
 
 // ─── SCPX Laufzeit-SCHREIBEN: ERA löscht auf B: OHNE „BAD SECTOR" ─────────────
@@ -788,7 +1031,7 @@ TEST(CreateDiskDefault, K560010_ss40_200K) {
     const std::string path = tmpImg("k560010");
     std::filesystem::remove(path);
     A5120Machine::Config cfg;
-    cfg.drive_profiles = {"ss_525_40", "K5601", "K5601", "K5601"};
+    cfg.drive_profiles = {"K5600.10", "K5601", "K5601", "K5601"};
     A5120Machine machine(cfg);
     ASSERT_TRUE(machine.createDisk(0, path, "", false)) << machine.lastError();
     EXPECT_EQ(std::filesystem::file_size(path), 40u * 5 * 1024);      // 200K
@@ -799,7 +1042,7 @@ TEST(CreateDiskDefault, MF3200_fm_308K) {
     const std::string path = tmpImg("mf3200");
     std::filesystem::remove(path);
     A5120Machine::Config cfg;
-    cfg.drive_profiles = {"mf3200_8_ss77", "K5601", "K5601", "K5601"};
+    cfg.drive_profiles = {"MF3200", "K5601", "K5601", "K5601"};
     A5120Machine machine(cfg);
     ASSERT_TRUE(machine.createDisk(0, path, "", false)) << machine.lastError();
     EXPECT_EQ(std::filesystem::file_size(path), 77u * 4 * 1024);      // 308K

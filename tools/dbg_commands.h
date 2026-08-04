@@ -27,11 +27,12 @@ inline const std::vector<std::string>& names() {
         "wp","wpr","wb","wd","wl","iow","iob","iod","iol",
         "logpoint","lp","lpd","lpl","trace","itrace",
         // inspect
-        "r","rj","rj2","where","w","hist","bt","d","e","u","x","list","l","set","disp","undisp","vars","dev",
+        "r","rj","rj2","where","w","hist","bt","d","dump","e","u","x","list","l","set","disp","undisp","vars","dev","ivt",
         // memory / symbols / listings
-        "load","save","sym","lst",
+        "load","save","sym","lst","verify",
         // misc
-        "mark","keys","screen","reset","disk","alias","unalias","source","help","q","quit",
+        "mark","keys","keyuntil","screen","gscreen","bscreen","dialog",
+        "reset","disk","alias","unalias","source","help","q","quit",
     };
     return n;
 }

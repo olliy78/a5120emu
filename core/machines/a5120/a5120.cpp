@@ -1,7 +1,9 @@
 #include "a5120.h"
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <stdexcept>
 #include "core/logger.h"
 
 namespace {
@@ -31,7 +33,7 @@ constexpr long long kHeldReadWatchdogCycles = 1'500'000;
 }  // namespace
 
 // Baut das DriveProfile-Array der 4 K5122-Slots aus den Profilnamen der Config.
-// Unbekannte Namen liefert builtinDriveProfile als Default-Profil (mfs_525_ds80).
+// Unbekannte Namen liefert builtinDriveProfile als Default-Profil (K5601).
 static std::array<DriveProfile, 4> profilesFromConfig(const A5120Machine::Config& cfg) {
     return { builtinDriveProfile(cfg.drive_profiles[0]),
              builtinDriveProfile(cfg.drive_profiles[1]),
@@ -52,7 +54,23 @@ A5120Machine::A5120Machine(const Config& cfg)
     , afs_(bus_, profilesFromConfig(cfg))
     , drive_profiles_(profilesFromConfig(cfg))
 {
-    disk_formats_ = FormatParser::builtinFormats();
+    // Diskettenformate aus data/formats.yaml laden (§8.6).  Fehlt die Datei oder ist
+    // sie syntaktisch kaputt, kann die Maschine keine Diskette mounten/anlegen — das
+    // ist ein Startabbruch mit klarer Meldung, kein stiller Weiterlauf.  Einzelne
+    // FEHLERHAFTE Formatdefinitionen sind dagegen nicht fatal: sie werden übersprungen
+    // und über formatCatalog().issues() gemeldet.
+    {
+        std::string fatal;
+        disk_formats_ = FormatCatalog::loadDefault(&fatal);
+        if (!fatal.empty()) throw std::runtime_error(fatal);
+
+        // Übersprungene Definitionen zusätzlich auf stderr — eine Konfigurationspanne
+        // muss sichtbar sein, auch wenn das Logging aus ist oder in eine Datei geht.
+        for (const auto& issue : disk_formats_.issues()) {
+            LOG_WARN("Formate", "%s", issue.c_str());
+            std::fprintf(stderr, "[Formatkatalog] %s\n", issue.c_str());
+        }
+    }
 
     // ZVE1 (Haupt-CPU) lebt jetzt auf der K2526-Karte.
     // Verdrahtung mit dem Bus erfolgt im K2526-Konstruktor.
@@ -80,6 +98,17 @@ void A5120Machine::wireBackplane() {
     // ZRE BS-PIO is on the second chain via Koppelbus (lowest priority)
     bus_.setInterruptChain({&afs_, &ass_, &zre_});
 
+    // Break-before-execute für Debugger (s. Z80::abortBeforeExecute): fordert ein
+    // Trace-Callback mitten in der Instruktionsvorbereitung einen Halt an (stop()),
+    // wird die Instruktion NICHT mehr ausgeführt — PC/Register/Speicher bleiben genau
+    // auf dem Stand, den der Callback gemeldet hat. Ohne das lief die Instruktion noch
+    // zu Ende und jede Abfrage nach dem Halt sah den Folgezustand.
+    // Die Rückfrage kostet nur etwas, wenn überhaupt ein traceCallback installiert ist
+    // (also nur unter Debugger/Tracer, nie im GUI-/Produktivlauf).
+    auto abort_on_stop = [this]{ return stop_.load(std::memory_order_relaxed); };
+    zre_.cpu().abortBeforeExecute  = abort_on_stop;
+    zre_.zve2().abortBeforeExecute = abort_on_stop;
+
     // Koppelbus wiring:
     // ZRE CTC ZC/TO outputs → Koppelbus zc_to[0..2] signals.
     // zc_to[2] is also "fest verdrahtet" back to ZRE CTC CLK/TRG[3] (channel cascade).
@@ -104,22 +133,49 @@ void A5120Machine::wireBackplane() {
     kbd_.connect(ass_.sioA32(), 0);
 }
 
-void A5120Machine::powerOn() {
+// Systemweiter /RESET des K1520-Backplane: ZVE1 + ALLE peripheren Bausteine.
+//
+// Nur die CPU zurückzusetzen genügt nicht.  Ein Reset aus dem laufenden Betrieb
+// liess sonst den System-CTC mit den IM2-Vektoren des alten OS weiterzählen
+// (`vecBase=F8`, Interrupts frei): sobald das Lade-ROM `IM 2`/`LD I,0` setzt und
+// `EI` gibt, landet der erste Timer-Interrupt auf einem Fantasie-Vektor aus der
+// ROM-Seite 0 → die Boot-Kette entgleist.  Dasselbe gilt für die SIOs (halb
+// gesendete Tastaturbytes, IUS in der Daisy-Chain) und den K5122 (offener
+// Lesetransfer + gehaltenes /BUSRQ).  Auf echter Hardware räumt die /RESET-
+// Leitung des Backplane genau das ab.
+void A5120Machine::resetHardware() {
     stop_.store(false);
-    zre_.powerOn();
+    zre_.powerOn();     // K2526: Lade-ROM mappen, BS-PIO/CTC/Q240 zurücksetzen
     zre_.cpuReset();
+    afs_.reset();       // K5122: Transfer abbrechen, /BUSRQ frei, PIOs zurück
+    ass_.reset();       // K8025: Baud-CTC + beide SIOs
+    kbd_.reset();       // K7637: Tastenwiederholung/LEDs/serielle Warteschlange
+    bus_.clearNMI();
+    bus_.releaseINT();
+    bus_.releaseWAIT();
+    bus_.markIntDirty();   // Daisy-Chain nach dem Reset neu bewerten
+
     // Run-Loop-Koppelzustand ZVE1↔ZVE2 auf Kaltstart bringen, sonst hängt ein
     // Neustart aus laufendem Betrieb im halb offenen DMA-Handshake fest.
     busrq_active_     = false;
     dma_saw_progress_ = false;
+    prev_floppy_int_  = false;
     bus_master_zve2_  = false;
     os_running_       = false;   // (SCPX) os-gated Laufzeit-Read-Gate zurücksetzen
     held_read_active_ = false;
     held_read_cycles_   = 0;
     held_read_watchdog_ = false;
-    afs_.endDmaTransfer();
-    screen_.clearScreen();   // Bildschirm sichtbar löschen (Kaltstart)
+    screen_.clearScreen();   // Bildschirm sichtbar löschen
     boot_trace_count_ = 0;
+}
+
+void A5120Machine::powerOn() {
+    // Echter Netz-Aus/Ein: das DRAM verliert seinen Inhalt (K3526 modelliert den
+    // unbestimmten Einschaltzustand als 0xFF, s. K3526-Konstruktor). Ohne dieses
+    // Löschen liefe ein Power-Cycle aus dem laufenden Betrieb auf altem RAM-Inhalt
+    // weiter — inklusive der Reste des vorherigen OS.
+    ops_.fill(0xFF);
+    resetHardware();
     LOG_INFO("A5120", "Power on: ZVE1 Reset, Lade-ROM aktiv");
 
 #if LOG_LEVEL >= 5
@@ -132,20 +188,73 @@ void A5120Machine::powerOn() {
 }
 
 void A5120Machine::reset() {
-    stop_.store(false);
-    zre_.powerOn();   // re-enable boot ROM
-    zre_.cpuReset();
-    busrq_active_     = false;
-    dma_saw_progress_ = false;
-    bus_master_zve2_  = false;
-    os_running_       = false;   // (SCPX) os-gated Laufzeit-Read-Gate zurücksetzen
-    held_read_active_ = false;
-    held_read_cycles_   = 0;
-    held_read_watchdog_ = false;
-    afs_.endDmaTransfer();
-    screen_.clearScreen();   // Bildschirm sichtbar löschen (Reset)
-    boot_trace_count_ = 0;
+    // Reset-Taste: wie /RESET auf echter Hardware — CPU + alle Bausteine, aber
+    // der RAM-Inhalt bleibt stehen (nur Netz-Aus verliert ihn, s. powerOn()).
+    resetHardware();
     LOG_INFO("A5120", "Reset: ZVE1 Reset, Lade-ROM reaktiviert");
+}
+
+// ─── Interrupt-Diagnose (Debugger `ivt`) ─────────────────────────────────────
+// Die Daisy-Chain wird hier baustein-fein aufgefaltet (Karte → Chip → Port/Kanal),
+// in genau der Prioritätsreihenfolge, in der interruptAcknowledge() sie abläuft:
+//   K5122 (ctrl-PIO → data-PIO) → K8025 (SIO A33 → SIO A32 → CTC A34)
+//   → K2526 (CTC → BS-PIO).
+// Vektoren: PIO je Port programmiert, CTC = Basisvektor | (Kanal<<1), SIO = WR2
+// des Kanals B als Basis (die Subtyp-Bits variieren je Anlass → exact=false).
+std::vector<A5120Machine::IntSource> A5120Machine::interruptSources() const {
+    std::vector<IntSource> out;
+    int pos = 0;
+    auto addPio = [&](const Z80PIO& pio, const char* name){
+        auto st = pio.debugState();
+        for (int p = 0; p < 2; ++p) {
+            IntSource s;
+            s.device  = std::string(name) + " " + (p ? "B" : "A");
+            s.vector  = st.port[p].vector;
+            s.ie      = st.port[p].ie;
+            s.pending = st.port[p].pending;
+            s.ius     = st.port[p].ius;
+            s.iei     = st.port[p].iei;
+            s.chain   = pos++;
+            out.push_back(std::move(s));
+        }
+    };
+    auto addCtc = [&](const Z80CTC& ctc, const char* name){
+        auto st = ctc.debugState();
+        for (int c = 0; c < 4; ++c) {
+            IntSource s;
+            s.device  = std::string(name) + " ch" + char('0' + c);
+            s.vector  = (uint8_t)(st.vecBase | (c << 1));   // wie Z80CTC::getVector()
+            s.ie      = st.ch[c].intEn;
+            s.pending = st.ch[c].intPending;
+            s.ius     = st.ch[c].ius;
+            s.iei     = st.ch[c].iei;
+            s.chain   = pos++;
+            out.push_back(std::move(s));
+        }
+    };
+    auto addSio = [&](const Z80SIO& sio, const char* name){
+        auto st = sio.debugState();
+        for (int c = 0; c < 2; ++c) {
+            IntSource s;
+            s.device  = std::string(name) + " " + (c ? "B" : "A");
+            s.vector  = st.ch[1].wr2;          // Basisvektor steht in WR2 des Kanals B
+            s.exact   = false;                 // + Subtyp-Bits (Rx/Tx/Ext) je Anlass
+            s.ie      = (st.ch[c].wr1 & 0x1F) != 0;
+            s.pending = st.ch[c].irqRx || st.ch[c].irqTx || st.ch[c].irqExt;
+            s.ius     = st.ch[c].ius;
+            s.iei     = st.ch[c].iei;
+            s.chain   = pos++;
+            out.push_back(std::move(s));
+        }
+    };
+    addPio(afs_.ctrlPio(), "K5122 ctrl-PIO");
+    addPio(afs_.dataPio(), "K5122 data-PIO");
+    addSio(ass_.sioA33(),  "K8025 SIO-A33 (DFUE)");
+    addSio(ass_.sioA32(),  "K8025 SIO-A32 (Tastatur)");
+    addCtc(ass_.ctcA34(),  "K8025 CTC-A34");
+    addCtc(zre_.ctc(),     "K2526 CTC");
+    addPio(zre_.bsPio(),   "K2526 BS-PIO");
+    return out;
 }
 
 // ─── Snapshot / reverse-debugging support ────────────────────────────────────
@@ -413,8 +522,13 @@ int A5120Machine::run(int max_cycles) {
             }
             if (!zre_.isZVE2InReset() && !zre_.isZVE2Waiting()) {
                 bus_master_zve2_ = true;
+                bus_.setBusMasterZVE2(true);
                 int used2 = zre_.zve2Step();
                 bus_master_zve2_ = false;
+                bus_.setBusMasterZVE2(false);
+                // Debugger-Halt VOR der Instruktion (abortBeforeExecute): nichts
+                // ausgeführt, nichts zu verbuchen — Lauf hier beenden.
+                if (used2 == 0 && stop_.load(std::memory_order_relaxed)) break;
                 if (used2 <= 0) used2 = 1;   // Sicherung gegen Endlosschleife
                 remaining     -= used2;
                 total_cycles_ += used2;
@@ -481,6 +595,9 @@ int A5120Machine::run(int max_cycles) {
 
         const uint16_t pc_before = zre_.cpuPC();
         int used = zre_.cpuStep();
+        // Debugger-Halt VOR der Instruktion (abortBeforeExecute): die Instruktion ist
+        // nicht gelaufen, also weder Takte noch Floppy-/CTC-/Tastatur-Zeit verbuchen.
+        if (used == 0 && stop_.load(std::memory_order_relaxed)) break;
         remaining -= used;
         total_cycles_ += used;
 
@@ -522,16 +639,26 @@ int A5120Machine::run(int max_cycles) {
 bool A5120Machine::mountDisk(int drive, const std::string& path,
                               const std::string& format_name, bool wp) {
     if (drive < 0 || drive > 3) { last_error_ = "Invalid drive"; return false; }
-
-    auto it = std::find_if(disk_formats_.begin(), disk_formats_.end(),
-                           [&](const DiskFormat& f){ return f.name == format_name; });
-    if (it == disk_formats_.end()) {
-        last_error_ = "Unknown format: " + format_name;
+    if (!drive_profiles_[drive].present) {
+        last_error_ = "Kein Laufwerk an Slot " + std::to_string(drive);
         return false;
     }
 
+    const DiskFormat* fmt = disk_formats_.find(format_name);
+    if (!fmt) {
+        last_error_ = "Unbekanntes Format: " + format_name;
+        return false;
+    }
+    // BEWUSST KEINE drives:-Prüfung beim Mounten eines VORHANDENEN Images:
+    //  - bei self-describing Containern (.hfe) ist der Formatname nur ein Platzhalter,
+    //    die Geometrie kommt aus der Datei (so mountet z. B. tools/format_driver alle
+    //    Slots nominell als "cpa780");
+    //  - der Laufwerkstyp ist auf der A5120 reine BIOS-Software, Combo-Boot-Disketten
+    //    betreiben an B:/C: bewusst Fremdtypen (CLAUDE.md, docs/format.md §11).
+    // Die Kompatibilität wird dort erzwungen, wo das Format die Struktur wirklich
+    // bestimmt: in createDisk() und in der angebotenen Auswahl (compatibleFormats()).
     std::lock_guard<std::mutex> lk(disk_mutex_);
-    if (afs_.mountDisk(drive, path, *it, wp)) return true;
+    if (afs_.mountDisk(drive, path, *fmt, wp)) return true;
 
     // Grund aus dem Laufwerk übernehmen (Geometrie-/Verfahrenskonflikt); wurde das
     // Image gar nicht erst geöffnet, ist die Laufwerks-Meldung leer → Fallback.
@@ -542,39 +669,46 @@ bool A5120Machine::mountDisk(int drive, const std::string& path,
     return false;
 }
 
-// Default-DiskFormat einer NEU angelegten Diskette je Laufwerkstyp (DriveProfile).
-// Wird benutzt, wenn createDisk ohne expliziten Formatnamen aufgerufen wird.
-static std::string defaultFormatFor(const DriveProfile& p) {
-    if (p.name == "ss_525_40")     return "k5601_ss40_5x1024";  // K5600.10 (200K)
-    if (p.name == "ss_525_80")     return "cpa200";             // K5600.20 (400K)
-    if (p.name == "mf3200_8_ss77") return "mf3200";             // MF3200 (308K, FM)
-    if (p.name.rfind("mf6400", 0) == 0) return "mf6400";        // MF6400 (616K)
-    return "cpa800";  // K5601 / mfs_525_ds80: 800K, ohne Bootspur
-}
-
 bool A5120Machine::createDisk(int drive, const std::string& path,
                               const std::string& format_name, bool write_protect) {
     if (drive < 0 || drive > 3) { last_error_ = "Invalid drive"; return false; }
 
     const DriveProfile& prof = drive_profiles_[drive];
-
-    // Leerer Formatname → laufwerkstyp-spezifisches Standardformat.
-    const std::string fname = format_name.empty() ? defaultFormatFor(prof)
-                                                   : format_name;
-
-    auto it = std::find_if(disk_formats_.begin(), disk_formats_.end(),
-                           [&](const DiskFormat& f){ return f.name == fname; });
-    if (it == disk_formats_.end()) {
-        last_error_ = "createDisk: unbekanntes Format '" + fname + "'";
+    if (!prof.present) {
+        last_error_ = "Kein Laufwerk an Slot " + std::to_string(drive);
         return false;
     }
 
-    // Verfahren aus dem Laufwerk ableiten: reine FM-Laufwerke (8″-SD) → FM, sonst MFM.
-    const Encoding enc = prof.supports_mfm ? Encoding::MFM : Encoding::FM;
+    // Leerer Formatname → Standardformat des Laufwerkstyps (`default_for:` im Katalog).
+    const DiskFormat* fmt = nullptr;
+    if (format_name.empty()) {
+        fmt = disk_formats_.defaultFor(prof);
+        if (!fmt) {
+            last_error_ = "createDisk: kein Standardformat für Laufwerk '" + prof.name
+                          + "' im Katalog (default_for)";
+            return false;
+        }
+    } else {
+        fmt = disk_formats_.find(format_name);
+        if (!fmt) {
+            last_error_ = "createDisk: unbekanntes Format '" + format_name + "'";
+            return false;
+        }
+        if (!fmt->supportsDrive(prof.name)) {
+            last_error_ = "createDisk: Format '" + format_name + "' passt nicht zum Laufwerk '"
+                          + prof.name + "'";
+            return false;
+        }
+    }
 
-    auto img = DiskImage::create(path, *it, write_protect, enc);
+    // Verfahren kommt jetzt aus dem FORMAT (pro Spurbereich).  Für den HFE-Header und
+    // rohe .img zählt das vorherrschende Verfahren; Mischdichte trägt DiskImage::create
+    // spurweise ein.
+    const Encoding enc = fmt->predominantEncoding();
+
+    auto img = DiskImage::create(path, *fmt, write_protect, enc);
     if (!img) {
-        last_error_ = "createDisk fehlgeschlagen (Format '" + fname + "'): " + path;
+        last_error_ = "createDisk fehlgeschlagen (Format '" + fmt->name + "'): " + path;
         return false;
     }
 
@@ -585,6 +719,28 @@ bool A5120Machine::createDisk(int drive, const std::string& path,
                       ? ("createDisk: Mounten fehlgeschlagen: " + path)
                       : drv_err;
     return false;
+}
+
+std::string A5120Machine::defaultFormatName(int drive) const {
+    if (drive < 0 || drive > 3) return "";
+    const DiskFormat* f = disk_formats_.defaultFor(drive_profiles_[drive]);
+    return f ? f->name : "";
+}
+
+std::vector<std::string> A5120Machine::compatibleFormats(int drive) const {
+    std::vector<std::string> out;
+    if (drive < 0 || drive > 3) return out;
+
+    // Kompatibilität ist jetzt EXPLIZIT im Katalog deklariert (`drives:`), keine
+    // Geometrie-Heuristik mehr — das Standardformat des Slots steht an erster Stelle.
+    for (const DiskFormat* f : disk_formats_.forDrive(drive_profiles_[drive]))
+        out.push_back(f->name);
+    return out;
+}
+
+std::string A5120Machine::formatDescription(const std::string& format_name) const {
+    const DiskFormat* f = disk_formats_.find(format_name);
+    return f ? f->description : "";
 }
 
 bool A5120Machine::unmountDisk(int drive) {

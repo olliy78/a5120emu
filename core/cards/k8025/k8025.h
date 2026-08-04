@@ -147,6 +147,14 @@ public:
      */
     uint8_t getVector() const override;
 
+    /// @brief Anfordernder Baustein (Debugger): SIO A33 (DFÜ), SIO A32 (Tastatur) oder CTC A34.
+    const char* intDeviceName() const override {
+        if (sio_dfue_.hasInterrupt())         return "K8025 SIO-A33 (DFUE)";
+        if (sio_kbd_printer_.hasInterrupt())  return "K8025 SIO-A32 (Tastatur)";
+        if (ctc_a34_.hasInterrupt())          return "K8025 CTC-A34";
+        return "K8025";
+    }
+
     // ─── Keyboard interface (SIO A32, channel A, connector X4) ────────────
 
     /**
@@ -250,6 +258,18 @@ public:
      * @return Reference to sio_dfue_ (Z80SIO)
      */
     Z80SIO& sioA33() { return sio_dfue_; }
+    /// @brief Const-Variante (Diagnose: `ivt`, `dev sio2`).
+    const Z80SIO& sioA33() const { return sio_dfue_; }
+
+    /**
+     * @brief Hardware-Reset (/RESET des K1520-Backplane): Baudraten-CTC und beide
+     *        SIOs in den Einschaltzustand.  Bus-/Koppelbus-Verdrahtung bleibt.
+     */
+    void reset() {
+        ctc_a34_.reset();
+        sio_kbd_printer_.reset();
+        sio_dfue_.reset();
+    }
 
     /**
      * @brief Return a reference to SIO A32 (keyboard + printer channels).

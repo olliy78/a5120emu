@@ -1,0 +1,157 @@
+# Dispatch-Smoke-Test: JEDES k1520dbg-Kommando einmal aufrufen.
+#
+# Zweck ist NICHT, das Verhalten zu pruefen (dafuer die gezielten cli_dbg_*-Tests),
+# sondern die KOMMANDO-TABELLE gegen Refactorings abzusichern: faellt ein Zweig aus
+# der if/else-Kette oder wird ein Name umbenannt, meldet das Tool den Kommandonamen
+# als unbekannt — darauf prueft der Test (FAIL_REGULAR_EXPRESSION), ebenso auf
+# Absturz/Signal (Exit-Code != 0).
+# ACHTUNG: in dieser Datei darf die Zeichenfolge nicht woertlich vorkommen, sonst
+# schlaegt der Test an der eigenen Kommentarzeile fehl.
+#
+# Reihenfolge so gewählt, dass nichts hängt: erst statische Kommandos, dann
+# kurze Läufe, am Ende die aufräumenden Varianten.
+
+# ── Hilfe/Themen ────────────────────────────────────────────────────────────
+help
+help floppy
+help dualcpu
+h
+?
+
+# ── Symbole, Aliase, Variablen ──────────────────────────────────────────────
+sym add MARKE 0x6000
+sym list
+alias zeigen u 0x6000 1
+alias
+unalias zeigen
+vars add zaehler 0x6002
+vars
+vars clear
+
+# ── Speicher lesen/schreiben ────────────────────────────────────────────────
+e 0x6000 3E 05 C9
+d 0x6000 16
+dump 0x6000 16
+u 0x6000 2
+x/4xb 0x6000
+x 0x6000 4
+list 0x6000
+l 0x6000
+set A 0x12
+set 2 A 0x34
+r
+r 2
+rj
+rj2
+where
+w
+disp 2*3+4
+disp
+undisp 1
+
+# ── Breakpoints (setzen, listen, deaktivieren, löschen) ─────────────────────
+b 0x0135
+b2 0x0269
+tb 0x0137
+b 0x0139 if A==0
+bi 0x0135 2
+bdis 0x0135
+be 0x0135
+bl
+bd 0x0139
+bd2 0x0269
+bd 0x0137
+bd 0x0135
+bl
+
+# ── Ereignis-Breakpoints (nur scharf/entschärft, kein Lauf) ─────────────────
+bint on
+bint off
+bnmi on
+bnmi off
+breti on
+breti off
+bbusrq assert
+bbusrq off
+bxfer read start
+bxfer off
+bscreen "Bootloader"
+bscreen off
+
+# ── Watchpoints ─────────────────────────────────────────────────────────────
+wp 0x6005 == 99
+wpr 0x6006
+wb 0x6007..0x6008 changed
+wl
+wd 0x6005
+wd all
+iow 0x11
+iob 0x14
+iol
+iod 0x14
+iol
+
+# ── Log/Trace (Dateien landen im Arbeitsverzeichnis des Tests) ─────────────
+logpoint 0x0135 A
+lpl
+lpd 0x0135
+trace dbg_smoke_trace.txt 0x0130 0x0140
+trace off
+itrace dbg_smoke_itrace.txt
+itrace off
+
+# ── Chip-/Geräte-Zustand ────────────────────────────────────────────────────
+dev
+dev ctc
+dev pio
+dev pio bs
+dev pio k5122ctrl
+dev pio k5122data
+dev sio
+dev sio2
+ivt
+ivt all
+ivt 2
+disk verify
+
+# ── Laufsteuerung (kurz halten!) ────────────────────────────────────────────
+clock
+clock zve1
+clock machine
+mark
+s
+s 2
+n
+gu 0x0139
+g 20000
+fin
+hist 20000
+bt
+bt scan
+screen
+screen find "x"
+keys \s
+
+# ── Snapshots / Reverse / Zustand auf Platte ───────────────────────────────
+snap vorher
+snap list
+e 0x6000 00
+snap nachher
+snap diff vorher nachher
+restore vorher
+rs 1
+bs 1
+rc
+savestate dbg_smoke_state.bin
+loadstate dbg_smoke_state.bin
+save dbg_smoke_mem.bin 0x6000 16
+load dbg_smoke_mem.bin 0x6100
+verify dbg_smoke_mem.bin @0x6100
+
+# ── Listings ────────────────────────────────────────────────────────────────
+lst
+lst list
+
+# ── Rest ────────────────────────────────────────────────────────────────────
+reset
+q

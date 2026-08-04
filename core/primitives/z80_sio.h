@@ -392,6 +392,17 @@ public:
     };
     DebugState debugState() const;
 
+    /**
+     * @brief Hardware-Reset (/RESET-Leitung des K1520-Backplane).
+     *
+     * Beide Kanäle gehen in den Einschaltzustand (alle WRs 0, leere FIFOs, keine
+     * Interruptanforderung, kein IUS).  Verdrahtung (Takt-Callback, Name) bleibt.
+     */
+    void reset() {
+        ch_a_.reset(); ch_b_.reset();
+        ch_a_.ius = ch_b_.ius = false;
+    }
+
     // ─── Snapshot serialisation (savestate/loadstate) ────────────────────────
     // Append the complete, restorable chip state (both channels + IEI line) to
     // @p out. The wiring callback (Channel::clk_cb_) and bus/daisy-chain

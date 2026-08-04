@@ -34,7 +34,7 @@
 #include "core/peripherals/floppy_drive/floppy_drive2.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/drive_profile.h"
-#include "core/peripherals/floppy_drive/format_parser.h"
+#include "core/peripherals/floppy_drive/disk_format.h"
 #include "core/peripherals/floppy_drive/track_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"   // LogicalSector
 #include <array>
@@ -68,7 +68,7 @@ public:
     /**
      * @brief Konstruiert die Karte mit je einem Laufwerksprofil pro Slot.
      * @param bus      K1520-Systembus (für BUSRQ/BUSAK)
-     * @param profiles Laufwerksprofile der 4 Slots (Default: 4× mfs_525_ds80)
+     * @param profiles Laufwerksprofile der 4 Slots (Default: 4× K5601)
      * @param cpu_hz   effektive Z80-Taktfrequenz für die Index-Periode (Default 2.45 MHz)
      */
     explicit K5122(K1520Bus& bus,
@@ -86,6 +86,12 @@ public:
     bool    hasInterrupt() const override;
     uint8_t getVector() const override;
     void    onRETI() override;
+    /// @brief Anfordernder Baustein (Debugger): Steuer- oder Daten-PIO.
+    const char* intDeviceName() const override {
+        if (ctrl_pio_.hasInterrupt()) return "K5122 ctrl-PIO";
+        if (data_pio_.hasInterrupt()) return "K5122 data-PIO";
+        return "K5122";
+    }
 
     // ─── Disk management ─────────────────────────────────────────────────────
 
@@ -219,6 +225,11 @@ public:
         return s;
     }
 
+    /// @brief Steuer-PIO (Ports 0x10–0x13) — Diagnose/Debugger (`dev pio k5122ctrl`).
+    const Z80PIO& ctrlPio() const { return ctrl_pio_; }
+    /// @brief Daten-PIO (Ports 0x14–0x17) — Diagnose/Debugger (`dev pio k5122data`).
+    const Z80PIO& dataPio() const { return data_pio_; }
+
     // ─── DMA-Arbitrierung / Index ────────────────────────────────────────────
 
     /// @brief ZVE2-Fallback: führt eine ausstehende DMA-Übertragung aus und gibt /BUSRQ frei.
@@ -227,6 +238,16 @@ public:
     void endDmaTransfer();
     /// @brief Schreitet die Floppy-Simulation um @p cycles Takte fort (Index-Puls).
     void update(int cycles);
+
+    /**
+     * @brief Hardware-Reset (/RESET des K1520-Backplane).
+     *
+     * Bricht einen laufenden Lese-/Schreibtransfer ab, gibt /BUSRQ frei und setzt
+     * beide PIOs sowie die gelatchten Steuersignale in den Einschaltzustand.
+     * NICHT zurückgesetzt werden die eingelegten Disketten und die mechanische
+     * Kopfposition — ein Reset bewegt auf echter Hardware kein Laufwerk.
+     */
+    void reset();
 
 private:
     // ─── PIO-/Signal-Handler ─────────────────────────────────────────────────

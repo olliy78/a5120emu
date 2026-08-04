@@ -42,7 +42,8 @@
  *     A2 /NMI     – NMI source (input, driven by Q240 on violation)
  *     A3 SPS-Ind  – memory-protect violation indicator (input, from Q240)
  *     A4 /EBF     – single-step end (input)
- *     A5 /WR      – memory test WR signal (input)
+ *     A5 /WR      – memory test WR signal (input, Strobe: nur während eines
+ *                   ZVE1-Schreibzyklus aktiv-LOW → pulseWriteStrobe())
  *     A6 /RDY     – memory/peripheral ready (input)
  *     A7 MEMDI1/2 – memory-disable output (active high → bus_.setMEMDI(true))
  *   Port B (mixed):
@@ -363,6 +364,13 @@ public:
      */
     void    onRETI() override;
 
+    /// @brief Anfordernder Baustein (Debugger): System-CTC oder BS-PIO.
+    const char* intDeviceName() const override {
+        if (ctc_.hasInterrupt())    return "K2526 CTC";
+        if (bs_pio_.hasInterrupt()) return "K2526 BS-PIO";
+        return "K2526";
+    }
+
     // ─── Lifecycle ─────────────────────────────────────────────────────────
 
     /**
@@ -665,6 +673,24 @@ private:
      * Call whenever sps_ind_ or port_a_inputs_ changes.
      */
     void updatePortAInputs();
+
+    /**
+     * @brief /WR-Strobe (BS-PIO Port A, A5) für einen ZVE1-Schreibzyklus pulsen.
+     *
+     * A5 ist auf der ZRE der **Schreib-Strobe** — er liegt nur WÄHREND eines
+     * Speicher-Schreibzyklus aktiv (LOW), nicht dauernd.  Genau darauf beruht die
+     * Speicher-Ausbaumessung des Lade-ROMs (0040H–005AH) und HARDYs MEMDI-RDY-Test:
+     * beide schärfen Port A mit Maske 9FH (A5 /WR AND A6 /RDY, aktiv-LOW), geben
+     * `EI` und lösen den Interrupt **durch den nachfolgenden Schreibbefehl** aus;
+     * die ISR prüft dann, ob das Testbyte im Speicher gelandet ist.
+     *
+     * Modellierte man A5 als dauerhaft aktiv, käme der Interrupt schon beim `EI`
+     * — also VOR dem Schreibzugriff — und die ISR sähe den alten Speicherinhalt.
+     * Bei frisch eingeschaltetem DRAM (0xFF) fällt das nicht auf, nach einem Reset
+     * aus dem laufenden Betrieb (echte Daten im RAM) meldet die Messung dagegen
+     * „kein Speicher" und der Neustart scheitert.
+     */
+    void pulseWriteStrobe();
 
     /**
      * @brief Build the current BS-PIO Port B input byte.

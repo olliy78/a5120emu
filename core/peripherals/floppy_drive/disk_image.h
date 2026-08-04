@@ -15,7 +15,7 @@
 
 #pragma once
 #include "track_image.h"
-#include "format_parser.h"   // DiskFormat
+#include "disk_format.h"   // DiskFormat
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -71,6 +71,9 @@ public:
      *
      * Erkennt HFE an der Signatur "HXCPICFE"/"HXCHFEV3" (Folgearbeit), sonst Raw/.img
      * (braucht @p fmt).  @p fmt nur für nicht-self-describing Backends nötig.
+     *
+     * Das Aufzeichnungsverfahren eines Raw-Images steht im @p fmt — **pro Spurbereich**
+     * (@ref TrackFormat::encoding), nicht als Eigenschaft des Aufrufs.
      *
      * @param path          Pfad zur Image-Datei
      * @param fmt           DiskFormat (nur Raw); std::nullopt für self-describing

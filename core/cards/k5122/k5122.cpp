@@ -31,7 +31,7 @@
 /**
  * @brief Initialisiert die Karte und alle 4 Laufwerksslots.
  *
- * Jeder Slot wird mit dem übergebenen DriveProfile initialisiert (Default: mfs_525_ds80).
+ * Jeder Slot wird mit dem übergebenen DriveProfile initialisiert (Default: K5601).
  * Der initiale Status-Port-B wird sofort gesetzt, damit der erste IN 0x12 einen
  * plausiblen Wert liefert.
  */
@@ -246,6 +246,8 @@ bool K5122::mountDisk(int drive, std::unique_ptr<DiskImage> img, bool write_prot
 bool K5122::mountDisk(int drive, const std::string& path,
                         const DiskFormat& fmt, bool write_protect) {
     if (drive < 0 || drive > 3) return false;
+    // Das Verfahren steht im DiskFormat (pro Spurbereich, §8.6) — für .hfe ohnehin in
+    // der Datei selbst.  Es wird nicht mehr aus dem Laufwerk abgeleitet.
     auto img = DiskImage::open(path, fmt, write_protect);
     if (!img) {
         // Öffnen/Erkennen fehlgeschlagen (unbekanntes/leeres/kaputtes Image) — für
@@ -330,14 +332,39 @@ void K5122::dmaUpdate() {
  *
  * Stellt den ctrl_pio_-Port-A-Interrupt wieder her (analog alter Karte, 0x83 = IE=1).
  */
+void K5122::reset() {
+    // Laufenden Transfer abbrechen und den Bus freigeben — sonst startet die neue
+    // Boot-Kette in einen halb offenen DMA-Handshake des alten OS hinein.
+    transferring_ = write_mode_ = we_writing_ = false;
+    dma_pending_  = dma_is_write_ = false;
+    byte_ready_   = false;
+    byte_acc_     = 0;
+    str_inactive_cycles_ = 0;
+    write_idle_acc_      = 0;
+    post_write_grace_    = 0;
+    write_buf_.clear();
+    cur_track_ = nullptr;
+    head_pos_  = 0;
+    locked_    = false;
+    if (bus_.isBUSRQ()) bus_.releaseBUSRQ();
+
+    // Beide PIOs und die gelatchten Steuersignale in den Einschaltzustand.
+    ctrl_pio_.reset();
+    data_pio_.reset();
+    prev_ctrl_a_ = 0xFF;
+    loaded_cyl_  = loaded_head_ = 0xFF;   // Lese-Spur beim nächsten /STR neu laden
+    read_enc_overridden_ = false;
+    head_loaded_ = false;
+    index_cycle_acc_ = 0;
+    LOG_INFO("K5122", "Hardware-Reset: Transfer abgebrochen, /BUSRQ frei, PIOs zurückgesetzt");
+}
+
 void K5122::endDmaTransfer() {
     if (!bus_.isBUSRQ()) return;
     transferring_ = false;
     dma_pending_  = false;
     bus_.releaseBUSRQ();
-    // ctrl_pio_ Port-A Interrupt-Enable wiederherstellen (von ZVE2-OUT(11H,03H) gelöscht).
-    ctrl_pio_.ioWrite(1, 0x83);
-    LOG_DEBUG("K5122", "endDmaTransfer: ZVE2 DMA fertig, BUSRQ freigegeben, ctrl-PIO Port-A IE wiederhergestellt");
+    LOG_DEBUG("K5122", "endDmaTransfer: ZVE2 DMA fertig, BUSRQ freigegeben");
 }
 
 /**
@@ -576,6 +603,24 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
         // MR/SD (bit5): bit5=1 → inward (höhere Zylinder), bit5=0 → outward (Richtung 0)
         step_dir_in_ = (data & 0x20) != 0;
         doStep();
+    }
+
+    // ── /STR (bit3) steigende Flanke DURCH ZVE2: Busbesitz sofort beenden ────
+    // /STR=1 macht den Anschluss inaktiv (K5122-Doku §5.5).  Setzt ZVE2 es selbst,
+    // ist seine DMA-Koroutine fertig — /BUSRQ fällt, ZVE2 friert im /WAIT ein und
+    // führt KEINE weitere Instruktion aus.  Genau darauf verlässt sich UDOS: hinter
+    // dem abschließenden `OUT (10H)` steht ein totes `RET`, das sich seinen
+    // Rücksprung aus dem CRC-Puffer holt (die Koroutine setzt `LD SP,0E50H`) und
+    // per RST-38-PUSH die CRC des ersten Sektors zerschreibt → „ERROR: C6".
+    // ZVE1-Schreibzugriffe mit /STR=1 während einer laufenden DMA bleiben von der
+    // Abtastung in update() abgedeckt: auf echter Hardware ist ZVE1 währenddessen
+    // angehalten, sie sind ein Artefakt unserer verschränkten Ausführung.
+    if (transferring_ && !write_mode_ && !(prev_ctrl_a_ & 0x08) && (data & 0x08)
+        && bus_.busMasterIsZVE2() && bus_.isBUSRQ()) {
+        prev_ctrl_a_ = data;
+        bus_.releaseBUSRQ();
+        LOG_DEBUG("K5122", "/STR=1 von ZVE2: Busbesitz beendet, ZVE2 haelt an");
+        return;
     }
 
     // ── /STR (bit3) fallende Flanke: Strobe ──────────────────────────────────

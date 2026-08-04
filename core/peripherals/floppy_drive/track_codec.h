@@ -35,7 +35,22 @@ struct LogicalSector {
     std::vector<uint8_t> data;
     bool     id_crc_ok   = true;   ///< von parseTrack gesetzt
     bool     data_crc_ok = true;   ///< von parseTrack gesetzt
+    /// @brief Bytes UNMITTELBAR hinter der Daten-CRC, wie sie auf dem Medium stehen.
+    ///
+    /// Bei einer Standard-IBM-Spur ist das schlicht der Gap (0x4E bzw. 0xFF) — dort
+    /// aendert die Uebernahme in den Lese-Stream nichts.  Fremdformate haengen hier
+    /// aber echte Nutzdaten an: **UDOS** schreibt je Sektor einen Sektorkontrollblock
+    /// (Rueckwaerts-/Vorwaertszeiger + eigene CRC) direkt hinter die Daten-CRC und
+    /// liest ihn beim Lesen mit (ZVE2 `LD BC,0416H / INIR`).  Wird die Spur aus den
+    /// geparsten Sektoren neu aufgebaut, gingen genau diese Bytes verloren und der
+    /// UDOS-Lader las Gap-Fuellbytes als Zeiger → „BAD POINTER IN OS".
+    /// Nur von @ref parseTrack gefuellt (bis @ref kSectorTailBytes Bytes).
+    std::vector<uint8_t> tail;
 };
+
+/// @brief Anzahl der Bytes hinter der Daten-CRC, die @ref parseTrack mitnimmt und
+///        @ref buildFaithfulReadTrack unveraendert in den Lese-Stream stellt.
+inline constexpr size_t kSectorTailBytes = 8;
 
 /**
  * @struct GapParams

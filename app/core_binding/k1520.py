@@ -80,12 +80,27 @@ except Exception as e:
 # Handle type (opaque pointer)
 K1520Handle = ctypes.c_void_p
 
-# Supported format names in the current core implementation.
+# Legacy K5601 CP/A format names (kept for reference).  The authoritative,
+# drive-type-specific list is queried at runtime via K1520Emulator.drive_formats().
 DISK_FORMATS = ["cpa780", "cpa800", "cpa640", "cpa624"]
+
+# Core DriveProfile names per K5122 slot (see core builtinDriveProfile).
+# "none" marks an empty slot ("kein Laufwerk"); "" / None keeps the default (K5601).
+DRIVE_NONE = "none"
 
 # k1520_create(machine_type: int) -> K1520Handle
 _lib.k1520_create.argtypes = [ctypes.c_int]
 _lib.k1520_create.restype = K1520Handle
+
+# k1520_create_configured(machine_type, d0, d1, d2, d3: const char*) -> K1520Handle
+_lib.k1520_create_configured.argtypes = [
+    ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p
+]
+_lib.k1520_create_configured.restype = K1520Handle
+
+# k1520_last_init_error() -> const char*   (Grund eines fehlgeschlagenen create)
+_lib.k1520_last_init_error.argtypes = []
+_lib.k1520_last_init_error.restype = ctypes.c_char_p
 
 # k1520_destroy(K1520Handle) -> void
 _lib.k1520_destroy.argtypes = [K1520Handle]
@@ -143,6 +158,26 @@ _lib.k1520_create_disk.restype = ctypes.c_bool
 _lib.k1520_unmount_disk.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_unmount_disk.restype = ctypes.c_bool
 
+# k1520_drive_format_count(K1520Handle, drive: int) -> int
+_lib.k1520_drive_format_count.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_drive_format_count.restype = ctypes.c_int
+
+# k1520_drive_format_name(K1520Handle, drive: int, index: int) -> const char*
+_lib.k1520_drive_format_name.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_int]
+_lib.k1520_drive_format_name.restype = ctypes.c_char_p
+
+# k1520_drive_default_format(K1520Handle, drive: int) -> const char*
+_lib.k1520_drive_default_format.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_drive_default_format.restype = ctypes.c_char_p
+
+# k1520_format_description(K1520Handle, name: const char*) -> const char*
+_lib.k1520_format_description.argtypes = [K1520Handle, ctypes.c_char_p]
+_lib.k1520_format_description.restype = ctypes.c_char_p
+
+# k1520_formats_source(K1520Handle) -> const char*
+_lib.k1520_formats_source.argtypes = [K1520Handle]
+_lib.k1520_formats_source.restype = ctypes.c_char_p
+
 # k1520_last_error(K1520Handle) -> const char*
 _lib.k1520_last_error.argtypes = [K1520Handle]
 _lib.k1520_last_error.restype = ctypes.c_char_p
@@ -178,17 +213,53 @@ _lib.k1520_head_loaded.restype = ctypes.c_bool
 class K1520Emulator:
     """Python wrapper for K1520 A5120 emulator."""
     
-    def __init__(self):
-        """Initialize emulator instance."""
+    def __init__(self, drive_types: Optional[list] = None):
+        """Initialize emulator instance.
+
+        Args:
+            drive_types: optional list of up to 4 core DriveProfile names, one per
+                K5122 slot (e.g. ``["K5601", "K5601", "K5601", "none"]``).  An entry
+                that is ``None`` or ``""`` keeps the slot default (K5601); ``"none"``
+                marks an empty slot ("kein Laufwerk").  ``None`` (the default) builds
+                the standard machine (4× K5601).
+        """
+        # Zuerst setzen: schlägt die Erzeugung fehl, läuft __del__ trotzdem und
+        # darf nicht über ein fehlendes Attribut stolpern.
+        self._handle = None
+        self._drive_types = list(drive_types) if drive_types else None
         try:
-            handle = _lib.k1520_create(0)  # K1520_MACHINE_A5120 = 0
-            if not handle:
-                raise RuntimeError("k1520_create returned NULL - possible constructor exception")
-            self._handle = handle
+            handle = self._create_handle(self._drive_types)
         except Exception as e:
             raise RuntimeError(f"Failed to create K1520 emulator: {e}")
+        if not handle:
+            # Startabbruch im Core (z. B. fehlender/kaputter Diskettenformat-Katalog
+            # data/formats.yaml).  Ohne Handle ist last_error() nicht erreichbar —
+            # der Grund kommt deshalb aus k1520_last_init_error().
+            reason = _lib.k1520_last_init_error()
+            reason = reason.decode("utf-8", "replace") if reason else ""
+            raise RuntimeError(reason or "k1520_create lieferte NULL (unbekannter Grund)")
+        self._handle = handle
         self._running = False
         self._thread: Optional[threading.Thread] = None
+
+    @staticmethod
+    def _create_handle(drive_types: Optional[list]):
+        """Create a core handle, configured with per-slot drive profiles if given."""
+        if not drive_types:
+            return _lib.k1520_create(0)  # K1520_MACHINE_A5120 = 0, default 4× K5601
+
+        names = list(drive_types)[:4] + [None] * (4 - len(drive_types))
+
+        def enc(name):
+            return name.encode("utf-8") if name else None  # None/"" → core keeps default
+
+        return _lib.k1520_create_configured(
+            0, enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
+
+    @property
+    def drive_types(self) -> Optional[list]:
+        """The per-slot DriveProfile names this machine was created with (or None)."""
+        return list(self._drive_types) if self._drive_types else None
     
     def __del__(self):
         """Cleanup on deletion."""
@@ -302,7 +373,8 @@ class K1520Emulator:
         Args:
             drive: Drive number (0-3)
             path: Path to disk image file
-            format_name: Disk format name (cpa800, cpa780, cpa640, cpa624)
+            format_name: Disk format name; must fit the slot's drive type — see
+                :meth:`drive_formats`. For .hfe the geometry comes from the file.
             write_protect: Whether disk is write-protected
             
         Returns:
@@ -311,10 +383,8 @@ class K1520Emulator:
         if not os.path.exists(path):
             raise FileNotFoundError(f"Disk image not found: {path}")
 
-        format_name = format_name.lower()
-        if format_name not in DISK_FORMATS:
-            raise ValueError(f"Unsupported format '{format_name}', expected one of: {', '.join(DISK_FORMATS)}")
-        
+        # The core is the authority on valid format names (see drive_formats());
+        # it reports an error via last_error() if the format does not fit.
         path_bytes = path.encode('utf-8')
         format_bytes = format_name.encode('utf-8')
         return _lib.k1520_mount_disk(self._handle, ctypes.c_int(drive), path_bytes, format_bytes, ctypes.c_bool(write_protect))
@@ -329,17 +399,16 @@ class K1520Emulator:
         Args:
             drive: Drive number (0-3)
             path: Path of the new disk image file (overwrites if it exists)
-            format_name: Disk format name (cpa800, cpa780, cpa640, cpa624);
-                         empty string picks the drive-type default.
+            format_name: Disk format name (see :meth:`drive_formats`); an empty
+                         string picks the drive-type default.
             write_protect: Whether disk is write-protected
 
         Returns:
             True if successful
         """
-        format_name = (format_name or "").lower()
-        if format_name and format_name not in DISK_FORMATS:
-            raise ValueError(f"Unsupported format '{format_name}', expected one of: {', '.join(DISK_FORMATS)}")
-
+        # Empty format → drive-type default (the core resolves it); otherwise the
+        # core validates the name against the formats that fit the drive.
+        format_name = format_name or ""
         path_bytes = path.encode('utf-8')
         format_bytes = format_name.encode('utf-8')
         return _lib.k1520_create_disk(self._handle, ctypes.c_int(drive), path_bytes, format_bytes, ctypes.c_bool(write_protect))
@@ -361,6 +430,35 @@ class K1520Emulator:
         """
         return _lib.k1520_unmount_disk(self._handle, ctypes.c_int(drive))
     
+    def drive_formats(self, drive: int) -> list:
+        """Built-in disk formats that fit the drive in *drive* (default first).
+
+        Returns an empty list for an empty slot.  These are the names accepted by
+        :meth:`mount_disk`/:meth:`create_disk` for that slot.
+        """
+        n = _lib.k1520_drive_format_count(self._handle, ctypes.c_int(drive))
+        out = []
+        for i in range(n):
+            name = _lib.k1520_drive_format_name(self._handle, ctypes.c_int(drive), ctypes.c_int(i))
+            if name:
+                out.append(name.decode("utf-8"))
+        return out
+
+    def drive_default_format(self, drive: int) -> str:
+        """Drive-type default format name (what an empty-format create uses)."""
+        name = _lib.k1520_drive_default_format(self._handle, ctypes.c_int(drive))
+        return name.decode("utf-8") if name else ""
+
+    def format_description(self, name: str) -> str:
+        """Human-readable description of a catalog format ("" if unknown)."""
+        d = _lib.k1520_format_description(self._handle, name.encode("utf-8"))
+        return d.decode("utf-8") if d else ""
+
+    def formats_source(self) -> str:
+        """Path(s) of the loaded formats.yaml — diagnostics."""
+        s = _lib.k1520_formats_source(self._handle)
+        return s.decode("utf-8") if s else ""
+
     def is_disk_active(self, drive: int) -> bool:
         """Check if disk is currently mounted."""
         return _lib.k1520_disk_active(self._handle, ctypes.c_int(drive))

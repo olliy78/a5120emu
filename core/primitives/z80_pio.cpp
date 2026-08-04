@@ -78,6 +78,12 @@ Z80PIO::Z80PIO(const std::string& name) : name_(name) {}
  * - **D[3:0]=0011 (0x03)**: Simplified interrupt control (no mask)
  *   - D7: IE, D6: AND/OR, D5: H/L
  *
+ * Wird die Interruptfreigabe (D7) zurückgenommen, verfällt eine bereits
+ * anstehende, aber noch nicht quittierte Anforderung (`pending`) — genau darauf
+ * beruht die Speicher-Ausbaumessung des A5120-Lade-ROMs: ihre ISR sperrt Port A
+ * als erstes wieder und wird damit die Anforderung los, die der Stack-Push der
+ * Interruptannahme über den /WR-Strobe gerade neu gesetzt hat.
+ *
  * State Machine:
  * - IDLE: Ready for any control word
  * - EXPECT_DIRECTION: Waiting for direction mask (after mode 3 selection)
@@ -118,6 +124,7 @@ void Z80PIO::writeCtrl(Port& p, uint8_t data) {
         p.ie               = (data >> 7) & 1;
         p.int_and          = (data >> 6) & 1;
         p.int_active_high  = (data >> 5) & 1;
+        if (!p.ie) p.pending = false;   // Sperren löscht eine anstehende Anforderung
         if ((data >> 4) & 1)
             p.ctrl_state = CtrlState::EXPECT_MASK;   // Neubewertung erst nach Maske
         else if (p.mode == 3)
@@ -129,6 +136,7 @@ void Z80PIO::writeCtrl(Port& p, uint8_t data) {
         p.ie               = (data >> 7) & 1;
         p.int_and          = (data >> 6) & 1;
         p.int_active_high  = (data >> 5) & 1;
+        if (!p.ie) p.pending = false;   // s.o.: Sperren löscht die Anforderung
         if (p.mode == 3) checkInterrupt(p, p.input_latch);
         return;
     }
@@ -428,7 +436,14 @@ bool Z80PIO::deserialize(const uint8_t*& p, const uint8_t* end) {
  * @return true if requesting interrupt, false otherwise
  */
 bool Z80PIO::hasInterrupt() const {
-    return (porta_.iei && porta_.pending) || (portb_.iei && portb_.pending);
+    // WICHTIG: dieselbe Bedingung wie getVector() — inklusive `!ius`.  Ein Port,
+    // der bereits bedient wird (IUS=1, noch kein RETI), darf KEINEN Interrupt
+    // mehr anfordern, auch wenn inzwischen ein neues `pending` aufgelaufen ist.
+    // Sonst zieht die Karte /INT, die Quittung findet in getVector() aber keinen
+    // vektorfähigen Port und liefert den Fallback 0xFF → Endlos-Sturm mit
+    // Pseudo-Vektor (s. doc/analyse_udos.md).  Analog zu Z80CTC::anyServiceable().
+    return (porta_.iei && porta_.pending && !porta_.ius) ||
+           (portb_.iei && portb_.pending && !portb_.ius);
 }
 
 /**

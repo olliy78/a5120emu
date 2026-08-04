@@ -12,6 +12,11 @@ static A5120Machine* toA5120(K1520Handle h) {
     return static_cast<A5120Machine*>(h);
 }
 
+// Grund eines fehlgeschlagenen k1520_create*.  Ein Startabbruch (z. B. fehlender
+// Diskettenformat-Katalog) liefert KEIN Handle — die Meldung muss deshalb ohne
+// Handle abrufbar sein (k1520_last_init_error).
+static std::string g_init_error;
+
 // Helper to create and set up log file on first machine creation
 static void setup_logging() {
     static bool logging_initialized_ = false;
@@ -38,8 +43,14 @@ K1520Handle k1520_create(K1520MachineType type) {
     setup_logging();
     
     try {
+        g_init_error.clear();
         return new A5120Machine();
+    } catch (const std::exception& e) {
+        g_init_error = e.what();
+        std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
     } catch (...) {
+        g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
         return nullptr;
     }
 }
@@ -52,14 +63,24 @@ K1520Handle k1520_create_configured(K1520MachineType type,
     setup_logging();
 
     try {
+        g_init_error.clear();
         A5120Machine::Config cfg;                      // Default = 4× K5601
         const char* names[4] = { d0, d1, d2, d3 };
         for (int i = 0; i < 4; ++i)
             if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
         return new A5120Machine(cfg);
+    } catch (const std::exception& e) {
+        g_init_error = e.what();
+        std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
     } catch (...) {
+        g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
         return nullptr;
     }
+}
+
+const char* k1520_last_init_error(void) {
+    return g_init_error.c_str();
 }
 
 void k1520_destroy(K1520Handle h) {
@@ -136,6 +157,40 @@ bool k1520_create_disk(K1520Handle h, int drive,
 
 bool k1520_unmount_disk(K1520Handle h, int drive) {
     return toA5120(h)->unmountDisk(drive);
+}
+
+int k1520_drive_format_count(K1520Handle h, int drive) {
+    return static_cast<int>(toA5120(h)->compatibleFormats(drive).size());
+}
+
+const char* k1520_drive_format_name(K1520Handle h, int drive, int index) {
+    static thread_local std::string buf;
+    const auto v = toA5120(h)->compatibleFormats(drive);
+    if (index < 0 || index >= static_cast<int>(v.size())) return nullptr;
+    buf = v[static_cast<size_t>(index)];
+    return buf.c_str();
+}
+
+const char* k1520_drive_default_format(K1520Handle h, int drive) {
+    static thread_local std::string buf;
+    buf = toA5120(h)->defaultFormatName(drive);
+    return buf.c_str();
+}
+
+const char* k1520_format_description(K1520Handle h, const char* name) {
+    static thread_local std::string buf;
+    buf = name ? toA5120(h)->formatDescription(name) : std::string();
+    return buf.c_str();
+}
+
+const char* k1520_formats_source(K1520Handle h) {
+    static thread_local std::string buf;
+    buf.clear();
+    for (const auto& s : toA5120(h)->formatCatalog().sources()) {
+        if (!buf.empty()) buf += ":";
+        buf += s;
+    }
+    return buf.c_str();
 }
 
 bool k1520_disk_active(K1520Handle h, int drive) {

@@ -19,8 +19,10 @@ from app.ui.screen_widget import ScreenWidget, StatusWidget
 from app.ui.settings_widget import SettingsWidget
 from app.ui.drive_widget import DriveWidget
 from app.ui.keyboard import KeyboardWidget
+from app.ui.focus import release_focus, ScreenFocusGuard
 from app.core_binding.k1520 import K1520Emulator
 from app import config_io
+from app import drive_types as dt
 
 
 class MainWindow(QMainWindow):
@@ -32,10 +34,15 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("K1520 A5120 Emulator")
         self.setWindowIcon(QIcon.fromTheme("computer"))
         
+        # Current drive-bay configuration (one core DriveProfile name per K5122
+        # slot).  Starts from the A5120 standard (3× K5601, 4th slot empty) and is
+        # overridden by the restored config / the Einstellungen → Laufwerke tab.
+        self._drive_types = list(dt.DEFAULT_DRIVE_TYPES)
+
         # Create emulator (powered on only AFTER the config restored the disks,
         # so a cold start boots from the last-mounted images).
         try:
-            self.emulator = K1520Emulator()
+            self.emulator = K1520Emulator(self._drive_types)
         except Exception as e:
             QMessageBox.critical(self, "Initialization Error", str(e))
             raise
@@ -90,6 +97,7 @@ class MainWindow(QMainWindow):
         # Persist on any settings/disk change.
         self.settings_widget.crtChanged.connect(self._schedule_autosave)
         self.settings_widget.speedChanged.connect(self._on_speed_selected)
+        self.settings_widget.driveTypesChanged.connect(self._on_drive_types_selected)
         self.drives_widget.disk_mounted.connect(lambda *_: self._schedule_autosave())
         self.drives_widget.disk_unmounted.connect(lambda *_: self._schedule_autosave())
 
@@ -192,7 +200,7 @@ class MainWindow(QMainWindow):
         # ── Laufwerke-Dock (rechts, scrollbar) ───────────────────────────────
         self.drives_dock = QDockWidget("Disk Drives", self)
         self.drives_dock.setObjectName("drives_dock")
-        self.drives_widget = DriveWidget(self.emulator)
+        self.drives_widget = DriveWidget(self.emulator, self._drive_types)
         drives_scroll = QScrollArea()
         drives_scroll.setWidgetResizable(True)
         drives_scroll.setWidget(self.drives_widget)
@@ -220,6 +228,14 @@ class MainWindow(QMainWindow):
         self.resizeDocks([self.screen_dock, self.drives_dock],
                          [900, self._drives_width], Qt.Horizontal)
         self._shrink_keyboard()
+
+        # ── Tastaturfokus gehört dem emulierten Rechner ──────────────────────
+        # Alle Bedienelemente auf NoFocus (ein Klick auf Power/Mount/… bedient
+        # sie, nimmt dem Bildschirm aber nicht die Tastatur weg) und ein
+        # Wächter, der den Fokus nach Klicks/Fensterwechsel zurückholt — sonst
+        # müsste man vor jeder Eingabe erst wieder in die Röhre klicken.
+        release_focus(self)
+        self._focus_guard = ScreenFocusGuard(self, self.screen_widget)
 
         # The screen must hold focus to receive F11 / Esc and host keystrokes.
         self.screen_widget.setFocus()
@@ -398,7 +414,7 @@ class MainWindow(QMainWindow):
         general = {"speed": float(self.speed_factor)}
         return config_io.build_config(
             self.screen_widget.params, general, self.drives_widget.get_mounts(),
-            self._gather_window_state())
+            self._gather_window_state(), drive_types=self._drive_types)
 
     def _gather_window_state(self) -> dict:
         """Window size + dock layout (panel visibility/arrangement/sizes).
@@ -460,6 +476,12 @@ class MainWindow(QMainWindow):
             speed = float(general.get("speed", 1.0))
             self.settings_widget.set_speed_value(speed)
             self._apply_speed(speed)
+
+            # Drive-bay configuration must be applied BEFORE the disks, so the
+            # panels for the present slots exist and the machine matches.  During
+            # a config restore we never cold-restart here (power-on happens later).
+            self._apply_drive_types(
+                data.get("drive_types") or dt.DEFAULT_DRIVE_TYPES, cold_restart=False)
 
             self.drives_widget.load_mounts(data.get("disks") or [])
 
@@ -572,8 +594,10 @@ class MainWindow(QMainWindow):
     
     def _on_mount_disk(self):
         """Show mount dialog."""
-        # This is handled by DriveWidget
-        self.drives_widget.setFocus()
+        # Das Mounten selbst erledigt das DriveWidget — hier nur dessen Dock
+        # nach vorn holen (der Tastaturfokus bleibt beim Bildschirm).
+        self.drives_dock.show()
+        self.drives_dock.raise_()
     
     def _cycles_per_frame(self) -> int:
         """CPU cycles to run per timer tick.
@@ -624,6 +648,57 @@ class MainWindow(QMainWindow):
                                    else self.frame_interval_ms)
         if self._emu_started and self.power_btn.isChecked():
             self.run_timer.start()
+
+    def _on_drive_types_selected(self, types: list):
+        """A drive-type dropdown changed → rebuild the machine and persist."""
+        self._apply_drive_types(types, cold_restart=True)
+        self._schedule_autosave()
+
+    def _apply_drive_types(self, types: list, cold_restart: bool):
+        """Adopt a new drive-bay configuration.
+
+        The core sets the per-slot ``DriveProfile`` at construction time, so a
+        changed bay means a **fresh machine**: the emulator is recreated with the
+        new profiles, every reference is rewired, the drive panels are rebuilt and
+        the disks that still have a drive are remounted.  With *cold_restart* the
+        new machine is powered on immediately (boot ROM restarts); during a config
+        restore it is ``False`` (power-on happens once, later).
+        """
+        types = dt.normalize_list(types)
+
+        # Disks whose slot still carries a drive survive the reconfiguration.
+        surviving = [m for m in self.drives_widget.get_mounts()
+                     if 0 <= int(m.get("drive", -1)) < dt.NUM_SLOTS
+                     and dt.is_present(types[int(m["drive"])])]
+
+        # Recreate the machine with the new drive bay.
+        try:
+            new_emu = K1520Emulator(types)
+        except Exception as e:
+            QMessageBox.critical(self, "Laufwerke",
+                                 f"Konnte Maschine nicht neu erzeugen:\n{e}")
+            # Keep the settings dropdowns consistent with the machine still in use.
+            self.settings_widget.set_drive_types(self._drive_types)
+            return
+
+        try:
+            self.emulator.stop()
+        except Exception:
+            pass
+
+        self._drive_types = types
+        self.emulator = new_emu
+        self.screen_widget.set_emulator(new_emu)
+        self.drives_widget.set_drive_types(types, new_emu)  # rebuild panels, clear mounts
+        self.drives_widget.load_mounts(surviving)           # remount into new machine
+        self.settings_widget.set_drive_types(types)         # keep dropdowns in sync (no re-emit)
+
+        if cold_restart and self._emu_started and self.power_btn.isChecked():
+            self.emulator.power_on()
+            self.cycles = 0
+            self.frame_count = 0
+            self.run_timer.start()
+            self.screen_widget.set_powered(True)
 
     def _on_error(self, message: str):
         """Handle error."""

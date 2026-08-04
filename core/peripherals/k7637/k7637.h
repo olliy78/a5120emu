@@ -63,6 +63,24 @@ public:
     // false on truncation.
     bool deserialize(const uint8_t*& p, const uint8_t* end);
 
+    /**
+     * @brief Hardware-Reset: Tastenwiederholung, LED-/Kommandozustand und die
+     *        noch nicht zugestellten seriellen Bytes verwerfen.
+     *
+     * Nach einem System-Reset wird auch der SIO zurückgesetzt; ein halb
+     * gesendetes Byte in der Warteschlange wäre dann verwaist.  Die Verbindung
+     * (sio_/ch_idx_) bleibt bestehen.
+     */
+    void reset() {
+        pressed_key_ = 0; pressed_scancode_ = 0;
+        shift_ = ctrl_ = false;
+        repeat_delay_ms_ = repeat_period_ms_ = 0;
+        caps_lock_ = scroll_lock_ = num_lock_ = false;
+        expect_second_byte_ = false; first_cmd_byte_ = 0;
+        tx_queue_.clear();
+        cur_cycle_ = 0; next_tx_cycle_ = 0;
+    }
+
     // ── LED / lock state ──────────────────────────────────────────────────
     bool capsLock()   const { return caps_lock_;   }
     bool scrollLock() const { return scroll_lock_; }
