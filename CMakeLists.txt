@@ -784,6 +784,26 @@ if(BUILD_K1520)
                 LABELS "format_integration")
         endmacro()
 
+        # ─── FORMAT.COM auf einer ECHTEN LEERDISKETTE (mit Verify) ──────────────
+        # Regression fuer den Einfrierer, den eine unformatierte Spur ausloeste: der
+        # markenlose Gap-Strom meldet kein MKE und darf deshalb kein /BUSRQ anfordern
+        # (K5122-Handbuch §5.6.1) — sonst haelt er ZVE1 an, das den Strom gar nicht
+        # abholen will, und FORMAT bleibt mitten im Lauf stehen.  Hier wird B: als
+        # unformatierte Leerdiskette angelegt (leerer Formatname) und FORMAT.COM
+        # Format 1, Spur 0-4, MIT Vergleichs-Lesen darueber gefahren.
+        add_test(NAME format_blank_disk_with_verify COMMAND sh -c
+            "set -e; \
+             A=$(mktemp --suffix=.img); B=$(mktemp --suffix=.hfe); S=$(mktemp); \
+             cp ${CMAKE_SOURCE_DIR}/disks/cpadisk_autofs_noclk_noautoexec.img \$A; \
+             rm -f \$B; \
+             printf 'boot 80\\ntype 12:00:00\\nenter\\nboot 5\\ntype FORMAT\\nenter\\nboot 30\\nenter\\nboot 6\\ntype B\\nenter\\nboot 10\\nenter\\nboot 8\\ntype 1\\nboot 6\\nenter\\nboot 5\\ntype 4\\nenter\\nboot 6\\ntype j\\nboot 800\\n' > \$S; \
+             $<TARGET_FILE:format_driver> \$A \$B \$S ''; \
+             rm -f \$A \$B \$S")
+        set_tests_properties(format_blank_disk_with_verify PROPERTIES
+            TIMEOUT 600 PASS_REGULAR_EXPRESSION "FORMATIEREN beendet"
+            FAIL_REGULAR_EXPRESSION "SPUR DEFEKT"
+            LABELS "format_integration")
+
         add_bootdisk_test(bootdisk_cpa780        cpa780)         # 5¼″-MFM   cpa780
         add_bootdisk_test(bootdisk_mf3200_fmt7   mf3200_fmt7)    # 8″-SD/FM  26×128+16×256
         add_bootdisk_test(bootdisk_mf6400_fmt1   mf6400_fmt1)    # 8″-DD Mischd. 26×128FM+8×1024MFM (C:)

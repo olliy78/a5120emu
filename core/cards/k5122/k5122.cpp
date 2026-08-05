@@ -684,7 +684,11 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
                 // Auf einer unformatierten Spur rastet der Datenseparator nicht ein,
                 // es kommt kein Byte — dann darf hier auch nichts angefordert werden
                 // (startReadTransfer hat den Transfer gar nicht erst armiert).
-                if (transferring_) {
+                // Ohne Adressmarke meldet der Datenseparator kein MKE (Tor B, B1)
+                // → keine DMA-Anforderung.  `IN (16H)` liefert weiter Gap-Bytes,
+                // aber /BUSRQ bleibt aus (sonst haelt es ZVE1 an, das den Strom gar
+                // nicht abholen will → FORMAT.COM friert mitten im Lauf ein).
+                if (transferring_ && stream_has_marks_) {
                     byte_ready_ = true;      // erstes Byte liegt bereit → /BUSRQ aktiv
                     byte_acc_   = 0;
                 }
@@ -711,7 +715,7 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
             }
             // Kein armierter Kanal ⇒ weder /ARDY noch /BRDY ⇒ Decoder-Ausgang 00
             // ⇒ KEIN /BUSRQ (Handbuch §5.6.1, Wahrheitstabelle).
-            dma_pending_ = transferring_ || write_mode_;
+            dma_pending_ = (transferring_ && stream_has_marks_) || write_mode_;
             if (dma_pending_) bus_.assertBUSRQ();
             LOG_DEBUG("K5122", "/STR Flanke: BUSRQ %s, DMA %s",
                       dma_pending_ ? "gesetzt" : "NICHT gesetzt (kein Byte)",
@@ -845,11 +849,12 @@ void K5122::startReadTransfer() {
         // Kein Datentraeger → kein Fluss, kein MKE, kein Byte und damit kein /BUSRQ
         // (Handbuch §5.6.1) — dieselbe Lage wie bei einer unformatierten Spur.
         LOG_WARN("K5122", "Lese-Transfer: D%d nicht montiert", selected_drive_);
-        transferring_ = false;
-        write_mode_   = false;
-        byte_ready_   = false;
-        dma_pending_  = false;
-        locked_       = false;
+        transferring_     = false;
+        stream_has_marks_ = false;
+        write_mode_       = false;
+        byte_ready_       = false;
+        dma_pending_      = false;
+        locked_           = false;
         cur_track_    = nullptr;
         read_stream_track_ = {};
         head_pos_     = 0;
@@ -879,9 +884,10 @@ void K5122::startReadTransfer() {
         head_pos_        = 0;
         loaded_cyl_      = drv.currentCylinder();
         loaded_head_     = current_head_;
-        transferring_    = true;
-        write_mode_      = false;
-        locked_          = false;
+        transferring_     = true;
+        stream_has_marks_ = false;   // kein MKE → keine DMA-Anforderung (§5.6.1)
+        write_mode_       = false;
+        locked_           = false;
         LOG_INFO("K5122", ">>> READ D%d C=%u H=%u UNFORMATIERT → %zu B Gap-Flux (%s, Index-Timeout)",
                  selected_drive_, static_cast<unsigned>(drv.currentCylinder()),
                  static_cast<unsigned>(current_head_), read_stream_track_.size(),
@@ -915,9 +921,10 @@ void K5122::startReadTransfer() {
     // (sonst kontinuierliche Rotation, kein Rewind).
     loaded_cyl_   = drv.currentCylinder();
     loaded_head_  = current_head_;
-    transferring_ = true;
-    write_mode_   = false;
-    locked_       = false;
+    transferring_     = true;
+    stream_has_marks_ = true;
+    write_mode_       = false;
+    locked_           = false;
 
     // §1 Strukturiertes Read-Attempt-Log: WELCHE Adressmarken unter dem Kopf liegen
     // und ob ihre CRCs gültig sind — beantwortet "Kopf richtig? Sektoren gültig?" in

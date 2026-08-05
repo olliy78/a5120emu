@@ -371,6 +371,13 @@ private:
     size_t            head_pos_     = 0;        ///< Lesekopf-Position (Byte) in der Spur
     bool              locked_       = false;    ///< Datenseparator auf eine Marke synchronisiert
     bool              transferring_ = false;    ///< Lesetransfer läuft
+    /// @brief Trägt der aktive Lese-Strom überhaupt Adressmarken?
+    ///
+    /// Auf einer unbeschriebenen Spur läuft der Datenseparator zwar frei mit und
+    /// liefert Bytes (`IN (16H)` gibt Gap zurück), meldet aber nie MKE (Tor B, B1).
+    /// Ohne MKE entsteht keine DMA-Anforderung — /BUSRQ bliebe sonst stehen und
+    /// hielte ZVE1 an, das den Strom gar nicht abholen will.
+    bool              stream_has_marks_ = false;
     bool              write_mode_   = false;    ///< Schreibtransfer läuft (alter /STR-Schreibpfad)
     std::vector<uint8_t> write_buf_;            ///< gesammelte Schreibdaten (Port 0x14)
     uint16_t          cur_sector_size_ = 128;   ///< Sektorgröße der aktiven Spur (nur Debug-Info)
