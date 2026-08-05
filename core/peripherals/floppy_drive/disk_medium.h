@@ -90,6 +90,16 @@ public:
     /// @brief Alle Dirty-Bits löschen (nach erfolgreichem Speichern).
     void clearDirty();
 
+    /**
+     * @brief Änderungszähler — steigt bei **jeder** Spuränderung.
+     *
+     * Der Autosave (@ref DiskImage::autoFlush) erkennt daran, ob seit der letzten
+     * Prüfung noch geschrieben wurde, und wartet damit auf eine **Schreibpause**
+     * statt blind alle n Takte die ganze Datei neu zu codieren.  Ohne das schriebe
+     * ein Formatier-/Kopierlauf (hunderte Spuren am Stück) die Image-Datei dutzendfach.
+     */
+    uint64_t revision() const { return revision_; }
+
     /// @brief Trägt mindestens eine Spur Adressmarken? (false = unformatierte Leerdiskette)
     bool formatted() const;
 
@@ -140,6 +150,7 @@ private:
     std::vector<TrackImage> tracks_;
     std::vector<uint8_t>    dirty_;       ///< je Spur 0/1
     bool                    dirty_any_ = false;
+    uint64_t                revision_  = 0;   ///< +1 je Spuränderung (Autosave-Ruhepause)
 
     /// Tri-state-Cache für @ref trackRawCompatible: -1 unbekannt, 0 nein, 1 ja.
     mutable std::vector<int8_t> raw_ok_;

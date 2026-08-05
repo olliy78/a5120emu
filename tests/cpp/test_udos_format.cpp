@@ -13,7 +13,7 @@
  * | `FormatsDriveOneIntoUsableZdosDisk` | `FORMAT` einer Datenseite + Belegungskarte |
  * | `FormatsBrandNewBlankDiskette` | FRISCHE LEERDISKETTE (unformatiert) unter UDOS formatieren |
  * | `CopyDiskDuplicatesSystemDiskSectorBySector` | sektorweises Kopieren am Dateisystem vorbei |
- * | `BuildsBootableSystemDiskAndBootsFromIt` | Systemspuren, Rückseite (Laufwerk 5), `MOVE`, Kaltstart von der selbstgebauten Diskette |
+ * | `BuildsBootableSystemDiskAndBootsFromIt` | LEERDISKETTE als `.dmk`, Systemspuren, Rückseite (Laufwerk 5), `MOVE`, Kaltstart von der selbstgebauten `.dmk` |
  *
  * Guard für **zwei** Fehler, die zusammen jedes Formatieren unter UDOS verhinderten:
  *
@@ -100,11 +100,16 @@ void antworte(A5120Machine& m, const std::string& prompt, const std::string& ant
     typeKey(m, QK_RETURN);
 }
 
-// A: und B: als beschreibbare Kopien der UDOS-Bootdiskette anlegen.
-void legeDisketten(const std::string& aPath, const std::string& bPath) {
+// A: als beschreibbare Kopie der UDOS-Bootdiskette anlegen.
+void legeSystemdiskette(const std::string& aPath) {
     namespace fs = std::filesystem;
     fs::copy_file(diskPath("udos_boot_scp.hfe"), aPath, fs::copy_options::overwrite_existing);
-    fs::copy_file(diskPath("udos_boot_scp.hfe"), bPath, fs::copy_options::overwrite_existing);
+}
+
+// A: und B: als beschreibbare Kopien der UDOS-Bootdiskette anlegen.
+void legeDisketten(const std::string& aPath, const std::string& bPath) {
+    legeSystemdiskette(aPath);
+    legeSystemdiskette(bPath);
 }
 
 // UDOS booten und das Datum setzen; danach steht der `%`-Prompt.
@@ -295,25 +300,31 @@ TEST(UdosFormat, CopyDiskDuplicatesSystemDiskSectorBySector) {
 
 /**
  * @test UdosFormat/BuildsBootableSystemDiskAndBootsFromIt
- * @brief Der komplette „neue Systemdiskette bauen"-Workflow — und die neue Diskette
- *        bootet danach den Rechner.
+ * @brief Der komplette „neue Systemdiskette bauen"-Workflow — von der **fabrikneuen
+ *        Leerdiskette** bis zum Kaltstart von der selbstgebauten `.dmk`.
  *
  * Das UDOS-Gegenstück zu `ScpxInit.CreateFormatBThenPipCopyFromBootDisk` und
  * `tools/cpa_tools/make_bootdisk.py`: alles, was eine Diskette zur Systemdiskette
- * macht, läuft im Emulator über den echten Schreibpfad.
+ * macht, läuft im Emulator über den echten Schreibpfad — und zwar auf einem Medium,
+ * das der Emulator selbst angelegt hat.
  *
  * 1. UDOS 4.3 von A: booten.
- * 2. B: **beidseitig** formatieren — Seite 0 (Laufwerk 1) mit `SYSTEMDISK? Y`, also
+ * 2. B: ist eine **vom Floppy-Emulator angelegte Leerdiskette** (`createDisk` ohne
+ *    Formatnamen: unformatiertes Medium in Laufwerksgeometrie 80×2), gebunden an eine
+ *    temporäre **`.dmk`**-Datei.  Sie trägt beim Einlegen keine einzige Adressmarke —
+ *    UDOS meldet sie beim Start folgerichtig als nicht initialisiert.
+ * 3. B: **beidseitig** formatieren — Seite 0 (Laufwerk 1) mit `SYSTEMDISK? Y`, also
  *    inklusive Urlader (Spur 0/1/2) und Bootabbild (Spur 21), Seite 1 (Laufwerk 5)
- *    als reine Datenseite.
- * 3. `STATUS` beweist, dass **beide** Seiten wirklich leer sind (55 bzw. 14 belegte
- *    Sektoren) — B: startet als Kopie der Bootdiskette, ohne diesen Nachweis wäre
- *    ein wirkungsloses FORMAT nicht von einem erfolgreichen zu unterscheiden.
- * 4. Alle Dateien mit `MOVE * S=… D=… P=&` hinüberkopieren (`P=&` ist nötig, sonst
+ *    als reine Datenseite.  Auf einer Leerdiskette ist das der schärfere Fall: FORMAT
+ *    muss die Spuren komplett neu schreiben, es gibt keine alte Struktur zum Aufsetzen.
+ * 4. `STATUS` beweist, dass beide Seiten jetzt gültige, leere ZDOS-Datenträger sind
+ *    (55 bzw. 14 belegte Sektoren).
+ * 5. Alle Dateien mit `MOVE * S=… D=… P=&` hinüberkopieren (`P=&` ist nötig, sonst
  *    bleiben die als SECRET markierten Dateien liegen).
- * 5. `CAT` auf beiden Seiten der neuen Diskette.
- * 6. **Neue Maschine, neue Diskette auf Laufwerk 0, Kaltstart** — sie muss UDOS 4.3
- *    hochfahren und sich selbst als `SYSDISK` / `SYSDISK.B` melden.
+ * 6. `CAT` auf beiden Seiten der neuen Diskette.
+ * 7. **Neue Maschine, die `.dmk` auf Laufwerk 0, Kaltstart** — sie muss UDOS 4.3
+ *    hochfahren und sich selbst als `SYSDISK` / `SYSDISK.B` melden.  Damit hängt der
+ *    komplette Lesepfad (Boot-ROM → SYL → OS) am DMK-Container.
  *
  * Sollwerte (doc/udos_diskettenformat.md §3/§4): frisch formatiert 14 belegte
  * Sektoren (Verzeichnis + Belegungskarte), als Systemseite zusätzlich 41 für Urlader
@@ -322,24 +333,37 @@ TEST(UdosFormat, CopyDiskDuplicatesSystemDiskSectorBySector) {
 TEST(UdosFormat, BuildsBootableSystemDiskAndBootsFromIt) {
     namespace fs = std::filesystem;
     const std::string aPath = (fs::temp_directory_path() / "udos_sysdisk_guard_A.hfe").string();
-    const std::string bPath = (fs::temp_directory_path() / "udos_sysdisk_guard_B.hfe").string();
-    legeDisketten(aPath, bPath);
+    const std::string bPath = (fs::temp_directory_path() / "udos_sysdisk_guard_B.dmk").string();
+    std::error_code ec;
+    legeSystemdiskette(aPath);
+    fs::remove(bPath, ec);
 
     k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
 
     {
         A5120Machine machine;
         ASSERT_TRUE(machine.mountDisk(0, aPath, "cpa780", /*wp=*/false)) << machine.lastError();
-        ASSERT_TRUE(machine.mountDisk(1, bPath, "cpa780", /*wp=*/false)) << machine.lastError();
+
+        // ── 2. B: als fabrikneue Leerdiskette anlegen (Ziel-Container .dmk) ──
+        ASSERT_TRUE(machine.createDisk(1, bPath, /*format_name=*/"", /*wp=*/false))
+            << machine.lastError();
+        ASSERT_EQ(machine.diskContainer(1), "dmk");
+        ASSERT_TRUE(fs::exists(bPath));
+        EXPECT_FALSE(machine.isDiskFormatted(1))
+            << "frisch angelegte Diskette darf keine Adressmarke tragen";
+        EXPECT_FALSE(machine.isDiskRawCompatible(1));
+        EXPECT_EQ(machine.diskGeometry(1).num_cyls,  80u);
+        EXPECT_EQ(machine.diskGeometry(1).num_heads,  2u);
+
         machine.powerOn();
+        // Kein „beide Disketten eingelesen"-Nachweis: B: ist noch unformatiert.
+        booteUdosMitLeerdiskette(machine);
 
-        booteUdos(machine);
-
-        // ── 2. beide Seiten formatieren ─────────────────────────────────────
+        // ── 3. beide Seiten formatieren ─────────────────────────────────────
         formatiere(machine, "y", "1", "sysdisk");     // Seite 0 = Systemseite
         formatiere(machine, "n", "5", "sysdisk.b");   // Seite 1 = Datenseite
 
-        // ── 3. Nachweis, dass B: jetzt LEER ist ─────────────────────────────
+        // ── 4. Nachweis, dass aus der Leerdiskette ein Datentraeger wurde ────
         typeString(machine, "status");
         typeKey(machine, QK_RETURN);
         // Auf die LETZTE Zeile des Laufwerk-5-Blocks warten (1988 frei = 2002 - 14),
@@ -355,8 +379,9 @@ TEST(UdosFormat, BuildsBootableSystemDiskAndBootsFromIt) {
             << "Systemseite: erwartet 14 + 41 Systemsektoren belegt:\n" << leer;
         EXPECT_NE(leer.find("14 SECTORS USED"), std::string::npos)
             << "Datenseite: erwartet 14 belegte Sektoren:\n" << leer;
+        EXPECT_TRUE(machine.isDiskFormatted(1));
 
-        // ── 4. alles hinueberkopieren (P=& erfasst auch die SECRET-Dateien) ──
+        // ── 5. alles hinueberkopieren (P=& erfasst auch die SECRET-Dateien) ──
         typeString(machine, "move * s=0 d=1 p=&");
         typeKey(machine, QK_RETURN);
         runCycles(machine, 600'000'000);
@@ -364,7 +389,7 @@ TEST(UdosFormat, BuildsBootableSystemDiskAndBootsFromIt) {
         typeKey(machine, QK_RETURN);
         runCycles(machine, 600'000'000);
 
-        // ── 5. Gegenprobe auf der neuen Diskette ────────────────────────────
+        // ── 6. Gegenprobe auf der neuen Diskette ────────────────────────────
         // „OVR.PROG" ist der letzte Verzeichniseintrag der Vorderseite, „HELP.DAT.04"
         // der letzte der Rueckseite — wer die sieht, ist die ganze Kette gelaufen.
         typeString(machine, "cat d=1 p=&");
@@ -378,21 +403,27 @@ TEST(UdosFormat, BuildsBootableSystemDiskAndBootsFromIt) {
         EXPECT_EQ(vramText(machine).find("ERROR C"), std::string::npos)
             << "Fehlermeldung beim Lesen der neuen Diskette:\n" << vramText(machine);
 
+        // Der UDOS-Sektorkontrollblock hinter der Daten-CRC macht das Abbild
+        // `.img`-untauglich — nur `.hfe`/`.dmk` koennen es verlustfrei halten.
+        EXPECT_FALSE(machine.isDiskRawCompatible(1))
+            << "UDOS-Systemdiskette wurde faelschlich als .img-tauglich gemeldet";
+
         machine.unmountDisk(0);
-        machine.unmountDisk(1);   // flusht die neue Diskette auf die Platte
+        machine.unmountDisk(1);   // flusht die neue Diskette in die .dmk
     }
 
-    // ── 6. Von der selbstgebauten Diskette booten ───────────────────────────
+    // ── 7. Von der selbstgebauten .dmk booten ───────────────────────────────
     {
         A5120Machine neu;
         ASSERT_TRUE(neu.mountDisk(0, bPath, "cpa780", /*wp=*/false)) << neu.lastError();
+        ASSERT_EQ(neu.diskContainer(0), "dmk");
         neu.powerOn();
 
         ASSERT_TRUE(runSmallUntil(neu, "Neues Datum", 120'000'000))
-            << "Die selbstgebaute Systemdiskette bootet nicht:\n" << vramText(neu);
+            << "Die selbstgebaute .dmk-Systemdiskette bootet nicht:\n" << vramText(neu);
         typeString(neu, "150388");
         ASSERT_TRUE(runSmallUntil(neu, "UDOS BC.5120", 40'000'000))
-            << "Kein UDOS-Prompt von der neuen Diskette:\n" << vramText(neu);
+            << "Kein UDOS-Prompt von der neuen .dmk-Diskette:\n" << vramText(neu);
 
         typeString(neu, "status");
         typeKey(neu, QK_RETURN);
@@ -404,7 +435,6 @@ TEST(UdosFormat, BuildsBootableSystemDiskAndBootsFromIt) {
         neu.unmountDisk(0);
     }
 
-    std::error_code ec;
     fs::remove(aPath, ec);
     fs::remove(bPath, ec);
 }

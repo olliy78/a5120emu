@@ -327,15 +327,19 @@ public:
 
 ### 6.1 Autosave
 
-`writeTrack()` markiert die Spur im Medium schmutzig und merkt sich den
-Maschinentakt der Änderung.  `A5120Machine::run()` ruft nach jedem Lauf-Abschnitt
-`autoFlush(total_cycles_)` für alle Laufwerke.  Ist die letzte Änderung
-**länger als `kAutoFlushDelayCycles` (≈ 0,5 s Maschinenzeit) her**, wird geflusht.
+`writeTrack()` markiert die Spur im Medium schmutzig und erhöht dessen
+`revision()`-Zähler.  `A5120Machine::run()` ruft alle `kDiskFlushCheckInterval`
+(100 000) Takte `autoFlush(total_cycles_)` für alle Laufwerke.  Geschrieben wird erst
+nach einer **Schreibpause**: solange sich die Revision zwischen zwei Prüfungen ändert,
+wird die Uhr neu gestellt; erst wenn `kAutoFlushDelayCycles` (≈ 0,5 s Maschinenzeit)
+lang **nichts mehr** geschrieben wurde, geht die ganze Datei einmal hinaus.
 
-* Warum verzögert: ein Formatier- oder Kopierlauf schreibt hunderte Spuren
-  hintereinander; jedes Mal die ganze Datei neu zu codieren wäre teuer.  Die
-  Verzögerung fasst Schreibbursts zusammen und stellt sicher, dass die Datei
-  **kurz nach** dem letzten Zugriff wieder dem Abbild entspricht.
+* Warum auf die Pause und nicht auf eine feste Frist: ein Formatier- oder Kopierlauf
+  schreibt hunderte Spuren am Stück (UDOS `FORMAT` + `MOVE`: ~2 · 10⁹ Takte).  Mit einer
+  festen Frist wäre die komplette Image-Datei dabei dutzende Male neu codiert worden;
+  mit der Pausenerkennung genau einmal, kurz nachdem das Gastsystem fertig ist.
+* Der Zeitversatz bleibt derselbe: die Datei entspricht dem Abbild **kurz nach** dem
+  letzten Zugriff.
 * `unmount()`, `saveAs()`, der Destruktor und `A5120Machine::reset()/powerOn()`
   flushen **sofort**.
 * Ohne Dateibindung (Leerdiskette, noch nie gespeichert) ist der Autosave ein
@@ -425,7 +429,7 @@ Laufwerks“.
 
 | Test (ctest-Suite) | Inhalt |
 |--------------------|--------|
-| `DiskMedium.*` (`test_disk_medium`) | Geometrie/Resize, Dirty-Bits, `formatted()`, `rawCompatible()` inkl. UDOS-Anhang, CRC-Fehler, Leerdiskette, Cache-Invalidierung |
+| `DiskMedium.*` (`test_disk_medium`) | Geometrie/Resize, Dirty-Bits + `revision()`, `formatted()`, `rawCompatible()` inkl. UDOS-Anhang, CRC-Fehler, Leerdiskette, Cache-Invalidierung |
 | `ImgCodec.*` / `DiskImageOpen.*` / `DiskImageCreate.*` (`test_img_codec`) | `.img` ⇄ Medium, Offset-/Interleave-Modell als Ground-Truth, Mischdichte, `first_sector_id`, Ablehnung nicht darstellbarer Medien |
 | `HfeCodec.*` (`test_hfe_codec`) | `.hfe` ⇄ Medium, Cross-Check gegen `.img`, Neuanlage ohne Vorlage, Leerdiskette, Mischdichte-Erkennung, Überabtastung |
 | `DmkCodec.*` (`test_dmk_codec`) | `.dmk`-Header, IDAM-Tabelle, FM-Verdopplung (mit und ohne SD-Flag), Round-Trip inkl. Gap-Anhang und unformatierter Spur, Erkennung |
@@ -434,4 +438,5 @@ Laufwerks“.
 | `A5120DiskApi.*` (`test_a5120_disk_api`) | `createDisk` (leer vs. vorformatiert), `saveDiskAs`, `isDiskRawCompatible` |
 | `CreateDiskBlank/Formatted.*`, `BootIntegrationCpa02.DmkBootsIntoRunningCpaOs` | Maschinen-API + **CP/A bootet von einem `.dmk`-Konvertat** |
 | `UdosFormat.FormatsBrandNewBlankDiskette` | **Der Zweck des Umbaus:** frische Leerdiskette unter UDOS formatieren, `STATUS` bestätigt 1988 freie Sektoren, Abbild bleibt `.img`-untauglich |
+| `UdosFormat.BuildsBootableSystemDiskAndBootsFromIt` | Vollkette auf einer **emulator-erzeugten Leerdiskette als `.dmk`**: beidseitig formatieren (Laufwerk 1 + 5), `MOVE`, `CAT`, dann **Kaltstart von genau dieser `.dmk`** |
 | `test_k5122`, `test_boot_integration` | Regression: Boot-Pfad, FORMAT-Schreibpfad, unformatierte Spur |

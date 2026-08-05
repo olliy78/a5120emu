@@ -94,13 +94,16 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
 > A mounted disk lives **entirely in memory** as a `DiskMedium` (every track a `TrackImage`);
 > `.img`/`.hfe`/`.dmk` are pure **container codecs** in front of it (`ImageCodec`), no file-bound
 > backend classes any more.  `DiskImage` = medium + file binding; changed tracks are written back
-> **delayed** (`autoFlush`, ≈0.5 s machine time, driven from `A5120Machine::run`), and `saveAs()`
+> **delayed** (`autoFlush` waits for a *write pause* of ≈0.5 s machine time — tracked via
+> `DiskMedium::revision()`, so a FORMAT/COPY burst re-encodes the file once, not dozens of
+> times — driven from `A5120Machine::run`), and `saveAs()`
 > writes into any container **and re-binds**.  `createDisk` with an EMPTY format name now creates a
 > genuinely **blank, unformatted** disk in the *drive's* geometry (guest can format it, incl. UDOS);
 > `.img` is refused for that.  `rawCompatible()` is the flag that blocks `.img` as a target as soon
 > as a track is unformatted or a sector carries data behind the data CRC (UDOS sector control block).
 > Guards: `test_disk_medium`, `test_img_codec`, `test_hfe_codec`, `test_dmk_codec`, `test_disk_image`,
-> `UdosFormat.FormatsBrandNewBlankDiskette`.
+> `UdosFormat.FormatsBrandNewBlankDiskette`, `UdosFormat.BuildsBootableSystemDiskAndBootsFromIt`
+> (blank disk → `.dmk` → format both sides → boot from it), `BootIntegrationCpa02.DmkBootsIntoRunningCpaOs`.
 >
 > **Drive select (8212, port 18H): the HIGH nibble is /SE, the low nibble /LCK (motor)** —
 > both active-low, `drive_selected_[d] = !(data>>(4+d) & 1)`.  Not readable off the usual

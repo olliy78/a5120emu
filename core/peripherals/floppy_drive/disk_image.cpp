@@ -162,7 +162,16 @@ bool DiskImage::autoFlush(uint64_t now_cycles) {
     if (!hasFile() || !binding_writable_) return false;
     if (!medium_.dirty()) { dirty_since_ = 0; return false; }
 
-    if (dirty_since_ == 0) { dirty_since_ = now_cycles ? now_cycles : 1; return false; }
+    // Auf eine SCHREIBPAUSE warten, nicht bloss auf Ablauf einer Frist: solange das
+    // Gastsystem weiterschreibt (FORMAT/COPY fassen hunderte Spuren an), steigt die
+    // Revision und die Uhr wird neu gestellt.  Sonst wuerde die ganze Image-Datei
+    // mitten im Lauf dutzendfach neu codiert.
+    const uint64_t rev = medium_.revision();
+    if (rev != last_seen_revision_ || dirty_since_ == 0) {
+        last_seen_revision_ = rev;
+        dirty_since_        = now_cycles ? now_cycles : 1;
+        return false;
+    }
     if (now_cycles < dirty_since_ + kAutoFlushDelayCycles) return false;
 
     return flush();

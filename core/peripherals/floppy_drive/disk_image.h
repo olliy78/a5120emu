@@ -140,10 +140,13 @@ public:
     bool flush();
 
     /**
-     * @brief Verzögerter Autosave.
+     * @brief Verzögerter Autosave — schreibt nach einer **Schreibpause**.
      *
-     * Flusht, sobald das Medium seit mindestens @ref kAutoFlushDelayCycles Takten
-     * schmutzig ist.  Wird aus der Laufschleife der Maschine aufgerufen.
+     * Flusht, sobald seit der letzten Spuränderung mindestens
+     * @ref kAutoFlushDelayCycles Takte vergangen sind (erkannt über
+     * @ref DiskMedium::revision).  Ein laufender Formatier-/Kopiervorgang schiebt den
+     * Zeitpunkt also vor sich her, statt die ganze Datei dutzendfach neu zu codieren.
+     * Wird aus der Laufschleife der Maschine aufgerufen.
      *
      * @param now_cycles aktueller Stand der Maschinenuhr
      * @return true, wenn tatsächlich geschrieben wurde
@@ -172,6 +175,8 @@ private:
     bool          binding_writable_ = true;
     std::string   last_error_;
 
-    /// Maschinentakt, zu dem das Medium erstmals wieder schmutzig wurde (0 = sauber).
-    uint64_t      dirty_since_ = 0;
+    /// Maschinentakt der zuletzt BEOBACHTETEN Spuränderung (0 = sauber) …
+    uint64_t      dirty_since_        = 0;
+    /// … und die dabei gesehene @ref DiskMedium::revision (erkennt weiteres Schreiben).
+    uint64_t      last_seen_revision_ = 0;
 };

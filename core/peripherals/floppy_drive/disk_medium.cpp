@@ -100,6 +100,7 @@ void DiskMedium::markDirty(uint8_t cyl, uint8_t head) {
     dirty_[index(cyl, head)]  = 1;
     raw_ok_[index(cyl, head)] = -1;   // Tauglichkeit neu bestimmen
     dirty_any_                = true;
+    ++revision_;                      // Autosave: Schreibpause erkennen
 }
 
 bool DiskMedium::trackDirty(uint8_t cyl, uint8_t head) const {
