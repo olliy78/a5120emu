@@ -750,7 +750,11 @@ if(BUILD_K1520)
         # ZVE1).  Die exakte Zeitlage hängt zusätzlich vom Floppy-Timing ab (u. a.
         # Motor-Spin-up, K5122_MOTOR_SPINUP_MS) — bei Timing-Änderungen hier den
         # neuen deterministischen Wert eintragen.
-        add_cli_test(cli_dbg_json "\"pc\":\"0x2182\".*\"hl\":\"0x0297\""
+        # Golden-Zustand nach fester Taktzahl — prueft das JSON-Format von `rj`.
+        # Die Werte haengen am Boot-Timing und sind nachzuziehen, wenn sich der
+        # Laufwerks-Suchlauf des Lade-ROMs aendert (zuletzt: /TRACK 00 meldet auch
+        # ein leeres Laufwerk, K5122-Handbuch §4.1).
+        add_cli_test(cli_dbg_json "\"pc\":\"0x19CF\".*\"hl\":\"0x1BCF\""
             "D=$(mktemp); cp ${_bbdisk} \$D; printf 'g 5000000\\nrj\\nq\\n' | $<TARGET_FILE:k1520dbg> \$D; rm -f \$D")
         add_cli_test(cli_bt_json "\"boot_reached\":false.*\"until\":.\"set\":true,\"met\":true"
             "D=$(mktemp); cp ${_bbdisk} \$D; $<TARGET_FILE:boot_trace> -L /dev/null --until '[0x03F8]==3' --json \$D; rm -f \$D")

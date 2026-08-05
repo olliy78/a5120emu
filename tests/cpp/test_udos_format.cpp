@@ -429,7 +429,9 @@ TEST(UdosFormat, BuildsBootableSystemDiskAndBootsFromIt) {
         typeKey(neu, QK_RETURN);
         ASSERT_TRUE(runSmallUntil(neu, "DRIVE 0   SYSDISK", 150'000'000))
             << "Das gebootete System erkennt seine eigene Diskette nicht:\n" << vramText(neu);
-        EXPECT_NE(vramText(neu).find("DRIVE 4   SYSDISK.B"), std::string::npos)
+        // Auf die Rueckseiten-Zeile WARTEN statt sofort zu pruefen: STATUS baut den
+        // Block Laufwerk fuer Laufwerk auf, und der Suchlauf laeuft ueber alle vier.
+        EXPECT_TRUE(runSmallUntil(neu, "DRIVE 4   SYSDISK.B", 100'000'000))
             << "Rueckseite der neuen Diskette nicht eingelesen:\n" << vramText(neu);
 
         neu.unmountDisk(0);
@@ -501,6 +503,58 @@ TEST(UdosFormat, FormatsBrandNewBlankDiskette) {
     EXPECT_TRUE(machine.isDiskFormatted(1));
     EXPECT_FALSE(machine.isDiskRawCompatible(1))
         << "UDOS-Diskette wurde faelschlich als .img-tauglich gemeldet";
+
+    machine.unmountDisk(0);
+    machine.unmountDisk(1);
+    fs::remove(aPath, ec);
+    fs::remove(bPath, ec);
+}
+
+/**
+ * @test UdosFormat/FormatsDisketteInsertedAtRuntime
+ * @brief Laufwerk 1 ist beim Kaltstart LEER; die Diskette wird erst zur Laufzeit
+ *        eingelegt und dann unter UDOS formatiert.
+ *
+ * Das ging vorher nicht: `/TRACK 00` war an eine eingelegte Diskette gekoppelt, ein
+ * leeres Laufwerk meldete also nie seine Endlage und galt UDOS' Kaltstart-Suchlauf
+ * als gar nicht vorhanden — `FORMAT` brach mit `ERROR C2` ab, ohne Laufwerk 1 auch
+ * nur zu selektieren.  /TO ist laut K5122-Handbuch §4.1 (Tor B, B7) ein **Eingang
+ * vom Laufwerk**, kein Diskettensignal.
+ */
+TEST(UdosFormat, FormatsDisketteInsertedAtRuntime) {
+    namespace fs = std::filesystem;
+    const std::string aPath = (fs::temp_directory_path() / "udos_runtime_A.hfe").string();
+    const std::string bPath = (fs::temp_directory_path() / "udos_runtime_B.dmk").string();
+    std::error_code ec;
+    legeSystemdiskette(aPath);
+    fs::remove(bPath, ec);
+
+    k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
+
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, aPath, "cpa780", false)) << machine.lastError();
+    machine.powerOn();
+    booteUdosMitLeerdiskette(machine);        // Laufwerk 1 ist LEER
+
+    // Erst jetzt die Diskette einlegen.
+    ASSERT_TRUE(machine.createDisk(1, bPath, /*format_name=*/"", false)) << machine.lastError();
+    ASSERT_FALSE(machine.isDiskFormatted(1));
+
+    formatiere(machine, "n", "1", "latedisk");
+    const std::string nachFormat = vramText(machine);
+    ASSERT_EQ(nachFormat.find("ERROR C2"), std::string::npos)
+        << "UDOS kennt das beim Kaltstart leere Laufwerk nicht:\n" << nachFormat;
+    EXPECT_EQ(nachFormat.find("DEFEKTIVE TRACK"), std::string::npos) << nachFormat;
+    EXPECT_EQ(nachFormat.find("NOT FOR UDOS USEABLE"), std::string::npos) << nachFormat;
+
+    typeString(machine, "status");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "1988 SECTORS AVAILABLE", 100'000'000))
+        << "Die zur Laufzeit eingelegte Diskette wurde nicht nutzbar formatiert:\n"
+        << vramText(machine);
+    EXPECT_NE(vramText(machine).find("DRIVE 1   LATEDISK"), std::string::npos)
+        << vramText(machine);
+    EXPECT_TRUE(machine.isDiskFormatted(1));
 
     machine.unmountDisk(0);
     machine.unmountDisk(1);

@@ -81,7 +81,7 @@ void FloppyDriveV2::setWriteProtect(bool wp) {
 // ─── Spurwahl ─────────────────────────────────────────────────────────────────
 
 bool FloppyDriveV2::step(bool inward) {
-    if (!image_) return false;
+    if (!profile_.present) return false;
     if (inward) {
         if (cur_cyl_ < profile_.num_cyls - 1) ++cur_cyl_;
     } else {
@@ -91,7 +91,7 @@ bool FloppyDriveV2::step(bool inward) {
 }
 
 bool FloppyDriveV2::seek(uint8_t cyl) {
-    if (!image_) return false;
+    if (!profile_.present) return false;
     cur_cyl_ = (cyl < profile_.num_cyls) ? cyl
                                          : static_cast<uint8_t>(profile_.num_cyls - 1);
     return true;

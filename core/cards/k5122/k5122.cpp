@@ -680,8 +680,14 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
             dma_is_write_ = is_write;
             if (!is_write) {
                 startReadTransfer();
-                byte_ready_ = true;          // erstes Byte liegt bereit → /BUSRQ aktiv
-                byte_acc_   = 0;
+                // §5.6.1: /BUSRQ entsteht NUR aus der Bereitschaft des Daten-PIO.
+                // Auf einer unformatierten Spur rastet der Datenseparator nicht ein,
+                // es kommt kein Byte — dann darf hier auch nichts angefordert werden
+                // (startReadTransfer hat den Transfer gar nicht erst armiert).
+                if (transferring_) {
+                    byte_ready_ = true;      // erstes Byte liegt bereit → /BUSRQ aktiv
+                    byte_acc_   = 0;
+                }
             } else {
                 // Schreib-DMA (Vollspur-FORMAT): ZVE2 streamt die komplette Spur
                 // byteweise via Port 0x14.  Per-Byte-/BUSRQ-Drossel wie beim Lesen
@@ -703,9 +709,12 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
                           ? drives_[selected_drive_].currentCylinder() : 0;
                 fmt_head_ = current_head_;
             }
-            dma_pending_ = true;
-            bus_.assertBUSRQ();
-            LOG_DEBUG("K5122", "/STR Flanke: BUSRQ gesetzt, DMA %s ausstehend",
+            // Kein armierter Kanal ⇒ weder /ARDY noch /BRDY ⇒ Decoder-Ausgang 00
+            // ⇒ KEIN /BUSRQ (Handbuch §5.6.1, Wahrheitstabelle).
+            dma_pending_ = transferring_ || write_mode_;
+            if (dma_pending_) bus_.assertBUSRQ();
+            LOG_DEBUG("K5122", "/STR Flanke: BUSRQ %s, DMA %s",
+                      dma_pending_ ? "gesetzt" : "NICHT gesetzt (kein Byte)",
                       is_write ? "SCHREIBEN" : "LESEN");
         }
     }
@@ -776,14 +785,22 @@ void K5122::handleDataPortAWrite(uint8_t data) {
  * Im aktuellen Testrahmen (nur MFM-Laufwerke) ist der Default ausreichend.
  */
 void K5122::updateStatusPortB() {
-    uint8_t s = 0xF5;   // Default: kein Laufwerk
+    uint8_t s = 0xF5;   // Default: kein Laufwerk am Slot
 
     FloppyDriveV2& drv = drives_[selected_drive_];
+
+    // /TO (TRACK 00, Tor B Bit 7) ist laut Handbuch §4.1 ein **Eingang vom Laufwerk**
+    // — ein mechanischer Endlagenschalter, der nichts von der eingelegten Diskette
+    // weiss.  Genau daran unterscheidet Software „Slot unbestueckt" von „Laufwerk
+    // ohne Diskette"; der Lade-ROM faehrt bei /TO=1 nach aussen und prueft erneut
+    // (0x0110), bevor er auf Index-Pulse wartet.  War /TO an die Diskette gekoppelt,
+    // blieb ein leeres Laufwerk fuer solche Suchlaeufe unsichtbar.
+    if (drv.profile().present && drv.currentCylinder() == 0)
+        s &= ~(1u << 7);            // /TO = 0 (auf Spur 0)
+
     if (drv.isMounted()) {
         if (motorAtSpeed(selected_drive_))
-            s &= ~(1u << 0);        // /RDYL = 0 (bereit) — nur auf Drehzahl
-        if (drv.currentCylinder() == 0)
-            s &= ~(1u << 7);        // /TO = 0 (auf Spur 0)
+            s &= ~(1u << 0);        // /RDYL = 0 (bereit) — nur mit Diskette auf Drehzahl
         if (drv.isWriteProtect())
             s &= ~(1u << 5);        // /WP = 0 (schreibgeschützt)
         // bit6 /FW bleibt 1 (kein Laufwerksfehler modelliert)
@@ -799,7 +816,9 @@ void K5122::updateStatusPortB() {
  */
 void K5122::doStep() {
     FloppyDriveV2& drv = drives_[selected_drive_];
-    if (!drv.isMounted()) return;
+    // Schrittmotor + Endlagenschalter gehoeren zum LAUFWERK: der Kopf faehrt auch
+    // ohne eingelegte Diskette (sonst erreicht ein leeres Laufwerk nie /TRACK 00).
+    if (!drv.profile().present) return;
 
     drv.step(step_dir_in_);
 
@@ -823,10 +842,20 @@ void K5122::doStep() {
 void K5122::startReadTransfer() {
     FloppyDriveV2& drv = drives_[selected_drive_];
     if (!drv.isMounted()) {
+        // Kein Datentraeger → kein Fluss, kein MKE, kein Byte und damit kein /BUSRQ
+        // (Handbuch §5.6.1) — dieselbe Lage wie bei einer unformatierten Spur.
         LOG_WARN("K5122", "Lese-Transfer: D%d nicht montiert", selected_drive_);
         transferring_ = false;
+        write_mode_   = false;
+        byte_ready_   = false;
+        dma_pending_  = false;
+        locked_       = false;
         cur_track_    = nullptr;
         read_stream_track_ = {};
+        head_pos_     = 0;
+        byte_acc_     = 0;
+        loaded_cyl_   = loaded_head_ = 0xFF;
+        if (bus_.isBUSRQ()) bus_.releaseBUSRQ();
         return;
     }
 
@@ -834,14 +863,10 @@ void K5122::startReadTransfer() {
     const TrackImage& ibm_track = drv.track(current_head_);
 
     if (ibm_track.empty()) {
-        // Unformatierte/leere Spur: eine echte Diskette liefert hier reinen Gap-Flux
-        // OHNE Adressmarken.  Wir streamen genau das (markenloser 0x4E-Fluss), damit
-        // die Leseroutine kein IDAM findet und über den Index-Timeout terminiert
-        // ("record not found") — wie auf echter Hardware.  Würde der Transfer hier
-        // (wie früher) einfach abgebrochen, bliebe das vom Lese-/STR assertierte
-        // /BUSRQ hängen: ZVE2 verklemmt in seiner Warteschleife (z. B. FORMAT.COMs
-        // ZVE2-Koroutine JR 0x1D21), weil kein Byte kommt und /BUSRQ nie freigegeben
-        // wird → der Formatier-Vorlese-Schritt auf einer frischen Blank-Disk hängt.
+        // Diskette liegt ein, Spur ist aber unbeschrieben: der Datenseparator laeuft
+        // frei mit und liefert weiter Bytes — nur eben ohne Adressmarke (kein MKE).
+        // Genau das streamen wir (markenloser 0x4E-Fluss); die Leseroutine findet
+        // kein IDAM und terminiert ueber ihren Index-Timeout.
         const Encoding eff_enc = read_enc_overridden_
                                      ? read_enc_
                                      : drv.profile().default_read_encoding;

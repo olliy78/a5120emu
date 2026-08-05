@@ -368,6 +368,22 @@ Konsequenz für das Mounten: die frühere Ablehnung markenloser Images
 (`hasFormattedData()`) **entfällt** — eine unformatierte Diskette ist ab jetzt ein
 gültiger, gewollter Zustand.
 
+### 7.1 /TRACK 00 gehört zum Laufwerk, nicht zur Diskette
+
+`/TO` (Steuer-PIO Tor B, Bit 7) ist laut K5122-Handbuch §4.1 ein **Eingang vom
+Laufwerk** — ein mechanischer Endlagenschalter.  Er gilt daher, sobald der Slot
+bestückt ist (`DriveProfile::present`), unabhängig von einer eingelegten Diskette;
+ebenso fährt der Schrittmotor ohne Diskette.  Nur `/RDYL` (und `/WP`) hängen am
+Medium.
+
+Das ist die Grenze, an der Software „Slot unbestückt" von „Laufwerk ohne Diskette"
+unterscheidet: der Lade-ROM fährt bei `/TO=1` nach außen und prüft erneut (0x0110)
+und wartet erst danach — mit Software-Timeout — auf Index-Pulse.  Solange `/TO` an
+die Diskette gekoppelt war, blieb ein beim Kaltstart leeres Laufwerk für solche
+Suchläufe unsichtbar; UDOS strich es dauerhaft aus seiner Gerätetabelle, sodass eine
+später eingelegte Diskette bis zum Kaltstart unbenutzbar blieb (`FORMAT` → `ERROR C2`).
+Guard: `UdosFormat.FormatsDisketteInsertedAtRuntime`.
+
 ---
 
 ## 8. Bedienschnittstelle
