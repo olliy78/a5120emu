@@ -181,7 +181,8 @@ int main(int argc, char** argv) {
         return 1;
     }
     if (createB) {
-        // B: NEU anlegen (create): .hfe = leeres Template, .img = 0xE5 in Format-Geometrie.
+        // B: NEU anlegen (create) im angegebenen Katalogformat: VORFORMATIERT
+        // (echte IDAM/DATA/CRC, Nutzdaten 0xE5) — nicht die neue Leerdiskette.
         if (!machine.createDisk(1, diskB, createB, false)) {
             fprintf(stderr, "ERROR: create B '%s' (Format '%s'): %s\n",
                     diskB, createB, machine.lastError().c_str());

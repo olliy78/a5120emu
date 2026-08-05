@@ -1,17 +1,16 @@
 /**
  * @file floppy_drive2.h
- * @brief FloppyDriveV2 – DiskImage-basiertes Laufwerk mit DriveProfile und Track-Cache.
+ * @brief FloppyDriveV2 – physisches Laufwerk (DriveProfile) + gemountete Diskette.
  *
- * Nachfolger des alten @ref FloppyDrive für die neue Streaming-Architektur.  Hält ein
- * @ref DiskImage (statt Pfad+DiskFormat+Inline-IO), kennt sein @ref DriveProfile
- * (welches physische Laufwerk am Slot hängt) und cached die aktuelle Spur je Kopf.
- * Der Controller (@ref K5122) bezieht über @ref track() einen fertigen
- * @ref TrackImage und kennt keine Sektoren/Offsets mehr.
+ * Hält ein @ref DriveProfile (welches physische Laufwerk am Slot hängt), die mechanische
+ * Kopfposition und die gemountete @ref DiskImage.  Der Controller (@ref K5122) bezieht
+ * über @ref track() einen fertigen @ref TrackImage und kennt keine Sektoren/Offsets.
  *
- * Der bestehende @ref FloppyDrive bleibt unverändert; diese Klasse existiert parallel,
- * bis die neue Karte die alte in einer Maschinenkonfiguration ablöst.
+ * **Kein Spur-Cache mehr:** seit dem Medium-Umbau (2026-08-05) liegt die gesamte
+ * Diskette als @ref DiskMedium im Speicher; das Laufwerk referenziert sie direkt.
+ * Das Zurückschreiben in die Datei übernimmt der Autosave der @ref DiskImage.
  *
- * @see doc/design/07_k5122_afs.md
+ * @see doc/design/09_floppy_drive.md
  * @author Olaf Krieger
  * @date 2026
  * @license MIT License
@@ -27,7 +26,7 @@
 
 /**
  * @class FloppyDriveV2
- * @brief Physisches Laufwerk (Profil) + gemountetes DiskImage + 1-Spur-Cache je Kopf.
+ * @brief Physisches Laufwerk (Profil) + Kopfposition + gemountete Diskette.
  */
 class FloppyDriveV2 {
 public:
@@ -35,35 +34,35 @@ public:
     explicit FloppyDriveV2(DriveProfile profile = {});
 
     /**
-     * @brief Mountet ein Image.  Prüft Geometrie + Encoding gegen das DriveProfile.
-     * @return false (Grund über lastError()) bei Inkompatibilität oder leerem Image.
+     * @brief Mountet eine Diskette.  Prüft Geometrie + Verfahren gegen das DriveProfile.
+     * @return false (Grund über lastError()) bei Inkompatibilität oder leerem Zeiger.
      */
     bool mount(std::unique_ptr<DiskImage> img, bool write_protect = false);
     void unmount();                       ///< flush() + Reset
 
     bool isMounted()      const { return image_ != nullptr; }
     bool isWriteProtect() const { return write_protect_; }
-    void setWriteProtect(bool wp) { write_protect_ = wp; }
+    void setWriteProtect(bool wp);
     const char* lastError() const { return last_error_.c_str(); }
     void setLastError(std::string msg) { last_error_ = std::move(msg); }
+
+    /// @brief Gemountete Diskette (nullptr, wenn leer) — für Speichern-unter/Statusabfragen.
+    DiskImage*       image()       { return image_.get(); }
+    const DiskImage* image() const { return image_.get(); }
 
     bool    step(bool inward);            ///< begrenzt durch profile_.num_cyls
     bool    seek(uint8_t cyl);
     uint8_t currentCylinder() const { return cur_cyl_; }
 
     /**
-     * @brief Snapshot-Restore: setzt die mechanische Kopfposition (@p cyl) direkt
-     *        und verwirft den Spur-Cache, ohne ihn zurückzuschreiben.
+     * @brief Snapshot-Restore: setzt die mechanische Kopfposition (@p cyl) direkt.
      *
-     * Anders als seek() wird NICHT geflusht: beim loadstate gehört der aktuelle
-     * Cache zu einer verworfenen Sitzung; die nächste track()-Anfrage liest die
-     * Spur frisch aus dem (separat gemounteten) Image am wiederhergestellten
-     * Zylinder. So steht der Kopf nach dem Laden auf der richtigen Spur.
+     * Anders als seek() wird NICHT geflusht: beim loadstate gehört der bisherige
+     * Zustand zu einer verworfenen Sitzung.
      */
     void restoreHeadPosition(uint8_t cyl) {
         cur_cyl_ = (cyl < profile_.num_cyls) ? cyl
                                              : static_cast<uint8_t>(profile_.num_cyls - 1);
-        for (auto& c : cache_) { c.valid = false; c.dirty = false; }
     }
 
     const DriveProfile& profile() const { return profile_; }
@@ -71,44 +70,37 @@ public:
     int indexPeriodCycles(uint32_t cpu_hz) const { return profile_.indexPeriodCycles(cpu_hz); }
 
     /**
-     * @brief Aktuelle Spur (cur_cyl_, @p head) als TrackImage.  Lazy decodiert + gecached.
-     * @return Referenz auf die gecachte Spur (leer, wenn nichts gemountet/Spur fehlt).
+     * @brief Aktuelle Spur (cur_cyl_, @p head) als TrackImage — Referenz aufs Medium.
+     * @return leeres TrackImage, wenn nichts gemountet oder die Spur unformatiert ist.
      */
-    const TrackImage& track(uint8_t head);
+    const TrackImage& track(uint8_t head) const;
 
-    /// @brief Markiert die gecachte Spur (head) als verändert.
+    /// @brief Markiert die Spur (cur_cyl_, head) als verändert.
     void markTrackDirty(uint8_t head);
-    /// @brief Direkter, modifizierbarer Zugriff auf die gecachte Spur (für Schreib-Patches).
+    /// @brief Direkter, modifizierbarer Zugriff auf die aktuelle Spur (Schreib-Patches).
     TrackImage& mutableTrack(uint8_t head);
 
-    /// @brief Schreibt dirty-Spur(en) via DiskImage::writeTrack zurück.
+    /// @brief Geänderte Spuren sofort in die gebundene Datei schreiben.
     bool flush();
+    /// @brief Verzögerter Autosave (@ref DiskImage::autoFlush).
+    bool autoFlush(uint64_t now_cycles);
 
     /**
-     * @brief Schreibt eine fertige Spur an eine EXPLIZITE (cyl, head)-Position ins Image.
+     * @brief Schreibt eine fertige Spur an eine EXPLIZITE (cyl, head)-Position.
      *
-     * Anders als @ref mutableTrack (das auf @ref cur_cyl_ arbeitet) adressiert dies eine
-     * beliebige Spur — nötig beim Vollspur-FORMAT, bei dem der Kopf zum Commit-Zeitpunkt
-     * bereits zur nächsten Spur weitergeschritten ist.  Hält den 1-Spur-Cache kohärent
-     * (invalidiert/aktualisiert einen passenden Cache-Eintrag).
+     * Nötig beim Vollspur-FORMAT, bei dem der Kopf zum Commit-Zeitpunkt bereits zur
+     * nächsten Spur weitergeschritten ist.
      *
-     * @return false bei nicht gemountetem / schreibgeschütztem Laufwerk oder writeTrack-Fehler.
+     * @return false bei nicht gemountetem / schreibgeschütztem Laufwerk.
      */
     bool writeTrackAt(uint8_t cyl, uint8_t head, const TrackImage& track);
 
     DiskGeometry geometry() const;
 
 private:
-    /// @brief Lädt die Spur (cur_cyl_, head) in den Cache, falls nötig.
-    void ensureCached(uint8_t head);
-
     DriveProfile               profile_;
     std::unique_ptr<DiskImage> image_;
     bool        write_protect_ = false;
     uint8_t     cur_cyl_       = 0;
     std::string last_error_;
-
-    /// 1-Spur-Cache je Kopf (Lesekopf liest jeweils eine Spur).
-    struct CachedTrack { TrackImage img; uint8_t cyl = 0xFF; bool dirty = false; bool valid = false; };
-    CachedTrack cache_[2];
 };

@@ -279,6 +279,16 @@ bool K5122::unmountDisk(int drive) {
     return true;
 }
 
+void K5122::autoFlushDisks(uint64_t now_cycles) {
+    for (auto& d : drives_) d.autoFlush(now_cycles);
+}
+
+bool K5122::flushDisks() {
+    bool ok = true;
+    for (auto& d : drives_) ok = d.flush() && ok;
+    return ok;
+}
+
 bool K5122::isDiskActive(int drive) const {
     if (drive < 0 || drive > 3) return false;
     return drives_[drive].isMounted();

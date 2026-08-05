@@ -466,6 +466,48 @@ TEST(BootIntegrationCpa02, HfeBootsIntoRunningCpaOs) {
         << "HFE boot reached a different OS than the raw image (TPA size differs)";
 }
 
+/**
+ * @test BootIntegrationCpa02/DmkBootsIntoRunningCpaOs
+ * @brief Dieselbe Diskette, aber ueber „Speichern unter .dmk" konvertiert, bootet
+ *        identisch — beweist den DMK-Codec (§8.7) am kompletten Lesepfad.
+ *
+ * Ablauf: `.hfe` mounten → `saveDiskAs(<tmp>.dmk)` (Containerwechsel + Umbinden) →
+ * frische Maschine von der `.dmk` booten.  Faellt die IDAM-Tabelle, die
+ * FM/MFM-Kennung oder die Spurlaenge des Codecs falsch aus, findet der Boot-ROM
+ * keine Adressmarke und der Lauf endet im Index-Timeout.
+ */
+TEST(BootIntegrationCpa02, DmkBootsIntoRunningCpaOs) {
+    namespace fs = std::filesystem;
+    const std::string dmk = (fs::temp_directory_path() / "k1520_boot_cpa02.dmk").string();
+    std::error_code ec;
+    fs::remove(dmk, ec);
+
+    {
+        A5120Machine conv;
+        mountCpa02(conv, "cpadisk_autofs_noclk_noautoexec.hfe");
+        ASSERT_TRUE(conv.saveDiskAs(0, dmk, /*format_name=*/"")) << conv.lastError();
+        EXPECT_EQ(conv.diskContainer(0), "dmk");
+        EXPECT_EQ(conv.diskPath(0), dmk);
+    }
+    ASSERT_TRUE(fs::exists(dmk));
+
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, dmk, "cpa780", /*wp=*/false)) << machine.lastError();
+    machine.powerOn();
+
+    ASSERT_TRUE(runUntilVramContains(machine, "TPA ist OK!", kCpa02BudgetCycles))
+        << "DMK-Konvertat: OS-BIOS-Kaltstart nie abgeschlossen — DMK-Lesepfad fehlerhaft:\n"
+        << vramText(machine);
+    const std::string screen = vramText(machine);
+    EXPECT_NE(screen.find("CP/A, Version 25.09.89"), std::string::npos)
+        << "CP/A-Banner fehlt beim DMK-Boot";
+    EXPECT_NE(screen.find("TPA 100H - 0C405H"), std::string::npos)
+        << "DMK-Boot erreichte ein anderes OS als das Original (TPA-Groesse weicht ab)";
+
+    machine.unmountDisk(0);
+    fs::remove(dmk, ec);
+}
+
 // ─── Booting from drives B: and C: (search starts at A:, lower drives empty) ──
 //
 // disks/cpadisk_autofs_clock_noautoexec.{img,hfe} are the same disk in two encodings, WITH an
@@ -1009,52 +1051,109 @@ TEST(ScpxIntegration, WrongFormatReadTerminatesInsteadOfFreezing) {
     fs::remove(bPath, ec);
 }
 
-// ─── createDisk: laufwerkstyp-spezifisches Standardformat ────────────────────
+// ─── createDisk: Leerdiskette vs. vorformatiert ──────────────────────────────
 //
-// Ein leerer Formatname wählt je Slot-DriveProfile das passende Default-Format;
-// die erzeugte, GÜLTIG FORMATIERTE Diskette wird gemountet.  Wir prüfen die
-// resultierende .img-Größe (= Geometrie) je Laufwerkstyp.
+// Seit dem Medium-Umbau (§8.7) heisst ein LEERER Formatname "echte Leerdiskette":
+// unformatiertes Medium in der Geometrie des LAUFWERKS, damit das Gastsystem sie
+// selbst formatieren kann (auch Fremdformate wie UDOS, die Nutzdaten hinter die
+// Daten-CRC haengen).  Ein `.img` kann "nicht formatiert" nicht ausdruecken und wird
+// dafuer abgelehnt.  Mit gesetztem Formatnamen bleibt es beim vorformatierten Weg —
+// dann pruefen wir wie bisher die resultierende .img-Groesse (= Geometrie).
 namespace {
 std::string tmpImg(const char* tag) {
     return (std::filesystem::temp_directory_path()
             / (std::string("k1520_create_default_") + tag + ".img")).string();
 }
+std::string tmpHfe(const char* tag) {
+    return (std::filesystem::temp_directory_path()
+            / (std::string("k1520_create_blank_") + tag + ".hfe")).string();
+}
 }  // namespace
 
-TEST(CreateDiskDefault, K5601_DefaultIstCpa800) {
-    const std::string path = tmpImg("k5601");
+TEST(CreateDiskBlank, K5601_LeerdisketteHat80x2UnformatierteSpuren) {
+    const std::string path = tmpHfe("k5601");
     std::filesystem::remove(path);
-    A5120Machine machine;                       // Default: 4× K5601
+    A5120Machine machine;                       // Default: 4x K5601
     ASSERT_TRUE(machine.createDisk(0, path, /*format=*/"", /*wp=*/false))
         << machine.lastError();
     EXPECT_TRUE(machine.isDiskActive(0));
-    EXPECT_EQ(std::filesystem::file_size(path), 80u * 2 * 5 * 1024);  // cpa800 = 800K
+    EXPECT_TRUE(std::filesystem::exists(path));
+    EXPECT_EQ(machine.diskContainer(0), "hfe");
+    EXPECT_EQ(machine.diskPath(0), path);
+    EXPECT_FALSE(machine.isDiskFormatted(0));
+    EXPECT_FALSE(machine.isDiskRawCompatible(0))
+        << "unformatierte Diskette darf nicht als .img gelten";
+    EXPECT_EQ(machine.diskGeometry(0).num_cyls,  80u);
+    EXPECT_EQ(machine.diskGeometry(0).num_heads,  2u);
+
+    machine.unmountDisk(0);
     std::filesystem::remove(path);
 }
 
-TEST(CreateDiskDefault, K560010_ss40_200K) {
-    const std::string path = tmpImg("k560010");
+TEST(CreateDiskBlank, K560010_LeerdisketteHat40x1) {
+    const std::string path = tmpHfe("k560010");
     std::filesystem::remove(path);
     A5120Machine::Config cfg;
     cfg.drive_profiles = {"K5600.10", "K5601", "K5601", "K5601"};
     A5120Machine machine(cfg);
     ASSERT_TRUE(machine.createDisk(0, path, "", false)) << machine.lastError();
-    EXPECT_EQ(std::filesystem::file_size(path), 40u * 5 * 1024);      // 200K
+
+    EXPECT_EQ(machine.diskGeometry(0).num_cyls,  40u);
+    EXPECT_EQ(machine.diskGeometry(0).num_heads,  1u);
+
+    machine.unmountDisk(0);
     std::filesystem::remove(path);
 }
 
-TEST(CreateDiskDefault, MF3200_fm_308K) {
+TEST(CreateDiskBlank, LeerdisketteAlsImg_wirdAbgelehnt) {
+    const std::string path = tmpImg("blank");
+    std::filesystem::remove(path);
+    A5120Machine machine;
+    EXPECT_FALSE(machine.createDisk(0, path, "", false));
+    EXPECT_NE(machine.lastError().find(".img"), std::string::npos)
+        << machine.lastError();
+    EXPECT_FALSE(std::filesystem::exists(path));
+}
+
+TEST(CreateDiskFormatted, K5601_DefaultIstCpa800) {
+    const std::string path = tmpImg("k5601");
+    std::filesystem::remove(path);
+    A5120Machine machine;                       // Default: 4x K5601
+    ASSERT_TRUE(machine.createDisk(0, path, machine.defaultFormatName(0), /*wp=*/false))
+        << machine.lastError();
+    EXPECT_TRUE(machine.isDiskActive(0));
+    EXPECT_EQ(std::filesystem::file_size(path), 80u * 2 * 5 * 1024);  // cpa800 = 800K
+    machine.unmountDisk(0);
+    std::filesystem::remove(path);
+}
+
+TEST(CreateDiskFormatted, K560010_ss40_200K) {
+    const std::string path = tmpImg("k560010");
+    std::filesystem::remove(path);
+    A5120Machine::Config cfg;
+    cfg.drive_profiles = {"K5600.10", "K5601", "K5601", "K5601"};
+    A5120Machine machine(cfg);
+    ASSERT_TRUE(machine.createDisk(0, path, machine.defaultFormatName(0), false))
+        << machine.lastError();
+    EXPECT_EQ(std::filesystem::file_size(path), 40u * 5 * 1024);      // 200K
+    machine.unmountDisk(0);
+    std::filesystem::remove(path);
+}
+
+TEST(CreateDiskFormatted, MF3200_fm_308K) {
     const std::string path = tmpImg("mf3200");
     std::filesystem::remove(path);
     A5120Machine::Config cfg;
     cfg.drive_profiles = {"MF3200", "K5601", "K5601", "K5601"};
     A5120Machine machine(cfg);
-    ASSERT_TRUE(machine.createDisk(0, path, "", false)) << machine.lastError();
+    ASSERT_TRUE(machine.createDisk(0, path, machine.defaultFormatName(0), false))
+        << machine.lastError();
     EXPECT_EQ(std::filesystem::file_size(path), 77u * 4 * 1024);      // 308K
+    machine.unmountDisk(0);
     std::filesystem::remove(path);
 }
 
-TEST(CreateDiskDefault, UnbekanntesFormat_gibtFalse) {
+TEST(CreateDiskFormatted, UnbekanntesFormat_gibtFalse) {
     const std::string path = tmpImg("bad");
     std::filesystem::remove(path);
     A5120Machine machine;

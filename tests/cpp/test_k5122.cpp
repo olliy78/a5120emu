@@ -31,7 +31,6 @@
 #include "core/peripherals/floppy_drive/disk_format.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
-#include "core/peripherals/floppy_drive/raw_sector_image.h"
 #include "core/peripherals/floppy_drive/drive_profile.h"
 #include "core/logger.h"
 
@@ -765,9 +764,9 @@ TEST_F(K5122Test, FormatWrite_VollspurRoundtrip) {
 
     // 4. flush + neu lesen
     card.drive(0).flush();
-    RawSectorImage check(path, fmt, /*wp=*/false);
-    ASSERT_TRUE(check.isOpen());
-    auto parsed = TrackCodec::parseTrack(check.readTrack(0, 0));
+    auto check = DiskImage::open(path, fmt, /*wp=*/false);
+    ASSERT_NE(check, nullptr);
+    auto parsed = TrackCodec::parseTrack(check->readTrack(0, 0));
     ASSERT_EQ(parsed.size(), 5u) << "5 Sektoren nach Vollspur-FORMAT";
     for (size_t k = 0; k < parsed.size(); ++k) {
         EXPECT_EQ(parsed[k].id, k + 1);
@@ -807,8 +806,9 @@ TEST_F(K5122Test, FormatWrite_IdleCommitLetzteSpur) {
     EXPECT_FALSE(bus.isBUSRQ()) << "BUSRQ nach Idle-Commit der letzten Spur frei";
 
     card.drive(0).flush();
-    RawSectorImage check(path, fmt, /*wp=*/false);
-    auto parsed = TrackCodec::parseTrack(check.readTrack(0, 0));
+    auto check = DiskImage::open(path, fmt, /*wp=*/false);
+    ASSERT_NE(check, nullptr);
+    auto parsed = TrackCodec::parseTrack(check->readTrack(0, 0));
     EXPECT_EQ(parsed.size(), 4u);
     std::filesystem::remove(path);
 }
@@ -965,8 +965,9 @@ TEST_F(K5122Test, WriteTrackAt_SchreibtExpliziteSpur) {
     ASSERT_TRUE(card.drive(0).writeTrackAt(1, 0, trk));   // Spur 1 schreiben, Kopf auf 2
     card.drive(0).flush();
 
-    RawSectorImage check(path, fmt, /*wp=*/false);
-    auto parsed = TrackCodec::parseTrack(check.readTrack(1, 0));
+    auto check = DiskImage::open(path, fmt, /*wp=*/false);
+    ASSERT_NE(check, nullptr);
+    auto parsed = TrackCodec::parseTrack(check->readTrack(1, 0));
     ASSERT_EQ(parsed.size(), 4u);
     EXPECT_EQ(parsed[0].data[0], 0xC1);
     std::filesystem::remove(path);
@@ -1012,10 +1013,10 @@ TEST_F(K5122Test, FormatWhole_MehrspurIntegration) {
     card.drive(0).flush();
 
     // Verifikation: jede Spur trägt ihre eindeutige Füllung.
-    RawSectorImage check(path, fmt, /*wp=*/false);
-    ASSERT_TRUE(check.isOpen());
+    auto check = DiskImage::open(path, fmt, /*wp=*/false);
+    ASSERT_NE(check, nullptr);
     for (uint8_t cyl = 0; cyl < NCYL; ++cyl) {
-        auto parsed = TrackCodec::parseTrack(check.readTrack(cyl, 0));
+        auto parsed = TrackCodec::parseTrack(check->readTrack(cyl, 0));
         ASSERT_EQ(parsed.size(), 5u) << "Spur " << int(cyl);
         for (uint8_t id = 1; id <= 5; ++id) {
             const uint8_t want = static_cast<uint8_t>((cyl << 4) | id);
@@ -1071,9 +1072,9 @@ TEST_F(K5122Test, WriteField_WEFlanke_TrifftZielsektorPerIDAM) {
 
     // flush → Host-Image, neu öffnen und prüfen.
     card.drive(0).flush();
-    RawSectorImage check(path, fmt1, /*wp=*/false);
-    ASSERT_TRUE(check.isOpen());
-    auto parsed = TrackCodec::parseTrack(check.readTrack(0, 0));
+    auto check = DiskImage::open(path, fmt1, /*wp=*/false);
+    ASSERT_NE(check, nullptr);
+    auto parsed = TrackCodec::parseTrack(check->readTrack(0, 0));
     ASSERT_GE(parsed.size(), 4u);
 
     auto byId = [&](uint8_t id) -> LogicalSector* {
@@ -1293,7 +1294,7 @@ TEST_F(K5122Test, TrackEncoding_AusImage_und_EncodingMatch) {
     auto path = tmpImg1();
     ASSERT_TRUE(card.mountDisk(0, path, fmt1));
 
-    // Test-.img wird als RawSectorImage mit Default MFM gemountet.
+    // Test-.img wird ueber den ImgCodec mit Default MFM geladen.
     auto s0 = card.debugState();
     EXPECT_EQ(s0.trackEncoding, Encoding::MFM);
     // Default-Profil K5601 → readEncoding FM → Mismatch.

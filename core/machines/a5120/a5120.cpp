@@ -145,6 +145,10 @@ void A5120Machine::wireBackplane() {
 // Leitung des Backplane genau das ab.
 void A5120Machine::resetHardware() {
     stop_.store(false);
+    // Ausstehende Disketten-Aenderungen zuerst wegschreiben: der /RESET raeumt den
+    // Controller ab, aber das interne Abbild ueberlebt — die gebundene Datei soll
+    // ihm auch ueber einen Reset/Power-Cycle hinweg entsprechen.
+    afs_.flushDisks();
     zre_.powerOn();     // K2526: Lade-ROM mappen, BS-PIO/CTC/Q240 zurücksetzen
     zre_.cpuReset();
     afs_.reset();       // K5122: Transfer abbrechen, /BUSRQ frei, PIOs zurück
@@ -633,6 +637,17 @@ int A5120Machine::run(int max_cycles) {
         if (kbd_.service(total_cycles_)) bus_.markIntDirty();
     }
 
+    // Verzoegertes Zurueckschreiben geaenderter Spuren in die gebundene Image-Datei:
+    // das interne Abbild ist die Wahrheit, die Datei folgt ihm mit leichtem Zeitversatz
+    // (doc/design/09_floppy_drive.md §6.1).  Nur alle kDiskFlushCheckInterval Takte
+    // nachsehen — run() wird von Werkzeugen auch instruktionsweise aufgerufen, und die
+    // Sperre soll dort nicht ins Gewicht fallen.
+    if (total_cycles_ >= next_disk_flush_check_) {
+        next_disk_flush_check_ = total_cycles_ + kDiskFlushCheckInterval;
+        std::lock_guard<std::mutex> lk(disk_mutex_);
+        afs_.autoFlushDisks(total_cycles_);
+    }
+
     return max_cycles - remaining;
 }
 
@@ -658,7 +673,7 @@ bool A5120Machine::mountDisk(int drive, const std::string& path,
     // Die Kompatibilität wird dort erzwungen, wo das Format die Struktur wirklich
     // bestimmt: in createDisk() und in der angebotenen Auswahl (compatibleFormats()).
     std::lock_guard<std::mutex> lk(disk_mutex_);
-    if (afs_.mountDisk(drive, path, *fmt, wp)) return true;
+    if (afs_.mountDisk(drive, path, *fmt, wp)) { last_error_.clear(); return true; }
 
     // Grund aus dem Laufwerk übernehmen (Geometrie-/Verfahrenskonflikt); wurde das
     // Image gar nicht erst geöffnet, ist die Laufwerks-Meldung leer → Fallback.
@@ -679,17 +694,41 @@ bool A5120Machine::createDisk(int drive, const std::string& path,
         return false;
     }
 
-    // Leerer Formatname → Standardformat des Laufwerkstyps (`default_for:` im Katalog).
-    const DiskFormat* fmt = nullptr;
+    std::unique_ptr<DiskImage> img;
+
     if (format_name.empty()) {
-        fmt = disk_formats_.defaultFor(prof);
-        if (!fmt) {
-            last_error_ = "createDisk: kein Standardformat für Laufwerk '" + prof.name
-                          + "' im Katalog (default_for)";
+        // ── Echte Leerdiskette ──────────────────────────────────────────────
+        // Geometrie kommt vom LAUFWERK (nicht von einem Format): eine unformatierte
+        // Diskette hat kein Sektorlayout.  Sie wird anschließend vom Gastsystem
+        // formatiert — inklusive Fremdformaten, die Nutzdaten hinter die Daten-CRC
+        // hängen (UDOS-Sektorkontrollblock), was ein .img nicht speichern könnte.
+        if (!path.empty()
+            && ImageCodec::fromExtension(path) == ContainerType::Img) {
+            last_error_ = "Eine leere Diskette kann nicht als rohes Sektorimage (.img) "
+                          "angelegt werden — bitte .hfe oder .dmk waehlen (oder ein "
+                          "Diskettenformat angeben, um vorformatiert anzulegen).";
             return false;
         }
+
+        // Vorschlagsverfahren des Laufwerks (reines FM-Laufwerk → FM, sonst MFM);
+        // je Spur überschreibt es der Formatierlauf ohnehin.
+        const Encoding enc = (prof.supports_mfm ? Encoding::MFM : Encoding::FM);
+        img = DiskImage::createBlank(prof.num_cyls, prof.num_heads, enc);
+        if (!img) {
+            last_error_ = "createDisk: Laufwerksgeometrie unbrauchbar ("
+                          + prof.name + ")";
+            return false;
+        }
+        // Sofort in die Zieldatei schreiben, damit sie ab dem ersten Moment existiert
+        // und der Autosave eine Bindung hat.  Leerer Pfad = nur im Speicher.
+        if (!path.empty() && !img->saveAs(path, std::nullopt)) {
+            last_error_ = std::string("createDisk: ") + img->lastError();
+            return false;
+        }
+        img->setWriteProtect(write_protect);
     } else {
-        fmt = disk_formats_.find(format_name);
+        // ── Vorformatierte Diskette nach Katalogformat ───────────────────────
+        const DiskFormat* fmt = disk_formats_.find(format_name);
         if (!fmt) {
             last_error_ = "createDisk: unbekanntes Format '" + format_name + "'";
             return false;
@@ -699,26 +738,91 @@ bool A5120Machine::createDisk(int drive, const std::string& path,
                           + prof.name + "'";
             return false;
         }
-    }
-
-    // Verfahren kommt jetzt aus dem FORMAT (pro Spurbereich).  Für den HFE-Header und
-    // rohe .img zählt das vorherrschende Verfahren; Mischdichte trägt DiskImage::create
-    // spurweise ein.
-    const Encoding enc = fmt->predominantEncoding();
-
-    auto img = DiskImage::create(path, *fmt, write_protect, enc);
-    if (!img) {
-        last_error_ = "createDisk fehlgeschlagen (Format '" + fmt->name + "'): " + path;
-        return false;
+        // Verfahren kommt aus dem FORMAT (pro Spurbereich).  Für den Container-Header
+        // und rohe .img zählt das vorherrschende Verfahren.
+        img = DiskImage::create(path, *fmt, write_protect, fmt->predominantEncoding());
+        if (!img) {
+            last_error_ = "createDisk fehlgeschlagen (Format '" + fmt->name + "'): " + path;
+            return false;
+        }
     }
 
     std::lock_guard<std::mutex> lk(disk_mutex_);
-    if (afs_.mountDisk(drive, std::move(img), write_protect)) return true;
+    if (afs_.mountDisk(drive, std::move(img), write_protect)) { last_error_.clear(); return true; }
     const std::string drv_err = afs_.drive(drive).lastError();
     last_error_ = drv_err.empty()
                       ? ("createDisk: Mounten fehlgeschlagen: " + path)
                       : drv_err;
     return false;
+}
+
+bool A5120Machine::saveDiskAs(int drive, const std::string& path,
+                              const std::string& format_name) {
+    if (drive < 0 || drive > 3) { last_error_ = "Invalid drive"; return false; }
+    if (path.empty())           { last_error_ = "Kein Zielpfad angegeben"; return false; }
+
+    std::lock_guard<std::mutex> lk(disk_mutex_);
+    DiskImage* img = afs_.drive(drive).image();
+    if (!img) {
+        last_error_ = "Kein Datentraeger in Laufwerk " + std::to_string(drive);
+        return false;
+    }
+
+    // Das Diskettenformat wird NUR fuer das rohe Sektorimage gebraucht — .hfe/.dmk
+    // sind self-describing.
+    std::optional<DiskFormat> fmt;
+    if (ImageCodec::fromExtension(path) == ContainerType::Img) {
+        if (format_name.empty()) {
+            last_error_ = "Speichern als .img braucht die Angabe eines Diskettenformats.";
+            return false;
+        }
+        const DiskFormat* f = disk_formats_.find(format_name);
+        if (!f) {
+            last_error_ = "Unbekanntes Format: " + format_name;
+            return false;
+        }
+        fmt = *f;
+    }
+
+    if (img->saveAs(path, fmt)) { last_error_.clear(); return true; }
+    last_error_ = img->lastError();
+    return false;
+}
+
+bool A5120Machine::isDiskRawCompatible(int drive) const {
+    if (drive < 0 || drive > 3) return false;
+    const DiskImage* img = afs_.drive(drive).image();
+    return img && img->rawCompatible();
+}
+
+std::string A5120Machine::diskPath(int drive) const {
+    if (drive < 0 || drive > 3) return "";
+    const DiskImage* img = afs_.drive(drive).image();
+    return img ? img->path() : "";
+}
+
+std::string A5120Machine::diskContainer(int drive) const {
+    if (drive < 0 || drive > 3) return "";
+    const DiskImage* img = afs_.drive(drive).image();
+    if (!img || !img->hasFile()) return "";
+    return ImageCodec::name(img->container());
+}
+
+DiskGeometry A5120Machine::diskGeometry(int drive) const {
+    if (drive < 0 || drive > 3) return {};
+    const DiskImage* img = afs_.drive(drive).image();
+    return img ? img->geometry() : DiskGeometry{};
+}
+
+bool A5120Machine::isDiskFormatted(int drive) const {
+    if (drive < 0 || drive > 3) return false;
+    const DiskImage* img = afs_.drive(drive).image();
+    return img && img->medium().formatted();
+}
+
+bool A5120Machine::flushDisks() {
+    std::lock_guard<std::mutex> lk(disk_mutex_);
+    return afs_.flushDisks();
 }
 
 std::string A5120Machine::defaultFormatName(int drive) const {

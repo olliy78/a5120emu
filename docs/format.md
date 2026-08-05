@@ -1,5 +1,14 @@
 # Diskettenformate (FORMAT.COM)
 
+> **Hinweis (2026-08-05, Medium-Umbau §8.7):** Der Floppy-Stack hält eine gemountete Diskette
+> jetzt vollständig als internes `DiskMedium` im Speicher; `.img`/`.hfe`/`.dmk` sind reine
+> Container-Codecs (`ImgCodec`/`HfeCodec`/`DmkCodec`) davor.  Wo dieses Dokument noch
+> `RawSectorImage`/`HfeImage` nennt, sind die entsprechenden Codecs gemeint — Verhalten und
+> Offset-/Layout-Modell sind unverändert.  Neu: `.dmk` als drittes Containerformat,
+> „Speichern unter" mit Containerwechsel, und eine **echte Leerdiskette**
+> (`createDisk` mit leerem Formatnamen), die das Gastsystem selbst formatiert.
+> Feinentwurf: `doc/design/09_floppy_drive.md`.
+
 Dieses Dokument listet **alle** im A5120-Emulator über das CP/A-Formatierprogramm
 `FORMAT.COM` (V19.05.89) auswählbaren Diskettenformate auf, beschreibt den
 Bedien-Dialog (inkl. der mehrseitigen Format-Menüs „X = Menü #2" usw.) und hält fest,
@@ -347,7 +356,7 @@ für ph. Sektorversatz prüfen.
 
 **Phase B — `.img` (Stand 2026-07-01): 14 von 15 §3-Formaten OK.**  Das B:-Ziel wird per
 **`create`** als 0xE5-`.img` in der Geometrie des passenden `DiskFormat` angelegt (`format_all.py
---type img`, s. §9.0) — eine frische 0xE5-`.img` liest über `RawSectorImage` als gültig
+--type img`, s. §9.0) — eine frische 0xE5-`.img` liest über den `ImgCodec` als gültig
 formatierte Disk, daher **kein BUSRQ-Hänger**.  Alle Sektorgrößen + Menüseiten verifizieren;
 Dateigrößen passen (z. B. `0`=819200, `4`=655360, `6`=532480, `E`=737280 B).  **Interleave im
 Rohspeicher unkritisch:** Format `5` (16×256 *mit* ph. Sektorversatz) verifiziert als `.img`
@@ -696,7 +705,7 @@ Der Runner erzeugt je Format eine **Temp-Kopie der Boot-Disk (A:)** und ein
 **`.img` vs `.hfe` (`--type`):**
 - `--type img` (Phase B): `format_driver` **legt** die `.img` per **`create`** in der
   Geometrie des passenden `DiskFormat` an (0xE5-gefüllt; kein Python-Vorbau).  Eine frische
-  0xE5-`.img` liest über `RawSectorImage` als **gültig formatierte** Disk → FORMAT.COMs
+  0xE5-`.img` liest über den `ImgCodec` als **gültig formatierte** Disk → FORMAT.COMs
   Vorlesung findet echte Sektoren → **kein** BUSRQ-Hänger.  Format→`DiskFormat`-Zuordnung:
   s. `FORMATS`-Tabelle in `tools/format_all.py` bzw. `k5601_16x256`/`k5601_26x128`/
   `k5601_9x512`/`k5601_10x512`/`cpa800`/`cpa780` in `FormatParser::builtinFormats()`.

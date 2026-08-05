@@ -11,6 +11,7 @@
  * | Test | deckt ab |
  * |---|---|
  * | `FormatsDriveOneIntoUsableZdosDisk` | `FORMAT` einer Datenseite + Belegungskarte |
+ * | `FormatsBrandNewBlankDiskette` | FRISCHE LEERDISKETTE (unformatiert) unter UDOS formatieren |
  * | `CopyDiskDuplicatesSystemDiskSectorBySector` | sektorweises Kopieren am Dateisystem vorbei |
  * | `BuildsBootableSystemDiskAndBootsFromIt` | Systemspuren, Rückseite (Laufwerk 5), `MOVE`, Kaltstart von der selbstgebauten Diskette |
  *
@@ -116,6 +117,18 @@ void booteUdos(A5120Machine& m) {
     // Ein sauberer Start heisst: BEIDE Disketten sind als ZDOS-Datentraeger eingelesen.
     ASSERT_EQ(vramText(m).find("DISK INITIALIZATION ERROR"), std::string::npos)
         << "UDOS konnte eine der beiden Disketten nicht einlesen:\n" << vramText(m);
+    runCycles(m, 3'000'000);
+}
+
+// Wie booteUdos, aber OHNE die Forderung, dass beide Disketten einlesbar sind:
+// in Laufwerk 1 liegt hier eine noch voellig unformatierte Leerdiskette, die UDOS
+// zu Recht nicht als Datentraeger annimmt (genau die soll ja formatiert werden).
+void booteUdosMitLeerdiskette(A5120Machine& m) {
+    ASSERT_TRUE(runSmallUntil(m, "Neues Datum", 120'000'000))
+        << "UDOS-Datumsabfrage nie erschienen:\n" << vramText(m);
+    typeString(m, "150388");
+    ASSERT_TRUE(runSmallUntil(m, "UDOS BC.5120", 60'000'000))
+        << "UDOS-Prompt nie erreicht:\n" << vramText(m);
     runCycles(m, 3'000'000);
 }
 
@@ -392,6 +405,75 @@ TEST(UdosFormat, BuildsBootableSystemDiskAndBootsFromIt) {
     }
 
     std::error_code ec;
+    fs::remove(aPath, ec);
+    fs::remove(bPath, ec);
+}
+
+/**
+ * @test UdosFormat/FormatsBrandNewBlankDiskette
+ * @brief Der eigentliche Zweck des Medium-Umbaus (§8.7): eine **frisch angelegte,
+ *        voellig unformatierte** Diskette laesst sich unter UDOS formatieren und ist
+ *        danach ein brauchbarer ZDOS-Datentraeger.
+ *
+ * Vorher war das unmoeglich: `createDisk` musste eine bereits IBM-formatierte
+ * Diskette anlegen (eine gap-leere `.hfe` liess den Controller haengen), und auf
+ * einer solchen konnte UDOS seinen Sektorkontrollblock hinter der Daten-CRC nicht
+ * unterbringen.  Jetzt ist die neue Diskette wirklich leer (keine Adressmarken,
+ * Geometrie aus dem DriveProfile), der Controller streamt dafuer markenlosen
+ * Gap-Flux, und FORMAT schreibt die Spuren komplett neu.
+ *
+ * Gegenprobe: `STATUS` meldet 1988 freie Sektoren (77x26 - 14 Systemsektoren) und
+ * den frisch vergebenen Datentraegernamen; das Abbild ist anschliessend NICHT als
+ * `.img` speicherbar, weil der UDOS-Anhang hinter der Daten-CRC dort verloren ginge.
+ */
+TEST(UdosFormat, FormatsBrandNewBlankDiskette) {
+    namespace fs = std::filesystem;
+    const std::string aPath = (fs::temp_directory_path() / "udos_blank_guard_A.hfe").string();
+    const std::string bPath = (fs::temp_directory_path() / "udos_blank_guard_B.hfe").string();
+    std::error_code ec;
+    fs::copy_file(diskPath("udos_boot_scp.hfe"), aPath, fs::copy_options::overwrite_existing);
+    fs::remove(bPath, ec);
+
+    k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
+
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, aPath, "cpa780", /*wp=*/false)) << machine.lastError();
+
+    // LEERE Diskette anlegen: kein Formatname → unformatiertes Medium in
+    // Laufwerksgeometrie (K5601 = 80x2), gebunden an eine .hfe.
+    ASSERT_TRUE(machine.createDisk(1, bPath, /*format_name=*/"", /*wp=*/false))
+        << machine.lastError();
+    EXPECT_FALSE(machine.isDiskFormatted(1)) << "frische Diskette darf keine Marken tragen";
+    EXPECT_FALSE(machine.isDiskRawCompatible(1));
+    EXPECT_EQ(machine.diskGeometry(1).num_cyls, 80u);
+
+    machine.powerOn();
+    booteUdosMitLeerdiskette(machine);
+
+    formatiere(machine, "n", "1", "blankdsk");
+    const std::string nachFormat = vramText(machine);
+    EXPECT_EQ(nachFormat.find("DEFEKTIVE TRACK"), std::string::npos)
+        << "FORMAT meldete defekte Spuren auf der Leerdiskette:\n" << nachFormat;
+    EXPECT_EQ(nachFormat.find("NOT FOR UDOS USEABLE"), std::string::npos)
+        << "FORMAT verwarf die Leerdiskette:\n" << nachFormat;
+
+    typeString(machine, "status");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "1988 SECTORS AVAILABLE", 100'000'000))
+        << "STATUS meldet fuer die frisch formatierte Leerdiskette nicht 1988 freie "
+           "Sektoren:\n" << vramText(machine);
+    EXPECT_NE(vramText(machine).find("DRIVE 1   BLANKDSK"), std::string::npos)
+        << "Laufwerk 1 traegt nicht den frisch vergebenen Datentraegernamen:\n"
+        << vramText(machine);
+
+    // Der UDOS-Sektorkontrollblock hinter der Daten-CRC macht das Abbild
+    // unweigerlich `.img`-untauglich — genau dafuer gibt es das Flag.
+    EXPECT_TRUE(machine.isDiskFormatted(1));
+    EXPECT_FALSE(machine.isDiskRawCompatible(1))
+        << "UDOS-Diskette wurde faelschlich als .img-tauglich gemeldet";
+
+    machine.unmountDisk(0);
+    machine.unmountDisk(1);
     fs::remove(aPath, ec);
     fs::remove(bPath, ec);
 }

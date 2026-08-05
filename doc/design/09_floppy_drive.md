@@ -1,285 +1,437 @@
-# Feinentwurf: FloppyDrive – Diskettenlaufwerk-Emulation
+# Feinentwurf: Diskettenabbild — internes Medium + Container-Codecs
 
-**Modul:** `core/peripherals/floppy_drive/`  
-**Dateien:** `floppy_drive.h`, `floppy_drive.cpp`, `format_parser.h`, `format_parser.cpp`  
-**Format-Referenz:** `/home/olliy/projects/CPA_Workbench/cpaFormates.cfg`
+**Modul:** `core/peripherals/floppy_drive/`
+**Dateien:** `track_image.*`, `track_codec.*`, `bit_codec.*`, `disk_medium.*`,
+`image_codec.*`, `img_codec.*`, `hfe_codec.*`, `dmk_codec.*`, `disk_image.*`,
+`floppy_drive2.*`, `drive_profile.*`, `disk_format.*`, `format_catalog.*`
+**Verwandt:** `doc/design/07_k5122_afs.md` (Controller), `doc/K1520_architecture.md` §8.5/§8.7
 
-> **Hinweis (2026-06-10): DiskImage-Schicht ist der aktive Pfad.** Dieses Dokument beschreibt das
-> ursprüngliche `FloppyDrive` (Inline-Sektor-IO über `.img`).  Die heutige `K5122` nutzt es **nicht**
-> mehr, sondern die im selben Verzeichnis ergänzte **DiskImage-basierte Schicht**: `track_image.*`
-> (zentrale `TrackImage`-Abstraktion), `track_codec.*` (FM/MFM-Track bauen/parsen + CRC), `bit_codec.*`
-> (HFE-Bitzellen), `drive_profile.*` (physische Laufwerksprofile), `disk_image.*` + `raw_sector_image.*`
-> + `hfe_image.*` (austauschbare Backends) und `floppy_drive2.*` (`FloppyDriveV2` mit Profil +
-> Track-Cache).  `FloppyDrive` bleibt nur noch als Referenz/Test-Vergleich (`test_floppy`,
-> `test_disk_image_raw`) erhalten.  Architektur/Status: `doc/design/07_k5122_afs.md`, `doc/K1520_architecture.md` §8.5.
-
----
-
-## 1. Aufgabe
-
-Die `FloppyDrive`-Klasse emuliert ein physisches Diskettenlaufwerk als Abstraktion über eine `.img`-Datei. Sie ist kein K1520-Bus-Gerät, sondern wird von der K5122-Karte verwendet.
+> **Historie.** Dieses Dokument beschrieb ursprünglich die monolithische `FloppyDrive`
+> (Inline-Sektor-IO über `.img`, Klasse längst entfallen), danach die
+> `DiskImage`-Backend-Schicht (je Dateiformat eine Unterklasse, die *auf der Datei
+> arbeitete*).  Seit dem **Medium-Umbau (2026-08-05)** gibt es nur noch **ein
+> internes Diskettenabbild**; die Dateiformate sind reine **Container-Codecs**
+> davor.  Der frühere Aufbau ist in §9 als Abgrenzung dokumentiert.
 
 ---
 
-## 2. Disk-Format-Definition
+## 1. Aufgabe und Leitidee
 
-Das Format einer Diskette beschreibt die Sektorgeometrie pro Spur und Kopf. Es kann spurabhängig variieren (z.B. cpa780 hat andere Boot-Spuren).
+Der Emulator hält eine gemountete Diskette **vollständig als internes,
+bitstrom-orientiertes Abbild im Speicher** (`DiskMedium`).  Eine Image-Datei ist
+nur noch **Ein-/Ausgabeformat**:
 
-```cpp
-struct SectorInfo {
-    uint8_t  id;        // Sektor-ID (1-basiert)
-    uint16_t size;      // Bytes pro Sektor (128, 256, 512, 1024)
-};
-
-struct TrackFormat {
-    int head_first;     // Erster Kopf (0 oder 1)
-    int head_last;      // Letzter Kopf
-    int cyl_first;      // Erste Spur
-    int cyl_last;       // Letzte Spur
-    int secs_per_track; // Sektoren pro Spur
-    int bytes_per_sec;  // Bytes pro Sektor
-};
-
-struct DiskFormat {
-    std::string name;          // z.B. "cpa780"
-    int         num_cyls;      // Anzahl Spuren (z.B. 80)
-    int         num_heads;     // Anzahl Köpfe (1 oder 2)
-    std::vector<TrackFormat> tracks;  // Spur-Bereiche mit Geometrie
-
-    // Byte-Offset eines Sektors im .img-File
-    size_t sectorOffset(int cyl, int head, int sector_id) const;
-
-    // Gesamtgröße in Bytes
-    size_t totalSize() const;
-};
+```
+Datei (.img | .hfe | .dmk)  ──load──►  DiskMedium (intern, bitstrom-orientiert)  ──►  K5122
+                            ◄─save──                    ▲
+                                                        └── Schreibzugriffe des Gastsystems
 ```
 
-### 2.1 Bekannte Formate (aus cpaFormates.cfg)
+Daraus folgt alles Weitere:
 
-| Format | Spuren | Köpfe | Bootspuren | Bootsektor | Datensektor |
-|--------|--------|-------|-----------|------------|-------------|
-| cpa624 | 80 | 2 | keine (alle gleich) | — | 16×256B |
-| cpa640 | 80 | 2 | keine | — | 16×256B |
-| cpa780 | 80 | 2 | 0-1.K0, 0.K1 | 26×128B | 5×1024B |
-| cpa800 | 80 | 2 | keine | — | 5×1024B |
-| cpa200 | 40 | 1 | keine | — | 5×1024B |
-| cpa200_boot | 40 | 1 | 0-1 | 26×128B | 5×1024B |
-| scpx780 | 80 | 2 | keine | — | 5×1024B |
-| scpx780_b | 80 | 2 | keine | — | 10×512B |
+| Anforderung | Umsetzung |
+|-------------|-----------|
+| Einheitliche interne Darstellung | `DiskMedium` = Feld von `TrackImage` (Vollumdrehungs-Byte-/Markenstrom, FM **und** MFM) |
+| Datei folgt dem Abbild | Autosave: schmutzige Spuren werden verzögert in die **gebundene** Datei zurückgeschrieben |
+| Format nachträglich wechseln | `saveAs(pfad, container)` schreibt das Medium neu **und bindet um** — ab da geht der Autosave in die neue Datei |
+| `.dmk` zusätzlich | dritter Container-Codec, self-describing wie `.hfe` |
+| Echte Leerdiskette | `DiskMedium` mit **unformatierten** Spuren (keine Marken) — Geometrie aus dem **DriveProfile** |
+| Leerdiskette ist nicht `.img`-fähig | Flag `rawCompatible()`; Speichern als `.img` scheitert mit Fehlermeldung, GUI bietet `.img` gar nicht erst an |
+| Formatname nur für `.img` | `.hfe`/`.dmk` sind self-describing; `DiskFormat` wird **ausschließlich** vom `.img`-Codec verlangt |
+
+**Warum „bitstrom-orientiert“, obwohl `TrackImage` Bytes hält:** `TrackImage` ist der
+*decodierte* Vollumdrehungsstrom — Gaps, Sync, Adressmarken (als `marks[]`, also aus dem
+fehlenden Clock-Bit, nicht aus dem Bytewert), Datenfelder, **echte CRCs** und alles, was
+sonst noch auf der Spur steht.  Er ist damit verlustfrei in FM-/MFM-Bitzellen
+rückcodierbar (`BitCodec`) und trägt insbesondere die Bytes, die **kein** Sektorimage
+kennt: den UDOS-Sektorkontrollblock hinter der Daten-CRC, fremde Gap-Inhalte,
+CRC-Fehler, unformatierte Spuren.  Eine Bitzellen-Speicherung wäre gleichwertig, aber
+teurer (jede Leseanforderung müsste decodieren) und würde die vom Controller ohnehin
+benötigte Markeninformation wegwerfen.
 
 ---
 
-## 3. Format-Parser
+## 2. Schichtung
+
+```
+K5122 (Controller)                                        core/cards/k5122/
+   │  fordert TrackImage(cyl, head) an, streamt es byteweise
+   ▼
+FloppyDriveV2 — physisches Laufwerk: DriveProfile + Kopfposition   floppy_drive2.*
+   │  track(head) / mutableTrack(head) / writeTrackAt(cyl,head,t)
+   ▼
+DiskImage — gemountete Diskette: Medium + Dateibindung + Autosave  disk_image.*
+   ├── DiskMedium — DAS interne Abbild (alle Spuren, dirty-Bits)   disk_medium.*
+   └── ImageCodec — Container laden/speichern (Fabrik + Sniffing)  image_codec.*
+         ├── ImgCodec  (.img, braucht DiskFormat)                  img_codec.*
+         ├── HfeCodec  (.hfe, HFE v1, self-describing)             hfe_codec.*
+         └── DmkCodec  (.dmk, David Keil, self-describing)         dmk_codec.*
+   ▼
+TrackImage / TrackCodec / BitCodec — Spurstrom, IBM-Synthese, Bitzellen
+DriveProfile[4] / DiskFormat / FormatCatalog — Laufwerke bzw. Sektorlayout
+```
+
+Die **Namensgebung**: `DiskMedium` ist der Datenträger, `DiskImage` die *gemountete*
+Diskette (Medium **plus** Dateibindung, Schreibschutz, Fehlertext).  `ImageCodec` ist
+die Container-Schicht.  Es gibt **keine** Datei-Backend-Unterklassen mehr.
+
+---
+
+## 3. `DiskMedium` — das interne Abbild
 
 ```cpp
-class FormatParser {
+class DiskMedium {
 public:
-    // Liest eine .cfg-Datei und gibt alle definierten Formate zurück
-    static std::vector<DiskFormat> parseFile(const std::string& path);
+    DiskMedium() = default;
+    DiskMedium(uint8_t num_cyls, uint8_t num_heads, Encoding default_enc);
 
-    // Parst einen einzelnen Format-Block aus einem String
-    static DiskFormat parseFormat(const std::string& name,
-                                   const std::string& block);
+    void resize(uint8_t num_cyls, uint8_t num_heads);   ///< Spuren bleiben erhalten
 
-    // Gibt alle eingebauten Formate zurück (ohne externe Datei)
-    static const std::vector<DiskFormat>& builtinFormats();
+    uint8_t  numCylinders() const;
+    uint8_t  numHeads()     const;
+    Encoding defaultEncoding() const;                   ///< vorherrschendes Verfahren
+    void     setDefaultEncoding(Encoding e);
+    DiskGeometry geometry() const;
 
-private:
-    static void parseTrackRange(const std::string& line, DiskFormat& fmt);
+    const TrackImage& track(uint8_t cyl, uint8_t head) const;
+    TrackImage&       mutableTrack(uint8_t cyl, uint8_t head);   ///< markiert dirty
+    void              setTrack(uint8_t cyl, uint8_t head, TrackImage t);
+    void              markDirty(uint8_t cyl, uint8_t head);
+
+    bool dirty() const;                       ///< irgendeine Spur seit dem letzten Save geändert
+    bool trackDirty(uint8_t cyl, uint8_t head) const;
+    void clearDirty();
+
+    bool formatted()     const;               ///< mind. eine Spur trägt Adressmarken
+    bool rawCompatible() const;               ///< als .img darstellbar (§5)
+    bool trackRawCompatible(uint8_t cyl, uint8_t head) const;
 };
 ```
 
-**Eingebaute Formate:** Die Standardformate (cpa780, cpa800, etc.) sind im Code eingebaut und funktionieren ohne externe Konfigurationsdatei. Externe `.cfg`-Dateien können zusätzliche Formate definieren.
+* **Speicherung:** `std::vector<TrackImage>`, Index `cyl * num_heads + head`.
+  80×2 Spuren × ~6,3 KB ≈ 1 MB je Laufwerk — unkritisch.
+* **Dirty-Bits pro Spur**, damit der Autosave nur geänderte Spuren neu codiert.
+* **`raw_ok_`-Cache pro Spur** (tri-state), wird bei jeder Änderung dieser Spur
+  invalidiert und bei Bedarf neu bestimmt (§5).
+* **Nicht existierende Spuren** (jenseits der Geometrie) liefern ein leeres
+  `TrackImage`; **unformatierte** Spuren sind ebenfalls leer (`bytes.empty()`).
+  Der Controller macht daraus gap-Flux ohne Marken (§7).
+
+### 3.1 Leerdiskette — Geometrie kommt vom Laufwerk
+
+Eine neue, leere Diskette hat **kein** Sektorlayout, also auch kein `DiskFormat`.
+Ihre Geometrie ist die **physische Erreichbarkeit des Laufwerks**, das sie aufnimmt:
+
+| DriveProfile | Zylinder × Köpfe | Default-Verfahren des Mediums |
+|--------------|------------------|-------------------------------|
+| `K5601`      | 80 × 2           | MFM |
+| `K5600.10`   | 40 × 1           | MFM |
+| `K5600.20`   | 80 × 1           | MFM |
+| `MF3200`     | 77 × 1           | FM  |
+| `MF6400`     | 77 × 1           | MFM |
+
+`DiskMedium::defaultEncoding()` ist nur ein **Vorschlagswert** für Container-Header und
+für die Geometrieanzeige; das tatsächliche Verfahren steht **pro Spur** in
+`TrackImage::encoding` und wird vom Formatiervorgang des Gastsystems gesetzt.  Ein
+Medium darf FM- und MFM-Spuren mischen (8″-System-34, CP/A-Mischdichte).
 
 ---
 
-## 4. FloppyDrive-Klasse
+## 4. Container-Codecs (`ImageCodec`)
 
 ```cpp
-class FloppyDrive {
-public:
-    FloppyDrive() = default;
+enum class ContainerType { Img, Hfe, Dmk };
 
-    // ─── Montieren/Auswerfen ──────────────────────────────────────
+namespace ImageCodec {
+    /// Endung → Typ (ohne Datei-Zugriff); Default Img.
+    ContainerType fromExtension(const std::string& path);
+    /// Signatur der Datei → Typ; fällt auf die Endung zurück.
+    ContainerType detect(const std::string& path);
 
-    bool    mount(const std::string& imagePath,
-                  const DiskFormat& format,
-                  bool writeProtect = false);
-    void    unmount();
-    bool    isMounted() const;
+    const char* name(ContainerType);                 ///< "img" | "hfe" | "dmk"
+    const char* extension(ContainerType);            ///< ".img" | ".hfe" | ".dmk"
+    bool        selfDescribing(ContainerType);       ///< Hfe/Dmk = true
+    bool        needsDiskFormat(ContainerType);      ///< nur Img = true
 
-    // ─── Disk-Eigenschaften ───────────────────────────────────────
-
-    const DiskFormat& format() const;
-    bool    isWriteProtected() const;
-    void    setWriteProtect(bool wp);
-    bool    isTrack0() const;        // Aktueller Kopf auf Spur 0?
-
-    // ─── Kopf-Positionierung ──────────────────────────────────────
-
-    void    seekTrack(int track);    // Absolute Position
-    void    step(bool inward);       // Ein Schritt +/- Spur
-    int     currentTrack() const;
-
-    // ─── Sektoroperationen ────────────────────────────────────────
-
-    // Liest einen physikalischen Sektor
-    // cyl: Spur, head: Kopf (0/1), sector_id: Sektor-ID (1-basiert)
-    std::vector<uint8_t> readSector(int cyl, int head, int sector_id);
-
-    // Schreibt einen physikalischen Sektor
-    bool writeSector(int cyl, int head, int sector_id,
-                     const std::vector<uint8_t>& data);
-
-    // ─── Image-Verwaltung ─────────────────────────────────────────
-
-    // Erstellt ein neues leeres Image (E5H-gefüllt)
-    static bool createBlankImage(const std::string& path,
-                                  const DiskFormat& format);
-
-    // Speichert Änderungen (für Nicht-Read-Only-Images)
-    bool    flush();
-
-    // ─── Aktivitätsanzeige ────────────────────────────────────────
-    bool    isActive() const;        // Laufwerk wird gerade verwendet
-    void    setActive(bool active);
-
-private:
-    DiskFormat              format_;
-    std::vector<uint8_t>    image_;         // Im Speicher gehaltenes Image
-    std::string             image_path_;
-    bool                    mounted_       = false;
-    bool                    write_protect_ = false;
-    int                     current_track_ = 0;
-    bool                    active_        = false;
-
-    size_t  calcOffset(int cyl, int head, int sector_id) const;
-    bool    validateSector(int cyl, int head, int sector_id) const;
-};
-```
-
----
-
-## 5. Sektor-Offset-Berechnung
-
-```cpp
-size_t FloppyDrive::calcOffset(int cyl, int head, int sector_id) const {
-    size_t offset = 0;
-
-    // Summiere alle Spuren vor der gesuchten
-    for (const auto& tr : format_.tracks) {
-        if (cyl > tr.cyl_last ||
-            (cyl == tr.cyl_first && head < tr.head_first))
-            continue;
-
-        // Prüfe ob diese TrackFormat-Regel zutrifft
-        if (cyl >= tr.cyl_first && cyl <= tr.cyl_last &&
-            head >= tr.head_first && head <= tr.head_last) {
-
-            // Offset innerhalb dieser Spur-Gruppe
-            int cyls_before = (cyl - tr.cyl_first) * (tr.head_last - tr.head_first + 1);
-            int heads_before = head - tr.head_first;
-            int track_idx = cyls_before + heads_before;
-
-            offset += track_idx * tr.secs_per_track * tr.bytes_per_sec;
-            offset += (sector_id - 1) * tr.bytes_per_sec;
-            return offset;
-        } else {
-            // Komplette Spur-Gruppe addieren
-            int num_tracks = (tr.cyl_last - tr.cyl_first + 1) *
-                             (tr.head_last - tr.head_first + 1);
-            offset += num_tracks * tr.secs_per_track * tr.bytes_per_sec;
-        }
-    }
-    return offset;
+    bool load(const std::string& path, ContainerType,
+              const DiskFormat* fmt, DiskMedium& out, std::string& err);
+    bool save(const std::string& path, ContainerType,
+              const DiskFormat* fmt, const DiskMedium& in, std::string& err);
 }
 ```
 
----
+**Vertrag:** `load()` füllt das Medium **vollständig** (alle Spuren, Geometrie,
+Default-Verfahren), `save()` schreibt die Datei **komplett neu** aus dem Medium.
+Kein Codec hält einen Dateizustand über den Aufruf hinaus — genau das erlaubt den
+Formatwechsel per `saveAs()`.
 
-## 6. Disk-Format-Validierung
+### 4.1 `.img` — rohes Sektorimage (`ImgCodec`)
 
-Beim Mounten wird geprüft, ob die Image-Datei zur angegebenen Geometrie passt:
+* **Nicht** self-describing → `DiskFormat` ist Pflicht (Geometrie, Sektorzahl/-größe,
+  Sektor-IDs, Verfahren pro Spurbereich, Spur-Reihenfolge im File).
+* `load`: je Spur die Sektor-Nutzdaten am errechneten Offset lesen und über
+  `TrackCodec::buildTrack` eine normgerechte IBM-Spur (Marken, Gaps, echte CRCs)
+  **synthetisieren**.
+* `save`: je Spur `TrackCodec::parseTrack`, Nutzdaten an ihre Offsets schreiben.
+  **Alles außerhalb der Datenfelder geht verloren** — deshalb §5.
+* Spur-Reihenfolge im File: verschränkt `(0,0) (0,1) (1,0) (1,1) …`.
 
-```cpp
-bool FloppyDrive::mount(const std::string& path,
-                         const DiskFormat& format, bool wp) {
-    size_t expected_size = format.totalSize();
-    auto file_size = std::filesystem::file_size(path);
+### 4.2 `.hfe` — HXC Floppy Emulator v1 (`HfeCodec`)
 
-    if (file_size != expected_size) {
-        // Warnung: Image-Größe passt nicht exakt
-        // Trotzdem laden (manche Images haben Toleranz)
-        if (file_size < expected_size * 0.9) {
-            return false;  // Zu klein, abbrechen
-        }
-    }
-    // Image laden...
-}
+* Self-describing: Signatur `HXCPICFE`, Zylinder-/Seitenzahl, Verfahren, Bitrate, RPM
+  stehen im 512-B-Header; Track-LUT ab Block 1; Spurdaten als seitenverschränkte
+  256-B-Blöcke, Zellen **LSB-first**.
+* `load`: LUT → Seitenbytes de-interleaven → `BitCodec::decode`.  Bringt das
+  Header-Verfahren keine Marken, wird **das andere Verfahren probiert** (Mischdichte).
+  Überabgetastete Aufnahmen (Bitrate ≥ 375 kbit/s, typ. Greaseweazle 500) werden über
+  `BitCodec::downsampleCells` auf die Nominalrate quantisiert.
+* `save`: Header + LUT werden **neu berechnet** — die Spurlänge ergibt sich aus der
+  längsten Spur des Mediums.  Damit kann ein aus `.img` geladenes oder frisch
+  formatiertes Medium ohne Vorlage als `.hfe` geschrieben werden.
+  Unformatierte Spuren werden als Gap-Zellen (`0x88`) abgelegt.
+
+### 4.3 `.dmk` — David Keil's Disk Image (`DmkCodec`) — **neu**
+
+DMK speichert je Spur den **rohen Byte-Strom** plus eine Tabelle der
+Adressmarken-Positionen — also fast exakt unser `TrackImage`.
+
+```
+Datei-Header (16 B)
+  0      Schreibschutz: 0xFF = geschützt, 0x00 = frei
+  1      Anzahl Zylinder
+  2..3   Spurlänge in Bytes (little-endian), INKLUSIVE der 128-B-IDAM-Tabelle
+  4      Optionen:  Bit4 = 1 → einseitig
+                    Bit6 = 1 → reine SD-Diskette (FM-Bytes NICHT verdoppelt)
+                    Bit7 = 1 → Dichte-Flags ignorieren
+  5..11  reserviert (0)
+  12..15 0x00000000 = Datei-Image (0x12345678 = echter Laufwerkszugriff, n.u.)
+
+Spuren in der Reihenfolge (0,0) (0,1) (1,0) (1,1) …, je Spur:
+  128 B  IDAM-Tabelle: 64 × u16 little-endian
+           Bit15 = 1 → Sektor in MFM (Double Density), 0 → FM
+           Bit14 = reserviert
+           Bit0..13 = Offset des 0xFE-Bytes, gezählt AB SPURANFANG (also ≥ 0x80)
+           0x0000 = unbenutzter Eintrag; Einträge aufsteigend sortiert
+  Rest   Spur-Bytes, wie vom Datenseparator gelesen.
+         Bei FM-Spuren ist jedes Byte VERDOPPELT (außer Header-Bit6 ist gesetzt).
 ```
 
+* `load`: IDAM-Tabelle → `marks[MarkType::Id]`.  Die zugehörige Datenmarke wird
+  hinter jeder IDAM gesucht (nächstes `F8..FB`, im MFM hinter der `A1 A1 A1`-Sync);
+  IAM (`FC`) wird erkannt, wenn vorhanden.  FM-Verdopplung wird beim Laden entfernt.
+  Spuren ohne IDAM-Einträge sind **unformatiert** → leeres `TrackImage`.
+* `save`: Spurlänge = `128 + max(Spurbytes)`, aufgerundet auf 256; Verdopplung für
+  FM-Spuren; `Bit4` aus `numHeads()`, `Bit6` gesetzt, wenn **alle** Spuren FM sind
+  und dann ohne Verdopplung geschrieben wird.
+* Damit ist DMK — wie HFE — verlustfrei für Gap-Inhalte, Sektorkontrollblöcke,
+  Mischdichte und unformatierte Spuren.
+
+### 4.4 Erkennung beim Öffnen
+
+| Signatur / Endung | Container |
+|-------------------|-----------|
+| `HXCPICFE`        | HFE v1    |
+| `HXCHFEV3`        | abgelehnt (nicht implementiert) |
+| Endung `.dmk` **und** plausibler DMK-Header | DMK |
+| sonst             | Img (verlangt `DiskFormat`) |
+
+DMK hat keine Magic-Zahl; erkannt wird an der Endung **plus** Plausibilitätsprüfung
+(Byte 0 ∈ {0x00, 0xFF}, `1 ≤ n_tracks ≤ 96`, `0x80 < track_len ≤ 0x4000`,
+Dateigröße passt zu `16 + n_tracks * sides * track_len`).
+
 ---
 
-## 7. C-API-Integration
+## 5. `.img`-Tauglichkeit (`rawCompatible`)
+
+Ein rohes Sektorimage kann **nur Datenfeld-Nutzbytes** speichern.  Sobald auf dem
+Medium etwas steht, das dabei verloren ginge, darf nicht als `.img` gespeichert werden.
+
+Eine **Spur** ist `.img`-tauglich, wenn sie
+
+1. mindestens einen Sektor enthält (`TrackCodec::parseTrack` liefert ≥ 1 Sektor),
+2. bei allen Sektoren **ID- und Daten-CRC gültig** sind,
+3. und hinter jeder Daten-CRC **nur Gap-Füllbytes** stehen
+   (`0x4E`, `0xFF`, `0x00`; geprüft über `LogicalSector::tail`).
+
+Punkt 3 ist der eigentliche Auslöser: **UDOS** schreibt je Sektor einen
+Sektorkontrollblock (Rückwärts-/Vorwärtszeiger + eigene CRC) direkt hinter die
+Daten-CRC.  Genau dieser Anhang macht ein UDOS-Dateisystem in `.img` unmöglich
+(vgl. `doc/udos_diskettenformat.md`) — und war der Grund, warum eine leere `.img`
+unter UDOS nicht formatierbar war.
+
+Das **Medium** ist `.img`-tauglich, wenn es überhaupt formatiert ist (`formatted()`)
+**und jede nicht-leere Spur** tauglich ist.  Leere Spuren sind erlaubt — sie werden im
+`.img` zu Füllbytes, und viele echte Images tragen ein bis drei leere Zusatzspuren am
+Ende.  Eine **komplett** unformatierte Diskette ist nie `.img`-fähig: ein rohes
+Sektorimage kann „nicht formatiert“ nicht ausdrücken.
+
+> **Konsequenz für die Bedienung:** Das Flag entsteht **beim Schreiben** und ist damit
+> das vom Auftrag geforderte „Flag, das gesetzt wird, sobald ein Sektor geschrieben
+> wird, der nicht in ein `.img`-Image überführt werden kann“.  Es wird nicht
+> zurückgesetzt, solange die betreffende Spur so bleibt — ein anschließendes
+> Neuformatieren im IBM-Layout macht die Spur wieder tauglich.
+
+Beim Speichern als `.img` kommt eine **zweite** Prüfung dazu: das Medium muss zum
+gewählten `DiskFormat` passen (Sektorzahl, -größe und -IDs je Spurbereich).  Schlägt
+sie fehl, nennt die Fehlermeldung die erste abweichende Spur.
+
+---
+
+## 6. `DiskImage` — gemountete Diskette (Medium + Dateibindung)
+
+```cpp
+class DiskImage {
+public:
+    // ── Fabriken ───────────────────────────────────────────────────────────
+    /// Vorhandene Datei laden und binden (Container per Sniffing).
+    static std::unique_ptr<DiskImage> open(const std::string& path,
+                                           std::optional<DiskFormat> fmt,
+                                           bool write_protect);
+    /// LEERE, unformatierte Diskette in Laufwerksgeometrie — ohne Dateibindung.
+    static std::unique_ptr<DiskImage> createBlank(uint8_t num_cyls, uint8_t num_heads,
+                                                  Encoding default_enc);
+    /// Vorformatierte Leerdiskette (echte IDAM/DATA/CRC, Nutzdaten 0xE5) + Datei anlegen.
+    static std::unique_ptr<DiskImage> create(const std::string& path,
+                                             std::optional<DiskFormat> fmt,
+                                             bool write_protect,
+                                             Encoding enc = Encoding::MFM);
+
+    // ── Medium ─────────────────────────────────────────────────────────────
+    DiskMedium&       medium();
+    const DiskMedium& medium() const;
+    DiskGeometry geometry() const;
+    bool writable()      const;      ///< Medium beschreibbar (kein WP, keine Nur-Lese-Quelle)
+    bool rawCompatible() const;      ///< → medium().rawCompatible()
+
+    const TrackImage& readTrack(uint8_t cyl, uint8_t head) const;
+    bool  writeTrack(uint8_t cyl, uint8_t head, const TrackImage& t);
+
+    // ── Dateibindung ───────────────────────────────────────────────────────
+    bool                 hasFile()   const;
+    const std::string&   path()      const;
+    ContainerType        container() const;
+    const DiskFormat*    diskFormat() const;   ///< nur bei .img gesetzt
+
+    /// Schmutzige Spuren in die gebundene Datei schreiben (No-op ohne Bindung/dirty).
+    bool flush();
+    /// Verzögerter Autosave: flush(), wenn seit der letzten Änderung genug Zeit verging.
+    bool autoFlush(uint64_t now_cycles);
+
+    /// Unter neuem Namen/Container speichern und **umbinden**.
+    /// @p fmt nur für .img nötig; bei .img zusätzlich rawCompatible()-Prüfung.
+    bool saveAs(const std::string& path, std::optional<DiskFormat> fmt);
+
+    const char* lastError() const;
+};
+```
+
+### 6.1 Autosave
+
+`writeTrack()` markiert die Spur im Medium schmutzig und merkt sich den
+Maschinentakt der Änderung.  `A5120Machine::run()` ruft nach jedem Lauf-Abschnitt
+`autoFlush(total_cycles_)` für alle Laufwerke.  Ist die letzte Änderung
+**länger als `kAutoFlushDelayCycles` (≈ 0,5 s Maschinenzeit) her**, wird geflusht.
+
+* Warum verzögert: ein Formatier- oder Kopierlauf schreibt hunderte Spuren
+  hintereinander; jedes Mal die ganze Datei neu zu codieren wäre teuer.  Die
+  Verzögerung fasst Schreibbursts zusammen und stellt sicher, dass die Datei
+  **kurz nach** dem letzten Zugriff wieder dem Abbild entspricht.
+* `unmount()`, `saveAs()`, der Destruktor und `A5120Machine::reset()/powerOn()`
+  flushen **sofort**.
+* Ohne Dateibindung (Leerdiskette, noch nie gespeichert) ist der Autosave ein
+  No-op — das Medium lebt bis zum ersten `saveAs()` nur im Speicher.
+
+### 6.2 Nur-Lese-Quellen
+
+Ein überabgetastetes HFE (Flux-Mitschnitt einer echten Diskette) wird beim Laden auf
+die Nominalrate quantisiert.  Ein Rückschreiben in die Originalrate gibt es nicht,
+also wird die **Bindung** als nur-lesend markiert: Schreibzugriffe des Gastsystems
+landen im Medium, der Autosave schweigt, `saveAs()` in eine neue Datei funktioniert
+normal.  Ebenso bei einer schreibgeschützten Datei.
+
+---
+
+## 7. Unformatierte Spuren im Lesepfad
+
+Eine leere Spur (`TrackImage::empty()`) ist auf echter Hardware reiner Gap-Flux ohne
+Adressmarken.  `K5122::startReadTransfer()` streamt genau das
+(`kUnformattedTrackBytes` × `0x4E`, keine Marken): die Leseroutine findet kein IDAM
+und terminiert über den Index-Timeout („record not found“) — statt in der
+ZVE2-Lese-Koroutine zu verklemmen.  **Das ist die Voraussetzung dafür, dass eine echte
+Leerdiskette überhaupt gemountet und dann vom Gastsystem formatiert werden kann.**
+
+Konsequenz für das Mounten: die frühere Ablehnung markenloser Images
+(`hasFormattedData()`) **entfällt** — eine unformatierte Diskette ist ab jetzt ein
+gültiger, gewollter Zustand.
+
+---
+
+## 8. Bedienschnittstelle
+
+### 8.1 Maschinen-API (`A5120Machine`)
+
+```cpp
+bool mountDisk (int drive, const std::string& path,
+                const std::string& format_name, bool wp);
+/// format_name LEER  → echte Leerdiskette (unformatiert, Geometrie aus dem DriveProfile);
+///                     Ziel muss .hfe/.dmk sein (bzw. gar keine Datei).
+/// format_name GESETZT → vorformatierte Diskette nach Katalogformat (auch .img).
+bool createDisk(int drive, const std::string& path,
+                const std::string& format_name, bool wp);
+/// Speichert die gemountete Diskette unter neuem Namen/Container und bindet um.
+/// format_name wird NUR bei Ziel .img gebraucht (und dort geprüft).
+bool saveDiskAs(int drive, const std::string& path, const std::string& format_name);
+bool isDiskRawCompatible(int drive) const;   ///< darf als .img gespeichert werden
+std::string diskPath(int drive) const;       ///< aktuell gebundene Datei ("" = nur im Speicher)
+```
+
+### 8.2 C-API
 
 ```c
-// Via C-API (k1520_api.h):
-bool k1520_mount_disk(K1520Handle h, int drive,
-                       const char* image_path,
-                       const char* format_name);
-
-// Implementierung:
-bool k1520_mount_disk(K1520Handle h, int drive, ...) {
-    auto& machine = *static_cast<Machine*>(h);
-    const auto& fmt = FormatParser::builtinFormats()  // oder aus .cfg
-        | find(format_name);
-    auto floppy = std::make_unique<FloppyDrive>();
-    floppy->mount(image_path, fmt);
-    machine.k5122().mountDrive(drive, floppy.get());
-    machine.storeDrive(drive, std::move(floppy));
-    return true;
-}
+bool  k1520_save_disk_as     (K1520Handle, int drive, const char* path, const char* format_name);
+bool  k1520_disk_raw_compatible(K1520Handle, int drive);
+int   k1520_disk_path        (K1520Handle, int drive, char* buf, int buf_len);
 ```
+
+`k1520_create_disk(h, drive, path, format_name, wp)` behält seine Signatur; der
+leere/`NULL`-Formatname bedeutet jetzt **Leerdiskette** statt „Standardformat des
+Laufwerks“.
+
+### 8.3 GUI
+
+* Dateifilter für Öffnen/Speichern: `*.img *.hfe *.dmk`.
+* **Neu anlegen** erzeugt standardmäßig eine Leerdiskette (`.hfe`); das
+  Format-Auswahlfeld ist dabei **deaktiviert**.
+* **Speichern unter…** blendet `.img` aus, solange `k1520_disk_raw_compatible()`
+  falsch ist, und verlangt nur bei `.img` einen Formatnamen.
 
 ---
 
-## 8. Testbarkeit
+## 9. Abgrenzung zum vorigen Aufbau
 
-```python
-# tests/python/test_floppy_drive.py
-import ctypes, os, tempfile, pytest
+| vorher | jetzt |
+|--------|-------|
+| `DiskImage` abstrakt, je Dateiformat eine Unterklasse (`RawSectorImage`, `HfeImage`) | `DiskImage` konkret = `DiskMedium` + Bindung; Dateiformate sind Codecs |
+| Backend arbeitete **auf der Datei** (Raw: seek/write je Sektor; HFE: In-place-Blöcke) | Alles läuft im **Medium**; Datei wird komplett neu geschrieben |
+| Spur-Cache (1 Spur je Kopf) in `FloppyDriveV2`, Rückschreiben bei Spurwechsel | kein Cache mehr — `FloppyDriveV2` referenziert das Medium direkt |
+| Formatwechsel unmöglich (Backend an Dateityp gebunden) | `saveAs()` in jeden Container |
+| `.hfe`-Neuanlage musste **vorformatiert** sein (gap-leere Datei ließ den Controller hängen) | echte Leerdiskette möglich; der Hänger ist im Controller behoben (§7) |
+| `DiskImage::open` lehnte markenlose Images ab | markenlose (= unformatierte) Medien sind gültig |
+| `.img`-Verlust von Gap-Anhängen fiel nicht auf | `rawCompatible()` verhindert ihn |
 
-def test_mount_cpa780(floppy_lib, cpa780_image):
-    drv = floppy_lib.floppy_create()
-    assert floppy_lib.floppy_mount(drv, cpa780_image, "cpa780")
-    assert floppy_lib.floppy_is_mounted(drv)
-    assert floppy_lib.floppy_track0(drv)  # Nach Reset: Spur 0
+---
 
-def test_read_boot_sector(floppy_lib, cpa780_image):
-    drv = floppy_lib.floppy_create()
-    floppy_lib.floppy_mount(drv, cpa780_image, "cpa780")
-    # Spur 0, Kopf 0, Sektor 1 (Bootsektor), 128 Bytes
-    data = floppy_lib.floppy_read_sector(drv, 0, 0, 1)
-    assert len(data) == 128
-    assert data[0] != 0xFF  # Nicht leer
+## 10. Testbarkeit
 
-def test_seek_step(floppy_lib, cpa780_image):
-    drv = floppy_lib.floppy_create()
-    floppy_lib.floppy_mount(drv, cpa780_image, "cpa780")
-    floppy_lib.floppy_step(drv, True)   # nach innen
-    assert floppy_lib.floppy_current_track(drv) == 1
-    floppy_lib.floppy_step(drv, False)  # nach außen
-    assert floppy_lib.floppy_current_track(drv) == 0
-
-def test_write_read_roundtrip(floppy_lib, tmp_path):
-    # Neues leeres Image erstellen
-    img = str(tmp_path / "test.img")
-    assert floppy_lib.floppy_create_blank(img, "cpa800")
-    drv = floppy_lib.floppy_create()
-    floppy_lib.floppy_mount(drv, img, "cpa800")
-    # Schreiben und Lesen vergleichen
-    test_data = bytes(range(256)) * 4  # 1024 Bytes
-    floppy_lib.floppy_write_sector(drv, 2, 0, 1, test_data)
-    read_back = floppy_lib.floppy_read_sector(drv, 2, 0, 1)
-    assert read_back == test_data
-```
+| Test (ctest-Suite) | Inhalt |
+|--------------------|--------|
+| `DiskMedium.*` (`test_disk_medium`) | Geometrie/Resize, Dirty-Bits, `formatted()`, `rawCompatible()` inkl. UDOS-Anhang, CRC-Fehler, Leerdiskette, Cache-Invalidierung |
+| `ImgCodec.*` / `DiskImageOpen.*` / `DiskImageCreate.*` (`test_img_codec`) | `.img` ⇄ Medium, Offset-/Interleave-Modell als Ground-Truth, Mischdichte, `first_sector_id`, Ablehnung nicht darstellbarer Medien |
+| `HfeCodec.*` (`test_hfe_codec`) | `.hfe` ⇄ Medium, Cross-Check gegen `.img`, Neuanlage ohne Vorlage, Leerdiskette, Mischdichte-Erkennung, Überabtastung |
+| `DmkCodec.*` (`test_dmk_codec`) | `.dmk`-Header, IDAM-Tabelle, FM-Verdopplung (mit und ohne SD-Flag), Round-Trip inkl. Gap-Anhang und unformatierter Spur, Erkennung |
+| `DiskImageBlank/SaveAs/AutoFlush.*` (`test_disk_image`) | Leerdiskette ohne Datei, Autosave-Verzögerung + Destruktor, `saveAs()` durch alle drei Container, `.img`-Ablehnung |
+| `FloppyDriveV2.*` (`test_floppy_drive2`) | Kopfposition, Medium-Referenz, `writeTrackAt`, Geometrie-/Verfahrensprüfung beim Mounten, Leerdiskette in jedem Laufwerk |
+| `A5120DiskApi.*` (`test_a5120_disk_api`) | `createDisk` (leer vs. vorformatiert), `saveDiskAs`, `isDiskRawCompatible` |
+| `CreateDiskBlank/Formatted.*`, `BootIntegrationCpa02.DmkBootsIntoRunningCpaOs` | Maschinen-API + **CP/A bootet von einem `.dmk`-Konvertat** |
+| `UdosFormat.FormatsBrandNewBlankDiskette` | **Der Zweck des Umbaus:** frische Leerdiskette unter UDOS formatieren, `STATUS` bestätigt 1988 freie Sektoren, Abbild bleibt `.img`-untauglich |
+| `test_k5122`, `test_boot_integration` | Regression: Boot-Pfad, FORMAT-Schreibpfad, unformatierte Spur |

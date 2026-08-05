@@ -1,6 +1,6 @@
 /**
  * @file test_floppy_drive2.cpp
- * @brief GoogleTests für FloppyDriveV2 (DiskImage + DriveProfile + Track-Cache).
+ * @brief GoogleTests für FloppyDriveV2 (DriveProfile + gemountete DiskImage).
  *
  * Getestete Komponenten:
  *   - FloppyDriveV2::mount (Erfolg, Kompatibilitätsprüfungen)
@@ -23,7 +23,6 @@
 #include <cstdint>
 
 #include "core/peripherals/floppy_drive/floppy_drive2.h"
-#include "core/peripherals/floppy_drive/raw_sector_image.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
 #include "core/peripherals/floppy_drive/disk_format.h"
@@ -59,7 +58,7 @@ static std::string makeTmpImg(const DiskFormat& fmt, const std::string& suffix =
     return path;
 }
 
-/** Öffnet ein RawSectorImage über die DiskImage-Fabrik. */
+/** Öffnet ein rohes Sektorimage über die DiskImage-Fabrik. */
 static std::unique_ptr<DiskImage> openImg(const std::string& path,
                                           const DiskFormat& fmt,
                                           bool wp = false) {
@@ -124,9 +123,9 @@ TEST(FloppyDriveV2, Mount_FalschesVerfahren_Inkompatibel) {
     auto path = makeTmpImg(fmt);
 
     FloppyDriveV2 drv(builtinDriveProfile("MF3200")); // FM only
-    // RawSectorImage mit MFM (Default-Encoding) anlegen
-    auto img = std::make_unique<RawSectorImage>(path, fmt, false, Encoding::MFM);
-    ASSERT_TRUE(img->isOpen());
+    // Das Format deklariert MFM (Default) → passt nicht zum FM-Laufwerk.
+    auto img = openImg(path, fmt);
+    ASSERT_NE(img, nullptr);
 
     EXPECT_FALSE(drv.mount(std::move(img)));
     EXPECT_FALSE(drv.isMounted());
@@ -277,11 +276,11 @@ TEST(FloppyDriveV2, SchreibRoundtrip_AenderungPersistiert) {
         EXPECT_TRUE(drv.flush());
     }
 
-    // Neues Backend öffnen und nachlesen.
-    RawSectorImage check(path, fmt, /*wp=*/false);
-    ASSERT_TRUE(check.isOpen());
+    // Datei neu öffnen und nachlesen.
+    auto check = openImg(path, fmt);
+    ASSERT_NE(check, nullptr);
 
-    TrackImage gelesen = check.readTrack(0, 0);
+    const TrackImage& gelesen = check->readTrack(0, 0);
     ASSERT_FALSE(gelesen.empty());
 
     auto parsed = TrackCodec::parseTrack(gelesen);
@@ -315,4 +314,52 @@ TEST(FloppyDriveV2, Geometry_OhneMount_Leer) {
     DiskGeometry g = drv.geometry();
     EXPECT_EQ(g.num_cyls,  0u);
     EXPECT_EQ(g.num_heads, 0u);
+}
+
+// ─── Gruppe 6: Leerdiskette ──────────────────────────────────────────────────
+
+/**
+ * @test FloppyDriveV2/Mount_LeerdisketteWirdAkzeptiert
+ * @brief Eine unformatierte Diskette muss sich in JEDES Laufwerk mounten lassen —
+ *        sonst könnte das Gastsystem sie gar nicht erst formatieren.  Ihr
+ *        Vorschlagsverfahren (hier MFM) darf dabei nicht gegen ein FM-Laufwerk
+ *        geprüft werden, weil noch keine einzige Spur beschrieben ist.
+ */
+TEST(FloppyDriveV2, Mount_LeerdisketteWirdAkzeptiert) {
+    FloppyDriveV2 drv(builtinDriveProfile("MF3200"));   // 77 Spuren, nur FM
+    auto img = DiskImage::createBlank(77, 1, Encoding::MFM);
+    ASSERT_NE(img, nullptr);
+
+    EXPECT_TRUE(drv.mount(std::move(img))) << drv.lastError();
+    EXPECT_TRUE(drv.isMounted());
+    EXPECT_TRUE(drv.track(0).empty()) << "unformatierte Spur ist leer";
+}
+
+/**
+ * @test FloppyDriveV2/WriteTrackAt_SchreibtInsMedium
+ * @brief Der Vollspur-FORMAT-Pfad adressiert eine EXPLIZITE (cyl, head)-Position,
+ *        weil der Kopf beim Commit schon weitergeschritten ist.
+ */
+TEST(FloppyDriveV2, WriteTrackAt_SchreibtInsMedium) {
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
+    ASSERT_TRUE(drv.mount(DiskImage::createBlank(80, 2, Encoding::MFM)));
+
+    std::vector<LogicalSector> sektoren;
+    for (uint8_t id = 1; id <= 2; ++id) {
+        LogicalSector ls;
+        ls.cyl = 5; ls.head = 1; ls.id = id; ls.size = 128;
+        ls.data.assign(128, 0x7E);
+        sektoren.push_back(std::move(ls));
+    }
+    const TrackImage spur = TrackCodec::buildTrack(sektoren, Encoding::MFM);
+
+    EXPECT_TRUE(drv.writeTrackAt(5, 1, spur));
+    ASSERT_NE(drv.image(), nullptr);
+    auto parsed = TrackCodec::parseTrack(drv.image()->readTrack(5, 1));
+    ASSERT_EQ(parsed.size(), 2u);
+    EXPECT_EQ(parsed[0].data[0], 0x7E);
+
+    // Schreibschutz sperrt den Pfad.
+    drv.setWriteProtect(true);
+    EXPECT_FALSE(drv.writeTrackAt(6, 0, spur));
 }

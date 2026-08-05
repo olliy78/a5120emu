@@ -4,12 +4,11 @@
 //   Restspuren  Datenbereich = <data_nsec>×<data_size> (z. B. 4×1024 / 5×1024 / 8×1024 / 16×256)
 // Alles im selben Verfahren (FM oder MFM), Sektordaten = 0xE5 (leere CP/M-Sektoren).
 //
-// Warum programmatisch?  FORMAT.COM kann eine FRISCHE, gap-leere .hfe nicht direkt
-// formatieren (Gap-Blank-.hfe-Hänger, docs/format.md §8.2).  Die Pipeline umgeht das,
-// indem sie eine GÜLTIGE, bereits formatierte Vorlage nach B:/C: kopiert und diese neu
-// formatiert.  Dieses Tool erzeugt genau solche Vorlagen für die einseitigen Formate
-// (MF3200 8″-FM, MF6400 8″-MFM, K5600.10 5″-40-SS, K5600.20 5″-80-SS) — dieselbe
-// Codec-Schicht (TrackCodec::buildTrack), die auch der FORMAT.COM-Schreibpfad benutzt.
+// Warum programmatisch?  Die Formatier-Pipeline braucht für die einseitigen Formate
+// (MF3200 8″-FM, MF6400 8″-MFM, K5600.10 5″-40-SS, K5600.20 5″-80-SS) eine bereits
+// gültig formatierte Vorlage, die nach B:/C: kopiert und dort neu formatiert wird.
+// Dieses Tool erzeugt sie über dieselbe Codec-Schicht (TrackCodec::buildTrack), die
+// auch der FORMAT.COM-Schreibpfad benutzt, und legt sie über den HFE-Container ab.
 //
 // Verwendung:
 //   mk_disk_template <out.hfe> <fm|mfm> <num_cyls> <sys_cyls> \
@@ -22,8 +21,8 @@
 //   k5600.10 f1 :  mk_disk_template x.hfe mfm 40 2 26 128  5 1024
 //   k5600.20 f1 :  mk_disk_template x.hfe mfm 80 2 26 128  5 1024
 
-#include "core/peripherals/floppy_drive/disk_image.h"
-#include "core/peripherals/floppy_drive/hfe_image.h"
+#include "core/peripherals/floppy_drive/disk_medium.h"
+#include "core/peripherals/floppy_drive/hfe_codec.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
 
 #include <algorithm>
@@ -35,55 +34,6 @@
 #include <string>
 #include <vector>
 
-namespace {
-
-void put16(std::vector<uint8_t>& b, size_t off, uint16_t v) {
-    b[off]     = static_cast<uint8_t>(v & 0xFF);
-    b[off + 1] = static_cast<uint8_t>((v >> 8) & 0xFF);
-}
-
-// Leeres, EINSEITIGES HFE-Template schreiben (num_cyls×1).  Header-Encoding steuert nur
-// das Sniffing beim Öffnen (0=MFM, 2=FM); die Spuren werden ohnehin überschrieben.
-// Die Spur liegt KONTINUIERLICH (volle 512 B/Block) — passend zur einseitigen Lese-/
-// Schreiblogik in HfeImage (num_sides_==1, s. §8.6).
-bool writeBlankHfe(const std::string& path, uint8_t num_cyls, bool fm, uint32_t side_len) {
-    const uint32_t track_blocks  = (side_len + 511) / 512;
-    const uint32_t track_len_pad = track_blocks * 512;
-
-    std::vector<uint8_t> hdr(512, 0x00);
-    std::memcpy(hdr.data(), "HXCPICFE", 8);
-    hdr[0x08] = 0;                 // formatrevision v1
-    hdr[0x09] = num_cyls;          // Spuren
-    hdr[0x0A] = 1;                 // Seiten = 1 (einseitig)
-    hdr[0x0B] = fm ? 2 : 0;        // track_encoding: 2=FM (IBM 3740) / 0=ISOIBM_MFM
-    put16(hdr, 0x0C, 250);         // bitrate kbit/s
-    put16(hdr, 0x0E, fm ? 360 : 300);
-    hdr[0x10] = 0;                 // iface
-    hdr[0x11] = 1;                 // dnu
-    put16(hdr, 0x12, 1);           // track_list_block = 1
-    hdr[0x14] = 0xFF;              // write_allowed
-    hdr[0x15] = 0xFF;              // single_step
-    for (size_t i = 0x16; i < 512; ++i) hdr[i] = 0xFF;
-
-    std::vector<uint8_t> lut(512, 0xFF);
-    uint32_t blk = 2;              // Spurdaten ab Block 2
-    for (uint8_t c = 0; c < num_cyls; ++c) {
-        put16(lut, c * 4 + 0, static_cast<uint16_t>(blk));
-        put16(lut, c * 4 + 2, static_cast<uint16_t>(side_len));   // len_bytes (einseitig)
-        blk += track_blocks;
-    }
-
-    std::ofstream f(path, std::ios::binary | std::ios::trunc);
-    if (!f) return false;
-    f.write(reinterpret_cast<const char*>(hdr.data()), 512);
-    f.write(reinterpret_cast<const char*>(lut.data()), 512);
-    const std::vector<uint8_t> gap(track_len_pad, 0x88);
-    for (uint8_t c = 0; c < num_cyls; ++c)
-        f.write(reinterpret_cast<const char*>(gap.data()), track_len_pad);
-    return static_cast<bool>(f);
-}
-
-}  // namespace
 
 int main(int argc, char** argv) {
     if (argc != 9) {
@@ -115,8 +65,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "FEHLER: Verfahren muss 'fm', 'mfm' oder '<sys>/<data>' sein\n");
         return 1;
     }
-    // HFE-Header-Verfahren = Datenspuren-Verfahren (dominiert); Mischspuren werden
-    // beim Lesen per HfeImage-Autoerkennung korrekt decodiert.
+    // Header-Verfahren = Datenspuren-Verfahren (dominiert); Mischspuren erkennt der
+    // HFE-Codec beim Lesen selbst (Dual-Decode).
     const bool fm = data_fm;
     const int num_cyls  = std::atoi(argv[3]);
     const int sys_cyls  = std::atoi(argv[4]);
@@ -129,15 +79,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Spuren VORAB bauen, damit die HFE-Seitenlänge dynamisch passt: ein Spur-Byte
-    // belegt (FM wie MFM) 16 Bitzellen = 2 HFE-Bytes.  side_len (HFE-Bytes) muss daher
-    // ≥ 2×(längste Spur) sein, sonst wird die Spur beim Kodieren abgeschnitten (z. B.
-    // 8×1024-MFM ≈ 8.9 KB Spur → ~18 KB HFE).  +512 B Gap-Reserve.
+    // Spuren in ein internes Medium bauen; der HFE-Codec bemisst die Spurlänge
+    // anschließend selbst nach der längsten Spur.
     const Encoding sys_enc  = sys_fm  ? Encoding::FM : Encoding::MFM;
     const Encoding data_enc = data_fm ? Encoding::FM : Encoding::MFM;
-    std::vector<TrackImage> tracks;
-    tracks.reserve(static_cast<size_t>(num_cyls));
-    size_t max_bytes = 0;
+
+    DiskMedium medium(static_cast<uint8_t>(num_cyls), 1,
+                      fm ? Encoding::FM : Encoding::MFM);
     for (int c = 0; c < num_cyls; ++c) {
         const bool is_sys = (c < sys_cyls);
         const int nsec = is_sys ? sys_nsec : data_nsec;
@@ -153,33 +101,13 @@ int main(int argc, char** argv) {
             s.data.assign(static_cast<size_t>(size), 0xE5);
             secs.push_back(s);
         }
-        tracks.push_back(TrackCodec::buildTrack(secs, is_sys ? sys_enc : data_enc));
-        max_bytes = std::max(max_bytes, tracks.back().bytes.size());
-    }
-    const uint32_t side_len = static_cast<uint32_t>(2 * max_bytes + 512);
-
-    if (!writeBlankHfe(out, static_cast<uint8_t>(num_cyls), fm, side_len)) {
-        std::fprintf(stderr, "FEHLER: Blank-HFE nicht schreibbar: %s\n", out.c_str());
-        return 1;
+        medium.setTrack(static_cast<uint8_t>(c), 0,
+                        TrackCodec::buildTrack(secs, is_sys ? sys_enc : data_enc));
     }
 
-    // Schreibbares Handle auf das noch gap-leere Template direkt über HfeImage holen
-    // (NICHT DiskImage::open — dessen Mount-Guard lehnt eine unformatierte Datei zu
-    // Recht ab; hier formatieren wir sie ja gerade erst).
-    auto img = std::make_unique<HfeImage>(out, /*write_protect=*/false);
-    if (!img->isOpen()) {
-        std::fprintf(stderr, "FEHLER: erzeugtes HFE nicht öffenbar: %s\n", out.c_str());
-        return 1;
-    }
-
-    for (int c = 0; c < num_cyls; ++c) {
-        if (!img->writeTrack(static_cast<uint8_t>(c), 0, tracks[static_cast<size_t>(c)])) {
-            std::fprintf(stderr, "FEHLER: writeTrack Spur %d\n", c);
-            return 1;
-        }
-    }
-    if (!img->flush()) {
-        std::fprintf(stderr, "FEHLER: flush\n");
+    std::string err;
+    if (!HfeCodec::save(out, medium, err)) {
+        std::fprintf(stderr, "FEHLER: %s\n", err.c_str());
         return 1;
     }
 

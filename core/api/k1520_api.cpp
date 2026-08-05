@@ -150,9 +150,35 @@ bool k1520_create_disk(K1520Handle h, int drive,
                        const char* image_path, const char* format_name,
                        bool write_protect) {
     if (!image_path) return false;
-    // NULL/"" format_name → drive-type default (createDisk resolves it).
+    // NULL/"" format_name → genuinely blank, unformatted disk in drive geometry.
     return toA5120(h)->createDisk(drive, image_path,
                                   format_name ? format_name : "", write_protect);
+}
+
+bool k1520_save_disk_as(K1520Handle h, int drive,
+                        const char* image_path, const char* format_name) {
+    if (!image_path) return false;
+    return toA5120(h)->saveDiskAs(drive, image_path, format_name ? format_name : "");
+}
+
+bool k1520_disk_raw_compatible(K1520Handle h, int drive) {
+    return toA5120(h)->isDiskRawCompatible(drive);
+}
+
+const char* k1520_disk_path(K1520Handle h, int drive) {
+    static thread_local std::string buf;
+    buf = toA5120(h)->diskPath(drive);
+    return buf.c_str();
+}
+
+const char* k1520_disk_container(K1520Handle h, int drive) {
+    static thread_local std::string buf;
+    buf = toA5120(h)->diskContainer(drive);
+    return buf.c_str();
+}
+
+bool k1520_flush_disks(K1520Handle h) {
+    return toA5120(h)->flushDisks();
 }
 
 bool k1520_unmount_disk(K1520Handle h, int drive) {

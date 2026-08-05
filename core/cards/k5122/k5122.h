@@ -10,8 +10,9 @@
  * eine fertig decodierte Spur (Gaps, Sync, IDAM, DATA, echte CRCs) und streamt deren Bytes
  * über Port 0x16 wie ein echter Lesekopf; die Re-Sync-Strobes MK/MK1 rücken den Kopf auf
  * die nächste Adressmarke vor.  Das Verfahren (FM/MFM) steckt allein in der Spur — der
- * Controller ist verfahrensneutral.  Unterstützte Image-Backends (über @ref DiskImage):
- * Raw-`.img` (@ref RawSectorImage) und HFE v1 (HfeImage).
+ * Controller ist verfahrensneutral.  Die gemountete Diskette liegt als internes
+ * @ref DiskMedium im Speicher; die Dateiformate (`.img`, `.hfe`, `.dmk`) sind
+ * Container-Codecs davor (@ref ImageCodec, doc/design/09_floppy_drive.md).
  *
  * Für den Boot-Lesepfad erzeugt @ref startReadTransfer() on-the-fly einen treuen FM/MFM-
  * Lese-Stream (@ref TrackCodec::buildFaithfulReadTrack, 4×A1-Sync) — die Sync-Länge, die
@@ -116,6 +117,19 @@ public:
                    bool write_protect = false);
 
     bool unmountDisk(int drive);
+
+    /**
+     * @brief Verzögerter Autosave aller Laufwerke (aus der Maschinen-Laufschleife).
+     *
+     * Schreibt geänderte Spuren in die gebundene Image-Datei zurück, sobald sie
+     * @ref kAutoFlushDelayCycles Takte „geruht" haben.  So entspricht die Datei dem
+     * internen Abbild stets mit leichtem Zeitversatz.
+     */
+    void autoFlushDisks(uint64_t now_cycles);
+
+    /// @brief Ausstehende Änderungen aller Laufwerke sofort schreiben.
+    bool flushDisks();
+
     bool isDiskActive(int drive) const;
     bool isDiskWriteProtected(int drive) const;
     void setWriteProtect(int drive, bool wp);
@@ -129,7 +143,8 @@ public:
     bool isHeadLoaded() const { return head_loaded_; }
 
     /// @brief Direkter Zugriff auf ein Laufwerk (Tests/C-API).
-    FloppyDriveV2& drive(int idx) { return drives_[idx]; }
+    FloppyDriveV2&       drive(int idx)       { return drives_[idx]; }
+    const FloppyDriveV2& drive(int idx) const { return drives_[idx]; }
 
     /**
      * @brief Parst einen Vollspur-FORMAT-Schreibstrom (wie ZVE2 ihn über Port 0x14

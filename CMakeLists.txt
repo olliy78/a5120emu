@@ -118,8 +118,11 @@ if(BUILD_K1520)
         core/peripherals/floppy_drive/track_codec.cpp
         core/peripherals/floppy_drive/bit_codec.cpp
         core/peripherals/floppy_drive/drive_profile.cpp
-        core/peripherals/floppy_drive/raw_sector_image.cpp
-        core/peripherals/floppy_drive/hfe_image.cpp
+        core/peripherals/floppy_drive/disk_medium.cpp
+        core/peripherals/floppy_drive/img_codec.cpp
+        core/peripherals/floppy_drive/hfe_codec.cpp
+        core/peripherals/floppy_drive/dmk_codec.cpp
+        core/peripherals/floppy_drive/image_codec.cpp
         core/peripherals/floppy_drive/disk_image.cpp
         core/peripherals/floppy_drive/floppy_drive2.cpp
         core/peripherals/floppy_drive/format_catalog.cpp
@@ -263,18 +266,30 @@ if(BUILD_K1520)
         target_link_libraries(k1520_test_drive_profile PRIVATE k1520_floppy2 GTest::gtest_main)
         target_include_directories(k1520_test_drive_profile PRIVATE ${CMAKE_SOURCE_DIR})
 
-        add_executable(k1520_test_disk_image_raw tests/cpp/test_disk_image_raw.cpp)
-        target_link_libraries(k1520_test_disk_image_raw PRIVATE k1520_floppy2 GTest::gtest_main)
-        target_include_directories(k1520_test_disk_image_raw PRIVATE ${CMAKE_SOURCE_DIR})
+        add_executable(k1520_test_disk_medium tests/cpp/test_disk_medium.cpp)
+        target_link_libraries(k1520_test_disk_medium PRIVATE k1520_floppy2 GTest::gtest_main)
+        target_include_directories(k1520_test_disk_medium PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_img_codec tests/cpp/test_img_codec.cpp)
+        target_link_libraries(k1520_test_img_codec PRIVATE k1520_floppy2 GTest::gtest_main)
+        target_include_directories(k1520_test_img_codec PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_dmk_codec tests/cpp/test_dmk_codec.cpp)
+        target_link_libraries(k1520_test_dmk_codec PRIVATE k1520_floppy2 GTest::gtest_main)
+        target_include_directories(k1520_test_dmk_codec PRIVATE ${CMAKE_SOURCE_DIR})
+
+        add_executable(k1520_test_disk_image tests/cpp/test_disk_image.cpp)
+        target_link_libraries(k1520_test_disk_image PRIVATE k1520_floppy2 GTest::gtest_main)
+        target_include_directories(k1520_test_disk_image PRIVATE ${CMAKE_SOURCE_DIR})
 
         add_executable(k1520_test_floppy_drive2 tests/cpp/test_floppy_drive2.cpp)
         target_link_libraries(k1520_test_floppy_drive2 PRIVATE k1520_floppy2 GTest::gtest_main)
         target_include_directories(k1520_test_floppy_drive2 PRIVATE ${CMAKE_SOURCE_DIR})
 
-        add_executable(k1520_test_hfe_image tests/cpp/test_hfe_image.cpp)
-        target_link_libraries(k1520_test_hfe_image PRIVATE k1520_floppy2 GTest::gtest_main)
-        target_include_directories(k1520_test_hfe_image PRIVATE ${CMAKE_SOURCE_DIR})
-        target_compile_definitions(k1520_test_hfe_image PRIVATE
+        add_executable(k1520_test_hfe_codec tests/cpp/test_hfe_codec.cpp)
+        target_link_libraries(k1520_test_hfe_codec PRIVATE k1520_floppy2 GTest::gtest_main)
+        target_include_directories(k1520_test_hfe_codec PRIVATE ${CMAKE_SOURCE_DIR})
+        target_compile_definitions(k1520_test_hfe_codec PRIVATE
             FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures")
 
         add_executable(k1520_test_ctc
@@ -393,9 +408,12 @@ if(BUILD_K1520)
         gtest_discover_tests(k1520_test_track_codec)
         gtest_discover_tests(k1520_test_bit_codec)
         gtest_discover_tests(k1520_test_drive_profile)
-        gtest_discover_tests(k1520_test_disk_image_raw)
+        gtest_discover_tests(k1520_test_disk_medium)
+        gtest_discover_tests(k1520_test_img_codec)
+        gtest_discover_tests(k1520_test_dmk_codec)
+        gtest_discover_tests(k1520_test_disk_image)
         gtest_discover_tests(k1520_test_floppy_drive2)
-        gtest_discover_tests(k1520_test_hfe_image)
+        gtest_discover_tests(k1520_test_hfe_codec)
         gtest_discover_tests(k1520_test_ctc)
         gtest_discover_tests(k1520_test_sio)
         gtest_discover_tests(k1520_test_k3526)

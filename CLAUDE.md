@@ -76,10 +76,10 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
 
 > **Floppy controller — single formatagnostic K5122.** Slot 2 (`core/cards/k5122/`)
 > is a formatagnostic *read-head-over-rotating-track* controller on the `core/peripherals/floppy_drive/`
-> stack (TrackImage / TrackCodec / BitCodec / DiskImage + RawSectorImage + HfeImage / FloppyDriveV2 /
+> stack (TrackImage / TrackCodec / BitCodec / **DiskMedium + ImageCodec** / DiskImage / FloppyDriveV2 /
 > DriveProfile).  It **boots CP/A fully** from the **real standard-IBM-MFM disks** (all
-> `test_boot_integration` stages green, incl. boot from drives B:/C:) and reads/writes **HFE v1** in
-> addition to raw `.img`.  The controller is encoding-faithful: FM vs MFM is a property of the
+> `test_boot_integration` stages green, incl. boot from drives B:/C:) and reads/writes
+> **`.img`, HFE v1 and DMK**.  The controller is encoding-faithful: FM vs MFM is a property of the
 > drive+medium (`DriveProfile::default_read_encoding`, overridable by the OS via the read-mark control
 > word 0x85=MFM / 0x87=FM).  For the boot read path `startReadTransfer()` streams
 > `TrackCodec::buildFaithfulReadTrack` — the real sync/mark/CRC structure, but with **4×A1 sync** per
@@ -89,6 +89,18 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
 > (`TrackCodec::crc16`) — the A5120 disks are plain standard IBM-MFM.  Boot itself is the real FM/MFM trial-and-error: the ROM starts in FM, finds no IDAM on the
 > MFM disk → index timeout → toggles MK to MFM → reads.  Full model: `doc/design/07_k5122_afs.md`,
 > `doc/K1520_architecture.md` §8.5.  The boot invariants that must not regress are listed below.
+>
+> **Internal disk medium (2026-08-05, `doc/K1520_architecture.md` §8.7 + `doc/design/09_floppy_drive.md`).**
+> A mounted disk lives **entirely in memory** as a `DiskMedium` (every track a `TrackImage`);
+> `.img`/`.hfe`/`.dmk` are pure **container codecs** in front of it (`ImageCodec`), no file-bound
+> backend classes any more.  `DiskImage` = medium + file binding; changed tracks are written back
+> **delayed** (`autoFlush`, ≈0.5 s machine time, driven from `A5120Machine::run`), and `saveAs()`
+> writes into any container **and re-binds**.  `createDisk` with an EMPTY format name now creates a
+> genuinely **blank, unformatted** disk in the *drive's* geometry (guest can format it, incl. UDOS);
+> `.img` is refused for that.  `rawCompatible()` is the flag that blocks `.img` as a target as soon
+> as a track is unformatted or a sector carries data behind the data CRC (UDOS sector control block).
+> Guards: `test_disk_medium`, `test_img_codec`, `test_hfe_codec`, `test_dmk_codec`, `test_disk_image`,
+> `UdosFormat.FormatsBrandNewBlankDiskette`.
 >
 > **Drive select (8212, port 18H): the HIGH nibble is /SE, the low nibble /LCK (motor)** —
 > both active-low, `drive_selected_[d] = !(data>>(4+d) & 1)`.  Not readable off the usual
@@ -269,19 +281,21 @@ Formate testbar (Laufwerkstyp = reine BIOS-Software). `tools/cpa_tools/make_boot
 zusätzlich die ganze Kette *format → CPABCGEN → bootfähige Disk* (6 Presets, als langsame
 `format_integration`-Tests registriert — via `tools/dev.sh test-format`). `DiskImage::create` legt
 **gültig formatierte** Leerdisketten an (echte IDAM/DATA/CRC, Daten 0xE5): `.hfe` je Spur per
-`TrackCodec::buildTrack`→`BitCodec::encode`, `.img` als 0xE5 in Format-Geometrie. `.hfe`/`.img`
-brauchen dafür ein `DiskFormat` (Geometrie); `A5120Machine::createDisk` wählt bei leerem Formatnamen
-das laufwerkstyp-spezifische Standardformat (K5601→cpa800, K5600.10→200K, K5600.20→400K,
-MF3200→308K/FM, MF6400→616K) und leitet das Verfahren aus dem `DriveProfile` ab. C-API:
-`k1520_create_disk`. Voller Stand + offene Punkte: `docs/format.md` §8–§11.
+`TrackCodec::buildTrack`→`BitCodec::encode`, `.img` als 0xE5 in Format-Geometrie. Ein `DiskFormat`
+(Geometrie) ist dafür Pflicht — `A5120Machine::createDisk` mit **gesetztem** Formatnamen ist der
+vorformatierte Weg; **leerer** Formatname legt seit dem Medium-Umbau eine echte Leerdiskette an
+(§8.7). `defaultFormatName(drive)` liefert weiterhin das laufwerkstyp-spezifische Standardformat
+(K5601→cpa800, K5600.10→200K, K5600.20→400K, MF3200→308K/FM, MF6400→616K) — die Formatier-Pipeline
+übergibt es explizit. C-API: `k1520_create_disk`, `k1520_save_disk_as`,
+`k1520_disk_raw_compatible`. Voller Stand + offene Punkte: `docs/format.md` §8–§11.
 
-> **Gap-Blank-`.hfe`-Hänger — GELÖST (2026-07-06):** `DiskImage::create` erzeugt für `.hfe` jetzt
-> eine *voll formatierte* Diskette statt eines gap-leeren Templates → FORMAT.COM formatiert sie ohne
-> Hänger (End-to-End verifiziert). `DiskImage::open` lehnt zusätzlich ein markenloses/unformatiertes
-> Image (leere/gap-lose `.hfe`) mit Fehler ab, statt in die ZVE2-Lese-Koroutine `0x1D0F` zu laufen.
-> Template-Kopie/Python-Vorbau sind damit nicht mehr nötig (`tools/format_all.py` legt `.hfe`-Ziele mit
-> bekannter Geometrie direkt via `create` an). Interne Create-then-Format-Tools (`mk_disk_template`)
-> öffnen ihr noch-leeres Handle direkt über `HfeImage` (umgeht bewusst den Mount-Guard).
+> **Gap-Blank-`.hfe`-Hänger — GELÖST (2026-07-06), Ursache seit 2026-08-05 im Controller behoben:**
+> `K5122::startReadTransfer()` streamt für eine **unformatierte** Spur markenlosen Gap-Flux, sodass
+> die Leseroutine über den Index-Timeout terminiert statt in der ZVE2-Lese-Koroutine `0x1D0F` zu
+> verklemmen. Damit ist eine gap-leere Diskette ein **gültiger, gewollter** Zustand; die frühere
+> Ablehnung markenloser Images beim Öffnen (`hasFormattedData`) ist entfallen, und
+> `DiskImage::createBlank` legt genau so eine Leerdiskette an. `DiskImage::create` (mit Format)
+> erzeugt weiterhin eine voll formatierte Diskette.
 
 ## Conventions
 
