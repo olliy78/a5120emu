@@ -442,7 +442,7 @@ if(BUILD_K1520)
             LOG_LEVEL=2
             A5120_TEST_DISK_DIR="${CMAKE_SOURCE_DIR}/disks")
         gtest_discover_tests(k1520_test_udos_format
-            PROPERTIES TIMEOUT 300 LABELS "format_integration")
+            PROPERTIES TIMEOUT 600 LABELS "format_integration")
 
         # HARDY-Hardware-Testprogramm: „Rechner"-Test läuft clean durch (Guard für
         # den /MEMDI- + BS-PIO-Bus-Strobe-Fix).  Ebenfalls langsam (Boot + Testlauf)

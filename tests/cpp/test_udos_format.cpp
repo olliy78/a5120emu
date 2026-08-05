@@ -1,11 +1,18 @@
 /**
  * @file test_udos_format.cpp
- * @brief Langsamer End-to-End-Regressionswächter: UDOS 4.3 FORMAT formatiert
- *        Laufwerk 1 zu einer benutzbaren ZDOS-Diskette.
+ * @brief Langsame End-to-End-Regressionswächter für den UDOS-4.3-Schreibpfad:
+ *        `FORMAT`, `COPY.DISK` und der komplette Bau einer bootfähigen Systemdiskette.
  *
  * Eigenes Executable mit ctest-Label „format_integration" (wie test_scpx_init.cpp),
- * damit der Test aus dem Default-`tools/dev.sh test` herausfällt — er bootet UDOS,
- * formatiert 77 Spuren und lässt sie von UDOS selbst verifizieren (~15 s).
+ * damit die Tests aus dem Default-`tools/dev.sh test` herausfallen — sie booten UDOS,
+ * formatieren 77 Spuren je Seite und lassen sie von UDOS selbst verifizieren
+ * (~6 s / ~11 s / ~33 s).
+ *
+ * | Test | deckt ab |
+ * |---|---|
+ * | `FormatsDriveOneIntoUsableZdosDisk` | `FORMAT` einer Datenseite + Belegungskarte |
+ * | `CopyDiskDuplicatesSystemDiskSectorBySector` | sektorweises Kopieren am Dateisystem vorbei |
+ * | `BuildsBootableSystemDiskAndBootsFromIt` | Systemspuren, Rückseite (Laufwerk 5), `MOVE`, Kaltstart von der selbstgebauten Diskette |
  *
  * Guard für **zwei** Fehler, die zusammen jedes Formatieren unter UDOS verhinderten:
  *
@@ -112,15 +119,23 @@ void booteUdos(A5120Machine& m) {
     runCycles(m, 3'000'000);
 }
 
-// `FORMAT` auf Laufwerk 1 fahren (Datentraegername TESTDISK, keine Systemdiskette).
-void formatiereLaufwerk1(A5120Machine& m) {
+// `FORMAT`-Dialog fahren: SYSTEMDISK? / DRIVE? / ID? / READY?
+// @p systemdisk "y" schreibt zusaetzlich die Urlader (Spur 0/1/2) und das Bootabbild
+// (Spur 21) — nur damit wird die Diskette bootfaehig.
+void formatiere(A5120Machine& m, const std::string& systemdisk,
+                const std::string& laufwerk, const std::string& id) {
     typeString(m, "format");
     typeKey(m, QK_RETURN);
-    antworte(m, "SYSTEMDISK", "n");
-    antworte(m, "DRIVE",      "1");
-    antworte(m, "ID?",        "testdisk");
+    antworte(m, "SYSTEMDISK", systemdisk);
+    antworte(m, "DRIVE",      laufwerk);
+    antworte(m, "ID?",        id);
     antworte(m, "READY",      "y");
     runCycles(m, 400'000'000);              // 77 Spuren formatieren + verifizieren
+}
+
+// `FORMAT` auf Laufwerk 1 fahren (Datentraegername TESTDISK, keine Systemdiskette).
+void formatiereLaufwerk1(A5120Machine& m) {
+    formatiere(m, "n", "1", "testdisk");
 }
 
 }  // namespace
@@ -260,6 +275,122 @@ TEST(UdosFormat, CopyDiskDuplicatesSystemDiskSectorBySector) {
 
     machine.unmountDisk(0);
     machine.unmountDisk(1);
+    std::error_code ec;
+    fs::remove(aPath, ec);
+    fs::remove(bPath, ec);
+}
+
+/**
+ * @test UdosFormat/BuildsBootableSystemDiskAndBootsFromIt
+ * @brief Der komplette „neue Systemdiskette bauen"-Workflow — und die neue Diskette
+ *        bootet danach den Rechner.
+ *
+ * Das UDOS-Gegenstück zu `ScpxInit.CreateFormatBThenPipCopyFromBootDisk` und
+ * `tools/cpa_tools/make_bootdisk.py`: alles, was eine Diskette zur Systemdiskette
+ * macht, läuft im Emulator über den echten Schreibpfad.
+ *
+ * 1. UDOS 4.3 von A: booten.
+ * 2. B: **beidseitig** formatieren — Seite 0 (Laufwerk 1) mit `SYSTEMDISK? Y`, also
+ *    inklusive Urlader (Spur 0/1/2) und Bootabbild (Spur 21), Seite 1 (Laufwerk 5)
+ *    als reine Datenseite.
+ * 3. `STATUS` beweist, dass **beide** Seiten wirklich leer sind (55 bzw. 14 belegte
+ *    Sektoren) — B: startet als Kopie der Bootdiskette, ohne diesen Nachweis wäre
+ *    ein wirkungsloses FORMAT nicht von einem erfolgreichen zu unterscheiden.
+ * 4. Alle Dateien mit `MOVE * S=… D=… P=&` hinüberkopieren (`P=&` ist nötig, sonst
+ *    bleiben die als SECRET markierten Dateien liegen).
+ * 5. `CAT` auf beiden Seiten der neuen Diskette.
+ * 6. **Neue Maschine, neue Diskette auf Laufwerk 0, Kaltstart** — sie muss UDOS 4.3
+ *    hochfahren und sich selbst als `SYSDISK` / `SYSDISK.B` melden.
+ *
+ * Sollwerte (doc/udos_diskettenformat.md §3/§4): frisch formatiert 14 belegte
+ * Sektoren (Verzeichnis + Belegungskarte), als Systemseite zusätzlich 41 für Urlader
+ * und Bootabbild → 55.
+ */
+TEST(UdosFormat, BuildsBootableSystemDiskAndBootsFromIt) {
+    namespace fs = std::filesystem;
+    const std::string aPath = (fs::temp_directory_path() / "udos_sysdisk_guard_A.hfe").string();
+    const std::string bPath = (fs::temp_directory_path() / "udos_sysdisk_guard_B.hfe").string();
+    legeDisketten(aPath, bPath);
+
+    k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
+
+    {
+        A5120Machine machine;
+        ASSERT_TRUE(machine.mountDisk(0, aPath, "cpa780", /*wp=*/false)) << machine.lastError();
+        ASSERT_TRUE(machine.mountDisk(1, bPath, "cpa780", /*wp=*/false)) << machine.lastError();
+        machine.powerOn();
+
+        booteUdos(machine);
+
+        // ── 2. beide Seiten formatieren ─────────────────────────────────────
+        formatiere(machine, "y", "1", "sysdisk");     // Seite 0 = Systemseite
+        formatiere(machine, "n", "5", "sysdisk.b");   // Seite 1 = Datenseite
+
+        // ── 3. Nachweis, dass B: jetzt LEER ist ─────────────────────────────
+        typeString(machine, "status");
+        typeKey(machine, QK_RETURN);
+        // Auf die LETZTE Zeile des Laufwerk-5-Blocks warten (1988 frei = 2002 - 14),
+        // sonst trifft der Schnappschuss den Block mitten im Aufbau.
+        ASSERT_TRUE(runSmallUntil(machine, "1988 SECTORS AVAILABLE", 150'000'000))
+            << "Rueckseite wurde nicht leer formatiert:\n" << vramText(machine);
+        const std::string leer = vramText(machine);
+        ASSERT_NE(leer.find("DRIVE 5   SYSDISK.B"), std::string::npos)
+            << "Rueckseite traegt nicht den neuen Datentraegernamen:\n" << leer;
+        ASSERT_NE(leer.find("DRIVE 1   SYSDISK"), std::string::npos)
+            << "Vorderseite wurde nicht formatiert:\n" << leer;
+        EXPECT_NE(leer.find("55 SECTORS USED"), std::string::npos)
+            << "Systemseite: erwartet 14 + 41 Systemsektoren belegt:\n" << leer;
+        EXPECT_NE(leer.find("14 SECTORS USED"), std::string::npos)
+            << "Datenseite: erwartet 14 belegte Sektoren:\n" << leer;
+
+        // ── 4. alles hinueberkopieren (P=& erfasst auch die SECRET-Dateien) ──
+        typeString(machine, "move * s=0 d=1 p=&");
+        typeKey(machine, QK_RETURN);
+        runCycles(machine, 600'000'000);
+        typeString(machine, "move * s=4 d=5 p=&");
+        typeKey(machine, QK_RETURN);
+        runCycles(machine, 600'000'000);
+
+        // ── 5. Gegenprobe auf der neuen Diskette ────────────────────────────
+        // „OVR.PROG" ist der letzte Verzeichniseintrag der Vorderseite, „HELP.DAT.04"
+        // der letzte der Rueckseite — wer die sieht, ist die ganze Kette gelaufen.
+        typeString(machine, "cat d=1 p=&");
+        typeKey(machine, QK_RETURN);
+        ASSERT_TRUE(runSmallUntil(machine, "OVR.PROG", 200'000'000))
+            << "Vorderseite der neuen Diskette unvollstaendig:\n" << vramText(machine);
+        typeString(machine, "cat d=5 p=&");
+        typeKey(machine, QK_RETURN);
+        ASSERT_TRUE(runSmallUntil(machine, "HELP.DAT.04", 200'000'000))
+            << "Rueckseite der neuen Diskette unvollstaendig:\n" << vramText(machine);
+        EXPECT_EQ(vramText(machine).find("ERROR C"), std::string::npos)
+            << "Fehlermeldung beim Lesen der neuen Diskette:\n" << vramText(machine);
+
+        machine.unmountDisk(0);
+        machine.unmountDisk(1);   // flusht die neue Diskette auf die Platte
+    }
+
+    // ── 6. Von der selbstgebauten Diskette booten ───────────────────────────
+    {
+        A5120Machine neu;
+        ASSERT_TRUE(neu.mountDisk(0, bPath, "cpa780", /*wp=*/false)) << neu.lastError();
+        neu.powerOn();
+
+        ASSERT_TRUE(runSmallUntil(neu, "Neues Datum", 120'000'000))
+            << "Die selbstgebaute Systemdiskette bootet nicht:\n" << vramText(neu);
+        typeString(neu, "150388");
+        ASSERT_TRUE(runSmallUntil(neu, "UDOS BC.5120", 40'000'000))
+            << "Kein UDOS-Prompt von der neuen Diskette:\n" << vramText(neu);
+
+        typeString(neu, "status");
+        typeKey(neu, QK_RETURN);
+        ASSERT_TRUE(runSmallUntil(neu, "DRIVE 0   SYSDISK", 150'000'000))
+            << "Das gebootete System erkennt seine eigene Diskette nicht:\n" << vramText(neu);
+        EXPECT_NE(vramText(neu).find("DRIVE 4   SYSDISK.B"), std::string::npos)
+            << "Rueckseite der neuen Diskette nicht eingelesen:\n" << vramText(neu);
+
+        neu.unmountDisk(0);
+    }
+
     std::error_code ec;
     fs::remove(aPath, ec);
     fs::remove(bPath, ec);

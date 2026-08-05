@@ -575,8 +575,49 @@ Dateien. Der Abgleich der Abbilder (Sektordaten **und** Kontrollblock, Seite 0):
 > übrigen 25 sind ID- und Daten-CRC-sauber). UDOS meldet ihn und kopiert weiter — daher
 > 2001 statt 2002 Sektoren. Spur- und Laufwerksnummer stehen in der Meldung **hexadezimal**.
 
-Guards: `UdosFormat.FormatsDriveOneIntoUsableZdosDisk` und
-`UdosFormat.CopyDiskDuplicatesSystemDiskSectorBySector` (`tools/dev.sh test-format`).
+### 12.2 Eine bootfähige Systemdiskette bauen
+
+Der vollständige Weg — im Emulator end-to-end nachgefahren, das Ergebnis bootet:
+
+```
+%FORMAT   SYSTEMDISK? Y   DRIVE? 1   ID? SYSDISK     READY? Y     ← Vorderseite
+%FORMAT   SYSTEMDISK? N   DRIVE? 5   ID? SYSDISK.B   READY? Y     ← Rückseite
+%MOVE * S=0 D=1 P=&
+%MOVE * S=4 D=5 P=&
+```
+
+* **`SYSTEMDISK? Y`** ist der einzige Unterschied zwischen Daten- und Systemdiskette:
+  FORMAT schreibt danach zusätzlich die Urlader auf Spur 0/1/2 und das Bootabbild auf
+  Spur 21 (§3) — **byteidentisch** zur Quelldiskette nachgemessen. Ohne `Y` bleibt der
+  Bildschirm beim Kaltstart schwarz.
+* **`DRIVE?` nimmt auch 4…7**, also die Rückseiten (§2). Eine beidseitig nutzbare
+  Diskette braucht daher **zwei** FORMAT-Läufe; die Rückseite bootet nicht und kommt
+  ohne Systemspuren aus.
+* **`P=&` bei `MOVE` ist Pflicht** — ohne den Suchoperator bleiben die als `S` (SECRET)
+  markierten Dateien liegen, und das sind auf der Systemdiskette die meisten
+  (`MOVE * S=0 D=1` allein meldet `NO FILES MOVED`).
+
+Belegung direkt nach dem Formatieren (Sollwerte für ein Prüfwerkzeug):
+
+| | belegt | frei |
+|---|---:|---:|
+| Datenseite (Verzeichnis + Belegungskarte) | 14 | 1988 |
+| Systemseite (zusätzlich Urlader + Bootabbild) | 55 | 1947 |
+
+Nach dem `MOVE` trägt die neue Diskette dieselben 46 + 22 Dateien wie das Original,
+mit identischem Typ, identischer Satzanzahl und Satzlänge; beide Belegungskarten sind
+in sich stimmig (ausgezählte Bits = gespeicherter Freizähler, und
+`Zähler+375 + frei = 2464`, §4.2). Der Kaltstart von dieser Diskette bringt
+`UDOS 4.3 / FEBRUAR 1987` und meldet `DRIVE 0 SYSDISK` / `DRIVE 4 SYSDISK.B`.
+
+> Die Belegungszahlen der Kopie liegen **unter** denen des Originals (598 statt 692 auf
+> der Rückseite), obwohl dieselben Dateien darauf sind: das Original schleppt die
+> Sektoren gelöschter Dateien und ein größeres Systemgebiet mit. Maßgeblich ist die
+> Belegungskarte, nicht der Vergleich zweier Zählerstände (§4.2, §8.5).
+
+Guards: `UdosFormat.FormatsDriveOneIntoUsableZdosDisk`,
+`UdosFormat.CopyDiskDuplicatesSystemDiskSectorBySector` und
+`UdosFormat.BuildsBootableSystemDiskAndBootsFromIt` (`tools/dev.sh test-format`).
 
 ---
 
