@@ -785,22 +785,25 @@ if(BUILD_K1520)
         endmacro()
 
         # ─── FORMAT.COM auf einer ECHTEN LEERDISKETTE (mit Verify) ──────────────
-        # Regression fuer den Einfrierer, den eine unformatierte Spur ausloeste: der
-        # markenlose Gap-Strom meldet kein MKE und darf deshalb kein /BUSRQ anfordern
-        # (K5122-Handbuch §5.6.1) — sonst haelt er ZVE1 an, das den Strom gar nicht
-        # abholen will, und FORMAT bleibt mitten im Lauf stehen.  Hier wird B: als
-        # unformatierte Leerdiskette angelegt (leerer Formatname) und FORMAT.COM
-        # Format 1, Spur 0-4, MIT Vergleichs-Lesen darueber gefahren.
+        # Regression fuer den Einfrierer auf unformatierten Spuren.  B: wird als
+        # echte Leerdiskette angelegt (leerer Formatname) und FORMAT.COM Format 1
+        # ueber ALLE 160 Spuren MIT Vergleichs-Lesen darueber gefahren.
+        #
+        # Der volle Spurbereich ist noetig: der Fehler ist ein Wettlauf mit dem
+        # Umdrehungs-Timeout des BIOS (fl.zto -> headup), der erst nach vielen
+        # Spuren zuschlaegt und dessen Trefferpunkt an der Anlaufphase haengt
+        # (gemessen: Spur 96 bzw. Spur 18 bei 2 Mio. Takten Unterschied).  Ein
+        # kurzer Bereich (Spur 0-4) lief auch VOR dem Fix durch.
         add_test(NAME format_blank_disk_with_verify COMMAND sh -c
             "set -e; \
              A=$(mktemp --suffix=.img); B=$(mktemp --suffix=.hfe); S=$(mktemp); \
              cp ${CMAKE_SOURCE_DIR}/disks/cpadisk_autofs_noclk_noautoexec.img \$A; \
              rm -f \$B; \
-             printf 'boot 80\\ntype 12:00:00\\nenter\\nboot 5\\ntype FORMAT\\nenter\\nboot 30\\nenter\\nboot 6\\ntype B\\nenter\\nboot 10\\nenter\\nboot 8\\ntype 1\\nboot 6\\nenter\\nboot 5\\ntype 4\\nenter\\nboot 6\\ntype j\\nboot 800\\n' > \$S; \
+             printf 'boot 80\\ntype 12:00:00\\nenter\\nboot 5\\ntype FORMAT\\nenter\\nboot 30\\nenter\\nboot 6\\ntype B\\nenter\\nboot 10\\nenter\\nboot 8\\ntype 1\\nboot 6\\nenter\\nboot 6\\nenter\\nboot 6\\ntype j\\nboot 8000\\n' > \$S; \
              $<TARGET_FILE:format_driver> \$A \$B \$S ''; \
              rm -f \$A \$B \$S")
         set_tests_properties(format_blank_disk_with_verify PROPERTIES
-            TIMEOUT 600 PASS_REGULAR_EXPRESSION "FORMATIEREN beendet"
+            TIMEOUT 1200 PASS_REGULAR_EXPRESSION "FORMATIEREN beendet"
             FAIL_REGULAR_EXPRESSION "SPUR DEFEKT"
             LABELS "format_integration")
 

@@ -313,6 +313,24 @@ private:
             byte_ready_ = true;
             bus_.assertBUSRQ();
         }
+        // ── Überlauf (Handbuch §5.7) ────────────────────────────────────────
+        // „Das nächste Byte wird in den Daten-PIO übernommen, BEVOR die CPU die
+        // Daten abgefordert hat" — der Datenseparator wartet nicht, das nicht
+        // abgeholte Byte geht verloren (/FA).  Auf einer Spur OHNE Adressmarken
+        // gibt es nichts, worauf sich das Programm synchronisieren könnte; hält
+        // die Karte hier ihre Anforderung fest, bleibt /BUSRQ stehen und legt
+        // ZVE1 still — genau das ließ FORMAT.COM auf einer leeren Spur einfrieren.
+        // Die Anforderung verfällt daher mit dem nächsten Byte, der Kopf dreht
+        // weiter, und der Bus geht an ZVE1 zurück.
+        if (byte_ready_ && transferring_ && !write_mode_ && !stream_has_marks_
+            && byte_acc_ >= 2 * period) {
+            byte_ready_ = false;
+            bus_.releaseBUSRQ();
+            if (cur_track_ && !cur_track_->empty())
+                head_pos_ = (head_pos_ + 1) % cur_track_->size();
+            byte_acc_ = 0;
+            return;
+        }
         // Gegen Überlauf/Runaway bei stehendem ZVE2 (Overrun) begrenzen — hält die
         // Rasterphase beschränkt; die Schreib-Idle-Erkennung (byte_ready_ bleibt) läuft weiter.
         if (byte_acc_ > 2 * period) byte_acc_ = 2 * period;

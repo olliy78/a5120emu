@@ -684,11 +684,7 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
                 // Auf einer unformatierten Spur rastet der Datenseparator nicht ein,
                 // es kommt kein Byte — dann darf hier auch nichts angefordert werden
                 // (startReadTransfer hat den Transfer gar nicht erst armiert).
-                // Ohne Adressmarke meldet der Datenseparator kein MKE (Tor B, B1)
-                // → keine DMA-Anforderung.  `IN (16H)` liefert weiter Gap-Bytes,
-                // aber /BUSRQ bleibt aus (sonst haelt es ZVE1 an, das den Strom gar
-                // nicht abholen will → FORMAT.COM friert mitten im Lauf ein).
-                if (transferring_ && stream_has_marks_) {
+                if (transferring_) {
                     byte_ready_ = true;      // erstes Byte liegt bereit → /BUSRQ aktiv
                     byte_acc_   = 0;
                 }
@@ -715,7 +711,7 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
             }
             // Kein armierter Kanal ⇒ weder /ARDY noch /BRDY ⇒ Decoder-Ausgang 00
             // ⇒ KEIN /BUSRQ (Handbuch §5.6.1, Wahrheitstabelle).
-            dma_pending_ = (transferring_ && stream_has_marks_) || write_mode_;
+            dma_pending_ = transferring_ || write_mode_;
             if (dma_pending_) bus_.assertBUSRQ();
             LOG_DEBUG("K5122", "/STR Flanke: BUSRQ %s, DMA %s",
                       dma_pending_ ? "gesetzt" : "NICHT gesetzt (kein Byte)",
