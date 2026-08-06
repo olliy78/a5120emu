@@ -22,6 +22,8 @@ namespace {
 constexpr uint16_t kNominalBitrate = 250;
 /// HFE-Fuellbyte fuer nicht belegte Zellen (Gap).
 constexpr uint8_t  kHfeGap = 0x88;
+/// Groesster geprueffter Ueberabtastfaktor (Greaseweazle-Exporte liegen bei 2..4).
+constexpr uint32_t kMaxOversample = 4;
 
 uint16_t rd16(const std::vector<uint8_t>& b, size_t off) {
     return static_cast<uint16_t>(b[off] | (b[off + 1] << 8));
@@ -123,11 +125,18 @@ bool HfeCodec::load(const std::string& path, DiskMedium& out, SourceInfo* info,
         return false;
     }
 
-    // Ueberabtastung erkennen: der K1520-Stack kennt nur 250 kbit/s Zellrate; eine
-    // hoehere Rate ist dieselbe DD-Diskette mit mehrfacher Abtastung (Greaseweazle).
-    uint32_t oversample = 1;
+    // Ueberabtastung: der K1520-Stack kennt nur 250 kbit/s Zellrate; eine hoehere
+    // Rate ist dieselbe DD-Diskette mit mehrfacher Abtastung (Greaseweazle & Co.).
+    //
+    // Der Header-Wert `bitrate` taugt dafuer NICHT als alleinige Quelle: reale
+    // Mitschnitte tragen dort auch schlicht falsche Angaben (gesehen: 311 kbit/s bei
+    // tatsaechlich ~2,4-facher Abtastung).  Er dient daher nur noch als ERSTER
+    // Kandidat; entschieden wird am Inhalt — genau wie beim Verfahren (FM/MFM):
+    // der Faktor, unter dem ueberhaupt Adressmarken auftauchen, ist der richtige.
+    uint32_t hdr_guess = 1;
     if (bitrate >= kNominalBitrate + kNominalBitrate / 2)
-        oversample = (bitrate + kNominalBitrate / 2) / kNominalBitrate;
+        hdr_guess = (bitrate + kNominalBitrate / 2) / kNominalBitrate;
+    uint32_t oversample = 0;          // 0 = noch unbestimmt (wird an der 1. Spur mit Marken gesetzt)
 
     const size_t lut_off = static_cast<size_t>(lut_block) * 512;
     if (lut_off + static_cast<size_t>(num_tracks) * 4 > file.size()) {
@@ -145,20 +154,38 @@ bool HfeCodec::load(const std::string& path, DiskMedium& out, SourceInfo* info,
         if (side_len == 0) continue;
 
         for (uint8_t h = 0; h < num_sides; ++h) {
-            auto     side     = seitenBytes(file, track_start, side_len, num_sides, h);
-            uint32_t bitcells = side_len * 8;
-            if (oversample > 1)
-                side = BitCodec::downsampleCells(side, bitcells, oversample, bitcells);
+            const auto roh = seitenBytes(file, track_start, side_len, num_sides, h);
 
-            // Per-Spur-Verfahrenserkennung fuer MISCHDICHTE-Medien: FM- und MFM-Sync-
-            // Zellworte sind disjunkt, ein Decode im falschen Verfahren findet KEINE
-            // Marke.  Bringt das Header-Verfahren nichts, das andere versuchen.
-            TrackImage t = BitCodec::decode(side, bitcells, enc_hdr);
-            if (markenZahl(t) == 0) {
-                const Encoding other = (enc_hdr == Encoding::MFM) ? Encoding::FM : Encoding::MFM;
-                TrackImage alt = BitCodec::decode(side, bitcells, other);
-                if (markenZahl(alt) > 0) t = std::move(alt);
+            // Eine Spurseite unter dem Abtastfaktor @p f decodieren (FM/MFM wird dabei
+            // wie gehabt beidseitig probiert — Mischdichte-Medien).
+            auto decodeMit = [&](uint32_t f) {
+                auto     zellen   = roh;
+                uint32_t bitcells = side_len * 8;
+                if (f > 1)
+                    zellen = BitCodec::downsampleCells(zellen, bitcells, f, bitcells);
+                TrackImage t = BitCodec::decode(zellen, bitcells, enc_hdr);
+                if (markenZahl(t) == 0) {
+                    const Encoding other = (enc_hdr == Encoding::MFM) ? Encoding::FM
+                                                                      : Encoding::MFM;
+                    TrackImage alt = BitCodec::decode(zellen, bitcells, other);
+                    if (markenZahl(alt) > 0) t = std::move(alt);
+                }
+                return t;
+            };
+
+            TrackImage t;
+            if (oversample != 0) {
+                t = decodeMit(oversample);          // Faktor steht bereits fest
+            } else {
+                // Noch unbestimmt: Kandidaten durchprobieren, Header-Schaetzung zuerst.
+                for (uint32_t f : {hdr_guess, 1u, 2u, 3u, 4u}) {
+                    if (f == 0 || f > kMaxOversample) continue;
+                    TrackImage probe = decodeMit(f);
+                    if (markenZahl(probe) > 0) { t = std::move(probe); oversample = f; break; }
+                }
+                if (oversample == 0) t = decodeMit(hdr_guess);   // nichts gefunden
             }
+
             // Markenlose Spur = unformatiert: als LEERE Spur ablegen, damit der
             // Controller gap-Flux streamt statt Rauschbytes zu liefern.
             if (markenZahl(t) == 0) t = {};
@@ -170,7 +197,7 @@ bool HfeCodec::load(const std::string& path, DiskMedium& out, SourceInfo* info,
 
     if (info) {
         info->write_allowed = (file[0x14] == 0xFF);
-        info->oversampled   = (oversample > 1);
+        info->oversampled   = (oversample > 1);   // 0 = unbestimmt ⇒ nicht ueberabgetastet
         info->rpm           = rpm;
     }
     return true;

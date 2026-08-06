@@ -450,3 +450,41 @@ TEST(HfeCodec, UeberabgetasteteAufnahme500kbitWirdGelesen) {
 
     std::filesystem::remove(path);
 }
+
+/**
+ * @test HfeCodec/UeberabtastungTrotzFalscherHeaderRate
+ * @brief Ein überabgetasteter Mitschnitt wird auch dann gelesen, wenn der Header
+ *        eine FALSCHE Bitrate meldet.
+ *
+ * Reale Greaseweazle-Exporte tragen im Header gelegentlich Unsinn — beobachtet an
+ * einer echten Leerdiskette: `bitrate = 311` kbit/s bei tatsächlich ~2,4-facher
+ * Abtastung.  Die frühere Erkennung schloss allein aus dem Header-Wert auf den
+ * Faktor und ließ alles unter 375 kbit/s ungefiltert durch → der Decoder fand
+ * keine einzige Adressmarke.  Jetzt entscheidet der INHALT: der Faktor, unter dem
+ * Marken auftauchen, gewinnt.
+ */
+TEST(HfeCodec, UeberabtastungTrotzFalscherHeaderRate) {
+    uint32_t bitcells = 0;
+    const auto cells = buildMiniCells(bitcells);
+    const auto bits  = hfeCellsToBits(cells, bitcells);
+
+    // 2x ueberabtasten (wie ein Flux-Reader mit doppelter Rate).
+    std::vector<bool> os(bits.size() * 2, false);
+    for (size_t cell = 0; cell < bits.size(); ++cell)
+        if (bits[cell]) os[cell * 2] = true;
+    const auto os_cells = hfeBitsToCells(os);
+
+    const auto path = (std::filesystem::temp_directory_path()
+                       / "k1520_test_hfe_falsche_rate.hfe").string();
+    // Header meldet 311 kbit/s — unter der alten 375er-Schwelle, also "keine
+    // Ueberabtastung", obwohl der Inhalt doppelt abgetastet ist.
+    writeMiniHfe(path, os_cells, os_cells, /*bitrate=*/311);
+
+    HfeCodec::SourceInfo info;
+    const DiskMedium m = loadHfe(path, &info);
+    EXPECT_TRUE(info.oversampled) << "Ueberabtastung nicht am Inhalt erkannt";
+    expectFourGoodSectors(m.track(0, 0), "311-kbit/s-Header, 2x abgetastet");
+    expectFourGoodSectors(m.track(0, 1), "311-kbit/s-Header, Seite 1");
+
+    std::filesystem::remove(path);
+}
