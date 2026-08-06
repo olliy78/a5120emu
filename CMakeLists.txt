@@ -794,18 +794,29 @@ if(BUILD_K1520)
         # Spuren zuschlaegt und dessen Trefferpunkt an der Anlaufphase haengt
         # (gemessen: Spur 96 bzw. Spur 18 bei 2 Mio. Takten Unterschied).  Ein
         # kurzer Bereich (Spur 0-4) lief auch VOR dem Fix durch.
-        add_test(NAME format_blank_disk_with_verify COMMAND sh -c
-            "set -e; \
-             A=$(mktemp --suffix=.img); B=$(mktemp --suffix=.hfe); S=$(mktemp); \
-             cp ${CMAKE_SOURCE_DIR}/disks/cpadisk_autofs_noclk_noautoexec.img \$A; \
-             rm -f \$B; \
-             printf 'boot 80\\ntype 12:00:00\\nenter\\nboot 5\\ntype FORMAT\\nenter\\nboot 30\\nenter\\nboot 6\\ntype B\\nenter\\nboot 10\\nenter\\nboot 8\\ntype 1\\nboot 6\\nenter\\nboot 6\\nenter\\nboot 6\\ntype j\\nboot 8000\\n' > \$S; \
-             $<TARGET_FILE:format_driver> \$A \$B \$S ''; \
-             rm -f \$A \$B \$S")
-        set_tests_properties(format_blank_disk_with_verify PROPERTIES
-            TIMEOUT 1200 PASS_REGULAR_EXPRESSION "FORMATIEREN beendet"
-            FAIL_REGULAR_EXPRESSION "SPUR DEFEKT"
-            LABELS "format_integration")
+        #
+        # ZWEI Anlaufphasen: der Trefferpunkt haengt allein daran, wo FORMAT.COMs
+        # Vergleichs-Lesen relativ zum Abschluss des Schreibstroms landet.  Mit
+        # 'boot 80' lief der Lauf auch MIT dem Fehler sauber durch (0 von 4 Phasen
+        # meldeten dort SPUR DEFEKT), 'boot 78' traf ihn dagegen reproduzierbar
+        # (Spur 5 und 123).  Beide Phasen laufen parallel (~130 s je Lauf).
+        macro(add_blank_format_test name phase)
+            add_test(NAME ${name} COMMAND sh -c
+                "set -e; \
+                 A=$(mktemp --suffix=.img); B=$(mktemp --suffix=.hfe); S=$(mktemp); \
+                 cp ${CMAKE_SOURCE_DIR}/disks/cpadisk_autofs_noclk_noautoexec.img \$A; \
+                 rm -f \$B; \
+                 printf 'boot ${phase}\\ntype 12:00:00\\nenter\\nboot 5\\ntype FORMAT\\nenter\\nboot 30\\nenter\\nboot 6\\ntype B\\nenter\\nboot 10\\nenter\\nboot 8\\ntype 1\\nboot 6\\nenter\\nboot 6\\nenter\\nboot 6\\ntype j\\nboot 8000\\n' > \$S; \
+                 $<TARGET_FILE:format_driver> \$A \$B \$S ''; \
+                 rm -f \$A \$B \$S")
+            set_tests_properties(${name} PROPERTIES
+                TIMEOUT 1200 PASS_REGULAR_EXPRESSION "FORMATIEREN beendet"
+                FAIL_REGULAR_EXPRESSION "SPUR DEFEKT"
+                LABELS "format_integration")
+        endmacro()
+
+        add_blank_format_test(format_blank_disk_with_verify     80)
+        add_blank_format_test(format_blank_disk_with_verify_p78 78)
 
         add_bootdisk_test(bootdisk_cpa780        cpa780)         # 5¼″-MFM   cpa780
         add_bootdisk_test(bootdisk_mf3200_fmt7   mf3200_fmt7)    # 8″-SD/FM  26×128+16×256

@@ -679,6 +679,22 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
             // ZVE1-Kontext: neuen DMA-Transfer auslösen
             dma_is_write_ = is_write;
             if (!is_write) {
+                // ── Anstehenden FORMAT-Schreibstrom ZUERST auf die Diskette bringen ──
+                // Auf echter Hardware liegen die geschriebenen Bytes in dem Moment auf
+                // der Scheibe, in dem der Kopf sie schreibt — jede folgende Lesung sieht
+                // sie.  Unser Modell sammelt den Vollspur-Strom dagegen in write_buf_ und
+                // materialisiert ihn erst in commitFormatTrack().  Ein Lese-Strobe aus
+                // ZVE1-Kontext bedeutet: ZVE1 ist aus seinem Format-Wartepark (JR 1D21)
+                // zurück, ZVE2 hat die Spur fertig geschrieben.  Wird hier nicht
+                // committet, löscht startReadTransfer() write_mode_ — der Strom bleibt
+                // verwaist liegen (die Schreib-Idle-Erkennung in update() läuft nur im
+                // write_mode_) und die Spur gilt weiter als unformatiert, bis IRGENDWANN
+                // der nächste Schreib-Strobe kommt.  Genau das war das Wettrennen hinter
+                // „Fehler 'U' SPUR DEFEKT" beim Formatieren einer leeren Diskette: kam
+                // FORMAT.COMs Vergleichs-Lesen vor dem nächsten Schreib-Strobe, las es
+                // eine markenlose Spur und lief in den BIOS-Index-Timeout
+                // (doc/analyse_format_leerspur.md).
+                if (write_mode_ && !write_buf_.empty()) commitFormatTrack();
                 startReadTransfer();
                 // §5.6.1: /BUSRQ entsteht NUR aus der Bereitschaft des Daten-PIO.
                 // Auf einer unformatierten Spur rastet der Datenseparator nicht ein,

@@ -1,41 +1,36 @@
-# `Fehler 'U' SPUR DEFEKT` beim Formatieren leerer Spuren — Analysestand
+# `Fehler 'U' SPUR DEFEKT` beim Formatieren leerer Spuren — GELÖST
 
-**Status:** offen.  **Stand:** 2026-08-06, HEAD = `4740b98`.
-**Zweck:** Übergabe an eine neue Sitzung.  Jede Aussage hier ist entweder **gemessen**
-(mit Zahl und Reproduktionsweg), **belegt** (Handbuch- oder Quelltextstelle) oder
-ausdrücklich als **Vermutung** markiert.  Widerlegte Hypothesen stehen in §6 — bitte
-nicht erneut durchlaufen.
+**Status:** ✅ gelöst (2026-08-06).  **Ursache:** verwaister FORMAT-Schreibstrom im K5122 —
+die frisch geschriebene Spur wurde erst beim *nächsten* Schreib-Strobe ins Medium
+materialisiert, sodass FORMAT.COMs Vergleichs-Lesen sie je nach Anlaufphase noch als
+unformatiert vorfand.  **Fix:** ein Lese-`/STR`-Strobe aus ZVE1-Kontext committet einen
+anstehenden Schreibstrom, bevor er den Lesetransfer armiert
+(`K5122::handleCtrlPortAWrite`, `core/cards/k5122/k5122.cpp`).
 
 ---
 
-## 1. Symptom
+## 1. Symptom (Ausgangslage)
 
 Formatiert man unter **CP/A** mit `FORMAT.COM` (V19.05.89) eine **komplett unformatierte**
 Diskette **mit Vergleichs-Lesen**, meldet das Programm an zufälligen Stellen
 `Fehler 'U' SPUR DEFEKT!`.  Der Lauf bricht nicht ab, die Diskette wird fertig
-formatiert — die betroffenen Spuren gelten aber als defekt.
+formatiert — die betroffenen Spuren gelten aber als defekt.  Auf einer bereits
+formatierten Diskette und auf echter Hardware tritt es nicht auf.
 
-`'U'` ist laut `docs/format.md` ein **Timeout** (dort in §9 bei den bekannten
-Format-Ausfällen: „`5` (16×256 mit ph. Sektorversatz) → `Fehler 'U'` (Timeout)").
+`'U'` ist der BIOS-Ergebniskode **„keine Marke gefunden"** (`fl.to1`, `E32F`:
+`ld a,'U' ; time-out`), erreicht über `pret4` nach 5 Umdrehungen ohne Adressmarke.
 
-Auf einer bereits formatierten Diskette tritt es nicht auf — auch nicht, wenn das
-vorhandene Format ein *anderes* ist (vom Anwender geprüft mit 5×1024, 16×256, 9×512;
-9 Durchläufe ohne Fehler).  **Auf echter Hardware tritt der Fehler nicht auf.**
+### Referenzmessung (jeweils voller Lauf, Format 1, Spur 0–159, mit Verify)
 
-### Referenzmessung auf HEAD
-
-Voller Lauf, Format 1, Spur 0–159, mit Verify, B: = frisch angelegte Leerdiskette:
-
-| Anlaufphase (`boot`-Wert vor der Uhrzeit) | Ergebnis | betroffene Spuren |
+| Anlaufphase (`boot`-Wert vor der Uhrzeit) | vor dem Fix | nach dem Fix |
 |---|---|---|
-| 76 | `FORMATIEREN beendet`, 2× `'U'` | 71, 78 |
-| 78 | `FORMATIEREN beendet`, 2× `'U'` | 5, 123 |
-| 80 | `FORMATIEREN beendet`, 0× | — |
-| 82 | `FORMATIEREN beendet`, 1× `'U'` | 24 |
-| dieselbe Phase, B: **vorformatiert** (cpa800) | `FORMATIEREN beendet`, **0×** | — |
+| 76 | 2× `'U'` (Spur 71, 78) | **0×** |
+| 78 | 2× `'U'` (Spur 5, 123)  | **0×** |
+| 80 | 0×                      | **0×** |
+| 82 | 1× `'U'` (Spur 24)      | **0×** |
 
-Die Fehlerstellen hängen allein an der Anlaufphase — es ist ein Wettlauf, keine feste
-Spur.
+Ergebnisdiskette (Phase 78): `disk verify` → *160 Spuren, 863 Sektoren, 0 CRC-Fehler,
+0 Problem-Spuren, 0 leer* (= 3×26 + 157×5, genau die `cpa780`-Geometrie).
 
 ---
 
@@ -46,7 +41,7 @@ S=/tmp/fmt && mkdir -p $S
 cp disks/cpadisk_autofs_noclk_noautoexec.img $S/A.img
 
 cat > $S/full.script <<'EOF'
-boot 80
+boot 78
 type 12:00:00
 enter
 boot 5
@@ -75,103 +70,152 @@ rm -f $S/B.hfe
 ```
 
 - Der leere vierte Parameter legt B: als **unformatierte Leerdiskette** an
-  (`A5120Machine::createDisk` mit leerem Formatnamen).  Ein Katalogname
-  (z. B. `cpa800`) legt stattdessen vorformatiert an — das ist die Gegenprobe.
-- Andere Anlaufphase = erste Zeile `boot 80` auf 76/78/82 ändern.
-- `boot 8000` ist das Taktbudget nach dem Start; der Lauf dauert ~2–4 min.
-- `FD_LOGLEVEL=info` schaltet die K5122-Meldungen (`>>> READ`, `>>> FORMAT-WRITE`,
-  `8212 write=`) zu.
+  (`A5120Machine::createDisk` mit leerem Formatnamen); ein Katalogname (z. B. `cpa800`)
+  legt vorformatiert an — das ist die Gegenprobe.
+- Andere Anlaufphase = erste Zeile ändern (76/78/80/82).  `boot 8000` ist das Taktbudget
+  nach dem Start; der Lauf dauert ~2 min.
+- `FD_LOGLEVEL=info` schaltet die K5122-Meldungen (`>>> READ`, `>>> FORMAT-WRITE`) zu.
 
-**Wichtig:** ein kurzer Spurbereich reicht **nicht** — mit `bis Spur 4` oder `20` läuft
-auch der fehlerhafte Fall durch.  Der Guard `format_blank_disk_with_verify`
-(CMakeLists, Label `format_integration`) deckt deshalb alle 160 Spuren ab.
+**Wichtig:** ein kurzer Spurbereich reicht **nicht** — mit `bis Spur 4` oder `20` lief auch
+der fehlerhafte Fall durch.
 
 ---
 
-## 3. Was HEAD tut (Ausgangslage des Codes)
+## 3. Die Ursache
 
-`K5122::startReadTransfer()` (`core/cards/k5122/k5122.cpp`, Zweig `if (ibm_track.empty())`)
-behandelt eine unbeschriebene Spur so:
+### 3.1 Was FORMAT.COM pro Spur tut
 
-- Es wird ein Strom aus `kUnformattedTrackBytes` (= 6250) Bytes `0x4E` **ohne Marken**
-  armiert, `transferring_ = true`, `stream_has_marks_ = false`.
-- An der `/STR`-Flanke (`handleCtrlPortAWrite`) wird wie bei jeder Leseanforderung
-  `byte_ready_` gesetzt und `/BUSRQ` assertiert.
-- **`advanceByteClock()` (`k5122.h`) lässt die Anforderung nach 2 Byteperioden
-  verfallen**, wenn niemand sie abholt: `byte_ready_ = false`, `/BUSRQ` frei,
-  `head_pos_` um ein Byte weiter.  Nur für Lesen ohne Marken (`!write_mode_ &&
-  !stream_has_marks_`).
+Die geladene Routine `0x1CEC–0x1D38` (RAM-Disassemblat, s. §5) ist der generische
+„ZVE2-Auftrag starten"-Rahmen — identisch zum BIOS-Original `diortn` (`E45A`,
+`disks/cpadisk_autofs_noclk_noautoexec.prn`):
 
-Netto liefert eine markenlose Spur damit Bytes **nur jede zweite Byteperiode**, und
-`/BUSRQ` pendelt.  Das ist der Kompromiss aus Commit `69551f0` — er verhindert den
-Totalhänger (§5), erzeugt aber genau die halbe Byte-Rate, die als Timeout-Ursache in
-Frage kommt (§7).
+```
+1CEC  LD A,FE / LD (1D22H),A   ; Spin-Falle 1D21 (JR $) schaerfen
+1CF1  LD HL,1D50 / LD DE,1DE5  ; zwei weitere Fallen im ZVE2-Code
+1CF7  LD (HL),18H / LD (DE),18H ;   (Opcode -> JR zurueck)
+1CFD  XOR A / OUT (14H),A      ; Daten-PIO Tor A laden
+1D00  OUT (04H),A              ; ZVE2 in Reset
+1D02  DEC A / OUT (17H),A ×2   ; Daten-PIO Tor B: Mode 3, alles Eingang
+1D07  LD A,B9H / OUT (10H),A   ; /STR = 1
+1D0B  LD A,A5H / OUT (10H),A   ; /STR = 0, /WE = 1  -> Lese-Strobe
+1D0F  LD A,7FH / OUT (17H),A   ; Tor B -> Mode 1 (Byte-Eingabe)
+1D13  IN A,(16H)               ; Scheineingabe  == "CPU2 starten (ueber BUSRQ)"
+1D15  LD (0001H),BC            ; ZVE2-Einsprung
+1D19  LD A,B4H / OUT (10H),A   ; /WE = 0  -> Schreiben
+1D1D  LD A,83H / OUT (11H),A   ; Index-Interrupt scharf
+1D21  JR $                     ; Wartepark, bis die Index-ISR [1D22] patcht
+```
+
+ZVE2 läuft ab `1D39`: Gap-Bytes `4E` in der gepatchten Falle `1D4E/1D50` schreiben, bis der
+Index kommt (das ist die **Spurlängen-Messung** — „Laenge in Bytes: 6282", Sollwert 6250
+±2 %), danach die eigentliche Spur (`C2 C2 C2 FC`-IAM, `A1 A1 A1 FE`-IDAMs, `OTIR` der
+ID-Felder, Datenfelder).  Anschließend liest FORMAT die Spur zum **Vergleich** zurück.
+
+### 3.2 Der Fehler im Emulator
+
+Der K5122 sammelt den Vollspur-Schreibstrom in `write_buf_` und materialisiert ihn erst in
+`commitFormatTrack()`.  Ausgelöst wurde der Commit nur an zwei Stellen:
+
+1. am **nächsten Schreib-`/STR`-Strobe** (`handleCtrlPortAWrite`), und
+2. über die **Schreib-Idle-Erkennung** in `update()` — die aber ausschließlich im
+   `write_mode_` läuft.
+
+`startReadTransfer()` setzt `write_mode_ = false`.  Ein Lese-Strobe (das Vergleichs-Lesen)
+löschte also `write_mode_`, **ohne** den Strom zu committen: der fertig geschriebene
+Spurinhalt blieb verwaist in `write_buf_` liegen, die Schreib-Idle-Erkennung war
+abgeschaltet, und die Spur galt im Medium weiter als **unformatiert** — bis irgendwann der
+Schreib-Strobe der *nächsten* Spur den Puffer abschloss.
+
+Ob das auffiel, war ein reines Wettrennen um die Reihenfolge:
+
+```
+gesunde Spur (C=2 H=0)                     defekte Spur (C=2 H=1)
+  /STR B4  wr=1  -> Commit (Vorspur)         /STR B0  wr=1 -> Commit (Vorspur)
+  ... ZVE2 schreibt (2,0) ...                ... ZVE2 schreibt (2,1) ...
+  /STR B4  wr=1  -> Commit (2,0)  <<<        /STR A1  wr=0 -> READ (2,1) UNFORMATIERT
+  /STR A5  wr=0  -> READ (2,0) 5 Sekt  OK    /STR A1  wr=0 -> READ (2,1) UNFORMATIERT
+                                             ... 5 Umdrehungen ohne Marke -> 'U'
+                                             (Commit erst 1 s spaeter, Kopf schon auf C=3)
+```
+
+Gemessen mit temporären `DIAG`-Logs auf `/STR`-Flanken und `commitFormatTrack()`;
+im Fehlerfall lag zwischen Schreib-Strobe und Commit von `(2,1)` gut **eine Sekunde
+Maschinenzeit**, in der zwei Vergleichs-Lesungen auf die noch leere Spur trafen.
+
+Auf echter Hardware gibt es dieses Fenster nicht: die Bytes liegen in dem Moment auf der
+Scheibe, in dem der Kopf sie schreibt.
+
+### 3.3 Der Fix
+
+`core/cards/k5122/k5122.cpp`, `handleCtrlPortAWrite`, ZVE1-Kontext des
+`/STR`-Lese-Strobes:
+
+```cpp
+if (write_mode_ && !write_buf_.empty()) commitFormatTrack();
+startReadTransfer();
+```
+
+Ein Lese-Strobe aus **ZVE1**-Kontext bedeutet zwangsläufig, dass ZVE1 aus seinem
+Format-Wartepark (`JR 1D21`) zurück ist, ZVE2 die Spur also fertig geschrieben hat —
+der Strom ist vollständig und gehört auf die Diskette.  (Die `/STR`-Strobes *während* des
+Schreibens kommen von ZVE2 und laufen über den `bus_.isBUSRQ()`-Zweig, werden also nicht
+berührt.)
+
+Guards:
+- `K5122Test.FormatWrite_LeseStrobeCommittetSpurSofort` (Unit, `tests/cpp/test_k5122.cpp`) —
+  schlägt ohne den Fix fehl (0 statt 4 Sektoren).
+- `format_blank_disk_with_verify` (Anlaufphase 80) **und neu**
+  `format_blank_disk_with_verify_p78` (Anlaufphase 78, traf den Fehler reproduzierbar).
+  Phase 80 allein war als Wächter untauglich — sie lief auch MIT dem Fehler durch.
 
 ---
 
-## 4. Belegte Grundlagen
+## 4. Belegte Grundlagen (weiterhin gültig)
 
 ### 4.1 K5122-Handbuch (`doc/trascripted/Floppy Anschlußsteuerung K 5122.md`)
 
-- **§5.5 „Der Ablauf des Lesens"**: der Lesedatenpfad ist vom **Marken-FF** getaktet.
-  Erst wenn eine Marke erkannt ist (MKE = 1), wird der Bitzähler A13 gesetzt, es
-  entsteht `/BSTB` und „die Übernahme des Datenbytes […] in den Daten-PIO" erfolgt.
-  Ende der Übertragung durch Rücksetzen des Marken-FF (`/MR`) oder Abschalten von `/STR`.
+- **§4.1**: Steuer-PIO **Tor A = Mode 0 (Ausgabe)**, Tor B = Mode 3; `/ASTB` von Tor A ist
+  der **Index-Puls**.  Bitlage Tor A: `A₀ /WE`, `A₁ MK`, `A₂ /FR`, `A₃ /STR`, `A₄ MK1`,
+  `A₅ MR/SD`, `A₆ /HL`, `A₇ /ST`.  Tor B: `B₇ = /TRACK 00` ist ein **Laufwerks**signal.
+- **§5.5**: der Lesedatenpfad ist vom **Marken-FF** getaktet — erst nach erkannter Marke
+  (MKE = 1) entsteht `/BSTB` und damit die Übernahme ins Daten-PIO.
 - **§5.6.1**: „BUSRQ wird gebildet, wenn der Daten-PIO zum Datenaustausch mit dem Bus
-  bereit ist."  Wahrheitstabelle über `/ARDY`/`/BRDY` (1-aus-8-Decoder A3.3): bei
-  `/ARDY = 0 ∧ /BRDY = 0` (Ausgang 00) entsteht **kein** `/BUSRQ`.
-- **§5.7**: „Das nächste Byte wird in den Daten-PIO übernommen, **bevor** die CPU die
-  Daten abgefordert hat" — Überlauf, gemeldet über `/FA`.  Der Separator wartet also
-  nicht auf den Abholer.
-- **§4.1, Steuer-PIO Tor B**: `B₇ = /TRACK 00 = /TO`, **Eingang vom Laufwerk**
-  (mechanischer Endlagenschalter, unabhängig von der Diskette).
+  bereit ist … BUSRQ wird durch /STR unterdrückt."  1-aus-8-Decoder A3.3 über
+  `/ARDY`/`/BRDY`; die vierte Eingangskombination ist in der Wahrheitstabelle **nicht**
+  aufgeführt (Ausgang 03 → weder `/BUSRQ` noch `/WAIT`).
+- **§5.7**: der Separator wartet nicht auf den Abholer — das nächste Byte kommt in den PIO,
+  bevor die CPU das alte geholt hat (`/FA`, Überlauf).
 
 ### 4.2 CP/A-BIOS (`disks/cpadisk_autofs_noclk_noautoexec.prn`)
 
 | Adresse | Label | Bedeutung |
 |---|---|---|
+| `E32F` | `fl.to1` | `ld a,'U'` — **genau die Fehlermeldung**, „keine Sektor-Marke gefunden" |
 | `E392` | `fl.sto` | setzt `fl.zto` (Zähler für Indexpunkte) aus Register A |
-| `E3A3` | `fl.zto` | der Zähler selbst (selbstmodifizierender Operand) |
 | `E39A` | `itimeo` | **Index-ISR**: `dec a / ld (fl.zto),a`; bei 0 → `pretx` |
 | `E3AA` | `pretx` | `jr pret3`, während eines Transfers auf `jr pret4` gepatcht |
-| `E3AB` | `pretx+1` | Sprungdistanz: `0x00` = Transfer läuft, `0x0B` = Leerlauf |
 | `E3AC` | `pret4` | Timeout **während** Transfer → CPU 2 stoppen, `dtrret` = „keine Marke gefunden" |
-| `E3B7` | `pret3` | → `headup` |
-| `E3BD` | `headup` | `OUT (11H),3` = Index-Interrupt **sperren**; `OUT (18H),0FFH` = Motor aus |
-| `E12D` | `drv0a` | Laufwerkswahl: `pretx+1 = 0`, `fl.sto(255)` |
+| `E3BD` | `headup` | `OUT (11H),3` = Index-Interrupt sperren; `OUT (18H),0FFH` = Motor aus |
+| `E45A` | `diortn` | **Original des FORMAT-Rahmens `1CEC`** (s. §3.1) |
+| `E47F` | — | `IN A,(fldabd)` mit dem Kommentar **„CPU2 starten (ueber BUSRQ)"** |
 | `E2C9` | — | vor dem Transfer: `fl.sto(5)` „Überwachung auf fehlende Marke" |
 | `E2D6` | `fehret` | Operationsende: `pretx+1 = 0x0B`, `fl.sto(20)` = 4-s-Leerlauf-Motorstopp |
-| `E22C` | `phrw` | Kopfstabilisierung, 50 ms, kalibriert auf `189·13 = 2457 Takte/ms` |
 
-### 4.3 FORMAT.COM (aus dem RAM disassembliert, Ladeadresse 0x1D00)
-
-```
-ZVE1  1D0B  LD A,A5H / OUT (10H),A   ; Lesen armieren (/STR aktiv, /WE=1)
-      1D0F  LD A,7FH / OUT (17H),A   ; Daten-PIO Tor B auf Eingabe
-      1D13  IN A,(16H)               ; genau EIN Byte — wird von LD A,B4H verworfen
-      1D19  LD A,B4H / OUT (10H),A   ; danach Schreiben armieren (/WE=0)
-      1D1F  LD A,83H / OUT (11H),A   ; Index-Interrupt scharf
-      1D21  JR 1D21                  ; Wartepark
-ZVE2  1D44  LD A,(1C45H) / LD D,A    ; Gap-Füllbyte
-      1D48  LD E,4EH / LD A,BDH / OUT (10H),A
-      1D4E  OUT (C),E / JR 1D4E      ; Gap schreiben (C = 14H = Daten-PIO Tor A)
-```
-
-Das Byte bei `1D13` ist ein **Dummy-Read**; sein Wert wird nicht ausgewertet.
+Dazu die Warnung des BIOS-Autors bei `E481`:
+> „Achtung!! Zur Synchronisation CPU1 und CPU2 keine 2-Byte-Werte (Adressen) verwenden,
+> da dazwischen BUSRQ auftreten kann und dann nur ein Byte gesetzt wurde!!"
 
 ---
 
-## 5. Vorgeschichte (bereits behobene, verwandte Fehler)
+## 5. Werkzeuge / Messwege dieser Analyse
 
-Diese Fixes sind committet und dürfen nicht rückgängig gemacht werden:
-
-| Commit | Inhalt |
-|---|---|
-| `1c22af7` | `/TO` ist ein Laufwerkssignal (`DriveProfile::present`), nicht an die Diskette gekoppelt; kein `/BUSRQ` ohne Datenträger.  Behob: Diskette zur Laufzeit einlegen und unter UDOS formatieren (`ERROR C2`). |
-| `22e2bbc` | Marken-Gatung eingeführt (`stream_has_marks_`).  Behob: Totalhänger bei ZVE1=`1D0F` / ZVE2=`1D4E`, `/BUSRQ` gehalten. |
-| `69551f0` | Verfall der unabgeholten Anforderung nach 2 Byteperioden (§5.7).  Behob: Hänger bei ZVE1=`1D21`, Motor aus. |
-| `3fd6414` | `parseTrack` maskiert das 2-Bit-Größenfeld → kein `std::invalid_argument`-Abbruch mehr. |
-| `4740b98` | HFE-Überabtastung am Inhalt statt an der Header-Bitrate erkennen. |
+- RAM-Disassemblat der geladenen FORMAT-Routine:
+  `format_driver … ramdump 0100 2200 tpa.bin` (Skript-Kommando), dann
+  `python3 tools/z80_disasm2.py --org 0x0100 --entry 0x1CEC --entry 0x1D39 tpa.bin`.
+- Zustandsverlauf: temporäre `LOG_INFO`-Zeilen (env-geschaltet) auf `/STR`-Flanken,
+  `commitFormatTrack()` und `OUT(10H)` — zeigten Reihenfolge und Puffergröße pro Spur.
+  (Nicht committet; das Muster ist bei Bedarf schnell wiederhergestellt.)
+- Ergebnisprüfung: `k1520dbg -b <disk.hfe>` → `disk verify b`.
 
 ---
 
@@ -179,25 +223,24 @@ Diese Fixes sind committet und dürfen nicht rückgängig gemacht werden:
 
 | # | Hypothese | Widerlegung |
 |---|---|---|
-| 1 | Index-Puls kommt zu oft / falsche Rate | `indexPeriodCycles = 2 450 000·60/300 = 490 000` Takte = 0,2 s = **genau ein Puls pro Umdrehung**.  Gerechnet und im Code verifiziert. |
-| 2 | Index-Phase wird durch Laufwerkswechsel zerstört | Zähler der Resets in `!motorAtSpeed`-Zweig während eines Formatierlaufs: **0**. |
-| 3 | Motor-Spin-up kostet Umdrehungen | `K5122_MOTOR_SPINUP_MS = 2` (k5122.h). Vernachlässigbar. |
-| 4 | Unsere CPU-Taktbilanz ist zu langsam | Die BIOS-eigene kalibrierte 50-ms-Schleife (`phrw`, Soll 122 500 Takte) läuft in **128 078** Takten = **+4,6 %**, erklärt durch die mitlaufenden ISRs.  94 Messungen. |
-| 5 | Das Füllbyte des Leerstroms (`0x4E`) ist falsch | Auf `0xAA` umgestellt (= echter Wert, s. §7.2) und vier Phasen gemessen: **2/2/0/1 defekte Spuren — identisch** zur `0x4E`-Referenz. |
-| 6 | §5.5 wörtlich umsetzen (markenlos ⇒ gar kein Byte, kein `/BUSRQ`) | Vier Phasen gemessen: **4 von 4 frieren ein** (Spur 124/18/96/92), kein Lauf kommt durch.  Deutlich schlechter als HEAD. |
-| 7 | Verfallsfrist der Anforderung tunen | 2 Byteperioden (HEAD, gemessen ab `byte_ready_`): funktioniert.  Entkoppelter Zähler mit Schwelle 2 → **Einfrieren schon bei Spur 0**; Schwelle 16 → **20 defekte Spuren** pro Lauf.  Nicht monoton, reines Symptomtuning. |
-| 8 | Der SCPX-Mini-Stack-Guard verzögert Interrupts (`SP ∈ [0xEC00,0xEC10]`, a5120.cpp) | Instrumentiert: **null Treffer** während des Formatierlaufs. |
-| 9 | Zu wenig Index-Pulse ⇒ BIOS-Wachhund verhungert | Pro Spur werden **6–11** Index-Pulse erzeugt; der markenlose Abbruch läuft über `pret4` **korrekt** ab (Ereignis-Trace §7.3). |
+| 1 | Index-Puls kommt zu oft / falsche Rate | `indexPeriodCycles = 2 450 000·60/300 = 490 000` Takte = 0,2 s = genau ein Puls pro Umdrehung.  Gerechnet und im Code verifiziert. |
+| 2 | Index-Phase wird durch Laufwerkswechsel zerstört | Zähler der Resets im `!motorAtSpeed`-Zweig während eines Formatierlaufs: **0**. |
+| 3 | Motor-Spin-up kostet Umdrehungen | `K5122_MOTOR_SPINUP_MS = 2`. Vernachlässigbar. |
+| 4 | Unsere CPU-Taktbilanz ist zu langsam | Die BIOS-eigene kalibrierte 50-ms-Schleife (`phrw`, Soll 122 500 Takte) läuft in **128 078** Takten = +4,6 %. 94 Messungen. |
+| 5 | Das Füllbyte des Leerstroms (`0x4E`) ist falsch | Auf `0xAA` (echter Wert einer leeren Spur, §7.2) umgestellt: 2/2/0/1 defekte Spuren — **identisch** zur `0x4E`-Referenz. |
+| 6 | §5.5 wörtlich umsetzen (markenlos ⇒ gar kein Byte, kein `/BUSRQ`) | Vier Phasen gemessen: **4 von 4 frieren ein**.  Deutlich schlechter als der damalige Stand. |
+| 7 | Verfallsfrist der unabgeholten Anforderung tunen | 2 Byteperioden funktionierte; entkoppelter Zähler mit Schwelle 2 → Einfrieren bei Spur 0, Schwelle 16 → 20 defekte Spuren.  Nicht monoton, reines Symptomtuning. |
+| 8 | SCPX-Mini-Stack-Guard verzögert Interrupts | Instrumentiert: **null Treffer** während des Formatierlaufs. |
+| 9 | Zu wenig Index-Pulse ⇒ BIOS-Wachhund verhungert | Pro Spur 6–11 Index-Pulse; der markenlose Abbruch läuft über `pret4` korrekt ab. |
+| 10 | Der ZVE1↔ZVE2-Arbitrierungspunkt („`continue;` — ZVE1 läuft nicht während `/BUSRQ`") ist die Ursache | Widerlegt durch die Messung in §3.2: die Reihenfolge Commit ↔ Vergleichs-Lesen entscheidet, nicht die Busvergabe.  Mit dem Commit-Fix sind alle vier Anlaufphasen sauber, an der Arbitrierung wurde nichts geändert. |
 
 ---
 
-## 7. Gemessene Fakten
+## 7. Weitere gemessene Fakten (Kontext, unverändert gültig)
 
 ### 7.1 Zeitbudget pro Spur
 
-Index-Pulse pro Spur, nach Kartenzustand aufgeschlüsselt (gezählt an
-`commitFormatTrack`; Phase = `write_mode_` / `transferring_ && stream_has_marks_` /
-`transferring_ && !stream_has_marks_` / sonst):
+Index-Pulse pro Spur, nach Kartenzustand aufgeschlüsselt:
 
 | Fall | idle | markenlos | Verify | Schreiben | Summe |
 |---|---|---|---|---|---|
@@ -205,122 +248,73 @@ Index-Pulse pro Spur, nach Kartenzustand aufgeschlüsselt (gezählt an
 | vorformatiert, 1. Durchlauf | 1–5 | 0 | 0–1 | 2 | 3–8 |
 | vorformatiert, 2. Durchlauf | 5 | 0 | 0–1 | 2 | **7** |
 
-Auf der **leeren** Diskette dazu gemessen: 3–11 `startReadTransfer`-Aufrufe und
-3,0–5,5 Mio. Takte pro Spur.
-
-**Wichtig:** auch der *funktionierende* Fall braucht 7 Umdrehungen pro Spur.  Zum
-Vergleich hat der Anwender UDOS und SCPX gemessen: dort ~2 Umdrehungen pro Spur, auch
-auf leeren Disketten.  Für CP/A liegt **keine** Messung an echter Hardware vor.
-
-Zeitanteile im Formatierfenster (PC-Histogramm, jede 1024. Instruktion, nach
-Kartenzustand): **idle 87 %**, Lesen 4,5 %, Schreiben 8,4 %.  Heißeste Stellen im
-Leerlauf: `E37D–E389` (Software-CRC des BIOS) ~4,6 %, `E6CC/E6CD`
-(`iodis1: rrca/djnz`, I/O-Byte-Dispatch der Konsole) ~3,1 %, `E230` (Kopfstabilisierung)
-~1 %.  Kein einzelner dominanter Wartepunkt.
-
-> **Vermutung (nicht belegt):** die 7 Umdrehungen könnten für CP/A echt sein, weil es
-> pro Spur mehr tut als UDOS/SCPX (Software-CRC über jeden Sektor beim Vergleichs-Lesen,
-> Fortschrittsausgabe).  Das ließe sich nur mit einer Stoppuhr an echter Hardware
-> klären — z. B. Sekunden für „Spur 0 bis Spur 20 mit Verify".
+Zeitanteile im Formatierfenster (PC-Histogramm): **idle 87 %**, Lesen 4,5 %, Schreiben 8,4 %.
+Heißeste Leerlaufstellen: `E37D–E389` (Software-CRC) ~4,6 %, `E6CC/E6CD` (`iodis1`) ~3,1 %,
+`E230` (Kopfstabilisierung) ~1 %.  Kein dominanter Wartepunkt.
 
 ### 7.2 Inhalt einer echten Leerspur
 
-Aus `disks/leer_scp.dmk` (mit Greaseweazle von einer echten leeren Diskette eingelesen,
+Aus `disks/leer_scp.dmk` (Greaseweazle-Mitschnitt einer echten leeren Diskette,
 80 Spuren × 2 Seiten, `track_len = 7668`):
 
 ```
-Spur 0 / 1 / 40:  IDAM-Einträge = 0,  7540 Rohbytes,  davon 7540 × AA
+Spur 0 / 1 / 40:  IDAM-Eintraege = 0,  7540 Rohbytes,  davon 7540 × AA
 ```
 
-Eine echte leere Spur liefert also **einen durchgehenden Bytestrom ohne jede
-Adressmarke**.  Das stützt das HEAD-Modell (Bytes ja, Marken nein) und spricht gegen
-die wörtliche §5.5-Lesart (Hypothese 6).
+Eine echte leere Spur liefert also **einen durchgehenden Bytestrom ohne jede Adressmarke** —
+das stützt das Modell in `startReadTransfer()` (Bytes ja, Marken nein) und spricht gegen die
+wörtliche §5.5-Lesart (Hypothese 6).
 
 > Die zugehörige `disks/leer_scp.hfe` meldet im Header `bitrate = 311` kbit/s, hat aber
-> 15 097 Bytes je Spurseite = 120 776 Zellen pro Umdrehung (nominal 50 000) — also ~2,4-fach
-> überabgetastet und **kein ganzzahliger Faktor**.  Seit `4740b98` wird die Überabtastung
-> am Inhalt bestimmt (Kandidaten 1–4); bei dieser markenlosen Diskette greift das nicht
-> und sie gilt korrekt als unformatiert.  Für einen *formatierten* Mitschnitt mit
-> demselben Setup wäre ein nicht-ganzzahliger Faktor weiterhin ein Problem.
+> 15 097 Bytes je Spurseite = 120 776 Zellen pro Umdrehung (nominal 50 000) — ~2,4-fach
+> überabgetastet und **kein ganzzahliger Faktor**.  Seit `4740b98` wird die Überabtastung am
+> Inhalt bestimmt (Kandidaten 1–4); bei dieser markenlosen Diskette greift das nicht und sie
+> gilt korrekt als unformatiert.  Für einen *formatierten* Mitschnitt mit demselben Setup
+> wäre ein nicht-ganzzahliger Faktor weiterhin ein Problem.
 
-### 7.3 Ereignisfolge des BIOS-Wachhunds
-
-Trace der BIOS-Stellen aus §4.2 pro Spur (gemessen, `pretx`/`fl.zto` mitgelesen):
+### 7.3 Ereignisfolge des BIOS-Wachhunds (gemessen)
 
 ```
 drvsel    pretx=00  fl.sto(255)      ; Laufwerkswahl: Motorabschaltung gesperrt
-fl.sto(5)                            ; „Überwachung auf fehlende Marke"
-itimeo ×5   zto 5→1                  ; fünf Umdrehungen ohne Marke
-pret4                                ; KORREKTER Abbruch „keine Marke gefunden"
-fehret    pretx=0B  fl.sto(20)       ; Operationsende → 4-s-Leerlauf-Motorstopp scharf
-itimeo    zto 20→19→18→17…           ; Leerlauf-Countdown
-drvsel    pretx=00                   ; nächste Operation → wieder gesperrt
+fl.sto(5)                            ; "Ueberwachung auf fehlende Marke"
+itimeo ×5   zto 5->1                 ; fuenf Umdrehungen ohne Marke
+pret4                                ; KORREKTER Abbruch "keine Marke gefunden" -> 'U'
+fehret    pretx=0B  fl.sto(20)       ; Operationsende -> 4-s-Leerlauf-Motorstopp scharf
 ```
 
-Die 5 Umdrehungen des markenlosen Lesens sind also **das Budget des OS selbst** und
-kein Emulatorfehler.  Verteilung der `fl.sto`-Argumente über einen Lauf auf der leeren Diskette: `5`, `20`
-und `255` — je 798 Aufrufe.
-
-### 7.4 Signatur des (behobenen) Totalhängers
-
-Nur zur Einordnung — auf HEAD tritt das **nicht** mehr auf.  Gemessen mit der
-§5.5-Variante (Hypothese 6):
-
-```
-ZVE1 PC=1D21   ZVE2 PC=1D4E   /BUSRQ frei
-pretx+1[E3AB] = 0x0B   (Leerlauf)      fl.zto[E3A3] = 0x00
-```
-
-`fl.zto` lief im **Leerlaufzustand** ab → `pret3` → `headup` → Index-Interrupt gesperrt
-und Motor aus → ZVE1 wartete bei `1D21` auf einen Puls, den es nicht mehr gab.
+Die 5 Umdrehungen sind **das Budget des OS selbst** und kein Emulatorfehler.  Genau dieser
+Pfad lieferte das `'U'` — er lief korrekt, nur war die Spur zu diesem Zeitpunkt eben (im
+Modell) noch leer.
 
 ---
 
-## 8. Offener Kern
+## 8. Offen geblieben (getrennt vom obigen Fehler)
 
-Alles Obige zusammen zeigt auf **eine** Stelle:
+**`/BUSRQ` wird nicht aus dem Daten-PIO-Handshake gebildet.**  Heute assertiert der K5122
+`/BUSRQ` direkt aus `byte_ready_`/`transferring_`; auf echter Hardware entsteht es aus
+`/ARDY`/`/BRDY` des Daten-PIO (§4.1/§5.6.1).  Der BIOS-Kommentar bei `E47F`
+(„`IN A,(16H)` = CPU2 starten (ueber BUSRQ)") und die Sequenz *Tor B → Mode 3 → Mode 1 →
+Scheineingabe* belegen, dass die Karte **vor** dieser Scheineingabe gar kein `/BUSRQ`
+bilden kann — sonst käme ZVE1 nie dazu, den ZVE2-Einsprung bei `1D15`/`E461` zu setzen.
+Unser Modell braucht deshalb den künstlichen Verfall der unabgeholten Anforderung nach
+2 Byteperioden (`advanceByteClock`, Commit `69551f0`).
 
-`A5120Machine::run` (`core/machines/a5120/a5120.cpp`, Zeile ~562) enthält
-
-```cpp
-continue;   // Verriegelung: ZVE1 läuft NICHT während /BUSRQ
-```
-
-FORMAT.COM armiert bei `1D0D` einen Lesevorgang und will das Byte bei `1D13`
-**selbst** abholen — währenddessen sitzt ZVE2 in seiner Gap-Schreibschleife (`1D4E`)
-und ist gar nicht der Abholer.  Unsere Arbitrierung gibt den Bus bei `/BUSRQ` aber
-immer an ZVE2.  Genau deshalb braucht HEAD den künstlichen Verfall der Anforderung —
-und der halbiert die Byte-Rate auf markenlosen Spuren, was als Timeout-Ursache
-naheliegt.
-
-**Zu klären ist:** wie kommt ZVE1 auf echter Hardware in diesem Fenster an sein Byte?
-Drei Möglichkeiten, keine davon geprüft:
-
-1. `/BUSRQ` entsteht dort gar nicht, weil beide Richtungen des Daten-PIO armiert sind
-   (ZVE2 schreibt auf Tor A, der Lesekanal liegt auf Tor B).  Der 1-aus-8-Decoder A3.3
-   hat für „beide bereit" keinen `/BUSRQ`-Ausgang (§5.6.1) — die Wahrheitstabelle listet
-   nur 00/01/02.  **Das ist der aussichtsreichste Kandidat**, erfordert aber ein Modell
-   von `/ARDY`/`/BRDY` statt der heutigen `transferring_`/`write_mode_`-Flags.
-2. Die Verriegelung ist zu streng: der Z80 gibt den Bus erst nach dem laufenden
-   Maschinenzyklus frei; FORMAT könnte darauf bauen.  ⚠ Ein strikter Umbau des
-   „gehaltenen Bus" ist laut Notiz `project_per_byte_busrq_model` bereits einmal als
-   **verifizierte Sackgasse** markiert worden — vorher dort nachlesen.
-3. Unsere ZVE1/ZVE2-Verschränkung lässt ZVE2 zu früh in die Gap-Schleife laufen.
+Das ist eine echte Modellierungslücke, aber **nicht** die Ursache des hier gelösten
+Fehlers.  Wer sie angeht: ein „armiert"-Flag am Daten-PIO Tor B (Steuerwort → entwaffnen,
+Datenlesung → armieren) als `/BUSRQ`-Gate ist der aussichtsreichste Weg; er ersetzt die
+Verfallsheuristik.  ⚠ Ein strikter Umbau des „gehaltenen Bus" ist laut Notiz
+`project_per_byte_busrq_model` bereits einmal als **verifizierte Sackgasse** markiert
+worden — vorher dort nachlesen.
 
 ---
 
 ## 9. Absicherung beim Weiterarbeiten
 
-- `ctest --test-dir build -j8` — **795/795** müssen grün bleiben, inklusive der 14
+- `ctest --test-dir build -j8` — **796/796** grün, inklusive der 15
   `format_integration`-Tests.  `./build/a5120emu_test` — 58/58.
-- `format_blank_disk_with_verify` (Label `format_integration`, ~150 s) ist der direkte
-  Guard für dieses Thema: Leerdiskette, alle 160 Spuren, mit Verify, erwartet
-  `FORMATIEREN beendet` **ohne** `SPUR DEFEKT`.  **Er ist heute grün, obwohl der Fehler
-  auftritt** — weil `SPUR DEFEKT` in 1 von 4 Phasen ausbleibt.  Wer hier arbeitet,
-  sollte die vier Phasen aus §1 einzeln fahren, nicht nur den Guard.
-- Boot-kritisch und daher besonders im Auge zu behalten: `test_boot_integration`
-  (CP/A- und UDOS-Kaltstart, Boot von B:/C:), `ScpxInit.InitFormatsDriveAWithNoBadTracks`,
+- Direkte Wächter dieses Themas: `K5122Test.FormatWrite_LeseStrobeCommittetSpurSofort`
+  (schnell) sowie `format_blank_disk_with_verify` + `format_blank_disk_with_verify_p78`
+  (je ~130 s, laufen parallel).
+- Boot-kritisch und besonders im Auge zu behalten: `test_boot_integration` (CP/A- und
+  UDOS-Kaltstart, Boot von B:/C:), `ScpxInit.InitFormatsDriveAWithNoBadTracks`,
   `UdosFormat.*`.
-- Werkzeuge: `tools/format_driver` (Tastatur-Skript, siehe §2), `tools/k1520dbg`,
-  `tools/boot_trace`.  Für Messungen an BIOS-Adressen eignet sich ein
-  `machine.setCpuTraceCallback(...)` in `format_driver` (temporär, nicht committen).

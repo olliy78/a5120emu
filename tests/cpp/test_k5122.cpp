@@ -814,6 +814,57 @@ TEST_F(K5122Test, FormatWrite_IdleCommitLetzteSpur) {
 }
 
 /**
+ * @test K5122Test/FormatWrite_LeseStrobeCommittetSpurSofort
+ * @brief Regressionswächter: ein Lese-/STR-Strobe (ZVE1-Kontext) schließt einen noch
+ *        anstehenden FORMAT-Schreibstrom ab, BEVOR er den Lesetransfer armiert.
+ *
+ * Auf echter Hardware liegen die geschriebenen Bytes in dem Moment auf der Scheibe, in
+ * dem der Kopf sie schreibt — das anschließende Vergleichs-Lesen findet sie immer.  Ohne
+ * diesen Commit löschte startReadTransfer() write_mode_, der Strom blieb verwaist liegen
+ * (die Schreib-Idle-Erkennung in update() läuft nur im write_mode_) und die frisch
+ * formatierte Spur galt bis zum NÄCHSTEN Schreib-Strobe als unformatiert.  Traf
+ * FORMAT.COMs Vergleichs-Lesen dieses Fenster, meldete es `Fehler 'U' SPUR DEFEKT`
+ * (doc/analyse_format_leerspur.md).
+ */
+TEST_F(K5122Test, FormatWrite_LeseStrobeCommittetSpurSofort) {
+    DiskFormat fmt; fmt.name = "fmt_rdcommit_2c1h4x256";
+    fmt.tracks.push_back({0, 1, 0, 0, 4, 256});
+    auto path = makeTmpImg(fmt, "_fmtrd");
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0xEE);
+
+    std::vector<LogicalSector> soll;
+    for (uint8_t id = 1; id <= 4; ++id) {
+        LogicalSector s; s.cyl = 0; s.head = 0; s.id = id; s.size = 256;
+        s.data.assign(256, static_cast<uint8_t>(0xA0 + id)); soll.push_back(s);
+    }
+    TrackImage stream = TrackCodec::buildTrack(soll, Encoding::MFM);
+
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF4);                       // Schreib-/STR-Strobe (Kopf 0)
+    for (uint8_t b : stream.bytes) card.ioWrite(0x14, b);
+
+    // KEIN Folge-Schreib-Strobe und KEIN Idle-Fenster: direkt der Lese-/STR-Strobe des
+    // Vergleichs-Lesens (bit0=1 /WE inaktiv).  Er muss die Spur committen.
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF5);
+
+    card.drive(0).flush();
+    auto check = DiskImage::open(path, fmt, /*wp=*/false);
+    ASSERT_NE(check, nullptr);
+    auto parsed = TrackCodec::parseTrack(check->readTrack(0, 0));
+    ASSERT_EQ(parsed.size(), 4u)
+        << "Lese-Strobe muss den anstehenden FORMAT-Strom committen (sonst sieht das "
+           "Vergleichs-Lesen eine unformatierte Spur → Fehler 'U')";
+    for (size_t k = 0; k < parsed.size(); ++k) {
+        EXPECT_EQ(parsed[k].id, k + 1);
+        EXPECT_TRUE(std::all_of(parsed[k].data.begin(), parsed[k].data.end(),
+                    [k](uint8_t b){ return b == static_cast<uint8_t>(0xA0 + k + 1); }));
+    }
+    std::filesystem::remove(path);
+}
+
+/**
  * @test K5122Test/FormatWrite_CommitResetsIndexPhase
  * @brief Regressionswächter: commitFormatTrack() koppelt die Index-Phase ans Spur-Ende
  *        (setzt index_cycle_acc_ = 0).

@@ -299,6 +299,19 @@ vorformatierte Weg; **leerer** Formatname legt seit dem Medium-Umbau eine echte 
 > Ablehnung markenloser Images beim Öffnen (`hasFormattedData`) ist entfallen, und
 > `DiskImage::createBlank` legt genau so eine Leerdiskette an. `DiskImage::create` (mit Format)
 > erzeugt weiterhin eine voll formatierte Diskette.
+>
+> **`Fehler 'U' SPUR DEFEKT` beim Formatieren einer Leerdiskette — GELÖST (2026-08-06):**
+> Ein Lese-`/STR`-Strobe aus **ZVE1**-Kontext committet jetzt einen noch anstehenden
+> Vollspur-FORMAT-Schreibstrom, BEVOR er den Lesetransfer armiert
+> (`K5122::handleCtrlPortAWrite`). Vorher löschte `startReadTransfer()` nur `write_mode_`,
+> der fertige Strom blieb verwaist in `write_buf_` liegen (die Schreib-Idle-Erkennung in
+> `update()` läuft nur im `write_mode_`) und die frisch formatierte Spur galt bis zum
+> *nächsten* Schreib-Strobe als unformatiert — traf FORMAT.COMs Vergleichs-Lesen dieses
+> Fenster, lief es in den BIOS-Index-Timeout (`fl.to1`, `'U'`). Auf echter HW gibt es das
+> Fenster nicht: geschriebene Bytes liegen sofort auf der Scheibe. Guards:
+> `K5122Test.FormatWrite_LeseStrobeCommittetSpurSofort` und die beiden
+> `format_blank_disk_with_verify`-Läufe (Anlaufphase 80 **und** 78 — Phase 80 allein lief
+> auch mit dem Fehler durch). Analyse: `doc/analyse_format_leerspur.md`.
 
 ## Conventions
 
