@@ -42,7 +42,9 @@ bool FloppyDriveV2::mount(std::unique_ptr<DiskImage> img, bool write_protect) {
             for (uint8_t h = 0; h < geo.num_heads; ++h) {
                 for (MarkType m : img->readTrack(c, h).marks) {
                     if (m == MarkType::Id || m == MarkType::Data) {
-                        last_error_ = "zu viele Spuren für Laufwerk";
+                        last_error_ = "Diskette hat " + std::to_string(geo.num_cyls)
+                                    + " Spuren mit Daten, Laufwerk '" + profile_.name
+                                    + "' erreicht nur " + std::to_string(profile_.num_cyls);
                         return false;
                     }
                 }
@@ -50,13 +52,20 @@ bool FloppyDriveV2::mount(std::unique_ptr<DiskImage> img, bool write_protect) {
         }
     }
     if (geo.num_heads > profile_.num_heads) {
-        last_error_ = "zu viele Köpfe";
+        last_error_ = "Diskette ist " + std::to_string(geo.num_heads)
+                    + "-seitig, Laufwerk '" + profile_.name + "' hat "
+                    + std::to_string(profile_.num_heads)
+                    + (profile_.num_heads == 1 ? " Kopf" : " Koepfe")
+                    + " (Slot-Bestueckung in den Einstellungen pruefen)";
         return false;
     }
     // Verfahren nur pruefen, wenn die Diskette ueberhaupt formatiert ist — eine
     // LEERDISKETTE traegt nur einen Vorschlagswert und passt in jedes Laufwerk.
     if (img->medium().formatted() && !profile_.supports(geo.encoding)) {
-        last_error_ = "Verfahren vom Laufwerk nicht unterstützt";
+        last_error_ = std::string("Diskette ist ")
+                    + (geo.encoding == Encoding::FM ? "FM" : "MFM")
+                    + "-aufgezeichnet, Laufwerk '" + profile_.name
+                    + "' beherrscht das nicht";
         return false;
     }
 
