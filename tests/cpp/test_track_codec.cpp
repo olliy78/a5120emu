@@ -510,3 +510,49 @@ TEST(RomReadKalibrierung, FaithfulRead_StandardCrc_parseTrackValidiert) {
     EXPECT_TRUE(secs[0].id_crc_ok);
     EXPECT_TRUE(secs[0].data_crc_ok);
 }
+
+/**
+ * @test TrackCodec/ParseTrack_VerfaelschtesGroessenfeldStuerztNichtAb
+ * @brief Ein verfälschtes Größenfeld in der Adressmarke darf keine unmögliche
+ *        Sektorgröße erzeugen.
+ *
+ * Das Größenfeld der IBM-IDAM ist 2 Bit breit (0..3 = 128..1024 B).  Auf einer
+ * gestörten Spur (Schreibabbruch, halb formatierte Diskette) steht dort aber ein
+ * beliebiges Byte.  Ohne Maske lieferte `parseTrack` daraus z. B. 4096 B, und der
+ * anschließende Neuaufbau der Spur brach mit `std::invalid_argument`
+ * („TrackCodec: ungültige Sektorgröße") ab — als **unbehandelte** Ausnahme, die
+ * den kompletten Emulator beendete (beobachtet beim Formatieren einer real
+ * eingelesenen Leerdiskette).  Ab Schiebeweiten ≥ 32 war es zusätzlich
+ * undefiniertes Verhalten.
+ */
+TEST(TrackCodec, ParseTrack_VerfaelschtesGroessenfeldStuerztNichtAb) {
+    std::vector<LogicalSector> secs;
+    for (uint8_t id = 1; id <= 2; ++id) {
+        LogicalSector ls;
+        ls.cyl = 0; ls.head = 0; ls.id = id; ls.size = 256;
+        ls.data.assign(256, static_cast<uint8_t>(0x30 + id));
+        secs.push_back(std::move(ls));
+    }
+    TrackImage t = TrackCodec::buildTrack(secs, Encoding::MFM);
+
+    // Größenfeld der ersten Adressmarke verfälschen (Byte 4 hinter der Id-Marke).
+    const size_t idPos = t.nextMark(0, MarkType::Id);
+    ASSERT_NE(idPos, SIZE_MAX);
+    ASSERT_LT(idPos + 4, t.bytes.size());
+    t.bytes[idPos + 4] = 0xFD;          // unmaskiert wäre das 128<<253
+
+    std::vector<LogicalSector> parsed;
+    ASSERT_NO_THROW(parsed = TrackCodec::parseTrack(t));
+    ASSERT_FALSE(parsed.empty());
+
+    // Jede gemeldete Größe muss eine echte IBM-Sektorgröße sein …
+    for (const auto& s : parsed)
+        EXPECT_TRUE(s.size == 128 || s.size == 256 || s.size == 512 || s.size == 1024)
+            << "unmögliche Sektorgröße " << s.size;
+    // … und der verfälschte Sektor faellt ueber die ID-CRC auf.
+    EXPECT_FALSE(parsed.front().id_crc_ok);
+
+    // Der Neuaufbau darf ebenfalls nicht werfen (das war der Absturzpfad).
+    EXPECT_NO_THROW((void)TrackCodec::buildTrack(parsed, Encoding::MFM));
+    EXPECT_NO_THROW((void)TrackCodec::buildFaithfulReadTrack(parsed, Encoding::MFM));
+}

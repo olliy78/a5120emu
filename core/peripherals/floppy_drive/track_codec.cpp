@@ -312,7 +312,17 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
             id_crc_ok = (calc == static_cast<uint16_t>((crcHi << 8) | crcLo));
         }
 
-        const uint16_t secSize = static_cast<uint16_t>(128u << sizeCode);
+        // Das Größenfeld der IBM-Adressmarke ist 2 Bit breit (0..3 = 128..1024 B).
+        // Vom MEDIUM gelesene Bytes können beliebige Werte tragen — bei einer
+        // gestörten Spur (halb formatiert, Schreibabbruch) steht dort Müll.  Ohne
+        // Maske ergäbe das eine unmögliche Sektorgröße, an der buildTrack später
+        // mit std::invalid_argument abbricht und den ganzen Emulator mitnimmt;
+        // ab Schiebeweiten ≥ 32 wäre es sogar undefiniertes Verhalten.
+        // Die K5122 maskiert an ihren beiden Auswertestellen längst genauso
+        // (parseFormatStream, beginWriteField) — hier wird nur nachgezogen.
+        // Für die CRC zählt weiterhin das ROHE Byte (siehe crcIn oben), sodass
+        // ein verfälschtes Größenfeld korrekt als CRC-Fehler auffällt.
+        const uint16_t secSize = static_cast<uint16_t>(128u << (sizeCode & 0x03));
 
         // Nächste Data-Marke nach dem ID-Feld suchen
         size_t dataPos = SIZE_MAX;
