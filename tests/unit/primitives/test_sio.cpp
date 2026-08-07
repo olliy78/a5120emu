@@ -390,7 +390,7 @@ TEST(Z80SIO, DebugStateReflectsTxInterrupt) {
  *        loadstate resumes with a working keyboard SIO.
  * @par Pass criterion  All distinctive fields match and the blob is fully consumed.
  */
-TEST(SIO, SerializeRoundTrip) {
+TEST(Z80SIO, SerializeRoundTrip) {
     Z80SIO a;
     a.channelA().rxByte(0x11);
     a.channelA().rxByte(0x22);
@@ -428,7 +428,7 @@ TEST(SIO, SerializeRoundTrip) {
  * @test SIO/DeserializeRejectsTruncatedBlob
  * @brief deserialize() reports failure on a short buffer rather than reading OOB.
  */
-TEST(SIO, DeserializeRejectsTruncatedBlob) {
+TEST(Z80SIO, DeserializeRejectsTruncatedBlob) {
     Z80SIO a;
     std::vector<uint8_t> blob;
     a.serialize(blob);

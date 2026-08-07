@@ -907,7 +907,7 @@ TEST(Z80CTC, DebugStateReflectsChannelAndDaisyChain) {
  *        savestate so the system timer (and timer-driven keyboard scan) resumes.
  * @par Pass criterion  debugState matches on the configured channel; blob fully consumed.
  */
-TEST(CTC, SerializeRoundTrip) {
+TEST(Z80CTC, SerializeRoundTrip) {
     Z80CTC a;
     a.ioWrite(0, 0x85);   // ch0: Timer, ÷16, IRQ enabled, TC follows
     a.ioWrite(0, 0x50);   //      time constant = 0x50 → running

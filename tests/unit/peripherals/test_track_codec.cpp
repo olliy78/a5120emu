@@ -109,7 +109,7 @@ TEST_P(MfmRoundtrip, RoundtripBitgleich) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    Sekorgroessen, MfmRoundtrip,
+    Sektorgroessen, MfmRoundtrip,
     ::testing::Values(128u, 256u, 512u, 1024u));
 
 // ─────────────────────────────────────────────────────────────────────────────

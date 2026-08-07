@@ -72,6 +72,27 @@ Compile-Definition. Weitere Argumente: `DEFS` (zusätzliche Makros),
 
 Braucht der Test die Maschine, kommt `k1520_testsupport` in die `LIBS`.
 
+**Suitenname:** die geprüfte Komponente, so wie sie im Kern heißt — `Z80PIO`,
+`K3526`, `TrackCodec`.  Ein Thema darf eine eigene Suite bekommen
+(`BitCodecMarks`, `TrackCodecCrc`), aber **keine willkürliche zweite Suite für
+dieselbe Komponente**: sonst übersieht `ctest -R <Suitenname>` stillschweigend
+einen Teil.  Genau das war bis 2026-08-07 dreimal der Fall (`PIO` neben
+`Z80PIO`, `SIO` neben `Z80SIO`, `CTC` neben `Z80CTC`) — die vier verirrten Tests
+sind zusammengeführt.
+
+Eine Ausnahme erzwingt GoogleTest selbst: `TEST` und `TEST_F` dürfen sich keine
+Suite teilen.  Braucht ein Teil der Tests eine Fixture und ein anderer eine
+eigene Konfiguration, sind zwei Suiten unvermeidlich — so bei `K7024Test`
+(Fixture, Standardkonfiguration) und `K7024` (baut Bus und Karte je Test selbst).
+`ctest -R K7024` erwischt beide.
+
+Die vorhandenen Namen sind nicht durchgängig — `K5122Test` und `Z80Test` tragen
+ein `Test`-Suffix, das andere nicht haben, und Deutsch und Englisch mischen sich.
+Das bleibt bewusst so: ein flächendeckendes Umbenennen wäre Kosmetik, würde
+`ctest -R`-Gewohnheiten und Verweise in der Werkzeugdokumentation brechen und bei
+jedem Merge mit origin/main Reibung erzeugen.  Für **neue** Suiten gilt die Regel
+oben.
+
 **CLI-Fall hinzufügen:** eine Datei `cli/cases/<name>.cli` anlegen — sonst
 nichts, CMake liest das Verzeichnis ein. Format:
 

@@ -335,11 +335,11 @@ Jeder Schritt ist eigenständig, hinterlässt einen grünen Baum und ist einzeln
 | ~~**8**~~ | ~~Testtreiber nach `tests/system/`~~ ✅ erledigt (§6); Presets bleiben Python-Dicts (Begründung dort) | — | — |
 | ~~**9**~~ | ~~Testdoku vereinheitlichen~~ ✅ erledigt (§6) | — | — |
 | ~~**10**~~ | ~~GitHub-Actions-Workflow~~ → stattdessen **`pre-push`-Hook**, ✅ erledigt (§6) | — | — |
-| **11** | Kür: `DISABLED_TypeCommandAtCcpEchoesAndProcesses` reaktivieren, Suiten-Namensschema vereinheitlichen, Tippfehler `Sekorgroessen` beheben | gering | 3 h |
-| **12** | Befunde §7 (5×1024-Generierung erzeugt defekte Disk) und §8 (IEO ignoriert IUS) bewerten und entweder beheben oder als bewusste Grenze festschreiben | offen | unbekannt |
+| ~~**11**~~ | ~~Kür: deaktivierter Test, Namensschema, Tippfehler~~ ✅ erledigt (§6) | — | — |
+| ~~**12**~~ | ~~Befunde §7 und §8 bewerten~~ ✅ erledigt: §7 durch origin behoben, §8 geschärft und die SIO-Lücke geschlossen | — | — |
 
-**Stand 2026-08-07:** erledigt sind **0–10**.  Offen: **11** (Kür: deaktivierten Test
-reaktivieren, Namensschema, Tippfehler) und **12** (die zwei Befunde §7/§8).
+**Stand 2026-08-07:** **alle Schritte 0–12 erledigt.**  Der Plan ist abgearbeitet; der
+Branch ist auf dem Stand von origin/main.
 
 ---
 
@@ -807,6 +807,43 @@ Datei 743 → 692 Zeilen; übrig bleibt eine bewusste dreizeilige Delegation
 **Verifikation:** `build/` gelöscht, `tools/dev.sh test` 783/783, `test-format` 16/16
 (darunter die fünf umgestellten UDOS-Tests, Laufzeiten unverändert 6,4–33,6 s),
 `test-matrix` 88/88 grün.
+
+### 2026-08-07 — Schritt 11 (Kür): deaktivierter Test, Splitter-Suiten, Tippfehler
+
+**Der letzte deaktivierte Test ist wieder scharf.**
+`KeyboardIntegration.TypeCommandAtCcpEchoesAndProcesses` war seit 2026-06-18 abgeschaltet:
+die RTC-Uhr in der Statuszeile verwilderte („E6:DA:56" statt von 12:00:00 weiterzuzählen),
+woraufhin der CCP das Kommando verwarf.  Vermutet wurde eine Eigenheit des Testrahmens.
+
+Versuchsweise aktiviert — er läuft.  Es war also ein echter Emulatorfehler, seither behoben;
+in Frage kommen der systemweite `/RESET` (Invariante 8) und das IUS-Gating der
+Interrupt-Anforderung (PIO `f3b7ab1`, SIO 2026-08-07) — beides trifft genau den Timer-ISR-Pfad,
+an dem die Uhr hängt.
+
+Vor der Reaktivierung geprüft, weil „war mal instabil" eine einmalige grüne Ausführung nicht
+aufwiegt: **20 Wiederholungen** isoliert (`--gtest_repeat=20`) und ein Lauf des **ganzen
+Binaries in einem Prozess** (33 Tests) — genau die Konstellation, in der sich ein globaler
+Zustand bemerkbar machen würde.  Damit gibt es im Testsatz keinen deaktivierten Test mehr.
+
+**Splitter-Suiten zusammengeführt.**  Für dieselbe Komponente gab es je zwei Suiten:
+`PIO` (1 Test) neben `Z80PIO` (24), `SIO` (2) neben `Z80SIO` (15), `CTC` (1) neben `Z80CTC` (29).
+Das ist keine Kosmetik: `ctest -R Z80PIO` übersah den verirrten Test stillschweigend.  Die vier
+sind in die dominante Suite überführt.
+
+Bei `K7024`/`K7024Test` habe ich dasselbe versucht und **zurückgenommen** — dort erzwingt
+GoogleTest die Trennung (`TEST` und `TEST_F` dürfen sich keine Suite nicht teilen; die vier
+`K7024`-Tests bauen eine eigene Konfiguration auf, die die Fixture nicht liefert).  Die Regel
+in `tests/README.md` und `doc/design/12_testing.md` nennt diese Ausnahme jetzt ausdrücklich.
+
+**Kein flächendeckendes Umbenennen.**  Die übrigen Uneinheitlichkeiten (`Test`-Suffix mal ja
+mal nein, Deutsch neben Englisch über 76 Suiten) bleiben stehen: das wäre Kosmetik und hätte
+`ctest -R`-Gewohnheiten, Verweise in der Werkzeugdokumentation und jeden künftigen Merge mit
+origin/main gegen sich.  Für **neue** Suiten steht die Regel jetzt in der Doku.
+
+**Tippfehler** `Sekorgroessen` → `Sektorgroessen` (4 Testnamen), dazu ein veralteter Verweis
+auf `DISABLED_Stage3_FullyLoadsAndJumpsToOs` — den Test gibt es längst aktiv.
+
+**Verifikation:** `build/` gelöscht, 787/787 schnell, 16/16 `format_integration`.
 
 ---
 

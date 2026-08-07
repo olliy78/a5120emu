@@ -204,8 +204,9 @@ TEST(BootIntegration, Stage3_PrintsCpaBootBanner) {
  * @test BootIntegration/Stage3_StartsLoadingOsCom
  * @brief Stage 3 reads @OS.COM from the 1024B data area into RAM at 0x3780
  *        (OS entry 0x37A0). This asserts the load STARTS — the first records
- *        arrive as real code — which currently works even though the full load
- *        does not yet complete (see DISABLED_Stage3_FullyLoadsAndJumpsToOs).
+ *        arrive as real code.  Der vollstaendige Ladevorgang wird von
+ *        Stage3_FullyLoadsAndJumpsToOs geprueft (laeuft seit der Loesung der
+ *        Bootkette; der Verweis stand hier noch als "DISABLED_...").
  * @par Pass criterion  At least 64 non-zero bytes appear in [0x3780, 0x3C00)
  *        and the OS entry word at 0x37A0 is non-zero.
  */
@@ -627,18 +628,26 @@ TEST(BootIntegration, PowerCycleFromRunningOsRebootsFromRom) {
 // reached the CCP.  This types the clock, then a command at the A> prompt and
 // checks that it is echoed AND processed (unknown command → "XY7?").
 //
-// DISABLED: the fix is verified end-to-end manually and reproducibly with
-//   build/kbd_test disks/cpa_cpa780_k5601_clock.img "120000|Xy7"
-// → screen shows `A>Xy7` then `XY7?`.  But the *gtest* harness cannot reproduce
-// the interactive-CCP keyboard path reliably: the RTC clock in the status line
-// drifts to garbage (e.g. "E6:DA:56" instead of advancing from 12:00:00) and the
-// CCP then drops the command, while time-entry (a different OS input loop) does
-// work.  This is a global-state / timer-ISR timing peculiarity of the test
-// environment (the same one that blocked an automated `dir` test), not a
-// keyboard regression.  Kept here, disabled, to document the intended check and
-// re-enable once the harness clock issue is understood.  The serial-latency
-// mechanism itself is regression-guarded by the K7637 unit tests.
-TEST(KeyboardIntegration, DISABLED_TypeCommandAtCcpEchoesAndProcesses) {
+// Geschichte: dieser Test war von 2026-06-18 bis 2026-08-07 als DISABLED
+// abgelegt.  Damals lief er unter gtest nicht zuverlaessig — die RTC-Uhr in der
+// Statuszeile verwilderte ("E6:DA:56" statt von 12:00:00 weiterzuzaehlen) und
+// der CCP verwarf daraufhin das Kommando, waehrend die Uhrzeit-Eingabe (eine
+// andere Eingabeschleife des OS) funktionierte.  Vermutet wurde eine
+// Eigenheit der Testumgebung.
+//
+// Beim Aufraeumen am 2026-08-07 versuchsweise aktiviert: er laeuft.  Es war also
+// keine Eigenheit des Rahmens, sondern ein echter Emulatorfehler, der seither
+// behoben wurde — in Frage kommen der systemweite /RESET (Invariante 8:
+// der System-CTC zaehlte nach einem Reset mit der IM2-Vektorbasis des alten OS
+// weiter) und das IUS-Gating der Interrupt-Anforderung (PIO f3b7ab1, SIO
+// 2026-08-07).  Beides trifft genau den Timer-ISR-Pfad, an dem die Uhr haengt.
+//
+// Vor der Reaktivierung geprueft, weil "war mal instabil" eine einmalige
+// gruene Ausfuehrung nicht aufwiegt: 20 Wiederholungen isoliert
+// (--gtest_repeat=20) und ein Lauf des GANZEN Binaries in EINEM Prozess
+// (33 Tests) — genau die Konstellation, in der ein globaler Zustand sich
+// bemerkbar machen wuerde.
+TEST(KeyboardIntegration, TypeCommandAtCcpEchoesAndProcesses) {
     A5120Machine machine;
     machine.powerOn();   // power on BEFORE mounting (matches the kbd_test order)
     ASSERT_TRUE(machine.mountDisk(0, diskPath("cpa_cpa780_k5601_clock.img"), "cpa780", /*wp=*/false))
