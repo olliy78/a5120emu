@@ -788,7 +788,7 @@ TEST_F(K5122Test, FormatWrite_IdleCommitLetzteSpur) {
  * Index.  Lief unser Index-Puls frei relativ zum Byte-Takt, fiel er in dieses Prüffenster
  * → BAD TRACKS.  Der Fix (K5122::commitFormatTrack) resettet die Index-Phase am Spur-Ende.
  * Dieser Test hält genau diese Invariante fest; End-to-End siehe
- * ScpxInit.InitFormatsDriveAWithNoBadTracks (tests/cpp/test_scpx_init.cpp).
+ * ScpxInit.InitFormatsDriveAWithNoBadTracks (tests/system/test_scpx_init.cpp).
  */
 TEST_F(K5122Test, FormatWrite_CommitResetsIndexPhase) {
     DiskFormat fmt; fmt.name = "fmt_idx_2c1h4x256";

@@ -9,7 +9,7 @@ genauso ans Laufen gebracht werden können wie der bereits gelöste **Rechner-Te
 - Der MEMDI-Freeze-Fix des Rechner-Tests ist separat in `doc/analyse_hardy_memdi.md`
   beschrieben; dieses Dokument ist die **Gesamtreferenz** (Struktur, I/O-Landkarte,
   Vorgehen) für alle Testabschnitte.
-- Guard-Test: `tests/cpp/test_hardy.cpp` (`Hardy.RechnerTestRunsCleanWithoutFreezing`).
+- Guard-Test: `tests/system/test_hardy.cpp` (`Hardy.RechnerTestRunsCleanWithoutFreezing`).
 
 ---
 

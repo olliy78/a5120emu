@@ -86,7 +86,7 @@ data-CRC seed, never stale; the real issue was `head_pos_` pinning under the old
 `REN B:STAT.COM=B:STAT2.COM` complete, `DIR B:` shows `STAT COM`, and the `A>` prompt returns.
 
 **Remaining action (small):** there is **no automated regression guard** for this path. Add one
-to `ScpxIntegration` (`tests/cpp/test_boot_integration.cpp`): boot → `ERA B:STAT.COM` →
+to `ScpxIntegration` (`tests/integration/test_boot_integration.cpp`): boot → `ERA B:STAT.COM` →
 `PIP B:=A:STAT.COM` → assert return-to-`A>` + `STAT COM` present on B: (and/or the `REN` variant).
 This locks in the fix so a future timing change can't silently re-break it. Repro script in
 `doc/analyse_scpx_pip_rename.md` §3.
@@ -112,7 +112,7 @@ failed deterministically (head 1 / odd cylinders). On real HW the full-track for
 an index and the next index lands in the `0x111B` wait. **Fix:** `K5122::commitFormatTrack` sets
 `index_cycle_acc_ = 0` (couples the index phase to the track end). Remaining first-attempt misses
 are absorbed by INIT's 5× retry → no bad tracks. Guard test:
-`ScpxInit.InitFormatsDriveAWithNoBadTracks` (`tests/cpp/test_scpx_init.cpp`, own executable,
+`ScpxInit.InitFormatsDriveAWithNoBadTracks` (`tests/system/test_scpx_init.cpp`, own executable,
 label `format_integration`). 592/592 ctest + 58/58 legacy + 6/6 format_integration green (CP/A
 FORMAT.COM unaffected).
 
@@ -140,14 +140,14 @@ bytes were never the blocker.
 - **Review the disabled/skipped tests** — go through the `DISABLED_`/skipped tests and
   decide re-enable vs. delete vs. keep-as-documentation:
   - `KeyboardIntegration.DISABLED_TypeCommandAtCcpEchoesAndProcesses`
-    (`tests/cpp/test_boot_integration.cpp:484`) — CP/A "type a command at the CCP,
+    (`tests/integration/test_boot_integration.cpp:484`) — CP/A "type a command at the CCP,
     expect echo + processing" check. Disabled because of a harness clock / timer-ISR
     timing peculiarity (the CCP drops the command while time-entry input works). The
     serial-latency mechanism itself is regression-guarded by the K7637 unit tests, so
     this is a *harness* gap, not a product bug. Re-enable once the harness clock issue
     is understood; note that on `scpx_boot` the interactive CCP input path
     (`ScpxIntegration`) *is* exercised, so check whether that already covers the intent.
-  - **Stale comment to clean up**: `tests/cpp/test_boot_integration.cpp:282` still
+  - **Stale comment to clean up**: `tests/integration/test_boot_integration.cpp:282` still
     references "`DISABLED_Stage3_FullyLoadsAndJumpsToOs`", but that test is now
     **enabled and passing** (`BootIntegration.Stage3_FullyLoadsAndJumpsToOs`, line 316).
     Update the comment.

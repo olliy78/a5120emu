@@ -363,4 +363,4 @@ ob `E671` den `E8B5`-DMA-Pfad erreichen SOLLTE (fehlender Branch). Nächster Dia
   Guard, `commitWriteField()` öffnet das Fenster, `/STR`-Timeout-Schwelle.
 - `core/machines/a5120/a5120.cpp` — `endPostWriteGrace()` beim Engage, ZVE1-INT-Guard.
 - `core/cards/k2526/k2526.h` — `cpuSP()`.
-- `tests/cpp/test_boot_integration.cpp` — Guard-Test `EraDeletesFileOnDriveBWithoutBadSector`.
+- `tests/integration/test_boot_integration.cpp` — Guard-Test `EraDeletesFileOnDriveBWithoutBadSector`.

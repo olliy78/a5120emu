@@ -172,7 +172,7 @@ Stufen:
    `4`=DD-SS 5×1024): je auf leere Temp-Disk passender Geometrie (`k1520_create_disk` /
    `DiskImage::create`), formatieren, verifizieren.
 4. **Regression:** erfolgreicher Pfad als GoogleTest analog `ScpxIntegration.BootThenDirStatPipLoadComFiles`
-   festhalten (`tests/cpp/test_boot_integration.cpp`), Boot→INIT→Format→Verify.
+   festhalten (`tests/integration/test_boot_integration.cpp`), Boot→INIT→Format→Verify.
 
 Erwartete Stolpersteine (aus §6): eigener ISR `F7E0`, `OUT(11H)`-Kommandowort, Port `18H`-Code,
 Per-Byte-/BUSRQ-Timing im Schreibmodus. Falls INIT.COM früh mit `BAD DRIVE SPEED`/`TRACK 00 NOT

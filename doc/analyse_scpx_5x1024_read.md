@@ -56,7 +56,7 @@ unter der Schwelle → **unberührt**, keine Regression (597/597 ctest + 58/58 L
 
 Statt eines Hängers erscheint jetzt `SCPX ERR ON B: BAD SECTOR`, und das System bleibt bedienbar.
 Guard: `ScpxIntegration.WrongFormatReadTerminatesInsteadOfFreezing`
-(`tests/cpp/test_boot_integration.cpp`).
+(`tests/integration/test_boot_integration.cpp`).
 
 ## 4. Warum 5×1024 vom 16×256-System aus trotzdem `BAD SECTOR` gibt
 

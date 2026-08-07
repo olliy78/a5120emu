@@ -80,6 +80,6 @@ Tastatur per **Direkt-Poll** der Tastatur-SIO, Ports 0x5C/0x5D — kein BDOS-Puf
 Taste greift nur, wenn HARDY im Moment des Anschlags pollt, daher im Guard-Test das
 Nachdrücken bis zum Folge-Screen).
 
-Guard: `tests/cpp/test_hardy.cpp` → `Hardy.RechnerTestRunsCleanWithoutFreezing`
+Guard: `tests/system/test_hardy.cpp` → `Hardy.RechnerTestRunsCleanWithoutFreezing`
 (Label `format_integration`; `tools/dev.sh test-format`). Zeitlage-Golden `cli_dbg_json`
 (CMakeLists) wurde an das minimal verschobene CP/A-Boot-Timing angepasst (1E52/231A).

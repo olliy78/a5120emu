@@ -37,7 +37,7 @@
  * @see core/bus/k1520_bus.h
  */
 
-// tests/cpp/test_k7024.cpp
+// tests/unit/cards/test_k7024.cpp
 // Unit tests for the K7024 ABS screen controller card.
 
 #include <gtest/gtest.h>

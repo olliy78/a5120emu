@@ -478,4 +478,4 @@ behebt den `dsidtt`-Hang nicht — siehe Tools-Commit.)
       Erkennung (Kaltstart-Login?)? Nächster Schritt: geladenes OS um `C772`/`C8B4`/`D17D`/
       `C9xx` + Kaltstart-Login disassemblieren (`k1520dbg`); das diskio/BDOS-Modul ist
       **nicht** in `cpa_src/`. Danach `dir` + Prompt; Integrationstests verschärfen
-      (`tests/cpp/test_boot_integration.cpp`).
+      (`tests/integration/test_boot_integration.cpp`).

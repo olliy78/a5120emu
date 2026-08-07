@@ -219,7 +219,7 @@ eigentliche Schwierigkeit**, nicht der Byte-Takt selbst.
 - `core/machines/a5120/a5120.cpp` `run()` — Warte-T-State-Aufschlag (Variante B) bzw. `/WAIT`-Abfrage
   (Variante A).
 - `core/primitives/z80.cpp` + `core/bus/*` — nur bei Variante A (WAIT-fähiger Portzugriff).
-- `tests/cpp/test_k5122.cpp`, `tests/cpp/test_boot_integration.cpp` — Byte-Takt- + INIT-Format-Tests.
+- `tests/unit/cards/test_k5122.cpp`, `tests/integration/test_boot_integration.cpp` — Byte-Takt- + INIT-Format-Tests.
 
 ## 7. Definition of Done
 

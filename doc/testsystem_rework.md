@@ -1,7 +1,7 @@
 # Testsystem: Bestandsaufnahme und Umbauvorschlag
 
 **Stand:** 2026-08-07, Branch `rework_testsystem` (Basis `main` @ 983fc1d)
-**Umgesetzt:** Schritte 0, 1, 2, 3, 4, 6a, 7, 10 — siehe §6 (Änderungsprotokoll)
+**Umgesetzt:** Schritte 0, 1, 2, 3, 4, 6a, 7, 9, 10 — siehe §6 (Änderungsprotokoll)
 **Zweck:** Ist-Landschaft der Tests vollständig erfassen, Schwachstellen benennen,
 eine Zielstruktur und einen schrittweisen Migrationsweg vorschlagen.
 
@@ -21,7 +21,7 @@ Legacy-Pakets (§6) sind es **fünf Pakete unter einem einzigen Ausführungsweg 
 | 3 | **Debug-Werkzeug-Unit-Tests** | `tests/cpp/test_{expr_eval,until_cond,event_bp,mem_watch,dbg_commands,coverage_diff,callstack_tracker,prn_listing}.cpp` | GoogleTest, testen **Header aus `tools/`** | 62 | wie 2 | < 1 s |
 | 4 | **Maschinen-Integrationstests** | `tests/cpp/test_{boot_integration,machine_snapshot,a5120_disk_api}.cpp` | GoogleTest, echter Kaltboot | 32 | wie 2 | 0,2–1,7 s je Fall |
 | 5 | **CLI-/Blackbox-Tests** der Werkzeuge | **direkt als Shell-Einzeiler in `CMakeLists.txt`** (Z. 500–597) | `add_test` + `PASS_REGULAR_EXPRESSION` | 19 | `CMakeLists.txt` | je < 1 s |
-| 6 | **System-/Format-Integration** (langsam) | `tests/cpp/test_scpx_init.cpp`, `test_hardy.cpp` + `tools/cpa_tools/make_bootdisk.py` | GoogleTest bzw. Python-Treiber | 8 | Label `format_integration` | Minuten (Timeout 600 s je Boot-Disk-Test) |
+| 6 | **System-/Format-Integration** (langsam) | `tests/system/test_scpx_init.cpp`, `test_hardy.cpp` + `tools/cpa_tools/make_bootdisk.py` | GoogleTest bzw. Python-Treiber | 8 | Label `format_integration` | Minuten (Timeout 600 s je Boot-Disk-Test) |
 
 **Summen (nach Entfernen des Legacy-Pakets):** 669 ctest-Fälle — 661 in der Schnellrunde,
 8 mit Label `format_integration`. Alles läuft jetzt unter ctest.
@@ -143,15 +143,18 @@ historisch gewachsen, nicht systematisch.
 `test_boot_integration.cpp:678` — deaktiviert, ohne Ablaufdatum oder Ticket. Ausgerechnet
 Tastatureingabe ins laufende System, also der Pfad, den die GUI benutzt.
 
-### B10 — Dreifache, teils falsche Testdokumentation
+### B10 — ~~Dreifache, teils falsche Testdokumentation~~ ✅ ERLEDIGT (§6, 2026-08-07)
 | Dokument | Umfang | Problem |
 |----------|--------|---------|
 | `doc/design/12_testing.md` | 288 Z. | beschreibt `tests/cpp/CMakeLists.txt` und eine pytest-Ebene — **beides existiert nicht**; nennt `test_floppy.cpp`/`test_format_parser.cpp`, die es nicht (mehr) gibt |
 | `doc/cpp_testsyste.md` | 1349 Z. | nennt Pfade `./build/tests/test_k2526` und `./build/test_main` — real sind es `./build/k1520_test_k2526` und `./build/a5120emu_test`; Tippfehler schon im Dateinamen |
 | `CLAUDE.md` | ~40 Z. | einzige aktuelle Quelle (dev.sh-Workflow, Labels) |
 
+**Behoben:** `doc/cpp_testsyste.md` gelöscht, `doc/design/12_testing.md` neu geschrieben,
+`tests/README.md` als praktischer Einstieg ergänzt, CLAUDE.md auf Verweise gekürzt (§6).
+
 ### B11 — Uneinheitliche Namen
-Quelle `tests/cpp/test_k5122.cpp` → Target `k1520_test_k5122` → Suiten `K5122Test`,
+Quelle `tests/unit/cards/test_k5122.cpp` → Target `k1520_test_k5122` → Suiten `K5122Test`,
 `K5122FormatStream`. Andere Karten ohne `Test`-Suffix (`K2526`, `K3526`). Deutsch und
 Englisch gemischt bis in Testnamen (`Mount_BereichsüberschreitungAbgelehnt` neben
 `Motor_SpinupBisAufDrehzahl` neben `HXCHFEV3_Signatur_gibtNullptr`), Umlaute in ctest-Namen.
@@ -326,14 +329,14 @@ Jeder Schritt ist eigenständig, hinterlässt einen grünen Baum und ist einzeln
 | **6b** | Rest: `.com`-Dateien entdoppeln (`boot_disk/` + `tools/cpa_tools/` + `docs/` halten dieselben `format.com`/`cpabcgen.com`/`hardy.com`), `leer_cpa780.hfe` zur Testzeit erzeugen statt committen | gering | 2 h |
 | ~~**7**~~ | ~~`tests/python/` mit pytest~~ ✅ erledigt (§6) — 80 Fälle, 7 Module, Label `python` | — | — |
 | **8** | `format_all.py`/`make_bootdisk.py` nach `tests/system/` verschieben, Presets in YAML (**behebt B6**) | gering | 3 h |
-| **9** | Labels + `dev.sh`-Kommandos + **eine** Testdoku (`tests/README.md` + neu geschriebene `doc/design/12_testing.md`); `doc/cpp_testsyste.md` löschen; CLAUDE.md auf Verweis kürzen | keins | 3 h |
+| ~~**9**~~ | ~~Testdoku vereinheitlichen~~ ✅ erledigt (§6) | — | — |
 | ~~**10**~~ | ~~GitHub-Actions-Workflow~~ → stattdessen **`pre-push`-Hook**, ✅ erledigt (§6) | — | — |
 | **11** | Kür: `DISABLED_TypeCommandAtCcpEchoesAndProcesses` reaktivieren, Suiten-Namensschema vereinheitlichen, Tippfehler `Sekorgroessen` beheben | gering | 3 h |
 | **12** | Befunde §7 (5×1024-Generierung erzeugt defekte Disk) und §8 (IEO ignoriert IUS) bewerten und entweder beheben oder als bewusste Grenze festschreiben | offen | unbekannt |
 
-**Stand 2026-08-07:** erledigt sind 0, 1, 2, 3, 4, 6a, 7, 10.  Offen: **5, 6b, 8, 9, 11, 12**.
-Empfohlene Reihenfolge für den Rest: **5 → 9**, danach 6b/8/11 als Aufräumarbeiten und 12
-unabhängig davon.
+**Stand 2026-08-07:** erledigt sind 0, 1, 2, 3, 4, 6a, 7, 9, 10.  Offen: **5, 6b, 8, 11, 12**.
+Schritt 5 (CLI-Tests datengetrieben) ist der letzte strukturelle; 6b/8/11 sind Aufräumarbeiten,
+12 (die zwei Befunde) ist davon unabhängig.
 
 ---
 
@@ -445,7 +448,7 @@ Bildschirminhalte zu prüfen).
 |-------|----------|
 | `test_boot.py`, `test_boot_detailed.py`, `test_integration.py`, `test_c_api.c` | gelöscht — Inhalt in `tests/python/test_boot_smoke.py` + `test_c_api.py` aufgegangen |
 | `test_qt.py` | gelöscht (PyQt5, die GUI nutzt PySide6) |
-| `test_reti.cpp` | nach GoogleTest überführt → `tests/cpp/test_reti.cpp`, Target `k1520_test_reti`, 5 Fälle (§8) |
+| `test_reti.cpp` | nach GoogleTest überführt → `tests/unit/primitives/test_reti.cpp`, Target `k1520_test_reti`, 5 Fälle (§8) |
 | `analyze_eprom.py`, `analyze_vram.py`, `disasm_k2526.py` | nach `tools/` verschoben, Doku-Pfade nachgezogen |
 | `disk_b.img` | nach `disks/unbekannt_daten_b.img` (keine Bootdiskette; nur in einem Docstring erwähnt) |
 
@@ -586,6 +589,46 @@ aber statt drei Fassungen gibt es eine, und die Begründungen stehen an einer St
 Laufzeiten unverändert.  Gegenprobe per Suche: keine lokale Definition von `vramText`,
 `runSmallUntil`, `runCycles`, `typeKey`, `typeString`, `typeCtrl`, `diskPath`, `pressKeyUntil`,
 `runUntilPC` oder `runUntilVramContains` mehr in `tests/`.
+
+### 2026-08-07 — Testdokumentation vereinheitlicht (Schritt 9)
+
+Statt drei teils falscher Dokumente jetzt drei Dokumente mit klarer Aufgabenteilung:
+
+| Dokument | Aufgabe |
+|----------|---------|
+| **`tests/README.md`** (neu) | Praktischer Einstieg: ausführen, Test hinzufügen, gemeinsame Infrastruktur, wo was dokumentiert ist |
+| **`doc/design/12_testing.md`** (neu geschrieben) | Begründung der Gliederung: Leitgedanken, Testpyramide, was in welche Ebene gehört, Labels, bewusste Auslassungen |
+| **`doc/testsystem_rework.md`** (dieses) | Bestandsaufnahme, Plan, Protokoll — die Geschichte, nicht der Zustand |
+
+**Gelöscht: `doc/cpp_testsyste.md`** (1349 Zeilen). Ein Abgleich Stichprobe gegen Quelle zeigte:
+die Datei war eine deutsche Nacherzählung der `@test`/`@brief`-Kommentare, die ohnehin in den
+Testquellen stehen — mit allen Nachteilen einer Kopie. Sie beschrieb zuletzt `test_floppy.cpp`
+und `test_format_parser.cpp` (existieren nicht), nannte Binärpfade `./build/tests/test_k2526`
+und `./build/test_main` (heißen anders bzw. gibt es nicht) und trug den Tippfehler schon im
+Dateinamen. Die maßgebliche Beschreibung eines Tests steht im Test; maschinellen Überblick
+liefern `ctest -N` und `--gtest_list_tests`. Der neue §7 von `12_testing.md` hält das fest.
+
+`doc/design/12_testing.md` beschrieb bis dahin einen **Entwurf**, der nie so gebaut wurde
+(`tests/cpp/CMakeLists.txt`, eine pytest-Ebene, ein CI-Workflow). Die Neufassung beschreibt den
+Ist-Zustand und begründet ihn — einschließlich der bewussten Auslassungen (keine CI, keine
+Coverage-Messung, keine Pixelprüfung, ein dauerhaft deaktivierter Test).
+
+`CLAUDE.md` verweist jetzt auf diese Dokumente statt sie zu wiederholen; stehen bleibt nur, was
+beim Bearbeiten unmittelbar gebraucht wird (Registrierung, Labels, Support-Bibliothek und die
+gtest_discover_tests-Falle). Der Abschnitt 13 von `doc/K1520_architecture.md` ist ebenso auf
+einen Verweis zusammengezogen, sein Verzeichnisbaum auf die neue Struktur aktualisiert.
+
+**Dabei gefunden — eine tote und kaputte Build-Datei:** `core/CMakeLists.txt` (204 Zeilen)
+war von nichts eingebunden, verwies auf `tests/cpp/test_main.cpp` und ist nicht einmal
+gültiges CMake — der Dateikopf steht in C-Kommentaren (`/** … */`), sodass `cmake -P` mit
+„Parse error" abbricht. Gelöscht. Sie hätte jeden in die Irre geführt, der versucht, `core/`
+eigenständig zu konfigurieren.
+
+Außerdem: alle Verweise auf die alten Pfade `tests/cpp/test_*.cpp` in 15 Dateien (Analysetexte,
+Werkzeugdoku, zwei Testquellen) auf die neue Struktur gezogen — keine toten Pfade mehr.
+
+**Verifikation:** `build/` gelöscht und neu gebaut, `tools/dev.sh test` 672/672 grün,
+`tools/dev.sh test-format` 8/8 grün.
 
 ---
 

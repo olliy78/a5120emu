@@ -51,21 +51,20 @@ tools/dev.sh check               # build both dirs + report freshness
 tools/dev.sh rebuild             # rm -rf build build_trace, then build from scratch
 ```
 
-**All test registration lives in `tests/`**, not in the root `CMakeLists.txt` (which is back to
-~230 lines of libraries + tools). One `CMakeLists.txt` per test level, each test a single line via
-`k1520_add_test()` (`tests/cmake/K1520AddTest.cmake`); the helper also keeps the binaries in
-`build/` (so `./build/k1520_test_k2526 --gtest_filter=…` still works) and hands every test the
-fixture path. Levels = directories = ctest labels: `unit/{primitives,bus,cards,peripherals,util}`,
-`debugtools/` (the header-only `tools/*.h` pieces), `integration/`, `cli/`, `system/`, `python/`;
-crosswise `fast` / `slow`. The slow ones additionally keep the historical label
-`format_integration` that `dev.sh` filters on.
+**The test system is documented in `tests/README.md`** (run it, add a test, shared helpers),
+`doc/design/12_testing.md` (why it is cut this way) and `tests/fixtures/README.md` (which test
+disk is which). The essentials for editing here:
 
-Integration/system tests share `tests/support/` (library `k1520_testsupport`, namespace
-`k1520test`): `vramText()`/`vramLines()`, `runCycles()`/`runSmallUntil()`/`runUntilVramContains()`/
-`runUntilPC()`, `typeKey()`/`typeString()`/`typeCtrl()`/`pressKeyUntil()`, and `TempDisk` (RAII
-copy of a fixture — never mount a committed disk directly, the emulator opens it r/w). The batch
-sizes are part of the contract: 5 000 cycles whenever the keyboard is involved (the K7637 models a
-9600-baud link and the BIOS fetches via timer ISR), 100 000 otherwise.
+- Registration lives entirely in `tests/`, one `CMakeLists.txt` per level; a test is one line via
+  `k1520_add_test()` (`tests/cmake/K1520AddTest.cmake`). Binaries stay in `build/`, so
+  `./build/k1520_test_k2526 --gtest_filter=…` keeps working.
+- Level = directory = ctest label: `unit/{primitives,bus,cards,peripherals,util}`, `debugtools/`
+  (the header-only `tools/*.h` pieces), `integration/`, `cli/`, `system/`, `python/`; crosswise
+  `fast`/`slow`. The slow ones keep the historical label `format_integration` that `dev.sh` filters on.
+- Integration/system tests use `tests/support/` (`k1520test::`): `vramText()`, `runSmallUntil()`,
+  `typeString()`, `TempDisk`, … **Never mount a committed disk directly** — the emulator opens it
+  r/w; `TempDisk` makes the copy. And keep the batch size: 5 000 cycles whenever the keyboard is
+  involved (K7637 = 9600 baud + timer ISR), 100 000 otherwise.
 
 > **Trap when adding a test:** `gtest_discover_tests(... PROPERTIES LABELS "a;b")` silently keeps
 > only the FIRST label — the list is flattened while being passed through. `k1520_add_test()`
@@ -184,7 +183,7 @@ Supporting tools (`tools/`):
 
 - `tools/z80_disasm2.py` — the canonical generic Z80 disassembler (configurable `--org`, repeatable `--entry`/`--label`). The other two disassemblers are format.com-specific.
 - **`k1520dbg`** (`tools/k1520dbg.md`) — the interactive debugger; expression-conditioned breakpoints, reverse-step, save-state, and `.prn`/symbol annotation make hand-disassembling RAM dumps mostly unnecessary. Delegate heavy log/trace reads to the `log-trace-analyzer` subagent.
-- **`.prn`-Listing-Annotation (`-l`, both `k1520dbg` and `boot_trace`)** — instead of hand-disassembling RAM dumps, load the commented MACRO-80 source listing of the running code (e.g. `-l ~/projects/CPA_Workbench/build/bios.prn`) and every disassembly/trace line + PC-histogram entry whose address is in the listing gets the **original label+mnemonic+comment** appended. Repeatable (multiple listings cover different ranges); `@OFFSET` (signed, `0x..`/`..h`/dec) relocates a listing's addresses to the runtime load address. Only absolute addresses — a BIOS listing covers ~`0xD200+` (and BIOS pieces mapped low, e.g. the CONIN keyboard poll at `0x041C–0x042B`). Parser: header-only `tools/prn_listing.h` (tests `tests/cpp/test_prn_listing.cpp`, gtest suite `PrnListing`). See `tools/k1520dbg.md` §6 / `tools/boot_trace.md` §4.
+- **`.prn`-Listing-Annotation (`-l`, both `k1520dbg` and `boot_trace`)** — instead of hand-disassembling RAM dumps, load the commented MACRO-80 source listing of the running code (e.g. `-l ~/projects/CPA_Workbench/build/bios.prn`) and every disassembly/trace line + PC-histogram entry whose address is in the listing gets the **original label+mnemonic+comment** appended. Repeatable (multiple listings cover different ranges); `@OFFSET` (signed, `0x..`/`..h`/dec) relocates a listing's addresses to the runtime load address. Only absolute addresses — a BIOS listing covers ~`0xD200+` (and BIOS pieces mapped low, e.g. the CONIN keyboard poll at `0x041C–0x042B`). Parser: header-only `tools/prn_listing.h` (tests `tests/debugtools/test_prn_listing.cpp`, gtest suite `PrnListing`). See `tools/k1520dbg.md` §6 / `tools/boot_trace.md` §4.
 - `tools/disasm_difftest.py` — cross-checks the disassembler against the `z80dis` pip package (in `venv`); run it before changing the disassembler engine.
 - `tools/boot_trace.cpp` (`boot_trace` target) — traces **both** ZVE1 and ZVE2 per instruction and reports where the DMA freezes. Use `-L <file>` to divert the emulator log so the summary stays readable. A separate `build_trace/` build dir is conventionally configured with `-DLOG_LEVEL=5` (the compile ceiling). **Default base level is now ERROR — the run is quiet & fast.** Raise it with `--log-level <off|error|warn|info|debug|trace>`, or far better, boost only where it matters: `--log-pc LO:HI[:level]` (effective level while either CPU PC is in the range) and `--log-cycle FROM:TO[:level]` (while the cycle counter is in the window). **Gotcha:** a `--log-pc` gate on a *spin-loop* address fires for as long as the CPU parks there (can be tens of millions of cycles → multi-GB log) — pair it with a tight `--log-cycle`, or just use a cycle window. Reference: `boot_trace --log-level info …` (≈11 KB / 8 s for a full @OS.COM run) gives the K5122 `>>> READ` summaries; add a `--log-cycle` window for full TRACE only there.
 

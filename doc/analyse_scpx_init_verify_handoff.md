@@ -4,7 +4,7 @@
 > vollständig und meldet **`BAD TRACKS: - NO -`**. Ursache war ein **Index-Puls-Phasen-
 > Problem** (NICHT der Read-Pfad, NICHT die Vergleichslogik — s. u.). Fix: `K5122::commitFormatTrack`
 > setzt `index_cycle_acc_ = 0` (koppelt die Index-Phase ans Spur-Ende, wie auf echter HW).
-> Guard: `ScpxInit.InitFormatsDriveAWithNoBadTracks` (`tests/cpp/test_scpx_init.cpp`, Label
+> Guard: `ScpxInit.InitFormatsDriveAWithNoBadTracks` (`tests/system/test_scpx_init.cpp`, Label
 > `format_integration`). 592/592 ctest + 58/58 Legacy + 6/6 format_integration grün (CP/A
 > FORMAT.COM unversehrt). Die unten stehende Analyse ist als **Fallstudie** aufbewahrt.
 >

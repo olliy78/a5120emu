@@ -4,7 +4,7 @@ Entstanden aus der HARDY-Analyse (`doc/analyse_hardy.md`): das Reverse-Engineeri
 Ans-Laufen-Bringen eines **interaktiven, bildschirm-/tastaturgetriebenen** Testprogramms
 (Menüs, Dialoge, VRAM-Ausgaben) war mit den vorhandenen Debugger-Features deutlich
 mühsamer als nötig. Die folgenden Verbesserungen hätten die Arbeit spürbar beschleunigt.
-Sortiert nach Nutzen. Kontext: das GoogleTest-Guard `tests/cpp/test_hardy.cpp` musste am
+Sortiert nach Nutzen. Kontext: das GoogleTest-Guard `tests/system/test_hardy.cpp` musste am
 Ende **genau diese fehlenden Fähigkeiten in C++ nachbauen** (`runSmallUntil`,
 `pressKeyUntil`) — ein starkes Signal, dass sie ins Werkzeug gehören.
 

@@ -1,288 +1,201 @@
-# Feinentwurf: Testkonzept
+# Testkonzept
 
 **Modul:** `tests/`
+**Stand:** 2026-08-07 (Umbau in `doc/testsystem_rework.md` protokolliert)
+
+Dieses Dokument begründet die Gliederung. Wie man die Tests ausführt und einen
+neuen hinzufügt, steht in `tests/README.md`.
 
 ---
 
-## 1. Überblick
+## 1. Leitgedanken
 
-Das Testsystem ist zweischichtig:
-1. **C++ Unit-Tests** (GoogleTest): Testen einzelne Klassen isoliert
-2. **Python Integrationstests** (pytest + ctypes): Testen Karten und Subsysteme über die C-API oder separate Karten-Libs
+1. **Eine Ausführungsquelle.** Alles läuft unter `ctest` — auch die
+   Python-Ebene und die Blackbox-Tests der Werkzeuge. `tools/dev.sh` ist ein
+   bequemer Aufsatz, aber nicht die einzige Stelle, die die volle Testmenge
+   kennt. (Bis 2026-08-07 lief eine eigene Harness-Suite mit 58 Fällen
+   *außerhalb* von ctest — ein `ctest`-Lauf meldete grün, ohne sie ausgeführt zu
+   haben.)
+2. **Gliederung nach Testebene, nicht nach Framework.** Verzeichnis = Ebene =
+   ctest-Label.
+3. **Laufzeit ist ein Label, keine Verzeichniseigenschaft** (`fast`/`slow`).
+   Auswahl über `ctest -L`, nicht über handgepflegte Ausschlusslisten.
+4. **Testcode wohnt in `tests/`** — auch Python-Treiber, Fixtures und
+   Golden-Dateien.
+5. **Gemeinsame Infrastruktur statt Kopien.** Was mehr als ein Test braucht,
+   gehört nach `tests/support/`.
 
 ---
 
 ## 2. Testpyramide
 
 ```
-         ┌─────────────────────────┐
-         │  System-Test (Python)   │  ← Bootet vollständigen A5120, prüft Ausgabe
-         ├─────────────────────────┤
-         │  Integrations-Tests     │  ← K5122 + FloppyDrive, K7024 + K7637
-         │  (Python ctypes)        │
-         ├─────────────────────────┤
-         │  Unit-Tests (C++)       │  ← Z80, PIO, SIO, CTC isoliert
-         └─────────────────────────┘
+        ┌──────────────────────────────────────────┐
+        │  system/      8  originale DDR-Programme │  Minuten
+        │               FORMAT · CPABCGEN · SCPX   │
+        │               INIT/MODF/SYSP · HARDY     │
+        ├──────────────────────────────────────────┤
+        │  python/      7  C-ABI + GUI (pytest)    │  Sekunden
+        │  cli/        19  Werkzeuge als Prozess   │
+        │  integration/50  ganze Maschine, Kaltboot│
+        ├──────────────────────────────────────────┤
+        │  debugtools/ 67  tools/*.h isoliert      │  Millisekunden
+        │  unit/      530  eine Klasse isoliert    │
+        └──────────────────────────────────────────┘
 ```
+
+Die Zahlen sind der Stand vom 2026-08-07; maßgeblich ist immer `ctest -N`.
 
 ---
 
-## 3. C++ Unit-Tests (GoogleTest)
+## 3. Was in welche Ebene gehört
 
-```
-tests/cpp/
-├── CMakeLists.txt
-├── test_z80.cpp          # Z80 Instruktionen (aus src/tests/ übernommen)
-├── test_bus.cpp          # K1520Bus: Dispatch, Interrupt-Chain
-├── test_pio.cpp          # Z80PIO: Modus-Wechsel, Interrupt
-├── test_sio.cpp          # Z80SIO: Senden, Empfangen, Interrupt
-├── test_ctc.cpp          # Z80CTC: Timer, Counter, ZC/TO
-├── test_k7024.cpp        # K7024: VRAM → Framebuffer
-├── test_k5122.cpp        # K5122: PIO-Protokoll, Sektorzugriff
-├── test_floppy.cpp       # FloppyDrive: Mount, Read, Write
-└── test_format_parser.cpp # FormatParser: cpaFormates.cfg parsen
-```
+### `unit/` — eine Klasse, isoliert
 
-### 3.1 Beispiel-Tests
+Keine Diskette, kein Boot, keine Datei. Struktur spiegelt `core/`
+(`primitives/ bus/ cards/ peripherals/ util/`), damit die Frage „wo teste ich
+das?" nicht diskutiert werden muss: dort, wo im Kern auch der Code liegt.
 
-```cpp
-// test_ctc.cpp
-#include <gtest/gtest.h>
-#include "primitives/z80_ctc.h"
+Ein Test gehört *nicht* hierher, sobald er eine `A5120Machine` braucht — das ist
+die Grenze zur Integrationsebene. Sichtbar auch im Build: `unit/` linkt die
+Maschinenbibliothek nicht.
 
-TEST(Z80CTC, TimerMode_InterruptAfterTimeout) {
-    Z80CTC ctc;
-    // Kanal 0: Timer, Prescaler=16, TimeConst=10 → 160 Takte bis INT
-    ctc.ioWrite(0, 0b10100101);  // IE=1, Mode=Timer, Prescaler=16, Trigger=Auto
-    ctc.ioWrite(0, 10);          // Time constant = 10
-    EXPECT_FALSE(ctc.hasInterrupt());
-    for (int i = 0; i < 159; i++) ctc.clockTick();
-    EXPECT_FALSE(ctc.hasInterrupt());
-    ctc.clockTick();
-    EXPECT_TRUE(ctc.hasInterrupt());
-}
+### `debugtools/` — die Bausteine der Werkzeuge
 
-TEST(Z80CTC, ZCTOCallback) {
-    Z80CTC ctc;
-    bool zc_fired = false;
-    ctc.setZCTOCallback([&](int ch, bool) { if (ch == 0) zc_fired = true; });
-    ctc.ioWrite(0, 0b10100101);
-    ctc.ioWrite(0, 1);   // TimeConst = 1 → 16 Takte
-    for (int i = 0; i < 16; i++) ctc.clockTick();
-    EXPECT_TRUE(zc_fired);
-}
+`k1520dbg` und `boot_trace` sind aus header-only Bausteinen zusammengesetzt
+(`tools/expr_eval.h`, `until_cond.h`, `event_bp.h`, `mem_watch.h`,
+`dbg_commands.h`, `coverage_diff.h`, `callstack_tracker.h`, `prn_listing.h`).
+Die sind Produktivcode, kein Testcode — sie werden hier wie jede andere
+Bibliothek geprüft, nur eben ohne Emulator.
 
-// test_k7024.cpp
-TEST(K7024, VRAMWriteRenderChar) {
-    K1520Bus bus;
-    K7024 screen(bus, K7024::A5120Config{});
+### `integration/` — die ganze Maschine
 
-    // Zeichen 'A' (ASCII 0x41) in Zeile 0, Spalte 0
-    bus.memWrite(0xF800, 0x41);
+Echter Kaltboot von einer Fixture-Diskette; prüft, was nur im Zusammenspiel
+sichtbar wird: die ZVE1↔ZVE2-DMA-Kette, Reset/Power-Cycle, das Zusammenspiel
+von K5122-Lesepfad und laufendem OS. Laufzeit 0,2–2 s je Fall, deshalb `fast`.
 
-    const uint8_t* fb = screen.getFramebuffer();
-    // Mindestens ein Pixel in Zeile 0 muss gesetzt sein
-    bool any_set = false;
-    for (int x = 0; x < 8; x++)
-        any_set |= (fb[x] != 0);
-    EXPECT_TRUE(any_set);
-}
+Kriterium für einen Fall hier: Es gibt einen **benennbaren Meilenstein** (ein
+Banner, ein Prompt, ein Sprungziel), an dem sich eine Regression festmachen
+lässt. „Bootet irgendwie" ist kein Test.
 
-// test_floppy.cpp
-TEST(FloppyDrive, MountAndReadBootSector) {
-    FloppyDrive drv;
-    auto formats = FormatParser::builtinFormats();
-    auto cpa780 = *std::find_if(formats.begin(), formats.end(),
-                                  [](auto& f){ return f.name == "cpa780"; });
-    ASSERT_TRUE(drv.mount("disks/cpadisk.img", cpa780));
-    auto data = drv.readSector(0, 0, 1);
-    EXPECT_EQ(data.size(), 128u);
-    EXPECT_NE(data[0], 0xFF);  // Kein Bus-Float
-}
-```
+### `cli/` — die Werkzeuge als Prozess
+
+Blackbox: Werkzeug starten, Sitzung per stdin einspielen, Ausgabe prüfen. Deckt
+die Schicht ab, die die Header-Tests nicht erreichen — Kommandozerlegung,
+Argumentbehandlung, Exit-Codes, Zusammenbau der Maschine.
+
+> **Offen (Schritt 5 des Umbaus):** Die Fälle stecken als escapte
+> Shell-Einzeiler samt Erwartungs-Regex im CMake. Ziel ist eine Datentabelle
+> plus ein Ausführungsskript.
+
+### `system/` — originale Programme
+
+FORMAT.COM, CPABCGEN.COM, SCPX INIT/MODF/SYSP, HARDY: vollständige
+Anwenderabläufe, tastaturgesteuert, je Fall ein oder mehrere Kaltstarts.
+Minuten statt Millisekunden — daher `slow` und aus der Standardrunde
+ausgeschlossen.
+
+Diese Ebene ist der einzige Ort, an dem echtes Zeitverhalten der Peripherie
+geprüft wird (Index-Interrupt, CTC-Phase, Tastatur-Timing bei
+Höchstgeschwindigkeit) — genau dort saßen historisch die schwersten Fehler.
+
+### `python/` — C-ABI und GUI
+
+Deckt ab, was C++-Tests nicht erreichen können:
+
+- Die **ctypes-Bindung** gegen `libk1520core.so`. Der C++-Compiler prüft die
+  Python-Seite nicht; eine geänderte Signatur bricht **still**, und ctypes
+  meldet es erst beim Aufruf — oft als Absturz. `test_c_api.py` vergleicht
+  Header, `.so` und Bindung mechanisch miteinander.
+- Die **PySide6-GUI** headless (`QT_QPA_PLATFORM=offscreen`): Fensteraufbau,
+  Widget-Verdrahtung, Konfigurationsrundlauf.
+
+Grenze: keine Pixelprüfungen. Der Bildschirm ist ein `QOpenGLWidget`, offscreen
+gibt es keinen FBO. Bildinhalte prüft die C++-Seite über das VRAM.
 
 ---
 
-## 4. Python Integrationstests (pytest)
+## 4. Labels
 
-### 4.1 Struktur
+| Label | Bedeutung |
+|-------|-----------|
+| `unit` `debugtools` `integration` `cli` `system` `python` | Ebene (= Verzeichnis) |
+| `fast` | läuft in der Standardrunde mit |
+| `slow` | nur auf Anforderung |
+| `format_integration` | historisches Label der langsamen Runde; `tools/dev.sh` filtert darauf |
 
-```
-tests/python/
-├── conftest.py             # Fixtures: k1520_lib, machine, ...
-├── test_bus.py             # Bus-Dispatch über Python-ctypes
-├── test_k7024.py           # Bildschirm-Karte
-├── test_k5122.py           # Floppy-Controller
-├── test_k7637.py           # Tastatur
-├── test_floppy_drive.py    # FloppyDrive
-├── test_format_parser.py   # Disk-Format-Konfiguration
-├── test_full_a5120.py      # System-Test: kompletter Boot
-└── fixtures/
-    ├── cpa780_boot.img      # Kleines Boot-Test-Image
-    └── ...
-```
-
-### 4.2 conftest.py
-
-```python
-# tests/python/conftest.py
-import ctypes
-import pathlib
-import pytest
-
-BUILD_DIR = pathlib.Path(__file__).parent.parent.parent / "build"
-
-@pytest.fixture(scope="session")
-def k1520_lib():
-    """Lädt libk1520core.so."""
-    lib = ctypes.CDLL(str(BUILD_DIR / "libk1520core.so"))
-    _setup_sigs(lib)
-    return lib
-
-@pytest.fixture
-def machine(k1520_lib):
-    """Erstellt eine A5120-Instanz, teardown nach Test."""
-    h = k1520_lib.k1520_create(0)  # 0 = A5120
-    yield h
-    k1520_lib.k1520_destroy(h)
-
-@pytest.fixture
-def tmp_cpa800_image(tmp_path):
-    """Erstellt ein leeres CPA800 Image für Schreib-Tests."""
-    path = str(tmp_path / "test.img")
-    # 80×2×5×1024 = 819200 Bytes
-    pathlib.Path(path).write_bytes(b'\xE5' * 819200)
-    return path
-
-def _setup_sigs(lib):
-    lib.k1520_create.restype = ctypes.c_void_p
-    lib.k1520_create.argtypes = [ctypes.c_int]
-    lib.k1520_destroy.restype = None
-    lib.k1520_destroy.argtypes = [ctypes.c_void_p]
-    lib.k1520_reset.restype = None
-    lib.k1520_reset.argtypes = [ctypes.c_void_p]
-    lib.k1520_run.restype = ctypes.c_int
-    lib.k1520_run.argtypes = [ctypes.c_void_p, ctypes.c_int]
-    lib.k1520_framebuffer.restype = ctypes.POINTER(ctypes.c_uint8)
-    lib.k1520_framebuffer.argtypes = [ctypes.c_void_p]
-    lib.k1520_fb_width.restype = ctypes.c_int
-    lib.k1520_fb_height.restype = ctypes.c_int
-    lib.k1520_mount_disk.restype = ctypes.c_bool
-    lib.k1520_mount_disk.argtypes = [ctypes.c_void_p, ctypes.c_int,
-                                      ctypes.c_char_p, ctypes.c_char_p,
-                                      ctypes.c_bool]
-    lib.k1520_mem_read.restype = ctypes.c_uint8
-    lib.k1520_mem_read.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
-    # ... weitere Signaturen
-```
-
-### 4.3 Vollständiger System-Test
-
-```python
-# tests/python/test_full_a5120.py
-import time
-
-def test_boot_cpa_to_prompt(k1520_lib, machine):
-    """Bootet CPA von Disk und prüft ob der CCP-Prompt erscheint."""
-    assert k1520_lib.k1520_mount_disk(
-        machine, 0, b"disks/cpadisk.img", b"cpa780", False)
-
-    k1520_lib.k1520_reset(machine)
-    k1520_lib.k1520_set_console_mode(machine, True)
-
-    # 20 Millionen Zyklen ≈ ~8 Sekunden Echtzeit auf 2.4576 MHz
-    TOTAL_CYCLES = 20_000_000
-    BATCH = 100_000
-    output = []
-    x_buf = ctypes.c_int(0)
-    y_buf = ctypes.c_int(0)
-    ch_buf = ctypes.c_char(0)
-
-    for _ in range(TOTAL_CYCLES // BATCH):
-        k1520_lib.k1520_run(machine, BATCH)
-        while k1520_lib.k1520_console_poll(
-                machine, ctypes.byref(x_buf),
-                ctypes.byref(y_buf), ctypes.byref(ch_buf)):
-            output.append(ch_buf.value.decode("latin-1"))
-
-    text = "".join(output)
-    # CPA-Prompt ist "A>"
-    assert "A>" in text, f"Kein CCP-Prompt gefunden. Ausgabe: {text[:200]!r}"
-
-
-def test_reset_clears_screen(k1520_lib, machine):
-    """Nach Reset ist der Bildschirm leer."""
-    k1520_lib.k1520_reset(machine)
-    k1520_lib.k1520_run(machine, 1000)
-
-    fb_ptr = k1520_lib.k1520_framebuffer(machine)
-    w = k1520_lib.k1520_fb_width(machine)
-    h = k1520_lib.k1520_fb_height(machine)
-    fb = bytes(fb_ptr[:w * h])
-    # Nach kurzer Ausführung: kaum Pixel gesetzt
-    non_zero = sum(1 for b in fb if b != 0)
-    assert non_zero < w * h * 0.05  # < 5% gesetzt
-```
+`format_integration` ist mit `slow` deckungsgleich und bleibt bestehen, weil
+`dev.sh`, die Werkzeugdokumentation und eingespielte Aufrufe darauf verweisen.
 
 ---
 
-## 5. Test-Runner
+## 5. Registrierung
 
-```bash
-# C++ Tests bauen und ausführen
-cmake -B build -DBUILD_TESTS=ON
-cmake --build build --target all
-cd build && ctest --output-on-failure
+Ein Test = eine Zeile, über `k1520_add_test()`
+(`tests/cmake/K1520AddTest.cmake`):
 
-# Python Tests
-cd tests/python
-pytest -v
-
-# Python Tests mit Coverage
-pytest --cov=../../app --cov-report=html -v
-
-# Spezifischen Modul-Test ausführen
-pytest test_k7024.py -v
-pytest test_full_a5120.py::test_boot_cpa_to_prompt -v -s
+```cmake
+k1520_add_test(k5122 SRC cards/test_k5122.cpp LIBS k1520_k5122 LABELS "unit;fast")
 ```
+
+Der Helfer hält drei Zusagen, die vorher je Test einzeln getippt wurden:
+Zielname `k1520_test_<name>`, Binary in `build/` (nicht `build/tests/…`, damit
+eingespielte Aufrufe gültig bleiben), Fixture-Pfad als Compile-Definition.
+
+Die Registrierung liegt vollständig in `tests/` — je Ebene eine
+`CMakeLists.txt`. Die Wurzel-`CMakeLists.txt` enthält nur noch Bibliotheken,
+Werkzeuge und `add_subdirectory(tests)`.
+
+**Zwei stille CMake-Fallen**, beide im Code kommentiert:
+
+1. `gtest_discover_tests(... PROPERTIES LABELS "a;b")` setzt nur das **erste**
+   Label — die Liste zerfällt beim Durchreichen in zwei Argumente.
+   `k1520_add_test()` maskiert die Semikola.
+2. `enable_testing()` muss im **Wurzel**-CMakeLists stehen; nur in `tests/`
+   aufgerufen, meldet ctest „No tests were found!!!".
 
 ---
 
-## 6. Continuous Integration
+## 6. Testdaten
 
-```yaml
-# .github/workflows/test.yml (oder GitLab CI)
-stages:
-  - build
-  - test
+Alle Testdisketten liegen unter `tests/fixtures/disks/` — **nur** die, die ein
+registrierter Test wirklich braucht. `disks/` im Projektwurzelverzeichnis ist
+davon getrennt das Arbeitsverzeichnis für manuelle Läufe und darf sich jederzeit
+ändern.
 
-build:
-  script:
-    - cmake -B build -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
-    - cmake --build build
+Namensschema und Zuordnung „welcher Test braucht welche Diskette":
+`tests/fixtures/README.md`.
 
-test_cpp:
-  script:
-    - cd build && ctest --output-on-failure
-
-test_python:
-  script:
-    - pip install -r app/requirements.txt pytest pytest-cov
-    - pytest tests/python/ -v --tb=short
-```
+**Regel ohne Ausnahme:** Ein Test mountet nie eine committete Diskette direkt —
+der Emulator öffnet sie schreibend. `k1520test::TempDisk` macht die Kopie und
+räumt sie weg, auch bei einem `ASSERT`-Abbruch.
 
 ---
 
-## 7. Test-Abdeckungsziele
+## 7. Wo die Beschreibung eines einzelnen Tests steht
 
-| Modul | Ziel-Coverage |
-|-------|--------------|
-| Z80CPU | > 90% (aus bestehendem Test-Satz) |
-| Z80PIO / SIO / CTC | > 80% |
-| K1520Bus | > 90% |
-| K7024 (Framebuffer) | > 70% |
-| K5122 (FDC) | > 70% |
-| FloppyDrive | > 85% |
-| FormatParser | > 95% |
-| K7637 | > 75% |
-| System-Test (Boot) | Manuell / E2E |
+**Im Test selbst.** Jede Testdatei trägt einen Dateikopf, jeder `TEST()` einen
+`@test`/`@brief`-Kommentar mit Ziel und Pass-Kriterium — bei den kniffligen
+Fällen zusätzlich die Vorgeschichte („vor dem Fix meldete INIT BAD TRACKS auf
+Kopf 1").
+
+Eine separate Prosafassung dieser Kommentare gab es bis 2026-08-07 als
+`doc/cpp_testsyste.md` (1349 Zeilen). Sie ist gelöscht: sie war eine Kopie der
+Quellkommentare, driftete unvermeidlich (sie beschrieb zuletzt Testdateien, die
+es nicht mehr gab, und nannte falsche Binärpfade) und hatte gegenüber dem
+Kommentar am Code keinen Mehrwert. Maschinellen Überblick liefern
+`ctest -N` und `--gtest_list_tests`.
+
+---
+
+## 8. Bewusste Auslassungen
+
+- **Keine CI.** Das Projekt wird lokal entwickelt; statt eines Workflows
+  erzwingt `.githooks/pre-push` die grüne Schnellrunde vor jedem Push.
+- **Keine Coverage-Messung.** Bisher kein Bedarf angemeldet; die Lücken sind
+  bekannt und in `doc/testsystem_rework.md` benannt.
+- **Keine Pixelprüfung der GUI** (siehe §3, `python/`).
+- **Ein dauerhaft deaktivierter Test:**
+  `KeyboardIntegration.DISABLED_TypeCommandAtCcpEchoesAndProcesses` — die
+  CP/A-Statuszeile mit laufender Uhr macht die Eingabe zeitabhängig. Reaktivieren
+  ist Schritt 11 des Umbauplans.

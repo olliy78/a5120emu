@@ -211,15 +211,18 @@ a5120emu/
 │   ├── CMakeLists.txt
 │   └── k1520cli.cpp             # Standalone ohne Python
 │
-├── tests/                       # ══ TESTS ══
-│   ├── cpp/                     # C++ Unit-Tests (GoogleTest)
-│   │   ├── test_bus.cpp
-│   │   ├── test_z80.cpp
-│   │   ├── test_k7024.cpp
-│   │   └── ...
-│   └── python/                  # Python Integrationstests
-│       ├── conftest.py          # ctypes-Loader
-│       ├── test_k5122.py
+├── tests/                       # ══ TESTS ══ (Ebene = Verzeichnis = ctest-Label)
+│   ├── support/                 # k1520_testsupport: Screen/Tastatur/TempDisk
+│   ├── unit/                    # eine Klasse isoliert (spiegelt core/)
+│   │   ├── primitives/  bus/  cards/  peripherals/  util/
+│   ├── debugtools/              # die header-only Bausteine aus tools/*.h
+│   ├── integration/             # ganze Maschine, echter Kaltboot
+│   ├── cli/                     # Werkzeuge als Prozess (Blackbox)
+│   ├── system/                  # FORMAT/CPABCGEN/SCPX/HARDY (langsam)
+│   ├── fixtures/disks/          # Testdisketten
+│   └── python/                  # pytest: C-ABI + GUI
+│       ├── conftest.py          # ctypes-Loader, Fixtures, Headless-Qt
+│       ├── test_c_api.py
 │       ├── test_k7024.py
 │       └── ...
 │
@@ -1275,32 +1278,20 @@ add_subdirectory(cli)      # k1520cli
 
 ## 13. Testkonzept
 
-### 13.1 C++ Unit-Tests (GoogleTest)
+Das Testsystem ist nach Testebenen gegliedert (`unit`, `debugtools`,
+`integration`, `cli`, `system`, `python`), jede Ebene ein Verzeichnis unter
+`tests/` und zugleich ein ctest-Label.  Begründung der Gliederung, was in welche
+Ebene gehört und die bewussten Auslassungen: **`doc/design/12_testing.md`**.
+Ausführen, einen Test hinzufügen, gemeinsame Infrastruktur: **`tests/README.md`**.
+Testdisketten: **`tests/fixtures/README.md`**.
 
-```cpp
-// tests/cpp/test_k7024.cpp
-TEST(K7024, VRAMWriteUpdatesFramebuffer) {
-    K1520Bus bus;
-    K7024 screen(bus, K7024::A5120Config{});
-    bus.memWrite(0xF800, 'A');  // Zeichen 'A' schreiben
-    EXPECT_EQ(screen.getFramebuffer()[0..7], charset_latin['A'][0]);
-}
+Kurz:
+
+```sh
+tools/dev.sh test          # Regression ohne die langsamen (~12 s)
+tools/dev.sh test-format   # nur die langsamen System-Tests (~51 s)
+tools/dev.sh test-level unit
 ```
-
-### 13.2 Python-Integrationstests (pytest + ctypes)
-
-```python
-# tests/python/test_k5122.py
-def test_floppy_seek(k5122_lib, tmp_image):
-    drv = k5122_lib.k5122_create()
-    k5122_lib.k5122_mount(drv, 0, tmp_image, "cpa780")
-    # Emuliere SEEK-Kommando via PIO
-    k5122_lib.k5122_pio_write(drv, 0x10, STEP_IN | HEAD_LOAD)
-    time.sleep(0.001)
-    assert k5122_lib.k5122_get_track(drv, 0) == 1
-```
-
----
 
 ## 14. Interrupt-System A5120 (vollständige Spezifikation)
 
