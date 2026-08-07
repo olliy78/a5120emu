@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=A5120 Emulator
+GenericName=K1520 Emulator
+Comment=Emulator des Bürocomputers robotron A5120 (K1520-Bus)
+Comment[en]=Emulator of the robotron A5120 office computer (K1520 bus)
+Exec=@ROOT@/bin/a5120emu
+Icon=a5120emu
+Terminal=false
+Categories=System;Emulator;
+Keywords=A5120;K1520;robotron;Z80;CP/A;emulator;
+StartupNotify=true
+StartupWMClass=main.py

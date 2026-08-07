@@ -4,7 +4,8 @@
 `core/peripherals/floppy_drive/format_catalog.*`, `CMakeLists.txt`, `.github/workflows/`
 **Verwandt:** `doc/design/10_c_api.md` (C-ABI), `doc/design/11_python_app.md` (GUI),
 `doc/design/00_konfiguration.md` (`formats.yaml`-Suche)
-**Stand:** 2026-08-07 — **Konzept, noch nicht umgesetzt.**
+**Stand:** 2026-08-07 — **Schritte 1 und 2 umgesetzt** (relocatable + Linux-Paket,
+`packaging/`, Guards `py_paths`/`py_packaging`).  Windows und macOS stehen aus (§10).
 
 ---
 
@@ -31,7 +32,7 @@ Autoupdate im Hintergrund.
 Das Paket wird **nicht** als geschlossenes Bundle gebaut, sondern in drei Rollen zerlegt:
 
 ```
-┌─ Payload (CI-Artefakt, plattformspezifisch, ~5–10 MB) ────────────────┐
+┌─ Payload (CI-Artefakt, plattformspezifisch, ~2 MB) ───────────────────┐
 │  k1520core.so|dll   app/*.py   formats.yaml   Beispieldisketten       │
 │  requirements.lock  VERSION                                           │
 └───────────────────────────────────────────────────────────────────────┘
@@ -43,7 +44,7 @@ Das Paket wird **nicht** als geschlossenes Bundle gebaut, sondern in drei Rollen
                 │
                 ▼
 ┌─ Launcher (jeder Start) ──────────────────────────────────────────────┐
-│  Umgebung setzen (K1520_LIB, K1520_FORMATS, …) → venv-Python app/main │
+│  K1520_HOME setzen → venv-Python app/main.py                          │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -90,19 +91,34 @@ Hälfte des Downloads.
 
 ### 3.1 Ablauf des Bootstraps im Detail
 
-1. **Vorprüfung**: Zielverzeichnis schreibbar? Freier Platz ≥ 500 MB? Netz erreichbar?
-2. **`uv` beschaffen**: Download nach `<root>/tools/`, SHA256 gegen den im Payload
-   mitgelieferten Erwartungswert prüfen. Ist ein `uv` bereits im `PATH` und aktuell genug,
-   wird es benutzt (spart Download).
-3. **CPython**: `uv python install <pinned>` — die Version steht im Payload (`VERSION`),
-   nicht im Skript.
-4. **venv** in `<root>/venv`.
+1. **Vorprüfung**: Zielverzeichnis schreibbar? Freier Platz ≥ 500 MB?
+2. **`uv` beschaffen**: Download nach `<root>/tools/`, SHA256 gegen den **im Paket
+   mitgelieferten** Erwartungswert prüfen (`packaging/uv_pins.txt`) — eine nebenher
+   geladene `.sha256`-Datei deckte nur Übertragungsfehler ab, nicht eine ausgetauschte
+   Quelle. Ein systemweites `uv` wird bewusst *nicht* mitbenutzt: jede Installation soll
+   dieselbe geprüfte Fassung verwenden und beim Deinstallieren restlos verschwinden.
+3. **CPython**: `uv python install --no-bin <pinned>`.
+4. **venv** in `<root>/venv` (`--python-preference only-managed`, damit kein Systempython
+   einspringt).
 5. **Abhängigkeiten**: `uv pip install --require-hashes -r requirements.lock`.
-6. **Rauchtest**: `venv/bin/python -c "import PySide6; from app.core_binding..."` — lädt die
-   Kernbibliothek einmal und ruft `k1520_version()`. Schlägt das fehl, bricht die
-   Installation **mit Klartextmeldung** ab, statt einen kaputten Startmenüeintrag zu
-   hinterlassen.
+6. **Rauchtest**: lädt die Kernbibliothek, ruft `k1520_version()`, importiert PySide6,
+   löst `formats.yaml` auf und legt die Beispieldisketten beim Anwender ab. Schlägt etwas
+   fehl, bricht die Installation **mit Klartextmeldung** ab, statt einen kaputten
+   Startmenüeintrag zu hinterlassen.
 7. **Verknüpfungen** (Desktop-Datei bzw. Startmenü) und `VERSION`-Stempel schreiben.
+
+Damit **alles** in der Installation landet und beim Löschen mitgeht, bekommt uv seine
+Verzeichnisse vorgegeben: `UV_PYTHON_INSTALL_DIR=<root>/python`,
+`UV_CACHE_DIR=<root>/.cache-uv` (nach der Installation gelöscht, `--keep-cache` behält ihn)
+und `--no-bin` beim Python — sonst legt uv ein `~/.local/bin/python3.x` an, das im PATH des
+Anwenders stünde und das Deinstallieren als toter Symlink überlebte.
+
+> **Stolperstein Arbeitsverzeichnis.** Der Rauchtest bekommt sein Skript über die
+> Standardeingabe — dann steht das **Arbeitsverzeichnis** vorn in `sys.path`. Aus dem
+> Quellbaum heraus gestartet prüfte der Installer so dessen `app/` statt der Installation
+> und meldete „läuft", ohne das Ausgelieferte je angefasst zu haben. `install.sh` wechselt
+> deshalb vorher nach `$PREFIX`; Guard: `test_packaging.py` prüft, dass der
+> Rauchtest-Ausgabe der Installationspfad steht.
 
 **Fehlerfälle, die eine eigene Meldung bekommen** (sonst landet der Anwender bei einem
 Python-Traceback): kein Netz / Proxy verlangt Authentifizierung, Plattenplatz,
@@ -135,25 +151,27 @@ Bewusst auf allen Plattformen **gleich aufgebaut**, nur die Wurzel unterscheidet
 
 | Plattform | `<install-root>` | Benutzerdaten | Verknüpfung |
 |-----------|------------------|---------------|-------------|
-| Linux | `~/.local/share/a5120emu` | `~/.config/k1520emu/` (Konfig, bestehend), `~/.local/share/a5120emu/disks/` (Arbeitsdisketten) | `~/.local/share/applications/a5120emu.desktop`, Starter `~/.local/bin/a5120emu` |
+| Linux | `~/.local/opt/a5120emu` | `~/.config/k1520emu/` (Konfig, bestehend), `~/.local/share/a5120emu/disks/` (Arbeitsdisketten) | `~/.local/share/applications/a5120emu.desktop`, Starter `~/.local/bin/a5120emu` |
 | Windows | `%LOCALAPPDATA%\A5120Emu` | `%APPDATA%\A5120Emu\` | Startmenü `%APPDATA%\Microsoft\Windows\Start Menu\Programs\` |
 | macOS (später) | `~/Applications/A5120Emu.app/Contents/Resources` | `~/Library/Application Support/A5120Emu/` | die `.app` selbst |
 
-Zwei Details, die sonst im Feld beißen:
+Das Programm liegt unter Linux bewusst in `.local/opt` und **nicht** in
+`.local/share/a5120emu`: dort liegen die Benutzerdaten, und beides an einer Stelle hieße,
+dass die Arbeitsdisketten im Installationsverzeichnis lägen. Genau das darf nicht sein:
 
 - **Arbeitsdisketten müssen schreibbar liegen.** Der verzögerte Autosave
   (`DiskImage::autoFlush`, `doc/K1520_architecture.md` §8.7) schreibt in die *gemountete
   Datei* zurück. Eine direkt aus `share/disks/` gemountete Beispieldiskette würde also im
-  Installationsverzeichnis verändert — und beim Update kommentarlos überschrieben. Der
-  Launcher kopiert die Beispiele deshalb beim **Erststart** ins Benutzer-Diskettenverzeichnis
-  und der Dateidialog zeigt von Anfang an dorthin (heute: `drive_widget.py:115`
-  `_default_disk_dir()`, hart auf das Projektverzeichnis).
-- **`formats.yaml` findet sich nicht von selbst.** `FormatCatalog::searchPaths()`
-  (`format_catalog.h:44 ff.`) sucht u.a. bei `<Verzeichnis der Programmdatei>/../share/a5120emu/`
-  — „Programmdatei" ist per `readlink("/proc/self/exe")` (`format_catalog.cpp:271`) ermittelt
-  und damit bei einer per `ctypes` geladenen Bibliothek der **Python-Interpreter im venv**,
-  nicht `<root>/bin/`. Kurzfristig deckt der Launcher das mit `K1520_FORMATS` ab (Kandidat 5,
-  höchste Priorität); sauber ist die Auflösung über den **Modulpfad der Bibliothek** (§6.2).
+  Installationsverzeichnis verändert — und beim Update kommentarlos überschrieben.
+  `paths.seed_user_disks()` kopiert die Beispiele deshalb **bei der Installation** einmalig
+  ins Benutzerverzeichnis (und fasst ein vorhandenes nie wieder an); der Dateidialog zeigt über
+  `paths.default_disk_dir()` von Anfang an dorthin.
+- **`formats.yaml` findet sich nicht von selbst.** `FormatCatalog::searchPaths()` sucht u.a.
+  bei `<Verzeichnis der Programmdatei>/../share/a5120emu/` — war das per
+  `readlink("/proc/self/exe")` ermittelt, ist es bei einer per `ctypes` geladenen Bibliothek
+  der **Python-Interpreter im venv**, nicht `<root>/bin/`. Gelöst über den **Modulpfad**
+  (§6.2), nicht über ein `K1520_FORMATS` im Launcher — die Bibliothek soll sich selbst
+  finden, auch wenn sie jemand anders lädt.
 
 ---
 
@@ -184,13 +202,15 @@ Uninstallable=yes                  ; Eintrag unter HKCU\…\Uninstall
   Quarantäne gestellt. Der Bootstrap prüft nach dem `uv`-Download, ob die Datei noch da ist,
   und meldet das gezielt.
 
-### 5.2 Linux — Tarball + `install.sh`
+### 5.2 Linux — Tarball + `install.sh`   ✅ umgesetzt
 
-`a5120emu-<version>-linux-x86_64.tar.gz` mit `install.sh`:
+`a5120emu-<version>-linux-x86_64.tar.gz` (~2 MB) mit `install.sh`:
 
 ```
-./install.sh                 # nach ~/.local/share/a5120emu
+./install.sh                 # nach ~/.local/opt/a5120emu
 ./install.sh --prefix DIR    # abweichendes Ziel
+./install.sh --python 3.13   # andere Python-Fassung
+./install.sh --no-shortcut   # ohne Startmenü-Eintrag
 ./install.sh --uninstall [--purge]
 ```
 
@@ -220,48 +240,57 @@ Windows-tauglich** und die GUI **nicht relocatable**. Befunde:
 | Fundstelle | Problem | Lösung |
 |------------|---------|--------|
 | `core/api/k1520_api.h:3` | nur `extern "C"`, keine Export-Makros | Makro `K1520_API` (`__declspec(dllexport/import)` bzw. `__attribute__((visibility("default")))`) vor jede API-Funktion; alternativ `WINDOWS_EXPORT_ALL_SYMBOLS` als Übergangslösung. **Ohne das exportiert die MSVC-DLL gar nichts** — `ctypes` findet keine einzige Funktion. |
-| `format_catalog.cpp:23,271` | `<unistd.h>` + `readlink("/proc/self/exe")` | Windows-Zweig `GetModuleFileNameW`; siehe auch §6.2 |
-| `format_catalog.cpp:280` | `HOME`/`XDG_CONFIG_HOME` | Windows: `%APPDATA%` |
-| Pfadtrenner | `K1520_FORMATS` ist `:`-getrennt | unter Windows `;` (dort ist `:` Teil von `C:\…`) |
 | `CMakeLists.txt` | Build ist auf GCC/Linux zugeschnitten | MSVC-Zweig: statische CRT, `/utf-8` (die Quellen enthalten deutsche Umlaute!), Warnungsflags |
+
+Erledigt sind dagegen die Pfad- und Umgebungsfragen, die dieselbe Datei betrafen: der
+Modulpfad (§6.2) hat den Windows-Zweig `GetModuleFileNameW` gleich mitbekommen,
+`homeConfigDir()` kennt `%APPDATA%`, und `K1520_FORMATS` trennt unter Windows mit `;`
+(dort ist `:` Teil von `C:\…`).
 
 Der übrige Kern ist portabel (`std::filesystem`, keine POSIX-Aufrufe außerhalb dieser einen
 Datei, kein `pthread`, keine `dlopen`-Nutzung).
 
-### 6.2 Modulpfad statt Exe-Pfad
+### 6.2 Modulpfad statt Exe-Pfad   ✅ umgesetzt
 
-Sauberer als das Env-Pflaster: die Bibliothek ermittelt ihren **eigenen** Pfad
-(`dladdr` unter Linux/macOS, `GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS)`
-unter Windows) und leitet daraus `<lib-dir>/../share/a5120emu/formats.yaml` ab. Damit ist
-das Installationsverzeichnis **frei verschiebbar** und die Datenfindung funktioniert
-gleichermaßen für die GUI (Lib in `bin/`), die Testwerkzeuge (Exe im Build-Baum) und den
-Quellbaum. Kandidat 2 der Suchliste ändert dabei nur seine Bedeutung von „Exe-Verzeichnis"
-zu „Verzeichnis des ladenden Moduls"; für die Werkzeuge, die statisch linken, bleibt es das
-Exe-Verzeichnis.
+Sauberer als ein `K1520_FORMATS` im Launcher: die Bibliothek ermittelt ihren **eigenen**
+Pfad (`dladdr` unter Linux/macOS, `GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS)`
+unter Windows — beides über die Adresse eines Ankers im eigenen Modul) und leitet daraus
+`<lib-dir>/../share/a5120emu/formats.yaml` ab. Damit ist das Installationsverzeichnis
+**frei verschiebbar**, und dieselbe Auflösung stimmt für die GUI (Lib in `bin/`), die
+statisch gelinkten Werkzeuge (dort ist das Modul die Programmdatei) und den Quellbaum.
+Kandidat 2 der Suchliste heißt jetzt „Verzeichnis des eigenen Moduls".
 
-### 6.3 GUI: zentrale Pfadauflösung (`app/paths.py`)
+Guard: `test_paths.py::test_installierte_bibliothek_findet_eigenen_formatkatalog` baut eine
+Installation im Temp-Verzeichnis nach und lädt sie in einem eigenen Prozess — sie muss ihre
+`formats.yaml` daneben finden, ohne jede Umgebungsvariable.
 
-Heute sind die Pfade an drei Stellen verstreut und auf die Repo-Struktur verdrahtet:
+### 6.3 GUI: zentrale Pfadauflösung (`app/paths.py`)   ✅ umgesetzt
 
-- `app/core_binding/k1520.py:43–56` — sucht ausschließlich `libk1520core.so` in
-  `<repo>/build/`, `/usr/local/lib`, `/usr/lib`
-- `app/ui/drive_widget.py:119` — Disketten-Startverzeichnis über dreifaches `dirname`
-- `app/main.py:34` — `sys.path`-Manipulation relativ zum Quellbaum
-- `run_gui.sh` — setzt `LD_LIBRARY_PATH` auf `build/`
+Vorher waren die Pfade verstreut und auf die Repo-Struktur verdrahtet: die Bindung suchte
+`libk1520core.so` nur in `<repo>/build/`, das Diskettenverzeichnis kam aus dreifachem
+`dirname`, `run_gui.sh` setzte `LD_LIBRARY_PATH`.
 
-Ersetzt durch ein `app/paths.py` mit den Auflösungen `lib()`, `formats()`, `bundled_disks()`,
-`user_disks()`, `config_dir()`, jeweils in der Reihenfolge **Umgebungsvariable →
-Installationslayout → Quellbaum**. Ausdrücklich zu beachten:
+Jetzt löst `app/paths.py` alles an einer Stelle auf — `core_library()`, `formats_file()`,
+`bundled_disks_dir()`, `user_disks_dir()`, `config_dir()`, `default_disk_dir()`,
+`seed_user_disks()`, `describe()` — in der Reihenfolge **Umgebungsvariable
+(`K1520_HOME`/`K1520_LIB`/`K1520_FORMATS`/`K1520_DISKS`) → Installationslayout →
+Quellbaum**. Beide Layouts hängen an derselben Wurzel (dem Elternverzeichnis von `app/`)
+und unterscheiden sich nur in den Unterverzeichnissen, es braucht also keine
+Modusumschaltung — der erste existierende Kandidat gewinnt.
+
+Mit erledigt:
 
 - Dateiname je Plattform: `libk1520core.so` / `k1520core.dll` / `libk1520core.dylib`
-- Windows: abhängige DLLs brauchen `os.add_dll_directory(<root>/bin)` **vor** `ctypes.CDLL`
-  (seit Python 3.8 wird `PATH` dafür nicht mehr ausgewertet)
-- `config_io.default_config_dir()` liefert unter Windows `C:\Users\…\.config\k1520emu` —
-  funktioniert, ist aber unüblich; auf `%APPDATA%` umstellen (mit Migration eines bereits
-  vorhandenen Verzeichnisses)
+- Windows: `prepare_library_load()` meldet die Verzeichnisse über `os.add_dll_directory()`
+  an — seit Python 3.8 wertet `ctypes.CDLL` `PATH` dafür nicht mehr aus
+- `config_dir()` liefert unter Windows `%APPDATA%`, unter macOS
+  `~/Library/Application Support` — benutzt aber ein **vorhandenes** `~/.config/k1520emu`
+  weiter, damit dort abgelegte Konfigurationen nicht unsichtbar werden
+- `main.py --paths` gibt die ganze Auflösung aus (Rauchtest des Installers, erste Frage bei
+  „findet die Bibliothek nicht"); die Ladehinweise der Bindung liegen hinter `K1520_DEBUG`
 
 Der Quellbaum-Zweig bleibt erhalten: `run_gui.sh` und die Entwicklung aus `build/` heraus
-müssen unverändert weiterlaufen.
+laufen unverändert.
 
 ---
 
@@ -275,30 +304,47 @@ Eine GitHub-Actions-Matrix, ein Job je Plattform, Artefakte ans Release.
 | Windows x64 | `windows-latest`, MSVC | `CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded` (statische CRT — A4: kein VC-Redist ohne Admin), `/utf-8` |
 | macOS (später) | `macos-latest` | `-mmacosx-version-min=12.0`, universal2 (arm64+x86_64) via `CMAKE_OSX_ARCHITECTURES` |
 
-Weiter im Release-Job: Version aus `git describe` in `VERSION` und `k1520_version()`
-stempeln, `requirements.lock` mit `uv pip compile --generate-hashes` erzeugen (nicht von
-Hand pflegen), SHA256SUMS beilegen, die kuratierte Diskettenauswahl aus `disks/`
-zusammenstellen. Und: **auf jeder Plattform den Rauchtest fahren** (Lib laden,
-`k1520_version()`, `formats.yaml` finden) — ein Payload, dessen DLL nichts exportiert, darf
-kein Release-Asset werden.
+Zwei weitere Bau-Einstellungen sind für ein *verteilbares* Paket nicht verhandelbar
+(`packaging/build_payload.sh` setzt beide):
+
+- **`-DK1520_FORMATS_DEFAULT=`** — der einkompilierte Fallback-Pfad des Formatkatalogs zeigt
+  im Entwicklungsbaum auf `<repo>/data/formats.yaml`. Bliebe er gesetzt, trüge jede
+  ausgelieferte Bibliothek den absoluten Pfad des **Baurechners** als Suchkandidaten mit
+  sich herum. Guard: `test_packaging.py::test_paket_traegt_keinen_pfad_des_baurechners`
+  sucht den Pfad im Binärabbild.
+- **`-DBUILD_K1520_TESTS=OFF`** — spart GoogleTest per FetchContent, also einen
+  Netzzugriff im Release-Job.
+
+Weiter im Release-Job: Version aus `git describe` in `VERSION` stempeln, SHA256SUMS
+beilegen, die kuratierte Diskettenauswahl aus `disks/` zusammenstellen. Und: **auf jeder
+Plattform den Rauchtest fahren** (Lib laden, `k1520_version()`, `formats.yaml` finden) — ein
+Payload, dessen DLL nichts exportiert, darf kein Release-Asset werden.
+
+`requirements.lock` wird dagegen **nicht** im Release-Job aufgelöst, sondern liegt
+eingecheckt unter `packaging/requirements.lock` (aus `packaging/requirements.in`, auffrischen
+mit `--relock`). Damit braucht das Schnüren kein Netz, jeder Bau liefert dasselbe, und eine
+geänderte Abhängigkeit ist im Diff sichtbar statt still.
 
 ---
 
 ## 8. Größen
 
+Gemessen am ersten Linux-Paket (6 Beispieldisketten, `--disks default`):
+
 | Bestandteil | Größe | wann |
 |-------------|-------|------|
-| Kernbibliothek | ~0,6 MB | im Paket |
-| GUI-Quellen + `formats.yaml` | ~0,5 MB | im Paket |
-| Beispieldisketten (kuratiert, komprimiert) | ~3–5 MB | im Paket |
-| **Download des Pakets** | **~5–10 MB** | |
+| Kernbibliothek (Release, gestrippt) | ~0,6 MB | im Paket |
+| GUI-Quellen + `formats.yaml` + Symbol | ~0,4 MB | im Paket |
+| 6 Beispieldisketten (`.hfe`, komprimiert) | ~1 MB | im Paket |
+| **Download des Pakets** | **1,9 MB** | |
 | `uv` | ~15–20 MB | einmalig bei Installation |
-| CPython (relocatable) | ~30 MB | einmalig bei Installation |
-| PySide6-Essentials + PyYAML | ~70 MB | einmalig bei Installation |
+| CPython 3.12 (relocatable) | ~30 MB | einmalig bei Installation |
+| PySide6-Essentials + PyYAML | ~76 MB | einmalig bei Installation |
 | **Netzbedarf Erstinstallation** | **~120 MB** | |
-| **Belegter Platz nach Installation** | **~350–450 MB** | entpackt |
+| **Belegter Platz nach Installation** | **406 MB** | gemessen |
 
-Ein Emulator-Update kostet danach wieder nur die 5–10 MB der Payload.
+Die `.hfe`-Abbilder komprimieren sich sehr weit (Gaps und `0xE5`-Füllung), das Paket bleibt
+also auch mit mehr Disketten klein. Ein Emulator-Update kostet wieder nur diese ~2 MB.
 
 ---
 
@@ -317,20 +363,25 @@ Ein Emulator-Update kostet danach wieder nur die 5–10 MB der Payload.
 
 ## 10. Umsetzungsreihenfolge
 
-Vorschlag in vier Schritten, jeder für sich abnehmbar:
+Vier Schritte, jeder für sich abnehmbar:
 
-1. **Relocatable machen (Linux).** `app/paths.py`, Modulpfad-Auflösung in
-   `format_catalog`, Umgebungsvariablen `K1520_LIB`/`K1520_FORMATS`, `run_gui.sh` weiter
-   lauffähig. Prüfbar durch: Installationslayout in ein Temp-Verzeichnis kopieren und von
-   dort starten.
-2. **Paketierung Linux.** `packaging/build_payload.sh`, `packaging/install.sh`, Launcher,
-   `.desktop`. Ergebnis: Tarball, der auf einer frischen Distribution ohne `sudo`
-   durchläuft.
-3. **Windows-Portierung des Kerns.** Export-Makros, POSIX-Zweige, MSVC-Build, Rauchtest.
-   Ergebnis: `k1520core.dll`, aus dem venv per `ctypes` ladbar.
-4. **Paketierung Windows.** Inno-Setup-Skript, `bootstrap.ps1`, CI-Matrix, Release-Workflow.
+1. ✅ **Relocatable machen.** `app/paths.py`, Modulpfad-Auflösung in `format_catalog`,
+   Umgebungsvariablen, `main.py --paths`. Guards: `tests/python/test_paths.py` (13 Fälle,
+   darunter eine im Temp-Verzeichnis nachgebaute Installation).
+2. ✅ **Paketierung Linux.** `packaging/` — `build_payload.sh`, `install.sh`, `launcher.sh`,
+   `lib/common.sh`, `uv_pins.txt`, `requirements.in`/`.lock`, `.desktop`, Symbol. Ergebnis:
+   1,9-MB-Tarball, der ohne `sudo` durchläuft, sich selbst prüft und sich rückstandsfrei
+   deinstallieren lässt. Guards: `tests/python/test_packaging.py` (13 schnelle Fälle ohne
+   Netz + ein vollständiger Installationslauf hinter `K1520_PACKAGING_FULL=1`).
+3. **Windows-Portierung des Kerns.** Export-Makros, MSVC-Build mit statischer CRT,
+   Rauchtest. Ergebnis: `k1520core.dll`, aus dem venv per `ctypes` ladbar. Die
+   Pfad-/Umgebungsfragen sind mit Schritt 1 schon erledigt (§6.1).
+4. **Paketierung Windows.** Inno-Setup-Skript, `install.ps1` (Gegenstück zu `install.sh`,
+   dieselben Schritte), CI-Matrix, Release-Workflow.
 
-macOS erst danach, zusammen mit der Signaturentscheidung aus §5.3.
+macOS erst danach, zusammen mit der Signaturentscheidung aus §5.3. Die
+plattformübergreifenden Teile sind bereits darauf ausgelegt (`uv_pins.txt` führt die
+macOS-Tripel, `paths.py` kennt `.dylib` und `~/Library/Application Support`).
 
 ---
 
@@ -339,9 +390,10 @@ macOS erst danach, zusammen mit der Signaturentscheidung aus §5.3.
 - **Code Signing**: Windows-Zertifikat (SmartScreen) und Apple Developer ID
   (Notarisierung) sind laufende Kosten — Entscheidung nötig, bevor über „Anwender" jenseits
   des Bekanntenkreises geredet wird.
-- **Diskettenauswahl**: welche der 28 Dateien aus `disks/` (36 MB) ins Paket gehören und
-  unter welcher Lizenz die enthaltene CP/A-Software steht — das ist eine Rechte-, keine
-  Technikfrage.
+- **Diskettenauswahl**: `build_payload.sh` legt vorerst sechs Abbilder bei (vier CP/A, eine
+  SCPX, eine UDOS, Liste `DISKS_DEFAULT`). Unter welcher Lizenz die enthaltene
+  Originalsoftware weitergegeben werden darf, ist eine Rechte-, keine Technikfrage — bis zur
+  Klärung ist `--disks none` die konservative Variante.
 - **Versionsprüfung Payload ↔ venv**: ob der Launcher bei Versionsversatz automatisch
   nachinstalliert oder nur warnt.
 - **Proxy-Umgebungen**: `uv` respektiert `HTTPS_PROXY`; ob der Installer danach fragt, wenn

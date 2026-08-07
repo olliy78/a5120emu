@@ -10,6 +10,10 @@ __pycache__/
 build_k1520/
 out/
 
+# Paketierung: Release-Bauverzeichnis und geschnürte Archive
+build_dist/
+dist/
+
 # Temporäre Disk-Kopien der Debug-/Format-Tools
 disks/*_tmp*.hfe
 tests/python/.config-testrun/

@@ -85,7 +85,15 @@ interrupted builds), run `tools/dev.sh rebuild` to be certain. Raw commands stil
 
 ## Python GUI
 
-The GUI loads `libk1520core.so` through `ctypes` (`app/core_binding/k1520.py` searches `build/` first). It needs the shared lib built and on the library path:
+The GUI loads `libk1520core.so` through `ctypes`. **All paths are resolved in one place —
+`app/paths.py`** (`core_library()`, `formats_file()`, `bundled_disks_dir()`,
+`user_disks_dir()`, `config_dir()`, `describe()`), in the order **environment variable
+(`K1520_HOME`/`K1520_LIB`/`K1520_FORMATS`/`K1520_DISKS`) → installation layout
+(`<root>/{bin,share}`) → source tree (`<repo>/{build,data,disks}`)**. Don't hard-wire repo
+paths in GUI code, and don't reintroduce `<repo>/build` lookups — that breaks a packaged
+installation. `python3 app/main.py --paths` prints the whole resolution (works without Qt
+and without the core lib; first thing to ask when something isn't found). Needs the shared
+lib built:
 
 ```sh
 python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
@@ -101,6 +109,30 @@ otherwise; `test_c_api.py` compares all three mechanically) and the **GUI** (PyS
 pixels are not testable there). Install the test deps with
 `venv/bin/python3 -m pip install -r requirements-dev.txt`; without them CMake skips registering
 the layer and says so. Details + limits: `tests/python/README.md`.
+
+## Verteilbares Paket (`packaging/`)
+
+`packaging/build_payload.sh` schnürt aus dem Baum ein Anwenderpaket (~2 MB:
+Kernbibliothek, GUI, `formats.yaml`, Beispieldisketten); `install.sh` darin holt sich mit
+**`uv`** Python und Qt in ein venv **innerhalb der Installation** — benutzerlokal, ohne
+Administratorrechte. Python/Qt werden bewusst nicht mitverteilt. Bedienung:
+`packaging/README.md`, Entwurf und Begründungen: **`doc/design/13_distribution.md`**.
+Umgesetzt sind Linux/macOS-Aufbau (Schritt 1+2); Windows (Inno Setup, per-user) steht aus.
+
+Drei Dinge, die man dabei nicht kaputtmachen darf:
+
+- **`FormatCatalog` findet seine `formats.yaml` über den Pfad des *eigenen Moduls***
+  (`dladdr` / `GetModuleHandleEx`, `format_catalog.cpp: moduleDir()`), nicht über
+  `/proc/self/exe` — sonst sucht die per `ctypes` geladene Bibliothek neben dem
+  venv-Python. Guard: `py_paths`.
+- **Release-Bauten setzen `-DK1520_FORMATS_DEFAULT=`** — sonst trägt jede ausgelieferte
+  Bibliothek den absoluten Pfad des Baurechners als Suchkandidaten. Guard: `py_packaging`.
+- **Arbeitsdisketten liegen außerhalb der Installation** (`~/.local/share/a5120emu/disks`),
+  weil der Autosave in die gemountete Datei zurückschreibt.
+
+Tests: `py_paths` + `py_packaging` (schnell, ohne Netz, in der Standardregression). Der
+vollständige Installationslauf (lädt ~120 MB) liegt hinter
+`K1520_PACKAGING_FULL=1 venv/bin/python3 -m pytest tests/python/test_packaging.py`.
 
 ## K1520 core architecture (the part that needs multiple files to grasp)
 

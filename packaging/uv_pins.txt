@@ -1,0 +1,18 @@
+# Gepinnte uv-Fassung, mit der die Pakete ihre Laufzeitumgebung einrichten.
+#
+# Der Installer lädt genau diese Fassung und prüft sie gegen die hier
+# hinterlegte Prüfsumme.  Die Prüfsumme reist damit MIT dem Paket — eine
+# nebenher heruntergeladene .sha256-Datei würde nur Übertragungsfehler
+# abdecken, nicht eine ausgetauschte Quelle.
+#
+# Aktualisieren:  packaging/build_payload.sh --refresh-uv
+#
+# Format:  <Zieltripel> <SHA256 des Release-Archivs>
+
+version 0.12.3
+
+x86_64-unknown-linux-gnu   600cf9a742aca00d292673b16b5acffaa7b8c269a364ad0c2e79498dcb1fe101
+aarch64-unknown-linux-gnu  bb66cb52e7b1823aed1183630d8d8e5c958840d584a4c55ec10a4cfc168dcca2
+x86_64-apple-darwin        4c9f52262a14da336e4a42ed24992d12d0c956acde87619e4611d321dffa602b
+aarch64-apple-darwin       546f7f8a6c70ff13a3a9d2bc958db3427298cebf3e0cb756f9177133b7068843
+x86_64-pc-windows-msvc     b23350c79e8ad0192b8124af13a0f17e8d4e4549524785e1aef389ae5a06990e
