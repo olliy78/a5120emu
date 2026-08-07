@@ -823,6 +823,61 @@ if(BUILD_K1520)
         add_bootdisk_test(bootdisk_mf6400_fmt1   mf6400_fmt1)    # 8″-DD Mischd. 26×128FM+8×1024MFM (C:)
         add_bootdisk_test(bootdisk_k5600_10_fmt1 k5600_10_fmt1)  # 5¼″-40-SS 26×128+5×1024
         add_bootdisk_test(bootdisk_k5600_20_fmt1 k5600_20_fmt1)  # 5¼″-80-SS 26×128+5×1024 (C:)
+        # ─── Format-Matrix: JEDES Menü JEDES Laufwerkstyps einmal formatieren ─────
+        # Die 5 Boot-Disk-Tests oben prüfen je Laufwerkstyp EIN Format über die ganze
+        # Diskette.  Diese Matrix prüft die BREITE: jeden einzelnen Menüeintrag, den
+        # FORMAT.COM anbietet (88 Stück — §3 K5601 80-DS, die §3.4-Geometrien S/W/U/V/T
+        # und die nativen Menüs von K5600.10/K5600.20/MF3200/MF6400), jeweils auf einer
+        # ECHTEN LEERDISKETTE, mit Vergleichs-Lesen.
+        #
+        # Umfang bewusst SMOKE (Spur 0-2, ~9 s je Format): geprüft wird „das Menü
+        # formatiert überhaupt an" — Anlaufen, Geometrie, Sektorgröße, Verify.  Ein
+        # Voll-Lauf über alle Spuren wäre ~13× teurer und hat zwei bekannte Ausreißer
+        # (K5601 Format '7' → `Fehler 'S'`, Format '5' als .hfe; docs/format.md §8.2),
+        # die den Smoke NICHT betreffen.  Für volle Läufe von Hand:
+        #   python3 tools/format_all.py --all --full
+        #
+        # Die Matrix kommt per `--list-matrix` aus format_all.py selbst — dort stehen die
+        # Formattabellen, also wächst der Testsatz beim nächsten `cmake` automatisch mit.
+        # Eigenes LABEL "format_matrix": weder in der Standard-Regression noch in
+        # `dev.sh test-format` (das nur die Boot-Disk-Kette meint) → `dev.sh test-matrix`.
+        set(_fmtall "${CMAKE_SOURCE_DIR}/tools/format_all.py")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_fmtall}")
+        execute_process(COMMAND python3 "${_fmtall}" --list-matrix
+                        OUTPUT_VARIABLE _fmt_matrix
+                        RESULT_VARIABLE  _fmt_matrix_rc
+                        OUTPUT_STRIP_TRAILING_WHITESPACE)
+        if(NOT _fmt_matrix_rc EQUAL 0)
+            message(WARNING "format_all.py --list-matrix fehlgeschlagen (rc=${_fmt_matrix_rc})"
+                            " — die Format-Matrix-Tests werden NICHT registriert")
+        else()
+            string(REPLACE "\n" ";" _fmt_rows "${_fmt_matrix}")
+            foreach(_row IN LISTS _fmt_rows)
+                string(REPLACE "|" ";" _f "${_row}")
+                list(GET _f 0 _boot)
+                list(GET _f 1 _drv)
+                list(GET _f 2 _geo)
+                list(GET _f 3 _key)
+                set(_geoarg "")
+                set(_geotag "DS")
+                if(NOT _geo STREQUAL "")
+                    set(_geoarg "--geo ${_geo}")
+                    set(_geotag "${_geo}")
+                endif()
+                add_test(NAME format_matrix_${_boot}_${_drv}_${_geotag}_${_key} COMMAND sh -c
+                    "D=$(mktemp -d); \
+                     FORMAT_DRIVER=$<TARGET_FILE:format_driver> python3 ${_fmtall} ${_key} \
+                       --boot ${_boot} --drive ${_drv} ${_geoarg} --outdir \$D; \
+                     r=\$?; rm -rf \$D; exit \$r")
+                set_tests_properties(format_matrix_${_boot}_${_drv}_${_geotag}_${_key}
+                    PROPERTIES TIMEOUT 300
+                    FAIL_REGULAR_EXPRESSION "SPUR DEFEKT|FEHLER"
+                    LABELS "format_matrix")
+            endforeach()
+            list(LENGTH _fmt_rows _fmt_n)
+            message(STATUS "Format-Matrix: ${_fmt_n} Tests registriert (LABEL format_matrix)")
+        endif()
+
         # HINWEIS: Preset mf3200_fmt1 (8″-SD/FM 26×128+4×1024) ist bewusst NICHT als Test
         # registriert — die 1024-B-FM-Datensektoren werden korrekt geschrieben (CRC gültig),
         # aber das laufende OS liest sie nicht (256-B-FM funktioniert): offener 1024-B-FM-SD-

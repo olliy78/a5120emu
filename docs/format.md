@@ -344,6 +344,16 @@ nur eine Seite, 40-Spur = Doppelschritt), sind aber ungetestet. **Nicht möglich
 > Fallback für Geometrien ohne definiertes `DiskFormat`).  Die untenstehende Gap-Blank-Diagnose
 > (§8.2.1) ist damit historisch.
 
+> **UPDATE 2026-08-07 — die Matrix ist jetzt Teil der Testsuite.** `format_all.py` liefert
+> über `--list-matrix` seine vollständige Prüfmatrix (`boot|drive|geo|key`, 88 Einträge);
+> `CMakeLists.txt` legt beim Konfigurieren je Eintrag einen ctest-Test an
+> (`format_matrix_<boot>_<drive>_<geo|DS>_<key>`, LABEL **`format_matrix`**, Umfang Smoke
+> Spur 0–2, ~9 s je Format). Lauf: `tools/dev.sh test-matrix` (~200 s wall bei `-j8`,
+> 1572 s\*proc). Neue Formate/Geometrien in die Tabellen dieses Skripts eintragen — der
+> Testsatz wächst beim nächsten `cmake` mit. **Voll-Läufe bleiben manuell**
+> (`--full`); die beiden bekannten Voll-Ausreißer (§3 Format `7` → `Fehler 'S'`, `5` als
+> `.hfe`) fallen im Smoke nicht an.
+
 `tools/format_all.py` formatiert die nativen K5601-Formate aus §3 (Menü #1/#2/#3)
 scriptgesteuert nach Laufwerk **B:** und wertet Verify + Endstatus aus (Treiber:
 `tools/format_driver`).  Ergebnis als **.hfe** (formatagnostisch; Phase A) — `.img`

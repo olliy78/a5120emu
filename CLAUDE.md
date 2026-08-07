@@ -283,6 +283,18 @@ formatieren mit **FORMAT.COM (V19.05.89)** die K5601-Formate nach Laufwerk B: un
 Formate testbar (Laufwerkstyp = reine BIOS-Software). `tools/cpa_tools/make_bootdisk.py` fährt
 zusätzlich die ganze Kette *Leerdiskette → FORMAT.COM → CPABCGEN → bootfähige Disk → Kaltstart*
 (6 Presets, als langsame `format_integration`-Tests registriert — via `tools/dev.sh test-format`).
+
+**Zwei Test-Label, zwei Blickrichtungen** (beide aus der Standard-Regression ausgeschlossen):
+- `format_integration` — die **Tiefe**: je Laufwerkstyp EIN Format über die ganze Diskette
+  (5 Boot-Disk-Ketten + 2 Voll-Läufe Leerdiskette/160 Spuren) — `tools/dev.sh test-format`.
+- `format_matrix` — die **Breite**: **88 Tests, jeder einzelne FORMAT.COM-Menüeintrag**
+  (§3 K5601 80-DS, §3.4-Geometrien S/W/U/V/T, native Menüs von K5600.10/K5600.20/MF3200/
+  MF6400), jeweils Leerdiskette + Vergleichs-Lesen, Umfang **Smoke (Spur 0–2, ~9 s je Format)**
+  — `tools/dev.sh test-matrix` (~200 s wall bei `-j8`). Die Matrix wird beim `cmake` aus
+  `tools/format_all.py --list-matrix` erzeugt: neue Formate dort in die Tabellen eintragen,
+  der Testsatz wächst automatisch mit. **Voll-Läufe bleiben manuell**
+  (`python3 tools/format_all.py --all --full`) — dort sind K5601 `7` (`Fehler 'S'`) und `5`
+  als `.hfe` bekannt rot (docs/format.md §8.2), im Smoke fallen sie nicht an.
 > **Ausgangszustand aller CP/A-Formatier-Tests ist seit 2026-08-07 eine ECHTE LEERDISKETTE**
 > (`createB`/`FD_DISKC_FMT` = *leerer* Formatname → unformatiertes Medium in der Geometrie des
 > Laufwerks). Das ist der Anwenderfall und die schärfere Prüfung; die früher nötigen Vorlagen

@@ -19,6 +19,12 @@ Temp-/Ziel-Dateien an und wertet die Ausgabe aus.
       eine Temp-Kopie der Boot-Disk verwendet, damit das committete Boot-Image nie
       korrumpiert wird.
 
+Die vollständige Prüfmatrix (`--list-matrix`: 88 × `boot|drive|geo|key`) ist zugleich die
+Quelle der ctest-Registrierung: `CMakeLists.txt` legt beim Konfigurieren je Eintrag einen
+Test an (LABEL `format_matrix`, Smoke Spur 0-2) — `tools/dev.sh test-matrix`.  Neue Formate
+oder Geometrien einfach unten in die Tabellen eintragen, der Testsatz wächst beim nächsten
+`cmake` automatisch mit.  Voll-Läufe (`--full`) bleiben manuell.
+
 Verwendung:
   tools/dev.sh tool format_driver          # zuerst den Treiber bauen
   python3 tools/format_all.py --list
@@ -41,7 +47,9 @@ import tempfile
 
 HERE     = os.path.dirname(os.path.abspath(__file__))
 ROOT     = os.path.dirname(HERE)
-DRIVER   = os.path.join(ROOT, 'build', 'format_driver')
+# FORMAT_DRIVER erlaubt es der ctest-Registrierung, auf das Binary DIESES
+# Build-Verzeichnisses zu zeigen (statt fest auf build/).
+DRIVER   = os.environ.get('FORMAT_DRIVER', os.path.join(ROOT, 'build', 'format_driver'))
 IMG2HFE  = os.path.join(HERE, 'img_to_hfe.py')
 DISKS    = os.path.join(ROOT, 'disks')
 BOOT_IMG = os.path.join(DISKS, 'cpadisk_autofs_clock_noautoexec.img')
@@ -207,6 +215,28 @@ DRIVE_TABLES = {
     ('8inchCombo', 'B'): ('MF3200 (8\" 77 SD)',    MF3200),
     ('8inchCombo', 'C'): ('MF6400 (8\" 77 DD)',    MF6400),
 }
+
+
+def format_matrix():
+    """
+    Liefert die VOLLSTÄNDIGE Prüfmatrix als Liste (boot, drive, geo, format_key).
+
+    Das ist die eine Quelle der Wahrheit für die ctest-Registrierung: CMake ruft
+    `--list-matrix` beim Konfigurieren auf und legt je Eintrag einen Test an
+    (Label `format_matrix`).  Neue Formate/Geometrien hier oben in den Tabellen
+    ergänzen — der Testsatz wächst beim nächsten `cmake` automatisch mit.
+
+    Kombiniert wird NICHT: die §3.4-Geometrie-Umschalter gelten nur für das
+    K5601-Default-Laufwerk (die Fremdtypen bringen ihr Menü nativ mit), s.
+    resolve_drive().
+    """
+    rows = []
+    rows += [('clock', 'B', '', k) for k in FORMATS]                       # §3   K5601 80-DS
+    for geo, (_switch, table) in GEO_FORMATS.items():                      # §3.4 Geometrien
+        rows += [('clock', 'B', geo, k) for k in table]
+    for (boot, drive), (_label, table) in DRIVE_TABLES.items():            # §3.5/§5 Fremdtypen
+        rows += [(boot, drive, '', k) for k in table]
+    return rows
 
 
 def resolve_table(geo):
@@ -391,8 +421,16 @@ def main():
     p.add_argument('--dir-verify', action='store_true',
                    help="nach Voll-Format DIR B: fahren und auf 'No File' prüfen")
     p.add_argument('--list', action='store_true', help="Formattabelle zeigen und Ende")
+    p.add_argument('--list-matrix', action='store_true',
+                   help="ganze Pruefmatrix als 'boot|drive|geo|key' je Zeile (fuer CMake)")
     p.add_argument('--keep-log', action='store_true', help="Treiber-stdout je Format ablegen")
     args = p.parse_args()
+
+    if args.list_matrix:
+        # Trenner '|', NICHT ';' — CMake benutzt ';' selbst als Listentrenner.
+        for boot, drive, geo, key in format_matrix():
+            print(f'{boot}|{drive}|{geo}|{key}')
+        return 0
 
     _bi, _nc, drive_letter, switch_key, table = resolve_drive(args.boot, args.drive, args.geo)
     dtype = DRIVE_TABLES.get((args.boot, args.drive), (None, None))[0]
