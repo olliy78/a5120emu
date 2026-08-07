@@ -1,0 +1,6 @@
+# --until 'screen ~ "txt"': Text im Bildschirmspeicher als Abbruchbedingung.
+# Deckt zugleich die Pollung je Instruktion ab (sample_count, NICHT cycles_done).
+tool:      boot_trace
+disk:      cpa_cpa780_k5601_clock.img
+run:       -L /dev/null --until 'screen ~ "Bootloader"' %DISK%
+expect_re: MET at cycle [0-9]+

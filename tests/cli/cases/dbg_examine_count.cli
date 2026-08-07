@@ -1,0 +1,9 @@
+#  ohne /N-Spec muss N Bytes ausgeben — der behobene #4-Fehler gab nur eines.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  e 0x6000 41 42 43 44
+  x 0x6000 4
+  q
+expect: 6000: 41 42 43 44

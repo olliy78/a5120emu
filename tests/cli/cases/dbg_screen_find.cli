@@ -1,0 +1,9 @@
+# Textsuche im Bildschirmspeicher, Trefferposition wird gemeldet (#2).
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  gscreen "Bootloader" 8000000
+  screen find "Bootloader"
+  q
+expect_re: found at row [0-9]+ col [0-9]+

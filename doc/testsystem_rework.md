@@ -1,7 +1,7 @@
 # Testsystem: Bestandsaufnahme und Umbauvorschlag
 
 **Stand:** 2026-08-07, Branch `rework_testsystem` (Basis `main` @ 983fc1d)
-**Umgesetzt:** Schritte 0, 1, 2, 3, 4, 6a, 7, 9, 10 — siehe §6 (Änderungsprotokoll)
+**Umgesetzt:** Schritte 0, 1, 2, 3, 4, 5, 6a, 7, 9, 10 — siehe §6 (Änderungsprotokoll)
 **Zweck:** Ist-Landschaft der Tests vollständig erfassen, Schwachstellen benennen,
 eine Zielstruktur und einen schrittweisen Migrationsweg vorschlagen.
 
@@ -87,7 +87,7 @@ wiederholt (31×), plus eine separate `gtest_discover_tests`-Zeile (31×) an and
 zwei Listen, die auseinanderlaufen können.
 **Behoben:** Root-CMake auf 232 Zeilen, Registrierung in `tests/` mit `k1520_add_test()` (§6).
 
-### B3 — CLI-Tests als escapete Shell-Einzeiler im CMake
+### B3 — ~~CLI-Tests als escapete Shell-Einzeiler im CMake~~ ✅ ERLEDIGT (§6, 2026-08-07)
 Beispiel (gekürzt):
 ```cmake
 add_cli_test(cli_dbg_breakpoint "bp ZVE1 : ZVE1 PC=0135"
@@ -98,12 +98,13 @@ don't survive the macro."* Das ist eine dokumentierte Wartungsfalle: die Regexes
 Sonderzeichen nicht ausdrücken, das `mktemp; cp; …; rm`-Ritual ist **15×** kopiert, und ein
 Abbruch lässt Temp-Dateien liegen.
 
-### B4 — Golden-Werte im Build-System statt im Testcode
+### B4 — ~~Golden-Werte im Build-System statt im Testcode~~ ✅ ERLEDIGT (§6, 2026-08-07)
 ```cmake
 add_cli_test(cli_dbg_json "\"pc\":\"0x1E52\".*\"hl\":\"0x231A\"" …)
 ```
 Ein Registerabbild bei exakt 5 000 000 Zyklen, hart im `CMakeLists.txt`. Ändert sich das
 Floppy-Timing, schlägt ein Test fehl, dessen Erwartungswert niemand im Testverzeichnis findet.
+**Behoben:** steht jetzt in `tests/cli/cases/dbg_json.cli`, mit der Begründung daneben (§6).
 
 ### B5 — ~~Keine gemeinsame Test-Infrastruktur~~ ✅ ERLEDIGT (§6, 2026-08-07)
 „Boote bis zum Prompt“, „warte auf Text im VRAM“, „tippe ein Kommando“, „kopiere die Disk
@@ -324,7 +325,7 @@ Jeder Schritt ist eigenständig, hinterlässt einen grünen Baum und ist einzeln
 | ~~**2**~~ | ~~`tests/CMakeLists.txt` + `k1520_add_test()`~~ ✅ erledigt (§6) | — | — |
 | ~~**3**~~ | ~~Verzeichnisumzug `tests/cpp/*`~~ ✅ erledigt (§6) | — | — |
 | ~~**4**~~ | ~~`tests/support/`-Bibliothek~~ ✅ erledigt (§6) | — | — |
-| **5** | CLI-Tests datengetrieben: `cases/*.cli` + `run_case.sh`, Golden-Ausgaben in Dateien (**behebt B3, B4**) | mittel | 1 Tag |
+| ~~**5**~~ | ~~CLI-Tests datengetrieben~~ ✅ erledigt (§6) | — | — |
 | **6a** | ~~Fixtures unter `tests/fixtures/disks/` konsolidieren~~ ✅ erledigt (§6) | — | — |
 | **6b** | Rest: `.com`-Dateien entdoppeln (`boot_disk/` + `tools/cpa_tools/` + `docs/` halten dieselben `format.com`/`cpabcgen.com`/`hardy.com`), `leer_cpa780.hfe` zur Testzeit erzeugen statt committen | gering | 2 h |
 | ~~**7**~~ | ~~`tests/python/` mit pytest~~ ✅ erledigt (§6) — 80 Fälle, 7 Module, Label `python` | — | — |
@@ -334,9 +335,9 @@ Jeder Schritt ist eigenständig, hinterlässt einen grünen Baum und ist einzeln
 | **11** | Kür: `DISABLED_TypeCommandAtCcpEchoesAndProcesses` reaktivieren, Suiten-Namensschema vereinheitlichen, Tippfehler `Sekorgroessen` beheben | gering | 3 h |
 | **12** | Befunde §7 (5×1024-Generierung erzeugt defekte Disk) und §8 (IEO ignoriert IUS) bewerten und entweder beheben oder als bewusste Grenze festschreiben | offen | unbekannt |
 
-**Stand 2026-08-07:** erledigt sind 0, 1, 2, 3, 4, 6a, 7, 9, 10.  Offen: **5, 6b, 8, 11, 12**.
-Schritt 5 (CLI-Tests datengetrieben) ist der letzte strukturelle; 6b/8/11 sind Aufräumarbeiten,
-12 (die zwei Befunde) ist davon unabhängig.
+**Stand 2026-08-07:** erledigt sind 0, 1, 2, 3, 4, 5, 6a, 7, 9, 10 — **alle strukturellen
+Schritte**.  Offen: **6b, 8, 11** (Aufräumarbeiten) und **12** (die zwei Befunde §7/§8,
+davon unabhängig).
 
 ---
 
@@ -629,6 +630,54 @@ Werkzeugdoku, zwei Testquellen) auf die neue Struktur gezogen — keine toten Pf
 
 **Verifikation:** `build/` gelöscht und neu gebaut, `tools/dev.sh test` 672/672 grün,
 `tools/dev.sh test-format` 8/8 grün.
+
+### 2026-08-07 — CLI-Tests datengetrieben (Schritt 5)
+
+Die 19 Blackbox-Fälle stehen jetzt als **Daten** in `tests/cli/cases/*.cli`; `run_case.py`
+führt sie aus, `tests/cli/CMakeLists.txt` liest das Verzeichnis ein (je Datei ein ctest-Fall).
+Einen Fall hinzufügen heißt: eine Datei anlegen.
+
+Eine Falldatei sieht so aus:
+
+```
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img     # Kopie nach /tmp → %DISK%
+run:    %DISK%
+stdin:
+  b 0x0135
+  g
+  q
+expect: bp ZVE1 : ZVE1 PC=0135
+```
+
+Was das behebt:
+
+- **Erwartungen sind wieder lesbar.** Vorher mussten sie als CMake-Regex durch zwei Ebenen
+  Escaping; Klammern überlebten das nicht, weshalb im Build-System der Hinweis stand: „regex
+  uses '.' for literal []()*+" — aus `WR [6005]=99` wurde `WR .6005.=99`.  Jetzt ist die
+  Erwartung eine normale Zeichenkette; Regex ist die Ausnahme (`expect_re:`).
+- **Das mktemp/cp/rm-Ritual existiert einmal**, nicht 15-mal — und räumt in einem `finally`
+  auf, auch wenn ein Lauf abbricht (vorher blieben Diskettenkopien in `/tmp` liegen).
+- **Golden-Werte im Testverzeichnis.** Der Registerabbild-Vergleich bei 5 000 000 Takten
+  steht in `dbg_json.cli`, mit der Begründung daneben, statt im `CMakeLists.txt`.
+- **Brauchbare Fehlermeldung.** Statt CTests „required regular expression not found" nennt der
+  Runner die fehlende Erwartung, das ausgeführte Kommando und die letzten 40 Ausgabezeilen.
+- **Zusammengesetzte Erwartungen ohne Regex-Akrobatik.** `"pc":"0x1E52".*"hl":"0x231A"` sind
+  jetzt zwei `expect:`-Zeilen.
+
+Direktiven: `tool`, `disk`/`disk_path`, `run`, `setup_run` (Vorlauf mit verworfener Ausgabe —
+für den Save-/Load-State-Fall), `stdin`, `file <n>:`/`tmpfile <n>:` (Ein-/Ausgabedateien, z. B.
+die beiden CSVs des `--diff`-Falls), `expect`/`expect_re`/`forbid`/`forbid_re`, `exit`,
+`timeout`.  Argumentzerlegung per `shlex`, damit Anführungszeichen erhalten bleiben
+(`--until 'screen ~ "Bootloader"'`).
+
+Bewusst **keine Golden-Volldateien**: die Ausgaben enthalten Taktzahlen, ein Vollvergleich wäre
+bei jeder Timing-Änderung rot.  Die Erwartung ist die inhaltliche Aussage.
+
+**Verifikation:** 19/19 grün, dazu zwei Gegenproben — eine verfälschte `expect:`-Zeile und ein
+verfälschter `exit:`-Wert lassen den jeweiligen Fall mit der erwarteten Meldung fehlschlagen
+(ein Runner, der stillschweigend alles durchwinkt, wäre sonst nicht zu erkennen).
+Anschließend `build/` gelöscht: `tools/dev.sh test` 672/672, `test-format` 8/8 grün.
 
 ---
 

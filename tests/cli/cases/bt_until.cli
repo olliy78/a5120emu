@@ -1,0 +1,5 @@
+# --until <bedingung>: Lauf endet an der Bedingung und meldet Takt + PC.
+tool:      boot_trace
+disk:      cpa_cpa780_k5601_clock.img
+run:       -L /dev/null --until [0x03F8]==3 %DISK%
+expect_re: MET at cycle [0-9]+ \(PC=0x0168\)

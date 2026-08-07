@@ -1,0 +1,9 @@
+# --quiet unterdrückt die Erzählung: JSON ja, Banner/Fortschritt/Zusammenfassung nein.
+tool:   boot_trace
+disk:   cpa_cpa780_k5601_clock.img
+run:    -L /dev/null --quiet --until [0x03F8]==3 --json %DISK%
+expect: boot_reached
+forbid: Boot Trace Complete
+forbid: PROGRESS
+forbid: MILESTONE
+forbid: histogram

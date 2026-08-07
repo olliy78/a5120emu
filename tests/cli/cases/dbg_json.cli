@@ -1,0 +1,14 @@
+# Maschinenlesbare Registerausgabe (rj).
+#
+# GOLDEN-WERT: Registerabbild bei exakt 5 000 000 Takten.  Die Zeitlage hängt am
+# Floppy-Timing (u. a. Motor-Anlauf, K5122_MOTOR_SPINUP_MS); ändert sich das
+# bewusst, gehören hier die neuen deterministischen Werte hinein.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  g 5000000
+  rj
+  q
+expect: "pc":"0x1E52"
+expect: "hl":"0x231A"

@@ -1,0 +1,11 @@
+# Rückwärtsschritt: einen Schritt vor, dann zurück.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  b 0x0135
+  g
+  s 1
+  rs
+  q
+expect: restored 1 step

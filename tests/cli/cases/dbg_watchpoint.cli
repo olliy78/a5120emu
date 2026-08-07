@@ -1,0 +1,9 @@
+# Schreib-Watchpoint auf eine Adresse; der Schreibzugriff wird gemeldet.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  wp 0x6005 == 99
+  e 0x6005 99
+  q
+expect: WR [6005]=99

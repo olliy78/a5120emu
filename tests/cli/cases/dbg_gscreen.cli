@@ -1,0 +1,8 @@
+# Bildschirm-konditioniertes Laufen (feature_request_interactive_debug #1).
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  gscreen "Bootloader" 8000000
+  q
+expect_re: screen matched after [0-9]+ cyc

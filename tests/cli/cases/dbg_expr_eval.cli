@@ -1,0 +1,10 @@
+# Ausdrucksauswertung (tools/expr_eval.h) über die Anzeige-Kommandos.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  b 0x0135
+  disp 2*3+4
+  g
+  q
+expect: = 10 (0xA)

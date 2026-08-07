@@ -1,0 +1,11 @@
+# Ereignis-Haltepunkt auf den ersten angenommenen Interrupt.
+# Das ist die ISR der Speicher-Ausbaumessung des Lade-ROMs (007AH, ausgelöst vom
+# /WR-Strobe des Testschreibens) — lange vor dem Floppy-Index-IRQ (01C7H).
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  bint
+  g
+  q
+expect: ISR 007A

@@ -36,7 +36,7 @@ Testebene = Verzeichnis = ctest-Label. Quer dazu `fast` / `slow`.
 | `unit/` | 530 | Eine Klasse isoliert, keine Diskette, kein Boot. Struktur spiegelt `core/`: `primitives/ bus/ cards/ peripherals/ util/` |
 | `debugtools/` | 67 | Die header-only Bausteine, aus denen `k1520dbg` und `boot_trace` bestehen (`tools/*.h`) |
 | `integration/` | 50 | Ganze Maschine, echter Kaltboot von einer Fixture-Diskette |
-| `cli/` | 19 | Die gebauten Werkzeuge als Prozess (Blackbox, Ausgabe geprüft) |
+| `cli/` | 19 | Die gebauten Werkzeuge als Prozess. Fälle als Daten in `cli/cases/*.cli`, ausgeführt von `cli/run_case.py` |
 | `system/` | 8 | Originale DDR-Programme unter dem Emulator: FORMAT, CPABCGEN, SCPX INIT/MODF/SYSP, HARDY. **Langsam** (Minuten) |
 | `python/` | 7 | pytest: C-ABI (ctypes ↔ `libk1520core.so`) und PySide6-GUI headless |
 | `support/` | — | Bibliothek `k1520_testsupport`, keine Tests |
@@ -65,6 +65,25 @@ Compile-Definition. Weitere Argumente: `DEFS` (zusätzliche Makros),
 > maskiert die Semikola; nicht daran vorbeibauen.
 
 Braucht der Test die Maschine, kommt `k1520_testsupport` in die `LIBS`.
+
+**CLI-Fall hinzufügen:** eine Datei `cli/cases/<name>.cli` anlegen — sonst
+nichts, CMake liest das Verzeichnis ein. Format:
+
+```
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img     # wird nach /tmp kopiert → %DISK%
+run:    %DISK%
+stdin:
+  b 0x0135
+  g
+  q
+expect: bp ZVE1 : ZVE1 PC=0135
+```
+
+Erwartungen sind normale Zeichenketten (`expect:`), Regex nur wo nötig
+(`expect_re:`); dazu `forbid:`, `exit:`, `setup_run:` für einen Vorlauf,
+`file <name>:`/`tmpfile <name>:` für Ein-/Ausgabedateien. Vollständige
+Direktivenliste: Kopf von `cli/run_case.py`.
 
 ## Gemeinsame Infrastruktur (`support/`)
 

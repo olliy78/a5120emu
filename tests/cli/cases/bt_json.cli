@@ -1,0 +1,6 @@
+# --json: maschinenlesbares Ergebnis (Agenten-Ergonomie).
+tool:   boot_trace
+disk:   cpa_cpa780_k5601_clock.img
+run:    -L /dev/null --until [0x03F8]==3 --json %DISK%
+expect: "boot_reached":false
+expect: "until":{"set":true,"met":true

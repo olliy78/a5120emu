@@ -1,0 +1,7 @@
+# --coverage: Ausführungsabdeckung je CPU.
+# ACHTUNG: --coverage muss VOR --until stehen, sonst frisst es den Diskettenpfad
+# als CSV-Dateinamen.
+tool:   boot_trace
+disk:   cpa_cpa780_k5601_clock.img
+run:    -L /dev/null --coverage --until PC==0x0437 %DISK%
+expect: === Code coverage (ZVE1) ===

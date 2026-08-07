@@ -84,9 +84,15 @@ Blackbox: Werkzeug starten, Sitzung per stdin einspielen, Ausgabe prüfen. Deckt
 die Schicht ab, die die Header-Tests nicht erreichen — Kommandozerlegung,
 Argumentbehandlung, Exit-Codes, Zusammenbau der Maschine.
 
-> **Offen (Schritt 5 des Umbaus):** Die Fälle stecken als escapte
-> Shell-Einzeiler samt Erwartungs-Regex im CMake. Ziel ist eine Datentabelle
-> plus ein Ausführungsskript.
+Die Fälle stehen als **Daten** in `tests/cli/cases/*.cli` (Werkzeug, Diskette,
+Standardeingabe, Erwartungen) und werden von `tests/cli/run_case.py` ausgeführt
+— je Datei ein ctest-Fall. Einen Fall hinzufügen heißt: eine Datei anlegen.
+
+Erwartungen sind normale Zeichenketten; ein regulärer Ausdruck ist die Ausnahme
+(`expect_re:`) und nicht mehr die Regel. Bis 2026-08-07 steckten die Fälle als
+escapte Shell-Einzeiler mit CMake-Regex im Build-System — Sonderzeichen
+überlebten das doppelte Escaping nicht, weshalb dort der Hinweis stand: „regex
+uses '.' for literal []()*+".
 
 ### `system/` — originale Programme
 

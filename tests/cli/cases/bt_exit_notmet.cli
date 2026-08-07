@@ -1,0 +1,5 @@
+# Exit-Code 2, wenn das Taktbudget vor der Bedingung endet.
+tool:   boot_trace
+disk:   cpa_cpa780_k5601_clock.img
+run:    -L /dev/null -c 50000 --until [0x03F8]==3 %DISK%
+exit:   2

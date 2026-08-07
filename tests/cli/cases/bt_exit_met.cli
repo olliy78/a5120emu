@@ -1,0 +1,5 @@
+# Exit-Code 0, wenn die --until-Bedingung erfüllt wurde.
+tool:   boot_trace
+disk:   cpa_cpa780_k5601_clock.img
+run:    -L /dev/null --until [0x03F8]==3 %DISK%
+exit:   0
