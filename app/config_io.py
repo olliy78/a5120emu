@@ -41,15 +41,19 @@ import os
 
 import yaml
 
+from app import paths
 from app.ui.screen_widget import CRTParams
 
 CONFIG_VERSION = 1
 
 
 def default_config_dir() -> str:
-    """Directory of the auto-persisted configuration (``~/.config/k1520emu``)."""
-    base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return os.path.join(base, "k1520emu")
+    """Directory of the auto-persisted configuration (``~/.config/k1520emu``).
+
+    Platform-dependent — the resolution (and the fallback to an existing
+    ``~/.config/k1520emu`` on Windows/macOS) lives in :func:`app.paths.config_dir`.
+    """
+    return str(paths.config_dir())
 
 
 def default_config_path() -> str:

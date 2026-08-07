@@ -20,7 +20,13 @@
 #include <cstdlib>
 #include <filesystem>
 #include <sstream>
-#include <unistd.h>
+
+#if defined(_WIN32)
+#  include <windows.h>
+#else
+#  include <dlfcn.h>
+#  include <unistd.h>
+#endif
 
 // Vom Build gesetzt (CMake): Katalog im Quell- bzw. Installbaum.
 #ifndef K1520_FORMATS_DEFAULT
@@ -268,20 +274,66 @@ bool validateDrives(const DiskFormat& fmt, std::string& why) {
 
 // ─── Pfadsuche ───────────────────────────────────────────────────────────────
 
-std::string exeDir() {
-    char buf[4096];
+/// Anker im eigenen Modul — nur seine ADRESSE wird gebraucht (siehe @ref moduleDir).
+const char kModuleAnchor = 0;
+
+/**
+ * @brief Verzeichnis des Moduls, in dem DIESER Code liegt.
+ *
+ * Bewusst **nicht** das Verzeichnis der Programmdatei: steckt der Kern in
+ * `libk1520core.so` und lädt die GUI ihn per `ctypes`, dann ist die Programmdatei
+ * der Python-Interpreter im venv — die mitgelieferte `formats.yaml` läge daneben
+ * nirgends.  Über die Moduladresse gefragt, antwortet jeder Fall richtig: bei den
+ * statisch gelinkten Werkzeugen ist das Modul die Programmdatei selbst, bei der
+ * gemeinsam genutzten Bibliothek diese Bibliothek.  Damit ist eine Installation
+ * frei verschiebbar (`doc/design/13_distribution.md` §6.2).
+ */
+std::string moduleDir() {
+#if defined(_WIN32)
+    HMODULE mod = nullptr;
+    if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                                  | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                              reinterpret_cast<LPCWSTR>(&kModuleAnchor), &mod))
+        return {};
+    wchar_t buf[MAX_PATH];
+    const DWORD n = ::GetModuleFileNameW(mod, buf, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return {};
+    return std::filesystem::path(buf).parent_path().string();
+#else
+    ::Dl_info info{};
+    if (::dladdr(&kModuleAnchor, &info) && info.dli_fname && *info.dli_fname)
+        return std::filesystem::path(info.dli_fname).parent_path().string();
+    // Kein dynamischer Linker (vollstatisches Binary) → Programmdatei.
+    char    buf[4096];
     const ssize_t n = ::readlink("/proc/self/exe", buf, sizeof(buf) - 1);
     if (n <= 0) return {};
     buf[n] = '\0';
     return std::filesystem::path(buf).parent_path().string();
+#endif
 }
 
+/// Basisverzeichnis der Benutzerkonfiguration (ohne den Programmnamen).
 std::string homeConfigDir() {
     if (const char* x = std::getenv("XDG_CONFIG_HOME"); x && *x) return x;
+#if defined(_WIN32)
+    if (const char* a = std::getenv("APPDATA"); a && *a) return a;
+    if (const char* p = std::getenv("USERPROFILE"); p && *p)
+        return std::string(p) + "/.config";
+    return {};
+#else
     if (const char* h = std::getenv("HOME"); h && *h)
         return std::string(h) + "/.config";
     return {};
+#endif
 }
+
+/// Trennzeichen der Pfadliste in `K1520_FORMATS` (unter Windows ist ':' Teil von `C:\…`).
+constexpr char kPathListSeparator =
+#if defined(_WIN32)
+    ';';
+#else
+    ':';
+#endif
 
 }  // namespace
 
@@ -317,8 +369,8 @@ std::vector<std::string> FormatCatalog::searchPaths() {
     //    den Katalog ohne jede Umgebungsvariable finden.
     if (std::string d = K1520_FORMATS_DEFAULT; !d.empty()) p.push_back(d);
 
-    // 2) neben der Programmdatei installiert
-    if (std::string e = exeDir(); !e.empty()) {
+    // 2) neben dem eigenen Modul installiert (Bibliothek bzw. Programmdatei)
+    if (std::string e = moduleDir(); !e.empty()) {
         p.push_back(e + "/../share/a5120emu/" + kCatalogFileName);
         p.push_back(e + "/data/" + kCatalogFileName);
     }
@@ -330,11 +382,12 @@ std::vector<std::string> FormatCatalog::searchPaths() {
     if (std::string c = homeConfigDir(); !c.empty())
         p.push_back(c + "/a5120emu/" + kCatalogFileName);
 
-    // 5) explizite Vorgabe (höchste Priorität), ':'-getrennte Dateien/Verzeichnisse
+    // 5) explizite Vorgabe (höchste Priorität), Dateien/Verzeichnisse getrennt
+    //    durch ':' (unixoid) bzw. ';' (Windows)
     if (const char* env = std::getenv("K1520_FORMATS"); env && *env) {
         std::stringstream ss(env);
         std::string       item;
-        while (std::getline(ss, item, ':')) {
+        while (std::getline(ss, item, kPathListSeparator)) {
             if (item.empty()) continue;
             std::error_code ec;
             if (std::filesystem::is_directory(item, ec))
