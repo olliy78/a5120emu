@@ -7,7 +7,7 @@ Disasm/Trace die Original-Semantik inline (`; …`) zeigen. Analog gen_zre_prn.p
 
 Quelle der Bytes: ein SCPX-RAM-Dump. So gewinnen (BIOS liegt erst nach dem Boot im RAM):
 
-    D=$(mktemp --suffix=.hfe); cp disks/scpx_boot.hfe "$D"
+    D=$(mktemp --suffix=.hfe); cp disks/scpx17_cpa780_k5601.hfe "$D"
     printf 'b 0xE079\\ng\\nbd 0xE079\\nsavestate /tmp/scpx.state\\nq\\n' | ./build/k1520dbg --rw "$D"
     dd if=/tmp/scpx.state bs=1 skip=12 count=65536 of=/tmp/scpx_ram64.bin ; rm -f "$D"
     python3 tools/gen_scpx_readpath_prn.py /tmp/scpx_ram64.bin doc/EPROMS/scpx_readpath.prn

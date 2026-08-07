@@ -1,6 +1,6 @@
 # CPA780 SYL-Bootlader — Funktionale Analyse
 
-**Quelldatei:** `disks/bootsec.bin`  
+**Quelldatei:** `disks/bootsec_cpa780.bin`  
 **Größe:** 15104 Bytes = 3 × 3328 (System) + 1 × 5120 (Daten-Fueller)  
 **Format:** CPA780 SYL-Mixed-Geometry-Diskette  
 **CPU:** Zilog Z80  
@@ -9,7 +9,7 @@
 ---
 
 > **Status (2026-06):** Dieses Dokument analysiert das **On-Disk-Layout** von
-> `disks/bootsec.bin`. Die Byte-Disassemblate stimmen; einige funktionale
+> `disks/bootsec_cpa780.bin`. Die Byte-Disassemblate stimmen; einige funktionale
 > Deutungen sind jedoch durch die Emulator-Laufzeitanalyse korrigiert worden.
 > Maßgeblich für den **tatsächlichen Bootablauf** ist
 > [`K1520_architecture.md` §14.5/§14.5b](K1520_architecture.md). Kurz:
@@ -522,7 +522,7 @@ Aufruf: CPABCGEN <ZielDisk.>:[ <QuellSystem, Standard @OS.COM>]
 
 ### 10.1 Eingebetteter Boot-Sektor
 
-`cpabcgen.com` enthält eingebettete Bootsector-Daten für **Spur 0** und **Spur 2** (je 3328 Bytes, ab Datei-Offset `0x0700` bzw. `0x1400`). Die ersten 128 Bytes des eingebetteten Track-0-Sektors sind **byte-identisch** mit `disks/bootsec.bin`. Die eingebettete Version-Kennung lautet `"Bootloader, Version 24.02.87"` (älter als `bootsec.bin` mit `Version 05.04.88`).
+`cpabcgen.com` enthält eingebettete Bootsector-Daten für **Spur 0** und **Spur 2** (je 3328 Bytes, ab Datei-Offset `0x0700` bzw. `0x1400`). Die ersten 128 Bytes des eingebetteten Track-0-Sektors sind **byte-identisch** mit `disks/bootsec_cpa780.bin`. Die eingebettete Version-Kennung lautet `"Bootloader, Version 24.02.87"` (älter als `bootsec.bin` mit `Version 05.04.88`).
 
 Spur 1 (53H-Füllung) und die initiale Datenspur werden **zur Laufzeit generiert**, nicht aus eingebetteten Daten gelesen.
 
@@ -593,7 +593,7 @@ Teile des Bootloaders stammen nachweislich aus den CPA-BIOS-Quellcode-Dateien in
 
 ## 12. Referenzen
 
-- [`disks/bootsec.bin`](../disks/bootsec.bin) — analysierte Binärdatei
+- [`disks/bootsec_cpa780.bin`](../disks/bootsec_cpa780.bin) — analysierte Binärdatei
 - [`docs/bootsec.mac`](bootsec.mac) — kommentiertes Disassemblat im M80/MAC-Format
 - [`cpa_src/biosdskt.mac`](../cpa_src/biosdskt.mac) — physischer FDC-Treiber (Ports, ft.*, Motor, AMF-Legende)
 - [`cpa_src/biosdskb.mac`](../cpa_src/biosdskb.mac) — ft.*-Parameterblock-Definitionen

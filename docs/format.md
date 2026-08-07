@@ -6,7 +6,7 @@ Bedien-Dialog (inkl. der mehrseitigen Format-Menüs „X = Menü #2" usw.) und h
 welche Formate der Emulator aktuell **fehlerfrei** schreiben und verifizieren kann.
 
 Quelle: live aus dem Emulator abgegriffen (Treiber `tools/format_driver`, Boot-Disk
-`cpadisk_autofs_clock_noautoexec.img`, Ziel-Diskette in Laufwerk **B:**). Reproduktion
+`cpa_cpa780_k5601_clock.img`, Ziel-Diskette in Laufwerk **B:**). Reproduktion
 siehe Abschnitt *Nachstellen im Emulator*.
 
 ---
@@ -464,7 +464,7 @@ cyl1-Retry-Zyklus mit dem cyl2-Zyklus instruktionsweise.
   Define greift dort nicht).
 
 **Repro (Format 6, Blank-`.hfe`, hängt bei „FORMATIEREN auf Spur 4"):**
-`python3 tools/img_to_hfe.py --blank --cyls 80 --heads 2 B.hfe; cp disks/cpadisk_autofs_clock_noautoexec.img A.img;`
+`python3 tools/img_to_hfe.py --blank --cyls 80 --heads 2 B.hfe; cp disks/cpa_cpa780_k5601_clock.img A.img;`
 Script: `boot 80`/`type 12:00:00`/enter / `boot 5`/`type FORMAT`/enter / `boot 30`/enter (Fkt 0) /
 `boot 6`/`type B`/enter / `boot 10`/enter (Verify j) / `boot 8`/`type X`/`boot 3`/`type 6`/`boot 6`/enter /
 `boot 5`/`type 9`/enter / `boot 6`/`type j` / `boot 250` / `ramdump 0100 2200 tpa.bin` /
@@ -719,8 +719,8 @@ mountet Disk B: **schreibend**, FORMAT-Writes landen in der diskB-Datei):
 ```sh
 tools/dev.sh tool format_driver          # baut + zeigt Usage
 # Zwei Disketten anlegen (immer Kopien verwenden, NICHT die Fixtures!):
-D=$(mktemp --suffix=.img); cp disks/cpadisk_autofs_clock_noautoexec.img "$D"   # Ziel B:
-A=disks/cpadisk_autofs_clock_noautoexec.img                                     # Boot A:
+D=$(mktemp --suffix=.img); cp disks/cpa_cpa780_k5601_clock.img "$D"   # Ziel B:
+A=disks/cpa_cpa780_k5601_clock.img                                     # Boot A:
 build/format_driver "$A" "$D" script.txt
 ```
 
@@ -814,9 +814,9 @@ relevanten Laufwerkstypen ohne echte Hardware im Emulator abzufragen, gibt es zw
 
 | Boot-Disk (`disks/…`)                     | A:      | B:                  | C:                        |
 |-------------------------------------------|---------|---------------------|---------------------------|
-| `cpadisk_autofs_noclk_noautoexec`         | K5601   | K5601               | K5601                     |
-| `cpadisk_autofs_noclock_5inchCombo`       | K5601   | **K5600.10** `10540`| **K5600.20** `10580`      |
-| `cpadisk_autofs_noclock_8inchCombo`       | K5601   | **MF3200** `00877`  | **K5602.10/MF6400** `10877` |
+| `cpa_cpa780_k5601_noclock`         | K5601   | K5601               | K5601                     |
+| `cpa_cpa780_combo5zoll_noclock`       | K5601   | **K5600.10** `10540`| **K5600.20** `10580`      |
+| `cpa_cpa780_combo8zoll_noclock`       | K5601   | **MF3200** `00877`  | **K5602.10/MF6400** `10877` |
 
 Alle `noclock`/`noclk`-Disks booten ohne Uhr-Abfrage direkt nach `A>`. Die Boot-Meldung
 zeigt die Laufwerkskonfiguration, z. B. für die 5inchCombo:

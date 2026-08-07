@@ -8,8 +8,8 @@ gewählten Laufwerksbuchstaben meldet (siehe docs/format.md §2/§10).  Die neue
 Combo-Boot-Disketten konfigurieren B:/C: als andere Laufwerkstypen, sodass sich deren
 Menüs erstmals im Emulator abgreifen lassen:
 
-  cpadisk_autofs_noclock_5inchCombo : A:K5601  B:K5600.10 (5" 40 DD SS)  C:K5600.20 (5" 80 DD SS)
-  cpadisk_autofs_noclock_8inchCombo : A:K5601  B:MF3200   (8" 77 SD SS)  C:K5602.10/MF6400 (8" 77 DD SS)
+  cpa_cpa780_combo5zoll_noclock : A:K5601  B:K5600.10 (5" 40 DD SS)  C:K5600.20 (5" 80 DD SS)
+  cpa_cpa780_combo8zoll_noclock : A:K5601  B:MF3200   (8" 77 SD SS)  C:K5602.10/MF6400 (8" 77 DD SS)
 
 Der Runner bootet die passende Combo-Disk (A:), startet FORMAT.COM, wählt das Laufwerk,
 blättert mit X/Y/Z durch alle Menüseiten und dumpt jeden Bildschirm.  Es wird NICHT
@@ -37,13 +37,13 @@ ROOT     = os.path.dirname(HERE)
 DRIVER   = os.path.join(ROOT, 'build', 'format_driver')
 DISKS    = os.path.join(ROOT, 'disks')
 
-COMBO5   = os.path.join(DISKS, 'cpadisk_autofs_noclock_5inchCombo.img')
-COMBO8   = os.path.join(DISKS, 'cpadisk_autofs_noclock_8inchCombo.img')
+COMBO5   = os.path.join(DISKS, 'cpa_cpa780_combo5zoll_noclock.img')
+COMBO8   = os.path.join(DISKS, 'cpa_cpa780_combo8zoll_noclock.img')
 # noclk-Disk: bootet ohne Uhr-Abfrage direkt nach A> (alle 3 LW = K5601).
-NOCLK    = os.path.join(DISKS, 'cpadisk_autofs_noclk_noautoexec.img')
+NOCLK    = os.path.join(DISKS, 'cpa_cpa780_k5601_noclock.img')
 # Gültiges Template für die B:/C:-Slots (Menü-Capture liest das Medium nicht, aber
 # der Slot muss belegt sein, damit FORMAT den Laufwerksbuchstaben akzeptiert).
-TEMPLATE = os.path.join(DISKS, 'cpadisk_autofs_clock_noautoexec.img')
+TEMPLATE = os.path.join(DISKS, 'cpa_cpa780_k5601_clock.img')
 
 # ─── Laufwerks-Matrix ────────────────────────────────────────────────────────
 # name: (boot_disk, drive_letter, dpb_code, beschreibung)

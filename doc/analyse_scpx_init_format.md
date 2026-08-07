@@ -72,7 +72,7 @@ Zeigertabelle, `Bits 1..0` den Index darin (`0254`–`0268`):
 | `0x82` | B `09A7` | `09BF` | **M4** DD-SS 16×256 … |
 | `0x83` | B `09A7` | `09C3` | **M5** DD-DS 16×256 … |
 
-> Für unsere **SCPX-Bootdiskette** (`disks/scpx_boot.hfe`, Laufwerk A: = 5,25″ **DS 80-Spur MFM,
+> Für unsere **SCPX-Bootdiskette** (`disks/scpx17_cpa780_k5601.hfe`, Laufwerk A: = 5,25″ **DS 80-Spur MFM,
 > 16×256**) ist der native Typ **DD-DS 16×256** → **Menü M5** (`(IX+21)&0x83 = 0x83`).
 > **✓ Empirisch bestätigt** (2026-07-11, `k1520dbg`): `INIT` → `A` zeigt exakt M5
 > (`0=DD-DS 16*256 (DEFAULT) … 4=DD-SS 5*1024`), Dialog läuft bis `PLEASE SELECT FORMAT`.
@@ -154,7 +154,7 @@ INIT.COM benutzt **keinen BIOS-Format-Call**, sondern programmiert den **K5122-C
 
 ## 7. Testplan (Formatieren im Emulator)
 
-Vorbereitung: Boot `disks/scpx_boot.hfe` bis `A>` (interaktiver Prompt, `os_running_`-Gate aktiv,
+Vorbereitung: Boot `disks/scpx17_cpa780_k5601.hfe` bis `A>` (interaktiver Prompt, `os_running_`-Gate aktiv,
 .COM-Laden funktioniert). Werkzeuge: `k1520dbg -s tools/scpx1526.sym` (batch via `-x`/Pipe;
 `keys` braucht **literales `\r`** für Enter), `boot_trace --until PC==0xE079` als Boot-Check.
 COW-Mount ist Default → Fixture unkorrumpierbar; für persistente Schreibtests `--rw` auf **Temp-Kopie**.

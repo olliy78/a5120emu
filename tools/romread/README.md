@@ -61,7 +61,7 @@ Das Programm ist mit `k1520dbg` end-to-end verifiziert (CP/A läuft, EPROM wird
 ein-/ausgeblendet, System überlebt):
 
 ```sh
-A=$(mktemp --suffix=.img); cp disks/cpadisk_autofs_noclk_noautoexec.img "$A"
+A=$(mktemp --suffix=.img); cp disks/cpa_cpa780_k5601_noclock.img "$A"
 RR=$(pwd)/tools/romread/build/romread.com
 printf "g 100000000\nload $RR 0x100\nset PC 0x100\nset SP 0x7F00\ng 5000000\nsave /tmp/buf.bin 0x8000 1024\nscreen\nq\n" \
   | tools/dev.sh tool k1520dbg "$A"

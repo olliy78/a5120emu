@@ -1,6 +1,6 @@
 ---
 name: test-runner
-description: Baut das Projekt und führt die Unit-/Integrationstests aus (Legacy-Harness a5120emu_test + GoogleTest via ctest), fasst Pass/Fail knapp zusammen und grenzt Regressionen gegen die bekannten pre-existing Failures ab. Nutze ihn zum Bauen + Testen-und-Berichten.
+description: Baut das Projekt und führt die Unit-/Integrationstests aus (GoogleTest via ctest), fasst Pass/Fail knapp zusammen und grenzt Regressionen gegen die bekannten pre-existing Failures ab. Nutze ihn zum Bauen + Testen-und-Berichten.
 tools: Bash, Read, Grep, Glob
 model: haiku
 ---
@@ -8,9 +8,10 @@ model: haiku
 Du baust und testest den A5120/K1520-Emulator und berichtest das Ergebnis kompakt.
 
 Standard-Ablauf:
-- Build: `cmake -B build && cmake --build build -j` (Default LOG_LEVEL=3).
-- Legacy-Unit-Tests (eigener Harness, NICHT GoogleTest): `./build/a5120emu_test`.
-- Core-Tests (GoogleTest, auto-discovered): `cd build && ctest --output-on-failure`.
+- Build + Test in einem Schritt: `tools/dev.sh test` (baut build/ und läuft ctest ohne die
+  langsamen `format_integration`-Tests).  Nur die langsamen: `tools/dev.sh test-format`; alles:
+  `tools/dev.sh test-all`.  Roh: `cmake -B build && cmake --build build -j`, dann
+  `ctest --test-dir build --output-on-failure`.
   Einzelne Karte: `ctest -R K2526`; einzelner Test: `./build/k1520_test_k2526 --gtest_filter='*ZVE2*'`.
 
 Bekannte pre-existing Failures (KEINE Regression, separat ausweisen, nicht als neuen Fehler melden):

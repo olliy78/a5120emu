@@ -9,7 +9,7 @@ This file is part of the a5120emu project. See the LICENSE file in the
 project root for the full text of the MIT License.
 
 Dieses Skript disassembliert das Binärabbild des System-Bootloaders
-(disks/bootsec.bin) des Robotron A5120 / CPA780.
+(disks/bootsec_cpa780.bin) des Robotron A5120 / CPA780.
 
 Das Skript ist vollständig in der Python-Standardbibliothek implementiert
 und benötigt kein externes Z80-Disassembler-Paket.
@@ -62,7 +62,7 @@ import struct
 # ─── Konfiguration ────────────────────────────────────────────────────────────
 
 # Pfad zum Bootloader-Binärabbild (3 Systemspuren × 26 Sektoren × 128 Byte)
-BOOTSEC = '/home/olliy/projects/a5120emu/disks/bootsec.bin'
+BOOTSEC = '/home/olliy/projects/a5120emu/disks/bootsec_cpa780.bin'
 
 # Binärdaten einlesen
 data = open(BOOTSEC, 'rb').read()

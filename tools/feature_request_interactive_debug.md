@@ -150,7 +150,7 @@ Dialog → Menü → Test). Das ist mehr als „warte auf EINEN Screen":
 
 ## Umsetzungsstand (2026-07-24)
 
-Umgesetzt und mit Guard-Tests / Smoke-Läufen (auf `disks/scpx_boot.hfe`) verifiziert:
+Umgesetzt und mit Guard-Tests / Smoke-Läufen (auf `disks/scpx17_cpa780_k5601.hfe`) verifiziert:
 
 | Item | Status | Umsetzung / Verifikation |
 |------|--------|--------------------------|

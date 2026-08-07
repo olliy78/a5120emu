@@ -8,6 +8,7 @@ import sys
 import struct
 import re
 from collections import defaultdict
+from pathlib import Path
 
 ORG = 0x0100
 
@@ -1165,8 +1166,12 @@ class FormatDisassembler:
         return self.generate_output()
 
 
+# Projektwurzel aus dem Skriptort ableiten — die Arbeitskopie darf überall liegen.
+ROOT = Path(__file__).resolve().parents[1]
+
+
 def main():
-    path = '/home/olliy/projects/a5120emu/boot_disk/format.com'
+    path = sys.argv[1] if len(sys.argv) > 1 else str(ROOT / 'boot_disk/format.com')
     data = read_binary(path)
     
     dis = FormatDisassembler(data)

@@ -206,6 +206,56 @@ _lib.k1520_disk_motor.restype = ctypes.c_bool
 _lib.k1520_head_loaded.argtypes = [K1520Handle]
 _lib.k1520_head_loaded.restype = ctypes.c_bool
 
+# ─── Bisher unbenutzte, aber exportierte C-API ──────────────────────────────
+# Vollständig deklariert, damit die ctypes-Signaturen NIE von k1520_api.h
+# abdriften — tests/python/test_c_api.py vergleicht Header und Bindung.
+
+# k1520_stop(K1520Handle) -> void   (laufenden run() abbrechen)
+_lib.k1520_stop.argtypes = [K1520Handle]
+_lib.k1520_stop.restype = None
+
+# k1520_version() -> const char*
+_lib.k1520_version.argtypes = []
+_lib.k1520_version.restype = ctypes.c_char_p
+
+# k1520_mem_read(K1520Handle, addr: uint16) -> uint8
+_lib.k1520_mem_read.argtypes = [K1520Handle, ctypes.c_uint16]
+_lib.k1520_mem_read.restype = ctypes.c_uint8
+
+# k1520_mem_write(K1520Handle, addr: uint16, data: uint8) -> void
+_lib.k1520_mem_write.argtypes = [K1520Handle, ctypes.c_uint16, ctypes.c_uint8]
+_lib.k1520_mem_write.restype = None
+
+# k1520_io_read(K1520Handle, port: uint8) -> uint8
+_lib.k1520_io_read.argtypes = [K1520Handle, ctypes.c_uint8]
+_lib.k1520_io_read.restype = ctypes.c_uint8
+
+# k1520_set_console_mode(K1520Handle, enable: bool) -> void
+_lib.k1520_set_console_mode.argtypes = [K1520Handle, ctypes.c_bool]
+_lib.k1520_set_console_mode.restype = None
+
+# k1520_console_poll(K1520Handle, x*, y*, ch*) -> bool
+_lib.k1520_console_poll.argtypes = [K1520Handle, ctypes.POINTER(ctypes.c_int),
+                                    ctypes.POINTER(ctypes.c_int), ctypes.c_char_p]
+_lib.k1520_console_poll.restype = ctypes.c_bool
+
+# k1520_console_key(K1520Handle, c: char) -> void
+_lib.k1520_console_key.argtypes = [K1520Handle, ctypes.c_char]
+_lib.k1520_console_key.restype = None
+
+# k1520_serial_send(K1520Handle, port: int, byte: uint8) -> void
+_lib.k1520_serial_send.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_uint8]
+_lib.k1520_serial_send.restype = None
+
+# k1520_serial_set_rx_cb(K1520Handle, port: int, cb, user*) -> void
+K1520SerialRxCb = ctypes.CFUNCTYPE(None, ctypes.c_uint8, ctypes.c_void_p)
+_lib.k1520_serial_set_rx_cb.argtypes = [K1520Handle, ctypes.c_int,
+                                        K1520SerialRxCb, ctypes.c_void_p]
+_lib.k1520_serial_set_rx_cb.restype = None
+
+# Textbildschirm des K7024: 80x24 Zeichen ab 0xF800 (Bit7 = Invers-Attribut).
+VRAM_BASE, VRAM_COLS, VRAM_ROWS = 0xF800, 80, 24
+
 # ════════════════════════════════════════════════════════════════════════════
 # K1520 Emulator Python Class
 # ════════════════════════════════════════════════════════════════════════════
@@ -482,3 +532,34 @@ class K1520Emulator:
     def is_head_loaded(self) -> bool:
         """Return True while the read/write head is loaded (/HL, ctrl port A bit6)."""
         return _lib.k1520_head_loaded(self._handle)
+
+    # ─── Speicher-/Portzugriff (Diagnose, Tests) ─────────────────────────────
+
+    def mem_read(self, addr: int) -> int:
+        """Read one byte through the bus (memory map of the running machine)."""
+        return _lib.k1520_mem_read(self._handle, ctypes.c_uint16(addr))
+
+    def mem_write(self, addr: int, data: int):
+        """Write one byte through the bus."""
+        _lib.k1520_mem_write(self._handle, ctypes.c_uint16(addr), ctypes.c_uint8(data))
+
+    def io_read(self, port: int) -> int:
+        """Read one I/O port (non-destructive where the hardware allows it)."""
+        return _lib.k1520_io_read(self._handle, ctypes.c_uint8(port))
+
+    def screen_text(self) -> str:
+        """Textbildschirm als 24 Zeilen à 80 Zeichen (Attributbit 7 maskiert).
+
+        Liest das K7024-Bildwiederholram direkt — unabhängig vom gerenderten
+        Framebuffer und damit die robuste Art, den Bildschirminhalt zu prüfen.
+        """
+        chars = [chr(self.mem_read(VRAM_BASE + i) & 0x7F)
+                 for i in range(VRAM_COLS * VRAM_ROWS)]
+        return "\n".join("".join(chars[r * VRAM_COLS:(r + 1) * VRAM_COLS])
+                          for r in range(VRAM_ROWS))
+
+    @staticmethod
+    def version() -> str:
+        """Version string of the loaded core library."""
+        v = _lib.k1520_version()
+        return v.decode("utf-8") if v else ""

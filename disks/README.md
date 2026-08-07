@@ -1,21 +1,53 @@
-# Disketten-Images für verschiedene Tests
+# Disketten-Images — Arbeitsverzeichnis
+
+Dieses Verzeichnis ist für **manuelle Läufe**: GUI, `k1520dbg`, `boot_trace`, `floppy_diag`,
+Formatier-Experimente. Der Inhalt darf sich jederzeit ändern.
+
+> **Die Tests benutzen dieses Verzeichnis nicht.** Ihre unveränderlichen Kopien liegen unter
+> `tests/fixtures/disks/` — dort steht auch das Namensschema und wer welche Diskette braucht
+> (`tests/fixtures/README.md`). Wer hier eine Diskette ändert, beeinflusst keinen Test.
 
 ## Dateiformate
 
-.hfe     raw HFE Image Format mit Spuren und Sektoren
-.img     reine Payload der Diskette
-.prn     volständig gelinkte BIOS Quelltext mit Kommentaren. Kann zur Fehlersuche in den Debugger geladen werden
+| Endung | Inhalt |
+|--------|--------|
+| `.hfe` | HFE-Rohbild mit Spuren/Sektoren (formatagnostisch, enthält die Bitzellen) |
+| `.img` | reine Nutzdaten der Diskette (Geometrie steckt im Formatnamen) |
+| `.prn` | vollständig gelinkter, kommentierter BIOS-Quelltext der jeweiligen Diskette — mit `k1520dbg -l <datei>.prn` laden, dann zeigt jede Disassembly-Zeile Label + Originalkommentar |
 
+## Namensschema
+
+`<system>_<diskformat>_<laufwerkskonfiguration>_<merkmale>.<ext>` — identisch zu den Fixtures,
+Erklärung der Segmente in `tests/fixtures/README.md`.
 
 ## Disketten
 
-cpadisk_autofs_clock_noautoexec    mit Uhr A: K5601 B: K5601 C: K5601
-cpadisk_autofs_noclk_noautoexec    keine Uhr A: K5601 B: K5601 C: K5601
-cpadisk_autofs_noclock_8inchCombo: keine Uhr A: K5601 B: MF3200 C: K5602.10 / MF6400
-cpadisk_autofs_noclock_5inchCombo: keine Uhr A: K5601 B: K5600.10 C: K5600.20
+| Datei | System | Laufwerke A: / B: / C: |
+|-------|--------|------------------------|
+| `cpa_cpa780_k5601_clock` | CP/A **mit Uhr** | K5601 / K5601 / K5601 |
+| `cpa_cpa780_k5601_noclock` | CP/A ohne Uhr | K5601 / K5601 / K5601 |
+| `cpa_cpa780_combo5zoll_noclock` | CP/A ohne Uhr | K5601 / **K5600.10** / **K5600.20** |
+| `cpa_cpa780_combo8zoll_noclock` | CP/A ohne Uhr | K5601 / **MF3200** / **K5602.10 · MF6400** |
+| `scpx17_cpa780_k5601.hfe` | SCPX 1526 V1.7, 16×256-System | K5601 |
+| `scpx17_5x1024_k5601_hardy.hfe` | SCPX 1526 V1.7, 5×1024-System, mit HARDY.COM | K5601 |
+| `bootdisk_cpabcgen.hfe` | Ergebnis eines CPABCGEN-Laufs (Altbestand, von nichts referenziert) | — |
+| `bootsec_cpa780.bin` | Bootsektor einer cpa780-Diskette (512 B) | — |
 
-Die beiden Combo-Disketten konfigurieren im BIOS die Laufwerke B:/C: als andere
-Laufwerkstypen (DPB-Codes 10540/10580 bzw. 00877/10877). Dadurch bietet FORMAT.COM je
-gewähltem Laufwerk die zugehörigen Formate an (5¼″ einseitig, 8″ SD/DD). Details, die
-live abgegriffenen Formatmenüs und die Test-Pipeline: `docs/format.md` §11 und §5/§3.5.
+Die beiden **Combo**-Disketten konfigurieren im BIOS B:/C: als andere Laufwerkstypen
+(DPB-Codes 10540/10580 bzw. 00877/10877). FORMAT.COM bietet dadurch je gewähltem Laufwerk
+die zugehörigen Formate an (5¼″ einseitig, 8″ SD/DD). Details, live abgegriffene Formatmenüs
+und die Test-Pipeline: `docs/format.md` §11 und §5/§3.5.
 Menüs abgreifen: `python3 tools/capture_format_menus.py --all`.
+
+## Leere Disketten
+
+Hier liegen **keine** Leerdisketten mehr. Eine gültig formatierte Leerdiskette erzeugt der
+Kern selbst — `DiskImage::create` schreibt echte IDAM/DATA/CRC-Strukturen (Daten 0xE5):
+
+```sh
+tools/dev.sh tool mk_disk_template …      # einseitige Vorlagen (8″-FM/MFM, 5¼″-SS)
+```
+
+In der GUI legt `k1520_create_disk` (Menü „Diskette anlegen") eine leere Diskette im
+laufwerkstyp-spezifischen Standardformat an. Die einzige committete Leerdiskette ist
+`tests/fixtures/disks/leer_cpa780.hfe` — sie ist Formatierziel der Boot-Disk-Pipeline.

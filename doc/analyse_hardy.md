@@ -4,7 +4,7 @@ Vollständige Erkenntnisse aus der Analyse von **`docs/hardy.com`** (HARDY V.3/1
 Universität zu Berlin, 31.01.87), damit weitere Testabschnitte in einer neuen Session
 genauso ans Laufen gebracht werden können wie der bereits gelöste **Rechner-Test**.
 
-- Bootdiskette: `disks/scpx_5x1024_hardy.hfe` (SCPX 1526 V1.7, Geometrie 5×1024) → bootet
+- Bootdiskette: `disks/scpx17_5x1024_k5601_hardy.hfe` (SCPX 1526 V1.7, Geometrie 5×1024) → bootet
   vollautomatisch bis `A>`.
 - Der MEMDI-Freeze-Fix des Rechner-Tests ist separat in `doc/analyse_hardy_memdi.md`
   beschrieben; dieses Dokument ist die **Gesamtreferenz** (Struktur, I/O-Landkarte,
@@ -179,7 +179,7 @@ strings -n4 docs/hardy.com                 # Testabschnitt-Meldungen
 python3 -c 'd=open("docs/hardy.com","rb").read(); print(hex(d.find(b"...")+0x100))'
 
 # 3) Im Debugger reproduzieren (COW-Mount ist Default → Fixture sicher)
-tools/dev.sh tool k1520dbg -s tools/scpx1526.sym disks/scpx_5x1024_hardy.hfe -x script.dbg
+tools/dev.sh tool k1520dbg -s tools/scpx1526.sym disks/scpx17_5x1024_k5601_hardy.hfe -x script.dbg
 ```
 `script.dbg` (Muster):
 ```

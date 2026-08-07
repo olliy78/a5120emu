@@ -12,3 +12,4 @@ out/
 
 # Temporäre Disk-Kopien der Debug-/Format-Tools
 disks/*_tmp*.hfe
+tests/python/.config-testrun/

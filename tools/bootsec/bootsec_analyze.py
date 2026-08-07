@@ -9,7 +9,7 @@ This file is part of the a5120emu project. See the LICENSE file in the
 project root for the full text of the MIT License.
 
 Dieses Skript disassembliert das Binärabbild des System-Bootloaders
-(disks/bootsec.bin) des Robotron A5120 / CPA780.
+(disks/bootsec_cpa780.bin) des Robotron A5120 / CPA780.
 
 Das Skript ist vollständig in der Python-Standardbibliothek implementiert
 und benötigt kein externes Z80-Disassembler-Paket.
@@ -57,15 +57,35 @@ Z80-Befehlsabdeckung (Untermenge des vollständigen Z80-Befehlssatzes):
     da die fehlenden Befehle im Bootloader-Binärabbild nicht vorkommen.
 """
 
+from pathlib import Path
 import struct
 
 # ─── Konfiguration ────────────────────────────────────────────────────────────
 
-# Pfad zum Bootloader-Binärabbild (3 Systemspuren × 26 Sektoren × 128 Byte)
-BOOTSEC = '/home/olliy/projects/a5120emu/disks/bootsec.bin'
+# Pfad zum Bootloader-Binärabbild (3 Systemspuren × 26 Sektoren × 128 Byte = 9984 B).
+# Projektwurzel aus dem Skriptort ableiten — die Arbeitskopie darf überall liegen.
+# Überschreibbar per Argument:  python3 bootsec_analyze.py <datei.bin>
+import sys
+
+ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_BOOTSEC = ROOT / 'tests/fixtures/disks/bootsec_cpa780.bin'
+EXPECTED_SIZE = 3 * 26 * 128        # 9984 Byte
+
+BOOTSEC = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_BOOTSEC
+
+if not BOOTSEC.exists():
+    sys.exit(f"Bootloader-Abbild nicht gefunden: {BOOTSEC}\n"
+             f"Pfad als Argument übergeben: python3 {Path(__file__).name} <datei.bin>")
 
 # Binärdaten einlesen
-data = open(BOOTSEC, 'rb').read()
+data = BOOTSEC.read_bytes()
+
+if len(data) < EXPECTED_SIZE:
+    sys.exit(f"{BOOTSEC} ist {len(data)} Byte groß, erwartet werden {EXPECTED_SIZE} "
+             f"(3 Systemspuren x 26 Sektoren x 128 Byte).\n"
+             f"Die committete Datei ist nur der ERSTE Sektor (512 B) — für die volle "
+             f"Analyse die Systemspuren einer Bootdiskette auslesen und als Argument "
+             f"übergeben.")
 
 
 # ─── Hilfsfunktion: Vorzeichenbehaftetes Byte ─────────────────────────────────

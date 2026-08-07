@@ -1,0 +1,40 @@
+# Unit-Tests: isolierte Klassen, keine Diskette, kein Boot.
+# Struktur spiegelt core/ — primitives/ bus/ cards/ peripherals/ util/.
+
+set(_lbl "unit;fast")
+
+# ── core/primitives/ ─────────────────────────────────────────────────────────
+k1520_add_test(z80   SRC primitives/test_z80.cpp   LIBS k1520_z80 LABELS "${_lbl}")
+k1520_add_test(pio   SRC primitives/test_pio.cpp   LIBS k1520_pio LABELS "${_lbl}")
+k1520_add_test(ctc   SRC primitives/test_ctc.cpp   LIBS k1520_ctc LABELS "${_lbl}")
+k1520_add_test(sio   SRC primitives/test_sio.cpp   LIBS k1520_sio LABELS "${_lbl}")
+# RETI/IUS-Verhalten über alle drei Bausteine hinweg (braucht daher den Bus).
+k1520_add_test(reti  SRC primitives/test_reti.cpp
+                     LIBS k1520_ctc k1520_pio k1520_sio k1520_bus LABELS "${_lbl}")
+
+# ── core/bus/ ────────────────────────────────────────────────────────────────
+k1520_add_test(bus   SRC bus/test_bus.cpp          LIBS k1520_bus LABELS "${_lbl}")
+
+# ── core/cards/ ──────────────────────────────────────────────────────────────
+k1520_add_test(k2526 SRC cards/test_k2526.cpp
+                     LIBS k1520_k2526 k1520_k3526 k1520_k5122 k1520_floppy LABELS "${_lbl}")
+k1520_add_test(k3526 SRC cards/test_k3526.cpp      LIBS k1520_k3526 k1520_bus LABELS "${_lbl}")
+k1520_add_test(k5122 SRC cards/test_k5122.cpp      LIBS k1520_k5122 LABELS "${_lbl}")
+k1520_add_test(k7024 SRC cards/test_k7024.cpp      LIBS k1520_k7024 k1520_bus LABELS "${_lbl}")
+k1520_add_test(k8025 SRC cards/test_k8025.cpp      LIBS k1520_k8025 LABELS "${_lbl}")
+
+# ── core/peripherals/ ────────────────────────────────────────────────────────
+k1520_add_test(k7637          SRC peripherals/test_k7637.cpp
+                              LIBS k1520_k7637 k1520_sio k1520_bus LABELS "${_lbl}")
+k1520_add_test(track_codec    SRC peripherals/test_track_codec.cpp    LIBS k1520_floppy2 LABELS "${_lbl}")
+k1520_add_test(bit_codec      SRC peripherals/test_bit_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
+k1520_add_test(drive_profile  SRC peripherals/test_drive_profile.cpp  LIBS k1520_floppy2 LABELS "${_lbl}")
+k1520_add_test(disk_image_raw SRC peripherals/test_disk_image_raw.cpp LIBS k1520_floppy2 LABELS "${_lbl}")
+k1520_add_test(floppy_drive2  SRC peripherals/test_floppy_drive2.cpp  LIBS k1520_floppy2 LABELS "${_lbl}")
+k1520_add_test(hfe_image      SRC peripherals/test_hfe_image.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
+# Prüft den AUSGELIEFERTEN Katalog data/formats.yaml — Pfad muss der Test kennen.
+k1520_add_test(format_catalog SRC peripherals/test_format_catalog.cpp LIBS k1520_floppy2 LABELS "${_lbl}"
+                              DEFS K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")
+
+# ── core/util/ ───────────────────────────────────────────────────────────────
+k1520_add_test(yaml_lite SRC util/test_yaml_lite.cpp LIBS k1520_util LABELS "${_lbl}")

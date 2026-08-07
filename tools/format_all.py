@@ -41,17 +41,19 @@ HERE     = os.path.dirname(os.path.abspath(__file__))
 ROOT     = os.path.dirname(HERE)
 DRIVER   = os.path.join(ROOT, 'build', 'format_driver')
 IMG2HFE  = os.path.join(HERE, 'img_to_hfe.py')
-DISKS    = os.path.join(ROOT, 'disks')
-BOOT_IMG = os.path.join(DISKS, 'cpadisk_autofs_clock_noautoexec.img')
+# Testdisketten liegen als unveränderliche Fixtures unter tests/fixtures/disks/;
+# disks/ ist das Arbeitsverzeichnis für manuelle Läufe.
+DISKS    = os.path.join(ROOT, 'tests', 'fixtures', 'disks')
+BOOT_IMG = os.path.join(DISKS, 'cpa_cpa780_k5601_clock.img')
 
 # ─── Boot-Disketten ──────────────────────────────────────────────────────────
 # name: (img-Basename, needs_clock)  needs_clock=True → Uhr-Abfrage beim Kaltstart.
 # Die Combo-Disks konfigurieren B:/C: als Fremd-Laufwerkstypen (docs/format.md §11).
 BOOT_DISKS = {
-    'clock':      ('cpadisk_autofs_clock_noautoexec.img', True),
-    'noclk':      ('cpadisk_autofs_noclk_noautoexec.img',  False),
-    '5inchCombo': ('cpadisk_autofs_noclock_5inchCombo.img', False),
-    '8inchCombo': ('cpadisk_autofs_noclock_8inchCombo.img', False),
+    'clock':      ('cpa_cpa780_k5601_clock.img', True),
+    'noclk':      ('cpa_cpa780_k5601_noclock.img',  False),
+    '5inchCombo': ('cpa_cpa780_combo5zoll_noclock.img', False),
+    '8inchCombo': ('cpa_cpa780_combo8zoll_noclock.img', False),
 }
 
 # B:-Ausgangs-Template: eine GÜLTIGE, bereits formatierte Disk (nicht leer!).
@@ -62,7 +64,7 @@ BOOT_DISKS = {
 # Timing und führt formatabhängig zu einem BUSRQ-Hänger (s. docs/format.md §8.2).
 # Beim VOLL-Format wird das ganze Template überschrieben → sauberes Ziel-Format;
 # beim Smoke behalten die nicht formatierten Spuren die (lesbaren) Template-Daten.
-TEMPLATE_HFE = os.path.join(ROOT, 'disks', 'cpadisk_autofs_clock_noautoexec.hfe')
+TEMPLATE_HFE = os.path.join(DISKS, 'cpa_cpa780_k5601_clock.hfe')
 
 # ─── §3-Formattabelle (FORMAT.COM V19.05.89, 5¼″ 80-Spur-DS) ─────────────────
 #

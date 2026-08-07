@@ -21,7 +21,7 @@ Betriebsarten:
   * kompletten Zeichensatz 0x20–0x7F rendern (kein Boot)  (--font-sheet [--png F])
 
 Beispiele:
-    tools/fb_ocr.py --boot disks/cpadisk_autofs_clock_noautoexec.img
+    tools/fb_ocr.py --boot disks/cpa_cpa780_k5601_clock.img
     tools/fb_ocr.py --font-sheet --png /tmp/font.png
     tools/fb_ocr.py --fb-file /tmp/fb.raw --grid
 

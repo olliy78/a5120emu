@@ -13,7 +13,7 @@
 #include <chrono>
 
 int main(int argc, char** argv) {
-    const char* disk = "disks/cpadisk_autofs_clock_noautoexec.hfe";
+    const char* disk = "disks/cpa_cpa780_k5601_clock.hfe";
     long long bench_cycles = 300000000LL;   // gemessener Workload (~120 s @2,5 MHz)
     long long boot_budget  = 20000000LL;     // Takte bis zum Prompt (großzügig)
     for (int i = 1; i < argc; ++i) {

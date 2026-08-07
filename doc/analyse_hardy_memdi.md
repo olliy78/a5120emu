@@ -1,7 +1,7 @@
 # HARDY-Hardwaretest: „MEMDI aktiv: RDY bei:"-Freeze — Analyse & Fix
 
 HARDY (V.3/1, Humboldt-Universität 1987) ist ein K1520-/A5120-Hardware-Testprogramm.
-Auf `disks/scpx_5x1024_hardy.hfe` (SCPX 1526 V1.7, Geometrie 5×1024) bootet es
+Auf `disks/scpx17_5x1024_k5601_hardy.hfe` (SCPX 1526 V1.7, Geometrie 5×1024) bootet es
 vollautomatisch bis `A>`; nach `HARDY⏎` bestätigt man zwei Dialoge mit der Leertaste,
 dann folgt die Testauswahl. Der erste Test (`1 - Rechner`) **fror auf dem Emulator beim
 Schritt „MEMDI aktiv: RDY bei:" ein** (auf echter HW läuft er durch). Ursache und Fix:

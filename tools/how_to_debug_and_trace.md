@@ -282,7 +282,7 @@ Ziel: ein laufendes CP/A bedienen (Programm starten, Befehl absetzen) und beim
 eigentlichen BDOS/BIOS-Aufruf in den Debugger einsteigen — etwa um zu sehen, was beim
 Schreiben passiert (`PIP X.TXT=POWER.COM`).
 
-**Booten bis zum CCP, dann tippen.** Die Uhr-Disk `disks/cpadisk_autofs_clock_noautoexec.img` bootet
+**Booten bis zum CCP, dann tippen.** Die Uhr-Disk `disks/cpa_cpa780_k5601_clock.img` bootet
 bis zum `A>`-Prompt, sobald man die Zeit eingibt. `keys` fährt die Maschine pro Zeichen
 weiter (`\r` = Enter):
 

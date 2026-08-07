@@ -53,7 +53,7 @@
   2–78 sind gut**).
 - **Live-Recipe (INIT bis zur Format-Verify-Phase fahren):**
   ```
-  K1520DBG_LOGLEVEL=info ./build/k1520dbg disks/scpx_boot.hfe -x <script.dbg>
+  K1520DBG_LOGLEVEL=info ./build/k1520dbg disks/scpx17_cpa780_k5601.hfe -x <script.dbg>
   ```
   `<script.dbg>`:
   ```

@@ -1,6 +1,6 @@
 # SCPX 1526 — `.COM`-Laden schlägt fehl (`BAD SECTOR`): Analyse
 
-**Stand:** 2026-07-10. Branch `scpx_boot`, Fixture `disks/scpx_boot.hfe`.
+**Stand:** 2026-07-10. Branch `scpx_boot`, Fixture `disks/scpx17_cpa780_k5601.hfe`.
 
 Das OS **SCPX 1526 V1.7** bootet vollständig bis zum `A>`-Prompt; Tastatur und der CCP-eingebaute
 `DIR` funktionieren. **Transiente Programme (`STAT`, `PIP`, …) luden zunächst nicht** — sie endeten mit
@@ -193,7 +193,7 @@ Committed-Stand; diese Analyse ist die Arbeitsgrundlage.
 ## 9. Umsetzungsversuch §6.2 (2026-07-10) — Schicht 1+2 gefixt, **Schicht 3** entdeckt
 
 Der in §6.2 skizzierte surgische Weg (Kopf-Schritte unter `/BUSRQ` unterdrücken + Interrupts im
-Matcher sperren) wurde implementiert und Schritt für Schritt gegen die Fixture `disks/scpx_boot.hfe`
+Matcher sperren) wurde implementiert und Schritt für Schritt gegen die Fixture `disks/scpx17_cpa780_k5601.hfe`
 verifiziert. Ergebnis: **beide dokumentierten Schichten sind lösbar**, aber darunter liegt eine
 **dritte**, die den Read weiterhin scheitern lässt. Details (jeder Punkt reproduziert):
 

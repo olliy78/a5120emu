@@ -1,7 +1,7 @@
 # SCPX 1526 V1.7 — BIOS-Symbole im RAM (Branch scpx_boot)
 #
 # Adressen aus doc/analyse_scpx_com_load.md §7 ("Schlüssel-Adressen") + §9.
-# Laden:  k1520dbg -s tools/scpx1526.sym disks/scpx_boot.hfe
+# Laden:  k1520dbg -s tools/scpx1526.sym disks/scpx17_cpa780_k5601.hfe
 # Danach bekommen Disasm, Trace, Backtrace, `where`/`hist` und PC-Histogramme die Namen
 # automatisch. (boot_trace hat KEINE Symboldatei-Option — dort `-l <listing.prn>` für .prn.)
 # Companion: `-l doc/EPROMS/scpx_readpath.prn` = kommentiertes Listing des Lesepfads

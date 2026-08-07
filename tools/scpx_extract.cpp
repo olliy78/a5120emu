@@ -9,7 +9,7 @@
 #include <vector>
 
 int main(int argc, char** argv) {
-    const char* disk = (argc >= 2) ? argv[1] : "disks/scpx_boot.hfe";
+    const char* disk = (argc >= 2) ? argv[1] : "disks/scpx17_cpa780_k5601.hfe";
     const char* outdir = (argc >= 3) ? argv[2] : ".";
     HfeImage img(disk, true);
     if (!img.isOpen()) { fprintf(stderr, "open fail %s\n", disk); return 1; }

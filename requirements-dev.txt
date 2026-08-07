@@ -1,0 +1,11 @@
+# Entwicklungs-/Testabhängigkeiten (die Laufzeit braucht nur requirements.txt).
+#
+# Installation:
+#   python3 -m venv venv
+#   venv/bin/python3 -m pip install -r requirements.txt -r requirements-dev.txt
+#
+# Danach registriert CMake die Python-Testebene automatisch (ctest -L python).
+
+-r requirements.txt
+
+pytest>=8.0        # Testebene tests/python/ (C-ABI + GUI)

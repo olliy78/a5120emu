@@ -15,15 +15,17 @@ CRITICAL: Do not use slow regex chains with grep/sed if rg/sd/jq/yq are availabl
 </tool_preferences>
 
 
-## Two emulators live in this repo — know which one you're touching
+## One emulator: the modular K1520 core (`core/`)
 
-This is the single most important thing to understand before editing.
+**K1520 core (`core/`)** — a hardware-accurate, transaction-level emulation of the K1520 bus and its plug-in cards. **No BIOS traps**: real Z80 code (boot ROM, BIOS, OS) runs natively, so any K1520 OS can boot. Builds `libk1520core.so` (a stable C-ABI) consumed by a **Python/PySide6 GUI** (`app/`). `doc/K1520_architecture.md` and `doc/design/*.md` are the authoritative design references.
 
-1. **Legacy emulator (`src/`)** — the original monolithic A5120 emulator. Emulates the Z80 plus a **CP/M BIOS HALT-trap** mechanism: BIOS jump-table targets are replaced with `HALT` opcodes, and the run loop dispatches C++ functions when the Z80 halts. Boots **only CPA/CP/M**. Builds the `a5120emu`, `cparun`, and `a5120emu_test` targets. `README.md` describes *this* emulator (its memory map, boot process, and disk format are CP/M-specific and do **not** apply to the new core).
-
-2. **New modular K1520 core (`core/`)** — a hardware-accurate, transaction-level emulation of the K1520 bus and its plug-in cards. **No BIOS traps**: real Z80 code (boot ROM, BIOS, OS) runs natively, so any K1520 OS can boot. Builds `libk1520core.so` (a stable C-ABI) consumed by a **Python/PySide6 GUI** (`app/`). This is where active development happens. `doc/K1520_architecture.md` and `doc/design/*.md` are the authoritative design references.
-
-The two share **no code** except the Z80 (legacy `src/z80.cpp`; the core has its own adapted `core/primitives/z80.cpp`). When a task mentions cards (K2526/K5122/...), the bus, ZVE1/ZVE2, the boot ROM, or the GUI, it is about the **new core**.
+> **Removed (2026-08-07, branch `rework_testsystem`):** the original monolithic emulator under
+> `src/` (CP/M-BIOS-HALT-trap mechanism, targets `a5120emu` / `cparun` / `a5120emu_test`) and its
+> hand-rolled test harness `tests/test_main.cpp`. Nothing in `core/`, `tools/` or `app/` depended
+> on it. `README.md` still describes that old emulator — its memory map, boot process and disk
+> format are CP/M-specific and do **not** apply to the core; treat it as historical until rewritten.
+> The standalone CP/M runner in `cparun/` is an independent sub-project with its own copies of
+> `z80/memory/cpm_bdos` and is unaffected.
 
 ## Build & test
 
@@ -38,21 +40,42 @@ The two share **no code** except the Z80 (legacy `src/z80.cpp`; the core has its
 > "is it clean?" therefore means "run `cmake --build` and see if it had work to do".
 
 ```sh
-tools/dev.sh test [ctest-args]   # build build/, then ctest + a5120emu_test (the default)
+tools/dev.sh test [ctest-args]   # build build/, then ctest (the default; incl. Python layer)
 tools/dev.sh test -R K2526       #   one card's tests by name regex
 tools/dev.sh build [trace]       # just build build/ (+ build_trace/ with 'trace')
 tools/dev.sh trace <boot_trace-args>   # build build_trace/, then run boot_trace
 tools/dev.sh tool <name> [args]  # build build/, then run build/<name> (floppy_diag, k1520dbg, kbd_test…)
+tools/dev.sh test-python         # only the pytest layer (C-ABI + GUI, label "python")
+tools/dev.sh test-level unit     # one test level: unit|debugtools|integration|cli|system|python
 tools/dev.sh check               # build both dirs + report freshness
 tools/dev.sh rebuild             # rm -rf build build_trace, then build from scratch
 ```
+
+**All test registration lives in `tests/`**, not in the root `CMakeLists.txt` (which is back to
+~230 lines of libraries + tools). One `CMakeLists.txt` per test level, each test a single line via
+`k1520_add_test()` (`tests/cmake/K1520AddTest.cmake`); the helper also keeps the binaries in
+`build/` (so `./build/k1520_test_k2526 --gtest_filter=…` still works) and hands every test the
+fixture path. Levels = directories = ctest labels: `unit/{primitives,bus,cards,peripherals,util}`,
+`debugtools/` (the header-only `tools/*.h` pieces), `integration/`, `cli/`, `system/`, `python/`;
+crosswise `fast` / `slow`. The slow ones additionally keep the historical label
+`format_integration` that `dev.sh` filters on.
+
+> **Trap when adding a test:** `gtest_discover_tests(... PROPERTIES LABELS "a;b")` silently keeps
+> only the FIRST label — the list is flattened while being passed through. `k1520_add_test()`
+> escapes the semicolons for you; do not bypass it.
+
+**No CI — a `pre-push` hook takes its place.** `.githooks/pre-push` runs `tools/dev.sh test`
+and refuses the push if anything is red (~12 s). Activate it once per working copy with
+`git config core.hooksPath .githooks`; bypass a single push with `git push --no-verify`. The
+slow `format_integration` round is deliberately NOT in the hook — run `tools/dev.sh test-format`
+before merging to main.
 
 After any experiment that touched build dirs (sanitizer builds, `-DLOG_LEVEL=…`,
 interrupted builds), run `tools/dev.sh rebuild` to be certain. Raw commands still work
 (`cmake -B build && cmake --build build -j`; `ctest --test-dir build`;
 `./build/k1520_test_k2526 --gtest_filter='*ZVE2*'`) but only `dev.sh` guarantees no stale binary.
 
-`LOG_LEVEL` is the compile-time **ceiling** (0=off … 5=trace) baked in via `add_compile_definitions`; call sites above it are removed (zero overhead), so build with `-DLOG_LEVEL=5` (the `build_trace/` dir) to make every site available. **The actual output level is now runtime-controlled and gated** (`core/logger.{h,cpp}`): a runtime *base level* (`Logger::setBaseLevel`, default = ceiling), plus dynamic *gates* that raise the effective level only inside a PC range (`addPCGate`) or cycle window (`addCycleGate`), plus a RAII scoped boost (`K1520_LOG_BOOST(Level::TRACE)` at a function top). The emit macros check `Logger::shouldLog()` before formatting, so disabled logs cost ~one atomic load. The run loop (`a5120.cpp`) calls `Logger::update(cycle, zve1pc, zve2pc)` per instruction (cheap early-out when no gates). This replaces "build at level 5 → multi-GB log → grep" with "run quietly, boost only the window of interest". GoogleTest is fetched on first configure (network required). The `formating-disks` working branch is fully green (583/583 ctest + 58 legacy-harness, 2026-07-05); the tests that were formerly known-failing (FormatParser CPA780 / K3526 / K7024 / CTC) now pass here. If you branch off an older baseline and see those red, confirm against the baseline before treating them as a regression.
+`LOG_LEVEL` is the compile-time **ceiling** (0=off … 5=trace) baked in via `add_compile_definitions`; call sites above it are removed (zero overhead), so build with `-DLOG_LEVEL=5` (the `build_trace/` dir) to make every site available. **The actual output level is now runtime-controlled and gated** (`core/logger.{h,cpp}`): a runtime *base level* (`Logger::setBaseLevel`, default = ceiling), plus dynamic *gates* that raise the effective level only inside a PC range (`addPCGate`) or cycle window (`addCycleGate`), plus a RAII scoped boost (`K1520_LOG_BOOST(Level::TRACE)` at a function top). The emit macros check `Logger::shouldLog()` before formatting, so disabled logs cost ~one atomic load. The run loop (`a5120.cpp`) calls `Logger::update(cycle, zve1pc, zve2pc)` per instruction (cheap early-out when no gates). This replaces "build at level 5 → multi-GB log → grep" with "run quietly, boost only the window of interest". GoogleTest is fetched on first configure (network required). The `formating-disks` working branch is fully green (583/583 ctest, 2026-07-05); the tests that were formerly known-failing (FormatParser CPA780 / K3526 / K7024 / CTC) now pass here. If you branch off an older baseline and see those red, confirm against the baseline before treating them as a regression.
 
 ## Python GUI
 
@@ -62,6 +85,16 @@ The GUI loads `libk1520core.so` through `ctypes` (`app/core_binding/k1520.py` se
 python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
 bash run_gui.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
 ```
+
+**Tests for this side live in `tests/python/`** (pytest, registered with ctest under label
+`python`, one ctest case per module: `py_c_api`, `py_binding`, `py_boot_smoke`, …). They cover
+the two things C++ tests cannot reach: the **C-ABI** (`core/api/k1520_api.h` ↔ `libk1520core.so`
+↔ the ctypes declarations in `app/core_binding/k1520.py` — a signature change breaks *silently*
+otherwise; `test_c_api.py` compares all three mechanically) and the **GUI** (PySide6 headless via
+`QT_QPA_PLATFORM=offscreen`; widget wiring only — a `QOpenGLWidget` has no FBO offscreen, so
+pixels are not testable there). Install the test deps with
+`venv/bin/python3 -m pip install -r requirements-dev.txt`; without them CMake skips registering
+the layer and says so. Details + limits: `tests/python/README.md`.
 
 ## K1520 core architecture (the part that needs multiple files to grasp)
 
@@ -230,9 +263,9 @@ verwobene Arbeit selbst behalten. Opus bleibt für Orchestrierung, Entwurf und E
 | Agent | Modell | Wofür |
 |-------|--------|-------|
 | `log-trace-analyzer` | haiku | Auswertung großer `boot_trace`-/Emulator-Logs, Trace-/ctest-Ausgaben, VRAM-/Port-Histogramme — liefert nur die Schlussfolgerung. |
-| `code-explorer`      | haiku | Read-only Code-/Symbol-/Fundstellen-Suche über `src/` + `core/` + `tests/` + `tools/`. |
-| `test-runner`        | haiku | Bauen + `a5120emu_test` / `ctest` ausführen, Pass/Fail knapp berichten, gegen bekannte pre-existing Failures abgrenzen. |
-| `cpp-coder`          | sonnet | Umrissene C++-Implementierungen in `core/`/`src/` + zugehörige GoogleTests, im Stil der Umgebung. |
+| `code-explorer`      | haiku | Read-only Code-/Symbol-/Fundstellen-Suche über `core/` + `tests/` + `tools/` + `app/`. |
+| `test-runner`        | haiku | Bauen + `ctest` ausführen, Pass/Fail knapp berichten, gegen bekannte pre-existing Failures abgrenzen. |
+| `cpp-coder`          | sonnet | Umrissene C++-Implementierungen in `core/` + zugehörige GoogleTests, im Stil der Umgebung. |
 | `boot-disasm-analyst`| sonnet | Z80-Disassembly + ZRE-Boot-ROM/ZVE1↔ZVE2-DMA-Analyse mit den `tools/`-Werkzeugen. |
 
 Konkret heißt das u.a.: breite Suchen → `code-explorer`; Log-/Trace-Auswertung → `log-trace-analyzer`;

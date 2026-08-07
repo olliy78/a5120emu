@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+#
+# pre-push — die Regressionstests müssen grün sein, bevor etwas das Repo verlässt.
+#
+# Ersetzt bewusst eine CI: das Projekt wird lokal entwickelt, die schnelle Runde
+# dauert ~12 s (C++ + Python), das ist an dieser Stelle bezahlbar.
+#
+# Aktivierung (einmalig, pro Arbeitskopie):
+#     git config core.hooksPath .githooks
+# Prüfen:
+#     git config --get core.hooksPath      # muss .githooks liefern
+#
+# Umgehen (nur wenn du weißt, was du tust — z.B. Push eines kaputten Zwischen-
+# stands auf einen eigenen Branch):
+#     git push --no-verify
+#
+# NICHT enthalten: die langsamen Format-/Boot-Disk-Tests (Label format_integration,
+# ~51 s).  Die gehören vor einen Merge nach main:
+#     tools/dev.sh test-format
+
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT" || exit 1
+
+c_red() { printf '\033[31m%s\033[0m\n' "$*"; }
+c_ylw() { printf '\033[33m%s\033[0m\n' "$*"; }
+c_grn() { printf '\033[32m%s\033[0m\n' "$*"; }
+
+# Git reicht die zu pushenden Refs auf stdin herein:
+#   <local ref> <local sha> <remote ref> <remote sha>
+# Bei einer reinen Löschung ist die lokale SHA nur aus Nullen — dann gibt es
+# nichts zu testen.
+only_deletions=1
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+    [ -z "${local_sha:-}" ] && continue
+    case "$local_sha" in
+        *[!0]*) only_deletions=0 ;;
+    esac
+done
+
+if [ "$only_deletions" -eq 1 ]; then
+    c_ylw ">> pre-push: nur Ref-Löschungen — Tests übersprungen"
+    exit 0
+fi
+
+c_ylw ">> pre-push: tools/dev.sh test (Regression, ohne format_integration)"
+if ! tools/dev.sh test; then
+    echo
+    c_red "PUSH ABGEBROCHEN — die Regressionstests sind nicht grün."
+    echo "  Erneut ansehen:  tools/dev.sh test --output-on-failure"
+    echo "  Nur ein Test:    tools/dev.sh test -R <Namensmuster>"
+    echo "  Trotzdem pushen: git push --no-verify"
+    exit 1
+fi
+
+c_grn ">> pre-push: alles grün — Push läuft"
+exit 0

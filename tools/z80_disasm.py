@@ -7,6 +7,7 @@ Specifically for Robotron A5120 format.com
 import sys
 import struct
 from z80dis.z80 import decode, disasm, INSTRTYPE
+from pathlib import Path
 
 ORG = 0x0100
 
@@ -164,8 +165,12 @@ def is_printable_run(data, offset, min_len=5):
         return count
     return 0
 
+# Projektwurzel aus dem Skriptort ableiten — die Arbeitskopie darf überall liegen.
+ROOT = Path(__file__).resolve().parents[1]
+
+
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else '/home/olliy/projects/a5120emu/boot_disk/format.com'
+    path = sys.argv[1] if len(sys.argv) > 1 else str(ROOT / 'boot_disk/format.com')
     data = read_binary(path)
     
     print(f"; File: {path}")

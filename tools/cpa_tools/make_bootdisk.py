@@ -18,7 +18,7 @@ Ablauf (alles über tools/format_driver, den Zwei-Disk-Tastatur-Treiber):
   0. (einseitige Formate) Leere Ziel-Vorlage per `mk_disk_template` ERZEUGEN — FORMAT.COM
      kann eine gap-leere .hfe nicht direkt formatieren (Gap-Blank-Hänger, docs/format.md
      §8.2/§8.6); das Tool schreibt eine gültig vorformatierte einseitige Diskette.
-     (cpa780 nutzt die committete, doppelseitige `disks/empty_cpa780.hfe`.)
+     (cpa780 nutzt die committete, doppelseitige `disks/leer_cpa780.hfe`.)
   1. cpabcgen : boote die passende Combo-/Uhr-Boot-Disk als A: (mit CPABCGEN.COM +
      @OS.COM), lege die Ziel-Vorlage als B:/C: ein und fahre `CPABCGEN <LW>:`.
      Der Slot bekommt per FD_PROFILES das zum Combo-BIOS passende physische Laufwerk.
@@ -50,13 +50,15 @@ import tempfile
 
 HERE   = os.path.dirname(os.path.abspath(__file__))
 ROOT   = os.path.dirname(os.path.dirname(HERE))
-DISKS  = os.path.join(ROOT, 'disks')
+# Testdisketten liegen als unveränderliche Fixtures unter tests/fixtures/disks/;
+# disks/ ist das Arbeitsverzeichnis für manuelle Läufe.
+DISKS  = os.path.join(ROOT, 'tests', 'fixtures', 'disks')
 DRIVER = os.environ.get('FORMAT_DRIVER',   os.path.join(ROOT, 'build', 'format_driver'))
 MKTMPL = os.environ.get('MK_DISK_TEMPLATE', os.path.join(ROOT, 'build', 'mk_disk_template'))
 
-BOOT_CLOCK      = os.path.join(DISKS, 'cpadisk_autofs_clock_noautoexec.img')
-BOOT_8INCHCOMBO = os.path.join(DISKS, 'cpadisk_autofs_noclock_8inchCombo.img')
-BOOT_5INCHCOMBO = os.path.join(DISKS, 'cpadisk_autofs_noclock_5inchCombo.img')
+BOOT_CLOCK      = os.path.join(DISKS, 'cpa_cpa780_k5601_clock.img')
+BOOT_8INCHCOMBO = os.path.join(DISKS, 'cpa_cpa780_combo8zoll_noclock.img')
+BOOT_5INCHCOMBO = os.path.join(DISKS, 'cpa_cpa780_combo5zoll_noclock.img')
 
 # Template-Spezifikation für mk_disk_template: (fm|mfm, cyls, sys_cyls, sys_nsec,
 # sys_size, data_nsec, data_size).  None = committete Vorlage (cpa780, doppelseitig).
@@ -75,7 +77,7 @@ PRESETS = {
     'cpa780': dict(
         boot=BOOT_CLOCK, drive='B', prof='K5601', b_prof='K5601', c_prof='K5601',
         needs_clock=True, template=None, b_dummy=None,
-        committed=os.path.join(DISKS, 'empty_cpa780.hfe'),
+        committed=os.path.join(DISKS, 'leer_cpa780.hfe'),
     ),
     'mf3200_fmt7': dict(
         boot=BOOT_8INCHCOMBO, drive='B', prof='MF3200',

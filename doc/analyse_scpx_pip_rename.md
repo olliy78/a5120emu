@@ -63,7 +63,7 @@ Rename `STAT.$$$` → `STAT.COM` und kehrt nie zum `A>`-Prompt zurück.
 > **★ PRÄZISE EINGRENZUNG (2026-07-11, per Ausschluss-Tests) — ZWEI spezifische Directory-Kollisionen:**
 > Der Hänger ist NICHT „jedes Schreiben von STAT.COM" und NICHT „jeder gelöschte Eintrag", sondern eng:
 >
-> | Kommando (B: = Kopie von scpx_boot.hfe) | Ergebnis |
+> | Kommando (B: = Kopie von scpx17_cpa780_k5601.hfe) | Ergebnis |
 > |---|---|
 > | `PIP B:=A:STAT.COM` bzw. `PIP B:STAT.COM=A:STAT.COM` (Quelle- **UND** Zielname = STAT.COM) | **HÄNGT** |
 > | `PIP B:STAT.COM=A:MODF.COM` (Ziel STAT.COM, andere Quelle) | läuft |
@@ -103,7 +103,7 @@ ZVE1-INT-Guard `SP∈[0xEC00,0xEC10]`), `k2526.h` (`cpuSP()`). **Der INT-Guard i
 ```sh
 # 1) Screen sehen (hängt sichtbar):
 SP=$(mktemp -d)
-cp disks/scpx_boot.hfe $SP/A.hfe; cp disks/scpx_boot.hfe $SP/B.hfe
+cp disks/scpx17_cpa780_k5601.hfe $SP/A.hfe; cp disks/scpx17_cpa780_k5601.hfe $SP/B.hfe
 cat > $SP/pip.fds <<'EOF'
 boot 48
 type ERA B:STAT.COM
@@ -199,7 +199,7 @@ funktionierenden Boot/DIR-Reads nutzen) gilt für den hängenden Rename-Read:
 
 ## 4c. NEU: WAS `E671` liest = STAT.COMs eigene Dateidaten (nicht das Directory)
 
-Offline aus `scpx_boot.hfe` (Extraktor `tools/scpx_extract`, Sektor-Dump):
+Offline aus `scpx17_cpa780_k5601.hfe` (Extraktor `tools/scpx_extract`, Sektor-Dump):
 - **Directory** liegt auf **cyl2/head0/sec1–2** (Dump cyl2/h0/s1 beginnt mit `00 'INIT    COM'`).
   Systemspuren = cyl0–1. STAT.COM-Directory-Eintrag: `C2 H0 S1 off96`, Alloc-Blöcke **0B 0C 0D**.
 - Block→physisch (1 KB-Blöcke = 4×256B, 16 Sek/Spur, 2 Köpfe, Datenbereich ab cyl2/h0/s1):
@@ -347,7 +347,7 @@ DMA-Pfad liefen — der Unterschied zwischen „geht" und „hängt" ist der Sch
 - `savestate`/`loadstate` reproduziert den Gate NICHT (serialisiert `os_running_`/`held_read_active_`
   nicht) → immer frischer Kaltstart + `keys`.
 - Boot bis `A>` ≈ 48 Mcyc; PIP-Kopie + Spin liegt weit darüber (langsam, mehrere Minuten unter dbg).
-- Disks: immer Temp-Kopien von `disks/scpx_boot.hfe` für A: UND B: (format_driver/k1520dbg mounten beide
+- Disks: immer Temp-Kopien von `disks/scpx17_cpa780_k5601.hfe` für A: UND B: (format_driver/k1520dbg mounten beide
   beschreibbar; k1520dbg nutzt per Default COW).
 - Kommentierte Quellen: Boot-ROM `doc/EPROMS/zre.prn`, SCPX-Read-Pfad `doc/EPROMS/scpx_readpath.prn`
   (partiell, read-fokussiert). PIP.COMs eigener Code (`E671`-Pfad, D000-E9FF) liegt NICHT kommentiert vor.

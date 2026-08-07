@@ -239,7 +239,7 @@ Reverse-Engineering → an den `boot-disasm-analyst`-Subagenten ausgelagert (kei
 |------|--------|--------------------------|
 | §11 Interrupt-Trace | ✅ | `k1520dbg itrace <file>` + `boot_trace --itrace <file>` (CSV). Verifiziert: fängt die Index-Puls-ISR `int@0137→ISR 01C7` alle ~490k Takte. Reuse `eventbp::classify`, kein Core-Eingriff. |
 | §12 Echter Loop-Collapse | ✅ | `boot_trace --fold` erkennt jetzt PC-**Zyklen** (Periode ≤32, nur PC) → `↻ loop @A period=P ×N`. Verifiziert: registerändernder EC42-Delay-Loop **6000 → 19 Zeilen**. |
-| §13 disk verify | ✅ | `k1520dbg disk verify [B]`: 164 Spuren/2560 Sektoren/0 CRC-Fehler auf `scpx_boot.hfe`; meldet ehrlich die 4 markenlosen 82-Spur-Padding-Spuren. |
+| §13 disk verify | ✅ | `k1520dbg disk verify [B]`: 164 Spuren/2560 Sektoren/0 CRC-Fehler auf `scpx17_cpa780_k5601.hfe`; meldet ehrlich die 4 markenlosen 82-Spur-Padding-Spuren. |
 | §14 snap diff | ✅ | `snap diff <a> <b>`: geänderte Register (beide CPUs) + RAM-Bereiche. Verifiziert (2041 B in 8 Bereichen). |
 | §15 bxfer write + cond | ✅ | `bxfer [read\|write] … [if <cond>]`, `bbusrq … [if <cond>]`. Verifiziert (`bxfer write start`, `bbusrq if [0xEBFA]==4`). |
 | §16 vars -f | ✅ | `vars -f <datei>` / `vars add` / `vars clear` (name/addr/[w], Symbole erlaubt). Verifiziert. |
