@@ -13,7 +13,8 @@
  * |-----------------------|------------------------------------------------------------|
  * | Standardformat        | defaultFormatName() je Laufwerksprofil (aus `default_for:`) |
  * | Auswahl               | compatibleFormats() = explizite `drives:`-Liste             |
- * | createDisk            | Standard bei leerem Namen; Ablehnung inkompatibler Formate  |
+ * | createDisk            | leerer Name = Leerdiskette; vorformatiert mit Formatnamen   |
+ * | saveDiskAs            | Containerwechsel + Umbinden; Format nur für `.img`          |
  * | mountDisk             | erzwingt `drives:` BEWUSST NICHT (Combo-Boot, .hfe)         |
  * | Startabbruch          | kaputter Katalog → Konstruktor wirft mit klarer Meldung     |
  *
@@ -115,24 +116,107 @@ TEST(A5120DiskApi, CompatibleFormats_StandardZuerstUndNurPassende) {
 // ─── createDisk ──────────────────────────────────────────────────────────────
 
 /**
- * @test A5120DiskApi/CreateDisk_LeererNameNutztStandardformat
- * @brief Ein leerer Formatname legt die Diskette im Standardformat des Slots an.
- * @par Kriterium  createDisk() == true; die Datei entsteht und ist gemountet.
+ * @test A5120DiskApi/CreateDisk_LeererNameLegtLeerdisketteAn
+ * @brief Ein leerer Formatname legt eine ECHTE Leerdiskette in Laufwerksgeometrie an
+ *        (§8.7) — unformatiert, damit das Gastsystem sie selbst formatieren kann.
+ * @par Kriterium  createDisk() == true; Datei entsteht; 40×1 Spuren; unformatiert;
+ *                 nicht `.img`-fähig.
  */
-TEST(A5120DiskApi, CreateDisk_LeererNameNutztStandardformat) {
+TEST(A5120DiskApi, CreateDisk_LeererNameLegtLeerdisketteAn) {
     A5120Machine m(withDrives("K5600.10"));
-    k1520test::TempDisk path_disk = tmpPath("default.img");
+    k1520test::TempDisk path_disk = tmpPath("blank.hfe");
     const std::string& path = path_disk.path();
+    std::filesystem::remove(path);
 
     ASSERT_TRUE(m.createDisk(0, path, "", /*wp=*/false)) << m.lastError();
     EXPECT_TRUE(std::filesystem::exists(path));
     EXPECT_TRUE(m.isDiskActive(0));
 
-    // k5601_ss40_5x1024 = 40 Spuren × 1 Kopf × 5 × 1024 B.
+    EXPECT_EQ(m.diskGeometry(0).num_cyls,  40u);   // Geometrie kommt vom LAUFWERK
+    EXPECT_EQ(m.diskGeometry(0).num_heads,  1u);
+    EXPECT_FALSE(m.isDiskFormatted(0));
+    EXPECT_FALSE(m.isDiskRawCompatible(0));
+
+    m.unmountDisk(0);
+}
+
+/**
+ * @test A5120DiskApi/CreateDisk_LeerdisketteAlsImgAbgelehnt
+ * @brief Ein rohes Sektorimage kann „nicht formatiert" nicht ausdrücken.
+ */
+TEST(A5120DiskApi, CreateDisk_LeerdisketteAlsImgAbgelehnt) {
+    A5120Machine m(withDrives("K5600.10"));
+    k1520test::TempDisk path_disk = tmpPath("blank_reject.img");
+    const std::string& path = path_disk.path();
+    std::filesystem::remove(path);
+
+    EXPECT_FALSE(m.createDisk(0, path, "", /*wp=*/false));
+    EXPECT_NE(m.lastError().find(".img"), std::string::npos) << m.lastError();
+    EXPECT_FALSE(std::filesystem::exists(path));
+}
+
+/**
+ * @test A5120DiskApi/CreateDisk_MitFormatnamenVorformatiert
+ * @brief Mit gesetztem Formatnamen entsteht weiterhin eine vorformatierte Diskette
+ *        im Standardformat des Slots (k5601_ss40_5x1024 = 40×1×5×1024 B).
+ */
+TEST(A5120DiskApi, CreateDisk_MitFormatnamenVorformatiert) {
+    A5120Machine m(withDrives("K5600.10"));
+    k1520test::TempDisk path_disk = tmpPath("default.img");
+    const std::string& path = path_disk.path();
+
+    ASSERT_TRUE(m.createDisk(0, path, m.defaultFormatName(0), /*wp=*/false)) << m.lastError();
+    EXPECT_TRUE(std::filesystem::exists(path));
+    EXPECT_TRUE(m.isDiskActive(0));
+    EXPECT_TRUE(m.isDiskFormatted(0));
+    EXPECT_TRUE(m.isDiskRawCompatible(0));
     EXPECT_EQ(std::filesystem::file_size(path), 40u * 1u * 5u * 1024u);
 
     m.unmountDisk(0);
-    std::filesystem::remove(path);
+}
+
+/**
+ * @test A5120DiskApi/SaveDiskAs_WechseltContainerUndBindetUm
+ * @brief „Speichern unter" schreibt in einen beliebigen Container und bindet um;
+ *        das Diskettenformat wird nur für `.img` verlangt.
+ */
+TEST(A5120DiskApi, SaveDiskAs_WechseltContainerUndBindetUm) {
+    A5120Machine m(withDrives("K5600.10"));
+    k1520test::TempDisk img_disk = tmpPath("saveas_src.img");
+    const std::string& img = img_disk.path();
+    k1520test::TempDisk dmk_disk = tmpPath("saveas_ziel.dmk");
+    const std::string& dmk = dmk_disk.path();
+    std::filesystem::remove(img);
+    std::filesystem::remove(dmk);
+
+    ASSERT_TRUE(m.createDisk(0, img, m.defaultFormatName(0), false)) << m.lastError();
+    ASSERT_EQ(m.diskContainer(0), "img");
+
+    ASSERT_TRUE(m.saveDiskAs(0, dmk, /*format_name=*/"")) << m.lastError();
+    EXPECT_TRUE(std::filesystem::exists(dmk));
+    EXPECT_EQ(m.diskContainer(0), "dmk");
+    EXPECT_EQ(m.diskPath(0), dmk);
+
+    m.unmountDisk(0);
+    std::filesystem::remove(img);
+    std::filesystem::remove(dmk);
+}
+
+/**
+ * @test A5120DiskApi/SaveDiskAs_ImgOhneFormatnamenAbgelehnt
+ */
+TEST(A5120DiskApi, SaveDiskAs_ImgOhneFormatnamenAbgelehnt) {
+    A5120Machine m(withDrives("K5600.10"));
+    k1520test::TempDisk src_disk = tmpPath("saveas2_src.hfe");
+    const std::string& src = src_disk.path();
+    std::filesystem::remove(src);
+    ASSERT_TRUE(m.createDisk(0, src, m.defaultFormatName(0), false)) << m.lastError();
+
+    EXPECT_FALSE(m.saveDiskAs(0, tmpPath("saveas2_ziel.img"), ""));
+    EXPECT_NE(m.lastError().find("Diskettenformat"), std::string::npos) << m.lastError();
+
+    m.unmountDisk(0);
+    std::filesystem::remove(src);
 }
 
 /**
@@ -188,7 +272,6 @@ TEST(A5120DiskApi, CreateDisk_AchtZollFmLaufwerkErzeugtFmMedium) {
     EXPECT_EQ(img->geometry().num_heads, 1);
 
     m.unmountDisk(0);
-    std::filesystem::remove(path);
 }
 
 // ─── mountDisk: bewusst KEINE drives:-Prüfung ────────────────────────────────
@@ -216,7 +299,7 @@ TEST(A5120DiskApi, MountDisk_ErzwingtLaufwerksKompatibilitaetBewusstNicht) {
     const std::string& path = path_disk.path();
 
     // Gültige 8″-FM-Diskette im Standardformat des Slots anlegen …
-    ASSERT_TRUE(m.createDisk(0, path, "", /*wp=*/false)) << m.lastError();
+    ASSERT_TRUE(m.createDisk(0, path, m.defaultFormatName(0), /*wp=*/false)) << m.lastError();
     ASSERT_TRUE(m.unmountDisk(0));
 
     // … und wie format_driver nominell als "cpa780" mounten (5,25″-Format, das für
@@ -225,7 +308,6 @@ TEST(A5120DiskApi, MountDisk_ErzwingtLaufwerksKompatibilitaetBewusstNicht) {
     EXPECT_TRUE(m.isDiskActive(0));
 
     m.unmountDisk(0);
-    std::filesystem::remove(path);
 }
 
 /**
@@ -240,13 +322,11 @@ TEST(A5120DiskApi, MountDisk_LehntUnbekanntesFormatWeiterhinAb) {
     A5120Machine m(withDrives("K5601"));
     k1520test::TempDisk path_disk = tmpPath("known.img");
     const std::string& path = path_disk.path();
-    ASSERT_TRUE(m.createDisk(0, path, "", /*wp=*/false)) << m.lastError();
+    ASSERT_TRUE(m.createDisk(0, path, m.defaultFormatName(0), /*wp=*/false)) << m.lastError();
     ASSERT_TRUE(m.unmountDisk(0));
 
     EXPECT_FALSE(m.mountDisk(0, path, "gibt_es_nicht", /*wp=*/false));
     EXPECT_NE(m.lastError().find("gibt_es_nicht"), std::string::npos) << m.lastError();
-
-    std::filesystem::remove(path);
 }
 
 // ─── Startabbruch bei kaputtem Katalog ───────────────────────────────────────

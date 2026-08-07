@@ -345,6 +345,62 @@ TEST(TrackCodecMfm, DreiSektoren128B_AlleGruen) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GRUPPE: Sektor-Nachspann (LogicalSector::tail) — der UDOS-Sektorkontrollblock
+//
+// UDOS/ZDOS legt die Dateiverkettung NICHT im Datenfeld ab, sondern in 4 Bytes
+// unmittelbar hinter der Daten-CRC (doc/udos_diskettenformat.md §1.1).  Baut
+// buildTrack() eine Spur aus geparsten Sektoren neu auf — das tut der K5122 bei
+// JEDEM Schreibzugriff —, muss dieser Nachspann erhalten bleiben, sonst verlieren
+// auch die nicht angefassten Sektoren ihre Verkettung („POINTER CHECK ERROR CA",
+// doc/udos_bug1.md).
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(TrackCodecTail, BuildParse_ErhaeltUdosKontrollblock) {
+    std::vector<LogicalSector> sektoren;
+    for (uint8_t i = 1; i <= 3; ++i) {
+        LogicalSector s = makeSector(22, 0, i, 128, static_cast<uint8_t>(i));
+        // UDOS-artiger Kontrollblock: zurueck (5,22), vor (i+4,22), dann Gap-Naht
+        s.tail = {0x05, 0x16, static_cast<uint8_t>(i + 4), 0x16, 0x41, 0xFF, 0x4E, 0x4E};
+        sektoren.push_back(std::move(s));
+    }
+
+    auto parsed = TrackCodec::parseTrack(TrackCodec::buildTrack(sektoren, Encoding::MFM));
+    ASSERT_EQ(parsed.size(), 3u);
+    for (size_t k = 0; k < 3; ++k) {
+        EXPECT_TRUE(parsed[k].data_crc_ok) << "Sektor " << k;
+        EXPECT_EQ(parsed[k].data, sektoren[k].data) << "Sektor " << k;
+        EXPECT_EQ(parsed[k].tail, sektoren[k].tail)
+            << "Sektor " << k << ": Kontrollblock hinter der Daten-CRC verloren";
+    }
+}
+
+TEST(TrackCodecTail, FM_ErhaeltNachspannEbenso) {
+    LogicalSector s = makeSector(3, 0, 1, 128);
+    s.tail = {0x01, 0x02, 0x03, 0x04, 0xFF, 0xFF, 0xFF, 0xFF};
+    auto parsed = TrackCodec::parseTrack(TrackCodec::buildTrack({s}, Encoding::FM));
+    ASSERT_EQ(parsed.size(), 1u);
+    EXPECT_TRUE(parsed[0].data_crc_ok);
+    EXPECT_EQ(parsed[0].tail, s.tail);
+}
+
+TEST(TrackCodecTail, OhneTail_BitgleichZuReinemGap) {
+    // Frisch erzeugte Sektoren (DiskImage::create, Formatierstrom) haben KEINEN
+    // tail — dort muss buildTrack byteweise dasselbe liefern wie vor der
+    // Nachspann-Ausgabe, sonst aendert sich jede Standard-IBM-Spur.
+    std::vector<LogicalSector> ohne;
+    for (uint8_t i = 1; i <= 4; ++i) ohne.push_back(makeSector(0, 0, i, 256));
+
+    std::vector<LogicalSector> mit_gap = ohne;
+    const uint8_t gap = TrackCodec::gapsFor(Encoding::MFM).gap_fill;
+    for (auto& s : mit_gap) s.tail.assign(kSectorTailBytes, gap);
+
+    const TrackImage a = TrackCodec::buildTrack(ohne, Encoding::MFM);
+    const TrackImage b = TrackCodec::buildTrack(mit_gap, Encoding::MFM);
+    EXPECT_EQ(a.bytes, b.bytes);
+    EXPECT_EQ(a.marks, b.marks);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GRUPPE: ROM-Lese-Kalibrierung (Phase 1 FM/MFM-Umbau, doc/design/07 §10.5.1)
 //
 // Das ZRE-Boot-ROM liest nach einem Resync (MK/MK1-Strobe) im IDAM-Suchpfad
@@ -453,4 +509,50 @@ TEST(RomReadKalibrierung, FaithfulRead_StandardCrc_parseTrackValidiert) {
     ASSERT_EQ(secs.size(), 1u);
     EXPECT_TRUE(secs[0].id_crc_ok);
     EXPECT_TRUE(secs[0].data_crc_ok);
+}
+
+/**
+ * @test TrackCodec/ParseTrack_VerfaelschtesGroessenfeldStuerztNichtAb
+ * @brief Ein verfälschtes Größenfeld in der Adressmarke darf keine unmögliche
+ *        Sektorgröße erzeugen.
+ *
+ * Das Größenfeld der IBM-IDAM ist 2 Bit breit (0..3 = 128..1024 B).  Auf einer
+ * gestörten Spur (Schreibabbruch, halb formatierte Diskette) steht dort aber ein
+ * beliebiges Byte.  Ohne Maske lieferte `parseTrack` daraus z. B. 4096 B, und der
+ * anschließende Neuaufbau der Spur brach mit `std::invalid_argument`
+ * („TrackCodec: ungültige Sektorgröße") ab — als **unbehandelte** Ausnahme, die
+ * den kompletten Emulator beendete (beobachtet beim Formatieren einer real
+ * eingelesenen Leerdiskette).  Ab Schiebeweiten ≥ 32 war es zusätzlich
+ * undefiniertes Verhalten.
+ */
+TEST(TrackCodec, ParseTrack_VerfaelschtesGroessenfeldStuerztNichtAb) {
+    std::vector<LogicalSector> secs;
+    for (uint8_t id = 1; id <= 2; ++id) {
+        LogicalSector ls;
+        ls.cyl = 0; ls.head = 0; ls.id = id; ls.size = 256;
+        ls.data.assign(256, static_cast<uint8_t>(0x30 + id));
+        secs.push_back(std::move(ls));
+    }
+    TrackImage t = TrackCodec::buildTrack(secs, Encoding::MFM);
+
+    // Größenfeld der ersten Adressmarke verfälschen (Byte 4 hinter der Id-Marke).
+    const size_t idPos = t.nextMark(0, MarkType::Id);
+    ASSERT_NE(idPos, SIZE_MAX);
+    ASSERT_LT(idPos + 4, t.bytes.size());
+    t.bytes[idPos + 4] = 0xFD;          // unmaskiert wäre das 128<<253
+
+    std::vector<LogicalSector> parsed;
+    ASSERT_NO_THROW(parsed = TrackCodec::parseTrack(t));
+    ASSERT_FALSE(parsed.empty());
+
+    // Jede gemeldete Größe muss eine echte IBM-Sektorgröße sein …
+    for (const auto& s : parsed)
+        EXPECT_TRUE(s.size == 128 || s.size == 256 || s.size == 512 || s.size == 1024)
+            << "unmögliche Sektorgröße " << s.size;
+    // … und der verfälschte Sektor faellt ueber die ID-CRC auf.
+    EXPECT_FALSE(parsed.front().id_crc_ok);
+
+    // Der Neuaufbau darf ebenfalls nicht werfen (das war der Absturzpfad).
+    EXPECT_NO_THROW((void)TrackCodec::buildTrack(parsed, Encoding::MFM));
+    EXPECT_NO_THROW((void)TrackCodec::buildFaithfulReadTrack(parsed, Encoding::MFM));
 }

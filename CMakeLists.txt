@@ -63,8 +63,11 @@ if(BUILD_K1520)
         core/peripherals/floppy_drive/track_codec.cpp
         core/peripherals/floppy_drive/bit_codec.cpp
         core/peripherals/floppy_drive/drive_profile.cpp
-        core/peripherals/floppy_drive/raw_sector_image.cpp
-        core/peripherals/floppy_drive/hfe_image.cpp
+        core/peripherals/floppy_drive/disk_medium.cpp
+        core/peripherals/floppy_drive/img_codec.cpp
+        core/peripherals/floppy_drive/hfe_codec.cpp
+        core/peripherals/floppy_drive/dmk_codec.cpp
+        core/peripherals/floppy_drive/image_codec.cpp
         core/peripherals/floppy_drive/disk_image.cpp
         core/peripherals/floppy_drive/floppy_drive2.cpp
         core/peripherals/floppy_drive/format_catalog.cpp

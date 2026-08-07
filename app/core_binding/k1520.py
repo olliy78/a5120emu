@@ -154,6 +154,26 @@ _lib.k1520_mount_disk.restype = ctypes.c_bool
 _lib.k1520_create_disk.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_bool]
 _lib.k1520_create_disk.restype = ctypes.c_bool
 
+# k1520_save_disk_as(K1520Handle, drive: int, path: const char*, format: const char*) -> bool
+_lib.k1520_save_disk_as.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p]
+_lib.k1520_save_disk_as.restype = ctypes.c_bool
+
+# k1520_disk_raw_compatible(K1520Handle, drive: int) -> bool
+_lib.k1520_disk_raw_compatible.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_disk_raw_compatible.restype = ctypes.c_bool
+
+# k1520_disk_path(K1520Handle, drive: int) -> const char*
+_lib.k1520_disk_path.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_disk_path.restype = ctypes.c_char_p
+
+# k1520_disk_container(K1520Handle, drive: int) -> const char*
+_lib.k1520_disk_container.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_disk_container.restype = ctypes.c_char_p
+
+# k1520_flush_disks(K1520Handle) -> bool
+_lib.k1520_flush_disks.argtypes = [K1520Handle]
+_lib.k1520_flush_disks.restype = ctypes.c_bool
+
 # k1520_unmount_disk(K1520Handle, drive: int) -> bool
 _lib.k1520_unmount_disk.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_unmount_disk.restype = ctypes.c_bool
@@ -439,29 +459,72 @@ class K1520Emulator:
         format_bytes = format_name.encode('utf-8')
         return _lib.k1520_mount_disk(self._handle, ctypes.c_int(drive), path_bytes, format_bytes, ctypes.c_bool(write_protect))
     
-    def create_disk(self, drive: int, path: str, format_name: str, write_protect: bool = False) -> bool:
+    def create_disk(self, drive: int, path: str, format_name: str = "",
+                    write_protect: bool = False) -> bool:
         """
-        Create a NEW, validly-formatted blank disk image and mount it.
+        Create a NEW disk and mount it.
 
-        `.hfe` → formatted HFE (real IDAM/DATA/CRC); otherwise `.img` in the
-        given format geometry. The disk is mounted into the drive on success.
+        With an EMPTY *format_name* this creates a genuinely blank (unformatted)
+        disk in the geometry of the **drive** (K5601 80x2, K5600.10 40x1, ...),
+        ready to be formatted by the guest OS — including foreign systems such as
+        UDOS that append data behind the data CRC.  A ``.img`` target is rejected
+        in that case (a raw sector image cannot express "unformatted"); use
+        ``.hfe`` or ``.dmk``.
+
+        With a *format_name* set, a pre-formatted disk per catalog format is
+        created (real IDAM/DATA/CRC, 0xE5 data); ``.img`` is allowed then.
 
         Args:
             drive: Drive number (0-3)
             path: Path of the new disk image file (overwrites if it exists)
-            format_name: Disk format name (see :meth:`drive_formats`); an empty
-                         string picks the drive-type default.
+            format_name: Disk format name (see :meth:`drive_formats`); empty =
+                         blank, unformatted disk
             write_protect: Whether disk is write-protected
 
         Returns:
-            True if successful
+            True if successful (see :meth:`last_error` otherwise)
         """
-        # Empty format → drive-type default (the core resolves it); otherwise the
-        # core validates the name against the formats that fit the drive.
         format_name = format_name or ""
         path_bytes = path.encode('utf-8')
         format_bytes = format_name.encode('utf-8')
         return _lib.k1520_create_disk(self._handle, ctypes.c_int(drive), path_bytes, format_bytes, ctypes.c_bool(write_protect))
+
+    def save_disk_as(self, drive: int, path: str, format_name: str = "") -> bool:
+        """
+        Save the mounted disk under a new name/container and re-bind to it.
+
+        The container follows the extension (``.img`` / ``.hfe`` / ``.dmk``).  From
+        then on all further writes go (delayed) into the new file.  *format_name*
+        is only needed for ``.img`` — the other containers are self-describing.
+
+        Returns:
+            True if successful (see :meth:`last_error` otherwise)
+        """
+        path_bytes = path.encode('utf-8')
+        format_bytes = (format_name or "").encode('utf-8')
+        return _lib.k1520_save_disk_as(self._handle, ctypes.c_int(drive), path_bytes, format_bytes)
+
+    def disk_raw_compatible(self, drive: int) -> bool:
+        """True if the mounted disk may be saved as a raw sector image (.img).
+
+        False as soon as a track is unformatted or a sector carries data behind
+        the data CRC (UDOS sector control block) — both would be lost in a .img.
+        """
+        return bool(_lib.k1520_disk_raw_compatible(self._handle, ctypes.c_int(drive)))
+
+    def disk_path(self, drive: int) -> str:
+        """Currently bound image file of a slot ("" = memory only / empty drive)."""
+        p = _lib.k1520_disk_path(self._handle, ctypes.c_int(drive))
+        return p.decode('utf-8', 'replace') if p else ""
+
+    def disk_container(self, drive: int) -> str:
+        """Container of the bound file ("img" | "hfe" | "dmk"; "" = none)."""
+        c = _lib.k1520_disk_container(self._handle, ctypes.c_int(drive))
+        return c.decode('utf-8', 'replace') if c else ""
+
+    def flush_disks(self) -> bool:
+        """Write pending changes of all drives to their files immediately."""
+        return bool(_lib.k1520_flush_disks(self._handle))
 
     def last_error(self) -> str:
         """Return the last error message reported by the core (empty if none)."""

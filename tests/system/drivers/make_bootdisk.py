@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-make_bootdisk.py – Aus einer FORMATIERTEN CP/A-Leerdiskette mit CPABCGEN.COM eine
-BOOTfähige Systemdiskette machen (schreibt Boot-Lader + @OS.COM auf die Systemspuren)
-und den Boot direkt im A5120-Emulator verifizieren.
+make_bootdisk.py – Aus einer LEEREN (unformatierten) Diskette eine BOOTfähige
+CP/A-Systemdiskette machen und den Boot direkt im A5120-Emulator verifizieren:
+die volle Anwenderkette FORMAT.COM → CPABCGEN.COM → Kaltstart.
 
 Presets (--preset) — je Preset ein Laufwerkstyp/Format:
 
@@ -15,27 +15,31 @@ Presets (--preset) — je Preset ein Laufwerkstyp/Format:
 
 Ablauf (alles über tools/format_driver, den Zwei-Disk-Tastatur-Treiber):
 
-  0. (einseitige Formate) Leere Ziel-Vorlage per `mk_disk_template` ERZEUGEN — FORMAT.COM
-     kann eine gap-leere .hfe nicht direkt formatieren (Gap-Blank-Hänger, docs/format.md
-     §8.2/§8.6); das Tool schreibt eine gültig vorformatierte einseitige Diskette.
-     (cpa780 ist doppelseitig — dessen Vorlage erzeugt `gen_named_template()`
-     über die C-API, da mk_disk_template nur einseitig schreibt.)
-  1. cpabcgen : boote die passende Combo-/Uhr-Boot-Disk als A: (mit CPABCGEN.COM +
-     @OS.COM), lege die Ziel-Vorlage als B:/C: ein und fahre `CPABCGEN <LW>:`.
+  1. format+gen : boote die passende Combo-/Uhr-Boot-Disk als A: (mit FORMAT.COM,
+     CPABCGEN.COM + @OS.COM) und lege eine **echte Leerdiskette** als B:/C: ein.
+     Dann in EINEM Lauf: `FORMAT` (Format des Presets, alle Spuren, MIT Vergleichs-
+     Lesen) → zurück ins CCP → `CPABCGEN <LW>:` → `DIR <LW>:`.
      Der Slot bekommt per FD_PROFILES das zum Combo-BIOS passende physische Laufwerk.
-  2. verify   : mounte die erzeugte Disk als A: (Ziel-Profil) und boote kalt daraus;
+  2. verify     : mounte die erzeugte Disk als A: (Ziel-Profil) und boote kalt daraus;
      prüfe, dass CP/A hochkommt (Config-Screen + A>/@OS.COM).
 
-  ⚠️  format_driver mountet alle Disks schreibend → es werden IMMER Temp-Kopien benutzt.
+  Der Ausgangszustand ist IMMER eine unformatierte Leerdiskette (format_driver-
+  Parameter `createB` = leerer Formatname → `A5120Machine::createDisk` legt ein
+  unformatiertes Medium in der Geometrie des LAUFWERKS an, CLAUDE.md §8.7).
+  Frühere Fassungen mussten die Vorlage stattdessen mit `mk_disk_template` bzw. aus
+  `disks/empty_cpa780.hfe` vorformatiert liefern, weil FORMAT.COM auf einer gap-leeren
+  Diskette hing (docs/format.md §8.2) und später `Fehler 'U' SPUR DEFEKT` meldete
+  (doc/analyse_format_leerspur.md).  Beides ist behoben.
+
+  ⚠️  format_driver mountet alle Disks schreibend → A: wird IMMER als Temp-Kopie
+      gemountet; die Ziel-Disks sind ohnehin Temp-Dateien.
 
 Verwendung:
   tools/dev.sh tool format_driver
-  tools/dev.sh tool mk_disk_template
-  python3 tests/system/drivers/make_bootdisk.py --preset mf6400_fmt1 --quiet
+  python3 tools/cpa_tools/make_bootdisk.py --preset mf6400_fmt1 --quiet
 
 Env:
   FORMAT_DRIVER      Pfad zu format_driver (Default build/format_driver)
-  MK_DISK_TEMPLATE   Pfad zu mk_disk_template (Default build/mk_disk_template)
 
 Exit-Code: 0 = Boot verifiziert; 1 = Fehler; 2 = Voraussetzung fehlt.
 
@@ -51,108 +55,88 @@ import tempfile
 
 HERE   = os.path.dirname(os.path.abspath(__file__))          # tests/system/drivers
 ROOT   = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
-# Testdisketten liegen als unveränderliche Fixtures unter tests/fixtures/disks/;
-# disks/ ist das Arbeitsverzeichnis für manuelle Läufe.
+# Testdisketten liegen als unveraenderliche Fixtures unter tests/fixtures/disks/;
+# disks/ ist das Arbeitsverzeichnis fuer manuelle Laeufe.
 DISKS  = os.path.join(ROOT, 'tests', 'fixtures', 'disks')
-DRIVER = os.environ.get('FORMAT_DRIVER',   os.path.join(ROOT, 'build', 'format_driver'))
-MKTMPL = os.environ.get('MK_DISK_TEMPLATE', os.path.join(ROOT, 'build', 'mk_disk_template'))
+DRIVER = os.environ.get('FORMAT_DRIVER', os.path.join(ROOT, 'build', 'format_driver'))
 
 BOOT_CLOCK      = os.path.join(DISKS, 'cpa_cpa780_k5601_clock.img')
 BOOT_8INCHCOMBO = os.path.join(DISKS, 'cpa_cpa780_combo8zoll_noclock.img')
 BOOT_5INCHCOMBO = os.path.join(DISKS, 'cpa_cpa780_combo5zoll_noclock.img')
 
-# Template-Spezifikation für mk_disk_template: (fm|mfm, cyls, sys_cyls, sys_nsec,
-# sys_size, data_nsec, data_size).  None = committete Vorlage (cpa780, doppelseitig).
-#
+BLANK = ''   # createB/FD_DISKC_FMT-Formatname für „unformatierte Leerdiskette"
+
 # Preset-Felder:
-#   boot        A:-Boot-Disk (CPABCGEN.COM + @OS.COM)
+#   boot        A:-Boot-Disk (FORMAT.COM + CPABCGEN.COM + @OS.COM)
 #   drive       Ziel-Laufwerksbuchstabe (B/C)
 #   prof        DriveProfile des Ziel-Laufwerks (für Boot-Verify: Ziel liegt auf A:)
-#   b_prof      DriveProfile des B:-Slots während des CPABCGEN-Schritts (Combo-B:-Typ)
-#   c_prof      DriveProfile des C:-Slots während des CPABCGEN-Schritts (Combo-C:-Typ)
+#   b_prof      DriveProfile des B:-Slots während Schritt 1 (Combo-B:-Typ)
+#   c_prof      DriveProfile des C:-Slots während Schritt 1 (Combo-C:-Typ)
 #   needs_clock Kaltstart fragt Uhrzeit ab
-#   template    Ziel-Template-Spec (mk_disk_template, einseitig) oder None
-#   b_dummy     (nur drive=C) Template-Spec für den B:-Slot-Dummy (Combo-B:-Typ)
-#   named_fmt   (nur template=None) Formatname für die C-API (doppelseitig)
+#   fmt_key     Auswahltaste in FORMAT.COMs Formatliste (alle Presets: Menüseite 1)
+#   fmt_nav     Tastenfolge zur richtigen Menüseite (leer = Seite 1)
+#   budget      Takt-Budget (Mio.) fuer den Formatierlauf; Richtwert ~12 je Spur,
+#               gemessen werden ~3–5,5 Mio. Takte je LEERER Spur.
 PRESETS = {
     'cpa780': dict(
         boot=BOOT_CLOCK, drive='B', prof='K5601', b_prof='K5601', c_prof='K5601',
-        needs_clock=True, template=None, b_dummy=None,
-        named_fmt='cpa780',           # doppelseitig → über die C-API erzeugt
+        needs_clock=True, fmt_key='1', fmt_nav='', budget=2000,   # 160 Spuren
     ),
     'mf3200_fmt7': dict(
         boot=BOOT_8INCHCOMBO, drive='B', prof='MF3200',
         b_prof='MF3200', c_prof='MF6400', needs_clock=False,
-        template=('fm', 77, 3, 26, 128, 16, 256), b_dummy=None,
+        fmt_key='7', fmt_nav='', budget=1200,                     # 77 Spuren
     ),
     'mf3200_fmt1': dict(
         boot=BOOT_8INCHCOMBO, drive='B', prof='MF3200',
         b_prof='MF3200', c_prof='MF6400', needs_clock=False,
-        template=('fm', 77, 3, 26, 128, 4, 1024), b_dummy=None,
+        fmt_key='1', fmt_nav='', budget=1200,
     ),
     'mf6400_fmt1': dict(
         boot=BOOT_8INCHCOMBO, drive='C', prof='MF6400',
         b_prof='MF3200', c_prof='MF6400', needs_clock=False,
-        # 8″-DD ist MISCHDICHTE (System-34): FM-Systemspuren + MFM-Datenspuren.
-        template=('fm/mfm', 77, 2, 26, 128, 8, 1024),
-        b_dummy=('fm', 77, 3, 26, 128, 16, 256),   # gültige MF3200-FM-Disk für B:
+        fmt_key='1', fmt_nav='', budget=1200,
     ),
     'k5600_10_fmt1': dict(
         boot=BOOT_5INCHCOMBO, drive='B', prof='K5600.10',
         b_prof='K5600.10', c_prof='K5600.20', needs_clock=False,
-        template=('mfm', 40, 2, 26, 128, 5, 1024), b_dummy=None,
+        fmt_key='1', fmt_nav='', budget=800,                      # 40 Spuren
     ),
     'k5600_20_fmt1': dict(
         boot=BOOT_5INCHCOMBO, drive='C', prof='K5600.20',
         b_prof='K5600.10', c_prof='K5600.20', needs_clock=False,
-        template=('mfm', 80, 2, 26, 128, 5, 1024),
-        b_dummy=('mfm', 40, 2, 26, 128, 5, 1024),  # gültige K5600.10-Disk für B:
+        fmt_key='1', fmt_nav='', budget=1200,                     # 80 Spuren
     ),
 }
-
-
-def gen_template(spec):
-    """Erzeugt via mk_disk_template eine Temp-HFE und liefert deren Pfad."""
-    fd, path = tempfile.mkstemp(suffix='.hfe'); os.close(fd)
-    enc, cyls, sysc, snsec, ssz, dnsec, dsz = spec
-    subprocess.run([MKTMPL, path, enc, str(cyls), str(sysc),
-                    str(snsec), str(ssz), str(dnsec), str(dsz)],
-                   check=True, stdout=subprocess.DEVNULL)
-    return path
-
-
-def gen_named_template(format_name):
-    """Leere, gültig formatierte Diskette über die C-API erzeugen.
-
-    Für DOPPELSEITIGE Formate (cpa780): `mk_disk_template` schreibt nur
-    einseitige Abbilder, `DiskImage::create` beherrscht beide Seiten.  Der Weg
-    über die ctypes-Bindung braucht nur die Standardbibliothek (kein PySide6)
-    und benutzt exakt den Erzeugungspfad, den auch die GUI und
-    `test_a5120_disk_api` prüfen — dadurch muss die Vorlage nicht committet
-    werden.
-    """
-    sys.path.insert(0, ROOT)
-    from app.core_binding.k1520 import K1520Emulator
-
-    fd, path = tempfile.mkstemp(suffix='.hfe'); os.close(fd)
-    os.unlink(path)                      # createDisk will einen freien Pfad
-    emu = K1520Emulator()
-    if not emu.create_disk(0, path, format_name, False):
-        raise RuntimeError(f"createDisk({format_name}) scheiterte: {emu.last_error()}")
-    emu.unmount_disk(0)
-    return path
 
 
 def _profiles(a, b, c, d='K5601'):
     return f'{a},{b},{c},{d}'
 
 
-def _script_cpabcgen(drive, needs_clock):
+def _script_format_and_gen(cfg):
+    """FORMAT.COM (ganze Diskette, mit Verify) → CCP → CPABCGEN <LW>: → DIR <LW>:."""
+    drive = cfg['drive']
     lines = ['boot 90']
-    if needs_clock:
+    if cfg['needs_clock']:
         lines += ['type 12:00:00', 'enter']
-    lines += ['boot 8', f'type CPABCGEN {drive}:', 'enter',
-              'boot 80', 'dump cpabcgen',
+    lines += [
+        'boot 5', 'type FORMAT', 'enter',           # FORMAT.COM starten
+        'boot 30', 'enter',                         # Funktion 0 = Formatieren
+        'boot 6', f'type {drive}', 'enter',         # Laufwerk + Einlege-Quittung
+        'boot 10', 'enter',                         # Vergleichs-Lesen = j
+        'boot 8',
+    ]
+    for k in cfg['fmt_nav']:                        # zur richtigen Menüseite blättern
+        lines += [f'type {k}', 'boot 3']
+    lines += [f"type {cfg['fmt_key']}", 'boot 6']   # Format auswählen
+    lines += ['enter', 'boot 5']                    # von Spur 0
+    lines += ['enter']                              # bis Spur = letzte
+    lines += ['boot 6', 'type j']                   # Warnung bestätigen
+    lines += [f"boot {cfg['budget']}", 'dump format']
+    # FORMAT.COM verlassen: "Wiederholung? (j/n)" -> n, "Rueckkehr? (j, sonst Ende)" -> n
+    lines += ['type n', 'boot 20', 'type n', 'boot 30']
+    lines += [f'type CPABCGEN {drive}:', 'enter', 'boot 80', 'dump cpabcgen',
               f'type DIR {drive}:', 'enter', 'boot 120', 'dump dir_target']
     return '\n'.join(lines) + '\n'
 
@@ -165,40 +149,47 @@ def _script_verify(needs_clock):
     return '\n'.join(lines) + '\n'
 
 
-def run_driver(script, disks, profiles=None, target_slot='B'):
+def run_driver(script, a_path, b_path, c_path=None, profiles=None):
     """
-    format_driver mit Temp-Kopien laufen lassen.
-      disks: dict {0:pathA, 1:pathB, 2:pathC(optional)}
-      target_slot: 'B' oder 'C' — dessen Temp-Pfad (mit den Schreibergebnissen)
-                   wird zurückgegeben.
-    Liefert (stdout, stderr, result_path).  result_path muss vom Aufrufer gelöscht werden.
+    format_driver laufen lassen.
+
+      a_path : Boot-Disk — wird IMMER als Temp-Kopie gemountet (das committete Image
+               darf nie beschrieben werden).
+      b_path : Datei des B:-Slots.  Existiert sie nicht, legt format_driver sie als
+               **Leerdiskette** an (createB = leerer Formatname); existiert sie, wird
+               sie unverändert (schreibend!) gemountet.
+      c_path : dito für den C:-Slot (FD_DISKC / FD_DISKC_FMT).
+
+    Liefert (stdout, stderr).  b_path/c_path bleiben liegen — der Aufrufer räumt auf.
     """
-    tmp = {}
-    for slot, path in disks.items():
-        fd, tp = tempfile.mkstemp(suffix=os.path.splitext(path)[1]); os.close(fd)
-        shutil.copyfile(path, tp)
-        tmp[slot] = tp
+    fd, tmpA = tempfile.mkstemp(suffix=os.path.splitext(a_path)[1]); os.close(fd)
+    shutil.copyfile(a_path, tmpA)
     with tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False) as ts:
-        ts.write(script); tS = ts.name
+        ts.write(script); tmpS = ts.name
 
     env = dict(os.environ)
     if profiles:
         env['FD_PROFILES'] = profiles
-    if 2 in tmp:
-        env['FD_DISKC'] = tmp[2]
+    if c_path:
+        env['FD_DISKC'] = c_path
+        if not os.path.exists(c_path):
+            env['FD_DISKC_FMT'] = BLANK
 
-    cmd = [DRIVER, tmp[0], tmp[1], tS]
+    cmd = [DRIVER, tmpA, b_path, tmpS]
+    if not os.path.exists(b_path):
+        cmd.append(BLANK)          # B: als Leerdiskette anlegen
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     finally:
-        os.unlink(tS)
-        os.unlink(tmp[0])
-        # tmp[1]/tmp[2] je nach target_slot behalten/löschen:
-        keep = 1 if target_slot == 'B' else 2
-        for slot, tp in tmp.items():
-            if slot != 0 and slot != keep:
-                os.unlink(tp)
-    return proc.stdout, proc.stderr, tmp[1 if target_slot == 'B' else 2]
+        os.unlink(tmpA)
+        os.unlink(tmpS)
+    return proc.stdout, proc.stderr
+
+
+def _blank_path(suffix='.hfe'):
+    """Temp-Pfad für eine Leerdiskette — die DATEI wird bewusst nicht angelegt."""
+    fd, p = tempfile.mkstemp(suffix=suffix); os.close(fd); os.unlink(p)
+    return p
 
 
 def main():
@@ -217,40 +208,35 @@ def main():
         if not args.quiet:
             print(*a)
 
-    for tool in (DRIVER, MKTMPL):
-        if not os.path.exists(tool) and cfg['template'] is not None and tool == MKTMPL:
-            print(f"FEHLER: {tool} fehlt — zuerst: tools/dev.sh tool mk_disk_template",
-                  file=sys.stderr); return 2
     if not os.path.exists(DRIVER):
         print(f"FEHLER: {DRIVER} fehlt — zuerst: tools/dev.sh tool format_driver",
               file=sys.stderr); return 2
     if not os.path.exists(cfg['boot']):
         print(f"FEHLER: Boot-Disk fehlt: {cfg['boot']}", file=sys.stderr); return 2
 
-    temps = []   # aufzuräumende Zwischen-Templates
+    temps = []   # aufzuräumende Zwischendateien
 
     def cleanup():
         for t in temps:
             if t and os.path.exists(t):
                 os.unlink(t)
 
-    # ── Ziel-Vorlage (leer, formatiert) bereitstellen ────────────────────────
-    if cfg['template'] is None:
-        formatted = gen_named_template(cfg['named_fmt']); temps.append(formatted)
-    else:
-        formatted = gen_template(cfg['template']); temps.append(formatted)
-
-    # ── Schritt 1: CPABCGEN <LW>: ────────────────────────────────────────────
-    log(f"[1/2] ({args.preset}) CPABCGEN {drive}:  → {os.path.basename(args.out or '(temp)')}")
-    cprof = _profiles('K5601', cfg['b_prof'], cfg['c_prof'])
+    # ── Schritt 1: FORMAT <LW>: (Leerdiskette) → CPABCGEN <LW>: ──────────────
+    log(f"[1/2] ({args.preset}) Leerdiskette → FORMAT {cfg['fmt_key']} → CPABCGEN {drive}:")
+    cprof  = _profiles('K5601', cfg['b_prof'], cfg['c_prof'])
+    target = _blank_path(); temps.append(target)
     if drive == 'B':
-        disks = {0: cfg['boot'], 1: formatted}
-    else:  # C:  → B:-Slot mit gültigem Combo-B:-Dummy belegen, Ziel via FD_DISKC
-        bdummy = gen_template(cfg['b_dummy']); temps.append(bdummy)
-        disks = {0: cfg['boot'], 1: bdummy, 2: formatted}
-    o1, _e1, written = run_driver(_script_cpabcgen(drive, cfg['needs_clock']),
-                                  disks, profiles=cprof, target_slot=drive)
-    temps.append(written)
+        o1, _e1 = run_driver(_script_format_and_gen(cfg), cfg['boot'], target,
+                             profiles=cprof)
+    else:  # Ziel in C: → B:-Slot mit einer (ebenfalls leeren) Diskette belegen
+        bdummy = _blank_path(); temps.append(bdummy)
+        o1, _e1 = run_driver(_script_format_and_gen(cfg), cfg['boot'], bdummy,
+                             c_path=target, profiles=cprof)
+
+    formatted = 'FORMATIEREN beendet' in o1 and 'SPUR DEFEKT' not in o1
+    if not formatted:
+        print("  FEHLER: FORMAT.COM meldete kein sauberes 'FORMATIEREN beendet'.  Screen:")
+        print(o1); cleanup(); return 1
     ok = ('Anlegen einer neuen Systemdiskette' in o1 and 'OK' in o1
           and 'Abbruch' not in o1 and 'Schreibfehler' not in o1)
     if not ok:
@@ -259,28 +245,23 @@ def main():
 
     out = args.out
     if out:
-        shutil.copyfile(written, out)
+        shutil.copyfile(target, out)
     else:
-        out = written   # bleibt Temp
-    log(f"  OK — CPABCGEN gemeldet; Ziel @OS.COM: {'@OS' in o1}")
+        out = target   # bleibt Temp
+    log(f"  OK — formatiert + CPABCGEN gemeldet; Ziel @OS.COM: {'@OS' in o1}")
 
     if args.no_verify:
         log(f"\nFertig: {out}  (Boot-Verify übersprungen)")
         print(f"BOOTDISK OK (no-verify): {out}")
-        cleanup(); return 0
+        if out != target:
+            cleanup()
+        return 0
 
     # ── Schritt 2: Boot-Verify (Ziel-Disk als A:, Ziel-Profil) ───────────────
     log(f"[2/2] Boot-Verify: kalt aus der erzeugten Disk booten (Profil {cfg['prof']})")
     bprof = _profiles(cfg['prof'], cfg['prof'], 'K5601')
-    # B:-Slot-Dummy für den Boot: eine gültige Disk des Ziel-Profils (frische Vorlage).
-    if cfg['template'] is None:
-        bdisk = gen_named_template(cfg['named_fmt']); temps.append(bdisk)
-    else:
-        bdisk = gen_template(cfg['template']); temps.append(bdisk)
-    o2, _e2, vtmp = run_driver(_script_verify(cfg['needs_clock']),
-                               {0: out, 1: bdisk}, profiles=bprof, target_slot='B')
-    if vtmp != out:
-        temps.append(vtmp)
+    bdisk = _blank_path(); temps.append(bdisk)   # B:-Slot-Dummy: Leerdiskette
+    o2, _e2 = run_driver(_script_verify(cfg['needs_clock']), out, bdisk, profiles=bprof)
     booted  = 'CP/A, Version' in o2 and 'TPA ist OK' in o2
     reached = 'A>DIR' in o2 or ': @OS' in o2
     if not args.quiet:

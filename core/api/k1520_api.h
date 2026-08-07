@@ -89,17 +89,41 @@ bool k1520_mount_disk(K1520Handle h, int drive,
                       const char* format_name,
                       bool write_protect);
 /**
- * @brief Create a NEW, validly-formatted blank disk image and mount it.
+ * @brief Create a NEW disk and mount it.
  *
- * `.hfe` → formatted HFE (real IDAM/DATA/CRC, 0xE5 data); otherwise `.img`.
- * @p format_name selects the geometry; NULL or "" picks the drive-type default of
- * the slot (K5601→cpa800, K5600.10→200K, K5600.20→400K, MF3200→308K/FM, MF6400→616K).
- * Overwrites an existing file.  Returns false on error.
+ * @p format_name NULL or "" → a genuinely BLANK (unformatted) disk in the geometry of
+ * the *drive* (K5601 80×2, K5600.10 40×1, …), ready to be formatted by the guest OS —
+ * including foreign systems such as UDOS that append data behind the data CRC.  A `.img`
+ * target is rejected in that case (a raw sector image cannot express "unformatted");
+ * use `.hfe` or `.dmk`.
+ *
+ * @p format_name set → a PRE-FORMATTED disk per catalog format (real IDAM/DATA/CRC,
+ * 0xE5 data); `.img` is allowed then.
+ *
+ * Overwrites an existing file.  Returns false on error (see k1520_last_error).
  */
 bool k1520_create_disk(K1520Handle h, int drive,
                        const char* image_path,
                        const char* format_name,
                        bool write_protect);
+/**
+ * @brief Save the mounted disk under a new name/container and re-bind to it.
+ *
+ * Container follows the extension (`.img` / `.hfe` / `.dmk`).  From then on all further
+ * writes go (delayed) into the new file.  @p format_name is only needed for `.img`
+ * (the other containers are self-describing) and is validated against the medium.
+ */
+bool k1520_save_disk_as(K1520Handle h, int drive,
+                        const char* image_path,
+                        const char* format_name);
+/** @brief True if the mounted disk may be saved as a raw sector image (.img). */
+bool k1520_disk_raw_compatible(K1520Handle h, int drive);
+/** @brief Currently bound image file of a slot ("" = memory only / empty drive). */
+const char* k1520_disk_path(K1520Handle h, int drive);
+/** @brief Container of the bound file ("img" | "hfe" | "dmk"; "" = none). */
+const char* k1520_disk_container(K1520Handle h, int drive);
+/** @brief Write pending changes of all drives to their files immediately. */
+bool k1520_flush_disks(K1520Handle h);
 /** @brief Unmount disk image from a drive slot. */
 bool k1520_unmount_disk(K1520Handle h, int drive);
 

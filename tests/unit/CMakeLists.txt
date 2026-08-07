@@ -29,9 +29,13 @@ k1520_add_test(k7637          SRC peripherals/test_k7637.cpp
 k1520_add_test(track_codec    SRC peripherals/test_track_codec.cpp    LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(bit_codec      SRC peripherals/test_bit_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(drive_profile  SRC peripherals/test_drive_profile.cpp  LIBS k1520_floppy2 LABELS "${_lbl}")
-k1520_add_test(disk_image_raw SRC peripherals/test_disk_image_raw.cpp LIBS k1520_floppy2 LABELS "${_lbl}")
+# Medium-Umbau (origin/main 7c7f312): DiskMedium + Container-Codecs .img/.hfe/.dmk
+k1520_add_test(disk_medium    SRC peripherals/test_disk_medium.cpp    LIBS k1520_floppy2 LABELS "${_lbl}")
+k1520_add_test(img_codec      SRC peripherals/test_img_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
+k1520_add_test(hfe_codec      SRC peripherals/test_hfe_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
+k1520_add_test(dmk_codec      SRC peripherals/test_dmk_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
+k1520_add_test(disk_image     SRC peripherals/test_disk_image.cpp     LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(floppy_drive2  SRC peripherals/test_floppy_drive2.cpp  LIBS k1520_floppy2 LABELS "${_lbl}")
-k1520_add_test(hfe_image      SRC peripherals/test_hfe_image.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
 # Prüft den AUSGELIEFERTEN Katalog data/formats.yaml — Pfad muss der Test kennen.
 k1520_add_test(format_catalog SRC peripherals/test_format_catalog.cpp LIBS k1520_floppy2 LABELS "${_lbl}"
                               DEFS K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")

@@ -163,10 +163,13 @@ a5120emu/
 │   │       ├── track_codec.h/cpp       # IBM-Track (FM/MFM) bauen/parsen + CRC
 │   │       ├── bit_codec.h/cpp         # Bitzellen ⇆ Bytes (MFM/FM, HFE)
 │   │       ├── drive_profile.h/cpp     # Laufwerksprofile (4 Slots)
-│   │       ├── disk_image.h/cpp        # DiskImage-Interface + open()/create()/Sniffing
-│   │       ├── raw_sector_image.h/cpp  # .img-Backend
-│   │       ├── hfe_image.h/cpp         # HFE-v1-Backend (HxC, MFM/FM, Mischdichte)
-│   │       └── floppy_drive2.h/cpp     # FloppyDriveV2 (DiskImage + Profil + Track-Cache)
+│   │       ├── disk_medium.h/cpp       # DAS interne Diskettenabbild (alle Spuren, §8.7)
+│   │       ├── image_codec.h/cpp       # Container-Fabrik (.img/.hfe/.dmk) + Sniffing
+│   │       ├── img_codec.h/cpp         # .img  ⇄ DiskMedium (braucht DiskFormat)
+│   │       ├── hfe_codec.h/cpp         # .hfe  ⇄ DiskMedium (HxC v1, MFM/FM, Mischdichte)
+│   │       ├── dmk_codec.h/cpp         # .dmk  ⇄ DiskMedium (David Keil)
+│   │       ├── disk_image.h/cpp        # gemountete Diskette: Medium + Dateibindung + Autosave
+│   │       └── floppy_drive2.h/cpp     # FloppyDriveV2 (Profil + Kopfposition + Diskette)
 │   │
 │   ├── machines/                # Maschinenkonfigurationen
 │   │   ├── machine.h            # Abstrakte Maschinenbasis
@@ -721,6 +724,11 @@ beobachtbar.
 
 ### 8.5 Formatagnostischer Floppy-Stack (K5122 + DiskImage/TrackImage) — 2026-06-10
 
+> **Teilweise abgelöst durch §8.7 (2026-08-05).** Controller-Modell, `TrackImage`, `TrackCodec`,
+> `BitCodec` und der Boot-Lesepfad gelten unverändert. Die hier beschriebene **Backend-Schicht**
+> (`DiskImage` abstrakt, `RawSectorImage`/`HfeImage` als dateigebundene Unterklassen, Spur-Cache
+> in `FloppyDriveV2`) ist durch das **interne Medium + Container-Codecs** ersetzt.
+
 Die `K5122` (`core/cards/k5122/`) ist der **formatagnostische** Floppy-Controller (einzige
 Floppy-Karte) auf der Peripherie-Schicht `core/peripherals/floppy_drive/`.  Sie modelliert einen
 **Lesekopf über der rotierenden Spur** und kennt keine Sektorgrößen/CRCs/Boot-Stadien mehr.  *(Sie
@@ -779,8 +787,9 @@ DriveProfile[4] — Zoll/Spuren/Köpfe/U-min/Verfahren je Slot  drive_profile.*
   formatiert+verifiziert alle Sektorgrößen. `HfeImage::readTrack` erkennt das Verfahren **pro Spur**
   (Mischdichte-Disks: FM-Systemspuren + MFM-Datenspuren, z. B. 8″-MF6400). Details + Formatkatalog:
   `docs/format.md`.
-- **Tests:** `test_track_codec`, `test_bit_codec`, `test_hfe_image`,
-  `test_disk_image_raw`, `test_drive_profile`, `test_floppy_drive2`, `test_k5122` (GoogleTest);
+- **Tests:** `test_track_codec`, `test_bit_codec`, `test_hfe_codec`, `test_img_codec`,
+  `test_dmk_codec`, `test_disk_medium`, `test_disk_image`,
+  `test_drive_profile`, `test_floppy_drive2`, `test_k5122` (GoogleTest);
   alle grün, ebenso `test_boot_integration` (Full-Machine) und `test_k2526` (ZVE2-Floppy-Kette).
 
 ### 8.6 Diskettenformat-Katalog aus YAML (`formats.yaml`) — 2026-08-03
@@ -1094,6 +1103,67 @@ Label (Standard mit Präfix `Standard: `) und behält den Katalognamen in `userD
   statt sie wie früher nur als Kommentar im Quelltext zu führen. Im ausgelieferten Katalog ist es
   bewusst noch nirgends gesetzt (alle Formate erlauben `img` und `hfe`), damit der Umbau
   verhaltensneutral bleibt.
+
+---
+
+### 8.7 Internes Diskettenabbild + Container-Codecs (`DiskMedium`) — 2026-08-05
+
+> **Ablösung der Backend-Schicht aus §8.5.** Dort hatte jedes Dateiformat eine eigene
+> `DiskImage`-Unterklasse, die **auf der Datei arbeitete** (`RawSectorImage`: seek/write je
+> Sektor; `HfeImage`: In-place-Blöcke). Ab hier gibt es **ein internes, bitstrom-orientiertes
+> Diskettenabbild**; Dateiformate sind reine **Container-Codecs** davor. Der `TrackImage`-Stack
+> (§8.5), der Boot-Lesepfad und das PIO-Protokoll bleiben unverändert.
+> Vollständiger Feinentwurf: **`doc/design/09_floppy_drive.md`**.
+
+**Warum der Umbau.** Die dateigebundenen Backends erzwangen drei Einschränkungen, die
+sich nicht lokal reparieren ließen:
+
+1. **`.img` verliert das Dateisystem fremder OS.** Ein rohes Sektorimage speichert nur
+   Datenfeld-Nutzbytes. **UDOS** hängt aber je Sektor einen Sektorkontrollblock
+   (Verkettungszeiger + eigene CRC) **hinter die Daten-CRC** — genau diese Bytes fielen
+   beim Rückschreiben weg (`doc/udos_diskettenformat.md`).
+2. **Kein Formatwechsel.** Das Backend war an den Dateityp gebunden; eine gemountete
+   Diskette ließ sich nicht als anderer Typ herausschreiben.
+3. **Keine echte Leerdiskette.** `DiskImage::create` musste `.hfe` **vorformatiert**
+   anlegen, weil eine gap-leere Datei den Controller hängen ließ — auf einer
+   vorformatierten Diskette kann UDOS seinen Zeiger-Anhang aber nicht unterbringen.
+
+**Neues Modell.**
+
+```
+Datei (.img | .hfe | .dmk) ──load──► DiskMedium (alle Spuren als TrackImage) ──► K5122
+                           ◄─save──        ▲ Schreibzugriffe des Gastsystems
+```
+
+- **`DiskMedium`** (`disk_medium.*`) hält **jede** Spur als `TrackImage`
+  (Vollumdrehungs-Byte-/Markenstrom inkl. Gaps, Sync, echter CRCs, FM **und** MFM
+  gemischt) plus Dirty-Bit je Spur. Das ist der verlustfreie, bitzellen-rückcodierbare
+  „Bitstrom“ des Auftrags — Bytes statt Zellen, weil der Controller ohnehin byteweise
+  arbeitet und die Markeninformation (fehlendes Clock-Bit) sonst verloren ginge.
+- **`ImageCodec`** (`image_codec.*` + `img_codec/hfe_codec/dmk_codec.*`) lädt/speichert
+  Container **vollständig**; kein Codec hält Dateizustand. `.img` braucht ein
+  `DiskFormat`, `.hfe`/`.dmk` sind self-describing.
+- **`DiskImage`** ist jetzt **konkret**: Medium + Dateibindung + Schreibschutz. Es
+  schreibt schmutzige Spuren **verzögert** (≈ 0,5 s Maschinenzeit, `autoFlush()` aus
+  `A5120Machine::run()`) in die gebundene Datei zurück, sodass die Datei dem Abbild
+  stets mit leichtem Zeitversatz entspricht. `saveAs()` schreibt in einen beliebigen
+  Container **und bindet um**.
+- **`FloppyDriveV2`** hat **keinen Spur-Cache** mehr — es referenziert das Medium direkt.
+- **`.dmk`** (David Keil) ist neu: 16-B-Header, je Spur 128-B-IDAM-Tabelle
+  (u16-Offsets, Bit15 = MFM) + roher Spur-Byte-Strom (FM-Bytes verdoppelt). Damit
+  verlustfrei wie HFE, aber ohne Bitzellen-Ebene.
+- **`rawCompatible()`** ist das geforderte Flag: eine Spur ist `.img`-tauglich nur mit
+  ≥ 1 Sektor, gültigen CRCs und **reinen Gap-Bytes hinter der Daten-CRC**. Sobald das
+  Gastsystem etwas anderes schreibt (UDOS-Anhang) oder eine Spur unformatiert bleibt,
+  wird `.img` als Ziel abgelehnt (GUI blendet es aus).
+- **Leerdiskette:** `DiskImage::createBlank()` erzeugt ein Medium in **Laufwerks**-Geometrie
+  (K5601 80×2, K5600.10 40×1, …) mit **unformatierten** Spuren. Der Controller streamt
+  für sie markenlosen Gap-Flux (§7 des Feinentwurfs), das Gastsystem läuft in den
+  Index-Timeout — genau wie auf echter Hardware — und kann die Diskette formatieren.
+  Die Ablehnung markenloser Images beim Mounten (`hasFormattedData()`) entfällt damit.
+
+**Nicht betroffen:** `TrackImage`/`TrackCodec`/`BitCodec`, der treue FM/MFM-Lesepfad
+(§8.5, §14.5), die Boot-Invarianten und das K5122-Portprotokoll.
 
 ---
 

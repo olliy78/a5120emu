@@ -31,20 +31,22 @@ neuen hinzufügt, steht in `tests/README.md`.
 
 ```
         ┌──────────────────────────────────────────┐
-        │  system/      8  originale DDR-Programme │  Minuten
+        │  system/    104  originale DDR-Programme │  Minuten
         │               FORMAT · CPABCGEN · SCPX   │
-        │               INIT/MODF/SYSP · HARDY     │
+        │               INIT/MODF/SYSP · HARDY ·   │
+        │               UDOS + 88er Format-Matrix  │
         ├──────────────────────────────────────────┤
         │  python/      7  C-ABI + GUI (pytest)    │  Sekunden
-        │  cli/        19  Werkzeuge als Prozess   │
-        │  integration/50  ganze Maschine, Kaltboot│
+        │  cli/        46  Werkzeuge als Prozess   │
+        │  integration/62  ganze Maschine, Kaltboot│
         ├──────────────────────────────────────────┤
-        │  debugtools/ 67  tools/*.h isoliert      │  Millisekunden
-        │  unit/      530  eine Klasse isoliert    │
+        │  debugtools/ 89  tools/*.h isoliert      │  Millisekunden
+        │  unit/      580  eine Klasse isoliert    │
         └──────────────────────────────────────────┘
 ```
 
-Die Zahlen sind der Stand vom 2026-08-07; maßgeblich ist immer `ctest -N`.
+Die Zahlen sind der Stand vom 2026-08-07 (nach dem Merge von origin/main);
+maßgeblich ist immer `ctest -N`.
 
 ---
 
@@ -128,10 +130,14 @@ gibt es keinen FBO. Bildinhalte prüft die C++-Seite über das VRAM.
 | `unit` `debugtools` `integration` `cli` `system` `python` | Ebene (= Verzeichnis) |
 | `fast` | läuft in der Standardrunde mit |
 | `slow` | nur auf Anforderung |
-| `format_integration` | historisches Label der langsamen Runde; `tools/dev.sh` filtert darauf |
+| `format_integration` | die **Tiefe** der Formatierung: je Laufwerkstyp ein Format über die ganze Diskette (`dev.sh test-format`) |
+| `format_matrix` | die **Breite**: jeder einzelne FORMAT.COM-Menüeintrag, Umfang Smoke (`dev.sh test-matrix`) |
 
-`format_integration` ist mit `slow` deckungsgleich und bleibt bestehen, weil
-`dev.sh`, die Werkzeugdokumentation und eingespielte Aufrufe darauf verweisen.
+`format_integration` und `format_matrix` sind zusammen mit `slow` deckungsgleich;
+beide bleiben bestehen, weil `dev.sh`, die Werkzeugdokumentation und eingespielte
+Aufrufe darauf verweisen.  Die Matrix wird beim `cmake` aus
+`tests/system/drivers/format_all.py --list-matrix` erzeugt — neue Formate in der
+Tabelle dort werden beim nächsten Konfigurieren automatisch zu Tests.
 
 ---
 

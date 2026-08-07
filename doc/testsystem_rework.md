@@ -727,6 +727,56 @@ damit grün durch.
 **Verifikation:** `build/` gelöscht und neu gebaut, `tools/dev.sh test` 672/672 grün,
 `tools/dev.sh test-format` 8/8 grün, `format_all.py --list` funktioniert am neuen Ort.
 
+### 2026-08-07 — origin/main eingeholt (33 Commits, zwei Stufen)
+
+Der Branch lag 33 Commits hinter origin/main.  Gemerged in zwei Stufen entlang der
+Feature-Grenzen von origin (`94bcffb` boot_udos, `a24e4e8` udos_diskformats), jede Stufe
+einzeln aufgelöst und vollständig getestet.
+
+**Was Git selbst konnte:** die Rename-Erkennung hat origins Änderungen an den von uns
+verschobenen Testdateien korrekt zugeordnet — `test_boot_integration`, `test_z80`,
+`test_machine_snapshot`, `test_prn_listing`, `test_k5122` landeten ohne Konflikt in
+`tests/{integration,unit,debugtools}/`.  Nur bei den NEUEN Dateien versagte die Heuristik
+(„directory rename split": `tests/cpp` wurde auf mehrere Ziele aufgeteilt, keines mit
+Mehrheit) — die mussten von Hand einsortiert werden.
+
+**Wiederkehrendes Konfliktmuster.** In beiden Stufen kollidierte `CMakeLists.txt`: origin
+ergänzt dort Testregistrierung, wir haben sie nach `tests/` verlagert.  Auflösung jeweils:
+prüfen, ob origins Änderung **nur** Registrierung ist (Stufe A: ja) oder auch Bibliotheken
+betrifft (Stufe B: ja — `k1520_floppy2` bekam die neuen Codec-Quellen), dann unsere Fassung
+plus die Bibliotheksänderung übernehmen und die Registrierungen in `tests/` nachziehen.
+
+**Stufe A (boot_udos).** UDOS 4.3, drei Emulator-Fixes, Debugger-Regressionsnetz,
+Fremdquellen-Annotation.  Nachgezogen: `test_mac_listing` → `tests/debugtools/`,
+`all_commands_smoke.dbg` → `tests/cli/scripts/`, **27 neue CLI-Fälle ins Datenformat**
+(46 statt 19).  Dabei drei Runner-Erweiterungen (`capture_file:`, Lauf im Temp-Verzeichnis,
+`%CLI_DIR%`) und **ein echter Fehler im Runner**: Platzhalter wurden nur in `run:` ersetzt,
+nicht in der Standardeingabe.
+
+**Stufe B (udos_diskformats).** Der Medium-Umbau: `DiskMedium` als internes Abbild plus
+Container-Codecs `.img`/`.hfe`/`.dmk`; `hfe_image`/`raw_sector_image` sind weg,
+`test_hfe_image` und `test_disk_image_raw` durch `test_hfe_codec`/`test_img_codec` ersetzt.
+Fünf neue Unit-Tests nach `tests/unit/peripherals/`, `test_udos_format` nach `tests/system/`,
+dazu die **88er Format-Matrix** (neues Label `format_matrix`, beim `cmake` aus
+`format_all.py --list-matrix` erzeugt) und `dev.sh test-matrix`.
+
+**Vier Dateien habe ich bewusst in origins Fassung übernommen** statt zu verschmelzen —
+`make_bootdisk.py`, `format_all.py`, `test_a5120_disk_api.cpp`, `test_boot_integration.cpp`:
+origin hat sie um die neue Medium-Semantik herum neu geschrieben, und deren Sachwissen wiegt
+schwerer als unsere Änderungen daran.  Anschließend nur unsere **strukturellen** Anpassungen
+erneut aufgetragen (Pfade, Fixture-Namen, `TempDisk`, Support-Bibliothek).
+
+**Damit überholt:** `gen_named_template()` aus Schritt 6b.  Es beruhte darauf, dass
+`DiskImage::create` für `.hfe` eine *formatierte* Diskette anlegt (Stand bis 2026-07-06).
+Seit dem Medium-Umbau heißt ein leerer Formatname „echte Leerdiskette", und origins
+Boot-Disk-Pipeline formatiert sie selbst mit FORMAT.COM — der Gap-Blank-Hänger ist im Kern
+behoben (`doc/analyse_format_leerspur.md`).  Die eingecheckte Leerdiskette bleibt damit
+zu Recht entfernt, nur auf einem besseren Weg als von uns gebaut.
+
+**Verifikation nach vollständigem Neubau:** `tools/dev.sh test` **783/783**,
+`test-format` **16/16**, `test-matrix` **88/88** grün.  Ebenen jetzt: unit 580,
+debugtools 89, integration 62, cli 46, system 104, python 7.
+
 ---
 
 ## 7. Nebenbefund: 5×1024-System als Quelle erzeugt defekte Systemdiskette

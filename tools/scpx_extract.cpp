@@ -1,6 +1,7 @@
 // SCPX-Disk-Extraktor: liest ein HFE linear aus, parst das CP/M-Directory
 // und schreibt jede .COM/.SYS-Datei als Datei heraus.  Nur zur Analyse.
-#include "core/peripherals/floppy_drive/hfe_image.h"
+#include "core/peripherals/floppy_drive/disk_medium.h"
+#include "core/peripherals/floppy_drive/hfe_codec.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
 #include <cstdio>
 #include <cstring>
@@ -11,9 +12,13 @@
 int main(int argc, char** argv) {
     const char* disk = (argc >= 2) ? argv[1] : "disks/scpx17_cpa780_k5601.hfe";
     const char* outdir = (argc >= 3) ? argv[2] : ".";
-    HfeImage img(disk, true);
-    if (!img.isOpen()) { fprintf(stderr, "open fail %s\n", disk); return 1; }
-    auto g = img.geometry();
+    DiskMedium medium;
+    std::string err;
+    if (!HfeCodec::load(disk, medium, nullptr, err)) {
+        fprintf(stderr, "open fail %s: %s\n", disk, err.c_str());
+        return 1;
+    }
+    auto g = medium.geometry();
     fprintf(stderr, "geom: cyl=%d heads=%d\n", g.num_cyls, g.num_heads);
 
     // Linearer Track/Head/Sector-Dump: [cyl][head] -> sektor-id -> 256B
@@ -23,8 +28,7 @@ int main(int argc, char** argv) {
     int nsec = 0, ncrc = 0;
     for (int c = 0; c < g.num_cyls; ++c)
         for (int h = 0; h < g.num_heads; ++h) {
-            TrackImage t = img.readTrack((uint8_t)c, (uint8_t)h);
-            auto ls = TrackCodec::parseTrack(t);
+            auto ls = TrackCodec::parseTrack(medium.track((uint8_t)c, (uint8_t)h));
             for (auto& s : ls) {
                 sec[c][h][s.id] = s.data;
                 nsec++;

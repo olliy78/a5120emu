@@ -49,6 +49,7 @@
  */
 
 #include <gtest/gtest.h>
+#include <unistd.h>
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -1162,9 +1163,17 @@ DiskFormat cpa780Format() {
     return f ? *f : DiskFormat{};
 }
 
+// Temporaeres cpa780-Image anlegen.  Der Dateiname enthaelt Prozess-ID UND Testnamen:
+// unter `ctest -j` laufen die Tests dieser Fixture in NEBENLAEUFIGEN Prozessen, und ein
+// gemeinsamer fester Pfad liesse den einen das Image des anderen ueberschreiben oder im
+// TearDown wegloeschen.
 std::string makeCpa780Image() {
     const DiskFormat fmt = cpa780Format();
-    auto path = (std::filesystem::temp_directory_path() / "k2526_chain_cpa780.img").string();
+    const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+    const std::string tag = std::string(info ? info->name() : "unknown")
+                            + "_" + std::to_string(::getpid());
+    auto path = (std::filesystem::temp_directory_path()
+                 / ("k2526_chain_cpa780_" + tag + ".img")).string();
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     std::vector<uint8_t> buf(fmt.totalBytes(), 0xE5);
     f.write(reinterpret_cast<const char*>(buf.data()), static_cast<std::streamsize>(buf.size()));

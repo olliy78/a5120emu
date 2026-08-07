@@ -47,8 +47,15 @@ class DriveWidget(QWidget):
         self._led_timer.timeout.connect(self._refresh_leds)
         self._led_timer.start(120)
 
-    # Dateifilter für Öffnen/Erstellen: sowohl .img als auch .hfe.
-    DISK_FILTER = "Disk Images (*.img *.hfe);;All Files (*)"
+    # Dateifilter für Öffnen: alle drei Container.
+    DISK_FILTER = "Disk Images (*.img *.hfe *.dmk);;All Files (*)"
+    # Neue Leerdiskette: nur self-describing Container — ein rohes Sektorimage
+    # kann "nicht formatiert" nicht ausdrücken (doc/design/09_floppy_drive.md §5).
+    BLANK_FILTER = ("Bitstrom-Images (*.hfe *.dmk);;"
+                    "Vorformatiertes Sektorimage (*.img);;All Files (*)")
+    # Speichern unter: .img nur, wenn das Medium sektorweise darstellbar ist.
+    SAVE_FILTER_ALL = "Disk Images (*.hfe *.dmk *.img);;All Files (*)"
+    SAVE_FILTER_BITSTREAM = "Bitstrom-Images (*.hfe *.dmk);;All Files (*)"
 
     def present_drives(self) -> list:
         """Indices of the K5122 slots that carry a drive (in slot order)."""
@@ -202,16 +209,21 @@ class DriveWidget(QWidget):
         format_layout.addWidget(format_combo)
         layout.addLayout(format_layout)
 
-        # Buttons: eine Toggle-Taste (Mount ⇄ Unmount) + "Leere Diskette erstellen".
+        # Buttons: Toggle (Mount ⇄ Unmount) + "Neue Diskette" + "Speichern unter…".
         buttons_layout = QHBoxLayout()
         toggle_btn = QPushButton("Mount")
-        create_btn = QPushButton("Leere Diskette erstellen")
+        create_btn = QPushButton("Neue Diskette")
+        saveas_btn = QPushButton("Speichern unter…")
+        saveas_btn.setEnabled(False)
+        saveas_btn.setToolTip("Die eingelegte Diskette unter neuem Namen/Format "
+                              "speichern; ab dann folgen alle Schreibzugriffe dorthin.")
 
         def set_mounted(path: str, fmt: str, wp: bool):
             """UI-Zustand nach erfolgreichem Mount setzen."""
             path_display.setText(path)
             toggle_btn.setText("Unmount")
             self._mounts[drive] = (path, fmt, wp)
+            saveas_btn.setEnabled(True)
             self.disk_mounted.emit(drive, path)
 
         def set_unmounted():
@@ -219,6 +231,7 @@ class DriveWidget(QWidget):
             path_display.setText("")
             toggle_btn.setText("Mount")
             self._mounts.pop(drive, None)
+            saveas_btn.setEnabled(False)
             self.disk_unmounted.emit(drive)
 
         def on_toggle():
@@ -247,18 +260,22 @@ class DriveWidget(QWidget):
                 QMessageBox.critical(self, "Error", str(e))
 
         def on_create():
-            # Neue Datei anlegen; .img/.hfe erlaubt. Bei .img wird das Format aus
-            # dem Auswahlfeld verwendet; .hfe kann ein beliebiges Format aufnehmen.
+            # Standardfall: ECHTE Leerdiskette (.hfe/.dmk) in Laufwerksgeometrie —
+            # unformatiert, damit das Gastsystem sie selbst formatieren kann.  Wählt
+            # der Bediener bewusst .img, entsteht wie früher eine VORFORMATIERTE
+            # Diskette im ausgewählten Katalogformat (ein rohes Sektorimage kann
+            # "unformatiert" nicht darstellen).
             path, _ = QFileDialog.getSaveFileName(
-                self, f"Leere Diskette erstellen - Drive {drive}",
-                self._default_disk_dir(), self.DISK_FILTER
+                self, f"Neue Diskette - Drive {drive}",
+                self._default_disk_dir(), self.BLANK_FILTER
             )
             if not path:
                 return
-            # Ohne Endung → .img annehmen.
+            # Ohne Endung → .hfe (Leerdiskette).
             if not os.path.splitext(path)[1]:
-                path += ".img"
-            fmt = self._selected_format(format_combo, drive)
+                path += ".hfe"
+            is_img = path.lower().endswith(".img")
+            fmt = self._selected_format(format_combo, drive) if is_img else ""
             wp = wp_check.isChecked()
             try:
                 if self.emulator.create_disk(drive, path, fmt, wp):
@@ -268,17 +285,59 @@ class DriveWidget(QWidget):
             except Exception as e:
                 QMessageBox.critical(self, "Error", str(e))
 
+        def on_save_as():
+            # Das interne Abbild in einen beliebigen Container schreiben und
+            # umbinden.  `.img` wird nur angeboten, wenn das Medium sektorweise
+            # darstellbar ist — sonst gingen Gap-Anhänge (z. B. der
+            # UDOS-Sektorkontrollblock) oder unformatierte Spuren verloren.
+            try:
+                raw_ok = self.emulator.disk_raw_compatible(drive)
+            except Exception:
+                raw_ok = False
+            flt = self.SAVE_FILTER_ALL if raw_ok else self.SAVE_FILTER_BITSTREAM
+            path, _ = QFileDialog.getSaveFileName(
+                self, f"Diskette speichern unter - Drive {drive}",
+                self._default_disk_dir(), flt
+            )
+            if not path:
+                return
+            if not os.path.splitext(path)[1]:
+                path += ".hfe"
+            is_img = path.lower().endswith(".img")
+            if is_img and not raw_ok:
+                QMessageBox.critical(
+                    self, "Nicht möglich",
+                    "Diese Diskette lässt sich nicht als rohes Sektorimage (.img) "
+                    "speichern:\nunformatierte Spuren oder Nutzdaten hinter der "
+                    "Daten-CRC (z. B. UDOS-Sektorkontrollblock) gingen dabei "
+                    "verloren.\n\nBitte .hfe oder .dmk wählen.")
+                return
+            fmt = self._selected_format(format_combo, drive) if is_img else ""
+            try:
+                if self.emulator.save_disk_as(drive, path, fmt):
+                    # Ab jetzt zeigt die Bindung auf die neue Datei.
+                    _, _, wp = self._mounts.get(drive, (path, fmt, wp_check.isChecked()))
+                    set_mounted(path, fmt, wp)
+                else:
+                    QMessageBox.critical(self, "Error", self.emulator.last_error()
+                                         or "Speichern fehlgeschlagen")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
+
         toggle_btn.clicked.connect(on_toggle)
         create_btn.clicked.connect(on_create)
+        saveas_btn.clicked.connect(on_save_as)
 
         buttons_layout.addWidget(toggle_btn)
         buttons_layout.addWidget(create_btn)
+        buttons_layout.addWidget(saveas_btn)
         layout.addLayout(buttons_layout)
 
         # Store references for updates
         group._path_display = path_display
         group._toggle_btn = toggle_btn
         group._create_btn = create_btn
+        group._saveas_btn = saveas_btn
         group._wp_check = wp_check
         group._format_combo = format_combo
         group._led = led
@@ -317,6 +376,7 @@ class DriveWidget(QWidget):
             if panel is not None:
                 panel._path_display.setText("")
                 panel._toggle_btn.setText("Mount")
+                panel._saveas_btn.setEnabled(False)
         self._mounts.clear()
 
         # 2) Aus der Config mounten.
@@ -338,6 +398,7 @@ class DriveWidget(QWidget):
                     panel._wp_check.setChecked(wp)
                     panel._path_display.setText(path)
                     panel._toggle_btn.setText("Unmount")
+                    panel._saveas_btn.setEnabled(True)
                     self._mounts[drive] = (path, fmt, wp)
             except Exception:
                 pass

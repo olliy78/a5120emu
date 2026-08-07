@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -30,7 +31,6 @@
 #include "core/peripherals/floppy_drive/disk_format.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
-#include "core/peripherals/floppy_drive/raw_sector_image.h"
 #include "core/peripherals/floppy_drive/drive_profile.h"
 #include "core/logger.h"
 
@@ -170,7 +170,7 @@ TEST_F(K5122Test, Mount_BereichsüberschreitungAbgelehnt) {
 
 TEST_F(K5122Test, DriveSelect_AlleVierLaufwerke) {
     // Drive-Select-Codes: bit-Muster /SELx, active-low one-hot
-    // 0xEE = 1110 1110 → bit0=0 → D0; 0xDD → D1; 0xBB → D2; 0x77 → D3
+    // 0xEE = 1110 1110 → bit4=0 (/SE0) → D0; 0xDD → D1; 0xBB → D2; 0x77 → D3
     card.ioWrite(0x18, 0xEE);   // D0
     card.ioWrite(0x18, 0xDD);   // D1
     card.ioWrite(0x18, 0xBB);   // D2
@@ -208,15 +208,50 @@ TEST_F(K5122Test, DriveSelect_DekodiertSelectMotorUndLed) {
  *        D1 gilt als „Motor an", D0 nicht.
  */
 TEST_F(K5122Test, Led_FolgtSelectOderMotor) {
-    // low nibble = /SE0..3, high nibble = /LCK0..3 (active-low).
-    // /SE0=0 (Bit0) + /LCK1=0 (Bit5), alle anderen 1  →  ~((1<<0)|(1<<5)) = 0xDE
-    card.ioWrite(0x18, 0xDE);
+    // high nibble = /SE0..3, low nibble = /LCK0..3 (active-low).
+    // /SE0=0 (Bit4) + /LCK1=0 (Bit1), alle anderen 1  →  ~((1<<4)|(1<<1)) = 0xED
+    card.ioWrite(0x18, 0xED);
     EXPECT_TRUE(card.isDriveLedOn(0))  << "D0 selektiert → LED an";
     EXPECT_FALSE(card.isMotorOn(0))    << "D0 Motor bleibt aus";
     EXPECT_TRUE(card.isDriveLedOn(1))  << "D1 Motor an → LED an";
     EXPECT_TRUE(card.isMotorOn(1))     << "D1 Motor an";
     EXPECT_FALSE(card.isDriveLedOn(2));
     EXPECT_FALSE(card.isDriveLedOn(3));
+}
+
+/**
+ * @test K5122Test/DriveSelect_HighNibbleIstSelect
+ * @brief Die BIOSse maskieren beim 8212-Byte GENAU EIN Nibble — daran hängt die
+ *        Nibbelzuordnung, und nur daran (0xEE/0xDD lassen sie offen, weil dort je
+ *        ein /SE- UND ein /LCK-Bit fällt).
+ *
+ * Belegt durch zwei unabhängige Originalquellen:
+ *   - CP/A-Bootsektor 0x021E: `LD A,0F7H` („ohne lock") + RLCA je Laufwerk →
+ *     0xEF/0xDF/0xBF/0x77; direkt danach wird GENAU DIESES Laufwerk gesteppt und
+ *     sein Spur-0-Signal gelesen ⇒ das variierende High-Nibble-Bit ist /SE.
+ *   - UDOS-Floppytreiber: `OR 0FH` (UNFLOPPY.MAC, „LW EIN") bzw. `AND 0F0H`
+ *     (UDOS 4.3 auf dem A5120) → 0xEF/0xDF/… bzw. 0xE0/0xD0/…
+ * Mit vertauschten Nibbeln landete UDOS' 0xD0 auf Laufwerk 0 statt 1 — FORMAT
+ * beschrieb dann B: und verifizierte A: („DEFEKTIVE TRACK" auf allen Spuren).
+ */
+TEST_F(K5122Test, DriveSelect_HighNibbleIstSelect) {
+    // CP/A-Erkennung / UDOS `OR 0FH`: Select ohne Lock
+    const uint8_t ohne_lock[4] = {0xEF, 0xDF, 0xBF, 0x7F};
+    for (int d = 0; d < 4; ++d) {
+        card.ioWrite(0x18, ohne_lock[d]);
+        EXPECT_EQ(card.debugState().drive, d) << "0x" << std::hex << int(ohne_lock[d]);
+        EXPECT_TRUE(card.isDriveLedOn(d));
+        for (int m = 0; m < 4; ++m)
+            EXPECT_FALSE(card.isMotorOn(m)) << "kein /LCK aktiv (Motor D" << m << ")";
+    }
+    // UDOS 4.3 `AND 0F0H`: Select + ALLE Locks aktiv
+    const uint8_t alle_lock[4] = {0xE0, 0xD0, 0xB0, 0x70};
+    for (int d = 0; d < 4; ++d) {
+        card.ioWrite(0x18, alle_lock[d]);
+        EXPECT_EQ(card.debugState().drive, d) << "0x" << std::hex << int(alle_lock[d]);
+        for (int m = 0; m < 4; ++m)
+            EXPECT_TRUE(card.isMotorOn(m)) << "alle /LCK aktiv (Motor D" << m << ")";
+    }
 }
 
 /**
@@ -285,8 +320,8 @@ TEST_F(K5122Test, Motor_IndexNurBeiLaufendemMotor) {
     card.setIEI(true);
     const int P = builtinDriveProfile("K5601").indexPeriodCycles(2450000);
 
-    // D0 selektiert, aber Motor AUS (0xFE: /SE0=0, /LCK0=1) → kein Index trotz voller Periode
-    card.ioWrite(0x18, 0xFE);
+    // D0 selektiert, aber Motor AUS (0xEF: /SE0=0, /LCK0=1) → kein Index trotz voller Periode
+    card.ioWrite(0x18, 0xEF);
     card.update(P + 1);
     EXPECT_FALSE(card.hasInterrupt()) << "Motor steht → kein Index-Puls";
 
@@ -308,8 +343,8 @@ TEST_F(K5122Test, Motor_LesenLiefertGapWennMotorSteht) {
     ASSERT_TRUE(card.mountDisk(0, path, fmt1));
     card.ioWrite(0x18, 0xEE);                   // D0: Select + Motor
     strobeRead(0);                               // Lese-Transfer starten
-    // Motor abschalten, D0 bleibt selektiert (0xFE), Transfer bleibt aktiv.
-    card.ioWrite(0x18, 0xFE);
+    // Motor abschalten, D0 bleibt selektiert (0xEF), Transfer bleibt aktiv.
+    card.ioWrite(0x18, 0xEF);
     auto stream = readStream(2000);
     bool hat_idam = std::find(stream.begin(), stream.end(), 0xFE) != stream.end();
     EXPECT_FALSE(hat_idam) << "Motor steht → kein IDAM (0xFE) im Strom";
@@ -729,9 +764,9 @@ TEST_F(K5122Test, FormatWrite_VollspurRoundtrip) {
 
     // 4. flush + neu lesen
     card.drive(0).flush();
-    RawSectorImage check(path, fmt, /*wp=*/false);
-    ASSERT_TRUE(check.isOpen());
-    auto parsed = TrackCodec::parseTrack(check.readTrack(0, 0));
+    auto check = DiskImage::open(path, fmt, /*wp=*/false);
+    ASSERT_NE(check, nullptr);
+    auto parsed = TrackCodec::parseTrack(check->readTrack(0, 0));
     ASSERT_EQ(parsed.size(), 5u) << "5 Sektoren nach Vollspur-FORMAT";
     for (size_t k = 0; k < parsed.size(); ++k) {
         EXPECT_EQ(parsed[k].id, k + 1);
@@ -771,9 +806,61 @@ TEST_F(K5122Test, FormatWrite_IdleCommitLetzteSpur) {
     EXPECT_FALSE(bus.isBUSRQ()) << "BUSRQ nach Idle-Commit der letzten Spur frei";
 
     card.drive(0).flush();
-    RawSectorImage check(path, fmt, /*wp=*/false);
-    auto parsed = TrackCodec::parseTrack(check.readTrack(0, 0));
+    auto check = DiskImage::open(path, fmt, /*wp=*/false);
+    ASSERT_NE(check, nullptr);
+    auto parsed = TrackCodec::parseTrack(check->readTrack(0, 0));
     EXPECT_EQ(parsed.size(), 4u);
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/FormatWrite_LeseStrobeCommittetSpurSofort
+ * @brief Regressionswächter: ein Lese-/STR-Strobe (ZVE1-Kontext) schließt einen noch
+ *        anstehenden FORMAT-Schreibstrom ab, BEVOR er den Lesetransfer armiert.
+ *
+ * Auf echter Hardware liegen die geschriebenen Bytes in dem Moment auf der Scheibe, in
+ * dem der Kopf sie schreibt — das anschließende Vergleichs-Lesen findet sie immer.  Ohne
+ * diesen Commit löschte startReadTransfer() write_mode_, der Strom blieb verwaist liegen
+ * (die Schreib-Idle-Erkennung in update() läuft nur im write_mode_) und die frisch
+ * formatierte Spur galt bis zum NÄCHSTEN Schreib-Strobe als unformatiert.  Traf
+ * FORMAT.COMs Vergleichs-Lesen dieses Fenster, meldete es `Fehler 'U' SPUR DEFEKT`
+ * (doc/analyse_format_leerspur.md).
+ */
+TEST_F(K5122Test, FormatWrite_LeseStrobeCommittetSpurSofort) {
+    DiskFormat fmt; fmt.name = "fmt_rdcommit_2c1h4x256";
+    fmt.tracks.push_back({0, 1, 0, 0, 4, 256});
+    auto path = makeTmpImg(fmt, "_fmtrd");
+    ASSERT_TRUE(card.mountDisk(0, path, fmt));
+    card.ioWrite(0x18, 0xEE);
+
+    std::vector<LogicalSector> soll;
+    for (uint8_t id = 1; id <= 4; ++id) {
+        LogicalSector s; s.cyl = 0; s.head = 0; s.id = id; s.size = 256;
+        s.data.assign(256, static_cast<uint8_t>(0xA0 + id)); soll.push_back(s);
+    }
+    TrackImage stream = TrackCodec::buildTrack(soll, Encoding::MFM);
+
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF4);                       // Schreib-/STR-Strobe (Kopf 0)
+    for (uint8_t b : stream.bytes) card.ioWrite(0x14, b);
+
+    // KEIN Folge-Schreib-Strobe und KEIN Idle-Fenster: direkt der Lese-/STR-Strobe des
+    // Vergleichs-Lesens (bit0=1 /WE inaktiv).  Er muss die Spur committen.
+    card.ioWrite(0x10, 0xFF);
+    card.ioWrite(0x10, 0xF5);
+
+    card.drive(0).flush();
+    auto check = DiskImage::open(path, fmt, /*wp=*/false);
+    ASSERT_NE(check, nullptr);
+    auto parsed = TrackCodec::parseTrack(check->readTrack(0, 0));
+    ASSERT_EQ(parsed.size(), 4u)
+        << "Lese-Strobe muss den anstehenden FORMAT-Strom committen (sonst sieht das "
+           "Vergleichs-Lesen eine unformatierte Spur → Fehler 'U')";
+    for (size_t k = 0; k < parsed.size(); ++k) {
+        EXPECT_EQ(parsed[k].id, k + 1);
+        EXPECT_TRUE(std::all_of(parsed[k].data.begin(), parsed[k].data.end(),
+                    [k](uint8_t b){ return b == static_cast<uint8_t>(0xA0 + k + 1); }));
+    }
     std::filesystem::remove(path);
 }
 
@@ -929,8 +1016,9 @@ TEST_F(K5122Test, WriteTrackAt_SchreibtExpliziteSpur) {
     ASSERT_TRUE(card.drive(0).writeTrackAt(1, 0, trk));   // Spur 1 schreiben, Kopf auf 2
     card.drive(0).flush();
 
-    RawSectorImage check(path, fmt, /*wp=*/false);
-    auto parsed = TrackCodec::parseTrack(check.readTrack(1, 0));
+    auto check = DiskImage::open(path, fmt, /*wp=*/false);
+    ASSERT_NE(check, nullptr);
+    auto parsed = TrackCodec::parseTrack(check->readTrack(1, 0));
     ASSERT_EQ(parsed.size(), 4u);
     EXPECT_EQ(parsed[0].data[0], 0xC1);
     std::filesystem::remove(path);
@@ -976,10 +1064,10 @@ TEST_F(K5122Test, FormatWhole_MehrspurIntegration) {
     card.drive(0).flush();
 
     // Verifikation: jede Spur trägt ihre eindeutige Füllung.
-    RawSectorImage check(path, fmt, /*wp=*/false);
-    ASSERT_TRUE(check.isOpen());
+    auto check = DiskImage::open(path, fmt, /*wp=*/false);
+    ASSERT_NE(check, nullptr);
     for (uint8_t cyl = 0; cyl < NCYL; ++cyl) {
-        auto parsed = TrackCodec::parseTrack(check.readTrack(cyl, 0));
+        auto parsed = TrackCodec::parseTrack(check->readTrack(cyl, 0));
         ASSERT_EQ(parsed.size(), 5u) << "Spur " << int(cyl);
         for (uint8_t id = 1; id <= 5; ++id) {
             const uint8_t want = static_cast<uint8_t>((cyl << 4) | id);
@@ -1035,9 +1123,9 @@ TEST_F(K5122Test, WriteField_WEFlanke_TrifftZielsektorPerIDAM) {
 
     // flush → Host-Image, neu öffnen und prüfen.
     card.drive(0).flush();
-    RawSectorImage check(path, fmt1, /*wp=*/false);
-    ASSERT_TRUE(check.isOpen());
-    auto parsed = TrackCodec::parseTrack(check.readTrack(0, 0));
+    auto check = DiskImage::open(path, fmt1, /*wp=*/false);
+    ASSERT_NE(check, nullptr);
+    auto parsed = TrackCodec::parseTrack(check->readTrack(0, 0));
     ASSERT_GE(parsed.size(), 4u);
 
     auto byId = [&](uint8_t id) -> LogicalSector* {
@@ -1056,6 +1144,82 @@ TEST_F(K5122Test, WriteField_WEFlanke_TrifftZielsektorPerIDAM) {
     EXPECT_TRUE(std::all_of(s1->data.begin(), s1->data.end(),
                             [](uint8_t b){ return b == 0x01; }))
         << "Sektor 1 darf nicht überschrieben werden (IDAM-basiertes Targeting)";
+
+    std::filesystem::remove(path);
+}
+
+/**
+ * @test K5122Test/WriteField_UebernimmtSektorkontrollblock
+ * @brief Der Sektorkontrollblock hinter der Daten-CRC (UDOS) wird aus dem
+ *        Schreibstrom uebernommen — und ein zweiter Schreibzugriff auf die
+ *        SELBE Spur laesst den des ersten Sektors unangetastet.
+ *
+ * UDOS/ZDOS speichert die Dateiverkettung in 4 Bytes direkt hinter der Daten-CRC
+ * (doc/udos_diskettenformat.md §1.1).  Der Schreibstrom lautet gemessen
+ *   [Sync][A1 A1 A1][FB][128 Daten][CRC CRC][bb bb ff ff][Naht]
+ * Fruehere Fehler (doc/udos_bug1.md): commitWriteField() schnitt alles hinter den
+ * Nutzdaten ab (→ alter Kontrollblock blieb stehen) UND buildTrack() gab den
+ * Nachspann nicht aus (→ ALLE 26 Sektoren der Spur verloren ihre Verkettung, weil
+ * die ganze Spur neu gebaut wird).  Ergebnis war „POINTER CHECK ERROR CA".
+ */
+TEST_F(K5122Test, WriteField_UebernimmtSektorkontrollblock) {
+    // .hfe, nicht .img: ein rohes Sektorimage speichert NUR die Nutzbytes und
+    // verliert den Nachspann prinzipbedingt (doc/udos_diskettenformat.md, Kasten
+    // „.img reicht nicht") — die Verkettung ueberlebt nur spurbasiert.
+    const auto path = (std::filesystem::temp_directory_path()
+                       / "k1520_v2_udostail.hfe").string();
+    ASSERT_NE(DiskImage::create(path, fmt1, /*write_protect=*/false), nullptr);
+    ASSERT_TRUE(card.mountDisk(0, path, fmt1));
+    card.ioWrite(0x18, 0xEE);
+
+    strobeRead(0);
+    ASSERT_TRUE(bus.isBUSRQ());
+
+    // Ein Datenfeld inkl. Kontrollblock schreiben; die Zielsektor-ID ergibt sich
+    // aus der Kopfposition (letzte Id-Marke vor head_pos_) wie im BIOS-Pfad.
+    auto schreibeFeld = [&](uint8_t fuellung, const std::array<uint8_t, 4>& kb) {
+        card.update(1'000'000);                 // Per-Byte-Drossel → /BUSRQ wieder da
+        card.ioWrite(0x10, 0xF4);               // /WE 1→0
+        card.ioWrite(0x14, 0x00);
+        card.ioWrite(0x14, 0xA1); card.ioWrite(0x14, 0xA1); card.ioWrite(0x14, 0xA1);
+        card.ioWrite(0x14, 0xFB);
+        for (int i = 0; i < 128; ++i) card.ioWrite(0x14, fuellung);
+        card.ioWrite(0x14, 0x12); card.ioWrite(0x14, 0x34);   // CRC (neu berechnet)
+        for (uint8_t b : kb) card.ioWrite(0x14, b);           // Sektorkontrollblock
+        card.ioWrite(0x14, 0x41); card.ioWrite(0x14, 0xFF);   // Schreibnaht
+        card.ioWrite(0x10, 0xF5);               // /WE 0→1 → commitWriteField
+    };
+
+    const std::array<uint8_t, 4> kb2 = {0x05, 0x16, 0x0A, 0x16};
+    const std::array<uint8_t, 4> kb3 = {0x0A, 0x16, 0x0F, 0x16};
+
+    readStream(220);                            // Kopf in den Bereich von Sektor 2
+    schreibeFeld(0xBB, kb2);
+    readStream(196);                            // eine Sektorlaenge weiter → Sektor 3
+    schreibeFeld(0xCC, kb3);
+
+    card.drive(0).flush();
+    auto check = DiskImage::open(path, fmt1, /*write_protect=*/true);
+    ASSERT_NE(check, nullptr);
+    auto parsed = TrackCodec::parseTrack(check->readTrack(0, 0));
+    auto byId = [&](uint8_t id) -> LogicalSector* {
+        for (auto& s : parsed) if (s.id == id) return &s;
+        return nullptr;
+    };
+
+    LogicalSector* s2 = byId(2);
+    LogicalSector* s3 = byId(3);
+    ASSERT_NE(s2, nullptr);
+    ASSERT_NE(s3, nullptr);
+    EXPECT_EQ(s3->data[0], 0xCC) << "zweites Feld traf Sektor 3 nicht";
+    ASSERT_GE(s2->tail.size(), 4u);
+    ASSERT_GE(s3->tail.size(), 4u);
+    EXPECT_EQ(std::vector<uint8_t>(s3->tail.begin(), s3->tail.begin() + 4),
+              std::vector<uint8_t>(kb3.begin(), kb3.end()))
+        << "geschriebener Sektor traegt seinen NEUEN Kontrollblock nicht";
+    EXPECT_EQ(std::vector<uint8_t>(s2->tail.begin(), s2->tail.begin() + 4),
+              std::vector<uint8_t>(kb2.begin(), kb2.end()))
+        << "der zweite Schreibzugriff hat den Kontrollblock von Sektor 2 zerstoert";
 
     std::filesystem::remove(path);
 }
@@ -1181,7 +1345,7 @@ TEST_F(K5122Test, TrackEncoding_AusImage_und_EncodingMatch) {
     auto path = tmpImg1();
     ASSERT_TRUE(card.mountDisk(0, path, fmt1));
 
-    // Test-.img wird als RawSectorImage mit Default MFM gemountet.
+    // Test-.img wird ueber den ImgCodec mit Default MFM geladen.
     auto s0 = card.debugState();
     EXPECT_EQ(s0.trackEncoding, Encoding::MFM);
     // Default-Profil K5601 → readEncoding FM → Mismatch.

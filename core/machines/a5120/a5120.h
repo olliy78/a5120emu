@@ -73,17 +73,63 @@ public:
     bool mountDisk(int drive, const std::string& path,
                    const std::string& format_name, bool write_protect);
     /**
-     * @brief Legt eine NEUE, GÜLTIG FORMATIERTE, leere Diskette an und mountet sie.
+     * @brief Legt eine NEUE Diskette an und mountet sie.
      *
-     * Endung `.hfe` → formatiertes HFE (echte IDAM/DATA/CRC, Daten 0xE5); sonst `.img`
-     * → 0xE5-Sektorimage.  @p format_name bestimmt die Geometrie; ist er LEER, wird das
-     * laufwerkstyp-spezifische Standardformat des Slots gewählt (K5601→cpa800,
-     * K5600.10→200K, K5600.20→400K, MF3200→308K/FM, MF6400→616K).  Das Aufzeichnungs-
-     * verfahren folgt aus dem DriveProfile (reines FM-Laufwerk → FM, sonst MFM).
-     * Überschreibt eine vorhandene Datei.  @see DiskImage::create
+     * Zwei Betriebsarten, gesteuert über @p format_name:
+     *
+     * - **LEER → echte Leerdiskette** (der Normalfall).  Das Medium ist *unformatiert*
+     *   und hat die Geometrie des **Laufwerks** (K5601 80×2, K5600.10 40×1, …); es kann
+     *   anschließend vom Gastsystem formatiert werden — auch von Fremdsystemen wie UDOS,
+     *   die Nutzdaten hinter die Daten-CRC hängen.  Zulässige Ziele sind `.hfe` und
+     *   `.dmk`; ein `.img` kann eine unformatierte Diskette nicht ausdrücken und wird
+     *   mit Fehlermeldung abgelehnt.  Ist @p path leer, lebt die Diskette nur im
+     *   Speicher, bis sie über @ref saveDiskAs gespeichert wird.
+     * - **GESETZT → vorformatierte Diskette** nach Katalogformat (echte IDAM/DATA-Felder
+     *   mit CRC, Nutzdaten 0xE5).  Dann ist auch `.img` als Ziel zulässig.
+     *
+     * Überschreibt eine vorhandene Datei.  @see DiskImage::createBlank, DiskImage::create
      */
     bool createDisk(int drive, const std::string& path,
                     const std::string& format_name, bool write_protect);
+
+    /**
+     * @brief Speichert die gemountete Diskette unter neuem Namen/Format und bindet um.
+     *
+     * Der Container folgt der Endung (`.img` / `.hfe` / `.dmk`).  Ab diesem Zeitpunkt
+     * gehen alle weiteren Schreibzugriffe (verzögert) in die **neue** Datei.
+     *
+     * @p format_name wird **nur für `.img`** gebraucht — `.hfe`/`.dmk` sind
+     * self-describing.  Bei `.img` wird zusätzlich geprüft, ob sich das Medium
+     * überhaupt verlustfrei auf Sektor-Nutzdaten abbilden lässt
+     * (@ref isDiskRawCompatible) und ob es zum Format passt.
+     *
+     * @return false mit Grund in @ref lastError().
+     */
+    bool saveDiskAs(int drive, const std::string& path, const std::string& format_name);
+
+    /**
+     * @brief Darf die gemountete Diskette als rohes Sektorimage (`.img`) gespeichert werden?
+     *
+     * false, sobald eine Spur unformatiert ist oder ein Sektor Nutzdaten hinter der
+     * Daten-CRC trägt (UDOS-Sektorkontrollblock) — beides ginge in einer `.img`
+     * verloren.  Die GUI blendet `.img` dann aus.
+     */
+    bool isDiskRawCompatible(int drive) const;
+
+    /// @brief Aktuell gebundene Image-Datei eines Slots ("" = nur im Speicher/leer).
+    std::string diskPath(int drive) const;
+
+    /// @brief Containerformat der gebundenen Datei ("img" | "hfe" | "dmk"; "" = keine).
+    std::string diskContainer(int drive) const;
+
+    /// @brief Geometrie der eingelegten Diskette (alles 0, wenn kein Datenträger).
+    DiskGeometry diskGeometry(int drive) const;
+
+    /// @brief Trägt die eingelegte Diskette überhaupt Adressmarken? (false = Leerdiskette)
+    bool isDiskFormatted(int drive) const;
+
+    /// @brief Ausstehende Änderungen aller Laufwerke sofort in die Dateien schreiben.
+    bool flushDisks();
 
     /**
      * @brief Name des laufwerkstyp-spezifischen Standardformats für einen Slot.
@@ -369,6 +415,11 @@ private:
     // Monotonic cycle counter across all run() calls, fed to the Logger's gate
     // evaluation (cycle windows) once per instruction.
     uint64_t total_cycles_ = 0;
+
+    /// @brief Abstand zweier Autosave-Prüfungen in Maschinentakten (≈ 40 ms @ 2,45 MHz).
+    ///        Die eigentliche Ruhezeit vor dem Schreiben ist @ref kAutoFlushDelayCycles.
+    static constexpr uint64_t kDiskFlushCheckInterval = 100'000;
+    uint64_t next_disk_flush_check_ = kDiskFlushCheckInterval;
 
     std::string last_error_;
 };

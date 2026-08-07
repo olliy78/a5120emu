@@ -19,7 +19,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 
 | Segment | Werte |
 |---------|-------|
-| system | `cpa` = CP/A · `scpx17` = SCPX 1526 V1.7 |
+| system | `cpa` = CP/A · `scpx17` = SCPX 1526 V1.7 · `udos` = UDOS 4.3 |
 | diskformat | physisches Format des Mediums: `cpa780` (5¼″ 80 Spuren DS MFM, 26×128 Sys + 5×1024 Daten), `5x1024`, `mini` |
 | laufwerkskonfiguration | Laufwerkstypen, die das BIOS des Systems für A:/B:/C: annimmt |
 | merkmale | `clock`/`noclock` (Uhrzeit-Abfrage beim Kaltstart), `hardy` (HARDY.COM an Bord) |
@@ -34,6 +34,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `cpa_cpa780_combo8zoll_noclock.img` | CP/A ohne Uhr, A: K5601 · **B: MF3200** · **C: K5602.10/MF6400** | `make_bootdisk` (Presets mf3200_fmt7, mf6400_fmt1) |
 | `scpx17_cpa780_k5601.hfe` | SCPX 1526 V1.7, System im **16×256**-Datenformat | `ScpxIntegration.*`, `ScpxInit.*` |
 | `scpx17_5x1024_k5601_hardy.hfe` | SCPX 1526 V1.7, System im **5×1024**-Datenformat, mit `HARDY.COM` | `test_hardy` |
+| `udos_boot_scp.hfe` | UDOS 4.3, bootfähig (SCP-Laufwerkstyp) | `UdosIntegration.*`, `test_udos_format` |
 | `bootsec_cpa780.bin` | erwarteter Inhalt des Bootsektors einer cpa780-Diskette | `test_boot_integration` (Bootsektor-Vergleich) |
 | `cpa_mini.img` / `cpa_mini.hfe` | synthetische Mini-Diskette (2 KB / 26 KB), kein Systemabbild | `test_hfe_image`, `test_disk_image_raw` |
 
@@ -74,5 +75,9 @@ CMake reicht das Verzeichnis als Compile-Define herein:
 - `A5120_TEST_DISK_DIR` — Integrations-/Systemtests (`diskPath("…")`)
 - `FIXTURE_DIR` — Unit-Tests der Floppy-Schicht
 
-Beide zeigen auf `tests/fixtures/disks`. Python-Treiber (`make_bootdisk.py`, `format_all.py`)
+Beide zeigen auf `tests/fixtures/disks`.
+
+> **Namen von origin/main bleiben, wie sie dort heißen** (`udos_boot_scp.hfe`).  Unser
+> Schema gilt für die Disketten, die es zum Umbauzeitpunkt gab; neue von origin
+> umzubenennen würde jeden künftigen Merge unnötig erschweren. Python-Treiber (`make_bootdisk.py`, `format_all.py`)
 bilden denselben Pfad über `ROOT/tests/fixtures/disks`.

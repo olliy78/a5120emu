@@ -1,10 +1,6 @@
 /**
  * @file floppy_drive2.cpp
- * @brief Implementierung von FloppyDriveV2.
- *
- * Physisches Laufwerk (DriveProfile) + gemountetes DiskImage + 1-Spur-Cache je
- * Kopf.  Der Cache wird bei Zylinderwechsel oder Mount/Unmount invalidiert;
- * dirty Spuren werden vor dem Invalidieren zurückgeschrieben.
+ * @brief Implementierung von FloppyDriveV2 (Profil + Kopfposition + gemountete Diskette).
  *
  * @see core/peripherals/floppy_drive/floppy_drive2.h
  * @author Olaf Krieger
@@ -13,6 +9,11 @@
  */
 
 #include "core/peripherals/floppy_drive/floppy_drive2.h"
+
+namespace {
+const TrackImage kLeer{};
+TrackImage       g_dummy{};
+}  // namespace
 
 // ─── Konstruktor ─────────────────────────────────────────────────────────────
 
@@ -28,21 +29,22 @@ bool FloppyDriveV2::mount(std::unique_ptr<DiskImage> img, bool write_protect) {
         return false;
     }
 
-    DiskGeometry geo = img->geometry();
+    const DiskGeometry geo = img->geometry();
 
-    // Geometrie gegen das physische Laufwerk prüfen.
-    // Überzählige Zylinder jenseits von profile_.num_cyls sind zulässig, SOLANGE sie
+    // Geometrie gegen das physische Laufwerk pruefen.
+    // Ueberzaehlige Zylinder jenseits von profile_.num_cyls sind zulaessig, SOLANGE sie
     // unformatiert sind: ein physisches Laufwerk erreicht sie nicht (step() clampt auf
-    // num_cyls-1), sie werden also nie gelesen. Viele HFE-Images hängen 1–3 leere
-    // Gap-Spuren an (Über-Reise des Kopfs beim Erzeugen). Trägt ein solcher Zylinder
-    // dagegen echte Marken, ist es ein echter Kapazitäts-Konflikt → ablehnen.
+    // num_cyls-1), sie werden also nie gelesen.  Viele HFE-Images haengen 1–3 leere
+    // Gap-Spuren an.  Traegt ein solcher Zylinder dagegen echte Marken, ist es ein
+    // echter Kapazitaets-Konflikt → ablehnen.
     if (geo.num_cyls > profile_.num_cyls) {
         for (uint8_t c = profile_.num_cyls; c < geo.num_cyls; ++c) {
             for (uint8_t h = 0; h < geo.num_heads; ++h) {
-                const TrackImage t = img->readTrack(c, h);
-                for (MarkType m : t.marks) {
+                for (MarkType m : img->readTrack(c, h).marks) {
                     if (m == MarkType::Id || m == MarkType::Data) {
-                        last_error_ = "zu viele Spuren für Laufwerk";
+                        last_error_ = "Diskette hat " + std::to_string(geo.num_cyls)
+                                    + " Spuren mit Daten, Laufwerk '" + profile_.name
+                                    + "' erreicht nur " + std::to_string(profile_.num_cyls);
                         return false;
                     }
                 }
@@ -50,21 +52,27 @@ bool FloppyDriveV2::mount(std::unique_ptr<DiskImage> img, bool write_protect) {
         }
     }
     if (geo.num_heads > profile_.num_heads) {
-        last_error_ = "zu viele Köpfe";
+        last_error_ = "Diskette ist " + std::to_string(geo.num_heads)
+                    + "-seitig, Laufwerk '" + profile_.name + "' hat "
+                    + std::to_string(profile_.num_heads)
+                    + (profile_.num_heads == 1 ? " Kopf" : " Koepfe")
+                    + " (Slot-Bestueckung in den Einstellungen pruefen)";
         return false;
     }
-    if (!profile_.supports(geo.encoding)) {
-        last_error_ = "Verfahren vom Laufwerk nicht unterstützt";
+    // Verfahren nur pruefen, wenn die Diskette ueberhaupt formatiert ist — eine
+    // LEERDISKETTE traegt nur einen Vorschlagswert und passt in jedes Laufwerk.
+    if (img->medium().formatted() && !profile_.supports(geo.encoding)) {
+        last_error_ = std::string("Diskette ist ")
+                    + (geo.encoding == Encoding::FM ? "FM" : "MFM")
+                    + "-aufgezeichnet, Laufwerk '" + profile_.name
+                    + "' beherrscht das nicht";
         return false;
     }
 
-    image_        = std::move(img);
+    image_ = std::move(img);
+    image_->setWriteProtect(write_protect);
     write_protect_ = write_protect;
-    cur_cyl_      = 0;
-
-    // Cache invalidieren.
-    for (auto& c : cache_) { c.valid = false; c.dirty = false; }
-
+    cur_cyl_       = 0;
     return true;
 }
 
@@ -72,18 +80,17 @@ void FloppyDriveV2::unmount() {
     flush();
     image_.reset();
     cur_cyl_ = 0;
-    for (auto& c : cache_) { c.valid = false; c.dirty = false; }
+}
+
+void FloppyDriveV2::setWriteProtect(bool wp) {
+    write_protect_ = wp;
+    if (image_) image_->setWriteProtect(wp);
 }
 
 // ─── Spurwahl ─────────────────────────────────────────────────────────────────
 
 bool FloppyDriveV2::step(bool inward) {
-    if (!image_) return false;
-
-    // Dirty-Spuren der aktuellen Position zurückschreiben, bevor gewechselt wird.
-    flush();
-    for (auto& c : cache_) { c.valid = false; }
-
+    if (!profile_.present) return false;
     if (inward) {
         if (cur_cyl_ < profile_.num_cyls - 1) ++cur_cyl_;
     } else {
@@ -93,103 +100,45 @@ bool FloppyDriveV2::step(bool inward) {
 }
 
 bool FloppyDriveV2::seek(uint8_t cyl) {
-    if (!image_) return false;
-
-    const uint8_t ziel = (cyl < profile_.num_cyls) ? cyl
-                                                    : static_cast<uint8_t>(profile_.num_cyls - 1);
-    if (ziel == cur_cyl_) return true;
-
-    flush();
-    for (auto& c : cache_) { c.valid = false; }
-
-    cur_cyl_ = ziel;
+    if (!profile_.present) return false;
+    cur_cyl_ = (cyl < profile_.num_cyls) ? cyl
+                                         : static_cast<uint8_t>(profile_.num_cyls - 1);
     return true;
 }
 
-// ─── Spur-Cache ───────────────────────────────────────────────────────────────
+// ─── Spurzugriff (direkt auf dem Medium) ──────────────────────────────────────
 
-void FloppyDriveV2::ensureCached(uint8_t head) {
-    if (head > 1) return;
-
-    CachedTrack& ct = cache_[head];
-
-    // Cache gültig und noch auf demselben Zylinder?
-    if (ct.valid && ct.cyl == cur_cyl_) return;
-
-    // Veralteten dirty-Eintrag zuerst zurückschreiben.
-    if (ct.valid && ct.dirty && image_ && !write_protect_) {
-        image_->writeTrack(ct.cyl, head, ct.img);
-        ct.dirty = false;
-    }
-
-    // Neue Spur laden.
-    if (image_) {
-        ct.img   = image_->readTrack(cur_cyl_, head);
-    } else {
-        ct.img   = {};
-    }
-    ct.cyl   = cur_cyl_;
-    ct.valid = true;
-    ct.dirty = false;
-}
-
-const TrackImage& FloppyDriveV2::track(uint8_t head) {
-    static const TrackImage leer{};
-    if (head > 1) return leer;
-    ensureCached(head);
-    return cache_[head].img;
+const TrackImage& FloppyDriveV2::track(uint8_t head) const {
+    if (head > 1 || !image_) return kLeer;
+    return image_->readTrack(cur_cyl_, head);
 }
 
 void FloppyDriveV2::markTrackDirty(uint8_t head) {
-    if (head > 1) return;
-    ensureCached(head);
-    cache_[head].dirty = true;
+    if (head > 1 || !image_) return;
+    image_->medium().markDirty(cur_cyl_, head);
 }
 
 TrackImage& FloppyDriveV2::mutableTrack(uint8_t head) {
-    static TrackImage leer_mut{};
-    if (head > 1) return leer_mut;
-    ensureCached(head);
-    return cache_[head].img;
+    if (head > 1 || !image_) { g_dummy = {}; return g_dummy; }
+    return image_->medium().mutableTrack(cur_cyl_, head);
 }
 
-// ─── Flush ────────────────────────────────────────────────────────────────────
+// ─── Persistenz ───────────────────────────────────────────────────────────────
 
 bool FloppyDriveV2::flush() {
-    if (!image_) return true;
+    if (!image_)        return true;
+    if (write_protect_) return true;   // nichts zurueckzuschreiben
+    return image_->flush();
+}
 
-    bool ok = true;
-    for (uint8_t h = 0; h < 2; ++h) {
-        CachedTrack& ct = cache_[h];
-        if (!ct.valid || !ct.dirty) continue;
-        if (write_protect_)         continue;
-
-        if (!image_->writeTrack(ct.cyl, h, ct.img)) {
-            ok = false;
-        } else {
-            ct.dirty = false;
-        }
-    }
-    // Backend auf den Host persistieren: RawSectorImage schreibt bereits in
-    // writeTrack() synchron (flush() = no-op); HfeImage sammelt die Spuren intern
-    // und schreibt die Datei erst hier (flush() ist no-op, wenn nichts dirty ist).
-    if (!image_->flush()) ok = false;
-    return ok;
+bool FloppyDriveV2::autoFlush(uint64_t now_cycles) {
+    if (!image_ || write_protect_) return false;
+    return image_->autoFlush(now_cycles);
 }
 
 bool FloppyDriveV2::writeTrackAt(uint8_t cyl, uint8_t head, const TrackImage& track) {
     if (head > 1 || !image_ || write_protect_) return false;
-
-    bool ok = image_->writeTrack(cyl, head, track);
-
-    // Cache kohärent halten: hält der Cache (head) genau diesen Zylinder, ersetzen;
-    // sonst unangetastet lassen (Image ist die Wahrheit, beim nächsten readTrack frisch).
-    CachedTrack& ct = cache_[head];
-    if (ct.valid && ct.cyl == cyl) {
-        ct.img   = track;
-        ct.dirty = false;
-    }
-    return ok;
+    return image_->writeTrack(cyl, head, track);
 }
 
 // ─── Geometrie ────────────────────────────────────────────────────────────────

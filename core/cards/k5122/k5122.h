@@ -10,8 +10,9 @@
  * eine fertig decodierte Spur (Gaps, Sync, IDAM, DATA, echte CRCs) und streamt deren Bytes
  * über Port 0x16 wie ein echter Lesekopf; die Re-Sync-Strobes MK/MK1 rücken den Kopf auf
  * die nächste Adressmarke vor.  Das Verfahren (FM/MFM) steckt allein in der Spur — der
- * Controller ist verfahrensneutral.  Unterstützte Image-Backends (über @ref DiskImage):
- * Raw-`.img` (@ref RawSectorImage) und HFE v1 (HfeImage).
+ * Controller ist verfahrensneutral.  Die gemountete Diskette liegt als internes
+ * @ref DiskMedium im Speicher; die Dateiformate (`.img`, `.hfe`, `.dmk`) sind
+ * Container-Codecs davor (@ref ImageCodec, doc/design/09_floppy_drive.md).
  *
  * Für den Boot-Lesepfad erzeugt @ref startReadTransfer() on-the-fly einen treuen FM/MFM-
  * Lese-Stream (@ref TrackCodec::buildFaithfulReadTrack, 4×A1-Sync) — die Sync-Länge, die
@@ -116,6 +117,19 @@ public:
                    bool write_protect = false);
 
     bool unmountDisk(int drive);
+
+    /**
+     * @brief Verzögerter Autosave aller Laufwerke (aus der Maschinen-Laufschleife).
+     *
+     * Schreibt geänderte Spuren in die gebundene Image-Datei zurück, sobald sie
+     * @ref kAutoFlushDelayCycles Takte „geruht" haben.  So entspricht die Datei dem
+     * internen Abbild stets mit leichtem Zeitversatz.
+     */
+    void autoFlushDisks(uint64_t now_cycles);
+
+    /// @brief Ausstehende Änderungen aller Laufwerke sofort schreiben.
+    bool flushDisks();
+
     bool isDiskActive(int drive) const;
     bool isDiskWriteProtected(int drive) const;
     void setWriteProtect(int drive, bool wp);
@@ -129,7 +143,8 @@ public:
     bool isHeadLoaded() const { return head_loaded_; }
 
     /// @brief Direkter Zugriff auf ein Laufwerk (Tests/C-API).
-    FloppyDriveV2& drive(int idx) { return drives_[idx]; }
+    FloppyDriveV2&       drive(int idx)       { return drives_[idx]; }
+    const FloppyDriveV2& drive(int idx) const { return drives_[idx]; }
 
     /**
      * @brief Parst einen Vollspur-FORMAT-Schreibstrom (wie ZVE2 ihn über Port 0x14
@@ -298,6 +313,24 @@ private:
             byte_ready_ = true;
             bus_.assertBUSRQ();
         }
+        // ── Überlauf (Handbuch §5.7) ────────────────────────────────────────
+        // „Das nächste Byte wird in den Daten-PIO übernommen, BEVOR die CPU die
+        // Daten abgefordert hat" — der Datenseparator wartet nicht, das nicht
+        // abgeholte Byte geht verloren (/FA).  Auf einer Spur OHNE Adressmarken
+        // gibt es nichts, worauf sich das Programm synchronisieren könnte; hält
+        // die Karte hier ihre Anforderung fest, bleibt /BUSRQ stehen und legt
+        // ZVE1 still — genau das ließ FORMAT.COM auf einer leeren Spur einfrieren.
+        // Die Anforderung verfällt daher mit dem nächsten Byte, der Kopf dreht
+        // weiter, und der Bus geht an ZVE1 zurück.
+        if (byte_ready_ && transferring_ && !write_mode_ && !stream_has_marks_
+            && byte_acc_ >= 2 * period) {
+            byte_ready_ = false;
+            bus_.releaseBUSRQ();
+            if (cur_track_ && !cur_track_->empty())
+                head_pos_ = (head_pos_ + 1) % cur_track_->size();
+            byte_acc_ = 0;
+            return;
+        }
         // Gegen Überlauf/Runaway bei stehendem ZVE2 (Overrun) begrenzen — hält die
         // Rasterphase beschränkt; die Schreib-Idle-Erkennung (byte_ready_ bleibt) läuft weiter.
         if (byte_acc_ > 2 * period) byte_acc_ = 2 * period;
@@ -356,6 +389,13 @@ private:
     size_t            head_pos_     = 0;        ///< Lesekopf-Position (Byte) in der Spur
     bool              locked_       = false;    ///< Datenseparator auf eine Marke synchronisiert
     bool              transferring_ = false;    ///< Lesetransfer läuft
+    /// @brief Trägt der aktive Lese-Strom überhaupt Adressmarken?
+    ///
+    /// Auf einer unbeschriebenen Spur läuft der Datenseparator zwar frei mit und
+    /// liefert Bytes (`IN (16H)` gibt Gap zurück), meldet aber nie MKE (Tor B, B1).
+    /// Ohne MKE entsteht keine DMA-Anforderung — /BUSRQ bliebe sonst stehen und
+    /// hielte ZVE1 an, das den Strom gar nicht abholen will.
+    bool              stream_has_marks_ = false;
     bool              write_mode_   = false;    ///< Schreibtransfer läuft (alter /STR-Schreibpfad)
     std::vector<uint8_t> write_buf_;            ///< gesammelte Schreibdaten (Port 0x14)
     uint16_t          cur_sector_size_ = 128;   ///< Sektorgröße der aktiven Spur (nur Debug-Info)

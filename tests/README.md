@@ -11,7 +11,8 @@ verhindert damit, dass man versehentlich alte Objektdateien testet.
 
 ```sh
 tools/dev.sh test                    # Regression: alles außer den langsamen (~12 s)
-tools/dev.sh test-format             # NUR die langsamen System-Tests (~51 s)
+tools/dev.sh test-format             # NUR die Boot-Disk-Kette (Label format_integration)
+tools/dev.sh test-matrix             # NUR die 88 Format-Matrix-Tests (jedes FORMAT.COM-Menü)
 tools/dev.sh test-all                # beides
 tools/dev.sh test-python             # nur die pytest-Ebene
 tools/dev.sh test-level unit         # eine Ebene: unit|debugtools|integration|cli|system|python
@@ -33,17 +34,22 @@ Testebene = Verzeichnis = ctest-Label. Quer dazu `fast` / `slow`.
 
 | Verzeichnis | Fälle | Was dort hingehört |
 |-------------|------:|--------------------|
-| `unit/` | 530 | Eine Klasse isoliert, keine Diskette, kein Boot. Struktur spiegelt `core/`: `primitives/ bus/ cards/ peripherals/ util/` |
-| `debugtools/` | 67 | Die header-only Bausteine, aus denen `k1520dbg` und `boot_trace` bestehen (`tools/*.h`) |
-| `integration/` | 50 | Ganze Maschine, echter Kaltboot von einer Fixture-Diskette |
+| `unit/` | 580 | Eine Klasse isoliert, keine Diskette, kein Boot. Struktur spiegelt `core/`: `primitives/ bus/ cards/ peripherals/ util/` |
+| `debugtools/` | 89 | Die header-only Bausteine, aus denen `k1520dbg` und `boot_trace` bestehen (`tools/*.h`) |
+| `integration/` | 62 | Ganze Maschine, echter Kaltboot von einer Fixture-Diskette |
 | `cli/` | 19 | Die gebauten Werkzeuge als Prozess. Fälle als Daten in `cli/cases/*.cli`, ausgeführt von `cli/run_case.py` |
-| `system/` | 8 | Originale DDR-Programme unter dem Emulator: FORMAT, CPABCGEN, SCPX INIT/MODF/SYSP, HARDY. **Langsam** (Minuten) |
+| `system/` | 104 | Originale DDR-Programme unter dem Emulator: FORMAT, CPABCGEN, SCPX INIT/MODF/SYSP, HARDY, UDOS — plus die 88er Format-Matrix. **Langsam** (Minuten) |
 | `python/` | 7 | pytest: C-ABI (ctypes ↔ `libk1520core.so`) und PySide6-GUI headless |
 | `support/` | — | Bibliothek `k1520_testsupport`, keine Tests |
 | `fixtures/` | — | Testdisketten (`tests/fixtures/README.md`) |
 
-Die langsamen tragen zusätzlich das Label `format_integration`; darauf filtert
-`tools/dev.sh test` (`-LE format_integration`).
+Die langsamen tragen zusätzlich eines von zwei Format-Labeln, auf die
+`tools/dev.sh test` filtert (`-LE "format_(integration|matrix)"`):
+`format_integration` (16 — die **Tiefe**: je Laufwerkstyp ein Format über die
+ganze Diskette) und `format_matrix` (88 — die **Breite**: jeder einzelne
+FORMAT.COM-Menüeintrag, Umfang Smoke).  Die Matrix wird beim `cmake` aus
+`tests/system/drivers/format_all.py --list-matrix` erzeugt und wächst dort
+automatisch mit.
 
 ## Einen Test hinzufügen
 

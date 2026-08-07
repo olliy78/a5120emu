@@ -157,27 +157,36 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
             handleDataPortAWrite(data);
         }
     } else if (port == 0x18) {
-        // 8212 (A4): low nibble = /SE0../SE3 (Select), high nibble = /LCK0../LCK3
-        // (= /Motor On), beide active-low.  selected_drive_ (Transferpfad) aus dem
-        // low-nibble-One-Hot; Motor/Select je Laufwerk separat unten (LED/Motor).
-        // 0xEE → low 1110, bit0=0 → Drive 0   (0xDD→D1, 0xBB→D2, 0x77→D3)
-        uint8_t sel = ~data & 0x0F;
+        // 8212 (A4): **high** nibble = /SE0../SE3 (Select), **low** nibble =
+        // /LCK0../LCK3 (Lock = /Motor On), beide active-low (K5122-Doku §4.2).
+        // 0xEE → high 1110, bit4=0 → Drive 0 selektiert (0xDD→D1, 0xBB→D2, 0x77→D3);
+        // die BIOSse bilden das Byte als `LD A,77H / RLCA (LW+1)×` — dabei fällt je
+        // ein /SE- UND ein /LCK-Bit, deshalb ist die Nibbelzuordnung an 0xEE/0xDD
+        // NICHT ablesbar.  Entschieden wird sie von den Aufrufern, die genau EIN
+        // Nibble maskieren:
+        //   CP/A-Laufwerkserkennung (Bootsektor 0x021E): `LD A,0F7H` „ohne lock",
+        //     RLCA je Laufwerk → 0xEF/0xDF/0xBF/0x77 und steppt dann GENAU DIESES
+        //     Laufwerk (Spur-0-Signal) → das variierende High-Nibble-Bit ist /SE.
+        //   UDOS-Floppytreiber (UNFLOPPY.MAC): `OR 0FH` („LW EIN") → 0xEF/0xDF/…,
+        //     UDOS 4.3 auf dem A5120: `AND 0F0H` → 0xE0/0xD0/… (alle /LCK aktiv).
+        // Beide Varianten variieren ausschließlich das High-Nibble ⇒ /SE.  Mit der
+        // früheren (vertauschten) Zuordnung landete UDOS' 0xD0 auf „alle vier
+        // selektiert" → Laufwerk 0 statt 1 (FORMAT schrieb B:, verifizierte A:).
+        uint8_t sel = ~(data >> 4) & 0x0F;
         selected_drive_ = (sel == 0) ? 0
                         : (sel & 0x01) ? 0
                         : (sel & 0x02) ? 1
                         : (sel & 0x04) ? 2
                         : 3;
-        // Der 8212 latcht je Laufwerk /SE (Select, low nibble) und /LCK (= /Motor On,
-        // high nibble), beide active-low (K5122-Doku §4.2).  Daraus den echten
         // Select-/Motor-Zustand je Laufwerk ableiten (RESET → 0xFF → alles aus).  Der
         // Motor läuft, solange /LCK=0; die LED folgt „selektiert ODER Motor an".
         for (int d = 0; d < 4; ++d) {
             const size_t di  = static_cast<size_t>(d);
-            const bool   mot = ((data >> (4 + d)) & 1) == 0;
+            const bool   mot = ((data >> d) & 1) == 0;
             // Motor-Anlaufflanke (aus→an): Spin-up armieren.  Ein bereits laufender
             // Motor (an→an) läuft weiter, kein Neu-Anlauf.
             if (mot && !motor_on_[di]) motor_spinup_cycles_[di] = motorSpinupCycles();
-            drive_selected_[di] = ((data >> d) & 1) == 0;
+            drive_selected_[di] = ((data >> (4 + d)) & 1) == 0;
             motor_on_[di]       = mot;
         }
         LOG_INFO("K5122", "8212 write=0x%02X => sel D%d | SE=%d%d%d%d MotorOn=%d%d%d%d",
@@ -268,6 +277,16 @@ bool K5122::unmountDisk(int drive) {
         updateStatusPortB();
     }
     return true;
+}
+
+void K5122::autoFlushDisks(uint64_t now_cycles) {
+    for (auto& d : drives_) d.autoFlush(now_cycles);
+}
+
+bool K5122::flushDisks() {
+    bool ok = true;
+    for (auto& d : drives_) ok = d.flush() && ok;
+    return ok;
 }
 
 bool K5122::isDiskActive(int drive) const {
@@ -660,9 +679,31 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
             // ZVE1-Kontext: neuen DMA-Transfer auslösen
             dma_is_write_ = is_write;
             if (!is_write) {
+                // ── Anstehenden FORMAT-Schreibstrom ZUERST auf die Diskette bringen ──
+                // Auf echter Hardware liegen die geschriebenen Bytes in dem Moment auf
+                // der Scheibe, in dem der Kopf sie schreibt — jede folgende Lesung sieht
+                // sie.  Unser Modell sammelt den Vollspur-Strom dagegen in write_buf_ und
+                // materialisiert ihn erst in commitFormatTrack().  Ein Lese-Strobe aus
+                // ZVE1-Kontext bedeutet: ZVE1 ist aus seinem Format-Wartepark (JR 1D21)
+                // zurück, ZVE2 hat die Spur fertig geschrieben.  Wird hier nicht
+                // committet, löscht startReadTransfer() write_mode_ — der Strom bleibt
+                // verwaist liegen (die Schreib-Idle-Erkennung in update() läuft nur im
+                // write_mode_) und die Spur gilt weiter als unformatiert, bis IRGENDWANN
+                // der nächste Schreib-Strobe kommt.  Genau das war das Wettrennen hinter
+                // „Fehler 'U' SPUR DEFEKT" beim Formatieren einer leeren Diskette: kam
+                // FORMAT.COMs Vergleichs-Lesen vor dem nächsten Schreib-Strobe, las es
+                // eine markenlose Spur und lief in den BIOS-Index-Timeout
+                // (doc/analyse_format_leerspur.md).
+                if (write_mode_ && !write_buf_.empty()) commitFormatTrack();
                 startReadTransfer();
-                byte_ready_ = true;          // erstes Byte liegt bereit → /BUSRQ aktiv
-                byte_acc_   = 0;
+                // §5.6.1: /BUSRQ entsteht NUR aus der Bereitschaft des Daten-PIO.
+                // Auf einer unformatierten Spur rastet der Datenseparator nicht ein,
+                // es kommt kein Byte — dann darf hier auch nichts angefordert werden
+                // (startReadTransfer hat den Transfer gar nicht erst armiert).
+                if (transferring_) {
+                    byte_ready_ = true;      // erstes Byte liegt bereit → /BUSRQ aktiv
+                    byte_acc_   = 0;
+                }
             } else {
                 // Schreib-DMA (Vollspur-FORMAT): ZVE2 streamt die komplette Spur
                 // byteweise via Port 0x14.  Per-Byte-/BUSRQ-Drossel wie beim Lesen
@@ -684,9 +725,12 @@ void K5122::handleCtrlPortAWrite(uint8_t data) {
                           ? drives_[selected_drive_].currentCylinder() : 0;
                 fmt_head_ = current_head_;
             }
-            dma_pending_ = true;
-            bus_.assertBUSRQ();
-            LOG_DEBUG("K5122", "/STR Flanke: BUSRQ gesetzt, DMA %s ausstehend",
+            // Kein armierter Kanal ⇒ weder /ARDY noch /BRDY ⇒ Decoder-Ausgang 00
+            // ⇒ KEIN /BUSRQ (Handbuch §5.6.1, Wahrheitstabelle).
+            dma_pending_ = transferring_ || write_mode_;
+            if (dma_pending_) bus_.assertBUSRQ();
+            LOG_DEBUG("K5122", "/STR Flanke: BUSRQ %s, DMA %s",
+                      dma_pending_ ? "gesetzt" : "NICHT gesetzt (kein Byte)",
                       is_write ? "SCHREIBEN" : "LESEN");
         }
     }
@@ -757,14 +801,22 @@ void K5122::handleDataPortAWrite(uint8_t data) {
  * Im aktuellen Testrahmen (nur MFM-Laufwerke) ist der Default ausreichend.
  */
 void K5122::updateStatusPortB() {
-    uint8_t s = 0xF5;   // Default: kein Laufwerk
+    uint8_t s = 0xF5;   // Default: kein Laufwerk am Slot
 
     FloppyDriveV2& drv = drives_[selected_drive_];
+
+    // /TO (TRACK 00, Tor B Bit 7) ist laut Handbuch §4.1 ein **Eingang vom Laufwerk**
+    // — ein mechanischer Endlagenschalter, der nichts von der eingelegten Diskette
+    // weiss.  Genau daran unterscheidet Software „Slot unbestueckt" von „Laufwerk
+    // ohne Diskette"; der Lade-ROM faehrt bei /TO=1 nach aussen und prueft erneut
+    // (0x0110), bevor er auf Index-Pulse wartet.  War /TO an die Diskette gekoppelt,
+    // blieb ein leeres Laufwerk fuer solche Suchlaeufe unsichtbar.
+    if (drv.profile().present && drv.currentCylinder() == 0)
+        s &= ~(1u << 7);            // /TO = 0 (auf Spur 0)
+
     if (drv.isMounted()) {
         if (motorAtSpeed(selected_drive_))
-            s &= ~(1u << 0);        // /RDYL = 0 (bereit) — nur auf Drehzahl
-        if (drv.currentCylinder() == 0)
-            s &= ~(1u << 7);        // /TO = 0 (auf Spur 0)
+            s &= ~(1u << 0);        // /RDYL = 0 (bereit) — nur mit Diskette auf Drehzahl
         if (drv.isWriteProtect())
             s &= ~(1u << 5);        // /WP = 0 (schreibgeschützt)
         // bit6 /FW bleibt 1 (kein Laufwerksfehler modelliert)
@@ -780,7 +832,9 @@ void K5122::updateStatusPortB() {
  */
 void K5122::doStep() {
     FloppyDriveV2& drv = drives_[selected_drive_];
-    if (!drv.isMounted()) return;
+    // Schrittmotor + Endlagenschalter gehoeren zum LAUFWERK: der Kopf faehrt auch
+    // ohne eingelegte Diskette (sonst erreicht ein leeres Laufwerk nie /TRACK 00).
+    if (!drv.profile().present) return;
 
     drv.step(step_dir_in_);
 
@@ -804,10 +858,21 @@ void K5122::doStep() {
 void K5122::startReadTransfer() {
     FloppyDriveV2& drv = drives_[selected_drive_];
     if (!drv.isMounted()) {
+        // Kein Datentraeger → kein Fluss, kein MKE, kein Byte und damit kein /BUSRQ
+        // (Handbuch §5.6.1) — dieselbe Lage wie bei einer unformatierten Spur.
         LOG_WARN("K5122", "Lese-Transfer: D%d nicht montiert", selected_drive_);
-        transferring_ = false;
+        transferring_     = false;
+        stream_has_marks_ = false;
+        write_mode_       = false;
+        byte_ready_       = false;
+        dma_pending_      = false;
+        locked_           = false;
         cur_track_    = nullptr;
         read_stream_track_ = {};
+        head_pos_     = 0;
+        byte_acc_     = 0;
+        loaded_cyl_   = loaded_head_ = 0xFF;
+        if (bus_.isBUSRQ()) bus_.releaseBUSRQ();
         return;
     }
 
@@ -815,14 +880,10 @@ void K5122::startReadTransfer() {
     const TrackImage& ibm_track = drv.track(current_head_);
 
     if (ibm_track.empty()) {
-        // Unformatierte/leere Spur: eine echte Diskette liefert hier reinen Gap-Flux
-        // OHNE Adressmarken.  Wir streamen genau das (markenloser 0x4E-Fluss), damit
-        // die Leseroutine kein IDAM findet und über den Index-Timeout terminiert
-        // ("record not found") — wie auf echter Hardware.  Würde der Transfer hier
-        // (wie früher) einfach abgebrochen, bliebe das vom Lese-/STR assertierte
-        // /BUSRQ hängen: ZVE2 verklemmt in seiner Warteschleife (z. B. FORMAT.COMs
-        // ZVE2-Koroutine JR 0x1D21), weil kein Byte kommt und /BUSRQ nie freigegeben
-        // wird → der Formatier-Vorlese-Schritt auf einer frischen Blank-Disk hängt.
+        // Diskette liegt ein, Spur ist aber unbeschrieben: der Datenseparator laeuft
+        // frei mit und liefert weiter Bytes — nur eben ohne Adressmarke (kein MKE).
+        // Genau das streamen wir (markenloser 0x4E-Fluss); die Leseroutine findet
+        // kein IDAM und terminiert ueber ihren Index-Timeout.
         const Encoding eff_enc = read_enc_overridden_
                                      ? read_enc_
                                      : drv.profile().default_read_encoding;
@@ -835,9 +896,10 @@ void K5122::startReadTransfer() {
         head_pos_        = 0;
         loaded_cyl_      = drv.currentCylinder();
         loaded_head_     = current_head_;
-        transferring_    = true;
-        write_mode_      = false;
-        locked_          = false;
+        transferring_     = true;
+        stream_has_marks_ = false;   // kein MKE → keine DMA-Anforderung (§5.6.1)
+        write_mode_       = false;
+        locked_           = false;
         LOG_INFO("K5122", ">>> READ D%d C=%u H=%u UNFORMATIERT → %zu B Gap-Flux (%s, Index-Timeout)",
                  selected_drive_, static_cast<unsigned>(drv.currentCylinder()),
                  static_cast<unsigned>(current_head_), read_stream_track_.size(),
@@ -871,9 +933,10 @@ void K5122::startReadTransfer() {
     // (sonst kontinuierliche Rotation, kein Rewind).
     loaded_cyl_   = drv.currentCylinder();
     loaded_head_  = current_head_;
-    transferring_ = true;
-    write_mode_   = false;
-    locked_       = false;
+    transferring_     = true;
+    stream_has_marks_ = true;
+    write_mode_       = false;
+    locked_           = false;
 
     // §1 Strukturiertes Read-Attempt-Log: WELCHE Adressmarken unter dem Kopf liegen
     // und ob ihre CRCs gültig sind — beantwortet "Kopf richtig? Sektoren gültig?" in
@@ -1246,7 +1309,6 @@ void K5122::commitWriteField() {
     const size_t avail = write_buf_.size() - data_start;
     const size_t take  = std::min<size_t>(wr_size_, avail);
 
-
     // Ziel-Spur (IBM-Format im Drive-Cache) parsen und Sektor per ID ersetzen.
     TrackImage& spur = drv.mutableTrack(current_head_);
     if (spur.empty()) {
@@ -1270,6 +1332,22 @@ void K5122::commitWriteField() {
     ziel->data.assign(write_buf_.begin() + data_start,
                       write_buf_.begin() + data_start + take);
     ziel->data.resize(ziel->size, 0x00);
+
+    // ── Sektor-Nachspann aus dem Schreibstrom uebernehmen ────────────────────
+    // Der Strom eines Datenfelds lautet gemessen (UDOS, 128-B-Sektor):
+    //   [12×00 Sync][A1 A1 A1][FB][128 Daten][CRC CRC][bb bb ff ff][41 FF]
+    //                          └ data_start        └ +2      └ Sektorkontrollblock
+    // d. h. der schreibende Treiber liefert die 2 CRC-Bytes selbst mit (der
+    // Emulator rechnet sie in buildTrack ohnehin neu) und legt DAHINTER die
+    // Verkettung ab.  Ohne diese Uebernahme behielte der geschriebene Sektor
+    // seinen ALTEN Kontrollblock (doc/udos_bug1.md §5.1).  Standard-IBM-Formate
+    // (CP/A, SCPX) schreiben dort schlicht Gap-Bytes — folgenlos.
+    const size_t nach_crc = data_start + take + 2;
+    if (write_buf_.size() > nach_crc) {
+        const size_t ende = std::min(write_buf_.size(), nach_crc + kSectorTailBytes);
+        ziel->tail.assign(write_buf_.begin() + static_cast<long>(nach_crc),
+                          write_buf_.begin() + static_cast<long>(ende));
+    }
 
     LOG_INFO("K5122", ">>> WRITE D%d C=%u H=%u S=%u bytes=%zu (buf=%zu)",
              selected_drive_,

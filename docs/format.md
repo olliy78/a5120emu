@@ -1,5 +1,14 @@
 # Diskettenformate (FORMAT.COM)
 
+> **Hinweis (2026-08-05, Medium-Umbau §8.7):** Der Floppy-Stack hält eine gemountete Diskette
+> jetzt vollständig als internes `DiskMedium` im Speicher; `.img`/`.hfe`/`.dmk` sind reine
+> Container-Codecs (`ImgCodec`/`HfeCodec`/`DmkCodec`) davor.  Wo dieses Dokument noch
+> `RawSectorImage`/`HfeImage` nennt, sind die entsprechenden Codecs gemeint — Verhalten und
+> Offset-/Layout-Modell sind unverändert.  Neu: `.dmk` als drittes Containerformat,
+> „Speichern unter" mit Containerwechsel, und eine **echte Leerdiskette**
+> (`createDisk` mit leerem Formatnamen), die das Gastsystem selbst formatiert.
+> Feinentwurf: `doc/design/09_floppy_drive.md`.
+
 Dieses Dokument listet **alle** im A5120-Emulator über das CP/A-Formatierprogramm
 `FORMAT.COM` (V19.05.89) auswählbaren Diskettenformate auf, beschreibt den
 Bedien-Dialog (inkl. der mehrseitigen Format-Menüs „X = Menü #2" usw.) und hält fest,
@@ -312,6 +321,19 @@ nur eine Seite, 40-Spur = Doppelschritt), sind aber ungetestet. **Nicht möglich
 
 ### 8.2 Scriptgesteuerte Formatier-Pipeline für alle §3-Formate (Stand 2026-07-01)
 
+> **UPDATE 2026-08-07 — die Pipeline startet jetzt IMMER auf einer ECHTEN LEERDISKETTE.**
+> `tests/system/drivers/format_all.py` legt `.hfe`-Ziele als **unformatiertes** Medium in der Geometrie des
+> Laufwerks an (`createB` = *leerer* Formatname), und `tests/system/drivers/make_bootdisk.py`
+> fährt wieder die volle Anwenderkette **Leerdiskette → FORMAT.COM (alle Spuren, mit
+> Vergleichs-Lesen) → CPABCGEN → Kaltstart** in EINEM Treiberlauf; `mk_disk_template` und
+> `disks/empty_cpa780.hfe` werden dafür nicht mehr gebraucht.  Verifiziert für alle vier
+> Laufwerkstypen (K5601, K5600.10, K5600.20, MF3200, MF6400).
+> Die beiden Vorbedingungen dafür sind behoben: der Gap-Blank-Hänger (s. nächster Absatz)
+> und das Wettrennen `Fehler 'U' SPUR DEFEKT` beim Vergleichs-Lesen
+> (`doc/analyse_format_leerspur.md`).  **Ausnahme `--type img`:** ein rohes Sektorimage
+> kennt keinen Zustand „unformatiert" — dieser Pfad legt weiterhin vorformatiert (0xE5) an
+> und prüft damit das *Um*formatieren einer gültigen Disk.
+
 > **UPDATE 2026-07-06 — Gap-Blank-`.hfe`-Hänger GELÖST (supersedet §8.2/§8.2.1-Workaround).**
 > `DiskImage::create` erzeugt für `.hfe` jetzt eine *voll formatierte* Leerdiskette (echte
 > IDAM/DATA/CRC je Spur via `TrackCodec::buildTrack`→`BitCodec::encode`, Daten 0xE5) statt eines
@@ -321,6 +343,16 @@ nur eine Seite, 40-Spur = Doppelschritt), sind aber ungetestet. **Nicht möglich
 > mit bekannter Geometrie jetzt direkt via `create` an — die frühere Template-Kopie entfällt (nur noch
 > Fallback für Geometrien ohne definiertes `DiskFormat`).  Die untenstehende Gap-Blank-Diagnose
 > (§8.2.1) ist damit historisch.
+
+> **UPDATE 2026-08-07 — die Matrix ist jetzt Teil der Testsuite.** `format_all.py` liefert
+> über `--list-matrix` seine vollständige Prüfmatrix (`boot|drive|geo|key`, 88 Einträge);
+> `CMakeLists.txt` legt beim Konfigurieren je Eintrag einen ctest-Test an
+> (`format_matrix_<boot>_<drive>_<geo|DS>_<key>`, LABEL **`format_matrix`**, Umfang Smoke
+> Spur 0–2, ~9 s je Format). Lauf: `tools/dev.sh test-matrix` (~200 s wall bei `-j8`,
+> 1572 s\*proc). Neue Formate/Geometrien in die Tabellen dieses Skripts eintragen — der
+> Testsatz wächst beim nächsten `cmake` mit. **Voll-Läufe bleiben manuell**
+> (`--full`); die beiden bekannten Voll-Ausreißer (§3 Format `7` → `Fehler 'S'`, `5` als
+> `.hfe`) fallen im Smoke nicht an.
 
 `tests/system/drivers/format_all.py` formatiert die nativen K5601-Formate aus §3 (Menü #1/#2/#3)
 scriptgesteuert nach Laufwerk **B:** und wertet Verify + Endstatus aus (Treiber:
@@ -347,7 +379,7 @@ für ph. Sektorversatz prüfen.
 
 **Phase B — `.img` (Stand 2026-07-01): 14 von 15 §3-Formaten OK.**  Das B:-Ziel wird per
 **`create`** als 0xE5-`.img` in der Geometrie des passenden `DiskFormat` angelegt (`format_all.py
---type img`, s. §9.0) — eine frische 0xE5-`.img` liest über `RawSectorImage` als gültig
+--type img`, s. §9.0) — eine frische 0xE5-`.img` liest über den `ImgCodec` als gültig
 formatierte Disk, daher **kein BUSRQ-Hänger**.  Alle Sektorgrößen + Menüseiten verifizieren;
 Dateigrößen passen (z. B. `0`=819200, `4`=655360, `6`=532480, `E`=737280 B).  **Interleave im
 Rohspeicher unkritisch:** Format `5` (16×256 *mit* ph. Sektorversatz) verifiziert als `.img`
@@ -600,19 +632,19 @@ bis `A>` (CP/A 25.09.89):
    Schreibpfad (den `CPABCGEN` nutzt) suchte nur `A1 A1 A1` → FM-Schreiben fand kein Sync →
    `CPABCGEN`-`Schreibfehler`. Jetzt verfahrensabhängig (Encoding der Zielspur).
 
-**Gap-Blank-Grenze / Vorlage:** FORMAT.COM kann eine **frische, gap-leere** `.hfe` weiterhin
-nicht direkt formatieren (Gap-Blank-Hänger, §8.2/§8.2.1). Wie die 5¼″-Pipeline startet die
-8″-Variante daher von einer **gültigen vorformatierten Vorlage**. Da es keine einseitige
-8″/FM-Disk gab, erzeugt sie das Tool **`mk_disk_template`** (§8.6.1, nutzt dieselbe
-`TrackCodec`-Schicht wie der K5122-Schreibpfad; für MF3200 Format 7:
-`mk_disk_template x.hfe fm 77 3 26 128 16 256`). Auf dieser Vorlage formatiert FORMAT.COM
-bis Spur 76 (`beendet`, Verify-clean, Soll 5208 B / gemessen 5066 B), `CPABCGEN B:` meldet
-`OK`, der Boot läuft durch.
+**Ausgangszustand (Stand 2026-08-07): echte Leerdiskette.** FORMAT.COM formatiert eine
+frische, unformatierte `.hfe` direkt — der frühere Gap-Blank-Hänger (§8.2/§8.2.1) und das
+Wettrennen `Fehler 'U' SPUR DEFEKT` (`doc/analyse_format_leerspur.md`) sind behoben. Die
+8″-Variante braucht deshalb **keine vorformatierte Vorlage** mehr (`mk_disk_template` bleibt
+als eigenständiges Werkzeug erhalten, wird von der Pipeline aber nicht mehr benutzt).
+FORMAT.COM formatiert bis Spur 76 (`beendet`, Verify-clean, Soll 5208 B / gemessen 5066 B),
+`CPABCGEN B:` meldet `OK`, der Boot läuft durch.
 
-**Pipeline-Tool** `tests/system/drivers/make_bootdisk.py` — Presets `cpa780` (5¼″-MFM) und
-`mf3200` (8″-FM): kopiert die Leer-Vorlage, fährt `CPABCGEN` (Tastatur-getrieben über
-`format_driver` + passende `FD_PROFILES`) und bootet die erzeugte Disk kalt zurück; Exit 0 +
-`BOOTDISK OK`.
+**Pipeline-Tool** `tests/system/drivers/make_bootdisk.py` (6 Presets, s. §8.6.1): legt eine
+**Leerdiskette** in den Ziel-Slot, fährt in EINEM Treiberlauf `FORMAT` (Format des Presets,
+alle Spuren, mit Vergleichs-Lesen) → CCP → `CPABCGEN <LW>:` → `DIR <LW>:` (Tastatur-getrieben
+über `format_driver` + passende `FD_PROFILES`) und bootet die erzeugte Disk anschließend kalt
+zurück; Exit 0 + `BOOTDISK OK`.
 
 #### 8.6.1 Mehr Formate + einseitige Laufwerkstypen (Stand 2026-07-06)
 
@@ -622,7 +654,9 @@ Die Boot-Disk-Pipeline wurde auf weitere Formate/Laufwerkstypen ausgebaut. Dazu:
   80 Spuren, 1 Kopf, MFM — **K5600.20**) und `mf6400_8_ss77` (8″, 77 Spuren, 1 Kopf,
   MFM — **K5602.10**, einseitig; das bestehende `mf6400_8_ds77` hat 2 Köpfe und greift
   nicht ins Kopf-0-Forcing).
-- **Verallgemeinertes Template-Tool** `mk_disk_template` (ersetzt `mk_fm8_template`):
+- **Verallgemeinertes Template-Tool** `mk_disk_template` (ersetzt `mk_fm8_template`; seit
+  2026-08-07 von der Pipeline **nicht mehr benutzt** — sie startet auf Leerdisketten —,
+  bleibt aber als eigenständiges Werkzeug erhalten):
   `mk_disk_template <out.hfe> <fm|mfm|sys/data> <cyls> <sys_cyls> <sys_nsec> <sys_size>
   <data_nsec> <data_size>` erzeugt eine gültig vorformatierte EINSEITIGE Leerdiskette
   (Systemspuren + Datenspuren, beliebige Sektorgrößen). Die HFE-Seitenlänge wird aus der
@@ -635,7 +669,8 @@ Die Boot-Disk-Pipeline wurde auf weitere Formate/Laufwerkstypen ausgebaut. Dazu:
   erst mit dem Header-Verfahren decodiert und bei fehlender Adressmarke das andere
   versucht. Reine FM-/MFM-Disks bleiben unverändert.
 - **C:-Laufwerk-Ziele** in `make_bootdisk.py` (MF6400, K5600.20 liegen laut Combo-BIOS auf
-  C:): der B:-Slot wird mit einer gültigen Combo-B:-Dummy-Disk belegt (FD_DISKC = Ziel).
+  C:): der B:-Slot wird nur belegt, damit FORMATs Laufwerkswahl durchläuft — seit
+  2026-08-07 ebenfalls mit einer Leerdiskette (FD_DISKC = Ziel, FD_DISKC_FMT = leer).
 
 **Sechs Presets** in `make_bootdisk.py` (`--preset`); Test-Registrierung als
 `format_integration` (langsam, in der Standard-Regression ausgeschlossen — `tools/dev.sh
@@ -664,9 +699,8 @@ registriert; Preset bleibt für die Analyse.
 Repro (ganze Kette, z. B. MF6400-Mischdichte):
 ```sh
 tools/dev.sh tool format_driver
-tools/dev.sh tool mk_disk_template
 python3 tests/system/drivers/make_bootdisk.py --preset mf6400_fmt1        # → "BOOTDISK OK"
-tools/dev.sh test-format                                             # alle 5 Boot-Disk-Tests
+tools/dev.sh test-format                                             # alle Format-Tests
 ```
 
 **Regression:** volle Suite **583/583** (ohne die 5 `format_integration`-Tests) grün; die
@@ -696,13 +730,15 @@ Der Runner erzeugt je Format eine **Temp-Kopie der Boot-Disk (A:)** und ein
 **`.img` vs `.hfe` (`--type`):**
 - `--type img` (Phase B): `format_driver` **legt** die `.img` per **`create`** in der
   Geometrie des passenden `DiskFormat` an (0xE5-gefüllt; kein Python-Vorbau).  Eine frische
-  0xE5-`.img` liest über `RawSectorImage` als **gültig formatierte** Disk → FORMAT.COMs
+  0xE5-`.img` liest über den `ImgCodec` als **gültig formatierte** Disk → FORMAT.COMs
   Vorlesung findet echte Sektoren → **kein** BUSRQ-Hänger.  Format→`DiskFormat`-Zuordnung:
   s. `FORMATS`-Tabelle in `tests/system/drivers/format_all.py` bzw. `k5601_16x256`/`k5601_26x128`/
   `k5601_9x512`/`k5601_10x512`/`cpa800`/`cpa780` in `FormatParser::builtinFormats()`.
-- `--type hfe` (Phase A): B: ist eine **Kopie eines gültigen HFE-Templates**
-  (`disks/cpadisk_*.hfe`, s. §8.2 — **kein** gap-leeres Blank, das würde formatabhängig
-  hängen).
+- `--type hfe` (Phase A, Default): das Ziel ist eine **echte, unformatierte Leerdiskette**
+  in der Geometrie des Laufwerks (`createB` = leerer Formatname).  Das ist der Anwenderfall
+  und die schärfere Prüfung: FORMAT.COM muss die Spurlänge auf markenlosem Gap-Fluss messen
+  und darf sich beim Vergleichs-Lesen nicht auf Restdaten stützen.  (Bis 2026-08-07 war hier
+  eine Kopie eines gültigen HFE-Templates nötig, s. §8.2.)
 
 **`create` statt `open` (Emulator-API):** `DiskImage::create(path, fmt, wp)` /
 `A5120Machine::createDisk(drive, path, format_name, wp)` legen eine **neue leere** Disk an:

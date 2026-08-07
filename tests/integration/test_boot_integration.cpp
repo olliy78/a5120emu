@@ -49,15 +49,9 @@ constexpr int      kBootSectors  = 4;       // ROM [0x07F2]=4 → loads sectors 
 constexpr int      kSectorBytes  = 128;     // cpa780 boot track: 128-byte sectors
 constexpr int      kBootBytes    = kBootSectors * kSectorBytes;  // 512
 
-/**
- * @brief Run the machine until ZVE2 signals DMA completion ([0x03F8]==3).
- *
- * Steps in small batches and stops as soon as the done-flag is set, so the
- * loaded boot code (which starts at 0x0437 right after) cannot overwrite the
- * just-loaded sectors before we inspect them.  Bleibt hier statt in
- * tests/support/: die Adressen sind Wissen ÜBER den Bootvorgang, nicht
- * allgemeine Testinfrastruktur.
- */
+/// Laufen lassen, bis ZVE2 den DMA-Abschluss meldet ([0x03F8]==3).
+/// Bleibt hier statt in tests/support/: die Adressen sind Wissen ÜBER den
+/// Bootvorgang, nicht allgemeine Testinfrastruktur.
 bool runUntilDmaComplete(A5120Machine& m, int max_cycles = 3'000'000) {
     constexpr int batch = 2000;
     for (int done = 0; done < max_cycles; done += batch) {
@@ -67,16 +61,6 @@ bool runUntilDmaComplete(A5120Machine& m, int max_cycles = 3'000'000) {
     }
     return false;
 }
-
-// ── Per-stage milestone helpers ─────────────────────────────────────────────
-//
-// The A5120 boot is a chain of stages, each handing off to the next:
-//   Stage 0  ZRE boot ROM + ZVE2 DMA → "SYL" boot record at 0x0400, JP 0x0437
-//   Stage 1  chained loader @0x0437  → banner "Bootloader, Version 24.02.87"
-//   Stage 2  secondary loader        → loads tracks, JP 0x1800 into stage 3
-//   Stage 3  CP/A bootsystem @0x1800 → banner "CP/A-Bootsystem …", reads @OS.COM
-//            from the 1024B data area to 0x3780 and JP 0x37A0 into the OS.
-// Each test below pins one stage's milestone so a regression localises to a stage.
 
 }  // namespace
 
@@ -207,7 +191,12 @@ TEST(BootIntegration, Stage3_PrintsCpaBootBanner) {
     A5120Machine machine;
     ASSERT_TRUE(machine.mountDisk(0, diskPath("cpa_cpa780_k5601_clock.img"), "cpa780", false));
     machine.powerOn();
-    EXPECT_TRUE(runUntilVramContains(machine, "CP/A-Bootsystem", 8'000'000))
+    // Budget: the banner appears at ~12.4M cycles.  The BIOS drive-detect loop
+    // (boot sector 0x021E) steps EVERY drive 85× toward track 0 and only the
+    // mounted one reports /TO — with the corrected 8212 select nibble the three
+    // absent drives really are stepped (≈6.7M cycles) instead of drive 0 four
+    // times over.  See K5122Test.DriveSelect_HighNibbleIstSelect.
+    EXPECT_TRUE(runUntilVramContains(machine, "CP/A-Bootsystem", 25'000'000))
         << "stage-3 banner 'CP/A-Bootsystem …' never appeared in VRAM";
 }
 
@@ -394,6 +383,45 @@ TEST(BootIntegrationCpa02, HfeBootsIntoRunningCpaOs) {
         << "running CP/A OS banner missing from HFE boot";
     EXPECT_NE(screen.find("TPA 100H - 0C405H"), std::string::npos)
         << "HFE boot reached a different OS than the raw image (TPA size differs)";
+}
+
+/**
+ * @test BootIntegrationCpa02/DmkBootsIntoRunningCpaOs
+ * @brief Dieselbe Diskette, aber ueber „Speichern unter .dmk" konvertiert, bootet
+ *        identisch — beweist den DMK-Codec (§8.7) am kompletten Lesepfad.
+ *
+ * Ablauf: `.hfe` mounten → `saveDiskAs(<tmp>.dmk)` (Containerwechsel + Umbinden) →
+ * frische Maschine von der `.dmk` booten.  Faellt die IDAM-Tabelle, die
+ * FM/MFM-Kennung oder die Spurlaenge des Codecs falsch aus, findet der Boot-ROM
+ * keine Adressmarke und der Lauf endet im Index-Timeout.
+ */
+TEST(BootIntegrationCpa02, DmkBootsIntoRunningCpaOs) {
+    TempDisk dmk_disk = TempDisk::empty("boot_cpa02.dmk");
+    const std::string& dmk = dmk_disk.path();
+
+    {
+        A5120Machine conv;
+        mountCpa02(conv, "cpa_cpa780_k5601_noclock.hfe");
+        ASSERT_TRUE(conv.saveDiskAs(0, dmk, /*format_name=*/"")) << conv.lastError();
+        EXPECT_EQ(conv.diskContainer(0), "dmk");
+        EXPECT_EQ(conv.diskPath(0), dmk);
+    }
+    ASSERT_TRUE(std::filesystem::exists(dmk));
+
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, dmk, "cpa780", /*wp=*/false)) << machine.lastError();
+    machine.powerOn();
+
+    ASSERT_TRUE(runUntilVramContains(machine, "TPA ist OK!", kCpa02BudgetCycles))
+        << "DMK-Konvertat: OS-BIOS-Kaltstart nie abgeschlossen — DMK-Lesepfad fehlerhaft:\n"
+        << vramText(machine);
+    const std::string screen = vramText(machine);
+    EXPECT_NE(screen.find("CP/A, Version 25.09.89"), std::string::npos)
+        << "CP/A-Banner fehlt beim DMK-Boot";
+    EXPECT_NE(screen.find("TPA 100H - 0C405H"), std::string::npos)
+        << "DMK-Boot erreichte ein anderes OS als das Original (TPA-Groesse weicht ab)";
+
+    machine.unmountDisk(0);
 }
 
 // ─── Booting from drives B: and C: (search starts at A:, lower drives empty) ──
@@ -767,9 +795,8 @@ TEST(UdosIntegration, ColdBootReachesDatePrompt) {
 // Die Diskette wird aus einer TEMP-KOPIE gemountet: CAT liest zwar nur, aber das
 // Fixture ist committet und darf unter keinen Umständen verändert werden.
 TEST(UdosIntegration, DateEntryAndCatListsDirectory) {
-    namespace fs = std::filesystem;
-    const std::string aPath = (fs::temp_directory_path() / "udos_interactive_A.hfe").string();
-    fs::copy_file(diskPath("udos_boot_scp.hfe"), aPath, fs::copy_options::overwrite_existing);
+    TempDisk a("udos_boot_scp.hfe", "udos_interactive_A.hfe");
+    const std::string& aPath = a.path();
 
     A5120Machine machine;
     ASSERT_TRUE(machine.mountDisk(0, aPath, "cpa780", /*wp=*/false)) << machine.lastError();
@@ -819,7 +846,6 @@ TEST(UdosIntegration, DateEntryAndCatListsDirectory) {
         << "KLEIN getipptes Kommando wurde nicht gefunden — Schreibwandlung gekippt:\n"
         << screen;
 
-    fs::remove(aPath);
 }
 
 // ─── SCPX Laufzeit-SCHREIBEN: ERA löscht auf B: OHNE „BAD SECTOR" ─────────────
@@ -874,7 +900,7 @@ TEST(ScpxIntegration, EraDeletesFileOnDriveBWithoutBadSector) {
         << "STAT.COM nach ERA nicht gelöscht (kein 'NO FILE'):\n" << vramText(machine);
 
     machine.unmountDisk(0);
-    machine.unmountDisk(1);   // TempDisk räumt die Dateien beim Verlassen weg
+    machine.unmountDisk(1);
 }
 
 // ─── SCPX Fremdformat-Read friert NICHT ein (held-bus No-Progress-Watchdog) ──
@@ -931,49 +957,108 @@ TEST(ScpxIntegration, WrongFormatReadTerminatesInsteadOfFreezing) {
         << ") — System nicht wieder bedienbar";
 
     machine.unmountDisk(0);
-    machine.unmountDisk(1);   // TempDisk räumt die Datei beim Verlassen weg
+    machine.unmountDisk(1);
 }
 
-// ─── createDisk: laufwerkstyp-spezifisches Standardformat ────────────────────
+// ─── createDisk: Leerdiskette vs. vorformatiert ──────────────────────────────
 //
-// Ein leerer Formatname wählt je Slot-DriveProfile das passende Default-Format;
-// die erzeugte, GÜLTIG FORMATIERTE Diskette wird gemountet.  Wir prüfen die
-// resultierende .img-Größe (= Geometrie) je Laufwerkstyp.
-// Zielpfade kommen als TempDisk::empty() — die Datei räumt sich am Testende
-// selbst weg, auch wenn eine Prüfung vorher abbricht.
+// Seit dem Medium-Umbau (§8.7) heisst ein LEERER Formatname "echte Leerdiskette":
+// unformatiertes Medium in der Geometrie des LAUFWERKS, damit das Gastsystem sie
+// selbst formatieren kann (auch Fremdformate wie UDOS, die Nutzdaten hinter die
+// Daten-CRC haengen).  Ein `.img` kann "nicht formatiert" nicht ausdruecken und wird
+// dafuer abgelehnt.  Mit gesetztem Formatnamen bleibt es beim vorformatierten Weg —
+// dann pruefen wir wie bisher die resultierende .img-Groesse (= Geometrie).
+namespace {
+// Zielpfade als TempDisk::empty() — die Datei räumt sich am Testende selbst weg,
+// auch wenn eine Prüfung vorher abbricht.
+TempDisk tmpImg(const char* tag) {
+    return TempDisk::empty(std::string("create_default_") + tag + ".img");
+}
+TempDisk tmpHfe(const char* tag) {
+    return TempDisk::empty(std::string("create_blank_") + tag + ".hfe");
+}
+}  // namespace
 
-TEST(CreateDiskDefault, K5601_DefaultIstCpa800) {
-    TempDisk disk = TempDisk::empty("create_default_k5601.img");
+TEST(CreateDiskBlank, K5601_LeerdisketteHat80x2UnformatierteSpuren) {
+    TempDisk disk = tmpHfe("k5601");
     const std::string& path = disk.path();
-    A5120Machine machine;                       // Default: 4× K5601
+    A5120Machine machine;                       // Default: 4x K5601
     ASSERT_TRUE(machine.createDisk(0, path, /*format=*/"", /*wp=*/false))
         << machine.lastError();
     EXPECT_TRUE(machine.isDiskActive(0));
-    EXPECT_EQ(std::filesystem::file_size(path), 80u * 2 * 5 * 1024);  // cpa800 = 800K
+    EXPECT_TRUE(std::filesystem::exists(path));
+    EXPECT_EQ(machine.diskContainer(0), "hfe");
+    EXPECT_EQ(machine.diskPath(0), path);
+    EXPECT_FALSE(machine.isDiskFormatted(0));
+    EXPECT_FALSE(machine.isDiskRawCompatible(0))
+        << "unformatierte Diskette darf nicht als .img gelten";
+    EXPECT_EQ(machine.diskGeometry(0).num_cyls,  80u);
+    EXPECT_EQ(machine.diskGeometry(0).num_heads,  2u);
+
+    machine.unmountDisk(0);
 }
 
-TEST(CreateDiskDefault, K560010_ss40_200K) {
-    TempDisk disk = TempDisk::empty("create_default_k560010.img");
+TEST(CreateDiskBlank, K560010_LeerdisketteHat40x1) {
+    TempDisk disk = tmpHfe("k560010");
     const std::string& path = disk.path();
     A5120Machine::Config cfg;
     cfg.drive_profiles = {"K5600.10", "K5601", "K5601", "K5601"};
     A5120Machine machine(cfg);
     ASSERT_TRUE(machine.createDisk(0, path, "", false)) << machine.lastError();
-    EXPECT_EQ(std::filesystem::file_size(path), 40u * 5 * 1024);      // 200K
+
+    EXPECT_EQ(machine.diskGeometry(0).num_cyls,  40u);
+    EXPECT_EQ(machine.diskGeometry(0).num_heads,  1u);
+
+    machine.unmountDisk(0);
 }
 
-TEST(CreateDiskDefault, MF3200_fm_308K) {
-    TempDisk disk = TempDisk::empty("create_default_mf3200.img");
+TEST(CreateDiskBlank, LeerdisketteAlsImg_wirdAbgelehnt) {
+    TempDisk disk = tmpImg("blank");
+    const std::string& path = disk.path();
+    A5120Machine machine;
+    EXPECT_FALSE(machine.createDisk(0, path, "", false));
+    EXPECT_NE(machine.lastError().find(".img"), std::string::npos)
+        << machine.lastError();
+    EXPECT_FALSE(std::filesystem::exists(path));
+}
+
+TEST(CreateDiskFormatted, K5601_DefaultIstCpa800) {
+    TempDisk disk = tmpImg("k5601");
+    const std::string& path = disk.path();
+    A5120Machine machine;                       // Default: 4x K5601
+    ASSERT_TRUE(machine.createDisk(0, path, machine.defaultFormatName(0), /*wp=*/false))
+        << machine.lastError();
+    EXPECT_TRUE(machine.isDiskActive(0));
+    EXPECT_EQ(std::filesystem::file_size(path), 80u * 2 * 5 * 1024);  // cpa800 = 800K
+    machine.unmountDisk(0);
+}
+
+TEST(CreateDiskFormatted, K560010_ss40_200K) {
+    TempDisk disk = tmpImg("k560010");
+    const std::string& path = disk.path();
+    A5120Machine::Config cfg;
+    cfg.drive_profiles = {"K5600.10", "K5601", "K5601", "K5601"};
+    A5120Machine machine(cfg);
+    ASSERT_TRUE(machine.createDisk(0, path, machine.defaultFormatName(0), false))
+        << machine.lastError();
+    EXPECT_EQ(std::filesystem::file_size(path), 40u * 5 * 1024);      // 200K
+    machine.unmountDisk(0);
+}
+
+TEST(CreateDiskFormatted, MF3200_fm_308K) {
+    TempDisk disk = tmpImg("mf3200");
     const std::string& path = disk.path();
     A5120Machine::Config cfg;
     cfg.drive_profiles = {"MF3200", "K5601", "K5601", "K5601"};
     A5120Machine machine(cfg);
-    ASSERT_TRUE(machine.createDisk(0, path, "", false)) << machine.lastError();
+    ASSERT_TRUE(machine.createDisk(0, path, machine.defaultFormatName(0), false))
+        << machine.lastError();
     EXPECT_EQ(std::filesystem::file_size(path), 77u * 4 * 1024);      // 308K
+    machine.unmountDisk(0);
 }
 
-TEST(CreateDiskDefault, UnbekanntesFormat_gibtFalse) {
-    TempDisk disk = TempDisk::empty("create_default_bad.img");
+TEST(CreateDiskFormatted, UnbekanntesFormat_gibtFalse) {
+    TempDisk disk = tmpImg("bad");
     const std::string& path = disk.path();
     A5120Machine machine;
     EXPECT_FALSE(machine.createDisk(0, path, "gibt_es_nicht", false));

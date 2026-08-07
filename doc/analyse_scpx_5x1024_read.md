@@ -58,6 +58,22 @@ Statt eines Hängers erscheint jetzt `SCPX ERR ON B: BAD SECTOR`, und das System
 Guard: `ScpxIntegration.WrongFormatReadTerminatesInsteadOfFreezing`
 (`tests/integration/test_boot_integration.cpp`).
 
+> **Nachtrag 2026-08-05 — nicht verwechseln.** Es gab zwei verschiedene
+> `BAD SECTOR`-Meldungen im 5×1024-Umfeld:
+>
+> 1. **Ohne `MODF`** — 5×1024-Diskette am 16×256-System. Das ist die in §4 vermessene
+>    SCPX-Single-Format-Eigenschaft und gilt **unverändert**; der obige Guard prüft sie
+>    weiterhin scharf.
+> 2. **Nach `MODF` Option 3** (B: korrekt auf 5×1024 umgestellt) erschien beim *ersten*
+>    Zugriff einmalig ebenfalls `BAD SECTOR`. Diese Meldung ist seit `76a959a`
+>    **verschwunden** — per git-bisect und gezielter Mutation dem dortigen Fix 3
+>    zugeordnet: `/STR=1` **durch ZVE2** beendet dessen Busbesitz jetzt sofort
+>    (K5122-Doku §5.5) statt erst ~2 Byteperioden später über die `/STR=1`-Abtastung.
+>    In diesem Fenster lief ZVE2 eine Instruktion zu weit (bei UDOS zerschrieb das
+>    nachweislich den CRC-Puffer). Die einmalige Meldung war ein Artefakt genau dieses
+>    Fensters, kein SCPX-Verhalten. `ScpxInit.Builds5x1024SystemViaInitModfSyspAndBoots`
+>    akzeptiert deshalb beides und prüft stattdessen, dass B: **danach lesbar** ist.
+
 ## 4. Warum 5×1024 vom 16×256-System aus trotzdem `BAD SECTOR` gibt
 
 **SCPX hat keinen Format-Autodetect wie CP/A — ein SCPX-System funktioniert für genau EIN Format.**
