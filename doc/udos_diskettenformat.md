@@ -619,6 +619,90 @@ Guards: `UdosFormat.FormatsDriveOneIntoUsableZdosDisk`,
 `UdosFormat.CopyDiskDuplicatesSystemDiskSectorBySector` und
 `UdosFormat.BuildsBootableSystemDiskAndBootsFromIt` (`tools/dev.sh test-format`).
 
+### 12.3 Laufwerkstypen — was `SET DISKCON` wirklich umstellt
+
+`SET DISKCON=` erwartet je Laufwerk eine zweistellige Zahl: **erste Ziffer =
+Laufwerkstyp**, **zweite Ziffer = Sektorlänge** (1=128, 2=256, 4=512, 5=1024). Der
+Befehl schreibt genau **ein Byte** je Laufwerk nach `0x0BE1+Laufwerk` — es gibt keine
+davon abgeleitete Geometrietabelle.
+
+Ausgemessen (Leerdiskette auf B:, `FORMAT SYSTEMDISK? Y`, `MOVE`, Kaltstart der
+erzeugten Datei; Laufwerk 0 bleibt immer `41`):
+
+| `SET DISKCON` | UDOS-Typ | Laufwerksprofil | FORMAT | Bootdiskette |
+|---|---|---|---|---|
+| `41` | 5,25″ 80 Spuren SS | K5600.20 | ✅ 77 Spuren, 55 belegt / 1947 frei | ✅ bootet bis `%` |
+| `31` | 5,25″ 40 Spuren | K5600.10 | ✅ 40 Spuren, 55 / **985** | ✅ bootet bis `%` |
+| `41` | 5,25″ 80 Spuren SS | **MF6400 (8″)** | ✅ 77 Spuren, 55 / 1947 | ✅ bootet bis `%` |
+| `11` | 8″ FM | MF3200 | ✅ (schreibt echtes **FM**) | ❌ `WRITE ERROR C4` |
+| `21` | 8″ MFM | MF6400 | ✅ 55 / 1947 | ❌ `OPEN ERROR CA` → `BAD POINTER IN OS` |
+| `61` | 40 Spuren im 80-Spur-LW | K5600.20 | ❌ jede Spur defekt | — |
+| `x2`/`x4` | Sektorlänge 256/512 | beliebig | ❌ jede Spur defekt | — |
+
+Bei 40 Spuren passen 985 freie Sektoren nicht für die 1152 der Quelle; `MOVE` endet
+regulär mit `ERROR D3`. Bootfähig ist die Diskette trotzdem.
+
+**Die Systemspuren wandern nicht mit der Spurzahl.** Auf der 40-Spur- wie auf der
+80-Spur-Diskette steht Sektor 1 von Spur 21 auf dem Bootabbild
+(`.1ACTIVATE: 790705 COPYRIGHT, ZI…`), Spur 22 trägt das Verzeichnis und Spur 23 die
+Belegungskarte mit dem 24-Byte-Datenträgernamen (`SYSDISK…`) — die festen Spurnummern
+aus §3 gelten also auch dort, nur die Gesamtzahl sinkt auf 40·26 = 1040.
+
+**Alle vier Fehlschläge sind Gastverhalten, kein Emulatorfehler.**
+
+* **Sektorlänge ≠ 128.** `FORMAT.COM` liest die Konfiguration genau einmal
+  (`4051: LD A,(HL) / 4052: AND F0H`) und benutzt **nur das Typ-Nibble** — für die
+  Spurzahl (`405E: CP 30H` → `28H`=40 sonst `4DH`=77). Seine ZVE2-Formatier-Koroutine
+  bei `0x5E00–0x5FD0` ist fest verdrahtet: `5F85: LD B,80H` = 128 Datenbytes,
+  Sektorzähler bis `1B` = 26 Sektoren, Größencode in der IDAM-Vorlage `0x5FCB` bleibt 0.
+  Das **niedrige** Nibble wertet nur der Nukleus-Sektortreiber aus
+  (`0793: LD A,(HL) / 0794: AND 0FH`) und patcht damit die Lese-Koroutine: `0x0AAE` =
+  erwarteter IDAM-Größencode (`0AAD: CP nn`), `0x0AB7` = Zahl der 128-Byte-Blöcke.
+  Nach `SET DISKCON=…2…` verlangt der Leser also Größencode 1, das frisch formatierte
+  Medium trägt 0 → `0AB1: JR NZ` verwirft jeden Sektor → `DEFEKTIVE TRACK` auf allen
+  Spuren. Gegenprobe in den Originalquellen: `UDOS/FORMAT/GOOD/FOR7651.MAC` ist eine
+  **eigens gebaute** 256-B-Fassung (`N: db 1`, `EOT: db 16`, 80 Spuren, 32 Sätze/Spur)
+  neben `FOR7658.MAC` (`N: db 0`, `EOT: db 26`) — inklusive passendem Treiberpaar
+  `UDOS7651.MAC`/`UDOS7658.MAC`. Andere Sektorlängen sind bei UDOS ein **Build**, kein
+  Laufzeitschalter.
+* **8″-Typen (`11`/`21`): UDOS schreibt das Datenfeld ohne den Sektorkontrollblock.**
+  Gemessen am Schreibstrom (letzte Bytes vor dem Feldende):
+
+  ```
+  DISKCON 41 (geht):   … 47 FA │ 05 16 FF FF │ 41 FF     buf=152, tail=6
+  DISKCON 21 (kaputt): … F4 C4 │ 00 FF                   buf=148, tail=2
+                       └Daten-CRC └Sektorkontrollblock (§1.1)
+  ```
+
+  Damit fehlt der Zieldiskette die Verkettung → `POINTER CHECK`. Das Kontrollkreuz
+  verortet es eindeutig im Gast: **gleiche 5,25″-Hardware (K5600.20) mit `SET
+  DISKCON=21` → kaputt**, **8″-Hardware (MF6400) mit `41` → formatiert, nimmt alle
+  Dateien und bootet**. Es hängt allein am Typ-Nibble, nicht am Laufwerk; verdoppelte
+  Byte-Rate und Index-Periode 300 statt 360 min⁻¹ ließen `buf` bei exakt 148.
+* **Typ `61`: FORMAT schreibt einfachschrittig, der Treiber liest schrittverdoppelt.**
+  FORMAT legt 77 Spuren als Zylinder 0…76 an (`4464H`=77, weil `405E: CP 30H` nur Typ 3
+  auf 40 Spuren umschaltet); der anschließende Verify fährt die Kopfpositionen
+  76, 74, 72, … 46 an. Die Spurnummer in der IDAM passt nie. Ein `CP 60H` existiert im
+  Treiber (`0x0700–0x0BFF`) überhaupt nicht.
+
+Guards für die drei tragenden Kombinationen:
+`Einseitig/UdosLaufwerkstypen.BautBootfaehigeSystemdiskette/{K5600_20,K5600_10,MF6400}`
+(`tools/dev.sh test-format`, je ~16 s). Fertige Ergebnisse liegen als
+`disks/udos_boot_k5600_20.hfe`, `disks/udos_boot_k5600_10.hfe` und
+`disks/udos_boot_mf6400.hfe` — beim Mounten muss das passende Laufwerksprofil auf
+Slot 0 stehen (`A5120Machine::Config::drive_profiles`), mit dem Default K5601 (80×2)
+passt nur die erste.
+
+> **Nebenbefund am Emulator (offen).** `DriveProfile::bytePeriodCycles` benutzt für
+> **alle** Laufwerke die 5,25″-Datenrate (125/250 kbit/s). 8″ läuft real mit
+> 250/500 kbit/s; bei 360 min⁻¹ passen im Modell nur 2617 statt 5208 Bytes je
+> Umdrehung — eine 8″-FM-Spur (4576 B) passt damit **nicht in eine Umdrehung**. Die
+> Korrektur (`if (medium_inch == 8) bytes_per_sec *= 2`) wurde probeweise gebaut:
+> 782/782 ctest und alle 17 `format_matrix_8inchCombo_*` blieben grün, aber
+> `bootdisk_mf3200_fmt7` und `bootdisk_mf6400_fmt1` fielen um — die CP/A-8″-Bootkette
+> kompensiert die falsche Rate offenbar an anderer Stelle. Deshalb **nicht übernommen**;
+> an den UDOS-Ergebnissen oben ändert sie ohnehin nichts.
+
 ---
 
 ## 13. Offene Punkte
@@ -627,10 +711,14 @@ Guards: `UdosFormat.FormatsDriveOneIntoUsableZdosDisk`,
 2. **Offset 17…18** des Kopfsektors: meist Kopie der Satzlänge, bei `OS` `0000`.
 3. **`HIGH ADDRESS` / `STACK SIZE`** aus `EXTRACT` sind im Kopf nicht lokalisiert
    (für Dateizugriff irrelevant).
-4. **Andere Sektorgrößen/Spurzahlen** (`SET DISKCON=` kennt 128/256/512/1024 Byte und
-   40/77/80 Spuren): ob die Systemspuren 21/22/23 dann verschoben sind, ist ungeprüft.
-   Ein Werkzeug sollte die Spurnummern konfigurierbar halten und die Belegungskarte über
-   ihre Signatur (24-Byte-Name + `0x0D`-Füllung, danach `…3F`-Muster) verifizieren.
+4. **Andere Sektorgrößen** sind mit dem `FORMAT V 4.3` dieser Diskette gar nicht
+   herstellbar (§12.3) — für ein Werkzeug also kein Fall, solange keine fremd
+   formatierte 256-B-Diskette vorliegt. Bei **40 Spuren** (`SET DISKCON=31`) liegen
+   Verzeichnis und Belegungskarte weiterhin auf Spur 22/23, nur die Gesamtzahl sinkt
+   auf 40·26 = 1040 (§12.3) — nachgemessen, aber nur für diese eine Spurzahl. Ein
+   Werkzeug sollte die Spurnummern trotzdem konfigurierbar halten und die
+   Belegungskarte über ihre Signatur (24-Byte-Name + `0x0D`-Füllung, danach
+   `…3F`-Muster) verifizieren.
 5. **Die 2 Bytes hinter dem Kontrollblock** (`41 F2` u. ä.) sind als Gap/Schreibnaht
    eingeordnet, nicht als CRC (§1.1) — beim Zurückschreiben auf echte Hardware wäre zu
    prüfen, ob UDOS sie erwartet.
