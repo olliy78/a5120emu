@@ -1,7 +1,7 @@
 # Testsystem: Bestandsaufnahme und Umbauvorschlag
 
 **Stand:** 2026-08-07, Branch `rework_testsystem` (Basis `main` @ 983fc1d)
-**Umgesetzt:** Schritte 0, 1, 2, 3, 4, 5, 6a, 7, 9, 10 — siehe §6 (Änderungsprotokoll)
+**Umgesetzt:** Schritte 0–10 (alle bis auf 11 „Kür" und 12 „Befunde") — §6
 **Zweck:** Ist-Landschaft der Tests vollständig erfassen, Schwachstellen benennen,
 eine Zielstruktur und einen schrittweisen Migrationsweg vorschlagen.
 
@@ -21,7 +21,7 @@ Legacy-Pakets (§6) sind es **fünf Pakete unter einem einzigen Ausführungsweg 
 | 3 | **Debug-Werkzeug-Unit-Tests** | `tests/cpp/test_{expr_eval,until_cond,event_bp,mem_watch,dbg_commands,coverage_diff,callstack_tracker,prn_listing}.cpp` | GoogleTest, testen **Header aus `tools/`** | 62 | wie 2 | < 1 s |
 | 4 | **Maschinen-Integrationstests** | `tests/cpp/test_{boot_integration,machine_snapshot,a5120_disk_api}.cpp` | GoogleTest, echter Kaltboot | 32 | wie 2 | 0,2–1,7 s je Fall |
 | 5 | **CLI-/Blackbox-Tests** der Werkzeuge | **direkt als Shell-Einzeiler in `CMakeLists.txt`** (Z. 500–597) | `add_test` + `PASS_REGULAR_EXPRESSION` | 19 | `CMakeLists.txt` | je < 1 s |
-| 6 | **System-/Format-Integration** (langsam) | `tests/system/test_scpx_init.cpp`, `test_hardy.cpp` + `tools/cpa_tools/make_bootdisk.py` | GoogleTest bzw. Python-Treiber | 8 | Label `format_integration` | Minuten (Timeout 600 s je Boot-Disk-Test) |
+| 6 | **System-/Format-Integration** (langsam) | `tests/system/test_scpx_init.cpp`, `test_hardy.cpp` + `tests/system/drivers/make_bootdisk.py` | GoogleTest bzw. Python-Treiber | 8 | Label `format_integration` | Minuten (Timeout 600 s je Boot-Disk-Test) |
 
 **Summen (nach Entfernen des Legacy-Pakets):** 669 ctest-Fälle — 661 in der Schnellrunde,
 8 mit Label `format_integration`. Alles läuft jetzt unter ctest.
@@ -49,7 +49,7 @@ Dazu im Root: `disk_b.img` (800 KB, eingecheckt), 40+ `k1520_*.log` (ignoriert, 
 | Werkzeug | Ort | Zweck |
 |----------|-----|-------|
 | `format_all.py` | `tools/` | formatiert + verifiziert alle K5601-Formate über `format_driver` |
-| `make_bootdisk.py` | `tools/cpa_tools/` | leere Disk → FORMAT → CPABCGEN → Kaltboot-Verify (6 Presets, 5 davon als ctest registriert) |
+| `make_bootdisk.py` | `tests/system/drivers/` | leere Disk → FORMAT → CPABCGEN → Kaltboot-Verify (6 Presets, 5 davon als ctest registriert) |
 | `capture_format_menus.py` | `tools/` | Menü-Screenshots von FORMAT.COM |
 | `kbd_test`, `floppy_diag`, `bench_run` | `tools/*.cpp` | Smoke-/Diagnose-Läufe, nirgends als Test registriert |
 | `disasm_difftest.py` | `tools/` | Kreuzvergleich Disassembler ↔ `z80dis`-Paket — ein echter Test, nicht registriert |
@@ -61,7 +61,7 @@ Dazu im Root: `disk_b.img` (800 KB, eingecheckt), 40+ `k1520_*.log` (ignoriert, 
 | `tests/fixtures/` | `cpa_mini.img`, `cpa_mini.hfe` | 28 KB |
 | `disks/` | 15 Boot-/Leer-/SCPX-Images + `.prn`-Listings + `bootsec.bin` | **23 MB** |
 | `boot_disk/` | CP/A-Programme (`format.com`, `cpabcgen.com`, `hardy.com`, …) | 248 KB |
-| `tools/cpa_tools/` | `format.com`, `cpabcgen.com` (Duplikate von `boot_disk/`) | 27 KB |
+| `tests/system/drivers/` | `format.com`, `cpabcgen.com` (Duplikate von `boot_disk/`) | 27 KB |
 | `docs/` | `cpabcgen.com`, `hardy.com` (nochmals), `format.md` | 168 KB |
 | `tests/python/fixtures/` | **leer** | 0 |
 
@@ -113,14 +113,17 @@ nach /tmp“ ist in `test_boot_integration.cpp` (937 Z.), `test_scpx_init.cpp` (
 eine Test-Support-Bibliothek noch GoogleTest-Fixtures dafür.
 **Behoben:** `tests/support/` (Bibliothek `k1520_testsupport`) — eine Fassung je Helfer (§6).
 
-### B6 — Testcode liegt in `tools/`, Werkzeugcode wird aus `tests/` getestet
+### B6 — ~~Testcode liegt in `tools/`~~ ✅ ERLEDIGT (§6, 2026-08-07)
 Zwei verschiedene Fälle, die man auseinanderhalten muss:
 - **Legitim:** `tools/{expr_eval,until_cond,event_bp,mem_watch,dbg_commands,coverage_diff,callstack_tracker,prn_listing}.h`
   sind header-only *Produktivbausteine* des Debuggers; dass Tests sie inkludieren, ist in Ordnung —
   nur ist `tools/` dafür der falsche Ort (es ist eine Bibliothek, kein Werkzeug).
-- **Falsch platziert:** `tools/format_all.py`, `tools/cpa_tools/make_bootdisk.py`,
+- **Falsch platziert:** `tests/system/drivers/format_all.py`, `tests/system/drivers/make_bootdisk.py`,
   `tools/capture_format_menus.py`, `tools/disasm_difftest.py` sind **Testtreiber**. `make_bootdisk.py`
   ist sogar direkt als 5 ctest-Fälle registriert — ein Test, der in `tools/` wohnt.
+  **Behoben:** `format_all.py` und `make_bootdisk.py` liegen jetzt in
+  `tests/system/drivers/` (§6). `capture_format_menus.py` und `disasm_difftest.py` bleiben
+  bewusst in `tools/` — sie sind manuelle Werkzeuge, kein registrierter Test.
 
 ### B7 — ~~Keine Python-/GUI-Testebene~~ ✅ ERLEDIGT (§6, 2026-08-07)
 `app/` hat 12 Python-Module (Fenster, Bildschirm-Widget mit GLSL-Shader, Tastatur,
@@ -166,7 +169,7 @@ Ein Tippfehler ist bereits im Suitennamen zementiert: `Sekorgroessen/MfmRoundtri
 `disks/` enthält 15 Images à 0,8–2 MB. Seit `DiskImage::create` gültig formatierte
 Leerdisketten erzeugen kann, sind mindestens `empty_cpa780.hfe` und `cpa_leer800k.hfe`
 zur Laufzeit herstellbar. Zusätzlich liegen dieselben CP/A-Programme in drei Verzeichnissen
-(`boot_disk/`, `tools/cpa_tools/`, `docs/`).
+(`boot_disk/`, `tests/system/drivers/`, `docs/`).
 
 ### B13 — ~~Keine CI~~ ✅ ENTSCHIEDEN (§6, 2026-08-07)
 Kein `.github/workflows/`, kein anderer CI-Konfigurationsort. Die Testqualität hing daran,
@@ -237,9 +240,9 @@ tests/
 │
 ├── system/                       # ── langsam: Label slow ─────────────────────────
 │   ├── test_scpx_init.cpp  test_hardy.cpp
-│   ├── bootdisk/                 # aus tools/cpa_tools/ hierher
+│   ├── bootdisk/                 # aus tests/system/drivers/ hierher
 │   │   ├── make_bootdisk.py  presets.yaml
-│   └── format/                   # aus tools/format_all.py hierher
+│   └── format/                   # aus tests/system/drivers/format_all.py hierher
 │       └── format_all.py
 │
 ├── python/                       # ── pytest: C-API + GUI ─────────────────────────
@@ -327,17 +330,16 @@ Jeder Schritt ist eigenständig, hinterlässt einen grünen Baum und ist einzeln
 | ~~**4**~~ | ~~`tests/support/`-Bibliothek~~ ✅ erledigt (§6) | — | — |
 | ~~**5**~~ | ~~CLI-Tests datengetrieben~~ ✅ erledigt (§6) | — | — |
 | **6a** | ~~Fixtures unter `tests/fixtures/disks/` konsolidieren~~ ✅ erledigt (§6) | — | — |
-| **6b** | Rest: `.com`-Dateien entdoppeln (`boot_disk/` + `tools/cpa_tools/` + `docs/` halten dieselben `format.com`/`cpabcgen.com`/`hardy.com`), `leer_cpa780.hfe` zur Testzeit erzeugen statt committen | gering | 2 h |
+| **6b** | Rest: `.com`-Dateien entdoppeln (`boot_disk/` + `tests/system/drivers/` + `docs/` halten dieselben `format.com`/`cpabcgen.com`/`hardy.com`), `leer_cpa780.hfe` zur Testzeit erzeugen statt committen | gering | 2 h |
 | ~~**7**~~ | ~~`tests/python/` mit pytest~~ ✅ erledigt (§6) — 80 Fälle, 7 Module, Label `python` | — | — |
-| **8** | `format_all.py`/`make_bootdisk.py` nach `tests/system/` verschieben, Presets in YAML (**behebt B6**) | gering | 3 h |
+| ~~**8**~~ | ~~Testtreiber nach `tests/system/`~~ ✅ erledigt (§6); Presets bleiben Python-Dicts (Begründung dort) | — | — |
 | ~~**9**~~ | ~~Testdoku vereinheitlichen~~ ✅ erledigt (§6) | — | — |
 | ~~**10**~~ | ~~GitHub-Actions-Workflow~~ → stattdessen **`pre-push`-Hook**, ✅ erledigt (§6) | — | — |
 | **11** | Kür: `DISABLED_TypeCommandAtCcpEchoesAndProcesses` reaktivieren, Suiten-Namensschema vereinheitlichen, Tippfehler `Sekorgroessen` beheben | gering | 3 h |
 | **12** | Befunde §7 (5×1024-Generierung erzeugt defekte Disk) und §8 (IEO ignoriert IUS) bewerten und entweder beheben oder als bewusste Grenze festschreiben | offen | unbekannt |
 
-**Stand 2026-08-07:** erledigt sind 0, 1, 2, 3, 4, 5, 6a, 7, 9, 10 — **alle strukturellen
-Schritte**.  Offen: **6b, 8, 11** (Aufräumarbeiten) und **12** (die zwei Befunde §7/§8,
-davon unabhängig).
+**Stand 2026-08-07:** erledigt sind **0–10**.  Offen: **11** (Kür: deaktivierten Test
+reaktivieren, Namensschema, Tippfehler) und **12** (die zwei Befunde §7/§8).
 
 ---
 
@@ -678,6 +680,52 @@ bei jeder Timing-Änderung rot.  Die Erwartung ist die inhaltliche Aussage.
 verfälschter `exit:`-Wert lassen den jeweiligen Fall mit der erwarteten Meldung fehlschlagen
 (ein Runner, der stillschweigend alles durchwinkt, wäre sonst nicht zu erkennen).
 Anschließend `build/` gelöscht: `tools/dev.sh test` 672/672, `test-format` 8/8 grün.
+
+### 2026-08-07 — Duplikate aufgelöst, Testtreiber nach `tests/` (Schritte 6b + 8)
+
+**Testtreiber (Schritt 8).** `format_all.py` und `make_bootdisk.py` sind Testcode — letzterer
+ist direkt als fünf ctest-Fälle registriert — und lagen in `tools/`.  Sie liegen jetzt in
+`tests/system/drivers/`, ihre Pfadableitung entsprechend angepasst.  `tools/cpa_tools/` ist
+damit leer und entfernt.
+
+Die Presets bleiben **Python-Dicts statt YAML** (im Plan war YAML angedacht): sie enthalten
+Geometrie-Tupel und Verweise auf Funktionen desselben Moduls, die Auslagerung hätte nur eine
+Indirektion ohne Nutzen ergeben — es gibt keinen zweiten Leser.
+
+`capture_format_menus.py` und `disasm_difftest.py` bleiben bewusst in `tools/`: manuelle
+Werkzeuge, kein registrierter Test.
+
+**Doppelte Programme (Schritt 6b).** Drei CP/A-Programme lagen mehrfach im Baum
+(md5-identisch):
+
+| Datei | lag in | jetzt |
+|-------|--------|-------|
+| `cpabcgen.com` | `boot_disk/`, `docs/`, `tools/cpa_tools/` | nur `boot_disk/` |
+| `format.com` | `boot_disk/`, `tools/cpa_tools/` | nur `boot_disk/` |
+| `hardy.com` | `boot_disk/`, `docs/` | nur `boot_disk/` |
+
+Die Kopien unter `tools/cpa_tools/` wurden von **nichts** gelesen: die Boot-Disk-Pipeline
+startet CPABCGEN und FORMAT aus dem gemounteten Diskettenabbild, nicht aus einer Datei
+(`dump cpabcgen` im Treiberskript ist ein Bildschirmabzug mit dieser Beschriftung, kein
+Ladebefehl).  Die `docs/`-Kopien waren Analysegegenstände; die betreffenden Texte verweisen
+jetzt auf `boot_disk/`.
+
+**Leerdiskette (Schritt 6b).** `leer_cpa780.hfe` (1,9 MB) ist nicht mehr eingecheckt.  Die
+Boot-Disk-Pipeline erzeugt ihre Vorlage zur Laufzeit über `DiskImage::create` (C-API,
+`gen_named_template()`).  `mk_disk_template` schied dafür aus — es schreibt nur einseitige
+Abbilder, cpa780 ist doppelseitig; es um Seiten zu erweitern hieße, das HFE-Seiteninterleave
+anzufassen, mit dem Risiko subtil kaputter Vorlagen für kein Testergebnis.  Der Weg über
+`create_disk` benutzt dagegen Code, den `A5120DiskApi`, `CreateDiskDefault` und
+`tests/python/test_binding.py` bereits abdecken.
+
+Gegenprobe der erzeugten Vorlage vor dem Umstellen: `k1520dbg` → `disk verify` meldet
+„160 Spuren, 863 Sektoren, 0 CRC-Fehler, 0 Problem-Spuren" — und `bootdisk_cpa780` läuft
+damit grün durch.
+
+**Ersparnis:** 1,9 MB (Leerdiskette) + 52 KB (Programmkopien) weniger im Git.
+
+**Verifikation:** `build/` gelöscht und neu gebaut, `tools/dev.sh test` 672/672 grün,
+`tools/dev.sh test-format` 8/8 grün, `format_all.py --list` funktioniert am neuen Ort.
 
 ---
 

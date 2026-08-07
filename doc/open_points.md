@@ -21,7 +21,7 @@ architecture blockers.
 
 ### 1) Disk formatting — exotic-format tail
 
-The formatting pipeline (`tools/format_all.py` + `tools/format_driver`) covers the
+The formatting pipeline (`tests/system/drivers/format_all.py` + `tools/format_driver`) covers the
 native K5601 §3 formats and the §3.4 single-sided / 40-track geometries as both `.hfe`
 and `.img`, plus the four foreign drive types via combo-boot disks. Full status:
 `docs/format.md` §8. What is left:
@@ -33,7 +33,7 @@ and `.img`, plus the four foreign drive types via combo-boot disks. Full status:
   `'S'` is a FORMAT.COM-internal data-track verdict, not a differential emulator bug.
   Definitive root cause needs **disassembly of FORMAT.COM's `'S'`-verify path**.
   Scope: 2 of ~30 formats.
-  `docs/format.md` §8.4. Repro: `python3 tools/format_all.py 7 --type img --upto 5`.
+  `docs/format.md` §8.4. Repro: `python3 tests/system/drivers/format_all.py 7 --type img --upto 5`.
 - **(b) Double-step 40-track geometries T/U as `.img`** are skipped: the card only
   knows step pulses, so `cur_cyl_` = 2×logical and a logical-40-track `.img` would
   need a physical→logical mapping. Workaround: use `.hfe` (faithful bit-track model)

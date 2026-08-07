@@ -493,7 +493,7 @@ DI; HALT                 ; CPU anhalten
 
 ## 10. cpabcgen.com — Bootsystem-Erzeuger
 
-`docs/cpabcgen.com` ist das CPA-Hilfsprogramm zum Schreiben eines neuen Boot-Sektors auf eine Zieldiskette:
+`boot_disk/cpabcgen.com` ist das CPA-Hilfsprogramm zum Schreiben eines neuen Boot-Sektors auf eine Zieldiskette:
 
 ```
 CP/A fuer Buerocomputer: Anlegen einer neuen Systemdiskette, Version 05.04.88
@@ -581,6 +581,6 @@ Teile des Bootloaders stammen nachweislich aus den CPA-BIOS-Quellcode-Dateien in
 - [`cpa_src/biosnuc.mac`](../cpa_src/biosnuc.mac) — BIOS-Nucleus, fcb@os-Referenz
 - [`cpa_src/format.mac`](../cpa_src/format.mac) — FORMAT-Utility (advance_dma_ptr = FDC_ADRDEC)
 - [`cpa_src/bios.mac`](../cpa_src/bios.mac) — Produktions-BIOS (in `@OS.COM`)
-- [`docs/cpabcgen.com`](cpabcgen.com) — Boot-Sektor-Erzeuger (5.25"/40T, Version 05.04.88, embed. Bootlader Version 24.02.87)
+- [`boot_disk/cpabcgen.com`](cpabcgen.com) — Boot-Sektor-Erzeuger (5.25"/40T, Version 05.04.88, embed. Bootlader Version 24.02.87)
 - [`src/floppy.cpp`](../src/floppy.cpp) — Emulator-Implementierung der SYL-Geometrie
 - [`src/cpa_bios.cpp`](../src/cpa_bios.cpp) — Emulator-Boot-Sequenz (`bootFromDisk()`)

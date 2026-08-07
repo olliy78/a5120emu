@@ -84,7 +84,7 @@ ankam.
 
 **Schmerz:** `x 0x272C 32` gab **nur 1 Byte** aus (die Count-Angabe griff nicht wie
 erwartet). Um einen String/Puffer zu inspizieren, musste auf ein externes Python-Skript
-gegen `docs/hardy.com` ausgewichen werden — umständlich und fehleranfällig (Datei- vs.
+gegen `boot_disk/hardy.com` ausgewichen werden — umständlich und fehleranfällig (Datei- vs.
 Laufzeit-Offset).
 
 **Feature:** `dump ADDR N` (bzw. `x ADDR N` reparieren): klassischer Hex+ASCII-Dump von N

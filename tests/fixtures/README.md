@@ -19,7 +19,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 
 | Segment | Werte |
 |---------|-------|
-| system | `cpa` = CP/A · `scpx17` = SCPX 1526 V1.7 · `leer` = formatierte Leerdiskette |
+| system | `cpa` = CP/A · `scpx17` = SCPX 1526 V1.7 |
 | diskformat | physisches Format des Mediums: `cpa780` (5¼″ 80 Spuren DS MFM, 26×128 Sys + 5×1024 Daten), `5x1024`, `mini` |
 | laufwerkskonfiguration | Laufwerkstypen, die das BIOS des Systems für A:/B:/C: annimmt |
 | merkmale | `clock`/`noclock` (Uhrzeit-Abfrage beim Kaltstart), `hardy` (HARDY.COM an Bord) |
@@ -34,7 +34,6 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `cpa_cpa780_combo8zoll_noclock.img` | CP/A ohne Uhr, A: K5601 · **B: MF3200** · **C: K5602.10/MF6400** | `make_bootdisk` (Presets mf3200_fmt7, mf6400_fmt1) |
 | `scpx17_cpa780_k5601.hfe` | SCPX 1526 V1.7, System im **16×256**-Datenformat | `ScpxIntegration.*`, `ScpxInit.*` |
 | `scpx17_5x1024_k5601_hardy.hfe` | SCPX 1526 V1.7, System im **5×1024**-Datenformat, mit `HARDY.COM` | `test_hardy` |
-| `leer_cpa780.hfe` | gültig formatierte, **leere** cpa780-Diskette (echte IDAM/DATA/CRC, Daten 0xE5) | `make_bootdisk` (Preset cpa780) als Formatierziel |
 | `bootsec_cpa780.bin` | erwarteter Inhalt des Bootsektors einer cpa780-Diskette | `test_boot_integration` (Bootsektor-Vergleich) |
 | `cpa_mini.img` / `cpa_mini.hfe` | synthetische Mini-Diskette (2 KB / 26 KB), kein Systemabbild | `test_hfe_image`, `test_disk_image_raw` |
 
@@ -56,6 +55,17 @@ Details: `docs/format.md` §11 und §5/§3.5.
   hat die erzeugte Diskette pro Datenspur **einen defekten Sektor** (`disk verify`:
   „5 Sekt, 1 CRC-Fehler" auf jeder Spur) und das generierte System kann keine `.COM`-Datei
   mehr laden. Reproduziert am 2026-08-07; ungeklärt, siehe `doc/testsystem_rework.md` §7.
+
+## Keine Leerdisketten hier
+
+Leere, gültig formatierte Disketten werden zur **Testzeit erzeugt**, nicht
+committet — die Erzeugung ist selbst getestet (`A5120DiskApi`, `CreateDiskDefault`,
+`tests/python/test_binding.py`), also ist eine eingecheckte Vorlage nur ein
+Artefakt, das driften kann:
+
+- einseitige Formate: `mk_disk_template` (8″-FM/MFM, 5¼″-SS)
+- doppelseitige: `DiskImage::create` über die C-API — in der Boot-Disk-Pipeline
+  `gen_named_template()` in `tests/system/drivers/make_bootdisk.py`
 
 ## Zugriff aus Tests
 

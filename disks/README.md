@@ -49,5 +49,6 @@ tools/dev.sh tool mk_disk_template …      # einseitige Vorlagen (8″-FM/MFM, 
 ```
 
 In der GUI legt `k1520_create_disk` (Menü „Diskette anlegen") eine leere Diskette im
-laufwerkstyp-spezifischen Standardformat an. Die einzige committete Leerdiskette ist
-`tests/fixtures/disks/leer_cpa780.hfe` — sie ist Formatierziel der Boot-Disk-Pipeline.
+laufwerkstyp-spezifischen Standardformat an. Auch die Boot-Disk-Pipeline unter
+`tests/system/drivers/` erzeugt ihre Vorlagen zur Laufzeit — es ist keine
+Leerdiskette mehr eingecheckt.

@@ -85,7 +85,7 @@
 ;
 ; CPABCGEN.COM -- Erzeuger des Systemsektors
 ; ─────────────────────────────────────────────────────────────────────
-;  Das Programm docs/cpabcgen.com ("CP/A fuer Buerocomputer: Anlegen
+;  Das Programm boot_disk/cpabcgen.com ("CP/A fuer Buerocomputer: Anlegen
 ;  einer neuen Systemdiskette, Version 05.04.88") schreibt den Boot-
 ;  loader auf eine Zieldiskette:
 ;

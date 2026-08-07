@@ -288,11 +288,11 @@ nicht mit „hängt" verwechseln; sie melden sich bei Abschluss selbst.
 
 ## Diskettenformatierung (FORMAT.COM) — Scope
 
-Scriptgesteuerte Formatier-Pipeline: `tools/format_all.py` (Runner) + `tools/format_driver`
+Scriptgesteuerte Formatier-Pipeline: `tests/system/drivers/format_all.py` (Runner) + `tools/format_driver`
 formatieren mit **FORMAT.COM (V19.05.89)** die K5601-Formate nach Laufwerk B: und verifizieren
 (§3 80-Spur-DS: .hfe 13/15, .img 14/15; §3.4-Geometrien S/V/W als .hfe+.img, T/U als .hfe).
 Über **Combo-Boot-Disketten** (B:/C: als Fremdtypen) sind auch die 5,25″-SS- und 8″-FM/MFM-
-Formate testbar (Laufwerkstyp = reine BIOS-Software). `tools/cpa_tools/make_bootdisk.py` fährt
+Formate testbar (Laufwerkstyp = reine BIOS-Software). `tests/system/drivers/make_bootdisk.py` fährt
 zusätzlich die ganze Kette *format → CPABCGEN → bootfähige Disk* (6 Presets, als langsame
 `format_integration`-Tests registriert — via `tools/dev.sh test-format`). `DiskImage::create` legt
 **gültig formatierte** Leerdisketten an (echte IDAM/DATA/CRC, Daten 0xE5): `.hfe` je Spur per
@@ -306,7 +306,7 @@ MF3200→308K/FM, MF6400→616K) und leitet das Verfahren aus dem `DriveProfile`
 > eine *voll formatierte* Diskette statt eines gap-leeren Templates → FORMAT.COM formatiert sie ohne
 > Hänger (End-to-End verifiziert). `DiskImage::open` lehnt zusätzlich ein markenloses/unformatiertes
 > Image (leere/gap-lose `.hfe`) mit Fehler ab, statt in die ZVE2-Lese-Koroutine `0x1D0F` zu laufen.
-> Template-Kopie/Python-Vorbau sind damit nicht mehr nötig (`tools/format_all.py` legt `.hfe`-Ziele mit
+> Template-Kopie/Python-Vorbau sind damit nicht mehr nötig (`tests/system/drivers/format_all.py` legt `.hfe`-Ziele mit
 > bekannter Geometrie direkt via `create` an). Interne Create-then-Format-Tools (`mk_disk_template`)
 > öffnen ihr noch-leeres Handle direkt über `HfeImage` (umgeht bewusst den Mount-Guard).
 

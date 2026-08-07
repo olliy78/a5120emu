@@ -19,11 +19,11 @@ Temp-/Ziel-Dateien an und wertet die Ausgabe aus.
 
 Verwendung:
   tools/dev.sh tool format_driver          # zuerst den Treiber bauen
-  python3 tools/format_all.py --list
-  python3 tools/format_all.py 0 1 E                 # nur diese Formate (Schnell-Smoke)
-  python3 tools/format_all.py --all --full          # alle §3-Formate, volle 160 Spuren
-  python3 tools/format_all.py --all --type img      # als .img (Phase B)
-  python3 tools/format_all.py 0 --full --outdir out # Ergebnis-Images ablegen
+  python3 tests/system/drivers/format_all.py --list
+  python3 tests/system/drivers/format_all.py 0 1 E                 # nur diese Formate (Schnell-Smoke)
+  python3 tests/system/drivers/format_all.py --all --full          # alle §3-Formate, volle 160 Spuren
+  python3 tests/system/drivers/format_all.py --all --type img      # als .img (Phase B)
+  python3 tests/system/drivers/format_all.py 0 --full --outdir out # Ergebnis-Images ablegen
 
 Menü-Navigation (FORMAT.COM):  Menü #1 (0-3) --X--> Menü #2 (4-7) --Y--> Menü #3 (E-K).
 
@@ -37,10 +37,10 @@ import subprocess
 import sys
 import tempfile
 
-HERE     = os.path.dirname(os.path.abspath(__file__))
-ROOT     = os.path.dirname(HERE)
+HERE     = os.path.dirname(os.path.abspath(__file__))        # tests/system/drivers
+ROOT     = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 DRIVER   = os.path.join(ROOT, 'build', 'format_driver')
-IMG2HFE  = os.path.join(HERE, 'img_to_hfe.py')
+IMG2HFE  = os.path.join(ROOT, 'tools', 'img_to_hfe.py')
 # Testdisketten liegen als unveränderliche Fixtures unter tests/fixtures/disks/;
 # disks/ ist das Arbeitsverzeichnis für manuelle Läufe.
 DISKS    = os.path.join(ROOT, 'tests', 'fixtures', 'disks')

@@ -31,7 +31,7 @@ k1520_add_test(hardy     SRC test_hardy.cpp     LIBS ${_libs}
 # sie laufen bei den Standard-Regressionstests NICHT mit (tools/dev.sh test schließt
 # sie via `-LE format_integration` aus; `tools/dev.sh test-format` führt nur sie aus).
 # FORMAT_DRIVER/MK_DISK_TEMPLATE zeigen auf die Tools DIESES Build-Verzeichnisses.
-set(_mkboot "${CMAKE_SOURCE_DIR}/tools/cpa_tools/make_bootdisk.py")
+set(_mkboot "${CMAKE_CURRENT_SOURCE_DIR}/drivers/make_bootdisk.py")
 # Ein Boot-Disk-Test je Preset: erstellen+formatieren (mk_disk_template bzw.
 # committete cpa780-Vorlage) → CPABCGEN → Kaltboot-Verify.
 macro(add_bootdisk_test name preset)

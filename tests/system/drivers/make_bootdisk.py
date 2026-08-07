@@ -18,7 +18,8 @@ Ablauf (alles über tools/format_driver, den Zwei-Disk-Tastatur-Treiber):
   0. (einseitige Formate) Leere Ziel-Vorlage per `mk_disk_template` ERZEUGEN — FORMAT.COM
      kann eine gap-leere .hfe nicht direkt formatieren (Gap-Blank-Hänger, docs/format.md
      §8.2/§8.6); das Tool schreibt eine gültig vorformatierte einseitige Diskette.
-     (cpa780 nutzt die committete, doppelseitige `disks/leer_cpa780.hfe`.)
+     (cpa780 ist doppelseitig — dessen Vorlage erzeugt `gen_named_template()`
+     über die C-API, da mk_disk_template nur einseitig schreibt.)
   1. cpabcgen : boote die passende Combo-/Uhr-Boot-Disk als A: (mit CPABCGEN.COM +
      @OS.COM), lege die Ziel-Vorlage als B:/C: ein und fahre `CPABCGEN <LW>:`.
      Der Slot bekommt per FD_PROFILES das zum Combo-BIOS passende physische Laufwerk.
@@ -30,7 +31,7 @@ Ablauf (alles über tools/format_driver, den Zwei-Disk-Tastatur-Treiber):
 Verwendung:
   tools/dev.sh tool format_driver
   tools/dev.sh tool mk_disk_template
-  python3 tools/cpa_tools/make_bootdisk.py --preset mf6400_fmt1 --quiet
+  python3 tests/system/drivers/make_bootdisk.py --preset mf6400_fmt1 --quiet
 
 Env:
   FORMAT_DRIVER      Pfad zu format_driver (Default build/format_driver)
@@ -48,8 +49,8 @@ import subprocess
 import sys
 import tempfile
 
-HERE   = os.path.dirname(os.path.abspath(__file__))
-ROOT   = os.path.dirname(os.path.dirname(HERE))
+HERE   = os.path.dirname(os.path.abspath(__file__))          # tests/system/drivers
+ROOT   = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 # Testdisketten liegen als unveränderliche Fixtures unter tests/fixtures/disks/;
 # disks/ ist das Arbeitsverzeichnis für manuelle Läufe.
 DISKS  = os.path.join(ROOT, 'tests', 'fixtures', 'disks')
@@ -70,14 +71,14 @@ BOOT_5INCHCOMBO = os.path.join(DISKS, 'cpa_cpa780_combo5zoll_noclock.img')
 #   b_prof      DriveProfile des B:-Slots während des CPABCGEN-Schritts (Combo-B:-Typ)
 #   c_prof      DriveProfile des C:-Slots während des CPABCGEN-Schritts (Combo-C:-Typ)
 #   needs_clock Kaltstart fragt Uhrzeit ab
-#   template    Ziel-Template-Spec (mk_disk_template) oder None (→ committed)
+#   template    Ziel-Template-Spec (mk_disk_template, einseitig) oder None
 #   b_dummy     (nur drive=C) Template-Spec für den B:-Slot-Dummy (Combo-B:-Typ)
-#   committed   (nur template=None) Pfad der committeten Vorlage
+#   named_fmt   (nur template=None) Formatname für die C-API (doppelseitig)
 PRESETS = {
     'cpa780': dict(
         boot=BOOT_CLOCK, drive='B', prof='K5601', b_prof='K5601', c_prof='K5601',
         needs_clock=True, template=None, b_dummy=None,
-        committed=os.path.join(DISKS, 'leer_cpa780.hfe'),
+        named_fmt='cpa780',           # doppelseitig → über die C-API erzeugt
     ),
     'mf3200_fmt7': dict(
         boot=BOOT_8INCHCOMBO, drive='B', prof='MF3200',
@@ -117,6 +118,28 @@ def gen_template(spec):
     subprocess.run([MKTMPL, path, enc, str(cyls), str(sysc),
                     str(snsec), str(ssz), str(dnsec), str(dsz)],
                    check=True, stdout=subprocess.DEVNULL)
+    return path
+
+
+def gen_named_template(format_name):
+    """Leere, gültig formatierte Diskette über die C-API erzeugen.
+
+    Für DOPPELSEITIGE Formate (cpa780): `mk_disk_template` schreibt nur
+    einseitige Abbilder, `DiskImage::create` beherrscht beide Seiten.  Der Weg
+    über die ctypes-Bindung braucht nur die Standardbibliothek (kein PySide6)
+    und benutzt exakt den Erzeugungspfad, den auch die GUI und
+    `test_a5120_disk_api` prüfen — dadurch muss die Vorlage nicht committet
+    werden.
+    """
+    sys.path.insert(0, ROOT)
+    from app.core_binding.k1520 import K1520Emulator
+
+    fd, path = tempfile.mkstemp(suffix='.hfe'); os.close(fd)
+    os.unlink(path)                      # createDisk will einen freien Pfad
+    emu = K1520Emulator()
+    if not emu.create_disk(0, path, format_name, False):
+        raise RuntimeError(f"createDisk({format_name}) scheiterte: {emu.last_error()}")
+    emu.unmount_disk(0)
     return path
 
 
@@ -213,10 +236,7 @@ def main():
 
     # ── Ziel-Vorlage (leer, formatiert) bereitstellen ────────────────────────
     if cfg['template'] is None:
-        formatted = cfg['committed']
-        if not os.path.exists(formatted):
-            print(f"FEHLER: committete Vorlage fehlt: {formatted}", file=sys.stderr)
-            return 2
+        formatted = gen_named_template(cfg['named_fmt']); temps.append(formatted)
     else:
         formatted = gen_template(cfg['template']); temps.append(formatted)
 
@@ -254,7 +274,7 @@ def main():
     bprof = _profiles(cfg['prof'], cfg['prof'], 'K5601')
     # B:-Slot-Dummy für den Boot: eine gültige Disk des Ziel-Profils (frische Vorlage).
     if cfg['template'] is None:
-        bdisk = cfg['committed']
+        bdisk = gen_named_template(cfg['named_fmt']); temps.append(bdisk)
     else:
         bdisk = gen_template(cfg['template']); temps.append(bdisk)
     o2, _e2, vtmp = run_driver(_script_verify(cfg['needs_clock']),

@@ -322,7 +322,7 @@ nur eine Seite, 40-Spur = Doppelschritt), sind aber ungetestet. **Nicht möglich
 > Fallback für Geometrien ohne definiertes `DiskFormat`).  Die untenstehende Gap-Blank-Diagnose
 > (§8.2.1) ist damit historisch.
 
-`tools/format_all.py` formatiert die nativen K5601-Formate aus §3 (Menü #1/#2/#3)
+`tests/system/drivers/format_all.py` formatiert die nativen K5601-Formate aus §3 (Menü #1/#2/#3)
 scriptgesteuert nach Laufwerk **B:** und wertet Verify + Endstatus aus (Treiber:
 `tools/format_driver`).  Ergebnis als **.hfe** (formatagnostisch; Phase A) — `.img`
 folgt (Phase B).
@@ -505,7 +505,7 @@ deckt alle physischen Positionen ab).
 
 Neue `DiskFormat`s in `FormatParser::builtinFormats()`: `k5601_ss80_26x128`, `k5601_ss80_9x512`,
 `k5601_ss40_5x1024`/`_26x128`/`_16x256`/`_15x256`, `k5601_ds40_5x1024`/`_26x128`/`_16x256`/`_17x256`
-(+ vorhandene `cpa200`/`cpa640`).  Aufruf z. B. `python3 tools/format_all.py --geo W --type img 0 4`.
+(+ vorhandene `cpa200`/`cpa640`).  Aufruf z. B. `python3 tests/system/drivers/format_all.py --geo W --type img 0 4`.
 
 > **Ziel-Status:** 80-Spur-DS (§3) + §3.4-Geometrien (S/V/W einseitig/Einzelschritt) formatieren
 > +verifizieren als `.hfe`/`.img`; Doppelschritt (T/U) als `.hfe`.  Offen: (a) Interleave-Formate
@@ -537,7 +537,7 @@ Format 7 (`16×256, Sp.0-153, Sektorfolge 1,4,7…, 4 System`) und W:6 (`15×256
 exotischen Formate, nicht durch abweichendes Emulator-Read/Write ausgelöst.  Die definitive
 Ursache erfordert die **Disassemblierung von FORMAT.COMs `'S'`-Verify-Pfad** — ein abgegrenzter, aber substanzieller RE-Schritt für **2 von ~30**
 K5601-Formaten (alle Standard-Formate + S/V/W-Geometrien verifizieren fehlerfrei).
-Repro: `python3 tools/format_all.py 7 --type img --upto 5` bzw. `--geo W 6`.
+Repro: `python3 tests/system/drivers/format_all.py 7 --type img --upto 5` bzw. `--geo W 6`.
 
 ### 8.5 Fremd-Laufwerkstypen (Combo-Disks) — Teststand 2026-07-02
 
@@ -568,7 +568,7 @@ Verfahren aus dem Strom**; `commitFormatTrack` baut die gecachte Spur codierungs
 (`buildTrack(sektoren, fmt_enc)` statt hart MFM). Der Verify-Read nutzte bereits korrekt FM
 (Steuerwort `0x87`). Regression: 78 ctest + 58 Harness grün, neuer Test
 `K5122FormatStream.ParseFormatStream_FM_RecoversSectors`. Repro:
-`python3 tools/format_all.py --boot 8inchCombo --drive B 0 --upto 1`.
+`python3 tests/system/drivers/format_all.py --boot 8inchCombo --drive B 0 --upto 1`.
 
 ### 8.6 8″-SD/FM-BOOTdiskette komplett — formatieren → CPABCGEN → booten (Stand 2026-07-05)
 
@@ -609,7 +609,7 @@ nicht direkt formatieren (Gap-Blank-Hänger, §8.2/§8.2.1). Wie die 5¼″-Pipe
 bis Spur 76 (`beendet`, Verify-clean, Soll 5208 B / gemessen 5066 B), `CPABCGEN B:` meldet
 `OK`, der Boot läuft durch.
 
-**Pipeline-Tool** `tools/cpa_tools/make_bootdisk.py` — Presets `cpa780` (5¼″-MFM) und
+**Pipeline-Tool** `tests/system/drivers/make_bootdisk.py` — Presets `cpa780` (5¼″-MFM) und
 `mf3200` (8″-FM): kopiert die Leer-Vorlage, fährt `CPABCGEN` (Tastatur-getrieben über
 `format_driver` + passende `FD_PROFILES`) und bootet die erzeugte Disk kalt zurück; Exit 0 +
 `BOOTDISK OK`.
@@ -665,7 +665,7 @@ Repro (ganze Kette, z. B. MF6400-Mischdichte):
 ```sh
 tools/dev.sh tool format_driver
 tools/dev.sh tool mk_disk_template
-python3 tools/cpa_tools/make_bootdisk.py --preset mf6400_fmt1        # → "BOOTDISK OK"
+python3 tests/system/drivers/make_bootdisk.py --preset mf6400_fmt1        # → "BOOTDISK OK"
 tools/dev.sh test-format                                             # alle 5 Boot-Disk-Tests
 ```
 
@@ -676,16 +676,16 @@ tools/dev.sh test-format                                             # alle 5 Bo
 
 ## 9. Nachstellen im Emulator
 
-### 9.0 Komfort-Runner `tools/format_all.py` (alle §3-Formate)
+### 9.0 Komfort-Runner `tests/system/drivers/format_all.py` (alle §3-Formate)
 
 Für das Formatieren **mehrerer** §3-Formate am Stück (Phase A, .hfe):
 
 ```sh
 tools/dev.sh tool format_driver                 # Treiber bauen (einmalig)
-python3 tools/format_all.py --list              # Formattabelle
-python3 tools/format_all.py 0 1 4 6 E --upto 5  # Smoke (Spur 0-5) je Format, mit Verify
-python3 tools/format_all.py --all --full        # alle 15, volle 160 Spuren
-python3 tools/format_all.py 0 --full --dir-verify --outdir out/formats
+python3 tests/system/drivers/format_all.py --list              # Formattabelle
+python3 tests/system/drivers/format_all.py 0 1 4 6 E --upto 5  # Smoke (Spur 0-5) je Format, mit Verify
+python3 tests/system/drivers/format_all.py --all --full        # alle 15, volle 160 Spuren
+python3 tests/system/drivers/format_all.py 0 --full --dir-verify --outdir out/formats
 ```
 
 Der Runner erzeugt je Format eine **Temp-Kopie der Boot-Disk (A:)** und ein
@@ -698,7 +698,7 @@ Der Runner erzeugt je Format eine **Temp-Kopie der Boot-Disk (A:)** und ein
   Geometrie des passenden `DiskFormat` an (0xE5-gefüllt; kein Python-Vorbau).  Eine frische
   0xE5-`.img` liest über `RawSectorImage` als **gültig formatierte** Disk → FORMAT.COMs
   Vorlesung findet echte Sektoren → **kein** BUSRQ-Hänger.  Format→`DiskFormat`-Zuordnung:
-  s. `FORMATS`-Tabelle in `tools/format_all.py` bzw. `k5601_16x256`/`k5601_26x128`/
+  s. `FORMATS`-Tabelle in `tests/system/drivers/format_all.py` bzw. `k5601_16x256`/`k5601_26x128`/
   `k5601_9x512`/`k5601_10x512`/`cpa800`/`cpa780` in `FormatParser::builtinFormats()`.
 - `--type hfe` (Phase A): B: ist eine **Kopie eines gültigen HFE-Templates**
   (`disks/cpadisk_*.hfe`, s. §8.2 — **kein** gap-leeres Blank, das würde formatabhängig
@@ -846,14 +846,14 @@ K5600.10/.20 (§3.5), MF3200/MF6400 (§5). Die K5601-Kontrollmessung stimmt byte
 
 ### 11.2 Formate auf den neuen Laufwerkstypen testen (Vorbereitung)
 
-`tools/format_all.py` formatiert+verifiziert scriptgesteuert. Für die neuen
+`tests/system/drivers/format_all.py` formatiert+verifiziert scriptgesteuert. Für die neuen
 Laufwerkstypen wählt man Boot-Disk und Ziel-Laufwerk über `--boot`/`--drive`:
 
 ```sh
 # K5600.20 (C:, 5" 80 SS) — Smoke über Spur 0-5, mit Verify, als .hfe:
-python3 tools/format_all.py --boot 5inchCombo --drive C 0 4 7
+python3 tests/system/drivers/format_all.py --boot 5inchCombo --drive C 0 4 7
 # MF3200 (B:, 8" SD) — 8″-Formate:
-python3 tools/format_all.py --boot 8inchCombo --drive B 0 5
+python3 tests/system/drivers/format_all.py --boot 8inchCombo --drive B 0 5
 ```
 
 Der Format-Write landet dann physisch im gewählten Laufwerk (B: bzw. C:). Für `.img`-

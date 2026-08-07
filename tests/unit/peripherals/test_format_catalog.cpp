@@ -73,7 +73,7 @@ TEST(FormatCatalog, AusgelieferterKatalog_LaedtOhneBeanstandung) {
  * @brief Der Katalog enthält **exakt** die erwarteten Formatnamen.
  *
  * Die Namen sind eine öffentliche Schnittstelle: Werkzeuge und Skripte
- * referenzieren sie als Zeichenkette (`tools/format_all.py`, `make_bootdisk.py`,
+ * referenzieren sie als Zeichenkette (`tests/system/drivers/format_all.py`, `make_bootdisk.py`,
  * `tools/format_driver.cpp` mounten nominell als "cpa780"/"cpa800", die
  * `format_integration`-Presets nennen die k5601_*-Geometrien beim Namen).  Ein
  * Tippfehler oder ein versehentlich entfernter Eintrag in `data/formats.yaml`

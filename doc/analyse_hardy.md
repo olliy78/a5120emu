@@ -1,6 +1,6 @@
 # HARDY-Hardwaretest — Reverse-Engineering & Emulator-Handoff
 
-Vollständige Erkenntnisse aus der Analyse von **`docs/hardy.com`** (HARDY V.3/1, Humboldt-
+Vollständige Erkenntnisse aus der Analyse von **`boot_disk/hardy.com`** (HARDY V.3/1, Humboldt-
 Universität zu Berlin, 31.01.87), damit weitere Testabschnitte in einer neuen Session
 genauso ans Laufen gebracht werden können wie der bereits gelöste **Rechner-Test**.
 
@@ -18,7 +18,7 @@ genauso ans Laufen gebracht werden können wie der bereits gelöste **Rechner-Te
 - **CP/M-.COM**, lädt ab `0x0100`, 16128 Byte → belegt `0x0100–0x3FFF`.
 - `0x0100  JP L045D` (Einsprung). Code bis ~`0x24xx`, danach **Datenblock/Strings**
   (`0x24xx–0x27xx`) + Interrupt-Stubs (`0x09ED–0x0A36`).
-- Disassemblieren: `python3 tools/z80_disasm2.py --org 0x100 docs/hardy.com > hardy.asm`.
+- Disassemblieren: `python3 tools/z80_disasm2.py --org 0x100 boot_disk/hardy.com > hardy.asm`.
 - Läuft unter **SCPX** (CP/M-kompatibel): BDOS-Aufrufe `CALL 0005H` (C=2 Zeichen, C=9
   `$`-String), Konsole/Tastatur im SCPX-BIOS ab `0xD000` (CONOUT `D148`/`D190`, CONIN
   `E079`, Print-Schleife `D1D3`).
@@ -163,7 +163,7 @@ als aktiven Strobe/Interrupt nachbilden.
 | 6 Datenübertrg | DFÜ-SIO (K8025 SIO A33) | A33 ohne Gegenstelle → evtl. Loopback/Handshake nötig |
 | 7 Floppy | K5122-Controller (Drehzahl, /RDY, Seek, R/W) | K5122; viele Statusleitungen (/RDYL, /TO, /WP, /FW) |
 
-Strings im Binary geben Hinweise (`strings -n4 docs/hardy.com`), u.a. schon gesehen:
+Strings im Binary geben Hinweise (`strings -n4 boot_disk/hardy.com`), u.a. schon gesehen:
 `Kopfandruck ein ==> / RDY = 0/1`, `Laufwerk bereit / nicht bereit` (Floppy-Test).
 
 ---
@@ -172,11 +172,11 @@ Strings im Binary geben Hinweise (`strings -n4 docs/hardy.com`), u.a. schon gese
 
 ```sh
 # 1) Disassemblieren
-python3 tools/z80_disasm2.py --org 0x100 docs/hardy.com > /tmp/hardy.asm
+python3 tools/z80_disasm2.py --org 0x100 boot_disk/hardy.com > /tmp/hardy.asm
 
 # 2) Strings + Referenzen finden
-strings -n4 docs/hardy.com                 # Testabschnitt-Meldungen
-python3 -c 'd=open("docs/hardy.com","rb").read(); print(hex(d.find(b"...")+0x100))'
+strings -n4 boot_disk/hardy.com                 # Testabschnitt-Meldungen
+python3 -c 'd=open("boot_disk/hardy.com","rb").read(); print(hex(d.find(b"...")+0x100))'
 
 # 3) Im Debugger reproduzieren (COW-Mount ist Default → Fixture sicher)
 tools/dev.sh tool k1520dbg -s tools/scpx1526.sym disks/scpx17_5x1024_k5601_hardy.hfe -x script.dbg
