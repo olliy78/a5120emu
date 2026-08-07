@@ -777,6 +777,37 @@ zu Recht entfernt, nur auf einem besseren Weg als von uns gebaut.
 `test-format` **16/16**, `test-matrix` **88/88** grün.  Ebenen jetzt: unit 580,
 debugtools 89, integration 62, cli 46, system 104, python 7.
 
+### 2026-08-07 — Nachpflege nach dem Merge: `test_udos_format` auf `tests/support/`
+
+Erste Erosion der Struktur, direkt aus dem Merge: `tests/system/test_udos_format.cpp`
+(743 Zeilen, von origin) brachte **sieben eigene Kopien** der Helfer mit, die Schritt 4
+zusammengelegt hatte — `diskPath`, `vramText`, `runCycles`, `runSmallUntil`, `QK_RETURN`,
+`typeKey`, `typeString`.  origin hat die Datei gegen die alte Struktur geschrieben, konnte
+es also nicht anders wissen; die drei anderen Systemtests waren sauber.
+
+Umgestellt auf `k1520test::`, dabei zwei Dinge bewahrt, die beim naiven Ersetzen
+verlorengegangen wären:
+
+- **Das Prüfintervall.** Die UDOS-Fassung von `runSmallUntil` las den Bildschirm nur alle
+  50 000 Takte statt nach jedem 5000er-Batch — bei Läufen von 6–34 s eine bewusste
+  Optimierung.  Die Support-Fassung hat dafür jetzt einen Parameter `check_every`
+  (Vorgabe = bisheriges Verhalten): die **Maschine** läuft unverändert in
+  `kSmallBatch`-Schritten, nur das Absuchen des 2-KB-VRAM wird seltener.  Ohne diesen
+  Parameter hätte die Umstellung die Tests spürbar verlangsamt.
+- **Den UDOS-Hinweis.** „Konsole ist schreibungsinvertiert: KLEIN tippen ergibt GROSS"
+  steht jetzt an der `using`-Deklaration statt in einem Wrapper, der nur den Kommentar trug.
+
+Dazu 12 handgebaute Temp-Pfade und 6 manuelle Aufräumblöcke durch `TempDisk` ersetzt —
+inklusive des bekannten Nebeneffekts: die `fs::remove`-Zeilen standen am Testende und
+liefen bei einem `ASSERT`-Abbruch nie.
+
+Datei 743 → 692 Zeilen; übrig bleibt eine bewusste dreizeilige Delegation
+(`runSmallUntil` mit dem UDOS-Prüfintervall).
+
+**Verifikation:** `build/` gelöscht, `tools/dev.sh test` 783/783, `test-format` 16/16
+(darunter die fünf umgestellten UDOS-Tests, Laufzeiten unverändert 6,4–33,6 s),
+`test-matrix` 88/88 grün.
+
 ---
 
 ## 7. Nebenbefund: 5×1024-System als Quelle erzeugt defekte Systemdiskette

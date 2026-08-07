@@ -38,57 +38,35 @@
 #include "core/machines/a5120/a5120.h"
 #include "core/logger.h"
 
+#include "tests/support/fixtures.h"
+#include "tests/support/keyboard.h"
+#include "tests/support/machine_run.h"
+#include "tests/support/screen.h"
+
 #include <cstdint>
 #include <filesystem>
 #include <string>
 
-#ifndef A5120_TEST_DISK_DIR
-#define A5120_TEST_DISK_DIR "."
-#endif
+using k1520test::diskPath;
+using k1520test::QK_RETURN;
+using k1520test::runCycles;
+using k1520test::TempDisk;
+using k1520test::typeKey;
+using k1520test::vramText;
+// ⚠ UDOS-Konsole ist schreibungsinvertiert: KLEIN tippen ergibt GROSS auf dem
+// Bildschirm (doc/analyse_udos.md §14.2) — Kommandos in dieser Datei also klein
+// schreiben.
+using k1520test::typeString;
 
 namespace {
 
-std::string diskPath(const char* name) {
-    return std::string(A5120_TEST_DISK_DIR) + "/" + name;
-}
+// UDOS-Laeufe dauern zweistellige Sekunden; der Bildschirm wird deshalb nur alle
+// 50 000 Takte abgesucht statt nach jedem 5000er-Batch.  Die MASCHINE laeuft
+// unveraendert in 5000er-Schritten — nur das Lesen des 2-KB-VRAM wird seltener.
+constexpr long long kVramCheckEvery = 50'000;
 
-// 2 KB Text-VRAM (0xF800–0xFFFF) als druckbares ASCII (nicht-druckbar → ' ').
-std::string vramText(A5120Machine& m) {
-    std::string s;
-    s.reserve(0x800);
-    for (int a = 0xF800; a <= 0xFFFF; ++a) {
-        uint8_t c = m.memReadDebug(static_cast<uint16_t>(a));
-        s.push_back((c >= 0x20 && c < 0x7F) ? static_cast<char>(c) : ' ');
-    }
-    return s;
-}
-
-void runCycles(A5120Machine& m, long long cycles) {
-    for (long long done = 0; done < cycles; done += 5000) m.run(5000);
-}
-
-// In kleinen Batches laufen (Tastatur-/Timer-ISR-Timing) bis @p needle im VRAM steht.
 bool runSmallUntil(A5120Machine& m, const std::string& needle, long long max_cycles) {
-    for (long long done = 0; done < max_cycles; done += 50'000) {
-        runCycles(m, 50'000);
-        if (vramText(m).find(needle) != std::string::npos) return true;
-    }
-    return false;
-}
-
-constexpr uint32_t QK_RETURN = 0x01000004;
-
-void typeKey(A5120Machine& m, uint32_t kc) {
-    m.keyPress(kc, false, false);
-    runCycles(m, 1'000'000);
-    m.keyRelease(kc);
-    runCycles(m, 300'000);
-}
-
-// ⚠ UDOS-Konsole ist schreibungsinvertiert: KLEIN tippen ergibt GROSS auf dem
-// Bildschirm (doc/analyse_udos.md §14.2) — Kommandos hier also klein schreiben.
-void typeString(A5120Machine& m, const std::string& s) {
-    for (char c : s) typeKey(m, static_cast<uint8_t>(c));
+    return k1520test::runSmallUntil(m, needle, max_cycles, kVramCheckEvery);
 }
 
 // Auf einen Prompt warten und die Antwort tippen.
@@ -100,16 +78,10 @@ void antworte(A5120Machine& m, const std::string& prompt, const std::string& ant
     typeKey(m, QK_RETURN);
 }
 
-// A: als beschreibbare Kopie der UDOS-Bootdiskette anlegen.
-void legeSystemdiskette(const std::string& aPath) {
-    namespace fs = std::filesystem;
-    fs::copy_file(diskPath("udos_boot_scp.hfe"), aPath, fs::copy_options::overwrite_existing);
-}
-
-// A: und B: als beschreibbare Kopien der UDOS-Bootdiskette anlegen.
-void legeDisketten(const std::string& aPath, const std::string& bPath) {
-    legeSystemdiskette(aPath);
-    legeSystemdiskette(bPath);
+// Beschreibbare Kopie der UDOS-Bootdiskette unter eigenem Temp-Namen.
+// TempDisk raeumt sie am Testende weg — auch wenn ein ASSERT vorher abbricht.
+TempDisk legeSystemdiskette(const std::string& temp_name) {
+    return TempDisk("udos_boot_scp.hfe", temp_name);
 }
 
 // UDOS booten und das Datum setzen; danach steht der `%`-Prompt.
@@ -176,10 +148,10 @@ void formatiereLaufwerk1(A5120Machine& m) {
  * (doc/udos_diskettenformat.md §3/§4).
  */
 TEST(UdosFormat, FormatsDriveOneIntoUsableZdosDisk) {
-    namespace fs = std::filesystem;
-    const std::string aPath = (fs::temp_directory_path() / "udos_format_guard_A.hfe").string();
-    const std::string bPath = (fs::temp_directory_path() / "udos_format_guard_B.hfe").string();
-    legeDisketten(aPath, bPath);
+    TempDisk a = legeSystemdiskette("udos_format_guard_A.hfe");
+    TempDisk b = legeSystemdiskette("udos_format_guard_B.hfe");
+    const std::string& aPath = a.path();
+    const std::string& bPath = b.path();
 
     // Emulator-Log auf ERROR drosseln — der Lauf erzeugt sonst Tausende
     // K5122-INFO-Zeilen (77 FORMAT-Writes + jeder Spur-Read).
@@ -215,9 +187,6 @@ TEST(UdosFormat, FormatsDriveOneIntoUsableZdosDisk) {
 
     machine.unmountDisk(0);
     machine.unmountDisk(1);
-    std::error_code ec;
-    fs::remove(aPath, ec);
-    fs::remove(bPath, ec);
 }
 
 /**
@@ -242,10 +211,10 @@ TEST(UdosFormat, FormatsDriveOneIntoUsableZdosDisk) {
  * UDOS meldet den defekten Sektor und kopiert weiter — der Test prüft genau das.
  */
 TEST(UdosFormat, CopyDiskDuplicatesSystemDiskSectorBySector) {
-    namespace fs = std::filesystem;
-    const std::string aPath = (fs::temp_directory_path() / "udos_copydisk_guard_A.hfe").string();
-    const std::string bPath = (fs::temp_directory_path() / "udos_copydisk_guard_B.hfe").string();
-    legeDisketten(aPath, bPath);
+    TempDisk a = legeSystemdiskette("udos_copydisk_guard_A.hfe");
+    TempDisk b = legeSystemdiskette("udos_copydisk_guard_B.hfe");
+    const std::string& aPath = a.path();
+    const std::string& bPath = b.path();
 
     k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
 
@@ -293,9 +262,6 @@ TEST(UdosFormat, CopyDiskDuplicatesSystemDiskSectorBySector) {
 
     machine.unmountDisk(0);
     machine.unmountDisk(1);
-    std::error_code ec;
-    fs::remove(aPath, ec);
-    fs::remove(bPath, ec);
 }
 
 /**
@@ -331,12 +297,10 @@ TEST(UdosFormat, CopyDiskDuplicatesSystemDiskSectorBySector) {
  * und Bootabbild → 55.
  */
 TEST(UdosFormat, BuildsBootableSystemDiskAndBootsFromIt) {
-    namespace fs = std::filesystem;
-    const std::string aPath = (fs::temp_directory_path() / "udos_sysdisk_guard_A.hfe").string();
-    const std::string bPath = (fs::temp_directory_path() / "udos_sysdisk_guard_B.dmk").string();
-    std::error_code ec;
-    legeSystemdiskette(aPath);
-    fs::remove(bPath, ec);
+    TempDisk a = legeSystemdiskette("udos_sysdisk_guard_A.hfe");
+    TempDisk b = TempDisk::empty("udos_sysdisk_guard_B.dmk");
+    const std::string& aPath = a.path();
+    const std::string& bPath = b.path();
 
     k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
 
@@ -348,7 +312,7 @@ TEST(UdosFormat, BuildsBootableSystemDiskAndBootsFromIt) {
         ASSERT_TRUE(machine.createDisk(1, bPath, /*format_name=*/"", /*wp=*/false))
             << machine.lastError();
         ASSERT_EQ(machine.diskContainer(1), "dmk");
-        ASSERT_TRUE(fs::exists(bPath));
+        ASSERT_TRUE(std::filesystem::exists(bPath));
         EXPECT_FALSE(machine.isDiskFormatted(1))
             << "frisch angelegte Diskette darf keine Adressmarke tragen";
         EXPECT_FALSE(machine.isDiskRawCompatible(1));
@@ -436,9 +400,6 @@ TEST(UdosFormat, BuildsBootableSystemDiskAndBootsFromIt) {
 
         neu.unmountDisk(0);
     }
-
-    fs::remove(aPath, ec);
-    fs::remove(bPath, ec);
 }
 
 /**
@@ -459,12 +420,10 @@ TEST(UdosFormat, BuildsBootableSystemDiskAndBootsFromIt) {
  * `.img` speicherbar, weil der UDOS-Anhang hinter der Daten-CRC dort verloren ginge.
  */
 TEST(UdosFormat, FormatsBrandNewBlankDiskette) {
-    namespace fs = std::filesystem;
-    const std::string aPath = (fs::temp_directory_path() / "udos_blank_guard_A.hfe").string();
-    const std::string bPath = (fs::temp_directory_path() / "udos_blank_guard_B.hfe").string();
-    std::error_code ec;
-    fs::copy_file(diskPath("udos_boot_scp.hfe"), aPath, fs::copy_options::overwrite_existing);
-    fs::remove(bPath, ec);
+    TempDisk a = legeSystemdiskette("udos_blank_guard_A.hfe");
+    TempDisk b = TempDisk::empty("udos_blank_guard_B.hfe");
+    const std::string& aPath = a.path();
+    const std::string& bPath = b.path();
 
     k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
 
@@ -506,8 +465,6 @@ TEST(UdosFormat, FormatsBrandNewBlankDiskette) {
 
     machine.unmountDisk(0);
     machine.unmountDisk(1);
-    fs::remove(aPath, ec);
-    fs::remove(bPath, ec);
 }
 
 /**
@@ -522,12 +479,10 @@ TEST(UdosFormat, FormatsBrandNewBlankDiskette) {
  * vom Laufwerk**, kein Diskettensignal.
  */
 TEST(UdosFormat, FormatsDisketteInsertedAtRuntime) {
-    namespace fs = std::filesystem;
-    const std::string aPath = (fs::temp_directory_path() / "udos_runtime_A.hfe").string();
-    const std::string bPath = (fs::temp_directory_path() / "udos_runtime_B.dmk").string();
-    std::error_code ec;
-    legeSystemdiskette(aPath);
-    fs::remove(bPath, ec);
+    TempDisk a = legeSystemdiskette("udos_runtime_A.hfe");
+    TempDisk b = TempDisk::empty("udos_runtime_B.dmk");
+    const std::string& aPath = a.path();
+    const std::string& bPath = b.path();
 
     k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
 
@@ -558,8 +513,6 @@ TEST(UdosFormat, FormatsDisketteInsertedAtRuntime) {
 
     machine.unmountDisk(0);
     machine.unmountDisk(1);
-    fs::remove(aPath, ec);
-    fs::remove(bPath, ec);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -630,13 +583,10 @@ TEST_P(UdosLaufwerkstypen, BautBootfaehigeSystemdiskette) {
     namespace fs = std::filesystem;
     const UdosLaufwerksTyp& typ = GetParam();
 
-    const std::string aPath =
-        (fs::temp_directory_path() / (std::string("udos_typ_") + typ.testname + "_A.hfe")).string();
-    const std::string bPath =
-        (fs::temp_directory_path() / (std::string("udos_typ_") + typ.testname + "_B.hfe")).string();
-    std::error_code ec;
-    legeSystemdiskette(aPath);
-    fs::remove(bPath, ec);
+    TempDisk a = legeSystemdiskette(std::string("udos_typ_") + typ.testname + "_A.hfe");
+    TempDisk b = TempDisk::empty(std::string("udos_typ_") + typ.testname + "_B.hfe");
+    const std::string& aPath = a.path();
+    const std::string& bPath = b.path();
 
     k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
 
@@ -721,9 +671,6 @@ TEST_P(UdosLaufwerkstypen, BautBootfaehigeSystemdiskette) {
 
         neu.unmountDisk(0);
     }
-
-    fs::remove(aPath, ec);
-    fs::remove(bPath, ec);
 }
 
 INSTANTIATE_TEST_SUITE_P(

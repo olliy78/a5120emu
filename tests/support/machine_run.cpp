@@ -9,9 +9,14 @@ void runCycles(A5120Machine& m, long long cycles) {
         m.run(static_cast<int>(kSmallBatch));
 }
 
-bool runSmallUntil(A5120Machine& m, const std::string& needle, long long max_cycles) {
+bool runSmallUntil(A5120Machine& m, const std::string& needle, long long max_cycles,
+                   long long check_every) {
+    long long since_check = 0;
     for (long long done = 0; done < max_cycles; done += kSmallBatch) {
         m.run(static_cast<int>(kSmallBatch));
+        since_check += kSmallBatch;
+        if (since_check < check_every) continue;
+        since_check = 0;
         if (vramText(m).find(needle) != std::string::npos) return true;
     }
     return false;
