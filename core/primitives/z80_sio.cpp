@@ -184,9 +184,26 @@ bool Z80SIO::channelHasInterrupt(const Channel& ch) const {
     return ch.irq_rx || ch.irq_tx || ch.irq_ext;
 }
 
+/// Fordert @p ch gerade einen Interrupt an?  Ein Kanal, der bereits bedient wird
+/// (IUS=1, noch kein RETI), fordert NICHT an.
+bool Z80SIO::channelRequests(const Channel& ch) const {
+    return channelHasInterrupt(ch) && !ch.ius;
+}
+
 bool Z80SIO::hasInterrupt() const {
     if (!iei_) return false;
-    return channelHasInterrupt(ch_a_) || channelHasInterrupt(ch_b_);
+    // WICHTIG: dieselbe Bedingung wie getVector() — inklusive `!ius`.  Ein Kanal,
+    // der bereits bedient wird, darf keinen Interrupt mehr anfordern, auch wenn
+    // inzwischen ein neues Zeichen aufgelaufen ist.  Sonst zieht die Karte /INT,
+    // die Quittung findet in getVector() aber keinen vektorfähigen Kanal und
+    // liefert die reine Vektorbasis → die ISR wird endlos erneut angesprungen.
+    // Analog zu Z80CTC::anyServiceable() und Z80PIO::hasInterrupt() (f3b7ab1).
+    //
+    // NUR die Anforderungsseite.  getIEO() bleibt bewusst unverändert: die
+    // Kettenseite ist bei allen drei Bausteinen gleich („sperrt bei ANSTEHENDEM,
+    // nicht bei laufendem Interrupt") — sie hier allein umzustellen, würde die
+    // Bausteine gegeneinander verstimmen.  Bewertung: doc/testsystem_rework.md §8.
+    return channelRequests(ch_a_) || channelRequests(ch_b_);
 }
 
 bool Z80SIO::getIEO() const {

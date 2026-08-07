@@ -861,7 +861,7 @@ ungültig). Es braucht eine Neufassung für den K1520-Kern.
 
 ---
 
-## 8. Nebenbefund: IUS-Behandlung — Anforderung gegattert, Kette nicht (aktualisiert)
+## 8. Nebenbefund: IUS-Behandlung — Anforderungsseite angeglichen, Kette unverändert
 
 Beim Überführen des losen `test_reti.cpp` nach GoogleTest stellte sich heraus, dass seine
 Erwartung nicht dem implementierten Verhalten entspricht — die Datei war nie gebaut worden,
@@ -902,7 +902,7 @@ unterscheiden:
 
 | Seite | Frage | CTC | PIO | SIO |
 |-------|-------|-----|-----|-----|
-| **Anforderung** (`hasInterrupt`) | Fordert der Baustein an, während er bedient wird? | nein (`anyServiceable`) | nein — **seit `f3b7ab1`** | **ja** ← Lücke |
+| **Anforderung** (`hasInterrupt`) | Fordert der Baustein an, während er bedient wird? | nein (`anyServiceable`) | nein — seit `f3b7ab1` | nein — **seit 2026-08-07** |
 | **Kette** (`getIEO`) | Gibt er nachgeordnete Bausteine frei, während er bedient wird? | ja | ja | ja |
 
 **Die Anforderungsseite ist inzwischen die wichtigere** — und origin hat dort einen realen
@@ -910,7 +910,7 @@ Fehler behoben: der PIO forderte bei gesetztem IUS weiter an, die Quittung fand 
 `getVector()` aber keinen vektorfähigen Port und lieferte den Fallback `0xFF` → Endlos-Sturm
 mit Pseudo-Vektor, der den UDOS-Boot brach (`f3b7ab1`, `doc/analyse_udos.md`).
 
-**Neu gefunden: der SIO hat dieselbe Lücke noch.**
+**Neu gefunden war: der SIO hatte dieselbe Lücke noch.**
 `Z80SIO::channelHasInterrupt()` (`core/primitives/z80_sio.cpp:183`) prüft `!ius` nicht.
 Beim SIO fällt es bislang nicht auf, weil `getVector()` in dem Fall die reine Vektorbasis
 liefert statt eines Fallbacks — die ISR wird also erneut angesprungen statt auf einen
@@ -918,19 +918,28 @@ Pseudo-Vektor zu laufen.  Ob das je auftritt, hängt daran, ob eine SIO-ISR lang
 läuft, dass ein zweites Zeichen eintrifft; die Tastatur (K7637) arbeitet mit 9600 Baud,
 das Zeitfenster ist also nicht klein.
 
-**Nicht geändert**, aus demselben Grund wie zuvor: Interrupts sind für die Bootkette
-load-bearing, und eine Verhaltensänderung gehört nicht in einen Testsystem-Umbau.
-Stattdessen halten drei neue Tests in `tests/unit/primitives/test_reti.cpp` den Zustand fest:
+**Behoben am 2026-08-07.**  `Z80SIO::hasInterrupt()` fragt jetzt über den neuen Helfer
+`channelRequests()` zusätzlich `!ius` ab — dieselbe Bedingung, die `getVector()` ohnehin
+anlegt.  Damit halten alle drei Bausteine denselben Vertrag.
+
+**Bewusst nur die Anforderungsseite.**  Der `!ius`-Test steht in `hasInterrupt()`, NICHT im
+gemeinsamen `channelHasInterrupt()` — das wird auch von `getIEO()` und von `setIEI()`
+(interne Kette Kanal A → B) benutzt.  Dort hineinzugreifen hätte die Kettenseite des SIO
+allein umgestellt und ihn gegen CTC und PIO verstimmt.  Genauso hat origin es beim PIO
+gehalten (`f3b7ab1` fasst nur `hasInterrupt()` an).
+
+Vier Tests in `tests/unit/primitives/test_reti.cpp` halten den Zustand fest:
 
 - `RetiChain.CtcRequestIsIusGatedUntilReti` — Vertrag des CTC
 - `RetiChain.PioRequestIsIusGatedUntilReti` — **Wächter für origins Fix**, den origin selbst
   nicht abgesichert hat.  Gegenprobe: mit zurückgenommenem Fix schlägt er fehl.
-- `RetiChain.SioRequestIsNotIusGated` — hält die verbliebene Lücke fest; schlägt er fehl,
-  wurde der SIO angeglichen und der Kommentar dort gehört gelöscht.
+- `RetiChain.SioRequestIsIusGatedUntilReti` — Wächter für den hiesigen Fix.  Gegenprobe
+  ebenso durchgeführt: ohne den Fix schlägt er fehl.
+- `RetiChain.IeoBlocksOnPendingNotOnService` — die **Kettenseite** bleibt unverändert
+  („sperrt bei anstehendem, nicht bei laufendem Interrupt") und ist weiter bewacht.
 
-Die Kettenseite (`getIEO` ignoriert IUS) bleibt unverändert bestehen, weiterhin bewacht von
-`RetiChain.IeoBlocksOnPendingNotOnService`.
-
-**Empfehlung:** den SIO angleichen (drei Zeichen: `&& !ch.ius` in `channelHasInterrupt`),
-aber als eigener Commit außerhalb des Testsystem-Umbaus und mit einem Lauf der
-Systemtests — die Tastatur hängt daran.
+**Verifikation des Fixes:** `build/` gelöscht und neu gebaut; 786/786 schnell,
+16/16 `format_integration`, 88/88 `format_matrix`.  Gezielt geprüft wurde alles, was am SIO
+hängt — Z80SIO-, K7637-, K8025- und Tastatur-Tests (71 Fälle) — sowie die tastaturgetriebenen
+Systemläufe (SCPX INIT/MODF/SYSP, HARDY, UDOS), die jede Eingabe über die 9600-Baud-Strecke
+des K7637 schicken.  Dort hätte ein verschlucktes Zeichen sofort auffallen müssen.
