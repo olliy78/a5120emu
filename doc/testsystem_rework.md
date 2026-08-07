@@ -1,7 +1,7 @@
 # Testsystem: Bestandsaufnahme und Umbauvorschlag
 
 **Stand:** 2026-08-07, Branch `rework_testsystem` (Basis `main` @ 983fc1d)
-**Umgesetzt:** Schritte 0, 1, 2, 3, 6a, 7, 10 — siehe §6 (Änderungsprotokoll)
+**Umgesetzt:** Schritte 0, 1, 2, 3, 4, 6a, 7, 10 — siehe §6 (Änderungsprotokoll)
 **Zweck:** Ist-Landschaft der Tests vollständig erfassen, Schwachstellen benennen,
 eine Zielstruktur und einen schrittweisen Migrationsweg vorschlagen.
 
@@ -105,11 +105,12 @@ add_cli_test(cli_dbg_json "\"pc\":\"0x1E52\".*\"hl\":\"0x231A\"" …)
 Ein Registerabbild bei exakt 5 000 000 Zyklen, hart im `CMakeLists.txt`. Ändert sich das
 Floppy-Timing, schlägt ein Test fehl, dessen Erwartungswert niemand im Testverzeichnis findet.
 
-### B5 — Keine gemeinsame Test-Infrastruktur
+### B5 — ~~Keine gemeinsame Test-Infrastruktur~~ ✅ ERLEDIGT (§6, 2026-08-07)
 „Boote bis zum Prompt“, „warte auf Text im VRAM“, „tippe ein Kommando“, „kopiere die Disk
 nach /tmp“ ist in `test_boot_integration.cpp` (937 Z.), `test_scpx_init.cpp` (346 Z.),
 `test_hardy.cpp` (146 Z.) und den 19 CLI-Tests jeweils **neu implementiert**. Es gibt weder
 eine Test-Support-Bibliothek noch GoogleTest-Fixtures dafür.
+**Behoben:** `tests/support/` (Bibliothek `k1520_testsupport`) — eine Fassung je Helfer (§6).
 
 ### B6 — Testcode liegt in `tools/`, Werkzeugcode wird aus `tests/` getestet
 Zwei verschiedene Fälle, die man auseinanderhalten muss:
@@ -319,7 +320,7 @@ Jeder Schritt ist eigenständig, hinterlässt einen grünen Baum und ist einzeln
 | ~~**1**~~ | ~~Legacy-Harness in ctest~~ → stattdessen **Legacy komplett entfernt**, ✅ erledigt (§6) | — | — |
 | ~~**2**~~ | ~~`tests/CMakeLists.txt` + `k1520_add_test()`~~ ✅ erledigt (§6) | — | — |
 | ~~**3**~~ | ~~Verzeichnisumzug `tests/cpp/*`~~ ✅ erledigt (§6) | — | — |
-| **4** | `tests/support/`-Bibliothek anlegen; Boot-/Screen-/Keyboard-/TempDisk-Duplikate aus `test_boot_integration.cpp` (937 Z.), `test_scpx_init.cpp`, `test_hardy.cpp` dorthin ziehen | mittel — Verhalten muss identisch bleiben | 1 Tag |
+| ~~**4**~~ | ~~`tests/support/`-Bibliothek~~ ✅ erledigt (§6) | — | — |
 | **5** | CLI-Tests datengetrieben: `cases/*.cli` + `run_case.sh`, Golden-Ausgaben in Dateien (**behebt B3, B4**) | mittel | 1 Tag |
 | **6a** | ~~Fixtures unter `tests/fixtures/disks/` konsolidieren~~ ✅ erledigt (§6) | — | — |
 | **6b** | Rest: `.com`-Dateien entdoppeln (`boot_disk/` + `tools/cpa_tools/` + `docs/` halten dieselben `format.com`/`cpabcgen.com`/`hardy.com`), `leer_cpa780.hfe` zur Testzeit erzeugen statt committen | gering | 2 h |
@@ -330,8 +331,8 @@ Jeder Schritt ist eigenständig, hinterlässt einen grünen Baum und ist einzeln
 | **11** | Kür: `DISABLED_TypeCommandAtCcpEchoesAndProcesses` reaktivieren, Suiten-Namensschema vereinheitlichen, Tippfehler `Sekorgroessen` beheben | gering | 3 h |
 | **12** | Befunde §7 (5×1024-Generierung erzeugt defekte Disk) und §8 (IEO ignoriert IUS) bewerten und entweder beheben oder als bewusste Grenze festschreiben | offen | unbekannt |
 
-**Stand 2026-08-07:** erledigt sind 0, 1, 2, 3, 6a, 7, 10.  Offen: **4, 5, 6b, 8, 9, 11, 12**.
-Empfohlene Reihenfolge für den Rest: **4 → 5 → 9**, danach 6b/8/11 als Aufräumarbeiten und 12
+**Stand 2026-08-07:** erledigt sind 0, 1, 2, 3, 4, 6a, 7, 10.  Offen: **5, 6b, 8, 9, 11, 12**.
+Empfohlene Reihenfolge für den Rest: **5 → 9**, danach 6b/8/11 als Aufräumarbeiten und 12
 unabhängig davon.
 
 ---
@@ -547,6 +548,44 @@ in `tests/` aufgerufen, meldet ctest „No tests were found!!!".
 `tools/dev.sh test` **672/672 grün**, `tools/dev.sh test-format` **8/8 grün** — identische
 Fallzahlen wie vor dem Umzug. Label-Zählung: unit 530, debugtools 67, integration 50, cli 19,
 system 8, python 7, fast 673, slow 8.
+
+### 2026-08-07 — gemeinsame Test-Infrastruktur `tests/support/` (Schritt 4)
+
+Die Helfer „warte auf Text im Bildschirm", „tippe ein Kommando", „lass N Takte laufen",
+„kopiere die Diskette nach /tmp" existierten in `test_boot_integration.cpp`,
+`test_scpx_init.cpp` und `test_hardy.cpp` **je einmal eigenständig** — identischer Code,
+dreifach gepflegt.  Jetzt gibt es die Bibliothek `k1520_testsupport` (Namensraum `k1520test`):
+
+| Datei | Inhalt |
+|-------|--------|
+| `screen.{h,cpp}` | `vramText()` (Text-VRAM 0xF800–0xFFFF als ASCII), `vramLines()` (24×80 mit Umbrüchen für Fehlermeldungen) |
+| `machine_run.{h,cpp}` | `runCycles()`, `runSmallUntil()`, `runUntilVramContains()`, `runUntilPC()` — mit den Batchgrößen als **dokumentiertem Vertrag** (5 000 Takte bei Tastaturbezug, sonst 100 000) |
+| `keyboard.{h,cpp}` | `typeKey()`, `typeString()`, `typeCtrl()`, `pressKeyUntil()`, `QK_RETURN` samt der Wartezeiten (9600-Baud-Strecke des K7637) |
+| `fixtures.{h,cpp}` | `diskPath()`, `readFileBytes()` und **`TempDisk`** — RAII-Kopie einer Fixture bzw. freier Zielpfad |
+
+`TempDisk` ersetzt das bisher **sechsfach** kopierte `temp_directory_path()/copy_file/remove`-
+Ritual.  Nebenwirkung, die vorher fehlte: der Destruktor räumt auch dann auf, wenn ein Test
+per `ASSERT_*` abbricht — die manuellen `remove`-Zeilen am Testende wurden in dem Fall nie
+erreicht und ließen Disketten-Kopien in `/tmp` liegen.  Zwei weitere lokale Pfad-Helfer
+(`tmpImg()` in `test_boot_integration.cpp`, `tmpPath()` in `test_a5120_disk_api.cpp`) sind
+darin aufgegangen.
+
+Bewusst **nicht** in die Bibliothek gewandert: `runUntilDmaComplete()` samt der Adressen
+`[0x03F8]`/`0x0400` — das ist Wissen über den Bootvorgang, nicht allgemeine Infrastruktur, und
+bleibt bei dem Test, der es prüft.
+
+Die Bibliothek wird **nicht** automatisch an jeden Test gelinkt: die Unit-Tests kommen ohne
+`A5120Machine` aus und sollen die Maschinenbibliothek nicht mitziehen.  Integration und System
+listen sie in ihrem `LIBS`.
+
+Zeilenbilanz: die drei Testdateien 1432 → 1260 Zeilen; die Bibliothek 335 Zeilen (gut die
+Hälfte davon Erläuterung, u. a. warum die Batchgrößen so sind).  Netto also kaum weniger Code —
+aber statt drei Fassungen gibt es eine, und die Begründungen stehen an einer Stelle.
+
+**Verifikation:** `tools/dev.sh test` 672/672 grün, `tools/dev.sh test-format` 8/8 grün,
+Laufzeiten unverändert.  Gegenprobe per Suche: keine lokale Definition von `vramText`,
+`runSmallUntil`, `runCycles`, `typeKey`, `typeString`, `typeCtrl`, `diskPath`, `pressKeyUntil`,
+`runUntilPC` oder `runUntilVramContains` mehr in `tests/`.
 
 ---
 

@@ -24,6 +24,8 @@
 #include <gtest/gtest.h>
 #include "core/machines/a5120/a5120.h"
 
+#include "tests/support/fixtures.h"
+
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -40,10 +42,9 @@ A5120Machine::Config withDrives(const char* d0, const char* d1 = "K5601",
     return cfg;
 }
 
-std::string tmpPath(const std::string& name) {
-    const auto p = std::filesystem::temp_directory_path() / ("k1520_diskapi_" + name);
-    std::filesystem::remove(p);
-    return p.string();
+/// Freier Temp-Pfad für ein Testziel; die Datei räumt sich am Testende weg.
+k1520test::TempDisk tmpPath(const std::string& name) {
+    return k1520test::TempDisk::empty("diskapi_" + name);
 }
 
 }  // namespace
@@ -120,7 +121,8 @@ TEST(A5120DiskApi, CompatibleFormats_StandardZuerstUndNurPassende) {
  */
 TEST(A5120DiskApi, CreateDisk_LeererNameNutztStandardformat) {
     A5120Machine m(withDrives("K5600.10"));
-    const std::string path = tmpPath("default.img");
+    k1520test::TempDisk path_disk = tmpPath("default.img");
+    const std::string& path = path_disk.path();
 
     ASSERT_TRUE(m.createDisk(0, path, "", /*wp=*/false)) << m.lastError();
     EXPECT_TRUE(std::filesystem::exists(path));
@@ -145,7 +147,8 @@ TEST(A5120DiskApi, CreateDisk_LeererNameNutztStandardformat) {
  */
 TEST(A5120DiskApi, CreateDisk_LehntInkompatiblesFormatAb) {
     A5120Machine m(withDrives("K5600.20"));           // 80 Spuren, EINSEITIG
-    const std::string path = tmpPath("incompatible.img");
+    k1520test::TempDisk path_disk = tmpPath("incompatible.img");
+    const std::string& path = path_disk.path();
 
     EXPECT_FALSE(m.createDisk(0, path, "cpa800", /*wp=*/false));
     EXPECT_NE(m.lastError().find("cpa800"), std::string::npos)     << m.lastError();
@@ -160,7 +163,8 @@ TEST(A5120DiskApi, CreateDisk_LehntInkompatiblesFormatAb) {
  */
 TEST(A5120DiskApi, CreateDisk_LehntUnbekanntesFormatAb) {
     A5120Machine m(withDrives("K5601"));
-    const std::string path = tmpPath("unknown.img");
+    k1520test::TempDisk path_disk = tmpPath("unknown.img");
+    const std::string& path = path_disk.path();
 
     EXPECT_FALSE(m.createDisk(0, path, "gibt_es_nicht", /*wp=*/false));
     EXPECT_NE(m.lastError().find("gibt_es_nicht"), std::string::npos) << m.lastError();
@@ -173,7 +177,8 @@ TEST(A5120DiskApi, CreateDisk_LehntUnbekanntesFormatAb) {
  */
 TEST(A5120DiskApi, CreateDisk_AchtZollFmLaufwerkErzeugtFmMedium) {
     A5120Machine m(withDrives("MF3200"));
-    const std::string path = tmpPath("fm.hfe");
+    k1520test::TempDisk path_disk = tmpPath("fm.hfe");
+    const std::string& path = path_disk.path();
 
     ASSERT_TRUE(m.createDisk(0, path, "", /*wp=*/false)) << m.lastError();
     auto img = DiskImage::open(path, std::nullopt, /*wp=*/true);
@@ -207,7 +212,8 @@ TEST(A5120DiskApi, CreateDisk_AchtZollFmLaufwerkErzeugtFmMedium) {
  */
 TEST(A5120DiskApi, MountDisk_ErzwingtLaufwerksKompatibilitaetBewusstNicht) {
     A5120Machine m(withDrives("MF3200"));
-    const std::string path = tmpPath("combo.hfe");
+    k1520test::TempDisk path_disk = tmpPath("combo.hfe");
+    const std::string& path = path_disk.path();
 
     // Gültige 8″-FM-Diskette im Standardformat des Slots anlegen …
     ASSERT_TRUE(m.createDisk(0, path, "", /*wp=*/false)) << m.lastError();
@@ -232,7 +238,8 @@ TEST(A5120DiskApi, MountDisk_ErzwingtLaufwerksKompatibilitaetBewusstNicht) {
  */
 TEST(A5120DiskApi, MountDisk_LehntUnbekanntesFormatWeiterhinAb) {
     A5120Machine m(withDrives("K5601"));
-    const std::string path = tmpPath("known.img");
+    k1520test::TempDisk path_disk = tmpPath("known.img");
+    const std::string& path = path_disk.path();
     ASSERT_TRUE(m.createDisk(0, path, "", /*wp=*/false)) << m.lastError();
     ASSERT_TRUE(m.unmountDisk(0));
 
@@ -255,7 +262,8 @@ TEST(A5120DiskApi, MountDisk_LehntUnbekanntesFormatWeiterhinAb) {
  * @par Kriterium  Konstruktor wirft std::runtime_error; die Meldung nennt Datei und Zeile.
  */
 TEST(A5120DiskApi, KaputterKatalog_BrichtStartMitKlarerMeldungAb) {
-    const std::string bad = tmpPath("broken.yaml");
+    k1520test::TempDisk bad_disk = tmpPath("broken.yaml");
+    const std::string& bad = bad_disk.path();
     { std::ofstream f(bad); f << "version: 1\nformats:\n\t- name: mit_tab\n"; }
 
     const char* prev = std::getenv("K1520_FORMATS");

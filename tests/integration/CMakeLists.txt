@@ -3,7 +3,7 @@
 # schnellen Runde.  LOG_LEVEL=2 (WARN) hält den Millionen-Takte-Lauf lesbar.
 
 set(_lbl "integration;fast")
-set(_libs k1520_a5120 k1520_floppy k1520_logger)
+set(_libs k1520_a5120 k1520_floppy k1520_logger k1520_testsupport)
 
 k1520_add_test(boot_integration SRC test_boot_integration.cpp LIBS ${_libs}
                                 LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 60)

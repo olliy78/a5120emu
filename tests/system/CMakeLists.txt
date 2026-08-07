@@ -10,7 +10,7 @@
 # tools/dev.sh (test / test-all / test-format) und die Dokumentation verweisen.
 # `tools/dev.sh test` schließt sie via `-LE format_integration` aus.
 
-set(_libs k1520_a5120 k1520_floppy k1520_logger)
+set(_libs k1520_a5120 k1520_floppy k1520_logger k1520_testsupport)
 set(_lbl  "system;slow;format_integration")
 
 # Langsamer SCPX-INIT.COM-Formatier-Guard (~35 s, 160 Spuren): INIT formatiert B:,

@@ -27,70 +27,22 @@
 #include <gtest/gtest.h>
 #include "core/machines/a5120/a5120.h"
 
+#include "tests/support/fixtures.h"
+#include "tests/support/keyboard.h"
+#include "tests/support/machine_run.h"
+#include "tests/support/screen.h"
+
 #include <cstdint>
 #include <string>
 
-#ifndef A5120_TEST_DISK_DIR
-#define A5120_TEST_DISK_DIR "."
-#endif
-
-namespace {
-
-std::string diskPath(const char* name) {
-    return std::string(A5120_TEST_DISK_DIR) + "/" + name;
-}
-
-// 2 KB Text-VRAM (0xF800–0xFFFF) als druckbares ASCII (nicht-druckbar → ' ').
-std::string vramText(A5120Machine& m) {
-    std::string s;
-    s.reserve(0x800);
-    for (int a = 0xF800; a <= 0xFFFF; ++a) {
-        uint8_t c = m.memReadDebug(static_cast<uint16_t>(a));
-        s.push_back((c >= 0x20 && c < 0x7F) ? static_cast<char>(c) : ' ');
-    }
-    return s;
-}
-
-// In kleinen Batches laufen (Tastatur-/Timer-ISR-Timing) bis @p needle im VRAM steht.
-bool runSmallUntil(A5120Machine& m, const std::string& needle, long long max_cycles) {
-    for (long long done = 0; done < max_cycles; done += 5000) {
-        m.run(5000);
-        if (vramText(m).find(needle) != std::string::npos) return true;
-    }
-    return false;
-}
-
-void runCycles(A5120Machine& m, long long cycles) {
-    for (long long done = 0; done < cycles; done += 5000) m.run(5000);
-}
-
-constexpr uint32_t QK_RETURN = 0x01000004;  // == K7637::QK_RETURN
-
-// Eine Taste drücken+loslassen mit BIOS-Scan-Zeit (K7637 modelliert 9600 Baud).
-void typeKey(A5120Machine& m, uint32_t kc) {
-    m.keyPress(kc, false, false);
-    runCycles(m, 1'000'000);
-    m.keyRelease(kc);
-    runCycles(m, 300'000);
-}
-void typeString(A5120Machine& m, const std::string& s) {
-    for (char c : s) typeKey(m, static_cast<uint8_t>(c));
-}
-
-// HARDYs Dialoge lesen die Tastatur per DIREKT-Poll (kein BDOS-Puffer): eine Taste
-// geht verloren, wenn HARDY im Moment des Anschlags nicht gerade pollt. Daher die
-// Taste wiederholt drücken, bis der Folge-Screen (@p needle) erscheint. Da EIN
-// akzeptierter Anschlag genau EINEN Screen weiterschaltet, ist das Nachdrücken
-// sicher, solange auf den unmittelbar nächsten Screen gewartet wird.
-bool pressKeyUntil(A5120Machine& m, uint32_t kc, const std::string& needle, int attempts) {
-    for (int i = 0; i < attempts; ++i) {
-        typeKey(m, kc);
-        if (runSmallUntil(m, needle, 8'000'000)) return true;
-    }
-    return false;
-}
-
-}  // namespace
+using k1520test::diskPath;
+using k1520test::pressKeyUntil;
+using k1520test::QK_RETURN;
+using k1520test::runCycles;
+using k1520test::runSmallUntil;
+using k1520test::typeKey;
+using k1520test::typeString;
+using k1520test::vramText;
 
 /**
  * @test Hardy/RechnerTestRunsCleanWithoutFreezing

@@ -60,6 +60,13 @@ fixture path. Levels = directories = ctest labels: `unit/{primitives,bus,cards,p
 crosswise `fast` / `slow`. The slow ones additionally keep the historical label
 `format_integration` that `dev.sh` filters on.
 
+Integration/system tests share `tests/support/` (library `k1520_testsupport`, namespace
+`k1520test`): `vramText()`/`vramLines()`, `runCycles()`/`runSmallUntil()`/`runUntilVramContains()`/
+`runUntilPC()`, `typeKey()`/`typeString()`/`typeCtrl()`/`pressKeyUntil()`, and `TempDisk` (RAII
+copy of a fixture — never mount a committed disk directly, the emulator opens it r/w). The batch
+sizes are part of the contract: 5 000 cycles whenever the keyboard is involved (the K7637 models a
+9600-baud link and the BIOS fetches via timer ISR), 100 000 otherwise.
+
 > **Trap when adding a test:** `gtest_discover_tests(... PROPERTIES LABELS "a;b")` silently keeps
 > only the FIRST label — the list is flattened while being passed through. `k1520_add_test()`
 > escapes the semicolons for you; do not bypass it.

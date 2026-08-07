@@ -4,6 +4,7 @@
 #
 # Gliederung nach Testebene, ein Unterverzeichnis je Ebene:
 #
+#   support/      gemeinsame Infrastruktur (Bibliothek, keine Tests)
 #   unit/         isolierte Klasse, keine Diskette, kein Boot   (µs–ms)
 #     primitives/   Z80, PIO, CTC, SIO + RETI-Daisy-Chain
 #     bus/          K1520Bus
@@ -41,6 +42,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/K1520AddTest.cmake)
 # Einziger Fundort der Testdisketten (siehe tests/fixtures/README.md).
 # k1520_add_test() reicht ihn jedem Test als Compile-Definition herein.
 set(K1520_FIXTURE_DISKS "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/disks")
+
+# Gemeinsame Test-Infrastruktur zuerst — die anderen Ebenen linken sie.
+add_subdirectory(support)
 
 add_subdirectory(unit)
 add_subdirectory(debugtools)

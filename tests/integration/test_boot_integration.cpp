@@ -19,15 +19,26 @@
 #include "core/cards/k7024/chargen_zg1.h"   // CHARGEN_ZG1_LATIN — Pixelzeilen 0–7
 #include "core/cards/k7024/chargen_zg2.h"   // CHARGEN_ZG2_LATIN — Pixelzeilen 8–11
 
+#include "tests/support/fixtures.h"
+#include "tests/support/keyboard.h"
+#include "tests/support/machine_run.h"
+#include "tests/support/screen.h"
+
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <string>
 #include <vector>
 
-#ifndef A5120_TEST_DISK_DIR
-#define A5120_TEST_DISK_DIR "."
-#endif
+using k1520test::diskPath;
+using k1520test::QK_RETURN;
+using k1520test::runCycles;
+using k1520test::runSmallUntil;
+using k1520test::runUntilPC;
+using k1520test::runUntilVramContains;
+using k1520test::TempDisk;
+using k1520test::typeKey;
+using k1520test::typeString;
+using k1520test::vramText;
 
 namespace {
 
@@ -38,23 +49,14 @@ constexpr int      kBootSectors  = 4;       // ROM [0x07F2]=4 → loads sectors 
 constexpr int      kSectorBytes  = 128;     // cpa780 boot track: 128-byte sectors
 constexpr int      kBootBytes    = kBootSectors * kSectorBytes;  // 512
 
-std::string diskPath(const char* name) {
-    return std::string(A5120_TEST_DISK_DIR) + "/" + name;
-}
-
-std::vector<uint8_t> readFile(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
-}
-
 /**
  * @brief Run the machine until ZVE2 signals DMA completion ([0x03F8]==3).
  *
  * Steps in small batches and stops as soon as the done-flag is set, so the
  * loaded boot code (which starts at 0x0437 right after) cannot overwrite the
- * just-loaded sectors before we inspect them.
- *
- * @return true if completion was observed within the cycle budget.
+ * just-loaded sectors before we inspect them.  Bleibt hier statt in
+ * tests/support/: die Adressen sind Wissen ÜBER den Bootvorgang, nicht
+ * allgemeine Testinfrastruktur.
  */
 bool runUntilDmaComplete(A5120Machine& m, int max_cycles = 3'000'000) {
     constexpr int batch = 2000;
@@ -76,74 +78,6 @@ bool runUntilDmaComplete(A5120Machine& m, int max_cycles = 3'000'000) {
 //            from the 1024B data area to 0x3780 and JP 0x37A0 into the OS.
 // Each test below pins one stage's milestone so a regression localises to a stage.
 
-// Run until ZVE1's PC equals `target` (with the boot ROM unmapped, i.e. executing
-// loaded code), using the per-instruction trace callback so transient one-shot
-// jump targets (0x0437, 0x1800, 0x37A0) are reliably caught — not just sampled.
-bool runUntilPC(A5120Machine& m, uint16_t target, int max_cycles) {
-    bool reached = false;
-    m.setCpuTraceCallback([&](const Z80& z) {
-        if (z.PC == target && !m.isRomEnabled()) reached = true;
-    });
-    constexpr int batch = 100'000;
-    for (int done = 0; done < max_cycles && !reached; done += batch)
-        m.run(batch);
-    m.setCpuTraceCallback({});   // drop the lambda (it captures locals)
-    return reached;
-}
-
-// Read the 2 KB text VRAM (0xF800–0xFFFF) as printable ASCII (non-printables → ' ').
-std::string vramText(A5120Machine& m) {
-    std::string s;
-    s.reserve(0x800);
-    for (int a = 0xF800; a <= 0xFFFF; ++a) {
-        uint8_t c = m.memReadDebug(static_cast<uint16_t>(a));
-        s.push_back((c >= 0x20 && c < 0x7F) ? static_cast<char>(c) : ' ');
-    }
-    return s;
-}
-
-// Run up to `max_cycles`, returning true as soon as `needle` appears in VRAM.
-bool runUntilVramContains(A5120Machine& m, const std::string& needle, int max_cycles) {
-    constexpr int batch = 100'000;
-    for (int done = 0; done < max_cycles; done += batch) {
-        m.run(batch);
-        if (vramText(m).find(needle) != std::string::npos) return true;
-    }
-    return false;
-}
-
-// Run a fixed number of cycles in small batches (so queued keys are drained).
-void runCycles(A5120Machine& m, long long cycles) {
-    for (long long done = 0; done < cycles; done += 5000) m.run(5000);
-}
-
-// Like runUntilVramContains but in small (5000-cycle) batches — the keyboard
-// path is timing-sensitive (timer-ISR-driven scan + 9600-baud serial), and the
-// 100k-cycle batches drift the CTC timer/clock enough to disturb it.  Mirrors
-// the cadence kbd_test uses.
-bool runSmallUntil(A5120Machine& m, const std::string& needle, long long max_cycles) {
-    for (long long done = 0; done < max_cycles; done += 5000) {
-        m.run(5000);
-        if (vramText(m).find(needle) != std::string::npos) return true;
-    }
-    return false;
-}
-
-// Qt keycode for Return (matches K7637::QK_RETURN).
-constexpr uint32_t QK_RETURN = 0x01000004;
-
-// Press + release one key, giving the BIOS time to scan it (the K7637 models a
-// 9600-baud link, so a key takes ~one byte-time to arrive at the SIO).
-void typeKey(A5120Machine& m, uint32_t kc) {
-    m.keyPress(kc, false, false);
-    runCycles(m, 1'000'000);
-    m.keyRelease(kc);
-    runCycles(m, 300'000);
-}
-void typeString(A5120Machine& m, const std::string& s) {
-    for (char c : s) typeKey(m, static_cast<uint8_t>(c));
-}
-
 }  // namespace
 
 /**
@@ -160,7 +94,8 @@ TEST(BootIntegration, LoadsBootSectorsWithSYLSignature) {
     const std::string img = diskPath("cpa_cpa780_k5601_clock.img");
     const std::string ref = diskPath("bootsec_cpa780.bin");
 
-    std::vector<uint8_t> expected = readFile(ref);
+    const std::string raw = k1520test::readFileBytes(ref);
+    const std::vector<uint8_t> expected(raw.begin(), raw.end());
     ASSERT_GE(expected.size(), static_cast<size_t>(kBootBytes))
         << "reference boot image not found or too small: " << ref;
 
@@ -780,11 +715,12 @@ TEST(ScpxIntegration, BootThenDirStatPipLoadComFiles) {
 // Beide Laufwerke werden aus BESCHREIBBAREN TEMP-KOPIEN gemountet, damit die
 // committete Fixture disks/scpx17_cpa780_k5601.hfe garantiert unangetastet bleibt.
 TEST(ScpxIntegration, EraDeletesFileOnDriveBWithoutBadSector) {
-    namespace fs = std::filesystem;
-    const std::string aPath = (fs::temp_directory_path() / "scpx_write_guard_A.hfe").string();
-    const std::string bPath = (fs::temp_directory_path() / "scpx_write_guard_B.hfe").string();
-    fs::copy_file(diskPath("scpx17_cpa780_k5601.hfe"), aPath, fs::copy_options::overwrite_existing);
-    fs::copy_file(diskPath("scpx17_cpa780_k5601.hfe"), bPath, fs::copy_options::overwrite_existing);
+    // BEIDE Laufwerke aus beschreibbaren Kopien — die committete Fixture bleibt
+    // unangetastet (der Emulator mountet schreibend).
+    TempDisk a("scpx17_cpa780_k5601.hfe", "scpx_write_guard_A.hfe");
+    TempDisk b("scpx17_cpa780_k5601.hfe", "scpx_write_guard_B.hfe");
+    const std::string& aPath = a.path();
+    const std::string& bPath = b.path();
 
     A5120Machine machine;
     ASSERT_TRUE(machine.mountDisk(0, aPath, "cpa780", /*wp=*/false)) << machine.lastError();
@@ -817,10 +753,7 @@ TEST(ScpxIntegration, EraDeletesFileOnDriveBWithoutBadSector) {
         << "STAT.COM nach ERA nicht gelöscht (kein 'NO FILE'):\n" << vramText(machine);
 
     machine.unmountDisk(0);
-    machine.unmountDisk(1);
-    std::error_code ec;
-    fs::remove(aPath, ec);
-    fs::remove(bPath, ec);
+    machine.unmountDisk(1);   // TempDisk räumt die Dateien beim Verlassen weg
 }
 
 // ─── SCPX Fremdformat-Read friert NICHT ein (held-bus No-Progress-Watchdog) ──
@@ -842,9 +775,8 @@ TEST(ScpxIntegration, EraDeletesFileOnDriveBWithoutBadSector) {
 // UND das System reagiert danach noch (DIR A: listet weiter).  Ohne den Watchdog
 // erschiene die Meldung nie → runSmallUntil liefe in sein Limit → Test rot.
 TEST(ScpxIntegration, WrongFormatReadTerminatesInsteadOfFreezing) {
-    namespace fs = std::filesystem;
-    const std::string bPath =
-        (fs::temp_directory_path() / "scpx_wrongfmt_guard_B.hfe").string();
+    TempDisk b = TempDisk::empty("scpx_wrongfmt_guard_B.hfe");
+    const std::string& bPath = b.path();
 
     A5120Machine machine;
     ASSERT_TRUE(machine.mountDisk(0, diskPath("scpx17_cpa780_k5601.hfe"), "cpa780", /*wp=*/false))
@@ -878,9 +810,7 @@ TEST(ScpxIntegration, WrongFormatReadTerminatesInsteadOfFreezing) {
         << ") — System nicht wieder bedienbar";
 
     machine.unmountDisk(0);
-    machine.unmountDisk(1);
-    std::error_code ec;
-    fs::remove(bPath, ec);
+    machine.unmountDisk(1);   // TempDisk räumt die Datei beim Verlassen weg
 }
 
 // ─── createDisk: laufwerkstyp-spezifisches Standardformat ────────────────────
@@ -888,50 +818,42 @@ TEST(ScpxIntegration, WrongFormatReadTerminatesInsteadOfFreezing) {
 // Ein leerer Formatname wählt je Slot-DriveProfile das passende Default-Format;
 // die erzeugte, GÜLTIG FORMATIERTE Diskette wird gemountet.  Wir prüfen die
 // resultierende .img-Größe (= Geometrie) je Laufwerkstyp.
-namespace {
-std::string tmpImg(const char* tag) {
-    return (std::filesystem::temp_directory_path()
-            / (std::string("k1520_create_default_") + tag + ".img")).string();
-}
-}  // namespace
+// Zielpfade kommen als TempDisk::empty() — die Datei räumt sich am Testende
+// selbst weg, auch wenn eine Prüfung vorher abbricht.
 
 TEST(CreateDiskDefault, K5601_DefaultIstCpa800) {
-    const std::string path = tmpImg("k5601");
-    std::filesystem::remove(path);
+    TempDisk disk = TempDisk::empty("create_default_k5601.img");
+    const std::string& path = disk.path();
     A5120Machine machine;                       // Default: 4× K5601
     ASSERT_TRUE(machine.createDisk(0, path, /*format=*/"", /*wp=*/false))
         << machine.lastError();
     EXPECT_TRUE(machine.isDiskActive(0));
     EXPECT_EQ(std::filesystem::file_size(path), 80u * 2 * 5 * 1024);  // cpa800 = 800K
-    std::filesystem::remove(path);
 }
 
 TEST(CreateDiskDefault, K560010_ss40_200K) {
-    const std::string path = tmpImg("k560010");
-    std::filesystem::remove(path);
+    TempDisk disk = TempDisk::empty("create_default_k560010.img");
+    const std::string& path = disk.path();
     A5120Machine::Config cfg;
     cfg.drive_profiles = {"K5600.10", "K5601", "K5601", "K5601"};
     A5120Machine machine(cfg);
     ASSERT_TRUE(machine.createDisk(0, path, "", false)) << machine.lastError();
     EXPECT_EQ(std::filesystem::file_size(path), 40u * 5 * 1024);      // 200K
-    std::filesystem::remove(path);
 }
 
 TEST(CreateDiskDefault, MF3200_fm_308K) {
-    const std::string path = tmpImg("mf3200");
-    std::filesystem::remove(path);
+    TempDisk disk = TempDisk::empty("create_default_mf3200.img");
+    const std::string& path = disk.path();
     A5120Machine::Config cfg;
     cfg.drive_profiles = {"MF3200", "K5601", "K5601", "K5601"};
     A5120Machine machine(cfg);
     ASSERT_TRUE(machine.createDisk(0, path, "", false)) << machine.lastError();
     EXPECT_EQ(std::filesystem::file_size(path), 77u * 4 * 1024);      // 308K
-    std::filesystem::remove(path);
 }
 
 TEST(CreateDiskDefault, UnbekanntesFormat_gibtFalse) {
-    const std::string path = tmpImg("bad");
-    std::filesystem::remove(path);
+    TempDisk disk = TempDisk::empty("create_default_bad.img");
+    const std::string& path = disk.path();
     A5120Machine machine;
     EXPECT_FALSE(machine.createDisk(0, path, "gibt_es_nicht", false));
-    std::filesystem::remove(path);
 }
