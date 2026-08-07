@@ -105,6 +105,18 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
 > `UdosFormat.FormatsBrandNewBlankDiskette`, `UdosFormat.BuildsBootableSystemDiskAndBootsFromIt`
 > (blank disk → `.dmk` → format both sides → boot from it), `BootIntegrationCpa02.DmkBootsIntoRunningCpaOs`.
 >
+> **UDOS-Laufwerkstypen (`SET DISKCON`) — Matrix in `doc/udos_diskettenformat.md` §12.3.**
+> Bootfähig herstellbar sind `41` (K5600.20), `31` (K5600.10, 40 Spuren) und `41` auf dem
+> 8″-MF6400 — Guards `Einseitig/UdosLaufwerkstypen.BautBootfaehigeSystemdiskette/*`
+> (`test-format`, je ~16 s).  **Die vier Fehlschläge sind GASTVERHALTEN, nicht suchen:**
+> Sektorlänge ≠ 128 (`x2`/`x4`) — FORMAT.COM benutzt nur das Typ-Nibble (`4052: AND F0H`)
+> und formatiert fest 26×128 (`5F85: LD B,80H`), während nur der Nukleus-Treiber
+> (`0794: AND 0FH`) die Sektorgröße in die Lese-Koroutine patcht (`0AAE`/`0AB7`);
+> 8″-Typen `11`/`21` — UDOS schreibt das Datenfeld ohne den 4-Byte-Sektorkontrollblock
+> (`buf=148, tail=2` statt `152/6`); Typ `61` — FORMAT schreibt einfachschrittig, der
+> Treiber liest schrittverdoppelt.  Kontrollkreuz: gleiche 5,25″-HW + `21` scheitert,
+> 8″-HW + `41` bootet ⇒ es hängt am Typ-Nibble, nicht am Laufwerk.
+>
 > **Drive select (8212, port 18H): the HIGH nibble is /SE, the low nibble /LCK (motor)** —
 > both active-low, `drive_selected_[d] = !(data>>(4+d) & 1)`.  Not readable off the usual
 > select byte (`LD A,77H / RLCA (drv+1)×` → `0xEE`/`0xDD`/… drops one bit of *each* nibble);

@@ -561,3 +561,183 @@ TEST(UdosFormat, FormatsDisketteInsertedAtRuntime) {
     fs::remove(aPath, ec);
     fs::remove(bPath, ec);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fremde Laufwerkstypen: `SET DISKCON` + FORMAT + MOVE + Kaltstart
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+/**
+ * @brief Ein zu pruefender UDOS-Laufwerkstyp (Sektorlaenge immer 128 = Ziffer 1).
+ *
+ * `diskcon` konfiguriert NUR Laufwerk 1 um — Laufwerk 0 bleibt `41`, dort liegt die
+ * Bootdiskette.  `profil` ist das dazu passende physische Laufwerk am K5122-Slot 1
+ * (@ref builtinDriveProfile); die Leerdiskette entsteht in dessen Geometrie.
+ */
+struct UdosLaufwerksTyp {
+    const char* testname;       ///< Name im ctest-Eintrag
+    const char* profil;         ///< DriveProfile fuer Slot 1 bzw. beim Kaltstart Slot 0
+    const char* diskcon;        ///< Argument von `SET DISKCON=`
+    uint8_t     cyls;           ///< erwartete Geometrie der Leerdiskette
+    const char* frei;           ///< STATUS-Zeile nach dem Formatieren
+    bool        passt_komplett; ///< reicht der Platz fuer ALLE Dateien der Quelle?
+};
+
+std::ostream& operator<<(std::ostream& os, const UdosLaufwerksTyp& t) {
+    return os << t.testname;
+}
+
+class UdosLaufwerkstypen : public ::testing::TestWithParam<UdosLaufwerksTyp> {};
+
+// `SET DISKCON=…` absetzen und die Ausfuehrung abwarten.
+void setzeDiskcon(A5120Machine& m, const std::string& wert) {
+    typeString(m, "set diskcon=" + wert);
+    typeKey(m, QK_RETURN);
+    runCycles(m, 30'000'000);
+}
+
+}  // namespace
+
+/**
+ * @test UdosLaufwerkstypen/BautBootfaehigeSystemdiskette
+ * @brief Fuer jeden einseitigen UDOS-Laufwerkstyp: Leerdiskette → `SET DISKCON` →
+ *        `FORMAT SYSTEMDISK? Y` → `MOVE` → **Kaltstart von der erzeugten Diskette**.
+ *
+ * Das UDOS-Gegenstueck zu `bootdisk_k5600_20_fmt1` (CP/A) und die Breitenpruefung zu
+ * `BuildsBootableSystemDiskAndBootsFromIt` (das nur das Standardlaufwerk K5601 abdeckt).
+ * Geprueft werden die drei Kombinationen, die nachweislich tragen:
+ *
+ * | `SET DISKCON` | UDOS-Typ | Laufwerk | Spuren | frei nach FORMAT |
+ * |---|---|---|---|---|
+ * | `41` | 5,25″ 80 Spuren SS | K5600.20 | 77 | 1947 = 77·26 − 55 |
+ * | `31` | 5,25″ 40 Spuren    | K5600.10 | 40 |  985 = 40·26 − 55 |
+ * | `41` | 5,25″ 80 Spuren SS | MF6400 (8″) | 77 | 1947 |
+ *
+ * Die dritte Zeile ist Absicht: sie faehrt den **8″-Laufwerkspfad** (77 Zylinder,
+ * 360 min⁻¹) mit einem Typ-Nibble, das UDOS beherrscht.  Die 8″-eigenen Typen `11`/`21`
+ * sind hier bewusst NICHT dabei — UDOS 4.3 schreibt fuer sie das Datenfeld ohne den
+ * 4-Byte-Sektorkontrollblock, sodass die Verkettung auf der Zieldiskette fehlt
+ * (`POINTER CHECK ERROR CA`).  Das ist Gastverhalten, kein Emulatorfehler: dieselbe
+ * 5,25″-Hardware scheitert mit `SET DISKCON=21` genauso, waehrend das 8″-Laufwerk mit
+ * `41` — also hier — sauber durchlaeuft.
+ *
+ * Bei 40 Spuren passen 985 freie Sektoren nicht fuer alle 1152 der Quelle; `MOVE` endet
+ * dort regulaer mit `ERROR D3` (Diskette voll).  Bootfaehig ist die Diskette trotzdem,
+ * und genau das prueft `passt_komplett == false`.
+ */
+TEST_P(UdosLaufwerkstypen, BautBootfaehigeSystemdiskette) {
+    namespace fs = std::filesystem;
+    const UdosLaufwerksTyp& typ = GetParam();
+
+    const std::string aPath =
+        (fs::temp_directory_path() / (std::string("udos_typ_") + typ.testname + "_A.hfe")).string();
+    const std::string bPath =
+        (fs::temp_directory_path() / (std::string("udos_typ_") + typ.testname + "_B.hfe")).string();
+    std::error_code ec;
+    legeSystemdiskette(aPath);
+    fs::remove(bPath, ec);
+
+    k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
+
+    {   // ── Formatieren und befuellen ───────────────────────────────────────
+        A5120Machine::Config cfg;
+        cfg.drive_profiles = {"K5601", typ.profil, "K5601", "K5601"};
+        A5120Machine machine(cfg);
+        ASSERT_TRUE(machine.mountDisk(0, aPath, "cpa780", /*wp=*/false)) << machine.lastError();
+        ASSERT_TRUE(machine.createDisk(1, bPath, /*format_name=*/"", /*wp=*/false))
+            << machine.lastError();
+        // Die Leerdiskette hat die Geometrie des LAUFWERKS, nicht die eines Katalogformats.
+        EXPECT_EQ(machine.diskGeometry(1).num_cyls,  typ.cyls);
+        EXPECT_EQ(machine.diskGeometry(1).num_heads, 1u)
+            << "alle hier geprueften Laufwerke sind einseitig";
+        EXPECT_FALSE(machine.isDiskFormatted(1));
+
+        machine.powerOn();
+        booteUdosMitLeerdiskette(machine);
+
+        setzeDiskcon(machine, typ.diskcon);
+        formatiere(machine, "y", "1", "sysdisk");     // Systemseite: Urlader + Bootabbild
+
+        const std::string nachFormat = vramText(machine);
+        ASSERT_EQ(nachFormat.find("DEFEKTIVE TRACK"), std::string::npos)
+            << "FORMAT meldete defekte Spuren:\n" << nachFormat;
+        ASSERT_EQ(nachFormat.find("NOT FOR UDOS USEABLE"), std::string::npos)
+            << "FORMAT verwarf die Diskette:\n" << nachFormat;
+
+        typeString(machine, "status");
+        typeKey(machine, QK_RETURN);
+        ASSERT_TRUE(runSmallUntil(machine, typ.frei, 150'000'000))
+            << "STATUS meldet nicht " << typ.frei << " (Spurzahl/Belegungskarte falsch?):\n"
+            << vramText(machine);
+        EXPECT_NE(vramText(machine).find("DRIVE 1   SYSDISK"), std::string::npos)
+            << "Laufwerk 1 traegt nicht den frisch vergebenen Namen:\n" << vramText(machine);
+        EXPECT_TRUE(machine.isDiskFormatted(1));
+
+        // ── Alle Dateien hinueber (P=& erfasst auch die SECRET-Dateien) ─────
+        // „OVR.PROG" ist der letzte Eintrag des Quellverzeichnisses — sobald MOVE ihn
+        // auflistet, ist der Lauf durch (auch der auf 40 Spuren vorzeitig vollgelaufene).
+        typeString(machine, "move * s=0 d=1 p=&");
+        typeKey(machine, QK_RETURN);
+        ASSERT_TRUE(runSmallUntil(machine, "OVR.PROG", 1'500'000'000))
+            << "MOVE kam nicht bis zum letzten Verzeichniseintrag:\n" << vramText(machine);
+        runCycles(machine, 50'000'000);
+
+        if (typ.passt_komplett) {
+            EXPECT_EQ(vramText(machine).find("ERROR"), std::string::npos)
+                << "MOVE meldete Fehler, obwohl der Platz reicht:\n" << vramText(machine);
+            // Die Satzkette der neuen Diskette muss begehbar sein — das gelingt nur mit
+            // mitkopierten Sektorkontrollbloecken (doc/udos_bug1.md).
+            typeString(machine, "cat d=1 p=&");
+            typeKey(machine, QK_RETURN);
+            EXPECT_TRUE(runSmallUntil(machine, "OVR.PROG", 200'000'000))
+                << "CAT auf der neuen Diskette kommt nicht bis zum letzten Eintrag:\n"
+                << vramText(machine);
+            EXPECT_EQ(vramText(machine).find("ERROR CA"), std::string::npos)
+                << "POINTER CHECK auf der neuen Diskette:\n" << vramText(machine);
+        }
+
+        machine.unmountDisk(0);
+        machine.unmountDisk(1);          // flusht die neue Diskette in die .hfe
+    }
+
+    {   // ── Kaltstart von der selbstgebauten Diskette ───────────────────────
+        A5120Machine::Config cfg;
+        cfg.drive_profiles = {typ.profil, "K5601", "K5601", "K5601"};
+        A5120Machine neu(cfg);
+        ASSERT_TRUE(neu.mountDisk(0, bPath, "cpa780", /*wp=*/false)) << neu.lastError();
+        neu.powerOn();
+
+        ASSERT_TRUE(runSmallUntil(neu, "Neues Datum", 200'000'000))
+            << "Die selbstgebaute Systemdiskette bootet nicht:\n" << vramText(neu);
+        typeString(neu, "150388");
+        ASSERT_TRUE(runSmallUntil(neu, "UDOS BC.5120", 80'000'000))
+            << "Kein UDOS-Prompt von der neuen Diskette:\n" << vramText(neu);
+
+        typeString(neu, "status");
+        typeKey(neu, QK_RETURN);
+        EXPECT_TRUE(runSmallUntil(neu, "DRIVE 0   SYSDISK", 150'000'000))
+            << "Das gebootete System erkennt seine eigene Diskette nicht:\n" << vramText(neu);
+
+        neu.unmountDisk(0);
+    }
+
+    fs::remove(aPath, ec);
+    fs::remove(bPath, ec);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Einseitig, UdosLaufwerkstypen,
+    ::testing::Values(
+        // Typ 4 — 5,25″, 80 Spuren, einseitig
+        UdosLaufwerksTyp{"K5600_20", "K5600.20", "41 41 41 41", 80,
+                         "1947 SECTORS AVAILABLE", true},
+        // Typ 3 — 5,25″, 40 Spuren (FORMAT schaltet ueber `CP 30H` auf 40 Spuren um)
+        UdosLaufwerksTyp{"K5600_10", "K5600.10", "41 31 41 41", 40,
+                         "985 SECTORS AVAILABLE", false},
+        // 8″-Laufwerk, von UDOS als 5,25″-80-Spur-Typ angesprochen (s. Testdoku)
+        UdosLaufwerksTyp{"MF6400", "MF6400", "41 41 41 41", 77,
+                         "1947 SECTORS AVAILABLE", true}),
+    [](const ::testing::TestParamInfo<UdosLaufwerksTyp>& info) {
+        return std::string(info.param.testname);
+    });
