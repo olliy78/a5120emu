@@ -1,0 +1,12 @@
+# break-before-execute: der Halt liegt VOR der Instruktion — Haltezeile und die
+# Folgeabfrage `r` zeigen denselben PC und dieselbe Instruktion (vorher lief sie
+# noch zu Ende: Haltezeile 0135, `r` dann 0136).
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  b 0x0135
+  g
+  r
+  q
+expect_re: bp ZVE1 : ZVE1 PC=0135\n  ZVE1 PC=0135 .*\n  => 0135: 7E .*\n  state: .*\n.*ZVE1 PC=0135 .*\n  => 0135: 7E 

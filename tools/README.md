@@ -10,11 +10,12 @@ eine Funktion fehlt oder falsch ist, wird sie hier ergänzt/gefixt und unter
 | Werkzeug | Zweck | Detail-Doku |
 |----------|-------|-------------|
 | **HowTo (Einstieg)** | praxisnahe Anleitung: welches Werkzeug wann, mit Szenarien (Boot-Hang, Programm sezieren, Interrupt-/Uhr-Analyse, Coverage/Diff, Save-State, KI-Agent) | **[how_to_debug_and_trace.md](how_to_debug_and_trace.md)** |
-| **`k1520dbg`** | interaktiver gdb-artiger Debugger (ZVE1 **und** ZVE2): Breakpoints (bedingt/Event/ignore), Step into/over/out, **Reverse-Step + Snapshots + Save-State**, Watch mem/io, **Logpoints + Trace-to-File**, `x`-Examine, `.prn`-Annotation + Label-Import, Chip-State (`dev ctc/pio/sio`), JSON-Register, **exakter History-Backtrace** | **[k1520dbg.md](k1520dbg.md)** |
+| **`k1520dbg`** | interaktiver gdb-artiger Debugger (ZVE1 **und** ZVE2): Breakpoints (bedingt/Event/ignore), Step into/over/out, **Reverse-Step + Snapshots + Save-State**, Watch mem/io, **Logpoints + Trace-to-File**, `x`-Examine, `.prn`/`.MAC`-Annotation + Label-Import, Chip-State (`dev ctc/pio/sio`, `ivt`), JSON-Register, **exakter History-Backtrace** | **[k1520dbg.md](k1520dbg.md)** |
 | **`boot_trace`** | nicht-interaktiver Boot-/DMA-Tracer: Report (Histogramme, Done-Flag, VRAM-Banner), `--until`, `--coverage`/`--diff`, `--csv`, `--save-state`/`--load-state`, `--json`/`--quiet`, `.prn`-Annotation | **[boot_trace.md](boot_trace.md)** |
 | **`z80_disasm2.py`** | generischer, vollständiger Z80-Disassembler für Listings (kanonisch) | **[z80_disasm.md](z80_disasm.md)** |
 | `z80dis_min.h` | eingebauter Ein-Instruktions-Decoder (C++) für `k1520dbg` & `boot_trace` | [z80_disasm.md](z80_disasm.md) |
-| `prn_listing.h` | header-only Parser für MACRO-80-`.prn`-Listings (Adresse → kommentierte Quelle); von `k1520dbg` & `boot_trace` per `-l` genutzt | [k1520dbg.md](k1520dbg.md) §6 |
+| `prn_listing.h` | header-only Parser für MACRO-80-`.prn`-Listings (Adresse → kommentierte Quelle, optional Objektbytes); von `k1520dbg` & `boot_trace` per `-l` genutzt | [k1520dbg.md](k1520dbg.md) §6 |
+| `mac_listing.h` | header-only **Assembler für Fremdquellen** (`.MAC`/`.ASM` ohne Adressspalte): Adressen + Objektbytes, `Mxxxx`-Anker, Versatz-Abgleich `@auto`; Opcode-Tabelle aus `z80dis_min.h` rückwärts erzeugt | [k1520dbg.md](k1520dbg.md) §6.1 |
 | `callstack_tracker.h` | header-only exakter CALL/RST/RET-Aufrufstapel für den History-`bt` von `k1520dbg` | [k1520dbg.md](k1520dbg.md) §7 |
 | `expr_eval.h` | header-only Ausdrucks-Evaluator (Arithmetik/Bit/Vergleiche/`[expr]`) für `k1520dbg` (`if`/`disp`/`x`/`logpoint`) | [k1520dbg.md](k1520dbg.md) §3 |
 | `event_bp.h` · `mem_watch.h` | header-only Event-BP-Klassifikation (Interrupt/NMI/RETI) bzw. Watchpoint-Matching für `k1520dbg` | [k1520dbg.md](k1520dbg.md) §4 |

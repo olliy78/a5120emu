@@ -98,6 +98,17 @@ void A5120Machine::wireBackplane() {
     // ZRE BS-PIO is on the second chain via Koppelbus (lowest priority)
     bus_.setInterruptChain({&afs_, &ass_, &zre_});
 
+    // Break-before-execute für Debugger (s. Z80::abortBeforeExecute): fordert ein
+    // Trace-Callback mitten in der Instruktionsvorbereitung einen Halt an (stop()),
+    // wird die Instruktion NICHT mehr ausgeführt — PC/Register/Speicher bleiben genau
+    // auf dem Stand, den der Callback gemeldet hat. Ohne das lief die Instruktion noch
+    // zu Ende und jede Abfrage nach dem Halt sah den Folgezustand.
+    // Die Rückfrage kostet nur etwas, wenn überhaupt ein traceCallback installiert ist
+    // (also nur unter Debugger/Tracer, nie im GUI-/Produktivlauf).
+    auto abort_on_stop = [this]{ return stop_.load(std::memory_order_relaxed); };
+    zre_.cpu().abortBeforeExecute  = abort_on_stop;
+    zre_.zve2().abortBeforeExecute = abort_on_stop;
+
     // Koppelbus wiring:
     // ZRE CTC ZC/TO outputs → Koppelbus zc_to[0..2] signals.
     // zc_to[2] is also "fest verdrahtet" back to ZRE CTC CLK/TRG[3] (channel cascade).
@@ -181,6 +192,69 @@ void A5120Machine::reset() {
     // der RAM-Inhalt bleibt stehen (nur Netz-Aus verliert ihn, s. powerOn()).
     resetHardware();
     LOG_INFO("A5120", "Reset: ZVE1 Reset, Lade-ROM reaktiviert");
+}
+
+// ─── Interrupt-Diagnose (Debugger `ivt`) ─────────────────────────────────────
+// Die Daisy-Chain wird hier baustein-fein aufgefaltet (Karte → Chip → Port/Kanal),
+// in genau der Prioritätsreihenfolge, in der interruptAcknowledge() sie abläuft:
+//   K5122 (ctrl-PIO → data-PIO) → K8025 (SIO A33 → SIO A32 → CTC A34)
+//   → K2526 (CTC → BS-PIO).
+// Vektoren: PIO je Port programmiert, CTC = Basisvektor | (Kanal<<1), SIO = WR2
+// des Kanals B als Basis (die Subtyp-Bits variieren je Anlass → exact=false).
+std::vector<A5120Machine::IntSource> A5120Machine::interruptSources() const {
+    std::vector<IntSource> out;
+    int pos = 0;
+    auto addPio = [&](const Z80PIO& pio, const char* name){
+        auto st = pio.debugState();
+        for (int p = 0; p < 2; ++p) {
+            IntSource s;
+            s.device  = std::string(name) + " " + (p ? "B" : "A");
+            s.vector  = st.port[p].vector;
+            s.ie      = st.port[p].ie;
+            s.pending = st.port[p].pending;
+            s.ius     = st.port[p].ius;
+            s.iei     = st.port[p].iei;
+            s.chain   = pos++;
+            out.push_back(std::move(s));
+        }
+    };
+    auto addCtc = [&](const Z80CTC& ctc, const char* name){
+        auto st = ctc.debugState();
+        for (int c = 0; c < 4; ++c) {
+            IntSource s;
+            s.device  = std::string(name) + " ch" + char('0' + c);
+            s.vector  = (uint8_t)(st.vecBase | (c << 1));   // wie Z80CTC::getVector()
+            s.ie      = st.ch[c].intEn;
+            s.pending = st.ch[c].intPending;
+            s.ius     = st.ch[c].ius;
+            s.iei     = st.ch[c].iei;
+            s.chain   = pos++;
+            out.push_back(std::move(s));
+        }
+    };
+    auto addSio = [&](const Z80SIO& sio, const char* name){
+        auto st = sio.debugState();
+        for (int c = 0; c < 2; ++c) {
+            IntSource s;
+            s.device  = std::string(name) + " " + (c ? "B" : "A");
+            s.vector  = st.ch[1].wr2;          // Basisvektor steht in WR2 des Kanals B
+            s.exact   = false;                 // + Subtyp-Bits (Rx/Tx/Ext) je Anlass
+            s.ie      = (st.ch[c].wr1 & 0x1F) != 0;
+            s.pending = st.ch[c].irqRx || st.ch[c].irqTx || st.ch[c].irqExt;
+            s.ius     = st.ch[c].ius;
+            s.iei     = st.ch[c].iei;
+            s.chain   = pos++;
+            out.push_back(std::move(s));
+        }
+    };
+    addPio(afs_.ctrlPio(), "K5122 ctrl-PIO");
+    addPio(afs_.dataPio(), "K5122 data-PIO");
+    addSio(ass_.sioA33(),  "K8025 SIO-A33 (DFUE)");
+    addSio(ass_.sioA32(),  "K8025 SIO-A32 (Tastatur)");
+    addCtc(ass_.ctcA34(),  "K8025 CTC-A34");
+    addCtc(zre_.ctc(),     "K2526 CTC");
+    addPio(zre_.bsPio(),   "K2526 BS-PIO");
+    return out;
 }
 
 // ─── Snapshot / reverse-debugging support ────────────────────────────────────
@@ -448,8 +522,13 @@ int A5120Machine::run(int max_cycles) {
             }
             if (!zre_.isZVE2InReset() && !zre_.isZVE2Waiting()) {
                 bus_master_zve2_ = true;
+                bus_.setBusMasterZVE2(true);
                 int used2 = zre_.zve2Step();
                 bus_master_zve2_ = false;
+                bus_.setBusMasterZVE2(false);
+                // Debugger-Halt VOR der Instruktion (abortBeforeExecute): nichts
+                // ausgeführt, nichts zu verbuchen — Lauf hier beenden.
+                if (used2 == 0 && stop_.load(std::memory_order_relaxed)) break;
                 if (used2 <= 0) used2 = 1;   // Sicherung gegen Endlosschleife
                 remaining     -= used2;
                 total_cycles_ += used2;
@@ -516,6 +595,9 @@ int A5120Machine::run(int max_cycles) {
 
         const uint16_t pc_before = zre_.cpuPC();
         int used = zre_.cpuStep();
+        // Debugger-Halt VOR der Instruktion (abortBeforeExecute): die Instruktion ist
+        // nicht gelaufen, also weder Takte noch Floppy-/CTC-/Tastatur-Zeit verbuchen.
+        if (used == 0 && stop_.load(std::memory_order_relaxed)) break;
         remaining -= used;
         total_cycles_ += used;
 

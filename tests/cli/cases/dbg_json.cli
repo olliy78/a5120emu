@@ -1,8 +1,13 @@
 # Maschinenlesbare Registerausgabe (rj).
 #
-# GOLDEN-WERT: Registerabbild bei exakt 5 000 000 Takten.  Die Zeitlage hängt am
-# Floppy-Timing (u. a. Motor-Anlauf, K5122_MOTOR_SPINUP_MS); ändert sich das
-# bewusst, gehören hier die neuen deterministischen Werte hinein.
+# GOLDEN-WERT: Registerabbild bei exakt 5 000 000 Takten der MASCHINENUHR
+# (beide CPUs — seit origin/main 06dfa8d zählt `g N` so; `clock zve1` schaltet um).
+# Die Zeitlage hängt am Floppy-Timing (u. a. Motor-Anlauf, K5122_MOTOR_SPINUP_MS).
+#
+# ACHTUNG: zyklusabhängig und damit von Natur aus zerbrechlich — origin/main hat
+# ihn schon zweimal nachziehen müssen.  Der deterministische Gegenpart ist
+# `dbg_stop_json_matches_banner.cli` (Haltepunkt statt Taktzahl); dieser Fall
+# bleibt als Wächter für die Zeitlage selbst.
 tool:   k1520dbg
 disk:   cpa_cpa780_k5601_clock.img
 run:    %DISK%
@@ -10,5 +15,5 @@ stdin:
   g 5000000
   rj
   q
-expect: "pc":"0x1E52"
-expect: "hl":"0x231A"
+expect: "pc":"0x19CF"
+expect: "hl":"0x1BCF"

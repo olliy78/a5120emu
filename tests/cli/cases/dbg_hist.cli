@@ -1,0 +1,8 @@
+# `hist` fasst die PC-Verteilung eines Laufs zusammen.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  hist 200000
+  q
+expect_re: ZVE1 top \([0-9]+ instrs, [0-9]+ distinct PCs\)

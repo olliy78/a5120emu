@@ -1,0 +1,11 @@
+# `snap diff` nennt den geänderten RAM-Bereich zwischen zwei Schnappschüssen.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  snap a
+  e 0x6000 11 22
+  snap b
+  snap diff a b
+  q
+expect: RAM 6000..6001 (2 B)

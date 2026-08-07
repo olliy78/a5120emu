@@ -1,0 +1,9 @@
+# Logpoint protokolliert bei jedem Treffer, ohne anzuhalten.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  logpoint 0x0135 A
+  g 200000
+  q
+expect_re: \[lp\] c[0-9]+ +0135: 7E +LD A,\(HL\)  A=

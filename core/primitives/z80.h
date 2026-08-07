@@ -224,6 +224,25 @@ public:
     std::function<void(const Z80&)> traceCallback;       ///< TRACE callback: called before each instruction (optional)
 
     /**
+     * @brief Optional: „Instruktion doch nicht ausführen"-Rückfrage (Debugger-Halt).
+     *
+     * Wird unmittelbar NACH @ref traceCallback gefragt und nur dann, wenn überhaupt
+     * ein traceCallback installiert ist (im Produktivlauf also gar nicht → keine
+     * Kosten).  Liefert sie true, kehrt step() mit **0 Takten** zurück, ohne die
+     * Instruktion auszuführen: PC, Register, Speicher und der Refresh-Zähler bleiben
+     * exakt so, wie der Callback sie gesehen hat.
+     *
+     * Das ist die Grundlage für echtes **break-before-execute**: ein Debugger, der im
+     * traceCallback anhalten will, hält damit *vor* der Instruktion an statt nach ihr
+     * (sonst zeigt die Haltezeile den einen Zustand und jede Folgeabfrage den
+     * nächsten).  Der Aufrufer muss `step() == 0` behandeln (keine Takte verbuchen,
+     * Lauf beenden) — s. A5120Machine::run().
+     *
+     * Signatur: bool callback()
+     */
+    std::function<bool()> abortBeforeExecute;            ///< Halt VOR der Instruktion (optional)
+
+    /**
      * @brief Optional: RETI callback to notify peripherals.
      *
      * If set, this function is called when the CPU executes a

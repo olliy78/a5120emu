@@ -50,7 +50,11 @@ public:
     bool isOpen() const { return is_open_; }
 
     DiskGeometry geometry() const override;
-    bool         writable() const override { return is_open_ && hfe_write_allowed_ && !write_protect_; }
+    /// Überabtastete Aufnahmen (@ref oversample_ > 1) sind read-only: der Lesepfad rechnet
+    /// sie auf die Nominalrate herunter, ein treues Rückschreiben in die Originalrate gibt
+    /// es nicht.
+    bool         writable() const override { return is_open_ && hfe_write_allowed_
+                                                    && !write_protect_ && oversample_ == 1; }
     TrackImage   readTrack(uint8_t cyl, uint8_t head) override;
     bool         writeTrack(uint8_t cyl, uint8_t head, const TrackImage& track) override;
     bool         flush() override;
@@ -78,6 +82,7 @@ private:
     uint16_t  rpm_              = 0;
     uint16_t  track_list_block_ = 1;
     bool      hfe_write_allowed_ = false;
+    uint32_t  oversample_       = 1;   ///< Abtastwerte je Zellzeit (>1 = überabgetastete Aufnahme)
 
     std::vector<TrackEntry>   lut_;     ///< Track-LUT (ein Eintrag je Zylinder)
     std::vector<uint8_t>      file_;    ///< komplette Datei im Speicher (für In-place-Write)

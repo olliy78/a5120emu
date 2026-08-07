@@ -1,0 +1,12 @@
+# savestate/loadstate: nach dem Laden steht die Maschine wieder an derselben Stelle.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+tmpfile state.bin:
+stdin:
+  gu 0x0139
+  savestate %state.bin%
+  g 200000
+  loadstate %state.bin%
+  q
+expect_re: state loaded ← .*\n  => 0139:

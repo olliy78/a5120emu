@@ -1,0 +1,9 @@
+# Lauf-Budgets zählen die Maschinenuhr; `clock` zeigt beide Stände.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  g 1000000
+  clock
+  q
+expect_re: Lauf-Uhr = Maschine \(beide CPUs\)   ZVE1=[0-9]+  Maschine=[0-9]+

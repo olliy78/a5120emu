@@ -1,0 +1,9 @@
+# Interrupt-Halt meldet Vektor UND Quellbaustein samt Tabelleneintrag.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  bint
+  g
+  q
+expect: ISR 007A  Vektor=B8 von K2526 BS-PIO  Tabelle [00B8]

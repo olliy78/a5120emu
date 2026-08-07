@@ -1,0 +1,12 @@
+# verify meldet die abweichende Stelle mit Datei- und RAM-Wert.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+tmpfile abbild.bin:
+stdin:
+  g 500000
+  dump 0x0100 32 %abbild.bin%
+  e 0x0104 AA
+  verify %abbild.bin% @0x0100
+  q
+expect: 0104  Datei D3   RAM AA

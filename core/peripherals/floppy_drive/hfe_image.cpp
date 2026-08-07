@@ -26,6 +26,11 @@
 #include <fstream>
 #include <utility>
 
+namespace {
+/// Nominale Zellrate des K1520-Floppy-Stacks (Double Density) in kbit/s.
+constexpr uint16_t kNominalBitrate = 250;
+}
+
 // ─── Konstruktor ─────────────────────────────────────────────────────────────
 
 HfeImage::HfeImage(const std::string& path, bool write_protect)
@@ -82,6 +87,13 @@ HfeImage::HfeImage(const std::string& path, bool write_protect)
 
     track_list_block_   = static_cast<uint16_t>(file_[0x12] | (file_[0x13] << 8));
     hfe_write_allowed_  = (file_[0x14] == 0xFF);
+
+    // Überabtastung erkennen.  Der K1520-Floppy-Stack (K5122 + 5,25″/8″-Laufwerke) kennt
+    // ausschließlich Double Density mit 250 kbit/s Zellrate; ein HFE, das eine höhere Rate
+    // meldet, ist keine HD-Diskette, sondern dieselbe DD-Diskette mit mehrfacher Abtastung
+    // (typisch Greaseweazle-Export mit 500 kbit/s).  readTrack() rechnet sie herunter.
+    if (bitrate_ >= kNominalBitrate + kNominalBitrate / 2)
+        oversample_ = (bitrate_ + kNominalBitrate / 2) / kNominalBitrate;
 
     // ── LUT einlesen ─────────────────────────────────────────────────────────
 
@@ -216,6 +228,11 @@ TrackImage HfeImage::readTrack(uint8_t cyl, uint8_t head) {
 
     uint32_t bitcells = 0;
     auto side = readSideBytes(cyl, head, bitcells);
+
+    // Überabgetastete Aufnahme (bitrate > Nominalrate) auf die Nominalrate quantisieren,
+    // sonst belegt jede MFM-Zelle mehrere Bits und kein Sync-Zellwort passt (s. Konstruktor).
+    if (oversample_ > 1)
+        side = BitCodec::downsampleCells(side, bitcells, oversample_, bitcells);
 
     // Per-Spur-Verfahrenserkennung für MISCHDICHTE-Medien (z. B. 8″-DD System-34:
     // FM-Systemspuren + MFM-Datenspuren).  HFE v1 trägt nur EIN Header-Verfahren; FM-

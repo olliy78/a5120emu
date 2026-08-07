@@ -86,6 +86,12 @@ public:
     bool    hasInterrupt() const override;
     uint8_t getVector() const override;
     void    onRETI() override;
+    /// @brief Anfordernder Baustein (Debugger): Steuer- oder Daten-PIO.
+    const char* intDeviceName() const override {
+        if (ctrl_pio_.hasInterrupt()) return "K5122 ctrl-PIO";
+        if (data_pio_.hasInterrupt()) return "K5122 data-PIO";
+        return "K5122";
+    }
 
     // ─── Disk management ─────────────────────────────────────────────────────
 
@@ -218,6 +224,11 @@ public:
         s.indexAccum = index_cycle_acc_;
         return s;
     }
+
+    /// @brief Steuer-PIO (Ports 0x10–0x13) — Diagnose/Debugger (`dev pio k5122ctrl`).
+    const Z80PIO& ctrlPio() const { return ctrl_pio_; }
+    /// @brief Daten-PIO (Ports 0x14–0x17) — Diagnose/Debugger (`dev pio k5122data`).
+    const Z80PIO& dataPio() const { return data_pio_; }
 
     // ─── DMA-Arbitrierung / Index ────────────────────────────────────────────
 

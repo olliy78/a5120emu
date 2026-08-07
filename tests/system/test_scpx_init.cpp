@@ -206,10 +206,27 @@ TEST(ScpxInit, Builds5x1024SystemViaInitModfSyspAndBoots) {
     runCycles(machine, 2'000'000);
     typeString(machine, "B:"); typeKey(machine, QK_RETURN);         // auf B: wechseln
     runCycles(machine, 12'000'000);
-    EXPECT_NE(vramText(machine).find("BAD SECTOR"), std::string::npos)
-        << "erwartete einmalige BAD-SECTOR-Meldung beim Wechsel auf B: blieb aus:\n" << vramText(machine);
-    typeKey(machine, QK_RETURN);                                    // BAD SECTOR quittieren
-    runCycles(machine, 5'000'000);
+    // Der erste Zugriff auf B: quittierte hier bis 2026-08-04 EINMALIG
+    // `SCPX ERR ON B: BAD SECTOR`; seither laeuft er sauber durch.  Beides wird
+    // akzeptiert — massgeblich ist, dass B: DANACH lesbar ist (`DIR` → `NO FILE`).
+    //
+    // Zugeordnet per git-bisect + gezielter Mutation: der Ausloeser ist Fix 3 aus
+    // 76a959a — /STR=1 DURCH ZVE2 beendet dessen Busbesitz jetzt SOFORT (K5122-Doku
+    // §5.5), statt erst ueber die /STR=1-Abtastung ~2 Byteperioden spaeter.  In
+    // diesem Fenster lief ZVE2 frueher eine Instruktion zu weit (bei UDOS zerschrieb
+    // das nachweislich den CRC-Puffer).  Die einmalige BAD-SECTOR-Meldung beim
+    // Diskettenwechsel war ein Artefakt genau dieses Fensters.
+    //
+    // ⚠ Das ist NICHT die SCPX-Single-Format-Eigenschaft aus
+    // doc/analyse_scpx_5x1024_read.md §4 — die gilt unveraendert und wird von
+    // `ScpxIntegration.WrongFormatReadTerminatesInsteadOfFreezing` (Default-Suite)
+    // weiterhin scharf geprueft: OHNE MODF liefert eine 5×1024-Diskette am
+    // 16×256-System nach wie vor `BAD SECTOR`.  Hier ist B: per MODF Option 3
+    // korrekt auf 5×1024 umgestellt, der Zugriff DARF also gelingen.
+    if (vramText(machine).find("BAD SECTOR") != std::string::npos) {
+        typeKey(machine, QK_RETURN);                                // BAD SECTOR quittieren
+        runCycles(machine, 5'000'000);
+    }
     typeString(machine, "DIR"); typeKey(machine, QK_RETURN);
     ASSERT_TRUE(runSmallUntil(machine, "NO FILE", 15'000'000))
         << "frische 5×1024-B: nicht lesbar (kein NO FILE):\n" << vramText(machine);

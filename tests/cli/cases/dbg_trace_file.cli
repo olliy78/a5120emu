@@ -1,0 +1,12 @@
+# `trace <datei> <von> <bis>` schreibt den Befehlsverlauf des Bereichs in eine Datei.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+tmpfile trace.txt:
+stdin:
+  trace %trace.txt% 0x0130 0x0140
+  g 200000
+  trace off
+  q
+capture_file: trace.txt
+expect_re: T1 c[0-9]+ +013[0-9]:

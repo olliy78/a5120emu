@@ -1,0 +1,9 @@
+# Deckungsnetz für die ~90-Zweige-Dispatchkette in k1520dbg: fährt JEDES Kommando
+# einmal an.  Fällt eines aus der Kette, meldet der Debugger "unknown command".
+# Neue Kommandos gehören in dieses Skript UND in einen gezielten Fall unten.
+tool:    k1520dbg
+disk:    cpa_cpa780_k5601_clock.img
+run:     %DISK% -x %CLI_DIR%/scripts/all_commands_smoke.dbg
+timeout: 300
+exit:    0
+forbid:  unknown command

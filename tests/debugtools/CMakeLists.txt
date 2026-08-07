@@ -12,3 +12,4 @@ k1520_add_test(dbg_commands      SRC test_dbg_commands.cpp      LABELS "${_lbl}"
 k1520_add_test(coverage_diff     SRC test_coverage_diff.cpp     LABELS "${_lbl}")  # tools/coverage_diff.h
 k1520_add_test(callstack_tracker SRC test_callstack_tracker.cpp LABELS "${_lbl}")  # tools/callstack_tracker.h
 k1520_add_test(prn_listing       SRC test_prn_listing.cpp       LABELS "${_lbl}")  # tools/prn_listing.h
+k1520_add_test(mac_listing       SRC test_mac_listing.cpp       LABELS "${_lbl}")  # tools/mac_listing.h

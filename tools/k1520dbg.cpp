@@ -28,6 +28,7 @@
 #include "core/peripherals/floppy_drive/track_codec.h"
 #include "tools/z80dis_min.h"
 #include "tools/prn_listing.h"
+#include "tools/mac_listing.h"
 #include "tools/callstack_tracker.h"
 #include "tools/dbg_commands.h"
 #include "tools/expr_eval.h"
@@ -56,6 +57,8 @@
 #include <filesystem>
 #include <system_error>
 #include <optional>
+#include <csignal>
+#include <chrono>
 #include <unistd.h>   // getpid
 
 using k1520::logging::Logger;
@@ -74,6 +77,19 @@ static inline Snap grab(const Z80& z){
     Snap s; s.PC=z.PC; s.SP=z.SP; s.AF=z.AF; s.BC=z.BC; s.DE=z.DE; s.HL=z.HL;
     s.IX=z.IX; s.IY=z.IY; s.AF_=z.AF_; s.BC_=z.BC_; s.DE_=z.DE_; s.HL_=z.HL_;
     s.I=z.I; s.R=z.R; s.cyc=z.cycles; s.halted=z.halted; s.valid=true; return s;
+}
+
+// ─── Ctrl-C während eines langen Laufs (§7) ───────────────────────────────────
+// Ein `g 20000000` kann Minuten dauern (ZVE2-lastige Phasen). Ohne Ausstieg wirkt
+// das wie ein toter Debugger und man killt den Prozess (Sitzung weg). Deshalb:
+// SIGINT bricht einen laufenden `g`/`gscreen` ab und kehrt in die REPL zurück;
+// außerhalb eines Laufs bleibt Ctrl-C das gewohnte Abbrechen des Prozesses.
+static volatile sig_atomic_t g_int_flag = 0;   ///< SIGINT während eines Laufs gesehen
+static volatile sig_atomic_t g_in_run   = 0;   ///< läuft gerade ein Lauf-Kernel?
+static void dbgSigInt(int){
+    if (g_in_run){ g_int_flag = 1; return; }
+    signal(SIGINT, SIG_DFL);
+    raise(SIGINT);
 }
 
 // ─── breakpoint record ────────────────────────────────────────────────────────
@@ -209,8 +225,19 @@ int main(int argc, char** argv){
     bool hit=false; int hit_cpu=0; uint16_t hit_pc=0; std::string stop_reason;  // "we stopped" signal from a callback
     std::string screen_bp;   // #1: if set, any `g`/`gu`/`n` stops once the text VRAM shows this pattern
     int  gu_pc=-1;                              // `gu`/temp-bp target PC (<0 = inactive)
-    long step_rem=0, step2_rem=0;               // remaining single-step count (ZVE1 / ZVE2); stop at 0
+    // Einzelschritt-Kontingent. `step_rem` = wie viele Instruktionen noch AUSGEFÜHRT
+    // werden sollen; gehalten wird VOR der darauffolgenden (break-before-execute), das
+    // Kommando ist also erst mit dem Halt fertig — dafür `step_active` als Schleifen-
+    // bedingung (nicht step_rem, das schon eine Instruktion früher 0 wird).
+    long step_rem=0, step2_rem=0;
+    bool step_active=false, step2_active=false;
+    // Wiederaufnahme genau AUF einem Haltepunkt: der Halt greift jetzt vor der
+    // Instruktion, der PC steht also noch darauf. Ohne einmaliges Überspringen hielte
+    // `g` sofort wieder am selben Breakpoint (gdb macht es genauso). Gilt nur für die
+    // ERSTE Instruktion nach dem Fortsetzen, danach greift der Breakpoint wieder.
+    int resume_skip1=-1, resume_skip2=-1;
     bool fin_active=false; uint16_t fin_sp=0;   // `fin`: stop once SP rises above this frame
+    bool clock_machine=true;                    // §7: Lauf-Budgets auf der Maschinenuhr (beide CPUs)
     uint16_t last_u=0; bool last_u_set=false;          // `u` continue position
     uint16_t last_list=0; bool last_list_set=false;    // `list` continue position
 
@@ -306,15 +333,95 @@ int main(int argc, char** argv){
         }
         fprintf(stderr,"  loaded %d symbol(s) from %s\n",n,path.c_str()); return n; };
 
-    // ─── .prn listings (Adresse → kommentierte Original-Quellzeile) ─────────────
+    // ─── Listings (Adresse → kommentierte Original-Quellzeile) ─────────────────
     prnlst::Listing prn;
-    // spec = "PFAD[@OFFSET]"; OFFSET (signiert, hex 0x../..h oder dez) wird zu jeder
-    // Listing-Adresse addiert — für Code, der nicht an der .prn-Adresse läuft.
+    // spec = "PFAD[@SPEC]" mit SPEC =
+    //   OFFSET  — signiert (0x../..h/dez), wird zu jeder Listing-Adresse addiert
+    //             (Code, der nicht an der Listing-Adresse läuft),
+    //   auto    — Versatz selbst bestimmen: Objektbytes im RAM suchen (§2),
+    //   labels  — nur `.MAC`: Adressen ausschließlich aus den Mxxxx-Labelankern,
+    //   noanchor— nur `.MAC`: Anker ignorieren, rein durchgezählte Längen.
+    // `.MAC`/`.ASM`-Dateien (Fremdquellen ohne Adressspalte) werden dazu von
+    // tools/mac_listing.h assembliert; `.prn`-Listings tragen ihre Adressen selbst.
     auto loadPrnSpec = [&](const std::string& spec)->int{
-        std::string path; long off=0;
-        if (!prnlst::splitSpec(spec,path,off)){ fprintf(stderr,"  bad @offset in '%s'\n",spec.c_str()); return -1; }
-        int n = prn.load(path,off);
+        std::string path; long off=0; std::string mode;
+        {   size_t at = spec.rfind('@');
+            if (at != std::string::npos){
+                std::string s = spec.substr(at+1);
+                std::string sl = s; for(auto&c:sl) c=(char)tolower(c);
+                if (sl=="auto"||sl=="labels"||sl=="noanchor"){ mode=sl; path=spec.substr(0,at); }
+            }
+        }
+        if (mode.empty() && !prnlst::splitSpec(spec,path,off)){
+            fprintf(stderr,"  bad @offset in '%s'\n",spec.c_str()); return -1; }
+
+        // ── Fremdquelle (.MAC/.ASM): assemblieren statt Listing parsen ────────
+        if (maclst::isSourceFile(path)){
+            maclst::Result mr; maclst::Image img;
+            bool anchors = (mode != "noanchor");
+            if (!maclst::assemble(path, off, prn, mr, &img, anchors)){
+                fprintf(stderr,"  %s\n", mr.error.c_str()); return -1; }
+            if (mode=="auto"){
+                // §2: Objektbytes im Speicher wiederfinden → Ladeversatz ableiten.
+                auto match = maclst::findOffset(img,[&](uint16_t a){ return m.memReadDebug(a); });
+                if (!match.found){
+                    fprintf(stderr,"  @auto: kein Treffer im Speicher (%d feste Ankerbytes) — "
+                                   "passt die Quelle zu diesem Image?\n", maclst::fixedByteCount(img));
+                } else {
+                    fprintf(stderr,"  @auto: Versatz %+ld / %04X — %s\n"
+                                   "         %d von %d Bytes gleich (%.1f %%), %d Abweichung(en); "
+                                   "Anker %d B @%04X, %d Kandidat(en)\n",
+                            match.offset,(uint16_t)match.offset, match.verdict(),
+                            match.matched, match.fixed, 100.0*match.ratio,
+                            match.fixed-match.matched, match.anchor_len, match.anchor_src,
+                            match.candidates);
+                    // Nur einen belastbaren Versatz anwenden: eine 30-%-Übereinstimmung
+                    // heißt „anderes Build" — die Zeilen lägen dann versetzt auf fremdem
+                    // Code und die Annotation führte in die Irre.
+                    if (match.ratio < 0.60)
+                        fprintf(stderr,"         → Versatz NICHT angewandt (zu unsicher). Quelle und Image "
+                                       "sind verschiedene Builds;\n           notfalls '%s@%ld' erzwingen "
+                                       "oder mit 'verify' bereichsweise vergleichen.\n",
+                                path.c_str(), match.offset);
+                    else if (match.offset){            // Tabelle mit dem Versatz neu aufbauen
+                        prn.by_addr.clear(); maclst::Result r2;
+                        maclst::assemble(path, match.offset, prn, r2, nullptr, anchors);
+                    }
+                }
+            }
+            int li=0;
+            for (auto& kv : prn.by_addr){
+                std::string lab = prnlst::labelOf(kv.second);
+                if (!lab.empty() && sym_by_name.find(lab)==sym_by_name.end()){ symAdd(lab,kv.first); ++li; }
+            }
+            fprintf(stderr,"  assembliert: %d Zeile(n) aus %s (%04X..%04X), %d Anker/%d Nachführung(en), "
+                           "%d unbekannt, %d Label → Symbole\n",
+                    mr.code, path.c_str(), mr.first, mr.last, mr.anchors, mr.resyncs, mr.unknown, li);
+            for (size_t i=0;i<mr.problems.size() && i<5;++i)
+                fprintf(stderr,"    ? %s\n", mr.problems[i].c_str());
+            return mr.code;
+        }
+
+        // ── .prn-Listing ─────────────────────────────────────────────────────
+        int n = prn.load(path, mode=="auto"? 0 : off, /*want_bytes=*/mode=="auto");
         if (n < 0){ fprintf(stderr,"  cannot open %s\n",path.c_str()); return n; }
+        if (mode=="auto"){
+            maclst::Image img; img.byte = prn.bytes_by_addr;
+            auto match = maclst::findOffset(img,[&](uint16_t a){ return m.memReadDebug(a); });
+            if (!match.found)
+                fprintf(stderr,"  @auto: kein Treffer im Speicher (%d Ankerbytes)\n",
+                        maclst::fixedByteCount(img));
+            else {
+                fprintf(stderr,"  @auto: Versatz %+ld / %04X — %s (%d von %d Bytes, %.1f %%)\n",
+                        match.offset,(uint16_t)match.offset, match.verdict(),
+                        match.matched, match.fixed, 100.0*match.ratio);
+                if (match.ratio < 0.60)
+                    fprintf(stderr,"         → Versatz NICHT angewandt (zu unsicher)\n");
+                else if (match.offset){
+                    prn.by_addr.clear(); prn.bytes_by_addr.clear();
+                    n = prn.load(path, match.offset); }
+            }
+        }
         // Labels (name:) aus dem Listing als Symbole importieren (b/u/list per Name),
         // ohne bestehende (z.B. -s-/user-) Symbole zu überschreiben.
         int li=0;
@@ -467,6 +574,14 @@ int main(int argc, char** argv){
         const uint16_t pc=z.PC;
         // §9 hist: profiling mode only tallies PCs and skips ALL stop logic below.
         if (hist_on){ if(hist_lo<0 || (pc>=hist_lo && pc<=hist_hi)) hist1[pc]++; return; }
+        // Erste Instruktion nach einem Fortsetzen? Dann darf ein Haltepunkt AUF dieser
+        // Adresse nicht erneut greifen (wir stehen ja genau darauf — break-before-execute).
+        // Das Kennzeichen gilt für genau einen Callback und wird hier verbraucht.
+        bool skip_resume_stop = false;
+        if (resume_skip1 >= 0){
+            skip_resume_stop = (pc == (uint16_t)resume_skip1);
+            resume_skip1 = -1;
+        }
         // Maintain the exact CALL/RST/RET call stack (for the history backtrace).
         // Cheap: 1 mem read/instr in the common (non-call/ret) case.
         callstack.onInstruction(pc,[&](uint16_t a){ return m.memReadDebug(a); });
@@ -475,12 +590,25 @@ int main(int argc, char** argv){
         { auto lit=logpoints.find(pc); if(lit!=logpoints.end()) logHit(z,lit->second); }
         // event breakpoints: interrupt / NMI accepted (state signature) or RETI (opcode).
         // Klassifikation in tools/event_bp.h (unit-getestet, inkl. NMI-bei-IFF1=0-Grenzfall).
-        if (brk_int||brk_nmi||brk_reti){
+        // Beim Fortsetzen übersprungen: das RETI/RETN, auf dem wir stehen, würde sonst
+        // sofort wieder halten (INT/NMI erkennen ohnehin nur Flanken).
+        if ((brk_int||brk_nmi||brk_reti) && !skip_resume_stop){
             uint8_t o0=0,o1=0; if(brk_reti){ o0=m.memReadDebug(pc); o1=m.memReadDebug((uint16_t)(pc+1)); }
             eventbp::Prev pv{bi_have_prev, bi_prev_sp, bi_prev_iff1};
             switch (eventbp::classify(pc, z.SP, z.IFF1, pv, brk_int, brk_nmi, brk_reti, o0, o1)){
                 case eventbp::Event::NMI: stopAt(1,z,"NMI accepted (Q240/protection?)"); break;
-                case eventbp::Event::Interrupt:{ char w[40]; snprintf(w,sizeof w,"interrupt → ISR %04X",pc); stopAt(1,z,w); } break;
+                // §5: Vektor + Quellgerät + aufgelöste Tabellenadresse gleich mit anzeigen.
+                // „Gerät hat Vektor 0xFF" vs. „kein Gerät hat geantwortet" (SPURIOUS) ist der
+                // Unterschied, an dem ein Fremd-OS-Interruptsturm hängt.
+                case eventbp::Event::Interrupt:{ char w[160];
+                    auto& ia=m.lastIntAck();
+                    uint16_t tb=(uint16_t)((z.I<<8)|(ia.vector&0xFE));
+                    snprintf(w,sizeof w,"interrupt → ISR %04X  Vektor=%02X %s%s%s  Tabelle [%04X]",
+                             pc, ia.vector,
+                             ia.spurious? "SPURIOUS (kein Geraet!)" : "von ",
+                             ia.spurious? "" : (ia.device?ia.device:"?"),
+                             z.IM==2? "" : "  (IM!=2)", tb);
+                    stopAt(1,z,w); } break;
                 case eventbp::Event::RETI: stopAt(1,z,"RETI"); break;
                 case eventbp::Event::RETN: stopAt(1,z,"RETN"); break;
                 case eventbp::Event::None: break;
@@ -493,9 +621,15 @@ int main(int argc, char** argv){
             if (e==eventbp::Event::Interrupt || e==eventbp::Event::NMI){
                 uint16_t ret=(uint16_t)(m.memReadDebug(z.SP)|(m.memReadDebug((uint16_t)(z.SP+1))<<8));
                 std::string p=prnFor(pc), isr=symFor(pc);
-                fprintf(itrace_fp,"IT %c%-9lld %-3s int@%04X → ISR %04X%s%s%s SP=%04X%s%s\n",
+                // §5: Vektor + Quellgerät mitschreiben (bei NMI gibt es keine Quittung).
+                auto& ia=m.lastIntAck();
+                char via[64]="";
+                if (e==eventbp::Event::Interrupt)
+                    snprintf(via,sizeof via," vec=%02X dev=%s", ia.vector,
+                             ia.spurious? "SPURIOUS" : (ia.device?ia.device:"?"));
+                fprintf(itrace_fp,"IT %c%-9lld %-3s int@%04X → ISR %04X%s%s%s SP=%04X%s%s%s\n",
                         rcpfx(), rc(z.cycles), e==eventbp::Event::NMI?"NMI":"INT", ret, pc,
-                        isr.empty()?"":" <",isr.c_str(),isr.empty()?"":">", z.SP,
+                        isr.empty()?"":" <",isr.c_str(),isr.empty()?"":">", z.SP, via,
                         p.empty()?"":"  ; ", p.c_str());
                 ++itrace_n;
             }
@@ -508,8 +642,17 @@ int main(int argc, char** argv){
         }
         if (tw1lo>=0 && pc>=tw1lo && pc<=tw1hi && tw_n<tw_cap){ traceLine(1,z); ++tw_n; }
         if ((brk_busrq||brk_xfer||brk_wxfer) && checkFloppyEv(1,z)) return;   // §5/§15 /BUSRQ / xfer edge
-        if (step_rem>0){ traceLine(1,z); if(--step_rem==0){stopAt(1,z,"step");} return; }
+        // Einzelschritt: der Halt bricht die Instruktion ab, also erst durchlassen und
+        // beim NÄCHSTEN Callback halten — sonst käme `s` nie von der Stelle. Ergebnis
+        // ist zugleich die gdb-Semantik: nach `s` steht der PC auf dem NÄCHSTEN Befehl.
+        if (step_active){
+            if (step_rem<=0){ step_active=false; stopAt(1,z,"step"); return; }
+            traceLine(1,z); --step_rem; return;
+        }
         if (fin_active && z.SP > fin_sp){ fin_active=false; stopAt(1,z,"step-out"); return; }
+        // Fortsetzen VON einem Haltepunkt: die erste Instruktion nach dem Resume darf
+        // nicht sofort wieder halten (sie ist ja genau die, auf der wir stehen).
+        if (skip_resume_stop){ return; }
         if (gu_pc>=0 && pc==(uint16_t)gu_pc){ gu_pc=-1; stopAt(1,z,"run-until"); return; }
         auto it=bp1.find(pc);
         if (it!=bp1.end() && it->second.enabled && evalCond(grab(z),it->second.cond)){
@@ -526,10 +669,19 @@ int main(int argc, char** argv){
     m.setZVE2TraceCallback([&](const Z80& z){
         const uint16_t pc=z.PC;
         if (hist_on){ if(hist_lo<0 || (pc>=hist_lo && pc<=hist_hi)) hist2[pc]++; return; }  // §9
+        bool skip_resume_stop = false;                 // s. ZVE1-Callback
+        if (resume_skip2 >= 0){
+            skip_resume_stop = (pc == (uint16_t)resume_skip2);
+            resume_skip2 = -1;
+        }
         traceToFile(2,z);   // gap-free trace across DMA phases (ZVE2 also logged)
         if ((brk_busrq||brk_xfer||brk_wxfer) && checkFloppyEv(2,z)) return;   // §5/§15 (edge, either CPU)
         if (tw2lo>=0 && pc>=tw2lo && pc<=tw2hi && tw_n<tw_cap){ traceLine(2,z); ++tw_n; }
-        if (step2_rem>0){ traceLine(2,z); if(--step2_rem==0){stopAt(2,z,"step ZVE2");} return; }
+        if (step2_active){
+            if (step2_rem<=0){ step2_active=false; stopAt(2,z,"step ZVE2"); return; }
+            traceLine(2,z); --step2_rem; return;
+        }
+        if (skip_resume_stop){ return; }
         auto it=bp2.find(pc);
         if (it!=bp2.end() && it->second.enabled && evalCond(grab(z),it->second.cond)){
             it->second.hits++;
@@ -811,16 +963,41 @@ int main(int argc, char** argv){
                 m.isBUSRQ()?"yes":"no", zve2Active()?"ZVE2":"ZVE1",
                 k.drive,k.mounted?"mounted":"EMPTY",(unsigned)k.cylinder,(unsigned)k.head,
                 k.transferring?"READING":"idle",k.writeMode?"+WRITE":"",k.headPos,k.trackLen);
+        // §7: welche Uhr Lauf-Budgets zählen — und wie weit sie auseinanderlaufen.
+        fprintf(stderr,"  Takte: ZVE1=%llu  Maschine=%llu  (Lauf-Uhr = %s)\n",
+                (unsigned long long)m.cpuCycles(), (unsigned long long)m.machineCycles(),
+                clock_machine?"Maschine":"ZVE1");
         rst38Hint();
+    };
+    // §7 Lauf-Uhr: BEIDE CPUs. `m.cpuCycles()` ist die ZVE1-Uhr; hält ZVE2 den Bus
+    // (DMA — oder ein abgestürztes ZVE2, das Millionen Instruktionen dreht), steht
+    // sie fast still und ein `g 20000000` läuft minutenlang, obwohl die Maschine
+    // längst weit gekommen ist. `clock zve1` schaltet auf das alte Verhalten zurück.
+    auto runClock = [&]()->uint64_t{ return clock_machine? m.machineCycles() : m.cpuCycles(); };
+    // §7 Fortschrittsanzeige: bei langen Läufen alle 2 s eine Zeile auf stderr, damit
+    // „ZVE2 dreht durch" sofort sichtbar ist statt als toter Debugger.
+    auto runProgress = [&](uint64_t start, std::chrono::steady_clock::time_point& last)->void{
+        using namespace std::chrono;
+        auto now = steady_clock::now();
+        if (now - last < seconds(2)) return;
+        last = now;
+        fprintf(stderr,"  … %llu cyc (%s)  ZVE1 PC=%04X  ZVE2 PC=%04X  busrq=%s  [Ctrl-C bricht ab]\n",
+                (unsigned long long)(runClock()-start), clock_machine?"Maschine":"ZVE1",
+                m.cpuPC(), m.zve2PC(), m.isBUSRQ()?"yes":"no");
     };
     // §9 `hist <cycles> [lo hi]`: run N cycles profiling BOTH CPUs' PCs, print the
     // hotspots (with symbol/.prn annotation). One glance instead of reading a trace file.
     auto runHist = [&](uint64_t cycles, int lo, int hi){
         hist1.clear(); hist2.clear(); hist_lo=lo; hist_hi=hi; hist_on=true;
-        uint64_t start=m.cpuCycles(); m.clearStop(); hit=false;
-        while (m.cpuCycles()-start < cycles){ int n=m.run(50000); if(n==0) break; }
+        uint64_t start=runClock(); m.clearStop(); hit=false;
+        g_int_flag=0; g_in_run=1;
+        auto last_prog = std::chrono::steady_clock::now();
+        while (runClock()-start < cycles){ int n=m.run(50000); if(n==0) break;
+            if (g_int_flag){ fprintf(stderr,"\n  ^C — Lauf abgebrochen\n"); break; }
+            runProgress(start,last_prog); }
+        g_in_run=0;
         hist_on=false;
-        uint64_t ran=m.cpuCycles()-start;
+        uint64_t ran=runClock()-start;
         fprintf(stderr,"hist over %llu cyc",(unsigned long long)ran);
         if(lo>=0) fprintf(stderr," in [%04X..%04X]",(uint16_t)lo,(uint16_t)hi);
         fprintf(stderr,":\n");
@@ -841,18 +1018,27 @@ int main(int argc, char** argv){
         top(hist1,"ZVE1"); top(hist2,"ZVE2");
     };
     // silent run kernel: runs until a stop is signalled or budget/cap reached.
+    // Beim Fortsetzen wird die aktuelle Adresse beider CPUs als „einmal nicht halten"
+    // vorgemerkt — sonst hielte ein Breakpoint, auf dem wir gerade STEHEN, sofort wieder
+    // (break-before-execute, s. tools/k1520dbg.md §2).
+    auto armResume = [&]{ resume_skip1 = (int)m.cpuPC(); resume_skip2 = (int)m.zve2PC(); };
     auto goSilent = [&](uint64_t budget)->uint64_t{
-        hit=false; m.clearStop(); tw_n=0;
-        uint64_t start=m.cpuCycles();
+        hit=false; m.clearStop(); tw_n=0; armResume();
+        uint64_t start=runClock();
         uint64_t cap = budget? budget : 400000000ULL;     // safety cap for bare `g`
+        g_int_flag=0; g_in_run=1;
+        auto last_prog = std::chrono::steady_clock::now();
         while (!hit){
-            if (m.cpuCycles()-start>=cap) break;
+            if (runClock()-start>=cap) break;
             int n=m.run(50000); if(n==0) break;
             // #1 bscreen: stop as soon as the screen shows the armed pattern.
             if (!screen_bp.empty() && screenContains(screen_bp))
                 stopFromBus("bscreen \""+screen_bp+"\"");
+            if (g_int_flag){ fprintf(stderr,"\n  ^C — Lauf abgebrochen\n"); break; }
+            runProgress(start,last_prog);
         }
-        return m.cpuCycles()-start;
+        g_in_run=0;
+        return runClock()-start;
     };
     auto go = [&](uint64_t budget){
         uint64_t ran=goSilent(budget);
@@ -865,16 +1051,21 @@ int main(int argc, char** argv){
     // sets `matched`/`hit` so the caller can report which happened. Makes menu
     // navigation deterministic instead of guessing `g <cycles>`.
     auto goUntilScreen = [&](const std::string& pat, uint64_t cap, bool& matched)->uint64_t{
-        hit=false; matched=false; m.clearStop(); tw_n=0;
-        uint64_t start=m.cpuCycles();
+        hit=false; matched=false; m.clearStop(); tw_n=0; armResume();
+        uint64_t start=runClock();
         if (cap==0) cap=400000000ULL;
         if (screenContains(pat)){ matched=true; return 0; }
+        g_int_flag=0; g_in_run=1;
+        auto last_prog = std::chrono::steady_clock::now();
         while (!hit){
-            if (m.cpuCycles()-start>=cap) break;
+            if (runClock()-start>=cap) break;
             int n=m.run(50000); if(n==0) break;
             if (screenContains(pat)){ matched=true; break; }
+            if (g_int_flag){ fprintf(stderr,"\n  ^C — Lauf abgebrochen\n"); break; }
+            runProgress(start,last_prog);
         }
-        return m.cpuCycles()-start;
+        g_in_run=0;
+        return runClock()-start;
     };
     // Step OVER one ZVE1 instruction (silent — caller prints the result).
     // For CALL and repeating block ops (LDIR/INIR…) "over" means: don't descend —
@@ -883,7 +1074,8 @@ int main(int argc, char** argv){
     auto stepOver = [&]{
         z80dis::Insn d = z80dis::decode(rd1, m.cpuPC());
         if (d.is_call || d.is_repeat){ gu_pc=(int)(uint16_t)(m.cpuPC()+d.len); goSilent(0); }
-        else { step_rem=1; m.clearStop(); while(step_rem>0){int n=m.run(20000); if(n==0||hit)break;} }
+        else { step_rem=1; step_active=true; m.clearStop(); armResume();
+               while(step_active){ int n=m.run(20000); if(n==0||hit)break; } }
     };
     // Decode the key token starting at s[i], advancing i past it (the caller's for-loop
     // does the final ++i). Escapes: `\r`/`\n`→Enter, `\t`→Tab, `\e`→ESC, `\s`→Space
@@ -1063,7 +1255,9 @@ int main(int argc, char** argv){
     for (auto& sf : symfiles) loadSyms(sf);       // apply -s symbol files
     for (auto& pf : prnfiles) loadPrnSpec(pf);    // apply -l .prn listings (also imports labels)
 
-    fprintf(stderr,"k1520dbg — type 'help'.  Clock = ZVE1 cycles.  Disassembler: built-in.\n");
+    signal(SIGINT, dbgSigInt);      // §7: Ctrl-C bricht einen laufenden `g` ab, nicht die Sitzung
+    fprintf(stderr,"k1520dbg — type 'help'.  Lauf-Uhr = %s (clock zve1|machine).  Disassembler: built-in.\n",
+            clock_machine? "Maschine (beide CPUs)" : "ZVE1");
 #ifdef HAVE_READLINE
     rl_attempted_completion_function = dbgCompletion;   // Tab → command-name completion
 #endif
@@ -1136,7 +1330,8 @@ int main(int argc, char** argv){
         }
         else if (cmd=="help"||cmd=="h"||cmd=="?"){
             fprintf(stderr,
-              "  RUN     g/c [N]   run to breakpoint (or N ZVE1-cycles)\n"
+              "  RUN     g/c [N]   run to breakpoint (or N MASCHINEN-Takte; Ctrl-C bricht ab)\n"
+              "          clock [zve1|machine]   welche Uhr die Lauf-Budgets zaehlt\n"
               "          gu <A>    run until ZVE1 reaches A (temp bp)\n"
               "          s [N]     step INTO N ZVE1 instrs ;  s2 [N] step ZVE2\n"
               "          n [N]     step OVER N ZVE1 instrs (skip CALL/blockrepeat)\n"
@@ -1156,22 +1351,29 @@ int main(int argc, char** argv){
               "          iow/iob <P>     io port: print / break ; iod <P> wl-io: iol\n"
               "  LOG     logpoint <A> [expr..]  print + CONTINUE (dprintf) ; lpd <A> ; lpl\n"
               "          trace <file> [lo hi]   log every executed instr to file ; trace off\n"
-              "          itrace <file>          log every accepted INT/NMI (cycle, int@PC, ISR, SP) ; itrace off\n"
+              "          itrace <file>          log every accepted INT/NMI (cycle, int@PC, ISR, SP,\n"
+              "                                 Vektor + Quellgeraet/SPURIOUS) ; itrace off\n"
               "  INSPECT r [2]     registers (ZVE1, +ZVE2) ; rj / rj2 registers as JSON (ZVE1/ZVE2)\n"
               "          where/w [--json]   BOTH CPUs + /BUSRQ + K5122 head/xfer at a glance\n"
               "          hist <cyc> [lo hi] PC hotspots of both CPUs over a cycle window ; bt [N] backtrace\n"
-              "          d/dump <A> [N] hexdump ; u [A] [N] disasm ; e <A> <b..> poke\n"
+              "          d/dump <A> [N] hexdump ; dump <A> <N> <datei>  RAM -> Binaerdatei\n"
+              "          u [A] [N] disasm (bricht in unbeschriebenem Speicher ab) ; e <A> <b..> poke\n"
               "          x/<N><fmt><sz> <A> | x <A> [N]  examine (fmt x/d/u/c/t/o/a/i/s, sz b/w); x continues\n"
               "          list/l [A] [N]  .prn source lines around A (labels load as symbols)\n"
               "          set [2] <reg> <v>   edit register ; vars [-f <f>|add <n> <A> [w]|clear]  RAM dashboard\n"
-              "          dev [ctc|pio|sio|sio2]   chip state (default K5122); CTC/PIO/SIO + IUS/IEI\n"
+              "          dev [ctc|pio [all|bs|k5122ctrl|k5122data]|sio|sio2]   chip state (default K5122)\n"
+              "          ivt [all|2]     IM-2-Vektortabelle: Vektor/Tabelle/Eintrag/Geraet + Status\n"
               "          disk verify [B]   Sektor-/CRC-Health aller Spuren des Images\n"
               "          disp <expr> | undisp <n> | disp   show expr at every stop\n"
               "  MEM     load <f> <A>   read binary into RAM ; save <f> <A> <N> dump RAM\n"
+              "          verify <datei> @<A> [N]   Datei mit dem RAM vergleichen (Build-Abgleich)\n"
               "          savestate <f> | loadstate <f>   full machine state (boot once, resume)\n"
               "  MISC    mark [A]  zero relative cycle counter (now / armed at A)\n"
               "          sym <f> | sym add <name> <A> | sym list\n"
-              "          lst <f.prn>[@off] | lst <f.prn> <off> | lst list   MACRO-80 listing → annotate\n"
+              "          lst <f>[@off|@auto] | lst <f> <off> | lst list   Listing/Quelle → annotate\n"
+              "                    <f> = .prn-Listing ODER .MAC/.ASM-Quelltext (wird assembliert)\n"
+              "                    @auto = Ladeversatz aus den Objektbytes im RAM bestimmen\n"
+              "                    @labels/@noanchor (nur .MAC): Mxxxx-Adressanker erzwingen/abschalten\n"
               "          keys <text> (\\r \\t \\e \\s \\xNN) ; screen [find \"txt\"] ; reset ; q\n"
               "          gscreen \"txt\"|/re/ [maxcyc]   run until screen shows txt (deterministic menus)\n"
               "          bscreen \"txt\"|/re/ | off      arm: any g/gu/n stops on screen match\n"
@@ -1182,11 +1384,15 @@ int main(int argc, char** argv){
         // ══ RUN: continue / step (each snapshots first via pushHistory for `rs`) ══
         else if (cmd=="g"||cmd=="c"){ pushHistory(); go(t.size()>1? (uint64_t)parseNum(t[1]) : 0); }
         else if (cmd=="gu" && t.size()>1){ pushHistory(); gu_pc=(int)(uint16_t)parseNum(t[1]); go(0); }
-        else if (cmd=="s"){ pushHistory(); step_rem=t.size()>1?parseNum(t[1]):1; m.clearStop();
-            while(step_rem>0){ int n=m.run(20000); if(n==0||hit) break; }
+        else if (cmd=="s"){ pushHistory(); step_rem=t.size()>1?parseNum(t[1]):1; step_active=true;
+            m.clearStop(); armResume();
+            while(step_active){ int n=m.run(20000); if(n==0||hit) break; }
+            step_active=false;
             if(hit){ hit=false; onStop(); } else stateLine(); }
-        else if (cmd=="s2"){ pushHistory(); step2_rem=t.size()>1?parseNum(t[1]):1; m.clearStop();
-            while(step2_rem>0){ int n=m.run(20000); if(n==0||hit) break; }
+        else if (cmd=="s2"){ pushHistory(); step2_rem=t.size()>1?parseNum(t[1]):1; step2_active=true;
+            m.clearStop(); armResume();
+            while(step2_active){ int n=m.run(20000); if(n==0||hit) break; }
+            step2_active=false;
             if(hit){ hit=false; onStop(); } else { fprintf(stderr,"  (ZVE2 did not run — /BUSRQ not asserted?)\n"); stateLine(); } }
         else if (cmd=="n"){ pushHistory(); long k=t.size()>1?parseNum(t[1]):1;
             for(long i=0;i<k;++i){ stepOver(); if(hit) break; }
@@ -1355,7 +1561,16 @@ int main(int argc, char** argv){
             if (t.size()>1 && t[1]=="scan"){ bool prev=bt_use_history; bt_use_history=false;
                 backtrace(t.size()>2?(int)parseNum(t[2]):8); bt_use_history=prev; }
             else backtrace(t.size()>1?(int)parseNum(t[1]):8); }
-        else if ((cmd=="d"||cmd=="dump") && t.size()>1) dump((uint16_t)parseNum(t[1]), t.size()>2?(int)parseNum(t[2]):64);
+        else if ((cmd=="d"||cmd=="dump") && t.size()>1){
+            // §3-Gegenstück: `dump <adr> <len> <datei>` schreibt den Bereich als Binärdatei
+            // heraus (für externen Disassembler/Diff); ohne Dateinamen bleibt es der Hexdump.
+            if (t.size()>3){
+                uint16_t a=(uint16_t)parseNum(t[1]); int n=(int)parseNum(t[2]);
+                std::ofstream f(t[3],std::ios::binary);
+                if(!f) fprintf(stderr,"  cannot write %s\n",t[3].c_str());
+                else { for(int i=0;i<n;++i) f.put((char)m.memReadDebug((uint16_t)(a+i)));
+                       fprintf(stderr,"  dumped %d byte(s) from %04X → %s\n",n,a,t[3].c_str()); } }
+            else dump((uint16_t)parseNum(t[1]), t.size()>2?(int)parseNum(t[2]):64); }
         else if (cmd=="e" && t.size()>2){ uint16_t a=(uint16_t)parseNum(t[1]);
             // poke values default to HEX (matches d/u output); strtol base 16 also accepts 0x..
             for(size_t i=2;i<t.size();++i)
@@ -1364,7 +1579,26 @@ int main(int argc, char** argv){
         else if (cmd=="u"){
             uint16_t a = t.size()>1? (uint16_t)parseNum(t[1]) : (last_u_set? last_u : m.cpuPC());
             int cnt = t.size()>2? (int)parseNum(t[2]) : 12;
-            for(int i=0;i<cnt;++i){ char l[120]; int len=disasmAt(a,l,sizeof l);
+            // §8: `u <adr> <hi>` (Endadresse) ist die naheliegende, aber falsche Lesart —
+            // das zweite Argument ist die ANZAHL. Sieht es klar nach einer Endadresse aus
+            // (> Startadresse, > 256), so behandeln und es sagen, statt 5000 Zeilen zu drucken.
+            uint16_t u_end = 0; bool u_range=false;
+            if (t.size()>2 && cnt > 256 && cnt > (int)a && cnt <= 0xFFFF){
+                u_end=(uint16_t)cnt; u_range=true; cnt=0x7FFF;
+                fprintf(stderr,"  (2. Argument als END-Adresse %04X gelesen; fuer eine Anzahl < 257 angeben)\n",u_end); }
+            // läuft die Disassembly in unbeschriebenen Speicher (lauter 0xFF → "RST 38H"),
+            // ist das keine Codeausgabe, sondern Rauschen. Nach 4 solchen Zeilen abbrechen
+            // und sagen, ab wo — spart das Scrollen durch 40 sinnlose Zeilen.
+            int ff_run = 0;
+            for(int i=0;i<cnt;++i){ if(u_range && a>=u_end) break;
+                char l[120]; int len=disasmAt(a,l,sizeof l);
+                uint8_t op = m.memReadDebug(a);
+                if (op==0xFF || op==0x00){
+                    if (++ff_run > 4){
+                        fprintf(stderr,"  … ab %04X unbeschriebener Speicher (%s) — Ausgabe abgebrochen\n",
+                                (unsigned)(a - (uint16_t)(4*len)), op==0xFF? "0xFF":"0x00");
+                        break; }
+                } else ff_run = 0;
                 std::string p=prnFor(a);
                 fprintf(stderr,"  %s%s%s\n",l, p.empty()?"":"  ; ", p.c_str()); a=(uint16_t)(a+len); }
             last_u=a; last_u_set=true; }
@@ -1452,6 +1686,36 @@ int main(int argc, char** argv){
         else if (cmd=="save" && t.size()>3){ std::ofstream f(t[1],std::ios::binary);
             uint16_t a=(uint16_t)parseNum(t[2]); int n=(int)parseNum(t[3]);
             for(int i=0;i<n;++i) f.put((char)m.memReadDebug(a+i)); fprintf(stderr,"  saved %d byte(s) from %04X to %s\n",n,a,t[1].c_str()); }
+        // §3: Binärabgleich Datei ↔ RAM — „ist das die richtige Datei, derselbe Build,
+        // und wo genau nicht?" in einem Kommando (statt xxd-Ausgabe per Auge).
+        else if (cmd=="verify"){
+            if (t.size()<3){ fprintf(stderr,"  verify <datei> @<adr> [laenge]   Datei mit dem RAM vergleichen\n"); }
+            else {
+                std::string as=t[2]; if(!as.empty()&&as[0]=='@') as=as.substr(1);
+                uint16_t base=(uint16_t)resolveAddr(as);
+                std::ifstream f(t[1],std::ios::binary);
+                if(!f) fprintf(stderr,"  cannot open %s\n",t[1].c_str());
+                else {
+                    std::vector<uint8_t> fb((std::istreambuf_iterator<char>(f)),
+                                             std::istreambuf_iterator<char>());
+                    size_t n=fb.size();
+                    if (t.size()>3){ size_t lim=(size_t)parseNum(t[3]); if(lim<n) n=lim; }
+                    if (base+n > 0x10000) n = 0x10000 - base;
+                    size_t same=0, shown=0;
+                    std::vector<size_t> diffs;
+                    for(size_t i=0;i<n;++i){
+                        uint8_t r=m.memReadDebug((uint16_t)(base+i));
+                        if (r==fb[i]) ++same; else diffs.push_back(i);
+                    }
+                    fprintf(stderr,"  %zu Bytes @%04X, %zu identisch (%.1f %%), %zu Abweichung(en)%s\n",
+                            n,base,same, n? 100.0*(double)same/(double)n : 0.0, diffs.size(),
+                            diffs.empty()?"":":");
+                    for(size_t d : diffs){
+                        if (++shown>32){ fprintf(stderr,"    … (%zu weitere)\n",diffs.size()-32); break; }
+                        fprintf(stderr,"    %04X  Datei %02X   RAM %02X\n",
+                                (unsigned)(base+d), fb[d], m.memReadDebug((uint16_t)(base+d)));
+                    }
+                } } }
         // full machine state (RAM+CPU) to/from a file — boot once, then resume cheaply
         else if (cmd=="savestate" && t.size()>1){
             if(m.saveState(t[1])) fprintf(stderr,"  state saved → %s (PC=%04X)\n",t[1].c_str(),m.cpuPC());
@@ -1546,11 +1810,25 @@ int main(int argc, char** argv){
                 for(int i=0;i<4;++i){ auto& ch=c.ch[i];
                     fprintf(stderr,"    ch%d ctl=%02X TC=%02X cnt=%-3d run=%s  INT(en=%s pend=%s ius=%s iei=%s)\n",
                         i,ch.control,ch.timeConst,ch.counter,Y(ch.running),Y(ch.intEn),Y(ch.intPending),Y(ch.ius),Y(ch.iei)); } }
-            else if (w=="pio"){ auto p=m.bsPioState();
-                fprintf(stderr,"  BS-PIO (K2526)  IEI=%s IEO=%s\n",Y(p.iei),Y(p.ieo));
-                for(int i=0;i<2;++i){ auto& pt=p.port[i];
-                    fprintf(stderr,"    %c mode=%u out=%02X in=%02X dir=%02X vec=%02X  INT(en=%s pend=%s ius=%s iei=%s)\n",
-                        i?'B':'A',pt.mode,pt.out,pt.in,pt.dir,pt.vector,Y(pt.ie),Y(pt.pending),Y(pt.ius),Y(pt.iei)); } }
+            else if (w=="pio"){
+                // §4: alle drei PIOs erreichbar — die K5122-PIOs (Steuer/Daten) waren
+                // bisher nur per C++-Instrumentierung sichtbar, obwohl genau dort der
+                // Interrupt-Zustand steht, der einen Fremd-OS-Sturm erklärt.
+                std::string which = t.size()>2? t[2] : "all";
+                auto showPio=[&](const char* name, const Z80PIO::DebugState& p){
+                    fprintf(stderr,"  %s  IEI=%s IEO=%s\n",name,Y(p.iei),Y(p.ieo));
+                    for(int i=0;i<2;++i){ auto& pt=p.port[i];
+                        fprintf(stderr,"    %c mode=%u out=%02X in=%02X dir=%02X vec=%02X  INT(en=%s pend=%s ius=%s iei=%s)\n",
+                            i?'B':'A',pt.mode,pt.out,pt.in,pt.dir,pt.vector,Y(pt.ie),Y(pt.pending),Y(pt.ius),Y(pt.iei)); } };
+                bool all = (which=="all");
+                bool any = false;
+                if (all || which=="k5122ctrl" || which=="ctrl"){
+                    showPio("K5122 ctrl-PIO (Ports 10-13)", m.k5122CtrlPioState()); any=true; }
+                if (all || which=="k5122data" || which=="data"){
+                    showPio("K5122 data-PIO (Ports 14-17)", m.k5122DataPioState()); any=true; }
+                if (all || which=="bs"){
+                    showPio("BS-PIO (K2526, Ports 08-0B)", m.bsPioState()); any=true; }
+                if (!any) fprintf(stderr,"  dev pio [all|bs|k5122ctrl|k5122data]\n"); }
             else if (w=="sio" || w=="sio2"){
                 auto s = (w=="sio2")? m.dfueSioState() : m.kbdSioState();
                 fprintf(stderr,"  SIO %s (K8025 %s)  IEI=%s IEO=%s\n",
@@ -1563,12 +1841,60 @@ int main(int argc, char** argv){
                         k.drive, k.mounted?"mounted":"EMPTY", k.cylinder, k.head,
                         k.transferring?"READING":"idle", k.writeMode?"+WRITE":"",
                         k.headPos, k.trackLen, k.sectorSize, k.busrq?"yes":"no");
-                fprintf(stderr,"  (dev ctc | dev pio | dev sio | dev sio2 for the other chips)\n"); } }
+                fprintf(stderr,"  (dev ctc | dev pio [all|bs|k5122ctrl|k5122data] | dev sio | dev sio2)\n"); } }
+        else if (cmd=="ivt"){    // §6: IM-2-Vektortabelle auf einen Blick
+            // Für jede Interruptquelle der Daisy-Chain: programmierter Vektor →
+            // Tabellenadresse (I<<8 | vec&0xFE) → dort eingetragene ISR-Adresse.
+            // Ein Gerät mit IE=1, dessen Eintrag ins Leere zeigt, ist der klassische
+            // Fremd-OS-Fehler (Interruptsturm / Sprung nach 0xFFFF).
+            bool useZ2 = t.size()>1 && (t[1]=="2"||t[1]=="zve2");
+            const Z80& z = useZ2? m.zve2Debug() : m.cpuDebug();
+            fprintf(stderr,"  %s: I=%02X  IM %u  IFF1=%d\n",
+                    useZ2?"ZVE2":"ZVE1", z.I, z.IM, (int)z.IFF1);
+            if (z.IM != 2)
+                fprintf(stderr,"  (Hinweis: IM != 2 — die Tabelle wird gerade nicht benutzt)\n");
+            fprintf(stderr,"  Vektor Tabelle Eintrag Geraet                     Status\n");
+            auto entryAt=[&](uint8_t vec)->uint16_t{
+                uint16_t tb=(uint16_t)((z.I<<8)|(vec&0xFE));
+                return (uint16_t)(m.memReadDebug(tb) | (m.memReadDebug((uint16_t)(tb+1))<<8)); };
+            int warned=0;
+            for (auto& s : m.interruptSources()){
+                // Nicht programmierte/uninteressante Quellen ausblenden, außer sie sind scharf.
+                bool interesting = s.ie || s.pending || s.ius;
+                if (!interesting && !(t.size()>1 && (t[1]=="all"||t.back()=="all"))) continue;
+                uint16_t tb=(uint16_t)((z.I<<8)|(s.vector&0xFE));
+                uint16_t ent=entryAt(s.vector);
+                const char* st = "ok";
+                if (ent==0xFFFF || ent==0x0000){ st = s.ie? "ZEIGT INS LEERE  <-- IE=1!" : "zeigt ins Leere"; if(s.ie) ++warned; }
+                else if (!s.ie) st = "(IE=0)";
+                fprintf(stderr,"  %s0x%02X  0x%04X  %04X    %-26s %s%s%s\n",
+                        s.exact?" ":"~", s.vector, tb, ent, s.device.c_str(), st,
+                        s.pending?"  pend":"", s.ius?"  ius":"");
+            }
+            // Fallback-Zeile: der Bus liefert 0xFF, wenn KEIN Gerät antwortet.
+            {   uint16_t tb=(uint16_t)((z.I<<8)|0xFE);
+                uint16_t ent=entryAt(0xFF);
+                fprintf(stderr,"   0xFF  0x%04X  %04X    %-26s %s\n",tb,ent,
+                        "(Fallback: kein Geraet)", (ent==0xFFFF||ent==0x0000)?"zeigt ins Leere":"ok"); }
+            auto& ia = m.lastIntAck();
+            if (ia.count) fprintf(stderr,"  letzte Quittung: %s Vektor=%02X (%llu gesamt)\n",
+                    ia.spurious? "SPURIOUS (kein Geraet)" : (ia.device?ia.device:"?"),
+                    ia.vector, (unsigned long long)ia.count);
+            if (warned) fprintf(stderr,"  ==> %d scharfe Quelle(n) ohne gueltigen Tabelleneintrag\n",warned);
+            fprintf(stderr,"  (ivt all = auch gesperrte Quellen; ivt 2 = I-Register der ZVE2; ~ = SIO-Basisvektor)\n"); }
         else if (cmd=="disk"){   // §13 disk verify [B]: Sektor-/CRC-Health aller Spuren
             if (t.size()>=2 && t[1]=="verify"){
                 bool wantB = t.size()>=3 && (t[2]=="B"||t[2]=="b"||t[2]=="1");
                 diskVerify(wantB?diskB:disk, wantB?"B:":"A:");
             } else fprintf(stderr,"  disk verify [B]   Sektor-/CRC-Health aller Spuren des Originals\n"); }
+        else if (cmd=="clock"){   // §7: Uhrenwahl für Lauf-Budgets (g/gu/gscreen/hist)
+            if (t.size()>1){
+                if (t[1]=="zve1") clock_machine=false;
+                else if (t[1]=="machine"||t[1]=="maschine") clock_machine=true;
+                else { fprintf(stderr,"  clock [zve1|machine]\n"); } }
+            fprintf(stderr,"  Lauf-Uhr = %s   ZVE1=%llu  Maschine=%llu\n",
+                    clock_machine?"Maschine (beide CPUs)":"ZVE1",
+                    (unsigned long long)m.cpuCycles(),(unsigned long long)m.machineCycles()); }
         else if (cmd=="reset"){ m.reset(); fprintf(stderr,"  reset\n"); }
         // ── MISC: command aliases + sourcing a script mid-session ──
         else if (cmd=="alias"){

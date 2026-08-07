@@ -1,0 +1,15 @@
+# Fremdquellen-Annotation: .MAC-Quelltext wird assembliert und annotiert die Disasm.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+file quelle.mac:
+  	ORG	1000H
+  	LD	A,05H
+  	AND	0FH
+stdin:
+  e 0x1000 3E 05 E6 0F
+  lst %quelle.mac%
+  u 0x1000 2
+  q
+# Der angehängte Quelltext trägt den Tabulator aus der .MAC-Datei — daher \s+.
+expect_re: 1002: E6 0F +AND 0FH +; AND\s+0FH

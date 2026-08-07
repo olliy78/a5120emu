@@ -1,0 +1,11 @@
+# Symbole: `sym add` benennt eine Adresse; Disasm und Haltepunkte nutzen den Namen.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  sym add START 0x0135
+  u 0x0135 1
+  b START
+  bl
+  q
+expect_re: 0135 <START>: 7E +LD A,\(HL\)

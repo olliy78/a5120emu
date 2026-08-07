@@ -1,0 +1,13 @@
+# Fortsetzen hält nicht sofort wieder auf derselben Adresse — nach drei `g`
+# zählt der Haltepunkt drei Treffer.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  b 0x0135
+  g
+  g
+  g
+  bl
+  q
+expect: 0135  hits=3

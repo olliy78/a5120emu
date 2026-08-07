@@ -6,4 +6,4 @@ disk:      cpa_cpa780_k5601_clock.img
 tmpfile state.bin:
 setup_run: -L /dev/null --until [0x03F8]==3 --save-state %state.bin% %DISK%
 run:       -L /dev/null --load-state %state.bin% -c 2000 %DISK%
-expect:    resuming at PC=0x0169
+expect:    resuming at PC=0x0168

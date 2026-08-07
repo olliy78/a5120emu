@@ -1,0 +1,15 @@
+# `s` führt EINE Instruktion aus und zeigt die nächste (gdb-Semantik).
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  b 0x0135
+  g
+  s
+  s
+  q
+# Zwei Einzelprüfungen statt eines mehrzeiligen Musters: in Pythons re deckt
+# `.` KEINEN Zeilenumbruch ab (in CMakes Regex schon) — ein gezähltes
+# "n Zeilen dazwischen" wäre ohnehin nur an das Ausgabelayout gefesselt.
+expect_re: => 0136: B7\s+OR A
+expect_re: => 0137: 3E 87\s+LD A,87H

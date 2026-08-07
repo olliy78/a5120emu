@@ -1,0 +1,9 @@
+# IM-2-Vektortabelle inkl. Fallback-Zeile für den geräteloses-0xFF-Fall.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  g 5000000
+  ivt
+  q
+expect_re: 0xFF +0x[0-9A-F]+ +[0-9A-F]+ +\(Fallback: kein Geraet\)

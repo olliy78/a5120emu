@@ -1,0 +1,14 @@
+# `lst quelle.mac@auto` bestimmt den Ladeversatz selbst — und lehnt ihn ab,
+# wenn die Passung zu unsicher ist.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+file quelle.mac:
+  	ORG	6000H
+  	DB	3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H,3EH,05H
+  	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+stdin:
+  e 0x6000 3E 05 3E 05 3E 05 3E 05 3E 05 3E 05 3E 05 3E 05 3E 05 3E 05 3E 05 3E 05
+  lst %quelle.mac%@auto
+  q
+expect_re: 44.4 %.*\n.*Versatz NICHT angewandt \(zu unsicher\)

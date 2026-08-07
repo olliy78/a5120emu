@@ -1,0 +1,9 @@
+# Bedingter Haltepunkt erscheint mit seiner Bedingung in der Liste.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  b 0x0135 if A==0
+  bl
+  q
+expect: 0135  hits=0 if A==0

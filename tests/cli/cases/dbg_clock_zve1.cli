@@ -1,0 +1,8 @@
+# `clock zve1` schaltet die Lauf-Uhr auf ZVE1 zurück.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  clock zve1
+  q
+expect_re: Lauf-Uhr = ZVE1   ZVE1=[0-9]+  Maschine=[0-9]+

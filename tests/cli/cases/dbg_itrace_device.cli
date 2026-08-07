@@ -1,0 +1,12 @@
+# --itrace schreibt je angenommenem Interrupt eine Zeile mit Vektor und Gerät.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+tmpfile itrace.csv:
+stdin:
+  itrace %itrace.csv%
+  g 300000
+  itrace off
+  q
+capture_file: itrace.csv
+expect_re: ISR 007A SP=[0-9A-F]+ vec=B8 dev=K2526 BS-PIO

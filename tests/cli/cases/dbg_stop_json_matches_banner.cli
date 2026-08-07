@@ -1,0 +1,12 @@
+# Die JSON-Registerausgabe zeigt denselben Halt wie die Klartextzeile.
+# Deterministisch: der Zustand wird per Haltepunkt hergestellt, nicht per Taktzahl
+# (der zyklusabhängige Gegenpart ist dbg_json.cli).
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  b 0x0135
+  g
+  rj
+  q
+expect: "pc":"0x0135"

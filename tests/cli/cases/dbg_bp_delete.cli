@@ -1,0 +1,10 @@
+# `bd` entfernt einen Haltepunkt wieder.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  b 0x0135
+  bd 0x0135
+  bl
+  q
+expect_re: ZVE1 breakpoints:\n    \(none\)

@@ -177,6 +177,45 @@ TEST(MachineSnapshot, LoadStateRejectsMissingAndGarbage){
 // Default = 4× 5,25"-MFM (K5601); per Config (C-API/GUI/Config-Datei) überschreibbar.
 // k5122State() liefert den Zustand des aktuell gewählten Laufwerks (Default: Slot 0).
 
+// ─── break-before-execute (Debugger-Halt) ────────────────────────────────────
+// Fordert ein Trace-Callback mitten in der Instruktionsvorbereitung den Halt an
+// (stop()), darf die Instruktion NICHT mehr laufen: der Zustand, den der Callback
+// gemeldet hat, muss danach exakt der Maschinenzustand sein. Sonst zeigt ein
+// Debugger die eine Adresse an und jede Folgeabfrage die nächste
+// (s. tools/k1520dbg.md §2/§8).
+TEST(MachineRunControl, StopFromTraceCallbackHaltsBeforeTheInstruction){
+    A5120Machine m; m.powerOn();
+    // Erst ein Stück laufen lassen, damit wir mitten im Lade-ROM stehen.
+    m.run(20000);
+    const uint16_t target = m.cpuPC();
+
+    uint16_t seen_pc = 0xFFFF; uint64_t seen_cyc = 0; int calls = 0;
+    m.setCpuTraceCallback([&](const Z80& z){
+        if (calls++ > 0) return;              // nur beim ersten Callback halten
+        seen_pc = z.PC; seen_cyc = z.cycles;
+        m.stop();
+    });
+    m.clearStop();
+    int used = m.run(50000);
+
+    EXPECT_EQ(seen_pc, target);               // Callback sah die nächste Instruktion …
+    EXPECT_EQ(m.cpuPC(), seen_pc);            // … und genau dort steht die Maschine
+    EXPECT_EQ(m.cpuDebug().cycles, seen_cyc); // keine Takte verbraucht
+    EXPECT_EQ(used, 0);
+    m.setCpuTraceCallback({});                // Lambda fängt lokale Referenzen
+}
+
+// Ohne Halt läuft alles wie bisher — die Rückfrage darf den Normalbetrieb nicht bremsen.
+TEST(MachineRunControl, TraceCallbackWithoutStopRunsNormally){
+    A5120Machine m; m.powerOn();
+    int calls = 0;
+    m.setCpuTraceCallback([&](const Z80&){ ++calls; });
+    int used = m.run(20000);
+    EXPECT_GT(used, 0);
+    EXPECT_GT(calls, 10);
+    m.setCpuTraceCallback({});
+}
+
 TEST(MachineConfig, DefaultIst4xK5601){
     A5120Machine m;   // ohne Config → Default-Bürokonfiguration
     EXPECT_EQ(m.k5122State().driveProfileName, "K5601");

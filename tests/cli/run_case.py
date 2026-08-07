@@ -22,6 +22,9 @@ Dateiformat (Zeilenweise, `#` ist Kommentar):
 
     file <n>:                               Block → Temp-Datei, Pfad als %n%
       <inhalt…>
+    capture_file: <n>                       Inhalt dieser Datei NACH dem Lauf an die
+                                            geprüfte Ausgabe anhängen (für Kommandos,
+                                            die ihr Ergebnis in eine Datei schreiben)
     stdin:                                  Block → auf die Standardeingabe
       <zeilen…>
 
@@ -30,12 +33,21 @@ Dateiformat (Zeilenweise, `#` ist Kommentar):
 
     expect:     <text>                      muss in der Ausgabe vorkommen
     expect_re:  <ERE>                       dito, als regulärer Ausdruck
+                                            (Python-`re`: `.` deckt KEINEN
+                                            Zeilenumbruch ab — anders als CMakes
+                                            Regex, aus dem die Fälle stammen)
     forbid:     <text>                      darf NICHT vorkommen
     forbid_re:  <ERE>
     exit:       <n>                         erwarteter Exit-Code
 
 `expect*`/`forbid*` sind wiederholbar; geprüft wird die zusammengefasste
-Standard- und Fehlerausgabe des `run:`-Laufs.
+Standard- und Fehlerausgabe des `run:`-Laufs (plus der Inhalt aller
+`capture_file:`-Dateien).
+
+Platzhalter: `%DISK%`, jeder `file`-/`tmpfile`-Name, sowie `%CLI_DIR%` (das
+Verzeichnis `tests/cli`, z. B. für `-x %CLI_DIR%/scripts/…`).  Der Lauf findet in
+einem Temp-Verzeichnis statt, damit Dateien, die das Werkzeug nebenbei anlegt,
+mit aufgeräumt werden.
 
 Bewusst KEINE Golden-Volldateien: die Ausgaben enthalten Taktzahlen und
 Zeitstempel, ein Vollvergleich wäre bei jeder Timing-Änderung rot.  Die
@@ -60,7 +72,7 @@ class CaseError(Exception):
 def parse_case(path):
     """`.cli`-Datei → dict.  Blockdirektiven sammeln eingerückte Folgezeilen."""
     case = {"expect": [], "expect_re": [], "forbid": [], "forbid_re": [],
-            "setup_run": [], "files": {}, "tmpfiles": [], "stdin": None,
+            "setup_run": [], "capture_file": [], "files": {}, "tmpfiles": [], "stdin": None,
             "tool": None, "disk": None, "disk_path": None, "run": None,
             "exit": None, "timeout": 120, "doc": []}
     block_key = None
@@ -105,7 +117,8 @@ def parse_case(path):
             block_key, block_lines = key[5:].strip(), []
         elif key.startswith("tmpfile"):
             case["tmpfiles"].append(key[7:].strip())
-        elif key in ("expect", "expect_re", "forbid", "forbid_re", "setup_run"):
+        elif key in ("expect", "expect_re", "forbid", "forbid_re", "setup_run",
+                     "capture_file"):
             case[key].append(value)
         elif key in ("tool", "disk", "disk_path", "run"):
             case[key] = value
@@ -157,6 +170,10 @@ def main():
             subst[name] = path
         for name in case["tmpfiles"]:
             subst[name] = os.path.join(tmpdir, name)
+        for name in case["capture_file"]:
+            subst.setdefault(name, os.path.join(tmpdir, name))
+        # Verzeichnis tests/cli — für Skripte, die mitgeliefert werden.
+        subst["CLI_DIR"] = os.path.dirname(os.path.dirname(os.path.abspath(args.case)))
 
         def expand(text):
             for key, value in subst.items():
@@ -167,18 +184,31 @@ def main():
             return text
 
         exe = tools[case["tool"]]
+        # Platzhalter gelten auch in der Standardeingabe — Debugger-Kommandos wie
+        # `trace %datei%` oder `lst %quelle.mac%` brauchen den echten Pfad.
+        stdin = expand(case["stdin"]) if case["stdin"] else None
 
         for extra in case["setup_run"]:
             subprocess.run([exe] + shlex.split(expand(extra)),
-                           input=case["stdin"], text=True,
+                           input=stdin, text=True, cwd=tmpdir,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                            timeout=case["timeout"])
 
         proc = subprocess.run([exe] + shlex.split(expand(case["run"])),
-                              input=case["stdin"], text=True,
+                              input=stdin, text=True, cwd=tmpdir,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               timeout=case["timeout"])
         output = proc.stdout or ""
+
+        # Kommandos, die ihr Ergebnis in eine Datei schreiben (trace, itrace, dump)
+        for name in case["capture_file"]:
+            path = subst[name]
+            if not os.path.exists(path):
+                print(f"--- {os.path.basename(args.case)} FEHLGESCHLAGEN")
+                print(f"  * capture_file: {name} wurde nicht angelegt ({path})")
+                return 1
+            with open(path, encoding="utf-8", errors="replace") as f:
+                output += "\n--- Inhalt von " + name + " ---\n" + f.read()
 
         problems = []
         for needle in case["expect"]:

@@ -1,0 +1,10 @@
+# `breti on`: Fortsetzen nach einem RETI-Halt hält beim nächsten RETI wieder.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  breti on
+  g
+  g
+  q
+expect_re: RETI : ZVE1 PC=0090\n.*\n.*\n.*\n.*ran [0-9]+ cyc.*\n.. RETI : ZVE1 PC=0090

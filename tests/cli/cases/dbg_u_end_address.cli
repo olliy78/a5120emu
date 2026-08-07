@@ -1,0 +1,9 @@
+# Zweites Argument von `u` wird als END-Adresse gelesen, nicht als Anzahl.
+tool:   k1520dbg
+disk:   cpa_cpa780_k5601_clock.img
+run:    %DISK%
+stdin:
+  e 0x6000 00 00 00 00
+  u 0x6000 0x6003
+  q
+expect: 2. Argument als END-Adresse 6003 gelesen
