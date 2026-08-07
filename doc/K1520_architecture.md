@@ -248,7 +248,8 @@ a5120emu/
     │   ├── 09_floppy_drive.md
     │   ├── 10_c_api.md
     │   ├── 11_python_app.md
-    │   └── 12_testing.md
+    │   ├── 12_testing.md
+    │   └── 13_distribution.md   # Verteilbares Paket (Win/Linux/macOS)
     ├── EPROMS/                  # Binäre EPROM-Inhalte
     └── trascripted/             # Originaldokumentation
 ```
