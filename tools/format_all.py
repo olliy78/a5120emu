@@ -4,10 +4,12 @@ format_all.py – Scriptgesteuertes Formatieren + Verifizieren aller nativen
 K5601-Diskettenformate (5¼″, 80 Spuren, doppelseitig) im A5120-Emulator.
 
 Der Emulator bootet CP/A von Laufwerk A: und formatiert mit FORMAT.COM (V19.05.89)
-in Laufwerk B: der Reihe nach die gewünschten Formate.  Als B:-Ziel dient ein
-frisch erzeugtes, leeres Template — .hfe (formatagnostisch) oder .img (mit passender
-Geometrie/Größe).  Nach dem Formatieren prüft der Runner den End-Screen auf
-`FORMATIEREN beendet` OHNE `SPUR DEFEKT` (mit Verify = Vergleichs-Lesen).
+in Laufwerk B: (bzw. C:) der Reihe nach die gewünschten Formate.  **Das Ziel ist immer
+eine frisch angelegte, ECHTE LEERDISKETTE** (unformatiert, in der Geometrie des
+Laufwerks) — der Anwenderfall.  Ausnahme: `--type img`; ein rohes Sektorimage kennt
+keinen Zustand „unformatiert" und wird deshalb vorformatiert (0xE5) angelegt.
+Nach dem Formatieren prüft der Runner den End-Screen auf `FORMATIEREN beendet`
+OHNE `SPUR DEFEKT` (mit Verify = Vergleichs-Lesen).
 
 Die eigentliche Emulation macht `tools/format_driver` (Zwei-Disk-Treiber mit
 Tastatur-Script).  Dieses Skript erzeugt je Format das Treiber-Script, legt die
@@ -54,15 +56,19 @@ BOOT_DISKS = {
     '8inchCombo': ('cpadisk_autofs_noclock_8inchCombo.img', False),
 }
 
-# B:-Ausgangs-Template: eine GÜLTIGE, bereits formatierte Disk (nicht leer!).
-# FORMAT.COM liest jede Zielspur VOR dem Neuformatieren (Rotations-/Längenmessung).
-# Auf einem gültigen Template finden diese Vorlesungen echte Sektoren → schnell, kein
-# Index-Timeout — und der ZVE1↔ZVE2-Bus (BUSRQ) bleibt stabil.  Ein GAP-LEERES Template
-# zwingt jede Vorlesung in einen Index-Timeout; das verschiebt das Bus-Arbitrierungs-
-# Timing und führt formatabhängig zu einem BUSRQ-Hänger (s. docs/format.md §8.2).
-# Beim VOLL-Format wird das ganze Template überschrieben → sauberes Ziel-Format;
-# beim Smoke behalten die nicht formatierten Spuren die (lesbaren) Template-Daten.
-TEMPLATE_HFE = os.path.join(ROOT, 'disks', 'cpadisk_autofs_clock_noautoexec.hfe')
+# ─── Ausgangszustand des Ziels: ECHTE LEERDISKETTE ───────────────────────────
+# Alle Läufe starten auf einer unformatierten Leerdiskette — genau das, was ein
+# Anwender in das Laufwerk legt.  format_driver bekommt dafür den LEEREN Formatnamen
+# ('' → A5120Machine::createDisk legt ein unformatiertes Medium in der Geometrie des
+# LAUFWERKS an, CLAUDE.md §8.7).
+#
+# Historie: früher wurde eine gültige, bereits formatierte Disk als B:-Template kopiert,
+# weil eine gap-leere Diskette den Emulator hängen ließ bzw. `Fehler 'U' SPUR DEFEKT`
+# provozierte (docs/format.md §8.2).  Beides ist behoben — der markenlose Gap-Fluss
+# terminiert über den Index-Timeout, und der FORMAT-Schreibstrom wird vor dem
+# Vergleichs-Lesen committet (doc/analyse_format_leerspur.md).  Ein Template würde die
+# Tests nur noch schwächen: die Vorlesungen fänden fremde Sektoren statt gar keiner.
+BLANK = ''      # createB/FD_DISKC_FMT-Formatname für „unformatierte Leerdiskette"
 
 # ─── §3-Formattabelle (FORMAT.COM V19.05.89, 5¼″ 80-Spur-DS) ─────────────────
 #
@@ -274,25 +280,23 @@ def make_script(entry, switch_key, full, upto_track, dir_verify,
 
 def prepare_target(path, filetype, img_format):
     """
-    Bereitet das B:-Zielimage vor und liefert den `createB`-Formatnamen für
-    format_driver zurück (oder None = B: nur öffnen).
+    Bereitet das Zielimage vor und liefert den `createB`-Formatnamen für format_driver.
 
-    format_driver legt das Ziel bei angegebenem createB-Format via `create` NEU an —
-    für .hfe jetzt als GÜLTIG FORMATIERTE Leerdiskette (echte IDAM/DATA/CRC), nicht mehr
-    gap-leer.  Damit ist die frühere Template-Kopie (§8.2-Workaround) überflüssig.
-
-    - .hfe/.img mit img_format → createB = img_format (kein Python-Vorbau).
-    - .hfe OHNE img_format (Doppelschritt-Geo T/U oder Fremdtyp ohne definierte
-      RawSectorImage-Geometrie) → Fallback: Kopie eines gültigen Templates, B: nur öffnen.
+    - **.hfe → IMMER `BLANK`**: eine echte, unformatierte Leerdiskette in der Geometrie
+      des Laufwerks.  Das ist der Anwenderfall und die schärfere Prüfung — FORMAT.COM
+      muss die Spurlänge auf markenlosem Gap-Fluss messen und darf sich beim
+      Vergleichs-Lesen nicht auf Restdaten stützen.  Eine `img_format`-Angabe wird für
+      .hfe nicht gebraucht (der Container ist formatagnostisch).
+    - **.img → `img_format`** (vorformatiert, Nutzdaten 0xE5): ein rohes Sektorimage hat
+      keinen Zustand „unformatiert" — `createDisk` lehnt den leeren Formatnamen für .img
+      ab.  Der .img-Pfad prüft deshalb weiterhin das Umformatieren einer gültigen Disk.
     """
-    if not img_format:
-        if filetype == 'hfe':
-            shutil.copyfile(TEMPLATE_HFE, path)   # keine Geometrie → Template-Kopie
-            return None
-        raise ValueError("kein .img-DiskFormat für dieses Format definiert")
-    # Datei wird von format_driver (create) angelegt; alten Rest entfernen.
     if os.path.exists(path):
-        os.remove(path)
+        os.remove(path)              # Datei wird von format_driver (create) neu angelegt
+    if filetype == 'hfe':
+        return BLANK
+    if not img_format:
+        raise ValueError("kein .img-DiskFormat für dieses Format definiert")
     return img_format
 
 
@@ -317,7 +321,7 @@ def run_format(fmt_key, boot, drive, geo, filetype, full, upto_track, outdir,
     shutil.copyfile(boot_img, diskA)
     tag = f'{boot}_{drive_letter}_' + (geo or 'DS') + '_' + fmt_key
     target = os.path.join(outdir, f'fmt_{tag}.{filetype}')
-    create_fmt = prepare_target(target, filetype, img_format)   # None → nur öffnen
+    create_fmt = prepare_target(target, filetype, img_format)
 
     with tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False) as ts:
         ts.write(script)
@@ -325,20 +329,18 @@ def run_format(fmt_key, boot, drive, geo, filetype, full, upto_track, outdir,
 
     env = dict(os.environ, FD_LOGLEVEL=os.environ.get('FD_LOGLEVEL', 'warn'))
     if drive_letter == 'C':
-        # Ziel liegt in Laufwerk C: (FD_DISKC).  B: braucht nur einen belegten,
-        # gültigen Slot (Template), damit FORMATs Laufwerkswahl sauber durchläuft.
+        # Ziel liegt in Laufwerk C: (FD_DISKC).  Der B:-Slot muss nur BELEGT sein,
+        # damit FORMATs Laufwerkswahl sauber durchläuft — er bekommt ebenfalls eine
+        # Leerdiskette (in der Geometrie des B:-Laufwerks, also passend zum Combo-BIOS).
         with tempfile.NamedTemporaryFile(suffix='.hfe', delete=False) as tb:
             diskB = tb.name
-        shutil.copyfile(TEMPLATE_HFE, diskB)
-        env['FD_DISKC'] = target
-        if create_fmt is not None:
-            env['FD_DISKC_FMT'] = create_fmt
-        cmd = [DRIVER, diskA, diskB, script_path]
+        os.remove(diskB)               # format_driver legt sie via createB neu an
+        env['FD_DISKC']     = target
+        env['FD_DISKC_FMT'] = create_fmt
+        cmd = [DRIVER, diskA, diskB, script_path, BLANK]
     else:
         diskB = target
-        cmd = [DRIVER, diskA, diskB, script_path]
-        if create_fmt is not None:     # .img: format_driver legt B: via create an
-            cmd.append(create_fmt)
+        cmd = [DRIVER, diskA, diskB, script_path, create_fmt]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     finally:

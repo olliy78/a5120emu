@@ -765,22 +765,22 @@ if(BUILD_K1520)
             PASS_REGULAR_EXPRESSION "boot_reached"
             FAIL_REGULAR_EXPRESSION "Boot Trace Complete|PROGRESS|MILESTONE|histogram")
 
-        # ─── Boot-Disk-Erstellung: leere Diskette → formatieren → bootfähig → boot ──
-        # Voller Anwender-Workflow (Tastatur-getrieben über format_driver): eine leere,
-        # als Systemformat formatierte Diskette wird mit CPABCGEN.COM bootfähig gemacht
-        # und der Rechner davon kalt gebootet (make_bootdisk.py, Exit 0 = "BOOTDISK OK").
+        # ─── Boot-Disk-Erstellung: LEERdiskette → FORMAT.COM → CPABCGEN → boot ─────
+        # Voller Anwender-Workflow (Tastatur-getrieben über format_driver): eine ECHTE,
+        # unformatierte Leerdiskette wird von FORMAT.COM im Systemformat des Laufwerks
+        # formatiert (alle Spuren, MIT Vergleichs-Lesen), mit CPABCGEN.COM bootfähig
+        # gemacht und der Rechner davon kalt gebootet (make_bootdisk.py,
+        # Exit 0 = "BOOTDISK OK").
         # Diese Tests dauern LANGE (voller Boot je Schritt) → LABEL "format_integration";
         # sie laufen bei den Standard-Regressionstests NICHT mit (tools/dev.sh test schließt
         # sie via `-LE format_integration` aus; `tools/dev.sh test-format` führt nur sie aus).
-        # FORMAT_DRIVER/MK_DISK_TEMPLATE zeigen auf die Tools DIESES Build-Verzeichnisses.
+        # FORMAT_DRIVER zeigt auf das Tool DIESES Build-Verzeichnisses.
         set(_mkboot "${CMAKE_SOURCE_DIR}/tools/cpa_tools/make_bootdisk.py")
-        # Ein Boot-Disk-Test je Preset: erstellen+formatieren (mk_disk_template bzw.
-        # committete cpa780-Vorlage) → CPABCGEN → Kaltboot-Verify.
         macro(add_bootdisk_test name preset)
             add_test(NAME ${name} COMMAND sh -c
-                "FORMAT_DRIVER=$<TARGET_FILE:format_driver> MK_DISK_TEMPLATE=$<TARGET_FILE:mk_disk_template> python3 ${_mkboot} --preset ${preset} --quiet")
+                "FORMAT_DRIVER=$<TARGET_FILE:format_driver> python3 ${_mkboot} --preset ${preset} --quiet")
             set_tests_properties(${name} PROPERTIES
-                TIMEOUT 600 PASS_REGULAR_EXPRESSION "BOOTDISK OK"
+                TIMEOUT 900 PASS_REGULAR_EXPRESSION "BOOTDISK OK"
                 LABELS "format_integration")
         endmacro()
 

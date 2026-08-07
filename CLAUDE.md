@@ -281,8 +281,18 @@ formatieren mit **FORMAT.COM (V19.05.89)** die K5601-Formate nach Laufwerk B: un
 (§3 80-Spur-DS: .hfe 13/15, .img 14/15; §3.4-Geometrien S/V/W als .hfe+.img, T/U als .hfe).
 Über **Combo-Boot-Disketten** (B:/C: als Fremdtypen) sind auch die 5,25″-SS- und 8″-FM/MFM-
 Formate testbar (Laufwerkstyp = reine BIOS-Software). `tools/cpa_tools/make_bootdisk.py` fährt
-zusätzlich die ganze Kette *format → CPABCGEN → bootfähige Disk* (6 Presets, als langsame
-`format_integration`-Tests registriert — via `tools/dev.sh test-format`). `DiskImage::create` legt
+zusätzlich die ganze Kette *Leerdiskette → FORMAT.COM → CPABCGEN → bootfähige Disk → Kaltstart*
+(6 Presets, als langsame `format_integration`-Tests registriert — via `tools/dev.sh test-format`).
+> **Ausgangszustand aller CP/A-Formatier-Tests ist seit 2026-08-07 eine ECHTE LEERDISKETTE**
+> (`createB`/`FD_DISKC_FMT` = *leerer* Formatname → unformatiertes Medium in der Geometrie des
+> Laufwerks). Das ist der Anwenderfall und die schärfere Prüfung; die früher nötigen Vorlagen
+> (`mk_disk_template`, `disks/empty_cpa780.hfe`, Template-Kopie in `format_all.py`) werden von
+> der Pipeline nicht mehr benutzt. **Einzige Ausnahme `--type img`**: ein rohes Sektorimage hat
+> keinen Zustand „unformatiert" (`createDisk` lehnt den leeren Formatnamen für `.img` ab), dieser
+> Pfad legt weiter vorformatiert an. Verifiziert: 88/88 Formate über K5601 + alle §3.4-Geometrien
+> + K5600.10/K5600.20/MF3200/MF6400.
+
+`DiskImage::create` legt
 **gültig formatierte** Leerdisketten an (echte IDAM/DATA/CRC, Daten 0xE5): `.hfe` je Spur per
 `TrackCodec::buildTrack`→`BitCodec::encode`, `.img` als 0xE5 in Format-Geometrie. Ein `DiskFormat`
 (Geometrie) ist dafür Pflicht — `A5120Machine::createDisk` mit **gesetztem** Formatnamen ist der
