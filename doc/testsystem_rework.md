@@ -810,7 +810,7 @@ Datei 743 → 692 Zeilen; übrig bleibt eine bewusste dreizeilige Delegation
 
 ---
 
-## 7. Nebenbefund: 5×1024-System als Quelle erzeugt defekte Systemdiskette
+## 7. ~~Nebenbefund: 5×1024-System als Quelle erzeugt defekte Systemdiskette~~ ✅ ERLEDIGT
 
 Beim Versuch, die beiden SCPX-Fixtures zu **einer** zusammenzulegen (die HARDY-Diskette sollte
 `scpx17_cpa780_k5601.hfe` mit ersetzen), kam heraus: die beiden Disketten tragen **verschiedene
@@ -829,10 +829,18 @@ Reproduzierbarer Befund dabei:
 >
 > Beide committeten Quelldisketten sind selbst fehlerfrei (`disk verify` sauber).
 
-Offen, ob das eine echte Lücke im Schreibpfad des K5122 ist oder eine reale SCPX-Einschränkung
-(ein 5×1024-System generiert kein zweites 5×1024-System). Kein Test hängt daran — der
-Regressionswächter läuft weiter auf der 16×256-Quelle. Aufwand für die Klärung: unbekannt,
-Einstieg wäre ein `--log-level info`-Lauf des Schreibpfads über eine Datenspur.
+**Erledigt durch origin/main (nachgeprüft 2026-08-07 nach dem Merge).** Derselbe Versuch —
+`ScpxInit.Builds5x1024SystemViaInitModfSyspAndBoots` testweise auf die 5×1024-Quelle
+umgestellt — läuft jetzt grün durch (8,96 s): die erzeugte Systemdiskette bootet, `DIR`
+listet, und `STAT` lädt und läuft.  Genau daran scheiterte es vorher.
+
+Es war also eine echte Lücke im Schreibpfad, keine SCPX-Einschränkung; behoben von einem der
+K5122-Fixes aus dem Bereich „FORMAT.COM auf leeren Spuren" (`1c22af7`, `22e2bbc`, `69551f0`,
+`fba3e96`) oder vom Medium-Umbau selbst.  Welcher genau, ist nicht weiter eingegrenzt — der
+Befund ist weg, und die Fixes tragen eigene Tests.
+
+Der Test bleibt auf der 16×256-Quelle: seine dokumentierte Absicht ist die Umwandlung eines
+16×256-Systems in ein 5×1024-System, nicht die Reproduktion des früheren Fehlers.
 
 ---
 
@@ -853,7 +861,7 @@ ungültig). Es braucht eine Neufassung für den K1520-Kern.
 
 ---
 
-## 8. Nebenbefund: IEO sperrt nur bei anstehendem, nicht bei laufendem Interrupt
+## 8. Nebenbefund: IUS-Behandlung — Anforderung gegattert, Kette nicht (aktualisiert)
 
 Beim Überführen des losen `test_reti.cpp` nach GoogleTest stellte sich heraus, dass seine
 Erwartung nicht dem implementierten Verhalten entspricht — die Datei war nie gebaut worden,
@@ -886,3 +894,43 @@ fest — schlägt er fehl, wurde das Verhalten geändert und der Kommentar dort 
 Nebenbei fiel auf: `Z80SIO::getVector()` liefert bei „nichts quittierbar" die **reine
 Vektorbasis** statt `0xFF` wie CTC und PIO (`core/primitives/z80_sio.cpp:333`). Ohne Folgen,
 solange der Vektor nur nach einer echten INT-Anforderung gelesen wird.
+
+### Stand nach dem Merge von origin/main (2026-08-07)
+
+Der Befund hat sich **geschärft**, statt sich zu erledigen.  Es sind zwei Seiten zu
+unterscheiden:
+
+| Seite | Frage | CTC | PIO | SIO |
+|-------|-------|-----|-----|-----|
+| **Anforderung** (`hasInterrupt`) | Fordert der Baustein an, während er bedient wird? | nein (`anyServiceable`) | nein — **seit `f3b7ab1`** | **ja** ← Lücke |
+| **Kette** (`getIEO`) | Gibt er nachgeordnete Bausteine frei, während er bedient wird? | ja | ja | ja |
+
+**Die Anforderungsseite ist inzwischen die wichtigere** — und origin hat dort einen realen
+Fehler behoben: der PIO forderte bei gesetztem IUS weiter an, die Quittung fand in
+`getVector()` aber keinen vektorfähigen Port und lieferte den Fallback `0xFF` → Endlos-Sturm
+mit Pseudo-Vektor, der den UDOS-Boot brach (`f3b7ab1`, `doc/analyse_udos.md`).
+
+**Neu gefunden: der SIO hat dieselbe Lücke noch.**
+`Z80SIO::channelHasInterrupt()` (`core/primitives/z80_sio.cpp:183`) prüft `!ius` nicht.
+Beim SIO fällt es bislang nicht auf, weil `getVector()` in dem Fall die reine Vektorbasis
+liefert statt eines Fallbacks — die ISR wird also erneut angesprungen statt auf einen
+Pseudo-Vektor zu laufen.  Ob das je auftritt, hängt daran, ob eine SIO-ISR lange genug
+läuft, dass ein zweites Zeichen eintrifft; die Tastatur (K7637) arbeitet mit 9600 Baud,
+das Zeitfenster ist also nicht klein.
+
+**Nicht geändert**, aus demselben Grund wie zuvor: Interrupts sind für die Bootkette
+load-bearing, und eine Verhaltensänderung gehört nicht in einen Testsystem-Umbau.
+Stattdessen halten drei neue Tests in `tests/unit/primitives/test_reti.cpp` den Zustand fest:
+
+- `RetiChain.CtcRequestIsIusGatedUntilReti` — Vertrag des CTC
+- `RetiChain.PioRequestIsIusGatedUntilReti` — **Wächter für origins Fix**, den origin selbst
+  nicht abgesichert hat.  Gegenprobe: mit zurückgenommenem Fix schlägt er fehl.
+- `RetiChain.SioRequestIsNotIusGated` — hält die verbliebene Lücke fest; schlägt er fehl,
+  wurde der SIO angeglichen und der Kommentar dort gehört gelöscht.
+
+Die Kettenseite (`getIEO` ignoriert IUS) bleibt unverändert bestehen, weiterhin bewacht von
+`RetiChain.IeoBlocksOnPendingNotOnService`.
+
+**Empfehlung:** den SIO angleichen (drei Zeichen: `&& !ch.ius` in `channelHasInterrupt`),
+aber als eigener Commit außerhalb des Testsystem-Umbaus und mit einem Lauf der
+Systemtests — die Tastatur hängt daran.

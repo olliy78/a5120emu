@@ -165,6 +165,76 @@ TEST(RetiChain, BusAcknowledgeFollowsTheDaisyChainOrder) {
     EXPECT_TRUE(pio.getIEO());
 }
 
+
+// ─── Anforderungsseite: hasInterrupt() bei gesetztem IUS ─────────────────────
+//
+// Neben dem IEO-Signal (unten) gibt es die zweite Frage: fordert ein Baustein
+// ueberhaupt noch einen Interrupt an, waehrend er bedient wird?  Muss er NICHT —
+// sonst zieht die Karte /INT, die Quittung findet in getVector() aber keinen
+// vektorfaehigen Kanal und liefert den Fallback → Endlos-Sturm mit Pseudo-Vektor.
+// Genau das brach den UDOS-Boot (origin/main f3b7ab1, doc/analyse_udos.md).
+
+TEST(RetiChain, CtcRequestIsIusGatedUntilReti) {
+    Z80CTC ctc("CTC");
+    armCtc(ctc);
+    for (int i = 0; i < 80; ++i) ctc.clockTick();
+    ASSERT_TRUE(ctc.hasInterrupt());
+
+    ctc.getVector();                            // IUS gesetzt
+    for (int i = 0; i < 80; ++i) ctc.clockTick();  // neuer Zeitablauf waehrend der ISR
+    EXPECT_FALSE(ctc.hasInterrupt())
+        << "CTC fordert waehrend der eigenen ISR erneut an — Pseudo-Vektor-Sturm droht";
+
+    ctc.onRETI();
+    EXPECT_TRUE(ctc.hasInterrupt()) << "nach RETI muss die wartende Anforderung wieder gelten";
+}
+
+TEST(RetiChain, PioRequestIsIusGatedUntilReti) {
+    Z80PIO pio("PIO");
+    armPio(pio, 0xC4);
+    pio.portAWrite(0x01);
+    ASSERT_TRUE(pio.hasInterrupt());
+
+    pio.getVector();                            // IUS gesetzt
+    pio.portAWrite(0x02);                       // neue Daten waehrend der ISR
+    EXPECT_FALSE(pio.hasInterrupt())
+        << "PIO fordert waehrend der eigenen ISR erneut an — das war der "
+           "UDOS-Pseudo-Interrupt-Sturm (origin/main f3b7ab1)";
+
+    pio.onRETI();
+    EXPECT_TRUE(pio.hasInterrupt()) << "nach RETI muss die wartende Anforderung wieder gelten";
+}
+
+/**
+ * @test RetiChain/SioRequestIsNotIusGated
+ * @brief Haelt fest, dass der SIO als EINZIGER Baustein die Anforderung NICHT IUS-gatet.
+ *
+ * `Z80CTC::anyServiceable()` und (seit origin/main f3b7ab1) `Z80PIO::hasInterrupt()`
+ * pruefen `!ius`; `Z80SIO::channelHasInterrupt()` (`core/primitives/z80_sio.cpp:183`)
+ * tut es nicht — der Baustein fordert also weiter an, waehrend er bedient wird.
+ *
+ * Das ist dieselbe Fehlerklasse, die den UDOS-Boot brach.  Beim SIO faellt sie
+ * bislang nicht auf, weil `getVector()` in dem Fall die reine Vektorbasis liefert
+ * statt eines Fallbacks — die ISR wird also erneut angesprungen statt auf einen
+ * Pseudo-Vektor zu laufen.  Bewusst NICHT geaendert: Interrupts sind fuer die
+ * Bootkette load-bearing, und eine Verhaltensaenderung gehoert nicht in einen
+ * Testsystem-Umbau.  Bewertung: doc/testsystem_rework.md §8.
+ *
+ * Schlaegt dieser Test fehl, wurde der SIO angeglichen — dann gehoert er in die
+ * Form der beiden Tests darueber gebracht und dieser Kommentar geloescht.
+ */
+TEST(RetiChain, SioRequestIsNotIusGated) {
+    Z80SIO sio("SIO");
+    armSio(sio);
+    sio.channelA().rxByte(0x42);
+    ASSERT_TRUE(sio.hasInterrupt());
+
+    sio.getVector();                            // IUS gesetzt
+    sio.channelA().rxByte(0x43);                // zweites Zeichen waehrend der ISR
+    EXPECT_TRUE(sio.hasInterrupt())
+        << "IST-Zustand: der SIO fordert auch bei gesetztem IUS weiter an";
+}
+
 // ─── Dokumentierte Abweichung vom Z80-Daisy-Chain-Standard ───────────────────
 
 /**
