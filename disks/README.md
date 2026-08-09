@@ -36,7 +36,7 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 Die beiden **Combo**-Disketten konfigurieren im BIOS B:/C: als andere Laufwerkstypen
 (DPB-Codes 10540/10580 bzw. 00877/10877). FORMAT.COM bietet dadurch je gewähltem Laufwerk
 die zugehörigen Formate an (5¼″ einseitig, 8″ SD/DD). Details, live abgegriffene Formatmenüs
-und die Test-Pipeline: `docs/format.md` §11 und §5/§3.5.
+und die Test-Pipeline: `doc/format.md` §11 und §5/§3.5.
 Menüs abgreifen: `python3 tools/capture_format_menus.py --all`.
 
 ## Leere Disketten

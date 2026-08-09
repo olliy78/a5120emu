@@ -1,4 +1,4 @@
-# Bildschirm-konditioniertes Laufen (feature_request_interactive_debug #1).
+# Bildschirm-konditioniertes Laufen (doc/feature_requests/interaktive_programme.md #1).
 tool:   k1520dbg
 disk:   cpa_cpa780_k5601_clock.img
 run:    %DISK%

@@ -443,6 +443,8 @@ private:
      * @return true if channel has pending interrupt
      */
     bool channelHasInterrupt(const Channel& ch) const;
+    /// Wie channelHasInterrupt(), aber ohne bereits bediente Kanäle (IUS).
+    bool channelRequests(const Channel& ch) const;
 
     // ─── Register processing helpers ────────────────────────────────────────
 

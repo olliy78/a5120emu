@@ -335,11 +335,11 @@ Jeder Schritt ist eigenständig, hinterlässt einen grünen Baum und ist einzeln
 | ~~**8**~~ | ~~Testtreiber nach `tests/system/`~~ ✅ erledigt (§6); Presets bleiben Python-Dicts (Begründung dort) | — | — |
 | ~~**9**~~ | ~~Testdoku vereinheitlichen~~ ✅ erledigt (§6) | — | — |
 | ~~**10**~~ | ~~GitHub-Actions-Workflow~~ → stattdessen **`pre-push`-Hook**, ✅ erledigt (§6) | — | — |
-| **11** | Kür: `DISABLED_TypeCommandAtCcpEchoesAndProcesses` reaktivieren, Suiten-Namensschema vereinheitlichen, Tippfehler `Sekorgroessen` beheben | gering | 3 h |
-| **12** | Befunde §7 (5×1024-Generierung erzeugt defekte Disk) und §8 (IEO ignoriert IUS) bewerten und entweder beheben oder als bewusste Grenze festschreiben | offen | unbekannt |
+| ~~**11**~~ | ~~Kür: deaktivierter Test, Namensschema, Tippfehler~~ ✅ erledigt (§6) | — | — |
+| ~~**12**~~ | ~~Befunde §7 und §8 bewerten~~ ✅ erledigt: §7 durch origin behoben, §8 geschärft und die SIO-Lücke geschlossen | — | — |
 
-**Stand 2026-08-07:** erledigt sind **0–10**.  Offen: **11** (Kür: deaktivierten Test
-reaktivieren, Namensschema, Tippfehler) und **12** (die zwei Befunde §7/§8).
+**Stand 2026-08-07:** **alle Schritte 0–12 erledigt.**  Der Plan ist abgearbeitet; der
+Branch ist auf dem Stand von origin/main.
 
 ---
 
@@ -777,9 +777,77 @@ zu Recht entfernt, nur auf einem besseren Weg als von uns gebaut.
 `test-format` **16/16**, `test-matrix` **88/88** grün.  Ebenen jetzt: unit 580,
 debugtools 89, integration 62, cli 46, system 104, python 7.
 
+### 2026-08-07 — Nachpflege nach dem Merge: `test_udos_format` auf `tests/support/`
+
+Erste Erosion der Struktur, direkt aus dem Merge: `tests/system/test_udos_format.cpp`
+(743 Zeilen, von origin) brachte **sieben eigene Kopien** der Helfer mit, die Schritt 4
+zusammengelegt hatte — `diskPath`, `vramText`, `runCycles`, `runSmallUntil`, `QK_RETURN`,
+`typeKey`, `typeString`.  origin hat die Datei gegen die alte Struktur geschrieben, konnte
+es also nicht anders wissen; die drei anderen Systemtests waren sauber.
+
+Umgestellt auf `k1520test::`, dabei zwei Dinge bewahrt, die beim naiven Ersetzen
+verlorengegangen wären:
+
+- **Das Prüfintervall.** Die UDOS-Fassung von `runSmallUntil` las den Bildschirm nur alle
+  50 000 Takte statt nach jedem 5000er-Batch — bei Läufen von 6–34 s eine bewusste
+  Optimierung.  Die Support-Fassung hat dafür jetzt einen Parameter `check_every`
+  (Vorgabe = bisheriges Verhalten): die **Maschine** läuft unverändert in
+  `kSmallBatch`-Schritten, nur das Absuchen des 2-KB-VRAM wird seltener.  Ohne diesen
+  Parameter hätte die Umstellung die Tests spürbar verlangsamt.
+- **Den UDOS-Hinweis.** „Konsole ist schreibungsinvertiert: KLEIN tippen ergibt GROSS"
+  steht jetzt an der `using`-Deklaration statt in einem Wrapper, der nur den Kommentar trug.
+
+Dazu 12 handgebaute Temp-Pfade und 6 manuelle Aufräumblöcke durch `TempDisk` ersetzt —
+inklusive des bekannten Nebeneffekts: die `fs::remove`-Zeilen standen am Testende und
+liefen bei einem `ASSERT`-Abbruch nie.
+
+Datei 743 → 692 Zeilen; übrig bleibt eine bewusste dreizeilige Delegation
+(`runSmallUntil` mit dem UDOS-Prüfintervall).
+
+**Verifikation:** `build/` gelöscht, `tools/dev.sh test` 783/783, `test-format` 16/16
+(darunter die fünf umgestellten UDOS-Tests, Laufzeiten unverändert 6,4–33,6 s),
+`test-matrix` 88/88 grün.
+
+### 2026-08-07 — Schritt 11 (Kür): deaktivierter Test, Splitter-Suiten, Tippfehler
+
+**Der letzte deaktivierte Test ist wieder scharf.**
+`KeyboardIntegration.TypeCommandAtCcpEchoesAndProcesses` war seit 2026-06-18 abgeschaltet:
+die RTC-Uhr in der Statuszeile verwilderte („E6:DA:56" statt von 12:00:00 weiterzuzählen),
+woraufhin der CCP das Kommando verwarf.  Vermutet wurde eine Eigenheit des Testrahmens.
+
+Versuchsweise aktiviert — er läuft.  Es war also ein echter Emulatorfehler, seither behoben;
+in Frage kommen der systemweite `/RESET` (Invariante 8) und das IUS-Gating der
+Interrupt-Anforderung (PIO `f3b7ab1`, SIO 2026-08-07) — beides trifft genau den Timer-ISR-Pfad,
+an dem die Uhr hängt.
+
+Vor der Reaktivierung geprüft, weil „war mal instabil" eine einmalige grüne Ausführung nicht
+aufwiegt: **20 Wiederholungen** isoliert (`--gtest_repeat=20`) und ein Lauf des **ganzen
+Binaries in einem Prozess** (33 Tests) — genau die Konstellation, in der sich ein globaler
+Zustand bemerkbar machen würde.  Damit gibt es im Testsatz keinen deaktivierten Test mehr.
+
+**Splitter-Suiten zusammengeführt.**  Für dieselbe Komponente gab es je zwei Suiten:
+`PIO` (1 Test) neben `Z80PIO` (24), `SIO` (2) neben `Z80SIO` (15), `CTC` (1) neben `Z80CTC` (29).
+Das ist keine Kosmetik: `ctest -R Z80PIO` übersah den verirrten Test stillschweigend.  Die vier
+sind in die dominante Suite überführt.
+
+Bei `K7024`/`K7024Test` habe ich dasselbe versucht und **zurückgenommen** — dort erzwingt
+GoogleTest die Trennung (`TEST` und `TEST_F` dürfen sich keine Suite nicht teilen; die vier
+`K7024`-Tests bauen eine eigene Konfiguration auf, die die Fixture nicht liefert).  Die Regel
+in `tests/README.md` und `doc/design/12_testing.md` nennt diese Ausnahme jetzt ausdrücklich.
+
+**Kein flächendeckendes Umbenennen.**  Die übrigen Uneinheitlichkeiten (`Test`-Suffix mal ja
+mal nein, Deutsch neben Englisch über 76 Suiten) bleiben stehen: das wäre Kosmetik und hätte
+`ctest -R`-Gewohnheiten, Verweise in der Werkzeugdokumentation und jeden künftigen Merge mit
+origin/main gegen sich.  Für **neue** Suiten steht die Regel jetzt in der Doku.
+
+**Tippfehler** `Sekorgroessen` → `Sektorgroessen` (4 Testnamen), dazu ein veralteter Verweis
+auf `DISABLED_Stage3_FullyLoadsAndJumpsToOs` — den Test gibt es längst aktiv.
+
+**Verifikation:** `build/` gelöscht, 787/787 schnell, 16/16 `format_integration`.
+
 ---
 
-## 7. Nebenbefund: 5×1024-System als Quelle erzeugt defekte Systemdiskette
+## 7. ~~Nebenbefund: 5×1024-System als Quelle erzeugt defekte Systemdiskette~~ ✅ ERLEDIGT
 
 Beim Versuch, die beiden SCPX-Fixtures zu **einer** zusammenzulegen (die HARDY-Diskette sollte
 `scpx17_cpa780_k5601.hfe` mit ersetzen), kam heraus: die beiden Disketten tragen **verschiedene
@@ -798,10 +866,18 @@ Reproduzierbarer Befund dabei:
 >
 > Beide committeten Quelldisketten sind selbst fehlerfrei (`disk verify` sauber).
 
-Offen, ob das eine echte Lücke im Schreibpfad des K5122 ist oder eine reale SCPX-Einschränkung
-(ein 5×1024-System generiert kein zweites 5×1024-System). Kein Test hängt daran — der
-Regressionswächter läuft weiter auf der 16×256-Quelle. Aufwand für die Klärung: unbekannt,
-Einstieg wäre ein `--log-level info`-Lauf des Schreibpfads über eine Datenspur.
+**Erledigt durch origin/main (nachgeprüft 2026-08-07 nach dem Merge).** Derselbe Versuch —
+`ScpxInit.Builds5x1024SystemViaInitModfSyspAndBoots` testweise auf die 5×1024-Quelle
+umgestellt — läuft jetzt grün durch (8,96 s): die erzeugte Systemdiskette bootet, `DIR`
+listet, und `STAT` lädt und läuft.  Genau daran scheiterte es vorher.
+
+Es war also eine echte Lücke im Schreibpfad, keine SCPX-Einschränkung; behoben von einem der
+K5122-Fixes aus dem Bereich „FORMAT.COM auf leeren Spuren" (`1c22af7`, `22e2bbc`, `69551f0`,
+`fba3e96`) oder vom Medium-Umbau selbst.  Welcher genau, ist nicht weiter eingegrenzt — der
+Befund ist weg, und die Fixes tragen eigene Tests.
+
+Der Test bleibt auf der 16×256-Quelle: seine dokumentierte Absicht ist die Umwandlung eines
+16×256-Systems in ein 5×1024-System, nicht die Reproduktion des früheren Fehlers.
 
 ---
 
@@ -822,7 +898,7 @@ ungültig). Es braucht eine Neufassung für den K1520-Kern.
 
 ---
 
-## 8. Nebenbefund: IEO sperrt nur bei anstehendem, nicht bei laufendem Interrupt
+## 8. Nebenbefund: IUS-Behandlung — Anforderungsseite angeglichen, Kette unverändert
 
 Beim Überführen des losen `test_reti.cpp` nach GoogleTest stellte sich heraus, dass seine
 Erwartung nicht dem implementierten Verhalten entspricht — die Datei war nie gebaut worden,
@@ -855,3 +931,52 @@ fest — schlägt er fehl, wurde das Verhalten geändert und der Kommentar dort 
 Nebenbei fiel auf: `Z80SIO::getVector()` liefert bei „nichts quittierbar" die **reine
 Vektorbasis** statt `0xFF` wie CTC und PIO (`core/primitives/z80_sio.cpp:333`). Ohne Folgen,
 solange der Vektor nur nach einer echten INT-Anforderung gelesen wird.
+
+### Stand nach dem Merge von origin/main (2026-08-07)
+
+Der Befund hat sich **geschärft**, statt sich zu erledigen.  Es sind zwei Seiten zu
+unterscheiden:
+
+| Seite | Frage | CTC | PIO | SIO |
+|-------|-------|-----|-----|-----|
+| **Anforderung** (`hasInterrupt`) | Fordert der Baustein an, während er bedient wird? | nein (`anyServiceable`) | nein — seit `f3b7ab1` | nein — **seit 2026-08-07** |
+| **Kette** (`getIEO`) | Gibt er nachgeordnete Bausteine frei, während er bedient wird? | ja | ja | ja |
+
+**Die Anforderungsseite ist inzwischen die wichtigere** — und origin hat dort einen realen
+Fehler behoben: der PIO forderte bei gesetztem IUS weiter an, die Quittung fand in
+`getVector()` aber keinen vektorfähigen Port und lieferte den Fallback `0xFF` → Endlos-Sturm
+mit Pseudo-Vektor, der den UDOS-Boot brach (`f3b7ab1`, `doc/analyse_udos.md`).
+
+**Neu gefunden war: der SIO hatte dieselbe Lücke noch.**
+`Z80SIO::channelHasInterrupt()` (`core/primitives/z80_sio.cpp:183`) prüft `!ius` nicht.
+Beim SIO fällt es bislang nicht auf, weil `getVector()` in dem Fall die reine Vektorbasis
+liefert statt eines Fallbacks — die ISR wird also erneut angesprungen statt auf einen
+Pseudo-Vektor zu laufen.  Ob das je auftritt, hängt daran, ob eine SIO-ISR lange genug
+läuft, dass ein zweites Zeichen eintrifft; die Tastatur (K7637) arbeitet mit 9600 Baud,
+das Zeitfenster ist also nicht klein.
+
+**Behoben am 2026-08-07.**  `Z80SIO::hasInterrupt()` fragt jetzt über den neuen Helfer
+`channelRequests()` zusätzlich `!ius` ab — dieselbe Bedingung, die `getVector()` ohnehin
+anlegt.  Damit halten alle drei Bausteine denselben Vertrag.
+
+**Bewusst nur die Anforderungsseite.**  Der `!ius`-Test steht in `hasInterrupt()`, NICHT im
+gemeinsamen `channelHasInterrupt()` — das wird auch von `getIEO()` und von `setIEI()`
+(interne Kette Kanal A → B) benutzt.  Dort hineinzugreifen hätte die Kettenseite des SIO
+allein umgestellt und ihn gegen CTC und PIO verstimmt.  Genauso hat origin es beim PIO
+gehalten (`f3b7ab1` fasst nur `hasInterrupt()` an).
+
+Vier Tests in `tests/unit/primitives/test_reti.cpp` halten den Zustand fest:
+
+- `RetiChain.CtcRequestIsIusGatedUntilReti` — Vertrag des CTC
+- `RetiChain.PioRequestIsIusGatedUntilReti` — **Wächter für origins Fix**, den origin selbst
+  nicht abgesichert hat.  Gegenprobe: mit zurückgenommenem Fix schlägt er fehl.
+- `RetiChain.SioRequestIsIusGatedUntilReti` — Wächter für den hiesigen Fix.  Gegenprobe
+  ebenso durchgeführt: ohne den Fix schlägt er fehl.
+- `RetiChain.IeoBlocksOnPendingNotOnService` — die **Kettenseite** bleibt unverändert
+  („sperrt bei anstehendem, nicht bei laufendem Interrupt") und ist weiter bewacht.
+
+**Verifikation des Fixes:** `build/` gelöscht und neu gebaut; 786/786 schnell,
+16/16 `format_integration`, 88/88 `format_matrix`.  Gezielt geprüft wurde alles, was am SIO
+hängt — Z80SIO-, K7637-, K8025- und Tastatur-Tests (71 Fälle) — sowie die tastaturgetriebenen
+Systemläufe (SCPX INIT/MODF/SYSP, HARDY, UDOS), die jede Eingabe über die 9600-Baud-Strecke
+des K7637 schicken.  Dort hätte ein verschlucktes Zeichen sofort auffallen müssen.

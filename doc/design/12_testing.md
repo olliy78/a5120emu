@@ -200,14 +200,36 @@ Kommentar am Code keinen Mehrwert. Maschinellen Überblick liefern
 
 ---
 
-## 8. Bewusste Auslassungen
+## 8. Namensgebung
+
+Suitenname = geprüfte Komponente, so wie sie im Kern heißt.  Ein Thema darf eine
+eigene Suite bekommen (`BitCodecMarks`, `TrackCodecCrc`), **keine willkürliche
+zweite Suite für dieselbe Komponente** — sonst übersieht `ctest -R <Suitenname>`
+stillschweigend einen Teil.  Bis 2026-08-07 gab es genau das dreimal
+(`PIO`/`Z80PIO`, `SIO`/`Z80SIO`, `CTC`/`Z80CTC`, zusammen vier verirrte Tests);
+sie sind in die jeweils dominante Suite überführt.
+
+Eine Ausnahme erzwingt GoogleTest selbst: `TEST` und `TEST_F` dürfen sich keine
+Suite teilen.  Wo ein Teil der Tests eine Fixture braucht und ein anderer eine
+eigene Konfiguration aufbaut, sind zwei Suiten unvermeidlich (`K7024Test` und
+`K7024`).
+
+Die übrigen Uneinheitlichkeiten (`Test`-Suffix mal ja mal nein, Deutsch neben
+Englisch) bleiben bewusst stehen: ein flächendeckendes Umbenennen wäre Kosmetik
+und würde `ctest -R`-Gewohnheiten, Verweise in der Werkzeugdokumentation und die
+Merges mit origin/main gegen sich haben.
+
+---
+
+## 9. Bewusste Auslassungen
 
 - **Keine CI.** Das Projekt wird lokal entwickelt; statt eines Workflows
   erzwingt `.githooks/pre-push` die grüne Schnellrunde vor jedem Push.
 - **Keine Coverage-Messung.** Bisher kein Bedarf angemeldet; die Lücken sind
   bekannt und in `doc/testsystem_rework.md` benannt.
 - **Keine Pixelprüfung der GUI** (siehe §3, `python/`).
-- **Ein dauerhaft deaktivierter Test:**
-  `KeyboardIntegration.DISABLED_TypeCommandAtCcpEchoesAndProcesses` — die
-  CP/A-Statuszeile mit laufender Uhr macht die Eingabe zeitabhängig. Reaktivieren
-  ist Schritt 11 des Umbauplans.
+- ~~Ein dauerhaft deaktivierter Test~~ — seit 2026-08-07 gibt es keinen mehr.
+  `KeyboardIntegration.TypeCommandAtCcpEchoesAndProcesses` war von 2026-06-18 an
+  abgeschaltet (die RTC-Uhr in der Statuszeile verwilderte); beim Aufräumen
+  versuchsweise aktiviert, läuft er — es war ein echter Emulatorfehler, der
+  seither behoben wurde, keine Eigenheit des Testrahmens.

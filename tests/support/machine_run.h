@@ -30,7 +30,14 @@ void runCycles(A5120Machine& m, long long cycles);
 /// der K7637 modelliert eine 9600-Baud-Strecke, und die Zeichenannahme hängt am
 /// Timer-Interrupt.  Mit `kCoarseBatch` driftet die Phase genug, um Anschläge zu
 /// verschlucken (dieselbe Taktung benutzt `tools/kbd_test`).
-bool runSmallUntil(A5120Machine& m, const std::string& needle, long long max_cycles);
+///
+/// @param check_every  Wie oft der Bildschirm gelesen wird.  Die MASCHINE läuft
+///        unabhängig davon immer in `kSmallBatch`-Schritten — nur das Absuchen
+///        des 2-KB-VRAM wird seltener.  Für lange Läufe (UDOS-Systemtests,
+///        zweistellige Sekunden) spart ein größerer Wert spürbar Zeit, ohne das
+///        Zeitverhalten der Maschine anzufassen.
+bool runSmallUntil(A5120Machine& m, const std::string& needle, long long max_cycles,
+                   long long check_every = kSmallBatch);
 
 /// Läuft in GROBEN Batches, bis @p needle im Textbildschirm steht.
 /// Für reine Ausgabe-Meilensteine (Banner, Meldungen) ohne Tastaturbeteiligung.

@@ -486,7 +486,7 @@ TEST(Z80PIO, DebugStateReflectsPortsAndInterrupt) {
  *        daisy-chain bits) into a fresh chip. Part of the savestate device set.
  * @par Pass criterion  debugState matches on both ports; blob fully consumed.
  */
-TEST(PIO, SerializeRoundTrip) {
+TEST(Z80PIO, SerializeRoundTrip) {
     Z80PIO a;
     a.ioWrite(1, 0x4F);   // port A: mode 1 (input)
     a.ioWrite(3, 0x0F);   // port B: mode 0 (output)

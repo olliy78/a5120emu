@@ -1,139 +1,149 @@
-# a5120emu – Werkzeugkasten (tools/)
+# Werkzeugkasten (`tools/`)
 
-Hilfsprogramme für Analyse, Disassemblierung, Boot-Tracing und interaktives Debuggen
-der K1520-Emulation. Dieser Werkzeugkasten wächst iterativ: Wenn bei einer Analyse
-eine Funktion fehlt oder falsch ist, wird sie hier ergänzt/gefixt und unter
-„Bekannte Lücken" notiert.
+Werkzeuge für Analyse, Disassemblierung, Boot-Tracing und interaktives Debuggen der
+K1520-Emulation. Der Kasten wächst iterativ: fehlt bei einer Analyse eine Funktion, wird
+sie hier ergänzt und unter „Bekannte Lücken" notiert.
 
-## Überblick — welches Werkzeug wofür
+> **Einstieg:** **[how_to_debug_and_trace.md](how_to_debug_and_trace.md)** — welches
+> Werkzeug wann, mit durchgerechneten Szenarien (Boot-Hänger, Programm sezieren,
+> Interrupt-/Uhr-Analyse, Coverage/Diff, Save-State).
+>
+> **Faustregel:** mit `boot_trace` die Phase **lokalisieren**, dann mit `k1520dbg`
+> **sezieren**.
 
-| Werkzeug | Zweck | Detail-Doku |
-|----------|-------|-------------|
-| **HowTo (Einstieg)** | praxisnahe Anleitung: welches Werkzeug wann, mit Szenarien (Boot-Hang, Programm sezieren, Interrupt-/Uhr-Analyse, Coverage/Diff, Save-State, KI-Agent) | **[how_to_debug_and_trace.md](how_to_debug_and_trace.md)** |
-| **`k1520dbg`** | interaktiver gdb-artiger Debugger (ZVE1 **und** ZVE2): Breakpoints (bedingt/Event/ignore), Step into/over/out, **Reverse-Step + Snapshots + Save-State**, Watch mem/io, **Logpoints + Trace-to-File**, `x`-Examine, `.prn`/`.MAC`-Annotation + Label-Import, Chip-State (`dev ctc/pio/sio`, `ivt`), JSON-Register, **exakter History-Backtrace** | **[k1520dbg.md](k1520dbg.md)** |
-| **`boot_trace`** | nicht-interaktiver Boot-/DMA-Tracer: Report (Histogramme, Done-Flag, VRAM-Banner), `--until`, `--coverage`/`--diff`, `--csv`, `--save-state`/`--load-state`, `--json`/`--quiet`, `.prn`-Annotation | **[boot_trace.md](boot_trace.md)** |
-| **`z80_disasm2.py`** | generischer, vollständiger Z80-Disassembler für Listings (kanonisch) | **[z80_disasm.md](z80_disasm.md)** |
-| `z80dis_min.h` | eingebauter Ein-Instruktions-Decoder (C++) für `k1520dbg` & `boot_trace` | [z80_disasm.md](z80_disasm.md) |
-| `prn_listing.h` | header-only Parser für MACRO-80-`.prn`-Listings (Adresse → kommentierte Quelle, optional Objektbytes); von `k1520dbg` & `boot_trace` per `-l` genutzt | [k1520dbg.md](k1520dbg.md) §6 |
-| `mac_listing.h` | header-only **Assembler für Fremdquellen** (`.MAC`/`.ASM` ohne Adressspalte): Adressen + Objektbytes, `Mxxxx`-Anker, Versatz-Abgleich `@auto`; Opcode-Tabelle aus `z80dis_min.h` rückwärts erzeugt | [k1520dbg.md](k1520dbg.md) §6.1 |
-| `callstack_tracker.h` | header-only exakter CALL/RST/RET-Aufrufstapel für den History-`bt` von `k1520dbg` | [k1520dbg.md](k1520dbg.md) §7 |
-| `expr_eval.h` | header-only Ausdrucks-Evaluator (Arithmetik/Bit/Vergleiche/`[expr]`) für `k1520dbg` (`if`/`disp`/`x`/`logpoint`) | [k1520dbg.md](k1520dbg.md) §3 |
-| `event_bp.h` · `mem_watch.h` | header-only Event-BP-Klassifikation (Interrupt/NMI/RETI) bzw. Watchpoint-Matching für `k1520dbg` | [k1520dbg.md](k1520dbg.md) §4 |
-| `dbg_commands.h` | header-only Kommandoliste + Präfix-Matcher für die `k1520dbg`-Tab-Completion (readline) | [k1520dbg.md](k1520dbg.md) §1 |
-| `coverage_diff.h` | header-only Parser+Diff (+Range-Collapse) für `boot_trace --coverage`/`--diff` | [boot_trace.md](boot_trace.md) §4 |
-| `until_cond.h` | header-only `--until`-Bedingung (Parser + Auswertung) für `boot_trace` | [boot_trace.md](boot_trace.md) §3 |
-| `disasm_difftest.py` | Regressionswächter: `z80_disasm2.py` gegen `z80dis` | [z80_disasm.md](z80_disasm.md) |
-| `kbd_test` | Tastatur-/Boot-Smoke-Test (boot, tippe Befehl, dump Screen) | unten |
-| `eprom_to_h.py` | EPROM-Binär → committetes C-Array (`*_data.h`) | — |
-| `img_to_hfe.py` | Roh-`.img` → HFE-v1-Diskettenabbild | — |
+## Aufrufen
 
-**Einstieg & Reihenfolge.** Task-orientierte Anleitung mit Szenarien:
-**[how_to_debug_and_trace.md](how_to_debug_and_trace.md)**. Faustregel: mit `boot_trace` die
-grobe Phase / den Hang-Punkt **lokalisieren**, dann mit `k1520dbg` (Breakpoint + `mark` +
-Step, oder `b … if`/`bint`/`dev ctc`) **sezieren**.
+**Immer über `tools/dev.sh`** — es baut das passende Verzeichnis vorher neu. Es gibt zwei
+Bauverzeichnisse mit denselben Werkzeugnamen (`build/` mit LOG_LEVEL=3, `build_trace/` mit
+LOG_LEVEL=5); direkt aus einem davon zu starten testet leicht veraltete Objektdateien.
 
-**Korrekt & effizient (gilt auch für KI-Agenten):**
+```sh
+tools/dev.sh tool k1520dbg <args>     # build/ bauen, dann build/k1520dbg
+tools/dev.sh trace <args>             # build_trace/ bauen, dann boot_trace
+tools/dev.sh tool floppy_diag <args>  # ebenso für jedes andere Werkzeug
+```
 
-- ⚠️ **Beide Tools mounten die Disk schreibbar — ein Lauf kann das Image KORRUMPIEREN.**
-  Immer gegen eine **Temp-Kopie** laufen, nie gegen ein committetes Fixture:
-  `D=$(mktemp --suffix=.img); cp DISK $D;  boot_trace … $D;  rm -f $D`.
-- **Aufruf über `tools/dev.sh`** (baut zuerst → nie ein stale Binary):
-  `tools/dev.sh trace <args>` (boot_trace) bzw. `tools/dev.sh tool k1520dbg <args>`.
-- **boot_trace token-sparsam:** `-L /dev/null` verwirft den Emulator-Log; `--quiet --json`
-  liefert genau **eine** maschinenlesbare Ergebniszeile (statt ~880) + sinnvollen Exit-Code
-  (`--until`: 0 erreicht / 2 nicht). Statt Zyklen raten: **`--until <cond>`**.
-- **k1520dbg im Batch:** per Pipe (`printf 'b 0x0437\ng\nrj\nq\n' | k1520dbg $D`) oder
-  `-x skript.dbg`; `rj` druckt Register als JSON. REPL/readline ist für Menschen.
+**Disketten sind sicher.** `k1520dbg` und `boot_trace` mounten **Copy-on-Write**: sie legen
+eine Temp-Kopie an und arbeiten auf der, ein committetes Fixture kann also nicht beschädigt
+werden. Die Diskette einfach direkt übergeben. `--rw` nur, wenn ein Schreibvorgang
+bestehen bleiben soll (z. B. Formatier-Versuche) — dann auf einer eigenen Kopie arbeiten.
+
+**Sparsam laufen lassen** (zählt besonders für Agenten):
+
+- `boot_trace`: `-L /dev/null` verwirft den Emulator-Log; **`--quiet --json`** liefert genau
+  *eine* maschinenlesbare Ergebniszeile statt ~880, dazu einen sinnvollen Exit-Code
+  (`--until`: 0 erreicht / 2 nicht). Statt Zyklen zu raten: **`--until <cond>`**.
+- `k1520dbg`: im Stapelbetrieb über eine Pipe (`printf 'b 0x0437\ng\nrj\nq\n' | …`) oder
+  `-x skript.dbg`; `rj` druckt Register als JSON. Die REPL mit readline ist für Menschen.
 - **Einmal booten, oft fortsetzen:** `--save-state`/`--load-state` (boot_trace) bzw.
-  `savestate`/`loadstate` (k1520dbg) sichern RAM+CPU+ROM-Mapping in eine Datei → der ~2-s-Boot
-  ist eine Einmal-Investition. `-l <bios.prn>` zeigt kommentierten Quelltext statt rohem Disasm.
+  `savestate`/`loadstate` (k1520dbg) sichern RAM+CPU+ROM-Mapping in eine Datei — der ~2 s
+  lange Boot wird zur Einmalinvestition.
+- `-l <listing.prn>` bzw. `-l <quelle.mac@auto>` zeigt kommentierten Originalquelltext
+  statt rohem Disassemblat.
+
+## Werkzeuge
+
+### Gebaut aus C++ (CMake, in `build/`)
+
+| Werkzeug | Zweck | Doku |
+|---|---|---|
+| **`k1520dbg`** | Interaktiver gdb-artiger Debugger für **beide** CPUs: bedingte und Ereignis-Breakpoints, Step into/over/out, Reverse-Step + Snapshots + Save-State, Watch auf Speicher/Ports, Logpoints, `x`-Examine, `.prn`/`.MAC`-Annotation, Chip-Zustand (`dev`, `ivt`), History-`bt` | **[k1520dbg.md](k1520dbg.md)** |
+| **`boot_trace`** | Nicht-interaktiver Boot-/DMA-Tracer: Report mit Histogrammen, `[03F8]`-Done-Flag und VRAM-Banner; `--until`, `--coverage`/`--diff`, `--csv`, `--fold`, `--itrace`, Log-Gates | **[boot_trace.md](boot_trace.md)** |
+| `format_driver` | Skriptgesteuerter Treiber für interaktive Gastprogramme: bootet CP/A mit zwei Disketten, sendet Tastenfolgen, gibt zwischen den Schritten den 80×24-Text aus. Rückgrat der Formatier-Pipeline (`FORMAT.COM`/`FORMATB.COM`) | `doc/format.md` |
+| `kbd_test` | Tastatur-/Boot-Smoke: bootet, tippt Text + Enter, gibt Bildschirm, Tastatur-Portverkehr (0x5C/0x5D mit Quell-PC) und ein PC-Histogramm aus | unten |
+| `floppy_diag` | Lese-Diagnose am **laufenden** OS: verfolgt jeden ZVE2-Lesezugriff über `0x1F7D` — gesuchte (cyl, head, sector, size) und ob das IDAM gefunden wurde | — |
+| `mk_disk_template` | Erzeugt gültig vorformatierte **einseitige** Leerdisketten (HFE) im CP/A-Systemlayout — 8″-FM/MFM und 5¼″-SS | `tests/fixtures/README.md` |
+| `bench_run` | Leistungsmessung mit fester Last: bootet bis zum Prompt und misst danach die reine Emulationsrate von `A5120Machine::run()` in Mcycles/s und als Faktor gegen 2,5 MHz | — |
+
+### Header-only Bausteine
+
+Sie bilden die Innereien von `k1520dbg` und `boot_trace` und sind **einzeln getestet**
+(`tests/debugtools/`, 89 Fälle) — beim Ändern dort mitziehen.
+
+| Header | Inhalt | Doku |
+|---|---|---|
+| `z80dis_min.h` | Ein-Instruktions-Z80-Decoder (C++) | [z80_disasm.md](z80_disasm.md) |
+| `prn_listing.h` | Parser für MACRO-80-`.prn`-Listings: Adresse → kommentierte Quellzeile, optional Objektbytes | [k1520dbg.md](k1520dbg.md) §6 |
+| `mac_listing.h` | **Assembler für Fremdquellen** (`.MAC`/`.ASM` ohne Adressspalte): Adressen + Objektbytes, `Mxxxx`-Anker, Versatz-Abgleich `@auto`. Die Opcode-Tabelle wird zur Laufzeit aus `z80dis_min.h` rückwärts erzeugt | [k1520dbg.md](k1520dbg.md) §6.1 |
+| `callstack_tracker.h` | Exakter CALL/RST/RET-Aufrufstapel für den History-`bt` | [k1520dbg.md](k1520dbg.md) §7 |
+| `expr_eval.h` | Ausdrucks-Evaluator (Arithmetik/Bit/Vergleiche/`[expr]`) für `if`/`disp`/`x`/`logpoint` | [k1520dbg.md](k1520dbg.md) §3 |
+| `event_bp.h` · `mem_watch.h` | Ereignis-Breakpoint-Klassifikation (Interrupt/NMI/RETI) bzw. Watchpoint-Abgleich | [k1520dbg.md](k1520dbg.md) §4 |
+| `dbg_commands.h` | Kommandoliste + Präfix-Matcher für die Tab-Vervollständigung | [k1520dbg.md](k1520dbg.md) §1 |
+| `coverage_diff.h` | Parser + Diff (+ Bereichskollaps) für `--coverage`/`--diff` | [boot_trace.md](boot_trace.md) §4 |
+| `until_cond.h` | Parser und Auswertung der `--until`-Bedingung | [boot_trace.md](boot_trace.md) §3 |
+
+### Python
+
+| Skript | Zweck |
+|---|---|
+| **`z80_disasm2.py`** | **Kanonischer** generischer Z80-Disassembler (`--org`, wiederholbare `--entry`/`--label`) — [z80_disasm.md](z80_disasm.md) |
+| `z80_disasm.py` · `z80_disasm3.py` | Ältere, format.com-spezifische Fassungen (ORG bzw. Labels fest verdrahtet). Nur als Zweitmeinung |
+| `disasm_difftest.py` | Regressionswächter: `z80_disasm2.py` gegen das `z80dis`-Paket. Vor jedem Umbau der Disassembler-Engine laufen lassen |
+| `eprom_to_h.py` | EPROM-Binärdatei → committetes C-Array (`*_data.h`) |
+| `img_to_hfe.py` | Rohes `.img` → HFE-v1-Diskettenabbild |
+| `fb_ocr.py` | Framebuffer-OCR: zerlegt den 640×288-Puffer der K7024 wieder in Text. Benutzt von `tests/python/test_gui_smoke.py` |
+| `capture_format_menus.py` | Greift die FORMAT.COM-Formatmenüs je Laufwerkstyp live aus dem Emulator ab (Grundlage der Format-Matrix) |
+| `gen_zre_prn.py` · `gen_scpx_readpath_prn.py` | Erzeugen die kommentierten `.prn`-Listings (`doc/EPROMS/zre.prn`, SCPX-Lesepfad) für die `-l`-Annotation |
+| `analyze_eprom.py` · `disasm_k2526.py` · `analyze_vram.py` | Einzelanalysen am ZRE-EPROM bzw. am Bildwiederholspeicher |
+
+Zusatzabhängigkeit nur für `disasm_difftest.py`: `venv/bin/pip install -r tools/requirements.txt`.
+
+### Datendateien
+
+| Datei | Zweck |
+|---|---|
+| `scpx1526.sym` | SCPX-1526-BIOS-Symbole — `k1520dbg -s tools/scpx1526.sym …` |
+| `scpx.vars` | Handshake-/Lese-Dashboard für `vars -f tools/scpx.vars` |
+
+### Unterprojekte
+
+| Verzeichnis | Inhalt |
+|---|---|
+| [`bootsec/`](bootsec/README.md) | Vollständig kommentiertes Disassemblat des CP/A-SYL-Bootladers (`src/*.mac`), Build-Skript und Analysewerkzeuge |
+| [`romread/`](romread/README.md) | `romread.com` — CP/M-Programm, das das Boot-EPROM der ZRE/K2526 **echter Hardware** ausliest |
 
 ---
 
-## k1520dbg — interaktiver Debugger
-
-Vollständiges Handbuch: **[k1520dbg.md](k1520dbg.md)**. Kurz:
+## kbd_test — Tastatur-/Boot-Smoke
 
 ```sh
-cmake --build build --target k1520dbg -j
-./build/k1520dbg disks/cpa_cpa780_k5601_clock.img                 # interaktiv
-printf 'b 0xC7A3\ng\nr\nq\n' | ./build/k1520dbg disks/cpa_cpa780_k5601_clock.img   # pipe
-./build/k1520dbg disks/cpa_cpa780_k5601_noclock.hfe -x skript.dbg -s symbole.sym
-./build/k1520dbg -l ~/projects/CPA_Workbench/build/bios.prn disks/cpa_cpa780_k5601_clock.img  # Disasm mit Quelltext
-printf 'g 5000000\nbt\nsnap A\ns 3\nrs\nrestore A\nq\n' | ./build/k1520dbg disks/cpa_cpa780_k5601_clock.img  # bt/snap/reverse
+tools/dev.sh tool kbd_test <disk> [text]
 ```
 
-Kann **beide CPUs** debuggen (ZVE1 ohne Suffix, ZVE2 mit `2`: `b2`, `s2`, `set 2`),
-bedingte Breakpoints (`b A if (HL&0xFF)==0xF7`, voller Ausdrucks-Evaluator),
-Ereignis-Breakpoints (`bint`/`bnmi`/`breti`), Step into/over/out (`s`/`n`/`fin`),
-**Reverse-Step + Snapshots + Save-State** (`rs`/`snap`/`savestate`), Watchpoints mit
-Bereich/Wert-Bedingung (`wp 0x6000..0x60FF changed`), Logpoints/Trace-to-File,
-`x`-Examine (gdb-Formate), Chip-Zustand (`dev ctc/pio/sio`), exakter History-`bt`,
-`.prn`-Quelltext-Annotation + Label-Import, JSON-Register (`rj`). `help` listet alles.
+Bootet, tippt `text` + Enter und gibt den 80×24-Bildschirm, den Tastatur-Portverkehr
+(Ports 0x5C/0x5D mit dem Quell-PC jedes Zugriffs) und ein Vordergrund-PC-Histogramm aus.
+Schneller Einzeltest, ob Tasten ankommen und ob ein Befehl Wirkung zeigt.
 
-## boot_trace — Boot-/DMA-Tracer
-
-Vollständige Doku: **[boot_trace.md](boot_trace.md)**. Kurz (Build über `build_trace`
-mit `LOG_LEVEL=5`):
+**Sondersyntax im `text`:** `|` = Enter mittendrin, `^X` = Strg+X, `~` = blankes Strg+C.
 
 ```sh
-cmake -B build_trace -DLOG_LEVEL=5 -DCMAKE_BUILD_TYPE=Debug
-cmake --build build_trace --target boot_trace -j
-./build_trace/boot_trace -L /tmp/emu.log disks/cpa_cpa780_k5601_clock.img      # leiser Volllauf
-./build_trace/boot_trace -p 9000000 disks/cpa_cpa780_k5601_clock.img           # Post-Boot-Report
-./build_trace/boot_trace -p 9000000 -l ~/projects/CPA_Workbench/build/bios.prn \
-    disks/cpa_cpa780_k5601_clock.img                                           # Histogramme mit BIOS-Quelltext
+tools/dev.sh tool kbd_test disks/cpa_cpa780_k5601_clock.img "120000|DIR"   # Uhr stellen, dann DIR
 ```
 
-Verfolgt ZVE1 **und** ZVE2 per Instruktion, meldet den DMA-Einfrierpunkt und den
-`[03F8]`-Done-Flag-Verlauf. Weiter: `--until <cond>` (bis zu einem Zustand laufen),
-`--coverage`/`--diff` (welcher Code lief / zwei Läufe vergleichen), `--csv`
-(maschinenlesbarer Trace), `--save-state`/`--load-state` (Checkpoint statt Reboot),
-`--json`/`--quiet` (eine Ergebniszeile für Skript/Agent). Log-Gates (`--log-pc`,
-`--log-cycle`) heben das Level nur im interessanten Fenster an — leise laufen, gezielt boosten.
-
-## z80_disasm2.py / Disassembler
-
-Vollständige Doku: **[z80_disasm.md](z80_disasm.md)**. Kanonischer Aufruf für das
-Boot-ROM und der Hinweis zu `--entry` (Laufzeit-Vektoren wie ZVE2 @ `01DD`) dort.
-`disasm_difftest.py` ist der Regressionswächter (gegen `z80dis`) — vor jedem
-Engine-Umbau laufen lassen.
-
-## kbd_test — Tastatur-/Boot-Smoke-Test (nicht-interaktiv)
-
-`./build/kbd_test <disk> [text]` bootet, tippt `text`+Enter und gibt den 80×24-
-Bildschirm + Tastatur-Port-Verkehr (Port 0x5C/0x5D, mit Quell-PC jedes Zugriffs)
-+ ein Foreground-PC-Histogramm aus. Schneller Einzeltest, ob Tasten ankommen und
-ob ein Befehl Wirkung zeigt.
-
-**Sondersyntax im `text`:** `|` = Enter mittendrin (z.B. erst die Uhrzeit, dann
-ein Kommando in einem Lauf), `^X` = Ctrl+X, `~` = bare Ctrl+C. Beispiel:
-`kbd_test disks/cpa_cpa780_k5601_clock.img "120000|DIR"` (Uhr stellen, dann `DIR`).
-Auf der **Uhr-Disk nach Zeiteingabe** funktioniert die CCP-Eingabe vollständig
-(Echo/Kommando); cpa_cpa780_k5601_noclock erreicht keinen interaktiven CCP (eigenes Thema).
-Die K7637 modelliert die 9600-Baud-Latenz — Tasten erscheinen erst ~2604 Takte
-nach `keyPress` am SIO (`K7637::service()` aus der Run-Loop).
-
-(`floppy_diag.cpp` ist ein Scratch-Tracer für die ZVE2-Lesezugriffe des laufenden
-OS — durch `k1520dbg` weitgehend abgelöst.)
+Auf der Uhr-Diskette funktioniert die CCP-Eingabe nach der Zeiteingabe vollständig;
+`cpa_cpa780_k5601_noclock` erreicht keinen interaktiven CCP (eigenes Thema). Die K7637
+modelliert die 9600-Baud-Latenz — Tasten erscheinen erst ~2604 Takte nach `keyPress` am SIO.
 
 ---
 
-## Bekannte Lücken / Backlog
+## Bekannte Lücken
 
-- **z80_disasm2.py**: Behoben 2026-06-05 — war auf format.com (ORG 0100H) fest
-  verdrahtet; jetzt generisch. Gleichzeitig latenter Engine-Bug gefixt: die
-  unprefixed 3-Byte-Loads `LD (nn),A/HL` und `LD A/HL,(nn)` (Opcodes 22/2A/32/3A)
-  lasen das Operandenwort um ein Byte verschoben. Selbsttest in der Datei.
-- **z80dis_min.h** (eingebauter Decoder): IXH/IXL in kombinierten `(IX+d)`-Befehlen
-  kosmetisch vereinfacht (Länge korrekt). Niedrige Priorität — für solche
-  Sonderfälle `z80_disasm2.py` heranziehen.
-- **k1520dbg `bt`**: heuristisch (Stack-Scan nach `CALL`-Vorbyte); Falsch-Positive
-  möglich. `fin` braucht einen sauberen Stack-Rahmen.
-- **z80_disasm.py / z80_disasm3.py**: ORG bzw. Labels hartkodiert; nur als
-  Zweitmeinung/Orakel bzw. nur für format.com. Kanonisch bleibt z80_disasm2.py.
-- **DD/FD-Shadow-Präfix**: vor einem Nicht-Index-Opcode zeigt z80_disasm2.py
-  `DB DDH` + Folgebefehl, z80dis ignoriert das Präfix (hardware-näher). Betrifft
-  nur fehlausgerichtete Offsets/Datenbytes; ausgerichteter Code ist bit-genau.
-- **boot_trace ZVE2-INIR-Histogramm**: INIR zählt im ZVE2-PC-Histogramm pro Byte
-  (PC bleibt auf 0x0242). Kosmetisch, niedrige Priorität.
+- **`z80dis_min.h`**: IXH/IXL in kombinierten `(IX+d)`-Befehlen kosmetisch vereinfacht
+  (Länge korrekt). Für solche Sonderfälle `z80_disasm2.py` heranziehen.
+- **`k1520dbg bt`**: der Stack-Scan-`bt` ist heuristisch (sucht das `CALL`-Vorbyte),
+  Falschpositive sind möglich; `fin` braucht einen sauberen Stapelrahmen. Der
+  History-`bt` (`callstack_tracker.h`) ist exakt.
+- **DD/FD-Schattenpräfix**: vor einem Nicht-Index-Opcode zeigt `z80_disasm2.py`
+  `DB DDH` + Folgebefehl, `z80dis` ignoriert das Präfix (hardwarenäher). Betrifft nur
+  fehlausgerichtete Offsets und Datenbytes; ausgerichteter Code ist bitgenau.
+- **`boot_trace` ZVE2-INIR-Histogramm**: `INIR` zählt pro Byte, weil der PC auf `0x0242`
+  stehen bleibt. Kosmetisch.
+- **Tastatur-Diagnose** (`dev kbd`, `keys --echo`, `keys \S`, adaptives `keys`) ist
+  vorgeschlagen, aber nicht umgesetzt: [`feature_request_keyboard_diagnostics.md`](feature_request_keyboard_diagnostics.md).
+
+> **2026-08-09 entfernt:** die Wegwerf-Analysewerkzeuge `scpx_extract.cpp` (Dateien aus
+> einer SCPX-Diskette extrahieren) und `mk_blank.cpp` (formatierte Leerdiskette anlegen).
+> Beide wurden von CMake nicht gebaut. Ersatz: `k1520dbg disk verify` für die
+> Medienprüfung und `A5120Machine::createDisk` bzw. „Neue Diskette" in der Oberfläche
+> zum Anlegen. Ältere Analysetexte unter `doc/` nennen sie noch — dort sind sie
+> Protokoll, kein Handlungsvorschlag.

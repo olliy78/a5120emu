@@ -573,14 +573,19 @@ Teile des Bootloaders stammen nachweislich aus den CPA-BIOS-Quellcode-Dateien in
 
 ## 12. Referenzen
 
-- [`disks/bootsec_cpa780.bin`](../disks/bootsec_cpa780.bin) — analysierte Binärdatei
-- [`docs/bootsec.mac`](bootsec.mac) — kommentiertes Disassemblat im M80/MAC-Format
-- [`cpa_src/biosdskt.mac`](../cpa_src/biosdskt.mac) — physischer FDC-Treiber (Ports, ft.*, Motor, AMF-Legende)
-- [`cpa_src/biosdskb.mac`](../cpa_src/biosdskb.mac) — ft.*-Parameterblock-Definitionen
-- [`cpa_src/bioscld3.mac`](../cpa_src/bioscld3.mac) — CCP-Lader, fcb@os (Warmstart)
-- [`cpa_src/biosnuc.mac`](../cpa_src/biosnuc.mac) — BIOS-Nucleus, fcb@os-Referenz
-- [`cpa_src/format.mac`](../cpa_src/format.mac) — FORMAT-Utility (advance_dma_ptr = FDC_ADRDEC)
-- [`cpa_src/bios.mac`](../cpa_src/bios.mac) — Produktions-BIOS (in `@OS.COM`)
-- [`boot_disk/cpabcgen.com`](cpabcgen.com) — Boot-Sektor-Erzeuger (5.25"/40T, Version 05.04.88, embed. Bootlader Version 24.02.87)
-- [`src/floppy.cpp`](../src/floppy.cpp) — Emulator-Implementierung der SYL-Geometrie
-- [`src/cpa_bios.cpp`](../src/cpa_bios.cpp) — Emulator-Boot-Sequenz (`bootFromDisk()`)
+- [`disks/bootsec_cpa780.bin`](../../disks/bootsec_cpa780.bin) — analysierte Binärdatei
+- [`src/`](src/) — kommentiertes Disassemblat im M80/MAC-Format (`bootsec_syl.mac`, `boot_bios.mac`, `mini_bdos.mac`; monolithisch: `bootsec.mac.bak`)
+- [`cpa_src/biosdskt.mac`](../../cpa_src/biosdskt.mac) — physischer FDC-Treiber (Ports, ft.*, Motor, AMF-Legende)
+- [`cpa_src/biosdskb.mac`](../../cpa_src/biosdskb.mac) — ft.*-Parameterblock-Definitionen
+- [`cpa_src/bioscld3.mac`](../../cpa_src/bioscld3.mac) — CCP-Lader, fcb@os (Warmstart)
+- [`cpa_src/biosnuc.mac`](../../cpa_src/biosnuc.mac) — BIOS-Nucleus, fcb@os-Referenz
+- [`cpa_src/format.mac`](../../cpa_src/format.mac) — FORMAT-Utility (advance_dma_ptr = FDC_ADRDEC)
+- [`cpa_src/bios.mac`](../../cpa_src/bios.mac) — Produktions-BIOS (in `@OS.COM`)
+- [`boot_disk/cpabcgen.com`](../../boot_disk/cpabcgen.com) — Boot-Sektor-Erzeuger (5.25"/40T, Version 05.04.88, embed. Bootlader Version 24.02.87)
+- [`core/cards/k5122/`](../../core/cards/k5122/) — Emulation des Floppy-Controllers (Lesepfad, SYL-Geometrie)
+- [`core/machines/a5120/a5120.cpp`](../../core/machines/a5120/a5120.cpp) — Laufschleife, ZVE1↔ZVE2-Übergabe beim Bootladen
+
+> Die beiden zuletzt genannten Verweise zeigten bis 2026-08-09 auf `src/floppy.cpp`
+> und `src/cpa_bios.cpp` — den monolithischen Alt-Emulator mit BIOS-HALT-Traps, der
+> am 2026-08-07 entfernt wurde.  Der K1520-Kern führt den Bootlader als echten
+> Z80-Code aus; es gibt keine nachgebaute `bootFromDisk()` mehr.

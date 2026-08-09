@@ -194,7 +194,7 @@ if(BUILD_K1520)
     # mk_disk_template: erzeugt gültig vorformatierte EINSEITIGE Leerdisketten (HFE)
     # für die Boot-Pipeline der einseitigen Formate (MF3200 8″-FM, MF6400 8″-MFM,
     # K5600.10/.20 5″-SS) — FORMAT.COM kann eine gap-leere .hfe nicht direkt formatieren
-    # (Gap-Blank-Hänger, docs/format.md §8.2/§8.6).
+    # (Gap-Blank-Hänger, doc/format.md §8.2/§8.6).
     add_executable(mk_disk_template tools/mk_disk_template.cpp)
     target_link_libraries(mk_disk_template PRIVATE k1520_floppy2 k1520_logger)
     target_include_directories(mk_disk_template PRIVATE ${CMAKE_SOURCE_DIR})

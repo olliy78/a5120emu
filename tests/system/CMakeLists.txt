@@ -35,13 +35,15 @@ k1520_add_test(hardy     SRC test_hardy.cpp     LIBS ${_libs}
 # Diese Tests dauern LANGE (voller Boot je Schritt) → LABEL "format_integration";
 # sie laufen bei den Standard-Regressionstests NICHT mit (tools/dev.sh test schließt
 # sie via `-LE format_integration` aus; `tools/dev.sh test-format` führt nur sie aus).
-# FORMAT_DRIVER/MK_DISK_TEMPLATE zeigen auf die Tools DIESES Build-Verzeichnisses.
+# FORMAT_DRIVER zeigt auf das Tool DIESES Build-Verzeichnisses.
 set(_mkboot "${CMAKE_CURRENT_SOURCE_DIR}/drivers/make_bootdisk.py")
-# Ein Boot-Disk-Test je Preset: erstellen+formatieren (mk_disk_template bzw.
-# committete cpa780-Vorlage) → CPABCGEN → Kaltboot-Verify.
+# Ein Boot-Disk-Test je Preset: Leerdiskette → FORMAT → CPABCGEN → Kaltboot-Verify.
+# (Bis 2026-08-07 wurde hier zusätzlich MK_DISK_TEMPLATE gereicht — der Treiber legt
+# die Diskette seit dem Medium-Umbau selbst unformatiert an und liest die Variable
+# nicht mehr; mk_disk_template bleibt als Handwerkzeug bestehen.)
 macro(add_bootdisk_test name preset)
     add_test(NAME ${name} COMMAND sh -c
-        "FORMAT_DRIVER=$<TARGET_FILE:format_driver> MK_DISK_TEMPLATE=$<TARGET_FILE:mk_disk_template> python3 ${_mkboot} --preset ${preset} --quiet")
+        "FORMAT_DRIVER=$<TARGET_FILE:format_driver> python3 ${_mkboot} --preset ${preset} --quiet")
     set_tests_properties(${name} PROPERTIES
         TIMEOUT 600 PASS_REGULAR_EXPRESSION "BOOTDISK OK"
         LABELS "system;slow;format_integration")

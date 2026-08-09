@@ -6,7 +6,7 @@ disassembliert mit `tools/z80_disasm2.py --org 0x100`. Ziel: Bedienung/Dialoge d
 um danach gezielte Formatier-Tests im Emulator zu fahren.
 
 Zugehörig: [[project_scpx_boot]], [[project_scpx_com_load_bug]] (Laufzeit-.COM-Laden gelöst),
-`doc/analyse_scpx_com_load.md` (SCPX-BIOS-Lesepfad), `docs/format.md` (CP/A-FORMAT-Pipeline).
+`doc/analyse_scpx_com_load.md` (SCPX-BIOS-Lesepfad), `doc/format.md` (CP/A-FORMAT-Pipeline).
 
 ---
 

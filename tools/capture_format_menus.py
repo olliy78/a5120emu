@@ -4,7 +4,7 @@ capture_format_menus.py – Greift die FORMAT.COM-Formatmenüs für die verschie
 Laufwerkstypen live aus dem A5120-Emulator ab.
 
 Welche Formate FORMAT.COM anbietet, hängt vom Laufwerkstyp ab, den das BIOS für den
-gewählten Laufwerksbuchstaben meldet (siehe docs/format.md §2/§10).  Die neuen
+gewählten Laufwerksbuchstaben meldet (siehe doc/format.md §2/§10).  Die neuen
 Combo-Boot-Disketten konfigurieren B:/C: als andere Laufwerkstypen, sodass sich deren
 Menüs erstmals im Emulator abgreifen lassen:
 

@@ -263,7 +263,7 @@ Analysewerkzeug der teuerste denkbare Ausfall.
 
 **Umgesetzt:**
 
-- **`cli_dbg_all_commands_smoke`** — `tests/dbg/all_commands_smoke.dbg` ruft **jedes**
+- **`cli_dbg_all_commands_smoke`** — `tests/cli/scripts/all_commands_smoke.dbg` ruft **jedes**
   Kommando einmal auf (Reihenfolge so, dass nichts hängt). Der Test scheitert per
   `FAIL_REGULAR_EXPRESSION`, sobald das Tool ein Kommando als unbekannt meldet, und per
   Exit-Code bei Absturz. Negativprobe durchgeführt: ein umbenanntes Kommando lässt den

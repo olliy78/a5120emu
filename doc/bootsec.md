@@ -594,7 +594,7 @@ Teile des Bootloaders stammen nachweislich aus den CPA-BIOS-Quellcode-Dateien in
 ## 12. Referenzen
 
 - [`disks/bootsec_cpa780.bin`](../disks/bootsec_cpa780.bin) — analysierte Binärdatei
-- [`docs/bootsec.mac`](bootsec.mac) — kommentiertes Disassemblat im M80/MAC-Format
+- [`tools/bootsec/src/`](../tools/bootsec/src/) — kommentiertes Disassemblat im M80/MAC-Format (`bootsec_syl.mac`, `boot_bios.mac`, `mini_bdos.mac`; monolithisch: `bootsec.mac.bak`)
 - [`cpa_src/biosdskt.mac`](../cpa_src/biosdskt.mac) — physischer FDC-Treiber (Ports, ft.*, Motor, AMF-Legende)
 - [`cpa_src/biosdskb.mac`](../cpa_src/biosdskb.mac) — ft.*-Parameterblock-Definitionen
 - [`cpa_src/bioscld3.mac`](../cpa_src/bioscld3.mac) — CCP-Lader, fcb@os (Warmstart)

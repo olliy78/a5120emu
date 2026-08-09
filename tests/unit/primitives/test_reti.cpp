@@ -165,6 +165,66 @@ TEST(RetiChain, BusAcknowledgeFollowsTheDaisyChainOrder) {
     EXPECT_TRUE(pio.getIEO());
 }
 
+
+// ─── Anforderungsseite: hasInterrupt() bei gesetztem IUS ─────────────────────
+//
+// Neben dem IEO-Signal (unten) gibt es die zweite Frage: fordert ein Baustein
+// ueberhaupt noch einen Interrupt an, waehrend er bedient wird?  Muss er NICHT —
+// sonst zieht die Karte /INT, die Quittung findet in getVector() aber keinen
+// vektorfaehigen Kanal und liefert den Fallback → Endlos-Sturm mit Pseudo-Vektor.
+// Genau das brach den UDOS-Boot (origin/main f3b7ab1, doc/analyse_udos.md).
+//
+// Alle drei Bausteine halten diesen Vertrag: CTC ueber anyServiceable(), PIO seit
+// f3b7ab1, SIO seit dem Angleich vom 2026-08-07.  Die KETTENseite (getIEO) ist
+// davon unberuehrt — siehe IeoBlocksOnPendingNotOnService am Dateiende.
+
+TEST(RetiChain, CtcRequestIsIusGatedUntilReti) {
+    Z80CTC ctc("CTC");
+    armCtc(ctc);
+    for (int i = 0; i < 80; ++i) ctc.clockTick();
+    ASSERT_TRUE(ctc.hasInterrupt());
+
+    ctc.getVector();                            // IUS gesetzt
+    for (int i = 0; i < 80; ++i) ctc.clockTick();  // neuer Zeitablauf waehrend der ISR
+    EXPECT_FALSE(ctc.hasInterrupt())
+        << "CTC fordert waehrend der eigenen ISR erneut an — Pseudo-Vektor-Sturm droht";
+
+    ctc.onRETI();
+    EXPECT_TRUE(ctc.hasInterrupt()) << "nach RETI muss die wartende Anforderung wieder gelten";
+}
+
+TEST(RetiChain, PioRequestIsIusGatedUntilReti) {
+    Z80PIO pio("PIO");
+    armPio(pio, 0xC4);
+    pio.portAWrite(0x01);
+    ASSERT_TRUE(pio.hasInterrupt());
+
+    pio.getVector();                            // IUS gesetzt
+    pio.portAWrite(0x02);                       // neue Daten waehrend der ISR
+    EXPECT_FALSE(pio.hasInterrupt())
+        << "PIO fordert waehrend der eigenen ISR erneut an — das war der "
+           "UDOS-Pseudo-Interrupt-Sturm (origin/main f3b7ab1)";
+
+    pio.onRETI();
+    EXPECT_TRUE(pio.hasInterrupt()) << "nach RETI muss die wartende Anforderung wieder gelten";
+}
+
+TEST(RetiChain, SioRequestIsIusGatedUntilReti) {
+    Z80SIO sio("SIO");
+    armSio(sio);
+    sio.channelA().rxByte(0x42);
+    ASSERT_TRUE(sio.hasInterrupt());
+
+    sio.getVector();                            // IUS gesetzt
+    sio.channelA().rxByte(0x43);                // zweites Zeichen waehrend der ISR
+    EXPECT_FALSE(sio.hasInterrupt())
+        << "SIO fordert waehrend der eigenen ISR erneut an — die Quittung findet "
+           "dann keinen vektorfaehigen Kanal und die ISR wird endlos wiederholt";
+
+    sio.onRETI();
+    EXPECT_TRUE(sio.hasInterrupt()) << "nach RETI muss die wartende Anforderung wieder gelten";
+}
+
 // ─── Dokumentierte Abweichung vom Z80-Daisy-Chain-Standard ───────────────────
 
 /**

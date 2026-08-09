@@ -860,7 +860,7 @@ int main(int argc, char** argv){
                 ln[c]=(ch>=0x20&&ch<0x7F)?(char)ch:'.'; }
             ln[80]=0; fprintf(stderr,"  |%s|\n",ln); }
     };
-    // ── screen text as a condition (feature_request_interactive_debug #1/#5) ──
+    // ── screen text as a condition (doc/feature_requests/interaktive_programme.md #1/#5) ──
     // Render one 80-char row of the text VRAM (0xF800) into `out` (no trailing NUL
     // handling needed by callers — 80 chars). Non-printable → space (so matches
     // survive control bytes / the cursor-flag high bit).

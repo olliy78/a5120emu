@@ -28,7 +28,7 @@ Ablauf (alles über tools/format_driver, den Zwei-Disk-Tastatur-Treiber):
   unformatiertes Medium in der Geometrie des LAUFWERKS an, CLAUDE.md §8.7).
   Frühere Fassungen mussten die Vorlage stattdessen mit `mk_disk_template` bzw. aus
   `disks/empty_cpa780.hfe` vorformatiert liefern, weil FORMAT.COM auf einer gap-leeren
-  Diskette hing (docs/format.md §8.2) und später `Fehler 'U' SPUR DEFEKT` meldete
+  Diskette hing (doc/format.md §8.2) und später `Fehler 'U' SPUR DEFEKT` meldete
   (doc/analyse_format_leerspur.md).  Beides ist behoben.
 
   ⚠️  format_driver mountet alle Disks schreibend → A: wird IMMER als Temp-Kopie
@@ -36,7 +36,7 @@ Ablauf (alles über tools/format_driver, den Zwei-Disk-Tastatur-Treiber):
 
 Verwendung:
   tools/dev.sh tool format_driver
-  python3 tools/cpa_tools/make_bootdisk.py --preset mf6400_fmt1 --quiet
+  python3 tests/system/drivers/make_bootdisk.py --preset mf6400_fmt1 --quiet
 
 Env:
   FORMAT_DRIVER      Pfad zu format_driver (Default build/format_driver)

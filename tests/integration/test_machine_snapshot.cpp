@@ -91,7 +91,7 @@ TEST(MachineSnapshot, SaveAndLoadStateRoundTrip){
     std::remove(path.c_str());
 }
 
-// ── K7024-VRAM überlebt save/load (feature_request_interactive_debug #2) ─────
+// ── K7024-VRAM überlebt save/load (doc/feature_requests/interaktive_programme.md #2) ─────
 
 // Der Bildschirminhalt (VRAM 0xF800–0xFFFF, im K7024 gehalten, nicht im OPS-RAM)
 // muss einen savestate→loadstate überleben, sonst ist `screen` nach dem Laden leer
