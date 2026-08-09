@@ -556,3 +556,139 @@ TEST(TrackCodec, ParseTrack_VerfaelschtesGroessenfeldStuerztNichtAb) {
     EXPECT_NO_THROW((void)TrackCodec::buildTrack(parsed, Encoding::MFM));
     EXPECT_NO_THROW((void)TrackCodec::buildFaithfulReadTrack(parsed, Encoding::MFM));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GRUPPE: writeSector — Einzelsektor an Ort und Stelle ersetzen
+// Der Schreibpfad des Dateisystem-Werkzeugs (k1520DiskTool).  Die Zusagen:
+// alles ausserhalb des Datenfelds bleibt BYTEGLEICH, die CRC stimmt danach, der
+// UDOS-Nachspann ueberlebt, und ein Fehlschlag aendert NICHTS.
+// Siehe doc/design/13_k1520disktool.md §4.1.
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(TrackCodecWriteSector, ErsetztDatenfeldUndRechnetCrcNeu) {
+    std::vector<LogicalSector> secs;
+    for (uint8_t i = 1; i <= 5; ++i) secs.push_back(makeSector(7, 1, i, 256, 0xE5));
+    TrackImage t = TrackCodec::buildTrack(secs, Encoding::MFM);
+
+    std::vector<uint8_t> neu(256);
+    for (size_t i = 0; i < neu.size(); ++i) neu[i] = static_cast<uint8_t>(i ^ 0x5A);
+
+    ASSERT_TRUE(TrackCodec::writeSector(t, 3, neu));
+
+    auto parsed = TrackCodec::parseTrack(t);
+    ASSERT_EQ(parsed.size(), 5u);
+    for (const auto& s : parsed) {
+        EXPECT_TRUE(s.id_crc_ok)   << "Sektor " << int(s.id);
+        EXPECT_TRUE(s.data_crc_ok) << "Sektor " << int(s.id) << ": CRC nicht nachgezogen";
+        if (s.id == 3) EXPECT_EQ(s.data, neu);
+        else           EXPECT_EQ(s.data, std::vector<uint8_t>(256, 0xE5))
+            << "Nachbarsektor " << int(s.id) << " veraendert";
+    }
+}
+
+TEST(TrackCodecWriteSector, LaesstAllesAusserDemDatenfeldBytegleich) {
+    std::vector<LogicalSector> secs;
+    for (uint8_t i = 1; i <= 4; ++i) secs.push_back(makeSector(0, 0, i, 128));
+    TrackImage t = TrackCodec::buildTrack(secs, Encoding::MFM);
+
+    const TrackImage vorher = t;
+    std::vector<uint8_t> neu(128, 0xAB);
+    ASSERT_TRUE(TrackCodec::writeSector(t, 2, neu));
+
+    ASSERT_EQ(t.bytes.size(), vorher.bytes.size());
+    EXPECT_EQ(t.marks, vorher.marks) << "Markenspur veraendert";
+    EXPECT_EQ(t.bitcells, vorher.bitcells);
+
+    // Genau 128 Daten- + 2 CRC-Bytes duerfen sich unterscheiden — und nur zusammenhaengend.
+    size_t erstes = SIZE_MAX, letztes = 0, anzahl = 0;
+    for (size_t i = 0; i < t.bytes.size(); ++i)
+        if (t.bytes[i] != vorher.bytes[i]) {
+            if (erstes == SIZE_MAX) erstes = i;
+            letztes = i;
+            ++anzahl;
+        }
+    ASSERT_NE(erstes, SIZE_MAX);
+    EXPECT_EQ(letztes - erstes + 1, 130u) << "Aenderung reicht ueber Datenfeld+CRC hinaus";
+    EXPECT_EQ(t.marks[erstes - 1], MarkType::Data) << "Aenderung beginnt nicht hinter der DAM";
+    (void)anzahl;
+}
+
+TEST(TrackCodecWriteSector, SchreibtUdosKontrollblockUndErhaeltIhnSonst) {
+    std::vector<LogicalSector> secs;
+    for (uint8_t i = 1; i <= 3; ++i) {
+        LogicalSector s = makeSector(22, 0, i, 128, 0x00);
+        s.tail = {0x05, 0x16, 0x05, 0x16, 0x41, 0xF2, 0x12, 0x12};
+        secs.push_back(std::move(s));
+    }
+    TrackImage t = TrackCodec::buildTrack(secs, Encoding::MFM);
+
+    // 1) Ohne tail-Argument bleibt der vorhandene Kontrollblock stehen.
+    ASSERT_TRUE(TrackCodec::writeSector(t, 1, std::vector<uint8_t>(128, 0x11)));
+    auto p1 = TrackCodec::parseTrack(t);
+    ASSERT_EQ(p1.size(), 3u);
+    EXPECT_EQ(p1[0].tail, secs[0].tail) << "Kontrollblock beim Schreiben verloren";
+
+    // 2) Mit tail-Argument wird er ersetzt — die Verkettung ist damit schreibbar.
+    const std::vector<uint8_t> neuerBlock = {0x08, 0x15, 0xFF, 0xFF};
+    ASSERT_TRUE(TrackCodec::writeSector(t, 2, std::vector<uint8_t>(128, 0x22), neuerBlock));
+    auto p2 = TrackCodec::parseTrack(t);
+    ASSERT_EQ(p2.size(), 3u);
+    ASSERT_GE(p2[1].tail.size(), 4u);
+    EXPECT_EQ(std::vector<uint8_t>(p2[1].tail.begin(), p2[1].tail.begin() + 4), neuerBlock);
+    // Die Bytes DAHINTER (Gap-Naht) bleiben unangetastet.
+    EXPECT_EQ(p2[1].tail[4], 0x41);
+    EXPECT_TRUE(p2[1].data_crc_ok);
+}
+
+TEST(TrackCodecWriteSector, FM_EbensoMitEigenerCrc) {
+    std::vector<LogicalSector> secs;
+    for (uint8_t i = 1; i <= 4; ++i) secs.push_back(makeSector(0, 0, i, 1024));
+    TrackImage t = TrackCodec::buildTrack(secs, Encoding::FM);
+
+    std::vector<uint8_t> neu(1024, 0x3C);
+    ASSERT_TRUE(TrackCodec::writeSector(t, 4, neu));
+
+    auto parsed = TrackCodec::parseTrack(t);
+    ASSERT_EQ(parsed.size(), 4u);
+    EXPECT_TRUE(parsed[3].data_crc_ok);
+    EXPECT_EQ(parsed[3].data, neu);
+}
+
+TEST(TrackCodecWriteSector, FehlschlagAendertNichts) {
+    std::vector<LogicalSector> secs;
+    for (uint8_t i = 1; i <= 3; ++i) secs.push_back(makeSector(0, 0, i, 256));
+    const TrackImage original = TrackCodec::buildTrack(secs, Encoding::MFM);
+
+    TrackImage t = original;
+    EXPECT_FALSE(TrackCodec::writeSector(t, 9, std::vector<uint8_t>(256, 1)))
+        << "unbekannte Sektor-ID muss scheitern";
+    EXPECT_EQ(t.bytes, original.bytes);
+
+    EXPECT_FALSE(TrackCodec::writeSector(t, 2, std::vector<uint8_t>(128, 1)))
+        << "falsche Datenlaenge muss scheitern";
+    EXPECT_EQ(t.bytes, original.bytes);
+
+    TrackImage leer;
+    EXPECT_FALSE(TrackCodec::writeSector(leer, 1, std::vector<uint8_t>(128, 1)));
+}
+
+TEST(TrackCodecWriteSector, GeloeschtesDatenfeldBleibtGeloescht) {
+    // Marke F8 (deleted data): writeSector rechnet die CRC ueber die TATSAECHLICHE
+    // Marke, damit ein solcher Sektor nach dem Schreiben nicht CRC-defekt ist.
+    std::vector<LogicalSector> secs{makeSector(0, 0, 1, 128)};
+    TrackImage t = TrackCodec::buildTrack(secs, Encoding::MFM);
+    const size_t dam = t.nextMark(0, MarkType::Data);
+    ASSERT_NE(dam, SIZE_MAX);
+    t.bytes[dam] = 0xF8;
+
+    const std::vector<uint8_t> neu(128, 0x7E);
+    ASSERT_TRUE(TrackCodec::writeSector(t, 1, neu));
+    EXPECT_EQ(t.bytes[dam], 0xF8) << "Markenbyte veraendert";
+
+    // Gegenprobe: CRC ueber [A1,A1,A1,F8]+Daten muss passen.
+    std::vector<uint8_t> crcIn = {0xA1, 0xA1, 0xA1, 0xF8};
+    crcIn.insert(crcIn.end(), neu.begin(), neu.end());
+    const uint16_t soll = TrackCodec::crc16(crcIn.data(), crcIn.size(), 0xFF, 0xFF);
+    EXPECT_EQ(t.bytes[dam + 1 + 128],     static_cast<uint8_t>(soll >> 8));
+    EXPECT_EQ(t.bytes[dam + 1 + 128 + 1], static_cast<uint8_t>(soll & 0xFF));
+}

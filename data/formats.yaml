@@ -110,6 +110,37 @@ formats:
       - { cyls: 0-2,  heads: 0-1, sectors: 26, size: 128  }
       - { cyls: 3-79, heads: 0-1, sectors: 5,  size: 1024 }
 
+  - name:        scpx798
+    description: "SCPX 798K — Systemzylinder 0 in 16×256, Daten 5×1024"
+    drives:      [K5601]
+    encoding:    mfm
+    # GEMESSEN an tests/fixtures/disks/scpx17_5x1024_k5601_hardy.hfe (GeometryProbe):
+    # nur Zylinder 0 ist beidseitig 16×256, ab Zylinder 1 durchgängig 5×1024.  Ohne
+    # diesen Eintrag passte die Diskette zu keinem Format des Katalogs.
+    tracks:
+      - { cyls: 0,    heads: 0-1, sectors: 16, size: 256  }
+      - { cyls: 1-79, heads: 0-1, sectors: 5,  size: 1024 }
+
+  # ══ UDOS 1526 / 4.x (ZDOS) ═════════════════════════════════════════════════
+  # UDOS formatiert 77 Spuren zu 26×128 MFM.  Beide Seiten tragen je ein eigenes,
+  # vollständiges Dateisystem (doc/udos_diskettenformat.md §2) — physisch ist das
+  # trotzdem EIN Format.  Beide Einträge sind an den Referenzdisketten gemessen
+  # (`disks/udos_boot_*.hfe`, GeometryProbe).
+
+  - name:        udos_ds77
+    description: "UDOS 4.x — 77 Spuren doppelseitig, 26×128 (je Seite ein Dateisystem)"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-76, heads: 0-1, sectors: 26, size: 128 }
+
+  - name:        udos_ss77
+    description: "UDOS 4.x — 77 Spuren einseitig, 26×128"
+    drives:      [K5601, K5600.20, MF6400]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-76, heads: 0, sectors: 26, size: 128 }
+
   # ══ 8″-Laufwerke ═══════════════════════════════════════════════════════════
 
   # Beide 8″-Laufwerke sind einseitig mit 77 Spuren.  Das MF3200 beherrscht NUR FM
@@ -248,3 +279,107 @@ formats:
     encoding:    mfm
     tracks:
       - { cyls: 0-39, heads: 0-1, sectors: 17, size: 256 }
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  DATEISYSTEME (k1520DiskTool)
+#
+#  Der Emulator liest diese Sektion NICHT — sie beschreibt die logische Ebene:
+#  welches Dateisystem auf einer Geometrie liegt und wo es beginnt.  Geladen von
+#  FsCatalog (core/filesystem/fs_catalog.cpp).  Vollstaendiges Schema:
+#  doc/design/13_k1520disktool.md §6.3
+#
+#  Gemeinsame Felder
+#    name         (Pflicht)  eindeutiger Name — CLI, GUI, C-API
+#    description  (optional) Klartext fuer die Oberflaeche
+#    format       (Pflicht)  Name eines Eintrags aus `formats:` (die Geometrie)
+#    type         (Pflicht)  cpm | udos
+#    data_start   (optional) erste Spur des Dateisystems (Vorgabe cyl 0 / head 0)
+#    containers   (optional) img | hfe | dmk (Vorgabe: alle; udos nie img)
+#    detect_rank  (optional) Reihenfolge bei mehrdeutiger Erkennung (kleiner = frueher)
+#
+#  Nur type: cpm      block_size, dir_entries, skew, os
+#  Nur type: udos     sides_separate, boot_track, directory_track, bitmap_track,
+#                     usable_tracks
+#
+#  ┌─────────────────────────────────────────────────────────────────────────┐
+#  │ Der Beginn des Dateisystems ist eine SPUR, kein Byte-Offset.            │
+#  │ Bei gemischter Geometrie (cpa780: drei 128-B-Seiten, dann 1024 B) ist   │
+#  │ er als Spurzahl gar nicht ausdrueckbar — cpmtools traegt deshalb        │
+#  │ `offset 15104` ein.  Aus data_start rechnet der SectorSpace denselben   │
+#  │ Wert aus, und er bleibt bei jeder Geometrie richtig.                    │
+#  └─────────────────────────────────────────────────────────────────────────┘
+# ═════════════════════════════════════════════════════════════════════════════
+
+filesystems:
+
+  # ══ CP/A ═══════════════════════════════════════════════════════════════════
+
+  - name:        cpa780
+    description: "CP/A 780K Bootdiskette — Dateisystem ab Zylinder 2"
+    format:      cpa780
+    type:        cpm
+    # NACHGEMESSEN an tests/fixtures/disks/cpa_cpa780_k5601_clock.img: das Verzeichnis
+    # steht bei Byte 15104 = Anfang c2h0; die erste Datei belegt ab Block 2, also sind
+    # zwei 2048-B-Bloecke Verzeichnis = 128 Eintraege.  Blockzeiger sind 16 Bit
+    # (390 Bloecke > 255) — das ergibt sich aus der Groesse und steht nicht im Profil.
+    data_start:  { cyl: 2, head: 0 }
+    block_size:  2048
+    dir_entries: 128
+
+  - name:        cpa800
+    description: "CP/A 800K Datendiskette — Dateisystem ab Zylinder 0"
+    format:      cpa800
+    type:        cpm
+    block_size:  2048
+    dir_entries: 128
+
+  - name:        cpa640
+    description: "CP/A 640K (16×256) — Dateisystem ab Zylinder 0"
+    format:      cpa640
+    type:        cpm
+    block_size:  2048
+    dir_entries: 128
+
+  # ══ SCPX ═══════════════════════════════════════════════════════════════════
+
+  - name:        scpx640
+    description: "SCPX 640K (16×256) — Systemzylinder 0-1, Dateisystem ab Zylinder 2"
+    format:      cpa640
+    type:        cpm
+    # NACHGEMESSEN an tests/fixtures/disks/scpx17_cpa780_k5601.hfe (Verzeichnis bei
+    # c2h0 = Byte 16384).  Dieselbe Geometrie wie cpa640, anderes data_start — genau
+    # der Fall, fuer den `filesystems:` eine eigene Sektion ist.
+    data_start:  { cyl: 2, head: 0 }
+    block_size:  2048
+    dir_entries: 128
+
+  - name:        scpx798
+    description: "SCPX 798K — Systemzylinder 0 in 16×256, Dateisystem ab Zylinder 2"
+    format:      scpx798
+    type:        cpm
+    # NACHGEMESSEN an tests/fixtures/disks/scpx17_5x1024_k5601_hardy.hfe.
+    data_start:  { cyl: 2, head: 0 }
+    block_size:  2048
+    dir_entries: 128
+
+  # ══ UDOS 1526 / 4.x (ZDOS) ═════════════════════════════════════════════════
+  # Feste Spurlage aus UDOS_/PC1715/FORMATPC.MAC (BOOTSSPUR 15H, DIRECTORYSPUR 16H,
+  # BITMAPSPUR 17H), belegt am Referenzdatentraeger — doc/udos_diskettenformat.md §3.
+  # Beide Seiten sind getrennte Dateisysteme (§2) und erscheinen im Werkzeug als
+  # Side0/ und Side1/ EINES Datentraegers.
+
+  - name:        udos_ds77
+    description: "UDOS 4.x doppelseitig — 77 Spuren 26×128, je Seite ein Dateisystem"
+    format:      udos_ds77
+    type:        udos
+
+  - name:        udos_ss77
+    description: "UDOS 4.x einseitig — 77 Spuren 26×128"
+    format:      udos_ss77
+    type:        udos
+
+  - name:        udos_ss40
+    description: "UDOS 4.x einseitig — 40 Spuren 26×128 (K5600.10)"
+    format:      k5601_ss40_26x128
+    type:        udos
+    usable_tracks: 40

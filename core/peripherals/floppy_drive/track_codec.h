@@ -107,6 +107,30 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors, Encoding enc);
 std::vector<LogicalSector> parseTrack(const TrackImage& track);
 
 /**
+ * @brief Datenfeld eines EINZELNEN Sektors an Ort und Stelle ersetzen (Werkzeug-Schreibpfad).
+ *
+ * Sucht den Sektor über seine ID, schreibt @p data in sein Datenfeld, rechnet die Daten-CRC
+ * neu und laesst **alles andere byteweise unangetastet** — Gaps, Sync, Marken, ID-Feld,
+ * Spurlaenge und @ref TrackImage::bitcells.  Genau das braucht ein Dateisystem-Werkzeug, das
+ * einzelne Sektoren beschreibt, ohne die Spur neu zu bauen.
+ *
+ * **Warum nicht @ref buildTrack:** das baut die Spur aus logischen Sektoren neu und verliert
+ * dabei die Bytes hinter der Daten-CRC — bei UDOS also den Sektorkontrollblock und damit die
+ * gesamte Dateiverkettung (@ref LogicalSector::tail).
+ *
+ * @param track      zu aendernde Spur (Marken muessen gesetzt sein)
+ * @param sector_id  Sektor-ID aus dem ID-Feld
+ * @param data       neue Nutzdaten; die Laenge MUSS der Sektorgroesse aus dem ID-Feld entsprechen
+ * @param tail       optional die Bytes unmittelbar hinter der Daten-CRC (UDOS-Kontrollblock).
+ *                   Leer = vorhandene Bytes bleiben stehen.  Hoechstens @ref kSectorTailBytes.
+ * @return false (ohne jede Aenderung), wenn die ID fehlt, kein Datenfeld folgt, die Laenge
+ *         nicht passt oder der Nachspann eine Adressmarke ueberschreiben wuerde.
+ */
+bool writeSector(TrackImage& track, uint8_t sector_id,
+                 const std::vector<uint8_t>& data,
+                 const std::vector<uint8_t>& tail = {});
+
+/**
  * @brief Resync-Zielposition für den ZRE-ROM-Lesepfad (Kalibrierung, doc/design/07 §10.5.1).
  *
  * Findet ab @p fromPos die nächste Adressmarke und liefert die Position, auf die der

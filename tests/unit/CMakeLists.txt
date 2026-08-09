@@ -42,3 +42,14 @@ k1520_add_test(format_catalog SRC peripherals/test_format_catalog.cpp LIBS k1520
 
 # ── core/util/ ───────────────────────────────────────────────────────────────
 k1520_add_test(yaml_lite SRC util/test_yaml_lite.cpp LIBS k1520_util LABELS "${_lbl}")
+
+# ── core/filesystem/ (k1520DiskTool) ─────────────────────────────────────────
+# Prüft gegen die AUSGELIEFERTE data/formats.yaml und die committeten Disketten.
+k1520_add_test(sector_space SRC filesystem/test_sector_space.cpp
+                            LIBS k1520_fs LABELS "${_lbl}")
+k1520_add_test(fs_catalog    SRC filesystem/test_fs_catalog.cpp
+                             LIBS k1520_fs LABELS "${_lbl}"
+                             DEFS K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")
+k1520_add_test(geometry_probe SRC filesystem/test_geometry_probe.cpp
+                              LIBS k1520_fs LABELS "${_lbl}"
+                              DEFS K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")

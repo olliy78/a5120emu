@@ -88,7 +88,10 @@ TEST(FormatCatalog, Formatnamen_SindEinStabilerVertrag) {
 
     const std::vector<std::string> expected = {
         "cpa780", "cpa800", "cpa640", "cpa624", "cpa200", "cpa200_boot",
-        "scpx780", "scpx780_b", "mf3200", "mf6400",
+        "scpx780", "scpx780_b", "scpx798", "mf3200", "mf6400",
+        // UDOS-Geometrien, an disks/udos_boot_*.hfe gemessen (k1520DiskTool,
+        // doc/design/13_k1520disktool.md §6).
+        "udos_ds77", "udos_ss77",
         "k5601_16x256", "k5601_16x256_77", "k5601_26x128",
         "k5601_9x512", "k5601_10x512",
         "k5601_ss80_26x128", "k5601_ss80_9x512",

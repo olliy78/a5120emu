@@ -1,0 +1,947 @@
+# Feinentwurf: k1520DiskTool — Dateiaustausch mit K1520-Disketten
+
+**Module (neu):** `core/filesystem/`, `core/api/k1520_disk_api.*`, `tools/k1520disktool.cpp`,
+`app/disktool/`, `app/core_binding/k1520disk.py`
+**Wiederverwendet:** `core/peripherals/floppy_drive/` (Container-Codecs, Medium, Spur-Codec),
+`core/util/yaml_lite.*`, `data/formats.yaml`
+**Verwandt:** `doc/design/09_floppy_drive.md` (Medium/Container), `doc/udos_diskettenformat.md`
+(UDOS-Dateisystem — die maßgebliche Spezifikation), `doc/K1520_architecture.md` §8.6 (Formatkatalog)
+
+**Stand:** Entwurf, 2026-08-09 · Branch `create_disktool`
+
+---
+
+## 1. Aufgabe
+
+**k1520DiskTool** tauscht Dateien zwischen einem Linux-Verzeichnis und einem
+K1520-Diskettenabbild aus — in beide Richtungen, für **CP/M-artige** (CP/A, SCPX) und für
+**UDOS/ZDOS**-Disketten, auf `.img`, `.hfe` und `.dmk`.
+
+Es löst die beiden Tkinter-Werkzeuge `readDiskUI.py` / `writeDiskUI.py` des Projekts
+*CPA_Workbench* ab, die dafür die Fremdprogramme `cpmls`/`cpmcp` aus `cpmtools` als
+Unterprozesse aufrufen und deren `diskdefs` als zweiten, unabhängigen Formatkatalog pflegen.
+
+**Funktionsumfang** (entschieden, s. §2):
+
+| | |
+|---|---|
+| **Auflisten** | Verzeichnis der Diskette mit Name, Größe, Typ, Eigenschaften, Datum |
+| **Extrahieren** | einzelne Dateien oder alles in ein Zielverzeichnis |
+| **Einfügen** | einzelne Dateien oder ein ganzes Verzeichnis auf die Diskette |
+| **Löschen** | Datei von der Diskette entfernen |
+| **Leerdiskette** | neues Abbild mit **initialisiertem Dateisystem** anlegen (CP/M und UDOS) |
+| **Prüfen** | Medien-/Dateisystemzustand berichten (CRC-Fehler, Kettenbrüche, Belegungswidersprüche) |
+
+Vier Verhaltensregeln sind Vorgabe und durchziehen den ganzen Entwurf:
+
+- **Eine beidseitige UDOS-Diskette ist EIN Datenträger.** Beide Seiten werden gemeinsam
+  geöffnet und gemeinsam angezeigt; beim Extrahieren landen sie in den Unterverzeichnissen
+  `Side0/` und `Side1/`, beim Einfügen muss der Quellordner genau diese Unterverzeichnisse
+  haben — sonst Fehlermeldung (§9.1).
+- **Der Inhalt ist sofort und immer aktuell sichtbar**: nach dem Laden und nach *jeder*
+  schreibenden Aktion wird die Ansicht aus dem Medium **neu gelesen** (§9.3).
+- **Passt es nicht, wird gar nicht erst geschrieben**: Platzbedarf wird vor der ersten
+  Änderung geprüft, ein Fehlschlag nimmt die ganze Stapeloperation zurück (§9.2).
+- **`.hfe`/`.dmk` erkennen ihr Format selbst**; passt ein Abbild zu keinem Eintrag in
+  `formats.yaml`, bricht das Werkzeug mit einer Meldung ab, die die gemessene Geometrie nennt
+  (§12).
+
+**Nicht im Umfang:** Attribute ändern, Umbenennen, Datenträgername setzen, Reparatur
+(fsck-artig), physische Laufwerke. Für Letzteres wird die Schnittstelle vorgesehen (§13),
+nicht die Umsetzung.
+
+---
+
+## 2. Entscheidungen
+
+| # | Frage | Entscheidung |
+|---|-------|--------------|
+| E1 | Bibliotheksschnitt | **Eigene `libk1520disk.so`** mit eigener C-API (`core/api/k1520_disk_api.h`). Sie bindet dieselben **statischen** Bausteine wie der Emulator (`k1520_floppy2`, `k1520_util`), aber **keinen** Z80-/Karten-Code. Die Emulator-ABI bleibt unverändert. |
+| E2 | Oberfläche | **Eigenständige PySide6-Anwendung** unter `app/disktool/`, Start über `run_disktool.sh`. Teilt sich mit der Emulator-GUI die Hilfsmodule (`config_io`, Stil, Symbol), nicht den Prozess. |
+| E3 | Schreibumfang | Kopieren rein/raus **+ Löschen + Leerdiskette anlegen (mkfs)**. |
+| E4 | Hardware (Greaseweazle) | **Später.** Der Entwurf sieht eine Quellen-Abstraktion (Datei / Gerät) vor, damit `gw read/write` ohne Umbau andocken kann; die erste Ausbaustufe kennt nur Dateien. |
+
+**Getroffene Annahmen** (nicht rückgefragt, weil ein anderer Weg die Arbeit nicht wesentlich
+ändert — jederzeit umstellbar):
+
+- **A1** Beim Öffnen werden Geometrie und Dateisystem **automatisch erkannt** (§12); der
+  Anwender kann manuell übersteuern. Eine unsichere Erkennung darf niemals stillschweigend
+  schreiben.
+- **A2** Übertragung standardmäßig **binär**; Textkonvertierung (CR LF ↔ LF, `0x1A`-Ende,
+  UDOS: CR ↔ LF) ist ein **explizit wählbarer** Modus, mit Vorschlag anhand der Endung
+  bzw. des UDOS-Dateityps `A`.
+- **A3** CP/M-**Nutzerbereiche** (User 0…15) werden unterstützt und angezeigt; Vorgabe ist
+  User 0. Namensform `3:NAME.TYP` wie bei `cpmls`.
+- **A4** Bei UDOS ist **jede Diskettenseite technisch ein eigenes Dateisystem**
+  (`doc/udos_diskettenformat.md` §2) — für den Anwender aber **eine Diskette**. Das Werkzeug
+  mountet daher beide Seiten zusammen und zeigt sie in *einer* Liste; die Trennung wird in der
+  Ordnerstruktur (`Side0/`, `Side1/`) abgebildet, nicht durch Umschalten (§9.1). Die Zahl der
+  Seiten bestimmt die Ordnerform: **ein** Dateisystem → flacher Ordner, **mehrere** → `SideN/`.
+  CP/M-Disketten haben immer genau ein Dateisystem, auch beidseitige — dort gibt es also keine
+  Unterverzeichnisse.
+- **A5** **UDOS auf `.img` ist unmöglich** und wird abgelehnt — die Verkettung steht hinter der
+  Daten-CRC und existiert in einem rohen Sektorabbild nicht (`rawCompatible()`,
+  `doc/udos_diskettenformat.md` Vorspann). Das Werkzeug sagt das im Klartext, statt eine
+  halbe Diskette zu erzeugen.
+- **A6** Das Werkzeug schreibt **nie in eine Datei, die gerade im Emulator gemountet ist** —
+  es kann das nicht erkennen; deshalb Vorgabe „Sicherungskopie anlegen“ (§14).
+
+---
+
+## 3. Einordnung in den Baum
+
+```
+core/
+  peripherals/floppy_drive/     ← unverändert, WIRD BENUTZT
+  filesystem/                   ← NEU: alles Logische
+      sector_space.{h,cpp}          Sektorraum über ein DiskMedium (§5)
+      fs_profile.{h,cpp}            Datenmodell der `filesystems:`-Sektion (§6)
+      fs_catalog.{h,cpp}            lädt sie aus formats.yaml (yaml_lite)
+      file_system.h                 abstrakte Fassade: list/read/write/erase/mkfs (§9)
+      fs_detect.{h,cpp}             Autoerkennung (§12)
+      cpm/
+          cpm_fs.{h,cpp}            CP/M-2.2-Dateisystem (§7)
+          cpm_dir.{h,cpp}           Verzeichniseintrag, Extents, Allokationskarte
+      udos/
+          udos_fs.{h,cpp}           UDOS/ZDOS-Dateisystem (§8)
+          udos_dir.{h,cpp}          Verzeichnisdatei + Kopfsektor
+          udos_bitmap.{h,cpp}       Belegungskarte Spur 23
+  api/
+      k1520_disk_api.{h,cpp}    ← NEU: C-ABI von libk1520disk.so (§10)
+
+tools/
+  k1520disktool.cpp             ← NEU: CLI (§11)
+  k1520disktool.md              ← NEU: Referenz, Stil wie k1520dbg.md
+
+app/
+  disktool/                     ← NEU: PySide6-Anwendung (§11.2)
+      main.py, ui/…
+  core_binding/
+      k1520disk.py              ← NEU: ctypes-Bindung an libk1520disk.so
+
+data/formats.yaml               ← ERWEITERT: `filesystems:` + UDOS-Geometrien (§6)
+run_disktool.sh                 ← NEU (Analogon zu run_gui.sh)
+```
+
+> **Warum unter `core/`?** `core/` ist im Projekt die C++-Seite mit Include-Wurzel
+> Projektwurzel; `core/filesystem/` steht **neben**, nicht *unter* der Hardware-Emulation und
+> hängt nur von `core/peripherals/floppy_drive/` ab (nie umgekehrt). Ein eigener Wurzel-Ordner
+> `disktool/` wäre die Alternative, verdoppelte aber Include-Pfade und CMake-Konventionen ohne
+> Gewinn.
+
+---
+
+## 4. Wiederverwendung — was der Floppy-Stack schon liefert
+
+Das ist der eigentliche Grund, das Werkzeug **in** diesem Projekt zu bauen: die untere Hälfte
+existiert bereits, ist im Bootpfad des Emulators täglich in Benutzung und durch das Testsystem
+abgesichert.
+
+```
+   Datei (.img/.hfe/.dmk)
+        │  ImageCodec::detect + load          ← vorhanden
+        ▼
+   DiskMedium  (alle Spuren als TrackImage)   ← vorhanden
+        │  TrackCodec::parseTrack             ← vorhanden, liefert data + tail
+        ▼
+   SectorSpace (§5)                           ← NEU, dünn
+        │
+        ▼
+   CpmFileSystem / UdosFileSystem (§7/§8)     ← NEU, der eigentliche Inhalt
+```
+
+| Baustein | Zustand |
+|----------|---------|
+| `DiskImage::open` / `saveAs` / `flush` | **fertig** — erkennt `.img`/`.hfe`/`.dmk`, bindet die Datei, schreibt zurück |
+| `DiskImage::createBlank` / `create` | **fertig** — unformatiert bzw. gültig formatiert (echte IDAM/DATA/CRC) |
+| `DiskMedium`, `TrackImage`, Marken | **fertig** |
+| `TrackCodec::parseTrack` | **fertig** — inkl. `LogicalSector::tail` (die 4 UDOS-Kontrollbytes) |
+| `TrackCodec::buildTrack`, CRC | **fertig** |
+| `FormatCatalog` + `data/formats.yaml` | **fertig** für die Geometrie; die logische Ebene fehlt (§6) |
+| `yaml_lite` | **fertig** — der Katalog-Parser des Kerns |
+| **Sektor an Ort und Stelle schreiben** | **fehlt** — s. §4.1 |
+
+### 4.1 Die eine nötige Ergänzung im Kern: `TrackCodec::writeSector`
+
+Zum Schreiben brauchen wir „ersetze das Datenfeld von Sektor *id* in dieser Spur, rechne die
+Daten-CRC neu, lasse alles andere **byteweise unangetastet**“. Diese Funktion gibt es nicht:
+
+- `buildTrack()` baut eine Spur **komplett neu** aus logischen Sektoren — dabei gehen die
+  `tail`-Bytes verloren, also bei UDOS **das gesamte Dateisystem**;
+- der Schreibpfad des `K5122` patcht die Spur zwar an Ort und Stelle, aber gebunden an die
+  Kopfposition und den Portstrom des Gastsystems — nicht als aufrufbare Funktion.
+
+Vorschlag (additiv, in `track_codec.h`, ohne jede Änderung an vorhandenem Verhalten):
+
+```cpp
+/// @brief Datenfeld (und optional die Bytes hinter der CRC) eines Sektors ersetzen.
+/// Findet den Sektor über seine ID, schreibt @p data, rechnet die Daten-CRC neu und
+/// lässt Gaps, Marken, ID-Feld und Spurlänge unverändert.
+/// @param tail  optional; leer = die vorhandenen Bytes hinter der CRC bleiben stehen.
+/// @return false, wenn die ID nicht gefunden wurde oder die Länge nicht zur ID passt.
+bool writeSector(TrackImage& track, uint8_t sector_id,
+                 const std::vector<uint8_t>& data,
+                 const std::vector<uint8_t>& tail = {});
+```
+
+Guards: Roundtrip `parseTrack ∘ writeSector` byte-identisch außer im ersetzten Feld; CRC gültig;
+`tail` bleibt bei leerem Argument erhalten (der UDOS-kritische Fall); FM **und** MFM.
+
+---
+
+## 5. Der Sektorraum — die Brücke zwischen Medium und Dateisystem
+
+`SectorSpace` ist die einzige Sicht, die die Dateisysteme auf das Medium haben. Sie
+verbirgt Container, Encoding und Spurgeometrie und bietet **zwei** Adressierungen, weil die
+beiden Dateisysteme grundverschieden adressieren:
+
+```cpp
+class SectorSpace {
+public:
+    SectorSpace(DiskMedium& medium, const DiskFormat& fmt, uint8_t head_filter = kAllHeads);
+
+    // ── physisch: (Zylinder, Kopf, Sektor-ID) ───────────────── UDOS denkt so
+    bool readSector (uint8_t cyl, uint8_t head, uint8_t id, Sector& out) const;
+    bool writeSector(uint8_t cyl, uint8_t head, uint8_t id, const Sector& in);
+
+    // ── linear: fortlaufender Byte-/Satzstrom in Layout-Reihenfolge ─ CP/M denkt so
+    uint64_t size() const;                       // Nutzbytes des ganzen Datenträgers
+    bool read (uint64_t offset, uint8_t* dst, size_t n) const;
+    bool write(uint64_t offset, const uint8_t* src, size_t n);
+
+    struct Sector { std::vector<uint8_t> data, tail; bool id_crc_ok, data_crc_ok; };
+};
+```
+
+**Layout-Reihenfolge** ist exakt die des `.img`-Codecs (`img_codec.cpp`): Zylinder außen,
+Kopf innen, Sektoren nach aufsteigender ID —
+`c0h0, c0h1, c1h0, c1h1, …`. Damit gilt für jede `.img`-fähige Diskette
+`SectorSpace::read(off,…) ≡ Datei-Offset off`, und die Byte-Offsets aus `cpmtools`' `diskdefs`
+sind unmittelbar übertragbar.
+
+**Schreiben ist immer gepuffert-und-zurückgeschrieben**: `writeSector` liest die Spur, patcht
+sie über `TrackCodec::writeSector` (§4.1) und legt sie per `DiskMedium::setTrack` zurück; die
+Datei wird erst durch `DiskImage::flush()` angefasst. Ein abgebrochener Kopiervorgang
+hinterlässt also **keine** halb geschriebene Datei (§14).
+
+**`head_filter`** bedient §2 des UDOS-Dokuments: Seite 0 und Seite 1 sind getrennte
+Dateisysteme, also bekommt jedes seinen eigenen `SectorSpace` über *eine* Kopfnummer.
+
+**Fehlerhafte Sektoren** werden nicht verschwiegen: `Sector::id_crc_ok/data_crc_ok` reichen
+bis in die Oberfläche durch (Datei wird mit Warnung und mit den gelesenen Bytes extrahiert,
+nie stillschweigend).
+
+---
+
+## 6. Erweiterung von `data/formats.yaml`
+
+### 6.1 Warum eine neue Sektion und keine neuen Felder
+
+`formats:` beschreibt **Physik** (welche Spur trägt wie viele Sektoren welcher Größe in welchem
+Verfahren) und wird vom Emulator zum Formatieren/Mounten benutzt. Ob auf dieser Geometrie ein
+CP/M- oder ein UDOS-Dateisystem liegt und wo es beginnt, ist **eine andere Frage** — und sie hat
+**mehrere Antworten pro Geometrie**: dieselbe 80×2×5×1024-Diskette trägt als `cpa800` ein
+Dateisystem ab Spur 0 und als SCPX-Variante eines ab Spur 2. Deshalb:
+
+> **`formats:` bleibt unangetastet. Neu ist eine zweite Top-Level-Sektion `filesystems:`,
+> deren Einträge per `format:` eine Geometrie referenzieren.** n Dateisysteme je Geometrie sind
+> damit ausdrückbar, und der Emulator ignoriert die Sektion (er liest nur `formats:`).
+
+Der `FsCatalog` benutzt denselben `yaml_lite`-Parser und dieselbe Pfadsuche wie der
+`FormatCatalog` (`K1520_FORMATS_DEFAULT` → `./data/formats.yaml` → `~/.config/…` → `$K1520_FORMATS`),
+d.h. eigene Formate legt der Anwender weiterhin an genau einer Stelle ab.
+
+### 6.2 Der Beginn des Dateisystems ist *keine* Spurzahl
+
+`cpmtools` drückt den Systembereich als `boottrk` (Anzahl Spuren) **oder** `offset` (Bytes) aus.
+Bei den gemischten CP/A-Geometrien geht nur Letzteres — und der Grund steht schon in `formats.yaml`:
+
+```
+cpa780:  c0h0 26×128   c0h1 26×128   c1h0 26×128   c1h1 5×1024   c2…c79 5×1024
+         └────────── 3 × 3328 = 9984 B ──────────┘└─ 5120 B ─┘   └ Dateisystem ab hier
+```
+
+`9984 + 5120 = 15104` — und genau das steht in `cpmtools`' `diskdefs` als
+`diskdef A5120_160 … offset 15104`. Als Spurzahl ist das nicht ausdrückbar, weil die „Spuren“
+verschieden groß sind. (Die Angabe `boottrk 3` bei `seclen 1024` in der `diskdefs` der
+CPA_Workbench ergibt 15360 und ist eine Näherung, die nur funktioniert, solange man das Abbild
+als reines 1024-B-Bild betrachtet.)
+
+**Primitive im neuen Schema ist deshalb die Spur, an der das Dateisystem beginnt** — eindeutig,
+geometrieunabhängig, und der Byte-Offset folgt daraus:
+
+```yaml
+data_start: { cyl: 2, head: 0 }     # → SectorSpace-Offset 15104, ausgerechnet, nicht gepflegt
+```
+
+Der Lader validiert: `data_start` muss auf einer Spurgrenze liegen und innerhalb der Geometrie.
+
+### 6.3 Schema `filesystems:`
+
+```yaml
+filesystems:
+
+  # ── gemeinsame Felder ──────────────────────────────────────────────────────
+  #  name         (Pflicht)  eindeutiger Name — CLI, GUI, C-API
+  #  description  (optional) Klartext für die Oberfläche
+  #  format       (Pflicht)  Name eines Eintrags aus `formats:` (Geometrie)
+  #  type         (Pflicht)  cpm | udos
+  #  data_start   (optional) erste Spur des Dateisystems (Default cyl 0/head 0)
+  #  containers   (optional) img | hfe | dmk — was zulässig ist (Default: alle; udos: nie img)
+  #  detect_rank  (optional) Reihenfolge bei mehrdeutiger Autoerkennung (§12)
+
+  # ── nur type: cpm ──────────────────────────────────────────────────────────
+  #  block_size   (Pflicht)  Zuordnungseinheit in Byte (1024 | 2048 | 4096 | 8192 | 16384)
+  #  dir_entries  (Pflicht)  Verzeichniseinträge (maxdir)
+  #  skew         (optional) Sektorversatz je Spur (Default 0 — CP/A benutzt keinen)
+  #  first_record (optional) Byte-Offset innerhalb data_start (Default 0)
+  #  os           (optional) cpm2.2 | p2dos | cpm3 — Zeitstempel/Nutzernummern (Default cpm2.2)
+
+  # ── nur type: udos ─────────────────────────────────────────────────────────
+  #  sides_separate  (optional) jede Seite ein eigenes Dateisystem → n Volumes,
+  #                            Ordnerform SideN/ (Default true; §9.1)
+  #  boot_track      (optional) Spur des Bootabbilds (Default 21)
+  #  directory_track (optional) Spur der Verzeichnisdatei (Default 22)
+  #  bitmap_track    (optional) Spur der Belegungskarte (Default 23)
+  #  usable_tracks   (optional) Anzahl nutzbarer Spuren (Default: aus der Geometrie)
+
+  - name:        cpa800
+    description: "CP/A 800K Datendiskette (K5601)"
+    format:      cpa800
+    type:        cpm
+    block_size:  2048
+    dir_entries: 128
+
+  - name:        cpa780
+    description: "CP/A 780K Bootdiskette — Dateisystem ab Zylinder 2"
+    format:      cpa780
+    type:        cpm
+    data_start:  { cyl: 2, head: 0 }
+    block_size:  2048
+    dir_entries: 128
+
+  - name:        scpx780
+    description: "SCPX 780K — 3 Systemspuren mit 26×128"
+    format:      scpx780
+    type:        cpm
+    data_start:  { cyl: 3, head: 0 }
+    block_size:  2048
+    dir_entries: 128
+
+  - name:        udos_41
+    description: "UDOS 1526 / 4.x, Laufwerkstyp 41 — 5,25″, 26×128, Seiten getrennt"
+    format:      udos_26x128_77
+    type:        udos
+    containers:  [hfe, dmk]
+```
+
+Dazu die **fehlenden UDOS-Geometrien** in `formats:` — 77 Spuren à 26×128 MFM, beidseitig
+belegt, aber logisch getrennt. Die Kandidaten stehen als Referenzabbilder bereits im Baum
+(`disks/udos_boot_scp.hfe`, `udos_boot_k5600_10.hfe`, `udos_boot_k5600_20.hfe`,
+`udos_boot_mf6400.hfe`) und werden bei der Umsetzung daraus **verifiziert**, nicht geraten
+(vgl. die Laufwerkstyp-Matrix in `doc/udos_diskettenformat.md` §12.3).
+
+### 6.4 Rückwärtskompatibilität
+
+Ein `formats.yaml` ohne `filesystems:` ist weiterhin gültig — der Emulator merkt nichts, das
+DiskTool meldet dann schlicht „kein Dateisystemprofil bekannt“. Umgekehrt ignoriert der
+`FormatCatalog` die neue Sektion. Guard: `test_format_catalog` muss mit der erweiterten Datei
+unverändert grün bleiben (insbesondere `BootKritischeGeometrien_Unveraendert`).
+
+---
+
+## 7. CP/M-Dateisystem (`core/filesystem/cpm/`)
+
+Zielbild ist die Teilmenge von `cpmtools`, die wir wirklich brauchen — bewusst **ohne**
+Passwörter, Datenträgeretiketten, CP/M-3-Zeitstempel und `libdsk`.
+
+**Modell.** Ab `data_start` zerfällt der Sektorraum in Blöcke à `block_size`. Die ersten
+`dir_entries × 32 / block_size` Blöcke sind das Verzeichnis. Ein Eintrag (32 Byte):
+
+```
+US NAME(8) TYP(3) EX S1 S2 RC  AL(16)
+│  │       │      │  │  │  │   └─ Blocknummern: 16×8 Bit, oder 8×16 Bit wenn Blöcke ≥ 256
+│  │       │      │  │  │  └──── Sätze im letzten Extent (à 128 B)
+│  │       │      └──┴─────────── Extent-Nummer (EX + S2×32)
+│  │       └── Hochbit von TYP[0..2] = R/O, SYS, ARCHIV
+│  └── Name, mit Leerzeichen aufgefüllt
+└── Nutzerbereich 0…15, 0xE5 = frei
+```
+
+**Auflisten**: Verzeichnis lesen, Einträge je (User, Name) zu Dateien gruppieren, Größe aus
+höchstem Extent + `RC` (bei `os: cpm3` zusätzlich das „exakte Länge“-Byte), Attribute aus den
+Hochbits.
+
+**Lesen**: Extents nach `EX` sortieren, Blockliste verketten, je Block `block_size` Bytes aus
+dem Sektorraum ziehen, am Ende auf `(extents−1)×extent_size + RC×128` kürzen. Im Textmodus bis
+zum ersten `0x1A` abschneiden und CR LF → LF wandeln.
+
+**Schreiben**: freie Blöcke aus der Allokationskarte (aus allen Verzeichniseinträgen
+rekonstruiert, nicht aus einem gespeicherten Feld!) belegen, Daten auf `128` aufrunden und mit
+`0x1A`/`0x00` auffüllen, Extents in freie Verzeichnisplätze schreiben. Vorhandener gleicher
+Name → nach Rückfrage überschreiben (CLI: `--force`).
+
+**Löschen**: alle Extents auf `US = 0xE5` setzen. Blöcke werden dadurch frei (Karte wird
+ohnehin bei jedem Öffnen neu aufgebaut) — kein Nachführen einer FAT nötig.
+
+**mkfs**: Verzeichnisblöcke mit `0xE5` füllen, Rest des Datenbereichs unangetastet lassen.
+
+**Skew**: Übersetzungstabelle wie in `cpmtools` (`skewtab`), angewandt auf die Sektorreihenfolge
+innerhalb einer Spur. Für alle heute bekannten CP/A-/SCPX-Formate ist `skew 0`; die Tabelle
+existiert trotzdem, damit Fremdformate nachrüstbar sind.
+
+**Bewusst nicht unterstützt** (mit klarer Meldung statt falscher Ergebnisse): Passwörter,
+Datenträgeretikett, Datestamper, mehrere Verzeichnisspuren an nicht zusammenhängender Lage.
+
+---
+
+## 8. UDOS-/ZDOS-Dateisystem (`core/filesystem/udos/`)
+
+Vollständig spezifiziert in **`doc/udos_diskettenformat.md`** — das Dokument ist an einer echten,
+fehlerfrei eingelesenen Diskette gemessen und enthält in §8 bereits die Algorithmen. Der Entwurf
+übernimmt sie unverändert; hier nur die Bezüge zur Architektur.
+
+| Struktur | Ort | Umsetzung |
+|---|---|---|
+| Sektorkontrollblock (Rück-/Vorwärtszeiger, je 2 B) | **hinter der Daten-CRC** | `Sector::tail[0..3]`; genau deshalb `.hfe`/`.dmk` und nie `.img` (A5) |
+| Belegungskarte | Spur 23, Sektoren 1–3 (384 B) | `UdosBitmap` — **Bits sind die Wahrheit**, Zähler werden nachgeführt, aber nie geglaubt (§4.2 des Dokuments) |
+| Verzeichnis | gewöhnliche Datei `DIRECTORY`, Kopfsektor Spur 22 Sektor 1 | `UdosDirectory`: Einträge variabler Länge, Ende `0xFF`, Rest des Sektors ist Altbestand |
+| Dateikopfsektor | 1 Sektor je Datei | `UdosFileHeader`: Typ, Satzanzahl, Satzlänge, Bytes im letzten Satz, PROPS, Datum, Segmente |
+| Satz (Record) | `satzlen/128` **aufeinanderfolgende** Sektoren **einer** Spur | Zuteilungseinheit — Sätze überschreiten nie eine Spurgrenze |
+
+**Auflisten**: Verzeichnisdatei über die Kontrollblöcke durchlaufen; je Eintrag Namenslänge
+(Bits 0–5), SECRET (Bit 7) und Kopfzeiger; Metadaten aus dem Kopfsektor.
+
+**Lesen**: Kette ab Vorwärtszeiger des Kopfsektors, je Satz `satzlen/128` Sektoren, Ende bei
+`FF FF`, letzten Satz auf „Bytes im letzten Satz“ kürzen.
+
+**Schreiben**: Satzlänge 128 als sichere Vorgabe; Platz spurweise aus der Karte suchen
+(zusammenhängender Block je Satz); Kette rückwärts/vorwärts konsistent setzen; Kopfsektor nach
+§6 füllen; Eintrag vor dem `0xFF` des letzten Verzeichnissatzes einfügen — passt er nicht mehr,
+wächst die Datei `DIRECTORY` um einen Satz; Karte und **beide** Zähler nachführen.
+
+**Löschen**: Eintrag ausschneiden, Bits zurücksetzen. **Die Kontrollblöcke auf dem Medium
+bleiben stehen** — daraus darf nie auf „belegt“ geschlossen werden (§8.5 des Dokuments: auf dem
+Referenzträger sehen 364 freie Sektoren belegt aus).
+
+**mkfs**: Karte anlegen (Datenträgername, Spureinträge, konstanter Nachlauf `11×0x33 / 0xF7 /
+27×0x77`, Zähler), Datei `DIRECTORY` mit einem leeren Satz und Kopfsektor anlegen, Systemspuren
+0/1/2 und 21 **frei lassen und sperren**. Eine so erzeugte Diskette ist **nicht bootfähig** —
+das bleibt dem Emulator vorbehalten (`UdosFormat.BuildsBootableSystemDiskAndBootsFromIt`), und
+das Werkzeug sagt es beim Anlegen dazu.
+
+**Unantastbar** (§8.6 des Dokuments): Spuren 0, 1, 2 und 21–23. Der Belegungsprüfer des
+Werkzeugs behandelt sie als reserviert, egal was die Karte sagt.
+
+---
+
+## 9. Die gemeinsame Fassade
+
+Zwei Ebenen, weil eine UDOS-Diskette **zwei Dateisysteme** trägt, aber **eine Diskette** ist:
+
+```
+Volume     = ein Dateisystem (CP/M: die ganze Diskette · UDOS: eine Seite)
+DiskVolume = die Diskette als Ganzes: 1..n Volumes + Dateibindung   ← was Anwender/API sehen
+```
+
+```cpp
+struct FileEntry {
+    int         volume;        // 0..n-1 — bei UDOS die Seite, sonst immer 0
+    std::string name;          // CP/M "3:NAME.TYP" · UDOS "HELP.DAT.00"
+    uint64_t    size;          // Nutzbytes
+    std::string type;          // CP/M "" · UDOS "A"/"P"/"P1"/"B"/"D"
+    std::string attributes;    // CP/M "RO SYS ARC" · UDOS "WELS"
+    std::string date;          // "" wenn das Dateisystem keins führt
+    bool        hidden;        // CP/M SYS · UDOS SECRET
+    bool        damaged;       // CRC-Fehler oder Kettenbruch beim Lesen
+};
+
+class FileSystem {                       // ein Volume; Basisklasse, keine Ausnahmen
+public:
+    virtual std::vector<FileEntry> list() const = 0;
+    virtual bool read (const std::string& name, std::vector<uint8_t>& out) = 0;
+    virtual bool write(const std::string& name, const std::vector<uint8_t>& in,
+                       const WriteOptions&) = 0;
+    virtual bool erase(const std::string& name) = 0;
+    /// @brief Was WÜRDE das Einfügen kosten — inkl. Blockrundung, Verzeichniseinträgen
+    ///        und (UDOS) Kopfsektor + Wachstum der Datei DIRECTORY.  Schreibt nichts.
+    virtual bool wouldFit(const std::vector<PlannedFile>&, FitReport& out) const = 0;
+    virtual FsInfo info() const = 0;      // Datenträgername, frei/belegt, Warnungen
+};
+
+class DiskVolume {                       // die Diskette — das ist die Arbeitsschnittstelle
+public:
+    static std::unique_ptr<DiskVolume> open(const std::string& path,
+                                            const std::string& fs_name /* "" = erkennen */);
+    static std::unique_ptr<DiskVolume> create(const std::string& path,
+                                              const std::string& fs_name);
+
+    int  volumeCount() const;                     // CP/M 1 · UDOS beidseitig 2
+    const std::string& volumeDir(int v) const;    // "" bei 1 Volume, sonst "Side0"/"Side1"
+
+    std::vector<FileEntry> list() const;          // ALLE Volumes, immer frisch (§9.3)
+
+    bool extractAll(const std::string& dest_dir, const TransferOptions&);
+    bool insertAll (const std::string& src_dir,  const TransferOptions&);
+    bool extract(const FileRef&, const std::string& dest_path, const TransferOptions&);
+    bool insert (const std::string& src_path, const FileRef&, const TransferOptions&);
+    bool erase  (const FileRef&);
+
+    bool dirty() const;   bool flush();   bool saveAs(const std::string& path);
+    const std::string& lastError() const;
+};
+```
+
+`FileRef` ist `{volume, name}` — in Textform `Side1/HELP.DAT.00` bzw. bei einem Volume
+schlicht `HELP.DAT.00`. Damit ist jede Datei über die ganze Diskette eindeutig bezeichnet,
+auch wenn beide Seiten denselben Namen tragen (auf `disks/udos_boot_scp.hfe` ist das der
+Normalfall: beide Seiten heißen `UDOS.SYS.4.3` und teilen sich viele Dateinamen).
+
+**Fehlerstil wie im Kern**: Rückgabe `bool` + `lastError()` in Klartext-Deutsch, keine
+Ausnahmen über die Modulgrenze — passt zu C-ABI und zu `DiskImage`.
+
+**Namenskonvertierung** (Linux ↔ Diskette) liegt in der Fassade, nicht in der Oberfläche:
+CP/M `8.3`, Großschrift, verbotene Zeichen; UDOS bis 32 Zeichen, Punkt ist normales
+Namenszeichen, Groß-/Kleinschreibung signifikant. Kollisionen werden gemeldet, nicht geraten.
+
+### 9.1 Zusammengesetzter Datenträger: `Side0/` und `Side1/`
+
+Die beiden Seiten einer UDOS-Diskette sind getrennte Dateisysteme mit **getrennter
+Belegungskarte, getrenntem Verzeichnis und getrenntem Datenträgernamen** — Platz auf Seite 1
+hilft einer vollen Seite 0 nicht, und ein Zeiger kann die Seite nicht wechseln
+(`doc/udos_diskettenformat.md` §1.2/§2). Genau deshalb wird die Trennung **im Dateisystem des
+Anwenders** abgebildet statt weggemogelt:
+
+```
+Extrahieren                              Einfügen
+~/udos_extrakt/                          ~/udos_neu/
+├── Side0/   ← Volume 0 (UDOS-Laufwerk 0) ├── Side0/   → Volume 0
+│   ├── ZDOS                              │   └── PROG.COM
+│   └── HELP.DAT.00                       └── Side1/   → Volume 1
+└── Side1/   ← Volume 1 (UDOS-Laufwerk 4)     └── TEXT.DAT
+    └── NOTE.TO.UDOS.4.3
+```
+
+**Regeln** (`DiskVolume::extractAll` / `insertAll`):
+
+| Lage | Verhalten |
+|---|---|
+| 1 Volume (CP/M, einseitiges UDOS) | flacher Ordner, **keine** `SideN`-Unterverzeichnisse — weder erzeugt noch verlangt |
+| n Volumes, Extrahieren | `SideN/` wird angelegt, auch wenn eine Seite leer ist (die leere Seite als leerer Ordner ist die ehrliche Auskunft) |
+| n Volumes, Einfügen, Ordner hat **alle** `SideN/` | normal — je Unterverzeichnis auf das zugehörige Volume |
+| n Volumes, Einfügen, `SideN/` fehlt | **Fehler**, keine Änderung: *„Der Ordner ~/x muss die Unterverzeichnisse Side0/ und Side1/ enthalten (die Diskette hat 2 Seiten). Gefunden: Side0/."* |
+| n Volumes, Einfügen, Ordner enthält zusätzlich lose Dateien | **Fehler** mit Nennung der Dateien — nicht stillschweigend auf Seite 0 legen |
+| leeres `SideN/` | zulässig — diese Seite bleibt unverändert |
+
+Ein Unterverzeichnis **unterhalb** von `SideN/` ist ein Fehler: weder CP/M noch UDOS kennen
+Unterverzeichnisse. Die Namensvergabe der Ordner (`Side0`, `Side1`) ist fest und
+groß-/kleinschreibungstolerant beim Lesen (`side0` wird akzeptiert), aber beim Anlegen immer
+`Side0`.
+
+### 9.2 Stapeloperationen sind Transaktionen — Platzprüfung vorab
+
+„Passt nicht“ darf **nie** eine halb beschriebene Diskette hinterlassen. Jede Stapeloperation
+läuft deshalb in drei Schritten:
+
+1. **Planen.** Alle Quelldateien einlesen, je Volume den Bedarf ausrechnen — inklusive des
+   Verwaltungsaufwands, denn der ist erheblich:
+   - **CP/M**: Aufrundung auf `block_size` je Datei, plus ein Verzeichniseintrag je
+     angefangenem Extent (`extent_size = block_size × Blockzeiger`), plus vorhandene
+     gleichnamige Dateien, die ersetzt und damit frei werden.
+   - **UDOS**: 1 Kopfsektor je Datei, Aufrundung auf ganze **Sätze**, dazu der Zwang, dass ein
+     Satz in *eine* Spur passen muss (Zerstückelung kann Platz unbrauchbar machen), plus
+     mögliches Wachstum der Verzeichnisdatei `DIRECTORY` um Sätze.
+2. **Urteilen.** Reicht der Platz auf **jedem** betroffenen Volume? Sind alle Namen zulässig
+   und kollisionsfrei? Ist die Diskette schreibbar? Nein → **Abbruch vor der ersten Änderung**,
+   mit einer Meldung, die Zahlen nennt:
+   *„Seite 1: 12 Dateien (184 KB) benötigen 1472 Sektoren, frei sind 1310. Es wurde nichts
+   geschrieben.“*
+3. **Ausführen.** Erst jetzt wird geschrieben — im Speicher (§5). Tritt trotzdem ein Fehler auf
+   (CRC-defekte Zielspur, unerwarteter Kettenbruch), wird die **vorher genommene Momentaufnahme
+   des `DiskMedium` zurückgerollt** (≈1 MB je Diskette, also billig) und nichts geht in die
+   Datei. Erst `flush()` schreibt.
+
+Der Prüfschritt ist als `FileSystem::wouldFit()` auch einzeln aufrufbar — die GUI kann damit
+schon beim Ablegen per Ziehen anzeigen, dass es nicht passen wird.
+
+> **Rest­risiko, ehrlich benannt:** Die UDOS-Vorausrechnung kann in Ausnahmefällen zu
+> optimistisch sein, wenn die freien Sektoren so über die Spuren verstreut liegen, dass kein
+> zusammenhängender Block für einen Satz mehr frei ist. Deshalb rechnet der Planer nicht mit
+> „Summe freier Sektoren“, sondern **spurweise** gegen die Belegungskarte — dieselbe Suche, die
+> das Schreiben später benutzt. Damit ist die Aussage exakt, nicht geschätzt.
+
+### 9.3 Die Ansicht ist immer frisch
+
+`DiskVolume::list()` liest jedes Mal Verzeichnis (und bei UDOS Belegungskarte) aus dem
+`DiskMedium` neu; es gibt **keinen zwischengespeicherten Verzeichnisstand**. Damit gilt ohne
+Zutun der Oberfläche:
+
+- nach dem Öffnen ist der Inhalt sofort da (die GUI ruft `list()` direkt nach `open()`),
+- nach Einfügen, Löschen und `mkfs` zeigt die Ansicht den **tatsächlichen** Zustand des Mediums —
+  auch dann, wenn eine Operation teilweise fehlschlug,
+- Belegungsanzeige (frei/belegt je Seite) stammt aus derselben Quelle wie die Liste und kann
+  gar nicht auseinanderlaufen.
+
+Das ist bewusst „teuer“ (Verzeichnis erneut parsen: einige zehn Sektoren aus dem RAM) und dafür
+nicht falsifizierbar. Ein Cache käme erst in Frage, wenn es messbar stört.
+
+---
+
+## 10. C-API (`libk1520disk.so`)
+
+Stil wie `k1520_api.h`: opakes Handle, Index-plus-Getter statt Strukturen über die Grenze,
+`bool` + Fehlertext.
+
+```c
+typedef void* K1520Disk;
+
+/* Öffnen / Anlegen / Speichern */
+K1520Disk   k1520d_open(const char* path, const char* fs_name /* NULL = erkennen */);
+K1520Disk   k1520d_create(const char* path, const char* fs_name);   /* Leerdiskette + mkfs */
+bool        k1520d_flush(K1520Disk);
+bool        k1520d_save_as(K1520Disk, const char* path);
+void        k1520d_close(K1520Disk);
+const char* k1520d_last_error(K1520Disk);
+const char* k1520d_last_open_error(void);
+
+/* Katalog + Erkennung */
+int         k1520d_fs_count(void);
+const char* k1520d_fs_name(int i);
+const char* k1520d_fs_description(const char* name);
+const char* k1520d_detect(const char* path);        /* erkannter Name, "" = unbekannt */
+
+/* Seiten/Volumes — es wird NICHT umgeschaltet, sie sind alle gleichzeitig sichtbar */
+int         k1520d_volume_count(K1520Disk);            /* CP/M 1 · UDOS beidseitig 2      */
+const char* k1520d_volume_dir(K1520Disk, int v);       /* "" | "Side0" | "Side1"          */
+const char* k1520d_volume_label(K1520Disk, int v);     /* Datenträgername                 */
+uint64_t    k1520d_volume_free (K1520Disk, int v);
+uint64_t    k1520d_volume_used (K1520Disk, int v);
+
+/* Verzeichnis — IMMER frisch aus dem Medium (§9.3); enthält alle Volumes */
+int         k1520d_list(K1520Disk);                 /* Anzahl; füllt den internen Puffer */
+int         k1520d_entry_volume(K1520Disk, int i);
+const char* k1520d_entry_name(K1520Disk, int i);     /* ohne SideN-Präfix                */
+uint64_t    k1520d_entry_size(K1520Disk, int i);
+const char* k1520d_entry_type(K1520Disk, int i);
+const char* k1520d_entry_attrs(K1520Disk, int i);
+const char* k1520d_entry_date(K1520Disk, int i);
+bool        k1520d_entry_damaged(K1520Disk, int i);
+
+/* Übertragung  (mode: 0 = binär, 1 = Text) — `name` darf "Side1/NAME" sein */
+bool        k1520d_extract(K1520Disk, const char* name, const char* dest, int mode);
+bool        k1520d_insert (K1520Disk, const char* src,  const char* name, int mode, bool force);
+bool        k1520d_erase  (K1520Disk, const char* name);
+
+/* Stapel: legt bei mehreren Volumes SideN/ an bzw. verlangt sie (§9.1) */
+bool        k1520d_extract_all(K1520Disk, const char* dest_dir, int mode);
+bool        k1520d_insert_all (K1520Disk, const char* src_dir,  int mode, bool force);
+
+/* Vorabprüfung ohne jede Änderung (§9.2) — "" = passt, sonst der Grund im Klartext */
+const char* k1520d_check_fit(K1520Disk, const char* src_dir);
+
+/* Zustand */
+bool        k1520d_dirty(K1520Disk);   /* ungespeicherte Änderungen im Speicher */
+const char* k1520d_check(K1520Disk);   /* mehrzeiliger Prüfbericht, "" = ohne Befund */
+const char* k1520d_version(void);
+```
+
+Der **Dreiklang-Test** aus `tests/python/test_c_api.py` (Header ↔ `.so`-Symbole ↔ ctypes-
+Deklarationen) wird auf diese Schnittstelle mitgezogen — sonst bricht eine Signaturänderung
+auch hier stillschweigend.
+
+---
+
+## 11. Anwenderseite
+
+### 11.1 CLI — `k1520disktool`
+
+```sh
+k1520disktool ls     <image> [--fs NAME] [-l]
+k1520disktool get    <image> <muster…> --to <verzeichnis> [--text|--binary]
+k1520disktool put    <image> <datei…>  [--as NAME] [--text|--binary] [--force]
+k1520disktool rm     <image> <muster…>
+k1520disktool create <image> --fs NAME
+k1520disktool info   <image> [--fs NAME]
+k1520disktool check  <image>
+```
+
+`ls` zeigt **beide Seiten in einer Liste** mit Seitenspalte; `get … --to DIR` legt bei
+mehreren Seiten `DIR/Side0` und `DIR/Side1` an; `put DIR` (Verzeichnis statt Dateien) verlangt
+sie umgekehrt (§9.1). Muster und Namen dürfen das Präfix tragen — `get 'Side1/*.DAT'`,
+`put text.dat --as Side1/TEXT.DAT`; ohne Präfix wählt `--volume N` (Vorgabe 0).
+
+```
+$ k1520disktool ls disks/udos_boot_scp.hfe
+Dateisystem: udos_41 (erkannt) · 2 Seiten · UDOS.SYS.4.3 / UDOS.SYS.4.3
+Seite Name                 Typ  Größe  Eigensch.  Geändert
+0     ZDOS                 P1    3072  WELS       900517
+0     HELP.DAT.00          A     8192             900808
+1     NOTE.TO.UDOS.4.3     A      512             900808
+39 Dateien · Seite 0: 850 Sektoren frei · Seite 1: 1310 frei
+```
+
+Gemeinsam: `--fs` übersteuert die Erkennung, `--json` gibt maschinenlesbar aus (für Tests und
+Skripte), `--dry-run` führt **nur** die Planungs-/Prüfphase aus (§9.2) und meldet, ob es passt.
+Exit-Codes: `0` ok, `1` Fehler, `2` Format/Dateisystem nicht erkannt, `3` passt nicht (kein
+Platz), `4` Ordnerstruktur falsch (fehlendes `SideN/`).
+
+Aufruf im Projekt konsequent über `tools/dev.sh tool k1520disktool …` (nie direkt aus `build/` —
+zwei Build-Verzeichnisse, gleiche Namen; CLAUDE.md „Build & test“).
+
+### 11.2 GUI — `app/disktool/`
+
+PySide6, **Zwei-Fenster-Ansicht** (links Diskette, rechts Linux-Verzeichnis), weil das der
+Arbeitsablauf ist, den die beiden alten Werkzeuge künstlich auf zwei Programme aufteilten:
+
+```
+┌─ Diskettenabbild ──────────────────────┐   ┌─ Ordner ─────────────────────┐
+│ [Datei…]  udos_boot_scp.hfe            │   │ [Ordner…]  ~/udos_extrakt    │
+│ Format:      udos_26x128_77  (erkannt) │   │                              │
+│ Dateisystem: [udos_41 ▾]     (erkannt) │   │ ▾ Side0/                     │
+├────────────────────────────────────────┤   │     ZDOS                     │
+│ ▾ Side 0   UDOS.SYS.4.3   850 frei     │ → │     HELP.DAT.00              │
+│     ZDOS             P1  3 KB  WELS    │ ← │ ▾ Side1/                     │
+│     HELP.DAT.00      A   8 KB          │   │     NOTE.TO.UDOS.4.3         │
+│ ▾ Side 1   UDOS.SYS.4.3  1310 frei     │   │                              │
+│     NOTE.TO.UDOS.4.3 A    512 B        │   └──────────────────────────────┘
+├────────────────────────────────────────┤
+│ ● geändert · 69 Dateien                │
+└────────────────────────────────────────┘
+[Alles extrahieren] [Alles einfügen] [Löschen] [Neue Diskette…] [Speichern]
+```
+
+- **Beide Seiten in einer Liste**, nach Seite gruppiert (bei CP/M entfällt die Gruppierung
+  ersatzlos) — kein Umschalten, keine halbe Sicht auf die Diskette.
+- Die Liste wird **direkt nach dem Laden** gefüllt und nach jeder schreibenden Aktion aus dem
+  Medium **neu gelesen** (§9.3); die Freiplatzanzeige je Seite kommt aus derselben Abfrage.
+- Erkennung von Format und Dateisystem wird angezeigt („erkannt“ / „gewählt“); scheitert die
+  Erkennung, bleibt die Liste leer und die Meldung aus §12 steht sichtbar im Fenster —
+  die Schaltflächen zum Schreiben sind dann gesperrt.
+- Ziehen und Ablegen in beide Richtungen, auch aus dem Dateimanager. Beim Ablegen auf eine
+  Seitengruppe ist das Ziel-Volume damit bestimmt; ein Ordner mit `Side0/`/`Side1/` wird als
+  Ganzes übernommen.
+- **Vor** jedem Einfügen läuft die Prüfung aus §9.2; passt es nicht, erscheint der Fehler mit
+  Zahlen und es wird nichts geändert.
+- Schreibende Aktionen sind bis zum **[Speichern]** rein im Speicher (§5) — mit sichtbarem
+  „geändert“-Zeichen; Schließen mit ungespeicherten Änderungen fragt nach.
+- Textmodus als Umschalter mit Vorschlag aus Endung/UDOS-Typ.
+- Fortschritt + Protokollbereich für lange Läufe (ganze Diskette extrahieren).
+
+Start: `run_disktool.sh` (setzt `LD_LIBRARY_PATH=build`, ruft `app/disktool/main.py`), analog
+zu `run_gui.sh`.
+
+---
+
+## 12. Autoerkennung — und wann sie abbricht
+
+Zwei Stufen, weil zwei verschiedene Dinge erkannt werden: die **Geometrie** (welcher
+`formats:`-Eintrag beschreibt dieses Abbild?) und das **Dateisystem** (welcher
+`filesystems:`-Eintrag liegt darauf?).
+
+### 12.1 Stufe 1 — Geometrie aus dem Abbild messen
+
+`.hfe` und `.dmk` sind selbstbeschreibend: nach `DiskImage::open` liegt das ganze Medium vor,
+und `TrackCodec::parseTrack` liefert je Spur die **tatsächlichen** Sektor-IDs, Sektorgrößen und
+das Verfahren. Daraus entsteht ein gemessener Spurbereichsplan — exakt die Struktur, die ein
+`formats:`-Eintrag beschreibt:
+
+```
+gemessen:  c0h0-c0h1 26×128 MFM │ c1h0 26×128 MFM │ c1h1 5×1024 MFM │ c2-c79 5×1024 MFM
+formats:   cpa780                                                     ✔ deckungsgleich
+```
+
+Verglichen wird gegen **jeden** Eintrag in `formats:`; ein Treffer verlangt Übereinstimmung in
+Zylinder-/Kopfzahl, Sektoranzahl, Sektorgröße, erster Sektor-ID und Verfahren je Spurbereich.
+
+Toleranzen, damit echte Abbilder nicht durchfallen:
+- **leere Spuren am Ende** (viele echte `.hfe` tragen ein bis drei unformatierte Zusatzspuren)
+  werden ignoriert, wie schon im `.img`-Codec;
+- **einzelne CRC-defekte Spuren** disqualifizieren nicht, sie werden gemeldet;
+- eine Spur, die zu **gar keinem** Bereich passt, disqualifiziert den Eintrag.
+
+Bei `.img` gibt es nichts zu messen (rohe Sektorbytes ohne Struktur): dort bleiben alle Formate
+Kandidaten, deren `totalBytes()` zur Dateigröße passt; die Entscheidung fällt in Stufe 2.
+
+> **Wichtig für die Erwartungshaltung:** *das* Format eines Abbilds ist nicht immer eindeutig
+> bestimmbar — `formats.yaml` enthält bewusst geometrisch **identische** Einträge (`cpa640` und
+> `k5601_16x256`, `scpx780` und `scpx780_b`). Das ist kein Mangel: was der Anwender wirklich
+> braucht, ist das **Dateisystem**, und das entscheidet Stufe 2. Bleiben danach mehrere gleich
+> gute Kandidaten, wird der bestplatzierte genommen (`detect_rank`), das Ergebnis als
+> **„nicht eindeutig“** markiert und die Alternativen in der Auswahlliste angeboten.
+
+### 12.2 Stufe 2 — Dateisystem positiv nachweisen
+
+Kandidaten sind alle `filesystems:`-Einträge, deren `format:` in Stufe 1 getroffen wurde. Je
+Kandidat eine **Positivprobe** (billig, wenige Sektoren):
+
+- **UDOS**: Belegungskarte lesen (Spur `bitmap_track`, Sektoren 1–3) — 24 Byte druckbarer
+  Datenträgername mit `0x0D`-Füllung, Byte +378 = Sektoren/Spur, +379 = Spurzahl passend zur
+  gemessenen Geometrie, Nachlauf `11×0x33 / 0xF7 / 27×0x77`. Zusätzlich: Kopfsektor der Datei
+  `DIRECTORY` auf `directory_track` Sektor 1. Das ist sehr trennscharf — Zufallstreffer
+  praktisch ausgeschlossen.
+- **CP/M**: erste Verzeichnisblöcke ab `data_start` lesen — Anteil plausibler Einträge
+  (`US ≤ 15` oder `0xE5`, Name druckbar-großgeschrieben, Blocknummern innerhalb der Kapazität,
+  `RC ≤ 0x80`) über einem Schwellwert.
+
+Bei UDOS wird die Probe **je Seite** gefahren; besteht nur Seite 0, ist es eine einseitig
+beschriebene UDOS-Diskette (1 Volume, flacher Ordner — §9.1).
+
+### 12.3 Kein Treffer → Abbruch mit Diagnose
+
+Findet Stufe 1 keinen passenden `formats:`-Eintrag, wird **nicht geraten**. Das Werkzeug bricht
+ab und gibt aus, was es gemessen hat — damit ist die Meldung zugleich die Vorlage für den
+fehlenden Katalogeintrag:
+
+```
+Fehler: Das Abbild passt zu keinem Format in data/formats.yaml.
+Gemessen:
+  Zylinder 0-79, Köpfe 0-1, MFM
+  c0h0..c0h1   : 26 Sektoren à 128 B, IDs 1-26
+  c1h0..c79h1  :  9 Sektoren à 512 B, IDs 1-9
+Nächstliegender Eintrag: k5601_9x512 (weicht ab: Spuren c0h0..c0h1 sind dort 9×512)
+Geprüfter Katalog: /home/…/data/formats.yaml
+```
+
+Besteht Stufe 2 keine Probe, lautet die Meldung entsprechend „Geometrie erkannt (`cpa800`), aber
+kein bekanntes Dateisystem gefunden“ — mit dem Angebot, ein Profil manuell zu wählen (Lesen ist
+dann auf eigene Gefahr möglich, **Schreiben bleibt gesperrt**, bis die Wahl bestätigt ist).
+
+---
+
+## 13. Quellen-Abstraktion für spätere Hardware (E4)
+
+`DiskImage` bleibt die Quelle. Für physische Laufwerke kommt später eine dünne Schicht davor:
+
+```
+ImageSource ─┬─ FileSource     (heute: DiskImage::open / flush)
+             └─ DeviceSource   (später: gw read → temporäres .hfe → gw write)
+```
+
+Konkret heißt „vorgesehen“: die C-API kennt nur `path`, das CLI nur `<image>`, und beides
+akzeptiert später ein Gerätekürzel (`gw:0`) statt eines Dateinamens — ohne Änderung an
+Dateisystem, Sektorraum oder Oberfläche. Mehr wird jetzt nicht gebaut.
+
+---
+
+## 14. Sicherheit beim Schreiben
+
+Ein Werkzeug, das fremde, teils einmalige Datenträgerabbilder verändert, muss vorsichtiger sein
+als der Emulator (der auf einer Arbeitskopie läuft):
+
+1. **Alles im Speicher**: Änderungen gehen ins `DiskMedium`, die Datei wird erst beim
+   ausdrücklichen Speichern angefasst (§5). Abbruch = Datei unverändert.
+2. **Sicherungskopie**: beim ersten Schreiben auf eine bestehende Datei standardmäßig
+   `name.hfe~` anlegen (CLI: `--no-backup`).
+3. **Atomar**: in `name.hfe.tmp` schreiben, dann `rename()`.
+4. **Schreibschutz** der Datei und `DiskImage::bindingWritable()` werden respektiert.
+5. **`.img` + UDOS** wird abgelehnt, ebenso Speichern eines nicht `rawCompatible()`-Mediums als
+   `.img` (`DiskImage::saveAs` meldet das bereits mit Grund).
+6. **Kein Zugriff auf gemountete Abbilder** ist erzwingbar (A6) — deshalb warnt die GUI, wenn die
+   Datei in der letzten Emulator-Sitzung als Laufwerk konfiguriert war (`app/config`).
+
+---
+
+## 15. Teststrategie
+
+Eingeordnet in das bestehende System (`tests/README.md`, `doc/design/12_testing.md`) — eine Zeile
+je Test über `k1520_add_test()`, Ebene = Verzeichnis = ctest-Label:
+
+| Ebene | Tests |
+|-------|-------|
+| `unit/filesystem/` | `test_sector_space` (Layout-Reihenfolge ≡ `.img`-Offset, Kopf-Filter, Schreib-Roundtrip), `test_fs_catalog` (Schema, Validierung, Fehlermeldungen), `test_cpm_dir` (Extents, Blocklisten 8/16 Bit, Attribute, Nutzerbereiche), `test_udos_bitmap` (Bitlage MSB-first, Zähler), `test_udos_dir` (Einträge variabler Länge, `0xFF`-Ende, Altbestand), `test_udos_chain` (Satzverkettung, Längenrechnung), **`test_fs_detect`** (§12: jedes Referenzabbild wird erkannt; ein absichtlich abweichendes Abbild wird **abgelehnt** und die Meldung nennt die gemessene Geometrie; leere Diskette → Ablehnung), **`test_fit_planner`** (§9.2: Bedarf inkl. Blockrundung/Extents bzw. Kopfsektor/Satzrundung, spurweise UDOS-Suche) |
+| `unit/peripherals/` | `test_track_codec` **erweitert** um `writeSector` (§4.1): CRC neu, `tail` erhalten, FM+MFM |
+| `integration/` | **Roundtrip** je Dateisystem: Leerdiskette anlegen → n Dateien einfügen → auflisten → extrahieren → byte-identisch; **Lesen der echten Referenzabbilder** (`disks/cpa_*.hfe`, `disks/udos_boot_*.hfe`) gegen die im UDOS-Dokument §10/§11 dokumentierten Sollwerte (69 Dateien, 850 freie Sektoren, `UDOS.SYS.4.3`); Datei löschen und Platz wiederverwenden. **Beidseitiges UDOS (§9.1):** `extractAll` erzeugt `Side0/`+`Side1/` mit der richtigen Aufteilung; `insertAll` auf einen Ordner **ohne** `Side1/` schlägt fehl **und lässt die Diskette unverändert** (Medium byte-identisch); gleichnamige Dateien auf beiden Seiten bleiben getrennt. **Volllauf (§9.2):** zu viele Dateien → Fehler mit Zahlen, Medium unverändert; Platz nur auf Seite 1 frei → Einfügen auf Seite 0 scheitert trotz „genug Platz auf der Diskette“ |
+| `cli/` | `k1520disktool ls/get/put/rm/create` über `tests/cli/run_case.py`, Ausgabe-Wortlaut und **Exit-Codes 2/3/4** (nicht erkannt / passt nicht / Ordnerstruktur); ein `all_commands_smoke`-Analogon, damit kein Kommando aus der Dispatch-Kette fällt |
+| `python/` | `test_disk_c_api.py` (Header ↔ `.so` ↔ ctypes, mechanisch wie `test_c_api.py`), `test_disktool_gui.py` (PySide6 headless: Liste ist nach `open()` gefüllt, wird nach jedem Schreiben neu geladen, Schaltflächen bei fehlgeschlagener Erkennung gesperrt) |
+| `system/` (Label `format_integration`, langsam) | **Die schärfste Probe:** DiskTool schreibt eine Datei auf eine Diskette → der **Emulator bootet sie** und liest sie mit `TYPE`/`DIR` bzw. UDOS `CAT`/`EXTRACT`. Und umgekehrt: im Emulator mit `PIP` erzeugte Datei wird vom DiskTool extrahiert. Das prüft beide Dateisysteme gegen die *echten* Betriebssysteme, nicht gegen unsere eigene Lesart. |
+
+**Kreuzprobe gegen `cpmtools`** (optional, nur wenn `cpmls`/`cpmcp` im Pfad): gleiche Diskette,
+gleiche Liste, gleiche extrahierten Bytes. Kein harter Testabhängigkeit — als Werkzeug in
+`tests/support/` für die Entwicklungsphase, so wie `tools/disasm_difftest.py` beim Disassembler.
+
+Die Regressionsläufe bleiben schnell: alles außer der `system/`-Ebene gehört in
+`tools/dev.sh test` (Pre-Push-Hook), die Emulator-Kreuzproben laufen unter
+`tools/dev.sh test-format`.
+
+---
+
+## 16. Build-Integration
+
+```cmake
+# Dateisystem-Schicht (rein logisch, kein Z80/Karten-Code)
+add_library(k1520_fs STATIC
+    core/filesystem/sector_space.cpp  core/filesystem/fs_profile.cpp
+    core/filesystem/fs_catalog.cpp    core/filesystem/fs_detect.cpp
+    core/filesystem/cpm/cpm_fs.cpp    core/filesystem/cpm/cpm_dir.cpp
+    core/filesystem/udos/udos_fs.cpp  core/filesystem/udos/udos_dir.cpp
+    core/filesystem/udos/udos_bitmap.cpp)
+target_link_libraries(k1520_fs PUBLIC k1520_floppy2 k1520_util k1520_logger)
+target_include_directories(k1520_fs PUBLIC ${CMAKE_SOURCE_DIR})
+
+# libk1520disk.so — stabile C-ABI für Python
+add_library(k1520disk SHARED core/api/k1520_disk_api.cpp)
+target_link_libraries(k1520disk PRIVATE k1520_fs)
+
+# CLI
+add_executable(k1520disktool tools/k1520disktool.cpp)
+target_link_libraries(k1520disktool PRIVATE k1520_fs)
+```
+
+`k1520_fs` erbt `K1520_FORMATS_DEFAULT` über `k1520_floppy2` — der Katalogpfad bleibt eine
+einzige Wahrheit. Beide neuen Ziele landen in `build/` bzw. `build_trace/` und werden über
+`tools/dev.sh` gebaut wie alles andere.
+
+---
+
+## 17. Umsetzung in Etappen
+
+Jede Etappe ist für sich lauffähig und testbar; die Reihenfolge minimiert das Risiko, weil das
+Schwierigste (UDOS-Schreiben) auf einem dann schon geprüften Unterbau steht.
+
+| # | Inhalt | Ergebnis |
+|---|--------|----------|
+| 1 | `TrackCodec::writeSector` (§4.1) + `SectorSpace` (§5) + Tests | Sektoren lesen/schreiben über alle drei Container, `tail` bleibt erhalten |
+| 2 | `filesystems:`-Schema, `FsProfile`/`FsCatalog`, CP/A- und SCPX-Profile, UDOS-Geometrien aus den Referenzabbildern verifiziert; **Erkennung Stufe 1 + 2 (§12)** inkl. Ablehnungsmeldung | Katalog kennt die logische Ebene; jedes Abbild im Baum wird erkannt oder sauber abgelehnt |
+| 3 | **CP/M lesen** + `DiskVolume` mit 1 Volume + `k1520disktool ls/get/info` | ersetzt `cpmls`/`cpmcp -f` für das Auslesen — der häufigste Anwendungsfall |
+| 4 | **CP/M schreiben** (`put`, `rm`, `create`), Planer + Rücknahme (§9.2) + Roundtrip- und Emulator-Kreuzprobe | ersetzt `writeDiskUI.py`; „passt nicht“ ist ab hier eine geprüfte Zusage |
+| 5 | **UDOS lesen** (Karte, Verzeichnis, Kette) + **mehrere Volumes** in `DiskVolume` + `Side0/Side1`-Extraktion — gegen `disks/udos_boot_scp.hfe` und die Sollwerte aus §10/§11 des UDOS-Dokuments | erstmals überhaupt UDOS-Dateien unter Linux, beide Seiten in einem Zug |
+| 6 | **UDOS schreiben** + `mkfs` + `Side0/Side1`-Einfügen mit Strukturprüfung + Emulator-Kreuzprobe (`CAT`/`EXTRACT`) | Schreibpfad, den bisher nur UDOS selbst beherrscht |
+| 7 | C-API + ctypes-Bindung + Dreiklang-Test | Python sieht die Bibliothek |
+| 8 | **PySide6-Oberfläche** + `run_disktool.sh` + GUI-Smoke | das eigentliche Anwenderprogramm |
+| 9 | `tools/k1520disktool.md`, `APP_README.md`/`README.md`-Verweise, `doc/udos_diskettenformat.md` §13 nachziehen | Dokumentation auf dem Ist-Stand |
+
+Etappe 3 ist der erste echte Nutzen; ab Etappe 4 ist die `cpmtools`-Abhängigkeit der alten
+Werkzeuge vollständig ersetzt.
+
+---
+
+## 18. Offene Punkte
+
+1. **UDOS-Geometrien**: Spurzahl, Seitenzahl und Laufwerkszuordnung der vier Referenzabbilder
+   sind aus den Dateien zu bestätigen, bevor die `formats:`-Einträge geschrieben werden
+   (`doc/udos_diskettenformat.md` §12.3 nennt die Laufwerkstypen, nicht die Abbilder).
+2. **CP/A-Verzeichnisse mit `os: cpm3`**: ob im Bestand Disketten mit CP/M-3-Zeitstempeln
+   liegen, ist ungeprüft; das Schema sieht das Feld vor, die Umsetzung folgt bei Bedarf.
+3. **Kopfsektor-Felder `HIGH ADDRESS` / `STACK SIZE`** (UDOS §6) sind nicht eindeutig zugeordnet.
+   Beim Einfügen einer Datei vom Typ `P`/`P1` werden sie deshalb vorerst nicht gesetzt — für
+   reine Datendateien ohne Belang, für ausführbare Dateien ein bekannter Vorbehalt.
+4. **Satzlänge beim UDOS-Einfügen**: 128 ist immer sicher, größere Sätze sparen Verwaltung.
+   Ob das Werkzeug die Satzlänge anbieten soll oder fest bei 128 bleibt, wird nach Etappe 5
+   entschieden (dann kennen wir die Streuung im Bestand).
+5. **Interleave beim Schreiben**: UDOS legt Sätze typisch mit Versatz 5 ab
+   (`doc/udos_diskettenformat.md` §7). Ob wir das nachbilden (Geschwindigkeit auf echter
+   Hardware) oder dicht packen (einfacher), ist eine Entscheidung für Etappe 6.
+6. **Einseitig beschriebene UDOS-Diskette**: Ob es die im Bestand gibt (Seite 1 unformatiert
+   oder ohne gültige Belegungskarte), ist ungeprüft. Der Entwurf behandelt sie als
+   1-Volume-Diskette mit flachem Ordner (§9.1) — das ist erst nach Etappe 5 an den vier
+   `disks/udos_boot_*.hfe` zu bestätigen. Sollte sich zeigen, dass UDOS-Disketten **immer**
+   beide Seiten führen, entfällt der Sonderfall ersatzlos.
+7. **Feste Ordnernamen `Side0`/`Side1`**: bewusst nicht konfigurierbar, damit ein extrahierter
+   Ordner ohne Zusatzwissen wieder einfügbar ist. Falls sich später zeigt, dass Anwender die
+   UDOS-Laufwerksnummern (Seite 0 = Laufwerk 0, Seite 1 = Laufwerk 4) erwarten, wäre
+   `Drive0`/`Drive4` die Alternative — dann aber projektweit einheitlich, nicht als Option.
+8. **Geometrisch mehrdeutige Formate** (`cpa640` ≡ `k5601_16x256`, `scpx780` ≡ `scpx780_b`):
+   Stufe 1 der Erkennung kann sie prinzipiell nicht trennen (§12.1). Solange sich die zugehörigen
+   Dateisystemprofile unterscheiden, entscheidet Stufe 2; wo auch die identisch sind, ist die
+   Unterscheidung für das Werkzeug ohne Folge. `detect_rank` ist die Notbremse, falls doch eine
+   Reihenfolge nötig wird.

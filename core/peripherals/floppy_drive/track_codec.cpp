@@ -385,6 +385,77 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
     return result;
 }
 
+// ─── writeSector (Einzelsektor an Ort und Stelle ersetzen) ────────────────────
+
+/**
+ * Zweiphasig: erst alles pruefen (Sektor finden, Laengen, Nachspann-Platz), dann in einem
+ * Zug schreiben.  Nur so gilt die Zusage „false = keine Aenderung" auch dann, wenn der
+ * Fehler erst spaet auffaellt.
+ */
+bool writeSector(TrackImage& track, uint8_t sector_id,
+                 const std::vector<uint8_t>& data,
+                 const std::vector<uint8_t>& tail) {
+    const size_t n = track.bytes.size();
+    if (n == 0 || track.marks.size() != n) return false;
+
+    const bool isMfm = (track.encoding == Encoding::MFM);
+
+    // ── Phase 1: Sektor suchen und alles pruefen ─────────────────────────────
+    size_t   dataPos = SIZE_MAX;
+    uint16_t secSize = 0;
+
+    for (size_t idPos = 0; idPos < n; ++idPos) {
+        if (track.marks[idPos] != MarkType::Id) continue;
+        if (idPos + 1 + 4 + 2 > n) break;                 // ID-Feld unvollstaendig
+        if (track.bytes[idPos + 3] != sector_id) continue;
+
+        // Groessencode wie in parseTrack maskieren (gestoerte Spur → Muellwert).
+        secSize = static_cast<uint16_t>(128u << (track.bytes[idPos + 4] & 0x03));
+
+        for (size_t i = idPos + 1; i < n; ++i) {
+            if (track.marks[i] == MarkType::Data) { dataPos = i; break; }
+            if (track.marks[i] == MarkType::Id)   break;   // Sektor ohne Datenfeld
+        }
+        break;
+    }
+
+    if (dataPos == SIZE_MAX)                      return false;   // ID fehlt / kein Datenfeld
+    if (data.size() != secSize)                   return false;   // Laenge passt nicht
+    if (dataPos + 1 + secSize + 2 > n)            return false;   // Datenfeld ragt heraus
+
+    const size_t tailStart = dataPos + 1 + secSize + 2;
+    const size_t tailLen   = std::min(tail.size(), kSectorTailBytes);
+    if (tailLen > 0) {
+        if (tailStart + tailLen > n) return false;
+        // Ein Nachspann darf niemals in die naechste Adressmarke laufen — sonst waere die
+        // Spur danach kaputt, und zwar unbemerkt bis zum naechsten Lesen.
+        for (size_t i = tailStart; i < tailStart + tailLen; ++i)
+            if (track.marks[i] != MarkType::None) return false;
+    }
+
+    // ── Phase 2: schreiben ───────────────────────────────────────────────────
+    std::copy(data.begin(), data.end(), track.bytes.begin() + static_cast<long>(dataPos + 1));
+
+    // CRC ueber [A1 A1 A1 <Marke>] + Daten (MFM) bzw. [<Marke>] + Daten (FM).  Die Marke wird
+    // aus der Spur gelesen statt fest 0xFB anzunehmen: geloeschte Datenfelder (0xF8) bleiben
+    // damit geloescht und behalten eine gueltige CRC.
+    const uint8_t markByte = track.bytes[dataPos];
+    std::vector<uint8_t> crcIn;
+    crcIn.reserve(4 + secSize);
+    if (isMfm) { crcIn.push_back(0xA1); crcIn.push_back(0xA1); crcIn.push_back(0xA1); }
+    crcIn.push_back(markByte);
+    crcIn.insert(crcIn.end(), data.begin(), data.end());
+
+    const uint16_t crc = isMfm ? crc16(crcIn.data(), crcIn.size(), 0xFF, 0xFF)
+                               : crc16Ccitt(crcIn.data(), crcIn.size());
+    track.bytes[dataPos + 1 + secSize]     = static_cast<uint8_t>(crc >> 8);
+    track.bytes[dataPos + 1 + secSize + 1] = static_cast<uint8_t>(crc & 0xFF);
+
+    for (size_t i = 0; i < tailLen; ++i) track.bytes[tailStart + i] = tail[i];
+
+    return true;
+}
+
 // ─── romReadResyncTarget (Resync-Offset des MK/MK1-Strobes) ────────────────────
 
 /**

@@ -83,6 +83,18 @@ if(BUILD_K1520)
     target_compile_definitions(k1520_floppy2
         PRIVATE K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")
 
+    # ─── Dateisystem-Schicht (k1520DiskTool) ──────────────────────────────────
+    # Rein logisch: kein Z80, keine Karten.  Setzt auf denselben Container-/Medium-
+    # Bausteinen auf wie der Emulator (k1520_floppy2), sieht aber nur DiskMedium.
+    # Feinentwurf: doc/design/13_k1520disktool.md
+    add_library(k1520_fs STATIC
+        core/filesystem/sector_space.cpp
+        core/filesystem/geometry_probe.cpp
+        core/filesystem/fs_catalog.cpp
+    )
+    target_link_libraries(k1520_fs PUBLIC k1520_floppy2 k1520_util)
+    target_include_directories(k1520_fs PUBLIC ${CMAKE_SOURCE_DIR})
+
     # PIO primitive
     add_library(k1520_pio STATIC
         core/primitives/z80_pio.cpp
