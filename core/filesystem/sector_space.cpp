@@ -79,6 +79,22 @@ const std::vector<LogicalSector>& SectorSpace::sectors(int slot) const {
     return cache_[static_cast<size_t>(slot)];
 }
 
+// ─── Spuren des Raums ────────────────────────────────────────────────────────
+
+SectorSpace::TrackRef SectorSpace::trackAt(size_t i) const {
+    TrackRef r;
+    if (i >= slots_.size()) return r;
+    const Slot& s   = slots_[i];
+    r.cyl           = s.cyl;
+    r.head          = s.head;
+    r.start         = s.start;
+    r.bytes         = s.bytes;
+    r.sectors       = s.tf->secs_per_track;
+    r.sector_size   = s.tf->bytes_per_sec;
+    r.first_id      = s.tf->first_sector_id;
+    return r;
+}
+
 // ─── Geometrie-Auskuenfte ────────────────────────────────────────────────────
 
 uint16_t SectorSpace::sectorSize(uint8_t cyl, uint8_t head) const {

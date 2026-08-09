@@ -85,6 +85,30 @@ public:
                      const std::vector<uint8_t>& data,
                      const std::vector<uint8_t>& tail = {});
 
+    // ─── Spuren des Raums (Dateisysteme brauchen die Reihenfolge) ────────────
+
+    /**
+     * @struct TrackRef
+     * @brief Eine Spur des Raums in Layout-Reihenfolge.
+     *
+     * Die Dateisysteme rechnen ihre Adressen selbst in Spuren um — CP/M, weil der
+     * **Sektorversatz** (skew) je Spur gilt und nur das Dateisystem ihn kennt; UDOS,
+     * weil ein Satz nie eine Spurgrenze ueberschreitet.
+     */
+    struct TrackRef {
+        uint8_t  cyl = 0, head = 0;
+        uint64_t start = 0;        ///< Byte-Offset im linearen Raum
+        uint64_t bytes = 0;        ///< Nutzbytes der Spur
+        uint8_t  sectors = 0;
+        uint16_t sector_size = 0;
+        uint8_t  first_id = 1;
+    };
+
+    size_t   trackCount() const { return slots_.size(); }
+    TrackRef trackAt(size_t i) const;
+    /// @brief Index einer Spur in der Layout-Reihenfolge; -1 = nicht im Raum.
+    int      trackIndexOf(uint8_t cyl, uint8_t head) const { return slotOf(cyl, head); }
+
     /// @brief Sektorgroesse dieser Spur laut Format (0 = Spur gehoert nicht zum Raum).
     uint16_t sectorSize(uint8_t cyl, uint8_t head) const;
     /// @brief Sektoren je Spur laut Format (0 = Spur gehoert nicht zum Raum).
