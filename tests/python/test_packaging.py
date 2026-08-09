@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import time
 from pathlib import Path
 
 import pytest
@@ -73,6 +74,13 @@ def test_launcher_hat_genau_einen_platzhalter():
     assert 'ROOT="@ROOT@"' in text, "Platzhalter, den install.sh ersetzt, fehlt"
     assert '"$ROOT/venv/bin/python3"' in text
     assert '"$ROOT/app/main.py"' in text
+
+
+def test_launcher_wechselt_ins_datenverzeichnis():
+    """Sonst legt der Kern sein `logs/` dort an, wo der Anwender gerade steht."""
+    text = (PACKAGING / "launcher.sh").read_text()
+    assert "user_data_dir()" in text, "Starter fragt die Pfadauflösung nicht"
+    assert 'cd "$DATEN"' in text, "Starter wechselt nicht ins Datenverzeichnis"
 
 
 def test_uv_pins_vollstaendig():
@@ -559,6 +567,26 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
                           env=umgebung, timeout=60)
     assert ausk.returncode == 0, ausk.stderr
     assert "Layout:            Installation" in ausk.stdout
+
+    # Der Starter wechselt ins Benutzerdatenverzeichnis, bevor er den Emulator
+    # startet: der Kern legt sein Protokoll unter `logs/` im ARBEITSVERZEICHNIS
+    # an, und das wäre sonst der Ort, an dem der Anwender gerade zufällig steht
+    # — beim Start über das Startmenü das Heimatverzeichnis.
+    von_wo = tmp_path / "irgendwo"
+    von_wo.mkdir()
+    daten = nutzer_disks.parent
+    lauf = subprocess.Popen([str(starter)], cwd=von_wo, env=umgebung,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        frist = time.monotonic() + 30
+        while time.monotonic() < frist and not (daten / "logs").exists():
+            time.sleep(0.2)
+    finally:
+        lauf.terminate()
+        lauf.wait(timeout=30)
+    assert (daten / "logs").exists(), "Protokoll nicht bei den Benutzerdaten gelandet"
+    assert not (von_wo / "logs").exists(), \
+        "Protokoll landete im Arbeitsverzeichnis des Aufrufers"
 
     # Der Ausweis sagt, was dem Installer gehört — daran hängt das Deinstallieren.
     ausweis = (ziel / ".k1520emu-installation").read_text()
