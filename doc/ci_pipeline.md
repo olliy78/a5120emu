@@ -94,6 +94,13 @@ Schritte live mit.
 
 ### Von der Kommandozeile (`gh`)
 
+Einmalig einzurichten — auf diesem Rechner ist `gh` **nicht** installiert:
+
+```sh
+sudo apt install gh        # Debian/Ubuntu; sonst https://cli.github.com
+gh auth login              # einmal anmelden (Browser oder Token)
+```
+
 ```sh
 gh workflow list                              # welche Workflows gibt es
 gh workflow run ci.yml --ref main             # Regression anstoßen
