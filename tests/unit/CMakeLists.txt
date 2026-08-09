@@ -59,3 +59,6 @@ k1520_add_test(cpm_fs        SRC filesystem/test_cpm_fs.cpp
 k1520_add_test(udos_fs       SRC filesystem/test_udos_fs.cpp
                              LIBS k1520_fs LABELS "${_lbl}"
                              DEFS K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")
+k1520_add_test(disk_volume   SRC filesystem/test_disk_volume.cpp
+                             LIBS k1520_fs LABELS "${_lbl}"
+                             DEFS K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")
