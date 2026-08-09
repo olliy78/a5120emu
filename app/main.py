@@ -13,17 +13,11 @@ Requirements:
     - Python 3.8+
     - libk1520core.so built in build/ directory
 
-Build steps:
-    1. Build the C++ core:
-       mkdir -p build && cd build
-       cmake .. -DCMAKE_BUILD_TYPE=Release
-       make -j4
-    
-    2. Install Python dependencies:
-       pip install PySide6
-    
-    3. Run the GUI:
-       python3 app/main.py
+Setup (details: SETUP.md):
+    1. Build the C++ core:      tools/dev.sh build
+    2. Python dependencies:     python3 -m pip install -r requirements.txt
+    3. Run the GUI:             bash run_gui.sh
+       (sets LD_LIBRARY_PATH=build, activates venv, runs this file)
 """
 
 import sys

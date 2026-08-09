@@ -1,217 +1,113 @@
-# K1520 A5120 Emulator - GUI Application
+# Die Oberfläche (`app/`)
 
-A faithful graphical emulation of the **Robotron A5120** computer from the 1980s (East German DDR).
-
-## Prerequisites
-
-- Python 3.8 or later
-- PySide6 (Qt6 Python bindings)
-- libk1520core.so (built from C++ core)
-
-## Installation
-
-### 1. Build the C++ Core
-
-```bash
-cd /path/to/a5120emu
-mkdir -p build
-cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DLOG_LEVEL=2
-make -j4
-cd ..
-```
-
-This builds `libk1520core.so` which the Python GUI links to via ctypes.
-
-### 2. Install Python Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-This installs PySide6 (Qt6 bindings for Python).
-
-## Running the Emulator
-
-```bash
-python3 app/main.py
-```
-
-The GUI window will open showing:
-- The A5120 80×24 character display with authentic green phosphor color
-- Control buttons (Power, Reset)
-- Status bar showing cycles and disk activity
-- Docked disk drive panel for mounting/unmounting disk images
-
-## Features
-
-### Display
-- **Authentic green phosphor** rendering
-- 80×24 character mode
-- Real-time screen updates (50 Hz refresh)
-- Character-based rendering (8×12 pixels per character)
-
-### Disk Management
-- Mount/unmount disk images for 4 floppy drives
-- Support for multiple disk formats:
-  - CPA800 (Robotron native)
-  - CPA780
-  - UDOS
-  - SCP (Symbolic Computer Protocol)
-  - MUTOS
-  - K7
-  - HDOS
-- Write-protect control per drive
-
-### Keyboard
-- Full German QWERTZ keyboard emulation
-- Shift and Ctrl modifier support
-- Hardware-accurate scan code translation
-
-### Control
-- Power on/off toggle
-- Emulator reset
-- Speed control (1x, 2x, 10x, unlimited)
-
-## Architecture
-
-### C Core → Python Bridge
+PySide6/Qt6-Frontend für den K1520-Kern. Es enthält keine Emulationslogik — es lädt
+`libk1520core.so` über `ctypes` und zeigt an, was der Kern liefert.
 
 ```
 app/main.py
-    ↓
-app/ui/main_window.py (Qt6 MainWindow)
-    ↓
-app/core_binding/k1520.py (ctypes wrapper)
-    ↓
-libk1520core.so (C++ implementation)
+  └─ app/ui/main_window.py      Fenster, Laufschleife (Timer), Konfiguration
+       ├─ ui/screen_widget.py   Bildröhre  (QOpenGLWidget + GLSL)
+       ├─ ui/drive_widget.py    Laufwerksleiste
+       ├─ ui/keyboard.py        Tastaturübersetzung + Bildschirmtastatur
+       └─ ui/settings_widget.py Einstellungen (Reiter Allgemein / CRT)
+            ↓
+       app/core_binding/k1520.py   ctypes-Deklarationen
+            ↓
+       libk1520core.so             core/api/k1520_api.h
 ```
 
-### Key Classes
+Einrichten und starten steht in **[SETUP.md](SETUP.md)**; kurz: `bash run_gui.sh`.
 
-#### `K1520Emulator` (app/core_binding/k1520.py)
-Python ctypes wrapper exposing the C-API:
-- `power_on()` / `reset()` - Power management
-- `run(cycles)` - Execute CPU cycles
-- `mount_disk(drive, path, format, wp)` - Disk operations
-- `key_press()` / `key_release()` - Keyboard input
-- `get_framebuffer()` - Display data
+## Bildschirm
 
-#### `MainWindow` (app/ui/main_window.py)
-Qt6 main application window:
-- Embeds `ScreenWidget` for display rendering
-- Manages emulation loop (50 Hz timer)
-- Handles menus and dialogs
+Der K7024 liefert einen 640×288-Bytepuffer (ein Byte je Bildpunkt). Das Widget lädt ihn
+als 8-Bit-Textur hoch und rendert ihn durch einen GLSL-Fragmentshader, der das *Aussehen*
+einer echten Bildröhre nachbildet: Grünphosphor-Färbung, Zeilenstruktur, Glühen/Bloom,
+leichte Tonnenwölbung mit runden Ecken, Vignette, optionales Flimmern und eine
+Streifenmaske. Die Rechenarbeit liegt auf der GPU — Python lädt nur eine Textur je Bild.
 
-#### `ScreenWidget` (app/ui/screen_widget.py)
-Qt6 custom widget for framebuffer rendering:
-- Converts byte array to QImage
-- Renders green phosphor color scheme
-- Updates at 50 Hz to match original hardware
+Das Bild wird bewusst auf **4:3** gestreckt (der sichtbare Bereich der echten Röhre),
+frei skalierbar eingepasst; **F11** schaltet auf Vollbild.
 
-#### `DriveWidget` (app/ui/drive_widget.py)
-Docked panel for disk management:
-- 4 drive panels (one per floppy drive)
-- Mount/unmount buttons
-- Format selection
-- Write-protect toggle
+Jeder Bildparameter steckt in `CRTParams` (`ui/screen_widget.py`) und ist im
+Einstellungs-Dock unter **CRT** live einstellbar — Regler und Zahlenfeld je Wert,
+Farbwähler für die beiden Phosphorfarben. Änderungen greifen sofort und werden
+automatisch gespeichert.
 
-## Troubleshooting
+> Der Kern bleibt davon unberührt: über die C-ABI gehen weiterhin nur rohe
+> Bildpunktbytes. Alles „sieht aus wie eine Röhre" lebt im Frontend.
 
-### `libk1520core.so not found`
-Make sure you built the C++ core:
-```bash
-cd build
-cmake .. && make -j4
+## Laufwerke
+
+Die Zahl der Laufwerksfelder folgt der Bestückung des Laufwerksschachts
+(`app/drive_types.py`) — ein auf „kein Laufwerk" gesetzter Steckplatz bekommt kein Feld.
+Wählbare Typen:
+
+| Typ | Bauart |
+|---|---|
+| K5601 | 5,25″ DS, 80 Spuren, MFM, 800 K |
+| K5600.10 | 5,25″ SS, 40 Spuren, MFM, 200 K |
+| K5600.20 | 5,25″ SS, 80 Spuren, MFM, 400 K |
+| MF3200 | 8″ SS, 77 Spuren, nur FM, 300 K |
+| MF6400 | 8″ SS, 77 Spuren, FM+MFM, 600 K |
+
+Je Laufwerk: **Mount/Unmount**, **Neue Diskette** und **Speichern unter…**, dazu
+Schreibschutz. Dateiformate sind `.img` (rohes Sektorabbild), **HFE v1** und **DMK**.
+
+„Neue Diskette" mit **leerem** Formatnamen legt eine echte **unformatierte** Diskette in
+der Geometrie des Laufwerks an — der Gast kann sie dann selbst mit `FORMAT.COM`
+formatieren. Für `.img` geht das nicht: ein rohes Sektorabbild kennt den Zustand
+„unformatiert" nicht. Aus demselben Grund lehnt „Speichern unter…" `.img` ab, sobald die
+Diskette eine unformatierte Spur oder Daten hinter der Daten-CRC enthält
+(`k1520_disk_raw_compatible`).
+
+## Tastatur
+
+Tastendrücke werden nach dem Vertrag des K7637-Kerns übersetzt (`ui/keyboard.py`):
+druckbares ASCII als erzeugter Zeichencode, Sondertasten als `Qt::Key_*`-Konstante
+(die `QK_*`-Werte im Kern sind damit identisch), Strg+Buchstabe als Basiscode plus
+Strg-Flag. Zusätzlich gibt es eine anklickbare Bildschirmtastatur im K7637-Stil.
+
+## Steuerung und Konfiguration
+
+Menü **Emulator**: Reset (Strg+F5). Menü **Ansicht**: Vollbild (F11) und die Docks
+(Bildschirm, Tastatur, Laufwerke, Einstellungen) ein-/ausblenden.
+
+Die Geschwindigkeit steht im Einstellungs-Dock unter **Allgemein**: `1.0` = Echtzeit,
+größer = Vorspulen (etwa um einen Boot abzukürzen), `0.0` = unbegrenzt (so schnell der
+Wirt kann).
+
+Die Konfiguration — CRT-Werte, Geschwindigkeit, Laufwerksbestückung, eingelegte Disketten —
+wird automatisch nach `~/.config/k1520emu/config.yaml` geschrieben und beim Start wieder
+angewandt. Über **File → Save/Load Configuration…** lassen sich zusätzlich benannte
+YAML-Stände ablegen und laden.
+
+## Tests
+
+Die Python-Ebene liegt in `tests/python/` und läuft als Teil der Regressionsrunde
+(`tools/dev.sh test-python`). Sie deckt die beiden Dinge ab, die C++-Tests nicht
+erreichen: die **C-ABI** (`k1520_api.h` ↔ `libk1520core.so` ↔ die ctypes-Deklarationen —
+eine Signaturänderung bricht sonst *lautlos*) und die **GUI** headless unter
+`QT_QPA_PLATFORM=offscreen`. Pixel sind dort nicht prüfbar: ein `QOpenGLWidget` hat
+offscreen kein FBO. Einzelheiten und Grenzen: `tests/python/README.md`.
+
+## Wenn etwas nicht startet
+
+**`libk1520core.so not found`** — der Kern ist nicht gebaut oder der Bibliothekspfad fehlt:
+
+```sh
+tools/dev.sh build
+export LD_LIBRARY_PATH=$PWD/build:$LD_LIBRARY_PATH
 ```
 
-### `ModuleNotFoundError: No module named 'PySide6'`
-Install the Python dependency:
-```bash
-pip install PySide6
-```
+`run_gui.sh` erledigt beides mit. Gesucht wird zuerst in `build/` der Arbeitskopie.
 
-### Display is blank
-1. Check that a disk is mounted on drive 0
-2. Try pressing Power OFF then ON
-3. Check emulator logs: `CMAKE_BUILD_TYPE=Debug cmake ..`
+**`ModuleNotFoundError: No module named 'PySide6'`** — das venv ist nicht aktiv
+(`source venv/bin/activate`) oder die Abhängigkeiten fehlen (`SETUP.md`, Schritt 1).
 
-## Booting
+**Mehrzeilige Fehlermeldung beim Start** — Startabbrüche des Kerns (etwa ein fehlender
+Diskettenformat-Katalog `data/formats.yaml`) werden unverändert durchgereicht; die
+Meldung nennt die Ursache.
 
-To boot an operating system:
-
-1. Locate a disk image (e.g., `disk_b.img`)
-2. Launch the GUI: `python3 app/main.py`
-3. Mount the disk:
-   - Click "Mount" on Drive 0
-   - Select the disk image file
-   - Choose the appropriate format (usually CPA800)
-   - Leave Write-Protect unchecked
-4. Power on the emulator
-5. The A5120 will boot from the disk
-
-### Test Boot
-
-If disk_b.img is available:
-```bash
-python3 app/main.py
-# Mount disk_b.img on drive 0
-# Should see boot banner and CP/M prompt
-```
-
-## Performance
-
-- **1x (Original)**: Real-time emulation at original 4 MHz Z80 speed
-- **2x / 10x**: Faster-than-real-time execution
-- **Unlimited**: Maximum speed (CPU-bound, no throttling)
-
-Typical performance: 50-100 million Z80 cycles per second on modern hardware.
-
-## Configuration
-
-Machine configuration is stored in `app/config/machines/a5120.json`:
-- Hardware specifications
-- Default disk formats
-- Boot ROM behavior
-- Machine metadata
-
-## Development Notes
-
-### Adding New Features
-
-1. **UI Components**: Add to `app/ui/`
-2. **C-API Binding**: Update `app/core_binding/k1520.py`
-3. **Core Features**: Modify C++ in `core/` and rebuild
-
-### Logging
-
-To increase verbosity:
-```bash
-cd build
-cmake .. -DLOG_LEVEL=5 -DCMAKE_BUILD_TYPE=Debug
-make clean && make -j4
-```
-
-Log levels:
-- 0: OFF
-- 1: ERROR
-- 2: WARN (default)
-- 3: INFO
-- 4: DEBUG
-- 5: TRACE
-
-## References
-
-- **Robotron A5120**: https://en.wikipedia.org/wiki/Robotron_K8920
-- **Z80 CPU**: Zilog Z80 instruction set documentation
-- **CP/M**: Digital Research CP/M operating system
-
-## License
-
-See LICENSE file in the repository root.
-
-## Authors
-
-Implementation by: K1520 Emulator Contributors
-
-Original Robotron A5120: VEB Robotron, Dresden, DDR (1985)
+**Bild bleibt schwarz** — es ist keine bootfähige Diskette eingelegt oder die Maschine ist
+aus. Diskette in Laufwerk 0 einlegen und den Emulator zurücksetzen.

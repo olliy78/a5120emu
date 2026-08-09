@@ -42,7 +42,7 @@ Die beiden **Combo**-Disketten konfigurieren im BIOS die Laufwerke B:/C: als and
 Laufwerkstypen (DPB-Codes 10540/10580 bzw. 00877/10877). Dadurch bietet FORMAT.COM je
 gewähltem Laufwerk die zugehörigen Formate an (5¼″ einseitig, 8″ SD/DD) — so sind auch
 Fremdformate testbar, obwohl physisch immer dasselbe Laufwerk emuliert wird.
-Details: `docs/format.md` §11 und §5/§3.5.
+Details: `doc/format.md` §11 und §5/§3.5.
 
 ## Die beiden SCPX-Disketten sind NICHT austauschbar
 

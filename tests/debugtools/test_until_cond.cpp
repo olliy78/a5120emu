@@ -63,7 +63,7 @@ TEST(UntilCond, RejectsBadInput){
     EXPECT_EQ(u.kind, UntilCond::NONE);
 }
 
-// ── screen ~ "text" / /regex/  (feature_request_interactive_debug #1) ────────
+// ── screen ~ "text" / /regex/  (doc/feature_requests/interaktive_programme.md #1) ────────
 
 TEST(UntilCond, ParsesScreenSubstring){
     UntilCond u;

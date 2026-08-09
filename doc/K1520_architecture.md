@@ -720,7 +720,7 @@ beobachtbar.
 > der BIOS-DPB (`dpbtyp`, aus dem Generierungswert `diskA/B/C/D`); die K5122 streamt
 > formatagnostisch Bits. Deshalb lassen sich mit **Combo-Boot-Disketten** (B:/C: als
 > Fremdtypen konfiguriert) alle Laufwerkstypen-Menüs — inkl. der 8″-FM/MFM-Formate — ohne
-> echte Hardware im Emulator abgreifen. Katalog + Pipeline: `docs/format.md`.
+> echte Hardware im Emulator abgreifen. Katalog + Pipeline: `doc/format.md`.
 
 ### 8.5 Formatagnostischer Floppy-Stack (K5122 + DiskImage/TrackImage) — 2026-06-10
 
@@ -786,7 +786,7 @@ DriveProfile[4] — Zoll/Spuren/Köpfe/U-min/Verfahren je Slot  drive_profile.*
   `writeTrackAt`) sind implementiert und codierungstreu (FM ohne A1-Sync, MFM mit); `FORMAT.COM`
   formatiert+verifiziert alle Sektorgrößen. `HfeImage::readTrack` erkennt das Verfahren **pro Spur**
   (Mischdichte-Disks: FM-Systemspuren + MFM-Datenspuren, z. B. 8″-MF6400). Details + Formatkatalog:
-  `docs/format.md`.
+  `doc/format.md`.
 - **Tests:** `test_track_codec`, `test_bit_codec`, `test_hfe_codec`, `test_img_codec`,
   `test_dmk_codec`, `test_disk_medium`, `test_disk_image`,
   `test_drive_profile`, `test_floppy_drive2`, `test_k5122` (GoogleTest);

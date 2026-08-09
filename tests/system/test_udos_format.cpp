@@ -270,7 +270,7 @@ TEST(UdosFormat, CopyDiskDuplicatesSystemDiskSectorBySector) {
  *        Leerdiskette** bis zum Kaltstart von der selbstgebauten `.dmk`.
  *
  * Das UDOS-Gegenstück zu `ScpxInit.CreateFormatBThenPipCopyFromBootDisk` und
- * `tools/cpa_tools/make_bootdisk.py`: alles, was eine Diskette zur Systemdiskette
+ * `tests/system/drivers/make_bootdisk.py`: alles, was eine Diskette zur Systemdiskette
  * macht, läuft im Emulator über den echten Schreibpfad — und zwar auf einem Medium,
  * das der Emulator selbst angelegt hat.
  *

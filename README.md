@@ -1,218 +1,95 @@
-# Robotron A5120 Emulator
+# Robotron A5120 — K1520-Emulator
 
-A cycle-accurate emulator for the **Robotron A5120** — an East German Z80-based office computer from 1984, running the **CPA** operating system (a CP/M 2.2 derivative developed by the Akademie der Wissenschaften der DDR).
+Hardwarenahe Emulation des **Robotron A5120**, eines Z80-Bürocomputers des VEB Robotron
+Dresden (DDR, 1982). Nachgebildet wird nicht das Betriebssystem, sondern der **K1520-Bus
+mit seinen Steckkarten** — es gibt keine BIOS-Traps: Boot-ROM, BIOS und Betriebssystem
+laufen als echter Z80-Code.
 
----
-
-## Features
-
-- Full **Z80 CPU** emulation: all documented and undocumented opcodes, all interrupt modes (IM 0/1/2), accurate flag behavior
-- **80×24 text terminal**: ANSI console mode (any terminal emulator) and SDL2 pixel-accurate mode (green-phosphor look)
-- **5.25" DD DS floppy** emulation: 800 KB images (80 tracks, 2 sides, 5×1024-byte physical sectors → 40×128-byte logical CP/M sectors)
-- **CPA/CP/M BIOS**: original Z80 BIOS code from the real hardware, trap-intercepted by the emulator for I/O
-- **Directory mount**: any host folder can be mounted as a virtual CP/M drive A:
-- **Batch/auto-exec mode**: inject a command string at boot, capture console output to a file
-- **cparun**: standalone CP/M command-line runner — executes `.com` programs (e.g. M80, LINKMT) directly on the host without disk images, usable independently of the full emulator
-
----
-
-## Screenshot
+Deshalb bootet die Maschine mehrere Original-Betriebssysteme von Original-Disketten:
+**CP/A** (CP/M-2.2-Derivat der Akademie der Wissenschaften), **SCPX** und **UDOS** —
+inklusive Formatieren mit dem originalen `FORMAT.COM`.
 
 ```
-A>dir
-A: @OS     COM : LINKMT  COM : M80     COM
-A: BIOS    MAC : BDOS    ERL : CCP     ERL
-A>m80 =bios
-M80 Ver 4.0
-End of assembly, 0 error(s)
-A>
+  app/          Python/PySide6-Oberfläche (CRT-Darstellung, Laufwerke, Tastatur)
+    ↓ ctypes
+  libk1520core.so   stabile C-ABI  (core/api/k1520_api.h)
+    ↓
+  machines/a5120    verdrahtet die Karten auf den Bus, treibt die Laufschleife
+  cards/            K2526 (ZRE/CPU)  K3526 (RAM)  K7024 (Bildschirm)
+                    K8025 (V.24)     K5122 (Floppy)
+  primitives/       Z80, Z80-PIO, Z80-CTC, Z80-SIO, EPROM/RAM
+  bus/              K1520Bus (Speicher/E-A-Dispatch, INT-Daisy-Chain) + Koppelbus
 ```
 
-*(ANSI terminal mode)*
+Besonderheiten, die den Kern von einem üblichen CP/M-Emulator unterscheiden:
 
----
+- **Zwei Z80 auf der K2526** — ZVE1 als Hauptprozessor hinter der Q240-Schutzlogik,
+  ZVE2 als DMA-Prozessor für das Laden der Bootsektoren; beide koordinieren sich nur
+  über gemeinsames RAM.
+- **Formatagnostischer Floppy-Controller** — der K5122 liest einen rotierenden Flussstrom
+  (`TrackImage`/`BitCodec`), FM oder MFM, mit echten Sync-Marken und IBM-CCITT-CRC. Die
+  Diskette liegt vollständig im Speicher; `.img`, HFE v1 und DMK sind reine Container.
+- **Formatieren funktioniert wirklich** — eine unformatierte Leerdiskette lässt sich unter
+  dem Gast mit `FORMAT.COM` formatieren und anschließend bootfähig machen.
 
-## Hardware Background
+## Einrichten und starten
 
-| Component | Original Hardware | Emulation |
-|---|---|---|
-| CPU | U880D (Z80 clone) @ 2.5 MHz | Full Z80 including undocumented opcodes |
-| RAM | 64 KB | 64 KB flat address space |
-| Display | K7027 CRT card, 80×24 characters | ANSI Escape + SDL2 pixel graphics |
-| Keyboard | Matrix keyboard via PIO | PC keyboard → CPA key codes |
-| FDC | K2526 card with K5122 FDC, PIO-driven | PIO register emulation + image I/O |
-| OS | CPA (CP/M 2.2, K1520 bus) | Original BIOS code, BDOS+CCP via @os.com |
-
-The A5120 was produced by VEB Robotron Dresden and used in research institutions and universities across the DDR. It ran the **CPA** OS (*CP/M für Kleincomputer des Akademie-Netzes*), which is largely compatible with standard CP/M 2.2.
-
----
-
-## Requirements
-
-- **C++17** compiler (GCC 8+, Clang 7+)
-- **CMake** 3.16 or newer
-- Linux, macOS, or WSL
-- *(optional)* **SDL2** for the graphical terminal mode
-
----
-
-## Build
+Vollständige Anleitung: **[SETUP.md](SETUP.md)**. Kurz:
 
 ```sh
-cmake -B build
-cmake --build build
+python3 -m venv venv && source venv/bin/activate
+python3 -m pip install -r requirements.txt -r requirements-dev.txt
+tools/dev.sh build          # baut build/ (Release, LOG_LEVEL=3)
+bash run_gui.sh             # setzt LD_LIBRARY_PATH und startet app/main.py
 ```
 
-To enable the SDL2 graphical window:
+Voraussetzungen: C++17-Compiler, CMake ≥ 3.16, Python ≥ 3.8, Linux.
+Die Oberfläche ist in **[APP_README.md](APP_README.md)** beschrieben.
+
+## Bauen und testen
+
+**Immer über `tools/dev.sh`** — es baut das passende Verzeichnis vorher neu. Es gibt zwei
+Build-Verzeichnisse mit denselben Werkzeugnamen (`build/` mit LOG_LEVEL=3, `build_trace/`
+mit LOG_LEVEL=5); ein Werkzeug direkt aus einem davon zu starten testet leicht veraltete
+Objektdateien.
 
 ```sh
-cmake -B build -DUSE_SDL=ON
-cmake --build build
+tools/dev.sh test            # Regressionsrunde, ~12 s
+tools/dev.sh test-all        # zusätzlich die langsamen Format-/Boot-Disk-Läufe
+tools/dev.sh tool k1520dbg   # ein Werkzeug starten (k1520dbg, boot_trace, floppy_diag …)
 ```
 
-To run the tests:
+Es gibt bewusst keine CI: `.githooks/pre-push` fährt die Regressionsrunde vor jedem Push.
+Einmal je Arbeitskopie aktivieren mit `git config core.hooksPath .githooks`.
 
-```sh
-cd build && ctest --output-on-failure
-```
+## Wo was steht
 
----
-
-## Usage
-
-### Full Emulator
-
-```sh
-# Boot from @os.com with files from boot_disk/
-./build/a5120emu -os boot_disk/@os.com -dir boot_disk
-
-# Boot from a disk image
-./build/a5120emu -a disk_a.img -boot 0
-
-# Two disk drives + graphical window
-./build/a5120emu -os boot_disk/@os.com -a disk_a.img -b disk_b.img -sdl
-
-# Execute a single command and capture output (batch mode)
-./build/a5120emu -os boot_disk/@os.com -dir boot_disk -exec "dir" -cout out.txt
-```
-
-#### Options
-
-| Option | Description |
+| Thema | Datei |
 |---|---|
-| `-os <file>` | Boot from `@os.com` loader file (default: `boot_disk/@os.com`) |
-| `-a <image>` | Mount 800 KB disk image on drive A: |
-| `-b <image>` | Mount 800 KB disk image on drive B: |
-| `-dir <path>` | Mount host directory as virtual CP/M drive A: |
-| `-boot <0\|1>` | Boot from disk image (0 = A:, 1 = B:) |
-| `-exec <cmd>` | Inject command at boot prompt and exit when done |
-| `-log <file>` | Write BIOS diagnostic trace to file |
-| `-cout <file>` | Capture console output to file |
-| `-sdl` | Use SDL2 graphical window |
-| `-h`, `--help` | Show help |
+| Architektur des Kerns (maßgeblich) | `doc/K1520_architecture.md` |
+| Einzelentwürfe je Baugruppe | `doc/design/*.md` |
+| Testsystem: ausführen, erweitern | `tests/README.md` |
+| Fehlersuche im Boot-Pfad | `tools/how_to_debug_and_trace.md` |
+| Diskettenformate und Formatier-Pipeline | `doc/format.md` |
+| Offene Punkte | `doc/open_points.md` |
 
-### CP/M Runner (cparun)
+Kommentare und Dokumentation sind überwiegend deutsch.
 
-`cparun` runs CP/M `.com` programs directly on the host without disk images — useful for integrating CP/M build tools (M80, LINKMT, etc.) into Linux Makefiles or CMake scripts.
-
-```sh
-# Assemble with M80
-./build/cparun -dir cpa_src m80 bios.erl=bios
-
-# Link with LINKMT
-./build/cparun -dir cpa_src linkmt "@OS=cpabas,ccp,bdos,bios/p:0BB80"
-```
-
-See [cparun/README.md](cparun/README.md) for the standalone build and full documentation.
-
----
-
-## Architecture
-
-### Boot Process
-
-1. `@os.com` (the CPA loader) is loaded at `0x0100`
-2. The loader header contains relocation parameters
-3. CCP + BDOS + BIOS code is relocated to its final address (`0xBA00`)
-4. BIOS jump-table entries are replaced with `HALT` trap opcodes
-5. Page zero (`0x0000`, `0x0005`) is configured
-6. The Z80 starts executing the CCP at `0xBA00`
-
-### Memory Map
+## Verzeichnisse
 
 ```
-0x0000–0x0002   Warm boot vector  (JP BIOS+3)
-0x0003          IOBYTE
-0x0004          Current disk
-0x0005–0x0007   BDOS entry vector (JP BDOS+6)
-0x0100–0xB9FF   TPA – Transient Program Area (~46 KB)
-0xBA00–0xC1FF   CCP – Console Command Processor
-0xC200–0xCFFF   BDOS – Basic Disk Operating System
-0xD000–0xF7FF   BIOS – emulated via HALT traps
-0xF800–0xFFFF   Screen buffer (80×24 = 1920 bytes)
+core/        C++-Kern → libk1520core.so
+app/         PySide6-Oberfläche
+tools/       Debugger (k1520dbg), Tracer (boot_trace), Disassembler, Hilfsskripte
+tests/       Testebenen unit/ debugtools/ integration/ cli/ system/ python/
+doc/         Architektur, Entwürfe, Analysen, EPROM-Abzüge
+data/        formats.yaml — Katalog der Diskettengeometrien
+disks/       Disketten für Werkzeuge und Handversuche
+boot_disk/   Original-CP/A-Programme (@OS.COM, FORMAT.COM, M80 …)
+cpa_src/     Original-CP/A-BIOS-Quellen (.mac)
+cparun/      eigenständiges Unterprojekt: CP/M-Programme direkt auf dem Host ausführen
 ```
 
-### BIOS Trap Mechanism
+## Lizenz
 
-CP/M applications call the BIOS via the jump table at `0xD000`. The emulator replaces each jump-table target with a `HALT` opcode. When the Z80 executes a `HALT`, the emulator's run loop identifies the trap address and dispatches the corresponding C++ function (console I/O, disk read/write, etc.).
-
-### Disk Format
-
-Standard A5120 800 KB DS DD format:
-
-| Parameter | Value |
-|---|---|
-| Tracks | 80 (double-sided → 160 logical) |
-| Physical sectors/track | 5 × 1024 bytes |
-| Logical sectors/track | 40 × 128 bytes (CP/M) |
-| Block size | 2 KB (BSH = 4) |
-| Total blocks | 400 (DSM = 399) |
-| Directory entries | 192 (DRM = 191) |
-| System tracks | 2 |
-
-### Key Mapping
-
-| PC Key | CPA Code |
-|---|---|
-| Arrow Up | `0x1A` |
-| Arrow Down | `0x18` |
-| Arrow Left | `0x08` (Backspace) |
-| Arrow Right | `0x15` |
-| Home / Pos1 | `0x01` |
-| Delete | `0x7F` |
-| Escape | `0x1B` |
-| Ctrl+C | `0x03` |
-
----
-
-## Project Structure
-
-```
-a5120emu/
-├── src/
-│   ├── a5120emu.cpp        Main program – argument parsing, component wiring, boot
-│   ├── z80.h / z80.cpp     Z80 CPU emulator (all opcodes, IM0/1/2, HALT trap)
-│   ├── memory.h / memory.cpp   64 KB address space, screen buffer helpers
-│   ├── cpa_bios.h / cpa_bios.cpp  CPA BIOS + CRT + FDC emulation
-│   ├── floppy.h / floppy.cpp      800 KB disk image I/O, directory mount
-│   ├── terminal.h          Abstract terminal interface
-│   ├── terminal_ansi.cpp   ANSI/VT100 console implementation
-│   ├── terminal_sdl.cpp    SDL2 pixel-graphics implementation
-│   ├── cparun.cpp          CP/M runner main (standalone tool)
-│   ├── cpm_bdos.h / cpm_bdos.cpp  CP/M 2.2 BDOS emulation for cparun
-│   └── font8x8.h           8×8 bitmap font for SDL mode
-├── cparun/                 Standalone cparun sub-project (own CMakeLists.txt)
-├── boot_disk/              @os.com and default CP/M files
-├── cpa_src/                Original CPA BIOS source files (.mac, .erl)
-├── tests/                  Unit tests (Z80 opcodes, memory, floppy)
-├── docs/                   Additional documentation
-└── CMakeLists.txt
-```
-
----
-
-## License
-
-MIT License — see individual source files for the full license text.
-
-Copyright © Olaf Krieger
+MIT — siehe [LICENSE](LICENSE).

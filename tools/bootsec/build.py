@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Olaf Krieger
 # SPDX-License-Identifier: MIT
 """
-build_bootsec.py  --  Build-Skript fuer den CPA780 SYL-Bootlader (3-Datei-Version)
+build.py  --  Build-Skript fuer den CPA780 SYL-Bootlader (3-Datei-Version)
 ===================================================================================
 
 Baut den Bootlader aus drei separaten Assembler-Quellen mithilfe des
@@ -35,10 +35,10 @@ Aufruf
 ------
   Standalone:
     cd /pfad/zu/CPA_Workbench
-        python3 tools/bootsec/build_bootsec.py
+        python3 tools/bootsec/build.py
 
   Via cpa_builder.py (benutzerdefinierte Pfade):
-        python3 tools/bootsec/build_bootsec.py --build-dir build/
+        python3 tools/bootsec/build.py --build-dir build/
 
 Das fertige bootsec.bin liegt danach im jeweiligen Build-Verzeichnis.
 """

@@ -146,7 +146,7 @@ vielen Fällen überflüssig.
 ## Regressionsnetz
 
 Neue Kommandos gehören in **beide** Netze (s. `tools/k1520dbg.md` §9):
-`tests/dbg/all_commands_smoke.dbg` (Dispatch) **und** ein gezielter CLI-Test auf den
+`tests/cli/scripts/all_commands_smoke.dbg` (Dispatch) **und** ein gezielter CLI-Test auf den
 Meldungs-Wortlaut. Für Punkt 1/2 bietet sich `disks/udos_boot_scp.hfe` an: UDOS zeigt
 am `%`-Prompt reproduzierbar den Fall „gesendet `0x63`, angezeigt `C`" — genau die
 Konstellation, die diesen Feature Request ausgelöst hat.

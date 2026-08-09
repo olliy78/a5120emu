@@ -209,7 +209,7 @@ bt                    # Callstack (CALL/RST/RET-Tracker)
   `bt` zeigt, dass der Aufrufer HARDYs Print-`CALL 0005` ist → das eigentliche Problem
   liegt im HARDY-Code davor (z.B. MEMDI blieb gesetzt).
 - Boot bis `A>` kostet ~90–130 M Zyklen **pro Lauf** — das war der größte Zeitfresser
-  (siehe Feature-Request `tools/feature_request_interactive_debug.md`).
+  (siehe Feature-Request `doc/feature_requests/interaktive_programme.md`).
 
 Delegation: breite Disasm-Analyse eines Testabschnitts → `boot-disasm-analyst`-Subagent
 (rein statisch gegen `/tmp/hardy.asm`), Log-/Trace-Auswertung → `log-trace-analyzer`.

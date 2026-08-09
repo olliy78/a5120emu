@@ -15,7 +15,7 @@ architecture blockers.
 > keyboard (K7637), the clock timing, disk write, GUI validation, and basic FORMAT.COM
 > formatting — are all **resolved**. History lives in git and the analysis docs
 > (`doc/analyse_zre_rom_boot.md`, `doc/analyse_bootloader.md`,
-> `doc/K1520_architecture.md` §8.5/§14, `docs/format.md`).
+> `doc/K1520_architecture.md` §8.5/§14, `doc/format.md`).
 
 ## Remaining open points
 
@@ -24,7 +24,7 @@ architecture blockers.
 The formatting pipeline (`tests/system/drivers/format_all.py` + `tools/format_driver`) covers the
 native K5601 §3 formats and the §3.4 single-sided / 40-track geometries as both `.hfe`
 and `.img`, plus the four foreign drive types via combo-boot disks. Full status:
-`docs/format.md` §8. What is left:
+`doc/format.md` §8. What is left:
 
 - **(a) "Sektorfolge 1,4,7" interleave formats — Format 7 ("ZIK-NK") and W:6
   ("BAP2001")** report `Fehler 'S' SPUR DEFEKT` in Verify, on **both** `.hfe` and
@@ -33,17 +33,17 @@ and `.img`, plus the four foreign drive types via combo-boot disks. Full status:
   `'S'` is a FORMAT.COM-internal data-track verdict, not a differential emulator bug.
   Definitive root cause needs **disassembly of FORMAT.COM's `'S'`-verify path**.
   Scope: 2 of ~30 formats.
-  `docs/format.md` §8.4. Repro: `python3 tests/system/drivers/format_all.py 7 --type img --upto 5`.
+  `doc/format.md` §8.4. Repro: `python3 tests/system/drivers/format_all.py 7 --type img --upto 5`.
 - **(b) Double-step 40-track geometries T/U as `.img`** are skipped: the card only
   knows step pulses, so `cur_cyl_` = 2×logical and a logical-40-track `.img` would
   need a physical→logical mapping. Workaround: use `.hfe` (faithful bit-track model)
-  for double-step disks. `docs/format.md` §8.3.
+  for double-step disks. `doc/format.md` §8.3.
 - **(c) 1024-B FM/SD read path (`mf3200_fmt1`)** — an 8″-SD/FM disk formatted with
   1024-B data sectors formats + CPABCGEN + boots, but a running-OS `DIR` fails with
   `Bdos Err On A: Bad Sector` reading the 1024-B FM data track. 256-B FM
   (`mf3200_fmt7`) works and shares the read-stream build, so the difference is the
   sector size on the FM read path. Rare format; preset kept for analysis, not a test.
-  `docs/format.md` §8.6.1.
+  `doc/format.md` §8.6.1.
 
 ### 2) Fresh gap-blank `.hfe` format hang (known limit, workaround active)
 
@@ -51,7 +51,7 @@ Formatting a **freshly `create`d, gap-empty `.hfe`** directly hangs (ZVE2 read
 co-routine `0x1D0F/0x1D21` pre-reading an unformatted data track on the first seek
 past cyl 1; index-interrupt / dual-CPU coordination race). The "keep index
 mask-independent" and "motor/index stops" hypotheses were both tested and disproved
-(`docs/format.md` §8.2/§8.2.1). **Workaround in the pipeline:** copy B: from a valid
+(`doc/format.md` §8.2/§8.2.1). **Workaround in the pipeline:** copy B: from a valid
 template, or use `.img` via `create` (0xE5 reads as valid). A real fix needs
 cycle-level dual-CPU tracing of the retry loop's break condition across the cyl1→cyl2
 seek.
@@ -126,7 +126,7 @@ bytes were never the blocker.
 - **Native 8″ drive** — the K5122 is format-agnostic and drive type is pure BIOS
   software, so 8″ formats (MF3200 SD/FM, MF6400 DD/mixed-density) are testable and
   bootable via the combo-boot disks and the `mf3200_8_ss77` / `mf6400_8_ss77` drive
-  profiles (`docs/format.md` §8.5/§8.6, §11). No dedicated 8″ card is needed.
+  profiles (`doc/format.md` §8.5/§8.6, §11). No dedicated 8″ card is needed.
 
 ## Non-blocking / housekeeping
 

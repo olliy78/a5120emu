@@ -102,10 +102,10 @@ export LD_LIBRARY_PATH=$PWD/build:$LD_LIBRARY_PATH
 ```
 
 ### GUI startet nicht
-**Lösung:** X11/Display nicht verfügbar
+**Lösung:** X11/Display nicht verfügbar. Ob Kern und Bindung stimmen, lässt sich
+headless prüfen — die Python-Testebene läuft unter `QT_QPA_PLATFORM=offscreen`:
 ```bash
-# Headless testen:
-python3 test_integration.py
+tools/dev.sh test-python
 ```
 
 ---
@@ -113,38 +113,28 @@ python3 test_integration.py
 ## Struktur
 
 ```
-a5120emu/
-├── venv/                    # Virtual Environment (nach Setup)
-├── build/                   # CMake Build Artefakte
-├── core/                    # C++ Kern-Emulator
-│   ├── CMakeLists.txt
-│   ├── api/                 # C-API (k1520_api.*)
-│   ├── bus/                 # K1520 Bus
-│   ├── cards/               # CPU, RAM, Display, Serial, Floppy
-│   ├── primitives/          # Z80 Chips (PIO, SIO, CTC)
-│   └── machines/            # Machine integration
-├── app/                     # Python GUI
-│   ├── main.py              # Entry point
-│   ├── core_binding/        # ctypes Wrapper
-│   └── ui/                  # Qt6 Widgets
-├── requirements.txt         # Python Abhängigkeiten
-├── run_gui.sh              # GUI Launcher Script
-└── test_*.py               # Test Suite
+a5120emu_ui/
+├── venv/       Virtual Environment (nach Setup)
+├── build/      CMake-Bauverzeichnis (LOG_LEVEL=3); build_trace/ mit LOG_LEVEL=5
+├── core/       C++-Kern → libk1520core.so
+│   ├── api/            C-ABI (k1520_api.*)
+│   ├── bus/            K1520Bus + Koppelbus
+│   ├── cards/          K2526, K3526, K7024, K8025, K5122
+│   ├── primitives/     Z80, PIO, SIO, CTC, EPROM/RAM
+│   ├── peripherals/    Laufwerke, Tastatur K7637
+│   └── machines/       a5120 — verdrahtet die Karten
+├── app/        PySide6-Oberfläche (main.py, core_binding/, ui/)
+├── tools/      dev.sh, k1520dbg, boot_trace, Disassembler
+├── tests/      unit/ debugtools/ integration/ cli/ system/ python/
+├── doc/        Architektur, Entwürfe, Analysen
+└── data/       formats.yaml — Katalog der Diskettengeometrien
 ```
 
 ---
 
-## Nächste Schritte
-
-1. ✅ venv eingerichtet
-2. ✅ C++ Core gebaut
-3. 🔄 GUI testen und fehlende Boot-Features debuggen
-4. 🔄 Disk-Boot-Sequenz trace und fixieren
-5. 📊 Performance-Optimierungen
-
----
-
-**Für Fragen siehe:**
-- [APP_README.md](APP_README.md) - GUI Dokumentation
-- [doc/open_points.md](doc/open_points.md) - Architektur & TODOs
-- [PROJECT_STATUS.md](PROJECT_STATUS.md) - Implementierungs-Status
+**Weiter:**
+- [README.md](README.md) — Überblick über Aufbau und Werkzeuge
+- [APP_README.md](APP_README.md) — die Oberfläche
+- [tests/README.md](tests/README.md) — Testsystem
+- [doc/K1520_architecture.md](doc/K1520_architecture.md) — Architektur des Kerns
+- [doc/open_points.md](doc/open_points.md) — offene Punkte

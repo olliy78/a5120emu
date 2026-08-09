@@ -58,7 +58,7 @@ BOOT_IMG = os.path.join(DISKS, 'cpa_cpa780_k5601_clock.img')
 
 # ─── Boot-Disketten ──────────────────────────────────────────────────────────
 # name: (img-Basename, needs_clock)  needs_clock=True → Uhr-Abfrage beim Kaltstart.
-# Die Combo-Disks konfigurieren B:/C: als Fremd-Laufwerkstypen (docs/format.md §11).
+# Die Combo-Disks konfigurieren B:/C: als Fremd-Laufwerkstypen (doc/format.md §11).
 BOOT_DISKS = {
     'clock':      ('cpa_cpa780_k5601_clock.img', True),
     'noclk':      ('cpa_cpa780_k5601_noclock.img',  False),
@@ -74,7 +74,7 @@ BOOT_DISKS = {
 #
 # Historie: früher wurde eine gültige, bereits formatierte Disk als B:-Template kopiert,
 # weil eine gap-leere Diskette den Emulator hängen ließ bzw. `Fehler 'U' SPUR DEFEKT`
-# provozierte (docs/format.md §8.2).  Beides ist behoben — der markenlose Gap-Fluss
+# provozierte (doc/format.md §8.2).  Beides ist behoben — der markenlose Gap-Fluss
 # terminiert über den Index-Timeout, und der FORMAT-Schreibstrom wird vor dem
 # Vergleichs-Lesen committet (doc/analyse_format_leerspur.md).  Ein Template würde die
 # Tests nur noch schwächen: die Vorlesungen fänden fremde Sektoren statt gar keiner.
@@ -88,7 +88,7 @@ BLANK = ''      # createB/FD_DISKC_FMT-Formatname für „unformatierte Leerdisk
 #   img_format : Name des DiskFormat (core FormatParser) für .img-Ziel; None = (noch)
 #                keine passende Geometrie definiert → .img für dieses Format übersprungen
 #
-# Siehe docs/format.md §3 für Layout/Kapazität je Format.
+# Siehe doc/format.md §3 für Layout/Kapazität je Format.
 FORMATS = {
     '0': ([],          '0', 'CP/A        5x1024 Sp.0-159   800k', 'cpa800'),
     '1': ([],          '1', 'CP/A BC     26x128+5x1024     780k', 'cpa780'),
@@ -111,7 +111,7 @@ FORMATS = {
 # ─── §3.4-Geometrien (S/T/U/V/W) ─────────────────────────────────────────────
 #
 # Ein Geometrie-Umschalter (Taste S/T/U/V/W) im Format-Menü stellt die logische
-# Geometrie um; die Formatliste wechselt (docs/format.md §3.4).  Jede Geometrie:
+# Geometrie um; die Formatliste wechselt (doc/format.md §3.4).  Jede Geometrie:
 #   switch_key, header, {format_key: (submenu_nav, format_key, beschreibung, img_format)}
 #
 # .img-Regel (RawSectorImage nutzt die PHYSISCHE Kopfposition cur_cyl_ als Offset):
@@ -142,7 +142,7 @@ GEO_FORMATS = {
 }
 
 
-# ─── Native Formattabellen der Fremd-Laufwerkstypen (docs/format.md §3.5/§5) ──
+# ─── Native Formattabellen der Fremd-Laufwerkstypen (doc/format.md §3.5/§5) ──
 #
 # Diese Menüs sind Live-Emulator-Mitschnitte (tools/capture_format_menus.py).  Anders
 # als die §3.4-Geometrie-Umschalter (die ein K5601 auf andere Geometrien zwingen)

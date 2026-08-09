@@ -669,7 +669,7 @@ bool A5120Machine::mountDisk(int drive, const std::string& path,
     //    die Geometrie kommt aus der Datei (so mountet z. B. tools/format_driver alle
     //    Slots nominell als "cpa780");
     //  - der Laufwerkstyp ist auf der A5120 reine BIOS-Software, Combo-Boot-Disketten
-    //    betreiben an B:/C: bewusst Fremdtypen (CLAUDE.md, docs/format.md §11).
+    //    betreiben an B:/C: bewusst Fremdtypen (CLAUDE.md, doc/format.md §11).
     // Die Kompatibilität wird dort erzwungen, wo das Format die Struktur wirklich
     // bestimmt: in createDisk() und in der angebotenen Auswahl (compatibleFormats()).
     std::lock_guard<std::mutex> lk(disk_mutex_);

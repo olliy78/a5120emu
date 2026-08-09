@@ -345,7 +345,7 @@ zusätzlich die ganze Kette *Leerdiskette → FORMAT.COM → CPABCGEN → bootf�
   `tests/system/drivers/format_all.py --list-matrix` erzeugt: neue Formate dort in die Tabellen eintragen,
   der Testsatz wächst automatisch mit. **Voll-Läufe bleiben manuell**
   (`python3 tests/system/drivers/format_all.py --all --full`) — dort sind K5601 `7` (`Fehler 'S'`) und `5`
-  als `.hfe` bekannt rot (docs/format.md §8.2), im Smoke fallen sie nicht an.
+  als `.hfe` bekannt rot (doc/format.md §8.2), im Smoke fallen sie nicht an.
 > **Ausgangszustand aller CP/A-Formatier-Tests ist seit 2026-08-07 eine ECHTE LEERDISKETTE**
 > (`createB`/`FD_DISKC_FMT` = *leerer* Formatname → unformatiertes Medium in der Geometrie des
 > Laufwerks). Das ist der Anwenderfall und die schärfere Prüfung; die früher nötigen Vorlagen
@@ -363,7 +363,7 @@ vorformatierte Weg; **leerer** Formatname legt seit dem Medium-Umbau eine echte 
 (§8.7). `defaultFormatName(drive)` liefert weiterhin das laufwerkstyp-spezifische Standardformat
 (K5601→cpa800, K5600.10→200K, K5600.20→400K, MF3200→308K/FM, MF6400→616K) — die Formatier-Pipeline
 übergibt es explizit. C-API: `k1520_create_disk`, `k1520_save_disk_as`,
-`k1520_disk_raw_compatible`. Voller Stand + offene Punkte: `docs/format.md` §8–§11.
+`k1520_disk_raw_compatible`. Voller Stand + offene Punkte: `doc/format.md` §8–§11.
 
 > **Gap-Blank-`.hfe`-Hänger — GELÖST (2026-07-06), Ursache seit 2026-08-05 im Controller behoben:**
 > `K5122::startReadTransfer()` streamt für eine **unformatierte** Spur markenlosen Gap-Flux, sodass

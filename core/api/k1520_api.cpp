@@ -5,6 +5,8 @@
 #include <memory>
 #include <ctime>
 #include <cstdio>
+#include <filesystem>
+#include <system_error>
 
 #define VERSION "0.1.0"
 
@@ -24,14 +26,24 @@ static void setup_logging() {
     logging_initialized_ = true;
 
 #if LOG_LEVEL > 0
-    // Generate log filename with timestamp: k1520_YYYYMMDD_HHMMSS.log
+    // Dateiname mit Zeitstempel: logs/k1520_YYYYMMDD_HHMMSS.log
+    //
+    // Das Unterverzeichnis ist Absicht: JEDES k1520_create legt eine Logdatei an
+    // (GUI-Start, Testlauf, Werkzeugaufruf), und ins Arbeitsverzeichnis geschrieben
+    // schwemmt das binnen Tagen dreistellige Dateizahlen ins Projektwurzelverzeichnis.
     std::time_t now = std::time(nullptr);
     std::tm* tm = std::localtime(&now);
-    char log_path[256];
-    std::strftime(log_path, sizeof(log_path), "k1520_%Y%m%d_%H%M%S.log", tm);
-    
-    // Try to set output file; if it fails, keep stderr
-    k1520::logging::Logger::instance().setOutputFile(log_path);
+    char stamp[64];
+    std::strftime(stamp, sizeof(stamp), "k1520_%Y%m%d_%H%M%S.log", tm);
+
+    std::error_code ec;
+    std::filesystem::create_directories("logs", ec);
+
+    // Schlägt das Anlegen fehl (schreibgeschütztes CWD), bleibt es beim
+    // Arbeitsverzeichnis; scheitert auch das, behält der Logger stderr.
+    auto& logger = k1520::logging::Logger::instance();
+    if (ec || !logger.setOutputFile(std::string("logs/") + stamp))
+        logger.setOutputFile(stamp);
 #endif
 }
 

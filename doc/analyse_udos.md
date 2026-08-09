@@ -102,7 +102,7 @@ Diese Werte sind **vor und nach dem main-Merge identisch**.
 
 > **Werkzeug-Warnung:** `k1520dbg` ist auf dieser Disk ab ca. 15 Mio. Takten praktisch
 > unbenutzbar (`g 15000000` = 0,3 s, `g 15500000` > 90 s) — Ursache und Messwerte in
-> §10 bzw. `tools/feature_request_source_annotation.md` §7. Für lange Läufe
+> §10 bzw. `doc/feature_requests/fremdquellen_annotation.md` §7. Für lange Läufe
 > `boot_trace` nehmen, `k1520dbg` nur mit Breakpoint.
 
 ---
@@ -607,7 +607,7 @@ tools/dev.sh trace DISK -c 14000000 -p 14000000 --watchio 0x11 -L /dev/null
 > Teilen aus Handarbeit, die ein Werkzeug erledigen sollte (Opcode-Längen zählen,
 > Hex-Dumps vergleichen, zweimal C++ mit `fprintf` instrumentieren, um an einen
 > PIO-Portzustand zu kommen). Die daraus abgeleiteten Verbesserungen stehen in
-> **`tools/feature_request_source_annotation.md`**.
+> **`doc/feature_requests/fremdquellen_annotation.md`**.
 
 ---
 
@@ -643,7 +643,7 @@ Für `DEBUBC43.MAC` (`ORG 0`) habe ich die Opcode-Längen ab `0x0000` **von Hand
 durchgezählt**, um die Trap-Einsprünge zu finden — und traf exakt die
 Z80-Architekturadressen `0x0038` (RST 38H) und `0x0066` (NMI), was die Zählung
 zugleich verifizierte. Genau diese Handarbeit sollte das Werkzeug abnehmen
-(Feature-Request §1/§2 in `tools/feature_request_source_annotation.md`).
+(Feature-Request §1/§2 in `doc/feature_requests/fremdquellen_annotation.md`).
 
 **Schritt 3 — Gegen den laufenden Code validieren, nie blind vertrauen.** Die Disk
 trägt einen **anderen Build** als die Quellen. Der Live-Disassembler zeigte die

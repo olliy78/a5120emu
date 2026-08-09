@@ -30,8 +30,8 @@ Drei Lade-Abschnitte / ORG-Bereiche:
     T2S0-25 (Offset 0x1A00, 3328 B): Stage-2-Kern           → RAM 0x0D00
 
 Erzeugte Dokumentationsdateien:
-    docs/bootsec.mac  — vollständig kommentierter Z80-Assemblertext (M80-Format)
-    docs/bootsec.md   — funktionale Beschreibung (Deutsch/Englisch)
+    tools/bootsec/src/*.mac — vollständig kommentierter Z80-Assemblertext (M80-Format)
+    doc/bootsec.md          — funktionale Beschreibung (Deutsch/Englisch)
 
 Z80-Befehlsabdeckung (Untermenge des vollständigen Z80-Befehlssatzes):
     Implementiert:
