@@ -189,9 +189,12 @@ entferne_installation() {
         esac
         rm -rf "$_wurzel/$_e"
     done
-    # Protokolle des Emulators (k1520_JJJJMMTT_HHMMSS.log) — sie entstehen im
-    # Arbeitsverzeichnis, also hier, sobald jemand aus der Installation heraus
-    # startet.  Der Rauchtest des Installers legt gleich beim Einrichten eines an.
+    # Protokolle des Emulators — sie entstehen im ARBEITSVERZEICHNIS (seit
+    # e6db12c in dessen Unterverzeichnis `logs/`, siehe k1520_api.cpp), also
+    # hier, sobald jemand aus der Installation heraus startet.  Die ältere
+    # Schreibweise direkt im Verzeichnis bleibt berücksichtigt, damit auch eine
+    # damit angelegte Installation sauber verschwindet.
+    rm -rf "$_wurzel/logs"
     rm -f "$_wurzel"/k1520_*.log
     rm -f "$_wurzel/$INSTALL_MARKER"
 
@@ -401,9 +404,10 @@ fenster = MainWindow()
 fenster.close()
 print("     Oberfläche: baut auf")
 PYEOF
-# Der Kern legt beim Erzeugen einer Maschine ein Protokoll im ARBEITSVERZEICHNIS
-# an (k1520_api.cpp: `k1520_%Y%m%d_%H%M%S.log`) — das ist hier die frische
-# Installation.  Eine leere Installation soll aber leer sein.
+# Der Kern legt beim Erzeugen einer Maschine ein Protokoll unter `logs/` im
+# ARBEITSVERZEICHNIS an (k1520_api.cpp) — das ist hier die frische Installation.
+# Eine frische Installation soll aber nur enthalten, was hineingehört.
+rm -rf "$PREFIX/logs"
 rm -f "$PREFIX"/k1520_*.log
 ok "läuft"
 

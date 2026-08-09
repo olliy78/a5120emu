@@ -259,7 +259,11 @@ def test_deinstallieren_raeumt_leere_wurzel_ganz_weg(tmp_path):
     heim = tmp_path / "heim"
     heim.mkdir()
     wurzel = _fake_installation(tmp_path / "K1520emu")
-    (wurzel / "k1520_20260809_120000.log").write_text("protokoll")
+    # Laufzeitspuren des Emulators: das Protokoll liegt seit e6db12c unter
+    # `logs/` im Arbeitsverzeichnis, die alte Schreibweise daneben.
+    (wurzel / "logs").mkdir()
+    (wurzel / "logs" / "k1520_20260809_120000.log").write_text("protokoll")
+    (wurzel / "k1520_20260808_090000.log").write_text("aelteres protokoll")
 
     out = _install_sh(wurzel, heim, "--uninstall")
     assert out.returncode == 0, out.stderr
@@ -564,6 +568,7 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
     # Eine frische Installation enthält nichts, was nicht hineingehört — der Kern
     # legt sein Protokoll im Arbeitsverzeichnis an, und das ist beim Rauchtest
     # genau hier.
+    assert not (ziel / "logs").exists(), "Protokollverzeichnis des Rauchtests blieb liegen"
     assert not list(ziel.glob("k1520_*.log")), "Protokoll des Rauchtests blieb liegen"
 
     # Noch einmal — und zwar OHNE --prefix: das ist der Update-Fall.  Der
