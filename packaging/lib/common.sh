@@ -51,6 +51,106 @@ core_lib_name() {
     esac
 }
 
+# abs_path <pfad> — Tilde und Relativangaben auflösen.
+#
+# Die Tilde muss dabei GESCHÜTZT werden: unquotiert dehnt die Shell sie in der
+# Musterangabe selbst zu $HOME aus, das Muster passt dann nie, und im Ergebnis
+# bliebe ein Verzeichnis namens „~" stehen.
+abs_path() {
+    _p=$1
+    case "$_p" in
+        "~")   _p="$HOME" ;;
+        "~/"*) _p="$HOME/${_p#"~/"}" ;;
+    esac
+    case "$_p" in
+        /*) ;;
+        *)  _p="$(pwd)/$_p" ;;
+    esac
+    echo "$_p"
+}
+
+# Dateiname des Merkmals, an dem eine Installation zu erkennen ist.
+INSTALL_MARKER=".k1520emu-installation"
+
+# ist_installation <verzeichnis> — trägt das Verzeichnis unsere Installation?
+#
+# Das Deinstallieren LÖSCHT sein Ziel, und seit das Ziel erfragt wird, kann dort
+# alles stehen — im schlimmsten Fall das Heimatverzeichnis.  Gelöscht wird
+# deshalb nur, was sich ausweisen kann.  Installationen aus der Zeit vor dem
+# Merkmal werden am Inventar erkannt, damit ein Update über sie hinweg geht.
+ist_installation() {
+    [ -f "$1/$INSTALL_MARKER" ] && return 0
+    [ -f "$1/VERSION" ] && [ -f "$1/app/paths.py" ] && [ -d "$1/share/k1520emu" ]
+}
+
+# ersetze_root <vorlage> <wurzel> — @ROOT@ einsetzen und das Ergebnis ausgeben.
+#
+# Bewusst ohne `sed`: der Installationspfad kommt seit der Zielabfrage vom
+# Anwender und darf jedes Zeichen enthalten — „|" wäre dort das Trennzeichen des
+# Ausdrucks, „&" und „\" in der Ersetzung wieder etwas anderes.  Je Zeile ein
+# Platzhalter genügt (beide Vorlagen halten sich daran).
+ersetze_root() {
+    _vorlage=$1; _wurzel=$2
+    while IFS= read -r _zeile || [ -n "$_zeile" ]; do
+        case "$_zeile" in
+            *@ROOT@*) printf '%s%s%s\n' "${_zeile%%@ROOT@*}" "$_wurzel" "${_zeile#*@ROOT@}" ;;
+            *)        printf '%s\n' "$_zeile" ;;
+        esac
+    done < "$_vorlage"
+}
+
+# dokumente_dir — Dokumentenordner des Anwenders ausgeben, sonst mit 1 enden.
+#
+# Sein Name ist sprachabhängig (~/Dokumente, ~/Documents, ~/Documenti);
+# verbindlich ist XDG_DOCUMENTS_DIR aus ~/.config/user-dirs.dirs, die die
+# Desktop-Umgebung selbst pflegt.  Gelesen wird die Datei direkt, nicht über das
+# Programm `xdg-user-dir` — das fehlt auf schlanken Systemen.
+#
+# ACHTUNG: dieselbe Regel steht in app/paths.py (`documents_dir`).  Beide
+# müssen dasselbe liefern, sonst räumt `--purge` woanders auf, als der Emulator
+# schreibt; Guard: `test_dokumentenordner_shell_und_python_stimmen_ueberein`.
+dokumente_dir() {
+    if [ -n "${XDG_DOCUMENTS_DIR:-}" ]; then
+        echo "$XDG_DOCUMENTS_DIR"
+        return 0
+    fi
+    _ud="${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs"
+    if [ -f "$_ud" ]; then
+        _wert=$(sed -n 's/^[[:space:]]*XDG_DOCUMENTS_DIR=//p' "$_ud" | tail -n 1)
+        _wert=$(printf '%s' "$_wert" | tr -d "\"'")
+        # In der Datei steht „$HOME/Dokumente" — die Variable gehört zum Format,
+        # eine Shell hat sie nie gesehen.  Ersetzt wird sie ohne `sed`, damit ein
+        # Sonderzeichen im Heimatpfad nicht zum Ausdruck wird.
+        case "$_wert" in
+            '$HOME')   _wert=$HOME ;;
+            '$HOME/'*) _wert="$HOME/${_wert#\$HOME/}" ;;
+        esac
+        if [ -n "$_wert" ]; then
+            echo "$_wert"
+            return 0
+        fi
+    fi
+    for _n in Documents Dokumente; do
+        if [ -d "$HOME/$_n" ]; then echo "$HOME/$_n"; return 0; fi
+    done
+    return 1
+}
+
+# benutzerdaten_dir — wohin der Emulator die Anwenderdaten legt (Disketten …).
+benutzerdaten_dir() {
+    if _docs=$(dokumente_dir); then
+        echo "$_docs/K1520emu"
+    else
+        echo "${XDG_DATA_HOME:-$HOME/.local/share}/K1520emu"
+    fi
+}
+
+# ist_leer <verzeichnis> — Verzeichnis nicht vorhanden oder ohne Inhalt?
+ist_leer() {
+    [ -d "$1" ] || return 0
+    [ -z "$(ls -A "$1" 2>/dev/null)" ]
+}
+
 # ─── Werkzeuge ───────────────────────────────────────────────────────────────
 
 have() { command -v "$1" >/dev/null 2>&1; }

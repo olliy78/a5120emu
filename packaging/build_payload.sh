@@ -1,6 +1,6 @@
 #!/bin/sh
 # ─────────────────────────────────────────────────────────────────────────────
-# A5120-Emulator — verteilbares Paket schnüren (Linux/macOS)
+# K1520-Emulator — verteilbares Paket schnüren (Linux/macOS)
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # Baut die Kernbibliothek als Release und legt sie mit GUI, Formatkatalog,
@@ -38,7 +38,7 @@ udos_boot_k5600_20.hfe"
 
 usage() {
     cat <<EOF
-A5120-Emulator — Paket schnüren
+K1520-Emulator — Paket schnüren
 
   --out DIR        Ausgabeverzeichnis (Vorgabe: $OUT)
   --build-dir DIR  Bauverzeichnis für den Release-Kern (Vorgabe: $BUILD_DIR)
@@ -101,10 +101,10 @@ case "$(uname -s)" in
     Darwin) PLATFORM="macos-$(uname -m)" ;;
     *)      PLATFORM="linux-$(uname -m)" ;;
 esac
-NAME="a5120emu-$VERSION-$PLATFORM"
+NAME="k1520emu-$VERSION-$PLATFORM"
 STAGE="$OUT/$NAME"
 
-info "A5120-Emulator $VERSION für $PLATFORM"
+info "K1520-Emulator $VERSION für $PLATFORM"
 
 # ─── 1. Kern bauen ───────────────────────────────────────────────────────────
 #
@@ -139,7 +139,7 @@ fi
 
 info "Payload zusammenstellen"
 rm -rf "$STAGE"
-mkdir -p "$STAGE/payload/bin" "$STAGE/payload/share/a5120emu" \
+mkdir -p "$STAGE/payload/bin" "$STAGE/payload/share/k1520emu" \
          "$STAGE/payload/share/disks" "$STAGE/payload/share/icons" "$STAGE/lib"
 
 cp "$BUILD_DIR/$LIB" "$STAGE/payload/bin/$LIB"
@@ -152,16 +152,29 @@ strip "$STAGE/payload/bin/$LIB" 2>/dev/null || true
     || die "GUI-Dateien nicht kopierbar"
 [ -f "$STAGE/payload/app/main.py" ] || die "app/main.py fehlt in der Payload"
 
-cp "$REPO/data/formats.yaml" "$STAGE/payload/share/a5120emu/formats.yaml"
+cp "$REPO/data/formats.yaml" "$STAGE/payload/share/k1520emu/formats.yaml"
 cp "$SELF_DIR/icon.svg"      "$STAGE/payload/share/icons/a5120emu.svg"
+
+# Beispieldisketten werden GEPACKT abgelegt.  Ein Diskettenabbild besteht zum
+# größten Teil aus Füllmuster (11 MB schrumpfen auf gut 1 MB), und gebraucht
+# wird es genau einmal: beim ersten Start entpackt `paths.seed_user_disks()` es
+# in das Arbeitsverzeichnis des Anwenders.  Ungepackt lägen die Abbilder danach
+# doppelt auf der Platte — einmal in der Installation, einmal beim Anwender.
+lege_diskette_ab() {
+    gzip -9 -c "$1" > "$STAGE/payload/share/disks/$(basename "$1").gz" \
+        || die "Beispieldiskette nicht packbar: $1"
+}
 
 case "$DISKS" in
     none) ;;
-    all)  cp "$REPO"/disks/*.hfe "$REPO"/disks/*.img "$STAGE/payload/share/disks/" 2>/dev/null || true ;;
+    all)
+        for d in "$REPO"/disks/*.hfe "$REPO"/disks/*.img "$REPO"/disks/*.dmk; do
+            if [ -f "$d" ]; then lege_diskette_ab "$d"; fi
+        done ;;
     default)
         for d in $DISKS_DEFAULT; do
             if [ -f "$REPO/disks/$d" ]; then
-                cp "$REPO/disks/$d" "$STAGE/payload/share/disks/"
+                lege_diskette_ab "$REPO/disks/$d"
             else
                 warn "Beispieldiskette fehlt, wird ausgelassen: $d"
             fi
@@ -174,6 +187,7 @@ cp "$REPO/disks/README.md" "$STAGE/payload/share/disks/README.md" 2>/dev/null ||
 
 cp "$SELF_DIR/install.sh"           "$STAGE/install.sh"
 cp "$SELF_DIR/launcher.sh"          "$STAGE/launcher.sh"
+cp "$SELF_DIR/slim.py"              "$STAGE/slim.py"
 cp "$SELF_DIR/a5120emu.desktop.in"  "$STAGE/a5120emu.desktop.in"
 cp "$SELF_DIR/uv_pins.txt"          "$STAGE/uv_pins.txt"
 cp "$SELF_DIR/lib/common.sh"        "$STAGE/lib/common.sh"
@@ -220,5 +234,5 @@ fi
 
 printf "\n"
 info "Fertig.  Probeinstallation:"
-printf "     tar xzf %s/%s.tar.gz -C /tmp && /tmp/%s/install.sh --prefix /tmp/a5120emu-test\n" \
+printf "     tar xzf %s/%s.tar.gz -C /tmp && /tmp/%s/install.sh --prefix /tmp/k1520emu-test\n" \
     "$OUT" "$NAME" "$NAME"

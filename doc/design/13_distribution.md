@@ -4,8 +4,10 @@
 `core/peripherals/floppy_drive/format_catalog.*`, `CMakeLists.txt`, `.github/workflows/`
 **Verwandt:** `doc/design/10_c_api.md` (C-ABI), `doc/design/11_python_app.md` (GUI),
 `doc/design/00_konfiguration.md` (`formats.yaml`-Suche)
-**Stand:** 2026-08-07 — **Schritte 1 und 2 umgesetzt** (relocatable + Linux-Paket,
-`packaging/`, Guards `py_paths`/`py_packaging`).  Windows und macOS stehen aus (§10).
+**Stand:** 2026-08-09 — **Schritte 1 und 2 umgesetzt** (relocatable + Linux-Paket,
+`packaging/`, Guards `py_paths`/`py_packaging`), dazu Schlankmachen auf 146 MB (§8.1),
+Löschschutz und Update-Pfad (§3.2) sowie die Umbenennung auf **K1520emu** (§4).
+Windows und macOS stehen aus (§10).
 
 ---
 
@@ -126,11 +128,38 @@ Virenscanner löscht `uv.exe`, bereits vorhandene Installation anderer Version.
 
 ### 3.2 Update und Deinstallation
 
-- **Update**: derselbe Installer über dieselbe Wurzel. Payload wird ersetzt; das venv nur
-  neu aufgebaut, wenn sich der Hash von `requirements.lock` ändert. Benutzerdaten (§4)
-  werden nie angefasst.
-- **Deinstallation**: `<root>` löschen. Benutzerdaten separat und auf Nachfrage — der
-  Windows-Uninstaller fragt, das Linux-Skript hat `--purge`.
+- **Update**: derselbe Installer über dieselbe Wurzel. Die Payload wird ersetzt, die
+  **Laufzeitumgebung neu aufgebaut** (`uv venv --clear`), der geladene Python unter
+  `python/` bleibt liegen. Weiterbenutzen wäre verlockend — `uv` verweigert ein
+  vorhandenes venv aber schlicht, und richtig wäre es auch nicht: das Schlankmachen (§8)
+  einer älteren Fassung kann etwas entfernt haben, das die neue braucht, und
+  wiederherstellen kann `uv` das nicht. Benutzerdaten (§4) werden nie angefasst.
+  Gefunden wird die Wurzel dabei **von selbst**: der Starter in `~/.local/bin` zeigt darauf,
+  und genau die wird als Ziel vorgeschlagen. Ohne das schlüge der Installer beim Update den
+  Standardort vor — wer damals woanders installiert hat und Enter drückt, bekäme eine zweite
+  Installation, während die alte verwaist liegen bliebe (Guard: der Update-Lauf in
+  `test_installation_laeuft_durch_und_startet` ruft `install.sh -y` **ohne** `--prefix`).
+- **Deinstallation**: entfernt wird **nur das Inventar aus dem Ausweis** — die Einträge, die
+  der Installer selbst angelegt hat —, nicht das Verzeichnis als Ganzes. Ein `rm -rf` auf die
+  Wurzel wäre einfacher, nähme dem Anwender aber alles mit, was er daneben abgelegt hat.
+  Bleibt danach etwas übrig, bleibt auch das Verzeichnis stehen und der Installer zählt auf,
+  was darin liegt. Das Inventar reist **in der Installation** (`.k1520emu-installation`),
+  damit eine ältere Fassung nach ihrer eigenen Liste abgeräumt wird und nicht nach der einer
+  neueren; ein Eintrag ist dabei ein *Name*, kein Pfad (`../…` wird verworfen, sonst zeigte
+  ein verfälschter Ausweis aus der Installation heraus). Benutzerdaten separat und auf
+  Nachfrage — der Windows-Uninstaller fragt, das Linux-Skript hat `--purge`.
+  Guards: `test_deinstallieren_laesst_eigene_dateien_stehen`,
+  `test_deinstallieren_raeumt_leere_wurzel_ganz_weg`,
+  `test_deinstallieren_folgt_keinem_pfad_im_ausweis`.
+- **Der Löschschutz** gehört zu beidem: seit das Ziel *erfragt* wird (§4), kann dort alles
+  stehen — im schlimmsten Fall das Heimatverzeichnis. Deshalb zwei Riegel. Ziel werden darf
+  nur ein leeres oder bereits von uns belegtes Verzeichnis (niemals `$HOME` oder `/`), und
+  gelöscht wird nur, was sich ausweisen kann: die Datei `.k1520emu-installation`, ersatzweise
+  das Inventar `VERSION` + `app/paths.py` + `share/k1520emu/` für Installationen aus der Zeit
+  davor. Ohne diesen Ausweis bleibt das Verzeichnis stehen und der Installer sagt es.
+  Guards: `test_installer_verweigert_das_heimatverzeichnis`,
+  `test_installer_verweigert_fremdes_verzeichnis`,
+  `test_deinstallieren_loescht_nur_eine_installation`.
 
 ---
 
@@ -138,36 +167,59 @@ Virenscanner löscht `uv.exe`, bereits vorhandene Installation anderer Version.
 
 Bewusst auf allen Plattformen **gleich aufgebaut**, nur die Wurzel unterscheidet sich.
 
+> **Produkt heißt K1520emu, Programme heißen nach ihrer Maschine.** Emuliert wird die
+> Rechnerfamilie am K1520-Bus; der A5120 ist die erste Maschine, weitere bekommen ein
+> eigenes Programm in **derselben** Installation. Deshalb tragen Installation, Paket,
+> `share/k1520emu/` und der Datenordner den Familiennamen, während Starter, Symbol und
+> Startmenü-Eintrag `a5120emu` heißen. Eine neue Maschine bringt einen weiteren Starter samt
+> `<name>.desktop.in` mit und wird in `MASCHINEN` (`install.sh`) eingetragen — daran findet
+> das Deinstallieren ihre Verknüpfungen.
+
 ```
 <install-root>/
   bin/          k1520core.so | k1520core.dll        (+ ggf. MinGW-Laufzeit-DLLs)
+                a5120emu            Starter der Maschine (weitere daneben)
   app/          Python-Quellen der GUI
-  share/a5120emu/formats.yaml
-  share/disks/  mitgelieferte Beispieldisketten (schreibgeschützt gedacht)
+  share/k1520emu/formats.yaml
+  share/disks/  mitgelieferte Beispieldisketten, GEPACKT (§8)
   tools/        uv[.exe]
   venv/         vom Bootstrap erzeugt
-  requirements.lock, VERSION, LICENSE
+  requirements.lock, VERSION, LICENSE, .k1520emu-installation
 ```
 
 | Plattform | `<install-root>` | Benutzerdaten | Verknüpfung |
 |-----------|------------------|---------------|-------------|
-| Linux | `~/.local/opt/a5120emu` | `~/.config/k1520emu/` (Konfig, bestehend), `~/.local/share/a5120emu/disks/` (Arbeitsdisketten) | `~/.local/share/applications/a5120emu.desktop`, Starter `~/.local/bin/a5120emu` |
-| Windows | `%LOCALAPPDATA%\A5120Emu` | `%APPDATA%\A5120Emu\` | Startmenü `%APPDATA%\Microsoft\Windows\Start Menu\Programs\` |
-| macOS (später) | `~/Applications/A5120Emu.app/Contents/Resources` | `~/Library/Application Support/A5120Emu/` | die `.app` selbst |
+| Linux | frei gewählt, Vorschlag `~/K1520emu` | `<Dokumente>/K1520emu/Disketten/` (Arbeitsdisketten), `~/.config/k1520emu/` (Konfig) | `~/.local/share/applications/a5120emu.desktop`, Starter `~/.local/bin/a5120emu` |
+| Windows | `%LOCALAPPDATA%\K1520emu` | `%USERPROFILE%\Documents\K1520emu\` | Startmenü `%APPDATA%\Microsoft\Windows\Start Menu\Programs\` |
+| macOS (später) | `~/Applications/K1520emu.app/Contents/Resources` | `~/Documents/K1520emu/` | die `.app` selbst |
 
-Das Programm liegt unter Linux bewusst in `.local/opt` und **nicht** in
-`.local/share/a5120emu`: dort liegen die Benutzerdaten, und beides an einer Stelle hieße,
-dass die Arbeitsdisketten im Installationsverzeichnis lägen. Genau das darf nicht sein:
+Unter Linux wird das Ziel **erfragt** (Vorschlag `~/K1520emu`, `--prefix` und `-y` gehen
+daran vorbei, ohne Terminal gilt kommentarlos der Vorschlag). Ein Pfad unter `~/.local` wäre
+der übliche Ort für benutzereigene Software — aber dort findet ihn niemand wieder, und wer
+seinen Emulator anfassen will, soll das können. Das Deinstallieren findet die Installation
+trotzdem ohne `--prefix`: der Starter in `~/.local/bin` verrät sie.
+
+**Der Dokumentenordner ist kein fester Name.** Er heißt `~/Dokumente`, `~/Documents`,
+`~/Documenti` — verbindlich ist `XDG_DOCUMENTS_DIR` aus `~/.config/user-dirs.dirs`, die die
+Desktop-Umgebung selbst pflegt. Gelesen wird die Datei direkt statt über das Programm
+`xdg-user-dir` (das auf schlanken Systemen fehlt); gibt es sie nicht, wird `~/Documents` bzw.
+`~/Dokumente` probiert und zuletzt auf `~/.local/share/K1520emu` zurückgefallen. Die Regel
+steht **zweimal** — `paths.documents_dir()` für den Emulator und `dokumente_dir()` in
+`lib/common.sh`, damit `--purge` dort aufräumt, wo der Emulator schreibt. Guard:
+`test_dokumentenordner_shell_und_python_stimmen_ueberein`.
+
+Die **Benutzerdaten** liegen damit dort, wo der Anwender sie sucht — und getrennt vom
+Programm:
 
 - **Arbeitsdisketten müssen schreibbar liegen.** Der verzögerte Autosave
   (`DiskImage::autoFlush`, `doc/K1520_architecture.md` §8.7) schreibt in die *gemountete
   Datei* zurück. Eine direkt aus `share/disks/` gemountete Beispieldiskette würde also im
   Installationsverzeichnis verändert — und beim Update kommentarlos überschrieben.
-  `paths.seed_user_disks()` kopiert die Beispiele deshalb **bei der Installation** einmalig
-  ins Benutzerverzeichnis (und fasst ein vorhandenes nie wieder an); der Dateidialog zeigt über
+  `paths.seed_user_disks()` packt die Beispiele deshalb **beim ersten Start** einmalig
+  ins Benutzerverzeichnis aus (und fasst ein vorhandenes nie wieder an); der Dateidialog zeigt über
   `paths.default_disk_dir()` von Anfang an dorthin.
 - **`formats.yaml` findet sich nicht von selbst.** `FormatCatalog::searchPaths()` sucht u.a.
-  bei `<Verzeichnis der Programmdatei>/../share/a5120emu/` — war das per
+  bei `<Verzeichnis der Programmdatei>/../share/k1520emu/` — war das per
   `readlink("/proc/self/exe")` ermittelt, ist es bei einer per `ctypes` geladenen Bibliothek
   der **Python-Interpreter im venv**, nicht `<root>/bin/`. Gelöst über den **Modulpfad**
   (§6.2), nicht über ein `K1520_FORMATS` im Launcher — die Bibliothek soll sich selbst
@@ -204,13 +256,15 @@ Uninstallable=yes                  ; Eintrag unter HKCU\…\Uninstall
 
 ### 5.2 Linux — Tarball + `install.sh`   ✅ umgesetzt
 
-`a5120emu-<version>-linux-x86_64.tar.gz` (~2 MB) mit `install.sh`:
+`k1520emu-<version>-linux-x86_64.tar.gz` (~2 MB) mit `install.sh`:
 
 ```
-./install.sh                 # nach ~/.local/opt/a5120emu
-./install.sh --prefix DIR    # abweichendes Ziel
+./install.sh                 # fragt nach dem Ziel (Vorschlag ~/K1520emu)
+./install.sh --prefix DIR    # ohne Rückfrage dorthin
+./install.sh -y              # ohne Rückfrage in den Vorschlag
 ./install.sh --python 3.13   # andere Python-Fassung
 ./install.sh --no-shortcut   # ohne Startmenü-Eintrag
+./install.sh --no-slim       # Python und Qt vollständig lassen
 ./install.sh --uninstall [--purge]
 ```
 
@@ -255,7 +309,7 @@ Datei, kein `pthread`, keine `dlopen`-Nutzung).
 Sauberer als ein `K1520_FORMATS` im Launcher: die Bibliothek ermittelt ihren **eigenen**
 Pfad (`dladdr` unter Linux/macOS, `GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS)`
 unter Windows — beides über die Adresse eines Ankers im eigenen Modul) und leitet daraus
-`<lib-dir>/../share/a5120emu/formats.yaml` ab. Damit ist das Installationsverzeichnis
+`<lib-dir>/../share/k1520emu/formats.yaml` ab. Damit ist das Installationsverzeichnis
 **frei verschiebbar**, und dieselbe Auflösung stimmt für die GUI (Lib in `bin/`), die
 statisch gelinkten Werkzeuge (dort ist das Modul die Programmdatei) und den Quellbaum.
 Kandidat 2 der Suchliste heißt jetzt „Verzeichnis des eigenen Moduls".
@@ -341,10 +395,44 @@ Gemessen am ersten Linux-Paket (6 Beispieldisketten, `--disks default`):
 | CPython 3.12 (relocatable) | ~30 MB | einmalig bei Installation |
 | PySide6-Essentials + PyYAML | ~76 MB | einmalig bei Installation |
 | **Netzbedarf Erstinstallation** | **~120 MB** | |
-| **Belegter Platz nach Installation** | **406 MB** | gemessen |
+| Belegter Platz, ungeschlankt | 406 MB | gemessen |
+| **Belegter Platz nach Installation** | **146 MB** | gemessen, nach §8.1 |
 
 Die `.hfe`-Abbilder komprimieren sich sehr weit (Gaps und `0xE5`-Füllung), das Paket bleibt
-also auch mit mehr Disketten klein. Ein Emulator-Update kostet wieder nur diese ~2 MB.
+also auch mit mehr Disketten klein. Ein Emulator-Update kostet wieder nur diese ~2 MB. Aus
+demselben Grund liegen sie auch **in der Installation gepackt** (`*.hfe.gz`) und werden erst
+beim ersten Start ins Arbeitsverzeichnis des Anwenders ausgepackt
+(`paths.seed_user_disks()`) — ungepackt lägen sie danach doppelt auf der Platte.
+
+### 8.1 Schlankmachen (`slim.py`)
+
+Von den 406 MB gehören keine 15 dem Emulator; der Rest ist, was Python und Qt an Beiwerk
+mitbringen. `install.sh` ruft nach dem Einrichten `slim.py` auf, das entfernt, was diese
+Anwendung nie lädt: den QML/Quick-Stapel, die Qt-Entwicklungswerkzeuge (Designer, Linguist,
+qmlls), die Bindungen nicht importierter Module, Typstubs und shiboken-Baumaterial, die
+Übersetzungen außer de/en, CPythons Testsuite, IDLE und Tcl/Tk.
+
+Drei Regeln, an denen sich das entlanghangelt — jede davon ist Erfahrung, keine Vorliebe:
+
+- **Welche Qt-Bibliotheken bleiben, entscheidet `ldd`, keine Liste.** Ausgehend von den
+  importierten Bindungen und den Laufzeit-Plugins wird die Hülle gebildet; was nicht darin
+  liegt, fliegt. Das ist der große Posten (~130 MB). Beim Auswerten der `ldd`-Zeilen wird die
+  **Ladeadresse am Ende** abgetrennt, nicht am ersten Leerzeichen — der Installationspfad
+  kommt vom Anwender und darf Leerzeichen enthalten. (Am Leerzeichen geschnitten blieb die
+  Hülle leer, der Sicherheitsrückfall griff, und „`~/Emulator Test`" bekam 223 statt 146 MB.)
+- **Gestrippt werden nur Bibliotheken, nie Programme.** Der Interpreter von
+  python-build-standalone überlebt `strip` in *keiner* Variante: die Warnung
+  „allocated section `.dynstr' not in segment", eine geschriebene Datei — und beim Start
+  „undefined symbol: , version". `--strip-debug` spart dort nicht einmal Platz. Gearbeitet
+  wird auf einer Kopie, und **eine Warnung von `strip` genügt, sie zu verwerfen**.
+- **Der Rauchtest ist die Gegenprobe.** Er baut das Hauptfenster wirklich auf (offscreen);
+  fehlt ein Qt-Plugin, kommt er nicht durch und die Installation bricht ab, statt einen
+  kaputten Startmenü-Eintrag zu hinterlassen. Genau so ist der Interpreter-Fehler oben
+  aufgefallen.
+
+Was übrig bleibt, ist nicht mehr sinnvoll zu drücken: 45 MB CPython und von den 71 MB Qt
+allein **37,8 MB ICU** (`libicudata` 31 MB), das als `NEEDED` direkt an `libQt6Core` hängt und
+nur mit einem eigenen Qt-Bau loszuwerden wäre. `--no-slim` behält alles.
 
 ---
 

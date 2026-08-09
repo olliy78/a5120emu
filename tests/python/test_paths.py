@@ -31,9 +31,9 @@ def _fake_install(root: Path, with_lib: bool = True) -> Path:
     """Baut ein Installationslayout ``<root>/{bin,app,share}`` nach."""
     (root / "bin").mkdir(parents=True, exist_ok=True)
     (root / "app").mkdir(parents=True, exist_ok=True)
-    (root / "share" / "a5120emu").mkdir(parents=True, exist_ok=True)
+    (root / "share" / "k1520emu").mkdir(parents=True, exist_ok=True)
     (root / "share" / "disks").mkdir(parents=True, exist_ok=True)
-    (root / "share" / "a5120emu" / "formats.yaml").write_text("formats: []\n")
+    (root / "share" / "k1520emu" / "formats.yaml").write_text("formats: []\n")
     if with_lib:
         (root / "bin" / paths.library_filenames()[0]).write_bytes(b"")
     return root
@@ -67,7 +67,7 @@ def test_installation_wird_erkannt(tmp_path, at_root):
     at_root(_fake_install(tmp_path))
     assert paths.is_installed_layout()
     assert paths.core_library().parent == tmp_path / "bin"
-    assert paths.formats_file() == tmp_path / "share" / "a5120emu" / "formats.yaml"
+    assert paths.formats_file() == tmp_path / "share" / "k1520emu" / "formats.yaml"
     assert paths.bundled_disks_dir() == tmp_path / "share" / "disks"
 
 
@@ -133,6 +133,40 @@ def test_konfigurationsverzeichnis_folgt_xdg(monkeypatch, tmp_path):
     assert paths.config_dir() == tmp_path / "k1520emu"
 
 
+def _leeres_heim(tmp_path, monkeypatch) -> Path:
+    """Ein HOME ohne alles — jede XDG-Variable von außen wäre sonst im Spiel."""
+    heim = tmp_path / "heim"
+    heim.mkdir()
+    monkeypatch.setenv("HOME", str(heim))
+    for var in ("XDG_DOCUMENTS_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME"):
+        monkeypatch.delenv(var, raising=False)
+    return heim
+
+
+def test_arbeitsdisketten_liegen_im_dokumentenordner(tmp_path, monkeypatch):
+    """Der Ordnername ist sprachabhängig — verbindlich ist ``user-dirs.dirs``.
+
+    Ein fest verdrahtetes ``~/Documents`` läge auf einem deutschen System
+    daneben, und der Anwender fände seine Disketten nicht.
+    """
+    heim = _leeres_heim(tmp_path, monkeypatch)
+    (heim / "Dokumente").mkdir()
+    (heim / ".config").mkdir()
+    (heim / ".config" / "user-dirs.dirs").write_text(
+        '# erzeugt von xdg-user-dirs-update\nXDG_DOCUMENTS_DIR="$HOME/Dokumente"\n')
+
+    assert paths.documents_dir() == heim / "Dokumente"
+    assert paths.user_data_dir() == heim / "Dokumente" / "K1520emu"
+    assert paths.user_disks_dir() == heim / "Dokumente" / "K1520emu" / "Disketten"
+
+
+def test_dokumentenordner_faellt_auf_den_datenpfad_zurueck(tmp_path, monkeypatch):
+    """Ohne Dokumentenordner (schlankes System) bleibt der plattformübliche Ort."""
+    heim = _leeres_heim(tmp_path, monkeypatch)
+    assert paths.documents_dir() is None
+    assert paths.user_disks_dir() == heim / ".local" / "share" / "K1520emu" / "Disketten"
+
+
 def test_seed_user_disks_kopiert_einmalig(tmp_path, at_root, monkeypatch):
     root = _fake_install(tmp_path)
     at_root(root)
@@ -150,6 +184,24 @@ def test_seed_user_disks_kopiert_einmalig(tmp_path, at_root, monkeypatch):
     assert (ziel / "beispiel.hfe").read_bytes() == b"vom anwender geaendert"
 
 
+def test_seed_user_disks_packt_gepackte_beispiele_aus(tmp_path, at_root, monkeypatch):
+    """Im Paket liegen die Abbilder als ``*.hfe.gz`` — beim Anwender müssen sie
+    entpackt und bitgleich ankommen (sonst mountet der Emulator Müll)."""
+    import gzip
+
+    root = _fake_install(tmp_path)
+    at_root(root)
+    inhalt = bytes(range(256)) * 40
+    with gzip.open(root / "share" / "disks" / "beispiel.hfe.gz", "wb") as f:
+        f.write(inhalt)
+    ziel = tmp_path / "userdata" / "disks"
+    monkeypatch.setenv(paths.ENV_DISKS, str(ziel))
+
+    assert paths.seed_user_disks() == 1
+    assert (ziel / "beispiel.hfe").read_bytes() == inhalt
+    assert not list(ziel.glob("*.gz")), "gepackte Datei blieb beim Anwender liegen"
+
+
 def test_seed_user_disks_ist_im_quellbaum_wirkungslos(at_root, monkeypatch, tmp_path):
     at_root(PROJECT_ROOT)
     monkeypatch.setenv(paths.ENV_DISKS, str(tmp_path / "disks"))
@@ -162,7 +214,7 @@ def test_describe_nennt_layout_und_alle_pfade(tmp_path, at_root):
     text = paths.describe()
     assert "Installation" in text
     assert str(tmp_path / "bin") in text
-    assert str(tmp_path / "share" / "a5120emu") in text
+    assert str(tmp_path / "share" / "k1520emu") in text
 
 
 # ─── Verschiebbarkeit des Pakets (Kern) ──────────────────────────────────────
@@ -172,18 +224,18 @@ def test_installierte_bibliothek_findet_eigenen_formatkatalog(tmp_path):
     """Der Kern findet ``formats.yaml`` über den Pfad SEINES Moduls.
 
     Nachgebaute Installation in einem Temp-Verzeichnis: Bibliothek nach ``bin/``,
-    Katalog nach ``share/a5120emu/``.  Ein eigener Prozess lädt genau diese Kopie
+    Katalog nach ``share/k1520emu/``.  Ein eigener Prozess lädt genau diese Kopie
     (ohne ``K1520_FORMATS``) — er muss den Katalog daneben finden.  Damit ist
     belegt, dass eine Installation an einer beliebigen Stelle liegen darf.
     """
     root = tmp_path / "install"
     (root / "bin").mkdir(parents=True)
-    (root / "share" / "a5120emu").mkdir(parents=True)
+    (root / "share" / "k1520emu").mkdir(parents=True)
 
     lib_name = paths.library_filenames()[0]
     shutil.copy2(PROJECT_ROOT / "build" / lib_name, root / "bin" / lib_name)
     shutil.copy2(PROJECT_ROOT / "data" / "formats.yaml",
-                 root / "share" / "a5120emu" / "formats.yaml")
+                 root / "share" / "k1520emu" / "formats.yaml")
 
     code = textwrap.dedent(f"""
         import ctypes, sys
@@ -205,4 +257,4 @@ def test_installierte_bibliothek_findet_eigenen_formatkatalog(tmp_path):
     # Der Kern meldet den Fundort so, wie er ihn zusammengesetzt hat
     # („…/bin/../share/…") — für den Vergleich normalisieren.
     geladen = {Path(p).resolve() for p in out.stdout.strip().split(":") if p}
-    assert (root / "share" / "a5120emu" / "formats.yaml").resolve() in geladen, out.stdout
+    assert (root / "share" / "k1520emu" / "formats.yaml").resolve() in geladen, out.stdout

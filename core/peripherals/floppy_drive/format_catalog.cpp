@@ -371,7 +371,7 @@ std::vector<std::string> FormatCatalog::searchPaths() {
 
     // 2) neben dem eigenen Modul installiert (Bibliothek bzw. Programmdatei)
     if (std::string e = moduleDir(); !e.empty()) {
-        p.push_back(e + "/../share/a5120emu/" + kCatalogFileName);
+        p.push_back(e + "/../share/k1520emu/" + kCatalogFileName);
         p.push_back(e + "/data/" + kCatalogFileName);
     }
 
@@ -380,7 +380,7 @@ std::vector<std::string> FormatCatalog::searchPaths() {
 
     // 4) Benutzerkonfiguration
     if (std::string c = homeConfigDir(); !c.empty())
-        p.push_back(c + "/a5120emu/" + kCatalogFileName);
+        p.push_back(c + "/k1520emu/" + kCatalogFileName);
 
     // 5) explizite Vorgabe (höchste Priorität), Dateien/Verzeichnisse getrennt
     //    durch ':' (unixoid) bzw. ';' (Windows)

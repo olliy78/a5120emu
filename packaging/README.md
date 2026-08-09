@@ -12,7 +12,7 @@ sie mit [`uv`](https://github.com/astral-sh/uv) in eine Laufzeitumgebung
 ## Paket bauen
 
 ```sh
-packaging/build_payload.sh                # → dist/a5120emu-<version>-linux-x86_64.tar.gz
+packaging/build_payload.sh                # → dist/k1520emu-<version>-linux-x86_64.tar.gz
 packaging/build_payload.sh --disks all    # alle Disketten aus disks/ statt der Auswahl
 packaging/build_payload.sh --no-archive   # nur den Baum, kein Archiv
 ```
@@ -32,20 +32,30 @@ verhandelbar:
 ## Probeinstallation
 
 ```sh
-tar xzf dist/a5120emu-*.tar.gz -C /tmp
-/tmp/a5120emu-*/install.sh --prefix /tmp/a5120emu-test
-/tmp/a5120emu-test/bin/a5120emu --paths
+tar xzf dist/k1520emu-*.tar.gz -C /tmp
+/tmp/k1520emu-*/install.sh --prefix /tmp/k1520emu-test   # ohne --prefix wird gefragt
+/tmp/k1520emu-test/bin/a5120emu --paths
 ```
 
-Der Installer prüft sich am Ende selbst (Kernbibliothek laden, `k1520_version`,
-PySide6, Formatkatalog) und bricht ab, statt einen unbrauchbaren
-Startmenü-Eintrag zu hinterlassen.
+Der Installer prüft sich am Ende selbst — Kernbibliothek laden,
+`k1520_version`, PySide6, Formatkatalog **und das Hauptfenster wirklich bauen**
+— und bricht ab, statt einen unbrauchbaren Startmenü-Eintrag zu hinterlassen.
+Der Fensterbau ist zugleich die Gegenprobe zum Schlankmachen: fehlte ein
+Qt-Plugin, käme er nicht durch.
 
 Automatisiert läuft dasselbe als Test:
 
 ```sh
 venv/bin/python3 -m pytest tests/python/test_packaging.py -v
 ```
+
+**Beim Ausprobieren wissenswert.** Ein Update ist derselbe Aufruf; der
+Installer findet die vorhandene Installation über den Starter in `~/.local/bin`
+und schlägt sie vor, die Laufzeitumgebung wird dabei neu aufgebaut (§3.2 des
+Entwurfs).  Das Ziel ist gegen Unfälle gesichert: `$HOME`, `/` und jedes nicht
+leere fremde Verzeichnis werden abgelehnt; `--uninstall` fasst nur an, was sich
+als Installation ausweist, und entfernt daraus **nur das Inventar aus dem
+Ausweis** — fremde Dateien im Ordner überleben.
 
 ## Dateien
 
@@ -54,9 +64,10 @@ venv/bin/python3 -m pytest tests/python/test_packaging.py -v
 | `build_payload.sh` | baut den Release-Kern und schnürt das Archiv |
 | `install.sh` | Bootstrap-Installer (liegt im Paket, läuft beim Anwender) |
 | `launcher.sh` | Startskript-Vorlage; `@ROOT@` wird beim Installieren ersetzt |
+| `slim.py` | wirft nach dem Installieren heraus, was nie geladen wird (~400 → ~146 MB) |
 | `lib/common.sh` | gemeinsame Bausteine: Meldungen, Plattform, Download, `ensure_uv` |
 | `uv_pins.txt` | gepinnte uv-Fassung + Prüfsummen (`build_payload.sh --refresh-uv`) |
-| `a5120emu.desktop.in` | Startmenü-Eintrag |
+| `a5120emu.desktop.in` | Startmenü-Eintrag der Maschine A5120 |
 | `icon.svg` | Symbol |
 | `paket_readme.md` | wird als `README.md` **ins Paket** gelegt (Anwendertext) |
 

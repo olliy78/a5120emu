@@ -1,5 +1,5 @@
 #!/bin/sh
-# A5120-Emulator — Starter.  @ROOT@ wird beim Installieren eingesetzt.
+# K1520-Emulator — Starter des A5120.  @ROOT@ wird beim Installieren eingesetzt.
 #
 # Startet die GUI aus der Laufzeitumgebung der Installation.  Bibliothek,
 # Formatkatalog und Disketten findet der Emulator selbst (app/paths.py bzw.
@@ -11,7 +11,7 @@ set -eu
 ROOT="@ROOT@"
 
 [ -x "$ROOT/venv/bin/python3" ] || {
-    echo "A5120-Emulator: Laufzeitumgebung fehlt in $ROOT/venv" >&2
+    echo "K1520-Emulator: Laufzeitumgebung fehlt in $ROOT/venv" >&2
     echo "Neu einrichten:  ./install.sh --prefix '$ROOT'" >&2
     exit 1
 }

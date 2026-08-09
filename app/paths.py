@@ -12,7 +12,7 @@ Jede Auflösung geht dieselbe Reihenfolge durch:
 1. **Umgebungsvariable** — ``K1520_LIB``, ``K1520_FORMATS``, ``K1520_HOME``,
    ``K1520_DISKS``.  Hat immer Vorrang, damit sich von außen (Launcher, Test,
    Fehlersuche) jeder Pfad umbiegen lässt.
-2. **Installationslayout** ``<root>/{bin,app,share/a5120emu,share/disks}``
+2. **Installationslayout** ``<root>/{bin,app,share/k1520emu,share/disks}``
 3. **Quellbaum** ``<repo>/{build,app,data,disks}``
 
 ``<root>`` und ``<repo>`` sind dabei **dasselbe** Verzeichnis — das
@@ -53,11 +53,17 @@ FORMATS_FILE = "formats.yaml"
 #: unsichtbar machen.
 CONFIG_DIRNAME = "k1520emu"
 
-#: Verzeichnisname der Benutzerdaten (Arbeitsdisketten).
-DATA_DIRNAME = "a5120emu"
+#: Verzeichnisname der Benutzerdaten im Dokumentenordner.  Das Projekt heißt
+#: nach der Rechnerfamilie, nicht nach einer Maschine: der A5120 ist die erste,
+#: weitere K1520-Rechner bekommen eigene Programme in derselben Installation.
+DATA_DIRNAME = "K1520emu"
+
+#: Unterordner der Arbeitsdisketten.  Bewusst eine Ebene tiefer, damit später
+#: Druckausgaben o. Ä. danebenpassen, ohne die Disketten umziehen zu müssen.
+DISKS_DIRNAME = "Disketten"
 
 #: Verzeichnisname unter Windows/macOS, wo Programmnamen großgeschrieben sind.
-APP_DIRNAME = "A5120Emu"
+APP_DIRNAME = "K1520emu"
 
 
 # ─── Plattform ───────────────────────────────────────────────────────────────
@@ -197,7 +203,7 @@ def formats_candidates() -> List[Path]:
             out.append(p / FORMATS_FILE if p.is_dir() else p)
 
     base = base_dir()
-    out.append(base / "share" / "a5120emu" / FORMATS_FILE)   # Installation
+    out.append(base / "share" / "k1520emu" / FORMATS_FILE)   # Installation
     out.append(base / "data" / FORMATS_FILE)                 # Quellbaum
     out.append(config_dir() / FORMATS_FILE)                  # Benutzerkonfiguration
     return out
@@ -217,8 +223,8 @@ def config_dir() -> Path:
     """Verzeichnis der automatisch gesicherten Konfiguration.
 
     * Linux/BSD: ``${XDG_CONFIG_HOME:-~/.config}/k1520emu``
-    * Windows:   ``%APPDATA%\\A5120Emu``
-    * macOS:     ``~/Library/Application Support/A5120Emu``
+    * Windows:   ``%APPDATA%\\K1520emu``
+    * macOS:     ``~/Library/Application Support/K1520emu``
 
     Unter Windows/macOS wird ein **bereits vorhandenes** ``~/.config/k1520emu``
     weiterbenutzt: dort haben frühere Fassungen ihre Konfiguration abgelegt,
@@ -240,13 +246,68 @@ def config_dir() -> Path:
     return legacy
 
 
+def documents_dir() -> Optional[Path]:
+    """Der **Dokumentenordner** des Anwenders — oder ``None``, wenn es keinen gibt.
+
+    Sein Name ist sprachabhängig (``~/Dokumente``, ``~/Documents``,
+    ``~/Documenti``), verbindlich ist deshalb ``XDG_DOCUMENTS_DIR``.  Gelesen
+    wird ``~/.config/user-dirs.dirs`` — die Datei, die die Desktop-Umgebung
+    selbst pflegt — **direkt** und nicht über das Programm ``xdg-user-dir``:
+    das fehlt auf schlanken Systemen, und eine Zeile zu lesen ist billiger als
+    ein Prozessstart.
+
+    Windows und macOS haben denselben Ort ohne XDG; dass der Ordner unter
+    Windows umgeleitet sein kann (OneDrive), bleibt der Windows-Portierung
+    überlassen (Entwurf §6.1).
+    """
+    if _is_windows() or _is_macos():
+        cand = Path.home() / "Documents"
+        return cand if cand.is_dir() else None
+
+    env = os.environ.get("XDG_DOCUMENTS_DIR")
+    if env:
+        return Path(os.path.expandvars(env)).expanduser()
+
+    xdg_cfg = os.environ.get("XDG_CONFIG_HOME")
+    user_dirs = (Path(xdg_cfg) if xdg_cfg else Path.home() / ".config") / "user-dirs.dirs"
+    if user_dirs.is_file():
+        try:
+            for zeile in user_dirs.read_text(encoding="utf-8").splitlines():
+                zeile = zeile.strip()
+                if not zeile.startswith("XDG_DOCUMENTS_DIR="):
+                    continue
+                wert = zeile.split("=", 1)[1].strip().strip('"').strip("'")
+                # In der Datei steht „$HOME/Dokumente" — die Variable ist Teil
+                # des Formats, nicht der Shell, die sie sonst aufgelöst hätte.
+                wert = wert.replace("$HOME", str(Path.home()))
+                if wert:
+                    return Path(wert).expanduser()
+        except OSError:
+            pass
+
+    for name in ("Documents", "Dokumente"):
+        cand = Path.home() / name
+        if cand.is_dir():
+            return cand
+    return None
+
+
 def user_data_dir() -> Path:
     """Verzeichnis der Benutzerdaten (Arbeitsdisketten, Zustände).
 
-    * Linux/BSD: ``${XDG_DATA_HOME:-~/.local/share}/a5120emu``
-    * Windows:   ``%APPDATA%\\A5120Emu``
-    * macOS:     ``~/Library/Application Support/A5120Emu``
+    Liegt im **Dokumentenordner** (``~/Dokumente/K1520emu``): dort sucht der
+    Anwender seine Dateien, dorthin greift seine Datensicherung, und Windows
+    und macOS haben denselben Ort.  Ein Pfad unter ``~/.local/share`` wäre
+    idiomatischer, aber der Dateimanager zeigt versteckte Ordner nicht — und
+    Arbeitsdisketten sind Anwenderdaten, keine Anwendungsinterna.
+
+    Gibt es keinen Dokumentenordner (schlankes System, dienstähnlicher
+    Betrieb), bleibt der plattformübliche Datenpfad als Reserve.
     """
+    docs = documents_dir()
+    if docs is not None:
+        return docs / DATA_DIRNAME
+
     if _is_windows():
         appdata = os.environ.get("APPDATA")
         if appdata:
@@ -270,7 +331,7 @@ def user_disks_dir() -> Path:
     env = os.environ.get(ENV_DISKS)
     if env:
         return Path(env).expanduser()
-    return user_data_dir() / "disks"
+    return user_data_dir() / DISKS_DIRNAME
 
 
 def bundled_disks_dir() -> Optional[Path]:
@@ -298,14 +359,20 @@ def default_disk_dir() -> Path:
 def seed_user_disks(patterns=("*.hfe", "*.dmk", "*.img")) -> int:
     """Kopiert die mitgelieferten Beispieldisketten **einmalig** ins Benutzerverzeichnis.
 
-    Gedacht für den Erststart nach einer Installation (der Launcher ruft es
-    auf).  Ist das Zielverzeichnis schon vorhanden, geschieht nichts — der
-    Anwender hat es dann bereits in der Hand.  Im Quellbaum ebenfalls ein
-    No-op: dort wird direkt aus ``disks/`` gearbeitet.
+    Gedacht für den Erststart nach einer Installation (``main.py`` ruft es auf,
+    der Installer ebenfalls).  Ist das Zielverzeichnis schon vorhanden, geschieht
+    nichts — der Anwender hat es dann bereits in der Hand.  Im Quellbaum
+    ebenfalls ein No-op: dort wird direkt aus ``disks/`` gearbeitet.
+
+    Im Paket liegen die Abbilder **gepackt** (``*.hfe.gz``): sie bestehen
+    überwiegend aus Füllmuster, und gebraucht werden sie genau einmal — hier.
+    Ungepackt lägen sie danach doppelt auf der Platte.  Beides wird angenommen,
+    damit ältere Pakete und der Quellbaum weiter funktionieren.
 
     Returns:
-        Anzahl kopierter Dateien.
+        Anzahl angelegter Dateien.
     """
+    import gzip
     import shutil
 
     if not is_installed_layout():
@@ -322,6 +389,10 @@ def seed_user_disks(patterns=("*.hfe", "*.dmk", "*.img")) -> int:
     for pattern in patterns:
         for f in sorted(source.glob(pattern)):
             shutil.copy2(f, target / f.name)
+            count += 1
+        for f in sorted(source.glob(pattern + ".gz")):
+            with gzip.open(f, "rb") as gepackt, open(target / f.stem, "wb") as offen:
+                shutil.copyfileobj(gepackt, offen)
             count += 1
     return count
 

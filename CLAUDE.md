@@ -119,16 +119,48 @@ Administratorrechte. Python/Qt werden bewusst nicht mitverteilt. Bedienung:
 `packaging/README.md`, Entwurf und Begründungen: **`doc/design/13_distribution.md`**.
 Umgesetzt sind Linux/macOS-Aufbau (Schritt 1+2); Windows (Inno Setup, per-user) steht aus.
 
-Drei Dinge, die man dabei nicht kaputtmachen darf:
+Sieben Dinge, die man dabei nicht kaputtmachen darf:
 
+- **`--uninstall` löscht in seinem Ziel, und das Ziel wird ERFRAGT.** Deshalb zwei
+  Riegel in `install.sh`: Ziel werden darf nur ein leeres oder bereits von uns belegtes
+  Verzeichnis (nie `$HOME`, nie `/`), und gelöscht wird nur, was sich ausweist
+  (`.k1520emu-installation`, ersatzweise `VERSION`+`app/paths.py`+`share/k1520emu/`).
+  Ohne das löschte die Antwort „`~`" beim Deinstallieren das Heimatverzeichnis — belegt,
+  nicht theoretisch. Und gelöscht wird **nur das Inventar aus dem Ausweis** (die Einträge,
+  die der Installer anlegte; ein Eintrag ist ein NAME, kein Pfad), nicht die Wurzel als
+  Ganzes — fremde Dateien im Ordner überleben, dann bleibt auch der Ordner stehen. Guards:
+  `test_installer_verweigert_*`, `test_deinstallieren_loescht_nur_eine_installation`,
+  `test_deinstallieren_laesst_eigene_dateien_stehen`,
+  `test_deinstallieren_folgt_keinem_pfad_im_ausweis`.
+- **Ein Update findet seine Installation selbst** (`vorhandene_installation()` über den
+  Starter-Symlink) und schlägt sie als Ziel vor. Ohne das legte ein `install.sh` ohne
+  `--prefix` eine ZWEITE Installation am Standardort an und ließe die alte verwaisen.
+- **`slim.py` strippt Bibliotheken, aber NIE Programme.** Der Interpreter von
+  python-build-standalone überlebt `strip` in keiner Variante („allocated section `.dynstr'
+  not in segment" → „undefined symbol: , version"); gearbeitet wird auf einer Kopie, und
+  eine Warnung von `strip` verwirft sie. Ebenso: die `ldd`-Zeile wird an der **Ladeadresse
+  am Ende** getrennt, nicht am ersten Leerzeichen — sonst kippt bei einem Installationspfad
+  mit Leerzeichen die ganze Qt-Hülle in den Sicherheitsrückfall (223 statt 146 MB).
+  Begründungen: `doc/design/13_distribution.md` §8.1.
 - **`FormatCatalog` findet seine `formats.yaml` über den Pfad des *eigenen Moduls***
   (`dladdr` / `GetModuleHandleEx`, `format_catalog.cpp: moduleDir()`), nicht über
   `/proc/self/exe` — sonst sucht die per `ctypes` geladene Bibliothek neben dem
   venv-Python. Guard: `py_paths`.
 - **Release-Bauten setzen `-DK1520_FORMATS_DEFAULT=`** — sonst trägt jede ausgelieferte
   Bibliothek den absoluten Pfad des Baurechners als Suchkandidaten. Guard: `py_packaging`.
-- **Arbeitsdisketten liegen außerhalb der Installation** (`~/.local/share/a5120emu/disks`),
-  weil der Autosave in die gemountete Datei zurückschreibt.
+- **Arbeitsdisketten liegen außerhalb der Installation**, im **Dokumentenordner**
+  (`<Dokumente>/K1520emu/Disketten`), weil der Autosave in die gemountete Datei
+  zurückschreibt. Der Ordnername ist sprachabhängig — maßgeblich ist `XDG_DOCUMENTS_DIR`
+  aus `~/.config/user-dirs.dirs`, und die Regel steht ZWEIMAL (`paths.documents_dir()` und
+  `dokumente_dir()` in `lib/common.sh`, damit `--purge` dort aufräumt, wo der Emulator
+  schreibt; Guard: `test_dokumentenordner_shell_und_python_stimmen_ueberein`). Im Paket
+  liegen die Abbilder **gepackt** (`*.hfe.gz`), ausgepackt wird beim ersten Start
+  (`paths.seed_user_disks()`).
+- **Produkt = `k1520emu`, Programm = `a5120emu`.** Installation, Paketname, `share/k1520emu/`,
+  Datenordner und Marker tragen den FAMILIENnamen (der Bus, nicht der Rechner); Starter,
+  Symbol und `.desktop` heißen nach der Maschine. Weitere K1520-Rechner bekommen ein eigenes
+  Programm in derselben Installation: eigener Block beim Starterschreiben + `<name>.desktop.in`
+  + Eintrag in `MASCHINEN` (`install.sh`), woran das Deinstallieren die Verknüpfungen findet.
 
 Tests: `py_paths` + `py_packaging` (schnell, ohne Netz, in der Standardregression). Der
 vollständige Installationslauf (lädt ~120 MB) liegt hinter

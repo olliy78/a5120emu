@@ -63,6 +63,12 @@ def main():
     sigint_timer.start(200)
     sigint_timer.timeout.connect(lambda: None)
 
+    # Beim ersten Start einer Installation die Beispieldisketten ins
+    # Arbeitsverzeichnis des Anwenders auspacken (im Quellbaum und bei
+    # vorhandenem Verzeichnis wirkungslos).
+    from app import paths
+    paths.seed_user_disks()
+
     # Create and show main window
     try:
         window = MainWindow()

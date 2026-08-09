@@ -27,10 +27,20 @@ from conftest import PROJECT_ROOT, requires_core
 
 PACKAGING = PROJECT_ROOT / "packaging"
 SCRIPTS = ["install.sh", "build_payload.sh", "launcher.sh", "lib/common.sh"]
+MAX_INSTALL_MB = 160   # frisch geschlankt sind es ~146 MB (§8 des Entwurfs)
 
 
 def _sh(*args, **kw):
     return subprocess.run(args, capture_output=True, text=True, timeout=600, **kw)
+
+
+def _slim():
+    """``packaging/slim.py`` als Modul laden (es liegt außerhalb des Pakets)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("slim", PACKAGING / "slim.py")
+    modul = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modul)
+    return modul
 
 
 # ─── Skripte ─────────────────────────────────────────────────────────────────
@@ -89,8 +99,298 @@ def test_lock_nagelt_mit_hashes_fest():
 def test_desktop_eintrag_ist_gueltig():
     text = (PACKAGING / "a5120emu.desktop.in").read_text()
     assert text.startswith("[Desktop Entry]")
-    for feld in ("Type=Application", "Name=", "Exec=@ROOT@/bin/a5120emu", "Icon=a5120emu"):
+    for feld in ("Type=Application", "Name=", 'Exec="@ROOT@/bin/a5120emu"', "Icon=a5120emu"):
         assert feld in text, f"{feld} fehlt im Startmenü-Eintrag"
+
+
+@pytest.mark.parametrize("eingabe,erwartet", [
+    ("~/Emulatoren/A5120", "{home}/Emulatoren/A5120"),
+    ("~", "{home}"),
+    ("/abs/pfad", "/abs/pfad"),
+])
+def test_abs_path_loest_tilde_auf(eingabe, erwartet, tmp_path):
+    """„~/…" muss zum Heimatverzeichnis werden.
+
+    Die Tilde im Muster von ``${p#...}`` dehnt die Shell sonst selbst aus, das
+    Muster passt dann nie — und im Installationspfad steht ein Verzeichnis
+    namens „~".
+    """
+    out = subprocess.run(
+        ["sh", "-c", f'. "{PACKAGING}/lib/common.sh"; abs_path "{eingabe}"'],
+        capture_output=True, text=True, env={**os.environ, "HOME": str(tmp_path)})
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == erwartet.format(home=tmp_path)
+
+
+@pytest.mark.parametrize("wurzel", [
+    "/opt/a5120emu",
+    "/home/anna/Emulator Test",          # Leerzeichen — seit der Zielabfrage üblich
+    "/home/anna/a&b|c",                  # Sonderzeichen, an denen `sed` zerbrach
+])
+def test_ersetze_root_vertraegt_jeden_pfad(tmp_path, wurzel):
+    """@ROOT@ wird eingesetzt, ohne dass der Pfad als Ausdruck gelesen wird."""
+    vorlage = tmp_path / "vorlage"
+    vorlage.write_text('Exec="@ROOT@/bin/a5120emu"\nnichts\n')
+    out = _sh("sh", "-c", f'. "{PACKAGING}/lib/common.sh"; ersetze_root "$1" "$2"',
+              "sh", str(vorlage), wurzel)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout == f'Exec="{wurzel}/bin/a5120emu"\nnichts\n'
+
+
+@pytest.mark.parametrize("aufbau", ["user-dirs.dirs", "nur ~/Documents", "gar nichts"])
+def test_dokumentenordner_shell_und_python_stimmen_ueberein(tmp_path, aufbau):
+    """`--purge` muss dort aufräumen, wo der Emulator schreibt.
+
+    Die Regel steht zweimal — in ``lib/common.sh`` für den Installer und in
+    ``app/paths.py`` für den Emulator.  Laufen sie auseinander, löscht das
+    Deinstallieren am Datenverzeichnis vorbei, ohne dass es jemandem auffällt.
+    """
+    heim = tmp_path / "heim"
+    heim.mkdir()
+    if aufbau == "user-dirs.dirs":
+        (heim / "Dokumente").mkdir()
+        (heim / ".config").mkdir()
+        (heim / ".config" / "user-dirs.dirs").write_text(
+            'XDG_DOCUMENTS_DIR="$HOME/Dokumente"\n')
+    elif aufbau == "nur ~/Documents":
+        (heim / "Documents").mkdir()
+
+    umgebung = {k: v for k, v in os.environ.items()
+                if k not in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_DOCUMENTS_DIR")}
+    umgebung["HOME"] = str(heim)
+
+    schale = subprocess.run(
+        ["sh", "-c", f'. "{PACKAGING}/lib/common.sh"; benutzerdaten_dir'],
+        capture_output=True, text=True, env=umgebung)
+    assert schale.returncode == 0, schale.stderr
+
+    python = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.path.insert(0, sys.argv[1]);"
+         "from app import paths; print(paths.user_data_dir())", str(PROJECT_ROOT)],
+        capture_output=True, text=True, env=umgebung)
+    assert python.returncode == 0, python.stderr
+
+    assert schale.stdout.strip() == python.stdout.strip()
+
+
+def test_desktop_exec_ist_gequotet():
+    """Ein Pfad mit Leerzeichen macht ein ungequotetes ``Exec=`` unbrauchbar."""
+    text = (PACKAGING / "a5120emu.desktop.in").read_text()
+    assert 'Exec="@ROOT@/bin/a5120emu"' in text
+
+
+# ─── Schutz des Zielverzeichnisses ───────────────────────────────────────────
+#
+# `--uninstall` löscht sein Ziel mit `rm -rf`.  Seit das Ziel ERFRAGT wird, ist
+# ein Tippfehler („~") eine Katastrophe — diese Tests halten beide Riegel fest.
+# Sie brauchen kein Netz: der Installer prüft, bevor er irgendetwas tut.
+
+def _install_sh(prefix, heim, *extra):
+    umgebung = {k: v for k, v in os.environ.items()
+                if k not in ("XDG_DATA_HOME", "XDG_CONFIG_HOME")}
+    umgebung["HOME"] = str(heim)
+    return subprocess.run(["sh", str(PACKAGING / "install.sh"), "--prefix", str(prefix),
+                           *extra], capture_output=True, text=True, env=umgebung,
+                          timeout=120)
+
+
+def test_installer_verweigert_das_heimatverzeichnis(tmp_path):
+    heim = tmp_path / "heim"
+    (heim / "Dokumente").mkdir(parents=True)
+    out = _install_sh(heim, heim)
+    assert out.returncode != 0
+    assert "darf kein Installationsverzeichnis sein" in out.stdout + out.stderr
+    assert (heim / "Dokumente").exists()
+
+
+def test_installer_verweigert_fremdes_verzeichnis(tmp_path):
+    heim = tmp_path / "heim"
+    heim.mkdir()
+    fremd = tmp_path / "fremd"
+    fremd.mkdir()
+    (fremd / "wichtig.txt").write_text("nicht anfassen")
+    out = _install_sh(fremd, heim)
+    assert out.returncode != 0
+    assert "nicht leer" in out.stdout + out.stderr
+    assert (fremd / "wichtig.txt").exists()
+
+
+def _fake_installation(wurzel: Path, inventar=("bin", "app", "share", "venv")) -> Path:
+    """Baut nach, was der Installer hinterlässt — samt Ausweis mit Inventar."""
+    wurzel.mkdir(parents=True, exist_ok=True)
+    for eintrag in inventar:
+        (wurzel / eintrag).mkdir()
+        (wurzel / eintrag / "inhalt").write_text("vom installer")
+    (wurzel / "VERSION").write_text("test\n")
+    marke = ["k1520emu test", "# Vom Installer angelegt"]
+    marke += [f"eintrag {e}" for e in inventar] + ["eintrag VERSION"]
+    (wurzel / ".k1520emu-installation").write_text("\n".join(marke) + "\n")
+    return wurzel
+
+
+def test_deinstallieren_laesst_eigene_dateien_stehen(tmp_path):
+    """Entfernt wird das Inventar des Ausweises — nicht das Verzeichnis.
+
+    Wer seine eigenen Disketten oder Notizen neben den Emulator legt, soll sie
+    nach dem Deinstallieren wiederfinden.  Ein `rm -rf` auf die Wurzel wäre
+    einfacher und nähme alles mit.
+    """
+    heim = tmp_path / "heim"
+    heim.mkdir()
+    wurzel = _fake_installation(tmp_path / "K1520emu")
+    (wurzel / "meine_notizen.txt").write_text("wichtig")
+    (wurzel / "meine_disketten").mkdir()
+    (wurzel / "meine_disketten" / "eigen.hfe").write_bytes(b"x")
+
+    out = _install_sh(wurzel, heim, "--uninstall")
+    assert out.returncode == 0, out.stderr
+
+    for weg in ("bin", "app", "share", "venv", "VERSION", ".k1520emu-installation"):
+        assert not (wurzel / weg).exists(), f"{weg} hätte entfernt werden müssen"
+    assert (wurzel / "meine_notizen.txt").read_text() == "wichtig"
+    assert (wurzel / "meine_disketten" / "eigen.hfe").exists()
+    assert "bleibt stehen" in out.stdout
+    assert "meine_notizen.txt" in out.stdout, "der Anwender erfährt nicht, was übrig ist"
+
+
+def test_deinstallieren_raeumt_leere_wurzel_ganz_weg(tmp_path):
+    """Liegt nichts Fremdes darin, verschwindet auch das Verzeichnis selbst."""
+    heim = tmp_path / "heim"
+    heim.mkdir()
+    wurzel = _fake_installation(tmp_path / "K1520emu")
+    (wurzel / "k1520_20260809_120000.log").write_text("protokoll")
+
+    out = _install_sh(wurzel, heim, "--uninstall")
+    assert out.returncode == 0, out.stderr
+    assert not wurzel.exists(), out.stdout
+
+
+def test_deinstallieren_folgt_keinem_pfad_im_ausweis(tmp_path):
+    """Ein Eintrag ist ein NAME. „../…" darf nicht aus der Installation herauszeigen."""
+    heim = tmp_path / "heim"
+    heim.mkdir()
+    wurzel = _fake_installation(tmp_path / "K1520emu")
+    daneben = tmp_path / "fremd"
+    daneben.mkdir()
+    (daneben / "unbeteiligt.txt").write_text("nicht anfassen")
+    marke = wurzel / ".k1520emu-installation"
+    marke.write_text(marke.read_text() + "eintrag ../fremd\n")
+
+    out = _install_sh(wurzel, heim, "--uninstall")
+    assert out.returncode == 0, out.stderr
+    assert (daneben / "unbeteiligt.txt").exists(), "Ausweis führte aus der Installation heraus"
+    assert "fragwürdiger Eintrag" in out.stdout + out.stderr
+
+
+def test_deinstallieren_findet_die_installation_ueber_den_starter(tmp_path):
+    """Ohne --prefix verrät der Starter in ~/.local/bin die Wurzel."""
+    heim = tmp_path / "heim"
+    (heim / ".local" / "bin").mkdir(parents=True)
+    wurzel = _fake_installation(tmp_path / "woanders" / "K1520emu")
+    (wurzel / "bin" / "a5120emu").write_text("#!/bin/sh\n")
+    (heim / ".local" / "bin" / "a5120emu").symlink_to(wurzel / "bin" / "a5120emu")
+
+    umgebung = {k: v for k, v in os.environ.items()
+                if k not in ("XDG_DATA_HOME", "XDG_CONFIG_HOME")}
+    umgebung["HOME"] = str(heim)
+    out = subprocess.run(["sh", str(PACKAGING / "install.sh"), "--uninstall"],
+                         capture_output=True, text=True, env=umgebung, timeout=120)
+    assert out.returncode == 0, out.stderr
+    assert str(wurzel) in out.stdout
+    assert not wurzel.exists()
+
+
+def test_deinstallieren_loescht_nur_eine_installation(tmp_path):
+    """Ohne Ausweis wird nichts gelöscht — auch nicht, wenn der Starter dorthin zeigt."""
+    heim = tmp_path / "heim"
+    heim.mkdir()
+    fremd = tmp_path / "Dokumente"
+    fremd.mkdir()
+    (fremd / "brief.txt").write_text("wichtig")
+    out = _install_sh(fremd, heim, "--uninstall")
+    assert out.returncode == 0, out.stderr
+    assert "sieht nicht nach einer Installation aus" in out.stdout + out.stderr
+    assert (fremd / "brief.txt").exists()
+
+
+def test_slim_ist_gueltiges_python():
+    import ast
+    ast.parse((PACKAGING / "slim.py").read_text())
+
+
+def test_slim_liest_ldd_auch_bei_leerzeichen_im_pfad(tmp_path, monkeypatch):
+    """Abgetrennt wird die Ladeadresse am Ende, nicht am ersten Leerzeichen.
+
+    Am ersten Leerzeichen geschnitten blieb die Hülle leer, der
+    Sicherheitsrückfall griff — und die Installation behielt ganz Qt (223 statt
+    146 MB), sobald der Anwender „~/Emulator Test" als Ziel angab.
+    """
+    slim = _slim()
+    libdir = tmp_path / "Emulator Test" / "lib"
+    libdir.mkdir(parents=True)
+    lib = libdir / "libQt6Core.so.6"
+    lib.write_bytes(b"")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "ldd"
+    fake.write_text('#!/bin/sh\nprintf "\\tlibQt6Core.so.6 => %s (0x00007f1234567000)\\n" '
+                    f'"{lib}"\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+    assert slim.linked_libraries(tmp_path / "egal.so", libdir.resolve()) == {lib.resolve()}
+
+
+@pytest.mark.skipif(not shutil.which("strip"), reason="strip nicht vorhanden")
+def test_slim_strippt_bibliotheken_aber_keine_programme(tmp_path, monkeypatch):
+    """`strip` zerstört den Interpreter von python-build-standalone.
+
+    Er meldet „allocated section `.dynstr' not in segment", schreibt trotzdem
+    eine Datei — und die startet nicht mehr.  Das gilt für jede Variante,
+    ``--strip-debug`` spart dort nicht einmal Platz.  Deshalb werden nur
+    gemeinsame Bibliotheken angefasst.
+    """
+    slim = _slim()
+    bin_dir = tmp_path / "python" / "cpython-3.12" / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "python3.12").write_bytes(b"ELF")
+    dynload = tmp_path / "python" / "cpython-3.12" / "lib" / "python3.12" / "lib-dynload"
+    dynload.mkdir(parents=True)
+    (dynload / "_dbm.so").write_bytes(b"ELF")
+    site = tmp_path / "venv" / "lib" / "python3.12" / "site-packages"
+    site.mkdir(parents=True)
+    (site / "_yaml.so").write_bytes(b"ELF")
+
+    angefasst = []
+    monkeypatch.setattr(slim, "strip_datei", lambda d, c: angefasst.append(d))
+    slim.slim_symbole(tmp_path, slim.Cutter(dry_run=False))
+
+    namen = {p.name for p in angefasst}
+    assert "python3.12" not in namen, "der Interpreter darf nicht gestrippt werden"
+    assert {"_dbm.so", "_yaml.so"} <= namen
+
+
+def test_slim_verweigert_fremdes_verzeichnis(tmp_path):
+    """Ohne venv/ ist es keine Installation — slim.py darf dort nichts löschen."""
+    opfer = tmp_path / "wichtig.txt"
+    opfer.write_text("nicht loeschen")
+    out = _sh(sys.executable, str(PACKAGING / "slim.py"), str(tmp_path))
+    assert out.returncode != 0
+    assert "Installation" in out.stderr
+    assert opfer.exists()
+
+
+def test_slim_behaelt_was_die_gui_importiert():
+    """Die Bindungsliste muss decken, was `app/` tatsächlich importiert."""
+    import re
+    quelle = " ".join(p.read_text() for p in (PROJECT_ROOT / "app").rglob("*.py"))
+    benutzt = set(re.findall(r"PySide6\.([A-Za-z]+)", quelle))
+    text = (PACKAGING / "slim.py").read_text()
+    behalten = set(re.findall(r'"(Qt[A-Za-z]+)"', text.split("PLUGINS_KEEP")[0]))
+    fehlt = benutzt - behalten
+    assert not fehlt, f"slim.py wuerde entfernen, was die GUI importiert: {sorted(fehlt)}"
 
 
 # ─── Payload schnüren ────────────────────────────────────────────────────────
@@ -108,14 +408,14 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
               "--out", str(tmp_path), "--version", "test", "--disks", "none")
     assert out.returncode == 0, out.stdout + out.stderr
 
-    stage = next(p for p in tmp_path.glob("a5120emu-test-*") if p.is_dir())
+    stage = next(p for p in tmp_path.glob("k1520emu-test-*") if p.is_dir())
     for pflicht in [
-        "install.sh", "launcher.sh", "a5120emu.desktop.in", "uv_pins.txt",
+        "install.sh", "launcher.sh", "slim.py", "a5120emu.desktop.in", "uv_pins.txt",
         "lib/common.sh", "requirements.lock", "VERSION", "README.md",
         "payload/bin/libk1520core.so",
         "payload/app/main.py", "payload/app/paths.py",
         "payload/app/core_binding/k1520.py", "payload/app/ui/main_window.py",
-        "payload/share/a5120emu/formats.yaml",
+        "payload/share/k1520emu/formats.yaml",
         "payload/share/icons/a5120emu.svg",
     ]:
         assert (stage / pflicht).exists(), f"{pflicht} fehlt im Paket"
@@ -123,13 +423,39 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
     assert os.access(stage / "install.sh", os.X_OK), "install.sh ist nicht ausführbar"
     assert not list(stage.rglob("__pycache__")), "Bytecode des Baurechners im Paket"
 
-    archiv = next(tmp_path.glob("a5120emu-test-*.tar.gz"))
+    archiv = next(tmp_path.glob("k1520emu-test-*.tar.gz"))
     with tarfile.open(archiv) as tf:
         namen = tf.getnames()
     assert all(n.startswith(stage.name) for n in namen), \
         "Archiv entpackt ohne gemeinsames Wurzelverzeichnis"
     pruefsumme = archiv.with_suffix(".gz.sha256").read_text().split()[0]
     assert len(pruefsumme) == 64
+
+
+@requires_core
+def test_beispieldisketten_liegen_gepackt_im_paket(tmp_path):
+    """Abbilder sind zu ~90 % Füllmuster und werden genau einmal gebraucht.
+
+    Ungepackt lägen sie nach dem Erststart doppelt auf der Platte — in der
+    Installation und beim Anwender.  Ausgepackt wird beim Seeden
+    (``paths.seed_user_disks``), und zwar bitgleich.
+    """
+    import gzip
+
+    out = _sh("sh", str(PACKAGING / "build_payload.sh"),
+              "--skip-build", "--build-dir", str(PROJECT_ROOT / "build"),
+              "--out", str(tmp_path), "--version", "test")
+    assert out.returncode == 0, out.stdout + out.stderr
+
+    stage = next(p for p in tmp_path.glob("k1520emu-test-*") if p.is_dir())
+    disks = stage / "payload" / "share" / "disks"
+    gepackt = sorted(disks.glob("*.hfe.gz"))
+    assert gepackt, "keine gepackten Beispieldisketten im Paket"
+    assert not list(disks.glob("*.hfe")), "ungepackte Abbilder im Paket"
+
+    original = PROJECT_ROOT / "disks" / gepackt[0].stem
+    with gzip.open(gepackt[0], "rb") as f:
+        assert f.read() == original.read_bytes(), "gepacktes Abbild weicht ab"
 
 
 @requires_core
@@ -168,28 +494,60 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
               "--skip-build", "--build-dir", str(PROJECT_ROOT / "build"),
               "--out", str(tmp_path / "dist"), "--version", "test")
     assert out.returncode == 0, out.stdout + out.stderr
-    stage = next(p for p in (tmp_path / "dist").glob("a5120emu-test-*") if p.is_dir())
+    stage = next(p for p in (tmp_path / "dist").glob("k1520emu-test-*") if p.is_dir())
 
     heim = tmp_path / "heim"
     heim.mkdir()
+    # Ein Dokumentenordner wie auf einem eingerichteten Desktop — dorthin gehören
+    # die Arbeitsdisketten, und der Name ist sprachabhängig.
+    (heim / "Dokumente").mkdir()
+    (heim / ".config").mkdir()
+    (heim / ".config" / "user-dirs.dirs").write_text('XDG_DOCUMENTS_DIR="$HOME/Dokumente"\n')
     umgebung = {k: v for k, v in os.environ.items()
-                if k not in ("XDG_DATA_HOME", "XDG_CONFIG_HOME")}
+                if k not in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_DOCUMENTS_DIR")}
     umgebung["HOME"] = str(heim)
 
-    inst = subprocess.run(["sh", str(stage / "install.sh")], capture_output=True,
-                          text=True, env=umgebung, timeout=1800)
+    # Eigenes Ziel — und zwar eines, das NICHT der Vorschlag ist: so ist zugleich
+    # belegt, dass das Deinstallieren weiter unten die Installation ohne --prefix
+    # wiederfindet (über den Starter in ~/.local/bin).
+    ziel = heim / "Programme" / "A5120"
+    inst = subprocess.run(["sh", str(stage / "install.sh"), "--prefix", str(ziel)],
+                          capture_output=True, text=True, env=umgebung, timeout=1800)
     assert inst.returncode == 0, inst.stdout + inst.stderr
     assert "läuft" in inst.stdout, "Rauchtest des Installers hat nicht bestätigt"
+    assert "Oberfläche: baut auf" in inst.stdout, \
+        "Rauchtest hat das Fenster nicht gebaut — Qt-Plugins ungeprüft"
     # Der Rauchtest muss die INSTALLATION geprüft haben, nicht zufällig den
     # Baum, aus dem heraus er gestartet wurde (sys.path[0] = Arbeitsverzeichnis).
-    assert str(heim) in inst.stdout, "Rauchtest prüfte nicht die Installation"
+    assert str(ziel) in inst.stdout, "Rauchtest prüfte nicht die Installation"
 
-    starter = heim / ".local" / "opt" / "a5120emu" / "bin" / "a5120emu"
+    starter = ziel / "bin" / "a5120emu"
     assert starter.is_file() and os.access(starter, os.X_OK)
     assert (heim / ".local" / "share" / "applications" / "a5120emu.desktop").is_file()
-    # Beispieldisketten liegen beim Anwender, nicht in der Installation.
-    nutzer_disks = heim / ".local" / "share" / "a5120emu" / "disks"
-    assert any(nutzer_disks.glob("*.hfe"))
+    # Beispieldisketten liegen beim Anwender, nicht in der Installation — und
+    # kommen dort AUSGEPACKT und bitgleich an (im Paket liegen sie gepackt).
+    nutzer_disks = heim / "Dokumente" / "K1520emu" / "Disketten"
+    ausgepackt = sorted(nutzer_disks.glob("*.hfe"))
+    assert ausgepackt
+    assert not list(nutzer_disks.glob("*.gz")), "gepackte Datei blieb beim Anwender liegen"
+    for f in ausgepackt:
+        assert f.read_bytes() == (PROJECT_ROOT / "disks" / f.name).read_bytes(), \
+            f"{f.name} kam beschädigt beim Anwender an"
+
+    # Platzbedarf: ohne das Schlankmachen wären es ~400 MB.  Gezählt wird wie
+    # `du` — Verzeichnis-Symlinks nicht verfolgen, jede Datei nur einmal (uv legt
+    # neben cpython-3.12.13-… einen Verweis cpython-3.12-… an).
+    gesehen, bytes_ = set(), 0
+    for wurzel, _, dateien in os.walk(ziel, followlinks=False):
+        for name in dateien:
+            st = os.lstat(os.path.join(wurzel, name))
+            if (st.st_dev, st.st_ino) in gesehen:
+                continue
+            gesehen.add((st.st_dev, st.st_ino))
+            bytes_ += st.st_size
+    belegt = bytes_ / (1024 * 1024)
+    assert belegt < MAX_INSTALL_MB, f"Installation belegt {belegt:.0f} MB"
+    assert not (ziel / "tools").exists(), "uv blieb nach der Installation liegen"
 
     # Der Starter läuft aus der Installation heraus und löst alles dorthin auf.
     umgebung["QT_QPA_PLATFORM"] = "offscreen"
@@ -198,11 +556,33 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
     assert ausk.returncode == 0, ausk.stderr
     assert "Layout:            Installation" in ausk.stdout
 
-    # Deinstallieren räumt das Programm ab, lässt die Disketten stehen.
+    # Der Ausweis sagt, was dem Installer gehört — daran hängt das Deinstallieren.
+    ausweis = (ziel / ".k1520emu-installation").read_text()
+    for eintrag in ("bin", "app", "share", "venv", "python"):
+        assert f"eintrag {eintrag}" in ausweis, f"{eintrag} fehlt im Inventar"
+
+    # Eine frische Installation enthält nichts, was nicht hineingehört — der Kern
+    # legt sein Protokoll im Arbeitsverzeichnis an, und das ist beim Rauchtest
+    # genau hier.
+    assert not list(ziel.glob("k1520_*.log")), "Protokoll des Rauchtests blieb liegen"
+
+    # Noch einmal — und zwar OHNE --prefix: das ist der Update-Fall.  Der
+    # Installer muss die bestehende Installation über den Starter finden, sonst
+    # legte er eine zweite am Standardort an und ließe die alte verwaisen.
+    # `uv venv` verweigert ein vorhandenes venv, deshalb wird es erneuert.
+    erneut = subprocess.run(["sh", str(stage / "install.sh"), "-y"],
+                            capture_output=True, text=True, env=umgebung, timeout=1800)
+    assert erneut.returncode == 0, erneut.stdout + erneut.stderr
+    assert str(ziel) in erneut.stdout, "Update fand die bestehende Installation nicht"
+    assert not (heim / "K1520emu").exists(), "Update legte eine zweite Installation an"
+    assert "erneuert" in erneut.stdout, "bestehende Laufzeitumgebung nicht erneuert"
+    assert "läuft" in erneut.stdout
+
+    # Deinstallieren OHNE --prefix: der Pfad kommt aus dem Starter-Symlink.
     deinst = subprocess.run(["sh", str(stage / "install.sh"), "--uninstall"],
                             capture_output=True, text=True, env=umgebung, timeout=300)
     assert deinst.returncode == 0, deinst.stderr
-    assert not starter.exists()
+    assert not ziel.exists(), "Deinstallieren fand die Installation nicht"
     assert any(nutzer_disks.glob("*.hfe")), "Deinstallieren hat Anwenderdisketten gelöscht"
     assert not (heim / ".local" / "bin" / "python3.12").exists(), \
         "uv hat einen Python-Symlink im PATH des Anwenders hinterlassen"
