@@ -80,8 +80,19 @@ tools/dev.sh test-all        # zusätzlich die langsamen Format-/Boot-Disk-Läuf
 tools/dev.sh tool k1520dbg   # ein Werkzeug starten (k1520dbg, boot_trace, floppy_diag …)
 ```
 
-Es gibt bewusst keine CI: `.githooks/pre-push` fährt die Regressionsrunde vor jedem Push.
+Geprüft wird zuerst lokal: `.githooks/pre-push` fährt die Regressionsrunde vor jedem Push.
 Einmal je Arbeitskopie aktivieren mit `git config core.hooksPath .githooks`.
+
+Dieselbe Runde gibt es als Gegenprobe auf sauberem System in GitHub Actions — **von Hand
+angestoßen**, nichts läuft bei einem Push von selbst:
+
+```sh
+gh workflow run ci.yml --ref main          # Bauen + Regression
+gh workflow run release.yml --ref main     # verteilbares Paket schnüren
+```
+
+Was dort läuft, was in GitHub eingestellt sein muss und wie man einen Lauf startet:
+`doc/ci_pipeline.md`.
 
 ## Wo was steht
 
@@ -93,6 +104,7 @@ Einmal je Arbeitskopie aktivieren mit `git config core.hooksPath .githooks`.
 | Fehlersuche im Boot-Pfad | `tools/how_to_debug_and_trace.md` |
 | Diskettenformate und Formatier-Pipeline | `doc/format.md` |
 | Verteilbares Paket, Installer | `packaging/README.md`, `doc/design/13_distribution.md` |
+| Pipeline auf GitHub: Bedienung, Einstellungen | `doc/ci_pipeline.md` |
 | Offene Punkte | `doc/open_points.md` |
 
 Kommentare und Dokumentation sind überwiegend deutsch.

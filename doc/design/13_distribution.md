@@ -379,6 +379,37 @@ eingecheckt unter `packaging/requirements.lock` (aus `packaging/requirements.in`
 mit `--relock`). Damit braucht das Schnüren kein Netz, jeder Bau liefert dasselbe, und eine
 geänderte Abhängigkeit ist im Diff sichtbar statt still.
 
+### 7.1 Stand der Umsetzung
+
+| Datei | Auslöser | Inhalt |
+|-------|----------|--------|
+| `.github/workflows/ci.yml` | nur von Hand | `tools/dev.sh test` (C++ + Python-Ebene) auf `ubuntu-latest` |
+| `.github/workflows/slow-tests.yml` | nur von Hand | `test-format`, `test-matrix` |
+| `.github/workflows/release.yml` | von Hand oder Tag `v*` | `build_payload.sh` auf **ubuntu-22.04**, Rauchtest, Asset am Release-Entwurf |
+| `.github/workflows/windows-probe.yml` | nur von Hand | MSVC-Bau der Kernbibliothek — **noch rot** (§6.1) |
+
+Bedienung, nötige GitHub-Einstellungen und Fehlersuche: **`doc/ci_pipeline.md`**.
+
+Drei Festlegungen, die man beim Ändern nicht übersehen darf:
+
+- **Kein Lauf startet von selbst.** Kein Push-, kein PR-, kein Zeitplan-Auslöser — die
+  Regression läuft lokal vor jedem Push (`.githooks/pre-push`), der Lauf auf GitHub ist die
+  Gegenprobe auf sauberem System und wird angestoßen, wenn jemand sie haben will. Einzige
+  Ausnahme: ein gepushter Tag `v*` baut das Release-Paket.
+
+- **Alle Testjobs gehen durch `tools/dev.sh`**, nie durch rohe `cmake`/`ctest`-Aufrufe. Dort
+  stehen Build-Typ, `LOG_LEVEL` und die ausgeschlossenen Label; eine CI, die daran vorbeiruft,
+  prüft etwas anderes als der Entwickler vor dem Push.
+- **Der Release-Job läuft auf `ubuntu-22.04`, nicht auf `ubuntu-latest`.** Die
+  Rückwärtskompatibilität kommt von der Baseline (oben in diesem Abschnitt). Wird das Abbild
+  abgekündigt, ist der Nachfolger ein Container mit alter glibc — nicht das jeweils neueste
+  Ubuntu.
+
+Der Rauchtest des Release-Jobs prüft genau die drei Dinge, an denen ein Paket still kaputt sein
+kann: die Bibliothek lädt und `k1520_version()` antwortet, `app/main.py --paths` erkennt das
+Installationslayout und findet Bibliothek **und** `formats.yaml`, und im Binärabbild steht kein
+Pfad des Baurechners (Gegenprobe zu `-DK1520_FORMATS_DEFAULT=`).
+
 ---
 
 ## 8. Größen

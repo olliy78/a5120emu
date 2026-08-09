@@ -70,11 +70,26 @@ disk is which). The essentials for editing here:
 > only the FIRST label — the list is flattened while being passed through. `k1520_add_test()`
 > escapes the semicolons for you; do not bypass it.
 
-**No CI — a `pre-push` hook takes its place.** `.githooks/pre-push` runs `tools/dev.sh test`
-and refuses the push if anything is red (~12 s). Activate it once per working copy with
-`git config core.hooksPath .githooks`; bypass a single push with `git push --no-verify`. The
-slow `format_integration` round is deliberately NOT in the hook — run `tools/dev.sh test-format`
-before merging to main.
+**Two safety nets: a `pre-push` hook locally, GitHub Actions on the server.**
+`.githooks/pre-push` runs `tools/dev.sh test` and refuses the push if anything is red (~12 s).
+Activate it once per working copy with `git config core.hooksPath .githooks`; bypass a single
+push with `git push --no-verify`. The slow `format_integration` round is deliberately NOT in the
+hook — run `tools/dev.sh test-format` before merging to main.
+
+The workflows in `.github/workflows/` **drive the same `tools/dev.sh` commands** — never raw
+cmake/ctest, otherwise CI tests something else than the developer does. **Everything is
+triggered by hand** (`workflow_dispatch`) — nothing runs on push, on a PR, or on a schedule; the
+one exception is a pushed `v*` tag, which builds the release package. Bedienung, nötige
+GitHub-Einstellungen und Fehlersuche: **`doc/ci_pipeline.md`**.
+
+| Workflow | Auslöser | Was |
+|----------|----------|-----|
+| `ci.yml` | nur von Hand | `tools/dev.sh test` auf `ubuntu-latest` (inkl. Python-Ebene; `venv/` wird angelegt, damit CMake sie registriert) |
+| `slow-tests.yml` | nur von Hand | `test-format` und/oder `test-matrix` |
+| `release.yml` | von Hand **oder** Tag `v*` | `packaging/build_payload.sh` auf **ubuntu-22.04** (glibc-Baseline, §7 des Verteilungsentwurfs), Rauchtest (Bibliothek laden, `k1520_version`, `--paths`, kein Baurechner-Pfad im Binärabbild), Asset am Release-**Entwurf** |
+| `windows-probe.yml` | nur von Hand | MSVC-Bau der Kernbibliothek — **noch rot**, der Kern ist nicht portiert (§6.1: Export-Makros fehlen, `/utf-8`, statische CRT) |
+
+Anstoßen: `gh workflow run ci.yml --ref main` (oder Actions → Workflow → *Run workflow*).
 
 After any experiment that touched build dirs (sanitizer builds, `-DLOG_LEVEL=…`,
 interrupted builds), run `tools/dev.sh rebuild` to be certain. Raw commands still work
