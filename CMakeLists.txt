@@ -92,6 +92,8 @@ if(BUILD_K1520)
         core/filesystem/geometry_probe.cpp
         core/filesystem/fs_catalog.cpp
         core/filesystem/cpm/cpm_fs.cpp
+        core/filesystem/udos/udos_bitmap.cpp
+        core/filesystem/udos/udos_fs.cpp
     )
     target_link_libraries(k1520_fs PUBLIC k1520_floppy2 k1520_util)
     target_include_directories(k1520_fs PUBLIC ${CMAKE_SOURCE_DIR})
