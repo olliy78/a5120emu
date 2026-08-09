@@ -93,19 +93,19 @@ nicht die Umsetzung.
 ```
 core/
   peripherals/floppy_drive/     ← unverändert, WIRD BENUTZT
+                                  (+ TrackCodec::writeSector, §4.1) ✅
   filesystem/                   ← NEU: alles Logische
-      sector_space.{h,cpp}          Sektorraum über ein DiskMedium (§5)
-      fs_profile.{h,cpp}            Datenmodell der `filesystems:`-Sektion (§6)
-      fs_catalog.{h,cpp}            lädt sie aus formats.yaml (yaml_lite)
-      file_system.h                 abstrakte Fassade: list/read/write/erase/mkfs (§9)
-      fs_detect.{h,cpp}             Autoerkennung (§12)
+      sector_space.{h,cpp}          Sektorraum über ein DiskMedium (§5)          ✅
+      geometry_probe.{h,cpp}        Geometrie messen + Katalogabgleich (§12.1)   ✅
+      fs_profile.h                  Datenmodell der `filesystems:`-Sektion (§6)  ✅
+      fs_catalog.{h,cpp}            lädt sie aus formats.yaml (yaml_lite)        ✅
+      file_system.h                 Fassade eines Volumes (§9)                   ✅
+      disk_volume.{h,cpp}           die Diskette als Ganzes (§9.1–9.3, §12)      ✅
       cpm/
-          cpm_fs.{h,cpp}            CP/M-2.2-Dateisystem (§7)
-          cpm_dir.{h,cpp}           Verzeichniseintrag, Extents, Allokationskarte
+          cpm_fs.{h,cpp}            CP/M-2.2-Dateisystem (§7)                    ✅
       udos/
-          udos_fs.{h,cpp}           UDOS/ZDOS-Dateisystem (§8)
-          udos_dir.{h,cpp}          Verzeichnisdatei + Kopfsektor
-          udos_bitmap.{h,cpp}       Belegungskarte Spur 23
+          udos_bitmap.{h,cpp}       Belegungskarte Spur 23 (§8)                  ✅
+          udos_fs.{h,cpp}           UDOS/ZDOS-Dateisystem (§8) — lesend          ✅
   api/
       k1520_disk_api.{h,cpp}    ← NEU: C-ABI von libk1520disk.so (§10)
 
@@ -897,6 +897,16 @@ einzige Wahrheit. Beide neuen Ziele landen in `build/` bzw. `build_trace/` und w
 
 Jede Etappe ist für sich lauffähig und testbar; die Reihenfolge minimiert das Risiko, weil das
 Schwierigste (UDOS-Schreiben) auf einem dann schon geprüften Unterbau steht.
+
+> **Stand 2026-08-10 (Branch `create_disktool`): Etappen 1–5 sind umgesetzt und grün**
+> — Sektorraum, Geometriemessung, Dateisystemkatalog, CP/M lesen **und** schreiben,
+> UDOS lesen, `DiskVolume` mit `Side0/Side1`, Transaktionen und Erkennung.
+> Verifiziert an den echten Disketten des Projekts: CP/M-Extraktion byteweise gegen
+> `cpmtools`, CP/M-Schreiben gegen das **laufende CP/A** (`TYPE`/`DIR`), UDOS gegen die
+> am laufenden UDOS gemessenen Sollwerte (69 Dateien, 39 sichtbar, 850/1310 freie
+> Sektoren, `EXTRACT SD`).  Offen: UDOS **schreiben** (Etappe 6), C-API, CLI, GUI.
+> `CpmFileSystem` deckt die Fälle der Etappe 4 mit ab; `udos_dir.*` und `fs_detect.*`
+> sind in `udos_fs.*` bzw. `disk_volume.*`/`geometry_probe.*` aufgegangen.
 
 | # | Inhalt | Ergebnis |
 |---|--------|----------|
