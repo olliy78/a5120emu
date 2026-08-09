@@ -276,3 +276,236 @@ TEST(CpmFileSystem, GrossKleinschreibungBeimLesenEgal) {
     ASSERT_TRUE(v.fs->read("PIP.COM", b));
     EXPECT_EQ(a, b);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Schreiben (nur auf Kopien — Fixtures werden nie angefasst)
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+std::string tmpPath(const char* name) {
+    return (std::filesystem::temp_directory_path() / name).string();
+}
+
+/// @brief Beschreibbare Kopie einer Fixture; raeumt sich im Destruktor weg.
+class Kopie {
+public:
+    Kopie(const char* fixture_name, const char* temp_name) : pfad_(tmpPath(temp_name)) {
+        std::filesystem::copy_file(fixture(fixture_name), pfad_,
+                                   std::filesystem::copy_options::overwrite_existing);
+    }
+    ~Kopie() { std::error_code ec; std::filesystem::remove(pfad_, ec); }
+    const std::string& path() const { return pfad_; }
+private:
+    std::string pfad_;
+};
+
+/// @brief Wie @ref oeffne, aber auf einem beliebigen Pfad und schreibbar.
+Volume oeffneSchreibbar(const std::string& pfad, const char* fsname) {
+    Volume v;
+    const FsProfile* p = dateisysteme().find(fsname);
+    if (!p) { v.error = "Dateisystem unbekannt"; return v; }
+    const DiskFormat* f = formate().find(p->format);
+    if (!f) { v.error = "Format unbekannt"; return v; }
+    const bool istImg = pfad.size() > 4 && pfad.compare(pfad.size() - 4, 4, ".img") == 0;
+    std::optional<DiskFormat> of;
+    if (istImg) of = *f;
+    v.disk = DiskImage::open(pfad, of, false);
+    if (!v.disk) { v.error = "Abbild nicht ladbar"; return v; }
+    v.space = std::make_unique<SectorSpace>(v.disk->medium(), *f);
+    v.fs    = CpmFileSystem::mount(*v.space, *p, v.error);
+    return v;
+}
+
+}  // namespace
+
+TEST(CpmFileSystemWrite, RoundtripBinaerUndText) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_cpm_rt.img");
+    Volume v = oeffneSchreibbar(k.path(), "cpa780");
+    ASSERT_TRUE(v) << v.error;
+
+    std::vector<uint8_t> binaer(3000);
+    for (size_t i = 0; i < binaer.size(); ++i) binaer[i] = static_cast<uint8_t>(i * 31 + 7);
+    const std::string text = "ZEILE EINS\r\nZEILE ZWEI\r\n";
+    std::vector<uint8_t> txt(text.begin(), text.end());
+
+    WriteOptions bin_opt;                 // Fuellbyte 0x00
+    WriteOptions txt_opt; txt_opt.text = true;   // Fuellbyte 0x1A
+
+    ASSERT_TRUE(v.fs->write("BINAER.DAT", binaer, bin_opt)) << v.fs->lastError();
+    ASSERT_TRUE(v.fs->write("TEXT.TXT",   txt,    txt_opt)) << v.fs->lastError();
+
+    // Auf ganze 128-B-Saetze aufgerundet — das ist CP/M-Eigenart, keine Panne.
+    std::vector<uint8_t> zurueck;
+    ASSERT_TRUE(v.fs->read("BINAER.DAT", zurueck)) << v.fs->lastError();
+    ASSERT_EQ(zurueck.size(), 3072u);
+    EXPECT_TRUE(std::equal(binaer.begin(), binaer.end(), zurueck.begin()));
+    for (size_t i = binaer.size(); i < zurueck.size(); ++i)
+        EXPECT_EQ(zurueck[i], 0x00) << "Binaerfuellung an " << i;
+
+    ASSERT_TRUE(v.fs->read("TEXT.TXT", zurueck));
+    ASSERT_EQ(zurueck.size(), 128u);
+    EXPECT_TRUE(std::equal(txt.begin(), txt.end(), zurueck.begin()));
+    EXPECT_EQ(zurueck[txt.size()], 0x1A) << "Textdateien enden mit 0x1A";
+}
+
+TEST(CpmFileSystemWrite, GrosseDateiUeberMehrereExtents) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_cpm_gross.img");
+    Volume v = oeffneSchreibbar(k.path(), "cpa780");
+    ASSERT_TRUE(v) << v.error;
+
+    // 40000 B → 313 Saetze → 20 Bloecke → 3 Verzeichnisplaetze (8 Zeiger je Platz).
+    std::vector<uint8_t> gross(40000);
+    for (size_t i = 0; i < gross.size(); ++i) gross[i] = static_cast<uint8_t>(i ^ (i >> 8));
+    ASSERT_TRUE(v.fs->write("GROSS.BIN", gross, WriteOptions{})) << v.fs->lastError();
+
+    int plaetze = 0, max_extent = -1;
+    for (const CpmDirEntry& d : v.fs->directory())
+        if (!d.free() && d.name == "GROSS.BIN") { ++plaetze; max_extent = std::max(max_extent, d.extent); }
+    EXPECT_EQ(plaetze, 3);
+    EXPECT_EQ(max_extent, 2);
+
+    std::vector<uint8_t> zurueck;
+    ASSERT_TRUE(v.fs->read("GROSS.BIN", zurueck));
+    ASSERT_EQ(zurueck.size(), 40064u);           // auf 128 aufgerundet
+    EXPECT_TRUE(std::equal(gross.begin(), gross.end(), zurueck.begin()));
+
+    const FileEntry* e = nullptr;
+    const std::vector<FileEntry> l = v.fs->list();
+    for (const auto& x : l) if (x.name == "GROSS.BIN") e = &x;
+    ASSERT_NE(e, nullptr);
+    EXPECT_EQ(e->size, 40064u);
+}
+
+TEST(CpmFileSystemWrite, VorhandeneDateiNurMitErlaubnisUeberschreiben) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_cpm_ovr.img");
+    Volume v = oeffneSchreibbar(k.path(), "cpa780");
+    ASSERT_TRUE(v) << v.error;
+
+    const std::vector<uint8_t> neu(500, 0x42);
+    EXPECT_FALSE(v.fs->write("PIP.COM", neu, WriteOptions{}));
+    EXPECT_NE(v.fs->lastError().find("existiert bereits"), std::string::npos)
+        << v.fs->lastError();
+
+    // Der alte Inhalt ist unangetastet.
+    std::vector<uint8_t> alt;
+    ASSERT_TRUE(v.fs->read("PIP.COM", alt));
+    EXPECT_EQ(alt.size(), 7424u);
+
+    WriteOptions o; o.overwrite = true;
+    ASSERT_TRUE(v.fs->write("PIP.COM", neu, o)) << v.fs->lastError();
+    std::vector<uint8_t> jetzt;
+    ASSERT_TRUE(v.fs->read("PIP.COM", jetzt));
+    EXPECT_EQ(jetzt.size(), 512u);
+}
+
+TEST(CpmFileSystemWrite, LoeschenGibtDenPlatzZurueck) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_cpm_del.img");
+    Volume v = oeffneSchreibbar(k.path(), "cpa780");
+    ASSERT_TRUE(v) << v.error;
+
+    const FsInfo vorher = v.fs->info();
+    ASSERT_TRUE(v.fs->erase("M80.COM")) << v.fs->lastError();     // 20224 B = 10 Bloecke
+    const FsInfo nachher = v.fs->info();
+
+    EXPECT_EQ(nachher.files, vorher.files - 1);
+    EXPECT_GT(nachher.free_bytes, vorher.free_bytes);
+    EXPECT_EQ(nachher.free_bytes - vorher.free_bytes, 10u * 2048u);
+
+    std::vector<uint8_t> d;
+    EXPECT_FALSE(v.fs->read("M80.COM", d));
+}
+
+TEST(CpmFileSystemWrite, PlatzpruefungRechnetVerwaltungMit) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_cpm_fit.img");
+    Volume v = oeffneSchreibbar(k.path(), "cpa780");
+    ASSERT_TRUE(v) << v.error;
+
+    // 1 Byte belegt einen ganzen Block — genau das muss die Pruefung sagen.
+    FitReport r;
+    ASSERT_TRUE(v.fs->wouldFit({{"WINZIG.DAT", 1, 0, false}}, r));
+    EXPECT_TRUE(r.fits);
+    EXPECT_EQ(r.needed, 2048u) << "Blockrundung nicht mitgerechnet";
+    EXPECT_EQ(r.dir_needed, 1);
+
+    // Mehr als die Diskette fasst → passt nicht, mit Zahlen in der Begruendung.
+    ASSERT_TRUE(v.fs->wouldFit({{"ZUGROSS.BIN", 900u * 1024u, 0, false}}, r));
+    EXPECT_FALSE(r.fits);
+    EXPECT_NE(r.detail.find("frei sind"), std::string::npos) << r.detail;
+
+    // Eine ersetzte Datei gibt ihren Platz zurueck: PIP.COM (7424 B = 4 Bloecke)
+    // durch etwas Gleichgrosses zu ersetzen kostet netto nichts.
+    const FsInfo i = v.fs->info();
+    ASSERT_TRUE(v.fs->wouldFit({{"PIP.COM", 7424, 0, false}}, r));
+    EXPECT_TRUE(r.fits);
+    EXPECT_EQ(r.available, i.free_bytes + 4u * 2048u)
+        << "der Platz der ersetzten Datei wurde nicht gutgeschrieben";
+}
+
+TEST(CpmFileSystemWrite, DiskettenvollMeldungStattHalberDatei) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_cpm_voll.img");
+    Volume v = oeffneSchreibbar(k.path(), "cpa780");
+    ASSERT_TRUE(v) << v.error;
+
+    const FsInfo vorher = v.fs->info();
+    const std::vector<uint8_t> zugross(static_cast<size_t>(vorher.free_bytes + 4096), 0x5A);
+    EXPECT_FALSE(v.fs->write("ZUGROSS.BIN", zugross, WriteOptions{}));
+    EXPECT_NE(v.fs->lastError().find("voll"), std::string::npos) << v.fs->lastError();
+
+    // Nichts angefangen: Dateizahl und Belegung unveraendert.
+    const FsInfo nachher = v.fs->info();
+    EXPECT_EQ(nachher.files, vorher.files);
+    EXPECT_EQ(nachher.free_bytes, vorher.free_bytes);
+}
+
+TEST(CpmFileSystemWrite, MkfsLeertNurDasVerzeichnis) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_cpm_mkfs.img");
+    Volume v = oeffneSchreibbar(k.path(), "cpa780");
+    ASSERT_TRUE(v) << v.error;
+
+    ASSERT_TRUE(v.fs->mkfs()) << v.fs->lastError();
+    EXPECT_TRUE(v.fs->list().empty());
+    const FsInfo i = v.fs->info();
+    EXPECT_EQ(i.used_bytes, 0u);
+    EXPECT_EQ(i.free_bytes, i.total_bytes);
+
+    // Und danach ist die Diskette wieder normal beschreibbar.
+    ASSERT_TRUE(v.fs->write("NEU.TXT", std::vector<uint8_t>(100, 'A'), WriteOptions{}));
+    EXPECT_EQ(v.fs->list().size(), 1u);
+}
+
+TEST(CpmFileSystemWrite, UnzulaessigeNamenWerdenAbgewiesen) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_cpm_name.img");
+    Volume v = oeffneSchreibbar(k.path(), "cpa780");
+    ASSERT_TRUE(v) << v.error;
+
+    const std::vector<uint8_t> d(100, 1);
+    EXPECT_FALSE(v.fs->write("VIELZULANGERNAME.TXT", d, WriteOptions{}));
+    EXPECT_FALSE(v.fs->write("A.TOOLANG", d, WriteOptions{}));
+    EXPECT_FALSE(v.fs->write("MIT*STERN.TXT", d, WriteOptions{}));
+    EXPECT_TRUE(v.fs->list().size() == 24u) << "kein Eintrag darf entstanden sein";
+
+    std::string warum;
+    EXPECT_TRUE(CpmFileSystem::validName("OK.TXT", &warum)) << warum;
+    EXPECT_FALSE(CpmFileSystem::validName("klein.txt", &warum));
+    EXPECT_EQ(CpmFileSystem::toCpmName("/pfad/zu/Mein Dokument.textdatei"), "MEINDOKU.TEX");
+}
+
+TEST(CpmFileSystemWrite, NutzerbereicheBleibenGetrennt) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_cpm_user.img");
+    Volume v = oeffneSchreibbar(k.path(), "cpa780");
+    ASSERT_TRUE(v) << v.error;
+
+    ASSERT_TRUE(v.fs->write("3:GEHEIM.TXT", std::vector<uint8_t>(200, 'U'), WriteOptions{}))
+        << v.fs->lastError();
+
+    bool gefunden = false;
+    for (const FileEntry& e : v.fs->list())
+        if (e.name == "GEHEIM.TXT") { EXPECT_EQ(e.user, 3); gefunden = true;
+                                      EXPECT_EQ(e.qualifiedName(), "3:GEHEIM.TXT"); }
+    EXPECT_TRUE(gefunden);
+
+    std::vector<uint8_t> d;
+    EXPECT_FALSE(v.fs->read("GEHEIM.TXT", d)) << "Nutzerbereich 0 darf sie nicht sehen";
+    EXPECT_TRUE(v.fs->read("3:GEHEIM.TXT", d));
+}

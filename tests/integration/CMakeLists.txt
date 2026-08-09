@@ -9,3 +9,9 @@ k1520_add_test(boot_integration SRC test_boot_integration.cpp LIBS ${_libs}
                                 LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 60)
 k1520_add_test(machine_snapshot SRC test_machine_snapshot.cpp LIBS ${_libs} LABELS "${_lbl}")
 k1520_add_test(a5120_disk_api   SRC test_a5120_disk_api.cpp   LIBS ${_libs} LABELS "${_lbl}")
+
+# k1520DiskTool ↔ echtes CP/A: geschrieben wird mit CpmFileSystem, gelesen vom
+# laufenden Betriebssystem (doc/design/13_k1520disktool.md §15).
+k1520_add_test(disktool_cpm_roundtrip SRC test_disktool_cpm_roundtrip.cpp
+                                      LIBS ${_libs} k1520_fs
+                                      LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)

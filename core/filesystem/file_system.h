@@ -55,6 +55,39 @@ struct FsInfo {
 };
 
 /**
+ * @struct WriteOptions
+ * @brief Steuerung des Einfuegens.
+ */
+struct WriteOptions {
+    bool overwrite = false;   ///< vorhandene gleichnamige Datei ersetzen
+    bool text      = false;   ///< Textmodus: Rest des letzten Satzes mit 0x1A fuellen
+};
+
+/**
+ * @struct PlannedFile
+ * @brief Was eingefuegt werden SOLL — Eingabe der Platzpruefung (§9.2).
+ */
+struct PlannedFile {
+    std::string name;
+    uint64_t    size   = 0;
+    int         volume = 0;
+    bool        replaces_existing = false;   ///< von @ref FileSystem::wouldFit gesetzt
+};
+
+/**
+ * @struct FitReport
+ * @brief Ergebnis der Platzpruefung — mit Zahlen, damit die Meldung etwas taugt.
+ */
+struct FitReport {
+    bool     fits        = false;
+    uint64_t needed      = 0;   ///< Bedarf INKLUSIVE Verwaltungsaufwand
+    uint64_t available   = 0;
+    int      dir_needed  = 0;   ///< benoetigte Verzeichnisplaetze
+    int      dir_free    = 0;
+    std::string detail;         ///< Klartext, auch wenn es passt ("" = ohne Befund)
+};
+
+/**
  * @class FileSystem
  * @brief Ein Volume: auflisten, lesen, schreiben, loeschen.
  */
@@ -67,6 +100,26 @@ public:
 
     /// @brief Dateiinhalt lesen.  @p name wie @ref FileEntry::qualifiedName.
     virtual bool read(const std::string& name, std::vector<uint8_t>& out) = 0;
+
+    /// @brief Datei einfuegen/ersetzen.
+    virtual bool write(const std::string& name, const std::vector<uint8_t>& data,
+                       const WriteOptions& opt) = 0;
+
+    /// @brief Datei entfernen.
+    virtual bool erase(const std::string& name) = 0;
+
+    /**
+     * @brief Was WUERDE das Einfuegen kosten?  Schreibt nichts.
+     *
+     * Rechnet den Verwaltungsaufwand mit — bei CP/M die Blockrundung und die
+     * Verzeichnisplaetze je Extent, bei UDOS Kopfsektor, Satzrundung und das
+     * Wachstum der Verzeichnisdatei.  Ersetzte gleichnamige Dateien geben ihren
+     * Platz zurueck und werden gutgeschrieben.
+     */
+    virtual bool wouldFit(const std::vector<PlannedFile>& files, FitReport& out) const = 0;
+
+    /// @brief Leeres Dateisystem anlegen (Verzeichnis initialisieren).
+    virtual bool mkfs() = 0;
 
     /// @brief Zustand des Volumes.
     virtual FsInfo info() const = 0;

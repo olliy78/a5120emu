@@ -71,8 +71,19 @@ public:
                                                 std::string& err);
 
     std::vector<FileEntry> list() const override;
-    bool   read(const std::string& name, std::vector<uint8_t>& out) override;
+    bool   read (const std::string& name, std::vector<uint8_t>& out) override;
+    bool   write(const std::string& name, const std::vector<uint8_t>& data,
+                 const WriteOptions& opt) override;
+    bool   erase(const std::string& name) override;
+    bool   wouldFit(const std::vector<PlannedFile>& files, FitReport& out) const override;
+    bool   mkfs() override;
     FsInfo info() const override;
+
+    /// @brief Ist @p name ein gueltiger CP/M-Name (8.3, Grossschrift, ohne Sonderzeichen)?
+    ///        Liefert bei false den Grund in @p why.
+    static bool validName(const std::string& name, std::string* why);
+    /// @brief Linux-Dateiname → CP/M-Name (Grossschrift, auf 8.3 gekuerzt).
+    static std::string toCpmName(const std::string& linux_name);
 
     // ─── Innenansicht (Diagnose, Tests) ──────────────────────────────────────
 
@@ -94,6 +105,10 @@ private:
 
     /// @brief Byte-Offset im Datenbereich → Sektor lesen (mit Versatz).
     bool readAt(uint64_t offset, uint8_t* dst, size_t n) const;
+    /// @brief Byte-Offset im Datenbereich → Sektor schreiben (mit Versatz).
+    bool writeAt(uint64_t offset, const uint8_t* src, size_t n);
+    /// @brief Einen 32-B-Verzeichnisplatz zurueckschreiben.
+    bool writeDirEntry(int slot, const uint8_t* raw32);
     /// @brief Einen Block in @p out anhaengen.
     bool readBlock(uint16_t block, std::vector<uint8_t>& out) const;
     /// @brief Verzeichnisbytes (dir_entries × 32).
