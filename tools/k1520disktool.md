@@ -11,7 +11,7 @@ Aufruf im Projekt immer über `tools/dev.sh tool k1520disktool …` — nie dire
 ## Kommandos
 
 ```
-k1520disktool ls     <abbild> [--fs NAME] [--json]   Verzeichnis anzeigen
+k1520disktool ls     <abbild> [-l]                     Verzeichnis anzeigen
 k1520disktool get    <abbild> [muster…] --to <ordner>  Dateien herausholen
 k1520disktool put    <abbild> <datei|ordner…>          Dateien einfügen
 k1520disktool rm     <abbild> <muster…>                Dateien löschen
@@ -22,8 +22,31 @@ k1520disktool formats                                  bekannte Dateisysteme
 ```
 
 Schalter: `--fs NAME` (Erkennung übersteuern), `--volume N` (Seite),
-`--text`/`--binary`, `--as NAME`, `--force`, `--json`, `--dry-run`,
-`--no-backup`.
+`--text`/`--binary`, `--as NAME`, `--force`, `--dry-run`, `--no-backup`.
+
+## Ausgabe weiterverarbeiten
+
+`ls` gibt **ohne `-l` nur die Namen** aus, einen je Zeile — bei mehreren Seiten mit
+ihrem Präfix, sodass sie als Argument wieder brauchbar sind.  Kopf- und Fußzeile
+gehen dabei nach **stderr**, die Standardausgabe bleibt also reine Nutzlast:
+
+```sh
+$ k1520disktool ls udos.hfe | grep '^Side1/'
+Side1/HELP.DAT.00
+…
+$ k1520disktool ls udos.hfe 2>/dev/null | wc -l
+69
+```
+
+Mit `-l` kommt die Tabelle mit Typ, Größe, Eigenschaften und Datum — für Menschen.
+
+**`--json`** liefert `ls`, `info`, `check` und `formats` maschinenlesbar:
+
+```sh
+$ k1520disktool info udos.hfe --json | jq '.volumes[].free'
+108800
+167680
+```
 
 **Exit-Codes** sind Teil der Schnittstelle:
 `0` ok · `1` Fehler · `2` Format/Dateisystem nicht erkannt · `3` passt nicht
@@ -60,6 +83,12 @@ Bei einem Dateisystem (jede CP/M-Diskette, auch beidseitige) ist der Ordner flac
   direkt als Vorlage für den fehlenden Katalogeintrag.
 * **UDOS auf `.img` wird abgelehnt**: der Sektorkontrollblock steht hinter der
   Daten-CRC, ein rohes Sektorabbild verlöre die gesamte Dateiverkettung.
+* **Beim Lesen kann nichts kaputtgehen**: `ls`, `get`, `info`, `check` und
+  `save-as` öffnen das Abbild **schreibgeschützt** — der Schutz reicht bis in die
+  Container-Schicht, die dann selbst beim Schließen nichts schreibt.  Nur `put`
+  und `rm` öffnen schreibend; dort ist der Aufruf schon der bewusste Schritt.
+  In der Oberfläche entspricht dem der Haken **„Nur lesen"**, der beim Öffnen
+  gesetzt ist.
 
 ## Dateisysteme ergänzen
 

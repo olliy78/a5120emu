@@ -1,0 +1,8 @@
+# Der Dateisystemkatalog maschinenlesbar — fuer Skripte und die Oberflaeche.
+tool:   k1520disktool
+disk_path: /dev/null
+run:    formats --json
+expect: "name":"cpa780"
+expect: "type":"udos"
+expect: "format":"cpa640"
+exit:   0

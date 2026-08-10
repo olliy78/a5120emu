@@ -1,0 +1,11 @@
+# Ohne -l gibt `ls` NUR die Namen aus — je Zeile einen, bei mehreren Seiten mit
+# ihrem Praefix, sodass die Ausgabe als Argument wieder brauchbar ist.  Kopf- und
+# Fusszeile gehen dabei nach stderr (hier zusammengefasst geprueft).
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+run:    ls %DISK%
+expect: Side0/ACTIVATE
+expect: Side1/HELP.DAT.00
+forbid: Groesse
+forbid: Eigensch.
+exit:   0

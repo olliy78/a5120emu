@@ -1,0 +1,11 @@
+# --json gilt fuer ls, info, check und formats — nicht nur fuer ls (das war bis
+# 2026-08-10 ein Schalter, den `info` stillschweigend ignoriert hat).
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+run:    info %DISK% --json
+expect: "filesystem":"udos_ds77"
+expect: "read_only":true
+expect: "dir":"Side1"
+expect: "label":"UDOS.SYS.4.3"
+expect: "warnings":[]
+exit:   0

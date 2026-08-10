@@ -7,7 +7,7 @@
  * der alten Werkzeuge und kann zusaetzlich UDOS.
  *
  * ```
- * k1520disktool ls     <abbild> [--fs NAME] [-l]
+ * k1520disktool ls     <abbild> [--fs NAME] [-l]      # ohne -l nur die Namen
  * k1520disktool get    <abbild> <muster…> --to <verzeichnis> [--text|--binary]
  * k1520disktool put    <abbild> <datei|ordner…> [--as NAME] [--text] [--force]
  * k1520disktool rm     <abbild> <muster…>
@@ -33,6 +33,7 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -62,7 +63,7 @@ struct Optionen {
 void gebrauch() {
     std::cout <<
         "k1520disktool — Dateien zwischen Linux und K1520-Disketten austauschen\n\n"
-        "  ls     <abbild> [--fs NAME] [-l]         Verzeichnis anzeigen\n"
+        "  ls     <abbild> [-l]                     Verzeichnis (nur Namen; -l ausfuehrlich)\n"
         "  get    <abbild> <muster…> --to <ordner>  Dateien herausholen\n"
         "  put    <abbild> <datei|ordner…>          Dateien einfuegen\n"
         "  rm     <abbild> <muster…>                Dateien loeschen\n"
@@ -72,7 +73,8 @@ void gebrauch() {
         "  check  <abbild>                          Pruefbericht\n"
         "  formats                                  bekannte Dateisysteme auflisten\n\n"
         "Gemeinsam: --fs NAME (Erkennung uebersteuern), --volume N (Seite),\n"
-        "           --text|--binary, --force, --json, --dry-run, --no-backup\n\n"
+        "           --text|--binary, --force, --dry-run, --no-backup\n"
+        "  --json   maschinenlesbar — bei ls, info, check und formats\n\n"
         "Bei beidseitigen UDOS-Disketten sind die Seiten `Side0`/`Side1`:\n"
         "  get  legt sie als Unterverzeichnisse an,\n"
         "  put  verlangt einen Ordner, der genau diese Unterverzeichnisse hat,\n"
@@ -178,6 +180,9 @@ std::string menschlich(uint64_t bytes) {
     return p;
 }
 
+/// @brief Liste von Zeichenketten als JSON-Feld.
+std::string jsonListe(const std::vector<std::string>& v);
+
 std::string jsonText(const std::string& s) {
     std::string o = "\"";
     for (char c : s) {
@@ -186,6 +191,12 @@ std::string jsonText(const std::string& s) {
         else o += c;
     }
     return o + "\"";
+}
+
+std::string jsonListe(const std::vector<std::string>& v) {
+    std::string o = "[";
+    for (size_t i = 0; i < v.size(); ++i) o += (i ? "," : "") + jsonText(v[i]);
+    return o + "]";
 }
 
 // ─── Kommandos ───────────────────────────────────────────────────────────────
@@ -218,37 +229,52 @@ int cmd_ls(const Optionen& o) {
         return kOk;
     }
 
-    std::cout << "Dateisystem: " << v->detection().filesystem
-              << (o.fs.empty() ? " (erkannt)" : " (gewaehlt)");
-    if (!v->detection().unambiguous) std::cout << " — nicht eindeutig";
-    std::cout << " · " << v->volumeCount() << (v->volumeCount() == 1 ? " Seite" : " Seiten");
+    // In der KURZFORM gehoert auf die Standardausgabe nur, was weiterverarbeitet
+    // wird — die Namen.  Kopf- und Fusszeile sind Beiwerk und gehen nach stderr,
+    // damit `ls … | xargs` und `| grep` sauber bleiben.  Mit -l ist die Ausgabe
+    // fuer Menschen gedacht und darf zusammenbleiben.
+    std::ostream& info_aus = o.lang ? std::cout : std::cerr;
+
+    info_aus << "Dateisystem: " << v->detection().filesystem
+             << (o.fs.empty() ? " (erkannt)" : " (gewaehlt)");
+    if (!v->detection().unambiguous) info_aus << " — nicht eindeutig";
+    info_aus << " · " << v->volumeCount() << (v->volumeCount() == 1 ? " Seite" : " Seiten");
     for (int i = 0; i < v->volumeCount(); ++i) {
         const std::string l = v->volumeInfo(i).label;
-        if (!l.empty()) std::cout << (i == 0 ? " · " : " / ") << l;
+        if (!l.empty()) info_aus << (i == 0 ? " · " : " / ") << l;
     }
-    std::cout << "\n";
+    info_aus << "\n";
     if (!v->detection().remarks.empty())
-        std::cout << "Medium: " << v->detection().remarks << "\n";
+        info_aus << "Medium: " << v->detection().remarks << "\n";
 
     const bool seiten = v->volumeCount() > 1;
-    if (seiten) std::cout << "Seite ";
-    std::cout << "Name                 Typ   Groesse  Eigensch. Datum\n";
-    for (const FileEntry& e : liste) {
-        if (seiten) std::printf("%-5d ", e.volume);
-        std::printf("%-20s %-3s %8llu  %-9s %s%s\n",
-                    e.qualifiedName().c_str(), e.type.c_str(),
-                    static_cast<unsigned long long>(e.size),
-                    e.attributes.c_str(), e.date.c_str(),
-                    e.damaged ? "  [DEFEKT]" : "");
+
+    if (!o.lang) {
+        // Kurzform wie `cpmls`: ein Name je Zeile, nichts sonst — so laesst sich die
+        // Ausgabe weiterverarbeiten (`| grep`, `| xargs`).  Bei mehreren Seiten traegt
+        // jeder Name sein Praefix und ist damit auch als Argument wieder brauchbar.
+        for (const FileEntry& e : liste)
+            std::cout << (seiten ? v->volumeDir(e.volume) + "/" : "")
+                      << e.qualifiedName() << "\n";
+    } else {
+        if (seiten) std::cout << "Seite ";
+        std::cout << "Name                 Typ   Groesse  Eigensch. Datum\n";
+        for (const FileEntry& e : liste) {
+            if (seiten) std::printf("%-5d ", e.volume);
+            std::printf("%-20s %-3s %8llu  %-9s %s%s\n",
+                        e.qualifiedName().c_str(), e.type.c_str(),
+                        static_cast<unsigned long long>(e.size),
+                        e.attributes.c_str(), e.date.c_str(),
+                        e.damaged ? "  [DEFEKT]" : "");
+        }
     }
-    std::cout << liste.size() << " Dateien";
+    info_aus << liste.size() << " Dateien";
     for (int i = 0; i < v->volumeCount(); ++i) {
         const FsInfo info = v->volumeInfo(i);
-        std::cout << " · " << (seiten ? v->volumeDir(i) + ": " : "")
-                  << menschlich(info.free_bytes) << " frei";
+        info_aus << " · " << (seiten ? v->volumeDir(i) + ": " : "")
+                 << menschlich(info.free_bytes) << " frei";
     }
-    std::cout << "\n";
-    (void)o.lang;
+    info_aus << "\n";
     return kOk;
 }
 
@@ -257,6 +283,31 @@ int cmd_info(const Optionen& o) {
     int rc = kOk;
     auto v = oeffne(o, o.rest[1], rc);
     if (!v) return rc;
+
+    if (o.json) {
+        std::cout << "{\"image\":" << jsonText(v->path())
+                  << ",\"format\":" << jsonText(v->detection().format)
+                  << ",\"filesystem\":" << jsonText(v->detection().filesystem)
+                  << ",\"unambiguous\":" << (v->detection().unambiguous ? "true" : "false")
+                  << ",\"alternatives\":" << jsonListe(v->detection().alternatives)
+                  << ",\"remarks\":" << jsonText(v->detection().remarks)
+                  << ",\"read_only\":" << (v->readOnly() ? "true" : "false")
+                  << ",\"volumes\":[";
+        for (int i = 0; i < v->volumeCount(); ++i) {
+            const FsInfo info = v->volumeInfo(i);
+            std::cout << (i ? "," : "")
+                      << "{\"index\":" << i
+                      << ",\"dir\":" << jsonText(v->volumeDir(i))
+                      << ",\"label\":" << jsonText(info.label)
+                      << ",\"total\":" << info.total_bytes
+                      << ",\"used\":"  << info.used_bytes
+                      << ",\"free\":"  << info.free_bytes
+                      << ",\"files\":" << info.files
+                      << ",\"warnings\":" << jsonListe(info.warnings) << "}";
+        }
+        std::cout << "]}\n";
+        return kOk;
+    }
 
     std::cout << "Abbild:      " << v->path() << "\n"
               << "Format:      " << v->detection().format << "\n"
@@ -291,6 +342,25 @@ int cmd_check(const Optionen& o) {
     int rc = kOk;
     auto v = oeffne(o, o.rest[1], rc);
     if (!v) return rc;
+
+    if (o.json) {
+        std::vector<std::string> unlesbar, warnungen;
+        for (const FileEntry& e : v->list())
+            if (e.damaged)
+                unlesbar.push_back((v->volumeCount() > 1
+                                        ? v->volumeDir(e.volume) + "/" : "")
+                                   + e.qualifiedName());
+        for (int i = 0; i < v->volumeCount(); ++i)
+            for (const std::string& w : v->volumeInfo(i).warnings) warnungen.push_back(w);
+
+        const bool ok = unlesbar.empty() && warnungen.empty();
+        std::cout << "{\"image\":" << jsonText(v->path())
+                  << ",\"ok\":" << (ok ? "true" : "false")
+                  << ",\"damaged\":" << jsonListe(unlesbar)
+                  << ",\"warnings\":" << jsonListe(warnungen)
+                  << ",\"remarks\":" << jsonText(v->detection().remarks) << "}\n";
+        return ok ? kOk : kFehler;
+    }
 
     int defekt = 0;
     for (const FileEntry& e : v->list()) {
@@ -488,7 +558,21 @@ int cmd_save_as(const Optionen& o) {
     return kOk;
 }
 
-int cmd_formats() {
+int cmd_formats(const Optionen& o) {
+    if (o.json) {
+        std::cout << "[";
+        bool erstes = true;
+        for (const FsProfile& p : dateisysteme().profiles()) {
+            std::cout << (erstes ? "" : ",")
+                      << "{\"name\":" << jsonText(p.name)
+                      << ",\"type\":" << jsonText(fsTypeName(p.type))
+                      << ",\"format\":" << jsonText(p.format)
+                      << ",\"description\":" << jsonText(p.description) << "}";
+            erstes = false;
+        }
+        std::cout << "]\n";
+        return kOk;
+    }
     std::printf("%-14s %-6s %-18s %s\n", "Name", "Typ", "Geometrie", "Beschreibung");
     for (const FsProfile& p : dateisysteme().profiles())
         std::printf("%-14s %-6s %-18s %s\n", p.name.c_str(), fsTypeName(p.type),
@@ -524,7 +608,7 @@ int main(int argc, char** argv) {
     if (befehl == "info")    return cmd_info(o);
     if (befehl == "save-as") return cmd_save_as(o);
     if (befehl == "check")   return cmd_check(o);
-    if (befehl == "formats") return cmd_formats();
+    if (befehl == "formats") return cmd_formats(o);
 
     std::cerr << "Fehler: unbekanntes Kommando '" << befehl << "'\n\n";
     gebrauch();

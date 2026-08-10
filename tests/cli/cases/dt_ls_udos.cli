@@ -2,7 +2,7 @@
 # Freiplatz je Seite.  Der Altbestand hinter Spur 76 wird gemeldet, nicht verschwiegen.
 tool:   k1520disktool
 disk:   udos_boot_scp.hfe
-run:    ls %DISK%
+run:    ls %DISK% -l
 expect: udos_ds77 (erkannt)
 expect: 2 Seiten
 expect: UDOS.SYS.4.3 / UDOS.SYS.4.3
