@@ -992,7 +992,8 @@ Werkzeuge vollständig ersetzt.
    zu lesen. Abhilfe wäre ein Attribut `step: 2` am Format; zu ändern wären
    `TrackFormat`/`DiskFormat`, die Spurabbildung im `SectorSpace` und das
    Lückenkriterium im `GeometryProbe`. Betroffen: 13 der erzeugten Abbilder
-   (CP/A-Geometrien `T`/`U`).
+   (CP/A-Geometrien `T`/`U`). Ausgearbeitet als Feature-Request:
+   `doc/feature_requests/doppelschritt_disketten.md`.
 9. **Geometrisch mehrdeutige Formate** (`cpa640` ≡ `k5601_16x256`, `scpx780` ≡ `scpx780_b`):
    Stufe 1 der Erkennung kann sie prinzipiell nicht trennen (§12.1). Solange sich die zugehörigen
    Dateisystemprofile unterscheiden, entscheidet Stufe 2; wo auch die identisch sind, ist die

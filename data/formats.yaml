@@ -21,7 +21,8 @@
 #  │ Laufwerk lesbar (doc/format.md, „Wozu einseitig und Doppelschritt gut      │
 #  │ sind").  `tracks:` kennt nur zusammenhaengende Zylinderbereiche; solche    │
 #  │ Disketten lehnt die Erkennung deshalb bewusst ab, statt ein 80-Spur-Format │
-#  │ darauf zu ziehen.  Fehlt: ein Attribut `step: 2` je Format.                │
+#  │ darauf zu ziehen.  Fehlt: ein Attribut `step: 2` je Format —              │
+#  │ doc/feature_requests/doppelschritt_disketten.md                           │
 #  └───────────────────────────────────────────────────────────────────────────┘
 #
 #  Spurbereich

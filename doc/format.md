@@ -118,12 +118,11 @@ ZWISCHEN beschriebenen — sieht nach Doppelschritt aus"), statt ein 80-Spur-For
 darauf zu ziehen und anschließend Datenmüll zu lesen.
 
 **Der saubere Weg wäre ein Schrittweiten-Attribut** am Format, z. B.
-`step: 2` neben `tracks:`. Ein 40-Spur-Format mit `step: 2` beschriebe dann genau
-diese Diskette: logische Spur *n* liegt auf physischem Zylinder 2·*n*. Zu ändern
-wären `TrackFormat`/`DiskFormat` (Feld + Validierung), der `SectorSpace`
-(Spurabbildung) und der `GeometryProbe` (Lückenmuster als Treffer statt als
-Ausschluss). Solange das fehlt, sind die 13 Doppelschritt-Abbilder aus
-`out/formats/` bekannt und benannt, aber nicht katalogisiert.
+`step: 2` neben `tracks:`. Ausgearbeitet als Feature-Request:
+**`doc/feature_requests/doppelschritt_disketten.md`** (Vorschlag, Änderungsstellen,
+Prüfmaterial, Abnahmekriterien). Solange das fehlt, sind die 13
+Doppelschritt-Abbilder aus `out/formats/` bekannt und benannt, aber nicht
+katalogisiert.
 
 > **✅ Seit den Combo-Disks (2026-07-02) im Emulator reproduzierbar:** Die früher hier
 > vermerkte Einschränkung „8″-Menüs nicht abgreifbar" ist **überholt**. Alle fünf
