@@ -14,6 +14,16 @@
 #    containers   (optional) img | hfe — darstellbare Dateitypen (Default: beide)
 #    tracks       (Pflicht)  Liste disjunkter Spurbereiche
 #
+#  ┌───────────────────────────────────────────────────────────────────────────┐
+#  │ NOCH NICHT ausdrueckbar: Doppelschritt.                                   │
+#  │ Ein 96-tpi-Laufwerk (K5601, K5600.20) schreibt fuer den Austausch mit dem  │
+#  │ 48-tpi-K5600.10 nur jede ZWEITE Spur — die Diskette ist dann im kleinen    │
+#  │ Laufwerk lesbar (doc/format.md, „Wozu einseitig und Doppelschritt gut      │
+#  │ sind").  `tracks:` kennt nur zusammenhaengende Zylinderbereiche; solche    │
+#  │ Disketten lehnt die Erkennung deshalb bewusst ab, statt ein 80-Spur-Format │
+#  │ darauf zu ziehen.  Fehlt: ein Attribut `step: 2` je Format.                │
+#  └───────────────────────────────────────────────────────────────────────────┘
+#
 #  Spurbereich
 #    cyls / heads   Bereich, INKLUSIVE ("0", "2-79", "0-1")
 #    sectors        Sektoren je Spur

@@ -68,6 +68,63 @@ Menüs (inkl. der 8″-Menüs) **live im Emulator abgreifen** lassen.
    bzw. MF3200/MF6400 (8″, 77 Spuren) konfiguriert. Die Kopfzeile zeigt dann `8"`
    bzw. `40 Sp./einseitig` und es erscheinen die passenden Formate (§3.5, §5).
 
+### Wozu einseitig und Doppelschritt gut sind — der Datenaustausch
+
+Die Umschalter aus Punkt 1 sind **keine Sparformate**, sondern die
+**Austauschformate** zwischen Rechnern mit unterschiedlichen Laufwerken. Wer das
+nicht weiß, hält eine Doppelschritt-Diskette für halb kaputt (jede zweite Spur
+leer) — sie ist aber genau richtig.
+
+Der Kern ist die **Spurdichte**: das K5600.10 arbeitet mit 48 tpi (40 Spuren), die
+80-Spur-Laufwerke K5601 und K5600.20 mit 96 tpi. Ein 96-tpi-Laufwerk kann eine für
+48 tpi lesbare Diskette schreiben, indem es **zwei Schritte je Spur** macht — dann
+liegen seine Spuren radial genau dort, wo das 48-tpi-Laufwerk sie erwartet. Die
+zweite Achse sind die **Köpfe**: ein einseitiges Laufwerk liest nur, was auf Seite 0
+steht.
+
+Daraus ergeben sich genau drei Fälle:
+
+| Austausch zwischen | umzustellen ist | Einstellung | Ergebnis auf der Diskette |
+|---|---|---|---|
+| **K5600.20 ↔ K5600.10** | das K5600.20 (80 Sp.) | **Doppelschritt** | 40 Spuren mit doppeltem Abstand, eine Seite |
+| **K5601 ↔ K5600.20** | das K5601 (80 Sp. DS) | **einseitig** | 80 Spuren, nur Seite 0 |
+| **K5601 ↔ K5600.10** | das K5601 | **einseitig + Doppelschritt** | 40 Spuren mit doppeltem Abstand, eine Seite |
+
+Umgestellt wird immer das **höherwertige** Laufwerk — das kleinere kann nichts
+dazulernen. Die so beschriebene Diskette ist physisch dieselbe wie eine im kleinen
+Laufwerk native erzeugte; nur der Schreiber war ein anderer.
+
+Damit erklären sich die Umschalter der Tabelle unten: `S` ist der Fall
+K5601 → K5600.20, `U` der Fall K5601/K5600.20 → K5600.10. `W`/`V`
+(40 Spuren im **Einzel**schritt) sind dagegen **kein** Austauschformat — sie gelten,
+wenn im Laufwerksschacht wirklich ein 40-Spur-Laufwerk steckt und dessen eigene
+Schritte schon die doppelte Breite haben.
+
+#### Alle drei Betriebssysteme können das — an verschiedenen Stellen
+
+| System | wo eingestellt | wie |
+|---|---|---|
+| **CP/A** | in `FORMAT.COM` selbst, je Formatiervorgang | Geometrie-Umschalter `S`/`T`/`U`/`V`/`W` (§3.4) |
+| **SCPX** | bei der **Systemgenerierung** mit `SYSP`, je Laufwerk | `Gib Laufwerkstyp ein (1..5)`: `1`=MF3200 FM · `2`=MF6400 MFM · `3`=K5600.10 · `4`=K5600.20 · `5`=5,25″ doppelseitig 80 Spuren.  `INIT`/`MODF` wählen danach nur noch das **Disketten**format (DD-DS/SS 16×256, DD-SS 26×128, DD-DS/SS 5×1024) — die Schrittweite steckt im generierten BIOS. |
+| **UDOS** | zur **Laufzeit** mit `SET DISKCON=`, je Laufwerk | Typ-Nibble: `3`=5,25″ 40 Spuren · `4`=80 Spuren einseitig · `5`=80 Spuren doppelseitig · **`6`=40 Spuren im 80-Spur-Laufwerk** (= Doppelschritt).  ⚠ Typ `6` ist bei UDOS 4.3 **defekt**: `FORMAT.COM` schreibt einfachschrittig, der Nukleus-Treiber liest schrittverdoppelt (`doc/udos_diskettenformat.md` §12.3) — Gastverhalten, kein Emulatorfehler. |
+
+#### Folge für den Formatkatalog (`data/formats.yaml`)
+
+Ein `tracks:`-Eintrag beschreibt **zusammenhängende** Zylinderbereiche. Eine
+Doppelschritt-Diskette belegt aber nur jeden zweiten Zylinder — das lässt sich damit
+heute **nicht** ausdrücken. Solche Abbilder erkennt der `GeometryProbe` deshalb
+bewusst als „passt zu keinem Format" und nennt den Grund („unformatierte Spuren
+ZWISCHEN beschriebenen — sieht nach Doppelschritt aus"), statt ein 80-Spur-Format
+darauf zu ziehen und anschließend Datenmüll zu lesen.
+
+**Der saubere Weg wäre ein Schrittweiten-Attribut** am Format, z. B.
+`step: 2` neben `tracks:`. Ein 40-Spur-Format mit `step: 2` beschriebe dann genau
+diese Diskette: logische Spur *n* liegt auf physischem Zylinder 2·*n*. Zu ändern
+wären `TrackFormat`/`DiskFormat` (Feld + Validierung), der `SectorSpace`
+(Spurabbildung) und der `GeometryProbe` (Lückenmuster als Treffer statt als
+Ausschluss). Solange das fehlt, sind die 13 Doppelschritt-Abbilder aus
+`out/formats/` bekannt und benannt, aber nicht katalogisiert.
+
 > **✅ Seit den Combo-Disks (2026-07-02) im Emulator reproduzierbar:** Die früher hier
 > vermerkte Einschränkung „8″-Menüs nicht abgreifbar" ist **überholt**. Alle fünf
 > Laufwerkstypen-Menüs sind jetzt **live abgegriffen** (`tools/capture_format_menus.py`,

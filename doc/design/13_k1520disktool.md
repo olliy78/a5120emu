@@ -983,7 +983,17 @@ Werkzeuge vollständig ersetzt.
    Ordner ohne Zusatzwissen wieder einfügbar ist. Falls sich später zeigt, dass Anwender die
    UDOS-Laufwerksnummern (Seite 0 = Laufwerk 0, Seite 1 = Laufwerk 4) erwarten, wäre
    `Drive0`/`Drive4` die Alternative — dann aber projektweit einheitlich, nicht als Option.
-8. **Geometrisch mehrdeutige Formate** (`cpa640` ≡ `k5601_16x256`, `scpx780` ≡ `scpx780_b`):
+8. **Doppelschritt-Disketten sind nicht katalogisierbar.** Die Austauschformate
+   zwischen Laufwerken verschiedener Spurdichte (96 tpi schreibt jede zweite Spur,
+   damit ein 48-tpi-Laufwerk lesen kann — `doc/format.md`, „Wozu einseitig und
+   Doppelschritt gut sind") belegen nur jeden zweiten Zylinder. `tracks:` beschreibt
+   aber zusammenhängende Bereiche. Die Erkennung lehnt sie deshalb ausdrücklich ab
+   (Kriterium `gap_tracks`), statt ein 80-Spur-Format darauf zu ziehen und Datenmüll
+   zu lesen. Abhilfe wäre ein Attribut `step: 2` am Format; zu ändern wären
+   `TrackFormat`/`DiskFormat`, die Spurabbildung im `SectorSpace` und das
+   Lückenkriterium im `GeometryProbe`. Betroffen: 13 der erzeugten Abbilder
+   (CP/A-Geometrien `T`/`U`).
+9. **Geometrisch mehrdeutige Formate** (`cpa640` ≡ `k5601_16x256`, `scpx780` ≡ `scpx780_b`):
    Stufe 1 der Erkennung kann sie prinzipiell nicht trennen (§12.1). Solange sich die zugehörigen
    Dateisystemprofile unterscheiden, entscheidet Stufe 2; wo auch die identisch sind, ist die
    Unterscheidung für das Werkzeug ohne Folge. `detect_rank` ist die Notbremse, falls doch eine
