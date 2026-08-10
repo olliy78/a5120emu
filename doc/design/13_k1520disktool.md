@@ -115,12 +115,12 @@ tools/
 
 app/
   disktool/                     ← NEU: PySide6-Anwendung (§11.2)
-      main.py, ui/…
+      main.py, ui/…                                                            ✅
   core_binding/
       k1520disk.py              ← NEU: ctypes-Bindung an libk1520disk.so        ✅
 
 data/formats.yaml               ← ERWEITERT: `filesystems:` + UDOS-Geometrien (§6)
-run_disktool.sh                 ← NEU (Analogon zu run_gui.sh)
+run_disktool.sh                 ← NEU (Analogon zu run_gui.sh)                  ✅
 ```
 
 > **Warum unter `core/`?** `core/` ist im Projekt die C++-Seite mit Include-Wurzel
@@ -898,7 +898,7 @@ einzige Wahrheit. Beide neuen Ziele landen in `build/` bzw. `build_trace/` und w
 Jede Etappe ist für sich lauffähig und testbar; die Reihenfolge minimiert das Risiko, weil das
 Schwierigste (UDOS-Schreiben) auf einem dann schon geprüften Unterbau steht.
 
-> **Stand 2026-08-10 (Branch `create_disktool`): Etappen 1–7 sind umgesetzt und grün.**
+> **Stand 2026-08-10 (Branch `create_disktool`): ALLE Etappen sind umgesetzt und grün.**
 > Die gesamte Dateisystemschicht steht: Sektorraum, Geometriemessung, Katalog,
 > **CP/M lesen und schreiben**, **UDOS lesen und schreiben** (inkl. `mkfs`),
 > `DiskVolume` mit `Side0/Side1`, Transaktionen und Erkennung.
@@ -909,11 +909,10 @@ Schwierigste (UDOS-Schreiben) auf einem dann schon geprüften Unterbau steht.
 > (69 Dateien, 39 sichtbar, 850/1310 freie Sektoren, `EXTRACT SD`); UDOS-**Schreiben**
 > gegen das **laufende UDOS** (`CAT` listet, `PRINT` gibt aus, `STATUS` bestätigt den
 > freien Platz auf den Sektor genau).
-> Dazu **C-API `libk1520disk.so`**, **CLI `k1520disktool`** und die
-> **ctypes-Bindung** `app/core_binding/k1520disk.py` — mit dem Dreiklang-Test
-> (Header ↔ `.so` ↔ ctypes) wie beim Emulator.
-> Offen: nur noch die **PySide6-Oberfläche** (Etappe 8) und die Werkzeugreferenz
-> `tools/k1520disktool.md` (Etappe 9).
+> Dazu **C-API `libk1520disk.so`**, **CLI `k1520disktool`**, die **ctypes-Bindung**
+> `app/core_binding/k1520disk.py` (mit dem Dreiklang-Test Header ↔ `.so` ↔ ctypes wie
+> beim Emulator) und die **PySide6-Oberfläche** `app/disktool/` samt
+> `run_disktool.sh` und Werkzeugreferenz `tools/k1520disktool.md`.
 > Abweichungen von der Dateiliste oben: `CpmFileSystem` deckt Etappe 4 mit ab;
 > `udos_dir.*` und `fs_detect.*` sind in `udos_fs.*` bzw.
 > `disk_volume.*`/`geometry_probe.*` aufgegangen.

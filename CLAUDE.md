@@ -325,6 +325,48 @@ geben (`isolation: "worktree"`). Read-only-Agenten (`code-explorer`, `log-trace-
 Agenten sind langsam (ein voller Boot unter `k1520dbg`/`boot_trace` ~2 s bis Minuten je Aufgabe) —
 nicht mit „hängt" verwechseln; sie melden sich bei Abschluss selbst.
 
+## k1520DiskTool — Dateiaustausch mit Disketten (`core/filesystem/`, `app/disktool/`)
+
+Zweites Anwenderprogramm neben dem Emulator: holt Dateien von CP/A-, SCPX- und
+**UDOS**-Disketten und schreibt sie zurück (`.img`/`.hfe`/`.dmk`).  Es teilt sich mit dem
+Emulator die Container-/Medium-Schicht, hat aber **eine eigene Bibliothek**
+(`libk1520disk.so`) ohne Z80 und Karten.  Voller Entwurf: `doc/design/13_k1520disktool.md`,
+Bedienung: `tools/k1520disktool.md`.
+
+```
+core/filesystem/   SectorSpace (physisch + linear) · GeometryProbe (Erkennung Stufe 1)
+                   FsProfile/FsCatalog · CpmFileSystem · UdosFileSystem · DiskVolume
+core/api/k1520_disk_api.*   C-ABI  →  libk1520disk.so
+tools/k1520disktool.cpp     CLI    →  tools/dev.sh tool k1520disktool ls <abbild>
+app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
+```
+
+Was beim Weiterarbeiten zu wissen ist:
+
+- **`data/formats.yaml` hat jetzt ZWEI Sektionen.**  `formats:` (Physik, liest der
+  Emulator) und `filesystems:` (logische Ebene, liest nur das DiskTool).  `data_start`
+  ist dort eine **Spur**, kein Byte-Offset — bei gemischter Geometrie (cpa780: drei
+  128-B-Seiten, dann 1024 B) wäre er als Spurzahl gar nicht ausdrückbar; cpmtools trägt
+  deshalb `offset 15104` ein, was der `SectorSpace` aus `data_start c2h0` ausrechnet.
+  Mehrere Dateisysteme je Geometrie sind normal (`cpa640` ≡ `scpx640`, nur anderes
+  `data_start`).  Neue Formatnamen gehören in die Erwartungsliste von
+  `FormatCatalog.Formatnamen_SindEinStabilerVertrag` bzw. `FsCatalog.ProfilnamenSind…`.
+- **`TrackCodec::writeSector`** ersetzt ein Datenfeld an Ort und Stelle und rechnet die
+  CRC neu.  `buildTrack()` taugt zum Schreiben **nicht**: es baut die Spur neu und
+  verlöre die Bytes hinter der Daten-CRC — bei UDOS die gesamte Dateiverkettung.
+- **UDOS: jede Seite ist ein eigenes Dateisystem**, für den Anwender aber EINE Diskette.
+  `DiskVolume` führt beide als `Side0`/`Side1`; `extractAll` legt die Unterverzeichnisse
+  an, `insertAll` verlangt sie.  UDOS auf `.img` ist unmöglich (Kontrollblock hinter der
+  Daten-CRC) und wird abgelehnt.
+- **Stapeloperationen sind Transaktionen**: erst planen und urteilen, dann schreiben;
+  ein Fehler rollt die Momentaufnahme des `DiskMedium` zurück.  `list()` liest **immer**
+  frisch aus dem Medium — es gibt keinen zwischengespeicherten Verzeichnisstand.
+- **Kreuzproben statt Selbstbestätigung** (`ctest -R DiskTool.*Roundtrip`, Label
+  `format_integration`): geschrieben wird mit dem Werkzeug, gelesen vom **laufenden
+  CP/A** (`TYPE`/`DIR`) bzw. **UDOS** (`CAT`/`PRINT`/`STATUS`).  Der CP/M-Lesepfad ist
+  zusätzlich byteweise gegen `cpmtools` verifiziert (nicht als Abhängigkeit — die
+  Prüfsummen im Test frieren das Ergebnis ein).
+
 ## Diskettenformatierung (FORMAT.COM) — Scope
 
 Scriptgesteuerte Formatier-Pipeline: `tests/system/drivers/format_all.py` (Runner) + `tools/format_driver`
