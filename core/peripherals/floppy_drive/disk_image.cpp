@@ -177,7 +177,7 @@ bool DiskImage::autoFlush(uint64_t now_cycles) {
     return flush();
 }
 
-bool DiskImage::saveAs(const std::string& path, std::optional<DiskFormat> fmt) {
+bool DiskImage::exportTo(const std::string& path, std::optional<DiskFormat> fmt) {
     const ContainerType ziel = ImageCodec::fromExtension(path);
 
     if (ImageCodec::needsDiskFormat(ziel)) {
@@ -203,14 +203,19 @@ bool DiskImage::saveAs(const std::string& path, std::optional<DiskFormat> fmt) {
         last_error_ = err;
         return false;
     }
+    last_error_.clear();
+    return true;
+}
+
+bool DiskImage::saveAs(const std::string& path, std::optional<DiskFormat> fmt) {
+    if (!exportTo(path, fmt)) return false;
 
     // Ab jetzt zeigt die Bindung auf die neue Datei — Autosave folgt dorthin.
     path_             = path;
-    container_        = ziel;
-    disk_format_      = (ziel == ContainerType::Img) ? fmt : std::nullopt;
+    container_        = ImageCodec::fromExtension(path);
+    disk_format_      = (container_ == ContainerType::Img) ? fmt : std::nullopt;
     binding_writable_ = true;
     medium_.clearDirty();
     dirty_since_      = 0;
-    last_error_.clear();
     return true;
 }

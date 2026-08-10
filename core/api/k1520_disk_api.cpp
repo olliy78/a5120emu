@@ -90,14 +90,14 @@ TransferOptions optionen(K1520DMode mode, bool overwrite) {
 
 // ─── Oeffnen / Anlegen / Speichern ───────────────────────────────────────────
 
-extern "C" K1520Disk k1520d_open(const char* path, const char* fs_name) {
+extern "C" K1520Disk k1520d_open(const char* path, const char* fs_name, bool read_only) {
     g_open_error.clear();
     if (!path || !*path) { g_open_error = "kein Pfad angegeben"; return nullptr; }
 
     auto h = std::make_unique<Handle>();
     std::string err;
     h->vol = DiskVolume::open(path, fs_name ? fs_name : "",
-                              kataloge().formate, kataloge().dateisysteme, err);
+                              kataloge().formate, kataloge().dateisysteme, err, read_only);
     if (!h->vol) { g_open_error = err; return nullptr; }
     return h.release();
 }
@@ -123,6 +123,18 @@ extern "C" bool k1520d_flush(K1520Disk h) {
 
 extern "C" bool k1520d_save_as(K1520Disk h, const char* path) {
     return h && path && H(h)->vol->saveAs(path);
+}
+
+extern "C" bool k1520d_export_image(K1520Disk h, const char* path) {
+    return h && path && H(h)->vol->exportImage(path);
+}
+
+extern "C" bool k1520d_read_only(K1520Disk h) {
+    return h ? H(h)->vol->readOnly() : true;
+}
+
+extern "C" void k1520d_set_read_only(K1520Disk h, bool ro) {
+    if (h) H(h)->vol->setReadOnly(ro);
 }
 
 extern "C" void k1520d_set_backup(K1520Disk h, bool on) {
@@ -173,7 +185,8 @@ extern "C" const char* k1520d_detect(const char* path) {
     g_scratch.clear();
     if (!path) return g_scratch.c_str();
     std::string err;
-    auto v = DiskVolume::open(path, "", kataloge().formate, kataloge().dateisysteme, err);
+    auto v = DiskVolume::open(path, "", kataloge().formate, kataloge().dateisysteme,
+                              err, /*read_only=*/true);
     if (v) g_scratch = v->detection().filesystem;
     else   g_open_error = err;
     return g_scratch.c_str();

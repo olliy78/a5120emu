@@ -28,9 +28,12 @@ from typing import List, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow,
-    QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QInputDialog, QLabel,
+    QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSplitter,
+    QVBoxLayout, QWidget,
 )
+
+from app.disktool.archive import create_archive
 
 from app.core_binding.k1520disk import DiskTool, K1520DiskError, filesystems
 from app.disktool.ui.disk_view import DiskView
@@ -59,11 +62,21 @@ class MainWindow(QMainWindow):
             self.fs_wahl.addItem(f"{f.name} — {f.description}", f.name)
         self.fs_wahl.currentIndexChanged.connect(self._fs_gewaehlt)
 
+        # Der Schreibschutz ist beim Oeffnen AN.  Ihn zu entfernen ist ein
+        # bewusster Schritt — wer eine unersetzliche Diskette vor sich hat, legt
+        # vorher lieber mit „Speichern unter…" eine Arbeitskopie an.
+        self.chk_readonly = QCheckBox("Nur lesen")
+        self.chk_readonly.setChecked(True)
+        self.chk_readonly.setToolTip(
+            "Solange der Haken gesetzt ist, kann die Diskette nicht veraendert werden.")
+        self.chk_readonly.toggled.connect(self._readonly_umgeschaltet)
+
         kopf = QHBoxLayout()
         kopf.addWidget(self.btn_oeffnen)
         kopf.addWidget(self.btn_neu)
         kopf.addWidget(QLabel("Dateisystem:"))
         kopf.addWidget(self.fs_wahl, 1)
+        kopf.addWidget(self.chk_readonly)
 
         # ── Mitte: Diskette | Übertragung | Ordner ──────────────────────────
         self.disk_view = DiskView()
@@ -94,6 +107,10 @@ class MainWindow(QMainWindow):
         self.btn_alles_rein = QPushButton("Alles einfügen")
         self.btn_loeschen = QPushButton("Löschen")
         self.btn_speichern = QPushButton("Speichern")
+        self.btn_speichern_unter = QPushButton("Speichern unter…")
+        self.btn_archivieren = QPushButton("Archivieren…")
+        self.btn_archivieren.setToolTip(
+            "Abbild (.hfe), alle Dateien und ein Inhaltsverzeichnis in eine .zip")
         self.chk_text = QComboBox()
         self.chk_text.addItems(["binär", "Text (CR LF ↔ LF)"])
 
@@ -105,6 +122,8 @@ class MainWindow(QMainWindow):
         fuss.addWidget(QLabel("Übertragung:"))
         fuss.addWidget(self.chk_text)
         fuss.addWidget(self.btn_speichern)
+        fuss.addWidget(self.btn_speichern_unter)
+        fuss.addWidget(self.btn_archivieren)
 
         self.protokoll = QPlainTextEdit()
         self.protokoll.setReadOnly(True)
@@ -130,6 +149,8 @@ class MainWindow(QMainWindow):
         self.btn_alles_rein.clicked.connect(self._alles_einfuegen)
         self.btn_loeschen.clicked.connect(self._loeschen_auswahl)
         self.btn_speichern.clicked.connect(self.save)
+        self.btn_speichern_unter.clicked.connect(self._speichern_unter_dialog)
+        self.btn_archivieren.clicked.connect(self._archivieren_dialog)
         self.folder_view.choose_requested.connect(self._ordner_dialog)
         self.folder_view.disk_files_dropped.connect(self._extrahieren_refs)
         self.disk_view.files_dropped.connect(self._einfuegen_pfade)
@@ -152,11 +173,21 @@ class MainWindow(QMainWindow):
         self.protokoll.appendPlainText(text)
         self.statusBar().showMessage(text.splitlines()[0] if text else "")
 
-    def _enable_write(self, an: bool) -> None:
-        """Schreibende Bedienelemente sperren, solange nichts Erkanntes offen ist."""
-        for w in (self.btn_raus, self.btn_rein, self.btn_alles_raus,
-                  self.btn_alles_rein, self.btn_loeschen, self.btn_speichern):
-            w.setEnabled(an)
+    def _enable_write(self, offen: bool) -> None:
+        """Bedienelemente nach Zustand freigeben.
+
+        Zwei Stufen: **offen** (etwas Erkanntes liegt vor) gibt das Lesen frei —
+        Extrahieren, Speichern unter, Archivieren.  Schreiben zusaetzlich erst,
+        wenn der Schreibschutz entfernt ist.
+        """
+        schreibbar = offen and self.tool is not None and not self.tool.read_only
+        for w in (self.btn_raus, self.btn_alles_raus,
+                  self.btn_speichern_unter, self.btn_archivieren):
+            w.setEnabled(offen)
+        for w in (self.btn_rein, self.btn_alles_rein, self.btn_loeschen,
+                  self.btn_speichern):
+            w.setEnabled(schreibbar)
+        self.chk_readonly.setEnabled(offen)
 
     def _reload(self) -> None:
         """Ansicht aus dem Medium neu aufbauen (§9.3 — kein Zwischenspeicher)."""
@@ -191,6 +222,9 @@ class MainWindow(QMainWindow):
             self.log(f"Nicht geöffnet: {e}")
             return False
 
+        self.chk_readonly.blockSignals(True)
+        self.chk_readonly.setChecked(self.tool.read_only)
+        self.chk_readonly.blockSignals(False)
         self._enable_write(True)
         self._reload()
         hinweis = "" if self.tool.unambiguous else \
@@ -207,6 +241,9 @@ class MainWindow(QMainWindow):
             self._enable_write(False)
             self._fehler("Diskette anlegen", str(e))
             return False
+        self.chk_readonly.blockSignals(True)
+        self.chk_readonly.setChecked(False)      # frisch angelegt = zum Beschreiben da
+        self.chk_readonly.blockSignals(False)
         self._enable_write(True)
         self._reload()
         self.log(f"Angelegt: {path} ({filesystem}, {self.tool.volume_count} Seiten)")
@@ -311,6 +348,49 @@ class MainWindow(QMainWindow):
         self.log(f"{len(refs)} Dateien gelöscht")
         return True
 
+    def save_as(self, path) -> bool:
+        """Unter neuem Namen/Container speichern und **dort weiterarbeiten**.
+
+        Auch bei Schreibschutz erlaubt — die Quelle bleibt unberuehrt.  Genau der
+        Weg, um vor Aenderungen eine Arbeitskopie anzulegen.
+        """
+        if self.tool is None:
+            return False
+        try:
+            self.tool.save_as(path)
+        except K1520DiskError as e:
+            self._fehler("Speichern unter", str(e))
+            return False
+        self._reload()
+        self.log(f"Gespeichert unter {path}")
+        return True
+
+    def archive(self, zip_path) -> bool:
+        """Abbild (.hfe), alle Dateien und ein Inhaltsverzeichnis in eine `.zip`.
+
+        Reine Leseoperation — auch mit gesetztem Schreibschutz benutzbar.
+        """
+        if self.tool is None:
+            return False
+        try:
+            ziel = create_archive(self.tool, zip_path, text_mode=self.text_mode)
+        except (K1520DiskError, OSError) as e:
+            self._fehler("Archivieren", str(e))
+            return False
+        self.log(f"Archiviert: {ziel}")
+        return True
+
+    def set_read_only(self, ro: bool) -> None:
+        """Schreibschutz setzen — ohne Rueckfrage (die sitzt im Klick-Behandler)."""
+        if self.tool is None:
+            return
+        self.tool.set_read_only(ro)
+        self.chk_readonly.blockSignals(True)
+        self.chk_readonly.setChecked(ro)
+        self.chk_readonly.blockSignals(False)
+        self._enable_write(True)
+        self.log("Schreibschutz " + ("gesetzt" if ro else "aufgehoben"))
+
     def save(self) -> bool:
         if self.tool is None:
             return False
@@ -347,6 +427,59 @@ class MainWindow(QMainWindow):
             return
         label, _ = QInputDialog.getText(self, "Neue Diskette", "Datenträgername:")
         self.create_disk(pfad, fs, label or "")
+
+    def _speichern_unter_dialog(self) -> None:
+        if self.tool is None:
+            return
+        # UDOS kann kein .img tragen — den Filter dann gar nicht erst anbieten.
+        filter_ = "HFE-Abbild (*.hfe);;DMK-Abbild (*.dmk)"
+        if not any(f.name == self.tool.filesystem and f.type == "udos"
+                   for f in filesystems()):
+            filter_ += ";;Sektorabbild (*.img)"
+        pfad, _ = QFileDialog.getSaveFileName(self, "Speichern unter", "", filter_)
+        if pfad:
+            self.save_as(pfad)
+
+    def _archivieren_dialog(self) -> None:
+        if self.tool is None:
+            return
+        vorschlag = str(Path(self.tool.path).with_suffix(".zip"))
+        pfad, _ = QFileDialog.getSaveFileName(
+            self, "Archivieren", vorschlag, "ZIP-Archiv (*.zip)")
+        if pfad:
+            self.archive(pfad)
+
+    def _readonly_umgeschaltet(self, an: bool) -> None:
+        """Haken „Nur lesen" — der bewusste Schritt zum Schreiben.
+
+        Beim Zurueckschalten auf Nur-Lesen mit ungespeicherten Aenderungen wird
+        gefragt: speichern, verwerfen (Datei neu einlesen) oder abbrechen.
+        """
+        if self.tool is None:
+            return
+        if an and self.tool.dirty:
+            antwort = QMessageBox.question(
+                self, "Ungespeicherte Änderungen",
+                "Die Diskette hat ungespeicherte Änderungen.\n"
+                "Vor dem Schreibschutz speichern?",
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+            if antwort == QMessageBox.Cancel:
+                self.chk_readonly.blockSignals(True)
+                self.chk_readonly.setChecked(False)
+                self.chk_readonly.blockSignals(False)
+                return
+            if antwort == QMessageBox.Yes:
+                if not self.save():
+                    self.chk_readonly.blockSignals(True)
+                    self.chk_readonly.setChecked(False)
+                    self.chk_readonly.blockSignals(False)
+                    return
+            else:
+                # Verwerfen heisst: die Datei noch einmal einlesen.
+                pfad = self.tool.path
+                self.open_image(pfad, self.fs_wahl.currentData() or "")
+                return
+        self.set_read_only(an)
 
     def _ordner_dialog(self) -> None:
         pfad = QFileDialog.getExistingDirectory(self, "Ordner wählen")

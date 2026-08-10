@@ -59,6 +59,7 @@ nicht die Umsetzung.
 | E1 | Bibliotheksschnitt | **Eigene `libk1520disk.so`** mit eigener C-API (`core/api/k1520_disk_api.h`). Sie bindet dieselben **statischen** Bausteine wie der Emulator (`k1520_floppy2`, `k1520_util`), aber **keinen** Z80-/Karten-Code. Die Emulator-ABI bleibt unverändert. |
 | E2 | Oberfläche | **Eigenständige PySide6-Anwendung** unter `app/disktool/`, Start über `run_disktool.sh`. Teilt sich mit der Emulator-GUI die Hilfsmodule (`config_io`, Stil, Symbol), nicht den Prozess. |
 | E3 | Schreibumfang | Kopieren rein/raus **+ Löschen + Leerdiskette anlegen (mkfs)**. |
+| E5 | Schreibsicherheit | **Schreibgeschützt öffnen statt atomar schreiben** (§14). Beim Lesen soll nichts kaputtgehen können; Schreiben verlangt einen bewussten Schritt. |
 | E4 | Hardware (Greaseweazle) | **Später.** Der Entwurf sieht eine Quellen-Abstraktion (Datei / Gerät) vor, damit `gw read/write` ohne Umbau andocken kann; die erste Ausbaustufe kennt nur Dateien. |
 
 **Getroffene Annahmen** (nicht rückgefragt, weil ein anderer Weg die Arbeit nicht wesentlich
@@ -825,6 +826,24 @@ Dateisystem, Sektorraum oder Oberfläche. Mehr wird jetzt nicht gebaut.
 
 ## 14. Sicherheit beim Schreiben
 
+> **Entscheidung 2026-08-10 (E5): kein atomares Schreiben.** Der Entwurf sah ursprünglich
+> `.tmp` + `rename()` vor (§14.3 unten, gestrichen). Der Bauherr hat das verworfen, und
+> zwar mit dem besseren Argument: dass eine Datei kaputtgeht, wenn ein Programm mitten
+> im Schreiben abstürzt, ist ein *normales* Risiko jeder Software — dann legt man die
+> Diskette eben neu an. Was **nicht** passieren darf, ist eine Diskette zu verlieren,
+> die man nur **ansehen** wollte. Genau dort setzt der Schutz jetzt an:
+>
+> * **Schreibgeschützt ist die Vorgabe.** `DiskVolume::open` öffnet schreibgeschützt;
+>   der Schutz reicht bis ins `DiskImage` (dessen `flush()` schreibt dann nichts, auch
+>   nicht aus dem Destruktor). Die Oberfläche zeigt das als Haken **„Nur lesen"**, der
+>   beim Öffnen gesetzt ist; das CLI öffnet für `ls`/`get`/`info`/`check`/`save-as`
+>   schreibgeschützt und nur für `put`/`rm` schreibend.
+> * **Schreiben ist ein bewusster Schritt.** Wer den Haken entfernt, weiß in diesem
+>   Moment, dass er die Diskette verändern kann — und legt bei einem unersetzlichen
+>   Stück vorher mit **„Speichern unter…"** eine Arbeitskopie an.
+> * Die **Sicherungskopie `<name>~`** beim ersten Zurückschreiben bleibt: sie schützt
+>   gegen den *logischen* Irrtum, nicht gegen den abgebrochenen Schreibvorgang.
+
 Ein Werkzeug, das fremde, teils einmalige Datenträgerabbilder verändert, muss vorsichtiger sein
 als der Emulator (der auf einer Arbeitskopie läuft):
 
@@ -832,7 +851,7 @@ als der Emulator (der auf einer Arbeitskopie läuft):
    ausdrücklichen Speichern angefasst (§5). Abbruch = Datei unverändert.
 2. **Sicherungskopie**: beim ersten Schreiben auf eine bestehende Datei standardmäßig
    `name.hfe~` anlegen (CLI: `--no-backup`).
-3. **Atomar**: in `name.hfe.tmp` schreiben, dann `rename()`.
+3. ~~**Atomar**: in `name.hfe.tmp` schreiben, dann `rename()`.~~ — verworfen, s. o.
 4. **Schreibschutz** der Datei und `DiskImage::bindingWritable()` werden respektiert.
 5. **`.img` + UDOS** wird abgelehnt, ebenso Speichern eines nicht `rawCompatible()`-Mediums als
    `.img` (`DiskImage::saveAs` meldet das bereits mit Grund).

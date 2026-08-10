@@ -164,6 +164,15 @@ public:
      */
     bool saveAs(const std::string& path, std::optional<DiskFormat> fmt);
 
+    /**
+     * @brief Kopie in einen beliebigen Container schreiben — **ohne umzubinden**.
+     *
+     * Wie @ref saveAs, aber die Diskette bleibt an ihre bisherige Datei gebunden und
+     * ihr Dirty-Zustand unveraendert.  Fuer Exporte, die den Arbeitsstand nicht
+     * antasten sollen (Archivierung, Formatumwandlung zur Ansicht).
+     */
+    bool exportTo(const std::string& path, std::optional<DiskFormat> fmt);
+
     const char* lastError() const { return last_error_.c_str(); }
 
 private:

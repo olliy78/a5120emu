@@ -67,6 +67,7 @@ void gebrauch() {
         "  put    <abbild> <datei|ordner…>          Dateien einfuegen\n"
         "  rm     <abbild> <muster…>                Dateien loeschen\n"
         "  create <abbild> --fs NAME [--label N]    leere Diskette anlegen\n"
+        "  save-as <abbild> <ziel>                  Kopie, ggf. anderes Format\n"
         "  info   <abbild>                          Belegung und Erkennung\n"
         "  check  <abbild>                          Pruefbericht\n"
         "  formats                                  bekannte Dateisysteme auflisten\n\n"
@@ -146,9 +147,19 @@ bool passt(const std::string& muster, const std::string& name) {
     return m == muster.size();
 }
 
-std::unique_ptr<DiskVolume> oeffne(const Optionen& o, const std::string& pfad, int& rc) {
+/**
+ * @brief Abbild oeffnen.
+ *
+ * @p schreibend entscheidet ueber den Schreibschutz: `ls`/`get`/`info`/`check`
+ * oeffnen schreibgeschuetzt, sodass beim blossen Lesen nichts kaputtgehen kann —
+ * auch nicht durch einen Abbruch.  Nur `put`/`rm` heben ihn auf; dort IST der
+ * Aufruf schon der bewusste Schritt.
+ */
+std::unique_ptr<DiskVolume> oeffne(const Optionen& o, const std::string& pfad, int& rc,
+                                   bool schreibend = false) {
     std::string err;
-    auto v = DiskVolume::open(pfad, o.fs, formate(), dateisysteme(), err);
+    auto v = DiskVolume::open(pfad, o.fs, formate(), dateisysteme(), err,
+                              /*read_only=*/!schreibend);
     if (!v) {
         std::cerr << "Fehler: " << err << "\n";
         rc = kNichtErkannt;
@@ -361,7 +372,7 @@ int cmd_put(const Optionen& o) {
         return kFehler;
     }
     int rc = kOk;
-    auto v = oeffne(o, o.rest[1], rc);
+    auto v = oeffne(o, o.rest[1], rc, /*schreibend=*/true);
     if (!v) return rc;
 
     TransferOptions t;
@@ -415,7 +426,7 @@ int cmd_put(const Optionen& o) {
 int cmd_rm(const Optionen& o) {
     if (o.rest.size() < 3) { std::cerr << "Fehler: Abbild und Muster angeben\n"; return kFehler; }
     int rc = kOk;
-    auto v = oeffne(o, o.rest[1], rc);
+    auto v = oeffne(o, o.rest[1], rc, /*schreibend=*/true);
     if (!v) return rc;
 
     int n = 0;
@@ -460,6 +471,23 @@ int cmd_create(const Optionen& o) {
     return kOk;
 }
 
+int cmd_save_as(const Optionen& o) {
+    if (o.rest.size() < 3) {
+        std::cerr << "Fehler: Quellabbild und Zielabbild angeben\n";
+        return kFehler;
+    }
+    int rc = kOk;
+    auto v = oeffne(o, o.rest[1], rc);          // lesend genuegt — die Quelle bleibt heil
+    if (!v) return rc;
+
+    if (!v->exportImage(o.rest[2])) {
+        std::cerr << "Fehler: " << v->lastError() << "\n";
+        return kFehler;
+    }
+    std::cout << o.rest[1] << " → " << o.rest[2] << "\n";
+    return kOk;
+}
+
 int cmd_formats() {
     std::printf("%-14s %-6s %-18s %s\n", "Name", "Typ", "Geometrie", "Beschreibung");
     for (const FsProfile& p : dateisysteme().profiles())
@@ -494,6 +522,7 @@ int main(int argc, char** argv) {
     if (befehl == "rm")      return cmd_rm(o);
     if (befehl == "create")  return cmd_create(o);
     if (befehl == "info")    return cmd_info(o);
+    if (befehl == "save-as") return cmd_save_as(o);
     if (befehl == "check")   return cmd_check(o);
     if (befehl == "formats") return cmd_formats();
 

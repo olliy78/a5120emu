@@ -180,7 +180,7 @@ def test_insert_all_requires_the_side_directories(tmp_path, fixture_disks):
     (quelle / "Side0").mkdir(parents=True)
     (quelle / "Side0" / "NUR.EINE").write_text("Seite 0")
 
-    with DiskTool.open(abbild) as d:
+    with DiskTool.open(abbild, read_only=False) as d:
         with pytest.raises(K1520DiskError) as exc:
             d.insert_all(quelle)
         assert "Side1/" in str(exc.value)
@@ -227,7 +227,7 @@ def test_backup_copy_on_first_write(tmp_path, fixture_disks):
     quelle = tmp_path / "neu.txt"
     quelle.write_text("Inhalt")
 
-    with DiskTool.open(abbild) as d:
+    with DiskTool.open(abbild, read_only=False) as d:
         d.insert(quelle, "NEU.TXT")
         d.flush()
 

@@ -53,6 +53,16 @@ std::unique_ptr<DiskVolume> oeffne(const std::string& pfad, const std::string& f
     return DiskVolume::open(pfad, fs_name, formate(), dateisysteme(), err);
 }
 
+/// @brief Oeffnen UND den Schreibschutz aufheben — in der Oberflaeche der Haken
+///        „Nur lesen", hier ein Aufruf.  Absichtlich ein eigener Schritt.
+std::unique_ptr<DiskVolume> oeffneSchreibbar(const std::string& pfad,
+                                             const std::string& fs_name,
+                                             std::string& err) {
+    auto v = DiskVolume::open(pfad, fs_name, formate(), dateisysteme(), err);
+    if (v) v->setReadOnly(false);
+    return v;
+}
+
 /// @brief Temporaerer Ordner, raeumt sich weg.
 class TempOrdner {
 public:
@@ -196,7 +206,7 @@ TEST(DiskVolume, ExtrahiertFlachWennDieDisketteEinDateisystemHat) {
 TEST(DiskVolume, FehlenderSideOrdnerIstEinFehlerUndAendertNichts) {
     Kopie k("udos_boot_scp.hfe", "k1520_test_dv_side.hfe");
     std::string err;
-    auto dv = oeffne(k.path(), "", err);
+    auto dv = oeffneSchreibbar(k.path(), "", err);
     ASSERT_NE(dv, nullptr) << err;
     ASSERT_EQ(dv->volumeCount(), 2);
 
@@ -211,7 +221,7 @@ TEST(DiskVolume, FehlenderSideOrdnerIstEinFehlerUndAendertNichts) {
 
 TEST(DiskVolume, LoseDateienNebenDenSideOrdnernSindEinFehler) {
     std::string err;
-    auto dv = oeffne(fixture("udos_boot_scp.hfe"), "", err);
+    auto dv = oeffneSchreibbar(fixture("udos_boot_scp.hfe"), "", err);
     ASSERT_NE(dv, nullptr) << err;
 
     TempOrdner quelle("k1520_test_dv_lose");
@@ -231,7 +241,7 @@ TEST(DiskVolume, LoseDateienNebenDenSideOrdnernSindEinFehler) {
 TEST(DiskVolume, StapelPasstNichtUndSchreibtDeshalbGarNichts) {
     Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_dv_voll.img");
     std::string err;
-    auto dv = oeffne(k.path(), "cpa780", err);
+    auto dv = oeffneSchreibbar(k.path(), "cpa780", err);
     ASSERT_NE(dv, nullptr) << err;
 
     const uint64_t frei_vorher = dv->volumeInfo(0).free_bytes;
@@ -253,7 +263,7 @@ TEST(DiskVolume, StapelPasstNichtUndSchreibtDeshalbGarNichts) {
 TEST(DiskVolume, StapelSchreibtUndDieAnsichtIstSofortAktuell) {
     Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_dv_ok.img");
     std::string err;
-    auto dv = oeffne(k.path(), "cpa780", err);
+    auto dv = oeffneSchreibbar(k.path(), "cpa780", err);
     ASSERT_NE(dv, nullptr) << err;
 
     const size_t vorher = dv->list().size();
@@ -299,7 +309,7 @@ TEST(DiskVolume, CheckFitUrteiltOhneZuSchreiben) {
 TEST(DiskVolume, RoundtripUeberDieDateiEbene) {
     Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_dv_rt.img");
     std::string err;
-    auto dv = oeffne(k.path(), "cpa780", err);
+    auto dv = oeffneSchreibbar(k.path(), "cpa780", err);
     ASSERT_NE(dv, nullptr) << err;
 
     TempOrdner quelle("k1520_test_dv_rt_q");
@@ -322,7 +332,7 @@ TEST(DiskVolume, RoundtripUeberDieDateiEbene) {
 TEST(DiskVolume, TextmodusSetztZeilenendenUm) {
     Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_dv_text.img");
     std::string err;
-    auto dv = oeffne(k.path(), "cpa780", err);
+    auto dv = oeffneSchreibbar(k.path(), "cpa780", err);
     ASSERT_NE(dv, nullptr) << err;
 
     TempOrdner quelle("k1520_test_dv_text_q");
@@ -358,7 +368,7 @@ TEST(DiskVolume, SideNPraefixImDateinamen) {
 TEST(DiskVolume, UdosStapelUeberBeideSeitenHinUndZurueck) {
     Kopie k("udos_boot_scp.hfe", "k1520_test_dv_udos_stapel.hfe");
     std::string err;
-    auto dv = oeffne(k.path(), "", err);
+    auto dv = oeffneSchreibbar(k.path(), "", err);
     ASSERT_NE(dv, nullptr) << err;
     ASSERT_EQ(dv->volumeCount(), 2);
 
@@ -398,7 +408,7 @@ TEST(DiskVolume, UdosGleicherNameAufBeidenSeitenBleibtGetrennt) {
     // ohne FileRef mit Seitenangabe waere die Datei nicht mehr eindeutig.
     Kopie k("udos_boot_scp.hfe", "k1520_test_dv_udos_gleich.hfe");
     std::string err;
-    auto dv = oeffne(k.path(), "", err);
+    auto dv = oeffneSchreibbar(k.path(), "", err);
     ASSERT_NE(dv, nullptr) << err;
 
     TempOrdner quelle("k1520_test_dv_udos_gleich_q");
@@ -419,4 +429,149 @@ TEST(DiskVolume, UdosGleicherNameAufBeidenSeitenBleibtGetrennt) {
     };
     EXPECT_EQ(lies("a").substr(0, 10), "Seite null");
     EXPECT_EQ(lies("b").substr(0, 10), "Seite eins");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Schreibschutz — beim blossen Lesen soll nichts kaputtgehen koennen
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(DiskVolume, WirdSchreibgeschuetztGeoeffnet) {
+    std::string err;
+    auto dv = oeffne(fixture("cpa_cpa780_k5601_clock.img"), "cpa780", err);
+    ASSERT_NE(dv, nullptr) << err;
+    EXPECT_TRUE(dv->readOnly()) << "Vorgabe beim Oeffnen ist Schreibschutz";
+
+    // Lesen geht uneingeschraenkt …
+    EXPECT_EQ(dv->list().size(), 24u);
+
+    // … Aendern nicht, und die Meldung sagt, was zu tun ist.
+    TempOrdner q("k1520_test_dv_ro_q");
+    schreibe(q / "NEU.TXT", "Inhalt");
+    EXPECT_FALSE(dv->insert((q / "NEU.TXT").string(), FileRef{0, "NEU.TXT"},
+                            TransferOptions{}));
+    EXPECT_NE(dv->lastError().find("schreibgeschuetzt"), std::string::npos)
+        << dv->lastError();
+    EXPECT_FALSE(dv->erase(FileRef{0, "PIP.COM"}));
+    EXPECT_FALSE(dv->insertAll(q.path(), TransferOptions{}));
+    EXPECT_FALSE(dv->dirty()) << "nichts davon darf das Medium angefasst haben";
+}
+
+TEST(DiskVolume, SchreibgeschuetztesOeffnenLaesstDieDateiUnberuehrt) {
+    // Der eigentliche Zweck: eine Diskette, die man nur ansieht, muss danach
+    // BYTEGLEICH sein — auch wenn das Programm dazwischen abstuerzt oder das
+    // Objekt einfach zerstoert wird (DiskImage::flush laeuft aus dem Destruktor).
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_dv_ro_datei.img");
+    const auto vorher = fs::last_write_time(k.path());
+    std::vector<char> inhalt_vorher;
+    {
+        std::ifstream f(k.path(), std::ios::binary);
+        inhalt_vorher.assign(std::istreambuf_iterator<char>(f),
+                             std::istreambuf_iterator<char>());
+    }
+
+    {
+        std::string err;
+        auto dv = oeffne(k.path(), "cpa780", err);
+        ASSERT_NE(dv, nullptr) << err;
+        (void)dv->list();
+        TempOrdner ziel("k1520_test_dv_ro_ziel");
+        EXPECT_TRUE(dv->extractAll(ziel.path(), TransferOptions{}));
+    }   // Destruktor: DiskImage::flush() darf hier nichts schreiben
+
+    std::vector<char> inhalt_nachher;
+    {
+        std::ifstream f(k.path(), std::ios::binary);
+        inhalt_nachher.assign(std::istreambuf_iterator<char>(f),
+                              std::istreambuf_iterator<char>());
+    }
+    EXPECT_EQ(inhalt_vorher, inhalt_nachher);
+    EXPECT_EQ(vorher, fs::last_write_time(k.path())) << "die Datei wurde angefasst";
+}
+
+TEST(DiskVolume, NeuAngelegteDisketteIstBeschreibbar) {
+    // Der Schreibschutz schuetzt FREMDE Abbilder beim Lesen — ein gerade selbst
+    // angelegtes Werkstueck waere damit nur laestig.
+    const std::string pfad =
+        (fs::temp_directory_path() / "k1520_test_dv_neu_rw.hfe").string();
+    std::string err;
+    auto dv = DiskVolume::create(pfad, "udos_ds77", "FRISCH", formate(),
+                                 dateisysteme(), err);
+    ASSERT_NE(dv, nullptr) << err;
+    EXPECT_FALSE(dv->readOnly());
+
+    TempOrdner q("k1520_test_dv_neu_q");
+    schreibe(q / "Side0" / "A.DAT", "x");
+    schreibe(q / "Side1" / "B.DAT", "y");
+    EXPECT_TRUE(dv->insertAll(q.path(), TransferOptions{})) << dv->lastError();
+
+    std::error_code ec;
+    fs::remove(pfad, ec);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Speichern unter / Exportieren
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(DiskVolume, ExportSchreibtEineKopieOhneUmzubinden) {
+    std::string err;
+    auto dv = oeffne(fixture("cpa_cpa780_k5601_clock.hfe"), "cpa780", err);
+    ASSERT_NE(dv, nullptr) << err;
+    const std::string quelle = dv->path();
+
+    const std::string ziel =
+        (fs::temp_directory_path() / "k1520_test_dv_export.dmk").string();
+    ASSERT_TRUE(dv->exportImage(ziel)) << dv->lastError();
+
+    EXPECT_EQ(dv->path(), quelle) << "Export darf die Bindung NICHT umhaengen";
+    EXPECT_TRUE(fs::exists(ziel));
+
+    // Die Kopie traegt denselben Inhalt — im anderen Container.
+    std::string err2;
+    auto kopie = oeffne(ziel, "cpa780", err2);
+    ASSERT_NE(kopie, nullptr) << err2;
+    EXPECT_EQ(kopie->list().size(), dv->list().size());
+
+    std::error_code ec;
+    fs::remove(ziel, ec);
+}
+
+TEST(DiskVolume, UdosLaesstSichNichtAlsImgAblegen) {
+    std::string err;
+    auto dv = oeffne(fixture("udos_boot_scp.hfe"), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    const std::string ziel =
+        (fs::temp_directory_path() / "k1520_test_dv_udos_export.img").string();
+    EXPECT_FALSE(dv->exportImage(ziel));
+    EXPECT_NE(dv->lastError().find("Daten-CRC"), std::string::npos) << dv->lastError();
+    EXPECT_FALSE(fs::exists(ziel)) << "es darf nicht einmal eine Ruine entstehen";
+
+    // Als .dmk dagegen schon.
+    const std::string dmk =
+        (fs::temp_directory_path() / "k1520_test_dv_udos_export.dmk").string();
+    EXPECT_TRUE(dv->exportImage(dmk)) << dv->lastError();
+    std::error_code ec;
+    fs::remove(dmk, ec);
+}
+
+TEST(DiskVolume, SpeichernUnterBindetUmUndBleibtSchreibbar) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_dv_saveas_q.img");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "cpa780", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    const std::string ziel =
+        (fs::temp_directory_path() / "k1520_test_dv_saveas.hfe").string();
+    ASSERT_TRUE(dv->saveAs(ziel)) << dv->lastError();
+    EXPECT_EQ(dv->path(), ziel) << "ab jetzt wird an der neuen Datei gearbeitet";
+
+    TempOrdner q("k1520_test_dv_saveas_ordner");
+    schreibe(q / "NACH.TXT", "danach geschrieben");
+    ASSERT_TRUE(dv->insert((q / "NACH.TXT").string(), FileRef{0, "NACH.TXT"},
+                           TransferOptions{})) << dv->lastError();
+    ASSERT_TRUE(dv->flush()) << dv->lastError();
+
+    std::error_code ec;
+    fs::remove(ziel, ec);
+    fs::remove(ziel + "~", ec);
 }

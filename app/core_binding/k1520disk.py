@@ -64,7 +64,7 @@ BINARY = 0
 TEXT = 1
 
 # ── Öffnen / Anlegen / Speichern ────────────────────────────────────────────
-_lib.k1520d_open.argtypes = [_CS, _CS]
+_lib.k1520d_open.argtypes = [_CS, _CS, ctypes.c_bool]
 _lib.k1520d_open.restype = _H
 _lib.k1520d_create.argtypes = [_CS, _CS, _CS]
 _lib.k1520d_create.restype = _H
@@ -72,6 +72,12 @@ _lib.k1520d_flush.argtypes = [_H]
 _lib.k1520d_flush.restype = ctypes.c_bool
 _lib.k1520d_save_as.argtypes = [_H, _CS]
 _lib.k1520d_save_as.restype = ctypes.c_bool
+_lib.k1520d_export_image.argtypes = [_H, _CS]
+_lib.k1520d_export_image.restype = ctypes.c_bool
+_lib.k1520d_read_only.argtypes = [_H]
+_lib.k1520d_read_only.restype = ctypes.c_bool
+_lib.k1520d_set_read_only.argtypes = [_H, ctypes.c_bool]
+_lib.k1520d_set_read_only.restype = None
 _lib.k1520d_set_backup.argtypes = [_H, ctypes.c_bool]
 _lib.k1520d_set_backup.restype = None
 _lib.k1520d_close.argtypes = [_H]
@@ -283,15 +289,20 @@ class DiskTool:
     # ── Öffnen / Anlegen ────────────────────────────────────────────────────
 
     @classmethod
-    def open(cls, path, filesystem: Optional[str] = None) -> "DiskTool":
+    def open(cls, path, filesystem: Optional[str] = None,
+             read_only: bool = True) -> "DiskTool":
         """Diskette öffnen; ``filesystem=None`` erkennt selbst.
+
+        ``read_only`` ist **absichtlich die Vorgabe**: beim blossen Lesen soll eine
+        Diskette gar nicht kaputtgehen können.  Ändern verlangt danach den bewussten
+        Schritt ``set_read_only(False)`` — in der Oberfläche der Haken „Nur lesen".
 
         Raises:
             K1520DiskError: mit der Meldung der Bibliothek — bei einem Abbild ohne
                 Katalogeintrag enthält sie die gemessene Geometrie im Klartext.
         """
         p = os.fspath(path)
-        h = _lib.k1520d_open(_b(p), _b(filesystem or ""))
+        h = _lib.k1520d_open(_b(p), _b(filesystem or ""), read_only)
         if not h:
             raise K1520DiskError(_s(_lib.k1520d_last_open_error()))
         return cls(h, p)
@@ -454,6 +465,28 @@ class DiskTool:
             raise K1520DiskError(self._fail())
 
     def save_as(self, path) -> None:
+        """Unter neuem Namen/Container speichern und **umbinden**.
+
+        Auch bei Schreibschutz erlaubt: die Quelle bleibt unberührt.  Genau der Weg,
+        um vor Änderungen eine Arbeitskopie anzulegen.
+        """
         if not _lib.k1520d_save_as(self._h, _b(os.fspath(path))):
             raise K1520DiskError(self._fail())
         self._path = os.fspath(path)
+
+    def export_image(self, path) -> None:
+        """Kopie in einen anderen Container schreiben, **ohne** umzubinden.
+
+        Für Archivierung und Formatumwandlung; die Arbeitsdatei bleibt dieselbe.
+        UDOS lässt sich dabei nicht als ``.img`` ablegen.
+        """
+        if not _lib.k1520d_export_image(self._h, _b(os.fspath(path))):
+            raise K1520DiskError(self._fail())
+
+    @property
+    def read_only(self) -> bool:
+        """Schreibgeschützt?  Vorgabe beim Öffnen: ja."""
+        return bool(_lib.k1520d_read_only(self._h))
+
+    def set_read_only(self, ro: bool) -> None:
+        _lib.k1520d_set_read_only(self._h, ro)

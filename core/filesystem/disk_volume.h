@@ -94,12 +94,18 @@ public:
      * @param fs_cat   Dateisystemkatalog
      * @param err      Grund, wenn nullptr zurueckkommt — bei „kein Format passt"
      *                 enthaelt er die gemessene Geometrie im Klartext
+     * @param read_only  **Vorgabe: schreibgeschuetzt.**  Beim blossen Lesen soll eine
+     *                   Diskette gar nicht kaputtgehen koennen; der Schutz wirkt bis in
+     *                   @ref DiskImage hinein (dessen `flush()` schreibt dann nichts,
+     *                   auch nicht aus dem Destruktor).  Schreiben verlangt einen
+     *                   bewussten Schritt: @ref setReadOnly(false).
      */
     static std::unique_ptr<DiskVolume> open(const std::string& path,
                                             const std::string& fs_name,
                                             const FormatCatalog& formats,
                                             const FsCatalog& fs_cat,
-                                            std::string& err);
+                                            std::string& err,
+                                            bool read_only = true);
 
     /**
      * @brief **Neue, leere** Diskette anlegen: formatieren + Dateisystem initialisieren.
@@ -175,7 +181,28 @@ public:
      * Mit @ref setBackup abschaltbar.
      */
     bool flush();
+
+    /// @brief Unter neuem Namen/Container speichern und **umbinden** (ab da wird dort
+    ///        gearbeitet).  Auch bei Schreibschutz erlaubt — die Quelle bleibt heil.
     bool saveAs(const std::string& path);
+
+    /// @brief Kopie schreiben, **ohne** umzubinden (Archivierung, Formatumwandlung).
+    ///        Auch bei Schreibschutz erlaubt.
+    bool exportImage(const std::string& path) const;
+
+    // ─── Schreibschutz ───────────────────────────────────────────────────────
+
+    /// @brief Schreibgeschuetzt?  Vorgabe beim Oeffnen: **ja**.
+    bool readOnly() const { return read_only_; }
+
+    /**
+     * @brief Schreibschutz setzen/aufheben.
+     *
+     * Wirkt zweifach: dieses Objekt weist jede aendernde Anforderung ab, und das
+     * darunterliegende @ref DiskImage bekommt seinen eigenen Schreibschutz — selbst
+     * ein Fehler hier kann die Datei dann nicht mehr anfassen.
+     */
+    void setReadOnly(bool ro);
 
     void setBackup(bool an) { backup_ = an; }
     bool backup() const     { return backup_; }
@@ -205,6 +232,7 @@ private:
     const FsProfile*   profile_ = nullptr;
     DetectionResult    detection_;
     std::vector<Vol>   volumes_;
+    bool               read_only_   = true;
     bool               backup_      = true;
     bool               backup_getan_= false;
     mutable std::string last_error_;

@@ -69,7 +69,10 @@ def test_cpm_disk_is_shown_flat(window, fixture_disks):
     assert "@OS.COM" in namen and "PIP.COM" in namen
     assert len(namen) == 24
     assert "Side0" not in " ".join(gruppen(window.disk_view))
-    assert window.btn_speichern.isEnabled()
+    # Schreibschutz ist die Vorgabe: Lesen frei, Schreiben gesperrt.
+    assert window.chk_readonly.isChecked()
+    assert window.btn_alles_raus.isEnabled()
+    assert not window.btn_speichern.isEnabled()
 
 
 def test_udos_disk_is_shown_as_one_carrier_with_two_side_groups(window, fixture_disks):
@@ -129,6 +132,7 @@ def test_view_refreshes_after_every_write(window, fixture_disks, tmp_path):
     abbild = tmp_path / "cpa.img"
     shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
     assert window.open_image(abbild)
+    window.set_read_only(False)   # der bewusste Schritt zum Schreiben
 
     vorher = len(alle_namen(window.disk_view))
 
@@ -170,6 +174,7 @@ def test_insert_all_refuses_a_folder_without_side_directories(window, fixture_di
     abbild = tmp_path / "udos.hfe"
     shutil.copy(fixture_disks / "udos_boot_scp.hfe", abbild)
     assert window.open_image(abbild)
+    window.set_read_only(False)   # der bewusste Schritt zum Schreiben
     vorher = len(alle_namen(window.disk_view))
 
     quelle = tmp_path / "quelle"
@@ -190,6 +195,7 @@ def test_insert_all_refuses_when_it_does_not_fit(window, fixture_disks, tmp_path
     abbild = tmp_path / "cpa.img"
     shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
     assert window.open_image(abbild)
+    window.set_read_only(False)   # der bewusste Schritt zum Schreiben
 
     quelle = tmp_path / "zuviel"
     quelle.mkdir()
@@ -235,3 +241,119 @@ def test_selection_yields_side_qualified_references(window, fixture_disks):
     assert len(refs) == 1
     assert refs[0].startswith("Side1/"), refs
     assert window.disk_view.current_volume() in (0, 1)
+
+
+# ─── Schreibschutz, Speichern unter, Archivieren ─────────────────────────────
+
+def test_opens_read_only_and_write_needs_a_deliberate_step(window, fixture_disks,
+                                                           tmp_path, monkeypatch):
+    """Beim blossen Lesen soll nichts kaputtgehen koennen.
+
+    Der Haken „Nur lesen" ist beim Öffnen gesetzt; Schreiben verlangt, ihn zu
+    entfernen — ein bewusster Schritt, bei dem einem einfällt, dass man von einer
+    unersetzlichen Diskette lieber erst eine Kopie anlegt.
+    """
+    from PySide6.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: None)
+
+    import shutil
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    original = abbild.read_bytes()
+
+    assert window.open_image(abbild)
+    assert window.tool.read_only
+    assert window.chk_readonly.isChecked()
+
+    # Lesen: frei.  Schreiben: gesperrt — und zwar wirklich, nicht nur optisch.
+    assert window.btn_alles_raus.isEnabled()
+    assert not window.btn_rein.isEnabled()
+    assert not window.btn_loeschen.isEnabled()
+
+    quelle = tmp_path / "NEU.TXT"
+    quelle.write_text("Inhalt")
+    assert not window.insert_paths([str(quelle)])
+    assert "schreibgeschuetzt" in window.protokoll.toPlainText()
+    assert not window.tool.dirty
+    assert abbild.read_bytes() == original
+
+    # Nach dem bewussten Schritt geht es.
+    window.set_read_only(False)
+    assert window.btn_rein.isEnabled()
+    assert window.insert_paths([str(quelle)])
+    assert "NEU.TXT" in alle_namen(window.disk_view)
+
+
+def test_save_as_writes_a_copy_and_leaves_the_source_untouched(window, fixture_disks,
+                                                               tmp_path):
+    """Der empfohlene Weg: schreibgeschützt öffnen, Arbeitskopie anlegen, dort ändern."""
+    quelle = fixture_disks / "cpa_cpa780_k5601_clock.img"
+    original = quelle.read_bytes()
+
+    assert window.open_image(quelle)
+    assert window.tool.read_only
+
+    kopie = tmp_path / "arbeitskopie.hfe"
+    assert window.save_as(kopie), "Speichern unter muss auch bei Schreibschutz gehen"
+    assert kopie.exists()
+    assert window.tool.path == str(kopie), "ab jetzt wird an der Kopie gearbeitet"
+    assert quelle.read_bytes() == original, "die Quelle darf sich nicht geändert haben"
+
+    # Die Kopie trägt denselben Inhalt — im anderen Container.
+    assert len(alle_namen(window.disk_view)) == 24
+
+
+def test_archive_bundles_image_files_and_catalogue(window, fixture_disks, tmp_path):
+    """Die .zip enthält Abbild, Dateien und das Inhaltsverzeichnis mit den
+    Angaben, die ein Linux-Dateisystem nicht tragen kann."""
+    import zipfile
+
+    assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
+    ziel = tmp_path / "archiv.zip"
+    assert window.archive(ziel)
+    assert ziel.exists()
+
+    with zipfile.ZipFile(ziel) as z:
+        namen = z.namelist()
+        assert "udos_boot_scp.hfe" in namen, "das verlustfreie Abbild fehlt"
+        assert "udos_boot_scp.txt" in namen, "das Inhaltsverzeichnis fehlt"
+        assert any(n.startswith("dateien/Side0/") for n in namen)
+        assert any(n.startswith("dateien/Side1/") for n in namen)
+        assert "dateien/Side1/HELP.DAT.00" in namen
+
+        text = z.read("udos_boot_scp.txt").decode("utf-8")
+
+    # Genau die Angaben, die beim Extrahieren sonst verlorengehen:
+    assert "udos_ds77" in text
+    assert "UDOS.SYS.4.3" in text
+    assert "HELP.DAT.00" in text
+    assert "P1" in text, "der UDOS-Dateityp gehört ins Verzeichnis"
+    assert "WELS" in text, "die UDOS-Eigenschaften ebenso"
+    assert "LEGENDE" in text, "ohne Legende ist das Archiv in 20 Jahren stumm"
+    assert "PROCEDURE" in text
+    # Der Altbestand des Mediums wird mitdokumentiert.
+    assert "Altbestand" in text
+
+
+def test_archive_works_read_only_and_does_not_rebind(window, fixture_disks, tmp_path):
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    vorher = window.tool.path
+    assert window.tool.read_only
+
+    assert window.archive(tmp_path / "cpa.zip")
+    assert window.tool.path == vorher, "Archivieren darf die Bindung nicht umhängen"
+    assert not window.tool.dirty
+
+
+def test_archive_converts_an_img_source_to_hfe(window, fixture_disks, tmp_path):
+    """Auch aus einem .img entsteht im Archiv ein .hfe — die verlustfreie Fassung."""
+    import zipfile
+
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    ziel = tmp_path / "aus_img.zip"
+    assert window.archive(ziel)
+
+    with zipfile.ZipFile(ziel) as z:
+        namen = z.namelist()
+    assert "cpa_cpa780_k5601_clock.hfe" in namen
+    assert not any(n.endswith(".img") for n in namen)

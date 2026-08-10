@@ -1,0 +1,8 @@
+# UDOS laesst sich nicht als rohes Sektorabbild ablegen: der Sektorkontrollblock
+# steht hinter der Daten-CRC und ginge dabei verloren.
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+tmpfile geht.nicht.img:
+run:    save-as %DISK% %geht.nicht.img%
+expect: Daten-CRC
+exit:   1

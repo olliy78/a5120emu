@@ -1,0 +1,11 @@
+# `save-as` schreibt eine Kopie — auch in einem anderen Container — und laesst die
+# Quelle unberuehrt (sie wird dafuer schreibgeschuetzt geoeffnet).
+tool:   k1520disktool
+disk:   cpa_cpa780_k5601_clock.img
+tmpfile kopie.dmk:
+setup_run: save-as %DISK% %kopie.dmk%
+run:    ls %kopie.dmk%
+expect: cpa780
+expect: PIP.COM
+expect: 24 Dateien
+exit:   0

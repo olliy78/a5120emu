@@ -79,6 +79,11 @@ std::vector<uint8_t> nachDiskettenText(const std::vector<uint8_t>& in) {
     return out;
 }
 
+/// @brief Eine Meldung, die sagt, was zu tun ist — nicht bloss, dass es nicht geht.
+constexpr const char* kSchreibschutz =
+    "Die Diskette ist schreibgeschuetzt geoeffnet. Zum Aendern den Schreibschutz "
+    "aufheben (in der Oberflaeche den Haken \"Nur lesen\" entfernen).";
+
 }  // namespace
 
 // ─── FileRef ─────────────────────────────────────────────────────────────────
@@ -124,9 +129,11 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
                                              const std::string& fs_name,
                                              const FormatCatalog& formats,
                                              const FsCatalog& fs_cat,
-                                             std::string& err) {
+                                             std::string& err,
+                                             bool read_only) {
     std::unique_ptr<DiskVolume> dv(new DiskVolume);
-    dv->path_ = path;
+    dv->path_      = path;
+    dv->read_only_ = read_only;
 
     const std::string ext   = endung(path);
     const bool        istImg = (ext == "img");
@@ -151,7 +158,7 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
         }
         std::optional<DiskFormat> of;
         if (istImg) of = *dv->format_;
-        dv->disk_ = DiskImage::open(path, of, false);
+        dv->disk_ = DiskImage::open(path, of, read_only);
         if (!dv->disk_) { err = "Abbild nicht ladbar: " + path; return nullptr; }
         dv->detection_.format     = dv->format_->name;
         dv->detection_.filesystem = dv->profile_->name;
@@ -174,9 +181,9 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
             }
             // Mit dem ersten Kandidaten oeffnen; die Stufe-2-Probe entscheidet gleich.
             std::optional<DiskFormat> of = *kandidaten.front();
-            dv->disk_ = DiskImage::open(path, of, false);
+            dv->disk_ = DiskImage::open(path, of, read_only);
         } else {
-            dv->disk_ = DiskImage::open(path, std::nullopt, false);
+            dv->disk_ = DiskImage::open(path, std::nullopt, read_only);
         }
         if (!dv->disk_) { err = "Abbild nicht ladbar: " + path; return nullptr; }
 
@@ -328,6 +335,7 @@ bool DiskVolume::extract(const FileRef& ref, const std::string& dest_path,
 
 bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
                         const TransferOptions& opt) {
+    if (read_only_) return fail(kSchreibschutz);
     if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
                                         + " gibt es auf dieser Diskette nicht");
     std::vector<uint8_t> d;
@@ -345,6 +353,7 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
 }
 
 bool DiskVolume::erase(const FileRef& ref) {
+    if (read_only_) return fail(kSchreibschutz);
     if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
                                         + " gibt es auf dieser Diskette nicht");
     if (!volumes_[static_cast<size_t>(ref.volume)].fs->erase(ref.name))
@@ -478,6 +487,7 @@ bool DiskVolume::checkFit(const std::string& src_dir, std::string& bericht) cons
 }
 
 bool DiskVolume::insertAll(const std::string& src_dir, const TransferOptions& opt) {
+    if (read_only_) return fail(kSchreibschutz);
     std::vector<std::vector<std::string>> je_volume;
     if (!sammleQuelldateien(src_dir, je_volume)) return false;
 
@@ -512,8 +522,33 @@ bool DiskVolume::insertAll(const std::string& src_dir, const TransferOptions& op
 
 bool DiskVolume::dirty() const { return disk_ && disk_->medium().dirty(); }
 
+void DiskVolume::setReadOnly(bool ro) {
+    read_only_ = ro;
+    // Zweite Sperre eine Ebene tiefer: ein schreibgeschuetztes DiskImage schreibt
+    // seine Datei auch dann nicht, wenn hier etwas durchrutscht — einschliesslich
+    // des flush() aus seinem Destruktor.
+    if (disk_) disk_->setWriteProtect(ro);
+}
+
+bool DiskVolume::exportImage(const std::string& path) const {
+    if (!disk_) return fail("keine Diskette geoeffnet");
+    std::optional<DiskFormat> of;
+    if (endung(path) == "img") {
+        if (profile_ && !profile_->allow_img)
+            return fail("Dieses Dateisystem kann nicht als .img abgelegt werden "
+                        "(der UDOS-Sektorkontrollblock steht hinter der Daten-CRC).");
+        if (format_) of = *format_;
+    }
+    if (!disk_->exportTo(path, of)) return fail(disk_->lastError());
+    return true;
+}
+
 bool DiskVolume::flush() {
     if (!disk_) return fail("keine Diskette geoeffnet");
+    if (read_only_) {
+        if (!dirty()) return true;          // nichts zu tun — kein Grund zu klagen
+        return fail(kSchreibschutz);
+    }
 
     // §14.2: fremde Diskettenabbilder sind oft Einzelstuecke — beim ERSTEN
     // Zurueckschreiben eine Sicherungskopie anlegen.
@@ -562,6 +597,9 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
     dv->path_    = path;
     dv->format_  = fmt;
     dv->profile_ = profil;
+    // Eine gerade selbst angelegte Diskette ist beschreibbar — der Schreibschutz
+    // schuetzt FREMDE Abbilder beim Lesen, nicht das eigene frische Werkstueck.
+    dv->read_only_ = false;
     dv->detection_.format     = fmt->name;
     dv->detection_.filesystem = profil->name;
 

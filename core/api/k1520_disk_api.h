@@ -40,11 +40,14 @@ typedef enum {
 
 /**
  * @brief Diskette oeffnen.
- * @param path     `.img`, `.hfe` oder `.dmk`
- * @param fs_name  Dateisystem erzwingen; NULL oder "" = erkennen
+ * @param path       `.img`, `.hfe` oder `.dmk`
+ * @param fs_name    Dateisystem erzwingen; NULL oder "" = erkennen
+ * @param read_only  **so oeffnen, dass nichts kaputtgehen kann.**  Beim blossen
+ *                   Lesen ist das die richtige Wahl; Aendern verlangt danach den
+ *                   bewussten Schritt @ref k1520d_set_read_only(h, false).
  * @return Handle oder NULL — Grund dann ueber @ref k1520d_last_open_error.
  */
-K1520Disk k1520d_open(const char* path, const char* fs_name);
+K1520Disk k1520d_open(const char* path, const char* fs_name, bool read_only);
 
 /**
  * @brief Neue, leere Diskette anlegen (formatieren + Dateisystem initialisieren).
@@ -55,8 +58,16 @@ K1520Disk k1520d_create(const char* path, const char* fs_name, const char* label
 
 /// @brief Aenderungen in die gebundene Datei schreiben (legt beim ersten Mal `<name>~` an).
 bool k1520d_flush(K1520Disk h);
-/// @brief Unter neuem Namen/Container speichern und umbinden.
+/// @brief Unter neuem Namen/Container speichern und **umbinden** (auch bei Schreibschutz).
 bool k1520d_save_as(K1520Disk h, const char* path);
+
+/// @brief Kopie in einen anderen Container schreiben, **ohne** umzubinden
+///        (Archivierung, Formatumwandlung).  Auch bei Schreibschutz erlaubt.
+bool k1520d_export_image(K1520Disk h, const char* path);
+
+/// @brief Schreibschutz abfragen bzw. setzen (Vorgabe beim Oeffnen: geschuetzt).
+bool k1520d_read_only(K1520Disk h);
+void k1520d_set_read_only(K1520Disk h, bool ro);
 /// @brief Sicherungskopie beim ersten Schreiben an-/abschalten (Vorgabe: an).
 void k1520d_set_backup(K1520Disk h, bool on);
 /// @brief Handle schliessen (schreibt NICHT selbsttaetig — vorher @ref k1520d_flush).
