@@ -101,6 +101,24 @@ public:
                                             const FsCatalog& fs_cat,
                                             std::string& err);
 
+    /**
+     * @brief **Neue, leere** Diskette anlegen: formatieren + Dateisystem initialisieren.
+     *
+     * Legt das Abbild in der Geometrie des Profils an (echte Adressmarken und CRCs)
+     * und initialisiert darauf das Dateisystem — bei beidseitigem UDOS auf **beiden**
+     * Seiten.  Die Datei wird sofort geschrieben.
+     *
+     * @param path     Zielpfad; die Endung bestimmt den Container
+     * @param fs_name  Dateisystem aus dem Katalog (Pflicht — hier gibt es nichts zu erkennen)
+     * @param label    Datentraegername (UDOS); "" = Vorgabe
+     */
+    static std::unique_ptr<DiskVolume> create(const std::string& path,
+                                              const std::string& fs_name,
+                                              const std::string& label,
+                                              const FormatCatalog& formats,
+                                              const FsCatalog& fs_cat,
+                                              std::string& err);
+
     // ─── Auskunft ────────────────────────────────────────────────────────────
 
     const std::string&     path()      const { return path_; }
@@ -148,8 +166,19 @@ public:
     // ─── Dateibindung ────────────────────────────────────────────────────────
 
     bool dirty() const;
+
+    /**
+     * @brief Aenderungen in die gebundene Datei schreiben.
+     *
+     * Beim **ersten** Schreiben auf eine bestehende Datei wird eine Sicherungskopie
+     * `<name>~` angelegt (§14.2) — fremde Diskettenabbilder sind oft Einzelstuecke.
+     * Mit @ref setBackup abschaltbar.
+     */
     bool flush();
     bool saveAs(const std::string& path);
+
+    void setBackup(bool an) { backup_ = an; }
+    bool backup() const     { return backup_; }
 
     const std::string& lastError() const { return last_error_; }
 
@@ -176,5 +205,7 @@ private:
     const FsProfile*   profile_ = nullptr;
     DetectionResult    detection_;
     std::vector<Vol>   volumes_;
+    bool               backup_      = true;
+    bool               backup_getan_= false;
     mutable std::string last_error_;
 };

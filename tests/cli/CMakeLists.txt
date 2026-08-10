@@ -33,7 +33,8 @@ foreach(_case IN LISTS _cli_cases)
                 "${_case}"
                 --fixtures "${K1520_FIXTURE_DISKS}"
                 --tool "k1520dbg=$<TARGET_FILE:k1520dbg>"
-                --tool "boot_trace=$<TARGET_FILE:boot_trace>")
+                --tool "boot_trace=$<TARGET_FILE:boot_trace>"
+                --tool "k1520disktool=$<TARGET_FILE:k1520disktool>")
     set_tests_properties(cli_${_name} PROPERTIES TIMEOUT 120 LABELS "cli;fast")
 endforeach()
 

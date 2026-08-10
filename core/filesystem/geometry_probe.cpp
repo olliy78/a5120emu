@@ -29,7 +29,9 @@ std::string GeometryMatch::remarks() const {
     auto add = [&](const std::string& t) { if (!s.empty()) s += ", "; s += t; };
     if (stray_tracks)  add(std::to_string(stray_tracks)
                            + " beschriebene Spuren hinter dem Format (Altbestand)");
-    if (defect_tracks) add(std::to_string(defect_tracks) + " Spuren mit fehlenden Sektoren");
+    if (defect_tracks) add(std::to_string(defect_tracks)
+                           + (defect_tracks == 1 ? " Spur mit fehlenden Sektoren"
+                                                 : " Spuren mit fehlenden Sektoren"));
     if (empty_tracks)  add(std::to_string(empty_tracks) + " unformatierte Spuren");
     if (crc_errors)    add(std::to_string(crc_errors) + " Sektoren mit CRC-Fehler");
     return s;

@@ -1,0 +1,8 @@
+# Passt eine Datei nicht auf die Diskette, wird gar nicht erst geschrieben (§9.2).
+# Als garantiert zu grosse Quelle dient das Diskettenabbild selbst (2 MB).
+# Exit 3 = passt nicht.
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+run:    put %DISK% %DISK%
+expect: voll
+exit:   3

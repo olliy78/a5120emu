@@ -1,0 +1,357 @@
+/**
+ * @file k1520_disk_api.cpp
+ * @brief Umsetzung der C-ABI von `libk1520disk.so`.
+ *
+ * Duenne Huelle um @ref DiskVolume.  Die Kataloge werden **einmal** geladen und
+ * danach geteilt (sie sind unveraenderlich); jedes Handle haelt seine eigenen
+ * Zeichenketten-Puffer, damit die Rueckgaben bis zum naechsten gleichartigen
+ * Aufruf gueltig bleiben.
+ *
+ * @see core/api/k1520_disk_api.h
+ * @author Olaf Krieger
+ * @date 2026
+ * @license MIT License
+ */
+
+#include "core/api/k1520_disk_api.h"
+
+#include "core/filesystem/disk_volume.h"
+
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace {
+
+// ─── Kataloge (einmal geladen) ───────────────────────────────────────────────
+
+struct Kataloge {
+    FormatCatalog formate;
+    FsCatalog     dateisysteme;
+    std::string   bericht;
+};
+
+const Kataloge& kataloge() {
+    static Kataloge k = [] {
+        Kataloge x;
+        std::string fatal;
+        x.formate = FormatCatalog::loadDefault(&fatal);
+        if (!fatal.empty()) x.bericht += fatal + "\n";
+        for (const auto& q : x.formate.sources()) x.bericht += "Formatkatalog: " + q + "\n";
+        for (const auto& i : x.formate.issues())  x.bericht += "  " + i + "\n";
+
+        std::string fatal2;
+        x.dateisysteme = FsCatalog::loadDefault(x.formate, &fatal2);
+        if (!fatal2.empty()) x.bericht += fatal2 + "\n";
+        for (const auto& q : x.dateisysteme.sources())
+            x.bericht += "Dateisysteme:  " + q + "\n";
+        for (const auto& i : x.dateisysteme.issues()) x.bericht += "  " + i + "\n";
+        return x;
+    }();
+    return k;
+}
+
+// ─── Handle ──────────────────────────────────────────────────────────────────
+
+struct Handle {
+    std::unique_ptr<DiskVolume> vol;
+    std::vector<FileEntry>      eintraege;   ///< Stand des letzten k1520d_list
+    // Puffer je Getter — die Rueckgabe gilt bis zum naechsten Aufruf DERSELBEN Funktion.
+    std::string s_error, s_name, s_type, s_attrs, s_date, s_dir, s_label;
+    std::string s_fmt, s_fs, s_alt, s_remarks, s_fit, s_check;
+};
+
+Handle* H(K1520Disk h) { return static_cast<Handle*>(h); }
+
+std::string g_open_error;
+std::string g_scratch;
+
+/// @brief Sicherer Zugriff auf einen Listeneintrag.
+const FileEntry* eintrag(K1520Disk h, int i) {
+    if (!h) return nullptr;
+    Handle* p = H(h);
+    if (i < 0 || i >= static_cast<int>(p->eintraege.size())) return nullptr;
+    return &p->eintraege[static_cast<size_t>(i)];
+}
+
+const char* halte(std::string& puffer, std::string wert) {
+    puffer = std::move(wert);
+    return puffer.c_str();
+}
+
+TransferOptions optionen(K1520DMode mode, bool overwrite) {
+    TransferOptions o;
+    o.text      = (mode == K1520D_TEXT);
+    o.overwrite = overwrite;
+    return o;
+}
+
+}  // namespace
+
+// ─── Oeffnen / Anlegen / Speichern ───────────────────────────────────────────
+
+extern "C" K1520Disk k1520d_open(const char* path, const char* fs_name) {
+    g_open_error.clear();
+    if (!path || !*path) { g_open_error = "kein Pfad angegeben"; return nullptr; }
+
+    auto h = std::make_unique<Handle>();
+    std::string err;
+    h->vol = DiskVolume::open(path, fs_name ? fs_name : "",
+                              kataloge().formate, kataloge().dateisysteme, err);
+    if (!h->vol) { g_open_error = err; return nullptr; }
+    return h.release();
+}
+
+extern "C" K1520Disk k1520d_create(const char* path, const char* fs_name,
+                                   const char* label) {
+    g_open_error.clear();
+    if (!path || !*path)       { g_open_error = "kein Pfad angegeben"; return nullptr; }
+    if (!fs_name || !*fs_name) { g_open_error = "kein Dateisystem angegeben — beim "
+                                                "Anlegen gibt es nichts zu erkennen";
+                                 return nullptr; }
+    auto h = std::make_unique<Handle>();
+    std::string err;
+    h->vol = DiskVolume::create(path, fs_name, label ? label : "",
+                                kataloge().formate, kataloge().dateisysteme, err);
+    if (!h->vol) { g_open_error = err; return nullptr; }
+    return h.release();
+}
+
+extern "C" bool k1520d_flush(K1520Disk h) {
+    return h && H(h)->vol->flush();
+}
+
+extern "C" bool k1520d_save_as(K1520Disk h, const char* path) {
+    return h && path && H(h)->vol->saveAs(path);
+}
+
+extern "C" void k1520d_set_backup(K1520Disk h, bool on) {
+    if (h) H(h)->vol->setBackup(on);
+}
+
+extern "C" void k1520d_close(K1520Disk h) { delete H(h); }
+
+extern "C" const char* k1520d_last_error(K1520Disk h) {
+    if (!h) return g_open_error.c_str();
+    return halte(H(h)->s_error, H(h)->vol->lastError());
+}
+
+extern "C" const char* k1520d_last_open_error(void) { return g_open_error.c_str(); }
+
+// ─── Katalog und Erkennung ───────────────────────────────────────────────────
+
+extern "C" int k1520d_fs_count(void) {
+    return static_cast<int>(kataloge().dateisysteme.profiles().size());
+}
+
+extern "C" const char* k1520d_fs_name(int i) {
+    const auto& p = kataloge().dateisysteme.profiles();
+    if (i < 0 || i >= static_cast<int>(p.size())) return "";
+    return p[static_cast<size_t>(i)].name.c_str();
+}
+
+extern "C" const char* k1520d_fs_description(const char* name) {
+    const FsProfile* p = name ? kataloge().dateisysteme.find(name) : nullptr;
+    return p ? p->description.c_str() : "";
+}
+
+extern "C" const char* k1520d_fs_format(const char* name) {
+    const FsProfile* p = name ? kataloge().dateisysteme.find(name) : nullptr;
+    return p ? p->format.c_str() : "";
+}
+
+extern "C" const char* k1520d_fs_type(const char* name) {
+    const FsProfile* p = name ? kataloge().dateisysteme.find(name) : nullptr;
+    return p ? fsTypeName(p->type) : "";
+}
+
+extern "C" const char* k1520d_catalog_report(void) {
+    return kataloge().bericht.c_str();
+}
+
+extern "C" const char* k1520d_detect(const char* path) {
+    g_scratch.clear();
+    if (!path) return g_scratch.c_str();
+    std::string err;
+    auto v = DiskVolume::open(path, "", kataloge().formate, kataloge().dateisysteme, err);
+    if (v) g_scratch = v->detection().filesystem;
+    else   g_open_error = err;
+    return g_scratch.c_str();
+}
+
+extern "C" const char* k1520d_detected_format(K1520Disk h) {
+    return h ? halte(H(h)->s_fmt, H(h)->vol->detection().format) : "";
+}
+
+extern "C" const char* k1520d_detected_fs(K1520Disk h) {
+    return h ? halte(H(h)->s_fs, H(h)->vol->detection().filesystem) : "";
+}
+
+extern "C" bool k1520d_detection_unambiguous(K1520Disk h) {
+    return h ? H(h)->vol->detection().unambiguous : false;
+}
+
+extern "C" const char* k1520d_detection_alternatives(K1520Disk h) {
+    if (!h) return "";
+    std::string s;
+    for (const auto& a : H(h)->vol->detection().alternatives) {
+        if (!s.empty()) s += ", ";
+        s += a;
+    }
+    return halte(H(h)->s_alt, std::move(s));
+}
+
+extern "C" const char* k1520d_detection_remarks(K1520Disk h) {
+    return h ? halte(H(h)->s_remarks, H(h)->vol->detection().remarks) : "";
+}
+
+// ─── Seiten ──────────────────────────────────────────────────────────────────
+
+extern "C" int k1520d_volume_count(K1520Disk h) {
+    return h ? H(h)->vol->volumeCount() : 0;
+}
+
+extern "C" const char* k1520d_volume_dir(K1520Disk h, int v) {
+    return h ? halte(H(h)->s_dir, H(h)->vol->volumeDir(v)) : "";
+}
+
+extern "C" const char* k1520d_volume_label(K1520Disk h, int v) {
+    return h ? halte(H(h)->s_label, H(h)->vol->volumeInfo(v).label) : "";
+}
+
+extern "C" uint64_t k1520d_volume_total(K1520Disk h, int v) {
+    return h ? H(h)->vol->volumeInfo(v).total_bytes : 0;
+}
+
+extern "C" uint64_t k1520d_volume_free(K1520Disk h, int v) {
+    return h ? H(h)->vol->volumeInfo(v).free_bytes : 0;
+}
+
+extern "C" uint64_t k1520d_volume_used(K1520Disk h, int v) {
+    return h ? H(h)->vol->volumeInfo(v).used_bytes : 0;
+}
+
+// ─── Verzeichnis ─────────────────────────────────────────────────────────────
+
+extern "C" int k1520d_list(K1520Disk h) {
+    if (!h) return 0;
+    H(h)->eintraege = H(h)->vol->list();
+    return static_cast<int>(H(h)->eintraege.size());
+}
+
+extern "C" int k1520d_entry_volume(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? e->volume : 0;
+}
+
+extern "C" const char* k1520d_entry_name(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? halte(H(h)->s_name, e->qualifiedName()) : "";
+}
+
+extern "C" int k1520d_entry_user(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? e->user : 0;
+}
+
+extern "C" uint64_t k1520d_entry_size(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? e->size : 0;
+}
+
+extern "C" const char* k1520d_entry_type(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? halte(H(h)->s_type, e->type) : "";
+}
+
+extern "C" const char* k1520d_entry_attrs(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? halte(H(h)->s_attrs, e->attributes) : "";
+}
+
+extern "C" const char* k1520d_entry_date(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? halte(H(h)->s_date, e->date) : "";
+}
+
+extern "C" bool k1520d_entry_hidden(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? e->hidden : false;
+}
+
+extern "C" bool k1520d_entry_damaged(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? e->damaged : false;
+}
+
+// ─── Uebertragung ────────────────────────────────────────────────────────────
+
+extern "C" bool k1520d_extract(K1520Disk h, const char* name, const char* dest,
+                               K1520DMode mode) {
+    if (!h || !name || !dest) return false;
+    TransferOptions o = optionen(mode, /*overwrite=*/true);
+    return H(h)->vol->extract(FileRef::parse(name), dest, o);
+}
+
+extern "C" bool k1520d_insert(K1520Disk h, const char* src, const char* name,
+                              K1520DMode mode, bool overwrite) {
+    if (!h || !src || !name) return false;
+    return H(h)->vol->insert(src, FileRef::parse(name), optionen(mode, overwrite));
+}
+
+extern "C" bool k1520d_erase(K1520Disk h, const char* name) {
+    if (!h || !name) return false;
+    return H(h)->vol->erase(FileRef::parse(name));
+}
+
+extern "C" bool k1520d_extract_all(K1520Disk h, const char* dest_dir, K1520DMode mode) {
+    if (!h || !dest_dir) return false;
+    return H(h)->vol->extractAll(dest_dir, optionen(mode, /*overwrite=*/true));
+}
+
+extern "C" bool k1520d_insert_all(K1520Disk h, const char* src_dir, K1520DMode mode,
+                                  bool overwrite) {
+    if (!h || !src_dir) return false;
+    return H(h)->vol->insertAll(src_dir, optionen(mode, overwrite));
+}
+
+extern "C" const char* k1520d_check_fit(K1520Disk h, const char* src_dir) {
+    if (!h || !src_dir) return "";
+    std::string bericht;
+    H(h)->vol->checkFit(src_dir, bericht);
+    return halte(H(h)->s_fit, std::move(bericht));
+}
+
+// ─── Zustand ─────────────────────────────────────────────────────────────────
+
+extern "C" bool k1520d_dirty(K1520Disk h) { return h && H(h)->vol->dirty(); }
+
+extern "C" const char* k1520d_check(K1520Disk h) {
+    if (!h) return "";
+    std::string b;
+    DiskVolume& v = *H(h)->vol;
+    b += "Abbild:      " + v.path() + "\n";
+    b += "Format:      " + v.detection().format + "\n";
+    b += "Dateisystem: " + v.detection().filesystem
+       + (v.detection().unambiguous ? "" : "  (nicht eindeutig)") + "\n";
+    if (!v.detection().remarks.empty())
+        b += "Medium:      " + v.detection().remarks + "\n";
+
+    int defekt = 0;
+    for (const FileEntry& e : v.list()) if (e.damaged) ++defekt;
+
+    for (int i = 0; i < v.volumeCount(); ++i) {
+        const FsInfo info = v.volumeInfo(i);
+        const std::string wo = v.volumeDir(i);
+        b += (wo.empty() ? std::string("Datentraeger") : wo);
+        if (!info.label.empty()) b += " '" + info.label + "'";
+        b += ": " + std::to_string(info.files) + " Dateien, "
+           + std::to_string(info.used_bytes / 1024) + " KB belegt, "
+           + std::to_string(info.free_bytes / 1024) + " KB frei\n";
+        for (const std::string& w : info.warnings) b += "  ! " + w + "\n";
+    }
+    if (defekt) b += "  ! " + std::to_string(defekt) + " Dateien nicht lesbar\n";
+    return halte(H(h)->s_check, std::move(b));
+}
+
+extern "C" const char* k1520d_version(void) { return "k1520disk 0.1"; }

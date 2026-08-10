@@ -1,0 +1,8 @@
+# Ohne Argumente die Kurzhilfe, mit den Exit-Codes als Teil der Schnittstelle.
+tool:   k1520disktool
+disk_path: /dev/null
+run:    --help
+expect: k1520disktool
+expect: Side0
+expect: Exit: 0 ok
+exit:   0

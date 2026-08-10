@@ -1,0 +1,10 @@
+# `formats` listet die Dateisysteme des Katalogs mit Typ und Geometrie.
+tool:   k1520disktool
+disk_path: /dev/null
+run:    formats
+expect: cpa780
+expect: scpx798
+expect: udos_ds77
+expect: udos
+expect: cpm
+exit:   0

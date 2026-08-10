@@ -1,0 +1,15 @@
+# Voller Anwenderweg auf einer NEUEN UDOS-Diskette: anlegen, Ordner mit Side0/Side1
+# einfuegen, wieder auflisten.  Der Quellordner entsteht durch `get` von der
+# Referenzdiskette — damit prueft der Fall zugleich, dass ein Auszug ohne
+# Nacharbeit wieder einfuegbar ist.
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+tmpfile neu.hfe:
+setup_run: get %DISK% Side0/CAT Side1/CODE --to q
+setup_run: create %neu.hfe% --fs udos_ds77 --label TESTDISK
+setup_run: put %neu.hfe% q
+run:    ls %neu.hfe%
+expect: TESTDISK / TESTDISK
+expect: CAT
+expect: CODE
+exit:   0

@@ -1,0 +1,9 @@
+# Beidseitige Diskette, Quellordner ohne Side1/ → Fehler MIT Nennung des Fehlenden,
+# und die Diskette bleibt unveraendert (§9.1).  Exit 4 = Ordnerstruktur.
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+setup_run: get %DISK% Side0/CAT --to nurside0
+run:    put %DISK% nurside0
+expect: Side1/
+expect: 2 Seiten
+exit:   4

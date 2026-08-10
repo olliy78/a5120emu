@@ -53,6 +53,18 @@ requires_core = pytest.mark.skipif(
 )
 
 
+def _disk_lib():
+    """`libk1520disk.so` — die C-ABI des k1520DiskTool (eigene Bibliothek)."""
+    p = PROJECT_ROOT / "build" / "libk1520disk.so"
+    return p if p.exists() else None
+
+
+requires_disk = pytest.mark.skipif(
+    _disk_lib() is None,
+    reason="libk1520disk.so nicht gebaut — vorher `tools/dev.sh build` ausführen",
+)
+
+
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 
 @pytest.fixture(scope="session")

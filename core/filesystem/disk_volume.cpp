@@ -368,6 +368,10 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
         if (ec) return fail("Ordner nicht anlegbar: " + ziel.string());
 
         for (const FileEntry& e : volumes_[static_cast<size_t>(v)].fs->list()) {
+            // Die UDOS-Verzeichnisdatei (Typ D) ist Dateisystemstruktur, keine
+            // Nutzdatei — sie wird mit ausgegeben (wie `CAT P=&`), aber nicht
+            // extrahiert: beim Zurueckschreiben waere sie ein Fremdkoerper.
+            if (e.type == "D") continue;
             FileRef r{v, e.qualifiedName()};
             // Nutzerbereich-Praefix ("3:NAME") ist im Dateinamen unbrauchbar.
             std::string datei = e.qualifiedName();
@@ -510,8 +514,96 @@ bool DiskVolume::dirty() const { return disk_ && disk_->medium().dirty(); }
 
 bool DiskVolume::flush() {
     if (!disk_) return fail("keine Diskette geoeffnet");
+
+    // §14.2: fremde Diskettenabbilder sind oft Einzelstuecke — beim ERSTEN
+    // Zurueckschreiben eine Sicherungskopie anlegen.
+    if (backup_ && !backup_getan_ && disk_->medium().dirty()) {
+        std::error_code ec;
+        if (fs::exists(path_, ec)) {
+            fs::copy_file(path_, path_ + "~", fs::copy_options::overwrite_existing, ec);
+            if (ec) return fail("Sicherungskopie " + path_ + "~ nicht anlegbar: "
+                                + ec.message());
+        }
+        backup_getan_ = true;
+    }
+
     if (!disk_->flush()) return fail(disk_->lastError());
     return true;
+}
+
+std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
+                                               const std::string& fs_name,
+                                               const std::string& label,
+                                               const FormatCatalog& formats,
+                                               const FsCatalog& fs_cat,
+                                               std::string& err) {
+    const FsProfile* profil = fs_cat.find(fs_name);
+    if (!profil) { err = "Dateisystem '" + fs_name + "' steht nicht im Katalog"; return nullptr; }
+    const DiskFormat* fmt = formats.find(profil->format);
+    if (!fmt) { err = "Format '" + profil->format + "' steht nicht im Katalog"; return nullptr; }
+
+    const std::string ext = endung(path);
+    if (!profil->allowsContainer(ext)) {
+        err = "Dateisystem '" + fs_name + "' kann nicht als ." + ext + " angelegt werden"
+            + (profil->type == FsType::Udos && ext == "img"
+                   ? " (der UDOS-Sektorkontrollblock steht hinter der Daten-CRC)" : "");
+        return nullptr;
+    }
+
+    // Vollstaendig formatierte Leerdiskette (echte Adressmarken und CRCs) …
+    {
+        auto leer = DiskImage::create(path, *fmt, /*write_protect=*/false,
+                                      fmt->predominantEncoding());
+        if (!leer) { err = "Abbild nicht anlegbar: " + path; return nullptr; }
+        if (!leer->flush()) { err = leer->lastError(); return nullptr; }
+    }
+
+    std::unique_ptr<DiskVolume> dv(new DiskVolume);
+    dv->path_    = path;
+    dv->format_  = fmt;
+    dv->profile_ = profil;
+    dv->detection_.format     = fmt->name;
+    dv->detection_.filesystem = profil->name;
+
+    std::optional<DiskFormat> of;
+    if (ext == "img") of = *fmt;
+    dv->disk_ = DiskImage::open(path, of, false);
+    if (!dv->disk_) { err = "frisch angelegtes Abbild nicht ladbar: " + path; return nullptr; }
+
+    // … und darauf das Dateisystem initialisieren.
+    const uint8_t koepfe = dv->disk_->medium().numHeads();
+    if (profil->type == FsType::Udos && profil->sides_separate) {
+        // Beide Seiten sind eigene Datentraeger und bekommen je ein Dateisystem.
+        for (uint8_t h = 0; h < koepfe; ++h) {
+            Vol v;
+            v.head  = h;
+            v.space = std::make_unique<SectorSpace>(dv->disk_->medium(), *fmt, h);
+            auto u = UdosFileSystem::format(*v.space, *profil, h, label, err);
+            if (!u) return nullptr;
+            v.fs = std::move(u);
+            dv->volumes_.push_back(std::move(v));
+        }
+    } else {
+        Vol v;
+        v.head  = SectorSpace::kAllHeads;
+        v.space = std::make_unique<SectorSpace>(dv->disk_->medium(), *fmt);
+        if (profil->type == FsType::Udos) {
+            auto u = UdosFileSystem::format(*v.space, *profil, 0, label, err);
+            if (!u) return nullptr;
+            v.fs = std::move(u);
+        } else {
+            auto c = CpmFileSystem::mount(*v.space, *profil, err);
+            if (!c) return nullptr;
+            if (!c->mkfs()) { err = c->lastError(); return nullptr; }
+            v.fs = std::move(c);
+        }
+        dv->volumes_.push_back(std::move(v));
+    }
+
+    // Eine frisch angelegte Diskette braucht keine Sicherungskopie ihrer selbst.
+    dv->backup_getan_ = true;
+    if (!dv->flush()) { err = dv->lastError(); return nullptr; }
+    return dv;
 }
 
 bool DiskVolume::saveAs(const std::string& path) {

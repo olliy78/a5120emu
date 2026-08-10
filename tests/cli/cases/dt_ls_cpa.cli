@@ -1,0 +1,11 @@
+# ls einer CP/A-Bootdiskette: Erkennung ohne --fs, Verzeichnis wie `cpmls`.
+tool:   k1520disktool
+disk:   cpa_cpa780_k5601_clock.img
+run:    ls %DISK%
+expect: cpa780 (erkannt)
+expect: 1 Seite
+expect: @OS.COM
+expect: PIP.COM
+expect: 24 Dateien
+forbid: Side0
+exit:   0

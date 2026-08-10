@@ -1,0 +1,14 @@
+# Eine beidseitige UDOS-Diskette ist EIN Datentraeger: eine Liste, Seitenspalte,
+# Freiplatz je Seite.  Der Altbestand hinter Spur 76 wird gemeldet, nicht verschwiegen.
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+run:    ls %DISK%
+expect: udos_ds77 (erkannt)
+expect: 2 Seiten
+expect: UDOS.SYS.4.3 / UDOS.SYS.4.3
+expect: Altbestand
+expect: HELP.DAT.00
+expect: 69 Dateien
+expect: Side0:
+expect: Side1:
+exit:   0

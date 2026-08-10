@@ -163,11 +163,15 @@ TEST(DiskVolume, ExtrahiertBeideSeitenInSideOrdner) {
     ASSERT_TRUE(fs::is_directory(ziel / "Side0"));
     ASSERT_TRUE(fs::is_directory(ziel / "Side1"));
 
+    // Je Seite EINE Datei weniger als im Verzeichnis (47/22): die UDOS-Datei
+    // DIRECTORY (Typ D) ist Dateisystemstruktur und wird zwar gelistet, aber
+    // nicht extrahiert — sonst waere sie beim Zurueckschreiben ein Fremdkoerper.
     int n0 = 0, n1 = 0;
     for (const auto& e : fs::directory_iterator(ziel / "Side0")) { (void)e; ++n0; }
     for (const auto& e : fs::directory_iterator(ziel / "Side1")) { (void)e; ++n1; }
-    EXPECT_EQ(n0, 47);
-    EXPECT_EQ(n1, 22);
+    EXPECT_EQ(n0, 46);
+    EXPECT_EQ(n1, 21);
+    EXPECT_FALSE(fs::exists(ziel / "Side0" / "DIRECTORY"));
 
     // Stichprobe: der Inhalt ist der der Diskette.
     ASSERT_TRUE(fs::exists(ziel / "Side1" / "HELP.DAT.00"));

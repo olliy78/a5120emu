@@ -179,6 +179,25 @@ if(BUILD_K1520)
     )
 
 
+    # libk1520disk.so — stabile C-ABI des k1520DiskTool (Python/PySide6).
+    # BEWUSST getrennt von libk1520core.so: das Werkzeug braucht keinen Z80 und keine
+    # Karten, der Emulator keine Dateisysteme; geteilt werden nur die statischen
+    # Container-/Medium-Bausteine.  Feinentwurf: doc/design/13_k1520disktool.md §10
+    add_library(k1520disk SHARED
+        core/api/k1520_disk_api.cpp
+    )
+    target_link_libraries(k1520disk PRIVATE k1520_fs)
+    target_include_directories(k1520disk PUBLIC ${CMAKE_SOURCE_DIR})
+    set_target_properties(k1520disk PROPERTIES
+        CXX_STANDARD 17
+        POSITION_INDEPENDENT_CODE ON
+    )
+
+    # k1520disktool: Kommandozeilenseite desselben Unterbaus (§11.1)
+    add_executable(k1520disktool tools/k1520disktool.cpp)
+    target_link_libraries(k1520disktool PRIVATE k1520_fs)
+    target_include_directories(k1520disktool PRIVATE ${CMAKE_SOURCE_DIR})
+
     # boot_trace: standalone boot diagnostic tool (LOG_LEVEL=5 for full trace)
     add_executable(boot_trace tools/boot_trace.cpp)
     target_link_libraries(boot_trace PRIVATE k1520_a5120 k1520_floppy k1520_logger)
