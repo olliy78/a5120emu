@@ -27,7 +27,8 @@ import pytest
 from conftest import PROJECT_ROOT, requires_core
 
 PACKAGING = PROJECT_ROOT / "packaging"
-SCRIPTS = ["install.sh", "build_payload.sh", "launcher.sh", "lib/common.sh"]
+SCRIPTS = ["install.sh", "build_payload.sh", "launcher.sh",
+           "disktool_launcher.sh", "lib/common.sh"]
 MAX_INSTALL_MB = 160   # frisch geschlankt sind es ~146 MB (§8 des Entwurfs)
 
 
@@ -68,6 +69,14 @@ def test_unbekannte_option_bricht_ab(tmp_path):
     assert "unbekannte Option" in out.stderr
 
 
+def test_disktool_launcher_hat_den_platzhalter():
+    """Wie beim Emulator-Starter — nur zeigt er auf app/disktool/main.py."""
+    text = (PACKAGING / "disktool_launcher.sh").read_text()
+    assert 'ROOT="@ROOT@"' in text, "Platzhalter, den install.sh ersetzt, fehlt"
+    assert '"$ROOT/venv/bin/python3"' in text
+    assert '"$ROOT/app/disktool/main.py"' in text
+
+
 def test_launcher_hat_genau_einen_platzhalter():
     """@ROOT@ wird beim Installieren ersetzt — bleibt einer stehen, startet nichts."""
     text = (PACKAGING / "launcher.sh").read_text()
@@ -104,11 +113,15 @@ def test_lock_nagelt_mit_hashes_fest():
     assert "pyside6-addons" not in lock.lower(), "PySide6-Addons (~170 MB) im Paket"
 
 
-def test_desktop_eintrag_ist_gueltig():
-    text = (PACKAGING / "a5120emu.desktop.in").read_text()
+@pytest.mark.parametrize("datei,starter", [
+    ("a5120emu.desktop.in", "a5120emu"),
+    ("k1520disktool.desktop.in", "k1520disktool"),
+])
+def test_desktop_eintrag_ist_gueltig(datei, starter):
+    text = (PACKAGING / datei).read_text()
     assert text.startswith("[Desktop Entry]")
-    for feld in ("Type=Application", "Name=", 'Exec="@ROOT@/bin/a5120emu"', "Icon=a5120emu"):
-        assert feld in text, f"{feld} fehlt im Startmenü-Eintrag"
+    for feld in ("Type=Application", "Name=", f'Exec="@ROOT@/bin/{starter}"', "Icon=a5120emu"):
+        assert feld in text, f"{feld} fehlt im Startmenü-Eintrag {datei}"
 
 
 @pytest.mark.parametrize("eingabe,erwartet", [
@@ -182,10 +195,14 @@ def test_dokumentenordner_shell_und_python_stimmen_ueberein(tmp_path, aufbau):
     assert schale.stdout.strip() == python.stdout.strip()
 
 
-def test_desktop_exec_ist_gequotet():
+@pytest.mark.parametrize("datei,starter", [
+    ("a5120emu.desktop.in", "a5120emu"),
+    ("k1520disktool.desktop.in", "k1520disktool"),
+])
+def test_desktop_exec_ist_gequotet(datei, starter):
     """Ein Pfad mit Leerzeichen macht ein ungequotetes ``Exec=`` unbrauchbar."""
-    text = (PACKAGING / "a5120emu.desktop.in").read_text()
-    assert 'Exec="@ROOT@/bin/a5120emu"' in text
+    text = (PACKAGING / datei).read_text()
+    assert f'Exec="@ROOT@/bin/{starter}"' in text
 
 
 # ─── Schutz des Zielverzeichnisses ───────────────────────────────────────────
@@ -429,6 +446,17 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
         "payload/app/core_binding/k1520.py", "payload/app/ui/main_window.py",
         "payload/share/k1520emu/formats.yaml",
         "payload/share/icons/a5120emu.svg",
+        # k1520DiskTool: Bibliothek, Kommandozeile, Oberflaeche, Starter.
+        # Ohne diese Zeilen laege app/disktool/ zwar im Paket (die ganze app/-
+        # Ebene wird eingepackt), faende aber keine Bibliothek — das Werkzeug
+        # startete beim Anwender mit „libk1520disk.so nicht gefunden".
+        "payload/bin/libk1520disk.so",
+        "payload/bin/k1520disktool-cli",
+        "payload/app/disktool/main.py",
+        "payload/app/disktool/archive.py",
+        "payload/app/disktool/ui/main_window.py",
+        "payload/app/core_binding/k1520disk.py",
+        "disktool_launcher.sh", "k1520disktool.desktop.in",
     ]:
         assert (stage / pflicht).exists(), f"{pflicht} fehlt im Paket"
 
@@ -619,3 +647,91 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
     assert any(nutzer_disks.glob("*.hfe")), "Deinstallieren hat Anwenderdisketten gelöscht"
     assert not (heim / ".local" / "bin" / "python3.12").exists(), \
         "uv hat einen Python-Symlink im PATH des Anwenders hinterlassen"
+
+
+# ─── k1520DiskTool im Paket ──────────────────────────────────────────────────
+#
+# Das Werkzeug kam nach der Paketierung dazu.  Die `app/`-Ebene wird als Ganzes
+# eingepackt, seine Oberflaeche lag also von selbst im Paket — die BIBLIOTHEK
+# und die Kommandozeile aber nicht, und ohne sie startet es beim Anwender nicht.
+# Diese Faelle halten beides fest.
+
+@requires_core
+def test_disktool_findet_seine_bibliothek_im_installationslayout(tmp_path):
+    """Die Auflösung muss ``<wurzel>/bin`` finden, nicht nur ``build/``.
+
+    Der eigentliche Fallstrick: die Bindung suchte ihre Bibliothek anfangs
+    selbst in ``build/`` — in einer Installation liegt sie in ``bin/``, und die
+    Suche liefe ins Leere.  Seit sie über :mod:`app.paths` geht, gilt für beide
+    Bibliotheken derselbe Weg; dieser Test hält das fest.
+    """
+    wurzel = tmp_path / "installation"
+    (wurzel / "bin").mkdir(parents=True)
+    (wurzel / "app").mkdir()
+    for name in ("libk1520core.so", "libk1520disk.so"):
+        (wurzel / "bin" / name).write_bytes(b"\x7fELF-attrappe")
+
+    umgebung = dict(os.environ, K1520_HOME=str(wurzel))
+    out = _sh(sys.executable, "-c",
+              "import sys; sys.path.insert(0, sys.argv[1]);"
+              "from app import paths;"
+              "print(paths.is_installed_layout());"
+              "print(paths.core_library());"
+              "print(paths.disk_library())",
+              str(PROJECT_ROOT), env=umgebung)
+    assert out.returncode == 0, out.stderr
+    erkannt, kern, werkzeug = out.stdout.split()
+    assert erkannt == "True"
+    assert kern == str(wurzel / "bin" / "libk1520core.so")
+    assert werkzeug == str(wurzel / "bin" / "libk1520disk.so"), \
+        "die DiskTool-Bibliothek wird im Installationslayout nicht gefunden"
+
+
+@requires_core
+def test_disktool_kommandozeile_laeuft_aus_dem_paket(tmp_path):
+    """Das mitgelieferte Programm muss ohne den Quellbaum arbeiten.
+
+    Geprüft wird der geschnürte Stand, nicht ``build/``: Läuft `formats`, dann
+    hat das Programm auch den Formatkatalog des Pakets gefunden.
+    """
+    out = _sh("sh", str(PACKAGING / "build_payload.sh"),
+              "--skip-build", "--build-dir", str(PROJECT_ROOT / "build"),
+              "--out", str(tmp_path), "--version", "test", "--disks", "none")
+    assert out.returncode == 0, out.stdout + out.stderr
+
+    stage = next(p for p in tmp_path.glob("k1520emu-test-*") if p.is_dir())
+    cli = stage / "payload" / "bin" / "k1520disktool-cli"
+    assert os.access(cli, os.X_OK), "die Kommandozeile ist nicht ausführbar"
+
+    hilfe = _sh(str(cli), "--help")
+    assert hilfe.returncode == 0, hilfe.stderr
+    assert "k1520disktool" in hilfe.stdout
+
+    formate = _sh(str(cli), "formats", cwd=stage / "payload")
+    assert formate.returncode == 0, formate.stderr
+    for erwartet in ("cpa780", "udos_ds77"):
+        assert erwartet in formate.stdout, \
+            f"'{erwartet}' fehlt — der Formatkatalog des Pakets wurde nicht gefunden"
+
+
+def test_installer_legt_beide_starter_an():
+    """`install.sh` muss Emulator UND Werkzeug einen Starter geben."""
+    text = (PACKAGING / "install.sh").read_text()
+    assert 'ersetze_root "$SELF_DIR/launcher.sh"' in text
+    assert 'ersetze_root "$SELF_DIR/disktool_launcher.sh"' in text
+    assert '> "$PREFIX/bin/k1520disktool"' in text
+    assert 'k1520disktool.desktop.in' in text
+
+
+def test_deinstallieren_raeumt_auch_das_werkzeug_weg():
+    """Die Aufräumliste muss beide Namen kennen.
+
+    `--uninstall` entfernt genau die Namen aus einer Liste. Stünde dort nur die
+    Maschine, bliebe der Starter des Werkzeugs samt Startmenü-Eintrag als Leiche
+    zurück und zeigte auf ein gelöschtes Verzeichnis.
+    """
+    text = (PACKAGING / "install.sh").read_text()
+    assert 'WERKZEUGE="k1520disktool"' in text
+    assert 'STARTER="$MASCHINEN $WERKZEUGE"' in text
+    assert 'for _m in $STARTER; do' in text, \
+        "die Aufräumschleife läuft noch über $MASCHINEN und übersieht das Werkzeug"

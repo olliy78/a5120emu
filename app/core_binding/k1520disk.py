@@ -24,9 +24,13 @@ from __future__ import annotations
 
 import ctypes
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from app import paths                                        # noqa: E402
 
 # ════════════════════════════════════════════════════════════════════════════
 # Bibliothek finden und laden
@@ -34,26 +38,20 @@ from typing import List, Optional
 
 
 def find_libk1520disk() -> Path:
-    """Pfad zu ``libk1520disk.so`` in den üblichen Bauverzeichnissen."""
-    project_root = Path(__file__).resolve().parents[2]
-    app_root = Path(__file__).resolve().parents[1]
-    candidates = [
-        project_root / "build" / "libk1520disk.so",
-        project_root / "build_trace" / "libk1520disk.so",
-        app_root / "build" / "libk1520disk.so",
-        Path("/usr/local/lib/libk1520disk.so"),
-        Path("/usr/lib/libk1520disk.so"),
-    ]
-    for path in candidates:
-        if path.exists():
-            return path
-    raise FileNotFoundError(
-        "libk1520disk.so nicht gefunden in:\n"
-        + "\n".join(f"  {p}" for p in candidates)
-        + "\n\nBauen mit:  tools/dev.sh build"
-    )
+    """Pfad der DiskTool-Bibliothek — Quellbaum wie Installation.
+
+    Die Auflösung selbst steht in :mod:`app.paths` (eine Stelle für alle Pfade,
+    siehe ``doc/design/13_distribution.md``): im Quellbaum ``build/``, in einer
+    Installation ``<wurzel>/bin/``.  Ohne das fände eine installierte Anwendung
+    ihre Bibliothek nicht — sie liegt dort nicht neben dem Python-Interpreter.
+
+    Raises:
+        FileNotFoundError: kein Kandidat existiert (Meldung listet alle auf).
+    """
+    return paths.disk_library()
 
 
+paths.prepare_library_load()      # Windows: DLL-Suchverzeichnis anmelden
 _lib = ctypes.CDLL(str(find_libk1520disk()))
 
 _H = ctypes.c_void_p       # K1520Disk
