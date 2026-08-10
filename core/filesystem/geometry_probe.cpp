@@ -29,6 +29,7 @@ std::string GeometryMatch::remarks() const {
     auto add = [&](const std::string& t) { if (!s.empty()) s += ", "; s += t; };
     if (stray_tracks)  add(std::to_string(stray_tracks)
                            + " beschriebene Spuren hinter dem Format (Altbestand)");
+    if (gap_tracks)    add(std::to_string(gap_tracks) + " Luecken zwischen den Spuren");
     if (defect_tracks) add(std::to_string(defect_tracks)
                            + (defect_tracks == 1 ? " Spur mit fehlenden Sektoren"
                                                  : " Spuren mit fehlenden Sektoren"));
@@ -114,7 +115,13 @@ GeometryMatch match(const std::vector<MeasuredTrack>& tracks, const DiskFormat& 
         const TrackFormat* tf = fmt.findTrack(t.cyl, t.head);
 
         if (!t.formatted) {
-            ++m.empty_tracks;                       // Regel 2 — immer tolerierbar
+            // Regel 2: leere Spuren am ENDE sind normal, Luecken MITTENDRIN nicht.
+            // Spuren, die das Format ohnehin nicht kennt, sind KEINE Luecke — sonst
+            // fiele jedes einseitige Format auf einem zweikoepfigen Medium durch
+            // (die ganze zweite Seite ist dort unformatiert).
+            if (!tf)                  ++m.empty_tracks;
+            else if (t.cyl < letzter) ++m.gap_tracks;
+            else                      ++m.empty_tracks;
             continue;
         }
 
@@ -161,17 +168,31 @@ GeometryMatch match(const std::vector<MeasuredTrack>& tracks, const DiskFormat& 
             std::min<int>(0xFFFF, m.crc_errors + t.crc_errors));
     }
 
+    // Luecken zwischen beschriebenen Spuren: eine Doppelschritt-Diskette.  Der
+    // Katalog kann sie nicht ausdruecken (Spurbereiche sind zusammenhaengend), und
+    // ein „passendes" Format waere schlicht falsch — also ablehnen und es sagen.
+    if (m.gap_tracks > 2) {
+        m.reason = std::to_string(m.gap_tracks) + " unformatierte Spuren ZWISCHEN "
+                   "beschriebenen — sieht nach Doppelschritt aus (nur jeder zweite "
+                   "Zylinder beschrieben)";
+        return m;
+    }
+
     // Ein Format, das deutlich mehr Zylinder deklariert als beschrieben sind, ist nicht
     // gemeint — sonst „passt" ein 80-Spur-Format auch auf eine 40-Spur-Diskette.
+    // Altbestand ist nur glaubwuerdig, solange es WENIGE Spuren sind — und diese
+    // Schranke gilt immer, nicht nur bei zu kleinem Zylinderbereich.  Sonst passt
+    // ein einseitiges Format auf eine beidseitig beschriebene Diskette: die ganze
+    // zweite Seite gilt dann als „Altbestand" (cpa390 auf einer cpa780-Diskette).
+    if (m.stray_tracks > 8) {
+        m.reason = std::to_string(m.stray_tracks) + " beschriebene Spuren liegen "
+                   "ausserhalb des Formats — das ist zu viel fuer Altbestand";
+        return m;
+    }
+
     const int deklariert = static_cast<int>(fmt.numCylinders());
     if (deklariert < letzter + 1) {
-        // Alle Spuren dahinter waren Altbestand — das ist nur glaubwuerdig, solange es
-        // wenige sind.  Sonst ist schlicht ein groesseres Format gemeint.
-        if (m.stray_tracks > 8) {
-            m.reason = "Format deckt nur " + std::to_string(deklariert)
-                     + " Zylinder ab, beschrieben sind " + std::to_string(letzter + 1);
-            return m;
-        }
+        // hier bereits ueber stray_tracks abgesichert
     } else {
         m.slack_cyls = static_cast<uint16_t>(deklariert - (letzter + 1));
         if (m.slack_cyls > 3) {
@@ -194,6 +215,7 @@ std::vector<GeometryMatch> matchAll(const std::vector<MeasuredTrack>& tracks,
     }
     std::stable_sort(treffer.begin(), treffer.end(),
                      [](const GeometryMatch& a, const GeometryMatch& b) {
+                         if (a.gap_tracks   != b.gap_tracks)   return a.gap_tracks   < b.gap_tracks;
                          if (a.stray_tracks != b.stray_tracks) return a.stray_tracks < b.stray_tracks;
                          if (a.slack_cyls   != b.slack_cyls)   return a.slack_cyls   < b.slack_cyls;
                          if (a.defect_tracks!= b.defect_tracks)return a.defect_tracks< b.defect_tracks;

@@ -164,6 +164,198 @@ formats:
     tracks:
       - { cyls: 0-76, heads: 0, sectors: 8, size: 1024 }
 
+  # ═══ EMPIRISCH ERGAENZT (2026-08-10) ═══════════════════════════════════════
+  # Erzeugt und vermessen von tests/system/drivers/make_all_formats.py: jedes
+  # Format wurde vom Originalprogramm des jeweiligen Systems im Emulator
+  # geschrieben (CP/A FORMAT.COM, SCPX INIT.COM) und danach mit
+  # `k1520disktool measure` vermessen.  Die Spurbereiche unten sind die MESSUNG,
+  # nicht die Menuebeschreibung.
+  #
+  # ACHTUNG zur `drives:`-Liste: die CP/A-Formate der Fremd-Laufwerkstypen wurden
+  # ueber Combo-Bootdisketten erzeugt — dort haelt das GAST-BIOS B:/C: fuer ein
+  # K5600.10/.20 bzw. MF3200/MF6400, physisch steckte aber ein K5601 (80 Zyl,
+  # 2 Koepfe, FM+MFM).  Die Layouts sind also echt, das Laufwerk war es nicht;
+  # `drives:` nennt deshalb jedes Profil, auf das die Geometrie wirklich passt.
+
+  # ── CP/A auf einseitigen 5,25″-Laufwerken ─────────────────────────────────
+  - name:        cpa190
+    description: "CP/A S 190K — 40 Spuren einseitig, 26×128-Systemspuren + 5×1024"
+    drives:      [K5600.10, K5600.20, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-1,  heads: 0, sectors: 26, size: 128  }
+      - { cyls: 2-39, heads: 0, sectors: 5,  size: 1024 }
+
+  - name:        cpa390
+    description: "CP/A S 390K — 80 Spuren einseitig, 26×128-Systemspuren + 5×1024"
+    drives:      [K5600.20, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-1,  heads: 0, sectors: 26, size: 128  }
+      - { cyls: 2-79, heads: 0, sectors: 5,  size: 1024 }
+
+  - name:        k5601_ss80_16x256
+    description: "80 Spuren einseitig, 16×256 (SCP 308K; auch SCPX INIT 1)"
+    drives:      [K5600.20, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-79, heads: 0, sectors: 16, size: 256 }
+
+  - name:        k5601_ss40_9x512
+    description: "40 Spuren einseitig, 9×512 (DEC VT / VPPC / MSDOS 170-180K)"
+    drives:      [K5600.10, K5600.20, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-39, heads: 0, sectors: 9, size: 512 }
+
+  - name:        k5601_ss40_8x512
+    description: "40 Spuren einseitig, 8×512 (CP/M 86 / IBM CPC 156K)"
+    drives:      [K5600.10, K5600.20, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-39, heads: 0, sectors: 8, size: 512 }
+
+  # Sektor-IDs, die NICHT bei 1 beginnen — genau dafuer gibt es first_sector.
+  - name:        k5601_ss40_9x512_id65
+    description: "40 Spuren einseitig, 9×512 ab Sektor-ID 65 (Schneider S)"
+    drives:      [K5600.10, K5600.20, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-39, heads: 0, sectors: 9, size: 512, first_sector: 65 }
+
+  - name:        k5601_ss40_10x512_id0
+    description: "40 Spuren einseitig, 10×512 ab Sektor-ID 0 (KAYPRO, 195K)"
+    drives:      [K5600.10, K5600.20, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-39, heads: 0, sectors: 10, size: 512, first_sector: 0 }
+
+  # ── SCPX INIT.COM ─────────────────────────────────────────────────────────
+  # INIT 3/4 (DD-DS/SS 5×1024) legt Zylinder 0 als 16×256 an — der Systemspur-
+  # bereich, den SCPX zum Booten braucht.
+  - name:        scpx_ss80_5x1024
+    description: "SCPX INIT 4 — 80 Spuren einseitig, Zylinder 0 in 16×256, dann 5×1024"
+    drives:      [K5600.20, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0,    heads: 0, sectors: 16, size: 256  }
+      - { cyls: 1-79, heads: 0, sectors: 5,  size: 1024 }
+
+  - name:        scpx_ss40_5x1024
+    description: "SCPX INIT 4 auf 40 Spuren — Zylinder 0 in 16×256, dann 5×1024"
+    drives:      [K5600.10, K5600.20, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0,    heads: 0, sectors: 16, size: 256  }
+      - { cyls: 1-39, heads: 0, sectors: 5,  size: 1024 }
+
+  # ── 8″-Layouts (CP/A-Menue der 8″-Laufwerkstypen) ─────────────────────────
+  # Durchgaengig FM beim MF3200-Menue; das MF6400-Menue mischt FM-Systemspuren
+  # mit MFM-Datenspuren — genau der Fall, fuer den TrackFormat ein eigenes
+  # `encoding` je Spurbereich hat.
+  - name:        mf3200_26x128
+    description: "8″-Layout — 77 Spuren einseitig, 26×128 FM (243/250K)"
+    drives:      [MF3200, MF6400, K5601]
+    encoding:    fm
+    tracks:
+      - { cyls: 0-76, heads: 0, sectors: 26, size: 128 }
+
+  - name:        mf3200_296k
+    description: "8″-Layout CP/A BC — 26×128-Systemspuren 0-2, dann 4×1024, FM"
+    drives:      [MF3200, MF6400, K5601]
+    encoding:    fm
+    tracks:
+      - { cyls: 0-2,  heads: 0, sectors: 26, size: 128  }
+      - { cyls: 3-76, heads: 0, sectors: 4,  size: 1024 }
+
+  - name:        mf3200_scp296k
+    description: "8″-Layout SCP — Systemspur 0 in 26×128, dann 4×1024, FM"
+    drives:      [MF3200, MF6400, K5601]
+    encoding:    fm
+    tracks:
+      - { cyls: 0,    heads: 0, sectors: 26, size: 128  }
+      - { cyls: 1-76, heads: 0, sectors: 4,  size: 1024 }
+
+  - name:        mf3200_9x512
+    description: "8″-Layout — 77 Spuren einseitig, 9×512 FM (346K)"
+    drives:      [MF3200, MF6400, K5601]
+    encoding:    fm
+    tracks:
+      - { cyls: 0-76, heads: 0, sectors: 9, size: 512 }
+
+  - name:        mf3200_336k
+    description: "8″-Layout — 26×128-Systemspuren 0-1, dann 9×512, FM (336K)"
+    drives:      [MF3200, MF6400, K5601]
+    encoding:    fm
+    tracks:
+      - { cyls: 0-1,  heads: 0, sectors: 26, size: 128 }
+      - { cyls: 2-76, heads: 0, sectors: 9,  size: 512 }
+
+  - name:        mf3200_16x256
+    description: "8″-Layout — 26×128-Systemspuren 0-2, dann 16×256, FM (296K)"
+    drives:      [MF3200, MF6400, K5601]
+    encoding:    fm
+    tracks:
+      - { cyls: 0-2,  heads: 0, sectors: 26, size: 128 }
+      - { cyls: 3-76, heads: 0, sectors: 16, size: 256 }
+
+  - name:        mf3200_9x512_80
+    description: "8″-Layout IH Mittweida — 9×512 FM ueber 80 Spuren (nur 5,25″-HW)"
+    drives:      [K5601]
+    encoding:    fm
+    tracks:
+      - { cyls: 0-79, heads: 0, sectors: 9, size: 512 }
+
+  - name:        mf6400_600k
+    description: "8″-DD — FM-Systemspuren 0-1 (26×128), dann 8×1024 MFM (600K)"
+    drives:      [MF6400, K5601]
+    tracks:
+      - { cyls: 0-1,  heads: 0, sectors: 26, size: 128,  encoding: fm  }
+      - { cyls: 2-76, heads: 0, sectors: 8,  size: 1024, encoding: mfm }
+
+  - name:        mf6400_scp600k
+    description: "8″-DD SCP — FM-Systemspur 0 (26×128), dann 8×1024 MFM"
+    drives:      [MF6400, K5601]
+    tracks:
+      - { cyls: 0,    heads: 0, sectors: 26, size: 128,  encoding: fm  }
+      - { cyls: 1-76, heads: 0, sectors: 8,  size: 1024, encoding: mfm }
+
+  - name:        mf6400_374k
+    description: "8″-DD — FM-Systemspuren 0-1 (26×128), dann 40×128 MFM (374K)"
+    drives:      [MF6400, K5601]
+    tracks:
+      - { cyls: 0-1,  heads: 0, sectors: 26, size: 128, encoding: fm  }
+      - { cyls: 2-76, heads: 0, sectors: 40, size: 128, encoding: mfm }
+
+  - name:        mf6400_40x128
+    description: "8″-DD — 77 Spuren einseitig, 40×128 MFM (384K)"
+    drives:      [MF6400, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-76, heads: 0, sectors: 40, size: 128 }
+
+  - name:        mf6400_16x512
+    description: "8″-DD — 77 Spuren einseitig, 16×512 MFM (616K)"
+    drives:      [MF6400, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-76, heads: 0, sectors: 16, size: 512 }
+
+  - name:        mf6400_600k_16x512
+    description: "8″-DD — FM-Systemspuren 0-1 (26×128), dann 16×512 MFM (600K)"
+    drives:      [MF6400, K5601]
+    tracks:
+      - { cyls: 0-1,  heads: 0, sectors: 26, size: 128, encoding: fm  }
+      - { cyls: 2-76, heads: 0, sectors: 16, size: 512, encoding: mfm }
+
+  - name:        mf6400_9x1024
+    description: "8″-DD — 77 Spuren einseitig, 9×1024 MFM (692K)"
+    drives:      [MF6400, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-76, heads: 0, sectors: 9, size: 1024 }
+
+
   # ══ K5601 §3 — 80 Spuren doppelseitig ══════════════════════════════════════
   # Viele §3-Formate teilen dieselbe ROHgeometrie; Systemspuren, Verzeichnis-
   # einträge und Sektor-Interleave ändern das Offset-Layout der .img nicht.

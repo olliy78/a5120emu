@@ -27,6 +27,7 @@
  */
 
 #include "core/filesystem/disk_volume.h"
+#include "core/filesystem/geometry_probe.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -71,6 +72,7 @@ void gebrauch() {
         "  save-as <abbild> <ziel>                  Kopie, ggf. anderes Format\n"
         "  info   <abbild>                          Belegung und Erkennung\n"
         "  check  <abbild>                          Pruefbericht\n"
+        "  measure <abbild>                         Geometrie messen (auch ohne Dateisystem)\n"
         "  formats                                  bekannte Dateisysteme auflisten\n\n"
         "Gemeinsam: --fs NAME (Erkennung uebersteuern), --volume N (Seite),\n"
         "           --text|--binary, --force, --dry-run, --no-backup\n"
@@ -541,6 +543,61 @@ int cmd_create(const Optionen& o) {
     return kOk;
 }
 
+/**
+ * @brief `measure` — die Geometrie eines Abbilds MESSEN, ohne ein Dateisystem zu
+ *        verlangen.
+ *
+ * Fuer unbekannte oder frisch formatierte Disketten: `ls` bricht dort ab, weil kein
+ * Dateisystem passt.  Diese Ausgabe ist zugleich die Vorlage fuer einen neuen
+ * `formats:`-Eintrag in data/formats.yaml.
+ */
+int cmd_measure(const Optionen& o) {
+    if (o.rest.size() < 2) { std::cerr << "Fehler: kein Abbild angegeben\n"; return kFehler; }
+
+    auto disk = DiskImage::open(o.rest[1], std::nullopt, /*write_protect=*/true);
+    if (!disk) {
+        std::cerr << "Fehler: Abbild nicht ladbar (selbstbeschreibend muss es sein — "
+                     ".hfe oder .dmk): " << o.rest[1] << "\n";
+        return kFehler;
+    }
+    const std::vector<MeasuredTrack> gemessen = GeometryProbe::measure(disk->medium());
+    const std::vector<GeometryMatch> treffer =
+        GeometryProbe::matchAll(gemessen, formate().formats());
+
+    if (o.json) {
+        std::cout << "{\"image\":" << jsonText(o.rest[1]) << ",\"tracks\":[";
+        bool erstes = true;
+        for (const MeasuredTrack& t : gemessen) {
+            if (!t.formatted) continue;
+            std::cout << (erstes ? "" : ",")
+                      << "{\"cyl\":" << int(t.cyl) << ",\"head\":" << int(t.head)
+                      << ",\"sectors\":" << int(t.sectors)
+                      << ",\"size\":" << t.sector_size
+                      << ",\"first_id\":" << int(t.first_id)
+                      << ",\"encoding\":" << jsonText(t.encoding == Encoding::FM ? "fm" : "mfm")
+                      << ",\"crc_errors\":" << t.crc_errors << "}";
+            erstes = false;
+        }
+        std::cout << "],\"matches\":[";
+        for (size_t i = 0; i < treffer.size(); ++i)
+            std::cout << (i ? "," : "") << "{\"format\":" << jsonText(treffer[i].format->name)
+                      << ",\"remarks\":" << jsonText(treffer[i].remarks()) << "}";
+        std::cout << "]}\n";
+        return treffer.empty() ? kNichtErkannt : kOk;
+    }
+
+    std::cout << "Gemessen:\n" << GeometryProbe::describe(gemessen);
+    if (treffer.empty()) {
+        std::cout << "\nKein Format in data/formats.yaml passt.\n";
+        return kNichtErkannt;
+    }
+    std::cout << "\nPasst zu:\n";
+    for (const GeometryMatch& m : treffer)
+        std::cout << "  " << m.format->name
+                  << (m.remarks().empty() ? "" : "   (" + m.remarks() + ")") << "\n";
+    return kOk;
+}
+
 int cmd_save_as(const Optionen& o) {
     if (o.rest.size() < 3) {
         std::cerr << "Fehler: Quellabbild und Zielabbild angeben\n";
@@ -607,6 +664,7 @@ int main(int argc, char** argv) {
     if (befehl == "create")  return cmd_create(o);
     if (befehl == "info")    return cmd_info(o);
     if (befehl == "save-as") return cmd_save_as(o);
+    if (befehl == "measure") return cmd_measure(o);
     if (befehl == "check")   return cmd_check(o);
     if (befehl == "formats") return cmd_formats(o);
 

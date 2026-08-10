@@ -50,7 +50,8 @@ struct GeometryMatch {
     const DiskFormat* format = nullptr;
     bool        ok        = false;
     std::string reason;              ///< bei ok == false: warum nicht
-    uint16_t    empty_tracks = 0;    ///< tolerierte unformatierte Spuren
+    uint16_t    empty_tracks = 0;    ///< tolerierte unformatierte Spuren (am Ende)
+    uint16_t    gap_tracks   = 0;    ///< unformatierte Spuren ZWISCHEN beschriebenen
     uint16_t    stray_tracks = 0;    ///< beschriebene Spuren HINTER dem Format (Altbestand)
     uint16_t    defect_tracks= 0;    ///< Spuren mit zu WENIGEN Sektoren (Schaden)
     uint16_t    crc_errors   = 0;    ///< Summe ueber alle Spuren
@@ -78,8 +79,14 @@ int lastFormattedCylinder(const std::vector<MeasuredTrack>& tracks);
  * Regeln (doc/design/13_k1520disktool.md §12.1):
  *  1. jede **formatierte** Spur muss von einem Spurbereich abgedeckt sein und in
  *     Sektorgroesse, erster ID und Verfahren uebereinstimmen;
- *  2. unformatierte Spuren werden toleriert (echte Abbilder tragen oft ein bis drei
- *     leere Zusatzspuren) — innerhalb des Formats zaehlen sie als @ref empty_tracks;
+ *  2. unformatierte Spuren **am Ende** werden toleriert (echte Abbilder tragen oft ein
+ *     bis drei leere Zusatzspuren) — sie zaehlen als @ref empty_tracks.  Unformatierte
+ *     Spuren **zwischen** beschriebenen (@ref gap_tracks) sind dagegen ein Ausschluss:
+ *     so sieht eine **Doppelschritt**-Diskette aus (nur jeder zweite Zylinder
+ *     beschrieben, §3.4-Geometrien T/U des CP/A-FORMAT).  Ohne diese Unterscheidung
+ *     passt jedes 80-Zylinder-Format auf eine 40-Spur-Doppelschritt-Diskette, weil die
+ *     40 Luecken als „leer" durchgingen — und das Dateisystem laese anschliessend
+ *     Datenmuell.
  *  3. beschriebene Spuren **hinter** dem Format sind Altbestand einer frueheren
  *     Formatierung (@ref stray_tracks) und disqualifizieren nicht: das Dateisystem
  *     fasst sie nie an.  Der Referenzdatentraeger `udos_boot_scp.hfe` traegt genau
