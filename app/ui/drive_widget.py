@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QTimer
 
 from app import drive_types as dt
+from app import paths
 from app.ui.focus import release_focus
 
 
@@ -113,12 +114,11 @@ class DriveWidget(QWidget):
         return f"{base}:\n{reason}" if reason else base
 
     def _default_disk_dir(self) -> str:
-        """Startverzeichnis für Datei-Dialoge: Unterordner 'disks' im Projekt-
-        Hauptverzeichnis, sonst das Projekt-Hauptverzeichnis selbst."""
-        # app/ui/drive_widget.py → Projekt-Hauptverzeichnis
-        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        disks = os.path.join(root, "disks")
-        return disks if os.path.isdir(disks) else root
+        """Startverzeichnis für Datei-Dialoge.
+
+        Die Arbeitsdisketten des Anwenders, sonst die mitgelieferten Beispiele
+        — im Quellbaum wie in einer Installation (:mod:`app.paths`)."""
+        return str(paths.default_disk_dir())
 
     def setup_ui(self):
         """Setup UI layout (panels are (re)built from the drive-bay config)."""

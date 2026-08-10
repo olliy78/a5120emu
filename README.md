@@ -46,6 +46,27 @@ bash run_gui.sh             # setzt LD_LIBRARY_PATH und startet app/main.py
 Voraussetzungen: C++17-Compiler, CMake ≥ 3.16, Python ≥ 3.8, Linux.
 Die Oberfläche ist in **[APP_README.md](APP_README.md)** beschrieben.
 
+### Für Anwender: verteilbares Paket
+
+Wer den Emulator nur benutzen will, braucht weder Quellbaum noch Compiler.
+`packaging/build_payload.sh` schnürt ein ~2-MB-Archiv; dessen `install.sh` holt sich
+Python und Qt mit [`uv`](https://github.com/astral-sh/uv) in eine eigene Laufzeitumgebung
+**innerhalb der Installation** — benutzerlokal, ohne Administratorrechte, ohne Rückwirkung
+auf das System.
+
+```sh
+packaging/build_payload.sh                  # → dist/k1520emu-<version>-linux-x86_64.tar.gz
+tar xzf dist/k1520emu-*.tar.gz -C /tmp
+/tmp/k1520emu-*/install.sh                  # fragt nach dem Ziel, Vorschlag ~/K1520emu
+```
+
+Einmalig ~120 MB Download, danach läuft der Emulator ohne Netz; belegt werden ~146 MB.
+Arbeitsdisketten landen im Dokumentenordner (`<Dokumente>/K1520emu/Disketten`), also
+getrennt vom Programm — der Emulator schreibt Änderungen an einer eingelegten Diskette
+dorthin zurück. Bedienung: **[packaging/README.md](packaging/README.md)**, Entwurf und
+Begründungen: **[doc/design/13_distribution.md](doc/design/13_distribution.md)**. Linux und
+macOS sind aufgebaut, Windows steht aus.
+
 ## Bauen und testen
 
 **Immer über `tools/dev.sh`** — es baut das passende Verzeichnis vorher neu. Es gibt zwei
@@ -59,8 +80,19 @@ tools/dev.sh test-all        # zusätzlich die langsamen Format-/Boot-Disk-Läuf
 tools/dev.sh tool k1520dbg   # ein Werkzeug starten (k1520dbg, boot_trace, floppy_diag …)
 ```
 
-Es gibt bewusst keine CI: `.githooks/pre-push` fährt die Regressionsrunde vor jedem Push.
+Geprüft wird zuerst lokal: `.githooks/pre-push` fährt die Regressionsrunde vor jedem Push.
 Einmal je Arbeitskopie aktivieren mit `git config core.hooksPath .githooks`.
+
+Dieselbe Runde gibt es als Gegenprobe auf sauberem System in GitHub Actions — **von Hand
+angestoßen**, nichts läuft bei einem Push von selbst:
+
+```sh
+gh workflow run ci.yml --ref main          # Bauen + Regression
+gh workflow run release.yml --ref main     # verteilbares Paket schnüren
+```
+
+Was dort läuft, was in GitHub eingestellt sein muss und wie man einen Lauf startet:
+`doc/ci_pipeline.md`.
 
 ## Wo was steht
 
@@ -71,6 +103,8 @@ Einmal je Arbeitskopie aktivieren mit `git config core.hooksPath .githooks`.
 | Testsystem: ausführen, erweitern | `tests/README.md` |
 | Fehlersuche im Boot-Pfad | `tools/how_to_debug_and_trace.md` |
 | Diskettenformate und Formatier-Pipeline | `doc/format.md` |
+| Verteilbares Paket, Installer | `packaging/README.md`, `doc/design/13_distribution.md` |
+| Pipeline auf GitHub: Bedienung, Einstellungen | `doc/ci_pipeline.md` |
 | Offene Punkte | `doc/open_points.md` |
 
 Kommentare und Dokumentation sind überwiegend deutsch.
@@ -81,6 +115,7 @@ Kommentare und Dokumentation sind überwiegend deutsch.
 core/        C++-Kern → libk1520core.so
 app/         PySide6-Oberfläche
 tools/       Debugger (k1520dbg), Tracer (boot_trace), Disassembler, Hilfsskripte
+packaging/   verteilbares Paket: Payload schnüren, Installer, Schlankmachen
 tests/       Testebenen unit/ debugtools/ integration/ cli/ system/ python/
 doc/         Architektur, Entwürfe, Analysen, EPROM-Abzüge
 data/        formats.yaml — Katalog der Diskettengeometrien

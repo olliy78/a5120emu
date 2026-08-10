@@ -1,0 +1,82 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Langsame Formatläufe — was der pre-push-Hook und die CI bewusst auslassen
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#   format_integration — die Tiefe: je Laufwerkstyp EIN Format über die ganze
+#                        Diskette (Boot-Disk-Ketten, Voll-Läufe)
+#   format_matrix      — die Breite: 88 FORMAT.COM-Menüeinträge, Smoke Spur 0–2
+#
+# Beide sind aus der Standardregression ausgeschlossen (CLAUDE.md, Abschnitt
+# „Diskettenformatierung").
+#
+# WIRD NUR VON HAND ANGESTOSSEN — sinnvoll vor einem Merge nach main und vor
+# einem Release.  Ein Lauf dauert ~20–40 min.
+#
+#     Actions → „Langsame Tests (Format)" → Run workflow → Umfang wählen
+#     gh workflow run slow-tests.yml --ref main -f umfang=format_matrix
+#
+# Wer das regelmäßig haben will, hängt einen Zeitplan davor:
+#     on:
+#       schedule:
+#         - cron: '17 3 * * 0'      # sonntags 03:17 UTC
+#       workflow_dispatch: …
+
+name: Langsame Tests (Format)
+
+on:
+  workflow_dispatch:
+    inputs:
+      umfang:
+        description: 'Welche Läufe'
+        type: choice
+        default: beide
+        options: [beide, format_integration, format_matrix]
+
+concurrency:
+  group: slow-tests
+  cancel-in-progress: false
+
+jobs:
+  format:
+    name: Formatläufe
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Systempakete
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ccache libreadline-dev
+
+      - name: ccache-Zwischenstand
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-slow-${{ github.sha }}
+          restore-keys: |
+            ccache-slow-
+            ccache-linux-
+
+      - name: format_integration
+        if: ${{ inputs.umfang != 'format_matrix' }}
+        env: { CC: ccache gcc, CXX: ccache g++, CCACHE_MAXSIZE: 500M }
+        run: tools/dev.sh test-format
+
+      - name: format_matrix
+        if: ${{ inputs.umfang != 'format_integration' }}
+        env: { CC: ccache gcc, CXX: ccache g++, CCACHE_MAXSIZE: 500M }
+        run: tools/dev.sh test-matrix -j4
+
+      - name: Protokolle bei Fehlschlag sichern
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slow-test-logs
+          path: |
+            build/Testing/Temporary/LastTest.log
+            logs/
+          if-no-files-found: ignore
+          retention-days: 14

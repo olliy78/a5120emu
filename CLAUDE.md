@@ -70,11 +70,26 @@ disk is which). The essentials for editing here:
 > only the FIRST label — the list is flattened while being passed through. `k1520_add_test()`
 > escapes the semicolons for you; do not bypass it.
 
-**No CI — a `pre-push` hook takes its place.** `.githooks/pre-push` runs `tools/dev.sh test`
-and refuses the push if anything is red (~12 s). Activate it once per working copy with
-`git config core.hooksPath .githooks`; bypass a single push with `git push --no-verify`. The
-slow `format_integration` round is deliberately NOT in the hook — run `tools/dev.sh test-format`
-before merging to main.
+**Two safety nets: a `pre-push` hook locally, GitHub Actions on the server.**
+`.githooks/pre-push` runs `tools/dev.sh test` and refuses the push if anything is red (~12 s).
+Activate it once per working copy with `git config core.hooksPath .githooks`; bypass a single
+push with `git push --no-verify`. The slow `format_integration` round is deliberately NOT in the
+hook — run `tools/dev.sh test-format` before merging to main.
+
+The workflows in `.github/workflows/` **drive the same `tools/dev.sh` commands** — never raw
+cmake/ctest, otherwise CI tests something else than the developer does. **Everything is
+triggered by hand** (`workflow_dispatch`) — nothing runs on push, on a PR, or on a schedule; the
+one exception is a pushed `v*` tag, which builds the release package. Bedienung, nötige
+GitHub-Einstellungen und Fehlersuche: **`doc/ci_pipeline.md`**.
+
+| Workflow | Auslöser | Was |
+|----------|----------|-----|
+| `ci.yml` | nur von Hand | `tools/dev.sh test` auf `ubuntu-latest` (inkl. Python-Ebene; `venv/` wird angelegt, damit CMake sie registriert) |
+| `slow-tests.yml` | nur von Hand | `test-format` und/oder `test-matrix` |
+| `release.yml` | von Hand **oder** Tag `v*` | `packaging/build_payload.sh` auf **ubuntu-22.04** (glibc-Baseline, §7 des Verteilungsentwurfs), Rauchtest (Bibliothek laden, `k1520_version`, `--paths`, kein Baurechner-Pfad im Binärabbild), Asset am Release-**Entwurf** |
+| `windows-probe.yml` | nur von Hand | MSVC-Bau der Kernbibliothek — **noch rot**, der Kern ist nicht portiert (§6.1: Export-Makros fehlen, `/utf-8`, statische CRT) |
+
+Anstoßen: `gh workflow run ci.yml --ref main` (oder Actions → Workflow → *Run workflow*).
 
 After any experiment that touched build dirs (sanitizer builds, `-DLOG_LEVEL=…`,
 interrupted builds), run `tools/dev.sh rebuild` to be certain. Raw commands still work
@@ -85,7 +100,15 @@ interrupted builds), run `tools/dev.sh rebuild` to be certain. Raw commands stil
 
 ## Python GUI
 
-The GUI loads `libk1520core.so` through `ctypes` (`app/core_binding/k1520.py` searches `build/` first). It needs the shared lib built and on the library path:
+The GUI loads `libk1520core.so` through `ctypes`. **All paths are resolved in one place —
+`app/paths.py`** (`core_library()`, `formats_file()`, `bundled_disks_dir()`,
+`user_disks_dir()`, `config_dir()`, `describe()`), in the order **environment variable
+(`K1520_HOME`/`K1520_LIB`/`K1520_FORMATS`/`K1520_DISKS`) → installation layout
+(`<root>/{bin,share}`) → source tree (`<repo>/{build,data,disks}`)**. Don't hard-wire repo
+paths in GUI code, and don't reintroduce `<repo>/build` lookups — that breaks a packaged
+installation. `python3 app/main.py --paths` prints the whole resolution (works without Qt
+and without the core lib; first thing to ask when something isn't found). Needs the shared
+lib built:
 
 ```sh
 python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
@@ -101,6 +124,62 @@ otherwise; `test_c_api.py` compares all three mechanically) and the **GUI** (PyS
 pixels are not testable there). Install the test deps with
 `venv/bin/python3 -m pip install -r requirements-dev.txt`; without them CMake skips registering
 the layer and says so. Details + limits: `tests/python/README.md`.
+
+## Verteilbares Paket (`packaging/`)
+
+`packaging/build_payload.sh` schnürt aus dem Baum ein Anwenderpaket (~2 MB:
+Kernbibliothek, GUI, `formats.yaml`, Beispieldisketten); `install.sh` darin holt sich mit
+**`uv`** Python und Qt in ein venv **innerhalb der Installation** — benutzerlokal, ohne
+Administratorrechte. Python/Qt werden bewusst nicht mitverteilt. Bedienung:
+`packaging/README.md`, Entwurf und Begründungen: **`doc/design/13_distribution.md`**.
+Umgesetzt sind Linux/macOS-Aufbau (Schritt 1+2); Windows (Inno Setup, per-user) steht aus.
+
+Sieben Dinge, die man dabei nicht kaputtmachen darf:
+
+- **`--uninstall` löscht in seinem Ziel, und das Ziel wird ERFRAGT.** Deshalb zwei
+  Riegel in `install.sh`: Ziel werden darf nur ein leeres oder bereits von uns belegtes
+  Verzeichnis (nie `$HOME`, nie `/`), und gelöscht wird nur, was sich ausweist
+  (`.k1520emu-installation`, ersatzweise `VERSION`+`app/paths.py`+`share/k1520emu/`).
+  Ohne das löschte die Antwort „`~`" beim Deinstallieren das Heimatverzeichnis — belegt,
+  nicht theoretisch. Und gelöscht wird **nur das Inventar aus dem Ausweis** (die Einträge,
+  die der Installer anlegte; ein Eintrag ist ein NAME, kein Pfad), nicht die Wurzel als
+  Ganzes — fremde Dateien im Ordner überleben, dann bleibt auch der Ordner stehen. Guards:
+  `test_installer_verweigert_*`, `test_deinstallieren_loescht_nur_eine_installation`,
+  `test_deinstallieren_laesst_eigene_dateien_stehen`,
+  `test_deinstallieren_folgt_keinem_pfad_im_ausweis`.
+- **Ein Update findet seine Installation selbst** (`vorhandene_installation()` über den
+  Starter-Symlink) und schlägt sie als Ziel vor. Ohne das legte ein `install.sh` ohne
+  `--prefix` eine ZWEITE Installation am Standardort an und ließe die alte verwaisen.
+- **`slim.py` strippt Bibliotheken, aber NIE Programme.** Der Interpreter von
+  python-build-standalone überlebt `strip` in keiner Variante („allocated section `.dynstr'
+  not in segment" → „undefined symbol: , version"); gearbeitet wird auf einer Kopie, und
+  eine Warnung von `strip` verwirft sie. Ebenso: die `ldd`-Zeile wird an der **Ladeadresse
+  am Ende** getrennt, nicht am ersten Leerzeichen — sonst kippt bei einem Installationspfad
+  mit Leerzeichen die ganze Qt-Hülle in den Sicherheitsrückfall (223 statt 146 MB).
+  Begründungen: `doc/design/13_distribution.md` §8.1.
+- **`FormatCatalog` findet seine `formats.yaml` über den Pfad des *eigenen Moduls***
+  (`dladdr` / `GetModuleHandleEx`, `format_catalog.cpp: moduleDir()`), nicht über
+  `/proc/self/exe` — sonst sucht die per `ctypes` geladene Bibliothek neben dem
+  venv-Python. Guard: `py_paths`.
+- **Release-Bauten setzen `-DK1520_FORMATS_DEFAULT=`** — sonst trägt jede ausgelieferte
+  Bibliothek den absoluten Pfad des Baurechners als Suchkandidaten. Guard: `py_packaging`.
+- **Arbeitsdisketten liegen außerhalb der Installation**, im **Dokumentenordner**
+  (`<Dokumente>/K1520emu/Disketten`), weil der Autosave in die gemountete Datei
+  zurückschreibt. Der Ordnername ist sprachabhängig — maßgeblich ist `XDG_DOCUMENTS_DIR`
+  aus `~/.config/user-dirs.dirs`, und die Regel steht ZWEIMAL (`paths.documents_dir()` und
+  `dokumente_dir()` in `lib/common.sh`, damit `--purge` dort aufräumt, wo der Emulator
+  schreibt; Guard: `test_dokumentenordner_shell_und_python_stimmen_ueberein`). Im Paket
+  liegen die Abbilder **gepackt** (`*.hfe.gz`), ausgepackt wird beim ersten Start
+  (`paths.seed_user_disks()`).
+- **Produkt = `k1520emu`, Programm = `a5120emu`.** Installation, Paketname, `share/k1520emu/`,
+  Datenordner und Marker tragen den FAMILIENnamen (der Bus, nicht der Rechner); Starter,
+  Symbol und `.desktop` heißen nach der Maschine. Weitere K1520-Rechner bekommen ein eigenes
+  Programm in derselben Installation: eigener Block beim Starterschreiben + `<name>.desktop.in`
+  + Eintrag in `MASCHINEN` (`install.sh`), woran das Deinstallieren die Verknüpfungen findet.
+
+Tests: `py_paths` + `py_packaging` (schnell, ohne Netz, in der Standardregression). Der
+vollständige Installationslauf (lädt ~120 MB) liegt hinter
+`K1520_PACKAGING_FULL=1 venv/bin/python3 -m pytest tests/python/test_packaging.py`.
 
 ## K1520 core architecture (the part that needs multiple files to grasp)
 

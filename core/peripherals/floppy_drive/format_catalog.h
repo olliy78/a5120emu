@@ -46,10 +46,15 @@ public:
      * @brief Kandidatenpfade in **aufsteigender** Priorität.
      *
      * 1. `K1520_FORMATS_DEFAULT` (CMake-Compile-Define — Quell- bzw. Installbaum)
-     * 2. `<Verzeichnis der Programmdatei>/../share/a5120emu/formats.yaml`
+     * 2. `<Verzeichnis des eigenen Moduls>/../share/a5120emu/formats.yaml`
      * 3. `./data/formats.yaml` (aktuelles Verzeichnis)
-     * 4. `${XDG_CONFIG_HOME:-~/.config}/a5120emu/formats.yaml`
-     * 5. `$K1520_FORMATS` (Datei oder Verzeichnis; mehrere `:`-getrennt)
+     * 4. `${XDG_CONFIG_HOME:-~/.config}/a5120emu/formats.yaml` (Windows: `%APPDATA%`)
+     * 5. `$K1520_FORMATS` (Datei oder Verzeichnis; mehrere `:`- bzw. `;`-getrennt)
+     *
+     * „Eigenes Modul" ist bei den statisch gelinkten Werkzeugen die Programmdatei,
+     * bei `libk1520core` die Bibliothek selbst — sonst suchte der von der GUI per
+     * `ctypes` geladene Kern neben dem Python-Interpreter des venv.  Eine
+     * Installation ist dadurch frei verschiebbar.
      *
      * Die Liste enthält **alle** Kandidaten, auch nicht existierende — für die
      * Fehlermeldung „keine Katalogdatei gefunden, gesucht in: …".

@@ -27,6 +27,15 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# --paths: aufgelöste Pfade ausgeben und beenden.  Steht VOR den Qt- und
+# Bindungs-Importen, damit die Auskunft auch dann kommt, wenn genau das fehlt,
+# wonach gefragt wird (Kernbibliothek, PySide6).  Rauchtest des Installers,
+# siehe doc/design/13_distribution.md §3.1.
+if "--paths" in sys.argv[1:]:
+    from app import paths
+    print(paths.describe())
+    sys.exit(0)
+
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer
 from app.ui.main_window import MainWindow
@@ -47,6 +56,12 @@ def main():
     sigint_timer = QTimer()
     sigint_timer.start(200)
     sigint_timer.timeout.connect(lambda: None)
+
+    # Beim ersten Start einer Installation die Beispieldisketten ins
+    # Arbeitsverzeichnis des Anwenders auspacken (im Quellbaum und bei
+    # vorhandenem Verzeichnis wirkungslos).
+    from app import paths
+    paths.seed_user_disks()
 
     # Create and show main window
     try:

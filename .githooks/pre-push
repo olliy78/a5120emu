@@ -2,8 +2,11 @@
 #
 # pre-push — die Regressionstests müssen grün sein, bevor etwas das Repo verlässt.
 #
-# Ersetzt bewusst eine CI: das Projekt wird lokal entwickelt, die schnelle Runde
-# dauert ~12 s (C++ + Python), das ist an dieser Stelle bezahlbar.
+# Erste Verteidigungslinie: die schnelle Runde dauert ~12 s (C++ + Python) und
+# fängt den Fehlschlag hier ab, statt fünf Minuten später in der CI.  Dieselbe
+# Runde läuft nach dem Push noch einmal in GitHub Actions
+# (.github/workflows/ci.yml) — auf einem sauberen System, was der lokale Lauf
+# nicht leisten kann.
 #
 # Aktivierung (einmalig, pro Arbeitskopie):
 #     git config core.hooksPath .githooks

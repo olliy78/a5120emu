@@ -42,7 +42,9 @@ git config core.hooksPath .githooks
 ```
 
 Damit läuft vor jedem `git push` die Regressionsrunde (`tools/dev.sh test`, ~12 s);
-bei rotem Ergebnis wird der Push abgelehnt.  Das Projekt hat bewusst keine CI.
+bei rotem Ergebnis wird der Push abgelehnt.  Das ist die erste Verteidigungslinie —
+dieselbe Runde gibt es als Gegenprobe auf sauberem System in GitHub Actions, dort
+aber nur **von Hand angestoßen** (`doc/ci_pipeline.md`).
 Der Wert ist **relativ** — er bleibt gültig, egal wo die Arbeitskopie liegt.
 Einzelnen Push erzwingen: `git push --no-verify`.
 

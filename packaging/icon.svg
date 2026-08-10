@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- A5120-Emulator: Bildschirm im Gehäuse, Grünphosphor-Zeilen, Diskettenschlitz -->
+  <defs>
+    <linearGradient id="gehaeuse" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cfc9b8"/>
+      <stop offset="1" stop-color="#9a9484"/>
+    </linearGradient>
+    <radialGradient id="schirm" cx="0.5" cy="0.42" r="0.75">
+      <stop offset="0" stop-color="#123d10"/>
+      <stop offset="1" stop-color="#05170a"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="3" y="6" width="58" height="44" rx="4" fill="url(#gehaeuse)" stroke="#5c5748" stroke-width="1.5"/>
+  <rect x="8" y="11" width="48" height="30" rx="3" fill="url(#schirm)" stroke="#3b382e" stroke-width="1"/>
+
+  <g fill="#78d41d">
+    <rect x="12" y="16" width="17" height="2.2" rx="1"/>
+    <rect x="12" y="21" width="30" height="2.2" rx="1"/>
+    <rect x="12" y="26" width="24" height="2.2" rx="1"/>
+    <rect x="12" y="31" width="10" height="2.2" rx="1"/>
+    <rect x="24" y="31" width="3.4" height="2.6" rx="0.6" opacity="0.9"/>
+  </g>
+
+  <!-- Laufwerksschacht -->
+  <rect x="3" y="50" width="58" height="9" rx="3" fill="#b3ad9c" stroke="#5c5748" stroke-width="1.5"/>
+  <rect x="10" y="53.5" width="20" height="2.5" rx="1" fill="#3b382e"/>
+  <circle cx="52" cy="54.7" r="2" fill="#c8462d"/>
+</svg>

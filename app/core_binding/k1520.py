@@ -6,7 +6,7 @@ Python ctypes wrapper for libk1520core.so C-API.
 Provides high-level Python interface to K1520 emulator.
 
 Typical usage:
-    from core_binding.k1520 import K1520Emulator
+    from app.core_binding.k1520 import K1520Emulator
     
     emu = K1520Emulator()
     emu.power_on()
@@ -27,50 +27,41 @@ from typing import Optional
 import threading
 import time
 
+from app import paths
+
 # ════════════════════════════════════════════════════════════════════════════
 # Library Loading
 # ════════════════════════════════════════════════════════════════════════════
 
 def find_libk1520core() -> Path:
-    """Find libk1520core.so in common build locations.
+    """Pfad der Kernbibliothek — Quellbaum wie Installation.
 
-    Returns:
-        Absolute path to the shared library.
+    Die Auflösung selbst steht in :mod:`app.paths` (eine Stelle für alle
+    Pfade, siehe ``doc/design/13_distribution.md``); hier bleibt nur der
+    plattformübergreifende Name der Funktion, den der Rest des Projekts kennt.
 
     Raises:
-        FileNotFoundError: If no valid shared library candidate is found.
+        FileNotFoundError: kein Kandidat existiert (Meldung listet alle auf).
     """
-    project_root = Path(__file__).resolve().parents[2]
-    app_root = Path(__file__).resolve().parents[1]
-    search_paths = [
-        project_root / "build" / "libk1520core.so",
-        project_root / "build" / "libk1520core.so.1",
-        app_root / "build" / "libk1520core.so",
-        app_root / "build" / "libk1520core.so.1",
-        Path("/usr/local/lib/libk1520core.so"),
-        Path("/usr/lib/libk1520core.so"),
-    ]
-    
-    for path in search_paths:
-        if path.exists():
-            return path
-    
-    raise FileNotFoundError(
-        f"libk1520core.so not found in:\n" +
-        "\n".join(f"  {p}" for p in search_paths) +
-        f"\n\nBuild with: cd {project_root} && "
-        "mkdir -p build && cd build && cmake .. && make -j4"
-    )
+    return paths.core_library()
+
+#: Ladehinweise nur auf Wunsch — in einer Installation ist die Konsole des
+#: Anwenders kein Protokoll.  ``K1520_DEBUG=1`` schaltet sie ein.
+_DEBUG_LOAD = bool(os.environ.get("K1520_DEBUG"))
 
 try:
+    paths.prepare_library_load()  # Windows: DLL-Suchverzeichnis anmelden
     _lib_path = find_libk1520core()
-    print(f"[DEBUG] Loading library from: {_lib_path}", file=sys.stderr)
+    if _DEBUG_LOAD:
+        print(f"[DEBUG] Loading library from: {_lib_path}", file=sys.stderr)
     _lib = ctypes.CDLL(str(_lib_path), use_errno=True)
-    print(f"[DEBUG] Library loaded successfully", file=sys.stderr)
+    if _DEBUG_LOAD:
+        print(f"[DEBUG] Library loaded successfully", file=sys.stderr)
 except Exception as e:
     print(f"ERROR: {e}", file=sys.stderr)
-    import traceback
-    traceback.print_exc()
+    if _DEBUG_LOAD:
+        import traceback
+        traceback.print_exc()
     sys.exit(1)
 
 # ════════════════════════════════════════════════════════════════════════════

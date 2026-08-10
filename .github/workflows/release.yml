@@ -1,0 +1,122 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Verteilbares Paket schnüren (Linux) — doc/design/13_distribution.md §7
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Auslöser (Bedienung: doc/ci_pipeline.md):
+#   * von Hand auf einem Branch → Paket bauen und prüfen, Ergebnis nur als
+#                      Artefakt (Probelauf, kein Release).
+#   * von Hand auf einem Tag v* → zusätzlich als Entwurf an das GitHub-Release
+#                      hängen:  gh workflow run release.yml --ref v1.2.0
+#   * Push eines Tags v* → dasselbe automatisch.  Der EINZIGE nicht-manuelle
+#                      Auslöser der ganzen Pipeline, und auch der ist eine
+#                      bewusste Handlung (`git push origin v1.2.0`).  Wer auch
+#                      das von Hand will, streicht den `push:`-Block unten.
+#
+# Der Entwurf ist Absicht: ein Release ist nach außen gerichtet, da schaut vor
+# dem Veröffentlichen jemand drauf.
+#
+# Gebaut wird auf ubuntu-22.04, NICHT auf ubuntu-latest: Rückwärtskompatibilität
+# kommt von der Baseline, nicht vom Zielsystem — eine gegen glibc 2.39 gelinkte
+# Bibliothek läuft auf keiner älteren Distribution (§7 des Entwurfs).  Wenn
+# GitHub dieses Abbild abkündigt, ist der Nachfolger ein Container mit alter
+# glibc (manylinux_2_28), nicht einfach ubuntu-latest.
+
+name: Release-Paket
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      disks:
+        description: 'Welche Beispieldisketten ins Paket'
+        type: choice
+        default: default
+        options: [default, all, none]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux:
+    name: Linux x86_64 — Paket
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: write        # nur für das Anhängen ans Release nötig
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # build_payload.sh stempelt `git describe --tags` in VERSION — dafür
+          # braucht es die ganze Historie.  `filter: blob:none` holt dabei nur
+          # die Commits/Bäume und die Blobs des Arbeitsstands: das Repo trägt
+          # ~500 MB Diskettenabbilder in der Historie, die hier niemand braucht.
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Systempakete
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake
+
+      - name: Paket schnüren
+        # Das Script setzt selbst, was für ein VERTEILBARES Paket nicht
+        # verhandelbar ist: -DK1520_FORMATS_DEFAULT= (sonst trägt die
+        # Bibliothek den Pfad des Baurechners mit sich herum),
+        # -DBUILD_K1520_TESTS=OFF, -static-libstdc++ -static-libgcc.
+        env:
+          DISKS: ${{ inputs.disks || 'default' }}
+        run: packaging/build_payload.sh --disks "$DISKS"
+
+      - name: Rauchtest — Bibliothek lädt, Pfade lösen auf
+        # Ein Payload, dessen Bibliothek nichts exportiert oder der seine
+        # formats.yaml nicht findet, darf kein Release-Asset werden (§7).
+        run: |
+          set -eu
+          probe="$RUNNER_TEMP/probe"
+          mkdir -p "$probe"
+          tar xzf dist/*.tar.gz -C "$probe"
+          root=$(echo "$probe"/*/payload)
+
+          echo "── Pfadauflösung im Installationslayout ──"
+          K1520_HOME="$root" python3 "$root/app/main.py" --paths | tee "$RUNNER_TEMP/paths.txt"
+          grep -q '^Layout: *Installation' "$RUNNER_TEMP/paths.txt" \
+            || { echo "FEHLER: Payload wird nicht als Installation erkannt"; exit 1; }
+          ! grep -q 'NICHT GEFUNDEN' "$RUNNER_TEMP/paths.txt" \
+            || { echo "FEHLER: ein Pfad löst nicht auf"; exit 1; }
+
+          echo "── C-ABI ──"
+          python3 - "$root/bin/libk1520core.so" <<'PY'
+          import ctypes, sys
+          lib = ctypes.CDLL(sys.argv[1])
+          lib.k1520_version.restype = ctypes.c_char_p
+          print("k1520_version:", lib.k1520_version().decode())
+          PY
+
+          echo "── kein Pfad des Baurechners in der Bibliothek ──"
+          if grep -qa "$GITHUB_WORKSPACE/data/formats.yaml" "$root/bin/libk1520core.so"; then
+            echo "FEHLER: einkompilierter Pfad des Baurechners gefunden"; exit 1
+          fi
+
+      - name: Paket als Artefakt
+        uses: actions/upload-artifact@v4
+        with:
+          name: k1520emu-linux-x86_64
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          retention-days: 30
+
+      - name: An das Release hängen (nur bei Tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --draft --title "$TAG" --generate-notes
+          gh release upload "$TAG" dist/*.tar.gz dist/*.sha256 --clobber
+          echo "Assets liegen am Release **$TAG** (Entwurf, falls neu angelegt)." >> "$GITHUB_STEP_SUMMARY"

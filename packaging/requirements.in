@@ -1,0 +1,13 @@
+# Laufzeitabhängigkeiten des VERTEILTEN Pakets (Eingabe für requirements.lock).
+#
+# Bewusst nicht requirements.txt: das ist die Entwicklungsumgebung, dort darf
+# PySide6 vollständig sein.  Ausgeliefert wird nur, was die GUI wirklich lädt —
+# QtCore, QtGui, QtWidgets, QtOpenGL, QtOpenGLWidgets.  Die stecken alle in
+# PySide6-Essentials; der Vollausbau zöge zusätzlich PySide6-Addons nach
+# (QtWebEngine, Qt3D, Multimedia …), rund 170 MB, die nie benutzt werden.
+#
+# Auflösen (macht packaging/build_payload.sh):
+#   uv pip compile packaging/requirements.in --generate-hashes -o requirements.lock
+
+PySide6-Essentials>=6.4.0
+PyYAML>=6.0
