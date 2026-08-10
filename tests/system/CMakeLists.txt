@@ -23,6 +23,12 @@ k1520_add_test(scpx_init SRC test_scpx_init.cpp LIBS ${_libs}
 k1520_add_test(udos_format SRC test_udos_format.cpp LIBS ${_libs}
                            LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
 
+# k1520DiskTool <-> echtes UDOS: geschrieben wird mit UdosFileSystem, gelesen vom
+# laufenden Betriebssystem (CAT / PRINT / STATUS).  Doc: doc/design/13_k1520disktool.md §15
+k1520_add_test(disktool_udos_roundtrip SRC test_disktool_udos_roundtrip.cpp
+                                       LIBS ${_libs} k1520_fs
+                                       LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
+
 # HARDY-Hardware-Testprogramm: der „Rechner"-Test laeuft clean durch (Waechter
 # fuer den /MEMDI- + BS-PIO-Bus-Strobe-Fix).
 k1520_add_test(hardy     SRC test_hardy.cpp     LIBS ${_libs}

@@ -61,6 +61,9 @@ struct FsInfo {
 struct WriteOptions {
     bool overwrite = false;   ///< vorhandene gleichnamige Datei ersetzen
     bool text      = false;   ///< Textmodus: Rest des letzten Satzes mit 0x1A fuellen
+    /// @brief UDOS-Datum „JJMMTT" fuer den Kopfsektor; leer = heutiges Systemdatum.
+    ///        (CP/M 2.2 fuehrt keine Zeitstempel und ignoriert das Feld.)
+    std::string date;
 };
 
 /**

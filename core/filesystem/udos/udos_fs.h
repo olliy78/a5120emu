@@ -90,7 +90,8 @@ struct UdosDirEntry {
     std::string name;
     bool        secret = false;      ///< Bit 7 des Flagbytes — Spiegel der S-Eigenschaft
     UdosPointer header;
-    uint32_t    record_index = 0;    ///< in welchem Satz der Verzeichnisdatei er steht
+    UdosPointer record;              ///< Satz der Verzeichnisdatei, in dem er steht
+    uint32_t    record_index = 0;    ///< dessen laufende Nummer
     uint32_t    offset       = 0;    ///< Byte-Offset innerhalb dieses Satzes
 };
 
@@ -109,6 +110,19 @@ public:
      */
     static std::unique_ptr<UdosFileSystem> mount(SectorSpace& space, const FsProfile& prof,
                                                  uint8_t head, std::string& err);
+
+    /**
+     * @brief **Neues** UDOS-Dateisystem auf einer formatierten Leerseite anlegen.
+     *
+     * @ref mount verlangt eine gueltige Belegungskarte — die gibt es auf einer frischen
+     * Diskette noch nicht.  Diese Fabrik setzt das Volume ohne Karte auf, legt sie an
+     * (@ref mkfs) und liefert das benutzbare Dateisystem zurueck.
+     *
+     * @param label Datentraegername (bis 24 Zeichen)
+     */
+    static std::unique_ptr<UdosFileSystem> format(SectorSpace& space, const FsProfile& prof,
+                                                  uint8_t head, const std::string& label,
+                                                  std::string& err);
 
     std::vector<FileEntry> list() const override;
     bool   read (const std::string& name, std::vector<uint8_t>& out) override;
@@ -137,6 +151,12 @@ public:
     static bool looksLikeUdos(const SectorSpace& space, const FsProfile& prof,
                               uint8_t head, std::string* why);
 
+    /// @brief Ist @p name ein gueltiger UDOS-Name?  (bis 32 Zeichen, Punkt ist normal)
+    static bool validName(const std::string& name, std::string* why);
+
+    /// @brief Spuren, die ein Werkzeug nie beschreiben darf (§8.6): 0, 1, 2 und 21–23.
+    bool reservedTrack(uint8_t track) const;
+
 private:
     UdosFileSystem(SectorSpace& space, const FsProfile& prof, uint8_t head);
 
@@ -146,10 +166,30 @@ private:
     /// @brief Inhalt einer Datei ab ihrem Kopfsektor zusammensetzen.
     bool readChain(const UdosFileHeader& hdr, std::vector<uint8_t>& out) const;
 
+    // ─── Schreibpfad ─────────────────────────────────────────────────────────
+
+    /// @brief Sektor MIT Kontrollblock schreiben (Daten genau 128 B).
+    bool writeLinked(UdosPointer p, const std::vector<uint8_t>& data128,
+                     UdosPointer back, UdosPointer fwd);
+    /// @brief Sektordaten schreiben, Kontrollblock unangetastet lassen.
+    bool writeData(UdosPointer p, const std::vector<uint8_t>& data128);
+    /// @brief @p n freie Sektoren aus der Karte belegen (noch nicht gespeichert).
+    bool allocSectors(uint32_t n, std::vector<UdosPointer>& out);
+    /// @brief Karte zurueckschreiben (Zaehler vorher nachfuehren).
+    bool saveBitmap();
+    /// @brief Eintrag in die Verzeichnisdatei einfuegen; liefert den Satz, in dem er steht.
+    bool appendDirEntry(const std::string& name, bool secret, UdosPointer header,
+                        UdosPointer& dir_record);
+    /// @brief Eintrag aus der Verzeichnisdatei herausschneiden.
+    bool removeDirEntry(const UdosDirEntry& e);
+    /// @brief Verzeichnisdatei um einen Satz verlaengern.
+    bool growDirectory(UdosPointer& neuer_satz);
+
     SectorSpace& space_;
     FsProfile    prof_;
     uint8_t      head_ = 0;
     UdosBitmap   bitmap_;
+    std::string  label_ = "K1520.DISK";   ///< Datentraegername fuer @ref mkfs
     uint8_t      secs_per_track_ = 26;
     uint8_t      tracks_         = 77;
 };

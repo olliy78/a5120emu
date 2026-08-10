@@ -325,3 +325,333 @@ TEST(UdosFileSystem, VerzeichnisIstSelbstEineDateiVomTypD) {
     ASSERT_TRUE(s0.fs->readHeader(s0.fs->directoryHeader(), hdr));
     EXPECT_EQ(hdr.typeName(), "D");
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Schreiben (nur auf Kopien — Fixtures werden nie angefasst)
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+/// @brief Beschreibbare Kopie einer Fixture; raeumt sich weg.
+class Kopie {
+public:
+    Kopie(const char* fixture_name, const char* temp_name)
+        : pfad_((std::filesystem::temp_directory_path() / temp_name).string()) {
+        std::filesystem::copy_file(fixture(fixture_name), pfad_,
+                                   std::filesystem::copy_options::overwrite_existing);
+    }
+    ~Kopie() { std::error_code ec; std::filesystem::remove(pfad_, ec); }
+    const std::string& path() const { return pfad_; }
+private:
+    std::string pfad_;
+};
+
+Seite oeffneSchreibbar(const std::string& pfad, uint8_t head) {
+    Seite s;
+    const FsProfile* p = dateisysteme().find("udos_ds77");
+    if (!p) { s.error = "Dateisystem unbekannt"; return s; }
+    const DiskFormat* f = formate().find(p->format);
+    if (!f) { s.error = "Format unbekannt"; return s; }
+    s.disk = DiskImage::open(pfad, std::nullopt, false);
+    if (!s.disk) { s.error = "Abbild nicht ladbar"; return s; }
+    s.space = std::make_unique<SectorSpace>(s.disk->medium(), *f, head);
+    s.fs    = UdosFileSystem::mount(*s.space, *p, head, s.error);
+    return s;
+}
+
+}  // namespace
+
+TEST(UdosFileSystemWrite, RoundtripBinaerUndText) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_udos_rt.hfe");
+    Seite s = oeffneSchreibbar(k.path(), 0);
+    ASSERT_TRUE(s) << s.error;
+
+    std::vector<uint8_t> binaer(9000);
+    for (size_t i = 0; i < binaer.size(); ++i) binaer[i] = static_cast<uint8_t>(i * 13 + 5);
+    const std::string txt = "ZEILE EINS\rZEILE ZWEI\r";
+    const std::vector<uint8_t> text(txt.begin(), txt.end());
+
+    WriteOptions bin; bin.date = "260810";
+    WriteOptions asc; asc.date = "260810"; asc.text = true;
+
+    ASSERT_TRUE(s.fs->write("GROSS.BIN", binaer, bin)) << s.fs->lastError();
+    ASSERT_TRUE(s.fs->write("KURZ.TEXT", text,  asc))  << s.fs->lastError();
+
+    std::vector<uint8_t> zurueck;
+    ASSERT_TRUE(s.fs->read("GROSS.BIN", zurueck)) << s.fs->lastError();
+    ASSERT_EQ(zurueck.size(), binaer.size()) << "Laenge muss auf das Byte stimmen";
+    EXPECT_EQ(zurueck, binaer);
+
+    ASSERT_TRUE(s.fs->read("KURZ.TEXT", zurueck));
+    ASSERT_GE(zurueck.size(), text.size());
+    EXPECT_TRUE(std::equal(text.begin(), text.end(), zurueck.begin()));
+
+    // Metadaten wie von UDOS erwartet.
+    for (const FileEntry& e : s.fs->list()) {
+        if (e.name == "GROSS.BIN") { EXPECT_EQ(e.type, "B"); EXPECT_EQ(e.size, 9000u);
+                                     EXPECT_EQ(e.date, "260810"); }
+        if (e.name == "KURZ.TEXT") { EXPECT_EQ(e.type, "A"); }
+    }
+}
+
+TEST(UdosFileSystemWrite, KetteUndKopfsektorSindKonsistent) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_udos_kette.hfe");
+    Seite s = oeffneSchreibbar(k.path(), 0);
+    ASSERT_TRUE(s) << s.error;
+
+    std::vector<uint8_t> d(700);          // 6 Saetze (5×128 + 60) → 6 Saetze
+    for (size_t i = 0; i < d.size(); ++i) d[i] = static_cast<uint8_t>(i);
+    WriteOptions o; o.date = "260810";
+    ASSERT_TRUE(s.fs->write("KETTE.DAT", d, o)) << s.fs->lastError();
+
+    const UdosDirEntry* e = nullptr;
+    const std::vector<UdosDirEntry> verz = s.fs->directory();
+    for (const auto& x : verz) if (x.name == "KETTE.DAT") e = &x;
+    ASSERT_NE(e, nullptr);
+
+    UdosFileHeader hdr;
+    ASSERT_TRUE(s.fs->readHeader(e->header, hdr)) << s.fs->lastError();
+    EXPECT_EQ(hdr.record_len, 128) << "Satzlaenge 128 ist die getroffene Festlegung";
+    EXPECT_EQ(hdr.record_count, 6u) << "700 B = 6 Saetze";
+    EXPECT_EQ(hdr.bytes_in_last, 700u - 5u * 128u);
+    EXPECT_EQ(hdr.length(), 700u);
+
+    // §6/§7: der Rueckwaertszeiger des Kopfsektors zeigt auf den Verzeichnissektor,
+    // in dem sein Eintrag steht — genau der, den directory() geliefert hat.
+    EXPECT_TRUE(hdr.directory_sector == e->record)
+        << "Kopfsektor zeigt auf einen anderen Verzeichnissatz";
+
+    std::vector<UdosPointer> kette;
+    ASSERT_TRUE(s.fs->recordChain(hdr, kette)) << s.fs->lastError();
+    EXPECT_EQ(kette.size(), 6u) << "die Kette muss so lang sein wie die Satzanzahl";
+    EXPECT_TRUE(kette.back() == hdr.last_record) << "letzter Satz im Kopf falsch";
+
+    // Jeder Satz liegt auf einer Spur, die ein Werkzeug beschreiben darf (§8.6).
+    for (const UdosPointer& p : kette)
+        EXPECT_FALSE(s.fs->reservedTrack(p.track))
+            << "Satz auf Systemspur " << int(p.track) << " abgelegt";
+    EXPECT_FALSE(s.fs->reservedTrack(e->header.track));
+}
+
+TEST(UdosFileSystemWrite, BelegungWirdExaktNachgefuehrt) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_udos_bits.hfe");
+    Seite s = oeffneSchreibbar(k.path(), 0);
+    ASSERT_TRUE(s) << s.error;
+
+    const int frei_vorher = s.fs->bitmap().countFree();
+    ASSERT_EQ(frei_vorher, 850);
+
+    // 1000 B = 8 Saetze + 1 Kopfsektor = 9 Sektoren.
+    WriteOptions o; o.date = "260810";
+    ASSERT_TRUE(s.fs->write("NEUN.DAT", std::vector<uint8_t>(1000, 0x42), o))
+        << s.fs->lastError();
+    EXPECT_EQ(s.fs->bitmap().countFree(), frei_vorher - 9);
+
+    // Jeder Sektor der Datei muss in der Karte als belegt stehen (§11: 0 Verstoesse).
+    // Den Vektor HALTEN — directory() liefert per Wert; ein Zeiger in das Ergebnis
+    // der Schleife zeigt sonst auf ein bereits zerstoertes Temporaer.
+    const std::vector<UdosDirEntry> verz = s.fs->directory();
+    const UdosDirEntry* e = nullptr;
+    for (const auto& x : verz) if (x.name == "NEUN.DAT") e = &x;
+    ASSERT_NE(e, nullptr);
+    UdosFileHeader hdr;
+    ASSERT_TRUE(s.fs->readHeader(e->header, hdr));
+    std::vector<UdosPointer> kette;
+    ASSERT_TRUE(s.fs->recordChain(hdr, kette));
+    EXPECT_TRUE(s.fs->bitmap().used(e->header.track, e->header.sectorId()));
+    for (const UdosPointer& p : kette)
+        EXPECT_TRUE(s.fs->bitmap().used(p.track, p.sectorId()))
+            << "Satz auf Spur " << int(p.track) << " Sektor " << int(p.sectorId())
+            << " ist nicht als belegt eingetragen";
+
+    // Der gespeicherte Freizaehler wird mitgefuehrt (§4.2: 2464 − frei).
+    EXPECT_EQ(s.fs->bitmap().storedFree(), frei_vorher - 9);
+    EXPECT_EQ(s.fs->bitmap().storedUsed() + s.fs->bitmap().storedFree(),
+              kUdosCounterConstant);
+
+    ASSERT_TRUE(s.fs->erase("NEUN.DAT")) << s.fs->lastError();
+    EXPECT_EQ(s.fs->bitmap().countFree(), frei_vorher) << "Loeschen gibt alles zurueck";
+}
+
+TEST(UdosFileSystemWrite, VerzeichnisWaechstWennEinSatzVollIst) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_udos_dirwachs.hfe");
+    Seite s = oeffneSchreibbar(k.path(), 0);
+    ASSERT_TRUE(s) << s.error;
+
+    UdosFileHeader vorher;
+    ASSERT_TRUE(s.fs->readHeader(s.fs->directoryHeader(), vorher));
+    const uint16_t saetze_vorher = vorher.record_count;
+
+    // Namen mit 32 Zeichen: je Eintrag 35 Byte → nach spaetestens vier Eintraegen
+    // muss ein 128-B-Satz ueberlaufen.
+    WriteOptions o; o.date = "260810";
+    for (int i = 0; i < 12; ++i) {
+        std::string name = "LANGERNAME.FUER.DEN.TEST.NR" + std::to_string(100 + i);
+        ASSERT_LE(name.size(), 32u);
+        ASSERT_TRUE(s.fs->write(name, std::vector<uint8_t>(64, 'x'), o))
+            << name << ": " << s.fs->lastError();
+    }
+
+    UdosFileHeader nachher;
+    ASSERT_TRUE(s.fs->readHeader(s.fs->directoryHeader(), nachher));
+    EXPECT_GT(nachher.record_count, saetze_vorher)
+        << "die Verzeichnisdatei haette wachsen muessen";
+
+    // Alle zwoelf stehen im Verzeichnis und sind lesbar.
+    int gefunden = 0;
+    for (const FileEntry& e : s.fs->list())
+        if (e.name.rfind("LANGERNAME.FUER.DEN.TEST.NR", 0) == 0) {
+            ++gefunden;
+            std::vector<uint8_t> d;
+            EXPECT_TRUE(s.fs->read(e.name, d)) << e.name << ": " << s.fs->lastError();
+        }
+    EXPECT_EQ(gefunden, 12);
+
+    // Und die Kette der Verzeichnisdatei ist weiterhin schluessig.
+    std::vector<UdosPointer> kette;
+    ASSERT_TRUE(s.fs->recordChain(nachher, kette)) << s.fs->lastError();
+    EXPECT_EQ(kette.size(), nachher.record_count);
+}
+
+TEST(UdosFileSystemWrite, UeberschreibenNurMitErlaubnis) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_udos_ovr.hfe");
+    Seite s = oeffneSchreibbar(k.path(), 0);
+    ASSERT_TRUE(s) << s.error;
+
+    WriteOptions o; o.date = "260810";
+    ASSERT_TRUE(s.fs->write("EINMAL.DAT", std::vector<uint8_t>(300, 1), o));
+    EXPECT_FALSE(s.fs->write("EINMAL.DAT", std::vector<uint8_t>(300, 2), o));
+    EXPECT_NE(s.fs->lastError().find("existiert bereits"), std::string::npos)
+        << s.fs->lastError();
+
+    const int frei = s.fs->bitmap().countFree();
+    o.overwrite = true;
+    ASSERT_TRUE(s.fs->write("EINMAL.DAT", std::vector<uint8_t>(300, 2), o))
+        << s.fs->lastError();
+    EXPECT_EQ(s.fs->bitmap().countFree(), frei)
+        << "gleich grosse Ersetzung darf netto keinen Platz kosten";
+
+    std::vector<uint8_t> d;
+    ASSERT_TRUE(s.fs->read("EINMAL.DAT", d));
+    EXPECT_EQ(d, std::vector<uint8_t>(300, 2));
+}
+
+TEST(UdosFileSystemWrite, DieVerzeichnisdateiSelbstIstGeschuetzt) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_udos_dirdel.hfe");
+    Seite s = oeffneSchreibbar(k.path(), 0);
+    ASSERT_TRUE(s) << s.error;
+
+    EXPECT_FALSE(s.fs->erase("DIRECTORY"));
+    EXPECT_NE(s.fs->lastError().find("Verzeichnisdatei"), std::string::npos)
+        << s.fs->lastError();
+}
+
+TEST(UdosFileSystemWrite, UnzulaessigeNamenUndLeereDateien) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_udos_name.hfe");
+    Seite s = oeffneSchreibbar(k.path(), 0);
+    ASSERT_TRUE(s) << s.error;
+
+    const std::vector<uint8_t> d(100, 1);
+    WriteOptions o; o.date = "260810";
+    EXPECT_FALSE(s.fs->write("", d, o));
+    EXPECT_FALSE(s.fs->write(std::string(33, 'A'), d, o)) << "33 Zeichen sind zu viel";
+    EXPECT_FALSE(s.fs->write("MIT LEERZEICHEN", d, o));
+    EXPECT_FALSE(s.fs->write("OK.NAME", {}, o)) << "leere Dateien kann UDOS nicht";
+
+    std::string warum;
+    EXPECT_TRUE(UdosFileSystem::validName("NOTE.TO.UDOS.4.3", &warum)) << warum;
+    EXPECT_TRUE(UdosFileSystem::validName(std::string(32, 'A'), &warum)) << warum;
+    EXPECT_FALSE(UdosFileSystem::validName("a b", &warum));
+}
+
+TEST(UdosFileSystemWrite, PlatzpruefungRechnetKopfsektorenMit) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_udos_fit.hfe");
+    Seite s = oeffneSchreibbar(k.path(), 0);
+    ASSERT_TRUE(s) << s.error;
+
+    FitReport r;
+    ASSERT_TRUE(s.fs->wouldFit({{"A", 1, 0, false}}, r));
+    EXPECT_TRUE(r.fits);
+    EXPECT_EQ(r.needed, 2u * 128u) << "1 Byte = 1 Satz + 1 Kopfsektor";
+
+    ASSERT_TRUE(s.fs->wouldFit({{"ZUGROSS", 200u * 1024u, 0, false}}, r));
+    EXPECT_FALSE(r.fits);
+    EXPECT_NE(r.detail.find("frei sind"), std::string::npos) << r.detail;
+
+    // Der freie Platz zaehlt die Systemspuren NICHT mit (§8.6) — er darf also nie
+    // groesser sein als das, was die Karte insgesamt frei meldet.
+    EXPECT_LE(r.available / 128, static_cast<uint64_t>(s.fs->bitmap().countFree()));
+}
+
+TEST(UdosFileSystemWrite, DiskettenvollHinterlaesstNichts) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_udos_voll.hfe");
+    Seite s = oeffneSchreibbar(k.path(), 0);
+    ASSERT_TRUE(s) << s.error;
+
+    const int frei = s.fs->bitmap().countFree();
+    const size_t dateien = s.fs->list().size();
+
+    WriteOptions o; o.date = "260810";
+    EXPECT_FALSE(s.fs->write("ZUGROSS.DAT",
+                             std::vector<uint8_t>(static_cast<size_t>(frei + 10) * 128, 7), o));
+    EXPECT_NE(s.fs->lastError().find("voll"), std::string::npos) << s.fs->lastError();
+    EXPECT_EQ(s.fs->bitmap().countFree(), frei) << "belegte Bits nicht zurueckgegeben";
+    EXPECT_EQ(s.fs->list().size(), dateien);
+}
+
+TEST(UdosFileSystemWrite, MkfsLegtEinBenutzbaresDateisystemAn) {
+    // Frisch formatierte, leere UDOS-Diskette: DiskImage::create erzeugt die
+    // Spuren (echte Marken/CRC), format() legt Karte und Verzeichnisdatei an.
+    const std::string pfad =
+        (std::filesystem::temp_directory_path() / "k1520_test_udos_mkfs.hfe").string();
+    {
+        const DiskFormat* f = formate().find("udos_ds77");
+        ASSERT_NE(f, nullptr);
+        auto leer = DiskImage::create(pfad, *f, false, Encoding::MFM);
+        ASSERT_NE(leer, nullptr);
+        ASSERT_TRUE(leer->flush());
+    }
+
+    const FsProfile* p = dateisysteme().find("udos_ds77");
+    ASSERT_NE(p, nullptr);
+    const DiskFormat* f = formate().find(p->format);
+
+    auto disk = DiskImage::open(pfad, std::nullopt, false);
+    ASSERT_NE(disk, nullptr);
+    SectorSpace raum(disk->medium(), *f, 0);
+
+    std::string err;
+    auto fs = UdosFileSystem::format(raum, *p, 0, "NEUE.DISKETTE", err);
+    ASSERT_NE(fs, nullptr) << err;
+
+    // Sie sieht fuer die Erkennung wie eine UDOS-Seite aus …
+    std::string warum;
+    EXPECT_TRUE(UdosFileSystem::looksLikeUdos(raum, *p, 0, &warum)) << warum;
+
+    // … traegt genau die Verzeichnisdatei …
+    const std::vector<FileEntry> liste = fs->list();
+    ASSERT_EQ(liste.size(), 1u);
+    EXPECT_EQ(liste[0].name, "DIRECTORY");
+    EXPECT_EQ(liste[0].type, "D");
+    EXPECT_TRUE(liste[0].hidden) << "DIRECTORY ist geheim (SECRET)";
+
+    // … und ist danach normal beschreibbar.
+    WriteOptions o; o.date = "260810";
+    ASSERT_TRUE(fs->write("ERSTE.DATEI", std::vector<uint8_t>(500, 0x5A), o))
+        << fs->lastError();
+    std::vector<uint8_t> d;
+    ASSERT_TRUE(fs->read("ERSTE.DATEI", d));
+    EXPECT_EQ(d, std::vector<uint8_t>(500, 0x5A));
+
+    const FsInfo i = fs->info();
+    EXPECT_EQ(i.label, "NEUE.DISKETTE");
+    EXPECT_EQ(i.total_bytes / 128, 77u * 26u);
+    EXPECT_TRUE(i.warnings.empty()) << (i.warnings.empty() ? "" : i.warnings[0]);
+
+    // Erneutes Mounten (ueber den normalen Weg) muss gelingen.
+    auto wieder = UdosFileSystem::mount(raum, *p, 0, err);
+    EXPECT_NE(wieder, nullptr) << err;
+
+    std::error_code ec;
+    std::filesystem::remove(pfad, ec);
+}

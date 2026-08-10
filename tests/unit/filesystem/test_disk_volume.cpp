@@ -346,3 +346,73 @@ TEST(DiskVolume, SideNPraefixImDateinamen) {
     EXPECT_EQ(FileRef::parse("PIP.COM").name, "PIP.COM");
     EXPECT_EQ(FileRef::parse("PIP.COM", 1).volume, 1) << "ohne Praefix gilt die Vorgabe";
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Der ganze Anwenderfall auf einer beidseitigen UDOS-Diskette
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(DiskVolume, UdosStapelUeberBeideSeitenHinUndZurueck) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_dv_udos_stapel.hfe");
+    std::string err;
+    auto dv = oeffne(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+    ASSERT_EQ(dv->volumeCount(), 2);
+
+    const size_t vorher = dv->list().size();
+
+    // Ordner mit genau den geforderten Unterverzeichnissen.
+    TempOrdner quelle("k1520_test_dv_udos_q");
+    schreibe(quelle / "Side0" / "VON.SEITE.NULL", std::string(700, 'A'));
+    schreibe(quelle / "Side1" / "VON.SEITE.EINS", std::string(300, 'B'));
+
+    ASSERT_TRUE(dv->insertAll(quelle.path(), TransferOptions{})) << dv->lastError();
+
+    // Jede Datei liegt auf IHRER Seite — und nur dort.
+    const std::vector<FileEntry> nachher = dv->list();
+    EXPECT_EQ(nachher.size(), vorher + 2);
+    int auf0 = 0, auf1 = 0;
+    for (const FileEntry& e : nachher) {
+        if (e.name == "VON.SEITE.NULL") { ++auf0; EXPECT_EQ(e.volume, 0); }
+        if (e.name == "VON.SEITE.EINS") { ++auf1; EXPECT_EQ(e.volume, 1); }
+    }
+    EXPECT_EQ(auf0, 1);
+    EXPECT_EQ(auf1, 1);
+
+    // Und zurueck: extractAll legt sie wieder in Side0/ bzw. Side1/ ab.
+    TempOrdner ziel("k1520_test_dv_udos_z");
+    ASSERT_TRUE(dv->extractAll(ziel.path(), TransferOptions{})) << dv->lastError();
+    ASSERT_TRUE(fs::exists(ziel / "Side0" / "VON.SEITE.NULL"));
+    ASSERT_TRUE(fs::exists(ziel / "Side1" / "VON.SEITE.EINS"));
+    EXPECT_EQ(fs::file_size(ziel / "Side0" / "VON.SEITE.NULL"), 700u);
+    EXPECT_EQ(fs::file_size(ziel / "Side1" / "VON.SEITE.EINS"), 300u);
+    EXPECT_FALSE(fs::exists(ziel / "Side1" / "VON.SEITE.NULL"))
+        << "die Seiten duerfen nicht vermischt werden";
+}
+
+TEST(DiskVolume, UdosGleicherNameAufBeidenSeitenBleibtGetrennt) {
+    // Auf udos_boot_scp.hfe ist das der Normalfall (CODE liegt auf beiden Seiten) —
+    // ohne FileRef mit Seitenangabe waere die Datei nicht mehr eindeutig.
+    Kopie k("udos_boot_scp.hfe", "k1520_test_dv_udos_gleich.hfe");
+    std::string err;
+    auto dv = oeffne(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    TempOrdner quelle("k1520_test_dv_udos_gleich_q");
+    schreibe(quelle / "Side0" / "GLEICH.NAME", "Seite null");
+    schreibe(quelle / "Side1" / "GLEICH.NAME", "Seite eins");
+    ASSERT_TRUE(dv->insertAll(quelle.path(), TransferOptions{})) << dv->lastError();
+
+    TempOrdner ziel("k1520_test_dv_udos_gleich_z");
+    ASSERT_TRUE(dv->extract(FileRef::parse("Side0/GLEICH.NAME"),
+                            (ziel / "a").string(), TransferOptions{})) << dv->lastError();
+    ASSERT_TRUE(dv->extract(FileRef::parse("Side1/GLEICH.NAME"),
+                            (ziel / "b").string(), TransferOptions{})) << dv->lastError();
+
+    auto lies = [&](const char* n) {
+        std::ifstream f((ziel / n).string(), std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(f)),
+                           std::istreambuf_iterator<char>());
+    };
+    EXPECT_EQ(lies("a").substr(0, 10), "Seite null");
+    EXPECT_EQ(lies("b").substr(0, 10), "Seite eins");
+}

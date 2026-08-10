@@ -11,6 +11,8 @@
 #include "core/filesystem/udos/udos_fs.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <ctime>
 
 namespace {
 
@@ -99,6 +101,30 @@ std::unique_ptr<UdosFileSystem> UdosFileSystem::mount(SectorSpace& space,
     }
     // Die Karte weiss es besser als das Profil — sie stammt vom Formatierer.
     if (fs->bitmap_.trackCount() > 0) fs->tracks_ = fs->bitmap_.trackCount();
+    return fs;
+}
+
+std::unique_ptr<UdosFileSystem> UdosFileSystem::format(SectorSpace& space,
+                                                       const FsProfile& prof, uint8_t head,
+                                                       const std::string& label,
+                                                       std::string& err) {
+    if (prof.type != FsType::Udos) {
+        err = "Profil '" + prof.name + "' ist kein UDOS-Dateisystem";
+        return nullptr;
+    }
+    if (space.sectorSize(0, head) != kSector) {
+        err = "UDOS erwartet 128-B-Sektoren, gemessen "
+            + std::to_string(space.sectorSize(0, head));
+        return nullptr;
+    }
+
+    std::unique_ptr<UdosFileSystem> fs(new UdosFileSystem(space, prof, head));
+    fs->secs_per_track_ = space.sectorsPerTrack(0, head);
+    fs->tracks_         = prof.usable_tracks ? prof.usable_tracks
+                                             : space.format().numCylinders();
+    fs->label_          = label.empty() ? "K1520.DISK" : label.substr(0, 24);
+
+    if (!fs->mkfs()) { err = fs->lastError(); return nullptr; }
     return fs;
 }
 
@@ -269,6 +295,7 @@ std::vector<UdosDirEntry> UdosFileSystem::directory() const {
             e.name.assign(reinterpret_cast<const char*>(satz.data() + i + 1), n);
             e.secret       = (flag & 0x80) != 0;
             e.header       = UdosPointer::fromBytes(satz.data() + i + 1 + n);
+            e.record       = kette[r];
             e.record_index = static_cast<uint32_t>(r);
             e.offset       = static_cast<uint32_t>(i);
             result.push_back(e);
@@ -331,39 +358,397 @@ FsInfo UdosFileSystem::info() const {
     return i;
 }
 
-// ─── Schreiben (Etappe 6) ────────────────────────────────────────────────────
+// ─── Schreibpfad ─────────────────────────────────────────────────────────────
+//
+// Umsetzung von doc/udos_diskettenformat.md §8.4/§8.5.  Zwei Festlegungen, die dort
+// offengelassen sind und hier bewusst getroffen werden:
+//
+//   * **Satzlaenge 128** (ein Sektor je Satz).  §8.4 nennt sie „immer sicher"; groessere
+//     Saetze braeuchten `satzlen/128` ZUSAMMENHAENGENDE freie Sektoren in EINER Spur
+//     (§7) und bringen einem Werkzeug keinen Vorteil.  Gelesen werden groessere
+//     Satzlaengen selbstverstaendlich weiterhin.
+//   * **Dichte Belegung** statt des Interleave 5, den der Referenzdatentraeger zeigt
+//     (§7).  Der Interleave ist eine Geschwindigkeitseigenschaft echter Hardware; die
+//     Verkettung steht ohnehin explizit in den Zeigern, das Ergebnis ist also fuer UDOS
+//     gleichwertig.
+//
+// Unangetastet bleiben die Systembereiche aus §8.6: die Spuren 0, 1, 2 (Urlader und
+// Nukleus) und 21–23 (Bootabbild, Verzeichnis, Belegungskarte).  Die beiden Bytes
+// HINTER dem Kontrollblock (`41 F2` …, §13.5) werden nie beschrieben — sie sind als
+// Gap/Schreibnaht eingeordnet, und TrackCodec::writeSector laesst sie stehen.
 
-bool UdosFileSystem::write(const std::string&, const std::vector<uint8_t>&,
-                           const WriteOptions&) {
-    return fail("Schreiben auf UDOS-Disketten ist noch nicht umgesetzt");
+bool UdosFileSystem::reservedTrack(uint8_t track) const {
+    return track <= 2
+        || track == prof_.boot_track
+        || track == prof_.directory_track
+        || track == prof_.bitmap_track;
 }
 
-bool UdosFileSystem::erase(const std::string&) {
-    return fail("Loeschen auf UDOS-Disketten ist noch nicht umgesetzt");
+bool UdosFileSystem::validName(const std::string& name, std::string* why) {
+    auto sag = [&](const std::string& m) { if (why) *why = m; return false; };
+    if (name.empty())      return sag("Name ist leer");
+    if (name.size() > 32)  return sag("Name ist laenger als 32 Zeichen");
+    for (char c : name) {
+        const unsigned char u = static_cast<unsigned char>(c);
+        if (u < 0x21 || u > 0x7E) return sag("Name enthaelt ein Sonderzeichen oder Leerzeichen");
+    }
+    return true;
+}
+
+bool UdosFileSystem::writeLinked(UdosPointer p, const std::vector<uint8_t>& data128,
+                                 UdosPointer back, UdosPointer fwd) {
+    if (data128.size() != kSector) return fail("Sektordaten muessen 128 B lang sein");
+    const std::vector<uint8_t> block = {back.sector_index, back.track,
+                                        fwd.sector_index,  fwd.track};
+    if (!space_.writeSector(p.track, head_, p.sectorId(), data128, block))
+        return fail(space_.lastError());
+    return true;
+}
+
+bool UdosFileSystem::writeData(UdosPointer p, const std::vector<uint8_t>& data128) {
+    if (data128.size() != kSector) return fail("Sektordaten muessen 128 B lang sein");
+    // Leeres tail-Argument: der vorhandene Kontrollblock bleibt unveraendert.
+    if (!space_.writeSector(p.track, head_, p.sectorId(), data128))
+        return fail(space_.lastError());
+    return true;
+}
+
+bool UdosFileSystem::allocSectors(uint32_t n, std::vector<UdosPointer>& out) {
+    out.clear();
+    for (uint8_t t = 0; t < tracks_ && out.size() < n; ++t) {
+        if (reservedTrack(t)) continue;
+        for (uint8_t s = 1; s <= secs_per_track_ && out.size() < n; ++s) {
+            if (bitmap_.used(t, s)) continue;
+            out.push_back(UdosPointer{static_cast<uint8_t>(s - 1), t});
+            bitmap_.setUsed(t, s, true);
+        }
+    }
+    if (out.size() < n) {
+        // Belegte Bits wieder freigeben — ein Fehlschlag darf nichts hinterlassen.
+        for (const UdosPointer& p : out) bitmap_.setUsed(p.track, p.sectorId(), false);
+        out.clear();
+        return fail("Diskette voll: " + std::to_string(n) + " Sektoren noetig");
+    }
+    return true;
+}
+
+bool UdosFileSystem::saveBitmap() {
+    bitmap_.refreshCounters();
+    std::string err;
+    if (!bitmap_.store(space_, head_, prof_.bitmap_track, err)) return fail(err);
+    return true;
+}
+
+bool UdosFileSystem::growDirectory(UdosPointer& neuer_satz) {
+    UdosFileHeader hdr;
+    if (!readHeader(directoryHeader(), hdr)) return false;
+
+    std::vector<UdosPointer> kette;
+    if (!recordChain(hdr, kette)) return false;
+    if (kette.empty()) return fail("Verzeichnisdatei hat keinen einzigen Satz");
+
+    std::vector<UdosPointer> neu;
+    if (!allocSectors(1, neu)) return false;
+    neuer_satz = neu.front();
+
+    // Neuer, leerer Satz: nur das Endebyte.  Rueckwaerts auf den bisher letzten Satz.
+    std::vector<uint8_t> leer(kSector, 0x00);
+    leer[0] = 0xFF;
+    if (!writeLinked(neuer_satz, leer, kette.back(), UdosPointer{})) return false;
+
+    // Bisher letzter Satz: Vorwaertszeiger auf den neuen (Daten unveraendert).
+    {
+        std::vector<uint8_t> d;
+        UdosPointer back, fwd;
+        if (!readSector(kette.back(), d, back, fwd)) return false;
+        if (!writeLinked(kette.back(), d, back, neuer_satz)) return false;
+    }
+
+    // Kopfsektor der Verzeichnisdatei: Satzanzahl +1, „letzter Satz" nachziehen.
+    // Sein Kontrollblock bleibt unangetastet (writeData).
+    {
+        std::vector<uint8_t> d;
+        UdosPointer back, fwd;
+        if (!readSector(directoryHeader(), d, back, fwd)) return false;
+        d[10] = neuer_satz.sector_index;
+        d[11] = neuer_satz.track;
+        const uint16_t anzahl = static_cast<uint16_t>(le16(d.data() + 13) + 1);
+        d[13] = static_cast<uint8_t>(anzahl & 0xFF);
+        d[14] = static_cast<uint8_t>(anzahl >> 8);
+        d[22] = static_cast<uint8_t>(hdr.record_len & 0xFF);   // letzter Satz voll
+        d[23] = static_cast<uint8_t>(hdr.record_len >> 8);
+        if (!writeData(directoryHeader(), d)) return false;
+    }
+    return true;
+}
+
+bool UdosFileSystem::appendDirEntry(const std::string& name, bool secret,
+                                    UdosPointer header, UdosPointer& dir_record) {
+    UdosFileHeader hdr;
+    if (!readHeader(directoryHeader(), hdr)) return false;
+    std::vector<UdosPointer> kette;
+    if (!recordChain(hdr, kette)) return false;
+    if (kette.empty()) return fail("Verzeichnisdatei hat keinen einzigen Satz");
+
+    const size_t noetig = 3 + name.size();      // Flagbyte + Name + Zeiger
+    UdosPointer  ziel   = kette.back();
+
+    auto passtIn = [&](const std::vector<uint8_t>& satz, size_t& ende) {
+        ende = 0;
+        while (ende < satz.size() && satz[ende] != 0xFF) {
+            const uint8_t n = satz[ende] & 0x3F;
+            if (n == 0) return false;
+            ende += 3 + n;
+        }
+        if (ende >= satz.size()) return false;              // kein Endebyte gefunden
+        return ende + noetig + 1 <= satz.size();            // +1 fuer das neue 0xFF
+    };
+
+    std::vector<uint8_t> satz;
+    UdosPointer back, fwd;
+    if (!readSector(ziel, satz, back, fwd)) return false;
+
+    size_t ende = 0;
+    if (!passtIn(satz, ende)) {
+        // §8.4 Schritt 5: passt er nicht mehr, waechst die Datei DIRECTORY selbst.
+        if (!growDirectory(ziel)) return false;
+        if (!readSector(ziel, satz, back, fwd)) return false;
+        if (!passtIn(satz, ende))
+            return fail("Verzeichniseintrag passt auch in einen frischen Satz nicht");
+    }
+
+    satz[ende] = static_cast<uint8_t>((secret ? 0x80 : 0x00) | (name.size() & 0x3F));
+    for (size_t i = 0; i < name.size(); ++i)
+        satz[ende + 1 + i] = static_cast<uint8_t>(name[i]);
+    satz[ende + 1 + name.size()]     = header.sector_index;
+    satz[ende + 2 + name.size()]     = header.track;
+    satz[ende + noetig]              = 0xFF;
+
+    if (!writeData(ziel, satz)) return false;
+    dir_record = ziel;
+    return true;
+}
+
+bool UdosFileSystem::removeDirEntry(const UdosDirEntry& e) {
+    std::vector<uint8_t> satz;
+    UdosPointer back, fwd;
+    if (!readSector(e.record, satz, back, fwd)) return false;
+
+    const size_t laenge = 3 + e.name.size();
+    if (e.offset + laenge > satz.size()) return fail("Verzeichniseintrag liegt schief");
+
+    // §8.5: nachfolgende Eintraege nach vorn schieben, 0xFF nachziehen.  Der Rest des
+    // Sektors bleibt Altbestand — genau so haelt es UDOS selbst.
+    for (size_t i = e.offset; i + laenge < satz.size(); ++i) satz[i] = satz[i + laenge];
+    for (size_t i = satz.size() - laenge; i < satz.size(); ++i) satz[i] = 0xFF;
+
+    return writeData(e.record, satz);
+}
+
+bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& data,
+                           const WriteOptions& opt) {
+    std::string warum;
+    if (!validName(name, &warum)) return fail("'" + name + "': " + warum);
+    if (data.empty()) return fail("leere Dateien kann UDOS nicht ablegen");
+
+    // Vorhandene gleichnamige Datei?
+    for (const UdosDirEntry& d : directory()) {
+        if (d.name != name) continue;
+        if (!opt.overwrite)
+            return fail("'" + name + "' existiert bereits — Ueberschreiben nicht erlaubt");
+        if (!erase(name)) return false;
+        break;
+    }
+
+    constexpr uint16_t satzlen = kSector;        // s. Abschnittskommentar
+    const uint32_t saetze  = static_cast<uint32_t>((data.size() + satzlen - 1) / satzlen);
+    const uint16_t im_letzten = static_cast<uint16_t>(data.size() % satzlen);
+
+    // Kopfsektor + Saetze belegen.  allocSectors nimmt bei Platzmangel alles zurueck.
+    std::vector<UdosPointer> sektoren;
+    if (!allocSectors(saetze + 1, sektoren)) return false;
+    const UdosPointer kopf = sektoren.front();
+
+    // Verzeichniseintrag zuerst — er bestimmt den Rueckwaertszeiger des Kopfsektors.
+    UdosPointer dir_record;
+    if (!appendDirEntry(name, /*secret=*/false, kopf, dir_record)) return false;
+
+    // Saetze schreiben; die Kette laeuft Kopf → Satz 1 → … → Satz n → FF FF.
+    for (uint32_t i = 0; i < saetze; ++i) {
+        std::vector<uint8_t> block(satzlen, opt.text ? 0x1A : 0x00);
+        const size_t ab    = static_cast<size_t>(i) * satzlen;
+        const size_t menge = std::min<size_t>(satzlen, data.size() - ab);
+        std::copy(data.begin() + static_cast<long>(ab),
+                  data.begin() + static_cast<long>(ab + menge), block.begin());
+
+        const UdosPointer selbst = sektoren[i + 1];
+        const UdosPointer vor    = (i == 0) ? kopf : sektoren[i];
+        const UdosPointer nach   = (i + 1 < saetze) ? sektoren[i + 2] : UdosPointer{};
+        if (!writeLinked(selbst, block, vor, nach)) return false;
+    }
+
+    // Kopfsektor nach §6 fuellen.
+    std::vector<uint8_t> h(kSector, 0xFF);
+    std::fill(h.begin(), h.begin() + 48, static_cast<uint8_t>(0x00));
+    h[6]  = dir_record.sector_index;  h[7]  = dir_record.track;
+    h[8]  = sektoren[1].sector_index; h[9]  = sektoren[1].track;
+    h[10] = sektoren[saetze].sector_index; h[11] = sektoren[saetze].track;
+    h[12] = opt.text ? 0x20 : 0x10;                 // A = ASCII, B = BINARY
+    h[13] = static_cast<uint8_t>(saetze & 0xFF);
+    h[14] = static_cast<uint8_t>(saetze >> 8);
+    h[15] = static_cast<uint8_t>(satzlen & 0xFF);
+    h[16] = static_cast<uint8_t>(satzlen >> 8);
+    h[17] = h[15];  h[18] = h[16];                  // §6: meist Kopie der Satzlaenge
+    h[19] = 0x00;                                   // keine Eigenschaften
+    h[20] = h[21] = 0x00;                           // ENTRY nur bei Typ P/P1 sinnvoll
+    // §7.1: „Bytes im letzten Satz" = Satzlaenge, wenn er voll ist (so haelt es UDOS,
+    // nachgewiesen an SD: 7 Saetze à 128 mit 0080 im Feld).
+    const uint16_t rest = im_letzten ? im_letzten : satzlen;
+    h[22] = static_cast<uint8_t>(rest & 0xFF);
+    h[23] = static_cast<uint8_t>(rest >> 8);
+
+    std::string datum = opt.date;
+    if (datum.size() != 6) {
+        const std::time_t jetzt = std::time(nullptr);
+        std::tm tm{};
+#if defined(_WIN32)
+        localtime_s(&tm, &jetzt);
+#else
+        localtime_r(&jetzt, &tm);
+#endif
+        char puffer[8];
+        std::snprintf(puffer, sizeof(puffer), "%02d%02d%02d",
+                      (tm.tm_year + 1900) % 100, tm.tm_mon + 1, tm.tm_mday);
+        datum = puffer;
+    }
+    for (int i = 0; i < 6; ++i) {
+        h[24 + i] = static_cast<uint8_t>(datum[i]);   // Erstellung
+        h[32 + i] = static_cast<uint8_t>(datum[i]);   // letzte Aenderung
+    }
+    h[30] = 0xFF; h[31] = 0x00;
+    h[38] = 0xFF; h[39] = 0x00;
+
+    if (!writeLinked(kopf, h, dir_record, sektoren[1])) return false;
+    return saveBitmap();
+}
+
+bool UdosFileSystem::erase(const std::string& name) {
+    const std::vector<UdosDirEntry> verz = directory();
+    const UdosDirEntry* treffer = nullptr;
+    for (const UdosDirEntry& d : verz) if (d.name == name) treffer = &d;
+    if (!treffer) return fail("Datei '" + name + "' steht nicht im Verzeichnis");
+
+    if (name == "DIRECTORY")
+        return fail("Die Verzeichnisdatei selbst darf nicht geloescht werden");
+
+    // Erst die Sektoren einsammeln, dann eintragen — so bleibt bei einem Lesefehler
+    // die Karte unberuehrt.
+    UdosFileHeader hdr;
+    if (!readHeader(treffer->header, hdr)) return false;
+    std::vector<UdosPointer> kette;
+    if (!recordChain(hdr, kette)) return false;
+
+    const uint32_t sek_je_satz = std::max<uint32_t>(1, hdr.record_len / kSector);
+    std::vector<UdosPointer> frei = {treffer->header};
+    for (const UdosPointer& satz : kette)
+        for (uint32_t k = 0; k < sek_je_satz; ++k)
+            frei.push_back(UdosPointer{static_cast<uint8_t>(satz.sector_index + k),
+                                       satz.track});
+
+    if (!removeDirEntry(*treffer)) return false;
+
+    // §8.5: die Kontrollbloecke auf dem Medium bleiben stehen — massgeblich ist allein
+    // die Belegungskarte.
+    for (const UdosPointer& p : frei) bitmap_.setUsed(p.track, p.sectorId(), false);
+    return saveBitmap();
 }
 
 bool UdosFileSystem::mkfs() {
-    return fail("Anlegen eines UDOS-Dateisystems ist noch nicht umgesetzt");
+    // Leeres UDOS-Dateisystem: Karte anlegen, Systembereiche sperren, Verzeichnisdatei
+    // mit einem Satz und ihrem eigenen Eintrag erzeugen (§8.4/§10).
+    bitmap_ = UdosBitmap::makeEmpty(secs_per_track_, tracks_, label_);
+
+    // Systemspuren sperren, wie sie der Referenzdatentraeger zeigt (§3): Urlader und
+    // Nukleus (0–2), Bootabbild (21), Verzeichnisspur (22) ganz, Karte (23) S1–3.
+    for (uint8_t t = 0; t <= 2; ++t)
+        for (uint8_t s = 1; s <= secs_per_track_; ++s) bitmap_.setUsed(t, s, true);
+    for (uint8_t s = 17; s <= 22 && s <= secs_per_track_; ++s)
+        bitmap_.setUsed(prof_.boot_track, s, true);
+    for (uint8_t s = 1; s <= secs_per_track_; ++s)
+        bitmap_.setUsed(prof_.directory_track, s, true);
+    for (uint8_t s = 1; s <= 3; ++s) bitmap_.setUsed(prof_.bitmap_track, s, true);
+
+    const UdosPointer kopf = directoryHeader();                        // Spur 22 S1
+    const UdosPointer satz{5, prof_.directory_track};                  // Spur 22 S6
+
+    // Der erste Satz traegt den Eintrag der Verzeichnisdatei selbst — geheim, Typ D,
+    // genau wie auf dem Referenzdatentraeger („89 'DIRECTORY' 00 16").
+    std::vector<uint8_t> erster(kSector, 0x00);
+    const std::string name = "DIRECTORY";
+    erster[0] = static_cast<uint8_t>(0x80 | name.size());
+    for (size_t i = 0; i < name.size(); ++i)
+        erster[1 + i] = static_cast<uint8_t>(name[i]);
+    erster[1 + name.size()] = kopf.sector_index;
+    erster[2 + name.size()] = kopf.track;
+    erster[3 + name.size()] = 0xFF;
+    if (!writeLinked(satz, erster, kopf, UdosPointer{})) return false;
+
+    std::vector<uint8_t> h(kSector, 0xFF);
+    std::fill(h.begin(), h.begin() + 48, static_cast<uint8_t>(0x00));
+    h[6]  = satz.sector_index; h[7]  = satz.track;      // Eintrag steht im 1. Satz
+    h[8]  = satz.sector_index; h[9]  = satz.track;      // erster Satz
+    h[10] = satz.sector_index; h[11] = satz.track;      // letzter Satz
+    h[12] = 0x40;                                       // Typ D
+    h[13] = 1; h[14] = 0;                               // 1 Satz
+    h[15] = static_cast<uint8_t>(kSector & 0xFF); h[16] = 0;
+    h[17] = h[15]; h[18] = h[16];
+    h[19] = 0xF0;                                       // Eigenschaften WELS
+    h[22] = static_cast<uint8_t>(kSector & 0xFF); h[23] = 0;
+    h[30] = 0xFF; h[31] = 0x00;
+    h[38] = 0xFF; h[39] = 0x00;
+    if (!writeLinked(kopf, h, satz, satz)) return false;
+
+    return saveBitmap();
 }
 
 bool UdosFileSystem::wouldFit(const std::vector<PlannedFile>& files, FitReport& out) const {
     out = FitReport{};
-    // Spurweise rechnen, nicht mit der Summe: ein Satz muss in EINE Spur passen (§7),
-    // deshalb kann verstreuter freier Platz unbrauchbar sein.  Solange nur mit
-    // Satzlaenge 128 geschrieben wird, ist jeder freie Sektor brauchbar — die
-    // Feinrechnung kommt mit dem Schreibpfad in Etappe 6.
-    const int frei = bitmap_.countFree();
-    out.available  = static_cast<uint64_t>(frei) * kSector;
 
-    uint64_t noetig = 0;
+    // Spurweise gegen die Karte rechnen, nicht mit der Summe: die Systemspuren (§8.6)
+    // sind fuer ein Werkzeug tabu, auch wenn dort Bits frei sind.  Da mit Satzlaenge
+    // 128 geschrieben wird, ist jeder uebrige freie Sektor brauchbar — die Aussage ist
+    // damit exakt und nicht geschaetzt.
+    int frei = 0;
+    for (uint8_t t = 0; t < tracks_; ++t) {
+        if (reservedTrack(t)) continue;
+        for (uint8_t s = 1; s <= secs_per_track_; ++s)
+            if (!bitmap_.used(t, s)) ++frei;
+    }
+
+    // Ersetzte gleichnamige Dateien geben ihre Sektoren zurueck.
+    const std::vector<UdosDirEntry> verz = directory();
+    for (const PlannedFile& f : files) {
+        for (const UdosDirEntry& d : verz) {
+            if (d.name != f.name) continue;
+            UdosFileHeader hdr;
+            if (!readHeader(d.header, hdr)) continue;
+            std::vector<UdosPointer> kette;
+            if (!recordChain(hdr, kette)) continue;
+            frei += 1 + static_cast<int>(kette.size())
+                      * std::max<uint32_t>(1, hdr.record_len / kSector);
+        }
+    }
+
+    uint32_t noetig = 0;
     for (const PlannedFile& f : files)
-        noetig += kSector                                        // Kopfsektor
-                + ((f.size + kSector - 1) / kSector) * kSector;  // Saetze à 128 B
-    out.needed = noetig;
-    out.fits   = noetig <= out.available;
+        noetig += 1 + static_cast<uint32_t>((f.size + kSector - 1) / kSector);
+
+    out.needed    = static_cast<uint64_t>(noetig) * kSector;
+    out.available = static_cast<uint64_t>(frei)   * kSector;
+    out.fits      = static_cast<int>(noetig) <= frei;
     if (!out.fits)
-        out.detail = std::to_string(files.size()) + " Dateien brauchen "
-                   + std::to_string(noetig / kSector) + " Sektoren, frei sind "
-                   + std::to_string(frei);
+        out.detail = std::to_string(files.size()) + " Dateien benoetigen "
+                   + std::to_string(noetig) + " Sektoren (je Datei einen Kopfsektor), "
+                     "frei sind " + std::to_string(frei);
     return true;
 }

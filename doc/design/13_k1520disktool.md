@@ -105,7 +105,7 @@ core/
           cpm_fs.{h,cpp}            CP/M-2.2-Dateisystem (§7)                    ✅
       udos/
           udos_bitmap.{h,cpp}       Belegungskarte Spur 23 (§8)                  ✅
-          udos_fs.{h,cpp}           UDOS/ZDOS-Dateisystem (§8) — lesend          ✅
+          udos_fs.{h,cpp}           UDOS/ZDOS-Dateisystem (§8) — lesen+schreiben ✅
   api/
       k1520_disk_api.{h,cpp}    ← NEU: C-ABI von libk1520disk.so (§10)
 
@@ -898,15 +898,21 @@ einzige Wahrheit. Beide neuen Ziele landen in `build/` bzw. `build_trace/` und w
 Jede Etappe ist für sich lauffähig und testbar; die Reihenfolge minimiert das Risiko, weil das
 Schwierigste (UDOS-Schreiben) auf einem dann schon geprüften Unterbau steht.
 
-> **Stand 2026-08-10 (Branch `create_disktool`): Etappen 1–5 sind umgesetzt und grün**
-> — Sektorraum, Geometriemessung, Dateisystemkatalog, CP/M lesen **und** schreiben,
-> UDOS lesen, `DiskVolume` mit `Side0/Side1`, Transaktionen und Erkennung.
-> Verifiziert an den echten Disketten des Projekts: CP/M-Extraktion byteweise gegen
-> `cpmtools`, CP/M-Schreiben gegen das **laufende CP/A** (`TYPE`/`DIR`), UDOS gegen die
-> am laufenden UDOS gemessenen Sollwerte (69 Dateien, 39 sichtbar, 850/1310 freie
-> Sektoren, `EXTRACT SD`).  Offen: UDOS **schreiben** (Etappe 6), C-API, CLI, GUI.
-> `CpmFileSystem` deckt die Fälle der Etappe 4 mit ab; `udos_dir.*` und `fs_detect.*`
-> sind in `udos_fs.*` bzw. `disk_volume.*`/`geometry_probe.*` aufgegangen.
+> **Stand 2026-08-10 (Branch `create_disktool`): Etappen 1–6 sind umgesetzt und grün.**
+> Die gesamte Dateisystemschicht steht: Sektorraum, Geometriemessung, Katalog,
+> **CP/M lesen und schreiben**, **UDOS lesen und schreiben** (inkl. `mkfs`),
+> `DiskVolume` mit `Side0/Side1`, Transaktionen und Erkennung.
+> Verifiziert an den echten Disketten des Projekts — jeweils gegen eine *unabhängige*
+> Instanz, nicht gegen uns selbst:
+> CP/M-Extraktion byteweise gegen `cpmtools`; CP/M-Schreiben gegen das **laufende CP/A**
+> (`TYPE`/`DIR`); UDOS-Lesen gegen die am laufenden UDOS gemessenen Sollwerte
+> (69 Dateien, 39 sichtbar, 850/1310 freie Sektoren, `EXTRACT SD`); UDOS-**Schreiben**
+> gegen das **laufende UDOS** (`CAT` listet, `PRINT` gibt aus, `STATUS` bestätigt den
+> freien Platz auf den Sektor genau).
+> Offen: C-API (Etappe 7), CLI, GUI.
+> Abweichungen von der Dateiliste oben: `CpmFileSystem` deckt Etappe 4 mit ab;
+> `udos_dir.*` und `fs_detect.*` sind in `udos_fs.*` bzw.
+> `disk_volume.*`/`geometry_probe.*` aufgegangen.
 
 | # | Inhalt | Ergebnis |
 |---|--------|----------|
@@ -938,9 +944,14 @@ Werkzeuge vollständig ersetzt.
 4. **Satzlänge beim UDOS-Einfügen**: 128 ist immer sicher, größere Sätze sparen Verwaltung.
    Ob das Werkzeug die Satzlänge anbieten soll oder fest bei 128 bleibt, wird nach Etappe 5
    entschieden (dann kennen wir die Streuung im Bestand).
-5. **Interleave beim Schreiben**: UDOS legt Sätze typisch mit Versatz 5 ab
-   (`doc/udos_diskettenformat.md` §7). Ob wir das nachbilden (Geschwindigkeit auf echter
-   Hardware) oder dicht packen (einfacher), ist eine Entscheidung für Etappe 6.
+5. **Interleave beim Schreiben — entschieden (Etappe 6): dicht packen.** UDOS legt Sätze
+   typisch mit Versatz 5 ab (`doc/udos_diskettenformat.md` §7), aber die beobachtete
+   Folge (1, 6, 11, 16, 21, 26, **2**, 7, …) folgt keiner der geprüften Versatzregeln —
+   sie ist offenbar Ablagegeschichte, keine Vorschrift. Der Versatz ist ohnehin nur eine
+   Geschwindigkeitseigenschaft echter Hardware; die Verkettung steht explizit in den
+   Zeigern. Das laufende UDOS liest dicht gepackte Dateien nachweislich einwandfrei
+   (`PRINT`, Systemtest). **Ebenfalls entschieden: Satzlänge 128** beim Schreiben (§8.4
+   nennt sie „immer sicher"); größere Satzlängen werden weiterhin gelesen.
 6. **Einseitig beschriebene UDOS-Diskette**: Ob es die im Bestand gibt (Seite 1 unformatiert
    oder ohne gültige Belegungskarte), ist ungeprüft. Der Entwurf behandelt sie als
    1-Volume-Diskette mit flachem Ordner (§9.1) — das ist erst nach Etappe 5 an den vier
