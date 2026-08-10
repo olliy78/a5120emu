@@ -33,7 +33,7 @@ execute_process(
 if (K1520_PYTEST_PYTHON AND _k1520_pydeps EQUAL 0)
     message(STATUS "Python-Tests: ${K1520_PYTEST_PYTHON}")
     # Ein ctest-Fall je Testmodul: klare Fehlerzuordnung + parallelisierbar.
-    set(_py_modules c_api disk_c_api binding boot_smoke drive_types config_io keyboard_map gui_smoke)
+    set(_py_modules c_api disk_c_api binding boot_smoke drive_types config_io keyboard_map gui_smoke disktool_gui)
     foreach(_mod IN LISTS _py_modules)
         add_test(NAME py_${_mod}
             COMMAND "${K1520_PYTEST_PYTHON}" -m pytest -q --no-header
