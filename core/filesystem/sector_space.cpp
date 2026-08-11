@@ -30,6 +30,7 @@ SectorSpace::SectorSpace(DiskMedium& medium, const DiskFormat& fmt, uint8_t head
 
             Slot s;
             s.cyl   = c;
+            s.phys  = fmt_.physicalCylinder(c);
             s.head  = h;
             s.start = total_bytes_;
             s.bytes = tf->trackBytes();
@@ -73,7 +74,7 @@ const std::vector<LogicalSector>& SectorSpace::sectors(int slot) const {
     if (!cache_gueltig_[static_cast<size_t>(slot)]) {
         const Slot& s = slots_[static_cast<size_t>(slot)];
         cache_[static_cast<size_t>(slot)] =
-            TrackCodec::parseTrack(medium_.track(s.cyl, s.head));
+            TrackCodec::parseTrack(medium_.track(s.phys, s.head));
         cache_gueltig_[static_cast<size_t>(slot)] = 1;
     }
     return cache_[static_cast<size_t>(slot)];
@@ -153,7 +154,7 @@ bool SectorSpace::writeSector(uint8_t cyl, uint8_t head, uint8_t id,
     // mutableTrack() markiert die Spur sofort als geaendert — auch wenn writeSector
     // gleich scheitert.  Das ist bewusst konservativ: eine ueberfluessig als schmutzig
     // markierte Spur kostet einen Rueckschreibvorgang, eine verpasste kostet Daten.
-    TrackImage& t = medium_.mutableTrack(cyl, head);
+    TrackImage& t = medium_.mutableTrack(slots_[static_cast<size_t>(slot)].phys, head);
     if (!TrackCodec::writeSector(t, id, data, tail)) {
         last_error_ = "Sektor " + std::to_string(id) + " auf Spur " + std::to_string(cyl)
                     + "/" + std::to_string(head) + " nicht beschreibbar (fehlt, falsche "

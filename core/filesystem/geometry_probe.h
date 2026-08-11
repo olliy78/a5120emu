@@ -37,6 +37,10 @@ struct MeasuredTrack {
     uint8_t  sectors    = 0;       ///< Anzahl gefundener Sektoren
     uint16_t sector_size= 0;       ///< einheitliche Sektorgroesse (0 = uneinheitlich)
     uint8_t  first_id   = 0;       ///< kleinste Sektor-ID
+    /// @brief Spurnummer aus dem ID-FELD.  Bei Doppelschritt-Disketten ist sie die
+    ///        LOGISCHE Spur und weicht deshalb vom physischen Zylinder ab
+    ///        (physisch c4h0 traegt `cyl=2`) — das ist das Erkennungsmerkmal.
+    uint8_t  id_cyl     = 0;
     bool     ids_dense  = false;   ///< IDs bilden lueckenlos first_id … first_id+sectors-1
     Encoding encoding   = Encoding::MFM;
     uint16_t crc_errors = 0;       ///< Sektoren mit ID- oder Daten-CRC-Fehler

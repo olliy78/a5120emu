@@ -104,12 +104,20 @@ TEST(FormatCatalog, Formatnamen_SindEinStabilerVertrag) {
         // danach vermessen (tests/system/drivers/make_all_formats.py).
         "cpa190", "cpa390",
         "k5601_ss80_16x256", "k5601_ss40_9x512", "k5601_ss40_8x512",
-        "k5601_ss40_9x512_id65", "k5601_ss40_10x512_id0",
+        "k5601_ss40_9x512_id65", "k5601_ss40_9x512_id193", "k5601_ss40_10x512_id0",
         "scpx_ss80_5x1024", "scpx_ss40_5x1024",
         "mf3200_26x128", "mf3200_296k", "mf3200_scp296k", "mf3200_9x512",
         "mf3200_336k", "mf3200_16x256", "mf3200_9x512_80",
         "mf6400_600k", "mf6400_scp600k", "mf6400_374k", "mf6400_40x128",
         "mf6400_16x512", "mf6400_600k_16x512", "mf6400_9x1024",
+        // 2026-08-11: die Doppelschritt-Austauschformate (`step: 2`, §3.4 T/U).
+        // Logisch identisch zu den V/W-Formaten daneben, physisch auf jedem
+        // zweiten Zylinder — deshalb eigene Eintraege statt eines Zusatzfeldes
+        // an den vorhandenen.
+        "k5601_ss40_5x1024_dstep", "k5601_ss40_26x128_dstep",
+        "k5601_ss40_16x256_dstep", "k5601_ss40_15x256_dstep",
+        "k5601_ds40_5x1024_dstep", "k5601_ds40_26x128_dstep",
+        "k5601_ds40_16x256_dstep", "k5601_ds40_17x256_dstep",
     };
 
     for (const auto& name : expected)

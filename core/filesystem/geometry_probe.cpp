@@ -71,6 +71,7 @@ std::vector<MeasuredTrack> measure(const DiskMedium& medium) {
                 if (!s.id_crc_ok || !s.data_crc_ok) ++mt.crc_errors;
             }
             mt.first_id  = lo;
+            mt.id_cyl    = secs.front().cyl;
             mt.ids_dense = (static_cast<int>(hi) - static_cast<int>(lo) + 1
                             == static_cast<int>(secs.size()));
 
@@ -111,8 +112,49 @@ GeometryMatch match(const std::vector<MeasuredTrack>& tracks, const DiskFormat& 
         return m;
     }
 
+    // Doppelschritt (`step: 2`): logische Spur n liegt auf physischem Zylinder 2n, die
+    // dazwischen MUESSEN leer sein.  Das ist ein POSITIVES Kriterium — sonst passte ein
+    // Doppelschritt-Format auch auf eine gewoehnliche 40-Spur-Diskette, deren Spuren
+    // luecklos liegen.  Zweite, staerkere Probe: die Spurnummer im ID-Feld ist die
+    // logische; auf einer Einzelschritt-Diskette stimmt sie mit dem Zylinder ueberein.
+    if (fmt.step > 1) {
+        int belegt = 0, luecken = 0;
+        for (const auto& t : tracks) {
+            if (t.cyl % fmt.step != 0) {
+                if (t.formatted) {
+                    m.reason = "Spur " + tp(t.cyl, t.head) + " ist beschrieben — bei "
+                               "Doppelschritt muss jeder zweite Zylinder leer sein";
+                    return m;
+                }
+                if (t.cyl < letzter) ++luecken;
+                continue;
+            }
+            if (!t.formatted) continue;
+            const int erwartet = t.cyl / fmt.step;
+            // Hinter dem Format liegt Altbestand — darueber urteilt Regel 3, nicht hier.
+            if (erwartet >= fmt.numCylinders()) continue;
+            ++belegt;
+            if (t.id_cyl != erwartet) {
+                m.reason = "Spur " + tp(t.cyl, t.head) + " traegt im ID-Feld die Spurnummer "
+                         + std::to_string(t.id_cyl) + ", ein Doppelschritt-Format erwartet "
+                         + std::to_string(erwartet);
+                return m;
+            }
+        }
+        if (belegt == 0 || luecken == 0) {
+            m.reason = "keine Doppelschritt-Luecken gefunden";
+            return m;
+        }
+    }
+
     for (const auto& t : tracks) {
-        const TrackFormat* tf = fmt.findTrack(t.cyl, t.head);
+        const int lcyl = fmt.logicalCylinder(t.cyl);
+        const TrackFormat* tf =
+            lcyl < 0 ? nullptr : fmt.findTrack(static_cast<uint8_t>(lcyl), t.head);
+
+        // Beim Doppelschritt sind die uebersprungenen Zylinder KEINE Luecke, sondern
+        // Teil des Formats — oben schon geprueft, hier nur nicht mitzaehlen.
+        if (lcyl < 0) continue;
 
         if (!t.formatted) {
             // Regel 2: leere Spuren am ENDE sind normal, Luecken MITTENDRIN nicht.
@@ -149,10 +191,19 @@ GeometryMatch match(const std::vector<MeasuredTrack>& tracks, const DiskFormat& 
             return m;
         }
         if (t.first_id != tf->first_sector_id) {
-            m.reason = "Spur " + tp(t.cyl, t.head) + ": erste Sektor-ID "
-                     + std::to_string(t.first_id) + ", Format sagt "
-                     + std::to_string(tf->first_sector_id);
-            return m;
+            // Eine abweichende erste ID ist normalerweise ein ANDERES Format — es sei
+            // denn, die IDs der Spur sind auch untereinander lueckenhaft: dann hat der
+            // Parser Gap-Bytes fuer eine Adressmarke gehalten, die Spur ist also
+            // beschaedigt.  Das ist ein Schaden wie „zu wenige Sektoren" (Regel 4) und
+            // darf die ganze Diskette nicht unlesbar machen.
+            if (t.ids_dense) {
+                m.reason = "Spur " + tp(t.cyl, t.head) + ": erste Sektor-ID "
+                         + std::to_string(t.first_id) + ", Format sagt "
+                         + std::to_string(tf->first_sector_id);
+                return m;
+            }
+            ++m.defect_tracks;
+            continue;
         }
 
         // Regel 4: zu wenige Sektoren = Schaden, zu viele = anderes Format.
@@ -190,7 +241,9 @@ GeometryMatch match(const std::vector<MeasuredTrack>& tracks, const DiskFormat& 
         return m;
     }
 
-    const int deklariert = static_cast<int>(fmt.numCylinders());
+    // PHYSISCHE Ausdehnung: ein 40-Spur-Doppelschritt-Format belegt 79 Zylinder.  Ohne
+    // das passte es auch auf eine gewoehnliche 40-Spur-Diskette (halb so breit).
+    const int deklariert = static_cast<int>(fmt.physicalCylinders());
     if (deklariert < letzter + 1) {
         // hier bereits ueber stray_tracks abgesichert
     } else {

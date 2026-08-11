@@ -138,7 +138,8 @@ public:
 private:
     /// @brief Eine Spur des linearen Raums.
     struct Slot {
-        uint8_t  cyl   = 0;
+        uint8_t  cyl   = 0;          ///< LOGISCHE Spur (so, wie das Dateisystem zaehlt)
+        uint8_t  phys  = 0;          ///< physischer Zylinder im Medium (`DiskFormat::step`)
         uint8_t  head  = 0;
         uint64_t start = 0;          ///< Byte-Offset des Spuranfangs im linearen Raum
         uint64_t bytes = 0;          ///< Nutzbytes der Spur

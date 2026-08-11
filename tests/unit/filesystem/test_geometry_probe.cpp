@@ -175,3 +175,41 @@ TEST(GeometryProbe, MehrdeutigkeitIstNormalUndWirdVollstaendigGemeldet) {
     // Beste zuerst: die ohne Altbestand.
     EXPECT_EQ(t.front().stray_tracks, 0);
 }
+
+/**
+ * @test Eine EINZELNE beschaedigte Spur macht die Diskette nicht unlesbar.
+ * @par Kriterium  Eine Spur, deren Sektor-IDs auch untereinander lueckenhaft sind, gilt
+ *                 als Schaden (`defect_tracks`) — das Format passt weiter.  Eine Spur mit
+ *                 LUECKENLOSEN IDs an anderer Stelle ist dagegen ein anderes Format und
+ *                 schliesst aus.
+ * @par Warum      Nachgemessen an `fmt_clock…_DS_H` (Schneider D, IDs 0xC1-0xC9): auf
+ *                 einem von 40 Zylindern hatte der Parser Gap-Bytes (0x4E) fuer eine
+ *                 Adressmarke gehalten.  Ohne diese Unterscheidung waere die ganze
+ *                 Diskette „passt zu keinem Format" — wegen einer kaputten Spur.
+ */
+TEST(GeometryProbe, EinzelneBeschaedigteSpurIstEinSchadenKeinAnderesFormat) {
+    const DiskFormat* f = katalog().find("k5601_ss40_9x512_id193");
+    ASSERT_NE(f, nullptr);
+
+    std::vector<MeasuredTrack> m;
+    for (uint8_t c = 0; c < 40; ++c) {
+        MeasuredTrack t;
+        t.cyl = c; t.head = 0; t.formatted = true;
+        t.sectors = 9; t.sector_size = 512; t.first_id = 193;
+        t.ids_dense = true; t.encoding = Encoding::MFM;
+        m.push_back(t);
+    }
+
+    ASSERT_TRUE(GeometryProbe::match(m, *f).ok) << GeometryProbe::match(m, *f).reason;
+
+    // Kaputte Spur: falsche erste ID UND Luecken zwischen den IDs.
+    m[16].first_id  = 78;
+    m[16].ids_dense = false;
+    const GeometryMatch beschaedigt = GeometryProbe::match(m, *f);
+    EXPECT_TRUE(beschaedigt.ok) << beschaedigt.reason;
+    EXPECT_EQ(beschaedigt.defect_tracks, 1);
+
+    // Dieselbe Abweichung mit lueckenlosen IDs ist ein anderes Format.
+    m[16].ids_dense = true;
+    EXPECT_FALSE(GeometryProbe::match(m, *f).ok);
+}

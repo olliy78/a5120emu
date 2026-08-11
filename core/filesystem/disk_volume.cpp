@@ -10,12 +10,14 @@
 
 #include "core/filesystem/disk_volume.h"
 
+#include "core/filesystem/cpm/cpa_dpb.h"
 #include "core/filesystem/cpm/cpm_fs.h"
 #include "core/filesystem/geometry_probe.h"
 #include "core/filesystem/udos/udos_fs.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 
@@ -32,6 +34,103 @@ std::string endung(const std::string& pfad) {
     const size_t p = pfad.find_last_of('.');
     if (p == std::string::npos) return {};
     return kleinbuchstaben(pfad.substr(p + 1));
+}
+
+/**
+ * @brief Positivprobe eines CP/M-Profils: laesst sich das Verzeichnis plausibel lesen?
+ *
+ * Ein falsches Profil trifft fast immer Datenbytes statt Verzeichniseintraege — und die
+ * fallen hier durch (Nutzerbereich > 15, Kleinbuchstaben oder Steuerzeichen im Namen,
+ * Blocknummer ausserhalb der Diskette).  Ein einziger schlechter Eintrag reicht zum
+ * Verwerfen; eine fabrikfrische Diskette (alles 0xE5) besteht die Probe.
+ *
+ * @param warum                gesetzt, wenn false zurueckkommt — gehoert in die Meldung
+ * @param uneingerichtet_zaehlt „formatiert, aber nie eingerichtet" durchgehen lassen
+ *                             (nur beim abgeleiteten Profil, s. u.)
+ * @param hinweis              dann der Klartext dazu
+ */
+bool cpmVerzeichnisPlausibel(DiskMedium& medium, const DiskFormat& f, const FsProfile& p,
+                             std::string* warum = nullptr,
+                             bool uneingerichtet_zaehlt = false,
+                             std::string* hinweis = nullptr) {
+    auto nein = [&](const std::string& t) { if (warum) *warum = t; return false; };
+
+    SectorSpace raum(medium, f);
+    std::string grund;
+    auto cpm = CpmFileSystem::mount(raum, p, grund);
+    if (!cpm) return nein(grund);
+
+    // „Formatiert, aber nie eingerichtet": der ganze Verzeichnisbereich traegt EIN
+    // Fuellbyte.  Nur bei einem abgeleiteten Profil zulassen — dort steht durch die
+    // CP/A-Regel fest, WO das Verzeichnis liegt, und ein durchgehend gleiches Muster
+    // laesst keine zweite Deutung zu.  `list()` ueberspringt solche Plaetze ohnehin
+    // (Nutzerbereich > 15), die Diskette erscheint also leer, was sie auch ist.
+    if (uneingerichtet_zaehlt) {
+        const int fuell = cpm->directoryFill();
+        if (fuell >= 0 && fuell != 0xE5) {
+            char t[64];
+            std::snprintf(t, sizeof t,
+                          "Verzeichnis nicht angelegt (Fuellbyte 0x%02X)", fuell);
+            if (hinweis) *hinweis = t;
+            return true;
+        }
+    }
+
+    int gut = 0;
+    for (const CpmDirEntry& d : cpm->directory()) {
+        if (d.free()) { ++gut; continue; }
+        const std::string wo = "Verzeichnisplatz " + std::to_string(d.index);
+        if (d.user > 15) {
+            char t[80];
+            std::snprintf(t, sizeof t, "%s traegt Nutzerbereich 0x%02X — das "
+                          "Verzeichnis ist nicht angelegt", wo.c_str(), d.user);
+            return nein(t);
+        }
+        bool ok = !d.name.empty();
+        for (char c : d.name)
+            if (c < 0x20 || c > 0x7E || (c >= 'a' && c <= 'z')) ok = false;
+        for (uint16_t b : d.blocks)
+            if (b >= cpm->totalBlocks()) ok = false;
+        if (d.records > 0x80) ok = false;
+        if (!ok) return nein(wo + " ist kein gueltiger Eintrag");
+        ++gut;
+    }
+    if (gut == 0) return nein("Verzeichnis ist leer gelesen worden");
+    return true;
+}
+
+/**
+ * @brief Traegt Sektor 1 der Spur 0 einen MS-DOS-Urlader (FAT)?
+ *
+ * FORMAT.COM legt auf Wunsch **DOS-Disketten** an — die Menuepunkte mit dem Vermerk
+ * `{MSDOS}` (doc/format.md §3.3 `E`/`J`/`K`, §3.4).  Darauf liegt kein CP/M-Verzeichnis,
+ * und ohne diese Probe endete der Versuch in der wenig hilfreichen Meldung „kein
+ * bekanntes Dateisystem".  Erkannt wird der uebliche BPB: Sprungbefehl, plausible
+ * Sektorgroesse, Medienkennung ab 0xF0.
+ *
+ * @return Klartext („MS-DOS-Dateisystem (FAT), Kennung 'CP/A1188'"), sonst leer.
+ */
+std::string dosKennung(DiskMedium& medium, const DiskFormat& f) {
+    SectorSpace raum(medium, f);
+    if (raum.trackCount() == 0) return {};
+    const SectorSpace::TrackRef t = raum.trackAt(0);
+    SectorData s;
+    if (!raum.readSector(t.cyl, t.head, t.first_id, s) || s.data.size() < 32) return {};
+
+    const uint8_t* b = s.data.data();
+    const bool sprung = (b[0] == 0xEB && b[2] == 0x90) || b[0] == 0xE9;
+    const uint16_t bps = static_cast<uint16_t>(b[11] | (b[12] << 8));
+    if (!sprung || (bps != 128 && bps != 256 && bps != 512 && bps != 1024)) return {};
+    if (b[21] < 0xF0 || b[13] == 0) return {};
+
+    std::string oem;
+    for (int i = 3; i < 11; ++i)
+        if (b[i] >= 0x20 && b[i] < 0x7F) oem += static_cast<char>(b[i]);
+    while (!oem.empty() && oem.back() == ' ') oem.pop_back();
+
+    std::string t2 = "die Diskette traegt ein MS-DOS-Dateisystem (FAT)";
+    if (!oem.empty()) t2 += ", Kennung '" + oem + "'";
+    return t2;
 }
 
 bool leseDatei(const std::string& pfad, std::vector<uint8_t>& out, std::string& err) {
@@ -138,8 +237,52 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
     const std::string ext   = endung(path);
     const bool        istImg = (ext == "img");
 
-    // ── Fall A: Dateisystem vorgegeben ───────────────────────────────────────
-    if (!fs_name.empty()) {
+    // ── Fall A': die CP/A-Regel ausdruecklich anfordern ──────────────────────
+    // `--fs cpa_auto` heisst „nicht im Katalog nachsehen, rechnen" — die Geometrie
+    // wird trotzdem erkannt, denn ohne sie gibt es nichts zu rechnen.
+    if (fs_name == CpaDpbRule::kName) {
+        std::optional<DiskFormat> of;
+        if (istImg) {
+            std::error_code ec;
+            const uint64_t groesse = fs::file_size(path, ec);
+            if (ec) { err = "Datei nicht lesbar: " + path; return nullptr; }
+            for (const DiskFormat& f : formats.formats())
+                if (f.totalBytes() == groesse) { of = f; break; }
+            if (!of) {
+                err = "Kein Format in data/formats.yaml hat die Groesse dieses Abbilds ("
+                    + std::to_string(groesse) + " Byte).";
+                return nullptr;
+            }
+        }
+        dv->disk_ = DiskImage::open(path, of, read_only);
+        if (!dv->disk_) { err = "Abbild nicht ladbar: " + path; return nullptr; }
+        const std::vector<MeasuredTrack> gemessen =
+            GeometryProbe::measure(dv->disk_->medium());
+        const std::vector<GeometryMatch> treffer =
+            GeometryProbe::matchAll(gemessen, formats.formats());
+        if (treffer.empty()) {
+            err = "Das Abbild passt zu keinem Format in data/formats.yaml.\nGemessen:\n"
+                + GeometryProbe::describe(gemessen);
+            return nullptr;
+        }
+        FsProfile abgeleitet;
+        std::string warum;
+        if (!CpaDpbRule::profile(*treffer.front().format,
+                                 SectorSpace(dv->disk_->medium(), *treffer.front().format),
+                                 abgeleitet, &warum)) {
+            err = "Die CP/A-Regel greift hier nicht: " + warum;
+            return nullptr;
+        }
+        dv->abgeleitet_           = abgeleitet;
+        dv->profile_              = &*dv->abgeleitet_;
+        dv->format_               = treffer.front().format;
+        dv->detection_.format     = dv->format_->name;
+        dv->detection_.filesystem = dv->profile_->name;
+        dv->detection_.remarks    = treffer.front().remarks();
+        if (!dv->detection_.remarks.empty()) dv->detection_.remarks += "; ";
+        dv->detection_.remarks   += abgeleitet.description;
+    } else if (!fs_name.empty()) {
+        // ── Fall A: Dateisystem vorgegeben ───────────────────────────────────
         dv->profile_ = fs_cat.find(fs_name);
         if (!dv->profile_) {
             err = "Dateisystem '" + fs_name + "' steht nicht im Katalog";
@@ -208,29 +351,12 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
             for (const FsProfile* p : fs_cat.forFormat(f->name)) {
                 if (!p->allowsContainer(ext)) continue;
 
-                SectorSpace probe(dv->disk_->medium(), *f);
                 if (p->type == FsType::Udos) {
+                    SectorSpace probe(dv->disk_->medium(), *f);
                     std::string warum;
                     if (!UdosFileSystem::looksLikeUdos(probe, *p, 0, &warum)) continue;
                 } else {
-                    std::string warum;
-                    SectorSpace raum(dv->disk_->medium(), *f);
-                    auto cpm = CpmFileSystem::mount(raum, *p, warum);
-                    if (!cpm) continue;
-                    // Positivprobe: das Verzeichnis muss plausibel sein.
-                    int gut = 0, schlecht = 0;
-                    for (const CpmDirEntry& d : cpm->directory()) {
-                        if (d.free()) { ++gut; continue; }
-                        if (d.user > 15) { ++schlecht; continue; }
-                        bool ok = !d.name.empty();
-                        for (char c : d.name)
-                            if (c < 0x20 || c > 0x7E || (c >= 'a' && c <= 'z')) ok = false;
-                        for (uint16_t b : d.blocks)
-                            if (b >= cpm->totalBlocks()) ok = false;
-                        if (d.records > 0x80) ok = false;
-                        ok ? ++gut : ++schlecht;
-                    }
-                    if (schlecht > 0 || gut == 0) continue;
+                    if (!cpmVerzeichnisPlausibel(dv->disk_->medium(), *f, *p)) continue;
                 }
                 passend.push_back(p);
                 if (!dv->format_) dv->format_ = f;
@@ -238,13 +364,47 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
             if (!passend.empty()) break;      // bestplatzierte Geometrie gewinnt
         }
 
+        // ── Rueckfall: die CP/A-Regel rechnen lassen ─────────────────────────
+        // Der Katalog nennt nur die Disketten, die man staendig in der Hand hat.
+        // Alles andere leitet dieselbe Regel ab, die das CP/A-BIOS beim LOGIN
+        // anwendet (@ref CpaDpbRule) — damit ist jede CP/A-formatierte Diskette
+        // lesbar, ohne dass ihr Format im Katalog stehen muss.
+        std::string abgelehnt;
         if (passend.empty()) {
+            for (const DiskFormat* f : kandidaten) {
+                FsProfile abgeleitet;
+                SectorSpace raum(dv->disk_->medium(), *f);
+                std::string warum, hinweis;
+                if (!CpaDpbRule::profile(*f, raum, abgeleitet, &warum)
+                    || !abgeleitet.allowsContainer(ext)
+                    || !cpmVerzeichnisPlausibel(dv->disk_->medium(), *f, abgeleitet, &warum,
+                                                /*uneingerichtet_zaehlt=*/true, &hinweis)) {
+                    if (abgelehnt.empty()) abgelehnt = warum;
+                    continue;
+                }
+                dv->abgeleitet_ = abgeleitet;
+                dv->format_     = f;
+                if (!dv->detection_.remarks.empty()) dv->detection_.remarks += "; ";
+                dv->detection_.remarks += abgeleitet.description;
+                if (!hinweis.empty()) dv->detection_.remarks += "; " + hinweis;
+                break;
+            }
+        }
+
+        if (passend.empty() && !dv->abgeleitet_) {
+            const std::string dos = dosKennung(dv->disk_->medium(), *kandidaten.front());
             err = "Die Geometrie ist erkannt (" + std::string(kandidaten.front()->name)
-                + "), aber kein bekanntes Dateisystem liegt darauf. Mit --fs laesst sich "
-                  "eines erzwingen.";
+                + "), aber ";
+            if (!dos.empty())
+                err += dos + " — dieses Werkzeug liest CP/M und UDOS.";
+            else
+                err += std::string("kein bekanntes Dateisystem liegt darauf")
+                     + (abgelehnt.empty() ? "" : " (" + abgelehnt + ")")
+                     + ". Mit --fs laesst sich eines erzwingen.";
             return nullptr;
         }
 
+        if (passend.empty()) passend.push_back(&*dv->abgeleitet_);
         dv->profile_ = passend.front();
         dv->detection_.format      = dv->format_->name;
         dv->detection_.filesystem  = dv->profile_->name;

@@ -82,14 +82,43 @@ struct DiskFormat {
     bool allow_img = true;      ///< als rohes Sektorimage (.img) darstellbar
     bool allow_hfe = true;      ///< als HFE-Bitstromimage (.hfe) darstellbar
 
+    /**
+     * @brief **Schrittweite**: logische Spur `n` liegt auf physischem Zylinder `n·step`.
+     *
+     * Vorgabe 1 — jedes gewöhnliche Format ist davon unberührt.  `step: 2` ist der
+     * **Doppelschritt**: ein 96-tpi-Laufwerk (K5601, K5600.20) beschreibt nur jeden
+     * zweiten Zylinder, damit die Spuren radial dort liegen, wo ein 48-tpi-Laufwerk
+     * (K5600.10) sie erwartet — das Austauschformat zwischen beiden Spurdichten
+     * (`doc/format.md`, „Wozu einseitig und Doppelschritt gut sind").
+     *
+     * `tracks:` bleibt dabei **logisch** (`cyls: 0-39`), also so, wie das Gastsystem
+     * die Diskette sieht; und genauso steht die Spurnummer im **ID-Feld** — nachgemessen
+     * an den von CP/A erzeugten Abbildern: physisch c4h0 trägt `cyl=2`.
+     */
+    uint8_t step = 1;
+
     std::vector<TrackFormat> tracks;
 
     uint8_t  numHeads()     const;
+    /// @brief **Logische** Spurzahl (so viele Spuren sieht das Dateisystem).
     uint8_t  numCylinders() const;
+    /// @brief Physischer Zylinder einer logischen Spur.
+    uint8_t  physicalCylinder(uint8_t logical_cyl) const {
+        return static_cast<uint8_t>(logical_cyl * step);
+    }
+    /// @brief So viele Zylinder muss das Laufwerk haben (bei `step: 2` fast doppelt so viele).
+    uint8_t  physicalCylinders() const;
     uint64_t totalBytes()   const;
 
-    /// @brief Spurbereich, der (cyl, head) abdeckt, oder nullptr.
+    /// @brief Spurbereich, der die **logische** Spur (cyl, head) abdeckt, oder nullptr.
     const TrackFormat* findTrack(uint8_t cyl, uint8_t head) const;
+
+    /// @brief Physischer Zylinder → logische Spur; -1, wenn dort keine Spur liegen darf.
+    int logicalCylinder(uint8_t physical_cyl) const {
+        if (step <= 1) return physical_cyl;
+        if (physical_cyl % step != 0) return -1;
+        return physical_cyl / step;
+    }
 
     /// @brief Ist dieses Profil in @ref drives gelistet?
     bool supportsDrive(const std::string& profile_name) const;

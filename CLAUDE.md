@@ -430,6 +430,31 @@ Was beim Weiterarbeiten zu wissen ist:
   Mehrere Dateisysteme je Geometrie sind normal (`cpa640` ≡ `scpx640`, nur anderes
   `data_start`).  Neue Formatnamen gehören in die Erwartungsliste von
   `FormatCatalog.Formatnamen_SindEinStabilerVertrag` bzw. `FsCatalog.ProfilnamenSind…`.
+- **Ein fehlendes Dateisystemprofil ist KEIN Hindernis mehr — `CpaDpbRule` rechnet.**
+  `core/filesystem/cpm/cpa_dpb.{h,cpp}` bildet die Formaterkennung des CP/A-BIOS nach
+  (`biosdsk.mac`/`drdfrm`, Tabellen `dtrsl0..3`; Analyse: `doc/cpa_format_detection.md`):
+  aus Sektorlängencode der Datenspur (**Zylinder 3, Kopf 0** — `dlgint`, einseitig
+  adressiert), Spurzahl, ein-/beidseitig und dem Inhalt der Spur 0 entstehen
+  Systemspuren, Blockgröße, Verzeichnisplätze und Sektorversatz.  Ein benanntes
+  Katalogprofil **gewinnt immer**; die Ableitung ist der Rückfall und heißt `cpa_auto`
+  (`--fs cpa_auto` erzwingt sie).  Damit sind **104 von 117** erzeugten Abbildern
+  mountbar (vorher 12).  Die Regel reproduziert `cpa780`/`scpx798` exakt und korrigierte
+  dabei einen geratenen Wert: **`cpa800` hat 192 Verzeichnisplätze, nicht 128** — am
+  laufenden CP/A nachgewiesen (`DiskToolNeueDisketten.CpaFindetDateiJenseitsVonPlatz128`).
+  Beim Ändern der Tabellen: `test_cpa_dpb` hält sie gegen `biosdsk.mac`.
+- **Doppelschritt (`step: 2`) ist umgesetzt** (2026-08-11, war
+  `doc/feature_requests/doppelschritt_disketten.md`).  `tracks:` bleibt **logisch**,
+  `DiskFormat::physicalCylinder()` rechnet um; die Spurnummer im **ID-Feld ist die
+  logische** (physisch c4h0 meldet `cyl=2`) — sonst verwirft der Gast-Treiber jeden
+  Sektor.  Berührt `SectorSpace` (Slot kennt beide Nummern), `ImgCodec` (`.img` ist
+  logisch), `DiskImage::create` (ungerade Zylinder bleiben unformatiert), `GeometryProbe`
+  (die Lücken sind ein **positives** Kriterium, sonst würde eine gewöhnliche
+  40-Spur-Diskette verwechselt) und `formatFitsDrive` (physische Ausdehnung).
+  Guards: `ctest -R Doppelschritt` + `DiskToolNeueDisketten.CpaLiestDoppelschrittDiskette`.
+- **Wächter „alle Formate sind mountbar"**:
+  `DiskVolume.JedesKatalogformatLaesstSichAnlegenUndWiederOeffnen` legt JEDES
+  `formats:`-Format an, öffnet es ohne `--fs` und prüft die Wiedererkennung.  Ein neuer
+  Katalogeintrag, den die Erkennung nicht wiederfindet, fällt sofort auf.
 - **`TrackCodec::writeSector`** ersetzt ein Datenfeld an Ort und Stelle und rechnet die
   CRC neu.  `buildTrack()` taugt zum Schreiben **nicht**: es baut die Spur neu und
   verlöre die Bytes hinter der Daten-CRC — bei UDOS die gesamte Dateiverkettung.

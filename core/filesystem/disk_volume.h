@@ -35,6 +35,7 @@
 #include "core/peripherals/floppy_drive/format_catalog.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -230,6 +231,9 @@ private:
     std::unique_ptr<DiskImage> disk_;
     const DiskFormat*  format_  = nullptr;
     const FsProfile*   profile_ = nullptr;
+    /// @brief Nach der CP/A-Regel abgeleitetes Profil (steht in keinem Katalog).
+    ///        Gesetzt, wenn kein benanntes Profil passte; @ref profile_ zeigt dann hierher.
+    std::optional<FsProfile> abgeleitet_;
     DetectionResult    detection_;
     std::vector<Vol>   volumes_;
     bool               read_only_   = true;

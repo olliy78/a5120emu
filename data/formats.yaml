@@ -12,17 +12,22 @@
 #    default_for  (optional) Profile, für die dies das Standardformat beim Anlegen ist
 #    encoding     (optional) fm | mfm — Vorgabe für Spuren ohne eigenes encoding
 #    containers   (optional) img | hfe — darstellbare Dateitypen (Default: beide)
+#    step         (optional) 1 (Vorgabe) | 2 — Doppelschritt, siehe Kasten
 #    tracks       (Pflicht)  Liste disjunkter Spurbereiche
 #
 #  ┌───────────────────────────────────────────────────────────────────────────┐
-#  │ NOCH NICHT ausdrueckbar: Doppelschritt.                                   │
+#  │ `step: 2` — DOPPELSCHRITT (Austausch zwischen 96 tpi und 48 tpi)          │
 #  │ Ein 96-tpi-Laufwerk (K5601, K5600.20) schreibt fuer den Austausch mit dem  │
 #  │ 48-tpi-K5600.10 nur jede ZWEITE Spur — die Diskette ist dann im kleinen    │
 #  │ Laufwerk lesbar (doc/format.md, „Wozu einseitig und Doppelschritt gut      │
-#  │ sind").  `tracks:` kennt nur zusammenhaengende Zylinderbereiche; solche    │
-#  │ Disketten lehnt die Erkennung deshalb bewusst ab, statt ein 80-Spur-Format │
-#  │ darauf zu ziehen.  Fehlt: ein Attribut `step: 2` je Format —              │
-#  │ doc/feature_requests/doppelschritt_disketten.md                           │
+#  │ sind"; die §3.4-Geometrien T und U).                                       │
+#  │                                                                            │
+#  │ `tracks:` bleibt dabei LOGISCH (`cyls: 0-39`) — genau so sieht das         │
+#  │ Gastsystem die Diskette, und genau diese Nummer steht auch im ID-Feld.     │
+#  │ `step` sagt nur, auf welchem PHYSISCHEN Zylinder eine logische Spur liegt: │
+#  │ Spur n auf Zylinder n·step; die ungeraden Zylinder bleiben unformatiert.   │
+#  │ Die Erkennung verlangt diese Luecken POSITIV, damit eine gewoehnliche      │
+#  │ 40-Spur-Diskette nicht damit verwechselt wird.                             │
 #  └───────────────────────────────────────────────────────────────────────────┘
 #
 #  Spurbereich
@@ -233,6 +238,13 @@ formats:
     encoding:    mfm
     tracks:
       - { cyls: 0-39, heads: 0, sectors: 9, size: 512, first_sector: 65 }
+
+  - name:        k5601_ss40_9x512_id193
+    description: "K5601 §3.4 Format U H (Schneider D) — 40 Sp. einseitig 9×512, IDs C1-C9"
+    drives:      [K5600.10, K5600.20, K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0-39, heads: 0, sectors: 9, size: 512, first_sector: 193 }
 
   - name:        k5601_ss40_10x512_id0
     description: "40 Spuren einseitig, 10×512 ab Sektor-ID 0 (KAYPRO, 195K)"
@@ -483,6 +495,77 @@ formats:
     tracks:
       - { cyls: 0-39, heads: 0-1, sectors: 17, size: 256 }
 
+  # ══ Doppelschritt: die Austauschformate T und U (doc/format.md §3.4) ════════
+  # Ein 96-tpi-Laufwerk (K5601, K5600.20) beschreibt nur JEDEN ZWEITEN Zylinder,
+  # damit die Spuren radial dort liegen, wo ein 48-tpi-K5600.10 sie erwartet.
+  # `tracks:` bleibt logisch (0-39) — genau diese Nummer steht auch im ID-Feld;
+  # `step: 2` sagt nur, auf welchem physischen Zylinder eine Spur liegt.
+  # Dieselben Sektorlayouts wie V/W, nur physisch anders abgelegt.
+
+  - name:        k5601_ss40_5x1024_dstep
+    description: "K5601 §3.4 Format U 0 — 40 Sp. einseitig 5×1024, Doppelschritt"
+    drives:      [K5600.20, K5601]
+    encoding:    mfm
+    step:        2
+    tracks:
+      - { cyls: 0-39, heads: 0, sectors: 5, size: 1024 }
+
+  - name:        k5601_ss40_26x128_dstep
+    description: "K5601 §3.4 Format U 2/3 — 40 Sp. einseitig 26×128, Doppelschritt"
+    drives:      [K5600.20, K5601]
+    encoding:    mfm
+    step:        2
+    tracks:
+      - { cyls: 0-39, heads: 0, sectors: 26, size: 128 }
+
+  - name:        k5601_ss40_16x256_dstep
+    description: "K5601 §3.4 Format U 4/5 — 40 Sp. einseitig 16×256, Doppelschritt"
+    drives:      [K5600.20, K5601]
+    encoding:    mfm
+    step:        2
+    tracks:
+      - { cyls: 0-39, heads: 0, sectors: 16, size: 256 }
+
+  - name:        k5601_ss40_15x256_dstep
+    description: "K5601 §3.4 Format U 6 (BAP2001) — 40 Sp. einseitig 15×256, Doppelschritt"
+    drives:      [K5600.20, K5601]
+    encoding:    mfm
+    step:        2
+    tracks:
+      - { cyls: 0-39, heads: 0, sectors: 15, size: 256 }
+
+  - name:        k5601_ds40_5x1024_dstep
+    description: "K5601 §3.4 Format T 0 — 40 Sp. doppelseitig 5×1024, Doppelschritt"
+    drives:      [K5601]
+    encoding:    mfm
+    step:        2
+    tracks:
+      - { cyls: 0-39, heads: 0-1, sectors: 5, size: 1024 }
+
+  - name:        k5601_ds40_26x128_dstep
+    description: "K5601 §3.4 Format T 3 — 40 Sp. doppelseitig 26×128, Doppelschritt"
+    drives:      [K5601]
+    encoding:    mfm
+    step:        2
+    tracks:
+      - { cyls: 0-39, heads: 0-1, sectors: 26, size: 128 }
+
+  - name:        k5601_ds40_16x256_dstep
+    description: "K5601 §3.4 Format T 4/5/7 — 40 Sp. doppelseitig 16×256, Doppelschritt"
+    drives:      [K5601]
+    encoding:    mfm
+    step:        2
+    tracks:
+      - { cyls: 0-39, heads: 0-1, sectors: 16, size: 256 }
+
+  - name:        k5601_ds40_17x256_dstep
+    description: "K5601 §3.4 Format T 6 (Spectra) — 40 Sp. doppelseitig 17×256, Doppelschritt"
+    drives:      [K5601]
+    encoding:    mfm
+    step:        2
+    tracks:
+      - { cyls: 0-39, heads: 0-1, sectors: 17, size: 256 }
+
 # ═════════════════════════════════════════════════════════════════════════════
 #  DATEISYSTEME (k1520DiskTool)
 #
@@ -533,13 +616,22 @@ filesystems:
     description: "CP/A 800K Datendiskette — Dateisystem ab Zylinder 0"
     format:      cpa800
     type:        cpm
+    # 192, nicht 128: FORMAT.COM nennt den Menuepunkt selbst „5×1024, Sp. 0-159;
+    # 192 Dir.-Eintraege" (doc/format.md §3.1, Wahl 0), und das BIOS rechnet dasselbe
+    # aus — `dtrsl3` Zeile 80DS traegt dsldir=191, und die Kuerzung auf 128 greift nur
+    # bei Disketten MIT Systemspuren (`selddr`).  Mit 128 blieben die Plaetze 128…191
+    # einer echten 800K-Diskette unsichtbar.  Siehe core/filesystem/cpm/cpa_dpb.cpp.
     block_size:  2048
-    dir_entries: 128
+    dir_entries: 192
 
   - name:        cpa640
     description: "CP/A 640K (16×256) — Dateisystem ab Zylinder 0"
     format:      cpa640
     type:        cpm
+    # ACHTUNG, ungeprueft: CP/A selbst kann diese Diskette nicht erzeugen — fuer
+    # 256-B-Sektoren traegt `dtrsl1` ein FESTES Offset (4 log. Spuren), das Verzeichnis
+    # liegt dort immer auf c2h0 (= Profil `scpx640`).  Der Eintrag bleibt fuer
+    # Fremddisketten ohne Systemspuren stehen; eine echte Diskette dazu liegt nicht vor.
     block_size:  2048
     dir_entries: 128
 

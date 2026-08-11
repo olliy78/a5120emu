@@ -147,7 +147,7 @@ TEST(FsCatalog, UdosProfileSindNiemalsImgFaehig) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(FsCatalog, FehlendeSektionIstKeinFehler) {
-    // §6.4: der Emulator kommt ohne `filesystems:` aus.
+    // §6.5: der Emulator kommt ohne `filesystems:` aus.
     TempKatalog k("version: 1\nformats:\n  - name: x\n    drives: [K5601]\n"
                   "    tracks:\n      - { cyls: 0, heads: 0, sectors: 5, size: 1024 }\n");
     std::string fatal;

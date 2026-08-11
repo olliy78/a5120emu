@@ -226,6 +226,14 @@ std::vector<CpmDirEntry> CpmFileSystem::directory() const {
     return result;
 }
 
+int CpmFileSystem::directoryFill() const {
+    std::vector<uint8_t> roh;
+    if (!readDirectory(roh) || roh.empty()) return -1;
+    for (uint8_t b : roh)
+        if (b != roh[0]) return -1;
+    return roh[0];
+}
+
 std::vector<FileEntry> CpmFileSystem::list() const {
     // Extents derselben Datei zusammenfassen: Schluessel ist (Nutzerbereich, Name).
     struct Sammler {

@@ -96,16 +96,20 @@ std::unique_ptr<DiskImage> DiskImage::create(const std::string& path,
     if (num_cyls == 0 || num_heads == 0) return nullptr;
 
     auto img = std::make_unique<DiskImage>();
-    img->medium_ = DiskMedium(num_cyls, num_heads,
+    // Beim Doppelschritt ist das Medium fast doppelt so breit wie das Format tief:
+    // die uebersprungenen Zylinder bleiben unformatiert.
+    img->medium_ = DiskMedium(fmt->physicalCylinders(), num_heads,
                               fmt->tracks.empty() ? enc : fmt->predominantEncoding());
 
     // Je Spurbereich eine gueltige IBM-Spur bauen (Verfahren PRO Bereich → Mischdichte).
+    // Die Spurnummer im ID-Feld ist die LOGISCHE — so schreibt es auch das Gastsystem.
     for (uint8_t c = 0; c < num_cyls; ++c) {
+        const uint8_t pc = fmt->physicalCylinder(c);
         for (uint8_t h = 0; h < num_heads; ++h) {
             const TrackFormat* tf = fmt->findTrack(c, h);
             if (!tf) continue;   // Spur existiert im Format nicht → bleibt unformatiert
             img->medium_.setTrack(
-                c, h, TrackCodec::buildTrack(leereSektoren(*tf, c, h), tf->encoding));
+                pc, h, TrackCodec::buildTrack(leereSektoren(*tf, c, h), tf->encoding));
         }
     }
 

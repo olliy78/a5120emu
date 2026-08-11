@@ -15,3 +15,9 @@ k1520_add_test(a5120_disk_api   SRC test_a5120_disk_api.cpp   LIBS ${_libs} LABE
 k1520_add_test(disktool_cpm_roundtrip SRC test_disktool_cpm_roundtrip.cpp
                                       LIBS ${_libs} k1520_fs
                                       LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# Dieselbe Kreuzprobe auf FRISCH ANGELEGTEN Disketten: 192 Verzeichnisplaetze (cpa800,
+# vom Werkzeug SELBST ausgerechnet) und die Doppelschritt-Abbildung (`step: 2`).
+k1520_add_test(disktool_neue_disketten SRC test_disktool_neue_disketten.cpp
+                                       LIBS ${_libs} k1520_fs
+                                       LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)

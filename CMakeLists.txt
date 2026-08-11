@@ -95,6 +95,7 @@ if(BUILD_K1520)
         core/filesystem/geometry_probe.cpp
         core/filesystem/fs_catalog.cpp
         core/filesystem/cpm/cpm_fs.cpp
+        core/filesystem/cpm/cpa_dpb.cpp
         core/filesystem/udos/udos_bitmap.cpp
         core/filesystem/udos/udos_fs.cpp
         core/filesystem/disk_volume.cpp
