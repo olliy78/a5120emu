@@ -1,0 +1,33 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Zeilenenden: NICHTS wird umgeschrieben
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Git unter Windows stellt per Vorgabe `core.autocrlf=true` ein (auch auf den
+# GitHub-Runnern) und wandelt beim Auschecken LF → CRLF — in allem, was seine
+# Heuristik für Text hält.  In diesem Baum ist das gefährlich: die Testdisketten
+# (`.hfe`, `.img`, `.dmk`), die EPROM-Abzüge und die CP/M-Programme sind
+# Bytefolgen, in denen 0x0A schlicht ein Datenbyte ist.  Ein einziges
+# eingeschobenes 0x0D verschiebt eine ganze Spur und lässt Tests auf eine Weise
+# scheitern, die nach einem Emulatorfehler aussieht.
+#
+# Deshalb die einfachste verlässliche Regel: **gar keine Umwandlung**.  Der Baum
+# ist mit LF gespeichert, und LF verkraften alle beteiligten Werkzeuge —
+# MSVC, Git-Bash, Python, CMake.
+* -text
+
+# Die echten Binärdateien zusätzlich als solche kennzeichnen: `binary` schaltet
+# neben der Umwandlung auch Zeilendiff und Zusammenführen ab, damit ein
+# versehentliches `git diff` kein Megabyte Kauderwelsch ausspuckt.
+*.hfe  binary
+*.img  binary
+*.dmk  binary
+*.bin  binary
+*.rom  binary
+*.png  binary
+*.pdf  binary
+*.pma  binary
+*.com  binary
+*.COM  binary
+*.rel  binary
+*.REL  binary
+*.Z80  binary

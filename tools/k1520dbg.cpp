@@ -37,7 +37,6 @@
 #ifdef HAVE_READLINE
 #include <readline/readline.h>
 #include <readline/history.h>
-#include <unistd.h>   // isatty
 #endif
 #include <cstdio>
 #include <cstdint>
@@ -59,7 +58,7 @@
 #include <optional>
 #include <csignal>
 #include <chrono>
-#include <unistd.h>   // getpid
+#include "core/util/os_compat.h"   // processId, isTerminal
 
 using k1520::logging::Logger;
 using k1520::logging::Level;
@@ -188,7 +187,7 @@ int main(int argc, char** argv){
         std::error_code ec;
         std::filesystem::path src(path);
         std::filesystem::path tmp = std::filesystem::temp_directory_path() /
-            ("k1520dbg_cow_"+std::to_string((long)getpid())+"_"+
+            ("k1520dbg_cow_"+std::to_string(k1520::os::processId())+"_"+
              std::to_string(cow_temps.size())+src.extension().string());
         std::filesystem::copy_file(src,tmp,std::filesystem::copy_options::overwrite_existing,ec);
         if (ec){ fprintf(stderr,"WARN: COW copy of '%s' failed (%s) — mounting original writable\n",
@@ -1269,7 +1268,7 @@ int main(int argc, char** argv){
             // interactive tty → readline (line editing, history, Tab-completion);
             // pipes/scripts → plain getline with a manual prompt (unchanged behaviour).
 #ifdef HAVE_READLINE
-            if (isatty(0)) {
+            if (k1520::os::isTerminal(0)) {
                 char* rl = readline("(dbg) ");
                 if (!rl) break;
                 line = rl; if (rl[0]) add_history(rl); free(rl);

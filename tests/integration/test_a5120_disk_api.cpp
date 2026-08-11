@@ -26,6 +26,7 @@
 #include "core/machines/a5120/a5120.h"
 
 #include "tests/support/fixtures.h"
+#include "core/util/os_compat.h"
 
 #include <cstdlib>
 #include <filesystem>
@@ -348,7 +349,7 @@ TEST(A5120DiskApi, KaputterKatalog_BrichtStartMitKlarerMeldungAb) {
 
     const char* prev = std::getenv("K1520_FORMATS");
     const std::string saved = prev ? prev : "";
-    ::setenv("K1520_FORMATS", bad.c_str(), 1);
+    k1520::os::setEnv("K1520_FORMATS", bad.c_str());
 
     std::string message;
     try {
@@ -358,8 +359,8 @@ TEST(A5120DiskApi, KaputterKatalog_BrichtStartMitKlarerMeldungAb) {
         message = e.what();
     }
 
-    if (saved.empty()) ::unsetenv("K1520_FORMATS");
-    else               ::setenv("K1520_FORMATS", saved.c_str(), 1);
+    if (saved.empty()) k1520::os::unsetEnv("K1520_FORMATS");
+    else               k1520::os::setEnv("K1520_FORMATS", saved.c_str());
     std::filesystem::remove(bad);
 
     EXPECT_NE(message.find("broken.yaml"), std::string::npos) << message;

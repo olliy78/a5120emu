@@ -1,5 +1,6 @@
 build/
 build_trace/
+build_win/
 *.o
 *.d
 *.pyc

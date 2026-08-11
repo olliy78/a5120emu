@@ -6,6 +6,8 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "core/api/k1520_export.h"   /* K1520_API — Ausfuhrkennzeichnung (Windows!) */
+
 typedef void* K1520Handle;
 
 typedef enum {
@@ -28,7 +30,7 @@ typedef enum {
 typedef void (*K1520SerialCallback)(void* ctx, uint8_t byte);
 
 /* ─── Lifecycle ──────────────────────────────────────────────────────────── */
-K1520Handle k1520_create(K1520MachineType type);
+K1520_API K1520Handle k1520_create(K1520MachineType type);
 
 /**
  * Create a machine with an explicit drive-bay configuration.
@@ -45,9 +47,9 @@ K1520Handle k1520_create(K1520MachineType type);
  * @return handle, or NULL on error.  Equivalent to k1520_create() when all four
  *         names are NULL/"".
  */
-K1520Handle k1520_create_configured(K1520MachineType type,
-                                    const char* drive0, const char* drive1,
-                                    const char* drive2, const char* drive3);
+K1520_API K1520Handle k1520_create_configured(K1520MachineType type,
+                                              const char* drive0, const char* drive1,
+                                              const char* drive2, const char* drive3);
 
 /**
  * @brief Reason the last k1520_create*() returned NULL ("" if none).
@@ -56,38 +58,38 @@ K1520Handle k1520_create_configured(K1520MachineType type,
  * no handle, so the message cannot be fetched via k1520_last_error(). The returned
  * pointer stays valid until the next k1520_create*() call.
  */
-const char* k1520_last_init_error(void);
+K1520_API const char* k1520_last_init_error(void);
 
-void        k1520_destroy(K1520Handle h);
-void        k1520_reset(K1520Handle h);
-void        k1520_power_on(K1520Handle h);
+K1520_API void        k1520_destroy(K1520Handle h);
+K1520_API void        k1520_reset(K1520Handle h);
+K1520_API void        k1520_power_on(K1520Handle h);
 
 /* ─── Execution ──────────────────────────────────────────────────────────── */
-int  k1520_run(K1520Handle h, int max_cycles);
-void k1520_stop(K1520Handle h);
+K1520_API int  k1520_run(K1520Handle h, int max_cycles);
+K1520_API void k1520_stop(K1520Handle h);
 
 /* ─── Framebuffer ────────────────────────────────────────────────────────── */
-const uint8_t* k1520_framebuffer(K1520Handle h);
-int            k1520_fb_width(K1520Handle h);
-int            k1520_fb_height(K1520Handle h);
-bool           k1520_fb_dirty(K1520Handle h);
-void           k1520_fb_clear_dirty(K1520Handle h);
+K1520_API const uint8_t* k1520_framebuffer(K1520Handle h);
+K1520_API int            k1520_fb_width(K1520Handle h);
+K1520_API int            k1520_fb_height(K1520Handle h);
+K1520_API bool           k1520_fb_dirty(K1520Handle h);
+K1520_API void           k1520_fb_clear_dirty(K1520Handle h);
 
 /* ─── Console (CLI) mode ─────────────────────────────────────────────────── */
-void k1520_set_console_mode(K1520Handle h, bool enable);
-bool k1520_console_poll(K1520Handle h, int* x, int* y, char* ch);
+K1520_API void k1520_set_console_mode(K1520Handle h, bool enable);
+K1520_API bool k1520_console_poll(K1520Handle h, int* x, int* y, char* ch);
 
 /* ─── Keyboard ───────────────────────────────────────────────────────────── */
-void k1520_key_press(K1520Handle h, uint32_t keycode, bool shift, bool ctrl);
-void k1520_key_release(K1520Handle h, uint32_t keycode);
-void k1520_console_key(K1520Handle h, char c);
+K1520_API void k1520_key_press(K1520Handle h, uint32_t keycode, bool shift, bool ctrl);
+K1520_API void k1520_key_release(K1520Handle h, uint32_t keycode);
+K1520_API void k1520_console_key(K1520Handle h, char c);
 
 /* ─── Disk drives ────────────────────────────────────────────────────────── */
 /** @brief Mount a disk image into a drive slot. */
-bool k1520_mount_disk(K1520Handle h, int drive,
-                      const char* image_path,
-                      const char* format_name,
-                      bool write_protect);
+K1520_API bool k1520_mount_disk(K1520Handle h, int drive,
+                                const char* image_path,
+                                const char* format_name,
+                                bool write_protect);
 /**
  * @brief Create a NEW disk and mount it.
  *
@@ -102,10 +104,10 @@ bool k1520_mount_disk(K1520Handle h, int drive,
  *
  * Overwrites an existing file.  Returns false on error (see k1520_last_error).
  */
-bool k1520_create_disk(K1520Handle h, int drive,
-                       const char* image_path,
-                       const char* format_name,
-                       bool write_protect);
+K1520_API bool k1520_create_disk(K1520Handle h, int drive,
+                                 const char* image_path,
+                                 const char* format_name,
+                                 bool write_protect);
 /**
  * @brief Save the mounted disk under a new name/container and re-bind to it.
  *
@@ -113,61 +115,61 @@ bool k1520_create_disk(K1520Handle h, int drive,
  * writes go (delayed) into the new file.  @p format_name is only needed for `.img`
  * (the other containers are self-describing) and is validated against the medium.
  */
-bool k1520_save_disk_as(K1520Handle h, int drive,
-                        const char* image_path,
-                        const char* format_name);
+K1520_API bool k1520_save_disk_as(K1520Handle h, int drive,
+                                  const char* image_path,
+                                  const char* format_name);
 /** @brief True if the mounted disk may be saved as a raw sector image (.img). */
-bool k1520_disk_raw_compatible(K1520Handle h, int drive);
+K1520_API bool k1520_disk_raw_compatible(K1520Handle h, int drive);
 /** @brief Currently bound image file of a slot ("" = memory only / empty drive). */
-const char* k1520_disk_path(K1520Handle h, int drive);
+K1520_API const char* k1520_disk_path(K1520Handle h, int drive);
 /** @brief Container of the bound file ("img" | "hfe" | "dmk"; "" = none). */
-const char* k1520_disk_container(K1520Handle h, int drive);
+K1520_API const char* k1520_disk_container(K1520Handle h, int drive);
 /** @brief Write pending changes of all drives to their files immediately. */
-bool k1520_flush_disks(K1520Handle h);
+K1520_API bool k1520_flush_disks(K1520Handle h);
 /** @brief Unmount disk image from a drive slot. */
-bool k1520_unmount_disk(K1520Handle h, int drive);
+K1520_API bool k1520_unmount_disk(K1520Handle h, int drive);
 
 /* ─── Disk formats per drive ─────────────────────────────────────────────────
  * The built-in disk formats that geometrically fit the drive configured in a
  * slot (for the GUI format selection).  The drive-type default is index 0.
  * Returned name pointers stay valid until the next call on the same thread. */
 /** @brief Number of built-in formats compatible with the drive in @p drive. */
-int         k1520_drive_format_count(K1520Handle h, int drive);
+K1520_API int         k1520_drive_format_count(K1520Handle h, int drive);
 /** @brief Name of the @p index-th compatible format (NULL if out of range). */
-const char* k1520_drive_format_name(K1520Handle h, int drive, int index);
+K1520_API const char* k1520_drive_format_name(K1520Handle h, int drive, int index);
 /** @brief Drive-type default format name for @p drive (what empty-create uses). */
-const char* k1520_drive_default_format(K1520Handle h, int drive);
+K1520_API const char* k1520_drive_default_format(K1520Handle h, int drive);
 /** @brief Human-readable description of a catalog format ("" if unknown). */
-const char* k1520_format_description(K1520Handle h, const char* name);
+K1520_API const char* k1520_format_description(K1520Handle h, const char* name);
 /** @brief Colon-separated list of the loaded formats.yaml file(s) — diagnostics. */
-const char* k1520_formats_source(K1520Handle h);
+K1520_API const char* k1520_formats_source(K1520Handle h);
 /** @brief Return true if a disk image is mounted in the drive. */
-bool k1520_disk_active(K1520Handle h, int drive);
+K1520_API bool k1520_disk_active(K1520Handle h, int drive);
 /** @brief Return true if mounted image is write protected. */
-bool k1520_disk_write_protected(K1520Handle h, int drive);
+K1520_API bool k1520_disk_write_protected(K1520Handle h, int drive);
 /** @brief Return true while the drive LED should be lit (drive selected or motor on). */
-bool k1520_disk_led(K1520Handle h, int drive);
+K1520_API bool k1520_disk_led(K1520Handle h, int drive);
 /** @brief Return true while the drive's spindle motor is running (/LCK, port 0x18). */
-bool k1520_disk_motor(K1520Handle h, int drive);
+K1520_API bool k1520_disk_motor(K1520Handle h, int drive);
 /** @brief Return true while the read/write head is loaded (/HL, ctrl port A bit6). */
-bool k1520_head_loaded(K1520Handle h);
+K1520_API bool k1520_head_loaded(K1520Handle h);
 /** @brief Update mounted image write-protect state. */
-void k1520_set_write_protect(K1520Handle h, int drive, bool wp);
+K1520_API void k1520_set_write_protect(K1520Handle h, int drive, bool wp);
 
 /* ─── Serial ports ───────────────────────────────────────────────────────── */
-void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
-                             K1520SerialCallback cb, void* ctx);
-void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte);
+K1520_API void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
+                                       K1520SerialCallback cb, void* ctx);
+K1520_API void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte);
 
 /* ─── Debug ──────────────────────────────────────────────────────────────── */
 /** @brief Read memory through the machine bus for diagnostics. */
-uint8_t     k1520_mem_read(K1520Handle h, uint16_t addr);
+K1520_API uint8_t     k1520_mem_read(K1520Handle h, uint16_t addr);
 /** @brief Write memory through the machine bus for diagnostics. */
-void        k1520_mem_write(K1520Handle h, uint16_t addr, uint8_t data);
+K1520_API void        k1520_mem_write(K1520Handle h, uint16_t addr, uint8_t data);
 /** @brief Read I/O port through the machine bus for diagnostics. */
-uint8_t     k1520_io_read(K1520Handle h, uint8_t port);
-const char* k1520_last_error(K1520Handle h);
-const char* k1520_version(void);
+K1520_API uint8_t     k1520_io_read(K1520Handle h, uint8_t port);
+K1520_API const char* k1520_last_error(K1520Handle h);
+K1520_API const char* k1520_version(void);
 
 #ifdef __cplusplus
 }

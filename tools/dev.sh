@@ -32,6 +32,8 @@
 #   tools/dev.sh trace [boot_trace…]  build_trace/ bauen, dann boot_trace starten
 #   tools/dev.sh tool  <name> [args]  build/ bauen, dann build/<name> starten
 #                                     (floppy_diag, k1520dbg, kbd_test, boot_trace…)
+#   tools/dev.sh win   [ctest-args]   Cross-Bau nach Windows (MinGW) + Tests unter
+#                                     wine — lokale Vorprüfung der Portierung
 #   tools/dev.sh check                build/ + build_trace/ bauen + Frische melden
 #   tools/dev.sh rebuild              build/ + build_trace/ von Grund auf neu (rm -rf)
 #
@@ -41,22 +43,45 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_DIR"
 
 # Build-Dir → LOG_LEVEL
-declare -A LOG_LEVEL=( [build]=3 [build_trace]=5 )
+declare -A LOG_LEVEL=( [build]=3 [build_trace]=5 [build_win]=3 )
 # Build-Dir → CMAKE_BUILD_TYPE.  Ohne Typ baut GCC mit -O0 (keine Optimierung) →
 # der Z80-Interpreter läuft ~5-8x zu langsam.  build/ = Release (-O3, Normalbetrieb
 # + Tests), build_trace/ = RelWithDebInfo (-O2 -g, schnell UND mit Host-Symbolen
 # fürs Trace-Werkzeug).
-declare -A BUILD_TYPE=( [build]=Release [build_trace]=RelWithDebInfo )
+declare -A BUILD_TYPE=( [build]=Release [build_trace]=RelWithDebInfo [build_win]=Release )
+
+# ─── Windows (Git-Bash/MSYS unter GitHub Actions oder auf einem Windows-Rechner) ──
+# Zwei Unterschiede, beide zwingend:
+#  * Generator: CMake nähme sonst „Visual Studio 17 2022" — einen MEHRKONFIGURATIONS-
+#    Generator.  Der legt die Programme nach build/Release/ statt build/, und ctest
+#    verlangt ein `-C Release`.  Damit stimmte kein einziger eingespielter Pfad mehr
+#    (build/k1520_test_k2526, build/k1520dbg …).  Ninja ist einkonfigurativ und hält
+#    das Layout identisch zu Linux.  Die MSVC-Umgebung (vcvars) muss die aufrufende
+#    Shell schon gesetzt haben — der Windows-Workflow tut das.
+#  * Programmnamen tragen `.exe`.
+WINDOWS=0
+case "$(uname -s 2>/dev/null || echo unknown)" in
+    MINGW*|MSYS*|CYGWIN*) WINDOWS=1 ;;
+esac
+EXE=""; GENERATOR=()
+if [ "$WINDOWS" = 1 ]; then EXE=".exe"; GENERATOR=(-G Ninja); fi
 
 c_red() { printf '\033[31m%s\033[0m\n' "$*"; }
 c_grn() { printf '\033[32m%s\033[0m\n' "$*"; }
 c_ylw() { printf '\033[33m%s\033[0m\n' "$*"; }
 
 configure_if_needed() {
-    local dir="$1"
+    local dir="$1" extra=()
+    # build_win/ ist der Cross-Bau nach Windows (MinGW + wine, siehe `win`).
+    # Die Python-Ebene bleibt dort AUS: sie lädt die Bibliothek per ctypes aus
+    # einem LINUX-Python — eine .dll kann sie nicht laden.
+    if [ "$dir" = build_win ]; then
+        extra=(-DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain-mingw64.cmake"
+               -DBUILD_PYTHON_TESTS=OFF)
+    fi
     if [ ! -f "$dir/CMakeCache.txt" ]; then
         c_ylw ">> konfiguriere $dir (LOG_LEVEL=${LOG_LEVEL[$dir]}, ${BUILD_TYPE[$dir]})"
-        cmake -B "$dir" -DLOG_LEVEL="${LOG_LEVEL[$dir]}" \
+        cmake -B "$dir" "${GENERATOR[@]}" "${extra[@]}" -DLOG_LEVEL="${LOG_LEVEL[$dir]}" \
               -DCMAKE_BUILD_TYPE="${BUILD_TYPE[$dir]}" >/dev/null
     fi
 }
@@ -117,18 +142,27 @@ case "$cmd" in
         ctest --test-dir build --output-on-failure -L "^$lvl$" "$@" ;;
     trace)
         build_dir build_trace
-        c_ylw ">> build_trace/boot_trace $*"; exec build_trace/boot_trace "$@" ;;
+        c_ylw ">> build_trace/boot_trace$EXE $*"; exec "build_trace/boot_trace$EXE" "$@" ;;
     tool)
         name="${1:?Tool-Name fehlt (z.B. floppy_diag, k1520dbg, kbd_test)}"; shift
         build_dir build
-        c_ylw ">> build/$name $*"; exec "build/$name" "$@" ;;
+        c_ylw ">> build/$name$EXE $*"; exec "build/$name$EXE" "$@" ;;
+    win)
+        # LOKALE Windows-Vorprüfung: nach Windows cross-übersetzen (MinGW-w64) und
+        # die Tests unter wine laufen lassen.  Findet Portierungsfehler in Sekunden
+        # statt in 10-Minuten-CI-Runden — ersetzt sie aber NICHT: MinGW ist GCC,
+        # die verbindliche Prüfung ist .github/workflows/windows-ci.yml
+        # (Begründung im Kopf von cmake/toolchain-mingw64.cmake).
+        build_dir build_win
+        c_ylw ">> ctest (build_win/, unter wine) [ohne format_integration/format_matrix]"
+        ctest --test-dir build_win --output-on-failure -LE "format_(integration|matrix)" "$@" ;;
     check)
         for d in build build_trace; do [ -d "$d" ] && build_dir "$d" || c_ylw ">> $d: nicht vorhanden"; done ;;
     rebuild)
         c_ylw ">> rm -rf build build_trace + Neubau von Grund auf"
-        rm -rf build build_trace; build_dir build; build_dir build_trace ;;
+        rm -rf build build_trace build_win; build_dir build; build_dir build_trace ;;
     ''|-h|--help|help)
-        sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^#\{0,1\} \{0,1\}//' ;;
+        sed -n '2,42p' "${BASH_SOURCE[0]}" | sed 's/^#\{0,1\} \{0,1\}//' ;;
     *)
         c_red "unbekanntes Kommando: $cmd"; echo "siehe: tools/dev.sh --help"; exit 2 ;;
 esac

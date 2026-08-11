@@ -42,7 +42,7 @@
 #include <deque>
 #include <filesystem>
 #include <system_error>
-#include <unistd.h>   // getpid
+#include "core/util/os_compat.h"   // processId
 
 // ─── Milestone detection ──────────────────────────────────────────────────────
 
@@ -229,7 +229,11 @@ int main(int argc, char** argv) {
     int   post_cycles       = 0;         // -p: cycles to keep tracing after boot reached
     int   dump_start        = -1;        // -d start:end: dump live RAM to file at end
     int   dump_end          = -1;
-    const char* dump_path   = "/tmp/ram_dump.bin";
+    // Vorgabeziel im TEMPORÄRVERZEICHNIS des Systems — "/tmp" gibt es unter
+    // Windows nicht (dort landete es als C:\tmp\… und der fopen scheiterte).
+    const std::string dump_default =
+        (std::filesystem::temp_directory_path() / "ram_dump.bin").string();
+    const char* dump_path   = dump_default.c_str();
     int   win_start         = -1;        // -w start:end: live ZVE1 step trace in a PC window
     int   win_end           = -1;
     int   win_cap           = 3000;      // -W <n>: max window-trace lines (shared -w/-z)
@@ -724,7 +728,7 @@ int main(int argc, char** argv) {
         std::error_code ec;
         std::filesystem::path src(disk_path);
         std::filesystem::path tmp = std::filesystem::temp_directory_path() /
-            ("boot_trace_cow_"+std::to_string((long)getpid())+src.extension().string());
+            ("boot_trace_cow_"+std::to_string(k1520::os::processId())+src.extension().string());
         std::filesystem::copy_file(src, tmp, std::filesystem::copy_options::overwrite_existing, ec);
         if (ec) fprintf(stderr, "WARN: COW copy of '%s' failed (%s) — mounting original writable\n",
                         disk_path, ec.message().c_str());

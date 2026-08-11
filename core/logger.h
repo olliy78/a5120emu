@@ -198,7 +198,7 @@ public:
 
 // Convenience macros - these are only defined if logging is enabled
 // Helper: strip path prefix from __FILE__ at compile time to keep log output compact
-#ifdef __linux__
+#if defined(__GNUC__) || defined(__clang__)
 #  define LOG_FILENAME ((__builtin_strrchr(__FILE__, '/') ? __builtin_strrchr(__FILE__, '/') + 1 : __FILE__))
 #else
 #  define LOG_FILENAME __FILE__

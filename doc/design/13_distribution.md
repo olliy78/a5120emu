@@ -289,12 +289,28 @@ plus Notarisierung (jährliche Gebühr, dafür klaglos), oder Installationsanlei
 Der Installer ist der kleinere Teil der Arbeit. Der Kern ist heute **nicht
 Windows-tauglich** und die GUI **nicht relocatable**. Befunde:
 
-### 6.1 Windows-Portierung des Kerns
+### 6.1 Windows-Portierung des Kerns   ✅ umgesetzt
 
 | Fundstelle | Problem | Lösung |
 |------------|---------|--------|
-| `core/api/k1520_api.h:3` | nur `extern "C"`, keine Export-Makros | Makro `K1520_API` (`__declspec(dllexport/import)` bzw. `__attribute__((visibility("default")))`) vor jede API-Funktion; alternativ `WINDOWS_EXPORT_ALL_SYMBOLS` als Übergangslösung. **Ohne das exportiert die MSVC-DLL gar nichts** — `ctypes` findet keine einzige Funktion. |
-| `CMakeLists.txt` | Build ist auf GCC/Linux zugeschnitten | MSVC-Zweig: statische CRT, `/utf-8` (die Quellen enthalten deutsche Umlaute!), Warnungsflags |
+| `core/api/k1520_api.h`, `k1520_disk_api.h` | nur `extern "C"`, keine Export-Makros | **`core/api/k1520_export.h`**: `K1520_API` = `__declspec(dllexport)` beim Bau (`K1520_BUILD_SHARED`, von CMake auf `k1520core`/`k1520disk` gesetzt), `dllimport` für einen künftigen C-Nutzer (`K1520_USE_SHARED`), sonst `visibility("default")`. Steht vor **jeder** der 44 + 48 Funktionen. **Ohne das exportiert die MSVC-DLL gar nichts** — `ctypes` findet keine einzige Funktion. |
+| `CMakeLists.txt` | Build war auf GCC/Linux zugeschnitten | MSVC-Zweig: `/utf-8` (die Quellen sind UTF-8 und voller Umlaute), `/permissive- /W3`, `/bigobj` (die Kartenmodelle mit eingebetteten EPROM-Feldern sprengen sonst das Sektionslimit), `NOMINMAX`/`WIN32_LEAN_AND_MEAN`, und die statische CRT hinter `-DK1520_MSVC_STATIC_CRT=ON` |
+| `tools/boot_trace.cpp`, `tools/k1520dbg.cpp`, zwei Tests | `unistd.h`, `getpid`, `isatty`, `setenv` | **`core/util/os_compat.h`** — `k1520::os::processId/isTerminal/setEnv/unsetEnv`, die vier Stellen an einem Ort statt vier `#ifdef _WIN32` |
+| `core/logger.h` | `__builtin_strrchr` hinter `#ifdef __linux__` | Bedingung auf `__GNUC__`/`__clang__` erweitert; MSVC nimmt `__FILE__` unverkürzt |
+| (neu) `.gitattributes` | Git unter Windows wandelt beim Auschecken LF → CRLF, **auch in Dateien, die es fälschlich für Text hält** | `* -text` — gar keine Umwandlung. Ein eingeschobenes 0x0D in einer `.hfe`/`.img` verschiebt eine ganze Spur und sieht wie ein Emulatorfehler aus. |
+
+**Statische CRT nur im Auslieferungsbau.** `K1520_MSVC_STATIC_CRT` steht auf `OFF`,
+weil GoogleTest im selben Baum die dynamische CRT erwartet (`gtest_force_shared_crt`)
+und `/MT` neben `/MD` beim Linken „mismatch detected for RuntimeLibrary" gibt. Der
+Release-Bau setzt sie zusammen mit `-DBUILD_K1520_TESTS=OFF`; nur die ausgelieferte
+DLL braucht sie (§5.1: kein VC-Redist ohne Administratorrechte).
+
+**Geprüft wird auf zwei Wegen.** Verbindlich ist `.github/workflows/windows-ci.yml`
+(MSVC, `windows-latest`, dieselbe `tools/dev.sh test`-Runde wie Linux, danach
+`dumpbin /exports` auf beide DLLs). Für die schnelle Runde auf dem Linux-Rechner gibt
+es `tools/dev.sh win`: Cross-Bau mit MinGW-w64 (`cmake/toolchain-mingw64.cmake`) und
+Tests unter `wine`. Der findet in Sekunden, was plattformabhängig ist, aber **nicht**,
+was MSVC-eigen ist — MinGW ist GCC und exportiert wie unter Linux per Vorgabe alles.
 
 Erledigt sind dagegen die Pfad- und Umgebungsfragen, die dieselbe Datei betrafen: der
 Modulpfad (§6.2) hat den Windows-Zweig `GetModuleFileNameW` gleich mitbekommen,
@@ -492,9 +508,12 @@ Vier Schritte, jeder für sich abnehmbar:
    1,9-MB-Tarball, der ohne `sudo` durchläuft, sich selbst prüft und sich rückstandsfrei
    deinstallieren lässt. Guards: `tests/python/test_packaging.py` (13 schnelle Fälle ohne
    Netz + ein vollständiger Installationslauf hinter `K1520_PACKAGING_FULL=1`).
-3. **Windows-Portierung des Kerns.** Export-Makros, MSVC-Build mit statischer CRT,
-   Rauchtest. Ergebnis: `k1520core.dll`, aus dem venv per `ctypes` ladbar. Die
-   Pfad-/Umgebungsfragen sind mit Schritt 1 schon erledigt (§6.1).
+3. ✅ **Windows-Portierung des Kerns.** Export-Makros (`core/api/k1520_export.h`),
+   MSVC-Zweig im `CMakeLists.txt`, `core/util/os_compat.h`, `.gitattributes`.
+   Ergebnis: `k1520core.dll`/`k1520disk.dll`, aus dem venv per `ctypes` ladbar, und
+   die **volle Regression** läuft auf `windows-latest` (`windows-ci.yml`) — nicht nur
+   ein Rauchtest. Lokale Vorprüfung: `tools/dev.sh win` (MinGW + wine). Die
+   Pfad-/Umgebungsfragen waren mit Schritt 1 schon erledigt (§6.1).
 4. **Paketierung Windows.** Inno-Setup-Skript, `install.ps1` (Gegenstück zu `install.sh`,
    dieselben Schritte), CI-Matrix, Release-Workflow.
 

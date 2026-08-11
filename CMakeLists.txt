@@ -13,6 +13,48 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     message(STATUS "CMAKE_BUILD_TYPE nicht gesetzt → Release (-O3)")
 endif()
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Plattform: Windows/MSVC   (doc/design/13_distribution.md §6.1)
+# ─────────────────────────────────────────────────────────────────────────────
+if(WIN32)
+    # NOMINMAX:            windows.h definiert sonst min/max als MAKRO und zerlegt
+    #                      jedes std::min/std::max im Kern.
+    # WIN32_LEAN_AND_MEAN: spart den halben Win32-Kopfdateibaum (Winsock, OLE, …).
+    # UNICODE:             die Modulpfad-Auflösung benutzt GetModuleFileNameW.
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
+endif()
+
+if(MSVC)
+    # /utf-8: die Quellen sind UTF-8 und stecken VOLLER deutscher Umlaute (Kommentare
+    #         UND Zeichenketten).  Ohne das liest MSVC sie in der Systemcodepage —
+    #         Umlaute in Log-/Fehlertexten kommen als Buchstabensalat heraus, und in
+    #         Kommentaren löst ein zerbrochenes Byte Warnung C4819 aus.
+    add_compile_options(/utf-8)
+    # /permissive-: Zwei-Phasen-Namensauflösung wie GCC/Clang — sonst nimmt MSVC
+    #               Vorlagenfehler erst bei der Instanziierung wahr.
+    add_compile_options(/permissive- /W3)
+    # /bigobj: die Kartenmodelle erzeugen sehr grosse Objektdateien (Vorlagen +
+    #          eingebettete EPROM-Felder) und reissen sonst das Sektionslimit.
+    add_compile_options(/bigobj)
+    # C4996: MSVC hält halb POSIX für „unsicher" (fopen, getenv …).  Wir benutzen
+    #        die Standardformen bewusst; der Kern soll auf allen drei Systemen
+    #        DIESELBE Quelle sein.
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+
+    # Statische CRT — NUR für Auslieferungsbauten.  Der Windows-Installer läuft
+    # per-user ohne Administratorrechte und kann deshalb KEIN VC-Redist
+    # nachinstallieren (§5.1); die ausgelieferte DLL muss ihre Laufzeit selbst
+    # mitbringen.  Vorgabe OFF, weil GoogleTest im selben Baum die dynamische CRT
+    # erwartet (gtest_force_shared_crt) — /MT und /MD in einem Bau geben
+    # „mismatch detected for RuntimeLibrary" beim Linken.  Der Release-Workflow
+    # baut daher mit -DK1520_MSVC_STATIC_CRT=ON UND -DBUILD_K1520_TESTS=OFF.
+    option(K1520_MSVC_STATIC_CRT "Auslieferungsbau: CRT statisch einbinden (/MT)" OFF)
+    if(K1520_MSVC_STATIC_CRT)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        message(STATUS "MSVC: statische CRT (/MT) — Auslieferungsbau")
+    endif()
+endif()
+
 if(NOT LOG_LEVEL)
     set(LOG_LEVEL 3)
 endif()
@@ -176,6 +218,10 @@ if(BUILD_K1520)
     )
     target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_logger)
     target_include_directories(k1520core PUBLIC ${CMAKE_SOURCE_DIR})
+    # K1520_BUILD_SHARED schaltet K1520_API auf __declspec(dllexport).  OHNE das
+    # exportiert eine MSVC-DLL GAR NICHTS und ctypes findet keine Funktion
+    # (core/api/k1520_export.h, doc/design/13_distribution.md §6.1).
+    target_compile_definitions(k1520core PRIVATE K1520_BUILD_SHARED)
     set_target_properties(k1520core PROPERTIES
         CXX_STANDARD 17
         POSITION_INDEPENDENT_CODE ON
@@ -191,6 +237,7 @@ if(BUILD_K1520)
     )
     target_link_libraries(k1520disk PRIVATE k1520_fs)
     target_include_directories(k1520disk PUBLIC ${CMAKE_SOURCE_DIR})
+    target_compile_definitions(k1520disk PRIVATE K1520_BUILD_SHARED)
     set_target_properties(k1520disk PROPERTIES
         CXX_STANDARD 17
         POSITION_INDEPENDENT_CODE ON
@@ -248,8 +295,12 @@ if(BUILD_K1520)
     target_compile_definitions(k1520dbg PRIVATE LOG_LEVEL=5)
     # Optional GNU readline: interactive line editing, history, command tab-completion.
     # If not found, k1520dbg falls back to plain getline (unchanged behaviour).
-    find_path(READLINE_INCLUDE_DIR readline/readline.h)
-    find_library(READLINE_LIBRARY readline)
+    # Unter Windows gibt es GNU readline nicht — gar nicht erst suchen (eine
+    # zufällig gefundene MSYS-Fassung würde gegen die falsche CRT linken).
+    if (NOT WIN32)
+        find_path(READLINE_INCLUDE_DIR readline/readline.h)
+        find_library(READLINE_LIBRARY readline)
+    endif()
     if (READLINE_INCLUDE_DIR AND READLINE_LIBRARY)
         message(STATUS "k1520dbg: GNU readline found — interactive editing/history/completion enabled")
         target_compile_definitions(k1520dbg PRIVATE HAVE_READLINE)

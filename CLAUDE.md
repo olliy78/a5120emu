@@ -34,9 +34,27 @@ tools/dev.sh trace <boot_trace-args>   # build build_trace/, then run boot_trace
 tools/dev.sh tool <name> [args]  # build build/, then run build/<name> (floppy_diag, k1520dbg, kbd_test…)
 tools/dev.sh test-python         # only the pytest layer (C-ABI + GUI, label "python")
 tools/dev.sh test-level unit     # one test level: unit|debugtools|integration|cli|system|python
+tools/dev.sh win [ctest-args]    # Cross-Bau nach WINDOWS (MinGW-w64) + Tests unter wine
 tools/dev.sh check               # build both dirs + report freshness
 tools/dev.sh rebuild             # rm -rf build build_trace, then build from scratch
 ```
+
+> **Windows-Portierung (2026-08-11).** Der Kern baut mit MSVC und fährt dort die volle
+> Regression (`.github/workflows/windows-ci.yml`). Vier Dinge tragen das:
+> **`core/api/k1520_export.h`** (`K1520_API` vor jeder C-ABI-Funktion — ohne das
+> exportiert eine MSVC-DLL **gar nichts** und `ctypes` findet keine Funktion),
+> der MSVC-Zweig im `CMakeLists.txt` (`/utf-8` — die Quellen sind voller Umlaute —,
+> `/permissive-`, `/bigobj`, statische CRT nur hinter `-DK1520_MSVC_STATIC_CRT=ON`,
+> weil GoogleTest die dynamische erwartet), **`core/util/os_compat.h`** (die vier
+> POSIX-Reste `getpid`/`isatty`/`setenv`/`unsetenv` an EINER Stelle) und
+> **`.gitattributes` mit `* -text`** (Git unter Windows wandelt sonst LF→CRLF auch in
+> Dateien, die es fälschlich für Text hält — ein 0x0D in einer `.hfe` verschiebt eine
+> ganze Spur und sieht wie ein Emulatorfehler aus).
+> `tools/dev.sh win` ist die **lokale Vorprüfung** (MinGW-w64 + wine,
+> `cmake/toolchain-mingw64.cmake`); sie ersetzt den CI-Lauf nicht — MinGW ist GCC und
+> exportiert wie unter Linux per Vorgabe alles. Voller Stand: `doc/ci_pipeline.md` §4.4,
+> `doc/design/13_distribution.md` §6.1. **Offen bleibt die Paketierung** (Inno Setup,
+> `install.ps1`, Windows-Job in `release.yml` — §10 Schritt 4).
 
 **The test system is documented in `tests/README.md`** (run it, add a test, shared helpers),
 `doc/design/12_testing.md` (why it is cut this way) and `tests/fixtures/README.md` (which test
@@ -74,7 +92,7 @@ GitHub-Einstellungen und Fehlersuche: **`doc/ci_pipeline.md`**.
 | `ci.yml` | nur von Hand | `tools/dev.sh test` auf `ubuntu-latest` (inkl. Python-Ebene; `venv/` wird angelegt, damit CMake sie registriert) |
 | `slow-tests.yml` | nur von Hand | `test-format` und/oder `test-matrix` |
 | `release.yml` | von Hand **oder** Tag `v*` | `packaging/build_payload.sh` auf **ubuntu-22.04** (glibc-Baseline, §7 des Verteilungsentwurfs), Rauchtest (Bibliothek laden, `k1520_version`, `--paths`, kein Baurechner-Pfad im Binärabbild), Asset am Release-**Entwurf** |
-| `windows-probe.yml` | nur von Hand | MSVC-Bau der Kernbibliothek — **noch rot**, der Kern ist nicht portiert (§6.1: Export-Makros fehlen, `/utf-8`, statische CRT) |
+| `windows-ci.yml` | nur von Hand | **Windows-Gegenprobe**: MSVC auf `windows-latest`, dieselbe `tools/dev.sh test`-Runde wie Linux (vcvars über `vswhere` → `$GITHUB_ENV`, Generator **Ninja** statt des mehrkonfigurativen VS-Generators), danach `dumpbin /exports` auf beide DLLs |
 
 Anstoßen: `gh workflow run ci.yml --ref main` (oder Actions → Workflow → *Run workflow*).
 

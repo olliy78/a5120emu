@@ -19,8 +19,11 @@ if (NOT BUILD_PYTHON_TESTS)
 endif()
 
 # Das Projekt-venv hat PySide6/PyYAML/pytest; ein System-Python meist nicht.
+# Windows legt es nach venv/Scripts/python.exe statt venv/bin/python3.
 if (EXISTS "${CMAKE_SOURCE_DIR}/venv/bin/python3")
     set(K1520_PYTEST_PYTHON "${CMAKE_SOURCE_DIR}/venv/bin/python3")
+elseif (EXISTS "${CMAKE_SOURCE_DIR}/venv/Scripts/python.exe")
+    set(K1520_PYTEST_PYTHON "${CMAKE_SOURCE_DIR}/venv/Scripts/python.exe")
 else()
     find_package(Python3 COMPONENTS Interpreter QUIET)
     set(K1520_PYTEST_PYTHON "${Python3_EXECUTABLE}")

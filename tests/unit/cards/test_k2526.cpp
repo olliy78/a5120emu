@@ -49,7 +49,7 @@
  */
 
 #include <gtest/gtest.h>
-#include <unistd.h>
+#include "core/util/os_compat.h"
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -1171,7 +1171,7 @@ std::string makeCpa780Image() {
     const DiskFormat fmt = cpa780Format();
     const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
     const std::string tag = std::string(info ? info->name() : "unknown")
-                            + "_" + std::to_string(::getpid());
+                            + "_" + std::to_string(k1520::os::processId());
     auto path = (std::filesystem::temp_directory_path()
                  / ("k2526_chain_cpa780_" + tag + ".img")).string();
     std::ofstream f(path, std::ios::binary | std::ios::trunc);

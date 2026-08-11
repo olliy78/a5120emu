@@ -24,7 +24,7 @@ Entwicklungsrechner mit der Zeit im Hintergrund stehen.
 | `ci.yml` | **Bauen und Regression** | nur von Hand | ~8–12 min (mit warmem ccache ~4) |
 | `slow-tests.yml` | **Langsame Tests (Format)** | nur von Hand | ~20–40 min |
 | `release.yml` | **Release-Paket** | von Hand **oder** Push eines Tags `v*` | ~6–10 min |
-| `windows-probe.yml` | **Windows-Sonde (experimentell)** | nur von Hand | ~5 min, **schlägt derzeit fehl** |
+| `windows-ci.yml` | **Windows — Bauen und Regression** | nur von Hand | ~15–25 min |
 
 Alle Testläufe rufen **`tools/dev.sh`** auf, nie `cmake`/`ctest` direkt. Dort stehen
 Build-Typ, `LOG_LEVEL` und die ausgeschlossenen Label; eine Pipeline, die daran
@@ -221,26 +221,50 @@ Die Version im Dateinamen und in `VERSION` kommt aus `git describe --tags` — d
 checkt der Job die volle Historie aus (`fetch-depth: 0`, dabei `filter: blob:none`,
 weil die ~500 MB Diskettenabbilder in der Historie hier niemand braucht).
 
-### 4.4 Windows-Sonde (`windows-probe.yml`)
+### 4.4 Windows — Bauen und Regression (`windows-ci.yml`)
 
-**Schlägt derzeit fehl, und das ist der Zweck.** Der Kern ist noch nicht
-MSVC-tauglich (`doc/design/13_distribution.md` §6.1):
+Die Gegenprobe zu [§4.1](#41-bauen-und-regression-ciyml) auf der anderen Plattform:
+**derselbe Aufruf** `tools/dev.sh test`, nur mit MSVC statt GCC. Löste die frühere
+„Windows-Sonde" ab, die nur die Kernbibliothek baute — seit die Export-Makros
+(`core/api/k1520_export.h`) und der MSVC-Zweig im `CMakeLists.txt` da sind, ist die
+ganze Regression erreichbar.
 
-- `core/api/k1520_api.h` trägt nur `extern "C"`, keine Export-Makros — eine MSVC-DLL
-  exportiert damit **gar nichts**, und `ctypes` findet keine einzige Funktion. Die
-  Sonde setzt übergangsweise `WINDOWS_EXPORT_ALL_SYMBOLS`.
-- `CMakeLists.txt` ist auf GCC zugeschnitten; MSVC braucht `/utf-8` (die Quellen
-  enthalten deutsche Umlaute) und die statische CRT (kein VC-Redist ohne
-  Administratorrechte).
+Der Job räumt drei Windows-Eigenheiten ab, die man kennen sollte, wenn man ihn ändert:
 
-Der Job baut deshalb **nur die Kernbibliothek** und prüft mit `dumpbin /exports`, ob
-`k1520_version` überhaupt exportiert wird. Er ist die Messlatte für die Portierung:
-sobald er grün ist, wird daraus ein zweiter Job in `release.yml` (Paket + Inno Setup,
-§5.1 des Entwurfs).
+1. **MSVC lebt nicht im `PATH`.** `vcvars64.bat` setzt `PATH`/`INCLUDE`/`LIB` — aber
+   nur für die eine Shell, die es aufruft. Der erste Schritt findet es über `vswhere`
+   und reicht genau diese Variablen über `$GITHUB_ENV` an alle folgenden Schritte
+   weiter. Wer stattdessen eine fremde Action einsetzt, holt sich eine Abhängigkeit
+   ins Haus, die [§2.1](#21-actions-einschalten) gerade vermeiden will.
+2. **Generator = Ninja.** Der Vorgabe-Generator „Visual Studio 17 2022" ist
+   *mehrkonfigurativ*: er legt alles nach `build/Release/` statt `build/`, und `ctest`
+   verlangt dann ein `-C Release`. Damit stimmte kein eingespielter Pfad mehr
+   (`build/k1520_test_k2526`, `build/k1520dbg` …). `tools/dev.sh` erzwingt unter
+   MSYS/Git-Bash deshalb Ninja — das Layout bleibt identisch zu Linux.
+3. **Das venv liegt unter `venv/Scripts/`,** nicht `venv/bin/`;
+   `tests/python/CMakeLists.txt` kennt beide Orte.
+
+Danach prüft der Job mit `dumpbin /exports`, dass **beide** DLLs ihre Funktionen auch
+wirklich ausführen (≥ 30 Symbole je DLL). Ohne `K1520_API` exportiert eine MSVC-DLL
+gar nichts, und `ctypes` findet auf der Python-Seite keine einzige Funktion — ein
+Fehler, der sonst erst beim ersten Aufruf auffällt.
 
 ```sh
-gh workflow run windows-probe.yml --ref main
+gh workflow run windows-ci.yml --ref windows_port_cicd
+gh run watch
 ```
+
+Der Auswahlpunkt *Was laufen soll* reicht `build`, `test`, `test-level unit` oder
+`test-python` an `tools/dev.sh` durch — nützlich, um beim Einkreisen eines Fehlers
+nicht jedes Mal die volle Runde zu zahlen.
+
+> **Vor dem CI-Lauf lokal gegenprüfen:** `tools/dev.sh win` übersetzt hier auf dem
+> Linux-Rechner mit **MinGW-w64** nach Windows und fährt die Tests unter `wine`
+> (`cmake/toolchain-mingw64.cmake`, braucht `sudo apt install g++-mingw-w64-x86-64
+> wine`). Das findet in Sekunden, was plattformabhängig ist — POSIX-Aufrufe,
+> fehlende `_WIN32`-Zweige, Pfadtrennzeichen. Es **ersetzt den CI-Lauf nicht**:
+> MinGW ist GCC und exportiert wie unter Linux per Vorgabe alles, kennt MSVCs
+> Strenge nicht und baut weder mit `/utf-8` noch mit statischer CRT.
 
 ---
 

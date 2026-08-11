@@ -27,6 +27,8 @@ extern "C" {
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "core/api/k1520_export.h"   ///< `K1520_API` — Ausfuhrkennzeichnung (Windows!)
+
 /// @brief Opakes Handle einer geoeffneten Diskette.
 typedef void* K1520Disk;
 
@@ -47,100 +49,100 @@ typedef enum {
  *                   bewussten Schritt @ref k1520d_set_read_only(h, false).
  * @return Handle oder NULL — Grund dann ueber @ref k1520d_last_open_error.
  */
-K1520Disk k1520d_open(const char* path, const char* fs_name, bool read_only);
+K1520_API K1520Disk k1520d_open(const char* path, const char* fs_name, bool read_only);
 
 /**
  * @brief Neue, leere Diskette anlegen (formatieren + Dateisystem initialisieren).
  * @param fs_name  Pflicht — hier gibt es nichts zu erkennen
  * @param label    Datentraegername (UDOS); NULL/"" = Vorgabe
  */
-K1520Disk k1520d_create(const char* path, const char* fs_name, const char* label);
+K1520_API K1520Disk k1520d_create(const char* path, const char* fs_name, const char* label);
 
 /// @brief Aenderungen in die gebundene Datei schreiben (legt beim ersten Mal `<name>~` an).
-bool k1520d_flush(K1520Disk h);
+K1520_API bool k1520d_flush(K1520Disk h);
 /// @brief Unter neuem Namen/Container speichern und **umbinden** (auch bei Schreibschutz).
-bool k1520d_save_as(K1520Disk h, const char* path);
+K1520_API bool k1520d_save_as(K1520Disk h, const char* path);
 
 /// @brief Kopie in einen anderen Container schreiben, **ohne** umzubinden
 ///        (Archivierung, Formatumwandlung).  Auch bei Schreibschutz erlaubt.
-bool k1520d_export_image(K1520Disk h, const char* path);
+K1520_API bool k1520d_export_image(K1520Disk h, const char* path);
 
 /// @brief Schreibschutz abfragen bzw. setzen (Vorgabe beim Oeffnen: geschuetzt).
-bool k1520d_read_only(K1520Disk h);
-void k1520d_set_read_only(K1520Disk h, bool ro);
+K1520_API bool k1520d_read_only(K1520Disk h);
+K1520_API void k1520d_set_read_only(K1520Disk h, bool ro);
 /// @brief Sicherungskopie beim ersten Schreiben an-/abschalten (Vorgabe: an).
-void k1520d_set_backup(K1520Disk h, bool on);
+K1520_API void k1520d_set_backup(K1520Disk h, bool on);
 /// @brief Handle schliessen (schreibt NICHT selbsttaetig — vorher @ref k1520d_flush).
-void k1520d_close(K1520Disk h);
+K1520_API void k1520d_close(K1520Disk h);
 
 /// @brief Grund des letzten fehlgeschlagenen Aufrufs an diesem Handle.
-const char* k1520d_last_error(K1520Disk h);
+K1520_API const char* k1520d_last_error(K1520Disk h);
 /// @brief Grund, wenn @ref k1520d_open / @ref k1520d_create NULL geliefert hat.
-const char* k1520d_last_open_error(void);
+K1520_API const char* k1520d_last_open_error(void);
 
 /* ─── Katalog und Erkennung ───────────────────────────────────────────────── */
 
-int         k1520d_fs_count(void);
-const char* k1520d_fs_name(int i);
-const char* k1520d_fs_description(const char* name);
+K1520_API int         k1520d_fs_count(void);
+K1520_API const char* k1520d_fs_name(int i);
+K1520_API const char* k1520d_fs_description(const char* name);
 /// @brief Geometrie, auf der dieses Dateisystem liegt.
-const char* k1520d_fs_format(const char* name);
+K1520_API const char* k1520d_fs_format(const char* name);
 /// @brief "cpm" | "udos"
-const char* k1520d_fs_type(const char* name);
+K1520_API const char* k1520d_fs_type(const char* name);
 /// @brief Geladene Katalogdateien (mehrzeilig) + Beanstandungen.
-const char* k1520d_catalog_report(void);
+K1520_API const char* k1520d_catalog_report(void);
 
 /// @brief Erkanntes Dateisystem einer Datei ohne sie offen zu halten; "" = nicht erkannt.
-const char* k1520d_detect(const char* path);
+K1520_API const char* k1520d_detect(const char* path);
 
-const char* k1520d_detected_format(K1520Disk h);
-const char* k1520d_detected_fs(K1520Disk h);
+K1520_API const char* k1520d_detected_format(K1520Disk h);
+K1520_API const char* k1520d_detected_fs(K1520Disk h);
 /// @brief false = mehrere gleich gute Kandidaten (Alternativen in @ref k1520d_detection_alternatives).
-bool        k1520d_detection_unambiguous(K1520Disk h);
-const char* k1520d_detection_alternatives(K1520Disk h);
+K1520_API bool        k1520d_detection_unambiguous(K1520Disk h);
+K1520_API const char* k1520d_detection_alternatives(K1520Disk h);
 /// @brief Auffaelligkeiten des Mediums (Altbestand, CRC-Fehler, Schaeden); "" = ohne Befund.
-const char* k1520d_detection_remarks(K1520Disk h);
+K1520_API const char* k1520d_detection_remarks(K1520Disk h);
 
 /* ─── Seiten (UDOS) ───────────────────────────────────────────────────────────
  * Es wird NICHT umgeschaltet — alle Seiten sind gleichzeitig sichtbar, und jeder
  * Verzeichniseintrag nennt seine Seite (@ref k1520d_entry_volume).            */
 
-int         k1520d_volume_count(K1520Disk h);
+K1520_API int         k1520d_volume_count(K1520Disk h);
 /// @brief "" bei einem Dateisystem, sonst "Side0"/"Side1" — auch der Ordnername.
-const char* k1520d_volume_dir(K1520Disk h, int v);
-const char* k1520d_volume_label(K1520Disk h, int v);
-uint64_t    k1520d_volume_total(K1520Disk h, int v);
-uint64_t    k1520d_volume_free(K1520Disk h, int v);
-uint64_t    k1520d_volume_used(K1520Disk h, int v);
+K1520_API const char* k1520d_volume_dir(K1520Disk h, int v);
+K1520_API const char* k1520d_volume_label(K1520Disk h, int v);
+K1520_API uint64_t    k1520d_volume_total(K1520Disk h, int v);
+K1520_API uint64_t    k1520d_volume_free(K1520Disk h, int v);
+K1520_API uint64_t    k1520d_volume_used(K1520Disk h, int v);
 
 /* ─── Verzeichnis ─────────────────────────────────────────────────────────────
  * IMMER frisch aus dem Medium gelesen — es gibt keinen zwischengespeicherten
  * Verzeichnisstand (doc/design/13_k1520disktool.md §9.3).                     */
 
 /// @brief Verzeichnis aller Seiten einlesen; liefert die Anzahl der Eintraege.
-int         k1520d_list(K1520Disk h);
-int         k1520d_entry_volume(K1520Disk h, int i);
-const char* k1520d_entry_name(K1520Disk h, int i);
-int         k1520d_entry_user(K1520Disk h, int i);
-uint64_t    k1520d_entry_size(K1520Disk h, int i);
-const char* k1520d_entry_type(K1520Disk h, int i);
-const char* k1520d_entry_attrs(K1520Disk h, int i);
-const char* k1520d_entry_date(K1520Disk h, int i);
-bool        k1520d_entry_hidden(K1520Disk h, int i);
-bool        k1520d_entry_damaged(K1520Disk h, int i);
+K1520_API int         k1520d_list(K1520Disk h);
+K1520_API int         k1520d_entry_volume(K1520Disk h, int i);
+K1520_API const char* k1520d_entry_name(K1520Disk h, int i);
+K1520_API int         k1520d_entry_user(K1520Disk h, int i);
+K1520_API uint64_t    k1520d_entry_size(K1520Disk h, int i);
+K1520_API const char* k1520d_entry_type(K1520Disk h, int i);
+K1520_API const char* k1520d_entry_attrs(K1520Disk h, int i);
+K1520_API const char* k1520d_entry_date(K1520Disk h, int i);
+K1520_API bool        k1520d_entry_hidden(K1520Disk h, int i);
+K1520_API bool        k1520d_entry_damaged(K1520Disk h, int i);
 
 /* ─── Uebertragung ───────────────────────────────────────────────────────────
  * `name` darf das Seitenpraefix tragen: "Side1/HELP.DAT.00".                  */
 
-bool k1520d_extract(K1520Disk h, const char* name, const char* dest, K1520DMode mode);
-bool k1520d_insert (K1520Disk h, const char* src, const char* name, K1520DMode mode,
-                    bool overwrite);
-bool k1520d_erase  (K1520Disk h, const char* name);
+K1520_API bool k1520d_extract(K1520Disk h, const char* name, const char* dest, K1520DMode mode);
+K1520_API bool k1520d_insert (K1520Disk h, const char* src, const char* name, K1520DMode mode,
+                              bool overwrite);
+K1520_API bool k1520d_erase  (K1520Disk h, const char* name);
 
 /**
  * @brief Alles extrahieren.  Bei mehreren Seiten entstehen `Side0/`, `Side1/` …
  */
-bool k1520d_extract_all(K1520Disk h, const char* dest_dir, K1520DMode mode);
+K1520_API bool k1520d_extract_all(K1520Disk h, const char* dest_dir, K1520DMode mode);
 
 /**
  * @brief Einen ganzen Ordner einfuegen — transaktional (§9.2).
@@ -149,18 +151,18 @@ bool k1520d_extract_all(K1520Disk h, const char* dest_dir, K1520DMode mode);
  * Passt der Inhalt nicht, wird **nichts** geschrieben; ein Fehler mittendrin nimmt
  * die ganze Aenderung zurueck.
  */
-bool k1520d_insert_all(K1520Disk h, const char* src_dir, K1520DMode mode, bool overwrite);
+K1520_API bool k1520d_insert_all(K1520Disk h, const char* src_dir, K1520DMode mode, bool overwrite);
 
 /// @brief Wuerde @p src_dir passen?  "passt" oder der Grund; schreibt nichts.
-const char* k1520d_check_fit(K1520Disk h, const char* src_dir);
+K1520_API const char* k1520d_check_fit(K1520Disk h, const char* src_dir);
 
 /* ─── Zustand ─────────────────────────────────────────────────────────────── */
 
 /// @brief Ungespeicherte Aenderungen im Speicher?
-bool        k1520d_dirty(K1520Disk h);
+K1520_API bool        k1520d_dirty(K1520Disk h);
 /// @brief Mehrzeiliger Pruefbericht (Datentraeger, Belegung, Auffaelligkeiten).
-const char* k1520d_check(K1520Disk h);
-const char* k1520d_version(void);
+K1520_API const char* k1520d_check(K1520Disk h);
+K1520_API const char* k1520d_version(void);
 
 #ifdef __cplusplus
 }

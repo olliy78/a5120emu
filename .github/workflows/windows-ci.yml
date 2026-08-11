@@ -1,0 +1,168 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Windows — Bauen und Regression (MSVC)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Die Gegenprobe zu ci.yml auf der anderen Plattform: DERSELBE Aufruf
+# (`tools/dev.sh test`), nur mit MSVC statt GCC.  Löste die frühere
+# „Windows-Sonde" ab, die nur die Kernbibliothek baute — seit die Export-Makros
+# (core/api/k1520_export.h) und der MSVC-Zweig im CMakeLists da sind, ist die
+# ganze Regression erreichbar.
+#
+# Drei Windows-Eigenheiten, die dieser Workflow abräumt:
+#
+#  1. MSVC lebt nicht im PATH.  `vcvars64.bat` setzt PATH/INCLUDE/LIB — aber nur
+#     für die eine Shell, die es aufruft.  Der erste Schritt findet es über
+#     `vswhere` und reicht genau die relevanten Variablen über $GITHUB_ENV an
+#     alle FOLGENDEN Schritte weiter.
+#  2. Generator = Ninja.  Der Vorgabe-Generator „Visual Studio 17 2022" ist
+#     mehrkonfigurativ und legt alles nach build/Release/ — dann stimmt kein
+#     eingespielter Pfad mehr.  `tools/dev.sh` erzwingt unter MSYS deshalb Ninja.
+#  3. Die Python-Ebene erwartet das venv unter venv/Scripts/ (nicht venv/bin/);
+#     tests/python/CMakeLists.txt kennt beide Orte.
+#
+# Anstoßen:  gh workflow run windows-ci.yml --ref <branch>
+#            Actions → „Windows — Bauen und Regression" → Run workflow
+
+name: Windows — Bauen und Regression
+
+on:
+  workflow_dispatch:
+    inputs:
+      testebene:
+        description: 'Was laufen soll'
+        type: choice
+        default: 'test'
+        options:
+          - test          # volle Regression (ohne die langsamen Format-Label)
+          - build         # nur bauen
+          - test-level unit
+          - test-python
+
+concurrency:
+  group: windows-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  msvc:
+    name: Windows x64 — MSVC
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── 1. MSVC-Umgebung in alle folgenden Schritte übernehmen ──────────────
+      # Bewusst nur die Variablen, die der Übersetzer braucht: ein vollständiger
+      # `set`-Abzug nach $GITHUB_ENV schriebe auch die GITHUB_*-Variablen zurück
+      # und stolperte über mehrzeilige Werte.
+      - name: MSVC-Umgebung (vcvars64) übernehmen
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * `
+                  -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+                  -property installationPath
+          if (-not $vs) { throw "Keine Visual-Studio-Installation mit C++-Werkzeugen gefunden" }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          Write-Host "vcvars: $vcvars"
+          $wanted = @('PATH','INCLUDE','LIB','LIBPATH','VSINSTALLDIR','VCINSTALLDIR',
+                      'VCToolsInstallDir','WindowsSdkDir','WindowsSDKVersion','UCRTVersion')
+          cmd /c "`"$vcvars`" >nul 2>&1 && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              $name = $matches[1]; $value = $matches[2]
+              if ($wanted -contains $name) { "$name=$value" | Out-File $env:GITHUB_ENV -Append -Encoding utf8 }
+            }
+          }
+
+      - name: Ninja bereitstellen
+        shell: pwsh
+        run: |
+          if (Get-Command ninja -ErrorAction SilentlyContinue) {
+            Write-Host "ninja vorhanden: $((Get-Command ninja).Source)"
+          } else {
+            choco install ninja -y --no-progress
+          }
+
+      - name: Werkzeuge zeigen
+        shell: bash
+        run: |
+          cl 2>&1 | head -2 || true
+          cmake --version | head -1
+          ninja --version
+          bash --version | head -1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Python-Testebene vorbereiten
+        # tests/python/CMakeLists.txt nimmt <repo>/venv/Scripts/python.exe und
+        # registriert die Ebene nur, wenn pytest+PySide6+PyYAML dort liegen.
+        shell: bash
+        run: |
+          python -m venv venv
+          venv/Scripts/python.exe -m pip install --upgrade pip
+          venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+
+      # GoogleTest wird beim ersten Konfigurieren geladen (FetchContent) — den
+      # entpackten Baum aufheben, das spart je Lauf einen Download.
+      - name: GoogleTest-Zwischenstand
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: gtest-windows-v1.14.0
+          restore-keys: gtest-windows-
+
+      - name: Bauen und Regression (tools/dev.sh ${{ inputs.testebene }})
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: tools/dev.sh ${{ inputs.testebene }}
+
+      # ── Die Kernprüfung der Portierung: exportiert die DLL überhaupt etwas? ──
+      # Ohne K1520_API exportiert eine MSVC-DLL GAR NICHTS, und ctypes findet
+      # keine einzige Funktion (doc/design/13_distribution.md §6.1).  Der Test
+      # py_c_api prüft dasselbe von der Python-Seite; diese Stufe sagt es
+      # deutlicher, wenn es schiefgeht.
+      - name: Exportierte Symbole prüfen
+        if: always()
+        shell: pwsh
+        run: |
+          # dumpbin liegt dank vcvars (erster Schritt) im PATH.
+          foreach ($name in 'k1520core.dll','k1520disk.dll') {
+            $dll = Get-ChildItem -Recurse -Filter $name build -ErrorAction SilentlyContinue |
+                   Select-Object -First 1
+            if (-not $dll) { throw "$name wurde nicht gebaut" }
+            $exports = & dumpbin /exports $dll.FullName
+            $anzahl = ($exports | Select-String 'k1520d?_[a-z0-9_]+').Count
+            Write-Host "$name : $anzahl exportierte k1520-Funktionen"
+            if ($anzahl -lt 30) {
+              throw "$name exportiert nur $anzahl Funktionen — Export-Makros fehlen (§6.1)"
+            }
+          }
+
+      - name: DLLs als Artefakt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k1520-windows-x64
+          path: |
+            build/k1520core.dll
+            build/k1520disk.dll
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Protokolle bei Fehlschlag sichern
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-ci-logs
+          path: |
+            build/Testing/Temporary/LastTest.log
+            logs/
+          if-no-files-found: ignore
+          retention-days: 7
