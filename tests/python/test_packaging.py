@@ -44,6 +44,16 @@ def _slim():
     return modul
 
 
+#: ``packaging/install.sh`` ist der **Unix**-Installer.  Unter Windows läuft er
+#: zwar in der Git-Bash, bekommt aber Windows-Pfade herein, die MSYS als
+#: ``/c/Users/…`` zurückgibt und relativ zum Arbeitsverzeichnis auflöst — das
+#: Ergebnis ist ``D:/a/repo/C:\Users\…`` und prüft nichts.  Windows bekommt
+#: sein eigenes ``install.ps1`` (Entwurf §10 Schritt 4); bis dahin laufen hier
+#: nur die Fälle, die die Skripte *lesen* statt sie auszuführen.
+nur_unix_installer = pytest.mark.skipif(
+    sys.platform.startswith("win"),
+    reason="Unix-Installer — Windows bekommt install.ps1 (Entwurf §10 Schritt 4)")
+
 # ─── Skripte ─────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("script", SCRIPTS)
@@ -111,10 +121,7 @@ def test_desktop_eintrag_ist_gueltig():
         assert feld in text, f"{feld} fehlt im Startmenü-Eintrag"
 
 
-@pytest.mark.skipif(
-    sys.platform.startswith("win"),
-    reason="Git-Bash löst ~ zu einem MSYS-Pfad (/c/Users/…) auf — nicht mit einem "
-           "Windows-Pfad vergleichbar.  Windows bekommt install.ps1 (Entwurf §10 Schritt 4).")
+@nur_unix_installer
 @pytest.mark.parametrize("eingabe,erwartet", [
     ("~/Emulatoren/A5120", "{home}/Emulatoren/A5120"),
     ("~", "{home}"),
@@ -150,6 +157,7 @@ def test_ersetze_root_vertraegt_jeden_pfad(tmp_path, wurzel):
 
 
 @pytest.mark.parametrize("aufbau", ["user-dirs.dirs", "nur ~/Documents", "gar nichts"])
+@nur_unix_installer
 def test_dokumentenordner_shell_und_python_stimmen_ueberein(tmp_path, aufbau):
     """`--purge` muss dort aufräumen, wo der Emulator schreibt.
 
@@ -207,6 +215,7 @@ def _install_sh(prefix, heim, *extra):
                           timeout=120)
 
 
+@nur_unix_installer
 def test_installer_verweigert_das_heimatverzeichnis(tmp_path):
     heim = tmp_path / "heim"
     (heim / "Dokumente").mkdir(parents=True)
@@ -216,6 +225,7 @@ def test_installer_verweigert_das_heimatverzeichnis(tmp_path):
     assert (heim / "Dokumente").exists()
 
 
+@nur_unix_installer
 def test_installer_verweigert_fremdes_verzeichnis(tmp_path):
     heim = tmp_path / "heim"
     heim.mkdir()
@@ -241,6 +251,7 @@ def _fake_installation(wurzel: Path, inventar=("bin", "app", "share", "venv")) -
     return wurzel
 
 
+@nur_unix_installer
 def test_deinstallieren_laesst_eigene_dateien_stehen(tmp_path):
     """Entfernt wird das Inventar des Ausweises — nicht das Verzeichnis.
 
@@ -266,6 +277,7 @@ def test_deinstallieren_laesst_eigene_dateien_stehen(tmp_path):
     assert "meine_notizen.txt" in out.stdout, "der Anwender erfährt nicht, was übrig ist"
 
 
+@nur_unix_installer
 def test_deinstallieren_raeumt_leere_wurzel_ganz_weg(tmp_path):
     """Liegt nichts Fremdes darin, verschwindet auch das Verzeichnis selbst."""
     heim = tmp_path / "heim"
@@ -282,6 +294,7 @@ def test_deinstallieren_raeumt_leere_wurzel_ganz_weg(tmp_path):
     assert not wurzel.exists(), out.stdout
 
 
+@nur_unix_installer
 def test_deinstallieren_folgt_keinem_pfad_im_ausweis(tmp_path):
     """Ein Eintrag ist ein NAME. „../…" darf nicht aus der Installation herauszeigen."""
     heim = tmp_path / "heim"
@@ -299,6 +312,7 @@ def test_deinstallieren_folgt_keinem_pfad_im_ausweis(tmp_path):
     assert "fragwürdiger Eintrag" in out.stdout + out.stderr
 
 
+@nur_unix_installer
 def test_deinstallieren_findet_die_installation_ueber_den_starter(tmp_path):
     """Ohne --prefix verrät der Starter in ~/.local/bin die Wurzel."""
     heim = tmp_path / "heim"
@@ -317,6 +331,7 @@ def test_deinstallieren_findet_die_installation_ueber_den_starter(tmp_path):
     assert not wurzel.exists()
 
 
+@nur_unix_installer
 def test_deinstallieren_loescht_nur_eine_installation(tmp_path):
     """Ohne Ausweis wird nichts gelöscht — auch nicht, wenn der Starter dorthin zeigt."""
     heim = tmp_path / "heim"

@@ -65,6 +65,13 @@ import sys
 import tempfile
 
 
+#: Die Werkzeuge geben UTF-8 aus (deutsche Meldungen, „—", „→").  `text=True`
+#: allein dekodiert mit der Gebietsschema-Kodierung — unter Windows cp1252, und
+#: das erste Byte 0x90 sprengt den Lesethread mit einem UnicodeDecodeError.
+#: Deshalb wird die Kodierung überall ausdrücklich mitgegeben.
+TEXT = {"encoding": "utf-8", "errors": "replace"}
+
+
 class CaseError(Exception):
     """Fehler in der Falldatei selbst (nicht im geprüften Werkzeug)."""
 
@@ -202,12 +209,12 @@ def main():
 
         for extra in case["setup_run"]:
             subprocess.run([exe] + argv(extra),
-                           input=stdin, text=True, cwd=tmpdir,
+                           input=stdin, cwd=tmpdir, **TEXT,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                            timeout=case["timeout"])
 
         proc = subprocess.run([exe] + argv(case["run"]),
-                              input=stdin, text=True, cwd=tmpdir,
+                              input=stdin, cwd=tmpdir, **TEXT,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               timeout=case["timeout"])
         output = proc.stdout or ""

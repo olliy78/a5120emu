@@ -89,7 +89,16 @@ bool Logger::setOutputFile(const std::string& path) {
         return true;
     }
 
-    FILE* f = std::fopen(path.c_str(), "a");
+    // „/dev/null" ist die eingespielte Schreibweise für „wegwerfen" (die
+    // Werkzeugaufrufe und die CLI-Testfälle stehen voll davon).  Unter Windows
+    // heißt dieses Gerät NUL; ohne die Umsetzung legte fopen dort eine reale
+    // Datei C:\dev\null an — oder scheiterte, weil es C:\dev nicht gibt.
+    const char* ziel = path.c_str();
+#if defined(_WIN32)
+    if (path == "/dev/null") ziel = "NUL";
+#endif
+
+    FILE* f = std::fopen(ziel, "a");
     if (!f) {
         return false;
     }
