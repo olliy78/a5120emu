@@ -125,6 +125,20 @@ jobs:
           key: gtest-windows-v1.14.0
           restore-keys: gtest-windows-
 
+      # ⚠️ NUR FÜR DIE PORTIERUNGSPHASE — zusammen mit dem push-Auslöser entfernen.
+      # Ninja hält beim ERSTEN Fehler an; solange noch Übersetzungsfehler zu
+      # erwarten sind, kostet das je Fehler einen ganzen CI-Lauf.  `-k 0` baut
+      # trotz Fehlern weiter und legt ALLE auf einmal offen.  Konfiguration und
+      # Ausgabeverzeichnis sind dieselben wie bei dev.sh — der folgende Schritt
+      # baut also inkrementell weiter und wiederholt nichts.
+      - name: Portierungsdurchlauf — alle Übersetzungsfehler sammeln
+        shell: bash
+        continue-on-error: true
+        run: |
+          cmake -B build -G Ninja -DLOG_LEVEL=3 -DCMAKE_BUILD_TYPE=Release >/dev/null
+          cmake --build build -j -- -k 0 2>&1 | tee bau.log | grep -E 'error [A-Z]?[0-9]+|FAILED:' | head -120
+          echo "── Fehler insgesamt: $(grep -cE 'error [A-Z]?[0-9]+' bau.log) ──"
+
       # Bei einem Push gibt es keine Eingaben — dann die volle Runde.
       - name: Bauen und Regression (tools/dev.sh ${{ inputs.testebene || 'test' }})
         shell: bash

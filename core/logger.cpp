@@ -8,6 +8,7 @@
  */
 
 #include "logger.h"
+#include <chrono>
 #include <ctime>
 #include <cstdio>
 #include <cstring>
@@ -52,14 +53,18 @@ void Logger::log(Level level, const char* category,
 
     FILE* out = output_file_ ? output_file_ : stderr;
 
-    // Format timestamp with milliseconds
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    std::tm* local_time = std::localtime(&ts.tv_sec);
+    // Format timestamp with milliseconds.  std::chrono statt clock_gettime():
+    // letzteres ist POSIX und MSVC kennt weder die Funktion noch CLOCK_REALTIME.
+    const auto now     = std::chrono::system_clock::now();
+    const auto now_t   = std::chrono::system_clock::to_time_t(now);
+    const auto now_ms  = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             now.time_since_epoch()) % 1000;
+    std::tm* local_time = std::localtime(&now_t);
     char time_buffer[32];
     std::strftime(time_buffer, sizeof(time_buffer), "%H:%M:%S", local_time);
     char full_time[48];
-    std::snprintf(full_time, sizeof(full_time), "%s.%03ld", time_buffer, ts.tv_nsec / 1000000L);
+    std::snprintf(full_time, sizeof(full_time), "%s.%03d", time_buffer,
+                  static_cast<int>(now_ms.count()));
 
     // Print header: time | level | category | file:line |
     std::fprintf(out, "[%s] %s [%-8s] %s:%d | ",
