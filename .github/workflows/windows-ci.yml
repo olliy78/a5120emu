@@ -26,6 +26,14 @@
 name: Windows — Bauen und Regression
 
 on:
+  # ⚠️ NUR FÜR DIE PORTIERUNGSPHASE — vor dem Merge nach main ENTFERNEN.
+  # Grund: `workflow_dispatch` zeigt GitHub nur für Workflows an, die auf dem
+  # STANDARD-Branch liegen (doc/ci_pipeline.md §2.3); ein Workflow, den es auf
+  # main noch nicht gibt, lässt sich also gar nicht von Hand anstoßen.  Ein auf
+  # DIESEN EINEN Branch beschränkter Push-Auslöser ist der einzige Weg, ihn
+  # einzufahren.  Danach gilt wieder die Hausregel „nichts läuft von selbst".
+  push:
+    branches: [windows_port_cicd]
   workflow_dispatch:
     inputs:
       testebene:
@@ -117,11 +125,12 @@ jobs:
           key: gtest-windows-v1.14.0
           restore-keys: gtest-windows-
 
-      - name: Bauen und Regression (tools/dev.sh ${{ inputs.testebene }})
+      # Bei einem Push gibt es keine Eingaben — dann die volle Runde.
+      - name: Bauen und Regression (tools/dev.sh ${{ inputs.testebene || 'test' }})
         shell: bash
         env:
           QT_QPA_PLATFORM: offscreen
-        run: tools/dev.sh ${{ inputs.testebene }}
+        run: tools/dev.sh ${{ inputs.testebene || 'test' }}
 
       # ── Die Kernprüfung der Portierung: exportiert die DLL überhaupt etwas? ──
       # Ohne K1520_API exportiert eine MSVC-DLL GAR NICHTS, und ctypes findet
