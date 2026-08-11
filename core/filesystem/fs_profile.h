@@ -4,12 +4,16 @@
  *
  * `formats:` in `data/formats.yaml` beschreibt **Physik** (welche Spur traegt wie viele
  * Sektoren welcher Groesse in welchem Verfahren).  Ob darauf ein CP/M- oder ein
- * UDOS-Dateisystem liegt und wo es beginnt, ist eine **andere** Frage — und sie hat je
- * Geometrie mehrere Antworten: dieselbe 16×256-Diskette traegt als `cpa640` ein
- * Dateisystem ab Zylinder 0 und als SCPX-Variante eines ab Zylinder 2.
+ * UDOS-Dateisystem liegt und wo es beginnt, ist eine **andere** Frage — dieselbe
+ * 26×128-Geometrie traegt einmal ein UDOS- und einmal ein CP/M-Dateisystem.
  *
  * Deshalb eine zweite Katalogsektion `filesystems:`, deren Eintraege per `format:` eine
  * Geometrie referenzieren (@ref FsCatalog).  Der Emulator liest sie nicht.
+ *
+ * Sie ist **kurz und soll es bleiben**: fuer CP/A-Disketten rechnet @ref CpaDpbRule den
+ * DPB aus der Geometrie aus, wie es das BIOS beim LOGIN tut.  Ein benannter Eintrag
+ * lohnt nur, wo diese Regel nicht gilt (UDOS, Fremdsysteme) oder wo ein Name gebraucht
+ * wird — `create --fs NAME` kann nur aus einem benannten Profil eine Diskette anlegen.
  *
  * @see doc/design/13_k1520disktool.md §6
  * @author Olaf Krieger

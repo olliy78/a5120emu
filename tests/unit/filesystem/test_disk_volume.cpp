@@ -711,3 +711,64 @@ TEST(DiskVolume, SpeichernUnterBindetUmUndBleibtSchreibbar) {
     fs::remove(ziel, ec);
     fs::remove(ziel + "~", ec);
 }
+
+/**
+ * @test Eine Geometrie, die in KEINEM Katalogeintrag steht, wird trotzdem gelesen.
+ * @par Kriterium  Das Abbild oeffnet, `detection().format` ist `(gemessen)`, die
+ *                 Anzeige sagt warum — und der Schreibschutz ist **unaufhebbar**.
+ * @par Warum      Ohne das musste man erst einen `formats:`-Eintrag schreiben, nur um
+ *                 eine fremde Diskette anzusehen.  Geschrieben wird trotzdem nicht: die
+ *                 Geometrie ist gemessen, nicht belegt, und fremde Abbilder sind meist
+ *                 Einzelstuecke (doc/design/13_k1520disktool.md §12.4).
+ */
+TEST(DiskVolume, UnbekannteGeometrieWirdVermessenUndSchreibgeschuetztGeoeffnet) {
+    const std::string pfad = (fs::temp_directory_path() / "k1520_dv_fremd.hfe").string();
+
+    // 7×512 auf 40 Spuren einseitig — bewusst in keinem Katalogeintrag.
+    DiskFormat fremd;
+    fremd.name = "nicht_im_katalog";
+    fremd.tracks.push_back(TrackFormat{0, 39, 0, 0, 7, 512, Encoding::MFM, 1});
+    ASSERT_EQ(formate().find("nicht_im_katalog"), nullptr);
+    ASSERT_NE(DiskImage::create(pfad, fremd, /*write_protect=*/false), nullptr);
+
+    std::string err;
+    auto dv = oeffne(pfad, "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    EXPECT_EQ(dv->detection().format, "(gemessen)");
+    EXPECT_EQ(dv->detection().filesystem, "cpa_auto");
+    EXPECT_NE(dv->detection().remarks.find("gemessene Geometrie"), std::string::npos)
+        << dv->detection().remarks;
+
+    // Der Schreibschutz laesst sich NICHT aufheben.
+    EXPECT_TRUE(dv->readOnly());
+    EXPECT_TRUE(dv->readOnlyForced());
+    dv->setReadOnly(false);
+    EXPECT_TRUE(dv->readOnly()) << "eine geratene Geometrie darf nie beschreibbar werden";
+    EXPECT_NE(dv->lastError().find("gemessen"), std::string::npos) << dv->lastError();
+
+    std::error_code ec;
+    fs::remove(pfad, ec);
+}
+
+/**
+ * @test Loecher, die kein Doppelschritt sind, werden weiter abgewiesen.
+ * @par Kriterium  Fehlt MITTENDRIN ein einzelner Zylinder, kommt die Diagnose statt
+ *                 eines locherigen Sektorraums.
+ */
+TEST(DiskVolume, LochInDerMitteWirdNichtVermessen) {
+    const std::string pfad = (fs::temp_directory_path() / "k1520_dv_loch.hfe").string();
+    DiskFormat fremd;
+    fremd.name = "loch";
+    fremd.tracks.push_back(TrackFormat{0, 4,  0, 0, 7, 512, Encoding::MFM, 1});
+    fremd.tracks.push_back(TrackFormat{6, 20, 0, 0, 7, 512, Encoding::MFM, 1});
+    ASSERT_NE(DiskImage::create(pfad, fremd, /*write_protect=*/false), nullptr);
+
+    std::string err;
+    auto dv = oeffne(pfad, "", err);
+    std::error_code ec;
+    fs::remove(pfad, ec);
+
+    EXPECT_EQ(dv, nullptr);
+    EXPECT_NE(err.find("Zylinder 5"), std::string::npos) << err;
+}

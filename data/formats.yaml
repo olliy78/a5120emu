@@ -624,16 +624,11 @@ filesystems:
     block_size:  2048
     dir_entries: 192
 
-  - name:        cpa640
-    description: "CP/A 640K (16×256) — Dateisystem ab Zylinder 0"
-    format:      cpa640
-    type:        cpm
-    # ACHTUNG, ungeprueft: CP/A selbst kann diese Diskette nicht erzeugen — fuer
-    # 256-B-Sektoren traegt `dtrsl1` ein FESTES Offset (4 log. Spuren), das Verzeichnis
-    # liegt dort immer auf c2h0 (= Profil `scpx640`).  Der Eintrag bleibt fuer
-    # Fremddisketten ohne Systemspuren stehen; eine echte Diskette dazu liegt nicht vor.
-    block_size:  2048
-    dir_entries: 128
+  # ENTFERNT 2026-08-11: `cpa640` (dieselbe 16×256-Geometrie, Dateisystem ab
+  # Zylinder 0).  Der Eintrag war geraten — CP/A kann so eine Diskette gar nicht
+  # erzeugen: fuer 256-B-Sektoren traegt `dtrsl1` ein FESTES Offset von 4 logischen
+  # Spuren, das Verzeichnis liegt dort IMMER auf c2h0 (Profil `scpx640` unten).
+  # Er sorgte nur dafuer, dass jede 16×256-Diskette „nicht eindeutig" gemeldet wurde.
 
   # ══ SCPX ═══════════════════════════════════════════════════════════════════
 
@@ -642,8 +637,9 @@ filesystems:
     format:      cpa640
     type:        cpm
     # NACHGEMESSEN an tests/fixtures/disks/scpx17_cpa780_k5601.hfe (Verzeichnis bei
-    # c2h0 = Byte 16384).  Dieselbe Geometrie wie cpa640, anderes data_start — genau
-    # der Fall, fuer den `filesystems:` eine eigene Sektion ist.
+    # c2h0 = Byte 16384) und deckungsgleich mit dem, was die CP/A-Regel ausrechnet
+    # (core/filesystem/cpm/cpa_dpb.cpp).  Der Eintrag bleibt, weil `create --fs`
+    # einen Namen braucht — erkannt wuerde die Diskette auch ohne ihn.
     data_start:  { cyl: 2, head: 0 }
     block_size:  2048
     dir_entries: 128

@@ -310,6 +310,7 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
         // .hfe/.dmk sind selbstbeschreibend; .img braucht fuer JEDEN Versuch die
         // Geometrie — dort kommen nur Formate passender Dateigroesse in Frage.
         std::vector<const DiskFormat*> kandidaten;
+        std::vector<MeasuredTrack>     gemessen;   // leer bei .img (nicht messbar)
 
         if (istImg) {
             std::error_code ec;
@@ -332,17 +333,31 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
 
         if (!istImg) {
             // Stufe 1: Geometrie messen und gegen den Katalog abgleichen.
-            const std::vector<MeasuredTrack> gemessen =
-                GeometryProbe::measure(dv->disk_->medium());
+            gemessen = GeometryProbe::measure(dv->disk_->medium());
             const std::vector<GeometryMatch> treffer =
                 GeometryProbe::matchAll(gemessen, formats.formats());
             if (treffer.empty()) {
-                err = "Das Abbild passt zu keinem Format in data/formats.yaml.\nGemessen:\n"
-                    + GeometryProbe::describe(gemessen);
-                return nullptr;
+                // Letzter Rueckfall: beschreiben, was tatsaechlich draufsteht, und es
+                // damit LESBAR machen.  Die Geometrie ist dann geraten — deshalb bleibt
+                // die Diskette hart schreibgeschuetzt (siehe unten).
+                std::string warum;
+                std::optional<DiskFormat> gebaut =
+                    GeometryProbe::synthesize(gemessen, &warum);
+                if (!gebaut) {
+                    err = "Das Abbild passt zu keinem Format in data/formats.yaml ("
+                        + warum + ").\nGemessen:\n" + GeometryProbe::describe(gemessen);
+                    return nullptr;
+                }
+                dv->gemessenes_format_    = std::move(*gebaut);
+                dv->nur_lesen_erzwungen_  = true;
+                kandidaten.push_back(&*dv->gemessenes_format_);
+                dv->detection_.remarks =
+                    "kein Katalogeintrag passt — als gemessene Geometrie gelesen, "
+                    "deshalb schreibgeschuetzt";
+            } else {
+                for (const GeometryMatch& m : treffer) kandidaten.push_back(m.format);
+                dv->detection_.remarks = treffer.front().remarks();
             }
-            for (const GeometryMatch& m : treffer) kandidaten.push_back(m.format);
-            dv->detection_.remarks = treffer.front().remarks();
         }
 
         // Stufe 2: Dateisysteme der Kandidaten positiv nachweisen.
@@ -393,6 +408,16 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
 
         if (passend.empty() && !dv->abgeleitet_) {
             const std::string dos = dosKennung(dv->disk_->medium(), *kandidaten.front());
+            if (dv->gemessenes_format_) {
+                // Die Geometrie stand in keinem Katalog UND traegt nichts Lesbares —
+                // dann ist die Messung das einzig Brauchbare, was wir sagen koennen.
+                err = "Das Abbild passt zu keinem Format in data/formats.yaml, und auf "
+                      "der gemessenen Geometrie liegt kein lesbares Dateisystem"
+                    + (dos.empty() ? (abgelehnt.empty() ? "" : " (" + abgelehnt + ")")
+                                   : " — " + dos)
+                    + ".\nGemessen:\n" + GeometryProbe::describe(gemessen);
+                return nullptr;
+            }
             err = "Die Geometrie ist erkannt (" + std::string(kandidaten.front()->name)
                 + "), aber ";
             if (!dos.empty())
@@ -683,6 +708,16 @@ bool DiskVolume::insertAll(const std::string& src_dir, const TransferOptions& op
 bool DiskVolume::dirty() const { return disk_ && disk_->medium().dirty(); }
 
 void DiskVolume::setReadOnly(bool ro) {
+    // Eine nur GEMESSENE Geometrie laesst sich nicht freigeben: wir haben sie geraten,
+    // nicht belegt.  Ein Schreibvorgang wuerde beim geringsten Irrtum an der falschen
+    // Stelle landen — und die Diskette ist in aller Regel ein Einzelstueck.
+    if (!ro && nur_lesen_erzwungen_) {
+        last_error_ = "Die Geometrie dieser Diskette steht in keinem Katalog und wurde "
+                      "nur gemessen — Schreiben ist gesperrt. Erst einen passenden "
+                      "Eintrag in data/formats.yaml anlegen (die Meldung von `measure` "
+                      "taugt als Vorlage).";
+        return;
+    }
     read_only_ = ro;
     // Zweite Sperre eine Ebene tiefer: ein schreibgeschuetztes DiskImage schreibt
     // seine Datei auch dann nicht, wenn hier etwas durchrutscht — einschliesslich

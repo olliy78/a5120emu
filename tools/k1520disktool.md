@@ -78,9 +78,11 @@ Bei einem Dateisystem (jede CP/M-Diskette, auch beidseitige) ist der Ordner flac
 * **Passt es nicht, wird gar nicht erst geschrieben.**  Vor jeder Stapeloperation
   läuft die Platzprüfung; ein Fehlschlag mittendrin wird zurückgerollt.
 * **Sicherungskopie** `<name>~` beim ersten Zurückschreiben (`--no-backup` aus).
-* **Kein Raten.**  Passt ein Abbild zu keinem Eintrag in `data/formats.yaml`,
-  bricht das Öffnen ab und nennt die **gemessene** Geometrie — die Meldung taugt
-  direkt als Vorlage für den fehlenden Katalogeintrag.
+* **Kein Raten — und wo gerechnet wird, steht es dabei.**  Passt kein Eintrag in
+  `data/formats.yaml`, wird die Geometrie vermessen und die Diskette **nur lesend**
+  geöffnet (s. u.); geht auch das nicht, bricht das Öffnen ab und nennt die
+  **gemessene** Geometrie — die Meldung taugt direkt als Vorlage für den fehlenden
+  Katalogeintrag.
 * **UDOS auf `.img` wird abgelehnt**: der Sektorkontrollblock steht hinter der
   Daten-CRC, ein rohes Sektorabbild verlöre die gesamte Dateiverkettung.
 * **Beim Lesen kann nichts kaputtgehen**: `ls`, `get`, `info`, `check` und
@@ -126,11 +128,23 @@ Spurzahl nicht ausdrückbar.  Schema: Kopf der Datei und
 `doc/design/13_k1520disktool.md` §6.3.  Ein Eintrag lohnt nur, wo die Regel oben
 nicht greift oder ein besserer Name gewünscht ist.
 
-Ein unbekanntes Abbild vermisst `ls` von selbst:
+## Fremde Diskette ohne Katalogeintrag
+
+Passt **gar kein** `formats:`-Eintrag, wird die Geometrie aus dem Abbild vermessen
+und die Diskette trotzdem geöffnet — `Format: (gemessen)`.  So lässt sich eine
+fremde Diskette ansehen, ohne vorher den Katalog zu erweitern.
+
+> **Schreiben ist dabei gesperrt, und zwar unaufhebbar.**  Die Geometrie ist
+> gemessen, nicht belegt; ein Schreibvorgang landete beim geringsten Irrtum an der
+> falschen Stelle, und fremde Abbilder sind meist Einzelstücke.  Wer schreiben
+> will, trägt das Format in `data/formats.yaml` ein — `measure` liefert die Vorlage.
+
+Trägt die vermessene Geometrie nichts Lesbares, nennt die Meldung die Messung:
 
 ```
 $ k1520disktool ls fremd.hfe
-Fehler: Das Abbild passt zu keinem Format in data/formats.yaml.
+Fehler: Das Abbild passt zu keinem Format in data/formats.yaml, und auf der
+gemessenen Geometrie liegt kein lesbares Dateisystem (…).
 Gemessen:
   Zylinder 0-79, Köpfe 0-1
   c0h0..c0h1 : 26 Sektoren à 128 B, IDs 1-26, mfm

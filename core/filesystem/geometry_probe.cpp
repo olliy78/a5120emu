@@ -219,6 +219,19 @@ GeometryMatch match(const std::vector<MeasuredTrack>& tracks, const DiskFormat& 
             std::min<int>(0xFFFF, m.crc_errors + t.crc_errors));
     }
 
+    // Regel 4b: EIN paar beschaedigte Spuren sind ein Schaden — die halbe Diskette
+    // nicht.  Ohne diese Schranke passt jedes Format auf jede Diskette mit WENIGER
+    // Sektoren je Spur (7×512 galt als „k5601_ss40_9x512 mit 40 defekten Spuren").
+    int beschrieben = 0;
+    for (const auto& t : tracks)
+        if (t.formatted && fmt.logicalCylinder(t.cyl) >= 0) ++beschrieben;
+    if (m.defect_tracks > 2 && m.defect_tracks * 4 > beschrieben) {
+        m.reason = std::to_string(m.defect_tracks) + " von " + std::to_string(beschrieben)
+                 + " beschriebenen Spuren weichen ab — das ist kein Schaden, sondern ein "
+                   "anderes Format";
+        return m;
+    }
+
     // Luecken zwischen beschriebenen Spuren: eine Doppelschritt-Diskette.  Der
     // Katalog kann sie nicht ausdruecken (Spurbereiche sind zusammenhaengend), und
     // ein „passendes" Format waere schlicht falsch — also ablehnen und es sagen.
@@ -322,6 +335,115 @@ std::string describe(const std::vector<MeasuredTrack>& tracks) {
     }
     if (crc > 0) os << "  " << crc << " Sektoren mit CRC-Fehler\n";
     return os.str();
+}
+
+// ─── aus der Messung ein Format bauen ────────────────────────────────────────
+
+std::optional<DiskFormat> synthesize(const std::vector<MeasuredTrack>& tracks,
+                                     std::string* why) {
+    auto nein = [&](const std::string& t) -> std::optional<DiskFormat> {
+        if (why) *why = t;
+        return std::nullopt;
+    };
+
+    uint8_t nheads = 0, ncyls = 0;
+    for (const auto& t : tracks) {
+        nheads = std::max(nheads, static_cast<uint8_t>(t.head + 1));
+        ncyls  = std::max(ncyls,  static_cast<uint8_t>(t.cyl + 1));
+        if (t.formatted && t.sector_size == 0)
+            return nein("Spur " + tp(t.cyl, t.head) + " hat uneinheitliche Sektorgroessen");
+    }
+    const int letzter = lastFormattedCylinder(tracks);
+    if (letzter < 0 || nheads == 0) return nein("Medium ist vollstaendig unformatiert");
+
+    // Gestalt einer Spur — der Vergleichsschluessel fuer das Zusammenfassen.
+    struct Gestalt {
+        bool     leer = true;
+        uint8_t  sectors = 0;
+        uint16_t size = 0;
+        uint8_t  first_id = 1;
+        Encoding enc = Encoding::MFM;
+        bool operator==(const Gestalt& o) const {
+            if (leer || o.leer) return leer == o.leer;
+            return sectors == o.sectors && size == o.size
+                && first_id == o.first_id && enc == o.enc;
+        }
+    };
+
+    std::vector<std::vector<Gestalt>> zylinder(
+        static_cast<size_t>(letzter) + 1, std::vector<Gestalt>(nheads));
+    for (const auto& t : tracks) {
+        if (t.cyl > letzter) continue;                   // Altbestand dahinter
+        Gestalt& g = zylinder[t.cyl][t.head];
+        g.leer = !t.formatted;
+        if (t.formatted) {
+            g.sectors  = t.sectors;
+            g.size     = t.sector_size;
+            g.first_id = t.first_id;
+            g.enc      = t.encoding;
+        }
+    }
+
+    auto zylinderLeer = [&](int c) {
+        for (const Gestalt& g : zylinder[static_cast<size_t>(c)])
+            if (!g.leer) return false;
+        return true;
+    };
+
+    // Doppelschritt: KEIN ungerader Zylinder beschrieben, aber Luecken dazwischen.
+    uint8_t step = 1;
+    if (letzter >= 2) {
+        bool ungerade_leer = true, luecke = false;
+        for (int c = 1; c <= letzter; c += 2) {
+            if (!zylinderLeer(c)) ungerade_leer = false; else luecke = true;
+        }
+        if (ungerade_leer && luecke && (letzter % 2) == 0) step = 2;
+    }
+
+    // Loecher, die kein Doppelschritt sind, machen den linearen Raum unbrauchbar.
+    for (int c = 0; c <= letzter; c += step)
+        if (zylinderLeer(c))
+            return nein("Zylinder " + std::to_string(c) + " ist unformatiert, die "
+                        "Spuren davor und dahinter nicht — ein solcher Datentraeger "
+                        "laesst sich nicht als zusammenhaengendes Dateisystem lesen");
+
+    DiskFormat fmt;
+    fmt.name        = "(gemessen)";
+    fmt.description = "aus dem Abbild vermessen, kein Katalogeintrag";
+    fmt.step        = step;
+
+    // Zylinder mit gleichem Kopf-Muster zusammenfassen, darin die Koepfe — so
+    // entstehen echte Rechtecke auch bei gemischter Geometrie.
+    for (int c = 0; c <= letzter; c += step) {
+        int bis = c;
+        while (bis + step <= letzter
+               && zylinder[static_cast<size_t>(bis + step)] == zylinder[static_cast<size_t>(c)])
+            bis += step;
+
+        const auto& muster = zylinder[static_cast<size_t>(c)];
+        for (uint8_t h = 0; h < nheads; ++h) {
+            if (muster[h].leer) continue;
+            uint8_t h_bis = h;
+            while (h_bis + 1 < nheads && muster[h_bis + 1] == muster[h]) ++h_bis;
+
+            TrackFormat tf;
+            tf.cyl_first       = static_cast<uint8_t>(c / step);
+            tf.cyl_last        = static_cast<uint8_t>(bis / step);
+            tf.head_first      = h;
+            tf.head_last       = h_bis;
+            tf.secs_per_track  = muster[h].sectors;
+            tf.bytes_per_sec   = muster[h].size;
+            tf.first_sector_id = muster[h].first_id;
+            tf.encoding        = muster[h].enc;
+            fmt.tracks.push_back(tf);
+
+            h = h_bis;
+        }
+        c = bis;
+    }
+
+    if (fmt.tracks.empty()) return nein("keine beschriebene Spur gefunden");
+    return fmt;
 }
 
 }  // namespace GeometryProbe
