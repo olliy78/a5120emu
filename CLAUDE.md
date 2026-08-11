@@ -2,19 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## CLI Tool Preferences
-<tool_preferences>
-ALWAYS check for and prioritize the following modern CLI tools over legacy ones:
-- Use `rg` instead of `grep` for any code or file text searching (faster and respects .gitignore).
-- Use `fd` (or `fdfind`) instead of `find` for finding files or directories.
-- Use `sd` instead of `sed` for complex string replacements or in-place file modifications.
-- Use `jq` for any JSON reading, querying, or manipulation tasks.
-- Use `yq` for any YAML configuration file reading or manipulation.
-
-CRITICAL: Do not use slow regex chains with grep/sed if rg/sd/jq/yq are available on the system.
-</tool_preferences>
-
-
 ## One emulator: the modular K1520 core (`core/`)
 
 **K1520 core (`core/`)** — a hardware-accurate, transaction-level emulation of the K1520 bus and its plug-in cards. **No BIOS traps**: real Z80 code (boot ROM, BIOS, OS) runs natively, so any K1520 OS can boot. Builds `libk1520core.so` (a stable C-ABI) consumed by a **Python/PySide6 GUI** (`app/`). `doc/K1520_architecture.md` and `doc/design/*.md` are the authoritative design references.
