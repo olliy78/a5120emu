@@ -250,7 +250,7 @@ gar nichts, und `ctypes` findet auf der Python-Seite keine einzige Funktion — 
 Fehler, der sonst erst beim ersten Aufruf auffällt.
 
 ```sh
-gh workflow run windows-ci.yml --ref windows_port_cicd
+gh workflow run windows-ci.yml --ref main
 gh run watch
 ```
 
@@ -276,6 +276,8 @@ nicht jedes Mal die volle Runde zu zahlen.
 | Release-Job grün, aber `gh release upload` → **403** | Workflow-Rechte auf *Read only* | [§2.2](#22-schreibrecht-für-den-release-job) |
 | `py_*`-Tests fehlen im ctest-Bericht | `venv/` oder `requirements-dev.txt` nicht installiert | Schritt „Python-Testebene vorbereiten" im Protokoll ansehen |
 | Rauchtest meldet „Payload wird nicht als Installation erkannt" | `bin/libk1520core.so` fehlt in der Payload | `packaging/build_payload.sh` lokal fahren und `dist/*/payload/` ansehen |
+| Windows-Lauf: `UnicodeDecodeError: 'charmap' codec can't decode byte 0x90` | Python liest die UTF-8-Ausgabe eines Werkzeugs in cp1252 | `encoding="utf-8"` mitgeben — die vier wiederkehrenden Windows-Fallen stehen in `tests/README.md` |
+| Windows-Lauf: `remove: … used by another process` | Windows löscht keine offene Datei | den lesenden Datenstrom vor dem `remove()` schließen (eigener Block) |
 | Lauf bricht mit „The runner image `ubuntu-22.04` is deprecated" ab | GitHub hat das Abbild abgekündigt | **nicht** einfach `ubuntu-latest` einsetzen — Nachfolger ist ein Container mit alter glibc (manylinux_2_28), sonst fällt die Baseline ([§4.3](#43-release-paket-releaseyml)) |
 
 Ein fehlgeschlagener Lauf lässt sich fast immer lokal nachstellen — die Pipeline ruft

@@ -26,14 +26,6 @@
 name: Windows — Bauen und Regression
 
 on:
-  # ⚠️ NUR FÜR DIE PORTIERUNGSPHASE — vor dem Merge nach main ENTFERNEN.
-  # Grund: `workflow_dispatch` zeigt GitHub nur für Workflows an, die auf dem
-  # STANDARD-Branch liegen (doc/ci_pipeline.md §2.3); ein Workflow, den es auf
-  # main noch nicht gibt, lässt sich also gar nicht von Hand anstoßen.  Ein auf
-  # DIESEN EINEN Branch beschränkter Push-Auslöser ist der einzige Weg, ihn
-  # einzufahren.  Danach gilt wieder die Hausregel „nichts läuft von selbst".
-  push:
-    branches: [windows_port_cicd]
   workflow_dispatch:
     inputs:
       testebene:
@@ -125,21 +117,9 @@ jobs:
           key: gtest-windows-v1.14.0
           restore-keys: gtest-windows-
 
-      # ⚠️ NUR FÜR DIE PORTIERUNGSPHASE — zusammen mit dem push-Auslöser entfernen.
-      # Ninja hält beim ERSTEN Fehler an; solange noch Übersetzungsfehler zu
-      # erwarten sind, kostet das je Fehler einen ganzen CI-Lauf.  `-k 0` baut
-      # trotz Fehlern weiter und legt ALLE auf einmal offen.  Konfiguration und
-      # Ausgabeverzeichnis sind dieselben wie bei dev.sh — der folgende Schritt
-      # baut also inkrementell weiter und wiederholt nichts.
-      - name: Portierungsdurchlauf — alle Übersetzungsfehler sammeln
-        shell: bash
-        continue-on-error: true
-        run: |
-          cmake -B build -G Ninja -DLOG_LEVEL=3 -DCMAKE_BUILD_TYPE=Release >/dev/null
-          cmake --build build -j -- -k 0 2>&1 | tee bau.log | grep -E 'error [A-Z]?[0-9]+|FAILED:' | head -120
-          echo "── Fehler insgesamt: $(grep -cE 'error [A-Z]?[0-9]+' bau.log) ──"
-
-      # Bei einem Push gibt es keine Eingaben — dann die volle Runde.
+      # `|| 'test'` ist kein Zierrat: wer den Workflow über die API anstößt, ohne
+      # eine Eingabe mitzugeben, bekäme sonst `tools/dev.sh` ohne Kommando — und
+      # das druckt die Hilfe und meldet Erfolg, ohne etwas geprüft zu haben.
       - name: Bauen und Regression (tools/dev.sh ${{ inputs.testebene || 'test' }})
         shell: bash
         env:

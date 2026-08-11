@@ -134,6 +134,38 @@ Zwei Regeln, die dahinterstecken:
    groben Batches driftet die CTC-Phase so weit, dass Anschläge verlorengehen.
    Ohne Tastaturbezug ist `runUntilVramContains` (100 000) richtig und schneller.
 
+## Vier Windows-Fallen beim Testschreiben
+
+Die Regression läuft seit 2026-08-11 auch auf `windows-latest`
+(`.github/workflows/windows-ci.yml`). Von den 29 Fehlschlägen des ersten Laufs war
+**keiner** ein Produktfehler — alle vier Ursachen waren Annahmen im Test, und alle
+vier kommen wieder, wenn man sie nicht kennt:
+
+1. **Kein festes `"/tmp/…"`.** Unter Windows liegt das als `C:\tmp\`, das es nicht
+   gibt; der `ofstream` scheitert **lautlos** und der Test sieht eine leere Datei.
+   Richtig ist `std::filesystem::temp_directory_path() / "name"` (C++) bzw.
+   `tmp_path` (pytest).
+2. **`remove()` scheitert, solange die Datei offen ist.** Windows kennt kein
+   „gelöscht, aber noch benutzt". Ein `std::ifstream`, mit dem der Test die Datei
+   gegenliest, gehört in einen eigenen Block **vor** dem `remove()`.
+3. **`Path.read_text()` / `text=True` ohne Kodierung** lesen in der
+   Gebietsschema-Kodierung — unter Windows cp1252. Der Baum ist UTF-8 und voller
+   Umlaute; der erste Umlaut wirft `UnicodeDecodeError` oder liefert Kauderwelsch.
+   Immer `encoding="utf-8"` mitgeben (`subprocess.run` genauso).
+4. **`std::filesystem::path` → `std::string` ist unter Windows nicht implizit**
+   (`value_type` ist dort `wchar_t`). MSVC lehnt es mit C2440 ab; `.string()`
+   anhängen.
+
+Was **nicht** Aufgabe des Tests ist: plattformabhängiges Verhalten wegdefinieren.
+`~/.config` vs. `%APPDATA%`, `user-dirs.dirs` vs. `Documents`, `install.sh` vs.
+`install.ps1` — dort gehört ein `pytest.mark.skipif` mit **Begründung** hin und,
+wo es sich lohnt, ein Gegenstück für die andere Plattform (Muster:
+`test_paths.py::test_dokumentenordner_unter_windows_ist_documents`).
+
+Lokal vorprüfen, ohne auf die CI zu warten: `tools/dev.sh win` baut mit MinGW-w64
+nach Windows und fährt die Tests unter `wine`. Findet die Punkte 1–3 sofort,
+Punkt 4 nicht (das ist MSVC-eigen).
+
 ## Was wo dokumentiert ist
 
 | Frage | Antwort steht in |
