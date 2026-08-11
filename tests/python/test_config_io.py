@@ -5,6 +5,9 @@ Disketten, Laufwerksbestückung, Fenstergeometrie.  Bricht der Rundlauf, verlier
 der Nutzer beim nächsten Start seine Einrichtung — ohne Fehlermeldung.
 """
 
+import sys
+from pathlib import Path
+
 import pytest
 
 import app.config_io as cfg
@@ -14,12 +17,26 @@ from app.ui.screen_widget import CRTParams
 def test_default_config_path_honours_xdg(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     assert cfg.default_config_dir() == str(tmp_path / "k1520emu")
-    assert cfg.default_config_path().endswith("k1520emu/config.yaml")
+    # Kein endswith("k1520emu/config.yaml"): unter Windows trennt os.path.join
+    # mit '\', und der Test pruefte dann nur noch, dass er auf Linux laeuft.
+    assert cfg.default_config_path() == str(tmp_path / "k1520emu" / "config.yaml")
 
 
 def test_default_config_path_without_xdg(monkeypatch):
+    """Ohne XDG greift der plattformuebliche Ort — und der ist je System anders.
+
+    Linux ``~/.config/k1520emu``, Windows ``%APPDATA%\\K1520emu``, macOS
+    ``~/Library/Application Support/K1520emu`` (app/paths.py::config_dir).
+    """
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    assert cfg.default_config_dir().endswith(".config/k1520emu")
+    verzeichnis = Path(cfg.default_config_dir())
+    if sys.platform.startswith("win"):
+        # Ein altes ~/.config/k1520emu wird weiterbenutzt — beides ist richtig.
+        assert verzeichnis.name in ("K1520emu", "k1520emu")
+    elif sys.platform == "darwin":
+        assert verzeichnis.parent.name in ("Application Support", ".config")
+    else:
+        assert verzeichnis == Path.home() / ".config" / "k1520emu"
 
 
 def test_build_config_has_all_sections():

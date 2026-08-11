@@ -183,18 +183,30 @@ def main():
                 raise CaseError(f"unaufgelöste Platzhalter: {', '.join(left)}")
             return text
 
+        def argv(text):
+            """Argumentliste einer `run:`-Zeile.
+
+            ERST zerlegen, DANN je Wort einsetzen — nie umgekehrt.  `shlex.split`
+            arbeitet in POSIX-Bedeutung und frisst dabei jeden Backslash als
+            Fluchtzeichen; ein eingesetzter Windows-Pfad käme als
+            ``C:UsersRUNNER~1…`` beim Werkzeug an.  In der unaufgelösten Zeile
+            stehen nur `%NAME%`-Platzhalter, die kein Zerlegen brauchen.  Als
+            Zugabe überleben so auch Pfade mit Leerzeichen.
+            """
+            return [expand(word) for word in shlex.split(text)]
+
         exe = tools[case["tool"]]
         # Platzhalter gelten auch in der Standardeingabe — Debugger-Kommandos wie
         # `trace %datei%` oder `lst %quelle.mac%` brauchen den echten Pfad.
         stdin = expand(case["stdin"]) if case["stdin"] else None
 
         for extra in case["setup_run"]:
-            subprocess.run([exe] + shlex.split(expand(extra)),
+            subprocess.run([exe] + argv(extra),
                            input=stdin, text=True, cwd=tmpdir,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                            timeout=case["timeout"])
 
-        proc = subprocess.run([exe] + shlex.split(expand(case["run"])),
+        proc = subprocess.run([exe] + argv(case["run"]),
                               input=stdin, text=True, cwd=tmpdir,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               timeout=case["timeout"])

@@ -111,6 +111,10 @@ def test_desktop_eintrag_ist_gueltig():
         assert feld in text, f"{feld} fehlt im Startmenü-Eintrag"
 
 
+@pytest.mark.skipif(
+    sys.platform.startswith("win"),
+    reason="Git-Bash löst ~ zu einem MSYS-Pfad (/c/Users/…) auf — nicht mit einem "
+           "Windows-Pfad vergleichbar.  Windows bekommt install.ps1 (Entwurf §10 Schritt 4).")
 @pytest.mark.parametrize("eingabe,erwartet", [
     ("~/Emulatoren/A5120", "{home}/Emulatoren/A5120"),
     ("~", "{home}"),

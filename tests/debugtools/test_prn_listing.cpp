@@ -6,6 +6,8 @@
 #include <gtest/gtest.h>
 #include <fstream>
 #include <cstdio>
+#include <filesystem>
+#include <string>
 
 using prnlst::parseLine;
 
@@ -146,7 +148,10 @@ TEST(PrnListing, LabelOfExtractsLeadingLabel){
 
 TEST(PrnListing, LoadAppliesOffsetToKeys){
     // Eine Listing-Zeile via temp-Datei laden, einmal mit Offset.
-    const char* tmp = "/tmp/k1520_prn_offset_test.prn";
+    // Temp-Verzeichnis des Systems: "/tmp" gibt es unter Windows nicht (dort
+    // laege es als C:\tmp\… und der ofstream scheiterte lautlos).
+    const std::string tmp =
+        (std::filesystem::temp_directory_path() / "k1520_prn_offset_test.prn").string();
     { std::ofstream f(tmp);
       f << "  D200    C3 E890               BIOS00: JP\tkaltst\n"; }
 
@@ -179,7 +184,8 @@ TEST(PrnListing, ExtractsObjectBytesOnePerColumn){
 }
 
 TEST(PrnListing, LoadCollectsBytesUnderRuntimeAddresses){
-    const char* p = "/tmp/k1520_prn_bytes_test.prn";
+    const std::string p =
+        (std::filesystem::temp_directory_path() / "k1520_prn_bytes_test.prn").string();
     { std::ofstream f(p); f << "  0100    C3 0605               START: JP\tX\n"; }
     prnlst::Listing l;
     ASSERT_EQ(l.load(p, 0x0400, /*want_bytes=*/true), 1);
@@ -187,5 +193,5 @@ TEST(PrnListing, LoadCollectsBytesUnderRuntimeAddresses){
     EXPECT_EQ(l.bytes_by_addr[0x0500], 0xC3);
     EXPECT_EQ(l.bytes_by_addr[0x0501], 0x05);
     EXPECT_EQ(l.bytes_by_addr[0x0502], 0x06);
-    std::remove(p);
+    std::filesystem::remove(p);
 }

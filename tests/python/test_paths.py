@@ -138,11 +138,23 @@ def _leeres_heim(tmp_path, monkeypatch) -> Path:
     heim = tmp_path / "heim"
     heim.mkdir()
     monkeypatch.setenv("HOME", str(heim))
+    # Path.home() liest unter Windows USERPROFILE, nicht HOME — ohne das griffe
+    # der Test dort am echten Benutzerverzeichnis vorbei ins Leere.
+    monkeypatch.setenv("USERPROFILE", str(heim))
     for var in ("XDG_DOCUMENTS_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME"):
         monkeypatch.delenv(var, raising=False)
     return heim
 
 
+#: ``user-dirs.dirs`` ist ein Freedesktop-Mechanismus.  Windows und macOS haben
+#: ihren Dokumentenordner an fester Stelle — die beiden folgenden Fälle prüfen
+#: die XDG-Auflösung und sind dort gegenstandslos (nicht „kaputt").
+nur_unix = pytest.mark.skipif(
+    sys.platform.startswith("win") or sys.platform == "darwin",
+    reason="XDG/user-dirs.dirs gibt es nur auf Freedesktop-Systemen")
+
+
+@nur_unix
 def test_arbeitsdisketten_liegen_im_dokumentenordner(tmp_path, monkeypatch):
     """Der Ordnername ist sprachabhängig — verbindlich ist ``user-dirs.dirs``.
 
@@ -160,11 +172,29 @@ def test_arbeitsdisketten_liegen_im_dokumentenordner(tmp_path, monkeypatch):
     assert paths.user_disks_dir() == heim / "Dokumente" / "K1520emu" / "Disketten"
 
 
+@nur_unix
 def test_dokumentenordner_faellt_auf_den_datenpfad_zurueck(tmp_path, monkeypatch):
     """Ohne Dokumentenordner (schlankes System) bleibt der plattformübliche Ort."""
     heim = _leeres_heim(tmp_path, monkeypatch)
     assert paths.documents_dir() is None
     assert paths.user_disks_dir() == heim / ".local" / "share" / "K1520emu" / "Disketten"
+
+
+@pytest.mark.skipif(not sys.platform.startswith("win"),
+                    reason="prüft die Windows-Auflösung")
+def test_dokumentenordner_unter_windows_ist_documents(tmp_path, monkeypatch):
+    """Windows hat keinen sprachabhängigen Ordnernamen im Dateisystem.
+
+    Der Explorer zeigt „Dokumente" an, im Dateisystem heißt der Ordner
+    ``Documents``.  Gibt es ihn nicht, fällt die Auflösung auf den Datenpfad
+    zurück — dasselbe Verhalten wie unter Linux ohne Dokumentenordner.
+    """
+    heim = _leeres_heim(tmp_path, monkeypatch)
+    assert paths.documents_dir() is None
+
+    (heim / "Documents").mkdir()
+    assert paths.documents_dir() == heim / "Documents"
+    assert paths.user_disks_dir() == heim / "Documents" / "K1520emu" / "Disketten"
 
 
 def test_seed_user_disks_kopiert_einmalig(tmp_path, at_root, monkeypatch):

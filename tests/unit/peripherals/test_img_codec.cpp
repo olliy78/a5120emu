@@ -137,10 +137,15 @@ TEST(ImgCodec, Load_BitgleichMitImageDatei) {
 
     const DiskMedium m = loadImg(path, fmt);
 
-    // Rohe Datei-Bytes als Vergleichsbasis einlesen.
-    std::ifstream f(path, std::ios::binary);
-    std::vector<uint8_t> fileBytes{std::istreambuf_iterator<char>(f),
-                                   std::istreambuf_iterator<char>()};
+    // Rohe Datei-Bytes als Vergleichsbasis einlesen.  Der Datenstrom lebt in
+    // einem eigenen Block: Windows verweigert das remove() am Ende, solange
+    // noch ein Griff auf die Datei offen ist ("used by another process").
+    std::vector<uint8_t> fileBytes;
+    {
+        std::ifstream f(path, std::ios::binary);
+        fileBytes.assign(std::istreambuf_iterator<char>(f),
+                         std::istreambuf_iterator<char>());
+    }
     ASSERT_EQ(fileBytes.size(), fmt.totalBytes());
 
     for (uint8_t cyl = 0; cyl < fmt.numCylinders(); ++cyl) {
@@ -448,10 +453,13 @@ TEST(DiskImageCreate, ImgMitFmt_LegtDateiInFormatGroesseAn) {
     ASSERT_NE(img, nullptr);
     EXPECT_TRUE(std::filesystem::exists(path));
     EXPECT_EQ(std::filesystem::file_size(path), fmt.totalBytes());
-    // Frisch angelegt → 0xE5 (leere CP/M-Sektoren).
-    std::ifstream f(path, std::ios::binary);
-    uint8_t b = 0; f.read(reinterpret_cast<char*>(&b), 1);
-    EXPECT_EQ(b, 0xE5);
+    // Frisch angelegt → 0xE5 (leere CP/M-Sektoren).  Eigener Block, damit die
+    // Datei vor dem remove() am Ende wieder zu ist (Windows, s.o.).
+    {
+        std::ifstream f(path, std::ios::binary);
+        uint8_t b = 0; f.read(reinterpret_cast<char*>(&b), 1);
+        EXPECT_EQ(b, 0xE5);
+    }
     auto g = img->geometry();
     EXPECT_EQ(g.num_cyls, 2);
     EXPECT_EQ(g.num_heads, 1);
