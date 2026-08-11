@@ -441,7 +441,7 @@ TEST(DiskImageOpen, RawMischdichte_VerfahrenJeSpur) {
 
 TEST(DiskImageCreate, ImgMitFmt_LegtDateiInFormatGroesseAn) {
     auto fmt = makeSimpleFormat();                 // 2 Zyl × 1 Kopf × 2 × 128 = 512 B
-    std::string path = std::filesystem::temp_directory_path() / "create_test.img";
+    std::string path = (std::filesystem::temp_directory_path() / "create_test.img").string();
     std::filesystem::remove(path);
 
     auto img = DiskImage::create(path, fmt, false);
@@ -460,14 +460,14 @@ TEST(DiskImageCreate, ImgMitFmt_LegtDateiInFormatGroesseAn) {
 }
 
 TEST(DiskImageCreate, ImgOhneFmt_gibtNullptr) {
-    std::string path = std::filesystem::temp_directory_path() / "create_nofmt.img";
+    std::string path = (std::filesystem::temp_directory_path() / "create_nofmt.img").string();
     std::filesystem::remove(path);
     auto img = DiskImage::create(path, std::nullopt, false);
     EXPECT_EQ(img, nullptr);
 }
 
 TEST(DiskImageCreate, HfeOhneFmt_gibtNullptr) {
-    std::string path = std::filesystem::temp_directory_path() / "create_nofmt.hfe";
+    std::string path = (std::filesystem::temp_directory_path() / "create_nofmt.hfe").string();
     std::filesystem::remove(path);
     // create() ist der VORFORMATIERTE Weg und braucht das Sektorlayout.  Für eine
     // unformatierte Leerdiskette gibt es createBlank().
@@ -489,7 +489,7 @@ static size_t countMarks(const TrackImage& t) {
 static void checkFormattedHfe(Encoding enc) {
     auto fmt = makeSimpleFormat();  // 2 Zyl × 1 Kopf × 2 × 128
     for (auto& t : fmt.tracks) t.encoding = enc;
-    std::string path = std::filesystem::temp_directory_path() / "create_fmt.hfe";
+    std::string path = (std::filesystem::temp_directory_path() / "create_fmt.hfe").string();
     std::filesystem::remove(path);
 
     auto img = DiskImage::create(path, fmt, false, enc);
