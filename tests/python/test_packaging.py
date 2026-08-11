@@ -54,6 +54,13 @@ nur_unix_installer = pytest.mark.skipif(
     sys.platform.startswith("win"),
     reason="Unix-Installer — Windows bekommt install.ps1 (Entwurf §10 Schritt 4)")
 
+#: ``slim.py`` schlankt ELF-Bibliotheken (``ldd``, ``strip``).  Unter Windows
+#: gibt es weder das eine noch das andere — die Regeln dort sind Sache der
+#: Windows-Paketierung (§10 Schritt 4).
+nur_elf = pytest.mark.skipif(
+    sys.platform.startswith("win"),
+    reason="ldd/strip sind ELF-Werkzeuge — unter Windows gegenstandslos")
+
 # ─── Skripte ─────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("script", SCRIPTS)
@@ -80,7 +87,7 @@ def test_unbekannte_option_bricht_ab(tmp_path):
 
 def test_launcher_hat_genau_einen_platzhalter():
     """@ROOT@ wird beim Installieren ersetzt — bleibt einer stehen, startet nichts."""
-    text = (PACKAGING / "launcher.sh").read_text()
+    text = (PACKAGING / "launcher.sh").read_text(encoding="utf-8")
     assert 'ROOT="@ROOT@"' in text, "Platzhalter, den install.sh ersetzt, fehlt"
     assert '"$ROOT/venv/bin/python3"' in text
     assert '"$ROOT/app/main.py"' in text
@@ -88,14 +95,14 @@ def test_launcher_hat_genau_einen_platzhalter():
 
 def test_launcher_wechselt_ins_datenverzeichnis():
     """Sonst legt der Kern sein `logs/` dort an, wo der Anwender gerade steht."""
-    text = (PACKAGING / "launcher.sh").read_text()
+    text = (PACKAGING / "launcher.sh").read_text(encoding="utf-8")
     assert "user_data_dir()" in text, "Starter fragt die Pfadauflösung nicht"
     assert 'cd "$DATEN"' in text, "Starter wechselt nicht ins Datenverzeichnis"
 
 
 def test_uv_pins_vollstaendig():
     """Version und je eine Prüfsumme für alle Zielplattformen des Entwurfs."""
-    zeilen = [z.split() for z in (PACKAGING / "uv_pins.txt").read_text().splitlines()
+    zeilen = [z.split() for z in (PACKAGING / "uv_pins.txt").read_text(encoding="utf-8").splitlines()
               if z.strip() and not z.startswith("#")]
     pins = {z[0]: z[1] for z in zeilen if len(z) == 2}
     assert "version" in pins
@@ -108,14 +115,14 @@ def test_uv_pins_vollstaendig():
 
 def test_lock_nagelt_mit_hashes_fest():
     """Der Installer installiert mit --require-hashes — ohne Hashes schlüge das fehl."""
-    lock = (PACKAGING / "requirements.lock").read_text()
+    lock = (PACKAGING / "requirements.lock").read_text(encoding="utf-8")
     assert "--hash=sha256:" in lock
     assert "pyside6-essentials==" in lock.lower(), "Qt-Vollausbau statt Essentials?"
     assert "pyside6-addons" not in lock.lower(), "PySide6-Addons (~170 MB) im Paket"
 
 
 def test_desktop_eintrag_ist_gueltig():
-    text = (PACKAGING / "a5120emu.desktop.in").read_text()
+    text = (PACKAGING / "a5120emu.desktop.in").read_text(encoding="utf-8")
     assert text.startswith("[Desktop Entry]")
     for feld in ("Type=Application", "Name=", 'Exec="@ROOT@/bin/a5120emu"', "Icon=a5120emu"):
         assert feld in text, f"{feld} fehlt im Startmenü-Eintrag"
@@ -196,7 +203,7 @@ def test_dokumentenordner_shell_und_python_stimmen_ueberein(tmp_path, aufbau):
 
 def test_desktop_exec_ist_gequotet():
     """Ein Pfad mit Leerzeichen macht ein ungequotetes ``Exec=`` unbrauchbar."""
-    text = (PACKAGING / "a5120emu.desktop.in").read_text()
+    text = (PACKAGING / "a5120emu.desktop.in").read_text(encoding="utf-8")
     assert 'Exec="@ROOT@/bin/a5120emu"' in text
 
 
@@ -271,7 +278,7 @@ def test_deinstallieren_laesst_eigene_dateien_stehen(tmp_path):
 
     for weg in ("bin", "app", "share", "venv", "VERSION", ".k1520emu-installation"):
         assert not (wurzel / weg).exists(), f"{weg} hätte entfernt werden müssen"
-    assert (wurzel / "meine_notizen.txt").read_text() == "wichtig"
+    assert (wurzel / "meine_notizen.txt").read_text(encoding="utf-8") == "wichtig"
     assert (wurzel / "meine_disketten" / "eigen.hfe").exists()
     assert "bleibt stehen" in out.stdout
     assert "meine_notizen.txt" in out.stdout, "der Anwender erfährt nicht, was übrig ist"
@@ -304,7 +311,7 @@ def test_deinstallieren_folgt_keinem_pfad_im_ausweis(tmp_path):
     daneben.mkdir()
     (daneben / "unbeteiligt.txt").write_text("nicht anfassen")
     marke = wurzel / ".k1520emu-installation"
-    marke.write_text(marke.read_text() + "eintrag ../fremd\n")
+    marke.write_text(marke.read_text(encoding="utf-8") + "eintrag ../fremd\n")
 
     out = _install_sh(wurzel, heim, "--uninstall")
     assert out.returncode == 0, out.stderr
@@ -347,9 +354,10 @@ def test_deinstallieren_loescht_nur_eine_installation(tmp_path):
 
 def test_slim_ist_gueltiges_python():
     import ast
-    ast.parse((PACKAGING / "slim.py").read_text())
+    ast.parse((PACKAGING / "slim.py").read_text(encoding="utf-8"))
 
 
+@nur_elf
 def test_slim_liest_ldd_auch_bei_leerzeichen_im_pfad(tmp_path, monkeypatch):
     """Abgetrennt wird die Ladeadresse am Ende, nicht am ersten Leerzeichen.
 
@@ -416,9 +424,9 @@ def test_slim_verweigert_fremdes_verzeichnis(tmp_path):
 def test_slim_behaelt_was_die_gui_importiert():
     """Die Bindungsliste muss decken, was `app/` tatsächlich importiert."""
     import re
-    quelle = " ".join(p.read_text() for p in (PROJECT_ROOT / "app").rglob("*.py"))
+    quelle = " ".join(p.read_text(encoding="utf-8") for p in (PROJECT_ROOT / "app").rglob("*.py"))
     benutzt = set(re.findall(r"PySide6\.([A-Za-z]+)", quelle))
-    text = (PACKAGING / "slim.py").read_text()
+    text = (PACKAGING / "slim.py").read_text(encoding="utf-8")
     behalten = set(re.findall(r'"(Qt[A-Za-z]+)"', text.split("PLUGINS_KEEP")[0]))
     fehlt = benutzt - behalten
     assert not fehlt, f"slim.py wuerde entfernen, was die GUI importiert: {sorted(fehlt)}"
@@ -459,7 +467,7 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
         namen = tf.getnames()
     assert all(n.startswith(stage.name) for n in namen), \
         "Archiv entpackt ohne gemeinsames Wurzelverzeichnis"
-    pruefsumme = archiv.with_suffix(".gz.sha256").read_text().split()[0]
+    pruefsumme = archiv.with_suffix(".gz.sha256").read_text(encoding="utf-8").split()[0]
     assert len(pruefsumme) == 64
 
 
@@ -608,7 +616,7 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
         "Protokoll landete im Arbeitsverzeichnis des Aufrufers"
 
     # Der Ausweis sagt, was dem Installer gehört — daran hängt das Deinstallieren.
-    ausweis = (ziel / ".k1520emu-installation").read_text()
+    ausweis = (ziel / ".k1520emu-installation").read_text(encoding="utf-8")
     for eintrag in ("bin", "app", "share", "venv", "python"):
         assert f"eintrag {eintrag}" in ausweis, f"{eintrag} fehlt im Inventar"
 
