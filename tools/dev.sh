@@ -37,6 +37,8 @@
 #   tools/dev.sh check                build/ + build_trace/ bauen + Frische melden
 #   tools/dev.sh rebuild              build/ + build_trace/ von Grund auf neu (rm -rf)
 #
+# K1520_JOBS=<n> setzt die Testparallelität (Vorgabe: nproc).
+#
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -65,6 +67,22 @@ case "$(uname -s 2>/dev/null || echo unknown)" in
 esac
 EXE=""; GENERATOR=()
 if [ "$WINDOWS" = 1 ]; then EXE=".exe"; GENERATOR=(-G Ninja); fi
+
+# ─── Testparallelität ────────────────────────────────────────────────────────
+# ctest startet JEDEN Testfall als eigenen Prozess (gtest_discover_tests macht aus
+# jedem TEST einen ctest-Fall).  Serieller Lauf heißt deshalb: 909 Prozessstarts
+# nacheinander.  Messung 2026-08-12: 36 s seriell → 14 s mit -j16; unter wine
+# (Cross-Bau) sogar 15 min → 15 s, weil dort jeder Start ~0,5 s kostet.
+#
+# Voraussetzung ist, dass kein Testfall einen FESTEN Dateinamen unter /tmp
+# benutzt — sonst greifen zwei gleichzeitig auf dieselbe Datei zu.  Dafür gibt es
+# k1520test::tempPath() (tests/support/temp_path.h); unter Linux fiele ein
+# Verstoß nicht auf, unter Windows schlägt er als „Sharing violation" zu.
+#
+# Die langsamen Formatläufe bleiben bewusst außen vor: sie fahren FORMAT.COM über
+# ganze Disketten, sind E/A-gebunden, und slow-tests.yml gibt ihnen ohnehin ein
+# eigenes -j mit.
+JOBS="${K1520_JOBS:-$(nproc 2>/dev/null || echo 4)}"
 
 c_red() { printf '\033[31m%s\033[0m\n' "$*"; }
 c_grn() { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -113,8 +131,9 @@ case "$cmd" in
         # Standard-Regression: die langsamen Format-Läufe NICHT mit ausführen —
         # LABEL format_integration (Boot-Disk-Kette) und format_matrix (88 Menüs).
         # Für nur diese: test-format bzw. test-matrix; für ALLES: test-all.
-        c_ylw ">> ctest (build/) [ohne format_integration/format_matrix]"
-        ctest --test-dir build --output-on-failure -LE "format_(integration|matrix)" "$@" ;;
+        c_ylw ">> ctest (build/, -j$JOBS) [ohne format_integration/format_matrix]"
+        ctest --test-dir build --output-on-failure -LE "format_(integration|matrix)" \
+              -j"$JOBS" "$@" ;;
     test-all)
         build_dir build
         c_ylw ">> ctest (build/) ALLE inkl. format_integration + format_matrix"
@@ -131,15 +150,15 @@ case "$cmd" in
         # pytest-Ebene: C-ABI (ctypes gegen libk1520core.so) + PySide6-GUI.
         # Braucht die gebaute Bibliothek — deshalb erst bauen.
         build_dir build
-        c_ylw ">> ctest (build/) NUR Python-Tests (Label python)"
-        ctest --test-dir build --output-on-failure -L python "$@" ;;
+        c_ylw ">> ctest (build/, -j$JOBS) NUR Python-Tests (Label python)"
+        ctest --test-dir build --output-on-failure -L python -j"$JOBS" "$@" ;;
     test-level)
         # Testebenen (Labels, siehe tests/CMakeLists.txt):
         #   unit debugtools integration cli system python  —  quer dazu: fast slow
         lvl="${1:?Ebene fehlt: unit|debugtools|integration|cli|system|python}"; shift
         build_dir build
-        c_ylw ">> ctest (build/) NUR Ebene '$lvl'"
-        ctest --test-dir build --output-on-failure -L "^$lvl$" "$@" ;;
+        c_ylw ">> ctest (build/, -j$JOBS) NUR Ebene '$lvl'"
+        ctest --test-dir build --output-on-failure -L "^$lvl$" -j"$JOBS" "$@" ;;
     trace)
         build_dir build_trace
         c_ylw ">> build_trace/boot_trace$EXE $*"; exec "build_trace/boot_trace$EXE" "$@" ;;
@@ -154,17 +173,12 @@ case "$cmd" in
         # die verbindliche Prüfung ist .github/workflows/windows-ci.yml
         # (Begründung im Kopf von cmake/toolchain-mingw64.cmake).
         build_dir build_win
-        # -j ist hier KEINE Feinheit, sondern der Unterschied zwischen 15 Minuten
-        # und 15 Sekunden: ctest startet jeden der ~900 Testfälle als eigenen
-        # Prozess, und jeder wine-Start kostet rund eine halbe Sekunde.  Seriell
-        # ist das fast reine Startzeit.  Voraussetzung dafür sind eindeutige
-        # Temp-Dateinamen (k1520test::tempPath, tests/support/temp_path.h) —
-        # ohne die kollidieren gleichzeitige Testprozesse unter Windows.
-        jobs="$(nproc 2>/dev/null || echo 4)"
-        c_ylw ">> ctest (build_win/, unter wine, -j$jobs) [ohne format_integration/format_matrix]"
+        # Unter wine ist -j der Unterschied zwischen 15 Minuten und 15 Sekunden
+        # (jeder Prozessstart ~0,5 s) — Begründung oben bei JOBS.
+        c_ylw ">> ctest (build_win/, unter wine, -j$JOBS) [ohne format_integration/format_matrix]"
         WINEDEBUG="${WINEDEBUG:--all}" \
         ctest --test-dir build_win --output-on-failure -LE "format_(integration|matrix)" \
-              -j"$jobs" "$@" ;;
+              -j"$JOBS" "$@" ;;
     check)
         for d in build build_trace; do [ -d "$d" ] && build_dir "$d" || c_ylw ">> $d: nicht vorhanden"; done ;;
     rebuild)

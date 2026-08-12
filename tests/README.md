@@ -9,8 +9,13 @@ Umbaugeschichte in `doc/testsystem_rework.md`.
 Immer über `tools/dev.sh` — es baut zuerst das passende Verzeichnis und
 verhindert damit, dass man versehentlich alte Objektdateien testet.
 
+Die Regression läuft **parallel** (`ctest -j`, Vorgabe `nproc`; mit `K1520_JOBS=<n>`
+anders einstellbar) — 909 Fälle in ~14 s statt ~36 s. Das setzt voraus, dass kein Test
+einen festen Temp-Dateinamen benutzt; dafür gibt es `k1520test::tempPath()`, siehe
+[unten](#vier-windows-fallen-beim-testschreiben).
+
 ```sh
-tools/dev.sh test                    # Regression: alles außer den langsamen (~12 s)
+tools/dev.sh test                    # Regression: alles außer den langsamen (~14 s)
 tools/dev.sh test-format             # NUR die Boot-Disk-Kette (Label format_integration)
 tools/dev.sh test-matrix             # NUR die 88 Format-Matrix-Tests (jedes FORMAT.COM-Menü)
 tools/dev.sh test-all                # beides
