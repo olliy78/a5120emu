@@ -307,9 +307,24 @@ if [ "$ARCHIVE" = yes ]; then
         # .zip statt .tar.gz: der Explorer packt es mit einem Doppelklick aus.
         # Gepackt wird über PowerShell — die Git-Bash bringt kein `zip` mit, und
         # ihr GNU-tar kann kein zip erzeugen.
+        #
+        # ABER NICHT mit `Compress-Archive`: das schreibt unter Windows
+        # PowerShell 5.1 BACKSLASHES als Trennzeichen in die Eintragsnamen.  Die
+        # ZIP-Spezifikation verlangt Schrägstriche; der Explorer verzeiht es,
+        # Pythons `zipfile` sieht dann gar keine Verzeichnisse und `unzip` unter
+        # Linux legt Dateien mit Backslash IM NAMEN an.  Gefunden am 2026-08-12
+        # beim Hineinsehen ins fertige Release-Artefakt.
+        #
+        # `ZipFile::CreateFromDirectory` hält sich an die Spezifikation; das
+        # letzte Argument nimmt den obersten Ordner mit ins Archiv, damit das
+        # Auspacken nicht alles ins aktuelle Verzeichnis streut.
         ARCHIV="$NAME.zip"
+        rm -f "$OUT/$ARCHIV"
         powershell.exe -NoProfile -NonInteractive -Command \
-            "Compress-Archive -Path '$(cygpath -w "$OUT/$NAME")' -DestinationPath '$(cygpath -w "$OUT/$ARCHIV")' -Force" \
+            "Add-Type -AssemblyName System.IO.Compression.FileSystem; \
+             [System.IO.Compression.ZipFile]::CreateFromDirectory( \
+               '$(cygpath -w "$OUT/$NAME")', '$(cygpath -w "$OUT/$ARCHIV")', \
+               [System.IO.Compression.CompressionLevel]::Optimal, \$true)" \
             || die "Archiv nicht erzeugbar"
     else
         ARCHIV="$NAME.tar.gz"

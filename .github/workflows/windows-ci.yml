@@ -443,6 +443,22 @@ jobs:
           done
           echo "$paket" > paket_pfad.txt
 
+          # Die ZIP-Spezifikation verlangt SCHRAEGSTRICHE als Trennzeichen.
+          # `Compress-Archive` schreibt unter PowerShell 5.1 Backslashes — der
+          # Explorer verzeiht das, Pythons zipfile sieht dann keine
+          # Verzeichnisse und `unzip` legt Dateien mit Backslash im Namen an.
+          python -c "
+          import sys, zipfile, glob
+          datei = glob.glob('dist/*.zip')[0]
+          namen = zipfile.ZipFile(datei).namelist()
+          schlecht = [n for n in namen if '\\\\' in n]
+          if schlecht:
+              sys.exit('ZIP mit Backslash-Trennzeichen: %s' % schlecht[:3])
+          if not any('/payload/bin/' in n for n in namen):
+              sys.exit('ZIP hat keine payload/bin-Eintraege — Struktur kaputt?')
+          print('ZIP-Struktur in Ordnung (%d Eintraege)' % len(namen))
+          "
+
       # ── Der eigentliche Zweck: install.ps1 einmal wirklich fahren ───────────
       - name: Probeinstallation
         shell: pwsh
