@@ -536,6 +536,9 @@ TEST(FloppyDriveV2, Doppelschritt_SchreibenZwischenDenSpurenWirdVerworfen) {
     ASSERT_FALSE(nachher.empty());
     EXPECT_EQ(nachher[0].data[0], 0x5A);
 
+    // Erst aushaengen, dann loeschen: ~DiskImage() flusht: eine veraenderte Diskette
+    // schriebe die Datei sonst NACH dem remove() wieder in /tmp.
+    drv.unmount();
     std::filesystem::remove(path);
 }
 

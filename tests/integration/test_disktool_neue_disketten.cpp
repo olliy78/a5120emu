@@ -75,7 +75,8 @@ class TempPfad {
 public:
     explicit TempPfad(const char* name)
         : pfad_(k1520test::tempPath(name)) {}
-    ~TempPfad() { std::error_code ec; std::filesystem::remove(pfad_, ec); }
+    /// Auch die Sicherungskopie, die das DiskTool beim ersten Schreiben anlegt.
+    ~TempPfad() { std::error_code ec; std::filesystem::remove(pfad_, ec); std::filesystem::remove(pfad_ + "~", ec); }
     const std::string& get() const { return pfad_; }
 private:
     std::string pfad_;

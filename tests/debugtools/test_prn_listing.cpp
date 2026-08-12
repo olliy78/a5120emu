@@ -164,6 +164,9 @@ TEST(PrnListing, LoadAppliesOffsetToKeys){
     EXPECT_EQ(b.find(0xD200), nullptr);
     ASSERT_NE(b.find(0xD000), nullptr);
     EXPECT_EQ(*b.find(0xD000), "BIOS00: JP kaltst");
+
+    std::error_code ec;
+    std::filesystem::remove(tmp, ec);
 }
 
 // --- Objektbytes (für den Versatz-Abgleich `@auto`) --------------------------

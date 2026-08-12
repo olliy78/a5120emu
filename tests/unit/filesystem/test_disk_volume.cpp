@@ -641,6 +641,9 @@ TEST(DiskVolume, NeuAngelegteDisketteIstBeschreibbar) {
     schreibe(q / "Side1" / "B.DAT", "y");
     EXPECT_TRUE(dv->insertAll(q.path(), TransferOptions{})) << dv->lastError();
 
+    // Erst schliessen, dann loeschen: ~DiskImage() flusht, sonst legt die eben
+    // beschriebene Diskette die Datei NACH dem remove() wieder an.
+    dv.reset();
     std::error_code ec;
     fs::remove(pfad, ec);
 }

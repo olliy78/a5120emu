@@ -65,8 +65,32 @@ static DiskFormat makeFormat_2cyl_2head_4sec() {
  * Einseitig: Sektoren mit Sektor-ID als Füll-Byte.
  * Zweiseitig: head0-Sektoren mit Sektor-ID (0x01…), head1-Sektoren mit 0x80 | Sektor-ID.
  */
+/**
+ * @brief Aufräumnetz für die Abbilder aus @ref makeTmpImg.
+ *
+ * Die Tests löschen ihre Datei selbst — das reicht aber NICHT: der Controller hält die
+ * Diskette bis zum Ende des Tests, und `~DiskImage()` flusht.  Eine beschriebene
+ * Diskette legt die Datei also NACH dem `remove()` des Tests wieder an.  Diese
+ * Umgebung läuft, wenn alle Fixtures zerstört sind, und räumt den Rest weg.
+ */
+static std::vector<std::string> g_temp_images;
+
+namespace {
+class TempImageCleanup : public ::testing::Environment {
+public:
+    void TearDown() override {
+        std::error_code ec;
+        for (const auto& p : g_temp_images) std::filesystem::remove(p, ec);
+        g_temp_images.clear();
+    }
+};
+const auto* g_cleanup_registered =
+    ::testing::AddGlobalTestEnvironment(new TempImageCleanup);
+}  // namespace
+
 static std::string makeTmpImg(const DiskFormat& fmt, const std::string& suffix = "") {
     const auto path = k1520test::tempPath(("k1520_v2_" + fmt.name + suffix + ".img"));
+    g_temp_images.push_back(path);
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     const uint8_t ncyls  = fmt.numCylinders();
     const uint8_t nheads = fmt.numHeads();

@@ -653,6 +653,11 @@ TEST(UdosFileSystemWrite, MkfsLegtEinBenutzbaresDateisystemAn) {
     auto wieder = UdosFileSystem::mount(raum, *p, 0, err);
     EXPECT_NE(wieder, nullptr) << err;
 
+    // Erst die Diskette schliessen, dann loeschen: ~DiskImage() flusht, eine
+    // beschriebene Diskette legte die Datei sonst NACH dem remove() wieder an.
+    wieder.reset();
+    fs.reset();
+    disk.reset();
     std::error_code ec;
     std::filesystem::remove(pfad, ec);
 }
