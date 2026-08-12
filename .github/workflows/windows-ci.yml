@@ -26,10 +26,6 @@
 name: Windows — Bauen und Regression
 
 on:
-  # VORUEBERGEHEND: die 40 umgestellten Temp-Pfade auf echtem MSVC gegenpruefen.
-  # Faellt sofort danach wieder raus (siehe doc/ci_pipeline.md §2.3).
-  push:
-    branches: [windows_port_cicd]
   workflow_dispatch:
     inputs:
       testebene:
