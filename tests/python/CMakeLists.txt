@@ -39,8 +39,18 @@ if (K1520_PYTEST_PYTHON AND _k1520_pydeps EQUAL 0)
     set(_py_modules c_api disk_c_api binding boot_smoke drive_types config_io
                     keyboard_map gui_smoke disktool_gui paths packaging)
     foreach(_mod IN LISTS _py_modules)
+        # -p no:cacheprovider: ALLE Fälle laufen im selben Arbeitsverzeichnis, und
+        # seit die Regression parallel fährt (`ctest -j`) auch gleichzeitig.  Der
+        # Cache-Anbieter legt dabei sein Verzeichnis über ein Temp-Verzeichnis plus
+        # Umbenennen an (`<rootdir>/pytest-cache-files-XXXX`) — zwei Prozesse
+        # geraten sich dabei in die Quere, und der Verlierer bricht schon beim
+        # EINSAMMELN ab („FileNotFoundError … pytest-cache-files-…"), also ohne
+        # einen einzigen Test gefahren zu haben.  Genau so am 2026-08-12 auf
+        # windows-latest passiert.  Der Cache trägt hier ohnehin nichts bei: er
+        # speist `--lf`/`--ff`, und jeder ctest-Fall fährt genau ein Modul.
         add_test(NAME py_${_mod}
             COMMAND "${K1520_PYTEST_PYTHON}" -m pytest -q --no-header
+                    -p no:cacheprovider
                     "${CMAKE_CURRENT_SOURCE_DIR}/test_${_mod}.py"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         set_tests_properties(py_${_mod} PROPERTIES

@@ -10,9 +10,16 @@ Immer über `tools/dev.sh` — es baut zuerst das passende Verzeichnis und
 verhindert damit, dass man versehentlich alte Objektdateien testet.
 
 Die Regression läuft **parallel** (`ctest -j`, Vorgabe `nproc`; mit `K1520_JOBS=<n>`
-anders einstellbar) — 909 Fälle in ~14 s statt ~36 s. Das setzt voraus, dass kein Test
-einen festen Temp-Dateinamen benutzt; dafür gibt es `k1520test::tempPath()`, siehe
-[unten](#vier-windows-fallen-beim-testschreiben).
+anders einstellbar) — 932 Fälle in ~14 s statt ~36 s. Der Preis dafür: **kein Test darf
+geteilten Zustand anfassen**, denn ctest startet jeden Fall als eigenen Prozess. Zwei
+Stellen sind daran schon aufgelaufen:
+
+* **Temp-Dateien** brauchen einen eindeutigen Namen — `k1520test::tempPath()`, siehe
+  [unten](#vier-windows-fallen-beim-testschreiben).
+* **pytests Cache-Verzeichnis** liegt für alle Fälle am selben Ort; die ctest-Aufrufe
+  schalten ihn deshalb ab (`-p no:cacheprovider` in `python/CMakeLists.txt`). Ohne das
+  brach der Verlierer eines Rennens schon beim Einsammeln ab — *ohne einen einzigen Test
+  gefahren zu haben*, was in der Ausgabe wie ein Testfehler aussieht.
 
 ```sh
 tools/dev.sh test                    # Regression: alles außer den langsamen (~14 s)
