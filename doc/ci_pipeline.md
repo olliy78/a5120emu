@@ -259,12 +259,20 @@ Der Auswahlpunkt *Was laufen soll* reicht `build`, `test`, `test-level unit` ode
 nicht jedes Mal die volle Runde zu zahlen.
 
 > **Vor dem CI-Lauf lokal gegenprüfen:** `tools/dev.sh win` übersetzt hier auf dem
-> Linux-Rechner mit **MinGW-w64** nach Windows und fährt die Tests unter `wine`
-> (`cmake/toolchain-mingw64.cmake`, braucht `sudo apt install g++-mingw-w64-x86-64
-> wine`). Das findet in Sekunden, was plattformabhängig ist — POSIX-Aufrufe,
-> fehlende `_WIN32`-Zweige, Pfadtrennzeichen. Es **ersetzt den CI-Lauf nicht**:
-> MinGW ist GCC und exportiert wie unter Linux per Vorgabe alles, kennt MSVCs
-> Strenge nicht und baut weder mit `/utf-8` noch mit statischer CRT.
+> Linux-Rechner mit **MinGW-w64** nach Windows und fährt die 898 Tests unter `wine`
+> — in **~15 Sekunden** (`cmake/toolchain-mingw64.cmake`, braucht
+> `sudo apt install g++-mingw-w64-x86-64 wine`). Das findet, was plattformabhängig
+> ist: POSIX-Aufrufe, fehlende `_WIN32`-Zweige, Pfadtrennzeichen, offene Dateigriffe.
+>
+> Es **ersetzt den CI-Lauf nicht**: MinGW ist GCC und exportiert wie unter Linux per
+> Vorgabe alles, kennt MSVCs Strenge nicht und baut weder mit `/utf-8` noch mit
+> statischer CRT. Umgekehrt findet es aber auch Dinge, die MSVC hier *nicht* zeigt —
+> weil es mit `-j` läuft: die parallel-unsicheren Temp-Dateinamen (2026-08-12) fielen
+> nur so auf.
+>
+> Die `-j`-Angabe ist dabei kein Zierrat, sondern der Unterschied zwischen 15 Minuten
+> und 15 Sekunden: `ctest` startet jeden der ~900 Fälle als eigenen Prozess, und jeder
+> `wine`-Start kostet rund eine halbe Sekunde. `dev.sh win` setzt sie selbst.
 
 ---
 

@@ -154,8 +154,17 @@ case "$cmd" in
         # die verbindliche Prüfung ist .github/workflows/windows-ci.yml
         # (Begründung im Kopf von cmake/toolchain-mingw64.cmake).
         build_dir build_win
-        c_ylw ">> ctest (build_win/, unter wine) [ohne format_integration/format_matrix]"
-        ctest --test-dir build_win --output-on-failure -LE "format_(integration|matrix)" "$@" ;;
+        # -j ist hier KEINE Feinheit, sondern der Unterschied zwischen 15 Minuten
+        # und 15 Sekunden: ctest startet jeden der ~900 Testfälle als eigenen
+        # Prozess, und jeder wine-Start kostet rund eine halbe Sekunde.  Seriell
+        # ist das fast reine Startzeit.  Voraussetzung dafür sind eindeutige
+        # Temp-Dateinamen (k1520test::tempPath, tests/support/temp_path.h) —
+        # ohne die kollidieren gleichzeitige Testprozesse unter Windows.
+        jobs="$(nproc 2>/dev/null || echo 4)"
+        c_ylw ">> ctest (build_win/, unter wine, -j$jobs) [ohne format_integration/format_matrix]"
+        WINEDEBUG="${WINEDEBUG:--all}" \
+        ctest --test-dir build_win --output-on-failure -LE "format_(integration|matrix)" \
+              -j"$jobs" "$@" ;;
     check)
         for d in build build_trace; do [ -d "$d" ] && build_dir "$d" || c_ylw ">> $d: nicht vorhanden"; done ;;
     rebuild)
