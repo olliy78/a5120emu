@@ -204,8 +204,6 @@ tests/       Testebenen unit/ debugtools/ integration/ cli/ system/ python/
 doc/         Architektur, Entwürfe, Analysen, EPROM-Abzüge
 data/        formats.yaml — Katalog der Diskettengeometrien
 disks/       Disketten für Werkzeuge und Handversuche
-boot_disk/   Original-CP/A-Programme (@OS.COM, FORMAT.COM, M80 …)
-cpa_src/     Original-CP/A-BIOS-Quellen (.mac)
 cparun/      eigenständiges Unterprojekt: CP/M-Programme direkt auf dem Host ausführen
 ```
 

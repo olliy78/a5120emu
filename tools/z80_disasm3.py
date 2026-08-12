@@ -1171,7 +1171,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else str(ROOT / 'boot_disk/format.com')
+    # Bis 2026-08-12 stand hier boot_disk/format.com als Vorgabe.  Das
+    # Verzeichnis mit den Original-CP/A-Programmen ist entfernt; eine Vorgabe,
+    # die ins Leere zeigt, ist schlechter als eine klare Ansage.
+    if len(sys.argv) <= 1:
+        sys.exit(f"Aufruf: {sys.argv[0]} <datei.com> [--org 0x100] …\n"
+                 "  Die Datei aus einer Diskette holen:\n"
+                 "  tools/dev.sh tool k1520disktool get <abbild> FORMAT.COM --to .")
+    path = sys.argv[1]
     data = read_binary(path)
     
     dis = FormatDisassembler(data)

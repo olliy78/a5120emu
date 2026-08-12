@@ -12,7 +12,7 @@ Requires: pip install z80dis  (already in the project venv)
 
 Usage:
     venv/bin/python tools/disasm_difftest.py doc/EPROMS/zre.rom
-    venv/bin/python tools/disasm_difftest.py boot_disk/format.com --org 0x100
+    venv/bin/python tools/disasm_difftest.py FORMAT.COM --org 0x100
     venv/bin/python tools/disasm_difftest.py <file> --max-report 40
 """
 import argparse
