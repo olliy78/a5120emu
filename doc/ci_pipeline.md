@@ -24,7 +24,7 @@ Entwicklungsrechner mit der Zeit im Hintergrund stehen.
 | `ci.yml` | **Bauen und Regression** | nur von Hand | ~8–12 min (mit warmem ccache ~4) |
 | `slow-tests.yml` | **Langsame Tests (Format)** | nur von Hand | ~20–40 min |
 | `release.yml` | **Release-Paket** | von Hand **oder** Push eines Tags `v*` | ~6–10 min |
-| `windows-ci.yml` | **Windows — Bauen und Regression** | nur von Hand | ~15–25 min |
+| `windows-ci.yml` | **Windows — Bauen und Regression** | nur von Hand | ~4 min (mit warmem sccache ~2) |
 
 Alle Testläufe rufen **`tools/dev.sh`** auf, nie `cmake`/`ctest` direkt. Dort stehen
 Build-Typ, `LOG_LEVEL` und die ausgeschlossenen Label; eine Pipeline, die daran
@@ -243,6 +243,23 @@ Der Job räumt drei Windows-Eigenheiten ab, die man kennen sollte, wenn man ihn 
    MSYS/Git-Bash deshalb Ninja — das Layout bleibt identisch zu Linux.
 3. **Das venv liegt unter `venv/Scripts/`,** nicht `venv/bin/`;
    `tests/python/CMakeLists.txt` kennt beide Orte.
+
+**sccache** ist das Windows-Gegenstück zum `ccache` in `ci.yml` und hängt über die
+Umgebungsvariable `CMAKE_CXX_COMPILER_LAUNCHER` ein — CMake liest sie beim
+Konfigurieren selbst, `tools/dev.sh` braucht dafür keine Zeile. Gemessen am
+2026-08-12, derselbe Stand zweimal gefahren:
+
+| | Bau + Tests | Lauf gesamt | Trefferquote |
+|---|---:|---:|---:|
+| kalt | 202 s | 260 s | 0 % |
+| warm | **48 s** | **100 s** | **100 %** |
+
+Von den 48 s sind 16 s die Tests (`ctest -j4`), der Rest Bau und Binden. Der Schritt
+*sccache-Ausbeute* druckt die Statistik nach jedem Lauf — **da muss man hinsehen**:
+reicht sccache alles nur durch (`Non-cacheable compilations` in Höhe der
+Übersetzungen), ist der Bau nicht kaputt, sondern bloß unverändert langsam, und das
+fällt sonst niemandem auf. Vier nicht zwischenspeicherbare Aufrufe sind normal (das
+sind die Verknüpfungsschritte).
 
 Danach prüft der Job mit `dumpbin /exports`, dass **beide** DLLs ihre Funktionen auch
 wirklich ausführen (≥ 30 Symbole je DLL). Ohne `K1520_API` exportiert eine MSVC-DLL

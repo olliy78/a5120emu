@@ -26,9 +26,6 @@
 name: Windows — Bauen und Regression
 
 on:
-  # VORUEBERGEHEND: sccache einfahren (kalt + warm messen).  Faellt danach raus.
-  push:
-    branches: [windows_port_cicd]
   workflow_dispatch:
     inputs:
       testebene:
@@ -124,11 +121,15 @@ jobs:
           restore-keys: gtest-windows-
 
       # ── Übersetzer-Zwischenspeicher (das Gegenstück zu ccache in ci.yml) ─────
-      # Der MSVC-Bau ist mit Abstand der teuerste Schritt: gemessen 167 s von
-      # 260 s Gesamtlaufzeit (2026-08-12).  sccache macht daraus bei warmem
-      # Zwischenspeicher einen Bruchteil.  Das ist keine Kostenfrage, solange das
-      # Repository öffentlich ist (dann sind die Minuten frei) — wohl aber eine,
-      # sobald es privat wird: Windows-Minuten zählen DOPPELT gegen das
+      # Der MSVC-Bau war mit Abstand der teuerste Schritt.  Gemessen 2026-08-12,
+      # derselbe Stand zweimal gefahren:
+      #
+      #     kalt   Bau+Tests 202 s,  Lauf gesamt 260 s,  Trefferquote   0 %
+      #     warm   Bau+Tests  48 s,  Lauf gesamt 100 s,  Trefferquote 100 %
+      #
+      # (davon 16 s Tests, der Rest Bau und Binden).  Das ist keine Kostenfrage,
+      # solange das Repository öffentlich ist — dann sind die Minuten frei —, wohl
+      # aber eine, sobald es privat wird: Windows-Minuten zählen DOPPELT gegen das
       # Kontingent (§2.4).
       - name: sccache-Zwischenstand
         uses: actions/cache@v4
