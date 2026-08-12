@@ -315,17 +315,36 @@ if [ "$ARCHIVE" = yes ]; then
         # Linux legt Dateien mit Backslash IM NAMEN an.  Gefunden am 2026-08-12
         # beim Hineinsehen ins fertige Release-Artefakt.
         #
-        # `ZipFile::CreateFromDirectory` hält sich an die Spezifikation; das
-        # letzte Argument nimmt den obersten Ordner mit ins Archiv, damit das
-        # Auspacken nicht alles ins aktuelle Verzeichnis streut.
+        # Auch `ZipFile::CreateFromDirectory` hilft NICHT: unter .NET Framework
+        # — und das ist die Laufzeit von Windows PowerShell 5.1 — schreibt auch
+        # sie den Plattform-Trenner in die Eintragsnamen; behoben ist das erst
+        # in .NET 5.  Die Namen werden deshalb SELBST gebildet und ausdrücklich
+        # auf Schrägstriche gebracht.  Das ist auf jeder .NET-Fassung richtig
+        # und haengt an keiner PowerShell-Version.
         ARCHIV="$NAME.zip"
         rm -f "$OUT/$ARCHIV"
-        powershell.exe -NoProfile -NonInteractive -Command \
-            "Add-Type -AssemblyName System.IO.Compression.FileSystem; \
-             [System.IO.Compression.ZipFile]::CreateFromDirectory( \
-               '$(cygpath -w "$OUT/$NAME")', '$(cygpath -w "$OUT/$ARCHIV")', \
-               [System.IO.Compression.CompressionLevel]::Optimal, \$true)" \
+        powershell.exe -NoProfile -NonInteractive -Command "
+            Add-Type -AssemblyName System.IO.Compression.FileSystem;
+            \$basis = '$(cygpath -w "$OUT")';
+            \$zip = [System.IO.Compression.ZipFile]::Open('$(cygpath -w "$OUT/$ARCHIV")', 'Create');
+            try {
+                Get-ChildItem -Recurse -File -LiteralPath '$(cygpath -w "$OUT/$NAME")' | ForEach-Object {
+                    \$rel = \$_.FullName.Substring(\$basis.Length).TrimStart('\\','/') -replace '\\','/';
+                    [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                        \$zip, \$_.FullName, \$rel,
+                        [System.IO.Compression.CompressionLevel]::Optimal)
+                }
+            } finally { \$zip.Dispose() }" \
             || die "Archiv nicht erzeugbar"
+
+        # Sofort nachsehen — der vorige Versuch sah richtig aus und war es nicht.
+        _schlecht=$(powershell.exe -NoProfile -NonInteractive -Command "
+            Add-Type -AssemblyName System.IO.Compression.FileSystem;
+            \$z = [System.IO.Compression.ZipFile]::OpenRead('$(cygpath -w "$OUT/$ARCHIV")');
+            try { (\$z.Entries | Where-Object { \$_.FullName -like '*\\*' }).Count }
+            finally { \$z.Dispose() }" | tr -d '\r')
+        [ "${_schlecht:-0}" = "0" ] \
+            || die "das erzeugte .zip hat $_schlecht Eintraege mit Backslash — die ZIP-Spezifikation verlangt Schraegstriche"
     else
         ARCHIV="$NAME.tar.gz"
         ( cd "$OUT" && tar czf "$ARCHIV" "$NAME" )

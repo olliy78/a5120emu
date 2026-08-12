@@ -246,6 +246,23 @@ jobs:
             throw 'die DLL braucht das VC-Redist — /MT hat nicht gegriffen (§5.1)'
           }
 
+          Write-Host '── ZIP-Struktur (Trennzeichen, Verzeichnisse) ──'
+          # Die ZIP-Spezifikation verlangt SCHRAEGSTRICHE.  Der Explorer
+          # verzeiht Backslashes, `unzip` und Pythons zipfile nicht — und dieses
+          # Artefakt haengt an einem oeffentlichen Release.  Der Waechter stand
+          # zuerst nur in windows-ci.yml und lief beim Release deshalb NIE mit.
+          $zipdatei = (Get-ChildItem dist\*.zip | Select-Object -First 1).FullName
+          $z = [System.IO.Compression.ZipFile]::OpenRead($zipdatei)
+          try {
+            $namen = $z.Entries | ForEach-Object { $_.FullName }
+          } finally { $z.Dispose() }
+          $schlecht = $namen | Where-Object { $_ -like '*\*' }
+          if ($schlecht) { throw "ZIP mit Backslash-Trennzeichen: $($schlecht[0])" }
+          if (-not ($namen | Where-Object { $_ -like '*/payload/bin/*' })) {
+            throw 'ZIP hat keine payload/bin-Eintraege — Struktur kaputt?'
+          }
+          Write-Host "     $($namen.Count) Eintraege, alle mit Schraegstrich"
+
           Write-Host '── kein Pfad des Baurechners in der Bibliothek ──'
           $bytes = [System.IO.File]::ReadAllBytes("$root\bin\k1520core.dll")
           $text  = [System.Text.Encoding]::ASCII.GetString($bytes)
