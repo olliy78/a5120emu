@@ -305,46 +305,20 @@ if [ "$ARCHIVE" = yes ]; then
     info "Archiv schnüren"
     if ist_windows; then
         # .zip statt .tar.gz: der Explorer packt es mit einem Doppelklick aus.
-        # Gepackt wird über PowerShell — die Git-Bash bringt kein `zip` mit, und
-        # ihr GNU-tar kann kein zip erzeugen.
+        # Gepackt wird von packaging/zip_ordner.ps1 — die Git-Bash bringt kein
+        # `zip` mit, ihr GNU-tar kann kein zip, und die eingebauten
+        # PowerShell-Wege schreiben unter .NET Framework BACKSLASHES in die
+        # Eintragsnamen (Begründung ausführlich im Kopf jener Datei).  Sie
+        # prüft ihr Ergebnis selbst.
         #
-        # ABER NICHT mit `Compress-Archive`: das schreibt unter Windows
-        # PowerShell 5.1 BACKSLASHES als Trennzeichen in die Eintragsnamen.  Die
-        # ZIP-Spezifikation verlangt Schrägstriche; der Explorer verzeiht es,
-        # Pythons `zipfile` sieht dann gar keine Verzeichnisse und `unzip` unter
-        # Linux legt Dateien mit Backslash IM NAMEN an.  Gefunden am 2026-08-12
-        # beim Hineinsehen ins fertige Release-Artefakt.
-        #
-        # Auch `ZipFile::CreateFromDirectory` hilft NICHT: unter .NET Framework
-        # — und das ist die Laufzeit von Windows PowerShell 5.1 — schreibt auch
-        # sie den Plattform-Trenner in die Eintragsnamen; behoben ist das erst
-        # in .NET 5.  Die Namen werden deshalb SELBST gebildet und ausdrücklich
-        # auf Schrägstriche gebracht.  Das ist auf jeder .NET-Fassung richtig
-        # und haengt an keiner PowerShell-Version.
+        # Eigene Datei statt einer `-Command`-Zeile: das Escaping durch zwei
+        # Ebenen (Bourne-Shell → PowerShell) überlebt kein `-replace '\\','/'`.
         ARCHIV="$NAME.zip"
-        rm -f "$OUT/$ARCHIV"
-        powershell.exe -NoProfile -NonInteractive -Command "
-            Add-Type -AssemblyName System.IO.Compression.FileSystem;
-            \$basis = '$(cygpath -w "$OUT")';
-            \$zip = [System.IO.Compression.ZipFile]::Open('$(cygpath -w "$OUT/$ARCHIV")', 'Create');
-            try {
-                Get-ChildItem -Recurse -File -LiteralPath '$(cygpath -w "$OUT/$NAME")' | ForEach-Object {
-                    \$rel = \$_.FullName.Substring(\$basis.Length).TrimStart('\\','/') -replace '\\','/';
-                    [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-                        \$zip, \$_.FullName, \$rel,
-                        [System.IO.Compression.CompressionLevel]::Optimal)
-                }
-            } finally { \$zip.Dispose() }" \
+        powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+            -File "$(cygpath -w "$SELF_DIR/zip_ordner.ps1")" \
+            -Quelle "$(cygpath -w "$OUT/$NAME")" \
+            -Ziel   "$(cygpath -w "$OUT/$ARCHIV")" \
             || die "Archiv nicht erzeugbar"
-
-        # Sofort nachsehen — der vorige Versuch sah richtig aus und war es nicht.
-        _schlecht=$(powershell.exe -NoProfile -NonInteractive -Command "
-            Add-Type -AssemblyName System.IO.Compression.FileSystem;
-            \$z = [System.IO.Compression.ZipFile]::OpenRead('$(cygpath -w "$OUT/$ARCHIV")');
-            try { (\$z.Entries | Where-Object { \$_.FullName -like '*\\*' }).Count }
-            finally { \$z.Dispose() }" | tr -d '\r')
-        [ "${_schlecht:-0}" = "0" ] \
-            || die "das erzeugte .zip hat $_schlecht Eintraege mit Backslash — die ZIP-Spezifikation verlangt Schraegstriche"
     else
         ARCHIV="$NAME.tar.gz"
         ( cd "$OUT" && tar czf "$ARCHIV" "$NAME" )
