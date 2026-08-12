@@ -152,6 +152,142 @@ TEST(DiskVolume, LehntAbbildOhneKatalogeintragMitDiagnoseAb) {
         << "die Meldung muss die gemessene Geometrie nennen:\n" << err;
 }
 
+/**
+ * @test Eine Geometrie OHNE Katalogprofil wird trotzdem geoeffnet — per CP/A-Regel.
+ * @par Kriterium  `k5601_ss80_26x128` hat keinen `filesystems:`-Eintrag; die Diskette
+ *                 laesst sich dennoch oeffnen, das Dateisystem heisst `cpa_auto`, und
+ *                 die Meldung sagt, woher die Werte stammen.
+ * @par Warum      Das ist der Kern des Rueckfalls: der Katalog nennt nur die Handvoll
+ *                 Disketten, die man staendig braucht; alles andere rechnet die Regel
+ *                 aus, mit der auch das CP/A-BIOS arbeitet.
+ */
+TEST(DiskVolume, GeometrieOhneProfilWirdUeberDieCpaRegelGeoeffnet) {
+    const std::string pfad =
+        k1520test::tempPath("k1520_dv_ohne_profil.hfe");
+    const DiskFormat* fmt = formate().find("k5601_ss80_26x128");
+    ASSERT_NE(fmt, nullptr);
+    ASSERT_TRUE(dateisysteme().forFormat(fmt->name).empty())
+        << "der Test setzt voraus, dass diese Geometrie KEIN benanntes Profil hat";
+    ASSERT_NE(DiskImage::create(pfad, *fmt, /*write_protect=*/false), nullptr);
+
+    std::string err;
+    auto dv = oeffne(pfad, "", err);
+    std::error_code ec;
+    fs::remove(pfad, ec);
+
+    ASSERT_NE(dv, nullptr) << err;
+    EXPECT_EQ(dv->detection().format, "k5601_ss80_26x128");
+    EXPECT_EQ(dv->detection().filesystem, "cpa_auto");
+    EXPECT_NE(dv->detection().remarks.find("CP/A-Regel"), std::string::npos)
+        << dv->detection().remarks;
+    EXPECT_TRUE(dv->list().empty()) << "frisch formatiert = keine Dateien";
+}
+
+/**
+ * @test Ein benanntes Profil geht dem abgeleiteten IMMER vor.
+ * @par Kriterium  Die 780K-Bootdiskette meldet `cpa780`, nicht `cpa_auto` — obwohl die
+ *                 Regel dasselbe ausrechnen wuerde.
+ */
+TEST(DiskVolume, BenanntesProfilGehtDemAbgeleitetenVor) {
+    std::string err;
+    auto dv = oeffne(fixture("cpa_cpa780_k5601_clock.hfe"), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+    EXPECT_EQ(dv->detection().filesystem, "cpa780");
+}
+
+/**
+ * @test `--fs cpa_auto` erzwingt die Regel, auch wo ein Katalogprofil passen wuerde.
+ */
+TEST(DiskVolume, CpaAutoLaesstSichAusdruecklichAnfordern) {
+    std::string err;
+    auto dv = oeffne(fixture("cpa_cpa780_k5601_clock.hfe"), "cpa_auto", err);
+    ASSERT_NE(dv, nullptr) << err;
+    EXPECT_EQ(dv->detection().format, "cpa780");
+    EXPECT_EQ(dv->detection().filesystem, "cpa_auto");
+    EXPECT_EQ(dv->list().size(), 24u) << "dieselben Dateien wie mit dem Profil cpa780";
+}
+
+/**
+ * @test Eine MS-DOS-Diskette wird als solche benannt, nicht als „unbekannt" abgetan.
+ * @par Kriterium  Die Meldung nennt FAT und die OEM-Kennung.
+ * @par Warum      FORMAT.COM legt auf Wunsch DOS-Disketten an (die Menuepunkte mit
+ *                 `{MSDOS}`, doc/format.md §3.3).  Wer so eine Diskette einlegt, soll
+ *                 erfahren, WAS darauf liegt — nicht bloss, dass es nicht geht.
+ */
+TEST(DiskVolume, MsDosDisketteWirdAlsSolcheGemeldet) {
+    const std::string pfad = k1520test::tempPath("k1520_dv_fat.hfe");
+    const DiskFormat* fmt = formate().find("k5601_9x512");
+    ASSERT_NE(fmt, nullptr);
+    {
+        auto disk = DiskImage::create(pfad, *fmt, /*write_protect=*/false);
+        ASSERT_NE(disk, nullptr);
+        SectorSpace raum(disk->medium(), *fmt);
+        std::vector<uint8_t> boot(512, 0x00);
+        boot[0] = 0xEB; boot[1] = 0x34; boot[2] = 0x90;          // JMP SHORT / NOP
+        const char* oem = "CP/A1188";
+        for (int i = 0; i < 8; ++i) boot[3 + i] = static_cast<uint8_t>(oem[i]);
+        boot[11] = 0x00; boot[12] = 0x02;                        // 512 Bytes/Sektor
+        boot[13] = 2;                                            // Sektoren/Cluster
+        boot[21] = 0xF9;                                         // Medienkennung
+        ASSERT_TRUE(raum.writeSector(0, 0, 1, boot));
+        ASSERT_TRUE(disk->flush());
+    }
+
+    std::string err;
+    auto dv = oeffne(pfad, "", err);
+    std::error_code ec;
+    fs::remove(pfad, ec);
+
+    EXPECT_EQ(dv, nullptr);
+    EXPECT_NE(err.find("MS-DOS"), std::string::npos) << err;
+    EXPECT_NE(err.find("CP/A1188"), std::string::npos) << err;
+}
+
+/**
+ * @test **Jedes** Format des Katalogs laesst sich anlegen, wiedererkennen und mounten.
+ * @par Kriterium  Fuer jeden `formats:`-Eintrag: `DiskImage::create` → `DiskVolume::open`
+ *                 ohne `--fs` liefert ein Volume, und die erkannte Geometrie ist genau
+ *                 die, mit der angelegt wurde.
+ * @par Warum      Das ist die Zusage „alle Formate sind mountbar" als Waechter.  Er
+ *                 faellt, sobald ein neuer Katalogeintrag eine Geometrie beschreibt, die
+ *                 die Erkennung anschliessend nicht wiederfindet (Ueberdeckung durch
+ *                 einen anderen Eintrag, unzulaessige Sektorlaenge, fehlender Kopf) —
+ *                 und er kostet nichts, weil alles im Speicher passiert.
+ */
+TEST(DiskVolume, JedesKatalogformatLaesstSichAnlegenUndWiederOeffnen) {
+    const std::string pfad = k1520test::tempPath("k1520_dv_alle.hfe");
+    int geprueft = 0;
+
+    for (const DiskFormat& f : formate().formats()) {
+        std::error_code ec;
+        fs::remove(pfad, ec);
+        ASSERT_NE(DiskImage::create(pfad, f, /*write_protect=*/false), nullptr)
+            << "Format '" << f.name << "' laesst sich nicht anlegen";
+
+        std::string err;
+        auto dv = oeffne(pfad, "", err);
+        EXPECT_NE(dv, nullptr) << "Format '" << f.name << "': " << err;
+        if (dv) {
+            // Geometrisch identische Eintraege sind normal (cpa640 ≡ k5601_16x256),
+            // und ein Format darf bis zu drei Zylinder mehr deklarieren als beschrieben
+            // sind (GeometryProbe, slack_cyls) — cpa624 (78 Zyl.) wird deshalb auch von
+            // cpa640 (80 Zyl.) erkannt.  Kopfzahl und Schrittweite muessen stimmen.
+            const DiskFormat* e = formate().find(dv->detection().format);
+            ASSERT_NE(e, nullptr);
+            EXPECT_EQ(e->numHeads(), f.numHeads()) << f.name;
+            EXPECT_EQ(e->step, f.step) << f.name;
+            EXPECT_LE(std::abs(int(e->physicalCylinders()) - int(f.physicalCylinders())), 3)
+                << "Format '" << f.name << "' wurde als '" << dv->detection().format
+                << "' erkannt — zu weit auseinander";
+        }
+        ++geprueft;
+    }
+
+    std::error_code ec;
+    fs::remove(pfad, ec);
+    EXPECT_GT(geprueft, 50) << "der Katalog ist unerwartet klein";
+}
+
 TEST(DiskVolume, UdosAlsImgWirdAbgelehnt) {
     std::string err;
     auto dv = oeffne(fixture("cpa_cpa780_k5601_clock.img"), "udos_ds77", err);
@@ -575,4 +711,65 @@ TEST(DiskVolume, SpeichernUnterBindetUmUndBleibtSchreibbar) {
     std::error_code ec;
     fs::remove(ziel, ec);
     fs::remove(ziel + "~", ec);
+}
+
+/**
+ * @test Eine Geometrie, die in KEINEM Katalogeintrag steht, wird trotzdem gelesen.
+ * @par Kriterium  Das Abbild oeffnet, `detection().format` ist `(gemessen)`, die
+ *                 Anzeige sagt warum — und der Schreibschutz ist **unaufhebbar**.
+ * @par Warum      Ohne das musste man erst einen `formats:`-Eintrag schreiben, nur um
+ *                 eine fremde Diskette anzusehen.  Geschrieben wird trotzdem nicht: die
+ *                 Geometrie ist gemessen, nicht belegt, und fremde Abbilder sind meist
+ *                 Einzelstuecke (doc/design/13_k1520disktool.md §12.4).
+ */
+TEST(DiskVolume, UnbekannteGeometrieWirdVermessenUndSchreibgeschuetztGeoeffnet) {
+    const std::string pfad = k1520test::tempPath("k1520_dv_fremd.hfe");
+
+    // 7×512 auf 40 Spuren einseitig — bewusst in keinem Katalogeintrag.
+    DiskFormat fremd;
+    fremd.name = "nicht_im_katalog";
+    fremd.tracks.push_back(TrackFormat{0, 39, 0, 0, 7, 512, Encoding::MFM, 1});
+    ASSERT_EQ(formate().find("nicht_im_katalog"), nullptr);
+    ASSERT_NE(DiskImage::create(pfad, fremd, /*write_protect=*/false), nullptr);
+
+    std::string err;
+    auto dv = oeffne(pfad, "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    EXPECT_EQ(dv->detection().format, "(gemessen)");
+    EXPECT_EQ(dv->detection().filesystem, "cpa_auto");
+    EXPECT_NE(dv->detection().remarks.find("gemessene Geometrie"), std::string::npos)
+        << dv->detection().remarks;
+
+    // Der Schreibschutz laesst sich NICHT aufheben.
+    EXPECT_TRUE(dv->readOnly());
+    EXPECT_TRUE(dv->readOnlyForced());
+    dv->setReadOnly(false);
+    EXPECT_TRUE(dv->readOnly()) << "eine geratene Geometrie darf nie beschreibbar werden";
+    EXPECT_NE(dv->lastError().find("gemessen"), std::string::npos) << dv->lastError();
+
+    std::error_code ec;
+    fs::remove(pfad, ec);
+}
+
+/**
+ * @test Loecher, die kein Doppelschritt sind, werden weiter abgewiesen.
+ * @par Kriterium  Fehlt MITTENDRIN ein einzelner Zylinder, kommt die Diagnose statt
+ *                 eines locherigen Sektorraums.
+ */
+TEST(DiskVolume, LochInDerMitteWirdNichtVermessen) {
+    const std::string pfad = k1520test::tempPath("k1520_dv_loch.hfe");
+    DiskFormat fremd;
+    fremd.name = "loch";
+    fremd.tracks.push_back(TrackFormat{0, 4,  0, 0, 7, 512, Encoding::MFM, 1});
+    fremd.tracks.push_back(TrackFormat{6, 20, 0, 0, 7, 512, Encoding::MFM, 1});
+    ASSERT_NE(DiskImage::create(pfad, fremd, /*write_protect=*/false), nullptr);
+
+    std::string err;
+    auto dv = oeffne(pfad, "", err);
+    std::error_code ec;
+    fs::remove(pfad, ec);
+
+    EXPECT_EQ(dv, nullptr);
+    EXPECT_NE(err.find("Zylinder 5"), std::string::npos) << err;
 }

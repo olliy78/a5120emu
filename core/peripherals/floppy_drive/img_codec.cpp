@@ -74,9 +74,13 @@ bool ImgCodec::load(const std::string& path, const DiskFormat& fmt,
         return false;
     }
 
-    out = DiskMedium(ncyls, nheads, fmt.predominantEncoding());
+    // Beim Doppelschritt braucht das Medium die PHYSISCHE Ausdehnung; die
+    // uebersprungenen Zylinder bleiben unformatiert — genau so, wie ein
+    // 96-tpi-Laufwerk die Diskette beschreibt.
+    out = DiskMedium(fmt.physicalCylinders(), nheads, fmt.predominantEncoding());
 
     for (uint8_t c = 0; c < ncyls; ++c) {
+        const uint8_t pc = fmt.physicalCylinder(c);
         for (uint8_t h = 0; h < nheads; ++h) {
             const TrackFormat* tf = fmt.findTrack(c, h);
             if (!tf) continue;   // Spur existiert im Format nicht → bleibt unformatiert
@@ -106,7 +110,7 @@ bool ImgCodec::load(const std::string& path, const DiskFormat& fmt,
 
             // Verfahren kommt aus dem SPURBEREICH (Mischdichte: FM-Systemspur +
             // MFM-Datenspuren) — nicht aus dem Gesamtformat.
-            out.setTrack(c, h, TrackCodec::buildTrack(sektoren, tf->encoding));
+            out.setTrack(pc, h, TrackCodec::buildTrack(sektoren, tf->encoding));
         }
     }
 
@@ -117,7 +121,7 @@ bool ImgCodec::load(const std::string& path, const DiskFormat& fmt,
 // ─── Geometrie-Abgleich ──────────────────────────────────────────────────────
 
 std::string ImgCodec::mismatchReason(const DiskFormat& fmt, const DiskMedium& in) {
-    const uint8_t ncyls  = fmt.numCylinders();
+    const uint8_t ncyls  = fmt.physicalCylinders();
     const uint8_t nheads = fmt.numHeads();
     if (in.numCylinders() > ncyls) {
         // Ueberzaehlige Spuren sind nur zulaessig, solange sie unformatiert sind.
@@ -134,10 +138,12 @@ std::string ImgCodec::mismatchReason(const DiskFormat& fmt, const DiskMedium& in
                + ", Diskette hat " + std::to_string(in.numHeads()) + " Seiten";
 
     for (uint8_t c = 0; c < ncyls && c < in.numCylinders(); ++c) {
+        const int lc = fmt.logicalCylinder(c);
         for (uint8_t h = 0; h < nheads && h < in.numHeads(); ++h) {
             const TrackImage& t = in.track(c, h);
             if (t.empty()) continue;
-            const TrackFormat* tf = fmt.findTrack(c, h);
+            const TrackFormat* tf =
+                lc < 0 ? nullptr : fmt.findTrack(static_cast<uint8_t>(lc), h);
             if (!tf)
                 return "Format '" + fmt.name + "' kennt Spur " + std::to_string(c)
                        + "/" + std::to_string(h) + " nicht";
@@ -189,8 +195,10 @@ bool ImgCodec::save(const std::string& path, const DiskFormat& fmt,
     std::vector<uint8_t> datei(static_cast<size_t>(total), 0xE5);
 
     for (uint8_t c = 0; c < fmt.numCylinders(); ++c) {
+        const uint8_t pc = fmt.physicalCylinder(c);
+        if (pc >= in.numCylinders()) break;
         for (uint8_t h = 0; h < fmt.numHeads(); ++h) {
-            const TrackImage& t = in.track(c, h);
+            const TrackImage& t = in.track(pc, h);
             if (t.empty()) continue;
             for (const LogicalSector& s : TrackCodec::parseTrack(t)) {
                 const int64_t off = sectorOffset(fmt, c, h, s.id);

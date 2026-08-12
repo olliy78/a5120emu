@@ -1,5 +1,30 @@
 # Feature-Request: Doppelschritt-Disketten lesen und schreiben
 
+> ## ✅ UMGESETZT am 2026-08-11 — wie hier vorgeschlagen
+>
+> `DiskFormat::step` sitzt am **Format** (§3), `tracks:` blieb logisch. Umgesetzt sind alle
+> sieben Punkte aus §4; acht Katalogeinträge `*_dstep` decken die Geometrien T und U ab.
+> Die 13 Prüfabbilder aus §5 werden erkannt, und zwar **nur** von den Doppelschritt-Formaten.
+>
+> Abnahme nach §6:
+> | | Nachweis |
+> |---|---|
+> | 1. Erkennung, keine Verwechslung mit V/W | `Doppelschritt.WirdNurVomDoppelschrittFormatErkannt`, `…EinzelschrittDisketteWirdNichtVerwechselt` |
+> | 2. mounten und listen | `Doppelschritt.LaesstSichMountenUndBeschreiben` |
+> | 3. **Rundlauf am echten CP/A** | `DiskToolNeueDisketten.CpaLiestDoppelschrittDiskette` (`DIR B:` + `TYPE B:`) |
+> | 4. `create` lässt die ungeraden Zylinder frei | `Doppelschritt.NeueDisketteLaesstJedenZweitenZylinderLeer` |
+> | 5. Namensvertrag ergänzt | `FormatCatalog.Formatnamen_SindEinStabilerVertrag` |
+>
+> **Nachgemessen und dadurch geklärt** (in §1 noch offen): die Spurnummer im **ID-Feld** ist
+> die *logische*, nicht der physische Zylinder — `fmt_clock_B_U_4.hfe` meldet auf physisch
+> c4h0 `cyl=2`. Stünde dort der Zylinder, verwürfe der Treiber des Gastsystems jeden Sektor
+> als „falsche Spur".
+>
+> Ein eigenes `filesystems:`-Profil brauchten die neuen Formate nicht: das Dateisystem
+> rechnet seit demselben Tag die CP/A-Regel aus (doc/design/13_k1520disktool.md §6.4).
+>
+> Der Text unten bleibt als Begründung und Analyse stehen.
+
 **Anlass:** Beim systematischen Erzeugen aller Diskettenformate der drei Systeme
 (2026-08-10, `tests/system/drivers/make_all_formats.py`) blieben **13 Abbilder**
 liegen, die der Formatkatalog nicht beschreiben kann — die CP/A-Geometrien `T` und

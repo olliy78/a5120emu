@@ -111,7 +111,7 @@ bool buildFormat(const yaml::Node& node, DiskFormat& out, std::string& why,
     const std::string where = file + ":" + std::to_string(node.line);
     collectUnknownKeys(node,
                        {"name", "description", "drives", "default_for",
-                        "encoding", "containers", "tracks"},
+                        "encoding", "containers", "step", "tracks"},
                        where, issues);
 
     // ── name (Pflicht) ──
@@ -143,6 +143,17 @@ bool buildFormat(const yaml::Node& node, DiskFormat& out, std::string& why,
         if (!n->isScalar() || !parseEncoding(n->scalar, fmt_enc))
             { why = "'encoding' muss 'fm' oder 'mfm' sein"; return false; }
         have_fmt_enc = true;
+    }
+
+    // ── step (optional) ──
+    // Doppelschritt: `tracks:` bleibt logisch, `step` sagt nur, auf welchem
+    // physischen Zylinder eine logische Spur liegt (doc/format.md, Austauschformate).
+    if (const yaml::Node* n = node.find("step")) {
+        if (!n->isScalar()) { why = "'step' muss eine Zahl sein"; return false; }
+        const long v = std::strtol(n->scalar.c_str(), nullptr, 10);
+        if (v != 1 && v != 2)
+            { why = "'step' kennt nur 1 (Einzelschritt) und 2 (Doppelschritt)"; return false; }
+        out.step = static_cast<uint8_t>(v);
     }
 
     // ── containers (optional) ──
@@ -349,9 +360,11 @@ bool formatFitsDrive(const DiskFormat& fmt, const DriveProfile& prof, std::strin
         return say("Format braucht " + std::to_string(fmt.numHeads()) + " Köpfe, Laufwerk hat "
                    + std::to_string(prof.num_heads));
 
-    if (fmt.numCylinders() > prof.num_cyls)
-        return say("Format braucht " + std::to_string(fmt.numCylinders()) + " Spuren, Laufwerk hat "
-                   + std::to_string(prof.num_cyls));
+    // Beim Doppelschritt zaehlt die PHYSISCHE Ausdehnung: 40 logische Spuren mit
+    // `step: 2` brauchen ein 80-Zylinder-Laufwerk, kein 40-spuriges.
+    if (fmt.physicalCylinders() > prof.num_cyls)
+        return say("Format braucht " + std::to_string(fmt.physicalCylinders())
+                   + " Spuren, Laufwerk hat " + std::to_string(prof.num_cyls));
 
     for (const auto& t : fmt.tracks) {
         if (!prof.supports(t.encoding))

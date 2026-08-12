@@ -23,6 +23,7 @@
 #include "core/peripherals/floppy_drive/disk_medium.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,10 @@ struct MeasuredTrack {
     uint8_t  sectors    = 0;       ///< Anzahl gefundener Sektoren
     uint16_t sector_size= 0;       ///< einheitliche Sektorgroesse (0 = uneinheitlich)
     uint8_t  first_id   = 0;       ///< kleinste Sektor-ID
+    /// @brief Spurnummer aus dem ID-FELD.  Bei Doppelschritt-Disketten ist sie die
+    ///        LOGISCHE Spur und weicht deshalb vom physischen Zylinder ab
+    ///        (physisch c4h0 traegt `cyl=2`) — das ist das Erkennungsmerkmal.
+    uint8_t  id_cyl     = 0;
     bool     ids_dense  = false;   ///< IDs bilden lueckenlos first_id … first_id+sectors-1
     Encoding encoding   = Encoding::MFM;
     uint16_t crc_errors = 0;       ///< Sektoren mit ID- oder Daten-CRC-Fehler
@@ -112,5 +117,31 @@ std::vector<GeometryMatch> matchAll(const std::vector<MeasuredTrack>& tracks,
 
 /// @brief Messung als Klartext — Grundlage der Fehlermeldung „passt zu keinem Format".
 std::string describe(const std::vector<MeasuredTrack>& tracks);
+
+/**
+ * @brief Aus der Messung ein **namenloses** @ref DiskFormat bauen (Name `(gemessen)`).
+ *
+ * Der letzte Rueckfall, wenn keine Katalogsgeometrie passt: statt die Diskette
+ * abzuweisen, wird beschrieben, was tatsaechlich daraufsteht — dieselbe Umformung, die
+ * @ref describe fuer den Menschen macht, nur als Datenstruktur.  Zusammen mit der
+ * CP/A-Regel (@ref CpaDpbRule) laesst sich eine fremde Diskette damit **lesen**, ohne
+ * dass jemand vorher einen Katalogeintrag schreibt.
+ *
+ * Die Spurbereiche werden korrekt als RECHTECKE gebildet: erst Zylinder mit gleichem
+ * Kopf-Muster zusammenfassen, dann darin die Koepfe — sonst bekaeme eine gemischte
+ * Geometrie (cpa780: c0h0/c0h1/c1h0 sind 128 B, c1h1 schon 1024 B) einen Bereich, den
+ * es gar nicht gibt.  Ein erkanntes Luecken-Muster wird als `step: 2` ausgedrueckt.
+ *
+ * @param why  Grund, wenn nichts herauskommt
+ * @return leer, wenn die Diskette gar nicht beschreibbar ist: keine formatierte Spur,
+ *         uneinheitliche Sektorgroessen auf einer Spur, oder Luecken MITTENDRIN, die
+ *         kein Doppelschritt sind (dann waere der lineare Sektorraum locherig und
+ *         jedes Dateisystem darueber Zufall).
+ *
+ * @warning Ein so gelesener Datentraeger ist **schreibgeschuetzt** — die Geometrie ist
+ *          geraten, nicht belegt (@ref DiskVolume::open).
+ */
+std::optional<DiskFormat> synthesize(const std::vector<MeasuredTrack>& tracks,
+                                     std::string* why);
 
 }  // namespace GeometryProbe

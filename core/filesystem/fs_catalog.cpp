@@ -253,7 +253,7 @@ FsCatalog FsCatalog::load(const std::vector<std::string>& paths,
         if (!root.isMap()) continue;
 
         const yaml::Node* list = root.find("filesystems");
-        if (!list) continue;                    // §6.4: Sektion ist optional
+        if (!list) continue;                    // §6.5: Sektion ist optional
         if (!list->isList()) {
             if (fatal_error)
                 *fatal_error = "Katalog fehlerhaft — " + path + ":"

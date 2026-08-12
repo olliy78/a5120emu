@@ -78,9 +78,11 @@ Bei einem Dateisystem (jede CP/M-Diskette, auch beidseitige) ist der Ordner flac
 * **Passt es nicht, wird gar nicht erst geschrieben.**  Vor jeder Stapeloperation
   läuft die Platzprüfung; ein Fehlschlag mittendrin wird zurückgerollt.
 * **Sicherungskopie** `<name>~` beim ersten Zurückschreiben (`--no-backup` aus).
-* **Kein Raten.**  Passt ein Abbild zu keinem Eintrag in `data/formats.yaml`,
-  bricht das Öffnen ab und nennt die **gemessene** Geometrie — die Meldung taugt
-  direkt als Vorlage für den fehlenden Katalogeintrag.
+* **Kein Raten — und wo gerechnet wird, steht es dabei.**  Passt kein Eintrag in
+  `data/formats.yaml`, wird die Geometrie vermessen und die Diskette **nur lesend**
+  geöffnet (s. u.); geht auch das nicht, bricht das Öffnen ab und nennt die
+  **gemessene** Geometrie — die Meldung taugt direkt als Vorlage für den fehlenden
+  Katalogeintrag.
 * **UDOS auf `.img` wird abgelehnt**: der Sektorkontrollblock steht hinter der
   Daten-CRC, ein rohes Sektorabbild verlöre die gesamte Dateiverkettung.
 * **Beim Lesen kann nichts kaputtgehen**: `ls`, `get`, `info`, `check` und
@@ -90,19 +92,59 @@ Bei einem Dateisystem (jede CP/M-Diskette, auch beidseitige) ist der Ordner flac
   In der Oberfläche entspricht dem der Haken **„Nur lesen"**, der beim Öffnen
   gesetzt ist.
 
+## Wenn kein Profil passt: `cpa_auto`
+
+Für eine CP/A-Diskette **braucht** es keinen `filesystems:`-Eintrag.  Findet die
+Erkennung keinen, rechnet das Werkzeug den DPB nach derselben Regel aus, mit der
+auch das CP/A-BIOS beim LOGIN arbeitet: Sektorlängencode der Datenspur, Spurzahl,
+ein-/beidseitig, Inhalt der Spur 0 → Systemspuren, Blockgröße, Verzeichnisplätze
+(`doc/design/13_k1520disktool.md` §6.4, Analyse in `doc/cpa_format_detection.md`).
+Das Dateisystem heißt dann `cpa_auto`, und `info` sagt, was herauskam:
+
+```
+$ k1520disktool info neu_formatiert.hfe
+Format:      k5601_ss80_26x128
+Dateisystem: cpa_auto
+Medium:      nach der CP/A-Regel abgeleitet — 2 Systemspuren, 2048-B-Bloecke,
+             128 Verzeichnisplaetze, Versatz 6
+```
+
+Ein **benanntes** Profil geht immer vor; mit `--fs cpa_auto` lässt sich die Regel
+trotzdem erzwingen (z. B. um sie gegen ein Profil zu halten).
+
+Zwei Dinge, die dabei auffallen können:
+
+* *„Verzeichnis nicht angelegt (Füllbyte 0xF6)"* — die Diskette ist formatiert, aber
+  nie eingerichtet worden.  Sie gilt als leer, was sie auch ist.
+* *„die Diskette trägt ein MS-DOS-Dateisystem (FAT)"* — FORMAT.COM kann DOS-Disketten
+  anlegen (Menüpunkte `{MSDOS}`).  Die liest das Wirtssystem, nicht dieses Werkzeug.
+
 ## Dateisysteme ergänzen
 
 `data/formats.yaml` hat zwei Sektionen: `formats:` (Physik) und `filesystems:`
 (logische Ebene — `type`, `data_start`, `block_size`, `dir_entries`).  `data_start`
 ist eine **Spur**, kein Byte-Offset; bei gemischter Geometrie (cpa780) wäre er als
 Spurzahl nicht ausdrückbar.  Schema: Kopf der Datei und
-`doc/design/13_k1520disktool.md` §6.3.
+`doc/design/13_k1520disktool.md` §6.3.  Ein Eintrag lohnt nur, wo die Regel oben
+nicht greift oder ein besserer Name gewünscht ist.
 
-Ein unbekanntes Abbild vermisst `ls` von selbst:
+## Fremde Diskette ohne Katalogeintrag
+
+Passt **gar kein** `formats:`-Eintrag, wird die Geometrie aus dem Abbild vermessen
+und die Diskette trotzdem geöffnet — `Format: (gemessen)`.  So lässt sich eine
+fremde Diskette ansehen, ohne vorher den Katalog zu erweitern.
+
+> **Schreiben ist dabei gesperrt, und zwar unaufhebbar.**  Die Geometrie ist
+> gemessen, nicht belegt; ein Schreibvorgang landete beim geringsten Irrtum an der
+> falschen Stelle, und fremde Abbilder sind meist Einzelstücke.  Wer schreiben
+> will, trägt das Format in `data/formats.yaml` ein — `measure` liefert die Vorlage.
+
+Trägt die vermessene Geometrie nichts Lesbares, nennt die Meldung die Messung:
 
 ```
 $ k1520disktool ls fremd.hfe
-Fehler: Das Abbild passt zu keinem Format in data/formats.yaml.
+Fehler: Das Abbild passt zu keinem Format in data/formats.yaml, und auf der
+gemessenen Geometrie liegt kein lesbares Dateisystem (…).
 Gemessen:
   Zylinder 0-79, Köpfe 0-1
   c0h0..c0h1 : 26 Sektoren à 128 B, IDs 1-26, mfm

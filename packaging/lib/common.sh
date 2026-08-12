@@ -51,6 +51,16 @@ core_lib_name() {
     esac
 }
 
+# disk_lib_name — Bibliothek des k1520DiskTool (Dateiaustausch mit Disketten).
+# Bewusst eine ZWEITE Bibliothek: das Werkzeug braucht keinen Z80, der Emulator
+# keine Dateisysteme (doc/design/13_k1520disktool.md §2).
+disk_lib_name() {
+    case "$(uname -s)" in
+        Darwin) echo "libk1520disk.dylib" ;;
+        *)      echo "libk1520disk.so" ;;
+    esac
+}
+
 # abs_path <pfad> — Tilde und Relativangaben auflösen.
 #
 # Die Tilde muss dabei GESCHÜTZT werden: unquotiert dehnt die Shell sie in der

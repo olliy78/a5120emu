@@ -90,6 +90,19 @@ public:
     /// @brief Alle Verzeichnisplaetze, auch freie und fortgesetzte Extents.
     std::vector<CpmDirEntry> directory() const;
 
+    /**
+     * @brief Besteht der Verzeichnisbereich aus EINEM immer gleichen Byte?
+     *
+     * Das ist der Zustand „formatiert, aber nie eingerichtet": FORMAT.COM legt die
+     * Spuren an und fuellt sie mit seinem Fuellbyte (0xE5, aber je nach Menuepunkt auch
+     * 0xF6 oder das Pruefmuster 0x53) — ein Verzeichnis entsteht dabei nicht.  Nur
+     * 0xE5 ist fuer CP/M „frei"; alles andere sieht wie ein belegter Platz aus.
+     *
+     * @return das Fuellbyte, oder -1 wenn der Bereich verschiedene Bytes traegt
+     *         (dann liegt entweder ein echtes Verzeichnis oder Datenmuell dort).
+     */
+    int directoryFill() const;
+
     uint32_t blockSize()      const { return prof_.block_size; }
     uint32_t totalBlocks()    const { return total_blocks_; }
     uint32_t directoryBlocks()const { return dir_blocks_; }

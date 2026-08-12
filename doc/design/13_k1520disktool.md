@@ -248,6 +248,18 @@ Dateisystem ab Spur 0 und als SCPX-Variante eines ab Spur 2. Deshalb:
 > deren Einträge per `format:` eine Geometrie referenzieren.** n Dateisysteme je Geometrie sind
 > damit ausdrückbar, und der Emulator ignoriert die Sektion (er liest nur `formats:`).
 
+> **Nachtrag 2026-08-11:** die Sektion ist **kurz und soll es bleiben.** Seit §6.4 rechnet
+> das Werkzeug den DPB einer CP/A-Diskette selbst aus; ein benannter Eintrag lohnt nur
+> noch, wo diese Regel nicht gilt (UDOS, Fremdsysteme) oder wo ein Name gebraucht wird —
+> `create --fs NAME` kann nur aus einem benannten Profil eine Diskette anlegen, und in der
+> Oberfläche ist „cpa780“ die bessere Auskunft als „cpa_auto“. Das ursprüngliche Beispiel
+> für „mehrere Antworten pro Geometrie“ (`cpa640` ab Spur 0 neben `scpx640` ab Spur 2) war
+> übrigens **falsch** und wurde entfernt: für 256-B-Sektoren trägt `dtrsl1` ein *festes*
+> Offset von 4 logischen Spuren — CP/A kann eine 16×256-Diskette ohne Systemspuren gar
+> nicht erzeugen. Der Eintrag bewirkte nur, dass jede solche Diskette „nicht eindeutig“
+> gemeldet wurde. Die Aussage selbst bleibt richtig: dieselbe 26×128-Geometrie trägt
+> einmal UDOS und einmal CP/M.
+
 Der `FsCatalog` benutzt denselben `yaml_lite`-Parser und dieselbe Pfadsuche wie der
 `FormatCatalog` (`K1520_FORMATS_DEFAULT` → `./data/formats.yaml` → `~/.config/…` → `$K1520_FORMATS`),
 d.h. eigene Formate legt der Anwender weiterhin an genau einer Stelle ab.
@@ -342,7 +354,50 @@ belegt, aber logisch getrennt. Die Kandidaten stehen als Referenzabbilder bereit
 `udos_boot_mf6400.hfe`) und werden bei der Umsetzung daraus **verifiziert**, nicht geraten
 (vgl. die Laufwerkstyp-Matrix in `doc/udos_diskettenformat.md` §12.3).
 
-### 6.4 Rückwärtskompatibilität
+### 6.4 Der Rückfall: CP/A rechnet den DPB selbst aus (`cpa_auto`)
+
+**Stand 2026-08-11.** Für die Handvoll Disketten, die man ständig in der Hand hat, ist ein
+benanntes Profil genau richtig. Für die 59 Geometrien des Katalogs wäre es Handarbeit mit
+Rateanteil — und jedes neu vermessene Format bräuchte wieder einen Eintrag. Genau daran hing
+die Mountbarkeit: von 117 im Emulator erzeugten Abbildern ließen sich **12** öffnen.
+
+Das ist unnötig, denn **CP/A rät nicht, CP/A rechnet**. Sein BIOS leitet den DPB beim LOGIN
+aus dem ab, was auf der Diskette steht (`biosdsk.mac`, Marke `drdfrm`; analysiert in
+[`doc/cpa_format_detection.md`](../cpa_format_detection.md)):
+
+1. **Sektorlängencode der Datenspur** — Zylinder 3, Kopf 0 (`dlgint`, „größte Anzahl
+   SS‑Systemspuren"); ab dort muss die Diskette einheitlich sein.
+2. **Zeile** in einer von vier Tabellen `dtrsl0..3` (eine je Sektorlänge), gewählt nach
+   40/80 Spuren, ein-/beidseitig bzw. 8″ FM/MFM.
+3. Die Zeile liefert **Verzeichnisplätze**, **Systemspuren** (in logischen Spuren, `2·N`
+   plus Flag „fest") und die **Blockgröße**.
+4. Ist die Systemspurzahl *nicht* fest, entscheidet Spur 0: ein Lader (Byte ≥ 0x20) heißt
+   „Standardanzahl", ein Verzeichniseintrag heißt „0 Systemspuren", und eine durchgehend
+   leere Spur 0 lässt an der ersten möglichen Datenspur nachsehen.
+5. Eine Diskette **mit** Systemspuren wird von 192 auf 128 Plätze gekürzt (`selddr`).
+6. 128‑B‑Sektoren bekommen den Sektorversatz der Tabelle `xlt` (1,7,13,… = Versatz 6).
+
+`core/filesystem/cpm/cpa_dpb.{h,cpp}` (@ref CpaDpbRule) bildet das nach. Ein benanntes
+Profil aus dem Katalog **gewinnt immer**; die Ableitung greift nur, wenn keines passt, und
+heißt dann `cpa_auto`. Mit `--fs cpa_auto` lässt sie sich erzwingen.
+
+Gegenprobe statt Selbstbestätigung: die Regel reproduziert die von Hand nachgemessenen
+Profile `cpa780` und `scpx798` **exakt** (`CpaDpb.ReproduziertNachgemessenesProfil*`), und
+sie korrigierte dabei einen geratenen Katalogwert — `cpa800` hat **192** Verzeichnisplätze,
+nicht 128 (FORMAT.COM nennt sie im Menü selbst, doc/format.md §3.1 Wahl 0). Bewiesen hat
+das erst das laufende CP/A: `DiskToolNeueDisketten.CpaFindetDateiJenseitsVonPlatz128`.
+
+Ergebnis: **104 der 117** Abbilder sind mountbar. Die restlichen dreizehn sind es aus
+Gründen, die kein Profil heilt — drei MS-DOS-Disketten (§12.3) und zehn fehlgeschlagene
+Formatierläufe, die keine einzige gültige Spur hinterlassen haben.
+
+> **Was die Regel NICHT ist:** ein Profil für Fremdsysteme. Eine KAYPRO- oder
+> VORTEX-formatierte Diskette (FORMAT.COM kann beide anlegen) bekommt hier den DPB, den
+> *CP/A* darauf sähe — für eine leere Diskette ist das richtig, für eine beschriebene
+> nicht unbedingt. Davor schützt die Positivprobe aus §12.2: ein fremdes Verzeichnis
+> fällt durch, und die Diskette gilt als nicht erkannt.
+
+### 6.5 Rückwärtskompatibilität
 
 Ein `formats.yaml` ohne `filesystems:` ist weiterhin gültig — der Emulator merkt nichts, das
 DiskTool meldet dann schlicht „kein Dateisystemprofil bekannt“. Umgekehrt ignoriert der
@@ -806,6 +861,54 @@ Geprüfter Katalog: /home/…/data/formats.yaml
 Besteht Stufe 2 keine Probe, lautet die Meldung entsprechend „Geometrie erkannt (`cpa800`), aber
 kein bekanntes Dateisystem gefunden“ — mit dem Angebot, ein Profil manuell zu wählen (Lesen ist
 dann auf eigene Gefahr möglich, **Schreiben bleibt gesperrt**, bis die Wahl bestätigt ist).
+Seit §6.4 kommt vor dieser Meldung noch die abgeleitete CP/A-Regel zum Zuge; die Meldung
+nennt jetzt auch, **woran** die Probe scheiterte („Verzeichnisplatz 0 trägt Nutzerbereich
+0x53 — das Verzeichnis ist nicht angelegt“).
+
+Zwei Sonderfälle, die sonst als „unbekannt“ durchgingen und dem Bediener nichts sagten:
+
+* **Formatiert, aber nie eingerichtet.** Trägt der ganze Verzeichnisbereich EIN Füllbyte
+  (0xF6 oder das Prüfmuster 0x53 von FORMAT.COM), gilt die Diskette als leer statt als
+  unlesbar — allerdings nur beim *abgeleiteten* Profil, denn nur dort steht durch die Regel
+  fest, wo das Verzeichnis liegt. `list()` überspringt solche Plätze ohnehin
+  (Nutzerbereich > 15), die Diskette erscheint also leer, was sie auch ist. Die Anzeige
+  sagt es: „Verzeichnis nicht angelegt (Füllbyte 0xF6)“.
+* **MS-DOS.** FORMAT.COM legt auf Wunsch DOS-Disketten an (die Menüpunkte mit `{MSDOS}`,
+  doc/format.md §3.3/§3.4). Ein BPB in Spur 0 Sektor 1 wird erkannt und benannt: „die
+  Diskette trägt ein MS-DOS-Dateisystem (FAT), Kennung 'CP/A1188' — dieses Werkzeug liest
+  CP/M und UDOS“. Gelesen wird sie nicht; dafür gibt es das Wirtssystem.
+
+### 12.4 …und wenn auch die Geometrie unbekannt ist: vermessen und **nur lesen**
+
+**Stand 2026-08-11.** Bis dahin war ein fehlender `formats:`-Eintrag das Ende: eine fremde
+Diskette ließ sich nicht einmal *ansehen*, ohne dass jemand vorher den Katalog erweiterte.
+Das war eine unnötig hohe Hürde für den häufigsten Fall — „was ist das überhaupt für eine
+Diskette?".
+
+Findet Stufe 1 nichts, baut `GeometryProbe::synthesize()` deshalb aus der Messung ein
+namenloses `DiskFormat` (`detection().format == "(gemessen)"`). Darauf läuft dann die
+gewohnte Stufe 2 samt CP/A-Regel (§6.4). Die Spurbereiche entstehen als echte
+**Rechtecke** — erst Zylinder mit gleichem Kopf-Muster zusammenfassen, dann darin die
+Köpfe; sonst bekäme eine gemischte Geometrie wie `cpa780` (c0h0/c0h1/c1h0 = 128 B, c1h1
+schon 1024 B) einen Bereich, den es gar nicht gibt. Ein erkanntes Lückenmuster wird als
+`step: 2` ausgedrückt.
+
+> **Ein so gelesener Datenträger ist unaufhebbar schreibgeschützt.** `setReadOnly(false)`
+> verweigert und sagt warum. Die Geometrie ist gemessen, nicht belegt — beim geringsten
+> Irrtum landete ein Schreibvorgang an der falschen Stelle, und fremde Abbilder sind in
+> aller Regel Einzelstücke. Wer schreiben will, legt den Katalogeintrag an; die Ausgabe
+> von `measure` taugt als Vorlage.
+
+Abgewiesen wird weiterhin, was sich nicht als zusammenhängendes Dateisystem lesen ließe:
+kein einziger formatierter Sektor, uneinheitliche Sektorgrößen **innerhalb** einer Spur,
+oder ein Loch mitten im beschriebenen Bereich, das kein Doppelschritt ist. Und wenn die
+Geometrie zwar vermessen wurde, aber nichts Lesbares trägt, nennt die Meldung wieder die
+**Messung** — nicht den nichtssagenden Namen `(gemessen)`.
+
+Nebenbei fiel dabei eine alte Schwäche auf: „zu wenige Sektoren" galt als *Schaden* ohne
+Obergrenze, sodass eine 7×512-Diskette als „`k5601_ss40_9x512` mit 40 defekten Spuren"
+durchging. Jetzt gilt: mehr als ein Viertel abweichender Spuren ist kein Schaden, sondern
+ein anderes Format (`GeometryProbe`, Regel 4b).
 
 ---
 

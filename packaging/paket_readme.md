@@ -45,6 +45,18 @@ Weitere Möglichkeiten:
 a5120emu
 ```
 
+Das Paket enthält ein zweites Programm, das **k1520DiskTool**: es tauscht Dateien
+zwischen Ihrem Rechner und K1520-Disketten aus (CP/A, SCPX und UDOS; `.hfe`,
+`.dmk`, `.img`). Startmenü-Eintrag „k1520DiskTool" oder:
+
+```sh
+k1520disktool                 # Oberfläche
+k1520disktool-cli ls disk.hfe # Kommandozeile
+```
+
+Beim Öffnen ist eine Diskette **schreibgeschützt** — Ändern verlangt, den Haken
+„Nur lesen" zu entfernen. So kann beim bloßen Ansehen nichts kaputtgehen.
+
 ## Wo liegt was
 
 | | |

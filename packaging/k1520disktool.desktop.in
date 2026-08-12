@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=k1520DiskTool
+GenericName=K1520-Diskettenwerkzeug
+Comment=Dateien zwischen Linux und K1520-Disketten austauschen (CP/A, SCPX, UDOS)
+Comment[en]=Exchange files between Linux and K1520 floppy disks (CP/A, SCPX, UDOS)
+Exec="@ROOT@/bin/k1520disktool"
+Icon=a5120emu
+Terminal=false
+Categories=System;Utility;FileTools;
+Keywords=K1520;A5120;robotron;Diskette;floppy;CP/M;CP/A;UDOS;
+StartupNotify=true
+StartupWMClass=main.py

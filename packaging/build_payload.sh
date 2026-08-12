@@ -118,6 +118,8 @@ info "K1520-Emulator $VERSION für $PLATFORM"
 #   -static-libgcc              älterer/neuerer libstdc++ laden.
 
 LIB=$(core_lib_name)
+DISKLIB=$(disk_lib_name)
+DISKCLI="k1520disktool"
 
 if [ "$SKIP_BUILD" = no ]; then
     info "Kern als Release bauen ($BUILD_DIR)"
@@ -129,11 +131,17 @@ if [ "$SKIP_BUILD" = no ]; then
         -DBUILD_K1520_TESTS=OFF \
         -DCMAKE_SHARED_LINKER_FLAGS="-static-libstdc++ -static-libgcc" \
         >/dev/null || die "cmake-Konfiguration fehlgeschlagen"
-    cmake --build "$BUILD_DIR" --target k1520core -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" \
-        >/dev/null || die "Bauen der Kernbibliothek fehlgeschlagen"
-    ok "$BUILD_DIR/$LIB"
+    # Drei Ziele: der Emulatorkern, die DiskTool-Bibliothek fuer dessen
+    # Oberflaeche und das Kommandozeilenwerkzeug.  Ohne die letzten beiden
+    # laege app/disktool/ zwar im Paket, faende aber keine Bibliothek.
+    cmake --build "$BUILD_DIR" --target k1520core k1520disk "$DISKCLI" \
+        -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" \
+        >/dev/null || die "Bauen der Bibliotheken/Werkzeuge fehlgeschlagen"
+    ok "$BUILD_DIR/$LIB, $BUILD_DIR/$DISKLIB, $BUILD_DIR/$DISKCLI"
 fi
-[ -f "$BUILD_DIR/$LIB" ] || die "Kernbibliothek fehlt: $BUILD_DIR/$LIB"
+[ -f "$BUILD_DIR/$LIB" ]     || die "Kernbibliothek fehlt: $BUILD_DIR/$LIB"
+[ -f "$BUILD_DIR/$DISKLIB" ] || die "DiskTool-Bibliothek fehlt: $BUILD_DIR/$DISKLIB"
+[ -f "$BUILD_DIR/$DISKCLI" ] || die "DiskTool-Kommandozeile fehlt: $BUILD_DIR/$DISKCLI"
 
 # ─── 2. Payload zusammenstellen ──────────────────────────────────────────────
 
@@ -145,12 +153,24 @@ mkdir -p "$STAGE/payload/bin" "$STAGE/payload/share/k1520emu" \
 cp "$BUILD_DIR/$LIB" "$STAGE/payload/bin/$LIB"
 strip "$STAGE/payload/bin/$LIB" 2>/dev/null || true
 
+cp "$BUILD_DIR/$DISKLIB" "$STAGE/payload/bin/$DISKLIB"
+strip "$STAGE/payload/bin/$DISKLIB" 2>/dev/null || true
+
+# Das Kommandozeilenwerkzeug wird unter -cli abgelegt: `bin/k1520disktool` ist
+# der Starter der OBERFLAECHE (wie `bin/a5120emu` beim Emulator), den der
+# Installer schreibt.  Zwei Namen sind ehrlicher als ein Programm, das je nach
+# Argumenten etwas anderes tut.
+cp "$BUILD_DIR/$DISKCLI" "$STAGE/payload/bin/$DISKCLI-cli"
+strip "$STAGE/payload/bin/$DISKCLI-cli" 2>/dev/null || true
+
 # GUI ohne Bytecode-Reste des Entwicklungsrechners (--exclude MUSS vor dem
 # Pfad stehen, sonst wirkt es bei GNU tar nicht)
 ( cd "$REPO" && tar cf - --exclude='__pycache__' --exclude='*.pyc' app ) \
     | ( cd "$STAGE/payload" && tar xf - ) \
     || die "GUI-Dateien nicht kopierbar"
 [ -f "$STAGE/payload/app/main.py" ] || die "app/main.py fehlt in der Payload"
+[ -f "$STAGE/payload/app/disktool/main.py" ] \
+    || die "app/disktool/main.py fehlt in der Payload"
 
 cp "$REPO/data/formats.yaml" "$STAGE/payload/share/k1520emu/formats.yaml"
 cp "$SELF_DIR/icon.svg"      "$STAGE/payload/share/icons/a5120emu.svg"
@@ -187,6 +207,8 @@ cp "$REPO/disks/README.md" "$STAGE/payload/share/disks/README.md" 2>/dev/null ||
 
 cp "$SELF_DIR/install.sh"           "$STAGE/install.sh"
 cp "$SELF_DIR/launcher.sh"          "$STAGE/launcher.sh"
+cp "$SELF_DIR/disktool_launcher.sh" "$STAGE/disktool_launcher.sh"
+cp "$SELF_DIR/k1520disktool.desktop.in" "$STAGE/k1520disktool.desktop.in"
 cp "$SELF_DIR/slim.py"              "$STAGE/slim.py"
 cp "$SELF_DIR/a5120emu.desktop.in"  "$STAGE/a5120emu.desktop.in"
 cp "$SELF_DIR/uv_pins.txt"          "$STAGE/uv_pins.txt"

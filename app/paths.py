@@ -76,17 +76,24 @@ def _is_macos() -> bool:
     return sys.platform == "darwin"
 
 
-def library_filenames() -> List[str]:
-    """Mögliche Dateinamen der Kernbibliothek auf dieser Plattform.
+#: Die beiden Bibliotheken der Installation.  ``k1520core`` ist der Emulator,
+#: ``k1520disk`` das Dateisystem-Werkzeug (k1520DiskTool) — bewusst getrennt,
+#: siehe doc/design/13_k1520disktool.md §2.
+CORE_STEM = "k1520core"
+DISK_STEM = "k1520disk"
+
+
+def library_filenames(stem: str = CORE_STEM) -> List[str]:
+    """Mögliche Dateinamen einer Bibliothek auf dieser Plattform.
 
     Der zweite Name deckt eine später vergebene SOVERSION ab (heute baut CMake
     ohne, siehe ``CMakeLists.txt``).
     """
     if _is_windows():
-        return ["k1520core.dll", "libk1520core.dll"]
+        return [f"{stem}.dll", f"lib{stem}.dll"]
     if _is_macos():
-        return ["libk1520core.dylib", "libk1520core.1.dylib"]
-    return ["libk1520core.so", "libk1520core.so.1"]
+        return [f"lib{stem}.dylib", f"lib{stem}.1.dylib"]
+    return [f"lib{stem}.so", f"lib{stem}.so.1"]
 
 
 # ─── Wurzel ──────────────────────────────────────────────────────────────────
@@ -111,17 +118,19 @@ def is_installed_layout() -> bool:
 
 # ─── Kernbibliothek ──────────────────────────────────────────────────────────
 
-def library_candidates() -> List[Path]:
-    """Alle Kandidaten für die Kernbibliothek in absteigender Priorität.
+def library_candidates(stem: str = CORE_STEM) -> List[Path]:
+    """Alle Kandidaten für eine Bibliothek in absteigender Priorität.
 
     Wird auch für die Fehlermeldung gebraucht („gesucht in: …"), enthält
     deshalb bewusst auch nicht existierende Pfade.
     """
-    names = library_filenames()
+    names = library_filenames(stem)
     out: List[Path] = []
 
-    # 1) explizite Vorgabe — Datei oder Verzeichnis
-    env = os.environ.get(ENV_LIB)
+    # 1) explizite Vorgabe — Datei oder Verzeichnis.  Sie gilt nur für den
+    #    Emulatorkern; eine Vorgabe für BEIDE Bibliotheken zugleich wäre
+    #    zweideutig (dieselbe Datei kann nicht beides sein).
+    env = os.environ.get(ENV_LIB) if stem == CORE_STEM else None
     if env:
         p = Path(env).expanduser()
         out.extend([p / n for n in names] if p.is_dir() else [p])
@@ -139,25 +148,36 @@ def library_candidates() -> List[Path]:
     return out
 
 
-def core_library() -> Path:
-    """Pfad der Kernbibliothek.
+def library(stem: str = CORE_STEM) -> Path:
+    """Pfad einer Bibliothek (Quellbaum wie Installation).
 
     Raises:
         FileNotFoundError: mit der vollständigen Kandidatenliste und einem
             Hinweis, wie sie zu bauen ist.
     """
-    candidates = library_candidates()
+    candidates = library_candidates(stem)
     for path in candidates:
         if path.exists():
             return path.resolve()
 
     listing = "\n".join(f"  {p}" for p in candidates)
+    hinweis = (f"Oder Pfad vorgeben:  {ENV_LIB}=/pfad/zur/bibliothek"
+               if stem == CORE_STEM else "")
     raise FileNotFoundError(
-        f"Kernbibliothek ({' / '.join(library_filenames())}) nicht gefunden.\n"
+        f"Bibliothek ({' / '.join(library_filenames(stem))}) nicht gefunden.\n"
         f"Gesucht in:\n{listing}\n\n"
-        f"Bauen:  tools/dev.sh build\n"
-        f"Oder Pfad vorgeben:  {ENV_LIB}=/pfad/zur/bibliothek"
+        f"Bauen:  tools/dev.sh build\n" + hinweis
     )
+
+
+def core_library() -> Path:
+    """Pfad der Kernbibliothek (Emulator)."""
+    return library(CORE_STEM)
+
+
+def disk_library() -> Path:
+    """Pfad der Bibliothek des k1520DiskTool."""
+    return library(DISK_STEM)
 
 
 def prepare_library_load() -> None:

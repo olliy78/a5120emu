@@ -13,9 +13,12 @@
  *    Mal neu aus dem Medium — es gibt keinen zwischengespeicherten Verzeichnisstand.
  * 3. **Passt es nicht, wird gar nicht erst geschrieben**: Stapeloperationen pruefen den
  *    Platz vorab und nehmen bei einem Fehler die ganze Aenderung zurueck (§9.2).
- * 4. **Format und Dateisystem werden erkannt**; passt ein Abbild zu keinem Eintrag in
- *    `formats.yaml`, bricht das Oeffnen mit einer Meldung ab, die die gemessene
- *    Geometrie nennt (§12).
+ * 4. **Format und Dateisystem werden erkannt** — notfalls ausgerechnet.  Passt kein
+ *    `formats:`-Eintrag, wird die Geometrie aus dem Abbild VERMESSEN
+ *    (@ref GeometryProbe::synthesize) und die Diskette **schreibgeschuetzt** geoeffnet;
+ *    passt kein `filesystems:`-Eintrag, rechnet @ref CpaDpbRule den DPB aus, wie es das
+ *    CP/A-BIOS beim LOGIN tut.  Erst wenn auch das nichts hergibt, bricht das Oeffnen
+ *    ab — mit einer Meldung, die die gemessene Geometrie nennt (§12).
  *
  * Geschrieben wird immer nur ins Medium; die Datei wird erst durch @ref flush oder
  * @ref saveAs angefasst.
@@ -35,6 +38,7 @@
 #include "core/peripherals/floppy_drive/format_catalog.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -195,6 +199,9 @@ public:
     /// @brief Schreibgeschuetzt?  Vorgabe beim Oeffnen: **ja**.
     bool readOnly() const { return read_only_; }
 
+    /// @brief Ist der Schreibschutz UNAUFHEBBAR (nur gemessene Geometrie)?
+    bool readOnlyForced() const { return nur_lesen_erzwungen_; }
+
     /**
      * @brief Schreibschutz setzen/aufheben.
      *
@@ -230,9 +237,18 @@ private:
     std::unique_ptr<DiskImage> disk_;
     const DiskFormat*  format_  = nullptr;
     const FsProfile*   profile_ = nullptr;
+    /// @brief Nach der CP/A-Regel abgeleitetes Profil (steht in keinem Katalog).
+    ///        Gesetzt, wenn kein benanntes Profil passte; @ref profile_ zeigt dann hierher.
+    std::optional<FsProfile> abgeleitet_;
+    /// @brief Aus dem Abbild VERMESSENE Geometrie (steht in keinem Katalog).
+    ///        Gesetzt, wenn kein `formats:`-Eintrag passte; @ref format_ zeigt dann hierher.
+    std::optional<DiskFormat> gemessenes_format_;
     DetectionResult    detection_;
     std::vector<Vol>   volumes_;
     bool               read_only_   = true;
+    /// @brief Harter Schreibschutz: die Geometrie ist nur gemessen, nicht katalogisiert.
+    ///        @ref setReadOnly(false) verweigert dann (siehe @ref gemessenes_format_).
+    bool               nur_lesen_erzwungen_ = false;
     bool               backup_      = true;
     bool               backup_getan_= false;
     mutable std::string last_error_;

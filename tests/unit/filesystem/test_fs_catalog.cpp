@@ -70,8 +70,11 @@ TEST(FsCatalog, ProfilnamenSindEinStabilerVertrag) {
     FsCatalog cat = FsCatalog::load({shippedCatalog()}, formate(), &fatal);
     ASSERT_TRUE(fatal.empty()) << fatal;
 
+    // Die Liste ist bewusst KURZ: seit die CP/A-Regel den DPB selbst ausrechnet
+    // (@ref CpaDpbRule), braucht ein Eintrag hier einen eigenen Grund — UDOS (andere
+    // Familie) oder ein Name, den `create --fs` und die Oberflaeche brauchen.
     const std::vector<std::string> erwartet = {
-        "cpa780", "cpa800", "cpa640",
+        "cpa780", "cpa800",
         "scpx640", "scpx798",
         "udos_ds77", "udos_ss77", "udos_ss40",
     };
@@ -108,21 +111,28 @@ TEST(FsCatalog, Cpa780BeginntBeiZylinder2) {
     EXPECT_EQ(p->dir_entries, 128);
 }
 
-TEST(FsCatalog, ZweiDateisystemeAufDerselbenGeometrie) {
-    // Der Fall, für den `filesystems:` überhaupt eine eigene Sektion ist:
-    // cpa640 und scpx640 teilen die Geometrie und unterscheiden sich im data_start.
+/**
+ * @test Auf der 16×256-Geometrie liegt GENAU EIN Profil — und es beginnt bei c2h0.
+ * @par Kriterium  `forFormat("cpa640")` liefert nur `scpx640`, mit `data_cyl == 2`.
+ * @par Warum      Bis 2026-08-11 stand daneben ein `cpa640` mit `data_cyl == 0`,
+ *                 gedacht als Beispiel für „mehrere Dateisysteme je Geometrie".  Das
+ *                 Beispiel war falsch: CP/A kann so eine Diskette nicht erzeugen, denn
+ *                 für 256-B-Sektoren trägt `dtrsl1` ein FESTES Offset von 4 logischen
+ *                 Spuren (`CpaDpb.TabellenzeilenEntsprechenDemBios`).  Der Eintrag
+ *                 bewirkte nur, dass jede 16×256-Diskette „nicht eindeutig" meldete.
+ *                 Dieser Test hält die Korrektur fest.
+ */
+TEST(FsCatalog, SechzehnMalZweihundertsechsundfuenfzigHatNurEinProfilAbZylinderZwei) {
     std::string fatal;
     FsCatalog cat = FsCatalog::load({shippedCatalog()}, formate(), &fatal);
+    ASSERT_TRUE(fatal.empty()) << fatal;
 
-    auto auf640 = cat.forFormat("cpa640");
-    ASSERT_EQ(auf640.size(), 2u);
-    const FsProfile* cpa = cat.find("cpa640");
-    const FsProfile* scpx = cat.find("scpx640");
-    ASSERT_NE(cpa, nullptr);
-    ASSERT_NE(scpx, nullptr);
-    EXPECT_EQ(cpa->format, scpx->format);
-    EXPECT_EQ(cpa->data_cyl, 0);
-    EXPECT_EQ(scpx->data_cyl, 2);
+    const auto auf640 = cat.forFormat("cpa640");
+    ASSERT_EQ(auf640.size(), 1u) << "ein zweites Profil auf dieser Geometrie macht jede "
+                                    "16×256-Diskette wieder mehrdeutig";
+    EXPECT_EQ(auf640.front()->name, "scpx640");
+    EXPECT_EQ(auf640.front()->data_cyl, 2);
+    EXPECT_EQ(cat.find("cpa640"), nullptr);
 }
 
 TEST(FsCatalog, UdosProfileSindNiemalsImgFaehig) {
@@ -147,7 +157,7 @@ TEST(FsCatalog, UdosProfileSindNiemalsImgFaehig) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(FsCatalog, FehlendeSektionIstKeinFehler) {
-    // §6.4: der Emulator kommt ohne `filesystems:` aus.
+    // §6.5: der Emulator kommt ohne `filesystems:` aus.
     TempKatalog k("version: 1\nformats:\n  - name: x\n    drives: [K5601]\n"
                   "    tracks:\n      - { cyls: 0, heads: 0, sectors: 5, size: 1024 }\n");
     std::string fatal;

@@ -26,6 +26,7 @@
  * @license MIT License
  */
 
+#include "core/filesystem/cpm/cpa_dpb.h"
 #include "core/filesystem/disk_volume.h"
 #include "core/filesystem/geometry_probe.h"
 
@@ -634,6 +635,11 @@ int cmd_formats(const Optionen& o) {
     for (const FsProfile& p : dateisysteme().profiles())
         std::printf("%-14s %-6s %-18s %s\n", p.name.c_str(), fsTypeName(p.type),
                     p.format.c_str(), p.description.c_str());
+    // Steht in keinem Katalog, laesst sich aber ueberall angeben — sonst waere die
+    // wichtigste Antwort auf „welche Dateisysteme gibt es?" gerade die unsichtbare.
+    std::printf("%-14s %-6s %-18s %s\n", CpaDpbRule::kName, "cpm", "(jede)",
+                "aus der Geometrie nach der CP/A-Regel abgeleitet — Rueckfall beim "
+                "Oeffnen, mit --fs erzwingbar");
     return kOk;
 }
 

@@ -876,6 +876,7 @@ formats:
 | `default_for` | nein | list\<string\> | Profile, für die dies das Standardformat ist — ersetzt `defaultFormatFor()` |
 | `encoding` | nein | `fm`\|`mfm` | Vorgabe für Spurbereiche ohne eigenes `encoding` |
 | `containers` | nein | list | `hfe`, `img` — darstellbare Dateitypen (Default: beide) |
+| `step` | nein | `1`\|`2` | **Doppelschritt** (2026-08-11): logische Spur `n` liegt auf physischem Zylinder `n·step`; `tracks:` bleibt logisch. Default 1. |
 | `tracks` | ja | list | ≥ 1 Spurbereich |
 
 **Spurbereich (`tracks[]`):**
@@ -1099,11 +1100,15 @@ Label (Standard mit Präfix `Standard: `) und behält den Katalognamen in `userD
   Lesen ist gelöst (Dual-Decode). Beim **Anlegen** ist zu beachten: `BitCodec` kodiert FM *und* MFM
   mit 16 Zellen/Byte (`bit_codec.h:15`), die reale Zeitkapazität je Umdrehung unterscheidet sich
   aber. `side_len` muss nach der **dichtesten** Spur bemessen werden; per Test absichern.
-- **R4 — Doppelschritt-Formate** (40 Spuren in 80-Spur-Laufwerk, physisch = 2 × logisch) bleiben
-  ungelöst; das Feld `containers: [hfe]` kann die Einschränkung jetzt **explizit** ausdrücken,
-  statt sie wie früher nur als Kommentar im Quelltext zu führen. Im ausgelieferten Katalog ist es
-  bewusst noch nirgends gesetzt (alle Formate erlauben `img` und `hfe`), damit der Umbau
-  verhaltensneutral bleibt.
+- **R4 — Doppelschritt-Formate** (40 Spuren in einem 80-Spur-Laufwerk, physisch = 2 × logisch)
+  sind **gelöst (2026-08-11)**: das Format trägt `step: 2`, `tracks:` bleibt logisch, und
+  `DiskFormat::physicalCylinder()` / `logicalCylinder()` rechnen um. Umgesetzt in `SectorSpace`
+  (Slot kennt logische *und* physische Spur), `ImgCodec` (das rohe Sektorabbild ist logisch),
+  `DiskImage::create` (ungerade Zylinder bleiben unformatiert) und `GeometryProbe` (die Lücken
+  sind ein **positives** Erkennungsmerkmal, zusätzlich muss die Spurnummer im ID-Feld die
+  logische sein). `formatFitsDrive` prüft die **physische** Ausdehnung. Acht Katalogeinträge
+  `*_dstep` decken die §3.4-Geometrien T und U ab; Gegenprobe am laufenden CP/A:
+  `DiskToolNeueDisketten.CpaLiestDoppelschrittDiskette`.
 
 ---
 

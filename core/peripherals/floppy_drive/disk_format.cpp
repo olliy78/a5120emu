@@ -24,6 +24,13 @@ uint8_t DiskFormat::numCylinders() const {
     return c;
 }
 
+uint8_t DiskFormat::physicalCylinders() const {
+    const uint8_t n = numCylinders();
+    if (n == 0) return 0;
+    // Der letzte belegte Zylinder ist (n−1)·step; die Luecken danach gehoeren nicht dazu.
+    return static_cast<uint8_t>((n - 1) * step + 1);
+}
+
 uint64_t DiskFormat::totalBytes() const {
     uint64_t total = 0;
     for (const auto& t : tracks) {

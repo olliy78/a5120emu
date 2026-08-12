@@ -104,12 +104,12 @@ def test_unrecognised_image_locks_the_buttons(window, fixture_disks):
 
 
 def test_forcing_a_filesystem_reopens_the_image(window, fixture_disks):
-    """Die Erkennung ist übersteuerbar — und beides führt zu einem anderen Inhalt.
+    """Die Erkennung ist übersteuerbar — `cpa_auto` rechnet statt nachzuschlagen.
 
-    `cpa640` und `scpx640` teilen sich die GEOMETRIE und unterscheiden sich nur im
-    `data_start` (Zylinder 0 gegen Zylinder 2).  Die Geometrie kann das nicht
-    trennen, das Dateisystem schon: erkannt wird `scpx640`, weil dort ein
-    plausibles Verzeichnis steht.
+    Das benannte Profil `scpx640` wurde von Hand nachgemessen; `cpa_auto` leitet
+    dieselben Werte aus der Geometrie ab, wie es das CP/A-BIOS beim LOGIN tut
+    (doc/design/13_k1520disktool.md §6.4).  Beide müssen deshalb **denselben**
+    Inhalt zeigen — das ist die Gegenprobe der Regel von der Oberfläche aus.
     """
     bild = fixture_disks / "scpx17_cpa780_k5601.hfe"
 
@@ -119,11 +119,15 @@ def test_forcing_a_filesystem_reopens_the_image(window, fixture_disks):
     erkannte_dateien = alle_namen(window.disk_view)
     assert "INIT.COM" in erkannte_dateien
 
-    # Mit erzwungenem cpa640 wird ab Zylinder 0 gelesen — dort steht der
-    # Systembereich, also etwas ANDERES als das echte Verzeichnis.
-    assert window.open_image(bild, "cpa640")
-    assert window.tool.filesystem == "cpa640"
-    assert alle_namen(window.disk_view) != erkannte_dateien
+    assert window.open_image(bild, "cpa_auto")
+    assert window.tool.filesystem == "cpa_auto"
+    assert alle_namen(window.disk_view) == erkannte_dateien
+
+
+def test_unknown_filesystem_name_is_refused(window, fixture_disks):
+    """Ein Tippfehler bei --fs öffnet nichts und sagt, woran es liegt."""
+    assert not window.open_image(fixture_disks / "scpx17_cpa780_k5601.hfe", "gibtsnicht")
+    assert window.tool is None
 
 
 # ─── Schreiben: die Ansicht ist danach frisch ────────────────────────────────

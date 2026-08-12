@@ -44,6 +44,15 @@ CONFDIR="${XDG_CONFIG_HOME:-$HOME/.config}/k1520emu"
 # <name>.desktop.in; das Deinstallieren räumt danach von selbst mit auf.
 MASCHINEN="a5120emu"
 
+# Werkzeuge der Installation — keine Maschinen, aber ebenfalls mit Starter und
+# Startmenue-Eintrag: das k1520DiskTool tauscht Dateien mit Disketten aus
+# (doc/design/13_k1520disktool.md).  Wie bei den Maschinen gilt: ein neuer Name
+# gehoert hier hinein UND braucht eine <name>.desktop.in.
+WERKZEUGE="k1520disktool"
+
+# Alles, was einen Starter/Eintrag bekommt — nur fuer das Aufraeumen gedacht.
+STARTER="$MASCHINEN $WERKZEUGE"
+
 # Was der Installer im Zielverzeichnis anlegt — und ausschließlich das entfernt
 # das Deinstallieren wieder.  Die Liste wandert beim Installieren in den Ausweis
 # (siehe unten), sodass eine ältere Installation nach ihrer EIGENEN Liste
@@ -216,7 +225,7 @@ if [ "$MODE" = uninstall ]; then
     else
         warn "$PREFIX sieht nicht nach einer Installation aus — es bleibt unangetastet"
     fi
-    for _m in $MASCHINEN; do
+    for _m in $STARTER; do
         rm -f "$BINDIR/$_m" "$APPDIR/$_m.desktop" "$ICONDIR/$_m.svg"
     done
     ok "Starter und Startmenü-Einträge entfernt"
@@ -350,15 +359,28 @@ mkdir -p "$PREFIX/bin"
 ersetze_root "$SELF_DIR/launcher.sh" "$PREFIX" > "$PREFIX/bin/a5120emu"
 chmod +x "$PREFIX/bin/a5120emu"
 
+# Das Diskettenwerkzeug ist ein eigenes Programm mit eigenem Starter.  Die
+# Kommandozeile liegt bereits als bin/k1520disktool-cli in der Payload; hier
+# entsteht der Starter der Oberflaeche.
+ersetze_root "$SELF_DIR/disktool_launcher.sh" "$PREFIX" > "$PREFIX/bin/k1520disktool"
+chmod +x "$PREFIX/bin/k1520disktool"
+[ -f "$PREFIX/bin/k1520disktool-cli" ] && chmod +x "$PREFIX/bin/k1520disktool-cli"
+
 if [ "$SHORTCUTS" = yes ]; then
     mkdir -p "$BINDIR" "$APPDIR" "$ICONDIR"
     ln -sf "$PREFIX/bin/a5120emu" "$BINDIR/a5120emu"
     cp "$PREFIX/share/icons/a5120emu.svg" "$ICONDIR/a5120emu.svg" 2>/dev/null || true
     ersetze_root "$SELF_DIR/a5120emu.desktop.in" "$PREFIX" > "$APPDIR/a5120emu.desktop"
+
+    ln -sf "$PREFIX/bin/k1520disktool" "$BINDIR/k1520disktool"
+    ln -sf "$PREFIX/bin/k1520disktool-cli" "$BINDIR/k1520disktool-cli" 2>/dev/null || true
+    ersetze_root "$SELF_DIR/k1520disktool.desktop.in" "$PREFIX" \
+        > "$APPDIR/k1520disktool.desktop"
+
     if have update-desktop-database; then
         update-desktop-database "$APPDIR" >/dev/null 2>&1 || true
     fi
-    ok "Startmenü-Eintrag und $BINDIR/a5120emu"
+    ok "Startmenü-Einträge und $BINDIR/{a5120emu,k1520disktool}"
     case ":$PATH:" in
         *":$BINDIR:"*) ;;
         *) warn "$BINDIR liegt nicht im PATH — der Emulator startet trotzdem über das Startmenü" ;;
@@ -416,6 +438,8 @@ info "Fertig."
 printf "     Installiert:  %s (%s)\n" "$PREFIX" \
     "$(du -sh "$PREFIX" 2>/dev/null | awk '{print $1}')"
 printf "     Starten:      %s\n" "$PREFIX/bin/a5120emu"
+printf "     Diskettenwerkzeug: %s  (Kommandozeile: %s)\n" \
+    "$PREFIX/bin/k1520disktool" "$PREFIX/bin/k1520disktool-cli"
 if [ "$SHORTCUTS" = yes ]; then
     printf "     oder einfach: a5120emu   (bzw. über das Startmenü)\n"
 fi

@@ -7,7 +7,7 @@
  * `format:` der Formatkatalog nicht kennt, wird mit Begruendung uebersprungen — so faellt
  * ein Tippfehler auf, statt ein halb funktionierendes Profil zu erzeugen.
  *
- * **Eine Katalogdatei ohne `filesystems:` ist gueltig** (§6.4): der Emulator kommt ohne
+ * **Eine Katalogdatei ohne `filesystems:` ist gueltig** (§6.5): der Emulator kommt ohne
  * die Sektion aus, sie ist reine Zutat des k1520DiskTool.
  *
  * @see doc/design/13_k1520disktool.md §6
