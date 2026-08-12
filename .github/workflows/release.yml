@@ -121,10 +121,20 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -eu
+          # Beide Jobs laufen GLEICHZEITIG und wollen dasselbe Release anlegen.
+          # Ein blosses `view || create` ist deshalb ein Wettlauf: finden beide
+          # nichts, legen beide an, und der zweite scheitert mit „already
+          # exists".  Also anlegen DUERFEN beide, scheitern darf keiner — und
+          # danach wird gewartet, bis es wirklich da ist.
+          gh release create "$TAG" --draft --title "$TAG" --generate-notes 2>/dev/null || true
+          for versuch in 1 2 3 4 5; do
+              if gh release view "$TAG" >/dev/null 2>&1; then break; fi
+              echo "warte auf das Release (Versuch $versuch)…"; sleep 3
+          done
           gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" --draft --title "$TAG" --generate-notes
+            || { echo "Release $TAG existiert nicht und liess sich nicht anlegen" >&2; exit 1; }
           gh release upload "$TAG" dist/*.tar.gz dist/*.sha256 --clobber
-          echo "Assets liegen am Release **$TAG** (Entwurf, falls neu angelegt)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Linux-Paket liegt am Release **$TAG** (Entwurf)." >> "$GITHUB_STEP_SUMMARY"
 
   windows:
     name: Windows x64 — Paket
@@ -156,10 +166,27 @@ jobs:
             }
           }
 
-      - name: Ninja bereitstellen
+      # `choco install` endet mit Code 0, auch wenn es nichts installiert hat
+      # (Serverstörung → „installed 0/0 packages").  Deshalb wird nachgesehen.
+      - name: Ninja und Inno Setup bereitstellen
         shell: pwsh
         run: |
-          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) { choco install ninja -y --no-progress }
+          function Beschaffen($werkzeug, $pfad) {
+            if (Get-Command $werkzeug -ErrorAction SilentlyContinue) { return $true }
+            if ($pfad -and (Test-Path -LiteralPath $pfad)) {
+              Add-Content -Path $env:GITHUB_PATH -Value $pfad
+              $env:Path = "$pfad;$env:Path"
+              if (Get-Command $werkzeug -ErrorAction SilentlyContinue) { return $true }
+            }
+            choco install $werkzeug -y --no-progress | Out-Host
+            $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + $env:Path
+            if ($pfad) { Add-Content -Path $env:GITHUB_PATH -Value $pfad; $env:Path = "$pfad;$env:Path" }
+            return [bool] (Get-Command $werkzeug -ErrorAction SilentlyContinue)
+          }
+          if (-not (Beschaffen 'ninja' $null)) { throw 'ninja liess sich nicht beschaffen' }
+          if (-not (Beschaffen 'iscc' "${env:ProgramFiles(x86)}\Inno Setup 6")) {
+            throw 'Inno Setup liess sich nicht beschaffen — ohne iscc gibt es kein Setup'
+          }
 
       - name: Paket schnüren
         # Dasselbe Skript wie unter Linux.  Es setzt für Windows selbst, was für
@@ -170,7 +197,7 @@ jobs:
         shell: bash
         env:
           DISKS: ${{ inputs.disks || 'default' }}
-        run: packaging/build_payload.sh --disks "$DISKS"
+        run: packaging/build_payload.sh --disks "$DISKS" --setup
 
       # Dieselben drei Fragen wie im Linux-Rauchtest, nur mit Windows-Antworten.
       # Ein Paket, dessen DLL nichts exportiert, dessen Pfade nicht auflösen oder
@@ -232,6 +259,7 @@ jobs:
           name: k1520emu-windows-x64
           path: |
             dist/*.zip
+            dist/*setup.exe
             dist/*.sha256
           retention-days: 30
 
@@ -243,7 +271,14 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -eu
+          # Siehe Linux-Job: beide laufen gleichzeitig, anlegen darf jeder,
+          # scheitern keiner.
+          gh release create "$TAG" --draft --title "$TAG" --generate-notes 2>/dev/null || true
+          for versuch in 1 2 3 4 5; do
+              if gh release view "$TAG" >/dev/null 2>&1; then break; fi
+              echo "warte auf das Release (Versuch $versuch)…"; sleep 3
+          done
           gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" --draft --title "$TAG" --generate-notes
-          gh release upload "$TAG" dist/*.zip dist/*.sha256 --clobber
-          echo "Windows-Paket liegt am Release **$TAG** (Entwurf, falls neu angelegt)." >> "$GITHUB_STEP_SUMMARY"
+            || { echo "Release $TAG existiert nicht und liess sich nicht anlegen" >&2; exit 1; }
+          gh release upload "$TAG" dist/*.zip dist/*setup.exe dist/*.sha256 --clobber
+          echo "Windows-Paket und Setup liegen am Release **$TAG** (Entwurf)." >> "$GITHUB_STEP_SUMMARY"
