@@ -37,6 +37,10 @@ on:
           - build         # nur bauen
           - test-level unit
           - test-python
+      paket:
+        description: 'Zusätzlich das Windows-Paket schnüren und PROBEWEISE installieren (lädt ~120 MB, dauert Minuten)'
+        type: boolean
+        default: false
 
 concurrency:
   group: windows-ci-${{ github.ref }}
@@ -74,15 +78,41 @@ jobs:
             }
           }
 
+      # `choco install` endet mit Code 0, AUCH wenn es nichts installiert hat —
+      # bei einer Störung des Paketservers steht dann „installed 0/0 packages"
+      # im Protokoll und der Schritt gilt als erfolgreich (2026-08-12: HTTP 503).
+      # Deshalb wird hier NACH der Installation nachgesehen, nicht vorher
+      # geglaubt.
       - name: Ninja und sccache bereitstellen
         shell: pwsh
         run: |
-          foreach ($werkzeug in 'ninja','sccache') {
-            if (Get-Command $werkzeug -ErrorAction SilentlyContinue) {
-              Write-Host "$werkzeug vorhanden: $((Get-Command $werkzeug).Source)"
-            } else {
-              choco install $werkzeug -y --no-progress
-            }
+          function Beschaffen($werkzeug) {
+            if (Get-Command $werkzeug -ErrorAction SilentlyContinue) { return $true }
+            # `| Out-Host` ist hier PFLICHT, nicht Kosmetik: eine
+            # PowerShell-Funktion gibt ALLES zurueck, was in den Ausgabestrom
+            # geschrieben wurde — nicht nur das hinter `return`.  Ohne die
+            # Umleitung landet chocos Ausgabe im Rueckgabewert, die Funktion
+            # liefert ein nicht-leeres Array, und `if (Beschaffen …)` ist immer
+            # wahr.  Out-Host schreibt auf die Konsole, aber nicht in den Strom.
+            choco install $werkzeug -y --no-progress | Out-Host
+            $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + $env:Path
+            return [bool] (Get-Command $werkzeug -ErrorAction SilentlyContinue)
+          }
+
+          # Ninja ist der Generator — ohne ihn geht gar nichts.
+          if (-not (Beschaffen 'ninja')) { throw 'ninja liess sich nicht beschaffen' }
+          Write-Host "ninja: $((Get-Command ninja -ErrorAction SilentlyContinue).Source)"
+
+          # sccache ist ein ZWISCHENSPEICHER, keine Voraussetzung.  Faellt der
+          # Paketserver aus, kostet das Zeit — es darf aber nicht den Bau
+          # scheitern lassen.  Der Uebersetzer-Aufsatz wird deshalb nur gesetzt,
+          # wenn das Werkzeug wirklich da ist; sonst baut es eben ohne.
+          if (Beschaffen 'sccache') {
+            Write-Host "sccache: $((Get-Command sccache -ErrorAction SilentlyContinue).Source)"
+            Add-Content -Path $env:GITHUB_ENV -Value 'CMAKE_CXX_COMPILER_LAUNCHER=sccache'
+            Add-Content -Path $env:GITHUB_ENV -Value 'CMAKE_C_COMPILER_LAUNCHER=sccache'
+          } else {
+            Write-Host '::warning::sccache nicht verfuegbar — es wird ohne Zwischenspeicher gebaut (nur langsamer).'
           }
 
       - name: Werkzeuge zeigen
@@ -91,7 +121,7 @@ jobs:
           cl 2>&1 | head -2 || true
           cmake --version | head -1
           ninja --version
-          sccache --version
+          sccache --version || echo "(sccache nicht vorhanden — Bau ohne Zwischenspeicher)"
           bash --version | head -1
 
       - uses: actions/setup-python@v5
@@ -145,12 +175,10 @@ jobs:
         shell: bash
         env:
           QT_QPA_PLATFORM: offscreen
-          # CMake liest CMAKE_<LANG>_COMPILER_LAUNCHER beim Konfigurieren aus der
-          # UMGEBUNG — deshalb braucht tools/dev.sh dafür keine Zeile.  Wichtig:
-          # das wirkt nur, weil dev.sh hier frisch konfiguriert (build/ ist im
-          # Lauf noch nicht vorhanden).
-          CMAKE_CXX_COMPILER_LAUNCHER: sccache
-          CMAKE_C_COMPILER_LAUNCHER: sccache
+          # CMAKE_<LANG>_COMPILER_LAUNCHER setzt der Schritt „Ninja und sccache
+          # bereitstellen" — aber nur, wenn sccache wirklich da ist.  CMake liest
+          # die Variable beim Konfigurieren aus der UMGEBUNG, deshalb braucht
+          # tools/dev.sh dafür keine Zeile.
           SCCACHE_DIR: ${{ github.workspace }}\.sccache
           # Der Vorgabewert (10 GB) sprengte den 10-GB-Rahmen eines Actions-
           # Zwischenspeichers; 2 GB reichen für diesen Baum mit Reserve.
@@ -320,4 +348,249 @@ jobs:
           name: k1520-windows-x64-statische-crt
           path: build_dist/*.dll
           if-no-files-found: ignore
+          retention-days: 7
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Windows-Paket schnüren und PROBEWEISE installieren
+  # ───────────────────────────────────────────────────────────────────────────
+  #
+  # Der einzige Weg, install.ps1 wirklich zu prüfen.  Alles bis hierher war
+  # statisch — Parser, Textabgleich gegen install.sh, Guards.  Was zur Laufzeit
+  # schiefgehen kann, ist damit unbelegt: uv-Download samt Prüfsumme,
+  # Expand-Archive, venv-Anlage, Qt-Installation, die COM-Verknüpfung, der
+  # Rauchtest, und ob `-Uninstall` hinterher wirklich nichts liegen lässt.
+  #
+  # Läuft NICHT bei jedem Aufruf: der Lauf lädt ~120 MB (uv, Python, Qt) und
+  # dauert Minuten.  Das Gegenstück unter Linux steckt aus demselben Grund
+  # hinter K1520_PACKAGING_FULL=1.  Einschalten:
+  #     gh workflow run windows-ci.yml --ref main -f paket=true
+  paket:
+    name: Windows x64 — Paket schnüren und probeweise installieren
+    if: inputs.paket
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # build_payload.sh stempelt `git describe --tags`
+
+      - name: MSVC-Umgebung (vcvars64) übernehmen
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * `
+                  -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+                  -property installationPath
+          if (-not $vs) { throw "Keine Visual-Studio-Installation mit C++-Werkzeugen gefunden" }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $wanted = @('PATH','INCLUDE','LIB','LIBPATH','VSINSTALLDIR','VCINSTALLDIR',
+                      'VCToolsInstallDir','WindowsSdkDir','WindowsSDKVersion','UCRTVersion')
+          cmd /c "`"$vcvars`" >nul 2>&1 && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              if ($wanted -contains $matches[1]) { "$($matches[1])=$($matches[2])" | Out-File $env:GITHUB_ENV -Append -Encoding utf8 }
+            }
+          }
+
+      - name: Ninja bereitstellen
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) { choco install ninja -y --no-progress }
+
+      # Gebaut wird über build_payload.sh — dieselbe Datei wie unter Linux.
+      # Bauen ist kein Anwenderschritt, die Git-Bash ist auf dem Runner da, und
+      # die Liste „was gehört ins Paket" soll es nicht zweimal geben.
+      - name: Inno Setup bereitstellen
+        shell: pwsh
+        run: |
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) {
+            $pfad = "${env:ProgramFiles(x86)}\Inno Setup 6"
+            if (Test-Path -LiteralPath $pfad) {
+              Add-Content -Path $env:GITHUB_PATH -Value $pfad
+              Write-Host "Inno Setup vorhanden: $pfad"
+            } else {
+              choco install innosetup -y --no-progress
+              Add-Content -Path $env:GITHUB_PATH -Value $pfad
+            }
+          }
+
+      - name: Paket und Installationsprogramm schnüren
+        shell: bash
+        run: packaging/build_payload.sh --disks none --setup
+
+      - name: Was ist drin?
+        shell: bash
+        run: |
+          paket=$(ls -d dist/k1520emu-*-windows-*/ | head -1)
+          echo "── $paket"
+          ls -la "$paket" "$paket/payload/bin"
+          # Ein Windows-Paket darf KEINE Unix-Installerdateien enthalten: der
+          # Anwender hat keine Shell dafür, und eine mitgelieferte install.sh
+          # wäre eine Einladung, das Falsche zu starten.  `slim.py` stand hier
+          # bis 2026-08-12 mit auf der Liste — seit es die PE-Importtabelle
+          # selbst liest, gehört es dazu und nicht mehr hierher.
+          for verboten in install.sh launcher.sh disktool_launcher.sh lib; do
+              if [ -e "$paket/$verboten" ]; then
+                  echo "FEHLER: $verboten gehört nicht ins Windows-Paket" >&2; exit 1
+              fi
+          done
+          for noetig in install.ps1 launcher.cmd disktool_launcher.cmd slim.py uv_pins.txt requirements.lock; do
+              [ -f "$paket/$noetig" ] || { echo "FEHLER: $noetig fehlt" >&2; exit 1; }
+          done
+          for noetig in bin/k1520core.dll bin/k1520disk.dll bin/k1520disktool-cli.exe \
+                        app/main.py app/disktool/main.py share/k1520emu/formats.yaml; do
+              [ -f "$paket/payload/$noetig" ] || { echo "FEHLER: payload/$noetig fehlt" >&2; exit 1; }
+          done
+          echo "$paket" > paket_pfad.txt
+
+      # ── Der eigentliche Zweck: install.ps1 einmal wirklich fahren ───────────
+      - name: Probeinstallation
+        shell: pwsh
+        run: |
+          $paket = (Get-Content paket_pfad.txt).Trim()
+          $ziel  = Join-Path $env:RUNNER_TEMP 'k1520emu-test'
+          $daten = Join-Path $env:RUNNER_TEMP 'k1520emu-daten'
+          # ÜBER powershell.exe, nicht über den pwsh dieses Schrittes: Windows
+          # PowerShell 5.1 ist das, was auf jedem Windows liegt, was das Setup
+          # aufruft und womit ein Anwender das .zip auspackt und startet.  pwsh
+          # ist nachsichtiger (UTF-8 als Vorgabe) — geprüft mit pwsh lief das
+          # Skript, das Setup scheiterte trotzdem am Parser (2026-08-12).
+          $ausgabe = & powershell.exe -ExecutionPolicy Bypass -NoProfile `
+                       -File "$paket\install.ps1" -Prefix $ziel -Data $daten -Yes -NoShortcut |
+                     Tee-Object -Variable zeilen
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 ist fehlgeschlagen" }
+          $ausgabe | ForEach-Object { Write-Host $_ }
+
+          # Der Rauchtest legt die Beispieldisketten beim Anwender an — und zwar
+          # im GEWÄHLTEN Ordner.  Ohne K1520_DATA landeten sie an der
+          # Vorgabestelle, und der Anwender suchte sie vergeblich.
+          $zeile = $zeilen | Where-Object { $_ -match 'kopiert nach' } | Select-Object -First 1
+          if (-not $zeile) { throw "Rauchtest hat die Diskettenablage nicht gemeldet" }
+          if ($zeile -notmatch [regex]::Escape($daten)) {
+            throw "Disketten landen nicht im gewählten Ordner: $zeile"
+          }
+
+          # Was danach dastehen MUSS.  Der Rauchtest im Installer hat den Kern
+          # schon geladen und das Hauptfenster gebaut; hier geht es um das
+          # Ergebnis auf der Platte.
+          foreach ($p in @('bin\a5120emu.cmd', 'bin\k1520disktool.cmd',
+                           'venv\Scripts\python.exe', 'app\main.py',
+                           'share\k1520emu\formats.yaml', '.k1520emu-installation')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $ziel $p))) { throw "fehlt nach der Installation: $p" }
+          }
+
+          # Der abweichende Datenordner muss im Starter stehen — sonst legte der
+          # Emulator die Disketten woanders ab als der Anwender gewählt hat.
+          $starter = Get-Content -LiteralPath (Join-Path $ziel 'bin\a5120emu.cmd') -Raw
+          if ($starter -notmatch [regex]::Escape($daten)) { throw "K1520_DATA fehlt im Starter" }
+          if ($starter -match '@ROOT@|@DATEN@') { throw "unersetzter Platzhalter im Starter" }
+          Write-Host "Installation belegt: $([math]::Round((Get-ChildItem -Recurse $ziel | Measure-Object Length -Sum).Sum/1MB)) MB"
+
+      # Das Schlankmachen ist der Grund, warum die Installation nicht ~316 MB
+      # belegt.  Geprüft wird beides: dass genug wegfällt UND dass das
+      # Wesentliche steht — der Rauchtest im Installer hat die Oberfläche
+      # bereits gebaut, hier geht es um die Dateien, die kein Import nennt.
+      - name: Was das Schlankmachen übrig lässt
+        shell: pwsh
+        run: |
+          $ziel = Join-Path $env:RUNNER_TEMP 'k1520emu-test'
+          $mb = [math]::Round((Get-ChildItem -Recurse -File $ziel |
+                               Measure-Object Length -Sum).Sum / 1MB)
+          Write-Host "Installation nach dem Schlankmachen: $mb MB"
+          if ($mb -gt 220) { throw "zu gross ($mb MB) — hat slim.py gegriffen?" }
+
+          $ps = Join-Path $ziel 'venv\Lib\site-packages\PySide6'
+          # Ohne diese vier startet die Oberfläche nicht — und keiner davon
+          # steht in einer Importtabelle, die der Kehraus liest.
+          foreach ($p in @('QtCore.pyd', 'QtWidgets.pyd', 'Qt6Core.dll',
+                           'opengl32sw.dll', 'plugins\platforms\qwindows.dll')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $ps $p))) { throw "fehlt nach dem Schlankmachen: $p" }
+          }
+          # Und das hier MUSS weg sein, sonst hat der Schnitt nicht gegriffen.
+          foreach ($p in @('qml', 'metatypes', 'Qt6Quick.dll', 'Qt6Designer.dll')) {
+            if (Test-Path -LiteralPath (Join-Path $ps $p)) { throw "noch da: $p" }
+          }
+          Write-Host 'ok — schlank, und das Wesentliche steht.'
+
+      # Das Setup ist der Weg, den ein Windows-Anwender geht — es muss also
+      # genauso durchlaufen wie install.ps1 von Hand.  /VERYSILENT fährt es ohne
+      # Assistent, /DIR und /LOG geben Ziel und Protokoll vor.
+      - name: Probeinstallation über das Setup
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem dist\*setup.exe | Select-Object -First 1).FullName
+          $ziel = Join-Path $env:RUNNER_TEMP 'k1520emu-setup'
+          $log  = Join-Path $env:RUNNER_TEMP 'setup.log'
+          Write-Host "Setup: $exe ($([math]::Round((Get-Item $exe).Length/1MB,1)) MB)"
+          $p = Start-Process -FilePath $exe -Wait -PassThru `
+                 -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=$ziel","/LOG=$log"
+          # Bei einem Fehlschlag zaehlen zwei Protokolle: das von Inno (/LOG,
+          # was das Setup selbst tat) und das des Bootstraps in {app} (was
+          # install.ps1 tat).  Ohne das zweite steht man vor „Code 1".
+          $boot = Join-Path $ziel 'bootstrap.log'
+          if ($p.ExitCode -ne 0) {
+            if (Test-Path $boot) { Write-Host '── bootstrap.log ──'; Get-Content $boot | Select-Object -Last 40 }
+            if (Test-Path $log)  { Write-Host '── Inno ──';          Get-Content $log  | Select-Object -Last 30 }
+            throw "Setup ist mit Code $($p.ExitCode) gescheitert"
+          }
+          if (Test-Path $boot) { Write-Host '── bootstrap.log ──'; Get-Content $boot }
+          foreach ($f in @('bin\a5120emu.cmd', 'venv\Scripts\pythonw.exe',
+                           'app\main.py', 'install.ps1', '.k1520emu-installation')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $ziel $f))) { throw "fehlt nach dem Setup: $f" }
+          }
+          $mb = [math]::Round((Get-ChildItem -Recurse -File $ziel | Measure-Object Length -Sum).Sum/1MB)
+          Write-Host "Über das Setup installiert: $mb MB"
+          if ($mb -gt 220) { throw "zu gross ($mb MB) — hat slim.py gegriffen?" }
+
+      - name: Über das Setup wieder deinstallieren
+        shell: pwsh
+        run: |
+          $ziel = Join-Path $env:RUNNER_TEMP 'k1520emu-setup'
+          $unins = Join-Path $ziel 'unins000.exe'
+          if (-not (Test-Path -LiteralPath $unins)) { throw 'Deinstallierer fehlt — Uninstallable=yes?' }
+          # Fremde Datei daneben: sie muss überleben.  Das Setup löscht bewusst
+          # NICHT selbst, sondern ruft install.ps1 mit seinen beiden Riegeln.
+          Set-Content -LiteralPath (Join-Path $ziel 'meine_notizen.txt') -Value 'wichtig'
+          $p = Start-Process -FilePath $unins -Wait -PassThru `
+                 -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART"
+          if ($p.ExitCode -ne 0) { throw "Deinstallieren scheiterte mit Code $($p.ExitCode)" }
+          Start-Sleep -Seconds 3      # unins000.exe räumt sich selbst verzögert weg
+          foreach ($f in @('bin', 'app', 'venv', 'python', 'share')) {
+            if (Test-Path -LiteralPath (Join-Path $ziel $f)) { throw "nach dem Deinstallieren noch da: $f" }
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $ziel 'meine_notizen.txt'))) {
+            throw 'das Deinstallieren hat eine fremde Datei mitgelöscht'
+          }
+          Write-Host 'ok — Setup-Installation entfernt, Fremdes steht noch.'
+
+      - name: Deinstallieren und nachsehen, ob wirklich nichts bleibt
+        shell: pwsh
+        run: |
+          $paket = (Get-Content paket_pfad.txt).Trim()
+          $ziel  = Join-Path $env:RUNNER_TEMP 'k1520emu-test'
+
+          # Eine fremde Datei DANEBEN: sie muss das Deinstallieren überleben —
+          # gelöscht wird nur das Inventar aus dem Ausweis, nicht die Wurzel.
+          Set-Content -LiteralPath (Join-Path $ziel 'meine_notizen.txt') -Value 'wichtig'
+
+          & "$paket\install.ps1" -Prefix $ziel -Uninstall
+          if ($LASTEXITCODE -ne 0) { throw "-Uninstall ist fehlgeschlagen" }
+
+          foreach ($p in @('bin', 'app', 'venv', 'share', 'python', 'tools', 'VERSION')) {
+            if (Test-Path -LiteralPath (Join-Path $ziel $p)) { throw "nach -Uninstall noch da: $p" }
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $ziel 'meine_notizen.txt'))) {
+            throw "-Uninstall hat eine fremde Datei mitgelöscht"
+          }
+          Write-Host 'ok — Installation entfernt, Fremdes steht noch.'
+
+      - name: Paket als Artefakt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k1520emu-windows-paket
+          path: |
+            dist/*.zip
+            dist/*setup.exe
+          if-no-files-found: warn
           retention-days: 7

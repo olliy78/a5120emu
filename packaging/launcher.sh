@@ -18,6 +18,13 @@ ROOT="@ROOT@"
 
 K1520_HOME="$ROOT"; export K1520_HOME
 
+# Datenordner, falls der Anwender beim Installieren einen ABWEICHENDEN gewählt
+# hat; sonst bleibt die Zeile leer und app/paths.py löst den Dokumentenordner
+# selbst auf.  Genau deshalb wird die Vorgabe NICHT eingetragen: ein fester Pfad
+# könnte einem später umbenannten Dokumentenordner nicht mehr folgen.
+K1520_DATA="@DATEN@"
+[ -n "$K1520_DATA" ] && export K1520_DATA || unset K1520_DATA
+
 # Arbeitsverzeichnis = Benutzerdaten.  Der Kern legt sein Protokoll unter
 # `logs/` im ARBEITSVERZEICHNIS an (k1520_api.cpp); ohne diesen Wechsel
 # entstünde es dort, wo der Anwender gerade zufällig steht — beim Start über das

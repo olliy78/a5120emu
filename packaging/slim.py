@@ -13,6 +13,13 @@ Qt-Entwicklungswerkzeuge (Designer, Linguist, qmlls …), die Bindungen für
 Module, die nie importiert werden, Typstubs und shiboken-Baumaterial, die
 Testsuite und Tcl/Tk von CPython.  Danach sind es ~146 MB.
 
+Unter **Windows** gilt dasselbe mit drei Unterschieden, die gemessen und nicht
+geraten sind (Erkundungsstufe im Paketjob, 2026-08-12): die Qt-DLLs liegen
+direkt in `PySide6/` statt in `PySide6/Qt/lib`, die Bindungen heißen `.pyd`,
+und CPython liegt als `Lib/`+`DLLs/`+`tcl/` statt `lib/pythonX.Y/`.  Die
+Abhängigkeiten liest dort kein `ldd`, sondern :func:`pe_imports` — `slim.py`
+läuft beim ANWENDER, und der hat kein Visual Studio und damit kein `dumpbin`.
+
 Der Schnitt ist bewusst **beweisbar** statt geraten: welche Qt-Bibliotheken
 bleiben, entscheidet nicht eine Liste, sondern `ldd` — ausgehend von den
 Bindungen, die die GUI importiert, und den Plugins, die Qt zur Laufzeit
@@ -47,6 +54,9 @@ PLUGINS_KEEP = {
     "platforms", "platforminputcontexts", "platformthemes", "xcbglintegrations",
     "egldeviceintegrations", "wayland-decoration-client", "wayland-graphics-integration-client",
     "wayland-shell-integration", "imageformats", "iconengines", "generic", "styles", "tls",
+    # Windows: Qt fragt darüber, ob eine Netzverbindung besteht.  Winzig, und
+    # ohne die Gruppe meldet Qt beim Start eine Warnung.
+    "networkinformation",
 }
 
 #: Einzelne Plugins, die trotz passender Gruppe rausfliegen.  Die
@@ -97,6 +107,41 @@ CPYTHON_GLOBS_DROP = (
     "lib/libtcl*", "lib/libtk*", "lib/tcl*", "lib/tk*", "lib/itcl*", "lib/thread*",
     "lib/*.a", "lib/python*/lib-dynload/_tkinter*.so",
 )
+
+IST_WINDOWS = sys.platform.startswith("win")
+
+#: CPython unter Windows liegt anders: `Lib/` statt `lib/pythonX.Y/`, die
+#: Erweiterungsmodule in `DLLs/`, Tcl/Tk als eigener Zweig `tcl/`.  Die
+#: Muster oben greifen dort nicht (auch nicht case-insensitiv — `glob` vergleicht
+#: das Muster, nicht das Dateisystem).  Gemessen 2026-08-12: Lib 27,7 MB,
+#: DLLs 17,1 MB, tcl 6,7 MB, include 1,2 MB, libs 0,7 MB.
+CPYTHON_WIN_DIRS_DROP = (
+    "include", "libs", "tcl", "Scripts/__pycache__",
+    "Lib/test", "Lib/idlelib", "Lib/tkinter", "Lib/turtledemo",
+    "Lib/ensurepip", "Lib/pydoc_data", "Lib/lib2to3", "Lib/distutils",
+    "Lib/site-packages/pip", "Lib/site-packages/pip-*.dist-info",
+)
+
+#: Windows: Tcl/Tk-Laufzeit und das zugehoerige Erweiterungsmodul.
+CPYTHON_WIN_GLOBS_DROP = (
+    "DLLs/_tkinter*.pyd", "DLLs/tcl*.dll", "DLLs/tk*.dll", "DLLs/_test*.pyd",
+)
+
+#: Windows: die Qt-Bibliotheken liegen NICHT in `Qt/lib`, sondern direkt neben
+#: den Bindungen in `PySide6/`.  Der Kehraus dort darf deshalb ausschliesslich
+#: `Qt6*.dll` anfassen — `QtCore.pyd` liegt im selben Verzeichnis, und ein
+#: blindes „alles weg, was nicht erreichbar ist" loeschte die Bindung selbst.
+QT_DLL_MUSTER_WIN = "Qt6*.dll"
+
+#: Windows: bleibt trotz allem stehen.  `opengl32sw.dll` (19,7 MB) ist Qts
+#: SOFTWARE-OpenGL (Mesa llvmpipe) und wird erst zur Laufzeit nachgeladen —
+#: keine Importtabelle nennt sie, der Kehraus wuerde sie also verwerfen.  Sie ist
+#: aber genau das, was die Oberflaeche auf Rechnern ohne brauchbare
+#: GPU-Treiber rettet: virtuelle Maschinen, Remotedesktop, alte Hardware — die
+#: typische Umgebung fuer einen Retro-Emulator.  Der Rauchtest laeuft offscreen
+#: und wuerde den Ausfall NICHT bemerken; er zeigte sich erst beim Anwender als
+#: schwarzes Fenster.  19,7 MB sind der Preis dafuer.
+WIN_IMMER_BEHALTEN = ("opengl32sw.dll",)
 
 
 # ─── Hilfsmittel ─────────────────────────────────────────────────────────────
@@ -179,13 +224,130 @@ def strip_datei(datei: Path, cut: Cutter) -> None:
                 pass
 
 
+def pe_imports(datei: Path) -> list:
+    """Die DLL-Namen aus der Importtabelle einer PE-Datei — ohne fremde Werkzeuge.
+
+    Warum von Hand statt `dumpbin /dependents`: **`slim.py` läuft beim
+    ANWENDER**, und dort gibt es kein Visual Studio.  `ldd` ist auf jedem Linux
+    da, `dumpbin` auf keinem normalen Windows.  Die Importtabelle zu lesen ist
+    dafür überschaubar — Header, Datenverzeichnis 1, dann je Eintrag den Namen.
+
+    Anders als `ldd` löst das **nicht rekursiv** auf; den Baum läuft
+    :func:`linked_libraries` ab.
+
+    Gibt eine Liste von Dateinamen zurück (ohne Pfad, Schreibweise wie in der
+    Datei).  Bei allem, was nicht lesbar oder kein PE ist: leere Liste — der
+    Aufrufer behandelt das wie „nichts gefunden" und fasst dann nichts an.
+    """
+    import struct
+    try:
+        roh = datei.read_bytes()
+    except OSError:
+        return []
+    try:
+        if roh[:2] != b"MZ":
+            return []
+        pe = struct.unpack_from("<I", roh, 0x3C)[0]
+        if roh[pe:pe + 4] != b"PE\0\0":
+            return []
+        # COFF-Header: Sektionszahl und Größe des optionalen Headers.
+        anzahl_sektionen = struct.unpack_from("<H", roh, pe + 6)[0]
+        opt_groesse      = struct.unpack_from("<H", roh, pe + 20)[0]
+        opt = pe + 24
+        magic = struct.unpack_from("<H", roh, opt)[0]
+        if magic == 0x20B:      # PE32+ (64 Bit)
+            dd = opt + 112
+        elif magic == 0x10B:    # PE32
+            dd = opt + 96
+        else:
+            return []
+        # Datenverzeichnis 1 = Importtabelle (RVA, Größe).
+        import_rva = struct.unpack_from("<I", roh, dd + 8)[0]
+        if not import_rva:
+            return []
+
+        # Sektionstabelle, um RVAs in Dateiversätze umzurechnen.
+        sektionen = []
+        st = opt + opt_groesse
+        for i in range(anzahl_sektionen):
+            e = st + i * 40
+            v_groesse, v_adr, r_groesse, r_versatz = struct.unpack_from("<IIII", roh, e + 8)
+            sektionen.append((v_adr, max(v_groesse, r_groesse), r_versatz))
+
+        def versatz(rva):
+            for v_adr, groesse, r_versatz in sektionen:
+                if v_adr <= rva < v_adr + groesse:
+                    return r_versatz + (rva - v_adr)
+            return None
+
+        namen = []
+        eintrag = versatz(import_rva)
+        if eintrag is None:
+            return []
+        while True:
+            # IMAGE_IMPORT_DESCRIPTOR ist 20 Byte; der Name steht an Versatz 12.
+            block = roh[eintrag:eintrag + 20]
+            if len(block) < 20 or block == b"\0" * 20:
+                break
+            name_rva = struct.unpack_from("<I", block, 12)[0]
+            if not name_rva:
+                break
+            n = versatz(name_rva)
+            if n is not None:
+                ende = roh.index(b"\0", n)
+                namen.append(roh[n:ende].decode("ascii", "replace"))
+            eintrag += 20
+        return namen
+    except (struct.error, IndexError, ValueError):
+        return []
+
+
+def _linked_windows(binary: Path, inside: Path) -> set:
+    """Wie :func:`linked_libraries`, aber über die PE-Importtabelle.
+
+    Der Unterschied zu `ldd` ist die REKURSION: `ldd` löst den ganzen Baum auf,
+    die Importtabelle nennt nur die direkten Nachbarn.  Also selbst ablaufen —
+    Breitensuche, jeder Name wird neben der jeweiligen Datei und in @p inside
+    gesucht (so sucht auch Windows: zuerst im Verzeichnis des Moduls).
+
+    Groß-/Kleinschreibung ist unter Windows egal, in einem Verzeichnisvergleich
+    hier aber nicht — deshalb wird ein Kleinbuchstaben-Verzeichnis der
+    vorhandenen Dateien angelegt statt je Name im Dateisystem zu raten.
+    """
+    vorrat = {}
+    for verzeichnis in {binary.parent, inside}:
+        if verzeichnis.is_dir():
+            for d in verzeichnis.iterdir():
+                if d.is_file():
+                    vorrat.setdefault(d.name.lower(), d)
+
+    gefunden, offen, gesehen = set(), [binary], {binary.resolve()}
+    while offen:
+        aktuell = offen.pop()
+        for name in pe_imports(aktuell):
+            ziel = vorrat.get(name.lower())
+            if ziel is None:
+                continue          # Systembibliothek — geht uns nichts an
+            aufgeloest = ziel.resolve()
+            if aufgeloest in gesehen:
+                continue
+            gesehen.add(aufgeloest)
+            offen.append(ziel)
+            if inside == aufgeloest.parent or inside in aufgeloest.parents:
+                gefunden.add(aufgeloest)
+    return gefunden
+
+
 def linked_libraries(binary: Path, inside: Path) -> set:
     """Alle Bibliotheken **unterhalb** von @p inside, die @p binary (transitiv) braucht.
 
-    `ldd` löst rekursiv auf, ein Durchlauf je Wurzel genügt also.  Interessant
-    sind nur Treffer innerhalb der Installation — die Systembibliotheken des
-    Wirts gehen uns nichts an.
+    Unter Linux/macOS über `ldd` (löst rekursiv auf, ein Durchlauf je Wurzel
+    genügt), unter Windows über die PE-Importtabelle (siehe
+    :func:`_linked_windows`).  Interessant sind nur Treffer innerhalb der
+    Installation — die Systembibliotheken des Wirts gehen uns nichts an.
     """
+    if sys.platform.startswith("win"):
+        return _linked_windows(binary, inside)
     try:
         out = subprocess.run(["ldd", str(binary)], capture_output=True, text=True,
                              timeout=60)
@@ -219,13 +381,12 @@ def linked_libraries(binary: Path, inside: Path) -> set:
 
 def slim_cpython(root: Path, cut: Cutter) -> None:
     """CPython auf eine Laufzeit eindampfen (Testsuite, Tcl/Tk, Header, IDLE)."""
+    dirs = CPYTHON_WIN_DIRS_DROP if IST_WINDOWS else CPYTHON_DIRS_DROP
+    globs = CPYTHON_WIN_GLOBS_DROP if IST_WINDOWS else CPYTHON_GLOBS_DROP
     for base in sorted((root / "python").glob("*")):
         if not base.is_dir():
             continue
-        for muster in CPYTHON_DIRS_DROP:
-            for treffer in base.glob(muster):
-                cut.drop(treffer)
-        for muster in CPYTHON_GLOBS_DROP:
+        for muster in tuple(dirs) + tuple(globs):
             for treffer in base.glob(muster):
                 cut.drop(treffer)
 
@@ -238,13 +399,15 @@ def slim_symbole(root: Path, cut: Cutter) -> None:
     alles gelaufen — künftige Abhängigkeiten sind damit gleich mit erfasst.
     Programme bleiben unangetastet, siehe `strip_datei`.
     """
-    if not shutil.which("strip") or cut.dry_run:
+    # Unter Windows gegenstandslos: `strip` ist ein ELF-Werkzeug, und MSVC legt
+    # Debugsymbole ohnehin in eine eigene `.pdb`, die gar nicht erst mitkommt.
+    if IST_WINDOWS or not shutil.which("strip") or cut.dry_run:
         return
     kandidaten = []
     for base in sorted((root / "python").glob("*")):
         if base.is_dir() and not base.is_symlink():
             kandidaten += list(base.glob("lib/python*/lib-dynload/*.so"))
-    for s in (root / "venv" / "lib").glob("python*/site-packages"):
+    for s in site_packages(root):
         kandidaten += list(s.rglob("*.so")) + list(s.rglob("*.so.*"))
     for datei in kandidaten:
         strip_datei(datei, cut)
@@ -263,6 +426,11 @@ def slim_libpython(root: Path, cut: Cutter) -> None:
     Objekt die Bibliothek anzieht, fliegt sie raus.  Zieht eine künftige
     Abhängigkeit sie doch, bleibt sie liegen.
     """
+    # Windows kennt das Problem nicht: dort ist `python312.dll` die Laufzeit
+    # selbst und wird von `python.exe` gebraucht — es gibt keine ueberzaehlige
+    # zweite Ausfertigung.
+    if IST_WINDOWS:
+        return
     for base in sorted((root / "python").glob("*")):
         if not base.is_dir() or base.is_symlink():
             continue
@@ -291,9 +459,18 @@ def slim_libpython(root: Path, cut: Cutter) -> None:
                         cut.drop(link)
 
 
+def site_packages(root: Path) -> list:
+    """Die `site-packages` des venv — unter Windows `venv/Lib/`, sonst `venv/lib/pythonX.Y/`."""
+    treffer = list((root / "venv" / "lib").glob("python*/site-packages"))
+    treffer += [d for d in ((root / "venv" / "Lib" / "site-packages"),) if d.is_dir()]
+    return treffer
+
+
 def _pyside_dir(root: Path):
-    treffer = list((root / "venv" / "lib").glob("python*/site-packages/PySide6"))
-    return treffer[0] if treffer else None
+    for sp in site_packages(root):
+        if (sp / "PySide6").is_dir():
+            return sp / "PySide6"
+    return None
 
 
 def slim_pyside(root: Path, cut: Cutter) -> None:
@@ -301,10 +478,15 @@ def slim_pyside(root: Path, cut: Cutter) -> None:
     pyside = _pyside_dir(root)
     if pyside is None:
         return
-    qt = pyside / "Qt"
+
+    # Windows legt das Wheel anders aus (gemessen 2026-08-12, Erkundungsstufe im
+    # Paketjob): die Qt-DLLs und die Plugins liegen DIREKT in `PySide6/`, nicht
+    # unter `PySide6/Qt/`; die Bindungen heissen `.pyd` statt `.abi3.so`.
+    qt = pyside if IST_WINDOWS else pyside / "Qt"
+    bindung_muster = "*.pyd" if IST_WINDOWS else "*.abi3.so"
 
     # 1. Bindungen, die nie importiert werden (je 1–9 MB).
-    for datei in pyside.glob("*.abi3.so"):
+    for datei in pyside.glob(bindung_muster):
         if datei.name.split(".")[0] not in BINDINGS_KEEP:
             cut.drop(datei)
 
@@ -319,7 +501,10 @@ def slim_pyside(root: Path, cut: Cutter) -> None:
 
     # 2. Qt-Werkzeuge (Designer, Linguist, qmlls …) — reine Entwicklungshilfen.
     for muster in TOOLS_DROP:
-        for treffer in pyside.glob(muster):
+        kandidaten = list(pyside.glob(muster))
+        if IST_WINDOWS:
+            kandidaten += list(pyside.glob(muster + ".exe"))
+        for treffer in kandidaten:
             if treffer.is_file() or treffer.is_symlink():
                 cut.drop(treffer)
 
@@ -335,7 +520,7 @@ def slim_pyside(root: Path, cut: Cutter) -> None:
                 cut.drop(datei)
 
     # 5. Plugins: nur die Gruppen, die zur Laufzeit gebraucht werden.
-    plugins = qt / "plugins"
+    plugins = qt / "plugins"   # unter Windows ist `qt` = `pyside`, also PySide6/plugins
     if plugins.is_dir():
         for gruppe in plugins.iterdir():
             if gruppe.is_dir() and gruppe.name not in PLUGINS_KEEP:
@@ -345,29 +530,40 @@ def slim_pyside(root: Path, cut: Cutter) -> None:
 
     # 6. Qt-Bibliotheken: alles, was von den verbliebenen Bindungen und Plugins
     #    aus nicht erreichbar ist.  DAS ist der große Posten (~130 MB), und er
-    #    wird nicht geraten, sondern mit ldd bestimmt.
-    lib = qt / "lib"
+    #    wird nicht geraten, sondern aus den Abhängigkeiten bestimmt (ldd bzw.
+    #    die PE-Importtabelle).
+    lib = pyside if IST_WINDOWS else qt / "lib"
     if not lib.is_dir():
         return
     lib_resolved = lib.resolve()
 
-    wurzeln = [p for p in pyside.glob("*.abi3.so")]
-    wurzeln += list(pyside.glob("../shiboken6/*.so*"))
+    wurzeln = list(pyside.glob(bindung_muster))
+    wurzeln += list(pyside.glob("../shiboken6/*.pyd" if IST_WINDOWS else "../shiboken6/*.so*"))
+    if IST_WINDOWS:
+        wurzeln += list((pyside / ".." / "shiboken6").glob("*.dll"))
     if plugins.is_dir():
-        wurzeln += [p for p in plugins.rglob("*.so")]
+        wurzeln += [p for p in plugins.rglob("*.dll" if IST_WINDOWS else "*.so")]
 
     gebraucht = set()
     for w in wurzeln:
         gebraucht |= linked_libraries(w, lib_resolved)
 
     if not gebraucht:
-        # Kein ldd oder nichts aufgelöst — dann lieber nichts anfassen, als die
-        # Installation zu zerlegen.
-        print("     (ldd lieferte nichts — Qt-Bibliotheken bleiben unangetastet)")
+        # Nichts aufgelöst — dann lieber nichts anfassen, als die Installation zu
+        # zerlegen.
+        print("     (keine Abhängigkeiten aufgelöst — Qt-Bibliotheken bleiben unangetastet)")
         return
 
-    for datei in lib.iterdir():
-        if datei.is_dir():
+    # UNTER WINDOWS ist `lib` das Verzeichnis PySide6/ SELBST, in dem auch die
+    # Bindungen (`QtCore.pyd`), Python-Dateien und `opengl32sw.dll` liegen.  Ein
+    # blindes „weg, was nicht erreichbar ist" löschte hier die Bindung, mit der
+    # der Kehraus gerade erst gerechnet hat.  Deshalb fasst er dort
+    # ausschließlich `Qt6*.dll` an.
+    kandidaten = sorted(lib.glob(QT_DLL_MUSTER_WIN)) if IST_WINDOWS else \
+                 [d for d in lib.iterdir() if not d.is_dir()]
+
+    for datei in kandidaten:
+        if IST_WINDOWS and datei.name in WIN_IMMER_BEHALTEN:
             continue
         try:
             ziel = datei.resolve()

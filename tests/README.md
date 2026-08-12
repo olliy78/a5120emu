@@ -184,8 +184,16 @@ wo es sich lohnt, ein Gegenstück für die andere Plattform (Muster:
 `test_paths.py::test_dokumentenordner_unter_windows_ist_documents`).
 
 Lokal vorprüfen, ohne auf die CI zu warten: `tools/dev.sh win` baut mit MinGW-w64
-nach Windows und fährt die Tests unter `wine`. Findet die Punkte 1–3 sofort,
+nach Windows und fährt die Tests unter `wine` (~15 s). Findet die Punkte 1–3 sofort,
 Punkt 4 nicht (das ist MSVC-eigen).
+
+> **Warum der Cross-Bau `DISCOVERY_MODE PRE_TEST` benutzt:** `gtest_discover_tests`
+> startet in der Vorgabe jedes Testprogramm **beim Bauen** einmal, um seine `TEST`s
+> aufzuzählen — im Cross-Bau also unter `wine`, und bei `cmake --build -j` dutzendfach
+> gleichzeitig. Einer fiel dabei regelmäßig um, und der Bau meldete „Error running test
+> executable", obwohl nichts kaputt war. Ein roter Bau, der nicht rot ist, macht das
+> Werkzeug unbrauchbar. `PRE_TEST` sammelt erst zur Testzeit ein. Gilt **nur** beim
+> Cross-Bau (`CMAKE_CROSSCOMPILING`); nativ bleibt die Vorgabe, die dort schneller ist.
 
 ## Was wo dokumentiert ist
 

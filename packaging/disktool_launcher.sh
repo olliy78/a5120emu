@@ -19,6 +19,12 @@ ROOT="@ROOT@"
 
 K1520_HOME="$ROOT"; export K1520_HOME
 
+# Derselbe Datenordner wie beim Emulator-Starter — sonst öffnete der
+# Dateidialog woanders, als der Emulator seine Disketten ablegt.  Leer =
+# Vorgabe, dann löst app/paths.py den Dokumentenordner selbst auf.
+K1520_DATA="@DATEN@"
+[ -n "$K1520_DATA" ] && export K1520_DATA || unset K1520_DATA
+
 # Arbeitsverzeichnis = Benutzerdaten, damit der Dateidialog dort aufgeht, wo die
 # Disketten liegen.  Dieselbe Auflösung wie beim Emulator-Starter.
 DATEN=$("$ROOT/venv/bin/python3" -c \

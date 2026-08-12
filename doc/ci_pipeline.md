@@ -23,7 +23,7 @@ Entwicklungsrechner mit der Zeit im Hintergrund stehen.
 |----------|----------------------|----------|-------|
 | `ci.yml` | **Bauen und Regression** | nur von Hand | ~8–12 min (mit warmem ccache ~4) |
 | `slow-tests.yml` | **Langsame Tests (Format)** | nur von Hand | ~20–40 min |
-| `release.yml` | **Release-Paket** | von Hand **oder** Push eines Tags `v*` | ~6–10 min |
+| `release.yml` | **Release-Paket** (Linux **und** Windows) | von Hand **oder** Push eines Tags `v*` | ~6–10 min |
 | `windows-ci.yml` | **Windows — Bauen und Regression** | nur von Hand | ~4 min (mit warmem sccache ~2) |
 
 Alle Testläufe rufen **`tools/dev.sh`** auf, nie `cmake`/`ctest` direkt. Dort stehen
@@ -243,6 +243,30 @@ Der Job räumt drei Windows-Eigenheiten ab, die man kennen sollte, wenn man ihn 
    MSYS/Git-Bash deshalb Ninja — das Layout bleibt identisch zu Linux.
 3. **Das venv liegt unter `venv/Scripts/`,** nicht `venv/bin/`;
    `tests/python/CMakeLists.txt` kennt beide Orte.
+
+**Warum der Windows-Job `tools/dev.sh` über die Git-Bash fährt und nicht PowerShell.**
+Die naheliegende Alternative wäre, die drei Zeilen `cmake`/`cmake --build`/`ctest`
+direkt in PowerShell zu schreiben. Dagegen spricht nicht die Hausregel, sondern die
+Rechnung: gewonnen wäre nichts (die Bash kostet keine messbare Zeit — die 205 s → 56 s
+kamen von sccache), verloren wäre die **eine Stelle**, an der Build-Typ, `LOG_LEVEL`,
+Generator und die ausgeschlossenen Label stehen. Ein zweiter Satz derselben Werte läuft
+irgendwann auseinander, und dann prüft Windows etwas anderes als Linux — ohne dass es
+jemand merkt. Stand 2026-08-12 hat in acht Windows-Läufen **kein einziger** Fehlschlag
+an der Git-Bash oder an `dev.sh` gelegen.
+
+> **`choco install` endet mit Code 0, auch wenn es nichts installiert hat.** Bei
+> einer Störung des Paketservers steht dann „installed 0/0 packages" im Protokoll
+> und der Schritt gilt als erfolgreich; erst zwei Schritte später kommt
+> „command not found" (2026-08-12, HTTP 503). Deshalb wird nach jeder Installation
+> **nachgesehen** statt geglaubt — und sccache, das nur ein Zwischenspeicher ist,
+> darf fehlen: dann baut es ohne, nur langsamer. Ninja dagegen ist der Generator
+> und bricht den Lauf ab.
+
+> **Die eine echte Falle dabei:** MSYS übersetzt Argumente, die wie Unix-Pfade aussehen,
+> beim Übergang an ein natives Programm — aus `/utf-8` würde
+> `C:/Program Files/Git/utf-8`. Uns trifft das heute nicht, weil solche Schalter in
+> `CMakeLists.txt` stehen und nicht auf der Kommandozeile. Wer sie dorthin zieht, muss
+> `MSYS_NO_PATHCONV=1` setzen oder sie verdoppeln (`//utf-8`).
 
 **sccache** ist das Windows-Gegenstück zum `ccache` in `ci.yml` und hängt über die
 Umgebungsvariable `CMAKE_CXX_COMPILER_LAUNCHER` ein — CMake liest sie beim

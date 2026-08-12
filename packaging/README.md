@@ -34,6 +34,11 @@ verhandelbar:
 ```sh
 tar xzf dist/k1520emu-*.tar.gz -C /tmp
 /tmp/k1520emu-*/install.sh --prefix /tmp/k1520emu-test   # ohne --prefix wird gefragt
+/tmp/k1520emu-*/install.sh --data ~/Disketten            # ohne --data wird gefragt
+#   Der Datenordner ist getrennt vom Installationsziel: dort schreibt der Autosave
+#   hinein, er soll ein Update überleben und in der Datensicherung auftauchen.
+#   Vorgabe <Dokumente>/K1520emu — nur eine ABWEICHENDE Wahl landet als K1520_DATA
+#   im Starter, sonst bliebe ein fester Pfad stehen (siehe app/paths.py).
 /tmp/k1520emu-test/bin/a5120emu --paths
 ```
 
@@ -62,7 +67,9 @@ Ausweis** — fremde Dateien im Ordner überleben.
 | Datei | Rolle |
 |-------|-------|
 | `build_payload.sh` | baut den Release-Kern und schnürt das Archiv |
-| `install.sh` | Bootstrap-Installer (liegt im Paket, läuft beim Anwender) |
+| `install.sh` | Bootstrap-Installer Linux/macOS (liegt im Paket, läuft beim Anwender) |
+| `install.ps1` | dasselbe für Windows — **Zeile für Zeile daran entlang gebaut**; wer eines ändert, ändert das andere mit (Guards in `tests/python/test_packaging.py`) |
+| `launcher.cmd`, `disktool_launcher.cmd` | Windows-Starter; die Startmenü-Verknüpfung zeigt dagegen direkt auf `pythonw.exe`, sonst öffnet sich ein Konsolenfenster |
 | `launcher.sh` | Startskript-Vorlage; `@ROOT@` wird beim Installieren ersetzt |
 | `slim.py` | wirft nach dem Installieren heraus, was nie geladen wird (~400 → ~146 MB) |
 | `lib/common.sh` | gemeinsame Bausteine: Meldungen, Plattform, Download, `ensure_uv` |
