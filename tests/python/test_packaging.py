@@ -15,6 +15,7 @@ Entwurf: doc/design/13_distribution.md
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -94,12 +95,22 @@ def test_disktool_launcher_hat_den_platzhalter():
     assert '"$ROOT/app/disktool/main.py"' in text
 
 
-def test_launcher_hat_genau_einen_platzhalter():
-    """@ROOT@ wird beim Installieren ersetzt — bleibt einer stehen, startet nichts."""
-    text = (PACKAGING / "launcher.sh").read_text(encoding="utf-8")
+@pytest.mark.parametrize("starter,einstieg", [
+    ("launcher.sh", "app/main.py"),
+    ("disktool_launcher.sh", "app/disktool/main.py"),
+])
+def test_starter_haben_ihre_platzhalter(starter, einstieg):
+    """@ROOT@/@DATEN@ setzt der Installer ein — bleibt einer stehen, startet nichts.
+
+    Beide Starter brauchen BEIDE Platzhalter: @DATEN@ trägt die abweichende Wahl
+    des Anwenders (K1520_DATA).  Fehlte er im Diskettenwerkzeug, öffnete dessen
+    Dateidialog woanders, als der Emulator seine Disketten ablegt.
+    """
+    text = (PACKAGING / starter).read_text(encoding="utf-8")
     assert 'ROOT="@ROOT@"' in text, "Platzhalter, den install.sh ersetzt, fehlt"
+    assert 'K1520_DATA="@DATEN@"' in text, "Datenordner-Platzhalter fehlt"
     assert '"$ROOT/venv/bin/python3"' in text
-    assert '"$ROOT/app/main.py"' in text
+    assert f'"$ROOT/{einstieg}"' in text
 
 
 def test_launcher_wechselt_ins_datenverzeichnis():
@@ -166,14 +177,34 @@ def test_abs_path_loest_tilde_auf(eingabe, erwartet, tmp_path):
     "/home/anna/Emulator Test",          # Leerzeichen — seit der Zielabfrage üblich
     "/home/anna/a&b|c",                  # Sonderzeichen, an denen `sed` zerbrach
 ])
-def test_ersetze_root_vertraegt_jeden_pfad(tmp_path, wurzel):
+def test_ersetze_platzhalter_vertraegt_jeden_pfad(tmp_path, wurzel):
     """@ROOT@ wird eingesetzt, ohne dass der Pfad als Ausdruck gelesen wird."""
     vorlage = tmp_path / "vorlage"
     vorlage.write_text('Exec="@ROOT@/bin/a5120emu"\nnichts\n')
-    out = _sh("sh", "-c", f'. "{PACKAGING}/lib/common.sh"; ersetze_root "$1" "$2"',
+    out = _sh("sh", "-c", f'. "{PACKAGING}/lib/common.sh"; ersetze_platzhalter "$1" "$2"',
               "sh", str(vorlage), wurzel)
     assert out.returncode == 0, out.stderr
     assert out.stdout == f'Exec="{wurzel}/bin/a5120emu"\nnichts\n'
+
+
+@pytest.mark.parametrize("daten,erwartet", [
+    ("/home/anna/Disketten", 'K1520_DATA="/home/anna/Disketten"'),
+    ("",                     'K1520_DATA=""'),
+])
+def test_ersetze_platzhalter_traegt_den_datenordner_ein(tmp_path, daten, erwartet):
+    """@DATEN@ bleibt LEER, wenn der Anwender die Vorgabe genommen hat.
+
+    Der Starter setzt ``K1520_DATA`` dann gar nicht, und ``app/paths.py`` löst
+    den Dokumentenordner weiter zur Laufzeit auf — nur so folgt er einem später
+    umbenannten Ordner.  Stünde dort immer ein fester Pfad, wäre genau das weg.
+    """
+    vorlage = tmp_path / "vorlage"
+    vorlage.write_text('ROOT="@ROOT@"\nK1520_DATA="@DATEN@"\n')
+    out = _sh("sh", "-c",
+              f'. "{PACKAGING}/lib/common.sh"; ersetze_platzhalter "$1" "$2" "$3"',
+              "sh", str(vorlage), "/opt/k1520", daten)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout == f'ROOT="/opt/k1520"\n{erwartet}\n'
 
 
 @pytest.mark.parametrize("aufbau", ["user-dirs.dirs", "nur ~/Documents", "gar nichts"])
@@ -223,6 +254,394 @@ def test_desktop_exec_ist_gequotet(datei, starter):
     text = (PACKAGING / datei).read_text(encoding="utf-8")
     assert f'Exec="@ROOT@/bin/{starter}"' in text
 
+
+
+
+
+# ─── slim.py: PE-Importtabelle ───────────────────────────────────────────────
+
+def test_pe_imports_liest_die_importtabelle():
+    """`slim.py` liest DLL-Abhängigkeiten selbst — beim Anwender gibt es kein dumpbin.
+
+    `ldd` ist auf jedem Linux da, `dumpbin` auf keinem normalen Windows; slim.py
+    läuft aber genau dort, beim Installieren.  Geprüft wird gegen eine PE-Datei,
+    die es überall gibt, wo es darauf ankommt: den laufenden Python.
+    """
+    slim = _slim()
+    if sys.platform.startswith("win"):
+        namen = [n.lower() for n in slim.pe_imports(Path(sys.executable))]
+        assert namen, "keine Importe in python.exe gefunden"
+        assert any(n.startswith("kernel32") for n in namen), namen
+    else:
+        # Ohne PE-Datei zur Hand wenigstens die Robustheit: alles, was kein PE
+        # ist, muss eine LEERE Liste geben — der Aufrufer fasst dann nichts an.
+        assert slim.pe_imports(Path(sys.executable)) == []
+
+
+def test_pe_imports_vertraegt_unsinn(tmp_path):
+    """Kaputte, fremde und fehlende Dateien dürfen nicht werfen.
+
+    Wirft es doch, bricht das Schlankmachen mitten in der Installation ab — und
+    zwar nachdem schon etwas entfernt wurde.
+    """
+    slim = _slim()
+    leer = tmp_path / "leer.dll"; leer.write_bytes(b"")
+    kurz = tmp_path / "kurz.dll"; kurz.write_bytes(b"MZ")
+    mist = tmp_path / "mist.dll"; mist.write_bytes(b"MZ" + bytes(4096))
+    for f in (leer, kurz, mist, tmp_path / "gibtsnicht.dll"):
+        assert slim.pe_imports(f) == []
+
+
+def test_slim_windows_kehrt_nur_qt_dlls_aus(tmp_path, monkeypatch):
+    """Unter Windows liegen Bindungen und Qt-DLLs im SELBEN Verzeichnis.
+
+    Auf Linux fegt der Kehraus `PySide6/Qt/lib` leer — dort liegt nichts anderes.
+    Unter Windows ist das Verzeichnis `PySide6/` selbst, und darin stehen
+    `QtCore.pyd` (die Bindung, mit der der Kehraus gerade gerechnet hat),
+    `opengl32sw.dll` und Python-Dateien.  Ein blindes „weg, was nicht erreichbar
+    ist" löschte genau die.  Deshalb fasst er dort ausschließlich `Qt6*.dll` an.
+    """
+    slim = _slim()
+    monkeypatch.setattr(slim, "IST_WINDOWS", True)
+
+    ps = tmp_path / "venv" / "Lib" / "site-packages" / "PySide6"
+    ps.mkdir(parents=True)
+    (tmp_path / "venv" / "Lib" / "site-packages" / "shiboken6").mkdir()
+    for name in ("QtCore.pyd", "QtWidgets.pyd", "QtQuick.pyd",
+                 "Qt6Core.dll", "Qt6Widgets.dll", "Qt6Quick.dll", "Qt6Qml.dll",
+                 "opengl32sw.dll", "__init__.py", "QtCore.pyi"):
+        (ps / name).write_bytes(b"x" * 16)
+    (ps / "plugins" / "platforms").mkdir(parents=True)
+    (ps / "qml").mkdir()
+
+    # „Erreichbar" sind nur die beiden Kern-DLLs — so, als hätte die
+    # Importtabelle das ergeben.
+    behalten = {(ps / "Qt6Core.dll").resolve(), (ps / "Qt6Widgets.dll").resolve()}
+    monkeypatch.setattr(slim, "linked_libraries", lambda b, i: behalten)
+
+    cut = slim.Cutter(dry_run=False)
+    slim.slim_pyside(tmp_path, cut)
+
+    # Muss WEG sein: nicht erreichbare Qt-DLLs, ungenutzte Bindung, QML, Stubs.
+    for weg in ("Qt6Quick.dll", "Qt6Qml.dll", "QtQuick.pyd", "QtCore.pyi"):
+        assert not (ps / weg).exists(), f"{weg} haette entfernt werden muessen"
+    assert not (ps / "qml").exists()
+
+    # Muss BLEIBEN — und das ist der eigentliche Zweck dieses Tests.
+    for bleibt in ("QtCore.pyd", "QtWidgets.pyd", "Qt6Core.dll", "Qt6Widgets.dll",
+                   "opengl32sw.dll", "__init__.py"):
+        assert (ps / bleibt).exists(), f"{bleibt} darf NICHT entfernt werden"
+    assert (ps / "plugins" / "platforms").is_dir()
+
+
+def test_slim_findet_site_packages_beider_plattformen(tmp_path):
+    """`venv/Lib/site-packages` (Windows) und `venv/lib/pythonX.Y/…` (Unix)."""
+    slim = _slim()
+    win = tmp_path / "w" / "venv" / "Lib" / "site-packages" / "PySide6"
+    win.mkdir(parents=True)
+    assert slim._pyside_dir(tmp_path / "w") == win
+
+    nix = tmp_path / "l" / "venv" / "lib" / "python3.12" / "site-packages" / "PySide6"
+    nix.mkdir(parents=True)
+    assert slim._pyside_dir(tmp_path / "l") == nix
+
+
+
+
+def test_installer_ps1_ignoriert_nur_eigene_dateien():
+    """Der Riegel „Ziel muss leer sein" darf genau die Setup-Dateien übersehen.
+
+    Inno legt seinen Deinstallierer ins Ziel, bevor der Bootstrap läuft; ohne
+    die Ausnahme verweigerte der Riegel ausgerechnet die Installation, die ihn
+    mitbringt (2026-08-12).  Die Liste muss aber KURZ und namentlich bleiben —
+    wer dort ein Muster wie `*.exe` einträgt, hebelt den Riegel aus, und das
+    fällt niemandem auf, bis jemand sein Dokumentenverzeichnis angibt.
+    """
+    text = _ps1()
+    block = re.search(r"\$EigeneDateien\s*=\s*@\((.*?)\)", text, re.S)
+    assert block, "$EigeneDateien fehlt in install.ps1"
+    namen = re.findall(r"'([^']+)'", block.group(1))
+    assert namen, "die Liste ist leer"
+    for n in namen:
+        assert not any(z in n for z in "*?"), f"Muster statt Name in der Liste: {n!r}"
+        assert n in ("install.ps1", "bootstrap.log") or n.startswith("unins"), (
+            f"unerwarteter Name in der Ausnahmeliste: {n!r}")
+    assert len(namen) <= 8, f"die Ausnahmeliste wächst zu weit: {namen}"
+
+
+def test_installer_ps1_braucht_keine_nachladbaren_module():
+    """Ein Installer darf sich nicht auf Modul-Nachladen verlassen.
+
+    `Get-FileHash`, `Invoke-WebRequest` und `Expand-Archive` stecken in
+    nachladbaren Modulen.  Ist das Nachladen gestört — geerbter PSModulePath,
+    Gruppenrichtlinie —, fehlen sie, und die Installation bricht auf einem
+    fremden Rechner mit „is not recognized as the name of a cmdlet" ab.  Genau
+    so am 2026-08-12 im Setup-Lauf, während derselbe Aufruf direkt lief.
+    """
+    # Kommentare zählen nicht — dort stehen die Namen als Begründung.  Das
+    # verlangt echtes Entfernen der Blockkommentare (<# … #>), nicht nur ein
+    # Aussortieren von Zeilen, die mit '#' beginnen: die Fortsetzungszeilen
+    # eines Blocks tun das nicht.
+    code = re.sub(r"<#.*?#>", " ", _ps1(), flags=re.S)
+    code = "\n".join(z.split("#", 1)[0] for z in code.splitlines())
+    for cmdlet in ("Get-FileHash", "Invoke-WebRequest", "Expand-Archive", "Compress-Archive"):
+        assert cmdlet not in code, (
+            f"{cmdlet} steckt in einem nachladbaren Modul — bitte über .NET lösen")
+
+
+def test_release_notizen_nennen_jede_ausgelieferte_datei():
+    """Die Release-Beschreibung muss die Dateien erklären, die auch entstehen.
+
+    Ohne sie steht am Release nur „Full Changelog", und ein Anwender sieht drei
+    Dateien ohne Hinweis, welche er braucht.  Läuft die Vorlage von den echten
+    Namen weg — etwa wenn `build_payload.sh` das Archiv anders benennt —, ist
+    das schlimmer als gar kein Text: sie beschriebe dann Dateien, die es nicht
+    gibt.
+    """
+    vorlage = (PACKAGING / "release_notes.md.in").read_text(encoding="utf-8")
+    for muster in ("K1520emu-@VERSION@-win-x64-setup.exe",
+                   "k1520emu-@TAG@-windows-x86_64.zip",
+                   "k1520emu-@TAG@-linux-x86_64.tar.gz"):
+        assert muster in vorlage, f"{muster} fehlt in der Release-Beschreibung"
+    # Ein Verweis auf die Projektseite gehört dazu — das Release ist für viele
+    # der erste Kontakt mit dem Projekt.
+    assert "github.com/olliy78/a5120emu" in vorlage
+    assert vorlage.lstrip().startswith("# "), "keine Überschrift"
+
+
+def test_release_notizen_passen_zu_den_erzeugten_dateinamen():
+    """Die Namen in der Vorlage müssen die sein, die build_payload.sh bildet.
+
+    Dort heißt das Archiv `k1520emu-<version>-<plattform>` und das Setup
+    `K1520emu-<version>-win-x64-setup` (aus der .iss).  Zwei Schreibweisen, und
+    genau deshalb leicht zu verwechseln.
+    """
+    bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    assert 'NAME="k1520emu-$VERSION-$PLATFORM"' in bp, \
+        "Namensschema in build_payload.sh geändert — Release-Vorlage nachziehen"
+    iss = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
+    assert "OutputBaseFilename={#Produkt}-{#Version}-win-x64-setup" in iss, \
+        "Setup-Name in der .iss geändert — Release-Vorlage nachziehen"
+
+def test_ps1_hat_utf8_bom():
+    """Windows PowerShell 5.1 liest eine .ps1 OHNE BOM in der ANSI-Codepage.
+
+    Das ist die Fassung, die auf jedem Windows vorhanden ist und die der
+    Inno-Setup-Bootstrap aufruft.  Ohne BOM wird aus den Umlauten und
+    Gedankenstrichen Kauderwelsch, und der Parser bricht mit „Unexpected token"
+    ab — **bevor** eine einzige Zeile ausgeführt wird.  PowerShell 7 nimmt UTF-8
+    als Vorgabe an und merkt nichts davon; genau deshalb lief das Skript im
+    CI-Schritt (pwsh) und im Setup (powershell.exe) nicht.
+    """
+    roh = PS1.read_bytes()
+    assert roh.startswith(b"\xef\xbb\xbf"), (
+        "packaging/install.ps1 braucht einen UTF-8-BOM — sonst scheitert sie "
+        "unter Windows PowerShell 5.1 schon am Parser")
+
+
+def test_cmd_starter_sind_reines_ascii():
+    """`cmd.exe` liest Batchdateien in der OEM-Codepage (850/437), nicht UTF-8.
+
+    Ein Gedankenstrich im Kommentar käme dort als Kauderwelsch heraus — und
+    stünde damit ausgerechnet in der Fehlermeldung, die ein Anwender zu sehen
+    bekommt, wenn etwas schiefgeht.
+    """
+    for name in ("launcher.cmd", "disktool_launcher.cmd"):
+        text = (PACKAGING / name).read_bytes()
+        unerlaubt = [b for b in text if b > 0x7F]
+        assert not unerlaubt, (
+            f"{name} enthält Nicht-ASCII ({len(unerlaubt)} Bytes) — "
+            "cmd.exe zeigt das als Kauderwelsch")
+
+def test_iss_kommentare_enthalten_keine_geschweifte_klammer():
+    """Pascal-Kommentare stehen in geschweiften Klammern und SCHACHTELN NICHT.
+
+    Ein Inno-Platzhalter wie ``app`` in geschweiften Klammern beendet deshalb
+    mitten im Kommentar den Kommentar, und der Rest der Zeile wird Code —
+    „Syntax error", einen CI-Lauf später.  Am 2026-08-12 genau so passiert,
+    einen Lauf nach dem Abschnittskopf-Fehler unten.
+    """
+    # Nur der Code-Abschnitt: davor ist eine geschweifte Klammer ein ganz
+    # normales Zeichen (`AppId=…`, `DefaultDirName={localappdata}\…`).
+    alle = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8").splitlines()
+    try:
+        ab = next(i for i, z in enumerate(alle) if z.strip() == "[Code]")
+    except StopIteration:
+        pytest.skip("kein Code-Abschnitt in der .iss")
+    im_kommentar = False
+    for nr, zeile in enumerate(alle[ab + 1:], ab + 2):
+        rest = zeile
+        while rest:
+            if im_kommentar:
+                zu = rest.find("}")
+                if zu < 0:
+                    assert "{" not in rest, (
+                        f"k1520emu.iss:{nr}: geschweifte Klammer im Kommentar — "
+                        f"sie beendet ihn: {zeile.strip()!r}")
+                    break
+                auf = rest.find("{")
+                assert auf < 0 or auf > zu, (
+                    f"k1520emu.iss:{nr}: geschweifte Klammer im Kommentar: {zeile.strip()!r}")
+                rest = rest[zu + 1:]
+                im_kommentar = False
+            else:
+                auf = rest.find("{")
+                if auf < 0:
+                    break
+                rest = rest[auf + 1:]
+                im_kommentar = True
+        if zeile.lstrip().startswith("//"):
+            im_kommentar = False
+
+
+def test_iss_hat_keine_versehentlichen_abschnittskoepfe():
+    """In einer `.iss` ist jede Zeile mit führendem `[` ein ABSCHNITTSKOPF.
+
+    Auch mitten in einem Pascal-Kommentar: ein umgebrochener Satz, der zufällig
+    mit ``[Run]`` beginnt, bricht den Bau mit „Invalid section tag" ab — genau so
+    am 2026-08-12 passiert.  Der Fehler kostet einen ganzen CI-Lauf, die Prüfung
+    hier kostet nichts.
+    """
+    erlaubt = {"[Setup]", "[Languages]", "[Files]", "[Icons]", "[Run]",
+               "[UninstallRun]", "[UninstallDelete]", "[Code]", "[Tasks]",
+               "[Dirs]", "[Registry]", "[INI]", "[Messages]", "[CustomMessages]"}
+    text = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
+    for nr, zeile in enumerate(text.splitlines(), 1):
+        if zeile.lstrip().startswith("["):
+            assert zeile.strip() in erlaubt, (
+                f"k1520emu.iss:{nr} beginnt mit '[' und ist kein Abschnittskopf: "
+                f"{zeile.strip()!r}")
+
+#: Namen, die unter MSVC die SUCHPFADE von Übersetzer und Binder sind.  Ein
+#: Shell-Skript, das sie als eigene Variable benutzt, überschreibt sie für jedes
+#: Kindprogramm — unter Linux folgenlos, unter Windows tödlich.
+MSVC_NAMEN = ("LIB", "INCLUDE", "LIBPATH", "CL", "LINK", "PATH")
+
+
+@pytest.mark.parametrize("script", SCRIPTS + ["build_payload.sh"])
+def test_kein_skript_ueberschreibt_msvc_suchpfade(script):
+    """`LIB=$(core_lib_name)` hat am 2026-08-12 den Windows-Paketbau zerlegt.
+
+    `link.exe` suchte `kernel32.lib` danach in einem „Verzeichnis" namens
+    `k1520core.dll` und meldete `LNK1104` — mitten im Übersetzertest von cmake,
+    also lange bevor eine Zeile eigener Code dran war.  Unter Linux bedeutet
+    `LIB` nichts, deshalb fiel es dort nie auf.  Diese Prüfung ist billiger als
+    die Stunde Eingrenzung, die es gekostet hat.
+    """
+    text = (PACKAGING / script).read_text(encoding="utf-8")
+    treffer = [z.strip() for z in text.splitlines()
+               if re.match(rf"\s*({'|'.join(MSVC_NAMEN)})=", z)]
+    assert not treffer, (
+        f"{script} belegt einen von MSVC benutzten Namen: {treffer}. "
+        "Bitte mit K1520_ präfixen.")
+
+# ─── Windows-Installer (install.ps1) ─────────────────────────────────────────
+#
+# Er lässt sich hier nicht ausführen — geprüft wird deshalb, dass er mit
+# install.sh ÜBEREINSTIMMT, wo beide dasselbe wissen müssen.  Läuft das
+# auseinander, räumt der eine woanders auf als der andere anlegt, und es fällt
+# erst beim Anwender auf.
+
+PS1 = PACKAGING / "install.ps1"
+
+
+def _ps1() -> str:
+    return PS1.read_text(encoding="utf-8")
+
+
+def test_installer_ps1_und_sh_haben_dasselbe_inventar():
+    """Das Inventar ist die Löschliste — sie MUSS auf beiden Systemen gleich sein.
+
+    `--uninstall` entfernt ausschließlich diese Einträge.  Fehlte einer im
+    Windows-Installer, bliebe er nach dem Deinstallieren liegen; stünde einer zu
+    viel drin, löschte er etwas, das er nie angelegt hat.
+    """
+    sh = (PACKAGING / "install.sh").read_text(encoding="utf-8")
+    sh_liste = re.search(r'^INVENTAR="([^"]+)"', sh, re.M).group(1).split()
+
+    block = re.search(r"\$Inventar\s*=\s*@\((.*?)\)", _ps1(), re.S).group(1)
+    ps_liste = re.findall(r"'([^']+)'", block)
+
+    assert sorted(ps_liste) == sorted(sh_liste), (
+        f"install.ps1 {sorted(ps_liste)} != install.sh {sorted(sh_liste)}")
+
+
+def test_installer_ps1_erkennt_dieselbe_installation():
+    """Beide müssen dasselbe Merkmal lesen, sonst geht ein Update daneben."""
+    sh = (PACKAGING / "lib/common.sh").read_text(encoding="utf-8")
+    marker = re.search(r'^INSTALL_MARKER="([^"]+)"', sh, re.M).group(1)
+    assert f"'{marker}'" in _ps1(), f"install.ps1 kennt {marker} nicht"
+
+
+def test_installer_ps1_hat_beide_loeschriegel():
+    """Die zwei Riegel aus install.sh — sie haben dort ein Heimatverzeichnis gerettet.
+
+    1. Als Ziel darf nur ein leeres oder bereits von uns belegtes Verzeichnis
+       dienen.  2. Gelöscht wird nur, was sich ausweist, und nur die Einträge des
+       Ausweises — ein Eintrag ist ein NAME, kein Pfad.
+    """
+    text = _ps1()
+    assert "$Verboten" in text, "Sperrliste für das Ziel fehlt"
+    for var in ("USERPROFILE", "SystemDrive", "Dokumente-Dir"):
+        assert var in text, f"{var} fehlt in der Sperrliste"
+    assert "Ist-Installation" in text, "Ausweisprüfung vor dem Löschen fehlt"
+    assert "fragwürdiger Eintrag im Ausweis" in text, "Pfadprüfung der Einträge fehlt"
+
+
+@pytest.mark.parametrize("starter,einstieg", [
+    ("launcher.cmd", r"app\main.py"),
+    ("disktool_launcher.cmd", r"app\disktool\main.py"),
+])
+def test_windows_starter_haben_ihre_platzhalter(starter, einstieg):
+    """Wie bei den .sh-Startern: beide Platzhalter, sonst startet nichts."""
+    text = (PACKAGING / starter).read_text(encoding="utf-8")
+    assert 'set "ROOT=@ROOT@"' in text
+    assert 'set "K1520_DATA=@DATEN@"' in text
+    assert einstieg in text
+    assert "pythonw.exe" in text, "GUI ohne pythonw.exe öffnet ein Konsolenfenster"
+
+
+@pytest.mark.skipif(not shutil.which("pwsh") and not shutil.which("powershell"),
+                    reason="kein PowerShell vorhanden (die CI hat eines)")
+def test_installer_ps1_ist_syntaktisch_gueltig():
+    """Gegenstück zu `sh -n` — der Parser liest die Datei, ohne sie auszuführen."""
+    pwsh = shutil.which("pwsh") or shutil.which("powershell")
+    # $tokens/$fehler MÜSSEN vorher existieren — [ref] auf eine unbekannte
+    # Variable ist selbst ein Laufzeitfehler, und der sähe aus wie ein
+    # Syntaxfehler im geprüften Skript (genau so am 2026-08-12 passiert).
+    skript = "; ".join([
+        "$tokens = $null", "$fehler = $null",
+        "[void][System.Management.Automation.Language.Parser]::ParseFile("
+        f"'{PS1}', [ref]$tokens, [ref]$fehler)",
+        "if ($fehler) { $fehler | ForEach-Object { Write-Output "
+        "(\"{0}:{1} {2}\" -f $_.Extent.StartLineNumber, "
+        "$_.Extent.StartColumnNumber, $_.Message) }; exit 1 }",
+        "Write-Output \"ok: $($tokens.Count) Token\"",
+    ])
+    out = _sh(pwsh, "-NoProfile", "-NonInteractive", "-Command", skript)
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "ok:" in out.stdout, out.stdout + out.stderr
+
+
+@pytest.mark.skipif(not sys.platform.startswith("win"),
+                    reason="vergleicht die Regel auf dem System, für das sie gilt")
+def test_dokumentenordner_ps1_und_python_stimmen_ueberein():
+    """`-Purge` muss dort aufräumen, wo der Emulator schreibt.
+
+    Die Regel steht zweimal — in install.ps1 (`Dokumente-Dir`) und in
+    app/paths.py (`documents_dir`).  Laufen sie auseinander, löscht das
+    Deinstallieren am Datenverzeichnis vorbei.  Unter Windows ist das nicht
+    theoretisch: OneDrive leitet „Dokumente" um.
+    """
+    from app import paths
+    pwsh = shutil.which("pwsh") or shutil.which("powershell")
+    out = _sh(pwsh, "-NoProfile", "-NonInteractive", "-Command",
+              "[Environment]::GetFolderPath('MyDocuments')")
+    assert out.returncode == 0, out.stderr
+    aus_ps1 = out.stdout.strip()
+    aus_python = paths.documents_dir()
+    assert aus_python is not None, "documents_dir() findet nichts, PowerShell schon"
+    assert Path(aus_ps1) == aus_python
 
 # ─── Schutz des Zielverzeichnisses ───────────────────────────────────────────
 #
@@ -400,6 +819,7 @@ def test_slim_liest_ldd_auch_bei_leerzeichen_im_pfad(tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(not shutil.which("strip"), reason="strip nicht vorhanden")
+@nur_elf   # `strip` fasst ELF an; unter Windows steigt slim_symbole gleich aus
 def test_slim_strippt_bibliotheken_aber_keine_programme(tmp_path, monkeypatch):
     """`strip` zerstört den Interpreter von python-build-standalone.
 
@@ -744,8 +1164,8 @@ def test_disktool_kommandozeile_laeuft_aus_dem_paket(tmp_path):
 def test_installer_legt_beide_starter_an():
     """`install.sh` muss Emulator UND Werkzeug einen Starter geben."""
     text = (PACKAGING / "install.sh").read_text(encoding="utf-8")
-    assert 'ersetze_root "$SELF_DIR/launcher.sh"' in text
-    assert 'ersetze_root "$SELF_DIR/disktool_launcher.sh"' in text
+    assert 'ersetze_platzhalter "$SELF_DIR/launcher.sh"' in text
+    assert 'ersetze_platzhalter "$SELF_DIR/disktool_launcher.sh"' in text
     assert '> "$PREFIX/bin/k1520disktool"' in text
     assert 'k1520disktool.desktop.in' in text
 

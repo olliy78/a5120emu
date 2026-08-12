@@ -59,6 +59,26 @@ function(k1520_add_test name)
     # "format_integration" in der schnellen Runde mitlaufen ließ.  Die
     # maskierten Semikola halten die Labelliste als EINEN Wert zusammen.
     string(REPLACE ";" "\\;" _labels "${T_LABELS}")
-    gtest_discover_tests(${target}
+
+    # Beim CROSS-Bau (tools/dev.sh win) das Einsammeln der Fälle auf die Testzeit
+    # verschieben.  Vorgabe ist POST_BUILD: CMake startet JEDES Testprogramm
+    # einmal während des Bauens, um seine TESTs aufzuzählen — im Cross-Bau also
+    # unter `wine`, und bei `cmake --build -j` gehen dutzende wine-Starts
+    # gleichzeitig los.  Einer fällt dabei regelmäßig um, und der Bau meldet
+    # „Error running test executable", obwohl nichts kaputt ist (dreimal am
+    # 2026-08-12 passiert; ein zweiter Aufruf lief jedes Mal durch).  Ein roter
+    # Bau, der nicht rot ist, macht das Werkzeug unbrauchbar.
+    #
+    # PRE_TEST sammelt stattdessen erst ein, wenn ctest den Fall braucht — dann
+    # einzeln statt in einem Sturm.  Nur beim Cross-Bau, damit der native Bau
+    # sein eingespieltes Verhalten behält (dort ist die Vorgabe schneller, weil
+    # sie einmal statt je ctest-Aufruf läuft).  DISCOVERY_MODE gibt es ab
+    # CMake 3.18; darunter bleibt es bei der Vorgabe.
+    set(_discovery "")
+    if (CMAKE_CROSSCOMPILING AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
+        set(_discovery DISCOVERY_MODE PRE_TEST)
+    endif()
+
+    gtest_discover_tests(${target} ${_discovery}
         PROPERTIES TIMEOUT ${T_TIMEOUT} LABELS "${_labels}")
 endfunction()

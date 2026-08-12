@@ -27,6 +27,19 @@ die()   { printf "${C_ERR}Fehler:${C_OFF} %s\n" "$*" >&2; exit 1; }
 
 # ─── Plattform ───────────────────────────────────────────────────────────────
 
+# ist_windows — läuft dieses Skript unter Git-Bash/MSYS auf Windows?
+#
+# Nur fürs SCHNÜREN gedacht (build_payload.sh).  Der Anwender bekommt unter
+# Windows install.ps1 und sieht nie eine .sh; bauen ist dagegen kein
+# Anwenderschritt, und die Liste „was gehört ins Paket" soll es nicht zweimal
+# geben — deshalb hier ein Zweig statt eines zweiten Skripts.
+ist_windows() {
+    case "$(uname -s 2>/dev/null || echo unknown)" in
+        MINGW*|MSYS*|CYGWIN*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # Zieltripel, wie es die uv-Releases benennen.
 uv_target() {
     _os=$(uname -s)
@@ -39,15 +52,17 @@ uv_target() {
     case "$_os" in
         Linux)  echo "${_arch}-unknown-linux-gnu" ;;
         Darwin) echo "${_arch}-apple-darwin" ;;
-        *) die "nicht unterstütztes System: $_os (Windows: packaging/install.ps1)" ;;
+        MINGW*|MSYS*|CYGWIN*) echo "${_arch}-pc-windows-msvc" ;;
+        *) die "nicht unterstütztes System: $_os" ;;
     esac
 }
 
 # Dateiname der Kernbibliothek auf diesem System.
 core_lib_name() {
     case "$(uname -s)" in
-        Darwin) echo "libk1520core.dylib" ;;
-        *)      echo "libk1520core.so" ;;
+        Darwin)               echo "libk1520core.dylib" ;;
+        MINGW*|MSYS*|CYGWIN*) echo "k1520core.dll" ;;
+        *)                    echo "libk1520core.so" ;;
     esac
 }
 
@@ -56,9 +71,22 @@ core_lib_name() {
 # keine Dateisysteme (doc/design/13_k1520disktool.md §2).
 disk_lib_name() {
     case "$(uname -s)" in
-        Darwin) echo "libk1520disk.dylib" ;;
-        *)      echo "libk1520disk.so" ;;
+        Darwin)               echo "libk1520disk.dylib" ;;
+        MINGW*|MSYS*|CYGWIN*) echo "k1520disk.dll" ;;
+        *)                    echo "libk1520disk.so" ;;
     esac
+}
+
+# disk_cli_name — Kommandozeile des k1520DiskTool (unter Windows mit .exe).
+disk_cli_name() {
+    if ist_windows; then echo "k1520disktool.exe"; else echo "k1520disktool"; fi
+}
+
+# kerne — Anzahl der Prozessorkerne fürs parallele Bauen.
+# `getconf` gibt es in der Git-Bash nicht; Windows setzt NUMBER_OF_PROCESSORS.
+kerne() {
+    getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null \
+        || echo "${NUMBER_OF_PROCESSORS:-4}"
 }
 
 # abs_path <pfad> — Tilde und Relativangaben auflösen.
@@ -93,18 +121,24 @@ ist_installation() {
     [ -f "$1/VERSION" ] && [ -f "$1/app/paths.py" ] && [ -d "$1/share/k1520emu" ]
 }
 
-# ersetze_root <vorlage> <wurzel> — @ROOT@ einsetzen und das Ergebnis ausgeben.
+# ersetze_platzhalter <vorlage> <wurzel> [<daten>] — Vorlage ausfüllen und ausgeben.
+#
+# Ersetzt @ROOT@ durch die Installationswurzel und @DATEN@ durch den vom Anwender
+# gewählten Datenordner.  @DATEN@ bleibt LEER, wenn er die Vorgabe genommen hat —
+# der Starter setzt K1520_DATA dann gar nicht, und app/paths.py löst den
+# Dokumentenordner weiter dynamisch auf (folgt also einem späteren Umbenennen).
 #
 # Bewusst ohne `sed`: der Installationspfad kommt seit der Zielabfrage vom
 # Anwender und darf jedes Zeichen enthalten — „|" wäre dort das Trennzeichen des
 # Ausdrucks, „&" und „\" in der Ersetzung wieder etwas anderes.  Je Zeile ein
-# Platzhalter genügt (beide Vorlagen halten sich daran).
-ersetze_root() {
-    _vorlage=$1; _wurzel=$2
+# Platzhalter genügt (alle Vorlagen halten sich daran).
+ersetze_platzhalter() {
+    _vorlage=$1; _wurzel=$2; _daten=${3:-}
     while IFS= read -r _zeile || [ -n "$_zeile" ]; do
         case "$_zeile" in
-            *@ROOT@*) printf '%s%s%s\n' "${_zeile%%@ROOT@*}" "$_wurzel" "${_zeile#*@ROOT@}" ;;
-            *)        printf '%s\n' "$_zeile" ;;
+            *@ROOT@*)  printf '%s%s%s\n' "${_zeile%%@ROOT@*}"  "$_wurzel" "${_zeile#*@ROOT@}" ;;
+            *@DATEN@*) printf '%s%s%s\n' "${_zeile%%@DATEN@*}" "$_daten"  "${_zeile#*@DATEN@}" ;;
+            *)         printf '%s\n' "$_zeile" ;;
         esac
     done < "$_vorlage"
 }

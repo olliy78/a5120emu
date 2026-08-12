@@ -24,11 +24,13 @@ VERSION=""
 DISKS=default
 SKIP_BUILD=no
 ARCHIVE=yes
+SETUP=no
 RELOCK=no
 
-# Mitgelieferte Beispieldisketten.  Bewusst eine kleine Auswahl: das Paket soll
-# klein bleiben, und was hier landet, muss weitergegeben werden dürfen
-# (offener Punkt §11 des Entwurfs).
+# Mitgelieferte Beispieldisketten.  Bewusst eine kleine Auswahl: je eine
+# startfähige Diskette für CP/A, SCPX und UDOS plus die beiden Combo-Disketten,
+# damit ein Anwender alle drei Betriebssysteme und die Fremdlaufwerkstypen
+# ausprobieren kann, ohne dass das Paket aufgeht.  Alles aus disks/: --disks all.
 DISKS_DEFAULT="cpa_cpa780_k5601_clock.hfe
 cpa_cpa780_k5601_noclock.hfe
 cpa_cpa780_combo5zoll_noclock.hfe
@@ -47,6 +49,8 @@ K1520-Emulator — Paket schnüren
   --skip-build     vorhandene Bibliothek im Bauverzeichnis verwenden
   --relock         packaging/requirements.lock neu auflösen (braucht Netz)
   --no-archive     nur den Baum unter dist/ erzeugen, kein .tar.gz
+  --setup          zusätzlich ein Windows-Installationsprogramm bauen (Inno
+                   Setup; nur unter Windows, braucht iscc im PATH)
   --refresh-uv     uv-Pins auf die neueste Fassung setzen und beenden
   -h, --help       diese Hilfe
 EOF
@@ -86,6 +90,7 @@ while [ $# -gt 0 ]; do
         --skip-build)  SKIP_BUILD=yes; shift ;;
         --relock)      RELOCK=yes; shift ;;
         --no-archive)  ARCHIVE=no; shift ;;
+        --setup)       SETUP=yes; shift ;;
         --refresh-uv)  refresh_uv_pins; exit 0 ;;
         -h|--help)     usage; exit 0 ;;
         *) die "unbekannte Option: $1  (--help zeigt die Liste)" ;;
@@ -98,8 +103,9 @@ if [ -z "$VERSION" ]; then
     VERSION=$(cd "$REPO" && git describe --tags --always --dirty 2>/dev/null || echo 0.0.0)
 fi
 case "$(uname -s)" in
-    Darwin) PLATFORM="macos-$(uname -m)" ;;
-    *)      PLATFORM="linux-$(uname -m)" ;;
+    Darwin)               PLATFORM="macos-$(uname -m)" ;;
+    MINGW*|MSYS*|CYGWIN*) PLATFORM="windows-$(uname -m)" ;;
+    *)                    PLATFORM="linux-$(uname -m)" ;;
 esac
 NAME="k1520emu-$VERSION-$PLATFORM"
 STAGE="$OUT/$NAME"
@@ -117,31 +123,62 @@ info "K1520-Emulator $VERSION für $PLATFORM"
 #   -static-libstdc++         — die Bibliothek soll auch auf Systemen mit
 #   -static-libgcc              älterer/neuerer libstdc++ laden.
 
-LIB=$(core_lib_name)
-DISKLIB=$(disk_lib_name)
-DISKCLI="k1520disktool"
+# ACHTUNG bei der Namenswahl: `LIB` und `INCLUDE` sind unter MSVC die
+# SUCHPFADE des Übersetzers und des Binders.  Diese Variable hiess bis
+# 2026-08-12 schlicht `LIB` — unter Linux bedeutungslos, unter Windows
+# ueberschrieb sie den Bibliothekssuchpfad, und `link.exe` suchte kernel32.lib
+# in einem „Verzeichnis" namens k1520core.dll: `LNK1104: cannot open file
+# 'kernel32.lib'`, mitten im Uebersetzertest von cmake.  Deshalb Praefix.
+K1520_CORE_LIB=$(core_lib_name)
+K1520_DISK_LIB=$(disk_lib_name)
+K1520_DISK_CLI=$(disk_cli_name)
+
+# Wie die Laufzeit gebunden wird, ist je System eine ANDERE Frage — beide Male
+# lautet die Antwort „die Bibliothek bringt sie mit", der Weg dahin ist anders:
+#
+#   GCC   -static-libstdc++/-static-libgcc, damit sie auch auf einem System mit
+#         anderer libstdc++ lädt.
+#   MSVC  -DK1520_MSVC_STATIC_CRT=ON (/MT).  Der Windows-Installer läuft
+#         per-user ohne Administratorrechte und kann kein VC-Redist
+#         nachinstallieren; ohne /MT startet der Emulator auf einem frischen
+#         Windows gar nicht („VCRUNTIME140.dll fehlt").  Geprüft vom Job
+#         „Auslieferungsbau" in windows-ci.yml — die DLL hängt danach nur noch
+#         an KERNEL32.dll.  Generator Ninja, damit die Ausgabe wie überall
+#         direkt in $BUILD_DIR liegt und nicht in einem Konfigurationsordner.
+if ist_windows; then
+    LAUFZEIT_ARGS='-G Ninja -DK1520_MSVC_STATIC_CRT=ON'
+else
+    LAUFZEIT_ARGS='-DCMAKE_SHARED_LINKER_FLAGS=-static-libstdc++ -static-libgcc'
+fi
 
 if [ "$SKIP_BUILD" = no ]; then
     info "Kern als Release bauen ($BUILD_DIR)"
     have cmake || die "cmake nicht gefunden"
-    cmake -S "$REPO" -B "$BUILD_DIR" \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DLOG_LEVEL=3 \
-        -DK1520_FORMATS_DEFAULT= \
-        -DBUILD_K1520_TESTS=OFF \
-        -DCMAKE_SHARED_LINKER_FLAGS="-static-libstdc++ -static-libgcc" \
-        >/dev/null || die "cmake-Konfiguration fehlgeschlagen"
+    # shellcheck disable=SC2086  # LAUFZEIT_ARGS soll in Worte zerfallen
+    if ist_windows; then
+        cmake -S "$REPO" -B "$BUILD_DIR" \
+            -DCMAKE_BUILD_TYPE=Release -DLOG_LEVEL=3 \
+            -DK1520_FORMATS_DEFAULT= -DBUILD_K1520_TESTS=OFF \
+            $LAUFZEIT_ARGS \
+            >/dev/null || die "cmake-Konfiguration fehlgeschlagen"
+    else
+        cmake -S "$REPO" -B "$BUILD_DIR" \
+            -DCMAKE_BUILD_TYPE=Release -DLOG_LEVEL=3 \
+            -DK1520_FORMATS_DEFAULT= -DBUILD_K1520_TESTS=OFF \
+            -DCMAKE_SHARED_LINKER_FLAGS="-static-libstdc++ -static-libgcc" \
+            >/dev/null || die "cmake-Konfiguration fehlgeschlagen"
+    fi
     # Drei Ziele: der Emulatorkern, die DiskTool-Bibliothek fuer dessen
     # Oberflaeche und das Kommandozeilenwerkzeug.  Ohne die letzten beiden
     # laege app/disktool/ zwar im Paket, faende aber keine Bibliothek.
-    cmake --build "$BUILD_DIR" --target k1520core k1520disk "$DISKCLI" \
-        -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" \
+    cmake --build "$BUILD_DIR" --target k1520core k1520disk k1520disktool \
+        -j"$(kerne)" \
         >/dev/null || die "Bauen der Bibliotheken/Werkzeuge fehlgeschlagen"
-    ok "$BUILD_DIR/$LIB, $BUILD_DIR/$DISKLIB, $BUILD_DIR/$DISKCLI"
+    ok "/, /, $BUILD_DIR/$K1520_DISK_CLI"
 fi
-[ -f "$BUILD_DIR/$LIB" ]     || die "Kernbibliothek fehlt: $BUILD_DIR/$LIB"
-[ -f "$BUILD_DIR/$DISKLIB" ] || die "DiskTool-Bibliothek fehlt: $BUILD_DIR/$DISKLIB"
-[ -f "$BUILD_DIR/$DISKCLI" ] || die "DiskTool-Kommandozeile fehlt: $BUILD_DIR/$DISKCLI"
+[ -f "$BUILD_DIR/$K1520_CORE_LIB" ]     || die "Kernbibliothek fehlt: $BUILD_DIR/$K1520_CORE_LIB"
+[ -f "$BUILD_DIR/$K1520_DISK_LIB" ] || die "DiskTool-Bibliothek fehlt: $BUILD_DIR/$K1520_DISK_LIB"
+[ -f "$BUILD_DIR/$K1520_DISK_CLI" ] || die "DiskTool-Kommandozeile fehlt: $BUILD_DIR/$K1520_DISK_CLI"
 
 # ─── 2. Payload zusammenstellen ──────────────────────────────────────────────
 
@@ -150,18 +187,23 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE/payload/bin" "$STAGE/payload/share/k1520emu" \
          "$STAGE/payload/share/disks" "$STAGE/payload/share/icons" "$STAGE/lib"
 
-cp "$BUILD_DIR/$LIB" "$STAGE/payload/bin/$LIB"
-strip "$STAGE/payload/bin/$LIB" 2>/dev/null || true
+# `strip` ist ein ELF/Mach-O-Werkzeug; MSVC legt Debugsymbole ohnehin in eine
+# eigene .pdb, die hier gar nicht erst mitkommt.  Das `|| true` deckt beides ab.
+cp "$BUILD_DIR/$K1520_CORE_LIB" "$STAGE/payload/bin/$K1520_CORE_LIB"
+strip "$STAGE/payload/bin/$K1520_CORE_LIB" 2>/dev/null || true
 
-cp "$BUILD_DIR/$DISKLIB" "$STAGE/payload/bin/$DISKLIB"
-strip "$STAGE/payload/bin/$DISKLIB" 2>/dev/null || true
+cp "$BUILD_DIR/$K1520_DISK_LIB" "$STAGE/payload/bin/$K1520_DISK_LIB"
+strip "$STAGE/payload/bin/$K1520_DISK_LIB" 2>/dev/null || true
 
 # Das Kommandozeilenwerkzeug wird unter -cli abgelegt: `bin/k1520disktool` ist
 # der Starter der OBERFLAECHE (wie `bin/a5120emu` beim Emulator), den der
 # Installer schreibt.  Zwei Namen sind ehrlicher als ein Programm, das je nach
 # Argumenten etwas anderes tut.
-cp "$BUILD_DIR/$DISKCLI" "$STAGE/payload/bin/$DISKCLI-cli"
-strip "$STAGE/payload/bin/$DISKCLI-cli" 2>/dev/null || true
+# Unter Windows bleibt die Endung hinten: „k1520disktool-cli.exe" — ohne .exe
+# startet es niemand.
+if ist_windows; then _cli_ziel="k1520disktool-cli.exe"; else _cli_ziel="$K1520_DISK_CLI-cli"; fi
+cp "$BUILD_DIR/$K1520_DISK_CLI" "$STAGE/payload/bin/$_cli_ziel"
+strip "$STAGE/payload/bin/$_cli_ziel" 2>/dev/null || true
 
 # GUI ohne Bytecode-Reste des Entwicklungsrechners (--exclude MUSS vor dem
 # Pfad stehen, sonst wirkt es bei GNU tar nicht)
@@ -205,16 +247,29 @@ cp "$REPO/disks/README.md" "$STAGE/payload/share/disks/README.md" 2>/dev/null ||
 
 # ─── 3. Installer beilegen ───────────────────────────────────────────────────
 
-cp "$SELF_DIR/install.sh"           "$STAGE/install.sh"
-cp "$SELF_DIR/launcher.sh"          "$STAGE/launcher.sh"
-cp "$SELF_DIR/disktool_launcher.sh" "$STAGE/disktool_launcher.sh"
-cp "$SELF_DIR/k1520disktool.desktop.in" "$STAGE/k1520disktool.desktop.in"
-cp "$SELF_DIR/slim.py"              "$STAGE/slim.py"
-cp "$SELF_DIR/a5120emu.desktop.in"  "$STAGE/a5120emu.desktop.in"
-cp "$SELF_DIR/uv_pins.txt"          "$STAGE/uv_pins.txt"
-cp "$SELF_DIR/lib/common.sh"        "$STAGE/lib/common.sh"
-cp "$SELF_DIR/paket_readme.md"      "$STAGE/README.md"
-chmod +x "$STAGE/install.sh"
+# Beigelegt wird NUR der Installer des Zielsystems.  Ein Windows-Anwender soll
+# keine .sh-Datei sehen (er hätte keine Shell dafür), ein Linux-Anwender kein
+# PowerShell-Skript.  Die .desktop-Vorlagen bleiben im Windows-Paket weg —
+# `slim.py` dagegen kommt MIT: es kann seit 2026-08-12 auch Windows (es liest
+# die PE-Importtabelle selbst, weil der Anwender kein dumpbin hat).
+cp "$SELF_DIR/uv_pins.txt"     "$STAGE/uv_pins.txt"
+cp "$SELF_DIR/paket_readme.md" "$STAGE/README.md"
+cp "$SELF_DIR/slim.py"         "$STAGE/slim.py"
+
+if ist_windows; then
+    cp "$SELF_DIR/install.ps1"            "$STAGE/install.ps1"
+    cp "$SELF_DIR/launcher.cmd"           "$STAGE/launcher.cmd"
+    cp "$SELF_DIR/disktool_launcher.cmd"  "$STAGE/disktool_launcher.cmd"
+    rmdir "$STAGE/lib" 2>/dev/null || true    # lib/common.sh ist Shell-Sache
+else
+    cp "$SELF_DIR/install.sh"               "$STAGE/install.sh"
+    cp "$SELF_DIR/launcher.sh"              "$STAGE/launcher.sh"
+    cp "$SELF_DIR/disktool_launcher.sh"     "$STAGE/disktool_launcher.sh"
+    cp "$SELF_DIR/k1520disktool.desktop.in" "$STAGE/k1520disktool.desktop.in"
+    cp "$SELF_DIR/a5120emu.desktop.in"      "$STAGE/a5120emu.desktop.in"
+    cp "$SELF_DIR/lib/common.sh"            "$STAGE/lib/common.sh"
+    chmod +x "$STAGE/install.sh"
+fi
 if [ -f "$REPO/LICENSE" ]; then cp "$REPO/LICENSE" "$STAGE/LICENSE"; fi
 
 printf '%s (%s, %s, Python %s)\n' \
@@ -246,15 +301,71 @@ ok "$(grep -c '^[a-zA-Z]' "$STAGE/requirements.lock") Pakete festgenagelt"
 
 # ─── 5. Archiv ───────────────────────────────────────────────────────────────
 
+ARCHIV=""
 if [ "$ARCHIVE" = yes ]; then
     info "Archiv schnüren"
-    ( cd "$OUT" && tar czf "$NAME.tar.gz" "$NAME" )
-    ( cd "$OUT" && sha256_of "$NAME.tar.gz" | awk -v n="$NAME.tar.gz" '{print $1"  "n}' > "$NAME.tar.gz.sha256" )
-    ok "$OUT/$NAME.tar.gz  ($(du -h "$OUT/$NAME.tar.gz" | awk '{print $1}'))"
-    printf "     %s\n" "$(cat "$OUT/$NAME.tar.gz.sha256")"
+    if ist_windows; then
+        # .zip statt .tar.gz: der Explorer packt es mit einem Doppelklick aus.
+        # Gepackt wird von packaging/zip_ordner.ps1 — die Git-Bash bringt kein
+        # `zip` mit, ihr GNU-tar kann kein zip, und die eingebauten
+        # PowerShell-Wege schreiben unter .NET Framework BACKSLASHES in die
+        # Eintragsnamen (Begründung ausführlich im Kopf jener Datei).  Sie
+        # prüft ihr Ergebnis selbst.
+        #
+        # Eigene Datei statt einer `-Command`-Zeile: das Escaping durch zwei
+        # Ebenen (Bourne-Shell → PowerShell) überlebt kein `-replace '\\','/'`.
+        ARCHIV="$NAME.zip"
+        powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+            -File "$(cygpath -w "$SELF_DIR/zip_ordner.ps1")" \
+            -Quelle "$(cygpath -w "$OUT/$NAME")" \
+            -Ziel   "$(cygpath -w "$OUT/$ARCHIV")" \
+            || die "Archiv nicht erzeugbar"
+    else
+        ARCHIV="$NAME.tar.gz"
+        ( cd "$OUT" && tar czf "$ARCHIV" "$NAME" )
+    fi
+    ( cd "$OUT" && sha256_of "$ARCHIV" | awk -v n="$ARCHIV" '{print $1"  "n}' > "$ARCHIV.sha256" )
+    ok "$OUT/$ARCHIV  ($(du -h "$OUT/$ARCHIV" | awk '{print $1}'))"
+    printf "     %s\n" "$(cat "$OUT/$ARCHIV.sha256")"
+fi
+
+# ─── 6. Windows-Installationsprogramm ────────────────────────────────────────
+#
+# Das Setup installiert NICHT selbst — es ruft install.ps1, dasselbe Skript, das
+# auch dem .zip beiliegt.  So gibt es einen Installationsweg statt zweier, von
+# denen einer stillschweigend veraltet.  Begründung und der zweite Punkt
+# (Deinstallieren) stehen im Kopf von k1520emu.iss.
+
+if [ "$SETUP" = yes ]; then
+    if ! ist_windows; then
+        die "--setup geht nur unter Windows (Inno Setup)"
+    fi
+    if ! have iscc; then
+        die "iscc nicht gefunden — Inno Setup 6 installieren (choco install innosetup)"
+    fi
+    info "Windows-Installationsprogramm bauen"
+    # Version ohne die git-Zusätze: Inno will etwas, das wie eine Version
+    # aussieht, `1.2.3-4-gabc1234-dirty` lehnt es ab.
+    _iss_version=$(printf '%s' "$VERSION" | sed 's/^v//; s/[^0-9.].*$//')
+    [ -n "$_iss_version" ] || _iss_version=0.0.0
+    iscc //Qp \
+         "//DVersion=$_iss_version" \
+         "//DPaket=$(cygpath -w "$STAGE")" \
+         "//O$(cygpath -w "$OUT")" \
+         "$(cygpath -w "$SELF_DIR/k1520emu.iss")" \
+        || die "Inno Setup ist fehlgeschlagen"
+    _exe=$(ls -1 "$OUT"/*setup.exe 2>/dev/null | head -1)
+    [ -n "$_exe" ] || die "Setup wurde nicht erzeugt"
+    ( cd "$OUT" && sha256_of "$(basename "$_exe")" \
+        | awk -v n="$(basename "$_exe")" '{print $1"  "n}' > "$(basename "$_exe").sha256" )
+    ok "$_exe  ($(du -h "$_exe" | awk '{print $1}'))"
 fi
 
 printf "\n"
 info "Fertig.  Probeinstallation:"
-printf "     tar xzf %s/%s.tar.gz -C /tmp && /tmp/%s/install.sh --prefix /tmp/k1520emu-test\n" \
-    "$OUT" "$NAME" "$NAME"
+if ist_windows; then
+    printf "     %s\\install.ps1 -Prefix %s\n" "$STAGE" "$TEMP\\k1520emu-test"
+else
+    printf "     tar xzf %s/%s.tar.gz -C /tmp && /tmp/%s/install.sh --prefix /tmp/k1520emu-test\n" \
+        "$OUT" "$NAME" "$NAME"
+fi

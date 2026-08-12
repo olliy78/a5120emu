@@ -43,7 +43,11 @@ from typing import List, Optional
 ENV_HOME = "K1520_HOME"        # Wurzel der Installation bzw. des Quellbaums
 ENV_LIB = "K1520_LIB"          # Kernbibliothek (Datei oder Verzeichnis)
 ENV_FORMATS = "K1520_FORMATS"  # Formatkatalog (Datei oder Verzeichnis)
+ENV_DATA = "K1520_DATA"        # Datenordner des Anwenders (enthält Disketten/)
 ENV_DISKS = "K1520_DISKS"      # Verzeichnis der Arbeitsdisketten
+# ENV_DISKS ist die SPEZIELLERE Angabe und schlägt deshalb ENV_DATA: wer nur die
+# Disketten woanders haben will, soll dafür nicht den ganzen Datenordner
+# verschieben müssen (dort liegen auch Zustände und `logs/`).
 
 #: Name des Formatkatalogs (identisch mit ``kCatalogFileName`` im Kern).
 FORMATS_FILE = "formats.yaml"
@@ -266,6 +270,38 @@ def config_dir() -> Path:
     return legacy
 
 
+def _windows_documents() -> Optional[Path]:
+    """Der Dokumentenordner laut Registrierung — oder ``None``.
+
+    Gelesen wird ``HKCU\\…\\Explorer\\User Shell Folders`` → ``Personal``: die
+    Stelle, die der Explorer und die Known-Folder-API als Wahrheit benutzen und
+    die **OneDrive beim Umleiten umschreibt**.  Ohne sie zeigte die Auflösung auf
+    ``%USERPROFILE%\\Documents``, während die Dateien des Anwenders längst unter
+    ``%USERPROFILE%\\OneDrive\\Dokumente`` liegen.
+
+    ``User Shell Folders`` (nicht ``Shell Folders``) ist die richtige Hälfte: dort
+    steht der Wert unaufgelöst, also z. B. ``%USERPROFILE%\\Documents`` — deshalb
+    das ``expandvars``.  Die andere Hälfte pflegt Windows nur als Zwischenspeicher
+    und schreibt sie nicht immer nach.
+
+    Eigene Funktion, damit die Registrierung im Test austauschbar ist — sie lässt
+    sich nicht sinnvoll in ein Temp-Verzeichnis stellen.
+    """
+    if not _is_windows():
+        return None
+    try:
+        import winreg
+        schluessel = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, schluessel) as k:
+            wert, _typ = winreg.QueryValueEx(k, "Personal")
+    except (ImportError, OSError):
+        return None
+    if not wert:
+        return None
+    pfad = Path(os.path.expandvars(wert))
+    return pfad if pfad.is_dir() else None
+
+
 def documents_dir() -> Optional[Path]:
     """Der **Dokumentenordner** des Anwenders — oder ``None``, wenn es keinen gibt.
 
@@ -276,11 +312,22 @@ def documents_dir() -> Optional[Path]:
     das fehlt auf schlanken Systemen, und eine Zeile zu lesen ist billiger als
     ein Prozessstart.
 
-    Windows und macOS haben denselben Ort ohne XDG; dass der Ordner unter
-    Windows umgeleitet sein kann (OneDrive), bleibt der Windows-Portierung
-    überlassen (Entwurf §6.1).
+    Unter **Windows** ist der Ordner häufig umgeleitet — OneDrive verschiebt ihn
+    nach ``%USERPROFILE%\\OneDrive\\Dokumente``, Firmen auf ein Netzlaufwerk.
+    ``~/Documents`` ist dann schlicht falsch (und existiert oft nicht einmal).
+    Maßgeblich ist die Registrierung, dieselbe Quelle, die der Explorer und die
+    Known-Folder-API lesen — siehe :func:`_windows_documents`.
+
+    macOS hat den Ort ohne Umleitung.
     """
-    if _is_windows() or _is_macos():
+    if _is_windows():
+        aus_registrierung = _windows_documents()
+        if aus_registrierung is not None:
+            return aus_registrierung
+        cand = Path.home() / "Documents"
+        return cand if cand.is_dir() else None
+
+    if _is_macos():
         cand = Path.home() / "Documents"
         return cand if cand.is_dir() else None
 
@@ -323,7 +370,20 @@ def user_data_dir() -> Path:
 
     Gibt es keinen Dokumentenordner (schlankes System, dienstähnlicher
     Betrieb), bleibt der plattformübliche Datenpfad als Reserve.
+
+    ``K1520_DATA`` schlägt beides.  Der Installer fragt den Ordner ab und trägt
+    die Antwort in den Starter ein — **aber nur, wenn sie von der Vorgabe
+    abweicht**: sonst bliebe ein fester Pfad stehen, und die Auflösung oben
+    könnte einem umbenannten Dokumentenordner nicht mehr folgen.  Der häufigste
+    Grund für eine abweichende Wahl ist ein nach OneDrive umgeleitetes
+    ``Documents`` — der Autosave schreibt bei jedem Diskettenzugriff zurück, und
+    das in einen synchronisierten Ordner zu legen, ist eine Entscheidung des
+    Anwenders, keine des Entwurfs.
     """
+    env = os.environ.get(ENV_DATA)
+    if env:
+        return Path(env).expanduser()
+
     docs = documents_dir()
     if docs is not None:
         return docs / DATA_DIRNAME

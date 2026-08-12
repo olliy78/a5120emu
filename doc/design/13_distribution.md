@@ -229,7 +229,7 @@ Programm:
 
 ## 5. Paketformen je Plattform
 
-### 5.1 Windows — Inno Setup, per-user
+### 5.1 Windows — Inno Setup, per-user   ✅ umgesetzt
 
 Ausgeliefert wird ein `A5120Emu-<version>-win-x64-setup.exe`, gebaut mit **Inno Setup**:
 
@@ -241,9 +241,21 @@ ArchitecturesAllowed=x64compatible
 Uninstallable=yes                  ; Eintrag unter HKCU\…\Uninstall
 ```
 
+- **Assistentenseite „Arbeitsdisketten"**: Vorgabe `<Dokumente>\K1520emu`, änderbar.
+  Dieselbe Abfrage wie in `install.sh --data`, und aus demselben Grund — „Dokumente"
+  ist hier häufig nach OneDrive umgeleitet. Die Antwort wird nur eingetragen, wenn sie
+  von der Vorgabe abweicht (`K1520_DATA`, §6.1).
 - Die Setup-Dateien sind **nur** die Payload. Nach dem Kopieren läuft der Bootstrap als
   `[Run]`-Schritt mit sichtbarer Fortschrittsausgabe (Qt-Download dauert je nach Leitung
   spürbar) — abbrechbar, mit Rückmeldung bei Fehlschlag.
+- **Das Setup installiert und löscht nicht selbst**, es ruft beide Male `install.ps1`
+  (`packaging/k1520emu.iss`). Damit gibt es *einen* Installationsweg statt zweier, von
+  denen einer stillschweigend veraltet — und das Deinstallieren behält die beiden
+  Riegel: gelöscht wird nur, was sich ausweist, und daran nur das Inventar aus dem
+  Ausweis. Ein `[UninstallDelete] {app}` wäre einfacher gewesen und hätte beides
+  umgangen; das Zielverzeichnis ist im Assistenten änderbar, dort kann also alles
+  stehen. Guard: der Paketjob installiert **über das Setup** und deinstalliert wieder,
+  wobei eine fremde Datei daneben überleben muss.
 - **Kein VC-Redist.** Der ließe sich per-user nicht installieren; stattdessen wird die DLL
   mit **statischer CRT** gebaut (§7).
 - **SmartScreen**: eine unsignierte `.exe` wird beim ersten Start gewarnt. Ohne
@@ -260,7 +272,9 @@ Uninstallable=yes                  ; Eintrag unter HKCU\…\Uninstall
 
 ```
 ./install.sh                 # fragt nach dem Ziel (Vorschlag ~/K1520emu)
+                             #   und nach dem Datenordner (<Dokumente>/K1520emu)
 ./install.sh --prefix DIR    # ohne Rückfrage dorthin
+./install.sh --data DIR      # Arbeitsdisketten und Zustände dorthin
 ./install.sh -y              # ohne Rückfrage in den Vorschlag
 ./install.sh --python 3.13   # andere Python-Fassung
 ./install.sh --no-shortcut   # ohne Startmenü-Eintrag
@@ -312,6 +326,22 @@ es `tools/dev.sh win`: Cross-Bau mit MinGW-w64 (`cmake/toolchain-mingw64.cmake`)
 Tests unter `wine`. Der findet in Sekunden, was plattformabhängig ist, aber **nicht**,
 was MSVC-eigen ist — MinGW ist GCC und exportiert wie unter Linux per Vorgabe alles.
 
+**Der Datenordner wird beim Installieren erfragt** (2026-08-12) — damit ist auch die
+offene OneDrive-Frage beantwortet, ohne sie zentral zu entscheiden. Vorgeschlagen wird
+`<Dokumente>/K1520emu`; wählt der Anwender etwas anderes, trägt der Installer es als
+`K1520_DATA` in **beide** Starter ein (Emulator und Diskettenwerkzeug — sonst öffnete
+dessen Dateidialog woanders). **Die Vorgabe wird bewusst NICHT festgeschrieben:** sonst
+stünde dort ein fester Pfad, und die Auflösung könnte einem später umbenannten
+Dokumentenordner oder einem Sprachwechsel nicht mehr folgen. Guards:
+`test_env_data_schlaegt_den_dokumentenordner`,
+`test_ohne_env_data_bleibt_die_aufloesung_dynamisch`,
+`test_ersetze_platzhalter_traegt_den_datenordner_ein`.
+
+Warum überhaupt gefragt wird: unter Windows ist „Dokumente" häufig nach OneDrive
+umgeleitet, und der Autosave schreibt bei **jedem** Diskettenzugriff zurück — das in
+einen synchronisierten Ordner zu legen, ist eine Entscheidung des Anwenders. Der
+Windows-Installer (§5.1) bekommt dieselbe Abfrage als Assistentenseite.
+
 Erledigt sind dagegen die Pfad- und Umgebungsfragen, die dieselbe Datei betrafen: der
 Modulpfad (§6.2) hat den Windows-Zweig `GetModuleFileNameW` gleich mitbekommen,
 `homeConfigDir()` kennt `%APPDATA%`, und `K1520_FORMATS` trennt unter Windows mit `;`
@@ -343,7 +373,7 @@ Vorher waren die Pfade verstreut und auf die Repo-Struktur verdrahtet: die Bindu
 Jetzt löst `app/paths.py` alles an einer Stelle auf — `core_library()`, `formats_file()`,
 `bundled_disks_dir()`, `user_disks_dir()`, `config_dir()`, `default_disk_dir()`,
 `seed_user_disks()`, `describe()` — in der Reihenfolge **Umgebungsvariable
-(`K1520_HOME`/`K1520_LIB`/`K1520_FORMATS`/`K1520_DISKS`) → Installationslayout →
+(`K1520_HOME`/`K1520_LIB`/`K1520_FORMATS`/`K1520_DATA`/`K1520_DISKS`) → Installationslayout →
 Quellbaum**. Beide Layouts hängen an derselben Wurzel (dem Elternverzeichnis von `app/`)
 und unterscheiden sich nur in den Unterverzeichnissen, es braucht also keine
 Modusumschaltung — der erste existierende Kandidat gewinnt.
@@ -514,8 +544,23 @@ Vier Schritte, jeder für sich abnehmbar:
    die **volle Regression** läuft auf `windows-latest` (`windows-ci.yml`) — nicht nur
    ein Rauchtest. Lokale Vorprüfung: `tools/dev.sh win` (MinGW + wine). Die
    Pfad-/Umgebungsfragen waren mit Schritt 1 schon erledigt (§6.1).
-4. **Paketierung Windows.** Inno-Setup-Skript, `install.ps1` (Gegenstück zu `install.sh`,
-   dieselben Schritte), CI-Matrix, Release-Workflow.
+4. ◑ **Paketierung Windows.** `install.ps1` ist da (Gegenstück zu `install.sh`,
+   dieselben Schritte und **dieselben zwei Löschriegel**), dazu `launcher.cmd` und
+   `disktool_launcher.cmd`. Guards vergleichen beide Installer mechanisch, wo sie
+   dasselbe wissen müssen: `test_installer_ps1_und_sh_haben_dasselbe_inventar`,
+   `test_installer_ps1_erkennt_dieselbe_installation`,
+   `test_installer_ps1_hat_beide_loeschriegel`, dazu eine Syntaxprüfung über den
+   PowerShell-Parser. Die **Windows-Payload** baut `build_payload.sh` mit
+   (vier plattformabhängige Stellen: Bibliotheksnamen, Laufzeitbindung,
+   beigelegter Installer, `.zip` statt `.tar.gz`), und `release.yml` hat einen
+   zweiten Job dafür. `install.ps1` ist im Paketjob von `windows-ci.yml`
+   **wirklich durchgelaufen** — installieren, Rauchtest, deinstallieren, wobei
+   eine fremde Datei daneben überlebt (`-f paket=true`).
+   Das **Inno-Setup-Skript** (`packaging/k1520emu.iss`) baut
+   `build_payload.sh --setup`; das Schlankmachen greift auch unter Windows
+   (**316 → 119 MB**, gemessen 2026-08-12). **Offen:** ein `.ico` für die
+   Verknüpfungen (ohne trägt der Eintrag das Python-Symbol) und die Signatur
+   (§11 — SmartScreen warnt bei jedem Erstinstall).
 
 macOS erst danach, zusammen mit der Signaturentscheidung aus §5.3. Die
 plattformübergreifenden Teile sind bereits darauf ausgelegt (`uv_pins.txt` führt die
@@ -528,10 +573,14 @@ macOS-Tripel, `paths.py` kennt `.dylib` und `~/Library/Application Support`).
 - **Code Signing**: Windows-Zertifikat (SmartScreen) und Apple Developer ID
   (Notarisierung) sind laufende Kosten — Entscheidung nötig, bevor über „Anwender" jenseits
   des Bekanntenkreises geredet wird.
-- **Diskettenauswahl**: `build_payload.sh` legt vorerst sechs Abbilder bei (vier CP/A, eine
-  SCPX, eine UDOS, Liste `DISKS_DEFAULT`). Unter welcher Lizenz die enthaltene
-  Originalsoftware weitergegeben werden darf, ist eine Rechte-, keine Technikfrage — bis zur
-  Klärung ist `--disks none` die konservative Variante.
+- **Diskettenauswahl**: `build_payload.sh` legt sechs Abbilder bei (vier CP/A, eine
+  SCPX, eine UDOS, Liste `DISKS_DEFAULT`) — genug, um jedes der drei Betriebssysteme
+  zu starten, ohne das Paket aufzublähen. Mit `--disks all` kommen alle aus `disks/`
+  mit, mit `--disks none` keine.
+- ~~**Schlankmachen unter Windows**~~ ✅ erledigt 2026-08-12: `slim.py` liest die
+  PE-Importtabelle selbst (`pe_imports`), weil auf dem Rechner des Anwenders kein
+  `dumpbin` liegt. Eine Windows-Installation belegt damit **123 MB statt 316**
+  (gemessen im Paketjob, `--disks none`).
 - **Versionsprüfung Payload ↔ venv**: ob der Launcher bei Versionsversatz automatisch
   nachinstalliert oder nur warnt.
 - **Proxy-Umgebungen**: `uv` respektiert `HTTPS_PROXY`; ob der Installer danach fragt, wenn

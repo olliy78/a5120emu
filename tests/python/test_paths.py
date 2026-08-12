@@ -180,21 +180,89 @@ def test_dokumentenordner_faellt_auf_den_datenpfad_zurueck(tmp_path, monkeypatch
     assert paths.user_disks_dir() == heim / ".local" / "share" / "K1520emu" / "Disketten"
 
 
-@pytest.mark.skipif(not sys.platform.startswith("win"),
-                    reason="prüft die Windows-Auflösung")
-def test_dokumentenordner_unter_windows_ist_documents(tmp_path, monkeypatch):
-    """Windows hat keinen sprachabhängigen Ordnernamen im Dateisystem.
+def test_windows_dokumentenordner_folgt_der_registrierung(tmp_path, monkeypatch):
+    """OneDrive verschiebt „Dokumente" — die Auflösung muss mitgehen.
 
-    Der Explorer zeigt „Dokumente" an, im Dateisystem heißt der Ordner
-    ``Documents``.  Gibt es ihn nicht, fällt die Auflösung auf den Datenpfad
-    zurück — dasselbe Verhalten wie unter Linux ohne Dokumentenordner.
+    Verschoben wird der Ordner NICHT im Dateisystem, sondern in der
+    Registrierung (``User Shell Folders`` → ``Personal``); ``~/Documents``
+    existiert danach oft gar nicht mehr.  Ein fest verdrahtetes ``~/Documents``
+    legte die Arbeitsdisketten also neben die Dateien des Anwenders — und
+    ``--purge`` räumte an derselben Stelle vorbei.
+
+    Die Registrierung lässt sich nicht in ein Temp-Verzeichnis stellen; geprüft
+    wird deshalb über die Naht :func:`paths._windows_documents`, die genau
+    dafür eine eigene Funktion ist.
+    """
+    monkeypatch.setattr(paths, "_is_windows", lambda: True)
+    monkeypatch.setattr(paths, "_is_macos", lambda: False)
+
+    onedrive = tmp_path / "OneDrive" / "Dokumente"
+    onedrive.mkdir(parents=True)
+    monkeypatch.setattr(paths, "_windows_documents", lambda: onedrive)
+
+    assert paths.documents_dir() == onedrive
+    assert paths.user_disks_dir() == onedrive / "K1520emu" / "Disketten"
+
+
+def test_windows_ohne_registrierungseintrag_bleibt_documents(tmp_path, monkeypatch):
+    """Ohne verwertbaren Eintrag bleibt ``~/Documents`` die Reserve."""
+    monkeypatch.setattr(paths, "_is_windows", lambda: True)
+    monkeypatch.setattr(paths, "_is_macos", lambda: False)
+    monkeypatch.setattr(paths, "_windows_documents", lambda: None)
+
+    heim = tmp_path / "heim"
+    (heim / "Documents").mkdir(parents=True)
+    monkeypatch.setattr(paths.Path, "home", staticmethod(lambda: heim))
+
+    assert paths.documents_dir() == heim / "Documents"
+
+
+def test_env_data_schlaegt_den_dokumentenordner(tmp_path, monkeypatch):
+    """Die Wahl aus dem Installationsdialog (``K1520_DATA``) gewinnt.
+
+    Sie steht im Starter und ist der Weg, auf dem ein Anwender seine
+    Arbeitsdisketten aus einem nach OneDrive synchronisierten ``Documents``
+    herausholt.
     """
     heim = _leeres_heim(tmp_path, monkeypatch)
-    assert paths.documents_dir() is None
-
     (heim / "Documents").mkdir()
-    assert paths.documents_dir() == heim / "Documents"
-    assert paths.user_disks_dir() == heim / "Documents" / "K1520emu" / "Disketten"
+    eigen = tmp_path / "woanders"
+    monkeypatch.setenv(paths.ENV_DATA, str(eigen))
+
+    assert paths.user_data_dir() == eigen
+    assert paths.user_disks_dir() == eigen / "Disketten"
+
+
+def test_env_disks_ist_spezieller_als_env_data(tmp_path, monkeypatch):
+    """Wer NUR die Disketten verschiebt, soll nicht den ganzen Datenordner mitnehmen.
+
+    Im Datenordner liegen auch Zustände und ``logs/`` — ``K1520_DISKS`` ist die
+    speziellere Angabe und schlägt deshalb ``K1520_DATA``.
+    """
+    _leeres_heim(tmp_path, monkeypatch)
+    monkeypatch.setenv(paths.ENV_DATA, str(tmp_path / "daten"))
+    monkeypatch.setenv(paths.ENV_DISKS, str(tmp_path / "nur_disketten"))
+
+    assert paths.user_data_dir() == tmp_path / "daten"
+    assert paths.user_disks_dir() == tmp_path / "nur_disketten"
+
+
+@nur_unix   # die Umbenennung prüft die XDG-/Namensauflösung; Windows hat „Documents" fest
+def test_ohne_env_data_bleibt_die_aufloesung_dynamisch(tmp_path, monkeypatch):
+    """Die VORGABE wird bewusst nicht festgeschrieben.
+
+    Der Installer trägt nur eine abweichende Wahl in den Starter ein.  Sonst
+    stünde dort ein fester Pfad, der einem später umbenannten Dokumentenordner
+    nicht mehr folgen könnte — hier nachgestellt, indem der Ordner wechselt.
+    """
+    heim = _leeres_heim(tmp_path, monkeypatch)
+    monkeypatch.delenv(paths.ENV_DATA, raising=False)
+    (heim / "Documents").mkdir()
+    assert paths.user_data_dir() == heim / "Documents" / "K1520emu"
+
+    # Anwender benennt um (bzw. stellt die Systemsprache um):
+    (heim / "Documents").rename(heim / "Dokumente")
+    assert paths.user_data_dir() == heim / "Dokumente" / "K1520emu"
 
 
 def test_seed_user_disks_kopiert_einmalig(tmp_path, at_root, monkeypatch):

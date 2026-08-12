@@ -30,7 +30,6 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 | `cpa_cpa780_combo8zoll_noclock` | CP/A ohne Uhr | K5601 / **MF3200** / **K5602.10 · MF6400** |
 | `scpx17_cpa780_k5601.hfe` | SCPX 1526 V1.7, 16×256-System | K5601 |
 | `scpx17_5x1024_k5601_hardy.hfe` | SCPX 1526 V1.7, 5×1024-System, mit HARDY.COM | K5601 |
-| `bootdisk_cpabcgen.hfe` | Ergebnis eines CPABCGEN-Laufs (Altbestand, von nichts referenziert) | — |
 | `bootsec_cpa780.bin` | Bootsektor einer cpa780-Diskette (512 B) | — |
 
 Die beiden **Combo**-Disketten konfigurieren im BIOS B:/C: als andere Laufwerkstypen

@@ -31,6 +31,13 @@ SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 # Dokumentenordner (~/Dokumente/K1520emu): Arbeitsdisketten werden
 # zurückgeschrieben und sollen ein Update überleben (app/paths.py).
 PREFIX="$HOME/K1520emu"
+
+# Datenordner des Anwenders (Arbeitsdisketten, Zustände, logs/).  LEER heißt
+# „Vorgabe" — dann löst app/paths.py den Dokumentenordner zur Laufzeit auf und
+# folgt einem späteren Umbenennen.  Nur eine ABWEICHENDE Wahl wird in den
+# Starter eingetragen (K1520_DATA).
+DATEN=
+DATEN_SET=no
 BINDIR="$HOME/.local/bin"
 APPDIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 ICONDIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
@@ -74,7 +81,9 @@ K1520-Emulator — Installation
 
   --prefix DIR     Installationsverzeichnis (ohne Angabe wird gefragt,
                    Vorschlag: $PREFIX)
-  -y, --yes        nicht fragen, Vorschlag verwenden
+  --data DIR       Ordner für Arbeitsdisketten und Zustände (ohne Angabe wird
+                   gefragt, Vorschlag: <Dokumente>/K1520emu)
+  -y, --yes        nicht fragen, Vorschläge verwenden
   --python X.Y     Python-Fassung der Laufzeitumgebung (Vorgabe: $PY_VERSION)
   --no-shortcut    keinen Startmenü-Eintrag und keinen Starter in ~/.local/bin
   --no-slim        Python und Qt vollständig lassen (~400 statt ~146 MB)
@@ -93,6 +102,8 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --prefix)     PREFIX=$2; PREFIX_SET=yes; shift 2 ;;
         --prefix=*)   PREFIX=${1#*=}; PREFIX_SET=yes; shift ;;
+        --data)       DATEN=$2; DATEN_SET=yes; shift 2 ;;
+        --data=*)     DATEN=${1#*=}; DATEN_SET=yes; shift ;;
         -y|--yes)     ASSUME_YES=yes; shift ;;
         --python)     PY_VERSION=$2; shift 2 ;;
         --python=*)   PY_VERSION=${1#*=}; shift ;;
@@ -157,6 +168,37 @@ fi
 
 # Der Starter braucht einen festen Pfad — „~/…" und Relativangaben auflösen.
 PREFIX=$(abs_path "$PREFIX")
+
+# ─── Datenordner erfragen ────────────────────────────────────────────────────
+#
+# Getrennt vom Installationsziel, und das aus einem inhaltlichen Grund: hier
+# liegen die ARBEITSDISKETTEN, in die der Emulator per Autosave zurückschreibt.
+# Sie sollen ein Update überleben und in der Datensicherung des Anwenders
+# auftauchen — deshalb der Dokumentenordner als Vorschlag und nicht die
+# Installation.
+#
+# Warum überhaupt gefragt wird: unter Windows ist „Dokumente" häufig nach
+# OneDrive umgeleitet, und ein Autosave in einen synchronisierten Ordner ist eine
+# Entscheidung des Anwenders, keine des Entwurfs.  Unter Linux trifft es den, der
+# sein Heimatverzeichnis klein halten will.
+_daten_vorgabe=$(dokumente_dir 2>/dev/null)/K1520emu || _daten_vorgabe=
+
+if [ "$MODE" = install ] && [ "$DATEN_SET" = no ] && [ "$ASSUME_YES" = no ] \
+   && [ -n "$_daten_vorgabe" ] && [ -r /dev/tty ] && [ -t 1 ]; then
+    printf "Wo sollen die Arbeitsdisketten liegen?\n"
+    printf "  (dort schreibt der Emulator Änderungen zurück; ein Update fasst sie nie an)\n"
+    printf "Disketten [%s]: " "$_daten_vorgabe"
+    if IFS= read -r _antwort < /dev/tty; then
+        [ -n "$_antwort" ] && DATEN=$_antwort
+    fi
+    printf "\n"
+fi
+
+# Nur eine ABWEICHENDE Wahl wird festgeschrieben (siehe oben bei DATEN).
+if [ -n "$DATEN" ]; then
+    DATEN=$(abs_path "$DATEN")
+    [ "$DATEN" = "$_daten_vorgabe" ] && DATEN=
+fi
 
 # ─── Ziel prüfen ─────────────────────────────────────────────────────────────
 #
@@ -356,13 +398,13 @@ fi
 # in $MASCHINEN, damit das Deinstallieren ihn findet.
 info "Starter schreiben"
 mkdir -p "$PREFIX/bin"
-ersetze_root "$SELF_DIR/launcher.sh" "$PREFIX" > "$PREFIX/bin/a5120emu"
+ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/a5120emu"
 chmod +x "$PREFIX/bin/a5120emu"
 
 # Das Diskettenwerkzeug ist ein eigenes Programm mit eigenem Starter.  Die
 # Kommandozeile liegt bereits als bin/k1520disktool-cli in der Payload; hier
 # entsteht der Starter der Oberflaeche.
-ersetze_root "$SELF_DIR/disktool_launcher.sh" "$PREFIX" > "$PREFIX/bin/k1520disktool"
+ersetze_platzhalter "$SELF_DIR/disktool_launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/k1520disktool"
 chmod +x "$PREFIX/bin/k1520disktool"
 [ -f "$PREFIX/bin/k1520disktool-cli" ] && chmod +x "$PREFIX/bin/k1520disktool-cli"
 
@@ -370,11 +412,11 @@ if [ "$SHORTCUTS" = yes ]; then
     mkdir -p "$BINDIR" "$APPDIR" "$ICONDIR"
     ln -sf "$PREFIX/bin/a5120emu" "$BINDIR/a5120emu"
     cp "$PREFIX/share/icons/a5120emu.svg" "$ICONDIR/a5120emu.svg" 2>/dev/null || true
-    ersetze_root "$SELF_DIR/a5120emu.desktop.in" "$PREFIX" > "$APPDIR/a5120emu.desktop"
+    ersetze_platzhalter "$SELF_DIR/a5120emu.desktop.in" "$PREFIX" > "$APPDIR/a5120emu.desktop"
 
     ln -sf "$PREFIX/bin/k1520disktool" "$BINDIR/k1520disktool"
     ln -sf "$PREFIX/bin/k1520disktool-cli" "$BINDIR/k1520disktool-cli" 2>/dev/null || true
-    ersetze_root "$SELF_DIR/k1520disktool.desktop.in" "$PREFIX" \
+    ersetze_platzhalter "$SELF_DIR/k1520disktool.desktop.in" "$PREFIX" \
         > "$APPDIR/k1520disktool.desktop"
 
     if have update-desktop-database; then
@@ -401,6 +443,11 @@ fi
 # und meldete „läuft", obwohl er nie angefasst hatte, was er ausliefert.
 info "Rauchtest"
 cd "$PREFIX"
+# K1520_DATA MUSS hier mit: der Rauchtest legt über seed_user_disks() die
+# Beispieldisketten beim Anwender an.  Ohne die Variable landen sie an der
+# VORGABEstelle statt in dem Ordner, den er gerade gewählt hat — und er sucht
+# sie dann vergeblich, während der Starter längst woanders hinzeigt.
+[ -n "$DATEN" ] && export K1520_DATA="$DATEN"
 QT_QPA_PLATFORM=offscreen PYTHONPATH="$PREFIX" "$PREFIX/venv/bin/python3" - "$PREFIX" <<'PYEOF' || die "Rauchtest fehlgeschlagen — die Installation ist unbrauchbar"
 import ctypes, sys
 from app import paths

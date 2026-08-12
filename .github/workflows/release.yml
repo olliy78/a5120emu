@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Verteilbares Paket schnüren (Linux) — doc/design/13_distribution.md §7
+# Verteilbares Paket schnüren (Linux + Windows) — doc/design/13_distribution.md §7
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # Auslöser (Bedienung: doc/ci_pipeline.md):
@@ -14,6 +14,11 @@
 #
 # Der Entwurf ist Absicht: ein Release ist nach außen gerichtet, da schaut vor
 # dem Veröffentlichen jemand drauf.
+#
+# Zwei Jobs, ein Skript: beide rufen packaging/build_payload.sh auf, das die
+# Plattformunterschiede selbst kennt (Bibliotheksnamen, Laufzeitbindung,
+# beigelegter Installer, Archivform).  Die Liste „was gehört ins Paket" gibt es
+# damit nur einmal.
 #
 # Gebaut wird auf ubuntu-22.04, NICHT auf ubuntu-latest: Rückwärtskompatibilität
 # kommt von der Baseline, nicht vom Zielsystem — eine gegen glibc 2.39 gelinkte
@@ -116,7 +121,203 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -eu
+          # Beide Jobs laufen GLEICHZEITIG und wollen dasselbe Release anlegen.
+          # Ein blosses `view || create` ist deshalb ein Wettlauf: finden beide
+          # nichts, legen beide an, und der zweite scheitert mit „already
+          # exists".  Also anlegen DUERFEN beide, scheitern darf keiner — und
+          # danach wird gewartet, bis es wirklich da ist.
+          # Der Beschreibungstext kommt aus packaging/release_notes.md.in — sonst
+          # steht am Release nur „Full Changelog", und ein Anwender sieht drei
+          # Dateien ohne einen Hinweis, welche er braucht.  Die Vorlage liegt im
+          # Repository und wird mit dem Code gepflegt.
+          TAG_OHNE_V="${TAG#v}"
+          sed -e "s/@TAG@/$TAG/g" -e "s/@VERSION@/$TAG_OHNE_V/g" \
+              packaging/release_notes.md.in > "$RUNNER_TEMP/notes.md"
+          grep -q '@' "$RUNNER_TEMP/notes.md" \
+            && { echo "unersetzte Platzhalter in den Release-Notizen:" >&2;
+                 grep -n '@[A-Z]' "$RUNNER_TEMP/notes.md" >&2; exit 1; } || true
+          gh release create "$TAG" --draft --title "K1520emu $TAG" \
+              --notes-file "$RUNNER_TEMP/notes.md" 2>/dev/null || true
+          for versuch in 1 2 3 4 5; do
+              if gh release view "$TAG" >/dev/null 2>&1; then break; fi
+              echo "warte auf das Release (Versuch $versuch)…"; sleep 3
+          done
           gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" --draft --title "$TAG" --generate-notes
+            || { echo "Release $TAG existiert nicht und liess sich nicht anlegen" >&2; exit 1; }
           gh release upload "$TAG" dist/*.tar.gz dist/*.sha256 --clobber
-          echo "Assets liegen am Release **$TAG** (Entwurf, falls neu angelegt)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Linux-Paket liegt am Release **$TAG** (Entwurf)." >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    name: Windows x64 — Paket
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: MSVC-Umgebung (vcvars64) übernehmen
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * `
+                  -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+                  -property installationPath
+          if (-not $vs) { throw "Keine Visual-Studio-Installation mit C++-Werkzeugen gefunden" }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $wanted = @('PATH','INCLUDE','LIB','LIBPATH','VSINSTALLDIR','VCINSTALLDIR',
+                      'VCToolsInstallDir','WindowsSdkDir','WindowsSDKVersion','UCRTVersion')
+          cmd /c "`"$vcvars`" >nul 2>&1 && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              if ($wanted -contains $matches[1]) { "$($matches[1])=$($matches[2])" | Out-File $env:GITHUB_ENV -Append -Encoding utf8 }
+            }
+          }
+
+      # `choco install` endet mit Code 0, auch wenn es nichts installiert hat
+      # (Serverstörung → „installed 0/0 packages").  Deshalb wird nachgesehen.
+      - name: Ninja und Inno Setup bereitstellen
+        shell: pwsh
+        run: |
+          function Beschaffen($werkzeug, $pfad) {
+            if (Get-Command $werkzeug -ErrorAction SilentlyContinue) { return $true }
+            if ($pfad -and (Test-Path -LiteralPath $pfad)) {
+              Add-Content -Path $env:GITHUB_PATH -Value $pfad
+              $env:Path = "$pfad;$env:Path"
+              if (Get-Command $werkzeug -ErrorAction SilentlyContinue) { return $true }
+            }
+            choco install $werkzeug -y --no-progress | Out-Host
+            $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + $env:Path
+            if ($pfad) { Add-Content -Path $env:GITHUB_PATH -Value $pfad; $env:Path = "$pfad;$env:Path" }
+            return [bool] (Get-Command $werkzeug -ErrorAction SilentlyContinue)
+          }
+          if (-not (Beschaffen 'ninja' $null)) { throw 'ninja liess sich nicht beschaffen' }
+          if (-not (Beschaffen 'iscc' "${env:ProgramFiles(x86)}\Inno Setup 6")) {
+            throw 'Inno Setup liess sich nicht beschaffen — ohne iscc gibt es kein Setup'
+          }
+
+      - name: Paket schnüren
+        # Dasselbe Skript wie unter Linux.  Es setzt für Windows selbst, was für
+        # ein VERTEILBARES Paket nicht verhandelbar ist: -DK1520_FORMATS_DEFAULT=
+        # und -DK1520_MSVC_STATIC_CRT=ON (ohne die statische CRT startet der
+        # Emulator auf einem frischen Windows nicht — der per-user-Installer
+        # kann kein VC-Redist nachinstallieren, §5.1).
+        shell: bash
+        env:
+          DISKS: ${{ inputs.disks || 'default' }}
+        run: packaging/build_payload.sh --disks "$DISKS" --setup
+
+      # Dieselben drei Fragen wie im Linux-Rauchtest, nur mit Windows-Antworten.
+      # Ein Paket, dessen DLL nichts exportiert, dessen Pfade nicht auflösen oder
+      # das noch am VC-Redist hängt, darf kein Release-Asset werden.
+      - name: Rauchtest — DLL lädt, Pfade lösen auf, keine fremde Laufzeit
+        shell: pwsh
+        run: |
+          $probe = Join-Path $env:RUNNER_TEMP 'probe'
+          New-Item -ItemType Directory -Force -Path $probe | Out-Null
+          Expand-Archive -Path (Get-ChildItem dist\*.zip | Select-Object -First 1).FullName `
+                         -DestinationPath $probe -Force
+          $root = (Get-ChildItem -Directory $probe | Select-Object -First 1).FullName + '\payload'
+
+          Write-Host '── Pfadauflösung im Installationslayout ──'
+          $env:K1520_HOME = $root
+          $pfade = & python "$root\app\main.py" --paths
+          $pfade | ForEach-Object { Write-Host $_ }
+          # Erst zu EINER Zeichenkette fügen.  `-match`/`-notmatch` auf einem
+          # ARRAY liefern die passenden bzw. die NICHT passenden Elemente zurück,
+          # und ein nicht-leeres Array ist in `if()` wahr — `$pfade -notmatch …`
+          # schlug damit zu, sobald irgendeine der acht Zeilen nicht passte, also
+          # immer.  Die Ausgabe war die ganze Zeit richtig.
+          $text = $pfade -join "`n"
+          if ($text -notmatch '(?m)^Layout:\s*Installation') { throw 'Payload wird nicht als Installation erkannt' }
+          if ($text -match 'NICHT GEFUNDEN') { throw 'ein Pfad löst nicht auf' }
+          Remove-Item Env:\K1520_HOME
+
+          Write-Host '── C-ABI ──'
+          # Bewusst ein Zeilen-Array statt eines Here-Strings: dessen Abschluss
+          # `"@` muss in PowerShell in Spalte 0 stehen und zerlegt damit den
+          # YAML-Block, in dem er steht.
+          $abi = Join-Path $env:RUNNER_TEMP 'abi.py'
+          Set-Content -LiteralPath $abi -Encoding UTF8 -Value @(
+            'import ctypes, sys',
+            'lib = ctypes.CDLL(sys.argv[1])',
+            'lib.k1520_version.restype = ctypes.c_char_p',
+            "print('k1520_version:', lib.k1520_version().decode())")
+          & python $abi "$root\bin\k1520core.dll"
+          if ($LASTEXITCODE -ne 0) { throw 'k1520core.dll ist nicht ladbar' }
+
+          Write-Host '── keine fremde C-Laufzeit ──'
+          $abh = (& dumpbin /dependents "$root\bin\k1520core.dll") |
+                 Select-String '^\s{4}\S+\.dll' | ForEach-Object { $_.Line.Trim() }
+          $abh | ForEach-Object { Write-Host "     $_" }
+          if ($abh -match 'msvcp\d+\.dll|vcruntime\d+\.dll|ucrtbase\.dll|api-ms-win-crt-') {
+            throw 'die DLL braucht das VC-Redist — /MT hat nicht gegriffen (§5.1)'
+          }
+
+          Write-Host '── ZIP-Struktur (Trennzeichen, Verzeichnisse) ──'
+          # Die ZIP-Spezifikation verlangt SCHRAEGSTRICHE.  Der Explorer
+          # verzeiht Backslashes, `unzip` und Pythons zipfile nicht — und dieses
+          # Artefakt haengt an einem oeffentlichen Release.  Der Waechter stand
+          # zuerst nur in windows-ci.yml und lief beim Release deshalb NIE mit.
+          $zipdatei = (Get-ChildItem dist\*.zip | Select-Object -First 1).FullName
+          $z = [System.IO.Compression.ZipFile]::OpenRead($zipdatei)
+          try {
+            $namen = $z.Entries | ForEach-Object { $_.FullName }
+          } finally { $z.Dispose() }
+          $schlecht = $namen | Where-Object { $_ -like '*\*' }
+          if ($schlecht) { throw "ZIP mit Backslash-Trennzeichen: $($schlecht[0])" }
+          if (-not ($namen | Where-Object { $_ -like '*/payload/bin/*' })) {
+            throw 'ZIP hat keine payload/bin-Eintraege — Struktur kaputt?'
+          }
+          Write-Host "     $($namen.Count) Eintraege, alle mit Schraegstrich"
+
+          Write-Host '── kein Pfad des Baurechners in der Bibliothek ──'
+          $bytes = [System.IO.File]::ReadAllBytes("$root\bin\k1520core.dll")
+          $text  = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if ($text.Contains("$env:GITHUB_WORKSPACE\data\formats.yaml".Replace('\','/'))) {
+            throw 'einkompilierter Pfad des Baurechners gefunden'
+          }
+
+      - name: Paket als Artefakt
+        uses: actions/upload-artifact@v4
+        with:
+          name: k1520emu-windows-x64
+          path: |
+            dist/*.zip
+            dist/*setup.exe
+            dist/*.sha256
+          retention-days: 30
+
+      - name: An das Release hängen (nur bei Tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          # Siehe Linux-Job: beide laufen gleichzeitig, anlegen darf jeder,
+          # scheitern keiner.
+          # Der Beschreibungstext kommt aus packaging/release_notes.md.in — sonst
+          # steht am Release nur „Full Changelog", und ein Anwender sieht drei
+          # Dateien ohne einen Hinweis, welche er braucht.  Die Vorlage liegt im
+          # Repository und wird mit dem Code gepflegt.
+          TAG_OHNE_V="${TAG#v}"
+          sed -e "s/@TAG@/$TAG/g" -e "s/@VERSION@/$TAG_OHNE_V/g" \
+              packaging/release_notes.md.in > "$RUNNER_TEMP/notes.md"
+          grep -q '@' "$RUNNER_TEMP/notes.md" \
+            && { echo "unersetzte Platzhalter in den Release-Notizen:" >&2;
+                 grep -n '@[A-Z]' "$RUNNER_TEMP/notes.md" >&2; exit 1; } || true
+          gh release create "$TAG" --draft --title "K1520emu $TAG" \
+              --notes-file "$RUNNER_TEMP/notes.md" 2>/dev/null || true
+          for versuch in 1 2 3 4 5; do
+              if gh release view "$TAG" >/dev/null 2>&1; then break; fi
+              echo "warte auf das Release (Versuch $versuch)…"; sleep 3
+          done
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || { echo "Release $TAG existiert nicht und liess sich nicht anlegen" >&2; exit 1; }
+          gh release upload "$TAG" dist/*.zip dist/*setup.exe dist/*.sha256 --clobber
+          echo "Windows-Paket und Setup liegen am Release **$TAG** (Entwurf)." >> "$GITHUB_STEP_SUMMARY"

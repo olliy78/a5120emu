@@ -82,7 +82,12 @@ if [ "$WINDOWS" = 1 ]; then EXE=".exe"; GENERATOR=(-G Ninja); fi
 # Die langsamen Formatläufe bleiben bewusst außen vor: sie fahren FORMAT.COM über
 # ganze Disketten, sind E/A-gebunden, und slow-tests.yml gibt ihnen ohnehin ein
 # eigenes -j mit.
-JOBS="${K1520_JOBS:-$(nproc 2>/dev/null || echo 4)}"
+#
+# Kernzahl: `nproc` ist coreutils und in der Git-Bash nicht garantiert; Windows
+# setzt dafür NUMBER_OF_PROCESSORS in der Umgebung.  Ohne diesen Zwischenschritt
+# fiele es dort stillschweigend auf 4 zurück — auf dem heutigen Runner zufällig
+# richtig, auf einem größeren Rechner die Hälfte verschenkt.
+JOBS="${K1520_JOBS:-$(nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-4}")}"
 
 c_red() { printf '\033[31m%s\033[0m\n' "$*"; }
 c_grn() { printf '\033[32m%s\033[0m\n' "$*"; }
