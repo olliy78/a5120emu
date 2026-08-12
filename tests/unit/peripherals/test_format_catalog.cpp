@@ -26,17 +26,17 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include "tests/support/temp_path.h"
 
 namespace {
 
 /// Schreibt @p text in eine temporäre .yaml-Datei und gibt den Pfad zurück.
 std::string writeTmp(const std::string& stem, const std::string& text) {
-    const auto p = std::filesystem::temp_directory_path()
-                 / ("k1520_fmt_" + stem + ".yaml");
+    const auto p = k1520test::tempPath("k1520_fmt_" + stem + ".yaml");
     std::ofstream f(p);
     f << text;
     f.close();
-    return p.string();
+    return p;
 }
 
 FormatCatalog loadText(const std::string& stem, const std::string& text,

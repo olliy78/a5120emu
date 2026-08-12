@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <string>
+#include "tests/support/temp_path.h"
 
 using prnlst::parseLine;
 
@@ -151,7 +152,7 @@ TEST(PrnListing, LoadAppliesOffsetToKeys){
     // Temp-Verzeichnis des Systems: "/tmp" gibt es unter Windows nicht (dort
     // laege es als C:\tmp\… und der ofstream scheiterte lautlos).
     const std::string tmp =
-        (std::filesystem::temp_directory_path() / "k1520_prn_offset_test.prn").string();
+        k1520test::tempPath("k1520_prn_offset_test.prn");
     { std::ofstream f(tmp);
       f << "  D200    C3 E890               BIOS00: JP\tkaltst\n"; }
 
@@ -185,7 +186,7 @@ TEST(PrnListing, ExtractsObjectBytesOnePerColumn){
 
 TEST(PrnListing, LoadCollectsBytesUnderRuntimeAddresses){
     const std::string p =
-        (std::filesystem::temp_directory_path() / "k1520_prn_bytes_test.prn").string();
+        k1520test::tempPath("k1520_prn_bytes_test.prn");
     { std::ofstream f(p); f << "  0100    C3 0605               START: JP\tX\n"; }
     prnlst::Listing l;
     ASSERT_EQ(l.load(p, 0x0400, /*want_bytes=*/true), 1);

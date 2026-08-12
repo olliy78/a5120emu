@@ -141,10 +141,19 @@ Die Regression läuft seit 2026-08-11 auch auf `windows-latest`
 **keiner** ein Produktfehler — alle vier Ursachen waren Annahmen im Test, und alle
 vier kommen wieder, wenn man sie nicht kennt:
 
-1. **Kein festes `"/tmp/…"`.** Unter Windows liegt das als `C:\tmp\`, das es nicht
-   gibt; der `ofstream` scheitert **lautlos** und der Test sieht eine leere Datei.
-   Richtig ist `std::filesystem::temp_directory_path() / "name"` (C++) bzw.
-   `tmp_path` (pytest).
+1. **Kein festes `"/tmp/…"`, und kein fester Dateiname.** Unter Windows liegt
+   `/tmp/…` als `C:\tmp\`, das es nicht gibt; der `ofstream` scheitert **lautlos**
+   und der Test sieht eine leere Datei. Richtig ist **`k1520test::tempPath("name")`**
+   (`support/temp_path.h`, header-only) bzw. `tmp_path` (pytest) — nie
+   `temp_directory_path() / "fester_name"` von Hand.
+
+   Der Dateiname muss eindeutig sein, weil `gtest_discover_tests` **jeden** Testfall
+   als eigenen Prozess startet: mit `ctest -j` benutzen dann zwei Testprozesse
+   gleichzeitig dieselbe Datei. Unter Linux fällt das nie auf (eine geöffnete Datei
+   darf man löschen), unter Windows ist es ein harter Fehler — `remove` scheitert mit
+   „Sharing violation", und der Test stirbt an einer Ausnahme, die mit seinem
+   Gegenstand nichts zu tun hat. Genau so gefunden (2026-08-12, `tools/dev.sh win`
+   mit `-j8`): sechs Tests rot, seriell alle grün.
 2. **`remove()` scheitert, solange die Datei offen ist.** Windows kennt kein
    „gelöscht, aber noch benutzt". Ein `std::ifstream`, mit dem der Test die Datei
    gegenliest, gehört in einen eigenen Block **vor** dem `remove()`.

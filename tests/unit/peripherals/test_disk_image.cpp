@@ -26,11 +26,12 @@
 
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
+#include "tests/support/temp_path.h"
 
 namespace {
 
 std::string tmpPath(const char* name) {
-    return (std::filesystem::temp_directory_path() / name).string();
+    return k1520test::tempPath(name);
 }
 
 /// @brief 2 Zylinder × 1 Kopf × 2 × 128 B.

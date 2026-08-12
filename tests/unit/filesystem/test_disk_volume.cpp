@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "core/filesystem/disk_volume.h"
+#include "tests/support/temp_path.h"
 
 namespace fs = std::filesystem;
 
@@ -67,7 +68,7 @@ std::unique_ptr<DiskVolume> oeffneSchreibbar(const std::string& pfad,
 class TempOrdner {
 public:
     explicit TempOrdner(const char* name)
-        : pfad_((fs::temp_directory_path() / name).string()) {
+        : pfad_(k1520test::tempPath(name)) {
         std::error_code ec;
         fs::remove_all(pfad_, ec);
         fs::create_directories(pfad_, ec);
@@ -83,7 +84,7 @@ private:
 class Kopie {
 public:
     Kopie(const char* fixture_name, const char* temp_name)
-        : pfad_((fs::temp_directory_path() / temp_name).string()) {
+        : pfad_(k1520test::tempPath(temp_name)) {
         fs::copy_file(fixture(fixture_name), pfad_, fs::copy_options::overwrite_existing);
     }
     ~Kopie() { std::error_code ec; fs::remove(pfad_, ec); }
@@ -492,7 +493,7 @@ TEST(DiskVolume, NeuAngelegteDisketteIstBeschreibbar) {
     // Der Schreibschutz schuetzt FREMDE Abbilder beim Lesen — ein gerade selbst
     // angelegtes Werkstueck waere damit nur laestig.
     const std::string pfad =
-        (fs::temp_directory_path() / "k1520_test_dv_neu_rw.hfe").string();
+        k1520test::tempPath("k1520_test_dv_neu_rw.hfe");
     std::string err;
     auto dv = DiskVolume::create(pfad, "udos_ds77", "FRISCH", formate(),
                                  dateisysteme(), err);
@@ -519,7 +520,7 @@ TEST(DiskVolume, ExportSchreibtEineKopieOhneUmzubinden) {
     const std::string quelle = dv->path();
 
     const std::string ziel =
-        (fs::temp_directory_path() / "k1520_test_dv_export.dmk").string();
+        k1520test::tempPath("k1520_test_dv_export.dmk");
     ASSERT_TRUE(dv->exportImage(ziel)) << dv->lastError();
 
     EXPECT_EQ(dv->path(), quelle) << "Export darf die Bindung NICHT umhaengen";
@@ -541,14 +542,14 @@ TEST(DiskVolume, UdosLaesstSichNichtAlsImgAblegen) {
     ASSERT_NE(dv, nullptr) << err;
 
     const std::string ziel =
-        (fs::temp_directory_path() / "k1520_test_dv_udos_export.img").string();
+        k1520test::tempPath("k1520_test_dv_udos_export.img");
     EXPECT_FALSE(dv->exportImage(ziel));
     EXPECT_NE(dv->lastError().find("Daten-CRC"), std::string::npos) << dv->lastError();
     EXPECT_FALSE(fs::exists(ziel)) << "es darf nicht einmal eine Ruine entstehen";
 
     // Als .dmk dagegen schon.
     const std::string dmk =
-        (fs::temp_directory_path() / "k1520_test_dv_udos_export.dmk").string();
+        k1520test::tempPath("k1520_test_dv_udos_export.dmk");
     EXPECT_TRUE(dv->exportImage(dmk)) << dv->lastError();
     std::error_code ec;
     fs::remove(dmk, ec);
@@ -561,7 +562,7 @@ TEST(DiskVolume, SpeichernUnterBindetUmUndBleibtSchreibbar) {
     ASSERT_NE(dv, nullptr) << err;
 
     const std::string ziel =
-        (fs::temp_directory_path() / "k1520_test_dv_saveas.hfe").string();
+        k1520test::tempPath("k1520_test_dv_saveas.hfe");
     ASSERT_TRUE(dv->saveAs(ziel)) << dv->lastError();
     EXPECT_EQ(dv->path(), ziel) << "ab jetzt wird an der neuen Datei gearbeitet";
 

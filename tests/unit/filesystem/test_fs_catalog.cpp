@@ -18,6 +18,7 @@
 #include <string>
 
 #include "core/filesystem/fs_catalog.h"
+#include "tests/support/temp_path.h"
 
 namespace {
 
@@ -37,8 +38,7 @@ const FormatCatalog& formate() {
 class TempKatalog {
 public:
     explicit TempKatalog(const std::string& yaml) {
-        path_ = (std::filesystem::temp_directory_path()
-                 / ("k1520_test_fscat_" + std::to_string(++zaehler_) + ".yaml")).string();
+        path_ = k1520test::tempPath(("k1520_test_fscat_" + std::to_string(++zaehler_) + ".yaml"));
         std::ofstream(path_) << yaml;
     }
     ~TempKatalog() { std::error_code ec; std::filesystem::remove(path_, ec); }

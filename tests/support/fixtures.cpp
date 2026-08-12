@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iterator>
 #include <utility>
+#include "tests/support/temp_path.h"
 
 #ifndef A5120_TEST_DISK_DIR
 #define A5120_TEST_DISK_DIR "."
@@ -26,7 +27,7 @@ TempDisk::TempDisk(const std::string& fixture_name)
     : TempDisk(fixture_name, fixture_name) {}
 
 TempDisk::TempDisk(const std::string& fixture_name, const std::string& temp_name) {
-    path_ = (fs::temp_directory_path() / ("k1520_" + temp_name)).string();
+    path_ = k1520test::tempPath("k1520_" + temp_name);
     std::error_code ec;
     fs::copy_file(diskPath(fixture_name), path_,
                   fs::copy_options::overwrite_existing, ec);
@@ -34,7 +35,7 @@ TempDisk::TempDisk(const std::string& fixture_name, const std::string& temp_name
 
 TempDisk TempDisk::empty(const std::string& file_name) {
     TempDisk t;
-    t.path_ = (fs::temp_directory_path() / ("k1520_" + file_name)).string();
+    t.path_ = k1520test::tempPath("k1520_" + file_name);
     std::error_code ec;
     fs::remove(t.path_, ec);          // Rest eines früheren Laufs wegräumen
     return t;

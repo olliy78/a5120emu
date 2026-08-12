@@ -28,11 +28,12 @@
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/image_codec.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
+#include "tests/support/temp_path.h"
 
 namespace {
 
 std::string tmpPath(const char* name) {
-    return (std::filesystem::temp_directory_path() / name).string();
+    return k1520test::tempPath(name);
 }
 
 TrackImage makeTrack(uint8_t cyl, uint8_t head, int nsec, uint16_t size,

@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 #include <cstdio>
 #include <string>
+#include "tests/support/temp_path.h"
 
 namespace {
 A5120Machine::MachineSnapshot* heapSnap(){ return new A5120Machine::MachineSnapshot(); }
@@ -12,7 +13,7 @@ A5120Machine::MachineSnapshot* heapSnap(){ return new A5120Machine::MachineSnaps
 std::string tmpStatePath(){
     const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
     std::string name = info ? info->name() : "unknown";
-    return std::string(::testing::TempDir()) + "k1520_state_test_" + name + ".bin";
+    return k1520test::tempPath("k1520_state_test_" + name + ".bin");
 }
 }
 

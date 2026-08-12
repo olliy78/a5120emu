@@ -33,6 +33,7 @@
 #include "core/peripherals/floppy_drive/track_codec.h"
 #include "core/peripherals/floppy_drive/drive_profile.h"
 #include "core/logger.h"
+#include "tests/support/temp_path.h"
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
@@ -65,8 +66,7 @@ static DiskFormat makeFormat_2cyl_2head_4sec() {
  * Zweiseitig: head0-Sektoren mit Sektor-ID (0x01…), head1-Sektoren mit 0x80 | Sektor-ID.
  */
 static std::string makeTmpImg(const DiskFormat& fmt, const std::string& suffix = "") {
-    const auto path = (std::filesystem::temp_directory_path()
-                       / ("k1520_v2_" + fmt.name + suffix + ".img")).string();
+    const auto path = k1520test::tempPath(("k1520_v2_" + fmt.name + suffix + ".img"));
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     const uint8_t ncyls  = fmt.numCylinders();
     const uint8_t nheads = fmt.numHeads();
@@ -1166,8 +1166,7 @@ TEST_F(K5122Test, WriteField_UebernimmtSektorkontrollblock) {
     // .hfe, nicht .img: ein rohes Sektorimage speichert NUR die Nutzbytes und
     // verliert den Nachspann prinzipbedingt (doc/udos_diskettenformat.md, Kasten
     // „.img reicht nicht") — die Verkettung ueberlebt nur spurbasiert.
-    const auto path = (std::filesystem::temp_directory_path()
-                       / "k1520_v2_udostail.hfe").string();
+    const auto path = k1520test::tempPath("k1520_v2_udostail.hfe");
     ASSERT_NE(DiskImage::create(path, fmt1, /*write_protect=*/false), nullptr);
     ASSERT_TRUE(card.mountDisk(0, path, fmt1));
     card.ioWrite(0x18, 0xEE);

@@ -31,6 +31,7 @@
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
 #include "core/peripherals/floppy_drive/disk_format.h"
+#include "tests/support/temp_path.h"
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
@@ -49,8 +50,7 @@ static DiskFormat makeSimpleFormat() {
  * in allen Bytes gefüllt (Erkennungsmuster für Roundtrip-Tests).
  */
 static std::string makeTmpImg(const DiskFormat& fmt) {
-    const auto path = (std::filesystem::temp_directory_path()
-                       / "k1520_test_img_codec.img").string();
+    const auto path = k1520test::tempPath("k1520_test_img_codec.img");
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
 
     const uint8_t ncyls  = fmt.numCylinders();
@@ -215,8 +215,7 @@ TEST(ImgCodec, SaveLoad_Roundtrip) {
         m.setTrack(1, 0, TrackCodec::buildTrack(secs, Encoding::MFM));
     }
 
-    const auto out = (std::filesystem::temp_directory_path()
-                      / "k1520_test_img_roundtrip.img").string();
+    const auto out = k1520test::tempPath("k1520_test_img_roundtrip.img");
     std::string err;
     ASSERT_TRUE(ImgCodec::save(out, fmt, m, err)) << err;
     EXPECT_EQ(std::filesystem::file_size(out), fmt.totalBytes());
@@ -238,8 +237,7 @@ TEST(ImgCodec, SaveLoad_Roundtrip) {
  */
 TEST(ImgCodec, Save_LehntUnformatiertesMediumAb) {
     const DiskMedium leer(2, 1, Encoding::MFM);
-    const auto out = (std::filesystem::temp_directory_path()
-                      / "k1520_test_img_blank.img").string();
+    const auto out = k1520test::tempPath("k1520_test_img_blank.img");
     std::filesystem::remove(out);
 
     std::string err;
@@ -272,8 +270,7 @@ TEST(ImgCodec, Save_LehntAnhangHinterDatenCrcAb) {
     EXPECT_FALSE(m.trackRawCompatible(0, 0));
     EXPECT_FALSE(m.rawCompatible());
 
-    const auto out = (std::filesystem::temp_directory_path()
-                      / "k1520_test_img_tail.img").string();
+    const auto out = k1520test::tempPath("k1520_test_img_tail.img");
     std::filesystem::remove(out);
     std::string err;
     EXPECT_FALSE(ImgCodec::save(out, fmt, m, err));
@@ -305,8 +302,7 @@ TEST(ImgCodec, MismatchReason_MeldetAbweichendeSektorzahl) {
 // ─── Gruppe 4: DiskImage::open ───────────────────────────────────────────────
 
 TEST(DiskImageOpen, HFE_Signatur_kurzeDatei_gibtNullptr) {
-    const auto path = (std::filesystem::temp_directory_path()
-                       / "k1520_test_hxcpicfe.img").string();
+    const auto path = k1520test::tempPath("k1520_test_hxcpicfe.img");
     {
         std::ofstream f(path, std::ios::binary | std::ios::trunc);
         f.write("HXCPICFE", 8);
@@ -320,8 +316,7 @@ TEST(DiskImageOpen, HFE_Signatur_kurzeDatei_gibtNullptr) {
 }
 
 TEST(DiskImageOpen, HXCHFEV3_Signatur_gibtNullptr) {
-    const auto path = (std::filesystem::temp_directory_path()
-                       / "k1520_test_hxchfev3.img").string();
+    const auto path = k1520test::tempPath("k1520_test_hxchfev3.img");
     {
         std::ofstream f(path, std::ios::binary | std::ios::trunc);
         f.write("HXCHFEV3", 8);
@@ -446,7 +441,7 @@ TEST(DiskImageOpen, RawMischdichte_VerfahrenJeSpur) {
 
 TEST(DiskImageCreate, ImgMitFmt_LegtDateiInFormatGroesseAn) {
     auto fmt = makeSimpleFormat();                 // 2 Zyl × 1 Kopf × 2 × 128 = 512 B
-    std::string path = (std::filesystem::temp_directory_path() / "create_test.img").string();
+    std::string path = k1520test::tempPath("create_test.img");
     std::filesystem::remove(path);
 
     auto img = DiskImage::create(path, fmt, false);
@@ -468,14 +463,14 @@ TEST(DiskImageCreate, ImgMitFmt_LegtDateiInFormatGroesseAn) {
 }
 
 TEST(DiskImageCreate, ImgOhneFmt_gibtNullptr) {
-    std::string path = (std::filesystem::temp_directory_path() / "create_nofmt.img").string();
+    std::string path = k1520test::tempPath("create_nofmt.img");
     std::filesystem::remove(path);
     auto img = DiskImage::create(path, std::nullopt, false);
     EXPECT_EQ(img, nullptr);
 }
 
 TEST(DiskImageCreate, HfeOhneFmt_gibtNullptr) {
-    std::string path = (std::filesystem::temp_directory_path() / "create_nofmt.hfe").string();
+    std::string path = k1520test::tempPath("create_nofmt.hfe");
     std::filesystem::remove(path);
     // create() ist der VORFORMATIERTE Weg und braucht das Sektorlayout.  Für eine
     // unformatierte Leerdiskette gibt es createBlank().
@@ -497,7 +492,7 @@ static size_t countMarks(const TrackImage& t) {
 static void checkFormattedHfe(Encoding enc) {
     auto fmt = makeSimpleFormat();  // 2 Zyl × 1 Kopf × 2 × 128
     for (auto& t : fmt.tracks) t.encoding = enc;
-    std::string path = (std::filesystem::temp_directory_path() / "create_fmt.hfe").string();
+    std::string path = k1520test::tempPath("create_fmt.hfe");
     std::filesystem::remove(path);
 
     auto img = DiskImage::create(path, fmt, false, enc);
@@ -542,7 +537,7 @@ TEST(DiskImageCreate, HfeMischdichte_BeideVerfahrenLesbar) {
     fmt.tracks.push_back({1, 2, 0, 0, 2, 1024,  Encoding::MFM, 1});
 
     const std::string path =
-        (std::filesystem::temp_directory_path() / "create_mixed.hfe").string();
+        k1520test::tempPath("create_mixed.hfe");
     std::filesystem::remove(path);
 
     {

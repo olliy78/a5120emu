@@ -26,12 +26,23 @@ endif()
 
 file(GLOB _cli_cases CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cases/*.cli")
 
+# Beim Cross-Bau (tools/dev.sh win: MinGW nach Windows) sind die Werkzeuge
+# `.exe` und laufen auf dem Linux-Rechner nur unter `wine`.  CMake weiß das
+# bereits — gtest_discover_tests benutzt denselben Wert; ohne die Weitergabe an
+# run_case.py starteten alle 59 CLI-Fälle die .exe direkt und scheiterten mit
+# „Exec format error".  Leer im Normalfall, dann ändert sich nichts.
+set(_cli_emulator "")
+if (CMAKE_CROSSCOMPILING_EMULATOR)
+    set(_cli_emulator --emulator "${CMAKE_CROSSCOMPILING_EMULATOR}")
+endif()
+
 foreach(_case IN LISTS _cli_cases)
     get_filename_component(_name "${_case}" NAME_WE)
     add_test(NAME cli_${_name}
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_case.py"
                 "${_case}"
                 --fixtures "${K1520_FIXTURE_DISKS}"
+                ${_cli_emulator}
                 --tool "k1520dbg=$<TARGET_FILE:k1520dbg>"
                 --tool "boot_trace=$<TARGET_FILE:boot_trace>"
                 --tool "k1520disktool=$<TARGET_FILE:k1520disktool>")

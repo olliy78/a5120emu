@@ -32,6 +32,7 @@
 #include "core/filesystem/fs_catalog.h"
 #include "core/filesystem/udos/udos_fs.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
+#include "tests/support/temp_path.h"
 
 namespace {
 
@@ -336,7 +337,7 @@ namespace {
 class Kopie {
 public:
     Kopie(const char* fixture_name, const char* temp_name)
-        : pfad_((std::filesystem::temp_directory_path() / temp_name).string()) {
+        : pfad_(k1520test::tempPath(temp_name)) {
         std::filesystem::copy_file(fixture(fixture_name), pfad_,
                                    std::filesystem::copy_options::overwrite_existing);
     }
@@ -603,7 +604,7 @@ TEST(UdosFileSystemWrite, MkfsLegtEinBenutzbaresDateisystemAn) {
     // Frisch formatierte, leere UDOS-Diskette: DiskImage::create erzeugt die
     // Spuren (echte Marken/CRC), format() legt Karte und Verzeichnisdatei an.
     const std::string pfad =
-        (std::filesystem::temp_directory_path() / "k1520_test_udos_mkfs.hfe").string();
+        k1520test::tempPath("k1520_test_udos_mkfs.hfe");
     {
         const DiskFormat* f = formate().find("udos_ds77");
         ASSERT_NE(f, nullptr);

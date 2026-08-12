@@ -41,6 +41,7 @@
 #include "core/peripherals/floppy_drive/floppy_drive2.h"
 #include "core/peripherals/floppy_drive/drive_profile.h"
 #include "core/peripherals/floppy_drive/disk_format.h"
+#include "tests/support/temp_path.h"
 
 // ─── Pfade zu den Fixtures ───────────────────────────────────────────────────
 
@@ -137,8 +138,7 @@ TEST(HfeCodec, SaveLoad_RoundtripMitAenderung) {
         m.setTrack(0, 0, TrackCodec::buildTrack(secs, Encoding::MFM));
     }
 
-    const auto tmp = (std::filesystem::temp_directory_path()
-                      / "k1520_test_hfe_roundtrip.hfe").string();
+    const auto tmp = k1520test::tempPath("k1520_test_hfe_roundtrip.hfe");
     std::string err;
     ASSERT_TRUE(HfeCodec::save(tmp, m, err)) << err;
 
@@ -185,8 +185,7 @@ TEST(HfeCodec, SaveOhneVorlage_BemisstSpurlaengeSelbst) {
         m.setTrack(c, 0, TrackCodec::buildTrack(secs, Encoding::MFM));
     }
 
-    const auto tmp = (std::filesystem::temp_directory_path()
-                      / "k1520_test_hfe_neu.hfe").string();
+    const auto tmp = k1520test::tempPath("k1520_test_hfe_neu.hfe");
     std::string err;
     ASSERT_TRUE(HfeCodec::save(tmp, m, err)) << err;
 
@@ -214,8 +213,7 @@ TEST(HfeCodec, SaveOhneVorlage_BemisstSpurlaengeSelbst) {
 TEST(HfeCodec, LeerdisketteBleibtUnformatiert) {
     const DiskMedium leer(40, 1, Encoding::MFM);
 
-    const auto tmp = (std::filesystem::temp_directory_path()
-                      / "k1520_test_hfe_leer.hfe").string();
+    const auto tmp = k1520test::tempPath("k1520_test_hfe_leer.hfe");
     std::string err;
     ASSERT_TRUE(HfeCodec::save(tmp, leer, err)) << err;
 
@@ -432,8 +430,7 @@ TEST(HfeCodec, UeberabgetasteteAufnahme500kbitWirdGelesen) {
         if (bits[cell]) os[cell * 2] = true;
     const auto os_cells = hfeBitsToCells(os);
 
-    const auto path = (std::filesystem::temp_directory_path()
-                       / "k1520_test_hfe_oversampled.hfe").string();
+    const auto path = k1520test::tempPath("k1520_test_hfe_oversampled.hfe");
     writeMiniHfe(path, os_cells, os_cells, /*bitrate=*/500);
 
     HfeCodec::SourceInfo info;
@@ -474,8 +471,7 @@ TEST(HfeCodec, UeberabtastungTrotzFalscherHeaderRate) {
         if (bits[cell]) os[cell * 2] = true;
     const auto os_cells = hfeBitsToCells(os);
 
-    const auto path = (std::filesystem::temp_directory_path()
-                       / "k1520_test_hfe_falsche_rate.hfe").string();
+    const auto path = k1520test::tempPath("k1520_test_hfe_falsche_rate.hfe");
     // Header meldet 311 kbit/s — unter der alten 375er-Schwelle, also "keine
     // Ueberabtastung", obwohl der Inhalt doppelt abgetastet ist.
     writeMiniHfe(path, os_cells, os_cells, /*bitrate=*/311);

@@ -148,6 +148,11 @@ def main():
     ap.add_argument("--fixtures", required=True, help="Verzeichnis der Testdisketten")
     ap.add_argument("--tool", action="append", default=[], metavar="NAME=PFAD",
                     help="Werkzeugpfad, wiederholbar")
+    # Cross-Bau (tools/dev.sh win): die Werkzeuge sind Windows-.exe und laufen
+    # auf dem Linux-Rechner nur unter wine.  CMake reicht CMAKE_CROSSCOMPILING_
+    # EMULATOR hier durch — dieselbe Angabe, die auch gtest_discover_tests nutzt.
+    ap.add_argument("--emulator", default="",
+                    help="Startprogramm vor dem Werkzeug (z. B. wine)")
     args = ap.parse_args()
 
     tools = dict(t.split("=", 1) for t in args.tool)
@@ -203,17 +208,19 @@ def main():
             return [expand(word) for word in shlex.split(text)]
 
         exe = tools[case["tool"]]
+        # Das Startprogramm gehört VOR das Werkzeug, nicht in die Argumentliste.
+        vorspann = [args.emulator] if args.emulator else []
         # Platzhalter gelten auch in der Standardeingabe — Debugger-Kommandos wie
         # `trace %datei%` oder `lst %quelle.mac%` brauchen den echten Pfad.
         stdin = expand(case["stdin"]) if case["stdin"] else None
 
         for extra in case["setup_run"]:
-            subprocess.run([exe] + argv(extra),
+            subprocess.run(vorspann + [exe] + argv(extra),
                            input=stdin, cwd=tmpdir, **TEXT,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                            timeout=case["timeout"])
 
-        proc = subprocess.run([exe] + argv(case["run"]),
+        proc = subprocess.run(vorspann + [exe] + argv(case["run"]),
                               input=stdin, cwd=tmpdir, **TEXT,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               timeout=case["timeout"])
@@ -249,7 +256,7 @@ def main():
             print(f"--- {os.path.basename(args.case)} FEHLGESCHLAGEN")
             for p in problems:
                 print(f"  * {p}")
-            print(f"--- Kommando: {exe} {expand(case['run'])}")
+            print(f"--- Kommando: {' '.join(vorspann)} {exe} {expand(case['run'])}".strip())
             print("--- Ausgabe (letzte 40 Zeilen):")
             for line in output.split("\n")[-40:]:
                 print("  " + line)

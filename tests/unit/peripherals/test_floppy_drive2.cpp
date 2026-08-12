@@ -27,6 +27,7 @@
 #include "core/peripherals/floppy_drive/track_codec.h"
 #include "core/peripherals/floppy_drive/disk_format.h"
 #include "core/peripherals/floppy_drive/drive_profile.h"
+#include "tests/support/temp_path.h"
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
@@ -40,8 +41,7 @@ static DiskFormat makeFormat_2cyl_1head_2sec() {
 
 /** Temporäre .img-Datei; alle Bytes mit Sektor-ID-Füller. */
 static std::string makeTmpImg(const DiskFormat& fmt, const std::string& suffix = "") {
-    const auto path = (std::filesystem::temp_directory_path()
-                       / ("k1520_drv2_" + fmt.name + suffix + ".img")).string();
+    const auto path = k1520test::tempPath(("k1520_drv2_" + fmt.name + suffix + ".img"));
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     const uint8_t ncyls  = fmt.numCylinders();
     const uint8_t nheads = fmt.numHeads();
@@ -97,8 +97,7 @@ TEST(FloppyDriveV2, Mount_ZuVieleSpuren_Inkompatibel) {
     fmt80.name = "test_80cyl";
     fmt80.tracks.push_back({0, 79, 0, 0, 2, 128});
 
-    auto path = (std::filesystem::temp_directory_path()
-                 / "k1520_drv2_80cyl.img").string();
+    auto path = k1520test::tempPath("k1520_drv2_80cyl.img");
     {
         uint64_t sz = fmt80.totalBytes();
         std::ofstream f(path, std::ios::binary | std::ios::trunc);

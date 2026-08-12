@@ -8,12 +8,13 @@
 #include <gtest/gtest.h>
 #include <cstdio>
 #include <fstream>
+#include "tests/support/temp_path.h"
 
 namespace {
 
 // Eine temporäre Quelldatei mit dem übergebenen Inhalt anlegen.
 std::string writeTmp(const std::string& name, const std::string& body){
-    std::string p = std::string(::testing::TempDir()) + name;
+    std::string p = k1520test::tempPath(name);
     std::ofstream f(p); f << body; f.close();
     return p;
 }

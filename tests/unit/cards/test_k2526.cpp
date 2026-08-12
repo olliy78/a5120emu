@@ -59,6 +59,7 @@
 #include "core/cards/k5122/k5122.h"
 #include "core/peripherals/floppy_drive/disk_format.h"
 #include "core/peripherals/floppy_drive/format_catalog.h"
+#include "tests/support/temp_path.h"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1172,8 +1173,7 @@ std::string makeCpa780Image() {
     const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
     const std::string tag = std::string(info ? info->name() : "unknown")
                             + "_" + std::to_string(k1520::os::processId());
-    auto path = (std::filesystem::temp_directory_path()
-                 / ("k2526_chain_cpa780_" + tag + ".img")).string();
+    auto path = k1520test::tempPath(("k2526_chain_cpa780_" + tag + ".img"));
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     std::vector<uint8_t> buf(fmt.totalBytes(), 0xE5);
     f.write(reinterpret_cast<const char*>(buf.data()), static_cast<std::streamsize>(buf.size()));

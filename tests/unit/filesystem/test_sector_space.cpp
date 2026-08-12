@@ -22,6 +22,7 @@
 #include "core/filesystem/sector_space.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/format_catalog.h"
+#include "tests/support/temp_path.h"
 
 namespace {
 
@@ -30,7 +31,7 @@ std::string fixture(const char* name) {
 }
 
 std::string tmpPath(const char* name) {
-    return (std::filesystem::temp_directory_path() / name).string();
+    return k1520test::tempPath(name);
 }
 
 std::vector<uint8_t> readFile(const std::string& path) {
