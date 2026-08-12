@@ -26,6 +26,9 @@
 name: Windows — Bauen und Regression
 
 on:
+  # VORUEBERGEHEND: sccache einfahren (kalt + warm messen).  Faellt danach raus.
+  push:
+    branches: [windows_port_cicd]
   workflow_dispatch:
     inputs:
       testebene:
@@ -74,13 +77,15 @@ jobs:
             }
           }
 
-      - name: Ninja bereitstellen
+      - name: Ninja und sccache bereitstellen
         shell: pwsh
         run: |
-          if (Get-Command ninja -ErrorAction SilentlyContinue) {
-            Write-Host "ninja vorhanden: $((Get-Command ninja).Source)"
-          } else {
-            choco install ninja -y --no-progress
+          foreach ($werkzeug in 'ninja','sccache') {
+            if (Get-Command $werkzeug -ErrorAction SilentlyContinue) {
+              Write-Host "$werkzeug vorhanden: $((Get-Command $werkzeug).Source)"
+            } else {
+              choco install $werkzeug -y --no-progress
+            }
           }
 
       - name: Werkzeuge zeigen
@@ -89,6 +94,7 @@ jobs:
           cl 2>&1 | head -2 || true
           cmake --version | head -1
           ninja --version
+          sccache --version
           bash --version | head -1
 
       - uses: actions/setup-python@v5
@@ -117,6 +123,20 @@ jobs:
           key: gtest-windows-v1.14.0
           restore-keys: gtest-windows-
 
+      # ── Übersetzer-Zwischenspeicher (das Gegenstück zu ccache in ci.yml) ─────
+      # Der MSVC-Bau ist mit Abstand der teuerste Schritt: gemessen 167 s von
+      # 260 s Gesamtlaufzeit (2026-08-12).  sccache macht daraus bei warmem
+      # Zwischenspeicher einen Bruchteil.  Das ist keine Kostenfrage, solange das
+      # Repository öffentlich ist (dann sind die Minuten frei) — wohl aber eine,
+      # sobald es privat wird: Windows-Minuten zählen DOPPELT gegen das
+      # Kontingent (§2.4).
+      - name: sccache-Zwischenstand
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\.sccache
+          key: sccache-windows-${{ github.sha }}
+          restore-keys: sccache-windows-
+
       # `|| 'test'` ist kein Zierrat: wer den Workflow über die API anstößt, ohne
       # eine Eingabe mitzugeben, bekäme sonst `tools/dev.sh` ohne Kommando — und
       # das druckt die Hilfe und meldet Erfolg, ohne etwas geprüft zu haben.
@@ -124,7 +144,27 @@ jobs:
         shell: bash
         env:
           QT_QPA_PLATFORM: offscreen
-        run: tools/dev.sh ${{ inputs.testebene || 'test' }}
+          # CMake liest CMAKE_<LANG>_COMPILER_LAUNCHER beim Konfigurieren aus der
+          # UMGEBUNG — deshalb braucht tools/dev.sh dafür keine Zeile.  Wichtig:
+          # das wirkt nur, weil dev.sh hier frisch konfiguriert (build/ ist im
+          # Lauf noch nicht vorhanden).
+          CMAKE_CXX_COMPILER_LAUNCHER: sccache
+          CMAKE_C_COMPILER_LAUNCHER: sccache
+          SCCACHE_DIR: ${{ github.workspace }}\.sccache
+          # Der Vorgabewert (10 GB) sprengte den 10-GB-Rahmen eines Actions-
+          # Zwischenspeichers; 2 GB reichen für diesen Baum mit Reserve.
+          SCCACHE_CACHE_SIZE: 2G
+        run: |
+          sccache --zero-stats >/dev/null 2>&1 || true
+          tools/dev.sh ${{ inputs.testebene || 'test' }}
+
+      # Zeigt, ob der Zwischenspeicher wirklich greift.  Ohne diese Zeile merkt
+      # niemand, wenn sccache jede Datei durchreicht („non-cacheable") — der Bau
+      # wäre dann nur unverändert langsam, nicht kaputt.
+      - name: sccache-Ausbeute
+        if: always()
+        shell: bash
+        run: sccache --show-stats || true
 
       # ── Die Kernprüfung der Portierung: exportiert die DLL überhaupt etwas? ──
       # Ohne K1520_API exportiert eine MSVC-DLL GAR NICHTS, und ctypes findet
