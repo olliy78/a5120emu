@@ -198,6 +198,15 @@ class DriveWidget(QWidget):
         path_layout.addWidget(path_display)
         layout.addLayout(path_layout)
 
+        # Hinweiszeilen des Kerns: wie die Diskette ans Laufwerk angepasst werden
+        # musste (Spurdichte, Seitenzahl).  Kein Fehler — sie steht deshalb hier
+        # unter dem Dateinamen und nicht in einem Meldungsfenster.
+        notice_label = QLabel()
+        notice_label.setWordWrap(True)
+        notice_label.setStyleSheet("color: #c08a00;")
+        notice_label.setVisible(False)
+        layout.addWidget(notice_label)
+
         # Format selection — populated from the core with the formats that fit
         # this slot's drive type (default first), so a non-K5601 drive offers its
         # own geometries instead of the fixed K5601 CP/A set.
@@ -224,6 +233,7 @@ class DriveWidget(QWidget):
             toggle_btn.setText("Unmount")
             self._mounts[drive] = (path, fmt, wp)
             saveas_btn.setEnabled(True)
+            self._update_notice(drive)
             self.disk_mounted.emit(drive, path)
 
         def set_unmounted():
@@ -232,6 +242,7 @@ class DriveWidget(QWidget):
             toggle_btn.setText("Mount")
             self._mounts.pop(drive, None)
             saveas_btn.setEnabled(False)
+            self._update_notice(drive)
             self.disk_unmounted.emit(drive)
 
         def on_toggle():
@@ -340,10 +351,43 @@ class DriveWidget(QWidget):
         group._saveas_btn = saveas_btn
         group._wp_check = wp_check
         group._format_combo = format_combo
+        group._notice_label = notice_label
         group._led = led
         self._panels[drive] = group
 
         return group
+
+    # ── Anpassungs-Hinweise (Spurdichte / Seitenzahl) ────────────────────────
+
+    #: Erläuterung je Hinweiszeile des Kerns — erscheint als Tooltip am Hinweis.
+    NOTICE_HELP = {
+        "Double Step aktiviert":
+            "40-Spur-Diskette in einem 80-Spur-Laufwerk: die Spuren liegen doppelt so "
+            "weit auseinander, Diskettenspur n liegt auf Kopfposition 2n. Das "
+            "Gastsystem muss die Diskette deshalb schrittverdoppelt lesen (im OS einen "
+            "40-Spur-Laufwerkstyp einstellen).",
+        "Laufwerk liest nur jede zweite Spur":
+            "80-Spur-Diskette in einem 40-Spur-Laufwerk: der Kopf trifft nur jede "
+            "zweite Spur. Bei einer einseitigen Doppelschritt-Diskette ist das genau "
+            "richtig — sie ist hier eine gewöhnliche 40-Spur-Diskette.",
+        "Nur Seite 0 verwendbar":
+            "Zweiseitige Diskette in einem einseitigen Laufwerk: Seite 1 erreicht kein "
+            "Kopf. Lesezugriffe dorthin liefern nichts, Schreibzugriffe gehen ins Leere.",
+    }
+
+    def _update_notice(self, drive: int):
+        """Hinweiszeilen des Kerns unter den Dateinamen setzen (leer = ausblenden)."""
+        panel = self._panels.get(drive)
+        if panel is None or not hasattr(panel, "_notice_label"):
+            return
+        try:
+            lines = [l for l in self.emulator.disk_notice(drive).splitlines() if l]
+        except Exception:
+            lines = []
+        label = panel._notice_label
+        label.setText("\n".join("⚠ " + l for l in lines))
+        label.setToolTip("\n\n".join(self.NOTICE_HELP.get(l, l) for l in lines))
+        label.setVisible(bool(lines))
 
     # ── Config-Persistenz (gemountete Disketten) ─────────────────────────────
 
@@ -377,6 +421,7 @@ class DriveWidget(QWidget):
                 panel._path_display.setText("")
                 panel._toggle_btn.setText("Mount")
                 panel._saveas_btn.setEnabled(False)
+                self._update_notice(drive)
         self._mounts.clear()
 
         # 2) Aus der Config mounten.
@@ -400,6 +445,7 @@ class DriveWidget(QWidget):
                     panel._toggle_btn.setText("Unmount")
                     panel._saveas_btn.setEnabled(True)
                     self._mounts[drive] = (path, fmt, wp)
+                    self._update_notice(drive)
             except Exception:
                 pass
 

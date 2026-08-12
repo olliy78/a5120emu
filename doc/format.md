@@ -581,25 +581,30 @@ Verify ist **physisch-positions-konsistent** — Schreiben und Rücklesen nutzen
 Kopfposition, daher spielt Einzel- vs. Doppelschritt für `.hfe` keine Rolle (das 80×2-Template
 deckt alle physischen Positionen ab).
 
-**`.img`: einseitig/Einzelschritt sauber** (RawSectorImage-Offset = phys. `cur_cyl_`):
+**`.img` — seit der Spurdichte-Anpassung (2026-08-12) genau andersherum als früher.**
+Ein 40-Zylinder-Abbild *ist* eine 48-tpi-Diskette; im 80-Spur-Laufwerk wird sie
+schrittverdoppelt gelesen (`doc/design/09_floppy_drive.md` §7.2, Kopfposition 2n = Spur n).
+Damit fällt das früher fehlende Physisch→Logisch-Mapping weg:
 - `S` (einseitig 80): **3/3** — `cpa200`(400k)/`cpa640`(320k)/`k5601_ss80_9x512`(360k).
-- `W` (einseitig 40, Einzelschritt): **2/3** — `k5601_ss40_5x1024`(200k)/`_16x256`(160k) OK;
-  `W:6` (15×256 „Sektorfolge 1,4,7") scheitert = **derselbe Interleave-Sonderfall** wie Format 7.
-- `V` (doppelseitig 40, Einzelschritt): **2/2** — `k5601_ds40_5x1024`(400k)/`_16x256`(320k).
-- `T`/`U` (**Doppelschritt**): als `.img` **übersprungen** (`SKIP(.img)`).  Grund: die Karte kennt
-  nur Step-Impulse, nicht „doppelt"; `cur_cyl_` = 2×logisch (0,2,…,78) → ein logisch-40-spuriges
-  `.img` bräuchte ein Physisch→Logisch-Mapping.  Für Doppelschritt-Disketten daher **`.hfe`**
-  verwenden (physisches Bit-Spur-Modell, faithful).
+- `T`/`U` (**Doppelschritt**): jetzt **als `.img` darstellbar** (`_SS40`/`_DS40`).  Der Gast
+  schreibt auf die Positionen 0,2,…,78, die Anpassung legt sie auf die Zylinder 0…39.
+  Nachgeprüft: `U:3` (26×128) formatiert 40 Zylinder voll und verifiziert fehlerfrei.
+- `W`/`V` (40 Spuren, **Einzelschritt** auf 96-tpi-Hardware): jetzt **`SKIP(.img)`**.  Das wäre
+  eine Diskette, die nur auf der äußeren Hälfte beschrieben ist — die Positionen 1,3,5,… liegen
+  zwischen den Spuren und sind in einem rohen Sektorimage nicht darstellbar.  Solche Disketten
+  brauchen ein **80-Zylinder-`.hfe`** mit unformatierter Innenhälfte.  (`W:6`, 15×256
+  „Sektorfolge 1,4,7", war ohnehin am **Interleave-Sonderfall** gescheitert, s. §8.4.)
 
 Neue `DiskFormat`s in `FormatParser::builtinFormats()`: `k5601_ss80_26x128`, `k5601_ss80_9x512`,
 `k5601_ss40_5x1024`/`_26x128`/`_16x256`/`_15x256`, `k5601_ds40_5x1024`/`_26x128`/`_16x256`/`_17x256`
 (+ vorhandene `cpa200`/`cpa640`).  Aufruf z. B. `python3 tests/system/drivers/format_all.py --geo W --type img 0 4`.
 
-> **Ziel-Status:** 80-Spur-DS (§3) + §3.4-Geometrien (S/V/W einseitig/Einzelschritt) formatieren
-> +verifizieren als `.hfe`/`.img`; Doppelschritt (T/U) als `.hfe`.  Offen: (a) Interleave-Formate
-> (Sektorfolge 1,4,7… — Format 7, W:6), s. §8.4; (b) Doppelschritt-`.img` (Mapping);
-> (c) 8″-Laufwerk (§5).  RE-Stand: `doc/design/07_k5122_afs.md`,
-> Memory `project_format_all_pipeline`.
+> **Ziel-Status:** 80-Spur-DS (§3) + alle §3.4-Geometrien formatieren+verifizieren als `.hfe`;
+> als `.img` zusätzlich `S` (80 Spuren) und **`T`/`U` (Doppelschritt)**.  Offen: (a)
+> Interleave-Formate (Sektorfolge 1,4,7… — Format 7, W:6), s. §8.4; (c) 8″-Laufwerk (§5).
+> **Erledigt:** (b) Doppelschritt-`.img` — die Spurdichte-Anpassung des Laufwerks
+> (`doc/design/09_floppy_drive.md` §7.2) macht das Mapping überflüssig.
+> RE-Stand: `doc/design/07_k5122_afs.md`, Memory `project_format_all_pipeline`.
 
 ### 8.4 „Sektorfolge 1,4,7"-Formate (Format 7 „ZIK-NK", W:6 „BAP2001") — Diagnose 2026-07-02
 

@@ -104,3 +104,26 @@ def test_mounting_a_disk_updates_the_drive_panel(window, qapp, temp_disk):
         window.emulator.last_error()
     qapp.processEvents()
     assert window.emulator.is_disk_active(0)
+
+
+def test_drive_panel_shows_the_adaptation_notice(window, qapp, tmp_path):
+    """Passt die Diskette nicht zum Laufwerk, steht der Hinweis im Laufwerkskasten."""
+    drives = window.drives_widget
+    fmt, path = "k5601_ss40_26x128", str(tmp_path / "vierzig_spuren.img")
+    assert window.emulator.create_disk(0, path, fmt, False), window.emulator.last_error()
+    assert window.emulator.unmount_disk(0)
+
+    # Über den Wiederherstellungsweg mounten — derselbe Pfad wie beim Programmstart.
+    drives.load_mounts([{"drive": 0, "path": path, "format": fmt,
+                         "write_protect": False}])
+    qapp.processEvents()
+
+    label = drives._panels[0]._notice_label
+    assert label.isVisibleTo(drives), "Hinweis muss sichtbar sein"
+    assert "Double Step aktiviert" in label.text()
+    assert "schrittverdoppelt" in label.toolTip(), "Tooltip erklärt den Hinweis"
+
+    # Nach dem Aushängen verschwindet er wieder.
+    drives.load_mounts([])
+    qapp.processEvents()
+    assert not drives._panels[0]._notice_label.isVisibleTo(drives)

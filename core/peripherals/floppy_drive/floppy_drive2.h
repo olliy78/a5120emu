@@ -23,6 +23,26 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
+
+/**
+ * @enum TrackPitch
+ * @brief Verhältnis der **Spurdichte** von Diskette und Laufwerk.
+ *
+ * 5,25″ kennt zwei Dichten: 48 tpi (40 Spuren über den ganzen Radius) und 96 tpi
+ * (80 Spuren).  Welche eine Diskette trägt, verrät ihre Spurzahl; welche das
+ * Laufwerk abfährt, steht im @ref DriveProfile.  Stimmen sie nicht überein, ist das
+ * **kein Fehler**, sondern ein Übersetzungsverhältnis zwischen Kopfposition und
+ * Diskettenspur — genau so, wie eine 40-Spur-Diskette in einem 80-Spur-Laufwerk
+ * seit jeher „schrittverdoppelt" gelesen wird.
+ *
+ * @see doc/design/09_floppy_drive.md §7.2
+ */
+enum class TrackPitch : uint8_t {
+    Direct,      ///< gleiche Dichte — Kopfposition n liegt über Diskettenspur n
+    DoubleStep,  ///< 48-tpi-Diskette im 96-tpi-Laufwerk: Position 2n = Spur n
+    HalfStep     ///< 96-tpi-Diskette im 48-tpi-Laufwerk: Position n = Spur 2n
+};
 
 /**
  * @class FloppyDriveV2
@@ -34,7 +54,16 @@ public:
     explicit FloppyDriveV2(DriveProfile profile = {});
 
     /**
-     * @brief Mountet eine Diskette.  Prüft Geometrie + Verfahren gegen das DriveProfile.
+     * @brief Mountet eine Diskette und **passt sie ans Laufwerk an**.
+     *
+     * Eine Diskette, die nicht zur Spurdichte oder Seitenzahl des Laufwerks passt,
+     * wird nicht abgewiesen, sondern übersetzt (@ref TrackPitch, @ref side0Only) —
+     * das Laufwerk tut, was die Mechanik täte.  Was dabei eingeschränkt ist, steht
+     * anschließend in @ref notices() und gehört vor die Augen des Bedieners.
+     *
+     * Abgewiesen wird nur, was das Laufwerk wirklich nicht kann: ein Verfahren, das
+     * es nicht beherrscht, und Spuren mit Daten jenseits seiner Reichweite.
+     *
      * @return false (Grund über lastError()) bei Inkompatibilität oder leerem Zeiger.
      */
     bool mount(std::unique_ptr<DiskImage> img, bool write_protect = false);
@@ -69,6 +98,32 @@ public:
     /// @brief Index-Periode in Z80-Takten aus profile_.rpm.
     int indexPeriodCycles(uint32_t cpu_hz) const { return profile_.indexPeriodCycles(cpu_hz); }
 
+    // ── Anpassung der Diskette ans Laufwerk (beim Mount festgelegt) ───────────
+
+    /// @brief Spurdichte-Verhältnis der eingelegten Diskette zu diesem Laufwerk.
+    TrackPitch pitch() const { return pitch_; }
+    /// @brief true = zweiseitige Diskette in einem einseitigen Laufwerk (Kopf 1 fehlt).
+    bool side0Only() const { return side0_only_; }
+    /// @brief Je ein kurzer Satz pro Einschränkung; leer = die Diskette passt.
+    const std::vector<std::string>& notices() const { return notices_; }
+    /// @brief Dieselben Sätze als ein Text (Zeilen durch `\n` getrennt).
+    std::string noticeText() const;
+
+    /**
+     * @brief Welche **Diskettenspur** liegt unter der Kopfposition @p pos?
+     *
+     * Der einzige Ort, an dem @ref TrackPitch ausgerechnet wird; alle Spurzugriffe
+     * gehen hier durch.  Bei `DoubleStep` liegt zwischen zwei Diskettenspuren eine
+     * Kopfposition, unter der **nichts** ist — der Fall, für den der Gast
+     * schrittverdoppeln muss.
+     *
+     * @return Zylindernummer auf der Diskette, oder **-1**, wenn dort keine Spur liegt.
+     */
+    int mediumCylinder(uint8_t pos) const;
+
+    /// @brief Erreicht dieses Laufwerk den Kopf @p head überhaupt?
+    bool headReachable(uint8_t head) const { return head < 2 && head < profile_.num_heads; }
+
     /**
      * @brief Aktuelle Spur (cur_cyl_, @p head) als TrackImage — Referenz aufs Medium.
      * @return leeres TrackImage, wenn nichts gemountet oder die Spur unformatiert ist.
@@ -98,9 +153,18 @@ public:
     DiskGeometry geometry() const;
 
 private:
+    /// @brief Warnt **einmal je Position/Kopf**, wenn ein Schreibzugriff ins Leere geht.
+    void warnLostWrite(uint8_t head) const;
+
     DriveProfile               profile_;
     std::unique_ptr<DiskImage> image_;
     bool        write_protect_ = false;
     uint8_t     cur_cyl_       = 0;
     std::string last_error_;
+
+    // Beim Mount festgelegte Anpassung an dieses Laufwerk.
+    TrackPitch               pitch_      = TrackPitch::Direct;
+    bool                     side0_only_ = false;
+    std::vector<std::string> notices_;
+    mutable int              last_lost_write_ = -1;  ///< (pos<<1|head) der letzten Warnung
 };

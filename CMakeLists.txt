@@ -117,7 +117,8 @@ if(BUILD_K1520)
     # ${CMAKE_DL_LIBS}: FormatCatalog fragt per dladdr(), in welchem Modul es selbst
     # liegt — davon hängt ab, wo es formats.yaml sucht (siehe format_catalog.h).
     # Ab glibc 2.34 steckt dladdr in der libc, davor braucht es -ldl.
-    target_link_libraries(k1520_floppy2 PUBLIC k1520_floppy k1520_util ${CMAKE_DL_LIBS})
+    # k1520_logger: FloppyDriveV2 meldet verworfene Schreibzugriffe (Spurdichte-Anpassung).
+    target_link_libraries(k1520_floppy2 PUBLIC k1520_floppy k1520_util k1520_logger ${CMAKE_DL_LIBS})
     target_include_directories(k1520_floppy2 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # Fallback-Fundort des Diskettenformat-Katalogs (§8.6.4, Priorität 1).  Zeigt im

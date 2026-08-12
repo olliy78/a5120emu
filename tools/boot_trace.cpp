@@ -745,7 +745,12 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Last error: %s\n", machine.lastError().c_str());
         fprintf(stderr, "Continuing without disk...\n\n");
     } else if (!quiet) {
-        fprintf(stderr, "Disk mounted OK (drive %d)%s\n\n", mount_drive, wp?" [read-only]":"");
+        fprintf(stderr, "Disk mounted OK (drive %d)%s\n", mount_drive, wp?" [read-only]":"");
+        // Musste die Diskette ans Laufwerk angepasst werden (Spurdichte/Seitenzahl)?
+        // Das erklaert einen scheiternden Boot schneller als jede Spurenlese.
+        const std::string hinweis = machine.diskNotice(mount_drive);
+        if (!hinweis.empty()) fprintf(stderr, "  ! %s\n", hinweis.c_str());
+        fprintf(stderr, "\n");
     }
 
     // --load-state: resume from a previously saved machine state (RAM+CPU) instead of

@@ -90,23 +90,22 @@ TEST(FloppyDriveV2, Mount_KeinImage_Fehler) {
 }
 
 TEST(FloppyDriveV2, Mount_ZuVieleSpuren_Inkompatibel) {
-    // K5600.10 hat nur 40 Zylinder; ein 80-Zylinderformat ist zu groß.
-    auto fmt  = makeFormat_2cyl_1head_2sec();
-    // Neues Format mit 80 Zylindern bauen
-    DiskFormat fmt80;
-    fmt80.name = "test_80cyl";
-    fmt80.tracks.push_back({0, 79, 0, 0, 2, 128});
+    // Jenseits jeder Uebersetzung: 160 Zylinder erreicht das K5600.10 auch
+    // schrittverdoppelt nicht (es kaeme hoechstens bis Spur 78).
+    DiskFormat fmt160;
+    fmt160.name = "test_160cyl";
+    fmt160.tracks.push_back({0, 159, 0, 0, 2, 128});
 
-    auto path = k1520test::tempPath("k1520_drv2_80cyl.img");
+    auto path = k1520test::tempPath("k1520_drv2_160cyl.img");
     {
-        uint64_t sz = fmt80.totalBytes();
+        uint64_t sz = fmt160.totalBytes();
         std::ofstream f(path, std::ios::binary | std::ios::trunc);
         std::vector<uint8_t> buf(sz, 0xE5);
         f.write(reinterpret_cast<const char*>(buf.data()), buf.size());
     }
 
     FloppyDriveV2 drv(builtinDriveProfile("K5600.10")); // nur 40 Zylinder
-    auto img = openImg(path, fmt80);
+    auto img = openImg(path, fmt160);
     ASSERT_NE(img, nullptr);
 
     EXPECT_FALSE(drv.mount(std::move(img)));
@@ -361,4 +360,247 @@ TEST(FloppyDriveV2, WriteTrackAt_SchreibtInsMedium) {
     // Schreibschutz sperrt den Pfad.
     drv.setWriteProtect(true);
     EXPECT_FALSE(drv.writeTrackAt(6, 0, spur));
+}
+
+// ─── Gruppe 6: Spurdichte — Diskette und Laufwerk passen nicht zusammen ──────
+//
+// 5,25″ kennt zwei Spurdichten: 48 tpi (40 Spuren) und 96 tpi (80).  Passt die
+// Diskette nicht zum Laufwerk, wird sie nicht abgewiesen, sondern uebersetzt —
+// und der Bediener bekommt einen Hinweis.  @see doc/design/09_floppy_drive.md §6.2
+
+/** Rohes Sektorimage, in dem JEDER Sektor mit seiner Zylindernummer gefuellt ist. */
+static std::string makeTmpImgCylMarked(const DiskFormat& fmt, const std::string& suffix) {
+    const auto path = k1520test::tempPath("k1520_drv2_" + fmt.name + suffix + ".img");
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    for (uint8_t c = 0; c < fmt.numCylinders(); ++c) {
+        for (uint8_t h = 0; h < fmt.numHeads(); ++h) {
+            const TrackFormat* tf = fmt.findTrack(c, h);
+            if (!tf) continue;
+            for (uint8_t id = 1; id <= tf->secs_per_track; ++id) {
+                std::vector<uint8_t> buf(tf->bytes_per_sec, c);
+                f.write(reinterpret_cast<const char*>(buf.data()), buf.size());
+            }
+        }
+    }
+    return path;
+}
+
+static DiskFormat makeFormat(const std::string& name, uint8_t cyls, uint8_t heads) {
+    DiskFormat fmt;
+    fmt.name = name;
+    fmt.tracks.push_back({0, static_cast<uint8_t>(cyls - 1), 0,
+                          static_cast<uint8_t>(heads - 1), 2, 128});
+    return fmt;
+}
+
+/** Zylindernummer, die unter der aktuellen Kopfposition liegt (-1 = keine Spur). */
+static int gelesenerZylinder(FloppyDriveV2& drv, uint8_t head = 0) {
+    const TrackImage& spur = drv.track(head);
+    if (spur.empty()) return -1;
+    auto parsed = TrackCodec::parseTrack(spur);
+    if (parsed.empty() || parsed[0].data.empty()) return -1;
+    return parsed[0].data[0];
+}
+
+TEST(FloppyDriveV2, Doppelschritt_VierzigSpurDisketteImAchtzigSpurLaufwerk) {
+    auto fmt  = makeFormat("test_40cyl", 40, 1);
+    auto path = makeTmpImgCylMarked(fmt, "_ds");
+
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));   // 80 Zylinder, 96 tpi
+    ASSERT_TRUE(drv.mount(openImg(path, fmt)));
+
+    EXPECT_EQ(drv.pitch(), TrackPitch::DoubleStep);
+    ASSERT_EQ(drv.notices().size(), 1u);
+    EXPECT_EQ(drv.notices()[0], "Double Step aktiviert");
+
+    // Spur n liegt auf Kopfposition 2n; dazwischen ist nichts.
+    EXPECT_EQ(drv.mediumCylinder(0),  0);
+    EXPECT_EQ(drv.mediumCylinder(1), -1);
+    EXPECT_EQ(drv.mediumCylinder(78), 39);
+
+    drv.seek(0);   EXPECT_EQ(gelesenerZylinder(drv),  0);
+    drv.seek(2);   EXPECT_EQ(gelesenerZylinder(drv),  1);
+    drv.seek(3);   EXPECT_EQ(gelesenerZylinder(drv), -1) << "zwischen zwei Spuren";
+    drv.seek(78);  EXPECT_EQ(gelesenerZylinder(drv), 39);
+
+    std::filesystem::remove(path);
+}
+
+TEST(FloppyDriveV2, Doppelschritt_AchtzigSpurDisketteBleibtUnveraendert) {
+    auto fmt  = makeFormat("test_80cyl_direkt", 80, 1);
+    auto path = makeTmpImgCylMarked(fmt, "_direkt");
+
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
+    ASSERT_TRUE(drv.mount(openImg(path, fmt)));
+
+    EXPECT_EQ(drv.pitch(), TrackPitch::Direct);
+    EXPECT_TRUE(drv.notices().empty());
+    drv.seek(37);  EXPECT_EQ(gelesenerZylinder(drv), 37);
+
+    std::filesystem::remove(path);
+}
+
+TEST(FloppyDriveV2, Halbschritt_AchtzigSpurDisketteImVierzigSpurLaufwerk) {
+    auto fmt  = makeFormat("test_80cyl", 80, 1);
+    auto path = makeTmpImgCylMarked(fmt, "_hs");
+
+    FloppyDriveV2 drv(builtinDriveProfile("K5600.10"));  // 40 Zylinder, 48 tpi
+    ASSERT_TRUE(drv.mount(openImg(path, fmt)))
+        << "frueher abgewiesen; jetzt liest das Laufwerk jede zweite Spur: "
+        << drv.lastError();
+
+    EXPECT_EQ(drv.pitch(), TrackPitch::HalfStep);
+    ASSERT_EQ(drv.notices().size(), 1u);
+    EXPECT_EQ(drv.notices()[0], "Laufwerk liest nur jede zweite Spur");
+
+    // Kopfposition n trifft Diskettenspur 2n — bei einer einseitigen
+    // Doppelschritt-Diskette ist genau das die gewoehnliche 40-Spur-Diskette.
+    drv.seek(0);   EXPECT_EQ(gelesenerZylinder(drv),  0);
+    drv.seek(1);   EXPECT_EQ(gelesenerZylinder(drv),  2);
+    drv.seek(39);  EXPECT_EQ(gelesenerZylinder(drv), 78);
+
+    std::filesystem::remove(path);
+}
+
+TEST(FloppyDriveV2, NurSeiteNull_ZweiseitigeDisketteImEinseitigenLaufwerk) {
+    auto fmt  = makeFormat("test_80cyl_2k", 80, 2);
+    auto path = makeTmpImgCylMarked(fmt, "_ss");
+
+    FloppyDriveV2 drv(builtinDriveProfile("K5600.20"));  // 80 Zylinder, EIN Kopf
+    ASSERT_TRUE(drv.mount(openImg(path, fmt)))
+        << "frueher abgewiesen; jetzt ist Seite 0 benutzbar: " << drv.lastError();
+
+    EXPECT_EQ(drv.pitch(), TrackPitch::Direct);
+    EXPECT_TRUE(drv.side0Only());
+    ASSERT_EQ(drv.notices().size(), 1u);
+    EXPECT_EQ(drv.notices()[0], "Nur Seite 0 verwendbar");
+
+    drv.seek(5);
+    EXPECT_EQ(gelesenerZylinder(drv, 0), 5);
+    EXPECT_TRUE(drv.track(1).empty()) << "diesen Kopf gibt es an dem Laufwerk nicht";
+
+    std::filesystem::remove(path);
+}
+
+TEST(FloppyDriveV2, ZweiHinweiseGleichzeitig) {
+    // Zweiseitige 80-Spur-Diskette im einseitigen 40-Spur-Laufwerk.
+    auto fmt  = makeFormat("test_80cyl_2k_b", 80, 2);
+    auto path = makeTmpImgCylMarked(fmt, "_beides");
+
+    FloppyDriveV2 drv(builtinDriveProfile("K5600.10"));
+    ASSERT_TRUE(drv.mount(openImg(path, fmt)));
+
+    ASSERT_EQ(drv.notices().size(), 2u);
+    EXPECT_EQ(drv.notices()[0], "Laufwerk liest nur jede zweite Spur");
+    EXPECT_EQ(drv.notices()[1], "Nur Seite 0 verwendbar");
+    EXPECT_EQ(drv.noticeText(),
+              "Laufwerk liest nur jede zweite Spur\nNur Seite 0 verwendbar");
+
+    std::filesystem::remove(path);
+}
+
+TEST(FloppyDriveV2, Doppelschritt_SchreibenZwischenDenSpurenWirdVerworfen) {
+    auto fmt  = makeFormat("test_40cyl_w", 40, 1);
+    auto path = makeTmpImgCylMarked(fmt, "_wverworfen");
+
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
+    ASSERT_TRUE(drv.mount(openImg(path, fmt)));
+    ASSERT_EQ(drv.pitch(), TrackPitch::DoubleStep);
+
+    std::vector<LogicalSector> sektoren;
+    for (uint8_t id = 1; id <= 2; ++id) {
+        LogicalSector ls;
+        ls.cyl = 1; ls.head = 0; ls.id = id; ls.size = 128;
+        ls.data.assign(128, 0x5A);
+        sektoren.push_back(std::move(ls));
+    }
+    const TrackImage spur = TrackCodec::buildTrack(sektoren, Encoding::MFM);
+
+    // Ungerade Kopfposition: dort liegt keine Spur → der Schreibstrom laeuft ins Leere.
+    drv.seek(3);
+    drv.mutableTrack(0) = spur;
+    drv.markTrackDirty(0);
+    EXPECT_FALSE(drv.writeTrackAt(3, 0, spur));
+
+    // Keine Diskettenspur darf sich veraendert haben.
+    ASSERT_NE(drv.image(), nullptr);
+    for (uint8_t c = 0; c < 40; ++c) {
+        auto parsed = TrackCodec::parseTrack(drv.image()->readTrack(c, 0));
+        ASSERT_FALSE(parsed.empty());
+        EXPECT_EQ(parsed[0].data[0], c) << "Spur " << (int)c << " wurde beschrieben";
+    }
+
+    // Gerade Position dagegen schreibt auf die getroffene Spur (Position 4 → Spur 2).
+    EXPECT_TRUE(drv.writeTrackAt(4, 0, spur));
+    auto nachher = TrackCodec::parseTrack(drv.image()->readTrack(2, 0));
+    ASSERT_FALSE(nachher.empty());
+    EXPECT_EQ(nachher[0].data[0], 0x5A);
+
+    std::filesystem::remove(path);
+}
+
+TEST(FloppyDriveV2, Anpassung_WirdBeimUnmountZurueckgesetzt) {
+    auto fmt  = makeFormat("test_40cyl_u", 40, 1);
+    auto path = makeTmpImgCylMarked(fmt, "_unmount");
+
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
+    ASSERT_TRUE(drv.mount(openImg(path, fmt)));
+    ASSERT_FALSE(drv.notices().empty());
+
+    drv.unmount();
+    EXPECT_EQ(drv.pitch(), TrackPitch::Direct);
+    EXPECT_FALSE(drv.side0Only());
+    EXPECT_TRUE(drv.notices().empty());
+    EXPECT_EQ(drv.noticeText(), "");
+
+    std::filesystem::remove(path);
+}
+
+/**
+ * @brief Der Gast darf die beiden Darstellungen derselben Diskette nicht unterscheiden.
+ *
+ * Ein und dieselbe physische Diskette — 40 Spuren auf 96-tpi-Radius — laesst sich auf
+ * zwei Arten abbilden: als **80-Zylinder-Abbild**, in dem nur die geraden Zylinder
+ * formatiert sind (so entsteht sie, wenn der Gast in diesem Laufwerk doppelschrittig
+ * formatiert, `step: 2` im Katalog), oder als **40-Zylinder-Abbild**, wie es von einem
+ * echten 48-tpi-Datentraeger kommt.  Unter dem Lesekopf muessen beide Bit fuer Bit
+ * dasselbe liefern — sonst ist die Uebersetzung falsch.
+ */
+TEST(FloppyDriveV2, Doppelschritt_IstDieselbeDisketteWieEinDoppelschrittAbbild) {
+    auto spurFuer = [](uint8_t nr) {
+        std::vector<LogicalSector> sektoren;
+        for (uint8_t id = 1; id <= 2; ++id) {
+            LogicalSector ls;
+            ls.cyl = nr; ls.head = 0; ls.id = id; ls.size = 128;
+            ls.data.assign(128, nr);
+            sektoren.push_back(std::move(ls));
+        }
+        return TrackCodec::buildTrack(sektoren, Encoding::MFM);
+    };
+
+    // (a) Doppelschritt-Abbild: 80 Zylinder, nur die geraden tragen Spuren.
+    FloppyDriveV2 doppel(builtinDriveProfile("K5601"));
+    ASSERT_TRUE(doppel.mount(DiskImage::createBlank(80, 1, Encoding::MFM)));
+    ASSERT_EQ(doppel.pitch(), TrackPitch::Direct);
+    for (uint8_t n = 0; n < 40; ++n)
+        ASSERT_TRUE(doppel.writeTrackAt(static_cast<uint8_t>(n * 2), 0, spurFuer(n)));
+
+    // (b) Dieselbe Diskette als 40-Zylinder-Abbild.
+    FloppyDriveV2 kompakt(builtinDriveProfile("K5601"));
+    ASSERT_TRUE(kompakt.mount(DiskImage::createBlank(40, 1, Encoding::MFM)));
+    ASSERT_EQ(kompakt.pitch(), TrackPitch::DoubleStep);
+    for (uint8_t n = 0; n < 40; ++n)
+        ASSERT_TRUE(kompakt.writeTrackAt(static_cast<uint8_t>(n * 2), 0, spurFuer(n)));
+
+    // Jede Kopfposition muss dasselbe liefern — auch die leeren dazwischen.
+    for (uint8_t pos = 0; pos < 80; ++pos) {
+        doppel.seek(pos);
+        kompakt.seek(pos);
+        EXPECT_EQ(doppel.track(0).bytes, kompakt.track(0).bytes)
+            << "Kopfposition " << (int)pos;
+    }
+    // Gegenprobe, damit der Vergleich nicht zwei leere Disketten beglaubigt.
+    doppel.seek(0);  EXPECT_FALSE(doppel.track(0).empty());
+    kompakt.seek(0); EXPECT_FALSE(kompakt.track(0).empty());
+    kompakt.seek(1); EXPECT_TRUE(kompakt.track(0).empty());
 }

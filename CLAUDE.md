@@ -228,6 +228,29 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
 > `UdosFormat.FormatsBrandNewBlankDiskette`, `UdosFormat.BuildsBootableSystemDiskAndBootsFromIt`
 > (blank disk → `.dmk` → format both sides → boot from it), `BootIntegrationCpa02.DmkBootsIntoRunningCpaOs`.
 >
+> **Spurdichte: die Diskette muss nicht zum Laufwerk passen** (2026-08-12,
+> `doc/design/09_floppy_drive.md` §7.2).  5,25″ kennt 48 tpi (40 Spuren) und 96 tpi (80).
+> Passt die Diskette nicht zum `DriveProfile`, wird sie **nicht mehr abgewiesen, sondern
+> übersetzt** — `FloppyDriveV2::mount()` legt einmalig `TrackPitch` und `side0Only` fest,
+> ausgerechnet wird an EINER Stelle (`mediumCylinder()`), durch die jeder Spurzugriff geht
+> (`track`/`mutableTrack`/`markTrackDirty`/**`writeTrackAt`** — auch das bekommt eine
+> *Kopfposition*).  40 Spuren im 80er-Laufwerk → `DoubleStep` (Position 2n = Spur n),
+> 80 Spuren im 40er → `HalfStep` (Position n = Spur 2n), zweiseitig im einseitigen →
+> Kopf 1 fehlt.  Je Einschränkung ein Satz in `notices()` → `A5120Machine::diskNotice` →
+> `k1520_disk_notice` → Laufwerkskasten der GUI (**kein** Meldungsfenster — die Diskette
+> ist benutzbar).  Drei Festlegungen, die man nicht aufweichen darf:
+> **(1)** Die *Spurzahl* entscheidet (48 tpi = 35–45 Zylinder, 96 tpi = ab 70), nicht das
+> Katalogformat — „nur die äußere Hälfte beschrieben" gibt es nicht; wer eine halb
+> beschriebene 96-tpi-Diskette abbilden will, braucht ein 80-Zylinder-Abbild mit
+> unformatierter Innenhälfte (`.hfe`/`.dmk`, nicht `.img`).
+> **(2)** Schreibzugriffe auf eine Position ohne Spur werden **verworfen** (Log-Warnung),
+> nicht auf die Nachbarspur umgeleitet.
+> **(3)** Beide Darstellungen derselben Diskette — 80 Zylinder mit formatierten geraden
+> (`step: 2`) und 40 Zylinder — müssen unter dem Kopf **byteweise gleich** sein; das ist
+> der Wächter `FloppyDriveV2.Doppelschritt_IstDieselbeDisketteWieEinDoppelschrittAbbild`.
+> Am laufenden CP/A gegengeprüft: Geometrie U (40 Spuren Doppelschritt) formatiert ein
+> 40-Zylinder-Abbild im K5601 voll und liest es fehlerfrei zurück.
+>
 > **UDOS-Laufwerkstypen (`SET DISKCON`) — Matrix in `doc/udos_diskettenformat.md` §12.3.**
 > Bootfähig herstellbar sind `41` (K5600.20), `31` (K5600.10, 40 Spuren) und `41` auf dem
 > 8″-MF6400 — Guards `Einseitig/UdosLaufwerkstypen.BautBootfaehigeSystemdiskette/*`
