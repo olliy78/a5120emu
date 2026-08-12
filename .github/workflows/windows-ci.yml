@@ -210,3 +210,114 @@ jobs:
             logs/
           if-no-files-found: ignore
           retention-days: 7
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Auslieferungsbau: statische CRT
+  # ───────────────────────────────────────────────────────────────────────────
+  #
+  # Der Bau, den das Windows-Paket später braucht — und der bis hierher NIE
+  # gelaufen ist.  Auf ihm steht die Prämisse des ganzen Installers:
+  #
+  #   Der Installer läuft per-user OHNE Administratorrechte (Anforderung A4) und
+  #   kann deshalb KEIN „Visual C++ Redistributable" nachinstallieren.  Die
+  #   ausgelieferte DLL muss ihre C-Laufzeit also selbst mitbringen (/MT).  Tut
+  #   sie das nicht, startet der Emulator auf einem frischen Windows gar nicht —
+  #   mit der Meldung „VCRUNTIME140.dll fehlt", die der Anwender nicht beheben
+  #   kann.  Genau das fällt sonst erst beim ersten echten Anwender auf.
+  #
+  # Warum das nicht im Job oben mitläuft: GoogleTest erzwingt die DYNAMISCHE CRT
+  # (gtest_force_shared_crt), und /MT neben /MD gibt beim Linken „mismatch
+  # detected for RuntimeLibrary".  Der Auslieferungsbau braucht deshalb
+  # zwingend -DBUILD_K1520_TESTS=OFF — also einen eigenen Job.
+  auslieferung:
+    name: Windows x64 — Auslieferungsbau (statische CRT)
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: MSVC-Umgebung (vcvars64) übernehmen
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * `
+                  -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+                  -property installationPath
+          if (-not $vs) { throw "Keine Visual-Studio-Installation mit C++-Werkzeugen gefunden" }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $wanted = @('PATH','INCLUDE','LIB','LIBPATH','VSINSTALLDIR','VCINSTALLDIR',
+                      'VCToolsInstallDir','WindowsSdkDir','WindowsSDKVersion','UCRTVersion')
+          cmd /c "`"$vcvars`" >nul 2>&1 && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              if ($wanted -contains $matches[1]) { "$($matches[1])=$($matches[2])" | Out-File $env:GITHUB_ENV -Append -Encoding utf8 }
+            }
+          }
+
+      - name: Ninja bereitstellen
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) { choco install ninja -y --no-progress }
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # -DK1520_FORMATS_DEFAULT= ist NICHT verhandelbar: sonst trägt jede
+      # ausgelieferte Bibliothek den absoluten Pfad des Baurechners als
+      # Suchkandidaten für formats.yaml (dieselbe Regel wie in release.yml).
+      - name: Bauen (/MT, ohne Tests)
+        shell: bash
+        run: |
+          cmake -B build_dist -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DLOG_LEVEL=3 \
+                -DK1520_MSVC_STATIC_CRT=ON \
+                -DBUILD_K1520_TESTS=OFF \
+                -DK1520_FORMATS_DEFAULT=
+          cmake --build build_dist -j --target k1520core k1520disk
+
+      # Der eigentliche Beweis.  Ein erfolgreicher Bau sagt NICHTS darüber, ob
+      # die CRT wirklich drin steckt — das steht nur in der Importtabelle.
+      - name: Hängt die DLL noch an einer fremden Laufzeit?
+        shell: pwsh
+        run: |
+          $verboten = 'msvcp\d+\.dll|vcruntime\d+\.dll|ucrtbase\.dll|api-ms-win-crt-'
+          foreach ($name in 'k1520core.dll','k1520disk.dll') {
+            $dll = Get-ChildItem -Recurse -Filter $name build_dist | Select-Object -First 1
+            if (-not $dll) { throw "$name wurde nicht gebaut" }
+            $abh = (& dumpbin /dependents $dll.FullName) |
+                   Select-String '^\s{4}\S+\.dll' | ForEach-Object { $_.Line.Trim() }
+            Write-Host "── $name ($([math]::Round($dll.Length/1KB)) KB) hängt an:"
+            $abh | ForEach-Object { Write-Host "     $_" }
+            $treffer = $abh | Where-Object { $_ -match $verboten }
+            if ($treffer) {
+              throw "$name braucht das VC-Redist: $($treffer -join ', ') — /MT hat nicht gegriffen (§5.1)"
+            }
+          }
+
+      # Und laufen muss sie auch.  Eine DLL ohne Abhängigkeiten, die beim Laden
+      # abstürzt, wäre die teuerste Art, den Test zu bestehen.  Geladen wird per
+      # ctypes — genau so, wie die GUI es später tut.
+      - name: Lädt sie und antwortet sie?
+        shell: bash
+        run: |
+          cat > ladetest.py <<'PY'
+          import ctypes, sys
+          lib = ctypes.CDLL(sys.argv[1])
+          lib.k1520_version.restype = ctypes.c_char_p
+          fassung = lib.k1520_version().decode()
+          print("k1520_version() =", fassung)
+          assert fassung.count(".") == 2, f"keine Versionsnummer: {fassung!r}"
+          PY
+          sed -i 's/^          //' ladetest.py
+          python ladetest.py "$(find build_dist -name k1520core.dll | head -1)"
+
+      - name: DLLs als Artefakt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k1520-windows-x64-statische-crt
+          path: build_dist/*.dll
+          if-no-files-found: ignore
+          retention-days: 7
