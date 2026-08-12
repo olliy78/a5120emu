@@ -573,19 +573,14 @@ macOS-Tripel, `paths.py` kennt `.dylib` und `~/Library/Application Support`).
 - **Code Signing**: Windows-Zertifikat (SmartScreen) und Apple Developer ID
   (Notarisierung) sind laufende Kosten — Entscheidung nötig, bevor über „Anwender" jenseits
   des Bekanntenkreises geredet wird.
-- **Diskettenauswahl**: `build_payload.sh` legt vorerst sechs Abbilder bei (vier CP/A, eine
-  SCPX, eine UDOS, Liste `DISKS_DEFAULT`). Unter welcher Lizenz die enthaltene
-  Originalsoftware weitergegeben werden darf, ist eine Rechte-, keine Technikfrage — bis zur
-  Klärung ist `--disks none` die konservative Variante.
+- **Diskettenauswahl**: `build_payload.sh` legt sechs Abbilder bei (vier CP/A, eine
+  SCPX, eine UDOS, Liste `DISKS_DEFAULT`) — genug, um jedes der drei Betriebssysteme
+  zu starten, ohne das Paket aufzublähen. Mit `--disks all` kommen alle aus `disks/`
+  mit, mit `--disks none` keine.
 - ~~**Schlankmachen unter Windows**~~ ✅ erledigt 2026-08-12: `slim.py` liest die
-  PE-Importtabelle selbst (`pe_imports`), weil der Anwender kein `dumpbin` hat.
-  316 → 119 MB. Frühere Fassung dieses Punktes: `slim.py` schneidet über `ldd` und
-  `strip` zu —
-  beides ELF-Werkzeuge. Die portablen Schnitte (QML, Qt-Werkzeuge, CPythons Testsuite,
-  Tcl/Tk) wären übertragbar, die tragende Hülle — *welche Qt-Bibliotheken wirklich
-  gebraucht werden* — nicht; unter Windows müsste das über die Importtabelle laufen
-  (`dumpbin /dependents`). Bis dahin belegt eine Windows-Installation **~316 MB statt
-  ~146** (gemessen 2026-08-12 im Paketjob); `install.ps1` sagt das beim Installieren ausdrücklich.
+  PE-Importtabelle selbst (`pe_imports`), weil auf dem Rechner des Anwenders kein
+  `dumpbin` liegt. Eine Windows-Installation belegt damit **123 MB statt 316**
+  (gemessen im Paketjob, `--disks none`).
 - **Versionsprüfung Payload ↔ venv**: ob der Launcher bei Versionsversatz automatisch
   nachinstalliert oder nur warnt.
 - **Proxy-Umgebungen**: `uv` respektiert `HTTPS_PROXY`; ob der Installer danach fragt, wenn

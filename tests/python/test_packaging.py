@@ -388,6 +388,41 @@ def test_installer_ps1_braucht_keine_nachladbaren_module():
         assert cmdlet not in code, (
             f"{cmdlet} steckt in einem nachladbaren Modul — bitte über .NET lösen")
 
+
+def test_release_notizen_nennen_jede_ausgelieferte_datei():
+    """Die Release-Beschreibung muss die Dateien erklären, die auch entstehen.
+
+    Ohne sie steht am Release nur „Full Changelog", und ein Anwender sieht drei
+    Dateien ohne Hinweis, welche er braucht.  Läuft die Vorlage von den echten
+    Namen weg — etwa wenn `build_payload.sh` das Archiv anders benennt —, ist
+    das schlimmer als gar kein Text: sie beschriebe dann Dateien, die es nicht
+    gibt.
+    """
+    vorlage = (PACKAGING / "release_notes.md.in").read_text(encoding="utf-8")
+    for muster in ("K1520emu-@VERSION@-win-x64-setup.exe",
+                   "k1520emu-@TAG@-windows-x86_64.zip",
+                   "k1520emu-@TAG@-linux-x86_64.tar.gz"):
+        assert muster in vorlage, f"{muster} fehlt in der Release-Beschreibung"
+    # Ein Verweis auf die Projektseite gehört dazu — das Release ist für viele
+    # der erste Kontakt mit dem Projekt.
+    assert "github.com/olliy78/a5120emu" in vorlage
+    assert vorlage.lstrip().startswith("# "), "keine Überschrift"
+
+
+def test_release_notizen_passen_zu_den_erzeugten_dateinamen():
+    """Die Namen in der Vorlage müssen die sein, die build_payload.sh bildet.
+
+    Dort heißt das Archiv `k1520emu-<version>-<plattform>` und das Setup
+    `K1520emu-<version>-win-x64-setup` (aus der .iss).  Zwei Schreibweisen, und
+    genau deshalb leicht zu verwechseln.
+    """
+    bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    assert 'NAME="k1520emu-$VERSION-$PLATFORM"' in bp, \
+        "Namensschema in build_payload.sh geändert — Release-Vorlage nachziehen"
+    iss = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
+    assert "OutputBaseFilename={#Produkt}-{#Version}-win-x64-setup" in iss, \
+        "Setup-Name in der .iss geändert — Release-Vorlage nachziehen"
+
 def test_ps1_hat_utf8_bom():
     """Windows PowerShell 5.1 liest eine .ps1 OHNE BOM in der ANSI-Codepage.
 

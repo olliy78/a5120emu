@@ -27,9 +27,10 @@ ARCHIVE=yes
 SETUP=no
 RELOCK=no
 
-# Mitgelieferte Beispieldisketten.  Bewusst eine kleine Auswahl: das Paket soll
-# klein bleiben, und was hier landet, muss weitergegeben werden dürfen
-# (offener Punkt §11 des Entwurfs).
+# Mitgelieferte Beispieldisketten.  Bewusst eine kleine Auswahl: je eine
+# startfähige Diskette für CP/A, SCPX und UDOS plus die beiden Combo-Disketten,
+# damit ein Anwender alle drei Betriebssysteme und die Fremdlaufwerkstypen
+# ausprobieren kann, ohne dass das Paket aufgeht.  Alles aus disks/: --disks all.
 DISKS_DEFAULT="cpa_cpa780_k5601_clock.hfe
 cpa_cpa780_k5601_noclock.hfe
 cpa_cpa780_combo5zoll_noclock.hfe

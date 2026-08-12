@@ -126,7 +126,18 @@ jobs:
           # nichts, legen beide an, und der zweite scheitert mit „already
           # exists".  Also anlegen DUERFEN beide, scheitern darf keiner — und
           # danach wird gewartet, bis es wirklich da ist.
-          gh release create "$TAG" --draft --title "$TAG" --generate-notes 2>/dev/null || true
+          # Der Beschreibungstext kommt aus packaging/release_notes.md.in — sonst
+          # steht am Release nur „Full Changelog", und ein Anwender sieht drei
+          # Dateien ohne einen Hinweis, welche er braucht.  Die Vorlage liegt im
+          # Repository und wird mit dem Code gepflegt.
+          TAG_OHNE_V="${TAG#v}"
+          sed -e "s/@TAG@/$TAG/g" -e "s/@VERSION@/$TAG_OHNE_V/g" \
+              packaging/release_notes.md.in > "$RUNNER_TEMP/notes.md"
+          grep -q '@' "$RUNNER_TEMP/notes.md" \
+            && { echo "unersetzte Platzhalter in den Release-Notizen:" >&2;
+                 grep -n '@[A-Z]' "$RUNNER_TEMP/notes.md" >&2; exit 1; } || true
+          gh release create "$TAG" --draft --title "K1520emu $TAG" \
+              --notes-file "$RUNNER_TEMP/notes.md" 2>/dev/null || true
           for versuch in 1 2 3 4 5; do
               if gh release view "$TAG" >/dev/null 2>&1; then break; fi
               echo "warte auf das Release (Versuch $versuch)…"; sleep 3
@@ -290,7 +301,18 @@ jobs:
           set -eu
           # Siehe Linux-Job: beide laufen gleichzeitig, anlegen darf jeder,
           # scheitern keiner.
-          gh release create "$TAG" --draft --title "$TAG" --generate-notes 2>/dev/null || true
+          # Der Beschreibungstext kommt aus packaging/release_notes.md.in — sonst
+          # steht am Release nur „Full Changelog", und ein Anwender sieht drei
+          # Dateien ohne einen Hinweis, welche er braucht.  Die Vorlage liegt im
+          # Repository und wird mit dem Code gepflegt.
+          TAG_OHNE_V="${TAG#v}"
+          sed -e "s/@TAG@/$TAG/g" -e "s/@VERSION@/$TAG_OHNE_V/g" \
+              packaging/release_notes.md.in > "$RUNNER_TEMP/notes.md"
+          grep -q '@' "$RUNNER_TEMP/notes.md" \
+            && { echo "unersetzte Platzhalter in den Release-Notizen:" >&2;
+                 grep -n '@[A-Z]' "$RUNNER_TEMP/notes.md" >&2; exit 1; } || true
+          gh release create "$TAG" --draft --title "K1520emu $TAG" \
+              --notes-file "$RUNNER_TEMP/notes.md" 2>/dev/null || true
           for versuch in 1 2 3 4 5; do
               if gh release view "$TAG" >/dev/null 2>&1; then break; fi
               echo "warte auf das Release (Versuch $versuch)…"; sleep 3

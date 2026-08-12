@@ -1,0 +1,77 @@
+# K1520emu @TAG@
+
+Hardwarenahe Emulation des **Robotron A5120**, eines Z80-Bürocomputers des VEB Robotron
+Dresden (DDR, 1982). Nachgebildet wird nicht das Betriebssystem, sondern der **K1520-Bus
+mit seinen Steckkarten** — es gibt keine BIOS-Traps: Boot-ROM, BIOS und Betriebssystem
+laufen als echter Z80-Code. Deshalb bootet die Maschine mehrere Original-Betriebssysteme
+von Original-Disketten: **CP/A**, **SCPX** und **UDOS**.
+
+Beschreibung, Aufbau und Entwicklungsstand: **[Projektseite mit README](https://github.com/olliy78/a5120emu#readme)**
+
+---
+
+## Welche Datei brauche ich?
+
+| Datei | System | Wofür |
+|-------|--------|-------|
+| **`K1520emu-@VERSION@-win-x64-setup.exe`** | Windows 10/11, 64 Bit | **Der normale Weg.** Doppelklicken, dem Assistenten folgen. Legt Startmenü-Einträge an und lässt sich über *Einstellungen → Apps* wieder entfernen. |
+| `k1520emu-@TAG@-windows-x86_64.zip` | Windows 10/11, 64 Bit | Dasselbe ohne Installationsprogramm — auspacken und in PowerShell `.\install.ps1` aufrufen. Für alle, die kein Setup mögen oder das Ziel vorgeben wollen. |
+| `k1520emu-@TAG@-linux-x86_64.tar.gz` | Linux, x86-64 | Auspacken und `./install.sh` aufrufen. |
+| `*.sha256` | | Prüfsummen. Kontrolle: `sha256sum -c <datei>.sha256` bzw. unter Windows `Get-FileHash <datei>`. |
+
+Beide Systeme installieren **benutzerlokal, ohne Administratorrechte**.
+
+## Installieren
+
+```sh
+# Linux
+tar xzf k1520emu-@TAG@-linux-x86_64.tar.gz
+cd k1520emu-@TAG@-linux-x86_64
+./install.sh                     # fragt nach Ziel und Diskettenordner
+```
+
+```powershell
+# Windows, ohne Setup
+Expand-Archive k1520emu-@TAG@-windows-x86_64.zip
+cd k1520emu-@TAG@-windows-x86_64
+.\install.ps1
+```
+
+Gefragt wird zweimal: nach dem **Installationsverzeichnis** und nach dem Ordner für die
+**Arbeitsdisketten** (Vorschlag `<Dokumente>/K1520emu`). Der zweite ist bewusst getrennt —
+dorthin schreibt der Emulator Änderungen an einer Diskette zurück, und ein Update fasst
+ihn nie an.
+
+## Was beim ersten Mal passiert
+
+Das Paket ist ~3 MB, die Installation lädt danach **einmalig ~120 MB** nach: einen eigenen
+Python 3.12 und Qt, beides **innerhalb der Installation**. Das braucht eine
+Internetverbindung und ein paar Minuten. Danach startet der Emulator ohne Netz, und es sind
+rund 150 MB (Linux) bzw. 123 MB (Windows) belegt. Systempython und Systempakete werden
+nicht angefasst.
+
+Sechs Beispieldisketten sind dabei — je eine startfähige für CP/A, SCPX und UDOS sowie zwei
+Combo-Disketten mit Fremdlaufwerkstypen. Sie landen beim ersten Start im Diskettenordner.
+
+## Gut zu wissen
+
+- **Windows: SmartScreen warnt** beim ersten Start, weil die Datei nicht signiert ist
+  („Weitere Informationen" → „Trotzdem ausführen"). Ein Code-Signing-Zertifikat kostet
+  laufend Geld; das ist bewusst noch nicht angeschafft.
+- **Die Startmenü-Einträge tragen vorerst das Python-Symbol** — ein eigenes Programmsymbol
+  fehlt noch.
+- **Deinstallieren:** Windows über *Einstellungen → Apps* oder den Startmenü-Eintrag,
+  Linux mit `./install.sh --uninstall`. Die Arbeitsdisketten bleiben dabei stehen; erst
+  `--purge` bzw. `-Purge` entfernt auch sie.
+- **Mitgeliefert ist außerdem das `k1520DiskTool`** — damit holt man Dateien von CP/A-,
+  SCPX- und UDOS-Disketten heraus und schreibt sie zurück (`.img`, `.hfe`, `.dmk`).
+
+## Geht etwas schief?
+
+Die Installation protokolliert alles: unter Windows in `bootstrap.log` im
+Installationsverzeichnis, unter Linux in der Ausgabe von `install.sh`. Wo der Emulator
+seine Dateien sucht, beantwortet `python3 app/main.py --paths` in der Installation.
+
+---
+
+**Alle Änderungen:** https://github.com/olliy78/a5120emu/commits/@TAG@
