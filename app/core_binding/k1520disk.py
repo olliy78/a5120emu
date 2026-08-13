@@ -66,6 +66,8 @@ _lib.k1520d_open.argtypes = [_CS, _CS, ctypes.c_bool]
 _lib.k1520d_open.restype = _H
 _lib.k1520d_create.argtypes = [_CS, _CS, _CS]
 _lib.k1520d_create.restype = _H
+_lib.k1520d_create_bootable.argtypes = [_CS, _CS, _CS, _CS]
+_lib.k1520d_create_bootable.restype = _H
 _lib.k1520d_flush.argtypes = [_H]
 _lib.k1520d_flush.restype = ctypes.c_bool
 _lib.k1520d_save_as.argtypes = [_H, _CS]
@@ -98,6 +100,16 @@ _lib.k1520d_fs_type.argtypes = [_CS]
 _lib.k1520d_fs_type.restype = _CS
 _lib.k1520d_catalog_report.argtypes = []
 _lib.k1520d_catalog_report.restype = _CS
+
+# ── Bootabbild (Systemspuren) ───────────────────────────────────────────────
+_lib.k1520d_fs_boot_capacity.argtypes = [_CS]
+_lib.k1520d_fs_boot_capacity.restype = _U64
+_lib.k1520d_boot_area_size.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_boot_area_size.restype = _U64
+_lib.k1520d_read_boot_image.argtypes = [_H, ctypes.c_int, _CS]
+_lib.k1520d_read_boot_image.restype = ctypes.c_bool
+_lib.k1520d_write_boot_image.argtypes = [_H, ctypes.c_int, _CS]
+_lib.k1520d_write_boot_image.restype = ctypes.c_bool
 _lib.k1520d_detect.argtypes = [_CS]
 _lib.k1520d_detect.restype = _CS
 _lib.k1520d_detected_format.argtypes = [_H]
@@ -146,6 +158,39 @@ _lib.k1520d_entry_hidden.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_entry_hidden.restype = ctypes.c_bool
 _lib.k1520d_entry_damaged.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_entry_damaged.restype = ctypes.c_bool
+
+# ── UDOS-Kopfsektorangaben je Eintrag ───────────────────────────────────────
+# Einzeln deklariert statt in einer Schleife: `test_disk_c_api.py` gleicht Header,
+# Bibliothek und diese Datei MECHANISCH ab und findet nur, was hier wörtlich steht.
+_lib.k1520d_entry_start.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_start.restype = ctypes.c_uint16
+_lib.k1520d_entry_record_len.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_record_len.restype = ctypes.c_uint16
+_lib.k1520d_entry_block_len.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_block_len.restype = ctypes.c_uint16
+_lib.k1520d_entry_segment.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_segment.restype = ctypes.c_uint16
+_lib.k1520d_entry_segment_len.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_segment_len.restype = ctypes.c_uint16
+_lib.k1520d_entry_low_addr.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_low_addr.restype = ctypes.c_uint16
+_lib.k1520d_entry_high_addr.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_high_addr.restype = ctypes.c_uint16
+_lib.k1520d_entry_stack_size.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_stack_size.restype = ctypes.c_uint16
+_lib.k1520d_entry_extra.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_extra.restype = ctypes.c_uint32
+_lib.k1520d_entry_created.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_created.restype = _CS
+_lib.k1520d_set_udos_attrs.argtypes = [
+    _H, _CS, _CS, _CS, _CS, _CS,
+    ctypes.c_bool, ctypes.c_uint16,
+    ctypes.c_bool, ctypes.c_uint16,
+    ctypes.c_bool, ctypes.c_uint16, ctypes.c_uint16,
+    ctypes.c_bool, ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16,
+    ctypes.c_bool, ctypes.c_uint32,
+]
+_lib.k1520d_set_udos_attrs.restype = ctypes.c_bool
 
 # ── Übertragung ─────────────────────────────────────────────────────────────
 _lib.k1520d_extract.argtypes = [_H, _CS, _CS, ctypes.c_int]
@@ -196,6 +241,12 @@ class FileSystemInfo:
     type: str          # 'cpm' | 'udos'
     format: str        # Geometrie
     description: str
+    boot_capacity: int = 0   # Byte in den Systemspuren; 0 = nicht bootfähig
+
+    @property
+    def bootable(self) -> bool:
+        """Kann dieses Dateisystem überhaupt eine Bootdiskette tragen?"""
+        return self.boot_capacity > 0
 
 
 def filesystems() -> List[FileSystemInfo]:
@@ -208,8 +259,18 @@ def filesystems() -> List[FileSystemInfo]:
             type=_s(_lib.k1520d_fs_type(_b(name))),
             format=_s(_lib.k1520d_fs_format(_b(name))),
             description=_s(_lib.k1520d_fs_description(_b(name))),
+            boot_capacity=int(_lib.k1520d_fs_boot_capacity(_b(name))),
         ))
     return out
+
+
+def boot_capacity(filesystem: str) -> int:
+    """Wie viele Byte fassen die Systemspuren dieses Dateisystems? (0 = keine)
+
+    Damit lässt sich schon bei der Auswahl sagen, ob eine Bootdiskette möglich
+    ist — ohne dass eine Diskette existiert.
+    """
+    return int(_lib.k1520d_fs_boot_capacity(_b(filesystem)))
 
 
 def catalog_report() -> str:
@@ -245,6 +306,20 @@ class Entry:
     hidden: bool = False
     damaged: bool = False
     side_dir: str = ""    # 'Side0'/'Side1' — leer bei einseitigen Dateisystemen
+
+    # ── UDOS-Kopfsektorangaben (bei CP/M alle 0 bzw. leer) ──────────────────
+    # Sie stehen NICHT in den Bytes der Datei, steuern aber, wie UDOS sie lädt
+    # (doc/udos_diskettenformat.md §6/§14).
+    entry: int = 0          # ENTRY — Einsprungadresse (Typ P/P1)
+    record_len: int = 0     # Satzlänge (Zuteilungseinheit)
+    block_len: int = 0      # zweite Längenangabe (Kopfsektor Offset 17)
+    segment: int = 0        # SEGMENTS: Anfang …
+    segment_len: int = 0    # … und Länge
+    low_addr: int = 0       # LOW ADDRESS  \
+    high_addr: int = 0      # HIGH ADDRESS  } was der Lader zuteilen lässt
+    stack_size: int = 0     # STACK SIZE   /
+    extra: int = 0          # Kopfsektor 44…47 (Bedeutung offen)
+    created: str = ""       # Erstellungsvermerk (Datum ODER Versionstext)
 
     @property
     def side_prefix(self) -> str:
@@ -306,10 +381,22 @@ class DiskTool:
         return cls(h, p)
 
     @classmethod
-    def create(cls, path, filesystem: str, label: str = "") -> "DiskTool":
-        """Neue, leere Diskette anlegen (formatieren + Dateisystem initialisieren)."""
+    def create(cls, path, filesystem: str, label: str = "",
+               boot_image=None) -> "DiskTool":
+        """Neue, leere Diskette anlegen (formatieren + Dateisystem initialisieren).
+
+        Mit ``boot_image`` (Pfad einer ``.bin``-Datei) wandert dieses Byteband in die
+        **Systemspuren** vor dem Dateisystem — erst das macht eine Diskette bootfähig.
+        Passt es nicht hinein, wird **gar nichts** angelegt.
+
+        Raises:
+            K1520DiskError: Dateisystem unbekannt, Container unpassend, oder das
+                Bootabbild ist grösser als die Systemspuren (die Meldung nennt beide
+                Zahlen).
+        """
         p = os.fspath(path)
-        h = _lib.k1520d_create(_b(p), _b(filesystem), _b(label))
+        boot = os.fspath(boot_image) if boot_image else ""
+        h = _lib.k1520d_create_bootable(_b(p), _b(filesystem), _b(label), _b(boot))
         if not h:
             raise K1520DiskError(_s(_lib.k1520d_last_open_error()))
         return cls(h, p)
@@ -394,6 +481,16 @@ class DiskTool:
                 hidden=bool(_lib.k1520d_entry_hidden(self._h, i)),
                 damaged=bool(_lib.k1520d_entry_damaged(self._h, i)),
                 side_dir=self.volume_dir(v),
+                entry=int(_lib.k1520d_entry_start(self._h, i)),
+                record_len=int(_lib.k1520d_entry_record_len(self._h, i)),
+                block_len=int(_lib.k1520d_entry_block_len(self._h, i)),
+                segment=int(_lib.k1520d_entry_segment(self._h, i)),
+                segment_len=int(_lib.k1520d_entry_segment_len(self._h, i)),
+                low_addr=int(_lib.k1520d_entry_low_addr(self._h, i)),
+                high_addr=int(_lib.k1520d_entry_high_addr(self._h, i)),
+                stack_size=int(_lib.k1520d_entry_stack_size(self._h, i)),
+                extra=int(_lib.k1520d_entry_extra(self._h, i)),
+                created=_s(_lib.k1520d_entry_created(self._h, i)),
             ))
         return out
 
@@ -446,6 +543,53 @@ class DiskTool:
 
     def fits(self, src_dir) -> bool:
         return self.check_fit(src_dir) == "passt"
+
+    def set_udos_attrs(self, name: str, *, type: Optional[str] = None,
+                       properties: Optional[str] = None,
+                       created: Optional[str] = None,
+                       modified: Optional[str] = None,
+                       entry: Optional[int] = None,
+                       block_len: Optional[int] = None,
+                       segment: Optional[tuple] = None,
+                       memory: Optional[tuple] = None,
+                       extra: Optional[int] = None) -> None:
+        """UDOS-Kopfsektorangaben einer vorhandenen Datei ändern.
+
+        Der Dateiinhalt bleibt unangetastet; **nicht angegebene Felder bleiben
+        stehen**.  ``segment=(anfang, länge)``, ``memory=(low, high, stack)``;
+        ``properties=";"`` löscht alle Eigenschaften.
+
+        Raises:
+            K1520DiskError: schreibgeschützt, Datei unbekannt, oder CP/M (dort gibt
+                es diese Angaben nicht).
+        """
+        seg = segment or (0, 0)
+        mem = memory or (0, 0, 0)
+        if not _lib.k1520d_set_udos_attrs(
+                self._h, _b(name), _b(type or ""), _b(properties or ""),
+                _b(created or ""), _b(modified or ""),
+                entry is not None, int(entry or 0),
+                block_len is not None, int(block_len or 0),
+                segment is not None, int(seg[0]), int(seg[1]),
+                memory is not None, int(mem[0]), int(mem[1]), int(mem[2]),
+                extra is not None, int(extra or 0)):
+            raise K1520DiskError(self._fail())
+
+    # ── Bootabbild (Systemspuren) ───────────────────────────────────────────
+
+    def boot_area_size(self, volume: int = 0) -> int:
+        """Fassungsvermögen der Systemspuren in Byte; 0 = nicht bootfähig."""
+        return int(_lib.k1520d_boot_area_size(self._h, volume))
+
+    def read_boot_image(self, path, volume: int = 0) -> None:
+        """Systemspuren in eine ``.bin``-Datei sichern (Bootabbild herausholen)."""
+        if not _lib.k1520d_read_boot_image(self._h, volume, _b(os.fspath(path))):
+            raise K1520DiskError(self._fail())
+
+    def write_boot_image(self, path, volume: int = 0) -> None:
+        """Bootabbild in die Systemspuren schreiben (danach ``flush()``)."""
+        if not _lib.k1520d_write_boot_image(self._h, volume, _b(os.fspath(path))):
+            raise K1520DiskError(self._fail())
 
     # ── Dateibindung ────────────────────────────────────────────────────────
 

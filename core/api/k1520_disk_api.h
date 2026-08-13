@@ -58,6 +58,42 @@ K1520_API K1520Disk k1520d_open(const char* path, const char* fs_name, bool read
  */
 K1520_API K1520Disk k1520d_create(const char* path, const char* fs_name, const char* label);
 
+/**
+ * @brief Wie @ref k1520d_create, aber mit **Bootabbild** in den Systemspuren.
+ *
+ * Bootfaehig wird eine Diskette durch die Spuren VOR dem Dateisystem — das Lade-ROM
+ * liest Spur 0 blind, lange bevor es ein Dateisystem gibt.  @p boot_image ist eine
+ * rohe `.bin`-Datei mit genau diesem Byteband (herausholen laesst es sich aus einer
+ * vorhandenen Diskette: @ref k1520d_read_boot_image).
+ *
+ * Passt die Datei nicht in die Systemspuren, wird **gar nichts angelegt** — der Grund
+ * steht dann in @ref k1520d_last_open_error.
+ *
+ * @param boot_image NULL oder "" = gewoehnliche, nicht bootfaehige Diskette
+ */
+K1520_API K1520Disk k1520d_create_bootable(const char* path, const char* fs_name,
+                                           const char* label, const char* boot_image);
+
+/* ─── Bootabbild (Systemspuren) ───────────────────────────────────────────── */
+
+/**
+ * @brief Wie viele Byte fassen die Systemspuren dieses Dateisystems?
+ *
+ * Ohne Diskette zu beantworten — die Oberflaeche kann damit schon bei der Auswahl
+ * sagen, ob eine Bootdiskette ueberhaupt moeglich ist.
+ * @return 0 = dieses Dateisystem hat keine Systemspuren (beginnt auf Zylinder 0).
+ */
+K1520_API uint64_t k1520d_fs_boot_capacity(const char* fs_name);
+
+/// @brief Dasselbe fuer eine geoeffnete Diskette (@p volume = Seite, UDOS).
+K1520_API uint64_t k1520d_boot_area_size(K1520Disk h, int volume);
+
+/// @brief Systemspuren in eine Datei schreiben (Bootabbild sichern).
+K1520_API bool k1520d_read_boot_image(K1520Disk h, int volume, const char* path);
+
+/// @brief Bootabbild aus einer Datei in die Systemspuren schreiben (danach @ref k1520d_flush).
+K1520_API bool k1520d_write_boot_image(K1520Disk h, int volume, const char* path);
+
 /// @brief Aenderungen in die gebundene Datei schreiben (legt beim ersten Mal `<name>~` an).
 K1520_API bool k1520d_flush(K1520Disk h);
 /// @brief Unter neuem Namen/Container speichern und **umbinden** (auch bei Schreibschutz).
@@ -130,6 +166,52 @@ K1520_API const char* k1520d_entry_attrs(K1520Disk h, int i);
 K1520_API const char* k1520d_entry_date(K1520Disk h, int i);
 K1520_API bool        k1520d_entry_hidden(K1520Disk h, int i);
 K1520_API bool        k1520d_entry_damaged(K1520Disk h, int i);
+
+/* ─── UDOS-Kopfsektorangaben eines Eintrags ───────────────────────────────────
+ * Eine UDOS-Datei traegt mehr als Name und Bytes; diese Angaben steuern, wie das
+ * Betriebssystem sie LAEDT (doc/udos_diskettenformat.md §6 und §14).  Bei CP/M sind
+ * sie alle 0 bzw. leer.                                                        */
+
+/// @brief ENTRY — Einsprungadresse (Typ P/P1).
+K1520_API uint16_t    k1520d_entry_start(K1520Disk h, int i);
+/// @brief Satzlaenge in Byte (Zuteilungseinheit).
+K1520_API uint16_t    k1520d_entry_record_len(K1520Disk h, int i);
+/// @brief Zweite Laengenangabe (Kopfsektor Offset 17) — bei 256/512 Byte Satzlaenge 0.
+K1520_API uint16_t    k1520d_entry_block_len(K1520Disk h, int i);
+/// @brief SEGMENTS: Anfang und Laenge des Speichersegments.
+K1520_API uint16_t    k1520d_entry_segment(K1520Disk h, int i);
+K1520_API uint16_t    k1520d_entry_segment_len(K1520Disk h, int i);
+/// @brief LOW/HIGH ADDRESS und STACK SIZE — der zugeteilte Speicher.
+K1520_API uint16_t    k1520d_entry_low_addr(K1520Disk h, int i);
+K1520_API uint16_t    k1520d_entry_high_addr(K1520Disk h, int i);
+K1520_API uint16_t    k1520d_entry_stack_size(K1520Disk h, int i);
+/// @brief Kopfsektor Offset 44…47 (Bedeutung offen, unveraendert uebernehmen).
+K1520_API uint32_t    k1520d_entry_extra(K1520Disk h, int i);
+/// @brief Erstellungsvermerk (Datum ODER Versionstext wie "V 4.3").
+K1520_API const char* k1520d_entry_created(K1520Disk h, int i);
+
+/**
+ * @brief Kopfsektorangaben einer vorhandenen Datei aendern (nur UDOS).
+ *
+ * Fuer die Oberflaeche gedacht: der Dateiinhalt bleibt unangetastet.  **Leere
+ * Zeichenketten und `false`-Kennzeichen lassen das jeweilige Feld unveraendert**, so
+ * dass ein einzelnes Feld gesetzt werden kann, ohne die uebrigen zu kennen.
+ *
+ * @param name      wie @ref k1520d_entry_name, ggf. mit `SideN/`-Praefix
+ * @param type      "A"/"P"/"P1"/"B"; NULL/"" = unveraendert
+ * @param props     "WELS"; NULL/"" = unveraendert, ";" = alle loeschen
+ * @param created   6 Zeichen; NULL/"" = unveraendert
+ * @param modified  "JJMMTT"; NULL/"" = unveraendert
+ */
+K1520_API bool k1520d_set_udos_attrs(K1520Disk h, const char* name,
+                                     const char* type, const char* props,
+                                     const char* created, const char* modified,
+                                     bool set_entry, uint16_t entry,
+                                     bool set_block_len, uint16_t block_len,
+                                     bool set_segment, uint16_t segment, uint16_t segment_len,
+                                     bool set_memory, uint16_t low, uint16_t high,
+                                     uint16_t stack,
+                                     bool set_extra, uint32_t extra);
 
 /* ─── Uebertragung ───────────────────────────────────────────────────────────
  * `name` darf das Seitenpraefix tragen: "Side1/HELP.DAT.00".                  */

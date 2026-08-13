@@ -46,6 +46,33 @@ uint64_t UdosFileHeader::length() const {
     return voll;
 }
 
+/// @brief Typkuerzel → Typbyte (§6); unbekannt/leer = aus dem Textmodus ableiten.
+static uint8_t udosTypByte(const std::string& kuerzel, bool text) {
+    if (kuerzel == "A")  return 0x20;
+    if (kuerzel == "P")  return 0x80;
+    if (kuerzel == "P1") return 0x81;
+    if (kuerzel == "B")  return 0x10;
+    if (kuerzel == "D")  return 0x40;
+    return text ? 0x20 : 0x10;
+}
+
+/// @brief Eigenschaftsbuchstaben (W E L S R F) → Byte (§6).
+static uint8_t udosEigenschaftsByte(const std::string& buchstaben) {
+    uint8_t b = 0;
+    for (char c : buchstaben) {
+        switch (c) {
+            case 'W': b |= 0x80; break;
+            case 'E': b |= 0x40; break;
+            case 'L': b |= 0x20; break;
+            case 'S': b |= 0x10; break;
+            case 'R': b |= 0x08; break;
+            case 'F': b |= 0x04; break;
+            default: break;
+        }
+    }
+    return b;
+}
+
 std::string UdosFileHeader::typeName() const {
     switch (type_byte) {
         case 0x20: return "A";
@@ -193,8 +220,19 @@ bool UdosFileSystem::readHeader(UdosPointer p, UdosFileHeader& out) const {
     out.type_byte        = d[12];
     out.record_count     = le16(d.data() + 13);
     out.record_len       = le16(d.data() + 15);
+    out.block_len        = le16(d.data() + 17);
     out.properties       = d[19];
     out.entry_addr       = le16(d.data() + 20);
+    // Offset 40/42: Ladeadresse und Laenge des Speicherabbilds.  Ohne sie laedt der
+    // UDOS-Lader nichts an die richtige Stelle — eine kopierte Systemdatei bringt die
+    // Diskette dann in den Debugger (`BREAK <Startadresse>`), weil dort 0xFF steht.
+    out.segment_start        = le16(d.data() + 40);
+    out.segment_len        = le16(d.data() + 42);
+    out.low_addr        = le16(d.data() + 122);
+    out.high_addr          = le16(d.data() + 124);
+    out.stack_size        = le16(d.data() + 126);
+    out.extra            = static_cast<uint32_t>(le16(d.data() + 44))
+                         | (static_cast<uint32_t>(le16(d.data() + 46)) << 16);
     out.bytes_in_last    = le16(d.data() + 22);
     out.created          = ascii6(d.data() + 24);
     out.modified         = ascii6(d.data() + 32);
@@ -255,8 +293,21 @@ bool UdosFileSystem::readChain(const UdosFileHeader& hdr, std::vector<uint8_t>& 
         }
     }
 
+    // Normalerweise endet die Datei bei @ref UdosFileHeader::length.  **Bei
+    // Programmdateien reicht das Speicherabbild aber ueber das logische Dateiende
+    // hinaus**: `OS` ist 5504 Byte lang, sein Abbild 5632 (11 volle Saetze à 512).
+    // Die 128 Byte dahinter sind echter Programmcode — der Nukleus springt selbst
+    // hinein (2580H).  Wer sie beim Extrahieren abschneidet, kann die Datei nicht
+    // mehr zurueckschreiben: die Diskette bootet dann zwar, stuerzt aber beim ersten
+    // Kommando in den UDOS-Monitor (doc/udos_diskettenformat.md §14.4).
+    // NUR bei Programmen (P/P1): dort sind die Segmentfelder ueberhaupt ein Segment.
+    // Bei Typ A steht an derselben Stelle Text (`OS.INIT` traegt dort "SCREEN"), der
+    // als Laenge gelesen jede Textdatei aufblaehen wuerde.
     const uint64_t laenge = hdr.length();
-    if (out.size() > laenge) out.resize(static_cast<size_t>(laenge));
+    const bool programm = (hdr.type_byte == 0x80 || hdr.type_byte == 0x81);
+    const bool abbild_reicht_weiter = programm && hdr.segment_len > laenge;
+    if (!abbild_reicht_weiter && out.size() > laenge)
+        out.resize(static_cast<size_t>(laenge));
     return true;
 }
 
@@ -318,6 +369,21 @@ std::vector<FileEntry> UdosFileSystem::list() const {
             e.size       = hdr.length();
             e.type       = hdr.typeName();
             e.attributes = hdr.propertyLetters();
+            e.entry_addr = hdr.entry_addr;
+            e.record_len = hdr.record_len;
+            e.block_len  = hdr.block_len;
+            e.bytes_in_last = hdr.bytes_in_last;
+            e.extra      = hdr.extra;
+            e.created    = hdr.created;
+            e.record_len = hdr.record_len;
+            e.block_len  = hdr.block_len;
+            e.bytes_in_last = hdr.bytes_in_last;
+            e.extra      = hdr.extra;
+            e.segment_start  = hdr.segment_start;
+            e.segment_len  = hdr.segment_len;
+            e.low_addr  = hdr.low_addr;
+            e.high_addr    = hdr.high_addr;
+            e.stack_size  = hdr.stack_size;
             e.date       = hdr.modified.empty() ? hdr.created : hdr.modified;
         } else {
             e.damaged = true;
@@ -428,6 +494,44 @@ bool UdosFileSystem::allocSectors(uint32_t n, std::vector<UdosPointer>& out) {
         for (const UdosPointer& p : out) bitmap_.setUsed(p.track, p.sectorId(), false);
         out.clear();
         return fail("Diskette voll: " + std::to_string(n) + " Sektoren noetig");
+    }
+    return true;
+}
+
+bool UdosFileSystem::allocRecords(uint32_t saetze, uint32_t sek_je_satz,
+                                  std::vector<UdosPointer>& out) {
+    out.clear();
+    if (sek_je_satz == 0) sek_je_satz = 1;
+    if (sek_je_satz > secs_per_track_)
+        return fail("Satzlaenge passt nicht in eine Spur ("
+                    + std::to_string(sek_je_satz) + " Sektoren noetig, "
+                    + std::to_string(secs_per_track_) + " je Spur)");
+
+    uint32_t gefunden = 0;
+    for (uint8_t t = 0; t < tracks_ && gefunden < saetze; ++t) {
+        if (reservedTrack(t)) continue;
+        // Ein Satz darf keine Spurgrenze ueberschreiten (§7) — deshalb je Spur nur
+        // Fenster suchen, die ganz hineinpassen.
+        for (uint8_t s = 1; s + sek_je_satz - 1 <= secs_per_track_ && gefunden < saetze; ) {
+            bool frei = true;
+            for (uint32_t k = 0; k < sek_je_satz; ++k)
+                if (bitmap_.used(t, static_cast<uint8_t>(s + k))) { frei = false; s += k + 1; break; }
+            if (!frei) continue;
+            for (uint32_t k = 0; k < sek_je_satz; ++k) {
+                const uint8_t id = static_cast<uint8_t>(s + k);
+                bitmap_.setUsed(t, id, true);
+                out.push_back(UdosPointer{static_cast<uint8_t>(id - 1), t});
+            }
+            ++gefunden;
+            s = static_cast<uint8_t>(s + sek_je_satz);
+        }
+    }
+
+    if (gefunden < saetze) {
+        for (const UdosPointer& p : out) bitmap_.setUsed(p.track, p.sectorId(), false);
+        out.clear();
+        return fail("Diskette voll: " + std::to_string(saetze) + " Saetze zu je "
+                    + std::to_string(sek_je_satz) + " Sektoren noetig");
     }
     return true;
 }
@@ -560,20 +664,39 @@ bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
         break;
     }
 
-    constexpr uint16_t satzlen = kSector;        // s. Abschnittskommentar
+    // Satzlaenge: Vorgabe 128, aber UDOS-Systemdateien haben groessere Saetze
+    // (`ZDOS` 1024, `OS` 512) — mit 128 zurueckgeschrieben bootet die Diskette nicht.
+    const uint16_t satzlen = opt.udos_record_len ? opt.udos_record_len : kSector;
+    if (satzlen == 0 || satzlen % kSector != 0)
+        return fail("Satzlaenge " + std::to_string(satzlen)
+                    + " ist kein Vielfaches von 128");
+    const uint32_t sek_je_satz = satzlen / kSector;
     const uint32_t saetze  = static_cast<uint32_t>((data.size() + satzlen - 1) / satzlen);
     const uint16_t im_letzten = static_cast<uint16_t>(data.size() % satzlen);
 
-    // Kopfsektor + Saetze belegen.  allocSectors nimmt bei Platzmangel alles zurueck.
-    std::vector<UdosPointer> sektoren;
-    if (!allocSectors(saetze + 1, sektoren)) return false;
-    const UdosPointer kopf = sektoren.front();
+    // Kopfsektor (ein einzelner Sektor) und die Saetze belegen.  Beide Vergaben
+    // nehmen bei Platzmangel alles zurueck.
+    std::vector<UdosPointer> kopf_sekt;
+    if (!allocSectors(1, kopf_sekt)) return false;
+    const UdosPointer kopf = kopf_sekt.front();
+
+    std::vector<UdosPointer> sektoren;   // ALLE Sektoren der Saetze, in Reihenfolge
+    if (!allocRecords(saetze, sek_je_satz, sektoren)) {
+        bitmap_.setUsed(kopf.track, kopf.sectorId(), false);
+        return false;
+    }
+    // Zeiger adressieren immer den ERSTEN Sektor eines Satzes.
+    auto satzanfang = [&](uint32_t i) { return sektoren[static_cast<size_t>(i) * sek_je_satz]; };
 
     // Verzeichniseintrag zuerst — er bestimmt den Rueckwaertszeiger des Kopfsektors.
+    // Das Flagbyte spiegelt die Eigenschaft SECRET (§5), sonst widerspraechen sich
+    // Verzeichnis und Kopfsektor.
+    const bool geheim = (udosEigenschaftsByte(opt.udos_properties) & 0x10) != 0;
     UdosPointer dir_record;
-    if (!appendDirEntry(name, /*secret=*/false, kopf, dir_record)) return false;
+    if (!appendDirEntry(name, geheim, kopf, dir_record)) return false;
 
     // Saetze schreiben; die Kette laeuft Kopf → Satz 1 → … → Satz n → FF FF.
+    // §7: alle Sektoren EINES Satzes tragen denselben Kontrollblock.
     for (uint32_t i = 0; i < saetze; ++i) {
         std::vector<uint8_t> block(satzlen, opt.text ? 0x1A : 0x00);
         const size_t ab    = static_cast<size_t>(i) * satzlen;
@@ -581,29 +704,44 @@ bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
         std::copy(data.begin() + static_cast<long>(ab),
                   data.begin() + static_cast<long>(ab + menge), block.begin());
 
-        const UdosPointer selbst = sektoren[i + 1];
-        const UdosPointer vor    = (i == 0) ? kopf : sektoren[i];
-        const UdosPointer nach   = (i + 1 < saetze) ? sektoren[i + 2] : UdosPointer{};
-        if (!writeLinked(selbst, block, vor, nach)) return false;
+        const UdosPointer vor  = (i == 0) ? kopf : satzanfang(i - 1);
+        const UdosPointer nach = (i + 1 < saetze) ? satzanfang(i + 1) : UdosPointer{};
+        for (uint32_t k = 0; k < sek_je_satz; ++k) {
+            const std::vector<uint8_t> teil(block.begin() + static_cast<long>(k * kSector),
+                                            block.begin() + static_cast<long>((k + 1) * kSector));
+            const UdosPointer selbst = sektoren[static_cast<size_t>(i) * sek_je_satz + k];
+            if (!writeLinked(selbst, teil, vor, nach)) return false;
+        }
     }
 
     // Kopfsektor nach §6 fuellen.
     std::vector<uint8_t> h(kSector, 0xFF);
     std::fill(h.begin(), h.begin() + 48, static_cast<uint8_t>(0x00));
     h[6]  = dir_record.sector_index;  h[7]  = dir_record.track;
-    h[8]  = sektoren[1].sector_index; h[9]  = sektoren[1].track;
-    h[10] = sektoren[saetze].sector_index; h[11] = sektoren[saetze].track;
-    h[12] = opt.text ? 0x20 : 0x10;                 // A = ASCII, B = BINARY
+    h[8]  = sektoren.front().sector_index; h[9]  = sektoren.front().track;
+    h[10] = satzanfang(saetze - 1).sector_index; h[11] = satzanfang(saetze - 1).track;
+    h[12] = udosTypByte(opt.udos_type, opt.text);   // Vorgabe: A = ASCII, B = BINARY
     h[13] = static_cast<uint8_t>(saetze & 0xFF);
     h[14] = static_cast<uint8_t>(saetze >> 8);
     h[15] = static_cast<uint8_t>(satzlen & 0xFF);
     h[16] = static_cast<uint8_t>(satzlen >> 8);
-    h[17] = h[15];  h[18] = h[16];                  // §6: meist Kopie der Satzlaenge
-    h[19] = 0x00;                                   // keine Eigenschaften
-    h[20] = h[21] = 0x00;                           // ENTRY nur bei Typ P/P1 sinnvoll
+    // Offset 17: zweite Laengenangabe — bei 128/1024 die Kopie der Satzlaenge, bei
+    // 256/512 aber 0.  Ohne den Originalwert startet ein neu geschriebener Nukleus
+    // (`OS`, Satzlaenge 512) das System nicht mehr.
+    const uint16_t blockl = opt.udos_block_len_gesetzt ? opt.udos_block_len
+                          : ((satzlen == 128 || satzlen == 1024) ? satzlen : 0);
+    h[17] = static_cast<uint8_t>(blockl & 0xFF);
+    h[18] = static_cast<uint8_t>(blockl >> 8);
+    h[19] = udosEigenschaftsByte(opt.udos_properties);
+    h[20] = static_cast<uint8_t>(opt.udos_entry & 0xFF);       // ENTRY (Typ P/P1)
+    h[21] = static_cast<uint8_t>(opt.udos_entry >> 8);
     // §7.1: „Bytes im letzten Satz" = Satzlaenge, wenn er voll ist (so haelt es UDOS,
     // nachgewiesen an SD: 7 Saetze à 128 mit 0080 im Feld).
-    const uint16_t rest = im_letzten ? im_letzten : satzlen;
+    // „Bytes im letzten Satz" bestimmt die LOGISCHE Laenge.  Kommt der Wert von
+    // aussen (Beiblatt), gilt er — nur so behaelt eine Programmdatei, deren Abbild
+    // ueber das Dateiende hinausreicht, ihre richtige Laenge.
+    const uint16_t rest = opt.udos_bytes_in_last ? opt.udos_bytes_in_last
+                        : (im_letzten ? im_letzten : satzlen);
     h[22] = static_cast<uint8_t>(rest & 0xFF);
     h[23] = static_cast<uint8_t>(rest >> 8);
 
@@ -621,15 +759,89 @@ bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
                       (tm.tm_year + 1900) % 100, tm.tm_mon + 1, tm.tm_mday);
         datum = puffer;
     }
+    // Erstellung und letzte Aenderung sind ZWEI Felder: der Erstellungsvermerk
+    // traegt bei Systemdateien einen Versionstext ("V 4.3 "), keinen Datumswert.
+    // Der Erstellungsvermerk darf kuerzer ankommen (Leerzeichen am Ende gehen beim
+    // Lesen verloren) — auf 6 Zeichen auffuellen statt ihn zu verwerfen.
+    std::string erstellt = opt.udos_created.empty() ? datum : opt.udos_created;
+    erstellt.resize(6, ' ');
     for (int i = 0; i < 6; ++i) {
-        h[24 + i] = static_cast<uint8_t>(datum[i]);   // Erstellung
-        h[32 + i] = static_cast<uint8_t>(datum[i]);   // letzte Aenderung
+        h[24 + i] = static_cast<uint8_t>(erstellt[i]);   // Erstellung
+        h[32 + i] = static_cast<uint8_t>(datum[i]);      // letzte Aenderung
     }
     h[30] = 0xFF; h[31] = 0x00;
     h[38] = 0xFF; h[39] = 0x00;
+    // SEGMENTS (nur P/P1): Anfang und Laenge des Speichersegments.  Die Laenge ist
+    // NICHT aus der Dateigroesse ableitbar — `OS` ist 5504 Byte gross, Segment 5632.
+    h[40] = static_cast<uint8_t>(opt.udos_segment & 0xFF);
+    h[41] = static_cast<uint8_t>(opt.udos_segment >> 8);
+    h[42] = static_cast<uint8_t>(opt.udos_segment_len & 0xFF);
+    h[43] = static_cast<uint8_t>(opt.udos_segment_len >> 8);
+    h[44] = static_cast<uint8_t>(opt.udos_extra & 0xFF);
+    h[45] = static_cast<uint8_t>((opt.udos_extra >> 8) & 0xFF);
+    h[46] = static_cast<uint8_t>((opt.udos_extra >> 16) & 0xFF);
+    h[47] = static_cast<uint8_t>(opt.udos_extra >> 24);
+    // LOW ADDRESS / HIGH ADDRESS / STACK SIZE ganz am Ende des Kopfsektors (122).
+    // DIESE Werte nimmt der Lader (Nukleusvariablen 1275H/1277H) — ohne sie steht
+    // dort FFFF und der Speicherverwalter lehnt mit `MEMORY PROTECT VIOLATION` ab.
+    if (opt.udos_low_addr || opt.udos_high_addr || opt.udos_stack_size) {
+        h[122] = static_cast<uint8_t>(opt.udos_low_addr & 0xFF);
+        h[123] = static_cast<uint8_t>(opt.udos_low_addr >> 8);
+        h[124] = static_cast<uint8_t>(opt.udos_high_addr & 0xFF);
+        h[125] = static_cast<uint8_t>(opt.udos_high_addr >> 8);
+        h[126] = static_cast<uint8_t>(opt.udos_stack_size & 0xFF);
+        h[127] = static_cast<uint8_t>(opt.udos_stack_size >> 8);
+    }
 
-    if (!writeLinked(kopf, h, dir_record, sektoren[1])) return false;
+    if (!writeLinked(kopf, h, dir_record, sektoren.front())) return false;
     return saveBitmap();
+}
+
+bool UdosFileSystem::setAttributes(const std::string& name, const UdosAttrs& a) {
+    // Der Kopfsektor wird an Ort und Stelle gepatcht — Inhalt, Verkettung und
+    // Belegung bleiben unberuehrt.  Leere Felder heissen „unveraendert".
+    const UdosDirEntry* treffer = nullptr;
+    const std::vector<UdosDirEntry> verz = directory();
+    for (const UdosDirEntry& d : verz) if (d.name == name) treffer = &d;
+    if (!treffer) return fail("Datei '" + name + "' steht nicht im Verzeichnis");
+
+    std::vector<uint8_t> h;
+    UdosPointer back, fwd;
+    if (!readSector(treffer->header, h, back, fwd)) return false;
+
+    auto setze16 = [&h](size_t off, uint16_t v) {
+        h[off]     = static_cast<uint8_t>(v & 0xFF);
+        h[off + 1] = static_cast<uint8_t>(v >> 8);
+    };
+    if (!a.type.empty())       h[12] = udosTypByte(a.type, false);
+    if (!a.properties.empty()) h[19] = udosEigenschaftsByte(a.properties == ";" ? ""
+                                                                                : a.properties);
+    if (a.set_entry)      setze16(20, a.entry);
+    if (a.set_block_len)  setze16(17, a.block_len);
+    if (a.set_segment)  { setze16(40, a.segment); setze16(42, a.segment_len); }
+    if (a.set_memory)   { setze16(122, a.low); setze16(124, a.high); setze16(126, a.stack); }
+    if (a.set_extra)    { setze16(44, static_cast<uint16_t>(a.extra & 0xFFFF));
+                          setze16(46, static_cast<uint16_t>(a.extra >> 16)); }
+    for (size_t i = 0; i < 6; ++i) {
+        if (a.created.size()  == 6) h[24 + i] = static_cast<uint8_t>(a.created[i]);
+        if (a.modified.size() == 6) h[32 + i] = static_cast<uint8_t>(a.modified[i]);
+    }
+    if (!writeData(treffer->header, h)) return false;
+
+    // Das Flagbyte im Verzeichnis spiegelt SECRET (§5) — sonst widersprechen sich
+    // Verzeichnis und Kopfsektor.
+    if (!a.properties.empty()) {
+        const bool geheim = (h[19] & 0x10) != 0;
+        std::vector<uint8_t> satz;
+        UdosPointer b2, f2;
+        if (!readSector(treffer->record, satz, b2, f2)) return false;
+        const size_t off = treffer->offset;
+        if (off < satz.size()) {
+            satz[off] = static_cast<uint8_t>((satz[off] & 0x7F) | (geheim ? 0x80 : 0x00));
+            if (!writeData(treffer->record, satz)) return false;
+        }
+    }
+    return true;
 }
 
 bool UdosFileSystem::erase(const std::string& name) {

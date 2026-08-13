@@ -57,7 +57,7 @@ struct Handle {
     std::unique_ptr<DiskVolume> vol;
     std::vector<FileEntry>      eintraege;   ///< Stand des letzten k1520d_list
     // Puffer je Getter — die Rueckgabe gilt bis zum naechsten Aufruf DERSELBEN Funktion.
-    std::string s_error, s_name, s_type, s_attrs, s_date, s_dir, s_label;
+    std::string s_error, s_name, s_type, s_attrs, s_date, s_dir, s_label, s_created;
     std::string s_fmt, s_fs, s_alt, s_remarks, s_fit, s_check;
 };
 
@@ -104,6 +104,11 @@ extern "C" K1520Disk k1520d_open(const char* path, const char* fs_name, bool rea
 
 extern "C" K1520Disk k1520d_create(const char* path, const char* fs_name,
                                    const char* label) {
+    return k1520d_create_bootable(path, fs_name, label, nullptr);
+}
+
+extern "C" K1520Disk k1520d_create_bootable(const char* path, const char* fs_name,
+                                            const char* label, const char* boot_image) {
     g_open_error.clear();
     if (!path || !*path)       { g_open_error = "kein Pfad angegeben"; return nullptr; }
     if (!fs_name || !*fs_name) { g_open_error = "kein Dateisystem angegeben — beim "
@@ -112,7 +117,8 @@ extern "C" K1520Disk k1520d_create(const char* path, const char* fs_name,
     auto h = std::make_unique<Handle>();
     std::string err;
     h->vol = DiskVolume::create(path, fs_name, label ? label : "",
-                                kataloge().formate, kataloge().dateisysteme, err);
+                                kataloge().formate, kataloge().dateisysteme, err,
+                                boot_image ? boot_image : "");
     if (!h->vol) { g_open_error = err; return nullptr; }
     return h.release();
 }
@@ -175,6 +181,25 @@ extern "C" const char* k1520d_fs_format(const char* name) {
 extern "C" const char* k1520d_fs_type(const char* name) {
     const FsProfile* p = name ? kataloge().dateisysteme.find(name) : nullptr;
     return p ? fsTypeName(p->type) : "";
+}
+
+extern "C" uint64_t k1520d_fs_boot_capacity(const char* fs_name) {
+    const FsProfile* p = fs_name ? kataloge().dateisysteme.find(fs_name) : nullptr;
+    if (!p) return 0;
+    const DiskFormat* f = kataloge().formate.find(p->format);
+    return f ? DiskVolume::bootAreaCapacity(*p, *f) : 0;
+}
+
+extern "C" uint64_t k1520d_boot_area_size(K1520Disk h, int volume) {
+    return h ? H(h)->vol->bootAreaSize(volume) : 0;
+}
+
+extern "C" bool k1520d_read_boot_image(K1520Disk h, int volume, const char* path) {
+    return h && path && *path && H(h)->vol->readBootImageToFile(path, volume);
+}
+
+extern "C" bool k1520d_write_boot_image(K1520Disk h, int volume, const char* path) {
+    return h && path && *path && H(h)->vol->writeBootImageFile(path, volume);
 }
 
 extern "C" const char* k1520d_catalog_report(void) {
@@ -290,6 +315,55 @@ extern "C" const char* k1520d_entry_date(K1520Disk h, int i) {
 extern "C" bool k1520d_entry_hidden(K1520Disk h, int i) {
     const FileEntry* e = eintrag(h, i);
     return e ? e->hidden : false;
+}
+
+#define K1520D_ENTRY_U16(fn, feld)                                   \
+    extern "C" uint16_t fn(K1520Disk h, int i) {                     \
+        const FileEntry* e = eintrag(h, i);                          \
+        return e ? e->feld : 0;                                      \
+    }
+
+K1520D_ENTRY_U16(k1520d_entry_start,       entry_addr)
+K1520D_ENTRY_U16(k1520d_entry_record_len,  record_len)
+K1520D_ENTRY_U16(k1520d_entry_block_len,   block_len)
+K1520D_ENTRY_U16(k1520d_entry_segment,     segment_start)
+K1520D_ENTRY_U16(k1520d_entry_segment_len, segment_len)
+K1520D_ENTRY_U16(k1520d_entry_low_addr,    low_addr)
+K1520D_ENTRY_U16(k1520d_entry_high_addr,   high_addr)
+K1520D_ENTRY_U16(k1520d_entry_stack_size,  stack_size)
+#undef K1520D_ENTRY_U16
+
+extern "C" uint32_t k1520d_entry_extra(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? e->extra : 0;
+}
+
+extern "C" const char* k1520d_entry_created(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? halte(H(h)->s_created, e->created) : "";
+}
+
+extern "C" bool k1520d_set_udos_attrs(K1520Disk h, const char* name,
+                                      const char* type, const char* props,
+                                      const char* created, const char* modified,
+                                      bool set_entry, uint16_t entry,
+                                      bool set_block_len, uint16_t block_len,
+                                      bool set_segment, uint16_t segment, uint16_t segment_len,
+                                      bool set_memory, uint16_t low, uint16_t high,
+                                      uint16_t stack,
+                                      bool set_extra, uint32_t extra) {
+    if (!h || !name) return false;
+    UdosAttrs a;
+    a.type       = type     ? type     : "";
+    a.properties = props    ? props    : "";
+    a.created    = created  ? created  : "";
+    a.modified   = modified ? modified : "";
+    a.set_entry     = set_entry;     a.entry     = entry;
+    a.set_block_len = set_block_len; a.block_len = block_len;
+    a.set_segment   = set_segment;   a.segment   = segment; a.segment_len = segment_len;
+    a.set_memory    = set_memory;    a.low = low; a.high = high; a.stack = stack;
+    a.set_extra     = set_extra;     a.extra     = extra;
+    return H(h)->vol->setAttributes(FileRef::parse(name), a);
 }
 
 extern "C" bool k1520d_entry_damaged(K1520Disk h, int i) {

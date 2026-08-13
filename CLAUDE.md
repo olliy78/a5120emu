@@ -450,6 +450,44 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 
 Was beim Weiterarbeiten zu wissen ist:
 
+- **Bootfähige Disketten (2026-08-12, `doc/design/13_k1520disktool.md` §13a).**  Das
+  Werkzeug legt Disketten mit **Bootabbild** an: `create --fs NAME --boot datei.bin`
+  (GUI: Rückfrage + Dateiauswahl bei „Neue Diskette", Gegenstück „Bootabbild sichern…"
+  = `boot-get`).  Das Abbild ist ein **rohes Byteband** über die Systemspuren, deren
+  Umriss je Familie feststeht: CP/M = alles vor `data_cyl`/`data_head` (cpa780: 15104 B),
+  UDOS = Spuren 0–2 **plus Bootspur 21** (13312 B je Seite — ohne die Bootspur bricht
+  der UDOS-Kaltstart mit `ERROR: 45` ab).  **Geprüft wird VOR dem Formatieren**, sonst
+  bliebe bei einem zu grossen Abbild eine halbe Diskette liegen; kürzer ist erlaubt.
+  Fertige Abbilder: `disks/boot_{cpa780,scpx640,scpx798,udos43}.bin`.  Wächter
+  `test_disktool_bootdiskette` — baut die Diskette mit dem Werkzeug und **bootet sie**
+  (CP/A bis `A>`, SCPX in beiden Geometrien, UDOS bis `%`).
+- **UDOS-Dateien tragen mehr als ihre Bytes (2026-08-12, `doc/udos_diskettenformat.md`
+  §6/§14).**  Der Kopfsektor steuert, wie UDOS eine Datei **lädt**; am Ende (Offset
+  122/124/126) stehen **LOW ADDRESS / HIGH ADDRESS / STACK SIZE** — genau das, was
+  `EXTRACT` im laufenden System meldet.  Der Lader trägt LOW/HIGH nach `(1275H)/(1277H)`
+  und lässt sie vom Speicherverwalter (`1009H`) zuteilen; stehen dort `FFFF`, bricht er
+  mit **`MEMORY PROTECT VIOLATION`** ab (Fehler `43H`, Meldungstabelle `13C6H`/`12B2H`,
+  Index = A−40H).  Ebenso maßgeblich: **Offset 17** ist NICHT immer die Kopie der
+  Satzlänge (bei 256/512 = 0) — mit dem falschen Wert startet ein neu geschriebener
+  Nukleus (`OS`) nicht mehr.  Der Kopfsektor ist damit lückenlos zugeordnet; berechnet
+  werden beim Schreiben nur Zeiger (6–11), Satzanzahl (13) und Bytes im letzten Satz (22).
+  Alles andere führt das Werkzeug mit: `WriteOptions::udos_*` / `UdosAttrs` →
+  CLI `put --type/--props/--entry/--record-len/--block-len/--segment/--mem/--extra/
+  --created/--date`, `attr` zeigt und ändert sie an einer vorhandenen Datei, und ein
+  **Beiblatt** `udos-dateiangaben.txt` (Schlüssel=Wert) trägt sie durch `get`→`put`.
+  C-ABI: `k1520d_entry_*` + `k1520d_set_udos_attrs`.
+- **UDOS-Bootdisketten laufen (2026-08-13).**  `get` → `create --boot` → `put` ergibt
+  eine Diskette, die den Selbststart fährt (`OS.INIT`: Banner, `DATE`) und **Befehle
+  ausführt** (`CAT`, `STATUS`, `PRINT`).  Der letzte Stolperstein war: **das
+  Speicherabbild einer Programmdatei reicht über ihr logisches Dateiende hinaus** —
+  `OS` ist 5504 Byte lang (`bytes_in_last`), sein Abbild 5632 (11 volle Sätze à 512),
+  und in den 128 Byte dahinter steht Nukleus-Code, in den er selbst springt (`2580H`).
+  Wer auf `length()` kürzt, bekommt eine Diskette, die bootet und beim ersten Befehl in
+  den Monitor fällt (`BREAK 4150`).  Deshalb liefert `UdosFileSystem::readChain` **volle
+  Sätze**, sobald `segment_len > length()`, und `bytes_in_last` wird mitgeführt
+  (`rest=` im Beiblatt) statt ausgerechnet.  Kleinste bootfähige Diskette:
+  Systemspuren + `OS` + `ZDOS` (Urlader sucht beide über das VERZEICHNIS).  Wächter:
+  `DiskToolBootdiskette.GebauteUdosDisketteBootetUndFuehrtBefehleAus`.
 - **`data/formats.yaml` hat jetzt ZWEI Sektionen.**  `formats:` (Physik, liest der
   Emulator) und `filesystems:` (logische Ebene, liest nur das DiskTool).  `data_start`
   ist dort eine **Spur**, kein Byte-Offset — bei gemischter Geometrie (cpa780: drei

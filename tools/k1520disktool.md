@@ -16,6 +16,9 @@ k1520disktool get    <abbild> [muster…] --to <ordner>  Dateien herausholen
 k1520disktool put    <abbild> <datei|ordner…>          Dateien einfügen
 k1520disktool rm     <abbild> <muster…>                Dateien löschen
 k1520disktool create <abbild> --fs NAME [--label N]    leere Diskette anlegen
+       [--boot abbild.bin]                             … bootfähig (Systemspuren)
+k1520disktool boot-get <abbild> <datei.bin>            Systemspuren herausschreiben
+k1520disktool boot-put <abbild> <datei.bin>            Bootabbild einspielen
 k1520disktool info   <abbild>                          Belegung und Erkennung
 k1520disktool check  <abbild>                          Prüfbericht
 k1520disktool formats                                  bekannte Dateisysteme
@@ -51,6 +54,121 @@ $ k1520disktool info udos.hfe --json | jq '.volumes[].free'
 **Exit-Codes** sind Teil der Schnittstelle:
 `0` ok · `1` Fehler · `2` Format/Dateisystem nicht erkannt · `3` passt nicht
 (kein Platz) · `4` Ordnerstruktur falsch (fehlendes `SideN/`).
+
+## Bootfähige Diskette anlegen
+
+Bootfähig wird eine Diskette nicht durch ihr Dateisystem, sondern durch die
+**Systemspuren** davor: das Lade-ROM liest Spur 0 blind ein, lange bevor es
+irgendein Dateisystem gibt.  Diese Spuren gehören keiner Datei; das Werkzeug
+behandelt sie als **ein Byteband** in einer `.bin`.
+
+```sh
+# 1. Bootabbild aus einer vorhandenen Bootdiskette holen
+k1520disktool boot-get disks/cpa_cpa780_k5601_noclock.hfe boot_cpa780.bin
+
+# 2. neue Diskette damit anlegen …
+k1520disktool create neu.hfe --fs cpa780 --boot boot_cpa780.bin
+
+# 3. … und die Systemdateien hineinkopieren (@OS.COM und der Rest)
+k1520disktool get disks/cpa_cpa780_k5601_noclock.hfe --to auszug
+k1520disktool put neu.hfe auszug
+```
+
+Fertige Abbilder für CP/A und SCPX liegen unter `disks/boot_*.bin` (`disks/README.md`).
+Eine vorhandene Diskette lässt sich nachträglich bootfähig machen: `boot-put`.
+
+Wie gross die Systemspuren sind, hängt am Dateisystem — `info` sagt es:
+
+| Dateisystem | Systemspuren | woraus |
+|-------------|--------------|--------|
+| `cpa780`  | 15104 B | c0h0 + c0h1 + c1h0 (je 26×128) + c1h1 (5×1024) |
+| `scpx640` | 16384 B | 4 × 16×256 |
+| `scpx798` | 18432 B | 2 × 16×256 + 2 × 5×1024 |
+| `udos_*`  | 13312 B | Spuren 0–2 (Urlader + Nukleus) **+ Bootspur 21**, je Seite |
+| `cpa800`  | — | keine: das Dateisystem beginnt auf Zylinder 0 |
+
+Ein **kürzeres** Abbild ist erlaubt (der Rest bleibt formatierte Leerspur), ein
+**längeres** ist ein Fehler — und zwar bevor irgendetwas angelegt wird:
+
+```
+$ k1520disktool create neu.hfe --fs cpa780 --boot zu_gross.bin
+Fehler: Das Bootabbild ist 20000 Byte gross, die Systemspuren von 'cpa780'
+        fassen aber nur 15104 Byte.
+```
+
+### UDOS
+
+Der UDOS-Urlader sucht sein System **über das Verzeichnis** — mit den Systemspuren
+allein meldet er `OS NOT FOUND`. Eine vollständige, laufende Diskette entsteht so:
+
+```sh
+k1520disktool get    udos_boot_scp.hfe --to auszug     # Dateien + Beiblatt
+k1520disktool create neu.hfe --fs udos_ds77 --label UDOS.SYS.4.3 --boot boot_udos43.bin
+k1520disktool put    neu.hfe auszug
+```
+
+Sie fährt den Selbststart (`OS.INIT`: Banner, `DATE`), meldet sich mit `%` und führt
+Befehle aus (`CAT`, `STATUS`, `PRINT`) — Wächter
+`DiskToolBootdiskette.GebauteUdosDisketteBootetUndFuehrtBefehleAus`. Die kleinste
+bootfähige Diskette ist Systemspuren + `OS` + `ZDOS`.
+
+Das **Beiblatt aus `get` muss dabei sein** (s. u.): ohne die Kopfsektorangaben wird aus
+einer Systemdatei eine gewöhnliche Binärdatei, und die Diskette bootet nicht.
+
+## UDOS: was eine Datei ausser ihren Bytes hat
+
+Eine Linux-Datei trägt nur Bytes. Ein UDOS-**Kopfsektor** trägt zusätzlich Angaben, die
+das Betriebssystem zum *Laden* braucht:
+
+| Angabe | Schalter | Beispiel `ZDOS` |
+|--------|----------|-----------------|
+| Angabe | Schalter | `ZDOS` | Kopfsektor |
+|--------|----------|--------|-----------|
+| Typ (`A`/`P`/`P1`/`B`) | `--type` | `P1` | 12 |
+| Eigenschaften (W E L S R F) | `--props` | `WS` | 19 |
+| Satzlänge (Vielfaches von 128) | `--record-len` | `1024` | 15 |
+| zweite Längenangabe | `--block-len` | `1024` | 17 |
+| ENTRY — Einsprungadresse | `--entry` | `0x2600` | 20 |
+| SEGMENTS — Anfang:Länge | `--segment 2600:5521` | | 40/42 |
+| Kopfsektor 44…47 (Bedeutung offen) | `--extra` | `0` | 44 |
+| LOW:HIGH:STACK | `--mem 2600:3FD4:0080` | | 122/124/126 |
+| Erstellungsvermerk / Änderungsdatum | `--created` / `--date` | `V 4.2 ` / `900808` | 24 / 32 |
+
+`ls -l` zeigt Typ, Eigenschaften und ENTRY, `ls --json` und `attr` alle Felder. Drei
+davon sind keine Formsache:
+
+* die **Satzlänge** bestimmt die Belegung — ein Satz liegt in `Satzlänge/128`
+  aufeinanderfolgenden Sektoren EINER Spur;
+* die **zweite Längenangabe** ist *nicht* immer deren Kopie (bei 256/512 Byte steht
+  dort 0) — mit dem falschen Wert startet ein neu geschriebener Nukleus nicht mehr;
+* **LOW/HIGH/STACK** sind das, was der Lader zuteilen lässt (mehr als das Segment).
+  Fehlen sie, weist UDOS die Datei mit `MEMORY PROTECT VIOLATION` ab.
+  Hintergrund: `doc/udos_diskettenformat.md` §14.
+
+Anzeigen und ändern lassen sie sich auch an einer Datei, die schon auf der Diskette
+liegt — der Inhalt bleibt dabei unangetastet:
+
+```sh
+$ k1520disktool attr udos.hfe ZDOS
+ZDOS                 Typ P1  Eigenschaften WS      5632 Byte
+  ENTRY 2600   Satzlaenge 1024   zweite Laenge 1024
+  SEGMENT 2600 + 5521 Byte
+  LOW 2600  HIGH 3FD4  STACK 0080   Zusatz 00000000
+  erstellt 'V 4.2'   geaendert '900808'
+
+$ k1520disktool attr udos.hfe CAT --props WEL --mem 4000:5FFF:0200
+```
+
+**Von Hand angeben muss man das selten**: `get` legt neben den Dateien ein Beiblatt
+`udos-dateiangaben.txt` an, und `put` liest es wieder — sowohl beim Einfügen eines
+ganzen Ordners als auch bei einer einzelnen Datei daraus (auch aus der Oberfläche).
+Ausdrückliche Schalter gehen dem Beiblatt vor.
+
+```
+# Datei  Typ  Eigenschaften  Start  Satzlaenge  Ladeadresse  Abbildlaenge
+Side0/OS   P    WES          13DE   512         1000         5632
+Side0/ZDOS P1   WS           2600   1024        2600         5521
+```
 
 ## Beidseitige UDOS-Disketten
 

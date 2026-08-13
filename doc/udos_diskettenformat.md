@@ -249,7 +249,7 @@ Die belegten Felder:
 | 12 | 1 | **Dateityp** | `80`=P, `81`=P1, `40`=D, `20`=A, `10`=B |
 | 13…14 | 2 LE | **Satzanzahl** (RECORD COUNT) | |
 | 15…16 | 2 LE | **Satzlänge** in Byte (RECORD LENGTH) | 0080/0100/0200/0400 beobachtet |
-| 17…18 | 2 LE | meist Kopie der Satzlänge; bei `OS` = `0000` | Bedeutung nicht geklärt |
+| 17…18 | 2 LE | zweite Längenangabe | bei Satzlänge 128/1024 deren Kopie, bei 256/512 = `0000`. Bedeutung offen, aber **maßgeblich**: schreibt man sie falsch, startet ein neu geschriebener Nukleus nicht mehr |
 | 19 | 1 | **Eigenschaften** | `80`=W, `40`=E, `20`=L, `10`=S |
 | 20…21 | 2 LE | **Einsprungadresse** (ENTRY) | nur bei Typ P/P1 ausgewertet |
 | 22…23 | 2 LE | **Bytes im letzten Satz** | `0000` = letzter Satz leer |
@@ -257,9 +257,24 @@ Die belegten Felder:
 | 30…31 | 2 | `FF 00` | Trenner |
 | 32…37 | 6 | **Letzte Änderung**: `JJMMTT` | ASCII; UDOS überschreibt das Feld bei jeder Änderung mit dem Systemdatum (nachgewiesen: `900808` → `880315` nach einem `SET`) |
 | 38…39 | 2 | `FF 00` bzw. `FF FF` | Trenner |
-| 40…41 | 2 LE | Anfang des 1. **Speichersegments** | |
-| 42…43 | 2 LE | Länge des 1. Speichersegments | weitere Segmente folgen paarweise |
-| ab 48 | | `FF`-Füllung | |
+| 40…41 | 2 LE | Anfang des 1. **Speichersegments** (SEGMENTS) | |
+| 42…43 | 2 LE | Länge des 1. Speichersegments | |
+| 44…47 | 4 | bei den meisten Dateien `00`; Typ A trägt dort Text | Bedeutung offen, unverändert übernehmen |
+| 48…121 | | `FF`-Füllung | |
+| **122…123** | 2 LE | **LOW ADDRESS** — erste Adresse, die das Programm belegt | s. u. |
+| **124…125** | 2 LE | **HIGH ADDRESS** — letzte Adresse | |
+| **126…127** | 2 LE | **STACK SIZE** | |
+
+> **Die drei Felder am Ende sind das, was den Lader steuert** (2026-08-12 gefunden,
+> §14). Sie waren oben als „nicht eindeutig zugeordnet" vermerkt — die Zuordnung ist
+> jetzt belegt, und zwar gegen die Ausgabe von `EXTRACT` im laufenden System: für `SD`
+> meldet UDOS `LOW ADDRESS=E800 HIGH ADDRESS=EB7F STACK SIZE=0000`, und im Kopfsektor
+> steht ab Offset 122 genau `00 E8 │ 7F EB │ 00 00`. Für `DO`: `00 E0 │ FF E3 │ 80 00`
+> = E000…E3FF, Stapel 128 Byte.
+>
+> Der Bereich LOW…HIGH ist **größer als das Segment**: `ZDOS` lädt 5521 Byte nach
+> 2600H, belegt aber 2600H…3FD4H (Arbeitsspeicher). Aus der Dateigröße lässt sich
+> nichts davon ableiten — die Werte müssen mitkopiert werden.
 
 Nachgeprüft an `EXTRACT` im laufenden System, z. B.
 
@@ -725,7 +740,132 @@ passt nur die erste.
 
 ---
 
-## 14. Quellen
+## 14. Wie UDOS eine Programmdatei lädt (2026-08-12)
+
+Ermittelt beim Versuch, mit dem `k1520DiskTool` eine bootfähige UDOS-Diskette zu bauen —
+und zwar am laufenden System mit `k1520dbg`, nicht aus Quellen: der Nukleus (`OS`,
+1000H…25FFH) liegt als Quelltext nirgends vor.
+
+### 14.1 Der Weg vom Kommando zum laufenden Programm
+
+```
+Kommandozeile (DO / Prompt)
+  → SYSTEM-Dienst  1608H            Kommandozeile aus dem IY-Anforderungsblock
+  → Ausführen      174CH            Namen auflösen, Kopfsektor lesen
+  → LOW/HIGH aus dem Kopfsektor (Offset 122/124) nach (1275H)/(1277H)
+  → MEMMGR         1009H → 1B4FH    Speicher zuteilen
+       (120EH) Bit 2 gesetzt?  → Prüfung überspringen
+       sonst (100EH) Bit 7 gesetzt? → A = 43H  →  FEHLER
+  → Segment laden (Offset 40/42), Sprung auf ENTRY (Offset 20)
+```
+
+Die Fehlernummer landet über `15A5H` in der Ausgabe. Die Meldungstabelle steht im
+Nukleus ab `13C6H` (Zeiger) bzw. `12B2H` (Texte), Index = `A − 40H`:
+
+| A | Meldung | | A | Meldung |
+|---|---|---|---|---|
+| `40` | INVALID DRIVE NAME | | `46` | ILLEGAL FILE NAME |
+| `41` | INVALID OR INACTIVE DEVICE | | `47` | NONEXISTENT COMMAND |
+| `42` | INVALID OR UNASSIGNED LOGICAL UNIT | | `48` | ILLEGAL FILE TYPE |
+| **`43`** | **MEMORY PROTECT VIOLATION** | | `49` | PROGRAM ABORT |
+| `44` | MISSING OR INVALID OPERAND(S) | | `4A` | INSUFFICIENT MEMORY |
+| `45` | SYSTEM ERROR | | `4B` | MISSING OR INVALID FILE PROPERTIES |
+
+### 14.2 Woran eine kopierte Systemdatei scheitert
+
+Beim Zurückschreiben einer Datei füllte das Werkzeug den Kopfsektor ab Offset 48 mit
+`FF` — also auch die drei Felder ab 122. Der Lader las daraus `LOW=FFFF`, `HIGH=FFFF`,
+trug das in `(1275H)/(1277H)` ein, und der Speicherverwalter lehnte ab:
+
+```
+%                                     ← nach dem Start
+MEMORY PROTECT VIOLATION              ← DO wird nicht geladen (RAM ab E000H bleibt FF)
+```
+
+Nachweisführung: Fehlerstelle `1B92H` (`LD A,43H`) über einen Haltepunkt gefunden,
+`(1275H)/(1277H)` verglichen — Original `E000/E3FF`, Kopie `FFFF/FFFF`. Mit
+mitkopierten Feldern läuft die Startdatei `OS.INIT` (Banner, `DATE`, `TAST`) durch.
+
+**Ebenso maßgeblich ist Offset 17.** Er ist *nicht* immer die Kopie der Satzlänge: bei
+256 und 512 Byte steht dort `0000`. Der Nukleus `OS` hat Satzlänge 512 — schreibt man
+dort die Kopie, entgleist der Systemstart.
+
+### 14.2b Das Speicherabbild reicht über das Dateiende hinaus
+
+Der hartnäckigste Fall, und der letzte: `OS` neu zu schreiben ließ die Diskette zwar
+booten, aber **der erste Befehl landete im UDOS-Monitor** (`BREAK 4150`) — bei
+byte-gleichem Inhalt und byte-gleichem Kopfsektor.
+
+Der Befehlsablauf im Trace zeigt, warum:
+
+```
+17FE  CPIR                 ; Gerätetabelle ab 102BH durchsuchen
+1800  LD E,(HL) / LD D,(HL); Einsprung des gefundenen Treibers holen  → DE = 2580H
+1803  LD HL,(0FBBH)        ; Anforderungsblock
+1809  PUSH BC / EX DE,HL
+180B  JP (HL)              ; → 2580H
+2580  NOP NOP NOP …        ; NICHTS. Der Prozessor rutscht bis 2600H (ZDOS)
+2657  LD A,(IY+1) / AND FE ; ZDOS liest einen sinnlosen Anforderungscode …
+26CE  LD A,C1H             ; … meldet „ungültig" und springt auf (IY+8/9) = 4150H
+4150  RST 38H              ; dort steht FFH  →  BREAK
+```
+
+`2580H` = `1000H + 1580H` = **Byte 5504 des Nukleus** — genau seine logische
+Dateilänge. Die Auflösung: `OS` ist 5504 Byte lang (`BYTES IN LAST RECORD = 0180H`),
+sein Speicherabbild aber **5632 Byte** (11 volle Sätze à 512). Die 128 Byte dahinter
+gehören nicht mehr zur „Datei", sind aber **Programmcode des Nukleus** — dort liegt
+eine Routine, in die er selbst springt.
+
+**Folgerung für ein Werkzeug:** bei einer Datei, deren Segment über das logische
+Dateiende hinausreicht, müssen die **vollen Sätze** extrahiert werden, nicht nur
+`length()` Byte. Beim Zurückschreiben kommt die logische Länge dann aus dem
+mitgeführten `BYTES IN LAST RECORD` — sonst hielte UDOS die Datei für 5632 Byte lang.
+So umgesetzt in `UdosFileSystem::readChain` (Wächter:
+`DiskToolBootdiskette.GebauteUdosDisketteBootetUndFuehrtBefehleAus`).
+
+### 14.3 Was eine Datei vollständig ausmacht
+
+Damit ist der Kopfsektor lückenlos zugeordnet. Beim Kopieren einer Datei muss ein
+Werkzeug **berechnen**: die drei Zeiger (6…11), die Satzanzahl (13/14) und die Bytes
+im letzten Satz (22/23). Alles andere gehört zur Datei und muss **mitgeführt** werden:
+
+Typ · Eigenschaften · Satzlänge · zweite Längenangabe (17) · **Bytes im letzten Satz** ·
+ENTRY · Erstellungsvermerk · Änderungsdatum · Segment (Anfang + Länge) · Offset 44…47 ·
+LOW/HIGH ADDRESS · STACK SIZE.
+
+Das `k1520DiskTool` legt sie beim Extrahieren als Beiblatt `udos-dateiangaben.txt`
+neben die Dateien und nimmt sie beim Einfügen wieder auf; einzeln setzbar sind sie über
+`put --type/--props/--entry/--record-len/--block-len/--segment/--mem/--extra`.
+
+### 14.4 Stand: eine selbst gebaute UDOS-Diskette läuft
+
+Gebaut wird sie so (Werkzeug: `tools/k1520disktool.md`):
+
+```sh
+k1520disktool get    udos_boot_scp.hfe --to auszug     # Dateien + Beiblatt
+k1520disktool create neu.hfe --fs udos_ds77 --label UDOS.SYS.4.3 \
+                     --boot disks/boot_udos43.bin      # Systemspuren 0–2 + 21
+k1520disktool put    neu.hfe auszug                    # alle Dateien, Angaben aus dem Beiblatt
+```
+
+Nachgeprüft am laufenden System (Wächter
+`DiskToolBootdiskette.GebauteUdosDisketteBootetUndFuehrtBefehleAus`):
+
+* ✅ die Startdatei `OS.INIT` läuft — Banner „UDOS 4.3 / FEBRUAR 1987", dann `DATE`;
+* ✅ nach der Datumseingabe meldet sich `UDOS BC.5120` mit dem `%`-Prompt;
+* ✅ **Befehle laufen**: `CAT` wird von der Diskette geladen und listet das Verzeichnis,
+  ebenso `STATUS` und `PRINT`;
+* ✅ einzelne Dateien lassen sich auf einer vorhandenen Diskette austauschen — auch
+  `OS` und `ZDOS` selbst.
+
+Die kleinste bootfähige Diskette ist **Systemspuren + `OS` + `ZDOS`**; sie kommt bis
+zum `%`-Prompt. Ohne `OS` meldet der Urlader `OS NOT FOUND`, ohne `ZDOS`
+`ZDOS NOT FOUND` — er sucht beide **über das Verzeichnis**, nicht über feste Sektoren.
+Für den Selbststart kommen `DO`, `OS.INIT`, `DATE` und `TAST` dazu.
+
+---
+
+## 15. Quellen
 
 * `disks/udos_boot_scp.hfe` — der vermessene Datenträger
 * `~/projects/UDOS/UDOS_/PC1715/FORMATPC.MAC` — Formatierprogramm, benennt Systemspuren

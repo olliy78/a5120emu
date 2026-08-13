@@ -927,6 +927,106 @@ Dateisystem, Sektorraum oder Oberfläche. Mehr wird jetzt nicht gebaut.
 
 ---
 
+## 13a. Bootabbild — die Systemspuren (2026-08-12)
+
+Das Werkzeug konnte leere Disketten anlegen; **bootfähig** wird eine Diskette aber erst
+durch die Spuren *vor* dem Dateisystem. Das Lade-ROM liest Spur 0 blind ein, lange bevor
+es irgendein Dateisystem gibt (`doc/K1520_architecture.md` §14.5) — diese Spuren gehören
+keiner Datei und werden vom Dateisystem nie angefasst.
+
+**Entscheidung: ein Byteband, keine Struktur.** Das Bootabbild ist eine rohe `.bin`,
+linear ab dem ersten Sektor des Systembereichs geschrieben. Der Systembereich ist je
+Dateisystemfamilie fest umrissen:
+
+| Familie | Systembereich | `cpa780` / `udos_ds77` |
+|---------|---------------|------------------------|
+| CP/M (CP/A, SCPX) | alles vor `data_cyl`/`data_head` | 15104 B |
+| UDOS | Spuren 0–2 (Urlader + Nukleus) **+ Bootspur 21** | 13312 B je Seite |
+
+Dass die UDOS-Bootspur dazugehört, ist am laufenden System gemessen: ohne sie bricht der
+Kaltstart mit `ERROR: 45` ab (der Urlader liest sie, sichtbar im K5122-Leseprotokoll als
+`READ D0 C=21 H=0`). Sie liegt **hinter** den Dateispuren, ist also kein durchgehendes
+Band — im Abbild folgt sie den Spuren 0–2 hinten an. Die Reihenfolge der Stücke ist Teil
+des Dateiformats und darf sich nicht ändern.
+
+Drei Festlegungen:
+
+1. **Geprüft wird vor dem Formatieren.** `DiskVolume::create` liest das Abbild und
+   vergleicht es mit dem Fassungsvermögen, bevor die erste Spur entsteht — ein zu grosses
+   Abbild hinterlässt keine halbe Diskette. Die Meldung nennt beide Zahlen.
+2. **Kürzer ist erlaubt, länger nie.** Der Rest bleibt formatierte Leerspur (0xE5); ein
+   längeres Abbild würde in das Dateisystem hineinschreiben.
+3. **Ohne Systemspuren keine Bootfähigkeit.** `cpa800` beginnt auf Zylinder 0;
+   `bootAreaCapacity` liefert dort 0, und die Oberfläche fragt gar nicht erst nach einem
+   Abbild. Das ist keine Einschränkung des Werkzeugs, sondern die Diskette.
+
+Belegt ist der Weg für alle drei Systeme: `test_disktool_bootdiskette` baut die Diskette
+mit dem Werkzeug und **bootet sie im Emulator** — CP/A und SCPX bis zum `A>`-Prompt,
+UDOS bis zum `%`-Prompt (dort braucht es zusätzlich zwei Dateien, §13b).
+
+Schnittstellen: `DiskVolume::{bootAreaCapacity,bootAreaSize,readBootImage,writeBootImage}`,
+`k1520d_create_bootable` / `k1520d_{fs_boot_capacity,boot_area_size,read,write}_boot_image`,
+CLI `create --boot` / `boot-get` / `boot-put`, in der Oberfläche die Rückfrage bei „Neue
+Diskette" und die Schaltfläche „Bootabbild sichern…".
+
+---
+
+## 13b. UDOS-Kopfsektorangaben — was eine Datei ausser ihren Bytes hat (2026-08-12)
+
+Der Versuch, aus Systemspuren + kopierten Dateien eine bootfähige **UDOS**-Diskette zu
+bauen, endete zunächst im UDOS-Debugger (`BREAK 2600`). Die Ursache liegt nicht in den
+Spuren, sondern im **Kopfsektor** jeder Datei (§6 von `doc/udos_diskettenformat.md`):
+er trägt Angaben, die eine Linux-Datei nicht mitbringt und die UDOS zum *Laden* braucht.
+
+| Feld | Offset | `ZDOS` | Wozu |
+|------|--------|--------|------|
+| Typ | 12 | `81` = P1 | Programm vs. ASCII vs. Binär |
+| Eigenschaften | 19 | `90` = W S | Schreib-/Löschschutz, SECRET |
+| Satzlänge | 15 | 1024 | **Zuteilungseinheit**: ein Satz belegt `Satzlänge/128` aufeinanderfolgende Sektoren EINER Spur (§7) |
+| Startadresse | 20 | `2600` | wohin gesprungen wird |
+| **Ladeadresse** | **40** | `2600` | wohin das Speicherabbild geladen wird |
+| **Abbildlänge** | **42** | 5521 | wie viel davon — **nicht** die Dateigröße (`OS`: 5504 Byte groß, 5632 Byte Abbild) |
+
+Die beiden letzten Felder waren im Datenformat bis dahin nicht beschrieben; sie sind an
+`OS`, `ZDOS`, `ACTIVATE`, `CAT`, `DO` und `SD` abgelesen (Ladeadresse = Startadresse bei
+allen sechs, Länge stets ≤ Dateigröße) und **am laufenden System belegt**: erst mit
+ihnen bootet eine neu geschriebene `ZDOS`.
+
+Drei Entscheidungen:
+
+1. **Die Angaben gehören in die Schreiboptionen, nicht in eine Heuristik.**
+   `WriteOptions::udos_*` (bis `TransferOptions` und in die CLI-Schalter
+   `--type/--props/--entry/--record-len/--load/--image-len`). Ohne Angabe bleibt es
+   beim bisherigen Verhalten (A/B, 128er Sätze) — das ist für Nutzdateien richtig.
+2. **Der Rundlauf trägt sie selbst**: `extractAll` legt neben die Dateien ein Beiblatt
+   `udos-dateiangaben.txt`, `insertAll` liest es. Auch der Einzel-`insert` schaut nach
+   (Ordner der Quelldatei und dessen Elternordner), damit eine aus der Oberfläche
+   herübergezogene Systemdatei ihren Kopfsektor behält. Das Beiblatt zählt bei der
+   Strukturprüfung **nicht** als „lose Datei" neben den `SideN/`-Ordnern.
+3. **Das Flagbyte im Verzeichnis spiegelt SECRET** (§5) — sonst widersprächen sich
+   Verzeichnis und Kopfsektor.
+
+Dazu kam die **variable Satzlänge** im Schreibpfad (`allocRecords`): Sätze > 128 Byte
+belegen mehrere aufeinanderfolgende Sektoren derselben Spur, alle mit demselben
+Kontrollblock, und ein Satz überschreitet nie eine Spurgrenze.
+
+**Kleinstmögliche UDOS-Bootdiskette**: Systemspuren + `OS` + `ZDOS`. Sie startet bis zum
+`%`-Prompt (`MinimaleUdosDisketteBootetInsSystem`).
+
+> **Offen:** der Selbststart über `OS.INIT` (Banner, `DATE`, `TAST`) läuft dort nicht.
+> Sobald `DO` — der Interpreter für Kommandodateien — auf der Diskette liegt, meldet
+> UDOS `MEMORY PROTECT VIOLATION` und überspringt die Startdatei; das System kommt
+> trotzdem hoch. Eingegrenzt ist es auf `DO` allein: schreibt man auf einer sonst
+> unveränderten Originaldiskette **nur** `DO` neu, tritt der Fehler auch dort auf,
+> obwohl Kopfsektor und Inhalt byte-gleich sind und nur die Sektorlage sich ändert;
+> `CAT`, `DATE` oder `ZDOS` neu zu schreiben stört den Start nicht. Bei der Störung ist
+> `DO` **nicht geladen** (RAM ab E000H bleibt `FF`) — UDOS weist es also schon vor dem
+> Laden ab. Naheliegender nächster Schritt: im Nukleus verfolgen, woher die Prüfung ihre
+> Erwartung nimmt (Verdacht: eine im Bootabbild der Spur 21 mitgeführte Lage der
+> aktivierten Module).
+
+---
+
 ## 14. Sicherheit beim Schreiben
 
 > **Entscheidung 2026-08-10 (E5): kein atomares Schreiben.** Der Entwurf sah ursprünglich

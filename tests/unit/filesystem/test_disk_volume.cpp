@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <map>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -775,4 +776,196 @@ TEST(DiskVolume, LochInDerMitteWirdNichtVermessen) {
 
     EXPECT_EQ(dv, nullptr);
     EXPECT_NE(err.find("Zylinder 5"), std::string::npos) << err;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bootabbild — die Systemspuren vor dem Dateisystem
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @test Das Fassungsvermoegen der Systemspuren ist ein Vertrag.
+ * @par Kriterium  Es ergibt sich aus Geometrie + Beginn des Dateisystems und darf
+ *                 sich nicht unbemerkt verschieben — wer hier einen Wert aendert,
+ *                 macht jedes vorhandene Bootabbild unbrauchbar.  cpa780 = 15104
+ *                 ist zugleich das Offset, das cpmtools als `offset` fuehrt.
+ */
+TEST(DiskVolume, SystemspurenFassenEineFesteZahlBytes) {
+    struct Fall { const char* fs; uint64_t bytes; };
+    // cpa800 beginnt auf Zylinder 0 — eine Datendiskette kann nicht bootfaehig sein.
+    const Fall faelle[] = {
+        {"cpa780",    15104},   // c0h0 + c0h1 + c1h0 (je 26×128) + c1h1 (5×1024)
+        {"scpx640",   16384},   // 4 × 16×256
+        {"scpx798",   18432},   // 2 × 16×256 + 2 × 5×1024
+        {"udos_ds77", 13728},   // Spuren 0–2 + Bootspur 21, je Sektor 128 + 4 Byte Kontrollblock
+        {"udos_ss40", 13728},
+        {"cpa800",        0},
+    };
+    for (const Fall& f : faelle) {
+        const FsProfile* p = dateisysteme().find(f.fs);
+        ASSERT_NE(p, nullptr) << f.fs;
+        const DiskFormat* g = formate().find(p->format);
+        ASSERT_NE(g, nullptr) << p->format;
+        EXPECT_EQ(DiskVolume::bootAreaCapacity(*p, *g), f.bytes) << f.fs;
+    }
+}
+
+/**
+ * @test Eine angelegte Diskette traegt das mitgegebene Bootabbild Byte fuer Byte.
+ * @par Kriterium  Was aus einer echten Bootdiskette herauskommt, geht unveraendert
+ *                 wieder hinein — sonst ist das Abbild wertlos.  Der Rest der
+ *                 Systemspuren bleibt Leerdiskette (0xE5).
+ */
+TEST(DiskVolume, BootabbildGehtUnveraendertInDieSystemspuren) {
+    std::string err;
+    auto quelle = oeffne(fixture("cpa_cpa780_k5601_clock.img"), "cpa780", err);
+    ASSERT_NE(quelle, nullptr) << err;
+
+    std::vector<uint8_t> boot;
+    ASSERT_TRUE(quelle->readBootImage(boot)) << quelle->lastError();
+    ASSERT_EQ(boot.size(), 15104u);
+
+    // Die ersten 512 Byte sind der committete Bootsektor — dieselbe Datei, die
+    // test_boot_integration als Vergleich benutzt.
+    std::ifstream b(fixture("bootsec_cpa780.bin"), std::ios::binary);
+    ASSERT_TRUE(b.good());
+    const std::vector<uint8_t> sektor((std::istreambuf_iterator<char>(b)),
+                                      std::istreambuf_iterator<char>());
+    ASSERT_EQ(sektor.size(), 512u);
+    EXPECT_TRUE(std::equal(sektor.begin(), sektor.end(), boot.begin()));
+
+    // Nur die halbe Systemspur schreiben — der Rest muss Leerdiskette bleiben.
+    const std::string bin = k1520test::tempPath("k1520_dv_boot.bin");
+    const std::vector<uint8_t> halb(boot.begin(), boot.begin() + 3328);
+    std::ofstream(bin, std::ios::binary)
+        .write(reinterpret_cast<const char*>(halb.data()), 3328);
+
+    const std::string pfad = k1520test::tempPath("k1520_dv_boot.hfe");
+    std::error_code ec;
+    fs::remove(pfad, ec);
+    auto neu = DiskVolume::create(pfad, "cpa780", "", formate(), dateisysteme(), err, bin);
+    ASSERT_NE(neu, nullptr) << err;
+    EXPECT_EQ(neu->bootAreaSize(), 15104u);
+
+    std::vector<uint8_t> zurueck;
+    ASSERT_TRUE(neu->readBootImage(zurueck)) << neu->lastError();
+    ASSERT_EQ(zurueck.size(), 15104u);
+    EXPECT_TRUE(std::equal(halb.begin(), halb.end(), zurueck.begin()));
+    EXPECT_TRUE(std::all_of(zurueck.begin() + 3328, zurueck.end(),
+                            [](uint8_t x) { return x == 0xE5; }))
+        << "hinter dem Bootabbild steht keine Leerdiskette mehr";
+
+    neu.reset();
+    fs::remove(pfad, ec);
+    fs::remove(bin, ec);
+}
+
+/**
+ * @test Ein zu grosses Bootabbild legt GAR NICHTS an.
+ * @par Kriterium  Geprueft wird vor dem Formatieren — sonst bliebe eine halbfertige
+ *                 Diskette liegen, und die Meldung nennt beide Zahlen.
+ */
+TEST(DiskVolume, ZuGrossesBootabbildLegtKeineDisketteAn) {
+    const std::string bin = k1520test::tempPath("k1520_dv_zugross.bin");
+    { std::ofstream f(bin, std::ios::binary);
+      const std::vector<uint8_t> x(15105, 0x5A);
+      f.write(reinterpret_cast<const char*>(x.data()), 15105); }
+
+    const std::string pfad = k1520test::tempPath("k1520_dv_zugross.hfe");
+    std::error_code ec;
+    fs::remove(pfad, ec);
+
+    std::string err;
+    auto dv = DiskVolume::create(pfad, "cpa780", "", formate(), dateisysteme(), err, bin);
+    EXPECT_EQ(dv, nullptr);
+    EXPECT_NE(err.find("15105"), std::string::npos) << err;
+    EXPECT_NE(err.find("15104"), std::string::npos) << err;
+    EXPECT_FALSE(fs::exists(pfad)) << "die Diskette wurde trotz Fehler angelegt";
+    fs::remove(bin, ec);
+}
+
+/**
+ * @test Ohne Systemspuren gibt es kein Bootabbild — mit Begruendung.
+ * @par Kriterium  `cpa800` beginnt auf Zylinder 0; die Meldung sagt genau das,
+ *                 statt bloss „passt nicht".
+ */
+TEST(DiskVolume, DateisystemOhneSystemspurenLehntBootabbildAb) {
+    const std::string bin = k1520test::tempPath("k1520_dv_kb.bin");
+    { std::ofstream f(bin, std::ios::binary); f << "SYL"; }
+
+    const std::string pfad = k1520test::tempPath("k1520_dv_kb.hfe");
+    std::error_code ec;
+    fs::remove(pfad, ec);
+
+    std::string err;
+    auto dv = DiskVolume::create(pfad, "cpa800", "", formate(), dateisysteme(), err, bin);
+    EXPECT_EQ(dv, nullptr);
+    EXPECT_NE(err.find("Systemspuren"), std::string::npos) << err;
+    EXPECT_NE(err.find("Zylinder 0"), std::string::npos) << err;
+    EXPECT_FALSE(fs::exists(pfad));
+    fs::remove(bin, ec);
+}
+
+/**
+ * @test Eine schreibgeschuetzt geoeffnete Diskette nimmt kein Bootabbild an.
+ * @par Kriterium  Der Schreibschutz gilt fuer die Systemspuren genauso wie fuer
+ *                 Dateien — sonst waere er an der interessantesten Stelle wirkungslos.
+ */
+TEST(DiskVolume, SchreibgeschuetzteDisketteNimmtKeinBootabbild) {
+    Kopie k("cpa_cpa780_k5601_clock.hfe", "k1520_dv_bootro.hfe");
+    std::string err;
+    auto dv = oeffne(k.path(), "cpa780", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    EXPECT_FALSE(dv->writeBootImage(std::vector<uint8_t>(128, 0x11)));
+    EXPECT_NE(dv->lastError().find("schreibgeschuetzt"), std::string::npos)
+        << dv->lastError();
+}
+
+/**
+ * @test UDOS-Kopfsektorangaben überleben den Rundlauf über den Linux-Ordner.
+ * @par Kriterium  Typ, Eigenschaften, Startadresse, Satzlänge und das Speicherabbild
+ *                 (Ladeadresse + Länge) stehen NICHT in der Datei — sie kommen über
+ *                 das Beiblatt zurück.  Ohne sie wird aus `ZDOS` (P1, 1024er Sätze,
+ *                 lädt 5521 Byte nach 2600H) eine gewöhnliche Binärdatei, und die
+ *                 Diskette bootet nicht mehr.
+ */
+TEST(DiskVolume, UdosKopfsektorangabenUeberlebenDenRundlauf) {
+    std::string err;
+    auto quelle = oeffne(fixture("udos_boot_scp.hfe"), "udos_ds77", err);
+    ASSERT_NE(quelle, nullptr) << err;
+
+    TempOrdner ordner("k1520_dv_udosmeta");
+    ASSERT_TRUE(quelle->extractAll(ordner.path(), TransferOptions{})) << quelle->lastError();
+    ASSERT_TRUE(fs::exists(ordner / "udos-dateiangaben.txt")) << "Beiblatt fehlt";
+
+    std::map<std::string, FileEntry> vorher;
+    for (const FileEntry& e : quelle->list()) vorher[e.name] = e;
+    quelle.reset();
+
+    const std::string pfad = k1520test::tempPath("k1520_dv_udosmeta.hfe");
+    std::error_code ec;
+    fs::remove(pfad, ec);
+    auto neu = DiskVolume::create(pfad, "udos_ds77", "UDOS.SYS.4.3",
+                                  formate(), dateisysteme(), err);
+    ASSERT_NE(neu, nullptr) << err;
+    ASSERT_TRUE(neu->insertAll(ordner.path(), TransferOptions{})) << neu->lastError();
+
+    int geprueft = 0;
+    for (const FileEntry& e : neu->list()) {
+        const auto it = vorher.find(e.name);
+        if (it == vorher.end() || e.type == "D") continue;
+        const FileEntry& q = it->second;
+        EXPECT_EQ(e.type,       q.type)       << e.name;
+        EXPECT_EQ(e.attributes, q.attributes) << e.name;
+        EXPECT_EQ(e.entry_addr, q.entry_addr) << e.name;
+        EXPECT_EQ(e.record_len, q.record_len) << e.name;
+        EXPECT_EQ(e.segment_start,  q.segment_start)  << e.name;
+        EXPECT_EQ(e.segment_len,  q.segment_len)  << e.name;
+        EXPECT_EQ(e.size,       q.size)       << e.name;
+        ++geprueft;
+    }
+    EXPECT_GT(geprueft, 40) << "es wurden kaum Dateien verglichen";
+
+    neu.reset();
+    fs::remove(pfad, ec);
 }

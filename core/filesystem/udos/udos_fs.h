@@ -68,8 +68,27 @@ struct UdosFileHeader {
     uint8_t     type_byte    = 0;   ///< 80=P · 81=P1 · 40=D · 20=A · 10=B
     uint16_t    record_count = 0;
     uint16_t    record_len   = 128;
+    /// @brief Offset 17: zweite Laengenangabe.  Bei Satzlaenge 128 und 1024 ist sie
+    ///        deren Kopie, bei 256 und 512 steht dort 0 — der Nukleus (`OS`) hat 0,
+    ///        und mit einer Kopie stattdessen entgleist der Systemstart.  Was sie
+    ///        genau bedeutet, ist offen; sie wird deshalb unveraendert uebernommen.
+    uint16_t    block_len    = 0;
     uint8_t     properties   = 0;   ///< 80=W · 40=E · 20=L · 10=S · 08=R · 04=F
     uint16_t    entry_addr   = 0;
+    uint16_t    segment_start  = 0;   ///< Offset 40: Anfang des 1. Speichersegments
+    uint16_t    segment_len    = 0;   ///< Offset 42: dessen Laenge in Byte
+    /// @brief Offset 122/124/126 — **LOW ADDRESS / HIGH ADDRESS / STACK SIZE**, so
+    ///        wie sie `EXTRACT` im laufenden UDOS ausgibt (§6).  Das ist der ganze
+    ///        Speicher, den das Programm belegt — mehr als das Segment.  Der Lader
+    ///        traegt LOW/HIGH in die Nukleusvariablen (1275H)/(1277H) und laesst sie
+    ///        vom Speicherverwalter (MEMMGR, 1009H) zuteilen; stehen dort FFFF, bricht
+    ///        er mit `MEMORY PROTECT VIOLATION` ab (§14).
+    uint16_t    low_addr   = 0;
+    uint16_t    high_addr  = 0;
+    uint16_t    stack_size = 0;
+    /// @brief Offset 44–47: vier Bytes ohne bekannte Bedeutung (bei den meisten
+    ///        Dateien 0; Typ A traegt dort Text).  Werden unveraendert uebernommen.
+    uint32_t    extra        = 0;
     uint16_t    bytes_in_last= 0;
     std::string created;            ///< 6 ASCII: "JJMMTT" ODER ein Versionstext ("V 4.3 ")
     std::string modified;           ///< 6 ASCII "JJMMTT"
@@ -129,6 +148,8 @@ public:
     bool   write(const std::string& name, const std::vector<uint8_t>& data,
                  const WriteOptions& opt) override;
     bool   erase(const std::string& name) override;
+    /// @brief Kopfsektorangaben einer vorhandenen Datei aendern (Inhalt bleibt).
+    bool   setAttributes(const std::string& name, const UdosAttrs& a) override;
     bool   wouldFit(const std::vector<PlannedFile>& files, FitReport& out) const override;
     bool   mkfs() override;
     FsInfo info() const override;
@@ -175,6 +196,15 @@ private:
     bool writeData(UdosPointer p, const std::vector<uint8_t>& data128);
     /// @brief @p n freie Sektoren aus der Karte belegen (noch nicht gespeichert).
     bool allocSectors(uint32_t n, std::vector<UdosPointer>& out);
+    /**
+     * @brief @p saetze Saetze zu je @p sek_je_satz Sektoren belegen.
+     *
+     * Ein Satz belegt **physisch aufeinanderfolgende Sektoren derselben Spur**
+     * (doc/udos_diskettenformat.md §7) — bei Satzlaenge 1024 also acht Sektoren am
+     * Stueck.  @p out bekommt ALLE Sektoren in Reihenfolge; der erste jedes Satzes
+     * ist der, den die Zeiger adressieren.  Bei Platzmangel wird alles zurueckgenommen.
+     */
+    bool allocRecords(uint32_t saetze, uint32_t sek_je_satz, std::vector<UdosPointer>& out);
     /// @brief Karte zurueckschreiben (Zaehler vorher nachfuehren).
     bool saveBitmap();
     /// @brief Eintrag in die Verzeichnisdatei einfuegen; liefert den Satz, in dem er steht.

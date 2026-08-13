@@ -361,3 +361,49 @@ def test_archive_converts_an_img_source_to_hfe(window, fixture_disks, tmp_path):
         namen = z.namelist()
     assert "cpa_cpa780_k5601_clock.hfe" in namen
     assert not any(n.endswith(".img") for n in namen)
+
+
+# ─── Bootdiskette ────────────────────────────────────────────────────────────
+
+def test_boot_image_button_follows_the_disk(window, fixture_disks, tmp_path):
+    """„Bootabbild sichern" gibt es nur, wo es Systemspuren gibt."""
+    assert not window.btn_bootabbild.isEnabled(), "ohne Diskette gesperrt"
+
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert window.btn_bootabbild.isEnabled()
+
+    # Eine Datendiskette (Dateisystem ab Zylinder 0) hat nichts zu sichern.
+    leer = tmp_path / "daten.hfe"
+    assert window.create_disk(leer, "cpa800")
+    assert not window.btn_bootabbild.isEnabled()
+
+
+def test_saved_boot_image_makes_a_new_disk_bootable(window, fixture_disks, tmp_path):
+    """Der ganze Weg durch das Fenster: sichern → neue Diskette damit anlegen."""
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    boot = tmp_path / "cpa780_boot.bin"
+    assert window.save_boot_image(boot)
+    assert boot.stat().st_size == 15104
+    assert window.tool.read_only, "Sichern ist eine reine Leseoperation"
+
+    ziel = tmp_path / "bootfaehig.hfe"
+    assert window.create_disk(ziel, "cpa780", "", boot)
+    kontrolle = tmp_path / "kontrolle.bin"
+    window.tool.read_boot_image(kontrolle)
+    assert kontrolle.read_bytes() == boot.read_bytes()
+
+
+def test_boot_image_that_does_not_fit_is_reported(window, tmp_path, monkeypatch):
+    """Passt das Abbild nicht, wird nichts angelegt — und das Fenster sagt warum."""
+    from PySide6.QtWidgets import QMessageBox
+    gemeldet = []
+    monkeypatch.setattr(QMessageBox, "critical",
+                        lambda *a, **k: gemeldet.append(a[2]))
+
+    zu_gross = tmp_path / "zu_gross.bin"
+    zu_gross.write_bytes(b"\x5A" * 15105)
+    ziel = tmp_path / "nicht_angelegt.hfe"
+
+    assert not window.create_disk(ziel, "cpa780", "", zu_gross)
+    assert not ziel.exists()
+    assert gemeldet and "15104" in gemeldet[0], gemeldet

@@ -32,6 +32,18 @@ struct FileEntry {
     std::string type;            ///< CP/M "" · UDOS "A"/"P"/"P1"/"B"/"D"
     std::string attributes;      ///< CP/M "RO SYS ARC" · UDOS "WELS"
     std::string date;            ///< "" wenn das Dateisystem keins fuehrt
+    uint16_t    entry_addr = 0;  ///< UDOS: Startadresse bei Typ P/P1 (0 = keine)
+    uint16_t    record_len = 0;  ///< UDOS: Satzlaenge aus dem Kopfsektor (0 = unbekannt)
+    uint16_t    block_len  = 0;  ///< UDOS: zweite Laengenangabe (Offset 17)
+    uint16_t    bytes_in_last = 0;  ///< UDOS: Bytes im letzten Satz (Offset 22) —
+                                    ///< bestimmt die logische Laenge
+    uint32_t    extra      = 0;  ///< UDOS: Kopfsektor Offset 44–47, Bedeutung offen
+    std::string created;         ///< UDOS: Erstellungsvermerk (auch Versionstext "V 4.3 ")
+    uint16_t    segment_start  = 0;  ///< UDOS: Anfang des Speichersegments (Kopf 40)
+    uint16_t    segment_len  = 0;  ///< UDOS: Laenge des Segments (nicht die Dateigroesse!)
+    uint16_t    low_addr   = 0;  ///< UDOS: LOW ADDRESS — erste belegte Adresse (Kopf 122)
+    uint16_t    high_addr  = 0;  ///< UDOS: HIGH ADDRESS — letzte belegte (Kopf 124)
+    uint16_t    stack_size = 0;  ///< UDOS: STACK SIZE (Kopf 126)
     bool        hidden  = false; ///< CP/M SYS · UDOS SECRET
     bool        damaged = false; ///< CRC-Fehler oder Kettenbruch beim Lesen
 
@@ -64,6 +76,75 @@ struct WriteOptions {
     /// @brief UDOS-Datum „JJMMTT" fuer den Kopfsektor; leer = heutiges Systemdatum.
     ///        (CP/M 2.2 fuehrt keine Zeitstempel und ignoriert das Feld.)
     std::string date;
+
+    // ── nur UDOS: was im Kopfsektor steht und Linux nicht mitliefert ─────────
+    //
+    // Ein UDOS-Kopfsektor traegt mehr als Name und Bytes: TYP, EIGENSCHAFTEN und —
+    // bei Programmen — die STARTADRESSE.  Ohne sie wird aus einer Systemdatei eine
+    // gewoehnliche Binaerdatei, und der Urlader springt ins Leere: eine so kopierte
+    // UDOS-Bootdiskette bleibt im Debugger stehen (`BREAK 2600`).  CP/M ignoriert
+    // diese Felder.
+
+    /// @brief "A"|"P"|"P1"|"B"|"D"; leer = aus @ref text ableiten (A bzw. B).
+    std::string udos_type;
+    /// @brief Eigenschaften als Buchstaben (W E L S R F), z. B. "WS"; leer = keine.
+    std::string udos_properties;
+    /// @brief ENTRY — Einsprungadresse fuer Typ P/P1; 0 = keine.
+    uint16_t    udos_entry = 0;
+    /// @brief Satzlaenge (Vielfaches von 128); 0 = 128.  **Kein Schoenheitswert:**
+    ///        ein Satz belegt `Satzlaenge/128` aufeinanderfolgende Sektoren einer
+    ///        Spur, und UDOS liest Systemdateien satzweise — `ZDOS` hat 1024, `OS`
+    ///        hat 512.  Mit 128 zurueckgeschrieben bootet die Diskette nicht.
+    uint16_t    udos_record_len = 0;
+    /// @brief SEGMENTS — Anfang und Laenge des Speichersegments (Kopfsektor 40/42).
+    ///        Die Laenge ist NICHT die Dateigroesse (`OS`: 5504 Byte gross,
+    ///        Segment 5632 Byte).
+    uint16_t    udos_segment = 0;
+    uint16_t    udos_segment_len = 0;
+    /// @brief LOW/HIGH ADDRESS und STACK SIZE (Kopfsektor 122/124/126) — der
+    ///        Speicher, den das Programm insgesamt belegt (Segment + Arbeitsspeicher
+    ///        + Stapel).  **Das ist es, was der Lader zuteilen laesst**: er traegt
+    ///        LOW/HIGH in die Nukleusvariablen 1275H/1277H und ruft den
+    ///        Speicherverwalter (1009H).  Fehlt die Angabe, steht dort FFFF und UDOS
+    ///        weist die Datei mit `MEMORY PROTECT VIOLATION` ab
+    ///        (doc/udos_diskettenformat.md §14).
+    uint16_t    udos_low_addr   = 0;
+    uint16_t    udos_high_addr  = 0;
+    uint16_t    udos_stack_size = 0;
+    /// @brief Zweite Laengenangabe (Offset 17); @ref udos_block_len_gesetzt sagt,
+    ///        ob der Wert gilt — 0 ist ein GUELTIGER Wert (Nukleus).
+    uint16_t    udos_block_len = 0;
+    bool        udos_block_len_gesetzt = false;
+    /// @brief „Bytes im letzten Satz" (Offset 22); 0 = aus der Datengroesse rechnen.
+    ///        Noetig, wenn das Speicherabbild ueber das logische Dateiende hinausreicht.
+    uint16_t    udos_bytes_in_last = 0;
+    /// @brief Kopfsektor Offset 44–47 (Bedeutung offen, unveraendert uebernehmen).
+    uint32_t    udos_extra = 0;
+    /// @brief Erstellungsvermerk (6 Zeichen; auch ein Versionstext wie "V 4.3 ");
+    ///        leer = wie @ref date.
+    std::string udos_created;
+};
+
+/**
+ * @struct UdosAttrs
+ * @brief Die Kopfsektorangaben einer UDOS-Datei — lesen und **aendern**.
+ *
+ * Dieselben Felder wie in @ref WriteOptions, aber als Bausatz fuer eine Datei, die
+ * schon auf der Diskette liegt (@ref FileSystem::setAttributes).  Leere Zeichenketten
+ * und `false`-Kennzeichen heissen „unveraendert lassen" — so kann eine Oberflaeche ein
+ * einzelnes Feld setzen, ohne die uebrigen zu kennen.
+ */
+struct UdosAttrs {
+    std::string type;            ///< "A"/"P"/"P1"/"B"; leer = unveraendert
+    std::string properties;      ///< "WELS"; leer = unveraendert (";" = alle loeschen)
+    std::string created;         ///< 6 Zeichen; leer = unveraendert
+    std::string modified;        ///< "JJMMTT"; leer = unveraendert
+
+    bool     set_entry = false;      uint16_t entry = 0;        ///< ENTRY (Offset 20)
+    bool     set_block_len = false;  uint16_t block_len = 0;    ///< Offset 17
+    bool     set_segment = false;    uint16_t segment = 0, segment_len = 0;  ///< 40/42
+    bool     set_memory = false;     uint16_t low = 0, high = 0, stack = 0;  ///< 122/124/126
+    bool     set_extra = false;      uint32_t extra = 0;        ///< Offset 44…47
 };
 
 /**
@@ -110,6 +191,17 @@ public:
 
     /// @brief Datei entfernen.
     virtual bool erase(const std::string& name) = 0;
+
+    /**
+     * @brief Kopfsektorangaben einer vorhandenen Datei aendern (nur UDOS).
+     *
+     * Der Inhalt bleibt unangetastet; geaendert wird allein der Kopfsektor.  CP/M
+     * kennt diese Angaben nicht und meldet das als Fehler.
+     */
+    virtual bool setAttributes(const std::string& name, const UdosAttrs&) {
+        last_error_ = "Dieses Dateisystem fuehrt keine solchen Dateiangaben";
+        return false;
+    }
 
     /**
      * @brief Was WUERDE das Einfuegen kosten?  Schreibt nichts.
