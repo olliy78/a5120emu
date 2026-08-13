@@ -233,6 +233,81 @@ K1520_API bool k1520d_set_cpm_attrs(K1520Disk h, const char* name,
                                     bool set_archived,  bool archived,
                                     bool set_user,      int  user);
 
+/* ─── Sektoransicht (Diskeditor) ───────────────────────────────────────────────
+ * Eine Ebene UNTER dem Dateisystem: Spuren, Sektoren, Gaps und CRCs.  Fuer einen
+ * Editor, der eine schadhafte Diskette begutachten oder von Hand reparieren soll
+ * (doc/design/13_k1520disktool.md §19).
+ *
+ * Winkelangaben sind Bruchteile EINER UMDREHUNG (0 = Index).  Sie kommen aus der
+ * Byteposition in der Spur — eine Spur ist genau eine Umdrehung —, nicht aus der
+ * Drehzahl im HFE-Kopf.                                                        */
+
+/// @brief Ausdehnung des MEDIUMS (was da ist, nicht was das Format vorsieht).
+K1520_API int k1520d_medium_cylinders(K1520Disk h);
+K1520_API int k1520d_medium_heads(K1520Disk h);
+
+/**
+ * @brief Eine Spur einlesen; liefert die Anzahl ihrer Abschnitte (-1 = Fehler).
+ *
+ * Wie @ref k1520d_list ein Zustandswechsel: die `k1520d_track_*`- und
+ * `k1520d_span_*`-Abfragen beziehen sich auf die zuletzt eingelesene Spur.
+ */
+K1520_API int k1520d_track_scan(K1520Disk h, int cyl, int head);
+
+/// @brief false = diese Spur gibt es in der Ausdehnung des Mediums nicht.
+K1520_API bool        k1520d_track_exists(K1520Disk h);
+/// @brief false = keine einzige Adressmarke (unformatiert bzw. markenloser Gap-Fluss).
+K1520_API bool        k1520d_track_formatted(K1520Disk h);
+/// @brief "MFM" | "FM"
+K1520_API const char* k1520d_track_encoding(K1520Disk h);
+/// @brief Spurlaenge in Byte (eine Umdrehung).
+K1520_API int         k1520d_track_bytes(K1520Disk h);
+K1520_API int         k1520d_track_sectors(K1520Disk h);
+
+/// @brief 0 = unformatiert · 1 = Gap · 2 = Sektor
+K1520_API int    k1520d_span_kind (K1520Disk h, int i);
+/// @brief Anfang/Ende als Bruchteil der Umdrehung; die Abschnitte decken [0,1) lueckenlos ab.
+K1520_API double k1520d_span_start(K1520Disk h, int i);
+K1520_API double k1520d_span_end  (K1520Disk h, int i);
+/// @brief Laufende Nummer des Sektors in der Spur — der Schluessel fuer Lesen/Schreiben.
+K1520_API int    k1520d_span_index(K1520Disk h, int i);
+/// @brief Angaben aus dem ID-FELD (koennen von der tatsaechlichen Lage abweichen).
+K1520_API int    k1520d_span_id   (K1520Disk h, int i);
+K1520_API int    k1520d_span_cyl  (K1520Disk h, int i);
+K1520_API int    k1520d_span_head (K1520Disk h, int i);
+K1520_API int    k1520d_span_size (K1520Disk h, int i);
+K1520_API bool   k1520d_span_id_crc_ok  (K1520Disk h, int i);
+K1520_API bool   k1520d_span_data_crc_ok(K1520Disk h, int i);
+/// @brief Datenmarke war 0xF8 (geloeschter Sektor) statt 0xFB.
+K1520_API bool   k1520d_span_deleted    (K1520Disk h, int i);
+
+/**
+ * @brief Nutzdaten eines Sektors lesen.
+ * @param index laufende Nummer aus @ref k1520d_span_index
+ * @return Anzahl gelesener Bytes, oder -1 (auch wenn @p max_len zu klein ist —
+ *         es wird dann NICHTS kopiert)
+ */
+K1520_API int k1520d_sector_read(K1520Disk h, int cyl, int head, int index,
+                                 uint8_t* out, int max_len);
+
+/// @brief Daten-CRC, wie sie auf dem Medium steht; -1 = Fehler.
+K1520_API int k1520d_sector_crc(K1520Disk h, int cyl, int head, int index);
+
+/// @brief Welche Daten-CRC gehoerte zu @p data?  Aendert nichts; -1 = Fehler.
+K1520_API int k1520d_sector_crc_for(K1520Disk h, int cyl, int head, int index,
+                                    const uint8_t* data, int len);
+
+/**
+ * @brief Datenfeld eines Sektors ersetzen (in die Diskette im Speicher).
+ *
+ * @param crc `< 0` = CRC neu rechnen; sonst wird **genau dieser Wert** ins CRC-Feld
+ *        geschrieben — damit laesst sich ein Sektor absichtlich defekt lassen oder
+ *        machen (eine schadhafte Diskette originalgetreu nachbilden).
+ * @param len MUSS der Sektorgroesse entsprechen.
+ */
+K1520_API bool k1520d_sector_write(K1520Disk h, int cyl, int head, int index,
+                                   const uint8_t* data, int len, int crc);
+
 /* ─── Uebertragung ───────────────────────────────────────────────────────────
  * `name` darf das Seitenpraefix tragen: "Side1/HELP.DAT.00".                  */
 

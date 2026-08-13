@@ -56,6 +56,7 @@ const Kataloge& kataloge() {
 struct Handle {
     std::unique_ptr<DiskVolume> vol;
     std::vector<FileEntry>      eintraege;   ///< Stand des letzten k1520d_list
+    TrackView                   spur;        ///< Stand des letzten k1520d_track_scan
     // Puffer je Getter — die Rueckgabe gilt bis zum naechsten Aufruf DERSELBEN Funktion.
     std::string s_error, s_name, s_type, s_attrs, s_date, s_dir, s_label, s_created;
     std::string s_fmt, s_fs, s_alt, s_remarks, s_fit, s_check;
@@ -77,6 +78,14 @@ const FileEntry* eintrag(K1520Disk h, int i) {
 const char* halte(std::string& puffer, std::string wert) {
     puffer = std::move(wert);
     return puffer.c_str();
+}
+
+/// @brief Sicherer Zugriff auf einen Spurabschnitt des letzten @c k1520d_track_scan.
+const TrackSpan* abschnitt(K1520Disk h, int i) {
+    if (!h) return nullptr;
+    Handle* p = H(h);
+    if (i < 0 || i >= static_cast<int>(p->spur.spans.size())) return nullptr;
+    return &p->spur.spans[static_cast<size_t>(i)];
 }
 
 TransferOptions optionen(K1520DMode mode, bool overwrite) {
@@ -384,6 +393,118 @@ extern "C" bool k1520d_set_cpm_attrs(K1520Disk h, const char* name,
 extern "C" bool k1520d_entry_damaged(K1520Disk h, int i) {
     const FileEntry* e = eintrag(h, i);
     return e ? e->damaged : false;
+}
+
+// ─── Sektoransicht (Diskeditor) ──────────────────────────────────────────────
+
+extern "C" int k1520d_medium_cylinders(K1520Disk h) {
+    return h ? H(h)->vol->mediumCylinders() : 0;
+}
+
+extern "C" int k1520d_medium_heads(K1520Disk h) {
+    return h ? H(h)->vol->mediumHeads() : 0;
+}
+
+extern "C" int k1520d_track_scan(K1520Disk h, int cyl, int head) {
+    if (!h || cyl < 0 || head < 0 || cyl > 255 || head > 255) return -1;
+    H(h)->spur = H(h)->vol->trackView(static_cast<uint8_t>(cyl),
+                                      static_cast<uint8_t>(head));
+    return static_cast<int>(H(h)->spur.spans.size());
+}
+
+extern "C" bool k1520d_track_exists(K1520Disk h)    { return h && H(h)->spur.exists; }
+extern "C" bool k1520d_track_formatted(K1520Disk h) { return h && H(h)->spur.formatted; }
+extern "C" int  k1520d_track_bytes(K1520Disk h)     { return h ? static_cast<int>(H(h)->spur.bytes) : 0; }
+extern "C" int  k1520d_track_sectors(K1520Disk h)   { return h ? H(h)->spur.sectors : 0; }
+
+extern "C" const char* k1520d_track_encoding(K1520Disk h) {
+    if (!h) return "";
+    return H(h)->spur.encoding == Encoding::FM ? "FM" : "MFM";
+}
+
+extern "C" int k1520d_span_kind(K1520Disk h, int i) {
+    const TrackSpan* s = abschnitt(h, i);
+    return s ? static_cast<int>(s->kind) : 0;
+}
+
+extern "C" double k1520d_span_start(K1520Disk h, int i) {
+    const TrackSpan* s = abschnitt(h, i);
+    return s ? s->start : 0.0;
+}
+
+extern "C" double k1520d_span_end(K1520Disk h, int i) {
+    const TrackSpan* s = abschnitt(h, i);
+    return s ? s->end : 0.0;
+}
+
+#define K1520D_SPAN_INT(fn, ausdruck)                                \
+    extern "C" int fn(K1520Disk h, int i) {                          \
+        const TrackSpan* s = abschnitt(h, i);                        \
+        return s ? static_cast<int>(ausdruck) : -1;                  \
+    }
+K1520D_SPAN_INT(k1520d_span_index, s->index)
+K1520D_SPAN_INT(k1520d_span_id,    s->id)
+K1520D_SPAN_INT(k1520d_span_cyl,   s->cyl)
+K1520D_SPAN_INT(k1520d_span_head,  s->head)
+K1520D_SPAN_INT(k1520d_span_size,  s->size)
+#undef K1520D_SPAN_INT
+
+extern "C" bool k1520d_span_id_crc_ok(K1520Disk h, int i) {
+    const TrackSpan* s = abschnitt(h, i);
+    return s && s->id_crc_ok;
+}
+
+extern "C" bool k1520d_span_data_crc_ok(K1520Disk h, int i) {
+    const TrackSpan* s = abschnitt(h, i);
+    return s && s->data_crc_ok;
+}
+
+extern "C" bool k1520d_span_deleted(K1520Disk h, int i) {
+    const TrackSpan* s = abschnitt(h, i);
+    return s && s->deleted;
+}
+
+extern "C" int k1520d_sector_read(K1520Disk h, int cyl, int head, int index,
+                                  uint8_t* out, int max_len) {
+    if (!h || !out || max_len < 0) return -1;
+    std::vector<uint8_t> d;
+    uint16_t crc = 0;
+    if (!H(h)->vol->readSectorAt(static_cast<uint8_t>(cyl), static_cast<uint8_t>(head),
+                                 index, d, crc))
+        return -1;
+    const int n = static_cast<int>(d.size());
+    if (n > max_len) return -1;               // Puffer zu klein — nichts halb kopieren
+    std::copy(d.begin(), d.end(), out);
+    return n;
+}
+
+extern "C" int k1520d_sector_crc(K1520Disk h, int cyl, int head, int index) {
+    if (!h) return -1;
+    std::vector<uint8_t> d;
+    uint16_t crc = 0;
+    if (!H(h)->vol->readSectorAt(static_cast<uint8_t>(cyl), static_cast<uint8_t>(head),
+                                 index, d, crc))
+        return -1;
+    return crc;
+}
+
+extern "C" int k1520d_sector_crc_for(K1520Disk h, int cyl, int head, int index,
+                                     const uint8_t* data, int len) {
+    if (!h || !data || len < 0) return -1;
+    uint16_t crc = 0;
+    if (!H(h)->vol->sectorCrcFor(static_cast<uint8_t>(cyl), static_cast<uint8_t>(head),
+                                 index, std::vector<uint8_t>(data, data + len), crc))
+        return -1;
+    return crc;
+}
+
+extern "C" bool k1520d_sector_write(K1520Disk h, int cyl, int head, int index,
+                                    const uint8_t* data, int len, int crc) {
+    if (!h || !data || len < 0) return false;
+    const uint16_t woertlich = static_cast<uint16_t>(crc);
+    return H(h)->vol->writeSectorAt(static_cast<uint8_t>(cyl), static_cast<uint8_t>(head),
+                                    index, std::vector<uint8_t>(data, data + len),
+                                    crc < 0 ? nullptr : &woertlich);
 }
 
 // ─── Uebertragung ────────────────────────────────────────────────────────────

@@ -570,3 +570,165 @@ def test_archive_catalogue_lists_cpm_user_area_and_flags(window, fixture_disks,
     angaben = text.split("DATEIANGABEN IM EINZELNEN", 1)[1]
     zeile = next(z for z in angaben.split("\n") if z.startswith("3:PIP.COM"))
     assert zeile.split() == ["3:PIP.COM", "3", "7424", "-", "ja", "-"], zeile
+
+
+# ─── Diskeditor: die Diskette als Scheibe ────────────────────────────────────
+#
+# Eine Ebene unter dem Dateisystem. Geprüft wird die Verdrahtung und das, was ein
+# Bildvergleich nicht kann: dass der Treffertest wirklich den Sektor findet, der
+# an dieser Stelle gezeichnet wurde, und dass der Schreibweg tut, was er sagt.
+
+import math
+
+
+def _editor(window, abbild):
+    assert window.open_image(abbild)
+    return window.open_disk_editor()
+
+
+def test_disk_editor_shows_both_sides_of_the_medium(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert ed.surface.cylinders == window.tool.medium_cylinders
+    assert ed.surface.heads == window.tool.medium_heads
+    spur = ed.surface.tracks[0][0]
+    assert spur.formatted and spur.sectors > 0
+    # Die Abschnitte decken die Umdrehung lückenlos ab — sonst bliebe Fläche leer.
+    assert spur.spans[0].start == 0.0
+    for a, b in zip(spur.spans, spur.spans[1:]):
+        assert a.end == b.start
+    assert abs(spur.spans[-1].end - 1.0) < 1e-9
+
+
+def test_disk_editor_hit_test_finds_the_drawn_sector(window, fixture_disks):
+    """Für jeden Sektor den gezeichneten Mittelpunkt zurückrechnen und treffen.
+
+    Das ist die einzige Prüfung, die die Grafik wirklich absichert: Winkelrichtung
+    (Seite 1 ist gespiegelt), Ringlage (Spur 0 außen) und Nullpunkt (12 Uhr)
+    müssen zwischen Zeichnen und Treffertest übereinstimmen.
+    """
+    from PySide6.QtCore import QPointF
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    ed.resize(1000, 800)
+    s = ed.surface
+
+    geprueft = 0
+    for kopf in (0, 1):
+        for spur in (0, 3):
+            cx, cy, r_aussen, r_nabe = s._mitte(kopf)
+            hoehe = s._ringhoehe(r_aussen, r_nabe)
+            r = r_aussen - (spur + 0.5) * hoehe
+            for span in s.tracks[kopf][spur].spans:
+                if not span.is_sector:
+                    continue
+                anteil = (span.start + span.end) / 2
+                grad = (90 - anteil * 360) if kopf == 0 else (90 + anteil * 360)
+                p = QPointF(cx + math.cos(math.radians(grad)) * r,
+                            cy - math.sin(math.radians(grad)) * r)
+                treffer = s.treffer(p)
+                assert treffer is not None, (kopf, spur, span.id)
+                assert (treffer[0], treffer[1], treffer[2].index) \
+                    == (kopf, spur, span.index)
+                geprueft += 1
+    assert geprueft > 50, "zu wenige Sektoren geprüft"
+
+
+def test_disk_editor_tooltip_names_track_and_sector(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    s = ed.surface
+    span = next(x for x in s.tracks[0][2].spans if x.is_sector)
+    text = s.beschreibung((0, 2, span))
+    assert "Seite 0" in text and "Spur 2" in text and f"Sektor {span.id}" in text
+
+
+def test_disk_editor_shows_the_sector_content(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    span = next(x for x in ed.surface.tracks[0][0].spans if x.is_sector)
+    assert ed.select_sector(0, 0, span.index)
+
+    assert "Seite: 0" in ed.info.text() and "Spur: 0" in ed.info.text()
+    assert "IBM-MFM" in ed.info.text() and "128 Byte" in ed.info.text()
+    assert ed.crc_urteil.text() == "gültig"
+    zeilen = ed.hex.toPlainText().split("\n")
+    assert len(zeilen) == 4, "128 Byte = 4 Zeilen à 32 Byte"
+    assert zeilen[0].startswith("0000  ")
+    assert zeilen[1].startswith("0020  ")
+
+
+def test_disk_editor_hexdump_round_trips(window):
+    from app.disktool.ui.disk_editor import hexdump, parse_hexdump
+    daten = bytes(range(256)) * 4
+    assert parse_hexdump(hexdump(daten)) == daten
+    # Der Offset ist Anzeige: ihn zu verbiegen ändert die Nutzdaten NICHT.
+    verbogen = hexdump(daten).replace("0000  ", "AFFE  ", 1)
+    assert parse_hexdump(verbogen) == daten
+    with pytest.raises(ValueError):
+        parse_hexdump("0000  ZZ 01 02")
+
+
+def test_disk_editor_writes_a_sector_into_the_disk_in_memory(window, fixture_disks,
+                                                             tmp_path):
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+
+    span = next(x for x in ed.surface.tracks[0][5].spans if x.is_sector)
+    assert ed.select_sector(0, 5, span.index)
+    zeilen = ed.hex.toPlainText().split("\n")
+    zeilen[0] = zeilen[0][:6] + "DE AD BE EF" + zeilen[0][17:]
+    ed.hex.setPlainText("\n".join(zeilen))
+
+    # Die Daten stimmen jetzt nicht mehr zur CRC — und das steht auch da.
+    assert "ungültig" in ed.crc_urteil.text()
+    assert ed.fix_crc()
+    assert ed.crc_urteil.text() == "gültig"
+    assert ed.save_sector()
+
+    assert window.tool.dirty, "geschrieben wird ins Medium, nicht in die Datei"
+    assert window.tool.sector_data(5, 0, span.index)[:4] == b"\xDE\xAD\xBE\xEF"
+    assert ed.reload_sector()
+    assert ed.hex.toPlainText().startswith("0000  DE AD BE EF")
+
+
+def test_disk_editor_can_leave_a_sector_deliberately_broken(window, fixture_disks,
+                                                            tmp_path):
+    """Der Sinn der mitschreibbaren CRC: eine schadhafte Diskette nachbilden."""
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+
+    span = next(x for x in ed.surface.tracks[0][5].spans if x.is_sector)
+    assert ed.select_sector(0, 5, span.index)
+    ed.crc_feld.setText("BEEF")
+    assert ed.save_sector()
+
+    kaputt = next(x for x in ed.surface.tracks[0][5].spans
+                  if x.is_sector and x.index == span.index)
+    assert not kaputt.ok, "der Sektor muss danach als defekt gelten (rot)"
+    assert window.tool.sector_crc(5, 0, span.index) == 0xBEEF
+
+    # … und wieder heilbar.
+    assert ed.fix_crc() and ed.save_sector()
+    geheilt = next(x for x in ed.surface.tracks[0][5].spans
+                   if x.is_sector and x.index == span.index)
+    assert geheilt.ok
+
+
+def test_disk_editor_is_read_only_on_a_protected_disk(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    span = next(x for x in ed.surface.tracks[0][0].spans if x.is_sector)
+    assert ed.select_sector(0, 0, span.index)
+
+    assert window.tool.read_only
+    assert ed.hex.isReadOnly()
+    assert not ed.btn_save.isEnabled()
+    assert not ed.btn_fixcrc.isEnabled()
+    assert ed.btn_reload.isEnabled(), "Ansehen bleibt erlaubt"
+
+
+def test_disk_editor_opens_once_per_window(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert window.open_disk_editor() is ed, "kein zweites Fenster auf dieselbe Diskette"
+    window._close_tool()
+    assert window._diskeditor is None, "der Editor darf keinen toten Griff behalten"

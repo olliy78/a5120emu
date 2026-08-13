@@ -46,6 +46,22 @@ struct LogicalSector {
     /// UDOS-Lader las Gap-Fuellbytes als Zeiger → „BAD POINTER IN OS".
     /// Nur von @ref parseTrack gefuellt (bis @ref kSectorTailBytes Bytes).
     std::vector<uint8_t> tail;
+
+    // ── Lage auf der Spur; nur von @ref parseTrack gesetzt ───────────────────
+    //
+    // Eine @ref TrackImage ist GENAU eine Umdrehung — `pos / track.size()` ist damit
+    // der Drehwinkel, an dem das Byte unter dem Kopf liegt (Index = 0 = 12 Uhr).  Nur
+    // damit laesst sich zeichnen, wo ein Sektor wirklich sitzt; die Drehzahl aus dem
+    // HFE-Kopf braucht es dafuer NICHT.  SIZE_MAX = nicht vorhanden (Sektor ohne
+    // Datenfeld).
+
+    size_t   id_pos    = SIZE_MAX;  ///< Byte-Index der IDAM (Mark-Byte FE)
+    size_t   sync_pos  = SIZE_MAX;  ///< Beginn der Sync-Gruppe davor (MFM: 3×A1, FM: = id_pos)
+    size_t   data_pos  = SIZE_MAX;  ///< Byte-Index der DAM (Mark-Byte FB/F8)
+    size_t   end_pos   = SIZE_MAX;  ///< erstes Byte HINTER der Daten-CRC
+    uint16_t id_crc    = 0;         ///< ID-CRC, wie sie auf dem Medium steht
+    uint16_t data_crc  = 0;         ///< Daten-CRC, wie sie auf dem Medium steht
+    bool     deleted   = false;     ///< DAM war 0xF8 (geloeschter Sektor) statt 0xFB
 };
 
 /// @brief Anzahl der Bytes hinter der Daten-CRC, die @ref parseTrack mitnimmt und
@@ -129,6 +145,36 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track);
 bool writeSector(TrackImage& track, uint8_t sector_id,
                  const std::vector<uint8_t>& data,
                  const std::vector<uint8_t>& tail = {});
+
+/**
+ * @brief Wie @ref writeSector, aber ueber die LAUFENDE NUMMER des Sektors in der Spur.
+ *
+ * Zwei Gruende, warum die ID dafuer nicht taugt: eine Spur darf dieselbe ID mehrfach
+ * tragen (fehlerhaft formatiert, Kopierschutz), und ein Sektoreditor muss genau den
+ * Sektor treffen, den der Anwender angeklickt hat.  Die Nummerierung ist die von
+ * @ref parseTrack.
+ *
+ * @param crc_woertlich `nullptr` = Daten-CRC neu rechnen (wie @ref writeSector);
+ *        sonst wird **genau dieser Wert** ins CRC-Feld geschrieben.  Damit laesst sich
+ *        ein Sektor absichtlich defekt lassen oder machen — noetig, um eine schadhafte
+ *        Diskette originalgetreu nachzubilden.
+ */
+bool writeSectorAt(TrackImage& track, size_t index,
+                   const std::vector<uint8_t>& data,
+                   const std::vector<uint8_t>& tail = {},
+                   const uint16_t* crc_woertlich = nullptr);
+
+/**
+ * @brief Daten-CRC, die zu @p data an der Stelle des @p index -ten Sektors gehoerte.
+ *
+ * Fuer den Editor: „was muesste dort stehen, damit der Sektor gueltig ist?" — ohne
+ * die Spur anzufassen.  Beruecksichtigt Verfahren (FM/MFM) und die vorgefundene
+ * Datenmarke (0xFB / 0xF8 geloescht).
+ *
+ * @return false, wenn es den Sektor nicht gibt oder @p data nicht seine Groesse hat.
+ */
+bool sectorDataCrc(const TrackImage& track, size_t index,
+                   const std::vector<uint8_t>& data, uint16_t& out);
 
 /**
  * @brief Resync-Zielposition für den ZRE-ROM-Lesepfad (Kalibrierung, doc/design/07 §10.5.1).

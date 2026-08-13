@@ -36,6 +36,7 @@
 #include "core/filesystem/sector_space.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/format_catalog.h"
+#include "core/peripherals/floppy_drive/track_view.h"
 
 #include <memory>
 #include <optional>
@@ -261,6 +262,43 @@ public:
      * verlangt eine beschreibbare Diskette.
      */
     bool setAttributes(const FileRef& ref, const CpmAttrs& attrs);
+
+    // ─── Sektoransicht (Diskeditor, §19) ─────────────────────────────────────
+    //
+    // Eine Ebene UNTER dem Dateisystem: hier gibt es keine Dateien, nur Spuren,
+    // Sektoren, Gaps und CRCs.  Genau das braucht ein Editor, der eine schadhafte
+    // Diskette begutachten oder von Hand reparieren soll.
+
+    /// @brief Ausdehnung des Mediums — was da ist, nicht was das Format vorsieht.
+    uint8_t mediumCylinders() const;
+    uint8_t mediumHeads()     const;
+
+    /// @brief Eine Spur als lueckenlose Abschnittsfolge (Sektor/Gap/unformatiert).
+    TrackView trackView(uint8_t cyl, uint8_t head) const;
+
+    /**
+     * @brief Nutzdaten und gespeicherte Daten-CRC eines Sektors.
+     * @param index laufende Nummer in der Spur (aus @ref TrackSpan::index)
+     */
+    bool readSectorAt(uint8_t cyl, uint8_t head, int index,
+                      std::vector<uint8_t>& out, uint16_t& crc) const;
+
+    /// @brief Welche Daten-CRC gehoerte zu @p data?  Aendert nichts.
+    bool sectorCrcFor(uint8_t cyl, uint8_t head, int index,
+                      const std::vector<uint8_t>& data, uint16_t& out) const;
+
+    /**
+     * @brief Datenfeld eines Sektors ersetzen.
+     *
+     * @param crc_woertlich `nullptr` = CRC neu rechnen; sonst wird genau dieser Wert
+     *        geschrieben — ein Sektor laesst sich damit absichtlich defekt lassen.
+     *
+     * Geschrieben wird ins Medium im Speicher; in die Datei kommt es erst mit
+     * @ref flush (wie jede andere Aenderung, §5).
+     */
+    bool writeSectorAt(uint8_t cyl, uint8_t head, int index,
+                       const std::vector<uint8_t>& data,
+                       const uint16_t* crc_woertlich);
 
     // ─── Stapeloperationen (transaktional, §9.2) ─────────────────────────────
 

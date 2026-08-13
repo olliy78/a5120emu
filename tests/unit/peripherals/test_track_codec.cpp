@@ -692,3 +692,97 @@ TEST(TrackCodecWriteSector, GeloeschtesDatenfeldBleibtGeloescht) {
     EXPECT_EQ(t.bytes[dam + 1 + 128],     static_cast<uint8_t>(soll >> 8));
     EXPECT_EQ(t.bytes[dam + 1 + 128 + 1], static_cast<uint8_t>(soll & 0xFF));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lage auf der Spur + Schreiben ueber die laufende Nummer (Diskeditor, §19)
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(TrackCodecParse, LiefertLageUndGespeicherteCrc) {
+    // Ohne die Byte-Offsets liesse sich nicht zeichnen, WO ein Sektor liegt — der
+    // Winkel ist Position/Spurlaenge, sonst nichts.
+    std::vector<LogicalSector> secs{makeSector(0, 0, 1, 128, 0x11),
+                                    makeSector(0, 0, 2, 256, 0x22)};
+    TrackImage t = TrackCodec::buildTrack(secs, Encoding::MFM);
+    const std::vector<LogicalSector> zurueck = TrackCodec::parseTrack(t);
+    ASSERT_EQ(zurueck.size(), 2u);
+
+    for (const LogicalSector& s : zurueck) {
+        ASSERT_NE(s.id_pos, SIZE_MAX);
+        ASSERT_NE(s.data_pos, SIZE_MAX);
+        ASSERT_NE(s.end_pos, SIZE_MAX);
+        EXPECT_EQ(t.marks[s.id_pos], MarkType::Id);
+        EXPECT_EQ(t.marks[s.data_pos], MarkType::Data);
+        EXPECT_EQ(s.sync_pos, s.id_pos - 3) << "MFM: drei A1 vor der Marke";
+        EXPECT_EQ(s.end_pos, s.data_pos + 1 + s.size + 2);
+        EXPECT_TRUE(s.id_crc_ok);
+        EXPECT_TRUE(s.data_crc_ok);
+        EXPECT_FALSE(s.deleted);
+        // Die gespeicherte CRC ist genau das, was im Feld steht.
+        EXPECT_EQ(s.data_crc, static_cast<uint16_t>(
+            (t.bytes[s.data_pos + 1 + s.size] << 8) | t.bytes[s.data_pos + 1 + s.size + 1]));
+    }
+    EXPECT_LT(zurueck[0].id_pos, zurueck[1].id_pos) << "Spurreihenfolge";
+}
+
+TEST(TrackCodecParse, ErkenntGeloeschtesDatenfeld) {
+    TrackImage t = TrackCodec::buildTrack({makeSector(0, 0, 1, 128)}, Encoding::MFM);
+    const size_t dam = t.nextMark(0, MarkType::Data);
+    t.bytes[dam] = 0xF8;
+    EXPECT_TRUE(TrackCodec::parseTrack(t)[0].deleted);
+}
+
+TEST(TrackCodecWriteSectorAt, TrifftDenNtenSektorAuchBeiDoppelterId) {
+    // Eine Spur darf dieselbe ID zweimal tragen (fehlerhaft formatiert, Kopierschutz).
+    // Ueber die ID waere der zweite Sektor unerreichbar — der Editor muss aber genau
+    // den treffen, den der Anwender angeklickt hat.
+    std::vector<LogicalSector> secs{makeSector(0, 0, 7, 128, 0xAA),
+                                    makeSector(0, 0, 7, 128, 0xBB)};
+    TrackImage t = TrackCodec::buildTrack(secs, Encoding::MFM);
+
+    const std::vector<uint8_t> neu(128, 0x5C);
+    ASSERT_TRUE(TrackCodec::writeSectorAt(t, 1, neu));
+
+    const std::vector<LogicalSector> zurueck = TrackCodec::parseTrack(t);
+    ASSERT_EQ(zurueck.size(), 2u);
+    EXPECT_EQ(zurueck[0].data[0], 0xAA) << "der erste Sektor darf sich nicht aendern";
+    EXPECT_EQ(zurueck[1].data[0], 0x5C);
+    EXPECT_TRUE(zurueck[0].data_crc_ok);
+    EXPECT_TRUE(zurueck[1].data_crc_ok);
+
+    EXPECT_FALSE(TrackCodec::writeSectorAt(t, 2, neu)) << "Nummer ausserhalb";
+    EXPECT_FALSE(TrackCodec::writeSectorAt(t, 0, std::vector<uint8_t>(64, 0)))
+        << "Laenge muss der Sektorgroesse entsprechen";
+}
+
+TEST(TrackCodecWriteSectorAt, WoertlicheCrcLaesstDenSektorDefekt) {
+    // Der Sinn: eine schadhafte Diskette originalgetreu nachbilden.  Ohne diesen Weg
+    // waere jeder geschriebene Sektor zwangslaeufig gueltig.
+    TrackImage t = TrackCodec::buildTrack({makeSector(0, 0, 1, 128)}, Encoding::MFM);
+    const std::vector<uint8_t> neu(128, 0x42);
+
+    const uint16_t falsch = 0x1234;
+    ASSERT_TRUE(TrackCodec::writeSectorAt(t, 0, neu, {}, &falsch));
+    std::vector<LogicalSector> s = TrackCodec::parseTrack(t);
+    EXPECT_EQ(s[0].data_crc, falsch);
+    EXPECT_FALSE(s[0].data_crc_ok);
+    EXPECT_EQ(s[0].data, neu) << "die Nutzdaten stehen trotzdem richtig da";
+
+    // Und zurueck: ohne Vorgabe wird gerechnet, der Sektor ist wieder gut.
+    uint16_t soll = 0;
+    ASSERT_TRUE(TrackCodec::sectorDataCrc(t, 0, neu, soll));
+    ASSERT_TRUE(TrackCodec::writeSectorAt(t, 0, neu));
+    s = TrackCodec::parseTrack(t);
+    EXPECT_TRUE(s[0].data_crc_ok);
+    EXPECT_EQ(s[0].data_crc, soll);
+}
+
+TEST(TrackCodecWriteSectorAt, SectorDataCrcRechnetOhneZuAendern) {
+    TrackImage t = TrackCodec::buildTrack({makeSector(0, 0, 1, 128)}, Encoding::MFM);
+    const std::vector<uint8_t> vorher = t.bytes;
+
+    uint16_t crc = 0;
+    EXPECT_TRUE(TrackCodec::sectorDataCrc(t, 0, std::vector<uint8_t>(128, 0x99), crc));
+    EXPECT_EQ(t.bytes, vorher) << "die Spur darf sich dabei nicht aendern";
+    EXPECT_FALSE(TrackCodec::sectorDataCrc(t, 0, std::vector<uint8_t>(127, 0), crc));
+    EXPECT_FALSE(TrackCodec::sectorDataCrc(t, 5, std::vector<uint8_t>(128, 0), crc));
+}

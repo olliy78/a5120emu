@@ -103,6 +103,7 @@ if(BUILD_K1520)
     add_library(k1520_floppy2 STATIC
         core/peripherals/floppy_drive/track_image.cpp
         core/peripherals/floppy_drive/track_codec.cpp
+        core/peripherals/floppy_drive/track_view.cpp
         core/peripherals/floppy_drive/bit_codec.cpp
         core/peripherals/floppy_drive/drive_profile.cpp
         core/peripherals/floppy_drive/disk_medium.cpp

@@ -920,6 +920,62 @@ bool DiskVolume::erase(const FileRef& ref) {
     return true;
 }
 
+// ─── Sektoransicht (Diskeditor, §19) ─────────────────────────────────────────
+
+uint8_t DiskVolume::mediumCylinders() const {
+    return disk_ ? disk_->medium().numCylinders() : 0;
+}
+
+uint8_t DiskVolume::mediumHeads() const {
+    return disk_ ? disk_->medium().numHeads() : 0;
+}
+
+TrackView DiskVolume::trackView(uint8_t cyl, uint8_t head) const {
+    if (!disk_) return TrackView{};
+    return scanTrack(disk_->medium().track(cyl, head));
+}
+
+bool DiskVolume::readSectorAt(uint8_t cyl, uint8_t head, int index,
+                              std::vector<uint8_t>& out, uint16_t& crc) const {
+    if (!disk_) return fail("keine Diskette geoeffnet");
+    const std::vector<LogicalSector> s =
+        TrackCodec::parseTrack(disk_->medium().track(cyl, head));
+    if (index < 0 || static_cast<size_t>(index) >= s.size())
+        return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+    out = s[static_cast<size_t>(index)].data;
+    crc = s[static_cast<size_t>(index)].data_crc;
+    return true;
+}
+
+bool DiskVolume::sectorCrcFor(uint8_t cyl, uint8_t head, int index,
+                              const std::vector<uint8_t>& data, uint16_t& out) const {
+    if (!disk_) return fail("keine Diskette geoeffnet");
+    if (index < 0) return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+    if (!TrackCodec::sectorDataCrc(disk_->medium().track(cyl, head),
+                                   static_cast<size_t>(index), data, out))
+        return fail("Die Laenge passt nicht zur Sektorgroesse");
+    return true;
+}
+
+bool DiskVolume::writeSectorAt(uint8_t cyl, uint8_t head, int index,
+                               const std::vector<uint8_t>& data,
+                               const uint16_t* crc_woertlich) {
+    if (read_only_) return fail(kSchreibschutz);
+    if (!disk_)     return fail("keine Diskette geoeffnet");
+    if (index < 0)  return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+
+    // Auf einer Kopie arbeiten: `writeSectorAt` prueft zwar zweiphasig, aber so bleibt
+    // die Spur auch dann unangetastet, wenn spaeter noch etwas dazukommt.
+    TrackImage spur = disk_->medium().track(cyl, head);
+    if (!TrackCodec::writeSectorAt(spur, static_cast<size_t>(index), data, {},
+                                   crc_woertlich))
+        return fail("Der Sektor liess sich nicht schreiben — Laenge oder Lage passt "
+                    "nicht (erwartet wird genau die Sektorgroesse).");
+
+    disk_->medium().setTrack(cyl, head, std::move(spur));
+    return true;
+}
+
 // ─── Stapeloperationen ───────────────────────────────────────────────────────
 
 bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& opt) {

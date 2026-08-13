@@ -358,3 +358,112 @@ def test_cpm_has_no_such_attributes(fixture_disks, tmp_path):
         assert all(e.record_len == 0 for e in d.list())
         with pytest.raises(K1520DiskError):
             d.set_udos_attrs("PIP.COM", properties="WEL")
+
+
+# ─── Sektoransicht (Diskeditor) ──────────────────────────────────────────────
+
+def test_track_view_covers_the_whole_revolution(fixture_disks):
+    """Die Abschnitte einer Spur decken [0,1) lückenlos ab — darauf ruht die Grafik."""
+    from app.core_binding.k1520disk import DiskTool, GAP, SECTOR
+
+    with DiskTool.open(fixture_disks / "cpa_cpa780_k5601_clock.img") as d:
+        assert d.medium_cylinders > 0 and d.medium_heads == 2
+        t = d.track(0, 0)
+        assert t.exists and t.formatted
+        assert t.encoding == "MFM"
+        assert t.sectors == 26
+        assert t.bytes > 0
+
+        assert t.spans[0].start == 0.0
+        for a, b in zip(t.spans, t.spans[1:]):
+            assert a.end == b.start
+        assert abs(t.spans[-1].end - 1.0) < 1e-9
+
+        arten = {s.kind for s in t.spans}
+        assert arten == {GAP, SECTOR}, "eine formatierte Spur hat beides"
+
+        sektoren = [s for s in t.spans if s.is_sector]
+        assert [s.id for s in sektoren] == list(range(1, 27))
+        assert all(s.size == 128 and s.ok for s in sektoren)
+        assert [s.index for s in sektoren] == list(range(26))
+
+
+def test_sector_data_and_crc_are_readable(fixture_disks):
+    from app.core_binding.k1520disk import DiskTool
+
+    with DiskTool.open(fixture_disks / "cpa_cpa780_k5601_clock.img") as d:
+        daten = d.sector_data(0, 0, 0)
+        assert len(daten) == 128
+        # Die gespeicherte CRC ist die, die zu den Daten gehört — der Sektor ist heil.
+        assert d.sector_crc(0, 0, 0) == d.sector_crc_for(0, 0, 0, daten)
+        # Andere Daten, andere CRC.
+        assert d.sector_crc_for(0, 0, 0, bytes(128)) != d.sector_crc(0, 0, 0)
+
+
+def test_sector_write_needs_a_writable_disk(fixture_disks):
+    from app.core_binding.k1520disk import DiskTool, K1520DiskError
+
+    with DiskTool.open(fixture_disks / "cpa_cpa780_k5601_clock.img") as d:
+        with pytest.raises(K1520DiskError, match="schreibgesch"):
+            d.sector_write(0, 0, 0, bytes(128))
+
+
+def test_sector_write_replaces_only_that_sector(tmp_path, fixture_disks):
+    import shutil
+    from app.core_binding.k1520disk import DiskTool
+
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    with DiskTool.open(abbild) as d:
+        d.set_read_only(False)
+        # cpa780 hat gemischte Geometrie: ab Zylinder 2 sind es 1024-B-Sektoren.
+        # Die Größe kommt deshalb aus dem Sektor selbst, nicht aus einer Annahme.
+        gross = next(s for s in d.track(2, 0).spans if s.is_sector).size
+        nachbar = d.sector_data(2, 0, 1)
+        neu = bytes(i & 0xFF for i in range(gross))
+        d.sector_write(2, 0, 0, neu)
+
+        assert d.sector_data(2, 0, 0) == neu
+        assert d.sector_data(2, 0, 1) == nachbar, "der Nachbarsektor bleibt unberührt"
+        assert d.track(2, 0).spans[1].ok, "CRC wurde mitgerechnet"
+
+        # Eine wörtliche CRC macht den Sektor absichtlich defekt …
+        d.sector_write(2, 0, 0, neu, crc=0x1234)
+        assert d.sector_crc(2, 0, 0) == 0x1234
+        kaputt = next(s for s in d.track(2, 0).spans if s.is_sector and s.index == 0)
+        assert not kaputt.ok
+        # … und die Nutzdaten stehen trotzdem richtig da.
+        assert d.sector_data(2, 0, 0) == neu
+
+
+def test_sector_write_refuses_a_wrong_length(tmp_path, fixture_disks):
+    import shutil
+    from app.core_binding.k1520disk import DiskTool, K1520DiskError
+
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    with DiskTool.open(abbild) as d:
+        d.set_read_only(False)
+        vorher = d.sector_data(2, 0, 0)
+        with pytest.raises(K1520DiskError):
+            d.sector_write(2, 0, 0, bytes(len(vorher) - 1))
+        assert d.sector_data(2, 0, 0) == vorher, "nichts halb geschrieben"
+        with pytest.raises(K1520DiskError):
+            d.sector_data(2, 0, 99)
+
+
+def test_unformatted_track_is_told_apart_from_a_gap(tmp_path):
+    """Eine echte Leerdiskette: Bytes ja, Adressmarken nein — das ist grau, nicht orange."""
+    from app.core_binding.k1520disk import DiskTool, UNFORMATTED
+
+    ziel = tmp_path / "leer.hfe"
+    DiskTool.create(ziel, "cpa780").close()
+    with DiskTool.open(ziel) as d:
+        t = d.track(60, 0)
+        assert t.formatted, "cpa780 legt eine formatierte Diskette an"
+
+    # Gegenprobe an einer Spur, die es in der Ausdehnung des Mediums nicht gibt.
+    with DiskTool.open(ziel) as d:
+        t = d.track(d.medium_cylinders + 5, 0)
+        assert not t.exists and not t.formatted
+        assert [s.kind for s in t.spans] == [UNFORMATTED]

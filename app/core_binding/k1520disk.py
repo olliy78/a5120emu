@@ -203,6 +203,63 @@ _lib.k1520d_set_cpm_attrs.argtypes = [
 ]
 _lib.k1520d_set_cpm_attrs.restype = ctypes.c_bool
 
+# ── Sektoransicht (Diskeditor) ──────────────────────────────────────────────
+_lib.k1520d_medium_cylinders.argtypes = [_H]
+_lib.k1520d_medium_cylinders.restype = ctypes.c_int
+_lib.k1520d_medium_heads.argtypes = [_H]
+_lib.k1520d_medium_heads.restype = ctypes.c_int
+_lib.k1520d_track_scan.argtypes = [_H, ctypes.c_int, ctypes.c_int]
+_lib.k1520d_track_scan.restype = ctypes.c_int
+_lib.k1520d_track_exists.argtypes = [_H]
+_lib.k1520d_track_exists.restype = ctypes.c_bool
+_lib.k1520d_track_formatted.argtypes = [_H]
+_lib.k1520d_track_formatted.restype = ctypes.c_bool
+_lib.k1520d_track_encoding.argtypes = [_H]
+_lib.k1520d_track_encoding.restype = _CS
+_lib.k1520d_track_bytes.argtypes = [_H]
+_lib.k1520d_track_bytes.restype = ctypes.c_int
+_lib.k1520d_track_sectors.argtypes = [_H]
+_lib.k1520d_track_sectors.restype = ctypes.c_int
+
+# Ausgeschrieben statt in einer Schleife: der Wächter
+# `test_every_header_function_has_ctypes_signatures` sucht wörtlich nach
+# `_lib.<name>.argtypes` — eine Schleife wäre für ihn unsichtbar.
+_lib.k1520d_span_kind.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_kind.restype = ctypes.c_int
+_lib.k1520d_span_index.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_index.restype = ctypes.c_int
+_lib.k1520d_span_id.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_id.restype = ctypes.c_int
+_lib.k1520d_span_cyl.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_cyl.restype = ctypes.c_int
+_lib.k1520d_span_head.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_head.restype = ctypes.c_int
+_lib.k1520d_span_size.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_size.restype = ctypes.c_int
+_lib.k1520d_span_start.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_start.restype = ctypes.c_double
+_lib.k1520d_span_end.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_end.restype = ctypes.c_double
+_lib.k1520d_span_id_crc_ok.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_id_crc_ok.restype = ctypes.c_bool
+_lib.k1520d_span_data_crc_ok.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_data_crc_ok.restype = ctypes.c_bool
+_lib.k1520d_span_deleted.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_deleted.restype = ctypes.c_bool
+
+_lib.k1520d_sector_read.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                    ctypes.POINTER(ctypes.c_uint8), ctypes.c_int]
+_lib.k1520d_sector_read.restype = ctypes.c_int
+_lib.k1520d_sector_crc.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+_lib.k1520d_sector_crc.restype = ctypes.c_int
+_lib.k1520d_sector_crc_for.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                       ctypes.POINTER(ctypes.c_uint8), ctypes.c_int]
+_lib.k1520d_sector_crc_for.restype = ctypes.c_int
+_lib.k1520d_sector_write.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                     ctypes.POINTER(ctypes.c_uint8), ctypes.c_int,
+                                     ctypes.c_int]
+_lib.k1520d_sector_write.restype = ctypes.c_bool
+
 # ── Übertragung ─────────────────────────────────────────────────────────────
 _lib.k1520d_extract.argtypes = [_H, _CS, _CS, ctypes.c_int]
 _lib.k1520d_extract.restype = ctypes.c_bool
@@ -356,6 +413,60 @@ class Entry:
     def ref(self) -> str:
         """Eindeutige Bezeichnung über die ganze Diskette."""
         return self.side_prefix + self.name
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Sektoransicht (Diskeditor)
+# ════════════════════════════════════════════════════════════════════════════
+
+
+#: Abschnittsarten einer Spur (``TrackSpan::Kind`` der Bibliothek).
+UNFORMATTED, GAP, SECTOR = 0, 1, 2
+
+
+@dataclass(frozen=True)
+class Span:
+    """Ein Abschnitt einer Spur — Sektor, Gap oder unformatiert.
+
+    ``start``/``end`` sind Bruchteile **einer Umdrehung** (0 = Index, bei der
+    Darstellung 12 Uhr).  Sie stammen aus der Byteposition in der Spur — eine Spur
+    *ist* genau eine Umdrehung —, nicht aus der Drehzahl im HFE-Kopf.
+    """
+
+    kind: int
+    start: float
+    end: float
+    index: int = -1          # laufende Nummer des Sektors in der Spur
+    id: int = 0              # Angaben aus dem ID-Feld …
+    cyl: int = 0             # … die von der tatsächlichen Lage abweichen dürfen
+    head: int = 0
+    size: int = 0
+    id_crc_ok: bool = False
+    data_crc_ok: bool = False
+    deleted: bool = False
+
+    @property
+    def is_sector(self) -> bool:
+        return self.kind == SECTOR
+
+    @property
+    def ok(self) -> bool:
+        """Beide CRCs stimmen — nur dann ist der Sektor lesbar."""
+        return self.id_crc_ok and self.data_crc_ok
+
+
+@dataclass(frozen=True)
+class Track:
+    """Eine Spur: Kopfangaben und ihre lückenlose Abschnittsfolge."""
+
+    cyl: int
+    head: int
+    exists: bool
+    formatted: bool
+    encoding: str            # 'MFM' | 'FM'
+    bytes: int               # Spurlänge (eine Umdrehung)
+    sectors: int
+    spans: List[Span]
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -635,6 +746,82 @@ class DiskTool:
                 system is not None, bool(system),
                 archived is not None, bool(archived),
                 user is not None, int(user or 0)):
+            raise K1520DiskError(self._fail())
+
+    # ── Sektoransicht (Diskeditor) ──────────────────────────────────────────
+
+    @property
+    def medium_cylinders(self) -> int:
+        """Zylinder des MEDIUMS — was da ist, nicht was das Format vorsieht."""
+        return int(_lib.k1520d_medium_cylinders(self._h))
+
+    @property
+    def medium_heads(self) -> int:
+        return int(_lib.k1520d_medium_heads(self._h))
+
+    def track(self, cyl: int, head: int) -> Track:
+        """Eine Spur mit allen Abschnitten — immer frisch aus dem Medium."""
+        n = _lib.k1520d_track_scan(self._h, cyl, head)
+        spans = []
+        for i in range(max(0, n)):
+            art = int(_lib.k1520d_span_kind(self._h, i))
+            spans.append(Span(
+                kind=art,
+                start=float(_lib.k1520d_span_start(self._h, i)),
+                end=float(_lib.k1520d_span_end(self._h, i)),
+                index=int(_lib.k1520d_span_index(self._h, i)),
+                id=int(_lib.k1520d_span_id(self._h, i)),
+                cyl=int(_lib.k1520d_span_cyl(self._h, i)),
+                head=int(_lib.k1520d_span_head(self._h, i)),
+                size=int(_lib.k1520d_span_size(self._h, i)),
+                id_crc_ok=bool(_lib.k1520d_span_id_crc_ok(self._h, i)),
+                data_crc_ok=bool(_lib.k1520d_span_data_crc_ok(self._h, i)),
+                deleted=bool(_lib.k1520d_span_deleted(self._h, i)),
+            ))
+        return Track(
+            cyl=cyl, head=head,
+            exists=bool(_lib.k1520d_track_exists(self._h)),
+            formatted=bool(_lib.k1520d_track_formatted(self._h)),
+            encoding=_s(_lib.k1520d_track_encoding(self._h)),
+            bytes=int(_lib.k1520d_track_bytes(self._h)),
+            sectors=int(_lib.k1520d_track_sectors(self._h)),
+            spans=spans,
+        )
+
+    def sector_data(self, cyl: int, head: int, index: int) -> bytes:
+        """Nutzdaten eines Sektors; ``index`` ist ``Span.index``."""
+        puffer = (ctypes.c_uint8 * 1024)()
+        n = _lib.k1520d_sector_read(self._h, cyl, head, index, puffer, len(puffer))
+        if n < 0:
+            raise K1520DiskError(self._fail())
+        return bytes(puffer[:n])
+
+    def sector_crc(self, cyl: int, head: int, index: int) -> int:
+        """Daten-CRC, wie sie auf dem Medium steht."""
+        v = _lib.k1520d_sector_crc(self._h, cyl, head, index)
+        if v < 0:
+            raise K1520DiskError(self._fail())
+        return int(v)
+
+    def sector_crc_for(self, cyl: int, head: int, index: int, data: bytes) -> int:
+        """Welche Daten-CRC gehörte zu ``data``?  Ändert nichts."""
+        roh = (ctypes.c_uint8 * len(data)).from_buffer_copy(bytes(data))
+        v = _lib.k1520d_sector_crc_for(self._h, cyl, head, index, roh, len(data))
+        if v < 0:
+            raise K1520DiskError(self._fail())
+        return int(v)
+
+    def sector_write(self, cyl: int, head: int, index: int, data: bytes,
+                     crc: Optional[int] = None) -> None:
+        """Datenfeld eines Sektors ersetzen — in die Diskette **im Speicher**.
+
+        ``crc=None`` rechnet die Daten-CRC neu; ein angegebener Wert wird wörtlich
+        geschrieben, auch wenn er falsch ist (eine schadhafte Diskette lässt sich so
+        originalgetreu nachbilden).  In die Datei kommt es erst mit ``flush()``.
+        """
+        roh = (ctypes.c_uint8 * len(data)).from_buffer_copy(bytes(data))
+        if not _lib.k1520d_sector_write(self._h, cyl, head, index, roh, len(data),
+                                        -1 if crc is None else int(crc)):
             raise K1520DiskError(self._fail())
 
     # ── Bootabbild (Systemspuren) ───────────────────────────────────────────

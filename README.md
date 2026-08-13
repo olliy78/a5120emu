@@ -59,6 +59,13 @@ und dann unter CP/A zu übersetzen, oder um eine Diskette zu sichern.
   die fremde Diskette und sagt, was es gefunden hat.
 - **Beidseitige UDOS-Disketten** führt es als eine Diskette mit zwei Seiten — bei UDOS ist
   jede Seite technisch ein eigenes Dateisystem.
+- **Eigenschaften je Datei** (Rechtsklick): bei UDOS der ganze Kopfsektor — Typ,
+  Eigenschaften, Einsprungadresse, Speichersegment, LOW/HIGH/STACK —, bei CP/M
+  Nutzerbereich und R/O·SYS·ARC. Ansehen und ändern.
+- **Diskeditor**: die beiden Diskettenseiten als Scheibe, jede Spur ein Ring, jeder
+  Sektor ein Kreisabschnitt an seiner *tatsächlichen* Lage — grün heil, rot CRC-Fehler,
+  orange Gap, grau unformatiert. Ein Klick zeigt den Sektorinhalt hexadezimal; er lässt
+  sich ändern, die CRC neu berechnen oder absichtlich falsch stehen lassen.
 - Beim Öffnen ist eine Diskette **schreibgeschützt**; Ändern verlangt eine ausdrückliche
   Freigabe, und vor dem Schreiben entsteht eine Sicherungskopie. Stapeloperationen sind
   Transaktionen: erst planen und urteilen, dann schreiben.

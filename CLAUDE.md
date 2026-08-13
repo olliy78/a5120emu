@@ -488,6 +488,26 @@ Was beim Weiterarbeiten zu wissen ist:
   (`rest=` im Beiblatt) statt ausgerechnet.  Kleinste bootfähige Diskette:
   Systemspuren + `OS` + `ZDOS` (Urlader sucht beide über das VERZEICHNIS).  Wächter:
   `DiskToolBootdiskette.GebauteUdosDisketteBootetUndFuehrtBefehleAus`.
+- **Diskeditor — die Diskette als Scheibe (2026-08-13, `doc/design/13_k1520disktool.md` §19).**
+  Knopf „Diskeditor“ im Hauptfenster → `app/disktool/ui/disk_editor.py`: zwei Scheiben
+  (Spur 0 **außen**, Sektor 0 bei **12 Uhr**, Seite 1 gespiegelt), Sektor grün/rot,
+  Gap orange, unformatiert grau; Klick → Hexfeld (32 B/Zeile) + CRC-Feld +
+  *Reload/Fix CRC/Save*.  Unterbau: `core/peripherals/floppy_drive/track_view.{h,cpp}`
+  (`scanTrack` → lückenlose Abschnittsfolge), `parseTrack` liefert jetzt zusätzlich
+  **Byte-Offsets + gespeicherte CRCs + `deleted`**, neu `TrackCodec::writeSectorAt`
+  und `sectorDataCrc`, C-ABI `k1520d_track_scan`/`k1520d_span_*`/`k1520d_sector_*`.
+  Vier Festlegungen: **(1) Der Winkel ist `Byteposition ÷ Spurlänge`** — eine
+  `TrackImage` IST eine Umdrehung; Bitrate/Drehzahl aus dem HFE-Kopf werden NICHT
+  gebraucht (die Schreibnaht ergibt darum eine sichtbare Spirale, keine Speiche; `.img`
+  hat gar keine Winkelinformation).  **(2) Gap ≠ unformatiert** — keine Adressmarke =
+  unformatiert (der Zustand von `createBlank`), sonst Gap.  **(3) Geschrieben wird über
+  die LAUFENDE NUMMER, nicht über die Sektor-ID** (IDs dürfen doppelt vorkommen).
+  **(4) Die CRC ist mitschreibbar** (`crc_woertlich`), sonst liesse sich eine schadhafte
+  Diskette nicht originalgetreu nachbilden.  Der Treffertest der Grafik ist analytisch
+  (Polarkoordinaten), nicht per Szenengraph — Wächter
+  `test_disk_editor_hit_test_finds_the_drawn_sector` rechnet jeden Sektor zurück; dazu
+  `TrackView.*`, `TrackCodecWriteSectorAt.*`, `py_disk_c_api`.  **Grenze:** der Editor
+  braucht eine geöffnete (= erkannte) Diskette — „roh öffnen“ gibt es noch nicht.
 - **Dateiangaben sehen und ändern (2026-08-13, `doc/design/13_k1520disktool.md` §13c).**
   Rechtsklick/Doppelklick auf eine Datei → **Eigenschaften-Dialog**
   (`app/disktool/ui/properties_dialog.py`): UDOS-Kopfsektor voll editierbar, CP/M

@@ -1259,3 +1259,90 @@ Werkzeuge vollständig ersetzt.
    Dateisystemprofile unterscheiden, entscheidet Stufe 2; wo auch die identisch sind, ist die
    Unterscheidung für das Werkzeug ohne Folge. `detect_rank` ist die Notbremse, falls doch eine
    Reihenfolge nötig wird.
+
+---
+
+## 19. Diskeditor — die Diskette als Scheibe (2026-08-13)
+
+Alles Bisherige sieht die Diskette **durch das Dateisystem**. Wo keines mehr
+greift — eine Diskette mit CRC-Fehlern, ein halb formatierter Datenträger, ein
+Verzeichnis, das ins Leere zeigt —, war das Werkzeug blind. Der Diskeditor ist die
+Ebene darunter: Spuren, Sektoren, Gaps, CRCs.
+
+### 19.1 Die Darstellung
+
+Zwei Scheiben nebeneinander, links Seite 0, rechts Seite 1. **Spur 0 außen**,
+**Sektor 0 bei 12 Uhr**; Seite 0 zählt im Uhrzeigersinn, Seite 1 dagegen — so, wie
+man die Diskette sähe, wenn man sie umdreht. Sektor mit gültigen CRCs grün, mit
+CRC-Fehler rot, Gap orange, unformatiert grau.
+
+**Die Winkel sind echt, und sie kosten nichts.** Eine `TrackImage` *ist* genau eine
+Umdrehung; der Winkel eines Bytes ist damit `Position ÷ Spurlänge`. Bitrate und
+Drehzahl aus dem HFE-Kopf (`hfe_codec.cpp`, Offset `0x0E`) werden dafür **nicht**
+gebraucht — sie skalieren nur die Zeitachse und wären zudem bei krummer Drehzahl
+eine Fehlerquelle. Sichtbarer Beweis am realen Abbild: die Schreibnaht wandert von
+Spur zu Spur und ergibt eine Spirale, keine Speiche. Bei `.img` gibt es keine
+Winkelinformation im Container; dort liegen die Sektoren gleichmäßig, und das sieht
+man dem Bild dann auch an.
+
+### 19.2 Vier Entscheidungen
+
+1. **`scanTrack` liefert eine LÜCKENLOSE Abschnittsfolge** über `[0,1)`
+   (`core/peripherals/floppy_drive/track_view.h`). Nur dann muss die Darstellung
+   nichts raten und der Treffertest über den Winkel ist eindeutig. Ein Sektor, der
+   über den Index läuft, wird an der Naht in zwei Abschnitte mit **derselben
+   Nummer** geteilt — sonst wäre `start < end` nicht zu halten. Wächter:
+   `TrackView.*` prüft die Abdeckung in jedem Fall mit.
+2. **Gap und „unformatiert“ sind zwei Dinge.** Keine einzige Adressmarke =
+   unformatiert (grau) — das ist der Zustand, den `DiskImage::createBlank` anlegt
+   und den ein Gast erst formatieren muss. Alles zwischen den Sektorfeldern einer
+   formatierten Spur = Gap (orange). Der Unterschied ist keine Kosmetik: er sagt,
+   ob dort etwas fehlt oder ob dort nichts hingehört.
+3. **Geschrieben wird über die LAUFENDE NUMMER, nicht über die Sektor-ID**
+   (`TrackCodec::writeSectorAt`). Eine Spur darf dieselbe ID zweimal tragen
+   (fehlerhaft formatiert, Kopierschutz); der Editor muss genau den Sektor treffen,
+   den der Anwender angeklickt hat. `writeSector(id)` bleibt für den
+   Dateisystempfad.
+4. **Die CRC ist mitschreibbar.** `writeSectorAt` nimmt optional einen wörtlichen
+   CRC-Wert; ohne ihn wird gerechnet. In der Oberfläche heißt das: das CRC-Feld ist
+   editierbar, *Save Sektor* schreibt genau das, was dort steht, *Fix CRC* trägt den
+   berechneten Wert ein. Erst damit lässt sich eine **schadhafte Diskette
+   originalgetreu nachbilden** — ohne diesen Weg wäre jeder geschriebene Sektor
+   zwangsläufig gültig. Der Preis ist ein Knopf mehr; er ist es wert.
+
+Dazu, rein additiv: `parseTrack` liefert jetzt die **Byte-Offsets** (`sync_pos`,
+`id_pos`, `data_pos`, `end_pos`), die gespeicherten CRCs und das Kennzeichen
+`deleted` (Datenmarke `0xF8`). Ohne die Offsets ließe sich nicht zeichnen, *wo* ein
+Sektor liegt.
+
+### 19.3 Oberfläche
+
+`app/disktool/ui/disk_editor.py`, geöffnet über den Knopf **Diskeditor** im
+Hauptfenster (nicht modal, genau eines je Fenster). Oben die Scheiben, unten
+Kopfangaben, CRC-Feld, Hexfeld (**32 Byte je Zeile** — ein 1024-B-Sektor ergibt
+damit 32 Zeilen) und die drei Knöpfe *Reload Sektor* / *Fix CRC* / *Save Sektor*.
+
+Drei Umsetzungsdetails, die man nicht aufweichen sollte:
+
+* **Der Treffertest ist analytisch** (Polarkoordinaten → Ring → Winkel → Abschnitt),
+  kein Szenengraph. Bei 80 Spuren × 26 Sektoren × 2 Seiten wären es sonst ~4000
+  Objekte, durch die jede Mausbewegung liefe. Wächter:
+  `test_disk_editor_hit_test_finds_the_drawn_sector` rechnet für **jeden** Sektor
+  den gezeichneten Mittelpunkt zurück — das ist die einzige Prüfung, die
+  Winkelrichtung, Ringlage und Nullpunkt zwischen Zeichnen und Treffen wirklich
+  zusammenhält.
+* **Das Bild liegt als Pixmap vor** und wird nur bei Größen- oder Datenänderung neu
+  gezeichnet; die Auswahl kommt obenauf.
+* **Trennlinien erst ab 5 px Ringhöhe.** Bei 80 Spuren sind 80 schwarze Ringlinien
+  plus 26 Speichen je Ring mehr Linie als Farbe.
+* **Metadaten und Nutzdaten sind getrennte Felder.** Die Sektorangaben stehen als
+  Beschriftung über dem Hexfeld, nicht darin: nur so ist beim Zurücklesen eindeutig,
+  was Inhalt ist und was Anzeige. Gelesen wird ohnehin **positionsgenau** nur die
+  Hexspalte — ein `.` in der ASCII-Deutung kann keine Hexziffer werden, und wer den
+  Offset verbiegt, ändert nichts.
+
+**Grenze:** der Editor hängt an einer *geöffneten* Diskette, und geöffnet wird nur,
+was die Erkennung (§12) durchlässt. Eine Diskette ganz ohne brauchbares Dateisystem
+— gerade der Fall, für den ein Sektoreditor gemacht ist — lässt sich damit heute
+nicht ansehen. Ein „roh öffnen" (nur Geometrie, kein Dateisystem) wäre die
+Fortsetzung; `GeometryProbe::synthesize` liefert die Geometrie dafür bereits.

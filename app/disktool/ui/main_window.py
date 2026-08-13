@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 from app.disktool.archive import create_archive
 
 from app.core_binding.k1520disk import DiskTool, K1520DiskError, filesystems
+from app.disktool.ui.disk_editor import DiskEditorWindow
 from app.disktool.ui.disk_view import DiskView
 from app.disktool.ui.folder_view import FolderView
 from app.disktool.ui.properties_dialog import PropertiesDialog
@@ -112,6 +113,10 @@ class MainWindow(QMainWindow):
         self.btn_archivieren = QPushButton("Archivieren…")
         self.btn_archivieren.setToolTip(
             "Abbild (.hfe), alle Dateien und ein Inhaltsverzeichnis in eine .zip")
+        self.btn_diskeditor = QPushButton("Diskeditor")
+        self.btn_diskeditor.setToolTip(
+            "Die Diskette Spur für Spur und Sektor für Sektor ansehen und einzelne "
+            "Sektoren bearbeiten")
         self.btn_bootabbild = QPushButton("Bootabbild sichern…")
         self.btn_bootabbild.setToolTip(
             "Die Systemspuren dieser Diskette als .bin sichern — damit lässt sich "
@@ -129,6 +134,7 @@ class MainWindow(QMainWindow):
         fuss.addWidget(self.btn_speichern)
         fuss.addWidget(self.btn_speichern_unter)
         fuss.addWidget(self.btn_archivieren)
+        fuss.addWidget(self.btn_diskeditor)
         fuss.addWidget(self.btn_bootabbild)
 
         self.protokoll = QPlainTextEdit()
@@ -157,6 +163,7 @@ class MainWindow(QMainWindow):
         self.btn_speichern.clicked.connect(self.save)
         self.btn_speichern_unter.clicked.connect(self._speichern_unter_dialog)
         self.btn_archivieren.clicked.connect(self._archivieren_dialog)
+        self.btn_diskeditor.clicked.connect(self.open_disk_editor)
         self.btn_bootabbild.clicked.connect(self._bootabbild_sichern_dialog)
         self.folder_view.choose_requested.connect(self._ordner_dialog)
         self.folder_view.disk_files_dropped.connect(self._extrahieren_refs)
@@ -191,8 +198,8 @@ class MainWindow(QMainWindow):
         wenn der Schreibschutz entfernt ist.
         """
         schreibbar = offen and self.tool is not None and not self.tool.read_only
-        for w in (self.btn_raus, self.btn_alles_raus,
-                  self.btn_speichern_unter, self.btn_archivieren):
+        for w in (self.btn_raus, self.btn_alles_raus, self.btn_speichern_unter,
+                  self.btn_archivieren, self.btn_diskeditor):
             w.setEnabled(offen)
         # Systemspuren gibt es nicht ueberall — eine Datendiskette (cpa800) beginnt
         # auf Zylinder 0 und hat nichts zu sichern.
@@ -271,6 +278,12 @@ class MainWindow(QMainWindow):
         return True
 
     def _close_tool(self) -> None:
+        # Der Diskeditor hält dieselbe Diskette; er MUSS vorher zu sein, sonst
+        # arbeitete er auf einem geschlossenen Griff weiter.
+        editor = getattr(self, "_diskeditor", None)
+        if editor is not None:
+            editor.close()
+            self._diskeditor = None
         if self.tool is not None:
             self.tool.close()
             self.tool = None
@@ -658,6 +671,29 @@ class MainWindow(QMainWindow):
 
     def _eigenschaften_ref(self, ref: str) -> None:
         self.show_properties(ref)
+
+    # ── Diskeditor ──────────────────────────────────────────────────────────
+
+    def open_disk_editor(self):
+        """Das Sektorfenster öffnen (nicht modal — man arbeitet nebenher weiter).
+
+        Es gibt genau EINS je Hauptfenster; ein zweiter Klick holt das vorhandene
+        nach vorn, statt eine zweite Sicht auf dieselbe Diskette aufzumachen.
+        """
+        if self.tool is None:
+            return None
+        vorhanden = getattr(self, "_diskeditor", None)
+        if vorhanden is not None and vorhanden.isVisible() and vorhanden.tool is self.tool:
+            vorhanden.raise_()
+            vorhanden.activateWindow()
+            return vorhanden
+
+        self._diskeditor = DiskEditorWindow(self.tool, self)
+        # Ein geschriebener Sektor ist eine Änderung wie jede andere: Titel mit ●,
+        # und die Dateiliste kann sich mitgeändert haben.
+        self._diskeditor.disk_changed.connect(self._reload)
+        self._diskeditor.show()
+        return self._diskeditor
 
     # ── Schließen ───────────────────────────────────────────────────────────
 
