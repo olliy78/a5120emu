@@ -1318,9 +1318,28 @@ Sektor liegt.
 ### 19.3 Oberfläche
 
 `app/disktool/ui/disk_editor.py`, geöffnet über den Knopf **Diskeditor** im
-Hauptfenster (nicht modal, genau eines je Fenster). Oben die Scheiben, unten
-Kopfangaben, CRC-Feld, Hexfeld (**32 Byte je Zeile** — ein 1024-B-Sektor ergibt
-damit 32 Zeilen) und die drei Knöpfe *Reload Sektor* / *Fix CRC* / *Save Sektor*.
+Hauptfenster (nicht modal, genau eines je Fenster, mit Maximieren-Knopf — ein
+QDialog bekommt den vom Fensterverwalter sonst nicht). Oben die Scheiben, unten
+die Wählerzeile `[−] Seite: [0] [+]  [−] Spur: [25] [+]  [−] Sektor: [3] [+]`,
+CRC-Feld, Hexfeld (**32 Byte je Zeile** — ein 1024-B-Sektor ergibt damit 32 Zeilen)
+und die drei Knöpfe *Reload Sektor* / *Fix CRC* / *Save Sektor*.
+
+**Die Wähler sind kein Zierrat**: einen bestimmten Sektor auf der Grafik zu treffen
+ist Sucharbeit. Wer weiß, dass er Spur 25 will, tippt sie; wer *sucht*, schaltet mit
+den Knöpfen durch (gedrückt halten blättert weiter). `[+]`/`[−]` beim Sektor geht
+**in Spurreihenfolge**, nicht zur nächsten ID — die IDs liegen wegen Sektorversatz
+weder lückenlos noch aufsteigend. Eine unmögliche Eingabe wird zurückgesetzt und
+begründet, statt die Anzeige wegspringen zu lassen.
+
+**`Save Sektor` schreibt bis in die Datei** (`sector_write` + `flush`). Der Entwurf
+sah zuerst nur das Medium im Speicher vor, wie bei jeder anderen Änderung — für
+einen *Sektor*editor ist das aber eine Falle: man glaubt gespeichert zu haben. Die
+Sicherungskopie `…~` entsteht dabei wie immer beim ersten Schreiben. **Ausnahme mit
+Ansage:** ein `.img` ist ein reines Sektorabbild und führt gar kein CRC-Feld — eine
+absichtlich falsche CRC ist dort nicht darstellbar, `flush` verweigert, und der
+Editor sagt es samt Ausweg („Speichern unter…“ als `.hfe`/`.dmk`). Die Änderung
+bleibt dann im Speicher stehen. Wächter:
+`test_disk_editor_says_when_img_cannot_hold_a_broken_crc`.
 
 Drei Umsetzungsdetails, die man nicht aufweichen sollte:
 
@@ -1340,6 +1359,14 @@ Drei Umsetzungsdetails, die man nicht aufweichen sollte:
   was Inhalt ist und was Anzeige. Gelesen wird ohnehin **positionsgenau** nur die
   Hexspalte — ein `.` in der ASCII-Deutung kann keine Hexziffer werden, und wer den
   Offset verbiegt, ändert nichts.
+* **Das Hexfeld überschreibt, es fügt nicht ein** (`setOverwriteMode`), und nach jeder
+  Änderung wird der Dump neu erzeugt, damit die **ASCII-Spalte mitläuft** (Schreibmarke
+  bleibt stehen). Im Einfügemodus verschöbe jede getippte Ziffer den Rest der Zeile
+  und die feste Spaltenlage — die Grundlage des positionsgenauen Zurücklesens — wäre
+  dahin. Ein halb getippter Bytewert lässt alles unverändert stehen.
+* **Die Beschriftung „Seite 0/1" steht im leeren Eck oben links**, nicht über der
+  Scheibe: ein Kreis füllt sein Quadrat nicht aus. Das sind 26 Pixel Höhe, die sonst
+  verschenkt wären.
 
 **Grenze:** der Editor hängt an einer *geöffneten* Diskette, und geöffnet wird nur,
 was die Erkennung (§12) durchlässt. Eine Diskette ganz ohne brauchbares Dateisystem

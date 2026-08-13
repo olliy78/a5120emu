@@ -645,7 +645,9 @@ def test_disk_editor_shows_the_sector_content(window, fixture_disks):
     span = next(x for x in ed.surface.tracks[0][0].spans if x.is_sector)
     assert ed.select_sector(0, 0, span.index)
 
-    assert "Seite: 0" in ed.info.text() and "Spur: 0" in ed.info.text()
+    # Seite/Spur/Sektor stehen in den Eingabefeldern, nicht als Fliesstext.
+    assert (ed.w_seite.value(), ed.w_spur.value()) == (0, 0)
+    assert ed.w_sektor.value() == span.id
     assert "IBM-MFM" in ed.info.text() and "128 Byte" in ed.info.text()
     assert ed.crc_urteil.text() == "gültig"
     zeilen = ed.hex.toPlainText().split("\n")
@@ -665,8 +667,8 @@ def test_disk_editor_hexdump_round_trips(window):
         parse_hexdump("0000  ZZ 01 02")
 
 
-def test_disk_editor_writes_a_sector_into_the_disk_in_memory(window, fixture_disks,
-                                                             tmp_path):
+def test_disk_editor_writes_a_sector_straight_into_the_file(window, fixture_disks,
+                                                            tmp_path):
     abbild = tmp_path / "cpa.img"
     shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
     ed = _editor(window, abbild)
@@ -684,17 +686,28 @@ def test_disk_editor_writes_a_sector_into_the_disk_in_memory(window, fixture_dis
     assert ed.crc_urteil.text() == "gültig"
     assert ed.save_sector()
 
-    assert window.tool.dirty, "geschrieben wird ins Medium, nicht in die Datei"
+    # „Save Sektor" speichert wirklich — sonst waere der Knopf eine Falle.
+    assert not window.tool.dirty, "der Sektor steht in der Datei, nicht nur im Speicher"
+    assert (abbild.parent / (abbild.name + "~")).exists(), "Sicherungskopie"
     assert window.tool.sector_data(5, 0, span.index)[:4] == b"\xDE\xAD\xBE\xEF"
     assert ed.reload_sector()
     assert ed.hex.toPlainText().startswith("0000  DE AD BE EF")
 
+    # Gegenprobe an der Datei selbst: neu oeffnen, ohne den alten Griff.
+    from app.core_binding.k1520disk import DiskTool
+    with DiskTool.open(abbild) as frisch:
+        assert frisch.sector_data(5, 0, span.index)[:4] == b"\xDE\xAD\xBE\xEF"
+
 
 def test_disk_editor_can_leave_a_sector_deliberately_broken(window, fixture_disks,
                                                             tmp_path):
-    """Der Sinn der mitschreibbaren CRC: eine schadhafte Diskette nachbilden."""
-    abbild = tmp_path / "cpa.img"
-    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    """Der Sinn der mitschreibbaren CRC: eine schadhafte Diskette nachbilden.
+
+    Das geht nur in einem Container, der eine CRC überhaupt führt — deshalb `.hfe`
+    (ein `.img` ist ein reines Sektorabbild, s. u.).
+    """
+    abbild = tmp_path / "cpa.hfe"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.hfe", abbild)
     ed = _editor(window, abbild)
     window.set_read_only(False)
 
@@ -732,3 +745,105 @@ def test_disk_editor_opens_once_per_window(window, fixture_disks):
     assert window.open_disk_editor() is ed, "kein zweites Fenster auf dieselbe Diskette"
     window._close_tool()
     assert window._diskeditor is None, "der Editor darf keinen toten Griff behalten"
+
+
+def test_disk_editor_jumps_to_a_typed_track_and_sector(window, fixture_disks):
+    """Wer weiß, dass er Spur 25 will, tippt sie — statt auf der Grafik zu suchen."""
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+
+    ed.w_spur.feld.setText("25")
+    ed.w_spur._eingegeben()
+    assert ed.w_spur.value() == 25
+    assert ed.aktuell[1] == 25
+
+    ziel = ed._sektoren(0, 25)[2].id
+    ed.w_sektor.feld.setText(str(ziel))
+    ed.w_sektor._eingegeben()
+    assert ed.w_sektor.value() == ziel
+    assert ed.aktuell[:2] == (0, 25)
+
+    ed.w_seite.feld.setText("1")
+    ed.w_seite._eingegeben()
+    assert ed.aktuell[0] == 1
+
+
+def test_disk_editor_steps_through_sectors_and_tracks(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    ed._springe(seite=0, spur=10)
+
+    sektoren = ed._sektoren(0, 10)
+    ed.select_sector(0, 10, sektoren[0].index)
+    ed._schritt_sektor(+1)
+    assert ed.aktuell[2] == sektoren[1].index, "weiter IN SPURREIHENFOLGE, nicht nach ID"
+    ed._schritt_sektor(-1)
+    assert ed.aktuell[2] == sektoren[0].index
+    ed._schritt_sektor(-1)
+    assert ed.aktuell[2] == sektoren[0].index, "am Spuranfang wird nicht umgebrochen"
+
+    ed._schritt_spur(+1)
+    assert ed.w_spur.value() == 11 and ed.aktuell[1] == 11
+    ed._schritt_seite(+1)
+    assert ed.w_seite.value() == 1 and ed.aktuell[0] == 1
+
+
+def test_disk_editor_refuses_an_impossible_sector_and_says_so(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    ed._springe(seite=0, spur=5)
+    vorher = ed.aktuell
+
+    ed.w_sektor.feld.setText("99")
+    ed.w_sektor._eingegeben()
+    assert ed.aktuell == vorher, "die Anzeige darf nicht wegspringen"
+    assert "99" in ed.hinweis.text() and "vorhanden" in ed.hinweis.text()
+    # Das Feld wird auf den WIRKLICH gezeigten Sektor zurückgesetzt.
+    assert ed.w_sektor.value() != 99
+
+
+def test_disk_editor_ascii_column_follows_the_hex_column(window, fixture_disks,
+                                                         tmp_path):
+    """Ein geänderter Bytewert muss sofort auch rechts lesbar werden."""
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+    ed._springe(seite=0, spur=10)
+
+    zeilen = ed.hex.toPlainText().split("\n")
+    zeilen[0] = zeilen[0][:6] + "41 42 43 44" + zeilen[0][17:]
+    ed.hex.setPlainText("\n".join(zeilen))
+
+    erste = ed.hex.toPlainText().split("\n")[0]
+    ascii_spalte = erste[6 + 32 * 3 - 1 + 2:]
+    assert ascii_spalte.startswith("ABCD"), ascii_spalte
+    # Und die Nutzdaten selbst stimmen weiterhin mit der Hexspalte überein.
+    from app.disktool.ui.disk_editor import parse_hexdump
+    assert parse_hexdump(ed.hex.toPlainText())[:4] == b"ABCD"
+
+
+def test_disk_editor_window_can_be_maximised(window, fixture_disks):
+    from PySide6.QtCore import Qt
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert ed.windowFlags() & Qt.WindowMaximizeButtonHint
+
+
+def test_disk_editor_says_when_img_cannot_hold_a_broken_crc(window, fixture_disks,
+                                                            tmp_path, monkeypatch):
+    """Ein `.img` hat kein CRC-Feld — dann muss der Editor das SAGEN, nicht schlucken."""
+    from PySide6.QtWidgets import QMessageBox
+    gemeldet = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: gemeldet.append(a[2]))
+
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+
+    span = next(x for x in ed.surface.tracks[0][5].spans if x.is_sector)
+    assert ed.select_sector(0, 5, span.index)
+    ed.crc_feld.setText("BEEF")
+    assert not ed.save_sector(), "nicht gespeichert — und das ist die Wahrheit"
+
+    assert gemeldet and ".hfe" in gemeldet[0], gemeldet
+    assert "NICHT in die Datei" in ed.hinweis.text()
+    # Im Speicher steht die Änderung trotzdem — sie ist über „Speichern unter…" zu retten.
+    assert window.tool.sector_crc(5, 0, span.index) == 0xBEEF

@@ -28,6 +28,7 @@ und das sieht man dem Bild dann auch an.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import List, Optional, TYPE_CHECKING
 
 from PySide6.QtCore import QPoint, QRectF, Qt, Signal
@@ -150,11 +151,17 @@ class DiskSurface(QWidget):
     # ── Geometrie ───────────────────────────────────────────────────────────
 
     def _mitte(self, kopf: int) -> tuple:
-        """Mittelpunkt und Radien der Scheibe von @p kopf."""
+        """Mittelpunkt und Radien der Scheibe von @p kopf.
+
+        Über der Scheibe wird **kein** Platz für die Beschriftung freigehalten: sie
+        steht im leeren Eck oben links (ein Kreis füllt sein Quadrat nicht aus).
+        Das ist der Unterschied zwischen einer Scheibe, die die Fensterhöhe
+        ausnutzt, und einer, die 26 Pixel darüber verschenkt.
+        """
         halb = self.width() / 2.0
         cx = halb * (0.5 + kopf)
         cy = self.height() / 2.0
-        r_aussen = max(10.0, min(halb, self.height()) / 2.0 - 26.0)
+        r_aussen = max(10.0, min(halb, self.height()) / 2.0 - 6.0)
         return cx, cy, r_aussen, r_aussen * 0.22    # Nabe = Loch in der Mitte
 
     def _ringhoehe(self, r_aussen: float, r_nabe: float) -> float:
@@ -211,9 +218,10 @@ class DiskSurface(QWidget):
         p.drawEllipse(QRectF(cx - r_aussen, cy - r_aussen, 2 * r_aussen, 2 * r_aussen))
         p.drawEllipse(QRectF(cx - r_nabe, cy - r_nabe, 2 * r_nabe, 2 * r_nabe))
 
-        beschriftung = f"Seite {kopf}"
-        p.drawText(QRectF(cx - r_aussen, cy - r_aussen - 24, 2 * r_aussen, 20),
-                   Qt.AlignCenter, beschriftung)
+        # Beschriftung auf etwa ein Viertel der Scheibenbreite nach links — dort ist
+        # zwischen Kreisbogen und Ecke des Quadrats ohnehin nichts.
+        p.drawText(QRectF(cx - r_aussen, cy - r_aussen, r_aussen, 20),
+                   Qt.AlignCenter, f"Seite {kopf}")
 
         spuren = self.tracks[kopf] if kopf < len(self.tracks) else []
         if not spuren:
@@ -324,12 +332,75 @@ class DiskSurface(QWidget):
 # ════════════════════════════════════════════════════════════════════════════
 
 
+class _Waehler(QWidget):
+    """``[−] Beschriftung: [Wert] [+]`` — Zahl eingeben ODER durchschalten.
+
+    Auf der Grafik einen bestimmten Sektor zu treffen ist Sucharbeit; wer weiß,
+    dass er Spur 25 will, tippt sie.  Und wer *sucht*, schaltet mit den Knöpfen
+    durch, ohne die Maus zu bewegen.
+    """
+
+    #: Neuer Wert (durch Eingabe oder Knopf).
+    changed = Signal(int)
+    #: Ein Knopf wurde gedrückt: ±1 (die Schrittweite bestimmt der Empfänger).
+    stepped = Signal(int)
+
+    def __init__(self, beschriftung: str, breite: int = 52, parent=None):
+        super().__init__(parent)
+        self.minus = QPushButton("−")
+        self.plus = QPushButton("+")
+        for k in (self.minus, self.plus):
+            k.setFixedWidth(26)
+            k.setAutoRepeat(True)          # gedrückt halten blättert weiter
+        self.feld = QLineEdit()
+        self.feld.setFixedWidth(breite)
+        self.feld.setAlignment(Qt.AlignRight)
+        self.feld.setFont(_monospace())
+
+        zeile = QHBoxLayout(self)
+        zeile.setContentsMargins(0, 0, 0, 0)
+        zeile.setSpacing(2)
+        zeile.addWidget(self.minus)
+        zeile.addWidget(QLabel(f"{beschriftung}:"))
+        zeile.addWidget(self.feld)
+        zeile.addWidget(self.plus)
+
+        self.minus.clicked.connect(lambda: self.stepped.emit(-1))
+        self.plus.clicked.connect(lambda: self.stepped.emit(+1))
+        self.feld.returnPressed.connect(self._eingegeben)
+        self.feld.editingFinished.connect(self._eingegeben)
+
+    def _eingegeben(self) -> None:
+        text = self.feld.text().strip()
+        if not text:
+            return
+        try:
+            self.changed.emit(int(text, 10))
+        except ValueError:
+            pass                            # stehenlassen; setValue korrigiert später
+
+    def value(self) -> Optional[int]:
+        try:
+            return int(self.feld.text().strip(), 10)
+        except ValueError:
+            return None
+
+    def setValue(self, wert: Optional[int]) -> None:   # noqa: N802 (Qt-Namensschema)
+        self.feld.blockSignals(True)
+        self.feld.setText("" if wert is None else str(wert))
+        self.feld.blockSignals(False)
+
+    def setEnabled(self, an: bool) -> None:            # noqa: N802
+        for w in (self.minus, self.plus, self.feld):
+            w.setEnabled(an)
+
+
 class DiskEditorWindow(QDialog):
     """Scheibenansicht oben, Sektorinhalt unten.
 
     Das Fenster hält **keinen** eigenen Diskettenstand: gelesen wird bei jedem
-    Klick frisch aus dem Medium, und ``Save Sektor`` schreibt dorthin zurück (in die
-    Datei kommt es erst mit ``Speichern`` im Hauptfenster).
+    Klick frisch aus dem Medium, und ``Save Sektor`` schreibt zurück **und in die
+    Datei** — ein Sektoreditor, dessen „Speichern“ nichts speichert, wäre eine Falle.
     """
 
     #: Signal an das Hauptfenster: die Diskette hat sich geändert.
@@ -339,18 +410,45 @@ class DiskEditorWindow(QDialog):
         super().__init__(parent)
         self.tool = tool
         self.setWindowTitle(f"Diskeditor — {tool.path}")
+        # Ein QDialog bekommt vom Fensterverwalter sonst keinen Maximieren-Knopf —
+        # ausgerechnet hier, wo mehr Fläche mehr Diskette bedeutet.
+        self.setWindowFlags(Qt.Window
+                            | Qt.WindowMinMaxButtonsHint
+                            | Qt.WindowCloseButtonHint)
         self.resize(1000, 820)
         self.setSizeGripEnabled(True)
 
         self.aktuell: Optional[tuple] = None      # (Kopf, Spur, Sektornummer)
+        self._im_umbau = False                   # gegen Rückkopplung beim Auffrischen
 
         self.surface = DiskSurface()
         self.surface.sector_clicked.connect(self.select_sector)
 
-        # ── Unterer Teil: Angaben, CRC, Hexfeld, Knöpfe ─────────────────────
+        # ── Unterer Teil: Wähler, Angaben, CRC, Hexfeld, Knöpfe ─────────────
+        self.w_seite = _Waehler("Seite", 34)
+        self.w_spur = _Waehler("Spur", 44)
+        self.w_sektor = _Waehler("Sektor", 44)
+        self.w_seite.setValue(0)
+        self.w_spur.setValue(0)
+        self.w_seite.changed.connect(lambda v: self._springe(seite=v))
+        self.w_spur.changed.connect(lambda v: self._springe(spur=v))
+        self.w_sektor.changed.connect(lambda v: self._springe(sektor_id=v))
+        self.w_seite.stepped.connect(lambda d: self._schritt_seite(d))
+        self.w_spur.stepped.connect(lambda d: self._schritt_spur(d))
+        self.w_sektor.stepped.connect(lambda d: self._schritt_sektor(d))
+
         self.info = QLabel("Kein Sektor gewählt — auf einen Sektor klicken.")
         self.info.setWordWrap(True)
         self.info.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
+        wahlzeile = QHBoxLayout()
+        wahlzeile.addWidget(self.w_seite)
+        wahlzeile.addSpacing(12)
+        wahlzeile.addWidget(self.w_spur)
+        wahlzeile.addSpacing(12)
+        wahlzeile.addWidget(self.w_sektor)
+        wahlzeile.addSpacing(16)
+        wahlzeile.addWidget(self.info, 1)
 
         self.crc_feld = QLineEdit()
         self.crc_feld.setMaximumWidth(90)
@@ -375,9 +473,13 @@ class DiskEditorWindow(QDialog):
             "Hier steht der Inhalt des gewählten Sektors.\n"
             "Geändert wird ausschließlich die Hexspalte; Offset und ASCII-Deutung "
             "sind Anzeige.")
+        # ÜBERSCHREIBEN statt Einfügen: in einem Hexdump sind die Spalten fest.
+        # Beim Einfügen verschöbe jede getippte Ziffer den Rest der Zeile, und die
+        # ASCII-Spalte liesse sich nicht mehr verlässlich nachziehen.
+        self.hex.setOverwriteMode(True)
         # Auch eine Änderung der DATEN macht die CRC ungültig — das Urteil muss
         # beides im Blick haben, sonst stünde „gültig“ neben veränderten Bytes.
-        self.hex.textChanged.connect(self._crc_bewerten)
+        self.hex.textChanged.connect(self._hex_geaendert)
 
         self.btn_reload = QPushButton("Reload Sektor")
         self.btn_fixcrc = QPushButton("Fix CRC")
@@ -385,8 +487,8 @@ class DiskEditorWindow(QDialog):
         self.btn_reload.setToolTip("Änderungen verwerfen und neu aus der Diskette lesen")
         self.btn_fixcrc.setToolTip("Die zu den Daten passende CRC eintragen")
         self.btn_save.setToolTip(
-            "Nutzdaten und CRC in die Diskette im Speicher schreiben "
-            "(in die Datei erst mit „Speichern“ im Hauptfenster)")
+            "Nutzdaten und CRC in die Diskette schreiben — unmittelbar in die "
+            "Abbilddatei (beim ersten Mal entsteht eine Sicherungskopie „…~“)")
         self.btn_reload.clicked.connect(self.reload_sector)
         self.btn_fixcrc.clicked.connect(self.fix_crc)
         self.btn_save.clicked.connect(self.save_sector)
@@ -403,7 +505,7 @@ class DiskEditorWindow(QDialog):
         unten = QWidget()
         unten_lay = QVBoxLayout(unten)
         unten_lay.setContentsMargins(6, 6, 6, 6)
-        unten_lay.addWidget(self.info)
+        unten_lay.addLayout(wahlzeile)
         unten_lay.addLayout(crc_zeile)
         unten_lay.addWidget(self.hex, 1)
         unten_lay.addLayout(knopfzeile)
@@ -466,23 +568,170 @@ class DiskEditorWindow(QDialog):
         self.aktuell = (head, cyl, index)
         self.surface.auswahl = (head, cyl, index)
         self.surface.update()
+        self.w_seite.setValue(head)
+        self.w_spur.setValue(cyl)
+        self.w_seite.setEnabled(self.surface.heads > 1)
 
         spur = self.tool.track(cyl, head)
         span = next((s for s in spur.spans
                      if s.kind == SECTOR and s.index == index), None)
-        kennung = f"Sektor {span.id}" if span else f"Sektor #{index}"
+        self.w_sektor.setValue(span.id if span else None)
         verfahren = f"IBM-{spur.encoding}"
         marke = "  · Datenmarke F8 (gelöscht)" if span and span.deleted else ""
         id_crc = "" if not span or span.id_crc_ok else "  · ID-CRC FEHLERHAFT"
-        self.info.setText(
-            f"Seite: {head},  Spur: {cyl},  {kennung},  Format: {verfahren},  "
-            f"Größe: {len(daten)} Byte{marke}{id_crc}")
+        self.info.setText(f"Format: {verfahren},  Größe: {len(daten)} Byte"
+                          f"{marke}{id_crc}")
 
         self.crc_feld.setText(f"{crc:04X}")
+        self._im_umbau = True                 # kein Auffrischen beim Befüllen
         self.hex.setPlainText(hexdump(daten))
+        self._im_umbau = False
         self._enable(True)
         self._crc_bewerten()
         return True
+
+    # ── Navigation über die Wähler ──────────────────────────────────────────
+
+    def _spur_von(self, seite: int, spur: int):
+        """Die Spur aus der eingelesenen Ansicht; ``None``, wenn es sie nicht gibt."""
+        if not (0 <= seite < len(self.surface.tracks)):
+            return None
+        spuren = self.surface.tracks[seite]
+        if not (0 <= spur < len(spuren)):
+            return None
+        return spuren[spur]
+
+    def _sektoren(self, seite: int, spur: int) -> list:
+        t = self._spur_von(seite, spur)
+        return [s for s in t.spans if s.kind == SECTOR] if t else []
+
+    def _springe(self, seite: Optional[int] = None, spur: Optional[int] = None,
+                 sektor_id: Optional[int] = None) -> bool:
+        """Auf einen eingetippten Wert springen; die übrigen bleiben stehen.
+
+        Eine unmögliche Eingabe wird **zurückgesetzt statt angenommen** — sonst
+        stünde im Feld eine Spur, die gar nicht angezeigt wird.
+        """
+        s_alt, p_alt, i_alt = self.aktuell or (self.w_seite.value() or 0,
+                                               self.w_spur.value() or 0, None)
+        ziel_seite = s_alt if seite is None else seite
+        ziel_spur = p_alt if spur is None else spur
+
+        sektoren = self._sektoren(ziel_seite, ziel_spur)
+        if not sektoren:
+            self._zeige_leere_spur(ziel_seite, ziel_spur)
+            return False
+
+        if sektor_id is not None:
+            treffer = next((x for x in sektoren if x.id == sektor_id), None)
+            if treffer is None:
+                self.hinweis.setText(
+                    f"Auf Seite {ziel_seite}, Spur {ziel_spur} gibt es keinen Sektor "
+                    f"{sektor_id} (vorhanden: {sektoren[0].id}…{sektoren[-1].id}).")
+                self._werte_zurueck()
+                return False
+        elif seite is None and spur is None:
+            treffer = next((x for x in sektoren if x.index == i_alt), sektoren[0])
+        else:
+            # Beim Spur-/Seitenwechsel möglichst denselben Sektor weiterzeigen.
+            gleiche = next((x for x in sektoren
+                            if i_alt is not None and x.index == i_alt), None)
+            treffer = gleiche or sektoren[0]
+
+        self.hinweis.setText("")
+        return self.select_sector(ziel_seite, ziel_spur, treffer.index)
+
+    def _zeige_leere_spur(self, seite: int, spur: int) -> None:
+        """Spur ohne Sektoren: sagen, was da ist, statt den alten Inhalt stehenzulassen."""
+        t = self._spur_von(seite, spur)
+        if t is None:
+            self.hinweis.setText(f"Seite {seite}, Spur {spur} gibt es auf diesem "
+                                 "Datenträger nicht.")
+            self._werte_zurueck()
+            return
+        self.aktuell = None
+        self.surface.auswahl = None
+        self.surface.update()
+        self.w_seite.setValue(seite)
+        self.w_spur.setValue(spur)
+        self.w_sektor.setValue(None)
+        self.info.setText(f"Seite {seite}, Spur {spur}: keine Sektoren "
+                          f"({'unformatiert' if not t.formatted else 'leer'}).")
+        self.hex.blockSignals(True)
+        self.hex.setPlainText("")
+        self.hex.blockSignals(False)
+        self.crc_feld.setText("")
+        self.crc_urteil.setText("")
+        self._enable(False)
+
+    def _werte_zurueck(self) -> None:
+        """Die Felder auf den tatsächlich angezeigten Sektor zurücksetzen."""
+        if self.aktuell is None:
+            return
+        seite, spur, index = self.aktuell
+        self.w_seite.setValue(seite)
+        self.w_spur.setValue(spur)
+        span = next((x for x in self._sektoren(seite, spur) if x.index == index), None)
+        self.w_sektor.setValue(span.id if span else None)
+
+    def _schritt_seite(self, richtung: int) -> None:
+        seite = (self.w_seite.value() or 0) + richtung
+        if 0 <= seite < max(1, self.surface.heads):
+            self._springe(seite=seite)
+
+    def _schritt_spur(self, richtung: int) -> None:
+        spur = (self.w_spur.value() or 0) + richtung
+        if 0 <= spur < self.surface.cylinders:
+            self._springe(spur=spur)
+
+    def _schritt_sektor(self, richtung: int) -> None:
+        """Zum nächsten Sektor **in Spurreihenfolge** — nicht zur nächsten ID.
+
+        Beim Suchen will man der Scheibe entlanggehen; die IDs müssen dabei weder
+        lückenlos noch aufsteigend liegen (Sektorversatz, Fremdformate).
+        """
+        if self.aktuell is None:
+            return
+        seite, spur, index = self.aktuell
+        sektoren = self._sektoren(seite, spur)
+        stelle = next((i for i, x in enumerate(sektoren) if x.index == index), None)
+        if stelle is None:
+            return
+        neu = stelle + richtung
+        if 0 <= neu < len(sektoren):
+            self.select_sector(seite, spur, sektoren[neu].index)
+
+    def _hex_geaendert(self) -> None:
+        """ASCII-Spalte nachziehen und die CRC neu bewerten."""
+        self._ascii_auffrischen()
+        self._crc_bewerten()
+
+    def _ascii_auffrischen(self) -> None:
+        """Die ASCII-Deutung an die geänderten Hexbytes anpassen.
+
+        Der Dump wird neu erzeugt und die Schreibmarke an ihre Stelle zurückgesetzt.
+        Solange die Hexspalte unvollständig ist (halb getippter Bytewert), bleibt
+        alles stehen — Zwischenstände sind kein Grund, den Text umzubauen.
+        """
+        if self._im_umbau:
+            return
+        text = self.hex.toPlainText()
+        try:
+            daten = parse_hexdump(text)
+        except ValueError:
+            return
+        neu = hexdump(daten)
+        if neu == text:
+            return
+
+        self._im_umbau = True
+        marke = self.hex.textCursor()
+        stelle = marke.position()
+        self.hex.setPlainText(neu)
+        marke = self.hex.textCursor()
+        marke.setPosition(min(stelle, len(neu)))
+        self.hex.setTextCursor(marke)
+        self._im_umbau = False
 
     def _crc_bewerten(self) -> None:
         """Sagt, ob die eingetragene CRC zu den angezeigten Daten passt."""
@@ -557,9 +806,30 @@ class DiskEditorWindow(QDialog):
             return False
 
         self.surface.reload_track(self.tool, cyl, head)
-        self.hinweis.setText(
-            f"Sektor geschrieben — {len(daten)} Byte, CRC {crc:04X}. "
-            "In die Datei kommt es mit „Speichern“ im Hauptfenster.")
         self.disk_changed.emit()
+
+        # Bis in die DATEI durchschreiben: ein Sektoreditor, dessen „Save“ nur den
+        # Arbeitsspeicher anfasst, ist eine Falle — man glaubt gespeichert zu haben.
+        # Die Sicherungskopie `…~` legt die Bibliothek beim ersten Schreiben an.
+        try:
+            self.tool.flush()
+        except K1520DiskError as e:
+            # Der häufigste Fall: ein `.img` ist ein reines Sektorabbild und hat gar
+            # kein CRC-Feld — eine absichtlich falsche CRC ist dort nicht darstellbar.
+            # Die Änderung steht trotzdem im Speicher; der Weg heraus ist ein
+            # Containerwechsel, und der steht in der Meldung.
+            QMessageBox.warning(
+                self, "Nicht in die Datei geschrieben",
+                f"{e}\n\nDer Sektor ist in der Diskette im Speicher geändert. "
+                "Um ihn zu behalten: im Hauptfenster „Speichern unter…“ als .hfe "
+                "oder .dmk.")
+            self.hinweis.setText("Geändert, aber NICHT in die Datei geschrieben — "
+                                 "siehe Meldung.")
+            self._crc_bewerten()
+            return False
+
+        self.hinweis.setText(
+            f"Sektor geschrieben — {len(daten)} Byte, CRC {crc:04X}, "
+            f"gespeichert in {Path(self.tool.path).name}.")
         self._crc_bewerten()
         return True

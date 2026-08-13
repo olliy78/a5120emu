@@ -491,8 +491,12 @@ Was beim Weiterarbeiten zu wissen ist:
 - **Diskeditor — die Diskette als Scheibe (2026-08-13, `doc/design/13_k1520disktool.md` §19).**
   Knopf „Diskeditor“ im Hauptfenster → `app/disktool/ui/disk_editor.py`: zwei Scheiben
   (Spur 0 **außen**, Sektor 0 bei **12 Uhr**, Seite 1 gespiegelt), Sektor grün/rot,
-  Gap orange, unformatiert grau; Klick → Hexfeld (32 B/Zeile) + CRC-Feld +
-  *Reload/Fix CRC/Save*.  Unterbau: `core/peripherals/floppy_drive/track_view.{h,cpp}`
+  Gap orange, unformatiert grau; Klick **oder** Wählerzeile (`[−] Spur: [25] [+]`,
+  Sektorschritt geht in SPURreihenfolge, nicht nach ID) → Hexfeld (32 B/Zeile,
+  Überschreibmodus, ASCII-Spalte läuft mit) + CRC-Feld + *Reload/Fix CRC/Save*.
+  **`Save Sektor` schreibt bis in die Datei** (`sector_write`+`flush`) — bei einem
+  Sektoreditor wäre „nur im Speicher“ eine Falle; Ausnahme mit Ansage: `.img` führt
+  kein CRC-Feld, eine absichtlich falsche CRC lässt sich dort nicht ablegen.  Unterbau: `core/peripherals/floppy_drive/track_view.{h,cpp}`
   (`scanTrack` → lückenlose Abschnittsfolge), `parseTrack` liefert jetzt zusätzlich
   **Byte-Offsets + gespeicherte CRCs + `deleted`**, neu `TrackCodec::writeSectorAt`
   und `sectorDataCrc`, C-ABI `k1520d_track_scan`/`k1520d_span_*`/`k1520d_sector_*`.
