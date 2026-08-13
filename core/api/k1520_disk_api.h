@@ -316,6 +316,15 @@ K1520_API int k1520d_sector_tail(K1520Disk h, int cyl, int head, int index,
                                  uint8_t* out, int max_len);
 
 /**
+ * @brief Nur den Nachspann schreiben — Nutzdaten und Daten-CRC bleiben unangetastet.
+ *
+ * Bei UDOS ist das die Dateiverkettung; sie zu aendern ist etwas anderes, als die
+ * Nutzdaten zu aendern.  Eine absichtlich falsche CRC bleibt falsch.
+ */
+K1520_API bool k1520d_sector_write_tail(K1520Disk h, int cyl, int head, int index,
+                                        const uint8_t* tail, int len);
+
+/**
  * @brief Sektor loeschen — sein Bereich wird wieder Gap.
  * @param tail_bytes zusaetzlich zu loeschende Bytes hinter der Daten-CRC (UDOS: 4)
  */

@@ -467,3 +467,78 @@ def test_unformatted_track_is_told_apart_from_a_gap(tmp_path):
         t = d.track(d.medium_cylinders + 5, 0)
         assert not t.exists and not t.formatted
         assert [s.kind for s in t.spans] == [UNFORMATTED]
+
+
+def test_sector_tail_can_be_written_alone(tmp_path, fixture_disks):
+    """Die UDOS-Verkettung ändern, ohne Nutzdaten oder CRC anzufassen."""
+    import shutil
+    from app.core_binding.k1520disk import DiskTool, K1520DiskError
+
+    abbild = tmp_path / "udos.hfe"
+    shutil.copy(fixture_disks / "udos_boot_scp.hfe", abbild)
+    with DiskTool.open(abbild) as d:
+        d.set_read_only(False)
+        daten = d.sector_data(22, 0, 0)
+        assert d.sector_tail(22, 0, 0)[:4] == b"\x05\x16\x05\x16"
+
+        # Sektor absichtlich defekt machen, dann nur die Verkettung ändern.
+        d.sector_write(22, 0, 0, daten, crc=0xBEEF)
+        d.sector_write_tail(22, 0, 0, b"\x07\x15\xFF\xFF")
+
+        assert d.sector_tail(22, 0, 0)[:4] == b"\x07\x15\xFF\xFF"
+        assert d.sector_data(22, 0, 0) == daten
+        assert d.sector_crc(22, 0, 0) == 0xBEEF, "die falsche CRC bleibt falsch"
+
+        with pytest.raises(K1520DiskError):
+            d.sector_write_tail(22, 0, 0, bytes(64))
+
+
+def test_sector_create_and_erase_over_the_c_api(tmp_path, fixture_disks):
+    import shutil
+    from app.core_binding.k1520disk import DiskTool
+
+    abbild = tmp_path / "cpa.hfe"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.hfe", abbild)
+    with DiskTool.open(abbild) as d:
+        d.set_read_only(False)
+        t = d.track(0, 0)
+        vorher = t.sectors
+        ziel = next(s for s in t.spans if s.is_sector and s.id == 13)
+        lage = round(ziel.start * t.bytes)
+
+        d.sector_erase(0, 0, ziel.index)
+        assert d.track(0, 0).sectors == vorher - 1
+
+        # Die Vorhersage muss die Wirklichkeit treffen.
+        from app.core_binding.k1520disk import GAP
+        t = d.track(0, 0)
+        gaps = sorted(round((s.end - s.start) * t.bytes)
+                      for s in t.spans if s.kind == GAP)
+        gap = gaps[len(gaps) // 2]
+        von, laenge = d.sector_plan(0, 0, id=13, gap=gap)
+        d.sector_create(0, 0, id=13, gap=gap)
+
+        t = d.track(0, 0)
+        neu = next(s for s in t.spans if s.is_sector and s.id == 13)
+        assert t.sectors == vorher
+        assert neu.ok
+        assert round(neu.start * t.bytes) == von == lage
+        assert round(neu.end * t.bytes) == von + laenge
+
+
+def test_sector_create_refuses_what_does_not_fit(tmp_path, fixture_disks):
+    import shutil
+    from app.core_binding.k1520disk import DiskTool, K1520DiskError
+
+    abbild = tmp_path / "cpa.hfe"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.hfe", abbild)
+    with DiskTool.open(abbild) as d:
+        d.set_read_only(False)
+        vorher = d.track(0, 0).sectors
+        with pytest.raises(K1520DiskError, match="passt nicht"):
+            d.sector_create(0, 0, id=250, gap=6000)
+        assert d.track(0, 0).sectors == vorher, "abgelehnt heisst unverändert"
+
+        # FM auf einer MFM-Spur ist nicht mischbar.
+        with pytest.raises(K1520DiskError, match="mischen"):
+            d.sector_create(0, 0, id=250, gap=0, mfm=False)

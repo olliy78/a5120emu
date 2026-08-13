@@ -1423,6 +1423,16 @@ beide Zeiger im Klartext (`zurück Spur 22/Sektor 6 · vor Spur 22/Sektor 6`, `F
 **Dateisystem** (`filesystem_type == "udos"`); bei CP/M bleiben die Angaben weg,
 statt eine leere Spalte zu zeigen.
 
+Der Anhang ist **änderbar**: die vier Rohbytes stehen in einem eigenen Eingabefeld
+(gesperrt, solange die Diskette schreibgeschützt ist), die Deutung daneben. Zwei
+Gründe für das eigene Feld statt einer Zeile im Hexdump: die Verkettung zu ändern
+ist etwas anderes, als die Nutzdaten zu ändern, und der Schreibweg ist ein anderer —
+`DiskVolume::writeSectorTail` schreibt **nur** den Nachspann und übernimmt die
+vorhandene Daten-CRC wörtlich, damit ein absichtlich defekter Sektor defekt bleibt.
+Geschrieben wird mit demselben *Save Sektor*. Wächter:
+`DiskVolume.NachspannSchreibenLaesstDatenUndCrcInRuhe`,
+`test_udos_tail_is_saved_without_touching_data_or_crc`.
+
 **Grenze:** der Editor hängt an einer *geöffneten* Diskette, und geöffnet wird nur,
 was die Erkennung (§12) durchlässt. Eine Diskette ganz ohne brauchbares Dateisystem
 — gerade der Fall, für den ein Sektoreditor gemacht ist — lässt sich damit heute

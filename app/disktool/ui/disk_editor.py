@@ -659,6 +659,31 @@ class DiskEditorWindow(QDialog):
         crc_zeile.addWidget(self.crc_feld)
         crc_zeile.addWidget(self.crc_urteil, 1)
 
+        # ── UDOS-Nachspann: die Dateiverkettung, änderbar ───────────────────
+        # Sie zu ändern ist etwas anderes, als die Nutzdaten zu ändern — deshalb ein
+        # eigenes Feld.  Links die vier Rohbytes (das ist die Wahrheit auf dem
+        # Medium), rechts, was sie bedeuten.
+        self.tail_feld = QLineEdit()
+        self.tail_feld.setMaximumWidth(130)
+        self.tail_feld.setFont(_monospace())
+        self.tail_feld.setToolTip(
+            "Der UDOS-Sektorkontrollblock: Rückwärtszeiger (2 Byte) + "
+            "Vorwärtszeiger (2 Byte), hexadezimal.\n"
+            "Je Zeiger: Sektorindex (0-basiert), Spurnummer.  FF FF = Kettenende.\n"
+            "„Save Sektor“ schreibt ihn mit.")
+        self.tail_feld.textChanged.connect(self._tail_deuten)
+        self.tail_deutung = QLabel("")
+        self.tail_deutung.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
+        tail_zeile = QHBoxLayout()
+        tail_zeile.addWidget(QLabel("UDOS-Anhang:"))
+        tail_zeile.addWidget(self.tail_feld)
+        tail_zeile.addWidget(self.tail_deutung, 1)
+        self.tail_widget = QWidget()
+        self.tail_widget.setLayout(tail_zeile)
+        # CP/M kennt keinen Nachspann — dort bleibt die Zeile ganz weg.
+        self.tail_widget.setVisible(self.udos)
+
         self.hex = QPlainTextEdit()
         self.hex.setFont(_monospace())
         self.hex.setLineWrapMode(QPlainTextEdit.NoWrap)
@@ -711,6 +736,7 @@ class DiskEditorWindow(QDialog):
         unten_lay = QVBoxLayout(unten)
         unten_lay.setContentsMargins(6, 6, 6, 6)
         unten_lay.addLayout(wahlzeile)
+        unten_lay.addWidget(self.tail_widget)
         unten_lay.addLayout(crc_zeile)
         unten_lay.addWidget(self.hex, 1)
         unten_lay.addLayout(knopfzeile)
@@ -752,6 +778,7 @@ class DiskEditorWindow(QDialog):
         schreibbar = an and not self.tool.read_only
         self.hex.setReadOnly(not schreibbar)
         self.crc_feld.setReadOnly(not schreibbar)
+        self.tail_feld.setReadOnly(not schreibbar)
         self.btn_reload.setEnabled(an)
         self.btn_fixcrc.setEnabled(schreibbar)
         self.btn_save.setEnabled(schreibbar)
@@ -795,18 +822,16 @@ class DiskEditorWindow(QDialog):
         # Angabe weg, statt eine leere Spalte zu zeigen.
         verfahren = f"IBM-{spur.encoding}"
         groesse = f"{len(daten)} Byte"
-        kette = ""
         if self.udos:
             anhang = self.tool.sector_tail(cyl, head, index)[:UDOS_TAIL]
             verfahren += " + UDOS-Erweiterung"
             groesse = (f"{len(daten)} + 2 CRC + {UDOS_TAIL} Byte Kontrollblock "
                        f"= {len(daten) + 2 + UDOS_TAIL} Byte")
-            if len(anhang) >= UDOS_TAIL:
-                kette = (f",  Kette: zurück {udos_zeiger(anhang[0:2])} · "
-                         f"vor {udos_zeiger(anhang[2:4])}"
-                         f"  [{anhang.hex(' ').upper()}]")
-        self.info.setText(f"Format: {verfahren},  Größe: {groesse}"
-                          f"{kette}{marke}{id_crc}")
+            self.tail_feld.blockSignals(True)
+            self.tail_feld.setText(anhang.hex(" ").upper())
+            self.tail_feld.blockSignals(False)
+            self._tail_deuten()
+        self.info.setText(f"Format: {verfahren},  Größe: {groesse}{marke}{id_crc}")
 
         self.crc_feld.setText(f"{crc:04X}")
         self._im_umbau = True                 # kein Auffrischen beim Befüllen
@@ -958,6 +983,28 @@ class DiskEditorWindow(QDialog):
         marke.setPosition(min(stelle, len(neu)))
         self.hex.setTextCursor(marke)
         self._im_umbau = False
+
+    def tail_bytes(self) -> Optional[bytes]:
+        """Der eingetippte Nachspann; ``None``, wenn er nicht lesbar ist."""
+        roh = self.tail_feld.text().replace(" ", "").strip()
+        if len(roh) != UDOS_TAIL * 2:
+            return None
+        try:
+            return bytes.fromhex(roh)
+        except ValueError:
+            return None
+
+    def _tail_deuten(self) -> None:
+        """Die vier Bytes in Klartext übersetzen — Spur und Sektor dezimal."""
+        roh = self.tail_bytes()
+        if roh is None:
+            self.tail_deutung.setText(
+                f"— {UDOS_TAIL} Bytes hexadezimal erwartet")
+            self.tail_deutung.setStyleSheet("color: #cc2b2b;")
+            return
+        self.tail_deutung.setStyleSheet("color: #505050;")
+        self.tail_deutung.setText(
+            f"zurück: {udos_zeiger(roh[0:2])}   ·   vor: {udos_zeiger(roh[2:4])}")
 
     def _crc_bewerten(self) -> None:
         """Sagt, ob die eingetragene CRC zu den angezeigten Daten passt."""
@@ -1126,8 +1173,23 @@ class DiskEditorWindow(QDialog):
             QMessageBox.warning(self, "Nicht lesbar", "Die CRC ist 16 Bit breit.")
             return False
 
+        # Der UDOS-Nachspann gehört zum Sektor und wird deshalb mit demselben
+        # „Save“ geschrieben — getrennt vom Datenfeld, damit die vorhandene CRC
+        # dabei nicht angefasst wird.
+        anhang = None
+        if self.udos:
+            anhang = self.tail_bytes()
+            if anhang is None:
+                QMessageBox.warning(
+                    self, "Nicht lesbar",
+                    f"Der UDOS-Anhang braucht genau {UDOS_TAIL} Bytes hexadezimal, "
+                    f"z. B. „05 16 05 16“.")
+                return False
+
         try:
             self.tool.sector_write(cyl, head, index, daten, crc)
+            if anhang is not None:
+                self.tool.sector_write_tail(cyl, head, index, anhang)
         except K1520DiskError as e:
             QMessageBox.critical(self, "Nicht geschrieben", str(e))
             return False

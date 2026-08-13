@@ -987,6 +987,31 @@ bool DiskVolume::readSectorTail(uint8_t cyl, uint8_t head, int index,
     return true;
 }
 
+bool DiskVolume::writeSectorTail(uint8_t cyl, uint8_t head, int index,
+                                 const std::vector<uint8_t>& tail) {
+    if (read_only_) return fail(kSchreibschutz);
+    if (!disk_)     return fail("keine Diskette geoeffnet");
+    if (index < 0)  return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+    if (tail.size() > kSectorTailBytes)
+        return fail("Der Nachspann fasst hoechstens "
+                    + std::to_string(kSectorTailBytes) + " Byte");
+
+    TrackImage spur = disk_->medium().track(cyl, head);
+    const std::vector<LogicalSector> s = TrackCodec::parseTrack(spur);
+    if (static_cast<size_t>(index) >= s.size())
+        return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+
+    // Daten und CRC unveraendert zurueckschreiben: `writeSectorAt` fasst beides an,
+    // und eine neu gerechnete CRC wuerde einen absichtlich defekten Sektor heilen.
+    const uint16_t crc = s[static_cast<size_t>(index)].data_crc;
+    if (!TrackCodec::writeSectorAt(spur, static_cast<size_t>(index),
+                                   s[static_cast<size_t>(index)].data, tail, &crc))
+        return fail("Der Nachspann liess sich nicht schreiben — er wuerde in die "
+                    "naechste Adressmarke laufen.");
+    disk_->medium().setTrack(cyl, head, std::move(spur));
+    return true;
+}
+
 bool DiskVolume::eraseSectorAt(uint8_t cyl, uint8_t head, int index,
                                uint16_t tail_bytes) {
     if (read_only_) return fail(kSchreibschutz);

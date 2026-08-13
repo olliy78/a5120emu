@@ -520,6 +520,14 @@ extern "C" int k1520d_sector_tail(K1520Disk h, int cyl, int head, int index,
     return n;
 }
 
+extern "C" bool k1520d_sector_write_tail(K1520Disk h, int cyl, int head, int index,
+                                         const uint8_t* tail, int len) {
+    if (!h || !tail || len < 0) return false;
+    return H(h)->vol->writeSectorTail(static_cast<uint8_t>(cyl),
+                                      static_cast<uint8_t>(head), index,
+                                      std::vector<uint8_t>(tail, tail + len));
+}
+
 namespace {
 /// @brief Gemeinsame Umsetzung der Anlegeangaben in eine @ref NewSectorSpec.
 TrackCodec::NewSectorSpec bauSpec(int id, int id_cyl, int id_head, int size, int gap,

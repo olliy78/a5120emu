@@ -1030,3 +1030,147 @@ TEST(DiskVolume, UdosKopfsektorangabenUeberlebenDenRundlauf) {
     neu.reset();
     fs::remove(pfad, ec);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sektoransicht und Sektoreditor (§19) — auf der Ebene, die die C-ABI benutzt
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(DiskVolume, SektoransichtLiefertDieSpurenDesMediums) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_dv_sekt.img");
+    std::string err;
+    auto dv = oeffne(k.path(), "cpa780", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    EXPECT_GT(dv->mediumCylinders(), 0);
+    EXPECT_EQ(dv->mediumHeads(), 2);
+
+    const TrackView v = dv->trackView(0, 0);
+    EXPECT_TRUE(v.exists);
+    EXPECT_TRUE(v.formatted);
+    EXPECT_EQ(v.sectors, 26);
+    ASSERT_FALSE(v.spans.empty());
+
+    // Eine Spur ausserhalb der Ausdehnung gibt es schlicht nicht.
+    const TrackView weg = dv->trackView(static_cast<uint8_t>(dv->mediumCylinders()), 0);
+    EXPECT_FALSE(weg.exists);
+
+    std::vector<uint8_t> daten;
+    uint16_t crc = 0;
+    ASSERT_TRUE(dv->readSectorAt(0, 0, 0, daten, crc)) << dv->lastError();
+    EXPECT_EQ(daten.size(), 128u);
+    uint16_t soll = 0;
+    ASSERT_TRUE(dv->sectorCrcFor(0, 0, 0, daten, soll));
+    EXPECT_EQ(crc, soll) << "ein heiler Sektor traegt die CRC, die zu ihm gehoert";
+}
+
+TEST(DiskVolume, SchreibgeschuetzteDisketteLehntJedeSektoraenderungAb) {
+    // Der Schreibschutz muss ALLE neuen Wege sperren — einer, der durchrutscht,
+    // faellt beim blossen Ansehen einer fremden Diskette nicht auf.
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_dv_sekt_ro.img");
+    std::string err;
+    auto dv = oeffne(k.path(), "cpa780", err);          // schreibgeschuetzt geoeffnet
+    ASSERT_NE(dv, nullptr) << err;
+    ASSERT_TRUE(dv->readOnly());
+
+    const std::vector<uint8_t> daten(128, 0x42);
+    TrackCodec::NewSectorSpec spec;
+    spec.id = 200;
+    spec.gap_before = 24;
+
+    EXPECT_FALSE(dv->writeSectorAt(0, 0, 0, daten, nullptr));
+    EXPECT_NE(dv->lastError().find("schreibgeschuetzt"), std::string::npos)
+        << dv->lastError();
+    EXPECT_FALSE(dv->writeSectorTail(0, 0, 0, {0xFF, 0xFF, 0xFF, 0xFF}));
+    EXPECT_FALSE(dv->eraseSectorAt(0, 0, 0, 0));
+    EXPECT_FALSE(dv->createSector(0, 0, spec, true));
+
+    // Lesen bleibt erlaubt — und die Diskette ist unveraendert.
+    std::vector<uint8_t> zurueck;
+    uint16_t crc = 0;
+    EXPECT_TRUE(dv->readSectorAt(0, 0, 0, zurueck, crc));
+    EXPECT_EQ(dv->trackView(0, 0).sectors, 26);
+}
+
+TEST(DiskVolume, NachspannSchreibenLaesstDatenUndCrcInRuhe) {
+    // Bei UDOS ist der Nachspann die Dateiverkettung.  Sie zu aendern darf weder die
+    // Nutzdaten anfassen noch einen absichtlich defekten Sektor heilen.
+    Kopie k("udos_boot_scp.hfe", "k1520_test_dv_tail.hfe");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    std::vector<uint8_t> daten;
+    uint16_t crc = 0;
+    ASSERT_TRUE(dv->readSectorAt(22, 0, 0, daten, crc)) << dv->lastError();
+
+    // Sektor absichtlich defekt machen …
+    const uint16_t falsch = 0xBEEF;
+    ASSERT_TRUE(dv->writeSectorAt(22, 0, 0, daten, &falsch)) << dv->lastError();
+    ASSERT_FALSE(dv->trackView(22, 0).spans[0].data_crc_ok);
+
+    // … dann NUR die Verkettung aendern.
+    const std::vector<uint8_t> neu = {0x07, 0x15, 0xFF, 0xFF};
+    ASSERT_TRUE(dv->writeSectorTail(22, 0, 0, neu)) << dv->lastError();
+
+    std::vector<uint8_t> anhang;
+    ASSERT_TRUE(dv->readSectorTail(22, 0, 0, anhang));
+    ASSERT_GE(anhang.size(), 4u);
+    EXPECT_TRUE(std::equal(neu.begin(), neu.end(), anhang.begin()));
+
+    std::vector<uint8_t> zurueck;
+    uint16_t crc2 = 0;
+    ASSERT_TRUE(dv->readSectorAt(22, 0, 0, zurueck, crc2));
+    EXPECT_EQ(zurueck, daten) << "die Nutzdaten bleiben";
+    EXPECT_EQ(crc2, falsch)   << "und die absichtlich falsche CRC bleibt falsch";
+
+    // Ein zu langer Nachspann wird abgelehnt, statt in die naechste Marke zu laufen.
+    EXPECT_FALSE(dv->writeSectorTail(22, 0, 0, std::vector<uint8_t>(64, 0xAA)));
+}
+
+TEST(DiskVolume, SektorAnlegenUndLoeschenUeberDieFassade) {
+    Kopie k("cpa_cpa780_k5601_clock.hfe", "k1520_test_dv_sekt_neu.hfe");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "cpa780", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    const TrackView vorher = dv->trackView(0, 0);
+    const int anzahl = vorher.sectors;
+    const TrackSpan* dreizehn = nullptr;
+    for (const TrackSpan& s : vorher.spans)
+        if (s.kind == TrackSpan::Kind::Sector && s.id == 13) dreizehn = &s;
+    ASSERT_NE(dreizehn, nullptr);
+    const int index = dreizehn->index;
+    const double lage = dreizehn->start;
+
+    ASSERT_TRUE(dv->eraseSectorAt(0, 0, index, 0)) << dv->lastError();
+    EXPECT_EQ(dv->trackView(0, 0).sectors, anzahl - 1);
+
+    // Der Gap, der auf dieser Spur ueblich ist — so wie die Oberflaeche ihn misst.
+    const TrackView luecke = dv->trackView(0, 0);
+    std::vector<uint32_t> gaps;
+    for (const TrackSpan& s : luecke.spans)
+        if (s.kind == TrackSpan::Kind::Gap)
+            gaps.push_back(static_cast<uint32_t>((s.end - s.start) * luecke.bytes + 0.5));
+    std::sort(gaps.begin(), gaps.end());
+    ASSERT_FALSE(gaps.empty());
+
+    TrackCodec::NewSectorSpec spec;
+    spec.id = 13;
+    spec.gap_before = static_cast<uint16_t>(gaps[gaps.size() / 2]);
+    uint32_t von = 0, laenge = 0;
+    ASSERT_TRUE(dv->planSector(0, 0, spec, true, von, laenge));
+    ASSERT_TRUE(dv->createSector(0, 0, spec, true)) << dv->lastError();
+
+    const TrackView nachher = dv->trackView(0, 0);
+    EXPECT_EQ(nachher.sectors, anzahl);
+    bool gefunden = false;
+    for (const TrackSpan& s : nachher.spans) {
+        if (s.kind != TrackSpan::Kind::Sector || s.id != 13) continue;
+        gefunden = true;
+        EXPECT_TRUE(s.ok()) << "ein neu angelegter Sektor ist sofort gueltig";
+        EXPECT_NEAR(s.start, lage, 1e-9) << "wieder an derselben Stelle";
+        // Die Vorhersage muss sich mit der Wirklichkeit decken.
+        EXPECT_NEAR(s.start * nachher.bytes, von, 1.0);
+    }
+    EXPECT_TRUE(gefunden);
+}

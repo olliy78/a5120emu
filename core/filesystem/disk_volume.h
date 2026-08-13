@@ -304,6 +304,16 @@ public:
     bool readSectorTail(uint8_t cyl, uint8_t head, int index,
                         std::vector<uint8_t>& out) const;
 
+    /**
+     * @brief Nur den Nachspann schreiben — Nutzdaten und CRC bleiben, wie sie sind.
+     *
+     * Bei UDOS ist das die **Dateiverkettung**: sie zu ändern ist etwas anderes, als
+     * die Nutzdaten zu ändern.  Die vorhandene Daten-CRC wird woertlich uebernommen,
+     * damit ein absichtlich defekter Sektor defekt bleibt (§19.2).
+     */
+    bool writeSectorTail(uint8_t cyl, uint8_t head, int index,
+                         const std::vector<uint8_t>& tail);
+
     /// @brief Sektor loeschen — sein Bereich wird wieder Gap (§19.4).
     bool eraseSectorAt(uint8_t cyl, uint8_t head, int index, uint16_t tail_bytes);
 

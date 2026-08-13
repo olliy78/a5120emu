@@ -262,6 +262,9 @@ _lib.k1520d_sector_write.restype = ctypes.c_bool
 _lib.k1520d_sector_tail.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int,
                                     ctypes.POINTER(ctypes.c_uint8), ctypes.c_int]
 _lib.k1520d_sector_tail.restype = ctypes.c_int
+_lib.k1520d_sector_write_tail.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                          ctypes.POINTER(ctypes.c_uint8), ctypes.c_int]
+_lib.k1520d_sector_write_tail.restype = ctypes.c_bool
 _lib.k1520d_sector_erase.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int,
                                      ctypes.c_int]
 _lib.k1520d_sector_erase.restype = ctypes.c_bool
@@ -853,6 +856,18 @@ class DiskTool:
         if n < 0:
             raise K1520DiskError(self._fail())
         return bytes(puffer[:n])
+
+    def sector_write_tail(self, cyl: int, head: int, index: int,
+                          tail: bytes) -> None:
+        """Nur den Nachspann schreiben — Nutzdaten und Daten-CRC bleiben.
+
+        Bei UDOS ist das die Dateiverkettung.  Eine absichtlich falsche CRC bleibt
+        falsch: sie wird wörtlich übernommen, nicht neu gerechnet.
+        """
+        roh = (ctypes.c_uint8 * len(tail)).from_buffer_copy(bytes(tail))
+        if not _lib.k1520d_sector_write_tail(self._h, cyl, head, index, roh,
+                                             len(tail)):
+            raise K1520DiskError(self._fail())
 
     def sector_erase(self, cyl: int, head: int, index: int,
                      tail_bytes: int = 0) -> None:

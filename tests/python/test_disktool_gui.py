@@ -860,8 +860,10 @@ def test_disk_editor_names_the_udos_extension(window, fixture_disks):
     text = ed.info.text()
     assert "IBM-MFM + UDOS-Erweiterung" in text, text
     assert "Kontrollblock" in text and "134 Byte" in text, text
-    assert "Kette:" in text and "zurück" in text and "vor" in text, text
-    assert "Spur 22/Sektor" in text, text
+    # Die Verkettung selbst steht im eigenen, ÄNDERBAREN Feld darunter.
+    assert ed.tail_feld.text() == "05 16 05 16"
+    assert "zurück" in ed.tail_deutung.text() and "vor" in ed.tail_deutung.text()
+    assert "Spur 22/Sektor" in ed.tail_deutung.text()
 
 
 def test_disk_editor_hides_the_extension_on_cpm(window, fixture_disks):
@@ -982,3 +984,133 @@ def test_new_sector_dialog_defaults_the_gap_from_the_track(window, fixture_disks
     laengen = {round((s.end - s.start) * spur.bytes)
                for s in spur.spans if s.kind == 1}
     assert dlg.f_gap.value() in laengen
+
+
+# ─── UDOS-Anhang bearbeiten ──────────────────────────────────────────────────
+
+def test_udos_tail_is_an_editable_field_with_decimal_reading(window, fixture_disks):
+    """Die vier Rohbytes zum Ändern, daneben was sie bedeuten — Spur/Sektor dezimal."""
+    ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
+    ed._springe(seite=0, spur=22)
+
+    assert ed.tail_widget.isVisible() or not ed.isVisible()   # bei UDOS vorhanden
+    assert ed.tail_feld.text() == "05 16 05 16"
+    assert ed.tail_bytes() == b"\x05\x16\x05\x16"
+    assert ed.tail_deutung.text() == \
+        "zurück: Spur 22/Sektor 6   ·   vor: Spur 22/Sektor 6"
+
+    # Beim Tippen läuft die Deutung mit.
+    ed.tail_feld.setText("07 15 FF FF")
+    assert ed.tail_deutung.text() == "zurück: Spur 21/Sektor 8   ·   vor: Ende"
+
+    # Unvollständige Eingabe wird benannt, nicht geraten.
+    ed.tail_feld.setText("07 15")
+    assert ed.tail_bytes() is None
+    assert "erwartet" in ed.tail_deutung.text()
+
+
+def test_udos_tail_row_is_absent_on_cpm(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert not ed.udos
+    assert ed.tail_widget.isHidden()
+
+
+def test_udos_tail_is_saved_without_touching_data_or_crc(window, fixture_disks,
+                                                         tmp_path):
+    """Die Verkettung zu ändern ist etwas anderes, als die Nutzdaten zu ändern."""
+    abbild = tmp_path / "udos.hfe"
+    shutil.copy(fixture_disks / "udos_boot_scp.hfe", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+    ed._springe(seite=0, spur=22)
+    head, cyl, index = ed.aktuell
+    daten = window.tool.sector_data(cyl, head, index)
+
+    # Sektor absichtlich defekt lassen …
+    ed.crc_feld.setText("BEEF")
+    assert ed.save_sector()
+    # … und danach NUR die Verkettung ändern.
+    ed.tail_feld.setText("07 15 FF FF")
+    assert ed.save_sector()
+
+    assert window.tool.sector_tail(cyl, head, index)[:4] == b"\x07\x15\xFF\xFF"
+    assert window.tool.sector_data(cyl, head, index) == daten
+    assert window.tool.sector_crc(cyl, head, index) == 0xBEEF, \
+        "eine absichtlich falsche CRC darf dabei nicht geheilt werden"
+
+    assert ed.reload_sector()
+    assert ed.tail_feld.text() == "07 15 FF FF"
+
+
+def test_udos_tail_refuses_an_incomplete_value(window, fixture_disks, tmp_path,
+                                               monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    gemeldet = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: gemeldet.append(a[2]))
+
+    abbild = tmp_path / "udos.hfe"
+    shutil.copy(fixture_disks / "udos_boot_scp.hfe", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+    ed._springe(seite=0, spur=22)
+    head, cyl, index = ed.aktuell
+    vorher = window.tool.sector_tail(cyl, head, index)
+
+    ed.tail_feld.setText("07 15 ZZ")
+    assert not ed.save_sector()
+    assert gemeldet and "hexadezimal" in gemeldet[0], gemeldet
+    assert window.tool.sector_tail(cyl, head, index) == vorher, "nichts geschrieben"
+
+
+def test_udos_tail_is_locked_on_a_protected_disk(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
+    ed._springe(seite=0, spur=22)
+    assert window.tool.read_only
+    assert ed.tail_feld.isReadOnly()
+
+
+# ─── Randfälle der Scheibenansicht ───────────────────────────────────────────
+
+def test_disk_editor_shows_an_empty_track_and_still_offers_a_new_sector(
+        window, tmp_path):
+    """Auf einer Spur ohne Sektoren braucht man den Anlegen-Knopf am dringendsten."""
+    from app.core_binding.k1520disk import DiskTool
+
+    abbild = tmp_path / "leer.hfe"
+    DiskTool.create(abbild, "cpa780").close()
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+
+    # Eine Spur jenseits des Formats gibt es nicht …
+    ed._springe(seite=0, spur=ed.surface.cylinders - 1)
+    # … eine leergeräumte dagegen schon: alle Sektoren entfernen.
+    ed._springe(seite=0, spur=5)
+    while ed._sektoren(0, 5):
+        window.tool.sector_erase(5, 0, ed._sektoren(0, 5)[0].index)
+        ed.surface.reload_track(window.tool, 5, 0)
+
+    ed._springe(seite=0, spur=5)
+    assert ed.aktuell is None, "es gibt keinen Sektor zu wählen"
+    assert "keine Sektoren" in ed.info.text()
+    assert ed.hex.toPlainText() == ""
+    assert ed.btn_neu.isEnabled(), "gerade hier muss Anlegen gehen"
+    assert not ed.btn_save.isEnabled()
+
+
+def test_disk_editor_leaves_the_back_of_a_single_sided_disk_empty(window, tmp_path):
+    """Einseitige Diskette: die Rückseite bleibt leer — nur die beiden Kreise."""
+    from app.core_binding.k1520disk import DiskTool
+
+    abbild = tmp_path / "einseitig.hfe"
+    DiskTool.create(abbild, "udos_ss40").close()
+    ed = _editor(window, abbild)
+
+    assert ed.surface.heads == 1
+    assert ed.surface.tracks[0], "Seite 0 hat Spuren"
+    assert ed.surface.tracks[1] == [], "Seite 1 gibt es nicht"
+
+    # Ein Klick auf die rechte Hälfte findet nichts — und stürzt nicht ab.
+    from PySide6.QtCore import QPointF
+    ed.resize(1000, 800)
+    cx, cy, r, _ = ed.surface._mitte(1)
+    assert ed.surface.treffer(QPointF(cx, cy - r * 0.5)) is None
