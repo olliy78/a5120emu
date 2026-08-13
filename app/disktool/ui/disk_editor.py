@@ -34,8 +34,9 @@ from typing import List, Optional, TYPE_CHECKING
 from PySide6.QtCore import QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
-    QPushButton, QSizePolicy, QSplitter, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
+    QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy,
+    QSpinBox, QSplitter, QVBoxLayout, QWidget,
 )
 
 from app.core_binding.k1520disk import GAP, SECTOR, UNFORMATTED, K1520DiskError
@@ -56,6 +57,24 @@ FARBE_UNFORMAT    = QColor("#b8b8b8")   # unformatiert / markenloser Gap-Fluss
 FARBE_LINIE       = QColor("#000000")
 FARBE_HINTERGRUND = QColor("#ffffff")
 FARBE_AUSWAHL     = QColor("#1060d0")
+
+
+#: Länge des UDOS-Sektorkontrollblocks hinter der Daten-CRC (§1.1 des Datenformats).
+UDOS_TAIL = 4
+
+
+def udos_zeiger(roh: bytes) -> str:
+    """Ein UDOS-Zeiger (2 Byte) im Klartext.
+
+    Byte 0 ist der **Sektorindex, 0-basiert** (0 = Sektor-ID 1), Byte 1 die
+    Spurnummer; `FF FF` ist das Kettenende
+    (`doc/udos_diskettenformat.md` §1.2).
+    """
+    if len(roh) < 2:
+        return "?"
+    if roh[0] == 0xFF and roh[1] == 0xFF:
+        return "Ende"
+    return f"Spur {roh[1]}/Sektor {roh[0] + 1}"
 
 
 def _monospace() -> QFont:
@@ -395,6 +414,177 @@ class _Waehler(QWidget):
             w.setEnabled(an)
 
 
+class NewSectorDialog(QDialog):
+    """Angaben für einen neuen Sektor — und wo er landen wird.
+
+    **Die ID bestimmt die Lage**: der neue Sektor kommt hinter den vorhandenen mit
+    der nächstkleineren ID, um den eingestellten Gap versetzt.  Wer Lücken lassen
+    will, gibt beim Anlegen des späteren Sektors einen Gap an, in den die fehlenden
+    hineinpassen — sonst überschreibt der nächste angelegte den Nachbarn.  Was
+    passieren wird, steht deshalb **im Dialog**, bevor man ihn bestätigt.
+    """
+
+    def __init__(self, tool: "DiskTool", cyl: int, head: int, spur: "Track",
+                 udos: bool, parent=None):
+        super().__init__(parent)
+        self.tool = tool
+        self.cyl, self.head = cyl, head
+        self.spur = spur
+        self.setWindowTitle(f"Neuer Sektor — Seite {head}, Spur {cyl}")
+        self.setMinimumWidth(460)
+
+        vorhanden = [s for s in spur.spans if s.kind == SECTOR]
+        naechste = max((s.id for s in vorhanden), default=0) + 1 if vorhanden else 1
+
+        self.f_id = QSpinBox()
+        self.f_id.setRange(0, 255)
+        self.f_id.setValue(naechste)
+        self.f_id.setToolTip("Sektor-ID im ID-Feld — sie bestimmt zugleich die LAGE.")
+
+        self.f_size = QComboBox()
+        for n in (128, 256, 512, 1024):
+            self.f_size.addItem(f"{n} Byte", n)
+        self.f_size.setCurrentIndex(
+            [128, 256, 512, 1024].index(vorhanden[0].size) if vorhanden else 0)
+
+        self.f_gap = QSpinBox()
+        self.f_gap.setRange(0, 4096)
+        self.f_gap.setValue(self._gap_vorschlag())
+        self.f_gap.setSuffix(" Byte")
+        self.f_gap.setToolTip(
+            "Gap zwischen dem Ende des vorherigen Sektors und der Sync-Gruppe des "
+            "neuen.\nVorgabe: der Abstand, der auf dieser Spur tatsächlich vorkommt.")
+
+        self.f_mfm = QComboBox()
+        self.f_mfm.addItem("MFM (Double Density)", True)
+        self.f_mfm.addItem("FM (Single Density)", False)
+        self.f_mfm.setCurrentIndex(0 if spur.encoding != "FM" else 1)
+        # FM und MFM lassen sich in EINER Spur nicht mischen — das Verfahren hängt
+        # am Bit-Codec der ganzen Spur.  Nur eine leere Spur darf es noch festlegen.
+        self.f_mfm.setEnabled(not vorhanden)
+
+        self.f_tail = QCheckBox(f"UDOS-Kontrollblock ({UDOS_TAIL} Byte hinter der CRC)")
+        self.f_tail.setChecked(udos)
+        self.f_tail.setToolTip(
+            "Rückwärts- und Vorwärtszeiger der UDOS-Dateiverkettung.\n"
+            "Wird als „Kettenende“ (FF FF FF FF) angelegt.")
+
+        self.f_fill = QLineEdit("E5")
+        self.f_fill.setMaximumWidth(60)
+        self.f_fill.setFont(_monospace())
+        self.f_fill.setToolTip("Füllbyte der Nutzdaten (hexadezimal).")
+
+        self.f_idcyl = QSpinBox(); self.f_idcyl.setRange(0, 255); self.f_idcyl.setValue(cyl)
+        self.f_idhead = QSpinBox(); self.f_idhead.setRange(0, 255); self.f_idhead.setValue(head)
+        kennung = QHBoxLayout()
+        kennung.addWidget(QLabel("Zylinder"))
+        kennung.addWidget(self.f_idcyl)
+        kennung.addWidget(QLabel("Kopf"))
+        kennung.addWidget(self.f_idhead)
+        kennung.addStretch(1)
+        kennung_w = QWidget()
+        kennung_w.setLayout(kennung)
+        kennung_w.setToolTip(
+            "Was im ID-Feld steht.  Darf von der tatsächlichen Lage abweichen — "
+            "genau das braucht man, um eine fehlerhafte Diskette nachzubauen.")
+
+        form = QFormLayout()
+        form.addRow("Sektor-ID", self.f_id)
+        form.addRow("Größe", self.f_size)
+        form.addRow("Gap davor", self.f_gap)
+        form.addRow("Verfahren", self.f_mfm)
+        form.addRow("", self.f_tail)
+        form.addRow("Füllbyte", self.f_fill)
+        form.addRow("ID-Feld", kennung_w)
+
+        self.vorschau = QLabel("")
+        self.vorschau.setWordWrap(True)
+
+        self.knoepfe = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.knoepfe.button(QDialogButtonBox.Ok).setText("Anlegen")
+        self.knoepfe.accepted.connect(self.accept)
+        self.knoepfe.rejected.connect(self.reject)
+
+        lay = QVBoxLayout(self)
+        lay.addLayout(form)
+        lay.addWidget(self.vorschau)
+        lay.addWidget(self.knoepfe)
+
+        for w in (self.f_id, self.f_gap):
+            w.valueChanged.connect(self._vorschau)
+        self.f_size.currentIndexChanged.connect(self._vorschau)
+        self.f_mfm.currentIndexChanged.connect(self._vorschau)
+        self.f_tail.toggled.connect(self._vorschau)
+        self._vorschau()
+
+    # ── Vorgaben und Vorschau ───────────────────────────────────────────────
+
+    def _gap_vorschlag(self) -> int:
+        """Der Abstand, der auf DIESER Spur zwischen den Sektoren vorkommt.
+
+        Ein nachgelegter Sektor soll aussehen wie seine Nachbarn.  Gibt es keine
+        (leere Spur), bleibt der Normwert des Verfahrens.
+        """
+        laengen = sorted(round((s.end - s.start) * self.spur.bytes)
+                         for s in self.spur.spans if s.kind == GAP)
+        # Der Index-Gap ist der längste und untypisch — der Median trifft die
+        # gewöhnlichen Zwischenräume.
+        return laengen[len(laengen) // 2] if laengen else 24
+
+    def werte(self) -> dict:
+        try:
+            fill = int(self.f_fill.text().strip() or "E5", 16) & 0xFF
+        except ValueError:
+            fill = 0xE5
+        return {
+            "id": self.f_id.value(),
+            "size": self.f_size.currentData(),
+            "gap": self.f_gap.value(),
+            "tail_bytes": UDOS_TAIL if self.f_tail.isChecked() else 0,
+            "mfm": bool(self.f_mfm.currentData()),
+            "id_cyl": self.f_idcyl.value(),
+            "id_head": self.f_idhead.value(),
+            "fill": fill,
+        }
+
+    def betroffen(self) -> tuple:
+        """``(von, laenge, [überschriebene Sektor-IDs])`` — was der Sektor treffen wird."""
+        w = self.werte()
+        von, laenge = self.tool.sector_plan(
+            self.cyl, self.head, id=w["id"], size=w["size"], gap=w["gap"],
+            tail_bytes=w["tail_bytes"], mfm=w["mfm"])
+        bis = von + laenge
+        getroffen = []
+        for s in self.spur.spans:
+            if s.kind != SECTOR:
+                continue
+            s_von = round(s.start * self.spur.bytes)
+            s_bis = round(s.end * self.spur.bytes)
+            if s_von < bis and von < s_bis:
+                getroffen.append(s.id)
+        return von, laenge, sorted(set(getroffen))
+
+    def _vorschau(self) -> None:
+        try:
+            von, laenge, getroffen = self.betroffen()
+        except K1520DiskError as e:
+            self.vorschau.setText(str(e))
+            return
+        text = (f"Landet bei Byte {von} von {self.spur.bytes} "
+                f"({von / max(1, self.spur.bytes) * 360:.0f}° nach dem Index) "
+                f"und belegt {laenge} Byte.")
+        passt = von + laenge <= self.spur.bytes
+        if not passt:
+            text += "  ⚠ Das passt nicht mehr auf die Spur."
+        elif getroffen:
+            text += ("  ⚠ Überschreibt Sektor "
+                     + ", ".join(str(i) for i in getroffen) + ".")
+        self.vorschau.setStyleSheet(
+            "color: #a06000;" if (getroffen or not passt) else "color: #505050;")
+        self.vorschau.setText(text)
+        self.knoepfe.button(QDialogButtonBox.Ok).setEnabled(passt)
+
+
 class DiskEditorWindow(QDialog):
     """Scheibenansicht oben, Sektorinhalt unten.
 
@@ -420,6 +610,9 @@ class DiskEditorWindow(QDialog):
 
         self.aktuell: Optional[tuple] = None      # (Kopf, Spur, Sektornummer)
         self._im_umbau = False                   # gegen Rückkopplung beim Auffrischen
+        # Ob hinter der Daten-CRC ein Kontrollblock steht, weiß nicht der Sektor,
+        # sondern das DATEISYSTEM — deshalb einmal beim Öffnen bestimmt.
+        self.udos = (tool.filesystem_type == "udos")
 
         self.surface = DiskSurface()
         self.surface.sector_clicked.connect(self.select_sector)
@@ -493,10 +686,22 @@ class DiskEditorWindow(QDialog):
         self.btn_fixcrc.clicked.connect(self.fix_crc)
         self.btn_save.clicked.connect(self.save_sector)
 
+        self.btn_neu = QPushButton("Neuer Sektor…")
+        self.btn_loeschen = QPushButton("Sektor löschen")
+        self.btn_neu.setToolTip(
+            "Einen Sektor auf dieser Spur anlegen — die ID bestimmt, wo er landet")
+        self.btn_loeschen.setToolTip(
+            "Den gewählten Sektor entfernen; sein Bereich wird wieder Gap")
+        self.btn_neu.clicked.connect(self.new_sector)
+        self.btn_loeschen.clicked.connect(self.delete_sector)
+
         knopfzeile = QHBoxLayout()
         knopfzeile.addWidget(self.btn_reload)
         knopfzeile.addWidget(self.btn_fixcrc)
         knopfzeile.addWidget(self.btn_save)
+        knopfzeile.addSpacing(16)
+        knopfzeile.addWidget(self.btn_neu)
+        knopfzeile.addWidget(self.btn_loeschen)
         knopfzeile.addStretch(1)
         self.hinweis = QLabel("")
         self.hinweis.setWordWrap(True)
@@ -550,6 +755,11 @@ class DiskEditorWindow(QDialog):
         self.btn_reload.setEnabled(an)
         self.btn_fixcrc.setEnabled(schreibbar)
         self.btn_save.setEnabled(schreibbar)
+        self.btn_loeschen.setEnabled(schreibbar)
+        # Anlegen geht auch auf einer LEEREN Spur — dort gibt es keinen Sektor zu
+        # wählen, und genau dann braucht man den Knopf am dringendsten.
+        self.btn_neu.setEnabled(not self.tool.read_only
+                                and self.surface.cylinders > 0)
         if an and self.tool.read_only:
             self.hinweis.setText("Diskette ist schreibgeschützt geöffnet — "
                                  "„Nur lesen“ im Hauptfenster abwählen zum Ändern.")
@@ -576,11 +786,27 @@ class DiskEditorWindow(QDialog):
         span = next((s for s in spur.spans
                      if s.kind == SECTOR and s.index == index), None)
         self.w_sektor.setValue(span.id if span else None)
-        verfahren = f"IBM-{spur.encoding}"
         marke = "  · Datenmarke F8 (gelöscht)" if span and span.deleted else ""
         id_crc = "" if not span or span.id_crc_ok else "  · ID-CRC FEHLERHAFT"
-        self.info.setText(f"Format: {verfahren},  Größe: {len(daten)} Byte"
-                          f"{marke}{id_crc}")
+
+        # Bei UDOS hängt hinter der Daten-CRC ein 4-Byte-Kontrollblock — der Sektor
+        # ist damit tatsächlich größer als sein ID-Feld sagt, und die beiden Zeiger
+        # darin sind die Dateiverkettung.  CP/M kennt das nicht; dort bleibt die
+        # Angabe weg, statt eine leere Spalte zu zeigen.
+        verfahren = f"IBM-{spur.encoding}"
+        groesse = f"{len(daten)} Byte"
+        kette = ""
+        if self.udos:
+            anhang = self.tool.sector_tail(cyl, head, index)[:UDOS_TAIL]
+            verfahren += " + UDOS-Erweiterung"
+            groesse = (f"{len(daten)} + 2 CRC + {UDOS_TAIL} Byte Kontrollblock "
+                       f"= {len(daten) + 2 + UDOS_TAIL} Byte")
+            if len(anhang) >= UDOS_TAIL:
+                kette = (f",  Kette: zurück {udos_zeiger(anhang[0:2])} · "
+                         f"vor {udos_zeiger(anhang[2:4])}"
+                         f"  [{anhang.hex(' ').upper()}]")
+        self.info.setText(f"Format: {verfahren},  Größe: {groesse}"
+                          f"{kette}{marke}{id_crc}")
 
         self.crc_feld.setText(f"{crc:04X}")
         self._im_umbau = True                 # kein Auffrischen beim Befüllen
@@ -774,6 +1000,107 @@ class DiskEditorWindow(QDialog):
         except (ValueError, K1520DiskError) as e:
             QMessageBox.warning(self, "CRC nicht berechenbar", str(e))
             return False
+        return True
+
+    # ── Sektoren anlegen und löschen (§19.4) ────────────────────────────────
+
+    def _aktuelle_stelle(self) -> tuple:
+        """``(Seite, Spur)`` — die gerade gezeigte Stelle, auch ohne gewählten Sektor."""
+        if self.aktuell is not None:
+            return self.aktuell[0], self.aktuell[1]
+        return (self.w_seite.value() or 0), (self.w_spur.value() or 0)
+
+    def _speichern_oder_melden(self) -> bool:
+        """Nach einer Spuränderung in die Datei durchschreiben (wie `Save Sektor`)."""
+        try:
+            self.tool.flush()
+        except K1520DiskError as e:
+            QMessageBox.warning(
+                self, "Nicht in die Datei geschrieben",
+                f"{e}\n\nDie Spur ist im Speicher geändert. Um sie zu behalten: im "
+                "Hauptfenster „Speichern unter…“ als .hfe oder .dmk.")
+            return False
+        return True
+
+    def new_sector(self) -> bool:
+        """Dialog öffnen und den Sektor anlegen; danach ist er sofort bearbeitbar."""
+        head, cyl = self._aktuelle_stelle()
+        spur = self.tool.track(cyl, head)
+        if not spur.exists:
+            QMessageBox.warning(self, "Keine Spur",
+                                f"Seite {head}, Spur {cyl} gibt es auf diesem "
+                                "Datenträger nicht.")
+            return False
+
+        dialog = NewSectorDialog(self.tool, cyl, head, spur, self.udos, self)
+        if dialog.exec() != QDialog.Accepted:
+            return False
+
+        w = dialog.werte()
+        _, _, getroffen = dialog.betroffen()
+        if getroffen:
+            # Ihr Modell erlaubt das Überschreiben ausdrücklich — unbeabsichtigt
+            # soll es trotzdem nicht passieren.
+            antwort = QMessageBox.question(
+                self, "Überschreiben?",
+                "Der neue Sektor überschreibt Sektor "
+                + ", ".join(str(i) for i in getroffen)
+                + " ganz oder teilweise.\n\nTrotzdem anlegen?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if antwort != QMessageBox.Yes:
+                return False
+
+        try:
+            self.tool.sector_create(cyl, head, **w)
+        except K1520DiskError as e:
+            QMessageBox.critical(self, "Nicht angelegt", str(e))
+            return False
+
+        self.surface.reload_track(self.tool, cyl, head)
+        self.disk_changed.emit()
+        self._speichern_oder_melden()
+
+        # Den neuen Sektor gleich anzeigen — er ist ja der Grund für den Aufwand.
+        neu = next((s for s in self.tool.track(cyl, head).spans
+                    if s.kind == SECTOR and s.id == w["id"]), None)
+        if neu is not None:
+            self.select_sector(head, cyl, neu.index)
+        self.hinweis.setText(f"Sektor {w['id']} angelegt ({w['size']} Byte).")
+        return True
+
+    def delete_sector(self) -> bool:
+        """Den gewählten Sektor entfernen; sein Bereich wird wieder Gap."""
+        if self.aktuell is None:
+            return False
+        head, cyl, index = self.aktuell
+        span = next((s for s in self._sektoren(head, cyl) if s.index == index), None)
+        kennung = f"Sektor {span.id}" if span else f"Sektor #{index}"
+
+        antwort = QMessageBox.question(
+            self, "Sektor löschen",
+            f"{kennung} auf Seite {head}, Spur {cyl} entfernen?\n"
+            "Sein Bereich wird wieder Gap; die Spurlänge bleibt.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if antwort != QMessageBox.Yes:
+            return False
+
+        try:
+            self.tool.sector_erase(cyl, head, index, UDOS_TAIL if self.udos else 0)
+        except K1520DiskError as e:
+            QMessageBox.critical(self, "Nicht gelöscht", str(e))
+            return False
+
+        self.surface.reload_track(self.tool, cyl, head)
+        self.disk_changed.emit()
+        self._speichern_oder_melden()
+
+        # Weiterzeigen: der nächste vorhandene Sektor, sonst die leere Spur.
+        uebrig = self._sektoren(head, cyl)
+        if uebrig:
+            self.select_sector(head, cyl, uebrig[min(index, len(uebrig) - 1)].index)
+        else:
+            self._zeige_leere_spur(head, cyl)
+        self.hinweis.setText(f"{kennung} gelöscht.")
         return True
 
     def save_sector(self) -> bool:

@@ -976,6 +976,57 @@ bool DiskVolume::writeSectorAt(uint8_t cyl, uint8_t head, int index,
     return true;
 }
 
+bool DiskVolume::readSectorTail(uint8_t cyl, uint8_t head, int index,
+                                std::vector<uint8_t>& out) const {
+    if (!disk_) return fail("keine Diskette geoeffnet");
+    const std::vector<LogicalSector> s =
+        TrackCodec::parseTrack(disk_->medium().track(cyl, head));
+    if (index < 0 || static_cast<size_t>(index) >= s.size())
+        return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+    out = s[static_cast<size_t>(index)].tail;
+    return true;
+}
+
+bool DiskVolume::eraseSectorAt(uint8_t cyl, uint8_t head, int index,
+                               uint16_t tail_bytes) {
+    if (read_only_) return fail(kSchreibschutz);
+    if (!disk_)     return fail("keine Diskette geoeffnet");
+    if (index < 0)  return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+
+    TrackImage spur = disk_->medium().track(cyl, head);
+    if (!TrackCodec::eraseSectorAt(spur, static_cast<size_t>(index), tail_bytes))
+        return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+    disk_->medium().setTrack(cyl, head, std::move(spur));
+    return true;
+}
+
+bool DiskVolume::createSector(uint8_t cyl, uint8_t head, const TrackCodec::NewSectorSpec& spec,
+                              bool mfm) {
+    if (read_only_) return fail(kSchreibschutz);
+    if (!disk_)     return fail("keine Diskette geoeffnet");
+
+    TrackImage spur = disk_->medium().track(cyl, head);
+    std::string warum;
+    if (!TrackCodec::createSector(spur, spec, mfm ? Encoding::MFM : Encoding::FM,
+                                  &warum))
+        return fail(warum);
+    disk_->medium().setTrack(cyl, head, std::move(spur));
+    return true;
+}
+
+bool DiskVolume::planSector(uint8_t cyl, uint8_t head, const TrackCodec::NewSectorSpec& spec,
+                            bool mfm, uint32_t& von, uint32_t& laenge) const {
+    if (!disk_) return fail("keine Diskette geoeffnet");
+    const TrackImage& spur = disk_->medium().track(cyl, head);
+    if (spur.bytes.empty())
+        return fail("Diese Spur gibt es auf dem Datentraeger nicht.");
+    von = static_cast<uint32_t>(
+        TrackCodec::newSectorPosition(spur, spec.id, spec.gap_before));
+    laenge = static_cast<uint32_t>(TrackCodec::newSectorLength(
+        mfm ? Encoding::MFM : Encoding::FM, spec.size, spec.tail_bytes));
+    return true;
+}
+
 // ─── Stapeloperationen ───────────────────────────────────────────────────────
 
 bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& opt) {

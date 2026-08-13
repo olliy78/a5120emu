@@ -507,7 +507,21 @@ Was beim Weiterarbeiten zu wissen ist:
   unformatiert (der Zustand von `createBlank`), sonst Gap.  **(3) Geschrieben wird über
   die LAUFENDE NUMMER, nicht über die Sektor-ID** (IDs dürfen doppelt vorkommen).
   **(4) Die CRC ist mitschreibbar** (`crc_woertlich`), sonst liesse sich eine schadhafte
-  Diskette nicht originalgetreu nachbilden.  Der Treffertest der Grafik ist analytisch
+  Diskette nicht originalgetreu nachbilden.  **Sektoren anlegen/löschen (§19.4):**
+  `TrackCodec::createSector`/`eraseSectorAt`/`newSectorPosition` — **die ID bestimmt
+  die Lage** (hinter den vorhandenen mit der nächstkleineren ID, um den Gap versetzt;
+  ohne kleineren hinter den Index).  Daraus folgt: 0,1,5 angelegt ⇒ ein danach
+  angelegter Sektor 2 landet ebenfalls hinter der 1 und **überschreibt die 5** — das
+  ist gewollt (wer Platz lassen will, gibt bei der 5 einen grösseren Gap an), die
+  Oberfläche fragt vorher (`planSector` nennt Ziel, Länge und Betroffene).  Die
+  **Spurlänge bleibt fest** (Gap wird überschrieben, `bitcells` bleibt gültig);
+  FM/MFM ist an der SPUR, nicht am Sektor — auf einer formatierten Spur gesperrt.
+  Gap-Vorschlag = Median der Gaps DIESER Spur.  Dabei zeigt **`sync_pos` jetzt auf
+  den Anfang der Sync-Gruppe** (die 00 vor den A1), sonst wichen Anzeige und
+  `newSectorPosition` um die Sync-Länge ab.  **§19.5:** bei UDOS nennt die Sektorzeile
+  `IBM-MFM + UDOS-Erweiterung`, rechnet 128+2+4 = 134 Byte und entschlüsselt die
+  Kettenzeiger; ob es den Anhang gibt, weiss das DATEISYSTEM, nicht der Sektor.
+  Der Treffertest der Grafik ist analytisch
   (Polarkoordinaten), nicht per Szenengraph — Wächter
   `test_disk_editor_hit_test_finds_the_drawn_sector` rechnet jeden Sektor zurück; dazu
   `TrackView.*`, `TrackCodecWriteSectorAt.*`, `py_disk_c_api`.  **Grenze:** der Editor

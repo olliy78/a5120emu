@@ -259,6 +259,23 @@ _lib.k1520d_sector_write.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_in
                                      ctypes.POINTER(ctypes.c_uint8), ctypes.c_int,
                                      ctypes.c_int]
 _lib.k1520d_sector_write.restype = ctypes.c_bool
+_lib.k1520d_sector_tail.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                    ctypes.POINTER(ctypes.c_uint8), ctypes.c_int]
+_lib.k1520d_sector_tail.restype = ctypes.c_int
+_lib.k1520d_sector_erase.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                     ctypes.c_int]
+_lib.k1520d_sector_erase.restype = ctypes.c_bool
+_lib.k1520d_sector_create.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                      ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                      ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                      ctypes.c_bool]
+_lib.k1520d_sector_create.restype = ctypes.c_bool
+_lib.k1520d_sector_plan_pos.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                        ctypes.c_int]
+_lib.k1520d_sector_plan_pos.restype = ctypes.c_int
+_lib.k1520d_sector_plan_len.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                        ctypes.c_int, ctypes.c_bool]
+_lib.k1520d_sector_plan_len.restype = ctypes.c_int
 
 # ── Übertragung ─────────────────────────────────────────────────────────────
 _lib.k1520d_extract.argtypes = [_H, _CS, _CS, ctypes.c_int]
@@ -823,6 +840,53 @@ class DiskTool:
         if not _lib.k1520d_sector_write(self._h, cyl, head, index, roh, len(data),
                                         -1 if crc is None else int(crc)):
             raise K1520DiskError(self._fail())
+
+    def sector_tail(self, cyl: int, head: int, index: int) -> bytes:
+        """Bytes **hinter** der Daten-CRC.
+
+        Bei UDOS ist das der 4-Byte-Sektorkontrollblock (Rückwärts- und
+        Vorwärtszeiger, `doc/udos_diskettenformat.md` §1.1); auf einer gewöhnlichen
+        IBM-Spur stehen dort schlicht Gap-Füllbytes.
+        """
+        puffer = (ctypes.c_uint8 * 8)()
+        n = _lib.k1520d_sector_tail(self._h, cyl, head, index, puffer, len(puffer))
+        if n < 0:
+            raise K1520DiskError(self._fail())
+        return bytes(puffer[:n])
+
+    def sector_erase(self, cyl: int, head: int, index: int,
+                     tail_bytes: int = 0) -> None:
+        """Sektor löschen — sein Bereich wird wieder Gap (die Spurlänge bleibt)."""
+        if not _lib.k1520d_sector_erase(self._h, cyl, head, index, tail_bytes):
+            raise K1520DiskError(self._fail())
+
+    def sector_create(self, cyl: int, head: int, *, id: int, size: int = 128,
+                      gap: int = 0, tail_bytes: int = 0, mfm: bool = True,
+                      id_cyl: Optional[int] = None, id_head: Optional[int] = None,
+                      fill: int = 0xE5) -> None:
+        """Sektor anlegen.  **Die ID bestimmt die Lage.**
+
+        Der neue Sektor kommt hinter den vorhandenen mit der nächstkleineren ID, um
+        ``gap`` Bytes versetzt; gibt es keinen kleineren, hinter den Index (12 Uhr).
+        Die Spurlänge bleibt fest — geschrieben wird über vorhandenes Gap und, wenn
+        der Gap zu knapp ist, über den Nachbarn.  Was das trifft, sagt
+        :meth:`sector_plan` vorher.
+        """
+        if not _lib.k1520d_sector_create(
+                self._h, cyl, head, id,
+                cyl if id_cyl is None else id_cyl,
+                head if id_head is None else id_head,
+                size, gap, tail_bytes, fill, mfm):
+            raise K1520DiskError(self._fail())
+
+    def sector_plan(self, cyl: int, head: int, *, id: int, size: int = 128,
+                    gap: int = 0, tail_bytes: int = 0, mfm: bool = True) -> tuple:
+        """``(Byteposition, Länge)`` eines geplanten Sektors — schreibt nichts."""
+        von = _lib.k1520d_sector_plan_pos(self._h, cyl, head, id, gap)
+        laenge = _lib.k1520d_sector_plan_len(self._h, cyl, head, size, tail_bytes, mfm)
+        if von < 0 or laenge < 0:
+            raise K1520DiskError(self._fail())
+        return int(von), int(laenge)
 
     # ── Bootabbild (Systemspuren) ───────────────────────────────────────────
 

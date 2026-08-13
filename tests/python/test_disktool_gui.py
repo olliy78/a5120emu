@@ -847,3 +847,138 @@ def test_disk_editor_says_when_img_cannot_hold_a_broken_crc(window, fixture_disk
     assert "NICHT in die Datei" in ed.hinweis.text()
     # Im Speicher steht die Änderung trotzdem — sie ist über „Speichern unter…" zu retten.
     assert window.tool.sector_crc(5, 0, span.index) == 0xBEEF
+
+
+# ─── UDOS-Anhang und Sektoren anlegen/löschen ────────────────────────────────
+
+def test_disk_editor_names_the_udos_extension(window, fixture_disks):
+    """Bei UDOS hängt hinter der Daten-CRC ein 4-Byte-Kontrollblock — das muss
+    an Format, Größe UND als entschlüsselte Verkettung sichtbar sein."""
+    ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
+    ed._springe(seite=0, spur=22)
+
+    text = ed.info.text()
+    assert "IBM-MFM + UDOS-Erweiterung" in text, text
+    assert "Kontrollblock" in text and "134 Byte" in text, text
+    assert "Kette:" in text and "zurück" in text and "vor" in text, text
+    assert "Spur 22/Sektor" in text, text
+
+
+def test_disk_editor_hides_the_extension_on_cpm(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    span = next(x for x in ed.surface.tracks[0][0].spans if x.is_sector)
+    ed.select_sector(0, 0, span.index)
+
+    text = ed.info.text()
+    assert text.startswith("Format: IBM-MFM,")
+    assert "UDOS" not in text and "Kette" not in text and "Kontrollblock" not in text
+
+
+def test_udos_pointer_is_decoded(window):
+    from app.disktool.ui.disk_editor import udos_zeiger
+    # Byte 0 = Sektorindex 0-basiert, Byte 1 = Spur (doc/udos_diskettenformat.md §1.2)
+    assert udos_zeiger(b"\x05\x16") == "Spur 22/Sektor 6"
+    assert udos_zeiger(b"\xFF\xFF") == "Ende"
+
+
+def test_disk_editor_deletes_and_recreates_a_sector(window, fixture_disks, tmp_path,
+                                                    monkeypatch):
+    from PySide6.QtWidgets import QDialog, QMessageBox
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+
+    abbild = tmp_path / "cpa.hfe"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.hfe", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+
+    ed._springe(seite=0, spur=0)
+    vorher = ed._sektoren(0, 0)
+    ziel = next(s for s in vorher if s.id == 13)
+    lage = round(ziel.start * ed.tool.track(0, 0).bytes)
+
+    ed.select_sector(0, 0, ziel.index)
+    assert ed.delete_sector()
+    assert len(ed._sektoren(0, 0)) == len(vorher) - 1
+    assert not any(s.id == 13 for s in ed._sektoren(0, 0))
+
+    # … und wieder anlegen: der Dialog schlägt den auf dieser Spur üblichen Gap vor,
+    # der Sektor landet wieder an derselben Stelle.
+    from app.disktool.ui.disk_editor import NewSectorDialog
+    monkeypatch.setattr(NewSectorDialog, "exec", lambda self: QDialog.Accepted)
+    monkeypatch.setattr(NewSectorDialog, "__init__", _dialog_mit(id=13, size=128))
+    assert ed.new_sector()
+
+    neu = next(s for s in ed._sektoren(0, 0) if s.id == 13)
+    assert neu.ok, "ein neu angelegter Sektor ist sofort gültig"
+    assert round(neu.start * ed.tool.track(0, 0).bytes) == lage
+
+
+def _dialog_mit(**werte):
+    """Hilfskonstruktor: Dialog wie gewohnt aufbauen, dann Felder setzen."""
+    from app.disktool.ui.disk_editor import NewSectorDialog
+    urspruenglich = NewSectorDialog.__init__
+
+    def init(self, tool, cyl, head, spur, udos, parent=None):
+        urspruenglich(self, tool, cyl, head, spur, udos, parent)
+        if "id" in werte:
+            self.f_id.setValue(werte["id"])
+        if "size" in werte:
+            self.f_size.setCurrentIndex([128, 256, 512, 1024].index(werte["size"]))
+        if "gap" in werte:
+            self.f_gap.setValue(werte["gap"])
+    return init
+
+
+def test_new_sector_dialog_warns_before_overwriting(window, fixture_disks, tmp_path):
+    """Ihr Modell erlaubt das Überschreiben — unbeabsichtigt darf es nicht sein."""
+    from app.disktool.ui.disk_editor import NewSectorDialog
+
+    abbild = tmp_path / "cpa.hfe"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.hfe", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+
+    spur = ed.tool.track(0, 0)
+    dlg = NewSectorDialog(ed.tool, 0, 0, spur, False, ed)
+    dlg.f_id.setValue(2)          # Sektor 2 gibt es schon → landet auf ihm
+    dlg.f_gap.setValue(0)
+    von, laenge, getroffen = dlg.betroffen()
+    assert getroffen, "der Plan muss die betroffenen Sektoren nennen"
+    assert "Überschreibt Sektor" in dlg.vorschau.text()
+
+
+def test_new_sector_dialog_refuses_what_does_not_fit(window, fixture_disks):
+    from PySide6.QtWidgets import QDialogButtonBox
+    from app.disktool.ui.disk_editor import NewSectorDialog
+
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    spur = ed.tool.track(0, 0)
+    dlg = NewSectorDialog(ed.tool, 0, 0, spur, False, ed)
+    dlg.f_id.setValue(255)                 # hinter den letzten Sektor
+    dlg.f_gap.setValue(4000)               # weit hinter das Spurende
+    assert "passt nicht" in dlg.vorschau.text()
+    assert not dlg.knoepfe.button(QDialogButtonBox.Ok).isEnabled()
+
+
+def test_new_sector_dialog_locks_the_encoding_on_a_formatted_track(window,
+                                                                   fixture_disks):
+    """FM und MFM lassen sich in EINER Spur nicht mischen."""
+    from app.disktool.ui.disk_editor import NewSectorDialog
+
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    spur = ed.tool.track(0, 0)
+    dlg = NewSectorDialog(ed.tool, 0, 0, spur, False, ed)
+    assert not dlg.f_mfm.isEnabled()
+    assert dlg.f_mfm.currentData() is True
+
+
+def test_new_sector_dialog_defaults_the_gap_from_the_track(window, fixture_disks):
+    from app.disktool.ui.disk_editor import NewSectorDialog
+
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    spur = ed.tool.track(0, 0)
+    dlg = NewSectorDialog(ed.tool, 0, 0, spur, False, ed)
+    # Der Vorschlag ist ein Abstand, der auf DIESER Spur wirklich vorkommt.
+    laengen = {round((s.end - s.start) * spur.bytes)
+               for s in spur.spans if s.kind == 1}
+    assert dlg.f_gap.value() in laengen

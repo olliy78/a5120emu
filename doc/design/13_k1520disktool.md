@@ -1368,6 +1368,61 @@ Drei Umsetzungsdetails, die man nicht aufweichen sollte:
   Scheibe: ein Kreis füllt sein Quadrat nicht aus. Das sind 26 Pixel Höhe, die sonst
   verschenkt wären.
 
+### 19.4 Sektoren anlegen und löschen (2026-08-13)
+
+Wer eine schadhafte Diskette *nachbauen* oder eine Lücke schliessen will, muss eine
+Spur von Hand zusammensetzen können. Dafür zwei Knöpfe und ein Dialog.
+
+**Die ID bestimmt die Lage.** `TrackCodec::newSectorPosition` setzt den neuen Sektor
+hinter den vorhandenen mit der **nächstkleineren ID**, um den eingestellten Gap
+versetzt; gibt es keinen kleineren, hinter den Index (12 Uhr). Daraus folgt ein
+Verhalten, das gewollt ist und in der Bedienung sichtbar sein muss: legt man 0, 1
+und dann 5 an, sitzt die 5 physisch an dritter Stelle — und ein danach angelegter
+Sektor 2 landet *ebenfalls* hinter der 1 und überschreibt sie. Wer Platz für 2, 3
+und 4 lassen will, gibt beim Anlegen der 5 einen entsprechend grossen Gap an. Die
+Alternative — automatisch die erste passende Lücke suchen — wäre bequemer und
+verschleierte genau das, was man beim Nachbau einer Spur kontrollieren will.
+
+**Die Spurlänge ist fest.** Eine Umdrehung hat so viele Bytes, wie sie hat;
+geschrieben wird über vorhandenes Gap und, wenn der Gap zu knapp ist, über den
+Nachbarn. `TrackImage::bitcells` bleibt damit gültig, das HFE-Rückschreiben
+unverändert. Was nicht mehr vor das Spurende passt, wird abgelehnt — ohne etwas zu
+ändern. Vor dem Überschreiben eines vorhandenen Sektors **fragt** die Oberfläche
+(das Modell erlaubt es, unbeabsichtigt soll es trotzdem nicht passieren); der
+Dialog nennt Zielposition, Länge und die betroffenen Sektoren schon *vor* dem
+Bestätigen (`planSector`).
+
+**FM und MFM sind nicht mischbar** — das Verfahren hängt am Bit-Codec der ganzen
+Spur (`TrackImage::encoding`). Auf einer Spur mit Sektoren ist die Auswahl deshalb
+gesperrt und zeigt nur an, was gilt; auf einer markenlosen Spur legt der erste
+Sektor sie fest.
+
+**Der Gap-Vorschlag wird gemessen**, nicht geraten: der Median der Gap-Längen
+*dieser* Spur. Ein nachgelegter Sektor sieht damit aus wie seine Nachbarn, auch auf
+einer fremd formatierten Spur.
+
+**Löschen** (`eraseSectorAt`) überschreibt den Bereich von der Sync-Gruppe bis
+hinter die Daten-CRC (plus den UDOS-Kontrollblock) mit dem Gap-Füllbyte und nimmt
+die Marken weg. Die Nachbarn bleiben unangetastet, die Spurlänge bleibt.
+
+Dazu eine Korrektur an `parseTrack`: **`sync_pos` zeigt jetzt auf den Anfang der
+Sync-Gruppe** (die 00-Bytes vor den A1), nicht auf das erste A1. Sonst wichen „wo
+fängt der Sektor an" (Anzeige) und „wo setzt ein neuer auf" (`newSectorPosition`)
+um die Sync-Länge voneinander ab, und die Überschneidungswarnung urteilte über eine
+andere Stelle, als sie beschrieb. Rückwärts gelaufen wird höchstens eine doppelte
+Sync-Länge, damit ein auf Nullbytes endendes Datenfeld nicht verschluckt wird.
+
+### 19.5 UDOS-Anhang in der Sektorzeile
+
+Bei UDOS hängen hinter der Daten-CRC **4 Byte Sektorkontrollblock** (Rückwärts- und
+Vorwärtszeiger, `doc/udos_diskettenformat.md` §1.1) — der Sektor ist also grösser,
+als sein ID-Feld sagt. Die Sektorzeile nennt deshalb `IBM-MFM + UDOS-Erweiterung`,
+rechnet die Grösse als `128 + 2 CRC + 4 Byte Kontrollblock = 134 Byte` und zeigt
+beide Zeiger im Klartext (`zurück Spur 22/Sektor 6 · vor Spur 22/Sektor 6`, `FF FF`
+= Kettenende). Ob es den Anhang gibt, weiss nicht der Sektor, sondern das
+**Dateisystem** (`filesystem_type == "udos"`); bei CP/M bleiben die Angaben weg,
+statt eine leere Spalte zu zeigen.
+
 **Grenze:** der Editor hängt an einer *geöffneten* Diskette, und geöffnet wird nur,
 was die Erkennung (§12) durchlässt. Eine Diskette ganz ohne brauchbares Dateisystem
 — gerade der Fall, für den ein Sektoreditor gemacht ist — lässt sich damit heute

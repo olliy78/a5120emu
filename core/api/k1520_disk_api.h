@@ -308,6 +308,43 @@ K1520_API int k1520d_sector_crc_for(K1520Disk h, int cyl, int head, int index,
 K1520_API bool k1520d_sector_write(K1520Disk h, int cyl, int head, int index,
                                    const uint8_t* data, int len, int crc);
 
+/**
+ * @brief Bytes HINTER der Daten-CRC lesen (bei UDOS der 4-Byte-Kontrollblock).
+ * @return Anzahl gelesener Bytes, oder -1.
+ */
+K1520_API int k1520d_sector_tail(K1520Disk h, int cyl, int head, int index,
+                                 uint8_t* out, int max_len);
+
+/**
+ * @brief Sektor loeschen — sein Bereich wird wieder Gap.
+ * @param tail_bytes zusaetzlich zu loeschende Bytes hinter der Daten-CRC (UDOS: 4)
+ */
+K1520_API bool k1520d_sector_erase(K1520Disk h, int cyl, int head, int index,
+                                   int tail_bytes);
+
+/**
+ * @brief Sektor anlegen.  **Die ID bestimmt die Lage**: der neue Sektor kommt hinter
+ *        den vorhandenen mit der naechstkleineren ID, um @p gap Bytes versetzt; gibt
+ *        es keinen kleineren, hinter den Index (12 Uhr).
+ *
+ * Die Spurlaenge bleibt fest — geschrieben wird ueber vorhandenes Gap und, wenn der
+ * Gap zu knapp ist, ueber den Nachbarn.  Was dabei ueberschrieben wird, sagt
+ * @ref k1520d_sector_plan_pos / @ref k1520d_sector_plan_len **vorher**.
+ *
+ * @param mfm  Verfahren; muss zur Spur passen, ausser sie traegt noch keine Marke —
+ *             dann legt der erste Sektor es fest (FM und MFM sind nicht mischbar).
+ * @param tail_bytes Bytes hinter der Daten-CRC (UDOS-Kontrollblock: 4; 0 = keiner)
+ */
+K1520_API bool k1520d_sector_create(K1520Disk h, int cyl, int head,
+                                    int id, int id_cyl, int id_head, int size,
+                                    int gap, int tail_bytes, int fill, bool mfm);
+
+/// @brief Byte-Position, an der @ref k1520d_sector_create anlegen wuerde; -1 = Fehler.
+K1520_API int k1520d_sector_plan_pos(K1520Disk h, int cyl, int head, int id, int gap);
+/// @brief Wie viele Bytes der neue Sektor belegen wuerde; -1 = Fehler.
+K1520_API int k1520d_sector_plan_len(K1520Disk h, int cyl, int head,
+                                     int size, int tail_bytes, bool mfm);
+
 /* ─── Uebertragung ───────────────────────────────────────────────────────────
  * `name` darf das Seitenpraefix tragen: "Side1/HELP.DAT.00".                  */
 

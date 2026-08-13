@@ -21,6 +21,7 @@
 #include "track_image.h"        // Encoding, TrackImage, MarkType
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 /**
@@ -175,6 +176,65 @@ bool writeSectorAt(TrackImage& track, size_t index,
  */
 bool sectorDataCrc(const TrackImage& track, size_t index,
                    const std::vector<uint8_t>& data, uint16_t& out);
+
+/**
+ * @struct NewSectorSpec
+ * @brief Ein Sektor, der auf einer VORHANDENEN Spur neu angelegt werden soll (§19.4).
+ *
+ * Für den Sektoreditor: eine Spur von Hand zusammensetzen, Sektor für Sektor —
+ * etwa um eine schadhafte Diskette nachzubauen oder eine Lücke zu schliessen.
+ */
+struct NewSectorSpec {
+    uint8_t  id   = 1;      ///< Sektor-ID; bestimmt zugleich die LAGE (s. @ref newSectorPosition)
+    uint8_t  cyl  = 0;      ///< Zylinder- und Kopfangabe im ID-Feld (dürfen von der
+    uint8_t  head = 0;      ///< tatsächlichen Lage abweichen — das ist erlaubt und kommt vor)
+    uint16_t size = 128;    ///< 128/256/512/1024
+    uint16_t gap_before = 0;   ///< Gap-Bytes vor der Sync-Gruppe
+    uint16_t tail_bytes = 0;   ///< Bytes hinter der Daten-CRC (UDOS-Kontrollblock: 4)
+    uint8_t  fill = 0xE5;      ///< Füllbyte der Nutzdaten
+};
+
+/**
+ * @brief Wo landet ein neuer Sektor mit dieser ID?  (Byte-Index der Sync-Gruppe)
+ *
+ * **Die Regel:** hinter dem vorhandenen Sektor mit der **nächstkleineren ID**, um
+ * @p gap_before Bytes versetzt; gibt es keinen kleineren, hinter dem Index (12 Uhr).
+ * Damit legt man eine Spur in ID-Reihenfolge an, kann aber bewusst Lücken lassen —
+ * wer Sektor 5 mit grossem Gap setzt, hat hinter Sektor 1 noch Platz für 2, 3 und 4.
+ * Wer den Gap zu knapp wählt, überschreibt den Nachbarn; das ist gewollt und muss
+ * eine Ebene höher erfragt werden.
+ */
+size_t newSectorPosition(const TrackImage& track, uint8_t id, uint16_t gap_before);
+
+/// @brief Wie viele Bytes belegt ein solcher Sektor insgesamt (ohne @ref
+///        NewSectorSpec::gap_before)?
+size_t newSectorLength(Encoding enc, uint16_t size, uint16_t tail_bytes);
+
+/**
+ * @brief Einen Sektor auf einer vorhandenen Spur anlegen.
+ *
+ * Die **Spurlänge bleibt fest** — geschrieben wird über vorhandenes Gap (und, wenn
+ * es zu knapp ist, über den Nachbarn).  Das ist die physikalische Wahrheit: eine
+ * Umdrehung hat so viele Bytes, wie sie hat.  Passt der Sektor nicht mehr vor das
+ * Spurende, wird **nichts** geschrieben.
+ *
+ * Ist die Spur noch ohne jede Adressmarke, legt der erste Sektor zugleich das
+ * **Verfahren der Spur** fest (@p enc); sonst muss @p enc dazu passen — FM und MFM
+ * lassen sich in einer Spur nicht mischen (@ref TrackImage::encoding).
+ *
+ * @param warum optional: Klartextgrund, wenn `false` zurückkommt.
+ */
+bool createSector(TrackImage& track, const NewSectorSpec& spec, Encoding enc,
+                  std::string* warum = nullptr);
+
+/**
+ * @brief Einen Sektor löschen — sein Bereich wird wieder Gap.
+ *
+ * Gelöscht wird von der Sync-Gruppe bis hinter die Daten-CRC, dazu @p tail_bytes
+ * weitere Bytes (UDOS-Kontrollblock).  Die Marken werden entfernt, die Bytes mit dem
+ * Gap-Füllbyte des Verfahrens überschrieben; die Spurlänge bleibt.
+ */
+bool eraseSectorAt(TrackImage& track, size_t index, uint16_t tail_bytes = 0);
 
 /**
  * @brief Resync-Zielposition für den ZRE-ROM-Lesepfad (Kalibrierung, doc/design/07 §10.5.1).

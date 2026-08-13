@@ -712,7 +712,11 @@ TEST(TrackCodecParse, LiefertLageUndGespeicherteCrc) {
         ASSERT_NE(s.end_pos, SIZE_MAX);
         EXPECT_EQ(t.marks[s.id_pos], MarkType::Id);
         EXPECT_EQ(t.marks[s.data_pos], MarkType::Data);
-        EXPECT_EQ(s.sync_pos, s.id_pos - 3) << "MFM: drei A1 vor der Marke";
+        // sync_pos zeigt auf den ANFANG der Sync-Gruppe: 12 Nullbytes + 3×A1 vor
+        // der Marke.  Genau dort setzt auch ein neu angelegter Sektor auf.
+        EXPECT_EQ(s.sync_pos, s.id_pos - 3 - 12);
+        for (size_t i = s.sync_pos; i < s.id_pos - 3; ++i)
+            EXPECT_EQ(t.bytes[i], 0x00) << "Sync-Byte an " << i;
         EXPECT_EQ(s.end_pos, s.data_pos + 1 + s.size + 2);
         EXPECT_TRUE(s.id_crc_ok);
         EXPECT_TRUE(s.data_crc_ok);
@@ -785,4 +789,174 @@ TEST(TrackCodecWriteSectorAt, SectorDataCrcRechnetOhneZuAendern) {
     EXPECT_EQ(t.bytes, vorher) << "die Spur darf sich dabei nicht aendern";
     EXPECT_FALSE(TrackCodec::sectorDataCrc(t, 0, std::vector<uint8_t>(127, 0), crc));
     EXPECT_FALSE(TrackCodec::sectorDataCrc(t, 5, std::vector<uint8_t>(128, 0), crc));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sektoren anlegen und loeschen (Sektoreditor, §19.4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// @brief Eine Spur mit den Sektoren @p ids, sonst Standardlayout.
+static TrackImage spurMit(std::initializer_list<uint8_t> ids, uint16_t size = 128) {
+    std::vector<LogicalSector> s;
+    for (uint8_t id : ids) s.push_back(makeSector(0, 0, id, size));
+    return TrackCodec::buildTrack(s, Encoding::MFM);
+}
+
+TEST(TrackCodecCreate, LageFolgtDerNaechstkleinerenId) {
+    // DIE Regel: der neue Sektor kommt hinter den vorhandenen mit der naechst-
+    // kleineren ID.  Ohne kleineren landet er hinter dem Index (Byte 0).
+    TrackImage t = spurMit({1, 2, 5});
+    const std::vector<LogicalSector> s = TrackCodec::parseTrack(t);
+
+    EXPECT_EQ(TrackCodec::newSectorPosition(t, 0, 0), 0u) << "keine kleinere ID";
+    EXPECT_EQ(TrackCodec::newSectorPosition(t, 0, 20), 20u) << "Gap zaehlt ab dem Index";
+    EXPECT_EQ(TrackCodec::newSectorPosition(t, 3, 0), s[1].end_pos) << "hinter Sektor 2";
+    EXPECT_EQ(TrackCodec::newSectorPosition(t, 4, 30), s[1].end_pos + 30);
+    EXPECT_EQ(TrackCodec::newSectorPosition(t, 9, 0), s[2].end_pos) << "hinter Sektor 5";
+}
+
+TEST(TrackCodecCreate, AngelegterSektorIstLesbarUndLiegtWieGeplant) {
+    // buildTrack legt die Spur genau so lang an, wie ihre Sektoren brauchen —
+    // Platz fuer einen neuen entsteht erst durch Loeschen.
+    TrackImage t = spurMit({1, 2, 3});
+    TrackCodec::eraseSectorAt(t, 2);
+    TrackCodec::eraseSectorAt(t, 1);
+    ASSERT_EQ(TrackCodec::parseTrack(t).size(), 1u);
+
+    TrackCodec::NewSectorSpec spec;
+    spec.id   = 2;
+    spec.size = 256;
+    spec.gap_before = 24;
+    spec.fill = 0x5A;
+    const size_t ab  = TrackCodec::newSectorPosition(t, spec.id, spec.gap_before);
+    const size_t len = TrackCodec::newSectorLength(Encoding::MFM, spec.size, 0);
+
+    std::string warum;
+    ASSERT_TRUE(TrackCodec::createSector(t, spec, Encoding::MFM, &warum)) << warum;
+
+    const std::vector<LogicalSector> s = TrackCodec::parseTrack(t);
+    ASSERT_EQ(s.size(), 2u);
+    EXPECT_EQ(s[1].id, 2);
+    EXPECT_EQ(s[1].size, 256);
+    EXPECT_TRUE(s[1].id_crc_ok);
+    EXPECT_TRUE(s[1].data_crc_ok) << "ein neuer Sektor ist sofort gueltig";
+    EXPECT_EQ(s[1].data[0], 0x5A);
+    // Geplante und tatsaechliche Lage muessen sich decken — sonst urteilt die
+    // Oberflaeche ueber eine andere Stelle, als sie beschreibt.
+    EXPECT_EQ(s[1].sync_pos, ab);
+    EXPECT_EQ(s[1].end_pos, ab + len);
+}
+
+TEST(TrackCodecCreate, UdosKontrollblockWirdAlsKettenendeAngelegt) {
+    TrackImage t = spurMit({1, 2});
+    TrackCodec::eraseSectorAt(t, 1);              // Platz schaffen
+    TrackCodec::NewSectorSpec spec;
+    spec.id = 2;
+    spec.gap_before = 24;
+    spec.tail_bytes = 4;
+    ASSERT_TRUE(TrackCodec::createSector(t, spec, Encoding::MFM));
+
+    const std::vector<LogicalSector> s = TrackCodec::parseTrack(t);
+    ASSERT_EQ(s.size(), 2u);
+    ASSERT_GE(s[1].tail.size(), 4u);
+    // FF FF FF FF = beide Zeiger „Ende"; vier Gap-Fuellbytes saehen dagegen aus
+    // wie ein Zeiger auf Spur 0x4E.
+    for (int i = 0; i < 4; ++i) EXPECT_EQ(s[1].tail[static_cast<size_t>(i)], 0xFF);
+}
+
+TEST(TrackCodecCreate, ZuGrosserSektorWirdAbgelehntOhneEtwasZuAendern) {
+    TrackImage t = spurMit({1});
+    const std::vector<uint8_t> vorher = t.bytes;
+
+    TrackCodec::NewSectorSpec spec;
+    spec.id = 2;
+    spec.size = 1024;
+    spec.gap_before = static_cast<uint16_t>(t.bytes.size() - 10);   // fast am Ende
+    std::string warum;
+    EXPECT_FALSE(TrackCodec::createSector(t, spec, Encoding::MFM, &warum));
+    EXPECT_NE(warum.find("passt nicht"), std::string::npos) << warum;
+    EXPECT_EQ(t.bytes, vorher) << "abgelehnt heisst unveraendert";
+
+    spec.size = 200;                              // keine gueltige Sektorgroesse
+    spec.gap_before = 24;
+    EXPECT_FALSE(TrackCodec::createSector(t, spec, Encoding::MFM, &warum));
+}
+
+TEST(TrackCodecCreate, FmUndMfmLassenSichInEinerSpurNichtMischen) {
+    TrackImage t = spurMit({1});
+    TrackCodec::NewSectorSpec spec;
+    spec.id = 2;
+    spec.gap_before = 24;
+
+    std::string warum;
+    EXPECT_FALSE(TrackCodec::createSector(t, spec, Encoding::FM, &warum));
+    EXPECT_NE(warum.find("mischen"), std::string::npos) << warum;
+
+    // Eine markenlose Spur darf das Verfahren dagegen festlegen.
+    TrackImage leer;
+    leer.bytes.assign(6250, 0x4E);
+    leer.marks.assign(6250, MarkType::None);
+    leer.encoding = Encoding::MFM;
+    spec.id = 1;
+    ASSERT_TRUE(TrackCodec::createSector(leer, spec, Encoding::FM, &warum)) << warum;
+    EXPECT_EQ(leer.encoding, Encoding::FM);
+    EXPECT_EQ(TrackCodec::parseTrack(leer).size(), 1u);
+}
+
+TEST(TrackCodecCreate, UeberschreibtDenNachbarnWennDerGapZuKleinIst) {
+    // Ausdruecklich erlaubt: wer Luecken lassen will, gibt beim Anlegen des
+    // spaeteren Sektors einen groesseren Gap an.  Die Oberflaeche fragt vorher.
+    TrackImage t = spurMit({1, 5});
+    ASSERT_EQ(TrackCodec::parseTrack(t).size(), 2u);
+
+    TrackCodec::NewSectorSpec spec;
+    spec.id = 2;
+    spec.gap_before = 24;
+    ASSERT_TRUE(TrackCodec::createSector(t, spec, Encoding::MFM));
+
+    const std::vector<LogicalSector> s = TrackCodec::parseTrack(t);
+    ASSERT_EQ(s.size(), 2u) << "Sektor 5 wurde ueberschrieben";
+    EXPECT_EQ(s[0].id, 1);
+    EXPECT_EQ(s[1].id, 2);
+}
+
+TEST(TrackCodecErase, LoeschenMachtDenBereichWiederZuGap) {
+    TrackImage t = spurMit({1, 2, 3});
+    const size_t laenge = t.bytes.size();
+    const std::vector<LogicalSector> vorher = TrackCodec::parseTrack(t);
+    const size_t von = vorher[1].sync_pos, bis = vorher[1].end_pos;
+
+    ASSERT_TRUE(TrackCodec::eraseSectorAt(t, 1));
+    EXPECT_EQ(t.bytes.size(), laenge) << "die Spurlaenge bleibt";
+
+    const std::vector<LogicalSector> nachher = TrackCodec::parseTrack(t);
+    ASSERT_EQ(nachher.size(), 2u);
+    EXPECT_EQ(nachher[0].id, 1);
+    EXPECT_EQ(nachher[1].id, 3) << "die Nachbarn bleiben unangetastet";
+    for (size_t i = von; i < bis; ++i) {
+        EXPECT_EQ(t.marks[i], MarkType::None) << "Marke an " << i;
+        EXPECT_EQ(t.bytes[i], 0x4E) << "Gap-Fuellbyte an " << i;
+    }
+    EXPECT_FALSE(TrackCodec::eraseSectorAt(t, 5)) << "Nummer ausserhalb";
+}
+
+TEST(TrackCodecErase, LoeschenUndNeuAnlegenErgibtWiederEineVolleSpur) {
+    TrackImage t = spurMit({1, 2, 3});
+    const std::vector<LogicalSector> vorher = TrackCodec::parseTrack(t);
+    const size_t gap = vorher[1].sync_pos - vorher[0].end_pos;
+
+    ASSERT_TRUE(TrackCodec::eraseSectorAt(t, 1));
+    TrackCodec::NewSectorSpec spec;
+    spec.id = 2;
+    spec.gap_before = static_cast<uint16_t>(gap);
+    ASSERT_TRUE(TrackCodec::createSector(t, spec, Encoding::MFM));
+
+    const std::vector<LogicalSector> nachher = TrackCodec::parseTrack(t);
+    ASSERT_EQ(nachher.size(), 3u);
+    EXPECT_EQ(nachher[1].id, 2);
+    EXPECT_EQ(nachher[1].sync_pos, vorher[1].sync_pos) << "wieder an derselben Stelle";
+    for (const LogicalSector& s : nachher) {
+        EXPECT_TRUE(s.id_crc_ok);
+        EXPECT_TRUE(s.data_crc_ok);
+    }
 }

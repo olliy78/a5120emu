@@ -300,6 +300,24 @@ public:
                        const std::vector<uint8_t>& data,
                        const uint16_t* crc_woertlich);
 
+    /// @brief Bytes hinter der Daten-CRC (bei UDOS der 4-Byte-Kontrollblock).
+    bool readSectorTail(uint8_t cyl, uint8_t head, int index,
+                        std::vector<uint8_t>& out) const;
+
+    /// @brief Sektor loeschen — sein Bereich wird wieder Gap (§19.4).
+    bool eraseSectorAt(uint8_t cyl, uint8_t head, int index, uint16_t tail_bytes);
+
+    /**
+     * @brief Sektor anlegen; die Lage ergibt sich aus der ID (@ref newSectorPosition).
+     * @param mfm  Verfahren; muss zur Spur passen, ausser sie ist noch markenlos.
+     */
+    bool createSector(uint8_t cyl, uint8_t head, const TrackCodec::NewSectorSpec& spec, bool mfm);
+
+    /// @brief Wo laendete er, und wie viele Bytes belegt er?  Schreibt nichts —
+    ///        damit die Oberflaeche VOR dem Anlegen fragen kann, was ueberschrieben wird.
+    bool planSector(uint8_t cyl, uint8_t head, const TrackCodec::NewSectorSpec& spec, bool mfm,
+                    uint32_t& von, uint32_t& laenge) const;
+
     // ─── Stapeloperationen (transaktional, §9.2) ─────────────────────────────
 
     /**

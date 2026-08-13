@@ -507,6 +507,73 @@ extern "C" bool k1520d_sector_write(K1520Disk h, int cyl, int head, int index,
                                     crc < 0 ? nullptr : &woertlich);
 }
 
+extern "C" int k1520d_sector_tail(K1520Disk h, int cyl, int head, int index,
+                                  uint8_t* out, int max_len) {
+    if (!h || !out || max_len < 0) return -1;
+    std::vector<uint8_t> t;
+    if (!H(h)->vol->readSectorTail(static_cast<uint8_t>(cyl),
+                                   static_cast<uint8_t>(head), index, t))
+        return -1;
+    const int n = static_cast<int>(t.size());
+    if (n > max_len) return -1;
+    std::copy(t.begin(), t.end(), out);
+    return n;
+}
+
+namespace {
+/// @brief Gemeinsame Umsetzung der Anlegeangaben in eine @ref NewSectorSpec.
+TrackCodec::NewSectorSpec bauSpec(int id, int id_cyl, int id_head, int size, int gap,
+                      int tail_bytes, int fill) {
+    TrackCodec::NewSectorSpec s;
+    s.id         = static_cast<uint8_t>(id);
+    s.cyl        = static_cast<uint8_t>(id_cyl);
+    s.head       = static_cast<uint8_t>(id_head);
+    s.size       = static_cast<uint16_t>(size);
+    s.gap_before = static_cast<uint16_t>(gap);
+    s.tail_bytes = static_cast<uint16_t>(tail_bytes);
+    s.fill       = static_cast<uint8_t>(fill);
+    return s;
+}
+}  // namespace
+
+extern "C" bool k1520d_sector_erase(K1520Disk h, int cyl, int head, int index,
+                                    int tail_bytes) {
+    if (!h || tail_bytes < 0) return false;
+    return H(h)->vol->eraseSectorAt(static_cast<uint8_t>(cyl),
+                                    static_cast<uint8_t>(head), index,
+                                    static_cast<uint16_t>(tail_bytes));
+}
+
+extern "C" bool k1520d_sector_create(K1520Disk h, int cyl, int head,
+                                     int id, int id_cyl, int id_head, int size,
+                                     int gap, int tail_bytes, int fill, bool mfm) {
+    if (!h || gap < 0 || tail_bytes < 0) return false;
+    return H(h)->vol->createSector(
+        static_cast<uint8_t>(cyl), static_cast<uint8_t>(head),
+        bauSpec(id, id_cyl, id_head, size, gap, tail_bytes, fill), mfm);
+}
+
+extern "C" int k1520d_sector_plan_pos(K1520Disk h, int cyl, int head, int id, int gap) {
+    if (!h || gap < 0) return -1;
+    uint32_t von = 0, laenge = 0;
+    if (!H(h)->vol->planSector(static_cast<uint8_t>(cyl), static_cast<uint8_t>(head),
+                               bauSpec(id, 0, 0, 128, gap, 0, 0xE5), true,
+                               von, laenge))
+        return -1;
+    return static_cast<int>(von);
+}
+
+extern "C" int k1520d_sector_plan_len(K1520Disk h, int cyl, int head,
+                                      int size, int tail_bytes, bool mfm) {
+    if (!h || tail_bytes < 0) return -1;
+    uint32_t von = 0, laenge = 0;
+    if (!H(h)->vol->planSector(static_cast<uint8_t>(cyl), static_cast<uint8_t>(head),
+                               bauSpec(1, 0, 0, size, 0, tail_bytes, 0xE5), mfm,
+                               von, laenge))
+        return -1;
+    return static_cast<int>(laenge);
+}
+
 // ─── Uebertragung ────────────────────────────────────────────────────────────
 
 extern "C" bool k1520d_extract(K1520Disk h, const char* name, const char* dest,

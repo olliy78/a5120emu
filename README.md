@@ -65,7 +65,10 @@ und dann unter CP/A zu übersetzen, oder um eine Diskette zu sichern.
 - **Diskeditor**: die beiden Diskettenseiten als Scheibe, jede Spur ein Ring, jeder
   Sektor ein Kreisabschnitt an seiner *tatsächlichen* Lage — grün heil, rot CRC-Fehler,
   orange Gap, grau unformatiert. Ein Klick zeigt den Sektorinhalt hexadezimal; er lässt
-  sich ändern, die CRC neu berechnen oder absichtlich falsch stehen lassen.
+  sich ändern, die CRC neu berechnen oder absichtlich falsch stehen lassen. Einzelne
+  Sektoren lassen sich **löschen und neu anlegen** — damit baut man eine Spur von Hand
+  zusammen, etwa um eine schadhafte Diskette nachzubilden. Bei UDOS zeigt die Zeile
+  auch den 4-Byte-Sektorkontrollblock samt entschlüsselter Dateiverkettung.
 - Beim Öffnen ist eine Diskette **schreibgeschützt**; Ändern verlangt eine ausdrückliche
   Freigabe, und vor dem Schreiben entsteht eine Sicherungskopie. Stapeloperationen sind
   Transaktionen: erst planen und urteilen, dann schreiben.
