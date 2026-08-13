@@ -67,6 +67,12 @@ struct Optionen {
     std::string udos_zusatz;      ///< --extra (Kopfsektor 44-47, hex)
     std::string udos_erst;        ///< --created (Erstellungsvermerk, 6 Zeichen)
     std::string udos_geaend;      ///< --date (Aenderungsdatum JJMMTT)
+    // CP/M kennt nur drei Attributbits und den Nutzerbereich; jedes hat sein eigenes
+    // „gesetzt"-Kennzeichen, damit `--no-ro` von „gar nicht genannt" unterscheidbar ist.
+    bool cpm_ro_gesetzt  = false, cpm_ro  = false;   ///< --ro / --no-ro
+    bool cpm_sys_gesetzt = false, cpm_sys = false;   ///< --sys / --no-sys
+    bool cpm_arc_gesetzt = false, cpm_arc = false;   ///< --arc / --no-arc
+    bool cpm_user_gesetzt = false; int cpm_user = 0; ///< --user N
     int         volume  = 0; ///< --volume
     bool        text    = false;
     bool        binaer  = false;
@@ -92,7 +98,9 @@ void gebrauch() {
         "  rm     <abbild> <muster…>                Dateien loeschen\n"
         "  create <abbild> --fs NAME [--label N]    leere Diskette anlegen\n"
         "         [--boot abbild.bin]               … mit Bootabbild in den Systemspuren\n"
-        "  attr   <abbild> <datei> [--type …]        UDOS-Dateiangaben zeigen/aendern\n"
+        "  attr   <abbild> <datei> [--type …]       Dateiangaben zeigen/aendern\n"
+        "         [--ro|--no-ro --sys|--no-sys]     … CP/M-Attribute\n"
+        "         [--arc|--no-arc] [--user 3]       … und Nutzerbereich\n"
         "  boot-get <abbild> <datei.bin>            Systemspuren herausschreiben\n"
         "  boot-put <abbild> <datei.bin>            Bootabbild in die Systemspuren\n"
         "  save-as <abbild> <ziel>                  Kopie, ggf. anderes Format\n"
@@ -139,6 +147,15 @@ bool zerlege(int argc, char** argv, int ab, Optionen& o, std::string& err) {
         else if (a == "--mem")     { if (!wert("--mem"))    return false; o.udos_mem = argv[++i]; }
         else if (a == "--volume")  { if (!wert("--volume")) return false;
                                      o.volume = std::atoi(argv[++i]); }
+        else if (a == "--ro")      { o.cpm_ro_gesetzt  = true; o.cpm_ro  = true; }
+        else if (a == "--no-ro")   { o.cpm_ro_gesetzt  = true; o.cpm_ro  = false; }
+        else if (a == "--sys")     { o.cpm_sys_gesetzt = true; o.cpm_sys = true; }
+        else if (a == "--no-sys")  { o.cpm_sys_gesetzt = true; o.cpm_sys = false; }
+        else if (a == "--arc")     { o.cpm_arc_gesetzt = true; o.cpm_arc = true; }
+        else if (a == "--no-arc")  { o.cpm_arc_gesetzt = true; o.cpm_arc = false; }
+        else if (a == "--user")    { if (!wert("--user"))   return false;
+                                     o.cpm_user_gesetzt = true;
+                                     o.cpm_user = std::atoi(argv[++i]); }
         else if (a == "--text")    o.text     = true;
         else if (a == "--binary")  o.binaer   = true;
         else if (a == "--force")   o.force    = true;
@@ -709,28 +726,50 @@ int cmd_attr(const Optionen& o) {
         std::cerr << "Fehler: Abbild und Dateiname angeben\n";
         return kFehler;
     }
-    const bool aendern = !o.udos_typ.empty() || !o.udos_eig.empty() || o.udos_entry
+    const bool aendern_udos = !o.udos_typ.empty() || !o.udos_eig.empty() || o.udos_entry
                       || o.udos_block_gesetzt || o.udos_segment || o.udos_ilen
                       || !o.udos_mem.empty() || !o.udos_zusatz.empty()
                       || !o.udos_erst.empty() || !o.udos_geaend.empty();
+    const bool aendern_cpm = o.cpm_ro_gesetzt || o.cpm_sys_gesetzt
+                          || o.cpm_arc_gesetzt || o.cpm_user_gesetzt;
+    const bool aendern = aendern_udos || aendern_cpm;
 
     int rc = kOk;
     auto v = oeffne(o, o.rest[1], rc, /*schreibend=*/aendern);
     if (!v) return rc;
 
     const FileRef ref = FileRef::parse(o.rest[2], o.volume);
-    auto suche = [&]() -> const FileEntry* {
+    // Bei CP/M darf der Name den Nutzerbereich tragen ("3:NAME.TYP") — nach einem
+    // `--user`-Wechsel steht die Datei sogar nur noch unter dem NEUEN Praefix.
+    auto suche = [&](int user_bereich) -> const FileEntry* {
         static FileEntry treffer;
-        for (const FileEntry& e : v->list())
-            if (e.volume == ref.volume && e.name == ref.name) { treffer = e; return &treffer; }
+        for (const FileEntry& e : v->list()) {
+            if (e.volume != ref.volume) continue;
+            if (e.name != ref.name && e.qualifiedName() != ref.name) continue;
+            if (user_bereich >= 0 && e.user != user_bereich) continue;
+            treffer = e;
+            return &treffer;
+        }
         return nullptr;
     };
-    if (!suche()) {
+    if (!suche(-1)) {
         std::cerr << "Fehler: '" << o.rest[2] << "' steht nicht im Verzeichnis\n";
         return kFehler;
     }
 
-    if (aendern) {
+    if (aendern_cpm) {
+        CpmAttrs c;
+        c.set_read_only = o.cpm_ro_gesetzt;  c.read_only = o.cpm_ro;
+        c.set_system    = o.cpm_sys_gesetzt; c.system    = o.cpm_sys;
+        c.set_archived  = o.cpm_arc_gesetzt; c.archived  = o.cpm_arc;
+        c.set_user      = o.cpm_user_gesetzt; c.user     = o.cpm_user;
+        if (!v->setAttributes(ref, c) || !v->flush()) {
+            std::cerr << "Fehler: " << v->lastError() << "\n";
+            return kFehler;
+        }
+    }
+
+    if (aendern_udos) {
         UdosAttrs a;
         a.type       = o.udos_typ;
         a.properties = o.udos_eig;
@@ -766,13 +805,15 @@ int cmd_attr(const Optionen& o) {
         }
     }
 
-    const FileEntry* e = suche();
+    const FileEntry* e = suche(o.cpm_user_gesetzt ? o.cpm_user : -1);
     if (!e) { std::cerr << "Fehler: Eintrag nach dem Aendern nicht mehr lesbar\n"; return kFehler; }
     if (o.json) {
         std::cout << "{\"name\":" << jsonText(e->name)
                   << ",\"type\":" << jsonText(e->type)
                   << ",\"attrs\":" << jsonText(e->attributes)
+                  << ",\"user\":" << e->user
                   << ",\"size\":" << e->size
+                  << ",\"bytes_in_last\":" << e->bytes_in_last
                   << ",\"entry\":" << e->entry_addr
                   << ",\"record_len\":" << e->record_len
                   << ",\"block_len\":" << e->block_len
@@ -786,12 +827,26 @@ int cmd_attr(const Optionen& o) {
                   << ",\"date\":" << jsonText(e->date) << "}\n";
         return kOk;
     }
+    // CP/M fuehrt keine Kopfsektorangaben — dort waeren zehn Nullzeilen keine
+    // Auskunft, sondern Rauschen.
+    if (e->type.empty()) {
+        std::printf("%-20s Nutzerbereich %d  Attribute %-8s  %llu Byte\n",
+                    e->name.c_str(), e->user,
+                    e->attributes.empty() ? "-" : e->attributes.c_str(),
+                    static_cast<unsigned long long>(e->size));
+        std::printf("  RO %s   SYS %s   ARC %s\n",
+                    e->attributes.find("RO")  != std::string::npos ? "ja" : "nein",
+                    e->attributes.find("SYS") != std::string::npos ? "ja" : "nein",
+                    e->attributes.find("ARC") != std::string::npos ? "ja" : "nein");
+        return kOk;
+    }
+
     std::printf("%-20s Typ %-2s  Eigenschaften %-6s  %llu Byte\n",
                 e->name.c_str(), e->type.c_str(),
                 e->attributes.empty() ? "-" : e->attributes.c_str(),
                 static_cast<unsigned long long>(e->size));
-    std::printf("  ENTRY %04X   Satzlaenge %u   zweite Laenge %u\n",
-                e->entry_addr, e->record_len, e->block_len);
+    std::printf("  ENTRY %04X   Satzlaenge %u   zweite Laenge %u   letzter Satz %u Byte\n",
+                e->entry_addr, e->record_len, e->block_len, e->bytes_in_last);
     std::printf("  SEGMENT %04X + %u Byte\n", e->segment_start, e->segment_len);
     std::printf("  LOW %04X  HIGH %04X  STACK %04X   Zusatz %08X\n",
                 e->low_addr, e->high_addr, e->stack_size, e->extra);

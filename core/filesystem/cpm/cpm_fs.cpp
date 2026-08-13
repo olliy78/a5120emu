@@ -446,6 +446,50 @@ bool CpmFileSystem::erase(const std::string& name) {
     return true;
 }
 
+bool CpmFileSystem::setAttributes(const std::string& name, const CpmAttrs& a) {
+    int gesucht_user = 0;
+    std::string gesucht_name;
+    splitUser(name, gesucht_user, gesucht_name);
+    gesucht_name = upper(gesucht_name);
+
+    if (a.set_user && (a.user < 0 || a.user > 15))
+        return fail("Nutzerbereich muss zwischen 0 und 15 liegen");
+
+    std::vector<uint8_t> roh;
+    if (!readDirectory(roh)) return false;
+
+    // Erst schauen, dann schreiben: ein Wechsel des Nutzerbereichs darf keine
+    // vorhandene Datei verdecken — im Ziel gaebe es dann zwei Dateien gleichen
+    // Namens, und CP/M faende beim Lesen die falsche.
+    const bool zieht_um = a.set_user && a.user != gesucht_user;
+    bool gefunden = false;
+    for (int i = 0; i < prof_.dir_entries; ++i) {
+        const uint8_t* p = roh.data() + static_cast<size_t>(i) * 32;
+        if (p[0] == 0xE5 || p[0] > 15) continue;
+        if (upper(entryName(p)) != gesucht_name) continue;
+        if (p[0] == gesucht_user) { gefunden = true; continue; }
+        if (zieht_um && p[0] == a.user)
+            return fail("Im Nutzerbereich " + std::to_string(a.user)
+                        + " liegt bereits eine Datei '" + gesucht_name + "'");
+    }
+    if (!gefunden) return fail("Datei '" + name + "' steht nicht im Verzeichnis");
+
+    // Alle Extents tragen die Attributbits erneut — sie muessen alle mitgehen.
+    for (int i = 0; i < prof_.dir_entries; ++i) {
+        uint8_t* p = roh.data() + static_cast<size_t>(i) * 32;
+        if (p[0] == 0xE5 || p[0] > 15) continue;
+        if (p[0] != gesucht_user || upper(entryName(p)) != gesucht_name) continue;
+
+        if (a.set_read_only) p[ 9] = static_cast<uint8_t>((p[ 9] & 0x7F) | (a.read_only ? 0x80 : 0));
+        if (a.set_system)    p[10] = static_cast<uint8_t>((p[10] & 0x7F) | (a.system    ? 0x80 : 0));
+        if (a.set_archived)  p[11] = static_cast<uint8_t>((p[11] & 0x7F) | (a.archived  ? 0x80 : 0));
+        if (a.set_user)      p[0]  = static_cast<uint8_t>(a.user);
+
+        if (!writeDirEntry(i, p)) return false;
+    }
+    return true;
+}
+
 bool CpmFileSystem::write(const std::string& name, const std::vector<uint8_t>& data,
                           const WriteOptions& opt) {
     int ziel_user = 0;
@@ -533,6 +577,11 @@ bool CpmFileSystem::write(const std::string& name, const std::vector<uint8_t>& d
                                              ? static_cast<uint8_t>(basis[i]) : ' ';
         for (int i = 0; i < 3; ++i) e[9 + i] = i < (int)typ.size()
                                              ? static_cast<uint8_t>(typ[i]) : ' ';
+        // Die drei Attributbits sitzen in den Hochbits des Typs — und zwar in JEDEM
+        // Verzeichnisplatz der Datei.
+        if (opt.cpm_read_only) e[ 9] |= 0x80;
+        if (opt.cpm_system)    e[10] |= 0x80;
+        if (opt.cpm_archived)  e[11] |= 0x80;
 
         // Saetze dieses Verzeichnisplatzes und daraus EX/S2/RC.
         const uint32_t max_hier = 128u * ext_per_entry_;

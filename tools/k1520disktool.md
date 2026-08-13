@@ -17,6 +17,7 @@ k1520disktool put    <abbild> <datei|ordner…>          Dateien einfügen
 k1520disktool rm     <abbild> <muster…>                Dateien löschen
 k1520disktool create <abbild> --fs NAME [--label N]    leere Diskette anlegen
        [--boot abbild.bin]                             … bootfähig (Systemspuren)
+k1520disktool attr   <abbild> <datei> [schalter…]      Dateiangaben zeigen/ändern
 k1520disktool boot-get <abbild> <datei.bin>            Systemspuren herausschreiben
 k1520disktool boot-put <abbild> <datei.bin>            Bootabbild einspielen
 k1520disktool info   <abbild>                          Belegung und Erkennung
@@ -169,6 +170,44 @@ Ausdrückliche Schalter gehen dem Beiblatt vor.
 Side0/OS   P    WES          13DE   512         1000         5632
 Side0/ZDOS P1   WS           2600   1024        2600         5521
 ```
+
+Die Satzlänge und „Bytes im letzten Satz“ lassen sich **nicht** nachträglich ändern:
+beide bestimmen die Sektorlage der Daten, sie zu ändern hieße die Datei neu zu
+schreiben. Dafür `get` + `put --record-len …`.
+
+## CP/M: Nutzerbereich und die drei Attributbits
+
+CP/M 2.2 führt viel weniger — aber auch dieses Wenige steht in keiner Linux-Datei:
+
+| Angabe | Schalter | Verzeichnisplatz |
+|--------|----------|------------------|
+| Nutzerbereich 0…15 | `--user 3` | Byte 0 |
+| R/O — nur lesen | `--ro` / `--no-ro` | Hochbit von TYP[0] |
+| SYS — Systemdatei (im `DIR` unsichtbar) | `--sys` / `--no-sys` | Hochbit von TYP[1] |
+| ARCHIV | `--arc` / `--no-arc` | Hochbit von TYP[2] |
+
+```sh
+$ k1520disktool attr cpa.hfe PIP.COM --sys --ro --user 3
+3:PIP.COM            Nutzerbereich 3  Attribute RO SYS    7424 Byte
+  RO ja   SYS ja   ARC nein
+```
+
+Der **Nutzerbereich gehört zur Identität** der Datei, nicht zu ihren Attributen:
+`--user` verschiebt sie nach `3:NAME.TYP`, und liegt dort schon eine Datei gleichen
+Namens, wird der Umzug abgelehnt statt sie zu verdecken. Geändert werden immer
+*alle* Extents der Datei.
+
+Auch hier braucht man die Schalter selten: `get` legt ein Beiblatt
+`cpm-dateiangaben.txt` an, `put` liest es wieder. Im Linux-Dateinamen steht für den
+Doppelpunkt ein Unterstrich (`3_PIP.COM`) — der echte Name steht im Beiblatt.
+
+```
+3_PIP.COM name=3:PIP.COM attr=RS
+```
+
+Eine Zeile entsteht nur für Dateien, die *etwas zu sagen* haben; eine gewöhnliche
+Datei im Bereich 0 ohne Attribute braucht keine, und ohne solche Dateien entsteht
+gar kein Beiblatt.
 
 ## Beidseitige UDOS-Disketten
 

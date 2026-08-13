@@ -75,6 +75,16 @@ public:
     bool   write(const std::string& name, const std::vector<uint8_t>& data,
                  const WriteOptions& opt) override;
     bool   erase(const std::string& name) override;
+    using  FileSystem::setAttributes;     ///< die UDOS-Ueberladung bleibt sichtbar (meldet den Grund)
+    /**
+     * @brief R/O, SYS, ARCHIV und den Nutzerbereich einer Datei aendern.
+     *
+     * Geaendert werden **alle Extents** der Datei — CP/M traegt die Attributbits in
+     * jedem Verzeichnisplatz erneut, und ein halb umgesetzter Wechsel des
+     * Nutzerbereichs zerrisse die Datei.  Ein Wechsel des Nutzerbereichs wird
+     * abgelehnt, wenn dort schon eine Datei gleichen Namens liegt.
+     */
+    bool   setAttributes(const std::string& name, const CpmAttrs& a) override;
     bool   wouldFit(const std::vector<PlannedFile>& files, FitReport& out) const override;
     bool   mkfs() override;
     FsInfo info() const override;

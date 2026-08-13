@@ -178,6 +178,8 @@ _lib.k1520d_entry_high_addr.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_entry_high_addr.restype = ctypes.c_uint16
 _lib.k1520d_entry_stack_size.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_entry_stack_size.restype = ctypes.c_uint16
+_lib.k1520d_entry_bytes_in_last.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_bytes_in_last.restype = ctypes.c_uint16
 _lib.k1520d_entry_extra.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_entry_extra.restype = ctypes.c_uint32
 _lib.k1520d_entry_created.argtypes = [_H, ctypes.c_int]
@@ -191,6 +193,15 @@ _lib.k1520d_set_udos_attrs.argtypes = [
     ctypes.c_bool, ctypes.c_uint32,
 ]
 _lib.k1520d_set_udos_attrs.restype = ctypes.c_bool
+
+_lib.k1520d_set_cpm_attrs.argtypes = [
+    _H, _CS,
+    ctypes.c_bool, ctypes.c_bool,
+    ctypes.c_bool, ctypes.c_bool,
+    ctypes.c_bool, ctypes.c_bool,
+    ctypes.c_bool, ctypes.c_int,
+]
+_lib.k1520d_set_cpm_attrs.restype = ctypes.c_bool
 
 # ── Übertragung ─────────────────────────────────────────────────────────────
 _lib.k1520d_extract.argtypes = [_H, _CS, _CS, ctypes.c_int]
@@ -318,8 +329,23 @@ class Entry:
     low_addr: int = 0       # LOW ADDRESS  \
     high_addr: int = 0      # HIGH ADDRESS  } was der Lader zuteilen lässt
     stack_size: int = 0     # STACK SIZE   /
+    bytes_in_last: int = 0  # Bytes im letzten Satz (Kopfsektor 22)
     extra: int = 0          # Kopfsektor 44…47 (Bedeutung offen)
     created: str = ""       # Erstellungsvermerk (Datum ODER Versionstext)
+
+    # ── CP/M-Attribute, aus ``attrs`` aufgeschlüsselt ───────────────────────
+
+    @property
+    def read_only(self) -> bool:
+        return "RO" in self.attrs
+
+    @property
+    def system(self) -> bool:
+        return "SYS" in self.attrs
+
+    @property
+    def archived(self) -> bool:
+        return "ARC" in self.attrs
 
     @property
     def side_prefix(self) -> str:
@@ -430,6 +456,19 @@ class DiskTool:
         return _s(_lib.k1520d_detected_fs(self._h))
 
     @property
+    def filesystem_type(self) -> str:
+        """``'cpm'`` | ``'udos'`` | ``''`` — die Familie des erkannten Dateisystems.
+
+        Die Oberfläche braucht sie, um zu wissen, *welche* Dateiangaben es
+        überhaupt gibt.  Leer, wenn der Name in keinem Katalog steht (abgeleitete
+        Profile wie ``cpa_auto`` gelten als CP/M).
+        """
+        typ = _s(_lib.k1520d_fs_type(_b(self.filesystem)))
+        if typ:
+            return typ
+        return "cpm" if self.filesystem.startswith("cpa") else ""
+
+    @property
     def unambiguous(self) -> bool:
         """False = mehrere Dateisysteme passen gleich gut (siehe ``alternatives``)."""
         return bool(_lib.k1520d_detection_unambiguous(self._h))
@@ -489,6 +528,7 @@ class DiskTool:
                 low_addr=int(_lib.k1520d_entry_low_addr(self._h, i)),
                 high_addr=int(_lib.k1520d_entry_high_addr(self._h, i)),
                 stack_size=int(_lib.k1520d_entry_stack_size(self._h, i)),
+                bytes_in_last=int(_lib.k1520d_entry_bytes_in_last(self._h, i)),
                 extra=int(_lib.k1520d_entry_extra(self._h, i)),
                 created=_s(_lib.k1520d_entry_created(self._h, i)),
             ))
@@ -573,6 +613,28 @@ class DiskTool:
                 segment is not None, int(seg[0]), int(seg[1]),
                 memory is not None, int(mem[0]), int(mem[1]), int(mem[2]),
                 extra is not None, int(extra or 0)):
+            raise K1520DiskError(self._fail())
+
+    def set_cpm_attrs(self, name: str, *, read_only: Optional[bool] = None,
+                      system: Optional[bool] = None,
+                      archived: Optional[bool] = None,
+                      user: Optional[int] = None) -> None:
+        """CP/M-Attribute und Nutzerbereich einer vorhandenen Datei ändern.
+
+        Der Dateiinhalt bleibt unangetastet; **nicht angegebene Felder bleiben
+        stehen**.  Ein Wechsel des Nutzerbereichs verschiebt die Datei nach
+        ``3:NAME.TYP``.
+
+        Raises:
+            K1520DiskError: schreibgeschützt, Datei unbekannt, Zielbereich belegt,
+                oder UDOS (dort gibt es diese Angaben nicht).
+        """
+        if not _lib.k1520d_set_cpm_attrs(
+                self._h, _b(name),
+                read_only is not None, bool(read_only),
+                system is not None, bool(system),
+                archived is not None, bool(archived),
+                user is not None, int(user or 0)):
             raise K1520DiskError(self._fail())
 
     # ── Bootabbild (Systemspuren) ───────────────────────────────────────────

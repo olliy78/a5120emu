@@ -364,6 +364,98 @@ std::map<std::string, UdosAngabe> leseBeiblatt(const fs::path& datei) {
     return out;
 }
 
+// ─── CP/M-Angaben (Beiblatt zum Ordner) ──────────────────────────────────────
+//
+// CP/M fuehrt viel weniger als UDOS, aber auch dieses Wenige geht beim Extrahieren
+// verloren: der **Nutzerbereich** (aus "3:NAME.TYP" wird die Linux-Datei
+// "3_NAME.TYP") und die drei Attributbits R/O, SYS und ARCHIV.  Ohne sie liegt eine
+// zurueckgeschriebene Systemdatei im Nutzerbereich 0 und ist im `DIR` sichtbar —
+// die Diskette sieht anders aus als vorher.  Gleiches Verfahren wie bei UDOS:
+// `extractAll` schreibt, `insertAll` und der Einzel-`insert` lesen.
+
+constexpr const char* kCpmBeiblatt = "cpm-dateiangaben.txt";
+
+struct CpmAngabe {
+    std::string name;                ///< der ECHTE CP/M-Name, ggf. "3:NAME.TYP"
+    bool read_only = false, system = false, archived = false;
+};
+
+std::string cpmAttrText(const CpmAngabe& a) {
+    std::string t;
+    if (a.read_only) t += 'R';
+    if (a.system)    t += 'S';
+    if (a.archived)  t += 'A';
+    return t.empty() ? "-" : t;
+}
+
+/// @brief Beiblatt schreiben — je Datei `<linux-name> name=<cpm-name> attr=RSA`.
+bool schreibeCpmBeiblatt(const fs::path& datei,
+                         const std::vector<std::pair<std::string, CpmAngabe>>& eintraege) {
+    std::ofstream f(datei, std::ios::binary);
+    if (!f) return false;
+    f << "# k1520DiskTool — CP/M-Angaben zu den Dateien in diesem Ordner.\n"
+         "# Sie stehen NICHT in den Dateien selbst; beim Einfuegen (`put <ordner>`)\n"
+         "# werden sie wieder uebernommen.\n"
+         "#\n"
+         "#   name   der echte CP/M-Name mit Nutzerbereich (\"3:NAME.TYP\");\n"
+         "#          im Linux-Dateinamen steht dafuer ein Unterstrich\n"
+         "#   attr   R = nur lesen   S = Systemdatei (im DIR unsichtbar)\n"
+         "#          A = archiviert  -  = keines davon\n";
+    for (const auto& [datei_name, a] : eintraege)
+        f << datei_name << " name=" << a.name << " attr=" << cpmAttrText(a) << '\n';
+    return static_cast<bool>(f);
+}
+
+/// @brief Beiblatt lesen; fehlt es, kommt eine leere Tabelle zurueck (kein Fehler).
+std::map<std::string, CpmAngabe> leseCpmBeiblatt(const fs::path& datei) {
+    std::map<std::string, CpmAngabe> out;
+    std::ifstream f(datei);
+    if (!f) return out;
+    std::string zeile;
+    while (std::getline(f, zeile)) {
+        if (zeile.empty() || zeile[0] == '#') continue;
+        std::istringstream z(zeile);
+        std::string datei_name;
+        if (!(z >> datei_name)) continue;
+        CpmAngabe a;
+        std::string feld;
+        while (z >> feld) {
+            const size_t g = feld.find('=');
+            if (g == std::string::npos) continue;
+            const std::string k = feld.substr(0, g), v = feld.substr(g + 1);
+            if (k == "name") a.name = v;
+            else if (k == "attr" && v != "-") {
+                a.read_only = v.find('R') != std::string::npos;
+                a.system    = v.find('S') != std::string::npos;
+                a.archived  = v.find('A') != std::string::npos;
+            }
+        }
+        out[datei_name] = a;
+    }
+    return out;
+}
+
+/// @brief Ist das eines der beiden Beiblaetter?  Sie sind Zubehoer, keine Nutzdatei.
+bool istBeiblatt(const fs::path& name) {
+    return name == kUdosBeiblatt || name == kCpmBeiblatt;
+}
+
+/**
+ * @brief Linux-Dateiname → Name auf der Diskette.
+ *
+ * Bei UDOS unveraendert.  Bei CP/M nennt das Beiblatt den echten Namen samt
+ * Nutzerbereich ("3:NAME.TYP") — ohne es bliebe der beim Extrahieren eingesetzte
+ * Unterstrich stehen und die Datei landete im Bereich 0.
+ */
+std::string zielName(const std::string& quelle, FsType typ,
+                     const std::map<std::string, CpmAngabe>& beiblatt) {
+    const std::string datei = fs::path(quelle).filename().string();
+    if (typ == FsType::Udos) return datei;
+    const auto it = beiblatt.find(datei);
+    if (it != beiblatt.end() && !it->second.name.empty()) return it->second.name;
+    return CpmFileSystem::toCpmName(quelle);
+}
+
 /// @brief Meldung fuer ein Dateisystem ohne Systemspuren — mit dem Grund.
 std::string keineSystemspuren(const FsProfile& p) {
     return "Das Dateisystem '" + p.name + "' hat keine Systemspuren — es beginnt auf "
@@ -775,12 +867,42 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
     wo.udos_extra      = mit.udos_extra;
     wo.udos_created    = mit.udos_created;
     if (!mit.udos_modified.empty()) wo.date = mit.udos_modified;
+
+    // Dasselbe fuer CP/M: die drei Attributbits aus dem Beiblatt neben der Quelle,
+    // sofern der Aufrufer keine vorgibt.
+    wo.cpm_read_only = opt.cpm_read_only;
+    wo.cpm_system    = opt.cpm_system;
+    wo.cpm_archived  = opt.cpm_archived;
+    if (profile_ && profile_->type == FsType::Cpm
+        && !opt.cpm_read_only && !opt.cpm_system && !opt.cpm_archived) {
+        const fs::path quelle(src_path);
+        for (const fs::path& ordner : {quelle.parent_path(),
+                                       quelle.parent_path().parent_path()}) {
+            if (ordner.empty()) continue;
+            const auto tabelle = leseCpmBeiblatt(ordner / kCpmBeiblatt);
+            const auto it = tabelle.find(quelle.filename().string());
+            if (it == tabelle.end()) continue;
+            wo.cpm_read_only = it->second.read_only;
+            wo.cpm_system    = it->second.system;
+            wo.cpm_archived  = it->second.archived;
+            break;
+        }
+    }
     if (!volumes_[static_cast<size_t>(ref.volume)].fs->write(ref.name, d, wo))
         return fail(volumes_[static_cast<size_t>(ref.volume)].fs->lastError());
     return true;
 }
 
 bool DiskVolume::setAttributes(const FileRef& ref, const UdosAttrs& attrs) {
+    if (read_only_) return fail(kSchreibschutz);
+    if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
+                                        + " gibt es auf dieser Diskette nicht");
+    if (!volumes_[static_cast<size_t>(ref.volume)].fs->setAttributes(ref.name, attrs))
+        return fail(volumes_[static_cast<size_t>(ref.volume)].fs->lastError());
+    return true;
+}
+
+bool DiskVolume::setAttributes(const FileRef& ref, const CpmAttrs& attrs) {
     if (read_only_) return fail(kSchreibschutz);
     if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
                                         + " gibt es auf dieser Diskette nicht");
@@ -857,6 +979,28 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
             return fail("Beiblatt nicht schreibbar: "
                         + (fs::path(dest_dir) / kUdosBeiblatt).string());
     }
+
+    // Dasselbe fuer CP/M — dort sind es Nutzerbereich und die drei Attributbits.
+    if (profile_ && profile_->type == FsType::Cpm) {
+        std::vector<std::pair<std::string, CpmAngabe>> eintraege;
+        for (const FileEntry& e : volumes_[0].fs->list()) {
+            CpmAngabe a;
+            a.name      = e.qualifiedName();
+            a.read_only = e.attributes.find("RO")  != std::string::npos;
+            a.system    = e.attributes.find("SYS") != std::string::npos;
+            a.archived  = e.attributes.find("ARC") != std::string::npos;
+            // Nur was von der Vorgabe abweicht, ist ueberhaupt eine Angabe wert;
+            // eine gewoehnliche Datei im Bereich 0 braucht keine Zeile.
+            if (a.name == e.name && !a.read_only && !a.system && !a.archived) continue;
+            std::string datei = e.qualifiedName();
+            std::replace(datei.begin(), datei.end(), ':', '_');
+            eintraege.emplace_back(datei, a);
+        }
+        if (!eintraege.empty()
+            && !schreibeCpmBeiblatt(fs::path(dest_dir) / kCpmBeiblatt, eintraege))
+            return fail("Beiblatt nicht schreibbar: "
+                        + (fs::path(dest_dir) / kCpmBeiblatt).string());
+    }
     return true;
 }
 
@@ -870,7 +1014,7 @@ bool DiskVolume::sammleQuelldateien(const std::string& src_dir,
     if (volumes_.size() == 1) {
         for (const auto& e : fs::directory_iterator(src_dir, ec)) {
             if (e.is_directory()) continue;         // Unterordner kennt CP/M nicht
-            if (e.path().filename() == kUdosBeiblatt) continue;   // Beiblatt, keine Datei
+            if (istBeiblatt(e.path().filename())) continue;       // Beiblatt, keine Datei
             je_volume[0].push_back(e.path().string());
         }
         return true;
@@ -885,7 +1029,7 @@ bool DiskVolume::sammleQuelldateien(const std::string& src_dir,
     for (const auto& e : fs::directory_iterator(src_dir, ec)) {
         if (!e.is_directory()) {
             // Das Beiblatt gehoert dorthin und ist keine „lose Datei".
-            if (e.path().filename() != kUdosBeiblatt)
+            if (!istBeiblatt(e.path().filename()))
                 lose.push_back(e.path().filename().string());
             continue;
         }
@@ -934,15 +1078,16 @@ bool DiskVolume::checkFit(const std::string& src_dir, std::string& bericht) cons
     std::vector<std::vector<std::string>> je_volume;
     if (!sammleQuelldateien(src_dir, je_volume)) { bericht = last_error_; return false; }
 
+    const std::map<std::string, CpmAngabe> cpm_beiblatt =
+        leseCpmBeiblatt(fs::path(src_dir) / kCpmBeiblatt);
+
     bool passt = true;
     for (size_t v = 0; v < volumes_.size(); ++v) {
         std::vector<PlannedFile> plan;
         for (const std::string& p : je_volume[v]) {
             std::error_code ec;
             PlannedFile f;
-            f.name   = CpmFileSystem::toCpmName(p);   // UDOS nimmt den Namen unveraendert
-            if (volumes_[v].fs && profile_->type == FsType::Udos)
-                f.name = fs::path(p).filename().string();
+            f.name   = zielName(p, profile_->type, cpm_beiblatt);
             f.size   = fs::file_size(p, ec);
             f.volume = static_cast<int>(v);
             plan.push_back(f);
@@ -977,12 +1122,12 @@ bool DiskVolume::insertAll(const std::string& src_dir, const TransferOptions& op
     const DiskMedium sicherung = disk_->medium();
     const std::map<std::string, UdosAngabe> beiblatt =
         leseBeiblatt(fs::path(src_dir) / kUdosBeiblatt);
+    const std::map<std::string, CpmAngabe> cpm_beiblatt =
+        leseCpmBeiblatt(fs::path(src_dir) / kCpmBeiblatt);
 
     for (size_t v = 0; v < volumes_.size(); ++v) {
         for (const std::string& quelle : je_volume[v]) {
-            const std::string name = profile_->type == FsType::Udos
-                                   ? fs::path(quelle).filename().string()
-                                   : CpmFileSystem::toCpmName(quelle);
+            const std::string name = zielName(quelle, profile_->type, cpm_beiblatt);
             TransferOptions o = opt;
             o.overwrite = true;          // im Stapel ersetzt der Ordner den Bestand
             // Kopfsektorangaben aus dem Beiblatt, sofern der Aufrufer keine vorgibt.

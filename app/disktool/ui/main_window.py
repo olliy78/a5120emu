@@ -38,6 +38,7 @@ from app.disktool.archive import create_archive
 from app.core_binding.k1520disk import DiskTool, K1520DiskError, filesystems
 from app.disktool.ui.disk_view import DiskView
 from app.disktool.ui.folder_view import FolderView
+from app.disktool.ui.properties_dialog import PropertiesDialog
 
 #: Endungen, die im Textmodus vorgeschlagen werden.
 TEXT_ENDUNGEN = {".txt", ".text", ".asm", ".mac", ".doc", ".md", ".log", ".dat"}
@@ -160,6 +161,9 @@ class MainWindow(QMainWindow):
         self.folder_view.choose_requested.connect(self._ordner_dialog)
         self.folder_view.disk_files_dropped.connect(self._extrahieren_refs)
         self.disk_view.files_dropped.connect(self._einfuegen_pfade)
+        self.disk_view.properties_requested.connect(self._eigenschaften_ref)
+        self.disk_view.extract_requested.connect(self._extrahieren_refs)
+        self.disk_view.erase_requested.connect(self._loeschen_refs)
 
         self._enable_write(False)
         if folder:
@@ -616,7 +620,9 @@ class MainWindow(QMainWindow):
             self.insert_all(quelle)
 
     def _loeschen_auswahl(self) -> None:
-        refs = self.disk_view.selected_refs()
+        self._loeschen_refs(self.disk_view.selected_refs())
+
+    def _loeschen_refs(self, refs: List[str]) -> None:
         if not refs:
             QMessageBox.information(self, "Löschen", "Keine Datei ausgewählt.")
             return
@@ -625,6 +631,33 @@ class MainWindow(QMainWindow):
             f"{len(refs)} Datei(en) von der Diskette löschen?\n" + "\n".join(refs[:10]))
         if antwort == QMessageBox.Yes:
             self.erase_refs(refs)
+
+    # ── Eigenschaften ───────────────────────────────────────────────────────
+
+    def show_properties(self, ref: str) -> bool:
+        """Eigenschaften-Dialog zu einer Datei öffnen.
+
+        Der Dialog bekommt den **frisch gelesenen** Verzeichniseintrag (§9.3) und
+        schreibt selbst; danach wird die Ansicht neu aufgebaut, weil ein geänderter
+        Nutzerbereich den Namen verändert.
+
+        Returns:
+            False, wenn zu ``ref`` kein Eintrag (mehr) im Verzeichnis steht.
+        """
+        if self.tool is None:
+            return False
+        eintrag = next((e for e in self.tool.list() if e.ref == ref), None)
+        if eintrag is None:
+            self._fehler("Eigenschaften", f"'{ref}' steht nicht im Verzeichnis.")
+            return False
+
+        dialog = PropertiesDialog(self.tool, eintrag, self)
+        dialog.exec()
+        self._reload()
+        return True
+
+    def _eigenschaften_ref(self, ref: str) -> None:
+        self.show_properties(ref)
 
     # ── Schließen ───────────────────────────────────────────────────────────
 

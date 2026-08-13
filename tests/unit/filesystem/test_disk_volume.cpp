@@ -491,6 +491,67 @@ TEST(DiskVolume, TextmodusSetztZeilenendenUm) {
         << "Hin- und Rueckweg muessen sich aufheben (LF ↔ CR LF, 0x1A-Ende)";
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CP/M-Beiblatt: Nutzerbereich und Attributbits ueberleben den Rundlauf
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(DiskVolume, CpmBeiblattTraegtNutzerbereichUndAttributeDurchDenRundlauf) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_dv_cpm_beiblatt.img");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "cpa780", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    // Eine Systemdatei im Nutzerbereich 3 — beides steht in keiner Linux-Datei.
+    TempOrdner vorher("k1520_test_dv_cpm_bb_v");
+    schreibe(vorher / "SYSTEM.COM", std::string(500, 'S'));
+    ASSERT_TRUE(dv->insert((vorher / "SYSTEM.COM").string(), FileRef{0, "3:SYSTEM.COM"},
+                           TransferOptions{})) << dv->lastError();
+    CpmAttrs a;
+    a.set_read_only = true; a.read_only = true;
+    a.set_system    = true; a.system    = true;
+    ASSERT_TRUE(dv->setAttributes(FileRef{0, "3:SYSTEM.COM"}, a)) << dv->lastError();
+
+    // Herausholen: die Datei heisst auf Linux "3_SYSTEM.COM", das Beiblatt nennt
+    // den echten Namen und die Attribute.
+    TempOrdner ordner("k1520_test_dv_cpm_bb_o");
+    ASSERT_TRUE(dv->extractAll(ordner.path(), TransferOptions{})) << dv->lastError();
+    ASSERT_TRUE(fs::exists(ordner / "3_SYSTEM.COM"));
+    ASSERT_TRUE(fs::exists(ordner / "cpm-dateiangaben.txt"))
+        << "ohne Beiblatt gingen Nutzerbereich und Attribute verloren";
+
+    // Und in eine frische Diskette zurueck.
+    Kopie leer("cpa_cpa780_k5601_clock.img", "k1520_test_dv_cpm_bb_ziel.img");
+    auto ziel = oeffneSchreibbar(leer.path(), "cpa780", err);
+    ASSERT_NE(ziel, nullptr) << err;
+    ASSERT_TRUE(ziel->insertAll(ordner.path(), TransferOptions{})) << ziel->lastError();
+
+    bool gefunden = false;
+    for (const FileEntry& e : ziel->list())
+        if (e.name == "SYSTEM.COM") {
+            gefunden = true;
+            EXPECT_EQ(e.user, 3) << "der Nutzerbereich kommt aus dem Beiblatt";
+            EXPECT_EQ(e.attributes, "RO SYS");
+        }
+    EXPECT_TRUE(gefunden);
+
+    // Das Beiblatt selbst darf NICHT als Datei auf der Diskette landen.
+    for (const FileEntry& e : ziel->list())
+        EXPECT_EQ(e.name.find("CPM-DATE"), std::string::npos) << e.name;
+}
+
+TEST(DiskVolume, CpmBeiblattEntstehtNurWennEsEtwasZuSagenGibt) {
+    // Eine Diskette ohne Nutzerbereiche und ohne gesetzte Attribute braucht keines —
+    // ein leeres Beiblatt waere nur ein Ratsel im Ordner.
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_dv_cpm_bb_leer.img");
+    std::string err;
+    auto dv = oeffne(k.path(), "cpa780", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    TempOrdner ordner("k1520_test_dv_cpm_bb_leer_o");
+    ASSERT_TRUE(dv->extractAll(ordner.path(), TransferOptions{})) << dv->lastError();
+    EXPECT_FALSE(fs::exists(ordner / "cpm-dateiangaben.txt"));
+}
+
 TEST(DiskVolume, SideNPraefixImDateinamen) {
     EXPECT_EQ(FileRef::parse("Side1/HELP.DAT.00").volume, 1);
     EXPECT_EQ(FileRef::parse("Side1/HELP.DAT.00").name, "HELP.DAT.00");

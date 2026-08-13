@@ -148,6 +148,7 @@ public:
     bool   write(const std::string& name, const std::vector<uint8_t>& data,
                  const WriteOptions& opt) override;
     bool   erase(const std::string& name) override;
+    using  FileSystem::setAttributes;   ///< die CP/M-Ueberladung bleibt sichtbar (meldet den Grund)
     /// @brief Kopfsektorangaben einer vorhandenen Datei aendern (Inhalt bleibt).
     bool   setAttributes(const std::string& name, const UdosAttrs& a) override;
     bool   wouldFit(const std::vector<PlannedFile>& files, FitReport& out) const override;

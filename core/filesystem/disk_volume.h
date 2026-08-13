@@ -96,6 +96,15 @@ struct TransferOptions {
     std::string udos_created;
     /// @brief Datum der letzten Aenderung ("JJMMTT"); leer = heute.
     std::string udos_modified;
+
+    // ── nur CP/M: die drei Attributbits, die eine Linux-Datei nicht mitbringt ─
+    //
+    // Sie stehen in den Hochbits des Dateityps.  Ohne sie wird aus einer
+    // Systemdatei (`SYS`, im `DIR` unsichtbar) eine gewoehnliche Datei und aus
+    // einer schreibgeschuetzten eine beschreibbare.
+    bool cpm_read_only = false;
+    bool cpm_system    = false;
+    bool cpm_archived  = false;
 };
 
 /**
@@ -243,6 +252,15 @@ public:
      * bleiben unveraendert.  Verlangt eine beschreibbare Diskette.
      */
     bool setAttributes(const FileRef& ref, const UdosAttrs& attrs);
+
+    /**
+     * @brief Attribute und Nutzerbereich einer vorhandenen CP/M-Datei aendern.
+     *
+     * Das Gegenstueck fuer die andere Dateisystemfamilie: R/O, SYS, ARCHIV und der
+     * Nutzerbereich.  Nicht gesetzte Kennzeichen in @p attrs bleiben unveraendert;
+     * verlangt eine beschreibbare Diskette.
+     */
+    bool setAttributes(const FileRef& ref, const CpmAttrs& attrs);
 
     // ─── Stapeloperationen (transaktional, §9.2) ─────────────────────────────
 

@@ -488,6 +488,26 @@ Was beim Weiterarbeiten zu wissen ist:
   (`rest=` im Beiblatt) statt ausgerechnet.  Kleinste bootfähige Diskette:
   Systemspuren + `OS` + `ZDOS` (Urlader sucht beide über das VERZEICHNIS).  Wächter:
   `DiskToolBootdiskette.GebauteUdosDisketteBootetUndFuehrtBefehleAus`.
+- **Dateiangaben sehen und ändern (2026-08-13, `doc/design/13_k1520disktool.md` §13c).**
+  Rechtsklick/Doppelklick auf eine Datei → **Eigenschaften-Dialog**
+  (`app/disktool/ui/properties_dialog.py`): UDOS-Kopfsektor voll editierbar, CP/M
+  Nutzerbereich + R/O/SYS/ARC.  Dafür kam **`CpmAttrs` als zweite Überladung** von
+  `FileSystem::setAttributes` (nicht eine gemeinsame Struktur — die Familien haben
+  fachlich nichts gemeinsam), C-ABI `k1520d_set_cpm_attrs` + `k1520d_entry_bytes_in_last`,
+  CLI `attr --ro/--sys/--arc/--user`.  Drei Festlegungen: **(1)** Der Nutzerbereich ist
+  IDENTITÄT, kein Attribut — `--user` verschiebt nach `3:NAME.TYP` und wird abgelehnt,
+  wenn dort schon eine gleichnamige Datei liegt; geändert werden **alle Extents**.
+  **(2) Satzlänge und „Bytes im letzten Satz“ sind nicht änderbar** (sie bestimmen die
+  Sektorlage; Weg dahin ist `get` + `put --record-len`) — der Dialog fasst den *Inhalt*
+  einer Datei nie an.  **(3)** Geschrieben wird nur, was sich unterscheidet
+  (`aenderungen()`), sonst bewegte ein blosses Ansehen das Änderungsdatum.
+  Dazu ein **CP/M-Beiblatt `cpm-dateiangaben.txt`** analog zum UDOS-Beiblatt (ohne es
+  ging der Nutzerbereich beim Rundlauf `extractAll`→`insertAll` verloren; `zielName()`
+  benutzen **`checkFit` und `insertAll` gemeinsam**, sonst urteilt die Platzprüfung über
+  einen anderen Namen als die Ausführung).  Das **Archiv** druckt seitdem alle Angaben
+  als zweite Tabelle „DATEIANGABEN IM EINZELNEN“ — für die Wiederherstellung von Hand;
+  maschinell reichen die Beiblätter im selben Archiv.  Wächter: `CpmFileSystemAttrs.*`,
+  `DiskVolume.CpmBeiblatt*`, `py_disktool_gui`.
 - **`data/formats.yaml` hat jetzt ZWEI Sektionen.**  `formats:` (Physik, liest der
   Emulator) und `filesystems:` (logische Ebene, liest nur das DiskTool).  `data_start`
   ist dort eine **Spur**, kein Byte-Offset — bei gemischter Geometrie (cpa780: drei

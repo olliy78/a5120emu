@@ -185,6 +185,8 @@ K1520_API uint16_t    k1520d_entry_segment_len(K1520Disk h, int i);
 K1520_API uint16_t    k1520d_entry_low_addr(K1520Disk h, int i);
 K1520_API uint16_t    k1520d_entry_high_addr(K1520Disk h, int i);
 K1520_API uint16_t    k1520d_entry_stack_size(K1520Disk h, int i);
+/// @brief Bytes im letzten Satz (Kopfsektor Offset 22) — bestimmt die logische Laenge.
+K1520_API uint16_t    k1520d_entry_bytes_in_last(K1520Disk h, int i);
 /// @brief Kopfsektor Offset 44…47 (Bedeutung offen, unveraendert uebernehmen).
 K1520_API uint32_t    k1520d_entry_extra(K1520Disk h, int i);
 /// @brief Erstellungsvermerk (Datum ODER Versionstext wie "V 4.3").
@@ -212,6 +214,24 @@ K1520_API bool k1520d_set_udos_attrs(K1520Disk h, const char* name,
                                      bool set_memory, uint16_t low, uint16_t high,
                                      uint16_t stack,
                                      bool set_extra, uint32_t extra);
+
+/**
+ * @brief Attribute und Nutzerbereich einer vorhandenen Datei aendern (nur CP/M).
+ *
+ * Das Gegenstueck zu @ref k1520d_set_udos_attrs fuer die andere Dateisystemfamilie.
+ * CP/M fuehrt nur drei Attributbits und den Nutzerbereich; auch hier gilt
+ * **`set_*` = false laesst das Feld unveraendert**.
+ *
+ * Ein Wechsel des Nutzerbereichs verschiebt die Datei nach `3:NAME.TYP` und wird
+ * abgelehnt, wenn dort schon eine Datei gleichen Namens liegt.
+ *
+ * @param name  wie @ref k1520d_entry_name, ggf. mit Nutzerbereich ("3:NAME.TYP")
+ */
+K1520_API bool k1520d_set_cpm_attrs(K1520Disk h, const char* name,
+                                    bool set_read_only, bool read_only,
+                                    bool set_system,    bool system,
+                                    bool set_archived,  bool archived,
+                                    bool set_user,      int  user);
 
 /* ─── Uebertragung ───────────────────────────────────────────────────────────
  * `name` darf das Seitenpraefix tragen: "Side1/HELP.DAT.00".                  */

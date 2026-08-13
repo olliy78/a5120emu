@@ -407,3 +407,166 @@ def test_boot_image_that_does_not_fit_is_reported(window, tmp_path, monkeypatch)
     assert not window.create_disk(ziel, "cpa780", "", zu_gross)
     assert not ziel.exists()
     assert gemeldet and "15104" in gemeldet[0], gemeldet
+
+
+# ─── Eigenschaften einer Datei ───────────────────────────────────────────────
+#
+# Der Dialog ist die einzige Stelle, an der ein Anwender die Angaben zu sehen
+# bekommt, die weder in den Bytes der Datei noch in einem Linux-Dateisystem
+# stehen: bei UDOS der Kopfsektor, bei CP/M Nutzerbereich und Attributbits.
+
+def _dialog(window, name):
+    """Eigenschaften-Dialog zu einer Datei — ohne ihn anzuzeigen."""
+    from app.disktool.ui.properties_dialog import PropertiesDialog
+    eintrag = next(e for e in window.tool.list() if e.name == name)
+    return PropertiesDialog(window.tool, eintrag, window)
+
+
+def test_properties_dialog_shows_the_whole_udos_header(window, fixture_disks):
+    assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
+    d = _dialog(window, "OS")
+
+    assert d.udos
+    assert d.f_typ.currentData() == "P"
+    assert d.f_eig["W"].isChecked() and d.f_eig["S"].isChecked()
+    assert d.f_low.text() == "1000" and d.f_stack.text() == "0080"
+    # Ohne Zutun darf nichts geschrieben werden.
+    assert d.aenderungen() == {}
+
+
+def test_properties_dialog_writes_only_what_changed(window, fixture_disks, tmp_path):
+    abbild = tmp_path / "udos.hfe"
+    shutil.copy(fixture_disks / "udos_boot_scp.hfe", abbild)
+    assert window.open_image(abbild)
+    window.set_read_only(False)
+
+    d = _dialog(window, "ACTIVATE")
+    d.f_entry.setText("1234")
+    assert d.aenderungen() == {"entry": 0x1234}
+    assert d.uebernehmen()
+
+    eintrag = next(e for e in window.tool.list() if e.name == "ACTIVATE")
+    assert eintrag.entry == 0x1234
+    assert eintrag.type == "P", "der Rest des Kopfsektors bleibt stehen"
+    assert eintrag.record_len == 1024
+
+
+def test_properties_dialog_reports_a_bad_number(window, fixture_disks, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    gemeldet = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: gemeldet.append(a[2]))
+
+    assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
+    d = _dialog(window, "OS")
+    d.f_low.setText("XYZ")
+    assert not d.uebernehmen()
+    assert gemeldet and "LOW" in gemeldet[0], gemeldet
+
+
+def test_properties_dialog_edits_cpm_user_area_and_attributes(window, fixture_disks,
+                                                              tmp_path):
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    assert window.open_image(abbild)
+    window.set_read_only(False)
+
+    d = _dialog(window, "PIP.COM")
+    assert not d.udos
+    assert d.f_user.value() == 0 and not d.f_sys.isChecked()
+
+    d.f_sys.setChecked(True)
+    d.f_user.setValue(4)
+    assert d.aenderungen() == {"user": 4, "system": True}
+    assert d.uebernehmen()
+
+    # Der Nutzerbereich gehört zur Identität: die Datei heißt jetzt anders.
+    namen = {e.name: e for e in window.tool.list()}
+    assert "PIP.COM" not in namen
+    assert namen["4:PIP.COM"].attrs == "SYS"
+
+
+def test_properties_dialog_is_read_only_on_a_protected_disk(window, fixture_disks):
+    from PySide6.QtWidgets import QDialogButtonBox
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert window.tool.read_only
+
+    d = _dialog(window, "PIP.COM")
+    assert not d.knoepfe.button(QDialogButtonBox.Save).isEnabled()
+    assert "schreibgeschützt" in d.hinweis.text()
+
+
+def test_context_menu_signal_opens_the_properties_dialog(window, fixture_disks,
+                                                         monkeypatch):
+    """Rechtsklick → „Eigenschaften…" landet beim Fenster (die Verdrahtung)."""
+    from app.disktool.ui import main_window as mw
+    gesehen = []
+
+    class Attrappe:
+        def __init__(self, tool, entry, parent=None):
+            gesehen.append(entry.name)
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(mw, "PropertiesDialog", Attrappe)
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    window.disk_view.properties_requested.emit("PIP.COM")
+    assert gesehen == ["PIP.COM"]
+
+
+def test_properties_for_an_unknown_file_is_reported(window, fixture_disks, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: None)
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert not window.show_properties("GIBTSNI.CHT")
+
+
+# ─── Archiv: alle ermittelbaren Angaben im Inhaltsverzeichnis ────────────────
+
+def test_archive_catalogue_lists_every_udos_header_field(window, fixture_disks,
+                                                         tmp_path):
+    """Aus dem Textprotokoll allein muss sich eine Datei wiederherstellen lassen."""
+    import zipfile
+
+    assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
+    ziel = tmp_path / "archiv.zip"
+    assert window.archive(ziel)
+    with zipfile.ZipFile(ziel) as z:
+        text = z.read("udos_boot_scp.txt").decode("utf-8")
+        # Das maschinenlesbare Gegenstück liegt daneben.
+        assert "dateien/udos-dateiangaben.txt" in z.namelist()
+
+    assert "DATEIANGABEN IM EINZELNEN" in text
+    angaben = text.split("DATEIANGABEN IM EINZELNEN", 1)[1]
+    for spalte in ("Satz", "Rest", "ENTRY", "Segment", "LOW", "HIGH", "STACK",
+                   "Block", "Zusatz"):
+        assert spalte in angaben, spalte
+
+    # Die Zeile zu `OS` trägt genau das, was EXTRACT im laufenden System meldet.
+    zeile = next(z for z in angaben.split("\n") if z.split()[1:2] == ["OS"])
+    assert "1000+5632" in zeile, zeile      # Segment: Anfang + Abbildlänge
+    assert "25FF" in zeile, zeile           # HIGH ADDRESS
+    assert "0080" in zeile, zeile           # STACK SIZE
+    assert " 512 " in zeile or "512" in zeile
+
+
+def test_archive_catalogue_lists_cpm_user_area_and_flags(window, fixture_disks,
+                                                         tmp_path):
+    import zipfile
+
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    assert window.open_image(abbild)
+    window.set_read_only(False)
+    window.tool.set_cpm_attrs("PIP.COM", system=True, user=3)
+
+    ziel = tmp_path / "archiv.zip"
+    assert window.archive(ziel)
+    with zipfile.ZipFile(ziel) as z:
+        text = z.read("cpa.txt").decode("utf-8")
+        # Ohne dieses Beiblatt ginge der Nutzerbereich beim Zurückschreiben verloren.
+        assert "dateien/cpm-dateiangaben.txt" in z.namelist()
+
+    assert "DATEIANGABEN IM EINZELNEN" in text
+    angaben = text.split("DATEIANGABEN IM EINZELNEN", 1)[1]
+    zeile = next(z for z in angaben.split("\n") if z.startswith("3:PIP.COM"))
+    assert zeile.split() == ["3:PIP.COM", "3", "7424", "-", "ja", "-"], zeile

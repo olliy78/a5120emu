@@ -331,6 +331,7 @@ K1520D_ENTRY_U16(k1520d_entry_segment_len, segment_len)
 K1520D_ENTRY_U16(k1520d_entry_low_addr,    low_addr)
 K1520D_ENTRY_U16(k1520d_entry_high_addr,   high_addr)
 K1520D_ENTRY_U16(k1520d_entry_stack_size,  stack_size)
+K1520D_ENTRY_U16(k1520d_entry_bytes_in_last, bytes_in_last)
 #undef K1520D_ENTRY_U16
 
 extern "C" uint32_t k1520d_entry_extra(K1520Disk h, int i) {
@@ -363,6 +364,20 @@ extern "C" bool k1520d_set_udos_attrs(K1520Disk h, const char* name,
     a.set_segment   = set_segment;   a.segment   = segment; a.segment_len = segment_len;
     a.set_memory    = set_memory;    a.low = low; a.high = high; a.stack = stack;
     a.set_extra     = set_extra;     a.extra     = extra;
+    return H(h)->vol->setAttributes(FileRef::parse(name), a);
+}
+
+extern "C" bool k1520d_set_cpm_attrs(K1520Disk h, const char* name,
+                                     bool set_read_only, bool read_only,
+                                     bool set_system,    bool system,
+                                     bool set_archived,  bool archived,
+                                     bool set_user,      int  user) {
+    if (!h || !name) return false;
+    CpmAttrs a;
+    a.set_read_only = set_read_only; a.read_only = read_only;
+    a.set_system    = set_system;    a.system    = system;
+    a.set_archived  = set_archived;  a.archived  = archived;
+    a.set_user      = set_user;      a.user      = user;
     return H(h)->vol->setAttributes(FileRef::parse(name), a);
 }
 

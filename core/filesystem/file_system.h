@@ -123,6 +123,11 @@ struct WriteOptions {
     /// @brief Erstellungsvermerk (6 Zeichen; auch ein Versionstext wie "V 4.3 ");
     ///        leer = wie @ref date.
     std::string udos_created;
+
+    // ── nur CP/M: die Attributbits in den Hochbits des Dateityps ─────────────
+    bool cpm_read_only = false;   ///< R/O
+    bool cpm_system    = false;   ///< SYS (im `DIR` unsichtbar)
+    bool cpm_archived  = false;   ///< ARCHIV
 };
 
 /**
@@ -145,6 +150,27 @@ struct UdosAttrs {
     bool     set_segment = false;    uint16_t segment = 0, segment_len = 0;  ///< 40/42
     bool     set_memory = false;     uint16_t low = 0, high = 0, stack = 0;  ///< 122/124/126
     bool     set_extra = false;      uint32_t extra = 0;        ///< Offset 44…47
+};
+
+/**
+ * @struct CpmAttrs
+ * @brief Die aenderbaren Angaben einer CP/M-Datei — das Gegenstueck zu @ref UdosAttrs.
+ *
+ * CP/M 2.2 fuehrt viel weniger als UDOS: drei Attributbits in den Hochbits des
+ * Dateityps (R/O, SYS, ARCHIV) und den **Nutzerbereich** im ersten Byte des
+ * Verzeichnisplatzes.  Mehr ist nicht da — kein Datum, keine Ladeadresse, keine
+ * Satzlaenge (`doc/design/13_k1520disktool.md` §7).
+ *
+ * Wie bei UDOS heisst ein nicht gesetztes Kennzeichen „unveraendert lassen", damit
+ * eine Oberflaeche ein einzelnes Feld setzen kann.  Der Nutzerbereich ist **kein
+ * Attribut, sondern Teil der Identitaet**: ihn zu aendern verschiebt die Datei nach
+ * `3:NAME.TYP` — deshalb pruefen die Umsetzungen, dass der Zielbereich frei ist.
+ */
+struct CpmAttrs {
+    bool set_read_only = false;  bool read_only = false;  ///< R/O — Hochbit von TYP[0]
+    bool set_system    = false;  bool system    = false;  ///< SYS — Hochbit von TYP[1]
+    bool set_archived  = false;  bool archived  = false;  ///< ARC — Hochbit von TYP[2]
+    bool set_user      = false;  int  user      = 0;      ///< Nutzerbereich 0…15
 };
 
 /**
@@ -200,6 +226,17 @@ public:
      */
     virtual bool setAttributes(const std::string& name, const UdosAttrs&) {
         last_error_ = "Dieses Dateisystem fuehrt keine solchen Dateiangaben";
+        return false;
+    }
+
+    /**
+     * @brief Attribute und Nutzerbereich einer vorhandenen Datei aendern (nur CP/M).
+     *
+     * Gegenstueck zu @ref setAttributes; UDOS kennt weder R/O-Bits noch
+     * Nutzerbereiche und meldet das als Fehler.
+     */
+    virtual bool setAttributes(const std::string& name, const CpmAttrs&) {
+        last_error_ = "Dieses Dateisystem fuehrt keine CP/M-Attribute";
         return false;
     }
 
