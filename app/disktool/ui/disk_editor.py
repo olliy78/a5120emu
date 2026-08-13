@@ -832,9 +832,10 @@ class DiskEditorWindow(QDialog):
         if self.udos:
             anhang = self.tool.sector_tail(cyl, head, index)[:UDOS_TAIL]
             verfahren += " + UDOS-Erweiterung"
-            # Nutzdaten + Daten-CRC + Kontrollblock — so viel Platz belegt der
-            # Sektor auf der Spur wirklich.
-            groesse = f"{len(daten)}+2+{UDOS_TAIL} Byte"
+            # Nutzdaten + Kontrollblock.  Die Daten-CRC wird hier NICHT mitgezählt —
+            # bei CP/M steht sie ebenso wenig in der Größe, und sie hat ihr eigenes
+            # Feld.  Sonst zählte dieselbe Angabe je Dateisystem etwas anderes.
+            groesse = f"{len(daten)}+{UDOS_TAIL} Byte"
             self.tail_feld.blockSignals(True)
             self.tail_feld.setText(anhang.hex(" ").upper())
             self.tail_feld.blockSignals(False)

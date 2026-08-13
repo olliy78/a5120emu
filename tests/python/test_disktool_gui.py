@@ -859,8 +859,9 @@ def test_disk_editor_names_the_udos_extension(window, fixture_disks):
 
     text = ed.info.text()
     assert "IBM-MFM + UDOS-Erweiterung" in text, text
-    # Nutzdaten + Daten-CRC + Kontrollblock, kompakt in EINER Zeile.
-    assert "128+2+4 Byte" in text, text
+    # Nutzdaten + Kontrollblock; die Daten-CRC zaehlt hier so wenig mit wie bei
+    # CP/M — sie hat ihr eigenes Feld.
+    assert "128+4 Byte" in text, text
     # Die Verkettung selbst steht im eigenen, ÄNDERBAREN Feld darunter.
     assert ed.tail_feld.text() == "05 16 05 16"
     assert "zurück" in ed.tail_deutung.text() and "vor" in ed.tail_deutung.text()

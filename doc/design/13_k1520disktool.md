@@ -1417,7 +1417,8 @@ Sync-Länge, damit ein auf Nullbytes endendes Datenfeld nicht verschluckt wird.
 Bei UDOS hängen hinter der Daten-CRC **4 Byte Sektorkontrollblock** (Rückwärts- und
 Vorwärtszeiger, `doc/udos_diskettenformat.md` §1.1) — der Sektor ist also grösser,
 als sein ID-Feld sagt. Die Sektorzeile nennt deshalb `IBM-MFM + UDOS-Erweiterung`,
-rechnet die Grösse als `128+2+4 Byte` (Nutzdaten + Daten-CRC + Kontrollblock) und
+rechnet die Grösse als `128+4 Byte` (Nutzdaten + Kontrollblock — die Daten-CRC
+zählt hier so wenig mit wie bei CP/M, sie hat ihr eigenes Feld) und
 zeigt beide Zeiger im Klartext (`zurück: Spur 22/Sektor 6   vor: …`, `FF FF` =
 Kettenende).  **Alles in EINER Zeile** — Format, Grösse, Rohbytes, Deutung: jede
 zusätzliche Zeile im unteren Teil fehlt oben der Scheibe. Ob es den Anhang gibt, weiss nicht der Sektor, sondern das
