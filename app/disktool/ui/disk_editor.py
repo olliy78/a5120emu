@@ -631,7 +631,8 @@ class DiskEditorWindow(QDialog):
         self.w_sektor.stepped.connect(lambda d: self._schritt_sektor(d))
 
         self.info = QLabel("Kein Sektor gewählt — auf einen Sektor klicken.")
-        self.info.setWordWrap(True)
+        # KEIN Umbruch: eine zweite Zeile hier kostet Höhe, die der Scheibe fehlt.
+        self.info.setWordWrap(False)
         self.info.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
         wahlzeile = QHBoxLayout()
@@ -641,7 +642,6 @@ class DiskEditorWindow(QDialog):
         wahlzeile.addSpacing(12)
         wahlzeile.addWidget(self.w_sektor)
         wahlzeile.addSpacing(16)
-        wahlzeile.addWidget(self.info, 1)
 
         self.crc_feld = QLineEdit()
         self.crc_feld.setMaximumWidth(90)
@@ -654,10 +654,12 @@ class DiskEditorWindow(QDialog):
         self.crc_feld.textChanged.connect(self._crc_bewerten)
         self.crc_urteil = QLabel("")
 
-        crc_zeile = QHBoxLayout()
-        crc_zeile.addWidget(QLabel("Daten-CRC:"))
-        crc_zeile.addWidget(self.crc_feld)
-        crc_zeile.addWidget(self.crc_urteil, 1)
+        # Die CRC steht in derselben Zeile wie die Wähler — sie gehört zur Auswahl,
+        # nicht zu den Angaben, und spart so eine Zeile Höhe.
+        wahlzeile.addWidget(QLabel("Daten-CRC:"))
+        wahlzeile.addWidget(self.crc_feld)
+        wahlzeile.addWidget(self.crc_urteil)
+        wahlzeile.addStretch(1)
 
         # ── UDOS-Nachspann: die Dateiverkettung, änderbar ───────────────────
         # Sie zu ändern ist etwas anderes, als die Nutzdaten zu ändern — deshalb ein
@@ -675,14 +677,20 @@ class DiskEditorWindow(QDialog):
         self.tail_deutung = QLabel("")
         self.tail_deutung.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
-        tail_zeile = QHBoxLayout()
-        tail_zeile.addWidget(QLabel("UDOS-Anhang:"))
-        tail_zeile.addWidget(self.tail_feld)
-        tail_zeile.addWidget(self.tail_deutung, 1)
-        self.tail_widget = QWidget()
-        self.tail_widget.setLayout(tail_zeile)
-        # CP/M kennt keinen Nachspann — dort bleibt die Zeile ganz weg.
-        self.tail_widget.setVisible(self.udos)
+        # Alles zum Sektor in EINER Zeile: Format, Größe, die vier Rohbytes, ihre
+        # Deutung.  Eine eigene Zeile für den Anhang kostete Höhe, die im Fenster
+        # der Scheibe fehlt.
+        angaben = QHBoxLayout()
+        angaben.setContentsMargins(0, 0, 0, 0)
+        angaben.addWidget(self.info)
+        angaben.addWidget(self.tail_feld)
+        angaben.addWidget(self.tail_deutung)
+        angaben.addStretch(1)
+        self.angaben_widget = QWidget()
+        self.angaben_widget.setLayout(angaben)
+        # CP/M kennt keinen Nachspann — dort bleiben Feld und Deutung ganz weg.
+        self.tail_feld.setVisible(self.udos)
+        self.tail_deutung.setVisible(self.udos)
 
         self.hex = QPlainTextEdit()
         self.hex.setFont(_monospace())
@@ -736,8 +744,7 @@ class DiskEditorWindow(QDialog):
         unten_lay = QVBoxLayout(unten)
         unten_lay.setContentsMargins(6, 6, 6, 6)
         unten_lay.addLayout(wahlzeile)
-        unten_lay.addWidget(self.tail_widget)
-        unten_lay.addLayout(crc_zeile)
+        unten_lay.addWidget(self.angaben_widget)
         unten_lay.addWidget(self.hex, 1)
         unten_lay.addLayout(knopfzeile)
 
@@ -825,8 +832,9 @@ class DiskEditorWindow(QDialog):
         if self.udos:
             anhang = self.tool.sector_tail(cyl, head, index)[:UDOS_TAIL]
             verfahren += " + UDOS-Erweiterung"
-            groesse = (f"{len(daten)} + 2 CRC + {UDOS_TAIL} Byte Kontrollblock "
-                       f"= {len(daten) + 2 + UDOS_TAIL} Byte")
+            # Nutzdaten + Daten-CRC + Kontrollblock — so viel Platz belegt der
+            # Sektor auf der Spur wirklich.
+            groesse = f"{len(daten)}+2+{UDOS_TAIL} Byte"
             self.tail_feld.blockSignals(True)
             self.tail_feld.setText(anhang.hex(" ").upper())
             self.tail_feld.blockSignals(False)
@@ -1004,7 +1012,7 @@ class DiskEditorWindow(QDialog):
             return
         self.tail_deutung.setStyleSheet("color: #505050;")
         self.tail_deutung.setText(
-            f"zurück: {udos_zeiger(roh[0:2])}   ·   vor: {udos_zeiger(roh[2:4])}")
+            f"zurück: {udos_zeiger(roh[0:2])}    vor: {udos_zeiger(roh[2:4])}")
 
     def _crc_bewerten(self) -> None:
         """Sagt, ob die eingetragene CRC zu den angezeigten Daten passt."""

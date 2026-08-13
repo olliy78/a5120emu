@@ -859,7 +859,8 @@ def test_disk_editor_names_the_udos_extension(window, fixture_disks):
 
     text = ed.info.text()
     assert "IBM-MFM + UDOS-Erweiterung" in text, text
-    assert "Kontrollblock" in text and "134 Byte" in text, text
+    # Nutzdaten + Daten-CRC + Kontrollblock, kompakt in EINER Zeile.
+    assert "128+2+4 Byte" in text, text
     # Die Verkettung selbst steht im eigenen, ÄNDERBAREN Feld darunter.
     assert ed.tail_feld.text() == "05 16 05 16"
     assert "zurück" in ed.tail_deutung.text() and "vor" in ed.tail_deutung.text()
@@ -993,15 +994,14 @@ def test_udos_tail_is_an_editable_field_with_decimal_reading(window, fixture_dis
     ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
     ed._springe(seite=0, spur=22)
 
-    assert ed.tail_widget.isVisible() or not ed.isVisible()   # bei UDOS vorhanden
     assert ed.tail_feld.text() == "05 16 05 16"
     assert ed.tail_bytes() == b"\x05\x16\x05\x16"
     assert ed.tail_deutung.text() == \
-        "zurück: Spur 22/Sektor 6   ·   vor: Spur 22/Sektor 6"
+        "zurück: Spur 22/Sektor 6    vor: Spur 22/Sektor 6"
 
     # Beim Tippen läuft die Deutung mit.
     ed.tail_feld.setText("07 15 FF FF")
-    assert ed.tail_deutung.text() == "zurück: Spur 21/Sektor 8   ·   vor: Ende"
+    assert ed.tail_deutung.text() == "zurück: Spur 21/Sektor 8    vor: Ende"
 
     # Unvollständige Eingabe wird benannt, nicht geraten.
     ed.tail_feld.setText("07 15")
@@ -1012,7 +1012,8 @@ def test_udos_tail_is_an_editable_field_with_decimal_reading(window, fixture_dis
 def test_udos_tail_row_is_absent_on_cpm(window, fixture_disks):
     ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
     assert not ed.udos
-    assert ed.tail_widget.isHidden()
+    # Bei CP/M gibt es keinen Nachspann — Feld und Deutung bleiben ganz weg.
+    assert ed.tail_feld.isHidden() and ed.tail_deutung.isHidden()
 
 
 def test_udos_tail_is_saved_without_touching_data_or_crc(window, fixture_disks,
