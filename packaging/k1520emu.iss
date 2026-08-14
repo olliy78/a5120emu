@@ -136,6 +136,11 @@ ArchiveExtraction=full
 ; Installation braucht am Ende aber gut 150 MB.
 ExtraDiskSpaceRequired=157286400
 LicenseFile={#Paket}\LICENSE
+; Das Symbol des Programms — fuer das Setup selbst, fuer den Eintrag unter
+; „Apps" und (unten) fuer die Verknuepfungen.  Ohne das traegt alles davon das
+; Python-Symbol, weil die Verknuepfung auf pythonw.exe zeigt.
+SetupIconFile={#Paket}\payload\share\icons\a5120emu.ico
+UninstallDisplayIcon={app}\share\icons\a5120emu.ico
 
 [Languages]
 Name: "de"; MessagesFile: "compiler:Languages\German.isl"
@@ -174,10 +179,14 @@ Source: "{#Paket}\disktool_launcher.cmd";  Flags: dontcopy
 ; Verknuepft wird pythonw.exe DIREKT, nicht die .cmd: eine Verknuepfung auf eine
 ; Batchdatei oeffnet immer ein Konsolenfenster, das hinter der Oberflaeche
 ; stehen bliebe.  Die .cmd bleibt fuer den Aufruf von Hand.
+; IconFilename ist hier PFLICHT und keine Zier: die Verknuepfung zeigt auf
+; pythonw.exe, und ohne eigene Angabe steht im Startmenue das Python-Symbol.
 Name: "{group}\{#Programm}"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
-  Parameters: """{app}\app\main.py"""; WorkingDir: "{app}"; Comment: "{#Programm}"
+  Parameters: """{app}\app\main.py"""; WorkingDir: "{app}"; Comment: "{#Programm}"; \
+  IconFilename: "{app}\share\icons\a5120emu.ico"
 Name: "{group}\k1520DiskTool"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
-  Parameters: """{app}\app\disktool\main.py"""; WorkingDir: "{app}"; Comment: "Dateiaustausch mit K1520-Disketten"
+  Parameters: """{app}\app\disktool\main.py"""; WorkingDir: "{app}"; Comment: "Dateiaustausch mit K1520-Disketten"; \
+  IconFilename: "{app}\share\icons\a5120emu.ico"
 Name: "{group}\{cm:UninstallProgram,{#Produkt}}"; Filename: "{uninstallexe}"
 
 [UninstallDelete]

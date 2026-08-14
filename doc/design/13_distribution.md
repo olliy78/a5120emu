@@ -590,8 +590,11 @@ Vier Schritte, jeder für sich abnehmbar:
    gebrauchte Dateien, vollständiges `[UninstallDelete]`, Pins passen zur
    Wheel-Fassung) und der Job `paket` in `windows-ci.yml`, der das Setup **wirklich
    fährt** (`-f paket=true`) — installieren, Schlankmachen prüfen, deinstallieren,
-   wobei eine fremde Datei daneben überlebt. **Offen:** ein `.ico` für die
-   Verknüpfungen (ohne trägt der Eintrag das Python-Symbol) und die Signatur
+   wobei eine fremde Datei daneben überlebt. Das Symbol liegt seit 2026-08-14
+   als `packaging/icon.ico` bei (aus dem SVG mit `tools/svg_to_ico.py`, sieben
+   Auflösungen) und hängt an vier Stellen: Setup, Eintrag unter „Apps" und
+   beiden Verknüpfungen — ohne das trüge alles davon das Python-Symbol, weil
+   die Verknüpfung auf `pythonw.exe` zeigt. **Offen:** die Signatur
    (§11 — SmartScreen warnt bei jedem Erstinstall).
 
 macOS erst danach, zusammen mit der Signaturentscheidung aus §5.3. Die

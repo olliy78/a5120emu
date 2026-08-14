@@ -17,6 +17,7 @@ Entwurf: doc/design/13_distribution.md
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tarfile
@@ -741,6 +742,44 @@ def test_windows_starter_haben_ihre_platzhalter(starter, einstieg):
     assert 'set "K1520_DATA=@DATEN@"' in text
     assert einstieg in text
     assert "pythonw.exe" in text, "GUI ohne pythonw.exe öffnet ein Konsolenfenster"
+
+
+def test_windows_symbol_ist_eine_echte_ico_mit_mehreren_groessen():
+    """Das Startmenü braucht ein `.ico`, und darin mehrere Auflösungen.
+
+    Die Verknüpfung zeigt auf `pythonw.exe` — ohne eigenes Symbol steht dort das
+    Python-Symbol.  Und liegt nur EINE Größe in der Datei, rechnet der Explorer
+    sie für die Titelleiste herunter; das sieht man.  Erzeugt wird sie aus dem
+    SVG mit `tools/svg_to_ico.py`; sie ist eingecheckt, weil der Windows-Läufer
+    kein Qt hat.
+    """
+    ico = PACKAGING / "icon.ico"
+    assert ico.is_file(), "packaging/icon.ico fehlt (tools/svg_to_ico.py erzeugt sie)"
+    roh = ico.read_bytes()
+    reserviert, typ, anzahl = struct.unpack("<HHH", roh[:6])
+    assert (reserviert, typ) == (0, 1), "keine Windows-Symboldatei"
+    assert anzahl >= 4, f"nur {anzahl} Größe(n) in der Datei"
+    kanten = set()
+    for i in range(anzahl):
+        b, h, _, _, _, _, laenge, versatz = struct.unpack(
+            "<BBBBHHII", roh[6 + 16 * i: 22 + 16 * i])
+        kanten.add(256 if b == 0 else b)
+        assert versatz + laenge <= len(roh), "Eintrag zeigt über das Dateiende hinaus"
+    assert {16, 32, 256} <= kanten, f"es fehlen gebräuchliche Größen: {sorted(kanten)}"
+
+
+def test_iss_und_paket_kennen_das_symbol():
+    """Vier Stellen brauchen es — eine vergessene fällt sonst erst beim Anwender auf."""
+    iss = _iss()
+    assert "SetupIconFile=" in iss, "das Setup selbst hat kein Symbol"
+    assert "UninstallDisplayIcon={app}\\share\\icons\\a5120emu.ico" in iss, \
+        'der Eintrag in der Apps-Liste hat kein Symbol'
+    symbol_zeilen = [z for z in iss.splitlines() if "IconFilename:" in z]
+    assert len(symbol_zeilen) >= 2, "nicht jede Verknüpfung hat ein Symbol"
+
+    bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    assert 'icon.ico"      "$STAGE/payload/share/icons/a5120emu.ico"' in bp, \
+        "build_payload.sh legt das Symbol nicht in die Payload"
 
 
 def test_windows_starter_nennen_kein_verschwundenes_skript():

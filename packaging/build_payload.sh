@@ -278,6 +278,12 @@ strip "$STAGE/payload/bin/$_cli_ziel" 2>/dev/null || true
 
 cp "$REPO/data/formats.yaml" "$STAGE/payload/share/k1520emu/formats.yaml"
 cp "$SELF_DIR/icon.svg"      "$STAGE/payload/share/icons/a5120emu.svg"
+# Windows braucht ein .ico (Startmenue, Deinstallationseintrag, Setup selbst).
+# Es liegt eingecheckt daneben, weil der Windows-Laeufer weder Qt noch
+# tools/svg_to_ico.py hat; auffrischen nach einer Aenderung am SVG:
+#   QT_QPA_PLATFORM=offscreen venv/bin/python3 tools/svg_to_ico.py \
+#       packaging/icon.svg packaging/icon.ico
+cp "$SELF_DIR/icon.ico"      "$STAGE/payload/share/icons/a5120emu.ico"
 
 # Beispieldisketten werden GEPACKT abgelegt.  Ein Diskettenabbild besteht zum
 # größten Teil aus Füllmuster (11 MB schrumpfen auf gut 1 MB), und gebraucht

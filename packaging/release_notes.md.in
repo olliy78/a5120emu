@@ -51,8 +51,6 @@ Combo-Disketten mit Fremdlaufwerkstypen. Sie landen beim ersten Start im Diskett
 - **Windows: SmartScreen warnt** beim ersten Start, weil die Datei nicht signiert ist
   („Weitere Informationen" → „Trotzdem ausführen"). Ein Code-Signing-Zertifikat kostet
   laufend Geld; das ist bewusst noch nicht angeschafft.
-- **Die Startmenü-Einträge tragen vorerst das Python-Symbol** — ein eigenes Programmsymbol
-  fehlt noch.
 - **Deinstallieren:** Windows über *Einstellungen → Apps* oder den Startmenü-Eintrag,
   Linux mit `./install.sh --uninstall`. Die Arbeitsdisketten bleiben dabei stehen —
   sie liegen außerhalb der Installation, im Diskettenordner.
