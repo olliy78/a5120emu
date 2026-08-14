@@ -98,7 +98,7 @@
 ; `Str` wandelt das Release, das ISPP als ZAHL liest (20260807), in Text.
 #define PyUrl "https://github.com/astral-sh/python-build-standalone/releases/download/" \
   + Str(PyRelease) + "/cpython-" + PyVersion + "+" + Str(PyRelease) \
-  + "-x86_64-pc-windows-msvc-install_only.tar.gz"
+  + "-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
 
 #define Produkt   "K1520emu"
 #define Programm  "A5120-Emulator"

@@ -21,9 +21,15 @@
 #
 # Aktualisieren:  packaging/build_payload.sh --refresh-python
 #
+# Geladen wird die Variante `install_only_stripped` — dieselbe, aus der sich
+# auch uv bedient.  `install_only` bringt zusätzlich die Fehlersuchdateien
+# (*.pdb) mit: 43 statt 21 MB Download und **190 statt 69 MB** ausgepackt.  Beim
+# Anwender sind sie nutzlos, und sie sprengten den Größenwächter der CI (245 MB
+# statt der erwarteten ~120, gemessen 2026-08-14).
+#
 # Format:  <Zieltripel> <Größe in Byte> <SHA256 des Archivs>
 
 version 3.12.13
 release 20260807
 
-x86_64-pc-windows-msvc     46113914  6cf2be701aa7e9470454c9c86285c1bcc1832518d63e39c3e34e9d8ea1cbb99f
+x86_64-pc-windows-msvc     21962247  18bcc65b17921806b72cdc88bcf000bf67a2c99a8fc381fe1629f2b9ba56858d

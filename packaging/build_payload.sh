@@ -103,7 +103,7 @@ refresh_python_pins() {
     _liste=$(curl -fsSL "https://api.github.com/repos/$PBS_REPO/releases/tags/$_rel")
 
     # Neuester Fehlerstand der Nebenversion, gegen die die Wheels gebaut sind.
-    _muster="^cpython-$K1520_PY_VERSION\\.[0-9]+\\+$_rel-$PBS_ZIEL-install_only\\.tar\\.gz\$"
+    _muster="^cpython-$K1520_PY_VERSION\\.[0-9]+\\+$_rel-$PBS_ZIEL-install_only_stripped\\.tar\\.gz\$"
     _datei=$(printf '%s' "$_liste" \
              | jq -r --arg m "$_muster" '.assets[].name | select(test($m))' \
              | sort -V | tail -1)

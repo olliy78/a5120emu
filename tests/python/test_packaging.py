@@ -643,7 +643,9 @@ def test_iss_baut_die_adresse_aus_den_pins():
     text = _iss()
     assert "#define PyUrl" in text
     assert "python-build-standalone/releases/download/" in text
-    assert "-x86_64-pc-windows-msvc-install_only.tar.gz" in text
+    # `_stripped`: ohne die Fehlersuchdateien.  Mit ihnen belegt die Installation
+    # 245 statt ~120 MB — der Größenwächter der CI hat das gefangen (2026-08-14).
+    assert "-x86_64-pc-windows-msvc-install_only_stripped.tar.gz" in text
     for pflicht in ("PyVersion", "PyRelease", "PySha256", "PySize"):
         assert f"#ifndef {pflicht}" in text, f"{pflicht} ist nicht als Pflichtangabe abgesichert"
 
