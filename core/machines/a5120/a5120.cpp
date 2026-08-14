@@ -808,6 +808,12 @@ std::string A5120Machine::diskContainer(int drive) const {
     return ImageCodec::name(img->container());
 }
 
+std::string A5120Machine::diskNotice(int drive) const {
+    if (drive < 0 || drive > 3) return "";
+    if (!afs_.drive(drive).isMounted()) return "";
+    return afs_.drive(drive).noticeText();
+}
+
 DiskGeometry A5120Machine::diskGeometry(int drive) const {
     if (drive < 0 || drive > 3) return {};
     const DiskImage* img = afs_.drive(drive).image();

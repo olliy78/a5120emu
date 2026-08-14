@@ -122,6 +122,16 @@ public:
     /// @brief Containerformat der gebundenen Datei ("img" | "hfe" | "dmk"; "" = keine).
     std::string diskContainer(int drive) const;
 
+    /**
+     * @brief Bedienhinweise zur eingelegten Diskette ("" = sie passt ohne Einschränkung).
+     *
+     * Je Einschränkung eine Zeile, durch `\n` getrennt — „Double Step aktiviert",
+     * „Laufwerk liest nur jede zweite Spur", „Nur Seite 0 verwendbar".  Kein Fehler:
+     * die Diskette ist gemountet und lesbar, nur eben angepasst (@ref TrackPitch).
+     * Die Oberfläche zeigt die Zeilen im Laufwerkskasten unter dem Dateinamen.
+     */
+    std::string diskNotice(int drive) const;
+
     /// @brief Geometrie der eingelegten Diskette (alles 0, wenn kein Datenträger).
     DiskGeometry diskGeometry(int drive) const;
 

@@ -298,7 +298,19 @@ TEST(UdosFileSystem, JedeDateiDerDisketteIstLesbar) {
             std::vector<uint8_t> d;
             ASSERT_TRUE(s.fs->read(e.name, d))
                 << "Seite " << int(h) << " " << e.name << ": " << s.fs->lastError();
-            EXPECT_EQ(d.size(), e.size) << e.name;
+            // Regel: gelesen wird die logische Laenge — AUSSER bei einem Programm,
+            // dessen Speicherabbild darueber hinausreicht.  Dann kommen die vollen
+            // Saetze, denn dort steht noch Programmcode (`OS`: 5504 Byte lang, 5632
+            // Byte Abbild; der Nukleus springt selbst nach 2580H).
+            const bool programm = (e.type == "P" || e.type == "P1");
+            if (programm && e.segment_len > e.size) {
+                const uint64_t volle = (e.size + e.record_len - 1) / e.record_len
+                                     * e.record_len;
+                EXPECT_EQ(d.size(), volle) << e.name << " — volle Saetze erwartet";
+                EXPECT_GT(d.size(), e.size) << e.name;
+            } else {
+                EXPECT_EQ(d.size(), e.size) << e.name;
+            }
             ++gelesen;
         }
     }
@@ -653,6 +665,11 @@ TEST(UdosFileSystemWrite, MkfsLegtEinBenutzbaresDateisystemAn) {
     auto wieder = UdosFileSystem::mount(raum, *p, 0, err);
     EXPECT_NE(wieder, nullptr) << err;
 
+    // Erst die Diskette schliessen, dann loeschen: ~DiskImage() flusht, eine
+    // beschriebene Diskette legte die Datei sonst NACH dem remove() wieder an.
+    wieder.reset();
+    fs.reset();
+    disk.reset();
     std::error_code ec;
     std::filesystem::remove(pfad, ec);
 }

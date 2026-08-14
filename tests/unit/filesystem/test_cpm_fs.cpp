@@ -510,3 +510,118 @@ TEST(CpmFileSystemWrite, NutzerbereicheBleibenGetrennt) {
     EXPECT_FALSE(v.fs->read("GEHEIM.TXT", d)) << "Nutzerbereich 0 darf sie nicht sehen";
     EXPECT_TRUE(v.fs->read("3:GEHEIM.TXT", d));
 }
+
+// ─── Attribute und Nutzerbereich aendern ─────────────────────────────────────
+//
+// Das Gegenstueck zu `UdosFileSystem::setAttributes`: CP/M fuehrt nur drei
+// Attributbits und den Nutzerbereich — aber sie gehen beim Extrahieren nach Linux
+// genauso verloren wie ein UDOS-Kopfsektor.
+
+TEST(CpmFileSystemAttrs, SetztUndLoeschtDieDreiAttributbits) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_cpm_attr.img");
+    Volume v = oeffneSchreibbar(k.path(), "cpa780");
+    ASSERT_TRUE(v) << v.error;
+
+    auto attribute = [&](const std::string& name) {
+        for (const FileEntry& e : v.fs->list())
+            if (e.qualifiedName() == name) return e.attributes;
+        return std::string("<fehlt>");
+    };
+    ASSERT_EQ(attribute("PIP.COM"), "");
+
+    CpmAttrs a;
+    a.set_read_only = true; a.read_only = true;
+    a.set_system    = true; a.system    = true;
+    ASSERT_TRUE(v.fs->setAttributes("PIP.COM", a)) << v.fs->lastError();
+    EXPECT_EQ(attribute("PIP.COM"), "RO SYS");
+
+    // Nicht gesetzte Kennzeichen lassen ihr Feld stehen: ARC dazu, RO/SYS bleiben.
+    CpmAttrs b;
+    b.set_archived = true; b.archived = true;
+    ASSERT_TRUE(v.fs->setAttributes("PIP.COM", b)) << v.fs->lastError();
+    EXPECT_EQ(attribute("PIP.COM"), "RO SYS ARC");
+
+    CpmAttrs c;
+    c.set_read_only = true; c.read_only = false;
+    c.set_system    = true; c.system    = false;
+    c.set_archived  = true; c.archived  = false;
+    ASSERT_TRUE(v.fs->setAttributes("PIP.COM", c)) << v.fs->lastError();
+    EXPECT_EQ(attribute("PIP.COM"), "");
+}
+
+TEST(CpmFileSystemAttrs, AlleExtentsGehenMit) {
+    // Eine Datei ueber mehrere Verzeichnisplaetze traegt die Bits in JEDEM Platz;
+    // bliebe einer zurueck, widerspraechen sich die Extents derselben Datei.
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_cpm_attr_ext.img");
+    Volume v = oeffneSchreibbar(k.path(), "cpa780");
+    ASSERT_TRUE(v) << v.error;
+
+    // 20 KB brauchen bei 2-KB-Bloecken und 16 Zeigern je Platz zwei Plaetze.
+    ASSERT_TRUE(v.fs->write("GROSS.DAT", std::vector<uint8_t>(40u * 1024, 'X'),
+                            WriteOptions{})) << v.fs->lastError();
+    int plaetze = 0;
+    for (const CpmDirEntry& d : v.fs->directory())
+        if (!d.free() && d.name == "GROSS.DAT") ++plaetze;
+    ASSERT_GT(plaetze, 1) << "Test taugt nur mit mehreren Extents";
+
+    CpmAttrs a;
+    a.set_system = true; a.system = true;
+    ASSERT_TRUE(v.fs->setAttributes("GROSS.DAT", a)) << v.fs->lastError();
+
+    int mit_bit = 0;
+    for (const CpmDirEntry& d : v.fs->directory())
+        if (!d.free() && d.name == "GROSS.DAT" && d.system) ++mit_bit;
+    EXPECT_EQ(mit_bit, plaetze);
+}
+
+TEST(CpmFileSystemAttrs, NutzerbereichWechselnVerschiebtDieDatei) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_cpm_attr_user.img");
+    Volume v = oeffneSchreibbar(k.path(), "cpa780");
+    ASSERT_TRUE(v) << v.error;
+
+    CpmAttrs a;
+    a.set_user = true; a.user = 5;
+    ASSERT_TRUE(v.fs->setAttributes("PIP.COM", a)) << v.fs->lastError();
+
+    std::vector<uint8_t> d;
+    EXPECT_FALSE(v.fs->read("PIP.COM", d)) << "im Bereich 0 darf sie nicht mehr stehen";
+    EXPECT_TRUE(v.fs->read("5:PIP.COM", d)) << v.fs->lastError();
+}
+
+TEST(CpmFileSystemAttrs, UmzugInEinenBelegtenBereichWirdAbgelehnt) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_cpm_attr_kollision.img");
+    Volume v = oeffneSchreibbar(k.path(), "cpa780");
+    ASSERT_TRUE(v) << v.error;
+
+    ASSERT_TRUE(v.fs->write("7:PIP.COM", std::vector<uint8_t>(300, 'Z'), WriteOptions{}))
+        << v.fs->lastError();
+
+    CpmAttrs a;
+    a.set_user = true; a.user = 7;
+    EXPECT_FALSE(v.fs->setAttributes("PIP.COM", a));
+    EXPECT_NE(v.fs->lastError().find("bereits"), std::string::npos) << v.fs->lastError();
+
+    // Und die Diskette ist unveraendert: beide Dateien stehen noch, wo sie standen.
+    std::vector<uint8_t> d;
+    EXPECT_TRUE(v.fs->read("PIP.COM", d));
+    EXPECT_EQ(d.size() % 128u, 0u);
+    EXPECT_TRUE(v.fs->read("7:PIP.COM", d));
+    EXPECT_EQ(d[0], 'Z');
+}
+
+TEST(CpmFileSystemAttrs, UnbekannteDateiWirdBenannt) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_cpm_attr_unbekannt.img");
+    Volume v = oeffneSchreibbar(k.path(), "cpa780");
+    ASSERT_TRUE(v) << v.error;
+
+    CpmAttrs a;
+    a.set_system = true; a.system = true;
+    EXPECT_FALSE(v.fs->setAttributes("GIBTESNI.CHT", a));
+    EXPECT_NE(v.fs->lastError().find("GIBTESNI.CHT"), std::string::npos)
+        << v.fs->lastError();
+
+    // Und ein unmoeglicher Nutzerbereich faellt auf, bevor irgendetwas geschrieben ist.
+    CpmAttrs b;
+    b.set_user = true; b.user = 99;
+    EXPECT_FALSE(v.fs->setAttributes("PIP.COM", b));
+}

@@ -202,14 +202,23 @@ int main(int argc, char** argv){
             fprintf(stderr,"WARN: mount '%s' failed: %s\n",disk,m.lastError().c_str());
             mount_failed = true;   // session still runs; reflected in the exit code
         }
-        else fprintf(stderr,"Mounted %s on A:%s\n",disk,wp?" (read-only)":"");
+        else {
+            fprintf(stderr,"Mounted %s on A:%s\n",disk,wp?" (read-only)":"");
+            // Anpassung ans Laufwerk (Spurdichte/Seitenzahl) gleich mitmelden.
+            const std::string hinweis = m.diskNotice(0);
+            if (!hinweis.empty()) fprintf(stderr,"  ! %s\n",hinweis.c_str());
+        }
     }
     if (diskB){ bool wp; std::string mp=prepareDisk(diskB,wp);
         if (!(m.mountDisk(1,mp,"cpa780",wp) || m.mountDisk(1,mp,"cpa800",wp))){
             fprintf(stderr,"WARN: mount B '%s' failed: %s\n",diskB,m.lastError().c_str());
             mount_failed = true;
         }
-        else fprintf(stderr,"Mounted %s on B:%s\n",diskB,wp?" (read-only)":"");
+        else {
+            fprintf(stderr,"Mounted %s on B:%s\n",diskB,wp?" (read-only)":"");
+            const std::string hinweis = m.diskNotice(1);
+            if (!hinweis.empty()) fprintf(stderr,"  ! %s\n",hinweis.c_str());
+        }
     }
 
     // ─── Phase 2: debugger state ───────────────────────────────────────────────

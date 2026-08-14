@@ -58,6 +58,42 @@ K1520_API K1520Disk k1520d_open(const char* path, const char* fs_name, bool read
  */
 K1520_API K1520Disk k1520d_create(const char* path, const char* fs_name, const char* label);
 
+/**
+ * @brief Wie @ref k1520d_create, aber mit **Bootabbild** in den Systemspuren.
+ *
+ * Bootfaehig wird eine Diskette durch die Spuren VOR dem Dateisystem — das Lade-ROM
+ * liest Spur 0 blind, lange bevor es ein Dateisystem gibt.  @p boot_image ist eine
+ * rohe `.bin`-Datei mit genau diesem Byteband (herausholen laesst es sich aus einer
+ * vorhandenen Diskette: @ref k1520d_read_boot_image).
+ *
+ * Passt die Datei nicht in die Systemspuren, wird **gar nichts angelegt** — der Grund
+ * steht dann in @ref k1520d_last_open_error.
+ *
+ * @param boot_image NULL oder "" = gewoehnliche, nicht bootfaehige Diskette
+ */
+K1520_API K1520Disk k1520d_create_bootable(const char* path, const char* fs_name,
+                                           const char* label, const char* boot_image);
+
+/* ─── Bootabbild (Systemspuren) ───────────────────────────────────────────── */
+
+/**
+ * @brief Wie viele Byte fassen die Systemspuren dieses Dateisystems?
+ *
+ * Ohne Diskette zu beantworten — die Oberflaeche kann damit schon bei der Auswahl
+ * sagen, ob eine Bootdiskette ueberhaupt moeglich ist.
+ * @return 0 = dieses Dateisystem hat keine Systemspuren (beginnt auf Zylinder 0).
+ */
+K1520_API uint64_t k1520d_fs_boot_capacity(const char* fs_name);
+
+/// @brief Dasselbe fuer eine geoeffnete Diskette (@p volume = Seite, UDOS).
+K1520_API uint64_t k1520d_boot_area_size(K1520Disk h, int volume);
+
+/// @brief Systemspuren in eine Datei schreiben (Bootabbild sichern).
+K1520_API bool k1520d_read_boot_image(K1520Disk h, int volume, const char* path);
+
+/// @brief Bootabbild aus einer Datei in die Systemspuren schreiben (danach @ref k1520d_flush).
+K1520_API bool k1520d_write_boot_image(K1520Disk h, int volume, const char* path);
+
 /// @brief Aenderungen in die gebundene Datei schreiben (legt beim ersten Mal `<name>~` an).
 K1520_API bool k1520d_flush(K1520Disk h);
 /// @brief Unter neuem Namen/Container speichern und **umbinden** (auch bei Schreibschutz).
@@ -130,6 +166,193 @@ K1520_API const char* k1520d_entry_attrs(K1520Disk h, int i);
 K1520_API const char* k1520d_entry_date(K1520Disk h, int i);
 K1520_API bool        k1520d_entry_hidden(K1520Disk h, int i);
 K1520_API bool        k1520d_entry_damaged(K1520Disk h, int i);
+
+/* ─── UDOS-Kopfsektorangaben eines Eintrags ───────────────────────────────────
+ * Eine UDOS-Datei traegt mehr als Name und Bytes; diese Angaben steuern, wie das
+ * Betriebssystem sie LAEDT (doc/udos_diskettenformat.md §6 und §14).  Bei CP/M sind
+ * sie alle 0 bzw. leer.                                                        */
+
+/// @brief ENTRY — Einsprungadresse (Typ P/P1).
+K1520_API uint16_t    k1520d_entry_start(K1520Disk h, int i);
+/// @brief Satzlaenge in Byte (Zuteilungseinheit).
+K1520_API uint16_t    k1520d_entry_record_len(K1520Disk h, int i);
+/// @brief Zweite Laengenangabe (Kopfsektor Offset 17) — bei 256/512 Byte Satzlaenge 0.
+K1520_API uint16_t    k1520d_entry_block_len(K1520Disk h, int i);
+/// @brief SEGMENTS: Anfang und Laenge des Speichersegments.
+K1520_API uint16_t    k1520d_entry_segment(K1520Disk h, int i);
+K1520_API uint16_t    k1520d_entry_segment_len(K1520Disk h, int i);
+/// @brief LOW/HIGH ADDRESS und STACK SIZE — der zugeteilte Speicher.
+K1520_API uint16_t    k1520d_entry_low_addr(K1520Disk h, int i);
+K1520_API uint16_t    k1520d_entry_high_addr(K1520Disk h, int i);
+K1520_API uint16_t    k1520d_entry_stack_size(K1520Disk h, int i);
+/// @brief Bytes im letzten Satz (Kopfsektor Offset 22) — bestimmt die logische Laenge.
+K1520_API uint16_t    k1520d_entry_bytes_in_last(K1520Disk h, int i);
+/// @brief Kopfsektor Offset 44…47 (Bedeutung offen, unveraendert uebernehmen).
+K1520_API uint32_t    k1520d_entry_extra(K1520Disk h, int i);
+/// @brief Erstellungsvermerk (Datum ODER Versionstext wie "V 4.3").
+K1520_API const char* k1520d_entry_created(K1520Disk h, int i);
+
+/**
+ * @brief Kopfsektorangaben einer vorhandenen Datei aendern (nur UDOS).
+ *
+ * Fuer die Oberflaeche gedacht: der Dateiinhalt bleibt unangetastet.  **Leere
+ * Zeichenketten und `false`-Kennzeichen lassen das jeweilige Feld unveraendert**, so
+ * dass ein einzelnes Feld gesetzt werden kann, ohne die uebrigen zu kennen.
+ *
+ * @param name      wie @ref k1520d_entry_name, ggf. mit `SideN/`-Praefix
+ * @param type      "A"/"P"/"P1"/"B"; NULL/"" = unveraendert
+ * @param props     "WELS"; NULL/"" = unveraendert, ";" = alle loeschen
+ * @param created   6 Zeichen; NULL/"" = unveraendert
+ * @param modified  "JJMMTT"; NULL/"" = unveraendert
+ */
+K1520_API bool k1520d_set_udos_attrs(K1520Disk h, const char* name,
+                                     const char* type, const char* props,
+                                     const char* created, const char* modified,
+                                     bool set_entry, uint16_t entry,
+                                     bool set_block_len, uint16_t block_len,
+                                     bool set_segment, uint16_t segment, uint16_t segment_len,
+                                     bool set_memory, uint16_t low, uint16_t high,
+                                     uint16_t stack,
+                                     bool set_extra, uint32_t extra);
+
+/**
+ * @brief Attribute und Nutzerbereich einer vorhandenen Datei aendern (nur CP/M).
+ *
+ * Das Gegenstueck zu @ref k1520d_set_udos_attrs fuer die andere Dateisystemfamilie.
+ * CP/M fuehrt nur drei Attributbits und den Nutzerbereich; auch hier gilt
+ * **`set_*` = false laesst das Feld unveraendert**.
+ *
+ * Ein Wechsel des Nutzerbereichs verschiebt die Datei nach `3:NAME.TYP` und wird
+ * abgelehnt, wenn dort schon eine Datei gleichen Namens liegt.
+ *
+ * @param name  wie @ref k1520d_entry_name, ggf. mit Nutzerbereich ("3:NAME.TYP")
+ */
+K1520_API bool k1520d_set_cpm_attrs(K1520Disk h, const char* name,
+                                    bool set_read_only, bool read_only,
+                                    bool set_system,    bool system,
+                                    bool set_archived,  bool archived,
+                                    bool set_user,      int  user);
+
+/* ─── Sektoransicht (Diskeditor) ───────────────────────────────────────────────
+ * Eine Ebene UNTER dem Dateisystem: Spuren, Sektoren, Gaps und CRCs.  Fuer einen
+ * Editor, der eine schadhafte Diskette begutachten oder von Hand reparieren soll
+ * (doc/design/13_k1520disktool.md §19).
+ *
+ * Winkelangaben sind Bruchteile EINER UMDREHUNG (0 = Index).  Sie kommen aus der
+ * Byteposition in der Spur — eine Spur ist genau eine Umdrehung —, nicht aus der
+ * Drehzahl im HFE-Kopf.                                                        */
+
+/// @brief Ausdehnung des MEDIUMS (was da ist, nicht was das Format vorsieht).
+K1520_API int k1520d_medium_cylinders(K1520Disk h);
+K1520_API int k1520d_medium_heads(K1520Disk h);
+
+/**
+ * @brief Eine Spur einlesen; liefert die Anzahl ihrer Abschnitte (-1 = Fehler).
+ *
+ * Wie @ref k1520d_list ein Zustandswechsel: die `k1520d_track_*`- und
+ * `k1520d_span_*`-Abfragen beziehen sich auf die zuletzt eingelesene Spur.
+ */
+K1520_API int k1520d_track_scan(K1520Disk h, int cyl, int head);
+
+/// @brief false = diese Spur gibt es in der Ausdehnung des Mediums nicht.
+K1520_API bool        k1520d_track_exists(K1520Disk h);
+/// @brief false = keine einzige Adressmarke (unformatiert bzw. markenloser Gap-Fluss).
+K1520_API bool        k1520d_track_formatted(K1520Disk h);
+/// @brief "MFM" | "FM"
+K1520_API const char* k1520d_track_encoding(K1520Disk h);
+/// @brief Spurlaenge in Byte (eine Umdrehung).
+K1520_API int         k1520d_track_bytes(K1520Disk h);
+K1520_API int         k1520d_track_sectors(K1520Disk h);
+
+/// @brief 0 = unformatiert · 1 = Gap · 2 = Sektor
+K1520_API int    k1520d_span_kind (K1520Disk h, int i);
+/// @brief Anfang/Ende als Bruchteil der Umdrehung; die Abschnitte decken [0,1) lueckenlos ab.
+K1520_API double k1520d_span_start(K1520Disk h, int i);
+K1520_API double k1520d_span_end  (K1520Disk h, int i);
+/// @brief Laufende Nummer des Sektors in der Spur — der Schluessel fuer Lesen/Schreiben.
+K1520_API int    k1520d_span_index(K1520Disk h, int i);
+/// @brief Angaben aus dem ID-FELD (koennen von der tatsaechlichen Lage abweichen).
+K1520_API int    k1520d_span_id   (K1520Disk h, int i);
+K1520_API int    k1520d_span_cyl  (K1520Disk h, int i);
+K1520_API int    k1520d_span_head (K1520Disk h, int i);
+K1520_API int    k1520d_span_size (K1520Disk h, int i);
+K1520_API bool   k1520d_span_id_crc_ok  (K1520Disk h, int i);
+K1520_API bool   k1520d_span_data_crc_ok(K1520Disk h, int i);
+/// @brief Datenmarke war 0xF8 (geloeschter Sektor) statt 0xFB.
+K1520_API bool   k1520d_span_deleted    (K1520Disk h, int i);
+
+/**
+ * @brief Nutzdaten eines Sektors lesen.
+ * @param index laufende Nummer aus @ref k1520d_span_index
+ * @return Anzahl gelesener Bytes, oder -1 (auch wenn @p max_len zu klein ist —
+ *         es wird dann NICHTS kopiert)
+ */
+K1520_API int k1520d_sector_read(K1520Disk h, int cyl, int head, int index,
+                                 uint8_t* out, int max_len);
+
+/// @brief Daten-CRC, wie sie auf dem Medium steht; -1 = Fehler.
+K1520_API int k1520d_sector_crc(K1520Disk h, int cyl, int head, int index);
+
+/// @brief Welche Daten-CRC gehoerte zu @p data?  Aendert nichts; -1 = Fehler.
+K1520_API int k1520d_sector_crc_for(K1520Disk h, int cyl, int head, int index,
+                                    const uint8_t* data, int len);
+
+/**
+ * @brief Datenfeld eines Sektors ersetzen (in die Diskette im Speicher).
+ *
+ * @param crc `< 0` = CRC neu rechnen; sonst wird **genau dieser Wert** ins CRC-Feld
+ *        geschrieben — damit laesst sich ein Sektor absichtlich defekt lassen oder
+ *        machen (eine schadhafte Diskette originalgetreu nachbilden).
+ * @param len MUSS der Sektorgroesse entsprechen.
+ */
+K1520_API bool k1520d_sector_write(K1520Disk h, int cyl, int head, int index,
+                                   const uint8_t* data, int len, int crc);
+
+/**
+ * @brief Bytes HINTER der Daten-CRC lesen (bei UDOS der 4-Byte-Kontrollblock).
+ * @return Anzahl gelesener Bytes, oder -1.
+ */
+K1520_API int k1520d_sector_tail(K1520Disk h, int cyl, int head, int index,
+                                 uint8_t* out, int max_len);
+
+/**
+ * @brief Nur den Nachspann schreiben — Nutzdaten und Daten-CRC bleiben unangetastet.
+ *
+ * Bei UDOS ist das die Dateiverkettung; sie zu aendern ist etwas anderes, als die
+ * Nutzdaten zu aendern.  Eine absichtlich falsche CRC bleibt falsch.
+ */
+K1520_API bool k1520d_sector_write_tail(K1520Disk h, int cyl, int head, int index,
+                                        const uint8_t* tail, int len);
+
+/**
+ * @brief Sektor loeschen — sein Bereich wird wieder Gap.
+ * @param tail_bytes zusaetzlich zu loeschende Bytes hinter der Daten-CRC (UDOS: 4)
+ */
+K1520_API bool k1520d_sector_erase(K1520Disk h, int cyl, int head, int index,
+                                   int tail_bytes);
+
+/**
+ * @brief Sektor anlegen.  **Die ID bestimmt die Lage**: der neue Sektor kommt hinter
+ *        den vorhandenen mit der naechstkleineren ID, um @p gap Bytes versetzt; gibt
+ *        es keinen kleineren, hinter den Index (12 Uhr).
+ *
+ * Die Spurlaenge bleibt fest — geschrieben wird ueber vorhandenes Gap und, wenn der
+ * Gap zu knapp ist, ueber den Nachbarn.  Was dabei ueberschrieben wird, sagt
+ * @ref k1520d_sector_plan_pos / @ref k1520d_sector_plan_len **vorher**.
+ *
+ * @param mfm  Verfahren; muss zur Spur passen, ausser sie traegt noch keine Marke —
+ *             dann legt der erste Sektor es fest (FM und MFM sind nicht mischbar).
+ * @param tail_bytes Bytes hinter der Daten-CRC (UDOS-Kontrollblock: 4; 0 = keiner)
+ */
+K1520_API bool k1520d_sector_create(K1520Disk h, int cyl, int head,
+                                    int id, int id_cyl, int id_head, int size,
+                                    int gap, int tail_bytes, int fill, bool mfm);
+
+/// @brief Byte-Position, an der @ref k1520d_sector_create anlegen wuerde; -1 = Fehler.
+K1520_API int k1520d_sector_plan_pos(K1520Disk h, int cyl, int head, int id, int gap);
+/// @brief Wie viele Bytes der neue Sektor belegen wuerde; -1 = Fehler.
+K1520_API int k1520d_sector_plan_len(K1520Disk h, int cyl, int head,
+                                     int size, int tail_bytes, bool mfm);
 
 /* ─── Uebertragung ───────────────────────────────────────────────────────────
  * `name` darf das Seitenpraefix tragen: "Side1/HELP.DAT.00".                  */

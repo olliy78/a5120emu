@@ -124,6 +124,14 @@ K1520_API bool k1520_disk_raw_compatible(K1520Handle h, int drive);
 K1520_API const char* k1520_disk_path(K1520Handle h, int drive);
 /** @brief Container of the bound file ("img" | "hfe" | "dmk"; "" = none). */
 K1520_API const char* k1520_disk_container(K1520Handle h, int drive);
+/**
+ * @brief Operating notices about how the mounted disk had to be adapted to the drive.
+ *
+ * One line per restriction, separated by '\n'; "" = the disk fits as it is.  This is
+ * NOT an error — the disk is mounted and readable, just translated (track pitch /
+ * single-sided drive).  The GUI shows the lines in the drive box under the file name.
+ */
+K1520_API const char* k1520_disk_notice(K1520Handle h, int drive);
 /** @brief Write pending changes of all drives to their files immediately. */
 K1520_API bool k1520_flush_disks(K1520Handle h);
 /** @brief Unmount disk image from a drive slot. */

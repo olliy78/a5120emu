@@ -15,7 +15,8 @@ from typing import List, Optional
 from PySide6.QtCore import Qt, QMimeData, Signal
 from PySide6.QtGui import QDrag
 from PySide6.QtWidgets import (
-    QAbstractItemView, QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QLabel, QMenu, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
 #: Eigener MIME-Typ für das Ziehen von der Diskette in einen Ordner.
@@ -86,6 +87,10 @@ class DiskView(QWidget):
     """Diskettenseite des Fensters: Kopfzeile, Baum, Fußzeile."""
 
     files_dropped = Signal(list, int)
+    #: Rechtsklick → „Eigenschaften…" bzw. Doppelklick auf eine Datei.
+    properties_requested = Signal(str)     # Referenz („Side1/NAME")
+    extract_requested = Signal(list)       # Referenzen
+    erase_requested = Signal(list)         # Referenzen
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -101,6 +106,9 @@ class DiskView(QWidget):
         self.tree.setHeaderLabels(["Name", "Typ", "Größe", "Eigensch.", "Datum"])
         self.tree.setColumnWidth(0, 240)
         self.tree.files_dropped.connect(self.files_dropped)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._kontextmenue)
+        self.tree.itemDoubleClicked.connect(self._doppelklick)
 
         self.fuss = QLabel("")
 
@@ -169,6 +177,43 @@ class DiskView(QWidget):
             wo = f"{v.dir}: " if mehrseitig else ""
             teile.append(f"{wo}{v.free // 1024} KB frei")
         self.fuss.setText(" · ".join(teile))
+
+    # ── Kontextmenü ─────────────────────────────────────────────────────────
+
+    def _kontextmenue(self, punkt) -> None:
+        """Rechtsklick auf eine Datei: extrahieren, löschen, Eigenschaften.
+
+        Auf einer Gruppenzeile (der Seite) oder im Leeren gibt es nichts zu tun —
+        dann bleibt das Menü weg statt mit toten Einträgen zu erscheinen.
+        """
+        refs = self.selected_refs()
+        item = self.tree.itemAt(punkt)
+        if item is not None and item.data(0, REF_ROLE):
+            # Der angeklickte Eintrag zählt, auch wenn die Auswahl woanders steht.
+            if item.data(0, REF_ROLE) not in refs:
+                refs = [item.data(0, REF_ROLE)]
+        if not refs:
+            return
+
+        menue = QMenu(self)
+        a_props = menue.addAction("Eigenschaften…")
+        a_props.setEnabled(len(refs) == 1)
+        menue.addSeparator()
+        a_get = menue.addAction("In den Ordner holen")
+        a_del = menue.addAction("Löschen")
+
+        gewaehlt = menue.exec(self.tree.viewport().mapToGlobal(punkt))
+        if gewaehlt is a_props:
+            self.properties_requested.emit(refs[0])
+        elif gewaehlt is a_get:
+            self.extract_requested.emit(refs)
+        elif gewaehlt is a_del:
+            self.erase_requested.emit(refs)
+
+    def _doppelklick(self, item, spalte) -> None:
+        ref = item.data(0, REF_ROLE)
+        if ref:
+            self.properties_requested.emit(ref)
 
     # ── Auswahl ─────────────────────────────────────────────────────────────
 

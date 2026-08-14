@@ -21,3 +21,9 @@ k1520_add_test(disktool_cpm_roundtrip SRC test_disktool_cpm_roundtrip.cpp
 k1520_add_test(disktool_neue_disketten SRC test_disktool_neue_disketten.cpp
                                        LIBS ${_libs} k1520_fs
                                        LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# Bootfaehige Diskette: Systemspuren herausholen, neue Diskette damit anlegen,
+# Systemdateien einfuegen — und davon kalt starten.
+k1520_add_test(disktool_bootdiskette SRC test_disktool_bootdiskette.cpp
+                                     LIBS ${_libs} k1520_fs
+                                     LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)

@@ -36,8 +36,10 @@ from PySide6.QtWidgets import (
 from app.disktool.archive import create_archive
 
 from app.core_binding.k1520disk import DiskTool, K1520DiskError, filesystems
+from app.disktool.ui.disk_editor import DiskEditorWindow
 from app.disktool.ui.disk_view import DiskView
 from app.disktool.ui.folder_view import FolderView
+from app.disktool.ui.properties_dialog import PropertiesDialog
 
 #: Endungen, die im Textmodus vorgeschlagen werden.
 TEXT_ENDUNGEN = {".txt", ".text", ".asm", ".mac", ".doc", ".md", ".log", ".dat"}
@@ -111,6 +113,14 @@ class MainWindow(QMainWindow):
         self.btn_archivieren = QPushButton("Archivieren…")
         self.btn_archivieren.setToolTip(
             "Abbild (.hfe), alle Dateien und ein Inhaltsverzeichnis in eine .zip")
+        self.btn_diskeditor = QPushButton("Diskeditor")
+        self.btn_diskeditor.setToolTip(
+            "Die Diskette Spur für Spur und Sektor für Sektor ansehen und einzelne "
+            "Sektoren bearbeiten")
+        self.btn_bootabbild = QPushButton("Bootabbild sichern…")
+        self.btn_bootabbild.setToolTip(
+            "Die Systemspuren dieser Diskette als .bin sichern — damit lässt sich "
+            "später eine neue Diskette bootfähig anlegen.")
         self.chk_text = QComboBox()
         self.chk_text.addItems(["binär", "Text (CR LF ↔ LF)"])
 
@@ -124,6 +134,8 @@ class MainWindow(QMainWindow):
         fuss.addWidget(self.btn_speichern)
         fuss.addWidget(self.btn_speichern_unter)
         fuss.addWidget(self.btn_archivieren)
+        fuss.addWidget(self.btn_diskeditor)
+        fuss.addWidget(self.btn_bootabbild)
 
         self.protokoll = QPlainTextEdit()
         self.protokoll.setReadOnly(True)
@@ -151,9 +163,14 @@ class MainWindow(QMainWindow):
         self.btn_speichern.clicked.connect(self.save)
         self.btn_speichern_unter.clicked.connect(self._speichern_unter_dialog)
         self.btn_archivieren.clicked.connect(self._archivieren_dialog)
+        self.btn_diskeditor.clicked.connect(self.open_disk_editor)
+        self.btn_bootabbild.clicked.connect(self._bootabbild_sichern_dialog)
         self.folder_view.choose_requested.connect(self._ordner_dialog)
         self.folder_view.disk_files_dropped.connect(self._extrahieren_refs)
         self.disk_view.files_dropped.connect(self._einfuegen_pfade)
+        self.disk_view.properties_requested.connect(self._eigenschaften_ref)
+        self.disk_view.extract_requested.connect(self._extrahieren_refs)
+        self.disk_view.erase_requested.connect(self._loeschen_refs)
 
         self._enable_write(False)
         if folder:
@@ -181,9 +198,13 @@ class MainWindow(QMainWindow):
         wenn der Schreibschutz entfernt ist.
         """
         schreibbar = offen and self.tool is not None and not self.tool.read_only
-        for w in (self.btn_raus, self.btn_alles_raus,
-                  self.btn_speichern_unter, self.btn_archivieren):
+        for w in (self.btn_raus, self.btn_alles_raus, self.btn_speichern_unter,
+                  self.btn_archivieren, self.btn_diskeditor):
             w.setEnabled(offen)
+        # Systemspuren gibt es nicht ueberall — eine Datendiskette (cpa800) beginnt
+        # auf Zylinder 0 und hat nichts zu sichern.
+        self.btn_bootabbild.setEnabled(
+            offen and self.tool is not None and self.tool.boot_area_size(0) > 0)
         for w in (self.btn_rein, self.btn_alles_rein, self.btn_loeschen,
                   self.btn_speichern):
             w.setEnabled(schreibbar)
@@ -232,10 +253,16 @@ class MainWindow(QMainWindow):
         self.log(f"Geöffnet: {path} — {self.tool.filesystem}{hinweis}")
         return True
 
-    def create_disk(self, path, filesystem: str, label: str = "") -> bool:
+    def create_disk(self, path, filesystem: str, label: str = "",
+                    boot_image=None) -> bool:
+        """Neue Diskette anlegen — mit ``boot_image`` als **Bootdiskette**.
+
+        Das Bootabbild geht in die Systemspuren vor dem Dateisystem; passt es nicht,
+        wird gar nichts angelegt und die Meldung nennt beide Grössen.
+        """
         self._close_tool()
         try:
-            self.tool = DiskTool.create(path, filesystem, label)
+            self.tool = DiskTool.create(path, filesystem, label, boot_image)
         except K1520DiskError as e:
             self.tool = None
             self._enable_write(False)
@@ -246,10 +273,17 @@ class MainWindow(QMainWindow):
         self.chk_readonly.blockSignals(False)
         self._enable_write(True)
         self._reload()
-        self.log(f"Angelegt: {path} ({filesystem}, {self.tool.volume_count} Seiten)")
+        boot = f", Bootabbild {Path(boot_image).name}" if boot_image else ""
+        self.log(f"Angelegt: {path} ({filesystem}, {self.tool.volume_count} Seiten{boot})")
         return True
 
     def _close_tool(self) -> None:
+        # Der Diskeditor hält dieselbe Diskette; er MUSS vorher zu sein, sonst
+        # arbeitete er auf einem geschlossenen Griff weiter.
+        editor = getattr(self, "_diskeditor", None)
+        if editor is not None:
+            editor.close()
+            self._diskeditor = None
         if self.tool is not None:
             self.tool.close()
             self.tool = None
@@ -380,6 +414,22 @@ class MainWindow(QMainWindow):
         self.log(f"Archiviert: {ziel}")
         return True
 
+    def save_boot_image(self, path, volume: int = 0) -> bool:
+        """Die Systemspuren als `.bin` sichern — der Weg zum eigenen Bootabbild.
+
+        Reine Leseoperation; damit wird aus einer vorhandenen Bootdiskette die Datei,
+        die „Neue Diskette" später bootfähig macht.
+        """
+        if self.tool is None:
+            return False
+        try:
+            self.tool.read_boot_image(path, volume)
+        except (K1520DiskError, OSError) as e:
+            self._fehler("Bootabbild sichern", str(e))
+            return False
+        self.log(f"Bootabbild gesichert: {path} ({self.tool.boot_area_size(volume)} Byte)")
+        return True
+
     def set_read_only(self, ro: bool) -> None:
         """Schreibschutz setzen — ohne Rueckfrage (die sitzt im Klick-Behandler)."""
         if self.tool is None:
@@ -425,8 +475,42 @@ class MainWindow(QMainWindow):
             "HFE-Abbild (*.hfe);;DMK-Abbild (*.dmk);;Sektorabbild (*.img)")
         if not pfad:
             return
+
+        # Bootfähig? — nur, wo es Systemspuren gibt (eine Datendiskette wie cpa800
+        # beginnt auf Zylinder 0 und kann gar nicht booten).
+        boot = self._bootabbild_waehlen(fs)
+        if boot is False:          # Auswahl abgebrochen → gar nichts anlegen
+            self.log("Neue Diskette: abgebrochen (kein Bootabbild ausgewählt)")
+            return
+
         label, _ = QInputDialog.getText(self, "Neue Diskette", "Datenträgername:")
-        self.create_disk(pfad, fs, label or "")
+        self.create_disk(pfad, fs, label or "", boot or None)
+
+    def _bootabbild_waehlen(self, filesystem: str):
+        """Bootabbild für eine neue Diskette erfragen.
+
+        Returns:
+            Pfad (str) · ``None`` = gewöhnliche Diskette · ``False`` = abgebrochen,
+            es soll gar nichts angelegt werden.
+        """
+        platz = next((f.boot_capacity for f in filesystems() if f.name == filesystem), 0)
+        if platz <= 0:
+            return None
+
+        frage = QMessageBox.question(
+            self, "Neue Diskette",
+            f"Soll die Diskette bootfähig sein?\n\n"
+            f"Die Systemspuren von „{filesystem}\" fassen {platz} Byte. "
+            f"Ein Bootabbild (.bin) holt man mit „Bootabbild sichern\" aus einer "
+            f"vorhandenen Bootdiskette.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if frage != QMessageBox.Yes:
+            return None
+
+        pfad, _ = QFileDialog.getOpenFileName(
+            self, "Bootabbild auswählen", "",
+            "Bootabbild (*.bin);;Alle Dateien (*)")
+        return pfad or False
 
     def _speichern_unter_dialog(self) -> None:
         if self.tool is None:
@@ -448,6 +532,16 @@ class MainWindow(QMainWindow):
             self, "Archivieren", vorschlag, "ZIP-Archiv (*.zip)")
         if pfad:
             self.archive(pfad)
+
+    def _bootabbild_sichern_dialog(self) -> None:
+        if self.tool is None or self.tool.boot_area_size(0) == 0:
+            return
+        # Bei UDOS ist jede Seite ein eigener Datentraeger — gebootet wird von Seite 0.
+        vorschlag = str(Path(self.tool.path).with_suffix(".bin"))
+        pfad, _ = QFileDialog.getSaveFileName(
+            self, "Bootabbild sichern", vorschlag, "Bootabbild (*.bin)")
+        if pfad:
+            self.save_boot_image(pfad)
 
     def _readonly_umgeschaltet(self, an: bool) -> None:
         """Haken „Nur lesen" — der bewusste Schritt zum Schreiben.
@@ -539,7 +633,9 @@ class MainWindow(QMainWindow):
             self.insert_all(quelle)
 
     def _loeschen_auswahl(self) -> None:
-        refs = self.disk_view.selected_refs()
+        self._loeschen_refs(self.disk_view.selected_refs())
+
+    def _loeschen_refs(self, refs: List[str]) -> None:
         if not refs:
             QMessageBox.information(self, "Löschen", "Keine Datei ausgewählt.")
             return
@@ -548,6 +644,56 @@ class MainWindow(QMainWindow):
             f"{len(refs)} Datei(en) von der Diskette löschen?\n" + "\n".join(refs[:10]))
         if antwort == QMessageBox.Yes:
             self.erase_refs(refs)
+
+    # ── Eigenschaften ───────────────────────────────────────────────────────
+
+    def show_properties(self, ref: str) -> bool:
+        """Eigenschaften-Dialog zu einer Datei öffnen.
+
+        Der Dialog bekommt den **frisch gelesenen** Verzeichniseintrag (§9.3) und
+        schreibt selbst; danach wird die Ansicht neu aufgebaut, weil ein geänderter
+        Nutzerbereich den Namen verändert.
+
+        Returns:
+            False, wenn zu ``ref`` kein Eintrag (mehr) im Verzeichnis steht.
+        """
+        if self.tool is None:
+            return False
+        eintrag = next((e for e in self.tool.list() if e.ref == ref), None)
+        if eintrag is None:
+            self._fehler("Eigenschaften", f"'{ref}' steht nicht im Verzeichnis.")
+            return False
+
+        dialog = PropertiesDialog(self.tool, eintrag, self)
+        dialog.exec()
+        self._reload()
+        return True
+
+    def _eigenschaften_ref(self, ref: str) -> None:
+        self.show_properties(ref)
+
+    # ── Diskeditor ──────────────────────────────────────────────────────────
+
+    def open_disk_editor(self):
+        """Das Sektorfenster öffnen (nicht modal — man arbeitet nebenher weiter).
+
+        Es gibt genau EINS je Hauptfenster; ein zweiter Klick holt das vorhandene
+        nach vorn, statt eine zweite Sicht auf dieselbe Diskette aufzumachen.
+        """
+        if self.tool is None:
+            return None
+        vorhanden = getattr(self, "_diskeditor", None)
+        if vorhanden is not None and vorhanden.isVisible() and vorhanden.tool is self.tool:
+            vorhanden.raise_()
+            vorhanden.activateWindow()
+            return vorhanden
+
+        self._diskeditor = DiskEditorWindow(self.tool, self)
+        # Ein geschriebener Sektor ist eine Änderung wie jede andere: Titel mit ●,
+        # und die Dateiliste kann sich mitgeändert haben.
+        self._diskeditor.disk_changed.connect(self._reload)
+        self._diskeditor.show()
+        return self._diskeditor
 
     # ── Schließen ───────────────────────────────────────────────────────────
 

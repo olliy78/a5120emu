@@ -114,17 +114,22 @@ FORMATS = {
 # Geometrie um; die Formatliste wechselt (doc/format.md §3.4).  Jede Geometrie:
 #   switch_key, header, {format_key: (submenu_nav, format_key, beschreibung, img_format)}
 #
-# .img-Regel (RawSectorImage nutzt die PHYSISCHE Kopfposition cur_cyl_ als Offset):
-#   - einseitig (S, U, W)      → 1-Kopf-Format
-#   - 40-Spur EINZELschritt    → physisch = logisch → 40-Zyl-Format
-#   - 40-Spur DOPPELschritt    → physisch = 2×logisch (Zyl 0,2,…,78): KEIN sauberes
-#     logisches .img → img_format=None ⇒ .img wird übersprungen, nur .hfe (physisch
-#     verify-konsistent).  T/V bzw. U/W teilen dieselbe Formatliste (§3.4).
+# .img-Regel — seit der Spurdichte-Anpassung (2026-08-12,
+# doc/design/09_floppy_drive.md §7.2) **umgekehrt zu früher**: ein 40-Zylinder-Abbild
+# IST eine 48-tpi-Diskette und wird im 80-Spur-Laufwerk schrittverdoppelt gelesen.
+#   - 40-Spur DOPPELschritt (U, T): der Gast schreibt auf die Positionen 0,2,…,78, die
+#     Anpassung bildet sie auf die Zylinder 0…39 ab → **sauberes 40-Zyl-.img**.  (Das war
+#     der offene Punkt „Doppelschritt-.img (Mapping)" aus doc/format.md §3.4.)
+#   - 40-Spur EINZELschritt (W, V): das wäre eine 96-tpi-Diskette, die nur auf der
+#     äußeren Hälfte beschrieben ist — in einer .img nicht darstellbar (die Positionen
+#     1,3,5,… liegen zwischen den Spuren).  Solche Disketten brauchen ein
+#     **80-Zylinder**-Abbild mit unformatierter Innenhälfte, also `.hfe`.
 _SS40 = {'0': 'k5601_ss40_5x1024', '2': 'k5601_ss40_26x128', '3': 'k5601_ss40_26x128',
          '4': 'k5601_ss40_16x256', '5': 'k5601_ss40_16x256', '6': 'k5601_ss40_15x256',
          '7': 'k5601_ss40_5x1024'}
 _DS40 = {'0': 'k5601_ds40_5x1024', '3': 'k5601_ds40_26x128', '4': 'k5601_ds40_16x256',
          '5': 'k5601_ds40_16x256', '6': 'k5601_ds40_17x256', '7': 'k5601_ds40_16x256'}
+_KEIN_IMG = {k: None for k in '0234567'}
 _SS80 = {'0': 'cpa200', '2': 'k5601_ss80_26x128', '3': 'k5601_ss80_26x128',
          '4': 'cpa640', '5': 'cpa640', '7': 'k5601_ss80_9x512'}
 
@@ -133,12 +138,12 @@ def _geo_table(header, keys, img_map):
     return {k: ([], k, f'{header:22} Format {k}', img_map.get(k)) for k in keys}
 
 GEO_FORMATS = {
-    # geo: (switch_key, {format_key: entry})   — img_format=None bei Doppelschritt
+    # geo: (switch_key, {format_key: entry})   — img_format=None bei Einzelschritt-40
     'S': ('S', _geo_table('80 Sp. einseitig',  '023457',   _SS80)),
-    'W': ('W', _geo_table('40 Sp. einseitig',  '0234567',  _SS40)),
-    'U': ('U', _geo_table('40 Sp. eins. Dopp.', '0234567', {k: None for k in '0234567'})),
-    'V': ('V', _geo_table('40 Sp. doppels.',   '034567',   _DS40)),
-    'T': ('T', _geo_table('40 Sp. dopp. Dopp.', '034567',  {k: None for k in '034567'})),
+    'W': ('W', _geo_table('40 Sp. einseitig',  '0234567',  _KEIN_IMG)),
+    'U': ('U', _geo_table('40 Sp. eins. Dopp.', '0234567', _SS40)),
+    'V': ('V', _geo_table('40 Sp. doppels.',   '034567',   _KEIN_IMG)),
+    'T': ('T', _geo_table('40 Sp. dopp. Dopp.', '034567',  _DS40)),
 }
 
 

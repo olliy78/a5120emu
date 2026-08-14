@@ -377,6 +377,33 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
         ls.id_crc_ok    = id_crc_ok;
         ls.data_crc_ok  = data_crc_ok;
         ls.tail         = std::move(tail);
+
+        // Lage auf der Spur — die Grundlage jeder Darstellung „wo liegt der Sektor".
+        // sync_pos zeigt auf den ANFANG der Sync-Gruppe, nicht auf die A1-Bytes:
+        // die 00-Bytes davor gehoeren zum Sektor (der Formatierer schreibt sie mit),
+        // und nur so decken sich „wo faengt der Sektor an" und „wo setzt ein neuer
+        // Sektor auf" (@ref newSectorPosition).  Rueckwaerts gelaufen wird hoechstens
+        // eine doppelte Sync-Laenge, damit ein Datenfeld, das auf Nullbytes endet,
+        // nicht verschluckt wird.
+        ls.id_pos   = idPos;
+        {
+            const size_t a1 = (isMfm && idPos >= 3) ? idPos - 3 : idPos;
+            const size_t grenze = 2u * gapsFor(track.encoding).sync_len;
+            size_t p = a1;
+            while (p > 0 && (a1 - p) < grenze && track.bytes[p - 1] == 0x00) --p;
+            ls.sync_pos = p;
+        }
+        ls.id_crc   = static_cast<uint16_t>((crcHi << 8) | crcLo);
+        if (dataPos != SIZE_MAX) {
+            ls.data_pos = dataPos;
+            ls.deleted  = (track.bytes[dataPos] == 0xF8);
+            if (dataPos + 1 + secSize + 2 <= n) {
+                ls.end_pos  = dataPos + 1 + secSize + 2;
+                ls.data_crc = static_cast<uint16_t>(
+                    (track.bytes[dataPos + 1 + secSize] << 8)
+                    | track.bytes[dataPos + 1 + secSize + 1]);
+            }
+        }
         result.push_back(std::move(ls));
 
         // Weiter hinter dem aktuellen IDAM
@@ -392,32 +419,14 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
  * Zug schreiben.  Nur so gilt die Zusage „false = keine Aenderung" auch dann, wenn der
  * Fehler erst spaet auffaellt.
  */
-bool writeSector(TrackImage& track, uint8_t sector_id,
-                 const std::vector<uint8_t>& data,
-                 const std::vector<uint8_t>& tail) {
+/// @brief Gemeinsamer Kern von @ref writeSector und @ref writeSectorAt.
+///        @p crc == nullptr = CRC neu rechnen, sonst genau diesen Wert schreiben.
+static bool schreibeDatenfeld(TrackImage& track, size_t dataPos, uint16_t secSize,
+                              const std::vector<uint8_t>& data,
+                              const std::vector<uint8_t>& tail,
+                              const uint16_t* crc_woertlich) {
     const size_t n = track.bytes.size();
-    if (n == 0 || track.marks.size() != n) return false;
-
     const bool isMfm = (track.encoding == Encoding::MFM);
-
-    // ── Phase 1: Sektor suchen und alles pruefen ─────────────────────────────
-    size_t   dataPos = SIZE_MAX;
-    uint16_t secSize = 0;
-
-    for (size_t idPos = 0; idPos < n; ++idPos) {
-        if (track.marks[idPos] != MarkType::Id) continue;
-        if (idPos + 1 + 4 + 2 > n) break;                 // ID-Feld unvollstaendig
-        if (track.bytes[idPos + 3] != sector_id) continue;
-
-        // Groessencode wie in parseTrack maskieren (gestoerte Spur → Muellwert).
-        secSize = static_cast<uint16_t>(128u << (track.bytes[idPos + 4] & 0x03));
-
-        for (size_t i = idPos + 1; i < n; ++i) {
-            if (track.marks[i] == MarkType::Data) { dataPos = i; break; }
-            if (track.marks[i] == MarkType::Id)   break;   // Sektor ohne Datenfeld
-        }
-        break;
-    }
 
     if (dataPos == SIZE_MAX)                      return false;   // ID fehlt / kein Datenfeld
     if (data.size() != secSize)                   return false;   // Laenge passt nicht
@@ -446,13 +455,203 @@ bool writeSector(TrackImage& track, uint8_t sector_id,
     crcIn.push_back(markByte);
     crcIn.insert(crcIn.end(), data.begin(), data.end());
 
-    const uint16_t crc = isMfm ? crc16(crcIn.data(), crcIn.size(), 0xFF, 0xFF)
-                               : crc16Ccitt(crcIn.data(), crcIn.size());
+    const uint16_t crc = crc_woertlich ? *crc_woertlich
+                       : (isMfm ? crc16(crcIn.data(), crcIn.size(), 0xFF, 0xFF)
+                                : crc16Ccitt(crcIn.data(), crcIn.size()));
     track.bytes[dataPos + 1 + secSize]     = static_cast<uint8_t>(crc >> 8);
     track.bytes[dataPos + 1 + secSize + 1] = static_cast<uint8_t>(crc & 0xFF);
 
     for (size_t i = 0; i < tailLen; ++i) track.bytes[tailStart + i] = tail[i];
 
+    return true;
+}
+
+bool writeSector(TrackImage& track, uint8_t sector_id,
+                 const std::vector<uint8_t>& data,
+                 const std::vector<uint8_t>& tail) {
+    const size_t n = track.bytes.size();
+    if (n == 0 || track.marks.size() != n) return false;
+
+    size_t   dataPos = SIZE_MAX;
+    uint16_t secSize = 0;
+
+    for (size_t idPos = 0; idPos < n; ++idPos) {
+        if (track.marks[idPos] != MarkType::Id) continue;
+        if (idPos + 1 + 4 + 2 > n) break;                 // ID-Feld unvollstaendig
+        if (track.bytes[idPos + 3] != sector_id) continue;
+
+        // Groessencode wie in parseTrack maskieren (gestoerte Spur → Muellwert).
+        secSize = static_cast<uint16_t>(128u << (track.bytes[idPos + 4] & 0x03));
+
+        for (size_t i = idPos + 1; i < n; ++i) {
+            if (track.marks[i] == MarkType::Data) { dataPos = i; break; }
+            if (track.marks[i] == MarkType::Id)   break;   // Sektor ohne Datenfeld
+        }
+        break;
+    }
+    return schreibeDatenfeld(track, dataPos, secSize, data, tail, nullptr);
+}
+
+/**
+ * Ueber die LAUFENDE NUMMER statt ueber die Sektor-ID: eine Spur darf dieselbe ID
+ * mehrfach tragen (fehlerhaft formatiert, Kopierschutz), und ein Sektoreditor muss
+ * genau den Sektor treffen, den der Anwender angeklickt hat.  Die Nummerierung ist
+ * die von @ref parseTrack — Spurreihenfolge ab dem Index.
+ */
+bool writeSectorAt(TrackImage& track, size_t index,
+                   const std::vector<uint8_t>& data,
+                   const std::vector<uint8_t>& tail,
+                   const uint16_t* crc_woertlich) {
+    const std::vector<LogicalSector> sektoren = parseTrack(track);
+    if (index >= sektoren.size()) return false;
+    const LogicalSector& s = sektoren[index];
+    return schreibeDatenfeld(track, s.data_pos, s.size, data, tail, crc_woertlich);
+}
+
+bool sectorDataCrc(const TrackImage& track, size_t index,
+                   const std::vector<uint8_t>& data, uint16_t& out) {
+    const std::vector<LogicalSector> sektoren = parseTrack(track);
+    if (index >= sektoren.size()) return false;
+    const LogicalSector& s = sektoren[index];
+    if (s.data_pos == SIZE_MAX || data.size() != s.size) return false;
+
+    const bool isMfm = (track.encoding == Encoding::MFM);
+    std::vector<uint8_t> crcIn;
+    crcIn.reserve(4 + data.size());
+    if (isMfm) { crcIn.push_back(0xA1); crcIn.push_back(0xA1); crcIn.push_back(0xA1); }
+    crcIn.push_back(track.bytes[s.data_pos]);      // 0xFB bzw. 0xF8 (geloescht)
+    crcIn.insert(crcIn.end(), data.begin(), data.end());
+
+    out = isMfm ? crc16(crcIn.data(), crcIn.size(), 0xFF, 0xFF)
+                : crc16Ccitt(crcIn.data(), crcIn.size());
+    return true;
+}
+
+// ─── Sektor anlegen und loeschen (Sektoreditor, §19.4) ────────────────────────
+
+size_t newSectorLength(Encoding enc, uint16_t size, uint16_t tail_bytes) {
+    const GapParams g = gapsFor(enc);
+    const size_t a1 = (enc == Encoding::MFM) ? 3 : 0;
+    //  Sync A1×n FE [c h id sc] crc  gap2  Sync A1×n FB [data] crc  tail
+    return g.sync_len + a1 + 1 + 4 + 2
+         + g.gap2
+         + g.sync_len + a1 + 1 + size + 2
+         + tail_bytes;
+}
+
+size_t newSectorPosition(const TrackImage& track, uint8_t id, uint16_t gap_before) {
+    size_t hinter = 0;                       // Vorgabe: direkt hinter dem Index
+    int    beste  = -1;                      // groesste vorhandene ID kleiner als `id`
+
+    for (const LogicalSector& s : parseTrack(track)) {
+        if (s.id >= id) continue;
+        if (static_cast<int>(s.id) <= beste) continue;
+        beste = s.id;
+        // Ende des Sektors: hinter der Daten-CRC, sonst hinter dem ID-Feld.
+        hinter = (s.end_pos != SIZE_MAX) ? s.end_pos
+               : (s.id_pos != SIZE_MAX ? s.id_pos + 1 + 4 + 2 : 0);
+    }
+    return hinter + gap_before;
+}
+
+bool createSector(TrackImage& track, const NewSectorSpec& spec, Encoding enc,
+                  std::string* warum) {
+    auto nein = [&](const std::string& text) {
+        if (warum) *warum = text;
+        return false;
+    };
+    const size_t n = track.bytes.size();
+    if (n == 0 || track.marks.size() != n)
+        return nein("Diese Spur gibt es auf dem Datentraeger nicht.");
+    if (spec.size != 128 && spec.size != 256 && spec.size != 512 && spec.size != 1024)
+        return nein("Die Sektorgroesse muss 128, 256, 512 oder 1024 Byte sein.");
+
+    // FM und MFM lassen sich in einer Spur nicht mischen — das Verfahren haengt am
+    // Bit-Codec der ganzen Spur.  Nur eine markenlose Spur darf es noch festlegen.
+    const bool leer = std::none_of(track.marks.begin(), track.marks.end(),
+                                   [](MarkType m) { return m != MarkType::None; });
+    if (!leer && enc != track.encoding)
+        return nein(std::string("Diese Spur ist ")
+                    + (track.encoding == Encoding::MFM ? "MFM" : "FM")
+                    + "-kodiert; FM und MFM lassen sich in einer Spur nicht mischen. "
+                      "Erst alle Sektoren der Spur loeschen.");
+
+    const size_t ab   = newSectorPosition(track, spec.id, spec.gap_before);
+    const size_t len  = newSectorLength(enc, spec.size, spec.tail_bytes);
+    if (ab + len > n)
+        return nein("Der Sektor passt nicht mehr auf die Spur: er braucht "
+                    + std::to_string(len) + " Byte ab Position " + std::to_string(ab)
+                    + ", die Spur ist " + std::to_string(n) + " Byte lang. "
+                      "Kleinerer Gap oder kleinere Sektorgroesse.");
+
+    // ── Schreiben ────────────────────────────────────────────────────────────
+    const GapParams g = gapsFor(enc);
+    const bool isMfm = (enc == Encoding::MFM);
+    size_t p = ab;
+    auto setze = [&](uint8_t b, MarkType m = MarkType::None) {
+        track.bytes[p] = b;
+        track.marks[p] = m;
+        ++p;
+    };
+    auto fuelle = [&](uint8_t b, size_t k) { for (size_t i = 0; i < k; ++i) setze(b); };
+
+    const uint8_t sc = sizeCode(spec.size);
+
+    fuelle(0x00, g.sync_len);
+    if (isMfm) { setze(0xA1); setze(0xA1); setze(0xA1); }
+    setze(0xFE, MarkType::Id);
+
+    uint16_t idCrc;
+    if (isMfm) {
+        const uint8_t vor[] = {0xA1, 0xA1, 0xA1, 0xFE, spec.cyl, spec.head, spec.id, sc};
+        idCrc = crc16(vor, sizeof(vor), 0xFF, 0xFF);
+    } else {
+        const uint8_t vor[] = {0xFE, spec.cyl, spec.head, spec.id, sc};
+        idCrc = crc16Ccitt(vor, sizeof(vor));
+    }
+    setze(spec.cyl); setze(spec.head); setze(spec.id); setze(sc);
+    setze(static_cast<uint8_t>(idCrc >> 8));
+    setze(static_cast<uint8_t>(idCrc & 0xFF));
+
+    fuelle(g.gap_fill, g.gap2);
+
+    fuelle(0x00, g.sync_len);
+    if (isMfm) { setze(0xA1); setze(0xA1); setze(0xA1); }
+    setze(0xFB, MarkType::Data);
+
+    std::vector<uint8_t> crcIn;
+    crcIn.reserve(4 + spec.size);
+    if (isMfm) { crcIn.push_back(0xA1); crcIn.push_back(0xA1); crcIn.push_back(0xA1); }
+    crcIn.push_back(0xFB);
+    crcIn.insert(crcIn.end(), spec.size, spec.fill);
+    const uint16_t dataCrc = isMfm ? crc16(crcIn.data(), crcIn.size(), 0xFF, 0xFF)
+                                   : crc16Ccitt(crcIn.data(), crcIn.size());
+
+    fuelle(spec.fill, spec.size);
+    setze(static_cast<uint8_t>(dataCrc >> 8));
+    setze(static_cast<uint8_t>(dataCrc & 0xFF));
+
+    // Der Kontrollblock beginnt als „Kettenende" (FF FF FF FF) — nicht als Gap:
+    // vier Fuellbytes saehen aus wie ein Zeiger auf Spur 0x4E.
+    fuelle(0xFF, spec.tail_bytes);
+
+    if (leer) track.encoding = enc;
+    return true;
+}
+
+bool eraseSectorAt(TrackImage& track, size_t index, uint16_t tail_bytes) {
+    const std::vector<LogicalSector> sektoren = parseTrack(track);
+    if (index >= sektoren.size()) return false;
+    const LogicalSector& s = sektoren[index];
+    if (s.sync_pos == SIZE_MAX) return false;
+
+    const size_t bis = ((s.end_pos != SIZE_MAX) ? s.end_pos
+                                                : s.id_pos + 1 + 4 + 2) + tail_bytes;
+    const uint8_t fuell = gapsFor(track.encoding).gap_fill;
+    for (size_t i = s.sync_pos; i < std::min(bis, track.bytes.size()); ++i) {
+        track.bytes[i] = fuell;
+        track.marks[i] = MarkType::None;
+    }
     return true;
 }
 

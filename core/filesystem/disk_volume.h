@@ -36,6 +36,7 @@
 #include "core/filesystem/sector_space.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/format_catalog.h"
+#include "core/peripherals/floppy_drive/track_view.h"
 
 #include <memory>
 #include <optional>
@@ -66,6 +67,45 @@ struct TransferOptions {
     bool text      = false;   ///< Zeilenenden umsetzen (CR LF ↔ LF, UDOS CR ↔ LF)
     bool overwrite = false;   ///< vorhandene Zieldateien ersetzen
     bool dry_run   = false;   ///< nur planen und pruefen, nichts schreiben
+
+    /// @brief UDOS-Kopfsektorangaben, die eine Linux-Datei nicht mitbringt:
+    ///        Typ ("A"/"P"/"P1"/"B"), Eigenschaften ("WS") und Startadresse.
+    ///        Leer = Vorgabe (A/B, keine Eigenschaften, keine Startadresse).
+    ///        Ohne sie wird aus einer UDOS-Systemdatei eine gewoehnliche
+    ///        Binaerdatei — und die Diskette bootet nicht (§13a).
+    std::string udos_type;
+    std::string udos_properties;
+    uint16_t    udos_entry = 0;
+    /// @brief Satzlaenge (Vielfaches von 128); 0 = 128.
+    uint16_t    udos_record_len = 0;
+    /// @brief Ladeadresse und Laenge des Speicherabbilds (Typ P/P1); 0 = keine.
+    uint16_t    udos_segment = 0;
+    uint16_t    udos_segment_len = 0;
+    /// @brief Speicheranforderung (Start/Ende/Kennzeichen, Kopfsektor ab Offset 122).
+    uint16_t    udos_low_addr = 0;
+    uint16_t    udos_high_addr   = 0;
+    uint16_t    udos_stack_size = 0;
+    /// @brief Zweite Laengenangabe (Kopfsektor Offset 17); 0 ist ein gueltiger Wert,
+    ///        deshalb das Kennzeichen daneben.
+    uint16_t    udos_block_len = 0;
+    bool        udos_block_len_gesetzt = false;
+    /// @brief „Bytes im letzten Satz" (Kopfsektor Offset 22); 0 = ausrechnen.
+    uint16_t    udos_bytes_in_last = 0;
+    /// @brief Kopfsektor Offset 44–47 (Bedeutung offen) und Erstellungsvermerk
+    ///        (6 Zeichen, bei Systemdateien ein Versionstext wie "V 4.3 ").
+    uint32_t    udos_extra = 0;
+    std::string udos_created;
+    /// @brief Datum der letzten Aenderung ("JJMMTT"); leer = heute.
+    std::string udos_modified;
+
+    // ── nur CP/M: die drei Attributbits, die eine Linux-Datei nicht mitbringt ─
+    //
+    // Sie stehen in den Hochbits des Dateityps.  Ohne sie wird aus einer
+    // Systemdatei (`SYS`, im `DIR` unsichtbar) eine gewoehnliche Datei und aus
+    // einer schreibgeschuetzten eine beschreibbare.
+    bool cpm_read_only = false;
+    bool cpm_system    = false;
+    bool cpm_archived  = false;
 };
 
 /**
@@ -121,13 +161,67 @@ public:
      * @param path     Zielpfad; die Endung bestimmt den Container
      * @param fs_name  Dateisystem aus dem Katalog (Pflicht — hier gibt es nichts zu erkennen)
      * @param label    Datentraegername (UDOS); "" = Vorgabe
+     * @param boot_image  Pfad einer `.bin`-Datei mit dem **Bootabbild** fuer die
+     *                    Systemspuren; "" = nicht bootfaehig (§ Bootabbild unten).
+     *                    Passt sie nicht, wird **gar nichts angelegt** — die Pruefung
+     *                    laeuft vor dem Formatieren.
      */
     static std::unique_ptr<DiskVolume> create(const std::string& path,
                                               const std::string& fs_name,
                                               const std::string& label,
                                               const FormatCatalog& formats,
                                               const FsCatalog& fs_cat,
-                                              std::string& err);
+                                              std::string& err,
+                                              const std::string& boot_image = {});
+
+    // ─── Bootabbild (Systemspuren) ───────────────────────────────────────────
+    //
+    // Bootfaehig wird eine Diskette nicht durch ihr Dateisystem, sondern durch die
+    // **Systemspuren** davor: das Lade-ROM liest Spur 0 blind ein, bevor es irgendein
+    // Dateisystem gibt.  Diese Spuren gehoeren keiner Datei und werden vom Dateisystem
+    // nie angefasst — das Werkzeug behandelt sie deshalb als EIN Byteband:
+    //
+    //   * **CP/M** (CP/A, SCPX): alles vor dem Beginn des Dateisystems
+    //     (@ref FsProfile::data_cyl / data_head) — bei `cpa780` 15104 Byte.
+    //     Faengt das Dateisystem auf Zylinder 0 an (`cpa800`), gibt es keine
+    //     Systemspuren und damit keine Bootfaehigkeit.
+    //   * **UDOS**: die Spuren 0–2 (Urlader + Nukleus) UND die Bootspur 21
+    //     (`doc/udos_diskettenformat.md` §8.6) — je Seite, denn jede Seite ist ein
+    //     eigener Datentraeger.  Die Bootspur liegt HINTER den Dateispuren; im
+    //     Abbild folgt sie deshalb hinten an (13312 Byte bei 26×128).  Ohne sie
+    //     bricht der UDOS-Kaltstart mit „ERROR: 45" ab — der Urlader liest sie.
+    //
+    // Ein kuerzeres Abbild ist erlaubt (der Rest bleibt formatierte Leerspur); ein
+    // laengeres ist ein Fehler, denn es wuerde in das Dateisystem hineinschreiben.
+
+    /**
+     * @brief Fassungsvermoegen der Systemspuren in Byte — **ohne** eine Diskette.
+     *
+     * Damit kann die Oberflaeche schon beim Auswaehlen sagen, ob dieses Dateisystem
+     * ueberhaupt bootfaehig sein kann und wie gross das Abbild werden darf.
+     * @return 0 = dieses Dateisystem hat keine Systemspuren.
+     */
+    static uint64_t bootAreaCapacity(const FsProfile& prof, const DiskFormat& fmt);
+
+    /// @brief Fassungsvermoegen der Systemspuren dieser Diskette (0 = keine).
+    uint64_t bootAreaSize(int volume = 0) const;
+
+    /// @brief Systemspuren auslesen (Bootabbild aus einer vorhandenen Diskette holen).
+    bool readBootImage(std::vector<uint8_t>& out, int volume = 0) const;
+
+    /// @brief Wie @ref readBootImage, aber gleich in eine Datei.
+    bool readBootImageToFile(const std::string& path, int volume = 0) const;
+
+    /**
+     * @brief Bootabbild in die Systemspuren schreiben.
+     *
+     * Verlangt eine beschreibbare Diskette; laenger als @ref bootAreaSize ist ein
+     * Fehler und laesst die Diskette unveraendert.
+     */
+    bool writeBootImage(const std::vector<uint8_t>& img, int volume = 0);
+
+    /// @brief Wie @ref writeBootImage, aber aus einer Datei.
+    bool writeBootImageFile(const std::string& path, int volume = 0);
 
     // ─── Auskunft ────────────────────────────────────────────────────────────
 
@@ -150,6 +244,89 @@ public:
     bool extract(const FileRef& ref, const std::string& dest_path, const TransferOptions&);
     bool insert (const std::string& src_path, const FileRef& ref, const TransferOptions&);
     bool erase  (const FileRef& ref);
+
+    /**
+     * @brief Kopfsektorangaben einer vorhandenen UDOS-Datei aendern.
+     *
+     * Fuer die Oberflaeche: Typ, Eigenschaften, ENTRY, Speicherangaben … lassen sich
+     * einzeln setzen, ohne die Datei neu zu schreiben.  Leere Felder in @p attrs
+     * bleiben unveraendert.  Verlangt eine beschreibbare Diskette.
+     */
+    bool setAttributes(const FileRef& ref, const UdosAttrs& attrs);
+
+    /**
+     * @brief Attribute und Nutzerbereich einer vorhandenen CP/M-Datei aendern.
+     *
+     * Das Gegenstueck fuer die andere Dateisystemfamilie: R/O, SYS, ARCHIV und der
+     * Nutzerbereich.  Nicht gesetzte Kennzeichen in @p attrs bleiben unveraendert;
+     * verlangt eine beschreibbare Diskette.
+     */
+    bool setAttributes(const FileRef& ref, const CpmAttrs& attrs);
+
+    // ─── Sektoransicht (Diskeditor, §19) ─────────────────────────────────────
+    //
+    // Eine Ebene UNTER dem Dateisystem: hier gibt es keine Dateien, nur Spuren,
+    // Sektoren, Gaps und CRCs.  Genau das braucht ein Editor, der eine schadhafte
+    // Diskette begutachten oder von Hand reparieren soll.
+
+    /// @brief Ausdehnung des Mediums — was da ist, nicht was das Format vorsieht.
+    uint8_t mediumCylinders() const;
+    uint8_t mediumHeads()     const;
+
+    /// @brief Eine Spur als lueckenlose Abschnittsfolge (Sektor/Gap/unformatiert).
+    TrackView trackView(uint8_t cyl, uint8_t head) const;
+
+    /**
+     * @brief Nutzdaten und gespeicherte Daten-CRC eines Sektors.
+     * @param index laufende Nummer in der Spur (aus @ref TrackSpan::index)
+     */
+    bool readSectorAt(uint8_t cyl, uint8_t head, int index,
+                      std::vector<uint8_t>& out, uint16_t& crc) const;
+
+    /// @brief Welche Daten-CRC gehoerte zu @p data?  Aendert nichts.
+    bool sectorCrcFor(uint8_t cyl, uint8_t head, int index,
+                      const std::vector<uint8_t>& data, uint16_t& out) const;
+
+    /**
+     * @brief Datenfeld eines Sektors ersetzen.
+     *
+     * @param crc_woertlich `nullptr` = CRC neu rechnen; sonst wird genau dieser Wert
+     *        geschrieben — ein Sektor laesst sich damit absichtlich defekt lassen.
+     *
+     * Geschrieben wird ins Medium im Speicher; in die Datei kommt es erst mit
+     * @ref flush (wie jede andere Aenderung, §5).
+     */
+    bool writeSectorAt(uint8_t cyl, uint8_t head, int index,
+                       const std::vector<uint8_t>& data,
+                       const uint16_t* crc_woertlich);
+
+    /// @brief Bytes hinter der Daten-CRC (bei UDOS der 4-Byte-Kontrollblock).
+    bool readSectorTail(uint8_t cyl, uint8_t head, int index,
+                        std::vector<uint8_t>& out) const;
+
+    /**
+     * @brief Nur den Nachspann schreiben — Nutzdaten und CRC bleiben, wie sie sind.
+     *
+     * Bei UDOS ist das die **Dateiverkettung**: sie zu ändern ist etwas anderes, als
+     * die Nutzdaten zu ändern.  Die vorhandene Daten-CRC wird woertlich uebernommen,
+     * damit ein absichtlich defekter Sektor defekt bleibt (§19.2).
+     */
+    bool writeSectorTail(uint8_t cyl, uint8_t head, int index,
+                         const std::vector<uint8_t>& tail);
+
+    /// @brief Sektor loeschen — sein Bereich wird wieder Gap (§19.4).
+    bool eraseSectorAt(uint8_t cyl, uint8_t head, int index, uint16_t tail_bytes);
+
+    /**
+     * @brief Sektor anlegen; die Lage ergibt sich aus der ID (@ref newSectorPosition).
+     * @param mfm  Verfahren; muss zur Spur passen, ausser sie ist noch markenlos.
+     */
+    bool createSector(uint8_t cyl, uint8_t head, const TrackCodec::NewSectorSpec& spec, bool mfm);
+
+    /// @brief Wo laendete er, und wie viele Bytes belegt er?  Schreibt nichts —
+    ///        damit die Oberflaeche VOR dem Anlegen fragen kann, was ueberschrieben wird.
+    bool planSector(uint8_t cyl, uint8_t head, const TrackCodec::NewSectorSpec& spec, bool mfm,
+                    uint32_t& von, uint32_t& laenge) const;
 
     // ─── Stapeloperationen (transaktional, §9.2) ─────────────────────────────
 

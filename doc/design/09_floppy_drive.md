@@ -384,6 +384,59 @@ Suchläufe unsichtbar; UDOS strich es dauerhaft aus seiner Gerätetabelle, sodas
 später eingelegte Diskette bis zum Kaltstart unbenutzbar blieb (`FORMAT` → `ERROR C2`).
 Guard: `UdosFormat.FormatsDisketteInsertedAtRuntime`.
 
+### 7.2 Spurdichte — Diskette und Laufwerk müssen nicht zusammenpassen
+
+5,25″ kennt zwei Spurdichten: **48 tpi** (40 Spuren über den ganzen Radius) und
+**96 tpi** (80 Spuren).  Welche eine Diskette trägt, verrät ihre Spurzahl; welche das
+Laufwerk abfährt, steht im `DriveProfile`.  Stimmen sie nicht überein, ist das **kein
+Grund zur Ablehnung**, sondern ein Übersetzungsverhältnis zwischen Kopfposition und
+Diskettenspur — genau das, was ein 96-tpi-Laufwerk an einer 40-Spur-Diskette seit jeher
+tut.  Dasselbe gilt für die Seitenzahl.
+
+| Diskette | Laufwerk | `TrackPitch` | Kopfposition → Spur | Hinweis |
+|----------|----------|--------------|---------------------|---------|
+| 40 Spuren | 80 Zyl. (K5601, K5600.20) | `DoubleStep` | 2n → n, dazwischen nichts | „Double Step aktiviert" |
+| 80 Spuren | 40 Zyl. (K5600.10) | `HalfStep` | n → 2n | „Laufwerk liest nur jede zweite Spur" |
+| zweiseitig | einseitig | (`side0Only`) | Kopf 1 existiert nicht | „Nur Seite 0 verwendbar" |
+
+Beide Achsen sind unabhängig und treten auch gemeinsam auf.  Die Zuordnung geschieht
+**einmal beim Mount** aus der Mediengeometrie; ausgerechnet wird sie an **einer**
+Stelle, `FloppyDriveV2::mediumCylinder()`, durch die jeder Spurzugriff läuft
+(`track`, `mutableTrack`, `markTrackDirty`, `writeTrackAt` — letzteres bekommt vom
+Vollspur-FORMAT ebenfalls eine *Kopfposition*).
+
+Vier Festlegungen, die dabei tragen:
+
+* **Die Spurzahl entscheidet, nicht das Katalogformat.** 48 tpi heißt 35–45 Zylinder
+  (die Toleranz nach oben fängt die leeren Gap-Spuren vieler HFE-Abbilder ab, die
+  Untergrenze verhindert, dass ein Bruchstück-Abbild zur 48-tpi-Diskette erklärt wird);
+  96 tpi heißt ab 70.  8″ hat nur eine Dichte und bleibt unberührt.
+* **Dass nur die äußere Hälfte einer Diskette beschrieben ist, gibt es nicht** — so
+  beschreibt kein Laufwerk eine Diskette.  Ein 40-Zylinder-Abbild ist deshalb immer
+  eine 48-tpi-Diskette.  Wer die (durch eine Fehlkonfiguration im Gast durchaus
+  erzeugbare) halb beschriebene 96-tpi-Diskette abbilden will, braucht ein
+  **80-Zylinder**-Abbild mit unformatierter Innenhälfte — `.hfe`/`.dmk` können das,
+  `.img` nicht.
+* **Schreibzugriffe ohne Ziel werden verworfen** (mit Warnung im Log), nicht auf die
+  Nachbarspur umgeleitet: unter einer ungeraden Kopfposition liegt bei `DoubleStep`
+  keine Spur, und Seite 1 hat in einem einseitigen Laufwerk keinen Kopf.  Ein richtig
+  eingestellter Gast schreibt nie dorthin; ein falsch eingestellter scheitert an
+  seinem eigenen Vergleichs-Lesen — wie am echten Laufwerk, aber ohne die Diskette
+  zu beschädigen.
+* **Abgewiesen wird weiterhin**, was das Laufwerk wirklich nicht kann: ein Verfahren
+  außerhalb seines Könnens und Spuren mit Daten jenseits seiner Reichweite (die sich
+  mit der Übersetzung mitbewegt — schrittverdoppelt sind es 40 Diskettenspuren, halb
+  geschrittet 80).
+
+Der entscheidende Wächter ist
+`FloppyDriveV2.Doppelschritt_IstDieselbeDisketteWieEinDoppelschrittAbbild`: dieselbe
+physische Diskette einmal als 80-Zylinder-Abbild mit formatierten geraden Zylindern
+(`step: 2` im Katalog) und einmal als 40-Zylinder-Abbild muss unter dem Lesekopf Byte
+für Byte dasselbe liefern — der Gast darf die beiden Darstellungen nicht unterscheiden
+können.  Am laufenden CP/A nachgeprüft: mit Geometrie U (40 Spuren Doppelschritt)
+formatiert FORMAT.COM ein 40-Zylinder-Abbild im K5601 vollständig und liest es
+fehlerfrei zurück.
+
 ---
 
 ## 8. Bedienschnittstelle
@@ -403,6 +456,9 @@ bool createDisk(int drive, const std::string& path,
 bool saveDiskAs(int drive, const std::string& path, const std::string& format_name);
 bool isDiskRawCompatible(int drive) const;   ///< darf als .img gespeichert werden
 std::string diskPath(int drive) const;       ///< aktuell gebundene Datei ("" = nur im Speicher)
+/// Wie die Diskette ans Laufwerk angepasst werden musste (§7.2); je Einschränkung
+/// eine Zeile, "" = sie passt.  KEIN Fehler — sie ist gemountet und lesbar.
+std::string diskNotice(int drive) const;
 ```
 
 ### 8.2 C-API
@@ -411,6 +467,7 @@ std::string diskPath(int drive) const;       ///< aktuell gebundene Datei ("" = 
 bool  k1520_save_disk_as     (K1520Handle, int drive, const char* path, const char* format_name);
 bool  k1520_disk_raw_compatible(K1520Handle, int drive);
 int   k1520_disk_path        (K1520Handle, int drive, char* buf, int buf_len);
+const char* k1520_disk_notice(K1520Handle, int drive);   /* Anpassungs-Hinweise, §7.2 */
 ```
 
 `k1520_create_disk(h, drive, path, format_name, wp)` behält seine Signatur; der
@@ -424,6 +481,9 @@ Laufwerks“.
   Format-Auswahlfeld ist dabei **deaktiviert**.
 * **Speichern unter…** blendet `.img` aus, solange `k1520_disk_raw_compatible()`
   falsch ist, und verlangt nur bei `.img` einen Formatnamen.
+* Die **Anpassungs-Hinweise** aus §7.2 stehen im Laufwerkskasten unter dem Dateinamen
+  (je Einschränkung eine Zeile, Erläuterung als Tooltip) — kein Meldungsfenster, denn
+  die Diskette ist gemountet und benutzbar.
 
 ---
 

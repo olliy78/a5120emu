@@ -161,6 +161,10 @@ _lib.k1520_disk_path.restype = ctypes.c_char_p
 _lib.k1520_disk_container.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_disk_container.restype = ctypes.c_char_p
 
+# k1520_disk_notice(K1520Handle, drive: int) -> const char*
+_lib.k1520_disk_notice.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_disk_notice.restype = ctypes.c_char_p
+
 # k1520_flush_disks(K1520Handle) -> bool
 _lib.k1520_flush_disks.argtypes = [K1520Handle]
 _lib.k1520_flush_disks.restype = ctypes.c_bool
@@ -512,6 +516,17 @@ class K1520Emulator:
         """Container of the bound file ("img" | "hfe" | "dmk"; "" = none)."""
         c = _lib.k1520_disk_container(self._handle, ctypes.c_int(drive))
         return c.decode('utf-8', 'replace') if c else ""
+
+    def disk_notice(self, drive: int) -> str:
+        """Wie die eingelegte Diskette ans Laufwerk angepasst wurde ("" = passt).
+
+        Je Einschränkung eine Zeile: "Double Step aktiviert" (40-Spur-Diskette im
+        80-Spur-Laufwerk), "Laufwerk liest nur jede zweite Spur" (umgekehrt),
+        "Nur Seite 0 verwendbar" (zweiseitige Diskette, einseitiges Laufwerk).
+        Kein Fehler — die Diskette ist gemountet und lesbar.
+        """
+        n = _lib.k1520_disk_notice(self._handle, ctypes.c_int(drive))
+        return n.decode('utf-8', 'replace') if n else ""
 
     def flush_disks(self) -> bool:
         """Write pending changes of all drives to their files immediately."""

@@ -361,3 +361,758 @@ def test_archive_converts_an_img_source_to_hfe(window, fixture_disks, tmp_path):
         namen = z.namelist()
     assert "cpa_cpa780_k5601_clock.hfe" in namen
     assert not any(n.endswith(".img") for n in namen)
+
+
+# ─── Bootdiskette ────────────────────────────────────────────────────────────
+
+def test_boot_image_button_follows_the_disk(window, fixture_disks, tmp_path):
+    """„Bootabbild sichern" gibt es nur, wo es Systemspuren gibt."""
+    assert not window.btn_bootabbild.isEnabled(), "ohne Diskette gesperrt"
+
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert window.btn_bootabbild.isEnabled()
+
+    # Eine Datendiskette (Dateisystem ab Zylinder 0) hat nichts zu sichern.
+    leer = tmp_path / "daten.hfe"
+    assert window.create_disk(leer, "cpa800")
+    assert not window.btn_bootabbild.isEnabled()
+
+
+def test_saved_boot_image_makes_a_new_disk_bootable(window, fixture_disks, tmp_path):
+    """Der ganze Weg durch das Fenster: sichern → neue Diskette damit anlegen."""
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    boot = tmp_path / "cpa780_boot.bin"
+    assert window.save_boot_image(boot)
+    assert boot.stat().st_size == 15104
+    assert window.tool.read_only, "Sichern ist eine reine Leseoperation"
+
+    ziel = tmp_path / "bootfaehig.hfe"
+    assert window.create_disk(ziel, "cpa780", "", boot)
+    kontrolle = tmp_path / "kontrolle.bin"
+    window.tool.read_boot_image(kontrolle)
+    assert kontrolle.read_bytes() == boot.read_bytes()
+
+
+def test_boot_image_that_does_not_fit_is_reported(window, tmp_path, monkeypatch):
+    """Passt das Abbild nicht, wird nichts angelegt — und das Fenster sagt warum."""
+    from PySide6.QtWidgets import QMessageBox
+    gemeldet = []
+    monkeypatch.setattr(QMessageBox, "critical",
+                        lambda *a, **k: gemeldet.append(a[2]))
+
+    zu_gross = tmp_path / "zu_gross.bin"
+    zu_gross.write_bytes(b"\x5A" * 15105)
+    ziel = tmp_path / "nicht_angelegt.hfe"
+
+    assert not window.create_disk(ziel, "cpa780", "", zu_gross)
+    assert not ziel.exists()
+    assert gemeldet and "15104" in gemeldet[0], gemeldet
+
+
+# ─── Eigenschaften einer Datei ───────────────────────────────────────────────
+#
+# Der Dialog ist die einzige Stelle, an der ein Anwender die Angaben zu sehen
+# bekommt, die weder in den Bytes der Datei noch in einem Linux-Dateisystem
+# stehen: bei UDOS der Kopfsektor, bei CP/M Nutzerbereich und Attributbits.
+
+def _dialog(window, name):
+    """Eigenschaften-Dialog zu einer Datei — ohne ihn anzuzeigen."""
+    from app.disktool.ui.properties_dialog import PropertiesDialog
+    eintrag = next(e for e in window.tool.list() if e.name == name)
+    return PropertiesDialog(window.tool, eintrag, window)
+
+
+def test_properties_dialog_shows_the_whole_udos_header(window, fixture_disks):
+    assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
+    d = _dialog(window, "OS")
+
+    assert d.udos
+    assert d.f_typ.currentData() == "P"
+    assert d.f_eig["W"].isChecked() and d.f_eig["S"].isChecked()
+    assert d.f_low.text() == "1000" and d.f_stack.text() == "0080"
+    # Ohne Zutun darf nichts geschrieben werden.
+    assert d.aenderungen() == {}
+
+
+def test_properties_dialog_writes_only_what_changed(window, fixture_disks, tmp_path):
+    abbild = tmp_path / "udos.hfe"
+    shutil.copy(fixture_disks / "udos_boot_scp.hfe", abbild)
+    assert window.open_image(abbild)
+    window.set_read_only(False)
+
+    d = _dialog(window, "ACTIVATE")
+    d.f_entry.setText("1234")
+    assert d.aenderungen() == {"entry": 0x1234}
+    assert d.uebernehmen()
+
+    eintrag = next(e for e in window.tool.list() if e.name == "ACTIVATE")
+    assert eintrag.entry == 0x1234
+    assert eintrag.type == "P", "der Rest des Kopfsektors bleibt stehen"
+    assert eintrag.record_len == 1024
+
+
+def test_properties_dialog_reports_a_bad_number(window, fixture_disks, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    gemeldet = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: gemeldet.append(a[2]))
+
+    assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
+    d = _dialog(window, "OS")
+    d.f_low.setText("XYZ")
+    assert not d.uebernehmen()
+    assert gemeldet and "LOW" in gemeldet[0], gemeldet
+
+
+def test_properties_dialog_edits_cpm_user_area_and_attributes(window, fixture_disks,
+                                                              tmp_path):
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    assert window.open_image(abbild)
+    window.set_read_only(False)
+
+    d = _dialog(window, "PIP.COM")
+    assert not d.udos
+    assert d.f_user.value() == 0 and not d.f_sys.isChecked()
+
+    d.f_sys.setChecked(True)
+    d.f_user.setValue(4)
+    assert d.aenderungen() == {"user": 4, "system": True}
+    assert d.uebernehmen()
+
+    # Der Nutzerbereich gehört zur Identität: die Datei heißt jetzt anders.
+    namen = {e.name: e for e in window.tool.list()}
+    assert "PIP.COM" not in namen
+    assert namen["4:PIP.COM"].attrs == "SYS"
+
+
+def test_properties_dialog_is_read_only_on_a_protected_disk(window, fixture_disks):
+    from PySide6.QtWidgets import QDialogButtonBox
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert window.tool.read_only
+
+    d = _dialog(window, "PIP.COM")
+    assert not d.knoepfe.button(QDialogButtonBox.Save).isEnabled()
+    assert "schreibgeschützt" in d.hinweis.text()
+
+
+def test_context_menu_signal_opens_the_properties_dialog(window, fixture_disks,
+                                                         monkeypatch):
+    """Rechtsklick → „Eigenschaften…" landet beim Fenster (die Verdrahtung)."""
+    from app.disktool.ui import main_window as mw
+    gesehen = []
+
+    class Attrappe:
+        def __init__(self, tool, entry, parent=None):
+            gesehen.append(entry.name)
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(mw, "PropertiesDialog", Attrappe)
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    window.disk_view.properties_requested.emit("PIP.COM")
+    assert gesehen == ["PIP.COM"]
+
+
+def test_properties_for_an_unknown_file_is_reported(window, fixture_disks, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: None)
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert not window.show_properties("GIBTSNI.CHT")
+
+
+# ─── Archiv: alle ermittelbaren Angaben im Inhaltsverzeichnis ────────────────
+
+def test_archive_catalogue_lists_every_udos_header_field(window, fixture_disks,
+                                                         tmp_path):
+    """Aus dem Textprotokoll allein muss sich eine Datei wiederherstellen lassen."""
+    import zipfile
+
+    assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
+    ziel = tmp_path / "archiv.zip"
+    assert window.archive(ziel)
+    with zipfile.ZipFile(ziel) as z:
+        text = z.read("udos_boot_scp.txt").decode("utf-8")
+        # Das maschinenlesbare Gegenstück liegt daneben.
+        assert "dateien/udos-dateiangaben.txt" in z.namelist()
+
+    assert "DATEIANGABEN IM EINZELNEN" in text
+    angaben = text.split("DATEIANGABEN IM EINZELNEN", 1)[1]
+    for spalte in ("Satz", "Rest", "ENTRY", "Segment", "LOW", "HIGH", "STACK",
+                   "Block", "Zusatz"):
+        assert spalte in angaben, spalte
+
+    # Die Zeile zu `OS` trägt genau das, was EXTRACT im laufenden System meldet.
+    zeile = next(z for z in angaben.split("\n") if z.split()[1:2] == ["OS"])
+    assert "1000+5632" in zeile, zeile      # Segment: Anfang + Abbildlänge
+    assert "25FF" in zeile, zeile           # HIGH ADDRESS
+    assert "0080" in zeile, zeile           # STACK SIZE
+    assert " 512 " in zeile or "512" in zeile
+
+
+def test_archive_catalogue_lists_cpm_user_area_and_flags(window, fixture_disks,
+                                                         tmp_path):
+    import zipfile
+
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    assert window.open_image(abbild)
+    window.set_read_only(False)
+    window.tool.set_cpm_attrs("PIP.COM", system=True, user=3)
+
+    ziel = tmp_path / "archiv.zip"
+    assert window.archive(ziel)
+    with zipfile.ZipFile(ziel) as z:
+        text = z.read("cpa.txt").decode("utf-8")
+        # Ohne dieses Beiblatt ginge der Nutzerbereich beim Zurückschreiben verloren.
+        assert "dateien/cpm-dateiangaben.txt" in z.namelist()
+
+    assert "DATEIANGABEN IM EINZELNEN" in text
+    angaben = text.split("DATEIANGABEN IM EINZELNEN", 1)[1]
+    zeile = next(z for z in angaben.split("\n") if z.startswith("3:PIP.COM"))
+    assert zeile.split() == ["3:PIP.COM", "3", "7424", "-", "ja", "-"], zeile
+
+
+# ─── Diskeditor: die Diskette als Scheibe ────────────────────────────────────
+#
+# Eine Ebene unter dem Dateisystem. Geprüft wird die Verdrahtung und das, was ein
+# Bildvergleich nicht kann: dass der Treffertest wirklich den Sektor findet, der
+# an dieser Stelle gezeichnet wurde, und dass der Schreibweg tut, was er sagt.
+
+import math
+
+
+def _editor(window, abbild):
+    assert window.open_image(abbild)
+    return window.open_disk_editor()
+
+
+def test_disk_editor_shows_both_sides_of_the_medium(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert ed.surface.cylinders == window.tool.medium_cylinders
+    assert ed.surface.heads == window.tool.medium_heads
+    spur = ed.surface.tracks[0][0]
+    assert spur.formatted and spur.sectors > 0
+    # Die Abschnitte decken die Umdrehung lückenlos ab — sonst bliebe Fläche leer.
+    assert spur.spans[0].start == 0.0
+    for a, b in zip(spur.spans, spur.spans[1:]):
+        assert a.end == b.start
+    assert abs(spur.spans[-1].end - 1.0) < 1e-9
+
+
+def test_disk_editor_hit_test_finds_the_drawn_sector(window, fixture_disks):
+    """Für jeden Sektor den gezeichneten Mittelpunkt zurückrechnen und treffen.
+
+    Das ist die einzige Prüfung, die die Grafik wirklich absichert: Winkelrichtung
+    (Seite 1 ist gespiegelt), Ringlage (Spur 0 außen) und Nullpunkt (12 Uhr)
+    müssen zwischen Zeichnen und Treffertest übereinstimmen.
+    """
+    from PySide6.QtCore import QPointF
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    ed.resize(1000, 800)
+    s = ed.surface
+
+    geprueft = 0
+    for kopf in (0, 1):
+        for spur in (0, 3):
+            cx, cy, r_aussen, r_nabe = s._mitte(kopf)
+            hoehe = s._ringhoehe(r_aussen, r_nabe)
+            r = r_aussen - (spur + 0.5) * hoehe
+            for span in s.tracks[kopf][spur].spans:
+                if not span.is_sector:
+                    continue
+                anteil = (span.start + span.end) / 2
+                grad = (90 - anteil * 360) if kopf == 0 else (90 + anteil * 360)
+                p = QPointF(cx + math.cos(math.radians(grad)) * r,
+                            cy - math.sin(math.radians(grad)) * r)
+                treffer = s.treffer(p)
+                assert treffer is not None, (kopf, spur, span.id)
+                assert (treffer[0], treffer[1], treffer[2].index) \
+                    == (kopf, spur, span.index)
+                geprueft += 1
+    assert geprueft > 50, "zu wenige Sektoren geprüft"
+
+
+def test_disk_editor_tooltip_names_track_and_sector(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    s = ed.surface
+    span = next(x for x in s.tracks[0][2].spans if x.is_sector)
+    text = s.beschreibung((0, 2, span))
+    assert "Seite 0" in text and "Spur 2" in text and f"Sektor {span.id}" in text
+
+
+def test_disk_editor_shows_the_sector_content(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    span = next(x for x in ed.surface.tracks[0][0].spans if x.is_sector)
+    assert ed.select_sector(0, 0, span.index)
+
+    # Seite/Spur/Sektor stehen in den Eingabefeldern, nicht als Fliesstext.
+    assert (ed.w_seite.value(), ed.w_spur.value()) == (0, 0)
+    assert ed.w_sektor.value() == span.id
+    assert "IBM-MFM" in ed.info.text() and "128 Byte" in ed.info.text()
+    assert ed.crc_urteil.text() == "gültig"
+    zeilen = ed.hex.toPlainText().split("\n")
+    assert len(zeilen) == 4, "128 Byte = 4 Zeilen à 32 Byte"
+    assert zeilen[0].startswith("0000  ")
+    assert zeilen[1].startswith("0020  ")
+
+
+def test_disk_editor_hexdump_round_trips(window):
+    from app.disktool.ui.disk_editor import hexdump, parse_hexdump
+    daten = bytes(range(256)) * 4
+    assert parse_hexdump(hexdump(daten)) == daten
+    # Der Offset ist Anzeige: ihn zu verbiegen ändert die Nutzdaten NICHT.
+    verbogen = hexdump(daten).replace("0000  ", "AFFE  ", 1)
+    assert parse_hexdump(verbogen) == daten
+    with pytest.raises(ValueError):
+        parse_hexdump("0000  ZZ 01 02")
+
+
+def test_disk_editor_writes_a_sector_straight_into_the_file(window, fixture_disks,
+                                                            tmp_path):
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+
+    span = next(x for x in ed.surface.tracks[0][5].spans if x.is_sector)
+    assert ed.select_sector(0, 5, span.index)
+    zeilen = ed.hex.toPlainText().split("\n")
+    zeilen[0] = zeilen[0][:6] + "DE AD BE EF" + zeilen[0][17:]
+    ed.hex.setPlainText("\n".join(zeilen))
+
+    # Die Daten stimmen jetzt nicht mehr zur CRC — und das steht auch da.
+    assert "ungültig" in ed.crc_urteil.text()
+    assert ed.fix_crc()
+    assert ed.crc_urteil.text() == "gültig"
+    assert ed.save_sector()
+
+    # „Save Sektor" speichert wirklich — sonst waere der Knopf eine Falle.
+    assert not window.tool.dirty, "der Sektor steht in der Datei, nicht nur im Speicher"
+    assert (abbild.parent / (abbild.name + "~")).exists(), "Sicherungskopie"
+    assert window.tool.sector_data(5, 0, span.index)[:4] == b"\xDE\xAD\xBE\xEF"
+    assert ed.reload_sector()
+    assert ed.hex.toPlainText().startswith("0000  DE AD BE EF")
+
+    # Gegenprobe an der Datei selbst: neu oeffnen, ohne den alten Griff.
+    from app.core_binding.k1520disk import DiskTool
+    with DiskTool.open(abbild) as frisch:
+        assert frisch.sector_data(5, 0, span.index)[:4] == b"\xDE\xAD\xBE\xEF"
+
+
+def test_disk_editor_can_leave_a_sector_deliberately_broken(window, fixture_disks,
+                                                            tmp_path):
+    """Der Sinn der mitschreibbaren CRC: eine schadhafte Diskette nachbilden.
+
+    Das geht nur in einem Container, der eine CRC überhaupt führt — deshalb `.hfe`
+    (ein `.img` ist ein reines Sektorabbild, s. u.).
+    """
+    abbild = tmp_path / "cpa.hfe"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.hfe", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+
+    span = next(x for x in ed.surface.tracks[0][5].spans if x.is_sector)
+    assert ed.select_sector(0, 5, span.index)
+    ed.crc_feld.setText("BEEF")
+    assert ed.save_sector()
+
+    kaputt = next(x for x in ed.surface.tracks[0][5].spans
+                  if x.is_sector and x.index == span.index)
+    assert not kaputt.ok, "der Sektor muss danach als defekt gelten (rot)"
+    assert window.tool.sector_crc(5, 0, span.index) == 0xBEEF
+
+    # … und wieder heilbar.
+    assert ed.fix_crc() and ed.save_sector()
+    geheilt = next(x for x in ed.surface.tracks[0][5].spans
+                   if x.is_sector and x.index == span.index)
+    assert geheilt.ok
+
+
+def test_disk_editor_is_read_only_on_a_protected_disk(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    span = next(x for x in ed.surface.tracks[0][0].spans if x.is_sector)
+    assert ed.select_sector(0, 0, span.index)
+
+    assert window.tool.read_only
+    assert ed.hex.isReadOnly()
+    assert not ed.btn_save.isEnabled()
+    assert not ed.btn_fixcrc.isEnabled()
+    assert ed.btn_reload.isEnabled(), "Ansehen bleibt erlaubt"
+
+
+def test_disk_editor_opens_once_per_window(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert window.open_disk_editor() is ed, "kein zweites Fenster auf dieselbe Diskette"
+    window._close_tool()
+    assert window._diskeditor is None, "der Editor darf keinen toten Griff behalten"
+
+
+def test_disk_editor_jumps_to_a_typed_track_and_sector(window, fixture_disks):
+    """Wer weiß, dass er Spur 25 will, tippt sie — statt auf der Grafik zu suchen."""
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+
+    ed.w_spur.feld.setText("25")
+    ed.w_spur._eingegeben()
+    assert ed.w_spur.value() == 25
+    assert ed.aktuell[1] == 25
+
+    ziel = ed._sektoren(0, 25)[2].id
+    ed.w_sektor.feld.setText(str(ziel))
+    ed.w_sektor._eingegeben()
+    assert ed.w_sektor.value() == ziel
+    assert ed.aktuell[:2] == (0, 25)
+
+    ed.w_seite.feld.setText("1")
+    ed.w_seite._eingegeben()
+    assert ed.aktuell[0] == 1
+
+
+def test_disk_editor_steps_through_sectors_and_tracks(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    ed._springe(seite=0, spur=10)
+
+    sektoren = ed._sektoren(0, 10)
+    ed.select_sector(0, 10, sektoren[0].index)
+    ed._schritt_sektor(+1)
+    assert ed.aktuell[2] == sektoren[1].index, "weiter IN SPURREIHENFOLGE, nicht nach ID"
+    ed._schritt_sektor(-1)
+    assert ed.aktuell[2] == sektoren[0].index
+    ed._schritt_sektor(-1)
+    assert ed.aktuell[2] == sektoren[0].index, "am Spuranfang wird nicht umgebrochen"
+
+    ed._schritt_spur(+1)
+    assert ed.w_spur.value() == 11 and ed.aktuell[1] == 11
+    ed._schritt_seite(+1)
+    assert ed.w_seite.value() == 1 and ed.aktuell[0] == 1
+
+
+def test_disk_editor_refuses_an_impossible_sector_and_says_so(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    ed._springe(seite=0, spur=5)
+    vorher = ed.aktuell
+
+    ed.w_sektor.feld.setText("99")
+    ed.w_sektor._eingegeben()
+    assert ed.aktuell == vorher, "die Anzeige darf nicht wegspringen"
+    assert "99" in ed.hinweis.text() and "vorhanden" in ed.hinweis.text()
+    # Das Feld wird auf den WIRKLICH gezeigten Sektor zurückgesetzt.
+    assert ed.w_sektor.value() != 99
+
+
+def test_disk_editor_ascii_column_follows_the_hex_column(window, fixture_disks,
+                                                         tmp_path):
+    """Ein geänderter Bytewert muss sofort auch rechts lesbar werden."""
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+    ed._springe(seite=0, spur=10)
+
+    zeilen = ed.hex.toPlainText().split("\n")
+    zeilen[0] = zeilen[0][:6] + "41 42 43 44" + zeilen[0][17:]
+    ed.hex.setPlainText("\n".join(zeilen))
+
+    erste = ed.hex.toPlainText().split("\n")[0]
+    ascii_spalte = erste[6 + 32 * 3 - 1 + 2:]
+    assert ascii_spalte.startswith("ABCD"), ascii_spalte
+    # Und die Nutzdaten selbst stimmen weiterhin mit der Hexspalte überein.
+    from app.disktool.ui.disk_editor import parse_hexdump
+    assert parse_hexdump(ed.hex.toPlainText())[:4] == b"ABCD"
+
+
+def test_disk_editor_window_can_be_maximised(window, fixture_disks):
+    from PySide6.QtCore import Qt
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert ed.windowFlags() & Qt.WindowMaximizeButtonHint
+
+
+def test_disk_editor_says_when_img_cannot_hold_a_broken_crc(window, fixture_disks,
+                                                            tmp_path, monkeypatch):
+    """Ein `.img` hat kein CRC-Feld — dann muss der Editor das SAGEN, nicht schlucken."""
+    from PySide6.QtWidgets import QMessageBox
+    gemeldet = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: gemeldet.append(a[2]))
+
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+
+    span = next(x for x in ed.surface.tracks[0][5].spans if x.is_sector)
+    assert ed.select_sector(0, 5, span.index)
+    ed.crc_feld.setText("BEEF")
+    assert not ed.save_sector(), "nicht gespeichert — und das ist die Wahrheit"
+
+    assert gemeldet and ".hfe" in gemeldet[0], gemeldet
+    assert "NICHT in die Datei" in ed.hinweis.text()
+    # Im Speicher steht die Änderung trotzdem — sie ist über „Speichern unter…" zu retten.
+    assert window.tool.sector_crc(5, 0, span.index) == 0xBEEF
+
+
+# ─── UDOS-Anhang und Sektoren anlegen/löschen ────────────────────────────────
+
+def test_disk_editor_names_the_udos_extension(window, fixture_disks):
+    """Bei UDOS hängt hinter der Daten-CRC ein 4-Byte-Kontrollblock — das muss
+    an Format, Größe UND als entschlüsselte Verkettung sichtbar sein."""
+    ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
+    ed._springe(seite=0, spur=22)
+
+    text = ed.info.text()
+    assert "IBM-MFM + UDOS-Erweiterung" in text, text
+    # Nutzdaten + Kontrollblock; die Daten-CRC zaehlt hier so wenig mit wie bei
+    # CP/M — sie hat ihr eigenes Feld.
+    assert "128+4 Byte" in text, text
+    # Die Verkettung selbst steht im eigenen, ÄNDERBAREN Feld darunter.
+    assert ed.tail_feld.text() == "05 16 05 16"
+    assert "zurück" in ed.tail_deutung.text() and "vor" in ed.tail_deutung.text()
+    assert "Spur 22/Sektor" in ed.tail_deutung.text()
+
+
+def test_disk_editor_hides_the_extension_on_cpm(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    span = next(x for x in ed.surface.tracks[0][0].spans if x.is_sector)
+    ed.select_sector(0, 0, span.index)
+
+    text = ed.info.text()
+    assert text.startswith("Format: IBM-MFM,")
+    assert "UDOS" not in text and "Kette" not in text and "Kontrollblock" not in text
+
+
+def test_udos_pointer_is_decoded(window):
+    from app.disktool.ui.disk_editor import udos_zeiger
+    # Byte 0 = Sektorindex 0-basiert, Byte 1 = Spur (doc/udos_diskettenformat.md §1.2)
+    assert udos_zeiger(b"\x05\x16") == "Spur 22/Sektor 6"
+    assert udos_zeiger(b"\xFF\xFF") == "Ende"
+
+
+def test_disk_editor_deletes_and_recreates_a_sector(window, fixture_disks, tmp_path,
+                                                    monkeypatch):
+    from PySide6.QtWidgets import QDialog, QMessageBox
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+
+    abbild = tmp_path / "cpa.hfe"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.hfe", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+
+    ed._springe(seite=0, spur=0)
+    vorher = ed._sektoren(0, 0)
+    ziel = next(s for s in vorher if s.id == 13)
+    lage = round(ziel.start * ed.tool.track(0, 0).bytes)
+
+    ed.select_sector(0, 0, ziel.index)
+    assert ed.delete_sector()
+    assert len(ed._sektoren(0, 0)) == len(vorher) - 1
+    assert not any(s.id == 13 for s in ed._sektoren(0, 0))
+
+    # … und wieder anlegen: der Dialog schlägt den auf dieser Spur üblichen Gap vor,
+    # der Sektor landet wieder an derselben Stelle.
+    from app.disktool.ui.disk_editor import NewSectorDialog
+    monkeypatch.setattr(NewSectorDialog, "exec", lambda self: QDialog.Accepted)
+    monkeypatch.setattr(NewSectorDialog, "__init__", _dialog_mit(id=13, size=128))
+    assert ed.new_sector()
+
+    neu = next(s for s in ed._sektoren(0, 0) if s.id == 13)
+    assert neu.ok, "ein neu angelegter Sektor ist sofort gültig"
+    assert round(neu.start * ed.tool.track(0, 0).bytes) == lage
+
+
+def _dialog_mit(**werte):
+    """Hilfskonstruktor: Dialog wie gewohnt aufbauen, dann Felder setzen."""
+    from app.disktool.ui.disk_editor import NewSectorDialog
+    urspruenglich = NewSectorDialog.__init__
+
+    def init(self, tool, cyl, head, spur, udos, parent=None):
+        urspruenglich(self, tool, cyl, head, spur, udos, parent)
+        if "id" in werte:
+            self.f_id.setValue(werte["id"])
+        if "size" in werte:
+            self.f_size.setCurrentIndex([128, 256, 512, 1024].index(werte["size"]))
+        if "gap" in werte:
+            self.f_gap.setValue(werte["gap"])
+    return init
+
+
+def test_new_sector_dialog_warns_before_overwriting(window, fixture_disks, tmp_path):
+    """Ihr Modell erlaubt das Überschreiben — unbeabsichtigt darf es nicht sein."""
+    from app.disktool.ui.disk_editor import NewSectorDialog
+
+    abbild = tmp_path / "cpa.hfe"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.hfe", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+
+    spur = ed.tool.track(0, 0)
+    dlg = NewSectorDialog(ed.tool, 0, 0, spur, False, ed)
+    dlg.f_id.setValue(2)          # Sektor 2 gibt es schon → landet auf ihm
+    dlg.f_gap.setValue(0)
+    von, laenge, getroffen = dlg.betroffen()
+    assert getroffen, "der Plan muss die betroffenen Sektoren nennen"
+    assert "Überschreibt Sektor" in dlg.vorschau.text()
+
+
+def test_new_sector_dialog_refuses_what_does_not_fit(window, fixture_disks):
+    from PySide6.QtWidgets import QDialogButtonBox
+    from app.disktool.ui.disk_editor import NewSectorDialog
+
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    spur = ed.tool.track(0, 0)
+    dlg = NewSectorDialog(ed.tool, 0, 0, spur, False, ed)
+    dlg.f_id.setValue(255)                 # hinter den letzten Sektor
+    dlg.f_gap.setValue(4000)               # weit hinter das Spurende
+    assert "passt nicht" in dlg.vorschau.text()
+    assert not dlg.knoepfe.button(QDialogButtonBox.Ok).isEnabled()
+
+
+def test_new_sector_dialog_locks_the_encoding_on_a_formatted_track(window,
+                                                                   fixture_disks):
+    """FM und MFM lassen sich in EINER Spur nicht mischen."""
+    from app.disktool.ui.disk_editor import NewSectorDialog
+
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    spur = ed.tool.track(0, 0)
+    dlg = NewSectorDialog(ed.tool, 0, 0, spur, False, ed)
+    assert not dlg.f_mfm.isEnabled()
+    assert dlg.f_mfm.currentData() is True
+
+
+def test_new_sector_dialog_defaults_the_gap_from_the_track(window, fixture_disks):
+    from app.disktool.ui.disk_editor import NewSectorDialog
+
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    spur = ed.tool.track(0, 0)
+    dlg = NewSectorDialog(ed.tool, 0, 0, spur, False, ed)
+    # Der Vorschlag ist ein Abstand, der auf DIESER Spur wirklich vorkommt.
+    laengen = {round((s.end - s.start) * spur.bytes)
+               for s in spur.spans if s.kind == 1}
+    assert dlg.f_gap.value() in laengen
+
+
+# ─── UDOS-Anhang bearbeiten ──────────────────────────────────────────────────
+
+def test_udos_tail_is_an_editable_field_with_decimal_reading(window, fixture_disks):
+    """Die vier Rohbytes zum Ändern, daneben was sie bedeuten — Spur/Sektor dezimal."""
+    ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
+    ed._springe(seite=0, spur=22)
+
+    assert ed.tail_feld.text() == "05 16 05 16"
+    assert ed.tail_bytes() == b"\x05\x16\x05\x16"
+    assert ed.tail_deutung.text() == \
+        "zurück: Spur 22/Sektor 6    vor: Spur 22/Sektor 6"
+
+    # Beim Tippen läuft die Deutung mit.
+    ed.tail_feld.setText("07 15 FF FF")
+    assert ed.tail_deutung.text() == "zurück: Spur 21/Sektor 8    vor: Ende"
+
+    # Unvollständige Eingabe wird benannt, nicht geraten.
+    ed.tail_feld.setText("07 15")
+    assert ed.tail_bytes() is None
+    assert "erwartet" in ed.tail_deutung.text()
+
+
+def test_udos_tail_row_is_absent_on_cpm(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert not ed.udos
+    # Bei CP/M gibt es keinen Nachspann — Feld und Deutung bleiben ganz weg.
+    assert ed.tail_feld.isHidden() and ed.tail_deutung.isHidden()
+
+
+def test_udos_tail_is_saved_without_touching_data_or_crc(window, fixture_disks,
+                                                         tmp_path):
+    """Die Verkettung zu ändern ist etwas anderes, als die Nutzdaten zu ändern."""
+    abbild = tmp_path / "udos.hfe"
+    shutil.copy(fixture_disks / "udos_boot_scp.hfe", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+    ed._springe(seite=0, spur=22)
+    head, cyl, index = ed.aktuell
+    daten = window.tool.sector_data(cyl, head, index)
+
+    # Sektor absichtlich defekt lassen …
+    ed.crc_feld.setText("BEEF")
+    assert ed.save_sector()
+    # … und danach NUR die Verkettung ändern.
+    ed.tail_feld.setText("07 15 FF FF")
+    assert ed.save_sector()
+
+    assert window.tool.sector_tail(cyl, head, index)[:4] == b"\x07\x15\xFF\xFF"
+    assert window.tool.sector_data(cyl, head, index) == daten
+    assert window.tool.sector_crc(cyl, head, index) == 0xBEEF, \
+        "eine absichtlich falsche CRC darf dabei nicht geheilt werden"
+
+    assert ed.reload_sector()
+    assert ed.tail_feld.text() == "07 15 FF FF"
+
+
+def test_udos_tail_refuses_an_incomplete_value(window, fixture_disks, tmp_path,
+                                               monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    gemeldet = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: gemeldet.append(a[2]))
+
+    abbild = tmp_path / "udos.hfe"
+    shutil.copy(fixture_disks / "udos_boot_scp.hfe", abbild)
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+    ed._springe(seite=0, spur=22)
+    head, cyl, index = ed.aktuell
+    vorher = window.tool.sector_tail(cyl, head, index)
+
+    ed.tail_feld.setText("07 15 ZZ")
+    assert not ed.save_sector()
+    assert gemeldet and "hexadezimal" in gemeldet[0], gemeldet
+    assert window.tool.sector_tail(cyl, head, index) == vorher, "nichts geschrieben"
+
+
+def test_udos_tail_is_locked_on_a_protected_disk(window, fixture_disks):
+    ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
+    ed._springe(seite=0, spur=22)
+    assert window.tool.read_only
+    assert ed.tail_feld.isReadOnly()
+
+
+# ─── Randfälle der Scheibenansicht ───────────────────────────────────────────
+
+def test_disk_editor_shows_an_empty_track_and_still_offers_a_new_sector(
+        window, tmp_path):
+    """Auf einer Spur ohne Sektoren braucht man den Anlegen-Knopf am dringendsten."""
+    from app.core_binding.k1520disk import DiskTool
+
+    abbild = tmp_path / "leer.hfe"
+    DiskTool.create(abbild, "cpa780").close()
+    ed = _editor(window, abbild)
+    window.set_read_only(False)
+
+    # Eine Spur jenseits des Formats gibt es nicht …
+    ed._springe(seite=0, spur=ed.surface.cylinders - 1)
+    # … eine leergeräumte dagegen schon: alle Sektoren entfernen.
+    ed._springe(seite=0, spur=5)
+    while ed._sektoren(0, 5):
+        window.tool.sector_erase(5, 0, ed._sektoren(0, 5)[0].index)
+        ed.surface.reload_track(window.tool, 5, 0)
+
+    ed._springe(seite=0, spur=5)
+    assert ed.aktuell is None, "es gibt keinen Sektor zu wählen"
+    assert "keine Sektoren" in ed.info.text()
+    assert ed.hex.toPlainText() == ""
+    assert ed.btn_neu.isEnabled(), "gerade hier muss Anlegen gehen"
+    assert not ed.btn_save.isEnabled()
+
+
+def test_disk_editor_leaves_the_back_of_a_single_sided_disk_empty(window, tmp_path):
+    """Einseitige Diskette: die Rückseite bleibt leer — nur die beiden Kreise."""
+    from app.core_binding.k1520disk import DiskTool
+
+    abbild = tmp_path / "einseitig.hfe"
+    DiskTool.create(abbild, "udos_ss40").close()
+    ed = _editor(window, abbild)
+
+    assert ed.surface.heads == 1
+    assert ed.surface.tracks[0], "Seite 0 hat Spuren"
+    assert ed.surface.tracks[1] == [], "Seite 1 gibt es nicht"
+
+    # Ein Klick auf die rechte Hälfte findet nichts — und stürzt nicht ab.
+    from PySide6.QtCore import QPointF
+    ed.resize(1000, 800)
+    cx, cy, r, _ = ed.surface._mitte(1)
+    assert ed.surface.treffer(QPointF(cx, cy - r * 0.5)) is None

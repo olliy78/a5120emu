@@ -20,6 +20,8 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <sstream>
 
 namespace fs = std::filesystem;
 
@@ -176,6 +178,288 @@ std::vector<uint8_t> nachDiskettenText(const std::vector<uint8_t>& in) {
         out.push_back(c);
     }
     return out;
+}
+
+/**
+ * @brief Nachspannbytes je Sektor im Bootabbild — nur UDOS hat welche.
+ *
+ * Bei UDOS steht die Verkettung **hinter** der Daten-CRC (4 Byte Kontrollblock,
+ * `doc/udos_diskettenformat.md` §1.1).  Ein Bootabbild, das nur die Datenfelder
+ * traegt, verliert sie — genau daran scheiterte der erste Versuch: die Diskette
+ * lief bis in den UDOS-Debugger (`BREAK F10E`) statt bis zur Datumsabfrage.  Aus
+ * demselben Grund kann eine UDOS-Diskette kein `.img` sein.
+ */
+uint8_t nachspannBytes(const FsProfile& p) {
+    return p.type == FsType::Udos ? 4 : 0;
+}
+
+/**
+ * @brief Aus welchen Spuren besteht der Systembereich? (siehe disk_volume.h)
+ *
+ *   * **CP/M** — alle Spuren vor dem Beginn des Dateisystems (`data_cyl`/`data_head`).
+ *   * **UDOS** — die Spuren 0–2 (Urlader + Nukleus) **und** die Bootspur 21.  Die
+ *     Bootspur gehoert dazu, weil der Urlader sie beim Start liest: ohne sie kommt
+ *     der Kaltstart bis „ERROR: 45" und nicht weiter.  Sie liegt hinter den
+ *     Dateispuren, ist also kein durchgehendes Band — im Bootabbild folgt sie
+ *     einfach hinten an.
+ *
+ * Die Reihenfolge ist die Reihenfolge im Bootabbild und darf sich nicht aendern —
+ * sonst wird jede vorhandene `.bin` unbrauchbar.
+ */
+std::vector<SectorSpace::TrackRef> systemspuren(const SectorSpace& raum, const FsProfile& p) {
+    std::vector<SectorSpace::TrackRef> out;
+    auto spur = [&](uint8_t cyl) {
+        const uint8_t kopf = raum.headFilter() == SectorSpace::kAllHeads
+                                 ? 0 : raum.headFilter();
+        const int i = raum.trackIndexOf(cyl, kopf);
+        if (i >= 0) out.push_back(raum.trackAt(static_cast<size_t>(i)));
+    };
+
+    if (p.type == FsType::Udos) {
+        for (uint8_t c = 0; c < 3; ++c) spur(c);   // Urlader + Nukleus
+        spur(p.boot_track);                        // Bootabbild
+        return out;
+    }
+
+    // CP/M: alles bis zum Beginn des Dateisystems — das ist immer eine Spurgrenze.
+    const int ende = raum.trackIndexOf(p.data_cyl, p.data_head);
+    for (int i = 0; i < ende; ++i) out.push_back(raum.trackAt(static_cast<size_t>(i)));
+    return out;
+}
+
+/// @brief Fassungsvermoegen der Systemspuren; 0 = es gibt keine.
+uint64_t systemspurBytes(const SectorSpace& raum, const FsProfile& p) {
+    uint64_t n = 0;
+    for (const SectorSpace::TrackRef& t : systemspuren(raum, p))
+        n += static_cast<uint64_t>(t.sectors) * (t.sector_size + nachspannBytes(p));
+    return n;
+}
+
+
+// ─── UDOS-Kopfsektorangaben (Beiblatt zum Ordner) ────────────────────────────
+//
+// Eine Linux-Datei traegt nur Bytes.  Ein UDOS-Kopfsektor traegt darueber hinaus
+// TYP, EIGENSCHAFTEN, STARTADRESSE, SATZLAENGE und — bei Programmen — LADEADRESSE
+// und ABBILDLAENGE.  Ohne sie wird beim Zurueckschreiben aus `ZDOS` (P1, Satzlaenge
+// 1024, laedt 5521 Byte nach 2600H) eine gewoehnliche Binaerdatei mit 128er Saetzen,
+// und die Diskette bootet nicht mehr.  `extractAll` legt deshalb ein Beiblatt an,
+// `insertAll` liest es wieder — beide Richtungen ohne Zutun des Anwenders.
+
+constexpr const char* kUdosBeiblatt = "udos-dateiangaben.txt";
+
+struct UdosAngabe {
+    std::string typ, eigenschaften, erstellt, geaendert;
+    uint16_t    start = 0, satzlaenge = 0, ladeadresse = 0, abbildlaenge = 0;
+    uint16_t    speicher_von = 0, speicher_bis = 0, speicher_kz = 0;
+    uint16_t    blocklaenge = 0, rest = 0;
+    uint32_t    zusatz = 0;
+    bool        blocklaenge_gesetzt = false;
+};
+
+std::string hex16(uint16_t v) {
+    char t[8];
+    std::snprintf(t, sizeof t, "%04X", v);
+    return t;
+}
+
+/// @brief Leerzeichen im Erstellungsvermerk ("V 4.3 ") sind im Beiblatt `_`.
+std::string ohneLeer(std::string t) {
+    for (char& c : t) if (c == ' ') c = '_';
+    return t;
+}
+std::string mitLeer(std::string t) {
+    for (char& c : t) if (c == '_') c = ' ';
+    return t;
+}
+
+/**
+ * @brief Beiblatt schreiben — je Datei eine Zeile aus `schluessel=wert`.
+ *
+ * Schluessel=Wert statt fester Spalten, weil das Feld fuer Feld erweiterbar ist:
+ * ein aelteres Beiblatt bleibt lesbar, ein neueres schadet einem aelteren Werkzeug
+ * nicht.  Adressen hexadezimal, Laengen dezimal.
+ */
+bool schreibeBeiblatt(const fs::path& datei,
+                      const std::vector<std::pair<std::string, UdosAngabe>>& eintraege) {
+    std::ofstream f(datei, std::ios::binary);
+    if (!f) return false;
+    f << "# k1520DiskTool — UDOS-Kopfsektorangaben zu den Dateien in diesem Ordner.\n"
+         "# Sie stehen NICHT in den Dateien selbst; beim Einfuegen (`put <ordner>`)\n"
+         "# werden sie wieder uebernommen.  Ohne sie wird aus einer Systemdatei eine\n"
+         "# gewoehnliche Binaerdatei und die Diskette bootet nicht.\n"
+         "#\n"
+         "#   typ        A | P | P1 | B          eig    Eigenschaften W E L S R F\n"
+         "#   start      Startadresse (hex)      satz   Satzlaenge in Byte\n"
+         "#   block      zweite Laengenangabe    rest   Bytes im letzten Satz\n"
+         "#   segment    ANFANG(hex):LAENGE      mem    LOW:HIGH:STACK (hex, wie EXTRACT)\n"
+         "#   zusatz     Kopfsektor 44-47 (hex)  erst/geaend  Vermerke (`_` = Leerzeichen)\n";
+    for (const auto& [name, a] : eintraege) {
+        f << name
+          << " typ=" << (a.typ.empty() ? "-" : a.typ)
+          << " eig=" << (a.eigenschaften.empty() ? "-" : a.eigenschaften)
+          << " start=" << hex16(a.start)
+          << " satz=" << a.satzlaenge
+          << " block=" << a.blocklaenge
+          << " rest=" << a.rest
+          << " segment=" << hex16(a.ladeadresse) << ':' << a.abbildlaenge
+          << " mem=" << hex16(a.speicher_von) << ':' << hex16(a.speicher_bis)
+          << ':' << hex16(a.speicher_kz)
+          << " zusatz=" << std::hex << std::uppercase << a.zusatz << std::dec << std::nouppercase
+          << " erst=" << (a.erstellt.empty() ? "-" : ohneLeer(a.erstellt))
+          << " geaend=" << (a.geaendert.empty() ? "-" : ohneLeer(a.geaendert))
+          << '\n';
+    }
+    return static_cast<bool>(f);
+}
+
+/// @brief Beiblatt lesen; fehlt es, kommt eine leere Tabelle zurueck (kein Fehler).
+std::map<std::string, UdosAngabe> leseBeiblatt(const fs::path& datei) {
+    std::map<std::string, UdosAngabe> out;
+    std::ifstream f(datei);
+    if (!f) return out;
+    std::string zeile;
+    while (std::getline(f, zeile)) {
+        if (zeile.empty() || zeile[0] == '#') continue;
+        std::istringstream z(zeile);
+        std::string name;
+        if (!(z >> name)) continue;
+        UdosAngabe a;
+        std::string feld;
+        auto zahl = [](const std::string& t, int basis) -> unsigned long {
+            return std::strtoul(t.c_str(), nullptr, basis);
+        };
+        while (z >> feld) {
+            const size_t g = feld.find('=');
+            if (g == std::string::npos) continue;
+            const std::string k = feld.substr(0, g), v = feld.substr(g + 1);
+            if      (k == "typ")    a.typ = (v == "-") ? "" : v;
+            else if (k == "eig")    a.eigenschaften = (v == "-") ? "" : v;
+            else if (k == "start")  a.start = static_cast<uint16_t>(zahl(v, 16));
+            else if (k == "satz")   a.satzlaenge = static_cast<uint16_t>(zahl(v, 10));
+            else if (k == "block") { a.blocklaenge = static_cast<uint16_t>(zahl(v, 10));
+                                     a.blocklaenge_gesetzt = true; }
+            else if (k == "rest")   a.rest = static_cast<uint16_t>(zahl(v, 10));
+            else if (k == "segment") {
+                const size_t d = v.find(':');
+                a.ladeadresse  = static_cast<uint16_t>(zahl(v.substr(0, d), 16));
+                if (d != std::string::npos)
+                    a.abbildlaenge = static_cast<uint16_t>(zahl(v.substr(d + 1), 10));
+            }
+            else if (k == "zusatz") a.zusatz = static_cast<uint32_t>(zahl(v, 16));
+            else if (k == "erst")   a.erstellt = (v == "-") ? "" : mitLeer(v);
+            else if (k == "geaend") a.geaendert = (v == "-") ? "" : mitLeer(v);
+            else if (k == "mem") {
+                std::string x = v;
+                std::replace(x.begin(), x.end(), ':', ' ');
+                std::istringstream m(x);
+                std::string p1, p2, p3;
+                m >> p1 >> p2 >> p3;
+                a.speicher_von = static_cast<uint16_t>(zahl(p1, 16));
+                a.speicher_bis = static_cast<uint16_t>(zahl(p2, 16));
+                a.speicher_kz  = static_cast<uint16_t>(zahl(p3, 16));
+            }
+        }
+        out[name] = a;
+    }
+    return out;
+}
+
+// ─── CP/M-Angaben (Beiblatt zum Ordner) ──────────────────────────────────────
+//
+// CP/M fuehrt viel weniger als UDOS, aber auch dieses Wenige geht beim Extrahieren
+// verloren: der **Nutzerbereich** (aus "3:NAME.TYP" wird die Linux-Datei
+// "3_NAME.TYP") und die drei Attributbits R/O, SYS und ARCHIV.  Ohne sie liegt eine
+// zurueckgeschriebene Systemdatei im Nutzerbereich 0 und ist im `DIR` sichtbar —
+// die Diskette sieht anders aus als vorher.  Gleiches Verfahren wie bei UDOS:
+// `extractAll` schreibt, `insertAll` und der Einzel-`insert` lesen.
+
+constexpr const char* kCpmBeiblatt = "cpm-dateiangaben.txt";
+
+struct CpmAngabe {
+    std::string name;                ///< der ECHTE CP/M-Name, ggf. "3:NAME.TYP"
+    bool read_only = false, system = false, archived = false;
+};
+
+std::string cpmAttrText(const CpmAngabe& a) {
+    std::string t;
+    if (a.read_only) t += 'R';
+    if (a.system)    t += 'S';
+    if (a.archived)  t += 'A';
+    return t.empty() ? "-" : t;
+}
+
+/// @brief Beiblatt schreiben — je Datei `<linux-name> name=<cpm-name> attr=RSA`.
+bool schreibeCpmBeiblatt(const fs::path& datei,
+                         const std::vector<std::pair<std::string, CpmAngabe>>& eintraege) {
+    std::ofstream f(datei, std::ios::binary);
+    if (!f) return false;
+    f << "# k1520DiskTool — CP/M-Angaben zu den Dateien in diesem Ordner.\n"
+         "# Sie stehen NICHT in den Dateien selbst; beim Einfuegen (`put <ordner>`)\n"
+         "# werden sie wieder uebernommen.\n"
+         "#\n"
+         "#   name   der echte CP/M-Name mit Nutzerbereich (\"3:NAME.TYP\");\n"
+         "#          im Linux-Dateinamen steht dafuer ein Unterstrich\n"
+         "#   attr   R = nur lesen   S = Systemdatei (im DIR unsichtbar)\n"
+         "#          A = archiviert  -  = keines davon\n";
+    for (const auto& [datei_name, a] : eintraege)
+        f << datei_name << " name=" << a.name << " attr=" << cpmAttrText(a) << '\n';
+    return static_cast<bool>(f);
+}
+
+/// @brief Beiblatt lesen; fehlt es, kommt eine leere Tabelle zurueck (kein Fehler).
+std::map<std::string, CpmAngabe> leseCpmBeiblatt(const fs::path& datei) {
+    std::map<std::string, CpmAngabe> out;
+    std::ifstream f(datei);
+    if (!f) return out;
+    std::string zeile;
+    while (std::getline(f, zeile)) {
+        if (zeile.empty() || zeile[0] == '#') continue;
+        std::istringstream z(zeile);
+        std::string datei_name;
+        if (!(z >> datei_name)) continue;
+        CpmAngabe a;
+        std::string feld;
+        while (z >> feld) {
+            const size_t g = feld.find('=');
+            if (g == std::string::npos) continue;
+            const std::string k = feld.substr(0, g), v = feld.substr(g + 1);
+            if (k == "name") a.name = v;
+            else if (k == "attr" && v != "-") {
+                a.read_only = v.find('R') != std::string::npos;
+                a.system    = v.find('S') != std::string::npos;
+                a.archived  = v.find('A') != std::string::npos;
+            }
+        }
+        out[datei_name] = a;
+    }
+    return out;
+}
+
+/// @brief Ist das eines der beiden Beiblaetter?  Sie sind Zubehoer, keine Nutzdatei.
+bool istBeiblatt(const fs::path& name) {
+    return name == kUdosBeiblatt || name == kCpmBeiblatt;
+}
+
+/**
+ * @brief Linux-Dateiname → Name auf der Diskette.
+ *
+ * Bei UDOS unveraendert.  Bei CP/M nennt das Beiblatt den echten Namen samt
+ * Nutzerbereich ("3:NAME.TYP") — ohne es bliebe der beim Extrahieren eingesetzte
+ * Unterstrich stehen und die Datei landete im Bereich 0.
+ */
+std::string zielName(const std::string& quelle, FsType typ,
+                     const std::map<std::string, CpmAngabe>& beiblatt) {
+    const std::string datei = fs::path(quelle).filename().string();
+    if (typ == FsType::Udos) return datei;
+    const auto it = beiblatt.find(datei);
+    if (it != beiblatt.end() && !it->second.name.empty()) return it->second.name;
+    return CpmFileSystem::toCpmName(quelle);
+}
+
+/// @brief Meldung fuer ein Dateisystem ohne Systemspuren — mit dem Grund.
+std::string keineSystemspuren(const FsProfile& p) {
+    return "Das Dateisystem '" + p.name + "' hat keine Systemspuren — es beginnt auf "
+           "Zylinder 0, dort ist fuer ein Bootabbild kein Platz.";
 }
 
 /// @brief Eine Meldung, die sagt, was zu tun ist — nicht bloss, dass es nicht geht.
@@ -530,9 +814,99 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
     if (opt.dry_run) return true;
 
     WriteOptions wo;
-    wo.overwrite = opt.overwrite;
-    wo.text      = opt.text;
+    wo.overwrite       = opt.overwrite;
+    wo.text            = opt.text;
+    // Liegt neben der Quelldatei ein Beiblatt (aus `extractAll`), kommen die
+    // Kopfsektorangaben von dort — so behaelt auch eine EINZELN aus der Oberflaeche
+    // herübergezogene Systemdatei ihren Typ und ihr Speicherabbild.  Ausdrueckliche
+    // Angaben des Aufrufers gehen immer vor.
+    TransferOptions mit = opt;
+    if (profile_ && profile_->type == FsType::Udos && opt.udos_type.empty()) {
+        const fs::path quelle(src_path);
+        for (const fs::path& ordner : {quelle.parent_path(),
+                                       quelle.parent_path().parent_path()}) {
+            if (ordner.empty()) continue;
+            const auto tabelle = leseBeiblatt(ordner / kUdosBeiblatt);
+            if (tabelle.empty()) continue;
+            const std::string kurz = ref.name;
+            const std::string lang = volumeDir(ref.volume).empty()
+                                   ? kurz : volumeDir(ref.volume) + "/" + kurz;
+            auto it = tabelle.find(lang);
+            if (it == tabelle.end()) it = tabelle.find(kurz);
+            if (it == tabelle.end()) continue;
+            mit.udos_type       = it->second.typ;
+            mit.udos_properties = it->second.eigenschaften;
+            mit.udos_entry      = it->second.start;
+            mit.udos_record_len = it->second.satzlaenge;
+            mit.udos_segment       = it->second.ladeadresse;
+            mit.udos_segment_len  = it->second.abbildlaenge;
+            mit.udos_low_addr  = it->second.speicher_von;
+            mit.udos_high_addr    = it->second.speicher_bis;
+            mit.udos_stack_size  = it->second.speicher_kz;
+            mit.udos_block_len  = it->second.blocklaenge;
+            mit.udos_bytes_in_last = it->second.rest;
+            mit.udos_block_len_gesetzt = it->second.blocklaenge_gesetzt;
+            mit.udos_extra      = it->second.zusatz;
+            mit.udos_created    = it->second.erstellt;
+            mit.udos_modified   = it->second.geaendert;
+            break;
+        }
+    }
+    wo.udos_type       = mit.udos_type;
+    wo.udos_properties = mit.udos_properties;
+    wo.udos_entry      = mit.udos_entry;
+    wo.udos_record_len = mit.udos_record_len;
+    wo.udos_segment       = mit.udos_segment;
+    wo.udos_segment_len  = mit.udos_segment_len;
+    wo.udos_low_addr  = mit.udos_low_addr;
+    wo.udos_high_addr    = mit.udos_high_addr;
+    wo.udos_stack_size  = mit.udos_stack_size;
+    wo.udos_block_len  = mit.udos_block_len;
+    wo.udos_bytes_in_last = mit.udos_bytes_in_last;
+    wo.udos_block_len_gesetzt = mit.udos_block_len_gesetzt;
+    wo.udos_extra      = mit.udos_extra;
+    wo.udos_created    = mit.udos_created;
+    if (!mit.udos_modified.empty()) wo.date = mit.udos_modified;
+
+    // Dasselbe fuer CP/M: die drei Attributbits aus dem Beiblatt neben der Quelle,
+    // sofern der Aufrufer keine vorgibt.
+    wo.cpm_read_only = opt.cpm_read_only;
+    wo.cpm_system    = opt.cpm_system;
+    wo.cpm_archived  = opt.cpm_archived;
+    if (profile_ && profile_->type == FsType::Cpm
+        && !opt.cpm_read_only && !opt.cpm_system && !opt.cpm_archived) {
+        const fs::path quelle(src_path);
+        for (const fs::path& ordner : {quelle.parent_path(),
+                                       quelle.parent_path().parent_path()}) {
+            if (ordner.empty()) continue;
+            const auto tabelle = leseCpmBeiblatt(ordner / kCpmBeiblatt);
+            const auto it = tabelle.find(quelle.filename().string());
+            if (it == tabelle.end()) continue;
+            wo.cpm_read_only = it->second.read_only;
+            wo.cpm_system    = it->second.system;
+            wo.cpm_archived  = it->second.archived;
+            break;
+        }
+    }
     if (!volumes_[static_cast<size_t>(ref.volume)].fs->write(ref.name, d, wo))
+        return fail(volumes_[static_cast<size_t>(ref.volume)].fs->lastError());
+    return true;
+}
+
+bool DiskVolume::setAttributes(const FileRef& ref, const UdosAttrs& attrs) {
+    if (read_only_) return fail(kSchreibschutz);
+    if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
+                                        + " gibt es auf dieser Diskette nicht");
+    if (!volumes_[static_cast<size_t>(ref.volume)].fs->setAttributes(ref.name, attrs))
+        return fail(volumes_[static_cast<size_t>(ref.volume)].fs->lastError());
+    return true;
+}
+
+bool DiskVolume::setAttributes(const FileRef& ref, const CpmAttrs& attrs) {
+    if (read_only_) return fail(kSchreibschutz);
+    if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
+                                        + " gibt es auf dieser Diskette nicht");
+    if (!volumes_[static_cast<size_t>(ref.volume)].fs->setAttributes(ref.name, attrs))
         return fail(volumes_[static_cast<size_t>(ref.volume)].fs->lastError());
     return true;
 }
@@ -543,6 +917,138 @@ bool DiskVolume::erase(const FileRef& ref) {
                                         + " gibt es auf dieser Diskette nicht");
     if (!volumes_[static_cast<size_t>(ref.volume)].fs->erase(ref.name))
         return fail(volumes_[static_cast<size_t>(ref.volume)].fs->lastError());
+    return true;
+}
+
+// ─── Sektoransicht (Diskeditor, §19) ─────────────────────────────────────────
+
+uint8_t DiskVolume::mediumCylinders() const {
+    return disk_ ? disk_->medium().numCylinders() : 0;
+}
+
+uint8_t DiskVolume::mediumHeads() const {
+    return disk_ ? disk_->medium().numHeads() : 0;
+}
+
+TrackView DiskVolume::trackView(uint8_t cyl, uint8_t head) const {
+    if (!disk_) return TrackView{};
+    return scanTrack(disk_->medium().track(cyl, head));
+}
+
+bool DiskVolume::readSectorAt(uint8_t cyl, uint8_t head, int index,
+                              std::vector<uint8_t>& out, uint16_t& crc) const {
+    if (!disk_) return fail("keine Diskette geoeffnet");
+    const std::vector<LogicalSector> s =
+        TrackCodec::parseTrack(disk_->medium().track(cyl, head));
+    if (index < 0 || static_cast<size_t>(index) >= s.size())
+        return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+    out = s[static_cast<size_t>(index)].data;
+    crc = s[static_cast<size_t>(index)].data_crc;
+    return true;
+}
+
+bool DiskVolume::sectorCrcFor(uint8_t cyl, uint8_t head, int index,
+                              const std::vector<uint8_t>& data, uint16_t& out) const {
+    if (!disk_) return fail("keine Diskette geoeffnet");
+    if (index < 0) return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+    if (!TrackCodec::sectorDataCrc(disk_->medium().track(cyl, head),
+                                   static_cast<size_t>(index), data, out))
+        return fail("Die Laenge passt nicht zur Sektorgroesse");
+    return true;
+}
+
+bool DiskVolume::writeSectorAt(uint8_t cyl, uint8_t head, int index,
+                               const std::vector<uint8_t>& data,
+                               const uint16_t* crc_woertlich) {
+    if (read_only_) return fail(kSchreibschutz);
+    if (!disk_)     return fail("keine Diskette geoeffnet");
+    if (index < 0)  return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+
+    // Auf einer Kopie arbeiten: `writeSectorAt` prueft zwar zweiphasig, aber so bleibt
+    // die Spur auch dann unangetastet, wenn spaeter noch etwas dazukommt.
+    TrackImage spur = disk_->medium().track(cyl, head);
+    if (!TrackCodec::writeSectorAt(spur, static_cast<size_t>(index), data, {},
+                                   crc_woertlich))
+        return fail("Der Sektor liess sich nicht schreiben — Laenge oder Lage passt "
+                    "nicht (erwartet wird genau die Sektorgroesse).");
+
+    disk_->medium().setTrack(cyl, head, std::move(spur));
+    return true;
+}
+
+bool DiskVolume::readSectorTail(uint8_t cyl, uint8_t head, int index,
+                                std::vector<uint8_t>& out) const {
+    if (!disk_) return fail("keine Diskette geoeffnet");
+    const std::vector<LogicalSector> s =
+        TrackCodec::parseTrack(disk_->medium().track(cyl, head));
+    if (index < 0 || static_cast<size_t>(index) >= s.size())
+        return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+    out = s[static_cast<size_t>(index)].tail;
+    return true;
+}
+
+bool DiskVolume::writeSectorTail(uint8_t cyl, uint8_t head, int index,
+                                 const std::vector<uint8_t>& tail) {
+    if (read_only_) return fail(kSchreibschutz);
+    if (!disk_)     return fail("keine Diskette geoeffnet");
+    if (index < 0)  return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+    if (tail.size() > kSectorTailBytes)
+        return fail("Der Nachspann fasst hoechstens "
+                    + std::to_string(kSectorTailBytes) + " Byte");
+
+    TrackImage spur = disk_->medium().track(cyl, head);
+    const std::vector<LogicalSector> s = TrackCodec::parseTrack(spur);
+    if (static_cast<size_t>(index) >= s.size())
+        return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+
+    // Daten und CRC unveraendert zurueckschreiben: `writeSectorAt` fasst beides an,
+    // und eine neu gerechnete CRC wuerde einen absichtlich defekten Sektor heilen.
+    const uint16_t crc = s[static_cast<size_t>(index)].data_crc;
+    if (!TrackCodec::writeSectorAt(spur, static_cast<size_t>(index),
+                                   s[static_cast<size_t>(index)].data, tail, &crc))
+        return fail("Der Nachspann liess sich nicht schreiben — er wuerde in die "
+                    "naechste Adressmarke laufen.");
+    disk_->medium().setTrack(cyl, head, std::move(spur));
+    return true;
+}
+
+bool DiskVolume::eraseSectorAt(uint8_t cyl, uint8_t head, int index,
+                               uint16_t tail_bytes) {
+    if (read_only_) return fail(kSchreibschutz);
+    if (!disk_)     return fail("keine Diskette geoeffnet");
+    if (index < 0)  return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+
+    TrackImage spur = disk_->medium().track(cyl, head);
+    if (!TrackCodec::eraseSectorAt(spur, static_cast<size_t>(index), tail_bytes))
+        return fail("Diesen Sektor gibt es auf der Spur nicht (mehr)");
+    disk_->medium().setTrack(cyl, head, std::move(spur));
+    return true;
+}
+
+bool DiskVolume::createSector(uint8_t cyl, uint8_t head, const TrackCodec::NewSectorSpec& spec,
+                              bool mfm) {
+    if (read_only_) return fail(kSchreibschutz);
+    if (!disk_)     return fail("keine Diskette geoeffnet");
+
+    TrackImage spur = disk_->medium().track(cyl, head);
+    std::string warum;
+    if (!TrackCodec::createSector(spur, spec, mfm ? Encoding::MFM : Encoding::FM,
+                                  &warum))
+        return fail(warum);
+    disk_->medium().setTrack(cyl, head, std::move(spur));
+    return true;
+}
+
+bool DiskVolume::planSector(uint8_t cyl, uint8_t head, const TrackCodec::NewSectorSpec& spec,
+                            bool mfm, uint32_t& von, uint32_t& laenge) const {
+    if (!disk_) return fail("keine Diskette geoeffnet");
+    const TrackImage& spur = disk_->medium().track(cyl, head);
+    if (spur.bytes.empty())
+        return fail("Diese Spur gibt es auf dem Datentraeger nicht.");
+    von = static_cast<uint32_t>(
+        TrackCodec::newSectorPosition(spur, spec.id, spec.gap_before));
+    laenge = static_cast<uint32_t>(TrackCodec::newSectorLength(
+        mfm ? Encoding::MFM : Encoding::FM, spec.size, spec.tail_bytes));
     return true;
 }
 
@@ -573,6 +1079,60 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
             if (!extract(r, (ziel / datei).string(), opt)) return false;
         }
     }
+
+    // Beiblatt mit den Kopfsektorangaben — nur UDOS fuehrt welche.
+    if (profile_ && profile_->type == FsType::Udos) {
+        std::vector<std::pair<std::string, UdosAngabe>> eintraege;
+        for (int v = 0; v < volumeCount(); ++v) {
+            const std::string unter = volumeDir(v);
+            for (const FileEntry& e : volumes_[static_cast<size_t>(v)].fs->list()) {
+                if (e.type == "D") continue;
+                UdosAngabe a;
+                a.typ           = e.type;
+                a.eigenschaften = e.attributes;
+                a.start         = e.entry_addr;
+                a.satzlaenge    = e.record_len;
+                a.ladeadresse   = e.segment_start;
+                a.abbildlaenge  = e.segment_len;
+                a.speicher_von  = e.low_addr;
+                a.speicher_bis  = e.high_addr;
+                a.speicher_kz   = e.stack_size;
+                a.blocklaenge   = e.block_len;
+                a.rest          = e.bytes_in_last;
+                a.blocklaenge_gesetzt = true;
+                a.zusatz        = e.extra;
+                a.erstellt      = e.created;
+                a.geaendert     = e.date;
+                eintraege.emplace_back(unter.empty() ? e.name : unter + "/" + e.name, a);
+            }
+        }
+        if (!eintraege.empty()
+            && !schreibeBeiblatt(fs::path(dest_dir) / kUdosBeiblatt, eintraege))
+            return fail("Beiblatt nicht schreibbar: "
+                        + (fs::path(dest_dir) / kUdosBeiblatt).string());
+    }
+
+    // Dasselbe fuer CP/M — dort sind es Nutzerbereich und die drei Attributbits.
+    if (profile_ && profile_->type == FsType::Cpm) {
+        std::vector<std::pair<std::string, CpmAngabe>> eintraege;
+        for (const FileEntry& e : volumes_[0].fs->list()) {
+            CpmAngabe a;
+            a.name      = e.qualifiedName();
+            a.read_only = e.attributes.find("RO")  != std::string::npos;
+            a.system    = e.attributes.find("SYS") != std::string::npos;
+            a.archived  = e.attributes.find("ARC") != std::string::npos;
+            // Nur was von der Vorgabe abweicht, ist ueberhaupt eine Angabe wert;
+            // eine gewoehnliche Datei im Bereich 0 braucht keine Zeile.
+            if (a.name == e.name && !a.read_only && !a.system && !a.archived) continue;
+            std::string datei = e.qualifiedName();
+            std::replace(datei.begin(), datei.end(), ':', '_');
+            eintraege.emplace_back(datei, a);
+        }
+        if (!eintraege.empty()
+            && !schreibeCpmBeiblatt(fs::path(dest_dir) / kCpmBeiblatt, eintraege))
+            return fail("Beiblatt nicht schreibbar: "
+                        + (fs::path(dest_dir) / kCpmBeiblatt).string());
+    }
     return true;
 }
 
@@ -586,6 +1146,7 @@ bool DiskVolume::sammleQuelldateien(const std::string& src_dir,
     if (volumes_.size() == 1) {
         for (const auto& e : fs::directory_iterator(src_dir, ec)) {
             if (e.is_directory()) continue;         // Unterordner kennt CP/M nicht
+            if (istBeiblatt(e.path().filename())) continue;       // Beiblatt, keine Datei
             je_volume[0].push_back(e.path().string());
         }
         return true;
@@ -598,7 +1159,12 @@ bool DiskVolume::sammleQuelldateien(const std::string& src_dir,
             fehlend.push_back(volumeDir(v));
 
     for (const auto& e : fs::directory_iterator(src_dir, ec)) {
-        if (!e.is_directory()) { lose.push_back(e.path().filename().string()); continue; }
+        if (!e.is_directory()) {
+            // Das Beiblatt gehoert dorthin und ist keine „lose Datei".
+            if (!istBeiblatt(e.path().filename()))
+                lose.push_back(e.path().filename().string());
+            continue;
+        }
         if (volumeFromDir(e.path().filename().string()) < 0)
             lose.push_back(e.path().filename().string() + "/");
     }
@@ -644,15 +1210,16 @@ bool DiskVolume::checkFit(const std::string& src_dir, std::string& bericht) cons
     std::vector<std::vector<std::string>> je_volume;
     if (!sammleQuelldateien(src_dir, je_volume)) { bericht = last_error_; return false; }
 
+    const std::map<std::string, CpmAngabe> cpm_beiblatt =
+        leseCpmBeiblatt(fs::path(src_dir) / kCpmBeiblatt);
+
     bool passt = true;
     for (size_t v = 0; v < volumes_.size(); ++v) {
         std::vector<PlannedFile> plan;
         for (const std::string& p : je_volume[v]) {
             std::error_code ec;
             PlannedFile f;
-            f.name   = CpmFileSystem::toCpmName(p);   // UDOS nimmt den Namen unveraendert
-            if (volumes_[v].fs && profile_->type == FsType::Udos)
-                f.name = fs::path(p).filename().string();
+            f.name   = zielName(p, profile_->type, cpm_beiblatt);
             f.size   = fs::file_size(p, ec);
             f.volume = static_cast<int>(v);
             plan.push_back(f);
@@ -685,14 +1252,37 @@ bool DiskVolume::insertAll(const std::string& src_dir, const TransferOptions& op
     // Schritt 3: ausfuehren, mit Ruecknahme.  Die Momentaufnahme des Mediums kostet
     // ~1 MB je Diskette — billig gegenueber einer halb beschriebenen Diskette.
     const DiskMedium sicherung = disk_->medium();
+    const std::map<std::string, UdosAngabe> beiblatt =
+        leseBeiblatt(fs::path(src_dir) / kUdosBeiblatt);
+    const std::map<std::string, CpmAngabe> cpm_beiblatt =
+        leseCpmBeiblatt(fs::path(src_dir) / kCpmBeiblatt);
 
     for (size_t v = 0; v < volumes_.size(); ++v) {
         for (const std::string& quelle : je_volume[v]) {
-            const std::string name = profile_->type == FsType::Udos
-                                   ? fs::path(quelle).filename().string()
-                                   : CpmFileSystem::toCpmName(quelle);
+            const std::string name = zielName(quelle, profile_->type, cpm_beiblatt);
             TransferOptions o = opt;
             o.overwrite = true;          // im Stapel ersetzt der Ordner den Bestand
+            // Kopfsektorangaben aus dem Beiblatt, sofern der Aufrufer keine vorgibt.
+            const std::string schluessel = volumes_.size() == 1
+                                         ? name : volumeDir(static_cast<int>(v)) + "/" + name;
+            const auto it = beiblatt.find(schluessel);
+            if (it != beiblatt.end() && o.udos_type.empty()) {
+                o.udos_type       = it->second.typ;
+                o.udos_properties = it->second.eigenschaften;
+                o.udos_entry      = it->second.start;
+                o.udos_record_len = it->second.satzlaenge;
+                o.udos_segment       = it->second.ladeadresse;
+                o.udos_segment_len  = it->second.abbildlaenge;
+                o.udos_low_addr  = it->second.speicher_von;
+                o.udos_high_addr    = it->second.speicher_bis;
+                o.udos_stack_size  = it->second.speicher_kz;
+                o.udos_block_len  = it->second.blocklaenge;
+                o.udos_bytes_in_last = it->second.rest;
+                o.udos_block_len_gesetzt = it->second.blocklaenge_gesetzt;
+                o.udos_extra      = it->second.zusatz;
+                o.udos_created    = it->second.erstellt;
+                o.udos_modified   = it->second.geaendert;
+            }
             if (!insert(quelle, FileRef{static_cast<int>(v), name}, o)) {
                 const std::string grund = last_error_;
                 disk_->medium() = sicherung;         // Ruecknahme
@@ -766,7 +1356,8 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
                                                const std::string& label,
                                                const FormatCatalog& formats,
                                                const FsCatalog& fs_cat,
-                                               std::string& err) {
+                                               std::string& err,
+                                               const std::string& boot_image) {
     const FsProfile* profil = fs_cat.find(fs_name);
     if (!profil) { err = "Dateisystem '" + fs_name + "' steht nicht im Katalog"; return nullptr; }
     const DiskFormat* fmt = formats.find(profil->format);
@@ -778,6 +1369,22 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
             + (profil->type == FsType::Udos && ext == "img"
                    ? " (der UDOS-Sektorkontrollblock steht hinter der Daten-CRC)" : "");
         return nullptr;
+    }
+
+    // Das Bootabbild wird gelesen und BEURTEILT, bevor irgendetwas angelegt wird —
+    // ein zu grosses Abbild soll keine halbe Diskette hinterlassen.
+    std::vector<uint8_t> boot;
+    if (!boot_image.empty()) {
+        if (!leseDatei(boot_image, boot, err)) return nullptr;
+        if (boot.empty()) { err = "Bootabbild ist leer: " + boot_image; return nullptr; }
+        const uint64_t platz = bootAreaCapacity(*profil, *fmt);
+        if (platz == 0) { err = keineSystemspuren(*profil); return nullptr; }
+        if (boot.size() > platz) {
+            err = "Das Bootabbild ist " + std::to_string(boot.size())
+                + " Byte gross, die Systemspuren von '" + profil->name + "' fassen aber nur "
+                + std::to_string(platz) + " Byte.";
+            return nullptr;
+        }
     }
 
     // Vollstaendig formatierte Leerdiskette (echte Adressmarken und CRCs) …
@@ -833,10 +1440,114 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
         dv->volumes_.push_back(std::move(v));
     }
 
+    // … zuletzt das Bootabbild in die Systemspuren (geprueft ist es oben schon).
+    if (!boot.empty() && !dv->writeBootImage(boot)) { err = dv->lastError(); return nullptr; }
+
     // Eine frisch angelegte Diskette braucht keine Sicherungskopie ihrer selbst.
     dv->backup_getan_ = true;
     if (!dv->flush()) { err = dv->lastError(); return nullptr; }
     return dv;
+}
+
+// ─── Bootabbild (Systemspuren) ───────────────────────────────────────────────
+
+uint64_t DiskVolume::bootAreaCapacity(const FsProfile& prof, const DiskFormat& fmt) {
+    // Der lineare Aufbau haengt allein am Format — ein leeres Medium in dessen
+    // Geometrie genuegt, um die Spurlaengen zu addieren.
+    DiskMedium leer(fmt.numCylinders(), fmt.numHeads(), fmt.predominantEncoding());
+    const uint8_t filter = (prof.type == FsType::Udos && prof.sides_separate)
+                               ? 0 : SectorSpace::kAllHeads;
+    const SectorSpace raum(leer, fmt, filter);
+    return systemspurBytes(raum, prof);
+}
+
+uint64_t DiskVolume::bootAreaSize(int volume) const {
+    if (!valid(volume) || !profile_) return 0;
+    return systemspurBytes(*volumes_[static_cast<size_t>(volume)].space, *profile_);
+}
+
+bool DiskVolume::readBootImage(std::vector<uint8_t>& out, int volume) const {
+    if (!valid(volume) || !profile_)
+        return fail("Seite " + std::to_string(volume) + " gibt es nicht");
+    if (bootAreaSize(volume) == 0) return fail(keineSystemspuren(*profile_));
+
+    out.clear();
+    SectorSpace& raum = *volumes_[static_cast<size_t>(volume)].space;
+    const uint8_t nach = nachspannBytes(*profile_);
+
+    for (const SectorSpace::TrackRef& t : systemspuren(raum, *profile_)) {
+        for (uint8_t k = 0; k < t.sectors; ++k) {
+            const uint8_t id = static_cast<uint8_t>(t.first_id + k);
+            SectorData s;
+            if (!raum.readSector(t.cyl, t.head, id, s) || s.data.size() != t.sector_size) {
+                out.clear();
+                return fail("Systemspur " + std::to_string(t.cyl) + " Sektor "
+                            + std::to_string(id) + " nicht lesbar (unformatiert?)");
+            }
+            out.insert(out.end(), s.data.begin(), s.data.end());
+            // Nachspann auf feste Laenge bringen: fehlt er (frisch formatierte Spur),
+            // stehen dort Nullen — sonst haetten die Saetze im Abbild keine feste Groesse.
+            for (uint8_t i = 0; i < nach; ++i)
+                out.push_back(i < s.tail.size() ? s.tail[i] : 0x00);
+        }
+    }
+    return true;
+}
+
+bool DiskVolume::readBootImageToFile(const std::string& path, int volume) const {
+    std::vector<uint8_t> boot;
+    if (!readBootImage(boot, volume)) return false;
+    std::string err;
+    if (!schreibeDatei(path, boot, err)) return fail(err);
+    return true;
+}
+
+bool DiskVolume::writeBootImage(const std::vector<uint8_t>& img, int volume) {
+    if (!valid(volume) || !profile_)
+        return fail("Seite " + std::to_string(volume) + " gibt es nicht");
+    if (read_only_)    return fail(kSchreibschutz);
+    if (img.empty())   return fail("Das Bootabbild ist leer.");
+
+    const uint64_t n = bootAreaSize(volume);
+    if (n == 0) return fail(keineSystemspuren(*profile_));
+    if (img.size() > n)
+        return fail("Das Bootabbild ist " + std::to_string(img.size())
+                    + " Byte gross, die Systemspuren von '" + profile_->name
+                    + "' fassen aber nur " + std::to_string(n) + " Byte.");
+
+    SectorSpace& raum = *volumes_[static_cast<size_t>(volume)].space;
+    const uint8_t nach = nachspannBytes(*profile_);
+    size_t her = 0;
+
+    for (const SectorSpace::TrackRef& t : systemspuren(raum, *profile_)) {
+        const size_t satz = t.sector_size + nach;
+        for (uint8_t k = 0; k < t.sectors; ++k) {
+            if (her >= img.size()) return true;   // kuerzeres Abbild: Rest bleibt Leerspur
+            // Ein angebrochener Satz am Ende wird mit dem Fuellbyte der Leerdiskette
+            // aufgefuellt — ein halber Sektor laesst sich nicht schreiben.
+            std::vector<uint8_t> satzbytes(satz, 0xE5);
+            std::copy(img.begin() + static_cast<long>(her),
+                      img.begin() + static_cast<long>(std::min(img.size(), her + satz)),
+                      satzbytes.begin());
+            her += satz;
+
+            const std::vector<uint8_t> daten(satzbytes.begin(),
+                                             satzbytes.begin() + t.sector_size);
+            const std::vector<uint8_t> nachspann(satzbytes.begin() + t.sector_size,
+                                                 satzbytes.end());
+            const uint8_t id = static_cast<uint8_t>(t.first_id + k);
+            if (!raum.writeSector(t.cyl, t.head, id, daten, nachspann))
+                return fail("Systemspuren nicht beschreibbar: " + raum.lastError());
+        }
+    }
+    return true;
+}
+
+bool DiskVolume::writeBootImageFile(const std::string& path, int volume) {
+    std::vector<uint8_t> img;
+    std::string err;
+    if (!leseDatei(path, img, err)) return fail(err);
+    return writeBootImage(img, volume);
 }
 
 bool DiskVolume::saveAs(const std::string& path) {

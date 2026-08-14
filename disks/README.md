@@ -32,6 +32,45 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 | `scpx17_5x1024_k5601_hardy.hfe` | SCPX 1526 V1.7, 5×1024-System, mit HARDY.COM | K5601 |
 | `bootsec_cpa780.bin` | Bootsektor einer cpa780-Diskette (512 B) | — |
 
+## Bootabbilder (`boot_*.bin`) — Systemspuren zum Wiedereinspielen
+
+Bootfähig wird eine Diskette durch die **Systemspuren** vor dem Dateisystem; das
+Lade-ROM liest Spur 0 blind ein, lange bevor es ein Dateisystem gibt. Diese Bytebänder
+liegen hier als `.bin` — damit legt das DiskTool eine **bootfähige** Diskette an:
+
+```sh
+tools/dev.sh tool k1520disktool create neu.hfe --fs cpa780 --boot disks/boot_cpa780.bin
+tools/dev.sh tool k1520disktool put    neu.hfe auszug/          # @OS.COM und der Rest
+```
+
+| Datei | Größe | System | Herkunft |
+|-------|-------|--------|----------|
+| `boot_cpa780.bin` | 15104 | CP/A (alle cpa780-Disketten des Projekts sind hier byte-gleich) | `cpa_cpa780_k5601_noclock.hfe` |
+| `boot_scpx640.bin` | 16384 | SCPX 1526 V1.7, 16×256-System | `scpx17_cpa780_k5601.hfe` |
+| `boot_scpx798.bin` | 18432 | SCPX 1526 V1.7, 5×1024-System | `scpx17_5x1024_k5601_hardy.hfe` |
+| `boot_udos43.bin` | 13728 | UDOS 4.3 (Seite 0: Spuren 0–2 + Bootspur 21) | `udos_boot_scp.hfe` |
+
+Ein eigenes Abbild holt man sich mit `k1520disktool boot-get <diskette> <datei.bin>`
+(in der Oberfläche: „Bootabbild sichern…"). Die Systemspuren **allein** machen noch
+kein laufendes System — die Betriebssystemdateien (`@OS.COM` …) müssen zusätzlich auf
+die Diskette.
+
+> **UDOS braucht die Dateien dazu.** Mit den Systemspuren allein meldet der Urlader
+> `OS NOT FOUND` — er sucht die Systemdateien **über das Verzeichnis**. Der ganze
+> Datenträger wandert so:
+>
+> ```sh
+> k1520disktool get    udos_boot_scp.hfe --to auszug     # Dateien + Beiblatt
+> k1520disktool create neu.hfe --fs udos_ds77 --label UDOS.SYS.4.3 --boot disks/boot_udos43.bin
+> k1520disktool put    neu.hfe auszug
+> ```
+>
+> Ergebnis: Selbststart (`OS.INIT` → Banner, `DATE`), `%`-Prompt und laufende Befehle
+> (`CAT`, `STATUS`, `PRINT`). Das **Beiblatt** `udos-dateiangaben.txt` ist dabei nicht
+> optional — eine UDOS-Datei trägt Typ, Eigenschaften, Satzlänge, Startadresse und
+> Speicherangaben im Kopfsektor, nicht in ihren Bytes. Die kleinste bootfähige Diskette
+> ist Systemspuren + `OS` + `ZDOS`. Hintergrund: `doc/udos_diskettenformat.md` §14.
+
 Die beiden **Combo**-Disketten konfigurieren im BIOS B:/C: als andere Laufwerkstypen
 (DPB-Codes 10540/10580 bzw. 00877/10877). FORMAT.COM bietet dadurch je gewähltem Laufwerk
 die zugehörigen Formate an (5¼″ einseitig, 8″ SD/DD). Details, live abgegriffene Formatmenüs

@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <map>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -490,6 +491,67 @@ TEST(DiskVolume, TextmodusSetztZeilenendenUm) {
         << "Hin- und Rueckweg muessen sich aufheben (LF ↔ CR LF, 0x1A-Ende)";
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CP/M-Beiblatt: Nutzerbereich und Attributbits ueberleben den Rundlauf
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(DiskVolume, CpmBeiblattTraegtNutzerbereichUndAttributeDurchDenRundlauf) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_dv_cpm_beiblatt.img");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "cpa780", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    // Eine Systemdatei im Nutzerbereich 3 — beides steht in keiner Linux-Datei.
+    TempOrdner vorher("k1520_test_dv_cpm_bb_v");
+    schreibe(vorher / "SYSTEM.COM", std::string(500, 'S'));
+    ASSERT_TRUE(dv->insert((vorher / "SYSTEM.COM").string(), FileRef{0, "3:SYSTEM.COM"},
+                           TransferOptions{})) << dv->lastError();
+    CpmAttrs a;
+    a.set_read_only = true; a.read_only = true;
+    a.set_system    = true; a.system    = true;
+    ASSERT_TRUE(dv->setAttributes(FileRef{0, "3:SYSTEM.COM"}, a)) << dv->lastError();
+
+    // Herausholen: die Datei heisst auf Linux "3_SYSTEM.COM", das Beiblatt nennt
+    // den echten Namen und die Attribute.
+    TempOrdner ordner("k1520_test_dv_cpm_bb_o");
+    ASSERT_TRUE(dv->extractAll(ordner.path(), TransferOptions{})) << dv->lastError();
+    ASSERT_TRUE(fs::exists(ordner / "3_SYSTEM.COM"));
+    ASSERT_TRUE(fs::exists(ordner / "cpm-dateiangaben.txt"))
+        << "ohne Beiblatt gingen Nutzerbereich und Attribute verloren";
+
+    // Und in eine frische Diskette zurueck.
+    Kopie leer("cpa_cpa780_k5601_clock.img", "k1520_test_dv_cpm_bb_ziel.img");
+    auto ziel = oeffneSchreibbar(leer.path(), "cpa780", err);
+    ASSERT_NE(ziel, nullptr) << err;
+    ASSERT_TRUE(ziel->insertAll(ordner.path(), TransferOptions{})) << ziel->lastError();
+
+    bool gefunden = false;
+    for (const FileEntry& e : ziel->list())
+        if (e.name == "SYSTEM.COM") {
+            gefunden = true;
+            EXPECT_EQ(e.user, 3) << "der Nutzerbereich kommt aus dem Beiblatt";
+            EXPECT_EQ(e.attributes, "RO SYS");
+        }
+    EXPECT_TRUE(gefunden);
+
+    // Das Beiblatt selbst darf NICHT als Datei auf der Diskette landen.
+    for (const FileEntry& e : ziel->list())
+        EXPECT_EQ(e.name.find("CPM-DATE"), std::string::npos) << e.name;
+}
+
+TEST(DiskVolume, CpmBeiblattEntstehtNurWennEsEtwasZuSagenGibt) {
+    // Eine Diskette ohne Nutzerbereiche und ohne gesetzte Attribute braucht keines —
+    // ein leeres Beiblatt waere nur ein Ratsel im Ordner.
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_dv_cpm_bb_leer.img");
+    std::string err;
+    auto dv = oeffne(k.path(), "cpa780", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    TempOrdner ordner("k1520_test_dv_cpm_bb_leer_o");
+    ASSERT_TRUE(dv->extractAll(ordner.path(), TransferOptions{})) << dv->lastError();
+    EXPECT_FALSE(fs::exists(ordner / "cpm-dateiangaben.txt"));
+}
+
 TEST(DiskVolume, SideNPraefixImDateinamen) {
     EXPECT_EQ(FileRef::parse("Side1/HELP.DAT.00").volume, 1);
     EXPECT_EQ(FileRef::parse("Side1/HELP.DAT.00").name, "HELP.DAT.00");
@@ -641,6 +703,9 @@ TEST(DiskVolume, NeuAngelegteDisketteIstBeschreibbar) {
     schreibe(q / "Side1" / "B.DAT", "y");
     EXPECT_TRUE(dv->insertAll(q.path(), TransferOptions{})) << dv->lastError();
 
+    // Erst schliessen, dann loeschen: ~DiskImage() flusht, sonst legt die eben
+    // beschriebene Diskette die Datei NACH dem remove() wieder an.
+    dv.reset();
     std::error_code ec;
     fs::remove(pfad, ec);
 }
@@ -772,4 +837,340 @@ TEST(DiskVolume, LochInDerMitteWirdNichtVermessen) {
 
     EXPECT_EQ(dv, nullptr);
     EXPECT_NE(err.find("Zylinder 5"), std::string::npos) << err;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bootabbild — die Systemspuren vor dem Dateisystem
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @test Das Fassungsvermoegen der Systemspuren ist ein Vertrag.
+ * @par Kriterium  Es ergibt sich aus Geometrie + Beginn des Dateisystems und darf
+ *                 sich nicht unbemerkt verschieben — wer hier einen Wert aendert,
+ *                 macht jedes vorhandene Bootabbild unbrauchbar.  cpa780 = 15104
+ *                 ist zugleich das Offset, das cpmtools als `offset` fuehrt.
+ */
+TEST(DiskVolume, SystemspurenFassenEineFesteZahlBytes) {
+    struct Fall { const char* fs; uint64_t bytes; };
+    // cpa800 beginnt auf Zylinder 0 — eine Datendiskette kann nicht bootfaehig sein.
+    const Fall faelle[] = {
+        {"cpa780",    15104},   // c0h0 + c0h1 + c1h0 (je 26×128) + c1h1 (5×1024)
+        {"scpx640",   16384},   // 4 × 16×256
+        {"scpx798",   18432},   // 2 × 16×256 + 2 × 5×1024
+        {"udos_ds77", 13728},   // Spuren 0–2 + Bootspur 21, je Sektor 128 + 4 Byte Kontrollblock
+        {"udos_ss40", 13728},
+        {"cpa800",        0},
+    };
+    for (const Fall& f : faelle) {
+        const FsProfile* p = dateisysteme().find(f.fs);
+        ASSERT_NE(p, nullptr) << f.fs;
+        const DiskFormat* g = formate().find(p->format);
+        ASSERT_NE(g, nullptr) << p->format;
+        EXPECT_EQ(DiskVolume::bootAreaCapacity(*p, *g), f.bytes) << f.fs;
+    }
+}
+
+/**
+ * @test Eine angelegte Diskette traegt das mitgegebene Bootabbild Byte fuer Byte.
+ * @par Kriterium  Was aus einer echten Bootdiskette herauskommt, geht unveraendert
+ *                 wieder hinein — sonst ist das Abbild wertlos.  Der Rest der
+ *                 Systemspuren bleibt Leerdiskette (0xE5).
+ */
+TEST(DiskVolume, BootabbildGehtUnveraendertInDieSystemspuren) {
+    std::string err;
+    auto quelle = oeffne(fixture("cpa_cpa780_k5601_clock.img"), "cpa780", err);
+    ASSERT_NE(quelle, nullptr) << err;
+
+    std::vector<uint8_t> boot;
+    ASSERT_TRUE(quelle->readBootImage(boot)) << quelle->lastError();
+    ASSERT_EQ(boot.size(), 15104u);
+
+    // Die ersten 512 Byte sind der committete Bootsektor — dieselbe Datei, die
+    // test_boot_integration als Vergleich benutzt.
+    std::ifstream b(fixture("bootsec_cpa780.bin"), std::ios::binary);
+    ASSERT_TRUE(b.good());
+    const std::vector<uint8_t> sektor((std::istreambuf_iterator<char>(b)),
+                                      std::istreambuf_iterator<char>());
+    ASSERT_EQ(sektor.size(), 512u);
+    EXPECT_TRUE(std::equal(sektor.begin(), sektor.end(), boot.begin()));
+
+    // Nur die halbe Systemspur schreiben — der Rest muss Leerdiskette bleiben.
+    const std::string bin = k1520test::tempPath("k1520_dv_boot.bin");
+    const std::vector<uint8_t> halb(boot.begin(), boot.begin() + 3328);
+    std::ofstream(bin, std::ios::binary)
+        .write(reinterpret_cast<const char*>(halb.data()), 3328);
+
+    const std::string pfad = k1520test::tempPath("k1520_dv_boot.hfe");
+    std::error_code ec;
+    fs::remove(pfad, ec);
+    auto neu = DiskVolume::create(pfad, "cpa780", "", formate(), dateisysteme(), err, bin);
+    ASSERT_NE(neu, nullptr) << err;
+    EXPECT_EQ(neu->bootAreaSize(), 15104u);
+
+    std::vector<uint8_t> zurueck;
+    ASSERT_TRUE(neu->readBootImage(zurueck)) << neu->lastError();
+    ASSERT_EQ(zurueck.size(), 15104u);
+    EXPECT_TRUE(std::equal(halb.begin(), halb.end(), zurueck.begin()));
+    EXPECT_TRUE(std::all_of(zurueck.begin() + 3328, zurueck.end(),
+                            [](uint8_t x) { return x == 0xE5; }))
+        << "hinter dem Bootabbild steht keine Leerdiskette mehr";
+
+    neu.reset();
+    fs::remove(pfad, ec);
+    fs::remove(bin, ec);
+}
+
+/**
+ * @test Ein zu grosses Bootabbild legt GAR NICHTS an.
+ * @par Kriterium  Geprueft wird vor dem Formatieren — sonst bliebe eine halbfertige
+ *                 Diskette liegen, und die Meldung nennt beide Zahlen.
+ */
+TEST(DiskVolume, ZuGrossesBootabbildLegtKeineDisketteAn) {
+    const std::string bin = k1520test::tempPath("k1520_dv_zugross.bin");
+    { std::ofstream f(bin, std::ios::binary);
+      const std::vector<uint8_t> x(15105, 0x5A);
+      f.write(reinterpret_cast<const char*>(x.data()), 15105); }
+
+    const std::string pfad = k1520test::tempPath("k1520_dv_zugross.hfe");
+    std::error_code ec;
+    fs::remove(pfad, ec);
+
+    std::string err;
+    auto dv = DiskVolume::create(pfad, "cpa780", "", formate(), dateisysteme(), err, bin);
+    EXPECT_EQ(dv, nullptr);
+    EXPECT_NE(err.find("15105"), std::string::npos) << err;
+    EXPECT_NE(err.find("15104"), std::string::npos) << err;
+    EXPECT_FALSE(fs::exists(pfad)) << "die Diskette wurde trotz Fehler angelegt";
+    fs::remove(bin, ec);
+}
+
+/**
+ * @test Ohne Systemspuren gibt es kein Bootabbild — mit Begruendung.
+ * @par Kriterium  `cpa800` beginnt auf Zylinder 0; die Meldung sagt genau das,
+ *                 statt bloss „passt nicht".
+ */
+TEST(DiskVolume, DateisystemOhneSystemspurenLehntBootabbildAb) {
+    const std::string bin = k1520test::tempPath("k1520_dv_kb.bin");
+    { std::ofstream f(bin, std::ios::binary); f << "SYL"; }
+
+    const std::string pfad = k1520test::tempPath("k1520_dv_kb.hfe");
+    std::error_code ec;
+    fs::remove(pfad, ec);
+
+    std::string err;
+    auto dv = DiskVolume::create(pfad, "cpa800", "", formate(), dateisysteme(), err, bin);
+    EXPECT_EQ(dv, nullptr);
+    EXPECT_NE(err.find("Systemspuren"), std::string::npos) << err;
+    EXPECT_NE(err.find("Zylinder 0"), std::string::npos) << err;
+    EXPECT_FALSE(fs::exists(pfad));
+    fs::remove(bin, ec);
+}
+
+/**
+ * @test Eine schreibgeschuetzt geoeffnete Diskette nimmt kein Bootabbild an.
+ * @par Kriterium  Der Schreibschutz gilt fuer die Systemspuren genauso wie fuer
+ *                 Dateien — sonst waere er an der interessantesten Stelle wirkungslos.
+ */
+TEST(DiskVolume, SchreibgeschuetzteDisketteNimmtKeinBootabbild) {
+    Kopie k("cpa_cpa780_k5601_clock.hfe", "k1520_dv_bootro.hfe");
+    std::string err;
+    auto dv = oeffne(k.path(), "cpa780", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    EXPECT_FALSE(dv->writeBootImage(std::vector<uint8_t>(128, 0x11)));
+    EXPECT_NE(dv->lastError().find("schreibgeschuetzt"), std::string::npos)
+        << dv->lastError();
+}
+
+/**
+ * @test UDOS-Kopfsektorangaben überleben den Rundlauf über den Linux-Ordner.
+ * @par Kriterium  Typ, Eigenschaften, Startadresse, Satzlänge und das Speicherabbild
+ *                 (Ladeadresse + Länge) stehen NICHT in der Datei — sie kommen über
+ *                 das Beiblatt zurück.  Ohne sie wird aus `ZDOS` (P1, 1024er Sätze,
+ *                 lädt 5521 Byte nach 2600H) eine gewöhnliche Binärdatei, und die
+ *                 Diskette bootet nicht mehr.
+ */
+TEST(DiskVolume, UdosKopfsektorangabenUeberlebenDenRundlauf) {
+    std::string err;
+    auto quelle = oeffne(fixture("udos_boot_scp.hfe"), "udos_ds77", err);
+    ASSERT_NE(quelle, nullptr) << err;
+
+    TempOrdner ordner("k1520_dv_udosmeta");
+    ASSERT_TRUE(quelle->extractAll(ordner.path(), TransferOptions{})) << quelle->lastError();
+    ASSERT_TRUE(fs::exists(ordner / "udos-dateiangaben.txt")) << "Beiblatt fehlt";
+
+    std::map<std::string, FileEntry> vorher;
+    for (const FileEntry& e : quelle->list()) vorher[e.name] = e;
+    quelle.reset();
+
+    const std::string pfad = k1520test::tempPath("k1520_dv_udosmeta.hfe");
+    std::error_code ec;
+    fs::remove(pfad, ec);
+    auto neu = DiskVolume::create(pfad, "udos_ds77", "UDOS.SYS.4.3",
+                                  formate(), dateisysteme(), err);
+    ASSERT_NE(neu, nullptr) << err;
+    ASSERT_TRUE(neu->insertAll(ordner.path(), TransferOptions{})) << neu->lastError();
+
+    int geprueft = 0;
+    for (const FileEntry& e : neu->list()) {
+        const auto it = vorher.find(e.name);
+        if (it == vorher.end() || e.type == "D") continue;
+        const FileEntry& q = it->second;
+        EXPECT_EQ(e.type,       q.type)       << e.name;
+        EXPECT_EQ(e.attributes, q.attributes) << e.name;
+        EXPECT_EQ(e.entry_addr, q.entry_addr) << e.name;
+        EXPECT_EQ(e.record_len, q.record_len) << e.name;
+        EXPECT_EQ(e.segment_start,  q.segment_start)  << e.name;
+        EXPECT_EQ(e.segment_len,  q.segment_len)  << e.name;
+        EXPECT_EQ(e.size,       q.size)       << e.name;
+        ++geprueft;
+    }
+    EXPECT_GT(geprueft, 40) << "es wurden kaum Dateien verglichen";
+
+    neu.reset();
+    fs::remove(pfad, ec);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sektoransicht und Sektoreditor (§19) — auf der Ebene, die die C-ABI benutzt
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(DiskVolume, SektoransichtLiefertDieSpurenDesMediums) {
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_dv_sekt.img");
+    std::string err;
+    auto dv = oeffne(k.path(), "cpa780", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    EXPECT_GT(dv->mediumCylinders(), 0);
+    EXPECT_EQ(dv->mediumHeads(), 2);
+
+    const TrackView v = dv->trackView(0, 0);
+    EXPECT_TRUE(v.exists);
+    EXPECT_TRUE(v.formatted);
+    EXPECT_EQ(v.sectors, 26);
+    ASSERT_FALSE(v.spans.empty());
+
+    // Eine Spur ausserhalb der Ausdehnung gibt es schlicht nicht.
+    const TrackView weg = dv->trackView(static_cast<uint8_t>(dv->mediumCylinders()), 0);
+    EXPECT_FALSE(weg.exists);
+
+    std::vector<uint8_t> daten;
+    uint16_t crc = 0;
+    ASSERT_TRUE(dv->readSectorAt(0, 0, 0, daten, crc)) << dv->lastError();
+    EXPECT_EQ(daten.size(), 128u);
+    uint16_t soll = 0;
+    ASSERT_TRUE(dv->sectorCrcFor(0, 0, 0, daten, soll));
+    EXPECT_EQ(crc, soll) << "ein heiler Sektor traegt die CRC, die zu ihm gehoert";
+}
+
+TEST(DiskVolume, SchreibgeschuetzteDisketteLehntJedeSektoraenderungAb) {
+    // Der Schreibschutz muss ALLE neuen Wege sperren — einer, der durchrutscht,
+    // faellt beim blossen Ansehen einer fremden Diskette nicht auf.
+    Kopie k("cpa_cpa780_k5601_clock.img", "k1520_test_dv_sekt_ro.img");
+    std::string err;
+    auto dv = oeffne(k.path(), "cpa780", err);          // schreibgeschuetzt geoeffnet
+    ASSERT_NE(dv, nullptr) << err;
+    ASSERT_TRUE(dv->readOnly());
+
+    const std::vector<uint8_t> daten(128, 0x42);
+    TrackCodec::NewSectorSpec spec;
+    spec.id = 200;
+    spec.gap_before = 24;
+
+    EXPECT_FALSE(dv->writeSectorAt(0, 0, 0, daten, nullptr));
+    EXPECT_NE(dv->lastError().find("schreibgeschuetzt"), std::string::npos)
+        << dv->lastError();
+    EXPECT_FALSE(dv->writeSectorTail(0, 0, 0, {0xFF, 0xFF, 0xFF, 0xFF}));
+    EXPECT_FALSE(dv->eraseSectorAt(0, 0, 0, 0));
+    EXPECT_FALSE(dv->createSector(0, 0, spec, true));
+
+    // Lesen bleibt erlaubt — und die Diskette ist unveraendert.
+    std::vector<uint8_t> zurueck;
+    uint16_t crc = 0;
+    EXPECT_TRUE(dv->readSectorAt(0, 0, 0, zurueck, crc));
+    EXPECT_EQ(dv->trackView(0, 0).sectors, 26);
+}
+
+TEST(DiskVolume, NachspannSchreibenLaesstDatenUndCrcInRuhe) {
+    // Bei UDOS ist der Nachspann die Dateiverkettung.  Sie zu aendern darf weder die
+    // Nutzdaten anfassen noch einen absichtlich defekten Sektor heilen.
+    Kopie k("udos_boot_scp.hfe", "k1520_test_dv_tail.hfe");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    std::vector<uint8_t> daten;
+    uint16_t crc = 0;
+    ASSERT_TRUE(dv->readSectorAt(22, 0, 0, daten, crc)) << dv->lastError();
+
+    // Sektor absichtlich defekt machen …
+    const uint16_t falsch = 0xBEEF;
+    ASSERT_TRUE(dv->writeSectorAt(22, 0, 0, daten, &falsch)) << dv->lastError();
+    ASSERT_FALSE(dv->trackView(22, 0).spans[0].data_crc_ok);
+
+    // … dann NUR die Verkettung aendern.
+    const std::vector<uint8_t> neu = {0x07, 0x15, 0xFF, 0xFF};
+    ASSERT_TRUE(dv->writeSectorTail(22, 0, 0, neu)) << dv->lastError();
+
+    std::vector<uint8_t> anhang;
+    ASSERT_TRUE(dv->readSectorTail(22, 0, 0, anhang));
+    ASSERT_GE(anhang.size(), 4u);
+    EXPECT_TRUE(std::equal(neu.begin(), neu.end(), anhang.begin()));
+
+    std::vector<uint8_t> zurueck;
+    uint16_t crc2 = 0;
+    ASSERT_TRUE(dv->readSectorAt(22, 0, 0, zurueck, crc2));
+    EXPECT_EQ(zurueck, daten) << "die Nutzdaten bleiben";
+    EXPECT_EQ(crc2, falsch)   << "und die absichtlich falsche CRC bleibt falsch";
+
+    // Ein zu langer Nachspann wird abgelehnt, statt in die naechste Marke zu laufen.
+    EXPECT_FALSE(dv->writeSectorTail(22, 0, 0, std::vector<uint8_t>(64, 0xAA)));
+}
+
+TEST(DiskVolume, SektorAnlegenUndLoeschenUeberDieFassade) {
+    Kopie k("cpa_cpa780_k5601_clock.hfe", "k1520_test_dv_sekt_neu.hfe");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "cpa780", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    const TrackView vorher = dv->trackView(0, 0);
+    const int anzahl = vorher.sectors;
+    const TrackSpan* dreizehn = nullptr;
+    for (const TrackSpan& s : vorher.spans)
+        if (s.kind == TrackSpan::Kind::Sector && s.id == 13) dreizehn = &s;
+    ASSERT_NE(dreizehn, nullptr);
+    const int index = dreizehn->index;
+    const double lage = dreizehn->start;
+
+    ASSERT_TRUE(dv->eraseSectorAt(0, 0, index, 0)) << dv->lastError();
+    EXPECT_EQ(dv->trackView(0, 0).sectors, anzahl - 1);
+
+    // Der Gap, der auf dieser Spur ueblich ist — so wie die Oberflaeche ihn misst.
+    const TrackView luecke = dv->trackView(0, 0);
+    std::vector<uint32_t> gaps;
+    for (const TrackSpan& s : luecke.spans)
+        if (s.kind == TrackSpan::Kind::Gap)
+            gaps.push_back(static_cast<uint32_t>((s.end - s.start) * luecke.bytes + 0.5));
+    std::sort(gaps.begin(), gaps.end());
+    ASSERT_FALSE(gaps.empty());
+
+    TrackCodec::NewSectorSpec spec;
+    spec.id = 13;
+    spec.gap_before = static_cast<uint16_t>(gaps[gaps.size() / 2]);
+    uint32_t von = 0, laenge = 0;
+    ASSERT_TRUE(dv->planSector(0, 0, spec, true, von, laenge));
+    ASSERT_TRUE(dv->createSector(0, 0, spec, true)) << dv->lastError();
+
+    const TrackView nachher = dv->trackView(0, 0);
+    EXPECT_EQ(nachher.sectors, anzahl);
+    bool gefunden = false;
+    for (const TrackSpan& s : nachher.spans) {
+        if (s.kind != TrackSpan::Kind::Sector || s.id != 13) continue;
+        gefunden = true;
+        EXPECT_TRUE(s.ok()) << "ein neu angelegter Sektor ist sofort gueltig";
+        EXPECT_NEAR(s.start, lage, 1e-9) << "wieder an derselben Stelle";
+        // Die Vorhersage muss sich mit der Wirklichkeit decken.
+        EXPECT_NEAR(s.start * nachher.bytes, von, 1.0);
+    }
+    EXPECT_TRUE(gefunden);
 }

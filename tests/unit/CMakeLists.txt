@@ -28,6 +28,8 @@ k1520_add_test(k7637          SRC peripherals/test_k7637.cpp
                               LIBS k1520_k7637 k1520_sio k1520_bus LABELS "${_lbl}")
 k1520_add_test(track_codec    SRC peripherals/test_track_codec.cpp    LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(bit_codec      SRC peripherals/test_bit_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
+# Zeichenbare Sicht auf eine Spur (Diskeditor, §19)
+k1520_add_test(track_view     SRC peripherals/test_track_view.cpp     LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(drive_profile  SRC peripherals/test_drive_profile.cpp  LIBS k1520_floppy2 LABELS "${_lbl}")
 # Medium-Umbau (origin/main 7c7f312): DiskMedium + Container-Codecs .img/.hfe/.dmk
 k1520_add_test(disk_medium    SRC peripherals/test_disk_medium.cpp    LIBS k1520_floppy2 LABELS "${_lbl}")

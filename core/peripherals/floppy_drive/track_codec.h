@@ -21,6 +21,7 @@
 #include "track_image.h"        // Encoding, TrackImage, MarkType
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 /**
@@ -46,6 +47,22 @@ struct LogicalSector {
     /// UDOS-Lader las Gap-Fuellbytes als Zeiger → „BAD POINTER IN OS".
     /// Nur von @ref parseTrack gefuellt (bis @ref kSectorTailBytes Bytes).
     std::vector<uint8_t> tail;
+
+    // ── Lage auf der Spur; nur von @ref parseTrack gesetzt ───────────────────
+    //
+    // Eine @ref TrackImage ist GENAU eine Umdrehung — `pos / track.size()` ist damit
+    // der Drehwinkel, an dem das Byte unter dem Kopf liegt (Index = 0 = 12 Uhr).  Nur
+    // damit laesst sich zeichnen, wo ein Sektor wirklich sitzt; die Drehzahl aus dem
+    // HFE-Kopf braucht es dafuer NICHT.  SIZE_MAX = nicht vorhanden (Sektor ohne
+    // Datenfeld).
+
+    size_t   id_pos    = SIZE_MAX;  ///< Byte-Index der IDAM (Mark-Byte FE)
+    size_t   sync_pos  = SIZE_MAX;  ///< Beginn der Sync-Gruppe davor (MFM: 3×A1, FM: = id_pos)
+    size_t   data_pos  = SIZE_MAX;  ///< Byte-Index der DAM (Mark-Byte FB/F8)
+    size_t   end_pos   = SIZE_MAX;  ///< erstes Byte HINTER der Daten-CRC
+    uint16_t id_crc    = 0;         ///< ID-CRC, wie sie auf dem Medium steht
+    uint16_t data_crc  = 0;         ///< Daten-CRC, wie sie auf dem Medium steht
+    bool     deleted   = false;     ///< DAM war 0xF8 (geloeschter Sektor) statt 0xFB
 };
 
 /// @brief Anzahl der Bytes hinter der Daten-CRC, die @ref parseTrack mitnimmt und
@@ -129,6 +146,95 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track);
 bool writeSector(TrackImage& track, uint8_t sector_id,
                  const std::vector<uint8_t>& data,
                  const std::vector<uint8_t>& tail = {});
+
+/**
+ * @brief Wie @ref writeSector, aber ueber die LAUFENDE NUMMER des Sektors in der Spur.
+ *
+ * Zwei Gruende, warum die ID dafuer nicht taugt: eine Spur darf dieselbe ID mehrfach
+ * tragen (fehlerhaft formatiert, Kopierschutz), und ein Sektoreditor muss genau den
+ * Sektor treffen, den der Anwender angeklickt hat.  Die Nummerierung ist die von
+ * @ref parseTrack.
+ *
+ * @param crc_woertlich `nullptr` = Daten-CRC neu rechnen (wie @ref writeSector);
+ *        sonst wird **genau dieser Wert** ins CRC-Feld geschrieben.  Damit laesst sich
+ *        ein Sektor absichtlich defekt lassen oder machen — noetig, um eine schadhafte
+ *        Diskette originalgetreu nachzubilden.
+ */
+bool writeSectorAt(TrackImage& track, size_t index,
+                   const std::vector<uint8_t>& data,
+                   const std::vector<uint8_t>& tail = {},
+                   const uint16_t* crc_woertlich = nullptr);
+
+/**
+ * @brief Daten-CRC, die zu @p data an der Stelle des @p index -ten Sektors gehoerte.
+ *
+ * Fuer den Editor: „was muesste dort stehen, damit der Sektor gueltig ist?" — ohne
+ * die Spur anzufassen.  Beruecksichtigt Verfahren (FM/MFM) und die vorgefundene
+ * Datenmarke (0xFB / 0xF8 geloescht).
+ *
+ * @return false, wenn es den Sektor nicht gibt oder @p data nicht seine Groesse hat.
+ */
+bool sectorDataCrc(const TrackImage& track, size_t index,
+                   const std::vector<uint8_t>& data, uint16_t& out);
+
+/**
+ * @struct NewSectorSpec
+ * @brief Ein Sektor, der auf einer VORHANDENEN Spur neu angelegt werden soll (§19.4).
+ *
+ * Für den Sektoreditor: eine Spur von Hand zusammensetzen, Sektor für Sektor —
+ * etwa um eine schadhafte Diskette nachzubauen oder eine Lücke zu schliessen.
+ */
+struct NewSectorSpec {
+    uint8_t  id   = 1;      ///< Sektor-ID; bestimmt zugleich die LAGE (s. @ref newSectorPosition)
+    uint8_t  cyl  = 0;      ///< Zylinder- und Kopfangabe im ID-Feld (dürfen von der
+    uint8_t  head = 0;      ///< tatsächlichen Lage abweichen — das ist erlaubt und kommt vor)
+    uint16_t size = 128;    ///< 128/256/512/1024
+    uint16_t gap_before = 0;   ///< Gap-Bytes vor der Sync-Gruppe
+    uint16_t tail_bytes = 0;   ///< Bytes hinter der Daten-CRC (UDOS-Kontrollblock: 4)
+    uint8_t  fill = 0xE5;      ///< Füllbyte der Nutzdaten
+};
+
+/**
+ * @brief Wo landet ein neuer Sektor mit dieser ID?  (Byte-Index der Sync-Gruppe)
+ *
+ * **Die Regel:** hinter dem vorhandenen Sektor mit der **nächstkleineren ID**, um
+ * @p gap_before Bytes versetzt; gibt es keinen kleineren, hinter dem Index (12 Uhr).
+ * Damit legt man eine Spur in ID-Reihenfolge an, kann aber bewusst Lücken lassen —
+ * wer Sektor 5 mit grossem Gap setzt, hat hinter Sektor 1 noch Platz für 2, 3 und 4.
+ * Wer den Gap zu knapp wählt, überschreibt den Nachbarn; das ist gewollt und muss
+ * eine Ebene höher erfragt werden.
+ */
+size_t newSectorPosition(const TrackImage& track, uint8_t id, uint16_t gap_before);
+
+/// @brief Wie viele Bytes belegt ein solcher Sektor insgesamt (ohne @ref
+///        NewSectorSpec::gap_before)?
+size_t newSectorLength(Encoding enc, uint16_t size, uint16_t tail_bytes);
+
+/**
+ * @brief Einen Sektor auf einer vorhandenen Spur anlegen.
+ *
+ * Die **Spurlänge bleibt fest** — geschrieben wird über vorhandenes Gap (und, wenn
+ * es zu knapp ist, über den Nachbarn).  Das ist die physikalische Wahrheit: eine
+ * Umdrehung hat so viele Bytes, wie sie hat.  Passt der Sektor nicht mehr vor das
+ * Spurende, wird **nichts** geschrieben.
+ *
+ * Ist die Spur noch ohne jede Adressmarke, legt der erste Sektor zugleich das
+ * **Verfahren der Spur** fest (@p enc); sonst muss @p enc dazu passen — FM und MFM
+ * lassen sich in einer Spur nicht mischen (@ref TrackImage::encoding).
+ *
+ * @param warum optional: Klartextgrund, wenn `false` zurückkommt.
+ */
+bool createSector(TrackImage& track, const NewSectorSpec& spec, Encoding enc,
+                  std::string* warum = nullptr);
+
+/**
+ * @brief Einen Sektor löschen — sein Bereich wird wieder Gap.
+ *
+ * Gelöscht wird von der Sync-Gruppe bis hinter die Daten-CRC, dazu @p tail_bytes
+ * weitere Bytes (UDOS-Kontrollblock).  Die Marken werden entfernt, die Bytes mit dem
+ * Gap-Füllbyte des Verfahrens überschrieben; die Spurlänge bleibt.
+ */
+bool eraseSectorAt(TrackImage& track, size_t index, uint16_t tail_bytes = 0);
 
 /**
  * @brief Resync-Zielposition für den ZRE-ROM-Lesepfad (Kalibrierung, doc/design/07 §10.5.1).

@@ -247,6 +247,29 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
 > `UdosFormat.FormatsBrandNewBlankDiskette`, `UdosFormat.BuildsBootableSystemDiskAndBootsFromIt`
 > (blank disk → `.dmk` → format both sides → boot from it), `BootIntegrationCpa02.DmkBootsIntoRunningCpaOs`.
 >
+> **Spurdichte: die Diskette muss nicht zum Laufwerk passen** (2026-08-12,
+> `doc/design/09_floppy_drive.md` §7.2).  5,25″ kennt 48 tpi (40 Spuren) und 96 tpi (80).
+> Passt die Diskette nicht zum `DriveProfile`, wird sie **nicht mehr abgewiesen, sondern
+> übersetzt** — `FloppyDriveV2::mount()` legt einmalig `TrackPitch` und `side0Only` fest,
+> ausgerechnet wird an EINER Stelle (`mediumCylinder()`), durch die jeder Spurzugriff geht
+> (`track`/`mutableTrack`/`markTrackDirty`/**`writeTrackAt`** — auch das bekommt eine
+> *Kopfposition*).  40 Spuren im 80er-Laufwerk → `DoubleStep` (Position 2n = Spur n),
+> 80 Spuren im 40er → `HalfStep` (Position n = Spur 2n), zweiseitig im einseitigen →
+> Kopf 1 fehlt.  Je Einschränkung ein Satz in `notices()` → `A5120Machine::diskNotice` →
+> `k1520_disk_notice` → Laufwerkskasten der GUI (**kein** Meldungsfenster — die Diskette
+> ist benutzbar).  Drei Festlegungen, die man nicht aufweichen darf:
+> **(1)** Die *Spurzahl* entscheidet (48 tpi = 35–45 Zylinder, 96 tpi = ab 70), nicht das
+> Katalogformat — „nur die äußere Hälfte beschrieben" gibt es nicht; wer eine halb
+> beschriebene 96-tpi-Diskette abbilden will, braucht ein 80-Zylinder-Abbild mit
+> unformatierter Innenhälfte (`.hfe`/`.dmk`, nicht `.img`).
+> **(2)** Schreibzugriffe auf eine Position ohne Spur werden **verworfen** (Log-Warnung),
+> nicht auf die Nachbarspur umgeleitet.
+> **(3)** Beide Darstellungen derselben Diskette — 80 Zylinder mit formatierten geraden
+> (`step: 2`) und 40 Zylinder — müssen unter dem Kopf **byteweise gleich** sein; das ist
+> der Wächter `FloppyDriveV2.Doppelschritt_IstDieselbeDisketteWieEinDoppelschrittAbbild`.
+> Am laufenden CP/A gegengeprüft: Geometrie U (40 Spuren Doppelschritt) formatiert ein
+> 40-Zylinder-Abbild im K5601 voll und liest es fehlerfrei zurück.
+>
 > **UDOS-Laufwerkstypen (`SET DISKCON`) — Matrix in `doc/udos_diskettenformat.md` §12.3.**
 > Bootfähig herstellbar sind `41` (K5600.20), `31` (K5600.10, 40 Spuren) und `41` auf dem
 > 8″-MF6400 — Guards `Einseitig/UdosLaufwerkstypen.BautBootfaehigeSystemdiskette/*`
@@ -446,6 +469,102 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 
 Was beim Weiterarbeiten zu wissen ist:
 
+- **Bootfähige Disketten (2026-08-12, `doc/design/13_k1520disktool.md` §13a).**  Das
+  Werkzeug legt Disketten mit **Bootabbild** an: `create --fs NAME --boot datei.bin`
+  (GUI: Rückfrage + Dateiauswahl bei „Neue Diskette", Gegenstück „Bootabbild sichern…"
+  = `boot-get`).  Das Abbild ist ein **rohes Byteband** über die Systemspuren, deren
+  Umriss je Familie feststeht: CP/M = alles vor `data_cyl`/`data_head` (cpa780: 15104 B),
+  UDOS = Spuren 0–2 **plus Bootspur 21** (13312 B je Seite — ohne die Bootspur bricht
+  der UDOS-Kaltstart mit `ERROR: 45` ab).  **Geprüft wird VOR dem Formatieren**, sonst
+  bliebe bei einem zu grossen Abbild eine halbe Diskette liegen; kürzer ist erlaubt.
+  Fertige Abbilder: `disks/boot_{cpa780,scpx640,scpx798,udos43}.bin`.  Wächter
+  `test_disktool_bootdiskette` — baut die Diskette mit dem Werkzeug und **bootet sie**
+  (CP/A bis `A>`, SCPX in beiden Geometrien, UDOS bis `%`).
+- **UDOS-Dateien tragen mehr als ihre Bytes (2026-08-12, `doc/udos_diskettenformat.md`
+  §6/§14).**  Der Kopfsektor steuert, wie UDOS eine Datei **lädt**; am Ende (Offset
+  122/124/126) stehen **LOW ADDRESS / HIGH ADDRESS / STACK SIZE** — genau das, was
+  `EXTRACT` im laufenden System meldet.  Der Lader trägt LOW/HIGH nach `(1275H)/(1277H)`
+  und lässt sie vom Speicherverwalter (`1009H`) zuteilen; stehen dort `FFFF`, bricht er
+  mit **`MEMORY PROTECT VIOLATION`** ab (Fehler `43H`, Meldungstabelle `13C6H`/`12B2H`,
+  Index = A−40H).  Ebenso maßgeblich: **Offset 17** ist NICHT immer die Kopie der
+  Satzlänge (bei 256/512 = 0) — mit dem falschen Wert startet ein neu geschriebener
+  Nukleus (`OS`) nicht mehr.  Der Kopfsektor ist damit lückenlos zugeordnet; berechnet
+  werden beim Schreiben nur Zeiger (6–11), Satzanzahl (13) und Bytes im letzten Satz (22).
+  Alles andere führt das Werkzeug mit: `WriteOptions::udos_*` / `UdosAttrs` →
+  CLI `put --type/--props/--entry/--record-len/--block-len/--segment/--mem/--extra/
+  --created/--date`, `attr` zeigt und ändert sie an einer vorhandenen Datei, und ein
+  **Beiblatt** `udos-dateiangaben.txt` (Schlüssel=Wert) trägt sie durch `get`→`put`.
+  C-ABI: `k1520d_entry_*` + `k1520d_set_udos_attrs`.
+- **UDOS-Bootdisketten laufen (2026-08-13).**  `get` → `create --boot` → `put` ergibt
+  eine Diskette, die den Selbststart fährt (`OS.INIT`: Banner, `DATE`) und **Befehle
+  ausführt** (`CAT`, `STATUS`, `PRINT`).  Der letzte Stolperstein war: **das
+  Speicherabbild einer Programmdatei reicht über ihr logisches Dateiende hinaus** —
+  `OS` ist 5504 Byte lang (`bytes_in_last`), sein Abbild 5632 (11 volle Sätze à 512),
+  und in den 128 Byte dahinter steht Nukleus-Code, in den er selbst springt (`2580H`).
+  Wer auf `length()` kürzt, bekommt eine Diskette, die bootet und beim ersten Befehl in
+  den Monitor fällt (`BREAK 4150`).  Deshalb liefert `UdosFileSystem::readChain` **volle
+  Sätze**, sobald `segment_len > length()`, und `bytes_in_last` wird mitgeführt
+  (`rest=` im Beiblatt) statt ausgerechnet.  Kleinste bootfähige Diskette:
+  Systemspuren + `OS` + `ZDOS` (Urlader sucht beide über das VERZEICHNIS).  Wächter:
+  `DiskToolBootdiskette.GebauteUdosDisketteBootetUndFuehrtBefehleAus`.
+- **Diskeditor — die Diskette als Scheibe (2026-08-13, `doc/design/13_k1520disktool.md` §19).**
+  Knopf „Diskeditor“ im Hauptfenster → `app/disktool/ui/disk_editor.py`: zwei Scheiben
+  (Spur 0 **außen**, Sektor 0 bei **12 Uhr**, Seite 1 gespiegelt), Sektor grün/rot,
+  Gap orange, unformatiert grau; Klick **oder** Wählerzeile (`[−] Spur: [25] [+]`,
+  Sektorschritt geht in SPURreihenfolge, nicht nach ID) → Hexfeld (32 B/Zeile,
+  Überschreibmodus, ASCII-Spalte läuft mit) + CRC-Feld + *Reload/Fix CRC/Save*.
+  **`Save Sektor` schreibt bis in die Datei** (`sector_write`+`flush`) — bei einem
+  Sektoreditor wäre „nur im Speicher“ eine Falle; Ausnahme mit Ansage: `.img` führt
+  kein CRC-Feld, eine absichtlich falsche CRC lässt sich dort nicht ablegen.  Unterbau: `core/peripherals/floppy_drive/track_view.{h,cpp}`
+  (`scanTrack` → lückenlose Abschnittsfolge), `parseTrack` liefert jetzt zusätzlich
+  **Byte-Offsets + gespeicherte CRCs + `deleted`**, neu `TrackCodec::writeSectorAt`
+  und `sectorDataCrc`, C-ABI `k1520d_track_scan`/`k1520d_span_*`/`k1520d_sector_*`.
+  Vier Festlegungen: **(1) Der Winkel ist `Byteposition ÷ Spurlänge`** — eine
+  `TrackImage` IST eine Umdrehung; Bitrate/Drehzahl aus dem HFE-Kopf werden NICHT
+  gebraucht (die Schreibnaht ergibt darum eine sichtbare Spirale, keine Speiche; `.img`
+  hat gar keine Winkelinformation).  **(2) Gap ≠ unformatiert** — keine Adressmarke =
+  unformatiert (der Zustand von `createBlank`), sonst Gap.  **(3) Geschrieben wird über
+  die LAUFENDE NUMMER, nicht über die Sektor-ID** (IDs dürfen doppelt vorkommen).
+  **(4) Die CRC ist mitschreibbar** (`crc_woertlich`), sonst liesse sich eine schadhafte
+  Diskette nicht originalgetreu nachbilden.  **Sektoren anlegen/löschen (§19.4):**
+  `TrackCodec::createSector`/`eraseSectorAt`/`newSectorPosition` — **die ID bestimmt
+  die Lage** (hinter den vorhandenen mit der nächstkleineren ID, um den Gap versetzt;
+  ohne kleineren hinter den Index).  Daraus folgt: 0,1,5 angelegt ⇒ ein danach
+  angelegter Sektor 2 landet ebenfalls hinter der 1 und **überschreibt die 5** — das
+  ist gewollt (wer Platz lassen will, gibt bei der 5 einen grösseren Gap an), die
+  Oberfläche fragt vorher (`planSector` nennt Ziel, Länge und Betroffene).  Die
+  **Spurlänge bleibt fest** (Gap wird überschrieben, `bitcells` bleibt gültig);
+  FM/MFM ist an der SPUR, nicht am Sektor — auf einer formatierten Spur gesperrt.
+  Gap-Vorschlag = Median der Gaps DIESER Spur.  Dabei zeigt **`sync_pos` jetzt auf
+  den Anfang der Sync-Gruppe** (die 00 vor den A1), sonst wichen Anzeige und
+  `newSectorPosition` um die Sync-Länge ab.  **§19.5:** bei UDOS nennt die Sektorzeile
+  `IBM-MFM + UDOS-Erweiterung`, rechnet `128+4 Byte` (Nutzdaten+Kontrollblock; die CRC zählt wie bei CP/M nicht mit) und entschlüsselt die
+  Kettenzeiger — die vier Rohbytes in einem ÄNDERBAREN Feld (`writeSectorTail` fasst dabei weder Nutzdaten noch CRC an); ob es den Anhang gibt, weiss das DATEISYSTEM, nicht der Sektor.
+  Der Treffertest der Grafik ist analytisch
+  (Polarkoordinaten), nicht per Szenengraph — Wächter
+  `test_disk_editor_hit_test_finds_the_drawn_sector` rechnet jeden Sektor zurück; dazu
+  `TrackView.*`, `TrackCodecWriteSectorAt.*`, `py_disk_c_api`.  **Grenze:** der Editor
+  braucht eine geöffnete (= erkannte) Diskette — „roh öffnen“ gibt es noch nicht.
+- **Dateiangaben sehen und ändern (2026-08-13, `doc/design/13_k1520disktool.md` §13c).**
+  Rechtsklick/Doppelklick auf eine Datei → **Eigenschaften-Dialog**
+  (`app/disktool/ui/properties_dialog.py`): UDOS-Kopfsektor voll editierbar, CP/M
+  Nutzerbereich + R/O/SYS/ARC.  Dafür kam **`CpmAttrs` als zweite Überladung** von
+  `FileSystem::setAttributes` (nicht eine gemeinsame Struktur — die Familien haben
+  fachlich nichts gemeinsam), C-ABI `k1520d_set_cpm_attrs` + `k1520d_entry_bytes_in_last`,
+  CLI `attr --ro/--sys/--arc/--user`.  Drei Festlegungen: **(1)** Der Nutzerbereich ist
+  IDENTITÄT, kein Attribut — `--user` verschiebt nach `3:NAME.TYP` und wird abgelehnt,
+  wenn dort schon eine gleichnamige Datei liegt; geändert werden **alle Extents**.
+  **(2) Satzlänge und „Bytes im letzten Satz“ sind nicht änderbar** (sie bestimmen die
+  Sektorlage; Weg dahin ist `get` + `put --record-len`) — der Dialog fasst den *Inhalt*
+  einer Datei nie an.  **(3)** Geschrieben wird nur, was sich unterscheidet
+  (`aenderungen()`), sonst bewegte ein blosses Ansehen das Änderungsdatum.
+  Dazu ein **CP/M-Beiblatt `cpm-dateiangaben.txt`** analog zum UDOS-Beiblatt (ohne es
+  ging der Nutzerbereich beim Rundlauf `extractAll`→`insertAll` verloren; `zielName()`
+  benutzen **`checkFit` und `insertAll` gemeinsam**, sonst urteilt die Platzprüfung über
+  einen anderen Namen als die Ausführung).  Das **Archiv** druckt seitdem alle Angaben
+  als zweite Tabelle „DATEIANGABEN IM EINZELNEN“ — für die Wiederherstellung von Hand;
+  maschinell reichen die Beiblätter im selben Archiv.  Wächter: `CpmFileSystemAttrs.*`,
+  `DiskVolume.CpmBeiblatt*`, `py_disktool_gui`.
 - **`data/formats.yaml` hat jetzt ZWEI Sektionen.**  `formats:` (Physik, liest der
   Emulator) und `filesystems:` (logische Ebene, liest nur das DiskTool).  `data_start`
   ist dort eine **Spur**, kein Byte-Offset — bei gemischter Geometrie (cpa780: drei

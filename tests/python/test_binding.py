@@ -103,6 +103,23 @@ def test_create_disk_writes_a_mountable_image(emulator, tmp_path):
     assert other.mount_disk(0, str(target), "cpa780", True), other.last_error()
 
 
+def test_disk_notice_reports_the_track_pitch_adaptation(emulator, tmp_path):
+    """40-Spur-Diskette im 80-Spur-Laufwerk (Slot 0 = K5601) → Doppelschritt-Hinweis."""
+    target = tmp_path / "vierzig_spuren.img"
+    assert emulator.create_disk(0, str(target), "k5601_ss40_26x128", False), \
+        emulator.last_error()
+    assert emulator.disk_notice(0) == "Double Step aktiviert"
+
+    # Eine Diskette, die zum Laufwerk passt, meldet nichts.
+    passend = tmp_path / "achtzig_spuren.img"
+    assert emulator.create_disk(1, str(passend), "cpa780", False), emulator.last_error()
+    assert emulator.disk_notice(1) == ""
+
+    # Leeres Laufwerk ebenso.
+    assert emulator.unmount_disk(0)
+    assert emulator.disk_notice(0) == ""
+
+
 def test_drive_status_flags_are_boolean(emulator, temp_disk):
     emulator.mount_disk(0, temp_disk("cpa_cpa780_k5601_clock.img"), "cpa780", False)
     emulator.power_on()
