@@ -334,6 +334,80 @@ def test_slim_windows_kehrt_nur_qt_dlls_aus(tmp_path, monkeypatch):
     assert (ps / "plugins" / "platforms").is_dir()
 
 
+def test_slim_findet_cpython_in_BEIDEN_anordnungen(tmp_path):
+    """`uv` legt Python in ein versioniertes Unterverzeichnis, das Setup nicht.
+
+    Der Kehraus lief bis 2026-08-14 nur über `<root>/python/*/` — die Anordnung,
+    die `uv python install` erzeugt.  Der Windows-Assistent packt den Baum
+    direkt nach `<root>/python/`; dort traf dann KEIN Muster mehr, und Tcl/Tk,
+    IDLE, ensurepip, die Header und ein zweites pip blieben stehen: 163 statt
+    120 MB, ohne dass irgendetwas fehlschlug.  Genau deshalb dieser Test.
+    """
+    slim = _slim()
+
+    # 1) uv-Anordnung: <root>/python/cpython-3.12.11-…/lib/
+    uv = tmp_path / "uv"
+    (uv / "python" / "cpython-3.12.11-linux-x86_64-gnu" / "lib").mkdir(parents=True)
+    assert slim.cpython_baeume(uv) == [uv / "python" / "cpython-3.12.11-linux-x86_64-gnu"]
+
+    # 2) Assistenten-Anordnung: <root>/python/Lib/
+    win = tmp_path / "win"
+    (win / "python" / "Lib").mkdir(parents=True)
+    (win / "python" / "DLLs").mkdir()
+    assert slim.cpython_baeume(win) == [win / "python"]
+
+    # 3) gar kein Python
+    assert slim.cpython_baeume(tmp_path / "leer") == []
+
+
+def test_slim_raeumt_die_windows_anordnung_wirklich_ab(tmp_path, monkeypatch):
+    """Gegenprobe zum Vorigen: mit der richtigen Wurzel greifen die Muster auch."""
+    slim = _slim()
+    monkeypatch.setattr(slim, "IST_WINDOWS", True)
+
+    py = tmp_path / "python"
+    for d in ("Lib/idlelib", "Lib/ensurepip", "Lib/tkinter", "Lib/site-packages/pip",
+              "tcl", "include", "libs", "Lib/encodings", "DLLs"):
+        (py / d).mkdir(parents=True, exist_ok=True)
+    for f in ("DLLs/tcl86t.dll", "DLLs/_tkinter.pyd", "DLLs/libcrypto-3-x64.dll",
+              "DLLs/_ssl.pyd", "DLLs/unicodedata.pyd", "python312.dll"):
+        (py / f).write_bytes(b"x" * 32)
+
+    slim.slim_cpython(tmp_path, slim.Cutter(dry_run=False))
+
+    for weg in ("Lib/idlelib", "Lib/ensurepip", "Lib/tkinter", "Lib/site-packages/pip",
+                "tcl", "include", "libs", "DLLs/tcl86t.dll", "DLLs/_tkinter.pyd",
+                "DLLs/libcrypto-3-x64.dll", "DLLs/_ssl.pyd"):
+        assert not (py / weg).exists(), f"{weg} haette entfernt werden muessen"
+    # Und das hier ist die Laufzeit selbst — sie muss stehenbleiben.
+    for bleibt in ("python312.dll", "DLLs/unicodedata.pyd", "Lib/encodings"):
+        assert (py / bleibt).exists(), f"{bleibt} darf NICHT entfernt werden"
+
+
+def test_slim_wirft_pip_aus_der_laufzeitumgebung(tmp_path):
+    """Die Umgebung ist eine LAUFZEIT — pip sind dort 11 MB fuer nichts.
+
+    Unter Linux legt `uv venv` von vornherein kein pip an; unter Windows baut
+    der Assistent sie mit `python -m venv`, und das bringt es mit.
+    """
+    slim = _slim()
+    sp = tmp_path / "venv" / "Lib" / "site-packages"
+    (sp / "pip").mkdir(parents=True)
+    (sp / "pip-25.2.dist-info").mkdir()
+    (sp / "PySide6").mkdir()
+    (tmp_path / "venv" / "Scripts").mkdir()
+    (tmp_path / "venv" / "Scripts" / "pip.exe").write_bytes(b"x")
+    (tmp_path / "venv" / "Scripts" / "python.exe").write_bytes(b"x")
+
+    slim.slim_venv_paketverwaltung(tmp_path, slim.Cutter(dry_run=False))
+
+    assert not (sp / "pip").exists()
+    assert not (sp / "pip-25.2.dist-info").exists()
+    assert not (tmp_path / "venv" / "Scripts" / "pip.exe").exists()
+    assert (sp / "PySide6").is_dir(), "der Kehraus hat zu viel mitgenommen"
+    assert (tmp_path / "venv" / "Scripts" / "python.exe").exists()
+
+
 def test_slim_findet_site_packages_beider_plattformen(tmp_path):
     """`venv/Lib/site-packages` (Windows) und `venv/lib/pythonX.Y/…` (Unix)."""
     slim = _slim()

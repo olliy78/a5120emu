@@ -153,7 +153,7 @@ Installationsprogramm; gebaut wird beides von `.github/workflows/release.yml`, s
 Versions-Tag `v*` gesetzt wird.
 
 Einmalig ~120 MB Download, danach läuft der Emulator ohne Netz; belegt werden ~150 MB
-(Linux) bzw. ~123 MB (Windows). Arbeitsdisketten landen im Dokumentenordner
+(Linux) bzw. ~116 MB (Windows). Arbeitsdisketten landen im Dokumentenordner
 (`<Dokumente>/K1520emu/Disketten`), also getrennt vom Programm — der Emulator schreibt
 Änderungen an einer eingelegten Diskette dorthin zurück, und ein Update fasst den Ordner
 nie an. Bedienung: **[packaging/README.md](packaging/README.md)**, Entwurf und

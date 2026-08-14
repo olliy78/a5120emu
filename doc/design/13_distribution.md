@@ -584,7 +584,7 @@ Vier Schritte, jeder für sich abnehmbar:
    Bibliotheksnamen, Laufzeitbindung, beigelegte Starter, `.zip` statt `.tar.gz`); das
    `.zip` hängt seit 2026-08-14 **nicht mehr am Release** — ohne Installationsskript
    wäre es für einen Anwender nutzlos, es bleibt Prüfstück der CI. Das Schlankmachen
-   greift auch unter Windows (**316 → 119 MB**, gemessen 2026-08-12). Guards: die
+   greift auch unter Windows (**116 MB**, gemessen 2026-08-14 im Paketjob). Guards: die
    Textprüfungen an der `.iss` in `tests/python/test_packaging.py` (kein PowerShell,
    Bootstrap vor dem Kopieren, Aufräumen nach Fehlschlag, `dontcopy` für früh
    gebrauchte Dateien, vollständiges `[UninstallDelete]`, Pins passen zur
@@ -611,8 +611,26 @@ macOS-Tripel, `paths.py` kennt `.dylib` und `~/Library/Application Support`).
   mit, mit `--disks none` keine.
 - ~~**Schlankmachen unter Windows**~~ ✅ erledigt 2026-08-12: `slim.py` liest die
   PE-Importtabelle selbst (`pe_imports`), weil auf dem Rechner des Anwenders kein
-  `dumpbin` liegt. Eine Windows-Installation belegt damit **123 MB statt 316**
-  (gemessen im Paketjob, `--disks none`).
+  `dumpbin` liegt. Eine Windows-Installation belegt damit **116 MB** (gemessen
+  2026-08-14 im Paketjob, `--disks none`).
+
+  Dabei ist am 2026-08-14 ein stiller Aussetzer aufgefallen, der 40 MB kostete:
+  `slim_cpython` suchte den Interpreter ausschließlich unter `<root>/python/*/`
+  — die Anordnung, die `uv python install` erzeugt. Der Windows-Assistent packt
+  ihn direkt nach `<root>/python/`, dort traf **kein einziges** Muster, und
+  Tcl/Tk, IDLE, `ensurepip`, die Header und ein zweites `pip` blieben stehen,
+  ohne dass irgendetwas fehlschlug. `cpython_baeume()` erkennt jetzt beide
+  Anordnungen (Merkmal: `Lib`/`lib` unmittelbar darunter). Zwei weitere Posten
+  kamen dazu: `pip` fliegt aus der **Laufzeit**umgebung (unter Linux legt
+  `uv venv` von vornherein keines an, `python -m venv` schon — 11 MB), und
+  unter Windows fliegt **OpenSSL** (`libcrypto-3` allein 8 MB): der Emulator
+  redet mit nichts im Netz, `hashlib` rechnet ohne `_hashlib` mit den
+  eingebauten Implementierungen weiter, und pip braucht es nur beim
+  Einrichten — da ist es noch da. Guards: `test_slim_findet_cpython_in_BEIDEN_anordnungen`,
+  `test_slim_raeumt_die_windows_anordnung_wirklich_ab`,
+  `test_slim_wirft_pip_aus_der_laufzeitumgebung`, dazu die auf **130 MB**
+  verschärfte Schranke im Paketjob (mit den vorherigen 220 MB gingen die
+  163 MB als „in Ordnung" durch).
 - **Versionsprüfung Payload ↔ venv**: ob der Launcher bei Versionsversatz automatisch
   nachinstalliert oder nur warnt.
 - **Proxy-Umgebungen**: `uv` respektiert `HTTPS_PROXY`; ob der Installer danach fragt, wenn

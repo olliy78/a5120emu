@@ -533,9 +533,13 @@ jobs:
           $ziel_lnk = $sh.CreateShortcut((Join-Path $menue 'A5120-Emulator.lnk')).TargetPath
           if ($ziel_lnk -notmatch 'pythonw\.exe$') { throw "Verknuepfung zeigt nicht auf pythonw.exe: $ziel_lnk" }
 
+          # Die Schranke ist ABSICHTLICH knapp (gemessen 2026-08-14: 116 MB).
+          # Mit den fruehreren 220 MB fiel nicht auf, dass slim.py den
+          # CPython-Baum des Assistenten gar nicht fand — 163 MB gingen als
+          # „in Ordnung" durch.  Wer hier hochsetzt, sollte wissen, warum.
           $mb = [math]::Round((Get-ChildItem -Recurse -File $ziel | Measure-Object Length -Sum).Sum/1MB)
           Write-Host "Über das Setup installiert: $mb MB"
-          if ($mb -gt 220) { throw "zu gross ($mb MB) — hat slim.py gegriffen?" }
+          if ($mb -gt 130) { throw "zu gross ($mb MB) — hat slim.py gegriffen?" }
 
       # Das Schlankmachen ist der Grund, warum die Installation nicht ~316 MB
       # belegt.  Geprüft wird beides: dass genug wegfällt UND dass das

@@ -40,7 +40,7 @@ ihn nie an.
 Das Paket ist ~3 MB, die Installation lädt danach **einmalig ~120 MB** nach: einen eigenen
 Python 3.12 und Qt, beides **innerhalb der Installation**. Das braucht eine
 Internetverbindung und ein paar Minuten. Danach startet der Emulator ohne Netz, und es sind
-rund 150 MB (Linux) bzw. 123 MB (Windows) belegt. Systempython und Systempakete werden
+rund 150 MB (Linux) bzw. 116 MB (Windows) belegt. Systempython und Systempakete werden
 nicht angefasst.
 
 Sechs Beispieldisketten sind dabei — je eine startfähige für CP/A, SCPX und UDOS sowie zwei
