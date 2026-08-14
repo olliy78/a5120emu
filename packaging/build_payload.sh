@@ -12,6 +12,7 @@
 #     packaging/build_payload.sh --out /tmp/x    # woandershin
 #     packaging/build_payload.sh --disks all     # alle Disketten aus disks/
 #     packaging/build_payload.sh --refresh-uv    # uv-Pins aktualisieren
+#     packaging/build_payload.sh --refresh-python  # Python-Pins (Windows-Setup)
 set -eu
 
 SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -52,6 +53,7 @@ K1520-Emulator — Paket schnüren
   --setup          zusätzlich ein Windows-Installationsprogramm bauen (Inno
                    Setup; nur unter Windows, braucht iscc im PATH)
   --refresh-uv     uv-Pins auf die neueste Fassung setzen und beenden
+  --refresh-python Python-Pins (Windows-Setup) auffrischen und beenden
   -h, --help       diese Hilfe
 EOF
 }
@@ -81,6 +83,65 @@ refresh_uv_pins() {
     ok "packaging/uv_pins.txt aktualisiert"
 }
 
+# ─── Python-Pins auffrischen ─────────────────────────────────────────────────
+#
+# Nur fuer das Windows-Setup: dort laedt der Assistent Python selbst, weil uv
+# einen Junction anlegt, den der OneDrive-Filtertreiber verweigert (os error
+# 448 — Kopf von packaging/python_pins.txt).  Unter Linux bleibt es bei uv.
+#
+# Die Pruefsummen liegen als SHA256SUMS am Release — es muss also keine 46-MB-
+# Datei geladen werden, um zu pinnen.
+
+PBS_REPO=astral-sh/python-build-standalone
+PBS_ZIEL=x86_64-pc-windows-msvc
+
+refresh_python_pins() {
+    have curl || die "curl wird zum Auffrischen der Pins gebraucht"
+    have jq   || die "jq wird zum Auffrischen der Pins gebraucht"
+    _rel=$(curl -fsSL "https://api.github.com/repos/$PBS_REPO/releases/latest" | jq -r .tag_name)
+    [ -n "$_rel" ] && [ "$_rel" != null ] || die "python-build-standalone: Release nicht ermittelbar"
+    _liste=$(curl -fsSL "https://api.github.com/repos/$PBS_REPO/releases/tags/$_rel")
+
+    # Neuester Fehlerstand der Nebenversion, gegen die die Wheels gebaut sind.
+    _muster="^cpython-$K1520_PY_VERSION\\.[0-9]+\\+$_rel-$PBS_ZIEL-install_only\\.tar\\.gz\$"
+    _datei=$(printf '%s' "$_liste" \
+             | jq -r --arg m "$_muster" '.assets[].name | select(test($m))' \
+             | sort -V | tail -1)
+    [ -n "$_datei" ] || die "kein $PBS_ZIEL-Abbild für Python $K1520_PY_VERSION in $_rel"
+    _ver=$(printf '%s' "$_datei" | sed 's/^cpython-//; s/+.*//')
+    _size=$(printf '%s' "$_liste" | jq -r --arg n "$_datei" '.assets[] | select(.name==$n) | .size')
+    _sha=$(curl -fsSL "https://github.com/$PBS_REPO/releases/download/$_rel/SHA256SUMS" \
+           | awk -v n="$_datei" '$2==n {print $1}')
+    [ -n "$_sha" ] || die "keine Prüfsumme für $_datei"
+
+    info "python-build-standalone $_rel — CPython $_ver"
+    _tmp=$(mktemp)
+    {
+        sed -n '1,/^# Format:/p' "$SELF_DIR/python_pins.txt"
+        printf '\nversion %s\nrelease %s\n\n' "$_ver" "$_rel"
+        printf '%-24s %10s  %s\n' "$PBS_ZIEL" "$_size" "$_sha"
+    } > "$_tmp"
+    mv "$_tmp" "$SELF_DIR/python_pins.txt"
+    ok "packaging/python_pins.txt aktualisiert"
+}
+
+# python_pins.txt lesen und PY_VERSION/PY_RELEASE/PY_SIZE/PY_SHA setzen.
+lies_python_pins() {
+    _pins="$SELF_DIR/python_pins.txt"
+    [ -f "$_pins" ] || die "packaging/python_pins.txt fehlt — einmal mit --refresh-python erzeugen"
+    PY_VERSION=$(awk '$1=="version" {print $2}' "$_pins")
+    PY_RELEASE=$(awk '$1=="release" {print $2}' "$_pins")
+    PY_SIZE=$(awk -v z="$PBS_ZIEL" '$1==z {print $2}' "$_pins")
+    PY_SHA=$(awk  -v z="$PBS_ZIEL" '$1==z {print $3}' "$_pins")
+    [ -n "$PY_VERSION" ] && [ -n "$PY_RELEASE" ] && [ -n "$PY_SIZE" ] && [ -n "$PY_SHA" ] \
+        || die "python_pins.txt ist unvollständig (version/release/$PBS_ZIEL)"
+    # Die Nebenversion MUSS zu den Wheels aus requirements.lock passen.
+    case "$PY_VERSION" in
+        "$K1520_PY_VERSION".*) ;;
+        *) die "python_pins.txt nennt Python $PY_VERSION, gebaut wird gegen $K1520_PY_VERSION" ;;
+    esac
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --out)         OUT=$2; shift 2 ;;
@@ -91,7 +152,8 @@ while [ $# -gt 0 ]; do
         --relock)      RELOCK=yes; shift ;;
         --no-archive)  ARCHIVE=no; shift ;;
         --setup)       SETUP=yes; shift ;;
-        --refresh-uv)  refresh_uv_pins; exit 0 ;;
+        --refresh-uv)      refresh_uv_pins; exit 0 ;;
+        --refresh-python)  refresh_python_pins; exit 0 ;;
         -h|--help)     usage; exit 0 ;;
         *) die "unbekannte Option: $1  (--help zeigt die Liste)" ;;
     esac
@@ -248,20 +310,24 @@ cp "$REPO/disks/README.md" "$STAGE/payload/share/disks/README.md" 2>/dev/null ||
 # ─── 3. Installer beilegen ───────────────────────────────────────────────────
 
 # Beigelegt wird NUR der Installer des Zielsystems.  Ein Windows-Anwender soll
-# keine .sh-Datei sehen (er hätte keine Shell dafür), ein Linux-Anwender kein
-# PowerShell-Skript.  Die .desktop-Vorlagen bleiben im Windows-Paket weg —
-# `slim.py` dagegen kommt MIT: es kann seit 2026-08-12 auch Windows (es liest
-# die PE-Importtabelle selbst, weil der Anwender kein dumpbin hat).
-cp "$SELF_DIR/uv_pins.txt"     "$STAGE/uv_pins.txt"
+# keine .sh-Datei sehen (er hätte keine Shell dafür), ein Linux-Anwender keine
+# .cmd.  Die .desktop-Vorlagen bleiben im Windows-Paket weg — `slim.py` dagegen
+# kommt MIT: es kann seit 2026-08-12 auch Windows (es liest die
+# PE-Importtabelle selbst, weil der Anwender kein dumpbin hat).
+#
+# Unter Windows liegt gar KEIN Installationsskript mehr bei: seit 2026-08-14
+# installiert der Assistent selbst (packaging/k1520emu.iss), und das
+# Verzeichnis hier ist nur noch sein Rohstoff — die .cmd-Vorlagen und slim.py
+# wandern IN das Setup.  `uv_pins.txt` bleibt Sache der Unix-Installer.
 cp "$SELF_DIR/paket_readme.md" "$STAGE/README.md"
 cp "$SELF_DIR/slim.py"         "$STAGE/slim.py"
 
 if ist_windows; then
-    cp "$SELF_DIR/install.ps1"            "$STAGE/install.ps1"
     cp "$SELF_DIR/launcher.cmd"           "$STAGE/launcher.cmd"
     cp "$SELF_DIR/disktool_launcher.cmd"  "$STAGE/disktool_launcher.cmd"
     rmdir "$STAGE/lib" 2>/dev/null || true    # lib/common.sh ist Shell-Sache
 else
+    cp "$SELF_DIR/uv_pins.txt"              "$STAGE/uv_pins.txt"
     cp "$SELF_DIR/install.sh"               "$STAGE/install.sh"
     cp "$SELF_DIR/launcher.sh"              "$STAGE/launcher.sh"
     cp "$SELF_DIR/disktool_launcher.sh"     "$STAGE/disktool_launcher.sh"
@@ -331,26 +397,35 @@ fi
 
 # ─── 6. Windows-Installationsprogramm ────────────────────────────────────────
 #
-# Das Setup installiert NICHT selbst — es ruft install.ps1, dasselbe Skript, das
-# auch dem .zip beiliegt.  So gibt es einen Installationsweg statt zweier, von
-# denen einer stillschweigend veraltet.  Begründung und der zweite Punkt
-# (Deinstallieren) stehen im Kopf von k1520emu.iss.
+# Das Setup installiert SELBST — Nachladen, Auspacken, Laufzeitumgebung,
+# Schlankmachen, Starter, Rauchtest, Deinstallieren.  Ein PowerShell-Skript ist
+# daran nicht mehr beteiligt (Begründung im Kopf von k1520emu.iss).  Das
+# Verzeichnis unter dist/ ist nur noch sein Rohstoff.
 
 if [ "$SETUP" = yes ]; then
     if ! ist_windows; then
         die "--setup geht nur unter Windows (Inno Setup)"
     fi
     if ! have iscc; then
-        die "iscc nicht gefunden — Inno Setup 6 installieren (choco install innosetup)"
+        die "iscc nicht gefunden — Inno Setup 6.5 oder neuer installieren (choco install innosetup)"
     fi
-    info "Windows-Installationsprogramm bauen"
+    lies_python_pins
+    info "Windows-Installationsprogramm bauen (Python $PY_VERSION aus $PY_RELEASE)"
     # Version ohne die git-Zusätze: Inno will etwas, das wie eine Version
     # aussieht, `1.2.3-4-gabc1234-dirty` lehnt es ab.
     _iss_version=$(printf '%s' "$VERSION" | sed 's/^v//; s/[^0-9.].*$//')
     [ -n "$_iss_version" ] || _iss_version=0.0.0
+    # Die Adresse des Python-Archivs setzt die .iss aus Fassung und Release
+    # selbst zusammen — sie darf hier gar nicht erst als Argument auftauchen:
+    # die MSYS-Shell rechnet Argumente, die wie Pfade aussehen, in
+    # Windows-Pfade um und macht aus `https://…` `https:\…`.
     iscc //Qp \
          "//DVersion=$_iss_version" \
          "//DPaket=$(cygpath -w "$STAGE")" \
+         "//DPyVersion=$PY_VERSION" \
+         "//DPyRelease=$PY_RELEASE" \
+         "//DPySha256=$PY_SHA" \
+         "//DPySize=$PY_SIZE" \
          "//O$(cygpath -w "$OUT")" \
          "$(cygpath -w "$SELF_DIR/k1520emu.iss")" \
         || die "Inno Setup ist fehlgeschlagen"
@@ -364,7 +439,8 @@ fi
 printf "\n"
 info "Fertig.  Probeinstallation:"
 if ist_windows; then
-    printf "     %s\\install.ps1 -Prefix %s\n" "$STAGE" "$TEMP\\k1520emu-test"
+    printf "     %s\n" "$(ls -1 "$OUT"/*setup.exe 2>/dev/null | head -1)"
+    printf "     (still:  /VERYSILENT /DIR=... /Daten=... /LOG=setup.log)\n"
 else
     printf "     tar xzf %s/%s.tar.gz -C /tmp && /tmp/%s/install.sh --prefix /tmp/k1520emu-test\n" \
         "$OUT" "$NAME" "$NAME"

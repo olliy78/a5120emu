@@ -62,35 +62,75 @@ leere fremde Verzeichnis werden abgelehnt; `--uninstall` fasst nur an, was sich
 als Installation ausweist, und entfernt daraus **nur das Inventar aus dem
 Ausweis** — fremde Dateien im Ordner überleben.
 
+## Windows: Setup bauen und ausprobieren
+
+```sh
+packaging/build_payload.sh --disks none --setup     # in der Git-Bash, braucht iscc im PATH
+```
+
+Erzeugt zusätzlich `dist/K1520emu-<version>-win-x64-setup.exe`.  **Der Assistent
+installiert selbst** — es gibt kein `install.ps1` mehr: er lädt Python
+(python-build-standalone, Prüfsumme aus `python_pins.txt`), packt es aus, legt
+die Laufzeitumgebung an, holt Qt mit `pip --require-hashes`, schlankt, schreibt
+die Starter und fährt denselben Rauchtest wie unter Linux.  Jeder Schritt steht
+mit Klartext in der Statuszeile und in `<Installation>\bootstrap.log`.
+
+Alles Nachladbare läuft in `PrepareToInstall`, also **vor der ersten kopierten
+Datei**: scheitert es, gibt es keine halbe Installation und keinen
+Startmenü-Eintrag, der ins Leere zeigt.  Deinstalliert wird über
+*Einstellungen → Apps*; Inno entfernt nur, was es angelegt hat, das Nachgeladene
+steht namentlich im Abschnitt `[UninstallDelete]`.
+
+Still (wie in der CI):
+
+```powershell
+.\K1520emu-1.2.3-win-x64-setup.exe /VERYSILENT /DIR=C:\Temp\k1520 /Daten=C:\Temp\disketten /LOG=setup.log
+```
+
+Der ganze Lauf steckt im Job `paket` von `.github/workflows/windows-ci.yml`
+(`gh workflow run windows-ci.yml --ref main -f paket=true`) — installieren,
+Schlankmachen prüfen, deinstallieren, und dabei nachsehen, dass eine fremde
+Datei im Zielordner überlebt.
+
 ## Dateien
 
 | Datei | Rolle |
 |-------|-------|
 | `build_payload.sh` | baut den Release-Kern und schnürt das Archiv |
 | `install.sh` | Bootstrap-Installer Linux/macOS (liegt im Paket, läuft beim Anwender) |
-| `install.ps1` | dasselbe für Windows — **Zeile für Zeile daran entlang gebaut**; wer eines ändert, ändert das andere mit (Guards in `tests/python/test_packaging.py`) |
+| `k1520emu.iss` | Windows-Installationsprogramm (Inno Setup ≥ 6.5). Es **installiert selbst** — laden, auspacken, Laufzeitumgebung, Schlankmachen, Starter, Rauchtest, Deinstallieren; kein PowerShell beteiligt (Guards in `tests/python/test_packaging.py`) |
+| `python_pins.txt` | gepinnter Python für das Windows-Setup: Fassung, Größe, SHA256 (`build_payload.sh --refresh-python`) |
 | `launcher.cmd`, `disktool_launcher.cmd` | Windows-Starter; die Startmenü-Verknüpfung zeigt dagegen direkt auf `pythonw.exe`, sonst öffnet sich ein Konsolenfenster |
 | `launcher.sh` | Startskript-Vorlage; `@ROOT@` wird beim Installieren ersetzt |
 | `slim.py` | wirft nach dem Installieren heraus, was nie geladen wird (~400 → ~146 MB) |
 | `lib/common.sh` | gemeinsame Bausteine: Meldungen, Plattform, Download, `ensure_uv` |
-| `uv_pins.txt` | gepinnte uv-Fassung + Prüfsummen (`build_payload.sh --refresh-uv`) |
+| `uv_pins.txt` | gepinnte uv-Fassung + Prüfsummen für die **Unix**-Installer (`build_payload.sh --refresh-uv`) |
 | `a5120emu.desktop.in` | Startmenü-Eintrag der Maschine A5120 |
 | `icon.svg` | Symbol |
 | `paket_readme.md` | wird als `README.md` **ins Paket** gelegt (Anwendertext) |
 
-## uv-Pins auffrischen
+## Pins auffrischen
 
 ```sh
-packaging/build_payload.sh --refresh-uv
+packaging/build_payload.sh --refresh-uv       # uv (Unix-Installer)
+packaging/build_payload.sh --refresh-python   # Python (Windows-Setup)
 ```
 
-Holt die neueste uv-Fassung und schreibt Version samt Prüfsummen in
-`uv_pins.txt`.  Die Prüfsummen reisen mit dem Paket — der Installer vergleicht
-das Heruntergeladene gegen diese Werte und führt es sonst nicht aus.
+Beide holen die neueste Fassung und schreiben sie samt Prüfsummen in
+`uv_pins.txt` bzw. `python_pins.txt`.  Die Prüfsummen reisen mit dem Paket — der
+Installer vergleicht das Heruntergeladene gegen diese Werte und benutzt es
+sonst nicht.
+
+**Warum zwei Bezugswege.** Unter Linux holt `uv` den Python; unter Windows lädt
+das Setup ihn direkt von python-build-standalone.  Das ist keine Doppelung aus
+Bequemlichkeit: `uv python install` legt zum Schluss einen Junction auf die
+Nebenversion an, und wo OneDrive „Dateien bei Bedarf" läuft, verweigert dessen
+Filtertreiber das — `os error 448`, und die Installation bricht ab
+(astral-sh/uv #19616).  Abschalten lässt sich der Junction nicht.  Kopf von
+`python_pins.txt`.
 
 ## Noch nicht hier
 
-Windows (Inno Setup, per-user) und macOS folgen als Schritte 3 und 4 des
-Entwurfs (§10).  Die plattformübergreifenden Teile — `app/paths.py`, die
-Modulpfad-Auflösung im Kern, `uv_pins.txt` mit den Windows-/macOS-Tripeln —
-sind bereits darauf ausgelegt.
+macOS folgt als Schritt 5 des Entwurfs (§10).  Die plattformübergreifenden
+Teile — `app/paths.py`, die Modulpfad-Auflösung im Kern, `uv_pins.txt` mit den
+macOS-Tripeln — sind bereits darauf ausgelegt.

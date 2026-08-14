@@ -50,11 +50,11 @@ def _slim():
 #: zwar in der Git-Bash, bekommt aber Windows-Pfade herein, die MSYS als
 #: ``/c/Users/…`` zurückgibt und relativ zum Arbeitsverzeichnis auflöst — das
 #: Ergebnis ist ``D:/a/repo/C:\Users\…`` und prüft nichts.  Windows bekommt
-#: sein eigenes ``install.ps1`` (Entwurf §10 Schritt 4); bis dahin laufen hier
-#: nur die Fälle, die die Skripte *lesen* statt sie auszuführen.
+#: seinen eigenen Weg (``packaging/k1520emu.iss``, der Assistent installiert
+#: selbst); hier laufen dann nur die Fälle, die die Skripte *lesen*.
 nur_unix_installer = pytest.mark.skipif(
     sys.platform.startswith("win"),
-    reason="Unix-Installer — Windows bekommt install.ps1 (Entwurf §10 Schritt 4)")
+    reason="Unix-Installer — Windows installiert über k1520emu.iss")
 
 #: ``slim.py`` schlankt ELF-Bibliotheken (``ldd``, ``strip``).  Unter Windows
 #: gibt es weder das eine noch das andere — die Regeln dort sind Sache der
@@ -348,47 +348,6 @@ def test_slim_findet_site_packages_beider_plattformen(tmp_path):
 
 
 
-def test_installer_ps1_ignoriert_nur_eigene_dateien():
-    """Der Riegel „Ziel muss leer sein" darf genau die Setup-Dateien übersehen.
-
-    Inno legt seinen Deinstallierer ins Ziel, bevor der Bootstrap läuft; ohne
-    die Ausnahme verweigerte der Riegel ausgerechnet die Installation, die ihn
-    mitbringt (2026-08-12).  Die Liste muss aber KURZ und namentlich bleiben —
-    wer dort ein Muster wie `*.exe` einträgt, hebelt den Riegel aus, und das
-    fällt niemandem auf, bis jemand sein Dokumentenverzeichnis angibt.
-    """
-    text = _ps1()
-    block = re.search(r"\$EigeneDateien\s*=\s*@\((.*?)\)", text, re.S)
-    assert block, "$EigeneDateien fehlt in install.ps1"
-    namen = re.findall(r"'([^']+)'", block.group(1))
-    assert namen, "die Liste ist leer"
-    for n in namen:
-        assert not any(z in n for z in "*?"), f"Muster statt Name in der Liste: {n!r}"
-        assert n in ("install.ps1", "bootstrap.log") or n.startswith("unins"), (
-            f"unerwarteter Name in der Ausnahmeliste: {n!r}")
-    assert len(namen) <= 8, f"die Ausnahmeliste wächst zu weit: {namen}"
-
-
-def test_installer_ps1_braucht_keine_nachladbaren_module():
-    """Ein Installer darf sich nicht auf Modul-Nachladen verlassen.
-
-    `Get-FileHash`, `Invoke-WebRequest` und `Expand-Archive` stecken in
-    nachladbaren Modulen.  Ist das Nachladen gestört — geerbter PSModulePath,
-    Gruppenrichtlinie —, fehlen sie, und die Installation bricht auf einem
-    fremden Rechner mit „is not recognized as the name of a cmdlet" ab.  Genau
-    so am 2026-08-12 im Setup-Lauf, während derselbe Aufruf direkt lief.
-    """
-    # Kommentare zählen nicht — dort stehen die Namen als Begründung.  Das
-    # verlangt echtes Entfernen der Blockkommentare (<# … #>), nicht nur ein
-    # Aussortieren von Zeilen, die mit '#' beginnen: die Fortsetzungszeilen
-    # eines Blocks tun das nicht.
-    code = re.sub(r"<#.*?#>", " ", _ps1(), flags=re.S)
-    code = "\n".join(z.split("#", 1)[0] for z in code.splitlines())
-    for cmdlet in ("Get-FileHash", "Invoke-WebRequest", "Expand-Archive", "Compress-Archive"):
-        assert cmdlet not in code, (
-            f"{cmdlet} steckt in einem nachladbaren Modul — bitte über .NET lösen")
-
-
 def test_release_notizen_nennen_jede_ausgelieferte_datei():
     """Die Release-Beschreibung muss die Dateien erklären, die auch entstehen.
 
@@ -400,7 +359,6 @@ def test_release_notizen_nennen_jede_ausgelieferte_datei():
     """
     vorlage = (PACKAGING / "release_notes.md.in").read_text(encoding="utf-8")
     for muster in ("K1520emu-@VERSION@-win-x64-setup.exe",
-                   "k1520emu-@TAG@-windows-x86_64.zip",
                    "k1520emu-@TAG@-linux-x86_64.tar.gz"):
         assert muster in vorlage, f"{muster} fehlt in der Release-Beschreibung"
     # Ein Verweis auf die Projektseite gehört dazu — das Release ist für viele
@@ -422,22 +380,6 @@ def test_release_notizen_passen_zu_den_erzeugten_dateinamen():
     iss = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
     assert "OutputBaseFilename={#Produkt}-{#Version}-win-x64-setup" in iss, \
         "Setup-Name in der .iss geändert — Release-Vorlage nachziehen"
-
-def test_ps1_hat_utf8_bom():
-    """Windows PowerShell 5.1 liest eine .ps1 OHNE BOM in der ANSI-Codepage.
-
-    Das ist die Fassung, die auf jedem Windows vorhanden ist und die der
-    Inno-Setup-Bootstrap aufruft.  Ohne BOM wird aus den Umlauten und
-    Gedankenstrichen Kauderwelsch, und der Parser bricht mit „Unexpected token"
-    ab — **bevor** eine einzige Zeile ausgeführt wird.  PowerShell 7 nimmt UTF-8
-    als Vorgabe an und merkt nichts davon; genau deshalb lief das Skript im
-    CI-Schritt (pwsh) und im Setup (powershell.exe) nicht.
-    """
-    roh = PS1.read_bytes()
-    assert roh.startswith(b"\xef\xbb\xbf"), (
-        "packaging/install.ps1 braucht einen UTF-8-BOM — sonst scheitert sie "
-        "unter Windows PowerShell 5.1 schon am Parser")
-
 
 def test_cmd_starter_sind_reines_ascii():
     """`cmd.exe` liest Batchdateien in der OEM-Codepage (850/437), nicht UTF-8.
@@ -535,57 +477,181 @@ def test_kein_skript_ueberschreibt_msvc_suchpfade(script):
         f"{script} belegt einen von MSVC benutzten Namen: {treffer}. "
         "Bitte mit K1520_ präfixen.")
 
-# ─── Windows-Installer (install.ps1) ─────────────────────────────────────────
+# ─── Windows-Installationsprogramm (k1520emu.iss) ────────────────────────────
 #
-# Er lässt sich hier nicht ausführen — geprüft wird deshalb, dass er mit
-# install.sh ÜBEREINSTIMMT, wo beide dasselbe wissen müssen.  Läuft das
-# auseinander, räumt der eine woanders auf als der andere anlegt, und es fällt
-# erst beim Anwender auf.
+# Seit 2026-08-14 installiert der Assistent SELBST — kein install.ps1 mehr, kein
+# PowerShell im Installationsweg (Kopf der .iss).  Ausführen lässt sich eine
+# .iss hier nicht; geprüft wird deshalb, dass die Eigenschaften, an denen der
+# Weg hängt, im Text noch stehen.  Der wirkliche Lauf steckt in
+# .github/workflows/windows-ci.yml (Auslöser `paket=true`).
 
-PS1 = PACKAGING / "install.ps1"
-
-
-def _ps1() -> str:
-    return PS1.read_text(encoding="utf-8")
+ISS = PACKAGING / "k1520emu.iss"
+PY_PINS = PACKAGING / "python_pins.txt"
 
 
-def test_installer_ps1_und_sh_haben_dasselbe_inventar():
-    """Das Inventar ist die Löschliste — sie MUSS auf beiden Systemen gleich sein.
+def _iss() -> str:
+    return ISS.read_text(encoding="utf-8")
 
-    `--uninstall` entfernt ausschließlich diese Einträge.  Fehlte einer im
-    Windows-Installer, bliebe er nach dem Deinstallieren liegen; stünde einer zu
-    viel drin, löschte er etwas, das er nie angelegt hat.
+
+def _iss_code() -> str:
+    """Nur der Pascal-Teil — davor ist eine geschweifte Klammer ein Zeichen."""
+    text = _iss()
+    return text[text.index("\n[Code]"):]
+
+
+def test_iss_ruft_kein_powershell():
+    """Der ganze Punkt des Umbaus: der Installationsweg kommt ohne PowerShell aus.
+
+    Auf dem Testgerät am 2026-08-14 war das Skript zweimal im Weg — als
+    schwarzes Fenster ohne Rückmeldung und als „Ausführung von Skripts ist auf
+    diesem System deaktiviert".  Wer hier wieder ein `powershell.exe` einträgt,
+    holt sich beides zurück.
     """
-    sh = (PACKAGING / "install.sh").read_text(encoding="utf-8")
-    sh_liste = re.search(r'^INVENTAR="([^"]+)"', sh, re.M).group(1).split()
-
-    block = re.search(r"\$Inventar\s*=\s*@\((.*?)\)", _ps1(), re.S).group(1)
-    ps_liste = re.findall(r"'([^']+)'", block)
-
-    assert sorted(ps_liste) == sorted(sh_liste), (
-        f"install.ps1 {sorted(ps_liste)} != install.sh {sorted(sh_liste)}")
-
-
-def test_installer_ps1_erkennt_dieselbe_installation():
-    """Beide müssen dasselbe Merkmal lesen, sonst geht ein Update daneben."""
-    sh = (PACKAGING / "lib/common.sh").read_text(encoding="utf-8")
-    marker = re.search(r'^INSTALL_MARKER="([^"]+)"', sh, re.M).group(1)
-    assert f"'{marker}'" in _ps1(), f"install.ps1 kennt {marker} nicht"
+    # Kommentare zählen nicht — dort steht PowerShell als BEGRÜNDUNG, warum es
+    # weg ist.  Beide Arten müssen raus: `;` (Inno) und geschweifte Klammern
+    # (Pascal), Letztere auch über mehrere Zeilen.
+    ohne_kommentar = [z for z in _iss().splitlines() if not z.lstrip().startswith(";")]
+    text = re.sub(r"\{[^}]*\}", " ", "\n".join(ohne_kommentar)).lower()
+    for wort in ("powershell", "pwsh", "install.ps1"):
+        assert wort not in text, f"{wort} steht wieder in der .iss"
 
 
-def test_installer_ps1_hat_beide_loeschriegel():
-    """Die zwei Riegel aus install.sh — sie haben dort ein Heimatverzeichnis gerettet.
+def test_iss_laedt_und_richtet_ein_bevor_kopiert_wird():
+    """Fehlschlag = nichts installiert.  Das hängt am ZEITPUNKT.
 
-    1. Als Ziel darf nur ein leeres oder bereits von uns belegtes Verzeichnis
-       dienen.  2. Gelöscht wird nur, was sich ausweist, und nur die Einträge des
-       Ausweises — ein Eintrag ist ein NAME, kein Pfad.
+    Eine Ausnahme in `ssPostInstall` räumt NICHTS zurück: der Probelauf am
+    2026-08-14 hinterließ eine halbe Installation samt drei
+    Startmenü-Einträgen, die ins Leere zeigten.  Das Nachladen gehört deshalb
+    in `PrepareToInstall` — davor ist keine Datei kopiert, kein Symbol angelegt,
+    kein Deinstallierer eingetragen.
     """
-    text = _ps1()
-    assert "$Verboten" in text, "Sperrliste für das Ziel fehlt"
-    for var in ("USERPROFILE", "SystemDrive", "Dokumente-Dir"):
-        assert var in text, f"{var} fehlt in der Sperrliste"
-    assert "Ist-Installation" in text, "Ausweisprüfung vor dem Löschen fehlt"
-    assert "fragwürdiger Eintrag im Ausweis" in text, "Pfadprüfung der Einträge fehlt"
+    code = _iss_code()
+    assert "function PrepareToInstall" in code, "der Bootstrap sitzt nicht mehr in PrepareToInstall"
+    vorbereiten = code[code.index("function PrepareToInstall"):]
+    vorbereiten = vorbereiten[:vorbereiten.index("procedure VorlageSchreiben")]
+    for schritt in ("PythonAuspacken", "LaufzeitumgebungEinrichten"):
+        assert schritt in vorbereiten, f"{schritt} läuft nicht vor dem Kopieren"
+
+    nachlauf = code[code.index("procedure CurStepChanged"):]
+    for spaet in ("pip install", "-m venv", "ExtractArchive"):
+        assert spaet not in nachlauf, (
+            f"{spaet} im Nachlauf — ein Fehlschlag dort lässt sich nicht mehr zurücknehmen")
+
+
+def test_iss_raeumt_auf_wenn_das_nachladen_scheitert():
+    """Nach einem Fehlschlag soll kein 150-MB-Bruchstück beim Anwender bleiben."""
+    code = _iss_code()
+    vorbereiten = code[code.index("function PrepareToInstall"):]
+    vorbereiten = vorbereiten[:vorbereiten.index("procedure VorlageSchreiben")]
+    for weg in ("{app}\\venv", "{app}\\python"):
+        assert f"DelTree(ExpandConstant('{weg}')" in vorbereiten, (
+            f"{weg} wird nach einem Fehlschlag nicht weggeräumt")
+
+
+def test_iss_entfernt_verknuepfungen_wenn_der_rauchtest_scheitert():
+    """Eine Verknüpfung, die ins Leere zeigt, ist schlimmer als gar keine.
+
+    Der Rauchtest ist der einzige Schritt, der nach dem Kopieren laufen MUSS
+    (er braucht die Payload) — dort gibt es keine Rücknahme mehr, also wird
+    wenigstens das Startmenü geräumt.
+    """
+    code = _iss_code()
+    assert "procedure VerknuepfungenEntfernen" in code
+    nachlauf = code[code.index("procedure CurStepChanged"):]
+    assert "VerknuepfungenEntfernen" in nachlauf
+
+
+def test_iss_holt_frueh_gebrauchte_dateien_mit_dontcopy():
+    """`DestDir: <tmp>` liegt erst NACH PrepareToInstall da — dontcopy nicht.
+
+    Der Abschnitt mit den Dateien wird beim Kopieren abgearbeitet; wer eine
+    Datei schon im Bootstrap braucht (requirements.lock für pip, slim.py, die
+    Startervorlagen), muss sie mit `dontcopy` einpacken und mit
+    ExtractTemporaryFile holen.  Sonst fehlt sie genau dann, wenn sie gebraucht
+    wird.
+    """
+    text = _iss()
+    frueh = set(re.findall(r"ExtractTemporaryFile\('([^']+)'\)", text))
+    assert frueh, "keine früh geholte Datei — ist der Bootstrap noch da?"
+    dontcopy = set()
+    for zeile in text.splitlines():
+        if zeile.startswith("Source:") and "dontcopy" in zeile:
+            dontcopy.add(re.search(r'Source: "[^"]*\\([^"\\]+)"', zeile).group(1))
+    fehlend = frueh - dontcopy
+    assert not fehlend, f"wird früh gebraucht, ist aber nicht dontcopy: {sorted(fehlend)}"
+
+
+def test_iss_deinstalliert_was_der_bootstrap_anlegt():
+    """Inno entfernt nur, was es selbst kopiert hat — der Rest steht hier.
+
+    `python\\` und `venv\\` entstehen im Bootstrap, `bin\\` bekommt die
+    geschriebenen Starter, und die Protokolle entstehen beim ersten Start.  Ohne
+    diese Einträge bleiben nach dem Deinstallieren ~150 MB liegen.
+    """
+    text = _iss()
+    abschnitt = text[text.index("[UninstallDelete]"):text.index("[Code]")]
+    for pfad in ("{app}\\python", "{app}\\venv", "{app}\\bin", "{app}\\logs",
+                 "{app}\\bootstrap.log", "{app}\\.k1520emu-installation"):
+        assert f'Name: "{pfad}"' in abschnitt, f"{pfad} bleibt beim Deinstallieren liegen"
+    # Und der Riegel: das Ziel ist im Assistenten änderbar, dort kann Fremdes
+    # liegen.  Ein pauschales Löschen der Wurzel nähme es mit.
+    assert 'Type: filesandordirs; Name: "{app}"' not in abschnitt, (
+        "die Wurzel darf nicht pauschal gelöscht werden — sie ist im Assistenten wählbar")
+    assert 'Type: dirifempty;     Name: "{app}"' in abschnitt
+
+
+def test_iss_fragt_denselben_dokumentenordner_wie_python():
+    """`<userdocs>` ist die Known-Folder-API — dieselbe Quelle wie app/paths.py.
+
+    Ein fest verdrahtetes `<userprofile>\\Documents` läge bei nach OneDrive
+    umgeleitetem Ordner daneben, und der Emulator schriebe woandershin, als der
+    Assistent angeboten hat.
+    """
+    code = _iss_code()
+    assert "{userdocs}" in code, "der Vorschlag kommt nicht aus der Known-Folder-API"
+    assert "userprofile}\\Documents" not in code.lower()
+
+
+def test_python_pins_sind_vollstaendig_und_passen_zur_wheel_fassung():
+    """Der Assistent lädt Python selbst — Fassung, Größe und Prüfsumme reisen mit.
+
+    Die Nebenversion MUSS zu den Wheels aus requirements.lock passen; sonst
+    findet pip nichts Passendes.  `build_payload.sh` prüft dasselbe beim Bauen,
+    aber erst auf dem Windows-Läufer — hier fällt es sofort auf.
+    """
+    text = PY_PINS.read_text(encoding="utf-8")
+    version = re.search(r"^version\s+(\S+)", text, re.M).group(1)
+    release = re.search(r"^release\s+(\S+)", text, re.M).group(1)
+    ziel = re.search(r"^x86_64-pc-windows-msvc\s+(\d+)\s+([0-9a-f]{64})\s*$", text, re.M)
+    assert ziel, "kein Eintrag für x86_64-pc-windows-msvc (Größe + SHA256)"
+    assert re.fullmatch(r"\d{8}", release), f"Release sieht nicht nach einem Datum aus: {release}"
+    assert int(ziel.group(1)) > 10_000_000, "die Größe kann nicht stimmen"
+
+    common = (PACKAGING / "lib/common.sh").read_text(encoding="utf-8")
+    minor = re.search(r"K1520_PY_VERSION=\$\{K1520_PY_VERSION:-([0-9.]+)\}", common).group(1)
+    assert version.startswith(minor + "."), (
+        f"python_pins.txt nennt {version}, gebaut wird gegen Python {minor}")
+
+
+def test_iss_baut_die_adresse_aus_den_pins():
+    """Die Adresse darf NICHT über die Kommandozeile kommen.
+
+    Die MSYS-Shell, mit der gebaut wird, rechnet Argumente, die wie Pfade
+    aussehen, in Windows-Pfade um — aus `https://…` würde `https:\…`.  Die .iss
+    setzt sie deshalb selbst zusammen und bekommt nur Fassung und Release.
+    """
+    text = _iss()
+    assert "#define PyUrl" in text
+    assert "python-build-standalone/releases/download/" in text
+    assert "-x86_64-pc-windows-msvc-install_only.tar.gz" in text
+    for pflicht in ("PyVersion", "PyRelease", "PySha256", "PySize"):
+        assert f"#ifndef {pflicht}" in text, f"{pflicht} ist nicht als Pflichtangabe abgesichert"
+
+    bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    for gabe in ("//DPyVersion=$PY_VERSION", "//DPyRelease=$PY_RELEASE",
+                 "//DPySha256=$PY_SHA", "//DPySize=$PY_SIZE"):
+        assert gabe in bp, f"build_payload.sh reicht {gabe} nicht durch"
+    assert "//DPyUrl" not in bp, "die Adresse gehört nicht auf die Kommandozeile"
 
 
 @pytest.mark.parametrize("starter,einstieg", [
@@ -601,47 +667,17 @@ def test_windows_starter_haben_ihre_platzhalter(starter, einstieg):
     assert "pythonw.exe" in text, "GUI ohne pythonw.exe öffnet ein Konsolenfenster"
 
 
-@pytest.mark.skipif(not shutil.which("pwsh") and not shutil.which("powershell"),
-                    reason="kein PowerShell vorhanden (die CI hat eines)")
-def test_installer_ps1_ist_syntaktisch_gueltig():
-    """Gegenstück zu `sh -n` — der Parser liest die Datei, ohne sie auszuführen."""
-    pwsh = shutil.which("pwsh") or shutil.which("powershell")
-    # $tokens/$fehler MÜSSEN vorher existieren — [ref] auf eine unbekannte
-    # Variable ist selbst ein Laufzeitfehler, und der sähe aus wie ein
-    # Syntaxfehler im geprüften Skript (genau so am 2026-08-12 passiert).
-    skript = "; ".join([
-        "$tokens = $null", "$fehler = $null",
-        "[void][System.Management.Automation.Language.Parser]::ParseFile("
-        f"'{PS1}', [ref]$tokens, [ref]$fehler)",
-        "if ($fehler) { $fehler | ForEach-Object { Write-Output "
-        "(\"{0}:{1} {2}\" -f $_.Extent.StartLineNumber, "
-        "$_.Extent.StartColumnNumber, $_.Message) }; exit 1 }",
-        "Write-Output \"ok: $($tokens.Count) Token\"",
-    ])
-    out = _sh(pwsh, "-NoProfile", "-NonInteractive", "-Command", skript)
-    assert out.returncode == 0, out.stdout + out.stderr
-    assert "ok:" in out.stdout, out.stdout + out.stderr
+def test_windows_starter_nennen_kein_verschwundenes_skript():
+    """Die Fehlermeldung der Starter darf nicht auf install.ps1 verweisen.
 
-
-@pytest.mark.skipif(not sys.platform.startswith("win"),
-                    reason="vergleicht die Regel auf dem System, für das sie gilt")
-def test_dokumentenordner_ps1_und_python_stimmen_ueberein():
-    """`-Purge` muss dort aufräumen, wo der Emulator schreibt.
-
-    Die Regel steht zweimal — in install.ps1 (`Dokumente-Dir`) und in
-    app/paths.py (`documents_dir`).  Laufen sie auseinander, löscht das
-    Deinstallieren am Datenverzeichnis vorbei.  Unter Windows ist das nicht
-    theoretisch: OneDrive leitet „Dokumente" um.
+    Sie ist das Einzige, was ein Anwender sieht, wenn die Laufzeitumgebung
+    fehlt — ein Hinweis auf eine Datei, die es nicht mehr gibt, schickt ihn in
+    die Irre.
     """
-    from app import paths
-    pwsh = shutil.which("pwsh") or shutil.which("powershell")
-    out = _sh(pwsh, "-NoProfile", "-NonInteractive", "-Command",
-              "[Environment]::GetFolderPath('MyDocuments')")
-    assert out.returncode == 0, out.stderr
-    aus_ps1 = out.stdout.strip()
-    aus_python = paths.documents_dir()
-    assert aus_python is not None, "documents_dir() findet nichts, PowerShell schon"
-    assert Path(aus_ps1) == aus_python
+    for name in ("launcher.cmd", "disktool_launcher.cmd"):
+        text = (PACKAGING / name).read_text(encoding="utf-8")
+        assert "install.ps1" not in text, f"{name} verweist noch auf install.ps1"
+
 
 # ─── Schutz des Zielverzeichnisses ───────────────────────────────────────────
 #
