@@ -587,8 +587,16 @@ def test_iss_ruft_kein_powershell():
     # (Pascal), Letztere auch über mehrere Zeilen.
     ohne_kommentar = [z for z in _iss().splitlines() if not z.lstrip().startswith(";")]
     text = re.sub(r"\{[^}]*\}", " ", "\n".join(ohne_kommentar)).lower()
-    for wort in ("powershell", "pwsh", "install.ps1"):
+    for wort in ("powershell", "pwsh"):
         assert wort not in text, f"{wort} steht wieder in der .iss"
+    # Der Abschnitt, in dem frueher der Deinstallierer sein Skript rief.
+    assert "[uninstallrun]" not in text, "das Deinstallieren ruft wieder ein Programm"
+    # Ein `.ps1` DARF vorkommen — aber nur als Datei, die weggeraeumt wird
+    # (Hinterlassenschaft der alten Fassung), niemals als aufgerufenes Programm.
+    for zeile in text.splitlines():
+        if ".ps1" in zeile:
+            assert zeile.lstrip().startswith("type: files"), \
+                f"eine .ps1 taucht ausserhalb des Wegraeumens auf: {zeile.strip()!r}"
 
 
 def test_iss_laedt_und_richtet_ein_bevor_kopiert_wird():
@@ -742,6 +750,54 @@ def test_windows_starter_haben_ihre_platzhalter(starter, einstieg):
     assert 'set "K1520_DATA=@DATEN@"' in text
     assert einstieg in text
     assert "pythonw.exe" in text, "GUI ohne pythonw.exe öffnet ein Konsolenfenster"
+
+
+def test_iss_laesst_den_ort_waehlen_statt_ihn_zu_verstecken():
+    """`%LOCALAPPDATA%\\K1520emu` war der falsche Ort — versteckt und ungewohnt.
+
+    Wer die Rechte hat, soll nach „Programme" installieren können; wer nicht,
+    bekommt `%LOCALAPPDATA%\\Programs` — den Ort, den sich per-user-Installationen
+    unter Windows teilen. Beides leistet `{autopf}`, sobald der Assistent nach
+    der Betriebsart fragen darf.
+    """
+    iss = _iss()
+    assert "PrivilegesRequiredOverridesAllowed=dialog" in iss, \
+        "der Assistent fragt nicht nach der Betriebsart"
+    assert "DefaultDirName={autopf}\\{#Produkt}" in iss, \
+        "das Ziel folgt nicht der Betriebsart"
+    assert "DefaultDirName={localappdata}" not in iss, \
+        "der versteckte Ort ist zurück"
+    # Vorgabe bleibt die Installation ohne UAC.
+    assert "PrivilegesRequired=lowest" in iss
+
+
+def test_iss_sagt_vorher_was_geladen_wird_und_was_unberuehrt_bleibt():
+    """Zwei Dinge muss der Anwender wissen, BEVOR er auf „Weiter" drückt.
+
+    Dass mitten in der Installation ~120 MB aus dem Netz kommen (sonst sieht
+    ein minutenlanger Balken wie ein hängendes Setup aus), und dass nichts
+    ausserhalb des Installationsordners angefasst wird — die Frage stellt sich
+    jeder bei einem unbekannten Programm.  Beides steht auf einer eigenen Seite
+    und noch einmal in der Zusammenfassung vor dem Zugriff.
+    """
+    code = _iss_code()
+    assert "CreateOutputMsgPage" in code, "die Hinweisseite fehlt"
+    assert "function UpdateReadyMemo" in code, "die Zusammenfassung sagt nichts dazu"
+    seite = code[code.index("CreateOutputMsgPage"):]
+    seite = seite[:seite.index("DatenSeite := CreateInputDirPage")]
+    assert "120 MB" in seite, "die Menge wird nicht genannt"
+    assert "INNERHALB" in seite.upper(), "dass alles im Ordner bleibt, steht nicht da"
+
+
+def test_iss_raeumt_die_hinterlassenschaft_des_alten_installers_weg():
+    """Bis 2026-08-14 lag `install.ps1` im Zielverzeichnis.
+
+    Wer darüber hinweg aktualisiert, soll die Datei nicht behalten — sie ist
+    dann das einzige Überbleibsel eines Weges, den es nicht mehr gibt.
+    """
+    iss = _iss()
+    abschnitt = iss[iss.index("[UninstallDelete]"):iss.index("[Code]")]
+    assert 'Name: "{app}\\install.ps1"' in abschnitt
 
 
 def test_windows_symbol_ist_eine_echte_ico_mit_mehreren_groessen():

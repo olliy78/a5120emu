@@ -240,12 +240,34 @@ Programm:
 Ausgeliefert wird ein `A5120Emu-<version>-win-x64-setup.exe`, gebaut mit **Inno Setup**:
 
 ```ini
-PrivilegesRequired=lowest          ; kein UAC, kein Admin
-DefaultDirName={localappdata}\A5120Emu
-DisableDirPage=no                  ; Pfad änderbar (Roaming-Profile!)
+PrivilegesRequired=lowest                  ; Vorgabe: ohne UAC
+PrivilegesRequiredOverridesAllowed=dialog  ; …der Anwender darf aber wählen
+DefaultDirName={autopf}\K1520emu           ; folgt der Wahl (s. u.)
+DisableDirPage=no                          ; Pfad änderbar (Roaming-Profile!)
 ArchitecturesAllowed=x64compatible
-Uninstallable=yes                  ; Eintrag unter HKCU\…\Uninstall
+Uninstallable=yes                          ; Eintrag unter HKCU\…\Uninstall
 ```
+
+- **Wohin installiert wird, entscheidet der Anwender** (seit 2026-08-14).
+  `{autopf}` löst nach der gewählten Betriebsart auf: „für alle Benutzer"
+  (Administrator) → `C:\Program Files\K1520emu`, „nur für mich" (ohne UAC) →
+  `%LOCALAPPDATA%\Programs\K1520emu`. Vorher stand dort fest
+  `%LOCALAPPDATA%\K1520emu` — nicht falsch, aber **versteckt**: „ich musste eine
+  Weile suchen, bis ich es finde" (Rückmeldung vom Testgerät). `…\Programs` ist
+  der Ort, den sich per-user-Installationen unter Windows teilen (VS Code,
+  Signal …), nicht `%LOCALAPPDATA%` selbst. Dass „Programme" überhaupt in Frage
+  kommt, liegt daran, dass der Emulator **zur Laufzeit nicht in sein eigenes
+  Verzeichnis schreibt** — die Arbeitsdisketten liegen im Dokumentenordner
+  (§4). Geprüft ist beides, einschließlich des Leerzeichens in
+  „Program Files": Installation, Bootstrap und Starter halten den Pfad.
+- **Der Assistent sagt vorher, was er vorhat.** Eine eigene Seite nach der
+  Lizenz (`CreateOutputMsgPage`) nennt die beiden Dinge, die ein Anwender nicht
+  erwartet: dass **während** der Installation rund 120 MB aus dem Netz kommen
+  (ohne die Ansage sieht ein minutenlanger Balken wie ein hängendes Setup aus)
+  und dass **alles im Installationsordner bleibt** — kein Systempython wird
+  angefasst, nichts registriert, beim Entfernen bleibt nichts zurück. Dasselbe
+  noch einmal knapp in der Zusammenfassung vor dem Zugriff
+  (`UpdateReadyMemo`). Guard: `test_iss_sagt_vorher_was_geladen_wird_und_was_unberuehrt_bleibt`.
 
 - **Assistentenseite „Arbeitsdisketten"**: Vorgabe `<Dokumente>\K1520emu`, änderbar.
   Dieselbe Abfrage wie in `install.sh --data`, und aus demselben Grund — „Dokumente"

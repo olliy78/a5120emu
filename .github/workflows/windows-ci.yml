@@ -468,7 +468,10 @@ jobs:
       #
       # /VERYSILENT faehrt es ohne Assistent, /DIR und /Daten geben Ziel und
       # Diskettenordner vor (/Daten liest die .iss ueber {param:Daten} — im
-      # Assistenten ist das die eigene Seite).
+      # Assistenten ist das die eigene Seite).  /CURRENTUSER nagelt die
+      # Betriebsart fest: seit der Assistent zwischen „fuer alle" und „nur fuer
+      # mich" waehlen laesst, haengt sonst am Rechtestand des Laeufers, wohin
+      # `{autopf}` zeigt.
       - name: Probeinstallation über das Setup
         shell: pwsh
         run: |
@@ -478,7 +481,7 @@ jobs:
           $log   = Join-Path $env:RUNNER_TEMP 'setup.log'
           Write-Host "Setup: $exe ($([math]::Round((Get-Item $exe).Length/1MB,1)) MB)"
           $p = Start-Process -FilePath $exe -Wait -PassThru `
-                 -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART",
+                 -ArgumentList "/VERYSILENT","/CURRENTUSER","/SUPPRESSMSGBOXES","/NORESTART",
                                "/DIR=$ziel","/Daten=$daten","/LOG=$log"
           $boot = Join-Path $ziel 'bootstrap.log'
           if (Test-Path $boot) { Write-Host '── bootstrap.log ──'; Get-Content $boot }

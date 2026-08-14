@@ -114,11 +114,34 @@ AppVerName={#Produkt} {#Version}
 AppPublisher={#Anbieter}
 VersionInfoVersion=0.0.0.0
 
-; Kein UAC, kein Administrator: die ganze Installation ist benutzerlokal
-; (Anforderung A4).  Damit entfaellt auch das VC-Redist — die Kernbibliothek
-; bringt ihre C-Laufzeit selbst mit (/MT, §5.1).
+; ── Wohin, und mit welchen Rechten ──────────────────────────────────────────
+;
+; Der Assistent FRAGT (`PrivilegesRequiredOverridesAllowed=dialog`), und
+; `{autopf}` folgt der Antwort:
+;
+;   „Fuer alle Benutzer"  (Administrator)  →  C:\Program Files\K1520emu
+;   „Nur fuer mich"       (ohne UAC)       →  %LOCALAPPDATA%\Programs\K1520emu
+;
+; Bis 2026-08-14 stand hier fest `{localappdata}\K1520emu`.  Das war nicht
+; falsch — ohne Administratorrechte KANN nichts nach „Programme" —, aber der
+; Ort ist ungewoehnlich: `%LOCALAPPDATA%` ist versteckt, und wer sein Programm
+; sucht, findet es dort nicht (so berichtet, 2026-08-14).  Deshalb jetzt
+; beides: der uebliche Systemort fuer den, der die Rechte hat, und
+; `%LOCALAPPDATA%\Programs` fuer den, der sie nicht hat — das ist der Ort, den
+; sich per-user-Installationen unter Windows teilen (VS Code, Signal …), nicht
+; `%LOCALAPPDATA%` selbst.
+;
+; Die Vorgabe bleibt „nur fuer mich" (`PrivilegesRequired=lowest`): eine
+; Installation ohne UAC ist der Normalfall, und mehr braucht der Emulator
+; nicht.  Zur Laufzeit schreibt er NICHT in sein eigenes Verzeichnis — die
+; Arbeitsdisketten liegen im Dokumentenordner, das Protokoll daneben —,
+; deshalb ist auch „Programme" ein tauglicher Ort.
+;
+; Ein VC-Redist entfaellt in beiden Faellen: die Kernbibliothek bringt ihre
+; C-Laufzeit selbst mit (/MT, §5.1).
 PrivilegesRequired=lowest
-DefaultDirName={localappdata}\{#Produkt}
+PrivilegesRequiredOverridesAllowed=dialog
+DefaultDirName={autopf}\{#Produkt}
 DefaultGroupName={#Produkt}
 DisableDirPage=no
 DisableProgramGroupPage=yes
@@ -209,6 +232,10 @@ Type: files;          Name: "{app}\k1520_*.log"
 Type: files;          Name: "{app}\bootstrap.log"
 Type: files;          Name: "{app}\.rauchtest.py"
 Type: files;          Name: "{app}\.k1520emu-installation"
+; Hinterlassenschaft der Fassungen bis 2026-08-14: dort lag der Installer als
+; PowerShell-Skript im Zielverzeichnis, und der Deinstallierer rief ihn auf.
+; Wer darueber hinweg aktualisiert, soll die Datei nicht behalten.
+Type: files;          Name: "{app}\install.ps1"
 Type: dirifempty;     Name: "{app}"
 
 [Code]
@@ -226,6 +253,7 @@ const
   MarkeFertig      = 1000;
 
 var
+  HinweisSeite:      TOutputMsgWizardPage;
   DatenSeite:        TInputDirWizardPage;
   LadeSeite:         TDownloadWizardPage;
   Fortschrittsseite: TOutputProgressWizardPage;
@@ -687,6 +715,32 @@ end;
 
 procedure InitializeWizard;
 begin
+  { ── Was gleich passieren wird ──────────────────────────────────────────────
+
+    Diese Seite ist keine Hoeflichkeit.  Der Assistent tut zwei Dinge, die ein
+    Anwender nicht erwartet und die er erklaert bekommen muss, BEVOR er auf
+    „Weiter" drueckt: er laedt waehrend der Installation rund 120 MB aus dem
+    Netz, und er braucht dafuer ein paar Minuten.  Ohne die Ansage sieht das
+    aus wie ein haengendes Setup.  Der zweite Teil beantwortet die Frage, die
+    jeder bei einem unbekannten Programm hat: was macht das mit meinem
+    System?  Antwort: nichts ausserhalb seines eigenen Ordners. }
+  HinweisSeite := CreateOutputMsgPage(wpLicense,
+    'Bevor es losgeht',
+    'Was der Assistent tut — und was er nicht anfasst',
+    'Der Emulator bringt seine eigene Laufzeitumgebung mit.' + #13#10 + #13#10 +
+    'WÄHREND DER INSTALLATION WERDEN RUND 120 MB GELADEN' + #13#10 +
+    'Python {#PyVersion} und die Qt-Oberfläche holt der Assistent aus dem Netz —' + #13#10 +
+    'einmalig, dafür läuft der Emulator danach ohne Internetverbindung.' + #13#10 +
+    'Das dauert je nach Leitung ein paar Minuten; solange sieht der Balken' + #13#10 +
+    'unten, wo er gerade steht.' + #13#10 + #13#10 +
+    'ALLES BLEIBT IM INSTALLATIONSORDNER' + #13#10 +
+    'Python und Qt landen INNERHALB der Installation. Ein vorhandenes Python' + #13#10 +
+    'auf diesem Rechner wird nicht angefasst, nichts wird registriert, keine' + #13#10 +
+    'Systemdatei geändert. Beim Entfernen über „Einstellungen → Apps" bleibt' + #13#10 +
+    'nichts zurück.' + #13#10 + #13#10 +
+    'Am Ende sind rund 120 MB belegt. Ihre Arbeitsdisketten liegen bewusst' + #13#10 +
+    'ausserhalb davon — wo, fragt die übernächste Seite.');
+
   { Eigene Seite fuer den Datenordner — dieselbe Frage wie `install.sh --data`,
     und aus demselben Grund: dort schreibt der Emulator per Autosave in die
     Diskettendateien zurueck, und „Dokumente" ist unter Windows haeufig nach
@@ -713,6 +767,21 @@ begin
 
   Fortschrittsseite := CreateOutputProgressPage('Laufzeitumgebung einrichten',
     'Python und Qt werden eingerichtet. Das dauert einige Minuten.');
+end;
+
+function UpdateReadyMemo(const Space, NewLine, MemoUserInfoInfo, MemoDirInfo,
+  MemoTypeInfo, MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
+begin
+  { Die letzte Seite vor dem Zugriff — hier steht sonst nur das Zielverzeichnis.
+    Wer bis hierher geklickt hat, ohne die Hinweisseite zu lesen, soll wenigstens
+    DAS noch sehen: es wird geladen, und es dauert. }
+  Result := MemoDirInfo + NewLine + NewLine
+    + 'Arbeitsdisketten:' + NewLine
+    + Space + DatenOrdner + NewLine + NewLine
+    + 'Wird aus dem Netz geladen (einmalig, rund 120 MB):' + NewLine
+    + Space + 'Python {#PyVersion} und die Qt-Oberfläche' + NewLine + NewLine
+    + 'Beides landet innerhalb der Installation — das übrige System' + NewLine
+    + 'bleibt unberührt.';
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;

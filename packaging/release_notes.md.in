@@ -14,7 +14,7 @@ Beschreibung, Aufbau und Entwicklungsstand: **[Projektseite mit README](https://
 
 | Datei | System | Wofür |
 |-------|--------|-------|
-| **`K1520emu-@VERSION@-win-x64-setup.exe`** | Windows 10/11, 64 Bit | **Doppelklicken, dem Assistenten folgen.** Er fragt nach Installations- und Diskettenordner, lädt Python und Qt und richtet alles ein — ohne Administratorrechte. Legt Startmenü-Einträge an und lässt sich über *Einstellungen → Apps* wieder entfernen. |
+| **`K1520emu-@VERSION@-win-x64-setup.exe`** | Windows 10/11, 64 Bit | **Doppelklicken, dem Assistenten folgen.** Er fragt, ob für alle Benutzer (`C:\Program Files`, braucht Administratorrechte) oder nur für Sie (`%LOCALAPPDATA%\Programs`), dann nach dem Diskettenordner — und richtet alles ein. Legt Startmenü-Einträge an und lässt sich über *Einstellungen → Apps* wieder entfernen. |
 | `k1520emu-@TAG@-linux-x86_64.tar.gz` | Linux, x86-64 | Auspacken und `./install.sh` aufrufen. |
 | `*.sha256` | | Prüfsummen. Kontrolle: `sha256sum -c <datei>.sha256` bzw. unter Windows `Get-FileHash <datei>`. |
 
@@ -37,9 +37,11 @@ ihn nie an.
 
 ## Was beim ersten Mal passiert
 
-Das Paket ist ~3 MB, die Installation lädt danach **einmalig ~120 MB** nach: einen eigenen
+Das Setup ist ~3 MB, die Installation lädt danach **einmalig ~120 MB** nach: einen eigenen
 Python 3.12 und Qt, beides **innerhalb der Installation**. Das braucht eine
-Internetverbindung und ein paar Minuten. Danach startet der Emulator ohne Netz, und es sind
+Internetverbindung und ein paar Minuten — der Assistent sagt es vorher an und zeigt,
+wo er gerade steht. Ein vorhandenes Python auf dem Rechner wird nicht angefasst, nichts
+registriert; beim Entfernen bleibt nichts zurück. Danach startet der Emulator ohne Netz, und es sind
 rund 150 MB (Linux) bzw. 116 MB (Windows) belegt. Systempython und Systempakete werden
 nicht angefasst.
 
