@@ -494,7 +494,7 @@ jobs:
           if (-not (Test-Path $boot)) { throw "bootstrap.log fehlt — lief der Bootstrap ueberhaupt?" }
           $zeilen = Get-Content $boot
           if (-not ($zeilen | Where-Object { $_ -match '^==> Fertig\.' })) {
-            throw "der Bootstrap ist nicht durchgelaufen (kein „Fertig." im Protokoll)"
+            throw "der Bootstrap ist nicht durchgelaufen — 'Fertig.' fehlt im Protokoll"
           }
 
           # Der Rauchtest legt die Beispieldisketten beim Anwender an — und zwar
