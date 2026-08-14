@@ -32,6 +32,10 @@ from app.disktool.ui.main_window import MainWindow
 
 def main() -> int:
     app = QApplication(sys.argv)
+    # Organisation UND Name: erst damit legt QSettings eine Datei an — und nur
+    # dann merkt sich das Fenster Größe, Leisten und zuletzt geöffnete Abbilder
+    # (MainWindow._einstellungen).  Die Testläufe benennen sich bewusst nicht.
+    app.setOrganizationName("k1520emu")
     app.setApplicationName("k1520DiskTool")
 
     # Ctrl+C im Terminal: Qts Eventloop kehrt sonst nie nach Python zurück.

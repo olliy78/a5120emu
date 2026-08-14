@@ -1095,10 +1095,10 @@ Eingabe, Schreibschutz, Archivtabellen).
 >
 > * **Schreibgeschützt ist die Vorgabe.** `DiskVolume::open` öffnet schreibgeschützt;
 >   der Schutz reicht bis ins `DiskImage` (dessen `flush()` schreibt dann nichts, auch
->   nicht aus dem Destruktor). Die Oberfläche zeigt das als Haken **„Nur lesen"**, der
->   beim Öffnen gesetzt ist; das CLI öffnet für `ls`/`get`/`info`/`check`/`save-as`
+>   nicht aus dem Destruktor). Die Oberfläche zeigt das als
+>   *Diskette ▸ Schreibschutz* (Strg+R), gesetzt beim Öffnen; das CLI öffnet für `ls`/`get`/`info`/`check`/`save-as`
 >   schreibgeschützt und nur für `put`/`rm` schreibend.
-> * **Schreiben ist ein bewusster Schritt.** Wer den Haken entfernt, weiß in diesem
+> * **Schreiben ist ein bewusster Schritt.** Wer den Schutz aufhebt, weiß in diesem
 >   Moment, dass er die Diskette verändern kann — und legt bei einem unersetzlichen
 >   Stück vorher mit **„Speichern unter…"** eine Arbeitskopie an.
 > * Die **Sicherungskopie `<name>~`** beim ersten Zurückschreiben bleibt: sie schützt
@@ -1440,3 +1440,238 @@ was die Erkennung (§12) durchlässt. Eine Diskette ganz ohne brauchbares Dateis
 — gerade der Fall, für den ein Sektoreditor gemacht ist — lässt sich damit heute
 nicht ansehen. Ein „roh öffnen" (nur Geometrie, kein Dateisystem) wäre die
 Fortsetzung; `GeometryProbe::synthesize` liefert die Geometrie dafür bereits.
+
+## 20. Oberfläche als gewöhnliche Anwendung (2026-08-14)
+
+Bis hierher wuchs das Fenster mit den Fähigkeiten mit: jede neue Fähigkeit bekam
+eine Schaltfläche, und die landete in einer der **zwei Knopfleisten auf halber
+Höhe** — oben Öffnen/Neu/Dateisystem/Nur-lesen, unten acht weitere. Am Ende
+klemmten sie den Inhalt ein, die Menüleiste blieb leer (obwohl `QMainWindow`
+schon benutzt wurde), und **Meldungen erschienen an vier Orten ohne Rollen**:
+Protokollkasten unten, Statuszeile, Hinweistext über der Dateiliste, dazu ein
+selbstgemachtes `●` im Fenstertitel. Dieselbe Meldung stand oft an dreien
+gleichzeitig, ein *Zustand* („schreibgeschützt") dagegen im Protokoll, wo er
+wegscrollt.
+
+Der Umbau macht daraus ein Fenster nach den Gepflogenheiten der Werkzeugkiste:
+**Menüleiste + ausblendbare Symbolleiste + Kopfbereich + Meldungsstreifen +
+Statuszeile + Protokoll-Dock**. Die Fach-Logik ist unangetastet geblieben — alle
+Methoden (`open_image`, `insert_all`, `save_as`, …) sind weiter dialogfrei
+aufrufbar, und genau das machte den Umbau billig.
+
+```
+Titelleiste      udos_boot_scp.hfe — k1520DiskTool     ← Identität + Änderungsmarke
+Menüleiste       Datei · Bearbeiten · Diskette · Übertragung · Ansicht · Hilfe
+Symbolleiste     [Öffnen][Neu] │ [Speichern][Unter…][Archiv] │ [Diskeditor][Bootabbild]
+                 │ [Holen][Schreiben][Löschen] │ [Schutz]      ← ausblendbar
+Kopfbereich      💿 Pfad / Format · Dateisystem · Seiten        [Dateisystem ▾]
+Meldungsstreifen ⚠ Medium: … (nur bei Bedarf, wegklickbar)
+Inhalt           Diskette │ →→| →| |← |←← │ Ordner   (beide Hälften gleich breit)
+Protokoll-Dock   (unten, standardmäßig zu, F8)
+Statuszeile      letzte Aktion            │ 69 Dateien · 106 KB frei │ binär │ 🔓 R/W
+```
+
+### 20.1 Warum überhaupt Menü statt Knöpfe
+
+Nicht wegen des Aussehens, sondern wegen der **Vollständigkeit**: eine Knopfleiste
+ist immer eine Auswahl, ein Menü ist eine Landkarte. Seitdem lässt sich sagen
+*„jede Aktion steht in der Menüleiste"* — und das ist prüfbar
+(`test_every_action_is_reachable_from_the_menu_bar` sucht jede `act_*` des
+Fensters in der rekursiv durchlaufenen Menüleiste). Eine künftig ergänzte Aktion,
+die nur in die Symbolleiste gehängt wird, fällt sofort auf; sie wäre nach dem
+Ausblenden der Leiste unerreichbar.
+
+**Beide Hälften sind gleich gebaut und gleich breit**: Überschrift + Liste, sonst
+nichts. Die frühere Fusszeile unter dem Ordner („12 Dateien") ist entfallen —
+Zahlen stehen in der Statuszeile —, und der Teiler startet mittig mit gleichen
+Dehnungsfaktoren. Ungleiche Spalten lesen sich wie eine Aussage darüber, welche
+Seite die wichtigere sei; das ist keine. Guards:
+`test_both_panes_are_the_same_width`, `test_the_folder_pane_has_no_footer_line`.
+
+### 20.2 Kopfbereich statt Kopfleiste
+
+Was **dauerhaft** über die geöffnete Diskette gilt, steht in zwei Zeilen über
+beiden Hälften (`ui/disk_header.py`): Pfad, Format, Dateisystem samt Urteil der
+Erkennung, Seitenzahl. Rechts daneben das Auswahlfeld, mit dem sich die Erkennung
+übersteuern lässt — es steht dort und nicht in einer Knopfleiste, weil es sich auf
+die Angabe daneben bezieht.
+
+Dieselbe Wahl gibt es zusätzlich als Radiogruppe unter *Diskette ▸ Dateisystem
+übersteuern*. Damit beide nicht auseinanderlaufen, kommt die Liste aus **einer**
+Funktion (`disk_header.auswahlliste()`) und gesetzt wird sie an **einer** Stelle
+(`MainWindow._fs_setzen`). In der Liste steht neben den Katalogprofilen auch
+`cpa_auto` — die abgeleitete Erkennung (§6.4) hat keinen Katalogeintrag, ist aber
+ein zulässiger Zwang; ohne sie liesse sich eine profillose Diskette nicht öffnen.
+Guard: `test_filesystem_choice_stays_in_step_between_header_and_menu`.
+
+Alles, was man nur gelegentlich nachschlägt — Geometrie, Alternativen der
+Erkennung, Auffälligkeiten, Belegung je Seite —, steht seitdem unter *Diskette ▸
+Diskettenangaben…* (`ui/disk_info_dialog.py`), nicht im Kopf.
+
+### 20.3 Eine Aktion, drei Orte — und ein Ort zum Sperren
+
+Alle Aktionen entstehen an einer Stelle (`ui/actions.py`, Tabelle `_SPEC`) mit
+Beschriftung, Symbol, Kürzel und Statustext und werden als `fenster.act_<name>`
+abgelegt; Menü, Symbolleiste, die beiden Kontextmenüs und die Mittelspalte
+(→/←) zeigen **dasselbe Objekt**. Wer eine Aktion sperrt, sperrt sie damit
+überall — vorher musste jede Sperre in einer Schleife über Schaltflächen
+wiederholt werden.
+
+Gesperrt und freigegeben wird ausschließlich in `_aktionen_pruefen()`, in drei
+Stufen:
+
+| Stufe | Bedingung | Betrifft |
+|-------|-----------|----------|
+| offen | eine erkannte Diskette liegt vor | Speichern unter, Archivieren, Diskeditor, Alles extrahieren, Angaben, Schließen |
+| schreibbar | zusätzlich: Schreibschutz fort | Speichern, Alles einfügen |
+| ausgewählt | zusätzlich: in der *zuständigen* Liste ist etwas markiert | Holen, Schreiben, Löschen, Eigenschaften |
+
+Die dritte Stufe ist neu und lässt den früheren Hinweis *„Keine Datei
+ausgewählt"* verschwinden: eine Aktion, die gerade nichts zu tun hätte, ist
+gesperrt statt gesprächig. Über Kontextmenü und Ziehen kann der Fall trotzdem
+eintreten — dann sagt es die Statuszeile, kein Meldungsfenster. Guards:
+`test_selection_gates_the_transfer_actions`,
+`test_context_menus_use_the_same_actions_as_the_menu_bar`.
+
+Die **Mittelspalte** ist geblieben. Räumlich ist „von hier nach dort" eindeutiger
+als jeder Menüpunkt; die Knöpfe sind aber nur noch Anzeigen derselben Aktion
+(`QToolButton.setDefaultAction`), keine eigene Verdrahtung. Sie trägt **vier**
+Knöpfe — aussen die Stapel, innen die Auswahl, und die Pfeillänge sagt, wie viel
+wandert:
+
+```
+  →→|   Alles extrahieren     (ganze Diskette → Ordner)
+   →|   Auswahl holen
+   |←   Auswahl schreiben
+  |←←   Alles einfügen        (ganzer Ordner → Diskette)
+```
+
+Guard: `test_the_middle_column_offers_selection_and_everything` (Reihenfolge,
+Symbol und Menü-Erreichbarkeit aller vier).
+
+**Der Schreibschutzknopf zeigt seinen Zustand**, statt ihn nur zu schalten: ein
+rastender Knopf ist von aussen schwer zu lesen („ist er gedrückt?"), deshalb
+wechseln Symbol **und** Beschriftung mit — geschlossenes Schloss + `R/O` gegen
+offenes Schloss + `R/W` (`MainWindow._schutz_anzeigen`, aus `_aktionen_pruefen()`
+heraus). Dasselbe Bild trägt der Menüpunkt, dieselbe Aussage steht rechts in der
+Statuszeile. Guard: `test_the_protection_button_shows_which_state_it_is_in`.
+
+Die Beschriftung im Menü ist ausführlich („In den Ordner holen"), die in der
+Leiste kurz („Holen") — über `QAction.setIconText` (Tabelle `KURZ`). Ohne das
+kippt die Leiste schon bei 1150 px Fensterbreite in den Überlauf (»), und die
+letzten Knöpfe sind unsichtbar, obwohl die Leiste eingeblendet ist.
+
+### 20.4 Die sechs Meldungsorte und ihre Rollen
+
+Das eigentliche Aufräumen. Jede Sorte Meldung hat **genau einen** Ort:
+
+| Ort | Rolle | Lebensdauer |
+|-----|-------|-------------|
+| Fenstertitel | Identität + Änderungsmarke | ganze Sitzung |
+| Kopfbereich | dauerhafte **Eigenschaften** der Diskette | solange offen |
+| Meldungsstreifen (`ui/info_bar.py`) | dauerhafte **Einschränkungen**, wegklickbar | bis geschlossen / nächste Diskette |
+| Statuszeile links | Ergebnis der **letzten Aktion** | 8 s |
+| Statuszeile rechts | **Zustand** als Widget, nie als Fließtext | solange offen |
+| Protokoll-Dock (`ui/log_dock.py`) | **alles**, mit Uhrzeit | ganze Sitzung |
+| Meldungsfenster | nur **Abbruch** oder Rückfrage | modal |
+
+Fünf Festlegungen, die dabei nicht aufzuweichen sind:
+
+1. **Alles geht ins Protokoll**, ausnahmslos — es ist die Historie, nicht die
+   Anzeige. Deshalb darf es zu sein, und ist es beim Start auch (F8 holt es
+   hervor); ein verborgenes Dock nimmt trotzdem Text an, die Historie ist also
+   auch dann vollständig, wenn sie nie aufgeklappt wurde. Guard:
+   `test_log_dock_is_closed_at_start_but_keeps_the_history`.
+2. **Die Statuszeile ist flüchtig, der Kopfbereich ist es nicht.** Der
+   Schreibschutz wurde früher ins Protokoll geloggt — falsch, er ist ein Zustand:
+   jetzt Schlossanzeige rechts in der Statuszeile plus rastender Knopf in der
+   Leiste. Guard: `test_status_bar_shows_the_write_protection_as_a_state`.
+3. **Die Änderungsmarke ist Qts eigene**: `[*]` im Titelmuster +
+   `setWindowModified()`, statt eines selbstgemalten `●`. Damit trägt jede
+   Plattform ihr übliches Zeichen. Der Titel zeigt nur noch den **Dateinamen**;
+   der volle Pfad steht im Kopf (vorher stand er in beiden).
+4. **Modal nur bei Abbruch.** Erfolg wird nie mit einer Box gemeldet; „nichts
+   ausgewählt" ebenso wenig (s. §20.3).
+5. **Der Streifen liegt über beiden Hälften**, nicht in der Diskettenspalte —
+   auch das Einfügen aus dem Ordner kann etwas zu melden haben.
+6. **Die Statuszeile ist nicht abschaltbar.** Sie trägt den Zustand der
+   geöffneten Diskette (Schreibschutz, freier Platz, Übertragungsart); wer sie
+   ausblenden könnte, arbeitete blind. Symbolleiste und Protokoll dürfen weg,
+   sie nicht. Das Schloss darin ist ein **Bild**, kein Emoji — 🔒 und 🔓 sehen in
+   vielen Schriften gleich aus, und dann sagt die Anzeige nichts. Guards:
+   `test_the_status_bar_cannot_be_switched_off`,
+   `test_status_bar_shows_the_write_protection_as_a_state`.
+
+### 20.5 Fensterzustand — und warum die Tests ihn nicht anfassen
+
+Größe, Lage, Sichtbarkeit von Leiste und Dock, Leistenstil, Übertragungsart und
+die zuletzt geöffneten Abbilder überleben das Beenden (`saveGeometry`/`saveState`
+in `QSettings`). Der Haken daran: Testläufe würden dabei in die Einstellungen des
+Anwenders schreiben — und, schlimmer, dessen ausgeblendete Symbolleiste erben und
+daran scheitern.
+
+Deshalb die Regel: **gespeichert wird nur, wenn sich die Anwendung benannt hat.**
+`app/disktool/main.py` setzt `setOrganizationName`/`setApplicationName`; die
+Testläufe legen eine namenlose `QApplication` an, und `_einstellungen()` gibt dann
+`None` zurück. Guard:
+`test_a_nameless_application_does_not_touch_the_users_settings`.
+
+### 20.6 Symbole liegen im Baum, nicht im Systemthema
+
+`QIcon.fromTheme()` liefert unter Windows **nichts** — ein Paket, dessen
+Symbolleiste auf einer Plattform leer bleibt, ist keins (§13 der
+Verteilungsentwürfe). Die Zeichnungen liegen deshalb als einfarbige SVG unter
+`app/icons/` (17 Stück) und werden beim Laden eingefärbt: `ui/icons.py` ersetzt das Wort
+`currentColor` durch die Textfarbe der laufenden Palette und rastert je Größe neu
+(16/22/32/48). So passt ein Satz zu hellem wie dunklem Thema, und `app/` wandert
+ohnehin als Ganzes in die Payload. Guards:
+`test_every_bundled_icon_can_be_rendered`,
+`test_toolbar_shows_actions_that_all_exist_in_the_menu` (jede Leistenaktion trägt
+ein Symbol).
+
+### 20.7 Das Handbuch — eine `.md`, von Qt selbst gesetzt
+
+Die Hilfe war eine HTML-Zeichenkette im Quelltext. Das trägt für fünf Absätze und
+nicht weiter. Sie ist jetzt eine gewöhnliche Markdown-Datei,
+`app/disktool/help/handbuch.md`, angezeigt in einem eigenen Fenster
+(`ui/help_window.py`, F1).
+
+**Warum kein Bauschritt.** `QTextBrowser` versteht Markdown seit Qt 5.14
+(`QTextDocument::setMarkdown`, GitHub-Erweiterungen inbegriffen). Nachgemessen an
+einer Probe: Überschriften, Auszeichnung, geordnete und ungeordnete Listen,
+Ankreuzlisten, **Tabellen** und Verweise kommen sauber durch; Zitatblöcke werden
+nur eingerückt, Codeblöcke bekommen keinen Hintergrund. Das reicht für Text und
+Überschriften — und es kostet **nichts**: keine Abhängigkeit, kein erzeugtes
+Artefakt, keine Zeile in `release.yml` oder im MSVC-Lauf.
+
+Die Alternativen und warum sie hier nicht lohnen:
+
+| Weg | Urteil |
+|-----|--------|
+| Markdown → HTML beim Bauen (python-markdown, cmark, pandoc) | Der Gewinn wäre klein: angezeigt wird weiter mit `QTextBrowser` und dessen CSS-Ausschnitt. Lohnt erst mit Bildern oder Syntaxfärbung — dann bleibt die `.md` die Quelle und es kommt nur ein Umwandler davor. |
+| `QtWebEngine` | Volles CSS, aber 100–150 MB im Paket. Die Nutzlast ist ~2 MB. |
+| Qt-Hilfe (`.qhp`/`.qch`, `QHelpEngine`) | Der offizielle Weg mit Volltextindex; braucht `qhelpgenerator` und das QtHelp-Modul. Für ein Kurzhandbuch überdimensioniert, ab ~50 Seiten die richtige Antwort. |
+| Systembrowser (`QDesktopServices`) | Der Anwender verlässt das Programm, und im Paket müsste trotzdem HTML liegen. |
+
+Vier Festlegungen:
+
+1. **Die Datei liegt unter `app/`**, nicht in `doc/`. `packaging/build_payload.sh`
+   schiebt den `app/`-Baum als Ganzes in die Nutzlast; damit ist das Handbuch ohne
+   eine einzige Zeile Paketierungsänderung dabei. `doc/` ist **nicht** im Paket.
+   Guard: `test_help_manual_ships_inside_the_app_tree`.
+2. **Das Inhaltsverzeichnis kommt aus den Textblöcken, nicht aus Ankern.** Qts
+   Markdown vergibt keine Anker, `[…](#abschnitt)` funktioniert also nicht.
+   Gesprungen wird auf die Blöcke mit `headingLevel() == 2` — genauer als eine
+   Textsuche, weil eine Überschrift, deren Wortlaut auch im Fließtext vorkommt,
+   nicht in die Irre führt. Guard:
+   `test_help_window_lists_every_section_and_jumps_to_it`.
+3. **Typografie über den HTML-Umweg**: ein Formatvorlagenblatt wirkt nur auf HTML,
+   nicht auf importiertes Markdown — deshalb `setMarkdown` → `toHtml` → `setHtml`
+   mit gesetztem `defaultStyleSheet` (Schriftgrade, Tabellenabstände).
+4. **Das Handbuch darf nicht von der Oberfläche wegdriften.** Deshalb prüfen zwei
+   Tests die Tabelle „Tastenkürzel" **in beide Richtungen** gegen die wirklich
+   verdrahteten `QAction`s: `test_every_shortcut_in_the_manual_really_exists` und
+   `test_every_shortcut_of_the_window_is_in_the_manual`. Ein neues Kürzel ohne
+   Eintrag im Handbuch fällt damit sofort auf — und ein im Handbuch versprochenes,
+   das es nicht gibt, ebenso. Das ist der eigentliche Grund, die Hilfe im Baum zu
+   halten statt auf einer Webseite.
