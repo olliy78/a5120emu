@@ -319,5 +319,10 @@ jobs:
           done
           gh release view "$TAG" >/dev/null 2>&1 \
             || { echo "Release $TAG existiert nicht und liess sich nicht anlegen" >&2; exit 1; }
-          gh release upload "$TAG" dist/*.zip dist/*setup.exe dist/*.sha256 --clobber
-          echo "Windows-Paket und Setup liegen am Release **$TAG** (Entwurf)." >> "$GITHUB_STEP_SUMMARY"
+          # NUR das Setup.  Das .zip enthaelt seit 2026-08-14 kein
+          # Installationsskript mehr — unter Windows installiert der Assistent
+          # selbst (packaging/k1520emu.iss).  Ein Anwender koennte mit dem
+          # Archiv also nichts anfangen; es bleibt Artefakt dieses Laufs, damit
+          # der Rauchtest oben hineinsehen kann.
+          gh release upload "$TAG" dist/*setup.exe dist/*setup.exe.sha256 --clobber
+          echo "Windows-Setup liegt am Release **$TAG** (Entwurf)." >> "$GITHUB_STEP_SUMMARY"

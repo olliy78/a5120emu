@@ -1,0 +1,29 @@
+# Gepinnter Python für den Windows-Installationsassistenten.
+#
+# Der Assistent lädt GENAU diese Datei von python-build-standalone (dieselbe
+# Quelle, aus der sich auch `uv` bedient) und prüft sie gegen die hier
+# hinterlegte Prüfsumme.  Die Prüfsumme reist damit MIT dem Paket — eine
+# nebenher heruntergeladene .sha256-Datei deckte nur Übertragungsfehler ab,
+# nicht eine ausgetauschte Quelle.
+#
+# Warum nicht `uv python install` wie unter Linux: uv legt zum Schluss einen
+# Verweis auf die Nebenversion an (`python\cpython-3.12-…` → Vollversion), und
+# das ist unter Windows ein JUNCTION.  Wo OneDrive „Dateien bei Bedarf" läuft,
+# verweigert dessen Filtertreiber das Anlegen — os error 448,
+# STATUS_UNTRUSTED_MOUNT_POINT, „der Pfad kann nicht durchlaufen werden, da er
+# einen nicht vertrauenswürdigen Bereitstellungspunkt enthält" (astral-sh/uv
+# #19616).  Abschalten lässt sich der Verweis nicht.  Der Assistent lädt das
+# Archiv deshalb selbst; ausgepackt wird ein gewöhnliches Verzeichnis, und
+# kein Reparse-Punkt entsteht.  doc/design/13_distribution.md §5.1.
+#
+# Die Nebenversion MUSS zu K1520_PY_VERSION (lib/common.sh) passen — sonst
+# passen die Wheels aus requirements.lock nicht.  build_payload.sh prüft das.
+#
+# Aktualisieren:  packaging/build_payload.sh --refresh-python
+#
+# Format:  <Zieltripel> <Größe in Byte> <SHA256 des Archivs>
+
+version 3.12.13
+release 20260807
+
+x86_64-pc-windows-msvc     46113914  6cf2be701aa7e9470454c9c86285c1bcc1832518d63e39c3e34e9d8ea1cbb99f

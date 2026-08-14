@@ -1,13 +1,13 @@
 @echo off
 rem k1520DiskTool - Dateiaustausch mit K1520-Disketten (Windows).
-rem @ROOT@ setzt der Installer.  Gegenstueck zu disktool_launcher.sh.
+rem Die Wurzel setzt der Installer.  Gegenstueck zu disktool_launcher.sh.
 setlocal
 
 set "ROOT=@ROOT@"
 
 if not exist "%ROOT%\venv\Scripts\pythonw.exe" (
     echo k1520DiskTool: Laufzeitumgebung fehlt in %ROOT%\venv 1>&2
-    echo Neu einrichten:  install.ps1 -Prefix "%ROOT%" 1>&2
+    echo Neu einrichten:  das Installationsprogramm noch einmal ausfuehren 1>&2
     exit /b 1
 )
 
