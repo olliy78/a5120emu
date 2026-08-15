@@ -14,6 +14,7 @@
  */
 
 #include "core/api/k1520_disk_api.h"
+#include "core/api/k1520_sync_internal.h"
 
 #include "core/filesystem/disk_volume.h"
 
@@ -107,6 +108,24 @@ extern "C" K1520Disk k1520d_open(const char* path, const char* fs_name, bool rea
     std::string err;
     h->vol = DiskVolume::open(path, fs_name ? fs_name : "",
                               kataloge().formate, kataloge().dateisysteme, err, read_only);
+    if (!h->vol) { g_open_error = err; return nullptr; }
+    return h.release();
+}
+
+extern "C" K1520Disk k1520d_open_physical(K1520Sync sync, const char* fs_name,
+                                          bool read_only) {
+    g_open_error.clear();
+    std::unique_ptr<DiskImage> abbild = k1520s_take_image(sync);
+    if (!abbild) {
+        g_open_error = "kein physisches Laufwerk (oder schon geoeffnet)";
+        return nullptr;
+    }
+
+    auto h = std::make_unique<Handle>();
+    std::string err;
+    h->vol = DiskVolume::openPhysical(std::move(abbild), fs_name ? fs_name : "",
+                                      kataloge().formate, kataloge().dateisysteme,
+                                      err, read_only);
     if (!h->vol) { g_open_error = err; return nullptr; }
     return h.release();
 }

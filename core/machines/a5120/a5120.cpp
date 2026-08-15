@@ -651,6 +651,21 @@ int A5120Machine::run(int max_cycles) {
     return max_cycles - remaining;
 }
 
+bool A5120Machine::mountDiskImage(int drive, std::unique_ptr<DiskImage> img, bool wp) {
+    if (drive < 0 || drive > 3) { last_error_ = "Invalid drive"; return false; }
+    if (!drive_profiles_[drive].present) {
+        last_error_ = "Kein Laufwerk an Slot " + std::to_string(drive);
+        return false;
+    }
+    if (!img) { last_error_ = "kein Abbild uebergeben"; return false; }
+
+    std::lock_guard<std::mutex> lk(disk_mutex_);
+    if (afs_.mountDisk(drive, std::move(img), wp)) { last_error_.clear(); return true; }
+    const std::string drv_err = afs_.drive(drive).lastError();
+    last_error_ = drv_err.empty() ? "Mounten fehlgeschlagen" : drv_err;
+    return false;
+}
+
 bool A5120Machine::mountDisk(int drive, const std::string& path,
                               const std::string& format_name, bool wp) {
     if (drive < 0 || drive > 3) { last_error_ = "Invalid drive"; return false; }

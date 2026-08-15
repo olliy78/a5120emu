@@ -1,4 +1,5 @@
 #include "k1520_api.h"
+#include "core/api/k1520_sync_internal.h"
 #include "core/machines/a5120/a5120.h"
 #include "core/logger.h"
 #include <cstring>
@@ -193,6 +194,15 @@ const char* k1520_disk_notice(K1520Handle h, int drive) {
     static thread_local std::string buf;
     buf = toA5120(h)->diskNotice(drive);
     return buf.c_str();
+}
+
+bool k1520_mount_physical(K1520Handle h, int drive, K1520Sync sync, bool write_protect) {
+    // Das Abbild wandert AUS dem Synchronisierer-Handle ins Laufwerk; der
+    // Synchronisierer selbst bleibt beim Handle, damit der Arbeitsfaden weiterarbeitet
+    // (doc/design/14_physische_diskette.md §10).
+    std::unique_ptr<DiskImage> abbild = k1520s_take_image(sync);
+    if (!abbild) return false;
+    return toA5120(h)->mountDiskImage(drive, std::move(abbild), write_protect);
 }
 
 bool k1520_flush_disks(K1520Handle h) {

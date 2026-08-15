@@ -28,6 +28,7 @@ extern "C" {
 #include <stdint.h>
 
 #include "core/api/k1520_export.h"   ///< `K1520_API` — Ausfuhrkennzeichnung (Windows!)
+#include "core/api/k1520_sync_api.h"  ///< physische Diskette (Greaseweazle)
 
 /// @brief Opakes Handle einer geoeffneten Diskette.
 typedef void* K1520Disk;
@@ -50,6 +51,18 @@ typedef enum {
  * @return Handle oder NULL — Grund dann ueber @ref k1520d_last_open_error.
  */
 K1520_API K1520Disk k1520d_open(const char* path, const char* fs_name, bool read_only);
+
+/**
+ * @brief **Physische Diskette** in einem echten Laufwerk oeffnen.
+ *
+ * @p sync kommt aus @ref k1520s_create und wird von einem fremden Arbeitsfaden bedient.
+ *
+ * **Der Aufruf liest die ganze Diskette**: die Formaterkennung sieht sich jede Spur an.
+ * Er gehoert deshalb in einen Arbeitsfaden mit Fortschrittsanzeige, nicht in den
+ * Oberflaechenfaden (doc/design/14_physische_diskette.md §11.2).
+ */
+K1520_API K1520Disk k1520d_open_physical(K1520Sync sync, const char* fs_name,
+                                         bool read_only);
 
 /**
  * @brief Neue, leere Diskette anlegen (formatieren + Dateisystem initialisieren).

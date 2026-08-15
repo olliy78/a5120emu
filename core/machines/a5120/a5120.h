@@ -72,6 +72,18 @@ public:
     // Disk management (thread-safe)
     bool mountDisk(int drive, const std::string& path,
                    const std::string& format_name, bool write_protect);
+
+    /**
+     * @brief Ein **fertig aufgebautes** Abbild anmelden (physische Diskette).
+     *
+     * Weg fuer die physische Diskette am Greaseweazle: das Abbild kommt aus
+     * @ref DiskImage::openPhysical und haengt an einem @ref TrackSync, der von einem
+     * fremden Arbeitsfaden bedient wird.  Alles Weitere — Spurdichte-Anpassung,
+     * Hinweise, Lesepfad — ist wie bei jeder anderen Diskette.
+     *
+     * @see doc/design/14_physische_diskette.md
+     */
+    bool mountDiskImage(int drive, std::unique_ptr<DiskImage> img, bool write_protect);
     /**
      * @brief Legt eine NEUE Diskette an und mountet sie.
      *

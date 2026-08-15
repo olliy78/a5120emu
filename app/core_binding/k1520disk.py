@@ -64,6 +64,9 @@ TEXT = 1
 # ── Öffnen / Anlegen / Speichern ────────────────────────────────────────────
 _lib.k1520d_open.argtypes = [_CS, _CS, ctypes.c_bool]
 _lib.k1520d_open.restype = _H
+# Physische Diskette am Greaseweazle (doc/design/14_physische_diskette.md)
+_lib.k1520d_open_physical.argtypes = [ctypes.c_void_p, _CS, ctypes.c_bool]
+_lib.k1520d_open_physical.restype = _H
 _lib.k1520d_create.argtypes = [_CS, _CS, _CS]
 _lib.k1520d_create.restype = _H
 _lib.k1520d_create_bootable.argtypes = [_CS, _CS, _CS, _CS]
@@ -536,6 +539,28 @@ class DiskTool:
         if not h:
             raise K1520DiskError(_s(_lib.k1520d_last_open_error()))
         return cls(h, p)
+
+    @classmethod
+    def open_physical(cls, sync, filesystem: Optional[str] = None,
+                      read_only: bool = True) -> "DiskTool":
+        """**Physische Diskette** in einem echten Laufwerk öffnen.
+
+        ``sync`` ist ein :class:`app.gw.Sync` (oder dessen rohes Handle), der von einem
+        laufenden Arbeitsfaden bedient wird — ohne den blockiert der Aufruf bis zur
+        Frist.  Ein Handle lässt sich nur **einmal** öffnen.
+
+        **Der Aufruf liest die ganze Diskette**: die Formaterkennung sieht sich jede
+        Spur an (rund eine Sekunde je Spur).  Er gehört deshalb in einen Arbeitsfaden
+        mit Fortschrittsanzeige, nicht in den Oberflächenfaden.
+
+        Raises:
+            K1520DiskError: mit der Meldung der Bibliothek.
+        """
+        h = _lib.k1520d_open_physical(getattr(sync, "handle", sync),
+                                      _b(filesystem or ""), read_only)
+        if not h:
+            raise K1520DiskError(_s(_lib.k1520d_last_open_error()))
+        return cls(h, "")
 
     @classmethod
     def create(cls, path, filesystem: str, label: str = "",

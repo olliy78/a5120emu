@@ -29,6 +29,7 @@
 #include "disk_medium.h"
 #include "image_codec.h"
 #include "track_image.h"
+#include "track_sync.h"
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -46,7 +47,14 @@ class DiskImage {
 public:
     DiskImage() = default;
     /// @brief Schreibt ausstehende Änderungen noch weg (Unmount, Maschinenende).
-    ~DiskImage() { flush(); }
+    ///
+    /// Bei einer **physischen** Diskette wird zuerst auf die Rückführung gewartet und
+    /// dann der Synchronisierer vom Medium gelöst — der Arbeitsfaden darf nicht auf ein
+    /// sterbendes Medium greifen (@ref TrackSync::detach).
+    ~DiskImage() {
+        if (sync_) { sync_->flushPending(); sync_->detach(); }
+        flush();
+    }
 
     DiskImage(const DiskImage&)            = delete;
     DiskImage& operator=(const DiskImage&) = delete;
@@ -97,6 +105,26 @@ public:
                                              std::optional<DiskFormat> fmt,
                                              bool write_protect,
                                              Encoding enc = Encoding::MFM);
+
+    /**
+     * @brief **Physische Diskette** in einem echten Laufwerk — spurweise nachgeladen.
+     *
+     * Es wird nichts gelesen: alle Spuren sind zunächst @ref TrackState::Unknown und
+     * werden beim ersten Zugriff beschafft (@ref DiskMedium::track).  Die Diskette hat
+     * **keine Dateibindung** — der Autosave schweigt, `saveAs()` erzeugt bei Bedarf eine
+     * Abbilddatei (und liest dafür den Rest der Diskette).
+     *
+     * Bedient wird sie von einem fremden Arbeitsfaden über den @ref sync
+     * (doc/design/14_physische_diskette.md).
+     */
+    static std::unique_ptr<DiskImage> openPhysical(const TrackSyncSpec& spec);
+
+    /// @brief Synchronisierer der physischen Bindung (nullptr = Datei/Speicher).
+    TrackSync* sync() const { return sync_.get(); }
+    /// @brief Mitbesitz am Synchronisierer — die C-ABI gibt dem Arbeitsfaden ein
+    ///        Handle, das die Diskette ueberleben darf (dann greift @ref TrackSync::detach).
+    std::shared_ptr<TrackSync> syncPtr() const { return sync_; }
+    bool       isPhysical() const { return sync_ != nullptr; }
 
     // ─── Medium ──────────────────────────────────────────────────────────────
 
@@ -177,6 +205,9 @@ public:
 
 private:
     DiskMedium    medium_;
+    /// Physische Bindung (nullptr = Datei/Speicher).  `shared_ptr`, weil die C-ABI dem
+    /// Arbeitsfaden ein eigenes Handle darauf gibt, das die Diskette überleben darf.
+    std::shared_ptr<TrackSync> sync_;
     std::string   path_;                              ///< "" = nur im Speicher
     ContainerType container_       = ContainerType::Hfe;
     std::optional<DiskFormat> disk_format_;           ///< nur bei .img

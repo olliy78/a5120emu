@@ -152,6 +152,26 @@ public:
                                             bool read_only = true);
 
     /**
+     * @brief **Physische Diskette** in einem echten Laufwerk oeffnen.
+     *
+     * @p disk kommt aus @ref DiskImage::openPhysical und haengt an einem
+     * @ref TrackSync, der von einem fremden Arbeitsfaden bedient wird.  Danach
+     * verhaelt sich der Datentraeger wie jeder andere — der Unterschied ist allein,
+     * dass Spuren beim ersten Zugriff **nachgeladen** werden.
+     *
+     * **Das Oeffnen liest die ganze Diskette**: die Formaterkennung sieht sich jede
+     * Spur an.  Der Aufruf gehoert deshalb in einen Arbeitsfaden mit
+     * Fortschrittsanzeige, nicht in den Oberflaechenfaden
+     * (doc/design/14_physische_diskette.md §11.2).
+     */
+    static std::unique_ptr<DiskVolume> openPhysical(std::unique_ptr<DiskImage> disk,
+                                                    const std::string& fs_name,
+                                                    const FormatCatalog& formats,
+                                                    const FsCatalog& fs_cat,
+                                                    std::string& err,
+                                                    bool read_only = true);
+
+    /**
      * @brief **Neue, leere** Diskette anlegen: formatieren + Dateisystem initialisieren.
      *
      * Legt das Abbild in der Geometrie des Profils an (echte Adressmarken und CRCs)
@@ -395,6 +415,16 @@ public:
 
 private:
     DiskVolume() = default;
+
+    /// @brief Gemeinsamer Kern von @ref open und @ref openPhysical (§ Erkennung).
+    ///        @p vorhanden leer = @p path oeffnen; sonst das uebergebene Abbild nehmen.
+    static std::unique_ptr<DiskVolume> oeffnenMit(std::unique_ptr<DiskImage> vorhanden,
+                                                  const std::string& path,
+                                                  const std::string& fs_name,
+                                                  const FormatCatalog& formats,
+                                                  const FsCatalog& fs_cat,
+                                                  std::string& err,
+                                                  bool read_only);
 
     /// @brief Ein Dateisystem samt seinem Sektorraum.
     struct Vol {

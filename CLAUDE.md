@@ -634,6 +634,72 @@ Was beim Weiterarbeiten zu wissen ist:
   zusätzlich byteweise gegen `cpmtools` verifiziert (nicht als Abhängigkeit — die
   Prüfsummen im Test frieren das Ergebnis ein).
 
+## Physische Diskette am Greaseweazle (`core/peripherals/floppy_drive/track_sync.*`, `app/gw/`)
+
+Neben der Datei (`.img`/`.hfe`/`.dmk`) gibt es seit 2026-08-15 eine **zweite Art von
+Bindung** des internen Mediums: ein **echtes Laufwerk** an einem
+[Greaseweazle](https://github.com/keirf/greaseweazle)-Adapter.  Der Unterschied ist
+nicht das Medium, sondern die **Körnung** — gelesen und geschrieben wird **spurweise
+nach Bedarf**, der Zwischenschritt „ganze Diskette in eine Datei" entfällt.  Voller
+Entwurf: **`doc/design/14_physische_diskette.md`**, Medium-Sicht:
+`doc/design/09_floppy_drive.md` §12, Architektur: `doc/K1520_architecture.md` §8.8.
+
+```
+                                                    ┌── K5122 (Emulator)
+echte Diskette ◄─gw─► Arbeitsfaden ◄─Aufträge─► DiskMedium
+                       (app/gw/)                    └── DiskVolume (DiskTool)
+```
+
+Was man beim Weiterarbeiten wissen muss:
+
+- **Der Kern kennt Greaseweazle NICHT.**  Kein USB, kein Import, kein Rückruf in die
+  Anwendung.  `TrackSync` hat **keinen eigenen Faden**; ein fremder Arbeitsfaden holt
+  Aufträge ab (`k1520s_take_job` — die einzige blockierende ABI-Funktion, ctypes gibt
+  dabei die GIL frei) und liefert **HFE-Bitzellen** zurück, die durch denselben
+  `BitCodec::decode` laufen wie eine `.hfe`-Datei.  Ein anderer Adapter wäre ein anderes
+  `device` in `app/gw/`, keine Kernänderung.
+- **Je Spur ein Zustand** statt eines Dirty-Bits: `Unknown` (nie gelesen, Inhalt
+  **ungültig**) / `Clean` / `Dirty`.  **`Unknown` ≠ „unformatiert"** — letzteres ist eine
+  belegte Aussage über die Diskette, ersteres gar keine; deshalb melden
+  `formatted()`/`rawCompatible()` zusätzlich `complete()`, sonst erklärte sich eine halb
+  gelesene Diskette für leer und ein `.img` schriebe die ungelesenen Spuren als
+  Füllbytes fest.
+- **Nachgeladen wird in `DiskMedium::track()` — und NUR dort.**  Das ist die einzige
+  Stelle, durch die jeder Verbraucher geht (K5122 über `FloppyDriveV2`, DiskTool über
+  `DiskVolume`, Erkennung über `GeometryProbe`); der Aufruf **blockiert** (0,5–0,8 s je
+  Spur, am echten Gerät gemessen).  Medienweite Reihenläufe benutzen **`peek()`** und
+  laden nie nach — sonst zieht eine beiläufige Statusabfrage die ganze Diskette ein.
+  `mutableTrack()` lädt nach (Sektorschreiben ist Lesen-Ändern-Schreiben), `setTrack()`
+  nicht (Vollspur-FORMAT ersetzt die Spur) — daran hängt, dass eine Leerdiskette im
+  echten Laufwerk formatiert werden kann, ohne vorher gelesen zu werden.
+  Wächter: `TrackSync.ReihenlaufLaedtNichtNach`.
+- **Drei Prioritäten:** 1 Lesen auf Anforderung (jemand wartet) → 2 geänderte Spuren
+  zurückschreiben → 3 unbekannte Spuren vorauslesen (kürzester Kopfweg zuerst).
+  Prio 1 **verdrängt**, unterbricht aber **keinen laufenden** Zugriff (der Faden steckt
+  in einer Übertragung).  Zurückgeschrieben wird erst nach einer **Schreibpause**
+  (≈ 0,5 s) — dieselbe Regel wie der Autosave, sonst schriebe eine UDOS-Dateioperation
+  dieselbe Spur dutzendfach.  Eine gescheiterte Rückführung lässt die Spur `Dirty`
+  (eine verlorene Änderung wäre der schlimmere Ausgang); Abmelden wartet darauf.
+- **Physisch heißt schreibgeschützt, bis jemand widerspricht** — ein Fehler kostet hier
+  nicht eine Kopie, sondern die einzige noch existierende Diskette.
+- **Eine Rücknahme (`DiskVolume`-Transaktion) braucht `restoreFrom`**, nicht eine
+  Zuweisung: was schon auf der echten Scheibe steht, holt keine Kopie im Speicher
+  zurück — die zurückgesetzten Spuren müssen **erneut als geändert** gelten.
+- **Die Hosttools liegen nicht auf PyPI** und sind eine **freiwillige** Abhängigkeit:
+  `pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"` (der Zweigkopf
+  meldet sich als Pre-Release).  Fehlt das Paket, fehlt nur der Menüpunkt.
+- **Tests brauchen keine Hardware** (in der CI ist nie ein Laufwerk):
+  `TrackSync.*` (20 Fälle) mit einem Ersatz-Arbeitsfaden aus dem RAM, `PhysicalBoot.*`
+  (**CP/A bootet spurweise bis `A>` und holt dabei weniger als die halbe Diskette**),
+  `py_gw_physical` (Ersatzlaufwerk über einer `.hfe` — **ohne** `greaseweazle`-Import;
+  dieselbe Diskette einmal als Datei und einmal „physisch" muss dasselbe liefern).
+  Die echten Hardware-Tests liegen in `tests/python/test_gw_hardware.py`, sind **nicht**
+  in ctest registriert und laufen nur mit `K1520_GW_HARDWARE=1` (Schreiben zusätzlich
+  nur mit `K1520_GW_WRITE=1`).
+- **Offen:** die Oberflächen beider Programme (Menüpunkt, Auswahl, Füllstandsanzeige),
+  das Auslagern der DiskTool-Aufrufe in einen Arbeitsfaden (das Öffnen einer echten
+  Diskette dauert ~97 s, weil die Formaterkennung jede Spur ansieht) und die CLI.
+
 ## Diskettenformatierung (FORMAT.COM) — Scope
 
 Scriptgesteuerte Formatier-Pipeline: `tests/system/drivers/format_all.py` (Runner) + `tools/format_driver`

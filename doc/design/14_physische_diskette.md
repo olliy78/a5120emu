@@ -1,0 +1,594 @@
+# Feinentwurf: Physische Diskette am Greaseweazle
+
+**Modul:** `core/peripherals/floppy_drive/` (`track_sync.*`, Erweiterung von `disk_medium.*`
+und `disk_image.*`), `core/api/k1520_sync_api.*`, `app/gw/`
+**Verwandt:** `doc/design/09_floppy_drive.md` (internes Medium + Container),
+`doc/design/07_k5122_afs.md` (Controller), `doc/design/13_k1520disktool.md` (DiskTool),
+`doc/K1520_architecture.md` §8.8
+**Fremdsoftware:** [Greaseweazle](https://github.com/keirf/greaseweazle) (Keir Fraser,
+Unlicense/Public Domain), Hosttools **1.23**, Gerät **Greaseweazle F1**, Firmware 1.6
+
+---
+
+## 1. Aufgabe und Leitidee
+
+Bisher kennt der Floppy-Stack genau eine Quelle für eine Diskette: eine **Datei**
+(`.img`/`.hfe`/`.dmk`).  Wer mit einer echten Diskette arbeiten will, muss sie
+vorher als Ganzes einlesen und hinterher als Ganzes zurückschreiben — zwei Läufe
+über 160 Spuren (≈ 2 min je Richtung), auch wenn nur eine einzige Datei gebraucht wird.
+
+Die Anbindung des Greaseweazle soll diesen Umweg beseitigen.  Die Leitidee ist dabei
+**nicht** „ein neues Dateiformat“, sondern:
+
+> **Das echte Laufwerk ist eine zweite Art von Bindung des internen Mediums —
+> und das Medium wird spurweise nachgeladen, statt in einem Stück.**
+
+```
+                              ┌──────────────── bisher ────────────────┐
+Datei (.img | .hfe | .dmk) ──load/save──►  DiskMedium  ──►  K5122 / DiskVolume
+                                              ▲
+echte Diskette ──gw──► Arbeitsfaden ──Spur──► │   ◄── NEU: spurweise, nach Bedarf
+                                              └──────── Schreibrückführung ──►
+```
+
+Daraus folgt der ganze Rest:
+
+| Anforderung | Umsetzung |
+|-------------|-----------|
+| Kein Zwischenschritt über Dateien | Die physische Diskette **ist** die Bindung des Mediums; es gibt keine Abbilddatei (wohl aber „Speichern unter…“, das eine erzeugt) |
+| Nur die gebrauchten Spuren lesen | Je Spur ein **Zustand**; eine Spur ohne gültigen Inhalt löst beim Zugriff ein Lesen aus (§4, §5) |
+| Sofort dorthin, wo der Gast hinwill | **Priorität 1** (Lesen auf Anforderung) verdrängt jede Hintergrundarbeit — Spur 3 → Spur 22 ohne die Spuren dazwischen (§5) |
+| Änderungen landen zeitnah auf der Diskette | **Priorität 2**: geänderte Spuren werden zurückgeschrieben, sobald sie kurz zur Ruhe gekommen sind (§7) |
+| Das Abbild soll möglichst vollständig werden | **Priorität 3**: in Ruhephasen wird vorausgelesen (§5.3) |
+| Emulator **und** DiskTool | Die Erweiterung sitzt im `DiskMedium` — also unterhalb von beidem; beide Bibliotheken tragen dieselbe Schnittstelle (§10) |
+| Ohne Hardware baubar und testbar | Der Kern kennt den Greaseweazle **nicht**; er kennt nur Aufträge (§9, §13) |
+
+---
+
+## 2. Warum die Gerätehälfte in Python liegt
+
+Greaseweazle besteht aus einer Firmware und **Hosttools in Python**.  Eine
+C++-Anwenderbibliothek gibt es nicht: das USB-Protokoll wäre nachbaubar, aber die
+eigentliche Arbeit steckt nicht im Protokoll, sondern in der Flusswechsel-Auswertung
+(PLL, Index-Ausrichtung, Mehrfachumdrehungen, Wiederholungen) — genau dem Teil, der
+über Jahre an echten Disketten gereift ist.  Ihn nachzubauen hieße, den einzigen
+schwierigen Teil selbst zu schreiben und den einfachen zu übernehmen.
+
+Beide Anwendungen sind ohnehin **Python um eine Bibliothek herum**.  Der Greaseweazle
+wird deshalb dort angebunden, wo die Anwendung ohnehin lebt; der Kern bekommt einen
+neutralen Auftragsweg und weiß nicht, wer ihn bedient.
+
+**Installation:** Die Hosttools liegen **nicht auf PyPI**; installiert wird ein
+Freigabestand aus dem Quellzweig:
+
+```sh
+venv/bin/python3 -m pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"
+```
+
+Der Zweigkopf (`@master`) meldet sich als *TEST/PRE-RELEASE* und ist bewusst nicht die
+Grundlage.  Das Paket ist eine **freiwillige** Abhängigkeit: fehlt es, fehlt der
+Menüpunkt, sonst ändert sich nichts (§11.3).
+
+---
+
+## 3. Wo die Erweiterung ansetzt
+
+```
+K5122 (Controller)            DiskVolume / SectorSpace (DiskTool)
+      │  track(head)                │  medium().track(cyl,head)
+      ▼                             ▼
+FloppyDriveV2                       │
+      │                             │
+      ▼                             ▼
+DiskImage  ── Bindung: Datei (§09 6) ODER physische Diskette (hier)
+      │
+      ▼
+DiskMedium ── je Spur: TrackImage + ZUSTAND   ◄── DAS ist die Erweiterung
+      │
+      └── TrackSync (optional) ── Warteschlange ──► fremder Arbeitsfaden ──► gw ──► Laufwerk
+```
+
+**Der Haken sitzt in `DiskMedium::track()`, nicht weiter oben.**  Das ist die einzige
+Stelle, durch die *jeder* Verbraucher geht: der Controller über `FloppyDriveV2`, das
+DiskTool über `DiskVolume`, die Formaterkennung über `GeometryProbe`.  Läge der Haken
+in `DiskImage` oder `FloppyDriveV2`, käme das DiskTool nie an einer Nachladung vorbei,
+weil es das Medium direkt anspricht.
+
+Umgekehrt gilt: **die medienweiten Reihenläufe dürfen nicht nachladen.**
+`formatted()`, `rawCompatible()` und die Codecs laufen über *alle* Spuren; ginge jeder
+dieser Läufe durch den Haken, zöge eine beiläufige Statusabfrage der Oberfläche die
+ganze Diskette ein.  Sie arbeiten deshalb auf dem internen Feld
+(`peek(cyl,head)`), nicht über `track()`.
+
+| Zugriff | lädt nach? | Begründung |
+|---------|-----------|------------|
+| `track(cyl,head)` | **ja** | der Verbraucher will den Inhalt sehen |
+| `mutableTrack(cyl,head)` | **ja** | Sektorschreiben ist Lesen-Ändern-Schreiben; ohne den alten Inhalt entstünde eine Spur aus dem Nichts |
+| `setTrack(cyl,head,t)` | **nein** | die Spur wird vollständig ersetzt (Vollspur-FORMAT, Codec-Ladepfad) — der alte Inhalt ist gleichgültig |
+| `peek(cyl,head)` | nein | Reihenläufe, Codecs, Zustandsanzeigen |
+| `formatted()`, `rawCompatible()`, `dirty()` | nein | Aussagen über das, **was bekannt ist** (§4.2) |
+
+Der Unterschied zwischen `mutableTrack` und `setTrack` ist der Grund, warum eine
+Leerdiskette im Laufwerk vom Gast formatiert werden kann, **ohne** dass sie vorher
+gelesen wird: FORMAT schreibt ganze Spuren.
+
+---
+
+## 4. Der Spurzustand
+
+### 4.1 Die drei Zustände
+
+```
+                    ┌──────────────────────────────────────────┐
+                    │                                          │
+   mount            ▼            Lesen erledigt                │
+  ─────────►  ┌───────────┐  ──────────────────►  ┌─────────┐  │ Schreiben
+              │ UNBEKANNT │                       │ SAUBER  │  │ (mutableTrack
+              └───────────┘  ◄──────────────────  └─────────┘  │  / setTrack)
+                    │           (nie zurück)           │       │
+                    │ setTrack (Vollspur-FORMAT)       │       │
+                    ▼                                  ▼       │
+              ┌──────────────────────────────────────────────┐ │
+              │                  GEÄNDERT                    │◄┘
+              └──────────────────────────────────────────────┘
+                    │  Rückschreiben erledigt
+                    ▼
+                 SAUBER
+```
+
+| Zustand | Bedeutung | Inhalt gültig? |
+|---------|-----------|----------------|
+| **Unbekannt** (`Unknown`) | noch nie von der Diskette gelesen | **nein** — die Bytes sind bedeutungslos |
+| **Sauber** (`Clean`) | gelesen und seither nicht geändert | ja, gleich der Diskette |
+| **Geändert** (`Dirty`) | im Abbild geändert, noch nicht zurückgeschrieben | ja, **neuer** als die Diskette |
+
+Bei einer **datei**gebundenen Diskette gibt es „Unbekannt“ nicht: der Codec füllt beim
+Laden alle Spuren, alles ist von Anfang an `Sauber`.  Der Zustand ist damit eine echte
+Verallgemeinerung des bisherigen Dirty-Bits — `Dirty` bleibt exakt das, was der Autosave
+schon immer benutzt hat (§09 6.1), und dieselben Bits tragen jetzt zusätzlich die
+Rückführung auf die echte Diskette.
+
+### 4.2 „Unbekannt“ ist keine leere Spur
+
+Eine **unformatierte** Spur (`TrackImage::empty()`) ist eine belegte Aussage über die
+Diskette: dort stehen keine Adressmarken (§09 7).  Eine **unbekannte** Spur ist gar
+keine Aussage.  Die beiden dürfen nie verwechselt werden, denn:
+
+* `formatted()` und `rawCompatible()` urteilen über das Medium.  Solange Spuren
+  unbekannt sind, ist das Urteil vorläufig — beide melden zusätzlich, **ob** das Medium
+  vollständig ist (`complete()`).  Die Oberfläche zeigt „(noch nicht vollständig
+  gelesen)“, statt eine halb gelesene Diskette für unformatiert zu erklären.
+* `saveAs()`/`exportTo()` auf eine Datei **erzwingt Vollständigkeit**: eine Abbilddatei
+  ist eine Aussage über die ganze Diskette, also werden fehlende Spuren vorher gelesen
+  (mit Fortschritt, §11.2).  Das ist der einzige Ort, an dem der Kern von sich aus
+  einen vollständigen Lauf anstößt.
+
+---
+
+## 5. Der Synchronisierer
+
+`TrackSync` (`track_sync.{h,cpp}`) hält die Warteschlange und den Zustand.  Er ist
+**passiv**: er hat keinen eigenen Faden, kennt kein USB und keine Zeitscheiben.  Gearbeitet
+wird von einem **fremden Arbeitsfaden**, der sich seine Aufträge abholt (§9).
+
+### 5.1 Auftragsarten und Prioritäten
+
+| Prio | Auftrag | Ausgelöst durch | Wartet jemand? |
+|------|---------|-----------------|----------------|
+| **1** | `Read` — Spur lesen | Zugriff auf eine unbekannte Spur (`track`/`mutableTrack`) | **ja**, der Vordergrund steht (§6) |
+| **2** | `Write` — Spur zurückschreiben | geänderte Spur, die zur Ruhe gekommen ist (§7) | nein |
+| **3** | `Readahead` — unbekannte Spur vorauslesen | niemand; entsteht, wenn sonst nichts zu tun ist (§5.3) | nein |
+
+Die Warteschlange ist **kein FIFO**, sondern wird bei jeder Entnahme neu bewertet.  Ein
+Prio-1-Auftrag, der eintrifft, während ein Prio-3-Auftrag ansteht, wird als nächstes
+ausgeführt — nicht in Reihenfolge des Eintreffens.  Aufträge derselben Priorität gehen
+in Eintreffreihenfolge, mit einer Ausnahme: Prio 3 wählt nach **Kopfweg** (§5.3).
+
+> **Ein bereits laufender Auftrag wird nicht abgebrochen.**  Der Arbeitsfaden steckt
+> dann in einer USB-Übertragung; ihn zu unterbrechen brächte einen halben Lesevorgang
+> und Zustand im Gerät durcheinander.  Die Verdrängung wirkt also mit einer Latenz von
+> höchstens einem Spurzugriff (≈ 0,5–0,8 s) — der Grund, warum das Vorauslesen
+> spurweise arbeitet und nicht in Blöcken.
+
+### 5.2 Ein Auftrag je Spur
+
+Für dieselbe Spur gibt es nie zwei Aufträge.  Trifft eine Anforderung auf eine Spur, für
+die schon ein Prio-3-Auftrag ansteht, wird **dessen Priorität angehoben** (und der
+Wartende daran gehängt), statt einen zweiten Auftrag einzustellen.  Ohne das läse man
+dieselbe Spur zweimal — einmal für den Wartenden, einmal für den Vorratsbau.
+
+### 5.3 Vorauslesen (Prio 3)
+
+Steht kein Auftrag an, erzeugt `TrackSync` bei der nächsten Abholung selbst einen: die
+**unbekannte Spur mit dem kürzesten Kopfweg** zur zuletzt bearbeiteten Position,
+Kopf 0 vor Kopf 1.  Damit füllt sich das Abbild von der zuletzt gebrauchten Stelle nach
+außen — bei UDOS also rund um die Systemspuren und das Verzeichnis, wo als nächstes
+gelesen wird, statt stur bei Spur 0 zu beginnen.
+
+Das Vorauslesen ist **abschaltbar** (`setReadAhead(false)`) und ist es standardmäßig
+in einem Fall: solange die Diskette **schreibbar** gemountet ist und noch geänderte
+Spuren anstehen, ruht es nicht — es tritt nur hinter Prio 2 zurück.  Abgeschaltet wird es
+von der Oberfläche, wenn der Bediener das Laufwerk still haben will.
+
+### 5.4 Fehler
+
+Ein gescheiterter Auftrag (Gerät weg, Spur unlesbar, Zeitüberschreitung) meldet einen
+Text zurück.  Für den **Lesefall** ist eine unlesbare Spur **kein** Fehlerzustand des
+Mediums: sie wird als unbekannt belassen und der Wartende bekommt ein leeres
+`TrackImage` — für den Gast sieht das aus wie eine unformatierte Spur, also genau das,
+was ein echtes Laufwerk an einer kaputten Spur liefert (Index-Timeout, §09 7).  Der
+Fehlertext geht in `lastError()` und in die Statistik; die Spur wird nicht endlos
+neu angefordert (`failed`-Markierung, erst ein neuer Zugriff versucht es wieder).
+
+Für den **Schreibfall** bleibt die Spur `Geändert` und wird erneut eingestellt, bis es
+klappt oder der Bediener das Laufwerk abmeldet.  Eine verlorene Änderung wäre der
+schlimmere Ausgang: die Diskette im Laufwerk und das Abbild im Speicher lägen
+auseinander, ohne dass es jemand merkt.
+
+---
+
+## 6. Lesen auf Anforderung — die Blockade
+
+```cpp
+const TrackImage& DiskMedium::track(uint8_t cyl, uint8_t head) const {
+    if (sync_ && state(cyl,head) == TrackState::Unknown)
+        sync_->ensureLoaded(cyl, head);          // stellt Prio 1 ein und WARTET
+    return peek(cyl, head);
+}
+```
+
+`ensureLoaded()` blockiert den aufrufenden Faden, bis der Arbeitsfaden die Spur
+geliefert hat (oder die Frist abläuft, Vorgabe 30 s).  Das ist gewollt und harmlos,
+solange man weiß, **welcher** Faden da wartet:
+
+| Anwendung | wartender Faden | Folge |
+|-----------|-----------------|-------|
+| Emulator | der Maschinenfaden (`A5120Machine::run`) | Die emulierte Maschine steht ~0,5 s — genau wie eine echte, die auf ihr Laufwerk wartet. Die Oberfläche bleibt bedienbar. |
+| DiskTool | der Faden, der die Bibliothek ruft | **Muss** ein Arbeitsfaden sein, nicht der Oberflächenfaden — sonst friert das Fenster ein (§11.2). |
+
+Die Wartezeit ist **keine Emulationsungenauigkeit**: die Maschinenuhr läuft nicht mit,
+der Gast erlebt nur einen etwas trägen Zugriff.  Der Index-Timeout des Gastes zählt in
+Maschinentakten und kann daher nicht zuschlagen, während der Faden steht.
+
+> **Rückrufe gibt es nicht.**  Der Kern ruft nie in die Anwendung hinein — weder eine
+> Funktionszeiger-Schnittstelle noch eine Python-Rückrufmarke.  Der Arbeitsfaden holt
+> sich Aufträge ab.  Das erspart die ganze Klasse von Verklemmungen, bei denen ein
+> Rückruf, während der Kern eine Sperre hält, wieder in den Kern hineinruft — und es
+> hält die GIL aus dem Kern heraus.
+
+---
+
+## 7. Schreibrückführung und die Schreibpause
+
+Eine geänderte Spur wird **nicht sofort** eingestellt.  Der Gast schreibt sektorweise:
+eine einzige UDOS-Dateioperation fasst dieselbe Spur dutzendfach an
+(Daten, Verzeichnis, Belegungskarte).  Jede Änderung sofort auf die Diskette zu
+schreiben hieße, dieselbe Spur dutzendfach zu schreiben — laut, langsam und für die
+Diskette nicht gesund.
+
+Es gilt dieselbe Regel wie beim Autosave in die Datei (§09 6.1), nur auf der Uhr der
+Wirklichkeit statt der Maschinenuhr:
+
+> Eine geänderte Spur wird eingestellt, wenn sie **`write_settle_ms` (Vorgabe 500 ms)
+> lang nicht mehr angefasst** wurde.
+
+Damit fasst ein Schreibburst zu einem Schreibvorgang zusammen, und „zeitnah“ bleibt
+zeitnah: nach dem letzten Zugriff vergeht eine halbe Sekunde plus die Schreibdauer.
+
+Zwei Festlegungen dazu:
+
+* **Beim Abmelden wird gewartet.**  `unmount()`/Schließen stellt alle geänderten Spuren
+  sofort ein und wartet, bis sie geschrieben sind (mit Fortschritt und Abbruchmöglichkeit).
+  Wer das Fenster schließt, während drei Spuren anstehen, muss es wissen.
+* **Schreiben ist die Ausnahme, nicht die Vorgabe.**  Eine physische Diskette wird
+  **schreibgeschützt** gemountet, solange der Bediener nicht ausdrücklich etwas anderes
+  sagt.  Das Gegenstück zur Abbilddatei — dort kostet ein Fehler eine Kopie, hier die
+  einzige noch existierende Diskette.
+
+---
+
+## 8. Das Austauschformat: HFE-Bitzellen
+
+Zwischen Python und Kern gehen **Bitzellen einer Spurseite**, genau in der Form, die
+auch in einer HFE-Datei steht: ein Byte je acht Zellen, **LSB zuerst**, dazu die Zahl
+gültiger Zellen.
+
+Das ist keine Bequemlichkeit, sondern der Punkt, an dem die Anbindung **keinen neuen
+Codepfad** bekommt:
+
+* Der Kern wandelt sie mit `BitCodec::decode()` in ein `TrackImage` — **derselbe**
+  Decoder, mit dem HFE-Dateien gelesen werden, samt Neu-Einrasten an jeder Sync-Gruppe
+  (unerlässlich bei echten Aufnahmen, `project_real_disk_hfe_readpath`) und samt
+  Herunterrechnen überabgetasteter Aufnahmen (`downsampleCells`).
+* Die Gegenrichtung ist `BitCodec::encode()`.
+* Auf der Python-Seite ist es das, was Greaseweazle ohnehin erzeugt:
+  `PLLTrack(clock=5e-4/bitrate, data=flux).get_revolution(0)` →
+  `bits.tobytes()` + `bytereverse()` — dieselben drei Zeilen wie in
+  `greaseweazle/image/hfe.py`.
+
+**Gemessen** an der UDOS-Diskette im K5601 (5,25″, 250 kbit/s, 299 U/min):
+100 363 Zellen = 12 546 Byte je Spurseite, 156 A1-Sync-Marken (26 Sektoren × 6 Felder).
+
+### 8.1 Zellrate und Verfahren
+
+Die **Zellrate** (`cell_rate_kbps`) wird beim Mounten festgelegt und kommt aus dem
+`DriveProfile` (5,25″ DD: 250; 8″ MFM: 500; 8″ FM: 250).  Sie steht auf beiden Seiten:
+der Arbeitsfaden taktet damit die PLL, der Kern codiert damit zurück.  Eine falsch
+gewählte Rate erzeugt kein Kauderwelsch, sondern eine überabgetastete Spur — die
+`downsampleCells` auffängt, solange es ein ganzzahliges Vielfaches ist.
+
+Das **Verfahren** (FM/MFM) wird nicht gesetzt, sondern **erkannt**, spurweise: erst mit
+dem Vorschlagsverfahren des Mediums decodieren, findet sich keine Marke, das andere
+probieren — genau die Regel, die `HfeCodec` beim Laden schon anwendet und die hier
+in eine gemeinsame Hilfsfunktion wandert.  Eine Diskette darf FM- und MFM-Spuren
+mischen (§09 3.1), und bei einer echten weiß man es vorher schlicht nicht.
+
+### 8.2 Was der Kern **nicht** bekommt
+
+Flusswechsel.  Die Zeitwerte zwischen zwei Flanken bleiben in Python; im Kern kommt an,
+was ein Datenseparator daraus gemacht hat.  Damit sind schwache Bits, Kopierschutz und
+Flussschreibweisen außerhalb der Reichweite — für K1520-Disketten (Standard-IBM-FM/MFM,
+§09 4.2) kein Verlust, und der Preis dafür ist, dass der gesamte vorhandene Lesepfad
+unverändert trägt.
+
+---
+
+## 9. Der Vertrag mit dem Arbeitsfaden
+
+```
+Vordergrund (Maschine / DiskTool)        Hintergrund (fremder Faden, z. B. Python+gw)
+──────────────────────────────────       ───────────────────────────────────────────
+track(c,h)  ──► ensureLoaded  ──┐
+                                │  ┌──►  takeJob(timeout)   blockiert bis Arbeit da
+                             [Warteschlange]                       │
+                                │  │                               ▼
+                                │  │                     Spur lesen / schreiben (gw)
+                wartet …        │  │                               │
+                                │  └──  completeRead(id, cells) ◄──┘
+                ◄───────────────┘       completeWrite(id) / failJob(id, text)
+```
+
+Fünf Regeln, die den Vertrag ausmachen:
+
+1. **Genau ein Arbeitsfaden je Synchronisierer.**  Ein zweiter brächte zwei Köpfe auf
+   einem Laufwerk durcheinander; `takeJob` weist ihn ab.
+2. **Der Arbeitsfaden ruft nichts anderes im Kern.**  Nur `takeJob`, `fetchWrite`,
+   `completeRead`, `completeWrite`, `failJob`.  Insbesondere fasst er das Medium nicht an.
+3. **Kein Auftrag wird ohne Abschluss liegengelassen.**  Wer `takeJob` bekommen hat,
+   muss ihn abschließen oder scheitern lassen — sonst wartet der Vordergrund bis zur
+   Frist.  Bricht der Faden weg, löst `shutdown()` alle Wartenden.
+4. **Die Sperre wird nie über eine Übertragung gehalten.**  `takeJob` gibt die Sperre
+   frei, bevor es zurückkehrt; der Vordergrund kann währenddessen weiterarbeiten und
+   neue Aufträge einstellen.
+5. **`shutdown()` ist endgültig.**  Danach liefert `takeJob` „Ende“, jeder Wartende
+   bekommt sein leeres `TrackImage`, und neue Anforderungen warten nicht mehr.  Das ist
+   der Weg, auf dem das Abmelden eines Laufwerks oder das Beenden der Anwendung
+   garantiert nicht hängenbleibt.
+
+---
+
+## 10. C-ABI
+
+Der Synchronisierer ist ein **eigenständiges Handle** — nicht an die Maschine gebunden,
+denn das DiskTool hat keine.  Dieselben Funktionen stehen in **beiden** Bibliotheken
+(`libk1520core` und `libk1520disk`); die Übersetzungseinheit ist dieselbe.
+
+```c
+typedef void* K1520Sync;
+
+typedef struct {
+    uint8_t  num_cyls, num_heads;   /* Reichweite des Laufwerks (K5601: 80 × 2)   */
+    uint16_t cell_rate_kbps;        /* 250 / 500 — Vorgabe aus dem DriveProfile   */
+    uint16_t rpm;                   /* 300 / 360 — nur für Ersatz-Spurlängen      */
+    bool     writable;              /* false = die echte Diskette wird nie beschrieben */
+    uint8_t  default_encoding;      /* 0 = FM, 1 = MFM (Vorschlag, s. §8.1)       */
+} K1520SyncSpec;
+
+K1520_API K1520Sync k1520s_create (const K1520SyncSpec* spec);
+K1520_API void      k1520s_destroy(K1520Sync);
+K1520_API void      k1520s_shutdown(K1520Sync);          /* weckt alle Wartenden  */
+
+/* ── Arbeitsfaden ─────────────────────────────────────────────────────────── */
+typedef struct {
+    uint32_t id;                    /* 0 = kein Auftrag                          */
+    uint8_t  kind;                  /* 0 = Read, 1 = Write                       */
+    uint8_t  cyl, head, prio;
+} K1520SyncJob;
+
+K1520_API bool k1520s_take_job(K1520Sync, int timeout_ms, K1520SyncJob* out);
+K1520_API int  k1520s_fetch_write(K1520Sync, uint32_t id,
+                                  uint8_t* buf, int buf_len, uint32_t* bitcells);
+K1520_API bool k1520s_complete_read(K1520Sync, uint32_t id, const uint8_t* cells,
+                                    int len, uint32_t bitcells);
+K1520_API bool k1520s_complete_write(K1520Sync, uint32_t id);
+K1520_API void k1520s_fail_job(K1520Sync, uint32_t id, const char* msg);
+
+/* ── Anzeige ──────────────────────────────────────────────────────────────── */
+typedef struct {
+    uint16_t tracks_total, tracks_known, tracks_dirty, tracks_failed;
+    uint32_t reads_done, writes_done, errors;
+    uint8_t  busy_kind, busy_cyl, busy_head;   /* was gerade läuft (255 = nichts) */
+} K1520SyncStats;
+K1520_API bool        k1520s_stats(K1520Sync, K1520SyncStats* out);
+K1520_API const char* k1520s_last_error(K1520Sync);
+
+/* ── Anbinden ─────────────────────────────────────────────────────────────── */
+K1520_API bool      k1520_mount_physical(K1520Handle, int drive, K1520Sync, bool wp);
+K1520_API K1520Disk k1520d_open_physical(K1520Sync, const char* fs_name, bool read_only);
+```
+
+`k1520s_take_job` ist die einzige blockierende Funktion der ABI.  Über `ctypes` gibt
+Python währenddessen die GIL frei — der Arbeitsfaden hängt also nicht am Rest der
+Anwendung.
+
+---
+
+## 11. Die Python-Seite
+
+### 11.1 Aufbau
+
+```
+app/gw/
+  device.py    Gerät finden/öffnen, Laufwerk wählen, Motor (dünne Hülle um greaseweazle)
+  worker.py    der Arbeitsfaden: takeJob → lesen/schreiben → completeRead/Write
+  errors.py    „kein Adapter“, „kein Paket“, „Diskette schreibgeschützt“ als Klartext
+```
+
+Der Arbeitsfaden ist ein gewöhnlicher `threading.Thread`:
+
+```python
+while True:
+    job = sync.take_job(timeout_ms=1000)
+    if job is None:            continue      # Zeitüberschreitung: nur weitermachen
+    if job.kind == Kind.ENDE:  break         # shutdown()
+    try:
+        if job.kind == Kind.READ:
+            cells, nbits = self.dev.read_track(job.cyl, job.head)
+            sync.complete_read(job.id, cells, nbits)
+        else:
+            cells, nbits = sync.fetch_write(job.id)
+            self.dev.write_track(job.cyl, job.head, cells, nbits)
+            sync.complete_write(job.id)
+    except Exception as e:
+        sync.fail_job(job.id, str(e))
+```
+
+Das Laufwerk bleibt für die Dauer der Sitzung **gewählt**, der Motor läuft mit einer
+Nachlaufzeit (Vorgabe 3 s ohne Auftrag → aus).  Ein Motoranlauf kostet rund eine halbe
+Sekunde; ihn je Spur zu bezahlen machte das Vorauslesen sinnlos.
+
+### 11.2 Wer ruft die Bibliothek?
+
+* **Emulator:** unverändert — der Maschinenfaden blockiert im Kern, der gw-Faden
+  arbeitet daneben.  Der Laufwerkskasten zeigt aus `k1520s_stats` den Füllstand
+  („47 von 160 Spuren gelesen“) und was gerade läuft.
+* **DiskTool:** hier ist die Umstellung nötig.  Bisher ruft die Oberfläche die
+  Bibliothek direkt; mit einer physischen Diskette **muss** jeder Aufruf, der auf das
+  Medium geht (Öffnen samt Formaterkennung, Holen, Schreiben, Diskeditor), in einen
+  Arbeitsfaden mit Fortschrittsanzeige.  Das Öffnen ist dabei der teure Fall: die
+  Formaterkennung sieht sich **jede** Spur an (§4.2), liest also die ganze Diskette.
+
+### 11.3 Ohne Adapter, ohne Paket
+
+`import greaseweazle` steht **nicht** auf oberster Ebene, sondern hinter einer Prüfung.
+Fehlt das Paket oder das Gerät, bleibt der Menüpunkt „Physisches Laufwerk…“ gesperrt
+und nennt im Hinweis den Grund.  Alles andere — Bauen, Tests, Betrieb mit Abbilddateien
+— ist davon nicht berührt.
+
+---
+
+## 12. Bedienung
+
+| Ort | Was |
+|-----|-----|
+| Emulator, Laufwerkskasten | „Physisches Laufwerk…“ neben „Diskette einlegen…“; danach Adapter/Laufwerk/Zellrate, Schreiben aus (Vorgabe) |
+| Emulator, Anzeige | Füllstand + laufender Zugriff; Hinweiszeile wie bei den Anpassungen (§09 7.2) |
+| DiskTool, `Diskette ▸ Physisches Laufwerk öffnen…` | dieselbe Auswahl; danach arbeitet das Werkzeug wie mit jeder Diskette |
+| Beide, „Speichern unter…“ | erzwingt Vollständigkeit (§4.2) und schreibt eine ganz gewöhnliche `.hfe`/`.dmk` — der Weg „echte Diskette → Abbild“ |
+| CLI | `k1520disktool ls --physical a` usw. mit denselben Angaben |
+
+---
+
+## 13. Festlegungen, die man nicht aufweichen darf
+
+1. **Der Kern kennt Greaseweazle nicht.**  Kein `#include`, keine Seriellschnittstelle,
+   kein USB — nur Aufträge und Bitzellen.  Ein anderer Adapter (KryoFlux, FluxEngine,
+   ein echtes Diskettenlaufwerk am PC) ist damit ein anderer Arbeitsfaden und **keine**
+   Kernänderung.
+2. **`track()` lädt nach, `peek()` nie.**  Wer einen medienweiten Reihenlauf schreibt
+   und dabei `track()` benutzt, zieht ungewollt die ganze Diskette ein.  Der Wächter
+   `TrackSync.ReihenlaeufeLesenNichtNach` hält das fest.
+3. **„Unbekannt“ ≠ „unformatiert“.**  Sonst erklärt eine halb gelesene Diskette sich
+   selbst für leer — und `rawCompatible()` gäbe grünes Licht für ein `.img`, das die
+   ungelesenen Spuren als Füllbytes festschriebe.
+4. **Prio 1 verdrängt, aber unterbricht nicht.**  Ein laufender Zugriff wird zu Ende
+   geführt (§5.1).
+5. **Geänderte Spuren gehen nie verloren.**  Ein gescheitertes Rückschreiben lässt die
+   Spur geändert; das Abmelden wartet auf die Rückführung (§7).
+6. **Physisch heißt schreibgeschützt, bis jemand widerspricht.**
+7. **Ein Auftrag je Spur** (§5.2) — sonst liest das Vorauslesen gegen den Vordergrund an.
+
+---
+
+## 14. Testbarkeit — und warum sie keine Hardware braucht
+
+Das Laufwerk hängt nicht immer am Rechner, und in der CI/CD-Kette hängt es **nie**.
+Der Entwurf ist deshalb so geschnitten, dass die Hardware nur in der äußersten Schale
+vorkommt: alles unterhalb von „Aufträge und Bitzellen“ ist ohne Adapter prüfbar.
+
+| Ebene | Test | Ersatz für die Hardware |
+|-------|------|-------------------------|
+| `TrackSync` (Warteschlange, Prioritäten, Zustände) | `TrackSync.*` — 20 Fälle in `tests/unit/peripherals/test_track_sync.cpp` | **Ersatz-Arbeitsfaden** in C++: bedient Aufträge aus einem `DiskMedium` im Speicher, mit anhaltbarer Auslieferung |
+| Verdrängung | `TrackSync.LeseanforderungVerdraengtDasVorauslesen` | derselbe, Aufträge von Hand abgeholt (keine Zufallsreihenfolge) |
+| Blockade | `TrackSync.ZugriffBlockiertBisDieSpurDaIst`, `…ZeitueberschreitungLiefertDieLeereSpur` | angehaltener Ersatzfaden bzw. gar keiner |
+| Rückführung | `TrackSync.SchreibpauseFasstEinenBurstZusammen`, `…AbmeldenWartetAufDieRueckfuehrung`, `…GescheitertesSchreibenLaesstDieAenderungStehen`, `…SchreibgeschuetzteDisketteWirdNieBeschrieben` | derselbe |
+| Zustände am Medium | `TrackSync.UnbekanntIstNichtUnformatiert`, `…ReihenlaufLaedtNichtNach`, `…RuecknahmeStelltDieSpurWiederAlsAenderungEin` | keiner nötig |
+| Vertrag | `TrackSync.NurEinArbeitsfaden`, `…ShutdownLoestJedenWartenden` | keiner nötig |
+| **Voller Emulator** | `PhysicalBoot.*` (`tests/integration/test_physical_boot.cpp`) | **Ersatzlaufwerk über einer `.hfe`-Fixture**: CP/A bootet spurweise bis `A>`, holt dabei **weniger als die halbe Diskette**, und das Vorauslesen bremst den Kaltstart nicht |
+| C-ABI + Arbeitsfaden + DiskTool | `py_gw_physical` (`tests/python/test_gw_physical.py`, 10 Fälle) | `HfeDevice`: liest HFE v1 von Hand, **ohne** `greaseweazle`-Import — dieselbe Diskette einmal als Datei und einmal „physisch" geöffnet muss dasselbe Verzeichnis und dieselben Dateibytes liefern |
+| **Echte Hardware** | `tests/python/test_gw_hardware.py` | keiner — **übersprungen**, wenn `K1520_GW_HARDWARE` nicht gesetzt ist; **nicht** in ctest registriert |
+
+Der Kniff ist der **Ersatzfaden über einer `.hfe`-Datei**: er liefert dieselben
+Bitzellen, die der Greaseweazle liefern würde (die Aufnahme *ist* ja eine), inklusive
+Phasenversatz und Jitter einer echten Aufnahme, wenn man eine echte Aufnahme nimmt.
+Damit ist der gesamte Weg — Zustandsverwaltung, Warteschlange, Decodierung, Boot —
+in der Regression, und die Hardware fügt nur noch USB hinzu.
+
+Die Hardware-Tests laufen von Hand:
+
+```sh
+K1520_GW_HARDWARE=1 venv/bin/python3 -m pytest tests/python/test_gw_hardware.py -v
+```
+
+Sie sind **lesend**, solange nicht zusätzlich `K1520_GW_WRITE=1` gesetzt ist — ein
+Schreibtest beschreibt eine echte Diskette, und welche das ist, entscheidet kein Test
+von sich aus.
+
+---
+
+## 15. Stand der Umsetzung (2026-08-15)
+
+**Fertig und in der Regression** (1005/1005 ctest grün):
+
+* `TrackSync` samt Spurzuständen im `DiskMedium`, drei Prioritäten, Blockade,
+  Schreibpause, Rücknahme (`restoreFrom`).
+* C-ABI `k1520s_*` in **beiden** Bibliotheken; `k1520_mount_physical` (Emulator) und
+  `k1520d_open_physical` (DiskTool) — beide auch in den ctypes-Bindungen.
+* `app/gw/` (Gerätehülle, Arbeitsfaden, Bindung) und die Testebenen aus §14.
+
+**Am echten Gerät nachgewiesen** (Greaseweazle F1, K5601, UDOS-Diskette):
+
+| Messung | Wert |
+|---------|------|
+| eine Spur lesen (1 Umdrehung + Kopfweg) | 0,5–0,8 s; erste Spur 1,8 s (Motoranlauf) |
+| Zellstrom je Spurseite bei 250 kbit/s | 100 363 Zellen = 12 546 Byte (299 U/min) |
+| UDOS-Spur, roh gelesen | 156 A1-Sync-Marken = 26 Sektoren × 6 Felder |
+| **ganze Diskette im DiskTool öffnen** | **97 s** für 160 Spuren, beide Seiten, Verzeichnis vollständig |
+
+**Noch offen** (bewusst, nicht vergessen):
+
+* **Die Oberflächen** — der Menüpunkt „Physisches Laufwerk…“ samt Auswahl von Adapter,
+  Laufwerk und Zellrate fehlt in beiden Programmen (§12), ebenso der Füllstand im
+  Laufwerkskasten.  Bedient wird die Anbindung bis dahin aus Python.
+* **Das DiskTool muss dafür in einen Arbeitsfaden** (§11.2): 97 s im Oberflächenfaden
+  wären ein eingefrorenes Fenster.
+* **CLI** `k1520disktool --physical` (§12).
+* **Schreiben ist ungetestet an echter Hardware** — der Pfad steht (`fetch_write` →
+  `MasterTrack` → `write_track`), der Hardware-Test dazu liegt hinter
+  `K1520_GW_WRITE=1` und wurde bewusst noch nicht gegen eine echte Diskette gefahren.
+
+---
+
+## 15. Grenzen
+
+* **Kein Flusszugriff** (§8.2): kein Kopierschutz, keine schwachen Bits.
+* **Eine Diskette je Adapter.**  Ein Greaseweazle bedient zwei Laufwerke am Kabel, aber
+  nur eines zur Zeit; vier emulierte Laufwerke gleichzeitig physisch zu betreiben,
+  bräuchte vier Adapter.  Der Entwurf verbietet es nicht — jedes `DiskImage` hat seinen
+  eigenen Synchronisierer —, die Praxis begrenzt es.
+* **Das Öffnen im DiskTool liest die ganze Diskette** (§4.2, §11.2), weil die
+  Formaterkennung jede Spur ansieht.  Eine Erkennung, die mit einer Stichprobe auskommt,
+  wäre eine eigene Aufgabe — und eine heikle, weil gerade die Sonderfälle
+  (Mischgeometrie, Doppelschritt) an einzelnen Spuren hängen.
+* **Drehzahl und Schreibnaht** werden nicht nachgebildet: zurückgeschrieben wird eine
+  ganze Spur ab Index, wie sie ein Formatierlauf schreibt.

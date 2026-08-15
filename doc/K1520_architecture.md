@@ -1171,6 +1171,88 @@ Datei (.img | .hfe | .dmk) ──load──► DiskMedium (alle Spuren als Track
 **Nicht betroffen:** `TrackImage`/`TrackCodec`/`BitCodec`, der treue FM/MFM-Lesepfad
 (§8.5, §14.5), die Boot-Invarianten und das K5122-Portprotokoll.
 
+### 8.7a Die Floppy-Schicht trägt zwei Programme — 2026-08-13
+
+Seit dem **k1520DiskTool** (`doc/design/13_k1520disktool.md`) ist
+`core/peripherals/floppy_drive/` nicht mehr nur Zulieferer des Emulators: eine zweite
+Bibliothek **`libk1520disk.so`** übersetzt diese Schicht zusammen mit
+`core/filesystem/` — **ohne Z80, ohne Karten, ohne Bus**. Daraus folgt eine Regel, die
+für jede Änderung unterhalb von `DiskImage` gilt: **nichts darf die Maschine kennen**.
+Kein Maschinentakt in einer Signatur, keine `A5120Machine`, keine Kartenabhängigkeit;
+die Maschinenuhr des Autosave steht als *Parameter* in `autoFlush(now)`.
+
+Das DiskTool hat die Schicht dabei um eine **Schreibseite** erweitert, die der Emulator
+mitträgt (Einzelheiten: `doc/design/09_floppy_drive.md` §11):
+
+- **`TrackCodec` schreibt in vorhandene Spuren** statt sie neu zu bauen —
+  `writeSector`/`writeSectorAt` (Datenfeld + CRC, CRC auch **wörtlich** setzbar),
+  `writeSectorTail` (die Bytes hinter der Daten-CRC = UDOS-Sektorkontrollblock),
+  `createSector`/`eraseSectorAt`. `buildTrack()` taugt dafür **nicht**: es verlöre alles
+  hinter der Daten-CRC, bei UDOS also die gesamte Dateiverkettung.
+- **`parseTrack` liefert zusätzlich Byte-Offsets, gespeicherte CRCs und `deleted`.**
+- **`TrackView`** (`track_view.*`) zerlegt eine Spur in eine lückenlose Folge
+  zeichenbarer Abschnitte (Sektor/Gap/unformatiert) für den Diskeditor. Der Winkel eines
+  Bytes ist `Position ÷ Spurlänge` — eine `TrackImage` **ist** eine Umdrehung; Bitrate
+  und Drehzahl werden dafür nicht gebraucht.
+- **Stapeloperationen sind Transaktionen**: die Rücknahme ist eine Kopie des ganzen
+  `DiskMedium` (~1 MB) — billiger als Buchführung über Einzeländerungen.
+
+### 8.8 Physische Diskette am Greaseweazle (`TrackSync`) — 2026-08-15
+
+> **Zweite Art von Bindung neben der Datei.** Voller Feinentwurf:
+> **`doc/design/14_physische_diskette.md`**, Medium-Sicht: `doc/design/09_floppy_drive.md` §12.
+
+Eine gemountete Diskette hatte bisher genau eine Quelle: eine **Datei**, die beim Öffnen
+vollständig gelesen und beim Autosave vollständig geschrieben wird. Daneben tritt jetzt
+die **echte Diskette in einem echten Laufwerk**, angebunden über einen
+[Greaseweazle](https://github.com/keirf/greaseweazle)-Adapter am USB. Der Unterschied ist
+nicht das Medium, sondern die **Körnung**: gelesen und geschrieben wird **spurweise nach
+Bedarf**, nicht am Stück.
+
+```
+                                                        ┌── K5122 (Emulator)
+echte Diskette ◄─gw─► Arbeitsfaden ◄─Aufträge─► DiskMedium
+                        (Python)                        └── DiskVolume (DiskTool)
+```
+
+**Vier Festlegungen tragen das:**
+
+1. **Je Spur ein Zustand** statt eines Dirty-Bits: `Unknown` (nie gelesen, Inhalt
+   **ungültig**) / `Clean` / `Dirty`. `Unknown` ist **nicht** „unformatiert“ — letzteres
+   ist eine belegte Aussage über die Diskette (§8.7), ersteres gar keine. Darum melden
+   `formatted()`/`rawCompatible()` zusätzlich `complete()`; sonst erklärte sich eine halb
+   gelesene Diskette für unformatiert und ein `.img` schriebe die ungelesenen Spuren als
+   Füllbytes fest.
+2. **Nachgeladen wird in `DiskMedium::track()`** — der einzigen Stelle, durch die jeder
+   Verbraucher geht (Controller, DiskTool, Formaterkennung). Der Aufruf **blockiert**
+   (≈ 0,5–0,8 s je Spur); im Emulator wartet der Maschinenfaden, also genau der, der auch
+   an einem echten Laufwerk wartete. Die medienweiten Reihenläufe benutzen dagegen
+   `peek()` und laden **nie** nach — sonst zöge eine beiläufige Statusabfrage die ganze
+   Diskette ein.
+3. **Drei Prioritäten** in `TrackSync`: **1** Lesen auf Anforderung (jemand wartet),
+   **2** geänderte Spuren zurückschreiben (nach einer Schreibpause von ≈ 0,5 s — dieselbe
+   Regel wie der Autosave, sonst schriebe eine UDOS-Dateioperation dieselbe Spur
+   dutzendfach), **3** unbekannte Spuren vorausschauend lesen (kürzester Kopfweg zuerst).
+   Prio 1 **verdrängt**, unterbricht aber keinen laufenden Zugriff.
+4. **Der Kern kennt Greaseweazle nicht.** `TrackSync` hat keinen eigenen Faden und kein
+   USB; ein **fremder Arbeitsfaden** holt sich Aufträge ab (`k1520s_take_job`, die einzige
+   blockierende Funktion der ABI) und liefert **HFE-Bitzellen** zurück, die durch
+   denselben `BitCodec::decode` laufen wie eine HFE-Datei. Rückrufe in die Anwendung gibt
+   es nicht — das hält die GIL aus dem Kern heraus und die Verklemmungen aus dem Entwurf.
+
+**Warum die Gerätehälfte in Python liegt:** Greaseweazle liefert Firmware + **Hosttools in
+Python** und keine C++-Bibliothek. Das USB-Protokoll wäre nachbaubar, die gereifte
+Flusswechsel-Auswertung (PLL, Index, Wiederholungen) nicht sinnvoll. Beide Anwendungen
+sind ohnehin Python um eine Bibliothek herum. Das Paket ist **freiwillig**: fehlt es,
+fehlt der Menüpunkt.
+
+**Testbarkeit ohne Hardware** (das Laufwerk hängt in der CI nie am Rechner): Der
+Ersatz-Arbeitsfaden bedient die Aufträge aus einer **`.hfe`-Datei** — dieselben
+Bitzellen, die der Adapter liefern würde, denn eine HFE-Aufnahme *ist* genau das. Damit
+liegen Zustandsverwaltung, Warteschlange, Decodierung und sogar ein voller Boot „von
+einer spurweisen Quelle“ in der Regression; die Hardware fügt nur USB hinzu und läuft von
+Hand hinter `K1520_GW_HARDWARE=1`.
+
 ---
 
 ## 9. C-API (libk1520.so)

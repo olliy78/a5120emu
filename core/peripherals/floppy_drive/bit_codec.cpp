@@ -562,4 +562,22 @@ std::vector<uint8_t> downsampleCells(const std::vector<uint8_t>& cells,
     return out;
 }
 
+size_t markCount(const TrackImage& t) {
+    size_t n = 0;
+    for (MarkType m : t.marks)
+        if (m != MarkType::None) ++n;
+    return n;
+}
+
+TrackImage decodeAuto(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
+                      Encoding preferred) {
+    TrackImage t = decode(cells, bitcell_count, preferred);
+    if (markCount(t) > 0) return t;
+
+    // Kein einziges Markenbyte: entweder unformatiert oder das andere Verfahren.
+    const Encoding other = (preferred == Encoding::MFM) ? Encoding::FM : Encoding::MFM;
+    TrackImage alt = decode(cells, bitcell_count, other);
+    return (markCount(alt) > 0) ? alt : t;
+}
+
 }  // namespace BitCodec

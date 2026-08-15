@@ -37,6 +37,9 @@ k1520_add_test(img_codec      SRC peripherals/test_img_codec.cpp      LIBS k1520
 k1520_add_test(hfe_codec      SRC peripherals/test_hfe_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(dmk_codec      SRC peripherals/test_dmk_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(disk_image     SRC peripherals/test_disk_image.cpp     LIBS k1520_floppy2 LABELS "${_lbl}")
+# Physische Diskette am Greaseweazle: Spurzustaende + Auftragswarteschlange (§14).
+# Braucht KEINE Hardware — ein Ersatz-Arbeitsfaden bedient die Auftraege aus dem RAM.
+k1520_add_test(track_sync     SRC peripherals/test_track_sync.cpp     LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(floppy_drive2  SRC peripherals/test_floppy_drive2.cpp  LIBS k1520_floppy2 LABELS "${_lbl}")
 # Prüft den AUSGELIEFERTEN Katalog data/formats.yaml — Pfad muss der Test kennen.
 k1520_add_test(format_catalog SRC peripherals/test_format_catalog.cpp LIBS k1520_floppy2 LABELS "${_lbl}"

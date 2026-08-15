@@ -112,6 +112,7 @@ if(BUILD_K1520)
         core/peripherals/floppy_drive/dmk_codec.cpp
         core/peripherals/floppy_drive/image_codec.cpp
         core/peripherals/floppy_drive/disk_image.cpp
+        core/peripherals/floppy_drive/track_sync.cpp
         core/peripherals/floppy_drive/floppy_drive2.cpp
         core/peripherals/floppy_drive/format_catalog.cpp
     )
@@ -218,6 +219,7 @@ if(BUILD_K1520)
     # libk1520core.so — stable C-API shared library
     add_library(k1520core SHARED
         core/api/k1520_api.cpp
+        core/api/k1520_sync_api.cpp   # physische Diskette — steht in BEIDEN Bibliotheken
     )
     target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_logger)
     target_include_directories(k1520core PUBLIC ${CMAKE_SOURCE_DIR})
@@ -237,6 +239,7 @@ if(BUILD_K1520)
     # Container-/Medium-Bausteine.  Feinentwurf: doc/design/13_k1520disktool.md §10
     add_library(k1520disk SHARED
         core/api/k1520_disk_api.cpp
+        core/api/k1520_sync_api.cpp   # dieselbe Uebersetzungseinheit wie in k1520core
     )
     target_link_libraries(k1520disk PRIVATE k1520_fs)
     target_include_directories(k1520disk PUBLIC ${CMAKE_SOURCE_DIR})

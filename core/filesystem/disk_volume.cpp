@@ -508,17 +508,26 @@ int DiskVolume::volumeFromDir(const std::string& dir_name) const {
     return -1;
 }
 
-std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
-                                             const std::string& fs_name,
-                                             const FormatCatalog& formats,
-                                             const FsCatalog& fs_cat,
-                                             std::string& err,
-                                             bool read_only) {
+// Gemeinsamer Kern von @ref DiskVolume::open und @ref DiskVolume::openPhysical.
+//
+// @p vorhanden ist entweder leer (dann wird @p path geoeffnet) oder ein bereits
+// aufgebautes Abbild — bei einer PHYSISCHEN Diskette gibt es keine Datei, die man
+// oeffnen koennte.  Alles danach ist identisch: die Erkennung urteilt ueber das
+// MEDIUM, nicht ueber die Datei (doc/design/14_physische_diskette.md §11.2).
+std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vorhanden,
+                                                   const std::string& path,
+                                                   const std::string& fs_name,
+                                                   const FormatCatalog& formats,
+                                                   const FsCatalog& fs_cat,
+                                                   std::string& err,
+                                                   bool read_only) {
     std::unique_ptr<DiskVolume> dv(new DiskVolume);
     dv->path_      = path;
     dv->read_only_ = read_only;
 
-    const std::string ext   = endung(path);
+    // Eine physische Diskette verhaelt sich wie ein `.hfe`: sie traegt den vollen
+    // Spurstrom, also auch alles hinter der Daten-CRC (UDOS-Sektorkontrollblock).
+    const std::string ext   = vorhanden ? std::string("hfe") : endung(path);
     const bool        istImg = (ext == "img");
 
     // ── Fall A': die CP/A-Regel ausdruecklich anfordern ──────────────────────
@@ -538,7 +547,7 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
                 return nullptr;
             }
         }
-        dv->disk_ = DiskImage::open(path, of, read_only);
+        dv->disk_ = vorhanden ? std::move(vorhanden) : DiskImage::open(path, of, read_only);
         if (!dv->disk_) { err = "Abbild nicht ladbar: " + path; return nullptr; }
         const std::vector<MeasuredTrack> gemessen =
             GeometryProbe::measure(dv->disk_->medium());
@@ -585,7 +594,7 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
         }
         std::optional<DiskFormat> of;
         if (istImg) of = *dv->format_;
-        dv->disk_ = DiskImage::open(path, of, read_only);
+        dv->disk_ = vorhanden ? std::move(vorhanden) : DiskImage::open(path, of, read_only);
         if (!dv->disk_) { err = "Abbild nicht ladbar: " + path; return nullptr; }
         dv->detection_.format     = dv->format_->name;
         dv->detection_.filesystem = dv->profile_->name;
@@ -611,7 +620,8 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
             std::optional<DiskFormat> of = *kandidaten.front();
             dv->disk_ = DiskImage::open(path, of, read_only);
         } else {
-            dv->disk_ = DiskImage::open(path, std::nullopt, read_only);
+            dv->disk_ = vorhanden ? std::move(vorhanden)
+                                  : DiskImage::open(path, std::nullopt, read_only);
         }
         if (!dv->disk_) { err = "Abbild nicht ladbar: " + path; return nullptr; }
 
@@ -760,6 +770,27 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
     }
 
     return dv;
+}
+
+std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
+                                             const std::string& fs_name,
+                                             const FormatCatalog& formats,
+                                             const FsCatalog& fs_cat,
+                                             std::string& err,
+                                             bool read_only) {
+    return oeffnenMit(nullptr, path, fs_name, formats, fs_cat, err, read_only);
+}
+
+std::unique_ptr<DiskVolume> DiskVolume::openPhysical(std::unique_ptr<DiskImage> disk,
+                                                     const std::string& fs_name,
+                                                     const FormatCatalog& formats,
+                                                     const FsCatalog& fs_cat,
+                                                     std::string& err,
+                                                     bool read_only) {
+    if (!disk) { err = "kein Abbild uebergeben"; return nullptr; }
+    // ACHTUNG: Die Formaterkennung sieht sich JEDE Spur an — bei einer physischen
+    // Diskette liest sie damit die ganze Diskette ein (doc/design/14 §11.2, §15).
+    return oeffnenMit(std::move(disk), "", fs_name, formats, fs_cat, err, read_only);
 }
 
 // ─── Auskunft ────────────────────────────────────────────────────────────────

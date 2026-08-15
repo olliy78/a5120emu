@@ -40,12 +40,14 @@ void DiskMedium::resize(uint8_t num_cyls, uint8_t num_heads) {
     const size_t n = static_cast<size_t>(num_cyls) * num_heads;
     std::vector<TrackImage> neu(n);
     std::vector<uint8_t>    neu_dirty(n, 0);
+    std::vector<uint8_t>    neu_known(n, 1);   // Vorgabe: bekannt (Dateibindung)
 
     // Vorhandene Spuren an ihrer (cyl, head)-Position übernehmen.
     for (uint8_t c = 0; c < num_cyls && c < num_cyls_; ++c) {
         for (uint8_t h = 0; h < num_heads && h < num_heads_; ++h) {
             neu[static_cast<size_t>(c) * num_heads + h] = std::move(tracks_[index(c, h)]);
             neu_dirty[static_cast<size_t>(c) * num_heads + h] = dirty_[index(c, h)];
+            neu_known[static_cast<size_t>(c) * num_heads + h] = known_[index(c, h)];
         }
     }
 
@@ -53,6 +55,7 @@ void DiskMedium::resize(uint8_t num_cyls, uint8_t num_heads) {
     num_heads_ = num_heads;
     tracks_    = std::move(neu);
     dirty_     = std::move(neu_dirty);
+    known_     = std::move(neu_known);
     raw_ok_.assign(n, -1);
 }
 
@@ -80,11 +83,23 @@ DiskGeometry DiskMedium::geometry() const {
 
 const TrackImage& DiskMedium::track(uint8_t cyl, uint8_t head) const {
     if (!valid(cyl, head)) return kLeer;
+    // Der Nachladepunkt: unbekannte Spur beschaffen (blockiert).  Scheitert es, bleibt
+    // sie unbekannt und der Aufrufer sieht die leere Spur — für ihn nicht von einer
+    // unlesbaren Spur am echten Laufwerk zu unterscheiden.
+    if (loader_ && known_[index(cyl, head)] == 0) loader_->ensureLoaded(cyl, head);
+    return tracks_[index(cyl, head)];
+}
+
+const TrackImage& DiskMedium::peek(uint8_t cyl, uint8_t head) const {
+    if (!valid(cyl, head)) return kLeer;
     return tracks_[index(cyl, head)];
 }
 
 TrackImage& DiskMedium::mutableTrack(uint8_t cyl, uint8_t head) {
     if (!valid(cyl, head)) { g_dummy = {}; return g_dummy; }
+    // Ändern heißt Lesen-Ändern-Schreiben: ohne den alten Inhalt entstünde eine Spur
+    // aus dem Nichts.  setTrack() dagegen ersetzt sie ganz und lädt darum NICHT nach.
+    if (loader_ && known_[index(cyl, head)] == 0) loader_->ensureLoaded(cyl, head);
     markDirty(cyl, head);
     return tracks_[index(cyl, head)];
 }
@@ -97,10 +112,13 @@ void DiskMedium::setTrack(uint8_t cyl, uint8_t head, TrackImage t) {
 
 void DiskMedium::markDirty(uint8_t cyl, uint8_t head) {
     if (!valid(cyl, head)) return;
-    dirty_[index(cyl, head)]  = 1;
-    raw_ok_[index(cyl, head)] = -1;   // Tauglichkeit neu bestimmen
-    dirty_any_                = true;
+    const size_t i = index(cyl, head);
+    dirty_[i]  = 1;
+    known_[i]  = 1;                   // geschrieben heißt bekannt (Vollspur-FORMAT)
+    raw_ok_[i] = -1;                  // Tauglichkeit neu bestimmen
+    dirty_any_ = true;
     ++revision_;                      // Autosave: Schreibpause erkennen
+    if (loader_) loader_->trackChanged(cyl, head);   // Rückführung anmelden
 }
 
 bool DiskMedium::trackDirty(uint8_t cyl, uint8_t head) const {
@@ -110,6 +128,70 @@ bool DiskMedium::trackDirty(uint8_t cyl, uint8_t head) const {
 void DiskMedium::clearDirty() {
     for (auto& d : dirty_) d = 0;
     dirty_any_ = false;
+}
+
+// ─── Spurzustand (physische Quelle) ──────────────────────────────────────────
+
+TrackState DiskMedium::state(uint8_t cyl, uint8_t head) const {
+    if (!valid(cyl, head)) return TrackState::Unknown;
+    const size_t i = index(cyl, head);
+    if (known_[i] == 0) return TrackState::Unknown;
+    return dirty_[i] ? TrackState::Dirty : TrackState::Clean;
+}
+
+bool DiskMedium::complete() const {
+    for (uint8_t k : known_)
+        if (k == 0) return false;
+    return true;
+}
+
+size_t DiskMedium::unknownCount() const {
+    size_t n = 0;
+    for (uint8_t k : known_)
+        if (k == 0) ++n;
+    return n;
+}
+
+void DiskMedium::markAllUnknown() {
+    for (auto& k : known_) k = 0;
+}
+
+void DiskMedium::loadTrack(uint8_t cyl, uint8_t head, TrackImage t) {
+    if (!valid(cyl, head)) return;
+    const size_t i = index(cyl, head);
+    tracks_[i] = std::move(t);
+    known_[i]  = 1;
+    dirty_[i]  = 0;      // gelesen ist nicht geändert — sonst schriebe man es zurück
+    raw_ok_[i] = -1;
+}
+
+void DiskMedium::clearTrackDirty(uint8_t cyl, uint8_t head) {
+    if (!valid(cyl, head)) return;
+    dirty_[index(cyl, head)] = 0;
+    dirty_any_ = false;
+    for (uint8_t d : dirty_)
+        if (d) { dirty_any_ = true; break; }
+}
+
+void DiskMedium::restoreFrom(const DiskMedium& snapshot) {
+    if (snapshot.num_cyls_ != num_cyls_ || snapshot.num_heads_ != num_heads_) {
+        *this = snapshot;   // andere Geometrie: nichts zu retten, ganz übernehmen
+        return;
+    }
+    for (uint8_t c = 0; c < num_cyls_; ++c)
+        for (uint8_t h = 0; h < num_heads_; ++h) {
+            const size_t i = index(c, h);
+            if (tracks_[i].bytes == snapshot.tracks_[i].bytes &&
+                tracks_[i].marks == snapshot.tracks_[i].marks)
+                continue;
+            tracks_[i] = snapshot.tracks_[i];
+            known_[i]  = snapshot.known_[i];
+            // Der Inhalt hat sich geändert — auch wenn er der ÄLTERE ist.  Bei einer
+            // physischen Diskette steht der neuere schon auf der Scheibe; nur eine
+            // erneute Rückführung stellt sie richtig.
+            if (known_[i]) markDirty(c, h);
+        }
+    default_enc_ = snapshot.default_enc_;
 }
 
 // ─── Zustandsabfragen ────────────────────────────────────────────────────────
@@ -156,7 +238,8 @@ std::string DiskMedium::rawIncompatibleReason() const {
         for (uint8_t h = 0; h < num_heads_; ++h) {
             // Leere Spuren sind erlaubt (werden im .img zu Füllbytes); nur beschriebene
             // Spuren muessen sich verlustfrei auf Sektor-Nutzdaten abbilden lassen.
-            if (track(c, h).empty()) continue;
+            // peek(): ein medienweiter Reihenlauf darf NICHT nachladen (§12.3).
+            if (peek(c, h).empty()) continue;
             if (!trackRawCompatible(c, h))
                 return "Spur " + std::to_string(c) + "/" + std::to_string(h);
         }

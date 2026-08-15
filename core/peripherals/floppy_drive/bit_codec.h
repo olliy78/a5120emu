@@ -93,4 +93,22 @@ std::vector<uint8_t> downsampleCells(const std::vector<uint8_t>& cells,
                                      uint32_t bitcell_count, uint32_t factor,
                                      uint32_t& out_bitcells);
 
+/// @brief Zahl der Adressmarken (Id/Data/Index) einer Spur — „ist da überhaupt was?"
+size_t markCount(const TrackImage& t);
+
+/**
+ * @brief Decodiert und **bestimmt das Verfahren dabei selbst** (FM oder MFM).
+ *
+ * Erst mit @p preferred decodieren; findet sich keine einzige Adressmarke, das andere
+ * Verfahren probieren und nehmen, wenn es Marken liefert.  Genau die Regel, mit der
+ * @ref HfeCodec Mischdichte-Medien lädt — und die einzige mögliche, wenn die Quelle
+ * gar keinen Kopf hat, der das Verfahren nennt (echte Diskette am Greaseweazle,
+ * doc/design/14_physische_diskette.md §8.1).
+ *
+ * Eine markenlose Rückgabe ist **kein Fehler**, sondern eine unformatierte Spur; der
+ * Aufrufer entscheidet, ob er sie als leere Spur ablegt.
+ */
+TrackImage decodeAuto(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
+                      Encoding preferred);
+
 }  // namespace BitCodec
