@@ -73,6 +73,7 @@ class Device:
         self._motor_an = False
         self._letzte_arbeit = 0.0
         self._gewaehlt = False
+        self._ticks_per_rev = None
 
     # ── Auswahl / Motor ─────────────────────────────────────────────────────
 
@@ -134,13 +135,29 @@ class Device:
         self._letzte_arbeit = time.monotonic()
         return lsb.tobytes(), len(bits)
 
+    def ticks_per_rev(self) -> float:
+        """Umdrehungsdauer des Laufwerks in Adapter-Takten (einmal gemessen).
+
+        Ohne diese Messung lässt sich **nicht schreiben**: die Bitzellen kommen mit
+        der *nominellen* Zellrate herein, das Laufwerk dreht aber mit seiner eigenen
+        Drehzahl.  Die Flusszeiten müssen daher auf die **gemessene** Umdrehung
+        gestreckt werden — sonst ist der Datenstrom vor dem Indexloch zu Ende und
+        der Adapter meldet `Flux Underflow`.
+        """
+        if self._ticks_per_rev is None:
+            self.select()
+            self.motor(True)
+            self._ticks_per_rev = self._usb.read_track(2).ticks_per_rev
+        return self._ticks_per_rev
+
     def write_track(self, cyl: int, head: int, cells: bytes, bitcells: int) -> None:
-        """Eine Spurseite schreiben (ganze Spur ab Index)."""
+        """Eine Spurseite schreiben — ganze Spur, ab Index bis Index."""
         from bitarray import bitarray
         from greaseweazle.track import MasterTrack
 
         self.select()
         self.motor(True)
+        takte_je_umdrehung = self.ticks_per_rev()
         self._usb.seek(cyl, head)
 
         bits = bitarray(endian="big")
@@ -150,8 +167,23 @@ class Device:
 
         spur = MasterTrack(bits=bits,
                            time_per_rev=len(bits) / (2000 * self.cell_rate_kbps))
-        self._usb.write_track(flux_list=spur.flux_for_writeout(cue_at_index=True).list,
-                              terminate_at_index=True)
+        fluss = spur.flux_for_writeout(cue_at_index=True)
+
+        # Zeitbasis der Vorlage auf die des LAUFWERKS umrechnen; der Rest wird
+        # mitgeschleppt, damit sich Rundungsfehler nicht über die Spur summieren
+        # (dasselbe Verfahren wie `gw write`, tools/write.py).
+        faktor = takte_je_umdrehung / fluss.ticks_to_index
+        rest = 0.0
+        liste = []
+        for x in fluss.list:
+            y = x * faktor + rest
+            v = round(y)
+            rest = y - v
+            liste.append(v)
+
+        self._usb.write_track(flux_list=liste,
+                              cue_at_index=fluss.index_cued,
+                              terminate_at_index=fluss.terminate_at_index)
         self._letzte_arbeit = time.monotonic()
 
 

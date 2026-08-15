@@ -633,8 +633,13 @@ Das Dirty-Bit wird zu einem Dreizustand:
 | `Clean` | gelesen, seither nicht geändert | ja |
 | `Dirty` | im Abbild geändert, noch nicht zurückgeschrieben | ja, neuer als die Diskette |
 
-Bei einer dateigebundenen Diskette gibt es `Unknown` nicht — der Codec füllt beim Laden
-alles.  `Dirty` bleibt genau das Bit, mit dem der Autosave (§6.1) schon immer arbeitet.
+**Ein Konzept, nicht zwei:** der Zustand gilt für *jedes* Medium.  Bei einer
+dateigebundenen Diskette tritt `Unknown` nur nie auf — der Codec füllt beim Laden
+alles —, und `Dirty` ist genau das Bit, mit dem der Autosave (§6.1) seit jeher
+arbeitet.  Der Unterschied, an dem alles hängt: **`loadTrack` (gelesen) macht sauber,
+`setTrack` (geschrieben) macht schmutzig**.  Wächter: `DiskMedium.ZustandGiltAuchOhne\
+Laufwerk_UnknownKommtDortNieVor`, `…EinzelneSpurSauberMelden_LaesstDieAnderenSchmutzig`,
+`…GeleseneSpurIstSauber_GeschriebeneSchmutzig`.
 
 **`Unknown` ist nicht dasselbe wie „unformatiert“.**  Unformatiert (§7) ist eine
 belegte Aussage über die Diskette; unbekannt ist gar keine.  Deshalb melden

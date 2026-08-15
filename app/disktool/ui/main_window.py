@@ -48,6 +48,9 @@ TEXT_ENDUNGEN = {".txt", ".text", ".asm", ".mac", ".doc", ".md", ".log", ".dat"}
 class MainWindow(QMainWindow):
     """Fenster des Diskettenwerkzeugs."""
 
+    #: Laufende Sitzung an einem echten Laufwerk (None = Abbilddatei/leer).
+    _physisch = None
+
     def __init__(self, image: Optional[str] = None, folder: Optional[str] = None):
         super().__init__()
         self.setWindowTitle("k1520DiskTool")
@@ -58,6 +61,11 @@ class MainWindow(QMainWindow):
         # ── Kopfleiste ──────────────────────────────────────────────────────
         self.btn_oeffnen = QPushButton("Abbild öffnen…")
         self.btn_neu = QPushButton("Neue Diskette…")
+        self.btn_physisch = QPushButton("Physisches Laufwerk…")
+        self.btn_physisch.setToolTip(
+            "Eine ECHTE Diskette in einem echten Laufwerk am Greaseweazle öffnen.\n"
+            "Das Öffnen liest die ganze Diskette (die Formaterkennung sieht sich "
+            "jede Spur an) und dauert gut anderthalb Minuten.")
         self.fs_wahl = QComboBox()
         self.fs_wahl.addItem("automatisch erkennen", "")
         for f in filesystems():
@@ -76,6 +84,7 @@ class MainWindow(QMainWindow):
         kopf = QHBoxLayout()
         kopf.addWidget(self.btn_oeffnen)
         kopf.addWidget(self.btn_neu)
+        kopf.addWidget(self.btn_physisch)
         kopf.addWidget(QLabel("Dateisystem:"))
         kopf.addWidget(self.fs_wahl, 1)
         kopf.addWidget(self.chk_readonly)
@@ -155,6 +164,7 @@ class MainWindow(QMainWindow):
         # ── Verdrahtung ─────────────────────────────────────────────────────
         self.btn_oeffnen.clicked.connect(self._oeffnen_dialog)
         self.btn_neu.clicked.connect(self._neu_dialog)
+        self.btn_physisch.clicked.connect(self._physisch_dialog)
         self.btn_raus.clicked.connect(self._extrahieren_auswahl)
         self.btn_rein.clicked.connect(self._einfuegen_auswahl)
         self.btn_alles_raus.clicked.connect(self._alles_extrahieren)
@@ -253,6 +263,82 @@ class MainWindow(QMainWindow):
         self.log(f"Geöffnet: {path} — {self.tool.filesystem}{hinweis}")
         return True
 
+    def open_physical(self, *, drive: str = "a", cell_rate_kbps: int = 250,
+                      num_cyls: int = 80, num_heads: int = 2,
+                      writable: bool = False, read_ahead: bool = True,
+                      filesystem: str = "") -> bool:
+        """**Echte Diskette** in einem echten Laufwerk am Greaseweazle öffnen.
+
+        Anders als bei einem Abbild gibt es hier keine Datei: die Diskette wird
+        **spurweise** gelesen, sobald etwas gebraucht wird.  Das Öffnen selbst ist
+        trotzdem teuer — die Formaterkennung sieht sich jede Spur an —, läuft
+        deshalb in einem Arbeitsfaden mit Fortschrittsanzeige
+        (doc/design/14_physische_diskette.md §11.2).
+
+        Returns:
+            True, wenn die Diskette offen ist.  Abbruch durch den Bediener gilt
+            als „nicht geöffnet", ohne Fehlermeldung.
+        """
+        from app.ui.physical_disk import PhysicalSession, mit_fortschritt, verfuegbarkeit
+
+        ok, grund = verfuegbarkeit()
+        if not ok:
+            self._fehler("Physisches Laufwerk", grund)
+            return False
+
+        self._close_tool()
+        try:
+            sitzung = PhysicalSession.start(
+                drive=drive, cell_rate_kbps=cell_rate_kbps, num_cyls=num_cyls,
+                num_heads=num_heads, writable=writable, read_ahead=read_ahead)
+        except Exception as e:                       # noqa: BLE001
+            self._fehler("Physisches Laufwerk",
+                         f"Das Laufwerk liess sich nicht oeffnen:\n{e}")
+            return False
+        self._physisch = sitzung
+
+        werkzeug, fehler = mit_fortschritt(
+            self, sitzung,
+            lambda: DiskTool.open_physical(sitzung, filesystem or None,
+                                           read_only=not writable),
+            text="Diskette wird gelesen (Format wird erkannt)…")
+
+        if werkzeug is None:
+            self._close_physisch()
+            self.disk_view.clear()
+            if fehler is not None:
+                self.disk_view.kopf.setText("<b>Physisches Laufwerk</b>")
+                self.disk_view.hinweis.setText(str(fehler))
+                self.disk_view.hinweis.show()
+                self.log(f"Nicht geoeffnet: {fehler}")
+            else:
+                self.log("Physisches Laufwerk: abgebrochen")
+            self._enable_write(False)
+            return False
+
+        self.tool = werkzeug
+        self.chk_readonly.blockSignals(True)
+        self.chk_readonly.setChecked(self.tool.read_only)
+        self.chk_readonly.blockSignals(False)
+        self._enable_write(True)
+        self._reload()
+        self.disk_view.kopf.setText(
+            f"<b>Echtes Laufwerk {drive.upper()} am Greaseweazle</b> — "
+            f"{self.tool.filesystem}"
+            + ("  (schreibend)" if writable else "  (nur lesen)"))
+        self.log(f"Physisches Laufwerk {drive.upper()}: {self.tool.filesystem}, "
+                 f"{sitzung.status_text()}")
+        return True
+
+    def _physisch_dialog(self) -> None:
+        """Abfrage vor dem Einlegen und dann oeffnen."""
+        from app.ui.physical_disk import PhysicalDiskDialog
+
+        wahl = PhysicalDiskDialog.frage(self, num_cyls=80, num_heads=2)
+        if wahl is None:
+            return
+        self.open_physical(**wahl)
+
     def create_disk(self, path, filesystem: str, label: str = "",
                     boot_image=None) -> bool:
         """Neue Diskette anlegen — mit ``boot_image`` als **Bootdiskette**.
@@ -277,6 +363,22 @@ class MainWindow(QMainWindow):
         self.log(f"Angelegt: {path} ({filesystem}, {self.tool.volume_count} Seiten{boot})")
         return True
 
+    def _close_physisch(self) -> None:
+        """Laufende Sitzung am echten Laufwerk beenden (schreibt Ausstehendes zurück)."""
+        sitzung = getattr(self, "_physisch", None)
+        if sitzung is None:
+            return
+        self._physisch = None
+        from PySide6.QtGui import QCursor
+        from PySide6.QtWidgets import QApplication
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        try:
+            sitzung.close()
+        except Exception:
+            pass
+        finally:
+            QApplication.restoreOverrideCursor()
+
     def _close_tool(self) -> None:
         # Der Diskeditor hält dieselbe Diskette; er MUSS vorher zu sein, sonst
         # arbeitete er auf einem geschlossenen Griff weiter.
@@ -287,6 +389,9 @@ class MainWindow(QMainWindow):
         if self.tool is not None:
             self.tool.close()
             self.tool = None
+        # Erst das Werkzeug, DANN die Sitzung: ~DiskImage schreibt Ausstehendes noch
+        # über den Arbeitsfaden zurück und löst sich erst danach vom Medium.
+        self._close_physisch()
 
     # ════════════════════════════════════════════════════════════════════════
     # Übertragung — ohne Dialog aufrufbar (Tests)

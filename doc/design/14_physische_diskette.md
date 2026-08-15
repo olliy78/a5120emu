@@ -142,9 +142,17 @@ gelesen wird: FORMAT schreibt ganze Spuren.
 | **Sauber** (`Clean`) | gelesen und seither nicht geändert | ja, gleich der Diskette |
 | **Geändert** (`Dirty`) | im Abbild geändert, noch nicht zurückgeschrieben | ja, **neuer** als die Diskette |
 
-Bei einer **datei**gebundenen Diskette gibt es „Unbekannt“ nicht: der Codec füllt beim
-Laden alle Spuren, alles ist von Anfang an `Sauber`.  Der Zustand ist damit eine echte
-Verallgemeinerung des bisherigen Dirty-Bits — `Dirty` bleibt exakt das, was der Autosave
+**Der Zustand gilt für JEDES Medium, nicht nur für das echte Laufwerk.**  Bei einer
+dateigebundenen Diskette tritt „Unbekannt" schlicht nie auf — der Container-Codec füllt
+beim Laden alle Spuren, alles ist von Anfang an `Sauber`.  Es gibt also **ein** Konzept
+und nicht zwei; `dirty()`/`trackDirty()`, mit denen der Autosave seit jeher arbeitet,
+sind genau dieselben Bits.  Wächter: `DiskMedium.ZustandGiltAuchOhneLaufwerk_*`,
+`…EinzelneSpurSauberMelden_*`, `…GeleseneSpurIstSauber_GeschriebeneSchmutzig` — der
+letzte hält den Unterschied fest, an dem alles hängt: **`loadTrack` (gelesen) macht
+sauber, `setTrack` (geschrieben) macht schmutzig**; wer beim Laden `setTrack` benutzt,
+schriebe die frisch gelesene Spur sofort wieder hinaus.
+
+Der Zustand ist damit eine echte Verallgemeinerung des bisherigen Dirty-Bits — `Dirty` bleibt exakt das, was der Autosave
 schon immer benutzt hat (§09 6.1), und dieselben Bits tragen jetzt zusätzlich die
 Rückführung auf die echte Diskette.
 
@@ -317,6 +325,15 @@ der Arbeitsfaden taktet damit die PLL, der Kern codiert damit zurück.  Eine fal
 gewählte Rate erzeugt kein Kauderwelsch, sondern eine überabgetastete Spur — die
 `downsampleCells` auffängt, solange es ein ganzzahliges Vielfaches ist.
 
+> **Beim Schreiben zählt die gemessene Drehzahl, nicht die nominelle.**  Die Bitzellen
+> kommen mit der *nominellen* Zellrate herein; das Laufwerk dreht aber mit seiner
+> eigenen Drehzahl.  Die Flusszeiten müssen deshalb auf die **gemessene**
+> Umdrehungsdauer gestreckt werden (`usb.read_track(2).ticks_per_rev`, einmal je
+> Sitzung; danach je Spur `faktor = takte_je_umdrehung / fluss.ticks_to_index` mit
+> mitgeschlepptem Rundungsrest — dasselbe Verfahren wie `gw write`).  Ohne diese
+> Streckung ist der Datenstrom vor dem Indexloch zu Ende und der Adapter bricht mit
+> **`Flux Underflow`** ab.  Das war der einzige Stolperstein des Schreibpfads.
+
 Das **Verfahren** (FM/MFM) wird nicht gesetzt, sondern **erkannt**, spurweise: erst mit
 dem Vorschlagsverfahren des Mediums decodieren, findet sich keine Marke, das andere
 probieren — genau die Regel, die `HfeCodec` beim Laden schon anwendet und die hier
@@ -479,15 +496,54 @@ und nennt im Hinweis den Grund.  Alles andere — Bauen, Tests, Betrieb mit Abbi
 
 ## 12. Bedienung
 
-| Ort | Was |
-|-----|-----|
-| Emulator, Laufwerkskasten | „Physisches Laufwerk…“ neben „Diskette einlegen…“; danach Adapter/Laufwerk/Zellrate, Schreiben aus (Vorgabe) |
-| Emulator, Anzeige | Füllstand + laufender Zugriff; Hinweiszeile wie bei den Anpassungen (§09 7.2) |
-| DiskTool, `Diskette ▸ Physisches Laufwerk öffnen…` | dieselbe Auswahl; danach arbeitet das Werkzeug wie mit jeder Diskette |
-| Beide, „Speichern unter…“ | erzwingt Vollständigkeit (§4.2) und schreibt eine ganz gewöhnliche `.hfe`/`.dmk` — der Weg „echte Diskette → Abbild“ |
-| CLI | `k1520disktool ls --physical a` usw. mit denselben Angaben |
+Beide Programme teilen sich `app/ui/physical_disk.py`: **derselbe Dialog**, dieselbe
+Sitzung, dieselbe Statuszeile — „physisches Laufwerk einlegen" bedeutet in beiden
+Programmen dasselbe.
 
----
+| Baustein | Was |
+|----------|-----|
+| `verfuegbarkeit()` | `(True, "")` oder `(False, grund)`; der Grund ist für den Anwender geschrieben und taugt als Tooltip einer gesperrten Aktion |
+| `PhysicalDiskDialog` | Laufwerk am Kabel (`a`/`b`/`0`…`3`), Zellrate (250/500), Vorauslesen, **Schreiben — ohne Haken** |
+| `PhysicalSession` | hält Sync **und** Arbeitsfaden zusammen; `close()` schreibt Ausstehendes zurück, hält den Faden an und gibt erst dann den Synchronisierer frei (diese Reihenfolge ist Pflicht) |
+| `mit_fortschritt()` | führt eine lange Arbeit im Arbeitsfaden aus und zeigt dabei den Füllstand (`QProgressDialog` mit Abbruch) |
+
+### 12.1 Emulator
+
+Im Laufwerkskasten steht neben *Mount* / *Neue Diskette* / *Speichern unter…* ein
+vierter Knopf **„Physisch…"**.  Danach:
+
+* Die Pfadzeile zeigt `[echtes Laufwerk A am Greaseweazle]`, der Mount-Knopf heißt
+  **„Auswerfen"**, und „Physisch…" ist gesperrt (zweimal einlegen gibt es nicht).
+* Darunter läuft die **Füllstandszeile** mit: `⏵ 63 von 160 Spuren gelesen · liest 5/1`
+  — sie wird vom vorhandenen LED-Zeitgeber (120 ms) nachgeführt, kostet also keinen
+  eigenen Zeitgeber.
+* **Auswerfen** beendet die Sitzung (Wartecursor, weil das Zurückschreiben dauern kann)
+  und hängt danach aus.
+* Eine physische Diskette steht **nicht** in `get_mounts()` und wird von `remount_all()`
+  nicht angefasst: sie hat keinen Pfad, und ihr Sync-Handle ist nach dem Einlegen
+  verbraucht.  Beim Fensterschließen räumt `close_physical_sessions()` auf.
+
+### 12.2 k1520DiskTool
+
+In der Kopfzeile neben *Abbild öffnen…* / *Neue Diskette…* steht **„Physisches
+Laufwerk…"**.  Das Öffnen läuft über `mit_fortschritt()` — es liest die ganze Diskette
+(die Formaterkennung sieht sich jede Spur an, §11.2) und braucht dafür rund
+anderthalb Minuten; die Anzeige zählt die Spuren mit und lässt sich abbrechen.
+Danach ist die Diskette eine Diskette wie jede andere; der Kopf nennt sie
+`Echtes Laufwerk A am Greaseweazle — udos_ds77 (nur lesen)`.
+
+`_close_tool()` schließt **erst das Werkzeug, dann die Sitzung** — `~DiskImage`
+schreibt Ausstehendes noch über den Arbeitsfaden zurück und löst sich erst danach vom
+Medium.  Ein danach geöffnetes Abbild lässt das echte Laufwerk also frei.
+
+> **Nicht vergessen:** Die menügeführte DiskTool-Oberfläche (`ui/actions.py`,
+> Symbolleiste, Handbuch) liegt auf dem Zweig `create_disktool` und ist hier **nicht**
+> gemergt.  Wandert sie herein, gehört „Physisches Laufwerk öffnen…" als Aktion in
+> `_SPEC` (Menü **und** Leiste), nicht als freistehender Knopf.
+
+### 12.3 Kommandozeile
+
+Steht aus (`k1520disktool --physical …`), siehe §15.
 
 ## 13. Festlegungen, die man nicht aufweichen darf
 
@@ -526,6 +582,7 @@ vorkommt: alles unterhalb von „Aufträge und Bitzellen“ ist ohne Adapter pr�
 | Vertrag | `TrackSync.NurEinArbeitsfaden`, `…ShutdownLoestJedenWartenden` | keiner nötig |
 | **Voller Emulator** | `PhysicalBoot.*` (`tests/integration/test_physical_boot.cpp`) | **Ersatzlaufwerk über einer `.hfe`-Fixture**: CP/A bootet spurweise bis `A>`, holt dabei **weniger als die halbe Diskette**, und das Vorauslesen bremst den Kaltstart nicht |
 | C-ABI + Arbeitsfaden + DiskTool | `py_gw_physical` (`tests/python/test_gw_physical.py`, 10 Fälle) | `HfeDevice`: liest HFE v1 von Hand, **ohne** `greaseweazle`-Import — dieselbe Diskette einmal als Datei und einmal „physisch" geöffnet muss dasselbe Verzeichnis und dieselben Dateibytes liefern |
+| **Oberflächen** | `py_gw_gui` (`tests/python/test_gw_gui.py`) | dasselbe Ersatzlaufwerk (`tests/python/gw_fake.py`): Knopf → Sitzung → angemeldete Diskette → Anzeige → Auswerfen, in **beiden** Programmen; dazu die Zusicherung, dass die Dialogauswahl genau die Argumente von `PhysicalSession.start` sind |
 | **Echte Hardware** | `tests/python/test_gw_hardware.py` | keiner — **übersprungen**, wenn `K1520_GW_HARDWARE` nicht gesetzt ist; **nicht** in ctest registriert |
 
 Der Kniff ist der **Ersatzfaden über einer `.hfe`-Datei**: er liefert dieselben
@@ -548,38 +605,45 @@ von sich aus.
 
 ## 15. Stand der Umsetzung (2026-08-15)
 
-**Fertig und in der Regression** (1005/1005 ctest grün):
+**Fertig und in der Regression** (1009/1009 ctest grün):
 
 * `TrackSync` samt Spurzuständen im `DiskMedium`, drei Prioritäten, Blockade,
   Schreibpause, Rücknahme (`restoreFrom`).
 * C-ABI `k1520s_*` in **beiden** Bibliotheken; `k1520_mount_physical` (Emulator) und
   `k1520d_open_physical` (DiskTool) — beide auch in den ctypes-Bindungen.
-* `app/gw/` (Gerätehülle, Arbeitsfaden, Bindung) und die Testebenen aus §14.
+* `app/gw/` (Gerätehülle, Arbeitsfaden, Bindung), `app/ui/physical_disk.py`
+  (Dialog, Sitzung, Fortschritt) und die **Oberflächen beider Programme** (§12).
+* Die Testebenen aus §14, einschließlich der Oberflächen.
 
-**Am echten Gerät nachgewiesen** (Greaseweazle F1, K5601, UDOS-Diskette):
+**Am echten Gerät nachgewiesen** (Greaseweazle F1, K5601, UDOS-4.3-Diskette):
 
-| Messung | Wert |
-|---------|------|
+| Vorgang | Ergebnis |
+|---------|----------|
 | eine Spur lesen (1 Umdrehung + Kopfweg) | 0,5–0,8 s; erste Spur 1,8 s (Motoranlauf) |
 | Zellstrom je Spurseite bei 250 kbit/s | 100 363 Zellen = 12 546 Byte (299 U/min) |
 | UDOS-Spur, roh gelesen | 156 A1-Sync-Marken = 26 Sektoren × 6 Felder |
-| **ganze Diskette im DiskTool öffnen** | **97 s** für 160 Spuren, beide Seiten, Verzeichnis vollständig |
+| ganze Diskette im DiskTool öffnen | **97 s** für 160 Spuren, Verzeichnis beider Seiten vollständig (70 Dateien) |
+| **Emulator-Kaltstart von der echten Diskette** | **UDOS 4.3 meldet sich mit Banner und Datumsabfrage** — bei erst 62–70 von 160 gelesenen Spuren, der Rest lief noch im Vorrat |
+| **Datei auf die echte Diskette schreiben** | über das DiskTool eingefügt, **4 Spuren** zurückgeschrieben, 0 Fehler; die Diskette danach **komplett neu eingelesen** → Datei byteweise gleich |
+| beide Oberflächen | Einlegen, Füllstand, Auswerfen bzw. Öffnen mit Fortschritt — je einmal gegen die echte Hardware durchgefahren |
+
+Vor dem ersten Schreibversuch wurde die Diskette gesichert (`gw read` über alle 160
+Spuren, 2 MB `.hfe`) — bei einem Original ohne zweite Kopie gehört das dazu.
 
 **Noch offen** (bewusst, nicht vergessen):
 
-* **Die Oberflächen** — der Menüpunkt „Physisches Laufwerk…“ samt Auswahl von Adapter,
-  Laufwerk und Zellrate fehlt in beiden Programmen (§12), ebenso der Füllstand im
-  Laufwerkskasten.  Bedient wird die Anbindung bis dahin aus Python.
-* **Das DiskTool muss dafür in einen Arbeitsfaden** (§11.2): 97 s im Oberflächenfaden
-  wären ein eingefrorenes Fenster.
-* **CLI** `k1520disktool --physical` (§12).
-* **Schreiben ist ungetestet an echter Hardware** — der Pfad steht (`fetch_write` →
-  `MasterTrack` → `write_track`), der Hardware-Test dazu liegt hinter
-  `K1520_GW_WRITE=1` und wurde bewusst noch nicht gegen eine echte Diskette gefahren.
+* **CLI** `k1520disktool --physical` (§12.3).
+* **Die menügeführte DiskTool-Oberfläche** liegt unmerged auf `create_disktool`; beim
+  Zusammenführen gehört die Aktion in `ui/actions.py` statt als freistehender Knopf
+  (§12.2).
+* **Die Sitzungsparameter merkt sich niemand** — Laufwerk und Zellrate müssen bei
+  jedem Einlegen neu gewählt werden.  Sie in die Konfiguration zu übernehmen ist
+  leicht, wollte aber erst benutzt und dann entschieden sein.
+* **Ein zweites physisches Laufwerk am selben Adapter** ist ungetestet (§16).
 
 ---
 
-## 15. Grenzen
+## 16. Grenzen
 
 * **Kein Flusszugriff** (§8.2): kein Kopierschutz, keine schwachen Bits.
 * **Eine Diskette je Adapter.**  Ein Greaseweazle bedient zwei Laufwerke am Kabel, aber

@@ -135,3 +135,73 @@ def test_geschriebene_spur_liest_sich_zurueck(geraet):
     geraet.write_track(cyl, head, original, bits)
     zurueck, bits2 = geraet.read_track(cyl, head)
     assert abs(bits - bits2) < bits / 100
+
+
+@pytest.mark.skipif(os.environ.get("K1520_GW_WRITE") != "1",
+                    reason="beschreibt eine echte Diskette (K1520_GW_WRITE=1)")
+def test_disktool_schreibt_eine_datei_auf_die_eingelegte_diskette(geraet, tmp_path):
+    """Der ganze Schreibweg: Datei → Dateisystem → Spur → Rückführung → Diskette.
+
+    Und der Beweis, dass sie wirklich auf der Scheibe landet: die Diskette wird
+    danach **erneut geöffnet** — dieses zweite Öffnen liest alles frisch vom
+    Laufwerk, ein Zwischenspeicher kann das Ergebnis also nicht beschönigen.
+
+    Dauert rund vier Minuten (zweimal die ganze Diskette lesen).
+    """
+    from app.core_binding.k1520disk import DiskTool
+    from app.gw import Sync
+
+    inhalt = b"K1520 GW SCHREIBPROBE\r\n" * 8
+    quelle = tmp_path / "GWTEST.TXT"
+    quelle.write_bytes(inhalt)
+    name = "GWTEST.TXT"
+
+    cyls = _umgebung("K1520_GW_CYLS", 80)
+    heads = _umgebung("K1520_GW_HEADS", 2)
+    rate = _umgebung("K1520_GW_RATE", 250)
+
+    def sitzung(schreibbar: bool):
+        s = Sync(num_cyls=cyls, num_heads=heads, cell_rate_kbps=rate,
+                 writable=schreibbar, read_ahead=True)
+        w = TrackWorker(s, geraet)
+        w.start()
+        return s, w
+
+    # ── Schreiben ───────────────────────────────────────────────────────────
+    s, w = sitzung(True)
+    try:
+        with DiskTool.open_physical(s, read_only=False) as d:
+            vorher = {e.side_prefix + e.name for e in d.list()}
+            zielname = name if not vorher or "/" not in next(iter(vorher)) \
+                else "Side0/" + name
+            if zielname in vorher:
+                d.erase(zielname)
+            d.insert(quelle, zielname, overwrite=True)
+            # flush() wartet bei einer physischen Diskette auf die Rueckfuehrung —
+            # erst danach steht die Aenderung auf der Scheibe.
+            d.flush()
+            assert s.flush(120_000), f"Rückführung scheiterte: {s.last_error}"
+            st = s.stats
+            print(f"\ngeschrieben: {zielname} — {st.writes_done} Spuren "
+                  f"zurückgeschrieben, {st.errors} Fehler")
+            assert st.errors == 0
+            assert st.writes_done > 0, "es wurde gar nichts zurückgeschrieben"
+    finally:
+        w.stop()
+        s.close()
+
+    # ── Gegenprobe: frisch von der Diskette lesen ───────────────────────────
+    zurueck = tmp_path / "zurueck.bin"
+    s, w = sitzung(False)
+    try:
+        with DiskTool.open_physical(s) as d:
+            namen = {e.side_prefix + e.name for e in d.list()}
+            treffer = [n for n in namen if n.endswith(name)]
+            assert treffer, f"{name} steht nicht auf der Diskette: {sorted(namen)}"
+            d.extract(treffer[0], zurueck)
+    finally:
+        w.stop()
+        s.close()
+
+    assert zurueck.read_bytes() == inhalt, "die Datei kam verändert zurück"
+    print(f"gegengelesen: {len(inhalt)} Byte, byteweise gleich")

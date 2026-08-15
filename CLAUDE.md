@@ -659,7 +659,9 @@ Was man beim Weiterarbeiten wissen muss:
   `BitCodec::decode` laufen wie eine `.hfe`-Datei.  Ein anderer Adapter wäre ein anderes
   `device` in `app/gw/`, keine Kernänderung.
 - **Je Spur ein Zustand** statt eines Dirty-Bits: `Unknown` (nie gelesen, Inhalt
-  **ungültig**) / `Clean` / `Dirty`.  **`Unknown` ≠ „unformatiert"** — letzteres ist eine
+  **ungültig**) / `Clean` / `Dirty`.  Das ist **ein** Konzept für alle Medien — bei
+  einer Datei tritt `Unknown` nur nie auf.  Der Unterschied, an dem alles hängt:
+  **`loadTrack` (gelesen) macht sauber, `setTrack` (geschrieben) macht schmutzig**.  **`Unknown` ≠ „unformatiert"** — letzteres ist eine
   belegte Aussage über die Diskette, ersteres gar keine; deshalb melden
   `formatted()`/`rawCompatible()` zusätzlich `complete()`, sonst erklärte sich eine halb
   gelesene Diskette für leer und ein `.img` schriebe die ungelesenen Spuren als
@@ -685,6 +687,19 @@ Was man beim Weiterarbeiten wissen muss:
 - **Eine Rücknahme (`DiskVolume`-Transaktion) braucht `restoreFrom`**, nicht eine
   Zuweisung: was schon auf der echten Scheibe steht, holt keine Kopie im Speicher
   zurück — die zurückgesetzten Spuren müssen **erneut als geändert** gelten.
+- **Schreiben braucht die GEMESSENE Drehzahl.**  Die Bitzellen kommen mit der
+  *nominellen* Zellrate herein, das Laufwerk dreht mit seiner eigenen Drehzahl; die
+  Flusszeiten müssen auf `usb.read_track(2).ticks_per_rev` gestreckt werden (einmal je
+  Sitzung gemessen, je Spur `faktor = takte/fluss.ticks_to_index` mit mitgeschlepptem
+  Rundungsrest — wie `gw write`).  Ohne das bricht der Adapter mit **`Flux Underflow`**
+  ab; das war der einzige Stolperstein des Schreibpfads.
+- **Die Oberflächen liegen in `app/ui/physical_disk.py`** — Dialog, `PhysicalSession`
+  (Sync + Arbeitsfaden in einem, `close()` in der Reihenfolge Faden → Synchronisierer)
+  und `mit_fortschritt()`.  **Beide** Programme benutzen dasselbe Stück: der Emulator
+  einen Knopf „Physisch…" je Laufwerkskasten samt Füllstandszeile, das DiskTool
+  „Physisches Laufwerk…" mit Fortschrittsanzeige (das Öffnen liest die ganze Diskette,
+  ~97 s).  Eine physische Diskette gehört **nicht** in `get_mounts()` und wird von
+  `remount_all()` nicht angefasst (kein Pfad, Handle verbraucht).
 - **Die Hosttools liegen nicht auf PyPI** und sind eine **freiwillige** Abhängigkeit:
   `pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"` (der Zweigkopf
   meldet sich als Pre-Release).  Fehlt das Paket, fehlt nur der Menüpunkt.
@@ -696,9 +711,15 @@ Was man beim Weiterarbeiten wissen muss:
   Die echten Hardware-Tests liegen in `tests/python/test_gw_hardware.py`, sind **nicht**
   in ctest registriert und laufen nur mit `K1520_GW_HARDWARE=1` (Schreiben zusätzlich
   nur mit `K1520_GW_WRITE=1`).
-- **Offen:** die Oberflächen beider Programme (Menüpunkt, Auswahl, Füllstandsanzeige),
-  das Auslagern der DiskTool-Aufrufe in einen Arbeitsfaden (das Öffnen einer echten
-  Diskette dauert ~97 s, weil die Formaterkennung jede Spur ansieht) und die CLI.
+- **An echter Hardware nachgewiesen** (Greaseweazle F1 + K5601 + UDOS 4.3): Lesen
+  0,5–0,8 s je Spur; **Emulator-Kaltstart von der eingelegten Diskette** (UDOS meldet
+  sich bei erst 62 von 160 gelesenen Spuren); **Datei auf die echte Diskette
+  geschrieben** (4 Spuren zurückgeführt, danach die ganze Diskette neu eingelesen →
+  byteweise gleich); beide Oberflächen einmal durchgefahren.  Vor Schreibversuchen die
+  Diskette sichern (`gw read` über alle Spuren, 2 MB `.hfe`).
+- **Offen:** die CLI (`k1520disktool --physical`), das Merken der Sitzungsparameter,
+  und beim Zusammenführen mit `create_disktool` gehört die Aktion in `ui/actions.py`
+  statt als freistehender Knopf.
 
 ## Diskettenformatierung (FORMAT.COM) — Scope
 

@@ -41,7 +41,7 @@ if (K1520_PYTEST_PYTHON AND _k1520_pydeps EQUAL 0)
     # Greaseweazle und laeuft von Hand (doc/design/14_physische_diskette.md §14).
     set(_py_modules c_api disk_c_api binding boot_smoke drive_types config_io
                     keyboard_map gui_smoke disktool_gui paths packaging
-                    gw_physical)
+                    gw_physical gw_gui)
     foreach(_mod IN LISTS _py_modules)
         # -p no:cacheprovider: ALLE Fälle laufen im selben Arbeitsverzeichnis, und
         # seit die Regression parallel fährt (`ctest -j`) auch gleichzeitig.  Der
