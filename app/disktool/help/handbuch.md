@@ -25,6 +25,24 @@ dieselbe Bibliothek und kommen deshalb immer zum selben Ergebnis.
 6. **Sichern** — *Datei ▸ Speichern* (Strg+S). Ein `*` im Fenstertitel zeigt an,
    dass noch etwas ungespeichert ist.
 
+## Wo die Dateien liegen
+
+Das Werkzeug arbeitet in denselben Ordnern wie der Emulator — im Dokumentenordner,
+nicht dort, wo das Programm installiert ist:
+
+| Ordner | Wofür |
+|--------|-------|
+| `K1520emu/Disketten` | die Abbilder (`.hfe`, `.dmk`, `.img`) |
+| `K1520emu/Dateien` | was von den Disketten geholt und auf sie geschrieben wird |
+
+Dort gehen die Dateidialoge auf, und die rechte Hälfte zeigt beim Start den
+Dateiordner. Beim ersten Start nach einer Installation werden die mitgelieferten
+Beispieldisketten dorthin ausgepackt.
+
+Verschieben lässt sich das mit `K1520_DATA` (beide Ordner) bzw. `K1520_DISKS`
+(nur die Abbilder). Wo das Werkzeug gerade sucht, sagt
+`k1520disktool --paths` auf der Kommandozeile.
+
 ## Das Fenster
 
 **Kopfbereich** — was dauerhaft über die geöffnete Diskette gilt: Datei, Format,

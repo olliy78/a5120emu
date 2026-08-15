@@ -66,6 +66,12 @@ DATA_DIRNAME = "K1520emu"
 #: Druckausgaben o. Ä. danebenpassen, ohne die Disketten umziehen zu müssen.
 DISKS_DIRNAME = "Disketten"
 
+#: Unterordner für Dateien, die das DiskTool von Disketten holt bzw. auf sie
+#: schreibt — der Platz „daneben", den DISKS_DIRNAME oben vorsieht.  Getrennt
+#: von den Disketten, weil es zwei verschiedene Dinge sind: hier liegen einzelne
+#: Dateien und die Beiblätter, dort die Abbilder ganzer Datenträger.
+FILES_DIRNAME = "Dateien"
+
 #: Verzeichnisname unter Windows/macOS, wo Programmnamen großgeschrieben sind.
 APP_DIRNAME = "K1520emu"
 
@@ -414,6 +420,66 @@ def user_disks_dir() -> Path:
     return user_data_dir() / DISKS_DIRNAME
 
 
+def user_files_dir() -> Path:
+    """Verzeichnis der **Dateien**, die das DiskTool von Disketten holt.
+
+    Das Gegenstück zu :func:`user_disks_dir` für die Ordnerseite des
+    Diskettenwerkzeugs.  Es liegt aus demselben Grund außerhalb der Installation:
+    dort wird geschrieben (extrahierte Dateien, Beiblätter), und ein Update darf
+    das nicht überbügeln.
+
+    ``K1520_DISKS`` wirkt hier bewusst **nicht** — das ist die Angabe für die
+    Abbilder.  Wer beides verschieben will, setzt ``K1520_DATA``.
+    """
+    return user_data_dir() / FILES_DIRNAME
+
+
+def default_folder_dir() -> Path:
+    """Startverzeichnis für die **Ordnerseite** des DiskTool und ihre Dialoge.
+
+    Anders als :func:`default_disk_dir` darf das Ergebnis noch nicht existieren:
+    der Ordner entsteht beim ersten Extrahieren.  Gibt es weder ihn noch den
+    Datenordner, wird der Dokumentenordner genommen und erst zuletzt das
+    Heimatverzeichnis — **nie** die Installation, denn dorthin gehören keine
+    Anwenderdateien.
+    """
+    files = user_files_dir()
+    if files.is_dir():
+        return files
+    eltern = files.parent
+    if eltern.is_dir():
+        return eltern
+    docs = documents_dir()
+    return docs if docs is not None else Path.home()
+
+
+def ensure_user_files_dir() -> Optional[Path]:
+    """Den Dateiordner beim Erststart einer **Installation** anlegen.
+
+    Das Gegenstück zu :func:`seed_user_disks` für die Ordnerseite des DiskTool:
+    dort werden Beispieldisketten ausgepackt, hier entsteht der leere Ordner, in
+    den das Werkzeug seine Dateien holt.  Damit hat der Anwender nach der
+    Installation beides sichtbar nebeneinander im Dokumentenordner.
+
+    Im **Quellbaum** geschieht nichts — dort soll kein Ordner im Heimatverzeichnis
+    entstehen, bloß weil jemand das Werkzeug einmal gestartet hat.
+
+    Returns:
+        Das Verzeichnis, wenn es (nun) existiert, sonst ``None``.
+    """
+    if not is_installed_layout():
+        ziel = user_files_dir()
+        return ziel if ziel.is_dir() else None
+    ziel = user_files_dir()
+    try:
+        ziel.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Ein nicht anlegbarer Ordner ist kein Grund, das Programm nicht zu
+        # starten — die Dialoge weichen dann auf den Dokumentenordner aus.
+        return None
+    return ziel
+
+
 def bundled_disks_dir() -> Optional[Path]:
     """Verzeichnis der **mitgelieferten** Beispieldisketten (schreibgeschützt gedacht)."""
     base = base_dir()
@@ -495,5 +561,6 @@ def describe() -> str:
         f"Formatkatalog:     {fmt if fmt else 'NICHT GEFUNDEN (der Kern sucht weiter selbst)'}",
         f"Disketten (Paket): {bundled if bundled else '—'}",
         f"Disketten (Nutzer):{user_disks_dir()}",
+        f"Dateien (DiskTool):{user_files_dir()}",
         f"Konfiguration:     {config_dir()}",
     ])

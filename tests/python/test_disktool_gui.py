@@ -12,6 +12,7 @@ hier nicht angefasst.
 """
 
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -1493,3 +1494,124 @@ def test_every_shortcut_of_the_window_is_in_the_manual(window):
         if not a.shortcut().isEmpty() and a.shortcut().toString() not in im_handbuch:
             fehlend.append(f"{a.shortcut().toString()} ({a.text()})")
     assert fehlend == [], f"verdrahtet, aber im Handbuch nicht genannt: {fehlend}"
+
+
+# ─── Wo die Dialoge aufgehen ─────────────────────────────────────────────────
+#
+# Im Installationsordner liegt das Programm, nicht die Arbeit des Anwenders.
+# Aufgelöst wird über `app.paths` — dieselbe Stelle, die auch der Emulator
+# benutzt, damit beide Programme auf dieselben Ordner zeigen (§20.8).
+
+def _dialog_startpunkte(window, monkeypatch) -> dict:
+    """Alle Dateidialoge einmal aufrufen und ihren Startpfad einsammeln.
+
+    Jeder Dialog wird sofort „abgebrochen" (leerer Rückgabewert), es passiert
+    also nichts weiter.
+    """
+    from PySide6.QtWidgets import QFileDialog
+    gesehen = {}
+
+    def datei(titel_index):
+        def haken(parent, titel, verzeichnis="", *a, **k):
+            gesehen[titel] = verzeichnis
+            return ("", "")
+        return haken
+
+    def ordner(parent, titel, verzeichnis="", *a, **k):
+        gesehen[titel] = verzeichnis
+        return ""
+
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", datei(1))
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", datei(1))
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", ordner)
+    return gesehen
+
+
+def test_every_file_dialog_gets_a_start_directory(window, fixture_disks,
+                                                  monkeypatch):
+    """Der Kern der Sache: kein Dialog ohne Startpunkt.
+
+    Ein leerer Startpfad heisst für Qt „Arbeitsverzeichnis" — und das ist beim
+    installierten Programm der INSTALLATIONSORDNER.  Dort liegt das Programm,
+    nicht die Arbeit des Anwenders.
+    """
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    gesehen = _dialog_startpunkte(window, monkeypatch)
+
+    window._oeffnen_dialog()
+    window._speichern_unter_dialog()
+    window._archivieren_dialog()
+    window._bootabbild_sichern_dialog()
+    window._ordner_dialog()
+
+    assert len(gesehen) == 5, gesehen
+    for titel, start in gesehen.items():
+        assert start, f"{titel}: ohne Startpunkt landet der Dialog im Programmordner"
+        assert Path(start).is_absolute() or Path(start).exists(), (titel, start)
+
+
+def test_folder_side_never_starts_in_the_installation(window, tmp_path,
+                                                      monkeypatch):
+    """Für die Ordnerseite gilt es ausnahmslos: dort gehören keine Anwenderdateien hin.
+
+    (Bei den Abbildern gibt es eine gewollte Ausnahme — passt kein
+    Benutzerordner, bietet ``default_disk_dir`` die MITGELIEFERTEN Beispiele an,
+    und die liegen naturgemäß im Programmordner.  Der Emulator macht es ebenso.)
+    """
+    from app import paths
+
+    # Eine Installation nachbauen, den Datenordner daneben.
+    prog = tmp_path / "prog"
+    (prog / "bin").mkdir(parents=True)
+    (prog / "app").mkdir()
+    (prog / "share" / "k1520emu").mkdir(parents=True)
+    monkeypatch.setenv(paths.ENV_HOME, str(prog))
+    monkeypatch.setenv(paths.ENV_DATA, str(tmp_path / "daten"))
+
+    gesehen = _dialog_startpunkte(window, monkeypatch)
+    window._ordner_dialog()
+
+    start = Path(gesehen["Ordner wählen"]).resolve()
+    assert prog.resolve() not in start.parents and start != prog.resolve(), start
+
+
+def test_image_dialogs_start_where_the_emulator_looks(window, monkeypatch):
+    """Abbilder: derselbe Ordner, den das Laufwerksfeld des Emulators anbietet."""
+    from app import paths
+
+    assert window._disketten_ordner() == str(paths.default_disk_dir())
+
+    gesehen = _dialog_startpunkte(window, monkeypatch)
+    window._oeffnen_dialog()
+    assert gesehen["Diskettenabbild öffnen"] == str(paths.default_disk_dir())
+
+
+def test_save_as_starts_next_to_the_open_disk(window, fixture_disks, monkeypatch):
+    """Eine Arbeitskopie gehört dorthin, wo das Original liegt."""
+    from app import paths
+
+    # Ohne Diskette: der Diskettenordner.
+    assert window._neben_der_diskette() == str(paths.default_disk_dir())
+
+    bild = fixture_disks / "cpa_cpa780_k5601_clock.img"
+    assert window.open_image(bild)
+    gesehen = _dialog_startpunkte(window, monkeypatch)
+    window._speichern_unter_dialog()
+    assert Path(gesehen["Speichern unter"]).resolve() == bild.parent.resolve()
+
+
+def test_folder_dialog_starts_in_the_users_file_directory(window, tmp_path,
+                                                          monkeypatch):
+    """Ordnerseite: der Dateiordner des Anwenders — und danach der gewählte."""
+    from app import paths
+
+    assert window.folder_view.folder is None
+    assert window._ordner_startpunkt() == str(paths.default_folder_dir())
+
+    # Sobald einer gewählt ist, geht der nächste Dialog dort auf.
+    window.folder_view.set_folder(tmp_path)
+    assert window._ordner_startpunkt() == str(tmp_path)
+
+    gesehen = _dialog_startpunkte(window, monkeypatch)
+    window._ordner_dialog()
+    assert gesehen["Ordner wählen"] == str(tmp_path)

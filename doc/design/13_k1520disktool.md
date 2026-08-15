@@ -1675,3 +1675,61 @@ Vier Festlegungen:
    Eintrag im Handbuch fällt damit sofort auf — und ein im Handbuch versprochenes,
    das es nicht gibt, ebenso. Das ist der eigentliche Grund, die Hilfe im Baum zu
    halten statt auf einer Webseite.
+
+### 20.8 Arbeitsverzeichnisse — dieselben wie beim Emulator (2026-08-15)
+
+Alle Dateidialoge des DiskTool gingen mit leerem Startpfad auf. Für Qt heißt das
+*Arbeitsverzeichnis*, und das ist beim installierten Programm der
+**Installationsordner**: dort suchte der Anwender seine Abbilder, dorthin wollte
+das Werkzeug seine Dateien schreiben. Der Emulator macht es längst richtig
+(`app/ui/drive_widget.py` → `paths.default_disk_dir()`); das DiskTool importierte
+`app.paths` überhaupt nicht.
+
+Beide Programme lösen jetzt über **dieselbe** Stelle auf und zeigen damit auf
+dieselben Ordner:
+
+| Dialog | Startpunkt |
+|--------|-----------|
+| Abbild öffnen · Neue Diskette · Bootabbild auswählen | `paths.default_disk_dir()` — identisch zum Laufwerksfeld des Emulators |
+| Speichern unter… | neben der **geöffneten** Diskette; ohne Diskette der Diskettenordner |
+| Archivieren · Bootabbild sichern | unverändert neben der geöffneten Diskette (Vorschlag mit Namen) |
+| Ordner wählen · Zielordner wählen | der bereits gewählte Ordner, sonst `paths.default_folder_dir()` |
+
+**Der Dateiordner ist neu** (`paths.user_files_dir()` → `<Datenordner>/Dateien`).
+Er ist das Gegenstück zu `Disketten` für die Ordnerseite und liegt aus demselben
+Grund außerhalb der Installation: dort wird geschrieben, und ein Update darf das
+nicht überbügeln. Die Trennung ist inhaltlich — hier einzelne Dateien und die
+Beiblätter, dort Abbilder ganzer Datenträger; der Kommentar an `DISKS_DIRNAME`
+sah den Platz „daneben" von Anfang an vor.
+
+Vier Festlegungen:
+
+1. **`K1520_DISKS` verschiebt den Dateiordner NICHT.** Es ist die Angabe für die
+   *Abbilder*; wer beides verschieben will, setzt `K1520_DATA`. Guard:
+   `test_env_disks_verschiebt_den_dateiordner_nicht`.
+2. **Angelegt wird nur in einer Installation.** `ensure_user_files_dir()` ist das
+   Gegenstück zu `seed_user_disks()` und trägt dieselbe Bedingung: im Quellbaum
+   geschieht nichts — dort soll kein Ordner im Heimatverzeichnis entstehen, bloß
+   weil jemand das Werkzeug einmal gestartet hat. Beides ruft
+   `app/disktool/main.py` beim Start auf, wie `app/main.py` es für den Emulator
+   tut. `--purge` des Installers räumt es mit ab, weil es `$DATADIR` als Ganzes
+   löscht. Guard: `test_dateiordner_entsteht_nur_in_einer_installation`.
+3. **`default_folder_dir()` zeigt nie in die Installation** — gibt es den
+   Dateiordner noch nicht, wird nach *oben* ausgewichen (Datenordner →
+   Dokumentenordner → Heimatverzeichnis), niemals ins Programm. Bei den
+   **Abbildern** gibt es dagegen eine gewollte Ausnahme: passt kein
+   Benutzerordner, bietet `default_disk_dir()` die *mitgelieferten* Beispiele an,
+   und die liegen naturgemäß im Programmordner — der Emulator macht es ebenso.
+   Guards: `test_startordner_weicht_nach_oben_aus_statt_in_die_installation`,
+   `test_folder_side_never_starts_in_the_installation`.
+4. **Kein Dialog ohne Startpunkt.** Das ist der eigentliche Wächter
+   (`test_every_file_dialog_gets_a_start_directory`): er ruft jeden Dateidialog
+   einmal auf und prüft, dass ein Pfad übergeben wurde. Ein leerer Startpfad ist
+   genau der Fehler, um den es hier ging — und er fällt beim Ansehen nicht auf,
+   weil im Quellbaum das Arbeitsverzeichnis zufällig der richtige Ort ist.
+
+`python3 app/disktool/main.py --paths` gibt die ganze Auflösung aus (wie beim
+Emulator, und wie dort **vor** den Qt-Importen — die Auskunft muss auch dann
+kommen, wenn genau das fehlt, wonach gefragt wird). `describe()` nennt seitdem
+beide Arbeitsverzeichnisse; das ist die erste Frage, wenn ein Dialog am falschen
+Ort aufgeht.

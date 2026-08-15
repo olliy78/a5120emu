@@ -44,6 +44,7 @@ from PySide6.QtWidgets import (
     QSplitter, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
+from app import paths
 from app.disktool.archive import create_archive
 
 from app.core_binding.k1520disk import DiskTool, K1520DiskError, filesystems
@@ -839,7 +840,7 @@ class MainWindow(QMainWindow):
         if not self._darf_verwerfen():
             return
         pfad, _ = QFileDialog.getOpenFileName(
-            self, "Diskettenabbild öffnen", "",
+            self, "Diskettenabbild öffnen", self._disketten_ordner(),
             "Diskettenabbilder (*.hfe *.dmk *.img);;Alle Dateien (*)")
         if pfad:
             self.open_image(pfad)
@@ -852,7 +853,7 @@ class MainWindow(QMainWindow):
         if not ok:
             return
         pfad, _ = QFileDialog.getSaveFileName(
-            self, "Neue Diskette anlegen", "",
+            self, "Neue Diskette anlegen", self._disketten_ordner(),
             "HFE-Abbild (*.hfe);;DMK-Abbild (*.dmk);;Sektorabbild (*.img)")
         if not pfad:
             return
@@ -889,7 +890,7 @@ class MainWindow(QMainWindow):
             return None
 
         pfad, _ = QFileDialog.getOpenFileName(
-            self, "Bootabbild auswählen", "",
+            self, "Bootabbild auswählen", self._disketten_ordner(),
             "Bootabbild (*.bin);;Alle Dateien (*)")
         return pfad or False
 
@@ -901,7 +902,8 @@ class MainWindow(QMainWindow):
         if not any(f.name == self.tool.filesystem and f.type == "udos"
                    for f in filesystems()):
             filter_ += ";;Sektorabbild (*.img)"
-        pfad, _ = QFileDialog.getSaveFileName(self, "Speichern unter", "", filter_)
+        pfad, _ = QFileDialog.getSaveFileName(
+            self, "Speichern unter", self._neben_der_diskette(), filter_)
         if pfad:
             self.save_as(pfad)
 
@@ -984,8 +986,40 @@ class MainWindow(QMainWindow):
                 return
         self.set_read_only(an)
 
+    # ── Wo die Dialoge aufgehen (§20.8) ─────────────────────────────────────
+    #
+    # Nie im Installationsordner: dort liegt das Programm, nicht die Arbeit des
+    # Anwenders.  Aufgelöst wird ausschließlich über `app.paths` — dieselbe
+    # Stelle, die auch der Emulator benutzt, damit beide Programme auf dieselben
+    # Ordner zeigen.
+
+    def _disketten_ordner(self) -> str:
+        """Startpunkt für Abbild-Dialoge — wie das Laufwerksfeld des Emulators."""
+        return str(paths.default_disk_dir())
+
+    def _neben_der_diskette(self) -> str:
+        """Startpunkt für „Speichern unter…": neben der geöffneten Diskette.
+
+        Eine Arbeitskopie gehört dorthin, wo das Original liegt; nur ohne
+        geöffnete Diskette fällt es auf den Diskettenordner zurück.
+        """
+        if self.tool is not None:
+            return str(Path(self.tool.path).parent)
+        return self._disketten_ordner()
+
+    def _ordner_startpunkt(self) -> str:
+        """Startpunkt für die Ordnerwahl.
+
+        Der bereits gewählte Ordner, sonst der Dateiordner des Anwenders
+        (:func:`app.paths.default_folder_dir`).
+        """
+        if self.folder_view.folder:
+            return str(self.folder_view.folder)
+        return str(paths.default_folder_dir())
+
     def _ordner_dialog(self) -> None:
-        pfad = QFileDialog.getExistingDirectory(self, "Ordner wählen")
+        pfad = QFileDialog.getExistingDirectory(
+            self, "Ordner wählen", self._ordner_startpunkt())
         if pfad:
             self.folder_view.set_folder(pfad)
 
@@ -1021,7 +1055,8 @@ class MainWindow(QMainWindow):
     def _ziel_ordner(self) -> Optional[str]:
         if self.folder_view.folder:
             return str(self.folder_view.folder)
-        pfad = QFileDialog.getExistingDirectory(self, "Zielordner wählen")
+        pfad = QFileDialog.getExistingDirectory(
+            self, "Zielordner wählen", self._ordner_startpunkt())
         if pfad:
             self.folder_view.set_folder(pfad)
             return pfad

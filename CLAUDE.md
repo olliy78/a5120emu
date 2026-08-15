@@ -533,6 +533,21 @@ Was beim Weiterarbeiten zu wissen ist:
   mit `defaultStyleSheet`.  Zwei Wächter halten Handbuch und Oberfläche zusammen:
   die Tabelle „Tastenkürzel" wird in BEIDE Richtungen gegen die verdrahteten
   `QAction`s geprüft.
+- **Arbeitsverzeichnisse = die des Emulators (2026-08-15, §20.8).**  Alle Dateidialoge
+  des DiskTool gingen mit LEEREM Startpfad auf — für Qt das Arbeitsverzeichnis, beim
+  installierten Programm also der Installationsordner.  Aufgelöst wird jetzt über
+  `app.paths` (dieselbe Stelle wie beim Emulator): Abbilder → `default_disk_dir()`,
+  Ordnerseite → **`default_folder_dir()`** = neu `user_files_dir()`
+  (`<Datenordner>/Dateien`, Gegenstück zu `Disketten`), „Speichern unter" → neben der
+  offenen Diskette.  Drei Fallen: **(1)** `K1520_DISKS` meint nur die ABBILDER und
+  verschiebt den Dateiordner nicht (dafür `K1520_DATA`).  **(2)** `ensure_user_files_dir()`
+  legt nur in einer INSTALLATION an — wie `seed_user_disks()`; im Quellbaum darf kein
+  Ordner im Heimatverzeichnis entstehen.  Beides ruft `app/disktool/main.py` beim Start.
+  **(3)** „Nie in der Installation" gilt für die ORDNERseite; bei den Abbildern fällt
+  `default_disk_dir()` bewusst auf die mitgelieferten Beispiele zurück, und die liegen
+  dort.  Wächter: `test_every_file_dialog_gets_a_start_directory` (kein Dialog ohne
+  Startpunkt — im Quellbaum faellt der Fehler sonst nicht auf, weil das
+  Arbeitsverzeichnis zufaellig stimmt).
 - **Diskeditor — die Diskette als Scheibe (2026-08-13, `doc/design/13_k1520disktool.md` §19).**
   `Diskette ▸ Diskeditor` (Strg+E) → `app/disktool/ui/disk_editor.py`: zwei Scheiben
   (Spur 0 **außen**, Sektor 0 bei **12 Uhr**, Seite 1 gespiegelt), Sektor grün/rot,

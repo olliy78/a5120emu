@@ -358,6 +358,13 @@ für die häufigen Wege und lässt sich unter *Ansicht ▸ Symbolleiste* ausblen
 Größe, Leisten, Übertragungsart und die zuletzt geöffneten Abbilder merkt sich das
 Fenster bis zum nächsten Start.
 
+**Arbeitsverzeichnisse wie beim Emulator.** Die Dateidialoge gehen im
+Dokumentenordner auf, nicht im Installationsordner: `K1520emu/Disketten` für die
+Abbilder, `K1520emu/Dateien` für die Ordnerseite (die beim Start bereits darauf
+zeigt).  `K1520_DATA` verschiebt beides, `K1520_DISKS` nur die Abbilder;
+`python3 app/disktool/main.py --paths` gibt die ganze Auflösung aus — die erste
+Frage, wenn ein Dialog am falschen Ort aufgeht.
+
 **F1 öffnet das Handbuch** — links das Inhaltsverzeichnis, oben ein Suchfeld. Es ist
 eine gewöhnliche Markdown-Datei, `app/disktool/help/handbuch.md`; wer etwas ergänzen
 will, ändert sie und startet neu, ohne Code anzufassen.
