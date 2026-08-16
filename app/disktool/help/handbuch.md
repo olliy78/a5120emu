@@ -188,8 +188,10 @@ geschrieben. So bringt man ein Abbild zurück auf einen Datenträger.
 
 Zuerst kommt die Rückfrage, denn hier geht kein Abbild verloren, sondern eine
 Diskette: **ihr bisheriger Inhalt ist danach fort.** Dann wird das Laufwerk
-gewählt, und die Spuren gehen im Hintergrund hinaus — jede geschrieben *und*
-zurückgelesen. Passt das Abbild nicht in die eingestellte Laufwerksgeometrie
+gewählt — und dann läuft es **im Hintergrund**: die Statuszeile zählt die
+geschriebenen Spuren mit, der Streifen meldet das Ende. Man kann derweil
+weiterarbeiten; nur das Laufwerk ist belegt, und die Diskette darf bis zum Ende
+nicht entnommen werden. Jede Spur wird geschrieben *und* zurückgelesen. Passt das Abbild nicht in die eingestellte Laufwerksgeometrie
 (mehr Spuren oder Seiten, als das Laufwerk hat), wird **gar nichts** geschrieben;
 eine halb überschriebene Diskette wäre das schlechteste Ergebnis.
 

@@ -952,8 +952,32 @@ Drei Festlegungen:
 3. **Unbekannte Spuren der Quelle bleiben liegen.**  Ist die Quelle selbst ein
    Laufwerk, tragen sie bedeutungslose Bytes; sie zu kopieren schriebe Müll.
 
+**Geschrieben wird im Hintergrund — ohne Meldungsfenster.**  `write_to_physical` stellt
+die Spuren nur als geändert ein; hinaus schreibt sie der Arbeitsfaden (§7), und darauf
+zu warten gäbe es keinen Grund.  Ein modaler Fortschrittsdialog hielte die Oberfläche
+für Minuten an, ohne etwas zu gewinnen.  Stattdessen:
+
+* die **Statuszeile** zählt mit (`Diskette wird beschrieben: 37 von 160 Spuren`) —
+  gespeist vom selben 500-ms-Zeitgeber wie die geöffnete physische Diskette;
+* der **Streifen** meldet Beginn („darf bis zum Ende nicht entnommen werden") und Ende;
+* **Laden und Überschreiben sind gesperrt**, solange es läuft — das Laufwerk ist belegt;
+* **das Fenster lässt sich nicht arglos schliessen**: läuft noch etwas, fragt
+  `closeEvent` nach.  Eine halb beschriebene Diskette ist unbrauchbar, und man sieht
+  dem Fenster nicht an, dass hinten noch etwas läuft.
+
 Die Sitzung gehört **nicht** zum offenen Werkzeug — sie ist nur das Ziel dieses einen
-Vorgangs und wird danach wieder beendet.  C-ABI: `k1520d_write_to_physical`.
+Vorgangs und wird beendet, sobald keine Spur mehr aussteht (`_schreib_fertig`).
+C-ABI: `k1520d_write_to_physical`.
+
+> **Der Fortschritt muss zählen, was die Arbeit tut.**  `mit_fortschritt` las immer
+> `tracks_known` — die *gelesenen* Spuren.  Beim Schreiben rührt sich das nicht (es
+> geht aus dem Speicher hinaus), also stand der Balken still; und die Beschriftung war
+> fest auf „Spuren für die Formaterkennung" verdrahtet, was über einem Schreibvorgang
+> schlicht falsch ist.  Der Aufrufer gibt jetzt beides an: `zaehler` (woran der
+> Fortschritt abzulesen ist — beim Schreiben `verifies_done`, denn erst das
+> Prüf-Lesen macht eine Spur fertig) und `was` (das Substantiv der Beschriftung).
+> Betroffen war auch *Diskette neu beschreiben*, dessen Balken aus demselben Grund
+> stillstand.
 Wächter: `test_eine_datei_laesst_sich_auf_eine_echte_diskette_schreiben` (schreibt eine
 UDOS-Diskette auf ein Laufwerk, das eine CP/A-Diskette trägt, und liest sie zurück),
 `test_ueberschreiben_verweigert_eine_zu_kleine_diskette`,

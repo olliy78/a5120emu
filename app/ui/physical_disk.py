@@ -338,7 +338,9 @@ class PhysicalDiskDialog(QDialog):
 def mit_fortschritt(parent, sitzung: PhysicalSession, arbeit, *,
                     titel: str = "Physisches Laufwerk",
                     text: str = "Diskette wird gelesen…",
-                    ziel: Optional[int] = None):
+                    ziel: Optional[int] = None,
+                    was: str = "Spuren gelesen",
+                    zaehler=None):
     """Eine **lange** Arbeit am echten Laufwerk mit Fortschrittsanzeige ausführen.
 
     Am echten Laufwerk dauert jede Spur 0,5–0,8 s.  Im Oberflächenfaden wäre das ein
@@ -351,9 +353,15 @@ def mit_fortschritt(parent, sitzung: PhysicalSession, arbeit, *,
         ziel: erwartete Spurzahl **dieser** Arbeit.  Beim Öffnen sind das die
             Sondenspuren der Formaterkennung (acht), nicht die 160 der Diskette —
             ein Balken, der gegen 160 läuft und bei 8 stehenbleibt, sagt das
-            Falsche.  Wird das Ziel überschritten (die Stichprobe reichte nicht, es
-            folgt die Vollmessung), stellt die Anzeige selbsttätig auf die ganze
-            Diskette um.  ``None`` = ganze Diskette.
+            Falsche.  ``None`` = ganze Diskette.
+        was: was gezählt wird, für die Beschriftung („Spuren gelesen",
+            „Spuren geschrieben").  Der Text gehört zum ZÄHLER, nicht zur
+            Funktion — sonst steht über einem Schreibvorgang „für die
+            Formaterkennung".
+        zaehler: ``stats -> Zahl``; woran der Fortschritt abzulesen ist.  Vorgabe
+            sind die **gelesenen** Spuren.  Beim Schreiben ändern die sich nicht
+            (geschrieben wird aus dem Speicher) — dort muss der Zähler auf die
+            zurückgeschriebenen Spuren zeigen, sonst steht der Balken still.
 
     Returns:
         ``(ergebnis, fehler)`` — genau eines von beiden ist ``None``.  Bricht der
@@ -373,11 +381,13 @@ def mit_fortschritt(parent, sitzung: PhysicalSession, arbeit, *,
             ergebnis["fehler"] = e
 
     faden = threading.Thread(target=lauf, name="gw-arbeit", daemon=True)
+    if zaehler is None:
+        zaehler = lambda st: st.tracks_known      # noqa: E731
     st = sitzung.stats()
     ganze_diskette = st.tracks_total if st else 0
-    # Von wo aus gezählt wird: schon gelesene Spuren zählen nicht als Fortschritt
-    # DIESER Arbeit (beim Öffnen ist der Stand 0, beim Speichern selten).
-    beginn = st.tracks_known if st else 0
+    # Von wo aus gezählt wird: was VOR dieser Arbeit schon geschafft war, ist kein
+    # Fortschritt DIESER Arbeit.
+    beginn = zaehler(st) if st else 0
     gesamt = ziel if ziel else ganze_diskette
 
     dlg = QProgressDialog(text, "Abbrechen", 0, gesamt or 0, parent)
@@ -396,23 +406,20 @@ def mit_fortschritt(parent, sitzung: PhysicalSession, arbeit, *,
             return
         s = sitzung.stats()
         if s is not None:
-            getan = max(0, s.tracks_known - beginn)
+            getan = max(0, zaehler(s) - beginn)
             if ziel and getan <= ziel:
-                # Phase 1: die Sondenspuren der Formaterkennung — hier ist das Ziel
-                # bekannt, also gibt es einen echten Balken.
+                # Solange das Ziel bekannt ist, gibt es einen echten Balken.
                 dlg.setMaximum(ziel)
                 dlg.setValue(getan)
-                dlg.setLabelText(f"{text}\n{getan} von {ziel} Spuren "
-                                 "für die Formaterkennung")
+                dlg.setLabelText(f"{text}\n{getan} von {ziel} {was}")
             else:
-                # Phase 2: Verzeichnis (und was das Dateisystem sonst braucht).  Wie
-                # viele Spuren das werden, weiss vorher niemand — bei UDOS liegt zu
-                # jeder Datei ein Kopfsektor irgendwo auf der Diskette.  Deshalb ein
-                # unbestimmter Balken statt einer erfundenen Zielzahl; die frühere
-                # Umschaltung auf die Spurzahl der Diskette („10 von 160") behauptete
-                # eine Vollmessung, die gar nicht lief.
+                # Darüber hinaus weiss niemand, wie viele es werden (beim Öffnen: das
+                # Verzeichnis, bei UDOS je Datei ein Kopfsektor irgendwo).  Deshalb
+                # ein UNBESTIMMTER Balken statt einer erfundenen Zielzahl — eine
+                # Umschaltung auf die Spurzahl der Diskette behauptete eine
+                # Vollmessung, die gar nicht lief.
                 dlg.setMaximum(0)
-                dlg.setLabelText(f"Verzeichnis wird gelesen…\n{getan} Spuren geholt")
+                dlg.setLabelText(f"{text}\n{getan} {was}")
         if dlg.wasCanceled() and not abgebrochen["ja"]:
             # Der Kern löst jeden Wartenden; die Arbeit endet dann von selbst.
             abgebrochen["ja"] = True

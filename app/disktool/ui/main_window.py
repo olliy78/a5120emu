@@ -79,6 +79,10 @@ class MainWindow(QMainWindow):
     _physisch = None
     #: Welches Laufwerk diese Sitzung bedient (für Kopfzeile und Fenstertitel).
     _physisch_laufwerk = "a"
+    #: Laufender Schreibvorgang auf eine echte Diskette (None = keiner).  Er ist
+    #: UNABHAENGIG von der geöffneten Diskette: die ist nur die Quelle.
+    _schreib_sitzung = None
+    _schreib_gesamt = 0
 
     def __init__(self, image: Optional[str] = None, folder: Optional[str] = None):
         super().__init__()
@@ -529,7 +533,13 @@ class MainWindow(QMainWindow):
         # aufgehobenen Schreibschutz: der schützt die geöffnete Diskette, und die
         # wird hier nur gelesen.  Was Schutz braucht, ist die Diskette im Laufwerk —
         # dafür steht die Rückfrage.
-        self.act_physisch_schreiben.setEnabled(offen)
+        # Solange geschrieben wird, ist das Laufwerk belegt — beide Wege dorthin
+        # bleiben zu, bis es fertig ist.
+        laeuft = self._schreib_sitzung is not None
+        self.act_physisch_schreiben.setEnabled(offen and not laeuft)
+        # Laden bleibt sonst IMMER möglich — es ist der Weg, überhaupt eine Diskette
+        # zu bekommen; nur während des Schreibens ist das Laufwerk belegt.
+        self.act_physisch.setEnabled(not laeuft)
 
         self._schutz_anzeigen()
 
@@ -597,6 +607,11 @@ class MainWindow(QMainWindow):
 
         500 ms genügen: eine Spur dauert 0,5–0,8 s, häufiger gäbe es nichts Neues.
         """
+        # Zwei Sitzungsarten, ein Zeitgeber: die geöffnete physische Diskette und ein
+        # laufender Schreibvorgang.  Beide brauchen dieselbe Nachführung, und zwei
+        # Zeitgeber nebeneinander wären zwei Stellen, die aus dem Tritt geraten können.
+        if self._schreib_tick():
+            return
         sitzung = self._physisch
         if sitzung is None:
             self._physisch_uhr.stop()
@@ -607,6 +622,66 @@ class MainWindow(QMainWindow):
         self._details_nachtragen()
         self._befund_auffrischen()
         self._pruefe_defekte()
+
+    def _schreib_tick(self) -> bool:
+        """Einen laufenden Schreibvorgang nachführen.
+
+        Returns:
+            True, solange geschrieben wird — dann gehört die Statuszeile ihm.
+        """
+        sitzung = self._schreib_sitzung
+        if sitzung is None:
+            return False
+        st = sitzung.stats()
+        if st is None:                      # Sitzung fort — nichts mehr zu melden
+            self._schreib_fertig(None)
+            return True
+
+        gesamt = self._schreib_gesamt
+        self.st_physisch.setText(
+            f"Diskette wird beschrieben: {min(st.verifies_done, gesamt)} von "
+            f"{gesamt} Spuren")
+        self.st_physisch.show()
+
+        # Fertig ist es, wenn keine Spur mehr aussteht UND gerade nichts läuft.
+        # Beides ist nötig: `tracks_dirty` fällt schon vor dem Prüf-Lesen.
+        if st.tracks_dirty == 0 and not st.busy:
+            self._schreib_fertig(st)
+        return True
+
+    def _schreib_fertig(self, st) -> None:
+        """Schreibvorgang abschliessen: Sitzung beenden und Bescheid geben."""
+        sitzung = self._schreib_sitzung
+        self._schreib_sitzung = None
+        n = self._schreib_gesamt
+        self._schreib_gesamt = 0
+        self.st_physisch.clear()
+        self.st_physisch.hide()
+
+        schaden = ""
+        if sitzung is not None:
+            schaden = sitzung.defect_tracks
+            try:
+                sitzung.close()
+            except Exception:                        # noqa: BLE001
+                pass
+        if not self._physisch:
+            self._physisch_uhr.stop()
+        self._aktionen_pruefen()
+
+        if schaden:
+            # Kein Meldungsfenster im Rücken des Bedieners — aber auch nichts, was
+            # sich wegscrollt: eine Schadstelle ist eine dauerhafte Auskunft.
+            self.log(f"SCHREIBFEHLER auf Spur {schaden}", stufe="fehler")
+            self.info_bar.zeige(
+                f"Die Diskette liess sich auf Spur {schaden} nicht beschreiben — "
+                "das Speicherabbild ist unversehrt.  Mit einer anderen Diskette "
+                "noch einmal versuchen.", "fehler")
+            return
+        self.log(f"{n} Spuren geschrieben und fehlerfrei zurückgelesen")
+        self.info_bar.zeige(
+            f"Die Diskette ist beschrieben: {n} Spuren, fehlerfrei zurückgelesen.",
+            "hinweis")
 
     def _befund_auffrischen(self) -> None:
         """Den Stichproben-Vorbehalt aufheben, sobald die ganze Diskette gelesen ist.
@@ -797,7 +872,8 @@ class MainWindow(QMainWindow):
             self, sitzung, oeffnen_und_verzeichnis,
             text="Format wird erkannt…",
             # Ziel sind die Sondenspuren, nicht die ganze Diskette (§11.2a).
-            ziel=DiskTool.probe_track_count(sitzung.num_cyls, sitzung.num_heads))
+            ziel=DiskTool.probe_track_count(sitzung.num_cyls, sitzung.num_heads),
+            was="Spuren für die Formaterkennung")
 
         if werkzeug is None:
             self._close_physisch()
@@ -870,7 +946,12 @@ class MainWindow(QMainWindow):
         _, fehler = mit_fortschritt(
             self, sitzung, lambda: sitzung.sync.flush(600_000),
             titel="Diskette neu beschreiben",
-            text="Das Abbild wird geschrieben und zurückgelesen…")
+            text="Das Abbild wird geschrieben und zurückgelesen…",
+            ziel=n, was="Spuren geschrieben",
+            # Geschrieben wird aus dem Speicher — `tracks_known` ruehrt sich dabei
+            # nicht, und der Balken stuende still.  Gezaehlt wird das Prueflesen:
+            # erst danach gilt eine Spur als geschrieben (§7.1).
+            zaehler=lambda st: st.verifies_done)
         if fehler is not None:
             self._fehler("Diskette neu beschreiben", str(fehler))
             return
@@ -952,36 +1033,26 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            try:
-                n = self.tool.write_to_physical(sitzung)
-            except K1520DiskError as e:
-                self._fehler("Physische Diskette überschreiben", str(e))
-                return
-            self.log(f"{n} Spuren werden auf die eingelegte Diskette geschrieben")
+            n = self.tool.write_to_physical(sitzung)
+        except K1520DiskError as e:
+            self._fehler("Physische Diskette überschreiben", str(e))
+            sitzung.close()
+            return
 
-            _, fehler = mit_fortschritt(
-                self, sitzung, lambda: sitzung.sync.flush(900_000),
-                titel="Physische Diskette überschreiben",
-                text="Das Abbild wird geschrieben und zurückgelesen…",
-                ziel=n)
-            if fehler is not None:
-                self._fehler("Physische Diskette überschreiben", str(fehler))
-                return
-            schaden = sitzung.defect_tracks
-            if schaden:
-                self._fehler("Physische Diskette überschreiben",
-                             sitzung.defekt_meldung(schaden))
-                return
-            QMessageBox.information(
-                self, "Physische Diskette überschreiben",
-                f"{n} Spuren wurden geschrieben und fehlerfrei zurückgelesen.")
-        finally:
-            # Die Sitzung gehört NICHT zum offenen Werkzeug — sie war nur das Ziel
-            # dieses einen Vorgangs und wird hier auch wieder beendet.
-            try:
-                sitzung.close()
-            except Exception:                        # noqa: BLE001
-                pass
+        # **Und das war's schon.**  Die Spuren stehen jetzt als „geändert" im Medium
+        # des Laufwerks; der Arbeitsfaden schreibt sie von selbst hinaus (§7) — es
+        # gibt hier nichts zu warten und darum auch kein Meldungsfenster.  Wie weit
+        # er ist, sagt die Statuszeile; fertig meldet `_schreib_tick`.
+        self._schreib_sitzung = sitzung
+        self._schreib_gesamt  = n
+        self._physisch_uhr.start()
+        self._schreib_tick()          # sofort, nicht erst nach dem ersten Intervall
+        self._aktionen_pruefen()
+        self.log(f"{n} Spuren werden auf die eingelegte Diskette geschrieben")
+        self.info_bar.zeige(
+            f"Die Diskette im Laufwerk {wahl.get('drive', 'a').upper()} wird "
+            f"beschrieben ({n} Spuren) — sie darf bis zum Ende nicht entnommen werden.",
+            "hinweis")
 
     def _close_physisch(self) -> None:
         """Laufende Sitzung am echten Laufwerk beenden (schreibt Ausstehendes zurück)."""
@@ -1602,9 +1673,26 @@ class MainWindow(QMainWindow):
     # ── Schließen ───────────────────────────────────────────────────────────
 
     def closeEvent(self, event):  # noqa: N802
+        # Ein laufender Schreibvorgang ist der einzige Grund, das Schliessen
+        # aufzuhalten: eine halb beschriebene Diskette ist unbrauchbar, und der
+        # Bediener sieht dem Fenster nicht an, dass hinten noch etwas laeuft.
+        if self._schreib_sitzung is not None:
+            st = self._schreib_sitzung.stats()
+            offen_spuren = st.tracks_dirty if st else 0
+            if QMessageBox.question(
+                    self, "Es wird noch geschrieben",
+                    f"Auf die Diskette im Laufwerk sind noch {offen_spuren} Spuren "
+                    "zu schreiben.  Wird jetzt beendet, bleibt sie unvollständig.\n\n"
+                    "Trotzdem beenden?",
+                    QMessageBox.Cancel | QMessageBox.Ok,
+                    QMessageBox.Cancel) != QMessageBox.Ok:
+                event.ignore()
+                return
         if not self._darf_verwerfen():
             event.ignore()
             return
         self._zustand_sichern()
+        if self._schreib_sitzung is not None:
+            self._schreib_fertig(None)
         self._close_tool()
         event.accept()

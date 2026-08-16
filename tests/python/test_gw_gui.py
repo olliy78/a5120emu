@@ -535,6 +535,76 @@ def test_ueberschreiben_fragt_vorher_und_bricht_bei_nein_ab(app, hfe, monkeypatc
 
 
 
+def test_ueberschreiben_laeuft_im_hintergrund(app, hfe, tmp_path, monkeypatch):
+    """Der Klick kehrt sofort zurück — geschrieben wird nebenher.
+
+    Es gibt hier **nichts zu warten**: `write_to_physical` stellt die Spuren nur als
+    geändert ein, hinausgeschrieben werden sie vom Arbeitsfaden (§7).  Ein modales
+    Fenster davorzusetzen hielte die Oberfläche für Minuten an, ohne etwas zu
+    gewinnen.  Die Statuszeile zählt mit, der Streifen meldet Beginn und Ende.
+    """
+    import shutil
+
+    from app.gw import Sync, TrackWorker
+    from app.disktool.ui.main_window import MainWindow as DiskToolWindow
+    from app.ui import physical_disk
+    from app.ui.physical_disk import PhysicalSession
+    from gw_fake import HfeDevice
+
+    ziel = tmp_path / "ziel.hfe"
+    shutil.copy(hfe, ziel)
+    geraet = HfeDevice(ziel)
+    sync = Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
+                writable=True, read_ahead=False)
+    worker = TrackWorker(sync, geraet, poll_ms=10)
+    worker.start()
+    sitzung = PhysicalSession(sync, worker, geraet, drive="a", writable=True,
+                              cell_rate_kbps=250, num_cyls=geraet.num_cyls,
+                              num_heads=geraet.num_heads)
+    monkeypatch.setattr(physical_disk.PhysicalSession, "start",
+                        classmethod(lambda cls, **kw: sitzung))
+    monkeypatch.setattr(physical_disk.PhysicalDiskDialog, "frage",
+                        classmethod(lambda cls, parent=None, **kw: {
+                            "drive": "a", "cell_rate_kbps": 250,
+                            "num_cyls": geraet.num_cyls,
+                            "num_heads": geraet.num_heads,
+                            "writable": True, "read_ahead": False}))
+    monkeypatch.setattr("app.disktool.ui.main_window.QMessageBox.question",
+                        lambda *a, **k: QMessageBox.Ok)
+    # Ein Meldungsfenster wäre hier der Fehler — es darf keines geben.
+    fenster_auf = []
+    for name in ("information", "warning", "critical"):
+        monkeypatch.setattr(f"app.disktool.ui.main_window.QMessageBox.{name}",
+                            lambda *a, _n=name, **k: fenster_auf.append(_n))
+
+    fenster = DiskToolWindow()
+    try:
+        assert fenster.open_image(hfe)
+        fenster.act_physisch_schreiben.trigger()
+
+        assert fenster._schreib_sitzung is sitzung, "es läuft gar nichts"
+        assert fenster._physisch_uhr.isActive()
+        assert "beschrieben" in fenster.st_physisch.text(), \
+            f"Statuszeile sagt nichts: {fenster.st_physisch.text()!r}"
+        assert "Spuren" in fenster.info_bar.text()
+        # Solange es läuft, ist das Laufwerk belegt.
+        assert not fenster.act_physisch.isEnabled()
+        assert not fenster.act_physisch_schreiben.isEnabled()
+
+        assert _warte(lambda: (fenster._schreib_tick(),
+                               fenster._schreib_sitzung is None)[1], 60.0), \
+            "der Schreibvorgang wurde nie fertig"
+
+        assert fenster_auf == [], f"Meldungsfenster aufgegangen: {fenster_auf}"
+        assert "beschrieben" in fenster.info_bar.text()
+        assert fenster.st_physisch.isHidden()
+        assert fenster.act_physisch.isEnabled()
+        assert fenster.act_physisch_schreiben.isEnabled()
+    finally:
+        fenster._close_tool()
+        worker.stop()
+
+
 def test_diskeditor_oeffnet_sofort_und_waechst_mit(app, hfe, monkeypatch):
     """Der Editor darf nicht auf die ganze Diskette warten.
 
