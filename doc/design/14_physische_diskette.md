@@ -39,6 +39,7 @@ Daraus folgt der ganze Rest:
 | Nur die gebrauchten Spuren lesen | Je Spur ein **Zustand**; eine Spur ohne gültigen Inhalt löst beim Zugriff ein Lesen aus (§4, §5) |
 | Sofort dorthin, wo der Gast hinwill | **Priorität 1** (Lesen auf Anforderung) verdrängt jede Hintergrundarbeit — Spur 3 → Spur 22 ohne die Spuren dazwischen (§5) |
 | Änderungen landen zeitnah auf der Diskette | **Priorität 2**: geänderte Spuren werden zurückgeschrieben, sobald sie kurz zur Ruhe gekommen sind (§7) |
+| Schadstellen der Diskette fallen auf | Jede geschriebene Spur wird **zurückgelesen und verglichen**; erst dann gilt sie als sauber (§7.1) |
 | Das Abbild soll möglichst vollständig werden | **Priorität 3**: in Ruhephasen wird vorausgelesen (§5.3) |
 | Emulator **und** DiskTool | Die Erweiterung sitzt im `DiskMedium` — also unterhalb von beidem; beide Bibliotheken tragen dieselbe Schnittstelle (§10) |
 | Ohne Hardware baubar und testbar | Der Kern kennt den Greaseweazle **nicht**; er kennt nur Aufträge (§9, §13) |
@@ -185,7 +186,13 @@ wird von einem **fremden Arbeitsfaden**, der sich seine Aufträge abholt (§9).
 |------|---------|-----------------|----------------|
 | **1** | `Read` — Spur lesen | Zugriff auf eine unbekannte Spur (`track`/`mutableTrack`) | **ja**, der Vordergrund steht (§6) |
 | **2** | `Write` — Spur zurückschreiben | geänderte Spur, die zur Ruhe gekommen ist (§7) | nein |
+| **2** | `Verify` — eben geschriebene Spur **zurücklesen** | jeder abgeschlossene `Write` (§7.1) | nein |
 | **3** | `Readahead` — unbekannte Spur vorauslesen | niemand; entsteht, wenn sonst nichts zu tun ist (§5.3) | nein |
+
+Ein ausstehendes `Verify` kommt **vor** neuen `Write`-Aufträgen: der Kopf steht ohnehin
+schon dort, und die Spur gilt erst danach als erledigt.  Für den Arbeitsfaden ist
+`Verify` dasselbe wie `Read` — er liest und liefert Bitzellen; dass verglichen statt
+übernommen wird, entscheidet allein der Kern.
 
 Die Warteschlange ist **kein FIFO**, sondern wird bei jeder Entnahme neu bewertet.  Ein
 Prio-1-Auftrag, der eintrifft, während ein Prio-3-Auftrag ansteht, wird als nächstes
@@ -283,7 +290,89 @@ Wirklichkeit statt der Maschinenuhr:
 Damit fasst ein Schreibburst zu einem Schreibvorgang zusammen, und „zeitnah“ bleibt
 zeitnah: nach dem letzten Zugriff vergeht eine halbe Sekunde plus die Schreibdauer.
 
-Zwei Festlegungen dazu:
+### 7.1 Geschrieben ist noch nicht angekommen — das Prüf-Lesen
+
+Eine echte Diskette hat Schadstellen: Stellen, die keine Magnetisierung mehr halten.
+Beim Formatieren fängt ein **Verify-Lauf** so etwas ab — nur läuft er bei uns ins Leere:
+
+> Der Verify-Lauf des Gastsystems (`FORMAT`) liest die eben geschriebene Spur zurück
+> und vergleicht — **aus dem Speicherabbild**.  Er vergleicht also das Abbild mit sich
+> selbst und findet nie etwas.  Die Schadstelle liegt eine Schicht tiefer, auf der
+> Scheibe, und die sieht er nicht.
+
+Genau deshalb ist das zweistufige Schreiben (Abbild → Diskette) hier ein Vorteil: die
+Prüfung lässt sich **entkoppeln** und dorthin legen, wo sie hingehört — an die
+Rückführung.
+
+```
+   Gast schreibt          Rückführung (§7)            Prüf-Lesen (§7.1)
+  ─────────────►  DIRTY  ──── Write ────►  DIRTY  ──── Verify ────►  CLEAN
+                    ▲                        │                        ▲
+                    │                        │  Vergleich stimmt nicht│
+                    └────────────────────────┘                        │
+                       höchstens EINE Wiederholung                    │
+                                 │                                    │
+                                 ▼ auch die misslingt                 │
+                              DEFEKT (bleibt DIRTY, wird gemeldet) ───┘
+                                     nach `rewriteAll()` auf neuer Diskette
+```
+
+**Der Ablauf im Einzelnen:**
+
+1. Der `Write`-Auftrag ist fertig — die Spur bleibt **`Dirty`**.  Das ist die
+   entscheidende Änderung: geschrieben zu haben ist keine Aussage darüber, dass es
+   angekommen ist.
+2. Ein `Verify`-Auftrag liest dieselbe Spur zurück.
+3. Verglichen wird auf **Sektorebene**, nicht byteweise — zwei Aufnahmen derselben Spur
+   sind nie bitgleich (Schreibnaht, Drehzahl-Jitter, Startwinkel).  Geprüft werden
+   Sektorzahl und -folge, die Adressfelder, die Nutzdaten, der Anhang hinter der
+   Daten-CRC (UDOS-Kontrollblock) und **beide Prüfsummen**.  Nachlaufende Gap-Füllbytes
+   werden auf beiden Seiten abgeschnitten: wie viele davon mitgelesen wurden, hängt an
+   der Drehzahl und sagt nichts über die Gültigkeit.
+4. **Stimmt es** → die Spur wird `Clean`.  Erst hier, nirgends vorher.
+5. **Stimmt es nicht** → einmal neu schreiben und erneut prüfen
+   (`write_verify_retries`, Vorgabe 1).
+6. **Auch das misslingt** → die Spur gilt als **schadhaft**: sie bleibt im Abbild
+   `Dirty`, es wird nichts mehr versucht, und der Bediener wird gemeldet (§7.2).
+
+> **Das Zurückgelesene wird NIE ins Abbild übernommen.**  Täte man es, überschriebe ein
+> misslungener Schreibvorgang genau die Daten, die er zerstört hat — und niemand merkte
+> es je.  Der `Verify`-Zweig in `completeRead()` vergleicht und legt nichts ab; das ist
+> der ganze Unterschied zu einem gewöhnlichen `Read`.  Wächter:
+> `TrackSync.DasPruefLesenUeberschreibtDasAbbildNicht`.
+
+Ein `Verify`, das **gar nicht lesen** kann (Gerätefehler, Zeitüberschreitung), zählt wie
+ein falscher Inhalt: für die Diskette ist beides dasselbe.
+
+**Der Preis** ist die doppelte Zeit je Schreibvorgang (≈ 1,5 s statt 0,8 s je Spur;
+eine ganze Diskette zu beschreiben dauert damit ~4 min).  Abschaltbar ist es
+(`verify_writes`), Vorgabe ist **an**: eine unbemerkt verlorene Datei ist teurer als
+jede Wartezeit.
+
+### 7.2 Wenn die Diskette nicht mehr trägt
+
+Eine schadhafte Spur ist **kein Programmfehler und keine Panne des Abbilds** — das
+Abbild im Speicher ist unversehrt, nur die Scheibe nimmt es nicht mehr an.  Daraus folgt
+das Verhalten:
+
+* Die Spur bleibt **`Dirty`**.  Sie ist ja wirklich nicht geschrieben, und auf einer
+  anderen Diskette soll sie noch geschrieben werden können.
+* `flushPending()` — und damit „Speichern" — meldet **Misserfolg**, mit der Spurnummer
+  im Klartext.  Ein „gespeichert" wäre hier gelogen.
+* Der Bediener wird **einmal je Spur** gewarnt (nicht bei jedem Zeitgeber-Tick) und
+  bekommt beide Auswege genannt: das Abbild **in eine Datei** schreiben
+  („Speichern unter…") oder **eine fehlerfreie Diskette einlegen** und
+  **„Diskette neu beschreiben"** wählen.
+* `rewriteAll()` stellt daraufhin **jede bekannte Spur** erneut zum Schreiben ein und
+  löscht den Defektvermerk — auf der neuen Diskette gilt er nicht.  **Unbekannte Spuren
+  bleiben unangetastet**: sie tragen bedeutungslose Bytes, sie zu schreiben ergäbe Müll.
+  Ist das Abbild unvollständig, sagt die Oberfläche vorher, wie viele Spuren fehlen.
+
+Damit findet das Verfahren nicht nur Schäden, die vor dem Formatieren schon da waren,
+sondern auch solche, die **im Laufe der Zeit** entstehen — jeder Schreibvorgang ist
+zugleich eine Prüfung der Stelle, auf die er geht.
+
+Zwei weitere Festlegungen:
 
 * **Beim Abmelden wird gewartet.**  `unmount()`/Schließen stellt alle geänderten Spuren
   sofort ein und wartet, bis sie geschrieben sind (mit Fortschritt und Abbruchmöglichkeit).
@@ -371,6 +460,8 @@ Fünf Regeln, die den Vertrag ausmachen:
    einem Laufwerk durcheinander; `takeJob` weist ihn ab.
 2. **Der Arbeitsfaden ruft nichts anderes im Kern.**  Nur `takeJob`, `fetchWrite`,
    `completeRead`, `completeWrite`, `failJob`.  Insbesondere fasst er das Medium nicht an.
+   Ein `Verify`-Auftrag ist für ihn **dasselbe wie `Read`** — lesen und über
+   `completeRead` abliefern; was damit geschieht, entscheidet der Kern (§7.1).
 3. **Kein Auftrag wird ohne Abschluss liegengelassen.**  Wer `takeJob` bekommen hat,
    muss ihn abschließen oder scheitern lassen — sonst wartet der Vordergrund bis zur
    Frist.  Bricht der Faden weg, löst `shutdown()` alle Wartenden.
@@ -399,6 +490,8 @@ typedef struct {
     uint16_t rpm;                   /* 300 / 360 — nur für Ersatz-Spurlängen      */
     bool     writable;              /* false = die echte Diskette wird nie beschrieben */
     uint8_t  default_encoding;      /* 0 = FM, 1 = MFM (Vorschlag, s. §8.1)       */
+    bool     verify_writes;         /* jede geschriebene Spur zurücklesen (§7.1)  */
+    uint8_t  write_verify_retries;  /* Wiederholungen nach falschem Vergleich (1) */
 } K1520SyncSpec;
 
 K1520_API K1520Sync k1520s_create (const K1520SyncSpec* spec);
@@ -408,7 +501,7 @@ K1520_API void      k1520s_shutdown(K1520Sync);          /* weckt alle Wartenden
 /* ── Arbeitsfaden ─────────────────────────────────────────────────────────── */
 typedef struct {
     uint32_t id;                    /* 0 = kein Auftrag                          */
-    uint8_t  kind;                  /* 0 = Read, 1 = Write                       */
+    uint8_t  kind;                  /* 1 = Read, 2 = Write, 3 = Stop, 4 = Verify */
     uint8_t  cyl, head, prio;
 } K1520SyncJob;
 
@@ -423,11 +516,17 @@ K1520_API void k1520s_fail_job(K1520Sync, uint32_t id, const char* msg);
 /* ── Anzeige ──────────────────────────────────────────────────────────────── */
 typedef struct {
     uint16_t tracks_total, tracks_known, tracks_dirty, tracks_failed;
-    uint32_t reads_done, writes_done, errors;
+    uint16_t tracks_defect;                    /* schadhaft — s. §7.2            */
+    uint32_t reads_done, writes_done;
+    uint32_t verifies_done, verify_failed;     /* Prüf-Lesen (§7.1)              */
+    uint32_t errors;
     uint8_t  busy_kind, busy_cyl, busy_head;   /* was gerade läuft (255 = nichts) */
 } K1520SyncStats;
 K1520_API bool        k1520s_stats(K1520Sync, K1520SyncStats* out);
 K1520_API const char* k1520s_last_error(K1520Sync);
+/* Schadstellen und der Weg heraus (§7.2) */
+K1520_API int         k1520s_defect_tracks(K1520Sync, char* buf, int len);
+K1520_API int         k1520s_rewrite_all(K1520Sync);
 
 /* ── Anbinden ─────────────────────────────────────────────────────────────── */
 K1520_API bool      k1520_mount_physical(K1520Handle, int drive, K1520Sync, bool wp);
@@ -506,6 +605,8 @@ Programmen dasselbe.
 | `PhysicalDiskDialog` | Laufwerk am Kabel (`a`/`b`/`0`…`3`), Zellrate (250/500), Vorauslesen, **Schreiben — ohne Haken** |
 | `PhysicalSession` | hält Sync **und** Arbeitsfaden zusammen; `close()` schreibt Ausstehendes zurück, hält den Faden an und gibt erst dann den Synchronisierer frei (diese Reihenfolge ist Pflicht) |
 | `mit_fortschritt()` | führt eine lange Arbeit im Arbeitsfaden aus und zeigt dabei den Füllstand (`QProgressDialog` mit Abbruch) |
+| `neue_defekte()` / `defekt_meldung()` | Schadstellen **einmal je Spur** melden, mit beiden Auswegen im Text (§7.2) |
+| `rewrite_all()` | „Diskette neu beschreiben" — alles Bekannte erneut einstellen |
 
 ### 12.1 Emulator
 
@@ -519,6 +620,10 @@ vierter Knopf **„Physisch…"**.  Danach:
   eigenen Zeitgeber.
 * **Auswerfen** beendet die Sitzung (Wartecursor, weil das Zurückschreiben dauern kann)
   und hängt danach aus.
+* Bei einer **Schadstelle** (§7.2) wird die Füllstandszeile rot, ein Meldungsfenster
+  nennt die Spur und beide Auswege, und der Knopf **„Diskette neu beschreiben"**
+  erscheint.  Er ist ohnehin nur da, wenn schreibend eingelegt wurde — ohne
+  Schreibrecht gibt es nichts zurückzuschreiben.
 * Eine physische Diskette steht **nicht** in `get_mounts()` und wird von `remount_all()`
   nicht angefasst: sie hat keinen Pfad, und ihr Sync-Handle ist nach dem Einlegen
   verbraucht.  Beim Fensterschließen räumt `close_physical_sessions()` auf.
@@ -535,6 +640,13 @@ Danach ist die Diskette eine Diskette wie jede andere; der Kopf nennt sie
 `_close_tool()` schließt **erst das Werkzeug, dann die Sitzung** — `~DiskImage`
 schreibt Ausstehendes noch über den Arbeitsfaden zurück und löst sich erst danach vom
 Medium.  Ein danach geöffnetes Abbild lässt das echte Laufwerk also frei.
+
+**„Speichern" bedeutet hier mehr als sonst:** es wartet, bis jede geänderte Spur
+geschrieben **und zurückgelesen** ist (§7.1) — mit Fortschrittsanzeige, weil das
+dauert.  Scheitert es an einer Schadstelle, nennt die Meldung die Spur, und der Knopf
+**„Diskette neu beschreiben"** wird sichtbar.  Er schreibt nach einer Rückfrage das
+ganze bekannte Abbild erneut hinaus (wieder mit Fortschritt) und meldet am Ende, ob es
+diesmal fehlerfrei zurückkam.
 
 > **Nicht vergessen:** Die menügeführte DiskTool-Oberfläche (`ui/actions.py`,
 > Symbolleiste, Handbuch) liegt auf dem Zweig `create_disktool` und ist hier **nicht**
@@ -563,6 +675,12 @@ Steht aus (`k1520disktool --physical …`), siehe §15.
    Spur geändert; das Abmelden wartet auf die Rückführung (§7).
 6. **Physisch heißt schreibgeschützt, bis jemand widerspricht.**
 7. **Ein Auftrag je Spur** (§5.2) — sonst liest das Vorauslesen gegen den Vordergrund an.
+8. **Geschrieben gilt erst nach dem Zurücklesen** (§7.1).  Wer `Dirty` schon beim
+   Abschluss des `Write` löscht, macht die ganze Prüfung wirkungslos.
+9. **Das Prüf-Lesen wird verglichen, nicht übernommen** — sonst überschreibt ein
+   misslungener Schreibvorgang genau die Daten, die er zerstört hat.
+10. **Eine schadhafte Spur bleibt `Dirty`** und wird gemeldet, statt still zu
+    verschwinden; nur so lässt sie sich auf einer heilen Diskette noch retten (§7.2).
 
 ---
 
@@ -578,11 +696,14 @@ vorkommt: alles unterhalb von „Aufträge und Bitzellen“ ist ohne Adapter pr�
 | Verdrängung | `TrackSync.LeseanforderungVerdraengtDasVorauslesen` | derselbe, Aufträge von Hand abgeholt (keine Zufallsreihenfolge) |
 | Blockade | `TrackSync.ZugriffBlockiertBisDieSpurDaIst`, `…ZeitueberschreitungLiefertDieLeereSpur` | angehaltener Ersatzfaden bzw. gar keiner |
 | Rückführung | `TrackSync.SchreibpauseFasstEinenBurstZusammen`, `…AbmeldenWartetAufDieRueckfuehrung`, `…GescheitertesSchreibenLaesstDieAenderungStehen`, `…SchreibgeschuetzteDisketteWirdNieBeschrieben` | derselbe |
+| **Prüf-Lesen** (§7.1) | `TrackSync.NachJedemSchreibenWirdZurueckgelesen`, `…VorDemPruefLesenBleibtDieSpurGeaendert`, `…DasPruefLesenUeberschreibtDasAbbildNicht`, `…WirdWaehrendDesPruefLesensGeschriebenGiltDerNeueInhalt`, `…OhneVerifyGiltGeschriebenSofortAlsErledigt` | Ersatzfaden mit **Schadstelle**: die Spur meldet Schreiberfolg, liefert beim Lesen aber weiter den alten Inhalt — genau wie eine Diskette, die nicht mehr trägt |
+| **Schadstelle** (§7.2) | `TrackSync.EineSchadstelleWirdGenauEinmalWiederholt`, `…DieSchadhafteSpurStehtImKlartext`, `…NeuBeschreibenRettetDasAbbildAufEineHeileDiskette`, `…NeuBeschreibenLaesstUnbekannteSpurenInRuhe` | derselbe |
 | Zustände am Medium | `TrackSync.UnbekanntIstNichtUnformatiert`, `…ReihenlaufLaedtNichtNach`, `…RuecknahmeStelltDieSpurWiederAlsAenderungEin` | keiner nötig |
 | Vertrag | `TrackSync.NurEinArbeitsfaden`, `…ShutdownLoestJedenWartenden` | keiner nötig |
 | **Voller Emulator** | `PhysicalBoot.*` (`tests/integration/test_physical_boot.cpp`) | **Ersatzlaufwerk über einer `.hfe`-Fixture**: CP/A bootet spurweise bis `A>`, holt dabei **weniger als die halbe Diskette**, und das Vorauslesen bremst den Kaltstart nicht |
-| C-ABI + Arbeitsfaden + DiskTool | `py_gw_physical` (`tests/python/test_gw_physical.py`, 10 Fälle) | `HfeDevice`: liest HFE v1 von Hand, **ohne** `greaseweazle`-Import — dieselbe Diskette einmal als Datei und einmal „physisch" geöffnet muss dasselbe Verzeichnis und dieselben Dateibytes liefern |
-| **Oberflächen** | `py_gw_gui` (`tests/python/test_gw_gui.py`) | dasselbe Ersatzlaufwerk (`tests/python/gw_fake.py`): Knopf → Sitzung → angemeldete Diskette → Anzeige → Auswerfen, in **beiden** Programmen; dazu die Zusicherung, dass die Dialogauswahl genau die Argumente von `PhysicalSession.start` sind |
+| C-ABI + Arbeitsfaden + DiskTool | `py_gw_physical` (`tests/python/test_gw_physical.py`, 17 Fälle) | `HfeDevice` (`tests/python/gw_fake.py`): liest HFE v1 von Hand, **ohne** `greaseweazle`-Import — dieselbe Diskette einmal als Datei und einmal „physisch" geöffnet muss dasselbe Verzeichnis und dieselben Dateibytes liefern; dazu die Schadstelle über `HfeDevice.schadhaft` |
+| **ABI-Drift** | `py_gw_physical::test_die_ctypes_struktur_passt_zum_c_kopf`, `…die_auftragsarten_stimmen_ueberein` | keiner — liest den C-Kopf und vergleicht Feldnamen **und Reihenfolge** mit den `ctypes.Structure`.  Nötig, weil eine vertauschte Reihenfolge nicht abstürzt, sondern still falsche Zahlen liefert |
+| **Oberflächen** | `py_gw_gui` (`tests/python/test_gw_gui.py`, 13 Fälle) | dasselbe Ersatzlaufwerk: Knopf → Sitzung → angemeldete Diskette → Anzeige → Auswerfen, in **beiden** Programmen; die Zusicherung, dass die Dialogauswahl genau die Argumente von `PhysicalSession.start` sind; und der **volle Schadstellen-Weg** durch das DiskTool (`test_disktool_meldet_die_schadstelle_beim_speichern`: schreiben → prüfen → Warnung mit Spurnummer → Rettungsknopf) |
 | **Echte Hardware** | `tests/python/test_gw_hardware.py` | keiner — **übersprungen**, wenn `K1520_GW_HARDWARE` nicht gesetzt ist; **nicht** in ctest registriert |
 
 Der Kniff ist der **Ersatzfaden über einer `.hfe`-Datei**: er liefert dieselben
@@ -603,17 +724,20 @@ von sich aus.
 
 ---
 
-## 15. Stand der Umsetzung (2026-08-15)
+## 15. Stand der Umsetzung (2026-08-16)
 
-**Fertig und in der Regression** (1009/1009 ctest grün):
+**Fertig und in der Regression** (1018/1018 ctest grün):
 
 * `TrackSync` samt Spurzuständen im `DiskMedium`, drei Prioritäten, Blockade,
   Schreibpause, Rücknahme (`restoreFrom`).
+* **Prüf-Lesen nach jedem Schreiben** samt Wiederholung, Defektvermerk und
+  `rewriteAll()` (§7.1/§7.2).
 * C-ABI `k1520s_*` in **beiden** Bibliotheken; `k1520_mount_physical` (Emulator) und
-  `k1520d_open_physical` (DiskTool) — beide auch in den ctypes-Bindungen.
+  `k1520d_open_physical` (DiskTool) — beide auch in den ctypes-Bindungen, gegen Drift
+  mechanisch abgesichert.
 * `app/gw/` (Gerätehülle, Arbeitsfaden, Bindung), `app/ui/physical_disk.py`
-  (Dialog, Sitzung, Fortschritt) und die **Oberflächen beider Programme** (§12).
-* Die Testebenen aus §14, einschließlich der Oberflächen.
+  (Dialog, Sitzung, Fortschritt, Defektmeldung) und die **Oberflächen beider
+  Programme** (§12), einschließlich „Diskette neu beschreiben".
 
 **Am echten Gerät nachgewiesen** (Greaseweazle F1, K5601, UDOS-4.3-Diskette):
 
@@ -623,9 +747,22 @@ von sich aus.
 | Zellstrom je Spurseite bei 250 kbit/s | 100 363 Zellen = 12 546 Byte (299 U/min) |
 | UDOS-Spur, roh gelesen | 156 A1-Sync-Marken = 26 Sektoren × 6 Felder |
 | ganze Diskette im DiskTool öffnen | **97 s** für 160 Spuren, Verzeichnis beider Seiten vollständig (70 Dateien) |
-| **Emulator-Kaltstart von der echten Diskette** | **UDOS 4.3 meldet sich mit Banner und Datumsabfrage** — bei erst 62–70 von 160 gelesenen Spuren, der Rest lief noch im Vorrat |
+| **Emulator-Kaltstart von der echten Diskette** | **UDOS 4.3 meldet sich mit Banner und Datumsabfrage** — bei erst 62–70 von 160 gelesenen Spuren |
 | **Datei auf die echte Diskette schreiben** | über das DiskTool eingefügt, **4 Spuren** zurückgeschrieben, 0 Fehler; die Diskette danach **komplett neu eingelesen** → Datei byteweise gleich |
 | beide Oberflächen | Einlegen, Füllstand, Auswerfen bzw. Öffnen mit Fortschritt — je einmal gegen die echte Hardware durchgefahren |
+
+> **Das Prüf-Lesen (§7.1) ist an echter Hardware noch NICHT gegengeprüft.**  Der
+> Adapter meldete sich unmittelbar davor nicht mehr am USB ab (weder `lsusb` noch
+> `/dev/ttyACM*`).  Am Ersatzlaufwerk ist der Weg vollständig abgedeckt, aber die
+> Bestätigung an der Scheibe fehlt.  Nachzuholen mit:
+>
+> ```sh
+> K1520_GW_HARDWARE=1 K1520_GW_WRITE=1 \
+>   venv/bin/python3 -m pytest tests/python/test_gw_hardware.py -v -s -k schreibt_eine_datei
+> ```
+>
+> Der Test prüft seit dieser Änderung zusätzlich `verifies_done > 0` und
+> `tracks_defect == 0`.
 
 Vor dem ersten Schreibversuch wurde die Diskette gesichert (`gw read` über alle 160
 Spuren, 2 MB `.hfe`) — bei einem Original ohne zweite Kopie gehört das dazu.
@@ -634,11 +771,10 @@ Spuren, 2 MB `.hfe`) — bei einem Original ohne zweite Kopie gehört das dazu.
 
 * **CLI** `k1520disktool --physical` (§12.3).
 * **Die menügeführte DiskTool-Oberfläche** liegt unmerged auf `create_disktool`; beim
-  Zusammenführen gehört die Aktion in `ui/actions.py` statt als freistehender Knopf
-  (§12.2).
+  Zusammenführen gehören „Physisches Laufwerk öffnen…" **und** „Diskette neu
+  beschreiben" in `ui/actions.py` statt als freistehende Knöpfe (§12.2).
 * **Die Sitzungsparameter merkt sich niemand** — Laufwerk und Zellrate müssen bei
-  jedem Einlegen neu gewählt werden.  Sie in die Konfiguration zu übernehmen ist
-  leicht, wollte aber erst benutzt und dann entschieden sein.
+  jedem Einlegen neu gewählt werden.
 * **Ein zweites physisches Laufwerk am selben Adapter** ist ungetestet (§16).
 
 ---

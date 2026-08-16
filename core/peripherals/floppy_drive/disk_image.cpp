@@ -155,8 +155,17 @@ bool DiskImage::writeTrack(uint8_t cyl, uint8_t head, const TrackImage& track) {
 // ─── Persistenz ──────────────────────────────────────────────────────────────
 
 bool DiskImage::flush() {
-    // Physische Diskette: „speichern" heisst, auf die Rueckfuehrung zu warten.
-    if (sync_) return sync_->flushPending();
+    // Physische Diskette: „speichern" heisst, auf die Rueckfuehrung zu warten — und
+    // die gilt erst als geglueckt, wenn jede Spur zurueckGELESEN wurde (§7.1).  Der
+    // Grund muss durchgereicht werden, sonst steht der Bediener vor einem
+    // „Speichern fehlgeschlagen" ohne Spurnummer.
+    if (sync_) {
+        if (sync_->flushPending()) { last_error_.clear(); return true; }
+        last_error_ = sync_->lastError().empty()
+                          ? "Die Diskette liess sich nicht vollstaendig beschreiben."
+                          : sync_->lastError();
+        return false;
+    }
     if (!medium_.dirty()) { dirty_since_ = 0; return true; }
     if (write_protect_)   return true;   // Schreibschutz: nichts zurueckschreiben
     if (!hasFile())       return true;   // reines Speichermedium — nichts zu tun

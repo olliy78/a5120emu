@@ -204,3 +204,155 @@ def test_disktool_schliesst_die_sitzung_beim_naechsten_oeffnen(app, hfe, tmp_pat
         assert fenster._physisch is None, "das echte Laufwerk blieb belegt"
     finally:
         fenster._close_tool()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Schadstelle: Meldung und Rettungsweg
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def _mit_schadstelle(hfe, **kw):
+    """Sitzung, deren Diskette nichts mehr annimmt (alle Spuren schadhaft)."""
+    sitzung = fake_session(hfe, writable=True, read_ahead=False, **kw)
+    sitzung.device.schadhaft = {(c, h) for c in range(sitzung.device.num_cyls)
+                                for h in range(sitzung.device.num_heads)}
+    return sitzung
+
+
+def test_disktool_meldet_die_schadstelle_beim_speichern(app, hfe, tmp_path,
+                                                        monkeypatch):
+    """Der ganze Weg durch die Oberfläche: schreiben → prüfen → Warnung → Rettungsknopf.
+
+    Die Diskette nimmt nichts mehr an; der Verify-Lauf des Gastsystems liefe hier
+    gegen das Speicherabbild und sähe nichts.  Das Prüf-Lesen sieht es.
+    """
+    from app.disktool.ui.main_window import MainWindow as DiskToolWindow
+    from app.ui import physical_disk
+
+    sitzung = fake_session(hfe, writable=True, read_ahead=True)
+    monkeypatch.setattr(physical_disk.PhysicalSession, "start",
+                        classmethod(lambda cls, **kw: sitzung))
+
+    # Warnungen abfangen statt anzeigen (headless gäbe es sonst ein modales Fenster).
+    gemeldet = []
+    monkeypatch.setattr("app.disktool.ui.main_window.QMessageBox.warning",
+                        lambda parent, titel, text, *a, **k: gemeldet.append(text))
+    monkeypatch.setattr("app.disktool.ui.main_window.QMessageBox.information",
+                        lambda parent, titel, text, *a, **k: None)
+
+    fenster = DiskToolWindow()
+    try:
+        assert fenster.open_physical(drive="a", writable=True)
+        assert not fenster.btn_neu_beschreiben.isHidden(), "Rettungsknopf fehlt"
+
+        # Ab jetzt trägt die Diskette nicht mehr.
+        sitzung.device.schadhaft = {(c, h) for c in range(sitzung.device.num_cyls)
+                                    for h in range(sitzung.device.num_heads)}
+
+        quelle = tmp_path / "PROBE.TXT"
+        quelle.write_bytes(b"schadstelle\r\n" * 4)
+        ziel = ("Side0/" if fenster.tool.volume_count > 1 else "") + "PROBE.TXT"
+        fenster.tool.insert(quelle, ziel, overwrite=True)
+
+        assert fenster.save() is False, "der Schaden wurde als Erfolg verbucht"
+        assert gemeldet, "es wurde nicht gewarnt"
+        assert "Spur" in gemeldet[0]
+        assert "neu beschreiben" in gemeldet[0]
+        assert sitzung.stats().tracks_defect > 0
+    finally:
+        fenster._close_tool()
+
+
+def test_defektmeldung_erscheint_nur_einmal_je_spur(app, hfe, monkeypatch):
+    """Der Zeitgeber fragt zehnmal je Sekunde — melden darf er trotzdem nur einmal."""
+    sitzung = fake_session(hfe, writable=True, read_ahead=False)
+    try:
+        # Zwei Schadstellen vortäuschen, ohne echten Schreibweg.
+        folge = ["5/1", "5/1", "5/1, 12/0", "5/1, 12/0"]
+        monkeypatch.setattr(type(sitzung), "defect_tracks",
+                            property(lambda self: folge.pop(0) if folge else "5/1, 12/0"))
+
+        assert sitzung.neue_defekte() == "5/1"          # erste Meldung
+        assert sitzung.neue_defekte() == ""             # unverändert → still
+        assert sitzung.neue_defekte() == "5/1, 12/0"    # neue Spur → wieder melden
+        assert sitzung.neue_defekte() == ""
+    finally:
+        sitzung.close()
+
+
+def test_die_meldung_sagt_was_zu_tun_ist(app, hfe):
+    sitzung = fake_session(hfe)
+    try:
+        text = sitzung.defekt_meldung("5/1")
+        assert "Spur 5/1" in text
+        assert "Speichern unter" in text, "der Weg in eine Datei fehlt"
+        assert "neu beschreiben" in text, "der Weg auf eine neue Diskette fehlt"
+        assert "unversehrt" in text, "der Bediener muss wissen, dass nichts verloren ist"
+    finally:
+        sitzung.close()
+
+
+def test_emulator_zeigt_den_rettungsknopf_erst_beim_schreiben(app, hfe, monkeypatch):
+    """Ohne Schreibrecht gibt es nichts zurückzuschreiben — der Knopf bleibt weg."""
+    from app.core_binding.k1520 import K1520Emulator
+    from app.ui import physical_disk
+    from app.ui.drive_widget import DriveWidget
+
+    for schreibbar in (False, True):
+        sitzung = fake_session(hfe, writable=schreibbar, for_emulator=True)
+        monkeypatch.setattr(physical_disk.PhysicalSession, "start",
+                            classmethod(lambda cls, **kw: sitzung))
+        monkeypatch.setattr(physical_disk.PhysicalDiskDialog, "frage",
+                            classmethod(lambda cls, parent=None, **kw: {
+                                "drive": "a", "cell_rate_kbps": 250, "num_cyls": 80,
+                                "num_heads": 2, "writable": schreibbar,
+                                "read_ahead": False}))
+        w = DriveWidget(K1520Emulator())
+        panel = w._panels[0]
+        try:
+            panel._phys_btn.click()
+            assert panel._rewrite_btn.isHidden() != schreibbar, (
+                f"Rettungsknopf falsch sichtbar (schreibbar={schreibbar})")
+        finally:
+            w.close_physical_sessions()
+
+
+def test_neu_beschreiben_stellt_die_bekannten_spuren_ein(app, hfe):
+    """Der Rettungsweg selbst: alles Bekannte noch einmal hinausschreiben."""
+    sitzung = fake_session(hfe, writable=True, read_ahead=True)
+    try:
+        assert _warte(lambda: (sitzung.stats().tracks_known or 0) > 5)
+        # Vorauslesen ANHALTEN, bevor gezählt wird: sonst kommen zwischen dem Ablesen
+        # und dem rewrite_all() weitere Spuren herein und die Zahlen weichen ab
+        # (unter Last durchaus zu beobachten).
+        sitzung.sync.set_read_ahead(False)
+        time.sleep(0.2)                       # laufenden Leseauftrag auslaufen lassen
+        bekannt = sitzung.stats().tracks_known
+        assert sitzung.rewrite_all() == bekannt
+        # Und der Vermerk „schon gemeldet" ist zurückgesetzt — auf der neuen
+        # Diskette gilt nichts von der alten.
+        assert sitzung.gemeldete_defekte == ""
+    finally:
+        sitzung.close()
+
+
+def test_das_pruef_lesen_steht_in_der_statuszeile(app, hfe):
+    from app.gw import Stats
+
+    sitzung = fake_session(hfe, read_ahead=False)
+    try:
+        # busy_kind 4 = Verify; der Bediener soll „prüft" lesen, nicht „arbeitet an".
+        original = type(sitzung).stats
+        werte = Stats(tracks_total=160, tracks_known=8, tracks_dirty=1, tracks_failed=0,
+                      tracks_defect=0, reads_done=8, writes_done=1, verifies_done=0,
+                      verify_failed=0, errors=0, busy_kind=4, busy_cyl=5, busy_head=1,
+                      stopped=False)
+        type(sitzung).stats = lambda self: werte
+        try:
+            text = sitzung.status_text()
+            assert "prüft 5/1" in text
+            assert "1 zu schreiben" in text
+        finally:
+            type(sitzung).stats = original
+    finally:
+        sitzung.close()

@@ -162,7 +162,7 @@ def test_disktool_schreibt_eine_datei_auf_die_eingelegte_diskette(geraet, tmp_pa
 
     def sitzung(schreibbar: bool):
         s = Sync(num_cyls=cyls, num_heads=heads, cell_rate_kbps=rate,
-                 writable=schreibbar, read_ahead=True)
+                 writable=schreibbar, read_ahead=True, verify_writes=True)
         w = TrackWorker(s, geraet)
         w.start()
         return s, w
@@ -183,9 +183,13 @@ def test_disktool_schreibt_eine_datei_auf_die_eingelegte_diskette(geraet, tmp_pa
             assert s.flush(120_000), f"Rückführung scheiterte: {s.last_error}"
             st = s.stats
             print(f"\ngeschrieben: {zielname} — {st.writes_done} Spuren "
-                  f"zurückgeschrieben, {st.errors} Fehler")
+                  f"zurückgeschrieben, {st.verifies_done} geprüft, "
+                  f"{st.verify_failed} Vergleiche misslungen, {st.errors} Fehler")
             assert st.errors == 0
             assert st.writes_done > 0, "es wurde gar nichts zurückgeschrieben"
+            # Jede geschriebene Spur muss zurueckgelesen und verglichen worden sein.
+            assert st.verifies_done > 0, "es wurde nichts geprüft"
+            assert st.tracks_defect == 0, f"Schadstelle: {s.defect_tracks}"
     finally:
         w.stop()
         s.close()

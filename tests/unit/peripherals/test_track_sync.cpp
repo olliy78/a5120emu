@@ -25,6 +25,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <set>
+#include <utility>
 #include <thread>
 #include <vector>
 
@@ -70,6 +72,24 @@ class Ersatzfaden {
 public:
     Ersatzfaden(TrackSync& sync, DiskMedium& scheibe) : sync_(sync), scheibe_(scheibe) {}
 
+    /// @brief Schadstelle nachstellen: diese Spur nimmt keine Schreibvorgaenge an.
+    ///
+    /// Geschrieben wird scheinbar, gelesen wird aber weiter der ALTE Inhalt — genau
+    /// das Verhalten einer Diskette mit einer nicht mehr tragenden Stelle.
+    void schadstelle(uint8_t cyl, uint8_t head) {
+        std::lock_guard<std::mutex> l(m_);
+        schadhaft_.emplace(cyl, head);
+    }
+    /// @brief Die Schadstelle heilen (neue Diskette eingelegt).
+    void heilen() {
+        std::lock_guard<std::mutex> l(m_);
+        schadhaft_.clear();
+    }
+    size_t verifyLaeufe() const {
+        std::lock_guard<std::mutex> l(m_);
+        return verifies_;
+    }
+
     ~Ersatzfaden() { stop(); }
 
     void start() {
@@ -112,7 +132,11 @@ private:
                 verlauf_.push_back(j);
             }
 
-            if (j.kind == SyncJobKind::Read) {
+            if (j.kind == SyncJobKind::Read || j.kind == SyncJobKind::Verify) {
+                if (j.kind == SyncJobKind::Verify) {
+                    std::lock_guard<std::mutex> l(m_);
+                    ++verifies_;
+                }
                 const TrackImage& s = scheibe_.peek(j.cyl, j.head);
                 const uint32_t bitcells = s.bitcells ? s.bitcells
                                                      : static_cast<uint32_t>(s.size() * 16);
@@ -125,9 +149,15 @@ private:
                     sync_.failJob(j.id, "fetchWrite scheiterte");
                     continue;
                 }
-                scheibe_.setTrack(j.cyl, j.head,
-                                  BitCodec::decodeAuto(zellen, bitcells, Encoding::MFM));
-                { std::lock_guard<std::mutex> l(m_); ++schreibungen_; }
+                bool kaputt;
+                { std::lock_guard<std::mutex> l(m_);
+                  kaputt = schadhaft_.count({j.cyl, j.head}) != 0;
+                  ++schreibungen_; }
+                // Auf einer Schadstelle bleibt der alte Inhalt stehen — der
+                // Schreibvorgang selbst meldet trotzdem Erfolg, wie am echten Geraet.
+                if (!kaputt)
+                    scheibe_.setTrack(j.cyl, j.head,
+                                      BitCodec::decodeAuto(zellen, bitcells, Encoding::MFM));
                 sync_.completeWrite(j.id);
             }
         }
@@ -141,9 +171,12 @@ private:
     bool                    angehalten_   = false;
     std::vector<SyncJob>    verlauf_;
     size_t                  schreibungen_ = 0;
+    size_t                  verifies_     = 0;
+    std::set<std::pair<uint8_t, uint8_t>> schadhaft_;
 };
 
-TrackSyncSpec spec(bool schreibbar = false, bool vorauslesen = false) {
+TrackSyncSpec spec(bool schreibbar = false, bool vorauslesen = false,
+                   bool verify = true) {
     TrackSyncSpec s;
     s.num_cyls           = kCyls;
     s.num_heads          = kHeads;
@@ -151,6 +184,7 @@ TrackSyncSpec spec(bool schreibbar = false, bool vorauslesen = false) {
     s.read_ahead         = vorauslesen;
     s.write_settle_ms    = 60;
     s.request_timeout_ms = 5000;
+    s.verify_writes      = verify;
     return s;
 }
 
@@ -569,4 +603,213 @@ TEST(TrackSync, RuecknahmeStelltDieSpurWiederAlsAenderungEin) {
     EXPECT_EQ(TrackCodec::parseTrack(scheibe.peek(2, 1)).size(), 4u)
         << "die Ruecknahme kam nie auf der Diskette an";
     faden.stop();
+}
+
+// ─── Schreib-Verify gegen die echte Spur ─────────────────────────────────────
+//
+// Der Verify-Lauf des Gastsystems (FORMAT) prueft das SPEICHERABBILD gegen sich
+// selbst und sieht eine Schadstelle der Diskette daher nie.  Deshalb liest der
+// Synchronisierer jede geschriebene Spur zurueck und vergleicht sie
+// (doc/design/14_physische_diskette.md §7.1).
+
+TEST(TrackSync, NachJedemSchreibenWirdZurueckgelesen) {
+    DiskMedium scheibe = echteDiskette();
+    DiskMedium abbild;
+    TrackSync  sync(spec(/*schreibbar=*/true), abbild);
+    Ersatzfaden faden(sync, scheibe);
+    faden.start();
+
+    abbild.setTrack(3, 0, baueSpur(3, 0, 6));
+    ASSERT_TRUE(warteBis([&] { return abbild.state(3, 0) == TrackState::Clean; }));
+    faden.stop();
+
+    EXPECT_EQ(faden.verifyLaeufe(), 1u) << "es wurde nicht zurueckgelesen";
+    EXPECT_EQ(sync.stats().verifies_done, 1u);
+    EXPECT_EQ(sync.stats().verify_failed, 0u);
+
+    // Die Reihenfolge muss stimmen: erst schreiben, dann pruefen.
+    const auto v = faden.verlauf();
+    ASSERT_GE(v.size(), 2u);
+    EXPECT_EQ(v[0].kind, SyncJobKind::Write);
+    EXPECT_EQ(v[1].kind, SyncJobKind::Verify);
+    EXPECT_EQ(v[1].cyl, 3);
+}
+
+TEST(TrackSync, VorDemPruefLesenBleibtDieSpurGeaendert) {
+    // Der springende Punkt: geschrieben heisst noch nicht angekommen.  Solange das
+    // Pruef-Lesen aussteht, gilt die Spur als GEAENDERT — sonst haette der Bediener
+    // sie laengst als erledigt gesehen, waehrend sie noch gar nicht auf der Scheibe war.
+    DiskMedium abbild;
+    TrackSync  sync(spec(/*schreibbar=*/true), abbild);
+
+    abbild.setTrack(0, 0, baueSpur(0, 0));
+    SyncJob schreiben;
+    ASSERT_TRUE(sync.takeJob(schreiben, 1000));
+    ASSERT_EQ(schreiben.kind, SyncJobKind::Write);
+    ASSERT_TRUE(sync.completeWrite(schreiben.id));
+
+    EXPECT_EQ(abbild.state(0, 0), TrackState::Dirty) << "zu frueh fuer sauber";
+
+    SyncJob pruefen;
+    ASSERT_TRUE(sync.takeJob(pruefen, 1000));
+    EXPECT_EQ(pruefen.kind, SyncJobKind::Verify);
+    EXPECT_EQ(pruefen.cyl, 0);
+    EXPECT_EQ(pruefen.head, 0);
+}
+
+TEST(TrackSync, DasPruefLesenUeberschreibtDasAbbildNicht) {
+    // Kaeme das Zurueckgelesene ins Abbild, ueberschriebe ein misslungener
+    // Schreibvorgang genau die Daten, die er zerstoert hat — und niemand merkte es.
+    DiskMedium scheibe = echteDiskette();
+    DiskMedium abbild;
+    TrackSync  sync(spec(/*schreibbar=*/true), abbild);
+    Ersatzfaden faden(sync, scheibe);
+    faden.schadstelle(2, 1);                       // Spur nimmt nichts an
+    faden.start();
+
+    abbild.setTrack(2, 1, baueSpur(2, 1, /*sektoren=*/7));
+    ASSERT_TRUE(warteBis([&] { return sync.hasDefects(); }));
+    faden.stop();
+
+    // Im Abbild stehen weiterhin DIE EIGENEN 7 Sektoren, nicht die 4 der Scheibe.
+    EXPECT_EQ(TrackCodec::parseTrack(abbild.peek(2, 1)).size(), 7u)
+        << "das Pruef-Lesen hat das Abbild ueberschrieben";
+    EXPECT_EQ(abbild.state(2, 1), TrackState::Dirty)
+        << "eine nicht angekommene Aenderung muss geaendert bleiben";
+}
+
+TEST(TrackSync, EineSchadstelleWirdGenauEinmalWiederholt) {
+    DiskMedium scheibe = echteDiskette();
+    DiskMedium abbild;
+    TrackSync  sync(spec(/*schreibbar=*/true), abbild);
+    Ersatzfaden faden(sync, scheibe);
+    faden.schadstelle(4, 0);
+    faden.start();
+
+    abbild.setTrack(4, 0, baueSpur(4, 0, 6));
+    ASSERT_TRUE(warteBis([&] { return sync.hasDefects(); }));
+    std::this_thread::sleep_for(200ms);            // nichts darf mehr nachkommen
+    faden.stop();
+
+    // Ein Versuch + eine Wiederholung = 2 Schreibvorgaenge und 2 Pruef-Lesevorgaenge.
+    EXPECT_EQ(faden.schreibvorgaenge(), 2u);
+    EXPECT_EQ(faden.verifyLaeufe(), 2u);
+    EXPECT_EQ(sync.stats().verify_failed, 2u);
+    EXPECT_EQ(sync.stats().tracks_defect, 1);
+    EXPECT_EQ(sync.defectText(), "4/0");
+}
+
+TEST(TrackSync, DieSchadhafteSpurStehtImKlartext) {
+    DiskMedium scheibe = echteDiskette();
+    DiskMedium abbild;
+    TrackSync  sync(spec(/*schreibbar=*/true), abbild);
+    Ersatzfaden faden(sync, scheibe);
+    faden.schadstelle(1, 1);
+    faden.schadstelle(6, 0);
+    faden.start();
+
+    abbild.setTrack(1, 1, baueSpur(1, 1, 5));
+    abbild.setTrack(6, 0, baueSpur(6, 0, 5));
+    ASSERT_TRUE(warteBis([&] { return sync.stats().tracks_defect == 2; }, 5000ms));
+
+    EXPECT_EQ(sync.defectText(), "1/1, 6/0");
+    EXPECT_NE(sync.lastError().find("liess sich nicht schreiben"), std::string::npos);
+    // Und das Abmelden darf das NICHT als Erfolg verbuchen — in der Reihenfolge, in
+    // der PhysicalSession::close() es tut: erst flush, dann den Faden anhalten.
+    EXPECT_FALSE(sync.flushPending(500));
+    faden.stop();
+    EXPECT_FALSE(sync.flushPending(500)) << "auch nach dem Abmelden bleibt es ein Fehler";
+}
+
+TEST(TrackSync, NeuBeschreibenRettetDasAbbildAufEineHeileDiskette) {
+    // Der Weg aus der Schadstelle heraus (§7.2): Diskette wechseln, alles noch einmal
+    // hinausschreiben.  Das Abbild im Speicher ist die Wahrheit — es blieb ja heil.
+    DiskMedium scheibe = echteDiskette();
+    DiskMedium abbild;
+    TrackSync  sync(spec(/*schreibbar=*/true), abbild);
+    Ersatzfaden faden(sync, scheibe);
+    faden.schadstelle(5, 0);
+    faden.start();
+
+    (void)abbild.track(0, 0);                      // eine Spur bekannt machen
+    abbild.setTrack(5, 0, baueSpur(5, 0, 9));
+    ASSERT_TRUE(warteBis([&] { return sync.hasDefects(); }));
+
+    // Neue, heile Diskette einlegen und alles Bekannte erneut hinausschreiben.
+    faden.heilen();
+    const size_t eingestellt = sync.rewriteAll();
+    EXPECT_GE(eingestellt, 2u) << "es wurden gar keine Spuren eingestellt";
+
+    ASSERT_TRUE(warteBis([&] { return !sync.hasDefects() &&
+                                      abbild.state(5, 0) == TrackState::Clean; }, 5000ms));
+    faden.stop();
+
+    EXPECT_EQ(TrackCodec::parseTrack(scheibe.peek(5, 0)).size(), 9u)
+        << "die Rettung kam nicht auf der Diskette an";
+    EXPECT_EQ(sync.stats().tracks_defect, 0);
+}
+
+TEST(TrackSync, NeuBeschreibenLaesstUnbekannteSpurenInRuhe) {
+    // Eine nie gelesene Spur traegt bedeutungslose Bytes; sie zu schreiben ergaebe
+    // Muell auf der neuen Diskette.
+    DiskMedium scheibe = echteDiskette();
+    DiskMedium abbild;
+    TrackSync  sync(spec(/*schreibbar=*/true), abbild);
+    Ersatzfaden faden(sync, scheibe);
+    faden.start();
+
+    (void)abbild.track(0, 0);                      // genau EINE Spur bekannt
+    ASSERT_TRUE(warteBis([&] { return abbild.state(0, 0) == TrackState::Clean; }));
+
+    EXPECT_EQ(sync.rewriteAll(), 1u) << "unbekannte Spuren wurden mit eingestellt";
+    faden.stop();
+}
+
+TEST(TrackSync, OhneVerifyGiltGeschriebenSofortAlsErledigt) {
+    // Abschaltbar bleibt es — dann ist das Verhalten wie vor der Einfuehrung.
+    DiskMedium scheibe = echteDiskette();
+    DiskMedium abbild;
+    TrackSync  sync(spec(/*schreibbar=*/true, /*vorauslesen=*/false, /*verify=*/false),
+                    abbild);
+    Ersatzfaden faden(sync, scheibe);
+    faden.schadstelle(3, 1);                       // bliebe unentdeckt
+    faden.start();
+
+    abbild.setTrack(3, 1, baueSpur(3, 1, 6));
+    ASSERT_TRUE(warteBis([&] { return abbild.state(3, 1) == TrackState::Clean; }));
+    faden.stop();
+
+    EXPECT_EQ(faden.verifyLaeufe(), 0u);
+    EXPECT_FALSE(sync.hasDefects()) << "ohne Pruef-Lesen kann nichts auffallen";
+}
+
+TEST(TrackSync, WirdWaehrendDesPruefLesensGeschriebenGiltDerNeueInhalt) {
+    DiskMedium abbild;
+    TrackSync  sync(spec(/*schreibbar=*/true), abbild);
+
+    abbild.setTrack(0, 1, baueSpur(0, 1, 3));
+    SyncJob schreiben;
+    ASSERT_TRUE(sync.takeJob(schreiben, 1000));
+    ASSERT_TRUE(sync.completeWrite(schreiben.id));
+
+    SyncJob pruefen;
+    ASSERT_TRUE(sync.takeJob(pruefen, 1000));
+    ASSERT_EQ(pruefen.kind, SyncJobKind::Verify);
+
+    // Das Gastsystem schreibt die Spur waehrend des Pruef-Lesens neu.
+    abbild.setTrack(0, 1, baueSpur(0, 1, 8));
+
+    const TrackImage alt = baueSpur(0, 1, 3);
+    const auto zellen = BitCodec::encode(alt, static_cast<uint32_t>(alt.size() * 16));
+    ASSERT_TRUE(sync.completeRead(pruefen.id, zellen.data(), zellen.size(),
+                                  static_cast<uint32_t>(alt.size() * 16)));
+
+    // Der Vergleich gilt dem alten Inhalt und wird verworfen — kein Defekt, sondern
+    // ein neuer Schreibauftrag mit dem JUENGEREN Inhalt.
+    EXPECT_FALSE(sync.hasDefects());
+    SyncJob nochmal;
+    ASSERT_TRUE(sync.takeJob(nochmal, 1000));
+    EXPECT_EQ(nochmal.kind, SyncJobKind::Write);
+    EXPECT_EQ(nochmal.cyl, 0);
+    EXPECT_EQ(nochmal.head, 1);
 }

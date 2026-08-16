@@ -14,6 +14,7 @@
 
 #include "core/api/k1520_sync_internal.h"
 
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -49,6 +50,8 @@ extern "C" K1520Sync k1520s_create(const K1520SyncSpec* spec) {
     s.writable       = spec->writable;
     s.default_encoding = (spec->default_encoding == 0) ? Encoding::FM : Encoding::MFM;
     s.read_ahead     = spec->read_ahead;
+    s.verify_writes  = spec->verify_writes;
+    s.write_verify_retries = spec->write_verify_retries;
     if (spec->write_settle_ms)    s.write_settle_ms    = spec->write_settle_ms;
     if (spec->request_timeout_ms) s.request_timeout_ms = spec->request_timeout_ms;
 
@@ -135,8 +138,11 @@ extern "C" bool k1520s_stats(K1520Sync h, K1520SyncStats* out) {
     out->tracks_known  = st.tracks_known;
     out->tracks_dirty  = st.tracks_dirty;
     out->tracks_failed = st.tracks_failed;
+    out->tracks_defect = st.tracks_defect;
     out->reads_done    = st.reads_done;
     out->writes_done   = st.writes_done;
+    out->verifies_done = st.verifies_done;
+    out->verify_failed = st.verify_failed;
     out->errors        = st.errors;
     out->busy_kind     = st.busy_kind;
     out->busy_cyl      = st.busy_cyl;
@@ -160,4 +166,20 @@ extern "C" bool k1520s_load_all(K1520Sync h) {
 extern "C" bool k1520s_flush(K1520Sync h, int timeout_ms) {
     TrackSync* s = sync_of(h);
     return s && s->flushPending(timeout_ms);
+}
+
+extern "C" int k1520s_rewrite_all(K1520Sync h) {
+    TrackSync* s = sync_of(h);
+    return s ? static_cast<int>(s->rewriteAll()) : 0;
+}
+
+extern "C" int k1520s_defect_tracks(K1520Sync h, char* buf, int buf_len) {
+    TrackSync* s = sync_of(h);
+    if (!s || !buf || buf_len <= 0) return -1;
+    const std::string t = s->defectText();
+    const int n = static_cast<int>(std::min<size_t>(t.size(),
+                                                    static_cast<size_t>(buf_len - 1)));
+    std::memcpy(buf, t.data(), static_cast<size_t>(n));
+    buf[n] = 0;
+    return n;
 }

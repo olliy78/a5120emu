@@ -24,6 +24,12 @@
  * laufender Auftrag wird nie abgebrochen — der Arbeitsfaden steckt dann in einer
  * Übertragung.
  *
+ * **Geschrieben wird erst geglaubt, wenn es zurückgelesen wurde.**  Eine echte Diskette
+ * hat Schadstellen — und der Verify-Lauf des Gastsystems (FORMAT) prüft nur das
+ * Speicherabbild gegen sich selbst, sieht sie also nie.  Jedem Schreibauftrag folgt
+ * deshalb ein **Prüf-Lesen** derselben Spur (@ref SyncJobKind::Verify); erst wenn der
+ * Vergleich stimmt, gilt die Spur als sauber (§7.1 des Feinentwurfs).
+ *
  * @see doc/design/14_physische_diskette.md  (voller Feinentwurf)
  * @see doc/design/09_floppy_drive.md §12
  * @author Olaf Krieger
@@ -64,14 +70,34 @@ struct TrackSyncSpec {
     /// Frist für @ref ensureLoaded, bevor der Wartende aufgibt.
     uint32_t request_timeout_ms = 30000;
     bool     read_ahead = true;      ///< unbekannte Spuren in Ruhephasen vorauslesen
+
+    /**
+     * @brief Jede geschriebene Spur zurücklesen und vergleichen (§7.1).
+     *
+     * Kostet die doppelte Zeit je Schreibvorgang und ist trotzdem die Vorgabe: ohne
+     * das bleibt eine Schadstelle der Diskette **unentdeckt**, weil der Verify-Lauf
+     * des Gastsystems gegen das Speicherabbild läuft, nicht gegen die Scheibe.
+     */
+    bool     verify_writes = true;
+    /// Zusätzliche Schreibversuche nach einem gescheiterten Vergleich (0 = keiner).
+    uint8_t  write_verify_retries = 1;
 };
 
 /// @brief Was ein Auftrag verlangt.
 enum class SyncJobKind : uint8_t {
-    None  = 0,
-    Read  = 1,   ///< Spur von der Diskette lesen
-    Write = 2,   ///< Spur auf die Diskette schreiben
-    Stop  = 3    ///< kein Auftrag mehr — @ref TrackSync::shutdown wurde gerufen
+    None   = 0,
+    Read   = 1,   ///< Spur von der Diskette lesen
+    Write  = 2,   ///< Spur auf die Diskette schreiben
+    Stop   = 3,   ///< kein Auftrag mehr — @ref TrackSync::shutdown wurde gerufen
+    /**
+     * @brief Prüf-Lesen nach einem Schreibvorgang (§7.1).
+     *
+     * Für den Arbeitsfaden **dasselbe wie @ref Read** — er liest eine Spur und liefert
+     * Bitzellen.  Der Unterschied liegt allein hier: das Ergebnis wird **verglichen**
+     * und **nicht** ins Abbild übernommen (sonst überschriebe ein misslungener
+     * Schreibvorgang genau die Daten, die er zerstört hat).
+     */
+    Verify = 4
 };
 
 /// @brief Dringlichkeit; kleiner = wichtiger.  Siehe Feinentwurf §5.1.
@@ -97,8 +123,11 @@ struct SyncStats {
     uint16_t tracks_known  = 0;   ///< schon gelesen (oder geschrieben)
     uint16_t tracks_dirty  = 0;   ///< warten auf Rückführung
     uint16_t tracks_failed = 0;   ///< beim letzten Versuch nicht lesbar
+    uint16_t tracks_defect = 0;   ///< **schadhaft**: mehrfach geschrieben, nie zurückgelesen
     uint32_t reads_done    = 0;
     uint32_t writes_done   = 0;
+    uint32_t verifies_done = 0;   ///< Prüf-Lesevorgänge, die bestanden haben
+    uint32_t verify_failed = 0;   ///< Vergleiche, die nicht stimmten (inkl. Wiederholungen)
     uint32_t errors        = 0;
     uint8_t  busy_kind     = 0;   ///< @ref SyncJobKind des laufenden Auftrags
     uint8_t  busy_cyl      = 255; ///< 255 = gerade nichts zu tun
@@ -160,6 +189,31 @@ public:
      * @return false bei Zeitüberschreitung oder Schreibfehler.
      */
     bool flushPending(int timeout_ms = 0);
+
+    /**
+     * @brief **Die ganze Diskette neu beschreiben** — für eine frische, fehlerfreie.
+     *
+     * Der Weg aus einer Schadstelle heraus (§7.2): Diskette wechseln, das Abbild im
+     * Speicher unverändert lassen und alles noch einmal hinausschreiben.  Markiert
+     * jede **bekannte** Spur als geändert; unbekannte bleiben unangetastet — ihr
+     * Inhalt ist bedeutungslos, sie zu schreiben ergäbe Müll auf der neuen Diskette.
+     *
+     * Der Defektvermerk wird dabei gelöscht: auf der neuen Diskette gilt er nicht.
+     *
+     * @return Zahl der eingestellten Spuren (0 = nichts bekannt oder nicht schreibbar).
+     */
+    size_t rewriteAll();
+
+    /// @brief Gibt es Spuren, die sich nicht schreiben liessen?
+    bool hasDefects() const;
+
+    /**
+     * @brief Die schadhaften Spuren als Text, z. B. `"5/1, 12/0"` (leer = keine).
+     *
+     * Für die Meldung an den Bediener — er soll wissen, WELCHE Spur klemmt, bevor er
+     * das Abbild rettet.
+     */
+    std::string defectText() const;
 
     // ─── Arbeitsfaden ────────────────────────────────────────────────────────
 
@@ -242,7 +296,15 @@ private:
         uint32_t     changes = 0;                   ///< zählt @ref trackChanged
         uint32_t     changes_at_handout = 0;
         std::chrono::steady_clock::time_point dirty_since{};
-        bool         dirty_pending = false;
+        bool         dirty_pending  = false;
+        /// Geschrieben, aber noch nicht zurückgelesen — wartet auf @ref SyncJobKind::Verify.
+        bool         verify_pending = false;
+        /// Schreibversuche für den AKTUELLEN Inhalt (wird bei jeder Änderung genullt).
+        uint8_t      write_attempts = 0;
+        /// Endgültig gescheitert: mehrfach geschrieben, nie fehlerfrei zurückgelesen.
+        /// Die Spur bleibt im Medium **geändert**, damit sie auf einer neuen Diskette
+        /// noch geschrieben werden kann (@ref rewriteAll).
+        bool         defect = false;
     };
 
     size_t   idx(uint8_t cyl, uint8_t head) const {
@@ -255,6 +317,9 @@ private:
     bool     waehleAuftrag(SyncJob& out);
     /// @brief Trägt einen Auftrag für den laufenden Vorgang nach (Sperre gehalten).
     Eintrag* eintragZuAuftrag(uint32_t id, uint8_t& cyl, uint8_t& head);
+    /// @brief Ergebnis eines Prüf-Lesens verbuchen (Sperre gehalten).
+    void     verifyAbschliessen(Eintrag& e, uint8_t cyl, uint8_t head,
+                                bool bestanden, const std::string& grund);
 
     TrackSyncSpec spec_;
     /// nullptr nach @ref detach — das Medium ist weg, jeder Zugriff scheitert sauber.

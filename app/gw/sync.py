@@ -36,6 +36,9 @@ class JobKind(IntEnum):
     READ = 1
     WRITE = 2
     STOP = 3        #: kein Auftrag mehr; der Arbeitsfaden soll enden
+    #: Prüf-Lesen nach einem Schreibvorgang.  **Für den Arbeitsfaden dasselbe wie
+    #: READ** — Spur lesen, Bitzellen abliefern; verglichen wird im Kern.
+    VERIFY = 4
 
 
 class Priority(IntEnum):
@@ -48,6 +51,7 @@ class Priority(IntEnum):
 
 
 class _Spec(ctypes.Structure):
+    # Spiegel von K1520SyncSpec (core/api/k1520_sync_api.h) — Reihenfolge zählt.
     _fields_ = [
         ("num_cyls", ctypes.c_uint8),
         ("num_heads", ctypes.c_uint8),
@@ -58,6 +62,8 @@ class _Spec(ctypes.Structure):
         ("read_ahead", ctypes.c_bool),
         ("write_settle_ms", ctypes.c_uint32),
         ("request_timeout_ms", ctypes.c_uint32),
+        ("verify_writes", ctypes.c_bool),
+        ("write_verify_retries", ctypes.c_uint8),
     ]
 
 
@@ -72,13 +78,17 @@ class _Job(ctypes.Structure):
 
 
 class _Stats(ctypes.Structure):
+    # Spiegel von K1520SyncStats (core/api/k1520_sync_api.h) — Reihenfolge zählt.
     _fields_ = [
         ("tracks_total", ctypes.c_uint16),
         ("tracks_known", ctypes.c_uint16),
         ("tracks_dirty", ctypes.c_uint16),
         ("tracks_failed", ctypes.c_uint16),
+        ("tracks_defect", ctypes.c_uint16),
         ("reads_done", ctypes.c_uint32),
         ("writes_done", ctypes.c_uint32),
+        ("verifies_done", ctypes.c_uint32),
+        ("verify_failed", ctypes.c_uint32),
         ("errors", ctypes.c_uint32),
         ("busy_kind", ctypes.c_uint8),
         ("busy_cyl", ctypes.c_uint8),
@@ -106,8 +116,11 @@ class Stats:
     tracks_known: int
     tracks_dirty: int
     tracks_failed: int
+    tracks_defect: int
     reads_done: int
     writes_done: int
+    verifies_done: int
+    verify_failed: int
     errors: int
     busy_kind: int
     busy_cyl: int
@@ -117,6 +130,11 @@ class Stats:
     @property
     def busy(self) -> bool:
         return self.busy_cyl != 255
+
+    @property
+    def defect(self) -> bool:
+        """Gibt es Spuren, die sich nicht schreiben liessen?"""
+        return self.tracks_defect > 0
 
 
 _H = ctypes.c_void_p
@@ -161,6 +179,10 @@ def _lib(for_emulator: bool) -> ctypes.CDLL:
     lib.k1520s_load_all.restype = ctypes.c_bool
     lib.k1520s_flush.argtypes = [_H, ctypes.c_int]
     lib.k1520s_flush.restype = ctypes.c_bool
+    lib.k1520s_rewrite_all.argtypes = [_H]
+    lib.k1520s_rewrite_all.restype = ctypes.c_int
+    lib.k1520s_defect_tracks.argtypes = [_H, ctypes.c_char_p, ctypes.c_int]
+    lib.k1520s_defect_tracks.restype = ctypes.c_int
 
     _libs[for_emulator] = lib
     return lib
@@ -188,7 +210,8 @@ class Sync:
                  cell_rate_kbps: int = 250, rpm: int = 300,
                  writable: bool = False, encoding: str = "MFM",
                  read_ahead: bool = True, write_settle_ms: int = 0,
-                 request_timeout_ms: int = 0, for_emulator: bool = False):
+                 request_timeout_ms: int = 0, for_emulator: bool = False,
+                 verify_writes: bool = True, write_verify_retries: int = 1):
         self._lib = _lib(for_emulator)
         spec = _Spec(
             num_cyls=num_cyls,
@@ -200,6 +223,8 @@ class Sync:
             read_ahead=read_ahead,
             write_settle_ms=write_settle_ms,
             request_timeout_ms=request_timeout_ms,
+            verify_writes=verify_writes,
+            write_verify_retries=write_verify_retries,
         )
         self._h = self._lib.k1520s_create(ctypes.byref(spec))
         if not self._h:
@@ -294,5 +319,29 @@ class Sync:
         return bool(self._lib.k1520s_load_all(self._h))
 
     def flush(self, timeout_ms: int = 0) -> bool:
-        """Alle geänderten Spuren sofort zurückschreiben und darauf warten."""
+        """Alle geänderten Spuren zurückschreiben und darauf warten.
+
+        Returns:
+            ``False`` auch dann, wenn eine Spur **schadhaft** ist — dann steht in
+            :attr:`defect_tracks`, welche.
+        """
         return bool(self._lib.k1520s_flush(self._h, timeout_ms))
+
+    def rewrite_all(self) -> int:
+        """**Die ganze Diskette neu beschreiben** — für eine frische, fehlerfreie.
+
+        Der Weg aus einer Schadstelle heraus: Diskette wechseln, dann alles noch
+        einmal hinausschreiben.  Nur **bekannte** Spuren werden eingestellt; nie
+        gelesene tragen bedeutungslose Bytes.
+
+        Returns:
+            Zahl der eingestellten Spuren.
+        """
+        return int(self._lib.k1520s_rewrite_all(self._h))
+
+    @property
+    def defect_tracks(self) -> str:
+        """Die schadhaften Spuren als Text, z. B. ``"5/1, 12/0"`` (leer = keine)."""
+        puffer = ctypes.create_string_buffer(4096)
+        n = self._lib.k1520s_defect_tracks(self._h, puffer, len(puffer))
+        return puffer.value.decode("utf-8", "replace") if n > 0 else ""

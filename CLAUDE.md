@@ -675,8 +675,23 @@ Was man beim Weiterarbeiten wissen muss:
   nicht (Vollspur-FORMAT ersetzt die Spur) — daran hängt, dass eine Leerdiskette im
   echten Laufwerk formatiert werden kann, ohne vorher gelesen zu werden.
   Wächter: `TrackSync.ReihenlaufLaedtNichtNach`.
+- **Geschrieben gilt erst nach dem ZURUECKLESEN** (Entwurf §7.1).  Der Verify-Lauf des
+  Gastsystems (`FORMAT`) prüft das **Speicherabbild gegen sich selbst** und sieht eine
+  Schadstelle der Diskette nie — deshalb folgt jedem `Write` ein `Verify` (Spur
+  zurücklesen, auf **Sektorebene** vergleichen: IDs, Nutzdaten, Anhang hinter der
+  Daten-CRC, beide Prüfsummen; nachlaufende Gap-Bytes werden abgeschnitten, byteweise
+  gleich sind zwei Aufnahmen nie).  Erst dann wird `Dirty` gelöscht.  Stimmt es nicht:
+  **einmal** neu schreiben und erneut prüfen, sonst gilt die Spur als **schadhaft** —
+  sie bleibt `Dirty`, `flushPending()` meldet Misserfolg mit Spurnummer, und die
+  Oberfläche bietet **„Diskette neu beschreiben"** (`rewriteAll()`, stellt jede
+  **bekannte** Spur erneut ein; unbekannte bleiben weg, sie trügen Müll auf die neue
+  Diskette).  **Das Zurückgelesene wird NIE ins Abbild übernommen** — sonst
+  überschriebe ein misslungener Schreibvorgang genau die Daten, die er zerstört hat.
+  Für den Arbeitsfaden ist `Verify` dasselbe wie `Read`.  Abschaltbar über
+  `verify_writes`, Vorgabe **an**.
 - **Drei Prioritäten:** 1 Lesen auf Anforderung (jemand wartet) → 2 geänderte Spuren
-  zurückschreiben → 3 unbekannte Spuren vorauslesen (kürzester Kopfweg zuerst).
+  zurückschreiben (samt Prüf-Lesen, das **vor** neuen Schreibvorgängen kommt) →
+  3 unbekannte Spuren vorauslesen (kürzester Kopfweg zuerst).
   Prio 1 **verdrängt**, unterbricht aber **keinen laufenden** Zugriff (der Faden steckt
   in einer Übertragung).  Zurückgeschrieben wird erst nach einer **Schreibpause**
   (≈ 0,5 s) — dieselbe Regel wie der Autosave, sonst schriebe eine UDOS-Dateioperation
@@ -704,10 +719,15 @@ Was man beim Weiterarbeiten wissen muss:
   `pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"` (der Zweigkopf
   meldet sich als Pre-Release).  Fehlt das Paket, fehlt nur der Menüpunkt.
 - **Tests brauchen keine Hardware** (in der CI ist nie ein Laufwerk):
-  `TrackSync.*` (20 Fälle) mit einem Ersatz-Arbeitsfaden aus dem RAM, `PhysicalBoot.*`
+  `TrackSync.*` (29 Fälle) mit einem Ersatz-Arbeitsfaden aus dem RAM — inkl.
+  **Schadstelle** (die Spur meldet Schreiberfolg, liefert beim Lesen aber den alten
+  Inhalt) —, `PhysicalBoot.*`
   (**CP/A bootet spurweise bis `A>` und holt dabei weniger als die halbe Diskette**),
   `py_gw_physical` (Ersatzlaufwerk über einer `.hfe` — **ohne** `greaseweazle`-Import;
-  dieselbe Diskette einmal als Datei und einmal „physisch" muss dasselbe liefern).
+  dieselbe Diskette einmal als Datei und einmal „physisch" muss dasselbe liefern; dazu
+  ein **Drift-Wächter**, der die `ctypes.Structure` gegen den C-Kopf hält — eine
+  vertauschte Feldreihenfolge stürzt nicht ab, sie liefert still falsche Zahlen) und
+  `py_gw_gui` (beide Oberflächen, inkl. Schadstellen-Meldung und Rettungsknopf).
   Die echten Hardware-Tests liegen in `tests/python/test_gw_hardware.py`, sind **nicht**
   in ctest registriert und laufen nur mit `K1520_GW_HARDWARE=1` (Schreiben zusätzlich
   nur mit `K1520_GW_WRITE=1`).
@@ -717,7 +737,10 @@ Was man beim Weiterarbeiten wissen muss:
   geschrieben** (4 Spuren zurückgeführt, danach die ganze Diskette neu eingelesen →
   byteweise gleich); beide Oberflächen einmal durchgefahren.  Vor Schreibversuchen die
   Diskette sichern (`gw read` über alle Spuren, 2 MB `.hfe`).
-- **Offen:** die CLI (`k1520disktool --physical`), das Merken der Sitzungsparameter,
+- **Offen:** das **Prüf-Lesen ist an echter Hardware noch nicht gegengeprüft** (der
+  Adapter verschwand vom USB; nachzuholen mit `K1520_GW_HARDWARE=1 K1520_GW_WRITE=1
+  … -k schreibt_eine_datei`), die CLI (`k1520disktool --physical`),
+  das Merken der Sitzungsparameter,
   und beim Zusammenführen mit `create_disktool` gehört die Aktion in `ui/actions.py`
   statt als freistehender Knopf.
 

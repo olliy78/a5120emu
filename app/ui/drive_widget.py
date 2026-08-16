@@ -238,6 +238,15 @@ class DriveWidget(QWidget):
         create_btn = QPushButton("Neue Diskette")
         saveas_btn = QPushButton("Speichern unter…")
         phys_btn = QPushButton("Physisch…")
+        # Rettungsweg aus einer Schadstelle: neue Diskette einlegen, alles noch einmal
+        # hinausschreiben.  Nur sichtbar, solange ein echtes Laufwerk eingelegt ist.
+        rewrite_btn = QPushButton("Diskette neu beschreiben")
+        rewrite_btn.setVisible(False)
+        rewrite_btn.setToolTip(
+            "Schreibt das vollständige Speicherabbild noch einmal auf die eingelegte "
+            "Diskette — für eine frische, fehlerfreie.\n"
+            "Nur bereits gelesene Spuren werden geschrieben; nie gelesene tragen "
+            "keinen gültigen Inhalt.")
         saveas_btn.setEnabled(False)
         saveas_btn.setToolTip("Die eingelegte Diskette unter neuem Namen/Format "
                               "speichern; ab dann folgen alle Schreibzugriffe dorthin.")
@@ -259,6 +268,7 @@ class DriveWidget(QWidget):
             saveas_btn.setEnabled(False)
             phys_btn.setEnabled(True)
             phys_label.setVisible(False)
+            rewrite_btn.setVisible(False)
             self._update_notice(drive)
             self.disk_unmounted.emit(drive)
 
@@ -411,20 +421,47 @@ class DriveWidget(QWidget):
             phys_btn.setEnabled(False)
             saveas_btn.setEnabled(True)     # „Speichern unter…" zieht die Diskette ab
             phys_label.setVisible(True)
+            rewrite_btn.setVisible(bool(wahl["writable"]))
             self._update_physical_status(drive)
             self._update_notice(drive)
             self.disk_mounted.emit(drive, path_display.text())
+
+        def on_rewrite():
+            """Das Abbild noch einmal vollständig auf die (neue) Diskette schreiben."""
+            sitzung = self._physical.get(drive)
+            if sitzung is None:
+                return
+            st = sitzung.stats()
+            unbekannt = (st.tracks_total - st.tracks_known) if st else 0
+            frage = ("Das Speicherabbild wird noch einmal vollständig auf die "
+                     "eingelegte Diskette geschrieben.\n\n"
+                     "Legen Sie jetzt eine fehlerfreie Diskette ein.")
+            if unbekannt:
+                frage += (f"\n\n⚠ {unbekannt} von {st.tracks_total} Spuren wurden nie "
+                          "gelesen und können deshalb nicht geschrieben werden — die "
+                          "neue Diskette bliebe insoweit unvollständig.")
+            if QMessageBox.question(self, "Diskette neu beschreiben", frage,
+                                    QMessageBox.Ok | QMessageBox.Cancel) != QMessageBox.Ok:
+                return
+            n = sitzung.rewrite_all()
+            QMessageBox.information(
+                self, "Diskette neu beschreiben",
+                f"{n} Spuren wurden zum Schreiben eingestellt.\n"
+                "Der Fortschritt steht im Laufwerkskasten; jede Spur wird nach dem "
+                "Schreiben zurückgelesen.")
 
         toggle_btn.clicked.connect(on_toggle)
         create_btn.clicked.connect(on_create)
         saveas_btn.clicked.connect(on_save_as)
         phys_btn.clicked.connect(on_physical)
+        rewrite_btn.clicked.connect(on_rewrite)
 
         buttons_layout.addWidget(toggle_btn)
         buttons_layout.addWidget(create_btn)
         buttons_layout.addWidget(saveas_btn)
         buttons_layout.addWidget(phys_btn)
         layout.addLayout(buttons_layout)
+        layout.addWidget(rewrite_btn)
 
         # Store references for updates
         group._path_display = path_display
@@ -436,6 +473,7 @@ class DriveWidget(QWidget):
         group._notice_label = notice_label
         group._phys_label = phys_label
         group._phys_btn = phys_btn
+        group._rewrite_btn = rewrite_btn
         group._led = led
         self._panels[drive] = group
 
@@ -495,7 +533,12 @@ class DriveWidget(QWidget):
             QApplication.restoreOverrideCursor()
 
     def _update_physical_status(self, drive: int):
-        """Füllstandszeile einer physischen Diskette nachführen."""
+        """Füllstandszeile einer physischen Diskette nachführen.
+
+        Meldet dabei **einmal je Schadstelle** ein Fenster: eine Spur, die sich nicht
+        schreiben lässt, ist der eine Fall, in dem der Bediener sofort handeln muss —
+        das Abbild im Speicher ist noch heil, die Diskette nicht mehr.
+        """
         panel = self._panels.get(drive)
         sitzung = self._physical.get(drive)
         if panel is None or not hasattr(panel, "_phys_label"):
@@ -503,8 +546,17 @@ class DriveWidget(QWidget):
         if sitzung is None:
             panel._phys_label.setVisible(False)
             return
+
+        defekt = sitzung.defect_tracks
         panel._phys_label.setText("⏵ " + sitzung.status_text())
+        panel._phys_label.setStyleSheet("color: #d33;" if defekt else "color: #4a8;")
         panel._phys_label.setVisible(True)
+
+        neu = sitzung.neue_defekte()
+        if neu:
+            panel._rewrite_btn.setVisible(True)
+            QMessageBox.warning(self, f"Schreibfehler — Laufwerk {drive}",
+                                sitzung.defekt_meldung(neu))
 
     def close_physical_sessions(self):
         """Alle physischen Sitzungen beenden (Programmende, Konfigurationswechsel)."""

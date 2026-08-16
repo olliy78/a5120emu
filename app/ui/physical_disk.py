@@ -66,6 +66,10 @@ class PhysicalSession:
         writable: ob auf die echte Diskette geschrieben werden darf.
     """
 
+    #: Text der letzten Defektmeldung, die dem Bediener schon gezeigt wurde —
+    #: damit dieselbe Schadstelle nicht bei jedem Zeitgeber-Tick ein Fenster öffnet.
+    gemeldete_defekte: str = ""
+
     def __init__(self, sync, worker, device, *, drive: str, writable: bool,
                  cell_rate_kbps: int):
         self.sync = sync
@@ -80,7 +84,7 @@ class PhysicalSession:
     def start(cls, *, drive: str = "a", cell_rate_kbps: int = 250,
               num_cyls: int = 80, num_heads: int = 2, writable: bool = False,
               read_ahead: bool = True, for_emulator: bool = False,
-              rpm: int = 300) -> "PhysicalSession":
+              rpm: int = 300, verify_writes: bool = True) -> "PhysicalSession":
         """Adapter öffnen, Sync anlegen, Arbeitsfaden starten.
 
         Es wird dabei **nichts gelesen** — Spuren kommen einzeln, sobald jemand sie
@@ -95,7 +99,8 @@ class PhysicalSession:
         device = open_device(drive, cell_rate_kbps=cell_rate_kbps)
         sync = Sync(num_cyls=num_cyls, num_heads=num_heads,
                     cell_rate_kbps=cell_rate_kbps, rpm=rpm, writable=writable,
-                    read_ahead=read_ahead, for_emulator=for_emulator)
+                    read_ahead=read_ahead, for_emulator=for_emulator,
+                    verify_writes=verify_writes)
         worker = TrackWorker(sync, device)
         try:
             worker.start()
@@ -129,11 +134,62 @@ class PhysicalSession:
         if st.tracks_dirty:
             text += f" · {st.tracks_dirty} zu schreiben"
         if st.busy:
-            was = {1: "liest", 2: "schreibt"}.get(st.busy_kind, "arbeitet an")
+            was = {1: "liest", 2: "schreibt", 4: "prüft"}.get(st.busy_kind, "arbeitet an")
             text += f" · {was} {st.busy_cyl}/{st.busy_head}"
         if st.tracks_failed:
             text += f" · {st.tracks_failed} unlesbar"
+        if st.tracks_defect:
+            text += f" · {st.tracks_defect} nicht beschreibbar"
         return text
+
+    # ── Schadstellen ────────────────────────────────────────────────────────
+
+    @property
+    def defect_tracks(self) -> str:
+        """Die schadhaften Spuren als Text, z. B. ``"5/1, 12/0"`` (leer = keine)."""
+        if self._zu:
+            return ""
+        try:
+            return self.sync.defect_tracks
+        except Exception:                        # noqa: BLE001
+            return ""
+
+    def neue_defekte(self) -> str:
+        """Schadstellen, die dem Bediener **noch nicht** gemeldet wurden.
+
+        Der Aufrufer kann diese Methode bei jedem Zeitgeber-Tick rufen; sie liefert
+        nur beim ersten Mal (und bei jeder *neu* hinzugekommenen Spur) einen Text.
+        """
+        jetzt = self.defect_tracks
+        if not jetzt or jetzt == self.gemeldete_defekte:
+            return ""
+        self.gemeldete_defekte = jetzt
+        return jetzt
+
+    def defekt_meldung(self, spuren: str) -> str:
+        """Der Text, den der Bediener zu sehen bekommt — samt Ausweg."""
+        return (
+            f"Die Diskette liess sich an dieser Stelle nicht beschreiben:\n\n"
+            f"    Spur {spuren}\n\n"
+            "Geschrieben wurde es zweimal und danach zurückgelesen — beide Male kam "
+            "etwas anderes zurück.  Das ist eine Schadstelle der Diskette, kein "
+            "Fehler des Programms.\n\n"
+            "Das Abbild im Speicher ist unversehrt.  Retten Sie es, solange dieses "
+            "Fenster offen ist:\n"
+            "  • „Speichern unter…“ schreibt es in eine Datei, oder\n"
+            "  • legen Sie eine fehlerfreie Diskette ein und wählen Sie "
+            "„Diskette neu beschreiben“.")
+
+    def rewrite_all(self) -> int:
+        """Alle bekannten Spuren erneut zum Schreiben einstellen (neue Diskette).
+
+        Returns:
+            Zahl der eingestellten Spuren (0 = nichts bekannt / nicht schreibbar).
+        """
+        if self._zu:
+            return 0
+        self.gemeldete_defekte = ""      # auf der neuen Diskette gilt nichts von vorher
+        return self.sync.rewrite_all()
 
     def close(self, timeout: float = 30.0) -> None:
         """Sitzung beenden — **erst** den Faden, dann den Synchronisierer.
@@ -202,6 +258,15 @@ class PhysicalDiskDialog(QDialog):
             "das Laufwerk warten muss.  Angeforderte Spuren haben immer Vorrang.")
         form.addRow("", self._vorauslesen)
 
+        self._verify = QCheckBox("Geschriebene Spuren zurücklesen und vergleichen")
+        self._verify.setChecked(True)
+        self._verify.setToolTip(
+            "Findet Schadstellen der Diskette.  Der Verify-Lauf des Gastsystems "
+            "(FORMAT) prüft nur das Speicherabbild gegen sich selbst und sieht sie "
+            "nie — dieses Prüf-Lesen geht gegen die Scheibe.\n"
+            "Kostet die doppelte Zeit je Schreibvorgang.")
+        form.addRow("", self._verify)
+
         self._schreiben = QCheckBox("Auf die echte Diskette schreiben")
         self._schreiben.setChecked(False)
         self._schreiben.setEnabled(allow_write)
@@ -234,6 +299,7 @@ class PhysicalDiskDialog(QDialog):
             "num_heads": self._num_heads,
             "writable": self._schreiben.isChecked(),
             "read_ahead": self._vorauslesen.isChecked(),
+            "verify_writes": self._verify.isChecked(),
         }
 
     @classmethod

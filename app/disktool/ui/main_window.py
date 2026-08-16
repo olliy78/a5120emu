@@ -40,6 +40,7 @@ from app.disktool.ui.disk_editor import DiskEditorWindow
 from app.disktool.ui.disk_view import DiskView
 from app.disktool.ui.folder_view import FolderView
 from app.disktool.ui.properties_dialog import PropertiesDialog
+from app.ui.physical_disk import mit_fortschritt
 
 #: Endungen, die im Textmodus vorgeschlagen werden.
 TEXT_ENDUNGEN = {".txt", ".text", ".asm", ".mac", ".doc", ".md", ".log", ".dat"}
@@ -62,6 +63,14 @@ class MainWindow(QMainWindow):
         self.btn_oeffnen = QPushButton("Abbild öffnen…")
         self.btn_neu = QPushButton("Neue Diskette…")
         self.btn_physisch = QPushButton("Physisches Laufwerk…")
+        # Rettungsweg aus einer Schadstelle (§7.2): neue Diskette einlegen, alles noch
+        # einmal hinausschreiben.  Nur sichtbar, solange ein echtes Laufwerk offen ist.
+        self.btn_neu_beschreiben = QPushButton("Diskette neu beschreiben")
+        self.btn_neu_beschreiben.setVisible(False)
+        self.btn_neu_beschreiben.setToolTip(
+            "Schreibt das vollständige Speicherabbild noch einmal auf die eingelegte "
+            "Diskette — für eine frische, fehlerfreie.\n"
+            "Nur bereits gelesene Spuren werden geschrieben.")
         self.btn_physisch.setToolTip(
             "Eine ECHTE Diskette in einem echten Laufwerk am Greaseweazle öffnen.\n"
             "Das Öffnen liest die ganze Diskette (die Formaterkennung sieht sich "
@@ -85,6 +94,7 @@ class MainWindow(QMainWindow):
         kopf.addWidget(self.btn_oeffnen)
         kopf.addWidget(self.btn_neu)
         kopf.addWidget(self.btn_physisch)
+        kopf.addWidget(self.btn_neu_beschreiben)
         kopf.addWidget(QLabel("Dateisystem:"))
         kopf.addWidget(self.fs_wahl, 1)
         kopf.addWidget(self.chk_readonly)
@@ -165,6 +175,7 @@ class MainWindow(QMainWindow):
         self.btn_oeffnen.clicked.connect(self._oeffnen_dialog)
         self.btn_neu.clicked.connect(self._neu_dialog)
         self.btn_physisch.clicked.connect(self._physisch_dialog)
+        self.btn_neu_beschreiben.clicked.connect(self._neu_beschreiben)
         self.btn_raus.clicked.connect(self._extrahieren_auswahl)
         self.btn_rein.clicked.connect(self._einfuegen_auswahl)
         self.btn_alles_raus.clicked.connect(self._alles_extrahieren)
@@ -326,9 +337,59 @@ class MainWindow(QMainWindow):
             f"<b>Echtes Laufwerk {drive.upper()} am Greaseweazle</b> — "
             f"{self.tool.filesystem}"
             + ("  (schreibend)" if writable else "  (nur lesen)"))
+        self.btn_neu_beschreiben.setVisible(bool(writable))
         self.log(f"Physisches Laufwerk {drive.upper()}: {self.tool.filesystem}, "
                  f"{sitzung.status_text()}")
+        self._pruefe_defekte()
         return True
+
+    def _pruefe_defekte(self) -> bool:
+        """Schadstellen melden — **einmal je Spur**, mit Ausweg.
+
+        Zu rufen nach jedem Vorgang, der geschrieben haben könnte.  Das Abbild im
+        Speicher ist dann noch heil; die Meldung sagt, wie man es rettet.
+        """
+        sitzung = getattr(self, "_physisch", None)
+        if sitzung is None:
+            return False
+        neu = sitzung.neue_defekte()
+        if not neu:
+            return False
+        self.btn_neu_beschreiben.setVisible(True)
+        self.log(f"SCHREIBFEHLER auf Spur {neu}")
+        QMessageBox.warning(self, "Schreibfehler", sitzung.defekt_meldung(neu))
+        return True
+
+    def _neu_beschreiben(self) -> None:
+        """Das Abbild noch einmal vollständig auf die (neue) Diskette schreiben."""
+        sitzung = getattr(self, "_physisch", None)
+        if sitzung is None:
+            return
+        st = sitzung.stats()
+        unbekannt = (st.tracks_total - st.tracks_known) if st else 0
+        frage = ("Das Speicherabbild wird noch einmal vollständig auf die eingelegte "
+                 "Diskette geschrieben.\n\nLegen Sie jetzt eine fehlerfreie Diskette ein.")
+        if unbekannt:
+            frage += (f"\n\n⚠ {unbekannt} von {st.tracks_total} Spuren wurden nie gelesen "
+                      "und können deshalb nicht geschrieben werden.")
+        if QMessageBox.question(self, "Diskette neu beschreiben", frage,
+                                QMessageBox.Ok | QMessageBox.Cancel) != QMessageBox.Ok:
+            return
+
+        n = sitzung.rewrite_all()
+        self.log(f"{n} Spuren zum Neubeschreiben eingestellt")
+        from app.ui.physical_disk import mit_fortschritt
+        _, fehler = mit_fortschritt(
+            self, sitzung, lambda: sitzung.sync.flush(600_000),
+            titel="Diskette neu beschreiben",
+            text="Das Abbild wird geschrieben und zurückgelesen…")
+        if fehler is not None:
+            self._fehler("Diskette neu beschreiben", str(fehler))
+            return
+        if not self._pruefe_defekte():
+            QMessageBox.information(
+                self, "Diskette neu beschreiben",
+                f"{n} Spuren wurden geschrieben und fehlerfrei zurückgelesen.")
 
     def _physisch_dialog(self) -> None:
         """Abfrage vor dem Einlegen und dann oeffnen."""
@@ -369,6 +430,7 @@ class MainWindow(QMainWindow):
         if sitzung is None:
             return
         self._physisch = None
+        self.btn_neu_beschreiben.setVisible(False)
         from PySide6.QtGui import QCursor
         from PySide6.QtWidgets import QApplication
         QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
@@ -547,8 +609,29 @@ class MainWindow(QMainWindow):
         self.log("Schreibschutz " + ("gesetzt" if ro else "aufgehoben"))
 
     def save(self) -> bool:
+        """Änderungen festschreiben.
+
+        Bei einer **physischen** Diskette heisst das: warten, bis jede geänderte Spur
+        geschrieben **und zurückgelesen** ist (§7.1).  Das kann eine Weile dauern und
+        kann an einer Schadstelle scheitern — dann nennt die Meldung die Spur.
+        """
         if self.tool is None:
             return False
+        sitzung = getattr(self, "_physisch", None)
+        if sitzung is not None:
+            _, fehler = mit_fortschritt(
+                self, sitzung, self.tool.flush,
+                titel="Auf die Diskette schreiben",
+                text="Geänderte Spuren werden geschrieben und zurückgelesen…")
+            if fehler is not None:
+                if not self._pruefe_defekte():
+                    self._fehler("Speichern", str(fehler))
+                return False
+            self._pruefe_defekte()
+            self._reload()
+            self.log("Auf die physische Diskette geschrieben")
+            return True
+
         try:
             self.tool.flush()
         except K1520DiskError as e:

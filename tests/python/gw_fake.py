@@ -30,6 +30,10 @@ class HfeDevice:
         verzoegerung: künstliche Lesedauer in Sekunden (Kopfweg nachstellen).
     """
 
+    #: Spuren, die nichts annehmen — Schadstelle einer echten Diskette.  Geschrieben
+    #: wird scheinbar, gelesen wird weiter der ALTE Inhalt.
+    schadhaft: set
+
     def __init__(self, pfad, verzoegerung: float = 0.0):
         roh = pfad.read_bytes()
         assert roh[:8] == b"HXCPICFE", f"keine HFE-v1-Datei: {pfad}"
@@ -53,6 +57,7 @@ class HfeDevice:
 
         self.gelesen: list[tuple[int, int]] = []
         self.geschrieben: list[tuple[int, int]] = []
+        self.schadhaft = set()
         self.verzoegerung = verzoegerung
         self._sperre = threading.Lock()
 
@@ -66,7 +71,10 @@ class HfeDevice:
     def write_track(self, cyl: int, head: int, cells: bytes, bitcells: int) -> None:
         with self._sperre:
             self.geschrieben.append((cyl, head))
-            self._spuren[(cyl, head)] = (cells, bitcells)
+            # Auf einer Schadstelle bleibt der alte Inhalt stehen; der Schreibvorgang
+            # selbst meldet trotzdem Erfolg — genau wie am echten Laufwerk.
+            if (cyl, head) not in self.schadhaft:
+                self._spuren[(cyl, head)] = (cells, bitcells)
 
 
 def fake_session(hfe, *, writable=False, read_ahead=True, for_emulator=False,

@@ -200,3 +200,149 @@ def test_gescheitertes_lesen_bringt_niemanden_zum_haengen(hfe):
             assert "Kabel ab" in worker.last_error
         finally:
             worker.stop()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Drift-Wächter: C-Kopf ↔ ctypes
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Die drei Strukturen der Sync-ABI stehen zweimal: in core/api/k1520_sync_api.h und
+# als ctypes.Structure in app/gw/sync.py.  Weicht die REIHENFOLGE ab, liest Python
+# stillschweigend die falschen Felder — kein Absturz, nur falsche Zahlen.  Deshalb
+# werden beide Seiten hier mechanisch verglichen.
+
+import re
+from pathlib import Path
+
+HEADER = Path(__file__).resolve().parents[2] / "core" / "api" / "k1520_sync_api.h"
+
+
+def _c_struct_felder(name: str) -> list[str]:
+    """Feldnamen einer `typedef struct { … } NAME;` aus dem C-Kopf, in Reihenfolge."""
+    text = HEADER.read_text("utf-8")
+    # [^{}]* statt .*? — sonst beginnt der Treffer bei der ERSTEN Struktur des Kopfes
+    # und zieht deren Felder mit herein.
+    m = re.search(r"typedef struct \{([^{}]*)\}\s*" + name + r"\s*;", text, re.S)
+    assert m, f"{name} steht nicht im Kopf {HEADER}"
+    felder = []
+    for zeile in m.group(1).splitlines():
+        zeile = re.sub(r"/\*.*?\*/", "", zeile)          # Blockkommentare
+        zeile = zeile.split("///")[0].split("//")[0].strip()
+        treffer = re.match(r"^(?:const\s+)?\w+\s+(\w+)\s*;", zeile)
+        if treffer:
+            felder.append(treffer.group(1))
+    return felder
+
+
+@pytest.mark.parametrize("c_name,py_name", [
+    ("K1520SyncSpec", "_Spec"),
+    ("K1520SyncJob", "_Job"),
+    ("K1520SyncStats", "_Stats"),
+])
+def test_die_ctypes_struktur_passt_zum_c_kopf(c_name, py_name):
+    from app.gw import sync as sync_modul
+
+    erwartet = _c_struct_felder(c_name)
+    py = [f[0] for f in getattr(sync_modul, py_name)._fields_]
+    assert py == erwartet, (
+        f"{py_name} weicht von {c_name} ab.\n  C:      {erwartet}\n  Python: {py}")
+
+
+def test_die_auftragsarten_stimmen_ueberein():
+    """`JobKind` muss dieselben Werte tragen wie die Aufzählung im C-Kopf."""
+    from app.gw import JobKind
+
+    text = HEADER.read_text("utf-8")
+    for name, wert in re.findall(r"K1520_SYNC_JOB_(\w+)\s*=\s*(\d+)", text):
+        assert JobKind[name].value == int(wert), f"JobKind.{name}"
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Schreib-Verify gegen die echte Spur
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_geschriebene_spuren_werden_zurueckgelesen(hfe):
+    """Jedem Schreibvorgang folgt ein Prüf-Lesen — sonst bliebe ein Schaden blind."""
+    geraet = HfeDevice(hfe)
+    with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
+              writable=True, read_ahead=False, write_settle_ms=50) as s:
+        worker = TrackWorker(s, geraet, poll_ms=30)
+        worker.start()
+        try:
+            with DiskTool.open_physical(s, read_only=False) as d:
+                pass
+        finally:
+            worker.stop()
+
+    # Ohne Schreibzugriff darf gar nichts geschrieben (und nichts geprüft) worden sein.
+    assert geraet.geschrieben == []
+
+
+def test_eine_schadstelle_wird_gemeldet_statt_verschwiegen(hfe, tmp_path):
+    """Der eigentliche Zweck: eine Diskette, die nicht mehr trägt, fällt auf.
+
+    Der Verify-Lauf des Gastsystems liefe gegen das Speicherabbild und sähe nichts;
+    das Prüf-Lesen gegen die Scheibe sieht es.
+    """
+    geraet = HfeDevice(hfe)
+    with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
+              writable=True, read_ahead=False, write_settle_ms=50,
+              request_timeout_ms=20000) as s:
+        worker = TrackWorker(s, geraet, poll_ms=30)
+        worker.start()
+        try:
+            # Erst öffnen (liest die Diskette), dann sie „beschädigen" und schreiben.
+            with DiskTool.open_physical(s, read_only=False) as d:
+                eintraege = [e for e in d.list() if e.size > 0]
+                assert eintraege, "Fixture ohne Dateien"
+                geraet.schadhaft = set(geraet._spuren)      # NICHTS nimmt mehr an
+                quelle = tmp_path / "PROBE.TXT"
+                quelle.write_bytes(b"schadstelle\r\n" * 4)
+                ziel = eintraege[0].side_prefix.replace("Side1/", "Side0/") + "PROBE.TXT"
+                d.insert(quelle, ziel, overwrite=True)
+                # Das Speichern MUSS scheitern — und die Meldung muss die Spur nennen,
+                # nicht bloss „fehlgeschlagen".
+                from app.core_binding.k1520disk import K1520DiskError
+                with pytest.raises(K1520DiskError) as fehler:
+                    d.flush()
+                assert "nicht schreiben" in str(fehler.value), str(fehler.value)
+            assert not s.flush(20000), "der Schaden wurde als Erfolg verbucht"
+        finally:
+            worker.stop()
+
+        st = s.stats
+        assert st.tracks_defect > 0, "keine Schadstelle erkannt"
+        assert st.verify_failed >= 2, "es wurde nicht wiederholt"
+        assert s.defect_tracks, "die Spurnummer fehlt in der Meldung"
+        assert "/" in s.defect_tracks
+        assert "liess sich nicht schreiben" in s.last_error
+
+
+def test_neu_beschreiben_stellt_alles_wieder_ein(hfe):
+    """Der Ausweg: heile Diskette einlegen, alles Bekannte erneut hinausschreiben."""
+    geraet = HfeDevice(hfe)
+    with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
+              writable=True, read_ahead=True, write_settle_ms=50) as s:
+        worker = TrackWorker(s, geraet, poll_ms=30)
+        worker.start()
+        try:
+            ende = time.monotonic() + 20
+            while time.monotonic() < ende and s.stats.tracks_known < s.stats.tracks_total:
+                time.sleep(0.05)
+            bekannt = s.stats.tracks_known
+            assert bekannt > 0
+
+            eingestellt = s.rewrite_all()
+            assert eingestellt == bekannt, "es wurden nicht alle bekannten Spuren gestellt"
+
+            ende = time.monotonic() + 60
+            while time.monotonic() < ende and s.stats.tracks_dirty:
+                time.sleep(0.05)
+            assert s.stats.tracks_dirty == 0, "die Rückführung wurde nicht fertig"
+            assert s.stats.tracks_defect == 0
+            # Jede bekannte Spur wurde geschrieben UND geprüft.
+            assert len(set(geraet.geschrieben)) == bekannt
+            assert s.stats.verifies_done >= bekannt
+        finally:
+            worker.stop()

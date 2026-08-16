@@ -60,6 +60,16 @@ typedef struct {
     bool     read_ahead;        ///< unbekannte Spuren in Ruhephasen vorauslesen
     uint32_t write_settle_ms;   ///< Ruhezeit vor dem Rückschreiben (0 = 500)
     uint32_t request_timeout_ms;///< Frist einer Leseanforderung (0 = 30000)
+    /**
+     * @brief Jede geschriebene Spur zurücklesen und vergleichen (Vorgabe: **an**).
+     *
+     * Ohne das bleibt eine Schadstelle der Diskette unentdeckt — der Verify-Lauf des
+     * Gastsystems (FORMAT) prüft gegen das Speicherabbild, nicht gegen die Scheibe.
+     * `false` schaltet es ab (schneller, aber blind).
+     */
+    bool     verify_writes;
+    /// Zusätzliche Schreibversuche nach einem misslungenen Vergleich (0 = keiner, Vorgabe 1).
+    uint8_t  write_verify_retries;
 } K1520SyncSpec;
 
 /// @brief Auftragsart; entspricht `SyncJobKind`.
@@ -67,7 +77,15 @@ enum {
     K1520_SYNC_JOB_NONE  = 0,
     K1520_SYNC_JOB_READ  = 1,
     K1520_SYNC_JOB_WRITE = 2,
-    K1520_SYNC_JOB_STOP  = 3   /**< kein Auftrag mehr — der Arbeitsfaden soll enden */
+    K1520_SYNC_JOB_STOP  = 3,  /**< kein Auftrag mehr — der Arbeitsfaden soll enden */
+    /**
+     * @brief Prüf-Lesen nach einem Schreibvorgang.
+     *
+     * Für den Arbeitsfaden **dasselbe wie READ**: Spur lesen, Bitzellen über
+     * @ref k1520s_complete_read abliefern.  Was damit geschieht, entscheidet der Kern
+     * (er vergleicht und übernimmt **nicht**).
+     */
+    K1520_SYNC_JOB_VERIFY = 4
 };
 
 /// @brief Ein Auftrag für den Arbeitsfaden.
@@ -85,8 +103,11 @@ typedef struct {
     uint16_t tracks_known;    ///< schon gelesen (oder geschrieben)
     uint16_t tracks_dirty;    ///< warten auf Rückführung
     uint16_t tracks_failed;   ///< beim letzten Versuch nicht lesbar
+    uint16_t tracks_defect;   ///< **schadhaft**: mehrfach geschrieben, nie zurückgelesen
     uint32_t reads_done;
     uint32_t writes_done;
+    uint32_t verifies_done;   ///< bestandene Prüf-Lesevorgänge
+    uint32_t verify_failed;   ///< misslungene Vergleiche (inkl. Wiederholungen)
     uint32_t errors;
     uint8_t  busy_kind;       ///< laufender Auftrag (0 = gerade nichts)
     uint8_t  busy_cyl;        ///< 255 = nichts
@@ -156,8 +177,28 @@ K1520_API const char* k1520s_last_error(K1520Sync h);
 /// @brief Alle noch unbekannten Spuren lesen (für „Speichern unter…"). Blockiert.
 K1520_API bool k1520s_load_all(K1520Sync h);
 
-/// @brief Alle geänderten Spuren sofort zurückschreiben und darauf warten.
+/**
+ * @brief Alle geänderten Spuren sofort zurückschreiben und darauf warten.
+ * @return false auch dann, wenn eine Spur **schadhaft** ist (@ref k1520s_defect_tracks).
+ */
 K1520_API bool k1520s_flush(K1520Sync h, int timeout_ms);
+
+/**
+ * @brief **Die ganze Diskette neu beschreiben** — für eine frische, fehlerfreie.
+ *
+ * Der Weg aus einer Schadstelle heraus: Diskette wechseln, dann alles noch einmal
+ * hinausschreiben.  Nur **bekannte** Spuren werden eingestellt; nie gelesene tragen
+ * bedeutungslose Bytes und blieben sonst als Müll auf der neuen Diskette stehen.
+ *
+ * @return Zahl der eingestellten Spuren.
+ */
+K1520_API int k1520s_rewrite_all(K1520Sync h);
+
+/**
+ * @brief Die schadhaften Spuren als Text, z. B. `"5/1, 12/0"` (leer = keine).
+ * @return Länge des Textes (ohne Nullbyte), oder -1 bei ungültigem Handle.
+ */
+K1520_API int k1520s_defect_tracks(K1520Sync h, char* buf, int buf_len);
 
 #ifdef __cplusplus
 }  /* extern "C" */

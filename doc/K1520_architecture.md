@@ -1234,6 +1234,15 @@ echte Diskette ◄─gw─► Arbeitsfaden ◄─Aufträge─► DiskMedium
    Regel wie der Autosave, sonst schriebe eine UDOS-Dateioperation dieselbe Spur
    dutzendfach), **3** unbekannte Spuren vorausschauend lesen (kürzester Kopfweg zuerst).
    Prio 1 **verdrängt**, unterbricht aber keinen laufenden Zugriff.
+3a. **Geschrieben gilt erst nach dem Zurücklesen** (Feinentwurf §7.1). Der Verify-Lauf
+   des Gastsystems (`FORMAT`) prüft das *Speicherabbild gegen sich selbst* und sieht eine
+   Schadstelle der Diskette nie; deshalb folgt jedem `Write` ein `Verify`, das die Spur
+   zurückliest und auf **Sektorebene** vergleicht. Erst dann wird `Dirty` gelöscht.
+   Misslingt es zweimal, gilt die Spur als **schadhaft**: sie bleibt `Dirty`, „Speichern"
+   meldet Misserfolg mit Spurnummer, und die Oberfläche bietet
+   „Diskette neu beschreiben" für eine heile Diskette. Das Zurückgelesene wird **nie**
+   ins Abbild übernommen — sonst überschriebe ein misslungener Schreibvorgang genau die
+   Daten, die er zerstört hat.
 4. **Der Kern kennt Greaseweazle nicht.** `TrackSync` hat keinen eigenen Faden und kein
    USB; ein **fremder Arbeitsfaden** holt sich Aufträge ab (`k1520s_take_job`, die einzige
    blockierende Funktion der ABI) und liefert **HFE-Bitzellen** zurück, die durch

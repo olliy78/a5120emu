@@ -11,12 +11,80 @@
 
 #include "core/peripherals/floppy_drive/track_sync.h"
 #include "core/peripherals/floppy_drive/bit_codec.h"
+#include "core/peripherals/floppy_drive/track_codec.h"
 
 #include <algorithm>
 #include <cstdlib>
 
 namespace {
 using Uhr = std::chrono::steady_clock;
+
+/// @brief Gap-Fuellbyte? (MFM 0x4E, FM 0xFF, Sync-/Nullauslauf 0x00)
+bool istGapFueller(uint8_t b) { return b == 0x4E || b == 0xFF || b == 0x00; }
+
+/// @brief Nachlaufende Gap-Bytes abschneiden.
+///
+/// Die Bytes hinter der Daten-CRC sind bei einer Standardspur reiner Gap, bei UDOS
+/// aber der Sektorkontrollblock.  Beim Vergleich zaehlt nur, was WIRKLICH dort steht:
+/// wie viele Fuellbytes dahinter noch mitgelesen wurden, haengt an der Schreibnaht
+/// und der Drehzahl und sagt nichts ueber die Gueltigkeit der Spur.
+std::vector<uint8_t> ohneGapEnde(std::vector<uint8_t> v) {
+    while (!v.empty() && istGapFueller(v.back())) v.pop_back();
+    return v;
+}
+
+/**
+ * @brief Ist die zurueckgelesene Spur das, was geschrieben werden sollte?
+ *
+ * Verglichen wird auf **Sektorebene**, nicht byteweise: zwei Aufnahmen derselben Spur
+ * sind nie bitgleich (Schreibnaht, Drehzahl-Jitter, Startwinkel).  Massgeblich ist,
+ * was ein Laufwerk spaeter davon liest — Sektorfolge, IDs, Nutzdaten, der Anhang
+ * hinter der Daten-CRC (UDOS-Kontrollblock) und **gueltige Pruefsummen**.
+ *
+ * @param grund Klartext der ersten Abweichung (fuer die Meldung an den Bediener).
+ */
+bool spurenGleich(const TrackImage& erwartet, const TrackImage& gelesen,
+                  std::string& grund) {
+    if (erwartet.empty()) {
+        // Unformatiert geschrieben: es darf auch nichts zu lesen sein.
+        if (gelesen.empty()) return true;
+        grund = "die Spur sollte unformatiert sein, traegt aber Adressmarken";
+        return false;
+    }
+    if (gelesen.empty()) {
+        grund = "keine einzige Adressmarke lesbar";
+        return false;
+    }
+
+    const auto soll = TrackCodec::parseTrack(erwartet);
+    const auto ist  = TrackCodec::parseTrack(gelesen);
+    if (soll.size() != ist.size()) {
+        grund = std::to_string(ist.size()) + " statt " + std::to_string(soll.size())
+              + " Sektoren lesbar";
+        return false;
+    }
+
+    for (size_t i = 0; i < soll.size(); ++i) {
+        const LogicalSector& a = soll[i];
+        const LogicalSector& b = ist[i];
+        const std::string wo = "Sektor " + std::to_string(b.id);
+
+        if (!b.id_crc_ok)   { grund = wo + ": Pruefsumme des Adressfeldes falsch"; return false; }
+        if (!b.data_crc_ok) { grund = wo + ": Pruefsumme des Datenfeldes falsch";  return false; }
+        if (a.id != b.id || a.cyl != b.cyl || a.head != b.head) {
+            grund = wo + ": Adressfeld weicht ab (erwartet " + std::to_string(a.cyl)
+                  + "/" + std::to_string(a.head) + " Sektor " + std::to_string(a.id) + ")";
+            return false;
+        }
+        if (a.size != b.size) { grund = wo + ": andere Sektorlaenge"; return false; }
+        if (a.data != b.data) { grund = wo + ": Nutzdaten weichen ab"; return false; }
+        if (ohneGapEnde(a.tail) != ohneGapEnde(b.tail)) {
+            grund = wo + ": die Bytes hinter der Daten-CRC weichen ab";
+            return false;
+        }
+    }
+    return true;
+}
 }  // namespace
 
 // ─── Aufbau / Abbau ──────────────────────────────────────────────────────────
@@ -89,6 +157,12 @@ void TrackSync::trackChanged(uint8_t cyl, uint8_t head) {
     ++e.changes;
     e.dirty_since   = Uhr::now();
     e.dirty_pending = spec_.writable;
+    // Neuer Inhalt = frischer Anlauf: ein noch ausstehendes Pruef-Lesen gilt dem alten
+    // Inhalt und ist gegenstandslos, und ein Defektvermerk darf einen neuen Versuch
+    // nicht blockieren (die Schadstelle kann eine andere Diskette sein, §7.2).
+    e.verify_pending = false;
+    e.write_attempts = 0;
+    e.defect         = false;
     // Geweckt wird NICHT: die Spur muss erst zur Ruhe kommen (§7).  Der Arbeitsfaden
     // wacht von selbst auf, weil takeJob() seine Wartezeit auf die Ruhefrist begrenzt.
 }
@@ -109,7 +183,15 @@ bool TrackSync::loadAll() {
 
 bool TrackSync::flushPending(int timeout_ms) {
     std::unique_lock<std::mutex> sperre(m_);
-    if (!spec_.writable || stop_) return true;
+    // Nie geschrieben → nichts kann quergelegen haben.
+    if (!spec_.writable) return true;
+    // Nach dem Abmelden wird nichts mehr versucht — eine schadhafte Spur bleibt
+    // trotzdem eine schadhafte Spur und darf nicht als Erfolg durchgehen.
+    if (stop_) {
+        for (const Eintrag& e : eintraege_)
+            if (e.defect) return false;
+        return true;
+    }
 
     // Ruhefrist überspringen: alles, was ansteht, soll sofort hinaus.
     const auto lange_her = Uhr::now() - std::chrono::hours(1);
@@ -119,7 +201,20 @@ bool TrackSync::flushPending(int timeout_ms) {
         eintraege_[i].dirty_since = lange_her;
         etwas = true;
     }
-    if (!etwas) return true;
+    // Auch ohne offenen Schreibauftrag ist NICHT alles gut, wenn eine Spur quer liegt:
+    // fuer sie wird nichts mehr versucht, gemeldet werden muss sie trotzdem.
+    auto ohneDefekt = [this] {
+        for (const Eintrag& e : eintraege_)
+            if (e.defect) return false;
+        return true;
+    };
+    if (!etwas) {
+        // Steht noch ein Pruef-Lesen aus, ist die Rueckfuehrung nicht fertig (§7.1).
+        bool wartet = false;
+        for (const Eintrag& e : eintraege_)
+            if (e.verify_pending) { wartet = true; break; }
+        if (!wartet) return ohneDefekt();
+    }
     cv_arbeit_.notify_all();
 
     const uint32_t ms = (timeout_ms > 0) ? static_cast<uint32_t>(timeout_ms)
@@ -127,11 +222,55 @@ bool TrackSync::flushPending(int timeout_ms) {
     const bool fertig = cv_fertig_.wait_for(
         sperre, std::chrono::milliseconds(ms), [&] {
             if (stop_) return true;
+            // Auch auf das PRUEF-LESEN warten: geschrieben heisst noch nicht
+            // angekommen (§7.1).  Defekte Spuren zaehlen nicht mehr mit — fuer sie
+            // wird nichts mehr versucht, sie werden nur gemeldet.
             for (const Eintrag& e : eintraege_)
-                if (e.dirty_pending) return false;
+                if (e.dirty_pending || e.verify_pending) return false;
             return true;
         });
-    return fertig && !stop_;
+    if (!fertig || stop_) return false;
+    return ohneDefekt();   // alles hinaus — aber lag etwas quer, ist das kein Erfolg
+}
+
+size_t TrackSync::rewriteAll() {
+    // Die Liste unter der Sperre einsammeln, markDirty() aber OHNE sie rufen: es geht
+    // ueber DiskMedium zurueck in trackChanged() — mit gehaltener Sperre waere das
+    // eine Selbstverklemmung.
+    std::vector<std::pair<uint8_t, uint8_t>> spuren;
+    {
+        std::lock_guard<std::mutex> sperre(m_);
+        if (!medium_ || stop_ || !spec_.writable) return 0;
+        for (uint8_t c = 0; c < spec_.num_cyls; ++c)
+            for (uint8_t h = 0; h < spec_.num_heads; ++h) {
+                // NUR bekannte Spuren: eine nie gelesene traegt bedeutungslose Bytes,
+                // sie zu schreiben ergaebe Muell auf der neuen Diskette (§7.2).
+                if (medium_->state(c, h) == TrackState::Unknown) continue;
+                spuren.emplace_back(c, h);
+            }
+    }
+    for (const auto& [c, h] : spuren) medium_->markDirty(c, h);
+    cv_arbeit_.notify_all();
+    return spuren.size();
+}
+
+bool TrackSync::hasDefects() const {
+    std::lock_guard<std::mutex> sperre(m_);
+    for (const Eintrag& e : eintraege_)
+        if (e.defect) return true;
+    return false;
+}
+
+std::string TrackSync::defectText() const {
+    std::lock_guard<std::mutex> sperre(m_);
+    std::string out;
+    for (uint8_t c = 0; c < spec_.num_cyls; ++c)
+        for (uint8_t h = 0; h < spec_.num_heads; ++h) {
+            if (!eintraege_[idx(c, h)].defect) continue;
+            if (!out.empty()) out += ", ";
+            out += std::to_string(c) + "/" + std::to_string(h);
+        }
+    return out;
 }
 
 // ─── Auftragsauswahl ─────────────────────────────────────────────────────────
@@ -152,7 +291,19 @@ bool TrackSync::waehleAuftrag(SyncJob& out) {
     SyncJobKind  art  = SyncJobKind::Read;
     SyncPriority prio = SyncPriority::Demand;
 
-    // 2) Rückführung — die am längsten ruhende zuerst.
+    // 2a) Pruef-Lesen einer eben geschriebenen Spur — VOR neuen Schreibvorgaengen.
+    // Der Kopf steht noch dort, und die Spur gilt erst danach als erledigt (§7.1).
+    if (bester == SIZE_MAX && spec_.writable) {
+        for (size_t i = 0; i < eintraege_.size(); ++i) {
+            const Eintrag& e = eintraege_[i];
+            if (e.job_id != 0 || !e.verify_pending) continue;
+            bester = i;
+            break;
+        }
+        if (bester != SIZE_MAX) { art = SyncJobKind::Verify; prio = SyncPriority::Writeback; }
+    }
+
+    // 2b) Rückführung — die am längsten ruhende zuerst.
     if (bester == SIZE_MAX && spec_.writable) {
         Uhr::time_point aelteste{};
         for (size_t i = 0; i < eintraege_.size(); ++i) {
@@ -163,7 +314,10 @@ bool TrackSync::waehleAuftrag(SyncJob& out) {
                 bester = i; aelteste = e.dirty_since;
             }
         }
-        if (bester != SIZE_MAX) { art = SyncJobKind::Write; prio = SyncPriority::Writeback; }
+        if (bester != SIZE_MAX) {
+            art = SyncJobKind::Write; prio = SyncPriority::Writeback;
+            ++eintraege_[bester].write_attempts;
+        }
     }
 
     // 3) Vorauslesen — unbekannte Spur mit dem kürzesten Kopfweg.
@@ -319,10 +473,35 @@ bool TrackSync::completeRead(uint32_t id, const uint8_t* cells, size_t len,
     if (!medium_) return false;
     uint8_t c = 0, h = 0;
     Eintrag* e = eintragZuAuftrag(id, c, h);
-    if (!e || e->kind != SyncJobKind::Read) {
+    if (!e || (e->kind != SyncJobKind::Read && e->kind != SyncJobKind::Verify)) {
         letzter_fehler_ = "completeRead: unbekannter Auftrag";
         return false;
     }
+
+    if (e->kind == SyncJobKind::Verify) {
+        // PRUEF-LESEN: das Gelesene wird VERGLICHEN, nicht uebernommen.  Wuerde es
+        // uebernommen, ueberschriebe ein misslungener Schreibvorgang genau die Daten,
+        // die er zerstoert hat — und niemand merkte es je (§7.1).
+        e->job_id = 0;
+        e->kind   = SyncJobKind::None;
+        e->prio   = SyncPriority::None;
+        zaehler_.busy_cyl = zaehler_.busy_head = 255;
+        zaehler_.busy_kind = 0;
+
+        if (e->changes != e->changes_at_handout) {
+            // Waehrenddessen neu beschrieben: der Vergleich gaelte dem alten Inhalt.
+            e->verify_pending = false;
+            e->dirty_pending  = spec_.writable;
+            e->dirty_since    = Uhr::now();
+            cv_arbeit_.notify_all();
+            return true;
+        }
+        std::string grund;
+        const bool ok = spurenGleich(medium_->peek(c, h), spur, grund);
+        verifyAbschliessen(*e, c, h, ok, grund);
+        return true;
+    }
+
     medium_->loadTrack(c, h, std::move(spur));
     *e = Eintrag{};
     ++zaehler_.reads_done;
@@ -330,6 +509,42 @@ bool TrackSync::completeRead(uint32_t id, const uint8_t* cells, size_t len,
     zaehler_.busy_kind = 0;
     cv_fertig_.notify_all();
     return true;
+}
+
+void TrackSync::verifyAbschliessen(Eintrag& e, uint8_t cyl, uint8_t head,
+                                   bool bestanden, const std::string& grund) {
+    e.verify_pending = false;
+    const std::string wo = "Spur " + std::to_string(cyl) + "/" + std::to_string(head);
+
+    if (bestanden) {
+        // ERST JETZT ist die Spur erledigt — nicht schon nach dem Schreiben.
+        e.write_attempts = 0;
+        e.defect         = false;
+        e.dirty_pending  = false;
+        if (medium_) medium_->clearTrackDirty(cyl, head);
+        ++zaehler_.verifies_done;
+        cv_fertig_.notify_all();
+        return;
+    }
+
+    ++zaehler_.verify_failed;
+    if (e.write_attempts <= spec_.write_verify_retries) {
+        // Noch ein Versuch — sofort faellig, der Kopf steht ohnehin dort.
+        e.dirty_pending = spec_.writable;
+        e.dirty_since   = Uhr::now() - std::chrono::hours(1);
+        letzter_fehler_ = wo + " kam falsch zurueck (" + grund + ") — neuer Versuch";
+        cv_arbeit_.notify_all();
+        return;
+    }
+
+    // Endgueltig: die Stelle traegt nicht.  Die Spur bleibt im Abbild GEAENDERT,
+    // damit sie auf einer heilen Diskette noch geschrieben werden kann (§7.2);
+    // weiter versucht wird hier nichts mehr.
+    e.defect        = true;
+    e.dirty_pending = false;
+    letzter_fehler_ = wo + " liess sich nicht schreiben: " + grund;
+    ++zaehler_.errors;
+    cv_fertig_.notify_all();
 }
 
 bool TrackSync::completeWrite(uint32_t id) {
@@ -348,7 +563,14 @@ bool TrackSync::completeWrite(uint32_t id) {
     e->kind   = SyncJobKind::None;
     e->prio   = SyncPriority::None;
     if (erneut) {
-        e->dirty_since = Uhr::now();
+        e->dirty_since   = Uhr::now();
+        e->write_attempts = 0;          // neuer Inhalt, neuer Anlauf
+    } else if (spec_.verify_writes) {
+        // Geschrieben heisst noch nicht angekommen: erst das Pruef-Lesen entscheidet.
+        // Die Spur bleibt bis dahin GEAENDERT (§7.1).
+        e->dirty_pending  = false;
+        e->verify_pending = true;
+        cv_arbeit_.notify_all();
     } else {
         e->dirty_pending = false;
         medium_->clearTrackDirty(c, h);
@@ -366,13 +588,24 @@ void TrackSync::failJob(uint32_t id, const std::string& msg) {
     Eintrag* e = eintragZuAuftrag(id, c, h);
     if (!e) return;
 
-    letzter_fehler_ = msg;
-    ++zaehler_.errors;
-    const bool war_lesen = (e->kind == SyncJobKind::Read);
+    const SyncJobKind war = e->kind;
     e->job_id = 0;
     e->kind   = SyncJobKind::None;
     e->prio   = SyncPriority::None;
-    if (war_lesen) {
+    zaehler_.busy_cyl = zaehler_.busy_head = 255;
+    zaehler_.busy_kind = 0;
+
+    if (war == SyncJobKind::Verify) {
+        // Die Spur liess sich nach dem Schreiben nicht LESEN — fuer die Diskette ist
+        // das dasselbe wie ein falscher Inhalt: derselbe Weg (Wiederholung, dann Defekt).
+        verifyAbschliessen(*e, c, h, /*bestanden=*/false, msg);
+        cv_arbeit_.notify_all();
+        return;
+    }
+
+    letzter_fehler_ = msg;
+    ++zaehler_.errors;
+    if (war == SyncJobKind::Read) {
         // Unlesbare Spur: unbekannt lassen, aber nicht endlos wiederholen.
         e->failed = true;
     } else {
@@ -380,8 +613,6 @@ void TrackSync::failJob(uint32_t id, const std::string& msg) {
         e->dirty_pending = true;
         e->dirty_since   = Uhr::now();
     }
-    zaehler_.busy_cyl = zaehler_.busy_head = 255;
-    zaehler_.busy_kind = 0;
     cv_fertig_.notify_all();
     cv_arbeit_.notify_all();
 }
@@ -433,16 +664,23 @@ SyncStats TrackSync::stats() const {
     std::lock_guard<std::mutex> sperre(m_);
     SyncStats s = zaehler_;
     s.stopped       = stop_;
-    if (!medium_) return s;
     s.tracks_known  = 0;
     s.tracks_dirty  = 0;
     s.tracks_failed = 0;
+    s.tracks_defect = 0;
     for (uint8_t c = 0; c < spec_.num_cyls; ++c)
         for (uint8_t h = 0; h < spec_.num_heads; ++h) {
-            const TrackState st = medium_->state(c, h);
-            if (st != TrackState::Unknown) ++s.tracks_known;
-            if (st == TrackState::Dirty)   ++s.tracks_dirty;
+            // Zustaende gehoeren dem Medium — nach dem Abmelden gibt es keine mehr.
+            if (medium_) {
+                const TrackState st = medium_->state(c, h);
+                if (st != TrackState::Unknown) ++s.tracks_known;
+                if (st == TrackState::Dirty)   ++s.tracks_dirty;
+            }
+            // Die Buchfuehrung dagegen bleibt: WAS schiefging, muss auch dann noch zu
+            // erfahren sein, wenn die Diskette schon geschlossen ist — sonst stuende
+            // der Bediener nach dem Zumachen ohne Begruendung da.
             if (eintraege_[idx(c, h)].failed) ++s.tracks_failed;
+            if (eintraege_[idx(c, h)].defect) ++s.tracks_defect;
         }
     return s;
 }

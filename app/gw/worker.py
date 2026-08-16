@@ -97,7 +97,10 @@ class TrackWorker:
                 return
 
             try:
-                if auftrag.kind == JobKind.READ:
+                # VERIFY ist fuer diesen Faden dasselbe wie READ: Spur lesen, Bitzellen
+                # abliefern.  Ob damit verglichen oder uebernommen wird, entscheidet
+                # der Kern (doc/design/14_physische_diskette.md §7.1).
+                if auftrag.kind in (JobKind.READ, JobKind.VERIFY):
                     zellen, bitcells = self._dev.read_track(auftrag.cyl, auftrag.head)
                     self._sync.complete_read(auftrag.id, zellen, bitcells)
                 else:
