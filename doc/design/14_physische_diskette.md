@@ -326,9 +326,25 @@ Rückführung.
 3. Verglichen wird auf **Sektorebene**, nicht byteweise — zwei Aufnahmen derselben Spur
    sind nie bitgleich (Schreibnaht, Drehzahl-Jitter, Startwinkel).  Geprüft werden
    Sektorzahl und -folge, die Adressfelder, die Nutzdaten, der Anhang hinter der
-   Daten-CRC (UDOS-Kontrollblock) und **beide Prüfsummen**.  Nachlaufende Gap-Füllbytes
-   werden auf beiden Seiten abgeschnitten: wie viele davon mitgelesen wurden, hängt an
-   der Drehzahl und sagt nichts über die Gültigkeit.
+   Daten-CRC (UDOS-Kontrollblock) und **beide Prüfsummen des Sektors**.  Nachlaufende
+   Gap-Füllbytes werden auf beiden Seiten abgeschnitten: wie viele davon mitgelesen
+   wurden, hängt an der Drehzahl und sagt nichts über die Gültigkeit.
+
+   > **„Beide Prüfsummen" — pro SEKTOR, nicht pro Datenblock.**  Ein IBM-Sektor besteht
+   > aus zwei Feldern, und jedes trägt seine eigene CRC:
+   >
+   > ```
+   >   A1 A1 A1 FE  cyl head id sc  CRC CRC   …Gap…   A1 A1 A1 FB  <Daten>  CRC CRC
+   >   └──────── ID-Feld ──────────┘                  └────────── Datenfeld ─────────┘
+   > ```
+   >
+   > Über den Datenblock gibt es also genau **eine** CRC — die zweite gehört zum
+   > Adressfeld.  Beide zählen, weil sie Verschiedenes schützen: eine kaputte
+   > **Daten**-CRC gibt einen Lesefehler, eine kaputte **ID**-CRC macht den Sektor
+   > **unauffindbar** („record not found"), auch wenn die Nutzdaten dahinter heil sind.
+   > Deshalb wird zusätzlich der *Inhalt* des Adressfeldes verglichen (Zylinder, Kopf,
+   > Sektornummer, Längencode): eine gültige CRC über eine falsche Adresse ist ebenso
+   > unbrauchbar.  Im Code sind das `LogicalSector::id_crc_ok` und `data_crc_ok`.
 4. **Stimmt es** → die Spur wird `Clean`.  Erst hier, nirgends vorher.
 5. **Stimmt es nicht** → einmal neu schreiben und erneut prüfen
    (`write_verify_retries`, Vorgabe 1).

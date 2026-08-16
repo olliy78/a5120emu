@@ -679,8 +679,9 @@ Was man beim Weiterarbeiten wissen muss:
   Gastsystems (`FORMAT`) prüft das **Speicherabbild gegen sich selbst** und sieht eine
   Schadstelle der Diskette nie — deshalb folgt jedem `Write` ein `Verify` (Spur
   zurücklesen, auf **Sektorebene** vergleichen: IDs, Nutzdaten, Anhang hinter der
-  Daten-CRC, beide Prüfsummen; nachlaufende Gap-Bytes werden abgeschnitten, byteweise
-  gleich sind zwei Aufnahmen nie).  Erst dann wird `Dirty` gelöscht.  Stimmt es nicht:
+  Daten-CRC und **beide CRCs des Sektors** — ID-Feld *und* Datenfeld tragen je eine,
+  und eine kaputte ID-CRC macht den Sektor unauffindbar, auch wenn die Daten heil sind;
+  nachlaufende Gap-Bytes werden abgeschnitten, byteweise gleich sind zwei Aufnahmen nie).  Erst dann wird `Dirty` gelöscht.  Stimmt es nicht:
   **einmal** neu schreiben und erneut prüfen, sonst gilt die Spur als **schadhaft** —
   sie bleibt `Dirty`, `flushPending()` meldet Misserfolg mit Spurnummer, und die
   Oberfläche bietet **„Diskette neu beschreiben"** (`rewriteAll()`, stellt jede
