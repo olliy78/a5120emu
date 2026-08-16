@@ -21,7 +21,7 @@ import time
 
 import pytest
 
-from app.core_binding.k1520disk import DiskTool
+from app.core_binding.k1520disk import DiskTool, K1520DiskError
 from app.gw import JobKind, Priority, Sync, TrackWorker
 from gw_fake import HfeDevice
 
@@ -176,6 +176,140 @@ def test_datei_aus_der_physischen_diskette_ist_byteweise_gleich(hfe, tmp_path):
         finally:
             worker.stop()
     assert aus_laufwerk.read_bytes() == aus_datei.read_bytes()
+
+
+@pytest.mark.parametrize("name", [
+    "udos_boot_scp.hfe", "cpa_cpa780_k5601_clock.hfe",
+    "cpa_cpa780_k5601_noclock.hfe", "scpx17_5x1024_k5601_hardy.hfe",
+    "scpx17_cpa780_k5601.hfe",
+])
+def test_stichprobe_erkennt_dasselbe_wie_die_vollmessung(fixture_disks, name):
+    """**Der Wächter der Stichprobe: nie etwas ANDERES als die Vollmessung.**
+
+    Dieselbe Diskette einmal als Datei (Vollmessung) und einmal „physisch"
+    (Stichprobe) muss dasselbe Dateisystem ergeben.  Ohne diesen Vergleich blieb
+    unbemerkt, dass die Stichprobe drei Disketten falsch erkannte — darunter eine
+    77-Spur-Diskette als 40-Spur (`udos_ss40` statt `udos_ss77`), womit die halbe
+    Diskette unsichtbar gewesen wäre.
+
+    Ursache war, dass `GeometryProbe::match` Altbestand **duldet** und die Kandidaten
+    nach absoluten Zählungen ordnet: eine Stichprobe schrumpft diese Zahlen
+    ungleichmäßig und bevorzugt dadurch zu kleine Formate.  Zu wenig ist deshalb
+    nicht nur langsam — es ist falsch.
+    """
+    pfad = fixture_disks / name
+    if not pfad.exists():
+        pytest.skip(f"{name} fehlt")
+
+    with DiskTool.open(pfad) as datei:
+        erwartet = datei.filesystem
+
+    geraet = HfeDevice(pfad)
+    with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
+              read_ahead=False) as s:
+        worker = TrackWorker(s, geraet, poll_ms=20)
+        worker.start()
+        try:
+            with DiskTool.open_physical(s) as physisch:
+                assert physisch.filesystem == erwartet, (
+                    f"{name}: als Datei {erwartet}, physisch {physisch.filesystem} — "
+                    "die Stichprobe urteilt anders als die Vollmessung")
+                # Und sie darf dabei nicht die halbe Diskette gelesen haben.
+                assert s.stats.tracks_known < geraet.num_cyls, (
+                    f"{s.stats.tracks_known} Spuren für die Erkennung — "
+                    "die Stichprobe greift nicht")
+        finally:
+            worker.stop()
+
+
+def test_eine_leere_spur_verdirbt_nicht_die_ganze_diskette(fixture_disks):
+    """Eine unformatierte Spur darf den Zellraten-Faktor nicht festlegen.
+
+    `TrackSync::completeRead` ermittelt einmal je Sitzung, ob der Adapter
+    überabtastet liefert (§8.1), und behält den Faktor für die ganze Diskette.
+    Gesucht wurde er aber bei **jeder** Spur neu — und eine unformatierte Spur ist
+    Rauschen: bei irgendeinem falschen Faktor findet sich darin zufällig eine
+    Marke, die ihn festschreibt.  Danach war jede weitere Spur unlesbar
+    (`scpx17_cpa780_k5601.hfe`: 6181-B-Spuren kamen als 2658 B mit einem Sektor).
+
+    Sequentiell fiel das nie auf, weil leere Spuren am **Ende** liegen — das
+    Format war da längst erkannt.  Wer die Diskette in anderer Reihenfolge liest
+    (die Stichprobe der Formaterkennung tut genau das), verlor die halbe Diskette.
+    """
+    pfad = fixture_disks / "scpx17_cpa780_k5601.hfe"
+    if not pfad.exists():
+        pytest.skip("Fixture fehlt")
+
+    with DiskTool.open(pfad) as datei:
+        erwartet = {(c, h): datei.track(c, h).bytes
+                    for c, h in ((4, 1), (39, 0), (42, 0))}
+        leer = [(c, h) for c in (80, 81) for h in (0, 1)
+                if not datei.track(c, h).formatted]
+        assert leer, "Fixture ohne unformatierte Spuren — der Fall wird nicht geprüft"
+
+    geraet = HfeDevice(pfad)
+    with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
+              read_ahead=False) as s:
+        worker = TrackWorker(s, geraet, poll_ms=20)
+        worker.start()
+        try:
+            with DiskTool.open_physical(s, "scpx640") as physisch:
+                for c, h in leer:            # ERST die leeren Spuren …
+                    physisch.track(c, h)
+                for (c, h), bytes_soll in erwartet.items():   # … dann echte
+                    assert physisch.track(c, h).bytes == bytes_soll, (
+                        f"c{c}h{h}: {physisch.track(c, h).bytes} statt {bytes_soll} "
+                        "Byte — eine leere Spur hat den Faktor verdorben")
+        finally:
+            worker.stop()
+
+
+def test_die_sondenzahl_bleibt_klein():
+    """Acht Spuren — nicht acht Zylinder auf beiden Seiten.
+
+    Die Rechnung über den Katalog ergab acht **(Zylinder, Kopf)-Paare**; daraus
+    versehentlich „acht Zylinder × beide Köpfe" zu machen verdoppelt die Wartezeit
+    am echten Laufwerk auf nichts.  Auf Kopf 1 genügt EINE Sonde (ein- oder
+    zweiseitig), alles Weitere entscheidet sich auf Kopf 0.
+    """
+    from app.core_binding.k1520disk import DiskTool, K1520DiskError
+
+    assert DiskTool.probe_track_count(80, 2) == 8
+    assert DiskTool.probe_track_count(40, 1) == 7      # ohne die Kopf-1-Sonde
+    # Nie mehr als ein Bruchteil der Diskette, egal wie gross sie ist.
+    for cyls, heads in ((40, 1), (40, 2), (77, 2), (80, 2), (160, 2)):
+        assert DiskTool.probe_track_count(cyls, heads) <= 10, (cyls, heads)
+
+
+def test_erkennung_holt_nur_eine_stichprobe(hfe):
+    """Das Öffnen darf nicht die ganze Diskette einziehen.
+
+    Am echten Laufwerk kostet jede Spur 0,5–0,8 s; 160 Spuren sind anderthalb
+    Minuten.  Nachgerechnet über alle Formatpaare des Katalogs trennen acht Spuren
+    alles, was trennbar ist — die wichtigste ist Zylinder 3, dieselbe, die das
+    CP/A-BIOS liest.  Deshalb misst die Erkennung an einem nachladenden Medium nur
+    Sondenspuren; die Vollmessung ist der Rückfall, wenn nichts passt.
+
+    Geprüft wird beides: dass es deutlich weniger Spuren sind UND dass trotzdem
+    richtig erkannt wird — eine schnelle Fehlerkennung wäre kein Fortschritt.
+    """
+    geraet = HfeDevice(hfe)
+    gesamt = geraet.num_cyls * geraet.num_heads
+    with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
+              read_ahead=False) as s:          # kein Vorauslesen: nur das Nötige
+        worker = TrackWorker(s, geraet, poll_ms=50)
+        worker.start()
+        try:
+            with DiskTool.open(hfe) as datei, DiskTool.open_physical(s) as physisch:
+                assert physisch.filesystem == datei.filesystem, \
+                    "die Stichprobe erkennt etwas anderes als die Vollmessung"
+                assert physisch.format == datei.format
+                assert len(physisch.list()) == len(datei.list())
+            gelesen = s.stats.tracks_known
+        finally:
+            worker.stop()
+    assert gelesen < gesamt // 3, \
+        f"{gelesen} von {gesamt} Spuren gelesen — die Stichprobe greift nicht"
 
 
 def test_gescheitertes_lesen_bringt_niemanden_zum_haengen(hfe):

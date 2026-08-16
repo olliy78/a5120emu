@@ -453,16 +453,34 @@ bool TrackSync::completeRead(uint32_t id, const uint8_t* cells, size_t len,
     // gilt fuer die ganze Diskette.
     const uint32_t bekannt = ueberabtastung_.load(std::memory_order_relaxed);
     TrackImage     spur;
-    for (uint32_t f : {bekannt ? bekannt : 1u, 1u, 2u, 3u, 4u}) {
-        if (f == 0) continue;
+    auto versuch = [&](uint32_t f) {
         std::vector<uint8_t> z = zellen;
         uint32_t             bc = bitcells;
         if (f > 1) z = BitCodec::downsampleCells(zellen, bitcells, f, bc);
-        TrackImage probe = BitCodec::decodeAuto(z, bc, vorschlag);
-        if (BitCodec::markCount(probe) > 0) {
-            spur = std::move(probe);
-            ueberabtastung_.store(f, std::memory_order_relaxed);
-            break;
+        return BitCodec::decodeAuto(z, bc, vorschlag);
+    };
+
+    if (bekannt) {
+        // **Steht der Faktor fest, gilt er.**  Frueher suchte auch dann jede Spur
+        // erneut — und eine UNFORMATIERTE Spur (Rauschen) fand bei einem falschen
+        // Faktor eine zufaellige Marke, schrieb ihn fest und machte damit jede
+        // folgende Spur unlesbar.  Sequentiell fiel das nie auf, weil leere Spuren
+        // am Ende liegen; wer die Diskette in anderer Reihenfolge liest (die
+        // Stichprobe der Formaterkennung tut das), verlor die halbe Diskette.
+        TrackImage probe = versuch(bekannt);
+        if (BitCodec::markCount(probe) > 0) spur = std::move(probe);
+    } else {
+        // Noch unbekannt: suchen — aber **eine einzelne Marke stiftet keinen
+        // Faktor**.  Genau so entsteht er sonst aus Rauschen.  Eine wirklich
+        // formatierte Spur traegt Dutzende (je Sektor eine Adress- und eine
+        // Datenmarke), das kleinste denkbare Format immer noch mehrere.
+        for (uint32_t f : {1u, 2u, 3u, 4u}) {
+            TrackImage probe = versuch(f);
+            if (BitCodec::markCount(probe) >= 4) {
+                spur = std::move(probe);
+                ueberabtastung_.store(f, std::memory_order_relaxed);
+                break;
+            }
         }
     }
     // Markenlos = unformatiert: als LEERE Spur ablegen, damit der Controller Gap-Flux
