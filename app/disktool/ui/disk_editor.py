@@ -50,7 +50,11 @@ HEX_BREITE = 32
 #: Ab dieser Ringhöhe (Pixel) werden Trennlinien gezeichnet.
 MIN_LINIE = 5.0
 
-FARBE_OK          = QColor("#3fa34d")   # Sektor, beide CRCs gültig
+FARBE_OK          = QColor("#3fa34d")   # Sektor mit Daten, beide CRCs gültig
+# Ein formatierter, aber nie beschriebener Sektor: dieselbe Farbe, nur blass.  Es ist
+# kein anderer Zustand, sondern derselbe mit weniger Inhalt — deshalb kein eigener
+# Farbton, sondern eine hellere Tönung desselben Grüns.
+FARBE_OK_LEER     = QColor("#a8dcae")   # Sektor ohne Daten (Datenfeld einförmig)
 FARBE_DEFEKT      = QColor("#cc2b2b")   # Sektor mit CRC-Fehler
 FARBE_GAP         = QColor("#e8912a")   # Gap zwischen den Sektorfeldern
 FARBE_UNFORMAT    = QColor("#b8b8b8")   # unformatiert / markenloser Gap-Fluss
@@ -274,7 +278,12 @@ class DiskSurface(QWidget):
 
     def _farbe(self, span) -> QColor:
         if span.kind == SECTOR:
-            return FARBE_OK if span.ok else FARBE_DEFEKT
+            if not span.ok:
+                return FARBE_DEFEKT
+            # Leer heisst „Datenfeld einförmig" — der UDOS-Anhang hinter der
+            # Daten-CRC zählt NICHT mit: er trägt die Dateiverkettung und ist auch
+            # auf einer frisch formatierten Diskette belegt.
+            return FARBE_OK_LEER if getattr(span, "blank", False) else FARBE_OK
         if span.kind == GAP:
             return FARBE_GAP
         return FARBE_UNFORMAT
@@ -390,6 +399,8 @@ class DiskSurface(QWidget):
         if s.kind == GAP:
             return f"Seite {kopf} · Spur {spur} · Gap"
         zustand = "" if s.ok else "  ⚠ CRC-Fehler"
+        if s.ok and getattr(s, "blank", False):
+            zustand = "  · leer (formatiert, keine Daten)"
         return (f"Seite {kopf} · Spur {spur} · Sektor {s.id}"
                 f"  ({s.size} Byte){zustand}")
 
@@ -879,7 +890,8 @@ class DiskEditorWindow(QDialog):
         w = QWidget()
         zeile = QHBoxLayout(w)
         zeile.setContentsMargins(6, 2, 6, 2)
-        eintraege = [(FARBE_OK, "Sektor"), (FARBE_DEFEKT, "CRC-Fehler"),
+        eintraege = [(FARBE_OK, "Sektor mit Daten"), (FARBE_OK_LEER, "leer"),
+                     (FARBE_DEFEKT, "CRC-Fehler"),
                      (FARBE_GAP, "Gap"), (FARBE_UNFORMAT, "unformatiert")]
         # „Noch nicht gelesen" gibt es nur an einem nachladenden Medium; bei einer
         # Datei stünde ein Eintrag in der Legende, der nie vorkommt.

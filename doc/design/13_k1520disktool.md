@@ -1273,8 +1273,14 @@ Ebene darunter: Spuren, Sektoren, Gaps, CRCs.
 
 Zwei Scheiben nebeneinander, links Seite 0, rechts Seite 1. **Spur 0 außen**,
 **Sektor 0 bei 12 Uhr**; Seite 0 zählt im Uhrzeigersinn, Seite 1 dagegen — so, wie
-man die Diskette sähe, wenn man sie umdreht. Sektor mit gültigen CRCs grün, mit
-CRC-Fehler rot, Gap orange, unformatiert grau.
+man die Diskette sähe, wenn man sie umdreht. Sektor mit gültigen CRCs grün —
+**hellgrün, wenn er zwar formatiert, aber nie beschrieben wurde** (das Datenfeld
+trägt nur das Füllbyte des Formats; welches, ist dessen Sache, gezählt wird die
+Einförmigkeit).  Der **UDOS-Anhang hinter der Daten-CRC zählt dabei nicht mit**:
+er trägt die Dateiverkettung und ist auch auf einer frisch formatierten Diskette
+belegt — mitgezählt sähe dort kein Sektor leer aus.  Sektor mit CRC-Fehler rot,
+Gap orange, unformatiert grau, noch nicht gelesen schwarz (nur physisch, §11.2c
+des Greaseweazle-Entwurfs).
 
 **Die Winkel sind echt, und sie kosten nichts.** Eine `TrackImage` *ist* genau eine
 Umdrehung; der Winkel eines Bytes ist damit `Position ÷ Spurlänge`. Bitrate und

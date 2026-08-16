@@ -220,7 +220,14 @@ Leseoperation und geht auch mit gesetztem Schreibschutz.
 *Diskette ▸ Diskeditor* (Strg+E) zeigt die Diskette eine Ebene unter dem
 Dateisystem: zwei Scheiben, Spur 0 außen, Sektor 0 auf zwölf Uhr, Seite 1
 gespiegelt. Grün ist ein gültiger Sektor, rot ein defekter, orange die Lücke
-dazwischen, grau eine unformatierte Spur.
+dazwischen, grau eine unformatierte Spur. Schwarz heißt „noch nicht gelesen"
+(nur bei einer physischen Diskette).
+
+**Dunkel- oder hellgrün?** Hellgrün ist ein Sektor, der zwar formatiert, aber
+nie beschrieben wurde — sein Datenfeld trägt nur das Füllbyte des Formats. So
+sieht man auf einen Blick, wie viel von der Diskette wirklich benutzt ist. Der
+UDOS-Anhang hinter den Nutzdaten zählt dabei nicht mit: er ist auch auf einer
+leeren Diskette belegt.
 
 Ein Klick auf einen Sektor — oder die Wählerzeile darunter — zeigt seinen Inhalt
 als Hexdump mit mitlaufender Textspalte, dazu die Prüfsumme. *Save Sektor*

@@ -268,6 +268,8 @@ _lib.k1520d_span_data_crc_ok.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_span_data_crc_ok.restype = ctypes.c_bool
 _lib.k1520d_span_deleted.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_span_deleted.restype = ctypes.c_bool
+_lib.k1520d_span_blank.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_blank.restype = ctypes.c_bool
 
 _lib.k1520d_sector_read.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int,
                                     ctypes.POINTER(ctypes.c_uint8), ctypes.c_int]
@@ -489,6 +491,9 @@ class Span:
     id_crc_ok: bool = False
     data_crc_ok: bool = False
     deleted: bool = False
+    #: Datenfeld ohne unterscheidbaren Inhalt (alle Bytes gleich) — so sieht ein
+    #: formatierter, nie beschriebener Sektor aus.  Der UDOS-Anhang zählt nicht mit.
+    blank: bool = False
 
     @property
     def is_sector(self) -> bool:
@@ -938,6 +943,7 @@ class DiskTool:
                 id_crc_ok=bool(_lib.k1520d_span_id_crc_ok(self._h, i)),
                 data_crc_ok=bool(_lib.k1520d_span_data_crc_ok(self._h, i)),
                 deleted=bool(_lib.k1520d_span_deleted(self._h, i)),
+                blank=bool(_lib.k1520d_span_blank(self._h, i)),
             ))
         return Track(
             cyl=cyl, head=head,

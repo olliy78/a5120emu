@@ -377,6 +377,10 @@ K1520_API bool   k1520d_span_id_crc_ok  (K1520Disk h, int i);
 K1520_API bool   k1520d_span_data_crc_ok(K1520Disk h, int i);
 /// @brief Datenmarke war 0xF8 (geloeschter Sektor) statt 0xFB.
 K1520_API bool   k1520d_span_deleted    (K1520Disk h, int i);
+/// @brief Traegt das DATENFELD nichts Unterscheidbares (alle Bytes gleich)?  So sieht
+///        ein formatierter, nie beschriebener Sektor aus.  Der UDOS-Anhang hinter der
+///        Daten-CRC zaehlt nicht mit — er ist auch auf einer leeren Diskette belegt.
+K1520_API bool   k1520d_span_blank      (K1520Disk h, int i);
 
 /**
  * @brief Nutzdaten eines Sektors lesen.

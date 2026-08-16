@@ -600,6 +600,49 @@ def _editor(window, abbild):
     return window.open_disk_editor()
 
 
+def test_disk_editor_faerbt_leere_sektoren_heller(window, fixture_disks):
+    """Beschrieben oder nur formatiert? — dunkelgrün gegen hellgrün.
+
+    Ohne die Unterscheidung sieht eine frisch formatierte Diskette genauso aus wie
+    eine volle.  „Leer" heisst: das **Datenfeld** trägt nichts Unterscheidbares;
+    der UDOS-Anhang hinter der Daten-CRC zählt nicht mit — er ist auch auf einer
+    leeren Diskette belegt.
+    """
+    from app.disktool.ui.disk_editor import FARBE_OK, FARBE_OK_LEER
+    from app.core_binding.k1520disk import SECTOR
+
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_noclock.hfe")
+    leer = voll = None
+    for seite in ed.surface.tracks:
+        for spur in seite:
+            for sp in (spur.spans if spur else ()):
+                if sp.kind != SECTOR or not sp.ok:
+                    continue
+                if sp.blank and leer is None:
+                    leer = sp
+                elif not sp.blank and voll is None:
+                    voll = sp
+    assert leer is not None, "kein leerer Sektor — der Fall wird nicht geprüft"
+    assert voll is not None, "kein beschriebener Sektor"
+
+    assert ed.surface._farbe(leer) == FARBE_OK_LEER
+    assert ed.surface._farbe(voll) == FARBE_OK
+    # Heller, aber DASSELBE Grün: es ist kein anderer Zustand, nur weniger Inhalt.
+    assert FARBE_OK_LEER.lightness() > FARBE_OK.lightness()
+    assert abs(FARBE_OK_LEER.hue() - FARBE_OK.hue()) < 25
+
+    # Und der Tooltip sagt es in Worten — Farbe allein trägt keine Erklärung.
+    assert "leer" in ed.surface.beschreibung((0, 0, leer))
+    assert "leer" not in ed.surface.beschreibung((0, 0, voll))
+    # In der Legende steht beides.
+    from PySide6.QtWidgets import QLabel
+    # Die Legende festhalten, solange gelesen wird: gäbe man `_legende().findChildren()`
+    # heraus, stürbe der Wrapper und risse die Beschriftungen mit (PySide-Eigentum).
+    legende = ed._legende()
+    beschriftungen = [w.text() for w in legende.findChildren(QLabel)]
+    assert any("leer" == t for t in beschriftungen), beschriftungen
+
+
 def test_disk_editor_shows_both_sides_of_the_medium(window, fixture_disks):
     ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
     assert ed.surface.cylinders == window.tool.medium_cylinders

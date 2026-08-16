@@ -538,6 +538,11 @@ extern "C" bool k1520d_span_deleted(K1520Disk h, int i) {
     return s && s->deleted;
 }
 
+extern "C" bool k1520d_span_blank(K1520Disk h, int i) {
+    const TrackSpan* s = abschnitt(h, i);
+    return s && s->blank;
+}
+
 extern "C" int k1520d_sector_read(K1520Disk h, int cyl, int head, int index,
                                   uint8_t* out, int max_len) {
     if (!h || !out || max_len < 0) return -1;

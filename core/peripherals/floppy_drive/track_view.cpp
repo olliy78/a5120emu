@@ -24,6 +24,11 @@ TrackSpan ausSektor(const LogicalSector& s, int index) {
     sp.id_crc_ok   = s.id_crc_ok;
     sp.data_crc_ok = s.data_crc_ok;
     sp.deleted     = s.deleted;
+    // Nur `data`, nicht `tail`: der UDOS-Kontrollblock ist auch auf einer leeren
+    // Diskette belegt (Dateiverkettung) — mit ihm saehe dort nichts leer aus.
+    sp.blank       = !s.data.empty()
+                  && std::all_of(s.data.begin(), s.data.end(),
+                                 [&](uint8_t b) { return b == s.data.front(); });
     return sp;
 }
 
