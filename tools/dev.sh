@@ -134,7 +134,18 @@ build_dir() {
     fi
     if grep -qE "Building |Linking |Generating " "$log"; then
         c_ylw ">> $dir: NEU GEBAUT ($(grep -cE 'Linking ' "$log") Targets gelinkt)"
-        grep -E "Building CXX|Linking " "$log" | sed 's/^/     /' | tail -8
+        # `|| true` ist hier NICHT Zierrat: läuft der Bau NUR neu durch CMakes
+        # Generate-Schritt (Log enthält „Generating", aber keine einzige
+        # „Building CXX"/„Linking"-Zeile), findet dieses grep nichts und liefert
+        # 1 — und mit `set -euo pipefail` (Zeile 42) reisst das die ganze
+        # Funktion mit, BEVOR ctest überhaupt startet.  Nach aussen sieht das
+        # aus wie eine rote Regression: der pre-push-Hook bricht ab und meldet
+        # „die Regressionstests sind nicht grün", obwohl kein Test gelaufen ist.
+        # Genau so am 2026-08-16 einen Push abgelehnt.  Ausgelöst wird der Fall
+        # von jedem `file(GLOB … CONFIGURE_DEPENDS)` (tests/python, tests/cli),
+        # sobald dort eine Datei dazu- oder wegkommt: der nächste Bau ist dann
+        # ein reiner Konfigurationslauf.
+        grep -E "Building CXX|Linking " "$log" | sed 's/^/     /' | tail -8 || true
     else
         c_grn ">> $dir: aktuell (nichts neu zu bauen)"
     fi
