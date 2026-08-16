@@ -773,8 +773,7 @@ Was man beim Weiterarbeiten wissen muss:
   (Sync + Arbeitsfaden in einem, `close()` in der Reihenfolge Faden → Synchronisierer)
   und `mit_fortschritt()`.  **Beide** Programme benutzen dasselbe Stück: der Emulator
   einen Knopf „Physisch…" je Laufwerkskasten samt Füllstandszeile, das DiskTool
-  „Physisches Laufwerk…" mit Fortschrittsanzeige (das Öffnen liest die ganze Diskette,
-  ~97 s).  Eine physische Diskette gehört **nicht** in `get_mounts()` und wird von
+  „Physisches Laufwerk…" mit Fortschrittsanzeige (das Öffnen misst nur eine Stichprobe, ~10 s).  Eine physische Diskette gehört **nicht** in `get_mounts()` und wird von
   `remount_all()` nicht angefasst (kein Pfad, Handle verbraucht).
 - **Die Hosttools liegen nicht auf PyPI** und sind eine **freiwillige** Abhängigkeit:
   `pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"` (der Zweigkopf

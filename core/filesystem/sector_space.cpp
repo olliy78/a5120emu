@@ -119,6 +119,13 @@ bool SectorSpace::trackFormatted(uint8_t cyl, uint8_t head) const {
     return !sectors(s).empty();
 }
 
+bool SectorSpace::trackKnown(uint8_t cyl, uint8_t head) const {
+    // Bewusst NICHT ueber sectors()/track(): beides holt die Spur.  Gefragt ist der
+    // Zustand, nicht der Inhalt.
+    if (slotOf(cyl, head) < 0) return false;
+    return medium_.state(cyl, head) != TrackState::Unknown;
+}
+
 // ─── physisch ────────────────────────────────────────────────────────────────
 
 bool SectorSpace::readSector(uint8_t cyl, uint8_t head, uint8_t id, SectorData& out) const {

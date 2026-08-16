@@ -155,15 +155,23 @@ löschen, Diskeditor.
 
 Drei Unterschiede, die man kennen muss:
 
-* **Das Öffnen dauert.** Die Formaterkennung sieht sich jede Spur an; bei
-  160 Spuren sind das gut anderthalb Minuten. Ein Fortschrittsfenster zeigt,
-  wo es steht, und lässt sich abbrechen.
+* **Das Öffnen dauert einen Moment.** Die Formaterkennung liest ein paar Spuren
+  quer über die Diskette — rund zehn Sekunden. Ein Fortschrittsfenster zeigt, wo
+  es steht, und lässt sich abbrechen. Passt keines der bekannten Formate, sieht
+  sie doch die ganze Diskette an; dann dauert es gut anderthalb Minuten.
 * **Geöffnet wird schreibgeschützt**, bis man widerspricht. Ein Fehler kostet
   hier nicht eine Kopie, sondern die einzige noch existierende Diskette.
 * **Gespeichert ist erst, was zurückgelesen wurde.** *Speichern* schreibt jede
   geänderte Spur und **liest sie sofort wieder ein**, um sie zu vergleichen.
   Erst dann gilt sie als geschrieben. Das dauert, findet aber Schadstellen, die
   ein Schreiben ohne Gegenprobe verschweigt.
+
+Der **Diskeditor** lässt sich dabei jederzeit öffnen, auch wenn die Diskette erst
+zum Teil gelesen ist. Spuren, von denen das Werkzeug noch nichts weiß, sind
+**schwarz** — das ist etwas anderes als grau („unformatiert"): grau ist ein
+Befund, schwarz heißt nur, dass noch keiner vorliegt. Die Ansicht füllt sich,
+während im Hintergrund weitergelesen wird; ein Klick auf eine schwarze Spur holt
+sie sofort.
 
 Trägt die Diskette eine Spur nicht mehr, sagt das die Meldung mitsamt
 Spurnummer — **das Abbild im Speicher ist dann noch heil**. Der Ausweg steht

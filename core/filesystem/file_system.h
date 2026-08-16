@@ -46,6 +46,13 @@ struct FileEntry {
     uint16_t    stack_size = 0;  ///< UDOS: STACK SIZE (Kopf 126)
     bool        hidden  = false; ///< CP/M SYS · UDOS SECRET
     bool        damaged = false; ///< CRC-Fehler oder Kettenbruch beim Lesen
+    /// @brief Stehen die Angaben jenseits des Namens schon fest?
+    ///
+    /// Bei CP/M immer @c true — dort steht alles im Verzeichniseintrag selbst.  Bei
+    /// UDOS liegen Laenge, Typ und Datum im **Kopfsektor der Datei**, irgendwo auf der
+    /// Diskette; @ref FileSystem::listNames liefert die Eintraege deshalb mit
+    /// @c false, und @ref FileSystem::loadDetails traegt sie einzeln nach.
+    bool        details_loaded = true;
 
     /// @brief Eindeutige Bezeichnung innerhalb des Volumes ("NAME.TYP" bzw. "3:NAME.TYP").
     std::string qualifiedName() const {
@@ -207,6 +214,38 @@ public:
 
     /// @brief Verzeichnis — IMMER frisch aus dem Medium gelesen (§9.3, kein Zwischenspeicher).
     virtual std::vector<FileEntry> list() const = 0;
+
+    /**
+     * @brief Verzeichnis **ohne** die Angaben, die anderswo auf der Diskette stehen.
+     *
+     * Fuer Anzeigen, die schnell etwas zeigen sollen: bei UDOS kostet @ref list zu
+     * jeder Datei einen Kopfsektor — auf einer echten Diskette am Greaseweazle sind
+     * das Dutzende einzeln nachzuladender Spuren, waehrend das Verzeichnis selbst auf
+     * dreien liegt.  Der Unterschied ist derselbe wie zwischen `CAT` und `CAT F=L`.
+     *
+     * Vorgabe: dasselbe wie @ref list — bei CP/M steht ohnehin alles im
+     * Verzeichniseintrag, dort gaebe es nichts zu sparen.
+     */
+    virtual std::vector<FileEntry> listNames() const { return list(); }
+
+    /**
+     * @brief Liessen sich die Angaben zu @p e jetzt **ohne Warten** nachtragen?
+     *
+     * An einem echten Laufwerk: liegt der Kopfsektor auf einer schon gelesenen Spur?
+     * Eine Anzeige, die nachtraegt, fragt das vorher — sonst haelt sie beim Zeichnen
+     * das ganze Programm an.
+     */
+    virtual bool detailsReady(const FileEntry& e) const { (void)e; return true; }
+
+    /**
+     * @brief Die fehlenden Angaben zu @p e nachtragen (setzt @c details_loaded).
+     *
+     * **Blockiert**, wenn der Kopfsektor erst geholt werden muss — siehe
+     * @ref detailsReady.
+     *
+     * @return false, wenn der Eintrag nicht (mehr) lesbar ist; @c damaged ist dann gesetzt.
+     */
+    virtual bool loadDetails(FileEntry& e) const { (void)e; return true; }
 
     /// @brief Dateiinhalt lesen.  @p name wie @ref FileEntry::qualifiedName.
     virtual bool read(const std::string& name, std::vector<uint8_t>& out) = 0;

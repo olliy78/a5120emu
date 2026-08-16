@@ -37,7 +37,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
-from PySide6.QtCore import QCoreApplication, QSettings, Qt
+from PySide6.QtCore import QCoreApplication, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog, QFrame, QInputDialog, QLabel, QMainWindow, QMessageBox,
@@ -95,7 +95,10 @@ class MainWindow(QMainWindow):
         self._zuletzt: List[str] = []
 
         erzeuge_aktionen(self)
-        self._physisch_verfuegbarkeit()
+        # Läuft nur, solange ein echtes Laufwerk offen ist (siehe _physisch_tick).
+        self._physisch_uhr = QTimer(self)
+        self._physisch_uhr.setInterval(500)
+        self._physisch_uhr.timeout.connect(self._physisch_tick)
         self._baue_mitte()
         self._baue_menue()
         self._baue_leiste()
@@ -281,6 +284,10 @@ class MainWindow(QMainWindow):
     def _baue_status(self) -> None:
         """Links die letzte Aktion (flüchtig), rechts der Zustand (dauerhaft)."""
         self.st_inhalt = QLabel("")
+        # Füllstand des echten Laufwerks — eigenes Feld, weil es sich LAUFEND ändert,
+        # während `st_inhalt` nur nach einer Aktion neu gesetzt wird.
+        self.st_physisch = QLabel("")
+        self.st_physisch.hide()
         self.st_modus = QLabel("binär")
         self.st_modus.setToolTip("Übertragungsart — Menü „Übertragung\"")
         # Schloss als Bild, nicht als Emoji: 🔒 und 🔓 sehen in vielen Schriften
@@ -291,7 +298,8 @@ class MainWindow(QMainWindow):
 
         leiste = self.statusBar()
         leiste.setSizeGripEnabled(True)
-        for i, w in enumerate((self.st_inhalt, self.st_modus, self.st_schloss)):
+        for i, w in enumerate((self.st_inhalt, self.st_physisch,
+                               self.st_modus, self.st_schloss)):
             if i:                              # Trennstrich zwischen den Feldern
                 strich = QFrame()
                 strich.setFrameShape(QFrame.VLine)
@@ -553,40 +561,93 @@ class MainWindow(QMainWindow):
             self._aktionen_pruefen()
             return
 
-        eintraege = self.tool.list()
+        # An einer physischen Diskette zweistufig: erst die Namen (bei UDOS drei
+        # Spuren), die Angaben aus den Kopfsektoren trägt `_details_nachtragen`
+        # nach, sobald ihre Spuren da sind (§11.2b).  Bei einer Datei ist
+        # `list_names()` ohnehin dasselbe wie `list()` — nur bei CP/M immer, bei
+        # UDOS deshalb, weil dort jeder Zugriff sofort geht.
+        eintraege = (self.tool.list_names() if self._physisch is not None
+                     else self.tool.list())
+        self._eintraege = eintraege
         self.disk_view.set_disk(self.tool, eintraege)
         self.folder_view.refresh()
         self.kopf.setze(self.tool, self._bezeichnung())
 
-        teile = [f"{len(eintraege)} Dateien"]
-        mehrseitig = self.tool.volume_count > 1
-        for v in self.tool.volumes():
-            wo = f"{v.dir}: " if mehrseitig else ""
-            teile.append(f"{wo}{v.free // 1024} KB frei")
-        # Bei der echten Diskette gehört dazu, wie viel von ihr überhaupt gelesen ist —
-        # der Rest des Speicherabbilds ist noch gar keine Aussage (§12 „Unknown").
-        if self._physisch is not None:
-            teile.append(self._physisch.status_text())
-        self.st_inhalt.setText(" · ".join(teile))
+        self._inhalt_anzeigen()
 
         self.setWindowTitle(f"{self._kurzname()}[*] — k1520DiskTool")
         self.setWindowModified(self.tool.dirty)
         self._aktionen_pruefen()
 
-    def _physisch_verfuegbarkeit(self) -> None:
-        """Fehlen die Greaseweazle-Hosttools, ist die Aktion gesperrt — mit Grund.
+    def _physisch_tick(self) -> None:
+        """Füllstand des echten Laufwerks nachführen, solange eine Sitzung läuft.
 
-        Einmal beim Aufbau: ob das Paket da ist, ändert sich im laufenden Programm
-        nicht.  Gesperrt mit Begründung im Tooltip statt weggelassen — sonst sieht
-        man weder, dass es die Möglichkeit gibt, noch warum sie gerade nicht geht.
+        Ohne diesen Zeitgeber stand in der Statuszeile der Stand vom letzten
+        :meth:`_reload` — beim Vorauslesen wächst er aber weiter, und die Anzeige
+        blieb auf einer Spurzahl stehen, die längst überholt war.  Der Emulator
+        führt seine Füllstandszeile aus demselben Grund nach (dort am LED-Zeitgeber).
+
+        500 ms genügen: eine Spur dauert 0,5–0,8 s, häufiger gäbe es nichts Neues.
         """
-        from app.ui.physical_disk import verfuegbarkeit
+        sitzung = self._physisch
+        if sitzung is None:
+            self._physisch_uhr.stop()
+            self.st_physisch.hide()
+            return
+        self.st_physisch.setText(sitzung.status_text())
+        self.st_physisch.show()
+        self._details_nachtragen()
+        self._befund_auffrischen()
+        self._pruefe_defekte()
 
-        ok, grund = verfuegbarkeit()
-        self.act_physisch.setEnabled(ok)
-        if not ok:
-            self.act_physisch.setToolTip(grund)
-            self.act_physisch.setStatusTip(grund.splitlines()[0])
+    def _befund_auffrischen(self) -> None:
+        """Den Stichproben-Vorbehalt aufheben, sobald die ganze Diskette gelesen ist.
+
+        Die Erkennung urteilt anfangs über acht Spuren (§11.2a); „2 Spuren hinter dem
+        Format" heisst dann „2 der 8 angesehenen".  Bliebe dieser Satz stehen, stünde
+        an einer längst vollständig gelesenen Diskette dauerhaft ein Vorbehalt, der
+        nicht mehr gilt — und die Zahlen wären womöglich zu klein.
+        """
+        if self.tool is None or self.tool.examined_tracks == 0:
+            return          # war keine Stichprobe (oder schon aufgefrischt)
+        if self.tool.refresh_detection():
+            self._medium_meldungen()
+            self.kopf.setze(self.tool, self._bezeichnung())
+
+    def _details_nachtragen(self) -> None:
+        """Angaben nachtragen, deren Kopfsektor inzwischen gelesen ist.
+
+        **Nur was ohne Warten zu haben ist** (`entry_details_ready`): der Zeitgeber
+        läuft im Oberflächenfaden, ein blockierender Zugriff hielte hier das ganze
+        Fenster an — und er würde das Laufwerk antreiben, statt ihm zu folgen.
+        Dieselbe Regel wie beim Diskeditor.
+        """
+        eintraege = getattr(self, "_eintraege", None)
+        if not eintraege or self.tool is None:
+            return
+        offen = False
+        for nr, e in enumerate(eintraege):
+            if e.details_loaded:
+                continue
+            if not self.tool.entry_details_ready(nr):
+                offen = True
+                continue
+            eintraege[nr] = self.tool.load_entry_details(nr)
+            self.disk_view.eintrag_auffrischen(nr, eintraege[nr])
+        if not offen:
+            # Alles beisammen — die Statuszeile darf jetzt die echten Zahlen nennen.
+            self._inhalt_anzeigen()
+
+    def _inhalt_anzeigen(self) -> None:
+        """Dateizahl und freier Platz in die Statuszeile."""
+        if self.tool is None:
+            return
+        teile = [f"{len(getattr(self, '_eintraege', []))} Dateien"]
+        mehrseitig = self.tool.volume_count > 1
+        for v in self.tool.volumes():
+            wo = f"{v.dir}: " if mehrseitig else ""
+            teile.append(f"{wo}{v.free // 1024} KB frei")
+        self.st_inhalt.setText(" · ".join(teile))
 
     def _bezeichnung(self) -> str:
         """Woher die offene Diskette kommt — Pfad oder echtes Laufwerk.
@@ -659,10 +720,7 @@ class MainWindow(QMainWindow):
             f"Geöffnet: {Path(path).name} — {self.tool.filesystem}", STATUS_DAUER)
         return True
 
-    def open_physical(self, *, drive: str = "a", cell_rate_kbps: int = 250,
-                      num_cyls: int = 80, num_heads: int = 2,
-                      writable: bool = False, read_ahead: bool = True,
-                      filesystem: str = "") -> bool:
+    def open_physical(self, *, filesystem: str = "", **optionen) -> bool:
         """**Echte Diskette** in einem echten Laufwerk am Greaseweazle öffnen.
 
         Anders als bei einem Abbild gibt es hier keine Datei: die Diskette wird
@@ -670,6 +728,17 @@ class MainWindow(QMainWindow):
         trotzdem teuer — die Formaterkennung sieht sich jede Spur an —, läuft
         deshalb in einem Arbeitsfaden mit Fortschrittsanzeige
         (doc/design/14_physische_diskette.md §11.2).
+
+        Args:
+            filesystem: Dateisystem übersteuern (leer = erkennen).  Das einzige
+                Argument, das **hierher** gehört.
+            optionen: alles Übrige geht **unverändert** an
+                :meth:`PhysicalSession.start` — ``drive``, ``num_cyls``,
+                ``writable``, ``verify_writes``, …  Bewusst durchgereicht statt
+                einzeln aufgezählt: die Auswahl des Dialogs ist genau diese Menge,
+                und eine hier nachgepflegte Kopie der Signatur läuft ihr davon
+                (``verify_writes`` kam hinzu und fehlte prompt).  Der Emulator
+                macht es an derselben Stelle ebenso.
 
         Returns:
             True, wenn die Diskette offen ist.  Abbruch durch den Bediener gilt
@@ -682,11 +751,15 @@ class MainWindow(QMainWindow):
             self._fehler("Physisches Laufwerk", grund)
             return False
 
+        drive = optionen.get("drive", "a")
+        writable = bool(optionen.get("writable", False))
         self._close_tool()
         try:
-            sitzung = PhysicalSession.start(
-                drive=drive, cell_rate_kbps=cell_rate_kbps, num_cyls=num_cyls,
-                num_heads=num_heads, writable=writable, read_ahead=read_ahead)
+            sitzung = PhysicalSession.start(**optionen)
+        except TypeError as e:                       # Signaturdrift, kein Gerätefehler
+            self._fehler("Physisches Laufwerk",
+                         f"Die Angaben passen nicht zum Laufwerkszugriff:\n{e}")
+            return False
         except Exception as e:                       # noqa: BLE001
             self._fehler("Physisches Laufwerk",
                          f"Das Laufwerk liess sich nicht oeffnen:\n{e}")
@@ -694,11 +767,29 @@ class MainWindow(QMainWindow):
         self._physisch = sitzung
         self._physisch_laufwerk = drive
 
+        def oeffnen_und_verzeichnis():
+            """Öffnen UND das Verzeichnis holen — beides im Arbeitsfaden.
+
+            Auch das Verzeichnis gehört hierher, nicht in den Oberflächenfaden: liefe
+            es dort, verarbeitete Qt so lange keine Ereignisse — die Dateiliste bliebe
+            leer, der Fortschritt stünde, und ein Klick würde erst danach abgearbeitet
+            (das Programm sähe eingefroren aus).
+
+            Geholt werden nur die **Namen** (`list_names`).  Die übrigen Angaben
+            stehen bei UDOS im Kopfsektor jeder Datei, verstreut über die Diskette;
+            sie einzeln nachzutragen ist Sache von `_details_nachtragen`, sobald ihre
+            Spuren ohnehin gelesen sind.  Bei CP/M ist das ein und dasselbe.
+            """
+            werkzeug = DiskTool.open_physical(sitzung, filesystem or None,
+                                              read_only=not writable)
+            werkzeug.list_names()
+            return werkzeug
+
         werkzeug, fehler = mit_fortschritt(
-            self, sitzung,
-            lambda: DiskTool.open_physical(sitzung, filesystem or None,
-                                           read_only=not writable),
-            text="Diskette wird gelesen (Format wird erkannt)…")
+            self, sitzung, oeffnen_und_verzeichnis,
+            text="Format wird erkannt…",
+            # Ziel sind die Sondenspuren, nicht die ganze Diskette (§11.2a).
+            ziel=DiskTool.probe_track_count(sitzung.num_cyls, sitzung.num_heads))
 
         if werkzeug is None:
             self._close_physisch()
@@ -726,7 +817,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"Geöffnet: Laufwerk {drive.upper()} — {self.tool.filesystem}",
             STATUS_DAUER)
-        self._pruefe_defekte()
+        self._physisch_uhr.start()
+        self._physisch_tick()      # sofort, nicht erst nach dem ersten Intervall
         return True
 
     def _pruefe_defekte(self) -> bool:
@@ -781,9 +873,19 @@ class MainWindow(QMainWindow):
                 f"{n} Spuren wurden geschrieben und fehlerfrei zurückgelesen.")
 
     def _physisch_dialog(self) -> None:
-        """Abfrage vor dem Einlegen und dann oeffnen."""
-        from app.ui.physical_disk import PhysicalDiskDialog
+        """Abfrage vor dem Einlegen und dann oeffnen.
 
+        **Erst prüfen, dann fragen.**  Geht es gar nicht (Hosttools fehlen, die
+        Anbindung lässt sich nicht laden), erscheint der Auswahldialog erst gar
+        nicht — sonst füllt der Bediener ihn aus, klickt „Einlegen" und läuft
+        danach in eine Meldung, die er schon vor dem Ausfüllen hätte haben können.
+        """
+        from app.ui.physical_disk import PhysicalDiskDialog, verfuegbarkeit
+
+        ok, grund = verfuegbarkeit()
+        if not ok:
+            self._fehler("Physisches Laufwerk", grund)
+            return
         if not self._darf_verwerfen():
             return
         wahl = PhysicalDiskDialog.frage(self, num_cyls=80, num_heads=2)
@@ -797,6 +899,9 @@ class MainWindow(QMainWindow):
         if sitzung is None:
             return
         self._physisch = None
+        self._physisch_uhr.stop()
+        self.st_physisch.clear()
+        self.st_physisch.hide()
         from PySide6.QtGui import QCursor
         from PySide6.QtWidgets import QApplication
         QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))

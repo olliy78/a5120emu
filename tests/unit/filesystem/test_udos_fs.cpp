@@ -673,3 +673,65 @@ TEST(UdosFileSystemWrite, MkfsLegtEinBenutzbaresDateisystemAn) {
     std::error_code ec;
     std::filesystem::remove(pfad, ec);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Zweistufiges Verzeichnis (`CAT` gegen `CAT F=L`)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// UDOS fuehrt im Verzeichnis nur Name und SECRET-Bit; Laenge, Typ und Datum stehen
+// im Kopfsektor JEDER Datei, verstreut ueber die Diskette.  An einem echten Laufwerk
+// ist das der Unterschied zwischen drei und drei Dutzend Spuren — deshalb gibt es
+// listNames() + loadDetails().  Belegstelle: doc/udos_diskettenformat.md §5.
+
+TEST(UdosVerzeichnisZweistufig, NamenUndReihenfolgeSindDieselbenWieBeiList) {
+    Seite s = oeffne(0);
+    ASSERT_TRUE(s) << s.error;
+
+    const std::vector<FileEntry> voll  = s.fs->list();
+    const std::vector<FileEntry> namen = s.fs->listNames();
+
+    ASSERT_EQ(namen.size(), voll.size());
+    for (size_t i = 0; i < voll.size(); ++i) {
+        EXPECT_EQ(namen[i].name, voll[i].name) << "Reihenfolge weicht ab bei " << i;
+        // Das SECRET-Bit steht im Verzeichnis selbst — es ist schon ohne Kopf da.
+        EXPECT_EQ(namen[i].hidden, voll[i].hidden) << namen[i].name;
+    }
+}
+
+TEST(UdosVerzeichnisZweistufig, OhneKopfsektorBleibenDieAngabenLeer) {
+    Seite s = oeffne(0);
+    ASSERT_TRUE(s) << s.error;
+
+    for (const FileEntry& e : s.fs->listNames()) {
+        EXPECT_FALSE(e.details_loaded) << e.name;
+        EXPECT_EQ(e.size, 0u)   << e.name;   // 0 heisst hier „noch nicht gelesen"
+        EXPECT_TRUE(e.type.empty()) << e.name;
+        EXPECT_TRUE(e.date.empty()) << e.name;
+    }
+}
+
+TEST(UdosVerzeichnisZweistufig, NachtragenLiefertGenauDasselbeWieList) {
+    Seite s = oeffne(0);
+    ASSERT_TRUE(s) << s.error;
+
+    const std::vector<FileEntry> voll = s.fs->list();
+    std::vector<FileEntry>       nach = s.fs->listNames();
+    for (FileEntry& e : nach) {
+        // An einer DATEI ist jede Spur bekannt — nichts darf hier warten muessen.
+        EXPECT_TRUE(s.fs->detailsReady(e)) << e.name;
+        s.fs->loadDetails(e);
+    }
+
+    ASSERT_EQ(nach.size(), voll.size());
+    for (size_t i = 0; i < voll.size(); ++i) {
+        EXPECT_TRUE(nach[i].details_loaded)        << voll[i].name;
+        EXPECT_EQ(nach[i].name,       voll[i].name);
+        EXPECT_EQ(nach[i].size,       voll[i].size)       << voll[i].name;
+        EXPECT_EQ(nach[i].type,       voll[i].type)       << voll[i].name;
+        EXPECT_EQ(nach[i].attributes, voll[i].attributes) << voll[i].name;
+        EXPECT_EQ(nach[i].date,       voll[i].date)       << voll[i].name;
+        EXPECT_EQ(nach[i].record_len, voll[i].record_len) << voll[i].name;
+        EXPECT_EQ(nach[i].entry_addr, voll[i].entry_addr) << voll[i].name;
+        EXPECT_EQ(nach[i].damaged,    voll[i].damaged)    << voll[i].name;
+    }
+}

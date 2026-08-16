@@ -118,6 +118,17 @@ struct DetectionResult {
     bool        unambiguous = true;   ///< false = mehrere gleich gute Kandidaten
     std::vector<std::string> alternatives;   ///< weitere Dateisystem-Kandidaten
     std::string remarks;              ///< Auffaelligkeiten (Altbestand, CRC, Schaeden)
+    /**
+     * @brief Wie viele Spuren die Auffaelligkeiten abdecken; 0 = die ganze Diskette.
+     *
+     * An einem echten Laufwerk wird nur eine Stichprobe gemessen (§11.2a).  Die
+     * Zaehlungen in @ref remarks sind dann Aussagen ueber **diese** Spuren, nicht
+     * ueber die Diskette — „2 Spuren hinter dem Format" heisst dort „2 der
+     * 8 angesehenen", und es koennen mehr sein.  Wer die Meldung anzeigt, muss den
+     * Unterschied sichtbar machen; @ref DiskVolume::refreshDetection ersetzt sie,
+     * sobald die Diskette vollstaendig gelesen ist.
+     */
+    int         examined_tracks = 0;
 };
 
 /**
@@ -247,6 +258,22 @@ public:
 
     const std::string&     path()      const { return path_; }
     const DetectionResult& detection() const { return detection_; }
+
+    /**
+     * @brief Die Auffaelligkeiten neu bewerten, wenn die Diskette inzwischen
+     *        **vollstaendig** gelesen ist.
+     *
+     * Nach einer Stichprobenerkennung (§11.2a) gilt @ref DetectionResult::remarks nur
+     * fuer die angesehenen Spuren.  Sobald keine Spur mehr unbekannt ist, laesst sich
+     * daraus eine Aussage ueber die ganze Diskette machen — diese Methode misst dann
+     * einmal voll nach und ersetzt die Meldung.
+     *
+     * Das erkannte **Format** wird dabei nicht angetastet: es traegt das Dateisystem,
+     * das bereits gemountet ist.
+     *
+     * @return true, wenn sich die Meldung geaendert hat (Anzeige auffrischen).
+     */
+    bool refreshDetection();
     const FsProfile&       profile()   const { return *profile_; }
 
     int  volumeCount() const { return static_cast<int>(volumes_.size()); }
@@ -258,6 +285,13 @@ public:
 
     /// @brief Verzeichnis ALLER Volumes — immer frisch aus dem Medium (§9.3).
     std::vector<FileEntry> list() const;
+
+    /// @brief Verzeichnis ohne die Angaben aus den Kopfsektoren (@ref FileSystem::listNames).
+    std::vector<FileEntry> listNames() const;
+    /// @brief Waeren die Angaben zu @p e ohne Warten zu haben? (@ref FileSystem::detailsReady)
+    bool detailsReady(const FileEntry& e) const;
+    /// @brief Angaben nachtragen — **blockiert** ggf. (@ref FileSystem::loadDetails).
+    bool loadDetails(FileEntry& e) const;
 
     // ─── Einzeloperationen ───────────────────────────────────────────────────
 
@@ -294,7 +328,23 @@ public:
     uint8_t mediumHeads()     const;
 
     /// @brief Eine Spur als lueckenlose Abschnittsfolge (Sektor/Gap/unformatiert).
+    ///
+    /// @warning **Laedt nach**, wenn die Spur an einem echten Laufwerk noch unbekannt
+    ///          ist — der Aufruf blockiert dann eine halbe bis ganze Sekunde.  Wer nur
+    ///          zeichnen will, was schon bekannt ist, fragt vorher @ref trackState.
     TrackView trackView(uint8_t cyl, uint8_t head) const;
+
+    /**
+     * @brief Zustand einer Spur, **ohne** sie zu beschaffen.
+     *
+     * Fuer Ansichten ueber die ganze Diskette: eine Uebersicht darf nicht 160 Spuren
+     * nachladen, nur um sie zu zeichnen.  Bei einer Datei ist jede Spur bekannt, dort
+     * ist die Antwort immer @c Clean oder @c Dirty.
+     *
+     * @return 0 = unbekannt (nie gelesen, Inhalt bedeutungslos), 1 = sauber,
+     *         2 = geaendert.
+     */
+    int trackState(uint8_t cyl, uint8_t head) const;
 
     /**
      * @brief Nutzdaten und gespeicherte Daten-CRC eines Sektors.
@@ -451,6 +501,9 @@ private:
     ///        Gesetzt, wenn kein `formats:`-Eintrag passte; @ref format_ zeigt dann hierher.
     std::optional<DiskFormat> gemessenes_format_;
     DetectionResult    detection_;
+    /// @brief Teil des Befunds, der NICHT aus der Spurmessung stammt (CP/A-Regel,
+    ///        Hinweise zum Container) — @ref refreshDetection laesst ihn stehen.
+    std::string        befund_zusatz_;
     std::vector<Vol>   volumes_;
     bool               read_only_   = true;
     /// @brief Harter Schreibschutz: die Geometrie ist nur gemessen, nicht katalogisiert.

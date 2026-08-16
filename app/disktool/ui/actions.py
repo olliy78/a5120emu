@@ -30,7 +30,7 @@ _SPEC: List[Tuple] = [
      "Eine Diskette anlegen — wahlweise bootfähig", "_neu_dialog", False),
     ("physisch", "&Physisches Laufwerk…", None, "Ctrl+Shift+O",
      "Eine ECHTE Diskette in einem echten Laufwerk am Greaseweazle öffnen — "
-     "das Öffnen liest die ganze Diskette und dauert gut anderthalb Minuten",
+     "das Öffnen misst eine Stichprobe der Spuren und dauert etwa zehn Sekunden",
      "_physisch_dialog", False),
     ("speichern", "&Speichern", "save", "Ctrl+S",
      "Die Änderungen in die Abbilddatei schreiben", "save", False),

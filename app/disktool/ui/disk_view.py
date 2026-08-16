@@ -166,15 +166,40 @@ class DiskView(QWidget):
                 g.setExpanded(True)
                 gruppen[v.index] = g
 
-        for e in entries:
+        self._zeilen = {}
+        for nr, e in enumerate(entries):
             eltern = gruppen.get(e.volume, self.tree) if mehrseitig else self.tree
-            item = QTreeWidgetItem(eltern, [
-                e.name, e.type, f"{e.size}", e.attrs, e.date,
-            ])
+            item = QTreeWidgetItem(eltern, self._spalten(e))
             item.setData(0, REF_ROLE, e.ref)
             item.setData(0, VOLUME_ROLE, e.volume)
             if e.damaged:
                 item.setText(1, "DEFEKT")
+            # Zeile über die LAUFENDE NUMMER merken: genau darüber spricht die
+            # Bibliothek beim Nachtragen (`load_entry_details(i)`), und Namen sind
+            # bei UDOS über beide Seiten hinweg nicht eindeutig.
+            self._zeilen[nr] = item
+
+    @staticmethod
+    def _spalten(e) -> List[str]:
+        """Die fünf Spalten eines Eintrags.
+
+        Solange die Angaben aus dem Kopfsektor fehlen (UDOS an einer physischen
+        Diskette), steht dort ein Gedankenstrich — **nicht** „0 Byte": eine Null
+        wäre eine Behauptung, der Strich sagt „noch nicht gelesen".
+        """
+        if not getattr(e, "details_loaded", True):
+            return [e.name, "…", "…", "", ""]
+        return [e.name, e.type, f"{e.size}", e.attrs, e.date]
+
+    def eintrag_auffrischen(self, nr: int, e) -> None:
+        """Eine Zeile mit nachgetragenen Angaben neu beschriften."""
+        item = getattr(self, "_zeilen", {}).get(nr)
+        if item is None:
+            return
+        for spalte, text in enumerate(self._spalten(e)):
+            item.setText(spalte, text)
+        if e.damaged:
+            item.setText(1, "DEFEKT")
 
     # ── Kontextmenü ─────────────────────────────────────────────────────────
 

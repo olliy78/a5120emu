@@ -357,42 +357,72 @@ std::vector<UdosDirEntry> UdosFileSystem::directory() const {
     return result;
 }
 
+bool UdosFileSystem::uebernimmKopf(UdosPointer p, FileEntry& e) const {
+    UdosFileHeader hdr;
+    if (!readHeader(p, hdr)) {
+        e.damaged        = true;
+        e.details_loaded = true;   // mehr ist hier nicht zu holen
+        return false;
+    }
+    e.size       = hdr.length();
+    e.type       = hdr.typeName();
+    e.attributes = hdr.propertyLetters();
+    e.entry_addr = hdr.entry_addr;
+    e.record_len = hdr.record_len;
+    e.block_len  = hdr.block_len;
+    e.bytes_in_last = hdr.bytes_in_last;
+    e.extra      = hdr.extra;
+    e.created    = hdr.created;
+    e.segment_start = hdr.segment_start;
+    e.segment_len   = hdr.segment_len;
+    e.low_addr   = hdr.low_addr;
+    e.high_addr  = hdr.high_addr;
+    e.stack_size = hdr.stack_size;
+    e.date       = hdr.modified.empty() ? hdr.created : hdr.modified;
+    e.details_loaded = true;
+    return true;
+}
+
 std::vector<FileEntry> UdosFileSystem::list() const {
+    std::vector<FileEntry> out = listNames();
+    for (FileEntry& e : out)
+        loadDetails(e);
+    return out;
+}
+
+std::vector<FileEntry> UdosFileSystem::listNames() const {
     std::vector<FileEntry> out;
     for (const UdosDirEntry& d : directory()) {
         FileEntry e;
         e.name   = d.name;
+        // Das SECRET-Bit steht im Verzeichnis SELBST (§5) — eine Spiegelung der
+        // S-Eigenschaft aus dem Kopfsektor, damit `CAT` filtern kann, ohne jeden
+        // Kopf zu lesen.  Genau deshalb ist es hier schon zu haben.
         e.hidden = d.secret;
-
-        UdosFileHeader hdr;
-        if (readHeader(d.header, hdr)) {
-            e.size       = hdr.length();
-            e.type       = hdr.typeName();
-            e.attributes = hdr.propertyLetters();
-            e.entry_addr = hdr.entry_addr;
-            e.record_len = hdr.record_len;
-            e.block_len  = hdr.block_len;
-            e.bytes_in_last = hdr.bytes_in_last;
-            e.extra      = hdr.extra;
-            e.created    = hdr.created;
-            e.record_len = hdr.record_len;
-            e.block_len  = hdr.block_len;
-            e.bytes_in_last = hdr.bytes_in_last;
-            e.extra      = hdr.extra;
-            e.segment_start  = hdr.segment_start;
-            e.segment_len  = hdr.segment_len;
-            e.low_addr  = hdr.low_addr;
-            e.high_addr    = hdr.high_addr;
-            e.stack_size  = hdr.stack_size;
-            e.date       = hdr.modified.empty() ? hdr.created : hdr.modified;
-        } else {
-            e.damaged = true;
-        }
+        e.details_loaded = false;
         out.push_back(e);
     }
     std::sort(out.begin(), out.end(),
               [](const FileEntry& a, const FileEntry& b) { return a.name < b.name; });
     return out;
+}
+
+bool UdosFileSystem::detailsReady(const FileEntry& e) const {
+    if (e.details_loaded) return true;
+    for (const UdosDirEntry& d : directory())
+        if (d.name == e.name)
+            return space_.trackKnown(d.header.track, head_);
+    return true;                  // steht nicht mehr im Verzeichnis — nichts zu warten
+}
+
+bool UdosFileSystem::loadDetails(FileEntry& e) const {
+    if (e.details_loaded) return !e.damaged;
+    for (const UdosDirEntry& d : directory())
+        if (d.name == e.name)
+            return uebernimmKopf(d.header, e);
+    e.damaged        = true;
+    e.details_loaded = true;
+    return false;
 }
 
 bool UdosFileSystem::read(const std::string& name, std::vector<uint8_t>& out) {

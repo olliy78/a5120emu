@@ -57,12 +57,28 @@ K1520_API K1520Disk k1520d_open(const char* path, const char* fs_name, bool read
  *
  * @p sync kommt aus @ref k1520s_create und wird von einem fremden Arbeitsfaden bedient.
  *
- * **Der Aufruf liest die ganze Diskette**: die Formaterkennung sieht sich jede Spur an.
- * Er gehoert deshalb in einen Arbeitsfaden mit Fortschrittsanzeige, nicht in den
- * Oberflaechenfaden (doc/design/14_physische_diskette.md §11.2).
+ * Der Aufruf holt die **Sondenspuren** der Formaterkennung
+ * (@ref k1520d_probe_track_count) und danach das Verzeichnis; er dauert Sekunden und
+ * gehoert deshalb in einen Arbeitsfaden mit Fortschrittsanzeige, nicht in den
+ * Oberflaechenfaden (doc/design/14_physische_diskette.md §11.2/§11.2a).  Passt kein
+ * Katalogformat, folgt die Vollmessung — dann dauert es entsprechend laenger.
  */
 K1520_API K1520Disk k1520d_open_physical(K1520Sync sync, const char* fs_name,
                                          bool read_only);
+
+/**
+ * @brief Wie viele Spuren die Formaterkennung anfassen wird (Sondenzahl).
+ *
+ * Fuer die Fortschrittsanzeige: an einem echten Laufwerk ist die Zahl der
+ * Sondenspuren das Ziel, nicht die Spurzahl der Diskette — ein Balken, der gegen 160
+ * laeuft und bei 8 stehenbleibt, sagt dem Bedienenden das Falsche.
+ *
+ * Die Regel steht in @ref GeometryProbe::probeTracks; diese Funktion gibt es, damit
+ * die Oberflaeche sie nicht nachbauen muss (und dabei von ihr abweicht).
+ *
+ * @return Zahl der Sondenspuren, 0 bei unsinnigen Angaben.
+ */
+K1520_API int k1520d_probe_track_count(int num_cyls, int num_heads);
 
 /**
  * @brief Neue, leere Diskette anlegen (formatieren + Dateisystem initialisieren).
@@ -152,6 +168,21 @@ K1520_API const char* k1520d_detection_alternatives(K1520Disk h);
 /// @brief Auffaelligkeiten des Mediums (Altbestand, CRC-Fehler, Schaeden); "" = ohne Befund.
 K1520_API const char* k1520d_detection_remarks(K1520Disk h);
 
+/**
+ * @brief Zahl der Spuren, ueber die @ref k1520d_detection_remarks urteilt; 0 = alle.
+ *
+ * Nach einer Stichprobenerkennung (physisches Laufwerk) sind die Zaehlungen darin
+ * Aussagen ueber DIESE Spuren, nicht ueber die Diskette.
+ */
+K1520_API int k1520d_detection_examined_tracks(K1520Disk h);
+
+/**
+ * @brief Auffaelligkeiten neu bewerten, sobald die Diskette vollstaendig gelesen ist.
+ *
+ * @return true, wenn sich die Meldung geaendert hat — dann ist die Anzeige aufzufrischen.
+ */
+K1520_API bool k1520d_refresh_detection(K1520Disk h);
+
 /* ─── Seiten (UDOS) ───────────────────────────────────────────────────────────
  * Es wird NICHT umgeschaltet — alle Seiten sind gleichzeitig sichtbar, und jeder
  * Verzeichniseintrag nennt seine Seite (@ref k1520d_entry_volume).            */
@@ -170,6 +201,28 @@ K1520_API uint64_t    k1520d_volume_used(K1520Disk h, int v);
 
 /// @brief Verzeichnis aller Seiten einlesen; liefert die Anzahl der Eintraege.
 K1520_API int         k1520d_list(K1520Disk h);
+
+/**
+ * @brief Verzeichnis **nur mit den Namen** einlesen; liefert die Anzahl der Eintraege.
+ *
+ * Bei CP/M gleichbedeutend mit @ref k1520d_list (dort steht alles im Eintrag selbst).
+ * Bei UDOS bleiben Groesse, Typ und Datum zunaechst leer — sie stehen im Kopfsektor
+ * jeder Datei, verstreut ueber die Diskette.  An einem echten Laufwerk ist das der
+ * Unterschied zwischen drei und drei Dutzend Spuren (`CAT` gegen `CAT F=L`).
+ *
+ * Nachzutragen mit @ref k1520d_entry_load_details, am besten erst, wenn
+ * @ref k1520d_entry_details_ready dafuer @c true sagt.
+ */
+K1520_API int         k1520d_list_names(K1520Disk h);
+
+/// @brief Stehen die Angaben zu Eintrag @p i schon fest?
+K1520_API bool        k1520d_entry_details_loaded(K1520Disk h, int i);
+
+/// @brief Waeren die Angaben zu Eintrag @p i **ohne Warten** zu haben?
+K1520_API bool        k1520d_entry_details_ready(K1520Disk h, int i);
+
+/// @brief Angaben zu Eintrag @p i nachtragen; **blockiert** ggf. (siehe @c _ready).
+K1520_API bool        k1520d_entry_load_details(K1520Disk h, int i);
 K1520_API int         k1520d_entry_volume(K1520Disk h, int i);
 K1520_API const char* k1520d_entry_name(K1520Disk h, int i);
 K1520_API int         k1520d_entry_user(K1520Disk h, int i);
@@ -264,8 +317,19 @@ K1520_API int k1520d_medium_heads(K1520Disk h);
  *
  * Wie @ref k1520d_list ein Zustandswechsel: die `k1520d_track_*`- und
  * `k1520d_span_*`-Abfragen beziehen sich auf die zuletzt eingelesene Spur.
+ *
+ * @warning An einem echten Laufwerk **blockiert** der Aufruf, wenn die Spur noch
+ *          unbekannt ist (sie wird dann geholt).  Ansichten ueber die ganze Diskette
+ *          fragen deshalb zuerst @ref k1520d_track_state.
  */
 K1520_API int k1520d_track_scan(K1520Disk h, int cyl, int head);
+
+/**
+ * @brief Zustand einer Spur, **ohne** sie zu beschaffen (0=unbekannt, 1=sauber, 2=geaendert).
+ *
+ * Damit kann eine Uebersicht zeichnen, was sie weiss, statt 160 Spuren nachzuladen.
+ */
+K1520_API int k1520d_track_state(K1520Disk h, int cyl, int head);
 
 /// @brief false = diese Spur gibt es in der Ausdehnung des Mediums nicht.
 K1520_API bool        k1520d_track_exists(K1520Disk h);

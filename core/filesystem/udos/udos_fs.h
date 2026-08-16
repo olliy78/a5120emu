@@ -144,6 +144,15 @@ public:
                                                   std::string& err);
 
     std::vector<FileEntry> list() const override;
+
+    /// @brief Nur Name und SECRET-Bit — **ohne** die Kopfsektoren (`CAT` statt `CAT F=L`).
+    ///
+    /// Das Verzeichnis liegt auf drei Spuren, die Kopfsektoren ueber die ganze
+    /// Diskette; an einem echten Laufwerk ist das der Unterschied zwischen zwei
+    /// Sekunden und einer halben Minute (14_physische_diskette.md §11.2b).
+    std::vector<FileEntry> listNames() const override;
+    bool detailsReady(const FileEntry& e) const override;
+    bool loadDetails(FileEntry& e) const override;
     bool   read (const std::string& name, std::vector<uint8_t>& out) override;
     bool   write(const std::string& name, const std::vector<uint8_t>& data,
                  const WriteOptions& opt) override;
@@ -166,6 +175,9 @@ public:
     std::vector<UdosDirEntry> directory() const;
     /// @brief Kopfsektor einer Datei lesen.
     bool readHeader(UdosPointer p, UdosFileHeader& out) const;
+    /// @brief Angaben aus dem Kopfsektor in einen Eintrag uebernehmen (eine Stelle
+    ///        fuer @ref list und @ref loadDetails — sonst laufen sie auseinander).
+    bool uebernimmKopf(UdosPointer p, FileEntry& e) const;
     /// @brief Sektorkette einer Datei — die Anfangszeiger aller Saetze.
     bool recordChain(const UdosFileHeader& hdr, std::vector<UdosPointer>& out) const;
 

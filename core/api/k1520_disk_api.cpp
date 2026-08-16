@@ -17,6 +17,7 @@
 #include "core/api/k1520_sync_internal.h"
 
 #include "core/filesystem/disk_volume.h"
+#include "core/filesystem/geometry_probe.h"
 
 #include <memory>
 #include <string>
@@ -110,6 +111,12 @@ extern "C" K1520Disk k1520d_open(const char* path, const char* fs_name, bool rea
                               kataloge().formate, kataloge().dateisysteme, err, read_only);
     if (!h->vol) { g_open_error = err; return nullptr; }
     return h.release();
+}
+
+extern "C" int k1520d_probe_track_count(int num_cyls, int num_heads) {
+    if (num_cyls <= 0 || num_heads <= 0 || num_cyls > 255 || num_heads > 255) return 0;
+    return static_cast<int>(GeometryProbe::probeTracks(
+        static_cast<uint8_t>(num_cyls), static_cast<uint8_t>(num_heads)).size());
 }
 
 extern "C" K1520Disk k1520d_open_physical(K1520Sync sync, const char* fs_name,
@@ -305,6 +312,27 @@ extern "C" int k1520d_list(K1520Disk h) {
     return static_cast<int>(H(h)->eintraege.size());
 }
 
+extern "C" int k1520d_list_names(K1520Disk h) {
+    if (!h) return 0;
+    H(h)->eintraege = H(h)->vol->listNames();
+    return static_cast<int>(H(h)->eintraege.size());
+}
+
+extern "C" bool k1520d_entry_details_loaded(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? e->details_loaded : false;
+}
+
+extern "C" bool k1520d_entry_details_ready(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? H(h)->vol->detailsReady(*e) : false;
+}
+
+extern "C" bool k1520d_entry_load_details(K1520Disk h, int i) {
+    if (!h || i < 0 || static_cast<size_t>(i) >= H(h)->eintraege.size()) return false;
+    return H(h)->vol->loadDetails(H(h)->eintraege[static_cast<size_t>(i)]);
+}
+
 extern "C" int k1520d_entry_volume(K1520Disk h, int i) {
     const FileEntry* e = eintrag(h, i);
     return e ? e->volume : 0;
@@ -422,6 +450,19 @@ extern "C" int k1520d_medium_cylinders(K1520Disk h) {
 
 extern "C" int k1520d_medium_heads(K1520Disk h) {
     return h ? H(h)->vol->mediumHeads() : 0;
+}
+
+extern "C" int k1520d_detection_examined_tracks(K1520Disk h) {
+    return h ? H(h)->vol->detection().examined_tracks : 0;
+}
+
+extern "C" bool k1520d_refresh_detection(K1520Disk h) {
+    return h && H(h)->vol->refreshDetection();
+}
+
+extern "C" int k1520d_track_state(K1520Disk h, int cyl, int head) {
+    if (!h || cyl < 0 || head < 0 || cyl > 255 || head > 255) return 0;
+    return H(h)->vol->trackState(static_cast<uint8_t>(cyl), static_cast<uint8_t>(head));
 }
 
 extern "C" int k1520d_track_scan(K1520Disk h, int cyl, int head) {

@@ -647,11 +647,258 @@ vierter Knopf **„Physisch…"**.  Danach:
 ### 12.2 k1520DiskTool
 
 Im Menü *Datei* steht unter *Abbild öffnen…* / *Neue Diskette…* der Punkt
-**„Physisches Laufwerk…"** (Strg+Umschalt+O).  Das Öffnen läuft über `mit_fortschritt()` — es liest die ganze Diskette
-(die Formaterkennung sieht sich jede Spur an, §11.2) und braucht dafür rund
-anderthalb Minuten; die Anzeige zählt die Spuren mit und lässt sich abbrechen.
+**„Physisches Laufwerk…"** (Strg+Umschalt+O).  Das Öffnen läuft über `mit_fortschritt()`
+— es misst eine Stichprobe (§11.2a) und braucht dafür rund zehn Sekunden; die Anzeige
+zählt die Spuren mit und lässt sich abbrechen.
 Danach ist die Diskette eine Diskette wie jede andere; der Kopf nennt sie
 `Echtes Laufwerk A am Greaseweazle — udos_ds77 (nur lesen)`.
+
+#### 11.2a Erkennen an acht Spuren statt an hundertsechzig
+
+Bis 2026-08-16 lief `GeometryProbe::measure()` über **jede** Spur des Mediums, und weil
+`DiskMedium::track()` am echten Laufwerk nachlädt, zog das Öffnen die ganze Diskette ein:
+160 Spuren × 0,6 s ≈ **97 s**.  Für eine Datei ist das gratis, am Laufwerk ist es der
+teuerste Vorgang des Programms — und unnötig.
+
+Nachgerechnet über **alle 1770 Formatpaare** des Katalogs trennen **acht Spuren** alles,
+was überhaupt trennbar ist:
+
+| Sonde | trennt zusätzlich |
+|-------|-------------------|
+| **Zylinder 3, Kopf 0** | 1606 Paare |
+| Zylinder 0, Kopf 1 | 99 |
+| Zylinder 78, Kopf 0 | 35 |
+| Zylinder 0, Kopf 0 | 15 |
+| Zylinder 2 / 40 / 1 / 77 | je 1–4 |
+
+Die wichtigste Sonde ist **Zylinder 3** — dieselbe, die das CP/A-BIOS liest (`dlgint`,
+`doc/cpa_format_detection.md`).  Die innerste nötige ist 78, und sie beantwortet die
+einzige Frage, die außen nicht zu klären ist: **40 oder 80 Spuren**.  Ein Formatpaar,
+dessen Unterschied erst am inneren Rand *flächig* sichtbar würde, gibt es nicht.
+
+Umgesetzt als `GeometryProbe::probeTracks()` + `measureTracks()`, ausgewählt in
+`DiskVolume::open` an **`medium.loader() != nullptr`** — also an „die Spuren müssen teuer
+beschafft werden", nicht an „Greaseweazle"; der Kern kennt den Adapter weiterhin nicht.
+Genommen werden `{0,1,2,3, n/2, n-3, n-2}` auf **Kopf 0** plus `0/1` — zusammen **acht
+Spuren**, ≈ 5 s.
+
+> **Acht Spuren, nicht acht Zylinder.**  Der erste Wurf machte aus den acht berechneten
+> *(Zylinder, Kopf)-Paaren* acht Zylinder × beide Köpfe und verdoppelte die Wartezeit auf
+> nichts: Kopf 1 beantwortet genau eine Frage (ein- oder zweiseitig), und dafür genügt
+> eine einzige Sonde.  Wächter `test_die_sondenzahl_bleibt_klein`.
+
+Die ungeraden Zylinder (1, 3, n-3) sind Pflicht, nicht Beiwerk — ohne sie fände die
+Doppelschritt-Regel ihre Lücken nicht und jedes `step: 2`-Format fiele durch.
+
+Drei Dinge, die daran hängen:
+
+1. **Die Vollmessung bleibt der Rückfall.**  Passt kein Katalogformat, wird die ganze
+   Diskette gemessen, denn `synthesize()` leitet die Geometrie aus dem lückenlosen Bild
+   ab — aus einer Stichprobe entstünde eine erfundene Geometrie.
+2. **Die Auffälligkeiten sind dann Aussagen über die Stichprobe — und werden ersetzt,
+   sobald die Diskette vollständig ist.**  Ein leeres `remarks` läse sich sonst als
+   „Diskette makellos", obwohl 152 Spuren ungelesen sind; und eine Zählung liest sich
+   wie ein Befund, obwohl sie nur die angesehenen Spuren zählt.  Auf der
+   UDOS-Referenzdiskette meldet die Stichprobe **2** beschriebene Spuren hinter dem
+   Format, die vollständige Messung **6** plus eine Spur mit fehlenden Sektoren.
+   Deshalb:
+
+   | Stand | Meldung |
+   |-------|---------|
+   | Stichprobe, ohne Befund | `erst 8 Spuren angesehen (Stichprobe der Formaterkennung), die übrigen sind ungeprüft` |
+   | Stichprobe, mit Befund | `in einer Stichprobe von 8 Spuren: 2 … — die übrigen Spuren sind noch ungeprüft` |
+   | vollständig | der wirkliche Befund, oder **gar keine Meldung** |
+
+   `DetectionResult::examined_tracks` sagt, worüber der Satz urteilt (0 = ganze
+   Diskette); `DiskVolume::refreshDetection()` misst einmal voll nach, sobald
+   `DiskMedium::complete()` gilt, und der 500-ms-Zeitgeber der Oberfläche ruft es
+   (`_befund_auffrischen`).  Zwei Feinheiten: gemessen wird gegen **das gemountete**
+   Format (`match`, nicht `matchAll` — welches es ist, steht ja fest), und der Teil
+   des Befunds, der **nicht** aus der Messung stammt (`befund_zusatz_`, z. B. „nach
+   der CP/A-Regel abgeleitet …"), bleibt stehen.  Dasselbe Motiv wie `Unknown` ≠
+   „unformatiert" (§4.2).  Wächter: `test_befund_gilt_erst_der_stichprobe_und_wird_dann_ersetzt`,
+   `test_ohne_befund_verschwindet_der_streifen_wieder`.
+3. **Bei Dateien ändert sich nichts.**  Dort liegt ohnehin alles im Speicher, und die
+   vollständigen Zustandsaussagen sind mehr wert als die eingesparte Zeit.
+
+> **Die Stichprobe darf nicht naiv sein — das kostete zwei Anläufe.**  Der erste Wurf
+> nahm eine **feste** Spurauswahl, ausgerechnet über die Spur-Signaturen des Katalogs.
+> Das ist das falsche Modell: `match()` entscheidet nicht über Signaturen, sondern
+> **duldet** Altbestand und ordnet die Kandidaten nach **absoluten Zählungen**.  Eine
+> Stichprobe schrumpft diese Zahlen ungleichmäßig — ein Format, das weniger Spuren
+> abdeckt, verliert dadurch weniger.  Drei Disketten wurden falsch erkannt:
+>
+> | Diskette | Vollmessung | feste Stichprobe |
+> |---|---|---|
+> | `udos_boot_k5600_20` | `udos_ss77` | `udos_ss40` — **die halbe Diskette unsichtbar** |
+> | `scpx17_cpa780_k5601` | `scpx640` | einseitiges Format auf beidseitiger Diskette |
+> | `scpx17_5x1024_hardy` | `scpx798` | `cpa_auto` statt des Katalogprofils |
+>
+> Drei Ursachen, drei Gegenmittel:
+> 1. **Seitenzahl war nur ein Zählnachteil** (`empty_tracks`, letzter Rang der
+>    Sortierung).  Jetzt harte Regel: trägt eine Seite *beschriebene* Spuren, die das
+>    Format nicht kennt, passt es nicht — unabhängig davon, wie viele Spuren man ansah.
+> 2. **Verhältnisregeln urteilten über die Stichprobe** („mehr als ein Viertel
+>    abweichender Spuren = anderes Format"): 2 von 7 Sondenspuren sind 28 %, dieselben
+>    2 von 80 sind 2,5 %.  `match(..., stichprobe)` überspringt sie deshalb; bei der
+>    Vollmessung gelten sie unverändert.
+> 3. **Die Ausdehnung war geraten.**  Eine feste Sonde bei Zylinder 77 trifft auf
+>    unformatierten Altbestand → die Diskette gilt als 41 Zylinder lang → das richtige
+>    Format fällt mit „deklariert 77, beschrieben 41" durch.  Deshalb sucht
+>    `measureSample()` das Ende **binär** (§ oben) statt es anzunehmen.
+
+Wächter: `test_stichprobe_erkennt_dasselbe_wie_die_vollmessung` (`py_gw_physical`,
+fünf Fixture-Disketten) — dieselbe Diskette als Datei und „physisch" muss dasselbe
+Dateisystem ergeben, bei weniger als einer Spur je Zylinder.  Dazu
+`test_erkennung_holt_nur_eine_stichprobe` (Menge) und
+`test_die_sondenzahl_bleibt_klein` (Sondenzahl).
+
+#### 11.2a-bis Eine leere Spur darf den Zellraten-Faktor nicht setzen
+
+Beim Nachmessen der Stichprobe fiel ein **älterer Fehler im Lesepfad** auf, den die
+geänderte Lesereihenfolge erst sichtbar machte — er hat mit der Stichprobe nichts zu
+tun und träfe auch echte Hardware.
+
+`TrackSync::completeRead` ermittelt einmal je Sitzung, ob der Adapter überabtastet
+liefert (§8.1), und behält den Faktor für die ganze Diskette.  Gesucht wurde er aber
+bei **jeder** Spur neu — und eine unformatierte Spur ist Rauschen: bei irgendeinem
+falschen Faktor findet sich darin zufällig eine Marke, die ihn festschreibt.  Danach
+war jede weitere Spur unlesbar (`scpx17_cpa780_k5601.hfe`, eine **einwandfreie**
+Diskette mit 0 CRC-Fehlern: 6181-B-Spuren kamen als 2658 B mit einem Sektor).
+
+Sequentiell fiel das nie auf, weil unformatierte Spuren am **Ende** liegen — das
+Format war da längst erkannt.  Wer die Diskette in anderer Reihenfolge liest, verlor
+die halbe Diskette.  Zwei Festlegungen:
+
+1. **Steht der Faktor fest, gilt er.**  Findet sich damit keine Marke, ist die Spur
+   unformatiert — das ist die richtige Auskunft, kein Anlass zu einer neuen Suche.
+2. **Eine einzelne Marke stiftet keinen Faktor** (mindestens vier).  Genau so entsteht
+   er sonst aus Rauschen; eine formatierte Spur trägt Dutzende.
+
+Wächter: `test_eine_leere_spur_verdirbt_nicht_die_ganze_diskette` — liest erst die
+leeren Spuren, dann echte, und prüft deren Länge.
+
+#### 11.2b Was danach noch dauert — und warum
+
+Erkennung ist nicht Anzeige.  Nach den acht Sonden holt das Werkzeug das **Verzeichnis**
+(bei UDOS drei Spuren: 23/0, 22/0, 23/1) und kann es damit lesen — aber `list()` liest je
+Verzeichniseintrag zusätzlich den **Kopfsektor der Datei** (`udos_fs.cpp`, `readHeader`),
+denn bei UDOS stehen Länge, Typ und Attribute dort und nicht im Verzeichnis.  Die
+Kopfsektoren liegen über die ganze Diskette verstreut; bei 69 Dateien sind das rund
+24 weitere Spuren.
+
+Gemessen an einer UDOS-Diskette (Ersatzlaufwerk, 50 ms je Spur statt echter 600):
+
+| | Erkennung | bis der Inhalt steht |
+|---|---|---|
+| ohne Vorauslesen | 0,56 s / 11 Spuren | 1,80 s / 35 Spuren |
+| mit Vorauslesen | 0,87 s / 17 Spuren | 2,71 s / 53 Spuren |
+
+Das Vorauslesen kostet also rund die Hälfte obendrauf, obwohl es die **niedrigste**
+Priorität hat: Priorität 1 verdrängt zwar die Warteschlange, unterbricht aber **keinen
+laufenden Zugriff** (§5) — im Mittel wartet jede Vordergrundanforderung eine halbe
+Spurzeit.  Das ist der Preis dafür, dass die Diskette nebenher vollständig wird.
+
+**Das Verzeichnis gehört deshalb in den Arbeitsfaden, nicht in den Oberflächenfaden.**
+`open_physical()` führt seit 2026-08-16 *Öffnen und `list()` gemeinsam* im Faden aus:
+
+```python
+def oeffnen_und_verzeichnis():
+    werkzeug = DiskTool.open_physical(...)
+    werkzeug.list()          # zieht die Kopfsektoren JETZT, im Arbeitsfaden
+    return werkzeug
+```
+
+Vorher lief `list()` erst danach über `_reload()` im Oberflächenfaden — und solange
+verarbeitete Qt **keine Ereignisse**: die Dateiliste blieb leer, der Fortschritt stand,
+und ein Klick (etwa auf den Diskeditor) wurde erst eine halbe Diskette später
+abgearbeitet.  Das Programm sah eingefroren aus, obwohl es arbeitete.  Danach ist
+`_reload()` billig, weil jede nötige Spur schon bekannt ist.  Wächter:
+`test_oberflaeche_laedt_nach_dem_oeffnen_keine_spur_mehr_nach`.
+
+Die Anzeige unterscheidet die beiden Phasen, weil nur die erste ein bekanntes Ziel hat:
+
+| Phase | Anzeige |
+|-------|---------|
+| Sondenspuren | `n von 8 Spuren für die Formaterkennung` (echter Balken) |
+| Verzeichnis | `Verzeichnis wird gelesen… n Spuren geholt` (unbestimmter Balken) |
+
+Die frühere Umschaltung auf die Spurzahl der Diskette (`10 von 160`) war irreführend:
+sie behauptete eine Vollmessung, die gar nicht lief — es waren die Verzeichnisspuren.
+
+**Umgesetzt (2026-08-16): die Dateiliste kommt zweistufig.**  `CAT` ist am echten Rechner
+so schnell wie `DIR` unter CP/M, `CAT F=L` nicht — und der Unterschied ist genau dieser:
+`CAT` liest nur das Verzeichnis, `CAT F=L` zusätzlich jeden Kopfsektor.  Unser `list()`
+machte immer das Zweite, auch wenn niemand nach Größe und Datum fragte.
+
+| | liest | UDOS-Referenzdiskette (69 Dateien) |
+|---|---|---|
+| `listNames()` | Verzeichnis | **1 Spur** |
+| `list()` | + jeden Kopfsektor | 24 Spuren |
+
+Bei **CP/M** sind beide identisch: dort steht alles im Verzeichniseintrag selbst, und das
+Verzeichnis liegt ohnehin in den Sondenspuren — gemessen **0 zusätzliche Spuren** für
+24 Dateien.  Das ist der sachliche Grund, warum `DIR` schnell ist und UDOS hier teurer.
+
+Der Weg durch die Schichten:
+
+```
+UdosFileSystem::listNames()   Name + SECRET-Bit (beides steht im Verzeichnis, §5)
+             ::detailsReady() liegt der Kopfsektor auf einer schon bekannten Spur?
+             ::loadDetails()  Kopfsektor lesen und die Angaben eintragen
+   → DiskVolume → k1520d_list_names / _entry_details_ready / _entry_load_details
+   → DiskTool.list_names() → MainWindow._details_nachtragen() (am 500-ms-Zeitgeber)
+```
+
+Drei Festlegungen:
+
+1. **Nachgetragen wird nur, was ohne Warten zu haben ist** (`detailsReady`).  Der
+   Zeitgeber läuft im Oberflächenfaden; ein blockierender Zugriff hielte dort das Fenster
+   an — und er triebe das Laufwerk an, statt ihm zu folgen.  Dieselbe Regel wie beim
+   Diskeditor (§11.2c).
+2. **Die leere Zelle zeigt „…", nicht „0".**  Eine Null wäre eine Behauptung über die
+   Datei; der Strich sagt, dass die Angabe noch fehlt.  Gleiches Motiv wie schwarz ≠ grau.
+3. **`list()` bleibt, was es war** — vollständig.  CLI, Archiv und die Prüfberichte
+   brauchen alle Angaben auf einmal; nur die *Anzeige* darf sich Zeit lassen.
+
+Wächter: `UdosVerzeichnisZweistufig.*` (Namen und Reihenfolge gleich, Angaben erst leer,
+nachgetragen bitgleich mit `list()`) und `test_dateiliste_kommt_zweistufig` (`py_gw_gui`).
+
+Gemessen am langsamen Ersatzlaufwerk (0,3 s/Spur, Vorauslesen an): bis die Dateien
+**sichtbar** sind **5,4 s statt 16,3 s**.
+
+#### 11.2c Der Diskeditor zeigt, was er weiß — schwarz ist „noch keine Aussage"
+
+Der Editor las beim Öffnen **jede** Spur (`DiskSurface.load` → `tool.track()`), und weil
+das an einem echten Laufwerk nachlädt, stand das Programm bis die Diskette vollständig
+eingelesen war.  Er fragt jetzt zuerst den **Zustand** (`k1520d_track_state` →
+`DiskMedium::state`, holt nichts) und zeichnet:
+
+| Farbe | Bedeutung |
+|-------|-----------|
+| grün / rot | Sektor, CRCs gültig / fehlerhaft |
+| orange | Gap |
+| grau | **unformatiert** — eine Feststellung über die Diskette |
+| **schwarz** | **noch nicht gelesen** — gar keine Feststellung |
+
+Grau und Schwarz auseinanderzuhalten ist der Kern: „unformatiert" ist ein Befund,
+„unbekannt" ist dessen Abwesenheit (dieselbe Unterscheidung wie `Unknown` ≠ leer, §4.2).
+Eine schwarze Spur trägt deshalb auch keine Abschnitte — wir wissen ja nicht einmal, ob
+sie formatiert ist.
+
+Drei Regeln, die dabei gelten:
+
+1. **Der Editor treibt das Laufwerk nicht an.**  Der Nachlauf-Zeitgeber (1 s) übernimmt
+   nur, was **inzwischen ohnehin** gelesen wurde; er fordert nichts an.  Sonst zöge das
+   blosse Offenhalten des Fensters die ganze Diskette ein — genau das, was abgeschafft
+   werden sollte.  Sind alle Spuren bekannt, hält er sich selbst an.
+2. **Ein Klick auf eine schwarze Spur holt sie** (`track_requested` → `_spur_anfordern`,
+   mit Wartecursor).  Das ist der einzige Weg, auf dem der Editor ein Lesen auslöst, und
+   er geht immer vom Bedienenden aus.
+3. **Die Legende zeigt „noch nicht gelesen" nur, wenn es solche Spuren gibt** — bei einer
+   Datei gäbe es sie nie, und ein Eintrag für einen unmöglichen Zustand verwirrt.
+
+Wächter: `test_diskeditor_oeffnet_sofort_und_waechst_mit` (`py_gw_gui`).
 
 `_close_tool()` schließt **erst das Werkzeug, dann die Sitzung** — `~DiskImage`
 schreibt Ausstehendes noch über den Arbeitsfaden zurück und löst sich erst danach vom
@@ -816,9 +1063,7 @@ Spuren, 2 MB `.hfe`) — bei einem Original ohne zweite Kopie gehört das dazu.
   nur eines zur Zeit; vier emulierte Laufwerke gleichzeitig physisch zu betreiben,
   bräuchte vier Adapter.  Der Entwurf verbietet es nicht — jedes `DiskImage` hat seinen
   eigenen Synchronisierer —, die Praxis begrenzt es.
-* **Das Öffnen im DiskTool liest die ganze Diskette** (§4.2, §11.2), weil die
-  Formaterkennung jede Spur ansieht.  Eine Erkennung, die mit einer Stichprobe auskommt,
-  wäre eine eigene Aufgabe — und eine heikle, weil gerade die Sonderfälle
-  (Mischgeometrie, Doppelschritt) an einzelnen Spuren hängen.
+* **Das Öffnen misst nur eine Stichprobe** (seit 2026-08-16, s. §11.2a) — vorher las es
+  die ganze Diskette, was 97 s kostete.
 * **Drehzahl und Schreibnaht** werden nicht nachgebildet: zurückgeschrieben wird eine
   ganze Spur ab Index, wie sie ein Formatierlauf schreibt.

@@ -462,6 +462,34 @@ std::string keineSystemspuren(const FsProfile& p) {
            "Zylinder 0, dort ist fuer ein Bootabbild kein Platz.";
 }
 
+/**
+ * @brief Die Auffaelligkeiten eines Treffers als Satz — mit Angabe, WORUEBER er gilt.
+ *
+ * @param examined  Zahl der angesehenen Spuren; 0 = die ganze Diskette.
+ *
+ * Bei einer Stichprobe sind die Zaehlungen Aussagen ueber die angesehenen Spuren,
+ * nicht ueber die Diskette: „2 Spuren hinter dem Format" heisst dann „2 der
+ * 8 angesehenen", und es koennen mehr sein.  Der Satz muss das sagen — sonst liest
+ * sich eine Teilmessung wie ein Befund, und ein leeres Ergebnis wie ein Freispruch.
+ */
+std::string befund(const GeometryMatch& m, int examined) {
+    const std::string was = m.remarks();
+    if (examined <= 0) return was;               // Vollmessung: der Befund gilt
+    const std::string wieviel = std::to_string(examined);
+    if (was.empty())
+        return "erst " + wieviel + " Spuren angesehen (Stichprobe der Formaterkennung), "
+               "die uebrigen sind ungeprueft";
+    return "in einer Stichprobe von " + wieviel + " Spuren: " + was
+         + " — die uebrigen Spuren sind noch ungeprueft";
+}
+
+/// @brief Zwei Befundteile mit Semikolon verbinden; leere Teile fallen weg.
+std::string zusammen(const std::string& a, const std::string& b) {
+    if (a.empty()) return b;
+    if (b.empty()) return a;
+    return a + "; " + b;
+}
+
 /// @brief Eine Meldung, die sagt, was zu tun ist — nicht bloss, dass es nicht geht.
 constexpr const char* kSchreibschutz =
     "Die Diskette ist schreibgeschuetzt geoeffnet. Zum Aendern den Schreibschutz "
@@ -550,7 +578,7 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
         dv->disk_ = vorhanden ? std::move(vorhanden) : DiskImage::open(path, of, read_only);
         if (!dv->disk_) { err = "Abbild nicht ladbar: " + path; return nullptr; }
         const std::vector<MeasuredTrack> gemessen =
-            GeometryProbe::measure(dv->disk_->medium());
+            GeometryProbe::measure(dv->disk_->medium());   // .img: immer vollstaendig
         const std::vector<GeometryMatch> treffer =
             GeometryProbe::matchAll(gemessen, formats.formats());
         if (treffer.empty()) {
@@ -571,9 +599,9 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
         dv->format_               = treffer.front().format;
         dv->detection_.format     = dv->format_->name;
         dv->detection_.filesystem = dv->profile_->name;
-        dv->detection_.remarks    = treffer.front().remarks();
-        if (!dv->detection_.remarks.empty()) dv->detection_.remarks += "; ";
-        dv->detection_.remarks   += abgeleitet.description;
+        dv->befund_zusatz_        = abgeleitet.description;
+        dv->detection_.remarks    = zusammen(treffer.front().remarks(),
+                                             dv->befund_zusatz_);
     } else if (!fs_name.empty()) {
         // ── Fall A: Dateisystem vorgegeben ───────────────────────────────────
         dv->profile_ = fs_cat.find(fs_name);
@@ -627,9 +655,31 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
 
         if (!istImg) {
             // Stufe 1: Geometrie messen und gegen den Katalog abgleichen.
-            gemessen = GeometryProbe::measure(dv->disk_->medium());
-            const std::vector<GeometryMatch> treffer =
-                GeometryProbe::matchAll(gemessen, formats.formats());
+            //
+            // Muss jede Spur einzeln vom Original geholt werden (echtes Laufwerk am
+            // Greaseweazle: 0,5–0,8 s je Spur), kostet die Vollmessung anderthalb
+            // Minuten — fuer eine Frage, die acht Spuren beantworten.  Deshalb dort
+            // erst die Stichprobe; erkennt sie nichts, folgt die Vollmessung, denn
+            // nur sie traegt `synthesize()` (das braucht das lueckenlose Bild).
+            // Bei einer Datei liegt ohnehin alles im Speicher — da wird gemessen.
+            const bool teuer = dv->disk_->medium().loader() != nullptr;
+            bool stichprobe = false;
+            if (teuer) {
+                gemessen = GeometryProbe::measureSample(dv->disk_->medium());
+                stichprobe = true;
+            } else {
+                gemessen = GeometryProbe::measure(dv->disk_->medium());
+            }
+            std::vector<GeometryMatch> treffer =
+                GeometryProbe::matchAll(gemessen, formats.formats(), stichprobe);
+            if (treffer.empty() && stichprobe) {
+                // Die Stichprobe reichte nicht — jetzt doch die ganze Diskette.  Und
+                // dann gelten wieder ALLE Regeln: `stichprobe` muss hier false sein,
+                // sonst urteilt die Vollmessung mit den gelockerten Schranken.
+                stichprobe = false;
+                gemessen   = GeometryProbe::measure(dv->disk_->medium());
+                treffer    = GeometryProbe::matchAll(gemessen, formats.formats());
+            }
             if (treffer.empty()) {
                 // Letzter Rueckfall: beschreiben, was tatsaechlich draufsteht, und es
                 // damit LESBAR machen.  Die Geometrie ist dann geraten — deshalb bleibt
@@ -650,7 +700,10 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
                     "deshalb schreibgeschuetzt";
             } else {
                 for (const GeometryMatch& m : treffer) kandidaten.push_back(m.format);
-                dv->detection_.remarks = treffer.front().remarks();
+                dv->detection_.examined_tracks =
+                    stichprobe ? static_cast<int>(gemessen.size()) : 0;
+                dv->detection_.remarks =
+                    befund(treffer.front(), dv->detection_.examined_tracks);
             }
         }
 
@@ -693,9 +746,10 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
                 }
                 dv->abgeleitet_ = abgeleitet;
                 dv->format_     = f;
-                if (!dv->detection_.remarks.empty()) dv->detection_.remarks += "; ";
-                dv->detection_.remarks += abgeleitet.description;
-                if (!hinweis.empty()) dv->detection_.remarks += "; " + hinweis;
+                dv->befund_zusatz_ = abgeleitet.description;
+                if (!hinweis.empty()) dv->befund_zusatz_ += "; " + hinweis;
+                dv->detection_.remarks =
+                    zusammen(dv->detection_.remarks, dv->befund_zusatz_);
                 break;
             }
         }
@@ -809,6 +863,54 @@ std::vector<FileEntry> DiskVolume::list() const {
             out.push_back(std::move(e));
         }
     return out;
+}
+
+bool DiskVolume::refreshDetection() {
+    // Nur nach einer Stichprobe, und erst wenn nichts mehr unbekannt ist.  Solange
+    // Spuren fehlen, waere die Vollmessung selbst eine Nachladeorgie — genau das,
+    // was die Stichprobe vermeiden soll.
+    if (detection_.examined_tracks <= 0) return false;
+    if (!disk_ || !disk_->medium().complete()) return false;
+
+    if (!format_) return false;
+    // Gegen DAS gemountete Format messen, nicht neu suchen: welches es ist, steht
+    // fest (das Dateisystem haengt daran).  `match` statt `matchAll` liefert die
+    // Zaehlungen auch dann, wenn die volle Diskette knapp nicht mehr passt — sonst
+    // verschwaende ein Befund, statt genannt zu werden.
+    const std::vector<MeasuredTrack> alle = GeometryProbe::measure(disk_->medium());
+    const GeometryMatch voll = GeometryProbe::match(alle, *format_);
+
+    const std::string vorher = detection_.remarks;
+    detection_.examined_tracks = 0;
+    // Der Zusatz (z. B. „nach der CP/A-Regel abgeleitet …") stammt NICHT aus der
+    // Messung; er gilt unabhaengig davon, wie viele Spuren gelesen sind, und bleibt
+    // deshalb stehen.  Ohne diese Trennung verloere das Auffrischen ihn.
+    detection_.remarks = zusammen(
+        voll.ok ? befund(voll, 0)
+                : "beim vollstaendigen Lesen zeigte sich mehr, als zum Format passt: "
+                  + voll.reason,
+        befund_zusatz_);
+    return detection_.remarks != vorher;
+}
+
+std::vector<FileEntry> DiskVolume::listNames() const {
+    std::vector<FileEntry> out;
+    for (size_t v = 0; v < volumes_.size(); ++v)
+        for (FileEntry e : volumes_[v].fs->listNames()) {
+            e.volume = static_cast<int>(v);
+            out.push_back(std::move(e));
+        }
+    return out;
+}
+
+bool DiskVolume::detailsReady(const FileEntry& e) const {
+    if (!valid(e.volume)) return true;
+    return volumes_[static_cast<size_t>(e.volume)].fs->detailsReady(e);
+}
+
+bool DiskVolume::loadDetails(FileEntry& e) const {
+    if (!valid(e.volume)) return false;
+    return volumes_[static_cast<size_t>(e.volume)].fs->loadDetails(e);
 }
 
 // ─── Einzeloperationen ───────────────────────────────────────────────────────
@@ -964,6 +1066,15 @@ uint8_t DiskVolume::mediumHeads() const {
 TrackView DiskVolume::trackView(uint8_t cyl, uint8_t head) const {
     if (!disk_) return TrackView{};
     return scanTrack(disk_->medium().track(cyl, head));
+}
+
+int DiskVolume::trackState(uint8_t cyl, uint8_t head) const {
+    if (!disk_) return 0;
+    switch (disk_->medium().state(cyl, head)) {
+        case TrackState::Clean: return 1;
+        case TrackState::Dirty: return 2;
+        default:                return 0;
+    }
 }
 
 bool DiskVolume::readSectorAt(uint8_t cyl, uint8_t head, int index,

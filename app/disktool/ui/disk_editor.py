@@ -31,7 +31,7 @@ import math
 from pathlib import Path
 from typing import List, Optional, TYPE_CHECKING
 
-from PySide6.QtCore import QPoint, QRectF, Qt, Signal
+from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
@@ -54,6 +54,10 @@ FARBE_OK          = QColor("#3fa34d")   # Sektor, beide CRCs gültig
 FARBE_DEFEKT      = QColor("#cc2b2b")   # Sektor mit CRC-Fehler
 FARBE_GAP         = QColor("#e8912a")   # Gap zwischen den Sektorfeldern
 FARBE_UNFORMAT    = QColor("#b8b8b8")   # unformatiert / markenloser Gap-Fluss
+# Schwarz heisst NICHT „leer", sondern „noch keine Aussage": die Spur wurde vom
+# echten Laufwerk noch nicht geholt.  Sie von „unformatiert" (grau) zu trennen ist
+# wesentlich — das eine ist eine Feststellung über die Diskette, das andere keine.
+FARBE_UNBEKANNT   = QColor("#101010")   # noch nicht gelesen (physisches Laufwerk)
 FARBE_LINIE       = QColor("#000000")
 FARBE_HINTERGRUND = QColor("#ffffff")
 FARBE_AUSWAHL     = QColor("#1060d0")
@@ -134,6 +138,8 @@ class DiskSurface(QWidget):
 
     #: (Seite, Spur, laufende Nummer des Sektors)
     sector_clicked = Signal(int, int, int)
+    #: (Seite, Spur) — eine noch nicht gelesene Spur wurde angeklickt.
+    track_requested = Signal(int, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -151,14 +157,55 @@ class DiskSurface(QWidget):
     # ── Daten ───────────────────────────────────────────────────────────────
 
     def load(self, tool: "DiskTool") -> None:
-        """Alle Spuren beider Seiten einlesen — immer frisch aus dem Medium."""
+        """Alle **bekannten** Spuren beider Seiten einlesen.
+
+        Eine noch nie gelesene Spur (echtes Laufwerk) wird als ``None`` geführt und
+        schwarz gezeichnet.  Sie hier zu holen hiesse, das Öffnen des Editors auf die
+        ganze Diskette warten zu lassen — anderthalb Minuten, in denen das Fenster
+        steht.  Der Editor zeigt stattdessen, was er weiss, und wächst mit
+        (:meth:`aktualisieren`).
+        """
         self.cylinders = tool.medium_cylinders
         self.heads = tool.medium_heads
         self.tracks = [[], []]
         for kopf in range(min(2, self.heads)):
-            self.tracks[kopf] = [tool.track(c, kopf) for c in range(self.cylinders)]
+            self.tracks[kopf] = [self._bekannte_spur(tool, c, kopf)
+                                 for c in range(self.cylinders)]
         self._bild = None
         self.update()
+
+    @staticmethod
+    def _bekannte_spur(tool: "DiskTool", cyl: int, head: int):
+        """Die Spur — oder ``None``, wenn sie noch nie gelesen wurde.
+
+        Der Zustand wird VOR dem Zugriff gefragt; ``tool.track()`` würde die Spur
+        sonst beschaffen und dabei blockieren.
+        """
+        if tool.track_state(cyl, head) == tool.SPUR_UNBEKANNT:
+            return None
+        return tool.track(cyl, head)
+
+    def aktualisieren(self, tool: "DiskTool") -> bool:
+        """Spuren nachtragen, die inzwischen gelesen wurden.
+
+        Returns:
+            True, wenn sich etwas geändert hat (dann wurde neu gezeichnet).
+        """
+        if self.cylinders <= 0:
+            return False
+        neu = False
+        for kopf in range(min(2, self.heads)):
+            for c in range(self.cylinders):
+                if self.tracks[kopf][c] is not None:
+                    continue
+                if tool.track_state(c, kopf) == tool.SPUR_UNBEKANNT:
+                    continue
+                self.tracks[kopf][c] = tool.track(c, kopf)
+                neu = True
+        if neu:
+            self._bild = None
+            self.update()
+        return neu
 
     def reload_track(self, tool: "DiskTool", cyl: int, head: int) -> None:
         """Eine einzelne Spur auffrischen (nach dem Schreiben eines Sektors)."""
@@ -215,7 +262,10 @@ class DiskSurface(QWidget):
         roh = (90.0 - theta) if kopf == 0 else (theta - 90.0)
         anteil = (roh % 360.0) / 360.0
 
-        for s in self.tracks[kopf][spur].spans:
+        gefunden = self.tracks[kopf][spur]
+        if gefunden is None:                 # noch nicht gelesen — nichts zu treffen
+            return kopf, spur, None
+        for s in gefunden.spans:
             if s.start <= anteil < s.end:
                 return kopf, spur, s
         return None
@@ -255,6 +305,14 @@ class DiskSurface(QWidget):
             r_ring = r_aussen - (c + 0.5) * hoehe          # Mitte des Rings
             rect = QRectF(cx - r_ring, cy - r_ring, 2 * r_ring, 2 * r_ring)
             p.setBrush(Qt.NoBrush)
+            if spur is None:
+                # Noch nicht gelesen: voller Ring, keine Abschnitte — wir wissen ja
+                # nicht einmal, ob die Spur formatiert ist.
+                stift = QPen(FARBE_UNBEKANNT, hoehe)
+                stift.setCapStyle(Qt.FlatCap)
+                p.setPen(stift)
+                p.drawArc(rect, 0, 360 * 16)
+                continue
             for s in spur.spans:
                 weite = (s.end - s.start) * 360.0
                 if weite <= 0:
@@ -303,7 +361,8 @@ class DiskSurface(QWidget):
             hoehe = self._ringhoehe(r_aussen, r_nabe)
             r_ring = r_aussen - (spur + 0.5) * hoehe
             rect = QRectF(cx - r_ring, cy - r_ring, 2 * r_ring, 2 * r_ring)
-            for s in self.tracks[kopf][spur].spans:
+            gewaehlt = self.tracks[kopf][spur] if spur < len(self.tracks[kopf]) else None
+            for s in (gewaehlt.spans if gewaehlt else ()):
                 if s.kind != SECTOR or s.index != nummer:
                     continue
                 weite = (s.end - s.start) * 360.0
@@ -323,6 +382,9 @@ class DiskSurface(QWidget):
     def beschreibung(self, treffer) -> str:
         """Kurztext für den Tooltip."""
         kopf, spur, s = treffer
+        if s is None:
+            return (f"Seite {kopf} · Spur {spur} · noch nicht gelesen"
+                    "  (anklicken, um sie jetzt zu holen)")
         if s.kind == UNFORMATTED:
             return f"Seite {kopf} · Spur {spur} · unformatiert"
         if s.kind == GAP:
@@ -338,6 +400,12 @@ class DiskSurface(QWidget):
 
     def mousePressEvent(self, event):  # noqa: N802
         t = self.treffer(event.position())
+        if t and t[2] is None:
+            # Unbekannte Spur angeklickt: der Bediener will SIE sehen, also darf sie
+            # jetzt geholt werden — das ist ein ausdrücklicher Wunsch, kein Beiwerk.
+            self.track_requested.emit(t[0], t[1])
+            super().mousePressEvent(event)
+            return
         if t and t[2].kind == SECTOR:
             kopf, spur, s = t
             self.auswahl = (kopf, spur, s.index)
@@ -754,21 +822,70 @@ class DiskEditorWindow(QDialog):
         teiler.setStretchFactor(0, 3)
         teiler.setStretchFactor(1, 2)
 
+        self.surface.load(tool)
+
         lay = QVBoxLayout(self)
         lay.addWidget(self._legende())
         lay.addWidget(teiler, 1)
-
-        self.surface.load(tool)
         self._enable(False)
 
+        # Solange die Diskette noch wächst (echtes Laufwerk), die Ansicht nachführen.
+        # Der Zeitgeber hält sich selbst an: sind alle Spuren bekannt, hört er auf.
+        self.surface.track_requested.connect(self._spur_anfordern)
+        self._nachlauf = QTimer(self)
+        self._nachlauf.setInterval(1000)
+        self._nachlauf.timeout.connect(self._nachtragen)
+        if any(t is None for seite in self.surface.tracks for t in seite):
+            self._nachlauf.start()
+
     # ── Aufbau ──────────────────────────────────────────────────────────────
+
+    # ── Nachwachsende Diskette (echtes Laufwerk) ────────────────────────────
+
+    def _nachtragen(self) -> None:
+        """Inzwischen gelesene Spuren in die Ansicht übernehmen.
+
+        Fragt nur den **Zustand** ab (`track_state`) und holt ausschliesslich das,
+        was schon da ist — der Zeitgeber darf das Laufwerk nicht antreiben, sonst
+        führte das blosse Offenhalten des Editors die ganze Diskette ein.
+        """
+        try:
+            self.surface.aktualisieren(self.tool)
+        except K1520DiskError:
+            self._nachlauf.stop()               # Diskette weg — nichts mehr zu holen
+            return
+        if not any(t is None for seite in self.surface.tracks for t in seite):
+            self._nachlauf.stop()               # vollständig, es gibt nichts mehr
+
+    def _spur_anfordern(self, seite: int, spur: int) -> None:
+        """Eine noch ungelesene Spur auf Wunsch jetzt holen.
+
+        Das blockiert (eine halbe bis ganze Sekunde am echten Laufwerk) — deshalb
+        der Wartecursor.  Es ist der einzige Weg, auf dem der Editor selbst ein
+        Lesen auslöst, und er geht immer vom Bediener aus.
+        """
+        from PySide6.QtGui import QCursor
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        try:
+            self.surface.reload_track(self.tool, spur, seite)
+        except K1520DiskError as e:
+            QMessageBox.warning(self, "Spur lesen", str(e))
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def _legende(self) -> QWidget:
         w = QWidget()
         zeile = QHBoxLayout(w)
         zeile.setContentsMargins(6, 2, 6, 2)
-        for farbe, text in ((FARBE_OK, "Sektor"), (FARBE_DEFEKT, "CRC-Fehler"),
-                            (FARBE_GAP, "Gap"), (FARBE_UNFORMAT, "unformatiert")):
+        eintraege = [(FARBE_OK, "Sektor"), (FARBE_DEFEKT, "CRC-Fehler"),
+                     (FARBE_GAP, "Gap"), (FARBE_UNFORMAT, "unformatiert")]
+        # „Noch nicht gelesen" gibt es nur an einem nachladenden Medium; bei einer
+        # Datei stünde ein Eintrag in der Legende, der nie vorkommt.
+        if any(t is None for seite in self.surface.tracks for t in seite):
+            eintraege.append((FARBE_UNBEKANNT, "noch nicht gelesen"))
+        for farbe, text in eintraege:
             punkt = QLabel("  ")
             punkt.setStyleSheet(
                 f"background:{farbe.name()}; border:1px solid black;")

@@ -215,6 +215,15 @@ Auf den Datensätzen der Datei folgen dicht gepackte Einträge variabler Länge:
   Einträge mit gelöschtem Bit 7 (39 von 69 Dateien) — es ist eine im Verzeichnis
   gespiegelte Kopie der `S`-Eigenschaft aus dem Dateikopf, damit `CAT` filtern kann,
   ohne jeden Kopfsektor zu lesen.
+
+> **Daraus folgt der Preis einer Verzeichnisanzeige.** Name und SECRET-Bit stehen hier;
+> **Länge, Typ, Satzlänge, Datum stehen im Kopfsektor jeder Datei**, verstreut über die
+> Diskette. `CAT` ist deshalb so schnell wie ein CP/M-`DIR`, `CAT F=L` nicht — es liest
+> jede Datei an. Für ein Werkzeug heißt das: die Namensliste kostet **eine** Spur, die
+> volle Liste bei der Referenzdiskette (69 Dateien) **24**. Bei CP/M gibt es diesen
+> Unterschied nicht, dort trägt der Verzeichniseintrag die Größe selbst.
+> Umgesetzt als `UdosFileSystem::listNames()` / `loadDetails()`
+> (`doc/design/14_physische_diskette.md` §11.2b).
 * **Bit 6** kam auf diesem Datenträger nicht vor.
 * Die letzten 2 Bytes sind der **Zeiger auf den Kopfsektor** der Datei (Format §1.2).
 

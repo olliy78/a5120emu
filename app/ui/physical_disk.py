@@ -19,6 +19,7 @@ Siehe doc/design/14_physische_diskette.md §11/§12.
 
 from __future__ import annotations
 
+import sys
 from typing import Optional, Tuple
 
 from PySide6.QtCore import Qt
@@ -51,9 +52,17 @@ def verfuegbarkeit() -> Tuple[bool, str]:
     except Exception as e:                       # noqa: BLE001
         return False, f"Die Greaseweazle-Anbindung ließ sich nicht laden: {e}"
     if not verfuegbar():
-        return False, ("Das Paket „greaseweazle“ ist nicht installiert.\n"
+        # Der Befehl nennt DIESEN Interpreter, nicht das blosse `pip`: das Programm
+        # läuft in einem venv, ein nacktes `pip install` ginge daneben (ins System,
+        # und auf neueren Distributionen scheitert es dort an PEP 668).  Dazu der
+        # Pfad, damit man sieht, WOHIN installiert wird — steckt man versehentlich
+        # im venv eines anderen Projekts, ist genau das die Auskunft, die fehlt.
+        return False, ("Das Paket „greaseweazle“ ist in dieser Python-Umgebung nicht "
+                       "installiert:\n"
+                       f"  {sys.prefix}\n\n"
                        "Installation:\n"
-                       '  pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"')
+                       f'  {sys.executable} -m pip install '
+                       '"git+https://github.com/keirf/greaseweazle.git@v1.23"')
     return True, ""
 
 
@@ -71,13 +80,18 @@ class PhysicalSession:
     gemeldete_defekte: str = ""
 
     def __init__(self, sync, worker, device, *, drive: str, writable: bool,
-                 cell_rate_kbps: int):
+                 cell_rate_kbps: int, num_cyls: int = 0, num_heads: int = 0):
         self.sync = sync
         self.worker = worker
         self.device = device
         self.drive = drive
         self.writable = writable
         self.cell_rate_kbps = cell_rate_kbps
+        # Die Geometrie, mit der eingelegt wurde.  `Stats` trägt nur die Spurzahl
+        # als Produkt (tracks_total) — wer wissen will, wie viele KÖPFE es sind,
+        # bekäme sie von dort nicht zurückgerechnet.
+        self.num_cyls = num_cyls
+        self.num_heads = num_heads
         self._zu = False
 
     @classmethod
@@ -109,7 +123,8 @@ class PhysicalSession:
             sync.close()
             raise
         return cls(sync, worker, device, drive=drive, writable=writable,
-                   cell_rate_kbps=cell_rate_kbps)
+                   cell_rate_kbps=cell_rate_kbps, num_cyls=num_cyls,
+                   num_heads=num_heads)
 
     @property
     def handle(self):
@@ -313,18 +328,23 @@ class PhysicalDiskDialog(QDialog):
 
 def mit_fortschritt(parent, sitzung: PhysicalSession, arbeit, *,
                     titel: str = "Physisches Laufwerk",
-                    text: str = "Diskette wird gelesen…"):
+                    text: str = "Diskette wird gelesen…",
+                    ziel: Optional[int] = None):
     """Eine **lange** Arbeit am echten Laufwerk mit Fortschrittsanzeige ausführen.
 
-    Das Öffnen einer physischen Diskette liest die ganze Scheibe (die
-    Formaterkennung sieht sich jede Spur an) — rund anderthalb Minuten.  Im
-    Oberflächenfaden wäre das ein eingefrorenes Fenster, deshalb läuft @p arbeit in
-    einem eigenen Faden, während hier der Füllstand aus
-    :meth:`PhysicalSession.stats` angezeigt wird
+    Am echten Laufwerk dauert jede Spur 0,5–0,8 s.  Im Oberflächenfaden wäre das ein
+    eingefrorenes Fenster, deshalb läuft @p arbeit in einem eigenen Faden, während
+    hier der Füllstand aus :meth:`PhysicalSession.stats` angezeigt wird
     (doc/design/14_physische_diskette.md §11.2).
 
     Args:
         arbeit: parameterlose Funktion; ihr Rückgabewert wird durchgereicht.
+        ziel: erwartete Spurzahl **dieser** Arbeit.  Beim Öffnen sind das die
+            Sondenspuren der Formaterkennung (acht), nicht die 160 der Diskette —
+            ein Balken, der gegen 160 läuft und bei 8 stehenbleibt, sagt das
+            Falsche.  Wird das Ziel überschritten (die Stichprobe reichte nicht, es
+            folgt die Vollmessung), stellt die Anzeige selbsttätig auf die ganze
+            Diskette um.  ``None`` = ganze Diskette.
 
     Returns:
         ``(ergebnis, fehler)`` — genau eines von beiden ist ``None``.  Bricht der
@@ -345,7 +365,11 @@ def mit_fortschritt(parent, sitzung: PhysicalSession, arbeit, *,
 
     faden = threading.Thread(target=lauf, name="gw-arbeit", daemon=True)
     st = sitzung.stats()
-    gesamt = st.tracks_total if st else 0
+    ganze_diskette = st.tracks_total if st else 0
+    # Von wo aus gezählt wird: schon gelesene Spuren zählen nicht als Fortschritt
+    # DIESER Arbeit (beim Öffnen ist der Stand 0, beim Speichern selten).
+    beginn = st.tracks_known if st else 0
+    gesamt = ziel if ziel else ganze_diskette
 
     dlg = QProgressDialog(text, "Abbrechen", 0, gesamt or 0, parent)
     dlg.setWindowTitle(titel)
@@ -363,8 +387,23 @@ def mit_fortschritt(parent, sitzung: PhysicalSession, arbeit, *,
             return
         s = sitzung.stats()
         if s is not None:
-            dlg.setValue(min(s.tracks_known, dlg.maximum()))
-            dlg.setLabelText(f"{text}\n{sitzung.status_text()}")
+            getan = max(0, s.tracks_known - beginn)
+            if ziel and getan <= ziel:
+                # Phase 1: die Sondenspuren der Formaterkennung — hier ist das Ziel
+                # bekannt, also gibt es einen echten Balken.
+                dlg.setMaximum(ziel)
+                dlg.setValue(getan)
+                dlg.setLabelText(f"{text}\n{getan} von {ziel} Spuren "
+                                 "für die Formaterkennung")
+            else:
+                # Phase 2: Verzeichnis (und was das Dateisystem sonst braucht).  Wie
+                # viele Spuren das werden, weiss vorher niemand — bei UDOS liegt zu
+                # jeder Datei ein Kopfsektor irgendwo auf der Diskette.  Deshalb ein
+                # unbestimmter Balken statt einer erfundenen Zielzahl; die frühere
+                # Umschaltung auf die Spurzahl der Diskette („10 von 160") behauptete
+                # eine Vollmessung, die gar nicht lief.
+                dlg.setMaximum(0)
+                dlg.setLabelText(f"Verzeichnis wird gelesen…\n{getan} Spuren geholt")
         if dlg.wasCanceled() and not abgebrochen["ja"]:
             # Der Kern löst jeden Wartenden; die Arbeit endet dann von selbst.
             abgebrochen["ja"] = True
