@@ -246,8 +246,8 @@ Bei einem Dateisystem (jede CP/M-Diskette, auch beidseitige) ist der Ordner flac
   `save-as` öffnen das Abbild **schreibgeschützt** — der Schutz reicht bis in die
   Container-Schicht, die dann selbst beim Schließen nichts schreibt.  Nur `put`
   und `rm` öffnen schreibend; dort ist der Aufruf schon der bewusste Schritt.
-  In der Oberfläche entspricht dem der Haken **„Nur lesen"**, der beim Öffnen
-  gesetzt ist.
+  In der Oberfläche entspricht dem *Diskette ▸ Schreibschutz* (Strg+R), der beim
+  Öffnen gesetzt ist; rechts in der Statuszeile steht, woran man ist.
 
 ## Wenn kein Profil passt: `cpa_auto`
 
@@ -314,3 +314,57 @@ Gemessen:
 `ctest -R "CpmFileSystem|UdosFileSystem|DiskVolume"` die Bibliothek darunter;
 `ctest -R DiskTool.*Roundtrip` schreibt mit dem Werkzeug und liest mit dem
 **echten CP/A bzw. UDOS** im Emulator zurück (Label `format_integration`).
+
+
+## Die Oberfläche
+
+`bash run_disktool.sh [abbild] [ordner]` startet das Fenster.  Links die Diskette,
+rechts ein Linux-Ordner, dazwischen vier Knöpfe (oder einfach ziehen):
+
+```
+  →→|   alles von der Diskette in den Ordner
+   →|   die AUSWAHL in den Ordner
+   |←   die AUSWAHL auf die Diskette
+  |←←   den ganzen Ordner auf die Diskette
+```
+
+**Menüleiste — hier steht alles.** Die Symbolleiste darüber ist nur die Abkürzung
+für die häufigen Wege und lässt sich unter *Ansicht ▸ Symbolleiste* ausblenden
+(Stil ebenda: nur Symbole, Symbole und Text, …).
+
+| Menü | Was darin steht |
+|------|-----------------|
+| **Datei** | Abbild öffnen (Strg+O), Zuletzt geöffnet, Neue Diskette (Strg+N), Speichern (Strg+S), Speichern unter (Strg+Umschalt+S), Archivieren (Strg+Umschalt+A), Schließen (Strg+W), Beenden |
+| **Bearbeiten** | Alles auswählen (Strg+A), In den Ordner holen (Strg+→), Auf die Diskette schreiben (Strg+←), Löschen (Entf), Eigenschaften (Alt+Eingabe) |
+| **Diskette** | Schreibschutz (Strg+R), Dateisystem übersteuern, Alles extrahieren/einfügen, Bootabbild sichern, Diskeditor (Strg+E), Diskettenangaben |
+| **Übertragung** | Binär / Text (CR LF ↔ LF), Zielordner wählen |
+| **Ansicht** | Symbolleiste, Protokoll (F8), Symbolleistenstil, Aktualisieren (F5) |
+| **Hilfe** | Handbuch (F1), Über |
+
+**Wo etwas gemeldet wird** (der Entwurf dazu: `doc/design/13_k1520disktool.md` §20.4):
+
+* **Fenstertitel** — Dateiname; ein `*` (bzw. das plattformübliche Zeichen) heißt
+  *ungespeichert*.
+* **Kopfbereich** — Pfad, Format, Dateisystem: was dauerhaft gilt.
+* **Meldungsstreifen** darunter — was dauerhaft zu beachten ist („nicht eindeutig
+  erkannt", „Altbestand im Medium", „es wurde nichts geschrieben"); wegklickbar.
+* **Statuszeile** — links die letzte Aktion, rechts der Zustand: Zahl der Dateien,
+  freier Platz, Übertragungsart und der Schreibschutz als 🔒 `R/O` bzw. 🔓 `R/W`
+  (dasselbe zeigt der Knopf ganz rechts in der Symbolleiste).  Sie lässt sich
+  nicht ausblenden — Symbolleiste und Protokoll schon.
+* **Protokoll** (F8) — alles, mit Uhrzeit. Es ist beim Start zu und sammelt
+  trotzdem mit; wer nachlesen will, klappt es auf.
+
+Größe, Leisten, Übertragungsart und die zuletzt geöffneten Abbilder merkt sich das
+Fenster bis zum nächsten Start.
+
+**Arbeitsverzeichnisse wie beim Emulator.** Die Dateidialoge gehen im
+Dokumentenordner auf, nicht im Installationsordner: `K1520emu/Disketten` für die
+Abbilder, `K1520emu/Dateien` für die Ordnerseite (die beim Start bereits darauf
+zeigt).  `K1520_DATA` verschiebt beides, `K1520_DISKS` nur die Abbilder;
+`python3 app/disktool/main.py --paths` gibt die ganze Auflösung aus — die erste
+Frage, wenn ein Dialog am falschen Ort aufgeht.
+
+**F1 öffnet das Handbuch** — links das Inhaltsverzeichnis, oben ein Suchfeld. Es ist
+eine gewöhnliche Markdown-Datei, `app/disktool/help/handbuch.md`; wer etwas ergänzen
+will, ändert sie und startet neu, ohne Code anzufassen.

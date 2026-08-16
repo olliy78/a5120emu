@@ -320,7 +320,7 @@ def test_eine_schadstelle_wird_gemeldet_statt_verschwiegen(hfe, tmp_path):
 
 
 def test_neu_beschreiben_stellt_alles_wieder_ein(hfe):
-    """Der Ausweg: heile Diskette einlegen, alles Bekannte erneut hinausschreiben."""
+    """Der Ausweg: heile Diskette einlegen, alles Bekannte erneut wegschreiben."""
     geraet = HfeDevice(hfe)
     with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
               writable=True, read_ahead=True, write_settle_ms=50) as s:

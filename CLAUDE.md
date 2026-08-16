@@ -507,8 +507,68 @@ Was beim Weiterarbeiten zu wissen ist:
   (`rest=` im Beiblatt) statt ausgerechnet.  Kleinste bootfähige Diskette:
   Systemspuren + `OS` + `ZDOS` (Urlader sucht beide über das VERZEICHNIS).  Wächter:
   `DiskToolBootdiskette.GebauteUdosDisketteBootetUndFuehrtBefehleAus`.
+- **Oberfläche = gewöhnliche Anwendung (2026-08-14, `doc/design/13_k1520disktool.md` §20).**
+  Die zwei Knopfleisten auf halber Höhe sind weg; das Fenster hat **Menüleiste,
+  ausblendbare Symbolleiste** (`Ansicht ▸ Symbolleiste` = Qts eigene
+  `QToolBar.toggleViewAction()`), **Kopfbereich**, **Meldungsstreifen**, Statuszeile
+  und ein **Protokoll-Dock** (F8, beim Start zu).  Vier Festlegungen, die man nicht
+  aufweichen darf:
+  **(1) Jede Aktion steht in der Menüleiste** — die Leiste ist nur die Abkürzung und
+  ausblendbar; alle Aktionen entstehen EINMAL in `app/disktool/ui/actions.py`
+  (`_SPEC` → `fenster.act_<name>`), Menü/Leiste/Kontextmenüs/Mittelspalte zeigen
+  dasselbe Objekt.  Wächter `test_every_action_is_reachable_from_the_menu_bar` sucht
+  jede `act_*` im Menü — eine neu ergänzte Aktion fällt sofort auf.  Menütext lang,
+  Leistentext kurz (`QAction.setIconText`, Tabelle `KURZ`), sonst kippt die Leiste
+  bei 1150 px in den Überlauf.
+  **(2) Gesperrt wird nur in `_aktionen_pruefen()`**, in drei Stufen: *offen* /
+  *schreibbar* / *ausgewählt* (Holen, Schreiben, Löschen, Eigenschaften hängen an der
+  Auswahl der ZUSTÄNDIGEN Liste) — damit gibt es „Keine Datei ausgewählt" als
+  Meldungsfenster nicht mehr.
+  **(2a) Mittelspalte = vier Knöpfe** (`→→| →| |← |←←`: aussen die Stapel, innen die
+  Auswahl); beide Hälften sind gleich gebaut und gleich breit (Überschrift + Liste,
+  keine Fusszeile).  Der **Schreibschutzknopf zeigt seinen Zustand** — Symbol UND
+  Beschriftung wechseln (🔒 `R/O` ↔ 🔓 `R/W`, `_schutz_anzeigen()`); ein rastender
+  Knopf allein ist nicht lesbar.
+  **(3) Sechs Meldungsorte, sechs Rollen (§20.4):** Titel = Identität + Qt-eigene
+  Änderungsmarke (`[*]` + `setWindowModified`, **kein** selbstgemaltes `●`);
+  Kopfbereich = dauerhafte Eigenschaften; Streifen (`ui/info_bar.py`) = dauerhafte
+  Einschränkungen; Statuszeile links = letzte Aktion (flüchtig), rechts = Zustand als
+  Widget (Dateien/frei/Modus/Schloss); Protokoll = **alles** mit Uhrzeit; Meldungs­fenster
+  nur bei Abbruch/Rückfrage.  Ein Zustand gehört nie ins Protokoll.  Die **Statuszeile
+  ist NICHT abschaltbar** (Symbolleiste und Protokoll schon), und das Schloss darin
+  ist ein Bild, kein Emoji — 🔒 und 🔓 sehen in vielen Schriften gleich aus.
+  **(4) `QSettings` nur bei benannter Anwendung** — `main.py` setzt
+  `setOrganizationName`/`setApplicationName`, die Testläufe nicht; sonst schrieben
+  Tests in die Einstellungen des Anwenders und erbten dessen ausgeblendete Leiste
+  (`_einstellungen()` → `None`).  Symbole liegen als einfarbige SVG in `app/icons/`
+  und werden in `ui/icons.py` mit der Palettenfarbe eingefärbt (`currentColor`) —
+  `QIcon.fromTheme()` liefert unter Windows nichts.
+  **(5) Das Handbuch ist eine `.md`, die Qt selbst setzt** (§20.7):
+  `app/disktool/help/handbuch.md` → `ui/help_window.py` (F1, `QTextDocument::setMarkdown`).
+  Kein Bauschritt, keine Abhängigkeit — und die Datei MUSS unter `app/` liegen, weil
+  `build_payload.sh` nur diesen Baum einpackt (`doc/` ist nicht im Paket).  Qt vergibt
+  Überschriften **keine Anker**, das Inhaltsverzeichnis kommt daher aus den Blöcken mit
+  `headingLevel()==2`; Typografie nur über den Umweg `setMarkdown`→`toHtml`→`setHtml`
+  mit `defaultStyleSheet`.  Zwei Wächter halten Handbuch und Oberfläche zusammen:
+  die Tabelle „Tastenkürzel" wird in BEIDE Richtungen gegen die verdrahteten
+  `QAction`s geprüft.
+- **Arbeitsverzeichnisse = die des Emulators (2026-08-15, §20.8).**  Alle Dateidialoge
+  des DiskTool gingen mit LEEREM Startpfad auf — für Qt das Arbeitsverzeichnis, beim
+  installierten Programm also der Installationsordner.  Aufgelöst wird jetzt über
+  `app.paths` (dieselbe Stelle wie beim Emulator): Abbilder → `default_disk_dir()`,
+  Ordnerseite → **`default_folder_dir()`** = neu `user_files_dir()`
+  (`<Datenordner>/Dateien`, Gegenstück zu `Disketten`), „Speichern unter" → neben der
+  offenen Diskette.  Drei Fallen: **(1)** `K1520_DISKS` meint nur die ABBILDER und
+  verschiebt den Dateiordner nicht (dafür `K1520_DATA`).  **(2)** `ensure_user_files_dir()`
+  legt nur in einer INSTALLATION an — wie `seed_user_disks()`; im Quellbaum darf kein
+  Ordner im Heimatverzeichnis entstehen.  Beides ruft `app/disktool/main.py` beim Start.
+  **(3)** „Nie in der Installation" gilt für die ORDNERseite; bei den Abbildern fällt
+  `default_disk_dir()` bewusst auf die mitgelieferten Beispiele zurück, und die liegen
+  dort.  Wächter: `test_every_file_dialog_gets_a_start_directory` (kein Dialog ohne
+  Startpunkt — im Quellbaum faellt der Fehler sonst nicht auf, weil das
+  Arbeitsverzeichnis zufaellig stimmt).
 - **Diskeditor — die Diskette als Scheibe (2026-08-13, `doc/design/13_k1520disktool.md` §19).**
-  Knopf „Diskeditor“ im Hauptfenster → `app/disktool/ui/disk_editor.py`: zwei Scheiben
+  `Diskette ▸ Diskeditor` (Strg+E) → `app/disktool/ui/disk_editor.py`: zwei Scheiben
   (Spur 0 **außen**, Sektor 0 bei **12 Uhr**, Seite 1 gespiegelt), Sektor grün/rot,
   Gap orange, unformatiert grau; Klick **oder** Wählerzeile (`[−] Spur: [25] [+]`,
   Sektorschritt geht in SPURreihenfolge, nicht nach ID) → Hexfeld (32 B/Zeile,
@@ -728,7 +788,7 @@ Was man beim Weiterarbeiten wissen muss:
   dieselbe Diskette einmal als Datei und einmal „physisch" muss dasselbe liefern; dazu
   ein **Drift-Wächter**, der die `ctypes.Structure` gegen den C-Kopf hält — eine
   vertauschte Feldreihenfolge stürzt nicht ab, sie liefert still falsche Zahlen) und
-  `py_gw_gui` (beide Oberflächen, inkl. Schadstellen-Meldung und Rettungsknopf).
+  `py_gw_gui` (beide Oberflächen, inkl. Schadstellen-Meldung und Ausweg).
   Die echten Hardware-Tests liegen in `tests/python/test_gw_hardware.py`, sind **nicht**
   in ctest registriert und laufen nur mit `K1520_GW_HARDWARE=1` (Schreiben zusätzlich
   nur mit `K1520_GW_WRITE=1`).
@@ -738,12 +798,22 @@ Was man beim Weiterarbeiten wissen muss:
   geschrieben** (4 Spuren zurückgeführt, danach die ganze Diskette neu eingelesen →
   byteweise gleich); beide Oberflächen einmal durchgefahren.  Vor Schreibversuchen die
   Diskette sichern (`gw read` über alle Spuren, 2 MB `.hfe`).
+- **Im DiskTool ist es eine AKTION, kein Knopf** (2026-08-16, beim Zusammenführen mit
+  `create_disktool`): `act_physisch` (*Datei ▸ Physisches Laufwerk…*, Strg+Umschalt+O)
+  und `act_neu_beschreiben` (*Diskette ▸ …*) entstehen wie alle anderen in
+  `app/disktool/ui/actions.py` — damit sperrt sie `_aktionen_pruefen()` an der EINEN
+  dafür zuständigen Stelle.  Der Ausweg aus einer Schadstelle (§7.2) ist **unsichtbar
+  statt gesperrt**, solange keine physische Sitzung läuft (an einer Datei gibt es keine
+  Schadstelle); fehlen die Hosttools, ist `act_physisch` **gesperrt mit dem Grund im
+  Tooltip**
+  (`_physisch_verfuegbarkeit()`, einmal beim Aufbau) statt zu verschwinden.  Weil eine
+  physische Diskette **keinen Pfad** hat (`DiskTool.open_physical` → `path=""`), nennen
+  `_bezeichnung()`/`_kurzname()` die Herkunft für Kopfzeile und Fenstertitel, und
+  `DiskHeader.setze()` nimmt sie als zweites Argument.
 - **Offen:** das **Prüf-Lesen ist an echter Hardware noch nicht gegengeprüft** (der
   Adapter verschwand vom USB; nachzuholen mit `K1520_GW_HARDWARE=1 K1520_GW_WRITE=1
-  … -k schreibt_eine_datei`), die CLI (`k1520disktool --physical`),
-  das Merken der Sitzungsparameter,
-  und beim Zusammenführen mit `create_disktool` gehört die Aktion in `ui/actions.py`
-  statt als freistehender Knopf.
+  … -k schreibt_eine_datei`), die CLI (`k1520disktool --physical`)
+  und das Merken der Sitzungsparameter.
 
 ## Diskettenformatierung (FORMAT.COM) — Scope
 

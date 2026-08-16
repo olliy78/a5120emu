@@ -307,12 +307,80 @@ def test_seed_user_disks_ist_im_quellbaum_wirkungslos(at_root, monkeypatch, tmp_
     assert not (tmp_path / "disks").exists()
 
 
+# ─── Dateiordner des DiskTool ────────────────────────────────────────────────
+#
+# Das Gegenstück zu den Arbeitsdisketten für die Ordnerseite des Werkzeugs.  Er
+# muss aus demselben Grund außerhalb der Installation liegen: dort wird
+# geschrieben (doc/design/13_k1520disktool.md §20.8).
+
+def test_dateiordner_liegt_neben_den_disketten(tmp_path, monkeypatch):
+    monkeypatch.setenv(paths.ENV_DATA, str(tmp_path / "daten"))
+    monkeypatch.delenv(paths.ENV_DISKS, raising=False)
+    assert paths.user_files_dir() == tmp_path / "daten" / "Dateien"
+    assert paths.user_files_dir().parent == paths.user_disks_dir().parent
+
+
+def test_dateiordner_liegt_nie_in_der_installation(tmp_path, at_root):
+    root = _fake_install(tmp_path)
+    at_root(root)
+    assert root not in paths.user_files_dir().parents
+
+
+def test_env_disks_verschiebt_den_dateiordner_nicht(tmp_path, monkeypatch):
+    """``K1520_DISKS`` meint die ABBILDER — die Dateien bleiben, wo sie sind."""
+    monkeypatch.setenv(paths.ENV_DATA, str(tmp_path / "daten"))
+    monkeypatch.setenv(paths.ENV_DISKS, str(tmp_path / "woanders"))
+    assert paths.user_disks_dir() == tmp_path / "woanders"
+    assert paths.user_files_dir() == tmp_path / "daten" / "Dateien"
+
+
+def test_startordner_weicht_nach_oben_aus_statt_in_die_installation(tmp_path,
+                                                                    at_root,
+                                                                    monkeypatch):
+    """Gibt es den Dateiordner noch nicht, wird nach oben ausgewichen — nie ins Programm."""
+    root = _fake_install(tmp_path / "prog")
+    at_root(root)
+    daten = tmp_path / "daten"
+    monkeypatch.setenv(paths.ENV_DATA, str(daten))
+
+    # Weder Dateiordner noch Datenordner vorhanden: irgendein Ort im Heimat-,
+    # aber keiner im Installationsbereich.
+    assert root not in paths.default_folder_dir().parents
+    assert paths.default_folder_dir() != root
+
+    daten.mkdir()
+    assert paths.default_folder_dir() == daten          # der Datenordner
+    (daten / "Dateien").mkdir()
+    assert paths.default_folder_dir() == daten / "Dateien"
+
+
+def test_dateiordner_entsteht_nur_in_einer_installation(tmp_path, at_root,
+                                                        monkeypatch):
+    monkeypatch.setenv(paths.ENV_DATA, str(tmp_path / "daten"))
+
+    # Quellbaum: es darf nichts im Heimatverzeichnis angelegt werden, bloß weil
+    # jemand das Werkzeug einmal gestartet hat.
+    at_root(PROJECT_ROOT)
+    assert paths.ensure_user_files_dir() is None
+    assert not (tmp_path / "daten").exists()
+
+    at_root(_fake_install(tmp_path / "prog"))
+    assert paths.ensure_user_files_dir() == tmp_path / "daten" / "Dateien"
+    assert (tmp_path / "daten" / "Dateien").is_dir()
+    # Ein zweiter Start ist folgenlos.
+    assert paths.ensure_user_files_dir() == tmp_path / "daten" / "Dateien"
+
+
 def test_describe_nennt_layout_und_alle_pfade(tmp_path, at_root):
     at_root(_fake_install(tmp_path))
     text = paths.describe()
     assert "Installation" in text
     assert str(tmp_path / "bin") in text
     assert str(tmp_path / "share" / "k1520emu") in text
+    # Beide Arbeitsverzeichnisse stehen dabei — das ist die erste Frage, wenn ein
+    # Dialog am falschen Ort aufgeht.
+    assert str(paths.user_disks_dir()) in text
+    assert str(paths.user_files_dir()) in text
 
 
 # ─── Verschiebbarkeit des Pakets (Kern) ──────────────────────────────────────

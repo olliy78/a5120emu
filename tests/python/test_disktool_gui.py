@@ -12,6 +12,7 @@ hier nicht angefasst.
 """
 
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -70,9 +71,9 @@ def test_cpm_disk_is_shown_flat(window, fixture_disks):
     assert len(namen) == 24
     assert "Side0" not in " ".join(gruppen(window.disk_view))
     # Schreibschutz ist die Vorgabe: Lesen frei, Schreiben gesperrt.
-    assert window.chk_readonly.isChecked()
-    assert window.btn_alles_raus.isEnabled()
-    assert not window.btn_speichern.isEnabled()
+    assert window.act_schreibschutz.isChecked()
+    assert window.act_alles_raus.isEnabled()
+    assert not window.act_speichern.isEnabled()
 
 
 def test_udos_disk_is_shown_as_one_carrier_with_two_side_groups(window, fixture_disks):
@@ -85,10 +86,12 @@ def test_udos_disk_is_shown_as_one_carrier_with_two_side_groups(window, fixture_
 
     namen = alle_namen(window.disk_view)
     assert "HELP.DAT.00" in namen
-    assert "69 Dateien" in window.disk_view.fuss.text()
+    # Die Belegung ist ein Dauerzustand — sie steht rechts in der Statuszeile.
+    assert "69 Dateien" in window.st_inhalt.text()
     # Auffälligkeiten des Mediums werden angezeigt, nicht verschwiegen.
-    assert window.disk_view.hinweis.isVisibleTo(window)
-    assert "Altbestand" in window.disk_view.hinweis.text()
+    assert window.info_bar.isVisibleTo(window)
+    assert "Altbestand" in window.info_bar.text()
+    assert window.info_bar.stufe == "warnung"
 
 
 def test_unrecognised_image_locks_the_buttons(window, fixture_disks):
@@ -97,9 +100,10 @@ def test_unrecognised_image_locks_the_buttons(window, fixture_disks):
 
     assert window.tool is None
     assert window.disk_view.tree.topLevelItemCount() == 0
-    assert "passt zu keinem Format" in window.disk_view.hinweis.text()
-    assert "4 Sektoren" in window.disk_view.hinweis.text()
-    for knopf in (window.btn_alles_rein, window.btn_loeschen, window.btn_speichern):
+    assert "passt zu keinem Format" in window.info_bar.text()
+    assert "4 Sektoren" in window.info_bar.text()
+    assert window.info_bar.stufe == "fehler"
+    for knopf in (window.act_alles_rein, window.act_loeschen, window.act_speichern):
         assert not knopf.isEnabled(), "Schreiben muss gesperrt sein"
 
 
@@ -148,13 +152,16 @@ def test_view_refreshes_after_every_write(window, fixture_disks, tmp_path):
     namen = alle_namen(window.disk_view)
     assert "NEU.TXT" in namen
     assert len(namen) == vorher + 1
-    assert "●" in window.windowTitle(), "ungespeicherte Änderung wird angezeigt"
+    # Die Änderungsmarke ist Qts eigene (`[*]` im Titel + setWindowModified),
+    # damit jede Plattform ihr übliches Zeichen zeigt.
+    assert window.isWindowModified(), "ungespeicherte Änderung wird angezeigt"
+    assert "cpa.img" in window.windowTitle()
 
     assert window.erase_refs(["NEU.TXT"])
     assert "NEU.TXT" not in alle_namen(window.disk_view)
 
     assert window.save()
-    assert "●" not in window.windowTitle()
+    assert not window.isWindowModified()
 
 
 def test_extract_all_creates_side_folders(window, fixture_disks, tmp_path):
@@ -257,6 +264,7 @@ def test_opens_read_only_and_write_needs_a_deliberate_step(window, fixture_disks
     entfernen — ein bewusster Schritt, bei dem einem einfällt, dass man von einer
     unersetzlichen Diskette lieber erst eine Kopie anlegt.
     """
+    from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QMessageBox
     monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: None)
 
@@ -267,12 +275,12 @@ def test_opens_read_only_and_write_needs_a_deliberate_step(window, fixture_disks
 
     assert window.open_image(abbild)
     assert window.tool.read_only
-    assert window.chk_readonly.isChecked()
+    assert window.act_schreibschutz.isChecked()
 
     # Lesen: frei.  Schreiben: gesperrt — und zwar wirklich, nicht nur optisch.
-    assert window.btn_alles_raus.isEnabled()
-    assert not window.btn_rein.isEnabled()
-    assert not window.btn_loeschen.isEnabled()
+    assert window.act_alles_raus.isEnabled()
+    assert not window.act_schreiben.isEnabled()
+    assert not window.act_loeschen.isEnabled()
 
     quelle = tmp_path / "NEU.TXT"
     quelle.write_text("Inhalt")
@@ -281,9 +289,15 @@ def test_opens_read_only_and_write_needs_a_deliberate_step(window, fixture_disks
     assert not window.tool.dirty
     assert abbild.read_bytes() == original
 
-    # Nach dem bewussten Schritt geht es.
+    # Nach dem bewussten Schritt geht es — sobald im Ordner etwas ausgewählt ist
+    # (die Übertragung ist auswahlabhängig, §20.3).
     window.set_read_only(False)
-    assert window.btn_rein.isEnabled()
+    window.folder_view.set_folder(tmp_path)
+    assert not window.act_schreiben.isEnabled(), "ohne Auswahl gibt es nichts zu tun"
+    eintrag = window.folder_view.tree.findItems("NEU.TXT", Qt.MatchExactly)[0]
+    eintrag.setSelected(True)
+    assert window.act_schreiben.isEnabled()
+
     assert window.insert_paths([str(quelle)])
     assert "NEU.TXT" in alle_namen(window.disk_view)
 
@@ -367,15 +381,15 @@ def test_archive_converts_an_img_source_to_hfe(window, fixture_disks, tmp_path):
 
 def test_boot_image_button_follows_the_disk(window, fixture_disks, tmp_path):
     """„Bootabbild sichern" gibt es nur, wo es Systemspuren gibt."""
-    assert not window.btn_bootabbild.isEnabled(), "ohne Diskette gesperrt"
+    assert not window.act_bootabbild.isEnabled(), "ohne Diskette gesperrt"
 
     assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
-    assert window.btn_bootabbild.isEnabled()
+    assert window.act_bootabbild.isEnabled()
 
     # Eine Datendiskette (Dateisystem ab Zylinder 0) hat nichts zu sichern.
     leer = tmp_path / "daten.hfe"
     assert window.create_disk(leer, "cpa800")
-    assert not window.btn_bootabbild.isEnabled()
+    assert not window.act_bootabbild.isEnabled()
 
 
 def test_saved_boot_image_makes_a_new_disk_bootable(window, fixture_disks, tmp_path):
@@ -1116,3 +1130,488 @@ def test_disk_editor_leaves_the_back_of_a_single_sided_disk_empty(window, tmp_pa
     ed.resize(1000, 800)
     cx, cy, r, _ = ed.surface._mitte(1)
     assert ed.surface.treffer(QPointF(cx, cy - r * 0.5)) is None
+
+
+# ─── Fensteraufbau: Menüleiste, Symbolleiste, Meldungsorte ───────────────────
+#
+# Der Umbau von 2026-08-14 (doc/design/13_k1520disktool.md §20) hat die zwei
+# Knopfleisten auf halber Höhe durch Menü + ausblendbare Symbolleiste ersetzt und
+# die vier Meldungsorte auf klare Rollen verteilt.  Diese Prüfungen halten beides
+# fest — vor allem, dass eine NEUE Aktion nicht heimlich menülos bleibt.
+
+def _menue_aktionen(fenster) -> set:
+    """Alle Aktionen, die über die Menüleiste erreichbar sind (rekursiv)."""
+    gefunden = set()
+
+    def sammle(menue):
+        for a in menue.actions():
+            if a.menu() is not None:
+                sammle(a.menu())
+            elif not a.isSeparator():
+                gefunden.add(a)
+
+    sammle(fenster.menuBar())
+    return gefunden
+
+
+def test_every_action_is_reachable_from_the_menu_bar(window):
+    """Jede Aktion steht in der Menüleiste — die Symbolleiste ist nur die Abkürzung.
+
+    Sie lässt sich ausblenden; wäre eine Aktion nur dort, wäre sie danach weg.
+    """
+    im_menue = _menue_aktionen(window)
+    fehlend = [name for name in dir(window)
+               if name.startswith("act_") and getattr(window, name) not in im_menue]
+    assert fehlend == [], f"nicht im Menü erreichbar: {fehlend}"
+
+
+def test_toolbar_shows_actions_that_all_exist_in_the_menu(window):
+    in_leiste = [a for a in window.leiste.actions() if not a.isSeparator()]
+    assert len(in_leiste) >= 10, "die Leiste soll die häufigen Wege tragen"
+    assert set(in_leiste) <= _menue_aktionen(window)
+    # Und jede trägt ein Symbol — eine leere Leiste wäre das Gegenteil des Zwecks.
+    for a in in_leiste:
+        assert not a.icon().isNull(), a.text()
+
+
+def test_toolbar_can_be_hidden_from_the_view_menu(window):
+    """Der Umschalter kommt von Qt selbst (QToolBar.toggleViewAction).
+
+    Er spiegelt die *wirkliche* Sichtbarkeit, deshalb muss das Fenster hier
+    tatsächlich angezeigt werden (offscreen genügt).
+    """
+    assert window.act_leiste_zeigen in _menue_aktionen(window)
+    assert window.act_leiste_zeigen.isCheckable()
+
+    window.show()
+    assert window.leiste.isVisible() and window.act_leiste_zeigen.isChecked()
+
+    window.act_leiste_zeigen.trigger()
+    assert not window.leiste.isVisible(), "Ansicht ▸ Symbolleiste blendet sie aus"
+    window.act_leiste_zeigen.trigger()
+    assert window.leiste.isVisible()
+    window.hide()
+
+
+def test_log_dock_is_closed_at_start_but_keeps_the_history(window, fixture_disks):
+    """Das Protokoll ist die Historie, nicht die Anzeige — es kostet keinen Platz."""
+    assert not window.log_dock.isVisibleTo(window)
+
+    window.log("Etwas ist geschehen")
+    assert "Etwas ist geschehen" in window.protokoll.toPlainText()
+    assert "Etwas ist geschehen" in window.statusBar().currentMessage()
+    # Ohne Stufe bleibt der Streifen weg: eine erledigte Aktion ist nichts Dauerhaftes.
+    assert not window.info_bar.isVisibleTo(window)
+
+    window.act_protokoll_zeigen.trigger()
+    assert window.log_dock.isVisibleTo(window)
+
+
+def test_transfer_mode_is_a_radio_group_and_shows_in_the_status_bar(window):
+    assert window.act_binaer.isChecked() and not window.text_mode
+    assert window.st_modus.text() == "binär"
+
+    window.act_text.trigger()
+    assert window.text_mode
+    assert not window.act_binaer.isChecked(), "die beiden schließen sich aus"
+    assert window.st_modus.text() == "Text"
+
+
+def test_status_bar_shows_the_write_protection_as_a_state(window, fixture_disks):
+    assert window.st_schutz.text() == "", "ohne Diskette gibt es keinen Zustand"
+    assert window.st_schloss.pixmap().isNull()
+
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert "R/O" in window.st_schutz.text() and "nur lesen" in window.st_schutz.text()
+    assert not window.st_schloss.pixmap().isNull(), "Schloss als Bild, nicht als Emoji"
+    window.set_read_only(False)
+    assert "R/W" in window.st_schutz.text() and "schreibbar" in window.st_schutz.text()
+
+
+def test_the_protection_button_shows_which_state_it_is_in(window, fixture_disks):
+    """Ein rastender Knopf allein ist nicht lesbar — Symbol UND Wort wechseln mit."""
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    zu = window.act_schreibschutz.icon().pixmap(24, 24).toImage()
+    assert window.act_schreibschutz.iconText() == "R/O"
+
+    window.set_read_only(False)
+    assert window.act_schreibschutz.iconText() == "R/W"
+    auf = window.act_schreibschutz.icon().pixmap(24, 24).toImage()
+    assert auf != zu, "offenes und geschlossenes Schloss müssen sich unterscheiden"
+
+
+def test_the_status_bar_cannot_be_switched_off(window):
+    """Sie trägt den Zustand — wer sie ausblenden könnte, arbeitete blind."""
+    assert not hasattr(window, "act_statusleiste")
+    assert not any("tatus" in a.text() for a in window.menue_ansicht.actions())
+    assert window.statusBar().isVisibleTo(window)
+
+
+def test_both_panes_are_the_same_width(window):
+    """Keine der beiden Listen ist die wichtigere."""
+    links, mitte, rechts = window.teiler.sizes()
+    assert links == rechts, (links, mitte, rechts)
+
+    # … und sie bleiben es beim Wachsen (gleicher Dehnungsfaktor).
+    window.show()
+    window.resize(1400, 700)
+    window.teiler.setSizes([500, 44, 500])
+    links, _, rechts = window.teiler.sizes()
+    assert abs(links - rechts) <= 1, (links, rechts)
+    window.hide()
+
+
+def test_the_folder_pane_has_no_footer_line(window, tmp_path):
+    """Beide Hälften sind gleich gebaut: Überschrift + Liste, sonst nichts."""
+    assert not hasattr(window.folder_view, "fuss")
+    (tmp_path / "EINS.TXT").write_text("x")
+    window.folder_view.set_folder(tmp_path)
+    assert window.folder_view.tree.topLevelItemCount() == 1
+
+
+def test_the_middle_column_offers_selection_and_everything(window):
+    """Vier Knöpfe: aussen die Stapel, innen die Auswahl (→→| →| |← |←←)."""
+    knoepfe = [window.btn_alles_holen, window.btn_holen,
+               window.btn_schreiben, window.btn_alles_schreiben]
+    aktionen = [b.defaultAction() for b in knoepfe]
+    assert aktionen == [window.act_alles_raus, window.act_holen,
+                        window.act_schreiben, window.act_alles_rein]
+    for a in aktionen:
+        assert not a.icon().isNull(), a.text()
+        assert a in _menue_aktionen(window)
+
+
+def test_header_carries_path_and_format(window, fixture_disks):
+    """Der Kopfbereich trägt die DAUERHAFTEN Angaben — nicht die Statuszeile."""
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert "cpa_cpa780_k5601_clock.img" in window.kopf.pfad.text()
+    assert "cpa780" in window.kopf.angaben.text()
+    assert "erkannt" in window.kopf.angaben.text()
+
+
+def test_filesystem_choice_stays_in_step_between_header_and_menu(window,
+                                                                 fixture_disks):
+    """Feld und Menüpunkt zeigen dieselbe Wahl — gesetzt wird sie an einer Stelle."""
+    bild = fixture_disks / "scpx17_cpa780_k5601.hfe"
+    assert window.open_image(bild, "cpa_auto")
+
+    assert window.kopf.filesystem() == "cpa_auto"
+    assert window._fs_aktionen["cpa_auto"].isChecked()
+    assert not window._fs_aktionen[""].isChecked()
+
+
+def test_context_menus_use_the_same_actions_as_the_menu_bar(window):
+    """Wer eine Aktion sperrt, sperrt sie überall — dafür gibt es sie nur einmal."""
+    assert window.act_eigenschaften in window.disk_view._aktionen
+    assert window.act_loeschen in window.disk_view._aktionen
+    assert window.act_schreiben in window.folder_view._aktionen
+
+
+def test_selection_gates_the_transfer_actions(window, fixture_disks, tmp_path):
+    import shutil
+    abbild = tmp_path / "cpa.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    assert window.open_image(abbild)
+    window.set_read_only(False)
+
+    assert not window.act_holen.isEnabled(), "ohne Auswahl nichts zu holen"
+    assert not window.act_loeschen.isEnabled()
+    assert not window.act_eigenschaften.isEnabled()
+
+    window.disk_view.tree.topLevelItem(0).setSelected(True)
+    assert window.act_holen.isEnabled()
+    assert window.act_loeschen.isEnabled()
+    assert window.act_eigenschaften.isEnabled()
+
+    window.disk_view.tree.topLevelItem(1).setSelected(True)
+    assert not window.act_eigenschaften.isEnabled(), "Eigenschaften gibt es je Datei"
+
+
+def test_disk_info_dialog_reports_everything_about_the_carrier(window,
+                                                               fixture_disks):
+    from app.disktool.ui.disk_info_dialog import angaben_text
+
+    assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
+    text = angaben_text(window.tool)
+    for teil in ("udos_boot_scp.hfe", "Format:", "Dateisystem:", "Zylinder",
+                 "Schreibschutz:", "Systemspuren:", "BELEGUNG", "Side0", "Side1"):
+        assert teil in text, teil
+    assert "Altbestand" in text, "die Auffälligkeit des Mediums gehört dazu"
+
+
+def test_closing_the_disk_leaves_the_window_standing(window, fixture_disks):
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert window.close_disk()
+
+    assert window.tool is None
+    assert window.disk_view.tree.topLevelItemCount() == 0
+    assert "Keine Diskette" in window.kopf.pfad.text()
+    assert not window.act_speichern_unter.isEnabled()
+    assert not window.isWindowModified()
+
+
+def test_recent_files_menu_follows_what_was_opened(window, fixture_disks):
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
+
+    namen = [a.text() for a in window.menue_zuletzt.actions()]
+    assert namen[0] == "udos_boot_scp.hfe", "zuletzt geöffnet steht oben"
+    assert "cpa_cpa780_k5601_clock.img" in namen
+
+
+def test_a_nameless_application_does_not_touch_the_users_settings(window):
+    """Kein Test darf in die Einstellungen des Anwenders schreiben — oder daraus erben."""
+    assert window._einstellungen() is None
+    window._zustand_sichern()      # muss folgenlos durchlaufen
+
+
+def test_every_bundled_icon_can_be_rendered(qt_app):
+    """Die Symbole liegen mit im Baum — sonst bliebe die Leiste unter Windows leer."""
+    from app.disktool.ui.icons import ICON_DIR, icon
+
+    dateien = sorted(p.stem for p in ICON_DIR.glob("*.svg"))
+    assert len(dateien) >= 12, dateien
+    for name in dateien:
+        symbol = icon(name)
+        assert not symbol.isNull(), name
+        assert not symbol.pixmap(24, 24).isNull(), name
+
+
+def test_a_single_recent_file_survives_qsettings(window):
+    """QSettings gibt eine einelementige Liste als ZEICHENKETTE zurück.
+
+    Ohne Behandlung zerfiel der eine zuletzt geöffnete Pfad in seine Buchstaben
+    und „Zuletzt geöffnet" hatte 80 Einträge (§20.5).
+    """
+    assert window._als_liste("/pfad/zur/diskette.hfe") == ["/pfad/zur/diskette.hfe"]
+    assert window._als_liste(["/a.hfe", "/b.hfe"]) == ["/a.hfe", "/b.hfe"]
+    assert window._als_liste(None) == []
+    assert window._als_liste("") == []
+
+
+# ─── Handbuch (F1) ───────────────────────────────────────────────────────────
+#
+# Die Hilfe ist eine gewöhnliche `.md`-Datei, die Qt selbst setzt (§20.7) — kein
+# Bauschritt, keine Abhängigkeit.  Geprüft wird, dass sie mitgeliefert wird, dass
+# das Inhaltsverzeichnis zum Text passt und — das Wichtigste — dass die dort
+# genannten Tastenkürzel WIRKLICH an den Aktionen hängen.  Eine Hilfe, die mit der
+# Oberfläche auseinanderläuft, ist schlimmer als keine.
+
+#: Deutsche Tastennamen des Handbuchs → was QKeySequence versteht.
+_TASTEN = {"Strg": "Ctrl", "Umschalt": "Shift", "Entf": "Del",
+           "Eingabe": "Return", "→": "Right", "←": "Left"}
+
+
+def _als_kuerzel(deutsch: str):
+    from PySide6.QtGui import QKeySequence
+    teile = [_TASTEN.get(t, t) for t in deutsch.split("+")]
+    return QKeySequence("+".join(teile))
+
+
+def _handbuch_kuerzel() -> dict:
+    """Die Tabelle „Tastenkürzel" des Handbuchs als {Kürzel: Wirkung}."""
+    from app.disktool.ui.help_window import lade_handbuch
+    text = lade_handbuch()
+    tabelle = text.split("## Tastenkürzel", 1)[1].split("\n## ", 1)[0]
+    out = {}
+    for zeile in tabelle.splitlines():
+        if not zeile.startswith("|") or "---" in zeile:
+            continue
+        spalten = [s.strip() for s in zeile.strip("|").split("|")]
+        if len(spalten) == 2 and spalten[0] not in ("Kürzel",):
+            out[spalten[0]] = spalten[1]
+    return out
+
+
+def test_help_manual_ships_inside_the_app_tree(window):
+    """Sie muss unter `app/` liegen — `doc/` ist nicht im Paket."""
+    from app.disktool.ui.help_window import HANDBUCH
+    assert HANDBUCH.is_file(), HANDBUCH
+    assert "app" in HANDBUCH.parts, "sonst fehlt das Handbuch im Anwenderpaket"
+    assert HANDBUCH.read_text(encoding="utf-8").startswith("# k1520DiskTool")
+
+
+def test_help_window_lists_every_section_and_jumps_to_it(window):
+    from app.disktool.ui.help_window import abschnitte, lade_handbuch
+
+    h = window.open_help()
+    erwartet = abschnitte(lade_handbuch())
+    assert len(erwartet) >= 8, "ein Kurzhandbuch, aber kein Zettel"
+
+    im_verzeichnis = [h.inhalt.item(i).text() for i in range(h.inhalt.count())]
+    assert im_verzeichnis == erwartet
+
+    # Qt vergibt keine Anker; gesprungen wird auf den Überschriften-BLOCK.
+    assert [t for t, _ in h.ueberschriften()] == erwartet
+    for name in erwartet:
+        assert h.springe_zu(name), name
+    assert not h.springe_zu("Gibt es nicht")
+
+
+def test_help_window_opens_once_per_window(window):
+    h = window.open_help()
+    assert window.open_help() is h, "kein zweites Handbuchfenster"
+    h.close()
+
+
+def test_help_search_finds_wraps_and_reports_a_miss(window):
+    h = window.open_help()
+
+    h.suchfeld.setText("Schreibschutz")
+    assert h.weitersuchen()
+
+    h.suchfeld.setText("Kernspeicherringkern")
+    assert not h.weitersuchen()
+    assert "nicht gefunden" in h.meldung.text()
+
+    h.suchfeld.setText("")
+    assert not h.weitersuchen(), "leere Suche tut nichts"
+
+
+def test_every_shortcut_in_the_manual_really_exists(window):
+    """Jedes Kürzel der Handbuchtabelle hängt an einer Aktion des Fensters."""
+    from PySide6.QtGui import QAction
+
+    vorhanden = {}
+    for a in window.findChildren(QAction):
+        if not a.shortcut().isEmpty():
+            vorhanden[a.shortcut().toString()] = a.text()
+
+    fehlend = []
+    for kuerzel, wirkung in _handbuch_kuerzel().items():
+        if _als_kuerzel(kuerzel).toString() not in vorhanden:
+            fehlend.append(f"{kuerzel} ({wirkung})")
+    assert fehlend == [], f"im Handbuch versprochen, aber nicht verdrahtet: {fehlend}"
+
+
+def test_every_shortcut_of_the_window_is_in_the_manual(window):
+    """Und die Gegenrichtung: kein Kürzel bleibt unerwähnt."""
+    from PySide6.QtGui import QAction
+
+    im_handbuch = {_als_kuerzel(k).toString() for k in _handbuch_kuerzel()}
+    fehlend = []
+    for a in window.findChildren(QAction):
+        if not a.shortcut().isEmpty() and a.shortcut().toString() not in im_handbuch:
+            fehlend.append(f"{a.shortcut().toString()} ({a.text()})")
+    assert fehlend == [], f"verdrahtet, aber im Handbuch nicht genannt: {fehlend}"
+
+
+# ─── Wo die Dialoge aufgehen ─────────────────────────────────────────────────
+#
+# Im Installationsordner liegt das Programm, nicht die Arbeit des Anwenders.
+# Aufgelöst wird über `app.paths` — dieselbe Stelle, die auch der Emulator
+# benutzt, damit beide Programme auf dieselben Ordner zeigen (§20.8).
+
+def _dialog_startpunkte(window, monkeypatch) -> dict:
+    """Alle Dateidialoge einmal aufrufen und ihren Startpfad einsammeln.
+
+    Jeder Dialog wird sofort „abgebrochen" (leerer Rückgabewert), es passiert
+    also nichts weiter.
+    """
+    from PySide6.QtWidgets import QFileDialog
+    gesehen = {}
+
+    def datei(titel_index):
+        def haken(parent, titel, verzeichnis="", *a, **k):
+            gesehen[titel] = verzeichnis
+            return ("", "")
+        return haken
+
+    def ordner(parent, titel, verzeichnis="", *a, **k):
+        gesehen[titel] = verzeichnis
+        return ""
+
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", datei(1))
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", datei(1))
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", ordner)
+    return gesehen
+
+
+def test_every_file_dialog_gets_a_start_directory(window, fixture_disks,
+                                                  monkeypatch):
+    """Der Kern der Sache: kein Dialog ohne Startpunkt.
+
+    Ein leerer Startpfad heisst für Qt „Arbeitsverzeichnis" — und das ist beim
+    installierten Programm der INSTALLATIONSORDNER.  Dort liegt das Programm,
+    nicht die Arbeit des Anwenders.
+    """
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    gesehen = _dialog_startpunkte(window, monkeypatch)
+
+    window._oeffnen_dialog()
+    window._speichern_unter_dialog()
+    window._archivieren_dialog()
+    window._bootabbild_sichern_dialog()
+    window._ordner_dialog()
+
+    assert len(gesehen) == 5, gesehen
+    for titel, start in gesehen.items():
+        assert start, f"{titel}: ohne Startpunkt landet der Dialog im Programmordner"
+        assert Path(start).is_absolute() or Path(start).exists(), (titel, start)
+
+
+def test_folder_side_never_starts_in_the_installation(window, tmp_path,
+                                                      monkeypatch):
+    """Für die Ordnerseite gilt es ausnahmslos: dort gehören keine Anwenderdateien hin.
+
+    (Bei den Abbildern gibt es eine gewollte Ausnahme — passt kein
+    Benutzerordner, bietet ``default_disk_dir`` die MITGELIEFERTEN Beispiele an,
+    und die liegen naturgemäß im Programmordner.  Der Emulator macht es ebenso.)
+    """
+    from app import paths
+
+    # Eine Installation nachbauen, den Datenordner daneben.
+    prog = tmp_path / "prog"
+    (prog / "bin").mkdir(parents=True)
+    (prog / "app").mkdir()
+    (prog / "share" / "k1520emu").mkdir(parents=True)
+    monkeypatch.setenv(paths.ENV_HOME, str(prog))
+    monkeypatch.setenv(paths.ENV_DATA, str(tmp_path / "daten"))
+
+    gesehen = _dialog_startpunkte(window, monkeypatch)
+    window._ordner_dialog()
+
+    start = Path(gesehen["Ordner wählen"]).resolve()
+    assert prog.resolve() not in start.parents and start != prog.resolve(), start
+
+
+def test_image_dialogs_start_where_the_emulator_looks(window, monkeypatch):
+    """Abbilder: derselbe Ordner, den das Laufwerksfeld des Emulators anbietet."""
+    from app import paths
+
+    assert window._disketten_ordner() == str(paths.default_disk_dir())
+
+    gesehen = _dialog_startpunkte(window, monkeypatch)
+    window._oeffnen_dialog()
+    assert gesehen["Diskettenabbild öffnen"] == str(paths.default_disk_dir())
+
+
+def test_save_as_starts_next_to_the_open_disk(window, fixture_disks, monkeypatch):
+    """Eine Arbeitskopie gehört dorthin, wo das Original liegt."""
+    from app import paths
+
+    # Ohne Diskette: der Diskettenordner.
+    assert window._neben_der_diskette() == str(paths.default_disk_dir())
+
+    bild = fixture_disks / "cpa_cpa780_k5601_clock.img"
+    assert window.open_image(bild)
+    gesehen = _dialog_startpunkte(window, monkeypatch)
+    window._speichern_unter_dialog()
+    assert Path(gesehen["Speichern unter"]).resolve() == bild.parent.resolve()
+
+
+def test_folder_dialog_starts_in_the_users_file_directory(window, tmp_path,
+                                                          monkeypatch):
+    """Ordnerseite: der Dateiordner des Anwenders — und danach der gewählte."""
+    from app import paths
+
+    assert window.folder_view.folder is None
+    assert window._ordner_startpunkt() == str(paths.default_folder_dir())
+
+    # Sobald einer gewählt ist, geht der nächste Dialog dort auf.
+    window.folder_view.set_folder(tmp_path)
+    assert window._ordner_startpunkt() == str(tmp_path)
+
+    gesehen = _dialog_startpunkte(window, monkeypatch)
+    window._ordner_dialog()
+    assert gesehen["Ordner wählen"] == str(tmp_path)

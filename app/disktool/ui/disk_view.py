@@ -4,8 +4,12 @@ Beide Seiten einer UDOS-Diskette stehen in **einer** Liste, nach Seite gruppiert
 es wird nicht umgeschaltet (doc/design/13_k1520disktool.md §9.1).  Bei einer
 CP/M-Diskette entfällt die Gruppierung ersatzlos.
 
-Die Ansicht hält **keinen** eigenen Verzeichnisstand: `set_entries()` bekommt bei
+Die Ansicht hält **keinen** eigenen Verzeichnisstand: `set_disk()` bekommt bei
 jedem Aufruf die frisch gelesene Liste (§9.3).
+
+Sie trägt seit dem Umbau §20 auch **keine Meldungen** mehr: Pfad und Format stehen
+im Kopfbereich des Fensters, Auffälligkeiten im Meldungsstreifen, die Belegung
+rechts in der Statuszeile.  Hier ist nur noch die Liste.
 """
 
 from __future__ import annotations
@@ -15,8 +19,8 @@ from typing import List, Optional
 from PySide6.QtCore import Qt, QMimeData, Signal
 from PySide6.QtGui import QDrag
 from PySide6.QtWidgets import (
-    QAbstractItemView, QLabel, QMenu, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-    QWidget,
+    QAbstractItemView, QHeaderView, QLabel, QMenu, QTreeWidget, QTreeWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
 #: Eigener MIME-Typ für das Ziehen von der Diskette in einen Ordner.
@@ -40,6 +44,8 @@ class _Tree(QTreeWidget):
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setRootIsDecorated(True)
         self.setUniformRowHeights(True)
+        self.setAlternatingRowColors(True)
+        self.setSortingEnabled(False)
 
     # ── Ziehen: die ausgewählten Dateien als Referenzliste ──────────────────
 
@@ -84,7 +90,7 @@ class _Tree(QTreeWidget):
 
 
 class DiskView(QWidget):
-    """Diskettenseite des Fensters: Kopfzeile, Baum, Fußzeile."""
+    """Diskettenseite des Fensters: Überschrift und Liste."""
 
     files_dropped = Signal(list, int)
     #: Rechtsklick → „Eigenschaften…" bzw. Doppelklick auf eine Datei.
@@ -94,41 +100,49 @@ class DiskView(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._aktionen = []
 
-        self.kopf = QLabel("Keine Diskette geöffnet")
-        self.kopf.setWordWrap(True)
-        self.hinweis = QLabel("")
-        self.hinweis.setWordWrap(True)
-        self.hinweis.setStyleSheet("color: #a06000;")
-        self.hinweis.hide()
+        self.titel = QLabel("Diskette")
+        schrift = self.titel.font()
+        schrift.setBold(True)
+        self.titel.setFont(schrift)
 
         self.tree = _Tree()
         self.tree.setHeaderLabels(["Name", "Typ", "Größe", "Eigensch.", "Datum"])
-        self.tree.setColumnWidth(0, 240)
+        # Der Name nimmt, was übrig ist; die vier schmalen Spalten richten sich
+        # nach ihrem Inhalt — sonst wird das Datum abgeschnitten und die Liste
+        # bekommt einen waagerechten Rollbalken, obwohl Platz da wäre.
+        kopfzeile = self.tree.header()
+        kopfzeile.setSectionResizeMode(0, QHeaderView.Stretch)
+        for spalte in (1, 2, 3, 4):
+            kopfzeile.setSectionResizeMode(spalte, QHeaderView.ResizeToContents)
+        self.tree.setTextElideMode(Qt.ElideMiddle)
         self.tree.files_dropped.connect(self.files_dropped)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._kontextmenue)
         self.tree.itemDoubleClicked.connect(self._doppelklick)
 
-        self.fuss = QLabel("")
-
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(self.kopf)
-        lay.addWidget(self.hinweis)
+        lay.setSpacing(2)
+        lay.addWidget(self.titel)
         lay.addWidget(self.tree, 1)
-        lay.addWidget(self.fuss)
 
     # ── Inhalt setzen ───────────────────────────────────────────────────────
 
+    def setze_aktionen(self, *aktionen) -> None:
+        """Die Aktionen des Kontextmenüs — dieselben wie in Menü und Leiste.
+
+        ``None`` steht für einen Trenner.
+        """
+        self._aktionen = list(aktionen)
+
     def clear(self) -> None:
         self.tree.clear()
-        self.kopf.setText("Keine Diskette geöffnet")
-        self.hinweis.hide()
-        self.fuss.setText("")
+        self.titel.setText("Diskette")
 
     def set_disk(self, tool, entries) -> None:
-        """Kopfzeile und Baum aus einer geöffneten Diskette füllen.
+        """Baum aus einer geöffneten Diskette füllen.
 
         Args:
             tool: ``DiskTool`` (oder None)
@@ -139,17 +153,7 @@ class DiskView(QWidget):
             self.clear()
             return
 
-        erkannt = "erkannt" if tool.unambiguous else "erkannt, nicht eindeutig"
-        self.kopf.setText(
-            f"<b>{tool.path}</b><br>"
-            f"Format: {tool.format} &nbsp;·&nbsp; Dateisystem: {tool.filesystem} "
-            f"({erkannt})"
-        )
-        if tool.remarks:
-            self.hinweis.setText(f"Medium: {tool.remarks}")
-            self.hinweis.show()
-        else:
-            self.hinweis.hide()
+        self.titel.setText(f"Diskette — {tool.filesystem}")
 
         mehrseitig = tool.volume_count > 1
         gruppen = {}
@@ -172,43 +176,28 @@ class DiskView(QWidget):
             if e.damaged:
                 item.setText(1, "DEFEKT")
 
-        teile = [f"{len(entries)} Dateien"]
-        for v in tool.volumes():
-            wo = f"{v.dir}: " if mehrseitig else ""
-            teile.append(f"{wo}{v.free // 1024} KB frei")
-        self.fuss.setText(" · ".join(teile))
-
     # ── Kontextmenü ─────────────────────────────────────────────────────────
 
     def _kontextmenue(self, punkt) -> None:
-        """Rechtsklick auf eine Datei: extrahieren, löschen, Eigenschaften.
+        """Rechtsklick auf eine Datei — dieselben Aktionen wie im Menü.
 
         Auf einer Gruppenzeile (der Seite) oder im Leeren gibt es nichts zu tun —
         dann bleibt das Menü weg statt mit toten Einträgen zu erscheinen.
         """
-        refs = self.selected_refs()
         item = self.tree.itemAt(punkt)
         if item is not None and item.data(0, REF_ROLE):
             # Der angeklickte Eintrag zählt, auch wenn die Auswahl woanders steht.
-            if item.data(0, REF_ROLE) not in refs:
-                refs = [item.data(0, REF_ROLE)]
-        if not refs:
+            if item.data(0, REF_ROLE) not in self.selected_refs():
+                self.tree.clearSelection()
+                item.setSelected(True)
+                self.tree.setCurrentItem(item)
+        if not self.selected_refs() or not self._aktionen:
             return
 
         menue = QMenu(self)
-        a_props = menue.addAction("Eigenschaften…")
-        a_props.setEnabled(len(refs) == 1)
-        menue.addSeparator()
-        a_get = menue.addAction("In den Ordner holen")
-        a_del = menue.addAction("Löschen")
-
-        gewaehlt = menue.exec(self.tree.viewport().mapToGlobal(punkt))
-        if gewaehlt is a_props:
-            self.properties_requested.emit(refs[0])
-        elif gewaehlt is a_get:
-            self.extract_requested.emit(refs)
-        elif gewaehlt is a_del:
-            self.erase_requested.emit(refs)
+        for a in self._aktionen:
+            menue.addSeparator() if a is None else menue.addAction(a)
+        menue.exec(self.tree.viewport().mapToGlobal(punkt))
 
     def _doppelklick(self, item, spalte) -> None:
         ref = item.data(0, REF_ROLE)

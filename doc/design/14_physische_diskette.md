@@ -646,8 +646,8 @@ vierter Knopf **„Physisch…"**.  Danach:
 
 ### 12.2 k1520DiskTool
 
-In der Kopfzeile neben *Abbild öffnen…* / *Neue Diskette…* steht **„Physisches
-Laufwerk…"**.  Das Öffnen läuft über `mit_fortschritt()` — es liest die ganze Diskette
+Im Menü *Datei* steht unter *Abbild öffnen…* / *Neue Diskette…* der Punkt
+**„Physisches Laufwerk…"** (Strg+Umschalt+O).  Das Öffnen läuft über `mit_fortschritt()` — es liest die ganze Diskette
 (die Formaterkennung sieht sich jede Spur an, §11.2) und braucht dafür rund
 anderthalb Minuten; die Anzeige zählt die Spuren mit und lässt sich abbrechen.
 Danach ist die Diskette eine Diskette wie jede andere; der Kopf nennt sie
@@ -659,15 +659,29 @@ Medium.  Ein danach geöffnetes Abbild lässt das echte Laufwerk also frei.
 
 **„Speichern" bedeutet hier mehr als sonst:** es wartet, bis jede geänderte Spur
 geschrieben **und zurückgelesen** ist (§7.1) — mit Fortschrittsanzeige, weil das
-dauert.  Scheitert es an einer Schadstelle, nennt die Meldung die Spur, und der Knopf
-**„Diskette neu beschreiben"** wird sichtbar.  Er schreibt nach einer Rückfrage das
-ganze bekannte Abbild erneut hinaus (wieder mit Fortschritt) und meldet am Ende, ob es
-diesmal fehlerfrei zurückkam.
+dauert.  Scheitert es an einer Schadstelle, nennt die Meldung die Spur — im
+Meldungsfenster **und** im Streifen, der den Ausweg gleich als Knopf mitbringt —, und
+*Diskette ▸ **Diskette neu beschreiben*** wird sichtbar.  Es schreibt nach einer
+Rückfrage das ganze bekannte Abbild erneut hinaus (wieder mit Fortschritt) und meldet
+am Ende, ob es diesmal fehlerfrei zurückkam.
 
-> **Nicht vergessen:** Die menügeführte DiskTool-Oberfläche (`ui/actions.py`,
-> Symbolleiste, Handbuch) liegt auf dem Zweig `create_disktool` und ist hier **nicht**
-> gemergt.  Wandert sie herein, gehört „Physisches Laufwerk öffnen…" als Aktion in
-> `_SPEC` (Menü **und** Leiste), nicht als freistehender Knopf.
+**Seit dem Zusammenführen mit `create_disktool` (2026-08-16) sind es Aktionen, keine
+Knöpfe.**  `act_physisch` und `act_neu_beschreiben` stehen in `_SPEC`
+(`app/disktool/ui/actions.py`) wie alle anderen; damit sperrt und gibt sie
+`_aktionen_pruefen()` an der einen dafür zuständigen Stelle frei (§20.3 des
+DiskTool-Entwurfs).  Drei Feinheiten:
+
+* Der **Ausweg ist unsichtbar statt gesperrt**, solange keine physische Sitzung
+  läuft: an einer Datei gibt es keine Schadstelle, gegen die ein erneutes
+  Wegschreiben helfen würde — ein dauerhaft grauer Menüpunkt behauptete das Gegenteil.
+* **Fehlen die Hosttools, verschwindet der Menüpunkt nicht, er ist gesperrt** und trägt
+  den Grund im Tooltip (`_physisch_verfuegbarkeit()`, einmal beim Aufbau geprüft —
+  ob das Paket da ist, ändert sich im laufenden Programm nicht).  So sieht man, dass es
+  die Möglichkeit gibt, und woran es liegt.
+* Eine physische Diskette hat **keinen Pfad** (`DiskTool.open_physical` liefert
+  `path=""`).  Kopfzeile und Fenstertitel bekommen ihre Beschriftung deshalb aus
+  `_bezeichnung()` / `_kurzname()`, und `DiskHeader.setze(tool, name)` nimmt sie als
+  zweites Argument entgegen.  Ohne das bliebe die Pfadzeile leer.
 
 ### 12.3 Kommandozeile
 
@@ -719,7 +733,7 @@ vorkommt: alles unterhalb von „Aufträge und Bitzellen“ ist ohne Adapter pr�
 | **Voller Emulator** | `PhysicalBoot.*` (`tests/integration/test_physical_boot.cpp`) | **Ersatzlaufwerk über einer `.hfe`-Fixture**: CP/A bootet spurweise bis `A>`, holt dabei **weniger als die halbe Diskette**, und das Vorauslesen bremst den Kaltstart nicht |
 | C-ABI + Arbeitsfaden + DiskTool | `py_gw_physical` (`tests/python/test_gw_physical.py`, 17 Fälle) | `HfeDevice` (`tests/python/gw_fake.py`): liest HFE v1 von Hand, **ohne** `greaseweazle`-Import — dieselbe Diskette einmal als Datei und einmal „physisch" geöffnet muss dasselbe Verzeichnis und dieselben Dateibytes liefern; dazu die Schadstelle über `HfeDevice.schadhaft` |
 | **ABI-Drift** | `py_gw_physical::test_die_ctypes_struktur_passt_zum_c_kopf`, `…die_auftragsarten_stimmen_ueberein` | keiner — liest den C-Kopf und vergleicht Feldnamen **und Reihenfolge** mit den `ctypes.Structure`.  Nötig, weil eine vertauschte Reihenfolge nicht abstürzt, sondern still falsche Zahlen liefert |
-| **Oberflächen** | `py_gw_gui` (`tests/python/test_gw_gui.py`, 13 Fälle) | dasselbe Ersatzlaufwerk: Knopf → Sitzung → angemeldete Diskette → Anzeige → Auswerfen, in **beiden** Programmen; die Zusicherung, dass die Dialogauswahl genau die Argumente von `PhysicalSession.start` sind; und der **volle Schadstellen-Weg** durch das DiskTool (`test_disktool_meldet_die_schadstelle_beim_speichern`: schreiben → prüfen → Warnung mit Spurnummer → Rettungsknopf) |
+| **Oberflächen** | `py_gw_gui` (`tests/python/test_gw_gui.py`, 13 Fälle) | dasselbe Ersatzlaufwerk: Knopf → Sitzung → angemeldete Diskette → Anzeige → Auswerfen, in **beiden** Programmen; die Zusicherung, dass die Dialogauswahl genau die Argumente von `PhysicalSession.start` sind; und der **volle Schadstellen-Weg** durch das DiskTool (`test_disktool_meldet_die_schadstelle_beim_speichern`: schreiben → prüfen → Warnung mit Spurnummer → Ausweg) |
 | **Echte Hardware** | `tests/python/test_gw_hardware.py` | keiner — **übersprungen**, wenn `K1520_GW_HARDWARE` nicht gesetzt ist; **nicht** in ctest registriert |
 
 Der Kniff ist der **Ersatzfaden über einer `.hfe`-Datei**: er liefert dieselben

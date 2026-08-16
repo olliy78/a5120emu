@@ -24,6 +24,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+# --paths: aufgelöste Pfade ausgeben und beenden.  Steht VOR den Qt- und
+# Bindungs-Importen, damit die Auskunft auch dann kommt, wenn genau das fehlt,
+# wonach gefragt wird (DiskTool-Bibliothek, PySide6) — wie in app/main.py.
+if "--paths" in sys.argv[1:]:
+    from app import paths
+    print(paths.describe())
+    sys.exit(0)
+
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
@@ -32,6 +40,10 @@ from app.disktool.ui.main_window import MainWindow
 
 def main() -> int:
     app = QApplication(sys.argv)
+    # Organisation UND Name: erst damit legt QSettings eine Datei an — und nur
+    # dann merkt sich das Fenster Größe, Leisten und zuletzt geöffnete Abbilder
+    # (MainWindow._einstellungen).  Die Testläufe benennen sich bewusst nicht.
+    app.setOrganizationName("k1520emu")
     app.setApplicationName("k1520DiskTool")
 
     # Ctrl+C im Terminal: Qts Eventloop kehrt sonst nie nach Python zurück.
@@ -40,8 +52,19 @@ def main() -> int:
     ticker.start(200)
     ticker.timeout.connect(lambda: None)
 
+    # Arbeitsverzeichnisse wie beim Emulator (app/main.py): beim Erststart einer
+    # Installation die Beispieldisketten auspacken und den Dateiordner anlegen.
+    # Beides ist im Quellbaum wirkungslos.  Ohne das gingen die Dialoge im
+    # INSTALLATIONSORDNER auf — dort liegt das Programm, nicht die Arbeit des
+    # Anwenders (doc/design/13_k1520disktool.md §20.8).
+    from app import paths
+    paths.seed_user_disks()
+    dateiordner = paths.ensure_user_files_dir()
+
     abbild = sys.argv[1] if len(sys.argv) > 1 else None
     ordner = sys.argv[2] if len(sys.argv) > 2 else None
+    if not ordner and dateiordner is not None:
+        ordner = str(dateiordner)
 
     try:
         fenster = MainWindow(abbild, ordner)

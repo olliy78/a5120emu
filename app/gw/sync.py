@@ -331,7 +331,7 @@ class Sync:
         """**Die ganze Diskette neu beschreiben** — für eine frische, fehlerfreie.
 
         Der Weg aus einer Schadstelle heraus: Diskette wechseln, dann alles noch
-        einmal hinausschreiben.  Nur **bekannte** Spuren werden eingestellt; nie
+        einmal wegschreiben.  Nur **bekannte** Spuren werden eingestellt; nie
         gelesene tragen bedeutungslose Bytes.
 
         Returns:

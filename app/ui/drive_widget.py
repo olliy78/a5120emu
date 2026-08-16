@@ -238,8 +238,8 @@ class DriveWidget(QWidget):
         create_btn = QPushButton("Neue Diskette")
         saveas_btn = QPushButton("Speichern unter…")
         phys_btn = QPushButton("Physisch…")
-        # Rettungsweg aus einer Schadstelle: neue Diskette einlegen, alles noch einmal
-        # hinausschreiben.  Nur sichtbar, solange ein echtes Laufwerk eingelegt ist.
+        # Ausweg aus einer Schadstelle: neue Diskette einlegen, alles noch einmal
+        # wegschreiben.  Nur sichtbar, solange ein echtes Laufwerk eingelegt ist.
         rewrite_btn = QPushButton("Diskette neu beschreiben")
         rewrite_btn.setVisible(False)
         rewrite_btn.setToolTip(

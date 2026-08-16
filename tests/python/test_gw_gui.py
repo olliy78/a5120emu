@@ -174,7 +174,7 @@ def test_disktool_oeffnet_ueber_die_oberflaeche_und_zeigt_die_dateien(
         assert fenster.tool is not None
         assert fenster.tool.filesystem
         assert fenster.tool.list(), "kein Verzeichnis gelesen"
-        assert "Greaseweazle" in fenster.disk_view.kopf.text()
+        assert "Greaseweazle" in fenster.kopf.pfad.text()
         assert fenster.tool.read_only, "ohne Schreibrecht muss es schreibgeschützt sein"
     finally:
         fenster._close_tool()
@@ -207,7 +207,7 @@ def test_disktool_schliesst_die_sitzung_beim_naechsten_oeffnen(app, hfe, tmp_pat
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Schadstelle: Meldung und Rettungsweg
+# Schadstelle: Meldung und Ausweg
 # ════════════════════════════════════════════════════════════════════════════
 
 
@@ -221,7 +221,7 @@ def _mit_schadstelle(hfe, **kw):
 
 def test_disktool_meldet_die_schadstelle_beim_speichern(app, hfe, tmp_path,
                                                         monkeypatch):
-    """Der ganze Weg durch die Oberfläche: schreiben → prüfen → Warnung → Rettungsknopf.
+    """Der ganze Weg durch die Oberfläche: schreiben → prüfen → Warnung → Ausweg.
 
     Die Diskette nimmt nichts mehr an; der Verify-Lauf des Gastsystems liefe hier
     gegen das Speicherabbild und sähe nichts.  Das Prüf-Lesen sieht es.
@@ -243,7 +243,8 @@ def test_disktool_meldet_die_schadstelle_beim_speichern(app, hfe, tmp_path,
     fenster = DiskToolWindow()
     try:
         assert fenster.open_physical(drive="a", writable=True)
-        assert not fenster.btn_neu_beschreiben.isHidden(), "Rettungsknopf fehlt"
+        assert fenster.act_neu_beschreiben.isVisible(), "Ausweg fehlt"
+        assert fenster.act_neu_beschreiben.isEnabled(), "Ausweg gesperrt"
 
         # Ab jetzt trägt die Diskette nicht mehr.
         sitzung.device.schadhaft = {(c, h) for c in range(sitzung.device.num_cyls)
@@ -312,13 +313,13 @@ def test_emulator_zeigt_den_rettungsknopf_erst_beim_schreiben(app, hfe, monkeypa
         try:
             panel._phys_btn.click()
             assert panel._rewrite_btn.isHidden() != schreibbar, (
-                f"Rettungsknopf falsch sichtbar (schreibbar={schreibbar})")
+                f"Ausweg falsch sichtbar (schreibbar={schreibbar})")
         finally:
             w.close_physical_sessions()
 
 
 def test_neu_beschreiben_stellt_die_bekannten_spuren_ein(app, hfe):
-    """Der Rettungsweg selbst: alles Bekannte noch einmal hinausschreiben."""
+    """Der Ausweg selbst: alles Bekannte noch einmal wegschreiben."""
     sitzung = fake_session(hfe, writable=True, read_ahead=True)
     try:
         assert _warte(lambda: (sitzung.stats().tracks_known or 0) > 5)
