@@ -70,6 +70,13 @@ STATUS_DAUER = 8000
 #: Höchstzahl der Einträge unter „Zuletzt geöffnet".
 ZULETZT_MAX = 8
 
+#: Anstrich der Statuszeile, solange auf eine echte Diskette geschrieben wird.
+#: Rot heisst hier **nicht** „Fehler", sondern „Finger weg": die Diskette darf
+#: nicht aus dem Laufwerk, bis es fertig ist.  Es ist derselbe Rotton wie im
+#: Meldungsstreifen — zwei verschiedene Rots wären schlechter als eine Doppelrolle.
+SCHREIBT_STIL = ("background: #c0504d; color: white; font-weight: bold;"
+                 " padding: 1px 6px; border-radius: 3px;")
+
 
 
 class MainWindow(QMainWindow):
@@ -617,6 +624,7 @@ class MainWindow(QMainWindow):
             self._physisch_uhr.stop()
             self.st_physisch.hide()
             return
+        self.st_physisch.setStyleSheet("")
         self.st_physisch.setText(sitzung.status_text())
         self.st_physisch.show()
         self._details_nachtragen()
@@ -641,6 +649,7 @@ class MainWindow(QMainWindow):
         self.st_physisch.setText(
             f"Diskette wird beschrieben: {min(st.verifies_done, gesamt)} von "
             f"{gesamt} Spuren")
+        self.st_physisch.setStyleSheet(SCHREIBT_STIL)
         self.st_physisch.show()
 
         # Fertig ist es, wenn keine Spur mehr aussteht UND gerade nichts läuft.
@@ -656,6 +665,7 @@ class MainWindow(QMainWindow):
         n = self._schreib_gesamt
         self._schreib_gesamt = 0
         self.st_physisch.clear()
+        self.st_physisch.setStyleSheet("")
         self.st_physisch.hide()
 
         schaden = ""

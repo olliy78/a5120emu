@@ -958,7 +958,11 @@ zu warten gäbe es keinen Grund.  Ein modaler Fortschrittsdialog hielte die Ober
 für Minuten an, ohne etwas zu gewinnen.  Stattdessen:
 
 * die **Statuszeile** zählt mit (`Diskette wird beschrieben: 37 von 160 Spuren`) —
-  gespeist vom selben 500-ms-Zeitgeber wie die geöffnete physische Diskette;
+  gespeist vom selben 500-ms-Zeitgeber wie die geöffnete physische Diskette, und
+  **rot hinterlegt**: das ist die Aussage „Diskette jetzt nicht entnehmen", wie die
+  Betriebsleuchte am Laufwerk.  Es ist derselbe Rotton wie im Meldungsstreifen
+  (`#c0504d`) — zwei verschiedene Rots wären schlechter als eine Doppelrolle, und
+  der Füllstand beim **Lesen** bleibt unauffällig, dort ist nichts in Gefahr;
 * der **Streifen** meldet Beginn („darf bis zum Ende nicht entnommen werden") und Ende;
 * **Laden und Überschreiben sind gesperrt**, solange es läuft — das Laufwerk ist belegt;
 * **das Fenster lässt sich nicht arglos schliessen**: läuft noch etwas, fragt

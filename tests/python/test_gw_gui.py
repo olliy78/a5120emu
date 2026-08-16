@@ -586,6 +586,10 @@ def test_ueberschreiben_laeuft_im_hintergrund(app, hfe, tmp_path, monkeypatch):
         assert fenster._physisch_uhr.isActive()
         assert "beschrieben" in fenster.st_physisch.text(), \
             f"Statuszeile sagt nichts: {fenster.st_physisch.text()!r}"
+        # Rot hinterlegt: „Diskette jetzt nicht entnehmen" — die Zeile muss sich
+        # von einer beiläufigen Statusmeldung unterscheiden.
+        assert "#c0504d" in fenster.st_physisch.styleSheet(), \
+            "der Warnanstrich fehlt"
         assert "Spuren" in fenster.info_bar.text()
         # Solange es läuft, ist das Laufwerk belegt.
         assert not fenster.act_physisch.isEnabled()
@@ -598,6 +602,8 @@ def test_ueberschreiben_laeuft_im_hintergrund(app, hfe, tmp_path, monkeypatch):
         assert fenster_auf == [], f"Meldungsfenster aufgegangen: {fenster_auf}"
         assert "beschrieben" in fenster.info_bar.text()
         assert fenster.st_physisch.isHidden()
+        assert fenster.st_physisch.styleSheet() == "", \
+            "der Warnanstrich blieb stehen"
         assert fenster.act_physisch.isEnabled()
         assert fenster.act_physisch_schreiben.isEnabled()
     finally:
