@@ -89,6 +89,21 @@ if [ "$WINDOWS" = 1 ]; then EXE=".exe"; GENERATOR=(-G Ninja); fi
 # richtig, auf einem größeren Rechner die Hälfte verschenkt.
 JOBS="${K1520_JOBS:-$(nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-4}")}"
 
+# ─── Testprotokoll (JUnit-XML) ───────────────────────────────────────────────
+# Jeder ctest-Lauf legt zusätzlich eine Maschinenfassung seines Ergebnisses ab;
+# daraus baut `tools/test_report.py` die HTML-Seite, die die CI als Artefakt
+# anhängt.  Kostet nichts (ctest schreibt sie beim Laufen mit) und ist auch
+# lokal nützlich: nach jedem `tools/dev.sh test` liegt der letzte Lauf da.
+#
+#     tools/dev.sh test
+#     python3 tools/test_report.py build/Testing/junit.xml -o protokoll.html
+#
+# ACHTUNG, der Pfad ist RELATIV ZUM BUILD-VERZEICHNIS, nicht zum Arbeits-
+# verzeichnis — `--output-junit build/Testing/junit.xml` schriebe nach
+# `build/build/Testing/…`.  Deshalb steht er hier EINMAL und relativ; damit
+# stimmt er für build/ wie für build_win/ (Cross-Bau) ohne Fallunterscheidung.
+JUNIT=(--output-junit Testing/junit.xml)
+
 c_red() { printf '\033[31m%s\033[0m\n' "$*"; }
 c_grn() { printf '\033[32m%s\033[0m\n' "$*"; }
 c_ylw() { printf '\033[33m%s\033[0m\n' "$*"; }
@@ -137,33 +152,33 @@ case "$cmd" in
         # LABEL format_integration (Boot-Disk-Kette) und format_matrix (88 Menüs).
         # Für nur diese: test-format bzw. test-matrix; für ALLES: test-all.
         c_ylw ">> ctest (build/, -j$JOBS) [ohne format_integration/format_matrix]"
-        ctest --test-dir build --output-on-failure -LE "format_(integration|matrix)" \
+        ctest --test-dir build --output-on-failure "${JUNIT[@]}" -LE "format_(integration|matrix)" \
               -j"$JOBS" "$@" ;;
     test-all)
         build_dir build
         c_ylw ">> ctest (build/) ALLE inkl. format_integration + format_matrix"
-        ctest --test-dir build --output-on-failure "$@" ;;
+        ctest --test-dir build --output-on-failure "${JUNIT[@]}" "$@" ;;
     test-format)
         build_dir build
         c_ylw ">> ctest (build/) NUR format_integration (langsam)"
-        ctest --test-dir build --output-on-failure -L format_integration "$@" ;;
+        ctest --test-dir build --output-on-failure "${JUNIT[@]}" -L format_integration "$@" ;;
     test-matrix)
         build_dir build
         c_ylw ">> ctest (build/) NUR format_matrix — 88 FORMAT.COM-Menues auf Leerdisketten"
-        ctest --test-dir build --output-on-failure -L format_matrix "$@" ;;
+        ctest --test-dir build --output-on-failure "${JUNIT[@]}" -L format_matrix "$@" ;;
     test-python)
         # pytest-Ebene: C-ABI (ctypes gegen libk1520core.so) + PySide6-GUI.
         # Braucht die gebaute Bibliothek — deshalb erst bauen.
         build_dir build
         c_ylw ">> ctest (build/, -j$JOBS) NUR Python-Tests (Label python)"
-        ctest --test-dir build --output-on-failure -L python -j"$JOBS" "$@" ;;
+        ctest --test-dir build --output-on-failure "${JUNIT[@]}" -L python -j"$JOBS" "$@" ;;
     test-level)
         # Testebenen (Labels, siehe tests/CMakeLists.txt):
         #   unit debugtools integration cli system python  —  quer dazu: fast slow
         lvl="${1:?Ebene fehlt: unit|debugtools|integration|cli|system|python}"; shift
         build_dir build
         c_ylw ">> ctest (build/, -j$JOBS) NUR Ebene '$lvl'"
-        ctest --test-dir build --output-on-failure -L "^$lvl$" -j"$JOBS" "$@" ;;
+        ctest --test-dir build --output-on-failure "${JUNIT[@]}" -L "^$lvl$" -j"$JOBS" "$@" ;;
     trace)
         build_dir build_trace
         c_ylw ">> build_trace/boot_trace$EXE $*"; exec "build_trace/boot_trace$EXE" "$@" ;;
@@ -182,7 +197,7 @@ case "$cmd" in
         # (jeder Prozessstart ~0,5 s) — Begründung oben bei JOBS.
         c_ylw ">> ctest (build_win/, unter wine, -j$JOBS) [ohne format_integration/format_matrix]"
         WINEDEBUG="${WINEDEBUG:--all}" \
-        ctest --test-dir build_win --output-on-failure -LE "format_(integration|matrix)" \
+        ctest --test-dir build_win --output-on-failure "${JUNIT[@]}" -LE "format_(integration|matrix)" \
               -j"$JOBS" "$@" ;;
     check)
         for d in build build_trace; do [ -d "$d" ] && build_dir "$d" || c_ylw ">> $d: nicht vorhanden"; done ;;

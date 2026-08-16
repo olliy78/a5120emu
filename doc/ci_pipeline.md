@@ -132,11 +132,13 @@ installiert `requirements-dev.txt` hinein — **ohne das registriert CMake die
 Python-Testebene nicht** und die neun `py_*`-Fälle fallen still aus (siehe
 `tests/python/CMakeLists.txt`).
 
-- **Erwartet:** 789 Tests grün (Stand 2026-08-10).
+- **Erwartet:** 982 Tests grün (Stand 2026-08-16).
 - **ccache** wird zwischen Läufen aufbewahrt; der erste Lauf ist der langsamste.
-- **Bei Fehlschlag** lädt der Job `build/Testing/Temporary/LastTest.log` und `logs/`
-  als Artefakt `ci-logs` hoch (7 Tage). Lokal nachstellen:
-  `tools/dev.sh test -R <Namensmuster> --output-on-failure`.
+- **Testprotokoll** als Artefakt `testprotokoll-linux` (30 Tage) plus Kurzfassung
+  in der Zusammenfassung des Laufs — siehe §4.5.
+- **Bei Fehlschlag** lädt der Job `build/Testing/Temporary/LastTest.log`,
+  `build/Testing/junit.xml` und `logs/` als Artefakt `ci-logs` hoch (7 Tage). Lokal
+  nachstellen: `tools/dev.sh test -R <Namensmuster> --output-on-failure`.
 
 Anstoßen:
 
@@ -314,6 +316,74 @@ nicht jedes Mal die volle Runde zu zahlen.
 > Die `-j`-Angabe ist dabei kein Zierrat, sondern der Unterschied zwischen 15 Minuten
 > und 15 Sekunden: `ctest` startet jeden der ~900 Fälle als eigenen Prozess, und jeder
 > `wine`-Start kostet rund eine halbe Sekunde. `dev.sh win` setzt sie selbst.
+
+### 4.5 Das Testprotokoll (`tools/test_report.py`)
+
+Jeder Testlauf hinterlässt eine **eigenständige HTML-Seite** — was gelaufen ist, was
+wie lange brauchte, und im Fehlerfall der volle Text des Fehlschlags. Drei Workflows
+hängen sie an:
+
+| Workflow | Artefakt | Läufe darin |
+|----------|----------|-------------|
+| `ci.yml` | `testprotokoll-linux` | Linux (GCC) |
+| `windows-ci.yml` | `testprotokoll-windows` | Windows (MSVC) |
+| `slow-tests.yml` | `testprotokoll-langsam` | Tiefe (`format_integration`) und Breite (`format_matrix`) nebeneinander |
+
+Zusätzlich steht die **Kurzfassung als Tabelle direkt in der Zusammenfassung des
+Laufs** (Actions → Lauf → *Summary*) — inklusive Namen der fehlgeschlagenen Fälle.
+Dafür muss man kein Artefakt herunterladen.
+
+Wie es zusammenhängt:
+
+```
+tools/dev.sh test  ──► ctest --output-junit Testing/junit.xml
+                            │
+                            ▼
+                   build/Testing/junit.xml   (Maschinenfassung, ~850 KB)
+                            │
+                            ▼
+   python3 tools/test_report.py Linux:build/Testing/junit.xml \
+       --title "…" -o testprotokoll.html --summary-md - >> $GITHUB_STEP_SUMMARY
+                            │
+                            ▼
+                   testprotokoll.html        (~160 KB, ohne Nachladen)
+```
+
+**Auch lokal**: `tools/dev.sh` schreibt die JUnit-XML bei *jedem* ctest-Lauf mit
+(kostet nichts), also genügt nach einer Runde
+
+```sh
+python3 tools/test_report.py build/Testing/junit.xml -o protokoll.html
+xdg-open protokoll.html
+```
+
+Gegliedert wird nach der Taxonomie aus `tests/README.md`: das ctest-**Label** ist die
+Ebene (`unit`/`debugtools`/`integration`/`cli`/`system`/`python`), der
+GoogleTest-**Suitenname** die Gruppe darin. Fehlschläge stehen oben und aufgeklappt,
+bestandene Fälle eingeklappt; die Ausgabe eines bestandenen Falls kommt **nicht** mit
+in die Seite (sonst wären es 850 KB statt 160).
+
+Mehrere Läufe lassen sich in eine Seite legen — der Name vor dem Doppelpunkt wird zur
+Überschrift:
+
+```sh
+python3 tools/test_report.py Linux:linux.xml "Windows (MSVC):windows.xml" -o beide.html
+```
+
+> **Falle, die zweimal Zeit gekostet hat:** `ctest --output-junit` löst seinen Pfad
+> **relativ zum Build-Verzeichnis** auf, nicht zum Arbeitsverzeichnis —
+> `--output-junit build/Testing/junit.xml` landet in `build/build/Testing/…`. Deshalb
+> steht der Pfad **einmal** in `tools/dev.sh` (`JUNIT=(--output-junit
+> Testing/junit.xml)`) und nirgends sonst; damit stimmt er für `build/` wie für
+> `build_win/`.
+
+> **Ein einbuchstabiger Laufname geht nicht.** `L:lauf.xml` wird als Windows-Pfad
+> gelesen (Laufwerksbuchstabe), nicht als Name — der Lauf hieße `L` und die Datei
+> wäre nicht zu finden. Namen ab zwei Zeichen.
+
+Wächter: `py_testprotokoll` (`tests/python/test_testprotokoll.py`, 17 Fälle in der
+Standardregression) — geprüft wird vor allem, was nicht verlorengehen darf: der
+Fehlschlag, seine Ausgabe, der Rückgabewert, die Zuordnung zur Ebene.
 
 ---
 

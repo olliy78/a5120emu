@@ -18,6 +18,17 @@ venv/bin/python3 -m pytest tests/python -q -k c_api # einzelne Gruppe
 ```
 
 CMake registriert je Testmodul **einen** ctest-Fall (`py_c_api`, `py_binding`, …).
+Die Modulliste wird dabei **eingelesen** (`file(GLOB … test_*.py CONFIGURE_DEPENDS)`),
+nicht gepflegt: ein neues `test_xyz.py` wird beim nächsten Bau von selbst zu
+`py_xyz`. Bis 2026-08-16 stand die Liste von Hand in der `CMakeLists.txt` — wer die
+Zeile vergaß, hatte einen Test, der nirgends lief und dessen Fehlen niemandem auffiel.
+
+> **Modulnamen dürfen nicht mit einem Werkzeug kollidieren.** pytest importiert
+> Testdateien ohne Paket, also belegt `tests/python/test_report.py` den Modulnamen
+> `test_report` — ein `import test_report` holte dann die Testdatei statt
+> `tools/test_report.py`. Deshalb heißt der Wächter dafür `test_testprotokoll.py` und
+> lädt das Werkzeug über seinen Pfad (`importlib`).
+
 Voraussetzungen werden beim Konfigurieren geprüft; fehlen sie, werden die Tests
 nicht registriert und CMake sagt, was zu installieren ist:
 
