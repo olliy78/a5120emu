@@ -67,6 +67,26 @@ K1520_API K1520Disk k1520d_open_physical(K1520Sync sync, const char* fs_name,
                                          bool read_only);
 
 /**
+ * @brief Das Speicherabbild der geoeffneten Diskette auf ein **echtes Laufwerk** legen.
+ *
+ * Kopiert jede bekannte Spur in das Medium hinter @p sync.  Damit gilt sie dort als
+ * **geaendert**, und der Arbeitsfaden schreibt sie im Hintergrund auf die eingelegte
+ * Diskette — samt Pruef-Lesen (§7.1).  Gewartet wird nicht; der Aufrufer sieht den
+ * Fortschritt ueber @ref k1520s_stats und schliesst mit @ref k1520s_flush ab.
+ *
+ * Das ist der Weg, eine geladene `.hfe` auf eine echte Diskette zu bringen: die
+ * Quelle darf eine Datei sein, das Ziel ist immer ein Laufwerk.
+ *
+ * **Es wird nichts vorher gelesen.**  Was auf der Zieldiskette stand, ist danach fort;
+ * die Rueckfrage gehoert in die Oberflaeche.
+ *
+ * @return Zahl der eingestellten Spuren, oder -1 bei einem Fehler (Grund ueber
+ *         @ref k1520d_last_error).  Passt die Diskette nicht in die eingestellte
+ *         Laufwerksgeometrie, wird **gar nichts** kopiert.
+ */
+K1520_API int k1520d_write_to_physical(K1520Disk h, K1520Sync sync);
+
+/**
  * @brief Wie viele Spuren die Formaterkennung anfassen wird (Sondenzahl).
  *
  * Fuer die Fortschrittsanzeige: an einem echten Laufwerk ist die Zahl der

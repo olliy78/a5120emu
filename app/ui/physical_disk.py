@@ -236,9 +236,18 @@ class PhysicalDiskDialog(QDialog):
     """
 
     def __init__(self, parent=None, *, num_cyls: int = 80, num_heads: int = 2,
-                 drive_label: str = "", allow_write: bool = True):
+                 drive_label: str = "", allow_write: bool = True,
+                 writable: bool = False, titel: str = ""):
+        """
+        Args:
+            allow_write: darf überhaupt geschrieben werden?
+            writable: Vorbelegung des Hakens.  Vorgabe **aus** — beim blossen Lesen
+                soll die Diskette gar nicht in Gefahr sein.  Wer sie ausdrücklich
+                überschreiben will, hat das vorher schon bestätigt; dort wäre ein
+                leerer Haken eine Stolperfalle.
+        """
         super().__init__(parent)
-        self.setWindowTitle("Physisches Laufwerk einlegen")
+        self.setWindowTitle(titel or "Physisches Laufwerk einlegen")
         self._num_cyls = num_cyls
         self._num_heads = num_heads
 
@@ -283,7 +292,7 @@ class PhysicalDiskDialog(QDialog):
         form.addRow("", self._verify)
 
         self._schreiben = QCheckBox("Auf die echte Diskette schreiben")
-        self._schreiben.setChecked(False)
+        self._schreiben.setChecked(bool(writable) and allow_write)
         self._schreiben.setEnabled(allow_write)
         self._schreiben.setToolTip(
             "Ohne Haken bleibt die Diskette unangetastet; Änderungen leben nur im "

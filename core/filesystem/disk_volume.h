@@ -327,6 +327,21 @@ public:
     uint8_t mediumCylinders() const;
     uint8_t mediumHeads()     const;
 
+    /**
+     * @brief Das ganze Speicherabbild in ein anderes Medium legen (Diskette kopieren).
+     *
+     * Jede **bekannte** Spur wandert per @ref DiskMedium::setTrack hinueber und gilt
+     * dort damit als geaendert.  Haengt das Ziel an einem @ref TrackSync, stellt genau
+     * das sie zum Schreiben auf die eingelegte Diskette ein — der Weg, eine geladene
+     * `.hfe` auf ein echtes Laufwerk zu bringen.
+     *
+     * Passt die Quelle nicht in die Geometrie des Ziels, wird **gar nichts** kopiert:
+     * eine halb ueberschriebene Diskette waere das schlechteste Ergebnis.
+     *
+     * @return Zahl der kopierten Spuren, -1 bei Fehler (@ref lastError).
+     */
+    int copyTo(DiskMedium& ziel) const;
+
     /// @brief Eine Spur als lueckenlose Abschnittsfolge (Sektor/Gap/unformatiert).
     ///
     /// @warning **Laedt nach**, wenn die Spur an einem echten Laufwerk noch unbekannt
@@ -462,6 +477,10 @@ public:
     bool backup() const     { return backup_; }
 
     const std::string& lastError() const { return last_error_; }
+
+    /// @brief Fehlertext von aussen setzen — fuer die C-ABI, die eigene
+    ///        Vorbedingungen prueft (@ref k1520d_last_error liest ihn von hier).
+    void noteError(const std::string& why) const { last_error_ = why; }
 
 private:
     DiskVolume() = default;

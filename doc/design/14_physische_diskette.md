@@ -646,8 +646,10 @@ vierter Knopf **„Physisch…"**.  Danach:
 
 ### 12.2 k1520DiskTool
 
-Im Menü *Datei* steht unter *Abbild öffnen…* / *Neue Diskette…* der Punkt
-**„Physisches Laufwerk…"** (Strg+Umschalt+O).  Das Öffnen läuft über `mit_fortschritt()`
+Im Menü ***Diskette*** stehen ganz oben die beiden Richtungen des echten Laufwerks
+beieinander — *Physische Diskette laden…* (Strg+Umschalt+O) und *Physische Diskette
+überschreiben…*; beide auch in der Symbolleiste.  Sie gehören zur **Diskette**, nicht
+zu *Datei*: „Datei" meint das Abbild, hier geht es um den Datenträger im Laufwerk.  Das Öffnen läuft über `mit_fortschritt()`
 — es misst eine Stichprobe (§11.2a) und braucht dafür rund zehn Sekunden; die Anzeige
 zählt die Spuren mit und lässt sich abbrechen.
 Danach ist die Diskette eine Diskette wie jede andere; der Kopf nennt sie
@@ -929,6 +931,34 @@ DiskTool-Entwurfs).  Drei Feinheiten:
   `path=""`).  Kopfzeile und Fenstertitel bekommen ihre Beschriftung deshalb aus
   `_bezeichnung()` / `_kurzname()`, und `DiskHeader.setze(tool, name)` nimmt sie als
   zweites Argument entgegen.  Ohne das bliebe die Pfadzeile leer.
+
+### 12.4 Eine Datei auf eine echte Diskette schreiben
+
+Der Gegenweg zum Laden: Quelle ist das, was gerade offen ist — auch eine `.hfe` —,
+Ziel ein echtes Laufwerk.  `DiskVolume::copyTo()` legt jede **bekannte** Spur per
+`setTrack` in das Medium hinter dem Synchronisierer; damit gilt sie dort als
+**geändert**, und der gewöhnliche Rückschreibweg (§7) erledigt den Rest, samt
+Prüf-Lesen.  Es gibt also keinen zweiten Schreibpfad — nur eine zweite Quelle.
+
+Drei Festlegungen:
+
+1. **Erst fragen, dann alles andere.**  Die Rückfrage steht VOR dem Laufwerksdialog:
+   hier geht kein Abbild verloren, sondern eine Diskette, unwiederbringlich.  Wer
+   abbricht, soll nicht erst Laufwerk und Geometrie ausgefüllt haben.
+2. **Passt es nicht, wird gar nichts geschrieben.**  Hat die Quelle mehr Zylinder oder
+   Seiten als das eingestellte Laufwerk, bricht `copyTo` ab, bevor die erste Spur
+   hinausgeht — eine halb überschriebene Diskette wäre das schlechteste Ergebnis: die
+   alte ist fort, die neue unvollständig.
+3. **Unbekannte Spuren der Quelle bleiben liegen.**  Ist die Quelle selbst ein
+   Laufwerk, tragen sie bedeutungslose Bytes; sie zu kopieren schriebe Müll.
+
+Die Sitzung gehört **nicht** zum offenen Werkzeug — sie ist nur das Ziel dieses einen
+Vorgangs und wird danach wieder beendet.  C-ABI: `k1520d_write_to_physical`.
+Wächter: `test_eine_datei_laesst_sich_auf_eine_echte_diskette_schreiben` (schreibt eine
+UDOS-Diskette auf ein Laufwerk, das eine CP/A-Diskette trägt, und liest sie zurück),
+`test_ueberschreiben_verweigert_eine_zu_kleine_diskette`,
+`test_ueberschreiben_fragt_vorher_und_bricht_bei_nein_ab`,
+`test_beide_richtungen_stehen_im_diskettenmenue`.
 
 ### 12.3 Kommandozeile
 

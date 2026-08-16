@@ -18,6 +18,8 @@ from gw_fake import fake_session
 
 pytest.importorskip("PySide6")
 
+from PySide6.QtWidgets import QMessageBox      # noqa: E402  (erst nach importorskip)
+
 FIXTURE = "udos_boot_scp.hfe"
 
 
@@ -452,6 +454,85 @@ def test_ohne_befund_verschwindet_der_streifen_wieder(app, monkeypatch, fixture_
         assert fenster.info_bar.isHidden(), "der Streifen bleibt stehen"
     finally:
         fenster._close_tool()
+
+
+def test_beide_richtungen_stehen_im_diskettenmenue(app):
+    """Laden und Überschreiben gehören zur DISKETTE, nicht zu „Datei".
+
+    „Datei" meint das Abbild; hier geht es um den Datenträger im Laufwerk — und die
+    beiden Richtungen desselben Wegs sucht man beieinander.  Beide sind zusätzlich
+    in der Symbolleiste, mit Symbol.
+    """
+    from app.disktool.ui.main_window import MainWindow as DiskToolWindow
+
+    fenster = DiskToolWindow()
+    try:
+        def menue(titel):
+            """Beschriftungen eines Menüs.
+
+            Die Texte werden gelesen, solange das QMenu noch lebt.  Gäbe man
+            `a.menu().actions()` heraus, stürbe der QMenu-Wrapper beim Verlassen
+            der Funktion und risse die Aktionen mit — PySide reicht das Eigentum
+            an `QAction.menu()` durch, und man bekommt „Internal C++ object
+            already deleted" an einer Stelle, die damit nichts zu tun hat.
+            """
+            for a in fenster.menuBar().actions():
+                if a.text().replace("&", "") == titel:
+                    m = a.menu()
+                    return [x.text().replace("&", "") for x in m.actions()]
+            raise AssertionError(f"Menü {titel} fehlt")
+
+        diskette = menue("Diskette")
+        datei    = menue("Datei")
+        assert "Physische Diskette laden…" in diskette
+        assert "Physische Diskette überschreiben…" in diskette
+        assert not [t for t in datei if "hysisch" in t], \
+            f"noch im Datei-Menü: {datei}"
+
+        in_leiste = set(fenster.leiste.actions())
+        for a in (fenster.act_physisch, fenster.act_physisch_schreiben):
+            assert a in in_leiste, f"{a.text()} fehlt in der Symbolleiste"
+            assert not a.icon().isNull(), f"{a.text()} ohne Symbol"
+    finally:
+        fenster.close()
+
+
+def test_ueberschreiben_fragt_vorher_und_bricht_bei_nein_ab(app, hfe, monkeypatch):
+    """Vor dem Überschreiben steht die Rückfrage — und ein Nein tut gar nichts.
+
+    Hier geht kein Abbild verloren, sondern eine **Diskette**, unwiederbringlich.
+    Die Rückfrage kommt deshalb VOR dem Laufwerksdialog: wer abbricht, soll nicht
+    erst Laufwerk und Geometrie ausgefüllt haben.
+    """
+    from app.disktool.ui.main_window import MainWindow as DiskToolWindow
+    from app.ui import physical_disk
+
+    gefragt = []
+    monkeypatch.setattr("app.disktool.ui.main_window.QMessageBox.question",
+                        lambda parent, titel, text, *a, **k: (
+                            gefragt.append(text), QMessageBox.Cancel)[1])
+    dialog = []
+    monkeypatch.setattr(physical_disk.PhysicalDiskDialog, "frage",
+                        classmethod(lambda cls, parent=None, **kw: dialog.append(kw)))
+    gestartet = []
+    monkeypatch.setattr(physical_disk.PhysicalSession, "start",
+                        classmethod(lambda cls, **kw: gestartet.append(kw)))
+
+    fenster = DiskToolWindow()
+    try:
+        assert fenster.open_image(hfe)
+        assert fenster.act_physisch_schreiben.isEnabled()
+        fenster.act_physisch_schreiben.trigger()
+
+        assert gefragt, "es wurde nicht gefragt"
+        text = gefragt[0]
+        assert "überschreibt" in text and "vorhandenen Daten" in text
+        assert dialog == [], "der Laufwerksdialog kam VOR der Rückfrage"
+        assert gestartet == [], "das Laufwerk wurde trotz Abbruch geöffnet"
+    finally:
+        fenster._close_tool()
+        fenster.close()
+
 
 
 def test_diskeditor_oeffnet_sofort_und_waechst_mit(app, hfe, monkeypatch):

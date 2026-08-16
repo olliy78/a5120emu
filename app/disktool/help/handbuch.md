@@ -147,7 +147,7 @@ und die Dienstprogramme, bei UDOS mindestens `OS` und `ZDOS`.
 
 ## Eine echte Diskette am Greaseweazle
 
-*Datei ▸ Physisches Laufwerk* (Strg+Umschalt+O) öffnet keine Datei, sondern eine
+*Diskette ▸ Physische Diskette laden* (Strg+Umschalt+O) öffnet keine Datei, sondern eine
 **echte Diskette** in einem echten 5,25″- oder 8″-Laufwerk, das über einen
 [Greaseweazle](https://github.com/keirf/greaseweazle)-Adapter am USB hängt. Ab
 dann arbeitet das Werkzeug wie mit einem Abbild — Dateien holen, schreiben,
@@ -179,6 +179,19 @@ im Streifen und unter *Diskette ▸ Diskette neu beschreiben*: neue Diskette
 einlegen, alles noch einmal wegschreiben. Nur bereits gelesene Spuren können
 dabei geschrieben werden; was nie gelesen wurde, ist keine Aussage über den
 Inhalt und bleibt deshalb weg.
+
+### Eine Diskette beschreiben
+
+*Diskette ▸ Physische Diskette überschreiben* geht den umgekehrten Weg: was
+gerade geöffnet ist — auch eine `.hfe`-Datei — wird auf eine **echte** Diskette
+geschrieben. So bringt man ein Abbild zurück auf einen Datenträger.
+
+Zuerst kommt die Rückfrage, denn hier geht kein Abbild verloren, sondern eine
+Diskette: **ihr bisheriger Inhalt ist danach fort.** Dann wird das Laufwerk
+gewählt, und die Spuren gehen im Hintergrund hinaus — jede geschrieben *und*
+zurückgelesen. Passt das Abbild nicht in die eingestellte Laufwerksgeometrie
+(mehr Spuren oder Seiten, als das Laufwerk hat), wird **gar nichts** geschrieben;
+eine halb überschriebene Diskette wäre das schlechteste Ergebnis.
 
 Der Menüpunkt ist gesperrt, wenn die Greaseweazle-Hosttools fehlen; sein
 Kurzhinweis sagt dann, was zu tun ist:
@@ -241,7 +254,7 @@ gut. Dann hilft ein Blick in die Dateiliste: das falsche Profil zeigt Unsinn.
 |--------|---------|
 | Strg+O | Abbild öffnen |
 | Strg+N | Neue Diskette |
-| Strg+Umschalt+O | Physisches Laufwerk öffnen |
+| Strg+Umschalt+O | Physische Diskette laden |
 | Strg+S | Speichern |
 | Strg+Umschalt+S | Speichern unter |
 | Strg+Umschalt+A | Archivieren |

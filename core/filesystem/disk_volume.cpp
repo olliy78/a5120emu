@@ -1063,6 +1063,32 @@ uint8_t DiskVolume::mediumHeads() const {
     return disk_ ? disk_->medium().numHeads() : 0;
 }
 
+int DiskVolume::copyTo(DiskMedium& ziel) const {
+    if (!disk_) { fail("keine Diskette geoeffnet"); return -1; }
+    const DiskMedium& quelle = disk_->medium();
+
+    if (quelle.numCylinders() > ziel.numCylinders()
+        || quelle.numHeads() > ziel.numHeads()) {
+        fail("Die Diskette hat " + std::to_string(quelle.numCylinders())
+             + " Spuren auf " + std::to_string(quelle.numHeads())
+             + " Seite(n), das Ziel nur " + std::to_string(ziel.numCylinders())
+             + " auf " + std::to_string(ziel.numHeads()) + ".");
+        return -1;
+    }
+
+    int n = 0;
+    for (uint8_t c = 0; c < quelle.numCylinders(); ++c)
+        for (uint8_t h = 0; h < quelle.numHeads(); ++h) {
+            // Eine nie gelesene Spur der QUELLE traegt bedeutungslose Bytes — das gibt
+            // es nur, wenn die Quelle selbst ein Laufwerk ist.  Sie zu kopieren
+            // schriebe Muell auf die Zieldiskette.  `peek` laedt bewusst nicht nach.
+            if (quelle.state(c, h) == TrackState::Unknown) continue;
+            ziel.setTrack(c, h, quelle.peek(c, h));
+            ++n;
+        }
+    return n;
+}
+
 TrackView DiskVolume::trackView(uint8_t cyl, uint8_t head) const {
     if (!disk_) return TrackView{};
     return scanTrack(disk_->medium().track(cyl, head));

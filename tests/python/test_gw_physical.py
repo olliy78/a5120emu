@@ -264,6 +264,73 @@ def test_eine_leere_spur_verdirbt_nicht_die_ganze_diskette(fixture_disks):
             worker.stop()
 
 
+def test_eine_datei_laesst_sich_auf_eine_echte_diskette_schreiben(fixture_disks):
+    """Der Gegenweg: geladene ``.hfe`` → echtes Laufwerk (§12.4).
+
+    Geprüft wird die ganze Kette an ZWEI verschiedenen Disketten: die Zieldiskette
+    trägt anfangs CP/A, danach muss sie die UDOS-Quelle tragen — mit derselben
+    Dateiliste.  Nur so ist belegt, dass wirklich geschrieben und nicht bloss
+    gelesen wurde.
+    """
+    quelle = fixture_disks / "udos_boot_scp.hfe"
+    ziel   = fixture_disks / "cpa_cpa780_k5601_noclock.hfe"
+    if not (quelle.exists() and ziel.exists()):
+        pytest.skip("Fixtures fehlen")
+
+    geraet = HfeDevice(ziel)          # das „Laufwerk" mit der ANDEREN Diskette
+    with DiskTool.open(ziel) as vorher:
+        assert vorher.filesystem != "udos_ds77", "Zieldiskette trägt schon UDOS"
+
+    with DiskTool.open(quelle) as datei:
+        soll = sorted(e.side_prefix + e.name for e in datei.list())
+        with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
+                  writable=True, read_ahead=False) as s:
+            worker = TrackWorker(s, geraet, poll_ms=10)
+            worker.start()
+            try:
+                n = datei.write_to_physical(s)
+                assert n == geraet.num_cyls * geraet.num_heads, \
+                    f"nur {n} Spuren eingestellt"
+                assert s.flush(120_000), "Zurückschreiben scheiterte"
+                st = s.stats
+                assert st.tracks_dirty == 0 and st.tracks_defect == 0
+                # Geschrieben UND zurückgelesen — der Verify-Lauf gehört dazu (§7.1).
+                assert st.writes_done == n and st.verifies_done == n
+            finally:
+                worker.stop()
+
+    with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
+              read_ahead=False) as s2:
+        worker = TrackWorker(s2, geraet, poll_ms=10)
+        worker.start()
+        try:
+            with DiskTool.open_physical(s2) as danach:
+                assert danach.filesystem == "udos_ds77", \
+                    f"auf der Diskette liegt {danach.filesystem}"
+                assert sorted(e.side_prefix + e.name
+                              for e in danach.list()) == soll
+        finally:
+            worker.stop()
+
+
+def test_ueberschreiben_verweigert_eine_zu_kleine_diskette(fixture_disks):
+    """Passt es nicht, wird **gar nichts** geschrieben.
+
+    Eine halb überschriebene Diskette wäre das schlechteste Ergebnis: die alte ist
+    fort, die neue unvollständig.  Deshalb prüft `copyTo` die Geometrie vorher.
+    """
+    quelle = fixture_disks / "udos_boot_scp.hfe"      # 80 Zylinder
+    if not quelle.exists():
+        pytest.skip("Fixture fehlt")
+
+    with DiskTool.open(quelle) as datei:
+        with Sync(num_cyls=40, num_heads=1, writable=True, read_ahead=False) as s:
+            with pytest.raises(K1520DiskError) as fehler:
+                datei.write_to_physical(s)
+            assert "80" in str(fehler.value) and "40" in str(fehler.value)
+            assert s.stats.tracks_dirty == 0, "es wurde doch etwas eingestellt"
+
+
 def test_die_sondenzahl_bleibt_klein():
     """Acht Spuren — nicht acht Zylinder auf beiden Seiten.
 

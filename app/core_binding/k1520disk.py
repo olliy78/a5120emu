@@ -69,6 +69,8 @@ _lib.k1520d_open_physical.argtypes = [ctypes.c_void_p, _CS, ctypes.c_bool]
 _lib.k1520d_open_physical.restype = _H
 _lib.k1520d_probe_track_count.argtypes = [ctypes.c_int, ctypes.c_int]
 _lib.k1520d_probe_track_count.restype = ctypes.c_int
+_lib.k1520d_write_to_physical.argtypes = [_H, ctypes.c_void_p]
+_lib.k1520d_write_to_physical.restype = ctypes.c_int
 _lib.k1520d_create.argtypes = [_CS, _CS, _CS]
 _lib.k1520d_create.restype = _H
 _lib.k1520d_create_bootable.argtypes = [_CS, _CS, _CS, _CS]
@@ -581,6 +583,30 @@ class DiskTool:
         if not h:
             raise K1520DiskError(_s(_lib.k1520d_last_open_error()))
         return cls(h, "")
+
+    def write_to_physical(self, sync) -> int:
+        """Das Speicherabbild auf ein **echtes Laufwerk** legen.
+
+        Jede bekannte Spur wandert in das Medium hinter ``sync`` und gilt dort als
+        geändert — der Arbeitsfaden schreibt sie im Hintergrund auf die eingelegte
+        Diskette.  Gewartet wird nicht; der Fortschritt steht in ``sync.stats``,
+        abgeschlossen wird mit ``sync.flush()``.
+
+        So kommt eine geladene ``.hfe`` auf eine echte Diskette.  **Was auf der
+        Zieldiskette stand, ist danach fort.**
+
+        Returns:
+            Zahl der eingestellten Spuren.
+
+        Raises:
+            K1520DiskError: wenn gar nichts kopiert wurde (z. B. passt die Diskette
+                nicht in die eingestellte Laufwerksgeometrie).
+        """
+        n = int(_lib.k1520d_write_to_physical(self._h,
+                                              getattr(sync, "handle", sync)))
+        if n < 0:
+            raise K1520DiskError(self._fail())
+        return n
 
     @staticmethod
     def probe_track_count(num_cyls: int, num_heads: int) -> int:

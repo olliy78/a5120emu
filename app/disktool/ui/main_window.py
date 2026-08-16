@@ -190,10 +190,6 @@ class MainWindow(QMainWindow):
         self.menue_zuletzt = m.addMenu("&Zuletzt geöffnet")
         m.addAction(self.act_neu)
         m.addSeparator()
-        # Die echte Diskette steht neben dem Abbild: für den Anwender ist beides
-        # „eine Diskette öffnen", nur die Herkunft unterscheidet sich (§14 §11.2).
-        m.addAction(self.act_physisch)
-        m.addSeparator()
         m.addAction(self.act_speichern)
         m.addAction(self.act_speichern_unter)
         m.addAction(self.act_archivieren)
@@ -211,6 +207,11 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_eigenschaften)
 
         m = leiste.addMenu("Dis&kette")
+        # Beide Richtungen der echten Diskette zuerst und beieinander: laden und
+        # überschreiben sind derselbe Weg, einmal herein und einmal hinaus.
+        m.addAction(self.act_physisch)
+        m.addAction(self.act_physisch_schreiben)
+        m.addSeparator()
         m.addAction(self.act_schreibschutz)
         self.menue_fs = m.addMenu("&Dateisystem übersteuern")
         self._baue_fs_menue()
@@ -265,6 +266,7 @@ class MainWindow(QMainWindow):
 
         for gruppe in (
             (self.act_oeffnen, self.act_neu),
+            (self.act_physisch, self.act_physisch_schreiben),
             (self.act_speichern, self.act_speichern_unter, self.act_archivieren),
             (self.act_diskeditor, self.act_bootabbild),
             (self.act_holen, self.act_schreiben, self.act_loeschen),
@@ -522,6 +524,12 @@ class MainWindow(QMainWindow):
         # ist er nicht bloss gesperrt, sondern gar nicht da.
         self.act_neu_beschreiben.setVisible(self._physisch is not None)
         self.act_neu_beschreiben.setEnabled(schreibbar and self._physisch is not None)
+
+        # Überschreiben braucht eine QUELLE (die offene Diskette), aber keinen
+        # aufgehobenen Schreibschutz: der schützt die geöffnete Diskette, und die
+        # wird hier nur gelesen.  Was Schutz braucht, ist die Diskette im Laufwerk —
+        # dafür steht die Rückfrage.
+        self.act_physisch_schreiben.setEnabled(offen)
 
         self._schutz_anzeigen()
 
@@ -892,6 +900,88 @@ class MainWindow(QMainWindow):
         if wahl is None:
             return
         self.open_physical(**wahl)
+
+    def _physisch_schreiben_dialog(self) -> None:
+        """Das geöffnete Abbild auf eine **echte** Diskette schreiben.
+
+        Der Gegenweg zu „Physische Diskette laden": die Quelle ist das, was gerade
+        offen ist — auch eine `.hfe`-Datei —, das Ziel ein echtes Laufwerk.  Jede
+        bekannte Spur wird ins Medium des Laufwerks gelegt und gilt dort als
+        geändert; den Rest erledigt der Arbeitsfaden im Hintergrund, samt
+        Prüf-Lesen (§7.1).
+
+        **Erst fragen, dann alles andere.**  Hier geht kein Abbild verloren, sondern
+        eine Diskette — und zwar unwiederbringlich, bevor irgendetwas zu sehen ist.
+        """
+        from app.ui.physical_disk import (PhysicalDiskDialog, PhysicalSession,
+                                          verfuegbarkeit)
+
+        if self.tool is None:
+            return
+        ok, grund = verfuegbarkeit()
+        if not ok:
+            self._fehler("Physische Diskette überschreiben", grund)
+            return
+
+        if QMessageBox.question(
+                self, "Physische Diskette überschreiben",
+                "Die Funktion schreibt das aktuelle Speicherabbild auf eine physische "
+                "Diskette und überschreibt dabei alle vorhandenen Daten.\n\n"
+                "Sind Sie sicher, dass Sie das wollen?",
+                QMessageBox.Cancel | QMessageBox.Ok,
+                QMessageBox.Cancel) != QMessageBox.Ok:
+            return
+
+        # Die Geometrie der offenen Diskette vorschlagen — auf eine kleinere passt
+        # sie ohnehin nicht, und der Bediener soll nicht raten müssen.
+        wahl = PhysicalDiskDialog.frage(self,
+                                        num_cyls=self.tool.medium_cylinders,
+                                        num_heads=self.tool.medium_heads,
+                                        writable=True,
+                                        titel="Diskette zum Überschreiben einlegen")
+        if wahl is None:
+            return
+        wahl["writable"] = True          # ohne Schreibrecht ist der Punkt sinnlos
+        wahl["read_ahead"] = False       # gelesen wird hier nichts, nur geschrieben
+
+        try:
+            sitzung = PhysicalSession.start(**wahl)
+        except Exception as e:                       # noqa: BLE001
+            self._fehler("Physische Diskette überschreiben",
+                         f"Das Laufwerk liess sich nicht oeffnen:\n{e}")
+            return
+
+        try:
+            try:
+                n = self.tool.write_to_physical(sitzung)
+            except K1520DiskError as e:
+                self._fehler("Physische Diskette überschreiben", str(e))
+                return
+            self.log(f"{n} Spuren werden auf die eingelegte Diskette geschrieben")
+
+            _, fehler = mit_fortschritt(
+                self, sitzung, lambda: sitzung.sync.flush(900_000),
+                titel="Physische Diskette überschreiben",
+                text="Das Abbild wird geschrieben und zurückgelesen…",
+                ziel=n)
+            if fehler is not None:
+                self._fehler("Physische Diskette überschreiben", str(fehler))
+                return
+            schaden = sitzung.defect_tracks
+            if schaden:
+                self._fehler("Physische Diskette überschreiben",
+                             sitzung.defekt_meldung(schaden))
+                return
+            QMessageBox.information(
+                self, "Physische Diskette überschreiben",
+                f"{n} Spuren wurden geschrieben und fehlerfrei zurückgelesen.")
+        finally:
+            # Die Sitzung gehört NICHT zum offenen Werkzeug — sie war nur das Ziel
+            # dieses einen Vorgangs und wird hier auch wieder beendet.
+            try:
+                sitzung.close()
+            except Exception:                        # noqa: BLE001
+                pass
 
     def _close_physisch(self) -> None:
         """Laufende Sitzung am echten Laufwerk beenden (schreibt Ausstehendes zurück)."""

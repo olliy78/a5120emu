@@ -113,6 +113,20 @@ extern "C" K1520Disk k1520d_open(const char* path, const char* fs_name, bool rea
     return h.release();
 }
 
+extern "C" int k1520d_write_to_physical(K1520Disk h, K1520Sync sync) {
+    if (!h) return -1;
+    Handle* p = H(h);
+    K1520SyncHandle* sh = k1520s_handle(sync);
+    if (!sh || !sh->image) {
+        // In den Fehlertext des Volumes, denn genau von dort holt ihn
+        // k1520d_last_error — ein eigener Puffer wuerde beim naechsten Aufruf
+        // ueberschrieben.
+        p->vol->noteError("kein physisches Laufwerk (oder schon angemeldet)");
+        return -1;
+    }
+    return p->vol->copyTo(sh->image->medium());
+}
+
 extern "C" int k1520d_probe_track_count(int num_cyls, int num_heads) {
     if (num_cyls <= 0 || num_heads <= 0 || num_cyls > 255 || num_heads > 255) return 0;
     return static_cast<int>(GeometryProbe::probeTracks(

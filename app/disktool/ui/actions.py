@@ -28,10 +28,6 @@ _SPEC: List[Tuple] = [
      "Ein Diskettenabbild öffnen (.hfe, .dmk, .img)", "_oeffnen_dialog", False),
     ("neu", "&Neue Diskette…", "disk-new", "Ctrl+N",
      "Eine Diskette anlegen — wahlweise bootfähig", "_neu_dialog", False),
-    ("physisch", "&Physisches Laufwerk…", None, "Ctrl+Shift+O",
-     "Eine ECHTE Diskette in einem echten Laufwerk am Greaseweazle öffnen — "
-     "das Öffnen misst eine Stichprobe der Spuren und dauert etwa zehn Sekunden",
-     "_physisch_dialog", False),
     ("speichern", "&Speichern", "save", "Ctrl+S",
      "Die Änderungen in die Abbilddatei schreiben", "save", False),
     ("speichern_unter", "Speichern &unter…", "save-as", "Ctrl+Shift+S",
@@ -67,6 +63,18 @@ _SPEC: List[Tuple] = [
      "Den ganzen Disketteninhalt in einen Ordner holen", "_alles_extrahieren", False),
     ("alles_rein", "Alles ei&nfügen…", "in-all", None,
      "Einen ganzen Ordner auf die Diskette schreiben", "_alles_einfuegen", False),
+    # Die echte Diskette: laden und überschreiben stehen NEBENEINANDER — es sind
+    # die beiden Richtungen desselben Wegs, und der Bediener sucht sie zusammen.
+    ("physisch", "&Physische Diskette laden…", "disk-physical", "Ctrl+Shift+O",
+     "Eine ECHTE Diskette in einem echten Laufwerk am Greaseweazle öffnen — "
+     "das Öffnen misst eine Stichprobe der Spuren und dauert etwa zehn Sekunden",
+     "_physisch_dialog", False),
+    ("physisch_schreiben", "Physische Diskette &überschreiben…", "disk-physical-write",
+     None,
+     "Das geöffnete Speicherabbild auf eine echte Diskette schreiben — "
+     "ihr bisheriger Inhalt geht dabei verloren",
+     "_physisch_schreiben_dialog", False),
+
     # Einer der beiden Auswege aus einer Schadstelle (14_physische_diskette.md
     # §7.2; der andere ist, das Abbild in eine Datei zu sichern): neue Diskette
     # einlegen, alles noch einmal wegschreiben.  Nur sichtbar, solange ein
@@ -103,7 +111,8 @@ _SPEC: List[Tuple] = [
 #: Beschriftung in der Symbolleiste (``QAction.setIconText``).
 KURZ = {'oeffnen': 'Öffnen',
     'neu': 'Neu',
-    'physisch': 'Laufwerk',
+    'physisch': 'Diskette laden',
+    'physisch_schreiben': 'Diskette schreiben',
     'neu_beschreiben': 'Neu schreiben',
     'speichern': 'Speichern',
     'speichern_unter': 'Unter…',
