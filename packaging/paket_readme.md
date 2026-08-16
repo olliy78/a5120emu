@@ -12,6 +12,11 @@ ein eigenes Programm in derselben Installation.
 ./install.sh
 ```
 
+> **Windows:** dieses Archiv ist nur der Rohstoff des Installationsprogramms.
+> Zum Installieren nehmen Sie `K1520emu-<Fassung>-win-x64-setup.exe` vom
+> Release — der Assistent fragt nach Ziel und Diskettenordner und richtet alles
+> selbst ein.
+
 Der Installer **fragt, wohin** (Vorschlag: `~/K1520emu`), richtet dort eine
 **eigene** Python-Laufzeitumgebung mit Qt ein und trägt den Emulator ins
 Startmenü ein.  Es muss ein **eigener, neuer Ordner** sein: das Entfernen löscht

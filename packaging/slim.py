@@ -122,9 +122,24 @@ CPYTHON_WIN_DIRS_DROP = (
     "Lib/site-packages/pip", "Lib/site-packages/pip-*.dist-info",
 )
 
-#: Windows: Tcl/Tk-Laufzeit und das zugehoerige Erweiterungsmodul.
+#: Windows: Tcl/Tk-Laufzeit, das zugehoerige Erweiterungsmodul — und OpenSSL.
+#:
+#: Zu OpenSSL (`libcrypto-3` allein sind 8 MB): der Emulator und das DiskTool
+#: reden mit NICHTS im Netz; sie oeffnen Dateien.  `import ssl` kommt in
+#: `app/` nicht vor, und die Stellen der Standardbibliothek, die es versuchen
+#: (`http.client`, `urllib.request`), fangen den Fehlschlag selbst ab.
+#: `hashlib` ebenso — ohne `_hashlib` rechnet es mit den eingebauten
+#: Implementierungen weiter.  Qts eigener TLS-Baustein sucht seinerseits ein
+#: OpenSSL des SYSTEMS und hat mit diesem hier nie gearbeitet.
+#:
+#: Gebraucht wird es genau einmal, naemlich von pip beim Einrichten — und das
+#: ist vorbei, wenn `slim.py` laeuft.  Ein Update packt Python ohnehin frisch
+#: aus, bevor pip wieder laeuft.  (Unter Linux bleibt OpenSSL vorerst stehen:
+#: dort ist der Platzbedarf nicht das Problem, und ungemessen schneidet hier
+#: niemand.)
 CPYTHON_WIN_GLOBS_DROP = (
     "DLLs/_tkinter*.pyd", "DLLs/tcl*.dll", "DLLs/tk*.dll", "DLLs/_test*.pyd",
+    "DLLs/_ssl.pyd", "DLLs/_hashlib.pyd", "DLLs/libcrypto-3*.dll", "DLLs/libssl-3*.dll",
 )
 
 #: Windows: die Qt-Bibliotheken liegen NICHT in `Qt/lib`, sondern direkt neben
@@ -379,13 +394,34 @@ def linked_libraries(binary: Path, inside: Path) -> set:
 
 # ─── Die eigentlichen Schnitte ───────────────────────────────────────────────
 
+def cpython_baeume(root: Path) -> list:
+    """Die CPython-Bäume unter `<root>/python` — es gibt ZWEI Anordnungen.
+
+    `uv python install` legt den Baum in ein VERSIONIERTES Unterverzeichnis
+    (`<root>/python/cpython-3.12.11-linux-x86_64-gnu/`), der Windows-Assistent
+    packt ihn dagegen direkt nach `<root>/python/` (das Archiv trägt `python`
+    als oberste Ebene).
+
+    Wer nur die erste Anordnung kennt, findet unter Windows **nichts**: die
+    Muster laufen dann gegen `Lib/`, `DLLs/`, `tcl/` als Wurzel und treffen
+    keines.  Gemessen am 2026-08-14: die Installation belegte 163 statt 120 MB,
+    weil Tcl/Tk, IDLE, ensurepip, die Header und ein zweites pip einfach
+    stehenblieben.  Deshalb wird hier ERKANNT statt angenommen — Merkmal ist
+    das Vorhandensein von `Lib`/`lib` unmittelbar darunter.
+    """
+    basis = root / "python"
+    if not basis.is_dir():
+        return []
+    if (basis / "Lib").is_dir() or (basis / "lib").is_dir():
+        return [basis]
+    return [p for p in sorted(basis.glob("*")) if p.is_dir()]
+
+
 def slim_cpython(root: Path, cut: Cutter) -> None:
     """CPython auf eine Laufzeit eindampfen (Testsuite, Tcl/Tk, Header, IDLE)."""
     dirs = CPYTHON_WIN_DIRS_DROP if IST_WINDOWS else CPYTHON_DIRS_DROP
     globs = CPYTHON_WIN_GLOBS_DROP if IST_WINDOWS else CPYTHON_GLOBS_DROP
-    for base in sorted((root / "python").glob("*")):
-        if not base.is_dir():
-            continue
+    for base in cpython_baeume(root):
         for muster in tuple(dirs) + tuple(globs):
             for treffer in base.glob(muster):
                 cut.drop(treffer)
@@ -431,8 +467,8 @@ def slim_libpython(root: Path, cut: Cutter) -> None:
     # zweite Ausfertigung.
     if IST_WINDOWS:
         return
-    for base in sorted((root / "python").glob("*")):
-        if not base.is_dir() or base.is_symlink():
+    for base in cpython_baeume(root):
+        if base.is_symlink():
             continue
         kandidaten = [p for p in (base / "lib").glob("libpython*.so*")
                       if p.is_file() and not p.is_symlink()]
@@ -573,6 +609,30 @@ def slim_pyside(root: Path, cut: Cutter) -> None:
             cut.drop(datei)
 
 
+def slim_venv_paketverwaltung(root: Path, cut: Cutter) -> None:
+    """`pip` aus der Laufzeitumgebung werfen — sie ist eine LAUFZEIT, kein Bauplatz.
+
+    In die Installation wird genau einmal etwas installiert, und das ist zu
+    diesem Zeitpunkt vorbei.  Unter Linux stellt sich die Frage gar nicht:
+    `uv venv` legt von vornherein kein pip an.  Unter Windows baut der
+    Assistent die Umgebung mit `python -m venv`, und das bringt pip mit —
+    11 MB, die nie wieder jemand anfasst.  (Ein Update baut die Umgebung neu,
+    pip ist dann wieder da, solange es gebraucht wird.)
+    """
+    for sp in site_packages(root):
+        for muster in ("pip", "pip-*.dist-info", "setuptools", "setuptools-*.dist-info",
+                       "pkg_resources", "_distutils_hack", "distutils-precedence.pth"):
+            for treffer in sp.glob(muster):
+                cut.drop(treffer)
+    for bin_dir in ((root / "venv" / "Scripts"), (root / "venv" / "bin")):
+        if not bin_dir.is_dir():
+            continue
+        for muster in ("pip.exe", "pip3.exe", "pip3.*.exe", "pip", "pip3", "pip3.*",
+                       "easy_install*", "wheel*"):
+            for treffer in bin_dir.glob(muster):
+                cut.drop(treffer)
+
+
 def slim_tools(root: Path, cut: Cutter) -> None:
     """`uv` entfernen — es wird nur beim Installieren und Aktualisieren gebraucht.
 
@@ -598,6 +658,7 @@ def main(argv) -> int:
 
     cut = Cutter(dry)
     slim_cpython(root, cut)
+    slim_venv_paketverwaltung(root, cut)
     slim_pyside(root, cut)
     slim_libpython(root, cut)
     # Zuletzt strippen — was vorher schon weg ist, muss nicht erst gestrippt werden.

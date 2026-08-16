@@ -354,13 +354,14 @@ jobs:
   # Windows-Paket schnüren und PROBEWEISE installieren
   # ───────────────────────────────────────────────────────────────────────────
   #
-  # Der einzige Weg, install.ps1 wirklich zu prüfen.  Alles bis hierher war
-  # statisch — Parser, Textabgleich gegen install.sh, Guards.  Was zur Laufzeit
-  # schiefgehen kann, ist damit unbelegt: uv-Download samt Prüfsumme,
-  # Expand-Archive, venv-Anlage, Qt-Installation, die COM-Verknüpfung, der
-  # Rauchtest, und ob `-Uninstall` hinterher wirklich nichts liegen lässt.
+  # Der einzige Weg, das Installationsprogramm wirklich zu prüfen.  Alles bis
+  # hierher war statisch — Textprüfungen an der .iss, Guards.  Was zur Laufzeit
+  # schiefgehen kann, ist damit unbelegt: Python laden samt Prüfsumme, das
+  # zweistufige Auspacken des .tar.gz, venv-Anlage, Qt-Installation,
+  # Schlankmachen, Starter, Rauchtest — und ob das Deinstallieren hinterher
+  # wirklich nichts liegen lässt (und Fremdes stehen lässt).
   #
-  # Läuft NICHT bei jedem Aufruf: der Lauf lädt ~120 MB (uv, Python, Qt) und
+  # Läuft NICHT bei jedem Aufruf: der Lauf lädt ~120 MB (Python, Qt) und
   # dauert Minuten.  Das Gegenstück unter Linux steckt aus demselben Grund
   # hinter K1520_PACKAGING_FULL=1.  Einschalten:
   #     gh workflow run windows-ci.yml --ref main -f paket=true
@@ -429,12 +430,16 @@ jobs:
           # wäre eine Einladung, das Falsche zu starten.  `slim.py` stand hier
           # bis 2026-08-12 mit auf der Liste — seit es die PE-Importtabelle
           # selbst liest, gehört es dazu und nicht mehr hierher.
-          for verboten in install.sh launcher.sh disktool_launcher.sh lib; do
+          # `uv_pins.txt` steht seit 2026-08-14 mit auf der Liste: unter Windows
+          # laedt der Assistent Python selbst (uv legt einen Junction an, den
+          # der OneDrive-Filtertreiber verweigert — os error 448), uv ist dort
+          # also gar nicht mehr beteiligt.  `install.ps1` gibt es nicht mehr.
+          for verboten in install.sh launcher.sh disktool_launcher.sh lib install.ps1 uv_pins.txt; do
               if [ -e "$paket/$verboten" ]; then
                   echo "FEHLER: $verboten gehört nicht ins Windows-Paket" >&2; exit 1
               fi
           done
-          for noetig in install.ps1 launcher.cmd disktool_launcher.cmd slim.py uv_pins.txt requirements.lock; do
+          for noetig in launcher.cmd disktool_launcher.cmd slim.py requirements.lock; do
               [ -f "$paket/$noetig" ] || { echo "FEHLER: $noetig fehlt" >&2; exit 1; }
           done
           for noetig in bin/k1520core.dll bin/k1520disk.dll bin/k1520disktool-cli.exe \
@@ -459,23 +464,41 @@ jobs:
           print('ZIP-Struktur in Ordnung (%d Eintraege)' % len(namen))
           "
 
-      # ── Der eigentliche Zweck: install.ps1 einmal wirklich fahren ───────────
-      - name: Probeinstallation
+      # ── Der eigentliche Zweck: das Setup einmal wirklich fahren ────────────
+      #
+      # /VERYSILENT faehrt es ohne Assistent, /DIR und /Daten geben Ziel und
+      # Diskettenordner vor (/Daten liest die .iss ueber {param:Daten} — im
+      # Assistenten ist das die eigene Seite).  /CURRENTUSER nagelt die
+      # Betriebsart fest: seit der Assistent zwischen „fuer alle" und „nur fuer
+      # mich" waehlen laesst, haengt sonst am Rechtestand des Laeufers, wohin
+      # `{autopf}` zeigt.
+      - name: Probeinstallation über das Setup
         shell: pwsh
         run: |
-          $paket = (Get-Content paket_pfad.txt).Trim()
-          $ziel  = Join-Path $env:RUNNER_TEMP 'k1520emu-test'
+          $exe   = (Get-ChildItem dist\*setup.exe | Select-Object -First 1).FullName
+          $ziel  = Join-Path $env:RUNNER_TEMP 'k1520emu-setup'
           $daten = Join-Path $env:RUNNER_TEMP 'k1520emu-daten'
-          # ÜBER powershell.exe, nicht über den pwsh dieses Schrittes: Windows
-          # PowerShell 5.1 ist das, was auf jedem Windows liegt, was das Setup
-          # aufruft und womit ein Anwender das .zip auspackt und startet.  pwsh
-          # ist nachsichtiger (UTF-8 als Vorgabe) — geprüft mit pwsh lief das
-          # Skript, das Setup scheiterte trotzdem am Parser (2026-08-12).
-          $ausgabe = & powershell.exe -ExecutionPolicy Bypass -NoProfile `
-                       -File "$paket\install.ps1" -Prefix $ziel -Data $daten -Yes -NoShortcut |
-                     Tee-Object -Variable zeilen
-          if ($LASTEXITCODE -ne 0) { throw "install.ps1 ist fehlgeschlagen" }
-          $ausgabe | ForEach-Object { Write-Host $_ }
+          $log   = Join-Path $env:RUNNER_TEMP 'setup.log'
+          Write-Host "Setup: $exe ($([math]::Round((Get-Item $exe).Length/1MB,1)) MB)"
+          $p = Start-Process -FilePath $exe -Wait -PassThru `
+                 -ArgumentList "/VERYSILENT","/CURRENTUSER","/SUPPRESSMSGBOXES","/NORESTART",
+                               "/DIR=$ziel","/Daten=$daten","/LOG=$log"
+          $boot = Join-Path $ziel 'bootstrap.log'
+          if (Test-Path $boot) { Write-Host '── bootstrap.log ──'; Get-Content $boot }
+          if ($p.ExitCode -ne 0) {
+            if (Test-Path $log) { Write-Host '── Inno ──'; Get-Content $log | Select-Object -Last 40 }
+            throw "Setup ist mit Code $($p.ExitCode) gescheitert"
+          }
+
+          # Der Rueckgabewert allein GENUEGT NICHT: eine Ausnahme im Nachlauf
+          # (Rauchtest) meldet Inno mit einer Meldung, beendet sich aber mit 0.
+          # Der Bootstrap schreibt deshalb als letzte Zeile „Fertig." — fehlt
+          # sie, ist die Installation unterwegs stehengeblieben.
+          if (-not (Test-Path $boot)) { throw "bootstrap.log fehlt — lief der Bootstrap ueberhaupt?" }
+          $zeilen = Get-Content $boot
+          if (-not ($zeilen | Where-Object { $_ -match '^==> Fertig\.' })) {
+            throw "der Bootstrap ist nicht durchgelaufen — 'Fertig.' fehlt im Protokoll"
+          }
 
           # Der Rauchtest legt die Beispieldisketten beim Anwender an — und zwar
           # im GEWÄHLTEN Ordner.  Ohne K1520_DATA landeten sie an der
@@ -486,13 +509,14 @@ jobs:
             throw "Disketten landen nicht im gewählten Ordner: $zeile"
           }
 
-          # Was danach dastehen MUSS.  Der Rauchtest im Installer hat den Kern
-          # schon geladen und das Hauptfenster gebaut; hier geht es um das
-          # Ergebnis auf der Platte.
-          foreach ($p in @('bin\a5120emu.cmd', 'bin\k1520disktool.cmd',
-                           'venv\Scripts\python.exe', 'app\main.py',
-                           'share\k1520emu\formats.yaml', '.k1520emu-installation')) {
-            if (-not (Test-Path -LiteralPath (Join-Path $ziel $p))) { throw "fehlt nach der Installation: $p" }
+          # Was danach dastehen MUSS.  Der Rauchtest hat den Kern schon geladen
+          # und das Hauptfenster gebaut; hier geht es um das Ergebnis auf der
+          # Platte.
+          foreach ($f in @('bin\a5120emu.cmd', 'bin\k1520disktool.cmd',
+                           'python\python.exe', 'venv\Scripts\pythonw.exe',
+                           'app\main.py', 'share\k1520emu\formats.yaml',
+                           '.k1520emu-installation', 'unins000.exe')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $ziel $f))) { throw "fehlt nach dem Setup: $f" }
           }
 
           # Der abweichende Datenordner muss im Starter stehen — sonst legte der
@@ -500,21 +524,38 @@ jobs:
           $starter = Get-Content -LiteralPath (Join-Path $ziel 'bin\a5120emu.cmd') -Raw
           if ($starter -notmatch [regex]::Escape($daten)) { throw "K1520_DATA fehlt im Starter" }
           if ($starter -match '@ROOT@|@DATEN@') { throw "unersetzter Platzhalter im Starter" }
-          Write-Host "Installation belegt: $([math]::Round((Get-ChildItem -Recurse $ziel | Measure-Object Length -Sum).Sum/1MB)) MB"
+
+          # Die Verknuepfungen legt das Setup an (nicht mehr ein Skript ueber
+          # COM) — und sie zeigen auf pythonw.exe, nicht auf die .cmd: eine
+          # Verknuepfung auf eine Batchdatei oeffnet immer ein Konsolenfenster.
+          $menue = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\K1520emu'
+          foreach ($lnk in @('A5120-Emulator.lnk', 'k1520DiskTool.lnk')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $menue $lnk))) { throw "Verknuepfung fehlt: $lnk" }
+          }
+          $sh = New-Object -ComObject WScript.Shell
+          $vk = $sh.CreateShortcut((Join-Path $menue 'A5120-Emulator.lnk'))
+          if ($vk.TargetPath -notmatch 'pythonw\.exe$') { throw "Verknuepfung zeigt nicht auf pythonw.exe: $($vk.TargetPath)" }
+          # Und sie braucht ein EIGENES Symbol: ohne das steht im Startmenue das
+          # Python-Symbol, weil sie eben auf pythonw.exe zeigt.
+          if ($vk.IconLocation -notmatch 'a5120emu\.ico') { throw "Verknuepfung ohne eigenes Symbol: $($vk.IconLocation)" }
+          if (-not (Test-Path -LiteralPath (Join-Path $ziel 'share\icons\a5120emu.ico'))) { throw 'das Symbol fehlt in der Installation' }
+
+          # Die Schranke ist ABSICHTLICH knapp (gemessen 2026-08-14: 116 MB).
+          # Mit den fruehreren 220 MB fiel nicht auf, dass slim.py den
+          # CPython-Baum des Assistenten gar nicht fand — 163 MB gingen als
+          # „in Ordnung" durch.  Wer hier hochsetzt, sollte wissen, warum.
+          $mb = [math]::Round((Get-ChildItem -Recurse -File $ziel | Measure-Object Length -Sum).Sum/1MB)
+          Write-Host "Über das Setup installiert: $mb MB"
+          if ($mb -gt 130) { throw "zu gross ($mb MB) — hat slim.py gegriffen?" }
 
       # Das Schlankmachen ist der Grund, warum die Installation nicht ~316 MB
       # belegt.  Geprüft wird beides: dass genug wegfällt UND dass das
-      # Wesentliche steht — der Rauchtest im Installer hat die Oberfläche
-      # bereits gebaut, hier geht es um die Dateien, die kein Import nennt.
+      # Wesentliche steht — der Rauchtest hat die Oberfläche bereits gebaut,
+      # hier geht es um die Dateien, die kein Import nennt.
       - name: Was das Schlankmachen übrig lässt
         shell: pwsh
         run: |
-          $ziel = Join-Path $env:RUNNER_TEMP 'k1520emu-test'
-          $mb = [math]::Round((Get-ChildItem -Recurse -File $ziel |
-                               Measure-Object Length -Sum).Sum / 1MB)
-          Write-Host "Installation nach dem Schlankmachen: $mb MB"
-          if ($mb -gt 220) { throw "zu gross ($mb MB) — hat slim.py gegriffen?" }
-
+          $ziel = Join-Path $env:RUNNER_TEMP 'k1520emu-setup'
           $ps = Join-Path $ziel 'venv\Lib\site-packages\PySide6'
           # Ohne diese vier startet die Oberfläche nicht — und keiner davon
           # steht in einer Importtabelle, die der Kehraus liest.
@@ -528,76 +569,31 @@ jobs:
           }
           Write-Host 'ok — schlank, und das Wesentliche steht.'
 
-      # Das Setup ist der Weg, den ein Windows-Anwender geht — es muss also
-      # genauso durchlaufen wie install.ps1 von Hand.  /VERYSILENT fährt es ohne
-      # Assistent, /DIR und /LOG geben Ziel und Protokoll vor.
-      - name: Probeinstallation über das Setup
+      - name: Wieder deinstallieren — und nachsehen, ob wirklich nichts bleibt
         shell: pwsh
         run: |
-          $exe = (Get-ChildItem dist\*setup.exe | Select-Object -First 1).FullName
-          $ziel = Join-Path $env:RUNNER_TEMP 'k1520emu-setup'
-          $log  = Join-Path $env:RUNNER_TEMP 'setup.log'
-          Write-Host "Setup: $exe ($([math]::Round((Get-Item $exe).Length/1MB,1)) MB)"
-          $p = Start-Process -FilePath $exe -Wait -PassThru `
-                 -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=$ziel","/LOG=$log"
-          # Bei einem Fehlschlag zaehlen zwei Protokolle: das von Inno (/LOG,
-          # was das Setup selbst tat) und das des Bootstraps in {app} (was
-          # install.ps1 tat).  Ohne das zweite steht man vor „Code 1".
-          $boot = Join-Path $ziel 'bootstrap.log'
-          if ($p.ExitCode -ne 0) {
-            if (Test-Path $boot) { Write-Host '── bootstrap.log ──'; Get-Content $boot | Select-Object -Last 40 }
-            if (Test-Path $log)  { Write-Host '── Inno ──';          Get-Content $log  | Select-Object -Last 30 }
-            throw "Setup ist mit Code $($p.ExitCode) gescheitert"
-          }
-          if (Test-Path $boot) { Write-Host '── bootstrap.log ──'; Get-Content $boot }
-          foreach ($f in @('bin\a5120emu.cmd', 'venv\Scripts\pythonw.exe',
-                           'app\main.py', 'install.ps1', '.k1520emu-installation')) {
-            if (-not (Test-Path -LiteralPath (Join-Path $ziel $f))) { throw "fehlt nach dem Setup: $f" }
-          }
-          $mb = [math]::Round((Get-ChildItem -Recurse -File $ziel | Measure-Object Length -Sum).Sum/1MB)
-          Write-Host "Über das Setup installiert: $mb MB"
-          if ($mb -gt 220) { throw "zu gross ($mb MB) — hat slim.py gegriffen?" }
-
-      - name: Über das Setup wieder deinstallieren
-        shell: pwsh
-        run: |
-          $ziel = Join-Path $env:RUNNER_TEMP 'k1520emu-setup'
+          $ziel  = Join-Path $env:RUNNER_TEMP 'k1520emu-setup'
+          $menue = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\K1520emu'
           $unins = Join-Path $ziel 'unins000.exe'
           if (-not (Test-Path -LiteralPath $unins)) { throw 'Deinstallierer fehlt — Uninstallable=yes?' }
-          # Fremde Datei daneben: sie muss überleben.  Das Setup löscht bewusst
-          # NICHT selbst, sondern ruft install.ps1 mit seinen beiden Riegeln.
+
+          # Fremde Datei daneben: sie muss überleben.  Inno entfernt nur, was es
+          # selbst angelegt hat; alles Nachgeladene steht namentlich im
+          # Abschnitt zum Deinstallieren der .iss.
           Set-Content -LiteralPath (Join-Path $ziel 'meine_notizen.txt') -Value 'wichtig'
           $p = Start-Process -FilePath $unins -Wait -PassThru `
                  -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART"
           if ($p.ExitCode -ne 0) { throw "Deinstallieren scheiterte mit Code $($p.ExitCode)" }
           Start-Sleep -Seconds 3      # unins000.exe räumt sich selbst verzögert weg
-          foreach ($f in @('bin', 'app', 'venv', 'python', 'share')) {
+
+          foreach ($f in @('bin', 'app', 'venv', 'python', 'share',
+                           'bootstrap.log', '.k1520emu-installation')) {
             if (Test-Path -LiteralPath (Join-Path $ziel $f)) { throw "nach dem Deinstallieren noch da: $f" }
           }
           if (-not (Test-Path -LiteralPath (Join-Path $ziel 'meine_notizen.txt'))) {
             throw 'das Deinstallieren hat eine fremde Datei mitgelöscht'
           }
-          Write-Host 'ok — Setup-Installation entfernt, Fremdes steht noch.'
-
-      - name: Deinstallieren und nachsehen, ob wirklich nichts bleibt
-        shell: pwsh
-        run: |
-          $paket = (Get-Content paket_pfad.txt).Trim()
-          $ziel  = Join-Path $env:RUNNER_TEMP 'k1520emu-test'
-
-          # Eine fremde Datei DANEBEN: sie muss das Deinstallieren überleben —
-          # gelöscht wird nur das Inventar aus dem Ausweis, nicht die Wurzel.
-          Set-Content -LiteralPath (Join-Path $ziel 'meine_notizen.txt') -Value 'wichtig'
-
-          & "$paket\install.ps1" -Prefix $ziel -Uninstall
-          if ($LASTEXITCODE -ne 0) { throw "-Uninstall ist fehlgeschlagen" }
-
-          foreach ($p in @('bin', 'app', 'venv', 'share', 'python', 'tools', 'VERSION')) {
-            if (Test-Path -LiteralPath (Join-Path $ziel $p)) { throw "nach -Uninstall noch da: $p" }
-          }
-          if (-not (Test-Path -LiteralPath (Join-Path $ziel 'meine_notizen.txt'))) {
-            throw "-Uninstall hat eine fremde Datei mitgelöscht"
-          }
+          if (Test-Path -LiteralPath $menue) { throw 'die Startmenü-Einträge blieben stehen' }
           Write-Host 'ok — Installation entfernt, Fremdes steht noch.'
 
       - name: Paket als Artefakt

@@ -53,8 +53,8 @@ tools/dev.sh rebuild             # rm -rf build build_trace, then build from scr
 > `tools/dev.sh win` ist die **lokale Vorprüfung** (MinGW-w64 + wine,
 > `cmake/toolchain-mingw64.cmake`); sie ersetzt den CI-Lauf nicht — MinGW ist GCC und
 > exportiert wie unter Linux per Vorgabe alles. Voller Stand: `doc/ci_pipeline.md` §4.4,
-> `doc/design/13_distribution.md` §6.1. **Offen bleibt die Paketierung** (Inno Setup,
-> `install.ps1`, Windows-Job in `release.yml` — §10 Schritt 4).
+> `doc/design/13_distribution.md` §6.1. Die **Paketierung** steht ebenfalls: das
+> Inno-Setup installiert selbst (s. u.), `release.yml` hat einen Windows-Job.
 
 **The test system is documented in `tests/README.md`** (run it, add a test, shared helpers),
 `doc/design/12_testing.md` (why it is cut this way) and `tests/fixtures/README.md` (which test
@@ -137,7 +137,26 @@ Kernbibliothek, GUI, `formats.yaml`, Beispieldisketten); `install.sh` darin holt
 **`uv`** Python und Qt in ein venv **innerhalb der Installation** — benutzerlokal, ohne
 Administratorrechte. Python/Qt werden bewusst nicht mitverteilt. Bedienung:
 `packaging/README.md`, Entwurf und Begründungen: **`doc/design/13_distribution.md`**.
-Umgesetzt sind Linux/macOS-Aufbau (Schritt 1+2); Windows (Inno Setup, per-user) steht aus.
+Umgesetzt sind Linux/macOS (Schritt 1+2) **und Windows**: `packaging/k1520emu.iss`
+(Inno Setup ≥ 6.5, per-user) — gebaut mit `build_payload.sh --setup`, gefahren im Job
+`paket` von `windows-ci.yml` (`-f paket=true`).
+
+**Der Windows-Assistent installiert SELBST — es gibt kein `install.ps1` mehr** (seit
+2026-08-14). Drei Dinge daran nicht kaputtmachen:
+- **Kein PowerShell im Installationsweg.** Es kostete ein schwarzes Fenster ohne
+  Rückmeldung und scheiterte an der Ausführungsrichtlinie. Guard:
+  `test_iss_ruft_kein_powershell`.
+- **Python kommt direkt von python-build-standalone** (`packaging/python_pins.txt`,
+  `--refresh-python`), NICHT über `uv`: dessen Junction auf die Nebenversion scheitert
+  unter OneDrive „Dateien bei Bedarf" mit `os error 448`
+  (`STATUS_UNTRUSTED_MOUNT_POINT`, astral-sh/uv #19616) — abschalten lässt er sich
+  nicht. Unter Linux bleibt uv.
+- **Alles Nachladbare läuft in `PrepareToInstall`, also VOR dem Kopieren.** Eine
+  Ausnahme in `ssPostInstall` räumt nichts zurück und hinterlässt eine halbe
+  Installation mit Startmenü-Einträgen ins Leere. Guards:
+  `test_iss_laedt_und_richtet_ein_bevor_kopiert_wird`,
+  `test_iss_raeumt_auf_wenn_das_nachladen_scheitert`. Dateien, die der Bootstrap dort
+  schon braucht, müssen `dontcopy` sein (`[Files]` wird erst danach abgearbeitet).
 
 Sieben Dinge, die man dabei nicht kaputtmachen darf:
 

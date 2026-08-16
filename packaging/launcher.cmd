@@ -1,5 +1,5 @@
 @echo off
-rem K1520-Emulator - Starter des A5120 (Windows).  @ROOT@ setzt der Installer.
+rem K1520-Emulator - Starter des A5120 (Windows).  Die Wurzel setzt der Installer.
 rem
 rem Gegenstueck zu launcher.sh.  Fuer den Aufruf von Hand und aus der
 rem Eingabeaufforderung; die Verknuepfung im Startmenue zeigt dagegen direkt auf
@@ -11,7 +11,7 @@ set "ROOT=@ROOT@"
 
 if not exist "%ROOT%\venv\Scripts\pythonw.exe" (
     echo K1520-Emulator: Laufzeitumgebung fehlt in %ROOT%\venv 1>&2
-    echo Neu einrichten:  install.ps1 -Prefix "%ROOT%" 1>&2
+    echo Neu einrichten:  das Installationsprogramm noch einmal ausfuehren 1>&2
     exit /b 1
 )
 

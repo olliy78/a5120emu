@@ -93,6 +93,12 @@ Hälfte des Downloads.
 
 ### 3.1 Ablauf des Bootstraps im Detail
 
+> **Unter Windows läuft dieser Ablauf ohne `uv`** — dort macht ihn der
+> Installationsassistent selbst, und CPython kommt direkt von
+> python-build-standalone (§5.1: `uv python install` legt einen Junction an, den der
+> OneDrive-Filtertreiber verweigert). Schritte 2 und 3 entfallen dadurch, der Rest
+> ist derselbe, bis hin zum Rauchtest.
+
 1. **Vorprüfung**: Zielverzeichnis schreibbar? Freier Platz ≥ 500 MB?
 2. **`uv` beschaffen**: Download nach `<root>/tools/`, SHA256 gegen den **im Paket
    mitgelieferten** Erwartungswert prüfen (`packaging/uv_pins.txt`) — eine nebenher
@@ -234,28 +240,76 @@ Programm:
 Ausgeliefert wird ein `A5120Emu-<version>-win-x64-setup.exe`, gebaut mit **Inno Setup**:
 
 ```ini
-PrivilegesRequired=lowest          ; kein UAC, kein Admin
-DefaultDirName={localappdata}\A5120Emu
-DisableDirPage=no                  ; Pfad änderbar (Roaming-Profile!)
+PrivilegesRequired=lowest                  ; Vorgabe: ohne UAC
+PrivilegesRequiredOverridesAllowed=dialog  ; …der Anwender darf aber wählen
+DefaultDirName={autopf}\K1520emu           ; folgt der Wahl (s. u.)
+DisableDirPage=no                          ; Pfad änderbar (Roaming-Profile!)
 ArchitecturesAllowed=x64compatible
-Uninstallable=yes                  ; Eintrag unter HKCU\…\Uninstall
+Uninstallable=yes                          ; Eintrag unter HKCU\…\Uninstall
 ```
+
+- **Wohin installiert wird, entscheidet der Anwender** (seit 2026-08-14).
+  `{autopf}` löst nach der gewählten Betriebsart auf: „für alle Benutzer"
+  (Administrator) → `C:\Program Files\K1520emu`, „nur für mich" (ohne UAC) →
+  `%LOCALAPPDATA%\Programs\K1520emu`. Vorher stand dort fest
+  `%LOCALAPPDATA%\K1520emu` — nicht falsch, aber **versteckt**: „ich musste eine
+  Weile suchen, bis ich es finde" (Rückmeldung vom Testgerät). `…\Programs` ist
+  der Ort, den sich per-user-Installationen unter Windows teilen (VS Code,
+  Signal …), nicht `%LOCALAPPDATA%` selbst. Dass „Programme" überhaupt in Frage
+  kommt, liegt daran, dass der Emulator **zur Laufzeit nicht in sein eigenes
+  Verzeichnis schreibt** — die Arbeitsdisketten liegen im Dokumentenordner
+  (§4). Geprüft ist beides, einschließlich des Leerzeichens in
+  „Program Files": Installation, Bootstrap und Starter halten den Pfad.
+- **Der Assistent sagt vorher, was er vorhat.** Eine eigene Seite nach der
+  Lizenz (`CreateOutputMsgPage`) nennt die beiden Dinge, die ein Anwender nicht
+  erwartet: dass **während** der Installation rund 120 MB aus dem Netz kommen
+  (ohne die Ansage sieht ein minutenlanger Balken wie ein hängendes Setup aus)
+  und dass **alles im Installationsordner bleibt** — kein Systempython wird
+  angefasst, nichts registriert, beim Entfernen bleibt nichts zurück. Dasselbe
+  noch einmal knapp in der Zusammenfassung vor dem Zugriff
+  (`UpdateReadyMemo`). Guard: `test_iss_sagt_vorher_was_geladen_wird_und_was_unberuehrt_bleibt`.
 
 - **Assistentenseite „Arbeitsdisketten"**: Vorgabe `<Dokumente>\K1520emu`, änderbar.
   Dieselbe Abfrage wie in `install.sh --data`, und aus demselben Grund — „Dokumente"
   ist hier häufig nach OneDrive umgeleitet. Die Antwort wird nur eingetragen, wenn sie
   von der Vorgabe abweicht (`K1520_DATA`, §6.1).
-- Die Setup-Dateien sind **nur** die Payload. Nach dem Kopieren läuft der Bootstrap als
-  `[Run]`-Schritt mit sichtbarer Fortschrittsausgabe (Qt-Download dauert je nach Leitung
-  spürbar) — abbrechbar, mit Rückmeldung bei Fehlschlag.
-- **Das Setup installiert und löscht nicht selbst**, es ruft beide Male `install.ps1`
-  (`packaging/k1520emu.iss`). Damit gibt es *einen* Installationsweg statt zweier, von
-  denen einer stillschweigend veraltet — und das Deinstallieren behält die beiden
-  Riegel: gelöscht wird nur, was sich ausweist, und daran nur das Inventar aus dem
-  Ausweis. Ein `[UninstallDelete] {app}` wäre einfacher gewesen und hätte beides
-  umgangen; das Zielverzeichnis ist im Assistenten änderbar, dort kann also alles
-  stehen. Guard: der Paketjob installiert **über das Setup** und deinstalliert wieder,
+- **Das Setup installiert selbst** (`packaging/k1520emu.iss`), seit 2026-08-14 ohne
+  jedes PowerShell-Skript: laden, auspacken, venv, `pip --require-hashes`,
+  schlankmachen, Starter, Rauchtest. Jeder Schritt steht im Klartext in der
+  Statuszeile und in `<app>\bootstrap.log`; die Ausgabe der aufgerufenen Programme
+  läuft zeilenweise über `ExecAndLogOutput` mit.
+  Vorher rief das Setup ein `install.ps1`. Das kostete drei Dinge, alle beim Anwender
+  aufgeschlagen: ein **schwarzes Fenster ohne Rückmeldung** über Minuten, die
+  Abhängigkeit von Windows PowerShell 5.1 samt Ausführungsrichtlinie
+  („Ausführung von Skripts ist auf diesem System deaktiviert" beim Aufruf von Hand),
+  und einen zweiten Installationsweg mit eigenen Fehlern.
+- **Python kommt direkt von python-build-standalone, nicht über `uv`.**
+  `uv python install` legt zum Schluss einen **Junction** auf die Nebenversion an
+  (`python\cpython-3.12-…`). Wo OneDrive „Dateien bei Bedarf" läuft, verweigert dessen
+  Filtertreiber das: `os error 448` / `STATUS_UNTRUSTED_MOUNT_POINT`, „der Pfad kann
+  nicht durchlaufen werden, da er einen nicht vertrauenswürdigen Bereitstellungspunkt
+  enthält" (astral-sh/uv #19616) — der Fehlschlag auf dem Testgerät am 2026-08-14.
+  Abschalten lässt sich der Junction nicht. Das Setup lädt das Archiv deshalb selbst
+  (Pins in `packaging/python_pins.txt`, Prüfsumme reist mit) und packt es in ein
+  gewöhnliches Verzeichnis aus. Unter Linux bleibt es bei `uv`.
+- **Der Zeitpunkt ist eine Entscheidung über den Fehlschlag.** Alles Nachladbare läuft
+  in `PrepareToInstall`, also **vor der ersten kopierten Datei**. Eine Ausnahme in
+  `ssPostInstall` räumt nämlich *nichts* zurück — der Probelauf hinterließ eine halbe
+  Installation samt drei Startmenü-Einträgen, die ins Leere zeigten, also genau den
+  Ausgang, den §3.1 ausschließen will. Scheitert `PrepareToInstall`, ist nichts
+  kopiert, kein Symbol angelegt, kein Deinstallierer eingetragen; was der Bootstrap
+  selbst schon anlegte (`python\`, `venv\`), räumt er weg. Im Nachlauf bleibt nur,
+  was die Payload braucht: Starter, Ausweis, Rauchtest — und scheitert der, werden
+  wenigstens die Verknüpfungen wieder entfernt.
+- **Das Deinstallieren macht Inno selbst.** Es entfernt von sich aus nur, was es
+  angelegt hat; das Nachgeladene (`python\`, `venv\`, `bin\`, Protokolle) steht
+  namentlich in `[UninstallDelete]`. Ein pauschales `filesandordirs {app}` bleibt
+  verboten — das Zielverzeichnis ist im Assistenten änderbar, dort kann Fremdes
+  liegen. Guard: der Paketjob installiert über das Setup und deinstalliert wieder,
   wobei eine fremde Datei daneben überleben muss.
+- **Der Diskettenordner ist auch still wählbar** (`/Daten=…`, im Assistenten die
+  eigene Seite) — sonst könnte die CI nicht prüfen, dass die Beispieldisketten dort
+  landen, wo der Anwender sie erwartet.
 - **Kein VC-Redist.** Der ließe sich per-user nicht installieren; stattdessen wird die DLL
   mit **statischer CRT** gebaut (§7).
 - **SmartScreen**: eine unsignierte `.exe` wird beim ersten Start gewarnt. Ohne
@@ -544,22 +598,25 @@ Vier Schritte, jeder für sich abnehmbar:
    die **volle Regression** läuft auf `windows-latest` (`windows-ci.yml`) — nicht nur
    ein Rauchtest. Lokale Vorprüfung: `tools/dev.sh win` (MinGW + wine). Die
    Pfad-/Umgebungsfragen waren mit Schritt 1 schon erledigt (§6.1).
-4. ◑ **Paketierung Windows.** `install.ps1` ist da (Gegenstück zu `install.sh`,
-   dieselben Schritte und **dieselben zwei Löschriegel**), dazu `launcher.cmd` und
-   `disktool_launcher.cmd`. Guards vergleichen beide Installer mechanisch, wo sie
-   dasselbe wissen müssen: `test_installer_ps1_und_sh_haben_dasselbe_inventar`,
-   `test_installer_ps1_erkennt_dieselbe_installation`,
-   `test_installer_ps1_hat_beide_loeschriegel`, dazu eine Syntaxprüfung über den
-   PowerShell-Parser. Die **Windows-Payload** baut `build_payload.sh` mit
-   (vier plattformabhängige Stellen: Bibliotheksnamen, Laufzeitbindung,
-   beigelegter Installer, `.zip` statt `.tar.gz`), und `release.yml` hat einen
-   zweiten Job dafür. `install.ps1` ist im Paketjob von `windows-ci.yml`
-   **wirklich durchgelaufen** — installieren, Rauchtest, deinstallieren, wobei
-   eine fremde Datei daneben überlebt (`-f paket=true`).
-   Das **Inno-Setup-Skript** (`packaging/k1520emu.iss`) baut
-   `build_payload.sh --setup`; das Schlankmachen greift auch unter Windows
-   (**316 → 119 MB**, gemessen 2026-08-12). **Offen:** ein `.ico` für die
-   Verknüpfungen (ohne trägt der Eintrag das Python-Symbol) und die Signatur
+4. ✅ **Paketierung Windows.** Ausgeliefert wird **eine** Datei: das Setup
+   (`packaging/k1520emu.iss`, gebaut von `build_payload.sh --setup`). Es installiert
+   selbst — kein `install.ps1` mehr, kein PowerShell im Installationsweg (§5.1);
+   `launcher.cmd`/`disktool_launcher.cmd` füllt es aus den Vorlagen. Die
+   **Windows-Payload** baut `build_payload.sh` mit (vier plattformabhängige Stellen:
+   Bibliotheksnamen, Laufzeitbindung, beigelegte Starter, `.zip` statt `.tar.gz`); das
+   `.zip` hängt seit 2026-08-14 **nicht mehr am Release** — ohne Installationsskript
+   wäre es für einen Anwender nutzlos, es bleibt Prüfstück der CI. Das Schlankmachen
+   greift auch unter Windows (**116 MB**, gemessen 2026-08-14 im Paketjob). Guards: die
+   Textprüfungen an der `.iss` in `tests/python/test_packaging.py` (kein PowerShell,
+   Bootstrap vor dem Kopieren, Aufräumen nach Fehlschlag, `dontcopy` für früh
+   gebrauchte Dateien, vollständiges `[UninstallDelete]`, Pins passen zur
+   Wheel-Fassung) und der Job `paket` in `windows-ci.yml`, der das Setup **wirklich
+   fährt** (`-f paket=true`) — installieren, Schlankmachen prüfen, deinstallieren,
+   wobei eine fremde Datei daneben überlebt. Das Symbol liegt seit 2026-08-14
+   als `packaging/icon.ico` bei (aus dem SVG mit `tools/svg_to_ico.py`, sieben
+   Auflösungen) und hängt an vier Stellen: Setup, Eintrag unter „Apps" und
+   beiden Verknüpfungen — ohne das trüge alles davon das Python-Symbol, weil
+   die Verknüpfung auf `pythonw.exe` zeigt. **Offen:** die Signatur
    (§11 — SmartScreen warnt bei jedem Erstinstall).
 
 macOS erst danach, zusammen mit der Signaturentscheidung aus §5.3. Die
@@ -579,8 +636,26 @@ macOS-Tripel, `paths.py` kennt `.dylib` und `~/Library/Application Support`).
   mit, mit `--disks none` keine.
 - ~~**Schlankmachen unter Windows**~~ ✅ erledigt 2026-08-12: `slim.py` liest die
   PE-Importtabelle selbst (`pe_imports`), weil auf dem Rechner des Anwenders kein
-  `dumpbin` liegt. Eine Windows-Installation belegt damit **123 MB statt 316**
-  (gemessen im Paketjob, `--disks none`).
+  `dumpbin` liegt. Eine Windows-Installation belegt damit **116 MB** (gemessen
+  2026-08-14 im Paketjob, `--disks none`).
+
+  Dabei ist am 2026-08-14 ein stiller Aussetzer aufgefallen, der 40 MB kostete:
+  `slim_cpython` suchte den Interpreter ausschließlich unter `<root>/python/*/`
+  — die Anordnung, die `uv python install` erzeugt. Der Windows-Assistent packt
+  ihn direkt nach `<root>/python/`, dort traf **kein einziges** Muster, und
+  Tcl/Tk, IDLE, `ensurepip`, die Header und ein zweites `pip` blieben stehen,
+  ohne dass irgendetwas fehlschlug. `cpython_baeume()` erkennt jetzt beide
+  Anordnungen (Merkmal: `Lib`/`lib` unmittelbar darunter). Zwei weitere Posten
+  kamen dazu: `pip` fliegt aus der **Laufzeit**umgebung (unter Linux legt
+  `uv venv` von vornherein keines an, `python -m venv` schon — 11 MB), und
+  unter Windows fliegt **OpenSSL** (`libcrypto-3` allein 8 MB): der Emulator
+  redet mit nichts im Netz, `hashlib` rechnet ohne `_hashlib` mit den
+  eingebauten Implementierungen weiter, und pip braucht es nur beim
+  Einrichten — da ist es noch da. Guards: `test_slim_findet_cpython_in_BEIDEN_anordnungen`,
+  `test_slim_raeumt_die_windows_anordnung_wirklich_ab`,
+  `test_slim_wirft_pip_aus_der_laufzeitumgebung`, dazu die auf **130 MB**
+  verschärfte Schranke im Paketjob (mit den vorherigen 220 MB gingen die
+  163 MB als „in Ordnung" durch).
 - **Versionsprüfung Payload ↔ venv**: ob der Launcher bei Versionsversatz automatisch
   nachinstalliert oder nur warnt.
 - **Proxy-Umgebungen**: `uv` respektiert `HTTPS_PROXY`; ob der Installer danach fragt, wenn

@@ -179,7 +179,7 @@ vier kommen wieder, wenn man sie nicht kennt:
 
 Was **nicht** Aufgabe des Tests ist: plattformabhängiges Verhalten wegdefinieren.
 `~/.config` vs. `%APPDATA%`, `user-dirs.dirs` vs. `Documents`, `install.sh` vs.
-`install.ps1` — dort gehört ein `pytest.mark.skipif` mit **Begründung** hin und,
+`k1520emu.iss` — dort gehört ein `pytest.mark.skipif` mit **Begründung** hin und,
 wo es sich lohnt, ein Gegenstück für die andere Plattform (Muster:
 `test_paths.py::test_dokumentenordner_unter_windows_ist_documents`).
 

@@ -30,7 +30,7 @@ die()   { printf "${C_ERR}Fehler:${C_OFF} %s\n" "$*" >&2; exit 1; }
 # ist_windows — läuft dieses Skript unter Git-Bash/MSYS auf Windows?
 #
 # Nur fürs SCHNÜREN gedacht (build_payload.sh).  Der Anwender bekommt unter
-# Windows install.ps1 und sieht nie eine .sh; bauen ist dagegen kein
+# Windows ein Installationsprogramm und sieht nie eine .sh; bauen ist dagegen kein
 # Anwenderschritt, und die Liste „was gehört ins Paket" soll es nicht zweimal
 # geben — deshalb hier ein Zweig statt eines zweiten Skripts.
 ist_windows() {
