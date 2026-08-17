@@ -402,6 +402,88 @@ def test_nur_seite_null_liest_die_rueckseite_gar_nicht(fixture_disks):
         f"Seite 1 wurde angefahren: {[x for x in geraet.gelesen if x[1]][:3]}"
 
 
+def test_schneiden_macht_ein_abbild_lesbar(fixture_disks, tmp_path):
+    """Der Fall, für den es gebaut ist: ungerade Spuren weg → erkennbar (§12.6).
+
+    Eine 40-Spur-Diskette, die im **Doppelschritt** beschrieben und
+    **einfachschrittig** gelesen wurde, trägt auf den ungeraden Zylindern den
+    Altbestand einer früheren Formatierung.  Als Ganzes ist das keine Diskette, die
+    ein Katalog kennt — nach dem Schnitt schon.
+
+    Nachgestellt wird das aus einer echten Diskette: jede Spur auf den doppelten
+    Zylinder, dazwischen Müll.
+    """
+    quelle = fixture_disks / "udos_boot_scp.hfe"
+    if not quelle.exists():
+        pytest.skip("Fixture fehlt")
+
+    with DiskTool.open(quelle) as d:
+        erwartet = d.filesystem
+
+    # Ein Abbild bauen: Spur n der Quelle auf Zylinder 2n, ungerade bleiben leer.
+    geraet = HfeDevice(quelle)
+    gestreckt = {}
+    for (c, h), spur in geraet._spuren.items():
+        if c * 2 < 160:
+            gestreckt[(c * 2, h)] = spur
+    geraet._spuren = gestreckt
+    geraet.num_cyls = 160
+
+    with Sync(num_cyls=160, num_heads=geraet.num_heads, read_ahead=True) as s:
+        worker = TrackWorker(s, geraet, poll_ms=10)
+        worker.start()
+        try:
+            with DiskTool.open_physical_raw(s) as t:
+                # Warten, bis alles im Speicher ist — der Schnitt arbeitet am Abbild.
+                ende = time.monotonic() + 60
+                while (time.monotonic() < ende
+                       and s.stats.tracks_known < s.stats.tracks_total):
+                    time.sleep(0.05)
+
+                vorher = t.medium_cylinders
+                assert t.keep_even_tracks() > 0
+                assert t.medium_cylinders == vorher // 2, "nicht halbiert"
+
+                assert t.redetect(), "nach dem Schnitt immer noch nicht erkannt"
+                assert t.filesystem == erwartet, \
+                    f"erkannt als {t.filesystem}, erwartet {erwartet}"
+                assert t.list(), "keine Dateien"
+        finally:
+            worker.stop()
+
+
+def test_schneiden_loest_das_abbild_vom_laufwerk(fixture_disks):
+    """Nach dem Schnitt darf NICHTS mehr auf die Diskette gehen.
+
+    Die Spurnummern stimmen danach nicht mehr mit den Kopfpositionen überein — ein
+    Rückschreiben ginge auf die falschen Zylinder und zerstörte die Diskette.
+    """
+    pfad = fixture_disks / "udos_boot_scp.hfe"
+    if not pfad.exists():
+        pytest.skip("Fixture fehlt")
+
+    geraet = HfeDevice(pfad)
+    with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
+              writable=True, read_ahead=True) as s:
+        worker = TrackWorker(s, geraet, poll_ms=10)
+        worker.start()
+        try:
+            with DiskTool.open_physical_raw(s, read_only=False) as t:
+                ende = time.monotonic() + 60
+                while (time.monotonic() < ende
+                       and s.stats.tracks_known < s.stats.tracks_total):
+                    time.sleep(0.05)
+                geraet.geschrieben.clear()
+                t.drop_second_side()
+                # Der Schnitt selbst markiert Spuren als geändert — sie dürfen
+                # trotzdem NICHT auf die Diskette gehen.
+                time.sleep(1.5)
+                assert geraet.geschrieben == [], \
+                    f"es wurde auf die Diskette geschrieben: {geraet.geschrieben[:5]}"
+        finally:
+            worker.stop()
+
+
 def test_die_sondenzahl_bleibt_klein():
     """Acht Spuren — nicht acht Zylinder auf beiden Seiten.
 

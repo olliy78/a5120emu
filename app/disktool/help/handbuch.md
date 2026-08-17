@@ -193,6 +193,31 @@ Befund, schwarz heißt nur, dass noch keiner vorliegt. Die Ansicht füllt sich,
 während im Hintergrund weitergelesen wird; ein Klick auf eine schwarze Spur holt
 sie sofort.
 
+### Wenn kein Dateisystem erkannt wird
+
+Dann ist die Diskette **trotzdem offen** — nur ungedeutet. Sie liegt im Speicher,
+der Diskeditor geht, das Abbild lässt sich mit *Speichern unter* sichern; gesperrt
+ist nur, was Dateien braucht. Im Hintergrund wird weitergelesen.
+
+Danach gibt es zwei Wege:
+
+* **Dateisystem im Kopfbereich wählen** — die Deutung wird am Speicherabbild
+  wiederholt, die Diskette wird dafür *nicht* noch einmal gelesen.
+* **Diskette ▸ Speicherabbild ändern** — zwei Schnitte, die eine Diskette lesbar
+  machen können:
+  * *Ungerade Spuren entfernen* — für eine 40-Spur-Diskette, die im Doppelschritt
+    beschrieben, aber einfachschrittig gelesen wurde. Auf den ungeraden Spuren
+    steht dann noch das frühere Format.
+  * *Seite 1 entfernen* — wenn die Rückseite nur Altbestand trägt.
+
+  Beide arbeiten am **Abbild**, nicht an der Diskette. Danach ist die Verbindung
+  zum Laufwerk beendet: die Spurnummern stimmen nicht mehr mit den Kopfpositionen
+  überein, es wird also nicht weitergelesen und nichts mehr zurückgeschrieben. Das
+  Abbild bleibt vollständig — zurückschreiben lässt es sich mit *Physische
+  Diskette überschreiben* und gesetztem Doppelschritt-Haken.
+
+Nach jedem Schnitt wird die Erkennung erneut versucht.
+
 Trägt die Diskette eine Spur nicht mehr, sagt das die Meldung mitsamt
 Spurnummer — **das Abbild im Speicher ist dann noch heil**. Der Ausweg steht
 im Streifen und unter *Diskette ▸ Diskette neu beschreiben*: neue Diskette

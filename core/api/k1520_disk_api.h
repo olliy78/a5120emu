@@ -67,6 +67,44 @@ K1520_API K1520Disk k1520d_open_physical(K1520Sync sync, const char* fs_name,
                                          bool read_only);
 
 /**
+ * @brief Wie @ref k1520d_open_physical, aber **oeffnet auch ohne Erkennung**.
+ *
+ * Wird kein Dateisystem gefunden, kommt die Diskette trotzdem heraus — nur eben
+ * ohne (@ref k1520d_has_filesystem == false).  Medium, Sektoreditor, Abbild sichern
+ * und die Schnittwerkzeuge (@ref k1520d_keep_even_tracks) arbeiten weiter; Dateien
+ * gibt es keine.  Der Grund steht in @ref k1520d_detection_remarks.
+ */
+K1520_API K1520Disk k1520d_open_physical_raw(K1520Sync sync, const char* fs_name,
+                                             bool read_only);
+
+/// @brief Ist ein Dateisystem gemountet?  false = roh geoeffnet.
+K1520_API bool k1520d_has_filesystem(K1520Disk h);
+
+/**
+ * @brief Erkennung am **Speicherabbild** wiederholen — ohne die Diskette neu zu lesen.
+ *
+ * Fuer „Dateisystem von Hand waehlen" und fuer die Zeit nach einem Schnitt: das
+ * bereits gelesene Medium wandert unveraendert in ein neues Volume.  Das alte Handle
+ * bleibt gueltig und zeigt danach auf das neue Ergebnis.
+ *
+ * @param fs_name  Dateisystem erzwingen; NULL/"" = wieder erkennen lassen.
+ * @return false, wenn selbst roh nichts daraus wurde (Grund: @ref k1520d_last_error).
+ */
+K1520_API bool k1520d_redetect(K1520Disk h, const char* fs_name);
+
+/**
+ * @brief Jede zweite Spur wegwerfen (Doppelschritt-Diskette geradeziehen), §12.6.
+ *
+ * **Loest das Abbild vom Laufwerk**: die Spurnummern stimmen danach nicht mehr mit
+ * den Kopfpositionen ueberein, ein Rueckschreiben ginge auf die falschen Zylinder.
+ * @return verbliebene Spuren, -1 bei Fehler.
+ */
+K1520_API int k1520d_keep_even_tracks(K1520Disk h);
+
+/// @brief Seite 1 wegwerfen (§12.6).  Loest ebenfalls vom Laufwerk.
+K1520_API int k1520d_drop_second_side(K1520Disk h);
+
+/**
  * @brief Das Speicherabbild der geoeffneten Diskette auf ein **echtes Laufwerk** legen.
  *
  * Kopiert jede bekannte Spur in das Medium hinter @p sync.  Damit gilt sie dort als

@@ -83,6 +83,17 @@ _SPEC: List[Tuple] = [
      "Das vollständige Speicherabbild noch einmal auf die eingelegte Diskette "
      "schreiben — für eine frische, fehlerfreie.  Nur bereits gelesene Spuren "
      "werden geschrieben", "_neu_beschreiben", False),
+    # Zurechtschneiden des SPEICHERABBILDS (§12.6) — nicht der Diskette.  Beides
+    # löst vom Laufwerk: danach stimmt die Spurnummer nicht mehr mit der
+    # Kopfposition überein, ein Rückschreiben ginge auf die falschen Zylinder.
+    ("gerade_spuren", "&Ungerade Spuren entfernen", None, None,
+     "Jede zweite Spur wegwerfen — aus einer im Doppelschritt beschriebenen, aber "
+     "einfachschrittig gelesenen Diskette wird das, was ein 40-Spur-Laufwerk sieht",
+     "_gerade_spuren", False),
+    ("seite1_weg", "&Seite 1 entfernen", None, None,
+     "Die Rückseite aus dem Speicherabbild werfen — bei einer einseitig "
+     "beschriebenen Diskette steht dort nur Altbestand",
+     "_seite1_weg", False),
     ("bootabbild", "&Bootabbild sichern…", "boot", None,
      "Die Systemspuren als .bin sichern — damit lässt sich später eine neue "
      "Diskette bootfähig anlegen", "_bootabbild_sichern_dialog", False),
@@ -127,6 +138,8 @@ KURZ = {'oeffnen': 'Öffnen',
     'schreibschutz': 'R/O',
     'alles_raus': 'Alles holen',
     'alles_rein': 'Alles einfügen',
+    'gerade_spuren': 'Ungerade weg',
+    'seite1_weg': 'Seite 1 weg',
     'bootabbild': 'Bootabbild',
     'diskeditor': 'Diskeditor',
     'angaben': 'Diskette',

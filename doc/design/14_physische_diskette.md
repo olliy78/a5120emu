@@ -1018,6 +1018,73 @@ Wächter: `test_doppelschritt_faehrt_jeden_zweiten_zylinder_an`,
 `test_doppelschritt_und_nur_seite_null_gehen_durch_den_dialog`,
 `test_nur_seite_null_liest_die_rueckseite_gar_nicht`.
 
+#### 12.6 Roh öffnen und das Abbild zurechtschneiden
+
+Eine Diskette, die keiner Erkennung folgt, ist **nicht wertlos** — sie ist nur
+ungedeutet.  Bisher gab es dann gar nichts: kein Medium, kein Sektoreditor, kein
+Abbild, und die Fehlermeldung listete zum Trost jede einzelne der 160 gemessenen
+Spuren.  Drei Änderungen machen daraus einen Arbeitsweg.
+
+**1. Roh öffnen.**  `DiskVolume::openPhysical(..., roh_erlaubt=true)` gibt die
+Diskette auch dann heraus, wenn kein Dateisystem gefunden wurde — dann eben ohne
+(`hasFileSystem() == false`).  Medium, Diskeditor, „Speichern unter" und die
+Schnittwerkzeuge arbeiten weiter; gesperrt ist nur, was **Dateien** braucht
+(Extrahieren, Einfügen, Archivieren, Bootabbild).  Der Grund steht im Befund, nicht
+in einem Abbruch.
+
+**2. Am Laufwerk wird nicht mehr voll nachgemessen.**  Reicht die Stichprobe nicht,
+folgte bisher die Vollmessung — an einer echten Diskette anderthalb Minuten, an deren
+Ende womöglich doch keine Erkennung steht.  Sie unterbleibt jetzt, **solange sie etwas
+kostet** (`medium.loader() && !complete()`); stattdessen wird roh geöffnet und im
+Hintergrund weitergelesen.  Wer es später noch einmal versucht, misst dann umsonst
+voll — die Diskette liegt inzwischen im Speicher.
+
+**3. Erkennung am Speicherabbild** (`k1520d_redetect`).  Das gelesene Medium wandert
+per `releaseImage()` unverändert in ein neues Volume.  Das ist der richtige Weg für
+„Dateisystem von Hand wählen" **und** für die Zeit nach einem Schnitt: die Diskette
+noch einmal zu holen dauert und läse womöglich anderes (eine halb gelesene Diskette
+ist danach anders halb gelesen).
+
+##### Die zwei Schnitte
+
+*Diskette ▸ Speicherabbild ändern ▸* **Ungerade Spuren entfernen** / **Seite 1
+entfernen** (`keepEvenTracks`, `dropSecondSide`).  Sie arbeiten am **Abbild**, nicht
+an der Diskette — der Unterschied steht im Menünamen.
+
+Wozu: eine 40-Spur-Diskette, die im Doppelschritt beschrieben und einfachschrittig
+gelesen wurde, trägt auf den ungeraden Zylindern den Altbestand einer früheren
+Formatierung; dasselbe gilt für Seite 1 einer einseitig beschriebenen Diskette.  Als
+Ganzes ist das keine Diskette, die ein Katalog kennt — nach dem Schnitt schon.
+
+> **Beide lösen das Abbild vom Laufwerk** (`medium.setLoader(nullptr)`).  Danach
+> stimmt die Spurnummer nicht mehr mit der Kopfposition überein: Spur *n* liegt
+> physisch auf *2n*.  Ein Rückschreiben ginge auf die falschen Zylinder und
+> zerstörte die Diskette.  Das Abbild bleibt vollständig im Speicher — nur die
+> Bindung endet, und die Oberfläche sagt das vorher.  Wer es zurückschreiben will,
+> nimmt danach *Physische Diskette überschreiben* mit dem Doppelschritt-Haken
+> (§12.5) — dann stimmt es wieder.
+
+**An der echten Diskette durchgefahren** (cpa800, mit UDOS im Doppelschritt
+überschrieben):
+
+| Schritt | Ergebnis |
+|---|---|
+| Öffnen | 10 s, 13 Spuren, roh — Diskeditor bedienbar |
+| im Hintergrund | 160 Spuren nach 99 s |
+| *Seite 1 entfernen* | 80×1, noch nicht erkannt |
+| *Ungerade Spuren entfernen* | 40×1 → **`udos_ss40`, 44 Dateien** |
+
+**Die Meldung ist kompakt.**  Die Geometriemessung nennt jede Spur; ein Streifen mit
+160 Zeilen ist keine Meldung mehr, sondern eine Wand.  Angezeigt werden die ersten
+zwei Zeilen (höchstens 200 Zeichen), vollständig steht sie im Protokoll (F8).  Das
+gilt für den Rohbefund **und** für den Medium-Befund — beide gingen durch dieselbe
+Stelle (`_kurzgefasst`).
+
+Wächter: `test_nicht_erkannt_wird_roh_geoeffnet` (Editor bedienbar, Meldung einzeilig),
+`test_schneiden_macht_ein_abbild_lesbar` (Doppelschritt-Abbild → erkannt),
+`test_schneiden_loest_das_abbild_vom_laufwerk` (danach geht nichts mehr hinaus),
+`test_dateisystem_laesst_sich_auch_physisch_uebersteuern` (keine zweite Sitzung).
+
 ### 12.4 Eine Datei auf eine echte Diskette schreiben
 
 Der Gegenweg zum Laden: Quelle ist das, was gerade offen ist — auch eine `.hfe` —,

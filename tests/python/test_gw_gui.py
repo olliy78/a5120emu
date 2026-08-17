@@ -644,45 +644,74 @@ def test_dateisystem_laesst_sich_auch_physisch_uebersteuern(app, hfe, monkeypatc
         erkannt = fenster.tool.filesystem
         assert fenster._physisch_wahl, "die Angaben wurden nicht gemerkt"
 
-        # Umstellen auf dasselbe Dateisystem — der Weg muss durch die physische
-        # Neuöffnung gehen und darf NICHT über open_image("") laufen.
+        # Umstellen: darf NICHT über open_image("") laufen (leerer Pfad) — und darf
+        # die Diskette auch nicht noch einmal einlesen.  Sie liegt im Speicher; die
+        # Erkennung gehört dorthin.
         fenster._fs_setzen(erkannt, neu_oeffnen=True)
         assert fenster.tool is not None, "beim Übersteuern ging die Diskette verloren"
         assert fenster.tool.filesystem == erkannt
         assert fenster._eintraege, "keine Dateien nach dem Übersteuern"
-        assert len(sitzungen) == 2, "es wurde keine neue Sitzung aufgebaut"
+        assert len(sitzungen) == 1, \
+            "die Diskette wurde erneut eingelesen, statt am Abbild zu erkennen"
         assert fenster.act_diskeditor.isEnabled()
     finally:
         fenster._close_tool()
 
 
-def test_nicht_erkannt_bietet_den_ausweg_an(app, hfe, monkeypatch):
-    """Scheitert die Erkennung, ist die Diskette nicht verloren — nur unerkannt.
+def test_nicht_erkannt_wird_roh_geoeffnet(app, hfe, monkeypatch):
+    """Eine unerkannte Diskette ist nicht verloren — sie ist nur ungedeutet.
 
-    Dann muss der Ausweg dastehen (Dateisystem wählen) und das Menü dafür
-    bedienbar sein — gesperrt verstellte es genau den einzigen Weg hinein.
+    Früher gab es dann GAR NICHTS: kein Medium, kein Diskeditor, kein Abbild.
+    Jetzt liegt die Diskette im Speicher, nur ohne Dateisystem; der Editor geht,
+    das Abbild lässt sich sichern, und die Deutung kann später nachkommen —
+    wenn mehr gelesen ist oder das Abbild zurechtgeschnitten wurde (§12.6).
     """
     from app.disktool.ui.main_window import MainWindow as DiskToolWindow
-    from app.core_binding.k1520disk import K1520DiskError
     from app.ui import physical_disk
 
+    sitzung = fake_session(hfe, read_ahead=False)
     monkeypatch.setattr(physical_disk.PhysicalSession, "start",
-                        classmethod(lambda cls, **kw: fake_session(hfe,
-                                                                   read_ahead=False)))
+                        classmethod(lambda cls, **kw: sitzung))
+
     # Erkennung scheitern lassen — wie bei einem gemischten Format ohne Katalogeintrag.
-    monkeypatch.setattr(
-        "app.disktool.ui.main_window.DiskTool.open_physical",
-        staticmethod(lambda *a, **k: (_ for _ in ()).throw(
-            K1520DiskError("passt zu keinem Format"))))
+    echt = type(sitzung).__module__            # nur zur Klarheit
+    import app.core_binding.k1520disk as bind
+    roh = bind.DiskTool.open_physical_raw
+
+    class OhneDateisystem:
+        """Hülle um die echte Diskette, die `has_filesystem` verneint."""
+        def __init__(self, t): object.__setattr__(self, "_t", t)
+        def __getattr__(self, n): return getattr(self._t, n)
+        @property
+        def has_filesystem(self): return False
+        @property
+        def remarks(self):
+            return ("kein Katalogeintrag passt\n" + "\n".join(
+                f"  c{c}h0 : 26 Sektoren à 128 B" for c in range(160)))
+
+    monkeypatch.setattr("app.disktool.ui.main_window.DiskTool.open_physical_raw",
+                        staticmethod(lambda *a, **k: OhneDateisystem(roh(*a, **k))))
 
     fenster = DiskToolWindow()
     try:
-        assert fenster.open_physical(drive="a") is False
-        assert fenster.tool is None
-        assert "Nicht erkannt" in fenster.info_bar.text()
-        assert fenster._physisch_wahl, "ohne gemerkte Wahl gibt es kein Zurück"
-        assert fenster.menue_fs.isEnabled(), \
-            "das Dateisystem-Menü ist gesperrt — der einzige Weg hinein"
+        assert fenster.open_physical(drive="a") is True, "roh öffnen scheiterte"
+        assert fenster.tool is not None, "die Diskette liegt nicht im Speicher"
+        assert not fenster.tool.has_filesystem
+
+        # Der Diskeditor MUSS gehen — das ist der Sinn der Sache.
+        assert fenster.act_diskeditor.isEnabled()
+        assert fenster.act_speichern_unter.isEnabled(), "Abbild sichern gesperrt"
+        # Dateiabhängiges bleibt zu.
+        assert not fenster.act_alles_raus.isEnabled()
+
+        # Und die Meldung ist KOMPAKT — 160 Zeilen sind keine Meldung, sondern
+        # eine Wand.  Vollständig steht sie im Protokoll.
+        text = fenster.info_bar.text()
+        assert text.count("\n") == 0 and len(text) < 500, \
+            f"Meldung zu lang ({len(text)} Zeichen, {text.count(chr(10))+1} Zeilen)"
+        assert "kein Dateisystem" in text
+        assert "Protokoll" in text or "…" in text
+        assert fenster.menue_fs.isEnabled(), "der Weg zur Handauswahl ist versperrt"
     finally:
         fenster._close_tool()
 

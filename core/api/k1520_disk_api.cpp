@@ -151,6 +151,52 @@ extern "C" K1520Disk k1520d_open_physical(K1520Sync sync, const char* fs_name,
     return h.release();
 }
 
+extern "C" K1520Disk k1520d_open_physical_raw(K1520Sync sync, const char* fs_name,
+                                              bool read_only) {
+    g_open_error.clear();
+    std::unique_ptr<DiskImage> abbild = k1520s_take_image(sync);
+    if (!abbild) {
+        g_open_error = "kein physisches Laufwerk (oder schon geoeffnet)";
+        return nullptr;
+    }
+    auto h = std::make_unique<Handle>();
+    std::string err;
+    h->vol = DiskVolume::openPhysical(std::move(abbild), fs_name ? fs_name : "",
+                                      kataloge().formate, kataloge().dateisysteme,
+                                      err, read_only, /*roh_erlaubt=*/true);
+    if (!h->vol) { g_open_error = err; return nullptr; }
+    return h.release();
+}
+
+extern "C" bool k1520d_has_filesystem(K1520Disk h) {
+    return h && H(h)->vol->hasFileSystem();
+}
+
+extern "C" bool k1520d_redetect(K1520Disk h, const char* fs_name) {
+    if (!h) return false;
+    Handle* p = H(h);
+    std::unique_ptr<DiskImage> abbild = p->vol->releaseImage();
+    if (!abbild) { p->vol->noteError("keine Diskette im Speicher"); return false; }
+
+    const bool ro = p->vol->readOnly();
+    std::string err;
+    auto neu = DiskVolume::openPhysical(std::move(abbild), fs_name ? fs_name : "",
+                                        kataloge().formate, kataloge().dateisysteme,
+                                        err, ro, /*roh_erlaubt=*/true);
+    if (!neu) { p->vol->noteError(err); return false; }
+    p->vol = std::move(neu);
+    p->eintraege.clear();
+    return true;
+}
+
+extern "C" int k1520d_keep_even_tracks(K1520Disk h) {
+    return h ? H(h)->vol->keepEvenTracks() : -1;
+}
+
+extern "C" int k1520d_drop_second_side(K1520Disk h) {
+    return h ? H(h)->vol->dropSecondSide() : -1;
+}
+
 extern "C" K1520Disk k1520d_create(const char* path, const char* fs_name,
                                    const char* label) {
     return k1520d_create_bootable(path, fs_name, label, nullptr);

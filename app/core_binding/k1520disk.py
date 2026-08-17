@@ -67,6 +67,16 @@ _lib.k1520d_open.restype = _H
 # Physische Diskette am Greaseweazle (doc/design/14_physische_diskette.md)
 _lib.k1520d_open_physical.argtypes = [ctypes.c_void_p, _CS, ctypes.c_bool]
 _lib.k1520d_open_physical.restype = _H
+_lib.k1520d_open_physical_raw.argtypes = [ctypes.c_void_p, _CS, ctypes.c_bool]
+_lib.k1520d_open_physical_raw.restype = _H
+_lib.k1520d_has_filesystem.argtypes = [_H]
+_lib.k1520d_has_filesystem.restype = ctypes.c_bool
+_lib.k1520d_redetect.argtypes = [_H, _CS]
+_lib.k1520d_redetect.restype = ctypes.c_bool
+_lib.k1520d_keep_even_tracks.argtypes = [_H]
+_lib.k1520d_keep_even_tracks.restype = ctypes.c_int
+_lib.k1520d_drop_second_side.argtypes = [_H]
+_lib.k1520d_drop_second_side.restype = ctypes.c_int
 _lib.k1520d_probe_track_count.argtypes = [ctypes.c_int, ctypes.c_int]
 _lib.k1520d_probe_track_count.restype = ctypes.c_int
 _lib.k1520d_write_to_physical.argtypes = [_H, ctypes.c_void_p]
@@ -588,6 +598,62 @@ class DiskTool:
         if not h:
             raise K1520DiskError(_s(_lib.k1520d_last_open_error()))
         return cls(h, "")
+
+    @classmethod
+    def open_physical_raw(cls, sync, filesystem: Optional[str] = None,
+                          read_only: bool = True) -> "DiskTool":
+        """Wie :meth:`open_physical`, **öffnet aber auch ohne Erkennung**.
+
+        Wird kein Dateisystem gefunden, kommt die Diskette trotzdem heraus — nur
+        eben ohne (:attr:`has_filesystem` ist dann False).  Medium, Sektoreditor,
+        Abbild sichern und die Schnittwerkzeuge arbeiten weiter; Dateien gibt es
+        keine.  Der Grund steht in :attr:`remarks`.
+        """
+        h = _lib.k1520d_open_physical_raw(getattr(sync, "handle", sync),
+                                          _b(filesystem or ""), read_only)
+        if not h:
+            raise K1520DiskError(_s(_lib.k1520d_last_open_error()))
+        return cls(h, "")
+
+    @property
+    def has_filesystem(self) -> bool:
+        """Ist ein Dateisystem gemountet?  False = roh geöffnet."""
+        return bool(_lib.k1520d_has_filesystem(self._h))
+
+    def redetect(self, filesystem: Optional[str] = None) -> bool:
+        """Erkennung am **Speicherabbild** wiederholen — ohne neu einzulesen.
+
+        Für „Dateisystem von Hand wählen" und für die Zeit nach einem Schnitt.
+
+        Args:
+            filesystem: erzwingen; None/"" = wieder erkennen lassen.
+
+        Returns:
+            True, wenn danach ein Dateisystem gemountet ist.
+        """
+        if not _lib.k1520d_redetect(self._h, _b(filesystem or "")):
+            raise K1520DiskError(self._fail())
+        return self.has_filesystem
+
+    def keep_even_tracks(self) -> int:
+        """Jede zweite Spur wegwerfen — **löst das Abbild vom Laufwerk**.
+
+        Aus einer im Doppelschritt beschriebenen, aber einfachschrittig gelesenen
+        Diskette wird das, was ein 40-Spur-Laufwerk sieht.
+
+        Returns: verbliebene Spuren.
+        """
+        n = int(_lib.k1520d_keep_even_tracks(self._h))
+        if n < 0:
+            raise K1520DiskError(self._fail())
+        return n
+
+    def drop_second_side(self) -> int:
+        """Seite 1 wegwerfen — **löst das Abbild vom Laufwerk**."""
+        n = int(_lib.k1520d_drop_second_side(self._h))
+        if n < 0:
+            raise K1520DiskError(self._fail())
+        return n
 
     def write_to_physical(self, sync) -> int:
         """Das Speicherabbild auf ein **echtes Laufwerk** legen.

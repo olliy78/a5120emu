@@ -170,17 +170,52 @@ public:
      * verhaelt sich der Datentraeger wie jeder andere — der Unterschied ist allein,
      * dass Spuren beim ersten Zugriff **nachgeladen** werden.
      *
-     * **Das Oeffnen liest die ganze Diskette**: die Formaterkennung sieht sich jede
-     * Spur an.  Der Aufruf gehoert deshalb in einen Arbeitsfaden mit
-     * Fortschrittsanzeige, nicht in den Oberflaechenfaden
-     * (doc/design/14_physische_diskette.md §11.2).
+     * Das Oeffnen misst eine **Stichprobe** (§11.2a) und holt das Verzeichnis; der
+     * Aufruf gehoert in einen Arbeitsfaden mit Fortschrittsanzeige, nicht in den
+     * Oberflaechenfaden.
+     *
+     * @param roh_erlaubt  Wird nichts erkannt, trotzdem **oeffnen** — ohne
+     *        Dateisystem, aber mit Medium.  Eine Diskette, die keiner Erkennung
+     *        folgt, ist nicht wertlos: man will sie im Sektoreditor ansehen, ihr
+     *        Abbild sichern oder sie zurechtschneiden (@ref keepEvenTracks).  Ohne
+     *        das war sie schlicht nicht zu oeffnen (§12.6).
      */
     static std::unique_ptr<DiskVolume> openPhysical(std::unique_ptr<DiskImage> disk,
                                                     const std::string& fs_name,
                                                     const FormatCatalog& formats,
                                                     const FsCatalog& fs_cat,
                                                     std::string& err,
-                                                    bool read_only = true);
+                                                    bool read_only = true,
+                                                    bool roh_erlaubt = false);
+
+    /// @brief Ist ein Dateisystem gemountet?  false = **roh** geoeffnet (§12.6):
+    ///        Medium, Sektoreditor und Abbild gehen, Dateien gibt es keine.
+    bool hasFileSystem() const { return profile_ != nullptr; }
+
+    /**
+     * @brief Das Abbild herausgeben — die Diskette bleibt, das Volume gibt sie ab.
+     *
+     * Fuer die **Neuerkennung am Speicherabbild**: statt die Diskette noch einmal
+     * vom Laufwerk zu holen (das dauert und liest womoeglich anderes), wandert das
+     * bereits gelesene Medium in ein neues @ref DiskVolume.  Danach ist dieses hier
+     * leer und nur noch zu zerstoeren.
+     */
+    std::unique_ptr<DiskImage> releaseImage();
+
+    /**
+     * @brief Jede zweite Spur wegwerfen — aus 80 Zylindern werden 40 (§12.6).
+     *
+     * Eine im **Doppelschritt** beschriebene Diskette, die einfachschrittig gelesen
+     * wurde, traegt auf den ungeraden Zylindern den Altbestand einer frueheren
+     * Formatierung.  Danach ist das Abbild das, was ein 40-Spur-Laufwerk sieht.
+     *
+     * @return Zahl der verbliebenen Spuren, -1 bei Fehler.
+     */
+    int keepEvenTracks();
+
+    /// @brief Seite 1 wegwerfen — aus einer zweiseitigen wird eine einseitige
+    ///        Diskette (§12.6).  @return verbliebene Spuren, -1 bei Fehler.
+    int dropSecondSide();
 
     /**
      * @brief **Neue, leere** Diskette anlegen: formatieren + Dateisystem initialisieren.
@@ -487,13 +522,17 @@ private:
 
     /// @brief Gemeinsamer Kern von @ref open und @ref openPhysical (§ Erkennung).
     ///        @p vorhanden leer = @p path oeffnen; sonst das uebergebene Abbild nehmen.
+    /// @brief Gemeinsamer Kern von @ref keepEvenTracks und @ref dropSecondSide.
+    int schneide(bool nur_gerade_spuren, bool nur_seite_null);
+
     static std::unique_ptr<DiskVolume> oeffnenMit(std::unique_ptr<DiskImage> vorhanden,
                                                   const std::string& path,
                                                   const std::string& fs_name,
                                                   const FormatCatalog& formats,
                                                   const FsCatalog& fs_cat,
                                                   std::string& err,
-                                                  bool read_only);
+                                                  bool read_only,
+                                                  bool roh_erlaubt = false);
 
     /// @brief Ein Dateisystem samt seinem Sektorraum.
     struct Vol {
