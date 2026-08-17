@@ -64,6 +64,8 @@ TEXT = 1
 # ── Öffnen / Anlegen / Speichern ────────────────────────────────────────────
 _lib.k1520d_open.argtypes = [_CS, _CS, ctypes.c_bool]
 _lib.k1520d_open.restype = _H
+_lib.k1520d_open_raw.argtypes = [_CS, _CS, ctypes.c_bool]
+_lib.k1520d_open_raw.restype = _H
 # Physische Diskette am Greaseweazle (doc/design/14_physische_diskette.md)
 _lib.k1520d_open_physical.argtypes = [ctypes.c_void_p, _CS, ctypes.c_bool]
 _lib.k1520d_open_physical.restype = _H
@@ -606,6 +608,24 @@ class DiskTool:
         if not h:
             raise K1520DiskError(_s(_lib.k1520d_last_open_error()))
         return cls(h, "")
+
+    @classmethod
+    def open_raw(cls, path, filesystem: Optional[str] = None,
+                 read_only: bool = True) -> "DiskTool":
+        """Wie :meth:`open`, **öffnet aber auch ohne Erkennung**.
+
+        Wird kein Dateisystem gefunden, kommt das Abbild trotzdem heraus — nur eben
+        ohne (:attr:`has_filesystem` ist dann False).  Medium, Sektoreditor und
+        „Speichern unter" arbeiten weiter; Dateien gibt es keine.
+
+        Gilt für eine Datei genauso wie für eine physische Diskette: eine gemischte
+        oder unbekannte Geometrie ist kein Grund, das Abbild gar nicht herzugeben.
+        """
+        p = os.fspath(path)
+        h = _lib.k1520d_open_raw(_b(p), _b(filesystem or ""), read_only)
+        if not h:
+            raise K1520DiskError(_s(_lib.k1520d_last_open_error()))
+        return cls(h, p)
 
     @classmethod
     def open_physical_raw(cls, sync, filesystem: Optional[str] = None,

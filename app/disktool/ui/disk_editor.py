@@ -1070,11 +1070,20 @@ class DiskEditorWindow(QDialog):
         # Angabe weg, statt eine leere Spalte zu zeigen.
         verfahren = f"IBM-{spur.encoding}"
         groesse = f"{len(daten)} Byte"
-        # **Am Sektor entschieden, nicht am erkannten Dateisystem.**  Eine gemischte
-        # oder gar nicht erkannte Diskette trägt ihre UDOS-Sektoren genauso; wer sie
-        # im Editor ansieht, will die Verkettung sehen.  Maßgeblich ist, ob hinter
-        # der Daten-CRC etwas anderes steht als Gap-Füllbytes.
+        # Zwei Wege zur selben Frage — und beide werden gebraucht:
+        #
+        # * **Der Sektor selbst**: steht hinter der Daten-CRC etwas anderes als
+        #   Gap-Füllbytes, ist der Anhang belegt.  Das trägt auch eine gemischte
+        #   oder gar nicht erkannte Diskette — dort ist es die einzige Auskunft.
+        # * **Das Dateisystem**: auf einer FRISCH FORMATIERTEN UDOS-Diskette lautet
+        #   der Kontrollblock nie beschriebener Sektoren `4E 4E 4E 4E`
+        #   (doc/udos_diskettenformat.md §1.1) — vom Gap nicht zu unterscheiden.
+        #   Wo UDOS erkannt ist, wissen wir es trotzdem besser.
+        #
+        # Nur das erste Kriterium war zu streng (frisch angelegte Disketten zeigten
+        # nichts), nur das zweite war es auch (gemischte Disketten zeigten nichts).
         anhang_da = bool(getattr(span, "tail_bytes", 0)) if span else False
+        anhang_da = anhang_da or (self.udos and span is not None)
         self.tail_feld.setVisible(anhang_da)
         self.tail_deutung.setVisible(anhang_da)
         if anhang_da:

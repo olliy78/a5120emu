@@ -94,17 +94,28 @@ def test_udos_disk_is_shown_as_one_carrier_with_two_side_groups(window, fixture_
     assert window.info_bar.stufe == "warnung"
 
 
-def test_unrecognised_image_locks_the_buttons(window, fixture_disks):
-    """Ohne Erkennung bleibt die Liste leer, die Meldung steht im Fenster."""
-    assert not window.open_image(fixture_disks / "cpa_mini.hfe")
+def test_unrecognised_image_opens_raw_and_locks_the_file_actions(window,
+                                                                 fixture_disks):
+    """Ohne Erkennung: das Abbild ist DA, nur ohne Dateisystem (§12.6).
 
-    assert window.tool is None
+    Früher gab es gar nichts — kein Medium, kein Diskeditor.  Eine gemischte oder
+    unbekannte Geometrie ist aber kein Grund, das Abbild zurückzuhalten: ansehen,
+    sichern und zurechtschneiden bleiben möglich.  Gesperrt ist, was DATEIEN
+    braucht.
+    """
+    assert window.open_image(fixture_disks / "cpa_mini.hfe")
+
+    assert window.tool is not None, "das Abbild wurde nicht hergegeben"
+    assert not window.tool.has_filesystem
     assert window.disk_view.tree.topLevelItemCount() == 0
-    assert "passt zu keinem Format" in window.info_bar.text()
-    assert "4 Sektoren" in window.info_bar.text()
-    assert window.info_bar.stufe == "fehler"
-    for knopf in (window.act_alles_rein, window.act_loeschen, window.act_speichern):
-        assert not knopf.isEnabled(), "Schreiben muss gesperrt sein"
+    assert "kein Dateisystem" in window.info_bar.text()
+    # Kompakt: die Messung nennt sonst jede Spur einzeln.
+    assert window.info_bar.text().count("\n") == 0
+
+    assert window.act_diskeditor.isEnabled(), "der Sektoreditor muss gehen"
+    assert window.act_speichern_unter.isEnabled(), "Abbild sichern muss gehen"
+    for knopf in (window.act_alles_rein, window.act_loeschen, window.act_alles_raus):
+        assert not knopf.isEnabled(), "was Dateien braucht, bleibt gesperrt"
 
 
 def test_forcing_a_filesystem_reopens_the_image(window, fixture_disks):
@@ -617,12 +628,41 @@ def test_disk_editor_zeigt_den_udos_anhang_auch_ohne_erkanntes_udos(
     assert ed.tail_feld.text().strip(), "Anhangfeld leer"
     assert "UDOS" in ed.info.text()
 
-    # Und umgekehrt: wo keiner ist, steht auch keiner.
+    # Und umgekehrt: bei CP/M steht dort nichts — weder Inhalt noch Dateisystem
+    # sprechen dafür.
     ed2 = _editor(window, fixture_disks / "cpa_cpa780_k5601_noclock.hfe")
-    ed2.udos = True              # so, als wäre UDOS erkannt worden
+    assert not ed2.udos
     ed2._springe(seite=0, spur=25, sektor_id=1)
     assert not ed2.tail_feld.isVisible(), \
         "auf einer CP/M-Spur stehen dort Gap-Füllbytes, kein Anhang"
+
+
+def test_frisch_angelegte_udos_diskette_zeigt_ihre_anhaenge(window, tmp_path):
+    """Auch eine **frisch angelegte** UDOS-Diskette hat Kontrollblöcke.
+
+    Auf einer frisch formatierten UDOS-Diskette lautet der Kontrollblock nie
+    beschriebener Sektoren `4E 4E 4E 4E` (`doc/udos_diskettenformat.md` §1.1) — vom
+    Gap-Füllbyte nicht zu unterscheiden.  Am Inhalt allein war er deshalb nicht zu
+    sehen; dass UDOS erkannt ist, weiss es aber besser.
+
+    Die Diskette selbst ist dabei in Ordnung: das Anlegen schreibt genau das, was
+    ein UDOS-FORMAT hinterlässt.
+    """
+    ziel = tmp_path / "neu.hfe"
+    assert window.create_disk(ziel, "udos_ss40", "TESTDISK")
+    ed = window.open_disk_editor()
+    ed.show()
+
+    ed._springe(seite=0, spur=5, sektor_id=1)
+    assert ed.tail_feld.isVisible(), "der Kontrollblock wird verschwiegen"
+    assert ed.tail_feld.text().replace(" ", "") == "4E4E4E4E", \
+        f"unerwarteter Inhalt: {ed.tail_feld.text()!r}"
+    assert "UDOS" in ed.info.text()
+
+    # Der Kopfsektor der Verzeichnisdatei trägt einen ECHTEN Zeiger — Beleg dafür,
+    # dass das Anlegen die Verkettung schreibt, nicht nur Füllbytes.
+    ed._springe(seite=0, spur=22, sektor_id=1)
+    assert ed.tail_feld.text().replace(" ", "") != "4E4E4E4E"
 
 
 def test_disk_editor_loescht_und_fuegt_ganze_spuren_ein(window, temp_disk):

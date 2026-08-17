@@ -1473,16 +1473,24 @@ zeigt beide Zeiger im Klartext (`zurück: Spur 22/Sektor 6   vor: …`, `FF FF` 
 Kettenende).  **Alles in EINER Zeile** — Format, Grösse, Rohbytes, Deutung: jede
 zusätzliche Zeile im unteren Teil fehlt oben der Scheibe.
 
-**Ob es den Anhang gibt, sagt der SEKTOR** (`TrackSpan::tail_bytes`), nicht das
-erkannte Dateisystem.  Anfangs hing es an `filesystem_type == "udos"` — und damit
+**Ob es den Anhang gibt, sagen SEKTOR und Dateisystem gemeinsam** — und beides wird
+gebraucht.  Anfangs hing es an `filesystem_type == "udos"` — und damit
 sah man auf einer **gemischten oder gar nicht erkannten** Diskette ihre
 UDOS-Sektoren ohne Verkettung, obwohl der Kontrollblock danebenstand.  Gerade dort
 will man ihn aber sehen; die Erkennung ist ja gescheitert.  Entschieden wird am
 Inhalt: hinter dem Datenfeld steht auf einer gewöhnlichen IBM-Spur das
 **Gap-Füllbyte** (MFM `4E`, FM `FF`) — weicht eines der ersten vier Bytes davon ab,
-gilt der Anhang als belegt.  Bei CP/M bleiben die Angaben weg, statt eine leere
-Spalte zu zeigen.  Wächter: `TrackViewAnhang.*`,
-`test_disk_editor_zeigt_den_udos_anhang_auch_ohne_erkanntes_udos`.
+gilt der Anhang als belegt (`TrackSpan::tail_bytes`).
+
+Das allein reicht aber nicht: auf einer **frisch formatierten** UDOS-Diskette lautet
+der Kontrollblock nie beschriebener Sektoren `4E 4E 4E 4E` (`doc/udos_diskettenformat.md`
+§1.1) — vom Gap nicht zu unterscheiden.  Wo UDOS **erkannt** ist, wissen wir es
+trotzdem besser.  Deshalb: **Inhalt ODER Dateisystem.**  Nur der Inhalt war zu streng
+(frisch angelegte Disketten zeigten nichts), nur das Dateisystem war es auch
+(gemischte Disketten zeigten nichts).  Bei CP/M spricht keines von beiden dafür, dort
+bleiben die Angaben weg.  Wächter: `TrackViewAnhang.*`,
+`test_disk_editor_zeigt_den_udos_anhang_auch_ohne_erkanntes_udos`,
+`test_frisch_angelegte_udos_diskette_zeigt_ihre_anhaenge`.
 
 Der Anhang ist **änderbar**: die vier Rohbytes stehen in einem eigenen Eingabefeld
 (gesperrt, solange die Diskette schreibgeschützt ist), die Deutung daneben. Zwei

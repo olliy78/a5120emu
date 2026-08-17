@@ -113,6 +113,20 @@ extern "C" K1520Disk k1520d_open(const char* path, const char* fs_name, bool rea
     return h.release();
 }
 
+extern "C" K1520Disk k1520d_open_raw(const char* path, const char* fs_name,
+                                     bool read_only) {
+    g_open_error.clear();
+    if (!path || !*path) { g_open_error = "kein Pfad angegeben"; return nullptr; }
+
+    auto h = std::make_unique<Handle>();
+    std::string err;
+    h->vol = DiskVolume::open(path, fs_name ? fs_name : "", kataloge().formate,
+                              kataloge().dateisysteme, err, read_only,
+                              /*roh_erlaubt=*/true);
+    if (!h->vol) { g_open_error = err; return nullptr; }
+    return h.release();
+}
+
 extern "C" int k1520d_write_to_physical(K1520Disk h, K1520Sync sync) {
     if (!h) return -1;
     Handle* p = H(h);

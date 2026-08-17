@@ -1025,12 +1025,19 @@ ungedeutet.  Bisher gab es dann gar nichts: kein Medium, kein Sektoreditor, kein
 Abbild, und die Fehlermeldung listete zum Trost jede einzelne der 160 gemessenen
 Spuren.  Drei Änderungen machen daraus einen Arbeitsweg.
 
-**1. Roh öffnen.**  `DiskVolume::openPhysical(..., roh_erlaubt=true)` gibt die
+**1. Roh öffnen.**  `DiskVolume::open(..., roh_erlaubt=true)` gibt die
 Diskette auch dann heraus, wenn kein Dateisystem gefunden wurde — dann eben ohne
 (`hasFileSystem() == false`).  Medium, Diskeditor, „Speichern unter" und die
 Schnittwerkzeuge arbeiten weiter; gesperrt ist nur, was **Dateien** braucht
 (Extrahieren, Einfügen, Archivieren, Bootabbild).  Der Grund steht im Befund, nicht
 in einem Abbruch.
+
+> **Für eine DATEI genauso.**  Zuerst galt das nur für die physische Diskette — und
+> dieselbe Diskette, als `.hfe` gesichert, blieb verschlossen, obwohl sie dieselbe
+> ist.  `k1520d_open_raw` ist deshalb das Gegenstück zu `k1520d_open_physical_raw`,
+> und die Oberfläche geht beide Wege gleich.  Der CLI und den Tests bleibt
+> `k1520d_open` erhalten: dort ist „nicht erkannt" weiterhin ein Fehler, kein
+> Arbeitszustand.
 
 **2. Am Laufwerk wird nicht mehr voll nachgemessen.**  Reicht die Stichprobe nicht,
 folgte bisher die Vollmessung — an einer echten Diskette anderthalb Minuten, an deren

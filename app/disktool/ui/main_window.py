@@ -815,10 +815,17 @@ class MainWindow(QMainWindow):
     # ════════════════════════════════════════════════════════════════════════
 
     def open_image(self, path, filesystem: str = "") -> bool:
-        """Abbild öffnen.  Scheitert die Erkennung, bleibt alles gesperrt."""
+        """Abbild öffnen — **roh, wenn nichts erkannt wird** (§12.6).
+
+        Eine gemischte oder unbekannte Geometrie ist kein Grund, das Abbild gar
+        nicht herzugeben: Sektoreditor, „Speichern unter" und die Schnitte arbeiten
+        weiter, nur Dateien gibt es keine.  Das galt zunächst nur für physische
+        Disketten — dieselbe Diskette als DATEI blieb verschlossen, obwohl sie
+        dieselbe ist.
+        """
         self._close_tool()
         try:
-            self.tool = DiskTool.open(path, filesystem or None)
+            self.tool = DiskTool.open_raw(path, filesystem or None)
         except (K1520DiskError, FileNotFoundError) as e:
             self.tool = None
             self.disk_view.clear()
@@ -838,6 +845,8 @@ class MainWindow(QMainWindow):
         self.act_schreibschutz.blockSignals(False)
         self._reload()
         self._medium_meldungen()
+        if not self.tool.has_filesystem:
+            self._roh_melden()
         self._zuletzt_merken(str(path))
         self.log_dock.append(f"Geöffnet: {path} — {self.tool.filesystem}")
         self.statusBar().showMessage(
@@ -1106,11 +1115,16 @@ class MainWindow(QMainWindow):
         """
         grund = (self.tool.remarks or "").strip()
         self.log_dock.append("Kein Dateisystem erkannt. " + grund)
+        # Am Laufwerk läuft das Lesen weiter, bei einer Datei ist schon alles da —
+        # ein Satz, der das Falsche verspricht, ist schlimmer als keiner.
+        laeuft = self._physisch is not None
         self.info_bar.zeige(
-            "Aus den zuerst gelesenen Spuren liess sich kein Dateisystem ermitteln — "
+            ("Aus den zuerst gelesenen Spuren" if laeuft else "Aus dem Abbild")
+            + " liess sich kein Dateisystem ermitteln — "
             + self._kurzgefasst(grund)
-            + "  Die Diskette wird weiter eingelesen; Diskeditor und "
-              "Abbild-Sichern gehen bereits.  Danach im Kopfbereich ein Dateisystem "
+            + ("  Die Diskette wird weiter eingelesen; Diskeditor" if laeuft
+               else "  Diskeditor")
+            + " und Abbild-Sichern gehen bereits.  Im Kopfbereich ein Dateisystem "
               "wählen oder das Abbild unter „Speicherabbild ändern\u201c "
               "zurechtschneiden.",
             "warnung", knopf="Dateisystem wählen…", bei_klick=self.menue_fs.exec)

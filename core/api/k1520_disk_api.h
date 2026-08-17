@@ -53,6 +53,19 @@ typedef enum {
 K1520_API K1520Disk k1520d_open(const char* path, const char* fs_name, bool read_only);
 
 /**
+ * @brief Wie @ref k1520d_open, aber **oeffnet auch ohne Erkennung** (§12.6).
+ *
+ * Wird kein Dateisystem gefunden, kommt das Abbild trotzdem heraus — nur eben ohne
+ * (@ref k1520d_has_filesystem == false).  Medium, Sektoreditor, „Speichern unter"
+ * und die Schnittwerkzeuge arbeiten weiter; Dateien gibt es keine.
+ *
+ * Das gilt fuer eine DATEI genauso wie fuer eine physische Diskette: eine gemischte
+ * oder unbekannte Geometrie ist kein Grund, das Abbild gar nicht herzugeben.
+ */
+K1520_API K1520Disk k1520d_open_raw(const char* path, const char* fs_name,
+                                    bool read_only);
+
+/**
  * @brief **Physische Diskette** in einem echten Laufwerk oeffnen.
  *
  * @p sync kommt aus @ref k1520s_create und wird von einem fremden Arbeitsfaden bedient.

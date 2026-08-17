@@ -160,7 +160,8 @@ public:
                                             const FormatCatalog& formats,
                                             const FsCatalog& fs_cat,
                                             std::string& err,
-                                            bool read_only = true);
+                                            bool read_only = true,
+                                            bool roh_erlaubt = false);
 
     /**
      * @brief **Physische Diskette** in einem echten Laufwerk oeffnen.

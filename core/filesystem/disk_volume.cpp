@@ -856,8 +856,10 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
                                              const FormatCatalog& formats,
                                              const FsCatalog& fs_cat,
                                              std::string& err,
-                                             bool read_only) {
-    return oeffnenMit(nullptr, path, fs_name, formats, fs_cat, err, read_only);
+                                             bool read_only,
+                                             bool roh_erlaubt) {
+    return oeffnenMit(nullptr, path, fs_name, formats, fs_cat, err, read_only,
+                      roh_erlaubt);
 }
 
 std::unique_ptr<DiskVolume> DiskVolume::openPhysical(std::unique_ptr<DiskImage> disk,
