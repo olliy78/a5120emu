@@ -108,9 +108,18 @@ K1520_API int k1520d_drop_second_side(K1520Disk h);
 ///        @return verbliebene Zylinder, -1 bei Fehler.  Loest vom Laufwerk.
 K1520_API int k1520d_delete_cylinder(K1520Disk h, int cyl);
 
-/// @brief Einen **unformatierten** Zylinder hinter @p cyl einfuegen (§19.6).
-///        @return verbliebene Zylinder, -1 bei Fehler.  Loest vom Laufwerk.
-K1520_API int k1520d_insert_cylinder_after(K1520Disk h, int cyl);
+/**
+ * @brief Einen **unformatierten** Zylinder an Position @p pos einfuegen (§19.6).
+ *
+ * Der neue Zylinder TRAEGT die Nummer @p pos; alles von dort an rueckt nach hinten.
+ * @p pos darf die Spurzahl sein (anhaengen) und **0** (vor alle bestehenden) — das
+ * braucht man, um einer MFM-Diskette eine FM-Spur 0 vorzusetzen.
+ *
+ * @param mfm  Verfahren der neuen Spur; es folgt NICHT dem Nachbarn, denn gerade der
+ *             Wechsel ist der Zweck (gemischte K1520-Formate).
+ * @return verbliebene Zylinder, -1 bei Fehler.  Loest vom Laufwerk.
+ */
+K1520_API int k1520d_insert_cylinder_at(K1520Disk h, int pos, bool mfm);
 
 /**
  * @brief Das Speicherabbild der geoeffneten Diskette auf ein **echtes Laufwerk** legen.

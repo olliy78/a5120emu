@@ -282,8 +282,14 @@ originalgetreu nachbilden lässt.
 
 **Ganze Spuren** lassen sich löschen und einfügen: *Spur löschen* wirft die
 gewählte Spur mit beiden Seiten heraus (alles dahinter rückt auf), *Spur einfügen*
-setzt dahinter eine unformatierte ein — in der sich anschliessend mit *Neuer
-Sektor* von Hand formatieren lässt. Damit stutzt man ein Abbild zurecht — etwa von 82
+fragt beim Einfügen nach **Spurnummer** und **Verfahren** (FM oder MFM) und setzt
+dort eine unformatierte Spur ein, in der sich anschliessend mit *Neuer Sektor* von
+Hand formatieren lässt.
+
+Beides ist wählbar, weil es in der K1520-Welt gemischte Formate gibt: eine
+FM-Spur lässt sich auch **vor** alle bestehenden MFM-Spuren setzen (Spurnummer 0),
+oder eine MFM-Spur hinter eine FM-Spur. Die neue Spur bekommt die eingegebene
+Nummer; alles ab dort rückt nach hinten — aus 42 wird 43. Damit stutzt man ein Abbild zurecht — etwa von 82
 auf 80 Spuren oder auf 77, damit es auf eine 8″-Diskette passt. Bei einer
 physischen Diskette endet damit die Verbindung zum Laufwerk, denn die Spurnummern
 stimmen danach nicht mehr mit den Kopfpositionen überein.

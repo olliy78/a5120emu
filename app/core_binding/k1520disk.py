@@ -79,8 +79,8 @@ _lib.k1520d_drop_second_side.argtypes = [_H]
 _lib.k1520d_drop_second_side.restype = ctypes.c_int
 _lib.k1520d_delete_cylinder.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_delete_cylinder.restype = ctypes.c_int
-_lib.k1520d_insert_cylinder_after.argtypes = [_H, ctypes.c_int]
-_lib.k1520d_insert_cylinder_after.restype = ctypes.c_int
+_lib.k1520d_insert_cylinder_at.argtypes = [_H, ctypes.c_int, ctypes.c_bool]
+_lib.k1520d_insert_cylinder_at.restype = ctypes.c_int
 _lib.k1520d_probe_track_count.argtypes = [ctypes.c_int, ctypes.c_int]
 _lib.k1520d_probe_track_count.restype = ctypes.c_int
 _lib.k1520d_write_to_physical.argtypes = [_H, ctypes.c_void_p]
@@ -676,14 +676,19 @@ class DiskTool:
             raise K1520DiskError(self._fail())
         return n
 
-    def insert_cylinder_after(self, cyl: int) -> int:
-        """Einen **unformatierten** Zylinder hinter ``cyl`` einfügen.
+    def insert_cylinder_at(self, pos: int, mfm: bool = True) -> int:
+        """Einen **unformatierten** Zylinder an Position ``pos`` einfügen.
 
-        Sektoren legt man danach im Diskeditor an.
+        Der neue Zylinder trägt die Nummer ``pos``; alles von dort an rückt nach
+        hinten.  ``pos`` darf die Spurzahl sein (anhängen) und **0** (vor alle
+        bestehenden) — das braucht man für eine FM-Spur 0 vor MFM-Daten.
+
+        Das Verfahren folgt **nicht** dem Nachbarn: gerade der Wechsel ist der
+        Zweck.  Sektoren legt man danach im Diskeditor an.
 
         Returns: verbliebene Zylinder.
         """
-        n = int(_lib.k1520d_insert_cylinder_after(self._h, cyl))
+        n = int(_lib.k1520d_insert_cylinder_at(self._h, pos, mfm))
         if n < 0:
             raise K1520DiskError(self._fail())
         return n

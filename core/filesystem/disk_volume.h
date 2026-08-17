@@ -229,14 +229,21 @@ public:
     int deleteCylinder(uint8_t cyl);
 
     /**
-     * @brief Einen leeren Zylinder HINTER @p cyl einfuegen (§19.6).
+     * @brief Einen unformatierten Zylinder **an** Position @p pos einfuegen (§19.6).
      *
-     * Alles dahinter rueckt nach hinten; der neue Zylinder ist **unformatiert** —
-     * Sektoren legt man danach im Editor an.
+     * Der neue Zylinder TRAEGT die Nummer @p pos; alles von dort an rueckt nach
+     * hinten (aus 42 wird 43).  @p pos darf @ref mediumCylinders sein (anhaengen)
+     * und **0** (vor alle bestehenden) — letzteres braucht man, um einer
+     * MFM-Diskette eine FM-Spur 0 vorzusetzen, wie es gemischte K1520-Formate haben.
+     *
+     * @param mfm  Verfahren der neuen Spur.  Es folgt NICHT dem Nachbarn: gerade der
+     *             Wechsel ist der Zweck (FM-Systemspur vor MFM-Daten und umgekehrt).
+     *             Die Bytelaenge ergibt sich daraus — bei gleicher Zellrate traegt
+     *             eine FM-Spur halb so viele Bytes je Umdrehung wie eine MFM-Spur.
      *
      * @return verbliebene Zylinder, -1 bei Fehler.
      */
-    int insertCylinderAfter(uint8_t cyl);
+    int insertCylinderAt(uint8_t pos, bool mfm);
 
     /**
      * @brief **Neue, leere** Diskette anlegen: formatieren + Dateisystem initialisieren.

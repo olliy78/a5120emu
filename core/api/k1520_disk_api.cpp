@@ -202,9 +202,9 @@ extern "C" int k1520d_delete_cylinder(K1520Disk h, int cyl) {
     return H(h)->vol->deleteCylinder(static_cast<uint8_t>(cyl));
 }
 
-extern "C" int k1520d_insert_cylinder_after(K1520Disk h, int cyl) {
-    if (!h || cyl < 0 || cyl > 255) return -1;
-    return H(h)->vol->insertCylinderAfter(static_cast<uint8_t>(cyl));
+extern "C" int k1520d_insert_cylinder_at(K1520Disk h, int pos, bool mfm) {
+    if (!h || pos < 0 || pos > 255) return -1;
+    return H(h)->vol->insertCylinderAt(static_cast<uint8_t>(pos), mfm);
 }
 
 extern "C" K1520Disk k1520d_create(const char* path, const char* fs_name,

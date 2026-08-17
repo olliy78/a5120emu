@@ -1157,40 +1157,54 @@ int DiskVolume::deleteCylinder(uint8_t cyl) {
     return m.numCylinders();
 }
 
-int DiskVolume::insertCylinderAfter(uint8_t cyl) {
+int DiskVolume::insertCylinderAt(uint8_t pos, bool mfm) {
     if (!disk_) { fail("keine Diskette geoeffnet"); return -1; }
     DiskMedium& m = disk_->medium();
-    if (cyl >= m.numCylinders()) { fail("diesen Zylinder gibt es nicht"); return -1; }
-    if (m.numCylinders() >= 255) { fail("mehr Zylinder gehen nicht"); return -1; }
+    const uint8_t alt = m.numCylinders();
+    if (pos > alt)   { fail("diese Stelle liegt hinter dem Ende"); return -1; }
+    if (alt >= 255)  { fail("mehr Zylinder gehen nicht"); return -1; }
     if (!m.complete()) {
         fail("Es sind noch Spuren ungelesen — erst vollstaendig einlesen.");
         return -1;
     }
-    m.setLoader(nullptr);
+    m.setLoader(nullptr);                    // Lage aendert sich, s. @ref schneide
 
-    const uint8_t alt = m.numCylinders();
+    // Als Vorbild fuer die LAENGE dient der Nachbar — welcher, ist gleichgueltig,
+    // beide gehoeren zur selben Umdrehung.  Bei pos == 0 gibt es keinen davor.
+    const uint8_t vorbild_c = (pos > 0) ? static_cast<uint8_t>(pos - 1)
+                                        : (alt > 0 ? pos : 0);
+    const Encoding enc = mfm ? Encoding::MFM : Encoding::FM;
+
     m.resize(static_cast<uint8_t>(alt + 1), m.numHeads());
     // Von HINTEN nach vorn schieben — sonst ueberschreibt man, was noch kommt.
-    for (int c = alt; c > cyl + 1; --c)
+    for (int c = alt; c > pos; --c)
         for (uint8_t h = 0; h < m.numHeads(); ++h)
             m.setTrack(static_cast<uint8_t>(c), h,
                        m.peek(static_cast<uint8_t>(c - 1), h));
-    // Der neue Zylinder ist UNFORMATIERT — aber nicht LEER.  Der Unterschied ist
-    // entscheidend: eine Spur ohne Bytes gibt es in dieser Geometrie gar nicht
-    // (`TrackView::exists == false`), und in eine solche laesst sich kein Sektor
-    // legen.  Eine geloeschte echte Spur traegt Fluss, nur ohne Marken — genau das
-    // wird hier gebaut: Gap-Fuellbytes in Laenge und Verfahren des NACHBARN, damit
-    // die neue Spur in dieselbe Umdrehung passt.  Sektoren lassen sich darin dann
-    // einzeln anlegen: von Hand formatieren (§19.6).
+
     for (uint8_t h = 0; h < m.numHeads(); ++h) {
-        const TrackImage& vorbild = m.peek(cyl, h);
+        // Zellen je Umdrehung sind eine Eigenschaft der SCHEIBE, nicht des
+        // Verfahrens; die Bytezahl dagegen haengt daran (MFM 16 Zellen je Byte,
+        // FM 32).  Eine FM-Spur traegt also halb so viele Bytes wie ihr
+        // MFM-Nachbar — und genau so passt sie in dieselbe Umdrehung.
+        const TrackImage& vorbild = (alt > 0) ? m.peek(vorbild_c, h) : TrackImage{};
+        uint32_t zellen = vorbild.bitcells;
+        if (zellen == 0)
+            zellen = vorbild.bytes.empty()
+                   ? 100000u                              // 250 kbit/s bei 300 min⁻¹
+                   : static_cast<uint32_t>(vorbild.bytes.size())
+                     * (vorbild.encoding == Encoding::FM ? 32u : 16u);
+        const size_t laenge = zellen / (enc == Encoding::FM ? 32u : 16u);
+
+        // Unformatiert, aber NICHT leer: eine Spur ohne Bytes gibt es in dieser
+        // Geometrie gar nicht, und in eine solche laesst sich kein Sektor legen.
+        // Eine geloeschte echte Spur traegt Fluss, nur ohne Marken (§19.6).
         TrackImage neu;
-        neu.encoding = vorbild.encoding;
-        neu.bitcells = vorbild.bitcells;
-        const size_t laenge = vorbild.bytes.empty() ? 6250 : vorbild.bytes.size();
-        neu.bytes.assign(laenge, vorbild.encoding == Encoding::FM ? 0xFF : 0x4E);
+        neu.encoding = enc;
+        neu.bitcells = zellen;
+        neu.bytes.assign(laenge, enc == Encoding::FM ? 0xFF : 0x4E);
         neu.marks.assign(laenge, MarkType::None);
-        m.setTrack(static_cast<uint8_t>(cyl + 1), h, std::move(neu));
+        m.setTrack(pos, h, std::move(neu));
     }
     return m.numCylinders();
 }

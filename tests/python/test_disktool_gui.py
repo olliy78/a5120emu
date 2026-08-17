@@ -653,8 +653,20 @@ def test_disk_editor_loescht_und_fuegt_ganze_spuren_ein(window, temp_disk):
         # Alles dahinter ist aufgerückt: die alte Spur 6 ist jetzt die 5.
         assert len(sektoren(5)) == inhalt_dahinter
 
-        ed._springe(seite=0, spur=4)
-        assert ed.insert_track()
+        # Der Dialog fragt Stelle und Verfahren — hier beantwortet.
+        from PySide6.QtWidgets import QDialog
+        import app.disktool.ui.disk_editor as de
+        echt = de.NewTrackDialog
+        class Antwort(echt):
+            def exec(self):
+                self.f_pos.setValue(5)
+                return QDialog.Accepted
+        de.NewTrackDialog = Antwort
+        try:
+            ed._springe(seite=0, spur=4)
+            assert ed.insert_track()
+        finally:
+            de.NewTrackDialog = echt
         assert window.tool.medium_cylinders == vorher, "nicht eingefügt"
         # Die neue Spur ist LEER — kein Abklatsch des Nachbarn.
         assert sektoren(5) == [], "die eingefügte Spur trägt Sektoren"
@@ -696,13 +708,21 @@ def test_eine_eingefuegte_spur_laesst_sich_von_hand_formatieren(window, temp_dis
     window.tool.set_read_only(False)
     ed._enable(False)
 
-    frage = QMessageBox.question
-    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Ok)
+    from PySide6.QtWidgets import QDialog
+    import app.disktool.ui.disk_editor as de
+    echt = de.NewTrackDialog
+
+    class Antwort(echt):
+        def exec(self):
+            self.f_pos.setValue(6)          # neue Spur 6, hinter der jetzigen 5
+            return QDialog.Accepted
+
+    de.NewTrackDialog = Antwort
     try:
         ed._springe(seite=0, spur=5)
         assert ed.insert_track()
     finally:
-        QMessageBox.question = frage
+        de.NewTrackDialog = echt
 
     neu = window.tool.track(6, 0)
     assert neu.exists, "die eingefügte Spur gibt es gar nicht — so ist sie unbrauchbar"
@@ -715,6 +735,65 @@ def test_eine_eingefuegte_spur_laesst_sich_von_hand_formatieren(window, temp_dis
     danach = window.tool.track(6, 0)
     assert danach.formatted
     assert [x.id for x in danach.spans if x.kind == SECTOR] == [1, 2, 3]
+
+
+def test_eine_fm_spur_laesst_sich_vor_mfm_spuren_setzen(window, temp_disk):
+    """Der Zweck der beiden Abfragen: **gemischte** Formate (§19.6).
+
+    In der K1520-Welt gibt es Disketten mit FM-Systemspuren vor MFM-Daten.  Beides
+    muss deshalb wählbar sein — die **Stelle** (auch 0, vor allen bestehenden) und
+    das **Verfahren** (es folgt bewusst NICHT dem Nachbarn).
+
+    Und die Länge muss zum Verfahren passen: dieselbe Umdrehung trägt in FM halb so
+    viele Bytes wie in MFM.  Stimmte das nicht, passte die Spur nicht auf die
+    Scheibe.
+    """
+    from app.core_binding.k1520disk import SECTOR
+
+    ed = _editor(window, temp_disk("udos_boot_scp.hfe"))
+    t = window.tool
+    t.set_read_only(False)
+    vorher = t.medium_cylinders
+    mfm_bytes = t.track(0, 0).bytes
+    assert t.track(0, 0).encoding == "MFM"
+
+    assert t.insert_cylinder_at(0, mfm=False) == vorher + 1
+
+    neu, verschoben = t.track(0, 0), t.track(1, 0)
+    assert neu.encoding == "FM", "das Verfahren folgte dem Nachbarn"
+    assert not neu.formatted and neu.exists
+    assert abs(neu.bytes * 2 - mfm_bytes) < mfm_bytes * 0.05, \
+        f"FM-Spur {neu.bytes} B gegen MFM {mfm_bytes} B — passt nicht in eine Umdrehung"
+    assert verschoben.encoding == "MFM", "die alte Spur 0 ist nicht nachgerückt"
+    assert verschoben.bytes == mfm_bytes
+
+    # Und sie lässt sich von Hand formatieren — in FM.
+    t.sector_create(0, 0, id=1, size=128, gap=40, mfm=False)
+    sek = [x for x in t.track(0, 0).spans if x.kind == SECTOR]
+    assert [x.id for x in sek] == [1]
+    assert t.track(0, 0).encoding == "FM"
+
+
+def test_der_spurdialog_sagt_vorher_was_geschieht(window, fixture_disks):
+    """Der Dialog nennt Stelle, Verfahren und Folge — vor dem Bestätigen."""
+    from app.disktool.ui.disk_editor import NewTrackDialog
+
+    _editor(window, fixture_disks / "udos_boot_scp.hfe")
+    d = NewTrackDialog(window.tool, 42)
+    assert d.f_pos.value() == 42
+    assert d.f_pos.maximum() == window.tool.medium_cylinders, \
+        "ans Ende anhängen muss möglich sein"
+    assert d.werte() == (42, True)
+
+    text = d.hinweis.text()
+    assert "42" in text and "43" in text, f"die Folge steht nicht da: {text}"
+
+    d.f_mfm.setCurrentIndex(1)                  # FM
+    assert d.werte() == (42, False)
+    assert "FM" in d.hinweis.text()
+
+    d.f_pos.setValue(0)                         # vor alle bestehenden
+    assert d.werte()[0] == 0
 
 
 def test_disk_editor_faerbt_leere_sektoren_heller(window, fixture_disks):

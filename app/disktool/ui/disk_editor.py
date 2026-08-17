@@ -493,6 +493,93 @@ class _Waehler(QWidget):
             w.setEnabled(an)
 
 
+class NewTrackDialog(QDialog):
+    """Wo die neue Spur hinkommt — und in welchem Verfahren.
+
+    Zwei Angaben, und beide muss man treffen können:
+
+    * **Die Spurnummer**, die die neue Spur bekommen soll.  Alles von dort an rückt
+      nach hinten (aus 42 wird 43).  Zulässig ist auch **0** — eine Spur vor allen
+      bestehenden — und das Ende (anhängen).
+    * **Das Verfahren.**  Es folgt bewusst NICHT dem Nachbarn: in der K1520-Welt
+      gibt es gemischte Formate, und gerade der Wechsel ist der Zweck — eine
+      FM-Systemspur vor MFM-Daten, oder umgekehrt eine MFM-Spur hinter einer
+      FM-Spur.
+    """
+
+    def __init__(self, tool: "DiskTool", vorschlag: int, parent=None):
+        super().__init__(parent)
+        self.tool = tool
+        self.setWindowTitle("Spur einfügen")
+        self.setMinimumWidth(430)
+
+        self.f_pos = QSpinBox()
+        self.f_pos.setRange(0, tool.medium_cylinders)      # ein Platz mehr: anhängen
+        self.f_pos.setValue(max(0, min(vorschlag, tool.medium_cylinders)))
+        self.f_pos.setToolTip(
+            "Die Nummer, die die NEUE Spur bekommt.  Alles von dort an rückt nach "
+            "hinten.  0 setzt sie vor alle bestehenden.")
+
+        self.f_mfm = QComboBox()
+        self.f_mfm.addItem("MFM (doppelte Dichte)", True)
+        self.f_mfm.addItem("FM (einfache Dichte)", False)
+        self.f_mfm.setToolTip(
+            "Verfahren der neuen Spur.  Es folgt NICHT dem Nachbarn — gemischte "
+            "Formate sind gerade der Zweck.")
+        # Vorbelegung: was der künftige Vorgänger hat.  Das ist der übliche Fall;
+        # der Wechsel bleibt ein bewusster Griff.
+        self.f_mfm.setCurrentIndex(0 if self._nachbar_mfm(vorschlag) else 1)
+
+        self.hinweis = QLabel("")
+        self.hinweis.setWordWrap(True)
+
+        form = QFormLayout()
+        form.addRow("Spurnummer:", self.f_pos)
+        form.addRow("Verfahren:", self.f_mfm)
+        form.addRow("", self.hinweis)
+
+        knoepfe = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        knoepfe.button(QDialogButtonBox.Ok).setText("Einfügen")
+        knoepfe.accepted.connect(self.accept)
+        knoepfe.rejected.connect(self.reject)
+
+        lay = QVBoxLayout(self)
+        lay.addLayout(form)
+        lay.addWidget(knoepfe)
+
+        self.f_pos.valueChanged.connect(self._vorschau)
+        self.f_mfm.currentIndexChanged.connect(self._vorschau)
+        self._vorschau()
+
+    def _nachbar_mfm(self, pos: int) -> bool:
+        """Verfahren des künftigen Vorgängers (Vorgabe); MFM, wenn es keinen gibt."""
+        vorher = pos - 1
+        if vorher < 0 or vorher >= self.tool.medium_cylinders:
+            vorher = min(max(pos, 0), self.tool.medium_cylinders - 1)
+        try:
+            return self.tool.track(vorher, 0).encoding != "FM"
+        except K1520DiskError:
+            return True
+
+    def _vorschau(self) -> None:
+        """Sagen, was geschieht — vor dem Bestätigen, nicht danach."""
+        pos = self.f_pos.value()
+        n = self.tool.medium_cylinders
+        art = "MFM" if self.f_mfm.currentData() else "FM"
+        if pos >= n:
+            wohin = f"hinten angehängt (neue Spur {pos})"
+        else:
+            wohin = (f"vor der jetzigen Spur {pos} eingefügt — aus {pos} wird "
+                     f"{pos + 1}, und so weiter bis {n - 1} → {n}")
+        self.hinweis.setText(
+            f"Die neue {art}-Spur wird {wohin}.  Sie ist **unformatiert**: Sektoren "
+            f"legt man danach einzeln an.  Danach hat das Abbild {n + 1} Spuren."
+            .replace("**", ""))
+
+    def werte(self) -> tuple:
+        return self.f_pos.value(), bool(self.f_mfm.currentData())
+
+
 class NewSectorDialog(QDialog):
     """Angaben für einen neuen Sektor — und wo er landen wird.
 
@@ -814,8 +901,8 @@ class DiskEditorWindow(QDialog):
         self.btn_spur_neu = QPushButton("Spur einfügen")
         self.btn_spur_weg = QPushButton("Spur löschen")
         self.btn_spur_neu.setToolTip(
-            "Hinter der gewählten Spur eine LEERE Spur einfügen; alles dahinter "
-            "rückt nach hinten.  Sektoren legt man danach an.")
+            "Eine LEERE Spur einfügen — Stelle und Verfahren (FM/MFM) werden "
+            "erfragt.  Alles ab dort rückt nach hinten; Sektoren legt man danach an.")
         self.btn_spur_weg.setToolTip(
             "Die gewählte Spur ganz aus dem Abbild werfen; alles dahinter rückt "
             "auf.  Für Abbilder mit zu vielen Spuren (82 statt 80) oder zum "
@@ -1322,26 +1409,28 @@ class DiskEditorWindow(QDialog):
         return True
 
     def insert_track(self) -> bool:
-        """Hinter der gewählten Spur eine leere Spur einfügen."""
+        """Eine leere Spur einfügen — Stelle und Verfahren werden erfragt.
+
+        Beides muss wählbar sein: die **Stelle**, weil man eine Spur auch VOR alle
+        bestehenden setzen können muss, und das **Verfahren**, weil es in der
+        K1520-Welt gemischte Formate gibt — eine FM-Systemspur vor MFM-Daten ist
+        genau der Fall, für den das gebaut ist.
+        """
         wahl = self._gewaehlte_spur()
-        if wahl is None:
+        vorschlag = (wahl[1] + 1) if wahl is not None else self.tool.medium_cylinders
+
+        dialog = NewTrackDialog(self.tool, vorschlag, self)
+        if dialog.exec() != QDialog.Accepted:
             return False
-        _, cyl = wahl
-        if QMessageBox.question(
-                self, "Spur einfügen",
-                f"Hinter Spur {cyl} wird eine LEERE Spur eingefügt (beide Seiten).\n"
-                f"Alles dahinter rückt nach hinten.\n\n"
-                f"Die neue Spur {cyl + 1} ist unformatiert — Sektoren legt man "
-                "danach mit \u201eNeuer Sektor\u201c an.",
-                QMessageBox.Ok | QMessageBox.Cancel,
-                QMessageBox.Cancel) != QMessageBox.Ok:
-            return False
+        pos, mfm = dialog.werte()
+
         try:
-            n = self.tool.insert_cylinder_after(cyl)
+            n = self.tool.insert_cylinder_at(pos, mfm)
         except K1520DiskError as e:
             QMessageBox.warning(self, "Spur einfügen", str(e))
             return False
-        self._nach_spurwechsel(f"Spur hinter {cyl} eingefügt — {n} Spuren", cyl + 1)
+        self._nach_spurwechsel(
+            f"{'MFM' if mfm else 'FM'}-Spur {pos} eingefügt — {n} Spuren", pos)
         return True
 
     def _nach_spurwechsel(self, meldung: str, ziel: int) -> None:

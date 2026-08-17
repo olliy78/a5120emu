@@ -1427,8 +1427,22 @@ des Abbilds, nicht seinen Inhalt.
   rückt auf.  Für Abbilder mit mehr Spuren, als hineingehören (82 statt 80), und zum
   Zurechtstutzen auf eine Zielgeometrie — 77 Spuren, damit es auf eine 8″-Diskette
   passt.
-* **Spur einfügen** setzt hinter dem gewählten Zylinder einen **unformatierten** ein;
-  alles dahinter rückt nach hinten.  Sektoren legt man danach einzeln an.
+* **Spur einfügen** fragt in einem Dialog nach **Stelle** und **Verfahren** und
+  setzt dort einen **unformatierten** Zylinder ein; alles ab dort rückt nach hinten.
+  Sektoren legt man danach einzeln an.
+
+  Beides muss wählbar sein, und zwar wegen der **gemischten Formate** der K1520-Welt:
+  * die **Stelle** ist die Nummer, die die neue Spur bekommt — zulässig ist auch
+    **0** (vor allen bestehenden, für eine FM-Systemspur vor MFM-Daten) und das Ende
+    (anhängen).  Aus der jetzigen 42 wird dabei die 43.
+  * das **Verfahren** folgt bewusst NICHT dem Nachbarn — gerade der Wechsel ist der
+    Zweck.  Vorbelegt ist das des künftigen Vorgängers, denn das ist der übliche Fall.
+
+  **Die Länge hängt am Verfahren.**  Zellen je Umdrehung sind eine Eigenschaft der
+  Scheibe, die Bytezahl nicht: MFM braucht 16 Zellen je Byte, FM deren 32.  Eine
+  FM-Spur trägt also **halb so viele Bytes** wie ihr MFM-Nachbar — und passt genau so
+  in dieselbe Umdrehung (gemessen: 3136 gegen 6209 Byte).  Der Dialog sagt vorher,
+  was geschieht.
 
 Beides verlangt ein **vollständiges** Abbild, ist bei **Schreibschutz gesperrt** (es
 ändert die Geometrie — erst recht nichts für „nur lesen") und **löst vom Laufwerk**
