@@ -4,9 +4,15 @@ Werkzeuge für Analyse, Disassemblierung, Boot-Tracing und interaktives Debuggen
 K1520-Emulation. Der Kasten wächst iterativ: fehlt bei einer Analyse eine Funktion, wird
 sie hier ergänzt und unter „Bekannte Lücken" notiert.
 
-> **Einstieg:** **[how_to_debug_and_trace.md](how_to_debug_and_trace.md)** — welches
-> Werkzeug wann, mit durchgerechneten Szenarien (Boot-Hänger, Programm sezieren,
-> Interrupt-/Uhr-Analyse, Coverage/Diff, Save-State).
+> **Einstieg für die Emulatorentwicklung:**
+> **[how_to_debug_and_trace.md](how_to_debug_and_trace.md)** — welches Werkzeug wann, mit
+> durchgerechneten Szenarien (Boot-Hänger, Programm sezieren, Interrupt-/Uhr-Analyse,
+> Coverage/Diff, Save-State).
+>
+> **Einstieg für Anwender:** **[doc/handbuch_k1520dbg.md](../doc/handbuch_k1520dbg.md)** —
+> Handbuch zum Debugger für alle, die *eigene* Gastprogramme untersuchen (mit und ohne
+> Quelltext, Blick in PIO/SIO/CTC, Rezepte). Für die Auslieferung an Anwender vorgesehen:
+> `doc/design/13_distribution.md` §10a.
 >
 > **Faustregel:** mit `boot_trace` die Phase **lokalisieren**, dann mit `k1520dbg`
 > **sezieren**.

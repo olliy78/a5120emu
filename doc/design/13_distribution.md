@@ -625,6 +625,107 @@ macOS-Tripel, `paths.py` kennt `.dylib` und `~/Library/Application Support`).
 
 ---
 
+## 10a. Werkzeuge mitliefern (Vorschlag, noch nicht umgesetzt)
+
+Der Werkzeugkasten in `tools/` ist zum größten Teil **Entwicklungswerkzeug für den
+Emulator** und hat im Anwenderpaket nichts verloren. Ein Teil davon ist aber genau das,
+wofür ein Anwender einen Emulator überhaupt benutzt: **fremde Programme untersuchen**.
+`k1520dbg` debuggt jedes native Programm — `FORMAT.COM` und `HARDY.COM` haben wir selbst
+so seziert —, und dieses Können ist nicht projektintern, sondern das dritte Produkt
+neben Emulator und DiskTool.
+
+### 10a.1 Was mitkommt und was nicht
+
+Maßstab: *Kann ein Anwender es auf seine eigenen Programme und Disketten anwenden,
+ohne den Emulatorquelltext zu kennen?*
+
+| Werkzeug | Paket? | Begründung |
+|---|---|---|
+| **`k1520dbg`** | **ja** | Der Debugger. Anwendungsfall unabhängig vom Projekt; Handbuch: `doc/handbuch_k1520dbg.md` |
+| `k1520disktool` (+ `-cli`) | ja *(bereits)* | Dateiaustausch — liegt schon in `bin/` |
+| **`z80_disasm2.py`** | **ja** | Statisches Vollisting einer `.COM`; ergänzt das interaktive `u` des Debuggers. Reines Python → läuft im mitgelieferten venv, kostet ~40 KB |
+| `boot_trace` | **nein** | Zielt auf die ZVE1↔ZVE2-Boot-DMA — Emulatorentwicklung. Wer es braucht, baut aus der Quelle |
+| `format_driver`, `kbd_test`, `floppy_diag`, `mk_disk_template`, `bench_run` | nein | Prüfstandsteile der eigenen Testpipeline; ihre Bedienung setzt Kenntnis der Fixtures voraus |
+| `romread/romread.com` | **als Diskettendatei** | Liest das Boot-EPROM **echter** Hardware aus. Kein Wirtsprogramm, sondern ein Gastprogramm — gehört zu `share/disks/`, nicht nach `bin/` |
+| übrige Python-Skripte | nein | Einmalanalysen, Generatoren für committete Artefakte, Testhilfen |
+
+`boot_trace` ist der Grenzfall: es teilt den halben Unterbau mit dem Debugger und wiegt
+nur 860 KB. Dagegen spricht die Erklärungslast — seine Ausgabe (Meilensteine der
+Boot-Kette, `[03F8]`-Handshake) ist ohne `doc/analyse_zre_rom_boot.md` nicht zu deuten.
+Ein Anwender, der es wirklich will, ist einer, der auch bauen kann.
+
+### 10a.2 Layout
+
+Die Werkzeuge kommen **in dieselbe Installation**, nicht in ein zweites Paket — sie
+teilen sich `formats.yaml`, die Beispieldisketten und den Datenordner:
+
+```
+<install-root>/
+  bin/          k1520core.so | k1520core.dll
+                a5120emu · k1520disktool          Starter (GUI)
+                k1520disktool-cli                 bereits vorhanden
+                k1520dbg[.exe]                    NEU  (~1,0 MB)
+  share/doc/    handbuch_k1520dbg.md              NEU
+                k1520disktool.md
+  share/tools/  z80_disasm2.py                    NEU
+```
+
+Ein Starter auf der Kommandozeile ist nötig, damit `k1520dbg` ohne Pfadangabe läuft:
+unter Linux ein Symlink in `~/.local/bin` (dort liegt schon `a5120emu`), unter Windows
+der Eintrag im Startmenü als **„Eingabeaufforderung mit K1520-Werkzeugen"** — ein
+`.cmd`, das `PATH` um `<root>\bin` erweitert und eine Shell öffnet. Ein
+Doppelklick-Symbol für einen Kommandozeilendebugger wäre eine Falle: er öffnete ein
+Fenster, das mangels Diskette sofort wieder zuginge.
+
+### 10a.3 Die drei Punkte, an denen es hakt
+
+**(1) `libreadline` ist unter Linux eine harte Laufzeitabhängigkeit.** Der Rückfall auf
+`getline` in `CMakeLists.txt` ist eine **Bau**zeitentscheidung: wird readline beim Bauen
+gefunden, hängt das Ergebnis an `libreadline.so.8` **und** `libtinfo.so.6`, und auf einem
+System ohne diese Pakete startet es gar nicht — es gibt keinen Rückfall zur Laufzeit.
+Drei Wege:
+
+- *(empfohlen)* die beiden `.so` mit ins `bin/` legen und den Suchpfad auf `$ORIGIN`
+  setzen (`-Wl,-rpath,$ORIGIN`). Kostet ~400 KB und erhält die Zeilenbearbeitung, die
+  bei einem interaktiven Debugger kein Luxus ist. `slim.py` kopiert bereits nach genau
+  diesem Muster die Qt-Bibliotheken.
+- ohne readline bauen (`-DK1520_DBG_READLINE=OFF`, wäre neu anzulegen) — kleinstes
+  Paket, aber keine Pfeiltasten, keine History, keine Vervollständigung.
+- Systempaket voraussetzen — verstößt gegen die Prämisse „läuft ohne Administratorrechte
+  und ohne Paketverwaltung".
+
+Unter Windows entfällt die Frage: dort wird ohnehin ohne readline gebaut.
+
+**(2) Der Release-Bau muss `-DK1520_FORMATS_DEFAULT=` auch für `k1520dbg` setzen.**
+Sonst trägt das ausgelieferte Programm den absoluten Pfad des Baurechners als
+Suchkandidaten für `formats.yaml` — dieselbe Falle wie bei der Kernbibliothek (§7),
+Wächter `py_packaging` entsprechend erweitern.
+
+**(3) `k1520dbg` linkt den Kern statisch.** Es benutzt `k1520_a5120`/`k1520_floppy`, nicht
+`libk1520core.so` — im Paket lägen dann **zwei** Kopien des Emulatorkerns (~1 MB extra)
+mit dem Risiko, dass sie nach einem Teilupdate auseinanderlaufen. Auf 116 MB
+Gesamtinstallation fällt das Gewicht nicht ins Auge; sauberer wäre, `k1520dbg` gegen die
+Shared Library zu linken. Das ist eine Bauänderung im Kern, kein Paketierungsthema, und
+sollte nicht mit der Auslieferung vermischt werden.
+
+### 10a.4 Umsetzungsreihenfolge
+
+1. `build_payload.sh`: `k1520dbg` bauen und nach `bin/` kopieren; `share/doc/` und
+   `share/tools/` anlegen und füllen (~30 Zeilen, dem Muster von `k1520disktool-cli`
+   folgend).
+2. readline-Frage nach (1) entscheiden und im Payload umsetzen; Rauchtest „Programm
+   startet und beantwortet `q`" in `release.yml` aufnehmen.
+3. Linux: Symlink `~/.local/bin/k1520dbg` in `install.sh` (Deinstallieren findet ihn
+   über das Inventar im Ausweis — Eintrag ergänzen, sonst bleibt er stehen).
+4. Windows: `.iss` um den Startmenüeintrag „Eingabeaufforderung mit K1520-Werkzeugen"
+   ergänzen (`[Icons]` + kleines `.cmd` aus einer Vorlage, wie `launcher.cmd`).
+5. `paket_readme.md` und die Release-Notizen um einen Absatz erweitern.
+
+Aufwand insgesamt: überschaubar, weil `k1520disktool-cli` den Weg für ein
+Kommandozeilenprogramm im Paket schon gebahnt hat.
+
+---
+
 ## 11. Offene Punkte
 
 - **Code Signing**: Windows-Zertifikat (SmartScreen) und Apple Developer ID
