@@ -1,0 +1,7 @@
+# `--segment` nimmt eine LISTE.  Der Schalter stand vor 2026-08-17 in Hilfe und
+# Handbuch, ohne dass es ihn gab — dieser Fall haelt beides zusammen.
+tool:   k1520disktool
+disk:   udos1715_640k_pc1715_system.img
+run:    attr %DISK% STATUS --segment 4000+032D,8000+0100
+expect: SEGMENTE 4000+032D 8000+0100
+exit:   0

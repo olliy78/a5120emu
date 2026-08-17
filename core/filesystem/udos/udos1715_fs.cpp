@@ -216,6 +216,7 @@ bool Udos1715FileSystem::readDescriptor(UdosPointer p, UdosFileHeader& out) cons
     out.segment_len      = le16(d.data() + 0x2A);
     out.extra            = static_cast<uint32_t>(le16(d.data() + 0x2C))
                          | (static_cast<uint32_t>(le16(d.data() + 0x2E)) << 16);
+    out.segments         = udosReadSegments(d.data(), (out.type_byte & 0x80) != 0);
     out.low_addr         = le16(d.data() + 0x7A);
     out.high_addr        = le16(d.data() + 0x7C);
     out.stack_size       = le16(d.data() + 0x7E);
@@ -421,6 +422,7 @@ bool Udos1715FileSystem::loadDetails(FileEntry& e) const {
         e.created       = hdr.created;
         e.segment_start = hdr.segment_start;
         e.segment_len   = hdr.segment_len;
+        e.segments      = udosFormatSegments(hdr.segments);
         e.low_addr      = hdr.low_addr;
         e.high_addr     = hdr.high_addr;
         e.stack_size    = hdr.stack_size;
@@ -833,6 +835,16 @@ bool Udos1715FileSystem::write(const std::string& name, const std::vector<uint8_
     put16(h.data() + 0x2A, opt.udos_segment_len);
     put16(h.data() + 0x2C, static_cast<uint16_t>(opt.udos_extra & 0xFFFF));
     put16(h.data() + 0x2E, static_cast<uint16_t>(opt.udos_extra >> 16));
+    // Die VOLLE Segmentliste gewinnt (§5, Handbuch §3.2.2): `IMAGER` hat drei
+    // Segmente, `ZLINK` sechs — mit nur den ersten beiden kaeme die Datei kaputt
+    // zurueck.
+    if (!opt.udos_segments.empty()) {
+        std::vector<std::pair<uint16_t, uint16_t>> segs;
+        std::string warum;
+        if (!udosParseSegments(opt.udos_segments, segs, &warum)) return fail(warum);
+        if (!udosWriteSegments(h.data(), segs))
+            return fail("zu viele Speichersegmente fuer den Descriptor");
+    }
     put16(h.data() + 0x7A, opt.udos_low_addr);
     put16(h.data() + 0x7C, opt.udos_high_addr);
     put16(h.data() + 0x7E, opt.udos_stack_size);
@@ -875,7 +887,15 @@ bool Udos1715FileSystem::setAttributes(const std::string& name, const UdosAttrs&
                                                                               : a.properties);
     if (a.set_entry)     put16(h.data() + 0x14, a.entry);
     if (a.set_block_len) put16(h.data() + 0x11, a.block_len);
-    if (a.set_segment) {
+    if (a.set_segments) {
+        std::vector<std::pair<uint16_t, uint16_t>> segs;
+        std::string warum;
+        if (!udosParseSegments(a.segments, segs, &warum)) return fail(warum);
+        std::fill(h.begin() + kUdosSegmentsFirst, h.begin() + kUdosSegmentsEnd,
+                  static_cast<uint8_t>(0x00));
+        if (!udosWriteSegments(h.data(), segs))
+            return fail("zu viele Speichersegmente fuer den Descriptor");
+    } else if (a.set_segment) {
         put16(h.data() + 0x28, a.segment);
         put16(h.data() + 0x2A, a.segment_len);
     }

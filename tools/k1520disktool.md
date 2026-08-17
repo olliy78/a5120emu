@@ -130,8 +130,8 @@ das Betriebssystem zum *Laden* braucht:
 | Satzlänge (Vielfaches von 128) | `--record-len` | `1024` | 15 |
 | zweite Längenangabe | `--block-len` | `1024` | 17 |
 | ENTRY — Einsprungadresse | `--entry` | `0x2600` | 20 |
-| SEGMENTS — Anfang:Länge | `--segment 2600:5521` | | 40/42 |
-| Kopfsektor 44…47 (Bedeutung offen) | `--extra` | `0` | 44 |
+| SEGMENTS — **alle** Segmente `ANFANG+LÄNGE` | `--segment 2600+1591` | | 40…121 |
+| Kopfsektor 44…47 (= die vier Bytes hinter Segment 1) | `--extra` | `0` | 44 |
 | LOW:HIGH:STACK | `--mem 2600:3FD4:0080` | | 122/124/126 |
 | Erstellungsvermerk / Änderungsdatum | `--created` / `--date` | `V 4.2 ` / `900808` | 24 / 32 |
 
@@ -145,6 +145,19 @@ davon sind keine Formsache:
 * **LOW/HIGH/STACK** sind das, was der Lader zuteilen lässt (mehr als das Segment).
   Fehlen sie, weist UDOS die Datei mit `MEMORY PROTECT VIOLATION` ab.
   Hintergrund: `doc/udos_diskettenformat.md` §14.
+
+> **`--segment` nimmt eine LISTE.**  Eine Programmdatei kann mehrere Speicher-
+> segmente haben — `ZLINK` einer PC-1715-Diskette sechs.  Getrennt wird mit
+> Leerzeichen oder Komma, geschrieben `ANFANG+LÄNGE` (hex):
+>
+> ```sh
+> k1520disktool attr pc1715.img ZLINK \
+>     --segment '4000+06A7,62A7+0002,71E9+060B,7AF5+01C9,7FBE+0001,843F+4ABE'
+> ```
+>
+> Beim Rundlauf `get` → `put` braucht man das nicht von Hand: das Beiblatt führt
+> die Liste als `segs=` mit.  Wer sie wegwirft, bekommt ein Programm zurück, das
+> nicht mehr startet (`doc/udos_diskettenformat.md` §6.3).
 
 Anzeigen und ändern lassen sie sich auch an einer Datei, die schon auf der Diskette
 liegt — der Inhalt bleibt dabei unangetastet:
@@ -165,11 +178,19 @@ $ k1520disktool attr udos.hfe CAT --props WEL --mem 4000:5FFF:0200
 ganzen Ordners als auch bei einer einzelnen Datei daraus (auch aus der Oberfläche).
 Ausdrückliche Schalter gehen dem Beiblatt vor.
 
+Je Datei eine Zeile aus `schluessel=wert`-Paaren (hier umbrochen, in der Datei steht
+sie in einer Zeile):
+
 ```
-# Datei  Typ  Eigenschaften  Start  Satzlaenge  Ladeadresse  Abbildlaenge
-Side0/OS   P    WES          13DE   512         1000         5632
-Side0/ZDOS P1   WS           2600   1024        2600         5521
+STATUS typ=P eig=- start=4000 satz=256 block=0 rest=256 segment=4000:813
+       mem=4000:43FF:0080 zusatz=0 erst=860110 geaend=860903
+ZLINK  typ=P eig=- start=8492 satz=512 block=0 rest=512 segment=4000:1703
+       mem=4000:E700:0080 zusatz=262A7 erst=800630 geaend=860903
+       segs=4000+06A7,62A7+0002,71E9+060B,7AF5+01C9,7FBE+0001,843F+4ABE
 ```
+
+`segs=` steht nur bei Dateien mit **mehr als einem** Speichersegment — dort ist es
+aber unverzichtbar: `segment=` und `zusatz=` fassen zusammen nur die ersten beiden.
 
 Die Satzlänge und „Bytes im letzten Satz“ lassen sich **nicht** nachträglich ändern:
 beide bestimmen die Sektorlage der Daten, sie zu ändern hieße die Datei neu zu

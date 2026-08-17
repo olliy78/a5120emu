@@ -11,6 +11,7 @@
 #include "core/filesystem/udos/udos_fs.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <ctime>
 
@@ -110,6 +111,94 @@ std::string udosPropertyLetters(uint8_t props) {
     if (props & 0x08) s += 'R';
     if (props & 0x04) s += 'F';
     return s;
+}
+
+// ─── Speichersegmente (Offset 40…121) ────────────────────────────────────────
+//
+// UDOS1715-Handbuch §3.2.2: „mehrere Segmente moeglich; abgeschlossen mit
+// 00 00 00 00"; 2AH…7FH sind „nur bei P-Dateien vom System verwendet, sonst frei
+// fuer Anwender".  Gemessen: ZDOS-Referenzdiskette FORMAT/ESPRO/UPRO je 2 Segmente,
+// PC-1715-Diskette IMAGER 3 und ZLINK 6.  Nur das ERSTE Segment mitzuschleppen
+// hiesse, so eine Programmdatei beim Zurueckschreiben zu zerstoeren.
+
+std::vector<std::pair<uint16_t, uint16_t>> udosReadSegments(const uint8_t* header,
+                                                            bool ist_programm) {
+    std::vector<std::pair<uint16_t, uint16_t>> out;
+    if (!ist_programm) return out;
+    for (size_t o = kUdosSegmentsFirst; o + 3 < kUdosSegmentsEnd; o += 4) {
+        const uint16_t a = le16(header + o);
+        const uint16_t l = le16(header + o + 2);
+        if (a == 0 && l == 0) break;          // Abschluss der Liste
+        out.emplace_back(a, l);
+    }
+    return out;
+}
+
+bool udosWriteSegments(uint8_t* header,
+                       const std::vector<std::pair<uint16_t, uint16_t>>& segs) {
+    if (segs.size() > kUdosMaxSegments) return false;
+    size_t o = kUdosSegmentsFirst;
+    for (const auto& s : segs) {
+        header[o]     = static_cast<uint8_t>(s.first  & 0xFF);
+        header[o + 1] = static_cast<uint8_t>(s.first  >> 8);
+        header[o + 2] = static_cast<uint8_t>(s.second & 0xFF);
+        header[o + 3] = static_cast<uint8_t>(s.second >> 8);
+        o += 4;
+    }
+    // Abschluss — nur, wenn dahinter noch Platz ist (eine volle Liste braucht keinen).
+    if (o + 3 < kUdosSegmentsEnd) {
+        header[o] = header[o + 1] = header[o + 2] = header[o + 3] = 0x00;
+    }
+    return true;
+}
+
+std::string udosFormatSegments(const std::vector<std::pair<uint16_t, uint16_t>>& segs) {
+    std::string s;
+    char puffer[16];
+    for (const auto& seg : segs) {
+        if (!s.empty()) s += ' ';
+        std::snprintf(puffer, sizeof(puffer), "%04X+%04X", seg.first, seg.second);
+        s += puffer;
+    }
+    return s;
+}
+
+bool udosParseSegments(const std::string& text,
+                       std::vector<std::pair<uint16_t, uint16_t>>& out,
+                       std::string* why) {
+    auto sag = [&](const std::string& m) { if (why) *why = m; return false; };
+    out.clear();
+
+    size_t i = 0;
+    while (i < text.size()) {
+        while (i < text.size() && (text[i] == ' ' || text[i] == ',' || text[i] == '\t')) ++i;
+        if (i >= text.size()) break;
+
+        auto hex = [&](uint32_t& wert) {
+            const size_t ab = i;
+            wert = 0;
+            while (i < text.size() && std::isxdigit(static_cast<unsigned char>(text[i]))) {
+                const char c = text[i++];
+                const uint32_t z = (c <= '9') ? static_cast<uint32_t>(c - '0')
+                                              : static_cast<uint32_t>((c | 0x20) - 'a' + 10);
+                wert = wert * 16 + z;
+            }
+            return i > ab && wert <= 0xFFFF;
+        };
+
+        uint32_t anfang = 0, laenge = 0;
+        if (!hex(anfang)) return sag("'" + text + "': Segmentanfang ist keine Hexzahl");
+        if (i >= text.size() || (text[i] != '+' && text[i] != ':'))
+            return sag("'" + text + "': zwischen Anfang und Laenge fehlt '+' oder ':'");
+        ++i;
+        if (!hex(laenge)) return sag("'" + text + "': Segmentlaenge ist keine Hexzahl");
+
+        out.emplace_back(static_cast<uint16_t>(anfang), static_cast<uint16_t>(laenge));
+        if (out.size() > kUdosMaxSegments)
+            return sag("mehr als " + std::to_string(kUdosMaxSegments)
+                       + " Segmente passen nicht in den Kopfsektor");
+    }
+    return true;
 }
 
 std::string UdosFileHeader::typeName()        const { return udosTypeName(type_byte); }
@@ -253,6 +342,7 @@ bool UdosFileSystem::readHeader(UdosPointer p, UdosFileHeader& out) const {
     out.stack_size        = le16(d.data() + 126);
     out.extra            = static_cast<uint32_t>(le16(d.data() + 44))
                          | (static_cast<uint32_t>(le16(d.data() + 46)) << 16);
+    out.segments         = udosReadSegments(d.data(), (out.type_byte & 0x80) != 0);
     out.bytes_in_last    = le16(d.data() + 22);
     out.created          = ascii6(d.data() + 24);
     out.modified         = ascii6(d.data() + 32);
@@ -395,6 +485,7 @@ bool UdosFileSystem::uebernimmKopf(UdosPointer p, FileEntry& e) const {
     e.created    = hdr.created;
     e.segment_start = hdr.segment_start;
     e.segment_len   = hdr.segment_len;
+    e.segments      = udosFormatSegments(hdr.segments);
     e.low_addr   = hdr.low_addr;
     e.high_addr  = hdr.high_addr;
     e.stack_size = hdr.stack_size;
@@ -831,6 +922,19 @@ bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
     h[45] = static_cast<uint8_t>((opt.udos_extra >> 8) & 0xFF);
     h[46] = static_cast<uint8_t>((opt.udos_extra >> 16) & 0xFF);
     h[47] = static_cast<uint8_t>(opt.udos_extra >> 24);
+    // Die VOLLE Segmentliste gewinnt: eine Programmdatei kann mehr als zwei Segmente
+    // haben, und Offset 40…47 traegt nur die ersten beiden
+    // (doc/udos_diskettenformat.md §6.3).  Ohne sie kaeme so eine Datei mit
+    // abgeschnittener Liste zurueck — und startet dann nicht mehr.
+    if (!opt.udos_segments.empty()) {
+        std::vector<std::pair<uint16_t, uint16_t>> segs;
+        std::string warum;
+        if (!udosParseSegments(opt.udos_segments, segs, &warum)) return fail(warum);
+        // 48…121 ist sonst 0xFF-Fuellung — vor dem Schreiben freiraeumen.
+        std::fill(h.begin() + 48, h.begin() + 122, static_cast<uint8_t>(0x00));
+        if (!udosWriteSegments(h.data(), segs))
+            return fail("zu viele Speichersegmente fuer den Kopfsektor");
+    }
     // LOW ADDRESS / HIGH ADDRESS / STACK SIZE ganz am Ende des Kopfsektors (122).
     // DIESE Werte nimmt der Lader (Nukleusvariablen 1275H/1277H) — ohne sie steht
     // dort FFFF und der Speicherverwalter lehnt mit `MEMORY PROTECT VIOLATION` ab.
@@ -868,7 +972,14 @@ bool UdosFileSystem::setAttributes(const std::string& name, const UdosAttrs& a) 
                                                                                 : a.properties);
     if (a.set_entry)      setze16(20, a.entry);
     if (a.set_block_len)  setze16(17, a.block_len);
-    if (a.set_segment)  { setze16(40, a.segment); setze16(42, a.segment_len); }
+    if (a.set_segments) {
+        std::vector<std::pair<uint16_t, uint16_t>> segs;
+        std::string warum;
+        if (!udosParseSegments(a.segments, segs, &warum)) return fail(warum);
+        std::fill(h.begin() + 40, h.begin() + 122, static_cast<uint8_t>(0x00));
+        if (!udosWriteSegments(h.data(), segs))
+            return fail("zu viele Speichersegmente fuer den Kopfsektor");
+    } else if (a.set_segment) { setze16(40, a.segment); setze16(42, a.segment_len); }
     if (a.set_memory)   { setze16(122, a.low); setze16(124, a.high); setze16(126, a.stack); }
     if (a.set_extra)    { setze16(44, static_cast<uint16_t>(a.extra & 0xFFFF));
                           setze16(46, static_cast<uint16_t>(a.extra >> 16)); }

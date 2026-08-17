@@ -513,6 +513,16 @@ Was beim Weiterarbeiten zu wissen ist:
   (`81H` = P/Subtyp 1 = das alte „P1").  `UdosBitmap` bekam eine `UdosMapSitte`
   statt eines Doppels — gleiche Offsets, aber 80 statt 78 Einträge, `00`-Füllung
   statt des ZDOS-Nachlaufs, und **beide Zähler sind bei NDOS echt**.
+  **(3a) Der Kopfsektor-Bereich 40…121 ist eine LISTE von Speichersegmenten**,
+  kein Wertepaar plus vier rätselhafte Bytes (Handbuch §3.2.2: „mehrere Segmente
+  möglich; abgeschlossen mit `00 00 00 00`", `2AH…7FH` nur bei P-Dateien).  Das
+  erklärt `doc/udos_diskettenformat.md` §6.3 nachträglich — und es deckte einen
+  **Defekt** auf: `IMAGER` (3 Segmente) und `ZLINK` (6) kamen aus `get`→`put`
+  verstümmelt zurück.  Seitdem wird die Liste durchgehend geführt
+  (`FileEntry::segments`, `WriteOptions::udos_segments`, Beiblatt `segs=`, CLI
+  `--segment`, EIN Feld im Eigenschaften-Dialog); `segment_start`/`segment_len` und
+  `extra` bleiben nur als Sicht auf das erste Segment.  Bei Typ A steht dort
+  Anwenderinhalt — die Liste wird nur für Typ P gelesen.
   **(4) `detect_rank` gilt jetzt über Geometriegrenzen hinweg.**  `cpa640` und
   `k5601_16x256` sind dieselbe Rohgeometrie, und eine frische UDOS1715-Diskette ist
   außerhalb ihrer Systemspuren voller 0xE5 — also ein plausibles leeres CP/M.  Ohne

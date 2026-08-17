@@ -261,6 +261,9 @@ struct UdosAngabe {
     uint16_t    speicher_von = 0, speicher_bis = 0, speicher_kz = 0;
     uint16_t    blocklaenge = 0, rest = 0;
     uint32_t    zusatz = 0;
+    /// @brief ALLE Speichersegmente, mit Komma getrennt (`4400+0041,8442+0026`).
+    ///        Steht nur bei mehr als einem Segment in der Zeile — sonst genuegt `segment=`.
+    std::string segmente;
     bool        blocklaenge_gesetzt = false;
 };
 
@@ -300,7 +303,9 @@ bool schreibeBeiblatt(const fs::path& datei,
          "#   start      Startadresse (hex)      satz   Satzlaenge in Byte\n"
          "#   block      zweite Laengenangabe    rest   Bytes im letzten Satz\n"
          "#   segment    ANFANG(hex):LAENGE      mem    LOW:HIGH:STACK (hex, wie EXTRACT)\n"
-         "#   zusatz     Kopfsektor 44-47 (hex)  erst/geaend  Vermerke (`_` = Leerzeichen)\n";
+         "#   zusatz     Kopfsektor 44-47 (hex)  erst/geaend  Vermerke (`_` = Leerzeichen)\n"
+         "#   segs       ALLE Segmente ANFANG+LAENGE (hex), mit Komma getrennt — nur bei\n"
+         "#              mehr als einem; sie gehen `segment=` und `zusatz=` vor\n";
     for (const auto& [name, a] : eintraege) {
         f << name
           << " typ=" << (a.typ.empty() ? "-" : a.typ)
@@ -313,6 +318,7 @@ bool schreibeBeiblatt(const fs::path& datei,
           << " mem=" << hex16(a.speicher_von) << ':' << hex16(a.speicher_bis)
           << ':' << hex16(a.speicher_kz)
           << " zusatz=" << std::hex << std::uppercase << a.zusatz << std::dec << std::nouppercase
+          << (a.segmente.empty() ? "" : " segs=") << a.segmente
           << " erst=" << (a.erstellt.empty() ? "-" : ohneLeer(a.erstellt))
           << " geaend=" << (a.geaendert.empty() ? "-" : ohneLeer(a.geaendert))
           << '\n';
@@ -354,6 +360,7 @@ std::map<std::string, UdosAngabe> leseBeiblatt(const fs::path& datei) {
                     a.abbildlaenge = static_cast<uint16_t>(zahl(v.substr(d + 1), 10));
             }
             else if (k == "zusatz") a.zusatz = static_cast<uint32_t>(zahl(v, 16));
+            else if (k == "segs")   a.segmente = v;
             else if (k == "erst")   a.erstellt = (v == "-") ? "" : mitLeer(v);
             else if (k == "geaend") a.geaendert = (v == "-") ? "" : mitLeer(v);
             else if (k == "mem") {
@@ -1047,6 +1054,7 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
             mit.udos_bytes_in_last = it->second.rest;
             mit.udos_block_len_gesetzt = it->second.blocklaenge_gesetzt;
             mit.udos_extra      = it->second.zusatz;
+            mit.udos_segments   = it->second.segmente;
             mit.udos_created    = it->second.erstellt;
             mit.udos_modified   = it->second.geaendert;
             break;
@@ -1065,6 +1073,7 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
     wo.udos_bytes_in_last = mit.udos_bytes_in_last;
     wo.udos_block_len_gesetzt = mit.udos_block_len_gesetzt;
     wo.udos_extra      = mit.udos_extra;
+    wo.udos_segments   = mit.udos_segments;
     wo.udos_created    = mit.udos_created;
     if (!mit.udos_modified.empty()) wo.date = mit.udos_modified;
 
@@ -1463,6 +1472,12 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
                 a.rest          = e.bytes_in_last;
                 a.blocklaenge_gesetzt = true;
                 a.zusatz        = e.extra;
+                // Nur wenn es mehr als ein Segment gibt — sonst blaeht es die Zeile
+                // auf, ohne etwas zu sagen, was `segment=` nicht schon sagt.
+                if (e.segments.find(' ') != std::string::npos) {
+                    a.segmente = e.segments;
+                    std::replace(a.segmente.begin(), a.segmente.end(), ' ', ',');
+                }
                 a.erstellt      = e.created;
                 a.geaendert     = e.date;
                 eintraege.emplace_back(unter.empty() ? e.name : unter + "/" + e.name, a);
@@ -1642,6 +1657,7 @@ bool DiskVolume::insertAll(const std::string& src_dir, const TransferOptions& op
                 o.udos_bytes_in_last = it->second.rest;
                 o.udos_block_len_gesetzt = it->second.blocklaenge_gesetzt;
                 o.udos_extra      = it->second.zusatz;
+                o.udos_segments   = it->second.segmente;
                 o.udos_created    = it->second.erstellt;
                 o.udos_modified   = it->second.geaendert;
             }

@@ -138,9 +138,11 @@ Rechtsklick auf eine Datei ▸ *Eigenschaften* (oder Doppelklick, oder Alt+Einga
 zeigt die Angaben, die ein Linux-Dateisystem nicht tragen kann:
 
 * **UDOS** — den ganzen Kopfsektor: Dateityp, Eigenschaften (W/E/L/S), Satzlänge,
-  Einsprungadresse, Segment, Lade- und Endadresse, Stapelgröße, Datum. Bei einer
-  Programmdatei steuern diese Angaben, wie UDOS sie **lädt** — falsche Werte
+  Einsprungadresse, Speichersegmente, Lade- und Endadresse, Stapelgröße, Datum. Bei
+  einer Programmdatei steuern diese Angaben, wie UDOS sie **lädt** — falsche Werte
   ergeben ein Programm, das nicht startet.
+  Das Feld **Segmente** trägt sie alle, durch Leerzeichen getrennt
+  (`4000+06A7 62A7+0002 …`): ein Programm kann mehrere Speicherbereiche belegen.
 * **CP/M** — Nutzerbereich (0–15) und die Attribute R/O, SYS, ARC.
 
 Der Nutzerbereich gehört zur **Identität** einer CP/M-Datei: ihn zu ändern

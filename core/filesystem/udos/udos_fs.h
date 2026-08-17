@@ -76,6 +76,32 @@ uint8_t udosPropertyByte(const std::string& buchstaben);
 /// @brief Eigenschaftsbyte → Buchstaben in der Reihenfolge W E L S R F.
 std::string udosPropertyLetters(uint8_t props);
 
+/// @brief Erster Offset der Segmentliste im Kopfsektor/Descriptor (40 = 28H).
+inline constexpr size_t kUdosSegmentsFirst = 40;
+/// @brief Erster Offset HINTER der Segmentliste (122 = 7AH, dort steht LOW ADDRESS).
+inline constexpr size_t kUdosSegmentsEnd = 122;
+/// @brief Wie viele Segmente dazwischen Platz haben.
+inline constexpr size_t kUdosMaxSegments = (kUdosSegmentsEnd - kUdosSegmentsFirst) / 4;
+
+/// @brief Segmentliste aus dem Kopfsektor lesen (Abschluss `00 00 00 00`).
+///
+/// @param header  mindestens @ref kUdosSegmentsEnd Bytes
+/// @param ist_programm  bei Typ A/B/D steht dort Anwenderinhalt → leere Liste
+std::vector<std::pair<uint16_t, uint16_t>> udosReadSegments(const uint8_t* header,
+                                                            bool ist_programm);
+/// @brief Segmentliste in den Kopfsektor schreiben (samt Abschluss, Rest bleibt).
+/// @return false, wenn mehr als @ref kUdosMaxSegments uebergeben wurden.
+bool udosWriteSegments(uint8_t* header,
+                       const std::vector<std::pair<uint16_t, uint16_t>>& segs);
+
+/// @brief Textform fuer Beiblatt, CLI und Oberflaeche: `"4400+0041 8442+0026"`.
+std::string udosFormatSegments(const std::vector<std::pair<uint16_t, uint16_t>>& segs);
+/// @brief Gegenstueck zu @ref udosFormatSegments; Trenner sind Leerzeichen ODER Komma,
+///        `ANFANG+LAENGE` ODER `ANFANG:LAENGE`, immer hexadezimal.
+bool udosParseSegments(const std::string& text,
+                       std::vector<std::pair<uint16_t, uint16_t>>& out,
+                       std::string* why);
+
 /// @}
 
 /**
@@ -102,6 +128,24 @@ struct UdosFileHeader {
     uint16_t    entry_addr   = 0;
     uint16_t    segment_start  = 0;   ///< Offset 40: Anfang des 1. Speichersegments
     uint16_t    segment_len    = 0;   ///< Offset 42: dessen Laenge in Byte
+    /**
+     * @brief **Alle** Speichersegmente (Offset 40…121), Anfang + Laenge je Eintrag.
+     *
+     * Das UDOS1715-Handbuch §3.2.2 sagt es woertlich: „mehrere Segmente moeglich;
+     * abgeschlossen mit `00 00 00 00`", und `2AH…7FH` sind „nur bei P-Dateien vom
+     * System verwendet, sonst frei fuer Anwender".  Das gilt fuer ZDOS genauso —
+     * `FORMAT`, `ESPRO` und `UPRO` der A5120-Referenzdiskette haben zwei Segmente,
+     * `IMAGER` und `ZLINK` der PC-1715-Diskette drei bzw. sechs.
+     *
+     * Deshalb wird die Liste GANZ gefuehrt.  @ref segment_start / @ref segment_len
+     * sind das erste Element (Bequemlichkeit fuer Anzeigen, die nur eines zeigen),
+     * @ref extra die vier Bytes danach — beides bleibt, damit vorhandene Beiblaetter
+     * weiter gelesen werden; massgeblich beim Zurueckschreiben ist diese Liste.
+     *
+     * Nur bei Typ **P** gefuellt: bei Typ A steht dort Anwenderinhalt, der als
+     * Segmentliste gelesen Unsinn ergaebe.
+     */
+    std::vector<std::pair<uint16_t, uint16_t>> segments;
     /// @brief Offset 122/124/126 — **LOW ADDRESS / HIGH ADDRESS / STACK SIZE**, so
     ///        wie sie `EXTRACT` im laufenden UDOS ausgibt (§6).  Das ist der ganze
     ///        Speicher, den das Programm belegt — mehr als das Segment.  Der Lader
@@ -111,8 +155,12 @@ struct UdosFileHeader {
     uint16_t    low_addr   = 0;
     uint16_t    high_addr  = 0;
     uint16_t    stack_size = 0;
-    /// @brief Offset 44–47: vier Bytes ohne bekannte Bedeutung (bei den meisten
-    ///        Dateien 0; Typ A traegt dort Text).  Werden unveraendert uebernommen.
+    /// @brief Offset 44–47: die vier Bytes **hinter dem ersten Segment**.
+    ///
+    /// Bei einer Programmdatei mit genau zwei Segmenten ist das Segment 2, bei einer
+    /// mit einem der Abschluss `00 00 00 00`, bei Typ A Anwenderinhalt.  Die
+    /// vollstaendige Auskunft gibt @ref segments; dieses Feld bleibt, weil die
+    /// Beiblaetter (`extra=`) es fuehren.
     uint32_t    extra        = 0;
     uint16_t    bytes_in_last= 0;
     std::string created;            ///< 6 ASCII: "JJMMTT" ODER ein Versionstext ("V 4.3 ")

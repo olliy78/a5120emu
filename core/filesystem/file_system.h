@@ -41,6 +41,13 @@ struct FileEntry {
     std::string created;         ///< UDOS: Erstellungsvermerk (auch Versionstext "V 4.3 ")
     uint16_t    segment_start  = 0;  ///< UDOS: Anfang des Speichersegments (Kopf 40)
     uint16_t    segment_len  = 0;  ///< UDOS: Laenge des Segments (nicht die Dateigroesse!)
+    /// @brief UDOS: **alle** Speichersegmente als Text, `"4400+0041 8442+0026"`.
+    ///
+    /// Eine Programmdatei kann mehrere haben (`ZLINK` der PC-1715-Diskette sechs).
+    /// @ref segment_start / @ref segment_len sind nur das erste — wer zurueckschreibt,
+    /// muss diese Liste mitfuehren, sonst verliert die Datei ihre uebrigen Segmente
+    /// und startet nicht mehr.
+    std::string segments;
     uint16_t    low_addr   = 0;  ///< UDOS: LOW ADDRESS — erste belegte Adresse (Kopf 122)
     uint16_t    high_addr  = 0;  ///< UDOS: HIGH ADDRESS — letzte belegte (Kopf 124)
     uint16_t    stack_size = 0;  ///< UDOS: STACK SIZE (Kopf 126)
@@ -103,11 +110,16 @@ struct WriteOptions {
     ///        Spur, und UDOS liest Systemdateien satzweise — `ZDOS` hat 1024, `OS`
     ///        hat 512.  Mit 128 zurueckgeschrieben bootet die Diskette nicht.
     uint16_t    udos_record_len = 0;
-    /// @brief SEGMENTS — Anfang und Laenge des Speichersegments (Kopfsektor 40/42).
-    ///        Die Laenge ist NICHT die Dateigroesse (`OS`: 5504 Byte gross,
-    ///        Segment 5632 Byte).
+    /// @brief SEGMENTS — Anfang und Laenge des ERSTEN Speichersegments
+    ///        (Kopfsektor 40/42).  Die Laenge ist NICHT die Dateigroesse
+    ///        (`OS`: 5504 Byte gross, Segment 5632 Byte).
     uint16_t    udos_segment = 0;
     uint16_t    udos_segment_len = 0;
+    /// @brief **Alle** Segmente als Text (`"4400+0041 8442+0026"`); nicht leer
+    ///        gewinnt gegen @ref udos_segment / @ref udos_segment_len / @ref udos_extra.
+    ///        Ohne sie verliert eine mehrsegmentige Programmdatei beim
+    ///        Zurueckschreiben alles ab Segment 3.
+    std::string udos_segments;
     /// @brief LOW/HIGH ADDRESS und STACK SIZE (Kopfsektor 122/124/126) — der
     ///        Speicher, den das Programm insgesamt belegt (Segment + Arbeitsspeicher
     ///        + Stapel).  **Das ist es, was der Lader zuteilen laesst**: er traegt
@@ -155,6 +167,8 @@ struct UdosAttrs {
     bool     set_entry = false;      uint16_t entry = 0;        ///< ENTRY (Offset 20)
     bool     set_block_len = false;  uint16_t block_len = 0;    ///< Offset 17
     bool     set_segment = false;    uint16_t segment = 0, segment_len = 0;  ///< 40/42
+    /// @brief Ganze Segmentliste als Text; gewinnt gegen @ref set_segment.
+    bool     set_segments = false;   std::string segments;
     bool     set_memory = false;     uint16_t low = 0, high = 0, stack = 0;  ///< 122/124/126
     bool     set_extra = false;      uint32_t extra = 0;        ///< Offset 44…47
 };

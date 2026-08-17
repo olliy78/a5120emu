@@ -218,6 +218,8 @@ _lib.k1520d_entry_bytes_in_last.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_entry_bytes_in_last.restype = ctypes.c_uint16
 _lib.k1520d_entry_extra.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_entry_extra.restype = ctypes.c_uint32
+_lib.k1520d_entry_segments.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_segments.restype = _CS
 _lib.k1520d_entry_created.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_entry_created.restype = _CS
 _lib.k1520d_set_udos_attrs.argtypes = [
@@ -227,6 +229,7 @@ _lib.k1520d_set_udos_attrs.argtypes = [
     ctypes.c_bool, ctypes.c_uint16, ctypes.c_uint16,
     ctypes.c_bool, ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16,
     ctypes.c_bool, ctypes.c_uint32,
+    ctypes.c_bool, _CS,
 ]
 _lib.k1520d_set_udos_attrs.restype = ctypes.c_bool
 
@@ -452,7 +455,8 @@ class Entry:
     high_addr: int = 0      # HIGH ADDRESS  } was der Lader zuteilen lässt
     stack_size: int = 0     # STACK SIZE   /
     bytes_in_last: int = 0  # Bytes im letzten Satz (Kopfsektor 22)
-    extra: int = 0          # Kopfsektor 44…47 (Bedeutung offen)
+    extra: int = 0          # Kopfsektor 44…47 = die vier Bytes hinter Segment 1
+    segments: str = ""      # ALLE Segmente, "4400+0041 8442+0026"
     created: str = ""       # Erstellungsvermerk (Datum ODER Versionstext)
 
     # ── CP/M-Attribute, aus ``attrs`` aufgeschlüsselt ───────────────────────
@@ -915,6 +919,7 @@ class DiskTool:
             stack_size=int(_lib.k1520d_entry_stack_size(self._h, i)),
             bytes_in_last=int(_lib.k1520d_entry_bytes_in_last(self._h, i)),
             extra=int(_lib.k1520d_entry_extra(self._h, i)),
+            segments=_s(_lib.k1520d_entry_segments(self._h, i)),
             created=_s(_lib.k1520d_entry_created(self._h, i)),
             details_loaded=bool(_lib.k1520d_entry_details_loaded(self._h, i)),
         )
@@ -977,11 +982,14 @@ class DiskTool:
                        block_len: Optional[int] = None,
                        segment: Optional[tuple] = None,
                        memory: Optional[tuple] = None,
-                       extra: Optional[int] = None) -> None:
+                       extra: Optional[int] = None,
+                       segments: Optional[str] = None) -> None:
         """UDOS-Kopfsektorangaben einer vorhandenen Datei ändern.
 
         Der Dateiinhalt bleibt unangetastet; **nicht angegebene Felder bleiben
-        stehen**.  ``segment=(anfang, länge)``, ``memory=(low, high, stack)``;
+        stehen**.  ``segment=(anfang, länge)`` setzt nur das ERSTE Segment;
+        ``segments="4400+0041 8442+0026"`` setzt die ganze Liste und geht vor —
+        eine Programmdatei kann mehr als zwei haben.  ``memory=(low, high, stack)``;
         ``properties=";"`` löscht alle Eigenschaften.
 
         Raises:
@@ -997,7 +1005,8 @@ class DiskTool:
                 block_len is not None, int(block_len or 0),
                 segment is not None, int(seg[0]), int(seg[1]),
                 memory is not None, int(mem[0]), int(mem[1]), int(mem[2]),
-                extra is not None, int(extra or 0)):
+                extra is not None, int(extra or 0),
+                segments is not None, _b(segments or "")):
             raise K1520DiskError(self._fail())
 
     def set_cpm_attrs(self, name: str, *, read_only: Optional[bool] = None,

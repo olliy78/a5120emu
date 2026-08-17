@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <memory>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -611,4 +612,102 @@ TEST(Udos1715Schreiben, SystemspurenBleibenTabu) {
             << "Spur 17H Sektor " << int(s) << " wurde vergeben";
     // … und das Verzeichnis ist noch lesbar.
     EXPECT_GE(l.fs().list().size(), static_cast<size_t>(geschrieben));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Speichersegmente — die ganze Liste, nicht nur die ersten zwei
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST(Udos1715Segmente, TextformGehtInBeideRichtungen) {
+    std::vector<std::pair<uint16_t, uint16_t>> segs;
+    std::string warum;
+    ASSERT_TRUE(udosParseSegments("4400+0041 8442+0026 876E+3EF1", segs, &warum)) << warum;
+    ASSERT_EQ(segs.size(), 3u);
+    EXPECT_EQ(segs[0], std::make_pair(uint16_t(0x4400), uint16_t(0x0041)));
+    EXPECT_EQ(segs[2], std::make_pair(uint16_t(0x876E), uint16_t(0x3EF1)));
+    EXPECT_EQ(udosFormatSegments(segs), "4400+0041 8442+0026 876E+3EF1");
+
+    // Komma und ':' sind ebenso erlaubt — das Beiblatt trennt mit Komma, die alte
+    // CLI-Schreibweise war ANFANG:LAENGE.
+    std::vector<std::pair<uint16_t, uint16_t>> b;
+    ASSERT_TRUE(udosParseSegments("2600:1591,4000+0200", b, &warum)) << warum;
+    ASSERT_EQ(b.size(), 2u);
+    EXPECT_EQ(b[0], std::make_pair(uint16_t(0x2600), uint16_t(0x1591)));
+
+    EXPECT_TRUE(udosParseSegments("", segs, &warum));
+    EXPECT_TRUE(segs.empty());
+    EXPECT_FALSE(udosParseSegments("4400", segs, &warum));
+    EXPECT_FALSE(udosParseSegments("XYZ+1", segs, &warum));
+}
+
+TEST(Udos1715Segmente, MehrsegmentigeProgrammeWerdenGanzGelesen) {
+    // Handbuch §3.2.2: „mehrere Segmente moeglich; abgeschlossen mit 00 00 00 00".
+    Diskette d = referenz();
+    ASSERT_TRUE(d) << d.error;
+
+    std::map<std::string, std::string> segs;
+    for (const FileEntry& e : d.fs->list()) segs[e.name] = e.segments;
+
+    EXPECT_EQ(segs["ZLINK"],  "4000+06A7 62A7+0002 71E9+060B 7AF5+01C9 7FBE+0001 843F+4ABE");
+    EXPECT_EQ(segs["IMAGER"], "4400+0041 8442+0026 876E+3EF1");
+    EXPECT_EQ(segs["EDI"],    "4000+0D71 4FBE+19E3");
+    EXPECT_EQ(segs["STATUS"], "4000+032D") << "eine Datei mit genau einem Segment";
+
+    // Typ A/B/D fuehren dort Anwenderinhalt, keine Segmente (Handbuch §3.2.2:
+    // „2AH…7FH nur bei P-Dateien vom System verwendet, sonst frei fuer Anwender").
+    EXPECT_EQ(segs["UDOS.TEXT"], "") << "Typ A darf nicht als Segmentliste gelesen werden";
+    EXPECT_EQ(segs["DIRECTORY"], "");
+}
+
+TEST(Udos1715Segmente, SechsSegmenteUeberlebenDasZurueckschreiben) {
+    // Der eigentliche Punkt: mit nur Segment 1 + den vier Bytes dahinter kaeme
+    // `ZLINK` mit zwei statt sechs Segmenten zurueck — und startete nicht mehr.
+    Diskette quelle = referenz();
+    ASSERT_TRUE(quelle) << quelle.error;
+    std::vector<uint8_t> inhalt;
+    ASSERT_TRUE(quelle.fs->read("ZLINK", inhalt)) << quelle.fs->lastError();
+
+    std::string soll;
+    uint16_t reclen = 0;
+    for (const FileEntry& e : quelle.fs->list())
+        if (e.name == "ZLINK") { soll = e.segments; reclen = e.record_len; }
+    ASSERT_EQ(std::count(soll.begin(), soll.end(), '+'), 6) << soll;
+
+    Leerdiskette l;
+    ASSERT_TRUE(l) << l.fehler;
+    WriteOptions wo;
+    wo.udos_type       = "P";
+    wo.udos_record_len = reclen;
+    wo.udos_segments   = soll;
+    ASSERT_TRUE(l.fs().write("ZLINK", inhalt, wo)) << l.fs().lastError();
+
+    for (const FileEntry& e : l.fs().list())
+        if (e.name == "ZLINK") {
+            EXPECT_EQ(e.segments, soll);
+            EXPECT_EQ(e.segment_start, 0x4000) << "Segment 1 bleibt auch einzeln lesbar";
+        }
+
+    // Und ueber setAttributes ebenso.
+    UdosAttrs a;
+    a.set_segments = true;
+    a.segments     = "1000+0100 2000+0200";
+    ASSERT_TRUE(l.fs().setAttributes("ZLINK", a)) << l.fs().lastError();
+    for (const FileEntry& e : l.fs().list())
+        if (e.name == "ZLINK") EXPECT_EQ(e.segments, "1000+0100 2000+0200");
+}
+
+TEST(Udos1715Segmente, ZuVieleSegmenteWerdenAbgewiesen) {
+    Leerdiskette l;
+    ASSERT_TRUE(l) << l.fehler;
+
+    std::string zu_viele;
+    for (size_t i = 0; i <= kUdosMaxSegments; ++i) {
+        if (!zu_viele.empty()) zu_viele += ' ';
+        zu_viele += "1000+0010";
+    }
+    WriteOptions wo;
+    wo.udos_type     = "P";
+    wo.udos_segments = zu_viele;
+    EXPECT_FALSE(l.fs().write("ZUVIEL", std::vector<uint8_t>(256, 1), wo));
+    EXPECT_NE(l.fs().lastError().find("Segmente"), std::string::npos) << l.fs().lastError();
 }

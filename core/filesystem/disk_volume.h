@@ -78,9 +78,14 @@ struct TransferOptions {
     uint16_t    udos_entry = 0;
     /// @brief Satzlaenge (Vielfaches von 128); 0 = 128.
     uint16_t    udos_record_len = 0;
-    /// @brief Ladeadresse und Laenge des Speicherabbilds (Typ P/P1); 0 = keine.
+    /// @brief Ladeadresse und Laenge des ERSTEN Speichersegments (Typ P); 0 = keine.
     uint16_t    udos_segment = 0;
     uint16_t    udos_segment_len = 0;
+    /// @brief ALLE Segmente als Text (`"4400+0041 8442+0026"` oder mit Komma);
+    ///        nicht leer gewinnt gegen die beiden Felder darueber und `udos_extra`.
+    ///        Eine Programmdatei kann mehr als zwei haben — ohne diese Liste
+    ///        verlaesst sie das Werkzeug verstuemmelt (§13b).
+    std::string udos_segments;
     /// @brief Speicheranforderung (Start/Ende/Kennzeichen, Kopfsektor ab Offset 122).
     uint16_t    udos_low_addr = 0;
     uint16_t    udos_high_addr   = 0;

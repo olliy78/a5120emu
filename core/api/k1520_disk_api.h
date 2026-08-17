@@ -341,8 +341,15 @@ K1520_API uint16_t    k1520d_entry_high_addr(K1520Disk h, int i);
 K1520_API uint16_t    k1520d_entry_stack_size(K1520Disk h, int i);
 /// @brief Bytes im letzten Satz (Kopfsektor Offset 22) — bestimmt die logische Laenge.
 K1520_API uint16_t    k1520d_entry_bytes_in_last(K1520Disk h, int i);
-/// @brief Kopfsektor Offset 44…47 (Bedeutung offen, unveraendert uebernehmen).
+/// @brief Kopfsektor Offset 44…47 — die vier Bytes hinter dem ersten Segment.
+///        Vollstaendige Auskunft gibt @ref k1520d_entry_segments.
 K1520_API uint32_t    k1520d_entry_extra(K1520Disk h, int i);
+/// @brief ALLE Speichersegmente als Text: `"4400+0041 8442+0026"` (leer = keine).
+///
+/// Eine UDOS-Programmdatei kann mehr als zwei Segmente haben (`ZLINK` der
+/// PC-1715-Diskette sechs).  Wer sie zurueckschreibt, muss diese Zeichenkette
+/// mitfuehren — @ref k1520d_entry_segment allein verliert alles ab Segment 3.
+K1520_API const char* k1520d_entry_segments(K1520Disk h, int i);
 /// @brief Erstellungsvermerk (Datum ODER Versionstext wie "V 4.3").
 K1520_API const char* k1520d_entry_created(K1520Disk h, int i);
 
@@ -367,7 +374,8 @@ K1520_API bool k1520d_set_udos_attrs(K1520Disk h, const char* name,
                                      bool set_segment, uint16_t segment, uint16_t segment_len,
                                      bool set_memory, uint16_t low, uint16_t high,
                                      uint16_t stack,
-                                     bool set_extra, uint32_t extra);
+                                     bool set_extra, uint32_t extra,
+                                     bool set_segments, const char* segments);
 
 /**
  * @brief Attribute und Nutzerbereich einer vorhandenen Datei aendern (nur CP/M).

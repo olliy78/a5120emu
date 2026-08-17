@@ -227,6 +227,29 @@ ZDOS-Descriptor** — dieselben Felder an denselben Offsets. Neu ist nur `80H/81
 Damit ist auch das ZDOS-„P1" erklärt: `81H` = Typ P, Subtyp 1. Das Werkzeug schreibt
 `P`, `P1`, … `P15` und liest sie genauso.
 
+### 5.1a Die Segmentliste — mehr als ein Paar
+
+`28H/29H` und `2AH/2BH` sind Anfang und Länge des **ersten** Segments; danach folgen
+weitere Paare, abgeschlossen mit `00 00 00 00`, bis `79H`. Das sind bis zu 20
+Segmente. Bei Typ A/B/D steht dort kein Segment, sondern Anwenderinhalt
+(„sonst frei für Anwender").
+
+Nachgemessen auf dem Referenzdatenträger:
+
+| Datei | Segmente |
+|---|---|
+| `ZLINK` | `4000+06A7` `62A7+0002` `71E9+060B` `7AF5+01C9` `7FBE+0001` `843F+4ABE` |
+| `IMAGER` | `4400+0041` `8442+0026` `876E+3EF1` |
+| `EDI`, `EDR`, `LTS`, `Z8ASM`, `Z8ASM2` | je zwei |
+| 47 weitere P-Dateien | je eines |
+
+> **Wer nur das erste Segment mitschleppt, zerstört solche Dateien beim
+> Zurückschreiben.** Das Werkzeug führt deshalb die ganze Liste — als Text
+> `"4400+0041 8442+0026"` durch `FileEntry::segments`, `WriteOptions::udos_segments`,
+> das Beiblatt (`segs=`), die CLI (`--segment`) und ein einzelnes Feld im
+> Eigenschaften-Dialog. Dasselbe gilt für ZDOS (`doc/udos_diskettenformat.md` §6.3).
+> Wächter: `Udos1715Segmente.SechsSegmenteUeberlebenDasZurueckschreiben`.
+
 ### 5.2 Eigenschaftsbyte `13H`
 
 `80H` = W (write protected) · `40H` = E (erase protected) · `20H` = L (locked) ·
@@ -353,6 +376,7 @@ Python-Prüfskript gegengerechnet:
 | Erster/letzter Record = Descriptorfelder `08H`/`0AH` | 67/67 |
 | SECRET im Verzeichnis = Bit `10H` im Descriptor | 67/67 |
 | Kein Record überschreitet die Spurgrenze | ✔ |
+| Segmentlisten überstehen `get` → `put` unverändert | 66/66 Dateien |
 | **Belegungskarte ↔ Auszählung aus allen Dateien** | **1673 = 1673, beide Richtungen ohne Rest** |
 | Zähler `177H` + `17CH` = 80 · 32 | 1673 + 887 = 2560 ✔ |
 

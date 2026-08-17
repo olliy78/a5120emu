@@ -1907,7 +1907,39 @@ wird beim Anlegen ein Bootabbild mitgegeben, leitet `DiskVolume::create` ein
 Profil mit `system_track0: true` ab, bevor `mkfs()` läuft. Ohne das vergäbe die
 erste geschriebene Datei genau die Sektoren, die den Urlader tragen.
 
-### 21.6 Wächter
+### 21.6 Nebenbefund: die Segmentliste — und ein Defekt, den er aufdeckte
+
+Beim Rückschreiben des ZDOS-Descriptors in die Doku fiel auf, dass Offset 40…121
+**keine** zwei Werte plus vier rätselhafte Bytes sind, sondern eine **Liste** von
+Speichersegmenten (Handbuch §3.2.2: „mehrere Segmente möglich; abgeschlossen mit
+`00 00 00 00`"). Auf der A5120-Referenzdiskette fällt das nicht auf — dort hat keine
+Datei mehr als zwei Segmente, und die trug `extra` (44…47) zufällig mit. Auf der
+PC-1715-Diskette hat `IMAGER` drei und `ZLINK` sechs.
+
+Der Rundlauf `get` → `put` **verstümmelte diese beiden Dateien**: nachgemessen kamen
+sie mit zwei Segmenten zurück. Behoben, indem die Liste durchgehend geführt wird —
+`UdosFileHeader::segments`, `FileEntry::segments`, `WriteOptions::udos_segments`,
+`UdosAttrs::set_segments`, C-ABI `k1520d_entry_segments` und ein zusätzliches
+Parameterpaar an `k1520d_set_udos_attrs`, im Beiblatt `segs=`, in der CLI `--segment`
+(das es laut Hilfe und Handbuch längst gab — tatsächlich aber nie), im
+Eigenschaften-Dialog **ein** Textfeld statt zweier Kästchen für Anfang und Länge.
+
+Drei Festlegungen dabei:
+
+1. **Die Liste gewinnt.** `segment_start`/`segment_len` und `extra` bleiben als
+   bequeme Sicht auf das erste Segment bzw. die vier Bytes danach — vorhandene
+   Beiblätter bleiben damit lesbar —, aber sobald `udos_segments` gesetzt ist,
+   schreibt sie den ganzen Bereich.
+2. **Nur bei Typ P.** Bei Typ A steht dort Anwenderinhalt („sonst frei für
+   Anwender"), der als Segmentliste gelesen Unsinn ergäbe — `UDOS.TEXT` „hätte" acht.
+3. **`segs=` steht nur bei mehr als einem Segment** im Beiblatt; sonst bläht es jede
+   Zeile auf, ohne etwas zu sagen, was `segment=` nicht schon sagt.
+
+Nachgewiesen: `get` → `put` über die ganze PC-1715-Diskette lässt bei allen 66 Dateien
+die Segmentliste unverändert (vorher: 2 Abweichungen), ebenso auf der A5120-Diskette
+bei `FORMAT`, `ESPRO` und `UPRO`.
+
+### 21.7 Wächter
 
 | Test | Was er festhält |
 |---|---|
@@ -1919,6 +1951,8 @@ erste geschriebene Datei genau die Sektoren, die den Urlader tragen.
 | `Udos1715.HandbuchLaesstSichLesen` | der Lesepfad holt genau das Dokument zurück, aus dem die Sollwerte stammen |
 | `Udos1715.EineZdosDisketteWirdNichtVerwechselt` | Gegenprobe gegen die A5120-Diskette |
 | `Udos1715Schreiben.*` | Anlegen, Rundlauf, Verzeichniswachstum, Recordlängen, Namensregel, Systemspuren |
+| `Udos1715Segmente.*` | Textform hin und zurück, mehrsegmentige Dateien ganz gelesen, **sechs Segmente überleben das Zurückschreiben**, zu viele werden abgewiesen |
+| `UdosFileSystem.VierundvierzigBisSiebenundvierzigIstDasZweiteSegment` | dasselbe auf der ZDOS-Seite |
 | `FsCatalog.Udos1715ProfileSindImgFaehigUndEinseitigGezaehlt` | `.img` erlaubt, `sides_separate` false, 256-B-Geometrie |
 
 Fixture: `tests/fixtures/disks/udos1715_640k_pc1715_system.img` (640 KB — das

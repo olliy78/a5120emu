@@ -60,7 +60,8 @@ struct Handle {
     std::vector<FileEntry>      eintraege;   ///< Stand des letzten k1520d_list
     TrackView                   spur;        ///< Stand des letzten k1520d_track_scan
     // Puffer je Getter — die Rueckgabe gilt bis zum naechsten Aufruf DERSELBEN Funktion.
-    std::string s_error, s_name, s_type, s_attrs, s_date, s_dir, s_label, s_created;
+    std::string s_error, s_name, s_type, s_attrs, s_date, s_dir, s_label, s_created,
+                s_segments;
     std::string s_fmt, s_fs, s_alt, s_remarks, s_fit, s_check;
 };
 
@@ -479,6 +480,11 @@ extern "C" uint32_t k1520d_entry_extra(K1520Disk h, int i) {
     return e ? e->extra : 0;
 }
 
+extern "C" const char* k1520d_entry_segments(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? halte(H(h)->s_segments, e->segments) : "";
+}
+
 extern "C" const char* k1520d_entry_created(K1520Disk h, int i) {
     const FileEntry* e = eintrag(h, i);
     return e ? halte(H(h)->s_created, e->created) : "";
@@ -492,7 +498,8 @@ extern "C" bool k1520d_set_udos_attrs(K1520Disk h, const char* name,
                                       bool set_segment, uint16_t segment, uint16_t segment_len,
                                       bool set_memory, uint16_t low, uint16_t high,
                                       uint16_t stack,
-                                      bool set_extra, uint32_t extra) {
+                                      bool set_extra, uint32_t extra,
+                                      bool set_segments, const char* segments) {
     if (!h || !name) return false;
     UdosAttrs a;
     a.type       = type     ? type     : "";
@@ -504,6 +511,7 @@ extern "C" bool k1520d_set_udos_attrs(K1520Disk h, const char* name,
     a.set_segment   = set_segment;   a.segment   = segment; a.segment_len = segment_len;
     a.set_memory    = set_memory;    a.low = low; a.high = high; a.stack = stack;
     a.set_extra     = set_extra;     a.extra     = extra;
+    a.set_segments  = set_segments;  a.segments  = segments ? segments : "";
     return H(h)->vol->setAttributes(FileRef::parse(name), a);
 }
 
