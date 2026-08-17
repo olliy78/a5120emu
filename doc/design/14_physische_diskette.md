@@ -1365,23 +1365,52 @@ von sich aus.
 | ganze Diskette im DiskTool öffnen | **97 s** für 160 Spuren, Verzeichnis beider Seiten vollständig (70 Dateien) |
 | **Emulator-Kaltstart von der echten Diskette** | **UDOS 4.3 meldet sich mit Banner und Datumsabfrage** — bei erst 62–70 von 160 gelesenen Spuren |
 | **Datei auf die echte Diskette schreiben** | über das DiskTool eingefügt, **4 Spuren** zurückgeschrieben, 0 Fehler; die Diskette danach **komplett neu eingelesen** → Datei byteweise gleich |
+| **Prüf-Lesen nach dem Schreiben** (§7.1) | 2026-08-17 nachgeholt — 4 Spuren geschrieben, **4 geprüft**, 0 misslungen (§15.1) |
 | beide Oberflächen | Einlegen, Füllstand, Auswerfen bzw. Öffnen mit Fortschritt — je einmal gegen die echte Hardware durchgefahren |
 
-> **Das Prüf-Lesen (§7.1) ist an echter Hardware noch NICHT gegengeprüft.**  Der
-> Adapter meldete sich unmittelbar davor nicht mehr am USB ab (weder `lsusb` noch
-> `/dev/ttyACM*`).  Am Ersatzlaufwerk ist der Weg vollständig abgedeckt, aber die
-> Bestätigung an der Scheibe fehlt.  Nachzuholen mit:
->
-> ```sh
-> K1520_GW_HARDWARE=1 K1520_GW_WRITE=1 \
->   venv/bin/python3 -m pytest tests/python/test_gw_hardware.py -v -s -k schreibt_eine_datei
-> ```
->
-> Der Test prüft seit dieser Änderung zusätzlich `verifies_done > 0` und
-> `tracks_defect == 0`.
+### 15.1 Das Prüf-Lesen an echter Hardware (2026-08-17)
 
-Vor dem ersten Schreibversuch wurde die Diskette gesichert (`gw read` über alle 160
-Spuren, 2 MB `.hfe`) — bei einem Original ohne zweite Kopie gehört das dazu.
+Nachgeholt, an Greaseweazle F1 mit einer **UDOS1715**-Diskette (80×32×256):
+
+```
+geschrieben: GWTEST.TXT — 4 Spuren zurückgeschrieben, 4 geprüft,
+             0 Vergleiche misslungen, 0 Fehler
+gegengelesen: 184 Byte, byteweise gleich
+```
+
+Damit ist §7.1 an der Scheibe belegt: jede zurückgeschriebene Spur wurde **gelesen
+und auf Sektorebene verglichen**, bevor `Dirty` fiel. Die Gegenprobe kam nicht aus
+dem Programm, das sie schrieb, sondern **vom Medium**:
+
+| Probe | Ergebnis |
+|---|---|
+| Vollmessung vorher/nachher, Spur für Spur verglichen | **genau die 4 gemeldeten Spuren** geändert: c4h0 (Descriptor), c5h0 (Zeigersektor + Datenrecord), c22h0 (Verzeichnis), c23h0 (Belegungsplan) — sonst nichts |
+| Sektoren nach dem Schreiben | 2560/2560 fehlerfrei, keine neue CRC-Stelle |
+| Dateisystem nach dem Schreiben | 68 Dateien, Belegungsplan ↔ Dateien sektorgenau (1676 = 1673 + 3), beide Zähler richtig |
+| die 4 Spuren aus der Sicherung zurückgeschrieben | Diskette danach **byteweise die vom Anfang** |
+
+**Das Vorgehen gehört zum Ergebnis** — an einem Original ohne zweite Kopie:
+
+1. **Sichern**: `gw read --tracks='c=0-79:h=0-1' sicherung.hfe::bitrate=250`.
+2. **Identität prüfen**: eine Spur lesen und gegen die Sicherung halten — sonst
+   schreibt man womöglich auf eine andere Diskette, als man sichert.
+3. **Mit einer nachweislich FREIEN Spur anfangen** (welche das sind, sagt der
+   Belegungsplan): erst ein roher Spur-Rundlauf (`-k geschriebene_spur`,
+   `K1520_GW_TESTCYL=79`), dann erst über das Dateisystem.
+4. **Nach dem Test zurückschreiben**: `gw write sicherung.hfe --tracks='c=…:h=0'`
+   stellt einzelne Spuren wieder her; die `.hfe` trägt die Bitzellen, das `.img`
+   nicht (es hätte keine Winkelinformation).
+
+Reproduzieren:
+
+```sh
+K1520_GW_HARDWARE=1 K1520_GW_WRITE=1 \
+  venv/bin/python3 -m pytest tests/python/test_gw_hardware.py -v -s -k schreibt_eine_datei
+```
+
+Der Test prüft dabei `verifies_done > 0` und `tracks_defect == 0`, öffnet die
+Diskette danach **ein zweites Mal frisch** und liest die Datei vom Laufwerk zurück —
+ein Zwischenspeicher kann das Ergebnis also nicht beschönigen.
 
 **Noch offen** (bewusst, nicht vergessen):
 

@@ -870,10 +870,20 @@ Was man beim Weiterarbeiten wissen muss:
   physische Diskette **keinen Pfad** hat (`DiskTool.open_physical` → `path=""`), nennen
   `_bezeichnung()`/`_kurzname()` die Herkunft für Kopfzeile und Fenstertitel, und
   `DiskHeader.setze()` nimmt sie als zweites Argument.
-- **Offen:** das **Prüf-Lesen ist an echter Hardware noch nicht gegengeprüft** (der
-  Adapter verschwand vom USB; nachzuholen mit `K1520_GW_HARDWARE=1 K1520_GW_WRITE=1
-  … -k schreibt_eine_datei`), die CLI (`k1520disktool --physical`)
-  und das Merken der Sitzungsparameter.
+- **Das Prüf-Lesen ist an echter Hardware gegengeprüft** (2026-08-17, Greaseweazle F1
+  + UDOS1715-Diskette): `K1520_GW_HARDWARE=1 K1520_GW_WRITE=1 … -k schreibt_eine_datei`
+  meldet **4 Spuren zurückgeschrieben, 4 geprüft, 0 misslungene Vergleiche, 0
+  Schadstellen**; die Datei kam beim zweiten, frischen Öffnen byteweise gleich zurück.
+  Gegenprobe am Medium: eine Vollmessung vorher/nachher zeigt **genau die vier
+  gemeldeten Spuren** geändert (c4h0, c5h0 = Descriptor/Zeigersektor+Record, c22h0
+  Verzeichnis, c23h0 Belegungsplan) und sonst nichts, 2560/2560 Sektoren fehlerfrei.
+  Danach die vier Spuren aus der Sicherung zurückgeschrieben (`gw write … --tracks`) —
+  die Diskette ist wieder **byteweise die vom Anfang**.  Vorgehen bei so einem Test:
+  erst sichern (`gw read` über alle Spuren), Identität der eingelegten Diskette gegen
+  die Sicherung prüfen, mit einer NACHWEISLICH FREIEN Spur anfangen (der
+  Belegungsplan sagt welche), dann erst über das Dateisystem schreiben.
+- **Offen:** die CLI (`k1520disktool --physical`) und das Merken der
+  Sitzungsparameter.
 
 ## Diskettenformatierung (FORMAT.COM) — Scope
 

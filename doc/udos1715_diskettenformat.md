@@ -377,6 +377,7 @@ Python-Prüfskript gegengerechnet:
 | SECRET im Verzeichnis = Bit `10H` im Descriptor | 67/67 |
 | Kein Record überschreitet die Spurgrenze | ✔ |
 | Segmentlisten überstehen `get` → `put` unverändert | 66/66 Dateien |
+| **Am echten Laufwerk beschrieben** (Greaseweazle F1) | Datei eingefügt, 4 Spuren zurückgeschrieben und **geprüft**, danach genau diese 4 Spuren geändert, 2560/2560 Sektoren fehlerfrei, Belegungsplan wieder sektorgenau |
 | **Belegungskarte ↔ Auszählung aus allen Dateien** | **1673 = 1673, beide Richtungen ohne Rest** |
 | Zähler `177H` + `17CH` = 80 · 32 | 1673 + 887 = 2560 ✔ |
 
