@@ -334,7 +334,7 @@ poke at); `doc/analyse_zre_rom_boot.md` + `doc/K1520_architecture.md` §14 hold 
 >   exactly one machine-readable result line (instead of ~880) + a meaningful exit code
 >   (`--until`: 0 met / 2 not met). Prefer **`--until <cond>`** over guessing cycle counts.
 > - k1520dbg: drive it in one shot via a pipe (`printf 'b 0x0437\ng\nrj\nq\n' | k1520dbg $D`)
->   or `-x script.dbg`; `rj` prints registers as JSON. The interactive REPL/readline is for
+>   or `-x script.dbg`; `rj` prints registers as JSON. The interactive REPL (line editing via third_party/isocline) is for
 >   humans — the agent uses batch mode.
 > - **Boot once, resume often:** `--save-state`/`--load-state` (boot_trace) and
 >   `savestate`/`loadstate` (k1520dbg) persist RAM+CPU+ROM-mapping to a file, so the ~2 s

@@ -701,26 +701,44 @@ Gemessen am 2026-08-18 (x86-64, `-O2`, derselbe Objektstand):
 | ohne readline, `-static-libstdc++ -static-libgcc` | 2 632 KB | nur `libc.so.6` |
 | komplett `-static` | 3 463 KB | keine — **aber**: `getpwuid` in einem statisch gebundenen glibc verlangt zur Laufzeit dieselbe glibc-Fassung (Linkerwarnung), das ist das Gegenteil von portabel |
 
-**Entschieden: ohne readline bauen** (`-DK1520_DBG_READLINE=OFF`, neu anzulegen; der
-`if (NOT WIN32)`-Zweig bekommt die Bedingung dazu). Das ist zugleich die kleinste
-Fassung, und sie bringt **keine einzige neue Abhängigkeit** ins Paket: `libstdc++`,
-`libgcc_s`, `libc`, `libm` braucht `libk1520core.so` ohnehin schon. `-static-libstdc++`
-lohnt aus demselben Grund nicht — die C++-Laufzeit muss für die Kernbibliothek sowieso
-da sein.
+**✅ Erledigt 2026-08-18: readline ist raus, `isocline` ist drin**
+(`third_party/isocline`, **MIT**, beigelegt — dort steht auch die Anleitung zum
+Aktualisieren). Damit ist die Frage nicht durch Verzicht gelöst, sondern besser als
+vorher:
 
-Was dabei verlorengeht, sind Pfeiltasten, History und Tab-Vervollständigung. Wenn das
-im ausgelieferten Debugger fehlt, ist der saubere Ersatz **ein eigener kleiner
-Zeileneditor** (~200 Zeilen: Roh-Modus, Pfeiltasten, History-Ring, Tab über den bereits
-vorhandenen Präfix-Matcher in `tools/dbg_commands.h`). Der wäre MIT, käme ohne fremde
-Bibliothek aus — und gäbe die Zeilenbearbeitung zum ersten Mal auch **unter Windows**,
-wo es sie heute gar nicht gibt. `libedit` (BSD-2, in Debian als `libedit-dev`) wäre der
-Mittelweg, tauscht aber nur eine mitzuliefernde Fremdbibliothek gegen eine andere.
+| | vorher (readline) | jetzt (isocline) |
+|---|---|---|
+| Lizenz | GPLv3+ neben MIT | MIT = dieselbe |
+| Linux | Zeilenbearbeitung, **hängt** an `libreadline.so.8` + `libtinfo.so.6` | Zeilenbearbeitung, **keine** Fremdabhängigkeit |
+| Windows | **gar keine** Zeilenbearbeitung | dieselbe wie Linux (Console-API) |
+| Größe | 1012 KB | 1173 KB (+161 KB einkompiliert) |
+| Nachzuinstallieren | `libreadline-dev` beim Bauen | nichts |
 
-Unter Windows stellt sich die Frage nicht: dort wird readline gar nicht erst gesucht
-(`if (NOT WIN32)` im `CMakeLists.txt` — eine zufällig gefundene MSYS-Fassung würde gegen
-die falsche CRT linken), und der Auslieferungsbau läuft mit statischer CRT
-(`-DK1520_MSVC_STATIC_CRT=ON`, Job „Auslieferungsbau" in `windows-ci.yml`).
-`k1520dbg.exe` ist damit **von sich aus eine einzelne Datei ohne Beigaben**.
+Übrig bleiben als dynamische Bindungen `libstdc++`, `libgcc_s`, `libc`, `libm` — exakt
+die, die `libk1520core.so` ohnehin braucht. Das Paket bekommt also **keine einzige neue
+Abhängigkeit**. `-static-libstdc++` lohnt aus demselben Grund nicht: die C++-Laufzeit
+muss für die Kernbibliothek sowieso vorhanden sein.
+
+Umgesetzt in: `project(… LANGUAGES C CXX)` (isocline ist C), Ziel `isocline` als
+statische Bibliothek aus **einer** Übersetzungseinheit (`src/isocline.c` ist eine
+Amalgamation), `HAVE_ISOCLINE` in `tools/k1520dbg.cpp`. Der Skriptpfad blieb
+buchstabengetreu — die ~30 `cli_dbg_`-Tests pinnen den Wortlaut, isocline greift nur bei
+`isTerminal(0)`.
+
+Zwei Dinge, die dabei zu wissen sind:
+
+- **`ic_init(true)`** schaltet die Ausgabe des Editors auf **stderr**. Ohne das schriebe
+  der Prompt auf stdout, während der ganze Debugger auf stderr schreibt (`… 2>&1 | tee`).
+- **`ic_add_completion()` allein fügt EIN, statt zu ersetzen.** „whe"+TAB ergab
+  „whewhere"; erst `ic_complete_word()` richtet die Vorschläge am zu ersetzenden Wort
+  aus. Am Pseudoterminal gefunden, nicht am Quelltext — deshalb der Wächter
+  `py_dbg_interaktiv`.
+
+Wächter: `py_dbg_interaktiv` (Sitzung an einem echten Pseudoterminal: Prompt,
+Vervollständigung, „im Argument nichts anbieten", History, Rückschritt, Ctrl-D, `q`,
+und `ldd` ohne readline/tinfo) und `py_third_party_lizenzen` (jede beigelegte Quelle hat
+LICENSE + Herkunft und ist permissiv). Windows-Gegenprobe: `tools/dev.sh win` — 970/970
+unter wine, `k1520dbg.exe` hängt nur an `KERNEL32.dll` und `msvcrt.dll`.
 
 **(2) Der Release-Bau muss `-DK1520_FORMATS_DEFAULT=` auch für `k1520dbg` setzen.**
 Sonst trägt das ausgelieferte Programm den absoluten Pfad des Baurechners als
@@ -739,9 +757,9 @@ sollte nicht mit der Auslieferung vermischt werden.
 1. `build_payload.sh`: `k1520dbg` bauen und nach `bin/` kopieren; `share/doc/` und
    `share/tools/` anlegen und füllen (~30 Zeilen, dem Muster von `k1520disktool-cli`
    folgend).
-2. `-DK1520_DBG_READLINE=OFF` einführen und im Release-Bau setzen (§10a.3 (1));
-   Rauchtest „Programm startet und beantwortet `q`" in `release.yml` aufnehmen, dazu
-   die Gegenprobe `ldd`/`dumpbin`, dass **kein** readline mehr daranhängt.
+2. ✅ *(erledigt, §10a.3 (1))* Zeileneditor lizenzrein. Offen bleibt nur der Rauchtest
+   „Programm startet und beantwortet `q`" in `release.yml`; die `ldd`-Gegenprobe gegen
+   readline fährt bereits `py_dbg_interaktiv` in der Standardregression.
 3. Linux: Symlink `~/.local/bin/k1520dbg` in `install.sh` (Deinstallieren findet ihn
    über das Inventar im Ausweis — Eintrag ergänzen, sonst bleibt er stehen).
 4. Windows: `.iss` um den Startmenüeintrag „Eingabeaufforderung mit K1520-Werkzeugen"

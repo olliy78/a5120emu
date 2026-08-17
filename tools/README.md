@@ -40,7 +40,7 @@ bestehen bleiben soll (z. B. Formatier-Versuche) — dann auf einer eigenen Kopi
   *eine* maschinenlesbare Ergebniszeile statt ~880, dazu einen sinnvollen Exit-Code
   (`--until`: 0 erreicht / 2 nicht). Statt Zyklen zu raten: **`--until <cond>`**.
 - `k1520dbg`: im Stapelbetrieb über eine Pipe (`printf 'b 0x0437\ng\nrj\nq\n' | …`) oder
-  `-x skript.dbg`; `rj` druckt Register als JSON. Die REPL mit readline ist für Menschen.
+  `-x skript.dbg`; `rj` druckt Register als JSON. Die REPL mit Zeilenbearbeitung ist für Menschen.
 - **Einmal booten, oft fortsetzen:** `--save-state`/`--load-state` (boot_trace) bzw.
   `savestate`/`loadstate` (k1520dbg) sichern RAM+CPU+ROM-Mapping in eine Datei — der ~2 s
   lange Boot wird zur Einmalinvestition.

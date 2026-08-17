@@ -34,9 +34,8 @@
 #include "tools/expr_eval.h"
 #include "tools/event_bp.h"
 #include "tools/mem_watch.h"
-#ifdef HAVE_READLINE
-#include <readline/readline.h>
-#include <readline/history.h>
+#ifdef HAVE_ISOCLINE
+#include <isocline.h>          // third_party/isocline (MIT) — Zeileneditor, s. dortige README
 #endif
 #include <cstdio>
 #include <cstdint>
@@ -97,19 +96,34 @@ static void dbgSigInt(int){
 // counts down hits to skip before stopping; `temp` self-deletes on first stop.
 struct Bp { bool enabled=true; bool temp=false; std::string cond; long hits=0; long ignore=0; };
 
-#ifdef HAVE_READLINE
-// ─── readline tab-completion: complete the FIRST word against command names ───
-// (Args fall back to readline's default filename completion.) Command list +
-// matcher live in tools/dbg_commands.h so they are unit-testable.
-static char* dbgCmdGenerator(const char* text, int state){
-    static std::vector<std::string> matches; static size_t idx;
-    if (state == 0){ matches = dbgcmd::match(text); idx = 0; }
-    return (idx < matches.size()) ? strdup(matches[idx++].c_str()) : nullptr;
+#ifdef HAVE_ISOCLINE
+// ─── Tab-Vervollständigung: das ERSTE Wort gegen die Kommandonamen ────────────
+// Kommandoliste und Präfix-Matcher liegen in tools/dbg_commands.h, damit sie ohne
+// Maschine unit-testbar sind (tests/debugtools/test_dbg_commands.cpp).
+//
+// Nur das erste Wort wird vervollständigt: ab dem zweiten sind die Argumente
+// Adressen, Ausdrücke und Dateinamen — dort wäre eine Kommandoliste falsch, und
+// eine Dateinamensvervollständigung hülfe nur bei einem Bruchteil der Kommandos.
+// Erkennungsmerkmal ist, dass vor dem Präfix nichts als Leerraum steht.
+// Sammelt die Treffer. Läuft INNERHALB von ic_complete_word() (s.u.), bekommt also
+// nur das aktuelle Wort und darf es unmittelbar als Ersatz anbieten.
+static void dbgCmdMatches(ic_completion_env_t* cenv, const char* wort){
+    for (const auto& m : dbgcmd::match(wort ? wort : ""))
+        if (!ic_add_completion(cenv, m.c_str())) return;   // false = genug gesammelt
 }
-static char** dbgCompletion(const char* text, int start, int /*end*/){
-    if (start == 0){ rl_attempted_completion_over = 1;          // only our matches for the command word
-        return rl_completion_matches(text, dbgCmdGenerator); }
-    return nullptr;                                              // args → default (filename) completion
+
+// `prefix` ist die Eingabe BIS ZUM CURSOR.
+//
+// Zwei Feinheiten, beide am lebenden Terminal gefunden:
+//  * **ic_complete_word() ist Pflicht.** ic_add_completion() allein FÜGT EIN, statt
+//    zu ersetzen — aus „whe"+TAB wurde „whewhere". Erst ic_complete_word() rechnet
+//    aus, welcher Teil zu ersetzen ist, und richtet die Vorschläge daran aus.
+//  * **Nur das erste Wort.** Ab dem zweiten sind die Argumente Adressen, Ausdrücke
+//    und Dateinamen; eine Kommandoliste wäre dort schlicht falsch. Erkennbar daran,
+//    dass im Präfix noch kein Leerraum steht.
+static void dbgCompleter(ic_completion_env_t* cenv, const char* prefix){
+    if (prefix == nullptr || strpbrk(prefix, " \t") != nullptr) return;
+    ic_complete_word(cenv, prefix, dbgCmdMatches, nullptr);
 }
 #endif
 
@@ -1266,21 +1280,31 @@ int main(int argc, char** argv){
     signal(SIGINT, dbgSigInt);      // §7: Ctrl-C bricht einen laufenden `g` ab, nicht die Sitzung
     fprintf(stderr,"k1520dbg — type 'help'.  Lauf-Uhr = %s (clock zve1|machine).  Disassembler: built-in.\n",
             clock_machine? "Maschine (beide CPUs)" : "ZVE1");
-#ifdef HAVE_READLINE
-    rl_attempted_completion_function = dbgCompletion;   // Tab → command-name completion
+#ifdef HAVE_ISOCLINE
+    // ic_init(true) = Ausgabe des Editors auf STDERR. Das ist keine Kosmetik: der
+    // ganze Debugger schreibt auf stderr (damit `… 2>&1 | tee sitzung.log` alles
+    // erwischt), und ein Prompt auf stdout würde aus der Reihe tanzen.
+    ic_init(true);
+    ic_set_prompt_marker("(dbg) ", nullptr);   // Prompt exakt wie im Skriptbetrieb
+    ic_enable_multiline(false);                // eine Zeile = ein Kommando
+    ic_enable_hint(false);                     // keine Vorschau-Einblendung
+    ic_set_history(nullptr, -1);               // History nur im Speicher, 200 Einträge
+    ic_set_default_completer(dbgCompleter, nullptr);
 #endif
     std::string line;
     for (;;){
         // read one command (echo script lines so piped sessions are readable)
         if (!pending.empty()){ line=pending.front(); pending.pop_front(); fprintf(stderr,"(dbg) %s\n",line.c_str()); }
         else {
-            // interactive tty → readline (line editing, history, Tab-completion);
-            // pipes/scripts → plain getline with a manual prompt (unchanged behaviour).
-#ifdef HAVE_READLINE
+            // Terminal → isocline (Zeilenbearbeitung, History, Tab-Vervollständigung);
+            // Pipe/Skript → schlichtes getline mit eigenem Prompt (unverändert).
+            // isocline erkennt eine Pipe zwar selbst, aber der Skriptpfad muss
+            // buchstabengetreu bleiben: ~30 cli_dbg_-Tests pinnen den Wortlaut.
+#ifdef HAVE_ISOCLINE
             if (k1520::os::isTerminal(0)) {
-                char* rl = readline("(dbg) ");
-                if (!rl) break;
-                line = rl; if (rl[0]) add_history(rl); free(rl);
+                char* rl = ic_readline("");     // Prompt kommt aus dem prompt_marker
+                if (!rl) break;                 // EOF / Ctrl-D / Ctrl-C
+                line = rl; ic_free(rl);         // History führt isocline selbst
             } else
 #endif
             { fprintf(stderr,"(dbg) "); if(!std::getline(std::cin,line)) break; }

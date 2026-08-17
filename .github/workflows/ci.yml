@@ -39,12 +39,12 @@ jobs:
       - name: Systempakete
         run: |
           sudo apt-get update
-          # libreadline-dev: k1520dbg bekommt Zeileneditor + Vervollständigung
-          #   (optional — ohne baut es auch, dann fällt ein Codepfad aus dem Test).
+          # Der Zeileneditor des Debuggers liegt seit 2026-08-18 als Quelle bei
+          #   (third_party/isocline, MIT) — kein libreadline-dev mehr noetig.
           # libegl1/libgl1/libxkbcommon0/libdbus-1-3: PySide6 braucht diese
           #   Systembibliotheken auch für QT_QPA_PLATFORM=offscreen.
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ccache libreadline-dev \
+            build-essential cmake ccache \
             libegl1 libgl1 libxkbcommon0 libdbus-1-3
 
       - uses: actions/setup-python@v5

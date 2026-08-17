@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
-project(a5120emu VERSION 1.0.0 LANGUAGES CXX)
+# C steht neben CXX, weil der Zeileneditor des Debuggers (third_party/isocline,
+# MIT) reines C ist — ohne das meldet CMake beim Erzeugen „Missing variable is:
+# CMAKE_C_CREATE_STATIC_LIBRARY". Eigener Kerncode ist unverändert C++.
+project(a5120emu VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -296,22 +299,36 @@ if(BUILD_K1520)
     target_link_libraries(k1520dbg PRIVATE k1520_a5120 k1520_floppy k1520_logger)
     target_include_directories(k1520dbg PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(k1520dbg PRIVATE LOG_LEVEL=5)
-    # Optional GNU readline: interactive line editing, history, command tab-completion.
-    # If not found, k1520dbg falls back to plain getline (unchanged behaviour).
-    # Unter Windows gibt es GNU readline nicht — gar nicht erst suchen (eine
-    # zufällig gefundene MSYS-Fassung würde gegen die falsche CRT linken).
-    if (NOT WIN32)
-        find_path(READLINE_INCLUDE_DIR readline/readline.h)
-        find_library(READLINE_LIBRARY readline)
-    endif()
-    if (READLINE_INCLUDE_DIR AND READLINE_LIBRARY)
-        message(STATUS "k1520dbg: GNU readline found — interactive editing/history/completion enabled")
-        target_compile_definitions(k1520dbg PRIVATE HAVE_READLINE)
-        target_include_directories(k1520dbg PRIVATE ${READLINE_INCLUDE_DIR})
-        target_link_libraries(k1520dbg PRIVATE ${READLINE_LIBRARY})
+    # Zeilenbearbeitung der interaktiven Sitzung: Pfeiltasten, History,
+    # Tab-Vervollständigung, UTF-8 — über die BEIGELEGTE Quelle isocline
+    # (third_party/isocline, MIT, dort steht auch das Warum).
+    #
+    # Vorgänger war GNU readline. Zwei Gründe für den Wechsel (voll:
+    # doc/design/13_distribution.md §10a.3):
+    #   * LIZENZ — readline ist GPLv3+, dieses Projekt MIT. Ein ausgeliefertes
+    #     Binärabbild mit readline wäre ein Gesamtwerk unter GPLv3. isocline ist
+    #     ebenfalls MIT.
+    #   * WINDOWS — readline gibt es dort nicht (es wurde gar nicht erst
+    #     gesucht), die Sitzung hatte also KEINE Zeilenbearbeitung. isocline
+    #     bedient Windows über die Console-API.
+    # Nebenbei fällt die Laufzeitabhängigkeit von libreadline.so.8 + libtinfo.so.6
+    # weg — ohne die startete das Programm bisher gar nicht.
+    #
+    # src/isocline.c ist eine Amalgamation (inkludiert die übrigen .c selbst):
+    # genau EINE Datei übersetzen, sonst gibt es doppelte Symbole.
+    add_library(isocline STATIC third_party/isocline/src/isocline.c)
+    target_include_directories(isocline PUBLIC third_party/isocline/include)
+    set_target_properties(isocline PROPERTIES C_STANDARD 11 POSITION_INDEPENDENT_CODE ON)
+    if (MSVC)
+        # Die Fremdquelle wird nicht auf unsere Warnstufe gehoben; /utf-8 gilt
+        # global (die Quellen hier sind voller Umlaute) und stört sie nicht.
+        target_compile_options(isocline PRIVATE /w)
     else()
-        message(STATUS "k1520dbg: GNU readline not found — using plain getline (no history/completion)")
+        target_compile_options(isocline PRIVATE -w)
     endif()
+
+    target_compile_definitions(k1520dbg PRIVATE HAVE_ISOCLINE)
+    target_link_libraries(k1520dbg PRIVATE isocline)
 
 
     # ─── Testsystem ───────────────────────────────────────────────────────────
