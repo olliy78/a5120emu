@@ -19,6 +19,8 @@
 
 namespace {
 
+const char* encName(Encoding e) { return e == Encoding::FM ? "FM" : "MFM"; }
+
 LogicalSector sektor(uint8_t id, uint16_t size, uint8_t fill = 0xE5) {
     LogicalSector s;
     s.cyl  = 0;
@@ -192,6 +194,39 @@ TEST(TrackViewLeer, DerUdosAnhangZaehltNichtMit) {
     for (const TrackSpan& sp : v.spans)
         if (sp.kind == TrackSpan::Kind::Sector) {
             EXPECT_TRUE(sp.blank) << "der Anhang wurde mitgezaehlt";
+            gesehen = true;
+        }
+    EXPECT_TRUE(gesehen);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Anhang hinter der Daten-CRC — am SEKTOR erkannt, nicht am Dateisystem
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Hinter jedem Datenfeld stehen Bytes: auf einer gewoehnlichen IBM-Spur das
+// Gap-Fuellbyte, bei UDOS der Sektorkontrollblock.  Eine gemischte oder gar nicht
+// erkannte Diskette traegt ihre UDOS-Sektoren genauso — der Editor soll sie zeigen.
+
+TEST(TrackViewAnhang, GapFuellbytesSindKeinAnhang) {
+    for (auto [enc, fuell] : {std::pair{Encoding::MFM, uint8_t{0x4E}},
+                              std::pair{Encoding::FM,  uint8_t{0xFF}}}) {
+        LogicalSector s = sektor(1, 128);
+        s.tail.assign(4, fuell);
+        const TrackView v = scanTrack(TrackCodec::buildTrack({s}, enc));
+        for (const TrackSpan& sp : v.spans)
+            if (sp.kind == TrackSpan::Kind::Sector)
+                EXPECT_EQ(sp.tail_bytes, 0) << encName(enc);
+    }
+}
+
+TEST(TrackViewAnhang, EinUdosKontrollblockZaehlt) {
+    LogicalSector s = sektor(1, 128);
+    s.tail = {0x01, 0x16, 0xFF, 0xFF};        // Rueckwaerts-/Vorwaertszeiger
+    const TrackView v = scanTrack(TrackCodec::buildTrack({s}, Encoding::MFM));
+    bool gesehen = false;
+    for (const TrackSpan& sp : v.spans)
+        if (sp.kind == TrackSpan::Kind::Sector) {
+            EXPECT_EQ(sp.tail_bytes, 4);
             gesehen = true;
         }
     EXPECT_TRUE(gesehen);

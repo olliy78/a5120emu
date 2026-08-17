@@ -104,6 +104,14 @@ K1520_API int k1520d_keep_even_tracks(K1520Disk h);
 /// @brief Seite 1 wegwerfen (§12.6).  Loest ebenfalls vom Laufwerk.
 K1520_API int k1520d_drop_second_side(K1520Disk h);
 
+/// @brief Einen ganzen Zylinder loeschen; alles dahinter rueckt auf (§19.6).
+///        @return verbliebene Zylinder, -1 bei Fehler.  Loest vom Laufwerk.
+K1520_API int k1520d_delete_cylinder(K1520Disk h, int cyl);
+
+/// @brief Einen **unformatierten** Zylinder hinter @p cyl einfuegen (§19.6).
+///        @return verbliebene Zylinder, -1 bei Fehler.  Loest vom Laufwerk.
+K1520_API int k1520d_insert_cylinder_after(K1520Disk h, int cyl);
+
 /**
  * @brief Das Speicherabbild der geoeffneten Diskette auf ein **echtes Laufwerk** legen.
  *
@@ -419,6 +427,9 @@ K1520_API bool   k1520d_span_deleted    (K1520Disk h, int i);
 ///        ein formatierter, nie beschriebener Sektor aus.  Der UDOS-Anhang hinter der
 ///        Daten-CRC zaehlt nicht mit — er ist auch auf einer leeren Diskette belegt.
 K1520_API bool   k1520d_span_blank      (K1520Disk h, int i);
+/// @brief Bytes hinter der Daten-CRC, die KEIN Gap sind (0 = keine, UDOS = 4).
+///        Am Inhalt entschieden, nicht am erkannten Dateisystem.
+K1520_API int    k1520d_span_tail_bytes (K1520Disk h, int i);
 
 /**
  * @brief Nutzdaten eines Sektors lesen.

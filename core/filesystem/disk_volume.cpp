@@ -1104,6 +1104,17 @@ int DiskVolume::schneide(bool nur_gerade_spuren, bool nur_seite_null) {
     if (nur_gerade_spuren && alt_c < 2) { fail("zu wenige Spuren"); return -1; }
     if (nur_seite_null && alt_h < 2)    { fail("die Diskette hat nur eine Seite"); return -1; }
 
+    // **Nur an einem vollstaendigen Abbild.**  Der Schnitt loest vom Laufwerk (s. u.);
+    // was jetzt noch ungelesen ist, bleibt es fuer immer.  Und die verbliebenen
+    // Luecken machen die Erkennung unmoeglich — eine unbekannte Spur sieht aus wie
+    // eine unformatierte, mitten im beschriebenen Bereich.
+    if (!m.complete()) {
+        fail("Es sind noch " + std::to_string(m.unknownCount())
+             + " Spuren ungelesen.  Der Schnitt loest das Abbild vom Laufwerk — was "
+               "jetzt fehlt, fehlt dann endgueltig.  Erst vollstaendig einlesen.");
+        return -1;
+    }
+
     // **Erst vom Laufwerk loesen.**  Nach dem Schnitt stimmt die Spurnummer nicht
     // mehr mit der Kopfposition ueberein (Spur n liegt physisch auf 2n); ein
     // Rueckschreiben ginge auf die falschen Zylinder und zerstoerte die Diskette.
@@ -1125,6 +1136,50 @@ int DiskVolume::schneide(bool nur_gerade_spuren, bool nur_seite_null) {
     }
     m.resize(neu_c, neu_h);
     return static_cast<int>(neu_c) * neu_h;
+}
+
+int DiskVolume::deleteCylinder(uint8_t cyl) {
+    if (!disk_) { fail("keine Diskette geoeffnet"); return -1; }
+    DiskMedium& m = disk_->medium();
+    if (cyl >= m.numCylinders()) { fail("diesen Zylinder gibt es nicht"); return -1; }
+    if (m.numCylinders() < 2)    { fail("die letzte Spur bleibt"); return -1; }
+    if (!m.complete()) {
+        fail("Es sind noch Spuren ungelesen — erst vollstaendig einlesen.");
+        return -1;
+    }
+    m.setLoader(nullptr);                    // Lage aendert sich, s. @ref schneide
+
+    // Nach vorn schieben: Ziel liegt immer VOR der Quelle, es geht nichts verloren.
+    for (uint8_t c = cyl; c + 1 < m.numCylinders(); ++c)
+        for (uint8_t h = 0; h < m.numHeads(); ++h)
+            m.setTrack(c, h, m.peek(static_cast<uint8_t>(c + 1), h));
+    m.resize(static_cast<uint8_t>(m.numCylinders() - 1), m.numHeads());
+    return m.numCylinders();
+}
+
+int DiskVolume::insertCylinderAfter(uint8_t cyl) {
+    if (!disk_) { fail("keine Diskette geoeffnet"); return -1; }
+    DiskMedium& m = disk_->medium();
+    if (cyl >= m.numCylinders()) { fail("diesen Zylinder gibt es nicht"); return -1; }
+    if (m.numCylinders() >= 255) { fail("mehr Zylinder gehen nicht"); return -1; }
+    if (!m.complete()) {
+        fail("Es sind noch Spuren ungelesen — erst vollstaendig einlesen.");
+        return -1;
+    }
+    m.setLoader(nullptr);
+
+    const uint8_t alt = m.numCylinders();
+    m.resize(static_cast<uint8_t>(alt + 1), m.numHeads());
+    // Von HINTEN nach vorn schieben — sonst ueberschreibt man, was noch kommt.
+    for (int c = alt; c > cyl + 1; --c)
+        for (uint8_t h = 0; h < m.numHeads(); ++h)
+            m.setTrack(static_cast<uint8_t>(c), h,
+                       m.peek(static_cast<uint8_t>(c - 1), h));
+    // Der neue Zylinder ist UNFORMATIERT: eine leere Spur, kein Abklatsch des
+    // Nachbarn — sonst traegt sie fremde Sektor-IDs.
+    for (uint8_t h = 0; h < m.numHeads(); ++h)
+        m.setTrack(static_cast<uint8_t>(cyl + 1), h, TrackImage{});
+    return m.numCylinders();
 }
 
 int DiskVolume::keepEvenTracks()  { return schneide(true, false); }

@@ -974,6 +974,51 @@ class MainWindow(QMainWindow):
         self._physisch_tick()      # sofort, nicht erst nach dem ersten Intervall
         return True
 
+    def _vollstaendig_einlesen(self, titel: str) -> bool:
+        """Alle noch ungelesenen Spuren holen — Bedingung für jeden Schnitt.
+
+        Bei einer Datei ist ohnehin alles da; nur am echten Laufwerk fehlt etwas.
+        Gelesen wird im Arbeitsfaden mit Fortschritt: es können 150 Spuren sein.
+        """
+        if self.tool is None or self._physisch is None:
+            return True
+        fehlend = [(c, h)
+                   for c in range(self.tool.medium_cylinders)
+                   for h in range(self.tool.medium_heads)
+                   if self.tool.track_state(c, h) == DiskTool.SPUR_UNBEKANNT]
+        if not fehlend:
+            return True
+
+        if QMessageBox.question(
+                self, titel,
+                f"Von der Diskette sind noch {len(fehlend)} Spuren ungelesen.\n\n"
+                "Sie müssen vorher geholt werden — der Schnitt löst das Abbild vom "
+                "Laufwerk, danach ist nichts mehr nachzuholen.\n\nJetzt einlesen?",
+                QMessageBox.Cancel | QMessageBox.Ok,
+                QMessageBox.Cancel) != QMessageBox.Ok:
+            return False
+
+        werkzeug = self.tool
+        _, fehler = mit_fortschritt(
+            self, self._physisch,
+            lambda: [werkzeug.track(c, h) for c, h in fehlend],
+            titel=titel, text="Die restlichen Spuren werden gelesen…",
+            ziel=len(fehlend), was="Spuren gelesen")
+        if fehler is not None:
+            self._fehler(titel, str(fehler))
+            return False
+        # Abgebrochen oder eine Spur unlesbar — dann NICHT schneiden.
+        offen = [1 for c, h in fehlend
+                 if werkzeug.track_state(c, h) == DiskTool.SPUR_UNBEKANNT]
+        if offen:
+            self._fehler(titel,
+                         f"{len(offen)} Spuren liessen sich nicht lesen.  Ohne sie "
+                         "wäre das Abbild nach dem Schnitt lückenhaft — es bleibt, "
+                         "wie es ist.")
+            return False
+        self._reload()
+        return True
+
     def _gerade_spuren(self) -> None:
         """Jede zweite Spur wegwerfen — Doppelschritt-Diskette geradeziehen (§12.6)."""
         self._schneiden(
@@ -1003,6 +1048,11 @@ class MainWindow(QMainWindow):
         hereinkam, ist danach als das erkennbar, was sie ist.
         """
         if self.tool is None:
+            return
+        # Vorher VOLLSTÄNDIG einlesen.  Der Schnitt löst vom Laufwerk; was jetzt noch
+        # fehlt, fehlt dann für immer — und Lücken im Abbild machen jede spätere
+        # Erkennung unmöglich (eine ungelesene Spur sieht aus wie eine unformatierte).
+        if not self._vollstaendig_einlesen(titel):
             return
         hinweis = was
         if self._physisch is not None:

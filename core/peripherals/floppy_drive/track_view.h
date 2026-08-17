@@ -74,6 +74,19 @@ struct TrackSpan {
      *       das trifft dann ja zu.
      */
     bool     blank       = false;
+    /**
+     * @brief Bytes hinter der Daten-CRC, die **kein Gap** sind (0 = keine).
+     *
+     * Hinter jedem Datenfeld stehen Bytes — auf einer gewoehnlichen IBM-Spur das
+     * Gap-Fuellbyte (MFM 0x4E, FM 0xFF), bei UDOS der 4 Byte lange
+     * **Sektorkontrollblock** mit der Dateiverkettung.
+     *
+     * Unterschieden wird am INHALT, nicht am erkannten Dateisystem: eine gemischte
+     * oder gar nicht erkannte Diskette traegt ihre UDOS-Sektoren genauso, und wer
+     * sie im Editor ansieht, will die Verkettung sehen.  Weicht eines der ersten
+     * @ref kSectorTailBytes Bytes vom Fuellbyte ab, gilt der Anhang als belegt.
+     */
+    uint8_t  tail_bytes  = 0;
 
     /// @brief Gilt der Sektor als lesbar?  Beide CRCs müssen stimmen.
     bool ok() const { return id_crc_ok && data_crc_ok; }

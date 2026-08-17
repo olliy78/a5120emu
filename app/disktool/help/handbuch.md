@@ -280,8 +280,18 @@ schreibt **bis in die Datei**. Sektoren lassen sich anlegen und löschen; die
 Prüfsumme ist absichtlich mitschreibbar, damit sich eine schadhafte Diskette
 originalgetreu nachbilden lässt.
 
-Bei UDOS zeigt der Editor zusätzlich den 4 Byte langen Anhang hinter den
-Nutzdaten und übersetzt ihn: die Verkettung zum vorigen und nächsten Satz.
+**Ganze Spuren** lassen sich löschen und einfügen: *Spur löschen* wirft die
+gewählte Spur mit beiden Seiten heraus (alles dahinter rückt auf), *Spur einfügen*
+setzt dahinter eine leere ein. Damit stutzt man ein Abbild zurecht — etwa von 82
+auf 80 Spuren oder auf 77, damit es auf eine 8″-Diskette passt. Bei einer
+physischen Diskette endet damit die Verbindung zum Laufwerk, denn die Spurnummern
+stimmen danach nicht mehr mit den Kopfpositionen überein.
+
+Trägt ein Sektor hinter den Nutzdaten einen **UDOS-Anhang** (4 Byte), zeigt der
+Editor ihn und übersetzt ihn: die Verkettung zum vorigen und nächsten Satz. Das
+entscheidet der Sektor selbst — auch auf einer gemischten oder gar nicht erkannten
+Diskette wird er angezeigt. Wo stattdessen nur Füllbytes stehen (CP/M), bleibt die
+Angabe weg.
 
 ## Wenn eine Diskette nicht erkannt wird
 

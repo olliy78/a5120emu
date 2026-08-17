@@ -600,6 +600,68 @@ def _editor(window, abbild):
     return window.open_disk_editor()
 
 
+def test_disk_editor_zeigt_den_udos_anhang_auch_ohne_erkanntes_udos(
+        window, fixture_disks, monkeypatch):
+    """Der Anhang hängt am SEKTOR, nicht am erkannten Dateisystem.
+
+    Eine gemischte oder gar nicht erkannte Diskette trägt ihre UDOS-Sektoren
+    genauso — wer sie im Editor ansieht, will die Verkettung sehen.  Früher
+    entschied das `tool.filesystem_type`; bei einer rohen Diskette blieb das Feld
+    dann leer, obwohl der Kontrollblock danebenstand.
+    """
+    ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
+    ed.udos = False              # so, als wäre nichts erkannt worden
+
+    ed._springe(seite=0, spur=25, sektor_id=1)
+    assert ed.tail_feld.isVisible(), "der Anhang wird verschwiegen"
+    assert ed.tail_feld.text().strip(), "Anhangfeld leer"
+    assert "UDOS" in ed.info.text()
+
+    # Und umgekehrt: wo keiner ist, steht auch keiner.
+    ed2 = _editor(window, fixture_disks / "cpa_cpa780_k5601_noclock.hfe")
+    ed2.udos = True              # so, als wäre UDOS erkannt worden
+    ed2._springe(seite=0, spur=25, sektor_id=1)
+    assert not ed2.tail_feld.isVisible(), \
+        "auf einer CP/M-Spur stehen dort Gap-Füllbytes, kein Anhang"
+
+
+def test_disk_editor_loescht_und_fuegt_ganze_spuren_ein(window, temp_disk):
+    """Ganze Spuren löschen und einfügen (§19.6).
+
+    Anders als „Sektor löschen" verschiebt das die Diskette dahinter — der Weg,
+    ein Abbild mit zu vielen Spuren zurechtzustutzen (82 statt 80) oder auf eine
+    Zielgeometrie zu bringen (77 für 8″).
+    """
+    from PySide6.QtWidgets import QMessageBox
+    from app.core_binding.k1520disk import SECTOR
+
+    ed = _editor(window, temp_disk("udos_boot_scp.hfe"))
+    window.tool.set_read_only(False)
+    vorher = window.tool.medium_cylinders
+
+    def sektoren(c):
+        return [x for x in window.tool.track(c, 0).spans if x.kind == SECTOR]
+
+    inhalt_dahinter = len(sektoren(6))
+    with_ok = lambda *a, **k: QMessageBox.Ok          # noqa: E731
+    ed_frage = QMessageBox.question
+    QMessageBox.question = staticmethod(with_ok)
+    try:
+        ed._springe(seite=0, spur=5)
+        assert ed.delete_track()
+        assert window.tool.medium_cylinders == vorher - 1, "nicht gelöscht"
+        # Alles dahinter ist aufgerückt: die alte Spur 6 ist jetzt die 5.
+        assert len(sektoren(5)) == inhalt_dahinter
+
+        ed._springe(seite=0, spur=4)
+        assert ed.insert_track()
+        assert window.tool.medium_cylinders == vorher, "nicht eingefügt"
+        # Die neue Spur ist LEER — kein Abklatsch des Nachbarn.
+        assert sektoren(5) == [], "die eingefügte Spur trägt Sektoren"
+    finally:
+        QMessageBox.question = ed_frage
+
+
 def test_disk_editor_faerbt_leere_sektoren_heller(window, fixture_disks):
     """Beschrieben oder nur formatiert? — dunkelgrün gegen hellgrün.
 

@@ -767,9 +767,10 @@ class DiskEditorWindow(QDialog):
         angaben.addStretch(1)
         self.angaben_widget = QWidget()
         self.angaben_widget.setLayout(angaben)
-        # CP/M kennt keinen Nachspann — dort bleiben Feld und Deutung ganz weg.
-        self.tail_feld.setVisible(self.udos)
-        self.tail_deutung.setVisible(self.udos)
+        # Zunächst weg — ob es einen Nachspann gibt, entscheidet der ANGEZEIGTE
+        # Sektor (`_zeige_sektor`), nicht das erkannte Dateisystem.
+        self.tail_feld.setVisible(False)
+        self.tail_deutung.setVisible(False)
 
         self.hex = QPlainTextEdit()
         self.hex.setFont(_monospace())
@@ -807,6 +808,21 @@ class DiskEditorWindow(QDialog):
         self.btn_neu.clicked.connect(self.new_sector)
         self.btn_loeschen.clicked.connect(self.delete_sector)
 
+        # Ganze SPUREN — eine Ebene über den Sektoren.  Getrennt beschriftet, weil
+        # „Spur löschen" etwas anderes ist als „Sektor löschen": es verschiebt die
+        # ganze Diskette dahinter.
+        self.btn_spur_neu = QPushButton("Spur einfügen")
+        self.btn_spur_weg = QPushButton("Spur löschen")
+        self.btn_spur_neu.setToolTip(
+            "Hinter der gewählten Spur eine LEERE Spur einfügen; alles dahinter "
+            "rückt nach hinten.  Sektoren legt man danach an.")
+        self.btn_spur_weg.setToolTip(
+            "Die gewählte Spur ganz aus dem Abbild werfen; alles dahinter rückt "
+            "auf.  Für Abbilder mit zu vielen Spuren (82 statt 80) oder zum "
+            "Zurechtstutzen (77 Spuren für 8″).")
+        self.btn_spur_neu.clicked.connect(self.insert_track)
+        self.btn_spur_weg.clicked.connect(self.delete_track)
+
         knopfzeile = QHBoxLayout()
         knopfzeile.addWidget(self.btn_reload)
         knopfzeile.addWidget(self.btn_fixcrc)
@@ -814,6 +830,9 @@ class DiskEditorWindow(QDialog):
         knopfzeile.addSpacing(16)
         knopfzeile.addWidget(self.btn_neu)
         knopfzeile.addWidget(self.btn_loeschen)
+        knopfzeile.addSpacing(16)
+        knopfzeile.addWidget(self.btn_spur_neu)
+        knopfzeile.addWidget(self.btn_spur_weg)
         knopfzeile.addStretch(1)
         self.hinweis = QLabel("")
         self.hinweis.setWordWrap(True)
@@ -958,7 +977,14 @@ class DiskEditorWindow(QDialog):
         # Angabe weg, statt eine leere Spalte zu zeigen.
         verfahren = f"IBM-{spur.encoding}"
         groesse = f"{len(daten)} Byte"
-        if self.udos:
+        # **Am Sektor entschieden, nicht am erkannten Dateisystem.**  Eine gemischte
+        # oder gar nicht erkannte Diskette trägt ihre UDOS-Sektoren genauso; wer sie
+        # im Editor ansieht, will die Verkettung sehen.  Maßgeblich ist, ob hinter
+        # der Daten-CRC etwas anderes steht als Gap-Füllbytes.
+        anhang_da = bool(getattr(span, "tail_bytes", 0)) if span else False
+        self.tail_feld.setVisible(anhang_da)
+        self.tail_deutung.setVisible(anhang_da)
+        if anhang_da:
             anhang = self.tool.sector_tail(cyl, head, index)[:UDOS_TAIL]
             verfahren += " + UDOS-Erweiterung"
             # Nutzdaten + Kontrollblock.  Die Daten-CRC wird hier NICHT mitgezählt —
@@ -1253,6 +1279,80 @@ class DiskEditorWindow(QDialog):
         self.hinweis.setText(f"Sektor {w['id']} angelegt ({w['size']} Byte).")
         return True
 
+    # ── Ganze Spuren ────────────────────────────────────────────────────────
+
+    def _gewaehlte_spur(self):
+        """Seite und Spur der Auswahl; ``None``, wenn nichts gewählt ist."""
+        if self.aktuell is not None:
+            head, cyl, _ = self.aktuell
+            return head, cyl
+        return None
+
+    def delete_track(self) -> bool:
+        """Die gewählte Spur ganz aus dem Abbild werfen.
+
+        Anders als „Sektor löschen" verschiebt das die Diskette dahinter: aus Spur
+        n+1 wird n.  Das ist der Weg, ein Abbild mit zu vielen Spuren (82 statt 80)
+        oder auf eine Zielgeometrie (77 für 8″) zurechtzustutzen.
+        """
+        wahl = self._gewaehlte_spur()
+        if wahl is None:
+            return False
+        _, cyl = wahl
+        if QMessageBox.question(
+                self, "Spur löschen",
+                f"Spur {cyl} wird aus dem Abbild geworfen — mit BEIDEN Seiten.\n"
+                f"Alles dahinter rückt auf; aus Spur {cyl + 1} wird Spur {cyl}.\n\n"
+                f"Danach hat das Abbild {self.tool.medium_cylinders - 1} Spuren.",
+                QMessageBox.Ok | QMessageBox.Cancel,
+                QMessageBox.Cancel) != QMessageBox.Ok:
+            return False
+        try:
+            n = self.tool.delete_cylinder(cyl)
+        except K1520DiskError as e:
+            QMessageBox.warning(self, "Spur löschen", str(e))
+            return False
+        self._nach_spurwechsel(f"Spur {cyl} gelöscht — {n} Spuren", cyl)
+        return True
+
+    def insert_track(self) -> bool:
+        """Hinter der gewählten Spur eine leere Spur einfügen."""
+        wahl = self._gewaehlte_spur()
+        if wahl is None:
+            return False
+        _, cyl = wahl
+        if QMessageBox.question(
+                self, "Spur einfügen",
+                f"Hinter Spur {cyl} wird eine LEERE Spur eingefügt (beide Seiten).\n"
+                f"Alles dahinter rückt nach hinten.\n\n"
+                f"Die neue Spur {cyl + 1} ist unformatiert — Sektoren legt man "
+                "danach mit \u201eNeuer Sektor\u201c an.",
+                QMessageBox.Ok | QMessageBox.Cancel,
+                QMessageBox.Cancel) != QMessageBox.Ok:
+            return False
+        try:
+            n = self.tool.insert_cylinder_after(cyl)
+        except K1520DiskError as e:
+            QMessageBox.warning(self, "Spur einfügen", str(e))
+            return False
+        self._nach_spurwechsel(f"Spur hinter {cyl} eingefügt — {n} Spuren", cyl + 1)
+        return True
+
+    def _nach_spurwechsel(self, meldung: str, ziel: int) -> None:
+        """Nach dem Löschen/Einfügen: alles neu zeichnen und wieder hinspringen.
+
+        Die Geometrie hat sich geändert — die Ansicht muss komplett neu aufgebaut
+        werden, sonst zeigt sie Spuren, die es nicht mehr gibt.
+        """
+        self.surface.load(self.tool)
+        self.aktuell = None
+        self.hinweis.setText(meldung)
+        self.disk_changed.emit()
+        if ziel < self.tool.medium_cylinders:
+            self._springe(spur=ziel)
+        else:
+            self._zeige_leere_spur(0, max(0, self.tool.medium_cylinders - 1))
+
     def delete_sector(self) -> bool:
         """Den gewählten Sektor entfernen; sein Bereich wird wieder Gap."""
         if self.aktuell is None:
@@ -1270,7 +1370,11 @@ class DiskEditorWindow(QDialog):
             return False
 
         try:
-            self.tool.sector_erase(cyl, head, index, UDOS_TAIL if self.udos else 0)
+            # Wie viel Nachspann dieser Sektor hat, sagt er selbst.
+            span = next((x for x in self.tool.track(cyl, head).spans
+                         if x.kind == SECTOR and x.index == index), None)
+            anhang = getattr(span, "tail_bytes", 0) if span else 0
+            self.tool.sector_erase(cyl, head, index, anhang)
         except K1520DiskError as e:
             QMessageBox.critical(self, "Nicht gelöscht", str(e))
             return False

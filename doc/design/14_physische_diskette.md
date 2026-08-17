@@ -1056,6 +1056,14 @@ gelesen wurde, trägt auf den ungeraden Zylindern den Altbestand einer früheren
 Formatierung; dasselbe gilt für Seite 1 einer einseitig beschriebenen Diskette.  Als
 Ganzes ist das keine Diskette, die ein Katalog kennt — nach dem Schnitt schon.
 
+> **Beide verlangen ein vollständiges Abbild.**  Was beim Schnitt noch ungelesen ist,
+> bleibt es für immer — danach gibt es keinen Nachlader mehr.  Und die Lücken machen
+> jede spätere Erkennung unmöglich: eine ungelesene Spur sieht aus wie eine
+> unformatierte, mitten im beschriebenen Bereich.  Genau daran scheiterte die
+> Erkennung nach dem Schnitt, solange noch gelesen wurde.  Der Kern weist es ab
+> (`complete()`), die Oberfläche liest vorher die fehlenden Spuren nach — mit
+> Rückfrage und Fortschritt.  Wächter: `test_schneiden_verweigert_ein_halbes_abbild`.
+>
 > **Beide lösen das Abbild vom Laufwerk** (`medium.setLoader(nullptr)`).  Danach
 > stimmt die Spurnummer nicht mehr mit der Kopfposition überein: Spur *n* liegt
 > physisch auf *2n*.  Ein Rückschreiben ginge auf die falschen Zylinder und

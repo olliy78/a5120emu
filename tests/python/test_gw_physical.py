@@ -452,6 +452,36 @@ def test_schneiden_macht_ein_abbild_lesbar(fixture_disks, tmp_path):
             worker.stop()
 
 
+def test_schneiden_verweigert_ein_halbes_abbild(fixture_disks):
+    """Erst vollständig einlesen — der Schnitt löst vom Laufwerk.
+
+    Was beim Schnitt noch ungelesen ist, bleibt es **für immer**; danach gibt es
+    keinen Nachlader mehr.  Und die Lücken machen jede spätere Erkennung unmöglich:
+    eine ungelesene Spur sieht aus wie eine unformatierte, mitten im beschriebenen
+    Bereich.  Genau daran scheiterte die Erkennung nach dem Schnitt.
+    """
+    pfad = fixture_disks / "udos_boot_scp.hfe"
+    if not pfad.exists():
+        pytest.skip("Fixture fehlt")
+
+    geraet = HfeDevice(pfad)
+    with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
+              read_ahead=False) as s:                      # bewusst NICHT vorauslesen
+        worker = TrackWorker(s, geraet, poll_ms=20)
+        worker.start()
+        try:
+            with DiskTool.open_physical_raw(s) as t:
+                assert s.stats.tracks_known < s.stats.tracks_total, \
+                    "schon alles gelesen — der Fall wird nicht geprüft"
+                with pytest.raises(K1520DiskError) as fehler:
+                    t.drop_second_side()
+                assert "ungelesen" in str(fehler.value)
+                # Und die Diskette ist unversehrt geblieben.
+                assert t.medium_heads == 2
+        finally:
+            worker.stop()
+
+
 def test_schneiden_loest_das_abbild_vom_laufwerk(fixture_disks):
     """Nach dem Schnitt darf NICHTS mehr auf die Diskette gehen.
 

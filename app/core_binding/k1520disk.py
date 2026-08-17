@@ -77,6 +77,10 @@ _lib.k1520d_keep_even_tracks.argtypes = [_H]
 _lib.k1520d_keep_even_tracks.restype = ctypes.c_int
 _lib.k1520d_drop_second_side.argtypes = [_H]
 _lib.k1520d_drop_second_side.restype = ctypes.c_int
+_lib.k1520d_delete_cylinder.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_delete_cylinder.restype = ctypes.c_int
+_lib.k1520d_insert_cylinder_after.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_insert_cylinder_after.restype = ctypes.c_int
 _lib.k1520d_probe_track_count.argtypes = [ctypes.c_int, ctypes.c_int]
 _lib.k1520d_probe_track_count.restype = ctypes.c_int
 _lib.k1520d_write_to_physical.argtypes = [_H, ctypes.c_void_p]
@@ -280,6 +284,8 @@ _lib.k1520d_span_deleted.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_span_deleted.restype = ctypes.c_bool
 _lib.k1520d_span_blank.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_span_blank.restype = ctypes.c_bool
+_lib.k1520d_span_tail_bytes.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_tail_bytes.restype = ctypes.c_int
 
 _lib.k1520d_sector_read.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int,
                                     ctypes.POINTER(ctypes.c_uint8), ctypes.c_int]
@@ -504,6 +510,8 @@ class Span:
     #: Datenfeld ohne unterscheidbaren Inhalt (alle Bytes gleich) — so sieht ein
     #: formatierter, nie beschriebener Sektor aus.  Der UDOS-Anhang zählt nicht mit.
     blank: bool = False
+    #: Bytes hinter der Daten-CRC, die KEIN Gap sind (0 = keine, UDOS = 4).
+    tail_bytes: int = 0
 
     @property
     def is_sector(self) -> bool:
@@ -651,6 +659,31 @@ class DiskTool:
     def drop_second_side(self) -> int:
         """Seite 1 wegwerfen — **löst das Abbild vom Laufwerk**."""
         n = int(_lib.k1520d_drop_second_side(self._h))
+        if n < 0:
+            raise K1520DiskError(self._fail())
+        return n
+
+    def delete_cylinder(self, cyl: int) -> int:
+        """Einen ganzen Zylinder löschen; alles dahinter rückt auf.
+
+        Für Abbilder mit mehr Spuren, als hineingehören (82 statt 80), und zum
+        Zurechtstutzen auf eine Zielgeometrie (77 Spuren für 8″).
+
+        Returns: verbliebene Zylinder.
+        """
+        n = int(_lib.k1520d_delete_cylinder(self._h, cyl))
+        if n < 0:
+            raise K1520DiskError(self._fail())
+        return n
+
+    def insert_cylinder_after(self, cyl: int) -> int:
+        """Einen **unformatierten** Zylinder hinter ``cyl`` einfügen.
+
+        Sektoren legt man danach im Diskeditor an.
+
+        Returns: verbliebene Zylinder.
+        """
+        n = int(_lib.k1520d_insert_cylinder_after(self._h, cyl))
         if n < 0:
             raise K1520DiskError(self._fail())
         return n
@@ -1010,6 +1043,7 @@ class DiskTool:
                 data_crc_ok=bool(_lib.k1520d_span_data_crc_ok(self._h, i)),
                 deleted=bool(_lib.k1520d_span_deleted(self._h, i)),
                 blank=bool(_lib.k1520d_span_blank(self._h, i)),
+                tail_bytes=int(_lib.k1520d_span_tail_bytes(self._h, i)),
             ))
         return Track(
             cyl=cyl, head=head,

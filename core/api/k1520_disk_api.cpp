@@ -197,6 +197,16 @@ extern "C" int k1520d_drop_second_side(K1520Disk h) {
     return h ? H(h)->vol->dropSecondSide() : -1;
 }
 
+extern "C" int k1520d_delete_cylinder(K1520Disk h, int cyl) {
+    if (!h || cyl < 0 || cyl > 255) return -1;
+    return H(h)->vol->deleteCylinder(static_cast<uint8_t>(cyl));
+}
+
+extern "C" int k1520d_insert_cylinder_after(K1520Disk h, int cyl) {
+    if (!h || cyl < 0 || cyl > 255) return -1;
+    return H(h)->vol->insertCylinderAfter(static_cast<uint8_t>(cyl));
+}
+
 extern "C" K1520Disk k1520d_create(const char* path, const char* fs_name,
                                    const char* label) {
     return k1520d_create_bootable(path, fs_name, label, nullptr);
@@ -587,6 +597,11 @@ extern "C" bool k1520d_span_deleted(K1520Disk h, int i) {
 extern "C" bool k1520d_span_blank(K1520Disk h, int i) {
     const TrackSpan* s = abschnitt(h, i);
     return s && s->blank;
+}
+
+extern "C" int k1520d_span_tail_bytes(K1520Disk h, int i) {
+    const TrackSpan* s = abschnitt(h, i);
+    return s ? s->tail_bytes : 0;
 }
 
 extern "C" int k1520d_sector_read(K1520Disk h, int cyl, int head, int index,

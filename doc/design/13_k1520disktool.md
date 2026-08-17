@@ -1418,6 +1418,24 @@ um die Sync-Länge voneinander ab, und die Überschneidungswarnung urteilte übe
 andere Stelle, als sie beschrieb. Rückwärts gelaufen wird höchstens eine doppelte
 Sync-Länge, damit ein auf Nullbytes endendes Datenfeld nicht verschluckt wird.
 
+### 19.6 Ganze Spuren löschen und einfügen (2026-08-17)
+
+Zwei Knöpfe neben „Neuer Sektor" — eine Ebene darüber: sie ändern die **Geometrie**
+des Abbilds, nicht seinen Inhalt.
+
+* **Spur löschen** wirft den gewählten Zylinder (beide Seiten) heraus; alles dahinter
+  rückt auf.  Für Abbilder mit mehr Spuren, als hineingehören (82 statt 80), und zum
+  Zurechtstutzen auf eine Zielgeometrie — 77 Spuren, damit es auf eine 8″-Diskette
+  passt.
+* **Spur einfügen** setzt hinter dem gewählten Zylinder einen **unformatierten** ein;
+  alles dahinter rückt nach hinten.  Sektoren legt man danach einzeln an.
+
+Beides verlangt ein **vollständiges** Abbild und **löst vom Laufwerk** (wie die
+Schnitte in §12.6 des Greaseweazle-Entwurfs): die Spurnummer stimmt danach nicht mehr
+mit der Kopfposition überein.  Die eingefügte Spur ist bewusst leer und kein Abklatsch
+des Nachbarn — sonst trüge sie fremde Sektor-IDs.  Wächter:
+`test_disk_editor_loescht_und_fuegt_ganze_spuren_ein`.
+
 ### 19.5 UDOS-Anhang in der Sektorzeile
 
 Bei UDOS hängen hinter der Daten-CRC **4 Byte Sektorkontrollblock** (Rückwärts- und
@@ -1427,9 +1445,18 @@ rechnet die Grösse als `128+4 Byte` (Nutzdaten + Kontrollblock — die Daten-CR
 zählt hier so wenig mit wie bei CP/M, sie hat ihr eigenes Feld) und
 zeigt beide Zeiger im Klartext (`zurück: Spur 22/Sektor 6   vor: …`, `FF FF` =
 Kettenende).  **Alles in EINER Zeile** — Format, Grösse, Rohbytes, Deutung: jede
-zusätzliche Zeile im unteren Teil fehlt oben der Scheibe. Ob es den Anhang gibt, weiss nicht der Sektor, sondern das
-**Dateisystem** (`filesystem_type == "udos"`); bei CP/M bleiben die Angaben weg,
-statt eine leere Spalte zu zeigen.
+zusätzliche Zeile im unteren Teil fehlt oben der Scheibe.
+
+**Ob es den Anhang gibt, sagt der SEKTOR** (`TrackSpan::tail_bytes`), nicht das
+erkannte Dateisystem.  Anfangs hing es an `filesystem_type == "udos"` — und damit
+sah man auf einer **gemischten oder gar nicht erkannten** Diskette ihre
+UDOS-Sektoren ohne Verkettung, obwohl der Kontrollblock danebenstand.  Gerade dort
+will man ihn aber sehen; die Erkennung ist ja gescheitert.  Entschieden wird am
+Inhalt: hinter dem Datenfeld steht auf einer gewöhnlichen IBM-Spur das
+**Gap-Füllbyte** (MFM `4E`, FM `FF`) — weicht eines der ersten vier Bytes davon ab,
+gilt der Anhang als belegt.  Bei CP/M bleiben die Angaben weg, statt eine leere
+Spalte zu zeigen.  Wächter: `TrackViewAnhang.*`,
+`test_disk_editor_zeigt_den_udos_anhang_auch_ohne_erkanntes_udos`.
 
 Der Anhang ist **änderbar**: die vier Rohbytes stehen in einem eigenen Eingabefeld
 (gesperrt, solange die Diskette schreibgeschützt ist), die Deutung daneben. Zwei

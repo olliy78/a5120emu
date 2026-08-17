@@ -218,6 +218,27 @@ public:
     int dropSecondSide();
 
     /**
+     * @brief Einen ganzen Zylinder aus dem Abbild loeschen (§19.6).
+     *
+     * Alles dahinter rueckt auf, das Abbild wird um einen Zylinder kuerzer.  Fuer
+     * Abbilder mit mehr Spuren, als hineingehoeren (82 statt 80), und zum
+     * Zurechtstutzen auf eine Zielgeometrie (77 Spuren fuer 8″).
+     *
+     * @return verbliebene Zylinder, -1 bei Fehler.
+     */
+    int deleteCylinder(uint8_t cyl);
+
+    /**
+     * @brief Einen leeren Zylinder HINTER @p cyl einfuegen (§19.6).
+     *
+     * Alles dahinter rueckt nach hinten; der neue Zylinder ist **unformatiert** —
+     * Sektoren legt man danach im Editor an.
+     *
+     * @return verbliebene Zylinder, -1 bei Fehler.
+     */
+    int insertCylinderAfter(uint8_t cyl);
+
+    /**
      * @brief **Neue, leere** Diskette anlegen: formatieren + Dateisystem initialisieren.
      *
      * Legt das Abbild in der Geometrie des Profils an (echte Adressmarken und CRCs)

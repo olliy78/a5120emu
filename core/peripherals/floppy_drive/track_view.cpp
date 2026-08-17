@@ -13,7 +13,7 @@
 namespace {
 
 /// @brief Ein Sektorabschnitt aus einem geparsten Sektor (ohne Winkel).
-TrackSpan ausSektor(const LogicalSector& s, int index) {
+TrackSpan ausSektor(const LogicalSector& s, int index, Encoding enc) {
     TrackSpan sp;
     sp.kind        = TrackSpan::Kind::Sector;
     sp.index       = index;
@@ -24,8 +24,15 @@ TrackSpan ausSektor(const LogicalSector& s, int index) {
     sp.id_crc_ok   = s.id_crc_ok;
     sp.data_crc_ok = s.data_crc_ok;
     sp.deleted     = s.deleted;
-    // Nur `data`, nicht `tail`: der UDOS-Kontrollblock ist auch auf einer leeren
-    // Diskette belegt (Dateiverkettung) — mit ihm saehe dort nichts leer aus.
+    // Anhang: Gap oder Inhalt?  Das Fuellbyte haengt am Verfahren.
+    const uint8_t fuell = (enc == Encoding::FM) ? 0xFF : 0x4E;
+    const size_t  n     = std::min<size_t>(s.tail.size(), 4);
+    bool belegt = false;
+    for (size_t i = 0; i < n; ++i)
+        if (s.tail[i] != fuell) { belegt = true; break; }
+    sp.tail_bytes  = belegt ? static_cast<uint8_t>(n) : 0;
+    // Leer: nur `data`, nicht `tail` — der UDOS-Kontrollblock ist auch auf einer
+    // leeren Diskette belegt (Dateiverkettung), mit ihm saehe nichts leer aus.
     sp.blank       = !s.data.empty()
                   && std::all_of(s.data.begin(), s.data.end(),
                                  [&](uint8_t b) { return b == s.data.front(); });
@@ -69,7 +76,8 @@ TrackView scanTrack(const TrackImage& track) {
         // sonst verschluckte er den Rest der Spur.
         const size_t bis = (s.end_pos != SIZE_MAX) ? s.end_pos
                          : std::min(s.id_pos + 1 + 4 + 2, track.bytes.size());
-        bereiche.push_back({s.sync_pos, bis, ausSektor(s, static_cast<int>(i))});
+        bereiche.push_back({s.sync_pos, bis,
+                            ausSektor(s, static_cast<int>(i), track.encoding)});
         ++v.sectors;
     }
     std::sort(bereiche.begin(), bereiche.end(),
