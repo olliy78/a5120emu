@@ -679,22 +679,48 @@ Fenster, das mangels Diskette sofort wieder zuginge.
 
 ### 10a.3 Die drei Punkte, an denen es hakt
 
-**(1) `libreadline` ist unter Linux eine harte Laufzeitabhängigkeit.** Der Rückfall auf
-`getline` in `CMakeLists.txt` ist eine **Bau**zeitentscheidung: wird readline beim Bauen
-gefunden, hängt das Ergebnis an `libreadline.so.8` **und** `libtinfo.so.6`, und auf einem
-System ohne diese Pakete startet es gar nicht — es gibt keinen Rückfall zur Laufzeit.
-Drei Wege:
+**(1) GNU readline darf nicht mit ausgeliefert werden — Lizenz, nicht Technik.**
+`readline` steht unter der **GPLv3+** (`/usr/include/readline/readline.h`: „either
+version 3 of the License, or …"), dieses Projekt unter der **MIT-Lizenz** (`LICENSE`).
+Wer ein Programm verteilt, das readline einbindet, verteilt ein Gesamtwerk, das unter
+die GPLv3 fällt — beim **statischen** Linken unstrittig, beim dynamischen nach Lesart
+der FSF ebenso. Solange `k1520dbg` nur lokal gebaut wird, ist das kein Thema; mit dem
+ersten ausgelieferten Binärabbild wird es eines. Deshalb: **im Paket kein readline.**
 
-- *(empfohlen)* die beiden `.so` mit ins `bin/` legen und den Suchpfad auf `$ORIGIN`
-  setzen (`-Wl,-rpath,$ORIGIN`). Kostet ~400 KB und erhält die Zeilenbearbeitung, die
-  bei einem interaktiven Debugger kein Luxus ist. `slim.py` kopiert bereits nach genau
-  diesem Muster die Qt-Bibliotheken.
-- ohne readline bauen (`-DK1520_DBG_READLINE=OFF`, wäre neu anzulegen) — kleinstes
-  Paket, aber keine Pfeiltasten, keine History, keine Vervollständigung.
-- Systempaket voraussetzen — verstößt gegen die Prämisse „läuft ohne Administratorrechte
-  und ohne Paketverwaltung".
+Der Rückfall auf `getline` ist ohnehin eine **Bau**zeitentscheidung, kein Laufzeit-
+Rückfall: wird readline beim Bauen gefunden, hängt das Ergebnis fest an
+`libreadline.so.8` *und* `libtinfo.so.6`.
 
-Unter Windows entfällt die Frage: dort wird ohnehin ohne readline gebaut.
+Gemessen am 2026-08-18 (x86-64, `-O2`, derselbe Objektstand):
+
+| Fassung | Größe | dynamisch gebunden |
+|---|---:|---|
+| heute, readline dynamisch | 1 012 KB | readline, tinfo, stdc++, gcc_s, c, m |
+| readline **statisch** | 1 501 KB | stdc++, gcc_s, c, m |
+| **ohne readline** | **990 KB** | stdc++, gcc_s, c, m |
+| ohne readline, `-static-libstdc++ -static-libgcc` | 2 632 KB | nur `libc.so.6` |
+| komplett `-static` | 3 463 KB | keine — **aber**: `getpwuid` in einem statisch gebundenen glibc verlangt zur Laufzeit dieselbe glibc-Fassung (Linkerwarnung), das ist das Gegenteil von portabel |
+
+**Entschieden: ohne readline bauen** (`-DK1520_DBG_READLINE=OFF`, neu anzulegen; der
+`if (NOT WIN32)`-Zweig bekommt die Bedingung dazu). Das ist zugleich die kleinste
+Fassung, und sie bringt **keine einzige neue Abhängigkeit** ins Paket: `libstdc++`,
+`libgcc_s`, `libc`, `libm` braucht `libk1520core.so` ohnehin schon. `-static-libstdc++`
+lohnt aus demselben Grund nicht — die C++-Laufzeit muss für die Kernbibliothek sowieso
+da sein.
+
+Was dabei verlorengeht, sind Pfeiltasten, History und Tab-Vervollständigung. Wenn das
+im ausgelieferten Debugger fehlt, ist der saubere Ersatz **ein eigener kleiner
+Zeileneditor** (~200 Zeilen: Roh-Modus, Pfeiltasten, History-Ring, Tab über den bereits
+vorhandenen Präfix-Matcher in `tools/dbg_commands.h`). Der wäre MIT, käme ohne fremde
+Bibliothek aus — und gäbe die Zeilenbearbeitung zum ersten Mal auch **unter Windows**,
+wo es sie heute gar nicht gibt. `libedit` (BSD-2, in Debian als `libedit-dev`) wäre der
+Mittelweg, tauscht aber nur eine mitzuliefernde Fremdbibliothek gegen eine andere.
+
+Unter Windows stellt sich die Frage nicht: dort wird readline gar nicht erst gesucht
+(`if (NOT WIN32)` im `CMakeLists.txt` — eine zufällig gefundene MSYS-Fassung würde gegen
+die falsche CRT linken), und der Auslieferungsbau läuft mit statischer CRT
+(`-DK1520_MSVC_STATIC_CRT=ON`, Job „Auslieferungsbau" in `windows-ci.yml`).
+`k1520dbg.exe` ist damit **von sich aus eine einzelne Datei ohne Beigaben**.
 
 **(2) Der Release-Bau muss `-DK1520_FORMATS_DEFAULT=` auch für `k1520dbg` setzen.**
 Sonst trägt das ausgelieferte Programm den absoluten Pfad des Baurechners als
@@ -713,8 +739,9 @@ sollte nicht mit der Auslieferung vermischt werden.
 1. `build_payload.sh`: `k1520dbg` bauen und nach `bin/` kopieren; `share/doc/` und
    `share/tools/` anlegen und füllen (~30 Zeilen, dem Muster von `k1520disktool-cli`
    folgend).
-2. readline-Frage nach (1) entscheiden und im Payload umsetzen; Rauchtest „Programm
-   startet und beantwortet `q`" in `release.yml` aufnehmen.
+2. `-DK1520_DBG_READLINE=OFF` einführen und im Release-Bau setzen (§10a.3 (1));
+   Rauchtest „Programm startet und beantwortet `q`" in `release.yml` aufnehmen, dazu
+   die Gegenprobe `ldd`/`dumpbin`, dass **kein** readline mehr daranhängt.
 3. Linux: Symlink `~/.local/bin/k1520dbg` in `install.sh` (Deinstallieren findet ihn
    über das Inventar im Ausweis — Eintrag ergänzen, sonst bleibt er stehen).
 4. Windows: `.iss` um den Startmenüeintrag „Eingabeaufforderung mit K1520-Werkzeugen"
