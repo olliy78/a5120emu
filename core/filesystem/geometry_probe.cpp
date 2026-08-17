@@ -320,12 +320,23 @@ GeometryMatch match(const std::vector<MeasuredTrack>& tracks, const DiskFormat& 
             return m;
         }
         if (t.first_id != tf->first_sector_id) {
-            // Eine abweichende erste ID ist normalerweise ein ANDERES Format — es sei
-            // denn, die IDs der Spur sind auch untereinander lueckenhaft: dann hat der
-            // Parser Gap-Bytes fuer eine Adressmarke gehalten, die Spur ist also
-            // beschaedigt.  Das ist ein Schaden wie „zu wenige Sektoren" (Regel 4) und
-            // darf die ganze Diskette nicht unlesbar machen.
-            if (t.ids_dense) {
+            // Eine abweichende erste ID ist normalerweise ein ANDERES Format — mit
+            // zwei Ausnahmen, die beide SCHADEN sind und die Diskette nicht unlesbar
+            // machen duerfen (Regel 4):
+            //
+            //  * Die IDs sind untereinander lueckenhaft: dann hat der Parser
+            //    Gap-Bytes fuer eine Adressmarke gehalten.
+            //  * Die Spur traegt WENIGER Sektoren als das Format deklariert und
+            //    beginnt entsprechend spaeter: dann fehlen sie vorn.  Genau so sieht
+            //    eine Spur aus, der beim Formatieren der Sektor 1 misslang — 25
+            //    Sektoren mit den IDs 2…26 statt 26 mit 1…26.  Eine EIGENE Zaehlung
+            //    waere es nur bei voller Sektorzahl (26 Stueck mit 2…27).
+            const bool fehlen_vorn =
+                t.ids_dense && t.sectors < tf->secs_per_track
+                && t.first_id > tf->first_sector_id
+                && (static_cast<int>(t.first_id) - tf->first_sector_id)
+                       == (tf->secs_per_track - t.sectors);
+            if (t.ids_dense && !fehlen_vorn) {
                 m.reason = "Spur " + tp(t.cyl, t.head) + ": erste Sektor-ID "
                          + std::to_string(t.first_id) + ", Format sagt "
                          + std::to_string(tf->first_sector_id);

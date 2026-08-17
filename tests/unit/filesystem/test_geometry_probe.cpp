@@ -213,3 +213,34 @@ TEST(GeometryProbe, EinzelneBeschaedigteSpurIstEinSchadenKeinAnderesFormat) {
     m[16].ids_dense = true;
     EXPECT_FALSE(GeometryProbe::match(m, *f).ok);
 }
+
+TEST(GeometryProbe, EinFehlenderErsterSektorIstEinSchadenKeinAnderesFormat) {
+    // Genau so sieht eine Spur aus, der beim Formatieren der Sektor 1 misslang:
+    // WENIGER Sektoren, lueckenlos, und entsprechend spaeter beginnend.  Auf
+    // `mixed_udos_ss40_over_cpa800.hfe` traegt Spur 25 die IDs 2…26 statt 1…26 —
+    // daran fiel die Erkennung der ganzen Diskette durch, obwohl 39 Spuren stimmen.
+    const DiskFormat* f = katalog().find("k5601_ss40_26x128");
+    ASSERT_NE(f, nullptr);
+
+    std::vector<MeasuredTrack> m;
+    for (uint8_t c = 0; c < 40; ++c) {
+        MeasuredTrack t;
+        t.cyl = c; t.head = 0; t.formatted = true;
+        t.sectors = 26; t.sector_size = 128; t.first_id = 1;
+        t.ids_dense = true; t.encoding = Encoding::MFM;
+        m.push_back(t);
+    }
+    ASSERT_TRUE(GeometryProbe::match(m, *f).ok);
+
+    m[25].sectors  = 25;                     // Sektor 1 fehlt
+    m[25].first_id = 2;
+    const GeometryMatch mit_luecke = GeometryProbe::match(m, *f);
+    EXPECT_TRUE(mit_luecke.ok) << mit_luecke.reason;
+    EXPECT_EQ(mit_luecke.defect_tracks, 1) << "der Schaden wird verschwiegen";
+
+    // Volle Sektorzahl bei verschobenem Anfang bleibt ein ANDERES Format: dort
+    // zaehlt die Diskette wirklich anders, es fehlt nichts.
+    m[25].sectors  = 26;
+    m[25].first_id = 2;
+    EXPECT_FALSE(GeometryProbe::match(m, *f).ok);
+}

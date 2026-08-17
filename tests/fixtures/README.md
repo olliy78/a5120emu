@@ -36,7 +36,17 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `scpx17_5x1024_k5601_hardy.hfe` | SCPX 1526 V1.7, System im **5×1024**-Datenformat, mit `HARDY.COM` | `test_hardy` |
 | `udos_boot_scp.hfe` | UDOS 4.3, bootfähig (SCP-Laufwerkstyp) | `UdosIntegration.*`, `test_udos_format` |
 | `bootsec_cpa780.bin` | erwarteter Inhalt des Bootsektors einer cpa780-Diskette | `test_boot_integration` (Bootsektor-Vergleich) |
+| `mixed_udos_ss40_over_cpa800.hfe` | **gemischtes Layout**: cpa800, darüber UDOS ss40 im Doppelschritt — Kopf 0 gerade Zylinder 26×128 (UDOS), ungerade 5×1024 (Altbestand), Kopf 1 ganz 5×1024 | `test_disktool_gui` (roh öffnen, Schnitte), `test_gw_physical` |
 | `cpa_mini.img` / `cpa_mini.hfe` | synthetische Mini-Diskette (2 KB / 26 KB), kein Systemabbild | `test_hfe_image`, `test_disk_image_raw` |
+
+Die **gemischte** Diskette entstand am echten Laufwerk: erst vollständig als cpa800
+formatiert, dann mit UDOS `ss40` im Doppelschritt überschrieben.  Sie ist die einzige
+Fixture, auf der **kein** Katalogformat passt — und der Prüfstein für drei Zusagen:
+roh öffnen (das Abbild wird auch ohne Erkennung hergegeben), die Schnitte
+(*ungerade Spuren entfernen* + *Seite 1 entfernen* → `udos_ss40` mit 44 Dateien) und
+die Toleranz gegen Schadstellen: **Spur 25 fehlt der Sektor 1** (25 Sektoren mit den
+IDs 2…26 statt 26 mit 1…26).  Das ist echt und soll so bleiben — genau daran fiel auf,
+dass eine solche Spur als *anderes Format* galt statt als Schaden.
 
 Die beiden **Combo**-Disketten konfigurieren im BIOS die Laufwerke B:/C: als andere
 Laufwerkstypen (DPB-Codes 10540/10580 bzw. 00877/10877). Dadurch bietet FORMAT.COM je

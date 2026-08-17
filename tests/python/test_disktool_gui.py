@@ -637,6 +637,45 @@ def test_disk_editor_zeigt_den_udos_anhang_auch_ohne_erkanntes_udos(
         "auf einer CP/M-Spur stehen dort Gap-Füllbytes, kein Anhang"
 
 
+def test_gemischte_diskette_oeffnet_roh_und_laesst_sich_zurechtschneiden(
+        window, temp_disk):
+    """Der ganze Weg an der gemischten Diskette — dem Fall, für den es gebaut ist.
+
+    `mixed_udos_ss40_over_cpa800.hfe` entstand am echten Laufwerk: erst vollständig
+    als cpa800 formatiert, dann mit UDOS `ss40` im **Doppelschritt** überschrieben.
+    Kopf 0 trägt auf den geraden Zylindern 26×128 (UDOS) und auf den ungeraden noch
+    5×1024, Kopf 1 durchgehend 5×1024.  Kein Katalogformat beschreibt das.
+
+    Geprüft wird die Kette: roh öffnen → schneiden → erkannt.
+    """
+    from app.core_binding.k1520disk import SECTOR
+
+    pfad = temp_disk("mixed_udos_ss40_over_cpa800.hfe")
+    assert window.open_image(pfad), "das Abbild wurde nicht hergegeben"
+    t = window.tool
+    assert not t.has_filesystem, "diese Mischung soll gerade NICHT erkannt werden"
+    assert window.act_diskeditor.isEnabled(), "der Sektoreditor muss gehen"
+    assert window.info_bar.text().count("\n") == 0, "die Meldung ist eine Wand"
+
+    # Das Layout ist wirklich gemischt — sonst prüft der Test etwas anderes.
+    def art(c, h):
+        sp = [x for x in t.track(c, h).spans if x.kind == SECTOR]
+        return (len(sp), sp[0].size) if sp else (0, 0)
+    assert art(0, 0) == (26, 128) and art(1, 0) == (5, 1024)
+    assert art(0, 1) == (5, 1024)
+
+    t.set_read_only(False)
+    assert t.drop_second_side() > 0
+    assert t.keep_even_tracks() > 0
+    assert t.medium_cylinders == 40 and t.medium_heads == 1
+
+    assert t.redetect(), "nach den Schnitten immer noch nicht erkannt"
+    assert t.filesystem == "udos_ss40", f"erkannt als {t.filesystem}"
+    assert len(t.list()) == 44
+    # Und die eine schadhafte Spur wird als solche gemeldet, nicht verschwiegen.
+    assert "fehlenden Sektoren" in t.remarks, t.remarks
+
+
 def test_frisch_angelegte_udos_diskette_zeigt_ihre_anhaenge(window, tmp_path):
     """Auch eine **frisch angelegte** UDOS-Diskette hat Kontrollblöcke.
 
