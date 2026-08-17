@@ -882,8 +882,22 @@ Was man beim Weiterarbeiten wissen muss:
   erst sichern (`gw read` über alle Spuren), Identität der eingelegten Diskette gegen
   die Sicherung prüfen, mit einer NACHWEISLICH FREIEN Spur anfangen (der
   Belegungsplan sagt welche), dann erst über das Dateisystem schreiben.
-- **Offen:** die CLI (`k1520disktool --physical`) und das Merken der
-  Sitzungsparameter.
+- **`k1520disktool --physical` gibt es** (2026-08-17, Entwurf §12.3): `ls`, `info`,
+  `check`, `get`, `put`, `rm`, `save-as`, `rewrite` gegen die eingelegte Diskette.
+  Sie haengt am **Python**-Einstieg (`app/disktool/main.py`, wie `--paths` VOR den
+  Qt-Importen) und nicht am C++-Werkzeug — der Kern kennt Greaseweazle nicht, der
+  Arbeitsfaden ist Python; `k1520disktool-cli` bleibt der Dateiaustausch mit
+  Abbildern.  Damit Oberflaeche und Kommandozeile dieselbe Sitzung aufmachen, liegt
+  der Qt-freie Teil jetzt in **`app/gw/session.py`** (`PhysicalSession`,
+  `verfuegbarkeit`, `LAUFWERKE`, `RATEN`); `app/ui/physical_disk.py` reicht ihn
+  weiter.  Vier Festlegungen: **ohne `--write` wird abgelehnt, BEVOR der Motor
+  anlaeuft** (Waechter prueft `geraet.gelesen == []`), **stdout ist die Nutzlast**
+  (Fortschritt und Befund auf stderr), **Fortschritt aus einem Nebenfaden**, weil
+  sonst zwei Minuten Schweigen wie ein Haenger aussehen, und eine **Schadstelle
+  endet in Exit 1** samt Ausweg im Text.  Waechter `py_physical_cli` (14 Faelle,
+  Ersatzlaufwerk aus `gw_fake.py`); am echten Laufwerk durchgefahren (§15.2).
+- **Offen:** das Merken der Sitzungsparameter (Laufwerk und Zellrate muessen bei
+  jedem Einlegen neu gewaehlt werden).
 
 ## Diskettenformatierung (FORMAT.COM) — Scope
 

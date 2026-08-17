@@ -195,6 +195,19 @@ Beim **Schreiben** entscheidet der Doppelschritt, in welchem Rechner die Diskett
 danach läuft: mit Haken auf jedem zweiten Zylinder — dann liest sie ein K5600.10;
 ohne Haken dicht hintereinander — dann liest sie ein K5601.
 
+### Dasselbe auf der Kommandozeile
+
+```sh
+k1520disktool --physical ls -l
+k1520disktool --physical save-as sicherung.hfe
+k1520disktool --physical --write put NEU.TXT
+```
+
+Befehle: `ls`, `info`, `check`, `get`, `put`, `rm`, `save-as`, `rewrite`; die
+Laufwerksangaben aus dem Dialog heißen dort `--drive`, `--cyls`, `--heads`,
+`--rate`, `--double-step`. **Ohne `--write` wird nichts verändert** — das ist
+Absicht: an der Kommandozeile fragt niemand nach.
+
 Drei Unterschiede, die man kennen muss:
 
 * **Das Öffnen dauert einen Moment.** Die Formaterkennung liest ein paar Spuren

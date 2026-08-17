@@ -32,6 +32,15 @@ if "--paths" in sys.argv[1:]:
     print(paths.describe())
     sys.exit(0)
 
+# --physical: Kommandozeile für ein ECHTES Laufwerk.  Steht hier, weil das
+# C++-Werkzeug (`k1520disktool-cli`) den Adapter nicht ansprechen kann — der Kern
+# kennt Greaseweazle nicht, der Arbeitsfaden ist Python
+# (doc/design/14_physische_diskette.md §12.3).  Wie `--paths` VOR den Qt-Importen:
+# eine Kommandozeile darf keine Oberfläche brauchen.
+if "--physical" in sys.argv[1:]:
+    from app.disktool.physical_cli import main as physical_main
+    sys.exit(physical_main(sys.argv[1:]))
+
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 

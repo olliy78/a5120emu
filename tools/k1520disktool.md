@@ -281,6 +281,35 @@ $ k1520disktool put    neu.img auszug/
 Voller Aufbau: `doc/udos1715_diskettenformat.md` — er stammt aus dem Handbuch, das
 auf so einer Diskette selbst liegt (`UDOS.TEXT`).
 
+## Ein echtes Laufwerk: `k1520disktool --physical`
+
+Liegt ein Greaseweazle am Rechner, geht dasselbe mit der **eingelegten Diskette**
+statt mit einem Abbild:
+
+```sh
+k1520disktool --physical ls -l
+k1520disktool --physical save-as sicherung.hfe        # VOR jedem Schreibversuch
+k1520disktool --physical --write put NEU.TXT
+k1520disktool --physical --drive 0 --cyls 40 --double-step ls
+```
+
+Befehle: `ls`, `info`, `check`, `get`, `put`, `rm`, `save-as`, `rewrite`.
+Sitzungsschalter: `--drive a|b|0…3`, `--cyls`, `--heads`, `--rate`, `--rpm`,
+`--double-step`, dazu `--fs`, `--raw`, `--no-verify`, `-q`.
+
+* **Ohne `--write` ist die Diskette schreibgeschützt.** `put`, `rm` und `rewrite`
+  lehnen ab, **bevor der Motor anläuft** — ein Original ist meist ein Einzelstück.
+* **Alles dauert**: eine Spur 0,5–0,8 s, die ganze Diskette gut zwei Minuten. Der
+  Fortschritt geht auf **stderr**, stdout bleibt maschinenlesbar
+  (`--physical ls | wc -l`). `-q` schaltet ihn ab.
+* Nach jedem Schreiben wird **zurückgelesen und verglichen**; nimmt die Diskette die
+  Daten nicht an, endet der Aufruf mit Exit 1 und nennt die Spur.
+
+> Das ist **nicht** `k1520disktool-cli`: das C++-Werkzeug spricht nur Abbilder an.
+> Den Adapter bedient die Python-Seite (`app/gw/`) — der Kern kennt ihn nicht.
+> Voraussetzung ist das freiwillige Paket:
+> `pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"`.
+
 ## Was das Werkzeug zusichert
 
 * **Passt es nicht, wird gar nicht erst geschrieben.**  Vor jeder Stapeloperation

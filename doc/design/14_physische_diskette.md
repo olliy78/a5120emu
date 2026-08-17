@@ -1271,7 +1271,66 @@ UDOS-Diskette auf ein Laufwerk, das eine CP/A-Diskette trägt, und liest sie zur
 
 ### 12.3 Kommandozeile
 
-Steht aus (`k1520disktool --physical …`), siehe §15.
+```
+k1520disktool --physical [Sitzungsschalter] <befehl> [args]
+```
+
+**Warum das die Python-Seite ist.** `k1520disktool-cli` ist das C++-Werkzeug für
+**Abbilder**, und der Kern kennt Greaseweazle nicht (§1) — der Arbeitsfaden, der
+Aufträge abholt und Bitzellen zurückgibt, ist Python. Ein C++-Programm könnte den
+Adapter also gar nicht ansprechen, ohne genau die Grenze einzureißen, die dieser
+Entwurf zieht. Deshalb hängt `--physical` am Python-Einstieg
+(`app/disktool/main.py`), so wie `--paths` — und **vor** den Qt-Importen: eine
+Kommandozeile darf keine Oberfläche brauchen.
+
+Damit Oberfläche und Kommandozeile dieselbe Sitzung aufmachen, ist der Qt-freie Teil
+von `app/ui/physical_disk.py` nach **`app/gw/session.py`** gewandert
+(`verfuegbarkeit`, `PhysicalSession`, `LAUFWERKE`, `RATEN`); `app.ui.physical_disk`
+reicht ihn weiter, vorhandene Aufrufe gelten unverändert.
+
+| Befehl | Wirkung |
+|---|---|
+| `ls [-l]` | Verzeichnis — ohne `-l` nur die Namen (das ist auch das Schnelle: `listNames`) |
+| `info` | Herkunft, Format, Erkennung, Belegung |
+| `check` | Prüfbericht |
+| `get <muster…> --to <ordner>` | Dateien herausholen; ohne Muster die ganze Diskette samt Beiblatt |
+| `put <datei\|ordner…>` | einfügen — **braucht `--write`** |
+| `rm <muster…>` | löschen — **braucht `--write`** |
+| `save-as <ziel.hfe>` | die ganze Diskette als Abbild sichern |
+| `rewrite` | Diskette neu beschreiben (§7.2) — **braucht `--write`** |
+
+Sitzungsschalter: `--drive a|b|0…3`, `--cyls`, `--heads`, `--rate`, `--rpm`,
+`--double-step`, `--fs NAME`, `--raw`, `--no-verify`, `--text`, `--force`, `-q`.
+
+Vier Festlegungen:
+
+1. **Ohne `--write` ist die Diskette schreibgeschützt** (§13), und die Ablehnung
+   kommt **bevor der Motor anläuft**. Ein Tippfehler soll nicht erst nach zwei
+   Minuten Einlesen auffallen — und die Diskette gar nicht erst anfassen. Wächter:
+   `test_veraendernde_befehle_brauchen_write` prüft genau das mit
+   `geraet.gelesen == []`.
+2. **stdout ist die Nutzlast, stderr die Begleitung.** Der Fortschritt („47/160
+   Spuren c23h0") und der Erkennungsbefund gehen auf stderr, damit
+   `--physical ls | wc -l` etwas Vernünftiges ergibt.
+3. **Fortschritt, weil alles dauert.** Eine Kommandozeile, die zwei Minuten
+   schweigt, sieht aus wie eine, die hängt. Die Arbeit läuft in einem Faden, der
+   Haupt-Faden zeigt derweil den Füllstand aus `stats()` — und schweigt, wenn stderr
+   keine Konsole ist.
+4. **Die Schadstelle (§7.2) endet in Exit 1** und nennt den Ausweg im Text
+   (`save-as` oder `rewrite`). Ohne das sähe ein Skript einen Erfolg, wo die Diskette
+   die Daten nicht angenommen hat.
+
+Beispiele:
+
+```sh
+k1520disktool --physical ls -l
+k1520disktool --physical save-as sicherung.hfe        # VOR jedem Schreibversuch
+k1520disktool --physical --write put NEU.TXT
+k1520disktool --physical --drive 0 --cyls 40 --double-step ls
+```
+
+Prüfung ohne Hardware: `py_physical_cli` (14 Fälle) setzt das Ersatzlaufwerk aus
+`gw_fake.py` an die Stelle von `PhysicalSession.start` — derselbe Weg, nur ohne USB.
 
 ## 13. Festlegungen, die man nicht aufweichen darf
 
@@ -1412,12 +1471,30 @@ Der Test prüft dabei `verifies_done > 0` und `tracks_defect == 0`, öffnet die
 Diskette danach **ein zweites Mal frisch** und liest die Datei vom Laufwerk zurück —
 ein Zwischenspeicher kann das Ergebnis also nicht beschönigen.
 
+### 15.2 Die Kommandozeile am echten Laufwerk (2026-08-17)
+
+Alle Befehle einmal gegen die eingelegte UDOS1715-Diskette gefahren:
+
+| Aufruf | Ergebnis |
+|---|---|
+| `--physical info` | erkannt in **~10 s** (Stichprobe, §11.2a): `k5601_16x256 / udos1715`, 428 288 B belegt |
+| `--physical ls` | 67 Namen auf stdout |
+| `--physical ls -l` | Typ, Größe, Eigenschaften, Datum je Datei |
+| `--physical save-as sicherung.hfe` | 2 049 024 B; die Sicherung trägt dasselbe Dateisystem und dieselben 67 Namen wie die Fixture |
+| `--physical put …` **ohne** `--write` | Exit 1, Ablehnung **sofort** — kein Motoranlauf |
+| `--physical --write put CLITEST.TXT` | „4 Spuren geschrieben, 4 geprueft, 0 Vergleiche misslungen" |
+| `--physical get CLITEST.TXT --to …` | frisch vom Laufwerk, **byteweise gleich** |
+| Vollmessung vorher/nachher | **genau die 4 Spuren** c4h0, c5h0, c22h0, c23h0 geändert |
+
+Danach die vier Spuren aus der Sicherung zurückgeschrieben — die Diskette ist wieder
+die vom Anfang.
+
 **Noch offen** (bewusst, nicht vergessen):
 
-* **CLI** `k1520disktool --physical` (§12.3).
-* **Die menügeführte DiskTool-Oberfläche** liegt unmerged auf `create_disktool`; beim
-  Zusammenführen gehören „Physisches Laufwerk öffnen…" **und** „Diskette neu
-  beschreiben" in `ui/actions.py` statt als freistehende Knöpfe (§12.2).
+* ~~**CLI** `k1520disktool --physical`~~ — umgesetzt (§12.3), am echten Laufwerk
+  gefahren (§15.2).
+* ~~**Die menügeführte DiskTool-Oberfläche**~~ — zusammengeführt, beide Aktionen
+  liegen in `ui/actions.py` (§12.2).
 * **Die Sitzungsparameter merkt sich niemand** — Laufwerk und Zellrate müssen bei
   jedem Einlegen neu gewählt werden.
 * **Ein zweites physisches Laufwerk am selben Adapter** ist ungetestet (§16).
