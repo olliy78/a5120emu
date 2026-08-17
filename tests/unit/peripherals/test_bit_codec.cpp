@@ -391,3 +391,92 @@ TEST_P(MfmBitCodecRoundtrip, BitCodecPlusParseTrack) {
 INSTANTIATE_TEST_SUITE_P(
     Sektorgroessen, MfmBitCodecRoundtrip,
     ::testing::Values(128u, 256u, 512u, 1024u));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GRUPPE 6: Sync-Gruppen, die NICHT dem Lehrbuch folgen
+//
+// Fremde Controller schreiben die Sync-Gruppe vor dem Datenfeld nicht immer als
+// drei echte Sync-Marken (0x4489 = 0xA1 mit ausgelassenem Taktbit).  Auf
+// `udos_ds77_k5601_fremdsync.hfe` ist das dritte A1 REGULÄR kodiert (0x44A9) und
+// bei einem Teil der Sektoren auch noch das erste — die Gruppe hat dann nur EINE
+// echte Sync-Marke.  Beides muss lesbar sein: die Marke ist das erste Byte der
+// Gruppe, das kein 0xA1 ist, nicht einfach „das Byte nach dem Sync".
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+/// Ersetzt im Zellstrom das Sync-Zellwort des @p nth 0xA1 (0-basiert, gezählt ab
+/// Spuranfang) durch die REGULÄRE Kodierung desselben Bytes: 0x4489 -> 0x44A9.
+/// Wirkt auf HFE-Zellbytes (LSB zuerst), 16 Zellen = 2 Bytes je Spur-Byte.
+void machtSyncZuGewoehnlichemA1(std::vector<uint8_t>& cells, const TrackImage& track,
+                                size_t nth) {
+    size_t gesehen = 0;
+    for (size_t i = 0; i < track.bytes.size(); ++i) {
+        if (track.bytes[i] != 0xA1 || track.marks[i] != MarkType::None) continue;
+        if (gesehen++ != nth) continue;
+        // Zellwort 0x44A9, MSB zuerst -> HFE-Bytes (LSB zuerst) sind bitgespiegelt.
+        auto spiegel = [](uint8_t b) {
+            uint8_t r = 0;
+            for (int k = 0; k < 8; ++k) r = static_cast<uint8_t>((r << 1) | ((b >> k) & 1));
+            return r;
+        };
+        cells[2 * i]     = spiegel(0x44);
+        cells[2 * i + 1] = spiegel(0xA9);
+        return;
+    }
+    FAIL() << "kein Sync-A1 Nr. " << nth << " in der Spur";
+}
+
+}  // namespace
+
+TEST(BitCodecFremdeSyncgruppe, DrittesA1RegulaerKodiert_DatenfeldWirdGefunden) {
+    LogicalSector sec = makeSector(7, 0, 1, 128, 0x00);
+    for (size_t i = 0; i < sec.data.size(); ++i)
+        sec.data[i] = static_cast<uint8_t>(0x40 + (i & 0x3F));
+
+    TrackImage track = TrackCodec::buildTrack({sec}, Encoding::MFM);
+    ASSERT_FALSE(track.empty());
+    const uint32_t bc = static_cast<uint32_t>(track.bytes.size()) * 16u;
+    auto cells = BitCodec::encode(track, bc);
+
+    // Sync-A1 Nr. 0..2 gehören zum IDAM, Nr. 3..5 zum Datenfeld.  Das DRITTE A1 des
+    // Datenfelds (Nr. 5) wird regulär kodiert — genau wie auf der Fremddiskette.
+    machtSyncZuGewoehnlichemA1(cells, track, 5);
+
+    auto back   = BitCodec::decode(cells, bc, Encoding::MFM);
+    auto parsed = TrackCodec::parseTrack(back);
+    ASSERT_EQ(parsed.size(), 1u);
+    EXPECT_TRUE(parsed[0].data_crc_ok)
+        << "Datenfeld hinter einer Sync-Gruppe mit regulär kodiertem A1 nicht gelesen";
+    EXPECT_EQ(parsed[0].data, sec.data);
+}
+
+TEST(BitCodecFremdeSyncgruppe, NurEineEchteSyncmarke_DatenfeldWirdGefunden) {
+    LogicalSector sec = makeSector(7, 0, 1, 128, 0x00);
+    for (size_t i = 0; i < sec.data.size(); ++i)
+        sec.data[i] = static_cast<uint8_t>(i & 0xFF);
+
+    TrackImage track = TrackCodec::buildTrack({sec}, Encoding::MFM);
+    ASSERT_FALSE(track.empty());
+    const uint32_t bc = static_cast<uint32_t>(track.bytes.size()) * 16u;
+    auto cells = BitCodec::encode(track, bc);
+
+    // Erstes UND drittes A1 des Datenfelds regulär: nur die Mitte bleibt Sync.
+    machtSyncZuGewoehnlichemA1(cells, track, 3);
+    machtSyncZuGewoehnlichemA1(cells, track, 5);
+
+    auto back   = BitCodec::decode(cells, bc, Encoding::MFM);
+    auto parsed = TrackCodec::parseTrack(back);
+    ASSERT_EQ(parsed.size(), 1u);
+    EXPECT_TRUE(parsed[0].data_crc_ok)
+        << "Datenfeld hinter einer EINZELNEN Sync-Marke nicht gelesen";
+    EXPECT_EQ(parsed[0].data, sec.data);
+}
+
+// Die GEGENrichtung — „die Nachlese erfindet keine Sektoren" — hat keinen eigenen
+// Test hier, weil sie sich synthetisch nicht ehrlich nachbauen lässt: ein von Hand
+// ins Gap kopierter Sektorkopf liegt auf dem Byteraster und wird schon von der
+// gewöhnlichen Dekodierung gefunden, ganz ohne Re-Sync.  Bewacht wird sie von den
+// echten Disketten: `ScpxIntegration.*` liefen auf „82 Spuren mit Daten" (Laufwerk
+// K5601 erreicht nur 80) auf, als die Regel für einzelne Sync-Marken noch pauschal
+// galt statt nur für Datenfelder hinter einem Sektorkopf ohne Datenfeld.

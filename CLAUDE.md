@@ -232,6 +232,29 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
 > MFM disk → index timeout → toggles MK to MFM → reads.  Full model: `doc/design/07_k5122_afs.md`,
 > `doc/K1520_architecture.md` §8.5.  The boot invariants that must not regress are listed below.
 >
+> **Fremd beschriebene Disketten: zwei Dialekte, die der Lesepfad kennen muss**
+> (2026-08-17, `doc/design/14_physische_diskette.md` §8.1a–c; Fixture
+> `udos_ds77_k5601_fremdsync.hfe`).  Eine an einem ANDEREN K1520-Rechner beschriebene
+> UDOS-Diskette war unlesbar, lief aber in ihrem Rechner — drei Festlegungen daraus:
+> **(1) Die Marke ist das erste Byte der Sync-Gruppe, das kein 0xA1 ist**, nicht „das
+> Byte nach dem Sync": jener Controller schreibt die Datenfeld-Gruppe als
+> `A1(Sync) A1(Sync) A1(regulär 0x44A9) FB`, teils mit nur EINER echten Sync-Marke.  Wer
+> das reguläre A1 als Marken-Byte verbraucht, findet für jeden von diesem Rechner
+> **geschriebenen** Sektor kein Datenfeld (Symptom: „Sektor 1 auf Spur 23 ist kuerzer als
+> 128 B").  Einzelne Sync-Marken gelten nur im ZWEITEN `BitCodec::decode`-Durchlauf und
+> nur bei einem Sektorkopf ohne Datenfeld — pauschal geöffnet werden Reste alter
+> Formatierung zu Sektoren („82 Spuren mit Daten", `ScpxIntegration.*` rot).
+> **(2) `TrackCodec::mfmFieldCrcOk()` akzeptiert BEIDE CRC-Sitten**: mit A1-Präambel
+> (Standard-IBM ≡ Init 0xCDB4 ab der Marke) und ohne (Init 0xFFFF ab der Marke = die
+> FM-Rechnung).  Auf jener Diskette folgen alle 4004 ID-Felder dem Dialekt, alle 4004
+> Datenfelder dem Standard — die ID-CRC entsteht beim Formatieren (vorab gerechnet, ohne
+> Präambel), die Daten-CRC in der Hardware ab dem Sync.  Geschrieben wird weiter
+> Standard.  **(3) Der Schnitt der Spur gehört VOR EINEN SEKTORKOPF**, nicht stur an den Index
+> (`app/gw/device.py::naht_vor_sektorkopf`): sonst wird der Sektor über der Index-Naht zerhackt,
+> und bei UDOS reisst damit die Zeigerkette (12 statt 46 Dateien).  Wächter:
+> `BitCodecFremdeSyncgruppe.*`, `TrackCodecCrcDialekt.*`,
+> `DiskVolume.LiestEineDisketteMitFremderSyncSitte`, `test_naht_*`.
+>
 > **Internal disk medium (2026-08-05, `doc/K1520_architecture.md` §8.7 + `doc/design/09_floppy_drive.md`).**
 > A mounted disk lives **entirely in memory** as a `DiskMedium` (every track a `TrackImage`);
 > `.img`/`.hfe`/`.dmk` are pure **container codecs** in front of it (`ImageCodec`), no file-bound

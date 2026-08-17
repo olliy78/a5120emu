@@ -730,3 +730,171 @@ def test_neu_beschreiben_stellt_alles_wieder_ein(hfe):
             assert s.stats.verifies_done >= bekannt
         finally:
             worker.stop()
+
+
+# ─── Wo die Spur aufgeschnitten wird ─────────────────────────────────────────
+#
+# Eine TrackImage ist eine Umdrehung, braucht also einen Anfang.  Der Index ist der
+# naheliegende — aber der Spuranfang des schreibenden Rechners liegt nicht
+# zwangsläufig dort.  Schneidet man stur am Index, verliert der Sektor, der die Naht
+# überspannt, sein Datenfeld; bei UDOS reisst damit die Zeigerkette (an einer
+# fremdbeschriebenen Diskette gemessen: 12 statt 46 Dateien).
+
+def _echte_spur(fixture_disks, cyl=0, head=0):
+    """Zellstrom einer echten Spur (MSB zuerst) + Zellzahl einer Umdrehung."""
+    from bitarray import bitarray
+
+    zellen, bitcells = HfeDevice(fixture_disks / "udos_boot_scp.hfe").read_track(cyl, head)
+    msb = bitarray(endian="big")
+    msb.frombytes(zellen)
+    msb.bytereverse()                       # HFE ist LSB zuerst je Byte
+    del msb[bitcells:]
+    return msb, bitcells
+
+
+def test_naht_bleibt_am_index_wenn_kein_sektor_gespalten_ist(fixture_disks):
+    """Eine Spur, die mit einem Sektorkopf beginnt, wird nicht angetastet.
+
+    Nur so bleibt der Winkel im Diskeditor exakt — verschoben wird ausschliesslich,
+    wenn es etwas zu retten gibt.
+    """
+    from app.gw.device import naht_vor_sektorkopf
+
+    spur, eine = _echte_spur(fixture_disks)
+    assert naht_vor_sektorkopf(spur + spur, eine) == 0
+
+
+def test_naht_wandert_vor_den_sektorkopf_wenn_die_naht_einen_sektor_spaltet(fixture_disks):
+    """Verdrehte Spur: vor dem ersten Sektorkopf liegt ein Datenfeld — also spalten.
+
+    Geprüft wird, dass die gewählte Stelle im Vorlauf VOR einem Sektorkopf liegt und
+    dass danach kein Datenfeld mehr vor dem ersten Kopf steht.
+    """
+    from app.gw.device import naht_vor_sektorkopf, _feldanfaenge
+
+    spur, eine = _echte_spur(fixture_disks)
+    kopf = next(p for p, art, _ in _feldanfaenge(spur, eine) if art == "id")
+    datenfeld = next(p for p, art, _ in _feldanfaenge(spur, eine) if art == "dat")
+    versatz = (kopf + datenfeld) // 2          # zwischen Kopf und Datenfeld -> spaltet
+    verdreht = spur[versatz:] + spur[:versatz]
+
+    start = naht_vor_sektorkopf(verdreht + verdreht, eine)
+    assert start > 0, "der gespaltene Sektor wurde nicht erkannt"
+
+    geschnitten = (verdreht + verdreht)[start:start + eine]
+    felder = _feldanfaenge(geschnitten, eine)
+    assert felder and felder[0][1] == "id", \
+        f"die Spur beginnt nicht mit einem Sektorkopf, sondern mit {felder[:1]}"
+
+
+def test_naht_bleibt_bei_null_wenn_nur_eine_umdrehung_vorliegt(fixture_disks):
+    from app.gw.device import naht_vor_sektorkopf
+
+    spur, eine = _echte_spur(fixture_disks)
+    assert naht_vor_sektorkopf(spur, eine) == 0
+
+
+class VerdrehtesLaufwerk(HfeDevice):
+    """Ein Laufwerk, dessen Diskette NICHT am Index anfängt.
+
+    Genau die Lage, in der eine fremdbeschriebene Diskette im Laufwerk liegt: der
+    Spuranfang des schreibenden Rechners liegt irgendwo, das Indexloch fällt mitten in
+    einen Sektor.  Die Fixture selbst trägt diesen Fall nicht mehr (sie wurde bereits
+    lückengerecht geschnitten), deshalb wird er hier hergestellt: die Spur wird zyklisch
+    **verdreht**, so dass die Naht in ein Datenfeld fällt.
+
+    Mit ``naht=True`` verhält sich das Laufwerk wie ``Device.read_track`` am echten
+    Gerät (zwei Umdrehungen dekodieren, Schnitt vor einen Sektorkopf legen); mit ``naht=False``
+    wird stur am Index geschnitten — die Gegenprobe, die zeigen muss, dass der Test
+    überhaupt etwas prüft.
+    """
+
+    def __init__(self, pfad, *, versatz_zellen: int, naht: bool):
+        super().__init__(pfad)
+        self._versatz = versatz_zellen
+        self._naht = naht
+
+    def read_track(self, cyl: int, head: int) -> tuple[bytes, int]:
+        from bitarray import bitarray
+        from app.gw.device import naht_vor_sektorkopf
+
+        zellen, bitcells = super().read_track(cyl, head)
+        if not bitcells:
+            return zellen, bitcells
+
+        msb = bitarray(endian="big")            # HFE ist LSB zuerst je Byte
+        msb.frombytes(zellen)
+        msb.bytereverse()
+        del msb[bitcells:]
+
+        v = self._versatz % bitcells
+        verdreht = msb[v:] + msb[:v]            # dieselbe Umdrehung, anderer Anfang
+
+        if self._naht:
+            # Wie am echten Gerät: eine Umdrehung mehr da, Schnitt vor einen Sektorkopf.
+            ganz = verdreht + verdreht
+            start = naht_vor_sektorkopf(ganz, bitcells)
+            verdreht = ganz[start:start + bitcells]
+
+        lsb = bitarray(endian="big")
+        lsb.frombytes(verdreht.tobytes())
+        lsb.bytereverse()
+        return lsb.tobytes(), len(verdreht)
+
+
+def _dateien_ueber_das_laufwerk(geraet) -> int:
+    """Diskette „physisch" öffnen und ihre Dateien zählen (0 = nicht erkannt)."""
+    from app.core_binding.k1520disk import K1520DiskError
+
+    with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
+              read_ahead=False) as s:
+        worker = TrackWorker(s, geraet, poll_ms=10)
+        worker.start()
+        try:
+            with DiskTool.open_physical(s) as d:
+                return len(d.list())
+        except K1520DiskError:
+            return 0                            # Belegungskarte unlesbar o. ä.
+        finally:
+            worker.stop()
+
+
+def test_verdrehte_fremddiskette_wird_ueber_die_naht_vollstaendig_gelesen(fixture_disks):
+    """Die dritte Abweichung der Fremddiskette: Sektor 1 beginnt nicht am Index.
+
+    Ein Sektor, den die Index-Naht überspannt, verliert beim Schnitt sein Datenfeld;
+    bei UDOS reisst damit die Zeigerkette der Datei.
+
+    Wohin die Naht muss, wird im ZELLSTROM bestimmt, nicht über `Span.start`: dessen
+    Bruchteile beziehen sich auf die dekodierte Bytespur (hier 6041 B), die Rohspur hat
+    100352 Zellen und davon ~3285 Vorlauf — ein daraus gerechneter Versatz landet im
+    Gap und zerhackt gar nichts.  Stattdessen: erste Sync-Marke suchen (dort beginnt der
+    Sektorkopf) und 1500 Zellen weiter schneiden.  Damit liegt die Naht im Datenfeld des
+    ersten Sektors, das ~700 Zellen nach der Sync-Marke anfängt und 2352 Zellen
+    (147 Byte × 16) lang ist.
+    """
+    from bitarray import bitarray
+
+    pfad = fixture_disks / "udos_ds77_k5601_fremdsync.hfe"
+    if not pfad.exists():
+        pytest.skip("Fixture fehlt")
+
+    zellen, bitcells = HfeDevice(pfad).read_track(0, 0)
+    msb = bitarray(endian="big")
+    msb.frombytes(zellen)
+    msb.bytereverse()
+    erstes_sync = msb.find(bitarray("0100010010001001"))
+    assert erstes_sync >= 0, "keine Sync-Marke in der Spur"
+    versatz = erstes_sync + 1500
+
+    # Gegenprobe zuerst: stur am Index geschnitten, muss Dateien verlieren.
+    stur = _dateien_ueber_das_laufwerk(
+        VerdrehtesLaufwerk(pfad, versatz_zellen=versatz, naht=False))
+    assert stur < 46, ("der Versatz zerhackt keinen Sektor — der Test prueft nichts "
+                       f"(gelesen: {stur} Dateien)")
+
+    # Und mit der Naht vor einem Sektorkopf ist die Diskette wieder vollständig.
+    vor_kopf = _dateien_ueber_das_laufwerk(
+        VerdrehtesLaufwerk(pfad, versatz_zellen=versatz, naht=True))
+    assert vor_kopf == 46, (f"nur {vor_kopf} von 46 Dateien gelesen — der "
+                                "Schnitt liegt nicht vor einem Sektorkopf")

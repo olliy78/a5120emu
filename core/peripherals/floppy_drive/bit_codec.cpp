@@ -19,6 +19,7 @@
  */
 
 #include "core/peripherals/floppy_drive/bit_codec.h"
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 
@@ -260,7 +261,27 @@ TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
             if (p >= 16 && sync_map[p - 16] == sync_map[p]) return true;
             return false;
         };
-        const std::vector<uint32_t> strongs = collectStrong(bitcell_count, strong);
+        std::vector<uint32_t> strongs = collectStrong(bitcell_count, strong);
+
+        // EINZELNE Sync-Marken (nur ein 0x4489, weil der schreibende Controller die
+        // übrigen A1 der Gruppe regulär kodiert hat — s. u.) sind als Einrastpunkt zu
+        // schwach, um sie unbesehen zu nehmen: ein verschoben zufälliges 0x4489 in
+        // Nutzdaten würde die Phase mitten im Datenfeld verschieben, und schwache Reste
+        // einer alten Formatierung würden als Sektoren gelten (eine 80-Spur-Diskette
+        // bekäme „82 Spuren mit Daten" und passte in kein Laufwerk mehr).  Sie werden
+        // deshalb gesammelt, aber erst im ZWEITEN Durchlauf benutzt — und nur dort, wo
+        // ein Sektorkopf ohne Datenfeld dasteht (s. unten).
+        auto einzelsync = [&](uint32_t p) -> bool {
+            if (!sync_map[p] || strong(p)) return false;
+            // Die Gruppe ab p: bis zu drei weitere 0xA1, dann MUSS eine Marke kommen.
+            for (uint32_t q = p + 16, i = 0; i < 4 && q + 16 <= bitcell_count; ++i, q += 16) {
+                const uint8_t b = mfm_decode_word(get16(stream, q, bitcell_count));
+                if (b == 0xA1) continue;                      // Gruppe läuft weiter
+                return b == 0xFB || b == 0xF8;                // nur Datenfeld-Marken
+            }
+            return false;
+        };
+        const std::vector<uint32_t> einzelne = collectStrong(bitcell_count, einzelsync);
 
         // Startpunkt: erste starke Sync-Gruppe; ersatzweise das erste Sync überhaupt.
         uint32_t lock_pos = bitcell_count;
@@ -282,49 +303,108 @@ TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
         // Feld wurde einzeln geschrieben, Schreib-Splices und Drehzahl-Jitter verschieben
         // die Folgefelder um beliebige Zellzahlen (halbe Bytes und mehr).  Ohne Re-Sync
         // decodiert alles nach dem ersten Feld zu Rauschen.
-        bool after_sync = false;  // true: nächstes nicht-Sync-Byte wird als Marken-Byte bewertet
-        uint32_t pos = lock_pos;
-        size_t   si  = 0;         // Laufindex in strongs (monoton)
+        //
+        // @p punkte  Einrastpunkte; @p zellpos nimmt je Byte seine Zellposition auf.
+        auto dekodiere = [&](const std::vector<uint32_t>& punkte,
+                             std::vector<uint32_t>& zellpos) -> TrackImage {
+            TrackImage img;
+            img.encoding = enc;
+            img.bitcells = bitcell_count;
+            bool after_sync = false;  // nächstes Nicht-A1-Byte ist das Marken-Byte
+            uint32_t pos = lock_pos;
+            size_t   si  = 0;         // Laufindex in punkte (monoton)
 
-        while (pos + 16 <= bitcell_count) {
-            // Liegt eine starke Sync-Gruppe INNERHALB des nächsten Bytes (also
-            // phasenverschoben)? Dann dorthin springen; die ≤15 übersprungenen
-            // Gap-Zellen tragen keine Information.
-            while (si < strongs.size() && strongs[si] < pos) ++si;
-            if (si < strongs.size() && strongs[si] > pos && strongs[si] < pos + 16) {
-                pos = strongs[si];
-                continue;
-            }
-
-            uint16_t w = get16(stream, pos, bitcell_count);
-            pos += 16;
-
-            if (w == 0x4489u) {
-                // A1-Sync: Byte 0xA1 ohne Marke
-                result.bytes.push_back(0xA1);
-                result.marks.push_back(MarkType::None);
-                after_sync = true;
-            } else if (w == 0x5224u) {
-                // C2-Sync (IAM): Byte 0xC2 ohne Marke
-                result.bytes.push_back(0xC2);
-                result.marks.push_back(MarkType::None);
-                after_sync = true;
-            } else {
-                uint8_t b = mfm_decode_word(w);
-                MarkType mt = MarkType::None;
-                if (after_sync) {
-                    // Das erste Nicht-Sync-Byte nach einem Sync-Block ist das Marken-Byte.
-                    switch (b) {
-                        case 0xFE: mt = MarkType::Id;    break;
-                        case 0xFB: mt = MarkType::Data;  break;
-                        case 0xF8: mt = MarkType::Data;  break;
-                        case 0xFC: mt = MarkType::Index; break;
-                        default:   mt = MarkType::None;  break;
-                    }
-                    after_sync = false;
+            while (pos + 16 <= bitcell_count) {
+                // Liegt eine starke Sync-Gruppe INNERHALB des nächsten Bytes (also
+                // phasenverschoben)? Dann dorthin springen; die ≤15 übersprungenen
+                // Gap-Zellen tragen keine Information.
+                while (si < punkte.size() && punkte[si] < pos) ++si;
+                if (si < punkte.size() && punkte[si] > pos && punkte[si] < pos + 16) {
+                    pos = punkte[si];
+                    continue;
                 }
-                result.bytes.push_back(b);
-                result.marks.push_back(mt);
+
+                uint16_t w = get16(stream, pos, bitcell_count);
+                zellpos.push_back(pos);
+                pos += 16;
+
+                if (w == 0x4489u) {
+                    // A1-Sync: Byte 0xA1 ohne Marke
+                    img.bytes.push_back(0xA1);
+                    img.marks.push_back(MarkType::None);
+                    after_sync = true;
+                } else if (w == 0x5224u) {
+                    // C2-Sync (IAM): Byte 0xC2 ohne Marke
+                    img.bytes.push_back(0xC2);
+                    img.marks.push_back(MarkType::None);
+                    after_sync = true;
+                } else {
+                    uint8_t b = mfm_decode_word(w);
+                    MarkType mt = MarkType::None;
+                    if (after_sync && b == 0xA1) {
+                        // Ein 0xA1 MITTEN in der Sync-Gruppe, aber REGULÄR kodiert
+                        // (0x44A9 statt 0x4489, also MIT dem Taktbit, das der Sync
+                        // auslässt).  Es gehört zur Gruppe und ist nicht das Marken-Byte:
+                        // die Gruppe läuft weiter, die Marke ist das erste Byte, das KEIN
+                        // 0xA1 ist — genau so sucht ein echter Datenseparator sie.
+                        //
+                        // Das ist keine Spitzfindigkeit: der Controller, der
+                        // `udos_ds77_k5601_fremdsync.hfe` beschrieben hat, schreibt die
+                        // Datenfeld-Sync-Gruppe als A1(Sync) A1(Sync) A1(regulär) FB.  Wer
+                        // das dritte A1 als Marken-Byte verbraucht, findet für JEDEN von
+                        // diesem Rechner geschriebenen Sektor kein Datenfeld mehr — die
+                        // Diskette liest sich dann als „26 Sektoren, alle ohne Daten", und
+                        // die UDOS-Erkennung scheitert an der Belegungskarte.
+                    } else if (after_sync) {
+                        // Erstes Nicht-A1-Byte nach einem Sync-Block = Marken-Byte.
+                        switch (b) {
+                            case 0xFE: mt = MarkType::Id;    break;
+                            case 0xFB: mt = MarkType::Data;  break;
+                            case 0xF8: mt = MarkType::Data;  break;
+                            case 0xFC: mt = MarkType::Index; break;
+                            default:   mt = MarkType::None;  break;
+                        }
+                        after_sync = false;
+                    }
+                    img.bytes.push_back(b);
+                    img.marks.push_back(mt);
+                }
+            }
+            return img;
+        };
+
+        std::vector<uint32_t> zellpos;
+        result = dekodiere(strongs, zellpos);
+
+        // Schritt 2c: Nachlese für Sektorköpfe OHNE Datenfeld.  Nur hier sind die
+        // einzelnen Sync-Marken zugelassen: ein Sektorkopf, dem bis zum nächsten Kopf
+        // kein Datenfeld folgt, ist der eine Fall, in dem eine schwache Sync-Stelle
+        // etwas erklärt, statt etwas zu erfinden.  Alles andere bleibt unangetastet —
+        // Reste einer alten Formatierung werden dadurch NICHT zu Sektoren.
+        if (!einzelne.empty()) {
+            std::vector<uint32_t> zusatz;
+            const size_t n = result.marks.size();
+            for (size_t i = 0; i < n; ++i) {
+                if (result.marks[i] != MarkType::Id) continue;
+                // Fenster: hinter dem ID-Feld (Marke + 4 Byte + CRC) bis zum nächsten Kopf
+                size_t j = i + 1;
+                bool hat_daten = false;
+                for (; j < n; ++j) {
+                    if (result.marks[j] == MarkType::Data) { hat_daten = true; break; }
+                    if (result.marks[j] == MarkType::Id)   break;
+                }
+                if (hat_daten) continue;
+                const uint32_t von = i + 7 < zellpos.size() ? zellpos[i + 7] : bitcell_count;
+                const uint32_t bis = j < zellpos.size() ? zellpos[j] : bitcell_count;
+                for (uint32_t p : einzelne)
+                    if (p >= von && p < bis) zusatz.push_back(p);
+            }
+            if (!zusatz.empty()) {
+                std::vector<uint32_t> punkte = strongs;
+                punkte.insert(punkte.end(), zusatz.begin(), zusatz.end());
+                std::sort(punkte.begin(), punkte.end());
+                std::vector<uint32_t> zp2;
+                result = dekodiere(punkte, zp2);
             }
         }
 

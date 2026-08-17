@@ -42,6 +42,147 @@ def verfuegbar() -> bool:
     return True
 
 
+#: Vorlauf, der vor dem Sektorkopf noch zur Spur gehört (8 Byte à 16 Zellen).  Vor der
+#: Sync-Gruppe steht Gap/Vorlauf, hier ist der Schnitt also folgenlos.
+_VORLAUF_ZELLEN = 8 * 16
+
+
+def _feldanfaenge(zellen, bis: int):
+    """Felder im Bereich ``[0, bis)`` als ``[(anfang, 'id'|'dat', ende), …]``.
+
+    ``anfang`` ist die Zellposition der Sync-Gruppe, ``ende`` die erste Zelle NACH dem
+    Feld (Marke + Inhalt + CRC).  ``ende > bis`` heisst: das Feld reicht über die Spur
+    hinaus, ist also von der Naht durchschnitten.
+
+    Erkennt beide Verfahren, weil eine echte Diskette FM- und MFM-Spuren mischen darf
+    und hier niemand weiss, welche gerade unter dem Kopf liegt:
+
+    * **MFM** — Sync-Gruppe aus 0xA1 mit ausgelassenem Taktbit (Zellwort 0x4489), danach
+      ist die Marke das erste Byte, das kein 0xA1 ist (auch ein regulär kodiertes 0xA1
+      gehört noch zur Gruppe, s. `BitCodec::decode`).
+    * **FM** — die Marke steckt im Sync-Wort selbst (Takt 0xC7): 0xF57E = IDAM,
+      0xF56F = Datenfeld, 0xF56A = gelöschtes Datenfeld.
+    """
+    from bitarray import bitarray
+
+    a1 = bitarray("0100010010001001")           # MFM 0xA1 mit ausgelassenem Takt
+    fm = {"1111010101111110": "id",             # FM 0xFE / Takt 0xC7
+          "1111010101101111": "dat",            # FM 0xFB / Takt 0xC7
+          "1111010101101010": "dat"}            # FM 0xF8 / Takt 0xC7
+
+    def byte_bei(pos: int):
+        if pos + 16 > len(zellen):
+            return None
+        v = 0
+        for j in range(8):
+            v = (v << 1) | zellen[pos + 2 * j + 1]
+        return v
+
+    #: (anfang, art, marken_position) — die Länge folgt erst unten, weil ein Datenfeld
+    #: seine Länge aus dem VORANGEHENDEN Sektorkopf bezieht.
+    rohe = []
+    for muster, art in fm.items():
+        p = 0
+        m = bitarray(muster)
+        while True:
+            p = zellen.find(m, p, bis)
+            if p < 0:
+                break
+            rohe.append((p, art, p))             # FM: die Marke IST das Sync-Wort
+            p += 16
+
+    p = 0
+    while True:
+        p = zellen.find(a1, p, bis)
+        if p < 0:
+            break
+        q = p
+        while byte_bei(q) == 0xA1:               # ganze Sync-Gruppe überspringen
+            q += 16
+        marke = byte_bei(q)
+        if marke == 0xFE:
+            rohe.append((p, "id", q))
+        elif marke in (0xFB, 0xF8):
+            rohe.append((p, "dat", q))
+        p = max(q, p + 16)
+
+    rohe.sort()
+    felder = []
+    groesse = 128                                # bis der erste Kopf etwas anderes sagt
+    for anfang, art, marke_bei in rohe:
+        if art == "id":
+            # Marke + cyl head sec sizecode + 2 CRC = 7 Byte; sizecode steuert die
+            # Länge der Datenfelder dahinter (2 Bit: 128 … 1024 B).
+            code = byte_bei(marke_bei + 4 * 16)
+            if code is not None:
+                groesse = 128 << (code & 0x03)
+            ende = marke_bei + 7 * 16
+        else:
+            ende = marke_bei + (1 + groesse + 2) * 16
+        felder.append((anfang, art, ende))
+    return felder
+
+
+def naht_vor_sektorkopf(zellen, eine_umdrehung: int) -> int:
+    """Wo darf die Spur aufgeschnitten werden?  Liefert die Startzelle.
+
+    Eine ``TrackImage`` ist **eine Umdrehung**, also braucht sie einen Anfang, und der
+    naheliegende ist das Indexloch.  Nur liegt der Spuranfang des schreibenden Rechners
+    nicht zwangsläufig dort: schneidet man stur am Index, wird der Sektor, den die
+    Index-Naht überspannt, **zerhackt** — sein Kopf landet am Spurende, sein Datenfeld am
+    Spuranfang, und keins von beiden ist mehr als Sektor lesbar.  Bei UDOS reisst damit
+    die Zeigerkette der Datei (an einer fremdbeschriebenen Diskette gemessen: 46 Dateien
+    mit dieser Funktion, 12 ohne sie).
+
+    Geschnitten wird deshalb **kurz vor einem Sektorkopf** — dort liegt Vorlauf, der
+    Schnitt ist folgenlos.  Ob überhaupt etwas zu tun ist, sagen die Felder der Spur;
+    gespalten ist ein Sektor in genau drei Lagen:
+
+    * das **erste** Feld ist ein Datenfeld — sein Kopf steht jenseits der Naht;
+    * das **letzte** Feld ist ein Kopf — sein Datenfeld steht jenseits der Naht;
+    * das letzte Feld **reicht über das Spurende hinaus** — die Naht liegt mitten darin
+      (dieser Fall ist der heimtückische: am Spuranfang liegen dann Datenbytes ohne
+      Marke, es gibt dort also nichts zu sehen).
+
+    Sonst bleibt es beim Index, und der Winkel im Diskeditor stimmt exakt.
+
+    Absichtlich NICHT über die Periodizität des Füllmusters: eine Folge gleicher Bytes
+    sieht im Zellstrom aus wie eine Lücke, und Datenfelder sind voll davon (0x00-Vorlauf,
+    0xE5-Füllung eines frisch formatierten Sektors).  Ein darauf gestützter Schnitt landet
+    mitten im Sektor — nachweisbar an genau der Diskette, um die es hier geht.
+
+    Args:
+        zellen: Bitzellen von MEHR als einer Umdrehung (MSB zuerst, ``bitarray``).
+        eine_umdrehung: Zellzahl einer Umdrehung.
+
+    Returns:
+        Startzelle für den Schnitt — ``0``, wenn nichts zu verschieben ist.
+    """
+    if len(zellen) < eine_umdrehung + _VORLAUF_ZELLEN:
+        return 0                      # nur eine Umdrehung da: nichts zu wählen
+
+    felder = _feldanfaenge(zellen, eine_umdrehung)
+    if not felder:
+        return 0                      # keine Felder — nichts zu retten
+    kopf = next((p for p, art, _ in felder if art == "id"), None)
+    if kopf is None:
+        return 0
+
+    erste_art = felder[0][1]
+    letzte_art = felder[-1][1]
+    letztes_ende = felder[-1][2]
+    gespalten = (erste_art == "dat"
+                 or letzte_art == "id"
+                 or letztes_ende > eine_umdrehung)
+    if not gespalten:
+        return 0                      # Index bleibt Index
+
+    start = kopf - _VORLAUF_ZELLEN
+    if start <= 0 or start + eine_umdrehung > len(zellen):
+        return 0
+    return start
+
+
 @dataclass(frozen=True)
 class Adapter:
     """Was ``gw info`` über das gefundene Gerät sagt."""
@@ -145,6 +286,22 @@ class Device:
         fluss.cue_at_index()
         roh = PLLTrack(clock=5e-4 / self.cell_rate_kbps, data=fluss)
         bits, _ = roh.get_revolution(0)
+        eine = len(bits)
+
+        # Die zweite Umdrehung dranhängen, damit der Schnitt vor einen Sektorkopf gelegt
+        # werden kann (s. naht_vor_sektorkopf) — sonst zerhackt der Index-Schnitt den
+        # Sektor, den die Naht überspannt.
+        try:
+            weiter, _ = roh.get_revolution(1)
+        except Exception:                      # nur eine Umdrehung gelesen
+            weiter = None
+        if weiter:
+            ganz = bitarray(endian="big")
+            ganz += bits
+            ganz += weiter
+            start = naht_vor_sektorkopf(ganz, eine)
+            if start:
+                bits = ganz[start:start + eine]
 
         lsb = bitarray(endian="big")
         lsb.frombytes(bits.tobytes())

@@ -445,6 +445,119 @@ probieren — genau die Regel, die `HfeCodec` beim Laden schon anwendet und die 
 in eine gemeinsame Hilfsfunktion wandert.  Eine Diskette darf FM- und MFM-Spuren
 mischen (§09 3.1), und bei einer echten weiß man es vorher schlicht nicht.
 
+### 8.1a Wo die Spur aufgeschnitten wird — die Index-Naht
+
+Eine `TrackImage` **ist** eine Umdrehung, sie braucht also einen Anfang, und der
+naheliegende ist das Indexloch (`cue_at_index()` + `get_revolution(0)`).  Nur liegt der
+Spuranfang des schreibenden Rechners nicht zwangsläufig dort: schneidet man stur am
+Index, wird der Sektor, der die Index-Naht **überspannt**, zerhackt — sein Datenfeld
+fehlt.  Bei CP/M fällt das als ein defekter Sektor auf, bei UDOS reisst damit die
+**Zeigerkette** der Datei, denn die steht im Anhang hinter der Daten-CRC (§udos §6).
+
+Bei eigenen Disketten fällt das nie auf: der Emulator formatiert ab Index, die Spur
+endet im Gap.  Bei einer fremdbeschriebenen Diskette schon —
+`udos_ds77_k5601_fremdsync.hfe` liefert mit Index-Schnitt **12** Dateien statt **46**.
+
+`app/gw/device.py::naht_vor_sektorkopf()` legt den Schnitt deshalb **kurz vor einen
+Sektorkopf** (8 Byte davor, dort liegt Vorlauf).  Ob überhaupt verschoben wird, sagen die
+Felder der Spur — gespalten ist ein Sektor in genau drei Lagen:
+
+1. das **erste** Feld ist ein Datenfeld → sein Kopf steht jenseits der Naht;
+2. das **letzte** Feld ist ein Kopf → sein Datenfeld steht jenseits der Naht;
+3. das letzte Feld **reicht über das Spurende hinaus** → die Naht liegt mitten darin.
+
+Sonst bleibt es beim Index, und der Winkel im Diskeditor (§19 des DiskTool-Entwurfs)
+stimmt exakt.  Dafür wird eine Umdrehung **mehr** dekodiert, als in die Spur geht; das
+kostet nichts, weil ohnehin `revs + 1` Umdrehungen aufgenommen werden.
+
+Fall 3 ist der Grund, warum die Felder überhaupt erkannt werden müssen (`_feldanfaenge`:
+Sync-Gruppe suchen, Marke bestimmen, Länge aus dem Größencode des Kopfes — für MFM und FM,
+weil eine Diskette beides mischen darf).  Denn dort liegen am Spuranfang Datenbytes
+**ohne Marke**: es gibt nichts zu sehen, und nur die Rechnung „Feldlänge gegen Spurende"
+findet den Fall.
+
+> **Nicht über die Periodizität des Füllmusters.**  Der erste Ansatz suchte Lücken als
+> 16-zellen-periodische Folgen — füllbyte- und verfahrensunabhängig, und an der echten
+> Aufnahme funktionierte er.  Er ist trotzdem falsch: **Datenfelder sind voll von
+> Wiederholungen** (12 Byte 0x00 Vorlauf, 128 Byte 0xE5 in einem frisch formatierten
+> Sektor), sehen im Zellstrom also aus wie eine Lücke.  Der Schnitt landete dann mitten
+> im Sektor — nachweisbar an genau der Diskette, um die es hier geht: der Wächter
+> `test_verdrehte_fremddiskette_*` war damit rot, und zwar mit **0 gelesenen Dateien**.
+
+Wächter: `test_naht_*` (die drei Lagen, an einer echten Spur) und
+`test_verdrehte_fremddiskette_wird_ueber_die_naht_vollstaendig_gelesen` — der stellt die
+Lage her, in der die Diskette im Laufwerk liegt (Spur zyklisch verdreht, Naht im
+Datenfeld des ersten Sektors), und prüft **beide** Richtungen: stur am Index geschnitten
+gehen Dateien verloren, vor dem Sektorkopf geschnitten sind es wieder alle 46.
+
+### 8.1b Sync-Gruppen fremder Controller
+
+Der Decoder darf die Sync-Gruppe **nicht** als „drei Sync-Marken, dann die Marke"
+lesen, sondern muss sie lesen wie ein echter Datenseparator: **die Marke ist das erste
+Byte der Gruppe, das kein 0xA1 ist.**  Der Controller, der
+`udos_ds77_k5601_fremdsync.hfe` beschrieben hat, schreibt die Datenfeld-Gruppe als
+`A1(Sync) A1(Sync) A1(regulär) FB` — das dritte A1 ist **regulär** kodiert (0x44A9, mit
+dem Taktbit, das der Sync auslässt), bei einem Teil der Sektoren auch noch das erste.
+Am Rohfluss nachgewiesen (4/6/8-µs-Muster, ohne PLL): so steht es auf der Diskette,
+es ist kein Leseartefakt — und es betrifft genau die Sektoren, die dieser Rechner
+**geschrieben** hat, nicht die, die er nur formatiert hat.
+
+Wer das dritte A1 als Marken-Byte verbraucht, findet für jeden beschriebenen Sektor
+kein Datenfeld: die Diskette liest sich als „26 Sektoren, alle ohne Daten", und die
+UDOS-Erkennung scheitert an der Belegungskarte („Sektor 1 auf Spur 23 ist kuerzer als
+128 B").  Zwei Regeln in `BitCodec::decode` tragen das (Wächter
+`BitCodecFremdeSyncgruppe.*`, `DiskVolume.LiestEineDisketteMitFremderSyncSitte`):
+
+1. Ein regulär kodiertes 0xA1 **innerhalb** der Gruppe verlängert sie, statt die
+   Markensuche zu verbrauchen.
+2. Bleibt nur **eine** echte Sync-Marke, ist sie als Einrastpunkt zu schwach, um
+   pauschal zu gelten — ein verschoben zufälliges 0x4489 in Nutzdaten würde die Phase
+   mitten im Datenfeld verschieben, und schwache Reste einer alten Formatierung würden
+   zu Sektoren (eine 80-Spur-Diskette bekam so „82 Spuren mit Daten" und passte in kein
+   Laufwerk mehr).  Sie wird deshalb in einem **zweiten Durchlauf** benutzt, und nur
+   dort, wo ein Sektorkopf **ohne Datenfeld** dasteht: der eine Fall, in dem eine
+   schwache Sync-Stelle etwas erklärt statt etwas zu erfinden.
+
+### 8.1c Die CRC-Sitte derselben Diskette — ein Dialekt, kein Schaden
+
+Dieselbe Diskette rechnet die **ID-CRC** anders als Standard-IBM: über
+`FE cyl head sec size` mit Init 0xFFFF, **ohne** die drei A1 der Präambel.  Das ist
+belegt, nicht vermutet — die Restprobe `crc16(Feld ‖ CRC) == 0` geht exakt auf, und zwar
+bei **allen 4004 ID-Feldern ausnahmslos**.  Zur Einordnung dieselbe Messung an drei
+Referenzdisketten (`udos_boot_scp`, `cpa_cpa780_k5601_clock`, `scpx17_cpa780_k5601`):
+dort folgen ID *und* Daten durchweg dem Standard.
+
+| Diskette | ID-Felder | Datenfelder |
+|----------|-----------|-------------|
+| `udos_ds77_k5601_fremdsync` | 4004 × **ohne Präambel** (Init FFFF ab `FE`) | 4004 × Standard-IBM |
+| Referenzdisketten | Standard-IBM | Standard-IBM |
+
+Die beiden Sitten sind zwei Startwerte derselben Rechnung: `crc16([A1,A1,A1], 0xFFFF)`
+ist `0xCDB4`, Standard-IBM ist also „ab dem Marken-Byte mit 0xCDB4 anfangen", der
+Dialekt „ab dem Marken-Byte mit 0xFFFF anfangen" — letzteres ist genau die
+FM-Rechnung, wo es keine Präambel gibt.
+
+Aufschlussreich ist, **wo** die Diskette die Sitte wechselt: die ID-CRC entsteht beim
+FORMATIEREN und muss vorab berechnet in den Schreibstrom eingefügt werden (dort fehlt
+die Präambel in der Rechnung), die Datenfeld-CRC läuft beim Schreiben in der Hardware ab
+dem ersten Sync-Byte mit.  Der Bruch liegt genau an dieser Kante — das ist eine
+Eigenschaft des schreibenden Controllers, kein Defekt der Scheibe.
+
+`TrackCodec::mfmFieldCrcOk()` akzeptiert deshalb **beide** Sitten, für ID- und
+Datenfelder gleichermaßen und an der EINEN Stelle, durch die jede Anzeige geht
+(`parseTrack` → `SectorSpace`, `TrackView` → Diskeditor).  Der Preis ist ein Bit
+Trennschärfe: statt einem gehen zwei von 65536 Zufallswerten durch.  Der Gegenwert ist,
+dass die Sektoren dieser Diskette **grün** sind statt sämtlich rot, und dass
+`k1520disktool check` „ohne Befund" meldet statt 4004 Schäden.  Wächter:
+`TrackCodecCrcDialekt.*` (inkl. „eine wirklich falsche CRC bleibt falsch").
+
+> **Geschrieben wird weiter nach Standard-IBM.**  `buildTrack`, `createSector` und
+> `writeSectorAt` rechnen die Präambel mit; ein von uns neu geschriebenes Feld ist also
+> Standard, und unsere Prüfung nimmt es ebenso an.  Für den Originalrechner bleibt das
+> unkritisch, weil beim Sektorschreiben nur das **Datenfeld** ersetzt wird — und dessen
+> CRC ist auf dieser Diskette ohnehin Standard.  Nur ein NEUFORMATIEREN würde ID-Felder
+> in der anderen Sitte hinterlassen als der Rechner sie schreibt.
+
 ### 8.2 Was der Kern **nicht** bekommt
 
 Flusswechsel.  Die Zeitwerte zwischen zwei Flanken bleiben in Python; im Kern kommt an,

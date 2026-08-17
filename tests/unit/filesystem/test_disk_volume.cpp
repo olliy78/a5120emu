@@ -144,6 +144,35 @@ TEST(DiskVolume, ErkenntUdosUndOeffnetBeideSeitenAlsEinenDatentraeger) {
         << dv->detection().remarks;
 }
 
+TEST(DiskVolume, LiestEineDisketteMitFremderSyncSitte) {
+    // Diese Diskette wurde an einem ANDEREN K1520-Rechner (K5601) beschrieben.  Sein
+    // Controller schreibt die Sync-Gruppe vor dem Datenfeld mit nur ein bis zwei
+    // echten Sync-Marken (die übrigen 0xA1 regulär kodiert) und rechnet die ID-CRC
+    // OHNE die A1-Präambel.  Bis der Decoder die Gruppe wie ein echter Datenseparator
+    // liest (erstes Byte, das kein 0xA1 ist, IST die Marke), fand er für JEDEN
+    // beschriebenen Sektor kein Datenfeld: die Diskette galt als unerkannt, weil die
+    // Belegungskarte auf Spur 23 „kuerzer als 128 B" war.
+    std::string err;
+    auto dv = oeffne(fixture("udos_ds77_k5601_fremdsync.hfe"), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    EXPECT_EQ(dv->detection().filesystem, "udos_ds77");
+    EXPECT_EQ(dv->volumeCount(), 2);
+
+    const std::vector<FileEntry> alle = dv->list();
+    EXPECT_EQ(alle.size(), 46u) << "die Diskette traegt 34 + 12 Dateien";
+    int s0 = 0, s1 = 0;
+    for (const FileEntry& e : alle) (e.volume == 0 ? s0 : s1)++;
+    EXPECT_EQ(s0, 34);
+    EXPECT_EQ(s1, 12);
+
+    // Die abweichende ID-CRC-Sitte ist ein DIALEKT, kein Schaden: sie wird wie die
+    // Standard-Sitte akzeptiert (TrackCodec::mfmFieldCrcOk), sonst wären alle 4004
+    // Sektoren im Diskeditor rot, obwohl an ihnen nichts fehlt.
+    EXPECT_EQ(dv->detection().remarks.find("CRC"), std::string::npos)
+        << "der CRC-Dialekt wird als Schaden gemeldet: " << dv->detection().remarks;
+}
+
 TEST(DiskVolume, LehntAbbildOhneKatalogeintragMitDiagnoseAb) {
     std::string err;
     auto dv = oeffne(fixture("cpa_mini.hfe"), "", err);

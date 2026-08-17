@@ -38,6 +38,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `bootsec_cpa780.bin` | erwarteter Inhalt des Bootsektors einer cpa780-Diskette | `test_boot_integration` (Bootsektor-Vergleich) |
 | `mixed_udos_ss40_over_cpa800.hfe` | **gemischtes Layout**: cpa800, darüber UDOS ss40 im Doppelschritt — Kopf 0 gerade Zylinder 26×128 (UDOS), ungerade 5×1024 (Altbestand), Kopf 1 ganz 5×1024 | `test_disktool_gui` (roh öffnen, Schnitte), `test_gw_physical` |
 | `cpa_mini.img` / `cpa_mini.hfe` | synthetische Mini-Diskette (2 KB / 26 KB), kein Systemabbild | `test_hfe_image`, `test_disk_image_raw` |
+| `udos_ds77_k5601_fremdsync.hfe` | UDOS 4.3, an einem **fremden** K1520-Rechner (K5601) beschrieben: Datenfeld-Sync mit nur ein bis zwei echten Sync-Marken (die übrigen 0xA1 regulär kodiert), ID-CRC **ohne** A1-Präambel, 34 + 12 Dateien | `DiskVolume.LiestEineDisketteMitFremderSyncSitte`, `test_gw_physical` (Naht) |
 
 Die **gemischte** Diskette entstand am echten Laufwerk: erst vollständig als cpa800
 formatiert, dann mit UDOS `ss40` im Doppelschritt überschrieben.  Sie ist die einzige
