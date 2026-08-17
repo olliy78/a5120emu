@@ -282,7 +282,8 @@ originalgetreu nachbilden lässt.
 
 **Ganze Spuren** lassen sich löschen und einfügen: *Spur löschen* wirft die
 gewählte Spur mit beiden Seiten heraus (alles dahinter rückt auf), *Spur einfügen*
-setzt dahinter eine leere ein. Damit stutzt man ein Abbild zurecht — etwa von 82
+setzt dahinter eine unformatierte ein — in der sich anschliessend mit *Neuer
+Sektor* von Hand formatieren lässt. Damit stutzt man ein Abbild zurecht — etwa von 82
 auf 80 Spuren oder auf 77, damit es auf eine 8″-Diskette passt. Bei einer
 physischen Diskette endet damit die Verbindung zum Laufwerk, denn die Spurnummern
 stimmen danach nicht mehr mit den Kopfpositionen überein.

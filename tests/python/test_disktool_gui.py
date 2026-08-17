@@ -662,6 +662,61 @@ def test_disk_editor_loescht_und_fuegt_ganze_spuren_ein(window, temp_disk):
         QMessageBox.question = ed_frage
 
 
+def test_disk_editor_sperrt_spuraenderungen_bei_schreibschutz(window, fixture_disks):
+    """Ganze Spuren ändern die Geometrie — erst recht nichts für „nur lesen".
+
+    Die beiden Knöpfe hingen an gar nichts und liessen sich auch an einer
+    schreibgeschützt geöffneten Diskette auslösen.
+    """
+    ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
+    assert window.tool.read_only, "Fixture wird schreibgeschützt geöffnet"
+    assert not ed.btn_spur_neu.isEnabled(), "Spur einfügen trotz Schreibschutz"
+    assert not ed.btn_spur_weg.isEnabled(), "Spur löschen trotz Schreibschutz"
+    assert not ed.btn_neu.isEnabled()      # zum Vergleich: war schon richtig
+
+    window.tool.set_read_only(False)
+    ed._enable(False)
+    assert ed.btn_spur_neu.isEnabled()
+    assert ed.btn_spur_weg.isEnabled()
+
+
+def test_eine_eingefuegte_spur_laesst_sich_von_hand_formatieren(window, temp_disk):
+    """Die eingefügte Spur ist unformatiert — aber NICHT leer.
+
+    Der Unterschied entscheidet alles: eine Spur ohne Bytes gibt es in dieser
+    Geometrie gar nicht, und in eine solche lässt sich kein Sektor legen — das
+    Anlegen landete dann auf der nächsten formatierten Spur.  Eine gelöschte echte
+    Spur trägt Fluss, nur ohne Marken; genau so wird die neue gebaut, und darin
+    lässt sich von Hand formatieren.
+    """
+    from PySide6.QtWidgets import QMessageBox
+    from app.core_binding.k1520disk import SECTOR
+
+    ed = _editor(window, temp_disk("udos_boot_scp.hfe"))
+    window.tool.set_read_only(False)
+    ed._enable(False)
+
+    frage = QMessageBox.question
+    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Ok)
+    try:
+        ed._springe(seite=0, spur=5)
+        assert ed.insert_track()
+    finally:
+        QMessageBox.question = frage
+
+    neu = window.tool.track(6, 0)
+    assert neu.exists, "die eingefügte Spur gibt es gar nicht — so ist sie unbrauchbar"
+    assert not neu.formatted, "sie soll unformatiert sein"
+    assert neu.bytes > 0, "ohne Fluss lässt sich nichts hineinschreiben"
+
+    # Und jetzt von Hand formatieren: die Sektoren landen HIER, nicht anderswo.
+    for nr in (1, 2, 3):
+        window.tool.sector_create(6, 0, id=nr, size=128, gap=40)
+    danach = window.tool.track(6, 0)
+    assert danach.formatted
+    assert [x.id for x in danach.spans if x.kind == SECTOR] == [1, 2, 3]
+
+
 def test_disk_editor_faerbt_leere_sektoren_heller(window, fixture_disks):
     """Beschrieben oder nur formatiert? — dunkelgrün gegen hellgrün.
 

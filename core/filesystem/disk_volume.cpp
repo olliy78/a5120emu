@@ -1175,10 +1175,23 @@ int DiskVolume::insertCylinderAfter(uint8_t cyl) {
         for (uint8_t h = 0; h < m.numHeads(); ++h)
             m.setTrack(static_cast<uint8_t>(c), h,
                        m.peek(static_cast<uint8_t>(c - 1), h));
-    // Der neue Zylinder ist UNFORMATIERT: eine leere Spur, kein Abklatsch des
-    // Nachbarn — sonst traegt sie fremde Sektor-IDs.
-    for (uint8_t h = 0; h < m.numHeads(); ++h)
-        m.setTrack(static_cast<uint8_t>(cyl + 1), h, TrackImage{});
+    // Der neue Zylinder ist UNFORMATIERT — aber nicht LEER.  Der Unterschied ist
+    // entscheidend: eine Spur ohne Bytes gibt es in dieser Geometrie gar nicht
+    // (`TrackView::exists == false`), und in eine solche laesst sich kein Sektor
+    // legen.  Eine geloeschte echte Spur traegt Fluss, nur ohne Marken — genau das
+    // wird hier gebaut: Gap-Fuellbytes in Laenge und Verfahren des NACHBARN, damit
+    // die neue Spur in dieselbe Umdrehung passt.  Sektoren lassen sich darin dann
+    // einzeln anlegen: von Hand formatieren (§19.6).
+    for (uint8_t h = 0; h < m.numHeads(); ++h) {
+        const TrackImage& vorbild = m.peek(cyl, h);
+        TrackImage neu;
+        neu.encoding = vorbild.encoding;
+        neu.bitcells = vorbild.bitcells;
+        const size_t laenge = vorbild.bytes.empty() ? 6250 : vorbild.bytes.size();
+        neu.bytes.assign(laenge, vorbild.encoding == Encoding::FM ? 0xFF : 0x4E);
+        neu.marks.assign(laenge, MarkType::None);
+        m.setTrack(static_cast<uint8_t>(cyl + 1), h, std::move(neu));
+    }
     return m.numCylinders();
 }
 

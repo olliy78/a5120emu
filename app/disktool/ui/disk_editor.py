@@ -942,6 +942,12 @@ class DiskEditorWindow(QDialog):
         # wählen, und genau dann braucht man den Knopf am dringendsten.
         self.btn_neu.setEnabled(not self.tool.read_only
                                 and self.surface.cylinders > 0)
+        # Ganze Spuren ändern die GEOMETRIE des Abbilds — erst recht nichts für
+        # eine schreibgeschützt geöffnete Diskette.  Sie hingen bisher an gar
+        # nichts und liessen sich auch im Nur-Lesen-Zustand auslösen.
+        aendern = not self.tool.read_only and self.surface.cylinders > 0
+        self.btn_spur_neu.setEnabled(aendern)
+        self.btn_spur_weg.setEnabled(aendern and self.surface.cylinders > 1)
         if an and self.tool.read_only:
             self.hinweis.setText("Diskette ist schreibgeschützt geöffnet — "
                                  "„Nur lesen“ im Hauptfenster abwählen zum Ändern.")

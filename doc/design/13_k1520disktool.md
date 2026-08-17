@@ -1430,11 +1430,23 @@ des Abbilds, nicht seinen Inhalt.
 * **Spur einfügen** setzt hinter dem gewählten Zylinder einen **unformatierten** ein;
   alles dahinter rückt nach hinten.  Sektoren legt man danach einzeln an.
 
-Beides verlangt ein **vollständiges** Abbild und **löst vom Laufwerk** (wie die
-Schnitte in §12.6 des Greaseweazle-Entwurfs): die Spurnummer stimmt danach nicht mehr
-mit der Kopfposition überein.  Die eingefügte Spur ist bewusst leer und kein Abklatsch
-des Nachbarn — sonst trüge sie fremde Sektor-IDs.  Wächter:
-`test_disk_editor_loescht_und_fuegt_ganze_spuren_ein`.
+Beides verlangt ein **vollständiges** Abbild, ist bei **Schreibschutz gesperrt** (es
+ändert die Geometrie — erst recht nichts für „nur lesen") und **löst vom Laufwerk**
+(wie die Schnitte in §12.6 des Greaseweazle-Entwurfs): die Spurnummer stimmt danach
+nicht mehr mit der Kopfposition überein.
+
+> **Unformatiert heisst nicht leer.**  Die eingefügte Spur trägt **Gap-Füllbytes** in
+> Länge und Verfahren ihres Nachbarn — so wie eine gelöschte echte Spur Fluss trägt,
+> nur ohne Marken.  Eine Spur *ohne Bytes* gibt es in dieser Geometrie dagegen gar
+> nicht (`TrackView::exists == false`), und in eine solche lässt sich kein Sektor
+> legen: das Anlegen landete dann auf der nächsten formatierten Spur.  Mit Gap-Fluss
+> lässt sich die neue Spur **von Hand formatieren** — Sektor für Sektor, mit `Neuer
+> Sektor`.  Sie ist trotzdem kein Abklatsch des Nachbarn: dessen Sektor-IDs stünden
+> sonst auf der neuen Spur.
+
+Wächter: `test_disk_editor_loescht_und_fuegt_ganze_spuren_ein`,
+`test_eine_eingefuegte_spur_laesst_sich_von_hand_formatieren`,
+`test_disk_editor_sperrt_spuraenderungen_bei_schreibschutz`.
 
 ### 19.5 UDOS-Anhang in der Sektorzeile
 
