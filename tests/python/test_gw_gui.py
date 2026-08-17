@@ -611,6 +611,82 @@ def test_ueberschreiben_laeuft_im_hintergrund(app, hfe, tmp_path, monkeypatch):
         worker.stop()
 
 
+def test_dateisystem_laesst_sich_auch_physisch_uebersteuern(app, hfe, monkeypatch):
+    """Eine nicht erkannte Diskette muss von Hand zu öffnen sein — auch physisch.
+
+    Das Übersteuern rief `open_image(tool.path, name)`.  Eine physische Diskette hat
+    **keinen Pfad**: der Aufruf ging auf `""`, warf alles weg und liess die Anzeige
+    leer.  Und war die Erkennung schon beim Öffnen gescheitert, gab es gar kein
+    `tool` — dann tat die Wahl überhaupt nichts, obwohl genau dann übersteuert
+    werden soll.
+
+    Der Fall ist real: eine cpa800-Diskette, über die UDOS geschrieben wurde
+    (Kopf 0 26×128, Kopf 1 5×1024), steht in keinem Katalog — von Hand gewählt
+    liest sie sich einwandfrei.
+    """
+    from app.disktool.ui.main_window import MainWindow as DiskToolWindow
+    from app.ui import physical_disk
+
+    # Jede Öffnung braucht eine FRISCHE Sitzung — ein Sync-Handle ist verbraucht.
+    sitzungen = []
+
+    def neue_sitzung(cls, **kw):
+        s = fake_session(hfe, read_ahead=False)
+        sitzungen.append(s)
+        return s
+
+    monkeypatch.setattr(physical_disk.PhysicalSession, "start",
+                        classmethod(neue_sitzung))
+
+    fenster = DiskToolWindow()
+    try:
+        assert fenster.open_physical(drive="a", num_cyls=80, num_heads=2)
+        erkannt = fenster.tool.filesystem
+        assert fenster._physisch_wahl, "die Angaben wurden nicht gemerkt"
+
+        # Umstellen auf dasselbe Dateisystem — der Weg muss durch die physische
+        # Neuöffnung gehen und darf NICHT über open_image("") laufen.
+        fenster._fs_setzen(erkannt, neu_oeffnen=True)
+        assert fenster.tool is not None, "beim Übersteuern ging die Diskette verloren"
+        assert fenster.tool.filesystem == erkannt
+        assert fenster._eintraege, "keine Dateien nach dem Übersteuern"
+        assert len(sitzungen) == 2, "es wurde keine neue Sitzung aufgebaut"
+        assert fenster.act_diskeditor.isEnabled()
+    finally:
+        fenster._close_tool()
+
+
+def test_nicht_erkannt_bietet_den_ausweg_an(app, hfe, monkeypatch):
+    """Scheitert die Erkennung, ist die Diskette nicht verloren — nur unerkannt.
+
+    Dann muss der Ausweg dastehen (Dateisystem wählen) und das Menü dafür
+    bedienbar sein — gesperrt verstellte es genau den einzigen Weg hinein.
+    """
+    from app.disktool.ui.main_window import MainWindow as DiskToolWindow
+    from app.core_binding.k1520disk import K1520DiskError
+    from app.ui import physical_disk
+
+    monkeypatch.setattr(physical_disk.PhysicalSession, "start",
+                        classmethod(lambda cls, **kw: fake_session(hfe,
+                                                                   read_ahead=False)))
+    # Erkennung scheitern lassen — wie bei einem gemischten Format ohne Katalogeintrag.
+    monkeypatch.setattr(
+        "app.disktool.ui.main_window.DiskTool.open_physical",
+        staticmethod(lambda *a, **k: (_ for _ in ()).throw(
+            K1520DiskError("passt zu keinem Format"))))
+
+    fenster = DiskToolWindow()
+    try:
+        assert fenster.open_physical(drive="a") is False
+        assert fenster.tool is None
+        assert "Nicht erkannt" in fenster.info_bar.text()
+        assert fenster._physisch_wahl, "ohne gemerkte Wahl gibt es kein Zurück"
+        assert fenster.menue_fs.isEnabled(), \
+            "das Dateisystem-Menü ist gesperrt — der einzige Weg hinein"
+    finally:
+        fenster._close_tool()
+
+
 def test_diskeditor_oeffnet_sofort_und_waechst_mit(app, hfe, monkeypatch):
     """Der Editor darf nicht auf die ganze Diskette warten.
 

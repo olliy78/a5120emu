@@ -86,6 +86,10 @@ class MainWindow(QMainWindow):
     _physisch = None
     #: Welches Laufwerk diese Sitzung bedient (für Kopfzeile und Fenstertitel).
     _physisch_laufwerk = "a"
+    #: Womit das echte Laufwerk zuletzt geöffnet wurde (Laufwerk, Geometrie, …).
+    #: Gemerkt, weil ein Sync-Handle nach dem Öffnen VERBRAUCHT ist: wer das
+    #: Dateisystem übersteuern will, braucht eine neue Sitzung mit denselben Angaben.
+    _physisch_wahl = None
     #: Laufender Schreibvorgang auf eine echte Diskette (None = keiner).  Er ist
     #: UNABHAENGIG von der geöffneten Diskette: die ist nur die Quelle.
     _schreib_sitzung = None
@@ -528,7 +532,10 @@ class MainWindow(QMainWindow):
         # auf Zylinder 0 und hat nichts zu sichern.
         self.act_bootabbild.setEnabled(offen and self.tool.boot_area_size(0) > 0)
         self.act_schreibschutz.setEnabled(offen)
-        self.menue_fs.setEnabled(offen)
+        # Auch ohne offene Diskette wählbar, wenn ein physisches Laufwerk im Spiel
+        # ist: bei einer nicht erkannten Diskette ist das Übersteuern der einzige Weg
+        # hinein, und ein gesperrtes Menü verstellte genau ihn.
+        self.menue_fs.setEnabled(offen or bool(self._physisch_wahl))
 
         # Der Ausweg (§7.2) ist an einer Datei sinnlos — dort gibt es keine
         # Schadstelle, gegen die ein erneutes Wegschreiben helfen würde.  Deshalb
@@ -859,6 +866,17 @@ class MainWindow(QMainWindow):
             return False
         self._physisch = sitzung
         self._physisch_laufwerk = drive
+        self._physisch_wahl = dict(optionen)
+        return self._physisch_weiter(sitzung, filesystem, writable)
+
+    def _physisch_weiter(self, sitzung, filesystem: str, writable: bool) -> bool:
+        """Erkennen, Verzeichnis holen, anzeigen — der Teil NACH der Sitzung.
+
+        Eigene Methode, weil es zwei Wege hierher gibt: das erste Öffnen und das
+        Übersteuern des Dateisystems (:meth:`_physisch_erneut`).  Zwei Kopien
+        liefen unweigerlich auseinander.
+        """
+        drive = self._physisch_laufwerk
 
         def oeffnen_und_verzeichnis():
             """Öffnen UND das Verzeichnis holen — beides im Arbeitsfaden.
@@ -890,10 +908,19 @@ class MainWindow(QMainWindow):
             self.disk_view.clear()
             self.kopf.leeren(f"Echtes Laufwerk {drive.upper()} am Greaseweazle")
             if fehler is not None:
-                self.info_bar.zeige(f"Nicht geöffnet: {fehler}", "fehler")
+                # Eine Diskette, die keiner Erkennung folgt, ist nicht verloren —
+                # sie ist nur nicht ERKANNT.  Deshalb hier nicht bloss der Grund,
+                # sondern der Ausweg: das Dateisystem von Hand wählen.  Genau das
+                # rettet gemischte Formate (26×128 auf Kopf 0, 5×1024 auf Kopf 1),
+                # die es in keinem Katalog gibt.
+                self.info_bar.zeige(
+                    f"Nicht erkannt: {fehler}", "fehler",
+                    knopf="Dateisystem wählen…",
+                    bei_klick=self.menue_fs.exec)
                 self.log_dock.append(f"Nicht geoeffnet: {fehler}")
-                self.statusBar().showMessage(f"Nicht geöffnet: Laufwerk "
-                                             f"{drive.upper()}", STATUS_DAUER)
+                self.statusBar().showMessage(
+                    f"Nicht erkannt — Dateisystem im Kopfbereich wählen "
+                    f"(Laufwerk {drive.upper()})", STATUS_DAUER)
             else:
                 self.log("Physisches Laufwerk: abgebrochen")
             self._aktionen_pruefen()
@@ -970,6 +997,32 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self, "Diskette neu beschreiben",
                 f"{n} Spuren wurden geschrieben und fehlerfrei zurückgelesen.")
+
+    def _physisch_erneut(self, filesystem: str) -> bool:
+        """Die physische Diskette mit anderem Dateisystem noch einmal öffnen.
+
+        Ein Sync-Handle ist nach dem Öffnen **verbraucht** — die Wahl lässt sich
+        nicht an der laufenden Sitzung ändern.  Also wird mit denselben Angaben eine
+        neue aufgebaut; das kostet den Erkennungslauf noch einmal (~10 s), ist aber
+        der einzige ehrliche Weg.  Ohne ihn lief das Übersteuern bei einer physischen
+        Diskette in `open_image("")` — leerer Pfad, alles weg.
+        """
+        from app.ui.physical_disk import PhysicalSession
+
+        wahl = dict(self._physisch_wahl or {})
+        if not wahl:
+            return False
+        self._close_tool()
+        try:
+            sitzung = PhysicalSession.start(**wahl)
+        except Exception as e:                       # noqa: BLE001
+            self._fehler("Physisches Laufwerk",
+                         f"Das Laufwerk liess sich nicht erneut oeffnen:\n{e}")
+            return False
+        self._physisch = sitzung
+        self._physisch_laufwerk = wahl.get("drive", "a")
+        return self._physisch_weiter(sitzung, filesystem,
+                                     bool(wahl.get("writable", False)))
 
     def _physisch_dialog(self) -> None:
         """Abfrage vor dem Einlegen und dann oeffnen.
@@ -1538,7 +1591,16 @@ class MainWindow(QMainWindow):
         a = self._fs_aktionen.get(name)
         if a is not None:
             a.setChecked(True)
-        if neu_oeffnen and self.tool is not None:
+        if not neu_oeffnen:
+            return
+        # Eine physische Diskette hat KEINEN Pfad — `open_image("")` warf hier alles
+        # weg, und beim Übersteuern blieb die Anzeige leer.  Sie braucht eine neue
+        # Sitzung mit denselben Angaben; die stehen in `_physisch_wahl`.  Das gilt
+        # auch, wenn die Erkennung gerade gescheitert ist (dann gibt es kein `tool`,
+        # aber sehr wohl etwas zu übersteuern) — es ist sogar der Hauptfall.
+        if self._physisch is not None or (self.tool is None and self._physisch_wahl):
+            self._physisch_erneut(name)
+        elif self.tool is not None:
             self.open_image(self.tool.path, name)
 
     def _modus_geaendert(self) -> None:

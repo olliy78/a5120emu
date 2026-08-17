@@ -932,6 +932,33 @@ DiskTool-Entwurfs).  Drei Feinheiten:
   `_bezeichnung()` / `_kurzname()`, und `DiskHeader.setze(tool, name)` nimmt sie als
   zweites Argument entgegen.  Ohne das bliebe die Pfadzeile leer.
 
+#### 12.2a Wenn die Erkennung nichts findet: von Hand wählen
+
+Ein Sync-Handle ist nach dem Öffnen **verbraucht** — das Dateisystem lässt sich an
+einer laufenden Sitzung nicht umstellen.  Das Übersteuern rief deshalb
+`open_image(tool.path, name)`, und eine physische Diskette hat **keinen Pfad**: der
+Aufruf ging auf `""`, warf alles weg und liess die Anzeige leer.  War die Erkennung
+schon beim Öffnen gescheitert, gab es gar kein `tool` — dann tat die Wahl überhaupt
+nichts, obwohl genau dann übersteuert werden soll.
+
+`_physisch_erneut()` baut jetzt mit den **gemerkten Angaben** (`_physisch_wahl`) eine
+neue Sitzung auf und öffnet mit dem gewählten Dateisystem; den Teil danach teilen sich
+beide Wege (`_physisch_weiter`).  Das kostet den Erkennungslauf noch einmal (~10 s),
+ist aber der einzige ehrliche Weg.  Dazu: die Meldung nennt den Ausweg
+(`Dateisystem wählen…`), und das Dateisystem-Menü bleibt bedienbar, solange eine
+physische Wahl gemerkt ist — gesperrt verstellte es genau den einzigen Weg hinein.
+
+**Der Anlass ist real.**  Eine cpa800-Diskette, über die UDOS geschrieben wurde, trägt
+auf Kopf 0 26×128 (UDOS) und auf Kopf 1 weiter 5×1024 (Altbestand).  Diese Mischung
+steht in keinem Katalog, und die Regel aus §11.2a lehnt `udos_ss40` hier ausdrücklich
+ab: ein einseitiges Format beschreibt keine Diskette, deren andere Seite beschrieben
+ist.  Die Regel ist richtig — sie hält die Stichprobe zusammen —, aber sie macht diese
+Disketten zu Handarbeit.  Von Hand gewählt liest sich die Diskette einwandfrei
+(am echten Laufwerk nachgewiesen: 44 Dateien, Diskeditor bedienbar).
+
+Wächter: `test_dateisystem_laesst_sich_auch_physisch_uebersteuern`,
+`test_nicht_erkannt_bietet_den_ausweg_an`.
+
 ### 12.4 Eine Datei auf eine echte Diskette schreiben
 
 Der Gegenweg zum Laden: Quelle ist das, was gerade offen ist — auch eine `.hfe` —,
