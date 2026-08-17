@@ -36,26 +36,57 @@
 #include <string>
 #include <vector>
 
-/// @brief Groesse der Karte: drei 128-B-Sektoren.
+/// @brief Groesse der Karte: 384 Byte — bei ZDOS drei 128-B-, bei NDOS zwei
+///        256-B-Sektoren (dort bleibt die zweite Haelfte des zweiten ungenutzt).
 inline constexpr size_t kUdosBitmapBytes = 384;
 /// @brief Offset des ersten Spureintrags.
 inline constexpr size_t kUdosBitmapFirstTrack = 24;
-/// @brief Konstante aus FORMATPC.MAC, mit der UDOS den „belegt"-Zaehler bildet.
+/// @brief Konstante aus FORMATPC.MAC, mit der ZDOS den „belegt"-Zaehler bildet.
 inline constexpr uint16_t kUdosCounterConstant = 2464;
 
 /**
+ * @enum UdosMapSitte
+ * @brief Welche der beiden Karten-Sitten gilt.
+ *
+ * Die **Feldoffsets sind in beiden identisch** (Name 0…23, Eintraege ab 24, Zaehler bei
+ * 375/378/379/380).  Unterschiedlich sind nur drei Dinge — und genau die trennen die
+ * Karten auch bei der Erkennung:
+ *
+ * | | @ref Zdos (A5120) | @ref Ndos1715 (PC 1715) |
+ * |---|---|---|
+ * | Spureintraege | 78 (bis Offset 335) | **80** (bis Offset 343) |
+ * | Fuellung dahinter | `11×33H · F7H · 27×77H` | **`00`** |
+ * | „belegt"-Zaehler | `2464 − frei` (Festwert aus FORMATPC.MAC) | **die wirkliche Zahl** |
+ * | abgelegt in | 3 Sektoren à 128 B, IDs 1–3 | **2 Sektoren à 256 B, IDs 1–2** |
+ *
+ * @see doc/udos_diskettenformat.md §4 · doc/udos1715_diskettenformat.md §3
+ */
+enum class UdosMapSitte : uint8_t {
+    Zdos,      ///< UDOS 1526 / 4.x auf dem A5120
+    Ndos1715   ///< UDOS1715 auf dem PC 1715
+};
+
+/// @brief Anzahl der Spureintraege, die die Karte in dieser Sitte fuehrt.
+inline constexpr uint8_t udosMapTrackSlots(UdosMapSitte s) {
+    return s == UdosMapSitte::Ndos1715 ? 80 : 78;
+}
+
+/**
  * @class UdosBitmap
- * @brief Belegungskarte einer UDOS-Seite (eine Seite = ein Datentraeger).
+ * @brief Belegungskarte eines UDOS-Datentraegers (bei ZDOS: einer Seite).
  */
 class UdosBitmap {
 public:
     /// @brief Karte von Spur @p bitmap_track lesen.  @p head waehlt die Seite.
     static bool load(const SectorSpace& space, uint8_t head, uint8_t bitmap_track,
-                     UdosBitmap& out, std::string& err);
+                     UdosBitmap& out, std::string& err,
+                     UdosMapSitte sitte = UdosMapSitte::Zdos);
 
-    /// @brief Karte zurueckschreiben (drei Sektoren).
+    /// @brief Karte zurueckschreiben (drei bzw. zwei Sektoren, s. @ref UdosMapSitte).
     bool store(SectorSpace& space, uint8_t head, uint8_t bitmap_track,
                std::string& err) const;
+
+    UdosMapSitte sitte() const { return sitte_; }
 
     /// @brief Datentraegername (0x0D-Fuellung entfernt).
     std::string label() const;
@@ -82,9 +113,10 @@ public:
 
     /// @brief Sieht das nach einer echten UDOS-Karte aus? (Positivprobe der Erkennung)
     static bool looksValid(const std::vector<uint8_t>& raw, uint8_t expect_secs,
-                           uint8_t expect_tracks, std::string* why);
+                           uint8_t expect_tracks, std::string* why,
+                           UdosMapSitte sitte = UdosMapSitte::Zdos);
     bool looksValid(uint8_t expect_secs, uint8_t expect_tracks, std::string* why) const {
-        return looksValid(raw_, expect_secs, expect_tracks, why);
+        return looksValid(raw_, expect_secs, expect_tracks, why, sitte_);
     }
 
     const std::vector<uint8_t>& raw() const { return raw_; }
@@ -92,8 +124,10 @@ public:
 
     /// @brief Frisch angelegte Karte (alles frei, Systemspuren noch nicht gesperrt).
     static UdosBitmap makeEmpty(uint8_t sectors_per_track, uint8_t tracks,
-                                const std::string& label);
+                                const std::string& label,
+                                UdosMapSitte sitte = UdosMapSitte::Zdos);
 
 private:
     std::vector<uint8_t> raw_ = std::vector<uint8_t>(kUdosBitmapBytes, 0);
+    UdosMapSitte         sitte_ = UdosMapSitte::Zdos;
 };

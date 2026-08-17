@@ -4,7 +4,7 @@
  *
  * Kommandozeilenseite des k1520DiskTool; dieselbe Bibliothek, die auch die
  * PySide6-Oberflaeche benutzt (@ref DiskVolume).  Ersetzt die `cpmls`/`cpmcp`-Aufrufe
- * der alten Werkzeuge und kann zusaetzlich UDOS.
+ * der alten Werkzeuge und kann zusaetzlich UDOS/ZDOS (A5120) und UDOS1715/NDOS (PC 1715).
  *
  * ```
  * k1520disktool ls     <abbild> [--fs NAME] [-l]      # ohne -l nur die Namen
@@ -114,7 +114,9 @@ void gebrauch() {
         "Bei beidseitigen UDOS-Disketten sind die Seiten `Side0`/`Side1`:\n"
         "  get  legt sie als Unterverzeichnisse an,\n"
         "  put  verlangt einen Ordner, der genau diese Unterverzeichnisse hat,\n"
-        "  Namen duerfen das Praefix tragen:  Side1/HELP.DAT.00\n\n"
+        "  Namen duerfen das Praefix tragen:  Side1/HELP.DAT.00\n"
+        "  (UDOS1715/NDOS vom PC 1715 hat das NICHT — dort ist die Diskette EIN\n"
+        "   Datentraeger, und sie darf als .img vorliegen.)\n\n"
         "Exit: 0 ok · 1 Fehler · 2 nicht erkannt · 3 passt nicht · 4 Ordnerstruktur\n";
 }
 
@@ -942,13 +944,13 @@ int cmd_formats(const Optionen& o) {
         std::cout << "]\n";
         return kOk;
     }
-    std::printf("%-14s %-6s %-18s %s\n", "Name", "Typ", "Geometrie", "Beschreibung");
+    std::printf("%-14s %-8s %-18s %s\n", "Name", "Typ", "Geometrie", "Beschreibung");
     for (const FsProfile& p : dateisysteme().profiles())
-        std::printf("%-14s %-6s %-18s %s\n", p.name.c_str(), fsTypeName(p.type),
+        std::printf("%-14s %-8s %-18s %s\n", p.name.c_str(), fsTypeName(p.type),
                     p.format.c_str(), p.description.c_str());
     // Steht in keinem Katalog, laesst sich aber ueberall angeben — sonst waere die
     // wichtigste Antwort auf „welche Dateisysteme gibt es?" gerade die unsichtbare.
-    std::printf("%-14s %-6s %-18s %s\n", CpaDpbRule::kName, "cpm", "(jede)",
+    std::printf("%-14s %-8s %-18s %s\n", CpaDpbRule::kName, "cpm", "(jede)",
                 "aus der Geometrie nach der CP/A-Regel abgeleitet — Rueckfall beim "
                 "Oeffnen, mit --fs erzwingbar");
     return kOk;

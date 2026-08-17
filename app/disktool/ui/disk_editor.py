@@ -777,7 +777,8 @@ class DiskEditorWindow(QDialog):
         self.aktuell: Optional[tuple] = None      # (Kopf, Spur, Sektornummer)
         self._im_umbau = False                   # gegen Rückkopplung beim Auffrischen
         # Ob hinter der Daten-CRC ein Kontrollblock steht, weiß nicht der Sektor,
-        # sondern das DATEISYSTEM — deshalb einmal beim Öffnen bestimmt.
+        # sondern das DATEISYSTEM — deshalb einmal beim Öffnen bestimmt.  Nur ZDOS
+        # (A5120) hat einen; UDOS1715/NDOS hält alles im Sektor.
         self.udos = (tool.filesystem_type == "udos")
 
         self.surface = DiskSurface()

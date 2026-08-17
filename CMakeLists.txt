@@ -143,6 +143,7 @@ if(BUILD_K1520)
         core/filesystem/cpm/cpa_dpb.cpp
         core/filesystem/udos/udos_bitmap.cpp
         core/filesystem/udos/udos_fs.cpp
+        core/filesystem/udos/udos1715_fs.cpp
         core/filesystem/disk_volume.cpp
     )
     target_link_libraries(k1520_fs PUBLIC k1520_floppy2 k1520_util)

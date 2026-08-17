@@ -1,6 +1,6 @@
 # `k1520disktool` — Dateiaustausch mit K1520-Disketten
 
-Holt Dateien von CP/A-, SCPX- und **UDOS**-Disketten und schreibt sie zurück —
+Holt Dateien von CP/A-, SCPX-, **UDOS**- und **UDOS1715**-Disketten und schreibt sie zurück —
 auf `.img`, `.hfe` und `.dmk`.  Dieselbe Bibliothek treibt die Oberfläche
 (`run_disktool.sh`); Feinentwurf: `doc/design/13_k1520disktool.md`.
 
@@ -229,6 +229,36 @@ Fehlt eines oder liegen lose Dateien daneben, bricht `put` mit Exit 4 ab und
 `get udos.hfe 'Side1/HELP.*' --to .`
 
 Bei einem Dateisystem (jede CP/M-Diskette, auch beidseitige) ist der Ordner flach.
+
+## UDOS1715 — dieselbe Familie, anderes Dateisystem
+
+Disketten des **PC 1715** tragen UDOS mit dem Treiber **NDOS**; erkannt werden sie
+als `udos1715`.  Der Grund für den Unterschied ist der µPD765-Controller des
+PC 1715: er kann nichts hinter die Daten-CRC schreiben, also steht die Verkettung
+in eigenen *Zeigersektoren* innerhalb der Diskette.  Fürs Werkzeug heißt das:
+
+* **Ein Datenträger, kein `Side0`/`Side1`** — eine „Spur" umfasst beide Seiten
+  eines Zylinders (32 Sektoren à 256 B).  Der Auszugsordner ist flach.
+* **`.img` ist erlaubt** — es steht nichts außerhalb der Sektoren.
+* **Namen müssen mit einem Buchstaben beginnen** (Handbuch §3.1), bis 32 Zeichen.
+* Dateityp, Eigenschaften und der übrige Kopfsektor sind dieselben wie bei
+  UDOS/ZDOS; `--type`, `--props`, `--entry`, `--record-len`, `--segment`, `--mem`
+  und das Beiblatt `udos-dateiangaben.txt` gelten unverändert.
+
+```
+$ k1520disktool ls     pc1715.img
+$ k1520disktool create neu.img --fs udos1715 --label SYSTEM
+$ k1520disktool put    neu.img auszug/
+```
+
+| Dateisystem | Format | Kapazität |
+|-------------|--------|-----------|
+| `udos1715` | 80 Spuren doppelseitig, 16×256 | 640 KB |
+| `udos1715_ss80` | 80 Spuren einseitig, 16×256 | 320 KB |
+| `udos1715_ss40` | 40 Spuren einseitig, 16×256 | 160 KB |
+
+Voller Aufbau: `doc/udos1715_diskettenformat.md` — er stammt aus dem Handbuch, das
+auf so einer Diskette selbst liegt (`UDOS.TEXT`).
 
 ## Was das Werkzeug zusichert
 

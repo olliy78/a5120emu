@@ -1809,3 +1809,124 @@ Emulator, und wie dort **vor** den Qt-Importen — die Auskunft muss auch dann
 kommen, wenn genau das fehlt, wonach gefragt wird). `describe()` nennt seitdem
 beide Arbeitsverzeichnisse; das ist die erste Frage, wenn ein Dialog am falschen
 Ort aufgeht.
+
+---
+
+## 21. UDOS1715 / NDOS — die zweite UDOS-Ausprägung (2026-08-17)
+
+Das Werkzeug liest und schreibt seit dem 2026-08-17 auch die Disketten des
+**PC 1715**. Sie tragen dasselbe Betriebssystem (UDOS), aber ein anderes
+Dateisystem: **NDOS** statt ZDOS. Vollständige Spezifikation:
+**`doc/udos1715_diskettenformat.md`**; die maßgebliche Quelle ist das
+Systemhandbuch, das auf der Diskette selbst liegt
+(`doc/original_docs/UDOS1715_Systemhandbuch.txt`, extrahiert als Datei
+`UDOS.TEXT`).
+
+### 21.1 Warum es überhaupt ein zweites Dateisystem gibt
+
+Der PC 1715 hat einen **µPD765**-Floppycontroller. Der liest und schreibt ganze
+IBM-Sektoren und kommt an die vier Bytes hinter der Daten-CRC nicht heran, in
+denen ZDOS auf dem A5120 seine Dateiverkettung führt. NDOS legt die Verkettung
+deshalb in **eigene Sektoren** — Zeigersektoren mit je bis zu 125 Adressen,
+untereinander verkettet, adressiert über `FIRSTBL` im Descriptor.
+
+Daraus folgt alles Weitere:
+
+| | UDOS/ZDOS (A5120) | UDOS1715/NDOS (PC 1715) |
+|---|---|---|
+| Sektor | 128 B + 4 B hinter der CRC | **256 B, reines Standard-IBM** |
+| Verkettung | Kontrollblock im Gap | **Zeigersektoren** |
+| `.img` | unmöglich | **möglich und richtig** |
+| Seiten | zwei getrennte Datenträger (`Side0`/`Side1`) | **eine Diskette, eine Spur = ein Zylinder** |
+| Namen | beliebiges druckbares Zeichen | müssen mit einem **Buchstaben** beginnen |
+
+### 21.2 Was geteilt wird und was nicht
+
+Geteilt (eine Umsetzung, kein Doppel):
+
+* **Descriptor und Verzeichniseintrag.** Die ersten 128 Byte des Descriptors sind
+  bitgleich; Typbyte, Eigenschaftsbyte, Datumsfelder, Segment, LOW/HIGH/STACK
+  liegen an denselben Offsets. `UdosFileHeader`, `UdosPointer` und `UdosDirEntry`
+  sind deshalb gemeinsam, ebenso `udosTypeByte`/`udosTypeName`/
+  `udosPropertyByte`/`udosPropertyLetters` (`udos_fs.h`). Dabei fiel auf, dass das
+  Typbyte ein **Bitfeld aus Typ und Subtyp** ist — das erklärt nebenbei das
+  ZDOS-„P1" (`81H` = P, Subtyp 1), das vorher als Sonderwert in einer Tabelle stand.
+* **Belegungskarte.** Die Feldoffsets sind identisch (Name 0…23, Einträge ab 24,
+  Zähler bei 375/378/379/380). `UdosBitmap` bekam deshalb eine
+  @ref UdosMapSitte statt einer zweiten Klasse. Drei Unterschiede stecken darin:
+  80 statt 78 Spureinträge, `00`-Füllung statt des ZDOS-Nachlaufs
+  `11×33H · F7H · 27×77H`, und — der einzige inhaltliche — **der „belegt"-Zähler
+  ist bei NDOS echt**, nicht `2464 − frei`.
+
+Nicht geteilt: die Klasse selbst. `Udos1715FileSystem` ist eine eigene
+`FileSystem`-Umsetzung, weil Kettenauswertung, Belegung und Adressumrechnung
+nichts gemeinsam haben. Ein gemeinsamer Rumpf mit Fallunterscheidungen wäre
+länger als beide Umsetzungen zusammen.
+
+### 21.3 Die eine Stelle, an der die Adressen umgerechnet werden
+
+> „Für die Arbeit mit UDOS werden die Sektornummern intern nach der Beziehung
+> **(Sektornummer − 1) + Kopfnummer · 16** gebildet." (Handbuch §2.6.2)
+
+Eine „Spur" ist der ganze **Zylinder**, 32 Sektoren über beide Seiten. Das
+geschieht in `headOf()`/`idOf()` — zwei Zeilen, durch die jeder Zugriff geht. Wer
+sie umgeht, bekommt eine Diskette, deren zweite Hälfte fehlt.
+
+Zwei Folgen, die man nicht aufweichen darf:
+
+1. **`sides_separate` gibt es hier nicht.** Der Katalogparser setzt es für
+   `type: udos1715` hart auf `false` und meldet es, wenn jemand es setzt. Ein
+   Volume, ein Ordner, keine `SideN/`.
+2. **Ein Record darf die KOPFgrenze überschreiten**, die Spurgrenze nicht. Auf
+   dem Referenzdatenträger tut das z. B. `CAT` (1024-B-Record ab Sektor 0DH über
+   10H hinweg). Eine Belegung, die auf `Recordlänge/256` ausrichtet, findet solche
+   Dateien nicht wieder.
+
+### 21.4 Erkennung: ein leeres CP/M sieht aus wie eine leere UDOS1715-Diskette
+
+`cpa640` und `k5601_16x256` sind **dieselbe** Rohgeometrie unter zwei
+Katalognamen. Eine frisch angelegte UDOS1715-Diskette ist außerhalb ihrer beiden
+Systemspuren voller `0xE5` — und damit zugleich ein völlig plausibles *leeres*
+CP/M. Bis dahin gewann in Stufe 2 einfach die zuerst gemessene Geometrie, also
+`cpa640`/`scpx640`.
+
+Die Auflösung: `detect_rank` gilt jetzt **über Geometriegrenzen hinweg**. Die
+Schleife sucht über die erste treffende Geometrie hinaus weiter, solange eine
+spätere ein Profil mit *kleinerem* Rang anbieten kann. Bei lauter gleichen Rängen
+— dem Normalfall — ist das Verhalten unverändert; nur die drei
+`udos1715`-Profile stehen mit `detect_rank: -10` davor. Die Begründung ist
+inhaltlich: ein positiv nachgewiesener Datenträger (Belegungsplan mit passenden
+Zählern **und** ein Verzeichnis-Descriptor an der festen Stelle) schlägt ein
+Verzeichnis, das bloß nicht widerspricht.
+
+### 21.5 Systemdiskette: Spur 0 muss beim Anlegen gesperrt werden
+
+Handbuch §1.2.2: auf einer Systemdiskette liegen Urlader und BFOS auf Spur 0
+Sektor 00…0F (also Kopf 0). Das Katalogprofil beschreibt die **Anwender**diskette;
+wird beim Anlegen ein Bootabbild mitgegeben, leitet `DiskVolume::create` ein
+Profil mit `system_track0: true` ab, bevor `mkfs()` läuft. Ohne das vergäbe die
+erste geschriebene Datei genau die Sektoren, die den Urlader tragen.
+
+### 21.6 Wächter
+
+| Test | Was er festhält |
+|---|---|
+| `Udos1715Belegung.KarteUndDateienStimmenSektorgenau` | **der schärfste**: die Belegung aus allen 67 Dateien (Descriptoren, Zeigersektoren, Datenrecords) gegen den Belegungsplan, in beide Richtungen ohne Rest |
+| `Udos1715.VerzeichnisLiegtWoDasHandbuchEsSagt` | die 13 festen Sektoren aus §1.2.1, wörtlich |
+| `Udos1715.ErsteEintragungDesErstenZeigersektorsIstDerDescriptor` | die Kettenregel aus §3.2.3, für alle 67 Dateien |
+| `Udos1715.MehrAls124RecordsBrauchenZweiZeigersektoren` | 206 Records = 124 + 82 (`UDOS.TEXT`) |
+| `Udos1715.RecordUeberDieKopfgrenzeWirdRichtigZusammengesetzt` | die Spur ist der Zylinder |
+| `Udos1715.HandbuchLaesstSichLesen` | der Lesepfad holt genau das Dokument zurück, aus dem die Sollwerte stammen |
+| `Udos1715.EineZdosDisketteWirdNichtVerwechselt` | Gegenprobe gegen die A5120-Diskette |
+| `Udos1715Schreiben.*` | Anlegen, Rundlauf, Verzeichniswachstum, Recordlängen, Namensregel, Systemspuren |
+| `FsCatalog.Udos1715ProfileSindImgFaehigUndEinseitigGezaehlt` | `.img` erlaubt, `sides_separate` false, 256-B-Geometrie |
+
+Fixture: `tests/fixtures/disks/udos1715_640k_pc1715_system.img` (640 KB — das
+`.img` genügt, weil bei NDOS nichts außerhalb der Sektoren steht); die
+spurbasierte Aufnahme derselben Diskette liegt unter
+`disks/udos1715_640k_pc1715_system.hfe`.
+
+Am echten Laufwerk gegengeprüft (Greaseweazle F1 + MFS-1.6-Diskette): der
+Physisch-Pfad des DiskTool öffnet die eingelegte Diskette, erkennt `udos1715` und
+listet alle 67 Dateien
+(`K1520_GW_HARDWARE=1 … -k disktool_oeffnet`).

@@ -57,9 +57,34 @@ struct UdosPointer {
     }
 };
 
+/// @name Gemeinsame Sitten der UDOS-Familie
+///
+/// Kopfsektor/Descriptor sind bei ZDOS (A5120) und NDOS (UDOS1715) in den ersten 128
+/// Byte **bitgleich** — Typbyte, Eigenschaften und Datumsfelder liegen an denselben
+/// Offsets.  Deshalb stehen die Umrechnungen hier und nicht in einer der beiden
+/// Umsetzungen (doc/udos1715_diskettenformat.md §5).
+/// @{
+
+/// @brief Typkuerzel ("A"/"B"/"D"/"P"/"P1"…"P15") → Typbyte; leer = aus @p text ableiten.
+///
+/// Bit 7 = P, Bit 6 = D, Bit 5 = A, Bit 4 = B, Bits 0–3 = **Subtyp** (0…15).
+uint8_t udosTypeByte(const std::string& kuerzel, bool text);
+/// @brief Typbyte → Kuerzel; "" bei einem Byte ohne Typbit.
+std::string udosTypeName(uint8_t type_byte);
+/// @brief Eigenschaftsbuchstaben (W E L S R F) → Byte.
+uint8_t udosPropertyByte(const std::string& buchstaben);
+/// @brief Eigenschaftsbyte → Buchstaben in der Reihenfolge W E L S R F.
+std::string udosPropertyLetters(uint8_t props);
+
+/// @}
+
 /**
  * @struct UdosFileHeader
  * @brief Der 128-B-Kopfsektor einer Datei (§6) — nur die belegten Felder.
+ *
+ * Bei UDOS1715 ist der Descriptor 256 Byte lang; die hier abgebildeten Felder liegen
+ * aber in der ersten Haelfte und damit an genau denselben Offsets.  Hinzu kommt dort
+ * @ref UdosFileHeader::firstbl bei Offset 0x80.
  */
 struct UdosFileHeader {
     UdosPointer directory_sector;   ///< Rueckwaertszeiger: Verzeichnissektor mit dem Eintrag
@@ -92,6 +117,9 @@ struct UdosFileHeader {
     uint16_t    bytes_in_last= 0;
     std::string created;            ///< 6 ASCII: "JJMMTT" ODER ein Versionstext ("V 4.3 ")
     std::string modified;           ///< 6 ASCII "JJMMTT"
+    /// @brief **Nur UDOS1715** (Descriptor 0x80): Adresse des ersten Zeigersektors.
+    ///        Bei ZDOS bleibt das Feld leer — dort verkettet der Sektorkontrollblock.
+    UdosPointer firstbl;
 
     /// @brief Dateilaenge nach §7.1.
     uint64_t length() const;

@@ -240,7 +240,7 @@ K1520_API const char* k1520d_fs_name(int i);
 K1520_API const char* k1520d_fs_description(const char* name);
 /// @brief Geometrie, auf der dieses Dateisystem liegt.
 K1520_API const char* k1520d_fs_format(const char* name);
-/// @brief "cpm" | "udos"
+/// @brief "cpm" | "udos" | "udos1715"
 K1520_API const char* k1520d_fs_type(const char* name);
 /// @brief Geladene Katalogdateien (mehrzeilig) + Beanstandungen.
 K1520_API const char* k1520d_catalog_report(void);

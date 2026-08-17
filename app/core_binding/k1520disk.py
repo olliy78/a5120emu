@@ -797,7 +797,7 @@ class DiskTool:
 
     @property
     def filesystem_type(self) -> str:
-        """``'cpm'`` | ``'udos'`` | ``''`` — die Familie des erkannten Dateisystems.
+        """``'cpm'`` | ``'udos'`` | ``'udos1715'`` | ``''`` — die Familie.
 
         Die Oberfläche braucht sie, um zu wissen, *welche* Dateiangaben es
         überhaupt gibt.  Leer, wenn der Name in keinem Katalog steht (abgeleitete

@@ -19,7 +19,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 
 | Segment | Werte |
 |---------|-------|
-| system | `cpa` = CP/A · `scpx17` = SCPX 1526 V1.7 · `udos` = UDOS 4.3 |
+| system | `cpa` = CP/A · `scpx17` = SCPX 1526 V1.7 · `udos` = UDOS 4.3 · `udos1715` = UDOS1715/NDOS (PC 1715) |
 | diskformat | physisches Format des Mediums: `cpa780` (5¼″ 80 Spuren DS MFM, 26×128 Sys + 5×1024 Daten), `5x1024`, `mini` |
 | laufwerkskonfiguration | Laufwerkstypen, die das BIOS des Systems für A:/B:/C: annimmt |
 | merkmale | `clock`/`noclock` (Uhrzeit-Abfrage beim Kaltstart), `hardy` (HARDY.COM an Bord) |
@@ -39,6 +39,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `mixed_udos_ss40_over_cpa800.hfe` | **gemischtes Layout**: cpa800, darüber UDOS ss40 im Doppelschritt — Kopf 0 gerade Zylinder 26×128 (UDOS), ungerade 5×1024 (Altbestand), Kopf 1 ganz 5×1024 | `test_disktool_gui` (roh öffnen, Schnitte), `test_gw_physical` |
 | `cpa_mini.img` / `cpa_mini.hfe` | synthetische Mini-Diskette (2 KB / 26 KB), kein Systemabbild | `test_hfe_image`, `test_disk_image_raw` |
 | `udos_ds77_k5601_fremdsync.hfe` | UDOS 4.3, an einem **fremden** K1520-Rechner (K5601) beschrieben: Datenfeld-Sync mit nur ein bis zwei echten Sync-Marken (die übrigen 0xA1 regulär kodiert), ID-CRC **ohne** A1-Präambel, 34 + 12 Dateien | `DiskVolume.LiestEineDisketteMitFremderSyncSitte`, `test_gw_physical` (Naht) |
+| `udos1715_640k_pc1715_system.img` | **UDOS1715/NDOS** (PC 1715), Systemdiskette „SYSTEM": 80×32×256, 67 Dateien, darunter das Systemhandbuch `UDOS.TEXT` | `Udos1715.*`, `Udos1715Belegung.*`, `Udos1715Schreiben.*` |
 
 Die **gemischte** Diskette entstand am echten Laufwerk: erst vollständig als cpa800
 formatiert, dann mit UDOS `ss40` im Doppelschritt überschrieben.  Sie ist die einzige
@@ -54,6 +55,16 @@ Laufwerkstypen (DPB-Codes 10540/10580 bzw. 00877/10877). Dadurch bietet FORMAT.C
 gewähltem Laufwerk die zugehörigen Formate an (5¼″ einseitig, 8″ SD/DD) — so sind auch
 Fremdformate testbar, obwohl physisch immer dasselbe Laufwerk emuliert wird.
 Details: `doc/format.md` §11 und §5/§3.5.
+
+## Warum die UDOS1715-Fixture ein `.img` ist
+
+Weil sie es sein DARF, und weil das 640 KB statt 2 MB im Verzeichnisbaum bedeutet.
+UDOS1715/NDOS hält die Dateiverkettung in eigenen Zeigersektoren *innerhalb* der
+Sektoren — anders als ZDOS auf dem A5120, dessen Kontrollblock hinter der Daten-CRC
+liegt und ein rohes Sektorabbild unbrauchbar macht. Genau das prüft
+`FsCatalog.Udos1715ProfileSindImgFaehigUndEinseitigGezaehlt` mit; die spurbasierte
+Aufnahme derselben Diskette liegt als `disks/udos1715_640k_pc1715_system.hfe` im
+Arbeitsverzeichnis. Hintergrund: `doc/udos1715_diskettenformat.md` §8.
 
 ## Die beiden SCPX-Disketten sind NICHT austauschbar
 

@@ -84,7 +84,9 @@ class PropertiesDialog(QDialog):
         self.setWindowTitle(f"Eigenschaften — {entry.name}")
         self.setMinimumWidth(520)
 
-        self.udos = bool(entry.type) or tool.filesystem_type == "udos"
+        # Beide UDOS-Ausprägungen (ZDOS auf dem A5120, NDOS auf dem PC 1715) führen
+        # dieselben Kopfsektorangaben — nur CP/M nicht.
+        self.udos = bool(entry.type) or tool.filesystem_type.startswith("udos")
 
         lay = QVBoxLayout(self)
         lay.addWidget(self._kopf())

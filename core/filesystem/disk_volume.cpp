@@ -13,9 +13,11 @@
 #include "core/filesystem/cpm/cpa_dpb.h"
 #include "core/filesystem/cpm/cpm_fs.h"
 #include "core/filesystem/geometry_probe.h"
+#include "core/filesystem/udos/udos1715_fs.h"
 #include "core/filesystem/udos/udos_fs.h"
 
 #include <algorithm>
+#include <limits>
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
@@ -218,6 +220,12 @@ std::vector<SectorSpace::TrackRef> systemspuren(const SectorSpace& raum, const F
     if (p.type == FsType::Udos) {
         for (uint8_t c = 0; c < 3; ++c) spur(c);   // Urlader + Nukleus
         spur(p.boot_track);                        // Bootabbild
+        return out;
+    }
+    if (p.type == FsType::Udos1715) {
+        // Handbuch §1.2.2: „Spur 00, Sektor 00…0F — URLADER und BFOS".  Sektor 00…0F
+        // sind die 16 Sektoren der VORDERseite (§1.1), also genau Spur 0 Kopf 0.
+        spur(0);
         return out;
     }
 
@@ -450,7 +458,7 @@ bool istBeiblatt(const fs::path& name) {
 std::string zielName(const std::string& quelle, FsType typ,
                      const std::map<std::string, CpmAngabe>& beiblatt) {
     const std::string datei = fs::path(quelle).filename().string();
-    if (typ == FsType::Udos) return datei;
+    if (isUdosFamily(typ)) return datei;
     const auto it = beiblatt.find(datei);
     if (it != beiblatt.end() && !it->second.name.empty()) return it->second.name;
     return CpmFileSystem::toCpmName(quelle);
@@ -732,8 +740,29 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
         }
 
         // Stufe 2: Dateisysteme der Kandidaten positiv nachweisen.
+        //
+        // Grundregel bleibt: die bestplatzierte Geometrie gewinnt.  Sie hat aber eine
+        // Ausnahme, und `detect_rank` ist genau dafuer da — zwei Katalogeintraege
+        // koennen DIESELBE Rohgeometrie beschreiben (`cpa640` und `k5601_16x256` sind
+        // Byte fuer Byte gleich), und dann entscheidet die Reihenfolge der Messung
+        // zufaellig, welches Dateisystem ueberhaupt geprueft wird.  Eine frisch
+        // angelegte UDOS1715-Diskette ist ausserhalb ihrer beiden Systemspuren voller
+        // 0xE5 und damit zugleich ein voellig plausibles LEERES CP/M — die Frage ist
+        // also nicht theoretisch.  Deshalb wird ueber die erste treffende Geometrie
+        // hinaus weitergesucht, solange eine spaetere ein Profil mit KLEINEREM
+        // detect_rank anbieten kann; ein positiv nachgewiesener Datentraeger schlaegt
+        // ein bloss unwidersprochenes Verzeichnis.  Bei lauter gleichen Raengen — dem
+        // Normalfall — ist das Verhalten unveraendert.
         std::vector<const FsProfile*> passend;
+        auto besterRang = [&](const DiskFormat* f) {
+            int r = std::numeric_limits<int>::max();
+            for (const FsProfile* p : fs_cat.forFormat(f->name))
+                if (p->allowsContainer(ext)) r = std::min(r, p->detect_rank);
+            return r;
+        };
         for (const DiskFormat* f : kandidaten) {
+            if (!passend.empty() && besterRang(f) >= passend.front()->detect_rank) break;
+            std::vector<const FsProfile*> hier;
             for (const FsProfile* p : fs_cat.forFormat(f->name)) {
                 if (!p->allowsContainer(ext)) continue;
 
@@ -741,13 +770,20 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
                     SectorSpace probe(dv->disk_->medium(), *f);
                     std::string warum;
                     if (!UdosFileSystem::looksLikeUdos(probe, *p, 0, &warum)) continue;
+                } else if (p->type == FsType::Udos1715) {
+                    SectorSpace probe(dv->disk_->medium(), *f);
+                    std::string warum;
+                    if (!Udos1715FileSystem::looksLikeUdos1715(probe, *p, &warum)) continue;
                 } else {
                     if (!cpmVerzeichnisPlausibel(dv->disk_->medium(), *f, *p)) continue;
                 }
-                passend.push_back(p);
-                if (!dv->format_) dv->format_ = f;
+                hier.push_back(p);
             }
-            if (!passend.empty()) break;      // bestplatzierte Geometrie gewinnt
+            if (hier.empty()) continue;
+            if (passend.empty() || hier.front()->detect_rank < passend.front()->detect_rank) {
+                passend    = std::move(hier);
+                dv->format_ = f;
+            }
         }
 
         // ── Rueckfall: die CP/A-Regel rechnen lassen ─────────────────────────
@@ -838,6 +874,10 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
         std::string warum;
         if (dv->profile_->type == FsType::Udos) {
             auto u = UdosFileSystem::mount(*v.space, *dv->profile_, 0, warum);
+            if (!u) { err = warum; return roh(warum); }
+            v.fs = std::move(u);
+        } else if (dv->profile_->type == FsType::Udos1715) {
+            auto u = Udos1715FileSystem::mount(*v.space, *dv->profile_, warum);
             if (!u) { err = warum; return roh(warum); }
             v.fs = std::move(u);
         } else {
@@ -981,7 +1021,7 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
     // herübergezogene Systemdatei ihren Typ und ihr Speicherabbild.  Ausdrueckliche
     // Angaben des Aufrufers gehen immer vor.
     TransferOptions mit = opt;
-    if (profile_ && profile_->type == FsType::Udos && opt.udos_type.empty()) {
+    if (profile_ && isUdosFamily(profile_->type) && opt.udos_type.empty()) {
         const fs::path quelle(src_path);
         for (const fs::path& ordner : {quelle.parent_path(),
                                        quelle.parent_path().parent_path()}) {
@@ -1402,8 +1442,8 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
         }
     }
 
-    // Beiblatt mit den Kopfsektorangaben — nur UDOS fuehrt welche.
-    if (profile_ && profile_->type == FsType::Udos) {
+    // Beiblatt mit den Kopfsektorangaben — nur die UDOS-Familie fuehrt welche.
+    if (profile_ && isUdosFamily(profile_->type)) {
         std::vector<std::pair<std::string, UdosAngabe>> eintraege;
         for (int v = 0; v < volumeCount(); ++v) {
             const std::string unter = volumeDir(v);
@@ -1718,6 +1758,15 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
     }
 
     std::unique_ptr<DiskVolume> dv(new DiskVolume);
+    // Bei UDOS1715 liegt der Urlader auf Spur 0 (§1.2.2).  Wird ein Bootabbild
+    // mitgegeben, MUSS `mkfs` diese Spur sperren — sonst vergaebe die naechste
+    // geschriebene Datei genau die Sektoren, die den Urlader tragen.  Das Profil
+    // im Katalog beschreibt die Anwenderdiskette; hier entsteht eine Systemdiskette.
+    if (profil->type == FsType::Udos1715 && !boot.empty() && !profil->system_track0) {
+        dv->abgeleitet_ = *profil;
+        dv->abgeleitet_->system_track0 = true;
+        profil = &*dv->abgeleitet_;
+    }
     dv->path_    = path;
     dv->format_  = fmt;
     dv->profile_ = profil;
@@ -1751,6 +1800,10 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
         v.space = std::make_unique<SectorSpace>(dv->disk_->medium(), *fmt);
         if (profil->type == FsType::Udos) {
             auto u = UdosFileSystem::format(*v.space, *profil, 0, label, err);
+            if (!u) return nullptr;
+            v.fs = std::move(u);
+        } else if (profil->type == FsType::Udos1715) {
+            auto u = Udos1715FileSystem::format(*v.space, *profil, label, err);
             if (!u) return nullptr;
             v.fs = std::move(u);
         } else {

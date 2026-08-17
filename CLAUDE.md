@@ -476,15 +476,16 @@ nicht mit „hängt" verwechseln; sie melden sich bei Abschluss selbst.
 
 ## k1520DiskTool — Dateiaustausch mit Disketten (`core/filesystem/`, `app/disktool/`)
 
-Zweites Anwenderprogramm neben dem Emulator: holt Dateien von CP/A-, SCPX- und
-**UDOS**-Disketten und schreibt sie zurück (`.img`/`.hfe`/`.dmk`).  Es teilt sich mit dem
+Zweites Anwenderprogramm neben dem Emulator: holt Dateien von CP/A-, SCPX-, **UDOS**- und
+**UDOS1715**-Disketten und schreibt sie zurück (`.img`/`.hfe`/`.dmk`).  Es teilt sich mit dem
 Emulator die Container-/Medium-Schicht, hat aber **eine eigene Bibliothek**
 (`libk1520disk.so`) ohne Z80 und Karten.  Voller Entwurf: `doc/design/13_k1520disktool.md`,
 Bedienung: `tools/k1520disktool.md`.
 
 ```
 core/filesystem/   SectorSpace (physisch + linear) · GeometryProbe (Erkennung Stufe 1)
-                   FsProfile/FsCatalog · CpmFileSystem · UdosFileSystem · DiskVolume
+                   FsProfile/FsCatalog · CpmFileSystem · UdosFileSystem ·
+                   Udos1715FileSystem · DiskVolume
 core/api/k1520_disk_api.*   C-ABI  →  libk1520disk.so
 tools/k1520disktool.cpp     CLI    →  tools/dev.sh tool k1520disktool ls <abbild>
 app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
@@ -492,6 +493,33 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 
 Was beim Weiterarbeiten zu wissen ist:
 
+- **UDOS1715/NDOS — die zweite UDOS-Ausprägung (2026-08-17,
+  `doc/udos1715_diskettenformat.md`, Entwurf §21).**  Die Disketten des **PC 1715**
+  tragen dasselbe Betriebssystem, aber ein anderes Dateisystem, weil der **µPD765**
+  nichts hinter die Daten-CRC schreiben kann: die Verkettung steht in eigenen
+  **Zeigersektoren** (je bis zu 125 Adressen, `FIRSTBL` im Descriptor bei `80H`)
+  statt im Gap.  Maßgebliche Quelle ist das **Handbuch auf der Diskette selbst**
+  (`doc/original_docs/UDOS1715_Systemhandbuch.txt` = die Datei `UDOS.TEXT`).  Vier
+  Festlegungen, die man nicht aufweichen darf:
+  **(1) Die Spur ist der ganze ZYLINDER** — `UDOS-Sektor = (ID−1) + Kopf·16`, 32
+  Sektoren je Spur, EIN Datenträger (kein `Side0`/`Side1`).  Umgerechnet wird in
+  `headOf()`/`idOf()`, und nur dort.  Ein Record darf dabei die **Kopf**grenze
+  überschreiten, die Spurgrenze nicht (`CAT` tut es).
+  **(2) `.img` ist hier ERLAUBT** — es steht nichts außerhalb der Sektoren; deshalb
+  ist auch die Fixture ein 640-KB-`.img` statt eines 2-MB-`.hfe`.
+  **(3) Geteilt wird der Descriptor, nicht die Klasse.**  Die ersten 128 Byte sind
+  bitgleich mit ZDOS → `UdosFileHeader`/`UdosPointer`/`udosTypeByte`… gemeinsam
+  (`udos_fs.h`); dabei zeigte sich, dass das Typbyte ein **Bitfeld Typ+Subtyp** ist
+  (`81H` = P/Subtyp 1 = das alte „P1").  `UdosBitmap` bekam eine `UdosMapSitte`
+  statt eines Doppels — gleiche Offsets, aber 80 statt 78 Einträge, `00`-Füllung
+  statt des ZDOS-Nachlaufs, und **beide Zähler sind bei NDOS echt**.
+  **(4) `detect_rank` gilt jetzt über Geometriegrenzen hinweg.**  `cpa640` und
+  `k5601_16x256` sind dieselbe Rohgeometrie, und eine frische UDOS1715-Diskette ist
+  außerhalb ihrer Systemspuren voller 0xE5 — also ein plausibles leeres CP/M.  Ohne
+  die Regel gewann die zuerst gemessene Geometrie.  Wächter: `Udos1715*` (19 Fälle,
+  darunter der sektorgenaue Abgleich Belegungsplan ↔ alle 67 Dateien),
+  `FsCatalog.Udos1715ProfileSindImgFaehigUndEinseitigGezaehlt`.  Am echten Laufwerk
+  gegengeprüft.
 - **Bootfähige Disketten (2026-08-12, `doc/design/13_k1520disktool.md` §13a).**  Das
   Werkzeug legt Disketten mit **Bootabbild** an: `create --fs NAME --boot datei.bin`
   (GUI: Rückfrage + Dateiauswahl bei „Neue Diskette", Gegenstück „Bootabbild sichern…"

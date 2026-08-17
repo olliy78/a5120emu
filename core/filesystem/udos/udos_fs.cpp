@@ -46,18 +46,46 @@ uint64_t UdosFileHeader::length() const {
     return voll;
 }
 
-/// @brief Typkuerzel → Typbyte (§6); unbekannt/leer = aus dem Textmodus ableiten.
-static uint8_t udosTypByte(const std::string& kuerzel, bool text) {
-    if (kuerzel == "A")  return 0x20;
-    if (kuerzel == "P")  return 0x80;
-    if (kuerzel == "P1") return 0x81;
-    if (kuerzel == "B")  return 0x10;
-    if (kuerzel == "D")  return 0x40;
-    return text ? 0x20 : 0x10;
+// ─── Gemeinsame Sitten der UDOS-Familie ──────────────────────────────────────
+//
+// Das Typbyte ist ein Bitfeld aus TYP (Bit 4…7) und SUBTYP (Bit 0…3) — so steht es
+// woertlich im UDOS1715-Handbuch §3.2.2, und es erklaert zugleich das ZDOS-„P1":
+// 81H = Typ P, Subtyp 1.  Deshalb hier allgemein statt als Tabelle der fuenf
+// Einzelwerte (doc/udos1715_diskettenformat.md §5.1).
+
+uint8_t udosTypeByte(const std::string& kuerzel, bool text) {
+    if (kuerzel.empty()) return text ? 0x20 : 0x10;   // A = ASCII, B = BINARY
+
+    uint8_t typ = 0;
+    switch (kuerzel[0]) {
+        case 'A': typ = 0x20; break;
+        case 'B': typ = 0x10; break;
+        case 'D': typ = 0x40; break;
+        case 'P': typ = 0x80; break;
+        default:  return text ? 0x20 : 0x10;
+    }
+    // Angehaengte Ziffern sind der Subtyp ("P1", "P15").
+    unsigned sub = 0;
+    for (size_t i = 1; i < kuerzel.size(); ++i) {
+        if (kuerzel[i] < '0' || kuerzel[i] > '9') return typ;
+        sub = sub * 10 + static_cast<unsigned>(kuerzel[i] - '0');
+    }
+    return static_cast<uint8_t>(typ | (sub & 0x0F));
 }
 
-/// @brief Eigenschaftsbuchstaben (W E L S R F) → Byte (§6).
-static uint8_t udosEigenschaftsByte(const std::string& buchstaben) {
+std::string udosTypeName(uint8_t type_byte) {
+    std::string s;
+    if      (type_byte & 0x80) s = "P";
+    else if (type_byte & 0x40) s = "D";
+    else if (type_byte & 0x20) s = "A";
+    else if (type_byte & 0x10) s = "B";
+    else return "";
+    const uint8_t sub = type_byte & 0x0F;
+    if (sub) s += std::to_string(sub);
+    return s;
+}
+
+uint8_t udosPropertyByte(const std::string& buchstaben) {
     uint8_t b = 0;
     for (char c : buchstaben) {
         switch (c) {
@@ -73,27 +101,19 @@ static uint8_t udosEigenschaftsByte(const std::string& buchstaben) {
     return b;
 }
 
-std::string UdosFileHeader::typeName() const {
-    switch (type_byte) {
-        case 0x20: return "A";
-        case 0x80: return "P";
-        case 0x81: return "P1";
-        case 0x10: return "B";
-        case 0x40: return "D";
-        default:   return "";
-    }
-}
-
-std::string UdosFileHeader::propertyLetters() const {
+std::string udosPropertyLetters(uint8_t props) {
     std::string s;
-    if (properties & 0x80) s += 'W';
-    if (properties & 0x40) s += 'E';
-    if (properties & 0x20) s += 'L';
-    if (properties & 0x10) s += 'S';
-    if (properties & 0x08) s += 'R';
-    if (properties & 0x04) s += 'F';
+    if (props & 0x80) s += 'W';
+    if (props & 0x40) s += 'E';
+    if (props & 0x20) s += 'L';
+    if (props & 0x10) s += 'S';
+    if (props & 0x08) s += 'R';
+    if (props & 0x04) s += 'F';
     return s;
 }
+
+std::string UdosFileHeader::typeName()        const { return udosTypeName(type_byte); }
+std::string UdosFileHeader::propertyLetters() const { return udosPropertyLetters(properties); }
 
 // ─── Aufsetzen ───────────────────────────────────────────────────────────────
 
@@ -721,7 +741,7 @@ bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
     // Verzeichniseintrag zuerst — er bestimmt den Rueckwaertszeiger des Kopfsektors.
     // Das Flagbyte spiegelt die Eigenschaft SECRET (§5), sonst widerspraechen sich
     // Verzeichnis und Kopfsektor.
-    const bool geheim = (udosEigenschaftsByte(opt.udos_properties) & 0x10) != 0;
+    const bool geheim = (udosPropertyByte(opt.udos_properties) & 0x10) != 0;
     UdosPointer dir_record;
     if (!appendDirEntry(name, geheim, kopf, dir_record)) return false;
 
@@ -750,7 +770,7 @@ bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
     h[6]  = dir_record.sector_index;  h[7]  = dir_record.track;
     h[8]  = sektoren.front().sector_index; h[9]  = sektoren.front().track;
     h[10] = satzanfang(saetze - 1).sector_index; h[11] = satzanfang(saetze - 1).track;
-    h[12] = udosTypByte(opt.udos_type, opt.text);   // Vorgabe: A = ASCII, B = BINARY
+    h[12] = udosTypeByte(opt.udos_type, opt.text);   // Vorgabe: A = ASCII, B = BINARY
     h[13] = static_cast<uint8_t>(saetze & 0xFF);
     h[14] = static_cast<uint8_t>(saetze >> 8);
     h[15] = static_cast<uint8_t>(satzlen & 0xFF);
@@ -762,7 +782,7 @@ bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
                           : ((satzlen == 128 || satzlen == 1024) ? satzlen : 0);
     h[17] = static_cast<uint8_t>(blockl & 0xFF);
     h[18] = static_cast<uint8_t>(blockl >> 8);
-    h[19] = udosEigenschaftsByte(opt.udos_properties);
+    h[19] = udosPropertyByte(opt.udos_properties);
     h[20] = static_cast<uint8_t>(opt.udos_entry & 0xFF);       // ENTRY (Typ P/P1)
     h[21] = static_cast<uint8_t>(opt.udos_entry >> 8);
     // §7.1: „Bytes im letzten Satz" = Satzlaenge, wenn er voll ist (so haelt es UDOS,
@@ -843,8 +863,8 @@ bool UdosFileSystem::setAttributes(const std::string& name, const UdosAttrs& a) 
         h[off]     = static_cast<uint8_t>(v & 0xFF);
         h[off + 1] = static_cast<uint8_t>(v >> 8);
     };
-    if (!a.type.empty())       h[12] = udosTypByte(a.type, false);
-    if (!a.properties.empty()) h[19] = udosEigenschaftsByte(a.properties == ";" ? ""
+    if (!a.type.empty())       h[12] = udosTypeByte(a.type, false);
+    if (!a.properties.empty()) h[19] = udosPropertyByte(a.properties == ";" ? ""
                                                                                 : a.properties);
     if (a.set_entry)      setze16(20, a.entry);
     if (a.set_block_len)  setze16(17, a.block_len);

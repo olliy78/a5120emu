@@ -2,8 +2,8 @@
 
 Dieses Werkzeug holt Dateien von Disketten der K1520-Rechner (A5120, A5130, PC 1715 …)
 auf den heutigen Rechner und schreibt sie zurück. Es liest und schreibt die
-Dateisysteme von **CP/A**, **SCPX** und **UDOS/ZDOS** in den Abbildformaten
-`.hfe`, `.dmk` und `.img`.
+Dateisysteme von **CP/A**, **SCPX**, **UDOS/ZDOS** und **UDOS1715/NDOS** in den
+Abbildformaten `.hfe`, `.dmk` und `.img`.
 
 Es gibt dasselbe auch als Kommandozeilenwerkzeug (`k1520disktool`); beide benutzen
 dieselbe Bibliothek und kommen deshalb immer zum selben Ergebnis.
@@ -111,6 +111,26 @@ Seite, auf die man sie zieht (oder auf der, in der gerade etwas markiert ist).
 UDOS lässt sich nicht als `.img` ablegen: die Dateiverkettung steht dort hinter
 der Daten-Prüfsumme, ein rohes Sektorabbild verlöre sie. Das Werkzeug lehnt das
 darum ab, statt stillschweigend eine unbrauchbare Datei zu schreiben.
+
+## UDOS1715 — dieselbe Familie, anderes Dateisystem
+
+Disketten vom **PC 1715** tragen UDOS mit dem Treiber **NDOS** statt ZDOS. Das
+Werkzeug erkennt sie von selbst und nennt sie `udos1715`. Drei Dinge sind dort
+anders als bei den A5120-Disketten:
+
+* Die Diskette ist **ein** Datenträger, nicht zwei Seiten — es gibt kein `Side0`
+  und `Side1`, und beim Extrahieren entstehen keine Unterordner.
+* Sie lässt sich **sehr wohl als `.img`** ablegen. Der Floppycontroller des
+  PC 1715 kann nichts hinter die Prüfsumme schreiben, also steht dort auch
+  nichts: die Verkettung liegt in eigenen *Zeigersektoren* innerhalb der Diskette.
+* Ein Dateiname muss mit einem **Buchstaben** beginnen.
+
+Dateityp, Eigenschaften und der ganze Rest des Kopfsektors sind dieselben wie bei
+UDOS/ZDOS; Eigenschaften-Dialog und Beiblatt gelten unverändert.
+
+Angelegt wird eine solche Diskette mit dem Dateisystem `udos1715`
+(80 Spuren beidseitig, 640 KB), `udos1715_ss80` (320 KB) oder `udos1715_ss40`
+(160 KB).
 
 ## Was eine Datei außer ihren Bytes hat
 

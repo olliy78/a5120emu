@@ -1694,7 +1694,8 @@ class MainWindow(QMainWindow):
     def _speichern_unter_dialog(self) -> None:
         if self.tool is None:
             return
-        # UDOS kann kein .img tragen — den Filter dann gar nicht erst anbieten.
+        # UDOS/ZDOS kann kein .img tragen (Sektorkontrollblock hinter der Daten-CRC)
+        # — den Filter dann gar nicht erst anbieten.  UDOS1715/NDOS dagegen schon.
         filter_ = "HFE-Abbild (*.hfe);;DMK-Abbild (*.dmk)"
         if not any(f.name == self.tool.filesystem and f.type == "udos"
                    for f in filesystems()):

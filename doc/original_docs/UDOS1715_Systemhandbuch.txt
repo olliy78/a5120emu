@@ -1,0 +1,1204 @@
+*******************************************************************************
+
+                Universelles Disk-Operations-System   U D O S
+
+            Zentrum fuer Forschung und Technologie des KEAW Berlin
+
+*******************************************************************************
+
+Unterschiede zum Betriebssystem UNOS bzw. UDOS 1526
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Inhaltsverzeichnis
+==================
+								Seite
+1.	Diskettenaufbau						   2
+	---------------
+1.1.	Allgemeines						   2
+1.2.	Diskettenbelegung					   2
+1.2.1.	Belegung einer Anwenderdiskette				   2
+1.2.2.	Belegung einer Systemdiskette				   3
+1.3.	Aufbau des Diskettenbelegungsplanes (Disk-Allocation-Map)  3
+1.4.	Aufbau der DIRECTORY					   5
+
+2.	Basis-Floppy-Operationssystem BFOS			   6
+	----------------------------------
+2.1.	Aufbau							   6
+2.2.	Initialisierung und Systemstart				   7
+2.3.	Debug							   7
+2.3.1.	Statische Testroutinen					   7
+2.3.2.	Dynamische Testroutinen					   8
+2.3.3.	Pufferorganisation					   9
+2.4.	UDOS - Parametervektor					  10
+2.5.	Basis-PROM-Consol-Treiber (PCON)			  11
+2.6.	Basis-Floppy-Disk-Treiber (FLOPPY)			  12
+2.6.1.	Funktionsweise und Nutzung des Treibers			  12
+2.6.2.	Physische Diskettenstruktur				  13
+2.7.	BFOS - Unterprogramme					  14
+
+3.	Dateisystem NDOS					  15
+	----------------
+3.1.	Dateimerkmale						  15
+3.2.	Aufbau einer Datei					  15
+3.2.1.	Dateistruktur						  15
+3.2.2.	Aufbau des Descriptors einer Datei			  16
+3.2.3.	Aufbau der Zeigersektoren einer Datei			  17
+3.3.	Organisation in NDOS					  18
+3.3.1.	Dateiwerte						  18
+3.3.2.	Pufferorganisation					  18
+3.3.3.	Bemerkungen zu einigen NDOS-Requests			  19
+
+4.	UDOS-Kommando FILE.DEBUG				  20
+	------------------------
+
+5.	UDOS-Kommando COPY.DISK					  23
+	-----------------------
+
+6.	UDOS-Kommandos CAT/MOVE					  23
+	-----------------------
+
+7.	UDOS-Kommando DATE					  24
+	------------------
+1.	Diskettenaufbau
+-----------------------
+
+1.1.	Allgemeines
+-------------------
+
+Das Betriebssystem UDOS arbeitet mit Disketten als Massendatenspeicher.
+UDOS1715 benutzt zur Diskettenverwaltung das Dateisystem NDOS. Mit NDOS koennen
+bis zu 8 Laufwerke (Drives) mit pro Diskette maximal 80 Spuren und 32 Sektoren
+pro Spur verwaltet werden. Die Sektorlaenge muss 100H Datenbytes betragen. NDOS
+enthaelt keine Routinen zur Hardwareansteuerung und realisiert alle Disketten-
+zugriffe nur mit Hilfe des Basis-Floppy-Operationssystems BFOS. Fuer den PC1715
+ist BFOS zur Zeit nur fuer die Ansteuerung von zwei Laufwerken MFS 1.6
+implementiert (5 1/4-Zoll-Disketten, 80 spurig, doppelseitig). BFOS verwendet
+das IBM34-Aufzeichnungsformat mit 16 Sektoren pro Spur zu je 100H Datenbytes.
+Durch Zusammenfassen der Sektoren von Vorder- und Rueckseitenspuren gleicher
+Spurnummer erzeugt BFOS scheinbare Spurlaengen von 32 Sektoren. Das
+implementierte BFOS gestattet es auch, Disketten mit einfacher Spurdichte zu
+bearbeiten. Dabei werden die MFS 1.6 mit Doppelschritten zur Spureinstellung
+angesteuert.
+
+
+1.2.	Diskettenbelegung
+-------------------------
+UDOS1715 Standard ist das Diskettenformat 80*32*256 (Spuren * Sektoren *
+Sektorlaenge). Sind Disketten nur einseitig benutzbar, muss das Format
+80*16*256 benutzt werden. Weiterhin ist das Format 40*16*256 zugelassen. Es
+ergeben sich daraus folgende Speicherkapazitaeten:
+Format 80*32*256 : 640 KByte (2560 Sektoren)
+       80*16*256 : 320 KByte (1280 Sektoren)
+       40*16*256 : 160 KByte ( 640 Sektoren)
+Disketten koennen als Anwender- (User-) oder als Systemdisketten formatiert
+werden. Systemdisketten unterscheiden sich von Anwenderdisketten dadurch, dass
+bestimmte Sektoren fest durch Systemprogramme belegt sind (siehe 1.2.2.).
+
+1.2.1.	Belegung einer Anwenderdiskette
+---------------------------------------
+
+Bei jeder formatierten UDOS1715-Diskette sind 13 Sektoren immer fest belegt
+(Anwender- und Systemdiskette).
+
+Spur	Sektor		Inhalt
+----	------		------
+16	00		Descriptor der DIRECTORY
+16	02		Zeigersektor der DIRECTORY
+16	05		1. Datenrecord der DIRECTORY
+16	0A		2. Datenrecord der DIRECTORY
+16	0F		3. Datenrecord der DIRECTORY
+16	04		4. Datenrecord der DIRECTORY
+16	09		5. Datenrecord der DIRECTORY
+16	0E		6. Datenrecord der DIRECTORY
+16	03		7. Datenrecord der DIRECTORY
+16	08		8. Datenrecord der DIRECTORY
+16	0D		9. Datenrecord der DIRECTORY
+
+17	00,01		Diskettenbelegungsplan (Laenge = 180H-Byte)
+1.2.2.	Belegung einer Systemdiskette
+-------------------------------------
+
+Gegenueber einer Anwenderdiskette sind auf einer Systemdiskette weitere 16
+Sektoren fest belegt (d.h. insgesamt 13+16=29 Sektoren fest belegt).
+
+Spur	Sektor		Inhalt
+----	------		------
+00	00...0F		URLADER und BFOS
+
+1.3.	Aufbau des Diskettenbelegungsplanes (Disk-Allocation-Map)
+-----------------------------------------------------------------
+
+Jede Diskette enthaelt einen Diskettenbelegungsplan, in dem die einzelnen
+Sektoren einer Diskette dahingehend gekennzeichnet sind, ob sie belegt ('1')
+oder frei ('0') sind.
+Fuer jede Spur sind 4 Byte reserviert, so dass je Spur maximal 32 Sektoren
+vorhanden sein duerfen (1 Bit = 1 Sektor). Insgesamt koennen maximal 80 Spuren
+vorhanden sein. Bei anderen Formaten als 80*32*256 werden physisch nicht
+vorhandene Sektoren beim Formatieren als belegt gekennzeichnet, so dass auf
+diese Sektoren kein Zugriff erfolgen kann. Diese Massnahme wird ebenfalls auf
+Sektoren angewandt, die beim Formatieren als defekt erkannt werden. Der
+Diskettenbelegungsplan hat eine Laenge von 180H-Byte.
+
+Byte		Inhalt
+----		------
+000H-017H	Diskettenname
+018H-157H	Belegungsplan fuer die 80 Spuren (je Spur 4 Byte)
+158H-176H	unbenutzt
+177H/178H	Anzahl der belegten Sektoren
+179H		unbenutzt (=00)
+17AH		Anzahl der Sektoren pro Spur (=20H oder 10H)
+17BH		Anzahl formatierten Spuren (50H oder 28H)
+17CH/17DH	Anzahl der freien Sektoren
+17EH/17FH	unbenutzt
+
+Beispiel: Diskettenbelegungsplan einer neu formatierten Anwenderdiskette
+---------
+
+0000 * 41 6E 77 65  6E 64 65 72  64 69 73 6B  65 74 74 65   *Anwenderdiskette*
+0010 * 0D 0D 0D 0D  0D 0D 0D 0D  00 00 00 00  00 00 00 00   *................*
+0020 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0030 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0040 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0050 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0060 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0070 * BC E7 00 00  C0 00 00 00  00 00 00 00  00 00 00 00   *................*
+0080 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0090 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00A0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00B0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00C0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00D0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00E0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00F0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+
+0100 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0110 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0120 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0130 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0140 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0150 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0160 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0170 * 00 00 00 00  00 00 00 0D  00 00 20 50  F3 09 00 00   *...........P....*
+
+Beispiel: Diskettenbelegungsplan einer neu formatierten Systemdiskette
+---------
+
+0000 * 53 79 73 74  65 6D 64 69  73 6B 65 74  74 65 0D 0D   *Systemdiskette..*
+0010 * 0D 0D 0D 0D  0D 0D 0D 0D  FF FF 00 00  00 00 00 00   *................*
+0020 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0030 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0040 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0050 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0060 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0070 * E7 00 00 00  C0 00 00 00  00 00 00 00  00 00 00 00   *................*
+0080 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0090 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00A0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00B0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00C0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00D0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00E0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00F0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+
+0100 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0110 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0120 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0130 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0140 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0150 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0160 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0170 * 00 00 00 00  00 00 00 1D  00 00 20 50  E3 09 00 00   *...........P....*
+1.4.	Aufbau der DIRECTORY
+----------------------------
+
+Die DIRECTORY einer Diskette enthaelt das Inhaltsverzeichnis dieser Diskette.
+Sie ist wie eine gewoehnliche Datei aufgebaut und besitzt den Dateityp 'D' und
+die Dateieigenschaften 'WELS' (siehe auch 3.1.).
+
+Die Datenrecords (Recordlaenge=100H) enthalten je verzeichneter Datei folgende
+Informationen:
+
+1 Byte: Bit 0-6: Laenge des Dateinamens (maximal 32 Zeichen)
+        Bit 7:   Kennzeichnung der Dateieigenschaft 'S' (siehe auch 3.1.)
+x Byte: Dateiname
+2 Byte: Diskettenadresse des Descriptors dieser Datei
+
+Nach der letzten Eintragung in einem DIRECTORY-Record steht die Endekennung
+0FFH.
+Passt eine Dateieintragung nicht mehr in einen DIRECTORY-Record, so erfolgt die
+Eintragung vollstaendig in den naechsten DIRECTORY-Record. Sind alle
+DIRECTORY-Records gefuellt, so wird die DIRECTORY automatisch um einen weiteren
+Record erweitert.
+
+
+Beispiel: Erster DIRECTORY-Record einer Anwenderdiskette
+--------
+
+Folgende Dateien sind verzeichnet:
+DATEI1.S, DATEI1.OBJ, DATEI1.L, DATEI1, DATEI1.MAP
+
+0000 * 89 44 49 52  45 43 54 4F  52 59 00 16  08 44 41 54   *.DIRECTORY...DAT*
+0010 * 45 49 31 2E  53 03 16 0A  44 41 54 45  49 31 2E 4F   *EI1.S...DATEI1.O*
+0020 * 42 4A 08 18  08 44 41 54  45 49 31 2E  4C 0A 18 06   *BJ...DATEI1.L...*
+0030 * 44 41 54 45  49 31 07 18  0A 44 41 54  45 49 31 2E   *DATEI1...DATEI1.*
+0040 * 4D 41 50 0B  18 FF 00 00  00 00 00 00  00 00 00 00   *MAP.............*
+0050 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0060 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0070 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0080 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0090 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00A0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00B0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00C0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00D0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00E0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00F0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+2.	Basis-Floppy-Operations-System BFOS
+===========================================
+
+2.1.	Aufbau
+--------------
+
+- Hardware
+Das Programm belegt 3 K-Byte Programmspeicher (0-BFFH), sowie 1 K-Byte
+Operativspeicher (C00H-FFFH). Im Operativspeicher befinden sich Arbeitszellen,
+INPUT/OUTPUT-Puffer, der Stack usw.
+
+- Software
+In BFOS sind im wesentlichen folgende Module enthalten:
+- Bootstrap-Routine zum Laden von URLADER (Neustert)
+- DEBUG (Kommandointerpreter und Testroutinen)
+- PCON (Basis Printer- und Consol-Treiber)
+- FLOPPY (Basis Floppy-Treiber)
+Neben diesen Modulen existieren noch eine Reihe von Verarbeitungsprogrammen.
+Auf die hauptsaechlichen Basismodule sowie auf einige Verarbeitungsprogramme
+hat der Anwender ueber einen Sprungverteiler Zugriff. Die Adressen der
+Sprungtabelle sind in der folgenden Tabelle der Eintrittspunkte enthalten:
+
+- Tabelle der Eintrittspunkte
+
+Adresse		   Bemerkungen
+-------		   -----------
+
+0		   Neustart
+
+0038H		   BREAK Einsprung
+
+0BDCH		   READY Einsprung zum Bereitschaftstest der
+		   Laufwerke
+
+0BE2H		   PRINTA Einsprung zur Einzelzeichenausgabe auf Drucker
+
+0BE5H		   PRESS Einsprung zur Tastaturkontrolle
+
+0BE8H		   GETA Einsprung Einzelzeicheeingabe von Tastatur
+
+0BEBH		   PUTA Einsprung zur Einzelzeichenausgabe auf Bildschirm
+
+0BEEH		   PCON
+
+0BF1H		   OUTAS; Ausgabe von ASCII Zeichenketten
+
+0BF4H		   SSIGN; In einem Kommandopuffer wird das
+		   naechste auf ein SPACE folgende ASCII-
+		   Zeichen gesucht.
+
+0BF7H		   BDEC; Der Kommandointerpreter wird ange-
+		   sprungen, das  >  Zeichen wird ausgegeben.
+
+0BFAH		   DEBUG; Der Uebergang in den Debuger wird
+		   von einer hoeheren Programmebene aus realisiert.
+
+0BFDH		   FLOPPY; Der Floppytreiber realisiert das Lesen
+		   und Schreiben von Records auf der Diskette.
+2.2.	Initialisierung und Systemstart
+---------------------------------------
+
+Durch Betaetigen der RESET-Taste wird der Lade-ROM des PC1715 aktiviert. Dieser
+enthaelt Routinen zur Erkennung von Systemdisketten, zum Laden der Systemspur
+und Einsprung in das geladene Systemprogramm nach vorherigem Abschalten des
+Lade-ROMs. Wurde bereits mit UDOS gearbeitet, kann ein Neustart auch durch
+Sprung zur Adresse 0 durchgefuehrt werden. Die Systemspur bei UDOS1715 enthaelt
+die Initialisierungsroutinen fuer BFOS, BFOS selbst und Laderoutinen fuer OS
+und NDOS .
+Es erfolgen die folgenden Aktivitaeten:
+
+- Blocktransfer von BFOS auf die Adressen 0...BFFH
+- Initialisierung des von BFOS benutzten Operativspeichers C00H...FFFH
+- Initialisierung der Hardware
+- Laden von OS und NDOS
+- Start von OS
+
+Nach Abarbeiten der Kommandodatei OS.INIT meldet UDOS1715 die
+Eingabebereitschaft des OS-Kommandointerpreters mit dem PROMT-Zeichen '%' .
+
+
+2.3. Debug
+----------
+
+Mit Hilfe des Kommandos DEBUG (D) kann von der OS-Kommandoebene aus der Debuger
+des BFOS aufgerufen werden. Dieser enthaelt eine Reihe von Testroutinen die
+durch Kommandos genutzt werden koennen. Der Kommandointerpreter des Debugers
+meldet sich mit dem PROMT-Zeichen '>' .
+
+
+2.3.1.	Statische Testroutinen
+------------------------------
+
+- Display
+  D <Adr.> <Bytezahl>
+  Mit diesem Kommando wird der Inhalt des adressierten Speicherbereiches
+  angezeigt. Wenn keine Bytezahl  angegeben wird, kann der Inhalt der
+  adressierten Speicherzelle geaendert werden. Durch Eingabe des Zeichens '^'
+  kann die Adresse n-1 modifiziert   werden. Mit dem Zeichen 'Q' wird das
+  Kommando abgeschlossen.
+
+- Fill
+  F <Adr.1> <Adr.2> <Konstante>
+  Die angegebene Konstante (0...FF) wird beginnend ab  Adr.1 bis zur Adr.2
+  gespeichert.
+
+- Move
+  M <Zieladr.> <Quelladr.> <Bytezahl>
+  Dieses Kommando transferiert Speicherbloecke.
+
+- Interupt-Status
+  I
+  Das Kommando zeigt den Status des Interupt-Enable-Flip-Flop IFF1 nach
+  Ausfuehrung des Anwenderprogramms an.
+     0 - Interupt ausgeschaltet (DI)
+     1 - Interupt eingeschaltet (EI)
+  Der Anwender kann den Status durch Eingabe einer 0 (DI) oder einer 1 (EI)
+  aendern.
+
+- Port
+  PW <Adr.> <Datenbyte>		(Port Write)
+  PR <Adr.>			(Port Read)
+  Mit diesen Kommandos koennen E/A-Ports gelesen oder geschrieben werden.
+
+- Quit
+  Q
+  Das Kommando verursacht die Rueckkehr zum OS bzw. zur naechst hoeheren
+  Programmebene.
+
+
+2.3.2.	Dynamische Testroutinen
+-------------------------------
+
+- Register
+  R
+  R <Registername>
+  Das Registerkommando zeigt den Inhalt aller Registerwerte nach erfolgter
+  Programmunterbrechung an. Wird ein Registername angegeben, kann der Inhalt
+  des Registers im RAM geaendert werden. Anschliessend wird der Inhalt weiterer
+  Register oder Doppelregister angezeigt. Das Kommando kann durch Eingabe
+  eines 'Q' abgeschlossen werden.
+
+- Vektor
+  V
+  Dieses Kommando zeigt den Inhalt des UDOS-Parametervektors an. Als
+  Vektoranfangsadresse wird der Inhalt des IY-Registers verwendet. (siehe
+  Kommando R)
+
+- Go
+  G <Adr.>
+  Mit diesem Kommando kann ein Anwenderprogramm auf der angegebenen Adresse
+  abgearbeitet werden. Die Register werden zurueckgespeichert. Wurde keine
+  Adresse angegeben, wird der Inhalt des zuletzt gespeicherten PC genutzt.
+
+- Break
+  B
+  B <Adr.>
+  Mit diesem Kommando kann ein Software-Breakpoint in einem Programm gesetzt
+  wurden. Nach Erreichen des Breakpoints werden saemtliche Registerwerte
+  gerettet, die Breakpoint-Adresse wird ausgegeben. Der Breakpoint wird bei
+  Erreichen der angegebenen Adresse automatisch geloescht. Durch Eingabe
+  eines 'B' ohne Adresse kann der vorher gesetzte Breakpoint wieder geloescht
+  werden. Der Breakpoint muss auf das 1. Byte eines Befehls gesetzt werden.
+  Als Breakpoint wird der "RST 38"-Befehl benutzt.
+
+- Next
+  N <n>
+  Das Kommando realisiert die Ausfuehrung der naechsten  n (1-255) Befehle
+  ausgehend vom aktuellen PC. Wenn n nicht angegeben wurde, wird n=1 gesetzt
+  Nach einem Next-Kommando kann durch Betaetigen der Return-Taste die
+  Einzelschrittabarbeitung fortgesetzt werden. Das Kommando arbeitet
+  interuptgesteuert, d.h. das I-Register darf nicht umgeladen werden.
+
+2.3.2.	Puffer-Organisation
+---------------------------
+
+Im Operativspeicher des Debugers ist sowohl ein Input- als auch ein Output-
+Puffer vorhanden. Die gesamte Organisation ist so aufgebaut, dass die Lage der
+Puffer im RAM wahlfrei ist. Zu jedem Puffer gehoert ein 2-Byte-Pointer, mit dem
+die Fuellung bzw. Auswertung des Puffers erfolgt. Die Puffer enthalten
+ASCII-Zeichen. Unmittelbar vor dem Output-Puffer befindet sich eine
+Ein-Byte-Zaehlzelle, die die Anzahl der auszugebenden Zeichen enthaelt.
+
+- Input-Puffer
+ . CONIBC 0D89H	    1 Byte		; optionale Verwendung
+ . CONIBF 0D8AH	  128 Byte		; Puffer
+ . INPTR  0FBBH	    2 Byte		; zeigt auf das naechste
+					  auszuwertende Zeichen
+
+Zu Beginn der Auswertung zeigt INPTR auf CONIBF. Mit dem UP "SSIGN" wird nach
+erfolgter Auswertung INPTR auf das naechste Zeichen nach einem SPACE gestellt.
+
+- Output-Puffer
+ . CONOBC 0D03H	    1 Byte		; Anzahl der Zeichen
+ . CONOBF 0D04H	  133 Byte		; Puffer
+ . OUTPTR 0FBDH	    2 Byte		; Zeiger auf die erste freie
+					  Stelle im Puffer, auf die
+					  geschrieben werden kann.
+2.4.	UDOS-I/O-Parametervektor
+--------------------------------
+
+Die Parameteruebergabe zum UDOS-System bzw. zu UDOS-Treibern wird mit einem
+Vektor, auf den das IY-Register zeigt, realisiert.
+
+UDOS I/O-VEKTOR:
+  IY	+ 0	Unit	logische Einheit
+	+ 1	RC	Requestcode
+	+ 2	DTA	Datentransferadresse
+	+ 4	DL	Datenlaenge
+	+ 6	CRA	Adresse einer Completion-Routine
+	+ 8	ERA	Adresse einer Error-Routine
+	+10	CC	Completion Code
+	+11	SPVA	Supplemental Parameter-Vektor Adresse
+			oder 2 Byte Zusatzinformation
+
+Der I/O-Aufruf kann auf zwei Arten erfolgen:
+
+	a) Falls Bit 0 im RC = 0
+	   Die Unit fuehrt die gesamte I/O-Operation durch und kehrt
+	   anschliessend zum aufrufenden Programm zurueck.
+		CRA wird nicht beachtet.
+		ERA wird im Falle eines aufgetretenen Fehlers als Einsprungs-
+		    adresse in eine Fehler-Service-Routine genutzt. Diese
+		    Routine muss mit RET enden, sonst erfolgt keine Rueckkehr
+		    zum aufrufenden Programm.
+		    Falls ERA=0 efolgt keine Behandlung.
+
+	b) Falls Bit 0 im RC = 1
+	   Fuer mit Interrupt arbeitende Units:
+	   Die Unit fuehrt nur die Initialisierung der I/O-Operation durch,
+	   kehrt zum aufrufenden Programm zurueck und setzt die I/O-Operation
+	   unter Interruptsteuerung fort.
+
+		CRA Falls kein Fehler auftrat wird CRA als Einsprungsadresse
+		    in eine Fertigstellungsroutine genutzt. Der Einsprung
+		    erfolgt nach Beendigung der I/O-Operation. Die Routine
+		    muss Registerrestaurierung garantieren, da sie als Folge
+		    eines Interrupts aufgerufen wird. Der Treiber fuehrt vorher
+		    bereits EI, RETI aus.
+		    Falls CRA=0 erfolgt keine Behandlung.
+
+		ERA wird im Falle eines aufgetretenen Fehlers als Einsprungs-
+		    adresse in eine Fehler-Service-Routine genutzt. Die Routine
+		    muss Registerrestaurierung garantieren, da sie als Folge
+		    eines Interrupts aufgerufen wird. Der Treiber fuehrt vorher
+		    bereits EI, RETI aus.
+		    Falls ERA=0 efolgt keine Behandlung.
+
+		CC  enthaelt den Fertigstellungscode beim Aufruf der CRA oder
+		    ERA Routinen. Zur Zeit der Rueckkehr ins aufrufende
+Programm
+		    ist CC ohne Bedeutung.
+
+2.5.	Basis-Printer-und-Consol-Treiber (PCON)
+-----------------------------------------------
+
+PCON ist der CONSOL-Treiber des Debugers. Er kann unter Beachtung der
+Forderungen des Parametervektors auch unabhaengig vom Debuger genutzt werden.
+Der ENTRY-POINT fuer PCON ist 0BEEH. PCON erlaubt die Nutzung von vier
+Requests.
+
+- Write binary ; Schreiben bzw. Lesen von Zeichen bis die angegebene Daten-
+- Read binary  ; laenge erreicht ist (ohne Ausgabe des PROMT-Zeichens)
+
+- Write line   ; Schreiben bzw. Lesen von Zeichen bis zum ersten Auftreten
+- Read line    ; von 0DH (Carriage Return, CR), maximal bis zur angegebenen
+                 Datenlaenge (mit Ausgabe des PROMT). Nach Ausgabe eines CR
+                 wird automatisch 0AH (Line Feed, LF) mit ausgegeben.
+
+Zur Kennzeichnung der Programmebene kann im UDOS-System der Inhalt der
+Speicherzelle PROMT (0FC1H) ausgegeben werden. PROMT wird mit einem
+ASCII-Zeichen geladen, im Debuger ist es das ">" Zeichen.
+Kommt das Zeichen CTRL P (10H) zur Ausgabe, so wird bis zum naechsten Auftreten
+von CTRL P parallel zur Bildschirmausgabe die Druckerausabe durchgefuehrt.
+
+Als Korrekturzeichen wird:
+- 08H = Backspace fuer Zeichen loeschen und
+- 7FH = Delete fuer Zeile loeschen genutzt.
+
+Die Basisprogramme des PCON-Treibers sind:
+- GETA   ; Einzelzeicheneingabe
+- PUTA   ; Einzelzeichenausgabe auf Bildschirm
+- PRINTA ; Einzelzeichenausgabe auf Drucker
+
+2.6.	Basis-Floppy-Disk-Treiber (FLOPPY)
+-----------------------------------------
+
+2.6.1.	Funktionsweise und Nutzung des Treibers
+-----------------------------------------------
+
+Der Floppy-Disk-Treiber FLOPPY realisiert den Software-Anschluss der
+Diskettenlaufwerke MFS1.6.
+Die Parameteruebermittlung zum und vom Floppy-Treiber erfolgt mit dem UDOS-
+Parametervektor ueber das IY-Register:
+      IY    ---> Unit (nicht benutzt)
+      IY+01 ---> Request    Read binary (0AH,0BH) Lesen von Diskette
+                            Write binary(0EH,0FH) Schreiben auf Diskette
+      IY+02 ---> Anfangsadresse der Daten (Low-Teil)
+      IY+03 ---> Anfangsadresse der Daten (High-Teil)
+      IY+04 ---> Datenlaenge (Low-Teil)
+      IY+05 ---> Datenlaenge (High-Teil)
+      IY+06 ---> Rueckkehradresse nach richtiger Datenuebertragung (Low)
+      IY+07 ---> Rueckkehradresse nach richtiger Datenuebertragung (High)
+      IY+08 ---> Rueckkehradresse nach Fehler (Low)
+      IY+09 ---> Rueckkehradresse nach Fehler (High)
+      IY+10 ---> Rueckkehr-Code
+      IY+11 ---> Bit 4...0: Sektornummer, Bit 7...5: Laufwerksnummer
+      IY+12 ---> Spurnummer
+
+Nach einem FLOPPY-Aufruf enthalten (IY+4)/(IY+5) die Anzahl der tatsaechlich
+uebertragenen Bytes. Diese Angabe entspricht der Anzahl der gewuenschten Bytes,
+aufgerundet auf ein ganzzahliges Vielfaches von 128 (80H). Es koennen also auch
+Laengen uebertragen werden, die nicht ein ganzzahliges Vielfaches von 256 sind.
+Bei der Angabe von Datenlaengen, die groesser als 256 Byte sind, liest bzw.
+schreibt der FDC automatisch den naechsten Sektor, wobei ein Lesen bzw.
+Schreiben ueber den 32. Sektor einer Spur hinaus zum Fehler fuehrt. Ein
+Spurwechsel wird nicht automatisch durchgefuehrt. Der Uebergang vom 16. zum 17.
+ Sektor einer Spur erfolgt automatisch durch Uebergang von der Vorder- zur
+Rueckseite der Diskette.
+
+FLOPPY fuehrt jeweils eine Aktivitaet (Lesen oder Schreiben) mit einem Laufwerk
+aus. Bevor eine Aktivitaet nicht beendet ist, startet FLOPPY keine neue.
+Der Treiber realisiert folgende Aufgaben:
+  - Ueberpruefung der Laufwerksnummer
+  - Bildung des Select-Signals
+  - READY-Test des Laufwerks (Bereit-Abfrage)
+  - Kopfbewegung auf die gewuenschte Spur
+  - Datenuebertragung mit CRC-Summenbildung
+
+Die Arbeit des Treibers erfolgt interruptgesteuert. In Abhaengigkeit von Bit 0
+im Requestcode (IY+1) wartet der Treiber nach erfolgter Interrupt-
+programmierung entweder in einer internen Warteschleife auf das Auftreten des
+Interrupts oder der Programmablauf wird an das aufrufende Programm sofort
+zurueckgegeben. Ein erneutes Eintreten in den Floppy-Treiber wird im letzteren
+Falle verhindert. Man hat also die Moeglichkeit, waehrend der Floppy-Aktivitaet
+schon nachgeordnete Programmteile zu durchlaufen.
+
+Der READY-Test eines Laufwerks kann auch ausserhalb des Treibers aufgerufen
+werden, da er ein selbststaendiges Unterprogramm im Treiber ist. Die Bildung
+des Ready-Signals im Laufwerk erfolgt durch Verknuepfung der Signale fuer "Kopf
+an", "Select" und "2 Indeximpulse". Da bei verschiedenen UDOS-Kommandos alle
+acht  moeglichen Laufwerke abgefragt werden, kann es dadurch zu langen
+Abfragezeiten kommen. Zur Verkuerzung der Abfragezeiten beim Ready-Test wird
+die RAM-Adresse DSEL (0EA3H) aus BFOS benutzt. In ihr ist angegeben, welches
+Laufwerk zuletzt benutzt wurde. Maximal kann der Treiber 8 Laufwerke bedienen.
+Durch die FD-Ansteuer-Hardware des PC1715 ist nur eine maximale Anzahl von 4
+Laufwerken moeglich. Angepasst an die wirklich vorhandene Anzahl, erfolgt in
+FLOPPY zur Zeit eine Beschraenkung auf die Laufwerke 0 und 1.
+
+Als Fehler koennen in FLOPPY auftreten:
+   -- C2 : Laufwerk nicht bereit
+   -- C3 : Schreibversuch bei schreibgeschuetzter Diskette
+   -- C4 : Der angegebene Sektor wurde nicht gefunden
+   -- C5 : Die angegebene Spur wurde nicht gefunden
+   -- C6 : Fehler waehrend der Uebertragung der Daten (CRC)
+Bei Auftreten eines Fehlers wird (IY+4)/(IY+5) auf 0000 gesetzt.
+
+2.6.2.	Physischer Diskettenaufbau
+----------------------------------
+
+Physischer Sektoraufbau
+-----------------------
+Die Art des Aufzeichnungsverfahrens ist auf doppelte Schreibdichte und die
+modifizierte Frequenzmodulation (MFM) festgelegt. Als Aufzeichnungsformat wird
+das IBM34-Format verwendet. Ein Sektor auf der Diskette ist demnach wie folgt
+aufgebaut:
+
+   Byteanzahl ! Inhalt               	! hexadezimaler Wert
+   ----------------------------------------------------------
+	   12 ! Synchronisationsfeld	! 00
+	    3 ! Vorbyte			! A1
+	    1 ! Marke			! FE
+	    1 ! Spurnummer		! 00...4F
+	    1 ! Kopfnummer		! 00 oder 01
+	    1 ! Sektornummer		! 01...10
+	    2 ! CRC (ueber die vorher-	! XX
+	      ! gehenden 8 Byte)	!
+	   22 ! Luecke			! 4E
+	    3 ! Vorbyte			! A1
+	    1 ! Marke			! FB
+	  256 ! Datenfeld		! XX
+	    2 ! CRC (ueber die vorher-	! XX
+	      ! gehenden 260 Byte)	!
+   -------------------------------------------------------
+Die Vorbytes A1 haben spezielle Taktbitmuster. Zwischen den einzelnen Sektoren
+und in der Umgebung des Indexloches sind weitere Luecken angelegt.
+
+Physischer Spuraufbau
+---------------------
+Auf jeder Spur sind 16 Sektoren mit jeweils 256 Byte Datenfeldlaenge
+untergebracht. Die Nummerierung der Sektoren auf jeder Spur beginnt mit dem
+ersten Sektor nach dem Indexloch. Die Sektoren sind durch die Nummern 1 bis 16
+gekennzeichnet.
+Fuer die Arbeit mit UDOS werden die Sektornummern intern nach der Beziehung 
+(Sektornummer-1) + Kopfnummer*16   (= 0...1FH)   gebildet.
+
+Physischer Diskettenaufbau
+--------------------------
+Auf jeder Diskettenseite sind 80 Informationsspuren untergebracht, die von 0
+bis 4FH durchnummeriert sind. Die Spur 0 ist die aeusserste Spur auf einer
+Diskette. Es ergibt sich die Kapazitaet einer Diskette zu 2 * 16 * 80 = 2560
+Sektoren, sowie 2560 * 256 Byte = 640 KByte
+
+2.7. BFOS-Unterprogramme
+------------------------
+
+-GETA
+ Dieser Modul dient der Einzelzeicheneingabe von der Tastatur. Das ASCII-
+ Zeichen wird im Register A bereitgestellt. Return erfolgt erst nach
+ Tastendruck, Z-Flag=0.
+
+-PRESS
+ In PRESS wird nur festgestellt, ob eine Taste gedrueckt wurde. Der ASCII-
+ Code ist ohne Bedeutung, es wird ueber den Inhalt des ZERO-Flags angezeigt:
+ -Keine Taste gedrueckt --> Return mit Z-Flag=1
+ -Taste gedrueckt --> Return mit Z-Flag=0
+	Beispiel zum Abfragen der Tastatur ohne Wartezeit bis Taste betaetigt
+		...
+		call	PRESS
+		call	nz,GETA
+		...		;ZERO: kein Zeichen eingegeben
+		...		;NON ZERO: A=Zeichen
+
+-PUTA
+ Modul zur Einzelzeichenausgabe auf den Bildschirm und Drucker. Das
+ auszugebende Zeichen muss sich im A-Register befinden. Es werden keine
+ Register veraendert.
+ PUTA verarbeitet folgende Steuerzeichen und Escape-(ESC-)Folgen:
+
+	08		Courser nach links
+	09		Courser nach rechts modulo 8 Spalten (Tabulator)
+	0AH		Courser nach unten
+	0BH		Courser nach oben
+	0CH		Courser nach rechts
+	0DH		Courser auf Spalte 0
+	10H		Drucker ein/aus
+	1EH		Courser auf Zeile 0 Spalte 0 (home)
+	1BH/'='/z/s	Courser auf Zeile z-20H , Spalte s-20H
+	1BH/':'		Bild mit Leerzeichen fuellen
+	1BH/'E'		Leerzeile einfuegen (Bild unterhalb Courser senken)
+	1BH/'R'		Zeile loeschen (Bild unterhalb Courser heben)
+	1BH/'Q'		Leerzeichen einfuegen (ab Courser Zeile rechtsschieben)
+	1BH/'W'		Zeichen loeschen (ab Courser Zeile linkssschieben)
+	1BH/'T'		ab Courser Zeile mit Leerzeichen fuellen
+	1BH/'Y'		ab Courser Bild mit Leerzeichen fuellen
+	1BH/'S'		automatische Schirmrollen bei Ueberschreiten der
+			letzten Zeile
+	1BH/'s'		kein automatische Schirmrollen
+
+-PRINTA
+ Modul zur Einzelzeichenausgabe auf Drucker. Das auszugebende Zeichen
+ muss sich im A-Register befinden. Es werden keine Register veraendert, ausser
+ dem Flag-Register. Das ZERO-Flag zeigt an:
+ -Zeichen zum Drucker ausgegeben --> Return mit Z=1
+ -Zeichen nicht zum Drucker ausgegeben, da dieser nicht empfangsbereit --> Z=0
+	Beispiel fuer Aufruf dieses UP's:
+
+	marke:	...		;andere Programmteile zur Ausnutzung der
+		...		;Wartezeit, evtl. Abfrage der Tastatur,
+		...		;fuer Druckabruch mit vereinbartem Zeichen
+		call	PRINTA	;A=Zeichen
+		jr	nz,marke
+3.	Dateisystem NDOS
+========================
+
+3.1.	Dateimerkmale
+---------------------
+
+Jede Datei einer Diskette (ausser SCRATCH-Dateien) ist in der DIRECTORY
+verzeichnet (siehe 1.4.). Der Name einer Datei kann maximal 32 ASCII-Zeichen
+lang sein und muss mit einem Buchstaben beginnen.
+Dateien sind durch Dateityp/Subtyp, sowie durch Dateieigenschaften (PROPERTIES)
+gekennzeichnet. Der Dateityp wird beim Erstellen der Datei automatisch
+festgelegt.
+Der Subtyp (0-15) dient zur Unterscheidung zwischen Dateien gleichen Typs und
+wird vom Anwender festgelegt (z.B. muessen I/O-Treiber den Subtyp 1 besitzen).
+Ausserdem kann der Anwender fuer die Datei Dateieigenschaften festlegen.
+Dateityp, Subtyp und Dateieigenschaften koennen mit dem Kommando SET geaendert
+werden.
+
+Dateitypen
+----------
+D	DIRECTORY	Disketteninhaltsverzeichnis
+A	ASCII		Datei besteht nur aus ASCII-Zeichen
+			(z.B. mittels Editor erstellte Dateien)
+B	BINARY		Datei mit allgemeinen binaeren Informationen
+			(z.B. Objektcodedatei beim Assemblieren)
+P	PROCEDURE	abarbeitbare Maschinencodedateien
+
+Dateieigenschaften (PROPERTIES)
+-------------------------------
+W	WRITE PROTECTED		schreibgeschuetzte Datei
+E	ERASE PROTECTED		loeschgeschuetzte Datei
+L	LOCKED ATTRIBUTES	Datei geschuetzt gegen Aenderung
+				ihrer Merkmale
+S	SECRET			geheime Datei
+R	RANDOM			Datei mit wahlfreiem Zugriff
+F	FORCE			Datei wird auch in den Speicher geladen, wenn
+				entsprechender Speicherbereich bereits belegt
+				ist
+
+3.2.	Aufbau einer Datei
+--------------------------
+
+3.2.1.	Dateistruktur
+---------------------
+
+Das Dateisystem NDOS entspricht im DIRECTORY- und Descriptoraufbau dem ZDOS.
+Das ZDOS-Zeigersystem zur Verkettung der Datenrecords einer Datei entfaellt, da
+Disketten im IBM-Format mit einer Sektorlaenge von 100H-Byte genutzt werden
+(Zeigerinformation laesst sich im Sektor nicht unterbringen).
+Die implizite Recordlaenge betraegt 100H-Byte. Mit entsprechender Spezifikation
+koennen Dateien mit einer logischen Recordlaenge von 80H, 100H 200H, 400H,
+800H, 1000H-Byte erstellt werden. Bei einer Recordlaenge von 80H-Byte werden
+von jedem Sektor nur 80H-Byte genutzt. Die restlichen 80H-Byte eines jeden
+Datensektors sind dann unbenutzt.
+Da die Verkettung der Records einer Datei ueber BACK- und FORE-POINTER nicht
+mehr vorhanden ist, werden die Adressen der Records in speziellen
+Zeigersektoren abgelegt, d.h. zu jeder Datei gehoeren ein oder mehrere
+Zeigersektoren.
+Der Dateidescriptor ist 100H-Byte lang. Die ersten 80H-Byte entsprechen dem
+ZDOS-Descriptoraufbau. Am Anfang der zweiten 80H-Byte (Byte 128/129) steht die
+Diskadresse (Sektornr./Spurnr.) des ersten Zeigersektors der Datei. Die
+restlichen Bytes des Dateidescriptors sind unbenutzt.
+Die einzelnen Zeigersektoren einer Datei sind untereinander durch Rueckwaerts-
+und Vorwaertszeiger verkettet. Diese Zeiger stehen am Ende des Zeigersektors im
+Datenbereich. Der Rueckwaertszeiger des ersten Zeigersektors einer Datei zeigt
+auf den Descriptor dieser Datei. Der Vorwaertszeiger des letzten Zeigersektors
+einer Datei ist 0FFFFH.
+Tritt bei der Diskettenarbeit der Fehler CA (POINTER CHECK ERROR) auf, so
+bezieht er sich in NDOS nur auf die Verkettung der Zeigersektoren.
+
+3.2.2.	Aufbau des Descriptors einer Datei
+------------------------------------------
+
+Byte		Inhalt
+----		------
+00H-05H		unbenutzt
+06H/07H		Rueckzeiger zur DIRECTORY (Zeiger zu demjenigen DIRECTORY-
+		sektor, der den zugehoerigen Dateinamen enthaelt)
+08H/09H		Zeiger zum ersten Datenrecord der Datei
+0AH/0BH		Zeiger zum letzen Datenrecord der Datei
+0CH		Dateityp / Subtyp
+0DH/0EH		Anzahl der Datenrecords der Datei
+0FH/10H		Recordlaenge (80H,100H,200H,400H,800H,1000H)
+11H/12H		Blocklaenge (= Recordlaenge oder unbenutzt)
+13H		Dateieigenschaften (PROPERTIES)
+14H/15H		Programmstartadresse (ENTRY POINT) - nur bei P-Dateien
+16H/17H		Anzahl der Bytes im letzten Record (BYTE COUNT)
+18H-1FH		Erstellungsdatum der Datei (DATE OF CREATION)
+20H-27H		Datum der letzten Dateiaenderung (DATE OF LAST MODIFICATION)
+28H/29H		Anfangsadresse des 1. Segmentes - nur bei P-Dateien
+2AH...7FH	nur bei P-Dateien vom System verwendet, sonst frei fuer
+Anwender
+
+80H/81H		Zeiger auf den ersten Zeigersektor der Datei
+82H-FFH		unbenutzt
+
+nur bei P-Dateien:
+    2AH/2BH	Laenge des 1. Segmentes
+       .
+       .	(mehrere Segmente moeglich; abgeschlossen mit 00 00 00 00)
+       .
+    7AH/7BH	niedrigste vom Programm benutzte Adresse (LOW ADDRESS)
+    7CH/7DH	hoechste vom Programm benutzte Adresse (HIGH ADDRESS)
+    7EH/7FH	Stackgroesse (STACK SIZE) - nur bei P-Dateien
+
+Byte 0CH: Dateityp / Subtyp
+---------------------------
+Bit 0-3:	Subtyp (0-15)
+Bit 4:		Dateityp B
+Bit 5:		Dateityp A
+Bit 6:		Dateityp D
+Bit 7:		Dateityp P
+
+Byte 13H: Dateieigenschaften
+----------------------------
+Bit 0-1:	vom System benutzt
+Bit 2:		F
+Bit 3:		R
+Bit 4:		S
+Bit 5:		L
+Bit 6:		E
+Bit 7:		W
+Beispiel: Descriptor der DIRECTORY
+---------
+
+0000 * 00 00 00 00  00 00 05 16  05 16 0B 16  40 05 00 00   *............@...*
+0010 * 01 00 01 F0  00 00 00 00  33 34 30 31  32 34 FF 00   *........840124..*
+0020 * 38 34 30 31  32 34 FF 00  00 00 00 00  00 00 00 00   *840124..........*
+0030 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0040 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0050 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0060 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0070 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0080 * 02 16 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0090 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00A0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00B0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00C0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00D0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00E0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00F0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+
+Beispiel: Descriptor einer Procedure-Datei mit 3 Segmenten
+---------
+
+0000 * 00 00 00 00  00 00 05 16  00 1F 01 0D  85 1A 00 00   *................*
+0010 * 04 00 04 10  C9 48 00 04  37 38 30 35  32 34 FF 00   *.....H..780524..*
+0020 * 38 34 30 31  32 36 FF 00  00 44 00 0C  19 53 00 10   *840126...D...S..*
+0030 * 58 72 00 4C  00 00 00 00  FF FF FF FF  FF FF FF FF   *Xr.L............*
+0040 * FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF   *................*
+0050 * FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF   *................*
+0060 * FF FF FF FF  FF FF FF FF  FF FF FF FF  FF FF FF FF   *................*
+0070 * FF FF FF FF  FF FF FF FF  FF FF 00 44  57 BE 80 00   *...........DW...*
+0080 * 0C 1F 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0090 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00A0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00B0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00C0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00D0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00E0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00F0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+
+3.2.3.	Aufbau der Zeigersektoren einer Datei
+---------------------------------------------
+
+Byte		Inhalt
+----		------
+00H/01H		)
+02H/03H		) max. 124 Adressen von Datenrecords der Datei
+.		) (im ersten Zeigersektor einer Datei steht auf
+.		) Byte 0/1 die Adresse des Descriptors dieser Datei)
+F8H/F9H		)
+
+FAH/FBH		ADRCTR - relative Adresse der letzten Eintragung einer
+			 Datenrecordadresse im Zeigerblock (zeigt auf
+			 das 1. Byte der letzten Eintragung)
+FCH/FDH		BCKZGR - Disk-Adresse des vorhergehenden Zeigerblockes
+			 (Rueckwaertszeiger)
+FEH/FFH		FORZGR - Disk-Adresse des nachfolgenden Zeigerblockes
+			 (Vorwaertszeiger)
+Beispiel: Zeigersektor einer Datei mit einem Zeigerblock
+---------
+
+0000 * 06 1F 00 1F  08 20 00 20  04 20 08 21  00 21 04 21   *..... . . .!.!.!*
+0010 * 08 22 00 22  04 22 08 23  00 23 04 23  08 24 00 24   *.".".".#.#.#.$.$*
+0020 * 04 24 08 25  00 25 04 25  08 26 00 26  04 26 08 27   *.$.%.%.%.&.&.&.'*
+0030 * 00 27 04 27  01 0D 00 00  00 00 00 00  00 00 00 00   *.'.'............*
+0040 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0050 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0060 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0070 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0080 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+0090 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00A0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00B0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00C0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00D0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00E0 * 00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   *................*
+00F0 * 00 00 00 00  00 00 00 00  00 00 34 00  06 1F FF FF   *..........4.....*
+
+
+3.3.	Organisation in NDOS
+----------------------------
+
+3.3.1.	Dateiwerte
+------------------
+
+Fuer jede eroeffnete Datei existieren unter ZDOS 13 Dateiwerte:
+POIBCK		Z
+PTRLAS		Zeiger zum letzten Datenrecord
+TYPFIL		Dateityp / Subtyp
+RECCOU		Anzahl der Datenrecords
+RECLEN		Recordlaenge
+BLOLEN		Blocklaenge
+PROPER		Dateieigenschaften (PROPERTIES)
+
+Unter NDOS wurden diese Dateiwerte um 3 Dateiwerte erweitert:
+BLKADR		Adresse des aktuellen Zeigersektors
+BLKPOS		Zeiger auf die aktuelle Datenrecordadresse im aktuellen
+		Zeigersektor (rel. Adresse bzgl. des Anfanges des
+		Zeigersektors)
+FIRSTBL		Adresse des ersten Zeigersektors der Datei
+
+3.3.2.	Pufferorganisation
+--------------------------
+
+Gegenueber ZDOS wurden die Felder DATFLD (Feld fuer gelesenen Dateisektor) und
+DIRFLD (Feld fuer gelesenen DIRECTORY-Sektor) von 80H-Byte Laenge auf 100H-Byte
+Laenge erweitert. Darueberhinaus wurde ein 100H-Byte langes Feld fuer den
+aktuellen Zeigersektor reserviert. Es hat folgenden Aufbau:
+	ZGRBLK	DEFS	250
+	ADRCTR	DEFS	2
+	BCKZGR	DEFS	2
+	FORZGR	DEFS	2
+Die Disk-Adresse des zuletzt eingelesenen Zeigersektors wird in (BLKSRC)
+abgespeichert. Vor dem Einlesen eines Zeigersektors wird dessen Adresse mit der
+in (BLKSRC) verglichen. Besteht Uebereinstimmung, erfolgt kein Einlesen.
+Dadurch werden unnoetige Disk-Operationen vermieden.
+	BLKSRC	DEFS	2
+3.3.3.	Bemerkungen zu einigen NDOS-Request
+-------------------------------------------
+
+NDOS realisiert die gleichen Requests wie ZDOS.
+
+OPEN
+----
+Bei der Erstellung einer neuen Datei wird der erste Zeigersektor dieser Datei
+initialisiert und auf die Diskette geschrieben.
+
+Leseoperationen
+---------------
+Alle Leseoperationen erfolgen immer recordweise. Dabei zeigt (BLKPOS) auf den
+aktuellen zu lesenden Datenrecord im Zeigersektor (entsprechend (POIAKT)). Nach
+dem Lesen zeigt (POIAKT) i.allg. auf den naechsten Datenrecord. Dementsprechend
+wird auch (BLKPOS) veraendert. Dies geschieht, indem (BLKPOS) um den Wert 2
+erhoeht wird, ausser, wenn (BLKPOS)=(ADRCTR), d.h. wenn (BLKPOS) bereits auf
+die letzte Eintragung im Zeigersektor zeigt. In diesem Fall wird der naechste
+Zeigersektor eingelesen und (BLKPOS):=0, d.h. (BLKPOS) zeigt auf die erste
+Eintragung im naechsten Zeigersektor. Ist ein naechster Zeigersektor nicht
+vorhanden, so ist das Ende der Datei erreicht.
+
+Schreiboperationen
+------------------
+Alle Schreiboperationen erfolgen immer recordweise. Dabei zeigt (BLKPOS) auf
+die Stelle im Zeigersektor, wo die naechste Datenrecordadresse eingetragen
+werden soll. Vor dem Eintragen der Datenrecordadresse in den Zeigersektor wird
+geprueft, ob danach noch gueltige Datenrecordadressen im Zeigersektor stehen
+(d.h. wenn (ADRCTR) groesser als (BLKPOS) ist). In diesem Fall werden ab
+(BLKPOS) alle Datenrecordadressen um 2 Byte nach hinten verschoben und (ADRCTR)
+wird um 2 erhoeht. Ist der Zeigersektor bereits voll, erfolgt ein Uebertrag in
+den naechsten Zeigersektor und (ADRCTR) wird in diesem Sektor um 2 erhoeht. Ist
+kein naechster Zeigersektor vorhanden, wird dieser bereitgestellt.
+
+Loeschoperationen
+-----------------
+Alle Loeschoperationen erfolgen immer recordweise. Dabei zeigt (BLKPOS) auf die
+Datenrecordadresse im Zeigersektor, die geloescht werden soll. Stehen nach der
+geloeschten Datenrecordadresse im Zeigersektor noch weitere gueltige
+Datenrecordadressen (d.h. (ADRCTR) groesser als (BLKPOS)), so werden diese um 2
+Byte nach vorn geschoben und (ADRCTR) wird um 2 verkleinert. Ist ein
+Zeigersektor nach dem Loeschen der Datenrecordadresse leer, so wird er
+geloescht. Der Vorwaertszeiger des vorhergehenden und der Rueckwaertszeiger des
+nachfolgenden Zeigersektors (falls vorhanden) werden korrigiert. (BLKPOS) zeigt
+danach auf die erste Eintragung im nachfolgenden Zeigersektor (falls vorhanden)
+bzw. auf die letzte Eintragung im vorhergenden Zeigersektor.
+4.	UDOS-Kommando FILE.DEBUG
+--------------------------------
+
+Das Systemprogramm FILE.DEBUG dient zur Ueberpruefung und eventuellen Reparatur
+von Saetzen und Dateien einer UDOS-Diskette. Es bezieht sich auf den im Punkt 1
+angegebenen Aufbau einer solchen Diskette.
+
+FILE.DEBUG arbeitet mit drei Puffern:
+  -- Datenpuffer:     Anfangsadresse = Startadresse + 'C00'H
+     Der Datenpuffer enthaelt die gelesenen bzw. die zu schreibenden Daten
+     der Datenfelder der Sektoren.
+     (Laenge des Puffers = '2000'H = Datenlaenge einer Spur)
+  -- Maskenpuffer:    Anfangsadresse = Startadresse + '900'H
+     In ihm werden angegeben, welche Bits aus dem Vergleichspuffer zum
+     Vergleich mit dem Datenpuffer beim S-Kommando herangezogen werden sollen.
+     (Laenge des Puffers: '100'H)
+  -- Vergleichspuffer: Anfangsadresse = Startadresse + 'A00'H
+     In diesem Puffer wird das Bitmuster angegeben, mit dem der Inhalt der
+     Datenfelder der Sektoren beim S-Kommando verglichen werden soll.
+     (Laenge des Puffers: '100'H)
+  -- Zeigerblockpuffer: Anfangsadresse = Startadresse + 'B00'H
+     Dieser Puffer enthaelt nach dem O-Kommando und folgenden Kommandos
+     den aktuellen Zeigerblock der Datei.
+     (Laenge des Puffers = '100'H)
+
+Die Diskadresse DA wird jeweils als vierstellige Hexadezimalzahl ein- bzw.
+ausgegeben. Die beiden ersten Ziffern der Diskadresse enthalten die Spurnummer
+(0...27), die restlichen Ziffern enthalten in Bit 7,6,5 die Laufwerksnummer und
+in Bit 4,3,2,1,0 die Sektornummer.
+Beispiel:
+   DA = 1625 : Spur 16, Sektor 05, Laufwerk 1
+   DA = 0000 : Spur 00, Sektor 00, Laufwerk 0
+FILE.DEBUG meldet seine Eingabebereitschaft durch Ausgabe des Zeichens '#' auf
+der Konsole.
+
+Als Eingaben (Kommandos) sind moeglich:
+
+R diskadresse recordlaenge	(Read)
+  Das Kommando ermoeglicht das Lesen der Datenfelder einzelner bzw.
+  aufeianderfolgender Sektoren. Die Recordlaenge muss nicht angegeben werden,
+  sie wird dann implizit auf 256 gesetzt. Standardmaessig werden Zugriffe
+  auf das Laufwerk 0 durchgefuehrt. Wird ein anderes Laufwerk gewuenscht,
+  muss es in der Diskadresse mit angegeben werden. Der Inhalt des Datenfeldes
+  (der Datenfelder) wird in den Datenpuffer gelesen. Ausserdem wird die
+  Diskadresse (ohne Laufwerksangabe) und die Recordlaenge ueber Konsole
+  ausgegeben.
+  Ein R-Kommando ohne Parameter ist nur nach vorherigem O-Kommando moeglich.
+  Beispiel:
+  #R 1625		(Lesen Spur 16, Sektor 5, Laufwerk 1)
+  DA = 1605 RL = 100
+  #.....
+W diskadresse recordlaenge	(Write)
+  Das Kommando ermoeglicht das Schreiben der Datenfelder einzelner oder
+  aufeinanderfolgender Sektoren (Records). Ansonsten gelten die Hinweise
+  fuer das R-Kommando. Zusaetzlich wird nochmals abgefragt, ob die
+  Schreiboperation durchgefuehrt werden soll. Ein 'Y' oder 'y' startet
+  die Schreiboperation, jede andere Eingabe verhindert sie.
+  Beispiel:
+  #W 0003		Schreiben Spur 0, Sektor 3, Laufwerk 0
+  DA = 0003 RL = 100 ?Y
+  #....
+
+O dateiname	 		(Open)
+  Das Kommando sucht auf dem angegebenen Laufwerk im Directory der
+  Diskette nach dem angegebenen Dateinamen und liest den Descriptor-
+  record in den Datenpuffer und den ersten Zeigerblock in den
+  Zeigerblockpuffer. Der Dateiname kann eine Laufwerksangabe enthalten.
+  Es werden die Adressen der durchsuchten Directorysektoren, des Descriptors
+  der gefundenen Datei, des ersten und des letzten Datenrecords sowie des
+  ersten Zeigerblocks ueber Konsole ausgegeben (ohne Laufwerkcodierung).
+  Beispiel:
+  #O 1/STATUS
+  DA = 1600   RL = 100		(durchsuchte Directoryrecords)
+  DA = 1605   RL = 100		     "               "
+  DA = 2001   RL = 100		Descriptorrecord der Datei STATUS
+	 DSA = 160A  FRA = 2002  LRA = 2004
+	 ZBL = 2001
+  #....
+
+  Nach einem erfolgreichen "OPEN" kann mit dem Kommando "R" (ohne Parameter)
+  vorwaerts Satz fuer Satz der Datei in den Puffer eingelesen werden. Mit der
+  Eingabe von "^" kann dieser Vorgang auch rueckwaerts ablaufen. Ebenso ist
+  nach erfolgreichem "OPEN" das Kommando "T" (ohne Parameter) und "T ^"
+  moeglich.
+
+T dateiname			(Trace)
+  Fuer die angegebene Datei (Laufwerksangabe moeglich) wird ein O-Kommando
+  ausgefuehrt. Ist die Datei vorhanden, werden fortlaufend R-Kommandos
+  bis zum Dateiende oder bis zum Auftreten eines Fehlers erzeugt.
+  Ist fuer die Datei schon ein O-Kommando gemacht worden, koennen auch
+  folgende Kommandos aufgerufen werden:
+  T (ohne Parameter) : fortlaufende Leseoperationen durch die Datei
+  T                  : fortlaufende Leseoperationen rueckwaerts, bis der
+                       Descriptorrecord ereicht ist
+  Bei allen Kommandos wird der Inhalt des Zeigerblockpuffers nach Bedarf
+  aktualisiert.
+  Beispiel:
+  #T 1/STATUS
+  DA = 1600   RL = 100 		(durchsuchte Directoryrecords)
+  DA = 1605   RL = 100		     "               "
+  DA = 2001   RL = 100		Descriptorrecord der Datei STATUS
+         DSA = 160A  FRA = 2002  LRA = 2004
+         ZBL = 2001
+ DA = 2002  RL = 100
+  DA = 2003  RL = 100
+  DA = 2004  RL = 100		(Datenrecords der Datei STATUS)
+  #....
+L				(List)
+  Das Kommando zeigt den aktuellen Stand von DA und RL an.
+
+D				(Debug)
+  Das Kommando ermoeglicht den Uebergang in den PROM-Debugger mit allen
+  implementierten Funktionen (besonders wichtig: Anzeige und Aenderung
+  der Pufferinhalte). Durch Eingabe von "Q" erfolgt die Rueckkehr zu
+  FILE.DEBUG
+
+S				(Search)
+  Das Kommando sucht Sektoren auf der Diskette im zuletzt angesprochenen
+  Laufwerk, deren Inhalt mit dem Vergleichspuffer uebereinstimmt. Der Vergleich
+  wird bitweise fuer gesetzte Markenbits im Markenpuffer durchgefuehrt.
+  Die Diskadressen der Sektoren, bei denen Uebereinstimmung besteht, werden
+  ausgegeben. Der Suchlauf kann durch Druecken einer Taste abgebrochen
+  werden. Als Laufwerk wird das zuletzt angesprochene eingesetzt.
+  Beispiel:
+  Das Einrichten der Puffer erfolgt mit dem D-Kommando.
+  Maskenpuffer:      '4900'H: 00 FF FF FF 00 00 ...........
+  Vergleichspuffer:  '4A00'H: xx D  I  R  xx xx ...........
+  #S
+  1605		Der einzige Sektor, der in den Bytepositionen 1,2,3 die
+		ASCII-Werte fuer "DIR" enthaelt, ist der Sektor 1605
+		(Spur 16, Sektor 05))
+  #...
+
+Q				(Quit)
+  Das Kommando bewirkt die Rueckkehr in das Betriebssystem UDOS.
+
+
+5.	UDOS-Kommando COPY.DISK
+-------------------------------
+
+Das Systemprogramm COPY.DISK dient zum spurweisen Kopieren von Disketten. Es
+koennen auch Disketten anderer Betriebssysteme kopiert werden, wenn sie eines
+der UDOS-Diskettenformate besitzen.
+Es sind mindestens zwei Laufwerke erforderlich, ein Quell- und ein Ziel-
+Laufwerk. Die Abfrage der Laufwerke erfolgt im Dialog. Es werden jeweils die
+Daten der im Quell-Laufwerk gelesenen Spuren im Ziel-Laufwerk bei
+gleichzeitiger Formatierung spurweise geschrieben. Anschliessend wird die
+geschriebene Spur sektorweise zur Kontrolle rueckgelesen. Diskettenfehler der
+Quell-Diskette fuehren zum Abbruch. Fehler beim Kontroll-Lesen werden
+angezeigt.
+
+
+
+
+6.	UDOS-Kommandos CAT/MOVE
+-------------------------------
+
+Bei Angabe des Parameters F=L bei den Kommandos CAT und MOVE erscheint zum 
+Schluss die Ausschrift
+
+	'x TOTAL SECTORS FOR LISTED FILES'
+
+Dabei enthaelt dieser Wert x nicht die Anzahl der Zeigersektoren zu den
+aufgelisteten Dateien. Der exakte Wert der durch die aufgelisteten Dateien
+belegten Sektoren ergibt sich aus der Summe von x und der Anzahl der
+Zeigersektoren aller aufgelisteten Dateien.
+
+7.	UDOS-Kommando DATE
+--------------------------
+
+Der Aufruf kann in folgenden Varianten erfolgen:
+
+	DATE		Anzeige des letzten eingegebenen Datums
+	DATE JJMMTT	Neueingabe eines Datums (absolut)
+	DATE +n		Neueingabe eines Datums (relativ zum letzten Stand)
+			( n >= 0 )
+Jedes eingegebene Datum wird im Descriptor der Datei DATE auf der Diskette
+gespeichert.
+Beim Aufruf in einer der beiden letzten Formen wird ausserdem auf den
+Laufwerken nach einer Datei mit dem Namen "TERMINE" gesucht. Mit Hilfe einer
+Datei dieses Namens ist es moeglich, Termine und andere Hinweise, gekoppelt an
+das eingegebene Datum, anzeigen zu lassen. Die Datei TERMINE kann mittels
+Editor erstellt werden. Jede Zeile wird als ein Datensatz betrachtet, der
+folgenden Aufbau haben muss:
+
+	<datum> <leerzeichen> <text> <CR>
+
+Das Datum wird in der Form JJMMTT angegeben, wobei einzelne Ziffern auch durch
+das Zeichen '*' ersetzt werden koennen. Der Text kommt zur Anzeige, wenn das
+neu eingegebene Datum mit dem Datum des Datensatzes uebereinstimmt.
+Ziffernstellen, die '*' enthalten, werden als uebereinstimmend gewertet.
+
+Beispiel:
+Die Termindatei enthaelt folgende Zeilen:
+	**1013 Koll. X hat morgen Geburtstag
+	861013 9 UHR Beratung
+
+Aufruf von DATE:
+	DATE 861013
+Ausschriften:
+	Montag, 13. Oktober 1986
+	Koll. X hat morgen Geburtstag
+	9 UHR Beratung
