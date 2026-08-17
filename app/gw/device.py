@@ -65,11 +65,21 @@ class Device:
     #: Sekunden ohne Auftrag, nach denen der Motor abgeschaltet wird.
     motor_idle_s: float = 3.0
 
-    def __init__(self, usb, drive, *, cell_rate_kbps: int = 250, revs: int = 1):
+    def __init__(self, usb, drive, *, cell_rate_kbps: int = 250, revs: int = 1,
+                 double_step: bool = False):
         self._usb = usb
         self._drive = drive
         self.cell_rate_kbps = cell_rate_kbps
         self.revs = revs
+        #: **Doppelschritt**: die Spur *n* liegt auf dem physischen Zylinder *2n*.
+        #:
+        #: So schreibt ein 40-Spur-Laufwerk (K5600.10) auf eine 5,25″-Diskette; ein
+        #: 80-Spur-Laufwerk (K5601) fährt dieselben Spuren mit doppeltem Schritt an.
+        #: Der Umrechnung wegen bleibt ALLES darüber — Medium, Erkennung, Abbild —
+        #: in LOGISCHEN Spuren: ein so gelesenes Abbild hat 40 Spuren, keine 80 mit
+        #: Lücken.  Das ist der Unterschied zu `DiskFormat::step`, das eine
+        #: Eigenschaft der Diskette beschreibt; hier geht es um den Kopfweg.
+        self.double_step = double_step
         self._motor_an = False
         self._letzte_arbeit = 0.0
         self._gewaehlt = False
@@ -110,8 +120,15 @@ class Device:
 
     # ── Die beiden Vorgänge ─────────────────────────────────────────────────
 
+    def _position(self, cyl: int) -> int:
+        """Logische Spur → physischer Zylinder (§12.5)."""
+        return cyl * 2 if self.double_step else cyl
+
     def read_track(self, cyl: int, head: int) -> tuple[bytes, int]:
         """Eine Spurseite lesen.
+
+        Args:
+            cyl: **logische** Spur — bei Doppelschritt fährt der Kopf auf 2·cyl.
 
         Returns:
             ``(zellen, bitcells)`` — HFE-Konvention (LSB zuerst je Byte).
@@ -121,7 +138,7 @@ class Device:
 
         self.select()
         self.motor(True)
-        self._usb.seek(cyl, head)
+        self._usb.seek(self._position(cyl), head)
         # Eine Umdrehung mehr lesen, als gebraucht wird: cue_at_index() schneidet
         # anschließend genau bei Index — sonst fehlte der Anfang der Spur.
         fluss = self._usb.read_track(revs=self.revs + 1)
@@ -158,7 +175,7 @@ class Device:
         self.select()
         self.motor(True)
         takte_je_umdrehung = self.ticks_per_rev()
-        self._usb.seek(cyl, head)
+        self._usb.seek(self._position(cyl), head)
 
         bits = bitarray(endian="big")
         bits.frombytes(cells)
@@ -207,7 +224,8 @@ def finde_adapter() -> Adapter:
 
 
 def open_device(drive: str = "a", *, cell_rate_kbps: int = 250,
-                revs: int = 1, port: Optional[str] = None) -> Device:
+                revs: int = 1, port: Optional[str] = None,
+                double_step: bool = False) -> Device:
     """Adapter öffnen und ein Laufwerk wählen.
 
     Args:
@@ -215,6 +233,8 @@ def open_device(drive: str = "a", *, cell_rate_kbps: int = 250,
         cell_rate_kbps: 250 für 5,25″ DD, 500 für 8″ MFM.
         revs: Umdrehungen je Leseversuch (mehr = robuster, langsamer).
         port: Gerätedatei; ``None`` = selbst suchen.
+        double_step: Spur *n* auf physischem Zylinder *2n* (40-Spur-Diskette im
+            80-Spur-Laufwerk).
 
     Raises:
         GreaseweazleFehlt: Paket nicht installiert.
@@ -229,4 +249,5 @@ def open_device(drive: str = "a", *, cell_rate_kbps: int = 250,
         usb = util.usb_open(port)
     except Exception as e:                     # noqa: BLE001
         raise KeinAdapter(f"Kein Greaseweazle gefunden: {e}") from e
-    return Device(usb, util.Drive()(drive), cell_rate_kbps=cell_rate_kbps, revs=revs)
+    return Device(usb, util.Drive()(drive), cell_rate_kbps=cell_rate_kbps, revs=revs,
+                  double_step=double_step)

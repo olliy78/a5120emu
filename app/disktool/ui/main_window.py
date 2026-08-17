@@ -1078,15 +1078,29 @@ class MainWindow(QMainWindow):
 
         # Die Geometrie der offenen Diskette vorschlagen — auf eine kleinere passt
         # sie ohnehin nicht, und der Bediener soll nicht raten müssen.
-        wahl = PhysicalDiskDialog.frage(self,
-                                        num_cyls=self.tool.medium_cylinders,
-                                        num_heads=self.tool.medium_heads,
-                                        writable=True,
-                                        titel="Diskette zum Überschreiben einlegen")
+        wahl = PhysicalDiskDialog.frage(
+            self, writable=True,
+            titel="Diskette zum Überschreiben einlegen",
+            abbild=f"{self.tool.medium_cylinders} Spuren × "
+                   f"{self.tool.medium_heads} Seite(n)")
         if wahl is None:
             return
         wahl["writable"] = True          # ohne Schreibrecht ist der Punkt sinnlos
         wahl["read_ahead"] = False       # gelesen wird hier nichts, nur geschrieben
+
+        # „Nur Seite 0" bei einem ZWEISEITIGEN Abbild ist erlaubt — es kann genau
+        # gewollt sein (Seite 1 trägt Altlasten, die niemand haben will).  Aber es
+        # geht dabei etwas verloren, und das muss dastehen, bevor es passiert.
+        if wahl.get("num_heads", 2) < self.tool.medium_heads:
+            if QMessageBox.question(
+                    self, "Nur Seite 0 schreiben",
+                    f"Das Abbild hat {self.tool.medium_heads} Seiten, geschrieben "
+                    "wird nur Seite 0.\n\n**Der Inhalt von Seite 1 landet nicht auf "
+                    "der Diskette.**  Das kann gewollt sein — etwa wenn dort nur "
+                    "Altbestand steht.\n\nTrotzdem schreiben?".replace("**", ""),
+                    QMessageBox.Cancel | QMessageBox.Ok,
+                    QMessageBox.Cancel) != QMessageBox.Ok:
+                return
 
         try:
             sitzung = PhysicalSession.start(**wahl)

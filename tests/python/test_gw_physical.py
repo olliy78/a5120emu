@@ -331,6 +331,77 @@ def test_ueberschreiben_verweigert_eine_zu_kleine_diskette(fixture_disks):
             assert s.stats.tracks_dirty == 0, "es wurde doch etwas eingestellt"
 
 
+def test_doppelschritt_faehrt_jeden_zweiten_zylinder_an(fixture_disks):
+    """Spur *n* liegt bei Doppelschritt auf dem physischen Zylinder *2n* (§12.5).
+
+    So schreibt ein 40-Spur-Laufwerk (K5600.10); ein 80-Spur-Laufwerk erreicht
+    dieselben Spuren nur mit doppeltem Schritt.  **Oberhalb des Geräts bleibt alles
+    logisch**: das Abbild hat 40 Spuren, keine 80 mit Lücken — sonst müsste jede
+    Schicht darüber die Umrechnung noch einmal wissen.
+    """
+    from app.gw.device import Device
+
+    d = Device.__new__(Device)              # ohne Adapter — geprüft wird nur die Lage
+    for doppelt, erwartet in ((False, [0, 1, 39]), (True, [0, 2, 78])):
+        d.double_step = doppelt
+        assert [d._position(c) for c in (0, 1, 39)] == erwartet, \
+            f"double_step={doppelt}"
+
+
+def test_doppelschritt_und_nur_seite_null_gehen_durch_den_dialog():
+    """Was die beiden Haken bedeuten, muss bis in die Sitzungsargumente durchkommen.
+
+    Die Rechnung sitzt an EINER Stelle (`_geometrie_rechnen`): aus den physischen
+    Zylindern des Laufwerks und den Haken folgt die **logische** Geometrie.  Bei
+    Doppelschritt passt nur die Hälfte der Spuren auf dieselbe Strecke.
+    """
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication
+    from app.ui.physical_disk import PhysicalDiskDialog, PhysicalSession
+    import inspect
+
+    QApplication.instance() or QApplication([])
+    d = PhysicalDiskDialog()
+    d._laufwerkspuren.setCurrentIndex(0)          # 80 Zylinder
+    assert d.auswahl()["num_cyls"] == 80 and d.auswahl()["num_heads"] == 2
+
+    d._doppelschritt.setChecked(True)
+    d._nur_seite0.setChecked(True)
+    wahl = d.auswahl()
+    assert wahl["num_cyls"] == 40, "Doppelschritt halbiert die Spurzahl nicht"
+    assert wahl["num_heads"] == 1
+    assert wahl["double_step"] is True
+
+    # Und die Sitzung muss genau diese Argumente annehmen.
+    erlaubt = set(inspect.signature(PhysicalSession.start).parameters) - {"cls"}
+    assert set(wahl) <= erlaubt, f"unbekannt: {set(wahl) - erlaubt}"
+
+
+def test_nur_seite_null_liest_die_rueckseite_gar_nicht(fixture_disks):
+    """„Nur Seite 0" spart nicht bloss Zeit — es blendet Altbestand aus.
+
+    Auf einer Diskette, die einmal zweiseitig formatiert war, steht auf Seite 1
+    noch das alte Format.  Wird sie nicht angefahren, sieht die Erkennung eine
+    saubere einseitige Diskette (und der Kopf bleibt auf Seite 0).
+    """
+    pfad = fixture_disks / "udos_boot_scp.hfe"
+    if not pfad.exists():
+        pytest.skip("Fixture fehlt")
+
+    geraet = HfeDevice(pfad)
+    with Sync(num_cyls=geraet.num_cyls, num_heads=1, read_ahead=False) as s:
+        worker = TrackWorker(s, geraet, poll_ms=20)
+        worker.start()
+        try:
+            with DiskTool.open_physical(s) as t:
+                assert t.medium_heads == 1
+                assert t.list(), "nichts gelesen"
+        finally:
+            worker.stop()
+    assert all(h == 0 for _, h in geraet.gelesen), \
+        f"Seite 1 wurde angefahren: {[x for x in geraet.gelesen if x[1]][:3]}"
+
+
 def test_die_sondenzahl_bleibt_klein():
     """Acht Spuren — nicht acht Zylinder auf beiden Seiten.
 

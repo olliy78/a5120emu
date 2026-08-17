@@ -959,6 +959,65 @@ Disketten zu Handarbeit.  Von Hand gewählt liest sich die Diskette einwandfrei
 Wächter: `test_dateisystem_laesst_sich_auch_physisch_uebersteuern`,
 `test_nicht_erkannt_bietet_den_ausweg_an`.
 
+#### 12.2b Doppelschritt und „Nur Seite 0"
+
+Eine 5,25″-Diskette mit 40 Spuren und ein Laufwerk mit 80 Zylindern sind zwei
+verschiedene Dinge — und welche der möglichen Kombinationen vorliegt, weiß nur der
+Mensch vor dem Gerät.  Der Dialog fragt es deshalb, mit einem Feld und zwei Haken:
+
+| Bedienelement | Bedeutung |
+|---|---|
+| **Zylinder: 80 / 40** | wie weit nach innen gefahren wird.  Beim Lesen ist das zugleich eine **Begrenzung**: „40" an einem 80er-Laufwerk liest genau die äußeren 40 Zylinder |
+| **Doppelschritt erzwingen** | Spur *n* liegt auf dem physischen Zylinder *2n* |
+| **Nur Seite 0** | Seite 1 wird weder gelesen noch geschrieben |
+
+Daraus folgt die **logische** Geometrie des Abbilds (`_geometrie_rechnen`, eine
+Stelle): bei Doppelschritt passt nur die Hälfte der Spuren auf dieselbe Strecke, aus
+80 Zylindern werden also 40 Spuren.  **Umgerechnet wird ausschließlich im Gerät**
+(`Device._position`) — Medium, Erkennung, Abbild und Dateisystem rechnen durchweg in
+logischen Spuren.  Ein so gelesenes Abbild hat 40 Spuren, keine 80 mit Lücken; das
+ist der Unterschied zu `DiskFormat::step`, das eine Eigenschaft der **Diskette**
+beschreibt, während es hier um den **Kopfweg** geht.
+
+**Wozu das gut ist — vier Fälle, die alle vorkommen:**
+
+| Vorhaben | Zylinder | Doppelschritt | Nur Seite 0 |
+|---|---|---|---|
+| Diskette eines K5600.10 einlesen | 80 | ✓ | ✓ |
+| 40-Spur-Diskette einlesen, die in einem K5601 beschrieben wurde | 40 | — | ✓ |
+| Abbild schreiben, **bootfähig im K5600.10** | 80 | ✓ | ✓ |
+| Abbild schreiben, **bootfähig im K5601** | 80 | — | ✓ |
+
+Der Gewinn beim **Lesen** ist nicht nur Zeit.  Wer eine 40-Spur-Diskette einliest,
+die einmal zweiseitig mit 80 Spuren formatiert war, schleppt sonst den **Altbestand**
+mit: auf den ungeraden Zylindern und auf Seite 1 steht noch das alte Format, und die
+Erkennung sieht eine Mischung, die in keinem Katalog steht.  Wird gar nicht erst
+dorthin gefahren, kommt eine saubere einseitige 40-Spur-Diskette herein — und wird
+als das erkannt, was sie ist.
+
+> **An einer echten Diskette nachgemessen** (cpa800, mit UDOS überschrieben):
+> UDOS liegt dort auf den Zylindern 0–39 **lückenlos** (Einzelschritt), ab Zylinder 40
+> und auf Seite 1 steht noch cpa800.  Ohne die Haken erkennt die Automatik nichts;
+> mit *Nur Seite 0* + *Zylinder 40* wird sie als `udos_ss40` erkannt, 44 Dateien.
+> (Nur *Nur Seite 0* bei 80 Zylindern ergibt `udos_ss77` — auch lesbar, aber die
+> Geometrie ist dann geraten.)
+
+Beim **Schreiben** entscheidet der Doppelschritt, in welchem Rechner die Diskette
+danach läuft: mit Haken auf jedem zweiten Zylinder (K5600.10), ohne Haken dicht
+hintereinander (K5601).  Beides ist richtig — es hängt davon ab, wohin die Diskette
+soll.
+
+**„Nur Seite 0" beim Schreiben eines zweiseitigen Abbilds** ist erlaubt, aber es geht
+dabei etwas verloren.  Deshalb fragt die Oberfläche vorher nach und sagt, was
+wegbleibt; der Kern kopiert dann, was hineinpasst (`copyTo` prüft die **Spurzahl**
+hart, die Seitenzahl nicht — die Rückfrage wäre dort zu spät und am falschen Ort).
+Der Fall ist gewollt: auf Seite 1 kann genau der Altbestand stehen, den man los sein
+will.
+
+Wächter: `test_doppelschritt_faehrt_jeden_zweiten_zylinder_an`,
+`test_doppelschritt_und_nur_seite_null_gehen_durch_den_dialog`,
+`test_nur_seite_null_liest_die_rueckseite_gar_nicht`.
+
 ### 12.4 Eine Datei auf eine echte Diskette schreiben
 
 Der Gegenweg zum Laden: Quelle ist das, was gerade offen ist — auch eine `.hfe` —,

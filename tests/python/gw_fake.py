@@ -34,7 +34,7 @@ class HfeDevice:
     #: wird scheinbar, gelesen wird weiter der ALTE Inhalt.
     schadhaft: set
 
-    def __init__(self, pfad, verzoegerung: float = 0.0):
+    def __init__(self, pfad, verzoegerung: float = 0.0, double_step: bool = False):
         roh = pfad.read_bytes()
         assert roh[:8] == b"HXCPICFE", f"keine HFE-v1-Datei: {pfad}"
         self.num_cyls = roh[9]
@@ -59,22 +59,29 @@ class HfeDevice:
         self.geschrieben: list[tuple[int, int]] = []
         self.schadhaft = set()
         self.verzoegerung = verzoegerung
+        #: Wie am echten Gerät: Spur n liegt auf dem physischen Zylinder 2n.
+        self.double_step = double_step
         self._sperre = threading.Lock()
+
+    def _position(self, cyl: int) -> int:
+        return cyl * 2 if self.double_step else cyl
 
     def read_track(self, cyl: int, head: int) -> tuple[bytes, int]:
         if self.verzoegerung:
             time.sleep(self.verzoegerung)
+        wo = (self._position(cyl), head)
         with self._sperre:
-            self.gelesen.append((cyl, head))
-        return self._spuren.get((cyl, head), (b"", 0))
+            self.gelesen.append(wo)
+        return self._spuren.get(wo, (b"", 0))
 
     def write_track(self, cyl: int, head: int, cells: bytes, bitcells: int) -> None:
+        wo = (self._position(cyl), head)
         with self._sperre:
-            self.geschrieben.append((cyl, head))
+            self.geschrieben.append(wo)
             # Auf einer Schadstelle bleibt der alte Inhalt stehen; der Schreibvorgang
             # selbst meldet trotzdem Erfolg — genau wie am echten Laufwerk.
-            if (cyl, head) not in self.schadhaft:
-                self._spuren[(cyl, head)] = (cells, bitcells)
+            if wo not in self.schadhaft:
+                self._spuren[wo] = (cells, bitcells)
 
 
 def fake_session(hfe, *, writable=False, read_ahead=True, for_emulator=False,

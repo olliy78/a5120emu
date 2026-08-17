@@ -98,7 +98,8 @@ class PhysicalSession:
     def start(cls, *, drive: str = "a", cell_rate_kbps: int = 250,
               num_cyls: int = 80, num_heads: int = 2, writable: bool = False,
               read_ahead: bool = True, for_emulator: bool = False,
-              rpm: int = 300, verify_writes: bool = True) -> "PhysicalSession":
+              rpm: int = 300, verify_writes: bool = True,
+              double_step: bool = False) -> "PhysicalSession":
         """Adapter öffnen, Sync anlegen, Arbeitsfaden starten.
 
         Es wird dabei **nichts gelesen** — Spuren kommen einzeln, sobald jemand sie
@@ -110,7 +111,8 @@ class PhysicalSession:
         """
         from app.gw import Sync, TrackWorker, open_device
 
-        device = open_device(drive, cell_rate_kbps=cell_rate_kbps)
+        device = open_device(drive, cell_rate_kbps=cell_rate_kbps,
+                             double_step=double_step)
         sync = Sync(num_cyls=num_cyls, num_heads=num_heads,
                     cell_rate_kbps=cell_rate_kbps, rpm=rpm, writable=writable,
                     read_ahead=read_ahead, for_emulator=for_emulator,
@@ -237,9 +239,13 @@ class PhysicalDiskDialog(QDialog):
 
     def __init__(self, parent=None, *, num_cyls: int = 80, num_heads: int = 2,
                  drive_label: str = "", allow_write: bool = True,
-                 writable: bool = False, titel: str = ""):
+                 writable: bool = False, titel: str = "", abbild: str = ""):
         """
         Args:
+            num_cyls: **Zylinder des LAUFWERKS** (Vorbelegung des Feldes), nicht der
+                Diskette — die ergibt sich daraus mit den Haken.
+            abbild: Geometrie des zu schreibenden Abbilds als Text; wird angezeigt,
+                damit man sieht, was man wohin schreibt.
             allow_write: darf überhaupt geschrieben werden?
             writable: Vorbelegung des Hakens.  Vorgabe **aus** — beim blossen Lesen
                 soll die Diskette gar nicht in Gefahr sein.  Wer sie ausdrücklich
@@ -260,6 +266,7 @@ class PhysicalDiskDialog(QDialog):
         layout.addWidget(kopf)
 
         form = QFormLayout()
+        self._abbild_text = abbild
         self._laufwerk = QComboBox()
         for wert, text in LAUFWERKE:
             self._laufwerk.addItem(text, wert)
@@ -270,9 +277,58 @@ class PhysicalDiskDialog(QDialog):
             self._rate.addItem(text, wert)
         form.addRow("Zellrate:", self._rate)
 
-        form.addRow("Geometrie:", QLabel(
-            f"{num_cyls} Spuren × {num_heads} Seite(n)"
-            + (f"  ({drive_label})" if drive_label else "")))
+        # Wie weit nach innen gegangen wird.  Das ist zweierlei zugleich: die Bauart
+        # des Laufwerks am Kabel (die kennt nur der Bediener) UND eine Begrenzung —
+        # 40 zu wählen, obwohl ein 80er dranhängt, liest genau die äusseren 40
+        # Zylinder.  Genau das braucht eine 40-Spur-Diskette, die einmal in einem
+        # 80-Spur-Laufwerk beschrieben wurde: dahinter steht nur noch Altbestand.
+        self._laufwerkspuren = QComboBox()
+        for n, text in ((80, "80 — K5601 (96 tpi)"),
+                        (40, "40 — K5600.10 (48 tpi), oder nur die äußeren 40")):
+            self._laufwerkspuren.addItem(text, n)
+        vor = 0 if num_cyls is None or num_cyls > 45 else 1
+        self._laufwerkspuren.setCurrentIndex(vor)
+        self._laufwerkspuren.setToolTip(
+            "So viele Zylinder werden angefahren — nicht mehr.\n"
+            "Beim Lesen begrenzt das zugleich, wie weit nach innen gelesen wird: "
+            "was dahinter liegt (Altbestand einer früheren Formatierung), bleibt "
+            "aussen vor und stört die Erkennung nicht."
+            + (f"\nAngeschlossen: {drive_label}" if drive_label else ""))
+        form.addRow("Zylinder:", self._laufwerkspuren)
+        if abbild:
+            form.addRow("Abbild:", QLabel(abbild))
+
+        # Doppelschritt: Spur n liegt auf Zylinder 2n.  Beim LESEN blendet das die
+        # ungeraden Zylinder aus — genau dort sitzen die Altlasten einer früheren
+        # 80-Spur-Formatierung.  Beim SCHREIBEN entscheidet er, ob die Diskette
+        # später in einem 40- oder in einem 80-Spur-Laufwerk lesbar ist.
+        self._doppelschritt = QCheckBox("Doppelschritt erzwingen (40-Spur-Diskette)")
+        self._doppelschritt.setChecked(False)
+        self._doppelschritt.setToolTip(
+            "Spur n liegt auf dem physischen Zylinder 2n.\n\n"
+            "LESEN:  nur die geraden Zylinder werden geholt — eine 40-Spur-Diskette "
+            "kommt sauber herein, Altbestand auf den ungeraden bleibt aussen vor.\n"
+            "SCHREIBEN:  die Diskette wird später in einem 40-Spur-Laufwerk "
+            "(K5600.10) lesbar; ohne den Haken liegen die Spuren dicht "
+            "hintereinander und passen zu einem 80-Spur-Laufwerk (K5601).")
+        form.addRow("", self._doppelschritt)
+
+        self._nur_seite0 = QCheckBox("Nur Seite 0")
+        self._nur_seite0.setChecked(num_heads == 1)
+        self._nur_seite0.setToolTip(
+            "Seite 1 wird weder gelesen noch geschrieben.\n"
+            "Beim Lesen halbiert das die Zeit und blendet Altbestand auf der "
+            "Rückseite aus — eine einseitige Diskette wird dann auch als solche "
+            "erkannt.")
+        form.addRow("", self._nur_seite0)
+
+        self._geometrie = QLabel("")
+        self._geometrie.setToolTip("Was dabei als Abbild entsteht bzw. geschrieben wird")
+        form.addRow("Ergibt:", self._geometrie)
+        for w in (self._laufwerkspuren, self._doppelschritt, self._nur_seite0):
+            (w.currentIndexChanged if hasattr(w, "currentIndexChanged")
+             else w.toggled).connect(lambda *_: self._geometrie_zeigen())
+        self._geometrie_zeigen()
 
         self._vorauslesen = QCheckBox(
             "Unbenutzte Spuren im Hintergrund mitlesen")
@@ -314,13 +370,32 @@ class PhysicalDiskDialog(QDialog):
         knoepfe.rejected.connect(self.reject)
         layout.addWidget(knoepfe)
 
+    def _geometrie_zeigen(self) -> None:
+        """Sagen, was aus Laufwerk + Haken folgt — Rechnen soll niemand müssen."""
+        spuren, koepfe = self._geometrie_rechnen()
+        wie = " (jeder zweite Zylinder)" if self._doppelschritt.isChecked() else ""
+        self._geometrie.setText(f"{spuren} Spuren × {koepfe} Seite(n){wie}")
+
+    def _geometrie_rechnen(self) -> tuple:
+        """Physische Laufwerkszylinder + Haken → **logische** Geometrie des Abbilds.
+
+        Bei Doppelschritt passt nur die Hälfte der Spuren auf dieselbe Strecke: das
+        Abbild hat 40 Spuren, keine 80 mit Lücken.  Alles oberhalb des Geräts rechnet
+        deshalb in logischen Spuren.
+        """
+        phys = int(self._laufwerkspuren.currentData())
+        spuren = phys // 2 if self._doppelschritt.isChecked() else phys
+        return spuren, (1 if self._nur_seite0.isChecked() else 2)
+
     def auswahl(self) -> dict:
         """Die getroffene Auswahl als Argumente für :meth:`PhysicalSession.start`."""
+        spuren, koepfe = self._geometrie_rechnen()
         return {
             "drive": self._laufwerk.currentData(),
             "cell_rate_kbps": int(self._rate.currentData()),
-            "num_cyls": self._num_cyls,
-            "num_heads": self._num_heads,
+            "num_cyls": spuren,
+            "num_heads": koepfe,
+            "double_step": self._doppelschritt.isChecked(),
             "writable": self._schreiben.isChecked(),
             "read_ahead": self._vorauslesen.isChecked(),
             "verify_writes": self._verify.isChecked(),

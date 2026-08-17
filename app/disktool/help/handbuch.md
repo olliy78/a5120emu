@@ -153,6 +153,26 @@ und die Dienstprogramme, bei UDOS mindestens `OS` und `ZDOS`.
 dann arbeitet das Werkzeug wie mit einem Abbild — Dateien holen, schreiben,
 löschen, Diskeditor.
 
+Im Dialog stehen dabei drei Angaben, die nur Sie kennen können:
+
+* **Zylinder (80 oder 40)** — wie weit nach innen gefahren wird. „40" an einem
+  80er-Laufwerk liest genau die äußeren 40 Zylinder.
+* **Doppelschritt erzwingen** — Spur 1 liegt dann auf Zylinder 2, Spur 2 auf
+  Zylinder 4 und so fort. So beschreibt ein 40-Spur-Laufwerk (K5600.10) eine
+  Diskette; ein 80-Spur-Laufwerk erreicht dieselben Spuren nur mit doppeltem
+  Schritt.
+* **Nur Seite 0** — die Rückseite wird gar nicht angefahren.
+
+Das ist mehr als eine Zeitersparnis. Wer eine 40-Spur-Diskette einliest, die
+früher einmal zweiseitig mit 80 Spuren formatiert war, schleppt sonst den alten
+Bestand mit: auf den ungeraden Spuren und auf der Rückseite steht noch das frühere
+Format, und die Erkennung sieht eine Mischung, die es nirgends gibt. Wird dort gar
+nicht erst gelesen, kommt eine saubere einseitige Diskette herein.
+
+Beim **Schreiben** entscheidet der Doppelschritt, in welchem Rechner die Diskette
+danach läuft: mit Haken auf jedem zweiten Zylinder — dann liest sie ein K5600.10;
+ohne Haken dicht hintereinander — dann liest sie ein K5601.
+
 Drei Unterschiede, die man kennen muss:
 
 * **Das Öffnen dauert einen Moment.** Die Formaterkennung liest ein paar Spuren
