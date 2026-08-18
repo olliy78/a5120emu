@@ -268,8 +268,23 @@ PYSHIM
 
     mkdir -p "$_ziel" "$_lizenzen"
     info "Greaseweazle-Rad bauen (py3-none-any)"
-    ( cd "$_baum" && "$_py" -m pip wheel --no-deps --quiet -w "$_ziel" . ) \
-        || { rm -rf "$_tmp"; die "Greaseweazle-Rad liess sich nicht bauen (kein Netz? kein pip?)"; }
+
+    # Gebaut wird in einer EIGENEN Umgebung, nicht mit dem Systempython.  Der
+    # Grund ist belegt (Release-Lauf 2026-08-18, ubuntu-22.04): dort leckte das
+    # betagte `setuptools`/`pkg_resources` aus /usr/lib/python3/dist-packages in
+    # den Bauvorgang, und `setuptools_scm` brach mit
+    # `ContextualVersionConflict: packaging 21.3 … Requirement.parse('packaging>=26.2')`
+    # ab.  Mit eigener Umgebung + `--no-build-isolation` ist bestimmt, WOMIT
+    # gebaut wird — und das Systempython bleibt unberührt.
+    _bau="$_tmp/bauumgebung"
+    "$_py" -m venv "$_bau" >/dev/null 2>&1 \
+        || { rm -rf "$_tmp"; die "Bauumgebung nicht anlegbar (python3-venv fehlt?)"; }
+    if ist_windows; then _bpy="$_bau/Scripts/python.exe"; else _bpy="$_bau/bin/python"; fi
+    "$_bpy" -m pip install --quiet --upgrade pip setuptools setuptools_scm wheel \
+        || { rm -rf "$_tmp"; die "Bauwerkzeug nicht ladbar (kein Netz? Proxy?)"; }
+
+    ( cd "$_baum" && "$_bpy" -m pip wheel --no-deps --no-build-isolation --quiet -w "$_ziel" . ) \
+        || { rm -rf "$_tmp"; die "Greaseweazle-Rad liess sich nicht bauen"; }
 
     GW_RAD=$(ls -1 "$_ziel"/greaseweazle-*.whl 2>/dev/null | head -1)
     [ -n "$GW_RAD" ] || { rm -rf "$_tmp"; die "kein Greaseweazle-Rad im Ausgabeverzeichnis"; }
