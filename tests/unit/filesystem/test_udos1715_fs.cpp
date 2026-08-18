@@ -42,6 +42,16 @@
 namespace {
 
 constexpr const char* kFixture = "udos1715_640k_pc1715_system.img";
+/// @brief Zweite Ausprägung derselben Sitte: die WEGA-Startdiskette des
+///        **Robotron P8000** (UDOS 2.2).  Sie unterscheidet sich in einem
+///        einzigen Punkt vom PC 1715 — dem Füllmuster hinter dem Belegungsplan.
+///
+/// Sie liegt als **`.hfe`** vor, nicht als `.img`: 13 Sektoren tragen hinter der
+/// Daten-CRC die **Schreibnaht** eines nachträglich überschriebenen Sektors
+/// (`4E xx yy yy …`).  Inhaltlich ist das nichts, aber `rawCompatible()` sieht dort
+/// zu Recht Bytes außerhalb der Nutzdaten und verweigert `.img` — eine Fixture, die
+/// das Werkzeug selbst nicht schreiben würde, wäre ein schlechter Prüfstein.
+constexpr const char* kFixtureP8000 = "udos1715_640k_p8000_wega.hfe";
 
 std::string fixture(const char* name) {
     return (std::filesystem::path(FIXTURE_DIR) / name).string();
@@ -93,6 +103,20 @@ Diskette oeffne(const std::string& pfad, bool nur_lesen = true,
 }
 
 Diskette referenz() { return oeffne(fixture(kFixture)); }
+/// @brief Die P8000-Diskette; als `.hfe` bringt sie ihre Geometrie selbst mit.
+Diskette p8000(bool nur_lesen = true, const std::string& pfad = "") {
+    Diskette d;
+    const FsProfile* p = dateisysteme().find("udos1715");
+    if (!p) { d.error = "Dateisystem unbekannt"; return d; }
+    const DiskFormat* f = formate().find(p->format);
+    if (!f) { d.error = "Format unbekannt"; return d; }
+    d.disk = DiskImage::open(pfad.empty() ? fixture(kFixtureP8000) : pfad,
+                             std::nullopt, nur_lesen);
+    if (!d.disk) { d.error = "Abbild nicht ladbar"; return d; }
+    d.space = std::make_unique<SectorSpace>(d.disk->medium(), *f);
+    d.fs    = Udos1715FileSystem::mount(*d.space, *p, d.error);
+    return d;
+}
 
 /// @brief Frisch angelegte Diskette in einer Temp-Datei (räumt sich weg).
 struct Leerdiskette {
@@ -710,4 +734,152 @@ TEST(Udos1715Segmente, ZuVieleSegmenteWerdenAbgewiesen) {
     wo.udos_segments = zu_viele;
     EXPECT_FALSE(l.fs().write("ZUVIEL", std::vector<uint8_t>(256, 1), wo));
     EXPECT_NE(l.fs().lastError().find("Segmente"), std::string::npos) << l.fs().lastError();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Der Robotron P8000 — dieselbe Sitte, ein anderes Füllmuster
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Die WEGA-Startdiskette des P8000 (UDOS 2.2) trägt Descriptoren, Zeigersektoren
+// und Verzeichnis genau dort, wo das PC-1715-Handbuch sie beschreibt.  Sie war
+// trotzdem unlesbar, weil ihr Formatierer den Platz zwischen Belegungsplan und
+// Zählern nicht mit `00` füllt, sondern mit dem **0x77-Rest der ZDOS-Sitte**.
+// Die Trennung zu ZDOS trägt deshalb nicht mehr dieses Füllmuster, sondern der
+// Zählerabgleich (`belegt + frei == Kapazität`) und die 0x33/0xF7 davor — die
+// liegen bei ZDOS vor Offset 344 und damit hier mitten im Belegungsplan.
+
+TEST(Udos1715P8000, WegaStartdisketteWirdErkannt) {
+    const FsProfile* p = dateisysteme().find("udos1715");
+    ASSERT_NE(p, nullptr);
+    const DiskFormat* f = formate().find(p->format);
+    ASSERT_NE(f, nullptr);
+
+    auto disk = DiskImage::open(fixture(kFixtureP8000), std::nullopt, true);
+    ASSERT_TRUE(disk);
+    SectorSpace raum(disk->medium(), *f);
+
+    std::string warum;
+    EXPECT_TRUE(Udos1715FileSystem::looksLikeUdos1715(raum, *p, &warum)) << warum;
+
+    // Und sie ist NICHT als rohes Sektorabbild darstellbar: 13 Sektoren tragen die
+    // Schreibnaht eines ueberschriebenen Sektors hinter der Daten-CRC.  Das ist zwar
+    // kein Inhalt, aber das Werkzeug kann es nicht wissen — und darf es nicht
+    // stillschweigend wegwerfen.
+    EXPECT_FALSE(disk->medium().rawCompatible());
+    EXPECT_NE(disk->medium().rawIncompatibleReason(), "");
+}
+
+TEST(Udos1715P8000, DatentraegerAngabenStimmen) {
+    Diskette d = p8000();
+    ASSERT_TRUE(d) << d.error;
+
+    const FsInfo i = d.fs->info();
+    EXPECT_EQ(i.label, "WEGA-STARTDISKETTE");
+    EXPECT_EQ(i.files, 42);
+    EXPECT_EQ(i.total_bytes, 80u * 32u * 256u);
+    EXPECT_EQ(i.used_bytes, 2533u * 256u);
+    EXPECT_EQ(i.free_bytes,   27u * 256u);
+    for (const auto& w : i.warnings) ADD_FAILURE() << "unerwartete Warnung: " << w;
+}
+
+TEST(Udos1715P8000, HinterDemBelegungsplanStehtDerZdosNachlauf) {
+    // Das ist der Befund, an dem die Diskette scheiterte — er soll sichtbar bleiben.
+    Diskette d = p8000();
+    ASSERT_TRUE(d) << d.error;
+    const std::vector<uint8_t>& roh = d.fs->bitmap().raw();
+    ASSERT_EQ(roh.size(), kUdosBitmapBytes);
+
+    EXPECT_EQ(d.fs->bitmap().sitte(), UdosMapSitte::Ndos1715);
+    for (size_t i = 344; i < 348; ++i) EXPECT_EQ(roh[i], 0x00) << "Offset " << i;
+    for (size_t i = 348; i < 375; ++i) EXPECT_EQ(roh[i], 0x77) << "Offset " << i;
+    EXPECT_NE(roh[377], 0x00) << "Byte 179H ist beim P8000 belegt — es darf nicht "
+                                 "als Erkennungsmerkmal dienen";
+
+    // Und die Zähler sind trotzdem echt — daran haengt die Trennung zu ZDOS.
+    EXPECT_EQ(d.fs->bitmap().storedUsed(), 2533);
+    EXPECT_EQ(d.fs->bitmap().storedFree(),   27);
+    EXPECT_EQ(d.fs->bitmap().countUsed(),  2533);
+    EXPECT_EQ(d.fs->bitmap().countFree(),    27);
+}
+
+TEST(Udos1715P8000, KarteUndDateienStimmenSektorgenau) {
+    Diskette d = p8000();
+    ASSERT_TRUE(d) << d.error;
+    const FsProfile* prof = dateisysteme().find("udos1715");
+    ASSERT_NE(prof, nullptr);
+
+    std::set<std::pair<int, int>> aus_karte;
+    for (int t = 0; t < d.fs->trackCount(); ++t)
+        for (int s = 0; s < d.fs->sectorsPerTrack(); ++s)
+            if (d.fs->bitmap().used(static_cast<uint8_t>(t), static_cast<uint8_t>(s + 1)))
+                aus_karte.insert({s, t});
+
+    std::set<std::pair<int, int>> aus_dateien = belegungAusDenDateien(*d.fs, *prof);
+
+    // Was die Karte darueber hinaus sperrt, ist der SYSTEMBEREICH — und der reicht
+    // beim P8000 weiter als beim PC 1715.  Reserviert ist jeweils der ganze **Kopf 0**
+    // (Sektoren 0…15) von vier Spuren; Kopf 1 derselben Spuren traegt gewoehnliche
+    // Dateidaten.  Nachgemessen an der Diskette, nicht angenommen:
+    //   Spur  0  Urlader und BFOS  — mit EINER Luecke: Sektor 1 steht als frei
+    //                                (das Medium ist dort noch unbeschrieben)
+    //   Spur 21  Bootspur (UDOS liest sie beim Kaltstart, s. doc/udos_diskettenformat.md)
+    //   Spur 22  DIRECTORY-Spur    — ganz gesperrt, nicht nur die 11 benutzten Sektoren
+    //   Spur 23  Belegungsplanspur — ebenso
+    for (int s = 0; s < 16; ++s) {
+        if (s != 1) aus_dateien.insert({s, 0});
+        aus_dateien.insert({s, 21});
+        aus_dateien.insert({s, 22});
+        aus_dateien.insert({s, 23});
+    }
+
+    std::vector<std::pair<int, int>> nur_karte, nur_dateien;
+    std::set_difference(aus_karte.begin(), aus_karte.end(),
+                        aus_dateien.begin(), aus_dateien.end(),
+                        std::back_inserter(nur_karte));
+    std::set_difference(aus_dateien.begin(), aus_dateien.end(),
+                        aus_karte.begin(), aus_karte.end(),
+                        std::back_inserter(nur_dateien));
+
+    EXPECT_TRUE(nur_karte.empty())
+        << nur_karte.size() << " Sektoren stehen als belegt in der Karte, gehoeren aber "
+           "keiner Datei und keinem Systembereich (erster: Spur "
+        << (nur_karte.empty() ? -1 : nur_karte[0].second)
+        << " Sektor " << (nur_karte.empty() ? -1 : nur_karte[0].first) << ")";
+    EXPECT_TRUE(nur_dateien.empty())
+        << nur_dateien.size() << " Sektoren gehoeren einer Datei, stehen aber als frei "
+           "in der Karte";
+    EXPECT_EQ(aus_karte.size(), 2533u);
+}
+
+TEST(Udos1715P8000, SchreibenLesenLoeschenLaesstDenNachlaufStehen) {
+    // Rundlauf auf der echten Diskette: die 27 freien Sektoren reichen fuer eine
+    // kleine Datei.  Danach muss der Belegungsplan wieder der alte sein — samt
+    // seinem 0x77-Nachlauf, den wir beim Zurueckschreiben nicht platt buegeln duerfen.
+    // Auf einer Kopie — die Fixture wird schreibend geoeffnet.
+    const std::string kopie = k1520test::tempPath("k1520_test_p8000_wega.hfe");
+    std::error_code ec;
+    std::filesystem::copy_file(fixture(kFixtureP8000), kopie,
+                               std::filesystem::copy_options::overwrite_existing, ec);
+    ASSERT_FALSE(ec) << ec.message();
+    struct Weg { std::string p; ~Weg() { std::error_code e; std::filesystem::remove(p, e); } }
+        weg{kopie};
+
+    Diskette d = p8000(/*nur_lesen=*/false, kopie);
+    ASSERT_TRUE(d) << d.error;
+
+    const std::vector<uint8_t> vorher = d.fs->bitmap().raw();
+    const std::vector<uint8_t> inhalt = {'P', '8', '0', '0', '0', 0x0D};
+
+    WriteOptions wo;
+    wo.udos_type = "A";
+    ASSERT_TRUE(d.fs->write("TESTP8K", inhalt, wo)) << d.fs->lastError();
+
+    std::vector<uint8_t> zurueck;
+    ASSERT_TRUE(d.fs->read("TESTP8K", zurueck)) << d.fs->lastError();
+    EXPECT_EQ(zurueck, inhalt);
+
+    ASSERT_TRUE(d.fs->erase("TESTP8K")) << d.fs->lastError();
+    EXPECT_EQ(d.fs->bitmap().raw(), vorher)
+        << "Belegungsplan (inkl. Nachlauf und Byte 179H) hat sich veraendert";
+    EXPECT_EQ(d.fs->info().files, 42);
 }

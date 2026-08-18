@@ -455,6 +455,21 @@ bool TrackSync::fetchWrite(uint32_t id, std::vector<uint8_t>& cells, uint32_t& b
     return true;
 }
 
+namespace {
+
+/// @brief Sektoren einer Spur mit falscher ID- oder Daten-CRC.
+///
+/// Beide zaehlen: eine kaputte ID-CRC macht den Sektor unauffindbar, auch wenn seine
+/// Daten heil sind — dieselbe Regel wie beim Pruef-Lesen (Entwurf §7.1).
+uint16_t crcFehler(const TrackImage& t) {
+    uint16_t n = 0;
+    for (const LogicalSector& s : TrackCodec::parseTrack(t))
+        if (!s.id_crc_ok || !s.data_crc_ok) ++n;
+    return n;
+}
+
+}  // namespace
+
 bool TrackSync::completeRead(uint32_t id, const uint8_t* cells, size_t len,
                              uint32_t bitcells) {
     if (!cells && len > 0) return false;
@@ -545,6 +560,24 @@ bool TrackSync::completeRead(uint32_t id, const uint8_t* cells, size_t len,
         verifyAbschliessen(*e, c, h, ok, grund);
         return true;
     }
+
+    // ── Fehlerhafte Pruefsumme: NOCH EINMAL lesen ────────────────────────────
+    // Eine Umdrehung reicht auf einer gealterten Diskette nicht immer.  Wiederholt
+    // wird nur, solange Sektoren mit falscher CRC dabei sind; uebernommen wird der
+    // BESTE Versuch, nicht der letzte (@ref TrackSyncSpec::read_crc_retries).
+    const uint16_t schlecht = crcFehler(spur);
+    if (schlecht < e->best_bad) { e->best_bad = schlecht; e->best_read = spur; }
+    if (schlecht > 0 && e->read_attempts < spec_.read_crc_retries) {
+        ++e->read_attempts;
+        ++zaehler_.read_retries;
+        e->job_id = 0;                     // wieder in die Warteschlange, gleiche Prio
+        zaehler_.busy_cyl = zaehler_.busy_head = 255;
+        zaehler_.busy_kind = 0;
+        cv_arbeit_.notify_all();
+        return true;
+    }
+    if (e->best_bad < schlecht) spur = std::move(e->best_read);
+    if (e->best_bad > 0) ++zaehler_.read_crc_bad;
 
     medium_->loadTrack(c, h, std::move(spur));
     *e = Eintrag{};

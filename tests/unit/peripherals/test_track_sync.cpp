@@ -24,6 +24,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <map>
 #include <mutex>
 #include <set>
 #include <utility>
@@ -85,6 +86,20 @@ public:
         std::lock_guard<std::mutex> l(m_);
         schadhaft_.clear();
     }
+    /// @brief Wackelkontakt beim LESEN: die naechsten @p male Leseversuche dieser Spur
+    ///        liefern ein verfaelschtes Datenbyte (= falsche Daten-CRC), danach ist
+    ///        alles heil.  So verhaelt sich eine gealterte Diskette bei nur einer
+    ///        abgetasteten Umdrehung.
+    void leseflattern(uint8_t cyl, uint8_t head, int male) {
+        std::lock_guard<std::mutex> l(m_);
+        flattern_[{cyl, head}] = male;
+    }
+    /// @brief Wie oft wurde diese Spur ueberhaupt gelesen?
+    int leseversuche(uint8_t cyl, uint8_t head) const {
+        std::lock_guard<std::mutex> l(m_);
+        auto it = leseversuche_.find({cyl, head});
+        return it == leseversuche_.end() ? 0 : it->second;
+    }
     size_t verifyLaeufe() const {
         std::lock_guard<std::mutex> l(m_);
         return verifies_;
@@ -137,7 +152,19 @@ private:
                     std::lock_guard<std::mutex> l(m_);
                     ++verifies_;
                 }
-                const TrackImage& s = scheibe_.peek(j.cyl, j.head);
+                TrackImage s = scheibe_.peek(j.cyl, j.head);
+                {   // Wackelkontakt: ein Byte verfaelschen, solange das Kontingent laeuft.
+                    std::lock_guard<std::mutex> l(m_);
+                    ++leseversuche_[{j.cyl, j.head}];
+                    auto it = flattern_.find({j.cyl, j.head});
+                    if (it != flattern_.end() && it->second > 0) {
+                        --it->second;
+                        // Ein Byte MITTEN IM DATENFELD verfaelschen — dort schlaegt die
+                        // Daten-CRC an.  Ein Gap-Byte taete das nicht.
+                        const size_t dam = s.nextMark(0, MarkType::Data);
+                        if (dam != SIZE_MAX && dam + 8 < s.size()) s.bytes[dam + 8] ^= 0xFF;
+                    }
+                }
                 const uint32_t bitcells = s.bitcells ? s.bitcells
                                                      : static_cast<uint32_t>(s.size() * 16);
                 std::vector<uint8_t> zellen = BitCodec::encode(s, bitcells);
@@ -173,6 +200,8 @@ private:
     size_t                  schreibungen_ = 0;
     size_t                  verifies_     = 0;
     std::set<std::pair<uint8_t, uint8_t>> schadhaft_;
+    std::map<std::pair<uint8_t, uint8_t>, int> flattern_;
+    std::map<std::pair<uint8_t, uint8_t>, int> leseversuche_;
 };
 
 TrackSyncSpec spec(bool schreibbar = false, bool vorauslesen = false,
@@ -856,4 +885,77 @@ TEST(TrackSync, EinSchonDefekterSektorDarfDefektZurueckkommen) {
     const auto drauf = TrackCodec::parseTrack(scheibe.peek(5, 0));
     ASSERT_EQ(drauf.size(), 4u);
     EXPECT_FALSE(drauf.back().data_crc_ok);
+}
+
+// ─── Lesewiederholung bei falscher Prüfsumme ─────────────────────────────────
+//
+// Eine Spurseite wird nur EINE Umdrehung lang abgetastet.  Auf einer gealterten
+// Diskette liefert das gelegentlich einen Sektor mit falscher Daten-CRC, der beim
+// nächsten Versuch fehlerfrei zurückkommt — an der P8000-Diskette von 1988
+// beobachtet (ein Sektor unter 2560, danach dreimal fehlerfrei nachgelesen).
+// Ohne Wiederholung wanderte dieser Ausrutscher unbemerkt in eine Datei.
+
+TEST(TrackSync, EinLeseausrutscherWirdWiederholtUndNichtUebernommen) {
+    DiskMedium scheibe = echteDiskette();
+    DiskMedium abbild;
+    TrackSync  sync(spec(), abbild);
+    Ersatzfaden faden(sync, scheibe);
+    faden.leseflattern(3, 1, 1);            // der ERSTE Versuch kommt verfaelscht
+    faden.start();
+
+    const TrackImage& spur = abbild.track(3, 1);
+    ASSERT_FALSE(spur.empty());
+
+    // Der Inhalt ist der heile — nicht der des ersten Versuchs.
+    const auto soll = TrackCodec::parseTrack(scheibe.peek(3, 1));
+    const auto ist  = TrackCodec::parseTrack(spur);
+    ASSERT_EQ(ist.size(), soll.size());
+    for (size_t i = 0; i < ist.size(); ++i) EXPECT_EQ(ist[i].data, soll[i].data) << i;
+    for (const LogicalSector& s : ist) {
+        EXPECT_TRUE(s.id_crc_ok)   << "Sektor " << +s.id;
+        EXPECT_TRUE(s.data_crc_ok) << "Sektor " << +s.id;
+    }
+
+    EXPECT_EQ(faden.leseversuche(3, 1), 2) << "genau eine Wiederholung";
+    const SyncStats st = sync.stats();
+    EXPECT_EQ(st.read_retries, 1u);
+    EXPECT_EQ(st.read_crc_bad, 0u) << "am Ende war die Spur heil";
+    EXPECT_EQ(st.reads_done,   1u) << "die Wiederholung ist kein zweiter Lesevorgang";
+    faden.stop();
+}
+
+TEST(TrackSync, EineDauerhaftSchadhafteSpurWirdNichtEwigWiederholt) {
+    DiskMedium scheibe = echteDiskette();
+    DiskMedium abbild;
+    TrackSyncSpec s = spec();
+    s.read_crc_retries = 2;
+    TrackSync   sync(s, abbild);
+    Ersatzfaden faden(sync, scheibe);
+    faden.leseflattern(2, 0, 99);           // bleibt kaputt
+    faden.start();
+
+    const TrackImage& spur = abbild.track(2, 0);
+    EXPECT_FALSE(spur.empty()) << "die Spur wird trotzdem hergegeben — mit Befund";
+    EXPECT_EQ(faden.leseversuche(2, 0), 3) << "Erstversuch + 2 Wiederholungen, dann Schluss";
+
+    const SyncStats st = sync.stats();
+    EXPECT_EQ(st.read_retries, 2u);
+    EXPECT_EQ(st.read_crc_bad, 1u);
+    EXPECT_EQ(st.reads_done,   1u);
+    faden.stop();
+}
+
+TEST(TrackSync, EineHeileSpurWirdNiemalsZweimalGelesen) {
+    // Gegenprobe: die Wiederholung darf nicht jede Spur doppelt einlesen — das
+    // verdoppelte die Wartezeit an einer Diskette ohne jeden Fehler.
+    DiskMedium scheibe = echteDiskette();
+    DiskMedium abbild;
+    TrackSync  sync(spec(), abbild);
+    Ersatzfaden faden(sync, scheibe);
+    faden.start();
+
+    for (uint8_t c = 0; c < kCyls; ++c) (void)abbild.track(c, 0);
+    for (uint8_t c = 0; c < kCyls; ++c) EXPECT_EQ(faden.leseversuche(c, 0), 1) << +c;
+    EXPECT_EQ(sync.stats().read_retries, 0u);
+    faden.stop();
 }

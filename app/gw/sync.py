@@ -64,6 +64,7 @@ class _Spec(ctypes.Structure):
         ("request_timeout_ms", ctypes.c_uint32),
         ("verify_writes", ctypes.c_bool),
         ("write_verify_retries", ctypes.c_uint8),
+        ("read_crc_retries", ctypes.c_uint8),
     ]
 
 
@@ -89,6 +90,8 @@ class _Stats(ctypes.Structure):
         ("writes_done", ctypes.c_uint32),
         ("verifies_done", ctypes.c_uint32),
         ("verify_failed", ctypes.c_uint32),
+        ("read_retries", ctypes.c_uint32),
+        ("read_crc_bad", ctypes.c_uint32),
         ("errors", ctypes.c_uint32),
         ("busy_kind", ctypes.c_uint8),
         ("busy_cyl", ctypes.c_uint8),
@@ -121,6 +124,8 @@ class Stats:
     writes_done: int
     verifies_done: int
     verify_failed: int
+    read_retries: int
+    read_crc_bad: int
     errors: int
     busy_kind: int
     busy_cyl: int
@@ -211,7 +216,8 @@ class Sync:
                  writable: bool = False, encoding: str = "MFM",
                  read_ahead: bool = True, write_settle_ms: int = 0,
                  request_timeout_ms: int = 0, for_emulator: bool = False,
-                 verify_writes: bool = True, write_verify_retries: int = 1):
+                 verify_writes: bool = True, write_verify_retries: int = 1,
+                 read_crc_retries: int = 2):
         self._lib = _lib(for_emulator)
         spec = _Spec(
             num_cyls=num_cyls,
@@ -225,6 +231,7 @@ class Sync:
             request_timeout_ms=request_timeout_ms,
             verify_writes=verify_writes,
             write_verify_retries=write_verify_retries,
+            read_crc_retries=read_crc_retries,
         )
         self._h = self._lib.k1520s_create(ctypes.byref(spec))
         if not self._h:

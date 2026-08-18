@@ -70,6 +70,7 @@ typedef struct {
     bool     verify_writes;
     /// Zusätzliche Schreibversuche nach einem misslungenen Vergleich (0 = keiner, Vorgabe 1).
     uint8_t  write_verify_retries;
+    uint8_t  read_crc_retries;   ///< zusaetzliche LESEversuche bei falscher Pruefsumme
 } K1520SyncSpec;
 
 /// @brief Auftragsart; entspricht `SyncJobKind`.
@@ -108,6 +109,8 @@ typedef struct {
     uint32_t writes_done;
     uint32_t verifies_done;   ///< bestandene Prüf-Lesevorgänge
     uint32_t verify_failed;   ///< misslungene Vergleiche (inkl. Wiederholungen)
+    uint32_t read_retries;    ///< Lesewiederholungen wegen falscher Pruefsumme
+    uint32_t read_crc_bad;    ///< Spuren, die auch danach noch Fehler trugen
     uint32_t errors;
     uint8_t  busy_kind;       ///< laufender Auftrag (0 = gerade nichts)
     uint8_t  busy_cyl;        ///< 255 = nichts

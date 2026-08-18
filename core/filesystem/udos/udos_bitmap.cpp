@@ -174,12 +174,15 @@ bool UdosBitmap::looksValid(const std::vector<uint8_t>& raw, uint8_t expect_secs
     if (raw[379] == 0) return sag("Karte nennt 0 Spuren");
 
     if (sitte == UdosMapSitte::Ndos1715) {
-        // NDOS fuehrt 80 Spureintraege (bis 343) und laesst den Rest bis zu den
-        // Zaehlern auf 00.  Das ist zugleich das Unterscheidungsmerkmal zu ZDOS, das
-        // dort seinen Nachlauf 0x33/0xF7/0x77 stehen hat.
+        // NDOS fuehrt 80 Spureintraege (bis 343); dahinter bleibt bis zu den Zaehlern
+        // Platz, den die Formatierer verschieden fuellen — der PC 1715 mit 00, der
+        // **P8000** mit dem 0x77-Rest der ZDOS-Sitte (dessen 0x33/0xF7 liegen bei ZDOS
+        // vor 344 und damit hier mitten im Belegungsplan; sie bleiben das
+        // Unterscheidungsmerkmal, s. u.).  Geprueft wird deshalb nur, dass dort NICHTS
+        // ANDERES steht — die Trennung zu ZDOS traegt der Zaehlerabgleich.
         for (size_t i = 344; i < 375; ++i)
-            if (raw[i] != 0x00) return sag("Bereich hinter dem Belegungsplan ist nicht 0");
-        if (raw[377] != 0x00) return sag("Byte 179H ist nicht 0");
+            if (raw[i] != 0x00 && raw[i] != 0x77)
+                return sag("Bereich hinter dem Belegungsplan ist weder 0 noch Nachlauf");
         // Belegt + frei muss die Kapazitaet ergeben — bei NDOS sind beide Zaehler echt.
         const uint32_t kapazitaet = static_cast<uint32_t>(raw[378]) * raw[379];
         const uint32_t belegt = static_cast<uint32_t>(raw[375] | (raw[376] << 8));

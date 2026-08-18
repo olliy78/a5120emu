@@ -270,13 +270,11 @@ def main(argv: Optional[List[str]] = None) -> int:
               f"(bekannt: {', '.join(BEFEHLE)})", file=sys.stderr)
         return 1
 
-    from app.gw import PhysicalSession, verfuegbarkeit
-
-    ok, grund = verfuegbarkeit()
-    if not ok:
-        print(grund, file=sys.stderr)
-        return 1
-
+    # ERST die Argumente pruefen, DANN das Laufwerk anfassen (Entwurf §12.3): ein
+    # Tippfehler soll nicht erst nach zwei Minuten Einlesen auffallen — und er soll
+    # auch dann gemeldet werden, wenn die Hosttools gar nicht installiert sind.
+    # Frueher stand die Verfuegbarkeitspruefung hier davor; damit haing die Aussage
+    # „dafuer braucht es --write" an einer freiwilligen Abhaengigkeit.
     veraendernd = o.befehl in ("put", "rm", "rewrite")
     if veraendernd and not o.write:
         print(f"Fehler: '{o.befehl}' veraendert die eingelegte Diskette — dafuer "
@@ -289,6 +287,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     from app.core_binding.k1520disk import DiskTool, K1520DiskError
+    from app.gw import GreaseweazleFehlt, PhysicalSession
 
     try:
         sitzung = PhysicalSession.start(
@@ -296,6 +295,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             num_heads=o.heads, writable=o.write, rpm=o.rpm,
             read_ahead=True, verify_writes=not o.no_verify,
             double_step=o.double_step)
+    except GreaseweazleFehlt:
+        # Die ausfuehrliche Fassung nennt DIESEN Interpreter — genau die Auskunft,
+        # die fehlt, wenn man im venv eines anderen Projekts steckt.
+        from app.gw import verfuegbarkeit
+        print(verfuegbarkeit()[1], file=sys.stderr)
+        return 1
     except Exception as e:                                   # noqa: BLE001
         print(f"Fehler: {e}", file=sys.stderr)
         return 1
@@ -368,6 +373,16 @@ def main(argv: Optional[List[str]] = None) -> int:
                 if not gelungen:
                     return 1
     finally:
+        # Lesewiederholungen sind eine Aussage ueber die DISKETTE, nicht ueber den
+        # Lauf — sie gehoeren auch unter ein blosses `ls` oder `get`.  Nur melden,
+        # wenn es welche gab; sonst waere es Rauschen.
+        _st = sitzung.stats()
+        if _st and _st.read_retries:
+            print(f"{_st.read_retries} Lesewiederholung(en) wegen fehlerhafter "
+                  f"Pruefsumme"
+                  + (f"; {_st.read_crc_bad} Spur(en) blieben fehlerhaft"
+                     if _st.read_crc_bad else " — danach fehlerfrei"),
+                  file=sys.stderr)
         sitzung.close()
     return rc
 
