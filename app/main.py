@@ -36,6 +36,44 @@ if "--paths" in sys.argv[1:]:
     print(paths.describe())
     sys.exit(0)
 
+# --help: ebenfalls vor den Qt-Importen, damit die Hilfe auch ohne PySide6 kommt.
+HILFE = """a5120emu — Emulator des Buerocomputers A5120 (K1520-Bus)
+
+  a5120emu [DISKETTE …]     bis zu vier Abbilder, in Laufwerksreihenfolge A: B: C: D:
+  a5120emu --paths          aufgeloeste Pfade zeigen (Bibliothek, Katalog, Disketten)
+  a5120emu --help           diese Hilfe
+
+Angenommen werden .img, .hfe und .dmk.  Die genannten Disketten liegen beim
+Kaltstart bereits im Laufwerk — die Maschine bootet also von der ersten.  Sie
+ersetzen die zuletzt gemerkte Belegung nur fuer diesen Lauf; gespeichert wird
+nichts.
+
+Ohne Oberflaeche (Skript, Makefile, Fehlersuche) faehrt dieselbe Maschine unter
+`k1520dbg`; `k1520dbg DISKETTE --console` ist die Konsolenfassung.
+"""
+if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
+    print(HILFE)
+    sys.exit(0)
+
+# Diskettenargumente hier auswerten — ebenfalls VOR den Qt-Importen.  Ein
+# Tippfehler im Dateinamen soll eine Zeile im Terminal ergeben, nicht ein Fenster
+# mit leerem Laufwerk; und er soll auch dann gemeldet werden, wenn PySide6 gar
+# nicht installiert ist.
+CLI_DISKS = []
+for _arg in sys.argv[1:]:
+    if _arg.startswith("-"):
+        print(f"a5120emu: unbekannte Option '{_arg}' — `--help` zeigt die Bedienung",
+              file=sys.stderr)
+        sys.exit(2)
+    if not Path(_arg).is_file():
+        print(f"a5120emu: '{_arg}' gibt es nicht", file=sys.stderr)
+        sys.exit(2)
+    CLI_DISKS.append(_arg)
+if len(CLI_DISKS) > 4:
+    print(f"a5120emu: {len(CLI_DISKS)} Disketten angegeben, die Maschine hat vier "
+          f"Laufwerke", file=sys.stderr)
+    sys.exit(2)
+
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer
 from app.ui.main_window import MainWindow
@@ -65,7 +103,7 @@ def main():
 
     # Create and show main window
     try:
-        window = MainWindow()
+        window = MainWindow(CLI_DISKS)
         window.show()
     except Exception as e:
         # Startabbrüche des Cores (z. B. fehlender Diskettenformat-Katalog

@@ -814,15 +814,33 @@ Kommandozeilenprogramm im Paket schon gebahnt hat.
   `test_slim_wirft_pip_aus_der_laufzeitumgebung`, dazu die auf **130 MB**
   verschärfte Schranke im Paketjob (mit den vorherigen 220 MB gingen die
   163 MB als „in Ordnung" durch).
-- **Der Emulator hat keine Konsolenfassung** (nachgesehen 2026-08-18): `app/main.py`
-  kennt als einziges Argument `--paths` und startet sonst Qt; eine Diskette auf der
-  Kommandozeile nimmt er **nicht** entgegen (`MainWindow()` bekommt kein Argument, ein
-  `a5120emu meine.hfe` wird kommentarlos ignoriert). Wer die Maschine ohne Oberfläche
-  fahren will, nimmt `k1520dbg` (`keys`/`screen`/`gscreen`/`dialog`, `-x` für den
-  Stapelbetrieb). Das ist vertretbar — der Bildschirm ist ein Pixelpuffer der K7024 —,
-  aber **eine Diskette als Argument anzunehmen wäre billig** und genau das, was der
-  Ablauf bearbeiten→assemblieren→starten braucht. `k1520disktool` kann es längst
-  (`app/disktool/main.py` liest `argv[1]`/`argv[2]`).
+- ~~**Der Emulator nimmt keine Diskette auf der Kommandozeile**~~ ✅ erledigt
+  2026-08-19: `a5120emu [DISKETTE …]` legt bis zu vier Abbilder in A:–D:, **vor**
+  `power_on()`, sodass der Kaltstart schon von der ersten bootet. Dazu `--help`.
+  Zwei Festlegungen: die Argumente werden **vor den Qt-Importen** ausgewertet (ein
+  Tippfehler ergibt eine Zeile im Terminal, auch ohne PySide6), und sie werden
+  **nicht gespeichert** — ein `a5120emu fremde.hfe` soll die gemerkte Belegung des
+  Anwenders nicht dauerhaft ersetzen.
+
+  Dabei fiel eine Falle auf, die auch von Hand zuschlägt: **der Kern prüft beim
+  Mounten die Dateigröße nicht gegen die Geometrie.** Ein 780K-`.img` lässt sich
+  klaglos als `cpa800` einlegen — und bootet dann nicht, weil die Spurbelegung nicht
+  stimmt. Für ein rohes Sektorabbild ist die Größe das einzige Merkmal, also wählt
+  `DriveWidget.mount_path()` unter den passenden Katalogformaten dasjenige, dessen
+  aus `formats.yaml` errechnete Abbildgröße zur Datei passt (`_abbildgroessen()`);
+  `.hfe`/`.dmk` tragen ihre Geometrie selbst und bleiben unberührt. Guards:
+  `py_a5120emu_cli` (8 Fälle, inkl. Kaltstart von der genannten Diskette).
+
+  **Eine Konsolenfassung des Emulators gibt es weiterhin nicht** — die ist
+  `k1520dbg console` (§10a.1, `tools/k1520dbg.md` §9).
+
+  Offen bleibt eine Kleinigkeit unter Windows: `launcher.cmd` startet
+  `pythonw.exe` (fensterlos, damit beim Doppelklick keine Konsole aufgeht) —
+  `a5120emu --help` und `--paths` schreiben dort also ins Leere. Wer die Auskunft
+  braucht, ruft `python.exe app\main.py --paths` aus der Eingabeaufforderung auf
+  (die Vorlage `k1520dbg.cmd.in` legt sie ohnehin bereit). Zu beheben wäre es mit
+  einem zweiten `.cmd`, das `python.exe` benutzt — lohnt erst, wenn jemand darüber
+  stolpert.
 - **Versionsprüfung Payload ↔ venv**: ob der Launcher bei Versionsversatz automatisch
   nachinstalliert oder nur warnt.
 - **Proxy-Umgebungen**: `uv` respektiert `HTTPS_PROXY`; ob der Installer danach fragt, wenn

@@ -5,6 +5,7 @@ K1520 Emulator - Drive/Disk Management Widget
 Dialog and controls for mounting/unmounting disk images.
 """
 
+import functools
 import os
 
 from PySide6.QtWidgets import (
@@ -16,6 +17,57 @@ from PySide6.QtCore import Qt, Signal, QTimer
 from app import drive_types as dt
 from app import paths
 from app.ui.focus import release_focus
+
+
+def _spanne(wert) -> int:
+    """`0`, `"0-1"`, `"2-79"` → Anzahl der abgedeckten Nummern."""
+    if isinstance(wert, int):
+        return 1
+    s = str(wert)
+    if "-" not in s:
+        return 1
+    a, _, b = s.partition("-")
+    try:
+        return int(b) - int(a) + 1
+    except ValueError:
+        return 1
+
+
+@functools.lru_cache(maxsize=1)
+def _abbildgroessen() -> dict:
+    """Formatname → Bytezahl eines rohen Sektorabbilds (aus ``formats.yaml``).
+
+    Gebraucht wird das, weil der Kern beim Mounten die Dateigröße NICHT gegen die
+    Geometrie prüft: ein 780K-Abbild lässt sich klaglos als ``cpa800`` einlegen —
+    und bootet dann nicht, weil die Spurbelegung nicht stimmt.  Bei ``.hfe``/``.dmk``
+    steht die Geometrie in der Datei, bei einem rohen ``.img`` ist die Größe das
+    einzige Merkmal.  Fehlt oder klemmt der Katalog, kommt ein leeres Verzeichnis
+    zurück und es bleibt bei der bisherigen Reihenfolge.
+    """
+    try:
+        import yaml
+        from app import paths
+        datei = paths.formats_file()
+        if not datei:
+            return {}
+        katalog = yaml.safe_load(open(datei, encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+    out = {}
+    for eintrag in katalog.get("formats") or []:
+        try:
+            summe = 0
+            for tr in eintrag.get("tracks") or []:
+                summe += (_spanne(tr.get("cyls", 0)) * _spanne(tr.get("heads", 0))
+                          * int(tr["sectors"]) * int(tr["size"]))
+            if summe:
+                out[eintrag["name"]] = summe
+        except Exception:
+            continue
+    return out
+
+
 
 
 class DriveWidget(QWidget):
@@ -391,6 +443,66 @@ class DriveWidget(QWidget):
 
     # ── Config-Persistenz (gemountete Disketten) ─────────────────────────────
 
+    def mount_path(self, drive: int, path: str, fmt: str = "", wp: bool = False) -> bool:
+        """Ein Abbild in *drive* einlegen — für Aufrufe von AUSSEN.
+
+        Gebraucht für die Diskettenargumente der Kommandozeile (``a5120emu
+        meine.hfe``); die Oberfläche selbst mountet über den Dateidialog.
+
+        Ohne *fmt* wird das Standardformat des Laufwerkstyps genommen und, falls
+        das nicht passt, jedes weitere geometrisch passende Katalogformat
+        probiert — dieselbe Reihenfolge, die auch das Auswahlfeld anbietet.  Für
+        ``.hfe``/``.dmk`` kommt die Geometrie ohnehin aus der Datei; nur ein rohes
+        ``.img`` braucht wirklich den richtigen Namen.
+
+        :return: True, wenn die Diskette liegt.
+        """
+        panel = self._panels.get(drive)
+        if panel is None or not path or not os.path.exists(path):
+            return False
+
+        if fmt:
+            kandidaten = [fmt]
+        else:
+            try:
+                default = self.emulator.drive_default_format(drive)
+                weitere = [f for f in self.emulator.drive_formats(drive) if f != default]
+                kandidaten = ([default] if default else []) + weitere
+            except Exception:
+                kandidaten = []
+            if not kandidaten:
+                kandidaten = ["cpa800"]
+
+            # Bei einem rohen Sektorabbild entscheidet die DATEIGROESSE.  Der Kern
+            # prueft sie beim Mounten nicht: ein 780K-Abbild laesst sich klaglos als
+            # cpa800 einlegen — und bootet dann nicht.  Passt genau ein Katalogformat
+            # zur Groesse, kommt es nach vorn.  (.hfe/.dmk tragen ihre Geometrie
+            # selbst; dort trifft nichts zu und die Reihenfolge bleibt wie gehabt.)
+            try:
+                groesse = os.path.getsize(path)
+                nach_groesse = [k for k in kandidaten if _abbildgroessen().get(k) == groesse]
+                if nach_groesse:
+                    kandidaten = nach_groesse + [k for k in kandidaten if k not in nach_groesse]
+            except OSError:
+                pass
+
+        for name in kandidaten:
+            try:
+                if not self.emulator.mount_disk(drive, path, name, wp):
+                    continue
+            except Exception:
+                continue
+            idx = panel._format_combo.findData(name)
+            panel._format_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            panel._wp_check.setChecked(wp)
+            panel._path_display.setText(path)
+            panel._toggle_btn.setText("Unmount")
+            panel._saveas_btn.setEnabled(True)
+            self._mounts[drive] = (path, name, wp)
+            self._update_notice(drive)
+            return True
+        return False
+
     def get_mounts(self) -> list:
         """Aktuell gemountete Images als serialisierbare Liste (für die Config)."""
         out = []
@@ -424,30 +536,15 @@ class DriveWidget(QWidget):
                 self._update_notice(drive)
         self._mounts.clear()
 
-        # 2) Aus der Config mounten.
+        # 2) Aus der Config mounten (dieselbe Stelle wie die Kommandozeile).
         for m in mounts or []:
             try:
                 drive = int(m.get("drive"))
             except (TypeError, ValueError):
                 continue
-            path = m.get("path")
-            fmt = m.get("format") or "cpa800"
-            wp = bool(m.get("write_protect", False))
-            panel = self._panels.get(drive)
-            if panel is None or not path or not os.path.exists(path):
-                continue
-            try:
-                if self.emulator.mount_disk(drive, path, fmt, wp):
-                    idx = panel._format_combo.findData(fmt)
-                    panel._format_combo.setCurrentIndex(idx if idx >= 0 else 0)
-                    panel._wp_check.setChecked(wp)
-                    panel._path_display.setText(path)
-                    panel._toggle_btn.setText("Unmount")
-                    panel._saveas_btn.setEnabled(True)
-                    self._mounts[drive] = (path, fmt, wp)
-                    self._update_notice(drive)
-            except Exception:
-                pass
+            self.mount_path(drive, m.get("path") or "",
+                            m.get("format") or "cpa800",
+                            bool(m.get("write_protect", False)))
 
     def remount_all(self):
         """Alle aktuell gemounteten Images neu mounten (setzt den K5122-

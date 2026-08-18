@@ -774,7 +774,7 @@ ihn dort hineinstellt.
 | `k1520dbg` | dieser Debugger — **nur** Kommandozeile |
 | `k1520disktool-cli` | Dateien auf die Diskette und zurück — **nur** Kommandozeile |
 | `k1520disktool` | dasselbe mit Oberfläche |
-| `a5120emu` | der Emulator mit Oberfläche (die Konsolenfassung ist `k1520dbg console`, §9) |
+| `a5120emu` | der Emulator mit Oberfläche — nimmt Disketten entgegen (`a5120emu a.hfe b.hfe`, bis zu vier); die Konsolenfassung ist `k1520dbg console` (§9) |
 
 > **Das Programm `a5120emu` hat keine Konsolenfassung** — es nimmt nicht einmal eine
 > Diskette auf der Kommandozeile entgegen (einziges Argument ist `--paths`, eine
@@ -835,7 +835,10 @@ z80asm -o PROG.COM prog.asm
 k1520disktool-cli put arbeit.hfe PROG.COM
 k1520disktool-cli ls arbeit.hfe
 
-# 3. laufen lassen und am Programmanfang anhalten
+# 3a. einfach ausprobieren — mit Oberfläche, Diskette liegt schon im Laufwerk
+a5120emu arbeit.hfe
+
+# 3b. oder gleich mit Haltepunkt am Programmanfang
 k1520dbg arbeit.hfe -l prog.lst
 ```
 ```

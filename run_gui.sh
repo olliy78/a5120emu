@@ -36,4 +36,4 @@ echo ""
 echo "Starting GUI..."
 echo ""
 
-python3 "$PROJECT_DIR/app/main.py"
+python3 "${PROJECT_DIR}/app/main.py" "$@"
