@@ -556,10 +556,14 @@ Was beim Weiterarbeiten zu wissen ist:
   verschwand der erste Sektor.  Wächter: `Scp1700.*` (5 Fälle),
   `HfeCodec.FmSpurMitHalberRate_UeberlebtDenRundlauf`.  Am echten Laufwerk
   gegengeprüft.
-- **Der Robotron P8000 fährt dasselbe NDOS (2026-08-18,
-  `doc/udos1715_diskettenformat.md` §3.0a).**  Eine WEGA-Startdiskette des **P8000**
+- **Der Robotron P8000 fährt dasselbe NDOS — ein ANDERER Rechner, nicht eine
+  Spielart des PC 1715 (2026-08-18, `doc/udos1715_diskettenformat.md` §3.0a).**
+  Die beiden Maschinen sind unverwandt (der P8000 startet mit dieser Diskette sein
+  Hauptsystem **WEGA**); geteilt wird allein die Sitte, nach der eine Diskette
+  angelegt ist.  Das Dateisystemprofil heißt trotzdem `udos1715` — nach dem Ort der
+  Entschlüsselung, nicht nach der Maschine.  Eine WEGA-Startdiskette des **P8000**
   (UDOS 2.2, 80×32×256, 250 kbit/s MFM) galt als unlesbar.  Sie ist Feld für Feld eine
-  UDOS1715-Diskette; nur ihr Formatierer lässt zwischen Belegungsplan und Zählern den
+  NDOS-Diskette; nur ihr Formatierer lässt zwischen Belegungsplan und Zählern den
   **`77H`-Nachlauf der ZDOS-Sitte** stehen (`179H` = `01`), und darauf bestand
   `UdosBitmap::looksValid` als Unterscheidungsmerkmal.  **Das Füllmuster trennt die
   Karten NICHT** — die ZDOS-Kennzeichen `11×33H`/`F7H` liegen auf `150H…15BH` und damit
@@ -569,7 +573,7 @@ Was beim Weiterarbeiten zu wissen ist:
   Zweite Eigenheit, die man nicht für einen Defekt halten darf: **der Systembereich ist
   grösser** — gesperrt ist Kopf 0 (Sektoren 0…15) der Spuren 0, **21** (Bootspur), 22
   und 23 ganz, Kopf 1 derselben Spuren trägt Dateidaten.  Wächter: `Udos1715P8000.*`
-  auf der Fixture `udos1715_640k_p8000_wega.hfe` — sie liegt als `.hfe` vor, weil 13
+  auf der Fixture `udosP8000_640k_wega.hfe` — sie liegt als `.hfe` vor, weil 13
   ihrer Sektoren hinter der Daten-CRC die **Schreibnaht** eines überschriebenen Sektors
   tragen und `rawCompatible()` dafür zu Recht `.img` verweigert (anders als beim
   PC 1715, dessen Fixture ein `.img` ist).  Lesen **und** Schreiben am echten Laufwerk

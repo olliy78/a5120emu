@@ -42,16 +42,19 @@
 namespace {
 
 constexpr const char* kFixture = "udos1715_640k_pc1715_system.img";
-/// @brief Zweite Ausprägung derselben Sitte: die WEGA-Startdiskette des
-///        **Robotron P8000** (UDOS 2.2).  Sie unterscheidet sich in einem
-///        einzigen Punkt vom PC 1715 — dem Füllmuster hinter dem Belegungsplan.
+/// @brief Dieselbe Diskettensitte auf einem **anderen Rechner**: die
+///        WEGA-Startdiskette des **Robotron P8000** (UDOS 2.2).
+///
+/// Der P8000 ist keine Spielart des PC 1715 — andere Maschine, anderer Zweck der
+/// Diskette (sie startet WEGA).  Geteilt wird nur, wie eine Diskette angelegt ist;
+/// abweichend davon ist ein einziger Punkt, das Füllmuster hinter dem Belegungsplan.
 ///
 /// Sie liegt als **`.hfe`** vor, nicht als `.img`: 13 Sektoren tragen hinter der
 /// Daten-CRC die **Schreibnaht** eines nachträglich überschriebenen Sektors
 /// (`4E xx yy yy …`).  Inhaltlich ist das nichts, aber `rawCompatible()` sieht dort
 /// zu Recht Bytes außerhalb der Nutzdaten und verweigert `.img` — eine Fixture, die
 /// das Werkzeug selbst nicht schreiben würde, wäre ein schlechter Prüfstein.
-constexpr const char* kFixtureP8000 = "udos1715_640k_p8000_wega.hfe";
+constexpr const char* kFixtureP8000 = "udosP8000_640k_wega.hfe";
 
 std::string fixture(const char* name) {
     return (std::filesystem::path(FIXTURE_DIR) / name).string();
@@ -737,8 +740,12 @@ TEST(Udos1715Segmente, ZuVieleSegmenteWerdenAbgewiesen) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Der Robotron P8000 — dieselbe Sitte, ein anderes Füllmuster
+// Der Robotron P8000 — ein ANDERER Rechner mit derselben Diskettensitte
 // ─────────────────────────────────────────────────────────────────────────────
+//
+// Nicht verwandt mit dem PC 1715 und nicht dessen Nachfolger: eine eigene Maschine,
+// deren Diskette hier das Hauptsystem WEGA startet.  Gemeinsam ist allein, wie eine
+// Diskette angelegt wird — und genau das prüfen diese Fälle.
 //
 // Die WEGA-Startdiskette des P8000 (UDOS 2.2) trägt Descriptoren, Zeigersektoren
 // und Verzeichnis genau dort, wo das PC-1715-Handbuch sie beschreibt.  Sie war

@@ -54,7 +54,7 @@ inline constexpr uint16_t kUdosCounterConstant = 2464;
  * Belegungsplan der Spuren 78/79 laegen) und am Zaehlerabgleich — **nicht** an der
  * Fuellung dahinter, die beim P8000 wie bei ZDOS `77H` ist:
  *
- * | | @ref Zdos (A5120) | @ref Ndos1715 (PC 1715 · P8000) |
+ * | | @ref Zdos (A5120) | @ref Ndos1715 |
  * |---|---|---|
  * | Spureintraege | 78 (bis Offset 335) | **80** (bis Offset 343) |
  * | Fuellung dahinter | `11×33H · F7H · 27×77H` | **`00`** (P8000: `77H`) |
@@ -65,7 +65,11 @@ inline constexpr uint16_t kUdosCounterConstant = 2464;
  */
 enum class UdosMapSitte : uint8_t {
     Zdos,      ///< UDOS 1526 / 4.x auf dem A5120
-    Ndos1715   ///< UDOS1715/NDOS — PC 1715 und Robotron P8000 (UDOS 2.2)
+    /// UDOS1715/NDOS.  Angetroffen auf zwei **unverwandten** Rechnern, die nur
+    /// dieselbe Diskettensitte teilen: dem **PC 1715** (UDOS1715, Namensgeber) und
+    /// dem **Robotron P8000** (UDOS 2.2).  Der Name sagt, wo es entschluesselt
+    /// wurde — nicht, dass die Maschinen etwas miteinander zu tun haetten.
+    Ndos1715
 };
 
 /// @brief Anzahl der Spureintraege, die die Karte in dieser Sitte fuehrt.

@@ -125,17 +125,25 @@ halber Geschwindigkeit in einem anderen Aufzeichnungsverfahren geschrieben als d
 Rest. Das Werkzeug führt das mit, auch beim Zurückschreiben; zu sehen ist es im
 Diskeditor und in der Formatzeile.
 
-## UDOS1715 — dieselbe Familie, anderes Dateisystem
+## UDOS1715 — dasselbe UDOS, anderes Dateisystem
 
 Disketten vom **PC 1715** tragen UDOS mit dem Treiber **NDOS** statt ZDOS. Das
-Werkzeug erkennt sie von selbst und nennt sie `udos1715`. Drei Dinge sind dort
-anders als bei den A5120-Disketten:
+Werkzeug erkennt sie von selbst und nennt sie `udos1715`.
+
+Dieselben Disketten schreibt auch der **Robotron P8000** (dort UDOS 2.2, z. B. seine
+WEGA-Startdiskette). Die beiden Rechner haben nichts miteinander zu tun — sie legen
+ihre Disketten nur gleich an; der Name `udos1715` benennt das Dateisystem, nicht die
+Maschine. Für die Bedienung macht es keinen Unterschied.
+
+Drei Dinge sind dort anders als bei den A5120-Disketten:
 
 * Die Diskette ist **ein** Datenträger, nicht zwei Seiten — es gibt kein `Side0`
   und `Side1`, und beim Extrahieren entstehen keine Unterordner.
 * Sie lässt sich **sehr wohl als `.img`** ablegen. Der Floppycontroller des
   PC 1715 kann nichts hinter die Prüfsumme schreiben, also steht dort auch
   nichts: die Verkettung liegt in eigenen *Zeigersektoren* innerhalb der Diskette.
+  (Eine einzelne Aufnahme kann trotzdem `.img` verweigern — dann trägt sie die
+  Schreibnaht eines überschriebenen Sektors hinter einer Prüfsumme.)
 * Ein Dateiname muss mit einem **Buchstaben** beginnen.
 
 Dateityp, Eigenschaften und der ganze Rest des Kopfsektors sind dieselben wie bei

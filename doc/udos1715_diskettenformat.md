@@ -4,21 +4,37 @@
 Systemdiskette („SYSTEM", 67 Dateien, 80×32×256, 0 CRC-Fehler); als zweiter Beleg die
 **WEGA-Startdiskette des Robotron P8000** (UDOS 2.2, 42 Dateien, dieselbe Geometrie)
 
-UDOS1715 ist die Ausprägung von UDOS für den **PC 1715** — und, wie sich am zweiten
-Datenträger zeigte, ebenso für den **Robotron P8000**; dessen UDOS 2.2 legt dieselbe
-Struktur an (§3.0a nennt den einen Unterschied). Sie benutzt zur
-Diskettenverwaltung nicht ZDOS, sondern **NDOS**, und das ist kein Beiwerk, sondern der
-ganze Unterschied:
+Dieses Dokument beschreibt ein **Dateisystem**, keine Maschine. Es heißt hier
+UDOS1715, weil es am **PC 1715** aufgenommen und entschlüsselt wurde; angetroffen wurde
+es inzwischen auf zwei **völlig verschiedenen Rechnern**:
+
+| | **PC 1715** | **Robotron P8000** |
+|---|---|---|
+| Bauart | Bürocomputer, U880 (Z80) | Mehrprozessorsystem; UDOS läuft auf dem Z80-Vorrechner |
+| UDOS-Fassung | UDOS1715 | UDOS 2.2 |
+| Betriebsart der Diskette | Systemdiskette | **WEGA**-Startdiskette (lädt das Hauptsystem) |
+| Beleg hier | `SYSTEM`, 67 Dateien | `WEGA-STARTDISKETTE`, 42 Dateien |
+
+Sie sind **nicht verwandt** und teilen weder Architektur noch Betriebssystemzweck — sie
+legen ihre Disketten nur nach derselben Sitte an. Wo im Folgenden „PC 1715" steht, ist
+der PC 1715 gemeint und nicht „NDOS allgemein"; die beiden Stellen, an denen sich die
+Rechner unterscheiden, stehen in §3.0a. Gemeinsam ist ihnen: zur Diskettenverwaltung
+benutzen sie nicht ZDOS, sondern **NDOS**, und das ist kein Beiwerk, sondern der ganze
+Unterschied:
 
 > Der PC 1715 hat einen **µPD765**-Floppycontroller. Der kann nur ganze IBM-Sektoren
 > lesen und schreiben — die vier Bytes hinter der Daten-CRC, in denen ZDOS auf dem
 > A5120 seine Dateiverkettung führt (`doc/udos_diskettenformat.md` §1.1), sind für ihn
 > nicht erreichbar. NDOS legt die Verkettung deshalb **in eigene Sektoren**:
 > **Zeigersektoren**.
+>
+> Das ist die Begründung **für den PC 1715**. Warum der P8000 dasselbe tut, sagt seine
+> Diskette nicht — belegt ist nur, dass er es tut. Der naheliegende Schluss (auch dort
+> ein Controller ohne Zugriff hinter die Daten-CRC) ist hier nicht nachgeprüft.
 
 Daraus folgt der praktisch wichtigste Unterschied zu ZDOS:
 
-| | UDOS 4.x / ZDOS (A5120) | **UDOS1715 / NDOS (PC 1715)** |
+| | UDOS 4.x / ZDOS (A5120) | **UDOS1715 / NDOS** |
 |---|---|---|
 | Sektor | 128 B + 4 B Kontrollblock **hinter der CRC** | **256 B, reines Standard-IBM** |
 | Verkettung | Rück-/Vorwärtszeiger je Sektor im Gap | **Zeigersektoren** mit Adressliste |
@@ -171,7 +187,7 @@ Text sagte das; er war zu eng gefasst). Was bleibt:
 
 Geprüft wird deshalb nur noch, dass hinter dem Belegungsplan **`00` oder `77H`** steht,
 und Byte `179H` gar nicht mehr — beim P8000 trägt es `01`.
-Wächter: `Udos1715P8000.*` auf der Fixture `udos1715_640k_p8000_wega.hfe` — sie liegt
+Wächter: `Udos1715P8000.*` auf der Fixture `udosP8000_640k_wega.hfe` — sie liegt
 als `.hfe` vor, weil 13 ihrer Sektoren hinter der Daten-CRC die Schreibnaht eines
 nachträglich überschriebenen Sektors tragen (`4E xx yy yy …`); `rawCompatible()` sieht
 dort Bytes außerhalb der Nutzdaten und verweigert `.img`.  Das ist kein Widerspruch zu
