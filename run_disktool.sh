@@ -24,7 +24,12 @@ if [ ! -f "$BUILD_DIR/libk1520disk.so" ]; then
     exit 1
 fi
 
-source "$VENV_DIR/bin/activate"
+# Den Interpreter des venv DIREKT aufrufen, nicht über `source .../activate`.
+# `activate` trägt den Pfad des venv ABSOLUT ein (er stammt aus dem Erzeugen);
+# ein kopiertes oder mitverschobenes venv stellt damit das Verzeichnis eines
+# FREMDEN venv in den PATH, und `python3` ist dann ein anderer Interpreter mit
+# anderen Paketen — Fehlerbild: eine installierte Abhängigkeit gilt als fehlend.
+# Der direkt aufgerufene Interpreter findet sein venv über den eigenen Pfad.
 export LD_LIBRARY_PATH="$BUILD_DIR:$LD_LIBRARY_PATH"
 
-exec python3 "$PROJECT_DIR/app/disktool/main.py" "$@"
+exec "$VENV_DIR/bin/python3" "$PROJECT_DIR/app/disktool/main.py" "$@"

@@ -2,8 +2,9 @@
 
 Dieses Werkzeug holt Dateien von Disketten der K1520-Rechner (A5120, A5130, PC 1715 …)
 auf den heutigen Rechner und schreibt sie zurück. Es liest und schreibt die
-Dateisysteme von **CP/A**, **SCPX** und **UDOS/ZDOS** in den Abbildformaten
-`.hfe`, `.dmk` und `.img`.
+Dateisysteme von **CP/A**, **SCPX**, **UDOS/ZDOS**, **UDOS1715/NDOS** und
+**SCP1700** (CP/M-86 des A7100) in den
+Abbildformaten `.hfe`, `.dmk` und `.img`.
 
 Es gibt dasselbe auch als Kommandozeilenwerkzeug (`k1520disktool`); beide benutzen
 dieselbe Bibliothek und kommen deshalb immer zum selben Ergebnis.
@@ -112,15 +113,49 @@ UDOS lässt sich nicht als `.img` ablegen: die Dateiverkettung steht dort hinter
 der Daten-Prüfsumme, ein rohes Sektorabbild verlöre sie. Das Werkzeug lehnt das
 darum ab, statt stillschweigend eine unbrauchbare Datei zu schreiben.
 
+## SCP1700 — das CP/M-86 des A7100
+
+Disketten des 16-Bit-Rechners **A7100** erkennt das Werkzeug von selbst und nennt
+sie `scp1700`. Für die Bedienung gibt es dort nichts Besonderes: das Dateisystem
+ist gewöhnliches CP/M, Attribute und Nutzerbereich verhalten sich wie bei einer
+CP/A-Diskette.
+
+Die Diskette selbst ist allerdings ungewöhnlich gebaut — ihre erste Spur ist mit
+halber Geschwindigkeit in einem anderen Aufzeichnungsverfahren geschrieben als der
+Rest. Das Werkzeug führt das mit, auch beim Zurückschreiben; zu sehen ist es im
+Diskeditor und in der Formatzeile.
+
+## UDOS1715 — dieselbe Familie, anderes Dateisystem
+
+Disketten vom **PC 1715** tragen UDOS mit dem Treiber **NDOS** statt ZDOS. Das
+Werkzeug erkennt sie von selbst und nennt sie `udos1715`. Drei Dinge sind dort
+anders als bei den A5120-Disketten:
+
+* Die Diskette ist **ein** Datenträger, nicht zwei Seiten — es gibt kein `Side0`
+  und `Side1`, und beim Extrahieren entstehen keine Unterordner.
+* Sie lässt sich **sehr wohl als `.img`** ablegen. Der Floppycontroller des
+  PC 1715 kann nichts hinter die Prüfsumme schreiben, also steht dort auch
+  nichts: die Verkettung liegt in eigenen *Zeigersektoren* innerhalb der Diskette.
+* Ein Dateiname muss mit einem **Buchstaben** beginnen.
+
+Dateityp, Eigenschaften und der ganze Rest des Kopfsektors sind dieselben wie bei
+UDOS/ZDOS; Eigenschaften-Dialog und Beiblatt gelten unverändert.
+
+Angelegt wird eine solche Diskette mit dem Dateisystem `udos1715`
+(80 Spuren beidseitig, 640 KB), `udos1715_ss80` (320 KB) oder `udos1715_ss40`
+(160 KB).
+
 ## Was eine Datei außer ihren Bytes hat
 
 Rechtsklick auf eine Datei ▸ *Eigenschaften* (oder Doppelklick, oder Alt+Eingabe)
 zeigt die Angaben, die ein Linux-Dateisystem nicht tragen kann:
 
 * **UDOS** — den ganzen Kopfsektor: Dateityp, Eigenschaften (W/E/L/S), Satzlänge,
-  Einsprungadresse, Segment, Lade- und Endadresse, Stapelgröße, Datum. Bei einer
-  Programmdatei steuern diese Angaben, wie UDOS sie **lädt** — falsche Werte
+  Einsprungadresse, Speichersegmente, Lade- und Endadresse, Stapelgröße, Datum. Bei
+  einer Programmdatei steuern diese Angaben, wie UDOS sie **lädt** — falsche Werte
   ergeben ein Programm, das nicht startet.
+  Das Feld **Segmente** trägt sie alle, durch Leerzeichen getrennt
+  (`4000+06A7 62A7+0002 …`): ein Programm kann mehrere Speicherbereiche belegen.
 * **CP/M** — Nutzerbereich (0–15) und die Attribute R/O, SYS, ARC.
 
 Der Nutzerbereich gehört zur **Identität** einer CP/M-Datei: ihn zu ändern
@@ -145,6 +180,121 @@ beide Größen.
 Eine bootfähige Diskette braucht danach noch die Systemdateien: bei CP/A `@OS.COM`
 und die Dienstprogramme, bei UDOS mindestens `OS` und `ZDOS`.
 
+## Eine echte Diskette am Greaseweazle
+
+*Diskette ▸ Physische Diskette laden* (Strg+Umschalt+O) öffnet keine Datei, sondern eine
+**echte Diskette** in einem echten 5,25″- oder 8″-Laufwerk, das über einen
+[Greaseweazle](https://github.com/keirf/greaseweazle)-Adapter am USB hängt. Ab
+dann arbeitet das Werkzeug wie mit einem Abbild — Dateien holen, schreiben,
+löschen, Diskeditor.
+
+Im Dialog stehen dabei drei Angaben, die nur Sie kennen können:
+
+* **Zylinder (80 oder 40)** — wie weit nach innen gefahren wird. „40" an einem
+  80er-Laufwerk liest genau die äußeren 40 Zylinder.
+* **Doppelschritt erzwingen** — Spur 1 liegt dann auf Zylinder 2, Spur 2 auf
+  Zylinder 4 und so fort. So beschreibt ein 40-Spur-Laufwerk (K5600.10) eine
+  Diskette; ein 80-Spur-Laufwerk erreicht dieselben Spuren nur mit doppeltem
+  Schritt.
+* **Nur Seite 0** — die Rückseite wird gar nicht angefahren.
+
+Das ist mehr als eine Zeitersparnis. Wer eine 40-Spur-Diskette einliest, die
+früher einmal zweiseitig mit 80 Spuren formatiert war, schleppt sonst den alten
+Bestand mit: auf den ungeraden Spuren und auf der Rückseite steht noch das frühere
+Format, und die Erkennung sieht eine Mischung, die es nirgends gibt. Wird dort gar
+nicht erst gelesen, kommt eine saubere einseitige Diskette herein.
+
+Beim **Schreiben** entscheidet der Doppelschritt, in welchem Rechner die Diskette
+danach läuft: mit Haken auf jedem zweiten Zylinder — dann liest sie ein K5600.10;
+ohne Haken dicht hintereinander — dann liest sie ein K5601.
+
+### Dasselbe auf der Kommandozeile
+
+```sh
+k1520disktool --physical ls -l
+k1520disktool --physical save-as sicherung.hfe
+k1520disktool --physical --write put NEU.TXT
+```
+
+Befehle: `ls`, `info`, `check`, `get`, `put`, `rm`, `save-as`, `rewrite`; die
+Laufwerksangaben aus dem Dialog heißen dort `--drive`, `--cyls`, `--heads`,
+`--rate`, `--double-step`. **Ohne `--write` wird nichts verändert** — das ist
+Absicht: an der Kommandozeile fragt niemand nach.
+
+Drei Unterschiede, die man kennen muss:
+
+* **Das Öffnen dauert einen Moment.** Die Formaterkennung liest ein paar Spuren
+  quer über die Diskette — rund zehn Sekunden. Ein Fortschrittsfenster zeigt, wo
+  es steht, und lässt sich abbrechen. Passt keines der bekannten Formate, sieht
+  sie doch die ganze Diskette an; dann dauert es gut anderthalb Minuten.
+* **Geöffnet wird schreibgeschützt**, bis man widerspricht. Ein Fehler kostet
+  hier nicht eine Kopie, sondern die einzige noch existierende Diskette.
+* **Gespeichert ist erst, was zurückgelesen wurde.** *Speichern* schreibt jede
+  geänderte Spur und **liest sie sofort wieder ein**, um sie zu vergleichen.
+  Erst dann gilt sie als geschrieben. Das dauert, findet aber Schadstellen, die
+  ein Schreiben ohne Gegenprobe verschweigt.
+
+Der **Diskeditor** lässt sich dabei jederzeit öffnen, auch wenn die Diskette erst
+zum Teil gelesen ist. Spuren, von denen das Werkzeug noch nichts weiß, sind
+**schwarz** — das ist etwas anderes als grau („unformatiert"): grau ist ein
+Befund, schwarz heißt nur, dass noch keiner vorliegt. Die Ansicht füllt sich,
+während im Hintergrund weitergelesen wird; ein Klick auf eine schwarze Spur holt
+sie sofort.
+
+### Wenn kein Dateisystem erkannt wird
+
+Dann ist die Diskette **trotzdem offen** — nur ungedeutet. Sie liegt im Speicher,
+der Diskeditor geht, das Abbild lässt sich mit *Speichern unter* sichern; gesperrt
+ist nur, was Dateien braucht. Im Hintergrund wird weitergelesen.
+
+Danach gibt es zwei Wege:
+
+* **Dateisystem im Kopfbereich wählen** — die Deutung wird am Speicherabbild
+  wiederholt, die Diskette wird dafür *nicht* noch einmal gelesen.
+* **Diskette ▸ Speicherabbild ändern** — zwei Schnitte, die eine Diskette lesbar
+  machen können:
+  * *Ungerade Spuren entfernen* — für eine 40-Spur-Diskette, die im Doppelschritt
+    beschrieben, aber einfachschrittig gelesen wurde. Auf den ungeraden Spuren
+    steht dann noch das frühere Format.
+  * *Seite 1 entfernen* — wenn die Rückseite nur Altbestand trägt.
+
+  Beide arbeiten am **Abbild**, nicht an der Diskette. Danach ist die Verbindung
+  zum Laufwerk beendet: die Spurnummern stimmen nicht mehr mit den Kopfpositionen
+  überein, es wird also nicht weitergelesen und nichts mehr zurückgeschrieben. Das
+  Abbild bleibt vollständig — zurückschreiben lässt es sich mit *Physische
+  Diskette überschreiben* und gesetztem Doppelschritt-Haken.
+
+Nach jedem Schnitt wird die Erkennung erneut versucht.
+
+Trägt die Diskette eine Spur nicht mehr, sagt das die Meldung mitsamt
+Spurnummer — **das Abbild im Speicher ist dann noch heil**. Der Ausweg steht
+im Streifen und unter *Diskette ▸ Diskette neu beschreiben*: neue Diskette
+einlegen, alles noch einmal wegschreiben. Nur bereits gelesene Spuren können
+dabei geschrieben werden; was nie gelesen wurde, ist keine Aussage über den
+Inhalt und bleibt deshalb weg.
+
+### Eine Diskette beschreiben
+
+*Diskette ▸ Physische Diskette überschreiben* geht den umgekehrten Weg: was
+gerade geöffnet ist — auch eine `.hfe`-Datei — wird auf eine **echte** Diskette
+geschrieben. So bringt man ein Abbild zurück auf einen Datenträger.
+
+Zuerst kommt die Rückfrage, denn hier geht kein Abbild verloren, sondern eine
+Diskette: **ihr bisheriger Inhalt ist danach fort.** Dann wird das Laufwerk
+gewählt — und dann läuft es **im Hintergrund**: die Statuszeile zählt die
+geschriebenen Spuren mit, der Streifen meldet das Ende. Man kann derweil
+weiterarbeiten; nur das Laufwerk ist belegt, und die Diskette darf bis zum Ende
+nicht entnommen werden. Jede Spur wird geschrieben *und* zurückgelesen. Passt das Abbild nicht in die eingestellte Laufwerksgeometrie
+(mehr Spuren oder Seiten, als das Laufwerk hat), wird **gar nichts** geschrieben;
+eine halb überschriebene Diskette wäre das schlechteste Ergebnis.
+
+Der Menüpunkt ist gesperrt, wenn die Greaseweazle-Hosttools fehlen; sein
+Kurzhinweis sagt dann, was zu tun ist:
+
+```
+pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"
+```
+
 ## Archivieren
 
 *Datei ▸ Archivieren* (Strg+Umschalt+A) packt in **eine** `.zip`:
@@ -153,6 +303,14 @@ und die Dienstprogramme, bei UDOS mindestens `OS` und `ZDOS`.
 * alle Dateien einzeln, nach Seiten sortiert,
 * ein lesbares Inhaltsverzeichnis mit allen Dateiangaben und einer Legende,
 * die maschinenlesbaren Beiblätter.
+
+Vorher wird nach der **Beschriftung** der Diskette gefragt — dem Text auf dem
+Aufkleber. Daraus entstehen der vorgeschlagene Dateiname und die Namen der
+Dateien im Archiv, und sie steht im Kopf des Inhaltsverzeichnisses. Bei einer
+**physischen** Diskette ist das die einzige Auskunft darüber, welche Diskette
+archiviert wurde: sie hat keine Abbilddatei, von der sich ein Name ableiten
+liesse. Vorgeschlagen wird der Dateiname der offenen Diskette, sonst ihr
+Datenträgername.
 
 Gedacht als Langzeitablage: aus dem Textteil allein lässt sich in zwanzig Jahren
 noch nachvollziehen, was auf der Diskette stand. Archivieren ist eine reine
@@ -163,7 +321,14 @@ Leseoperation und geht auch mit gesetztem Schreibschutz.
 *Diskette ▸ Diskeditor* (Strg+E) zeigt die Diskette eine Ebene unter dem
 Dateisystem: zwei Scheiben, Spur 0 außen, Sektor 0 auf zwölf Uhr, Seite 1
 gespiegelt. Grün ist ein gültiger Sektor, rot ein defekter, orange die Lücke
-dazwischen, grau eine unformatierte Spur.
+dazwischen, grau eine unformatierte Spur. Schwarz heißt „noch nicht gelesen"
+(nur bei einer physischen Diskette).
+
+**Dunkel- oder hellgrün?** Hellgrün ist ein Sektor, der zwar formatiert, aber
+nie beschrieben wurde — sein Datenfeld trägt nur das Füllbyte des Formats. So
+sieht man auf einen Blick, wie viel von der Diskette wirklich benutzt ist. Der
+UDOS-Anhang hinter den Nutzdaten zählt dabei nicht mit: er ist auch auf einer
+leeren Diskette belegt.
 
 Ein Klick auf einen Sektor — oder die Wählerzeile darunter — zeigt seinen Inhalt
 als Hexdump mit mitlaufender Textspalte, dazu die Prüfsumme. *Save Sektor*
@@ -171,8 +336,25 @@ schreibt **bis in die Datei**. Sektoren lassen sich anlegen und löschen; die
 Prüfsumme ist absichtlich mitschreibbar, damit sich eine schadhafte Diskette
 originalgetreu nachbilden lässt.
 
-Bei UDOS zeigt der Editor zusätzlich den 4 Byte langen Anhang hinter den
-Nutzdaten und übersetzt ihn: die Verkettung zum vorigen und nächsten Satz.
+**Ganze Spuren** lassen sich löschen und einfügen: *Spur löschen* wirft die
+gewählte Spur mit beiden Seiten heraus (alles dahinter rückt auf), *Spur einfügen*
+fragt beim Einfügen nach **Spurnummer** und **Verfahren** (FM oder MFM) und setzt
+dort eine unformatierte Spur ein, in der sich anschliessend mit *Neuer Sektor* von
+Hand formatieren lässt.
+
+Beides ist wählbar, weil es in der K1520-Welt gemischte Formate gibt: eine
+FM-Spur lässt sich auch **vor** alle bestehenden MFM-Spuren setzen (Spurnummer 0),
+oder eine MFM-Spur hinter eine FM-Spur. Die neue Spur bekommt die eingegebene
+Nummer; alles ab dort rückt nach hinten — aus 42 wird 43. Damit stutzt man ein Abbild zurecht — etwa von 82
+auf 80 Spuren oder auf 77, damit es auf eine 8″-Diskette passt. Bei einer
+physischen Diskette endet damit die Verbindung zum Laufwerk, denn die Spurnummern
+stimmen danach nicht mehr mit den Kopfpositionen überein.
+
+Trägt ein Sektor hinter den Nutzdaten einen **UDOS-Anhang** (4 Byte), zeigt der
+Editor ihn und übersetzt ihn: die Verkettung zum vorigen und nächsten Satz. Das
+entscheidet der Sektor selbst — auch auf einer gemischten oder gar nicht erkannten
+Diskette wird er angezeigt. Wo stattdessen nur Füllbytes stehen (CP/M), bleibt die
+Angabe weg.
 
 ## Wenn eine Diskette nicht erkannt wird
 
@@ -199,6 +381,7 @@ gut. Dann hilft ein Blick in die Dateiliste: das falsche Profil zeigt Unsinn.
 |--------|---------|
 | Strg+O | Abbild öffnen |
 | Strg+N | Neue Diskette |
+| Strg+Umschalt+O | Physische Diskette laden |
 | Strg+S | Speichern |
 | Strg+Umschalt+S | Speichern unter |
 | Strg+Umschalt+A | Archivieren |

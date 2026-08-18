@@ -28,9 +28,22 @@
 
 /// @brief Unterstuetzte Dateisystemfamilien.
 enum class FsType : uint8_t {
-    Cpm,    ///< CP/M 2.2 und Verwandte (CP/A, SCPX)
-    Udos    ///< UDOS 1526 / 4.x mit dem Treiber ZDOS
+    Cpm,       ///< CP/M 2.2 und Verwandte (CP/A, SCPX)
+    Udos,      ///< UDOS 1526 / 4.x mit dem Treiber ZDOS (A5120)
+    /// @brief UDOS1715 mit dem Treiber **NDOS** (PC 1715, µPD765).
+    ///
+    /// Dieselbe Betriebssystemfamilie, aber ein anderes Dateisystem: der µPD765 kann
+    /// nichts hinter die Daten-CRC schreiben, deshalb steht die Verkettung in eigenen
+    /// **Zeigersektoren** statt im Gap.  Folgen: 256-B-Sektoren, `.img` ist moeglich,
+    /// und eine „Spur" umfasst BEIDE Seiten eines Zylinders (32 Sektoren).
+    /// @see doc/udos1715_diskettenformat.md
+    Udos1715
 };
+
+/// @brief Gehoert der Typ zur UDOS-Familie? (gemeinsame Kopfsektorfelder, Typ/Props)
+inline bool isUdosFamily(FsType t) {
+    return t == FsType::Udos || t == FsType::Udos1715;
+}
 
 /**
  * @struct FsProfile
@@ -60,12 +73,21 @@ struct FsProfile {
     uint8_t  skew        = 0;      ///< Sektorversatz je Spur (CP/A: 0)
     std::string os       = "cpm2.2";
 
-    // ── nur FsType::Udos ─────────────────────────────────────────────────────
+    // ── nur die UDOS-Familie ─────────────────────────────────────────────────
     bool    sides_separate  = true;  ///< je Seite ein eigenes Dateisystem → SideN/
-    uint8_t boot_track      = 21;    ///< Bootabbild (15H)
+                                     ///< (UDOS1715: immer false — eine Diskette,
+                                     ///<  ein Dateisystem, die Spur ist der Zylinder)
+    uint8_t boot_track      = 21;    ///< ZDOS: Bootabbild (15H); UDOS1715: ungenutzt
     uint8_t directory_track = 22;    ///< Verzeichnisdatei (16H)
     uint8_t bitmap_track    = 23;    ///< Belegungskarte (17H)
     uint8_t usable_tracks   = 0;     ///< 0 = aus der Geometrie
+
+    /// @brief Nur @ref FsType::Udos1715 — belegt Spur 0 der Urlader (Systemdiskette)?
+    ///
+    /// Auf einer Systemdiskette liegen dort Urlader und BFOS
+    /// (doc/udos1715_diskettenformat.md §2).  Ob das so ist, sagt die Belegungskarte;
+    /// beim ANLEGEN einer Diskette muss es aber jemand entscheiden.
+    bool    system_track0   = false;
 
     /// @brief Ist dieser Container erlaubt? (Endungslogik macht der Aufrufer)
     bool allowsContainer(const std::string& ext_lower) const {

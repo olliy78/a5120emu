@@ -77,6 +77,10 @@ TEST(FsCatalog, ProfilnamenSindEinStabilerVertrag) {
         "cpa780", "cpa800",
         "scpx640", "scpx798",
         "udos_ds77", "udos_ss77", "udos_ss40",
+        "udos1715", "udos1715_ss80", "udos1715_ss40",
+        // CP/M-86 des A7100: eigener Eintrag, weil die CP/A-Regel hier NICHT gilt
+        // (sie bildet das CP/A-BIOS nach, nicht das SCP1700).
+        "scp1700",
     };
     for (const auto& n : erwartet)
         EXPECT_NE(cat.find(n), nullptr) << "Dateisystem '" << n << "' fehlt";
@@ -150,6 +154,33 @@ TEST(FsCatalog, UdosProfileSindNiemalsImgFaehig) {
         EXPECT_EQ(p.bitmap_track,    23) << "17H laut FORMATPC.MAC";
         EXPECT_EQ(p.boot_track,      21) << "15H laut FORMATPC.MAC";
     }
+}
+
+TEST(FsCatalog, Udos1715ProfileSindImgFaehigUndEinseitigGezaehlt) {
+    // Umgekehrt zu ZDOS: NDOS haelt ALLES im Sektor (Zeigersektoren statt
+    // Gap-Zeigern), deshalb ist `.img` hier moeglich und richtig
+    // (doc/udos1715_diskettenformat.md §8).  Und die Spur umfasst beide Seiten —
+    // `sides_separate` gibt es dort nicht.
+    std::string fatal;
+    FsCatalog cat = FsCatalog::load({shippedCatalog()}, formate(), &fatal);
+    ASSERT_TRUE(fatal.empty()) << fatal;
+
+    int gefunden = 0;
+    for (const auto& p : cat.profiles()) {
+        if (p.type != FsType::Udos1715) continue;
+        ++gefunden;
+        EXPECT_TRUE(p.allow_img) << p.name;
+        EXPECT_TRUE(p.allow_hfe) << p.name;
+        EXPECT_TRUE(p.allow_dmk) << p.name;
+        EXPECT_FALSE(p.sides_separate) << p.name << ": die Spur ist der ganze Zylinder";
+        EXPECT_EQ(p.directory_track, 22) << "16H laut Handbuch §1.2.1";
+        EXPECT_EQ(p.bitmap_track,    23) << "17H laut Handbuch §1.2.1";
+        const DiskFormat* f = formate().find(p.format);
+        ASSERT_NE(f, nullptr) << p.name;
+        EXPECT_EQ(f->findTrack(0, 0)->bytes_per_sec, 256)
+            << p.name << ": NDOS verlangt 256-B-Sektoren (Handbuch §1.1)";
+    }
+    EXPECT_EQ(gefunden, 3) << "die drei Formate aus Handbuch §1.2";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

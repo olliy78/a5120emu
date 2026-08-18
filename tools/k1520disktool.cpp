@@ -4,7 +4,7 @@
  *
  * Kommandozeilenseite des k1520DiskTool; dieselbe Bibliothek, die auch die
  * PySide6-Oberflaeche benutzt (@ref DiskVolume).  Ersetzt die `cpmls`/`cpmcp`-Aufrufe
- * der alten Werkzeuge und kann zusaetzlich UDOS.
+ * der alten Werkzeuge und kann zusaetzlich UDOS/ZDOS (A5120) und UDOS1715/NDOS (PC 1715).
  *
  * ```
  * k1520disktool ls     <abbild> [--fs NAME] [-l]      # ohne -l nur die Namen
@@ -59,8 +59,12 @@ struct Optionen {
     std::string udos_eig;    ///< --props (UDOS-Eigenschaften, z. B. WS)
     int         udos_entry = 0;  ///< --entry (UDOS-Startadresse bei P/P1)
     int         udos_satz  = 0;  ///< --record-len (UDOS-Satzlaenge, Vielfaches von 128)
-    int         udos_segment = 0; ///< --segment ANFANG:LAENGE — Anfang (hex)
-    int         udos_ilen  = 0;   ///< --segment ANFANG:LAENGE — Laenge
+    int         udos_segment = 0; ///< --load ANFANG (hex) — Anfang des 1. Segments
+    int         udos_ilen  = 0;   ///< --image-len — dessen Laenge
+    /// @brief --segment: ALLE Segmente, `ANFANG+LAENGE` mit Komma getrennt.
+    ///        Eine Programmdatei kann mehr als eines haben; nur das erste
+    ///        mitzuschreiben zerstoert sie (doc/udos_diskettenformat.md §6.3).
+    std::string udos_segmente;
     std::string udos_mem;         ///< --mem LOW:HIGH[:STACK] (hex, wie `EXTRACT`)
     int         udos_block = 0;   ///< --block-len (Kopfsektor Offset 17)
     bool        udos_block_gesetzt = false;
@@ -92,7 +96,7 @@ void gebrauch() {
         "  put    <abbild> <datei|ordner…>          Dateien einfuegen\n"
         "         [--type P1 --props WS --entry 0]  … UDOS-Kopfsektor (Typ/Eigensch./Start)\n"
         "         [--record-len 1024]               … UDOS-Satzlaenge (Vielfaches von 128)\n"
-        "         [--segment 2600:5521]             … UDOS-Segment ANFANG(hex):LAENGE\n"
+        "         [--segment 2600+1591,4000+0200]   … UDOS-Segmente ANFANG+LAENGE (hex)\n"
         "         [--mem E000:E3FF:0080]            … LOW:HIGH:STACK (hex)\n"
         "         [--block-len 0] [--extra 0]       … Kopfsektor 17 bzw. 44-47\n"
         "  rm     <abbild> <muster…>                Dateien loeschen\n"
@@ -114,7 +118,9 @@ void gebrauch() {
         "Bei beidseitigen UDOS-Disketten sind die Seiten `Side0`/`Side1`:\n"
         "  get  legt sie als Unterverzeichnisse an,\n"
         "  put  verlangt einen Ordner, der genau diese Unterverzeichnisse hat,\n"
-        "  Namen duerfen das Praefix tragen:  Side1/HELP.DAT.00\n\n"
+        "  Namen duerfen das Praefix tragen:  Side1/HELP.DAT.00\n"
+        "  (UDOS1715/NDOS vom PC 1715 hat das NICHT — dort ist die Diskette EIN\n"
+        "   Datentraeger, und sie darf als .img vorliegen.)\n\n"
         "Exit: 0 ok · 1 Fehler · 2 nicht erkannt · 3 passt nicht · 4 Ordnerstruktur\n";
 }
 
@@ -144,6 +150,8 @@ bool zerlege(int argc, char** argv, int ab, Optionen& o, std::string& err) {
         else if (a == "--image-len") { if (!wert("--image-len")) return false;
                                      o.udos_ilen = static_cast<int>(
                                          std::strtol(argv[++i], nullptr, 0)); }
+        else if (a == "--segment") { if (!wert("--segment")) return false;
+                                     o.udos_segmente = argv[++i]; }
         else if (a == "--mem")     { if (!wert("--mem"))    return false; o.udos_mem = argv[++i]; }
         else if (a == "--volume")  { if (!wert("--volume")) return false;
                                      o.volume = std::atoi(argv[++i]); }
@@ -555,6 +563,7 @@ int cmd_put(const Optionen& o) {
     t.udos_record_len = static_cast<uint16_t>(o.udos_satz);
     t.udos_segment       = static_cast<uint16_t>(o.udos_segment);
     t.udos_segment_len  = static_cast<uint16_t>(o.udos_ilen);
+    t.udos_segments      = o.udos_segmente;
     t.udos_block_len = static_cast<uint16_t>(o.udos_block);
     t.udos_block_len_gesetzt = o.udos_block_gesetzt;
     if (!o.udos_zusatz.empty())
@@ -728,6 +737,7 @@ int cmd_attr(const Optionen& o) {
     }
     const bool aendern_udos = !o.udos_typ.empty() || !o.udos_eig.empty() || o.udos_entry
                       || o.udos_block_gesetzt || o.udos_segment || o.udos_ilen
+                      || !o.udos_segmente.empty()
                       || !o.udos_mem.empty() || !o.udos_zusatz.empty()
                       || !o.udos_erst.empty() || !o.udos_geaend.empty();
     const bool aendern_cpm = o.cpm_ro_gesetzt || o.cpm_sys_gesetzt
@@ -778,7 +788,10 @@ int cmd_attr(const Optionen& o) {
         if (o.udos_entry)        { a.set_entry = true; a.entry = static_cast<uint16_t>(o.udos_entry); }
         if (o.udos_block_gesetzt){ a.set_block_len = true;
                                    a.block_len = static_cast<uint16_t>(o.udos_block); }
-        if (o.udos_segment || o.udos_ilen) {
+        if (!o.udos_segmente.empty()) {
+            a.set_segments = true;
+            a.segments     = o.udos_segmente;
+        } else if (o.udos_segment || o.udos_ilen) {
             a.set_segment = true;
             a.segment     = static_cast<uint16_t>(o.udos_segment);
             a.segment_len = static_cast<uint16_t>(o.udos_ilen);
@@ -819,6 +832,7 @@ int cmd_attr(const Optionen& o) {
                   << ",\"block_len\":" << e->block_len
                   << ",\"segment\":" << e->segment_start
                   << ",\"segment_len\":" << e->segment_len
+                  << ",\"segments\":" << jsonText(e->segments)
                   << ",\"low_addr\":" << e->low_addr
                   << ",\"high_addr\":" << e->high_addr
                   << ",\"stack_size\":" << e->stack_size
@@ -847,7 +861,10 @@ int cmd_attr(const Optionen& o) {
                 static_cast<unsigned long long>(e->size));
     std::printf("  ENTRY %04X   Satzlaenge %u   zweite Laenge %u   letzter Satz %u Byte\n",
                 e->entry_addr, e->record_len, e->block_len, e->bytes_in_last);
-    std::printf("  SEGMENT %04X + %u Byte\n", e->segment_start, e->segment_len);
+    if (e->segments.find(' ') != std::string::npos)
+        std::printf("  SEGMENTE %s\n", e->segments.c_str());
+    else
+        std::printf("  SEGMENT %04X + %u Byte\n", e->segment_start, e->segment_len);
     std::printf("  LOW %04X  HIGH %04X  STACK %04X   Zusatz %08X\n",
                 e->low_addr, e->high_addr, e->stack_size, e->extra);
     std::printf("  erstellt '%s'   geaendert '%s'\n",
@@ -942,13 +959,13 @@ int cmd_formats(const Optionen& o) {
         std::cout << "]\n";
         return kOk;
     }
-    std::printf("%-14s %-6s %-18s %s\n", "Name", "Typ", "Geometrie", "Beschreibung");
+    std::printf("%-14s %-8s %-18s %s\n", "Name", "Typ", "Geometrie", "Beschreibung");
     for (const FsProfile& p : dateisysteme().profiles())
-        std::printf("%-14s %-6s %-18s %s\n", p.name.c_str(), fsTypeName(p.type),
+        std::printf("%-14s %-8s %-18s %s\n", p.name.c_str(), fsTypeName(p.type),
                     p.format.c_str(), p.description.c_str());
     // Steht in keinem Katalog, laesst sich aber ueberall angeben — sonst waere die
     // wichtigste Antwort auf „welche Dateisysteme gibt es?" gerade die unsichtbare.
-    std::printf("%-14s %-6s %-18s %s\n", CpaDpbRule::kName, "cpm", "(jede)",
+    std::printf("%-14s %-8s %-18s %s\n", CpaDpbRule::kName, "cpm", "(jede)",
                 "aus der Geometrie nach der CP/A-Regel abgeleitet — Rueckfall beim "
                 "Oeffnen, mit --fs erzwingbar");
     return kOk;

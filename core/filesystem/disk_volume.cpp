@@ -13,9 +13,11 @@
 #include "core/filesystem/cpm/cpa_dpb.h"
 #include "core/filesystem/cpm/cpm_fs.h"
 #include "core/filesystem/geometry_probe.h"
+#include "core/filesystem/udos/udos1715_fs.h"
 #include "core/filesystem/udos/udos_fs.h"
 
 #include <algorithm>
+#include <limits>
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
@@ -220,6 +222,12 @@ std::vector<SectorSpace::TrackRef> systemspuren(const SectorSpace& raum, const F
         spur(p.boot_track);                        // Bootabbild
         return out;
     }
+    if (p.type == FsType::Udos1715) {
+        // Handbuch §1.2.2: „Spur 00, Sektor 00…0F — URLADER und BFOS".  Sektor 00…0F
+        // sind die 16 Sektoren der VORDERseite (§1.1), also genau Spur 0 Kopf 0.
+        spur(0);
+        return out;
+    }
 
     // CP/M: alles bis zum Beginn des Dateisystems — das ist immer eine Spurgrenze.
     const int ende = raum.trackIndexOf(p.data_cyl, p.data_head);
@@ -253,6 +261,9 @@ struct UdosAngabe {
     uint16_t    speicher_von = 0, speicher_bis = 0, speicher_kz = 0;
     uint16_t    blocklaenge = 0, rest = 0;
     uint32_t    zusatz = 0;
+    /// @brief ALLE Speichersegmente, mit Komma getrennt (`4400+0041,8442+0026`).
+    ///        Steht nur bei mehr als einem Segment in der Zeile — sonst genuegt `segment=`.
+    std::string segmente;
     bool        blocklaenge_gesetzt = false;
 };
 
@@ -292,7 +303,9 @@ bool schreibeBeiblatt(const fs::path& datei,
          "#   start      Startadresse (hex)      satz   Satzlaenge in Byte\n"
          "#   block      zweite Laengenangabe    rest   Bytes im letzten Satz\n"
          "#   segment    ANFANG(hex):LAENGE      mem    LOW:HIGH:STACK (hex, wie EXTRACT)\n"
-         "#   zusatz     Kopfsektor 44-47 (hex)  erst/geaend  Vermerke (`_` = Leerzeichen)\n";
+         "#   zusatz     Kopfsektor 44-47 (hex)  erst/geaend  Vermerke (`_` = Leerzeichen)\n"
+         "#   segs       ALLE Segmente ANFANG+LAENGE (hex), mit Komma getrennt — nur bei\n"
+         "#              mehr als einem; sie gehen `segment=` und `zusatz=` vor\n";
     for (const auto& [name, a] : eintraege) {
         f << name
           << " typ=" << (a.typ.empty() ? "-" : a.typ)
@@ -305,6 +318,7 @@ bool schreibeBeiblatt(const fs::path& datei,
           << " mem=" << hex16(a.speicher_von) << ':' << hex16(a.speicher_bis)
           << ':' << hex16(a.speicher_kz)
           << " zusatz=" << std::hex << std::uppercase << a.zusatz << std::dec << std::nouppercase
+          << (a.segmente.empty() ? "" : " segs=") << a.segmente
           << " erst=" << (a.erstellt.empty() ? "-" : ohneLeer(a.erstellt))
           << " geaend=" << (a.geaendert.empty() ? "-" : ohneLeer(a.geaendert))
           << '\n';
@@ -346,6 +360,7 @@ std::map<std::string, UdosAngabe> leseBeiblatt(const fs::path& datei) {
                     a.abbildlaenge = static_cast<uint16_t>(zahl(v.substr(d + 1), 10));
             }
             else if (k == "zusatz") a.zusatz = static_cast<uint32_t>(zahl(v, 16));
+            else if (k == "segs")   a.segmente = v;
             else if (k == "erst")   a.erstellt = (v == "-") ? "" : mitLeer(v);
             else if (k == "geaend") a.geaendert = (v == "-") ? "" : mitLeer(v);
             else if (k == "mem") {
@@ -450,7 +465,7 @@ bool istBeiblatt(const fs::path& name) {
 std::string zielName(const std::string& quelle, FsType typ,
                      const std::map<std::string, CpmAngabe>& beiblatt) {
     const std::string datei = fs::path(quelle).filename().string();
-    if (typ == FsType::Udos) return datei;
+    if (isUdosFamily(typ)) return datei;
     const auto it = beiblatt.find(datei);
     if (it != beiblatt.end() && !it->second.name.empty()) return it->second.name;
     return CpmFileSystem::toCpmName(quelle);
@@ -460,6 +475,34 @@ std::string zielName(const std::string& quelle, FsType typ,
 std::string keineSystemspuren(const FsProfile& p) {
     return "Das Dateisystem '" + p.name + "' hat keine Systemspuren — es beginnt auf "
            "Zylinder 0, dort ist fuer ein Bootabbild kein Platz.";
+}
+
+/**
+ * @brief Die Auffaelligkeiten eines Treffers als Satz — mit Angabe, WORUEBER er gilt.
+ *
+ * @param examined  Zahl der angesehenen Spuren; 0 = die ganze Diskette.
+ *
+ * Bei einer Stichprobe sind die Zaehlungen Aussagen ueber die angesehenen Spuren,
+ * nicht ueber die Diskette: „2 Spuren hinter dem Format" heisst dann „2 der
+ * 8 angesehenen", und es koennen mehr sein.  Der Satz muss das sagen — sonst liest
+ * sich eine Teilmessung wie ein Befund, und ein leeres Ergebnis wie ein Freispruch.
+ */
+std::string befund(const GeometryMatch& m, int examined) {
+    const std::string was = m.remarks();
+    if (examined <= 0) return was;               // Vollmessung: der Befund gilt
+    const std::string wieviel = std::to_string(examined);
+    if (was.empty())
+        return "erst " + wieviel + " Spuren angesehen (Stichprobe der Formaterkennung), "
+               "die uebrigen sind ungeprueft";
+    return "in einer Stichprobe von " + wieviel + " Spuren: " + was
+         + " — die uebrigen Spuren sind noch ungeprueft";
+}
+
+/// @brief Zwei Befundteile mit Semikolon verbinden; leere Teile fallen weg.
+std::string zusammen(const std::string& a, const std::string& b) {
+    if (a.empty()) return b;
+    if (b.empty()) return a;
+    return a + "; " + b;
 }
 
 /// @brief Eine Meldung, die sagt, was zu tun ist — nicht bloss, dass es nicht geht.
@@ -508,17 +551,40 @@ int DiskVolume::volumeFromDir(const std::string& dir_name) const {
     return -1;
 }
 
-std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
-                                             const std::string& fs_name,
-                                             const FormatCatalog& formats,
-                                             const FsCatalog& fs_cat,
-                                             std::string& err,
-                                             bool read_only) {
+// Gemeinsamer Kern von @ref DiskVolume::open und @ref DiskVolume::openPhysical.
+//
+// @p vorhanden ist entweder leer (dann wird @p path geoeffnet) oder ein bereits
+// aufgebautes Abbild — bei einer PHYSISCHEN Diskette gibt es keine Datei, die man
+// oeffnen koennte.  Alles danach ist identisch: die Erkennung urteilt ueber das
+// MEDIUM, nicht ueber die Datei (doc/design/14_physische_diskette.md §11.2).
+std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vorhanden,
+                                                   const std::string& path,
+                                                   const std::string& fs_name,
+                                                   const FormatCatalog& formats,
+                                                   const FsCatalog& fs_cat,
+                                                   std::string& err,
+                                                   bool read_only,
+                                                   bool roh_erlaubt) {
     std::unique_ptr<DiskVolume> dv(new DiskVolume);
     dv->path_      = path;
     dv->read_only_ = read_only;
 
-    const std::string ext   = endung(path);
+    // Scheitert die ERKENNUNG, ist die Diskette darum nicht wertlos: man will sie im
+    // Sektoreditor ansehen, ihr Abbild sichern oder sie zurechtschneiden.  Mit
+    // `roh_erlaubt` kommt sie deshalb OHNE Dateisystem heraus statt gar nicht (§12.6).
+    // Der Grund wandert in den Befund — er ist die Auskunft, nicht mehr der Abbruch.
+    auto roh = [&](const std::string& grund) -> std::unique_ptr<DiskVolume> {
+        if (!roh_erlaubt || !dv->disk_) return nullptr;
+        dv->profile_ = nullptr;
+        dv->volumes_.clear();
+        dv->detection_.filesystem = "";
+        dv->detection_.remarks    = zusammen(dv->detection_.remarks, grund);
+        return std::move(dv);
+    };
+
+    // Eine physische Diskette verhaelt sich wie ein `.hfe`: sie traegt den vollen
+    // Spurstrom, also auch alles hinter der Daten-CRC (UDOS-Sektorkontrollblock).
+    const std::string ext   = vorhanden ? std::string("hfe") : endung(path);
     const bool        istImg = (ext == "img");
 
     // ── Fall A': die CP/A-Regel ausdruecklich anfordern ──────────────────────
@@ -538,10 +604,10 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
                 return nullptr;
             }
         }
-        dv->disk_ = DiskImage::open(path, of, read_only);
+        dv->disk_ = vorhanden ? std::move(vorhanden) : DiskImage::open(path, of, read_only);
         if (!dv->disk_) { err = "Abbild nicht ladbar: " + path; return nullptr; }
         const std::vector<MeasuredTrack> gemessen =
-            GeometryProbe::measure(dv->disk_->medium());
+            GeometryProbe::measure(dv->disk_->medium());   // .img: immer vollstaendig
         const std::vector<GeometryMatch> treffer =
             GeometryProbe::matchAll(gemessen, formats.formats());
         if (treffer.empty()) {
@@ -562,9 +628,9 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
         dv->format_               = treffer.front().format;
         dv->detection_.format     = dv->format_->name;
         dv->detection_.filesystem = dv->profile_->name;
-        dv->detection_.remarks    = treffer.front().remarks();
-        if (!dv->detection_.remarks.empty()) dv->detection_.remarks += "; ";
-        dv->detection_.remarks   += abgeleitet.description;
+        dv->befund_zusatz_        = abgeleitet.description;
+        dv->detection_.remarks    = zusammen(treffer.front().remarks(),
+                                             dv->befund_zusatz_);
     } else if (!fs_name.empty()) {
         // ── Fall A: Dateisystem vorgegeben ───────────────────────────────────
         dv->profile_ = fs_cat.find(fs_name);
@@ -585,7 +651,7 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
         }
         std::optional<DiskFormat> of;
         if (istImg) of = *dv->format_;
-        dv->disk_ = DiskImage::open(path, of, read_only);
+        dv->disk_ = vorhanden ? std::move(vorhanden) : DiskImage::open(path, of, read_only);
         if (!dv->disk_) { err = "Abbild nicht ladbar: " + path; return nullptr; }
         dv->detection_.format     = dv->format_->name;
         dv->detection_.filesystem = dv->profile_->name;
@@ -611,15 +677,48 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
             std::optional<DiskFormat> of = *kandidaten.front();
             dv->disk_ = DiskImage::open(path, of, read_only);
         } else {
-            dv->disk_ = DiskImage::open(path, std::nullopt, read_only);
+            dv->disk_ = vorhanden ? std::move(vorhanden)
+                                  : DiskImage::open(path, std::nullopt, read_only);
         }
         if (!dv->disk_) { err = "Abbild nicht ladbar: " + path; return nullptr; }
 
         if (!istImg) {
             // Stufe 1: Geometrie messen und gegen den Katalog abgleichen.
-            gemessen = GeometryProbe::measure(dv->disk_->medium());
-            const std::vector<GeometryMatch> treffer =
-                GeometryProbe::matchAll(gemessen, formats.formats());
+            //
+            // Muss jede Spur einzeln vom Original geholt werden (echtes Laufwerk am
+            // Greaseweazle: 0,5–0,8 s je Spur), kostet die Vollmessung anderthalb
+            // Minuten — fuer eine Frage, die acht Spuren beantworten.  Deshalb dort
+            // erst die Stichprobe; erkennt sie nichts, folgt die Vollmessung, denn
+            // nur sie traegt `synthesize()` (das braucht das lueckenlose Bild).
+            // Bei einer Datei liegt ohnehin alles im Speicher — da wird gemessen.
+            const bool teuer = dv->disk_->medium().loader() != nullptr;
+            bool stichprobe = false;
+            if (teuer) {
+                gemessen = GeometryProbe::measureSample(dv->disk_->medium());
+                stichprobe = true;
+            } else {
+                gemessen = GeometryProbe::measure(dv->disk_->medium());
+            }
+            std::vector<GeometryMatch> treffer =
+                GeometryProbe::matchAll(gemessen, formats.formats(), stichprobe);
+            if (treffer.empty() && stichprobe) {
+                // Die Stichprobe reichte nicht.  Die Vollmessung ist der naechste
+                // Schritt — aber nur, wenn sie NICHTS KOSTET: an einem echten
+                // Laufwerk zoege sie die ganze Diskette ein (anderthalb Minuten), und
+                // am Ende steht womoeglich doch keine Erkennung.  Dann ist es besser,
+                // gleich roh zu oeffnen und im Hintergrund weiterzulesen; wer es
+                // spaeter noch einmal versucht (@ref redetect), misst dann umsonst
+                // voll, weil die Diskette inzwischen im Speicher liegt.
+                const DiskMedium& med = dv->disk_->medium();
+                const bool teuer_nachzuladen = med.loader() != nullptr && !med.complete();
+                if (!teuer_nachzuladen) {
+                    // Jetzt gelten wieder ALLE Regeln: `stichprobe` muss false sein,
+                    // sonst urteilt die Vollmessung mit den gelockerten Schranken.
+                    stichprobe = false;
+                    gemessen   = GeometryProbe::measure(med);
+                    treffer    = GeometryProbe::matchAll(gemessen, formats.formats());
+                }
+            }
             if (treffer.empty()) {
                 // Letzter Rueckfall: beschreiben, was tatsaechlich draufsteht, und es
                 // damit LESBAR machen.  Die Geometrie ist dann geraten — deshalb bleibt
@@ -630,7 +729,7 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
                 if (!gebaut) {
                     err = "Das Abbild passt zu keinem Format in data/formats.yaml ("
                         + warum + ").\nGemessen:\n" + GeometryProbe::describe(gemessen);
-                    return nullptr;
+                    return roh("kein Format erkannt (" + warum + ")");
                 }
                 dv->gemessenes_format_    = std::move(*gebaut);
                 dv->nur_lesen_erzwungen_  = true;
@@ -640,13 +739,37 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
                     "deshalb schreibgeschuetzt";
             } else {
                 for (const GeometryMatch& m : treffer) kandidaten.push_back(m.format);
-                dv->detection_.remarks = treffer.front().remarks();
+                dv->detection_.examined_tracks =
+                    stichprobe ? static_cast<int>(gemessen.size()) : 0;
+                dv->detection_.remarks =
+                    befund(treffer.front(), dv->detection_.examined_tracks);
             }
         }
 
         // Stufe 2: Dateisysteme der Kandidaten positiv nachweisen.
+        //
+        // Grundregel bleibt: die bestplatzierte Geometrie gewinnt.  Sie hat aber eine
+        // Ausnahme, und `detect_rank` ist genau dafuer da — zwei Katalogeintraege
+        // koennen DIESELBE Rohgeometrie beschreiben (`cpa640` und `k5601_16x256` sind
+        // Byte fuer Byte gleich), und dann entscheidet die Reihenfolge der Messung
+        // zufaellig, welches Dateisystem ueberhaupt geprueft wird.  Eine frisch
+        // angelegte UDOS1715-Diskette ist ausserhalb ihrer beiden Systemspuren voller
+        // 0xE5 und damit zugleich ein voellig plausibles LEERES CP/M — die Frage ist
+        // also nicht theoretisch.  Deshalb wird ueber die erste treffende Geometrie
+        // hinaus weitergesucht, solange eine spaetere ein Profil mit KLEINEREM
+        // detect_rank anbieten kann; ein positiv nachgewiesener Datentraeger schlaegt
+        // ein bloss unwidersprochenes Verzeichnis.  Bei lauter gleichen Raengen — dem
+        // Normalfall — ist das Verhalten unveraendert.
         std::vector<const FsProfile*> passend;
+        auto besterRang = [&](const DiskFormat* f) {
+            int r = std::numeric_limits<int>::max();
+            for (const FsProfile* p : fs_cat.forFormat(f->name))
+                if (p->allowsContainer(ext)) r = std::min(r, p->detect_rank);
+            return r;
+        };
         for (const DiskFormat* f : kandidaten) {
+            if (!passend.empty() && besterRang(f) >= passend.front()->detect_rank) break;
+            std::vector<const FsProfile*> hier;
             for (const FsProfile* p : fs_cat.forFormat(f->name)) {
                 if (!p->allowsContainer(ext)) continue;
 
@@ -654,13 +777,20 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
                     SectorSpace probe(dv->disk_->medium(), *f);
                     std::string warum;
                     if (!UdosFileSystem::looksLikeUdos(probe, *p, 0, &warum)) continue;
+                } else if (p->type == FsType::Udos1715) {
+                    SectorSpace probe(dv->disk_->medium(), *f);
+                    std::string warum;
+                    if (!Udos1715FileSystem::looksLikeUdos1715(probe, *p, &warum)) continue;
                 } else {
                     if (!cpmVerzeichnisPlausibel(dv->disk_->medium(), *f, *p)) continue;
                 }
-                passend.push_back(p);
-                if (!dv->format_) dv->format_ = f;
+                hier.push_back(p);
             }
-            if (!passend.empty()) break;      // bestplatzierte Geometrie gewinnt
+            if (hier.empty()) continue;
+            if (passend.empty() || hier.front()->detect_rank < passend.front()->detect_rank) {
+                passend    = std::move(hier);
+                dv->format_ = f;
+            }
         }
 
         // ── Rueckfall: die CP/A-Regel rechnen lassen ─────────────────────────
@@ -683,9 +813,10 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
                 }
                 dv->abgeleitet_ = abgeleitet;
                 dv->format_     = f;
-                if (!dv->detection_.remarks.empty()) dv->detection_.remarks += "; ";
-                dv->detection_.remarks += abgeleitet.description;
-                if (!hinweis.empty()) dv->detection_.remarks += "; " + hinweis;
+                dv->befund_zusatz_ = abgeleitet.description;
+                if (!hinweis.empty()) dv->befund_zusatz_ += "; " + hinweis;
+                dv->detection_.remarks =
+                    zusammen(dv->detection_.remarks, dv->befund_zusatz_);
                 break;
             }
         }
@@ -700,7 +831,7 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
                     + (dos.empty() ? (abgelehnt.empty() ? "" : " (" + abgelehnt + ")")
                                    : " — " + dos)
                     + ".\nGemessen:\n" + GeometryProbe::describe(gemessen);
-                return nullptr;
+                return roh("kein Format und kein Dateisystem erkannt");
             }
             err = "Die Geometrie ist erkannt (" + std::string(kandidaten.front()->name)
                 + "), aber ";
@@ -710,7 +841,8 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
                 err += std::string("kein bekanntes Dateisystem liegt darauf")
                      + (abgelehnt.empty() ? "" : " (" + abgelehnt + ")")
                      + ". Mit --fs laesst sich eines erzwingen.";
-            return nullptr;
+            return roh("Geometrie " + std::string(kandidaten.front()->name)
+                       + " erkannt, aber kein Dateisystem darauf");
         }
 
         if (passend.empty()) passend.push_back(&*dv->abgeleitet_);
@@ -736,7 +868,7 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
             std::string warum;
             auto u = UdosFileSystem::mount(*v.space, *dv->profile_, h, warum);
             if (!u) {
-                if (h == 0) { err = "Seite 0: " + warum; return nullptr; }
+                if (h == 0) { err = "Seite 0: " + warum; return roh(warum); }
                 break;                       // Seite 1 unbeschrieben → einseitig
             }
             v.fs = std::move(u);
@@ -749,17 +881,44 @@ std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
         std::string warum;
         if (dv->profile_->type == FsType::Udos) {
             auto u = UdosFileSystem::mount(*v.space, *dv->profile_, 0, warum);
-            if (!u) { err = warum; return nullptr; }
+            if (!u) { err = warum; return roh(warum); }
+            v.fs = std::move(u);
+        } else if (dv->profile_->type == FsType::Udos1715) {
+            auto u = Udos1715FileSystem::mount(*v.space, *dv->profile_, warum);
+            if (!u) { err = warum; return roh(warum); }
             v.fs = std::move(u);
         } else {
             auto c = CpmFileSystem::mount(*v.space, *dv->profile_, warum);
-            if (!c) { err = warum; return nullptr; }
+            if (!c) { err = warum; return roh(warum); }
             v.fs = std::move(c);
         }
         dv->volumes_.push_back(std::move(v));
     }
 
     return dv;
+}
+
+std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
+                                             const std::string& fs_name,
+                                             const FormatCatalog& formats,
+                                             const FsCatalog& fs_cat,
+                                             std::string& err,
+                                             bool read_only,
+                                             bool roh_erlaubt) {
+    return oeffnenMit(nullptr, path, fs_name, formats, fs_cat, err, read_only,
+                      roh_erlaubt);
+}
+
+std::unique_ptr<DiskVolume> DiskVolume::openPhysical(std::unique_ptr<DiskImage> disk,
+                                                     const std::string& fs_name,
+                                                     const FormatCatalog& formats,
+                                                     const FsCatalog& fs_cat,
+                                                     std::string& err,
+                                                     bool read_only,
+                                                     bool roh_erlaubt) {
+    if (!disk) { err = "kein Abbild uebergeben"; return nullptr; }
+    return oeffnenMit(std::move(disk), "", fs_name, formats, fs_cat, err, read_only,
+                      roh_erlaubt);
 }
 
 // ─── Auskunft ────────────────────────────────────────────────────────────────
@@ -778,6 +937,54 @@ std::vector<FileEntry> DiskVolume::list() const {
             out.push_back(std::move(e));
         }
     return out;
+}
+
+bool DiskVolume::refreshDetection() {
+    // Nur nach einer Stichprobe, und erst wenn nichts mehr unbekannt ist.  Solange
+    // Spuren fehlen, waere die Vollmessung selbst eine Nachladeorgie — genau das,
+    // was die Stichprobe vermeiden soll.
+    if (detection_.examined_tracks <= 0) return false;
+    if (!disk_ || !disk_->medium().complete()) return false;
+
+    if (!format_) return false;
+    // Gegen DAS gemountete Format messen, nicht neu suchen: welches es ist, steht
+    // fest (das Dateisystem haengt daran).  `match` statt `matchAll` liefert die
+    // Zaehlungen auch dann, wenn die volle Diskette knapp nicht mehr passt — sonst
+    // verschwaende ein Befund, statt genannt zu werden.
+    const std::vector<MeasuredTrack> alle = GeometryProbe::measure(disk_->medium());
+    const GeometryMatch voll = GeometryProbe::match(alle, *format_);
+
+    const std::string vorher = detection_.remarks;
+    detection_.examined_tracks = 0;
+    // Der Zusatz (z. B. „nach der CP/A-Regel abgeleitet …") stammt NICHT aus der
+    // Messung; er gilt unabhaengig davon, wie viele Spuren gelesen sind, und bleibt
+    // deshalb stehen.  Ohne diese Trennung verloere das Auffrischen ihn.
+    detection_.remarks = zusammen(
+        voll.ok ? befund(voll, 0)
+                : "beim vollstaendigen Lesen zeigte sich mehr, als zum Format passt: "
+                  + voll.reason,
+        befund_zusatz_);
+    return detection_.remarks != vorher;
+}
+
+std::vector<FileEntry> DiskVolume::listNames() const {
+    std::vector<FileEntry> out;
+    for (size_t v = 0; v < volumes_.size(); ++v)
+        for (FileEntry e : volumes_[v].fs->listNames()) {
+            e.volume = static_cast<int>(v);
+            out.push_back(std::move(e));
+        }
+    return out;
+}
+
+bool DiskVolume::detailsReady(const FileEntry& e) const {
+    if (!valid(e.volume)) return true;
+    return volumes_[static_cast<size_t>(e.volume)].fs->detailsReady(e);
+}
+
+bool DiskVolume::loadDetails(FileEntry& e) const {
+    if (!valid(e.volume)) return false;
+    return volumes_[static_cast<size_t>(e.volume)].fs->loadDetails(e);
 }
 
 // ─── Einzeloperationen ───────────────────────────────────────────────────────
@@ -821,7 +1028,7 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
     // herübergezogene Systemdatei ihren Typ und ihr Speicherabbild.  Ausdrueckliche
     // Angaben des Aufrufers gehen immer vor.
     TransferOptions mit = opt;
-    if (profile_ && profile_->type == FsType::Udos && opt.udos_type.empty()) {
+    if (profile_ && isUdosFamily(profile_->type) && opt.udos_type.empty()) {
         const fs::path quelle(src_path);
         for (const fs::path& ordner : {quelle.parent_path(),
                                        quelle.parent_path().parent_path()}) {
@@ -847,6 +1054,7 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
             mit.udos_bytes_in_last = it->second.rest;
             mit.udos_block_len_gesetzt = it->second.blocklaenge_gesetzt;
             mit.udos_extra      = it->second.zusatz;
+            mit.udos_segments   = it->second.segmente;
             mit.udos_created    = it->second.erstellt;
             mit.udos_modified   = it->second.geaendert;
             break;
@@ -865,6 +1073,7 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
     wo.udos_bytes_in_last = mit.udos_bytes_in_last;
     wo.udos_block_len_gesetzt = mit.udos_block_len_gesetzt;
     wo.udos_extra      = mit.udos_extra;
+    wo.udos_segments   = mit.udos_segments;
     wo.udos_created    = mit.udos_created;
     if (!mit.udos_modified.empty()) wo.date = mit.udos_modified;
 
@@ -930,9 +1139,171 @@ uint8_t DiskVolume::mediumHeads() const {
     return disk_ ? disk_->medium().numHeads() : 0;
 }
 
+std::unique_ptr<DiskImage> DiskVolume::releaseImage() {
+    // Erst die Dateisysteme fallenlassen: sie zeigen auf Sektorraeume ueber DIESEM
+    // Medium.  Ein Volume ohne Abbild ist danach nur noch zu zerstoeren.
+    volumes_.clear();
+    profile_ = nullptr;
+    return std::move(disk_);
+}
+
+int DiskVolume::schneide(bool nur_gerade_spuren, bool nur_seite_null) {
+    if (!disk_) { fail("keine Diskette geoeffnet"); return -1; }
+    DiskMedium& m = disk_->medium();
+    const uint8_t alt_c = m.numCylinders(), alt_h = m.numHeads();
+
+    if (nur_gerade_spuren && alt_c < 2) { fail("zu wenige Spuren"); return -1; }
+    if (nur_seite_null && alt_h < 2)    { fail("die Diskette hat nur eine Seite"); return -1; }
+
+    // **Nur an einem vollstaendigen Abbild.**  Der Schnitt loest vom Laufwerk (s. u.);
+    // was jetzt noch ungelesen ist, bleibt es fuer immer.  Und die verbliebenen
+    // Luecken machen die Erkennung unmoeglich — eine unbekannte Spur sieht aus wie
+    // eine unformatierte, mitten im beschriebenen Bereich.
+    if (!m.complete()) {
+        fail("Es sind noch " + std::to_string(m.unknownCount())
+             + " Spuren ungelesen.  Der Schnitt loest das Abbild vom Laufwerk — was "
+               "jetzt fehlt, fehlt dann endgueltig.  Erst vollstaendig einlesen.");
+        return -1;
+    }
+
+    // **Erst vom Laufwerk loesen.**  Nach dem Schnitt stimmt die Spurnummer nicht
+    // mehr mit der Kopfposition ueberein (Spur n liegt physisch auf 2n); ein
+    // Rueckschreiben ginge auf die falschen Zylinder und zerstoerte die Diskette.
+    // Das Abbild bleibt vollstaendig im Speicher — nur die Bindung endet.
+    m.setLoader(nullptr);
+
+    const uint8_t neu_c = nur_gerade_spuren ? static_cast<uint8_t>((alt_c + 1) / 2) : alt_c;
+    const uint8_t neu_h = nur_seite_null ? 1 : alt_h;
+
+    if (nur_gerade_spuren) {
+        // Von vorn nach hinten schieben: Ziel n liegt immer VOR der Quelle 2n, es
+        // wird also nichts ueberschrieben, was noch gebraucht wird.
+        for (uint8_t c = 0; c < neu_c; ++c) {
+            const uint8_t quelle = static_cast<uint8_t>(c * 2);
+            if (quelle >= alt_c) break;
+            for (uint8_t h = 0; h < alt_h; ++h)
+                if (quelle != c) m.setTrack(c, h, m.peek(quelle, h));
+        }
+    }
+    m.resize(neu_c, neu_h);
+    return static_cast<int>(neu_c) * neu_h;
+}
+
+int DiskVolume::deleteCylinder(uint8_t cyl) {
+    if (!disk_) { fail("keine Diskette geoeffnet"); return -1; }
+    DiskMedium& m = disk_->medium();
+    if (cyl >= m.numCylinders()) { fail("diesen Zylinder gibt es nicht"); return -1; }
+    if (m.numCylinders() < 2)    { fail("die letzte Spur bleibt"); return -1; }
+    if (!m.complete()) {
+        fail("Es sind noch Spuren ungelesen — erst vollstaendig einlesen.");
+        return -1;
+    }
+    m.setLoader(nullptr);                    // Lage aendert sich, s. @ref schneide
+
+    // Nach vorn schieben: Ziel liegt immer VOR der Quelle, es geht nichts verloren.
+    for (uint8_t c = cyl; c + 1 < m.numCylinders(); ++c)
+        for (uint8_t h = 0; h < m.numHeads(); ++h)
+            m.setTrack(c, h, m.peek(static_cast<uint8_t>(c + 1), h));
+    m.resize(static_cast<uint8_t>(m.numCylinders() - 1), m.numHeads());
+    return m.numCylinders();
+}
+
+int DiskVolume::insertCylinderAt(uint8_t pos, bool mfm) {
+    if (!disk_) { fail("keine Diskette geoeffnet"); return -1; }
+    DiskMedium& m = disk_->medium();
+    const uint8_t alt = m.numCylinders();
+    if (pos > alt)   { fail("diese Stelle liegt hinter dem Ende"); return -1; }
+    if (alt >= 255)  { fail("mehr Zylinder gehen nicht"); return -1; }
+    if (!m.complete()) {
+        fail("Es sind noch Spuren ungelesen — erst vollstaendig einlesen.");
+        return -1;
+    }
+    m.setLoader(nullptr);                    // Lage aendert sich, s. @ref schneide
+
+    // Als Vorbild fuer die LAENGE dient der Nachbar — welcher, ist gleichgueltig,
+    // beide gehoeren zur selben Umdrehung.  Bei pos == 0 gibt es keinen davor.
+    const uint8_t vorbild_c = (pos > 0) ? static_cast<uint8_t>(pos - 1)
+                                        : (alt > 0 ? pos : 0);
+    const Encoding enc = mfm ? Encoding::MFM : Encoding::FM;
+
+    m.resize(static_cast<uint8_t>(alt + 1), m.numHeads());
+    // Von HINTEN nach vorn schieben — sonst ueberschreibt man, was noch kommt.
+    for (int c = alt; c > pos; --c)
+        for (uint8_t h = 0; h < m.numHeads(); ++h)
+            m.setTrack(static_cast<uint8_t>(c), h,
+                       m.peek(static_cast<uint8_t>(c - 1), h));
+
+    for (uint8_t h = 0; h < m.numHeads(); ++h) {
+        // Zellen je Umdrehung sind eine Eigenschaft der SCHEIBE, nicht des
+        // Verfahrens; die Bytezahl dagegen haengt daran (MFM 16 Zellen je Byte,
+        // FM 32).  Eine FM-Spur traegt also halb so viele Bytes wie ihr
+        // MFM-Nachbar — und genau so passt sie in dieselbe Umdrehung.
+        const TrackImage& vorbild = (alt > 0) ? m.peek(vorbild_c, h) : TrackImage{};
+        uint32_t zellen = vorbild.bitcells;
+        if (zellen == 0)
+            zellen = vorbild.bytes.empty()
+                   ? 100000u                              // 250 kbit/s bei 300 min⁻¹
+                   : static_cast<uint32_t>(vorbild.bytes.size())
+                     * (vorbild.encoding == Encoding::FM ? 32u : 16u);
+        const size_t laenge = zellen / (enc == Encoding::FM ? 32u : 16u);
+
+        // Unformatiert, aber NICHT leer: eine Spur ohne Bytes gibt es in dieser
+        // Geometrie gar nicht, und in eine solche laesst sich kein Sektor legen.
+        // Eine geloeschte echte Spur traegt Fluss, nur ohne Marken (§19.6).
+        TrackImage neu;
+        neu.encoding = enc;
+        neu.bitcells = zellen;
+        neu.bytes.assign(laenge, enc == Encoding::FM ? 0xFF : 0x4E);
+        neu.marks.assign(laenge, MarkType::None);
+        m.setTrack(pos, h, std::move(neu));
+    }
+    return m.numCylinders();
+}
+
+int DiskVolume::keepEvenTracks()  { return schneide(true, false); }
+int DiskVolume::dropSecondSide()  { return schneide(false, true); }
+
+int DiskVolume::copyTo(DiskMedium& ziel) const {
+    if (!disk_) { fail("keine Diskette geoeffnet"); return -1; }
+    const DiskMedium& quelle = disk_->medium();
+
+    // Zu wenige SPUREN sind ein Abbruch: die Diskette passt schlicht nicht hin.
+    if (quelle.numCylinders() > ziel.numCylinders()) {
+        fail("Die Diskette hat " + std::to_string(quelle.numCylinders())
+             + " Spuren, das Ziel nur " + std::to_string(ziel.numCylinders()) + ".");
+        return -1;
+    }
+    // Zu wenige SEITEN dagegen nicht: „nur Seite 0" ist eine gewollte Einstellung
+    // (§12.5) — etwa wenn auf Seite 1 nur Altbestand steht.  Kopiert wird dann, was
+    // hineinpasst.  Dass dabei etwas wegbleibt, sagt die Oberflaeche VORHER; hier
+    // waere die Rueckfrage zu spaet und am falschen Ort.
+    const uint8_t koepfe = std::min(quelle.numHeads(), ziel.numHeads());
+
+    int n = 0;
+    for (uint8_t c = 0; c < quelle.numCylinders(); ++c)
+        for (uint8_t h = 0; h < koepfe; ++h) {
+            // Eine nie gelesene Spur der QUELLE traegt bedeutungslose Bytes — das gibt
+            // es nur, wenn die Quelle selbst ein Laufwerk ist.  Sie zu kopieren
+            // schriebe Muell auf die Zieldiskette.  `peek` laedt bewusst nicht nach.
+            if (quelle.state(c, h) == TrackState::Unknown) continue;
+            ziel.setTrack(c, h, quelle.peek(c, h));
+            ++n;
+        }
+    return n;
+}
+
 TrackView DiskVolume::trackView(uint8_t cyl, uint8_t head) const {
     if (!disk_) return TrackView{};
     return scanTrack(disk_->medium().track(cyl, head));
+}
+
+int DiskVolume::trackState(uint8_t cyl, uint8_t head) const {
+    if (!disk_) return 0;
+    switch (disk_->medium().state(cyl, head)) {
+        case TrackState::Clean: return 1;
+        case TrackState::Dirty: return 2;
+        default:                return 0;
+    }
 }
 
 bool DiskVolume::readSectorAt(uint8_t cyl, uint8_t head, int index,
@@ -1080,8 +1451,8 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
         }
     }
 
-    // Beiblatt mit den Kopfsektorangaben — nur UDOS fuehrt welche.
-    if (profile_ && profile_->type == FsType::Udos) {
+    // Beiblatt mit den Kopfsektorangaben — nur die UDOS-Familie fuehrt welche.
+    if (profile_ && isUdosFamily(profile_->type)) {
         std::vector<std::pair<std::string, UdosAngabe>> eintraege;
         for (int v = 0; v < volumeCount(); ++v) {
             const std::string unter = volumeDir(v);
@@ -1101,6 +1472,12 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
                 a.rest          = e.bytes_in_last;
                 a.blocklaenge_gesetzt = true;
                 a.zusatz        = e.extra;
+                // Nur wenn es mehr als ein Segment gibt — sonst blaeht es die Zeile
+                // auf, ohne etwas zu sagen, was `segment=` nicht schon sagt.
+                if (e.segments.find(' ') != std::string::npos) {
+                    a.segmente = e.segments;
+                    std::replace(a.segmente.begin(), a.segmente.end(), ' ', ',');
+                }
                 a.erstellt      = e.created;
                 a.geaendert     = e.date;
                 eintraege.emplace_back(unter.empty() ? e.name : unter + "/" + e.name, a);
@@ -1280,6 +1657,7 @@ bool DiskVolume::insertAll(const std::string& src_dir, const TransferOptions& op
                 o.udos_bytes_in_last = it->second.rest;
                 o.udos_block_len_gesetzt = it->second.blocklaenge_gesetzt;
                 o.udos_extra      = it->second.zusatz;
+                o.udos_segments   = it->second.segmente;
                 o.udos_created    = it->second.erstellt;
                 o.udos_modified   = it->second.geaendert;
             }
@@ -1396,6 +1774,15 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
     }
 
     std::unique_ptr<DiskVolume> dv(new DiskVolume);
+    // Bei UDOS1715 liegt der Urlader auf Spur 0 (§1.2.2).  Wird ein Bootabbild
+    // mitgegeben, MUSS `mkfs` diese Spur sperren — sonst vergaebe die naechste
+    // geschriebene Datei genau die Sektoren, die den Urlader tragen.  Das Profil
+    // im Katalog beschreibt die Anwenderdiskette; hier entsteht eine Systemdiskette.
+    if (profil->type == FsType::Udos1715 && !boot.empty() && !profil->system_track0) {
+        dv->abgeleitet_ = *profil;
+        dv->abgeleitet_->system_track0 = true;
+        profil = &*dv->abgeleitet_;
+    }
     dv->path_    = path;
     dv->format_  = fmt;
     dv->profile_ = profil;
@@ -1429,6 +1816,10 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
         v.space = std::make_unique<SectorSpace>(dv->disk_->medium(), *fmt);
         if (profil->type == FsType::Udos) {
             auto u = UdosFileSystem::format(*v.space, *profil, 0, label, err);
+            if (!u) return nullptr;
+            v.fs = std::move(u);
+        } else if (profil->type == FsType::Udos1715) {
+            auto u = Udos1715FileSystem::format(*v.space, *profil, label, err);
             if (!u) return nullptr;
             v.fs = std::move(u);
         } else {

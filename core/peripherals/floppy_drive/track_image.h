@@ -75,6 +75,23 @@ struct TrackImage {
     Encoding              encoding = Encoding::MFM;  ///< Verfahren der Spur (Re-Encode + Index-/HF-Logik)
     uint32_t              bitcells = 0;     ///< urspr. Bitzellen-Länge (0 = unbekannt/Raw); für HFE-Rückschreiben
 
+    /**
+     * @brief Wie viele **nominale** Bitzellen eine Modellzelle dieser Spur belegt.
+     *
+     * 1 = volle Datenrate (250 kbit/s, der Regelfall — MFM ebenso wie das 8″-FM der
+     * MF3200/MF6400).  2 = **halbe** Datenrate: die Spur ist mit 125 kbit/s
+     * aufgezeichnet, jede Zelle dauert doppelt so lang.
+     *
+     * Der Fall ist nicht theoretisch — die Bootspur (c0h0) der SCP1700-Disketten des
+     * A7100 ist genau so aufgezeichnet, alle übrigen Spuren derselben Diskette mit
+     * voller Rate (`data/formats.yaml`, `scp1700_640`).  Das Modell rechnet immer in
+     * nominalen Zellen; der Faktor sagt nur, wie der Zellstrom beim **Laden**
+     * heruntergerechnet und beim **Zurückschreiben** wieder gestreckt werden muss
+     * (@ref BitCodec::downsampleCells / @ref BitCodec::upsampleCells).  Ohne ihn ginge
+     * eine solche Spur mit doppelter Rate zurück auf die Diskette.
+     */
+    uint8_t               cell_factor = 1;
+
     /// @brief Leer, wenn die Spur keine Bytes enthält (z. B. nicht existierende Spur).
     bool   empty() const { return bytes.empty(); }
     /// @brief Anzahl Bytes der Spur (eine Umdrehung).

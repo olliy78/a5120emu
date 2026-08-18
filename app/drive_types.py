@@ -38,6 +38,26 @@ LEGACY_PROFILE_NAMES = {
     "mfs_525_ds80":  "K5601",    # war ein K5601-Duplikat ohne FM-Lesepfad
 }
 
+#: Physische Reichweite je Laufwerkstyp: (Zylinder, Köpfe, Zellrate kbit/s, U/min).
+#:
+#: Spiegelt die `DriveProfile`-Tabelle des Kerns (core/peripherals/floppy_drive/
+#: drive_profile.cpp).  Gebraucht wird sie nur für das **echte** Laufwerk am
+#: Greaseweazle (doc/design/14_physische_diskette.md): dort muss die Anwendung dem
+#: Kern sagen, wie weit der Kopf fahren kann — bei einer Abbilddatei sagt das die Datei.
+GEOMETRIE = {
+    "K5601":    (80, 2, 250, 300),
+    "K5600.10": (40, 1, 250, 300),
+    "K5600.20": (80, 1, 250, 300),
+    "MF3200":   (77, 1, 250, 360),   # 8" FM
+    "MF6400":   (77, 1, 500, 360),   # 8" MFM
+}
+
+
+def geometrie(core_name: str):
+    """(Zylinder, Köpfe, Zellrate, U/min) eines Laufwerkstyps; Vorgabe K5601."""
+    return GEOMETRIE.get(normalize(core_name), GEOMETRIE["K5601"])
+
+
 NO_DRIVE = DRIVE_NONE          # core name for an empty slot
 NO_DRIVE_LABEL = "kein Laufwerk"
 

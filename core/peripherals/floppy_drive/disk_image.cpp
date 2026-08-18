@@ -108,8 +108,12 @@ std::unique_ptr<DiskImage> DiskImage::create(const std::string& path,
         for (uint8_t h = 0; h < num_heads; ++h) {
             const TrackFormat* tf = fmt->findTrack(c, h);
             if (!tf) continue;   // Spur existiert im Format nicht → bleibt unformatiert
-            img->medium_.setTrack(
-                pc, h, TrackCodec::buildTrack(leereSektoren(*tf, c, h), tf->encoding));
+            TrackImage spur = TrackCodec::buildTrack(leereSektoren(*tf, c, h),
+                                                     tf->encoding);
+            // Halbe Datenrate ist eine Eigenschaft des Spurbereichs (`rate: 125`) und
+            // muss an der Spur haengen, sonst schriebe sie jeder Codec mit voller Rate.
+            spur.cell_factor = tf->cell_factor;
+            img->medium_.setTrack(pc, h, std::move(spur));
         }
     }
 
@@ -123,6 +127,17 @@ std::unique_ptr<DiskImage> DiskImage::create(const std::string& path,
     img->medium_.clearDirty();
     img->path_          = path;
     img->write_protect_ = write_protect;
+    return img;
+}
+
+std::unique_ptr<DiskImage> DiskImage::openPhysical(const TrackSyncSpec& spec) {
+    auto img = std::unique_ptr<DiskImage>(new DiskImage());
+    // Der Synchronisierer setzt Geometrie und Verfahren und erklaert ALLE Spuren fuer
+    // unbekannt — gelesen wird erst beim ersten Zugriff (doc/design/14 §4).
+    img->sync_          = std::make_shared<TrackSync>(spec, img->medium_);
+    img->write_protect_ = !spec.writable;
+    // Keine Dateibindung: der Autosave schweigt, saveAs() legt bei Bedarf eine an.
+    img->binding_writable_ = false;
     return img;
 }
 
@@ -144,6 +159,17 @@ bool DiskImage::writeTrack(uint8_t cyl, uint8_t head, const TrackImage& track) {
 // ─── Persistenz ──────────────────────────────────────────────────────────────
 
 bool DiskImage::flush() {
+    // Physische Diskette: „speichern" heisst, auf die Rueckfuehrung zu warten — und
+    // die gilt erst als geglueckt, wenn jede Spur zurueckGELESEN wurde (§7.1).  Der
+    // Grund muss durchgereicht werden, sonst steht der Bediener vor einem
+    // „Speichern fehlgeschlagen" ohne Spurnummer.
+    if (sync_) {
+        if (sync_->flushPending()) { last_error_.clear(); return true; }
+        last_error_ = sync_->lastError().empty()
+                          ? "Die Diskette liess sich nicht vollstaendig beschreiben."
+                          : sync_->lastError();
+        return false;
+    }
     if (!medium_.dirty()) { dirty_since_ = 0; return true; }
     if (write_protect_)   return true;   // Schreibschutz: nichts zurueckschreiben
     if (!hasFile())       return true;   // reines Speichermedium — nichts zu tun
@@ -183,6 +209,18 @@ bool DiskImage::autoFlush(uint64_t now_cycles) {
 
 bool DiskImage::exportTo(const std::string& path, std::optional<DiskFormat> fmt) {
     const ContainerType ziel = ImageCodec::fromExtension(path);
+
+    // Eine Abbilddatei ist eine Aussage ueber die GANZE Diskette.  Bei einer physischen
+    // Quelle muessen die noch unbekannten Spuren also vorher gelesen werden — sonst
+    // schriebe die Datei sie als Fuellbytes fest (doc/design/14 §4.2).  Das ist der
+    // einzige Ort, an dem der Kern von sich aus einen vollstaendigen Lauf anstoesst.
+    if (sync_ && !medium_.complete()) {
+        if (!sync_->loadAll()) {
+            last_error_ = "Die Diskette konnte nicht vollstaendig gelesen werden: " +
+                          sync_->lastError();
+            return false;
+        }
+    }
 
     if (ImageCodec::needsDiskFormat(ziel)) {
         if (!fmt.has_value()) {

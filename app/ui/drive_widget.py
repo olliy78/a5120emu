@@ -94,6 +94,11 @@ class DriveWidget(QWidget):
         # Wird beim Kaltstart (Power ON) neu gemountet, weil das den K5122-
         # Laufwerkszustand zurücksetzt (nötig, damit das Boot-ROM neu bootet).
         self._mounts = {}
+        # Laufende Sitzungen an ECHTEN Laufwerken: drive -> PhysicalSession.
+        # Sie stehen bewusst NICHT in _mounts: eine physische Diskette hat keinen
+        # Pfad, lässt sich also weder in der Konfiguration merken noch beim
+        # Kaltstart „neu einlegen" (das Handle ist dann verbraucht).
+        self._physical = {}
         self.setup_ui()
 
         self._led_timer = QTimer(self)
@@ -211,6 +216,7 @@ class DriveWidget(QWidget):
         caller supplies a freshly created machine, so the K5122 state is empty).
         Restore any surviving disks afterwards via :meth:`load_mounts`.
         """
+        self.close_physical_sessions()
         if emulator is not None:
             self.emulator = emulator
         self.drive_types = dt.normalize_list(drive_types)
@@ -270,11 +276,29 @@ class DriveWidget(QWidget):
         format_layout.addWidget(format_combo)
         layout.addLayout(format_layout)
 
-        # Buttons: Toggle (Mount ⇄ Unmount) + "Neue Diskette" + "Speichern unter…".
+        # Füllstand einer physischen Diskette („47 von 160 Spuren gelesen").
+        # Kein Fehler und keine Meldung — ein Zustand, also eine eigene Zeile.
+        phys_label = QLabel()
+        phys_label.setStyleSheet("color: #4a8;")
+        phys_label.setVisible(False)
+        layout.addWidget(phys_label)
+
+        # Buttons: Toggle (Mount ⇄ Unmount) + "Neue Diskette" + "Speichern unter…"
+        # + "Physisch…" (echtes Laufwerk am Greaseweazle).
         buttons_layout = QHBoxLayout()
         toggle_btn = QPushButton("Mount")
         create_btn = QPushButton("Neue Diskette")
         saveas_btn = QPushButton("Speichern unter…")
+        phys_btn = QPushButton("Physisch…")
+        # Ausweg aus einer Schadstelle: neue Diskette einlegen, alles noch einmal
+        # wegschreiben.  Nur sichtbar, solange ein echtes Laufwerk eingelegt ist.
+        rewrite_btn = QPushButton("Diskette neu beschreiben")
+        rewrite_btn.setVisible(False)
+        rewrite_btn.setToolTip(
+            "Schreibt das vollständige Speicherabbild noch einmal auf die eingelegte "
+            "Diskette — für eine frische, fehlerfreie.\n"
+            "Nur bereits gelesene Spuren werden geschrieben; nie gelesene tragen "
+            "keinen gültigen Inhalt.")
         saveas_btn.setEnabled(False)
         saveas_btn.setToolTip("Die eingelegte Diskette unter neuem Namen/Format "
                               "speichern; ab dann folgen alle Schreibzugriffe dorthin.")
@@ -294,10 +318,20 @@ class DriveWidget(QWidget):
             toggle_btn.setText("Mount")
             self._mounts.pop(drive, None)
             saveas_btn.setEnabled(False)
+            phys_btn.setEnabled(True)
+            phys_label.setVisible(False)
+            rewrite_btn.setVisible(False)
             self._update_notice(drive)
             self.disk_unmounted.emit(drive)
 
         def on_toggle():
+            # Physisches Laufwerk: erst die Sitzung beenden (schreibt Ausstehendes
+            # zurück und hält den Arbeitsfaden an), dann aushängen.
+            if drive in self._physical:
+                self._stop_physical(drive)
+                self.emulator.unmount_disk(drive)
+                set_unmounted()
+                return
             # Ist ein Image gemountet → Unmount, sonst Mount-Dialog.
             if drive in self._mounts:
                 if self.emulator.unmount_disk(drive):
@@ -387,14 +421,99 @@ class DriveWidget(QWidget):
             except Exception as e:
                 QMessageBox.critical(self, "Error", str(e))
 
+        def on_physical():
+            """Echte Diskette in einem echten Laufwerk am Greaseweazle einlegen."""
+            from app.ui.physical_disk import (PhysicalDiskDialog, PhysicalSession,
+                                              verfuegbarkeit)
+            ok, grund = verfuegbarkeit()
+            if not ok:
+                QMessageBox.information(self, "Physisches Laufwerk", grund)
+                return
+
+            cyls, heads, rate, rpm = dt.geometrie(self.drive_types[drive])
+            wahl = PhysicalDiskDialog.frage(
+                self, num_cyls=cyls, num_heads=heads,
+                drive_label=dt.short_label(self.drive_types[drive]))
+            if wahl is None:
+                return
+            wahl.setdefault("cell_rate_kbps", rate)
+
+            # Vorher aushängen, damit kein Abbild im Laufwerk hängenbleibt.
+            if drive in self._mounts:
+                try:
+                    self.emulator.unmount_disk(drive)
+                except Exception:
+                    pass
+                set_unmounted()
+
+            try:
+                sitzung = PhysicalSession.start(rpm=rpm, for_emulator=True, **wahl)
+            except Exception as e:
+                QMessageBox.critical(self, "Physisches Laufwerk",
+                                     f"Das Laufwerk ließ sich nicht öffnen:\n{e}")
+                return
+            try:
+                belegt = self.emulator.mount_physical(drive, sitzung.sync,
+                                                      not wahl["writable"])
+            except Exception as e:
+                sitzung.close()
+                QMessageBox.critical(self, "Physisches Laufwerk", str(e))
+                return
+            if not belegt:
+                sitzung.close()
+                QMessageBox.critical(self, "Physisches Laufwerk",
+                                     self._fail_msg(drive, "mount"))
+                return
+
+            self._physical[drive] = sitzung
+            path_display.setText(
+                f"[echtes Laufwerk {wahl['drive'].upper()} am Greaseweazle"
+                + (", schreibend]" if wahl["writable"] else "]"))
+            toggle_btn.setText("Auswerfen")
+            phys_btn.setEnabled(False)
+            saveas_btn.setEnabled(True)     # „Speichern unter…" zieht die Diskette ab
+            phys_label.setVisible(True)
+            rewrite_btn.setVisible(bool(wahl["writable"]))
+            self._update_physical_status(drive)
+            self._update_notice(drive)
+            self.disk_mounted.emit(drive, path_display.text())
+
+        def on_rewrite():
+            """Das Abbild noch einmal vollständig auf die (neue) Diskette schreiben."""
+            sitzung = self._physical.get(drive)
+            if sitzung is None:
+                return
+            st = sitzung.stats()
+            unbekannt = (st.tracks_total - st.tracks_known) if st else 0
+            frage = ("Das Speicherabbild wird noch einmal vollständig auf die "
+                     "eingelegte Diskette geschrieben.\n\n"
+                     "Legen Sie jetzt eine fehlerfreie Diskette ein.")
+            if unbekannt:
+                frage += (f"\n\n⚠ {unbekannt} von {st.tracks_total} Spuren wurden nie "
+                          "gelesen und können deshalb nicht geschrieben werden — die "
+                          "neue Diskette bliebe insoweit unvollständig.")
+            if QMessageBox.question(self, "Diskette neu beschreiben", frage,
+                                    QMessageBox.Ok | QMessageBox.Cancel) != QMessageBox.Ok:
+                return
+            n = sitzung.rewrite_all()
+            QMessageBox.information(
+                self, "Diskette neu beschreiben",
+                f"{n} Spuren wurden zum Schreiben eingestellt.\n"
+                "Der Fortschritt steht im Laufwerkskasten; jede Spur wird nach dem "
+                "Schreiben zurückgelesen.")
+
         toggle_btn.clicked.connect(on_toggle)
         create_btn.clicked.connect(on_create)
         saveas_btn.clicked.connect(on_save_as)
+        phys_btn.clicked.connect(on_physical)
+        rewrite_btn.clicked.connect(on_rewrite)
 
         buttons_layout.addWidget(toggle_btn)
         buttons_layout.addWidget(create_btn)
         buttons_layout.addWidget(saveas_btn)
+        buttons_layout.addWidget(phys_btn)
         layout.addLayout(buttons_layout)
+        layout.addWidget(rewrite_btn)
 
         # Store references for updates
         group._path_display = path_display
@@ -404,6 +523,9 @@ class DriveWidget(QWidget):
         group._wp_check = wp_check
         group._format_combo = format_combo
         group._notice_label = notice_label
+        group._phys_label = phys_label
+        group._phys_btn = phys_btn
+        group._rewrite_btn = rewrite_btn
         group._led = led
         self._panels[drive] = group
 
@@ -440,6 +562,58 @@ class DriveWidget(QWidget):
         label.setText("\n".join("⚠ " + l for l in lines))
         label.setToolTip("\n\n".join(self.NOTICE_HELP.get(l, l) for l in lines))
         label.setVisible(bool(lines))
+
+    # ── Physisches Laufwerk (Greaseweazle) ───────────────────────────────────
+
+    def _stop_physical(self, drive: int):
+        """Sitzung beenden: Ausstehendes zurückschreiben, Arbeitsfaden anhalten.
+
+        Kann dauern (je Spur eine knappe Sekunde), deshalb der Wartecursor —
+        eine nicht zurückgeschriebene Änderung wäre der schlechtere Tausch.
+        """
+        sitzung = self._physical.pop(drive, None)
+        if sitzung is None:
+            return
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QCursor
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        try:
+            sitzung.close()
+        except Exception:
+            pass
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def _update_physical_status(self, drive: int):
+        """Füllstandszeile einer physischen Diskette nachführen.
+
+        Meldet dabei **einmal je Schadstelle** ein Fenster: eine Spur, die sich nicht
+        schreiben lässt, ist der eine Fall, in dem der Bediener sofort handeln muss —
+        das Abbild im Speicher ist noch heil, die Diskette nicht mehr.
+        """
+        panel = self._panels.get(drive)
+        sitzung = self._physical.get(drive)
+        if panel is None or not hasattr(panel, "_phys_label"):
+            return
+        if sitzung is None:
+            panel._phys_label.setVisible(False)
+            return
+
+        defekt = sitzung.defect_tracks
+        panel._phys_label.setText("⏵ " + sitzung.status_text())
+        panel._phys_label.setStyleSheet("color: #d33;" if defekt else "color: #4a8;")
+        panel._phys_label.setVisible(True)
+
+        neu = sitzung.neue_defekte()
+        if neu:
+            panel._rewrite_btn.setVisible(True)
+            QMessageBox.warning(self, f"Schreibfehler — Laufwerk {drive}",
+                                sitzung.defekt_meldung(neu))
+
+    def close_physical_sessions(self):
+        """Alle physischen Sitzungen beenden (Programmende, Konfigurationswechsel)."""
+        for drive in list(self._physical):
+            self._stop_physical(drive)
 
     # ── Config-Persistenz (gemountete Disketten) ─────────────────────────────
 
@@ -523,6 +697,7 @@ class DriveWidget(QWidget):
         Beschriftung, Format, Write-Protect) ohne die mount/unmount-Signale
         auszulösen — das Restore ist keine Nutzeraktion."""
         # 1) Alles aushängen, damit ein Config-Wechsel nicht alte Disks stehen lässt.
+        self.close_physical_sessions()
         for drive in list(self._mounts):
             try:
                 self.emulator.unmount_disk(drive)
@@ -548,7 +723,13 @@ class DriveWidget(QWidget):
 
     def remount_all(self):
         """Alle aktuell gemounteten Images neu mounten (setzt den K5122-
-        Laufwerkszustand zurück — für den Kaltstart bei Power ON)."""
+        Laufwerkszustand zurück — für den Kaltstart bei Power ON).
+
+        **Physische Laufwerke bleiben unberührt**: sie haben keinen Pfad, und ihr
+        Sync-Handle ist nach dem Einlegen verbraucht.  Nötig ist das Neu-Mounten
+        dort auch nicht — `powerOn()` setzt den K5122 ohnehin zurück, und die
+        Diskette liegt ja weiter im Laufwerk.
+        """
         for drive, (path, fmt, wp) in list(self._mounts.items()):
             try:
                 self.emulator.mount_disk(drive, path, fmt, wp)
@@ -557,6 +738,8 @@ class DriveWidget(QWidget):
 
     def _refresh_leds(self):
         """Update all drive LED indicators from emulator state."""
+        for drive in list(self._physical):
+            self._update_physical_status(drive)
         for drive, led in self._drive_leds.items():
             is_on = False
             try:

@@ -1,6 +1,7 @@
 # `k1520disktool` — Dateiaustausch mit K1520-Disketten
 
-Holt Dateien von CP/A-, SCPX- und **UDOS**-Disketten und schreibt sie zurück —
+Holt Dateien von CP/A-, SCPX-, **UDOS**-, **UDOS1715**- und **SCP1700**-Disketten
+(CP/M-86 des A7100) und schreibt sie zurück —
 auf `.img`, `.hfe` und `.dmk`.  Dieselbe Bibliothek treibt die Oberfläche
 (`run_disktool.sh`); Feinentwurf: `doc/design/13_k1520disktool.md`.
 
@@ -130,8 +131,8 @@ das Betriebssystem zum *Laden* braucht:
 | Satzlänge (Vielfaches von 128) | `--record-len` | `1024` | 15 |
 | zweite Längenangabe | `--block-len` | `1024` | 17 |
 | ENTRY — Einsprungadresse | `--entry` | `0x2600` | 20 |
-| SEGMENTS — Anfang:Länge | `--segment 2600:5521` | | 40/42 |
-| Kopfsektor 44…47 (Bedeutung offen) | `--extra` | `0` | 44 |
+| SEGMENTS — **alle** Segmente `ANFANG+LÄNGE` | `--segment 2600+1591` | | 40…121 |
+| Kopfsektor 44…47 (= die vier Bytes hinter Segment 1) | `--extra` | `0` | 44 |
 | LOW:HIGH:STACK | `--mem 2600:3FD4:0080` | | 122/124/126 |
 | Erstellungsvermerk / Änderungsdatum | `--created` / `--date` | `V 4.2 ` / `900808` | 24 / 32 |
 
@@ -145,6 +146,19 @@ davon sind keine Formsache:
 * **LOW/HIGH/STACK** sind das, was der Lader zuteilen lässt (mehr als das Segment).
   Fehlen sie, weist UDOS die Datei mit `MEMORY PROTECT VIOLATION` ab.
   Hintergrund: `doc/udos_diskettenformat.md` §14.
+
+> **`--segment` nimmt eine LISTE.**  Eine Programmdatei kann mehrere Speicher-
+> segmente haben — `ZLINK` einer PC-1715-Diskette sechs.  Getrennt wird mit
+> Leerzeichen oder Komma, geschrieben `ANFANG+LÄNGE` (hex):
+>
+> ```sh
+> k1520disktool attr pc1715.img ZLINK \
+>     --segment '4000+06A7,62A7+0002,71E9+060B,7AF5+01C9,7FBE+0001,843F+4ABE'
+> ```
+>
+> Beim Rundlauf `get` → `put` braucht man das nicht von Hand: das Beiblatt führt
+> die Liste als `segs=` mit.  Wer sie wegwirft, bekommt ein Programm zurück, das
+> nicht mehr startet (`doc/udos_diskettenformat.md` §6.3).
 
 Anzeigen und ändern lassen sie sich auch an einer Datei, die schon auf der Diskette
 liegt — der Inhalt bleibt dabei unangetastet:
@@ -165,11 +179,19 @@ $ k1520disktool attr udos.hfe CAT --props WEL --mem 4000:5FFF:0200
 ganzen Ordners als auch bei einer einzelnen Datei daraus (auch aus der Oberfläche).
 Ausdrückliche Schalter gehen dem Beiblatt vor.
 
+Je Datei eine Zeile aus `schluessel=wert`-Paaren (hier umbrochen, in der Datei steht
+sie in einer Zeile):
+
 ```
-# Datei  Typ  Eigenschaften  Start  Satzlaenge  Ladeadresse  Abbildlaenge
-Side0/OS   P    WES          13DE   512         1000         5632
-Side0/ZDOS P1   WS           2600   1024        2600         5521
+STATUS typ=P eig=- start=4000 satz=256 block=0 rest=256 segment=4000:813
+       mem=4000:43FF:0080 zusatz=0 erst=860110 geaend=860903
+ZLINK  typ=P eig=- start=8492 satz=512 block=0 rest=512 segment=4000:1703
+       mem=4000:E700:0080 zusatz=262A7 erst=800630 geaend=860903
+       segs=4000+06A7,62A7+0002,71E9+060B,7AF5+01C9,7FBE+0001,843F+4ABE
 ```
+
+`segs=` steht nur bei Dateien mit **mehr als einem** Speichersegment — dort ist es
+aber unverzichtbar: `segment=` und `zusatz=` fassen zusammen nur die ersten beiden.
 
 Die Satzlänge und „Bytes im letzten Satz“ lassen sich **nicht** nachträglich ändern:
 beide bestimmen die Sektorlage der Daten, sie zu ändern hieße die Datei neu zu
@@ -229,6 +251,83 @@ Fehlt eines oder liegen lose Dateien daneben, bricht `put` mit Exit 4 ab und
 `get udos.hfe 'Side1/HELP.*' --to .`
 
 Bei einem Dateisystem (jede CP/M-Diskette, auch beidseitige) ist der Ordner flach.
+
+## SCP1700 — das CP/M-86 des A7100
+
+Disketten des 16-Bit-Rechners **A7100** werden als `scp1700` erkannt.  Ihr
+Dateisystem ist gewöhnliches CP/M — Verzeichnis, Extents, Attribute, Nutzerbereich
+verhalten sich wie bei einer CP/A-Diskette, und `.CMD`-Dateien sind einfach Dateien.
+
+Besonders ist die **Physik**: Spur 0 Kopf 0 ist in FM mit **halber Datenrate**
+aufgezeichnet (16 Sektoren à 128 B), alle übrigen 159 Spuren in MFM (16 × 256 B).
+Das Werkzeug führt diese Rate je Spur mit, auch beim Zurückschreiben — eine mit
+`create --fs scp1700` angelegte Diskette bekommt eine echte FM-Bootspur.
+
+```
+$ k1520disktool ls     a7100.hfe
+$ k1520disktool create neu.hfe --fs scp1700
+```
+
+Hintergrund und Messwerte: `doc/scp1700_diskettenformat.md`.
+
+## UDOS1715 — dieselbe Familie, anderes Dateisystem
+
+Disketten des **PC 1715** tragen UDOS mit dem Treiber **NDOS**; erkannt werden sie
+als `udos1715`.  Der Grund für den Unterschied ist der µPD765-Controller des
+PC 1715: er kann nichts hinter die Daten-CRC schreiben, also steht die Verkettung
+in eigenen *Zeigersektoren* innerhalb der Diskette.  Fürs Werkzeug heißt das:
+
+* **Ein Datenträger, kein `Side0`/`Side1`** — eine „Spur" umfasst beide Seiten
+  eines Zylinders (32 Sektoren à 256 B).  Der Auszugsordner ist flach.
+* **`.img` ist erlaubt** — es steht nichts außerhalb der Sektoren.
+* **Namen müssen mit einem Buchstaben beginnen** (Handbuch §3.1), bis 32 Zeichen.
+* Dateityp, Eigenschaften und der übrige Kopfsektor sind dieselben wie bei
+  UDOS/ZDOS; `--type`, `--props`, `--entry`, `--record-len`, `--segment`, `--mem`
+  und das Beiblatt `udos-dateiangaben.txt` gelten unverändert.
+
+```
+$ k1520disktool ls     pc1715.img
+$ k1520disktool create neu.img --fs udos1715 --label SYSTEM
+$ k1520disktool put    neu.img auszug/
+```
+
+| Dateisystem | Format | Kapazität |
+|-------------|--------|-----------|
+| `udos1715` | 80 Spuren doppelseitig, 16×256 | 640 KB |
+| `udos1715_ss80` | 80 Spuren einseitig, 16×256 | 320 KB |
+| `udos1715_ss40` | 40 Spuren einseitig, 16×256 | 160 KB |
+
+Voller Aufbau: `doc/udos1715_diskettenformat.md` — er stammt aus dem Handbuch, das
+auf so einer Diskette selbst liegt (`UDOS.TEXT`).
+
+## Ein echtes Laufwerk: `k1520disktool --physical`
+
+Liegt ein Greaseweazle am Rechner, geht dasselbe mit der **eingelegten Diskette**
+statt mit einem Abbild:
+
+```sh
+k1520disktool --physical ls -l
+k1520disktool --physical save-as sicherung.hfe        # VOR jedem Schreibversuch
+k1520disktool --physical --write put NEU.TXT
+k1520disktool --physical --drive 0 --cyls 40 --double-step ls
+```
+
+Befehle: `ls`, `info`, `check`, `get`, `put`, `rm`, `save-as`, `rewrite`.
+Sitzungsschalter: `--drive a|b|0…3`, `--cyls`, `--heads`, `--rate`, `--rpm`,
+`--double-step`, dazu `--fs`, `--raw`, `--no-verify`, `-q`.
+
+* **Ohne `--write` ist die Diskette schreibgeschützt.** `put`, `rm` und `rewrite`
+  lehnen ab, **bevor der Motor anläuft** — ein Original ist meist ein Einzelstück.
+* **Alles dauert**: eine Spur 0,5–0,8 s, die ganze Diskette gut zwei Minuten. Der
+  Fortschritt geht auf **stderr**, stdout bleibt maschinenlesbar
+  (`--physical ls | wc -l`). `-q` schaltet ihn ab.
+* Nach jedem Schreiben wird **zurückgelesen und verglichen**; nimmt die Diskette die
+  Daten nicht an, endet der Aufruf mit Exit 1 und nennt die Spur.
+
+> Das ist **nicht** `k1520disktool-cli`: das C++-Werkzeug spricht nur Abbilder an.
+> Den Adapter bedient die Python-Seite (`app/gw/`) — der Kern kennt ihn nicht.
+> Voraussetzung ist das freiwillige Paket:
+> `pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"`.
 
 ## Was das Werkzeug zusichert
 

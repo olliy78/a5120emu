@@ -759,4 +759,12 @@ class MainWindow(QMainWindow):
         self.status_timer.stop()
         self.screen_widget.stop_display()
         self.emulator.stop()
+        # Echte Laufwerke abmelden: ausstehende Spuren zurückschreiben und den
+        # Arbeitsfaden anhalten.  Ohne das bliebe eine Änderung im Abbild liegen,
+        # die auf der eingelegten Diskette nie ankäme
+        # (doc/design/14_physische_diskette.md §7).
+        try:
+            self.drives_widget.close_physical_sessions()
+        except Exception:
+            pass
         event.accept()

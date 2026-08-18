@@ -1,0 +1,9 @@
+# Eine UDOS-Programmdatei kann MEHRERE Speichersegmente haben — `ZLINK` der
+# PC-1715-Diskette sechs.  `attr` muss sie alle nennen, nicht bloss das erste:
+# mit nur dem ersten kaeme die Datei aus get/put verstuemmelt zurueck und startete
+# nicht mehr (doc/udos_diskettenformat.md §6.3).
+tool:   k1520disktool
+disk:   udos1715_640k_pc1715_system.img
+run:    attr %DISK% ZLINK
+expect: SEGMENTE 4000+06A7 62A7+0002 71E9+060B 7AF5+01C9 7FBE+0001 843F+4ABE
+exit:   0

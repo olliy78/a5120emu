@@ -1273,8 +1273,14 @@ Ebene darunter: Spuren, Sektoren, Gaps, CRCs.
 
 Zwei Scheiben nebeneinander, links Seite 0, rechts Seite 1. **Spur 0 außen**,
 **Sektor 0 bei 12 Uhr**; Seite 0 zählt im Uhrzeigersinn, Seite 1 dagegen — so, wie
-man die Diskette sähe, wenn man sie umdreht. Sektor mit gültigen CRCs grün, mit
-CRC-Fehler rot, Gap orange, unformatiert grau.
+man die Diskette sähe, wenn man sie umdreht. Sektor mit gültigen CRCs grün —
+**hellgrün, wenn er zwar formatiert, aber nie beschrieben wurde** (das Datenfeld
+trägt nur das Füllbyte des Formats; welches, ist dessen Sache, gezählt wird die
+Einförmigkeit).  Der **UDOS-Anhang hinter der Daten-CRC zählt dabei nicht mit**:
+er trägt die Dateiverkettung und ist auch auf einer frisch formatierten Diskette
+belegt — mitgezählt sähe dort kein Sektor leer aus.  Sektor mit CRC-Fehler rot,
+Gap orange, unformatiert grau, noch nicht gelesen schwarz (nur physisch, §11.2c
+des Greaseweazle-Entwurfs).
 
 **Die Winkel sind echt, und sie kosten nichts.** Eine `TrackImage` *ist* genau eine
 Umdrehung; der Winkel eines Bytes ist damit `Position ÷ Spurlänge`. Bitrate und
@@ -1412,6 +1418,50 @@ um die Sync-Länge voneinander ab, und die Überschneidungswarnung urteilte übe
 andere Stelle, als sie beschrieb. Rückwärts gelaufen wird höchstens eine doppelte
 Sync-Länge, damit ein auf Nullbytes endendes Datenfeld nicht verschluckt wird.
 
+### 19.6 Ganze Spuren löschen und einfügen (2026-08-17)
+
+Zwei Knöpfe neben „Neuer Sektor" — eine Ebene darüber: sie ändern die **Geometrie**
+des Abbilds, nicht seinen Inhalt.
+
+* **Spur löschen** wirft den gewählten Zylinder (beide Seiten) heraus; alles dahinter
+  rückt auf.  Für Abbilder mit mehr Spuren, als hineingehören (82 statt 80), und zum
+  Zurechtstutzen auf eine Zielgeometrie — 77 Spuren, damit es auf eine 8″-Diskette
+  passt.
+* **Spur einfügen** fragt in einem Dialog nach **Stelle** und **Verfahren** und
+  setzt dort einen **unformatierten** Zylinder ein; alles ab dort rückt nach hinten.
+  Sektoren legt man danach einzeln an.
+
+  Beides muss wählbar sein, und zwar wegen der **gemischten Formate** der K1520-Welt:
+  * die **Stelle** ist die Nummer, die die neue Spur bekommt — zulässig ist auch
+    **0** (vor allen bestehenden, für eine FM-Systemspur vor MFM-Daten) und das Ende
+    (anhängen).  Aus der jetzigen 42 wird dabei die 43.
+  * das **Verfahren** folgt bewusst NICHT dem Nachbarn — gerade der Wechsel ist der
+    Zweck.  Vorbelegt ist das des künftigen Vorgängers, denn das ist der übliche Fall.
+
+  **Die Länge hängt am Verfahren.**  Zellen je Umdrehung sind eine Eigenschaft der
+  Scheibe, die Bytezahl nicht: MFM braucht 16 Zellen je Byte, FM deren 32.  Eine
+  FM-Spur trägt also **halb so viele Bytes** wie ihr MFM-Nachbar — und passt genau so
+  in dieselbe Umdrehung (gemessen: 3136 gegen 6209 Byte).  Der Dialog sagt vorher,
+  was geschieht.
+
+Beides verlangt ein **vollständiges** Abbild, ist bei **Schreibschutz gesperrt** (es
+ändert die Geometrie — erst recht nichts für „nur lesen") und **löst vom Laufwerk**
+(wie die Schnitte in §12.6 des Greaseweazle-Entwurfs): die Spurnummer stimmt danach
+nicht mehr mit der Kopfposition überein.
+
+> **Unformatiert heisst nicht leer.**  Die eingefügte Spur trägt **Gap-Füllbytes** in
+> Länge und Verfahren ihres Nachbarn — so wie eine gelöschte echte Spur Fluss trägt,
+> nur ohne Marken.  Eine Spur *ohne Bytes* gibt es in dieser Geometrie dagegen gar
+> nicht (`TrackView::exists == false`), und in eine solche lässt sich kein Sektor
+> legen: das Anlegen landete dann auf der nächsten formatierten Spur.  Mit Gap-Fluss
+> lässt sich die neue Spur **von Hand formatieren** — Sektor für Sektor, mit `Neuer
+> Sektor`.  Sie ist trotzdem kein Abklatsch des Nachbarn: dessen Sektor-IDs stünden
+> sonst auf der neuen Spur.
+
+Wächter: `test_disk_editor_loescht_und_fuegt_ganze_spuren_ein`,
+`test_eine_eingefuegte_spur_laesst_sich_von_hand_formatieren`,
+`test_disk_editor_sperrt_spuraenderungen_bei_schreibschutz`.
+
 ### 19.5 UDOS-Anhang in der Sektorzeile
 
 Bei UDOS hängen hinter der Daten-CRC **4 Byte Sektorkontrollblock** (Rückwärts- und
@@ -1421,9 +1471,26 @@ rechnet die Grösse als `128+4 Byte` (Nutzdaten + Kontrollblock — die Daten-CR
 zählt hier so wenig mit wie bei CP/M, sie hat ihr eigenes Feld) und
 zeigt beide Zeiger im Klartext (`zurück: Spur 22/Sektor 6   vor: …`, `FF FF` =
 Kettenende).  **Alles in EINER Zeile** — Format, Grösse, Rohbytes, Deutung: jede
-zusätzliche Zeile im unteren Teil fehlt oben der Scheibe. Ob es den Anhang gibt, weiss nicht der Sektor, sondern das
-**Dateisystem** (`filesystem_type == "udos"`); bei CP/M bleiben die Angaben weg,
-statt eine leere Spalte zu zeigen.
+zusätzliche Zeile im unteren Teil fehlt oben der Scheibe.
+
+**Ob es den Anhang gibt, sagen SEKTOR und Dateisystem gemeinsam** — und beides wird
+gebraucht.  Anfangs hing es an `filesystem_type == "udos"` — und damit
+sah man auf einer **gemischten oder gar nicht erkannten** Diskette ihre
+UDOS-Sektoren ohne Verkettung, obwohl der Kontrollblock danebenstand.  Gerade dort
+will man ihn aber sehen; die Erkennung ist ja gescheitert.  Entschieden wird am
+Inhalt: hinter dem Datenfeld steht auf einer gewöhnlichen IBM-Spur das
+**Gap-Füllbyte** (MFM `4E`, FM `FF`) — weicht eines der ersten vier Bytes davon ab,
+gilt der Anhang als belegt (`TrackSpan::tail_bytes`).
+
+Das allein reicht aber nicht: auf einer **frisch formatierten** UDOS-Diskette lautet
+der Kontrollblock nie beschriebener Sektoren `4E 4E 4E 4E` (`doc/udos_diskettenformat.md`
+§1.1) — vom Gap nicht zu unterscheiden.  Wo UDOS **erkannt** ist, wissen wir es
+trotzdem besser.  Deshalb: **Inhalt ODER Dateisystem.**  Nur der Inhalt war zu streng
+(frisch angelegte Disketten zeigten nichts), nur das Dateisystem war es auch
+(gemischte Disketten zeigten nichts).  Bei CP/M spricht keines von beiden dafür, dort
+bleiben die Angaben weg.  Wächter: `TrackViewAnhang.*`,
+`test_disk_editor_zeigt_den_udos_anhang_auch_ohne_erkanntes_udos`,
+`test_frisch_angelegte_udos_diskette_zeigt_ihre_anhaenge`.
 
 Der Anhang ist **änderbar**: die vier Rohbytes stehen in einem eigenen Eingabefeld
 (gesperrt, solange die Diskette schreibgeschützt ist), die Deutung daneben. Zwei
@@ -1525,6 +1592,15 @@ Stufen:
 | offen | eine erkannte Diskette liegt vor | Speichern unter, Archivieren, Diskeditor, Alles extrahieren, Angaben, Schließen |
 | schreibbar | zusätzlich: Schreibschutz fort | Speichern, Alles einfügen |
 | ausgewählt | zusätzlich: in der *zuständigen* Liste ist etwas markiert | Holen, Schreiben, Löschen, Eigenschaften |
+
+Zwei Aktionen fallen aus diesem Raster, beide vom physischen Laufwerk
+(`14_physische_diskette.md` §12.2, hereingekommen 2026-08-16): *Datei ▸ Physisches
+Laufwerk…* hängt an gar keiner Diskette — sie öffnet ja erst eine — und wird
+stattdessen **einmal beim Aufbau** danach gesperrt, ob die Greaseweazle-Hosttools
+überhaupt da sind. Und *Diskette ▸ Diskette neu beschreiben* ist **unsichtbar**
+statt gesperrt, solange keine physische Sitzung läuft: an einer Datei gibt es
+keine Schadstelle, die es heilen könnte, und ein dauerhaft grauer Menüpunkt
+behauptete, es gäbe sie.
 
 Die dritte Stufe ist neu und lässt den früheren Hinweis *„Keine Datei
 ausgewählt"* verschwinden: eine Aktion, die gerade nichts zu tun hätte, ist
@@ -1692,7 +1768,7 @@ dieselben Ordner:
 |--------|-----------|
 | Abbild öffnen · Neue Diskette · Bootabbild auswählen | `paths.default_disk_dir()` — identisch zum Laufwerksfeld des Emulators |
 | Speichern unter… | neben der **geöffneten** Diskette; ohne Diskette der Diskettenordner |
-| Archivieren · Bootabbild sichern | unverändert neben der geöffneten Diskette (Vorschlag mit Namen) |
+| Archivieren · Bootabbild sichern | neben der geöffneten Diskette (Vorschlag mit Namen); ohne Datei — physische Diskette — der Diskettenordner (§20.9) |
 | Ordner wählen · Zielordner wählen | der bereits gewählte Ordner, sonst `paths.default_folder_dir()` |
 
 **Der Dateiordner ist neu** (`paths.user_files_dir()` → `<Datenordner>/Dateien`).
@@ -1733,3 +1809,324 @@ Emulator, und wie dort **vor** den Qt-Importen — die Auskunft muss auch dann
 kommen, wenn genau das fehlt, wonach gefragt wird). `describe()` nennt seitdem
 beide Arbeitsverzeichnisse; das ist die erste Frage, wenn ein Dialog am falschen
 Ort aufgeht.
+
+### 20.9 Die Beschriftung der Diskette — Archivieren ohne Abbilddatei (2026-08-18)
+
+Das Archivieren leitete jeden Namen aus dem Pfad der offenen Diskette ab: den
+Vorschlag im Dateidialog, den Namen des `.hfe` im Archiv, den des
+Inhaltsverzeichnisses. Eine **physische** Diskette hat keinen Pfad — der Klickweg
+endete mitten im Dialog in einem `ValueError` aus
+`Path("").with_suffix(".zip")` („has an empty name"), also mit einem Rückschlag
+in die Konsole statt einer Meldung.
+
+Die Lösung ist nicht ein Ersatzname, sondern die fehlende Angabe selbst: **das
+Werkzeug fragt vor dem Archivieren nach der Beschriftung der Diskette** — dem
+Text auf dem Aufkleber. Sie ist die einzige Auskunft darüber, WELCHE Diskette
+archiviert wurde; ein Abbild trägt seinen Namen im Dateinamen, eine echte
+Diskette trägt ihn auf Papier.
+
+Daraus entsteht dreierlei:
+
+* der **Vorschlag** im Dateidialog (`<name>.zip`, im Diskettenordner),
+* die **Namen im Archiv** (`<name>.hfe`, `<name>.txt`) — nicht nur der Name der
+  `.zip`, denn der überlebt ein Umbenennen nicht,
+* die Zeile **`Beschriftung`** im Kopf des Inhaltsverzeichnisses, dazu
+  **`Herkunft`** an der Stelle, an der sonst `Abbild` steht.
+
+Vier Festlegungen:
+
+1. **Der Aufkleber ist Fliesstext, der Dateiname nicht.** `archive.dateiname()`
+   ist die eine Stelle, die daraus einen Namen macht (Leerzeichen → `_`,
+   `\/:*?"<>|` und Steuerzeichen weg, höchstens 64 Zeichen). Leer heisst „kein
+   Name"; dann entscheidet der Dateiname der Diskette und zuletzt `NAMENLOS`.
+   Ein Archiv entsteht also auch dann, wenn jemand die Frage leer bestätigt.
+2. **Vorgeschlagen wird, was das Werkzeug weiss**: der Dateiname der offenen
+   Diskette, sonst der **Datenträgername** des Dateisystems (UDOS und CP/M führen
+   einen — bei der Referenzdiskette `UDOS.SYS.4.3`). Nur wenn es beides nicht
+   gibt, bleibt das Feld leer.
+3. **Abbrechen bricht ab** — kein Dateidialog dahinter (Wächter
+   `test_disktool_bricht_das_archivieren_ohne_beschriftung_ab`).
+4. **`_neben_der_diskette()` fällt bei leerem Pfad auf den Diskettenordner
+   zurück.** `Path("").parent` ist `.`, also das Arbeitsverzeichnis — genau das,
+   was §20.8 verbietet. Dasselbe gilt für „Bootabbild sichern", das denselben
+   Vorschlag baute.
+
+Wächter: `test_disktool_archiviert_eine_physische_diskette` (der ganze Klickweg
+über das Ersatzlaufwerk, inkl. der Namen im Archiv),
+`test_archive_is_named_after_the_disk_label`,
+`test_disk_label_becomes_a_usable_file_name`. Und
+`test_every_file_dialog_gets_a_start_directory` beantwortet die neue Frage mit,
+sonst stünde der Testlauf an einem modalen Fenster.
+
+---
+
+## 21. UDOS1715 / NDOS — die zweite UDOS-Ausprägung (2026-08-17)
+
+Das Werkzeug liest und schreibt seit dem 2026-08-17 auch die Disketten des
+**PC 1715**. Sie tragen dasselbe Betriebssystem (UDOS), aber ein anderes
+Dateisystem: **NDOS** statt ZDOS. Vollständige Spezifikation:
+**`doc/udos1715_diskettenformat.md`**; die maßgebliche Quelle ist das
+Systemhandbuch, das auf der Diskette selbst liegt
+(`doc/original_docs/UDOS1715_Systemhandbuch.txt`, extrahiert als Datei
+`UDOS.TEXT`).
+
+### 21.1 Warum es überhaupt ein zweites Dateisystem gibt
+
+Der PC 1715 hat einen **µPD765**-Floppycontroller. Der liest und schreibt ganze
+IBM-Sektoren und kommt an die vier Bytes hinter der Daten-CRC nicht heran, in
+denen ZDOS auf dem A5120 seine Dateiverkettung führt. NDOS legt die Verkettung
+deshalb in **eigene Sektoren** — Zeigersektoren mit je bis zu 125 Adressen,
+untereinander verkettet, adressiert über `FIRSTBL` im Descriptor.
+
+Daraus folgt alles Weitere:
+
+| | UDOS/ZDOS (A5120) | UDOS1715/NDOS (PC 1715) |
+|---|---|---|
+| Sektor | 128 B + 4 B hinter der CRC | **256 B, reines Standard-IBM** |
+| Verkettung | Kontrollblock im Gap | **Zeigersektoren** |
+| `.img` | unmöglich | **möglich und richtig** |
+| Seiten | zwei getrennte Datenträger (`Side0`/`Side1`) | **eine Diskette, eine Spur = ein Zylinder** |
+| Namen | beliebiges druckbares Zeichen | müssen mit einem **Buchstaben** beginnen |
+
+### 21.2 Was geteilt wird und was nicht
+
+Geteilt (eine Umsetzung, kein Doppel):
+
+* **Descriptor und Verzeichniseintrag.** Die ersten 128 Byte des Descriptors sind
+  bitgleich; Typbyte, Eigenschaftsbyte, Datumsfelder, Segment, LOW/HIGH/STACK
+  liegen an denselben Offsets. `UdosFileHeader`, `UdosPointer` und `UdosDirEntry`
+  sind deshalb gemeinsam, ebenso `udosTypeByte`/`udosTypeName`/
+  `udosPropertyByte`/`udosPropertyLetters` (`udos_fs.h`). Dabei fiel auf, dass das
+  Typbyte ein **Bitfeld aus Typ und Subtyp** ist — das erklärt nebenbei das
+  ZDOS-„P1" (`81H` = P, Subtyp 1), das vorher als Sonderwert in einer Tabelle stand.
+* **Belegungskarte.** Die Feldoffsets sind identisch (Name 0…23, Einträge ab 24,
+  Zähler bei 375/378/379/380). `UdosBitmap` bekam deshalb eine
+  @ref UdosMapSitte statt einer zweiten Klasse. Drei Unterschiede stecken darin:
+  80 statt 78 Spureinträge, `00`-Füllung statt des ZDOS-Nachlaufs
+  `11×33H · F7H · 27×77H`, und — der einzige inhaltliche — **der „belegt"-Zähler
+  ist bei NDOS echt**, nicht `2464 − frei`.
+
+Nicht geteilt: die Klasse selbst. `Udos1715FileSystem` ist eine eigene
+`FileSystem`-Umsetzung, weil Kettenauswertung, Belegung und Adressumrechnung
+nichts gemeinsam haben. Ein gemeinsamer Rumpf mit Fallunterscheidungen wäre
+länger als beide Umsetzungen zusammen.
+
+### 21.3 Die eine Stelle, an der die Adressen umgerechnet werden
+
+> „Für die Arbeit mit UDOS werden die Sektornummern intern nach der Beziehung
+> **(Sektornummer − 1) + Kopfnummer · 16** gebildet." (Handbuch §2.6.2)
+
+Eine „Spur" ist der ganze **Zylinder**, 32 Sektoren über beide Seiten. Das
+geschieht in `headOf()`/`idOf()` — zwei Zeilen, durch die jeder Zugriff geht. Wer
+sie umgeht, bekommt eine Diskette, deren zweite Hälfte fehlt.
+
+Zwei Folgen, die man nicht aufweichen darf:
+
+1. **`sides_separate` gibt es hier nicht.** Der Katalogparser setzt es für
+   `type: udos1715` hart auf `false` und meldet es, wenn jemand es setzt. Ein
+   Volume, ein Ordner, keine `SideN/`.
+2. **Ein Record darf die KOPFgrenze überschreiten**, die Spurgrenze nicht. Auf
+   dem Referenzdatenträger tut das z. B. `CAT` (1024-B-Record ab Sektor 0DH über
+   10H hinweg). Eine Belegung, die auf `Recordlänge/256` ausrichtet, findet solche
+   Dateien nicht wieder.
+
+### 21.4 Erkennung: ein leeres CP/M sieht aus wie eine leere UDOS1715-Diskette
+
+`cpa640` und `k5601_16x256` sind **dieselbe** Rohgeometrie unter zwei
+Katalognamen. Eine frisch angelegte UDOS1715-Diskette ist außerhalb ihrer beiden
+Systemspuren voller `0xE5` — und damit zugleich ein völlig plausibles *leeres*
+CP/M. Bis dahin gewann in Stufe 2 einfach die zuerst gemessene Geometrie, also
+`cpa640`/`scpx640`.
+
+Die Auflösung: `detect_rank` gilt jetzt **über Geometriegrenzen hinweg**. Die
+Schleife sucht über die erste treffende Geometrie hinaus weiter, solange eine
+spätere ein Profil mit *kleinerem* Rang anbieten kann. Bei lauter gleichen Rängen
+— dem Normalfall — ist das Verhalten unverändert; nur die drei
+`udos1715`-Profile stehen mit `detect_rank: -10` davor. Die Begründung ist
+inhaltlich: ein positiv nachgewiesener Datenträger (Belegungsplan mit passenden
+Zählern **und** ein Verzeichnis-Descriptor an der festen Stelle) schlägt ein
+Verzeichnis, das bloß nicht widerspricht.
+
+### 21.5 Systemdiskette: Spur 0 muss beim Anlegen gesperrt werden
+
+Handbuch §1.2.2: auf einer Systemdiskette liegen Urlader und BFOS auf Spur 0
+Sektor 00…0F (also Kopf 0). Das Katalogprofil beschreibt die **Anwender**diskette;
+wird beim Anlegen ein Bootabbild mitgegeben, leitet `DiskVolume::create` ein
+Profil mit `system_track0: true` ab, bevor `mkfs()` läuft. Ohne das vergäbe die
+erste geschriebene Datei genau die Sektoren, die den Urlader tragen.
+
+### 21.6 Nebenbefund: die Segmentliste — und ein Defekt, den er aufdeckte
+
+Beim Rückschreiben des ZDOS-Descriptors in die Doku fiel auf, dass Offset 40…121
+**keine** zwei Werte plus vier rätselhafte Bytes sind, sondern eine **Liste** von
+Speichersegmenten (Handbuch §3.2.2: „mehrere Segmente möglich; abgeschlossen mit
+`00 00 00 00`"). Auf der A5120-Referenzdiskette fällt das nicht auf — dort hat keine
+Datei mehr als zwei Segmente, und die trug `extra` (44…47) zufällig mit. Auf der
+PC-1715-Diskette hat `IMAGER` drei und `ZLINK` sechs.
+
+Der Rundlauf `get` → `put` **verstümmelte diese beiden Dateien**: nachgemessen kamen
+sie mit zwei Segmenten zurück. Behoben, indem die Liste durchgehend geführt wird —
+`UdosFileHeader::segments`, `FileEntry::segments`, `WriteOptions::udos_segments`,
+`UdosAttrs::set_segments`, C-ABI `k1520d_entry_segments` und ein zusätzliches
+Parameterpaar an `k1520d_set_udos_attrs`, im Beiblatt `segs=`, in der CLI `--segment`
+(das es laut Hilfe und Handbuch längst gab — tatsächlich aber nie), im
+Eigenschaften-Dialog **ein** Textfeld statt zweier Kästchen für Anfang und Länge.
+
+Drei Festlegungen dabei:
+
+1. **Die Liste gewinnt.** `segment_start`/`segment_len` und `extra` bleiben als
+   bequeme Sicht auf das erste Segment bzw. die vier Bytes danach — vorhandene
+   Beiblätter bleiben damit lesbar —, aber sobald `udos_segments` gesetzt ist,
+   schreibt sie den ganzen Bereich.
+2. **Nur bei Typ P.** Bei Typ A steht dort Anwenderinhalt („sonst frei für
+   Anwender"), der als Segmentliste gelesen Unsinn ergäbe — `UDOS.TEXT` „hätte" acht.
+3. **`segs=` steht nur bei mehr als einem Segment** im Beiblatt; sonst bläht es jede
+   Zeile auf, ohne etwas zu sagen, was `segment=` nicht schon sagt.
+
+Nachgewiesen: `get` → `put` über die ganze PC-1715-Diskette lässt bei allen 66 Dateien
+die Segmentliste unverändert (vorher: 2 Abweichungen), ebenso auf der A5120-Diskette
+bei `FORMAT`, `ESPRO` und `UPRO`.
+
+### 21.7 Wächter
+
+| Test | Was er festhält |
+|---|---|
+| `Udos1715Belegung.KarteUndDateienStimmenSektorgenau` | **der schärfste**: die Belegung aus allen 67 Dateien (Descriptoren, Zeigersektoren, Datenrecords) gegen den Belegungsplan, in beide Richtungen ohne Rest |
+| `Udos1715.VerzeichnisLiegtWoDasHandbuchEsSagt` | die 13 festen Sektoren aus §1.2.1, wörtlich |
+| `Udos1715.ErsteEintragungDesErstenZeigersektorsIstDerDescriptor` | die Kettenregel aus §3.2.3, für alle 67 Dateien |
+| `Udos1715.MehrAls124RecordsBrauchenZweiZeigersektoren` | 206 Records = 124 + 82 (`UDOS.TEXT`) |
+| `Udos1715.RecordUeberDieKopfgrenzeWirdRichtigZusammengesetzt` | die Spur ist der Zylinder |
+| `Udos1715.HandbuchLaesstSichLesen` | der Lesepfad holt genau das Dokument zurück, aus dem die Sollwerte stammen |
+| `Udos1715.EineZdosDisketteWirdNichtVerwechselt` | Gegenprobe gegen die A5120-Diskette |
+| `Udos1715Schreiben.*` | Anlegen, Rundlauf, Verzeichniswachstum, Recordlängen, Namensregel, Systemspuren |
+| `Udos1715Segmente.*` | Textform hin und zurück, mehrsegmentige Dateien ganz gelesen, **sechs Segmente überleben das Zurückschreiben**, zu viele werden abgewiesen |
+| `UdosFileSystem.VierundvierzigBisSiebenundvierzigIstDasZweiteSegment` | dasselbe auf der ZDOS-Seite |
+| `FsCatalog.Udos1715ProfileSindImgFaehigUndEinseitigGezaehlt` | `.img` erlaubt, `sides_separate` false, 256-B-Geometrie |
+
+Fixture: `tests/fixtures/disks/udos1715_640k_pc1715_system.img` (640 KB — das
+`.img` genügt, weil bei NDOS nichts außerhalb der Sektoren steht); die
+spurbasierte Aufnahme derselben Diskette liegt unter
+`disks/udos1715_640k_pc1715_system.hfe`.
+
+Am echten Laufwerk gegengeprüft (Greaseweazle F1 + MFS-1.6-Diskette): der
+Physisch-Pfad des DiskTool öffnet die eingelegte Diskette, erkennt `udos1715` und
+listet alle 67 Dateien
+(`K1520_GW_HARDWARE=1 … -k disktool_oeffnet`).
+
+---
+
+## 22. SCP1700 / CP/M-86 — eine Diskette mit ZWEI Datenraten (2026-08-18)
+
+Der A7100 ist ein 16-Bit-Rechner mit **SCP1700**, einem CP/M-86.  Für das DiskTool ist
+sein Dateisystem eine Wiederholungsübung — CP/M-86 führt dasselbe Verzeichnis wie
+CP/M 2.2 —, seine **Physik** aber nicht: **Spur 0 Kopf 0 ist FM mit halber Datenrate**
+(125 kbit/s, 16×128), alle übrigen 159 Spuren MFM mit 250 kbit/s (16×256).
+Mischdichte gab es im Katalog schon (8″-System-34), **Mischrate** nicht.
+
+Volle Beschreibung samt Messwerten: **`doc/scp1700_diskettenformat.md`**.
+Hier nur, was am Entwurf hängt.
+
+### 22.1 Katalog
+
+Ein `formats:`-Eintrag mit drei Spurbereichen und dem neuen Schlüssel `rate:`
+
+```yaml
+- { cyls: 0, heads: 0, sectors: 16, size: 128, encoding: fm, rate: 125 }
+```
+
+sowie ein `filesystems:`-Profil `scp1700` (`data_start c2h0`, 2048-B-Blöcke, 128
+Verzeichnisplätze).  Der Eintrag hat seinen eigenen Grund im Sinne von §6.5:
+`CpaDpbRule` gilt hier nicht — sie bildet das CP/A-BIOS nach, nicht das SCP1700.
+
+`rate:` kennt genau zwei Werte, 250 (Vorgabe) und 125.  Es ist keine allgemeine
+Ratenverwaltung, sondern die Antwort auf einen belegten Fall; wer eine dritte Rate
+braucht, muss zuerst eine Diskette vorlegen, die sie trägt.
+
+### 22.2 Was der Kern lernen musste
+
+Drei Annahmen im Kern galten **je Diskette** und mussten **je Spur** werden:
+
+1. **Der Abtastfaktor des HFE-Lesers.**  Er wurde an der ersten Spur mit Marken
+   festgenagelt — hier die FM-Bootspur.  Danach galt deren Faktor für alle 159
+   MFM-Spuren, und die Diskette kam als „unformatiert" zurück.  Jetzt gilt: der
+   bewährte Faktor kommt zuerst und genügt sich selbst; ein anderer muss sich mit
+   **mindestens vier Adressmarken** ausweisen.  Die Vier ist kein Geschmack — eine
+   einzelne Scheinmarke aus dem Rauschen einer unformatierten Spur hatte den Faktor
+   früher schon einmal umgeworfen und die halbe Diskette unlesbar gemacht
+   (`TrackSync::completeRead`).  Dieselbe Regel gilt am echten Laufwerk.
+
+2. **Die Datenrate gehört an die Spur** — `TrackImage::cell_factor`.  Beim Laden wird
+   der Zellstrom heruntergerechnet, beim **Zurückschreiben wieder gestreckt**
+   (`BitCodec::upsampleCells`), in die Datei wie auf die echte Diskette.  Ohne das
+   ginge die Bootspur mit doppelter Rate auf die Scheibe: lesbar für uns, unlesbar für
+   den A7100.  `HfeCodec::save` bemisst die Spurlänge deshalb in **Zellen** statt in
+   Bytes ×2, sonst bekäme eine halbrate Spur nur die halbe Umdrehung.
+
+3. **„Überabgetastet" ist etwas anderes als „gemischt".**  Ein Flux-Mitschnitt über der
+   Nominalrate lässt sich nicht treu zurückschreiben und wird schreibgeschützt geöffnet.
+   Das gilt jetzt nur noch, wenn **keine** Spur mit nominaler Rate dabei ist —
+   sonst wäre jede SCP1700-Diskette unbeschreibbar.
+
+### 22.3 Erkennung: doppelt geschriebene Sektoren
+
+Die Bootspur des Referenzdatenträgers trägt **19 Adressmarken für 16 Sektoren**: hinter
+Sektor 16 stehen noch einmal 1…4, byteweise dieselben Daten wie am Spuranfang — sie
+wurde in einem Zug über den Index hinaus geschrieben.  Für den Abgleich mit einem
+Format zählen deshalb die **verschiedenen** IDs (`MeasuredTrack::uniqueSectors`); der
+Treiber liest über die ID, ein Doppelgänger bringt keinen Platz.  Nach der rohen Zahl
+(„19×128") passte die Diskette zu keinem Katalogformat.
+
+Ein `detect_rank` braucht es nicht: die FM-Bootspur trennt sauber.  Die Datenspuren
+allein (16×256 MFM) passten auch zu `cpa640`/`k5601_16x256` und damit zu UDOS1715 — für
+die ist c0h0 aber eine Lücke, und eine gewöhnliche 16×256-Diskette fällt bei
+`scp1700_640` mit „Verfahren mfm, Format sagt fm" durch.
+
+### 22.3a Zwei Befunde aus dem Schreibtest an echter Hardware
+
+Beide **unabhängig von SCP1700** — die Diskette hat sie nur ans Licht gebracht:
+
+* **Einseitige Greaseweazle-Aufnahmen wurden falsch gelesen.**  HFE verschränkt zwei
+  Seiten zu je 256 B je Block, und Greaseweazle legt auch eine einseitige Aufnahme so
+  ab; dieses Projekt schrieb einseitige Spuren kontinuierlich und las nur diese Sitte.
+  Folge: alle 256 B ein Schwung Gap-Bytes mitten im Datenstrom — die kurzen ID-Felder
+  überleben es, ein 131-B-Datenfeld nie.  Die Spur sieht vollständig aus und trägt
+  keine einzige gültige Daten-CRC; eine frisch geschriebene Bootspur schien dadurch
+  zerstört, während Greaseweazles eigener Dekoder sie tadellos las.  Der Leser
+  probiert jetzt beide Sitten und **entscheidet am Inhalt** — womit auch die Regel
+  fällt, den Abtastfaktor nach der Markenzahl zu wählen: gezählt werden Sektoren mit
+  **gültiger CRC**, denn unter einem falschen Faktor fällt reichlich Scheinsync heraus.
+* **Ein schon defekter Sektor darf defekt zurückkommen.**  Der Prüf-Vergleich (§7.1
+  des Physisch-Entwurfs) verlangte von jedem zurückgelesenen Sektor eine gültige
+  Prüfsumme.  Eine Spur mit Schadstelle liess sich damit nie zurückschreiben: das
+  Schreiben gelang, der Vergleich meldete „Prüfsumme des Datenfeldes falsch", die Spur
+  galt als Schadstelle.  Bei einem Sektor, der schon im Abbild kaputt ist, wird jetzt
+  nur noch die **Lage** verglichen; für jeden heilen gilt die volle Strenge weiter.
+
+### 22.4 Wächter
+
+| Test | Was er festhält |
+|---|---|
+| `Scp1700.WirdOhneVorgabeErkannt` | Format und Dateisystem ohne `--fs` |
+| `Scp1700.BootspurIstFmMitHalberDatenrate` | FM + `cell_factor == 2` neben MFM + 1 |
+| `Scp1700.BootspurZaehltVerschiedeneSektorenNichtDoppelte` | Doppelgänger am Spurende |
+| `Scp1700.VerzeichnisUndInhaltStimmen` | 46 Dateien, Größen, Textinhalt, 2 KB frei |
+| `Scp1700.SchreibenUndZurueckschreibenBleibtLesbar` | Schreiben → Speichern → Öffnen, Bootspur behält ihre Rate |
+| `HfeCodec.FmSpurMitHalberRate_UeberlebtDenRundlauf` | **zwei** Rundläufe durch die Datei |
+| `HfeCodec.EinseitigeAufnahmeMitSeitenschlitzen` | beide Sitten einseitiger HFE-Dateien |
+| `TrackSync.EinSchonDefekterSektorDarfDefektZurueckkommen` | Spur mit Schadstelle ist zurückschreibbar |
+
+Fixture: `tests/fixtures/disks/scp1700_640k_a7100_system.hfe` (die Aufnahme vom echten
+Laufwerk).  Am echten Laufwerk gegengeprüft (Greaseweazle F1), **lesend und
+schreibend**: `--physical ls` erkennt `scp1700_640 / scp1700` und listet alle 46
+Dateien, `--physical get` liefert byteweise dasselbe wie aus der Abbilddatei,
+`--physical --write put/rm` schreibt und löscht (je *0 Vergleiche misslungen*), und
+die FM-Bootspur wurde mit halber Rate zurückgeschrieben und geprüft.  Eine Vollmessung
+vorher/nachher zeigt **genau die zwei erwarteten Spuren** geändert (c2h0 Verzeichnis,
+c79h1 Datenblock); die viermal neu geschriebene Bootspur kommt sektorgleich zurück.
+
+### 22.5 Offen
+
+Ob eine mit `create --fs scp1700 --boot …` gebaute Diskette im A7100 **bootet**, ist
+nicht geprüft — es gibt kein Gerät dafür, und der Emulator kennt keinen 8086.  Vom
+Referenzdatenträger lässt sich das Bootabbild nicht herausschreiben: sein
+Bootspur-Sektor 10 ist beschädigt.

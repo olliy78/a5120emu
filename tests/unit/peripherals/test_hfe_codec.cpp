@@ -484,3 +484,166 @@ TEST(HfeCodec, UeberabtastungTrotzFalscherHeaderRate) {
 
     std::filesystem::remove(path);
 }
+
+/**
+ * @test HfeCodec/FmSpurMitHalberRate_UeberlebtDenRundlauf
+ * @brief Eine FM-Spur mit **halber Datenrate** kommt vollständig zurück.
+ *
+ * Die Bootspur (c0h0) der SCP1700-Disketten des A7100 ist so aufgezeichnet: FM,
+ * 16×128 B, 125 kbit/s — auf derselben Diskette, deren übrige Spuren MFM mit
+ * 250 kbit/s tragen (`data/formats.yaml`, `scp1700_640`).  Zwei Dinge müssen halten:
+ * **jeder** Sektor kommt zurück (auch der erste, der unmittelbar hinter dem
+ * Index liegt), und die Spur behält ihren @ref TrackImage::cell_factor — sonst
+ * ginge sie beim Zurückschreiben mit doppelter Rate auf die Diskette.
+ */
+TEST(HfeCodec, FmSpurMitHalberRate_UeberlebtDenRundlauf) {
+    // Wie die echte Diskette: Kopf 0 die FM-Bootspur, Kopf 1 (und alles Weitere)
+    // MFM mit voller Rate.  Die MFM-Spur ist die LAENGERE und bestimmt die
+    // Spurlaenge der Datei — genau daran ist die halbe Rate frueher gescheitert.
+    DiskMedium m(80, 2, Encoding::MFM);
+    std::vector<LogicalSector> secs;
+    for (uint8_t s = 1; s <= 16; ++s) {
+        LogicalSector ls;
+        ls.cyl = 0; ls.head = 0; ls.id = s; ls.size = 128;
+        ls.data.assign(128, 0xE5);
+        secs.push_back(std::move(ls));
+    }
+    TrackImage t = TrackCodec::buildTrack(secs, Encoding::FM);
+    t.cell_factor = 2;                       // halbe Datenrate
+    m.setTrack(0, 0, std::move(t));
+
+    std::vector<LogicalSector> mfm;
+    for (uint8_t s = 1; s <= 16; ++s) {
+        LogicalSector ls;
+        ls.cyl = 0; ls.head = 1; ls.id = s; ls.size = 256;
+        ls.data.assign(256, static_cast<uint8_t>(0x10 + s));
+        mfm.push_back(std::move(ls));
+    }
+    m.setTrack(0, 1, TrackCodec::buildTrack(mfm, Encoding::MFM));
+    for (uint8_t c = 1; c < 80; ++c)
+        for (uint8_t h = 0; h < 2; ++h) {
+            std::vector<LogicalSector> weitere;
+            for (uint8_t s = 1; s <= 16; ++s) {
+                LogicalSector ls;
+                ls.cyl = c; ls.head = h; ls.id = s; ls.size = 256;
+                ls.data.assign(256, 0xE5);
+                weitere.push_back(std::move(ls));
+            }
+            m.setTrack(c, h, TrackCodec::buildTrack(weitere, Encoding::MFM));
+        }
+
+    const auto tmp = k1520test::tempPath("k1520_test_hfe_fm_halbe_rate.hfe");
+    std::string err;
+    ASSERT_TRUE(HfeCodec::save(tmp, m, err)) << err;
+
+    const DiskMedium back = loadHfe(tmp);
+    const auto zurueck = TrackCodec::parseTrack(back.track(0, 0));
+    ASSERT_EQ(zurueck.size(), 16u) << "Sektoren verloren — auch der erste zaehlt";
+    for (uint8_t s = 1; s <= 16; ++s) {
+        const auto& ls = zurueck[s - 1];
+        EXPECT_EQ(ls.id, s);
+        EXPECT_TRUE(ls.id_crc_ok)   << "Sektor " << int(s);
+        EXPECT_TRUE(ls.data_crc_ok) << "Sektor " << int(s);
+        EXPECT_EQ(ls.data[0], 0xE5);
+    }
+    EXPECT_EQ(back.track(0, 0).cell_factor, 2)
+        << "Die halbe Datenrate muss an der Spur haengenbleiben";
+    EXPECT_EQ(back.track(0, 1).cell_factor, 1) << "Die MFM-Spur laeuft mit voller Rate";
+    EXPECT_EQ(TrackCodec::parseTrack(back.track(0, 1)).size(), 16u);
+
+    // ZWEITER Rundlauf: Laden→Speichern→Laden muss dasselbe ergeben.  Frueher begann
+    // die decodierte FM-Spur unmittelbar mit dem Marken-Byte des ersten Sektors —
+    // beim naechsten Speichern fehlten dessen Sync-Bytes, und der Sektor verschwand
+    // (frisch angelegte SCP1700-Diskette: Bootspur mit 15 Sektoren, IDs 2…16).
+    const auto tmp2 = k1520test::tempPath("k1520_test_hfe_fm_halbe_rate_2.hfe");
+    ASSERT_TRUE(HfeCodec::save(tmp2, back, err)) << err;
+    const DiskMedium zweimal = loadHfe(tmp2);
+    EXPECT_EQ(TrackCodec::parseTrack(zweimal.track(0, 0)).size(), 16u)
+        << "Der erste Sektor faellt beim zweiten Rundlauf heraus";
+    EXPECT_EQ(zweimal.track(0, 0).cell_factor, 2);
+    std::filesystem::remove(tmp2);
+
+    std::filesystem::remove(tmp);
+}
+
+/**
+ * @test HfeCodec/EinseitigeAufnahmeMitSeitenschlitzen
+ * @brief Eine EINSEITIGE Datei nach Greaseweazle-/HxC-Sitte wird richtig gelesen.
+ *
+ * HFE verschränkt zwei Seiten zu je 256 B je 512-B-Block.  Greaseweazle legt auch
+ * eine einseitige Aufnahme so ab (`gw read --tracks c=0:h=0`): Seite 0 in den ersten
+ * 256 B, der Rest Gap.  Dieses Projekt schrieb einseitige Spuren dagegen
+ * **kontinuierlich** über den ganzen Block — beide Sitten müssen gelesen werden.
+ *
+ * Wer eine verschränkte Datei kontinuierlich liest, zieht sich alle 256 B einen
+ * Schwung Gap-Bytes mitten in den Datenstrom.  Das Tückische daran: die kurzen
+ * ID-Felder überleben es meistens, ein 131-B-Datenfeld nie — die Diskette sieht
+ * vollständig aus („alle Sektoren gefunden") und trägt doch **keine einzige gültige
+ * Daten-CRC**.  Genau so verlor eine einspurige Aufnahme der SCP1700-Bootspur ihren
+ * ganzen Inhalt.
+ */
+TEST(HfeCodec, EinseitigeAufnahmeMitSeitenschlitzen) {
+    // 1. Eine einseitige Spur bauen und regulär speichern (kontinuierliche Sitte).
+    DiskMedium m(1, 1, Encoding::MFM);
+    std::vector<LogicalSector> secs;
+    for (uint8_t s = 1; s <= 8; ++s) {
+        LogicalSector ls;
+        ls.cyl = 0; ls.head = 0; ls.id = s; ls.size = 256;
+        ls.data.assign(256, static_cast<uint8_t>(0x30 + s));
+        secs.push_back(std::move(ls));
+    }
+    m.setTrack(0, 0, TrackCodec::buildTrack(secs, Encoding::MFM));
+
+    const auto durchgehend = k1520test::tempPath("k1520_test_hfe_1seitig_durch.hfe");
+    std::string err;
+    ASSERT_TRUE(HfeCodec::save(durchgehend, m, err)) << err;
+
+    // Kontinuierlich abgelegt: liest sich (wie bisher) vollständig.
+    {
+        const DiskMedium back = loadHfe(durchgehend);
+        const auto zurueck = TrackCodec::parseTrack(back.track(0, 0));
+        ASSERT_EQ(zurueck.size(), 8u);
+        for (const auto& s : zurueck) EXPECT_TRUE(s.data_crc_ok);
+    }
+
+    // 2. Dieselbe Datei in die VERSCHRÄNKTE Sitte umbauen: jeder 512-B-Block traegt
+    //    nur noch 256 B Nutzzellen, dahinter Gap — so schreibt es Greaseweazle.
+    std::vector<uint8_t> roh;
+    {
+        std::ifstream f(durchgehend, std::ios::binary);
+        roh.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+    }
+    const size_t lut  = (roh[0x12] | (roh[0x13] << 8)) * 512u;
+    const size_t start = (roh[lut] | (roh[lut + 1] << 8)) * 512u;
+    const size_t laenge = static_cast<size_t>(roh[lut + 2] | (roh[lut + 3] << 8));
+
+    std::vector<uint8_t> neu(roh.begin(), roh.begin() + static_cast<long>(start));
+    for (size_t off = 0; off < laenge; off += 256) {
+        const size_t n = std::min<size_t>(256, laenge - off);
+        neu.insert(neu.end(), roh.begin() + static_cast<long>(start + off),
+                   roh.begin() + static_cast<long>(start + off + n));
+        neu.insert(neu.end(), 256, 0x88);            // Seite-1-Schlitz = Gap
+    }
+    // Spurlaenge verdoppelt sich dadurch.
+    const size_t neue_laenge = laenge * 2;
+    neu[lut + 2] = static_cast<uint8_t>(neue_laenge & 0xFF);
+    neu[lut + 3] = static_cast<uint8_t>((neue_laenge >> 8) & 0xFF);
+
+    const auto verschraenkt = k1520test::tempPath("k1520_test_hfe_1seitig_schlitz.hfe");
+    { std::ofstream f(verschraenkt, std::ios::binary);
+      f.write(reinterpret_cast<const char*>(neu.data()),
+              static_cast<std::streamsize>(neu.size())); }
+
+    const DiskMedium back = loadHfe(verschraenkt);
+    const auto zurueck = TrackCodec::parseTrack(back.track(0, 0));
+    ASSERT_EQ(zurueck.size(), 8u) << "verschraenkte einseitige Aufnahme nicht erkannt";
+    for (const auto& s : zurueck) {
+        EXPECT_TRUE(s.id_crc_ok)   << "Sektor " << int(s.id);
+        EXPECT_TRUE(s.data_crc_ok) << "Sektor " << int(s.id)
+                                   << " — genau hier faellt die falsche Sitte auf";
+        EXPECT_EQ(s.data[0], static_cast<uint8_t>(0x30 + s.id));
+    }
+
+    std::filesystem::remove(durchgehend);
+    std::filesystem::remove(verschraenkt);
+}

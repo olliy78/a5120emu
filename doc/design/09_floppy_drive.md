@@ -1,10 +1,12 @@
 # Feinentwurf: Diskettenabbild — internes Medium + Container-Codecs
 
 **Modul:** `core/peripherals/floppy_drive/`
-**Dateien:** `track_image.*`, `track_codec.*`, `bit_codec.*`, `disk_medium.*`,
-`image_codec.*`, `img_codec.*`, `hfe_codec.*`, `dmk_codec.*`, `disk_image.*`,
+**Dateien:** `track_image.*`, `track_codec.*`, `bit_codec.*`, `track_view.*`, `disk_medium.*`,
+`image_codec.*`, `img_codec.*`, `hfe_codec.*`, `dmk_codec.*`, `disk_image.*`, `track_sync.*`,
 `floppy_drive2.*`, `drive_profile.*`, `disk_format.*`, `format_catalog.*`
-**Verwandt:** `doc/design/07_k5122_afs.md` (Controller), `doc/K1520_architecture.md` §8.5/§8.7
+**Verwandt:** `doc/design/07_k5122_afs.md` (Controller), `doc/design/13_k1520disktool.md`
+(zweites Programm auf derselben Schicht), `doc/design/14_physische_diskette.md`
+(echte Diskette am Greaseweazle), `doc/K1520_architecture.md` §8.5/§8.7/§8.8
 
 > **Historie.** Dieses Dokument beschrieb ursprünglich die monolithische `FloppyDrive`
 > (Inline-Sektor-IO über `.img`, Klasse längst entfallen), danach die
@@ -12,6 +14,10 @@
 > arbeitete*).  Seit dem **Medium-Umbau (2026-08-05)** gibt es nur noch **ein
 > internes Diskettenabbild**; die Dateiformate sind reine **Container-Codecs**
 > davor.  Der frühere Aufbau ist in §9 als Abgrenzung dokumentiert.
+>
+> **Seither zweierlei dazugekommen:** das **k1520DiskTool** benutzt dieselbe Schicht
+> ohne Emulator und hat sie um eine **Schreibseite** erweitert (§11); die **physische
+> Diskette** am Greaseweazle kommt als zweite Art von Bindung neben die Datei (§12).
 
 ---
 
@@ -54,26 +60,38 @@ benötigte Markeninformation wegwerfen.
 ## 2. Schichtung
 
 ```
-K5122 (Controller)                                        core/cards/k5122/
-   │  fordert TrackImage(cyl, head) an, streamt es byteweise
-   ▼
+K5122 (Controller)                    DiskVolume / SectorSpace (DiskTool)
+   │  fordert TrackImage(cyl, head)      │  medium().track(cyl,head), Sektor-IO
+   │  an, streamt es byteweise           │                      core/filesystem/
+   ▼                                     │
 FloppyDriveV2 — physisches Laufwerk: DriveProfile + Kopfposition   floppy_drive2.*
-   │  track(head) / mutableTrack(head) / writeTrackAt(cyl,head,t)
-   ▼
-DiskImage — gemountete Diskette: Medium + Dateibindung + Autosave  disk_image.*
-   ├── DiskMedium — DAS interne Abbild (alle Spuren, dirty-Bits)   disk_medium.*
-   └── ImageCodec — Container laden/speichern (Fabrik + Sniffing)  image_codec.*
-         ├── ImgCodec  (.img, braucht DiskFormat)                  img_codec.*
-         ├── HfeCodec  (.hfe, HFE v1, self-describing)             hfe_codec.*
-         └── DmkCodec  (.dmk, David Keil, self-describing)         dmk_codec.*
+   │  track(head) / mutableTrack(head) / writeTrackAt(cyl,head,t)  │
+   ▼                                                               ▼
+DiskImage — gemountete Diskette: Medium + Bindung + Autosave       disk_image.*
+   ├── DiskMedium — DAS interne Abbild (alle Spuren, Zustände)     disk_medium.*
+   ├── ImageCodec — Container laden/speichern (Fabrik + Sniffing)  image_codec.*
+   │     ├── ImgCodec  (.img, braucht DiskFormat)                  img_codec.*
+   │     ├── HfeCodec  (.hfe, HFE v1, self-describing)             hfe_codec.*
+   │     └── DmkCodec  (.dmk, David Keil, self-describing)         dmk_codec.*
+   └── TrackSync — Bindung an eine ECHTE Diskette (§12)            track_sync.*
    ▼
 TrackImage / TrackCodec / BitCodec — Spurstrom, IBM-Synthese, Bitzellen
+TrackView — dieselbe Spur als zeichenbare Abschnitte (Diskeditor)  track_view.*
 DriveProfile[4] / DiskFormat / FormatCatalog — Laufwerke bzw. Sektorlayout
 ```
 
 Die **Namensgebung**: `DiskMedium` ist der Datenträger, `DiskImage` die *gemountete*
-Diskette (Medium **plus** Dateibindung, Schreibschutz, Fehlertext).  `ImageCodec` ist
+Diskette (Medium **plus** Bindung, Schreibschutz, Fehlertext).  `ImageCodec` ist
 die Container-Schicht.  Es gibt **keine** Datei-Backend-Unterklassen mehr.
+
+**Die Schicht trägt zwei Programme.**  Der Emulator kommt von oben links (K5122), das
+k1520DiskTool von oben rechts (`DiskVolume`) — und zwar **ohne Z80 und ohne Karten**:
+`libk1520disk.so` übersetzt diese Schicht plus `core/filesystem/` allein
+(`doc/design/13_k1520disktool.md`).  Das ist der Grund, warum unterhalb von `DiskImage`
+nichts über die Maschine wissen darf: kein Maschinentakt in einer Signatur, keine
+`A5120Machine`, kein `Logger`-Aufruf, der eine Karte voraussetzt.  Die einzige Ausnahme
+ist die Maschinenuhr des Autosave — und sie steht als Parameter in `autoFlush(now)`,
+nicht als Abhängigkeit.
 
 ---
 
@@ -93,18 +111,24 @@ public:
     void     setDefaultEncoding(Encoding e);
     DiskGeometry geometry() const;
 
-    const TrackImage& track(uint8_t cyl, uint8_t head) const;
+    const TrackImage& track(uint8_t cyl, uint8_t head) const;    ///< lädt ggf. nach (§12)
+    const TrackImage& peek (uint8_t cyl, uint8_t head) const;    ///< NIE nachladen (§12.3)
     TrackImage&       mutableTrack(uint8_t cyl, uint8_t head);   ///< markiert dirty
     void              setTrack(uint8_t cyl, uint8_t head, TrackImage t);
     void              markDirty(uint8_t cyl, uint8_t head);
 
-    bool dirty() const;                       ///< irgendeine Spur seit dem letzten Save geändert
-    bool trackDirty(uint8_t cyl, uint8_t head) const;
-    void clearDirty();
+    bool     dirty() const;                   ///< irgendeine Spur seit dem letzten Save geändert
+    bool     trackDirty(uint8_t cyl, uint8_t head) const;
+    void     clearDirty();
+    uint64_t revision() const;                ///< +1 je Spuränderung (Autosave-Ruhepause, §6.1)
 
-    bool formatted()     const;               ///< mind. eine Spur trägt Adressmarken
-    bool rawCompatible() const;               ///< als .img darstellbar (§5)
-    bool trackRawCompatible(uint8_t cyl, uint8_t head) const;
+    TrackState state(uint8_t cyl, uint8_t head) const;   ///< Unknown | Clean | Dirty (§12.2)
+    bool       complete() const;              ///< keine Spur mehr unbekannt
+
+    bool        formatted()     const;        ///< mind. eine Spur trägt Adressmarken
+    bool        rawCompatible() const;        ///< als .img darstellbar (§5)
+    bool        trackRawCompatible(uint8_t cyl, uint8_t head) const;
+    std::string rawIncompatibleReason() const;   ///< "" oder z. B. "Spur 12/1" (Fehlertext)
 };
 ```
 
@@ -320,6 +344,12 @@ public:
     /// Unter neuem Namen/Container speichern und **umbinden**.
     /// @p fmt nur für .img nötig; bei .img zusätzlich rawCompatible()-Prüfung.
     bool saveAs(const std::string& path, std::optional<DiskFormat> fmt);
+    /// Wie saveAs, aber **ohne umzubinden** und ohne den Dirty-Zustand anzutasten —
+    /// für Exporte, die den Arbeitsstand nicht bewegen sollen (Archiv, Formatansicht).
+    bool exportTo(const std::string& path, std::optional<DiskFormat> fmt);
+
+    /// false, wenn die Quelle nicht zurückgeschrieben werden darf (§6.2).
+    bool bindingWritable() const;
 
     const char* lastError() const;
 };
@@ -516,3 +546,126 @@ Laufwerks“.
 | `UdosFormat.FormatsBrandNewBlankDiskette` | **Der Zweck des Umbaus:** frische Leerdiskette unter UDOS formatieren, `STATUS` bestätigt 1988 freie Sektoren, Abbild bleibt `.img`-untauglich |
 | `UdosFormat.BuildsBootableSystemDiskAndBootsFromIt` | Vollkette auf einer **emulator-erzeugten Leerdiskette als `.dmk`**: beidseitig formatieren (Laufwerk 1 + 5), `MOVE`, `CAT`, dann **Kaltstart von genau dieser `.dmk`** |
 | `test_k5122`, `test_boot_integration` | Regression: Boot-Pfad, FORMAT-Schreibpfad, unformatierte Spur |
+| `TrackView.*`, `TrackCodecWriteSectorAt.*` (`test_track_view`, `test_track_codec`) | Schreibseite und Ansicht der Spur (§11) — lückenlose Abschnittsfolge, Sektor anlegen/löschen/schreiben, CRC wörtlich |
+| `TrackSync.*` (`test_track_sync`), `DiskMedium.Unbekannt*` | Spurzustände, Prioritäten, Blockade, Rückführung (§12) — mit **Ersatz-Arbeitsfaden**, ohne Hardware |
+
+> **Anmerkung zur Nummerierung:** §11 und §12 sind später angehängt, damit die in
+> `CLAUDE.md` und den Nachbardokumenten zitierten Nummern (§5, §6.1, §7.2 …) stehen
+> bleiben.  Inhaltlich gehört §11 zu §4/§6 und §12 zu §3/§6.
+
+---
+
+## 11. Was das DiskTool auf dieser Schicht ergänzt hat — 2026-08-13
+
+Das k1520DiskTool (`doc/design/13_k1520disktool.md`) benutzt `DiskMedium` und
+`TrackCodec` **ohne Emulator**.  Dabei kam heraus, dass die Schicht bis dahin fast nur
+lesen und ganze Spuren schreiben konnte.  Ergänzt wurden drei Dinge; sie gehören
+hierher, weil der Emulator sie mitträgt.
+
+### 11.1 Schreiben in eine vorhandene Spur
+
+`buildTrack()` taugt zum Ändern **nicht**: es baut die Spur neu und verlöre alles hinter
+der Daten-CRC — bei UDOS die gesamte Dateiverkettung.  Es gibt daher eine Schreibseite,
+die an Ort und Stelle arbeitet:
+
+| Funktion | Zweck |
+|----------|-------|
+| `writeSector(track, id, daten)` | Datenfeld ersetzen, CRC neu rechnen — über die **Sektor-ID** |
+| `writeSectorAt(track, index, daten, crc_woertlich?)` | dasselbe über die **laufende Nummer**; IDs dürfen doppelt vorkommen. Die CRC ist optional **wörtlich** setzbar, sonst ließe sich eine schadhafte Diskette nicht originalgetreu nachbilden |
+| `writeSectorTail(track, index, tail)` | die Bytes **hinter** der Daten-CRC (UDOS-Sektorkontrollblock) — fasst Nutzdaten und CRC nicht an |
+| `sectorDataCrc(track, index, …)` | gespeicherte **und** gerechnete CRC nebeneinander |
+| `createSector` / `eraseSectorAt` / `newSectorPosition` / `newSectorLength` | Sektoren anlegen und löschen; **die ID bestimmt die Lage** (hinter den vorhandenen mit der nächstkleineren ID). Die Spurlänge bleibt fest — angelegt wird in den Gap hinein |
+
+`parseTrack()` liefert seither zusätzlich **Byte-Offsets, gespeicherte CRCs und
+`deleted`**; ohne die Offsets könnte ein Editor nicht sagen, *wo* etwas steht.
+Die Festlegungen im Einzelnen (warum die ID die Lage bestimmt, warum ein später
+angelegter Sektor einen vorhandenen überschreiben darf) stehen in
+`doc/design/13_k1520disktool.md` §19.4.
+
+### 11.2 `TrackView` — dieselbe Spur zum Ansehen
+
+`track_view.{h,cpp}` (`scanTrack`) zerlegt eine `TrackImage` in eine **lückenlose**
+Folge von Abschnitten über `[0,1)` einer Umdrehung: Sektor, Gap, unformatiert.  Der
+Winkel eines Bytes ist `Position ÷ Spurlänge` — eine `TrackImage` **ist** eine
+Umdrehung, Bitrate und Drehzahl skalieren nur die Zeitachse und werden nicht gebraucht.
+Zwei Unterscheidungen tragen das: **Gap ≠ unformatiert** (keine einzige Adressmarke =
+unformatiert), und `sync_pos` zeigt auf den **Anfang der Sync-Gruppe**, nicht auf die
+Adressmarke — sonst weichen Anzeige und `newSectorPosition` um die Sync-Länge ab.
+
+### 11.3 Das Medium als Transaktionsgegenstand
+
+Stapeloperationen des DiskTools sind Transaktionen: erst planen und urteilen, dann
+schreiben, bei einem Fehler alles zurück.  Die Rücknahme ist eine **Kopie des ganzen
+`DiskMedium`** (`const DiskMedium sicherung = disk_->medium();`, ~1 MB) — billiger als
+jede Buchführung über Einzeländerungen und immun gegen vergessene Fälle.
+
+> **Bei einer physischen Diskette (§12) genügt das Zurückkopieren nicht:** was schon auf
+> der echten Diskette steht, holt keine Kopie zurück.  Zurückgesetzte Spuren müssen
+> daher **erneut als geändert** gelten, damit die Rückführung sie richtigstellt — dafür
+> gibt es `restoreFrom(snapshot)` statt einer bloßen Zuweisung.
+
+---
+
+## 12. Physische Diskette als zweite Bindung — 2026-08-15
+
+**Voller Entwurf: `doc/design/14_physische_diskette.md`.**  Hier nur, was am *Medium*
+anders wird; alles über Greaseweazle, Arbeitsfaden, C-ABI und Python steht dort.
+
+Bisher hat eine gemountete Diskette genau eine Bindung: eine **Datei**, die beim Öffnen
+vollständig gelesen und beim Autosave vollständig geschrieben wird.  Daneben tritt die
+**echte Diskette in einem echten Laufwerk**, und die verhält sich in einem Punkt
+grundsätzlich anders: sie wird **spurweise nach Bedarf** gelesen, nicht am Stück.
+
+### 12.1 Der Zwischenschritt über eine Datei entfällt
+
+```
+bisher:  echte Diskette ──(2 min)──► .hfe ──► DiskMedium ──► arbeiten ──► .hfe ──(2 min)──► Diskette
+jetzt:   echte Diskette ◄──spurweise, nach Bedarf──► DiskMedium ──► arbeiten
+```
+
+### 12.2 Je Spur ein Zustand
+
+Das Dirty-Bit wird zu einem Dreizustand:
+
+| Zustand | Bedeutung | Inhalt gültig? |
+|---------|-----------|----------------|
+| `Unknown` | noch nie von der Diskette gelesen | **nein** |
+| `Clean` | gelesen, seither nicht geändert | ja |
+| `Dirty` | im Abbild geändert, noch nicht zurückgeschrieben | ja, neuer als die Diskette |
+
+**Ein Konzept, nicht zwei:** der Zustand gilt für *jedes* Medium.  Bei einer
+dateigebundenen Diskette tritt `Unknown` nur nie auf — der Codec füllt beim Laden
+alles —, und `Dirty` ist genau das Bit, mit dem der Autosave (§6.1) seit jeher
+arbeitet.  Der Unterschied, an dem alles hängt: **`loadTrack` (gelesen) macht sauber,
+`setTrack` (geschrieben) macht schmutzig**.  Wächter: `DiskMedium.ZustandGiltAuchOhne\
+Laufwerk_UnknownKommtDortNieVor`, `…EinzelneSpurSauberMelden_LaesstDieAnderenSchmutzig`,
+`…GeleseneSpurIstSauber_GeschriebeneSchmutzig`.
+
+**`Unknown` ist nicht dasselbe wie „unformatiert“.**  Unformatiert (§7) ist eine
+belegte Aussage über die Diskette; unbekannt ist gar keine.  Deshalb melden
+`formatted()` und `rawCompatible()` zusätzlich `complete()` — sonst erklärte sich eine
+halb gelesene Diskette für unformatiert, und ein `.img` schriebe die ungelesenen Spuren
+als Füllbytes fest.
+
+### 12.3 Nachgeladen wird in `track()` — und nur dort
+
+`DiskMedium::track()` ist die einzige Stelle, durch die **jeder** Verbraucher geht
+(Controller über `FloppyDriveV2`, DiskTool über `DiskVolume`, Erkennung über
+`GeometryProbe`).  Dort sitzt das Nachladen; es blockiert den rufenden Faden, bis die
+Spur da ist (≈ 0,5–0,8 s).
+
+Die medienweiten Reihenläufe dürfen das **nicht** auslösen — `formatted()`,
+`rawCompatible()`, die Codecs und jede Zustandsanzeige benutzen `peek()`.  Sonst zöge
+eine beiläufige Statusabfrage der Oberfläche die ganze Diskette ein.
+`mutableTrack()` lädt nach (Sektorschreiben ist Lesen-Ändern-Schreiben), `setTrack()`
+nicht (Vollspur-FORMAT ersetzt die Spur ohnehin) — daran hängt, dass eine Leerdiskette
+im echten Laufwerk formatiert werden kann, ohne vorher gelesen zu werden.
+
+### 12.4 Wer die Spuren holt
+
+`TrackSync` hält die Aufträge, hat aber **keinen eigenen Faden**: ein fremder
+Arbeitsfaden (Python + Greaseweazle) holt sie sich ab.  Drei Prioritäten —
+**1** Lesen auf Anforderung (jemand wartet), **2** geänderte Spuren zurückschreiben,
+**3** unbekannte Spuren vorausschauend lesen.  Der Kern kennt dabei weder USB noch
+Greaseweazle; ausgetauscht werden **HFE-Bitzellen**, die durch denselben
+`BitCodec::decode` laufen wie eine HFE-Datei.

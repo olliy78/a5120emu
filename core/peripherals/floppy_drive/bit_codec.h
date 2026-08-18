@@ -93,4 +93,43 @@ std::vector<uint8_t> downsampleCells(const std::vector<uint8_t>& cells,
                                      uint32_t bitcell_count, uint32_t factor,
                                      uint32_t& out_bitcells);
 
+/**
+ * @brief Umkehrung von @ref downsampleCells — Zellstrom auf @p factor-fache Länge.
+ *
+ * Jede Flanke wandert auf das @p factor-fache ihrer Zellposition; die Zellen dazwischen
+ * bleiben leer.  Damit dauert jede Zelle @p factor mal so lang, die Spur läuft also mit
+ * dem @p factor-ten Teil der nominalen Datenrate.
+ *
+ * Gebraucht beim ZURÜCKSCHREIBEN einer Spur, die mit halber Rate aufgezeichnet ist —
+ * die FM-Bootspur der SCP1700-Disketten (@ref TrackImage::cell_factor).  Ohne sie ginge
+ * eine solche Spur mit doppelter Rate auf die Diskette und wäre für ihren Rechner
+ * unlesbar.
+ *
+ * @param cells          Modell-Zellstrom (LSB-first, nominale Rate)
+ * @param bitcell_count  Zahl gültiger Zellen
+ * @param factor         Streckfaktor (>1; 1 gibt die Eingabe unverändert zurück)
+ * @param out_bitcells   liefert die Zahl der erzeugten Zellen
+ */
+std::vector<uint8_t> upsampleCells(const std::vector<uint8_t>& cells,
+                                   uint32_t bitcell_count, uint32_t factor,
+                                   uint32_t& out_bitcells);
+
+/// @brief Zahl der Adressmarken (Id/Data/Index) einer Spur — „ist da überhaupt was?"
+size_t markCount(const TrackImage& t);
+
+/**
+ * @brief Decodiert und **bestimmt das Verfahren dabei selbst** (FM oder MFM).
+ *
+ * Erst mit @p preferred decodieren; findet sich keine einzige Adressmarke, das andere
+ * Verfahren probieren und nehmen, wenn es Marken liefert.  Genau die Regel, mit der
+ * @ref HfeCodec Mischdichte-Medien lädt — und die einzige mögliche, wenn die Quelle
+ * gar keinen Kopf hat, der das Verfahren nennt (echte Diskette am Greaseweazle,
+ * doc/design/14_physische_diskette.md §8.1).
+ *
+ * Eine markenlose Rückgabe ist **kein Fehler**, sondern eine unformatierte Spur; der
+ * Aufrufer entscheidet, ob er sie als leere Spur ablegt.
+ */
+TrackImage decodeAuto(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
+                      Encoding preferred);
+
 }  // namespace BitCodec

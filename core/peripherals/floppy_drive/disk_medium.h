@@ -29,6 +29,41 @@
 #include <vector>
 
 /**
+ * @enum TrackState
+ * @brief Verhältnis einer Spur im Abbild zu ihrem Original.
+ *
+ * Bei einer **datei**gebundenen Diskette gibt es @ref Unknown nicht: der Container-Codec
+ * füllt beim Laden jede Spur.  Der Zustand wird erst bei einer **physischen** Diskette
+ * interessant, die spurweise nachgeladen wird
+ * (doc/design/14_physische_diskette.md §4, doc/design/09_floppy_drive.md §12.2).
+ */
+enum class TrackState : uint8_t {
+    Unknown,  ///< noch nie vom Original gelesen — der Inhalt ist **bedeutungslos**
+    Clean,    ///< gelesen und seither nicht geändert
+    Dirty     ///< im Abbild geändert, noch nicht zurückgeschrieben
+};
+
+/**
+ * @class TrackLoader
+ * @brief Nachlader für unbekannte Spuren — die Brücke zum echten Laufwerk.
+ *
+ * Implementiert von @ref TrackSync.  Das Medium kennt hiervon nur die zwei Methoden;
+ * es weiß nichts über Warteschlangen, Fäden, USB oder Greaseweazle.
+ */
+class TrackLoader {
+public:
+    virtual ~TrackLoader() = default;
+
+    /// @brief Spur beschaffen — **blockiert**, bis sie da ist (oder es scheitert).
+    /// @return false, wenn sie nicht beschafft werden konnte (Zeitüberschreitung,
+    ///         Gerätefehler, Abmeldung).  Der Aufrufer bekommt dann die leere Spur.
+    virtual bool ensureLoaded(uint8_t cyl, uint8_t head) = 0;
+
+    /// @brief Meldung, dass eine Spur im Abbild geändert wurde (Rückführung anmelden).
+    virtual void trackChanged(uint8_t cyl, uint8_t head) = 0;
+};
+
+/**
  * @struct DiskGeometry
  * @brief Geometrieabfrage für UI/Validierung (Zylinder × Köpfe + vorherrschendes Verfahren).
  */
@@ -68,8 +103,22 @@ public:
     /// @brief Geometrie + vorherrschendes Verfahren (für UI/Mount-Prüfung).
     DiskGeometry geometry() const;
 
-    /// @brief Spur (cyl, head); leeres TrackImage, wenn außerhalb der Geometrie.
+    /**
+     * @brief Spur (cyl, head); leeres TrackImage, wenn außerhalb der Geometrie.
+     *
+     * **Der Nachladepunkt.**  Hängt ein @ref TrackLoader am Medium und ist die Spur
+     * @ref TrackState::Unknown, wird sie hier beschafft — der Aufruf **blockiert** so
+     * lange (≈ 0,5–0,8 s an einem echten Laufwerk).  Das ist gewollt: es ist die einzige
+     * Stelle, durch die jeder Verbraucher geht (Controller über @ref FloppyDriveV2,
+     * DiskTool über `DiskVolume`, Erkennung über `GeometryProbe`).
+     *
+     * Für medienweite Reihenläufe **@ref peek benutzen** — sonst zieht eine beiläufige
+     * Statusabfrage die ganze Diskette ein (doc/design/09_floppy_drive.md §12.3).
+     */
     const TrackImage& track(uint8_t cyl, uint8_t head) const;
+
+    /// @brief Wie @ref track, aber **ohne** je nachzuladen (Reihenläufe, Codecs, Anzeige).
+    const TrackImage& peek(uint8_t cyl, uint8_t head) const;
 
     /**
      * @brief Modifizierbarer Zugriff auf eine Spur; markiert sie sofort als geändert.
@@ -100,7 +149,57 @@ public:
      */
     uint64_t revision() const { return revision_; }
 
+    // ─── Spurzustand (physische Quelle, doc/design/14_physische_diskette.md) ────
+
+    /// @brief Nachlader anmelden/abmelden; @p loader darf nullptr sein (Dateibindung).
+    void setLoader(TrackLoader* loader) { loader_ = loader; }
+    TrackLoader* loader() const { return loader_; }
+
+    TrackState state(uint8_t cyl, uint8_t head) const;
+
+    /// @brief true, wenn **keine** Spur mehr unbekannt ist.
+    ///
+    /// Nur dann sind @ref formatted und @ref rawCompatible endgültige Aussagen über die
+    /// Diskette; solange nicht, sind sie Aussagen über das bisher Gelesene.
+    bool complete() const;
+
+    /// @brief Zahl der noch unbekannten Spuren (Anzeige „x von y gelesen").
+    size_t unknownCount() const;
+
+    /**
+     * @brief Alle Spuren für unbekannt erklären — beim Binden an eine physische Quelle.
+     *
+     * Der Inhalt bleibt stehen (er ist ohnehin bedeutungslos), damit die Geometrie und
+     * die Puffer nicht neu gebaut werden müssen.
+     */
+    void markAllUnknown();
+
+    /**
+     * @brief Ladepfad des Nachladers: Inhalt setzen und die Spur als @ref TrackState::Clean
+     *        führen — **ohne** Dirty-Markierung und ohne @ref revision zu erhöhen.
+     *
+     * Der Unterschied zu @ref setTrack ist der springende Punkt: eine frisch **gelesene**
+     * Spur ist nicht geändert, sie darf also nicht zurückgeschrieben werden.
+     */
+    void loadTrack(uint8_t cyl, uint8_t head, TrackImage t);
+
+    /// @brief Eine einzelne Spur für sauber erklären (Rückführung erledigt).
+    void clearTrackDirty(uint8_t cyl, uint8_t head);
+
+    /**
+     * @brief Zustand aus einer Momentaufnahme zurückholen (Transaktions-Rücknahme).
+     *
+     * Anders als eine schlichte Zuweisung markiert dies jede Spur, deren Inhalt sich
+     * dadurch **ändert**, als geändert.  Bei einer physischen Diskette ist das
+     * unerlässlich: was schon auf der echten Diskette steht, holt keine Kopie im
+     * Speicher zurück — nur die Rückführung stellt es richtig
+     * (doc/design/09_floppy_drive.md §11.3).
+     */
+    void restoreFrom(const DiskMedium& snapshot);
+
     /// @brief Trägt mindestens eine Spur Adressmarken? (false = unformatierte Leerdiskette)
+    ///
+    /// Urteilt über das **bisher Bekannte** — siehe @ref complete.
     bool formatted() const;
 
     /**
@@ -149,6 +248,10 @@ private:
 
     std::vector<TrackImage> tracks_;
     std::vector<uint8_t>    dirty_;       ///< je Spur 0/1
+    /// je Spur 0/1 — 0 = @ref TrackState::Unknown.  Vorgabe **1**: eine aus einer Datei
+    /// geladene oder frisch angelegte Diskette ist vollständig bekannt.
+    std::vector<uint8_t>    known_;
+    TrackLoader*            loader_    = nullptr;   ///< nullptr = Dateibindung
     bool                    dirty_any_ = false;
     uint64_t                revision_  = 0;   ///< +1 je Spuränderung (Autosave-Ruhepause)
 

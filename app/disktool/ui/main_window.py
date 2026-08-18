@@ -37,7 +37,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
-from PySide6.QtCore import QCoreApplication, QSettings, Qt
+from PySide6.QtCore import QCoreApplication, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog, QFrame, QInputDialog, QLabel, QMainWindow, QMessageBox,
@@ -45,7 +45,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import paths
-from app.disktool.archive import create_archive
+from app.disktool.archive import NAMENLOS, create_archive, dateiname
 
 from app.core_binding.k1520disk import DiskTool, K1520DiskError, filesystems
 from app.disktool.ui.actions import erzeuge_aktionen
@@ -59,6 +59,7 @@ from app.disktool.ui.icons import icon
 from app.disktool.ui.info_bar import InfoBar
 from app.disktool.ui.log_dock import LogDock
 from app.disktool.ui.properties_dialog import PropertiesDialog
+from app.ui.physical_disk import mit_fortschritt
 
 #: Endungen, die im Textmodus vorgeschlagen werden.
 TEXT_ENDUNGEN = {".txt", ".text", ".asm", ".mac", ".doc", ".md", ".log", ".dat"}
@@ -69,10 +70,30 @@ STATUS_DAUER = 8000
 #: Höchstzahl der Einträge unter „Zuletzt geöffnet".
 ZULETZT_MAX = 8
 
+#: Anstrich der Statuszeile, solange auf eine echte Diskette geschrieben wird.
+#: Rot heisst hier **nicht** „Fehler", sondern „Finger weg": die Diskette darf
+#: nicht aus dem Laufwerk, bis es fertig ist.  Es ist derselbe Rotton wie im
+#: Meldungsstreifen — zwei verschiedene Rots wären schlechter als eine Doppelrolle.
+SCHREIBT_STIL = ("background: #c0504d; color: white; font-weight: bold;"
+                 " padding: 1px 6px; border-radius: 3px;")
+
 
 
 class MainWindow(QMainWindow):
     """Fenster des Diskettenwerkzeugs."""
+
+    #: Laufende Sitzung an einem echten Laufwerk (None = Abbilddatei/leer).
+    _physisch = None
+    #: Welches Laufwerk diese Sitzung bedient (für Kopfzeile und Fenstertitel).
+    _physisch_laufwerk = "a"
+    #: Womit das echte Laufwerk zuletzt geöffnet wurde (Laufwerk, Geometrie, …).
+    #: Gemerkt, weil ein Sync-Handle nach dem Öffnen VERBRAUCHT ist: wer das
+    #: Dateisystem übersteuern will, braucht eine neue Sitzung mit denselben Angaben.
+    _physisch_wahl = None
+    #: Laufender Schreibvorgang auf eine echte Diskette (None = keiner).  Er ist
+    #: UNABHAENGIG von der geöffneten Diskette: die ist nur die Quelle.
+    _schreib_sitzung = None
+    _schreib_gesamt = 0
 
     def __init__(self, image: Optional[str] = None, folder: Optional[str] = None):
         super().__init__()
@@ -89,6 +110,10 @@ class MainWindow(QMainWindow):
         self._zuletzt: List[str] = []
 
         erzeuge_aktionen(self)
+        # Läuft nur, solange ein echtes Laufwerk offen ist (siehe _physisch_tick).
+        self._physisch_uhr = QTimer(self)
+        self._physisch_uhr.setInterval(500)
+        self._physisch_uhr.timeout.connect(self._physisch_tick)
         self._baue_mitte()
         self._baue_menue()
         self._baue_leiste()
@@ -197,6 +222,11 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_eigenschaften)
 
         m = leiste.addMenu("Dis&kette")
+        # Beide Richtungen der echten Diskette zuerst und beieinander: laden und
+        # überschreiben sind derselbe Weg, einmal herein und einmal hinaus.
+        m.addAction(self.act_physisch)
+        m.addAction(self.act_physisch_schreiben)
+        m.addSeparator()
         m.addAction(self.act_schreibschutz)
         self.menue_fs = m.addMenu("&Dateisystem übersteuern")
         self._baue_fs_menue()
@@ -204,9 +234,16 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_alles_raus)
         m.addAction(self.act_alles_rein)
         m.addSeparator()
+        # Eigenes Untermenü: das sind Eingriffe ins ABBILD, nicht in die Diskette —
+        # der Unterschied gehört sichtbar gemacht.
+        self.menue_schnitt = m.addMenu("Speicherabbild &ändern")
+        self.menue_schnitt.addAction(self.act_gerade_spuren)
+        self.menue_schnitt.addAction(self.act_seite1_weg)
+        m.addSeparator()
         m.addAction(self.act_bootabbild)
         m.addAction(self.act_diskeditor)
         m.addSeparator()
+        m.addAction(self.act_neu_beschreiben)
         m.addAction(self.act_angaben)
 
         m = leiste.addMenu("&Übertragung")
@@ -250,6 +287,7 @@ class MainWindow(QMainWindow):
 
         for gruppe in (
             (self.act_oeffnen, self.act_neu),
+            (self.act_physisch, self.act_physisch_schreiben),
             (self.act_speichern, self.act_speichern_unter, self.act_archivieren),
             (self.act_diskeditor, self.act_bootabbild),
             (self.act_holen, self.act_schreiben, self.act_loeschen),
@@ -269,6 +307,10 @@ class MainWindow(QMainWindow):
     def _baue_status(self) -> None:
         """Links die letzte Aktion (flüchtig), rechts der Zustand (dauerhaft)."""
         self.st_inhalt = QLabel("")
+        # Füllstand des echten Laufwerks — eigenes Feld, weil es sich LAUFEND ändert,
+        # während `st_inhalt` nur nach einer Aktion neu gesetzt wird.
+        self.st_physisch = QLabel("")
+        self.st_physisch.hide()
         self.st_modus = QLabel("binär")
         self.st_modus.setToolTip("Übertragungsart — Menü „Übertragung\"")
         # Schloss als Bild, nicht als Emoji: 🔒 und 🔓 sehen in vielen Schriften
@@ -279,7 +321,8 @@ class MainWindow(QMainWindow):
 
         leiste = self.statusBar()
         leiste.setSizeGripEnabled(True)
-        for i, w in enumerate((self.st_inhalt, self.st_modus, self.st_schloss)):
+        for i, w in enumerate((self.st_inhalt, self.st_physisch,
+                               self.st_modus, self.st_schloss)):
             if i:                              # Trennstrich zwischen den Feldern
                 strich = QFrame()
                 strich.setFrameShape(QFrame.VLine)
@@ -474,16 +517,21 @@ class MainWindow(QMainWindow):
         „Keine Datei ausgewählt" gar nicht mehr (§20.3).
         """
         offen = self.tool is not None
+        # Roh geöffnet: es GIBT eine Diskette (Medium, Spuren, Sektoren), nur kein
+        # Dateisystem.  Alles, was am Abbild arbeitet, bleibt darum bedienbar —
+        # gesperrt wird nur, was Dateien braucht.
+        mit_fs = offen and self.tool.has_filesystem
         schreibbar = offen and not self.tool.read_only
         disk_auswahl = bool(self.disk_view.selected_refs())
         ordner_auswahl = bool(self.folder_view.selected_paths())
 
-        for a in (self.act_speichern_unter, self.act_archivieren,
-                  self.act_diskeditor, self.act_alles_raus, self.act_angaben,
+        for a in (self.act_speichern_unter, self.act_diskeditor, self.act_angaben,
                   self.act_schliessen, self.act_aktualisieren):
             a.setEnabled(offen)
-        for a in (self.act_speichern, self.act_alles_rein):
-            a.setEnabled(schreibbar)
+        for a in (self.act_archivieren, self.act_alles_raus):
+            a.setEnabled(mit_fs)            # braucht Dateien
+        self.act_speichern.setEnabled(schreibbar)
+        self.act_alles_rein.setEnabled(schreibbar and mit_fs)
 
         self.act_holen.setEnabled(offen and disk_auswahl)
         self.act_eigenschaften.setEnabled(offen and len(
@@ -493,9 +541,35 @@ class MainWindow(QMainWindow):
 
         # Systemspuren gibt es nicht überall — eine Datendiskette (cpa800) beginnt
         # auf Zylinder 0 und hat nichts zu sichern.
-        self.act_bootabbild.setEnabled(offen and self.tool.boot_area_size(0) > 0)
+        self.act_bootabbild.setEnabled(mit_fs and self.tool.boot_area_size(0) > 0)
         self.act_schreibschutz.setEnabled(offen)
-        self.menue_fs.setEnabled(offen)
+        # Auch ohne offene Diskette wählbar, wenn ein physisches Laufwerk im Spiel
+        # ist: bei einer nicht erkannten Diskette ist das Übersteuern der einzige Weg
+        # hinein, und ein gesperrtes Menü verstellte genau ihn.
+        self.menue_fs.setEnabled(offen or bool(self._physisch_wahl))
+
+        # Der Ausweg (§7.2) ist an einer Datei sinnlos — dort gibt es keine
+        # Schadstelle, gegen die ein erneutes Wegschreiben helfen würde.  Deshalb
+        # ist er nicht bloss gesperrt, sondern gar nicht da.
+        self.act_neu_beschreiben.setVisible(self._physisch is not None)
+        self.act_neu_beschreiben.setEnabled(schreibbar and self._physisch is not None)
+
+        # Überschreiben braucht eine QUELLE (die offene Diskette), aber keinen
+        # aufgehobenen Schreibschutz: der schützt die geöffnete Diskette, und die
+        # wird hier nur gelesen.  Was Schutz braucht, ist die Diskette im Laufwerk —
+        # dafür steht die Rückfrage.
+        # Solange geschrieben wird, ist das Laufwerk belegt — beide Wege dorthin
+        # bleiben zu, bis es fertig ist.
+        laeuft = self._schreib_sitzung is not None
+        self.act_physisch_schreiben.setEnabled(offen and not laeuft)
+        # Schneiden geht an JEDEM Abbild — auch an einem roh geöffneten; gerade dort
+        # ist es der Weg zur Erkennung.  Nur etwas da sein muss.
+        self.act_gerade_spuren.setEnabled(offen and self.tool.medium_cylinders > 1)
+        self.act_seite1_weg.setEnabled(offen and self.tool.medium_heads > 1)
+        self.menue_schnitt.setEnabled(offen)
+        # Laden bleibt sonst IMMER möglich — es ist der Weg, überhaupt eine Diskette
+        # zu bekommen; nur während des Schreibens ist das Laufwerk belegt.
+        self.act_physisch.setEnabled(not laeuft)
 
         self._schutz_anzeigen()
 
@@ -535,21 +609,188 @@ class MainWindow(QMainWindow):
             self._aktionen_pruefen()
             return
 
-        eintraege = self.tool.list()
+        # An einer physischen Diskette zweistufig: erst die Namen (bei UDOS drei
+        # Spuren), die Angaben aus den Kopfsektoren trägt `_details_nachtragen`
+        # nach, sobald ihre Spuren da sind (§11.2b).  Bei einer Datei ist
+        # `list_names()` ohnehin dasselbe wie `list()` — nur bei CP/M immer, bei
+        # UDOS deshalb, weil dort jeder Zugriff sofort geht.
+        # Ohne Dateisystem gibt es keine Dateiliste — die Diskette ist trotzdem da.
+        if not self.tool.has_filesystem:
+            eintraege = []
+        elif self._physisch is not None:
+            eintraege = self.tool.list_names()
+        else:
+            eintraege = self.tool.list()
+        self._eintraege = eintraege
         self.disk_view.set_disk(self.tool, eintraege)
         self.folder_view.refresh()
-        self.kopf.setze(self.tool)
+        self.kopf.setze(self.tool, self._bezeichnung())
 
-        teile = [f"{len(eintraege)} Dateien"]
+        self._inhalt_anzeigen()
+
+        self.setWindowTitle(f"{self._kurzname()}[*] — k1520DiskTool")
+        self.setWindowModified(self.tool.dirty)
+        self._aktionen_pruefen()
+
+    def _physisch_tick(self) -> None:
+        """Füllstand des echten Laufwerks nachführen, solange eine Sitzung läuft.
+
+        Ohne diesen Zeitgeber stand in der Statuszeile der Stand vom letzten
+        :meth:`_reload` — beim Vorauslesen wächst er aber weiter, und die Anzeige
+        blieb auf einer Spurzahl stehen, die längst überholt war.  Der Emulator
+        führt seine Füllstandszeile aus demselben Grund nach (dort am LED-Zeitgeber).
+
+        500 ms genügen: eine Spur dauert 0,5–0,8 s, häufiger gäbe es nichts Neues.
+        """
+        # Zwei Sitzungsarten, ein Zeitgeber: die geöffnete physische Diskette und ein
+        # laufender Schreibvorgang.  Beide brauchen dieselbe Nachführung, und zwei
+        # Zeitgeber nebeneinander wären zwei Stellen, die aus dem Tritt geraten können.
+        if self._schreib_tick():
+            return
+        sitzung = self._physisch
+        if sitzung is None:
+            self._physisch_uhr.stop()
+            self.st_physisch.hide()
+            return
+        self.st_physisch.setStyleSheet("")
+        self.st_physisch.setText(sitzung.status_text())
+        self.st_physisch.show()
+        self._details_nachtragen()
+        self._befund_auffrischen()
+        self._pruefe_defekte()
+
+    def _schreib_tick(self) -> bool:
+        """Einen laufenden Schreibvorgang nachführen.
+
+        Returns:
+            True, solange geschrieben wird — dann gehört die Statuszeile ihm.
+        """
+        sitzung = self._schreib_sitzung
+        if sitzung is None:
+            return False
+        st = sitzung.stats()
+        if st is None:                      # Sitzung fort — nichts mehr zu melden
+            self._schreib_fertig(None)
+            return True
+
+        gesamt = self._schreib_gesamt
+        self.st_physisch.setText(
+            f"Diskette wird beschrieben: {min(st.verifies_done, gesamt)} von "
+            f"{gesamt} Spuren")
+        self.st_physisch.setStyleSheet(SCHREIBT_STIL)
+        self.st_physisch.show()
+
+        # Fertig ist es, wenn keine Spur mehr aussteht UND gerade nichts läuft.
+        # Beides ist nötig: `tracks_dirty` fällt schon vor dem Prüf-Lesen.
+        if st.tracks_dirty == 0 and not st.busy:
+            self._schreib_fertig(st)
+        return True
+
+    def _schreib_fertig(self, st) -> None:
+        """Schreibvorgang abschliessen: Sitzung beenden und Bescheid geben."""
+        sitzung = self._schreib_sitzung
+        self._schreib_sitzung = None
+        n = self._schreib_gesamt
+        self._schreib_gesamt = 0
+        self.st_physisch.clear()
+        self.st_physisch.setStyleSheet("")
+        self.st_physisch.hide()
+
+        schaden = ""
+        if sitzung is not None:
+            schaden = sitzung.defect_tracks
+            try:
+                sitzung.close()
+            except Exception:                        # noqa: BLE001
+                pass
+        if not self._physisch:
+            self._physisch_uhr.stop()
+        self._aktionen_pruefen()
+
+        if schaden:
+            # Kein Meldungsfenster im Rücken des Bedieners — aber auch nichts, was
+            # sich wegscrollt: eine Schadstelle ist eine dauerhafte Auskunft.
+            self.log(f"SCHREIBFEHLER auf Spur {schaden}", stufe="fehler")
+            self.info_bar.zeige(
+                f"Die Diskette liess sich auf Spur {schaden} nicht beschreiben — "
+                "das Speicherabbild ist unversehrt.  Mit einer anderen Diskette "
+                "noch einmal versuchen.", "fehler")
+            return
+        self.log(f"{n} Spuren geschrieben und fehlerfrei zurückgelesen")
+        self.info_bar.zeige(
+            f"Die Diskette ist beschrieben: {n} Spuren, fehlerfrei zurückgelesen.",
+            "hinweis")
+
+    def _befund_auffrischen(self) -> None:
+        """Den Stichproben-Vorbehalt aufheben, sobald die ganze Diskette gelesen ist.
+
+        Die Erkennung urteilt anfangs über acht Spuren (§11.2a); „2 Spuren hinter dem
+        Format" heisst dann „2 der 8 angesehenen".  Bliebe dieser Satz stehen, stünde
+        an einer längst vollständig gelesenen Diskette dauerhaft ein Vorbehalt, der
+        nicht mehr gilt — und die Zahlen wären womöglich zu klein.
+        """
+        if self.tool is None or self.tool.examined_tracks == 0:
+            return          # war keine Stichprobe (oder schon aufgefrischt)
+        if self.tool.refresh_detection():
+            self._medium_meldungen()
+            self.kopf.setze(self.tool, self._bezeichnung())
+
+    def _details_nachtragen(self) -> None:
+        """Angaben nachtragen, deren Kopfsektor inzwischen gelesen ist.
+
+        **Nur was ohne Warten zu haben ist** (`entry_details_ready`): der Zeitgeber
+        läuft im Oberflächenfaden, ein blockierender Zugriff hielte hier das ganze
+        Fenster an — und er würde das Laufwerk antreiben, statt ihm zu folgen.
+        Dieselbe Regel wie beim Diskeditor.
+        """
+        eintraege = getattr(self, "_eintraege", None)
+        if not eintraege or self.tool is None:
+            return
+        offen = False
+        for nr, e in enumerate(eintraege):
+            if e.details_loaded:
+                continue
+            if not self.tool.entry_details_ready(nr):
+                offen = True
+                continue
+            eintraege[nr] = self.tool.load_entry_details(nr)
+            self.disk_view.eintrag_auffrischen(nr, eintraege[nr])
+        if not offen:
+            # Alles beisammen — die Statuszeile darf jetzt die echten Zahlen nennen.
+            self._inhalt_anzeigen()
+
+    def _inhalt_anzeigen(self) -> None:
+        """Dateizahl und freier Platz in die Statuszeile."""
+        if self.tool is None:
+            return
+        if not self.tool.has_filesystem:
+            self.st_inhalt.setText("kein Dateisystem — Diskette roh geöffnet")
+            return
+        teile = [f"{len(getattr(self, '_eintraege', []))} Dateien"]
         mehrseitig = self.tool.volume_count > 1
         for v in self.tool.volumes():
             wo = f"{v.dir}: " if mehrseitig else ""
             teile.append(f"{wo}{v.free // 1024} KB frei")
         self.st_inhalt.setText(" · ".join(teile))
 
-        self.setWindowTitle(f"{Path(self.tool.path).name}[*] — k1520DiskTool")
-        self.setWindowModified(self.tool.dirty)
-        self._aktionen_pruefen()
+    def _bezeichnung(self) -> str:
+        """Woher die offene Diskette kommt — Pfad oder echtes Laufwerk.
+
+        Eine physische Diskette hat keinen Pfad; ihre Herkunft ist trotzdem das
+        Erste, was im Kopf stehen muss (sonst bliebe die Zeile leer).
+        """
+        if self._physisch is None:
+            return ""
+        art = "schreibend" if self.tool is not None and not self.tool.read_only \
+            else "nur lesen"
+        return (f"Echtes Laufwerk {self._physisch_laufwerk.upper()} am Greaseweazle"
+                f"  ({art})")
+
+    def _kurzname(self) -> str:
+        """Name für die Fensterleiste."""
+        if self._physisch is not None:
+            return f"Laufwerk {self._physisch_laufwerk.upper()}"
+        return Path(self.tool.path).name if self.tool is not None else ""
 
     def _medium_meldungen(self) -> None:
         """Was an dieser Diskette dauerhaft zu beachten ist → Streifen."""
@@ -560,7 +801,7 @@ class MainWindow(QMainWindow):
             teile.append("Das Dateisystem ist nicht eindeutig erkannt — auch "
                          f"möglich: {', '.join(self.tool.alternatives)}.")
         if self.tool.remarks:
-            teile.append(f"Medium: {self.tool.remarks}")
+            teile.append("Medium: " + self._kurzgefasst(self.tool.remarks))
         if teile:
             self.info_bar.zeige(
                 " ".join(teile), "warnung",
@@ -574,10 +815,17 @@ class MainWindow(QMainWindow):
     # ════════════════════════════════════════════════════════════════════════
 
     def open_image(self, path, filesystem: str = "") -> bool:
-        """Abbild öffnen.  Scheitert die Erkennung, bleibt alles gesperrt."""
+        """Abbild öffnen — **roh, wenn nichts erkannt wird** (§12.6).
+
+        Eine gemischte oder unbekannte Geometrie ist kein Grund, das Abbild gar
+        nicht herzugeben: Sektoreditor, „Speichern unter" und die Schnitte arbeiten
+        weiter, nur Dateien gibt es keine.  Das galt zunächst nur für physische
+        Disketten — dieselbe Diskette als DATEI blieb verschlossen, obwohl sie
+        dieselbe ist.
+        """
         self._close_tool()
         try:
-            self.tool = DiskTool.open(path, filesystem or None)
+            self.tool = DiskTool.open_raw(path, filesystem or None)
         except (K1520DiskError, FileNotFoundError) as e:
             self.tool = None
             self.disk_view.clear()
@@ -597,11 +845,536 @@ class MainWindow(QMainWindow):
         self.act_schreibschutz.blockSignals(False)
         self._reload()
         self._medium_meldungen()
+        if not self.tool.has_filesystem:
+            self._roh_melden()
         self._zuletzt_merken(str(path))
         self.log_dock.append(f"Geöffnet: {path} — {self.tool.filesystem}")
         self.statusBar().showMessage(
             f"Geöffnet: {Path(path).name} — {self.tool.filesystem}", STATUS_DAUER)
         return True
+
+    def open_physical(self, *, filesystem: str = "", **optionen) -> bool:
+        """**Echte Diskette** in einem echten Laufwerk am Greaseweazle öffnen.
+
+        Anders als bei einem Abbild gibt es hier keine Datei: die Diskette wird
+        **spurweise** gelesen, sobald etwas gebraucht wird.  Das Öffnen selbst ist
+        trotzdem teuer — die Formaterkennung sieht sich jede Spur an —, läuft
+        deshalb in einem Arbeitsfaden mit Fortschrittsanzeige
+        (doc/design/14_physische_diskette.md §11.2).
+
+        Args:
+            filesystem: Dateisystem übersteuern (leer = erkennen).  Das einzige
+                Argument, das **hierher** gehört.
+            optionen: alles Übrige geht **unverändert** an
+                :meth:`PhysicalSession.start` — ``drive``, ``num_cyls``,
+                ``writable``, ``verify_writes``, …  Bewusst durchgereicht statt
+                einzeln aufgezählt: die Auswahl des Dialogs ist genau diese Menge,
+                und eine hier nachgepflegte Kopie der Signatur läuft ihr davon
+                (``verify_writes`` kam hinzu und fehlte prompt).  Der Emulator
+                macht es an derselben Stelle ebenso.
+
+        Returns:
+            True, wenn die Diskette offen ist.  Abbruch durch den Bediener gilt
+            als „nicht geöffnet", ohne Fehlermeldung.
+        """
+        from app.ui.physical_disk import PhysicalSession, verfuegbarkeit
+
+        ok, grund = verfuegbarkeit()
+        if not ok:
+            self._fehler("Physisches Laufwerk", grund)
+            return False
+
+        drive = optionen.get("drive", "a")
+        writable = bool(optionen.get("writable", False))
+        self._close_tool()
+        try:
+            sitzung = PhysicalSession.start(**optionen)
+        except TypeError as e:                       # Signaturdrift, kein Gerätefehler
+            self._fehler("Physisches Laufwerk",
+                         f"Die Angaben passen nicht zum Laufwerkszugriff:\n{e}")
+            return False
+        except Exception as e:                       # noqa: BLE001
+            self._fehler("Physisches Laufwerk",
+                         f"Das Laufwerk liess sich nicht oeffnen:\n{e}")
+            return False
+        self._physisch = sitzung
+        self._physisch_laufwerk = drive
+        self._physisch_wahl = dict(optionen)
+        return self._physisch_weiter(sitzung, filesystem, writable)
+
+    def _physisch_weiter(self, sitzung, filesystem: str, writable: bool) -> bool:
+        """Erkennen, Verzeichnis holen, anzeigen — der Teil NACH der Sitzung.
+
+        Eigene Methode, weil es zwei Wege hierher gibt: das erste Öffnen und das
+        Übersteuern des Dateisystems (:meth:`_physisch_erneut`).  Zwei Kopien
+        liefen unweigerlich auseinander.
+        """
+        drive = self._physisch_laufwerk
+
+        def oeffnen_und_verzeichnis():
+            """Öffnen UND das Verzeichnis holen — beides im Arbeitsfaden.
+
+            Auch das Verzeichnis gehört hierher, nicht in den Oberflächenfaden: liefe
+            es dort, verarbeitete Qt so lange keine Ereignisse — die Dateiliste bliebe
+            leer, der Fortschritt stünde, und ein Klick würde erst danach abgearbeitet
+            (das Programm sähe eingefroren aus).
+
+            Geholt werden nur die **Namen** (`list_names`).  Die übrigen Angaben
+            stehen bei UDOS im Kopfsektor jeder Datei, verstreut über die Diskette;
+            sie einzeln nachzutragen ist Sache von `_details_nachtragen`, sobald ihre
+            Spuren ohnehin gelesen sind.  Bei CP/M ist das ein und dasselbe.
+            """
+            # ROH öffnen: wird nichts erkannt, kommt die Diskette trotzdem heraus —
+            # ohne Dateisystem, aber mit Medium.  Sie im Sektoreditor ansehen, ihr
+            # Abbild sichern oder sie zurechtschneiden geht dann weiter (§12.6).
+            werkzeug = DiskTool.open_physical_raw(sitzung, filesystem or None,
+                                                  read_only=not writable)
+            if werkzeug.has_filesystem:
+                werkzeug.list_names()
+            return werkzeug
+
+        werkzeug, fehler = mit_fortschritt(
+            self, sitzung, oeffnen_und_verzeichnis,
+            text="Format wird erkannt…",
+            # Ziel sind die Sondenspuren, nicht die ganze Diskette (§11.2a).
+            ziel=DiskTool.probe_track_count(sitzung.num_cyls, sitzung.num_heads),
+            was="Spuren für die Formaterkennung")
+
+        if werkzeug is None:
+            self._close_physisch()
+            self.disk_view.clear()
+            self.kopf.leeren(f"Echtes Laufwerk {drive.upper()} am Greaseweazle")
+            if fehler is not None:
+                # Eine Diskette, die keiner Erkennung folgt, ist nicht verloren —
+                # sie ist nur nicht ERKANNT.  Deshalb hier nicht bloss der Grund,
+                # sondern der Ausweg: das Dateisystem von Hand wählen.  Genau das
+                # rettet gemischte Formate (26×128 auf Kopf 0, 5×1024 auf Kopf 1),
+                # die es in keinem Katalog gibt.
+                self.info_bar.zeige(
+                    f"Nicht erkannt: {fehler}", "fehler",
+                    knopf="Dateisystem wählen…",
+                    bei_klick=self.menue_fs.exec)
+                self.log_dock.append(f"Nicht geoeffnet: {fehler}")
+                self.statusBar().showMessage(
+                    f"Nicht erkannt — Dateisystem im Kopfbereich wählen "
+                    f"(Laufwerk {drive.upper()})", STATUS_DAUER)
+            else:
+                self.log("Physisches Laufwerk: abgebrochen")
+            self._aktionen_pruefen()
+            return False
+
+        self.tool = werkzeug
+        self._fs_setzen(filesystem, neu_oeffnen=False)
+        self.act_schreibschutz.blockSignals(True)
+        self.act_schreibschutz.setChecked(self.tool.read_only)
+        self.act_schreibschutz.blockSignals(False)
+        self._reload()
+        self._medium_meldungen()
+        # ZULETZT: ohne Dateisystem ist das die wichtigere Auskunft, und sie darf
+        # nicht vom Medium-Befund überschrieben werden.
+        if not werkzeug.has_filesystem:
+            self._roh_melden()
+        self.log_dock.append(f"Physisches Laufwerk {drive.upper()}: "
+                             f"{self.tool.filesystem}, {sitzung.status_text()}")
+        self.statusBar().showMessage(
+            f"Geöffnet: Laufwerk {drive.upper()} — {self.tool.filesystem}",
+            STATUS_DAUER)
+        self._physisch_uhr.start()
+        self._physisch_tick()      # sofort, nicht erst nach dem ersten Intervall
+        return True
+
+    def _vollstaendig_einlesen(self, titel: str) -> bool:
+        """Alle noch ungelesenen Spuren holen — Bedingung für jeden Schnitt.
+
+        Bei einer Datei ist ohnehin alles da; nur am echten Laufwerk fehlt etwas.
+        Gelesen wird im Arbeitsfaden mit Fortschritt: es können 150 Spuren sein.
+        """
+        if self.tool is None or self._physisch is None:
+            return True
+        fehlend = [(c, h)
+                   for c in range(self.tool.medium_cylinders)
+                   for h in range(self.tool.medium_heads)
+                   if self.tool.track_state(c, h) == DiskTool.SPUR_UNBEKANNT]
+        if not fehlend:
+            return True
+
+        if QMessageBox.question(
+                self, titel,
+                f"Von der Diskette sind noch {len(fehlend)} Spuren ungelesen.\n\n"
+                "Sie müssen vorher geholt werden — der Schnitt löst das Abbild vom "
+                "Laufwerk, danach ist nichts mehr nachzuholen.\n\nJetzt einlesen?",
+                QMessageBox.Cancel | QMessageBox.Ok,
+                QMessageBox.Cancel) != QMessageBox.Ok:
+            return False
+
+        werkzeug = self.tool
+        _, fehler = mit_fortschritt(
+            self, self._physisch,
+            lambda: [werkzeug.track(c, h) for c, h in fehlend],
+            titel=titel, text="Die restlichen Spuren werden gelesen…",
+            ziel=len(fehlend), was="Spuren gelesen")
+        if fehler is not None:
+            self._fehler(titel, str(fehler))
+            return False
+        # Abgebrochen oder eine Spur unlesbar — dann NICHT schneiden.
+        offen = [1 for c, h in fehlend
+                 if werkzeug.track_state(c, h) == DiskTool.SPUR_UNBEKANNT]
+        if offen:
+            self._fehler(titel,
+                         f"{len(offen)} Spuren liessen sich nicht lesen.  Ohne sie "
+                         "wäre das Abbild nach dem Schnitt lückenhaft — es bleibt, "
+                         "wie es ist.")
+            return False
+        self._reload()
+        return True
+
+    def _gerade_spuren(self) -> None:
+        """Jede zweite Spur wegwerfen — Doppelschritt-Diskette geradeziehen (§12.6)."""
+        self._schneiden(
+            "Ungerade Spuren entfernen",
+            "Jede zweite Spur wird aus dem Speicherabbild geworfen; aus "
+            f"{self.tool.medium_cylinders} Spuren werden "
+            f"{(self.tool.medium_cylinders + 1) // 2}.",
+            lambda: self.tool.keep_even_tracks())
+
+    def _seite1_weg(self) -> None:
+        """Die Rückseite aus dem Speicherabbild werfen (§12.6)."""
+        self._schneiden(
+            "Seite 1 entfernen",
+            "Seite 1 wird aus dem Speicherabbild geworfen; übrig bleibt eine "
+            "einseitige Diskette.",
+            lambda: self.tool.drop_second_side())
+
+    def _schneiden(self, titel: str, was: str, tat) -> None:
+        """Gemeinsamer Weg beider Abbild-Eingriffe: fragen, schneiden, neu erkennen.
+
+        Beide **lösen das Abbild vom Laufwerk** — danach stimmt die Spurnummer nicht
+        mehr mit der Kopfposition überein, ein Rückschreiben ginge auf die falschen
+        Zylinder.  Das muss dastehen, bevor es passiert.
+
+        Danach wird die Erkennung am **Speicherabbild** wiederholt: genau dafür ist
+        der Schnitt ja da — eine 40-Spur-Diskette, die als 80 Spuren mit Altbestand
+        hereinkam, ist danach als das erkennbar, was sie ist.
+        """
+        if self.tool is None:
+            return
+        # Vorher VOLLSTÄNDIG einlesen.  Der Schnitt löst vom Laufwerk; was jetzt noch
+        # fehlt, fehlt dann für immer — und Lücken im Abbild machen jede spätere
+        # Erkennung unmöglich (eine ungelesene Spur sieht aus wie eine unformatierte).
+        if not self._vollstaendig_einlesen(titel):
+            return
+        hinweis = was
+        if self._physisch is not None:
+            hinweis += ("\n\nDamit endet die Verbindung zum Laufwerk: das Abbild "
+                        "bleibt im Speicher, die Diskette wird nicht weiter gelesen "
+                        "und auch nicht mehr beschrieben.")
+        hinweis += "\n\nFortfahren?"
+        if QMessageBox.question(self, titel, hinweis,
+                                QMessageBox.Cancel | QMessageBox.Ok,
+                                QMessageBox.Cancel) != QMessageBox.Ok:
+            return
+
+        try:
+            spuren = tat()
+        except K1520DiskError as e:
+            self._fehler(titel, str(e))
+            return
+
+        # Die Sitzung ist jetzt nur noch Ballast — das Abbild hängt nicht mehr daran.
+        if self._physisch is not None:
+            self._close_physisch()
+            self._physisch_uhr.stop()
+            self.st_physisch.hide()
+        self.log(f"{titel}: {spuren} Spuren im Abbild")
+
+        try:
+            erkannt = self.tool.redetect()
+        except K1520DiskError as e:
+            self._fehler(titel, f"Danach war nichts mehr zu lesen:\n{e}")
+            return
+        self._reload()
+        self._medium_meldungen()
+        if erkannt:
+            self.info_bar.zeige(
+                f"{titel}: {spuren} Spuren — erkannt als {self.tool.filesystem}.",
+                "hinweis")
+            self._fs_setzen(self.tool.filesystem, neu_oeffnen=False)
+        else:
+            self._roh_melden()
+
+    def _roh_melden(self) -> None:
+        """Sagen, dass die Diskette OHNE Dateisystem offen ist — und wie es weitergeht.
+
+        Kein Meldungsfenster und kein Abbruch: die Diskette liegt im Speicher, der
+        Diskeditor geht, das Abbild lässt sich sichern.  Was fehlt, ist die Deutung
+        als Dateisystem — und die kann später noch kommen, wenn mehr gelesen ist
+        oder das Abbild zurechtgeschnitten wurde (§12.6).
+
+        Der Grund wird **gekürzt**: die Messung listet sonst jede einzelne Spur, und
+        160 Zeilen passen auf keinen Bildschirm.  Vollständig steht sie im Protokoll.
+        """
+        grund = (self.tool.remarks or "").strip()
+        self.log_dock.append("Kein Dateisystem erkannt. " + grund)
+        # Am Laufwerk läuft das Lesen weiter, bei einer Datei ist schon alles da —
+        # ein Satz, der das Falsche verspricht, ist schlimmer als keiner.
+        laeuft = self._physisch is not None
+        self.info_bar.zeige(
+            ("Aus den zuerst gelesenen Spuren" if laeuft else "Aus dem Abbild")
+            + " liess sich kein Dateisystem ermitteln — "
+            + self._kurzgefasst(grund)
+            + ("  Die Diskette wird weiter eingelesen; Diskeditor" if laeuft
+               else "  Diskeditor")
+            + " und Abbild-Sichern gehen bereits.  Im Kopfbereich ein Dateisystem "
+              "wählen oder das Abbild unter „Speicherabbild ändern\u201c "
+              "zurechtschneiden.",
+            "warnung", knopf="Dateisystem wählen…", bei_klick=self.menue_fs.exec)
+        self.statusBar().showMessage("Kein Dateisystem erkannt — Diskette ist roh "
+                                     "geöffnet", STATUS_DAUER)
+
+    @staticmethod
+    def _kurzgefasst(text: str, zeilen: int = 2, zeichen: int = 200) -> str:
+        """Eine lange Diagnose auf Bildschirmmass bringen.
+
+        Die Geometriemessung nennt JEDE Spur; ein Streifen mit 160 Zeilen ist keine
+        Meldung mehr, sondern eine Wand.  Das Ganze steht im Protokoll (F8).
+        """
+        stuecke = [z.strip() for z in text.splitlines() if z.strip()]
+        kurz = " ".join(stuecke[:zeilen])
+        if len(kurz) > zeichen:
+            kurz = kurz[:zeichen].rstrip() + " …"
+        elif len(stuecke) > zeilen:
+            kurz += " …"
+        return kurz + ("  (alles im Protokoll, F8)" if len(stuecke) > zeilen else "")
+
+    def _pruefe_defekte(self) -> bool:
+        """Schadstellen melden — **einmal je Spur**, mit Ausweg.
+
+        Zu rufen nach jedem Vorgang, der geschrieben haben könnte.  Das Abbild im
+        Speicher ist dann noch heil; die Meldung sagt, wie man es rettet.
+        """
+        sitzung = self._physisch
+        if sitzung is None:
+            return False
+        neu = sitzung.neue_defekte()
+        if not neu:
+            return False
+        self.log(f"SCHREIBFEHLER auf Spur {neu}")
+        self.info_bar.zeige(
+            f"Schreibfehler auf Spur {neu} — das Speicherabbild ist noch heil.",
+            "fehler", knopf="Diskette neu beschreiben…",
+            bei_klick=self._neu_beschreiben)
+        QMessageBox.warning(self, "Schreibfehler", sitzung.defekt_meldung(neu))
+        return True
+
+    def _neu_beschreiben(self) -> None:
+        """Das Abbild noch einmal vollständig auf die (neue) Diskette schreiben."""
+        sitzung = self._physisch
+        if sitzung is None:
+            return
+        st = sitzung.stats()
+        unbekannt = (st.tracks_total - st.tracks_known) if st else 0
+        frage = ("Das Speicherabbild wird noch einmal vollständig auf die eingelegte "
+                 "Diskette geschrieben.\n\nLegen Sie jetzt eine fehlerfreie Diskette ein.")
+        if unbekannt:
+            frage += (f"\n\n⚠ {unbekannt} von {st.tracks_total} Spuren wurden nie gelesen "
+                      "und können deshalb nicht geschrieben werden.")
+        if QMessageBox.question(self, "Diskette neu beschreiben", frage,
+                                QMessageBox.Ok | QMessageBox.Cancel) != QMessageBox.Ok:
+            return
+
+        n = sitzung.rewrite_all()
+        self.log(f"{n} Spuren zum Neubeschreiben eingestellt")
+        _, fehler = mit_fortschritt(
+            self, sitzung, lambda: sitzung.sync.flush(600_000),
+            titel="Diskette neu beschreiben",
+            text="Das Abbild wird geschrieben und zurückgelesen…",
+            ziel=n, was="Spuren geschrieben",
+            # Geschrieben wird aus dem Speicher — `tracks_known` ruehrt sich dabei
+            # nicht, und der Balken stuende still.  Gezaehlt wird das Prueflesen:
+            # erst danach gilt eine Spur als geschrieben (§7.1).
+            zaehler=lambda st: st.verifies_done)
+        if fehler is not None:
+            self._fehler("Diskette neu beschreiben", str(fehler))
+            return
+        if not self._pruefe_defekte():
+            self.info_bar.verbergen()
+            QMessageBox.information(
+                self, "Diskette neu beschreiben",
+                f"{n} Spuren wurden geschrieben und fehlerfrei zurückgelesen.")
+
+    def _am_abbild_erkennen(self, filesystem: str) -> bool:
+        """Dateisystem am **Speicherabbild** deuten — ohne die Diskette neu zu lesen.
+
+        Das ist der richtige Weg, sobald etwas im Speicher liegt: die Diskette noch
+        einmal zu holen dauert und läse womöglich anderes (eine halb gelesene
+        Diskette ist danach anders halb gelesen).
+        """
+        if self.tool is None:
+            return False
+        try:
+            erkannt = self.tool.redetect(filesystem or None)
+        except K1520DiskError as e:
+            self._fehler("Dateisystem", str(e))
+            return False
+        self._reload()
+        self._medium_meldungen()
+        if not erkannt:
+            self._roh_melden()
+        else:
+            self.log(f"Dateisystem: {self.tool.filesystem}")
+        return erkannt
+
+    def _physisch_erneut(self, filesystem: str) -> bool:
+        """Die physische Diskette mit anderem Dateisystem noch einmal öffnen.
+
+        Ein Sync-Handle ist nach dem Öffnen **verbraucht** — die Wahl lässt sich
+        nicht an der laufenden Sitzung ändern.  Also wird mit denselben Angaben eine
+        neue aufgebaut; das kostet den Erkennungslauf noch einmal (~10 s), ist aber
+        der einzige ehrliche Weg.  Ohne ihn lief das Übersteuern bei einer physischen
+        Diskette in `open_image("")` — leerer Pfad, alles weg.
+        """
+        from app.ui.physical_disk import PhysicalSession
+
+        wahl = dict(self._physisch_wahl or {})
+        if not wahl:
+            return False
+        self._close_tool()
+        try:
+            sitzung = PhysicalSession.start(**wahl)
+        except Exception as e:                       # noqa: BLE001
+            self._fehler("Physisches Laufwerk",
+                         f"Das Laufwerk liess sich nicht erneut oeffnen:\n{e}")
+            return False
+        self._physisch = sitzung
+        self._physisch_laufwerk = wahl.get("drive", "a")
+        return self._physisch_weiter(sitzung, filesystem,
+                                     bool(wahl.get("writable", False)))
+
+    def _physisch_dialog(self) -> None:
+        """Abfrage vor dem Einlegen und dann oeffnen.
+
+        **Erst prüfen, dann fragen.**  Geht es gar nicht (Hosttools fehlen, die
+        Anbindung lässt sich nicht laden), erscheint der Auswahldialog erst gar
+        nicht — sonst füllt der Bediener ihn aus, klickt „Einlegen" und läuft
+        danach in eine Meldung, die er schon vor dem Ausfüllen hätte haben können.
+        """
+        from app.ui.physical_disk import PhysicalDiskDialog, verfuegbarkeit
+
+        ok, grund = verfuegbarkeit()
+        if not ok:
+            self._fehler("Physisches Laufwerk", grund)
+            return
+        if not self._darf_verwerfen():
+            return
+        wahl = PhysicalDiskDialog.frage(self, num_cyls=80, num_heads=2)
+        if wahl is None:
+            return
+        self.open_physical(**wahl)
+
+    def _physisch_schreiben_dialog(self) -> None:
+        """Das geöffnete Abbild auf eine **echte** Diskette schreiben.
+
+        Der Gegenweg zu „Physische Diskette laden": die Quelle ist das, was gerade
+        offen ist — auch eine `.hfe`-Datei —, das Ziel ein echtes Laufwerk.  Jede
+        bekannte Spur wird ins Medium des Laufwerks gelegt und gilt dort als
+        geändert; den Rest erledigt der Arbeitsfaden im Hintergrund, samt
+        Prüf-Lesen (§7.1).
+
+        **Erst fragen, dann alles andere.**  Hier geht kein Abbild verloren, sondern
+        eine Diskette — und zwar unwiederbringlich, bevor irgendetwas zu sehen ist.
+        """
+        from app.ui.physical_disk import (PhysicalDiskDialog, PhysicalSession,
+                                          verfuegbarkeit)
+
+        if self.tool is None:
+            return
+        ok, grund = verfuegbarkeit()
+        if not ok:
+            self._fehler("Physische Diskette überschreiben", grund)
+            return
+
+        if QMessageBox.question(
+                self, "Physische Diskette überschreiben",
+                "Die Funktion schreibt das aktuelle Speicherabbild auf eine physische "
+                "Diskette und überschreibt dabei alle vorhandenen Daten.\n\n"
+                "Sind Sie sicher, dass Sie das wollen?",
+                QMessageBox.Cancel | QMessageBox.Ok,
+                QMessageBox.Cancel) != QMessageBox.Ok:
+            return
+
+        # Die Geometrie der offenen Diskette vorschlagen — auf eine kleinere passt
+        # sie ohnehin nicht, und der Bediener soll nicht raten müssen.
+        wahl = PhysicalDiskDialog.frage(
+            self, writable=True,
+            titel="Diskette zum Überschreiben einlegen",
+            abbild=f"{self.tool.medium_cylinders} Spuren × "
+                   f"{self.tool.medium_heads} Seite(n)")
+        if wahl is None:
+            return
+        wahl["writable"] = True          # ohne Schreibrecht ist der Punkt sinnlos
+        wahl["read_ahead"] = False       # gelesen wird hier nichts, nur geschrieben
+
+        # „Nur Seite 0" bei einem ZWEISEITIGEN Abbild ist erlaubt — es kann genau
+        # gewollt sein (Seite 1 trägt Altlasten, die niemand haben will).  Aber es
+        # geht dabei etwas verloren, und das muss dastehen, bevor es passiert.
+        if wahl.get("num_heads", 2) < self.tool.medium_heads:
+            if QMessageBox.question(
+                    self, "Nur Seite 0 schreiben",
+                    f"Das Abbild hat {self.tool.medium_heads} Seiten, geschrieben "
+                    "wird nur Seite 0.\n\n**Der Inhalt von Seite 1 landet nicht auf "
+                    "der Diskette.**  Das kann gewollt sein — etwa wenn dort nur "
+                    "Altbestand steht.\n\nTrotzdem schreiben?".replace("**", ""),
+                    QMessageBox.Cancel | QMessageBox.Ok,
+                    QMessageBox.Cancel) != QMessageBox.Ok:
+                return
+
+        try:
+            sitzung = PhysicalSession.start(**wahl)
+        except Exception as e:                       # noqa: BLE001
+            self._fehler("Physische Diskette überschreiben",
+                         f"Das Laufwerk liess sich nicht oeffnen:\n{e}")
+            return
+
+        try:
+            n = self.tool.write_to_physical(sitzung)
+        except K1520DiskError as e:
+            self._fehler("Physische Diskette überschreiben", str(e))
+            sitzung.close()
+            return
+
+        # **Und das war's schon.**  Die Spuren stehen jetzt als „geändert" im Medium
+        # des Laufwerks; der Arbeitsfaden schreibt sie von selbst hinaus (§7) — es
+        # gibt hier nichts zu warten und darum auch kein Meldungsfenster.  Wie weit
+        # er ist, sagt die Statuszeile; fertig meldet `_schreib_tick`.
+        self._schreib_sitzung = sitzung
+        self._schreib_gesamt  = n
+        self._physisch_uhr.start()
+        self._schreib_tick()          # sofort, nicht erst nach dem ersten Intervall
+        self._aktionen_pruefen()
+        self.log(f"{n} Spuren werden auf die eingelegte Diskette geschrieben")
+        self.info_bar.zeige(
+            f"Die Diskette im Laufwerk {wahl.get('drive', 'a').upper()} wird "
+            f"beschrieben ({n} Spuren) — sie darf bis zum Ende nicht entnommen werden.",
+            "hinweis")
+
+    def _close_physisch(self) -> None:
+        """Laufende Sitzung am echten Laufwerk beenden (schreibt Ausstehendes zurück)."""
+        sitzung = self._physisch
+        if sitzung is None:
+            return
+        self._physisch = None
+        self._physisch_uhr.stop()
+        self.st_physisch.clear()
+        self.st_physisch.hide()
+        from PySide6.QtGui import QCursor
+        from PySide6.QtWidgets import QApplication
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        try:
+            sitzung.close()
+        except Exception:
+            pass
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def create_disk(self, path, filesystem: str, label: str = "",
                     boot_image=None) -> bool:
@@ -651,6 +1424,9 @@ class MainWindow(QMainWindow):
         if self.tool is not None:
             self.tool.close()
             self.tool = None
+        # Erst das Werkzeug, DANN die Sitzung: ~DiskImage schreibt Ausstehendes noch
+        # über den Arbeitsfaden zurück und löst sich erst danach vom Medium.
+        self._close_physisch()
 
     def _darf_verwerfen(self) -> bool:
         """Vor dem Schließen/Verwerfen fragen, wenn etwas ungespeichert ist."""
@@ -778,15 +1554,23 @@ class MainWindow(QMainWindow):
         self.log(f"Gespeichert unter {path}")
         return True
 
-    def archive(self, zip_path) -> bool:
+    def archive(self, zip_path, bezeichnung: str = "") -> bool:
         """Abbild (.hfe), alle Dateien und ein Inhaltsverzeichnis in eine `.zip`.
 
         Reine Leseoperation — auch mit gesetztem Schreibschutz benutzbar.
+
+        `bezeichnung` ist die Beschriftung der Diskette (der Aufkleber): sie
+        benennt die Dateien im Archiv und steht im Inhaltsverzeichnis.  Bei einer
+        **physischen** Diskette ist sie die einzige Auskunft darüber, welche
+        Diskette das war — es gibt keinen Dateinamen, aus dem sich etwas ableiten
+        liesse.
         """
         if self.tool is None:
             return False
         try:
-            ziel = create_archive(self.tool, zip_path, text_mode=self.text_mode)
+            ziel = create_archive(self.tool, zip_path, text_mode=self.text_mode,
+                                  bezeichnung=bezeichnung,
+                                  herkunft=self._bezeichnung())
         except (K1520DiskError, OSError) as e:
             self._fehler("Archivieren", str(e))
             return False
@@ -821,8 +1605,29 @@ class MainWindow(QMainWindow):
         self.log("Schreibschutz " + ("gesetzt" if ro else "aufgehoben"))
 
     def save(self) -> bool:
+        """Änderungen festschreiben.
+
+        Bei einer **physischen** Diskette heisst das: warten, bis jede geänderte Spur
+        geschrieben **und zurückgelesen** ist (§7.1).  Das kann eine Weile dauern und
+        kann an einer Schadstelle scheitern — dann nennt die Meldung die Spur.
+        """
         if self.tool is None:
             return False
+        sitzung = self._physisch
+        if sitzung is not None:
+            _, fehler = mit_fortschritt(
+                self, sitzung, self.tool.flush,
+                titel="Auf die Diskette schreiben",
+                text="Geänderte Spuren werden geschrieben und zurückgelesen…")
+            if fehler is not None:
+                if not self._pruefe_defekte():
+                    self._fehler("Speichern", str(fehler))
+                return False
+            self._pruefe_defekte()
+            self._reload()
+            self.log("Auf die physische Diskette geschrieben")
+            return True
+
         try:
             self.tool.flush()
         except K1520DiskError as e:
@@ -897,7 +1702,8 @@ class MainWindow(QMainWindow):
     def _speichern_unter_dialog(self) -> None:
         if self.tool is None:
             return
-        # UDOS kann kein .img tragen — den Filter dann gar nicht erst anbieten.
+        # UDOS/ZDOS kann kein .img tragen (Sektorkontrollblock hinter der Daten-CRC)
+        # — den Filter dann gar nicht erst anbieten.  UDOS1715/NDOS dagegen schon.
         filter_ = "HFE-Abbild (*.hfe);;DMK-Abbild (*.dmk)"
         if not any(f.name == self.tool.filesystem and f.type == "udos"
                    for f in filesystems()):
@@ -907,20 +1713,65 @@ class MainWindow(QMainWindow):
         if pfad:
             self.save_as(pfad)
 
+    def _beschriftung_erfragen(self) -> str | None:
+        """Nach der Beschriftung der Diskette fragen — der Text auf dem Aufkleber.
+
+        Sie ist der Name, unter dem das Archiv abgelegt wird.  Bei einer
+        physischen Diskette gibt es sonst gar keinen: `tool.path` ist leer, und
+        `Path("").with_suffix(".zip")` warf hier bis 2026-08-18 einen
+        `ValueError` mitten in den Klickweg.
+
+        Returns:
+            Die Beschriftung, oder ``None``, wenn abgebrochen wurde.
+        """
+        text, ok = QInputDialog.getText(
+            self, "Diskette benennen",
+            "Beschriftung der Diskette (z. B. der Text auf dem Aufkleber).\n"
+            "Daraus entstehen der Dateiname des Archivs und der Eintrag im\n"
+            "Inhaltsverzeichnis:",
+            text=self._beschriftung_vorschlag())
+        return text.strip() if ok else None
+
+    def _beschriftung_vorschlag(self) -> str:
+        """Was in der Frage nach der Beschriftung schon dortsteht.
+
+        Der Dateiname der offenen Diskette, sonst der Datenträgername des
+        Dateisystems (UDOS und CP/M führen einen) — bei einer physischen Diskette
+        ist das die einzige Auskunft, die das Werkzeug selbst hat.  Gibt es
+        beides nicht, bleibt das Feld leer: dann weiss nur der Anwender, was auf
+        dem Aufkleber steht.
+        """
+        if self.tool is None:
+            return ""
+        stamm = Path(self.tool.path).stem
+        if stamm:
+            return stamm
+        for v in self.tool.volumes():
+            if v.label:
+                return v.label
+        return ""
+
     def _archivieren_dialog(self) -> None:
         if self.tool is None:
             return
-        vorschlag = str(Path(self.tool.path).with_suffix(".zip"))
+        bezeichnung = self._beschriftung_erfragen()
+        if bezeichnung is None:
+            return
+        vorschlag = str(Path(self._neben_der_diskette())
+                        / ((dateiname(bezeichnung) or NAMENLOS) + ".zip"))
         pfad, _ = QFileDialog.getSaveFileName(
             self, "Archivieren", vorschlag, "ZIP-Archiv (*.zip)")
         if pfad:
-            self.archive(pfad)
+            self.archive(pfad, bezeichnung=bezeichnung)
 
     def _bootabbild_sichern_dialog(self) -> None:
         if self.tool is None or self.tool.boot_area_size(0) == 0:
             return
         # Bei UDOS ist jede Seite ein eigener Datentraeger — gebootet wird von Seite 0.
-        vorschlag = str(Path(self.tool.path).with_suffix(".bin"))
+        # Eine physische Diskette hat keinen Pfad; dann traegt der Vorschlag nur den
+        # Ordner und einen Ersatznamen.
+        stamm = Path(self.tool.path).stem or "bootabbild"
+        vorschlag = str(Path(self._neben_der_diskette()) / (stamm + ".bin"))
         pfad, _ = QFileDialog.getSaveFileName(
             self, "Bootabbild sichern", vorschlag, "Bootabbild (*.bin)")
         if pfad:
@@ -1000,10 +1851,12 @@ class MainWindow(QMainWindow):
     def _neben_der_diskette(self) -> str:
         """Startpunkt für „Speichern unter…": neben der geöffneten Diskette.
 
-        Eine Arbeitskopie gehört dorthin, wo das Original liegt; nur ohne
-        geöffnete Diskette fällt es auf den Diskettenordner zurück.
+        Eine Arbeitskopie gehört dorthin, wo das Original liegt; ohne geöffnete
+        Diskette — und bei einer **physischen**, die keinen Pfad hat — fällt es
+        auf den Diskettenordner zurück.  (`Path("").parent` wäre `.`, also das
+        Arbeitsverzeichnis; genau das verbietet §20.8.)
         """
-        if self.tool is not None:
+        if self.tool is not None and self.tool.path:
             return str(Path(self.tool.path).parent)
         return self._disketten_ordner()
 
@@ -1034,7 +1887,21 @@ class MainWindow(QMainWindow):
         a = self._fs_aktionen.get(name)
         if a is not None:
             a.setChecked(True)
-        if neu_oeffnen and self.tool is not None:
+        if not neu_oeffnen:
+            return
+        # Eine physische Diskette hat KEINEN Pfad — `open_image("")` warf hier alles
+        # weg, und beim Übersteuern blieb die Anzeige leer.  Sie braucht eine neue
+        # Sitzung mit denselben Angaben; die stehen in `_physisch_wahl`.  Das gilt
+        # auch, wenn die Erkennung gerade gescheitert ist (dann gibt es kein `tool`,
+        # aber sehr wohl etwas zu übersteuern) — es ist sogar der Hauptfall.
+        if self.tool is not None and not self.tool.path:
+            # Physische Diskette (oder ein davon abgelöstes Abbild): sie liegt bereits
+            # im Speicher — noch einmal einzulesen wäre Zeitverschwendung und läse
+            # womöglich anderes.  Die Erkennung läuft deshalb auf dem Abbild.
+            self._am_abbild_erkennen(name)
+        elif self.tool is None and self._physisch_wahl:
+            self._physisch_erneut(name)      # gescheitertes Öffnen: neue Sitzung
+        elif self.tool is not None:
             self.open_image(self.tool.path, name)
 
     def _modus_geaendert(self) -> None:
@@ -1179,9 +2046,26 @@ class MainWindow(QMainWindow):
     # ── Schließen ───────────────────────────────────────────────────────────
 
     def closeEvent(self, event):  # noqa: N802
+        # Ein laufender Schreibvorgang ist der einzige Grund, das Schliessen
+        # aufzuhalten: eine halb beschriebene Diskette ist unbrauchbar, und der
+        # Bediener sieht dem Fenster nicht an, dass hinten noch etwas laeuft.
+        if self._schreib_sitzung is not None:
+            st = self._schreib_sitzung.stats()
+            offen_spuren = st.tracks_dirty if st else 0
+            if QMessageBox.question(
+                    self, "Es wird noch geschrieben",
+                    f"Auf die Diskette im Laufwerk sind noch {offen_spuren} Spuren "
+                    "zu schreiben.  Wird jetzt beendet, bleibt sie unvollständig.\n\n"
+                    "Trotzdem beenden?",
+                    QMessageBox.Cancel | QMessageBox.Ok,
+                    QMessageBox.Cancel) != QMessageBox.Ok:
+                event.ignore()
+                return
         if not self._darf_verwerfen():
             event.ignore()
             return
         self._zustand_sichern()
+        if self._schreib_sitzung is not None:
+            self._schreib_fertig(None)
         self._close_tool()
         event.accept()

@@ -11,6 +11,7 @@
 #include "core/filesystem/udos/udos_fs.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <ctime>
 
@@ -46,18 +47,46 @@ uint64_t UdosFileHeader::length() const {
     return voll;
 }
 
-/// @brief Typkuerzel → Typbyte (§6); unbekannt/leer = aus dem Textmodus ableiten.
-static uint8_t udosTypByte(const std::string& kuerzel, bool text) {
-    if (kuerzel == "A")  return 0x20;
-    if (kuerzel == "P")  return 0x80;
-    if (kuerzel == "P1") return 0x81;
-    if (kuerzel == "B")  return 0x10;
-    if (kuerzel == "D")  return 0x40;
-    return text ? 0x20 : 0x10;
+// ─── Gemeinsame Sitten der UDOS-Familie ──────────────────────────────────────
+//
+// Das Typbyte ist ein Bitfeld aus TYP (Bit 4…7) und SUBTYP (Bit 0…3) — so steht es
+// woertlich im UDOS1715-Handbuch §3.2.2, und es erklaert zugleich das ZDOS-„P1":
+// 81H = Typ P, Subtyp 1.  Deshalb hier allgemein statt als Tabelle der fuenf
+// Einzelwerte (doc/udos1715_diskettenformat.md §5.1).
+
+uint8_t udosTypeByte(const std::string& kuerzel, bool text) {
+    if (kuerzel.empty()) return text ? 0x20 : 0x10;   // A = ASCII, B = BINARY
+
+    uint8_t typ = 0;
+    switch (kuerzel[0]) {
+        case 'A': typ = 0x20; break;
+        case 'B': typ = 0x10; break;
+        case 'D': typ = 0x40; break;
+        case 'P': typ = 0x80; break;
+        default:  return text ? 0x20 : 0x10;
+    }
+    // Angehaengte Ziffern sind der Subtyp ("P1", "P15").
+    unsigned sub = 0;
+    for (size_t i = 1; i < kuerzel.size(); ++i) {
+        if (kuerzel[i] < '0' || kuerzel[i] > '9') return typ;
+        sub = sub * 10 + static_cast<unsigned>(kuerzel[i] - '0');
+    }
+    return static_cast<uint8_t>(typ | (sub & 0x0F));
 }
 
-/// @brief Eigenschaftsbuchstaben (W E L S R F) → Byte (§6).
-static uint8_t udosEigenschaftsByte(const std::string& buchstaben) {
+std::string udosTypeName(uint8_t type_byte) {
+    std::string s;
+    if      (type_byte & 0x80) s = "P";
+    else if (type_byte & 0x40) s = "D";
+    else if (type_byte & 0x20) s = "A";
+    else if (type_byte & 0x10) s = "B";
+    else return "";
+    const uint8_t sub = type_byte & 0x0F;
+    if (sub) s += std::to_string(sub);
+    return s;
+}
+
+uint8_t udosPropertyByte(const std::string& buchstaben) {
     uint8_t b = 0;
     for (char c : buchstaben) {
         switch (c) {
@@ -73,27 +102,107 @@ static uint8_t udosEigenschaftsByte(const std::string& buchstaben) {
     return b;
 }
 
-std::string UdosFileHeader::typeName() const {
-    switch (type_byte) {
-        case 0x20: return "A";
-        case 0x80: return "P";
-        case 0x81: return "P1";
-        case 0x10: return "B";
-        case 0x40: return "D";
-        default:   return "";
-    }
-}
-
-std::string UdosFileHeader::propertyLetters() const {
+std::string udosPropertyLetters(uint8_t props) {
     std::string s;
-    if (properties & 0x80) s += 'W';
-    if (properties & 0x40) s += 'E';
-    if (properties & 0x20) s += 'L';
-    if (properties & 0x10) s += 'S';
-    if (properties & 0x08) s += 'R';
-    if (properties & 0x04) s += 'F';
+    if (props & 0x80) s += 'W';
+    if (props & 0x40) s += 'E';
+    if (props & 0x20) s += 'L';
+    if (props & 0x10) s += 'S';
+    if (props & 0x08) s += 'R';
+    if (props & 0x04) s += 'F';
     return s;
 }
+
+// ─── Speichersegmente (Offset 40…121) ────────────────────────────────────────
+//
+// UDOS1715-Handbuch §3.2.2: „mehrere Segmente moeglich; abgeschlossen mit
+// 00 00 00 00"; 2AH…7FH sind „nur bei P-Dateien vom System verwendet, sonst frei
+// fuer Anwender".  Gemessen: ZDOS-Referenzdiskette FORMAT/ESPRO/UPRO je 2 Segmente,
+// PC-1715-Diskette IMAGER 3 und ZLINK 6.  Nur das ERSTE Segment mitzuschleppen
+// hiesse, so eine Programmdatei beim Zurueckschreiben zu zerstoeren.
+
+std::vector<std::pair<uint16_t, uint16_t>> udosReadSegments(const uint8_t* header,
+                                                            bool ist_programm) {
+    std::vector<std::pair<uint16_t, uint16_t>> out;
+    if (!ist_programm) return out;
+    for (size_t o = kUdosSegmentsFirst; o + 3 < kUdosSegmentsEnd; o += 4) {
+        const uint16_t a = le16(header + o);
+        const uint16_t l = le16(header + o + 2);
+        if (a == 0 && l == 0) break;          // Abschluss der Liste
+        out.emplace_back(a, l);
+    }
+    return out;
+}
+
+bool udosWriteSegments(uint8_t* header,
+                       const std::vector<std::pair<uint16_t, uint16_t>>& segs) {
+    if (segs.size() > kUdosMaxSegments) return false;
+    size_t o = kUdosSegmentsFirst;
+    for (const auto& s : segs) {
+        header[o]     = static_cast<uint8_t>(s.first  & 0xFF);
+        header[o + 1] = static_cast<uint8_t>(s.first  >> 8);
+        header[o + 2] = static_cast<uint8_t>(s.second & 0xFF);
+        header[o + 3] = static_cast<uint8_t>(s.second >> 8);
+        o += 4;
+    }
+    // Abschluss — nur, wenn dahinter noch Platz ist (eine volle Liste braucht keinen).
+    if (o + 3 < kUdosSegmentsEnd) {
+        header[o] = header[o + 1] = header[o + 2] = header[o + 3] = 0x00;
+    }
+    return true;
+}
+
+std::string udosFormatSegments(const std::vector<std::pair<uint16_t, uint16_t>>& segs) {
+    std::string s;
+    char puffer[16];
+    for (const auto& seg : segs) {
+        if (!s.empty()) s += ' ';
+        std::snprintf(puffer, sizeof(puffer), "%04X+%04X", seg.first, seg.second);
+        s += puffer;
+    }
+    return s;
+}
+
+bool udosParseSegments(const std::string& text,
+                       std::vector<std::pair<uint16_t, uint16_t>>& out,
+                       std::string* why) {
+    auto sag = [&](const std::string& m) { if (why) *why = m; return false; };
+    out.clear();
+
+    size_t i = 0;
+    while (i < text.size()) {
+        while (i < text.size() && (text[i] == ' ' || text[i] == ',' || text[i] == '\t')) ++i;
+        if (i >= text.size()) break;
+
+        auto hex = [&](uint32_t& wert) {
+            const size_t ab = i;
+            wert = 0;
+            while (i < text.size() && std::isxdigit(static_cast<unsigned char>(text[i]))) {
+                const char c = text[i++];
+                const uint32_t z = (c <= '9') ? static_cast<uint32_t>(c - '0')
+                                              : static_cast<uint32_t>((c | 0x20) - 'a' + 10);
+                wert = wert * 16 + z;
+            }
+            return i > ab && wert <= 0xFFFF;
+        };
+
+        uint32_t anfang = 0, laenge = 0;
+        if (!hex(anfang)) return sag("'" + text + "': Segmentanfang ist keine Hexzahl");
+        if (i >= text.size() || (text[i] != '+' && text[i] != ':'))
+            return sag("'" + text + "': zwischen Anfang und Laenge fehlt '+' oder ':'");
+        ++i;
+        if (!hex(laenge)) return sag("'" + text + "': Segmentlaenge ist keine Hexzahl");
+
+        out.emplace_back(static_cast<uint16_t>(anfang), static_cast<uint16_t>(laenge));
+        if (out.size() > kUdosMaxSegments)
+            return sag("mehr als " + std::to_string(kUdosMaxSegments)
+                       + " Segmente passen nicht in den Kopfsektor");
+    }
+    return true;
+}
+
+std::string UdosFileHeader::typeName()        const { return udosTypeName(type_byte); }
+std::string UdosFileHeader::propertyLetters() const { return udosPropertyLetters(properties); }
 
 // ─── Aufsetzen ───────────────────────────────────────────────────────────────
 
@@ -233,6 +342,7 @@ bool UdosFileSystem::readHeader(UdosPointer p, UdosFileHeader& out) const {
     out.stack_size        = le16(d.data() + 126);
     out.extra            = static_cast<uint32_t>(le16(d.data() + 44))
                          | (static_cast<uint32_t>(le16(d.data() + 46)) << 16);
+    out.segments         = udosReadSegments(d.data(), (out.type_byte & 0x80) != 0);
     out.bytes_in_last    = le16(d.data() + 22);
     out.created          = ascii6(d.data() + 24);
     out.modified         = ascii6(d.data() + 32);
@@ -357,42 +467,73 @@ std::vector<UdosDirEntry> UdosFileSystem::directory() const {
     return result;
 }
 
+bool UdosFileSystem::uebernimmKopf(UdosPointer p, FileEntry& e) const {
+    UdosFileHeader hdr;
+    if (!readHeader(p, hdr)) {
+        e.damaged        = true;
+        e.details_loaded = true;   // mehr ist hier nicht zu holen
+        return false;
+    }
+    e.size       = hdr.length();
+    e.type       = hdr.typeName();
+    e.attributes = hdr.propertyLetters();
+    e.entry_addr = hdr.entry_addr;
+    e.record_len = hdr.record_len;
+    e.block_len  = hdr.block_len;
+    e.bytes_in_last = hdr.bytes_in_last;
+    e.extra      = hdr.extra;
+    e.created    = hdr.created;
+    e.segment_start = hdr.segment_start;
+    e.segment_len   = hdr.segment_len;
+    e.segments      = udosFormatSegments(hdr.segments);
+    e.low_addr   = hdr.low_addr;
+    e.high_addr  = hdr.high_addr;
+    e.stack_size = hdr.stack_size;
+    e.date       = hdr.modified.empty() ? hdr.created : hdr.modified;
+    e.details_loaded = true;
+    return true;
+}
+
 std::vector<FileEntry> UdosFileSystem::list() const {
+    std::vector<FileEntry> out = listNames();
+    for (FileEntry& e : out)
+        loadDetails(e);
+    return out;
+}
+
+std::vector<FileEntry> UdosFileSystem::listNames() const {
     std::vector<FileEntry> out;
     for (const UdosDirEntry& d : directory()) {
         FileEntry e;
         e.name   = d.name;
+        // Das SECRET-Bit steht im Verzeichnis SELBST (§5) — eine Spiegelung der
+        // S-Eigenschaft aus dem Kopfsektor, damit `CAT` filtern kann, ohne jeden
+        // Kopf zu lesen.  Genau deshalb ist es hier schon zu haben.
         e.hidden = d.secret;
-
-        UdosFileHeader hdr;
-        if (readHeader(d.header, hdr)) {
-            e.size       = hdr.length();
-            e.type       = hdr.typeName();
-            e.attributes = hdr.propertyLetters();
-            e.entry_addr = hdr.entry_addr;
-            e.record_len = hdr.record_len;
-            e.block_len  = hdr.block_len;
-            e.bytes_in_last = hdr.bytes_in_last;
-            e.extra      = hdr.extra;
-            e.created    = hdr.created;
-            e.record_len = hdr.record_len;
-            e.block_len  = hdr.block_len;
-            e.bytes_in_last = hdr.bytes_in_last;
-            e.extra      = hdr.extra;
-            e.segment_start  = hdr.segment_start;
-            e.segment_len  = hdr.segment_len;
-            e.low_addr  = hdr.low_addr;
-            e.high_addr    = hdr.high_addr;
-            e.stack_size  = hdr.stack_size;
-            e.date       = hdr.modified.empty() ? hdr.created : hdr.modified;
-        } else {
-            e.damaged = true;
-        }
+        e.details_loaded = false;
         out.push_back(e);
     }
     std::sort(out.begin(), out.end(),
               [](const FileEntry& a, const FileEntry& b) { return a.name < b.name; });
     return out;
+}
+
+bool UdosFileSystem::detailsReady(const FileEntry& e) const {
+    if (e.details_loaded) return true;
+    for (const UdosDirEntry& d : directory())
+        if (d.name == e.name)
+            return space_.trackKnown(d.header.track, head_);
+    return true;                  // steht nicht mehr im Verzeichnis — nichts zu warten
+}
+
+bool UdosFileSystem::loadDetails(FileEntry& e) const {
+    if (e.details_loaded) return !e.damaged;
+    for (const UdosDirEntry& d : directory())
+        if (d.name == e.name)
+            return uebernimmKopf(d.header, e);
+    e.damaged        = true;
+    e.details_loaded = true;
+    return false;
 }
 
 bool UdosFileSystem::read(const std::string& name, std::vector<uint8_t>& out) {
@@ -691,7 +832,7 @@ bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
     // Verzeichniseintrag zuerst — er bestimmt den Rueckwaertszeiger des Kopfsektors.
     // Das Flagbyte spiegelt die Eigenschaft SECRET (§5), sonst widerspraechen sich
     // Verzeichnis und Kopfsektor.
-    const bool geheim = (udosEigenschaftsByte(opt.udos_properties) & 0x10) != 0;
+    const bool geheim = (udosPropertyByte(opt.udos_properties) & 0x10) != 0;
     UdosPointer dir_record;
     if (!appendDirEntry(name, geheim, kopf, dir_record)) return false;
 
@@ -720,7 +861,7 @@ bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
     h[6]  = dir_record.sector_index;  h[7]  = dir_record.track;
     h[8]  = sektoren.front().sector_index; h[9]  = sektoren.front().track;
     h[10] = satzanfang(saetze - 1).sector_index; h[11] = satzanfang(saetze - 1).track;
-    h[12] = udosTypByte(opt.udos_type, opt.text);   // Vorgabe: A = ASCII, B = BINARY
+    h[12] = udosTypeByte(opt.udos_type, opt.text);   // Vorgabe: A = ASCII, B = BINARY
     h[13] = static_cast<uint8_t>(saetze & 0xFF);
     h[14] = static_cast<uint8_t>(saetze >> 8);
     h[15] = static_cast<uint8_t>(satzlen & 0xFF);
@@ -732,7 +873,7 @@ bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
                           : ((satzlen == 128 || satzlen == 1024) ? satzlen : 0);
     h[17] = static_cast<uint8_t>(blockl & 0xFF);
     h[18] = static_cast<uint8_t>(blockl >> 8);
-    h[19] = udosEigenschaftsByte(opt.udos_properties);
+    h[19] = udosPropertyByte(opt.udos_properties);
     h[20] = static_cast<uint8_t>(opt.udos_entry & 0xFF);       // ENTRY (Typ P/P1)
     h[21] = static_cast<uint8_t>(opt.udos_entry >> 8);
     // §7.1: „Bytes im letzten Satz" = Satzlaenge, wenn er voll ist (so haelt es UDOS,
@@ -781,6 +922,19 @@ bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
     h[45] = static_cast<uint8_t>((opt.udos_extra >> 8) & 0xFF);
     h[46] = static_cast<uint8_t>((opt.udos_extra >> 16) & 0xFF);
     h[47] = static_cast<uint8_t>(opt.udos_extra >> 24);
+    // Die VOLLE Segmentliste gewinnt: eine Programmdatei kann mehr als zwei Segmente
+    // haben, und Offset 40…47 traegt nur die ersten beiden
+    // (doc/udos_diskettenformat.md §6.3).  Ohne sie kaeme so eine Datei mit
+    // abgeschnittener Liste zurueck — und startet dann nicht mehr.
+    if (!opt.udos_segments.empty()) {
+        std::vector<std::pair<uint16_t, uint16_t>> segs;
+        std::string warum;
+        if (!udosParseSegments(opt.udos_segments, segs, &warum)) return fail(warum);
+        // 48…121 ist sonst 0xFF-Fuellung — vor dem Schreiben freiraeumen.
+        std::fill(h.begin() + 48, h.begin() + 122, static_cast<uint8_t>(0x00));
+        if (!udosWriteSegments(h.data(), segs))
+            return fail("zu viele Speichersegmente fuer den Kopfsektor");
+    }
     // LOW ADDRESS / HIGH ADDRESS / STACK SIZE ganz am Ende des Kopfsektors (122).
     // DIESE Werte nimmt der Lader (Nukleusvariablen 1275H/1277H) — ohne sie steht
     // dort FFFF und der Speicherverwalter lehnt mit `MEMORY PROTECT VIOLATION` ab.
@@ -813,12 +967,19 @@ bool UdosFileSystem::setAttributes(const std::string& name, const UdosAttrs& a) 
         h[off]     = static_cast<uint8_t>(v & 0xFF);
         h[off + 1] = static_cast<uint8_t>(v >> 8);
     };
-    if (!a.type.empty())       h[12] = udosTypByte(a.type, false);
-    if (!a.properties.empty()) h[19] = udosEigenschaftsByte(a.properties == ";" ? ""
+    if (!a.type.empty())       h[12] = udosTypeByte(a.type, false);
+    if (!a.properties.empty()) h[19] = udosPropertyByte(a.properties == ";" ? ""
                                                                                 : a.properties);
     if (a.set_entry)      setze16(20, a.entry);
     if (a.set_block_len)  setze16(17, a.block_len);
-    if (a.set_segment)  { setze16(40, a.segment); setze16(42, a.segment_len); }
+    if (a.set_segments) {
+        std::vector<std::pair<uint16_t, uint16_t>> segs;
+        std::string warum;
+        if (!udosParseSegments(a.segments, segs, &warum)) return fail(warum);
+        std::fill(h.begin() + 40, h.begin() + 122, static_cast<uint8_t>(0x00));
+        if (!udosWriteSegments(h.data(), segs))
+            return fail("zu viele Speichersegmente fuer den Kopfsektor");
+    } else if (a.set_segment) { setze16(40, a.segment); setze16(42, a.segment_len); }
     if (a.set_memory)   { setze16(122, a.low); setze16(124, a.high); setze16(126, a.stack); }
     if (a.set_extra)    { setze16(44, static_cast<uint16_t>(a.extra & 0xFFFF));
                           setze16(46, static_cast<uint16_t>(a.extra >> 16)); }

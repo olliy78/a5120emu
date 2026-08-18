@@ -78,9 +78,14 @@ struct TransferOptions {
     uint16_t    udos_entry = 0;
     /// @brief Satzlaenge (Vielfaches von 128); 0 = 128.
     uint16_t    udos_record_len = 0;
-    /// @brief Ladeadresse und Laenge des Speicherabbilds (Typ P/P1); 0 = keine.
+    /// @brief Ladeadresse und Laenge des ERSTEN Speichersegments (Typ P); 0 = keine.
     uint16_t    udos_segment = 0;
     uint16_t    udos_segment_len = 0;
+    /// @brief ALLE Segmente als Text (`"4400+0041 8442+0026"` oder mit Komma);
+    ///        nicht leer gewinnt gegen die beiden Felder darueber und `udos_extra`.
+    ///        Eine Programmdatei kann mehr als zwei haben — ohne diese Liste
+    ///        verlaesst sie das Werkzeug verstuemmelt (§13b).
+    std::string udos_segments;
     /// @brief Speicheranforderung (Start/Ende/Kennzeichen, Kopfsektor ab Offset 122).
     uint16_t    udos_low_addr = 0;
     uint16_t    udos_high_addr   = 0;
@@ -118,6 +123,17 @@ struct DetectionResult {
     bool        unambiguous = true;   ///< false = mehrere gleich gute Kandidaten
     std::vector<std::string> alternatives;   ///< weitere Dateisystem-Kandidaten
     std::string remarks;              ///< Auffaelligkeiten (Altbestand, CRC, Schaeden)
+    /**
+     * @brief Wie viele Spuren die Auffaelligkeiten abdecken; 0 = die ganze Diskette.
+     *
+     * An einem echten Laufwerk wird nur eine Stichprobe gemessen (§11.2a).  Die
+     * Zaehlungen in @ref remarks sind dann Aussagen ueber **diese** Spuren, nicht
+     * ueber die Diskette — „2 Spuren hinter dem Format" heisst dort „2 der
+     * 8 angesehenen", und es koennen mehr sein.  Wer die Meldung anzeigt, muss den
+     * Unterschied sichtbar machen; @ref DiskVolume::refreshDetection ersetzt sie,
+     * sobald die Diskette vollstaendig gelesen ist.
+     */
+    int         examined_tracks = 0;
 };
 
 /**
@@ -149,7 +165,91 @@ public:
                                             const FormatCatalog& formats,
                                             const FsCatalog& fs_cat,
                                             std::string& err,
-                                            bool read_only = true);
+                                            bool read_only = true,
+                                            bool roh_erlaubt = false);
+
+    /**
+     * @brief **Physische Diskette** in einem echten Laufwerk oeffnen.
+     *
+     * @p disk kommt aus @ref DiskImage::openPhysical und haengt an einem
+     * @ref TrackSync, der von einem fremden Arbeitsfaden bedient wird.  Danach
+     * verhaelt sich der Datentraeger wie jeder andere — der Unterschied ist allein,
+     * dass Spuren beim ersten Zugriff **nachgeladen** werden.
+     *
+     * Das Oeffnen misst eine **Stichprobe** (§11.2a) und holt das Verzeichnis; der
+     * Aufruf gehoert in einen Arbeitsfaden mit Fortschrittsanzeige, nicht in den
+     * Oberflaechenfaden.
+     *
+     * @param roh_erlaubt  Wird nichts erkannt, trotzdem **oeffnen** — ohne
+     *        Dateisystem, aber mit Medium.  Eine Diskette, die keiner Erkennung
+     *        folgt, ist nicht wertlos: man will sie im Sektoreditor ansehen, ihr
+     *        Abbild sichern oder sie zurechtschneiden (@ref keepEvenTracks).  Ohne
+     *        das war sie schlicht nicht zu oeffnen (§12.6).
+     */
+    static std::unique_ptr<DiskVolume> openPhysical(std::unique_ptr<DiskImage> disk,
+                                                    const std::string& fs_name,
+                                                    const FormatCatalog& formats,
+                                                    const FsCatalog& fs_cat,
+                                                    std::string& err,
+                                                    bool read_only = true,
+                                                    bool roh_erlaubt = false);
+
+    /// @brief Ist ein Dateisystem gemountet?  false = **roh** geoeffnet (§12.6):
+    ///        Medium, Sektoreditor und Abbild gehen, Dateien gibt es keine.
+    bool hasFileSystem() const { return profile_ != nullptr; }
+
+    /**
+     * @brief Das Abbild herausgeben — die Diskette bleibt, das Volume gibt sie ab.
+     *
+     * Fuer die **Neuerkennung am Speicherabbild**: statt die Diskette noch einmal
+     * vom Laufwerk zu holen (das dauert und liest womoeglich anderes), wandert das
+     * bereits gelesene Medium in ein neues @ref DiskVolume.  Danach ist dieses hier
+     * leer und nur noch zu zerstoeren.
+     */
+    std::unique_ptr<DiskImage> releaseImage();
+
+    /**
+     * @brief Jede zweite Spur wegwerfen — aus 80 Zylindern werden 40 (§12.6).
+     *
+     * Eine im **Doppelschritt** beschriebene Diskette, die einfachschrittig gelesen
+     * wurde, traegt auf den ungeraden Zylindern den Altbestand einer frueheren
+     * Formatierung.  Danach ist das Abbild das, was ein 40-Spur-Laufwerk sieht.
+     *
+     * @return Zahl der verbliebenen Spuren, -1 bei Fehler.
+     */
+    int keepEvenTracks();
+
+    /// @brief Seite 1 wegwerfen — aus einer zweiseitigen wird eine einseitige
+    ///        Diskette (§12.6).  @return verbliebene Spuren, -1 bei Fehler.
+    int dropSecondSide();
+
+    /**
+     * @brief Einen ganzen Zylinder aus dem Abbild loeschen (§19.6).
+     *
+     * Alles dahinter rueckt auf, das Abbild wird um einen Zylinder kuerzer.  Fuer
+     * Abbilder mit mehr Spuren, als hineingehoeren (82 statt 80), und zum
+     * Zurechtstutzen auf eine Zielgeometrie (77 Spuren fuer 8″).
+     *
+     * @return verbliebene Zylinder, -1 bei Fehler.
+     */
+    int deleteCylinder(uint8_t cyl);
+
+    /**
+     * @brief Einen unformatierten Zylinder **an** Position @p pos einfuegen (§19.6).
+     *
+     * Der neue Zylinder TRAEGT die Nummer @p pos; alles von dort an rueckt nach
+     * hinten (aus 42 wird 43).  @p pos darf @ref mediumCylinders sein (anhaengen)
+     * und **0** (vor alle bestehenden) — letzteres braucht man, um einer
+     * MFM-Diskette eine FM-Spur 0 vorzusetzen, wie es gemischte K1520-Formate haben.
+     *
+     * @param mfm  Verfahren der neuen Spur.  Es folgt NICHT dem Nachbarn: gerade der
+     *             Wechsel ist der Zweck (FM-Systemspur vor MFM-Daten und umgekehrt).
+     *             Die Bytelaenge ergibt sich daraus — bei gleicher Zellrate traegt
+     *             eine FM-Spur halb so viele Bytes je Umdrehung wie eine MFM-Spur.
+     *
+     * @return verbliebene Zylinder, -1 bei Fehler.
+     */
+    int insertCylinderAt(uint8_t pos, bool mfm);
 
     /**
      * @brief **Neue, leere** Diskette anlegen: formatieren + Dateisystem initialisieren.
@@ -227,6 +327,22 @@ public:
 
     const std::string&     path()      const { return path_; }
     const DetectionResult& detection() const { return detection_; }
+
+    /**
+     * @brief Die Auffaelligkeiten neu bewerten, wenn die Diskette inzwischen
+     *        **vollstaendig** gelesen ist.
+     *
+     * Nach einer Stichprobenerkennung (§11.2a) gilt @ref DetectionResult::remarks nur
+     * fuer die angesehenen Spuren.  Sobald keine Spur mehr unbekannt ist, laesst sich
+     * daraus eine Aussage ueber die ganze Diskette machen — diese Methode misst dann
+     * einmal voll nach und ersetzt die Meldung.
+     *
+     * Das erkannte **Format** wird dabei nicht angetastet: es traegt das Dateisystem,
+     * das bereits gemountet ist.
+     *
+     * @return true, wenn sich die Meldung geaendert hat (Anzeige auffrischen).
+     */
+    bool refreshDetection();
     const FsProfile&       profile()   const { return *profile_; }
 
     int  volumeCount() const { return static_cast<int>(volumes_.size()); }
@@ -238,6 +354,13 @@ public:
 
     /// @brief Verzeichnis ALLER Volumes — immer frisch aus dem Medium (§9.3).
     std::vector<FileEntry> list() const;
+
+    /// @brief Verzeichnis ohne die Angaben aus den Kopfsektoren (@ref FileSystem::listNames).
+    std::vector<FileEntry> listNames() const;
+    /// @brief Waeren die Angaben zu @p e ohne Warten zu haben? (@ref FileSystem::detailsReady)
+    bool detailsReady(const FileEntry& e) const;
+    /// @brief Angaben nachtragen — **blockiert** ggf. (@ref FileSystem::loadDetails).
+    bool loadDetails(FileEntry& e) const;
 
     // ─── Einzeloperationen ───────────────────────────────────────────────────
 
@@ -273,8 +396,39 @@ public:
     uint8_t mediumCylinders() const;
     uint8_t mediumHeads()     const;
 
+    /**
+     * @brief Das ganze Speicherabbild in ein anderes Medium legen (Diskette kopieren).
+     *
+     * Jede **bekannte** Spur wandert per @ref DiskMedium::setTrack hinueber und gilt
+     * dort damit als geaendert.  Haengt das Ziel an einem @ref TrackSync, stellt genau
+     * das sie zum Schreiben auf die eingelegte Diskette ein — der Weg, eine geladene
+     * `.hfe` auf ein echtes Laufwerk zu bringen.
+     *
+     * Passt die Quelle nicht in die Geometrie des Ziels, wird **gar nichts** kopiert:
+     * eine halb ueberschriebene Diskette waere das schlechteste Ergebnis.
+     *
+     * @return Zahl der kopierten Spuren, -1 bei Fehler (@ref lastError).
+     */
+    int copyTo(DiskMedium& ziel) const;
+
     /// @brief Eine Spur als lueckenlose Abschnittsfolge (Sektor/Gap/unformatiert).
+    ///
+    /// @warning **Laedt nach**, wenn die Spur an einem echten Laufwerk noch unbekannt
+    ///          ist — der Aufruf blockiert dann eine halbe bis ganze Sekunde.  Wer nur
+    ///          zeichnen will, was schon bekannt ist, fragt vorher @ref trackState.
     TrackView trackView(uint8_t cyl, uint8_t head) const;
+
+    /**
+     * @brief Zustand einer Spur, **ohne** sie zu beschaffen.
+     *
+     * Fuer Ansichten ueber die ganze Diskette: eine Uebersicht darf nicht 160 Spuren
+     * nachladen, nur um sie zu zeichnen.  Bei einer Datei ist jede Spur bekannt, dort
+     * ist die Antwort immer @c Clean oder @c Dirty.
+     *
+     * @return 0 = unbekannt (nie gelesen, Inhalt bedeutungslos), 1 = sauber,
+     *         2 = geaendert.
+     */
+    int trackState(uint8_t cyl, uint8_t head) const;
 
     /**
      * @brief Nutzdaten und gespeicherte Daten-CRC eines Sektors.
@@ -393,8 +547,26 @@ public:
 
     const std::string& lastError() const { return last_error_; }
 
+    /// @brief Fehlertext von aussen setzen — fuer die C-ABI, die eigene
+    ///        Vorbedingungen prueft (@ref k1520d_last_error liest ihn von hier).
+    void noteError(const std::string& why) const { last_error_ = why; }
+
 private:
     DiskVolume() = default;
+
+    /// @brief Gemeinsamer Kern von @ref open und @ref openPhysical (§ Erkennung).
+    ///        @p vorhanden leer = @p path oeffnen; sonst das uebergebene Abbild nehmen.
+    /// @brief Gemeinsamer Kern von @ref keepEvenTracks und @ref dropSecondSide.
+    int schneide(bool nur_gerade_spuren, bool nur_seite_null);
+
+    static std::unique_ptr<DiskVolume> oeffnenMit(std::unique_ptr<DiskImage> vorhanden,
+                                                  const std::string& path,
+                                                  const std::string& fs_name,
+                                                  const FormatCatalog& formats,
+                                                  const FsCatalog& fs_cat,
+                                                  std::string& err,
+                                                  bool read_only,
+                                                  bool roh_erlaubt = false);
 
     /// @brief Ein Dateisystem samt seinem Sektorraum.
     struct Vol {
@@ -421,6 +593,9 @@ private:
     ///        Gesetzt, wenn kein `formats:`-Eintrag passte; @ref format_ zeigt dann hierher.
     std::optional<DiskFormat> gemessenes_format_;
     DetectionResult    detection_;
+    /// @brief Teil des Befunds, der NICHT aus der Spurmessung stammt (CP/A-Regel,
+    ///        Hinweise zum Container) — @ref refreshDetection laesst ihn stehen.
+    std::string        befund_zusatz_;
     std::vector<Vol>   volumes_;
     bool               read_only_   = true;
     /// @brief Harter Schreibschutz: die Geometrie ist nur gemessen, nicht katalogisiert.

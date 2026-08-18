@@ -542,3 +542,28 @@ def test_sector_create_refuses_what_does_not_fit(tmp_path, fixture_disks):
         # FM auf einer MFM-Spur ist nicht mischbar.
         with pytest.raises(K1520DiskError, match="mischen"):
             d.sector_create(0, 0, id=250, gap=0, mfm=False)
+
+
+def test_der_crc_dialekt_macht_die_sektoren_im_diskeditor_gruen(fixture_disks):
+    """Genau die Schicht, aus der der Diskeditor seine Farben nimmt.
+
+    `udos_ds77_k5601_fremdsync.hfe` wurde an einem fremden K1520-Rechner formatiert;
+    seine ID-CRC lässt die drei A1 der Sync-Präambel aus (alle 4004 ID-Felder, kein
+    Ausreisser).  Wird der Dialekt nicht anerkannt, ist JEDER Sektor der Diskette rot,
+    obwohl an ihm nichts fehlt — und `check` meldet 4004 Schäden statt „ohne Befund".
+    """
+    from app.core_binding.k1520disk import DiskTool
+
+    with DiskTool.open(fixture_disks / "udos_ds77_k5601_fremdsync.hfe") as d:
+        gruen = rot = 0
+        for cyl in (0, 1, 22, 23, 26, 51, 76):
+            for head in (0, 1):
+                for s in d.track(cyl, head).spans:
+                    if s.id < 0 or not s.size:
+                        continue          # Gap / unformatiert — keine CRC-Aussage
+                    if s.id_crc_ok and s.data_crc_ok:
+                        gruen += 1
+                    else:
+                        rot += 1
+        assert rot == 0, f"{rot} Sektoren gelten als schadhaft"
+        assert gruen == 7 * 2 * 26, "nicht jede Spurseite trug ihre 26 Sektoren"

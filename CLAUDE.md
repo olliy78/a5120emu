@@ -232,6 +232,29 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
 > MFM disk → index timeout → toggles MK to MFM → reads.  Full model: `doc/design/07_k5122_afs.md`,
 > `doc/K1520_architecture.md` §8.5.  The boot invariants that must not regress are listed below.
 >
+> **Fremd beschriebene Disketten: zwei Dialekte, die der Lesepfad kennen muss**
+> (2026-08-17, `doc/design/14_physische_diskette.md` §8.1a–c; Fixture
+> `udos_ds77_k5601_fremdsync.hfe`).  Eine an einem ANDEREN K1520-Rechner beschriebene
+> UDOS-Diskette war unlesbar, lief aber in ihrem Rechner — drei Festlegungen daraus:
+> **(1) Die Marke ist das erste Byte der Sync-Gruppe, das kein 0xA1 ist**, nicht „das
+> Byte nach dem Sync": jener Controller schreibt die Datenfeld-Gruppe als
+> `A1(Sync) A1(Sync) A1(regulär 0x44A9) FB`, teils mit nur EINER echten Sync-Marke.  Wer
+> das reguläre A1 als Marken-Byte verbraucht, findet für jeden von diesem Rechner
+> **geschriebenen** Sektor kein Datenfeld (Symptom: „Sektor 1 auf Spur 23 ist kuerzer als
+> 128 B").  Einzelne Sync-Marken gelten nur im ZWEITEN `BitCodec::decode`-Durchlauf und
+> nur bei einem Sektorkopf ohne Datenfeld — pauschal geöffnet werden Reste alter
+> Formatierung zu Sektoren („82 Spuren mit Daten", `ScpxIntegration.*` rot).
+> **(2) `TrackCodec::mfmFieldCrcOk()` akzeptiert BEIDE CRC-Sitten**: mit A1-Präambel
+> (Standard-IBM ≡ Init 0xCDB4 ab der Marke) und ohne (Init 0xFFFF ab der Marke = die
+> FM-Rechnung).  Auf jener Diskette folgen alle 4004 ID-Felder dem Dialekt, alle 4004
+> Datenfelder dem Standard — die ID-CRC entsteht beim Formatieren (vorab gerechnet, ohne
+> Präambel), die Daten-CRC in der Hardware ab dem Sync.  Geschrieben wird weiter
+> Standard.  **(3) Der Schnitt der Spur gehört VOR EINEN SEKTORKOPF**, nicht stur an den Index
+> (`app/gw/device.py::naht_vor_sektorkopf`): sonst wird der Sektor über der Index-Naht zerhackt,
+> und bei UDOS reisst damit die Zeigerkette (12 statt 46 Dateien).  Wächter:
+> `BitCodecFremdeSyncgruppe.*`, `TrackCodecCrcDialekt.*`,
+> `DiskVolume.LiestEineDisketteMitFremderSyncSitte`, `test_naht_*`.
+>
 > **Internal disk medium (2026-08-05, `doc/K1520_architecture.md` §8.7 + `doc/design/09_floppy_drive.md`).**
 > A mounted disk lives **entirely in memory** as a `DiskMedium` (every track a `TrackImage`);
 > `.img`/`.hfe`/`.dmk` are pure **container codecs** in front of it (`ImageCodec`), no file-bound
@@ -453,15 +476,16 @@ nicht mit „hängt" verwechseln; sie melden sich bei Abschluss selbst.
 
 ## k1520DiskTool — Dateiaustausch mit Disketten (`core/filesystem/`, `app/disktool/`)
 
-Zweites Anwenderprogramm neben dem Emulator: holt Dateien von CP/A-, SCPX- und
-**UDOS**-Disketten und schreibt sie zurück (`.img`/`.hfe`/`.dmk`).  Es teilt sich mit dem
+Zweites Anwenderprogramm neben dem Emulator: holt Dateien von CP/A-, SCPX-, **UDOS**-,
+**UDOS1715**- und **SCP1700**-Disketten (CP/M-86, A7100) und schreibt sie zurück (`.img`/`.hfe`/`.dmk`).  Es teilt sich mit dem
 Emulator die Container-/Medium-Schicht, hat aber **eine eigene Bibliothek**
 (`libk1520disk.so`) ohne Z80 und Karten.  Voller Entwurf: `doc/design/13_k1520disktool.md`,
 Bedienung: `tools/k1520disktool.md`.
 
 ```
 core/filesystem/   SectorSpace (physisch + linear) · GeometryProbe (Erkennung Stufe 1)
-                   FsProfile/FsCatalog · CpmFileSystem · UdosFileSystem · DiskVolume
+                   FsProfile/FsCatalog · CpmFileSystem · UdosFileSystem ·
+                   Udos1715FileSystem · DiskVolume
 core/api/k1520_disk_api.*   C-ABI  →  libk1520disk.so
 tools/k1520disktool.cpp     CLI    →  tools/dev.sh tool k1520disktool ls <abbild>
 app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
@@ -469,6 +493,85 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 
 Was beim Weiterarbeiten zu wissen ist:
 
+- **SCP1700/CP/M-86 (A7100) — eine Diskette mit ZWEI Datenraten (2026-08-18,
+  `doc/scp1700_diskettenformat.md`, Entwurf §22).**  Die Disketten des **A7100**
+  tragen ein CP/M-86; das Dateisystem ist gewöhnliches CP/M (Verzeichnis ab
+  `c2h0`, 2048-B-Blöcke, 128 Plätze, 16-Bit-Zeiger — Profil `scp1700`).  Die
+  **Physik** ist der Punkt: **Spur 0 Kopf 0 ist FM mit HALBER Datenrate**
+  (125 kbit/s, 16×128), alle übrigen 159 Spuren MFM mit 250 (16×256).  Das CP/A-BIOS
+  weiss davon („A7100-System mit 5" FM …", `biosdsk.mac`).  Vier Festlegungen:
+  **(1) Der Abtastfaktor gilt JE SPUR**, nicht je Datei — er wurde an der ersten
+  Spur mit Marken festgenagelt, und das war hier die Bootspur: danach kamen alle
+  159 MFM-Spuren als „unformatiert" zurück.  Der bewährte Faktor kommt zuerst und
+  genügt sich selbst, ein anderer muss **≥ 4 Adressmarken** vorweisen (eine
+  einzelne Scheinmarke aus dem Rauschen hatte den Faktor früher schon einmal
+  umgeworfen — `TrackSync::completeRead`).
+  **(2) Die Rate hängt an der Spur** (`TrackImage::cell_factor`, im Katalog
+  `rate: 125`): beim Laden herunterrechnen, beim **Zurückschreiben strecken**
+  (`BitCodec::upsampleCells`) — sonst ginge die Bootspur mit doppelter Rate auf die
+  Scheibe.  Deshalb bemisst `HfeCodec::save` die Spurlänge in **Zellen**, nicht in
+  Bytes ×2.
+  **(3) „Überabgetastet" heisst: KEINE Spur liegt auf der Nominalrate** — sonst
+  wäre jede gemischte Diskette schreibgeschützt.
+  **(3a) HFE verschraenkt zwei Seiten zu je 256 B — auch bei EINSEITIGEN Dateien.**
+  Greaseweazle legt `gw read --tracks c=0:h=0` so ab (Seite 0 in den ersten 256 B,
+  Rest Gap); dieses Projekt schrieb einseitige Spuren kontinuierlich.  Wer eine
+  verschraenkte Datei kontinuierlich liest, zieht sich alle 256 B Gap-Bytes MITTEN
+  in den Datenstrom: die kurzen ID-Felder ueberleben das, ein 131-B-Datenfeld nie —
+  „alle Sektoren gefunden, keine einzige gueltige Daten-CRC".  Der Leser probiert
+  jetzt beide Sitten und entscheidet am Inhalt.  **Ueberhaupt gilt: ein
+  Abtastfaktor wird an GUELTIGEN CRCs gemessen, nicht an der Markenzahl** — unter
+  dem falschen Faktor faellt reichlich Scheinsync heraus.  Waechter
+  `HfeCodec.EinseitigeAufnahmeMitSeitenschlitzen`.
+  **(3b) Ein schon defekter Sektor darf defekt zurueckkommen** — das Pruef-Lesen
+  verlangte von jedem zurueckgelesenen Sektor eine gueltige Pruefsumme, auch von
+  einem, der schon im Abbild kaputt war; damit liess sich eine Spur mit Schadstelle
+  NIE zurueckschreiben.  Bei einem Bruchstueck wird nur noch die Lage verglichen.
+  Waechter `TrackSync.EinSchonDefekterSektorDarfDefektZurueckkommen`.
+  **(4) Verglichen werden VERSCHIEDENE Sektor-IDs** (`MeasuredTrack::uniqueSectors`):
+  die Bootspur wurde in einem Zug über den Index hinaus beschrieben und trägt 19
+  Adressmarken für 16 Sektoren.  Nebenbefund: der FM-Dekoder begann die Spur am
+  Markenbyte und warf dessen Sync-Feld weg — beim ZWEITEN Rundlauf durch die Datei
+  verschwand der erste Sektor.  Wächter: `Scp1700.*` (5 Fälle),
+  `HfeCodec.FmSpurMitHalberRate_UeberlebtDenRundlauf`.  Am echten Laufwerk
+  gegengeprüft.
+- **UDOS1715/NDOS — die zweite UDOS-Ausprägung (2026-08-17,
+  `doc/udos1715_diskettenformat.md`, Entwurf §21).**  Die Disketten des **PC 1715**
+  tragen dasselbe Betriebssystem, aber ein anderes Dateisystem, weil der **µPD765**
+  nichts hinter die Daten-CRC schreiben kann: die Verkettung steht in eigenen
+  **Zeigersektoren** (je bis zu 125 Adressen, `FIRSTBL` im Descriptor bei `80H`)
+  statt im Gap.  Maßgebliche Quelle ist das **Handbuch auf der Diskette selbst**
+  (`doc/original_docs/UDOS1715_Systemhandbuch.txt` = die Datei `UDOS.TEXT`).  Vier
+  Festlegungen, die man nicht aufweichen darf:
+  **(1) Die Spur ist der ganze ZYLINDER** — `UDOS-Sektor = (ID−1) + Kopf·16`, 32
+  Sektoren je Spur, EIN Datenträger (kein `Side0`/`Side1`).  Umgerechnet wird in
+  `headOf()`/`idOf()`, und nur dort.  Ein Record darf dabei die **Kopf**grenze
+  überschreiten, die Spurgrenze nicht (`CAT` tut es).
+  **(2) `.img` ist hier ERLAUBT** — es steht nichts außerhalb der Sektoren; deshalb
+  ist auch die Fixture ein 640-KB-`.img` statt eines 2-MB-`.hfe`.
+  **(3) Geteilt wird der Descriptor, nicht die Klasse.**  Die ersten 128 Byte sind
+  bitgleich mit ZDOS → `UdosFileHeader`/`UdosPointer`/`udosTypeByte`… gemeinsam
+  (`udos_fs.h`); dabei zeigte sich, dass das Typbyte ein **Bitfeld Typ+Subtyp** ist
+  (`81H` = P/Subtyp 1 = das alte „P1").  `UdosBitmap` bekam eine `UdosMapSitte`
+  statt eines Doppels — gleiche Offsets, aber 80 statt 78 Einträge, `00`-Füllung
+  statt des ZDOS-Nachlaufs, und **beide Zähler sind bei NDOS echt**.
+  **(3a) Der Kopfsektor-Bereich 40…121 ist eine LISTE von Speichersegmenten**,
+  kein Wertepaar plus vier rätselhafte Bytes (Handbuch §3.2.2: „mehrere Segmente
+  möglich; abgeschlossen mit `00 00 00 00`", `2AH…7FH` nur bei P-Dateien).  Das
+  erklärt `doc/udos_diskettenformat.md` §6.3 nachträglich — und es deckte einen
+  **Defekt** auf: `IMAGER` (3 Segmente) und `ZLINK` (6) kamen aus `get`→`put`
+  verstümmelt zurück.  Seitdem wird die Liste durchgehend geführt
+  (`FileEntry::segments`, `WriteOptions::udos_segments`, Beiblatt `segs=`, CLI
+  `--segment`, EIN Feld im Eigenschaften-Dialog); `segment_start`/`segment_len` und
+  `extra` bleiben nur als Sicht auf das erste Segment.  Bei Typ A steht dort
+  Anwenderinhalt — die Liste wird nur für Typ P gelesen.
+  **(4) `detect_rank` gilt jetzt über Geometriegrenzen hinweg.**  `cpa640` und
+  `k5601_16x256` sind dieselbe Rohgeometrie, und eine frische UDOS1715-Diskette ist
+  außerhalb ihrer Systemspuren voller 0xE5 — also ein plausibles leeres CP/M.  Ohne
+  die Regel gewann die zuerst gemessene Geometrie.  Wächter: `Udos1715*` (19 Fälle,
+  darunter der sektorgenaue Abgleich Belegungsplan ↔ alle 67 Dateien),
+  `FsCatalog.Udos1715ProfileSindImgFaehigUndEinseitigGezaehlt`.  Am echten Laufwerk
+  gegengeprüft.
 - **Bootfähige Disketten (2026-08-12, `doc/design/13_k1520disktool.md` §13a).**  Das
   Werkzeug legt Disketten mit **Bootabbild** an: `create --fs NAME --boot datei.bin`
   (GUI: Rückfrage + Dateiauswahl bei „Neue Diskette", Gegenstück „Bootabbild sichern…"
@@ -693,6 +796,150 @@ Was beim Weiterarbeiten zu wissen ist:
   CP/A** (`TYPE`/`DIR`) bzw. **UDOS** (`CAT`/`PRINT`/`STATUS`).  Der CP/M-Lesepfad ist
   zusätzlich byteweise gegen `cpmtools` verifiziert (nicht als Abhängigkeit — die
   Prüfsummen im Test frieren das Ergebnis ein).
+
+## Physische Diskette am Greaseweazle (`core/peripherals/floppy_drive/track_sync.*`, `app/gw/`)
+
+Neben der Datei (`.img`/`.hfe`/`.dmk`) gibt es seit 2026-08-15 eine **zweite Art von
+Bindung** des internen Mediums: ein **echtes Laufwerk** an einem
+[Greaseweazle](https://github.com/keirf/greaseweazle)-Adapter.  Der Unterschied ist
+nicht das Medium, sondern die **Körnung** — gelesen und geschrieben wird **spurweise
+nach Bedarf**, der Zwischenschritt „ganze Diskette in eine Datei" entfällt.  Voller
+Entwurf: **`doc/design/14_physische_diskette.md`**, Medium-Sicht:
+`doc/design/09_floppy_drive.md` §12, Architektur: `doc/K1520_architecture.md` §8.8.
+
+```
+                                                    ┌── K5122 (Emulator)
+echte Diskette ◄─gw─► Arbeitsfaden ◄─Aufträge─► DiskMedium
+                       (app/gw/)                    └── DiskVolume (DiskTool)
+```
+
+Was man beim Weiterarbeiten wissen muss:
+
+- **Der Kern kennt Greaseweazle NICHT.**  Kein USB, kein Import, kein Rückruf in die
+  Anwendung.  `TrackSync` hat **keinen eigenen Faden**; ein fremder Arbeitsfaden holt
+  Aufträge ab (`k1520s_take_job` — die einzige blockierende ABI-Funktion, ctypes gibt
+  dabei die GIL frei) und liefert **HFE-Bitzellen** zurück, die durch denselben
+  `BitCodec::decode` laufen wie eine `.hfe`-Datei.  Ein anderer Adapter wäre ein anderes
+  `device` in `app/gw/`, keine Kernänderung.
+- **Je Spur ein Zustand** statt eines Dirty-Bits: `Unknown` (nie gelesen, Inhalt
+  **ungültig**) / `Clean` / `Dirty`.  Das ist **ein** Konzept für alle Medien — bei
+  einer Datei tritt `Unknown` nur nie auf.  Der Unterschied, an dem alles hängt:
+  **`loadTrack` (gelesen) macht sauber, `setTrack` (geschrieben) macht schmutzig**.  **`Unknown` ≠ „unformatiert"** — letzteres ist eine
+  belegte Aussage über die Diskette, ersteres gar keine; deshalb melden
+  `formatted()`/`rawCompatible()` zusätzlich `complete()`, sonst erklärte sich eine halb
+  gelesene Diskette für leer und ein `.img` schriebe die ungelesenen Spuren als
+  Füllbytes fest.
+- **Nachgeladen wird in `DiskMedium::track()` — und NUR dort.**  Das ist die einzige
+  Stelle, durch die jeder Verbraucher geht (K5122 über `FloppyDriveV2`, DiskTool über
+  `DiskVolume`, Erkennung über `GeometryProbe`); der Aufruf **blockiert** (0,5–0,8 s je
+  Spur, am echten Gerät gemessen).  Medienweite Reihenläufe benutzen **`peek()`** und
+  laden nie nach — sonst zieht eine beiläufige Statusabfrage die ganze Diskette ein.
+  `mutableTrack()` lädt nach (Sektorschreiben ist Lesen-Ändern-Schreiben), `setTrack()`
+  nicht (Vollspur-FORMAT ersetzt die Spur) — daran hängt, dass eine Leerdiskette im
+  echten Laufwerk formatiert werden kann, ohne vorher gelesen zu werden.
+  Wächter: `TrackSync.ReihenlaufLaedtNichtNach`.
+- **Geschrieben gilt erst nach dem ZURUECKLESEN** (Entwurf §7.1).  Der Verify-Lauf des
+  Gastsystems (`FORMAT`) prüft das **Speicherabbild gegen sich selbst** und sieht eine
+  Schadstelle der Diskette nie — deshalb folgt jedem `Write` ein `Verify` (Spur
+  zurücklesen, auf **Sektorebene** vergleichen: IDs, Nutzdaten, Anhang hinter der
+  Daten-CRC und **beide CRCs des Sektors** — ID-Feld *und* Datenfeld tragen je eine,
+  und eine kaputte ID-CRC macht den Sektor unauffindbar, auch wenn die Daten heil sind;
+  nachlaufende Gap-Bytes werden abgeschnitten, byteweise gleich sind zwei Aufnahmen nie).  Erst dann wird `Dirty` gelöscht.  Stimmt es nicht:
+  **einmal** neu schreiben und erneut prüfen, sonst gilt die Spur als **schadhaft** —
+  sie bleibt `Dirty`, `flushPending()` meldet Misserfolg mit Spurnummer, und die
+  Oberfläche bietet **„Diskette neu beschreiben"** (`rewriteAll()`, stellt jede
+  **bekannte** Spur erneut ein; unbekannte bleiben weg, sie trügen Müll auf die neue
+  Diskette).  **Das Zurückgelesene wird NIE ins Abbild übernommen** — sonst
+  überschriebe ein misslungener Schreibvorgang genau die Daten, die er zerstört hat.
+  Für den Arbeitsfaden ist `Verify` dasselbe wie `Read`.  Abschaltbar über
+  `verify_writes`, Vorgabe **an**.
+- **Drei Prioritäten:** 1 Lesen auf Anforderung (jemand wartet) → 2 geänderte Spuren
+  zurückschreiben (samt Prüf-Lesen, das **vor** neuen Schreibvorgängen kommt) →
+  3 unbekannte Spuren vorauslesen (kürzester Kopfweg zuerst).
+  Prio 1 **verdrängt**, unterbricht aber **keinen laufenden** Zugriff (der Faden steckt
+  in einer Übertragung).  Zurückgeschrieben wird erst nach einer **Schreibpause**
+  (≈ 0,5 s) — dieselbe Regel wie der Autosave, sonst schriebe eine UDOS-Dateioperation
+  dieselbe Spur dutzendfach.  Eine gescheiterte Rückführung lässt die Spur `Dirty`
+  (eine verlorene Änderung wäre der schlimmere Ausgang); Abmelden wartet darauf.
+- **Physisch heißt schreibgeschützt, bis jemand widerspricht** — ein Fehler kostet hier
+  nicht eine Kopie, sondern die einzige noch existierende Diskette.
+- **Eine Rücknahme (`DiskVolume`-Transaktion) braucht `restoreFrom`**, nicht eine
+  Zuweisung: was schon auf der echten Scheibe steht, holt keine Kopie im Speicher
+  zurück — die zurückgesetzten Spuren müssen **erneut als geändert** gelten.
+- **Schreiben braucht die GEMESSENE Drehzahl.**  Die Bitzellen kommen mit der
+  *nominellen* Zellrate herein, das Laufwerk dreht mit seiner eigenen Drehzahl; die
+  Flusszeiten müssen auf `usb.read_track(2).ticks_per_rev` gestreckt werden (einmal je
+  Sitzung gemessen, je Spur `faktor = takte/fluss.ticks_to_index` mit mitgeschlepptem
+  Rundungsrest — wie `gw write`).  Ohne das bricht der Adapter mit **`Flux Underflow`**
+  ab; das war der einzige Stolperstein des Schreibpfads.
+- **Die Oberflächen liegen in `app/ui/physical_disk.py`** — Dialog, `PhysicalSession`
+  (Sync + Arbeitsfaden in einem, `close()` in der Reihenfolge Faden → Synchronisierer)
+  und `mit_fortschritt()`.  **Beide** Programme benutzen dasselbe Stück: der Emulator
+  einen Knopf „Physisch…" je Laufwerkskasten samt Füllstandszeile, das DiskTool
+  „Physisches Laufwerk…" mit Fortschrittsanzeige (das Öffnen misst nur eine Stichprobe, ~10 s).  Eine physische Diskette gehört **nicht** in `get_mounts()` und wird von
+  `remount_all()` nicht angefasst (kein Pfad, Handle verbraucht).
+- **Die Hosttools liegen nicht auf PyPI** und sind eine **freiwillige** Abhängigkeit:
+  `pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"` (der Zweigkopf
+  meldet sich als Pre-Release).  Fehlt das Paket, fehlt nur der Menüpunkt.
+- **Tests brauchen keine Hardware** (in der CI ist nie ein Laufwerk):
+  `TrackSync.*` (29 Fälle) mit einem Ersatz-Arbeitsfaden aus dem RAM — inkl.
+  **Schadstelle** (die Spur meldet Schreiberfolg, liefert beim Lesen aber den alten
+  Inhalt) —, `PhysicalBoot.*`
+  (**CP/A bootet spurweise bis `A>` und holt dabei weniger als die halbe Diskette**),
+  `py_gw_physical` (Ersatzlaufwerk über einer `.hfe` — **ohne** `greaseweazle`-Import;
+  dieselbe Diskette einmal als Datei und einmal „physisch" muss dasselbe liefern; dazu
+  ein **Drift-Wächter**, der die `ctypes.Structure` gegen den C-Kopf hält — eine
+  vertauschte Feldreihenfolge stürzt nicht ab, sie liefert still falsche Zahlen) und
+  `py_gw_gui` (beide Oberflächen, inkl. Schadstellen-Meldung und Ausweg).
+  Die echten Hardware-Tests liegen in `tests/python/test_gw_hardware.py`, sind **nicht**
+  in ctest registriert und laufen nur mit `K1520_GW_HARDWARE=1` (Schreiben zusätzlich
+  nur mit `K1520_GW_WRITE=1`).
+- **An echter Hardware nachgewiesen** (Greaseweazle F1 + K5601 + UDOS 4.3): Lesen
+  0,5–0,8 s je Spur; **Emulator-Kaltstart von der eingelegten Diskette** (UDOS meldet
+  sich bei erst 62 von 160 gelesenen Spuren); **Datei auf die echte Diskette
+  geschrieben** (4 Spuren zurückgeführt, danach die ganze Diskette neu eingelesen →
+  byteweise gleich); beide Oberflächen einmal durchgefahren.  Vor Schreibversuchen die
+  Diskette sichern (`gw read` über alle Spuren, 2 MB `.hfe`).
+- **Im DiskTool ist es eine AKTION, kein Knopf** (2026-08-16, beim Zusammenführen mit
+  `create_disktool`): `act_physisch` (*Datei ▸ Physisches Laufwerk…*, Strg+Umschalt+O)
+  und `act_neu_beschreiben` (*Diskette ▸ …*) entstehen wie alle anderen in
+  `app/disktool/ui/actions.py` — damit sperrt sie `_aktionen_pruefen()` an der EINEN
+  dafür zuständigen Stelle.  Der Ausweg aus einer Schadstelle (§7.2) ist **unsichtbar
+  statt gesperrt**, solange keine physische Sitzung läuft (an einer Datei gibt es keine
+  Schadstelle); fehlen die Hosttools, ist `act_physisch` **gesperrt mit dem Grund im
+  Tooltip**
+  (`_physisch_verfuegbarkeit()`, einmal beim Aufbau) statt zu verschwinden.  Weil eine
+  physische Diskette **keinen Pfad** hat (`DiskTool.open_physical` → `path=""`), nennen
+  `_bezeichnung()`/`_kurzname()` die Herkunft für Kopfzeile und Fenstertitel, und
+  `DiskHeader.setze()` nimmt sie als zweites Argument.
+- **Das Prüf-Lesen ist an echter Hardware gegengeprüft** (2026-08-17, Greaseweazle F1
+  + UDOS1715-Diskette): `K1520_GW_HARDWARE=1 K1520_GW_WRITE=1 … -k schreibt_eine_datei`
+  meldet **4 Spuren zurückgeschrieben, 4 geprüft, 0 misslungene Vergleiche, 0
+  Schadstellen**; die Datei kam beim zweiten, frischen Öffnen byteweise gleich zurück.
+  Gegenprobe am Medium: eine Vollmessung vorher/nachher zeigt **genau die vier
+  gemeldeten Spuren** geändert (c4h0, c5h0 = Descriptor/Zeigersektor+Record, c22h0
+  Verzeichnis, c23h0 Belegungsplan) und sonst nichts, 2560/2560 Sektoren fehlerfrei.
+  Danach die vier Spuren aus der Sicherung zurückgeschrieben (`gw write … --tracks`) —
+  die Diskette ist wieder **byteweise die vom Anfang**.  Vorgehen bei so einem Test:
+  erst sichern (`gw read` über alle Spuren), Identität der eingelegten Diskette gegen
+  die Sicherung prüfen, mit einer NACHWEISLICH FREIEN Spur anfangen (der
+  Belegungsplan sagt welche), dann erst über das Dateisystem schreiben.
+- **`k1520disktool --physical` gibt es** (2026-08-17, Entwurf §12.3): `ls`, `info`,
+  `check`, `get`, `put`, `rm`, `save-as`, `rewrite` gegen die eingelegte Diskette.
+  Sie haengt am **Python**-Einstieg (`app/disktool/main.py`, wie `--paths` VOR den
+  Qt-Importen) und nicht am C++-Werkzeug — der Kern kennt Greaseweazle nicht, der
+  Arbeitsfaden ist Python; `k1520disktool-cli` bleibt der Dateiaustausch mit
+  Abbildern.  Damit Oberflaeche und Kommandozeile dieselbe Sitzung aufmachen, liegt
+  der Qt-freie Teil jetzt in **`app/gw/session.py`** (`PhysicalSession`,
+  `verfuegbarkeit`, `LAUFWERKE`, `RATEN`); `app/ui/physical_disk.py` reicht ihn
+  weiter.  Vier Festlegungen: **ohne `--write` wird abgelehnt, BEVOR der Motor
+  anlaeuft** (Waechter prueft `geraet.gelesen == []`), **stdout ist die Nutzlast**
+  (Fortschritt und Befund auf stderr), **Fortschritt aus einem Nebenfaden**, weil
+  sonst zwei Minuten Schweigen wie ein Haenger aussehen, und eine **Schadstelle
+  endet in Exit 1** samt Ausweg im Text.  Waechter `py_physical_cli` (14 Faelle,
+  Ersatzlaufwerk aus `gw_fake.py`); am echten Laufwerk durchgefahren (§15.2).
+- **Offen:** das Merken der Sitzungsparameter (Laufwerk und Zellrate muessen bei
+  jedem Einlegen neu gewaehlt werden).
 
 ## Diskettenformatierung (FORMAT.COM) — Scope
 

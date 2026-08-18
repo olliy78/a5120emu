@@ -71,6 +71,45 @@ uint16_t crc16Ccitt(const uint8_t* data, size_t n, uint16_t seed) {
     return crc;
 }
 
+/**
+ * Geht die gespeicherte CRC eines MFM-Feldes auf?  Prüft BEIDE bekannten Sitten.
+ *
+ * @param feld  Feld OHNE die A1-Präambel: Marken-Byte + Inhalt (`FE cyl head sec sc`
+ *              bzw. `FB` + Datenbytes).
+ * @param gespeichert  die zwei CRC-Bytes vom Medium, als Wort (hi<<8|lo).
+ *
+ * **Standard-IBM** rechnet die drei 0xA1 der Sync-Präambel mit — gleichbedeutend mit
+ * Startwert `crc16([A1,A1,A1], 0xFFFF) = 0xCDB4` ab dem Marken-Byte.
+ *
+ * **Der Dialekt** lässt die Präambel weg und setzt das Register erst bei der Marke auf
+ * 0xFFFF; die Rechnung ist dann dieselbe wie bei FM, wo es keine Präambel gibt.  Er ist
+ * kein Schaden und keine Vermutung, sondern nachgemessen: auf
+ * `udos_ds77_k5601_fremdsync.hfe` folgen ihm **alle 4004 ID-Felder ausnahmslos**,
+ * während die 4004 **Datenfelder derselben Diskette Standard-IBM** sind.  Der Bruch
+ * genau an dieser Kante passt zur Arbeitsteilung im schreibenden Controller: die
+ * ID-CRC entsteht beim FORMATIEREN und muss vorab berechnet in den Schreibstrom
+ * eingefügt werden (dort fehlt die Präambel in der Rechnung), die Datenfeld-CRC
+ * dagegen läuft beim Schreiben in der Hardware ab dem ersten Sync-Byte mit.
+ *
+ * Beide Sitten zu akzeptieren kostet Trennschärfe im Umfang von einem Bit: statt einem
+ * gehen zwei von 65536 Zufallswerten durch.  Der Gegenwert ist eine Diskette, deren
+ * Sektoren nicht mehr sämtlich als CRC-fehlerhaft gelten — sie wären im Diskeditor rot,
+ * obwohl an ihnen nichts fehlt.
+ *
+ * @see doc/design/14_physische_diskette.md §8.1c
+ */
+bool mfmFieldCrcOk(const std::vector<uint8_t>& feld, uint16_t gespeichert) {
+    // Standard-IBM: A1 A1 A1 vor dem Marken-Byte
+    std::vector<uint8_t> mitPraeambel;
+    mitPraeambel.reserve(3 + feld.size());
+    mitPraeambel.insert(mitPraeambel.end(), {0xA1, 0xA1, 0xA1});
+    mitPraeambel.insert(mitPraeambel.end(), feld.begin(), feld.end());
+    if (crc16(mitPraeambel.data(), mitPraeambel.size(), 0xFF, 0xFF) == gespeichert)
+        return true;
+    // Dialekt: Register erst bei der Marke auf 0xFFFF
+    return crc16Ccitt(feld.data(), feld.size()) == gespeichert;
+}
+
 // ─── Gap-Parameter ────────────────────────────────────────────────────────────
 
 GapParams gapsFor(Encoding enc) {
@@ -292,24 +331,20 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
         const uint8_t crcLo     = track.bytes[idPos + 6];
 
         // ID-CRC prüfen
+        const uint16_t idCrcGespeichert = static_cast<uint16_t>((crcHi << 8) | crcLo);
         bool id_crc_ok = false;
         if (isMfm) {
-            // CRC-Start: 3×A1 + FE (Mark-Byte) + cyl head id sc
-            // marks[idPos] ist das Mark-Byte (0xFE), davor 2×A1 ohne Marke
-            // und das dritte A1 wird als Mark-Byte (idPos-0) betrachtet.
-            // Tatsächliches Layout: ...A1 A1 [A1/Id] FE cyl head id sc CRC CRC...
-            // Nein: das Mark-Byte IST 0xFE (marks[idPos]=Id), die drei A1-Sync
-            // liegen davor, das letzte (marks[]=None) ist das dritte A1.
-            // Die CRC-Eingabe ist [A1,A1,A1,FE,cyl,head,id,sc].
-            const uint8_t crcIn[] = {0xA1, 0xA1, 0xA1, 0xFE,
-                                      cyl, head, id, sizeCode};
-            uint16_t calc = crc16(crcIn, sizeof(crcIn), 0xFF, 0xFF);
-            id_crc_ok = (calc == static_cast<uint16_t>((crcHi << 8) | crcLo));
+            // Layout: ...A1 A1 [A1] FE cyl head id sc CRC CRC... — marks[idPos] IST das
+            // Marken-Byte 0xFE, die drei A1-Sync liegen davor (marks[]=None).
+            // mfmFieldCrcOk() prüft beide Sitten: mit Präambel (Standard-IBM) und ohne
+            // (Dialekt des fremden Controllers, s. dort).
+            const std::vector<uint8_t> feld = {0xFE, cyl, head, id, sizeCode};
+            id_crc_ok = mfmFieldCrcOk(feld, idCrcGespeichert);
         } else {
-            // FM: CRC über [FE, cyl, head, id, sizeCode]
+            // FM: CRC über [FE, cyl, head, id, sizeCode] — hier gibt es keine Präambel,
+            // die Frage stellt sich also nicht.
             const uint8_t crcIn[] = {0xFE, cyl, head, id, sizeCode};
-            uint16_t calc = crc16Ccitt(crcIn, sizeof(crcIn));
-            id_crc_ok = (calc == static_cast<uint16_t>((crcHi << 8) | crcLo));
+            id_crc_ok = (crc16Ccitt(crcIn, sizeof(crcIn)) == idCrcGespeichert);
         }
 
         // Das Größenfeld der IBM-Adressmarke ist 2 Bit breit (0..3 = 128..1024 B).
@@ -342,21 +377,26 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
             const uint8_t dCrcHi = track.bytes[dataPos + 1 + secSize];
             const uint8_t dCrcLo = track.bytes[dataPos + 1 + secSize + 1];
 
+            // Das Marken-Byte geht in die CRC ein, und es ist NICHT immer 0xFB: ein
+            // gelöschter Sektor trägt 0xF8 (marks[] macht da keinen Unterschied, die
+            // CRC schon).  Deshalb das Byte vom Medium nehmen, nicht 0xFB annehmen.
+            const uint8_t markByte = track.bytes[dataPos];
+            const uint16_t dataCrcGespeichert =
+                static_cast<uint16_t>((dCrcHi << 8) | dCrcLo);
+
+            std::vector<uint8_t> feld;
+            feld.reserve(1 + secSize);
+            feld.push_back(markByte);
+            feld.insert(feld.end(), data.begin(), data.end());
+
             if (isMfm) {
-                // Standard-IBM-MFM-Daten-CRC (CCITT) über [A1,A1,A1,FB] + Daten,
-                // Seed 0xFFFF — identisch zu buildTrack (siehe Kommentar dort).
-                std::vector<uint8_t> dataCrcIn = {0xA1, 0xA1, 0xA1, 0xFB};
-                dataCrcIn.insert(dataCrcIn.end(), data.begin(), data.end());
-                uint16_t calc = crc16(dataCrcIn.data(), dataCrcIn.size(), 0xFF, 0xFF);
-                data_crc_ok = (calc == static_cast<uint16_t>((dCrcHi << 8) | dCrcLo));
+                // Standard-IBM rechnet [A1,A1,A1] mit; der Dialekt (s. mfmFieldCrcOk)
+                // lässt die Präambel weg.  Beide gelten.
+                data_crc_ok = mfmFieldCrcOk(feld, dataCrcGespeichert);
             } else {
-                // FM: CRC über [FB, <data>]
-                std::vector<uint8_t> crcIn;
-                crcIn.reserve(1 + secSize);
-                crcIn.push_back(0xFB);
-                crcIn.insert(crcIn.end(), data.begin(), data.end());
-                uint16_t calc = crc16Ccitt(crcIn.data(), crcIn.size());
-                data_crc_ok = (calc == static_cast<uint16_t>((dCrcHi << 8) | dCrcLo));
+                // FM: CRC über [Marke, <data>] — keine Präambel.
+                data_crc_ok =
+                    (crc16Ccitt(feld.data(), feld.size()) == dataCrcGespeichert);
             }
 
             // Sektor-Nachspann mitnehmen: die naechsten kSectorTailBytes Bytes so, wie

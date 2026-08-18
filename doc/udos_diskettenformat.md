@@ -210,11 +210,23 @@ Auf den Datensätzen der Datei folgen dicht gepackte Einträge variabler Länge:
    1 Byte     n Bytes      1 Byte     1 Byte
 ```
 
-* **Bit 0…5** des ersten Bytes = **Namenslänge** (Namen bis 32 Zeichen).
+* **Bit 0…6** des ersten Bytes = **Namenslänge** (Namen bis 32 Zeichen).  Das
+  UDOS1715-Handbuch §1.4 nennt Bit 0–6; bei Namen bis 32 Zeichen ist der Unterschied
+  zu einer 6-Bit-Maske folgenlos, aber `7FH` ist die richtige.  Das erklärt auch,
+  warum „Bit 6 kam auf diesem Datenträger nicht vor" — es gehört zur Länge.
 * **Bit 7** = **SECRET** (geheim). Nachgewiesen: `CAT` ohne `P=&` listet **exakt** die
   Einträge mit gelöschtem Bit 7 (39 von 69 Dateien) — es ist eine im Verzeichnis
   gespiegelte Kopie der `S`-Eigenschaft aus dem Dateikopf, damit `CAT` filtern kann,
   ohne jeden Kopfsektor zu lesen.
+
+> **Daraus folgt der Preis einer Verzeichnisanzeige.** Name und SECRET-Bit stehen hier;
+> **Länge, Typ, Satzlänge, Datum stehen im Kopfsektor jeder Datei**, verstreut über die
+> Diskette. `CAT` ist deshalb so schnell wie ein CP/M-`DIR`, `CAT F=L` nicht — es liest
+> jede Datei an. Für ein Werkzeug heißt das: die Namensliste kostet **eine** Spur, die
+> volle Liste bei der Referenzdiskette (69 Dateien) **24**. Bei CP/M gibt es diesen
+> Unterschied nicht, dort trägt der Verzeichniseintrag die Größe selbst.
+> Umgesetzt als `UdosFileSystem::listNames()` / `loadDetails()`
+> (`doc/design/14_physische_diskette.md` §11.2b).
 * **Bit 6** kam auf diesem Datenträger nicht vor.
 * Die letzten 2 Bytes sind der **Zeiger auf den Kopfsektor** der Datei (Format §1.2).
 
@@ -259,7 +271,7 @@ Die belegten Felder:
 | 38…39 | 2 | `FF 00` bzw. `FF FF` | Trenner |
 | 40…41 | 2 LE | Anfang des 1. **Speichersegments** (SEGMENTS) | |
 | 42…43 | 2 LE | Länge des 1. Speichersegments | |
-| 44…47 | 4 | bei den meisten Dateien `00`; Typ A trägt dort Text | Bedeutung offen, unverändert übernehmen |
+| 44…121 | | **weitere Segmentpaare**, Abschluss `00 00 00 00` | s. §6.3 — bei Typ A frei für den Anwender |
 | 48…121 | | `FF`-Füllung | |
 | **122…123** | 2 LE | **LOW ADDRESS** — erste Adresse, die das Programm belegt | s. u. |
 | **124…125** | 2 LE | **HIGH ADDRESS** — letzte Adresse | |
@@ -290,8 +302,10 @@ gegen den Kopfsektor von `SD` (Spur 31, Sektor 9):
 → Typ `81`=P1, 7 Sätze, Satzlänge `0080`, ENTRY `E800`, letzter Satz `0080` Byte,
 Segment `E800` + `037A` = `E800…EB79`. ✔
 
-*Nicht* eindeutig zugeordnet sind `HIGH ADDRESS` und `STACK SIZE`; ein Datei-Werkzeug
-braucht sie nicht.
+`HIGH ADDRESS` und `STACK SIZE` waren hier als *nicht eindeutig zugeordnet* vermerkt.
+Das UDOS1715-Handbuch §3.2.2 benennt sie ausdrücklich — `7AH/7BH` LOW ADDRESS,
+`7CH/7DH` HIGH ADDRESS, `7EH/7FH` STACK SIZE, also 122/124/126 —, und damit deckt sich
+die hier gemessene Zuordnung. Der Vermerk ist erledigt.
 
 ### 6.1 Dateitypen (wörtlich aus `HELP.DAT.00` der Diskette)
 
@@ -305,6 +319,13 @@ braucht sie nicht.
 
 Der Typ ist **nicht** Teil des Namens (anders als bei SCP/CP/M).
 
+> **Das Byte ist ein Bitfeld, keine Werteliste** (2026-08-17). Das UDOS1715-Handbuch
+> §3.2.2 gibt die Bedeutung an: **Bit 7 = P · Bit 6 = D · Bit 5 = A · Bit 4 = B ·
+> Bit 0…3 = Subtyp (0…15)**, wobei „I/O-Treiber den Subtyp 1 besitzen müssen".
+> Damit ist auch `P1` erklärt: `81H` ist Typ P mit Subtyp 1, kein Sonderwert. Die
+> Umsetzung rechnet seitdem allgemein (`udosTypeByte`/`udosTypeName` in
+> `udos_fs.h`) und liest `P2`…`P15` genauso.
+
 ### 6.2 Eigenschaften (PROPS, wörtlich aus `HELP.DAT.00`)
 
 | Bit in Offset 19 | Buchstabe | Bedeutung |
@@ -315,12 +336,56 @@ Der Typ ist **nicht** Teil des Namens (anders als bei SCP/CP/M).
 | `0x10` | `S` | SECRET — geheim (wird ohne `P=&` nicht gelistet) |
 | `0x08` | `R` | RANDOM — wahlfreier Zugriff |
 | `0x04` | `F` | FORCE MEMORY ALLOCATION |
+| `0x02`, `0x01` | — | **vom System benutzt** (UDOS1715-Handbuch §3.2.2) — nie setzen |
 | — | `&` | (kein Bit, sondern der Suchoperator „alle Eigenschaften") |
 
 Die vier oberen Bits sind über die Kombinationen `WELS`/`WES`/`WS` eindeutig belegt.
 `R` und `F` trägt keine Datei des Referenzdatenträgers; ihre Bitlage wurde durch
 **Setzen im laufenden System** bestimmt (`SET PROPERTIES OF CODE TO R` → Offset 19 von
 `00` auf `08`; `SET PROPERTIES OF TAST TO F` → `00` auf `04`).
+
+### 6.3 Offset 44–47 ist kein Rätsel — es ist das zweite Segment (2026-08-17)
+
+Die vier Bytes standen hier lange als „Bedeutung offen, unverändert übernehmen".
+Aufgelöst hat es die **Schwesterausprägung**: das Handbuch von UDOS1715 (§3.2.2,
+`doc/original_docs/UDOS1715_Systemhandbuch.txt`) beschreibt denselben Descriptor und
+sagt es wörtlich —
+
+> `28H/29H` Anfangsadresse des 1. Segmentes · `2AH/2BH` Länge des 1. Segmentes ·
+> „**mehrere Segmente möglich; abgeschlossen mit `00 00 00 00`**" ·
+> `2AH…7FH` „**nur bei P-Dateien vom System verwendet, sonst frei für Anwender**"
+
+`28H` = 40 und `7AH` = 122 — das ist Byte für Byte unsere Tabelle. Der Bereich
+**40…121** ist also eine **Liste** von Segmentpaaren, kein Einzelwert plus vier
+rätselhafte Bytes.
+
+Am Referenzdatenträger nachgemessen und in beiden Punkten bestätigt:
+
+| Datei | Typ | Segmente |
+|---|---|---|
+| `FORMAT` | P | `4000+0607` `5CEF+02DD` |
+| `ESPRO` | P | `C14B+2146` `E462+0937` |
+| `UPRO` | P | `C14B+20AE` `E3CA+0937` |
+| alle übrigen 47 P-Dateien | P | genau eines |
+| alle 14 A-Dateien | A | **keine** — dort steht Anwenderinhalt |
+
+Das erklärt zugleich den alten Nebenbefund „*Typ A trägt dort Text*": bei Typ A ist
+der Bereich laut Handbuch schlicht frei.
+
+> ### ⚠ Konsequenz fürs Zurückschreiben
+>
+> Nur das erste Segment mitzuschleppen zerstört eine mehrsegmentige Programmdatei.
+> Auf dieser Diskette fiele es nicht auf (Maximum 2 Segmente, und die vier Bytes
+> tragen genau das zweite) — auf einer **PC-1715**-Diskette schon: `IMAGER` hat
+> drei Segmente, `ZLINK` sechs. Das Werkzeug führt deshalb seit dem 2026-08-17 die
+> **ganze Liste**: `UdosFileHeader::segments`, `FileEntry::segments`,
+> `WriteOptions::udos_segments`, im Beiblatt `segs=`, in der CLI `--segment`, im
+> Eigenschaften-Dialog **ein** Feld statt zweier Kästchen. `segment_start`/
+> `segment_len` und `extra` bleiben als bequeme Sicht auf das erste Segment bzw. die
+> vier Bytes dahinter — massgeblich beim Schreiben ist die Liste.
+>
+> Wächter: `UdosFileSystem.VierundvierzigBisSiebenundvierzigIstDasZweiteSegment`,
+> `Udos1715Segmente.*`.
 
 ---
 
@@ -874,6 +939,13 @@ Für den Selbststart kommen `DO`, `OS.INIT`, `DATE` und `TAST` dazu.
   Ausprägung, s. §1.1)
 * `~/projects/UDOS/UDOS/FORMAT/FOR7658.MAC`, `UDOS/DISKCOPY/DISKCOPY.MAC` — „Sektor 0 ist
   Pointersektor", UDOS-Standardformat
+* **`doc/original_docs/UDOS1715_Systemhandbuch.txt`** — das Handbuch der
+  PC-1715-Ausprägung, von deren Diskette selbst gelesen.  Es beschreibt DENSELBEN
+  Descriptor- und Verzeichnisaufbau und hat hier drei offene Punkte geschlossen
+  (§6.1 Typ/Subtyp, §6.2 Bits 0/1, §6.3 Segmentliste).  Was es darüber hinaus
+  enthält — BFOS, Treiber-Anforderungsblöcke, `FILE.DEBUG`, `COPY.DISK`,
+  `CAT`/`MOVE`, `DATE` — ist für ZDOS nicht ausgewertet und wartet dort.
+* `doc/udos1715_diskettenformat.md` — das Dateisystem NDOS, die Unterschiede im Überblick
 * `~/projects/UDOS/README.md` — Bestandsaufnahme aller UDOS-Quellen
 * Systemdokumentation **auf der Diskette selbst**: `4/HELP.DAT.00…04`, `4/NOTE.TO.UDOS.4.3`
 * `doc/analyse_udos.md` §13.4 (Sektorkontrollblock im Lesepfad), §14 (Interaktivbetrieb),

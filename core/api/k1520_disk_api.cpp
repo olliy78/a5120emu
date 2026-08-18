@@ -14,8 +14,10 @@
  */
 
 #include "core/api/k1520_disk_api.h"
+#include "core/api/k1520_sync_internal.h"
 
 #include "core/filesystem/disk_volume.h"
+#include "core/filesystem/geometry_probe.h"
 
 #include <memory>
 #include <string>
@@ -58,7 +60,8 @@ struct Handle {
     std::vector<FileEntry>      eintraege;   ///< Stand des letzten k1520d_list
     TrackView                   spur;        ///< Stand des letzten k1520d_track_scan
     // Puffer je Getter — die Rueckgabe gilt bis zum naechsten Aufruf DERSELBEN Funktion.
-    std::string s_error, s_name, s_type, s_attrs, s_date, s_dir, s_label, s_created;
+    std::string s_error, s_name, s_type, s_attrs, s_date, s_dir, s_label, s_created,
+                s_segments;
     std::string s_fmt, s_fs, s_alt, s_remarks, s_fit, s_check;
 };
 
@@ -109,6 +112,114 @@ extern "C" K1520Disk k1520d_open(const char* path, const char* fs_name, bool rea
                               kataloge().formate, kataloge().dateisysteme, err, read_only);
     if (!h->vol) { g_open_error = err; return nullptr; }
     return h.release();
+}
+
+extern "C" K1520Disk k1520d_open_raw(const char* path, const char* fs_name,
+                                     bool read_only) {
+    g_open_error.clear();
+    if (!path || !*path) { g_open_error = "kein Pfad angegeben"; return nullptr; }
+
+    auto h = std::make_unique<Handle>();
+    std::string err;
+    h->vol = DiskVolume::open(path, fs_name ? fs_name : "", kataloge().formate,
+                              kataloge().dateisysteme, err, read_only,
+                              /*roh_erlaubt=*/true);
+    if (!h->vol) { g_open_error = err; return nullptr; }
+    return h.release();
+}
+
+extern "C" int k1520d_write_to_physical(K1520Disk h, K1520Sync sync) {
+    if (!h) return -1;
+    Handle* p = H(h);
+    K1520SyncHandle* sh = k1520s_handle(sync);
+    if (!sh || !sh->image) {
+        // In den Fehlertext des Volumes, denn genau von dort holt ihn
+        // k1520d_last_error — ein eigener Puffer wuerde beim naechsten Aufruf
+        // ueberschrieben.
+        p->vol->noteError("kein physisches Laufwerk (oder schon angemeldet)");
+        return -1;
+    }
+    return p->vol->copyTo(sh->image->medium());
+}
+
+extern "C" int k1520d_probe_track_count(int num_cyls, int num_heads) {
+    if (num_cyls <= 0 || num_heads <= 0 || num_cyls > 255 || num_heads > 255) return 0;
+    return static_cast<int>(GeometryProbe::probeTracks(
+        static_cast<uint8_t>(num_cyls), static_cast<uint8_t>(num_heads)).size());
+}
+
+extern "C" K1520Disk k1520d_open_physical(K1520Sync sync, const char* fs_name,
+                                          bool read_only) {
+    g_open_error.clear();
+    std::unique_ptr<DiskImage> abbild = k1520s_take_image(sync);
+    if (!abbild) {
+        g_open_error = "kein physisches Laufwerk (oder schon geoeffnet)";
+        return nullptr;
+    }
+
+    auto h = std::make_unique<Handle>();
+    std::string err;
+    h->vol = DiskVolume::openPhysical(std::move(abbild), fs_name ? fs_name : "",
+                                      kataloge().formate, kataloge().dateisysteme,
+                                      err, read_only);
+    if (!h->vol) { g_open_error = err; return nullptr; }
+    return h.release();
+}
+
+extern "C" K1520Disk k1520d_open_physical_raw(K1520Sync sync, const char* fs_name,
+                                              bool read_only) {
+    g_open_error.clear();
+    std::unique_ptr<DiskImage> abbild = k1520s_take_image(sync);
+    if (!abbild) {
+        g_open_error = "kein physisches Laufwerk (oder schon geoeffnet)";
+        return nullptr;
+    }
+    auto h = std::make_unique<Handle>();
+    std::string err;
+    h->vol = DiskVolume::openPhysical(std::move(abbild), fs_name ? fs_name : "",
+                                      kataloge().formate, kataloge().dateisysteme,
+                                      err, read_only, /*roh_erlaubt=*/true);
+    if (!h->vol) { g_open_error = err; return nullptr; }
+    return h.release();
+}
+
+extern "C" bool k1520d_has_filesystem(K1520Disk h) {
+    return h && H(h)->vol->hasFileSystem();
+}
+
+extern "C" bool k1520d_redetect(K1520Disk h, const char* fs_name) {
+    if (!h) return false;
+    Handle* p = H(h);
+    std::unique_ptr<DiskImage> abbild = p->vol->releaseImage();
+    if (!abbild) { p->vol->noteError("keine Diskette im Speicher"); return false; }
+
+    const bool ro = p->vol->readOnly();
+    std::string err;
+    auto neu = DiskVolume::openPhysical(std::move(abbild), fs_name ? fs_name : "",
+                                        kataloge().formate, kataloge().dateisysteme,
+                                        err, ro, /*roh_erlaubt=*/true);
+    if (!neu) { p->vol->noteError(err); return false; }
+    p->vol = std::move(neu);
+    p->eintraege.clear();
+    return true;
+}
+
+extern "C" int k1520d_keep_even_tracks(K1520Disk h) {
+    return h ? H(h)->vol->keepEvenTracks() : -1;
+}
+
+extern "C" int k1520d_drop_second_side(K1520Disk h) {
+    return h ? H(h)->vol->dropSecondSide() : -1;
+}
+
+extern "C" int k1520d_delete_cylinder(K1520Disk h, int cyl) {
+    if (!h || cyl < 0 || cyl > 255) return -1;
+    return H(h)->vol->deleteCylinder(static_cast<uint8_t>(cyl));
+}
+
+extern "C" int k1520d_insert_cylinder_at(K1520Disk h, int pos, bool mfm) {
+    if (!h || pos < 0 || pos > 255) return -1;
+    return H(h)->vol->insertCylinderAt(static_cast<uint8_t>(pos), mfm);
 }
 
 extern "C" K1520Disk k1520d_create(const char* path, const char* fs_name,
@@ -286,6 +397,27 @@ extern "C" int k1520d_list(K1520Disk h) {
     return static_cast<int>(H(h)->eintraege.size());
 }
 
+extern "C" int k1520d_list_names(K1520Disk h) {
+    if (!h) return 0;
+    H(h)->eintraege = H(h)->vol->listNames();
+    return static_cast<int>(H(h)->eintraege.size());
+}
+
+extern "C" bool k1520d_entry_details_loaded(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? e->details_loaded : false;
+}
+
+extern "C" bool k1520d_entry_details_ready(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? H(h)->vol->detailsReady(*e) : false;
+}
+
+extern "C" bool k1520d_entry_load_details(K1520Disk h, int i) {
+    if (!h || i < 0 || static_cast<size_t>(i) >= H(h)->eintraege.size()) return false;
+    return H(h)->vol->loadDetails(H(h)->eintraege[static_cast<size_t>(i)]);
+}
+
 extern "C" int k1520d_entry_volume(K1520Disk h, int i) {
     const FileEntry* e = eintrag(h, i);
     return e ? e->volume : 0;
@@ -348,6 +480,11 @@ extern "C" uint32_t k1520d_entry_extra(K1520Disk h, int i) {
     return e ? e->extra : 0;
 }
 
+extern "C" const char* k1520d_entry_segments(K1520Disk h, int i) {
+    const FileEntry* e = eintrag(h, i);
+    return e ? halte(H(h)->s_segments, e->segments) : "";
+}
+
 extern "C" const char* k1520d_entry_created(K1520Disk h, int i) {
     const FileEntry* e = eintrag(h, i);
     return e ? halte(H(h)->s_created, e->created) : "";
@@ -361,7 +498,8 @@ extern "C" bool k1520d_set_udos_attrs(K1520Disk h, const char* name,
                                       bool set_segment, uint16_t segment, uint16_t segment_len,
                                       bool set_memory, uint16_t low, uint16_t high,
                                       uint16_t stack,
-                                      bool set_extra, uint32_t extra) {
+                                      bool set_extra, uint32_t extra,
+                                      bool set_segments, const char* segments) {
     if (!h || !name) return false;
     UdosAttrs a;
     a.type       = type     ? type     : "";
@@ -373,6 +511,7 @@ extern "C" bool k1520d_set_udos_attrs(K1520Disk h, const char* name,
     a.set_segment   = set_segment;   a.segment   = segment; a.segment_len = segment_len;
     a.set_memory    = set_memory;    a.low = low; a.high = high; a.stack = stack;
     a.set_extra     = set_extra;     a.extra     = extra;
+    a.set_segments  = set_segments;  a.segments  = segments ? segments : "";
     return H(h)->vol->setAttributes(FileRef::parse(name), a);
 }
 
@@ -403,6 +542,19 @@ extern "C" int k1520d_medium_cylinders(K1520Disk h) {
 
 extern "C" int k1520d_medium_heads(K1520Disk h) {
     return h ? H(h)->vol->mediumHeads() : 0;
+}
+
+extern "C" int k1520d_detection_examined_tracks(K1520Disk h) {
+    return h ? H(h)->vol->detection().examined_tracks : 0;
+}
+
+extern "C" bool k1520d_refresh_detection(K1520Disk h) {
+    return h && H(h)->vol->refreshDetection();
+}
+
+extern "C" int k1520d_track_state(K1520Disk h, int cyl, int head) {
+    if (!h || cyl < 0 || head < 0 || cyl > 255 || head > 255) return 0;
+    return H(h)->vol->trackState(static_cast<uint8_t>(cyl), static_cast<uint8_t>(head));
 }
 
 extern "C" int k1520d_track_scan(K1520Disk h, int cyl, int head) {
@@ -462,6 +614,16 @@ extern "C" bool k1520d_span_data_crc_ok(K1520Disk h, int i) {
 extern "C" bool k1520d_span_deleted(K1520Disk h, int i) {
     const TrackSpan* s = abschnitt(h, i);
     return s && s->deleted;
+}
+
+extern "C" bool k1520d_span_blank(K1520Disk h, int i) {
+    const TrackSpan* s = abschnitt(h, i);
+    return s && s->blank;
+}
+
+extern "C" int k1520d_span_tail_bytes(K1520Disk h, int i) {
+    const TrackSpan* s = abschnitt(h, i);
+    return s ? s->tail_bytes : 0;
 }
 
 extern "C" int k1520d_sector_read(K1520Disk h, int cyl, int head, int index,

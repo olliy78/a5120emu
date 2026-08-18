@@ -6,7 +6,8 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "core/api/k1520_export.h"   /* K1520_API — Ausfuhrkennzeichnung (Windows!) */
+#include "core/api/k1520_export.h"
+#include "core/api/k1520_sync_api.h"   /* K1520_API — Ausfuhrkennzeichnung (Windows!) */
 
 typedef void* K1520Handle;
 
@@ -132,6 +133,20 @@ K1520_API const char* k1520_disk_container(K1520Handle h, int drive);
  * single-sided drive).  The GUI shows the lines in the drive box under the file name.
  */
 K1520_API const char* k1520_disk_notice(K1520Handle h, int drive);
+
+/**
+ * @brief **Physische Diskette** aus einem echten Laufwerk am Greaseweazle anmelden.
+ *
+ * @p sync kommt aus @ref k1520s_create (core/api/k1520_sync_api.h) und wird von einem
+ * fremden Arbeitsfaden bedient.  Es wird beim Anmelden **nichts gelesen** — Spuren
+ * kommen einzeln, sobald der Gast sie anfasst.
+ *
+ * Ein Handle laesst sich nur EINMAL anmelden.
+ *
+ * @see doc/design/14_physische_diskette.md
+ */
+K1520_API bool k1520_mount_physical(K1520Handle h, int drive, K1520Sync sync,
+                                    bool write_protect);
 /** @brief Write pending changes of all drives to their files immediately. */
 K1520_API bool k1520_flush_disks(K1520Handle h);
 /** @brief Unmount disk image from a drive slot. */

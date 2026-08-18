@@ -28,6 +28,7 @@ extern "C" {
 #include <stdint.h>
 
 #include "core/api/k1520_export.h"   ///< `K1520_API` — Ausfuhrkennzeichnung (Windows!)
+#include "core/api/k1520_sync_api.h"  ///< physische Diskette (Greaseweazle)
 
 /// @brief Opakes Handle einer geoeffneten Diskette.
 typedef void* K1520Disk;
@@ -50,6 +51,122 @@ typedef enum {
  * @return Handle oder NULL — Grund dann ueber @ref k1520d_last_open_error.
  */
 K1520_API K1520Disk k1520d_open(const char* path, const char* fs_name, bool read_only);
+
+/**
+ * @brief Wie @ref k1520d_open, aber **oeffnet auch ohne Erkennung** (§12.6).
+ *
+ * Wird kein Dateisystem gefunden, kommt das Abbild trotzdem heraus — nur eben ohne
+ * (@ref k1520d_has_filesystem == false).  Medium, Sektoreditor, „Speichern unter"
+ * und die Schnittwerkzeuge arbeiten weiter; Dateien gibt es keine.
+ *
+ * Das gilt fuer eine DATEI genauso wie fuer eine physische Diskette: eine gemischte
+ * oder unbekannte Geometrie ist kein Grund, das Abbild gar nicht herzugeben.
+ */
+K1520_API K1520Disk k1520d_open_raw(const char* path, const char* fs_name,
+                                    bool read_only);
+
+/**
+ * @brief **Physische Diskette** in einem echten Laufwerk oeffnen.
+ *
+ * @p sync kommt aus @ref k1520s_create und wird von einem fremden Arbeitsfaden bedient.
+ *
+ * Der Aufruf holt die **Sondenspuren** der Formaterkennung
+ * (@ref k1520d_probe_track_count) und danach das Verzeichnis; er dauert Sekunden und
+ * gehoert deshalb in einen Arbeitsfaden mit Fortschrittsanzeige, nicht in den
+ * Oberflaechenfaden (doc/design/14_physische_diskette.md §11.2/§11.2a).  Passt kein
+ * Katalogformat, folgt die Vollmessung — dann dauert es entsprechend laenger.
+ */
+K1520_API K1520Disk k1520d_open_physical(K1520Sync sync, const char* fs_name,
+                                         bool read_only);
+
+/**
+ * @brief Wie @ref k1520d_open_physical, aber **oeffnet auch ohne Erkennung**.
+ *
+ * Wird kein Dateisystem gefunden, kommt die Diskette trotzdem heraus — nur eben
+ * ohne (@ref k1520d_has_filesystem == false).  Medium, Sektoreditor, Abbild sichern
+ * und die Schnittwerkzeuge (@ref k1520d_keep_even_tracks) arbeiten weiter; Dateien
+ * gibt es keine.  Der Grund steht in @ref k1520d_detection_remarks.
+ */
+K1520_API K1520Disk k1520d_open_physical_raw(K1520Sync sync, const char* fs_name,
+                                             bool read_only);
+
+/// @brief Ist ein Dateisystem gemountet?  false = roh geoeffnet.
+K1520_API bool k1520d_has_filesystem(K1520Disk h);
+
+/**
+ * @brief Erkennung am **Speicherabbild** wiederholen — ohne die Diskette neu zu lesen.
+ *
+ * Fuer „Dateisystem von Hand waehlen" und fuer die Zeit nach einem Schnitt: das
+ * bereits gelesene Medium wandert unveraendert in ein neues Volume.  Das alte Handle
+ * bleibt gueltig und zeigt danach auf das neue Ergebnis.
+ *
+ * @param fs_name  Dateisystem erzwingen; NULL/"" = wieder erkennen lassen.
+ * @return false, wenn selbst roh nichts daraus wurde (Grund: @ref k1520d_last_error).
+ */
+K1520_API bool k1520d_redetect(K1520Disk h, const char* fs_name);
+
+/**
+ * @brief Jede zweite Spur wegwerfen (Doppelschritt-Diskette geradeziehen), §12.6.
+ *
+ * **Loest das Abbild vom Laufwerk**: die Spurnummern stimmen danach nicht mehr mit
+ * den Kopfpositionen ueberein, ein Rueckschreiben ginge auf die falschen Zylinder.
+ * @return verbliebene Spuren, -1 bei Fehler.
+ */
+K1520_API int k1520d_keep_even_tracks(K1520Disk h);
+
+/// @brief Seite 1 wegwerfen (§12.6).  Loest ebenfalls vom Laufwerk.
+K1520_API int k1520d_drop_second_side(K1520Disk h);
+
+/// @brief Einen ganzen Zylinder loeschen; alles dahinter rueckt auf (§19.6).
+///        @return verbliebene Zylinder, -1 bei Fehler.  Loest vom Laufwerk.
+K1520_API int k1520d_delete_cylinder(K1520Disk h, int cyl);
+
+/**
+ * @brief Einen **unformatierten** Zylinder an Position @p pos einfuegen (§19.6).
+ *
+ * Der neue Zylinder TRAEGT die Nummer @p pos; alles von dort an rueckt nach hinten.
+ * @p pos darf die Spurzahl sein (anhaengen) und **0** (vor alle bestehenden) — das
+ * braucht man, um einer MFM-Diskette eine FM-Spur 0 vorzusetzen.
+ *
+ * @param mfm  Verfahren der neuen Spur; es folgt NICHT dem Nachbarn, denn gerade der
+ *             Wechsel ist der Zweck (gemischte K1520-Formate).
+ * @return verbliebene Zylinder, -1 bei Fehler.  Loest vom Laufwerk.
+ */
+K1520_API int k1520d_insert_cylinder_at(K1520Disk h, int pos, bool mfm);
+
+/**
+ * @brief Das Speicherabbild der geoeffneten Diskette auf ein **echtes Laufwerk** legen.
+ *
+ * Kopiert jede bekannte Spur in das Medium hinter @p sync.  Damit gilt sie dort als
+ * **geaendert**, und der Arbeitsfaden schreibt sie im Hintergrund auf die eingelegte
+ * Diskette — samt Pruef-Lesen (§7.1).  Gewartet wird nicht; der Aufrufer sieht den
+ * Fortschritt ueber @ref k1520s_stats und schliesst mit @ref k1520s_flush ab.
+ *
+ * Das ist der Weg, eine geladene `.hfe` auf eine echte Diskette zu bringen: die
+ * Quelle darf eine Datei sein, das Ziel ist immer ein Laufwerk.
+ *
+ * **Es wird nichts vorher gelesen.**  Was auf der Zieldiskette stand, ist danach fort;
+ * die Rueckfrage gehoert in die Oberflaeche.
+ *
+ * @return Zahl der eingestellten Spuren, oder -1 bei einem Fehler (Grund ueber
+ *         @ref k1520d_last_error).  Passt die Diskette nicht in die eingestellte
+ *         Laufwerksgeometrie, wird **gar nichts** kopiert.
+ */
+K1520_API int k1520d_write_to_physical(K1520Disk h, K1520Sync sync);
+
+/**
+ * @brief Wie viele Spuren die Formaterkennung anfassen wird (Sondenzahl).
+ *
+ * Fuer die Fortschrittsanzeige: an einem echten Laufwerk ist die Zahl der
+ * Sondenspuren das Ziel, nicht die Spurzahl der Diskette — ein Balken, der gegen 160
+ * laeuft und bei 8 stehenbleibt, sagt dem Bedienenden das Falsche.
+ *
+ * Die Regel steht in @ref GeometryProbe::probeTracks; diese Funktion gibt es, damit
+ * die Oberflaeche sie nicht nachbauen muss (und dabei von ihr abweicht).
+ *
+ * @return Zahl der Sondenspuren, 0 bei unsinnigen Angaben.
+ */
+K1520_API int k1520d_probe_track_count(int num_cyls, int num_heads);
 
 /**
  * @brief Neue, leere Diskette anlegen (formatieren + Dateisystem initialisieren).
@@ -123,7 +240,7 @@ K1520_API const char* k1520d_fs_name(int i);
 K1520_API const char* k1520d_fs_description(const char* name);
 /// @brief Geometrie, auf der dieses Dateisystem liegt.
 K1520_API const char* k1520d_fs_format(const char* name);
-/// @brief "cpm" | "udos"
+/// @brief "cpm" | "udos" | "udos1715"
 K1520_API const char* k1520d_fs_type(const char* name);
 /// @brief Geladene Katalogdateien (mehrzeilig) + Beanstandungen.
 K1520_API const char* k1520d_catalog_report(void);
@@ -138,6 +255,21 @@ K1520_API bool        k1520d_detection_unambiguous(K1520Disk h);
 K1520_API const char* k1520d_detection_alternatives(K1520Disk h);
 /// @brief Auffaelligkeiten des Mediums (Altbestand, CRC-Fehler, Schaeden); "" = ohne Befund.
 K1520_API const char* k1520d_detection_remarks(K1520Disk h);
+
+/**
+ * @brief Zahl der Spuren, ueber die @ref k1520d_detection_remarks urteilt; 0 = alle.
+ *
+ * Nach einer Stichprobenerkennung (physisches Laufwerk) sind die Zaehlungen darin
+ * Aussagen ueber DIESE Spuren, nicht ueber die Diskette.
+ */
+K1520_API int k1520d_detection_examined_tracks(K1520Disk h);
+
+/**
+ * @brief Auffaelligkeiten neu bewerten, sobald die Diskette vollstaendig gelesen ist.
+ *
+ * @return true, wenn sich die Meldung geaendert hat — dann ist die Anzeige aufzufrischen.
+ */
+K1520_API bool k1520d_refresh_detection(K1520Disk h);
 
 /* ─── Seiten (UDOS) ───────────────────────────────────────────────────────────
  * Es wird NICHT umgeschaltet — alle Seiten sind gleichzeitig sichtbar, und jeder
@@ -157,6 +289,28 @@ K1520_API uint64_t    k1520d_volume_used(K1520Disk h, int v);
 
 /// @brief Verzeichnis aller Seiten einlesen; liefert die Anzahl der Eintraege.
 K1520_API int         k1520d_list(K1520Disk h);
+
+/**
+ * @brief Verzeichnis **nur mit den Namen** einlesen; liefert die Anzahl der Eintraege.
+ *
+ * Bei CP/M gleichbedeutend mit @ref k1520d_list (dort steht alles im Eintrag selbst).
+ * Bei UDOS bleiben Groesse, Typ und Datum zunaechst leer — sie stehen im Kopfsektor
+ * jeder Datei, verstreut ueber die Diskette.  An einem echten Laufwerk ist das der
+ * Unterschied zwischen drei und drei Dutzend Spuren (`CAT` gegen `CAT F=L`).
+ *
+ * Nachzutragen mit @ref k1520d_entry_load_details, am besten erst, wenn
+ * @ref k1520d_entry_details_ready dafuer @c true sagt.
+ */
+K1520_API int         k1520d_list_names(K1520Disk h);
+
+/// @brief Stehen die Angaben zu Eintrag @p i schon fest?
+K1520_API bool        k1520d_entry_details_loaded(K1520Disk h, int i);
+
+/// @brief Waeren die Angaben zu Eintrag @p i **ohne Warten** zu haben?
+K1520_API bool        k1520d_entry_details_ready(K1520Disk h, int i);
+
+/// @brief Angaben zu Eintrag @p i nachtragen; **blockiert** ggf. (siehe @c _ready).
+K1520_API bool        k1520d_entry_load_details(K1520Disk h, int i);
 K1520_API int         k1520d_entry_volume(K1520Disk h, int i);
 K1520_API const char* k1520d_entry_name(K1520Disk h, int i);
 K1520_API int         k1520d_entry_user(K1520Disk h, int i);
@@ -187,8 +341,15 @@ K1520_API uint16_t    k1520d_entry_high_addr(K1520Disk h, int i);
 K1520_API uint16_t    k1520d_entry_stack_size(K1520Disk h, int i);
 /// @brief Bytes im letzten Satz (Kopfsektor Offset 22) — bestimmt die logische Laenge.
 K1520_API uint16_t    k1520d_entry_bytes_in_last(K1520Disk h, int i);
-/// @brief Kopfsektor Offset 44…47 (Bedeutung offen, unveraendert uebernehmen).
+/// @brief Kopfsektor Offset 44…47 — die vier Bytes hinter dem ersten Segment.
+///        Vollstaendige Auskunft gibt @ref k1520d_entry_segments.
 K1520_API uint32_t    k1520d_entry_extra(K1520Disk h, int i);
+/// @brief ALLE Speichersegmente als Text: `"4400+0041 8442+0026"` (leer = keine).
+///
+/// Eine UDOS-Programmdatei kann mehr als zwei Segmente haben (`ZLINK` der
+/// PC-1715-Diskette sechs).  Wer sie zurueckschreibt, muss diese Zeichenkette
+/// mitfuehren — @ref k1520d_entry_segment allein verliert alles ab Segment 3.
+K1520_API const char* k1520d_entry_segments(K1520Disk h, int i);
 /// @brief Erstellungsvermerk (Datum ODER Versionstext wie "V 4.3").
 K1520_API const char* k1520d_entry_created(K1520Disk h, int i);
 
@@ -213,7 +374,8 @@ K1520_API bool k1520d_set_udos_attrs(K1520Disk h, const char* name,
                                      bool set_segment, uint16_t segment, uint16_t segment_len,
                                      bool set_memory, uint16_t low, uint16_t high,
                                      uint16_t stack,
-                                     bool set_extra, uint32_t extra);
+                                     bool set_extra, uint32_t extra,
+                                     bool set_segments, const char* segments);
 
 /**
  * @brief Attribute und Nutzerbereich einer vorhandenen Datei aendern (nur CP/M).
@@ -251,8 +413,19 @@ K1520_API int k1520d_medium_heads(K1520Disk h);
  *
  * Wie @ref k1520d_list ein Zustandswechsel: die `k1520d_track_*`- und
  * `k1520d_span_*`-Abfragen beziehen sich auf die zuletzt eingelesene Spur.
+ *
+ * @warning An einem echten Laufwerk **blockiert** der Aufruf, wenn die Spur noch
+ *          unbekannt ist (sie wird dann geholt).  Ansichten ueber die ganze Diskette
+ *          fragen deshalb zuerst @ref k1520d_track_state.
  */
 K1520_API int k1520d_track_scan(K1520Disk h, int cyl, int head);
+
+/**
+ * @brief Zustand einer Spur, **ohne** sie zu beschaffen (0=unbekannt, 1=sauber, 2=geaendert).
+ *
+ * Damit kann eine Uebersicht zeichnen, was sie weiss, statt 160 Spuren nachzuladen.
+ */
+K1520_API int k1520d_track_state(K1520Disk h, int cyl, int head);
 
 /// @brief false = diese Spur gibt es in der Ausdehnung des Mediums nicht.
 K1520_API bool        k1520d_track_exists(K1520Disk h);
@@ -280,6 +453,13 @@ K1520_API bool   k1520d_span_id_crc_ok  (K1520Disk h, int i);
 K1520_API bool   k1520d_span_data_crc_ok(K1520Disk h, int i);
 /// @brief Datenmarke war 0xF8 (geloeschter Sektor) statt 0xFB.
 K1520_API bool   k1520d_span_deleted    (K1520Disk h, int i);
+/// @brief Traegt das DATENFELD nichts Unterscheidbares (alle Bytes gleich)?  So sieht
+///        ein formatierter, nie beschriebener Sektor aus.  Der UDOS-Anhang hinter der
+///        Daten-CRC zaehlt nicht mit — er ist auch auf einer leeren Diskette belegt.
+K1520_API bool   k1520d_span_blank      (K1520Disk h, int i);
+/// @brief Bytes hinter der Daten-CRC, die KEIN Gap sind (0 = keine, UDOS = 4).
+///        Am Inhalt entschieden, nicht am erkannten Dateisystem.
+K1520_API int    k1520d_span_tail_bytes (K1520Disk h, int i);
 
 /**
  * @brief Nutzdaten eines Sektors lesen.

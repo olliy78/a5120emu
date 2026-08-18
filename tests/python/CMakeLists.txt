@@ -43,6 +43,11 @@ if (K1520_PYTEST_PYTHON AND _k1520_pydeps EQUAL 0)
     # anlegt und die Zeile vergisst, hat einen Test, der NIRGENDS läuft und
     # dessen Fehlen niemandem auffällt — grün, weil ungefragt.
     # CONFIGURE_DEPENDS lässt CMake beim Bauen nachsehen, ob Dateien dazukamen.
+    #
+    # Damit ist auch test_gw_hardware.py registriert — es überspringt sich selbst
+    # ohne `K1520_GW_HARDWARE=1` (Modul-`skipif`), braucht also keinen Sonderweg
+    # in dieser Datei (doc/design/14_physische_diskette.md §14).  Der Gegenpart
+    # OHNE Hardware ist gw_physical (Ersatzlaufwerk über einer .hfe).
     file(GLOB _py_tests CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/test_*.py")
     set(_py_modules "")
     foreach(_f IN LISTS _py_tests)

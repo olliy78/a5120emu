@@ -19,8 +19,13 @@ if [ ! -d "$VENV_DIR" ]; then
     exit 1
 fi
 
-# Activate venv
-source "$VENV_DIR/bin/activate"
+# Den Interpreter des venv DIREKT aufrufen, nicht über `source .../activate`.
+# `activate` trägt den Pfad des venv ABSOLUT ein (er stammt aus dem Erzeugen);
+# ein kopiertes oder mitverschobenes venv stellt damit das Verzeichnis eines
+# FREMDEN venv in den PATH, und `python3` ist dann ein anderer Interpreter mit
+# anderen Paketen — Fehlerbild: eine installierte Abhängigkeit gilt als fehlend.
+# Der direkt aufgerufene Interpreter findet sein venv über den eigenen Pfad.
+PY="$VENV_DIR/bin/python3"
 
 # Set library path
 export LD_LIBRARY_PATH="$BUILD_DIR:$LD_LIBRARY_PATH"
@@ -29,11 +34,11 @@ export LD_LIBRARY_PATH="$BUILD_DIR:$LD_LIBRARY_PATH"
 echo "K1520 A5120 Emulator GUI"
 echo "========================"
 echo ""
-echo "Python: $(which python3)"
-echo "PySide6: $(python3 -c 'import PySide6; print(PySide6.__version__)')"
+echo "Python: $PY"
+echo "PySide6: $("$PY" -c 'import PySide6; print(PySide6.__version__)')"
 echo "Library: $BUILD_DIR/libk1520core.so"
 echo ""
 echo "Starting GUI..."
 echo ""
 
-python3 "${PROJECT_DIR}/app/main.py" "$@"
+exec "$PY" "$PROJECT_DIR/app/main.py" "$@"

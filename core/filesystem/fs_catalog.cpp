@@ -20,8 +20,9 @@
 
 const char* fsTypeName(FsType t) {
     switch (t) {
-        case FsType::Cpm:  return "cpm";
-        case FsType::Udos: return "udos";
+        case FsType::Cpm:      return "cpm";
+        case FsType::Udos:     return "udos";
+        case FsType::Udos1715: return "udos1715";
     }
     return "?";
 }
@@ -109,10 +110,12 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
     // ── type (Pflicht) ──
     const yaml::Node* n_type = node.find("type");
     if (!n_type || !n_type->isScalar())
-        { why = "Pflichtfeld 'type' fehlt (cpm | udos)"; return false; }
-    if      (n_type->scalar == "cpm")  out.type = FsType::Cpm;
-    else if (n_type->scalar == "udos") out.type = FsType::Udos;
-    else { why = "'type': '" + n_type->scalar + "' — erlaubt sind cpm | udos"; return false; }
+        { why = "Pflichtfeld 'type' fehlt (cpm | udos | udos1715)"; return false; }
+    if      (n_type->scalar == "cpm")      out.type = FsType::Cpm;
+    else if (n_type->scalar == "udos")     out.type = FsType::Udos;
+    else if (n_type->scalar == "udos1715") out.type = FsType::Udos1715;
+    else { why = "'type': '" + n_type->scalar + "' — erlaubt sind cpm | udos | udos1715";
+           return false; }
 
     // ── data_start ──
     if (const yaml::Node* n = node.find("data_start")) {
@@ -175,19 +178,25 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
             out.os = n->scalar;
         }
 
-        // Ein UDOS-Dateisystem kann kein .img sein (Kontrollblock hinter der CRC);
+        // Ein ZDOS-Dateisystem kann kein .img sein (Kontrollblock hinter der CRC);
         // fuer CP/M gilt umgekehrt nichts Besonderes.
         for (const char* feld : {"sides_separate", "boot_track", "directory_track",
-                                 "bitmap_track", "usable_tracks"})
+                                 "bitmap_track", "usable_tracks", "system_track0"})
             if (node.has(feld))
-                issues.push_back(where + ": '" + feld + "' gilt nur fuer type: udos — ignoriert");
+                issues.push_back(where + ": '" + feld + "' gilt nur fuer die UDOS-Familie"
+                                                        " — ignoriert");
     } else {
-        // UDOS haengt je Sektor 4 Bytes HINTER die Daten-CRC — ein rohes Sektorabbild
+        // ZDOS haengt je Sektor 4 Bytes HINTER die Daten-CRC — ein rohes Sektorabbild
         // verliert damit die gesamte Dateiverkettung.  Das ist keine Einstellung.
-        if (img_ausdruecklich)
-            issues.push_back(where + ": 'containers: img' ist fuer UDOS unmoeglich "
-                                     "(Sektorkontrollblock hinter der Daten-CRC) — entfernt");
-        out.allow_img = false;
+        // UDOS1715/NDOS haelt dagegen ALLES im Sektor (Zeigersektoren statt Gap-Zeiger)
+        // und ist deshalb sehr wohl als .img darstellbar
+        // (doc/udos1715_diskettenformat.md §8).
+        if (out.type == FsType::Udos) {
+            if (img_ausdruecklich)
+                issues.push_back(where + ": 'containers: img' ist fuer UDOS/ZDOS unmoeglich "
+                                         "(Sektorkontrollblock hinter der Daten-CRC) — entfernt");
+            out.allow_img = false;
+        }
 
         if (const yaml::Node* n = node.find("sides_separate")) {
             bool b = true;
@@ -209,6 +218,26 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
         v = 0;
         if (!intField(node, "usable_tracks", 0, ncyls, v, why)) return false;
         out.usable_tracks = static_cast<uint8_t>(v ? v : ncyls);
+
+        if (const yaml::Node* n = node.find("system_track0")) {
+            bool b = false;
+            if (!n->isScalar() || !yaml::toBool(n->scalar, b))
+                { why = "'system_track0' muss true/false sein"; return false; }
+            if (out.type != FsType::Udos1715) {
+                issues.push_back(where + ": 'system_track0' gilt nur fuer type: udos1715"
+                                         " — ignoriert");
+            } else {
+                out.system_track0 = b;
+            }
+        }
+        // Bei UDOS1715 ist die Spur der ganze Zylinder — zwei getrennte Seiten gibt es
+        // dort nicht (doc/udos1715_diskettenformat.md §1.1).
+        if (out.type == FsType::Udos1715 && out.sides_separate) {
+            if (node.has("sides_separate"))
+                issues.push_back(where + ": 'sides_separate: true' gibt es bei UDOS1715 nicht"
+                                         " (die Spur umfasst beide Seiten) — auf false gesetzt");
+            out.sides_separate = false;
+        }
 
         for (const char* feld : {"block_size", "dir_entries", "skew", "os"})
             if (node.has(feld))

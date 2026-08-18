@@ -56,6 +56,37 @@ struct TrackSpan {
     bool     id_crc_ok   = false;
     bool     data_crc_ok = false;
     bool     deleted     = false;  ///< Datenmarke 0xF8 statt 0xFB
+    /**
+     * @brief Traegt das Datenfeld nichts Unterscheidbares — alle Bytes gleich?
+     *
+     * So sieht ein Sektor aus, der zwar **formatiert**, aber nie beschrieben wurde:
+     * das Formatieren fuellt ihn mit einem Fuellbyte (CP/M 0xE5, andere 0x00/0xFF).
+     * Statt auf einen bestimmten Wert zu pruefen, zaehlt die Gleichfoermigkeit —
+     * welches Byte ein Format benutzt, ist dessen Sache.
+     *
+     * **Nur das Datenfeld.**  Der UDOS-Sektorkontrollblock hinter der Daten-CRC
+     * (@ref LogicalSector::tail) bleibt aussen vor: er traegt die Dateiverkettung
+     * und ist auch auf einer leeren Diskette belegt — mitgezaehlt saehe dort kein
+     * Sektor mehr leer aus.
+     *
+     * @note Eine Datei aus lauter gleichen Bytes gilt hier ebenfalls als leer.  Das
+     *       ist hingenommen: die Anzeige sagt „nichts Unterscheidbares", und genau
+     *       das trifft dann ja zu.
+     */
+    bool     blank       = false;
+    /**
+     * @brief Bytes hinter der Daten-CRC, die **kein Gap** sind (0 = keine).
+     *
+     * Hinter jedem Datenfeld stehen Bytes — auf einer gewoehnlichen IBM-Spur das
+     * Gap-Fuellbyte (MFM 0x4E, FM 0xFF), bei UDOS der 4 Byte lange
+     * **Sektorkontrollblock** mit der Dateiverkettung.
+     *
+     * Unterschieden wird am INHALT, nicht am erkannten Dateisystem: eine gemischte
+     * oder gar nicht erkannte Diskette traegt ihre UDOS-Sektoren genauso, und wer
+     * sie im Editor ansieht, will die Verkettung sehen.  Weicht eines der ersten
+     * @ref kSectorTailBytes Bytes vom Fuellbyte ab, gilt der Anhang als belegt.
+     */
+    uint8_t  tail_bytes  = 0;
 
     /// @brief Gilt der Sektor als lesbar?  Beide CRCs müssen stimmen.
     bool ok() const { return id_crc_ok && data_crc_ok; }

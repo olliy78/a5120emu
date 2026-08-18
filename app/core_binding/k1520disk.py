@@ -64,6 +64,29 @@ TEXT = 1
 # ── Öffnen / Anlegen / Speichern ────────────────────────────────────────────
 _lib.k1520d_open.argtypes = [_CS, _CS, ctypes.c_bool]
 _lib.k1520d_open.restype = _H
+_lib.k1520d_open_raw.argtypes = [_CS, _CS, ctypes.c_bool]
+_lib.k1520d_open_raw.restype = _H
+# Physische Diskette am Greaseweazle (doc/design/14_physische_diskette.md)
+_lib.k1520d_open_physical.argtypes = [ctypes.c_void_p, _CS, ctypes.c_bool]
+_lib.k1520d_open_physical.restype = _H
+_lib.k1520d_open_physical_raw.argtypes = [ctypes.c_void_p, _CS, ctypes.c_bool]
+_lib.k1520d_open_physical_raw.restype = _H
+_lib.k1520d_has_filesystem.argtypes = [_H]
+_lib.k1520d_has_filesystem.restype = ctypes.c_bool
+_lib.k1520d_redetect.argtypes = [_H, _CS]
+_lib.k1520d_redetect.restype = ctypes.c_bool
+_lib.k1520d_keep_even_tracks.argtypes = [_H]
+_lib.k1520d_keep_even_tracks.restype = ctypes.c_int
+_lib.k1520d_drop_second_side.argtypes = [_H]
+_lib.k1520d_drop_second_side.restype = ctypes.c_int
+_lib.k1520d_delete_cylinder.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_delete_cylinder.restype = ctypes.c_int
+_lib.k1520d_insert_cylinder_at.argtypes = [_H, ctypes.c_int, ctypes.c_bool]
+_lib.k1520d_insert_cylinder_at.restype = ctypes.c_int
+_lib.k1520d_probe_track_count.argtypes = [ctypes.c_int, ctypes.c_int]
+_lib.k1520d_probe_track_count.restype = ctypes.c_int
+_lib.k1520d_write_to_physical.argtypes = [_H, ctypes.c_void_p]
+_lib.k1520d_write_to_physical.restype = ctypes.c_int
 _lib.k1520d_create.argtypes = [_CS, _CS, _CS]
 _lib.k1520d_create.restype = _H
 _lib.k1520d_create_bootable.argtypes = [_CS, _CS, _CS, _CS]
@@ -122,6 +145,10 @@ _lib.k1520d_detection_alternatives.argtypes = [_H]
 _lib.k1520d_detection_alternatives.restype = _CS
 _lib.k1520d_detection_remarks.argtypes = [_H]
 _lib.k1520d_detection_remarks.restype = _CS
+_lib.k1520d_detection_examined_tracks.argtypes = [_H]
+_lib.k1520d_detection_examined_tracks.restype = ctypes.c_int
+_lib.k1520d_refresh_detection.argtypes = [_H]
+_lib.k1520d_refresh_detection.restype = ctypes.c_bool
 
 # ── Seiten ──────────────────────────────────────────────────────────────────
 _lib.k1520d_volume_count.argtypes = [_H]
@@ -140,6 +167,15 @@ _lib.k1520d_volume_used.restype = _U64
 # ── Verzeichnis ─────────────────────────────────────────────────────────────
 _lib.k1520d_list.argtypes = [_H]
 _lib.k1520d_list.restype = ctypes.c_int
+# Zweistufiges Verzeichnis (UDOS: Kopfsektoren liegen verstreut, §11.2b)
+_lib.k1520d_list_names.argtypes = [_H]
+_lib.k1520d_list_names.restype = ctypes.c_int
+_lib.k1520d_entry_details_loaded.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_details_loaded.restype = ctypes.c_bool
+_lib.k1520d_entry_details_ready.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_details_ready.restype = ctypes.c_bool
+_lib.k1520d_entry_load_details.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_load_details.restype = ctypes.c_bool
 _lib.k1520d_entry_volume.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_entry_volume.restype = ctypes.c_int
 _lib.k1520d_entry_name.argtypes = [_H, ctypes.c_int]
@@ -182,6 +218,8 @@ _lib.k1520d_entry_bytes_in_last.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_entry_bytes_in_last.restype = ctypes.c_uint16
 _lib.k1520d_entry_extra.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_entry_extra.restype = ctypes.c_uint32
+_lib.k1520d_entry_segments.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_segments.restype = _CS
 _lib.k1520d_entry_created.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_entry_created.restype = _CS
 _lib.k1520d_set_udos_attrs.argtypes = [
@@ -191,6 +229,7 @@ _lib.k1520d_set_udos_attrs.argtypes = [
     ctypes.c_bool, ctypes.c_uint16, ctypes.c_uint16,
     ctypes.c_bool, ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint16,
     ctypes.c_bool, ctypes.c_uint32,
+    ctypes.c_bool, _CS,
 ]
 _lib.k1520d_set_udos_attrs.restype = ctypes.c_bool
 
@@ -210,6 +249,8 @@ _lib.k1520d_medium_heads.argtypes = [_H]
 _lib.k1520d_medium_heads.restype = ctypes.c_int
 _lib.k1520d_track_scan.argtypes = [_H, ctypes.c_int, ctypes.c_int]
 _lib.k1520d_track_scan.restype = ctypes.c_int
+_lib.k1520d_track_state.argtypes = [_H, ctypes.c_int, ctypes.c_int]
+_lib.k1520d_track_state.restype = ctypes.c_int
 _lib.k1520d_track_exists.argtypes = [_H]
 _lib.k1520d_track_exists.restype = ctypes.c_bool
 _lib.k1520d_track_formatted.argtypes = [_H]
@@ -246,6 +287,10 @@ _lib.k1520d_span_data_crc_ok.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_span_data_crc_ok.restype = ctypes.c_bool
 _lib.k1520d_span_deleted.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_span_deleted.restype = ctypes.c_bool
+_lib.k1520d_span_blank.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_blank.restype = ctypes.c_bool
+_lib.k1520d_span_tail_bytes.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_span_tail_bytes.restype = ctypes.c_int
 
 _lib.k1520d_sector_read.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c_int,
                                     ctypes.POINTER(ctypes.c_uint8), ctypes.c_int]
@@ -393,6 +438,9 @@ class Entry:
     user: int = 0
     hidden: bool = False
     damaged: bool = False
+    #: Stehen die Angaben jenseits des Namens fest?  Bei CP/M immer True; bei UDOS
+    #: erst, wenn der Kopfsektor der Datei gelesen ist (siehe DiskTool.list_names).
+    details_loaded: bool = True
     side_dir: str = ""    # 'Side0'/'Side1' — leer bei einseitigen Dateisystemen
 
     # ── UDOS-Kopfsektorangaben (bei CP/M alle 0 bzw. leer) ──────────────────
@@ -407,7 +455,8 @@ class Entry:
     high_addr: int = 0      # HIGH ADDRESS  } was der Lader zuteilen lässt
     stack_size: int = 0     # STACK SIZE   /
     bytes_in_last: int = 0  # Bytes im letzten Satz (Kopfsektor 22)
-    extra: int = 0          # Kopfsektor 44…47 (Bedeutung offen)
+    extra: int = 0          # Kopfsektor 44…47 = die vier Bytes hinter Segment 1
+    segments: str = ""      # ALLE Segmente, "4400+0041 8442+0026"
     created: str = ""       # Erstellungsvermerk (Datum ODER Versionstext)
 
     # ── CP/M-Attribute, aus ``attrs`` aufgeschlüsselt ───────────────────────
@@ -464,6 +513,11 @@ class Span:
     id_crc_ok: bool = False
     data_crc_ok: bool = False
     deleted: bool = False
+    #: Datenfeld ohne unterscheidbaren Inhalt (alle Bytes gleich) — so sieht ein
+    #: formatierter, nie beschriebener Sektor aus.  Der UDOS-Anhang zählt nicht mit.
+    blank: bool = False
+    #: Bytes hinter der Daten-CRC, die KEIN Gap sind (0 = keine, UDOS = 4).
+    tail_bytes: int = 0
 
     @property
     def is_sector(self) -> bool:
@@ -538,6 +592,165 @@ class DiskTool:
         return cls(h, p)
 
     @classmethod
+    def open_physical(cls, sync, filesystem: Optional[str] = None,
+                      read_only: bool = True) -> "DiskTool":
+        """**Physische Diskette** in einem echten Laufwerk öffnen.
+
+        ``sync`` ist ein :class:`app.gw.Sync` (oder dessen rohes Handle), der von einem
+        laufenden Arbeitsfaden bedient wird — ohne den blockiert der Aufruf bis zur
+        Frist.  Ein Handle lässt sich nur **einmal** öffnen.
+
+        **Der Aufruf liest die ganze Diskette**: die Formaterkennung sieht sich jede
+        Spur an (rund eine Sekunde je Spur).  Er gehört deshalb in einen Arbeitsfaden
+        mit Fortschrittsanzeige, nicht in den Oberflächenfaden.
+
+        Raises:
+            K1520DiskError: mit der Meldung der Bibliothek.
+        """
+        h = _lib.k1520d_open_physical(getattr(sync, "handle", sync),
+                                      _b(filesystem or ""), read_only)
+        if not h:
+            raise K1520DiskError(_s(_lib.k1520d_last_open_error()))
+        return cls(h, "")
+
+    @classmethod
+    def open_raw(cls, path, filesystem: Optional[str] = None,
+                 read_only: bool = True) -> "DiskTool":
+        """Wie :meth:`open`, **öffnet aber auch ohne Erkennung**.
+
+        Wird kein Dateisystem gefunden, kommt das Abbild trotzdem heraus — nur eben
+        ohne (:attr:`has_filesystem` ist dann False).  Medium, Sektoreditor und
+        „Speichern unter" arbeiten weiter; Dateien gibt es keine.
+
+        Gilt für eine Datei genauso wie für eine physische Diskette: eine gemischte
+        oder unbekannte Geometrie ist kein Grund, das Abbild gar nicht herzugeben.
+        """
+        p = os.fspath(path)
+        h = _lib.k1520d_open_raw(_b(p), _b(filesystem or ""), read_only)
+        if not h:
+            raise K1520DiskError(_s(_lib.k1520d_last_open_error()))
+        return cls(h, p)
+
+    @classmethod
+    def open_physical_raw(cls, sync, filesystem: Optional[str] = None,
+                          read_only: bool = True) -> "DiskTool":
+        """Wie :meth:`open_physical`, **öffnet aber auch ohne Erkennung**.
+
+        Wird kein Dateisystem gefunden, kommt die Diskette trotzdem heraus — nur
+        eben ohne (:attr:`has_filesystem` ist dann False).  Medium, Sektoreditor,
+        Abbild sichern und die Schnittwerkzeuge arbeiten weiter; Dateien gibt es
+        keine.  Der Grund steht in :attr:`remarks`.
+        """
+        h = _lib.k1520d_open_physical_raw(getattr(sync, "handle", sync),
+                                          _b(filesystem or ""), read_only)
+        if not h:
+            raise K1520DiskError(_s(_lib.k1520d_last_open_error()))
+        return cls(h, "")
+
+    @property
+    def has_filesystem(self) -> bool:
+        """Ist ein Dateisystem gemountet?  False = roh geöffnet."""
+        return bool(_lib.k1520d_has_filesystem(self._h))
+
+    def redetect(self, filesystem: Optional[str] = None) -> bool:
+        """Erkennung am **Speicherabbild** wiederholen — ohne neu einzulesen.
+
+        Für „Dateisystem von Hand wählen" und für die Zeit nach einem Schnitt.
+
+        Args:
+            filesystem: erzwingen; None/"" = wieder erkennen lassen.
+
+        Returns:
+            True, wenn danach ein Dateisystem gemountet ist.
+        """
+        if not _lib.k1520d_redetect(self._h, _b(filesystem or "")):
+            raise K1520DiskError(self._fail())
+        return self.has_filesystem
+
+    def keep_even_tracks(self) -> int:
+        """Jede zweite Spur wegwerfen — **löst das Abbild vom Laufwerk**.
+
+        Aus einer im Doppelschritt beschriebenen, aber einfachschrittig gelesenen
+        Diskette wird das, was ein 40-Spur-Laufwerk sieht.
+
+        Returns: verbliebene Spuren.
+        """
+        n = int(_lib.k1520d_keep_even_tracks(self._h))
+        if n < 0:
+            raise K1520DiskError(self._fail())
+        return n
+
+    def drop_second_side(self) -> int:
+        """Seite 1 wegwerfen — **löst das Abbild vom Laufwerk**."""
+        n = int(_lib.k1520d_drop_second_side(self._h))
+        if n < 0:
+            raise K1520DiskError(self._fail())
+        return n
+
+    def delete_cylinder(self, cyl: int) -> int:
+        """Einen ganzen Zylinder löschen; alles dahinter rückt auf.
+
+        Für Abbilder mit mehr Spuren, als hineingehören (82 statt 80), und zum
+        Zurechtstutzen auf eine Zielgeometrie (77 Spuren für 8″).
+
+        Returns: verbliebene Zylinder.
+        """
+        n = int(_lib.k1520d_delete_cylinder(self._h, cyl))
+        if n < 0:
+            raise K1520DiskError(self._fail())
+        return n
+
+    def insert_cylinder_at(self, pos: int, mfm: bool = True) -> int:
+        """Einen **unformatierten** Zylinder an Position ``pos`` einfügen.
+
+        Der neue Zylinder trägt die Nummer ``pos``; alles von dort an rückt nach
+        hinten.  ``pos`` darf die Spurzahl sein (anhängen) und **0** (vor alle
+        bestehenden) — das braucht man für eine FM-Spur 0 vor MFM-Daten.
+
+        Das Verfahren folgt **nicht** dem Nachbarn: gerade der Wechsel ist der
+        Zweck.  Sektoren legt man danach im Diskeditor an.
+
+        Returns: verbliebene Zylinder.
+        """
+        n = int(_lib.k1520d_insert_cylinder_at(self._h, pos, mfm))
+        if n < 0:
+            raise K1520DiskError(self._fail())
+        return n
+
+    def write_to_physical(self, sync) -> int:
+        """Das Speicherabbild auf ein **echtes Laufwerk** legen.
+
+        Jede bekannte Spur wandert in das Medium hinter ``sync`` und gilt dort als
+        geändert — der Arbeitsfaden schreibt sie im Hintergrund auf die eingelegte
+        Diskette.  Gewartet wird nicht; der Fortschritt steht in ``sync.stats``,
+        abgeschlossen wird mit ``sync.flush()``.
+
+        So kommt eine geladene ``.hfe`` auf eine echte Diskette.  **Was auf der
+        Zieldiskette stand, ist danach fort.**
+
+        Returns:
+            Zahl der eingestellten Spuren.
+
+        Raises:
+            K1520DiskError: wenn gar nichts kopiert wurde (z. B. passt die Diskette
+                nicht in die eingestellte Laufwerksgeometrie).
+        """
+        n = int(_lib.k1520d_write_to_physical(self._h,
+                                              getattr(sync, "handle", sync)))
+        if n < 0:
+            raise K1520DiskError(self._fail())
+        return n
+
+    @staticmethod
+    def probe_track_count(num_cyls: int, num_heads: int) -> int:
+        """Wie viele Spuren die Formaterkennung holen wird (Ziel der Fortschrittsanzeige).
+
+        Kommt aus der Bibliothek, damit die Oberfläche die Sondenregel nicht nachbaut
+        und dabei von ihr abweicht (§11.2a).
+        """
+        return int(_lib.k1520d_probe_track_count(int(num_cyls), int(num_heads)))
+
+    @classmethod
     def create(cls, path, filesystem: str, label: str = "",
                boot_image=None) -> "DiskTool":
         """Neue, leere Diskette anlegen (formatieren + Dateisystem initialisieren).
@@ -588,7 +801,7 @@ class DiskTool:
 
     @property
     def filesystem_type(self) -> str:
-        """``'cpm'`` | ``'udos'`` | ``''`` — die Familie des erkannten Dateisystems.
+        """``'cpm'`` | ``'udos'`` | ``'udos1715'`` | ``''`` — die Familie.
 
         Die Oberfläche braucht sie, um zu wissen, *welche* Dateiangaben es
         überhaupt gibt.  Leer, wenn der Name in keinem Katalog steht (abgeleitete
@@ -611,8 +824,25 @@ class DiskTool:
 
     @property
     def remarks(self) -> str:
-        """Auffälligkeiten des Mediums (Altbestand, CRC-Fehler); '' = ohne Befund."""
+        """Auffälligkeiten des Mediums (Altbestand, CRC-Fehler); '' = ohne Befund.
+
+        Achtung: nach einer Stichprobenerkennung gilt das nur für die angesehenen
+        Spuren — wie viele das waren, sagt :attr:`examined_tracks`.
+        """
         return _s(_lib.k1520d_detection_remarks(self._h))
+
+    @property
+    def examined_tracks(self) -> int:
+        """Über wie viele Spuren :attr:`remarks` urteilt; 0 = über die ganze Diskette."""
+        return int(_lib.k1520d_detection_examined_tracks(self._h))
+
+    def refresh_detection(self) -> bool:
+        """Befund neu bewerten, sobald die Diskette vollständig gelesen ist.
+
+        Returns:
+            True, wenn sich die Meldung geändert hat (Anzeige auffrischen).
+        """
+        return bool(_lib.k1520d_refresh_detection(self._h))
 
     @property
     def volume_count(self) -> int:
@@ -635,35 +865,64 @@ class DiskTool:
         ]
 
     def list(self) -> List[Entry]:
-        """Verzeichnis aller Seiten — **immer frisch** aus dem Medium gelesen."""
-        n = _lib.k1520d_list(self._h)
-        out = []
-        for i in range(n):
-            v = _lib.k1520d_entry_volume(self._h, i)
-            out.append(Entry(
-                volume=v,
-                name=_s(_lib.k1520d_entry_name(self._h, i)),
-                size=int(_lib.k1520d_entry_size(self._h, i)),
-                type=_s(_lib.k1520d_entry_type(self._h, i)),
-                attrs=_s(_lib.k1520d_entry_attrs(self._h, i)),
-                date=_s(_lib.k1520d_entry_date(self._h, i)),
-                user=_lib.k1520d_entry_user(self._h, i),
-                hidden=bool(_lib.k1520d_entry_hidden(self._h, i)),
-                damaged=bool(_lib.k1520d_entry_damaged(self._h, i)),
-                side_dir=self.volume_dir(v),
-                entry=int(_lib.k1520d_entry_start(self._h, i)),
-                record_len=int(_lib.k1520d_entry_record_len(self._h, i)),
-                block_len=int(_lib.k1520d_entry_block_len(self._h, i)),
-                segment=int(_lib.k1520d_entry_segment(self._h, i)),
-                segment_len=int(_lib.k1520d_entry_segment_len(self._h, i)),
-                low_addr=int(_lib.k1520d_entry_low_addr(self._h, i)),
-                high_addr=int(_lib.k1520d_entry_high_addr(self._h, i)),
-                stack_size=int(_lib.k1520d_entry_stack_size(self._h, i)),
-                bytes_in_last=int(_lib.k1520d_entry_bytes_in_last(self._h, i)),
-                extra=int(_lib.k1520d_entry_extra(self._h, i)),
-                created=_s(_lib.k1520d_entry_created(self._h, i)),
-            ))
-        return out
+        """Verzeichnis aller Seiten — **immer frisch** aus dem Medium gelesen.
+
+        Bei UDOS liest das zu JEDER Datei den Kopfsektor; an einem echten Laufwerk
+        ist :meth:`list_names` der schnelle Weg (§11.2b).
+        """
+        return [self._entry(i) for i in range(_lib.k1520d_list(self._h))]
+
+    def list_names(self) -> List[Entry]:
+        """Verzeichnis **nur mit den Namen** — bei UDOS drei Spuren statt drei Dutzend.
+
+        Die übrigen Angaben (Größe, Typ, Datum) sind dann leer und
+        ``details_loaded`` ist False; nachzutragen mit :meth:`load_entry_details`.
+        Bei CP/M ist das Ergebnis dasselbe wie bei :meth:`list` — dort steht alles
+        im Verzeichniseintrag selbst.
+        """
+        return [self._entry(i) for i in range(_lib.k1520d_list_names(self._h))]
+
+    def entry_details_ready(self, i: int) -> bool:
+        """Wären die Angaben zu Eintrag ``i`` **ohne Warten** zu haben?"""
+        return bool(_lib.k1520d_entry_details_ready(self._h, i))
+
+    def load_entry_details(self, i: int) -> Entry:
+        """Angaben zu Eintrag ``i`` nachtragen und den aktualisierten Eintrag liefern.
+
+        **Blockiert** an einem echten Laufwerk, wenn der Kopfsektor erst geholt
+        werden muss — vorher :meth:`entry_details_ready` fragen.
+        """
+        _lib.k1520d_entry_load_details(self._h, i)
+        return self._entry(i)
+
+    def _entry(self, i: int) -> Entry:
+        """Einen Eintrag aus dem Stand der Bibliothek zusammensetzen."""
+        v = _lib.k1520d_entry_volume(self._h, i)
+        return Entry(
+            volume=v,
+            name=_s(_lib.k1520d_entry_name(self._h, i)),
+            size=int(_lib.k1520d_entry_size(self._h, i)),
+            type=_s(_lib.k1520d_entry_type(self._h, i)),
+            attrs=_s(_lib.k1520d_entry_attrs(self._h, i)),
+            date=_s(_lib.k1520d_entry_date(self._h, i)),
+            user=_lib.k1520d_entry_user(self._h, i),
+            hidden=bool(_lib.k1520d_entry_hidden(self._h, i)),
+            damaged=bool(_lib.k1520d_entry_damaged(self._h, i)),
+            side_dir=self.volume_dir(v),
+            entry=int(_lib.k1520d_entry_start(self._h, i)),
+            record_len=int(_lib.k1520d_entry_record_len(self._h, i)),
+            block_len=int(_lib.k1520d_entry_block_len(self._h, i)),
+            segment=int(_lib.k1520d_entry_segment(self._h, i)),
+            segment_len=int(_lib.k1520d_entry_segment_len(self._h, i)),
+            low_addr=int(_lib.k1520d_entry_low_addr(self._h, i)),
+            high_addr=int(_lib.k1520d_entry_high_addr(self._h, i)),
+            stack_size=int(_lib.k1520d_entry_stack_size(self._h, i)),
+            bytes_in_last=int(_lib.k1520d_entry_bytes_in_last(self._h, i)),
+            extra=int(_lib.k1520d_entry_extra(self._h, i)),
+            segments=_s(_lib.k1520d_entry_segments(self._h, i)),
+            created=_s(_lib.k1520d_entry_created(self._h, i)),
+            details_loaded=bool(_lib.k1520d_entry_details_loaded(self._h, i)),
+        )
 
     def check(self) -> str:
         """Mehrzeiliger Prüfbericht."""
@@ -723,11 +982,14 @@ class DiskTool:
                        block_len: Optional[int] = None,
                        segment: Optional[tuple] = None,
                        memory: Optional[tuple] = None,
-                       extra: Optional[int] = None) -> None:
+                       extra: Optional[int] = None,
+                       segments: Optional[str] = None) -> None:
         """UDOS-Kopfsektorangaben einer vorhandenen Datei ändern.
 
         Der Dateiinhalt bleibt unangetastet; **nicht angegebene Felder bleiben
-        stehen**.  ``segment=(anfang, länge)``, ``memory=(low, high, stack)``;
+        stehen**.  ``segment=(anfang, länge)`` setzt nur das ERSTE Segment;
+        ``segments="4400+0041 8442+0026"`` setzt die ganze Liste und geht vor —
+        eine Programmdatei kann mehr als zwei haben.  ``memory=(low, high, stack)``;
         ``properties=";"`` löscht alle Eigenschaften.
 
         Raises:
@@ -743,7 +1005,8 @@ class DiskTool:
                 block_len is not None, int(block_len or 0),
                 segment is not None, int(seg[0]), int(seg[1]),
                 memory is not None, int(mem[0]), int(mem[1]), int(mem[2]),
-                extra is not None, int(extra or 0)):
+                extra is not None, int(extra or 0),
+                segments is not None, _b(segments or "")):
             raise K1520DiskError(self._fail())
 
     def set_cpm_attrs(self, name: str, *, read_only: Optional[bool] = None,
@@ -779,8 +1042,24 @@ class DiskTool:
     def medium_heads(self) -> int:
         return int(_lib.k1520d_medium_heads(self._h))
 
+    #: Spurzustände (siehe :meth:`track_state`).
+    SPUR_UNBEKANNT, SPUR_SAUBER, SPUR_GEAENDERT = 0, 1, 2
+
+    def track_state(self, cyl: int, head: int) -> int:
+        """Zustand einer Spur, **ohne** sie zu holen.
+
+        ``0`` = noch nie gelesen (an einem echten Laufwerk; der Inhalt ist dann
+        bedeutungslos), ``1`` = sauber, ``2`` = geändert.  Eine Übersicht über die
+        ganze Diskette muss das fragen, bevor sie :meth:`track` ruft — sonst lädt
+        das blosse Zeichnen die Diskette vollständig nach.
+        """
+        return int(_lib.k1520d_track_state(self._h, cyl, head))
+
     def track(self, cyl: int, head: int) -> Track:
-        """Eine Spur mit allen Abschnitten — immer frisch aus dem Medium."""
+        """Eine Spur mit allen Abschnitten — immer frisch aus dem Medium.
+
+        **Blockiert** an einem echten Laufwerk, wenn die Spur noch unbekannt ist.
+        """
         n = _lib.k1520d_track_scan(self._h, cyl, head)
         spans = []
         for i in range(max(0, n)):
@@ -797,6 +1076,8 @@ class DiskTool:
                 id_crc_ok=bool(_lib.k1520d_span_id_crc_ok(self._h, i)),
                 data_crc_ok=bool(_lib.k1520d_span_data_crc_ok(self._h, i)),
                 deleted=bool(_lib.k1520d_span_deleted(self._h, i)),
+                blank=bool(_lib.k1520d_span_blank(self._h, i)),
+                tail_bytes=int(_lib.k1520d_span_tail_bytes(self._h, i)),
             ))
         return Track(
             cyl=cyl, head=head,

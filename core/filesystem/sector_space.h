@@ -118,6 +118,15 @@ public:
     /// @brief Traegt die Spur ueberhaupt Adressmarken? (false = unformatiert)
     bool     trackFormatted(uint8_t cyl, uint8_t head) const;
 
+    /**
+     * @brief Ist die Spur schon bekannt? — **laedt NICHT nach**.
+     *
+     * Nur an einer physischen Diskette je @c false; bei einer Datei ist jede Spur
+     * bekannt.  Damit kann eine Anzeige entscheiden, ob ein Zugriff sie warten liesse
+     * (@ref FileSystem::detailsReady).
+     */
+    bool     trackKnown(uint8_t cyl, uint8_t head) const;
+
     // ─── linear ──────────────────────────────────────────────────────────────
 
     /// @brief Nutzbytes aller zum Raum gehoerenden Spuren.

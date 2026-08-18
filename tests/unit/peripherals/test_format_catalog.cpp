@@ -118,6 +118,9 @@ TEST(FormatCatalog, Formatnamen_SindEinStabilerVertrag) {
         "k5601_ss40_16x256_dstep", "k5601_ss40_15x256_dstep",
         "k5601_ds40_5x1024_dstep", "k5601_ds40_26x128_dstep",
         "k5601_ds40_16x256_dstep", "k5601_ds40_17x256_dstep",
+        // 2026-08-18: SCP1700/CP/M-86 (A7100) — die einzige Geometrie des Katalogs,
+        // die FM und MFM auf DERSELBEN Diskette mischt (Bootspur c0h0 in FM).
+        "scp1700_640",
     };
 
     for (const auto& name : expected)

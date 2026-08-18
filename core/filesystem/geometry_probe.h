@@ -35,7 +35,19 @@ struct MeasuredTrack {
     uint8_t  cyl        = 0;
     uint8_t  head       = 0;
     bool     formatted  = false;   ///< traegt Adressmarken
-    uint8_t  sectors    = 0;       ///< Anzahl gefundener Sektoren
+    uint8_t  sectors    = 0;       ///< Anzahl gefundener Sektoren (mit Doppelgaengern)
+    /// @brief Anzahl **verschiedener** Sektor-IDs; 0 = nicht ermittelt.
+    ///
+    /// Meist gleich @ref sectors.  Eine Spur, die in einem Zug ueber die Umdrehung
+    /// hinaus beschrieben wurde, traegt am Ende ein zweites Exemplar ihrer ersten
+    /// Sektoren — die SCP1700-Bootspur des A7100 ist so eine (16 Sektoren, 19
+    /// Adressmarken).  Fuer den Abgleich mit einem Format zaehlt diese Zahl: der
+    /// Treiber liest ueber die ID, ein Doppelgaenger bringt keinen Platz.
+    /// Zugriff ueber @ref uniqueSectors, nicht direkt.
+    uint8_t  unique_sectors = 0;
+
+    /// @brief Verschiedene Sektor-IDs — mit Rueckfall auf @ref sectors.
+    uint8_t uniqueSectors() const { return unique_sectors ? unique_sectors : sectors; }
     uint16_t sector_size= 0;       ///< einheitliche Sektorgroesse (0 = uneinheitlich)
     uint8_t  first_id   = 0;       ///< kleinste Sektor-ID
     /// @brief Spurnummer aus dem ID-FELD.  Bei Doppelschritt-Disketten ist sie die
@@ -75,6 +87,66 @@ namespace GeometryProbe {
 /// @brief Alle Spuren des Mediums vermessen (Reihenfolge: Zylinder aussen, Kopf innen).
 std::vector<MeasuredTrack> measure(const DiskMedium& medium);
 
+/**
+ * @brief Nur die angegebenen Zylinder vermessen — fuer teuer nachladende Medien.
+ *
+ * Am echten Laufwerk kostet jede Spur 0,5–0,8 s; eine Vollmessung von 160 Spuren
+ * braucht anderthalb Minuten, obwohl die Katalogformate sich an **wenigen** Stellen
+ * unterscheiden.  Nachgerechnet ueber alle Formatpaare des Katalogs trennen acht
+ * Spuren alles, was ueberhaupt trennbar ist; die mit Abstand wichtigste ist
+ * **Zylinder 3** — dieselbe, die das CP/A-BIOS liest (@c dlgint,
+ * doc/cpa_format_detection.md).
+ *
+ * @warning Das Ergebnis ist eine Aussage ueber die **gemessenen** Spuren.  Die Regeln
+ *          in @ref match zaehlen Luecken, Altbestand und Schadstellen nur unter ihnen;
+ *          @ref synthesize braucht weiterhin die Vollmessung, denn es leitet die
+ *          Geometrie aus dem lueckenlosen Bild ab.
+ */
+std::vector<MeasuredTrack> measureTracks(
+    const DiskMedium& medium,
+    const std::vector<std::pair<uint8_t, uint8_t>>& tracks);
+
+/**
+ * @brief Die **Spuren** (Zylinder + Kopf), die zum Unterscheiden der Formate genuegen.
+ *
+ * Acht Stueck, aus dem Katalog ausgerechnet — nicht acht Zylinder auf beiden Seiten:
+ * Kopf 1 traegt genau eine Sonde (Zylinder 0), und die beantwortet nur die Frage
+ * ein- oder zweiseitig.  Alles Weitere entscheidet sich auf Kopf 0.
+ *
+ * | Sonde | trennt zusaetzlich |
+ * |-------|--------------------|
+ * | 3/0   | 1606 Formatpaare (die CP/A-Sonde `dlgint`) |
+ * | 0/1   | 99  |
+ * | 78/0  | 35  (40 oder 80 Spuren) |
+ * | 0/0   | 15  |
+ * | 2/0, 40/0, 1/0, 77/0 | je 1–4 |
+ *
+ * Die ungeraden Zylinder sind Pflicht, nicht Beiwerk: ohne sie faende die
+ * Doppelschritt-Regel ihre Luecken nicht und jedes `step: 2`-Format fiele durch.
+ */
+std::vector<std::pair<uint8_t, uint8_t>> probeTracks(uint8_t num_cyls,
+                                                     uint8_t num_heads);
+
+/**
+ * @brief **Stichprobe** eines teuer nachladenden Mediums — sucht sich ihre Spuren selbst.
+ *
+ * Anders als @ref measureTracks ist die Auswahl nicht fest, sondern haengt vom
+ * Gemessenen ab.  Das ist noetig, weil die Regeln in @ref match nicht nur die
+ * einzelnen Spuren bewerten, sondern die **Ausdehnung** der Diskette: ein Format,
+ * das mehr Zylinder deklariert als beschrieben sind, faellt durch.  Wer fest bei
+ * Zylinder 77 sondiert und dort Altbestand einer kuerzeren Formatierung findet,
+ * haelt eine 77-Spur-Diskette fuer 41 Spuren lang und waehlt ein zu kleines Format.
+ *
+ * Ablauf: Systemspuren (0–3) → **binaere Suche nach dem letzten beschriebenen
+ * Zylinder** (~log2(n) Spuren, dabei immer zwei benachbarte pruefen, sonst halbiert
+ * sie eine Doppelschritt-Diskette) → Spuren am gefundenen Ende, auch auf Kopf 1 →
+ * eine Sonde in der Mitte.  Zusammen ~15 statt 160 Spuren.
+ *
+ * @warning Die Zaehlungen des Ergebnisses (`stray_tracks` …) sind Aussagen ueber die
+ *          angesehenen Spuren.  Wer damit @ref match ruft, setzt @c stichprobe.
+ */
+std::vector<MeasuredTrack> measureSample(const DiskMedium& medium);
+
 /// @brief Hoechster Zylinder mit Adressmarken; -1, wenn das Medium unformatiert ist.
 int lastFormattedCylinder(const std::vector<MeasuredTrack>& tracks);
 
@@ -102,7 +174,8 @@ int lastFormattedCylinder(const std::vector<MeasuredTrack>& tracks);
  *  6. ein Format mit mehr Koepfen als das Medium passt nie (kein DS-Format auf einer
  *     einseitigen Diskette).
  */
-GeometryMatch match(const std::vector<MeasuredTrack>& tracks, const DiskFormat& fmt);
+GeometryMatch match(const std::vector<MeasuredTrack>& tracks, const DiskFormat& fmt,
+                    bool stichprobe = false);
 
 /**
  * @brief Alle passenden Formate, bestes zuerst.
@@ -113,7 +186,8 @@ GeometryMatch match(const std::vector<MeasuredTrack>& tracks, const DiskFormat& 
  * entscheidet Stufe 2.
  */
 std::vector<GeometryMatch> matchAll(const std::vector<MeasuredTrack>& tracks,
-                                    const std::vector<DiskFormat>& formats);
+                                    const std::vector<DiskFormat>& formats,
+                                    bool stichprobe = false);
 
 /// @brief Messung als Klartext — Grundlage der Fehlermeldung „passt zu keinem Format".
 std::string describe(const std::vector<MeasuredTrack>& tracks);

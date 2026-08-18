@@ -137,6 +137,24 @@ formats:
       - { cyls: 0,    heads: 0-1, sectors: 16, size: 256  }
       - { cyls: 1-79, heads: 0-1, sectors: 5,  size: 1024 }
 
+  # ══ SCP1700 / CP/M-86 (A7100) ══════════════════════════════════════════════
+  # Der 16-Bit-Rechner A7100 fährt SCP1700, ein CP/M-86.  Seine 5,25″-Disketten
+  # sind durchgängig 16×256 MFM — mit EINER Ausnahme: **Spur 0 Kopf 0 ist FM**
+  # mit halber Datenrate (128-B-Sektoren).  Das ist keine Vermutung, das CP/A-BIOS
+  # rechnet damit: „Jeder Fehler in Spur 0, Sektor 1 führt zur Annahme von
+  # Systemspuren (A7100-System mit 5" FM und 8272-Hardware mit 128er
+  # Sektorlänge)" — `biosdsk.mac`, s. disks/cpa_cpa780_k5601_clock.prn.
+  # Gemessen am Referenzdatenträger (Greaseweazle F1, 300 min⁻¹): FM-Flusszeiten
+  # 4/8 µs auf c0h0, MFM 4/6/8 µs überall sonst.
+  - name:        scp1700_640
+    description: "SCP1700/CP/M-86 640K — Bootspur c0h0 in FM 16×128, sonst 16×256 MFM"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0,    heads: 0,   sectors: 16, size: 128, encoding: fm, rate: 125 }
+      - { cyls: 0,    heads: 1,   sectors: 16, size: 256 }
+      - { cyls: 1-79, heads: 0-1, sectors: 16, size: 256 }
+
   # ══ UDOS 1526 / 4.x (ZDOS) ═════════════════════════════════════════════════
   # UDOS formatiert 77 Spuren zu 26×128 MFM.  Beide Seiten tragen je ein eigenes,
   # vollständiges Dateisystem (doc/udos_diskettenformat.md §2) — physisch ist das
@@ -578,14 +596,15 @@ formats:
 #    name         (Pflicht)  eindeutiger Name — CLI, GUI, C-API
 #    description  (optional) Klartext fuer die Oberflaeche
 #    format       (Pflicht)  Name eines Eintrags aus `formats:` (die Geometrie)
-#    type         (Pflicht)  cpm | udos
+#    type         (Pflicht)  cpm | udos | udos1715
 #    data_start   (optional) erste Spur des Dateisystems (Vorgabe cyl 0 / head 0)
-#    containers   (optional) img | hfe | dmk (Vorgabe: alle; udos nie img)
+#    containers   (optional) img | hfe | dmk (Vorgabe: alle; udos nie img — udos1715 schon)
 #    detect_rank  (optional) Reihenfolge bei mehrdeutiger Erkennung (kleiner = frueher)
 #
 #  Nur type: cpm      block_size, dir_entries, skew, os
-#  Nur type: udos     sides_separate, boot_track, directory_track, bitmap_track,
-#                     usable_tracks
+#  Nur type: udos/    sides_separate, boot_track, directory_track, bitmap_track,
+#           udos1715  usable_tracks   (udos1715 zusaetzlich: system_track0;
+#                     sides_separate ist dort immer false — die Spur ist der Zylinder)
 #
 #  ┌─────────────────────────────────────────────────────────────────────────┐
 #  │ Der Beginn des Dateisystems ist eine SPUR, kein Byte-Offset.            │
@@ -653,6 +672,23 @@ filesystems:
     block_size:  2048
     dir_entries: 128
 
+  # ══ SCP1700 / CP/M-86 (A7100) ══════════════════════════════════════════════
+  # CP/M-86 führt dasselbe Verzeichnis wie CP/M 2.2 — 32-B-Einträge, Extents,
+  # 128-B-Sätze.  Nachgemessen am Referenzdatenträger (Verzeichnis bei c2h0,
+  # 16-Bit-Blockzeiger, höchster benutzter Block 311 = 312 Blöcke à 2048 B über
+  # 156 Datenspuren).  Ein eigener Eintrag ist nötig, weil `CpaDpbRule` hier
+  # nicht gilt: die Regel bildet das CP/A-BIOS nach, nicht das SCP1700.
+
+  - name:        scp1700
+    description: "SCP1700/CP/M-86 (A7100) — Dateisystem ab Zylinder 2"
+    format:      scp1700_640
+    type:        cpm
+    # `os:` bleibt bei cpm2.2 — CP/M-86 unterscheidet sich im VERZEICHNIS nicht;
+    # was anders ist (Programmdateiformat .CMD, 8086-Code), liegt im Dateiinhalt.
+    data_start:  { cyl: 2, head: 0 }
+    block_size:  2048
+    dir_entries: 128
+
   # ══ UDOS 1526 / 4.x (ZDOS) ═════════════════════════════════════════════════
   # Feste Spurlage aus UDOS_/PC1715/FORMATPC.MAC (BOOTSSPUR 15H, DIRECTORYSPUR 16H,
   # BITMAPSPUR 17H), belegt am Referenzdatentraeger — doc/udos_diskettenformat.md §3.
@@ -674,3 +710,32 @@ filesystems:
     format:      k5601_ss40_26x128
     type:        udos
     usable_tracks: 40
+
+  # ══ UDOS1715 / NDOS (PC 1715) ══════════════════════════════════════════════
+  # Dieselbe Betriebssystemfamilie, ANDERES Dateisystem: der uPD765 des PC 1715
+  # erreicht die Bytes hinter der Daten-CRC nicht, deshalb steht die Verkettung in
+  # eigenen ZEIGERSEKTOREN statt im Gap.  Folgen (doc/udos1715_diskettenformat.md):
+  #   * 256-B-Sektoren, reines Standard-IBM  ->  .img ist moeglich und richtig
+  #   * eine "Spur" umfasst BEIDE Seiten eines Zylinders (32 Sektoren)  ->  eine
+  #     Diskette ist EIN Datentraeger, kein Side0/Side1
+  #   * feste Lage: Verzeichnis Spur 16H, Belegungsplan Spur 17H Sektor 0/1
+  # Die drei zugelassenen Formate stehen woertlich im Handbuch §1.2.
+
+  - name:        udos1715
+    description: "UDOS1715/NDOS — 80 Spuren doppelseitig, 16×256 (640K, Standard)"
+    format:      k5601_16x256
+    type:        udos1715
+    detect_rank: -10
+
+  - name:        udos1715_ss80
+    description: "UDOS1715/NDOS — 80 Spuren einseitig, 16×256 (320K)"
+    format:      k5601_ss80_16x256
+    type:        udos1715
+    detect_rank: -10
+
+  - name:        udos1715_ss40
+    description: "UDOS1715/NDOS — 40 Spuren einseitig, 16×256 (160K)"
+    format:      k5601_ss40_16x256
+    type:        udos1715
+    usable_tracks: 40
+    detect_rank: -10

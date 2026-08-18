@@ -140,6 +140,10 @@ _lib.k1520_key_release.restype = None
 # k1520_mount_disk(K1520Handle, drive: int, path: const char*, format: const char*, wp: bool) -> bool
 _lib.k1520_mount_disk.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_bool]
 _lib.k1520_mount_disk.restype = ctypes.c_bool
+# k1520_mount_physical(K1520Handle, drive: int, K1520Sync, wp: bool) -> bool
+# Physische Diskette am Greaseweazle (doc/design/14_physische_diskette.md).
+_lib.k1520_mount_physical.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_void_p, ctypes.c_bool]
+_lib.k1520_mount_physical.restype = ctypes.c_bool
 
 # k1520_create_disk(K1520Handle, drive: int, path: const char*, format: const char*, wp: bool) -> bool
 _lib.k1520_create_disk.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_bool]
@@ -453,6 +457,26 @@ class K1520Emulator:
         path_bytes = path.encode('utf-8')
         format_bytes = format_name.encode('utf-8')
         return _lib.k1520_mount_disk(self._handle, ctypes.c_int(drive), path_bytes, format_bytes, ctypes.c_bool(write_protect))
+
+    def mount_physical(self, drive: int, sync, write_protect: bool = True) -> bool:
+        """Mount a PHYSICAL disk from a real drive on a Greaseweazle adapter.
+
+        *sync* is an :class:`app.gw.Sync` (or its raw handle) served by a running
+        worker thread.  Nothing is read at mount time — tracks are fetched one by
+        one as the guest touches them, so a boot starts within a second instead of
+        after a full disk image dump.
+
+        The read path blocks the machine thread for roughly half a second per
+        track, exactly as a real drive would; the GUI thread stays responsive.
+
+        A sync handle can only be mounted **once**.  Write protection is the
+        default here: a mistake costs the only remaining copy of a real diskette.
+
+        See doc/design/14_physische_diskette.md.
+        """
+        return _lib.k1520_mount_physical(self._handle, ctypes.c_int(drive),
+                                         getattr(sync, "handle", sync),
+                                         ctypes.c_bool(write_protect))
     
     def create_disk(self, drive: int, path: str, format_name: str = "",
                     write_protect: bool = False) -> bool:

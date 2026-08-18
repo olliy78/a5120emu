@@ -63,6 +63,37 @@ _SPEC: List[Tuple] = [
      "Den ganzen Disketteninhalt in einen Ordner holen", "_alles_extrahieren", False),
     ("alles_rein", "Alles ei&nfügen…", "in-all", None,
      "Einen ganzen Ordner auf die Diskette schreiben", "_alles_einfuegen", False),
+    # Die echte Diskette: laden und überschreiben stehen NEBENEINANDER — es sind
+    # die beiden Richtungen desselben Wegs, und der Bediener sucht sie zusammen.
+    ("physisch", "&Physische Diskette laden…", "disk-physical", "Ctrl+Shift+O",
+     "Eine ECHTE Diskette in einem echten Laufwerk am Greaseweazle öffnen — "
+     "das Öffnen misst eine Stichprobe der Spuren und dauert etwa zehn Sekunden",
+     "_physisch_dialog", False),
+    ("physisch_schreiben", "Physische Diskette &überschreiben…", "disk-physical-write",
+     None,
+     "Das geöffnete Speicherabbild auf eine echte Diskette schreiben — "
+     "ihr bisheriger Inhalt geht dabei verloren",
+     "_physisch_schreiben_dialog", False),
+
+    # Einer der beiden Auswege aus einer Schadstelle (14_physische_diskette.md
+    # §7.2; der andere ist, das Abbild in eine Datei zu sichern): neue Diskette
+    # einlegen, alles noch einmal wegschreiben.  Nur sichtbar, solange ein
+    # echtes Laufwerk offen ist — an einer Datei ergibt es keinen Sinn.
+    ("neu_beschreiben", "Diskette neu &beschreiben…", None, None,
+     "Das vollständige Speicherabbild noch einmal auf die eingelegte Diskette "
+     "schreiben — für eine frische, fehlerfreie.  Nur bereits gelesene Spuren "
+     "werden geschrieben", "_neu_beschreiben", False),
+    # Zurechtschneiden des SPEICHERABBILDS (§12.6) — nicht der Diskette.  Beides
+    # löst vom Laufwerk: danach stimmt die Spurnummer nicht mehr mit der
+    # Kopfposition überein, ein Rückschreiben ginge auf die falschen Zylinder.
+    ("gerade_spuren", "&Ungerade Spuren entfernen", None, None,
+     "Jede zweite Spur wegwerfen — aus einer im Doppelschritt beschriebenen, aber "
+     "einfachschrittig gelesenen Diskette wird das, was ein 40-Spur-Laufwerk sieht",
+     "_gerade_spuren", False),
+    ("seite1_weg", "&Seite 1 entfernen", None, None,
+     "Die Rückseite aus dem Speicherabbild werfen — bei einer einseitig "
+     "beschriebenen Diskette steht dort nur Altbestand",
+     "_seite1_weg", False),
     ("bootabbild", "&Bootabbild sichern…", "boot", None,
      "Die Systemspuren als .bin sichern — damit lässt sich später eine neue "
      "Diskette bootfähig anlegen", "_bootabbild_sichern_dialog", False),
@@ -91,6 +122,9 @@ _SPEC: List[Tuple] = [
 #: Beschriftung in der Symbolleiste (``QAction.setIconText``).
 KURZ = {'oeffnen': 'Öffnen',
     'neu': 'Neu',
+    'physisch': 'Diskette laden',
+    'physisch_schreiben': 'Diskette schreiben',
+    'neu_beschreiben': 'Neu schreiben',
     'speichern': 'Speichern',
     'speichern_unter': 'Unter…',
     'archivieren': 'Archiv',
@@ -104,6 +138,8 @@ KURZ = {'oeffnen': 'Öffnen',
     'schreibschutz': 'R/O',
     'alles_raus': 'Alles holen',
     'alles_rein': 'Alles einfügen',
+    'gerade_spuren': 'Ungerade weg',
+    'seite1_weg': 'Seite 1 weg',
     'bootabbild': 'Bootabbild',
     'diskeditor': 'Diskeditor',
     'angaben': 'Diskette',

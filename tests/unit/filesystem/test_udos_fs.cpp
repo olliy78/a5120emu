@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -672,4 +673,105 @@ TEST(UdosFileSystemWrite, MkfsLegtEinBenutzbaresDateisystemAn) {
     disk.reset();
     std::error_code ec;
     std::filesystem::remove(pfad, ec);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Zweistufiges Verzeichnis (`CAT` gegen `CAT F=L`)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// UDOS fuehrt im Verzeichnis nur Name und SECRET-Bit; Laenge, Typ und Datum stehen
+// im Kopfsektor JEDER Datei, verstreut ueber die Diskette.  An einem echten Laufwerk
+// ist das der Unterschied zwischen drei und drei Dutzend Spuren — deshalb gibt es
+// listNames() + loadDetails().  Belegstelle: doc/udos_diskettenformat.md §5.
+
+TEST(UdosVerzeichnisZweistufig, NamenUndReihenfolgeSindDieselbenWieBeiList) {
+    Seite s = oeffne(0);
+    ASSERT_TRUE(s) << s.error;
+
+    const std::vector<FileEntry> voll  = s.fs->list();
+    const std::vector<FileEntry> namen = s.fs->listNames();
+
+    ASSERT_EQ(namen.size(), voll.size());
+    for (size_t i = 0; i < voll.size(); ++i) {
+        EXPECT_EQ(namen[i].name, voll[i].name) << "Reihenfolge weicht ab bei " << i;
+        // Das SECRET-Bit steht im Verzeichnis selbst — es ist schon ohne Kopf da.
+        EXPECT_EQ(namen[i].hidden, voll[i].hidden) << namen[i].name;
+    }
+}
+
+TEST(UdosVerzeichnisZweistufig, OhneKopfsektorBleibenDieAngabenLeer) {
+    Seite s = oeffne(0);
+    ASSERT_TRUE(s) << s.error;
+
+    for (const FileEntry& e : s.fs->listNames()) {
+        EXPECT_FALSE(e.details_loaded) << e.name;
+        EXPECT_EQ(e.size, 0u)   << e.name;   // 0 heisst hier „noch nicht gelesen"
+        EXPECT_TRUE(e.type.empty()) << e.name;
+        EXPECT_TRUE(e.date.empty()) << e.name;
+    }
+}
+
+TEST(UdosVerzeichnisZweistufig, NachtragenLiefertGenauDasselbeWieList) {
+    Seite s = oeffne(0);
+    ASSERT_TRUE(s) << s.error;
+
+    const std::vector<FileEntry> voll = s.fs->list();
+    std::vector<FileEntry>       nach = s.fs->listNames();
+    for (FileEntry& e : nach) {
+        // An einer DATEI ist jede Spur bekannt — nichts darf hier warten muessen.
+        EXPECT_TRUE(s.fs->detailsReady(e)) << e.name;
+        s.fs->loadDetails(e);
+    }
+
+    ASSERT_EQ(nach.size(), voll.size());
+    for (size_t i = 0; i < voll.size(); ++i) {
+        EXPECT_TRUE(nach[i].details_loaded)        << voll[i].name;
+        EXPECT_EQ(nach[i].name,       voll[i].name);
+        EXPECT_EQ(nach[i].size,       voll[i].size)       << voll[i].name;
+        EXPECT_EQ(nach[i].type,       voll[i].type)       << voll[i].name;
+        EXPECT_EQ(nach[i].attributes, voll[i].attributes) << voll[i].name;
+        EXPECT_EQ(nach[i].date,       voll[i].date)       << voll[i].name;
+        EXPECT_EQ(nach[i].record_len, voll[i].record_len) << voll[i].name;
+        EXPECT_EQ(nach[i].entry_addr, voll[i].entry_addr) << voll[i].name;
+        EXPECT_EQ(nach[i].damaged,    voll[i].damaged)    << voll[i].name;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Speichersegmente — auch ZDOS-Programme haben mehr als eines
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @test Offset 44–47 ist kein Rätsel, sondern das zweite Speichersegment.
+ * @par Kriterium  `FORMAT`, `ESPRO` und `UPRO` der Referenzdiskette melden je zwei
+ *                 Segmente; Typ A meldet keine.
+ * @par Warum      §6 führte die vier Bytes lange als „Bedeutung offen, unverändert
+ *                 übernehmen".  Das UDOS1715-Handbuch (§3.2.2, dieselbe
+ *                 Betriebssystemfamilie) sagt es wörtlich: „mehrere Segmente möglich;
+ *                 abgeschlossen mit `00 00 00 00`", und `2AH…7FH` sind „nur bei
+ *                 P-Dateien vom System verwendet, sonst frei für Anwender".  Beides
+ *                 deckt sich mit dieser Diskette — auch mit dem alten Befund, dass
+ *                 Typ A dort Text trägt.
+ */
+TEST(UdosFileSystem, VierundvierzigBisSiebenundvierzigIstDasZweiteSegment) {
+    Seite s0 = oeffne(0);
+    ASSERT_TRUE(s0) << s0.error;
+
+    std::map<std::string, std::string> segs;
+    std::map<std::string, std::string> typ;
+    for (const FileEntry& e : s0.fs->list()) { segs[e.name] = e.segments; typ[e.name] = e.type; }
+
+    EXPECT_EQ(segs["FORMAT"], "4000+0607 5CEF+02DD");
+    EXPECT_EQ(segs["ESPRO"],  "C14B+2146 E462+0937");
+    EXPECT_EQ(segs["UPRO"],   "C14B+20AE E3CA+0937");
+
+    // Zaehlprobe: JEDE Programmdatei hat mindestens ein Segment, keine Textdatei eines.
+    int p_mit = 0, a_mit = 0, p_ges = 0, a_ges = 0;
+    for (const auto& [name, t] : typ) {
+        if (t.rfind("P", 0) == 0) { ++p_ges; if (!segs[name].empty()) ++p_mit; }
+        else if (t == "A")        { ++a_ges; if (!segs[name].empty()) ++a_mit; }
+    }
+    EXPECT_EQ(p_mit, p_ges) << "jede P-Datei traegt eine Segmentliste";
+    EXPECT_EQ(a_mit, 0)     << "bei Typ A steht dort Anwenderinhalt, keine Segmente";
+    EXPECT_GT(a_ges, 0);
 }

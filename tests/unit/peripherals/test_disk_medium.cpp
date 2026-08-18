@@ -205,3 +205,65 @@ TEST(DiskMedium, Geometry_UniformFalschBeiMischdichte) {
     EXPECT_FALSE(m.geometry().uniform);
     EXPECT_TRUE(m.rawCompatible()) << "Mischdichte allein sperrt .img nicht";
 }
+
+// ─── Spurzustand: EIN Konzept für Datei und echtes Laufwerk ──────────────────
+//
+// Der Dreizustand (Unknown/Clean/Dirty) ist nicht nur für die physische Diskette
+// da — er gilt für JEDES Medium.  Bei einer dateigebundenen Diskette tritt
+// `Unknown` schlicht nie auf, weil der Container-Codec beim Laden alle Spuren
+// füllt.  Die Aussagen `dirty()`/`trackDirty()`, mit denen der Autosave seit jeher
+// arbeitet, sind dieselben Bits (doc/design/09_floppy_drive.md §12.2).
+
+TEST(DiskMedium, ZustandGiltAuchOhneLaufwerk_UnknownKommtDortNieVor) {
+    DiskMedium m(2, 2, Encoding::MFM);
+
+    // Frisch angelegt: bekannt und sauber — nicht „unbekannt".
+    for (uint8_t c = 0; c < 2; ++c)
+        for (uint8_t h = 0; h < 2; ++h)
+            EXPECT_EQ(m.state(c, h), TrackState::Clean) << +c << "/" << +h;
+    EXPECT_TRUE(m.complete());
+    EXPECT_EQ(m.unknownCount(), 0u);
+
+    // Schreiben macht genau eine Spur schmutzig …
+    m.setTrack(1, 0, makeTrack(1, 0, 2, 128));
+    EXPECT_EQ(m.state(1, 0), TrackState::Dirty);
+    EXPECT_EQ(m.state(0, 0), TrackState::Clean);
+    EXPECT_TRUE(m.trackDirty(1, 0));       // dasselbe Bit wie eh und je
+    EXPECT_TRUE(m.dirty());
+
+    // … und der Save macht sie wieder sauber.  Nie wird daraus „unbekannt":
+    // der Inhalt ist ja da, nur die Datei hinkte hinterher.
+    m.clearDirty();
+    EXPECT_EQ(m.state(1, 0), TrackState::Clean);
+    EXPECT_TRUE(m.complete());
+}
+
+TEST(DiskMedium, EinzelneSpurSauberMelden_LaesstDieAnderenSchmutzig) {
+    // Der Weg der Rueckfuehrung: eine Spur ist geschrieben, die andere noch nicht.
+    // Ein pauschales clearDirty() waere hier falsch — es erklaerte auch die
+    // ungeschriebene fuer erledigt.
+    DiskMedium m(2, 1, Encoding::MFM);
+    m.setTrack(0, 0, makeTrack(0, 0, 2, 128));
+    m.setTrack(1, 0, makeTrack(1, 0, 2, 128));
+
+    m.clearTrackDirty(0, 0);
+    EXPECT_EQ(m.state(0, 0), TrackState::Clean);
+    EXPECT_EQ(m.state(1, 0), TrackState::Dirty);
+    EXPECT_TRUE(m.dirty()) << "es steht noch eine Spur aus";
+
+    m.clearTrackDirty(1, 0);
+    EXPECT_FALSE(m.dirty());
+}
+
+TEST(DiskMedium, GeleseneSpurIstSauber_GeschriebeneSchmutzig) {
+    // loadTrack (Ladepfad) vs. setTrack (Schreibpfad) — der Unterschied entscheidet,
+    // ob eine Spur zurueckgeschrieben wird.  Wer beim Laden setTrack benutzt,
+    // schriebe die frisch gelesene Spur sofort wieder hinaus.
+    DiskMedium m(1, 1, Encoding::MFM);
+    m.loadTrack(0, 0, makeTrack(0, 0, 2, 128));
+    EXPECT_EQ(m.state(0, 0), TrackState::Clean);
+    EXPECT_FALSE(m.dirty());
+
+    m.setTrack(0, 0, makeTrack(0, 0, 3, 128));
+    EXPECT_EQ(m.state(0, 0), TrackState::Dirty);
+}

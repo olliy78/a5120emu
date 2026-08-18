@@ -94,17 +94,28 @@ def test_udos_disk_is_shown_as_one_carrier_with_two_side_groups(window, fixture_
     assert window.info_bar.stufe == "warnung"
 
 
-def test_unrecognised_image_locks_the_buttons(window, fixture_disks):
-    """Ohne Erkennung bleibt die Liste leer, die Meldung steht im Fenster."""
-    assert not window.open_image(fixture_disks / "cpa_mini.hfe")
+def test_unrecognised_image_opens_raw_and_locks_the_file_actions(window,
+                                                                 fixture_disks):
+    """Ohne Erkennung: das Abbild ist DA, nur ohne Dateisystem (§12.6).
 
-    assert window.tool is None
+    Früher gab es gar nichts — kein Medium, kein Diskeditor.  Eine gemischte oder
+    unbekannte Geometrie ist aber kein Grund, das Abbild zurückzuhalten: ansehen,
+    sichern und zurechtschneiden bleiben möglich.  Gesperrt ist, was DATEIEN
+    braucht.
+    """
+    assert window.open_image(fixture_disks / "cpa_mini.hfe")
+
+    assert window.tool is not None, "das Abbild wurde nicht hergegeben"
+    assert not window.tool.has_filesystem
     assert window.disk_view.tree.topLevelItemCount() == 0
-    assert "passt zu keinem Format" in window.info_bar.text()
-    assert "4 Sektoren" in window.info_bar.text()
-    assert window.info_bar.stufe == "fehler"
-    for knopf in (window.act_alles_rein, window.act_loeschen, window.act_speichern):
-        assert not knopf.isEnabled(), "Schreiben muss gesperrt sein"
+    assert "kein Dateisystem" in window.info_bar.text()
+    # Kompakt: die Messung nennt sonst jede Spur einzeln.
+    assert window.info_bar.text().count("\n") == 0
+
+    assert window.act_diskeditor.isEnabled(), "der Sektoreditor muss gehen"
+    assert window.act_speichern_unter.isEnabled(), "Abbild sichern muss gehen"
+    for knopf in (window.act_alles_rein, window.act_loeschen, window.act_alles_raus):
+        assert not knopf.isEnabled(), "was Dateien braucht, bleibt gesperrt"
 
 
 def test_forcing_a_filesystem_reopens_the_image(window, fixture_disks):
@@ -377,6 +388,38 @@ def test_archive_converts_an_img_source_to_hfe(window, fixture_disks, tmp_path):
     assert not any(n.endswith(".img") for n in namen)
 
 
+def test_archive_is_named_after_the_disk_label(window, fixture_disks, tmp_path):
+    """Die Beschriftung benennt die Dateien IM Archiv und steht im Verzeichnis.
+
+    Bei einer physischen Diskette ist sie die einzige Auskunft darüber, welche
+    Diskette das war — der Dateiname des Archivs allein wäre nach dem Umbenennen
+    verloren.
+    """
+    import zipfile
+
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    ziel = tmp_path / "beliebig.zip"
+    assert window.archive(ziel, bezeichnung="CP/A 780 Arbeit 3")
+
+    with zipfile.ZipFile(ziel) as z:
+        namen = z.namelist()
+        text = z.read("CP_A_780_Arbeit_3.txt").decode("utf-8")
+    assert "CP_A_780_Arbeit_3.hfe" in namen, namen
+    assert "Beschriftung  CP/A 780 Arbeit 3" in text
+
+
+def test_disk_label_becomes_a_usable_file_name():
+    """Der Aufkleber darf alles tragen — der Dateiname nicht."""
+    from app.disktool.archive import NAMENLOS, dateiname
+
+    assert dateiname("UDOS 4.3  System") == "UDOS_4.3_System"
+    assert dateiname("A:/B*C?") == "A_B_C"
+    assert dateiname("   ") == ""
+    assert dateiname("") == ""
+    assert len(dateiname("x" * 200)) <= 64
+    assert NAMENLOS                       # der letzte Rückfall hat einen Namen
+
+
 # ─── Bootdiskette ────────────────────────────────────────────────────────────
 
 def test_boot_image_button_follows_the_disk(window, fixture_disks, tmp_path):
@@ -598,6 +641,313 @@ import math
 def _editor(window, abbild):
     assert window.open_image(abbild)
     return window.open_disk_editor()
+
+
+def test_disk_editor_zeigt_den_udos_anhang_auch_ohne_erkanntes_udos(
+        window, fixture_disks, monkeypatch):
+    """Der Anhang hängt am SEKTOR, nicht am erkannten Dateisystem.
+
+    Eine gemischte oder gar nicht erkannte Diskette trägt ihre UDOS-Sektoren
+    genauso — wer sie im Editor ansieht, will die Verkettung sehen.  Früher
+    entschied das `tool.filesystem_type`; bei einer rohen Diskette blieb das Feld
+    dann leer, obwohl der Kontrollblock danebenstand.
+    """
+    ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
+    ed.udos = False              # so, als wäre nichts erkannt worden
+
+    ed._springe(seite=0, spur=25, sektor_id=1)
+    assert ed.tail_feld.isVisible(), "der Anhang wird verschwiegen"
+    assert ed.tail_feld.text().strip(), "Anhangfeld leer"
+    assert "UDOS" in ed.info.text()
+
+    # Und umgekehrt: bei CP/M steht dort nichts — weder Inhalt noch Dateisystem
+    # sprechen dafür.
+    ed2 = _editor(window, fixture_disks / "cpa_cpa780_k5601_noclock.hfe")
+    assert not ed2.udos
+    ed2._springe(seite=0, spur=25, sektor_id=1)
+    assert not ed2.tail_feld.isVisible(), \
+        "auf einer CP/M-Spur stehen dort Gap-Füllbytes, kein Anhang"
+
+
+def test_gemischte_diskette_oeffnet_roh_und_laesst_sich_zurechtschneiden(
+        window, temp_disk):
+    """Der ganze Weg an der gemischten Diskette — dem Fall, für den es gebaut ist.
+
+    `mixed_udos_ss40_over_cpa800.hfe` entstand am echten Laufwerk: erst vollständig
+    als cpa800 formatiert, dann mit UDOS `ss40` im **Doppelschritt** überschrieben.
+    Kopf 0 trägt auf den geraden Zylindern 26×128 (UDOS) und auf den ungeraden noch
+    5×1024, Kopf 1 durchgehend 5×1024.  Kein Katalogformat beschreibt das.
+
+    Geprüft wird die Kette: roh öffnen → schneiden → erkannt.
+    """
+    from app.core_binding.k1520disk import SECTOR
+
+    pfad = temp_disk("mixed_udos_ss40_over_cpa800.hfe")
+    assert window.open_image(pfad), "das Abbild wurde nicht hergegeben"
+    t = window.tool
+    assert not t.has_filesystem, "diese Mischung soll gerade NICHT erkannt werden"
+    assert window.act_diskeditor.isEnabled(), "der Sektoreditor muss gehen"
+    assert window.info_bar.text().count("\n") == 0, "die Meldung ist eine Wand"
+
+    # Das Layout ist wirklich gemischt — sonst prüft der Test etwas anderes.
+    def art(c, h):
+        sp = [x for x in t.track(c, h).spans if x.kind == SECTOR]
+        return (len(sp), sp[0].size) if sp else (0, 0)
+    assert art(0, 0) == (26, 128) and art(1, 0) == (5, 1024)
+    assert art(0, 1) == (5, 1024)
+
+    t.set_read_only(False)
+    assert t.drop_second_side() > 0
+    assert t.keep_even_tracks() > 0
+    assert t.medium_cylinders == 40 and t.medium_heads == 1
+
+    assert t.redetect(), "nach den Schnitten immer noch nicht erkannt"
+    assert t.filesystem == "udos_ss40", f"erkannt als {t.filesystem}"
+    assert len(t.list()) == 44
+    # Und die eine schadhafte Spur wird als solche gemeldet, nicht verschwiegen.
+    assert "fehlenden Sektoren" in t.remarks, t.remarks
+
+
+def test_frisch_angelegte_udos_diskette_zeigt_ihre_anhaenge(window, tmp_path):
+    """Auch eine **frisch angelegte** UDOS-Diskette hat Kontrollblöcke.
+
+    Auf einer frisch formatierten UDOS-Diskette lautet der Kontrollblock nie
+    beschriebener Sektoren `4E 4E 4E 4E` (`doc/udos_diskettenformat.md` §1.1) — vom
+    Gap-Füllbyte nicht zu unterscheiden.  Am Inhalt allein war er deshalb nicht zu
+    sehen; dass UDOS erkannt ist, weiss es aber besser.
+
+    Die Diskette selbst ist dabei in Ordnung: das Anlegen schreibt genau das, was
+    ein UDOS-FORMAT hinterlässt.
+    """
+    ziel = tmp_path / "neu.hfe"
+    assert window.create_disk(ziel, "udos_ss40", "TESTDISK")
+    ed = window.open_disk_editor()
+    ed.show()
+
+    ed._springe(seite=0, spur=5, sektor_id=1)
+    assert ed.tail_feld.isVisible(), "der Kontrollblock wird verschwiegen"
+    assert ed.tail_feld.text().replace(" ", "") == "4E4E4E4E", \
+        f"unerwarteter Inhalt: {ed.tail_feld.text()!r}"
+    assert "UDOS" in ed.info.text()
+
+    # Der Kopfsektor der Verzeichnisdatei trägt einen ECHTEN Zeiger — Beleg dafür,
+    # dass das Anlegen die Verkettung schreibt, nicht nur Füllbytes.
+    ed._springe(seite=0, spur=22, sektor_id=1)
+    assert ed.tail_feld.text().replace(" ", "") != "4E4E4E4E"
+
+
+def test_disk_editor_loescht_und_fuegt_ganze_spuren_ein(window, temp_disk):
+    """Ganze Spuren löschen und einfügen (§19.6).
+
+    Anders als „Sektor löschen" verschiebt das die Diskette dahinter — der Weg,
+    ein Abbild mit zu vielen Spuren zurechtzustutzen (82 statt 80) oder auf eine
+    Zielgeometrie zu bringen (77 für 8″).
+    """
+    from PySide6.QtWidgets import QMessageBox
+    from app.core_binding.k1520disk import SECTOR
+
+    ed = _editor(window, temp_disk("udos_boot_scp.hfe"))
+    window.tool.set_read_only(False)
+    vorher = window.tool.medium_cylinders
+
+    def sektoren(c):
+        return [x for x in window.tool.track(c, 0).spans if x.kind == SECTOR]
+
+    inhalt_dahinter = len(sektoren(6))
+    with_ok = lambda *a, **k: QMessageBox.Ok          # noqa: E731
+    ed_frage = QMessageBox.question
+    QMessageBox.question = staticmethod(with_ok)
+    try:
+        ed._springe(seite=0, spur=5)
+        assert ed.delete_track()
+        assert window.tool.medium_cylinders == vorher - 1, "nicht gelöscht"
+        # Alles dahinter ist aufgerückt: die alte Spur 6 ist jetzt die 5.
+        assert len(sektoren(5)) == inhalt_dahinter
+
+        # Der Dialog fragt Stelle und Verfahren — hier beantwortet.
+        from PySide6.QtWidgets import QDialog
+        import app.disktool.ui.disk_editor as de
+        echt = de.NewTrackDialog
+        class Antwort(echt):
+            def exec(self):
+                self.f_pos.setValue(5)
+                return QDialog.Accepted
+        de.NewTrackDialog = Antwort
+        try:
+            ed._springe(seite=0, spur=4)
+            assert ed.insert_track()
+        finally:
+            de.NewTrackDialog = echt
+        assert window.tool.medium_cylinders == vorher, "nicht eingefügt"
+        # Die neue Spur ist LEER — kein Abklatsch des Nachbarn.
+        assert sektoren(5) == [], "die eingefügte Spur trägt Sektoren"
+    finally:
+        QMessageBox.question = ed_frage
+
+
+def test_disk_editor_sperrt_spuraenderungen_bei_schreibschutz(window, fixture_disks):
+    """Ganze Spuren ändern die Geometrie — erst recht nichts für „nur lesen".
+
+    Die beiden Knöpfe hingen an gar nichts und liessen sich auch an einer
+    schreibgeschützt geöffneten Diskette auslösen.
+    """
+    ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
+    assert window.tool.read_only, "Fixture wird schreibgeschützt geöffnet"
+    assert not ed.btn_spur_neu.isEnabled(), "Spur einfügen trotz Schreibschutz"
+    assert not ed.btn_spur_weg.isEnabled(), "Spur löschen trotz Schreibschutz"
+    assert not ed.btn_neu.isEnabled()      # zum Vergleich: war schon richtig
+
+    window.tool.set_read_only(False)
+    ed._enable(False)
+    assert ed.btn_spur_neu.isEnabled()
+    assert ed.btn_spur_weg.isEnabled()
+
+
+def test_eine_eingefuegte_spur_laesst_sich_von_hand_formatieren(window, temp_disk):
+    """Die eingefügte Spur ist unformatiert — aber NICHT leer.
+
+    Der Unterschied entscheidet alles: eine Spur ohne Bytes gibt es in dieser
+    Geometrie gar nicht, und in eine solche lässt sich kein Sektor legen — das
+    Anlegen landete dann auf der nächsten formatierten Spur.  Eine gelöschte echte
+    Spur trägt Fluss, nur ohne Marken; genau so wird die neue gebaut, und darin
+    lässt sich von Hand formatieren.
+    """
+    from PySide6.QtWidgets import QMessageBox
+    from app.core_binding.k1520disk import SECTOR
+
+    ed = _editor(window, temp_disk("udos_boot_scp.hfe"))
+    window.tool.set_read_only(False)
+    ed._enable(False)
+
+    from PySide6.QtWidgets import QDialog
+    import app.disktool.ui.disk_editor as de
+    echt = de.NewTrackDialog
+
+    class Antwort(echt):
+        def exec(self):
+            self.f_pos.setValue(6)          # neue Spur 6, hinter der jetzigen 5
+            return QDialog.Accepted
+
+    de.NewTrackDialog = Antwort
+    try:
+        ed._springe(seite=0, spur=5)
+        assert ed.insert_track()
+    finally:
+        de.NewTrackDialog = echt
+
+    neu = window.tool.track(6, 0)
+    assert neu.exists, "die eingefügte Spur gibt es gar nicht — so ist sie unbrauchbar"
+    assert not neu.formatted, "sie soll unformatiert sein"
+    assert neu.bytes > 0, "ohne Fluss lässt sich nichts hineinschreiben"
+
+    # Und jetzt von Hand formatieren: die Sektoren landen HIER, nicht anderswo.
+    for nr in (1, 2, 3):
+        window.tool.sector_create(6, 0, id=nr, size=128, gap=40)
+    danach = window.tool.track(6, 0)
+    assert danach.formatted
+    assert [x.id for x in danach.spans if x.kind == SECTOR] == [1, 2, 3]
+
+
+def test_eine_fm_spur_laesst_sich_vor_mfm_spuren_setzen(window, temp_disk):
+    """Der Zweck der beiden Abfragen: **gemischte** Formate (§19.6).
+
+    In der K1520-Welt gibt es Disketten mit FM-Systemspuren vor MFM-Daten.  Beides
+    muss deshalb wählbar sein — die **Stelle** (auch 0, vor allen bestehenden) und
+    das **Verfahren** (es folgt bewusst NICHT dem Nachbarn).
+
+    Und die Länge muss zum Verfahren passen: dieselbe Umdrehung trägt in FM halb so
+    viele Bytes wie in MFM.  Stimmte das nicht, passte die Spur nicht auf die
+    Scheibe.
+    """
+    from app.core_binding.k1520disk import SECTOR
+
+    ed = _editor(window, temp_disk("udos_boot_scp.hfe"))
+    t = window.tool
+    t.set_read_only(False)
+    vorher = t.medium_cylinders
+    mfm_bytes = t.track(0, 0).bytes
+    assert t.track(0, 0).encoding == "MFM"
+
+    assert t.insert_cylinder_at(0, mfm=False) == vorher + 1
+
+    neu, verschoben = t.track(0, 0), t.track(1, 0)
+    assert neu.encoding == "FM", "das Verfahren folgte dem Nachbarn"
+    assert not neu.formatted and neu.exists
+    assert abs(neu.bytes * 2 - mfm_bytes) < mfm_bytes * 0.05, \
+        f"FM-Spur {neu.bytes} B gegen MFM {mfm_bytes} B — passt nicht in eine Umdrehung"
+    assert verschoben.encoding == "MFM", "die alte Spur 0 ist nicht nachgerückt"
+    assert verschoben.bytes == mfm_bytes
+
+    # Und sie lässt sich von Hand formatieren — in FM.
+    t.sector_create(0, 0, id=1, size=128, gap=40, mfm=False)
+    sek = [x for x in t.track(0, 0).spans if x.kind == SECTOR]
+    assert [x.id for x in sek] == [1]
+    assert t.track(0, 0).encoding == "FM"
+
+
+def test_der_spurdialog_sagt_vorher_was_geschieht(window, fixture_disks):
+    """Der Dialog nennt Stelle, Verfahren und Folge — vor dem Bestätigen."""
+    from app.disktool.ui.disk_editor import NewTrackDialog
+
+    _editor(window, fixture_disks / "udos_boot_scp.hfe")
+    d = NewTrackDialog(window.tool, 42)
+    assert d.f_pos.value() == 42
+    assert d.f_pos.maximum() == window.tool.medium_cylinders, \
+        "ans Ende anhängen muss möglich sein"
+    assert d.werte() == (42, True)
+
+    text = d.hinweis.text()
+    assert "42" in text and "43" in text, f"die Folge steht nicht da: {text}"
+
+    d.f_mfm.setCurrentIndex(1)                  # FM
+    assert d.werte() == (42, False)
+    assert "FM" in d.hinweis.text()
+
+    d.f_pos.setValue(0)                         # vor alle bestehenden
+    assert d.werte()[0] == 0
+
+
+def test_disk_editor_faerbt_leere_sektoren_heller(window, fixture_disks):
+    """Beschrieben oder nur formatiert? — dunkelgrün gegen hellgrün.
+
+    Ohne die Unterscheidung sieht eine frisch formatierte Diskette genauso aus wie
+    eine volle.  „Leer" heisst: das **Datenfeld** trägt nichts Unterscheidbares;
+    der UDOS-Anhang hinter der Daten-CRC zählt nicht mit — er ist auch auf einer
+    leeren Diskette belegt.
+    """
+    from app.disktool.ui.disk_editor import FARBE_OK, FARBE_OK_LEER
+    from app.core_binding.k1520disk import SECTOR
+
+    ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_noclock.hfe")
+    leer = voll = None
+    for seite in ed.surface.tracks:
+        for spur in seite:
+            for sp in (spur.spans if spur else ()):
+                if sp.kind != SECTOR or not sp.ok:
+                    continue
+                if sp.blank and leer is None:
+                    leer = sp
+                elif not sp.blank and voll is None:
+                    voll = sp
+    assert leer is not None, "kein leerer Sektor — der Fall wird nicht geprüft"
+    assert voll is not None, "kein beschriebener Sektor"
+
+    assert ed.surface._farbe(leer) == FARBE_OK_LEER
+    assert ed.surface._farbe(voll) == FARBE_OK
+    # Heller, aber DASSELBE Grün: es ist kein anderer Zustand, nur weniger Inhalt.
+    assert FARBE_OK_LEER.lightness() > FARBE_OK.lightness()
+    assert abs(FARBE_OK_LEER.hue() - FARBE_OK.hue()) < 25
+
+    # Und der Tooltip sagt es in Worten — Farbe allein trägt keine Erklärung.
+    assert "leer" in ed.surface.beschreibung((0, 0, leer))
+    assert "leer" not in ed.surface.beschreibung((0, 0, voll))
+    # In der Legende steht beides.
+    from PySide6.QtWidgets import QLabel
+    # Die Legende festhalten, solange gelesen wird: gäbe man `_legende().findChildren()`
+    # heraus, stürbe der Wrapper und risse die Beschriftungen mit (PySide-Eigentum).
+    legende = ed._legende()
+    beschriftungen = [w.text() for w in legende.findChildren(QLabel)]
+    assert any("leer" == t for t in beschriftungen), beschriftungen
 
 
 def test_disk_editor_shows_both_sides_of_the_medium(window, fixture_disks):
@@ -1507,9 +1857,16 @@ def _dialog_startpunkte(window, monkeypatch) -> dict:
 
     Jeder Dialog wird sofort „abgebrochen" (leerer Rückgabewert), es passiert
     also nichts weiter.
+
+    Die Frage nach der Beschriftung (Archivieren) wird mitbeantwortet — sonst
+    stünde der Testlauf an einem modalen Fenster, und der Dateidialog dahinter
+    käme nie zum Zuge.
     """
-    from PySide6.QtWidgets import QFileDialog
+    from PySide6.QtWidgets import QFileDialog, QInputDialog
     gesehen = {}
+
+    monkeypatch.setattr(QInputDialog, "getText",
+                        lambda *a, **k: ("Testdiskette", True))
 
     def datei(titel_index):
         def haken(parent, titel, verzeichnis="", *a, **k):

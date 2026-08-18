@@ -84,7 +84,9 @@ class PropertiesDialog(QDialog):
         self.setWindowTitle(f"Eigenschaften — {entry.name}")
         self.setMinimumWidth(520)
 
-        self.udos = bool(entry.type) or tool.filesystem_type == "udos"
+        # Beide UDOS-Ausprägungen (ZDOS auf dem A5120, NDOS auf dem PC 1715) führen
+        # dieselben Kopfsektorangaben — nur CP/M nicht.
+        self.udos = bool(entry.type) or tool.filesystem_type.startswith("udos")
 
         lay = QVBoxLayout(self)
         lay.addWidget(self._kopf())
@@ -177,21 +179,17 @@ class PropertiesDialog(QDialog):
             "ENTRY — Einsprungadresse; nur bei Typ P/P1 ausgewertet (hex).")
         f2.addRow("Einsprung (ENTRY)", self.f_entry)
 
-        self.f_seg = QLineEdit(_hex16(e.segment))
-        self.f_seg_len = QSpinBox()
-        self.f_seg_len.setRange(0, 65535)
-        self.f_seg_len.setValue(e.segment_len)
-        self.f_seg_len.setSuffix(" Byte")
-        zeile = QHBoxLayout()
-        zeile.addWidget(self.f_seg, 1)
-        zeile.addWidget(QLabel("+"))
-        zeile.addWidget(self.f_seg_len, 1)
-        w = QWidget()
-        w.setLayout(zeile)
+        # EIN Feld für die GANZE Liste: eine Programmdatei kann mehrere Segmente
+        # haben (`ZLINK` einer PC-1715-Diskette sechs).  Zwei Kästchen für Anfang und
+        # Länge zeigten davon nur das erste und behaupteten damit etwas Falsches.
+        self.f_segs = QLineEdit(e.segments)
+        self.f_segs.setPlaceholderText("z. B.  2600+1591  4000+0200")
+        w = self.f_segs
         w.setToolTip(
-            "SEGMENTS — Anfang (hex) und Länge des Speicherabbilds.  Die Länge ist "
-            "NICHT die Dateigröße: sie reicht bei Programmen über das logische "
-            "Dateiende hinaus.")
+            "SEGMENTS — alle Speichersegmente als ANFANG+LÄNGE (hex), durch "
+            "Leerzeichen getrennt.  Die Länge ist NICHT die Dateigröße: sie reicht "
+            "bei Programmen über das logische Dateiende hinaus.  Bei Typ A steht an "
+            "dieser Stelle Anwenderinhalt — dann bleibt das Feld leer.")
         f2.addRow("Segment", w)
 
         self.f_low = QLineEdit(_hex16(e.low_addr))
@@ -314,9 +312,9 @@ class PropertiesDialog(QDialog):
         eintritt = _parse_hex(self.f_entry.text(), "Einsprung")
         if eintritt != e.entry:
             aend["entry"] = eintritt
-        seg = (_parse_hex(self.f_seg.text(), "Segment"), self.f_seg_len.value())
-        if seg != (e.segment, e.segment_len):
-            aend["segment"] = seg
+        segs = " ".join(self.f_segs.text().split())
+        if segs != e.segments:
+            aend["segments"] = segs
         mem = (_parse_hex(self.f_low.text(), "LOW"),
                _parse_hex(self.f_high.text(), "HIGH"),
                _parse_hex(self.f_stack.text(), "STACK"))

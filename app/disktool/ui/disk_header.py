@@ -92,9 +92,14 @@ class DiskHeader(QFrame):
         self.angaben.setText("Öffnen Sie ein Abbild oder legen Sie eine neue "
                              "Diskette an.")
 
-    def setze(self, tool) -> None:
-        """Kopf aus einer geöffneten Diskette füllen."""
-        self.pfad.setText(tool.path)
+    def setze(self, tool, name: str = "") -> None:
+        """Kopf aus einer geöffneten Diskette füllen.
+
+        ``name`` übersteuert die Pfadzeile — eine **physische** Diskette hat keinen
+        Pfad (``tool.path`` ist leer), aber sehr wohl eine Herkunft, die dort stehen
+        muss.
+        """
+        self.pfad.setText(name or tool.path)
         erkannt = "erkannt" if tool.unambiguous else "erkannt, nicht eindeutig"
         teile = [f"Format: {tool.format}",
                  f"Dateisystem: {tool.filesystem} ({erkannt})"]

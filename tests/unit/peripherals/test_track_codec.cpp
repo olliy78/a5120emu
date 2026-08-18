@@ -960,3 +960,98 @@ TEST(TrackCodecErase, LoeschenUndNeuAnlegenErgibtWiederEineVolleSpur) {
         EXPECT_TRUE(s.data_crc_ok);
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Der CRC-Dialekt „Präambel nicht mitgerechnet"
+//
+// Standard-IBM rechnet die drei 0xA1 der Sync-Präambel in die CRC ein.  Der
+// Controller, der `udos_ds77_k5601_fremdsync.hfe` beschrieben hat, setzt das
+// CRC-Register erst beim Marken-Byte auf 0xFFFF — nachgemessen an ALLEN 4004
+// ID-Feldern dieser Diskette (die 4004 Datenfelder derselben Diskette sind
+// dagegen Standard).  Beide Sitten gelten, sonst wäre jeder Sektor rot.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+/// Setzt die ID-CRC eines Sektors auf den Wert des Dialekts (ohne A1-Präambel).
+void schreibeDialektIdCrc(TrackImage& track) {
+    for (size_t i = 0; i + 6 < track.bytes.size(); ++i) {
+        if (track.marks[i] != MarkType::Id) continue;
+        const uint8_t feld[] = {0xFE, track.bytes[i + 1], track.bytes[i + 2],
+                                track.bytes[i + 3], track.bytes[i + 4]};
+        const uint16_t crc = TrackCodec::crc16Ccitt(feld, sizeof(feld));
+        track.bytes[i + 5] = static_cast<uint8_t>(crc >> 8);
+        track.bytes[i + 6] = static_cast<uint8_t>(crc & 0xFF);
+        return;
+    }
+    FAIL() << "keine Id-Marke in der Spur";
+}
+
+}  // namespace
+
+TEST(TrackCodecCrcDialekt, IdCrcOhnePraeambelGiltAlsGueltig) {
+    LogicalSector sec = makeSector(5, 1, 3, 128, 0x5A);
+    TrackImage track = TrackCodec::buildTrack({sec}, Encoding::MFM);
+    ASSERT_FALSE(track.empty());
+
+    // Kontrolle: von buildTrack geschrieben (Standard-Sitte) ist die CRC gültig.
+    auto standard = TrackCodec::parseTrack(track);
+    ASSERT_EQ(standard.size(), 1u);
+    ASSERT_TRUE(standard[0].id_crc_ok);
+
+    schreibeDialektIdCrc(track);
+    auto dialekt = TrackCodec::parseTrack(track);
+    ASSERT_EQ(dialekt.size(), 1u);
+    EXPECT_TRUE(dialekt[0].id_crc_ok)
+        << "die CRC ohne A1-Praeambel wird nicht als Dialekt erkannt";
+    EXPECT_TRUE(dialekt[0].data_crc_ok) << "das Datenfeld blieb unberuehrt";
+    EXPECT_EQ(dialekt[0].id, sec.id);
+}
+
+TEST(TrackCodecCrcDialekt, EineWirklichFalscheCrcBleibtFalsch) {
+    // Der Dialekt kostet genau ein Bit Trennschärfe: zwei von 65536 Zufallswerten
+    // gehen durch statt einem.  Eine verfälschte CRC muss weiterhin auffallen —
+    // sonst wäre die Prüfung wertlos.
+    LogicalSector sec = makeSector(5, 1, 3, 128, 0x5A);
+    TrackImage track = TrackCodec::buildTrack({sec}, Encoding::MFM);
+    ASSERT_FALSE(track.empty());
+
+    size_t idPos = SIZE_MAX;
+    for (size_t i = 0; i < track.marks.size(); ++i)
+        if (track.marks[i] == MarkType::Id) { idPos = i; break; }
+    ASSERT_NE(idPos, SIZE_MAX);
+    track.bytes[idPos + 5] = static_cast<uint8_t>(track.bytes[idPos + 5] ^ 0x01);
+
+    auto parsed = TrackCodec::parseTrack(track);
+    ASSERT_EQ(parsed.size(), 1u);
+    EXPECT_FALSE(parsed[0].id_crc_ok) << "ein gekipptes CRC-Bit blieb unbemerkt";
+}
+
+TEST(TrackCodecCrcDialekt, GeloeschterSektorWirdGegenSeinEigenesMarkenbytePrueft) {
+    // Das Marken-Byte geht in die CRC ein.  Bei einem gelöschten Sektor ist es 0xF8,
+    // nicht 0xFB — wer 0xFB annimmt, erklärt jeden gelöschten Sektor für schadhaft.
+    // buildTrack schreibt (noch) immer 0xFB, der Fall wird deshalb hier von Hand
+    // hergestellt: Marken-Byte tauschen und die CRC nach Standard-Sitte nachziehen.
+    LogicalSector sec = makeSector(2, 0, 1, 128, 0x33);
+    TrackImage track = TrackCodec::buildTrack({sec}, Encoding::MFM);
+    ASSERT_FALSE(track.empty());
+
+    size_t dataPos = SIZE_MAX;
+    for (size_t i = 0; i < track.marks.size(); ++i)
+        if (track.marks[i] == MarkType::Data) { dataPos = i; break; }
+    ASSERT_NE(dataPos, SIZE_MAX);
+
+    track.bytes[dataPos] = 0xF8;
+    std::vector<uint8_t> crcIn = {0xA1, 0xA1, 0xA1, 0xF8};
+    crcIn.insert(crcIn.end(), track.bytes.begin() + static_cast<long>(dataPos) + 1,
+                 track.bytes.begin() + static_cast<long>(dataPos) + 1 + sec.size);
+    const uint16_t crc = TrackCodec::crc16(crcIn.data(), crcIn.size(), 0xFF, 0xFF);
+    track.bytes[dataPos + 1 + sec.size]     = static_cast<uint8_t>(crc >> 8);
+    track.bytes[dataPos + 1 + sec.size + 1] = static_cast<uint8_t>(crc & 0xFF);
+
+    auto parsed = TrackCodec::parseTrack(track);
+    ASSERT_EQ(parsed.size(), 1u);
+    EXPECT_TRUE(parsed[0].deleted) << "der Sektor gilt nicht als gelöscht";
+    EXPECT_TRUE(parsed[0].data_crc_ok)
+        << "die Daten-CRC eines geloeschten Sektors (Marke 0xF8) wurde gegen 0xFB geprueft";
+}
