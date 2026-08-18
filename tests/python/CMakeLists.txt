@@ -36,12 +36,27 @@ execute_process(
 if (K1520_PYTEST_PYTHON AND _k1520_pydeps EQUAL 0)
     message(STATUS "Python-Tests: ${K1520_PYTEST_PYTHON}")
     # Ein ctest-Fall je Testmodul: klare Fehlerzuordnung + parallelisierbar.
-    # gw_physical: physische Diskette OHNE Hardware (Ersatzlaufwerk ueber .hfe).
-    # Der Gegenpart test_gw_hardware.py ist NICHT registriert — er braucht einen
-    # Greaseweazle und laeuft von Hand (doc/design/14_physische_diskette.md §14).
-    set(_py_modules c_api disk_c_api binding boot_smoke drive_types config_io
-                    keyboard_map gui_smoke disktool_gui paths packaging
-                    gw_physical gw_gui physical_cli)
+    #
+    # Die Liste wird EINGELESEN, nicht gepflegt (bis 2026-08-16 stand sie hier
+    # von Hand).  Eine handgepflegte Liste neben den Dateien ist dieselbe Falle
+    # wie die früher getrennte gtest_discover_tests-Zeile: wer test_neu.py
+    # anlegt und die Zeile vergisst, hat einen Test, der NIRGENDS läuft und
+    # dessen Fehlen niemandem auffällt — grün, weil ungefragt.
+    # CONFIGURE_DEPENDS lässt CMake beim Bauen nachsehen, ob Dateien dazukamen.
+    #
+    # Damit ist auch test_gw_hardware.py registriert — es überspringt sich selbst
+    # ohne `K1520_GW_HARDWARE=1` (Modul-`skipif`), braucht also keinen Sonderweg
+    # in dieser Datei (doc/design/14_physische_diskette.md §14).  Der Gegenpart
+    # OHNE Hardware ist gw_physical (Ersatzlaufwerk über einer .hfe).
+    file(GLOB _py_tests CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/test_*.py")
+    set(_py_modules "")
+    foreach(_f IN LISTS _py_tests)
+        get_filename_component(_n "${_f}" NAME_WE)
+        string(REGEX REPLACE "^test_" "" _n "${_n}")
+        list(APPEND _py_modules "${_n}")
+    endforeach()
+    list(SORT _py_modules)
+
     foreach(_mod IN LISTS _py_modules)
         # -p no:cacheprovider: ALLE Fälle laufen im selben Arbeitsverzeichnis, und
         # seit die Regression parallel fährt (`ctest -j`) auch gleichzeitig.  Der
@@ -61,6 +76,9 @@ if (K1520_PYTEST_PYTHON AND _k1520_pydeps EQUAL 0)
             LABELS "python;fast" TIMEOUT 300
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
+
+    list(LENGTH _py_modules _py_n)
+    message(STATUS "Python-Tests: ${_py_n} Module aus test_*.py")
 else()
     message(STATUS
         "Python-Tests NICHT registriert — pytest/PySide6/PyYAML fehlen in "

@@ -31,6 +31,16 @@ tools/dev.sh test-level unit         # eine Ebene: unit|debugtools|integration|c
 tools/dev.sh test -R K2526           # Namensmuster (ctest-Argumente werden durchgereicht)
 ```
 
+Jeder Lauf hinterlässt nebenbei `build/Testing/junit.xml`; daraus wird eine lesbare
+Seite (Ebenen, Laufzeiten, Fehlschläge mit voller Ausgabe):
+
+```sh
+tools/dev.sh test
+python3 tools/test_report.py build/Testing/junit.xml -o protokoll.html
+```
+
+Dieselbe Seite hängt die CI an jeden Lauf als Artefakt — `doc/ci_pipeline.md` §4.5.
+
 Einzelnen Fall genauer ansehen:
 
 ```sh
@@ -46,12 +56,12 @@ Testebene = Verzeichnis = ctest-Label. Quer dazu `fast` / `slow`.
 
 | Verzeichnis | Fälle | Was dort hingehört |
 |-------------|------:|--------------------|
-| `unit/` | 580 | Eine Klasse isoliert, keine Diskette, kein Boot. Struktur spiegelt `core/`: `primitives/ bus/ cards/ peripherals/ util/` |
+| `unit/` | 750 | Eine Klasse isoliert, keine Diskette, kein Boot. Struktur spiegelt `core/`: `primitives/ bus/ cards/ peripherals/ util/` |
 | `debugtools/` | 89 | Die header-only Bausteine, aus denen `k1520dbg` und `boot_trace` bestehen (`tools/*.h`) |
-| `integration/` | 62 | Ganze Maschine, echter Kaltboot von einer Fixture-Diskette |
-| `cli/` | 19 | Die gebauten Werkzeuge als Prozess. Fälle als Daten in `cli/cases/*.cli`, ausgeführt von `cli/run_case.py` |
-| `system/` | 104 | Originale DDR-Programme unter dem Emulator: FORMAT, CPABCGEN, SCPX INIT/MODF/SYSP, HARDY, UDOS — plus die 88er Format-Matrix. **Langsam** (Minuten) |
-| `python/` | 7 | pytest: C-ABI (ctypes ↔ `libk1520core.so`) und PySide6-GUI headless |
+| `integration/` | 72 | Ganze Maschine, echter Kaltboot von einer Fixture-Diskette |
+| `cli/` | 59 | Die gebauten Werkzeuge als Prozess. Fälle als Daten in `cli/cases/*.cli`, ausgeführt von `cli/run_case.py` |
+| `system/` | 106 | Originale DDR-Programme unter dem Emulator: FORMAT, CPABCGEN, SCPX INIT/MODF/SYSP, HARDY, UDOS — plus die 88er Format-Matrix. **Langsam** (Minuten) |
+| `python/` | 12 | pytest: C-ABI (ctypes ↔ `libk1520core.so`), PySide6-GUI headless, Pfadauflösung, Testprotokoll |
 | `support/` | — | Bibliothek `k1520_testsupport`, keine Tests |
 | `fixtures/` | — | Testdisketten (`tests/fixtures/README.md`) |
 

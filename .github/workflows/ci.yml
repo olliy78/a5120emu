@@ -81,6 +81,29 @@ jobs:
         if: always()
         run: ccache -s
 
+      # ── Testprotokoll ──────────────────────────────────────────────────────
+      # `tools/dev.sh` schreibt bei jedem ctest-Lauf build/Testing/junit.xml
+      # mit; daraus wird EINE eigenständige HTML-Seite (kein CDN, keine
+      # Nachladerei — ein Actions-Artefakt wird lokal aus dem ZIP geöffnet).
+      # `if: always()`, denn interessant ist das Protokoll gerade dann, wenn der
+      # Schritt davor rot war.
+      - name: Testprotokoll erzeugen
+        if: always()
+        run: |
+          python3 tools/test_report.py "Linux:build/Testing/junit.xml" \
+            --title "a5120emu — Regression" \
+            --out testprotokoll.html \
+            --summary-md - >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Testprotokoll anhängen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testprotokoll-linux
+          path: testprotokoll.html
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Protokolle bei Fehlschlag sichern
         if: failure()
         uses: actions/upload-artifact@v4
@@ -88,6 +111,7 @@ jobs:
           name: ci-logs
           path: |
             build/Testing/Temporary/LastTest.log
+            build/Testing/junit.xml
             logs/
           if-no-files-found: ignore
           retention-days: 7

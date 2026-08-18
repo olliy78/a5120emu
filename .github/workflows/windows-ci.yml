@@ -217,6 +217,29 @@ jobs:
             }
           }
 
+      # ── Testprotokoll ──────────────────────────────────────────────────────
+      # Gleiches Protokoll wie unter Linux (ci.yml), damit sich beide Läufe
+      # nebeneinander lesen lassen: `test_report.py Linux:a.xml Windows:b.xml`
+      # legt sie in EINE Seite.  `shell: bash`, weil `>>` und der Doppelpunkt im
+      # Laufnamen in pwsh anders zerfielen.
+      - name: Testprotokoll erzeugen
+        if: always()
+        shell: bash
+        run: |
+          python3 tools/test_report.py "Windows (MSVC):build/Testing/junit.xml" \
+            --title "a5120emu — Regression (Windows)" \
+            --out testprotokoll-windows.html \
+            --summary-md - >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Testprotokoll anhängen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testprotokoll-windows
+          path: testprotokoll-windows.html
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: DLLs als Artefakt
         if: always()
         uses: actions/upload-artifact@v4
@@ -235,6 +258,7 @@ jobs:
           name: windows-ci-logs
           path: |
             build/Testing/Temporary/LastTest.log
+            build/Testing/junit.xml
             logs/
           if-no-files-found: ignore
           retention-days: 7

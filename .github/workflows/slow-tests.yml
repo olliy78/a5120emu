@@ -60,15 +60,60 @@ jobs:
             ccache-slow-
             ccache-linux-
 
+      # Beide Läufe schreiben dieselbe build/Testing/junit.xml — der zweite
+      # überschriebe die des ersten.  Deshalb wird sie JE Lauf weggesichert,
+      # und zwar auch dann, wenn der Lauf rot war (`rc` durchreichen, sonst
+      # verschluckte das `exit` des Kopierens den Fehlschlag).
       - name: format_integration
         if: ${{ inputs.umfang != 'format_matrix' }}
         env: { CC: ccache gcc, CXX: ccache g++, CCACHE_MAXSIZE: 500M }
-        run: tools/dev.sh test-format
+        run: |
+          tools/dev.sh test-format; rc=$?
+          cp build/Testing/junit.xml junit-format-integration.xml 2>/dev/null || true
+          exit $rc
 
       - name: format_matrix
         if: ${{ inputs.umfang != 'format_integration' }}
         env: { CC: ccache gcc, CXX: ccache g++, CCACHE_MAXSIZE: 500M }
-        run: tools/dev.sh test-matrix -j4
+        run: |
+          tools/dev.sh test-matrix -j4; rc=$?
+          cp build/Testing/junit.xml junit-format-matrix.xml 2>/dev/null || true
+          exit $rc
+
+      # ── Testprotokoll ──────────────────────────────────────────────────────
+      # Beide Runden in EINE Seite: die Tiefe (Boot-Disk-Kette) und die Breite
+      # (88 FORMAT.COM-Menüs) stehen dann nebeneinander.  Welche davon lief,
+      # hängt an `umfang` — darum wird die Liste zur Laufzeit zusammengestellt.
+      - name: Testprotokoll erzeugen
+        if: always()
+        run: |
+          # Bewusst `if`-Blöcke statt `[ -f … ] && args+=(…)`: GitHub fährt die
+          # Shell mit `set -e`, und ein fehlgeschlagener Test als LETZTER Befehl
+          # einer Zeile beendet den Schritt — der Bericht fiele genau dann aus,
+          # wenn nur eine der beiden Runden lief.
+          args=()
+          if [ -f junit-format-integration.xml ]; then
+            args+=("Tiefe (format_integration):junit-format-integration.xml")
+          fi
+          if [ -f junit-format-matrix.xml ]; then
+            args+=("Breite (format_matrix):junit-format-matrix.xml")
+          fi
+          if [ ${#args[@]} -eq 0 ]; then
+            echo "keine JUnit-XML gefunden — kein Lauf zustande gekommen"; exit 0
+          fi
+          python3 tools/test_report.py "${args[@]}" \
+            --title "a5120emu — langsame Formatläufe" \
+            --out testprotokoll-langsam.html \
+            --summary-md - >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Testprotokoll anhängen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testprotokoll-langsam
+          path: testprotokoll-langsam.html
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Protokolle bei Fehlschlag sichern
         if: failure()
@@ -77,6 +122,7 @@ jobs:
           name: slow-test-logs
           path: |
             build/Testing/Temporary/LastTest.log
+            junit-format-*.xml
             logs/
           if-no-files-found: ignore
           retention-days: 14
