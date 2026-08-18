@@ -201,6 +201,38 @@ Sieben Dinge, die man dabei nicht kaputtmachen darf:
   Programm in derselben Installation: eigener Block beim Starterschreiben + `<name>.desktop.in`
   + Eintrag in `MASCHINEN` (`install.sh`), woran das Deinstallieren die Verknüpfungen findet.
 
+**Drei Programme, nicht eins** (2026-08-18, `doc/design/13_distribution.md` §10a/§10a.5).
+Neben Emulator und DiskTool liefert das Paket den **Debugger `k1520dbg`** aus, dazu die
+**Greaseweazle-Anbindung** für echte Laufwerke. Vier Festlegungen:
+- **Der Debugger hat kein Symbol, aber drei Hinweise.** Er wird in einen vorhandenen
+  Arbeitsablauf aus Editor, Assembler und Konsole eingebunden — deshalb nur ein Verweis
+  in `~/.local/bin` (Linux, Liste **`KONSOLENWERKZEUGE`** in `install.sh`; dabei fiel auf,
+  dass `k1520disktool-cli` in KEINER Aufräumliste stand und als toter Verweis liegenblieb)
+  bzw. `bin\k1520dbg.cmd` (Windows). Verknüpft wird unter Windows die **`.cmd`**
+  (`cmd /k`, bleibt stehen), NIE `k1520dbg.exe` (das Fenster ginge mangels Diskette sofort
+  wieder zu) — Wächter `test_iss_schreibt_die_werkzeug_eingabeaufforderung`. Gesagt wird es
+  in der Schlussmeldung von `install.sh`, auf einer eigenen Assistentenseite **nach dem
+  Kopieren** (`wpInfoAfter` — vorher wären die Pfade noch leer) und in `paket_readme.md`.
+- **`k1520dbg` hat keinen `--help`-Schalter** — jedes freie Argument gilt als Diskette. Der
+  Rauchtest ist deshalb überall `printf 'q\n' | k1520dbg` (Sitzung auf, Sitzung zu); eine
+  Diskette braucht er dafür nicht.
+- **Greaseweazle liegt als fertiges Rad im Paket** (`packaging/gw_pins.txt`, `wheels/`
+  neben der Payload). Es liegt **nicht auf PyPI**, und sein Quellarchiv erklärt eine
+  C-Erweiterung, die beim Anwender übersetzt werden müsste — unter Windows aussichtslos.
+  Das Rad ist daher **`py3-none-any`**, die Erweiterung entfällt über einen
+  **vorgeschalteten Aufsatz** (`setuptools.setup` abfangen, `ext_modules` verwerfen; nicht
+  in `setup.py` schneiden — das hielte die nächste Fassung nicht). Kosten: **~25 ms je
+  Spur** gegen 500–800 ms Lesezeit. Solange `ext_modules` gesetzt ist, wird das Rad an
+  Plattform UND ABI gebunden, auch ohne Übersetzung — `build_payload.sh` prüft den Namen
+  nach. Die vier Abhängigkeiten (crcmod, bitarray, pyserial, requests) kommen mit
+  Prüfsumme aus `requirements.lock`; das Rad selbst spielt der Installer mit **`--no-deps`**
+  ein, und ein Fehlschlag dabei wirft die Installation NICHT hin.
+- **Ohne die C-Erweiterung meldet sich `greaseweazle.optimised` auf der STANDARDAUSGABE.**
+  Bei `k1520disktool --physical` ist die die Nutzlast — `app/gw/device.py` liest die
+  Schicht deshalb nur noch über **`_leise()`** ein (`redirect_stdout(sys.stderr)`);
+  umgeleitet, nicht verworfen. Wächter `test_die_anbindung_schreibt_nicht_auf_die_nutzlast`
+  (es darf **keinen** Import an `_leise` vorbei geben).
+
 Tests: `py_paths` + `py_packaging` (schnell, ohne Netz, in der Standardregression). Der
 vollständige Installationslauf (lädt ~120 MB) liegt hinter
 `K1520_PACKAGING_FULL=1 venv/bin/python3 -m pytest tests/python/test_packaging.py`.

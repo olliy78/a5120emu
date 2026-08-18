@@ -463,10 +463,20 @@ jobs:
                   echo "FEHLER: $verboten gehört nicht ins Windows-Paket" >&2; exit 1
               fi
           done
-          for noetig in launcher.cmd disktool_launcher.cmd slim.py requirements.lock; do
+          for noetig in launcher.cmd disktool_launcher.cmd k1520dbg.cmd slim.py requirements.lock; do
               [ -f "$paket/$noetig" ] || { echo "FEHLER: $noetig fehlt" >&2; exit 1; }
           done
+          # Die Greaseweazle-Anbindung liegt als fertiges Rad BEI der Payload,
+          # nicht darin: der Assistent spielt sie in die Laufzeitumgebung ein.
+          # Plattformunabhaengig muss sie sein — ein cp312-win_amd64-Rad hiesse,
+          # dass die C-Erweiterung doch mitgebaut wurde (packaging/gw_pins.txt).
+          ls "$paket"/wheels/greaseweazle-*-py3-none-any.whl >/dev/null 2>&1 \
+              || { echo "FEHLER: kein plattformunabhaengiges Greaseweazle-Rad" >&2; exit 1; }
           for noetig in bin/k1520core.dll bin/k1520disk.dll bin/k1520disktool-cli.exe \
+                        bin/k1520dbg.exe \
+                        share/doc/handbuch_k1520dbg.md share/tools/z80_disasm2.py \
+                        share/doc/lizenzen/isocline-LICENSE.txt \
+                        share/doc/lizenzen/greaseweazle-COPYING.txt \
                         app/main.py app/disktool/main.py share/k1520emu/formats.yaml; do
               [ -f "$paket/payload/$noetig" ] || { echo "FEHLER: payload/$noetig fehlt" >&2; exit 1; }
           done
@@ -536,11 +546,46 @@ jobs:
           # Was danach dastehen MUSS.  Der Rauchtest hat den Kern schon geladen
           # und das Hauptfenster gebaut; hier geht es um das Ergebnis auf der
           # Platte.
-          foreach ($f in @('bin\a5120emu.cmd', 'bin\k1520disktool.cmd',
+          foreach ($f in @('bin\a5120emu.cmd', 'bin\k1520disktool.cmd', 'bin\k1520dbg.cmd',
+                           'bin\k1520dbg.exe', 'share\doc\handbuch_k1520dbg.md',
+                           'share\tools\z80_disasm2.py',
+                           'share\doc\lizenzen\isocline-LICENSE.txt',
+                           'share\doc\lizenzen\greaseweazle-COPYING.txt',
                            'python\python.exe', 'venv\Scripts\pythonw.exe',
                            'app\main.py', 'share\k1520emu\formats.yaml',
                            '.k1520emu-installation', 'unins000.exe')) {
             if (-not (Test-Path -LiteralPath (Join-Path $ziel $f))) { throw "fehlt nach dem Setup: $f" }
+          }
+
+          # Der Debugger — im Paket, aber ohne eigenes Symbol.  Er muss eine
+          # Sitzung oeffnen (das laedt Kern, Formatkatalog und Zeileneditor) und
+          # sich mit `q` wieder beenden lassen.  Einen Schalter zum blossen
+          # Abfragen gibt es nicht: jedes freie Argument gilt als Diskette.
+          $ausgabe = 'q' | & (Join-Path $ziel 'bin\k1520dbg.exe') 2>&1
+          if ($LASTEXITCODE -ne 0) { $ausgabe | Write-Host; throw 'k1520dbg.exe startet nicht' }
+          $ausgabe | Select-Object -First 2 | ForEach-Object { Write-Host "     $_" }
+          # … und seine Eingabeaufforderung darf keinen Platzhalter mehr tragen.
+          $wz = Get-Content -LiteralPath (Join-Path $ziel 'bin\k1520dbg.cmd') -Raw
+          if ($wz -match '@ROOT@|@DATEN@') { throw 'unersetzter Platzhalter in k1520dbg.cmd' }
+          if ($wz -notmatch [regex]::Escape($ziel)) { throw 'k1520dbg.cmd kennt die Installation nicht' }
+
+          # Die Greaseweazle-Anbindung: eingespielt und einlesbar.  `verfuegbar()`
+          # fragt KEIN Geraet ab — in der CI haengt nie eines am USB.
+          $gw = Join-Path $env:RUNNER_TEMP 'gw.py'
+          Set-Content -LiteralPath $gw -Encoding UTF8 -Value @(
+            'import os, sys',
+            'sys.path.insert(0, sys.argv[1])',
+            'from app.gw import verfuegbar',
+            'sys.exit(0 if verfuegbar() else "greaseweazle fehlt in der Laufzeitumgebung")')
+          & (Join-Path $ziel 'venv\Scripts\python.exe') $gw $ziel
+          if ($LASTEXITCODE -ne 0) { throw 'die Greaseweazle-Anbindung wurde nicht eingerichtet' }
+          Write-Host '     Greaseweazle: einsatzbereit'
+
+          # Und die Verknuepfung auf die Werkzeug-Eingabeaufforderung — ohne sie
+          # findet niemand den Debugger, er steht in keinem anderen Menue.
+          $menue0 = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\K1520emu'
+          if (-not (Test-Path -LiteralPath (Join-Path $menue0 'K1520-Werkzeuge (Eingabeaufforderung).lnk'))) {
+            throw 'die Verknuepfung auf die Werkzeug-Eingabeaufforderung fehlt'
           }
 
           # Der abweichende Datenordner muss im Starter stehen — sonst legte der
@@ -568,9 +613,16 @@ jobs:
           # Mit den fruehreren 220 MB fiel nicht auf, dass slim.py den
           # CPython-Baum des Assistenten gar nicht fand — 163 MB gingen als
           # „in Ordnung" durch.  Wer hier hochsetzt, sollte wissen, warum.
+          #
+          # 2026-08-18 von 130 auf 136 angehoben, und der Zuwachs ist bekannt:
+          # der Debugger (~1,5 MB, er linkt den Kern statisch), die Handbuecher
+          # (~60 KB) und die Greaseweazle-Anbindung mit ihren vier
+          # Abhaengigkeiten (~4 MB, davon requests samt certifi der groesste
+          # Posten).  Wer hier wieder hochsetzt, sollte den Posten benennen
+          # koennen.
           $mb = [math]::Round((Get-ChildItem -Recurse -File $ziel | Measure-Object Length -Sum).Sum/1MB)
           Write-Host "Über das Setup installiert: $mb MB"
-          if ($mb -gt 130) { throw "zu gross ($mb MB) — hat slim.py gegriffen?" }
+          if ($mb -gt 136) { throw "zu gross ($mb MB) — hat slim.py gegriffen?" }
 
       # Das Schlankmachen ist der Grund, warum die Installation nicht ~316 MB
       # belegt.  Geprüft wird beides: dass genug wegfällt UND dass das

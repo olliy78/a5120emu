@@ -58,6 +58,15 @@ Combo-Disketten mit Fremdlaufwerkstypen. Sie landen beim ersten Start im Diskett
   sie liegen außerhalb der Installation, im Diskettenordner.
 - **Mitgeliefert ist außerdem das `k1520DiskTool`** — damit holt man Dateien von CP/A-,
   SCPX- und UDOS-Disketten heraus und schreibt sie zurück (`.img`, `.hfe`, `.dmk`).
+- **Und der Debugger `k1520dbg`** — ein Werkzeug für die Konsole, mit dem sich fremde
+  Programme Schritt für Schritt untersuchen lassen (Haltepunkte, Register, Speicher,
+  Rückwärtslaufen). Er hat bewusst kein eigenes Symbol; unter Windows führt der
+  Startmenü-Eintrag *„K1520-Werkzeuge (Eingabeaufforderung)"* hin, das Handbuch liegt
+  in der Installation unter `share/doc/handbuch_k1520dbg.md`.
+- **Echte Disketten**: mit einem
+  [Greaseweazle](https://github.com/keirf/greaseweazle)-Adapter lesen und beschreiben
+  beide Programme ein angeschlossenes 5,25″- oder 8″-Laufwerk direkt. Die Anbindung
+  richtet der Installer mit ein — ohne Adapter stört sie nicht.
 
 ## Geht etwas schief?
 

@@ -5,7 +5,9 @@ nur zwei Vorgänge, und beide sprechen **HFE-Bitzellen** (LSB zuerst je Byte) �
 Darstellung, die auch in einer ``.hfe``-Datei steht und die der Kern mit demselben
 ``BitCodec`` liest wie ein Dateiabbild (doc/design/14_physische_diskette.md §8).
 
-Installation der Hosttools (sie liegen **nicht** auf PyPI)::
+Die Hosttools liegen **nicht** auf PyPI.  In einer Installation aus dem Paket sind
+sie bereits eingerichtet (der Installer spielt ein mitgeliefertes Rad ein, siehe
+``packaging/gw_pins.txt``); im Quellbaum installiert man sie von Hand::
 
     venv/bin/python3 -m pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"
 
@@ -16,6 +18,9 @@ Menüpunkt und nennt den Grund, sonst ändert sich nichts.
 
 from __future__ import annotations
 
+import contextlib
+import importlib
+import sys
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -33,10 +38,27 @@ class KeinAdapter(GwFehler):
     """Kein Greaseweazle am USB gefunden (oder keine Rechte am Anschluss)."""
 
 
+def _leise(modul: str):
+    """Ein Greaseweazle-Modul einlesen, ohne dass es auf die Ausgabe schreibt.
+
+    ``greaseweazle.optimised`` meldet beim Einlesen auf der **Standardausgabe**, ob
+    seine C-Beschleunigung da ist — und im ausgelieferten Rad ist sie es bewusst
+    nicht (``packaging/gw_pins.txt``: beide Aufrufstellen fallen auf Python zurück,
+    das kostet ~25 ms je Spur gegenüber 500–800 ms Lesezeit).  Die Zeile stünde damit
+    mitten in der Nutzlast von ``k1520disktool --physical``, wo die Standardausgabe
+    das Ergebnis ist und alles Beiläufige auf die Fehlerausgabe gehört.
+
+    Umgeleitet statt verworfen: eine Meldung, die eine künftige Fassung dort abgibt,
+    soll sichtbar bleiben — nur eben am richtigen Ort.
+    """
+    with contextlib.redirect_stdout(sys.stderr):
+        return importlib.import_module(modul)
+
+
 def verfuegbar() -> bool:
     """Ist das Paket ``greaseweazle`` installiert?  (Fragt **kein** Gerät ab.)"""
     try:
-        import greaseweazle  # noqa: F401
+        _leise("greaseweazle")
     except ImportError:
         return False
     return True
@@ -275,7 +297,7 @@ class Device:
             ``(zellen, bitcells)`` — HFE-Konvention (LSB zuerst je Byte).
         """
         from bitarray import bitarray
-        from greaseweazle.track import PLLTrack
+        PLLTrack = _leise("greaseweazle.track").PLLTrack
 
         self.select()
         self.motor(True)
@@ -327,7 +349,7 @@ class Device:
     def write_track(self, cyl: int, head: int, cells: bytes, bitcells: int) -> None:
         """Eine Spurseite schreiben — ganze Spur, ab Index bis Index."""
         from bitarray import bitarray
-        from greaseweazle.track import MasterTrack
+        MasterTrack = _leise("greaseweazle.track").MasterTrack
 
         self.select()
         self.motor(True)
@@ -365,9 +387,13 @@ def finde_adapter() -> Adapter:
     """Adapter suchen und beschreiben — ohne ein Laufwerk anzufassen."""
     if not verfuegbar():
         raise GreaseweazleFehlt(
-            "Das Paket 'greaseweazle' ist nicht installiert. Installation:\n"
+            "Das Paket 'greaseweazle' ist nicht installiert.\n"
+            "In einer Installation aus dem Paket sollte es da sein — dann ist beim "
+            "Einrichten etwas schiefgegangen (siehe bootstrap.log bzw. die Meldung "
+            "des Installers).\n"
+            "Im Quellbaum von Hand:\n"
             '  pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"')
-    from greaseweazle.tools import util
+    util = _leise("greaseweazle.tools.util")
     try:
         usb = util.usb_open(None)
     except Exception as e:                     # noqa: BLE001 — gw wirft vielerlei
@@ -399,9 +425,13 @@ def open_device(drive: str = "a", *, cell_rate_kbps: int = 250,
     """
     if not verfuegbar():
         raise GreaseweazleFehlt(
-            "Das Paket 'greaseweazle' ist nicht installiert. Installation:\n"
+            "Das Paket 'greaseweazle' ist nicht installiert.\n"
+            "In einer Installation aus dem Paket sollte es da sein — dann ist beim "
+            "Einrichten etwas schiefgegangen (siehe bootstrap.log bzw. die Meldung "
+            "des Installers).\n"
+            "Im Quellbaum von Hand:\n"
             '  pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"')
-    from greaseweazle.tools import util
+    util = _leise("greaseweazle.tools.util")
     try:
         usb = util.usb_open(port)
     except Exception as e:                     # noqa: BLE001

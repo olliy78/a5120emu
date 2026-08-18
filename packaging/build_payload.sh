@@ -13,6 +13,7 @@
 #     packaging/build_payload.sh --disks all     # alle Disketten aus disks/
 #     packaging/build_payload.sh --refresh-uv    # uv-Pins aktualisieren
 #     packaging/build_payload.sh --refresh-python  # Python-Pins (Windows-Setup)
+#     packaging/build_payload.sh --refresh-gw    # Greaseweazle-Pin aktualisieren
 set -eu
 
 SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -27,6 +28,7 @@ SKIP_BUILD=no
 ARCHIVE=yes
 SETUP=no
 RELOCK=no
+GW=yes
 
 # Mitgelieferte Beispieldisketten.  Bewusst eine kleine Auswahl: je eine
 # startfähige Diskette für CP/A, SCPX und UDOS plus die beiden Combo-Disketten,
@@ -52,8 +54,11 @@ K1520-Emulator — Paket schnüren
   --no-archive     nur den Baum unter dist/ erzeugen, kein .tar.gz
   --setup          zusätzlich ein Windows-Installationsprogramm bauen (Inno
                    Setup; nur unter Windows, braucht iscc im PATH)
+  --no-gw          ohne die Greaseweazle-Anbindung schnüren (kein Zugriff auf
+                   echte Diskettenlaufwerke; braucht dann kein Netz zum Bauen)
   --refresh-uv     uv-Pins auf die neueste Fassung setzen und beenden
   --refresh-python Python-Pins (Windows-Setup) auffrischen und beenden
+  --refresh-gw     Greaseweazle-Pin auf das neueste Release setzen und beenden
   -h, --help       diese Hilfe
 EOF
 }
@@ -142,6 +147,146 @@ lies_python_pins() {
     esac
 }
 
+# ─── Greaseweazle-Pin auffrischen ────────────────────────────────────────────
+#
+# Die Hosttools liegen nicht auf PyPI, sondern nur als Quellarchiv am
+# GitHub-Release (Begründung im Kopf von packaging/gw_pins.txt).  Gepinnt wird
+# deshalb die ARCHIVDATEI mit Größe und Prüfsumme — dieselbe Sitte wie bei uv
+# und Python.
+
+GW_REPO=keirf/greaseweazle
+
+refresh_gw_pins() {
+    have curl || die "curl wird zum Auffrischen der Pins gebraucht"
+    have jq   || die "jq wird zum Auffrischen der Pins gebraucht"
+    _rel=$(curl -fsSL "https://api.github.com/repos/$GW_REPO/releases/latest")
+    _tag=$(printf '%s' "$_rel" | jq -r .tag_name)
+    [ -n "$_tag" ] && [ "$_tag" != null ] || die "greaseweazle: Release nicht ermittelbar"
+    _ver=${_tag#v}
+    _datei="greaseweazle-$_ver.zip"
+    _size=$(printf '%s' "$_rel" | jq -r --arg n "$_datei" '.assets[] | select(.name==$n) | .size')
+    [ -n "$_size" ] && [ "$_size" != null ] \
+        || die "am Release $_tag liegt kein Quellarchiv $_datei"
+
+    # Es gibt keine SHA256SUMS-Datei am Release — die Prüfsumme muss also am
+    # geladenen Archiv gerechnet werden.  Bei 200 KB ist das kein Thema.
+    _tmp=$(mktemp -d) || die "kein temporäres Verzeichnis anlegbar"
+    fetch "$(gw_quelle_url "$_ver")" "$_tmp/$_datei"
+    _sha=$(sha256_of "$_tmp/$_datei")
+    _ist=$(wc -c < "$_tmp/$_datei" | tr -d ' ')
+    rm -rf "$_tmp"
+    [ "$_ist" = "$_size" ] || die "Größe stimmt nicht: $_ist statt $_size"
+
+    info "greaseweazle $_ver"
+    _neu=$(mktemp)
+    {
+        sed -n '1,/^# Format:/p' "$SELF_DIR/gw_pins.txt"
+        printf '\nversion %s\n\n' "$_ver"
+        printf '%-26s %7s  %s\n' "$_datei" "$_size" "$_sha"
+    } > "$_neu"
+    mv "$_neu" "$SELF_DIR/gw_pins.txt"
+    ok "packaging/gw_pins.txt aktualisiert"
+}
+
+# gw_pins.txt lesen und GW_VERSION/GW_DATEI/GW_SIZE/GW_SHA setzen.
+lies_gw_pins() {
+    _pins="$SELF_DIR/gw_pins.txt"
+    [ -f "$_pins" ] || die "packaging/gw_pins.txt fehlt — einmal mit --refresh-gw erzeugen"
+    GW_VERSION=$(gw_pin "$_pins" version)
+    [ -n "$GW_VERSION" ] || die "keine Greaseweazle-Fassung in $_pins"
+    GW_DATEI="greaseweazle-$GW_VERSION.zip"
+    GW_SIZE=$(awk -v n="$GW_DATEI" '$1==n {print $2}' "$_pins")
+    GW_SHA=$(awk  -v n="$GW_DATEI" '$1==n {print $3}' "$_pins")
+    [ -n "$GW_SIZE" ] && [ -n "$GW_SHA" ] \
+        || die "gw_pins.txt nennt keine Größe/Prüfsumme für $GW_DATEI"
+}
+
+# ─── Greaseweazle: das Rad bauen ─────────────────────────────────────────────
+#
+#   gw_rad_bauen <radverzeichnis> <lizenzverzeichnis>
+#
+# Laedt das gepinnte Quellarchiv, prueft die Pruefsumme, baut daraus ein
+# plattformunabhaengiges Rad (py3-none-any) und legt COPYING daneben.  Setzt
+# GW_RAD auf den Dateinamen des Rades.
+#
+# Warum hier und nicht beim Anwender: `setup.py` erklaert eine C-Erweiterung,
+# und der Anwender hat unter Windows keinen Uebersetzer.  Die Erweiterung ist
+# reine Beschleunigung — beide Aufrufstellen fallen auf Python zurueck —, also
+# wird sie herausgenommen.  Das geschieht ueber einen VORGESCHALTETEN Aufsatz
+# und nicht ueber einen Eingriff in setup.py selbst: der haelt auch dann noch,
+# wenn die naechste Fassung die Datei umschreibt.
+GW_RAD=
+
+gw_rad_bauen() {
+    _ziel=$1
+    _lizenzen=$2
+    lies_gw_pins
+
+    _py=""
+    for _k in python3 python; do have "$_k" && { _py=$_k; break; }; done
+    [ -n "$_py" ] || die "python3 wird zum Bauen des Greaseweazle-Rades gebraucht
+     (oder --no-gw: dann fehlt der Zugriff auf echte Diskettenlaufwerke)"
+
+    # Ein Zwischenlager, damit ein zweiter Lauf nicht wieder laedt.  Es liegt
+    # unter dist/, wird also von einem `rm -rf dist` mit weggeraeumt.
+    _lager="$OUT/.cache-gw"
+    mkdir -p "$_lager"
+    _archiv="$_lager/$GW_DATEI"
+    if [ ! -f "$_archiv" ] || [ "$(sha256_of "$_archiv")" != "$GW_SHA" ]; then
+        info "greaseweazle $GW_VERSION laden (~200 KB)"
+        fetch "$(gw_quelle_url "$GW_VERSION")" "$_archiv"
+    fi
+    _got=$(sha256_of "$_archiv")
+    [ "$_got" = "$GW_SHA" ] || {
+        rm -f "$_archiv"
+        die "Pruefsumme von $GW_DATEI stimmt nicht:
+  erwartet $GW_SHA
+  erhalten $_got"
+    }
+
+    _tmp=$(mktemp -d) || die "kein temporaeres Verzeichnis anlegbar"
+    ( cd "$_tmp" && unzip -q "$_archiv" ) || { rm -rf "$_tmp"; die "$GW_DATEI nicht entpackbar (unzip fehlt?)"; }
+    _baum="$_tmp/greaseweazle-$GW_VERSION"
+    [ -d "$_baum" ] || { rm -rf "$_tmp"; die "$GW_DATEI hat nicht die erwartete Form"; }
+
+    # Der Aufsatz: `setup()` wird abgefangen und `ext_modules` fallengelassen.
+    # setup.py holt sich `setup` erst DANACH aus setuptools und bekommt damit
+    # unsere Fassung.  Ohne leeres ext_modules bliebe das Rad an Plattform und
+    # Python-Nebenversion gebunden, auch wenn gar nichts uebersetzt wurde.
+    cat > "$_baum/_ohne_erweiterung.py" <<'PYSHIM'
+# Vorgeschaltet von packaging/build_payload.sh — siehe packaging/gw_pins.txt.
+import setuptools
+_setup = setuptools.setup
+def setup(**kw):
+    kw.pop('ext_modules', None)
+    return _setup(**kw)
+setuptools.setup = setup
+PYSHIM
+    printf 'exec(open("_ohne_erweiterung.py").read())\n' > "$_baum/setup.py.neu"
+    cat "$_baum/setup.py" >> "$_baum/setup.py.neu"
+    mv "$_baum/setup.py.neu" "$_baum/setup.py"
+
+    mkdir -p "$_ziel" "$_lizenzen"
+    info "Greaseweazle-Rad bauen (py3-none-any)"
+    ( cd "$_baum" && "$_py" -m pip wheel --no-deps --quiet -w "$_ziel" . ) \
+        || { rm -rf "$_tmp"; die "Greaseweazle-Rad liess sich nicht bauen (kein Netz? kein pip?)"; }
+
+    GW_RAD=$(ls -1 "$_ziel"/greaseweazle-*.whl 2>/dev/null | head -1)
+    [ -n "$GW_RAD" ] || { rm -rf "$_tmp"; die "kein Greaseweazle-Rad im Ausgabeverzeichnis"; }
+    GW_RAD=$(basename "$GW_RAD")
+    case "$GW_RAD" in
+        *-py3-none-any.whl) ;;
+        *) rm -rf "$_tmp"
+           die "das Rad ist plattformgebunden ($GW_RAD) — der Aufsatz hat nicht gegriffen" ;;
+    esac
+
+    # Gemeinfrei (Unlicence) — der Text reist trotzdem mit: er ist der Nachweis,
+    # unter welchen Bedingungen dieses Stueck Fremdsoftware im Paket liegt.
+    cp "$_baum/COPYING" "$_lizenzen/greaseweazle-COPYING.txt"
+    rm -rf "$_tmp"
+    ok "$GW_RAD"
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --out)         OUT=$2; shift 2 ;;
@@ -152,8 +297,10 @@ while [ $# -gt 0 ]; do
         --relock)      RELOCK=yes; shift ;;
         --no-archive)  ARCHIVE=no; shift ;;
         --setup)       SETUP=yes; shift ;;
+        --no-gw)       GW=no; shift ;;
         --refresh-uv)      refresh_uv_pins; exit 0 ;;
         --refresh-python)  refresh_python_pins; exit 0 ;;
+        --refresh-gw)      refresh_gw_pins; exit 0 ;;
         -h|--help)     usage; exit 0 ;;
         *) die "unbekannte Option: $1  (--help zeigt die Liste)" ;;
     esac
@@ -194,6 +341,10 @@ info "K1520-Emulator $VERSION für $PLATFORM"
 K1520_CORE_LIB=$(core_lib_name)
 K1520_DISK_LIB=$(disk_lib_name)
 K1520_DISK_CLI=$(disk_cli_name)
+# Der Debugger — das dritte Werkzeug im Paket (§10a des Entwurfs).  Er linkt
+# den Kern STATISCH (k1520_a5120/k1520_floppy, nicht die .so/.dll), ist also
+# ein in sich geschlossenes Programm.
+if ist_windows; then K1520_DBG="k1520dbg.exe"; else K1520_DBG="k1520dbg"; fi
 
 # Wie die Laufzeit gebunden wird, ist je System eine ANDERE Frage — beide Male
 # lautet die Antwort „die Bibliothek bringt sie mit", der Weg dahin ist anders:
@@ -230,24 +381,31 @@ if [ "$SKIP_BUILD" = no ]; then
             -DCMAKE_SHARED_LINKER_FLAGS="-static-libstdc++ -static-libgcc" \
             >/dev/null || die "cmake-Konfiguration fehlgeschlagen"
     fi
-    # Drei Ziele: der Emulatorkern, die DiskTool-Bibliothek fuer dessen
-    # Oberflaeche und das Kommandozeilenwerkzeug.  Ohne die letzten beiden
-    # laege app/disktool/ zwar im Paket, faende aber keine Bibliothek.
-    cmake --build "$BUILD_DIR" --target k1520core k1520disk k1520disktool \
+    # Vier Ziele: der Emulatorkern, die DiskTool-Bibliothek fuer dessen
+    # Oberflaeche, das Kommandozeilenwerkzeug — und der Debugger.  Ohne die
+    # mittleren beiden laege app/disktool/ zwar im Paket, faende aber keine
+    # Bibliothek.
+    #
+    # `k1520dbg` erbt K1520_FORMATS_DEFAULT ueber k1520_floppy2 und traegt damit
+    # ebenfalls KEINEN Pfad des Baurechners (§10a.3 (2) des Entwurfs); der
+    # Waechter dagegen steht im Rauchtest von release.yml.
+    cmake --build "$BUILD_DIR" --target k1520core k1520disk k1520disktool k1520dbg \
         -j"$(kerne)" \
         >/dev/null || die "Bauen der Bibliotheken/Werkzeuge fehlgeschlagen"
-    ok "/, /, $BUILD_DIR/$K1520_DISK_CLI"
+    ok "$K1520_CORE_LIB, $K1520_DISK_LIB, $K1520_DISK_CLI, $K1520_DBG"
 fi
 [ -f "$BUILD_DIR/$K1520_CORE_LIB" ]     || die "Kernbibliothek fehlt: $BUILD_DIR/$K1520_CORE_LIB"
 [ -f "$BUILD_DIR/$K1520_DISK_LIB" ] || die "DiskTool-Bibliothek fehlt: $BUILD_DIR/$K1520_DISK_LIB"
 [ -f "$BUILD_DIR/$K1520_DISK_CLI" ] || die "DiskTool-Kommandozeile fehlt: $BUILD_DIR/$K1520_DISK_CLI"
+[ -f "$BUILD_DIR/$K1520_DBG" ]      || die "Debugger fehlt: $BUILD_DIR/$K1520_DBG"
 
 # ─── 2. Payload zusammenstellen ──────────────────────────────────────────────
 
 info "Payload zusammenstellen"
 rm -rf "$STAGE"
 mkdir -p "$STAGE/payload/bin" "$STAGE/payload/share/k1520emu" \
-         "$STAGE/payload/share/disks" "$STAGE/payload/share/icons" "$STAGE/lib"
+         "$STAGE/payload/share/disks" "$STAGE/payload/share/icons" \
+         "$STAGE/payload/share/doc/lizenzen" "$STAGE/payload/share/tools" "$STAGE/lib"
 
 # `strip` ist ein ELF/Mach-O-Werkzeug; MSVC legt Debugsymbole ohnehin in eine
 # eigene .pdb, die hier gar nicht erst mitkommt.  Das `|| true` deckt beides ab.
@@ -266,6 +424,30 @@ strip "$STAGE/payload/bin/$K1520_DISK_LIB" 2>/dev/null || true
 if ist_windows; then _cli_ziel="k1520disktool-cli.exe"; else _cli_ziel="$K1520_DISK_CLI-cli"; fi
 cp "$BUILD_DIR/$K1520_DISK_CLI" "$STAGE/payload/bin/$_cli_ziel"
 strip "$STAGE/payload/bin/$_cli_ziel" 2>/dev/null || true
+
+# Der Debugger.  Er bekommt bewusst KEIN Startmenue-Symbol und keinen
+# Doppelklick-Starter: ein Debugger wird in einen vorhandenen Arbeitsablauf aus
+# Editor, Assembler und Konsole eingebunden, und wie der aussieht, weiss nur der
+# Anwender (§10a.2 des Entwurfs).  Mitgeliefert werden Programm, Handbuch und
+# unter Windows eine Vorlage zum Anpassen.
+cp "$BUILD_DIR/$K1520_DBG" "$STAGE/payload/bin/$K1520_DBG"
+strip "$STAGE/payload/bin/$K1520_DBG" 2>/dev/null || true
+
+# Handbuecher.  Sie liegen unter share/doc/, damit sie auch der findet, der das
+# Werkzeug aus der Eingabeaufforderung benutzt — die Oberflaeche des DiskTool
+# bringt ihr eigenes Handbuch als .md unter app/ mit (F1).
+cp "$REPO/doc/handbuch_k1520dbg.md" "$STAGE/payload/share/doc/handbuch_k1520dbg.md"
+cp "$REPO/tools/k1520disktool.md"   "$STAGE/payload/share/doc/k1520disktool.md" 2>/dev/null || true
+
+# Statisches Vollisting einer .COM — die Ergaenzung zum interaktiven `u` des
+# Debuggers.  Reines Python, laeuft im mitgelieferten venv.
+cp "$REPO/tools/z80_disasm2.py" "$STAGE/payload/share/tools/z80_disasm2.py"
+
+# Lizenzen der beigelegten Fremdsoftware.  isocline steckt EINKOMPILIERT im
+# Debugger (Zeilenbearbeitung) — man sieht es der Datei nicht an, also gehoert
+# der Text daneben.  Greaseweazle kommt weiter unten dazu (eigenes Rad).
+cp "$REPO/third_party/isocline/LICENSE" \
+   "$STAGE/payload/share/doc/lizenzen/isocline-LICENSE.txt"
 
 # GUI ohne Bytecode-Reste des Entwicklungsrechners (--exclude MUSS vor dem
 # Pfad stehen, sonst wirkt es bei GNU tar nicht)
@@ -331,6 +513,11 @@ cp "$SELF_DIR/slim.py"         "$STAGE/slim.py"
 if ist_windows; then
     cp "$SELF_DIR/launcher.cmd"           "$STAGE/launcher.cmd"
     cp "$SELF_DIR/disktool_launcher.cmd"  "$STAGE/disktool_launcher.cmd"
+    # Die Werkzeug-Eingabeaufforderung.  Sie traegt die Endung `.in` im
+    # Quellbaum, weil sie erst beim Einrichten ausgefuellt wird — im Paket
+    # heisst sie wie die uebrigen Vorlagen (der Assistent holt sie ueber
+    # ExtractTemporaryFile, und der will einen festen Namen).
+    cp "$SELF_DIR/k1520dbg.cmd.in"        "$STAGE/k1520dbg.cmd"
     rmdir "$STAGE/lib" 2>/dev/null || true    # lib/common.sh ist Shell-Sache
 else
     cp "$SELF_DIR/uv_pins.txt"              "$STAGE/uv_pins.txt"
@@ -370,6 +557,20 @@ fi
     || die "packaging/requirements.lock fehlt — einmal mit --relock erzeugen (braucht Netz)"
 cp "$SELF_DIR/requirements.lock" "$STAGE/requirements.lock"
 ok "$(grep -c '^[a-zA-Z]' "$STAGE/requirements.lock") Pakete festgenagelt"
+
+# ─── 4a. Greaseweazle — die Anbindung an echte Laufwerke ─────────────────────
+#
+# Sie liegt als fertiges Rad NEBEN der Payload (wie requirements.lock), nicht
+# darin: der Installer spielt sie in die Laufzeitumgebung ein, in der
+# Installation selbst hat sie nichts verloren.  Die vier Abhaengigkeiten
+# (crcmod, bitarray, pyserial, requests) stehen in requirements.lock und kommen
+# mit Pruefsumme von PyPI — zusammen mit Qt.
+
+if [ "$GW" = yes ]; then
+    gw_rad_bauen "$STAGE/wheels" "$STAGE/payload/share/doc/lizenzen"
+else
+    warn "ohne Greaseweazle geschnuert — kein Zugriff auf echte Diskettenlaufwerke"
+fi
 
 # ─── 5. Archiv ───────────────────────────────────────────────────────────────
 
@@ -416,6 +617,16 @@ if [ "$SETUP" = yes ]; then
         die "iscc nicht gefunden — Inno Setup 6.5 oder neuer installieren (choco install innosetup)"
     fi
     lies_python_pins
+    # Der Assistent holt das Rad mit ExtractTemporaryFile und braucht dafuer den
+    # NAMEN — ein Muster kennt Inno an der Stelle nicht.  Leer heisst „ohne
+    # Greaseweazle" (--no-gw); die .iss laesst den Schritt dann aus.
+    _gw_rad=""
+    _gw_version=""
+    if [ "$GW" = yes ]; then
+        lies_gw_pins
+        _gw_rad=$(basename "$(ls -1 "$STAGE/wheels"/greaseweazle-*.whl | head -1)")
+        _gw_version=$GW_VERSION
+    fi
     info "Windows-Installationsprogramm bauen (Python $PY_VERSION aus $PY_RELEASE)"
     # Version ohne die git-Zusätze: Inno will etwas, das wie eine Version
     # aussieht, `1.2.3-4-gabc1234-dirty` lehnt es ab.
@@ -428,6 +639,8 @@ if [ "$SETUP" = yes ]; then
     iscc //Qp \
          "//DVersion=$_iss_version" \
          "//DPaket=$(cygpath -w "$STAGE")" \
+         "//DGwRad=$_gw_rad" \
+         "//DGwVersion=$_gw_version" \
          "//DPyVersion=$PY_VERSION" \
          "//DPyRelease=$PY_RELEASE" \
          "//DPySha256=$PY_SHA" \

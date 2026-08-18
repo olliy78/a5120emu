@@ -57,6 +57,14 @@ MASCHINEN="a5120emu"
 # gehoert hier hinein UND braucht eine <name>.desktop.in.
 WERKZEUGE="k1520disktool"
 
+# Werkzeuge OHNE Oberflaeche: sie bekommen einen Verweis in ~/.local/bin, aber
+# keinen Startmenue-Eintrag und kein Symbol.  `k1520dbg` ist der Debugger — ein
+# Programm, das neben Editor und Assembler in der Konsole steht und nicht per
+# Doppelklick startet (doc/design/13_distribution.md §10a.2).  `k1520disktool-cli`
+# ist die Kommandozeile des Diskettenwerkzeugs; sie stand bis 2026-08-18 in
+# KEINER Liste und blieb beim Deinstallieren als toter Verweis liegen.
+KONSOLENWERKZEUGE="k1520dbg k1520disktool-cli"
+
 # Alles, was einen Starter/Eintrag bekommt — nur fuer das Aufraeumen gedacht.
 STARTER="$MASCHINEN $WERKZEUGE"
 
@@ -270,6 +278,10 @@ if [ "$MODE" = uninstall ]; then
     for _m in $STARTER; do
         rm -f "$BINDIR/$_m" "$APPDIR/$_m.desktop" "$ICONDIR/$_m.svg"
     done
+    # Nur der Verweis — Startmenü-Eintrag und Symbol gibt es dafür nicht.
+    for _m in $KONSOLENWERKZEUGE; do
+        rm -f "$BINDIR/$_m"
+    done
     ok "Starter und Startmenü-Einträge entfernt"
     if [ "$PURGE" = yes ]; then
         rm -rf "$DATADIR" "$CONFDIR"
@@ -366,6 +378,29 @@ info "Qt und Abhängigkeiten installieren (~70 MB, dauert einen Moment)"
     || die "Abhängigkeiten konnten nicht installiert werden (kein Netz? Proxy?)"
 ok "Laufzeitumgebung fertig"
 
+# ── Greaseweazle: der Zugriff auf ECHTE Diskettenlaufwerke ───────────────────
+#
+# Das Rad liegt fertig im Paket (packaging/gw_pins.txt sagt warum: die
+# Hosttools liegen nicht auf PyPI, und ihr Quellarchiv wollte beim Anwender
+# uebersetzt werden).  Seine vier Abhaengigkeiten kamen gerade mit der Zeile
+# darueber — deshalb `--no-deps`: hier soll nichts mehr aus dem Netz kommen.
+#
+# Scheitert es, ist das KEIN Grund, die Installation hinzuwerfen: der Emulator
+# und das Diskettenwerkzeug laufen ohne, es fehlt nur der Menuepunkt fuer das
+# echte Laufwerk (app/gw/session.py: `verfuegbarkeit`).
+_gw_rad=$(ls -1 "$SELF_DIR"/wheels/greaseweazle-*.whl 2>/dev/null | head -1)
+if [ -n "$_gw_rad" ]; then
+    info "Greaseweazle-Anbindung einspielen (echte Diskettenlaufwerke)"
+    if "$UV" pip install --python "$PREFIX/venv" --no-deps "$_gw_rad" >/dev/null 2>&1; then
+        ok "$(basename "$_gw_rad")"
+    else
+        warn "Greaseweazle liess sich nicht einspielen — der Emulator läuft,
+     aber der Zugriff auf ein echtes Diskettenlaufwerk fehlt."
+    fi
+else
+    warn "kein Greaseweazle im Paket — kein Zugriff auf echte Diskettenlaufwerke"
+fi
+
 if [ "$KEEP_CACHE" = no ]; then
     rm -rf "$PREFIX/.cache-uv"
 fi
@@ -415,9 +450,15 @@ if [ "$SHORTCUTS" = yes ]; then
     ersetze_platzhalter "$SELF_DIR/a5120emu.desktop.in" "$PREFIX" > "$APPDIR/a5120emu.desktop"
 
     ln -sf "$PREFIX/bin/k1520disktool" "$BINDIR/k1520disktool"
-    ln -sf "$PREFIX/bin/k1520disktool-cli" "$BINDIR/k1520disktool-cli" 2>/dev/null || true
     ersetze_platzhalter "$SELF_DIR/k1520disktool.desktop.in" "$PREFIX" \
         > "$APPDIR/k1520disktool.desktop"
+
+    # Die Konsolenwerkzeuge: nur ein Verweis, kein Eintrag im Startmenü.  Ein
+    # Debugger, der per Doppelklick startet, oeffnete ein Fenster, das mangels
+    # Diskette sofort wieder zuginge (§10a.2 des Entwurfs).
+    for _w in $KONSOLENWERKZEUGE; do
+        [ -f "$PREFIX/bin/$_w" ] && ln -sf "$PREFIX/bin/$_w" "$BINDIR/$_w"
+    done
 
     if have update-desktop-database; then
         update-desktop-database "$APPDIR" >/dev/null 2>&1 || true
@@ -465,6 +506,12 @@ if fmt is None:
 print("     Katalog:   ", fmt)
 print("     Disketten: ", paths.seed_user_disks(), "kopiert nach", paths.user_disks_dir())
 
+# Die Anbindung an echte Laufwerke ist FREIWILLIG — fehlt sie, laeuft alles
+# uebrige weiter, nur der Menuepunkt bleibt gesperrt.  Deshalb wird sie
+# gemeldet und nicht geprueft.
+from app.gw import verfuegbar
+print("     Greaseweazle:", "einsatzbereit" if verfuegbar() else "NICHT installiert")
+
 # Das Fenster wirklich bauen (unsichtbar) und sofort wieder abräumen.
 from PySide6.QtWidgets import QApplication
 from app.ui.main_window import MainWindow
@@ -478,6 +525,19 @@ PYEOF
 # Eine frische Installation soll aber nur enthalten, was hineingehört.
 rm -rf "$PREFIX/logs"
 rm -f "$PREFIX"/k1520_*.log
+# Der Debugger ist ein eigenes Programm ohne Python und ohne Qt — er wird
+# deshalb getrennt angefasst.  Eine Schalterabfrage gibt es nicht (er OEFFNET
+# immer eine Sitzung, jedes freie Argument gilt als Diskette); geprueft wird
+# deshalb die Sitzung selbst: aufmachen und mit `q` wieder zumachen.  Das laedt
+# Kern, Formatkatalog und Zeileneditor, und eine Diskette braucht es dafuer
+# nicht.
+if [ -x "$PREFIX/bin/k1520dbg" ]; then
+    if printf 'q\n' | "$PREFIX/bin/k1520dbg" >/dev/null 2>&1; then
+        printf "     Debugger:   %s\n" "$PREFIX/bin/k1520dbg"
+    else
+        warn "der Debugger startet nicht — $PREFIX/bin/k1520dbg"
+    fi
+fi
 ok "läuft"
 
 printf "\n"
@@ -490,4 +550,29 @@ printf "     Diskettenwerkzeug: %s  (Kommandozeile: %s)\n" \
 if [ "$SHORTCUTS" = yes ]; then
     printf "     oder einfach: a5120emu   (bzw. über das Startmenü)\n"
 fi
+
+# Der Debugger bekommt einen eigenen Absatz — er ist das dritte Programm im
+# Paket, hat aber bewusst keinen Startmenue-Eintrag, an dem man ihn faende.
+# Wer nicht erfaehrt, dass es ihn gibt und wo sein Handbuch liegt, benutzt ihn
+# nie (doc/design/13_distribution.md §10a.2).
+if [ -x "$PREFIX/bin/k1520dbg" ]; then
+    printf "\n"
+    info "Mitgeliefert: der Debugger k1520dbg"
+    printf "     Er untersucht fremde Programme Schritt für Schritt — Haltepunkte,\n"
+    printf "     Register, Speicher, Rückwärtslaufen.  Kein Fenster, sondern ein\n"
+    printf "     Werkzeug für die Konsole:\n\n"
+    printf "       Programm:  %s\n" "$PREFIX/bin/k1520dbg"
+    if [ "$SHORTCUTS" = yes ]; then
+        printf "                  (oder einfach: k1520dbg)\n"
+    fi
+    printf "       Handbuch:  %s\n" "$PREFIX/share/doc/handbuch_k1520dbg.md"
+    printf "       Dazu:      %s\n" "$PREFIX/share/tools/z80_disasm2.py"
+    printf "       Lizenzen der Fremdsoftware: %s\n" "$PREFIX/share/doc/lizenzen/"
+fi
+printf "\n"
+info "Echte Diskettenlaufwerke"
+printf "     Die Greaseweazle-Anbindung ist eingespielt: mit einem\n"
+printf "     Greaseweazle-Adapter lesen und beschreiben beide Programme echte\n"
+printf "     5,25\"- und 8\"-Disketten (Emulator: „Physisch…\" am Laufwerkskasten,\n"
+printf "     Diskettenwerkzeug: Datei ▸ Physisches Laufwerk…).\n"
 printf "     Entfernen:    %s --uninstall\n" "$0"

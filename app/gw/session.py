@@ -55,10 +55,17 @@ def verfuegbarkeit() -> Tuple[bool, str]:
         # und auf neueren Distributionen scheitert es dort an PEP 668).  Dazu der
         # Pfad, damit man sieht, WOHIN installiert wird — steckt man versehentlich
         # im venv eines anderen Projekts, ist genau das die Auskunft, die fehlt.
+        #
+        # In einer Installation AUS DEM PAKET darf dieser Fall gar nicht auftreten:
+        # der Installer spielt ein mitgeliefertes Rad ein (packaging/gw_pins.txt).
+        # Steht es trotzdem hier, ist beim Einrichten etwas schiefgegangen — deshalb
+        # der Satz davor, sonst sucht der Anwender den Fehler bei sich.
         return False, ("Das Paket „greaseweazle“ ist in dieser Python-Umgebung nicht "
                        "installiert:\n"
                        f"  {sys.prefix}\n\n"
-                       "Installation:\n"
+                       "In einer Installation aus dem Paket gehört es dazu — dann ist "
+                       "beim Einrichten etwas schiefgegangen.\n"
+                       "Von Hand nachholen:\n"
                        f'  {sys.executable} -m pip install '
                        '"git+https://github.com/keirf/greaseweazle.git@v1.23"')
     return True, ""

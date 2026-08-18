@@ -101,8 +101,52 @@ jobs:
           PY
 
           echo "── kein Pfad des Baurechners in der Bibliothek ──"
-          if grep -qa "$GITHUB_WORKSPACE/data/formats.yaml" "$root/bin/libk1520core.so"; then
-            echo "FEHLER: einkompilierter Pfad des Baurechners gefunden"; exit 1
+          # Der Debugger steht mit auf der Liste: er linkt den Kern STATISCH und
+          # erbt K1520_FORMATS_DEFAULT ueber k1520_floppy2 — traegt also
+          # dieselbe Falle in sich (§10a.3 (2) des Entwurfs).
+          for datei in "$root/bin/libk1520core.so" "$root/bin/k1520dbg"; do
+            if grep -qa "$GITHUB_WORKSPACE/data/formats.yaml" "$datei"; then
+              echo "FEHLER: einkompilierter Pfad des Baurechners in $datei"; exit 1
+            fi
+          done
+
+          echo "── der Debugger startet und antwortet ──"
+          # Eine Schalterabfrage gibt es nicht — k1520dbg OEFFNET immer eine
+          # Sitzung, jedes freie Argument gilt als Diskette.  Geprueft wird
+          # deshalb die Sitzung: aufmachen, `q`, sauber beenden.  Ohne Terminal
+          # greift isocline nicht (isTerminal(0) ist falsch) — das ist genau der
+          # Skriptpfad, den die cli_dbg_-Tests pinnen.
+          printf 'q\n' | "$root/bin/k1520dbg" > "$RUNNER_TEMP/dbg.txt" 2>&1 \
+            || { echo "FEHLER: k1520dbg startet nicht"; cat "$RUNNER_TEMP/dbg.txt"; exit 1; }
+          head -3 "$RUNNER_TEMP/dbg.txt"
+          # Und einmal mit eingelegter Diskette — dabei laeuft der Formatkatalog mit.
+          disk=$(ls "$root/share/disks"/*.gz 2>/dev/null | head -1)
+          if [ -n "$disk" ]; then
+            gunzip -c "$disk" > "$RUNNER_TEMP/probe.hfe"
+            printf 'q\n' | "$root/bin/k1520dbg" "$RUNNER_TEMP/probe.hfe" >/dev/null 2>&1 \
+              || { echo "FEHLER: k1520dbg beendet sich nicht auf q"; exit 1; }
+            echo "     Sitzung an einer Diskette: laeuft und endet auf q"
+          fi
+
+          echo "── Werkzeuge, Handbuecher und Lizenzen liegen bei ──"
+          for datei in bin/k1520dbg bin/k1520disktool-cli \
+                       share/doc/handbuch_k1520dbg.md \
+                       share/tools/z80_disasm2.py \
+                       share/doc/lizenzen/isocline-LICENSE.txt \
+                       share/doc/lizenzen/greaseweazle-COPYING.txt; do
+            [ -f "$root/$datei" ] || { echo "FEHLER: $datei fehlt im Paket"; exit 1; }
+          done
+          # Das Greaseweazle-Rad liegt NEBEN der Payload (wie requirements.lock):
+          # der Installer spielt es in die Laufzeitumgebung ein, in der
+          # Installation selbst hat es nichts verloren.
+          rad=$(ls "$root"/../wheels/greaseweazle-*-py3-none-any.whl 2>/dev/null | head -1)
+          [ -n "$rad" ] || { echo "FEHLER: kein plattformunabhaengiges Greaseweazle-Rad"; exit 1; }
+          echo "     $(basename "$rad")"
+          # Der Kern darf von Greaseweazle NICHTS wissen (Entwurf §14: kein USB,
+          # kein Import, kein Rueckruf) — sonst waere ein anderer Adapter eine
+          # Kernaenderung.
+          if grep -qa greaseweazle "$root/bin/libk1520core.so"; then
+            echo "FEHLER: der Kern nennt greaseweazle"; exit 1
           fi
 
       - name: Paket als Artefakt
@@ -275,11 +319,48 @@ jobs:
           Write-Host "     $($namen.Count) Eintraege, alle mit Schraegstrich"
 
           Write-Host '── kein Pfad des Baurechners in der Bibliothek ──'
-          $bytes = [System.IO.File]::ReadAllBytes("$root\bin\k1520core.dll")
-          $text  = [System.Text.Encoding]::ASCII.GetString($bytes)
-          if ($text.Contains("$env:GITHUB_WORKSPACE\data\formats.yaml".Replace('\','/'))) {
-            throw 'einkompilierter Pfad des Baurechners gefunden'
+          # Der Debugger steht mit auf der Liste: er linkt den Kern STATISCH und
+          # erbt K1520_FORMATS_DEFAULT ueber k1520_floppy2.
+          foreach ($datei in @("$root\bin\k1520core.dll", "$root\bin\k1520dbg.exe")) {
+            $bytes = [System.IO.File]::ReadAllBytes($datei)
+            $text  = [System.Text.Encoding]::ASCII.GetString($bytes)
+            if ($text.Contains("$env:GITHUB_WORKSPACE\data\formats.yaml".Replace('\','/'))) {
+              throw "einkompilierter Pfad des Baurechners in $datei"
+            }
           }
+
+          Write-Host '── der Debugger startet und antwortet ──'
+          # Kein Schalter zum Abfragen: k1520dbg oeffnet immer eine Sitzung.
+          # Geprueft wird deshalb die Sitzung — aufmachen, `q`, sauber beenden.
+          $ausgabe = 'q' | & "$root\bin\k1520dbg.exe" 2>&1
+          if ($LASTEXITCODE -ne 0) { $ausgabe | Write-Host; throw 'k1520dbg.exe startet nicht' }
+          $ausgabe | Select-Object -First 3 | ForEach-Object { Write-Host "     $_" }
+          # Und einmal mit eingelegter Diskette.
+          $disk = Get-ChildItem "$root\share\disks\*.gz" -ErrorAction SilentlyContinue |
+                  Select-Object -First 1
+          if ($disk) {
+            $hfe = Join-Path $env:RUNNER_TEMP 'probe.hfe'
+            $ein = [System.IO.File]::OpenRead($disk.FullName)
+            $aus = [System.IO.File]::Create($hfe)
+            $gz  = New-Object System.IO.Compression.GZipStream($ein, [System.IO.Compression.CompressionMode]::Decompress)
+            $gz.CopyTo($aus); $gz.Dispose(); $aus.Dispose(); $ein.Dispose()
+            'q' | & "$root\bin\k1520dbg.exe" $hfe | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'k1520dbg.exe beendet sich nicht auf q' }
+            Write-Host '     Sitzung an einer Diskette: laeuft und endet auf q'
+          }
+
+          Write-Host '── Werkzeuge, Handbuecher und Lizenzen liegen bei ──'
+          foreach ($datei in @('bin\k1520dbg.exe', 'bin\k1520disktool-cli.exe',
+                               'share\doc\handbuch_k1520dbg.md',
+                               'share\tools\z80_disasm2.py',
+                               'share\doc\lizenzen\isocline-LICENSE.txt',
+                               'share\doc\lizenzen\greaseweazle-COPYING.txt')) {
+            if (-not (Test-Path -LiteralPath "$root\$datei")) { throw "$datei fehlt im Paket" }
+          }
+          $rad = Get-ChildItem "$root\..\wheels\greaseweazle-*-py3-none-any.whl" `
+                 -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $rad) { throw 'kein plattformunabhaengiges Greaseweazle-Rad im Paket' }
+          Write-Host "     $($rad.Name)"
 
       - name: Paket als Artefakt
         uses: actions/upload-artifact@v4

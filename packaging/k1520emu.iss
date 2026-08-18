@@ -8,6 +8,7 @@
 ;
 ;   iscc /DVersion=1.2.3 /DPaket="C:\...\k1520emu-1.2.3-windows-x86_64" \
 ;        /DPyVersion=3.12.13 /DPyRelease=20260807 /DPySha256=… /DPySize=… \
+;        /DGwRad=greaseweazle-1.23-py3-none-any.whl /DGwVersion=1.23 \
 ;        k1520emu.iss
 ;
 ; Die vier Py*-Angaben kommen aus packaging/python_pins.txt und werden vom
@@ -89,6 +90,22 @@
 #endif
 #ifndef PySize
   #error "Bitte /DPySize=… angeben (aus packaging/python_pins.txt)"
+#endif
+
+; Die Greaseweazle-Anbindung (Zugriff auf ECHTE Diskettenlaufwerke).  Sie liegt
+; als fertiges Rad im Paket — nicht auf PyPI und nicht als Quellarchiv, weil
+; dessen C-Erweiterung beim Anwender uebersetzt werden muesste und der unter
+; Windows keinen Uebersetzer hat (packaging/gw_pins.txt).
+;
+; LEER ist erlaubt und heisst „ohne Greaseweazle" (build_payload.sh --no-gw):
+; dann faellt der Schritt aus, und in der Oberflaeche bleibt der Menuepunkt fuer
+; das echte Laufwerk gesperrt.  Ein Fehler ist das nicht — deshalb hier kein
+; #error wie bei den Py*-Angaben.
+#ifndef GwRad
+  #define GwRad ""
+#endif
+#ifndef GwVersion
+  #define GwVersion ""
 #endif
 
 ; Die Adresse setzt die .iss selbst zusammen — sie taucht dadurch nie als
@@ -192,6 +209,16 @@ Source: "{#Paket}\slim.py";                Flags: dontcopy
 Source: "{#Paket}\requirements.lock";      Flags: dontcopy
 Source: "{#Paket}\launcher.cmd";           Flags: dontcopy
 Source: "{#Paket}\disktool_launcher.cmd";  Flags: dontcopy
+; Die Eingabeaufforderung fuer die Konsolenwerkzeuge (Debugger,
+; k1520disktool-cli).  Wie die uebrigen Starter eine VORLAGE — der
+; Installationsordner wird beim Einrichten eingetragen.
+Source: "{#Paket}\k1520dbg.cmd";           Flags: dontcopy
+; Das Greaseweazle-Rad.  `dontcopy` aus demselben Grund wie requirements.lock:
+; es wird in PrepareToInstall gebraucht, also VOR dem Kopieren.  Der Eintrag
+; entfaellt, wenn ohne Greaseweazle geschnuert wurde.
+#if GwRad != ""
+Source: "{#Paket}\wheels\{#GwRad}";        Flags: dontcopy
+#endif
 
 ; Python selbst steht NICHT hier: es wird schon vor dem Kopieren gebraucht
 ; (Punkt 1a im Kopf) und deshalb im Code-Abschnitt geladen — mit
@@ -209,6 +236,17 @@ Name: "{group}\{#Programm}"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
   IconFilename: "{app}\share\icons\a5120emu.ico"
 Name: "{group}\k1520DiskTool"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
   Parameters: """{app}\app\disktool\main.py"""; WorkingDir: "{app}"; Comment: "Dateiaustausch mit K1520-Disketten"; \
+  IconFilename: "{app}\share\icons\a5120emu.ico"
+; Die Werkzeug-Eingabeaufforderung — NICHT der Debugger.  Der Unterschied ist
+; der Grund, warum dieser Eintrag den Zuschnitt aus §10a.2 nicht bricht: ein
+; Symbol auf k1520dbg.exe selbst oeffnete ein Fenster, das mangels Diskette
+; sofort wieder zuginge; diese .cmd dagegen OEFFNET eine Eingabeaufforderung
+; (`cmd /k`) mit gesetztem PATH und bleibt stehen.  Ohne sie findet ein
+; Anwender den Debugger nie — er liegt in bin\ und steht in keinem Menue.
+; Die Datei entsteht erst im Nachlauf (StarterSchreiben); die Verknuepfung
+; darauf darf trotzdem hier stehen, Inno prueft das Ziel nicht.
+Name: "{group}\K1520-Werkzeuge (Eingabeaufforderung)"; Filename: "{app}\bin\k1520dbg.cmd"; \
+  WorkingDir: "{app}"; Comment: "Debugger k1520dbg und k1520disktool-cli in der Konsole"; \
   IconFilename: "{app}\share\icons\a5120emu.ico"
 Name: "{group}\{cm:UninstallProgram,{#Produkt}}"; Filename: "{uninstallexe}"
 
@@ -248,12 +286,14 @@ const
   MarkeAusgepackt  = 300;
   MarkeVenv        = 340;
   MarkeQt          = 380;
-  MarkeQtFertig    = 880;
+  MarkeQtFertig    = 860;
+  MarkeGw          = 890;
   MarkeSchlank     = 960;
   MarkeFertig      = 1000;
 
 var
   HinweisSeite:      TOutputMsgWizardPage;
+  AbschlussSeite:    TOutputMsgWizardPage;
   DatenSeite:        TInputDirWizardPage;
   LadeSeite:         TDownloadWizardPage;
   Fortschrittsseite: TOutputProgressWizardPage;
@@ -494,6 +534,30 @@ begin
     Exit;
   end;
 
+  { ── Die Anbindung an ECHTE Diskettenlaufwerke ─────────────────────────────
+
+    Das Rad liegt fertig im Paket; seine vier Abhaengigkeiten (crcmod,
+    bitarray, pyserial, requests) kamen gerade mit requirements.lock — daher
+    `--no-deps`: hier soll nichts mehr aus dem Netz kommen.
+
+    Scheitert es, ist das KEIN Grund, die Installation hinzuwerfen.  Emulator
+    und Diskettenwerkzeug laufen ohne; es fehlt nur der Zugriff auf ein echtes
+    Laufwerk, und die Oberflaeche sagt das dann von selbst (app\gw\session.py:
+    `verfuegbarkeit` sperrt den Menuepunkt mit dem Grund im Tooltip). }
+#if GwRad != ""
+  Melde('Greaseweazle einrichten (echte Diskettenlaufwerke)', MarkeGw);
+  ExtractTemporaryFile('{#GwRad}');
+  if Laufe(VenvPy,
+           '-m pip install --disable-pip-version-check --no-input --no-color'
+           + ' --no-warn-script-location --no-deps "'
+           + ExpandConstant('{tmp}\{#GwRad}') + '"',
+           ExpandConstant('{app}')) <> 0 then
+    Notiere('Warnung: Greaseweazle liess sich nicht einspielen — der Zugriff auf'
+          + ' ein echtes Diskettenlaufwerk fehlt.')
+  else
+    Notiere('    Greaseweazle {#GwVersion} eingerichtet');
+#endif
+
   { Python und Qt bringen ~300 MB mit, keine 15 davon gehoeren dem Emulator.
     slim.py schneidet QML/Quick, Entwicklungswerkzeug, ungenutzte Bindungen und
     CPythons Testsuite heraus; welche Qt-Bibliotheken bleiben, bestimmt dabei
@@ -585,6 +649,16 @@ begin
                    ExpandConstant('{app}\bin\a5120emu.cmd'));
   VorlageSchreiben(ExpandConstant('{tmp}\disktool_launcher.cmd'),
                    ExpandConstant('{app}\bin\k1520disktool.cmd'));
+
+  { Der Debugger bekommt KEIN Symbol und keinen Doppelklick-Starter: er ist
+    kein Programm, das man oeffnet und wieder schliesst, sondern eines, das
+    neben Editor und Assembler in der Konsole steht.  Statt dessen eine
+    Eingabeaufforderung, in der er (und k1520disktool-cli) ohne Pfadangabe
+    laufen — ausdruecklich zum Kopieren und Anpassen gedacht
+    (doc/design/13_distribution.md §10a.2). }
+  ExtractTemporaryFile('k1520dbg.cmd');
+  VorlageSchreiben(ExpandConstant('{tmp}\k1520dbg.cmd'),
+                   ExpandConstant('{app}\bin\k1520dbg.cmd'));
 end;
 
 procedure AusweisSchreiben;
@@ -616,7 +690,7 @@ begin
   Daten := AbweichenderDatenOrdner;
   StringChangeEx(Daten, '\', '\\', True);
 
-  SetArrayLength(Zeilen, 22);
+  SetArrayLength(Zeilen, 24);
   Zeilen[0]  := 'import ctypes, os, sys';
   Zeilen[1]  := 'os.environ["QT_QPA_PLATFORM"] = "offscreen"';
   Zeilen[2]  := 'sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))';
@@ -642,6 +716,10 @@ begin
   Zeilen[19] := 'qt = QApplication([])';
   Zeilen[20] := 'MainWindow().close()';
   Zeilen[21] := 'print("Oberflaeche: baut auf")';
+  { Die Anbindung an echte Laufwerke ist FREIWILLIG — sie wird gemeldet, nicht
+    geprueft.  Ein fehlendes Greaseweazle darf den Rauchtest nicht kippen. }
+  Zeilen[22] := 'from app.gw import verfuegbar';
+  Zeilen[23] := 'print("Greaseweazle:", "einsatzbereit" if verfuegbar() else "NICHT installiert")';
 
   Datei := ExpandConstant('{app}\.rauchtest.py');
   if not SaveStringsToFile(Datei, Zeilen, False) then
@@ -733,6 +811,12 @@ begin
     'einmalig, dafür läuft der Emulator danach ohne Internetverbindung.' + #13#10 +
     'Das dauert je nach Leitung ein paar Minuten; solange sieht der Balken' + #13#10 +
     'unten, wo er gerade steht.' + #13#10 + #13#10 +
+    'ECHTE DISKETTEN: DIE GREASEWEAZLE-ANBINDUNG WIRD MIT EINGERICHTET' + #13#10 +
+    'Mit einem Greaseweazle-Adapter lesen und beschreiben beide Programme' + #13#10 +
+    'echte 5,25"- und 8"-Disketten in einem angeschlossenen Laufwerk.' + #13#10 +
+    'Die dafür nötigen Bausteine (Greaseweazle {#GwVersion} und vier kleine' + #13#10 +
+    'Python-Pakete) richtet der Assistent gleich mit ein — ohne Adapter' + #13#10 +
+    'stören sie nicht, der Menüpunkt bleibt dann einfach gesperrt.' + #13#10 + #13#10 +
     'ALLES BLEIBT IM INSTALLATIONSORDNER' + #13#10 +
     'Python und Qt landen INNERHALB der Installation. Ein vorhandenes Python' + #13#10 +
     'auf diesem Rechner wird nicht angefasst, nichts wird registriert, keine' + #13#10 +
@@ -767,6 +851,42 @@ begin
 
   Fortschrittsseite := CreateOutputProgressPage('Laufzeitumgebung einrichten',
     'Python und Qt werden eingerichtet. Das dauert einige Minuten.');
+
+  { ── Was noch mitkam, aber in keinem Startmenue steht ───────────────────────
+
+    Der Debugger ist das dritte Programm im Paket und bekommt bewusst KEIN
+    Symbol (§10a.2 des Entwurfs): er wird in einen vorhandenen Arbeitsablauf
+    aus Editor, Assembler und Konsole eingebunden, nicht doppelgeklickt.  Genau
+    deshalb braucht er diese Seite — wer nicht erfaehrt, dass es ihn gibt und
+    wo sein Handbuch liegt, benutzt ihn nie.
+
+    Sie steht NACH dem Kopieren (wpInfoAfter): vorher waeren die genannten
+    Pfade noch leer, und wer abbricht, soll nicht mit Wegbeschreibungen zu
+    Dateien zurueckbleiben, die es nicht gibt. }
+  AbschlussSeite := CreateOutputMsgPage(wpInfoAfter,
+    'Auch mit dabei',
+    'Der Debugger k1520dbg — und der Zugriff auf echte Disketten',
+    'DER DEBUGGER k1520dbg' + #13#10 +
+    'Er untersucht fremde Programme Schritt für Schritt: Haltepunkte,' + #13#10 +
+    'Register, Speicher, Rückwärtslaufen, Disassemblat mit Ihrem eigenen' + #13#10 +
+    'Quelltext daneben. Kein Fenster, sondern ein Werkzeug für die Konsole —' + #13#10 +
+    'deshalb steht es in keinem Startmenü.' + #13#10 + #13#10 +
+    '  Programm:  <Installation>\bin\k1520dbg.exe' + #13#10 +
+    '  Handbuch:  <Installation>\share\doc\handbuch_k1520dbg.md' + #13#10 +
+    '  Dazu:      <Installation>\share\tools\z80_disasm2.py' + #13#10 + #13#10 +
+    'Am einfachsten über bin\k1520dbg.cmd: das öffnet eine Eingabe-' + #13#10 +
+    'aufforderung, in der k1520dbg und k1520disktool-cli ohne Pfadangabe' + #13#10 +
+    'laufen. Die Datei ist zum Kopieren und Anpassen gedacht — Arbeitsordner' + #13#10 +
+    'und eigener Assembler stehen als Beispielzeilen darin.' + #13#10 + #13#10 +
+    'ECHTE DISKETTEN' + #13#10 +
+    'Die Greaseweazle-Anbindung ist eingerichtet. Mit einem angeschlossenen' + #13#10 +
+    'Adapter lesen und beschreiben beide Programme echte Disketten:' + #13#10 +
+    'im Emulator „Physisch…" am Laufwerkskasten, im Diskettenwerkzeug' + #13#10 +
+    'unter „Datei ▸ Physisches Laufwerk…".' + #13#10 + #13#10 +
+    'LIZENZEN' + #13#10 +
+    'Die Texte der mitgelieferten Fremdsoftware (isocline für die' + #13#10 +
+    'Zeilenbearbeitung des Debuggers, Greaseweazle) liegen unter' + #13#10 +
+    '<Installation>\share\doc\lizenzen\.');
 end;
 
 function UpdateReadyMemo(const Space, NewLine, MemoUserInfoInfo, MemoDirInfo,
@@ -779,8 +899,11 @@ begin
     + 'Arbeitsdisketten:' + NewLine
     + Space + DatenOrdner + NewLine + NewLine
     + 'Wird aus dem Netz geladen (einmalig, rund 120 MB):' + NewLine
-    + Space + 'Python {#PyVersion} und die Qt-Oberfläche' + NewLine + NewLine
-    + 'Beides landet innerhalb der Installation — das übrige System' + NewLine
+    + Space + 'Python {#PyVersion} und die Qt-Oberfläche' + NewLine
+    + Space + 'die Bausteine der Greaseweazle-Anbindung (echte Laufwerke)' + NewLine + NewLine
+    + 'Mitgeliefert, also ohne Download:' + NewLine
+    + Space + 'Emulator, Diskettenwerkzeug und der Debugger k1520dbg' + NewLine + NewLine
+    + 'Alles landet innerhalb der Installation — das übrige System' + NewLine
     + 'bleibt unberührt.';
 end;
 

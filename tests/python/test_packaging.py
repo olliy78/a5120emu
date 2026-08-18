@@ -1389,3 +1389,241 @@ def test_deinstallieren_raeumt_auch_das_werkzeug_weg():
     assert 'STARTER="$MASCHINEN $WERKZEUGE"' in text
     assert 'for _m in $STARTER; do' in text, \
         "die Aufräumschleife läuft noch über $MASCHINEN und übersieht das Werkzeug"
+
+
+# ─── Der Debugger im Paket (Entwurf §10a) ────────────────────────────────────
+#
+# `k1520dbg` ist das dritte Programm der Auslieferung — und das einzige ohne
+# Oberfläche.  Genau daran hängen die Fallen: es steht in keinem Startmenü, es
+# bringt eine einkompilierte Fremdquelle mit (isocline), und es linkt den Kern
+# statisch, trägt also dieselbe `formats.yaml`-Falle wie die Bibliothek.
+
+GW_PINS = PACKAGING / "gw_pins.txt"
+
+
+def test_der_debugger_wird_gebaut_und_kommt_ins_paket():
+    """Bauen UND kopieren — beides, sonst liegt nur eine Hälfte im Paket."""
+    bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    assert "k1520disktool k1520dbg" in bp, "k1520dbg fehlt in der Zielliste des Bauschritts"
+    assert '"$BUILD_DIR/$K1520_DBG" "$STAGE/payload/bin/$K1520_DBG"' in bp, \
+        "der gebaute Debugger wird nicht in die Payload kopiert"
+    assert '[ -f "$BUILD_DIR/$K1520_DBG" ]' in bp, \
+        "ohne Prüfung schnürt ein Fehlbau klaglos ein Paket ohne Debugger"
+
+
+def test_handbuch_und_lizenzen_reisen_mit():
+    """Ein Werkzeug ohne Handbuch benutzt niemand — und isocline verlangt seinen Text.
+
+    Die Zeilenbearbeitung des Debuggers steckt EINKOMPILIERT in der Programmdatei
+    (third_party/isocline, MIT).  Man sieht es ihr nicht an; genau deshalb muss der
+    Lizenztext daneben liegen.  Dasselbe gilt für Greaseweazle (Unlicence).
+    """
+    bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    assert (PROJECT_ROOT / "doc/handbuch_k1520dbg.md").is_file(), \
+        "das Handbuch, das build_payload.sh einpackt, gibt es nicht"
+    assert (PROJECT_ROOT / "third_party/isocline/LICENSE").is_file()
+    assert "share/doc/handbuch_k1520dbg.md" in bp
+    assert "share/tools/z80_disasm2.py" in bp
+    assert "lizenzen/isocline-LICENSE.txt" in bp
+    assert "lizenzen/greaseweazle-COPYING.txt" in bp, \
+        "die Lizenz der Greaseweazle-Anbindung wird nicht mitgeliefert"
+
+
+@nur_unix_installer
+def test_installer_verweist_den_debugger_und_raeumt_ihn_wieder_weg():
+    """Ein Verweis in ~/.local/bin — und er muss beim Deinstallieren verschwinden.
+
+    Der Debugger bekommt bewusst KEINEN Startmenü-Eintrag (§10a.2): er wird in
+    einen vorhandenen Arbeitsablauf eingebunden, nicht doppelgeklickt.  Bleibt
+    er beim Deinstallieren als toter Verweis stehen, ist das schlimmer als gar
+    kein Verweis — genau das war `k1520disktool-cli` bis 2026-08-18.
+    """
+    text = (PACKAGING / "install.sh").read_text(encoding="utf-8")
+    assert "KONSOLENWERKZEUGE=" in text
+    zeile = re.search(r'^KONSOLENWERKZEUGE="([^"]*)"', text, re.M).group(1).split()
+    assert "k1520dbg" in zeile
+    assert "k1520disktool-cli" in zeile, \
+        "die Kommandozeile des DiskTool blieb beim Deinstallieren als toter Verweis liegen"
+    # Angelegt …
+    assert 'ln -sf "$PREFIX/bin/$_w" "$BINDIR/$_w"' in text
+    # … und wieder entfernt.
+    assert re.search(r"for _m in \$KONSOLENWERKZEUGE; do\s*\n\s*rm -f \"\$BINDIR/\$_m\"", text), \
+        "die Konsolenwerkzeuge werden beim Deinstallieren nicht entfernt"
+
+
+@nur_unix_installer
+def test_installer_sagt_wo_der_debugger_liegt():
+    """Wer nicht erfährt, dass es ihn gibt, benutzt ihn nie.
+
+    Der Debugger taucht in keinem Menü auf.  Die Schlussmeldung der Installation
+    ist damit der EINZIGE Ort, an dem ein Anwender von ihm erfährt — sie muss
+    Programm, Handbuch und Ablageort nennen.
+    """
+    text = (PACKAGING / "install.sh").read_text(encoding="utf-8")
+    schluss = text[text.index("Fertig."):]
+    assert "k1520dbg" in schluss
+    assert "handbuch_k1520dbg.md" in schluss, "der Hinweis nennt das Handbuch nicht"
+    assert "lizenzen" in schluss
+
+
+def test_iss_sagt_wo_der_debugger_liegt():
+    """Dasselbe unter Windows — und dort ZUSÄTZLICH die Eingabeaufforderung.
+
+    Der Assistent bekommt dafür eine eigene Seite NACH dem Kopieren: vorher
+    wären die genannten Pfade noch leer.
+    """
+    text = _iss()
+    assert "CreateOutputMsgPage(wpInfoAfter" in text, \
+        "der Hinweis auf den Debugger steht nicht nach dem Kopieren"
+    seite = text[text.index("CreateOutputMsgPage(wpInfoAfter"):]
+    seite = seite[:seite.index("end;")]
+    for pflicht in ("k1520dbg.exe", "handbuch_k1520dbg.md", "k1520dbg.cmd",
+                    "z80_disasm2.py", "lizenzen"):
+        assert pflicht in seite, f"die Abschlussseite nennt {pflicht} nicht"
+
+
+def test_iss_schreibt_die_werkzeug_eingabeaufforderung():
+    """Sie ist eine VORLAGE — ohne ausgefüllten Installationsordner nützt sie nichts."""
+    vorlage = (PACKAGING / "k1520dbg.cmd.in").read_text(encoding="utf-8")
+    assert 'set "K1520_ROOT=@ROOT@"' in vorlage
+    assert "cmd /k" in vorlage, "ohne `cmd /k` ginge das Fenster sofort wieder zu"
+
+    text = _iss()
+    assert "ExtractTemporaryFile('k1520dbg.cmd')" in text
+    assert r"ExpandConstant('{app}\bin\k1520dbg.cmd')" in text, \
+        "die Vorlage wird nicht in die Installation geschrieben"
+    # Verknüpft wird die EINGABEAUFFORDERUNG, nie k1520dbg.exe selbst: ein Symbol
+    # auf den Debugger öffnete ein Fenster, das mangels Diskette sofort zuginge.
+    icons = text[text.index("[Icons]"):text.index("[UninstallDelete]")]
+    # Ohne die Kommentare: die erklären genau diesen Unterschied und nennen
+    # `k1520dbg.exe` dabei beim Namen.
+    eintraege = "\n".join(z for z in icons.splitlines() if not z.lstrip().startswith(";"))
+    assert "bin\\k1520dbg.cmd" in eintraege
+    assert "k1520dbg.exe" not in eintraege, "kein Doppelklick-Symbol auf den Debugger (§10a.2)"
+
+
+def test_windows_paket_bekommt_die_vorlage_und_unix_nicht():
+    """Ein Windows-Anwender sieht keine .sh, ein Linux-Anwender keine .cmd."""
+    bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    windows_teil = bp[bp.index("if ist_windows; then\n    cp \"$SELF_DIR/launcher.cmd\""):]
+    windows_teil = windows_teil[:windows_teil.index("else")]
+    assert "k1520dbg.cmd.in" in windows_teil, \
+        "die Werkzeug-Eingabeaufforderung fehlt im Windows-Paket"
+
+
+# ─── Greaseweazle: die Anbindung an echte Laufwerke ──────────────────────────
+
+def test_gw_pins_sind_vollstaendig():
+    """Fassung, Größe und Prüfsumme reisen MIT dem Paket.
+
+    Eine nebenher geladene Prüfsummendatei deckte nur Übertragungsfehler ab,
+    nicht eine ausgetauschte Quelle — dieselbe Sitte wie bei uv und Python.
+    """
+    text = GW_PINS.read_text(encoding="utf-8")
+    version = re.search(r"^version\s+(\S+)", text, re.M).group(1)
+    eintrag = re.search(r"^greaseweazle-(\S+)\.zip\s+(\d+)\s+([0-9a-f]{64})\s*$", text, re.M)
+    assert eintrag, "kein Eintrag <Archiv> <Größe> <SHA256>"
+    assert eintrag.group(1) == version, \
+        f"die gepinnte Datei ({eintrag.group(1)}) gehört nicht zur Fassung {version}"
+    assert int(eintrag.group(2)) > 50_000, "die Größe kann nicht stimmen"
+
+
+def test_die_abhaengigkeiten_der_anbindung_stehen_im_lock():
+    """greaseweazle selbst kommt als Rad — seine vier Abhängigkeiten von PyPI.
+
+    Ohne sie ist das Rad ein Paket, das sich einspielen lässt und beim ersten
+    Import auseinanderfällt.  `--require-hashes` verlangt dabei, dass sie
+    festgenagelt sind.
+    """
+    lock = (PACKAGING / "requirements.lock").read_text(encoding="utf-8")
+    for paket in ("crcmod", "bitarray", "pyserial", "requests"):
+        assert re.search(rf"^{paket}==", lock, re.M), \
+            f"{paket} fehlt in requirements.lock — die Greaseweazle-Anbindung liefe nicht"
+    assert not re.search(r"^greaseweazle==", lock, re.M), \
+        "greaseweazle liegt nicht auf PyPI und gehört nicht in den Lock"
+    assert re.search(r"--hash=sha256:", lock), "der Lock nagelt keine Prüfsummen fest"
+
+
+def test_das_rad_wird_plattformunabhaengig_gebaut():
+    """py3-none-any — sonst hätte der Anwender einen Übersetzer zu stellen.
+
+    `setup.py` von greaseweazle erklärt eine C-Erweiterung.  Sie ist reine
+    Beschleunigung (beide Aufrufstellen fallen auf Python zurück), aber solange
+    `ext_modules` gesetzt ist, wird das Rad an Plattform UND Python-Nebenversion
+    gebunden — auch wenn gar nichts übersetzt wurde.
+    """
+    bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    assert "kw.pop('ext_modules', None)" in bp, "der Aufsatz nimmt die C-Erweiterung nicht heraus"
+    assert "*-py3-none-any.whl)" in bp, "das Ergebnis wird nicht auf Plattformunabhängigkeit geprüft"
+    # Und die Prüfsumme wird wirklich geprüft, nicht nur mitgeschleppt.
+    assert '[ "$_got" = "$GW_SHA" ]' in bp
+
+
+def test_der_installer_spielt_das_rad_ohne_netz_ein():
+    """`--no-deps`: die Abhängigkeiten kamen mit requirements.lock.
+
+    Und ein Fehlschlag darf die Installation NICHT hinwerfen — Emulator und
+    Diskettenwerkzeug laufen ohne, es fehlt nur der Zugriff auf ein echtes
+    Laufwerk (app/gw/session.py sperrt den Menüpunkt mit dem Grund im Tooltip).
+    """
+    sh = (PACKAGING / "install.sh").read_text(encoding="utf-8")
+    assert "wheels/greaseweazle-*.whl" in sh
+    assert "--no-deps" in sh
+    block = sh[sh.index("Greaseweazle-Anbindung einspielen"):]
+    block = block[:block.index("\nfi\n") + 4]
+    assert "warn " in block, "ein Fehlschlag muss gemeldet werden"
+    assert "die " not in block, \
+        "ein Fehlschlag beim Einspielen darf die Installation nicht abbrechen"
+
+    iss = _iss()
+    assert "ExtractTemporaryFile('{#GwRad}')" in iss
+    assert "--no-deps" in iss
+    # Vor dem Schlankmachen — slim.py wirft pip aus der Laufzeitumgebung.
+    assert iss.index("{#GwRad}") < iss.index("Überflüssiges entfernen"), \
+        "das Rad muss eingespielt sein, BEVOR slim.py pip entfernt"
+
+
+def test_der_assistent_sagt_vorher_dass_greaseweazle_dazukommt():
+    """Er richtet etwas ein, das der Anwender nicht bestellt hat — das gehört angesagt.
+
+    Und zwar mit dem GRUND: „Greaseweazle" allein sagt niemandem etwas, „echte
+    Disketten in einem angeschlossenen Laufwerk" schon.
+    """
+    text = _iss()
+    hinweis = text[text.index("HinweisSeite := CreateOutputMsgPage"):]
+    hinweis = hinweis[:hinweis.index("DatenSeite :=")]
+    assert "GREASEWEAZLE" in hinweis.upper()
+    assert "Disketten" in hinweis
+    memo = text[text.index("function UpdateReadyMemo"):]
+    memo = memo[:memo.index("function NextButtonClick")]
+    assert "Greaseweazle" in memo, "die letzte Seite vor dem Zugriff verschweigt es"
+
+
+def test_der_kern_bindet_nichts_von_greaseweazle_ein():
+    """Entwurf §14: kein USB, kein Import, kein Rückruf in die Anwendung.
+
+    Der Arbeitsfaden ist Python (app/gw/), der Kern sieht nur Aufträge und
+    HFE-Bitzellen.  Ein anderer Adapter wäre damit ein anderes `device`, keine
+    Kernänderung.  Geprüft werden die EINBINDUNGEN, nicht das Wort: in
+    Kommentaren steht `greaseweazle` völlig zu Recht (der Entwurf erklärt ja,
+    wofür `TrackSync` da ist) — eine `#include`-Zeile wäre der Bruch.
+    """
+    treffer = _sh("grep", "-rn", "-E",
+                  r"^\s*#\s*include.*(greaseweazle|libusb|serial)",
+                  str(PROJECT_ROOT / "core"))
+    assert treffer.stdout.strip() == "", \
+        f"der Kern bindet Adapter-/USB-Kram ein:\n{treffer.stdout}"
+
+
+def test_die_anbindung_schreibt_nicht_auf_die_nutzlast():
+    """`greaseweazle.optimised` meldet sich beim Import auf der STANDARDAUSGABE.
+
+    Bei `k1520disktool --physical` ist die Standardausgabe das Ergebnis (Entwurf
+    §12.3) — eine Warnzeile mittendrin macht aus einer Dateiliste Kauderwelsch.
+    Deshalb geht jeder Import dieser Schicht durch `_leise`.
+    """
+    text = (PROJECT_ROOT / "app/gw/device.py").read_text(encoding="utf-8")
+    assert "redirect_stdout" in text
+    # Kein direkter Import mehr — der ginge an der Umleitung vorbei.
+    assert not re.search(r"^\s*(import greaseweazle|from greaseweazle)", text, re.M), \
+        "ein Import an `_leise` vorbei schreibt wieder auf die Nutzlast"

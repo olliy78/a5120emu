@@ -625,7 +625,7 @@ macOS-Tripel, `paths.py` kennt `.dylib` und `~/Library/Application Support`).
 
 ---
 
-## 10a. Werkzeuge mitliefern (Vorschlag, noch nicht umgesetzt)
+## 10a. Werkzeuge mitliefern (✅ umgesetzt 2026-08-18)
 
 Der Werkzeugkasten in `tools/` ist zum größten Teil **Entwicklungswerkzeug für den
 Emulator** und hat im Anwenderpaket nichts verloren. Ein Teil davon ist aber genau das,
@@ -763,20 +763,105 @@ Gesamtinstallation fällt das Gewicht nicht ins Auge; sauberer wäre, `k1520dbg`
 Shared Library zu linken. Das ist eine Bauänderung im Kern, kein Paketierungsthema, und
 sollte nicht mit der Auslieferung vermischt werden.
 
-### 10a.4 Umsetzungsreihenfolge
+### 10a.4 Umsetzung (2026-08-18)
 
-1. `build_payload.sh`: `k1520dbg` bauen und nach `bin/` kopieren; `share/doc/` und
-   `share/tools/` anlegen und füllen (~30 Zeilen, dem Muster von `k1520disktool-cli`
-   folgend).
-2. ✅ *(erledigt, §10a.3 (1))* Zeileneditor lizenzrein. Offen bleibt nur der Rauchtest
-   „Programm startet und beantwortet `q`" in `release.yml`; die `ldd`-Gegenprobe gegen
-   readline fährt bereits `py_dbg_interaktiv` in der Standardregression.
-3. Linux: Symlink `~/.local/bin/k1520dbg` in `install.sh` (Deinstallieren findet ihn
-   über das Inventar im Ausweis — Eintrag ergänzen, sonst bleibt er stehen).
-4. Windows: `packaging/k1520dbg.cmd.in` mit dem Installationsordner ausfüllen und als
-   `k1520dbg.cmd` ins Paket legen (dasselbe Muster wie `launcher.cmd`). **Kein**
-   Startmenüeintrag, kein Symbol — s. Zuschnitt in §10a.2.
-5. `paket_readme.md` und die Release-Notizen um einen Absatz erweitern.
+Alle fünf Schritte sind gefahren. Was dabei anders kam als geplant:
+
+1. ✅ `build_payload.sh` baut `k1520dbg` mit (Ziel in derselben `cmake --build`-Zeile
+   wie die Bibliotheken) und legt `share/doc/`, `share/doc/lizenzen/` und
+   `share/tools/` an.
+2. ✅ Zeilen­editor lizenzrein (§10a.3 (1)). Der Rauchtest „startet und beantwortet
+   `q`" steht jetzt in **beiden** Jobs von `release.yml` — samt einer Sitzung an einer
+   ausgepackten Beispieldiskette.
+3. ✅ Linux: Verweis in `~/.local/bin`. Dafür kam eine eigene Liste
+   **`KONSOLENWERKZEUGE`** in `install.sh` — und dabei fiel auf, dass
+   `k1520disktool-cli` seit jeher verlinkt, aber **in keiner Aufräumliste** stand: es
+   blieb beim Deinstallieren als toter Verweis liegen. Beide hängen jetzt an derselben
+   Liste. Wächter `test_installer_verweist_den_debugger_und_raeumt_ihn_wieder_weg`.
+4. ✅ Windows: `k1520dbg.cmd.in` → `bin\k1520dbg.cmd`. **Eine Abweichung vom
+   Zuschnitt**, mit Absicht: es gibt einen Startmenü-Eintrag *„K1520-Werkzeuge
+   (Eingabeaufforderung)"* — er zeigt auf die **`.cmd`**, nicht auf `k1520dbg.exe`.
+   Das Argument aus §10a.2 richtet sich gegen ein Symbol auf den *Debugger* (das
+   öffnete ein Fenster, das mangels Diskette sofort wieder zuginge); die `.cmd`
+   dagegen öffnet eine Eingabeaufforderung (`cmd /k`) und bleibt stehen. Ohne
+   irgendeinen Eintrag findet ein Windows-Anwender den Debugger nie — er liegt in
+   `bin\` und steht sonst nirgends. Wächter
+   `test_iss_schreibt_die_werkzeug_eingabeaufforderung` hält beides auseinander:
+   die `.cmd` **muss** im Abschnitt für die Symbole stehen, `k1520dbg.exe` **darf
+   nicht**.
+5. ✅ Der Hinweis auf den Debugger steht an **drei** Stellen, weil er sonst untergeht:
+   die Schlussmeldung von `install.sh`, eine eigene Assistentenseite **nach dem
+   Kopieren** (`CreateOutputMsgPage(wpInfoAfter, …)` — vorher wären die genannten
+   Pfade noch leer) und `paket_readme.md`.
+
+`(3)` aus §10a.3 bleibt offen wie beschrieben: `k1520dbg` linkt den Kern weiterhin
+statisch, im Paket liegen also zwei Kopien (~1 MB). `(2)` erledigte sich von selbst —
+`K1520_FORMATS_DEFAULT` hängt an `k1520_floppy2`, und das erbt `k1520dbg` mit; der
+Wächter dagegen steht trotzdem im Rauchtest beider Release-Jobs (er prüft jetzt
+`libk1520core.so` **und** `k1520dbg`).
+
+### 10a.5 Greaseweazle: mitgeliefert statt nachinstalliert (2026-08-18)
+
+Mit `--physical` in beiden Programmen ist der Zugriff auf ein echtes Laufwerk kein
+Sonderfall mehr, sondern eine Funktion des Produkts (`doc/design/14_physische_diskette.md`).
+Bis hierher war er eine **freiwillige Nachinstallation von Hand** — im ausgelieferten
+Paket ist das keine Option: dort gibt es kein `pip` im Blick des Anwenders und unter
+Windows nicht einmal `git`.
+
+**Der Weg dahin ist der einzige, der ohne Übersetzer beim Anwender auskommt.** Vier
+Wege standen zur Wahl:
+
+| Weg | woran er scheitert |
+|---|---|
+| PyPI (`greaseweazle` in `requirements.in`) | **liegt nicht auf PyPI** — 404, Stand 2026-08-18 |
+| `pip install git+https://…@v1.23` beim Anwender | braucht `git`, und die C-Erweiterung braucht einen Übersetzer |
+| Quellarchiv ins Paket, `pip install` beim Anwender | Übersetzer beim Anwender — unter Windows aussichtslos |
+| **Rad beim Schnüren bauen, ins Paket legen** | — |
+
+Umgesetzt ist der vierte. `packaging/gw_pins.txt` nagelt das Quellarchiv des
+GitHub-Releases mit Größe und **SHA256** fest (dieselbe Sitte wie `uv_pins.txt` und
+`python_pins.txt`: die Prüfsumme reist mit dem Paket, nicht neben der Datei her);
+`build_payload.sh` lädt es, prüft, baut daraus ein Rad und legt es als
+`wheels/greaseweazle-<v>-py3-none-any.whl` **neben** die Payload — wie
+`requirements.lock` gehört es dem Installer, nicht der Installation.
+
+Drei Festlegungen, die man nicht aufweichen darf:
+
+- **Das Rad ist `py3-none-any`, die C-Erweiterung entfällt bewusst.** `setup.py`
+  erklärt `greaseweazle.optimised`; beide Aufrufstellen haben aber einen Rückfall in
+  Python (`except AttributeError` in `usb.py:487` und `track.py:406`). Gemessen am
+  2026-08-18 kostet der Verzicht **~25 ms je Spur** — gegen 500–800 ms, die das Lesen
+  einer Spur am echten Laufwerk ohnehin dauert, also 3–5 %. Dafür gibt es EIN Rad für
+  alle Systeme, keinen Übersetzer beim Anwender und keine Bindung an die
+  Python-Nebenversion. Herausgenommen wird die Erweiterung über einen **vorgeschalteten
+  Aufsatz** (`setuptools.setup` wird abgefangen, `ext_modules` fällt weg) und nicht
+  durch einen Eingriff in `setup.py` selbst: so hält es auch, wenn die nächste Fassung
+  die Datei umschreibt. Solange `ext_modules` gesetzt ist, wird das Rad an Plattform
+  **und** ABI gebunden, auch wenn gar nichts übersetzt wurde — deshalb prüft
+  `build_payload.sh` den Dateinamen nach.
+- **Die vier Abhängigkeiten kommen von PyPI, in `requirements.lock`** (crcmod,
+  bitarray, pyserial, requests). Sie werden also zusammen mit Qt geladen und mit
+  `--require-hashes` geprüft; das Rad selbst spielt der Installer danach mit
+  **`--no-deps`** ein — an der Stelle soll nichts mehr aus dem Netz kommen.
+- **Ein Fehlschlag beim Einspielen wirft die Installation NICHT hin.** Emulator und
+  Diskettenwerkzeug laufen ohne; es fehlt nur der Zugriff auf ein echtes Laufwerk, und
+  die Oberfläche sagt das von selbst (`app/gw/session.py: verfuegbarkeit` sperrt den
+  Menüpunkt mit dem Grund im Tooltip).
+
+Dazu ein Nebenbefund, der ohne das Ausliefern nie aufgefallen wäre: **ohne die
+C-Erweiterung meldet sich `greaseweazle.optimised` beim Import auf der
+STANDARDAUSGABE.** Bei `k1520disktool --physical` ist die Standardausgabe die Nutzlast
+(§12.3 des Diskettenentwurfs) — eine Warnzeile mittendrin macht aus einer Dateiliste
+Kauderwelsch. `app/gw/device.py` liest die Schicht deshalb nur noch über **`_leise()`**
+ein (`contextlib.redirect_stdout(sys.stderr)`); umgeleitet, nicht verworfen, damit eine
+künftige Meldung sichtbar bleibt — nur eben am richtigen Ort. Wächter
+`test_die_anbindung_schreibt_nicht_auf_die_nutzlast` (es darf **keinen** Import an
+`_leise` vorbei geben).
+
+Der Assistent sagt beides **vorher** an — Greaseweazle auf der Seite „Bevor es losgeht"
+und noch einmal auf der letzten Seite vor dem Zugriff: er richtet etwas ein, das der
+Anwender nicht bestellt hat, und „Greaseweazle" allein sagt niemandem etwas, „echte
+Disketten in einem angeschlossenen Laufwerk" schon.
 
 Aufwand insgesamt: überschaubar, weil `k1520disktool-cli` den Weg für ein
 Kommandozeilenprogramm im Paket schon gebahnt hat.

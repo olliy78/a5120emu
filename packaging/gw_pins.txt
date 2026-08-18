@@ -1,0 +1,37 @@
+# Gepinnte Greaseweazle-Fassung — die Anbindung an ECHTE Diskettenlaufwerke.
+#
+# Warum eine eigene Pin-Datei und nicht requirements.lock:
+#
+# Die Greaseweazle-Hosttools liegen NICHT auf PyPI (Stand 2026-08-18: 404).  Es
+# gibt sie nur am GitHub-Release — als Quellarchiv.  Ein Quellarchiv kann pip
+# aber nicht einfach einspielen: `setup.py` erklaert eine C-Erweiterung
+# (`greaseweazle.optimised`), und die muesste beim ANWENDER uebersetzt werden.
+# Unter Windows hat er keinen Uebersetzer; die Installation braeche ab.
+#
+# Deshalb wird beim SCHNUEREN ein Rad („wheel") gebaut und dem Paket beigelegt
+# (packaging/build_payload.sh, `--refresh-gw` frischt die Pins auf).  Der
+# Installer spielt es ohne Netz und ohne Uebersetzer ein; die vier
+# Abhaengigkeiten (crcmod, bitarray, pyserial, requests) liegen dagegen sehr wohl
+# auf PyPI und kommen mit Pruefsumme aus requirements.lock — sie werden also
+# zusammen mit Qt geladen.
+#
+# Die C-Erweiterung entfaellt dabei BEWUSST.  Beide Stellen, die sie benutzen,
+# haben einen Rueckfall in Python (`except AttributeError` in usb.py:487 und
+# track.py:406); gemessen am 2026-08-18 kostet der Verzicht rund 25 ms je Spur,
+# waehrend das Lesen einer Spur am echten Laufwerk 500–800 ms dauert.  Dafuer
+# gibt es EIN Rad fuer alle Systeme (py3-none-any), keinen Uebersetzer beim
+# Anwender und keine Bindung an die Python-Nebenversion.  Der Preis dafuer ist
+# eine Warnzeile auf der Standardausgabe beim Import — die faengt
+# app/gw/device.py ab (dort steht auch warum: die Ausgabe ist bei
+# `k1520disktool --physical` die Nutzlast).
+#
+# Lizenz: Unlicence (gemeinfrei) — COPYING reist mit ins Paket,
+# share/doc/lizenzen/greaseweazle-COPYING.txt.
+#
+# Aktualisieren:  packaging/build_payload.sh --refresh-gw
+#
+# Format:  <Dateiname> <Groesse in Byte> <SHA256 des Quellarchivs>
+
+version 1.23
+
+greaseweazle-1.23.zip       199962  0da643322b391ff20ecb1ae0990bafe4471615af7589628c6173588e1b7ae504
