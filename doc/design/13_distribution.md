@@ -670,12 +670,23 @@ teilen sich `formats.yaml`, die Beispieldisketten und den Datenordner:
   share/tools/  z80_disasm2.py                    NEU
 ```
 
-Ein Starter auf der Kommandozeile ist nötig, damit `k1520dbg` ohne Pfadangabe läuft:
-unter Linux ein Symlink in `~/.local/bin` (dort liegt schon `a5120emu`), unter Windows
-der Eintrag im Startmenü als **„Eingabeaufforderung mit K1520-Werkzeugen"** — ein
-`.cmd`, das `PATH` um `<root>\bin` erweitert und eine Shell öffnet. Ein
-Doppelklick-Symbol für einen Kommandozeilendebugger wäre eine Falle: er öffnete ein
-Fenster, das mangels Diskette sofort wieder zuginge.
+**Zuschnitt (entschieden 2026-08-18): das Werkzeug liegt im Paket, das Handbuch
+erklärt den Rest.** Ein Debugger ist nichts, was man doppelklickt und fertig — er wird
+in einen vorhandenen Arbeitsablauf aus Editor, Assembler und Konsole eingebunden, und
+wie der aussieht, weiß nur der Anwender. Also keine Startmenü-Automatik, keine
+geratenen Pfade: mitgeliefert werden das Programm, das Handbuch (§11 dort: Pfade,
+Umgebungsvariablen, die Runde bearbeiten→assemblieren→testen) und **eine Vorlage zum
+Anpassen**.
+
+- **Linux** — der Installer legt ohnehin einen Starter in `~/.local/bin` ab; dasselbe
+  für `k1520dbg`, und wer es anders will, setzt `PATH` selbst. Mehr braucht es nicht.
+- **Windows** — `packaging/k1520dbg.cmd.in` wird beim Einrichten mit dem
+  Installationsordner ausgefüllt und landet als `k1520dbg.cmd` im Paket. Es erweitert
+  `PATH` um `<root>\bin`, wechselt in einen Arbeitsordner und öffnet eine
+  Eingabeaufforderung. **Ausdrücklich zum Kopieren und Ändern gedacht** — Arbeitsordner
+  und eigener Assembler stehen als leere Zeilen mit Beispiel darin. Kein
+  Doppelklick-Symbol für den Debugger selbst: das öffnete ein Fenster, das mangels
+  Diskette sofort wieder zuginge.
 
 ### 10a.3 Die drei Punkte, an denen es hakt
 
@@ -762,8 +773,9 @@ sollte nicht mit der Auslieferung vermischt werden.
    readline fährt bereits `py_dbg_interaktiv` in der Standardregression.
 3. Linux: Symlink `~/.local/bin/k1520dbg` in `install.sh` (Deinstallieren findet ihn
    über das Inventar im Ausweis — Eintrag ergänzen, sonst bleibt er stehen).
-4. Windows: `.iss` um den Startmenüeintrag „Eingabeaufforderung mit K1520-Werkzeugen"
-   ergänzen (`[Icons]` + kleines `.cmd` aus einer Vorlage, wie `launcher.cmd`).
+4. Windows: `packaging/k1520dbg.cmd.in` mit dem Installationsordner ausfüllen und als
+   `k1520dbg.cmd` ins Paket legen (dasselbe Muster wie `launcher.cmd`). **Kein**
+   Startmenüeintrag, kein Symbol — s. Zuschnitt in §10a.2.
 5. `paket_readme.md` und die Release-Notizen um einen Absatz erweitern.
 
 Aufwand insgesamt: überschaubar, weil `k1520disktool-cli` den Weg für ein
@@ -802,6 +814,15 @@ Kommandozeilenprogramm im Paket schon gebahnt hat.
   `test_slim_wirft_pip_aus_der_laufzeitumgebung`, dazu die auf **130 MB**
   verschärfte Schranke im Paketjob (mit den vorherigen 220 MB gingen die
   163 MB als „in Ordnung" durch).
+- **Der Emulator hat keine Konsolenfassung** (nachgesehen 2026-08-18): `app/main.py`
+  kennt als einziges Argument `--paths` und startet sonst Qt; eine Diskette auf der
+  Kommandozeile nimmt er **nicht** entgegen (`MainWindow()` bekommt kein Argument, ein
+  `a5120emu meine.hfe` wird kommentarlos ignoriert). Wer die Maschine ohne Oberfläche
+  fahren will, nimmt `k1520dbg` (`keys`/`screen`/`gscreen`/`dialog`, `-x` für den
+  Stapelbetrieb). Das ist vertretbar — der Bildschirm ist ein Pixelpuffer der K7024 —,
+  aber **eine Diskette als Argument anzunehmen wäre billig** und genau das, was der
+  Ablauf bearbeiten→assemblieren→starten braucht. `k1520disktool` kann es längst
+  (`app/disktool/main.py` liest `argv[1]`/`argv[2]`).
 - **Versionsprüfung Payload ↔ venv**: ob der Launcher bei Versionsversatz automatisch
   nachinstalliert oder nur warnt.
 - **Proxy-Umgebungen**: `uv` respektiert `HTTPS_PROXY`; ob der Installer danach fragt, wenn

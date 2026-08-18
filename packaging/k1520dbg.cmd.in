@@ -1,0 +1,45 @@
+@echo off
+rem ===========================================================================
+rem  K1520-Werkzeuge in der Eingabeaufforderung
+rem ---------------------------------------------------------------------------
+rem  ZUM ANPASSEN GEDACHT.  Diese Datei oeffnet eine Eingabeaufforderung, in der
+rem  `k1520dbg` und `k1520disktool-cli` ohne Pfadangabe laufen.  Kopieren Sie sie
+rem  irgendwohin, tragen Sie unten Ihre Ordner ein und legen Sie eine
+rem  Verknuepfung davon dorthin, wo Sie arbeiten.
+rem
+rem  Warum kein Doppelklick-Symbol fuer den Debugger selbst: er ist kein Programm,
+rem  das man startet und wieder schliesst, sondern eines, das neben Editor und
+rem  Assembler in der Konsole steht.  Handbuch: share\doc\handbuch_k1520dbg.md
+rem ===========================================================================
+
+rem --- Installationsordner (wird beim Einrichten ausgefuellt) -----------------
+set "K1520_ROOT=@ROOT@"
+
+rem --- Ihr Arbeitsordner: hier startet die Eingabeaufforderung ----------------
+rem     Beispiel: set "ARBEIT=%USERPROFILE%\Projekte\z80"
+set "ARBEIT=%USERPROFILE%\Documents\K1520emu"
+
+rem --- Ihre Werkzeuge (nur eintragen, was Sie benutzen) -----------------------
+rem     Beispiel: set "PATH=C:\z80asm;%PATH%"
+
+rem ---------------------------------------------------------------------------
+set "PATH=%K1520_ROOT%\bin;%PATH%"
+
+rem  Der Formatkatalog wird normalerweise neben der Programmdatei gefunden.
+rem  Nur setzen, wenn Sie ihn woanders halten:
+rem  set "K1520_FORMATS=%K1520_ROOT%\share\k1520emu\formats.yaml"
+
+if not exist "%ARBEIT%" mkdir "%ARBEIT%" 2>nul
+cd /d "%ARBEIT%"
+
+echo.
+echo   K1520-Werkzeuge bereit.
+echo.
+echo     k1520dbg DISKETTE.hfe          Debugger  (Handbuch: siehe share\doc)
+echo     k1520disktool-cli ls DISK.hfe  Dateien auf der Diskette
+echo     k1520disktool-cli put DISK.hfe PROG.COM
+echo.
+echo   Installation: %K1520_ROOT%
+echo   Arbeitsordner: %CD%
+echo.
+cmd /k

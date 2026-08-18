@@ -35,7 +35,8 @@ Emulator-Quelltexts.
 8. [Programme fernsteuern und Sitzungen automatisieren](#8-programme-fernsteuern-und-sitzungen-automatisieren)
 9. [Rezepte für typische Fälle](#9-rezepte-für-typische-fälle)
 10. [Grenzen und Fallstricke](#10-grenzen-und-fallstricke)
-11. [Spickzettel](#11-spickzettel)
+11. [In den eigenen Arbeitsablauf einbinden](#11-in-den-eigenen-arbeitsablauf-einbinden)
+12. [Spickzettel](#12-spickzettel)
 
 ---
 
@@ -699,7 +700,115 @@ k1520dbg diskette.img -l quelle.mac@auto     falls Quelle vorhanden
 
 ---
 
-## 11. Spickzettel
+## 11. In den eigenen Arbeitsablauf einbinden
+
+Der Debugger ist kein Programm, das man doppelklickt und wieder schließt. Er steht
+neben Editor, Assembler und Konsole — der Ablauf ist *bearbeiten → assemblieren → auf
+die Diskette → laufen lassen → anhalten und nachsehen*. Dieser Abschnitt sagt, wie man
+ihn dort hineinstellt.
+
+### Was mitgeliefert wird
+
+| Programm | Was es ist |
+|---|---|
+| `k1520dbg` | dieser Debugger — **nur** Kommandozeile |
+| `k1520disktool-cli` | Dateien auf die Diskette und zurück — **nur** Kommandozeile |
+| `k1520disktool` | dasselbe mit Oberfläche |
+| `a5120emu` | der Emulator — **nur** mit Oberfläche |
+
+> **Der Emulator hat keine Konsolenfassung.** Er nimmt auch keine Diskette auf der
+> Kommandozeile entgegen (einziges Argument ist `--paths`, eine Pfadauskunft). Wer die
+> Maschine ohne Oberfläche fahren will — im Skript, in einem Makefile, in der CI —
+> nimmt dafür **`k1520dbg`**: `keys` tippt, `screen` liest den Bildschirm als Text,
+> `gscreen` wartet auf eine Ausgabe, `dialog` fährt eine ganze Menüfolge ab. Mit `-x`
+> läuft das ohne jede Eingabe durch (§8).
+
+### Pfade
+
+Nach der Installation liegen die Programme in `<Installation>/bin`. Damit sie ohne
+Pfadangabe laufen:
+
+**Linux** — der Installer legt einen Starter in `~/.local/bin` ab, das genügt meist
+schon. Sonst in die eigene `~/.bashrc`/`~/.zshrc`:
+
+```sh
+export PATH="$HOME/K1520emu/bin:$PATH"
+```
+
+**Windows** — im Paket liegt `k1520dbg.cmd`, **zum Anpassen gedacht**: Kopie anlegen,
+Arbeitsordner und eigene Werkzeuge (Assembler!) eintragen, Verknüpfung dorthin legen,
+wo man arbeitet. Es öffnet eine Eingabeaufforderung, in der `k1520dbg` und
+`k1520disktool-cli` bereitstehen:
+
+```bat
+set "K1520_ROOT=%LOCALAPPDATA%\K1520emu"
+set "ARBEIT=%USERPROFILE%\Projekte\z80"
+set "PATH=%K1520_ROOT%in;%PATH%"
+cd /d "%ARBEIT%"
+cmd /k
+```
+
+### Umgebungsvariablen
+
+Im Normalfall braucht man **keine**: die Programme finden ihre Beigaben über den Pfad
+ihrer eigenen Programmdatei (`<bin>/../share/k1520emu/`). Nötig werden sie nur, wenn
+etwas woanders liegt:
+
+| Variable | Wofür | Wann nötig |
+|---|---|---|
+| `K1520_FORMATS` | Diskettenformat-Katalog `formats.yaml` (Datei **oder** Ordner; mehrere mit `:` bzw. unter Windows `;`) | eigener Katalog, oder Programm aus dem Bauverzeichnis gestartet |
+| `K1520_HOME` | Wurzel der Installation | ungewöhnliches Layout |
+| `K1520_LIB` | Kernbibliothek | mehrere Fassungen nebeneinander |
+| `K1520_DISKS` | Ordner der Arbeitsdisketten | Disketten liegen woanders |
+| `K1520_DATA` | Datenordner insgesamt (enthält `Disketten/`) | verschiebt beides auf einmal |
+
+Was tatsächlich gefunden wurde, sagt `a5120emu --paths` — die erste Frage, wenn etwas
+fehlt. Eigene Formate lassen sich auch ohne Variable dauerhaft hinterlegen:
+`~/.config/k1520emu/formats.yaml` (Windows: `%APPDATA%\k1520emu\formats.yaml`).
+
+### Die Runde: bearbeiten → assemblieren → testen
+
+```sh
+# 1. bearbeiten und assemblieren (Ihre Werkzeuge, hier beispielhaft)
+z80asm -o PROG.COM prog.asm
+
+# 2. auf die Arbeitsdiskette legen
+k1520disktool-cli put arbeit.hfe PROG.COM
+k1520disktool-cli ls arbeit.hfe
+
+# 3. laufen lassen und am Programmanfang anhalten
+k1520dbg arbeit.hfe -l prog.lst
+```
+```
+(dbg) gscreen "A>"
+(dbg) b 0x0100
+(dbg) keys prog\r
+(dbg) g
+```
+
+Drei Kniffe, die diese Runde kurz halten:
+
+**Den Systemstart nur einmal zahlen.** Beim ersten Mal am Programmanfang
+`savestate start.state`; danach beginnt jede Sitzung mit `loadstate start.state` statt
+mit einem Kaltstart (§7). Achtung: der Zustand enthält die Diskette **nicht** — nach
+einem neuen `put` das Programm neu laden lassen.
+
+**Die ganze Sitzung als Datei.** Was man jedes Mal tippt, gehört in eine `.dbg`-Datei
+und wird mit `-x` übergeben (§8) — damit ist der Testlauf ein einziger Aufruf und passt
+in ein Makefile oder eine Prüfliste.
+
+**Schreibzugriffe.** Der Debugger mountet die Diskette standardmäßig als Kopie; was Ihr
+Programm schreibt, ist nach dem Beenden weg. Soll es bleiben (weil das Programm eine
+Datei anlegt, die Sie ansehen wollen), `--rw` benutzen — dann aber auf einer Kopie der
+Diskette arbeiten.
+
+**Die Diskette bleibt ansehbar, während der Debugger läuft** — `k1520disktool-cli ls`
+in einem zweiten Fenster liest die Datei, ohne den Emulator zu stören. Bei `--rw` erst
+nach dem Beenden, sonst sieht man einen halb geschriebenen Stand.
+
+---
+
+## 12. Spickzettel
 
 ```
 LAUFEN     g [N] · gu ADR · s [N] · n [N] · fin · rs [N] · rc
