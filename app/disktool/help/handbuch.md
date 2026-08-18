@@ -291,6 +291,14 @@ pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"
 * ein lesbares Inhaltsverzeichnis mit allen Dateiangaben und einer Legende,
 * die maschinenlesbaren Beiblätter.
 
+Vorher wird nach der **Beschriftung** der Diskette gefragt — dem Text auf dem
+Aufkleber. Daraus entstehen der vorgeschlagene Dateiname und die Namen der
+Dateien im Archiv, und sie steht im Kopf des Inhaltsverzeichnisses. Bei einer
+**physischen** Diskette ist das die einzige Auskunft darüber, welche Diskette
+archiviert wurde: sie hat keine Abbilddatei, von der sich ein Name ableiten
+liesse. Vorgeschlagen wird der Dateiname der offenen Diskette, sonst ihr
+Datenträgername.
+
 Gedacht als Langzeitablage: aus dem Textteil allein lässt sich in zwanzig Jahren
 noch nachvollziehen, was auf der Diskette stand. Archivieren ist eine reine
 Leseoperation und geht auch mit gesetztem Schreibschutz.

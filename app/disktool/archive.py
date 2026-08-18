@@ -30,6 +30,7 @@ Benutzbar aus der Oberfläche und als Skript::
 from __future__ import annotations
 
 import datetime
+import re
 import sys
 import tempfile
 import zipfile
@@ -41,6 +42,24 @@ if TYPE_CHECKING:                                   # pragma: no cover
 
 #: Unterordner im Archiv, der die extrahierten Dateien aufnimmt.
 DATEI_ORDNER = "dateien"
+
+#: Name der Dateien im Archiv, wenn nichts Besseres bekannt ist.
+NAMENLOS = "diskette"
+
+
+def dateiname(bezeichnung: str) -> str:
+    """Aus der Beschriftung einer Diskette einen Dateinamen machen.
+
+    Eine **physische** Diskette hat keinen Pfad, aus dem sich ein Name ableiten
+    liesse — ihr Name ist das, was auf dem Aufkleber steht.  Der darf alles
+    enthalten (Leerzeichen, Schrägstriche, Umlaute); hier wird daraus etwas, das
+    auf jedem Dateisystem und in jedem ZIP-Programm heil ankommt.  Leer heisst
+    „kein Name" — der Aufrufer fällt dann auf den Pfad bzw. :data:`NAMENLOS`
+    zurück.
+    """
+    name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', " ", bezeichnung or "")
+    name = re.sub(r"\s+", "_", name.strip())
+    return name.strip("._")[:64]
 
 
 def _legende(hat_udos: bool, hat_cpm: bool) -> str:
@@ -146,8 +165,20 @@ def _cpm_angaben(eintraege) -> list:
     return z
 
 
-def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "") -> str:
-    """Das Inhaltsverzeichnis als Text — Kopf, Tabelle, Legende."""
+def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
+                       bezeichnung: str = "", herkunft: str = "") -> str:
+    """Das Inhaltsverzeichnis als Text — Kopf, Tabelle, Legende.
+
+    Args:
+        quelle: Dateiname, unter dem die Diskette geführt wird (Vorgabe: der
+            Pfad der offenen Diskette).
+        bezeichnung: Die Beschriftung der Diskette, wie sie der Anwender angibt
+            (der Text auf dem Aufkleber).  Sie ist bei einer **physischen**
+            Diskette die einzige Auskunft darüber, WELCHE Diskette das war —
+            deshalb steht sie im Kopf, nicht nur im Dateinamen.
+        herkunft: Woher die Diskette kam, wenn es keine Datei gibt (z. B.
+            „Echtes Laufwerk A am Greaseweazle").
+    """
     eintraege = tool.list()
     hat_udos = any(e.type for e in eintraege)
     hat_cpm = any(e.user or e.attrs in ("RO", "SYS", "ARC") for e in eintraege) \
@@ -158,7 +189,15 @@ def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "") -> str:
     z.append("k1520DiskTool — Inhaltsverzeichnis einer K1520-Diskette")
     z.append("=" * 70)
     z.append("")
-    z.append(f"Abbild        {Path(quelle or tool.path).name}")
+    if bezeichnung:
+        z.append(f"Beschriftung  {bezeichnung}")
+    datei = Path(quelle or tool.path).name
+    if datei:
+        z.append(f"Abbild        {datei}")
+    if herkunft:
+        z.append(f"Herkunft      {herkunft}")
+    elif not datei:
+        z.append("Herkunft      physisches Laufwerk — kein Abbild als Quelle")
     z.append(f"Format        {tool.format}")
     z.append(f"Dateisystem   {tool.filesystem}"
              + ("" if tool.unambiguous else "   (nicht eindeutig erkannt)"))
@@ -212,7 +251,8 @@ def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "") -> str:
     return "\n".join(z) + "\n"
 
 
-def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False) -> Path:
+def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False,
+                   bezeichnung: str = "", herkunft: str = "") -> Path:
     """Abbild, Dateien und Inhaltsverzeichnis in eine `.zip` packen.
 
     Das Abbild wird immer als **`.hfe`** abgelegt — auch wenn die Quelle ein `.img`
@@ -222,6 +262,14 @@ def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False) -> Path:
     Die Diskette wird dabei **nicht** angefasst: der Export bindet nicht um, und
     ein Schreibschutz bleibt bestehen.
 
+    Args:
+        bezeichnung: Beschriftung der Diskette.  Sie benennt die Dateien IM
+            Archiv (`<name>.hfe` / `<name>.txt`) und steht im Kopf des
+            Inhaltsverzeichnisses.  Ohne sie entscheidet der Dateiname der
+            offenen Diskette — eine physische Diskette hat keinen, dort ist die
+            Beschriftung die einzige Auskunft (`NAMENLOS` als letzter Rückfall).
+        herkunft: Woher die Diskette kam, wenn es keine Quelldatei gibt.
+
     Returns:
         Der geschriebene Archivpfad.
     """
@@ -229,8 +277,8 @@ def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False) -> Path:
     if ziel.suffix.lower() != ".zip":
         ziel = ziel.with_suffix(".zip")
 
-    stamm = Path(tool.path).stem
-    text = inhaltsverzeichnis(tool)
+    stamm = dateiname(bezeichnung) or Path(tool.path).stem or NAMENLOS
+    text = inhaltsverzeichnis(tool, bezeichnung=bezeichnung, herkunft=herkunft)
 
     with tempfile.TemporaryDirectory(prefix="k1520_archiv_") as tmp:
         tmpdir = Path(tmp)
@@ -261,9 +309,9 @@ def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False) -> Path:
 
 def main(argv=None) -> int:                          # pragma: no cover
     argv = list(sys.argv[1:] if argv is None else argv)
-    if len(argv) != 2:
-        print("Aufruf: python3 -m app.disktool.archive <abbild> <archiv.zip>",
-              file=sys.stderr)
+    if not 2 <= len(argv) <= 3:
+        print("Aufruf: python3 -m app.disktool.archive <abbild> <archiv.zip>"
+              " [beschriftung]", file=sys.stderr)
         return 1
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -271,7 +319,8 @@ def main(argv=None) -> int:                          # pragma: no cover
 
     try:
         with DiskTool.open(argv[0]) as d:            # schreibgeschuetzt — nur lesen
-            ziel = create_archive(d, argv[1])
+            ziel = create_archive(d, argv[1],
+                                  bezeichnung=argv[2] if len(argv) > 2 else "")
     except K1520DiskError as e:
         print(f"Fehler: {e}", file=sys.stderr)
         return 1

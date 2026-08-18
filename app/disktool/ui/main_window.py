@@ -45,7 +45,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import paths
-from app.disktool.archive import create_archive
+from app.disktool.archive import NAMENLOS, create_archive, dateiname
 
 from app.core_binding.k1520disk import DiskTool, K1520DiskError, filesystems
 from app.disktool.ui.actions import erzeuge_aktionen
@@ -1554,15 +1554,23 @@ class MainWindow(QMainWindow):
         self.log(f"Gespeichert unter {path}")
         return True
 
-    def archive(self, zip_path) -> bool:
+    def archive(self, zip_path, bezeichnung: str = "") -> bool:
         """Abbild (.hfe), alle Dateien und ein Inhaltsverzeichnis in eine `.zip`.
 
         Reine Leseoperation — auch mit gesetztem Schreibschutz benutzbar.
+
+        `bezeichnung` ist die Beschriftung der Diskette (der Aufkleber): sie
+        benennt die Dateien im Archiv und steht im Inhaltsverzeichnis.  Bei einer
+        **physischen** Diskette ist sie die einzige Auskunft darüber, welche
+        Diskette das war — es gibt keinen Dateinamen, aus dem sich etwas ableiten
+        liesse.
         """
         if self.tool is None:
             return False
         try:
-            ziel = create_archive(self.tool, zip_path, text_mode=self.text_mode)
+            ziel = create_archive(self.tool, zip_path, text_mode=self.text_mode,
+                                  bezeichnung=bezeichnung,
+                                  herkunft=self._bezeichnung())
         except (K1520DiskError, OSError) as e:
             self._fehler("Archivieren", str(e))
             return False
@@ -1705,20 +1713,65 @@ class MainWindow(QMainWindow):
         if pfad:
             self.save_as(pfad)
 
+    def _beschriftung_erfragen(self) -> str | None:
+        """Nach der Beschriftung der Diskette fragen — der Text auf dem Aufkleber.
+
+        Sie ist der Name, unter dem das Archiv abgelegt wird.  Bei einer
+        physischen Diskette gibt es sonst gar keinen: `tool.path` ist leer, und
+        `Path("").with_suffix(".zip")` warf hier bis 2026-08-18 einen
+        `ValueError` mitten in den Klickweg.
+
+        Returns:
+            Die Beschriftung, oder ``None``, wenn abgebrochen wurde.
+        """
+        text, ok = QInputDialog.getText(
+            self, "Diskette benennen",
+            "Beschriftung der Diskette (z. B. der Text auf dem Aufkleber).\n"
+            "Daraus entstehen der Dateiname des Archivs und der Eintrag im\n"
+            "Inhaltsverzeichnis:",
+            text=self._beschriftung_vorschlag())
+        return text.strip() if ok else None
+
+    def _beschriftung_vorschlag(self) -> str:
+        """Was in der Frage nach der Beschriftung schon dortsteht.
+
+        Der Dateiname der offenen Diskette, sonst der Datenträgername des
+        Dateisystems (UDOS und CP/M führen einen) — bei einer physischen Diskette
+        ist das die einzige Auskunft, die das Werkzeug selbst hat.  Gibt es
+        beides nicht, bleibt das Feld leer: dann weiss nur der Anwender, was auf
+        dem Aufkleber steht.
+        """
+        if self.tool is None:
+            return ""
+        stamm = Path(self.tool.path).stem
+        if stamm:
+            return stamm
+        for v in self.tool.volumes():
+            if v.label:
+                return v.label
+        return ""
+
     def _archivieren_dialog(self) -> None:
         if self.tool is None:
             return
-        vorschlag = str(Path(self.tool.path).with_suffix(".zip"))
+        bezeichnung = self._beschriftung_erfragen()
+        if bezeichnung is None:
+            return
+        vorschlag = str(Path(self._neben_der_diskette())
+                        / ((dateiname(bezeichnung) or NAMENLOS) + ".zip"))
         pfad, _ = QFileDialog.getSaveFileName(
             self, "Archivieren", vorschlag, "ZIP-Archiv (*.zip)")
         if pfad:
-            self.archive(pfad)
+            self.archive(pfad, bezeichnung=bezeichnung)
 
     def _bootabbild_sichern_dialog(self) -> None:
         if self.tool is None or self.tool.boot_area_size(0) == 0:
             return
         # Bei UDOS ist jede Seite ein eigener Datentraeger — gebootet wird von Seite 0.
-        vorschlag = str(Path(self.tool.path).with_suffix(".bin"))
+        # Eine physische Diskette hat keinen Pfad; dann traegt der Vorschlag nur den
+        # Ordner und einen Ersatznamen.
+        stamm = Path(self.tool.path).stem or "bootabbild"
+        vorschlag = str(Path(self._neben_der_diskette()) / (stamm + ".bin"))
         pfad, _ = QFileDialog.getSaveFileName(
             self, "Bootabbild sichern", vorschlag, "Bootabbild (*.bin)")
         if pfad:
@@ -1798,10 +1851,12 @@ class MainWindow(QMainWindow):
     def _neben_der_diskette(self) -> str:
         """Startpunkt für „Speichern unter…": neben der geöffneten Diskette.
 
-        Eine Arbeitskopie gehört dorthin, wo das Original liegt; nur ohne
-        geöffnete Diskette fällt es auf den Diskettenordner zurück.
+        Eine Arbeitskopie gehört dorthin, wo das Original liegt; ohne geöffnete
+        Diskette — und bei einer **physischen**, die keinen Pfad hat — fällt es
+        auf den Diskettenordner zurück.  (`Path("").parent` wäre `.`, also das
+        Arbeitsverzeichnis; genau das verbietet §20.8.)
         """
-        if self.tool is not None:
+        if self.tool is not None and self.tool.path:
             return str(Path(self.tool.path).parent)
         return self._disketten_ordner()
 

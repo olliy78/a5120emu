@@ -795,6 +795,83 @@ def test_disktool_schliesst_die_sitzung_beim_naechsten_oeffnen(app, hfe, tmp_pat
         fenster._close_tool()
 
 
+def test_disktool_archiviert_eine_physische_diskette(app, hfe, tmp_path, monkeypatch):
+    """Archivieren muss auch ohne Abbilddatei gehen — über die Beschriftung.
+
+    Vorher stürzte der Klickweg ab: ``Path(tool.path).with_suffix(".zip")`` mit
+    leerem Pfad wirft ``ValueError: has an empty name``.  Jetzt fragt das Werkzeug
+    nach dem Aufkleber, und der benennt die Dateien im Archiv.
+    """
+    import zipfile
+
+    from app.disktool.ui.main_window import MainWindow as DiskToolWindow
+    from app.ui import physical_disk
+
+    sitzung = fake_session(hfe, read_ahead=True)
+    monkeypatch.setattr(physical_disk.PhysicalSession, "start",
+                        classmethod(lambda cls, **kw: sitzung))
+
+    ziel = tmp_path / "archiv.zip"
+    gefragt = []
+
+    def _beschriftung(parent, titel, frage, **kw):
+        gefragt.append((titel, frage, kw.get("text", "")))
+        return "UDOS 4.3 Nr. 7", True
+
+    monkeypatch.setattr("app.disktool.ui.main_window.QInputDialog.getText",
+                        _beschriftung)
+    monkeypatch.setattr("app.disktool.ui.main_window.QFileDialog.getSaveFileName",
+                        lambda parent, titel, vorschlag, filter_: (str(ziel), filter_))
+
+    fenster = DiskToolWindow()
+    try:
+        assert fenster.open_physical(drive="a")
+        datentraeger = fenster.tool.volumes()[0].label
+        fenster._archivieren_dialog()
+    finally:
+        fenster._close_tool()
+
+    assert gefragt, "es wurde nicht nach der Beschriftung gefragt"
+    assert "Aufkleber" in gefragt[0][1]
+    # Ohne Dateinamen schlägt das Werkzeug den Datenträgernamen vor — das Einzige,
+    # was die Diskette selbst über sich sagt.
+    assert gefragt[0][2] == datentraeger and datentraeger
+
+    assert ziel.exists(), "kein Archiv geschrieben"
+    with zipfile.ZipFile(ziel) as z:
+        namen = z.namelist()
+        text = z.read("UDOS_4.3_Nr._7.txt").decode("utf-8")
+    assert "UDOS_4.3_Nr._7.hfe" in namen, namen
+    assert any(n.startswith("dateien/") for n in namen), "die Dateien fehlen"
+    assert "Beschriftung  UDOS 4.3 Nr. 7" in text
+    assert "Greaseweazle" in text, "die Herkunft steht nicht im Inhaltsverzeichnis"
+
+
+def test_disktool_bricht_das_archivieren_ohne_beschriftung_ab(app, hfe, monkeypatch):
+    """Wer die Frage abbricht, bekommt keinen Dateidialog."""
+    from app.disktool.ui.main_window import MainWindow as DiskToolWindow
+    from app.ui import physical_disk
+
+    sitzung = fake_session(hfe, read_ahead=False)
+    monkeypatch.setattr(physical_disk.PhysicalSession, "start",
+                        classmethod(lambda cls, **kw: sitzung))
+    monkeypatch.setattr("app.disktool.ui.main_window.QInputDialog.getText",
+                        lambda *a, **k: ("", False))
+
+    def _kein_dialog(*a, **k):
+        raise AssertionError("der Dateidialog ging trotz Abbruch auf")
+
+    monkeypatch.setattr("app.disktool.ui.main_window.QFileDialog.getSaveFileName",
+                        _kein_dialog)
+
+    fenster = DiskToolWindow()
+    try:
+        assert fenster.open_physical(drive="a")
+        fenster._archivieren_dialog()
+    finally:
+        fenster._close_tool()
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # Schadstelle: Meldung und Ausweg
 # ════════════════════════════════════════════════════════════════════════════

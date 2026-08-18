@@ -388,6 +388,38 @@ def test_archive_converts_an_img_source_to_hfe(window, fixture_disks, tmp_path):
     assert not any(n.endswith(".img") for n in namen)
 
 
+def test_archive_is_named_after_the_disk_label(window, fixture_disks, tmp_path):
+    """Die Beschriftung benennt die Dateien IM Archiv und steht im Verzeichnis.
+
+    Bei einer physischen Diskette ist sie die einzige Auskunft darüber, welche
+    Diskette das war — der Dateiname des Archivs allein wäre nach dem Umbenennen
+    verloren.
+    """
+    import zipfile
+
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
+    ziel = tmp_path / "beliebig.zip"
+    assert window.archive(ziel, bezeichnung="CP/A 780 Arbeit 3")
+
+    with zipfile.ZipFile(ziel) as z:
+        namen = z.namelist()
+        text = z.read("CP_A_780_Arbeit_3.txt").decode("utf-8")
+    assert "CP_A_780_Arbeit_3.hfe" in namen, namen
+    assert "Beschriftung  CP/A 780 Arbeit 3" in text
+
+
+def test_disk_label_becomes_a_usable_file_name():
+    """Der Aufkleber darf alles tragen — der Dateiname nicht."""
+    from app.disktool.archive import NAMENLOS, dateiname
+
+    assert dateiname("UDOS 4.3  System") == "UDOS_4.3_System"
+    assert dateiname("A:/B*C?") == "A_B_C"
+    assert dateiname("   ") == ""
+    assert dateiname("") == ""
+    assert len(dateiname("x" * 200)) <= 64
+    assert NAMENLOS                       # der letzte Rückfall hat einen Namen
+
+
 # ─── Bootdiskette ────────────────────────────────────────────────────────────
 
 def test_boot_image_button_follows_the_disk(window, fixture_disks, tmp_path):
@@ -1825,9 +1857,16 @@ def _dialog_startpunkte(window, monkeypatch) -> dict:
 
     Jeder Dialog wird sofort „abgebrochen" (leerer Rückgabewert), es passiert
     also nichts weiter.
+
+    Die Frage nach der Beschriftung (Archivieren) wird mitbeantwortet — sonst
+    stünde der Testlauf an einem modalen Fenster, und der Dateidialog dahinter
+    käme nie zum Zuge.
     """
-    from PySide6.QtWidgets import QFileDialog
+    from PySide6.QtWidgets import QFileDialog, QInputDialog
     gesehen = {}
+
+    monkeypatch.setattr(QInputDialog, "getText",
+                        lambda *a, **k: ("Testdiskette", True))
 
     def datei(titel_index):
         def haken(parent, titel, verzeichnis="", *a, **k):
