@@ -434,6 +434,18 @@ TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
         if (lock_pos == bitcell_count)
             return result;
 
+        // Vor die Marke ZURUECKGEHEN, solange dort reine Sync- und Gap-Bytes stehen
+        // (FM-Zellwort von 0x00 = 0xAAAA, von 0xFF = 0xFFFF).  Ohne das begaenne die
+        // decodierte Spur unmittelbar mit dem Marken-Byte — und der naechste Rundlauf
+        // durch die Datei verloere diesen Sektor: `strong()` verlangt das 00-Sync-Feld
+        // VOR der Marke, und das waere dann weg (gesehen an einer frisch angelegten
+        // SCP1700-Diskette: Bootspur mit 15 statt 16 Sektoren, IDs 2…16).
+        while (lock_pos >= 16) {
+            const uint16_t davor = get16(stream, lock_pos - 16, bitcell_count);
+            if (davor != 0xAAAAu && davor != 0xFFFFu) break;
+            lock_pos -= 16;
+        }
+
         // Schritt 3b: Ab lock_pos decodieren, an jeder starken Marke neu einrasten
         // (siehe MFM-Zweig: real gelesene Spuren liegen nicht in EINER Bytephase).
         uint32_t pos = lock_pos;
@@ -639,6 +651,32 @@ std::vector<uint8_t> downsampleCells(const std::vector<uint8_t>& cells,
 
     out_bitcells = have_prev ? (last_cell + 1) : (bitcell_count / factor);
     out.resize((out_bitcells + 7) / 8, 0x00);
+    return out;
+}
+
+// ─── upsampleCells ───────────────────────────────────────────────────────────
+
+std::vector<uint8_t> upsampleCells(const std::vector<uint8_t>& cells,
+                                   uint32_t bitcell_count, uint32_t factor,
+                                   uint32_t& out_bitcells) {
+    if (factor <= 1 || cells.empty() || bitcell_count == 0) {
+        out_bitcells = bitcell_count;
+        return cells;
+    }
+
+    out_bitcells = bitcell_count * factor;
+    std::vector<uint8_t> out((out_bitcells + 7) / 8, 0x00);
+
+    // Jede Flanke wandert auf das @p factor-fache ihrer Zellposition; die Zellen
+    // dazwischen bleiben leer.  Das ist die Umkehrung von @ref downsampleCells:
+    // dieselbe Flankenfolge, nur mit @p factor-mal so langer Zelle — also mit halber
+    // (bei factor 2) Datenrate.  Eine Flanke zu VERVIELFACHEN waere falsch: das
+    // ergaebe factor Flanken hintereinander.
+    for (uint32_t p = 0; p < bitcell_count && p / 8 < cells.size(); ++p) {
+        if (!((cells[p / 8] >> (p % 8)) & 1u)) continue;
+        const uint32_t ziel = p * factor;
+        out[ziel / 8] |= static_cast<uint8_t>(1u << (ziel % 8));
+    }
     return out;
 }
 

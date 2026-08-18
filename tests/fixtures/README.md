@@ -40,6 +40,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `cpa_mini.img` / `cpa_mini.hfe` | synthetische Mini-Diskette (2 KB / 26 KB), kein Systemabbild | `test_hfe_image`, `test_disk_image_raw` |
 | `udos_ds77_k5601_fremdsync.hfe` | UDOS 4.3, an einem **fremden** K1520-Rechner (K5601) beschrieben: Datenfeld-Sync mit nur ein bis zwei echten Sync-Marken (die übrigen 0xA1 regulär kodiert), ID-CRC **ohne** A1-Präambel, 34 + 12 Dateien | `DiskVolume.LiestEineDisketteMitFremderSyncSitte`, `test_gw_physical` (Naht) |
 | `udos1715_640k_pc1715_system.img` | **UDOS1715/NDOS** (PC 1715), Systemdiskette „SYSTEM": 80×32×256, 67 Dateien, darunter das Systemhandbuch `UDOS.TEXT` | `Udos1715.*`, `Udos1715Belegung.*`, `Udos1715Schreiben.*` |
+| `scp1700_640k_a7100_system.hfe` | **SCP1700/CP/M-86** (A7100), Systemdiskette: 80×2×16×256 MFM — aber **Spur 0 Kopf 0 in FM mit halber Datenrate** (16×128, 125 kbit/s), 46 Dateien | `Scp1700.*` |
 
 Die **gemischte** Diskette entstand am echten Laufwerk: erst vollständig als cpa800
 formatiert, dann mit UDOS `ss40` im Doppelschritt überschrieben.  Sie ist die einzige
@@ -65,6 +66,21 @@ liegt und ein rohes Sektorabbild unbrauchbar macht. Genau das prüft
 `FsCatalog.Udos1715ProfileSindImgFaehigUndEinseitigGezaehlt` mit; die spurbasierte
 Aufnahme derselben Diskette liegt als `disks/udos1715_640k_pc1715_system.hfe` im
 Arbeitsverzeichnis. Hintergrund: `doc/udos1715_diskettenformat.md` §8.
+
+## Die SCP1700-Diskette ist die einzige mit ZWEI Datenraten
+
+`scp1700_640k_a7100_system.hfe` ist eine Aufnahme vom echten Laufwerk (Greaseweazle F1,
+300 min⁻¹).  Ihre Bootspur c0h0 läuft mit **125 kbit/s in FM**, alle übrigen 159 Spuren
+mit 250 kbit/s in MFM — Mischdichte gibt es sonst auch (8″-System-34), Mischrate nicht.
+Sie ist damit der Prüfstein dafür, dass der Abtastfaktor **je Spur** bestimmt wird und
+die halbe Rate an der Spur hängenbleibt (`TrackImage::cell_factor`).
+
+Zwei Eigenheiten sind echt und sollen so bleiben: die Bootspur trägt **19 Adressmarken
+für 16 Sektoren** (hinter Sektor 16 stehen noch einmal 1…4 — sie wurde in einem Zug
+über den Index hinaus geschrieben), und ihr **Sektor 10 ist beschädigt** (kein
+Adressfeld, auch nach vielen Umdrehungen nicht).  Deshalb meldet `info` die
+Systemspuren als „nicht lesbar"; das Dateisystem ist davon unberührt.
+Hintergrund: `doc/scp1700_diskettenformat.md`.
 
 ## Die beiden SCPX-Disketten sind NICHT austauschbar
 

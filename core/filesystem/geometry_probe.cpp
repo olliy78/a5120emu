@@ -66,15 +66,24 @@ MeasuredTrack messeSpur(const DiskMedium& medium, uint8_t c, uint8_t h) {
         if (s.size != mt.sector_size) { mt.sector_size = 0; break; }
 
     uint8_t lo = 0xFF, hi = 0;
+    bool    gesehen[256] = {};
+    size_t  verschieden  = 0;
     for (const auto& s : secs) {
         lo = std::min(lo, s.id);
         hi = std::max(hi, s.id);
+        if (!gesehen[s.id]) { gesehen[s.id] = true; ++verschieden; }
         if (!s.id_crc_ok || !s.data_crc_ok) ++mt.crc_errors;
     }
     mt.first_id  = lo;
     mt.id_cyl    = secs.front().cyl;
+    // Massgeblich ist, wie viele VERSCHIEDENE Sektoren die Spur traegt: der Treiber
+    // liest ueber die ID, ein zweites Exemplar derselben ID bringt keinen Platz.
+    // Die Bootspur der SCP1700-Disketten traegt genau so ein zweites Exemplar der
+    // Sektoren 1…4 (die Spur wurde in einem Zug ueber die Umdrehung hinaus
+    // beschrieben); nach der rohen Zahl waere sie „19×128" und passte zu nichts.
+    mt.unique_sectors = static_cast<uint8_t>(std::min<size_t>(verschieden, 255));
     mt.ids_dense = (static_cast<int>(hi) - static_cast<int>(lo) + 1
-                    == static_cast<int>(secs.size()));
+                    == static_cast<int>(verschieden));
     return mt;
 }
 
@@ -332,10 +341,10 @@ GeometryMatch match(const std::vector<MeasuredTrack>& tracks, const DiskFormat& 
             //    Sektoren mit den IDs 2…26 statt 26 mit 1…26.  Eine EIGENE Zaehlung
             //    waere es nur bei voller Sektorzahl (26 Stueck mit 2…27).
             const bool fehlen_vorn =
-                t.ids_dense && t.sectors < tf->secs_per_track
+                t.ids_dense && t.uniqueSectors() < tf->secs_per_track
                 && t.first_id > tf->first_sector_id
                 && (static_cast<int>(t.first_id) - tf->first_sector_id)
-                       == (tf->secs_per_track - t.sectors);
+                       == (tf->secs_per_track - t.uniqueSectors());
             if (t.ids_dense && !fehlen_vorn) {
                 m.reason = "Spur " + tp(t.cyl, t.head) + ": erste Sektor-ID "
                          + std::to_string(t.first_id) + ", Format sagt "
@@ -347,13 +356,15 @@ GeometryMatch match(const std::vector<MeasuredTrack>& tracks, const DiskFormat& 
         }
 
         // Regel 4: zu wenige Sektoren = Schaden, zu viele = anderes Format.
-        if (t.sectors > tf->secs_per_track) {
-            m.reason = "Spur " + tp(t.cyl, t.head) + ": " + std::to_string(t.sectors)
+        // Gezaehlt werden VERSCHIEDENE IDs (s. MeasuredTrack::unique_sectors).
+        if (t.uniqueSectors() > tf->secs_per_track) {
+            m.reason = "Spur " + tp(t.cyl, t.head) + ": "
+                     + std::to_string(t.uniqueSectors())
                      + " Sektoren, das Format erlaubt nur "
                      + std::to_string(tf->secs_per_track);
             return m;
         }
-        if (t.sectors < tf->secs_per_track) ++m.defect_tracks;
+        if (t.uniqueSectors() < tf->secs_per_track) ++m.defect_tracks;
 
         m.crc_errors = static_cast<uint16_t>(
             std::min<int>(0xFFFF, m.crc_errors + t.crc_errors));
@@ -456,6 +467,7 @@ std::string describe(const std::vector<MeasuredTrack>& tracks) {
     // Darstellung wie ein `tracks:`-Eintrag in formats.yaml.
     auto gleich = [](const MeasuredTrack& a, const MeasuredTrack& b) {
         return a.formatted == b.formatted && a.sectors == b.sectors
+            && a.uniqueSectors() == b.uniqueSectors()
             && a.sector_size == b.sector_size && a.first_id == b.first_id
             && a.encoding == b.encoding;
     };
@@ -470,11 +482,14 @@ std::string describe(const std::vector<MeasuredTrack>& tracks) {
         if (!tracks[i].formatted) {
             os << " : unformatiert";
         } else {
-            os << " : " << int(tracks[i].sectors) << " Sektoren à "
+            os << " : " << int(tracks[i].uniqueSectors()) << " Sektoren à "
                << tracks[i].sector_size << " B, IDs " << int(tracks[i].first_id) << "-"
-               << int(tracks[i].first_id + tracks[i].sectors - 1) << ", "
+               << int(tracks[i].first_id + tracks[i].uniqueSectors() - 1) << ", "
                << encName(tracks[i].encoding);
             if (!tracks[i].ids_dense) os << " (IDs mit Luecken)";
+            if (tracks[i].sectors > tracks[i].uniqueSectors())
+                os << " (+" << int(tracks[i].sectors - tracks[i].uniqueSectors())
+                   << " doppelt geschrieben)";
         }
         os << "\n";
         i = j + 1;
@@ -523,7 +538,7 @@ std::optional<DiskFormat> synthesize(const std::vector<MeasuredTrack>& tracks,
         Gestalt& g = zylinder[t.cyl][t.head];
         g.leer = !t.formatted;
         if (t.formatted) {
-            g.sectors  = t.sectors;
+            g.sectors  = t.uniqueSectors();
             g.size     = t.sector_size;
             g.first_id = t.first_id;
             g.enc      = t.encoding;

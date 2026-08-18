@@ -137,6 +137,24 @@ formats:
       - { cyls: 0,    heads: 0-1, sectors: 16, size: 256  }
       - { cyls: 1-79, heads: 0-1, sectors: 5,  size: 1024 }
 
+  # ══ SCP1700 / CP/M-86 (A7100) ══════════════════════════════════════════════
+  # Der 16-Bit-Rechner A7100 fährt SCP1700, ein CP/M-86.  Seine 5,25″-Disketten
+  # sind durchgängig 16×256 MFM — mit EINER Ausnahme: **Spur 0 Kopf 0 ist FM**
+  # mit halber Datenrate (128-B-Sektoren).  Das ist keine Vermutung, das CP/A-BIOS
+  # rechnet damit: „Jeder Fehler in Spur 0, Sektor 1 führt zur Annahme von
+  # Systemspuren (A7100-System mit 5" FM und 8272-Hardware mit 128er
+  # Sektorlänge)" — `biosdsk.mac`, s. disks/cpa_cpa780_k5601_clock.prn.
+  # Gemessen am Referenzdatenträger (Greaseweazle F1, 300 min⁻¹): FM-Flusszeiten
+  # 4/8 µs auf c0h0, MFM 4/6/8 µs überall sonst.
+  - name:        scp1700_640
+    description: "SCP1700/CP/M-86 640K — Bootspur c0h0 in FM 16×128, sonst 16×256 MFM"
+    drives:      [K5601]
+    encoding:    mfm
+    tracks:
+      - { cyls: 0,    heads: 0,   sectors: 16, size: 128, encoding: fm, rate: 125 }
+      - { cyls: 0,    heads: 1,   sectors: 16, size: 256 }
+      - { cyls: 1-79, heads: 0-1, sectors: 16, size: 256 }
+
   # ══ UDOS 1526 / 4.x (ZDOS) ═════════════════════════════════════════════════
   # UDOS formatiert 77 Spuren zu 26×128 MFM.  Beide Seiten tragen je ein eigenes,
   # vollständiges Dateisystem (doc/udos_diskettenformat.md §2) — physisch ist das
@@ -650,6 +668,23 @@ filesystems:
     format:      scpx798
     type:        cpm
     # NACHGEMESSEN an tests/fixtures/disks/scpx17_5x1024_k5601_hardy.hfe.
+    data_start:  { cyl: 2, head: 0 }
+    block_size:  2048
+    dir_entries: 128
+
+  # ══ SCP1700 / CP/M-86 (A7100) ══════════════════════════════════════════════
+  # CP/M-86 führt dasselbe Verzeichnis wie CP/M 2.2 — 32-B-Einträge, Extents,
+  # 128-B-Sätze.  Nachgemessen am Referenzdatenträger (Verzeichnis bei c2h0,
+  # 16-Bit-Blockzeiger, höchster benutzter Block 311 = 312 Blöcke à 2048 B über
+  # 156 Datenspuren).  Ein eigener Eintrag ist nötig, weil `CpaDpbRule` hier
+  # nicht gilt: die Regel bildet das CP/A-BIOS nach, nicht das SCP1700.
+
+  - name:        scp1700
+    description: "SCP1700/CP/M-86 (A7100) — Dateisystem ab Zylinder 2"
+    format:      scp1700_640
+    type:        cpm
+    # `os:` bleibt bei cpm2.2 — CP/M-86 unterscheidet sich im VERZEICHNIS nicht;
+    # was anders ist (Programmdateiformat .CMD, 8086-Code), liegt im Dateiinhalt.
     data_start:  { cyl: 2, head: 0 }
     block_size:  2048
     dir_entries: 128

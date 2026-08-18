@@ -2,7 +2,8 @@
 
 Dieses Werkzeug holt Dateien von Disketten der K1520-Rechner (A5120, A5130, PC 1715 …)
 auf den heutigen Rechner und schreibt sie zurück. Es liest und schreibt die
-Dateisysteme von **CP/A**, **SCPX**, **UDOS/ZDOS** und **UDOS1715/NDOS** in den
+Dateisysteme von **CP/A**, **SCPX**, **UDOS/ZDOS**, **UDOS1715/NDOS** und
+**SCP1700** (CP/M-86 des A7100) in den
 Abbildformaten `.hfe`, `.dmk` und `.img`.
 
 Es gibt dasselbe auch als Kommandozeilenwerkzeug (`k1520disktool`); beide benutzen
@@ -111,6 +112,18 @@ Seite, auf die man sie zieht (oder auf der, in der gerade etwas markiert ist).
 UDOS lässt sich nicht als `.img` ablegen: die Dateiverkettung steht dort hinter
 der Daten-Prüfsumme, ein rohes Sektorabbild verlöre sie. Das Werkzeug lehnt das
 darum ab, statt stillschweigend eine unbrauchbare Datei zu schreiben.
+
+## SCP1700 — das CP/M-86 des A7100
+
+Disketten des 16-Bit-Rechners **A7100** erkennt das Werkzeug von selbst und nennt
+sie `scp1700`. Für die Bedienung gibt es dort nichts Besonderes: das Dateisystem
+ist gewöhnliches CP/M, Attribute und Nutzerbereich verhalten sich wie bei einer
+CP/A-Diskette.
+
+Die Diskette selbst ist allerdings ungewöhnlich gebaut — ihre erste Spur ist mit
+halber Geschwindigkeit in einem anderen Aufzeichnungsverfahren geschrieben als der
+Rest. Das Werkzeug führt das mit, auch beim Zurückschreiben; zu sehen ist es im
+Diskeditor und in der Formatzeile.
 
 ## UDOS1715 — dieselbe Familie, anderes Dateisystem
 

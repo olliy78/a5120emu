@@ -19,6 +19,9 @@
 namespace {
 using Uhr = std::chrono::steady_clock;
 
+/// @brief Ab so vielen Adressmarken darf ein Abtastfaktor den bewaehrten ablosen.
+constexpr size_t kSichereMarken = 4;
+
 /// @brief Gap-Fuellbyte? (MFM 0x4E, FM 0xFF, Sync-/Nullauslauf 0x00)
 bool istGapFueller(uint8_t b) { return b == 0x4E || b == 0xFF || b == 0x00; }
 
@@ -430,6 +433,14 @@ bool TrackSync::fetchWrite(uint32_t id, std::vector<uint8_t>& cells, uint32_t& b
     // Codieren außerhalb der Sperre — der Vordergrund soll nicht darauf warten.
     bitcells = kopie.bitcells ? kopie.bitcells : nominalBitcells();
     cells    = BitCodec::encode(kopie, bitcells);
+    // Eine Spur mit halber Datenrate (SCP1700-Bootspur) muss auch mit halber Rate auf
+    // die Diskette — sonst kann ihr Rechner sie nicht mehr lesen (@ref
+    // TrackImage::cell_factor).  Der Adapter bekommt den gestreckten Zellstrom.
+    if (kopie.cell_factor > 1) {
+        uint32_t erzeugt = 0;
+        cells = BitCodec::upsampleCells(cells, bitcells, kopie.cell_factor, erzeugt);
+        bitcells = erzeugt;
+    }
     return true;
 }
 
@@ -460,28 +471,32 @@ bool TrackSync::completeRead(uint32_t id, const uint8_t* cells, size_t len,
         return BitCodec::decodeAuto(z, bc, vorschlag);
     };
 
-    if (bekannt) {
-        // **Steht der Faktor fest, gilt er.**  Frueher suchte auch dann jede Spur
-        // erneut — und eine UNFORMATIERTE Spur (Rauschen) fand bei einem falschen
-        // Faktor eine zufaellige Marke, schrieb ihn fest und machte damit jede
-        // folgende Spur unlesbar.  Sequentiell fiel das nie auf, weil leere Spuren
-        // am Ende liegen; wer die Diskette in anderer Reihenfolge liest (die
-        // Stichprobe der Formaterkennung tut das), verlor die halbe Diskette.
-        TrackImage probe = versuch(bekannt);
-        if (BitCodec::markCount(probe) > 0) spur = std::move(probe);
-    } else {
-        // Noch unbekannt: suchen — aber **eine einzelne Marke stiftet keinen
-        // Faktor**.  Genau so entsteht er sonst aus Rauschen.  Eine wirklich
-        // formatierte Spur traegt Dutzende (je Sektor eine Adress- und eine
-        // Datenmarke), das kleinste denkbare Format immer noch mehrere.
-        for (uint32_t f : {1u, 2u, 3u, 4u}) {
-            TrackImage probe = versuch(f);
-            if (BitCodec::markCount(probe) >= 4) {
-                spur = std::move(probe);
-                ueberabtastung_.store(f, std::memory_order_relaxed);
-                break;
-            }
-        }
+    // **Der bewaehrte Faktor kommt zuerst und genuegt sich selbst.**  Frueher suchte
+    // jede Spur erneut — und eine UNFORMATIERTE Spur (Rauschen) fand bei einem
+    // falschen Faktor eine zufaellige Marke, schrieb ihn fest und machte damit jede
+    // folgende Spur unlesbar.  Sequentiell fiel das nie auf, weil leere Spuren am
+    // Ende liegen; wer die Diskette in anderer Reihenfolge liest (die Stichprobe der
+    // Formaterkennung tut das), verlor die halbe Diskette.
+    //
+    // Er ist aber kein Dogma mehr: eine Diskette kann Spuren VERSCHIEDENER Datenrate
+    // tragen — die SCP1700-Disketten des A7100 haben ihre Bootspur (c0h0) in FM mit
+    // halber Rate, alles Uebrige in MFM.  Bringt der bewaehrte Faktor zu wenig,
+    // duerfen die anderen antreten; durchsetzen darf sich einer aber nur mit
+    // @ref kSichereMarken vielen Marken — eine einzelne stiftet keinen Faktor,
+    // genau so entstand der Schaden oben.
+    size_t   beste = 0;
+    uint32_t bester_f = 0;
+    for (uint32_t f : {bekannt, 1u, 2u, 3u, 4u}) {
+        if (f == 0) continue;
+        TrackImage   probe = versuch(f);
+        const size_t n      = BitCodec::markCount(probe);
+        const size_t noetig = (f == bekannt) ? 1 : kSichereMarken;
+        if (n >= noetig && n > beste) { spur = std::move(probe); beste = n; bester_f = f; }
+        if (f == bekannt && n >= kSichereMarken) break;
+    }
+    if (bester_f) {
+        ueberabtastung_.store(bester_f, std::memory_order_relaxed);
+        spur.cell_factor = static_cast<uint8_t>(bester_f);
     }
     // Markenlos = unformatiert: als LEERE Spur ablegen, damit der Controller Gap-Flux
     // streamt statt Rauschbytes zu liefern (doc/design/09_floppy_drive.md §7).

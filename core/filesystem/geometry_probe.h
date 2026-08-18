@@ -35,7 +35,19 @@ struct MeasuredTrack {
     uint8_t  cyl        = 0;
     uint8_t  head       = 0;
     bool     formatted  = false;   ///< traegt Adressmarken
-    uint8_t  sectors    = 0;       ///< Anzahl gefundener Sektoren
+    uint8_t  sectors    = 0;       ///< Anzahl gefundener Sektoren (mit Doppelgaengern)
+    /// @brief Anzahl **verschiedener** Sektor-IDs; 0 = nicht ermittelt.
+    ///
+    /// Meist gleich @ref sectors.  Eine Spur, die in einem Zug ueber die Umdrehung
+    /// hinaus beschrieben wurde, traegt am Ende ein zweites Exemplar ihrer ersten
+    /// Sektoren — die SCP1700-Bootspur des A7100 ist so eine (16 Sektoren, 19
+    /// Adressmarken).  Fuer den Abgleich mit einem Format zaehlt diese Zahl: der
+    /// Treiber liest ueber die ID, ein Doppelgaenger bringt keinen Platz.
+    /// Zugriff ueber @ref uniqueSectors, nicht direkt.
+    uint8_t  unique_sectors = 0;
+
+    /// @brief Verschiedene Sektor-IDs — mit Rueckfall auf @ref sectors.
+    uint8_t uniqueSectors() const { return unique_sectors ? unique_sectors : sectors; }
     uint16_t sector_size= 0;       ///< einheitliche Sektorgroesse (0 = uneinheitlich)
     uint8_t  first_id   = 0;       ///< kleinste Sektor-ID
     /// @brief Spurnummer aus dem ID-FELD.  Bei Doppelschritt-Disketten ist sie die

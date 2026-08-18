@@ -49,6 +49,16 @@ struct TrackFormat {
     /// @brief Erste Sektor-ID der Spur (IBM-üblich 1-basiert).
     uint8_t  first_sector_id = 1;
 
+    /**
+     * @brief Datenrate dieses Bereichs als Teiler der nominalen 250 kbit/s.
+     *
+     * 1 = 250 kbit/s (der Regelfall), 2 = 125 kbit/s.  YAML: `rate: 250` bzw.
+     * `rate: 125`.  Wird beim Anlegen einer Diskette in @ref TrackImage::cell_factor
+     * übernommen — ohne das ginge die halbrate FM-Bootspur der SCP1700-Disketten
+     * mit doppelter Rate auf die Scheibe und wäre für den A7100 unlesbar.
+     */
+    uint8_t  cell_factor = 1;
+
     uint32_t trackBytes() const {
         return static_cast<uint32_t>(secs_per_track) * bytes_per_sec;
     }

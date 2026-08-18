@@ -1,6 +1,7 @@
 # `k1520disktool` — Dateiaustausch mit K1520-Disketten
 
-Holt Dateien von CP/A-, SCPX-, **UDOS**- und **UDOS1715**-Disketten und schreibt sie zurück —
+Holt Dateien von CP/A-, SCPX-, **UDOS**-, **UDOS1715**- und **SCP1700**-Disketten
+(CP/M-86 des A7100) und schreibt sie zurück —
 auf `.img`, `.hfe` und `.dmk`.  Dieselbe Bibliothek treibt die Oberfläche
 (`run_disktool.sh`); Feinentwurf: `doc/design/13_k1520disktool.md`.
 
@@ -250,6 +251,24 @@ Fehlt eines oder liegen lose Dateien daneben, bricht `put` mit Exit 4 ab und
 `get udos.hfe 'Side1/HELP.*' --to .`
 
 Bei einem Dateisystem (jede CP/M-Diskette, auch beidseitige) ist der Ordner flach.
+
+## SCP1700 — das CP/M-86 des A7100
+
+Disketten des 16-Bit-Rechners **A7100** werden als `scp1700` erkannt.  Ihr
+Dateisystem ist gewöhnliches CP/M — Verzeichnis, Extents, Attribute, Nutzerbereich
+verhalten sich wie bei einer CP/A-Diskette, und `.CMD`-Dateien sind einfach Dateien.
+
+Besonders ist die **Physik**: Spur 0 Kopf 0 ist in FM mit **halber Datenrate**
+aufgezeichnet (16 Sektoren à 128 B), alle übrigen 159 Spuren in MFM (16 × 256 B).
+Das Werkzeug führt diese Rate je Spur mit, auch beim Zurückschreiben — eine mit
+`create --fs scp1700` angelegte Diskette bekommt eine echte FM-Bootspur.
+
+```
+$ k1520disktool ls     a7100.hfe
+$ k1520disktool create neu.hfe --fs scp1700
+```
+
+Hintergrund und Messwerte: `doc/scp1700_diskettenformat.md`.
 
 ## UDOS1715 — dieselbe Familie, anderes Dateisystem
 

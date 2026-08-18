@@ -177,7 +177,8 @@ bool buildFormat(const yaml::Node& node, DiskFormat& out, std::string& why,
     for (const auto& tn : n_tracks->items) {
         if (!tn.isMap()) { why = "Spurbereich ist keine Map"; return false; }
         collectUnknownKeys(tn,
-                           {"cyls", "heads", "sectors", "size", "encoding", "first_sector"},
+                           {"cyls", "heads", "sectors", "size", "encoding",
+                            "first_sector", "rate"},
                            file + ":" + std::to_string(tn.line), issues);
 
         TrackFormat tf;
@@ -219,6 +220,14 @@ bool buildFormat(const yaml::Node& node, DiskFormat& out, std::string& why,
             tf.encoding = fmt_enc;
         } else {
             tf.encoding = Encoding::MFM;   // Katalog-Default, s. §8.6.1
+        }
+
+        // Datenrate des Bereichs — 250 kbit/s (Regelfall) oder 125.  Die halbe Rate
+        // gibt es wirklich: die FM-Bootspur der SCP1700-Disketten des A7100.
+        if (const yaml::Node* n = tn.find("rate")) {
+            if (!n->isScalar() || !yaml::toInt(n->scalar, v) || (v != 250 && v != 125))
+                { why = "'rate': erlaubt sind 250 (nominal) und 125 (halbe Rate)"; return false; }
+            tf.cell_factor = (v == 125) ? 2 : 1;
         }
 
         if (const yaml::Node* n = tn.find("first_sector")) {

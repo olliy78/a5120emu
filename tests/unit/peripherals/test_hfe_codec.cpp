@@ -484,3 +484,84 @@ TEST(HfeCodec, UeberabtastungTrotzFalscherHeaderRate) {
 
     std::filesystem::remove(path);
 }
+
+/**
+ * @test HfeCodec/FmSpurMitHalberRate_UeberlebtDenRundlauf
+ * @brief Eine FM-Spur mit **halber Datenrate** kommt vollständig zurück.
+ *
+ * Die Bootspur (c0h0) der SCP1700-Disketten des A7100 ist so aufgezeichnet: FM,
+ * 16×128 B, 125 kbit/s — auf derselben Diskette, deren übrige Spuren MFM mit
+ * 250 kbit/s tragen (`data/formats.yaml`, `scp1700_640`).  Zwei Dinge müssen halten:
+ * **jeder** Sektor kommt zurück (auch der erste, der unmittelbar hinter dem
+ * Index liegt), und die Spur behält ihren @ref TrackImage::cell_factor — sonst
+ * ginge sie beim Zurückschreiben mit doppelter Rate auf die Diskette.
+ */
+TEST(HfeCodec, FmSpurMitHalberRate_UeberlebtDenRundlauf) {
+    // Wie die echte Diskette: Kopf 0 die FM-Bootspur, Kopf 1 (und alles Weitere)
+    // MFM mit voller Rate.  Die MFM-Spur ist die LAENGERE und bestimmt die
+    // Spurlaenge der Datei — genau daran ist die halbe Rate frueher gescheitert.
+    DiskMedium m(80, 2, Encoding::MFM);
+    std::vector<LogicalSector> secs;
+    for (uint8_t s = 1; s <= 16; ++s) {
+        LogicalSector ls;
+        ls.cyl = 0; ls.head = 0; ls.id = s; ls.size = 128;
+        ls.data.assign(128, 0xE5);
+        secs.push_back(std::move(ls));
+    }
+    TrackImage t = TrackCodec::buildTrack(secs, Encoding::FM);
+    t.cell_factor = 2;                       // halbe Datenrate
+    m.setTrack(0, 0, std::move(t));
+
+    std::vector<LogicalSector> mfm;
+    for (uint8_t s = 1; s <= 16; ++s) {
+        LogicalSector ls;
+        ls.cyl = 0; ls.head = 1; ls.id = s; ls.size = 256;
+        ls.data.assign(256, static_cast<uint8_t>(0x10 + s));
+        mfm.push_back(std::move(ls));
+    }
+    m.setTrack(0, 1, TrackCodec::buildTrack(mfm, Encoding::MFM));
+    for (uint8_t c = 1; c < 80; ++c)
+        for (uint8_t h = 0; h < 2; ++h) {
+            std::vector<LogicalSector> weitere;
+            for (uint8_t s = 1; s <= 16; ++s) {
+                LogicalSector ls;
+                ls.cyl = c; ls.head = h; ls.id = s; ls.size = 256;
+                ls.data.assign(256, 0xE5);
+                weitere.push_back(std::move(ls));
+            }
+            m.setTrack(c, h, TrackCodec::buildTrack(weitere, Encoding::MFM));
+        }
+
+    const auto tmp = k1520test::tempPath("k1520_test_hfe_fm_halbe_rate.hfe");
+    std::string err;
+    ASSERT_TRUE(HfeCodec::save(tmp, m, err)) << err;
+
+    const DiskMedium back = loadHfe(tmp);
+    const auto zurueck = TrackCodec::parseTrack(back.track(0, 0));
+    ASSERT_EQ(zurueck.size(), 16u) << "Sektoren verloren — auch der erste zaehlt";
+    for (uint8_t s = 1; s <= 16; ++s) {
+        const auto& ls = zurueck[s - 1];
+        EXPECT_EQ(ls.id, s);
+        EXPECT_TRUE(ls.id_crc_ok)   << "Sektor " << int(s);
+        EXPECT_TRUE(ls.data_crc_ok) << "Sektor " << int(s);
+        EXPECT_EQ(ls.data[0], 0xE5);
+    }
+    EXPECT_EQ(back.track(0, 0).cell_factor, 2)
+        << "Die halbe Datenrate muss an der Spur haengenbleiben";
+    EXPECT_EQ(back.track(0, 1).cell_factor, 1) << "Die MFM-Spur laeuft mit voller Rate";
+    EXPECT_EQ(TrackCodec::parseTrack(back.track(0, 1)).size(), 16u);
+
+    // ZWEITER Rundlauf: Laden→Speichern→Laden muss dasselbe ergeben.  Frueher begann
+    // die decodierte FM-Spur unmittelbar mit dem Marken-Byte des ersten Sektors —
+    // beim naechsten Speichern fehlten dessen Sync-Bytes, und der Sektor verschwand
+    // (frisch angelegte SCP1700-Diskette: Bootspur mit 15 Sektoren, IDs 2…16).
+    const auto tmp2 = k1520test::tempPath("k1520_test_hfe_fm_halbe_rate_2.hfe");
+    ASSERT_TRUE(HfeCodec::save(tmp2, back, err)) << err;
+    const DiskMedium zweimal = loadHfe(tmp2);
+    EXPECT_EQ(TrackCodec::parseTrack(zweimal.track(0, 0)).size(), 16u)
+        << "Der erste Sektor faellt beim zweiten Rundlauf heraus";
+    EXPECT_EQ(zweimal.track(0, 0).cell_factor, 2);
+    std::filesystem::remove(tmp2);
+
+    std::filesystem::remove(tmp);
+}

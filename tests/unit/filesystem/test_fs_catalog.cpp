@@ -78,6 +78,9 @@ TEST(FsCatalog, ProfilnamenSindEinStabilerVertrag) {
         "scpx640", "scpx798",
         "udos_ds77", "udos_ss77", "udos_ss40",
         "udos1715", "udos1715_ss80", "udos1715_ss40",
+        // CP/M-86 des A7100: eigener Eintrag, weil die CP/A-Regel hier NICHT gilt
+        // (sie bildet das CP/A-BIOS nach, nicht das SCP1700).
+        "scp1700",
     };
     for (const auto& n : erwartet)
         EXPECT_NE(cat.find(n), nullptr) << "Dateisystem '" << n << "' fehlt";

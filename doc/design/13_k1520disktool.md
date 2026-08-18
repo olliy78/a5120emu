@@ -1768,7 +1768,7 @@ dieselben Ordner:
 |--------|-----------|
 | Abbild öffnen · Neue Diskette · Bootabbild auswählen | `paths.default_disk_dir()` — identisch zum Laufwerksfeld des Emulators |
 | Speichern unter… | neben der **geöffneten** Diskette; ohne Diskette der Diskettenordner |
-| Archivieren · Bootabbild sichern | unverändert neben der geöffneten Diskette (Vorschlag mit Namen) |
+| Archivieren · Bootabbild sichern | neben der geöffneten Diskette (Vorschlag mit Namen); ohne Datei — physische Diskette — der Diskettenordner (§20.9) |
 | Ordner wählen · Zielordner wählen | der bereits gewählte Ordner, sonst `paths.default_folder_dir()` |
 
 **Der Dateiordner ist neu** (`paths.user_files_dir()` → `<Datenordner>/Dateien`).
@@ -1809,6 +1809,54 @@ Emulator, und wie dort **vor** den Qt-Importen — die Auskunft muss auch dann
 kommen, wenn genau das fehlt, wonach gefragt wird). `describe()` nennt seitdem
 beide Arbeitsverzeichnisse; das ist die erste Frage, wenn ein Dialog am falschen
 Ort aufgeht.
+
+### 20.9 Die Beschriftung der Diskette — Archivieren ohne Abbilddatei (2026-08-18)
+
+Das Archivieren leitete jeden Namen aus dem Pfad der offenen Diskette ab: den
+Vorschlag im Dateidialog, den Namen des `.hfe` im Archiv, den des
+Inhaltsverzeichnisses. Eine **physische** Diskette hat keinen Pfad — der Klickweg
+endete mitten im Dialog in einem `ValueError` aus
+`Path("").with_suffix(".zip")` („has an empty name"), also mit einem Rückschlag
+in die Konsole statt einer Meldung.
+
+Die Lösung ist nicht ein Ersatzname, sondern die fehlende Angabe selbst: **das
+Werkzeug fragt vor dem Archivieren nach der Beschriftung der Diskette** — dem
+Text auf dem Aufkleber. Sie ist die einzige Auskunft darüber, WELCHE Diskette
+archiviert wurde; ein Abbild trägt seinen Namen im Dateinamen, eine echte
+Diskette trägt ihn auf Papier.
+
+Daraus entsteht dreierlei:
+
+* der **Vorschlag** im Dateidialog (`<name>.zip`, im Diskettenordner),
+* die **Namen im Archiv** (`<name>.hfe`, `<name>.txt`) — nicht nur der Name der
+  `.zip`, denn der überlebt ein Umbenennen nicht,
+* die Zeile **`Beschriftung`** im Kopf des Inhaltsverzeichnisses, dazu
+  **`Herkunft`** an der Stelle, an der sonst `Abbild` steht.
+
+Vier Festlegungen:
+
+1. **Der Aufkleber ist Fliesstext, der Dateiname nicht.** `archive.dateiname()`
+   ist die eine Stelle, die daraus einen Namen macht (Leerzeichen → `_`,
+   `\/:*?"<>|` und Steuerzeichen weg, höchstens 64 Zeichen). Leer heisst „kein
+   Name"; dann entscheidet der Dateiname der Diskette und zuletzt `NAMENLOS`.
+   Ein Archiv entsteht also auch dann, wenn jemand die Frage leer bestätigt.
+2. **Vorgeschlagen wird, was das Werkzeug weiss**: der Dateiname der offenen
+   Diskette, sonst der **Datenträgername** des Dateisystems (UDOS und CP/M führen
+   einen — bei der Referenzdiskette `UDOS.SYS.4.3`). Nur wenn es beides nicht
+   gibt, bleibt das Feld leer.
+3. **Abbrechen bricht ab** — kein Dateidialog dahinter (Wächter
+   `test_disktool_bricht_das_archivieren_ohne_beschriftung_ab`).
+4. **`_neben_der_diskette()` fällt bei leerem Pfad auf den Diskettenordner
+   zurück.** `Path("").parent` ist `.`, also das Arbeitsverzeichnis — genau das,
+   was §20.8 verbietet. Dasselbe gilt für „Bootabbild sichern", das denselben
+   Vorschlag baute.
+
+Wächter: `test_disktool_archiviert_eine_physische_diskette` (der ganze Klickweg
+über das Ersatzlaufwerk, inkl. der Namen im Archiv),
+`test_archive_is_named_after_the_disk_label`,
+`test_disk_label_becomes_a_usable_file_name`. Und
+`test_every_file_dialog_gets_a_start_directory` beantwortet die neue Frage mit,
+sonst stünde der Testlauf an einem modalen Fenster.
 
 ---
 
@@ -1964,3 +2012,94 @@ Am echten Laufwerk gegengeprüft (Greaseweazle F1 + MFS-1.6-Diskette): der
 Physisch-Pfad des DiskTool öffnet die eingelegte Diskette, erkennt `udos1715` und
 listet alle 67 Dateien
 (`K1520_GW_HARDWARE=1 … -k disktool_oeffnet`).
+
+---
+
+## 22. SCP1700 / CP/M-86 — eine Diskette mit ZWEI Datenraten (2026-08-18)
+
+Der A7100 ist ein 16-Bit-Rechner mit **SCP1700**, einem CP/M-86.  Für das DiskTool ist
+sein Dateisystem eine Wiederholungsübung — CP/M-86 führt dasselbe Verzeichnis wie
+CP/M 2.2 —, seine **Physik** aber nicht: **Spur 0 Kopf 0 ist FM mit halber Datenrate**
+(125 kbit/s, 16×128), alle übrigen 159 Spuren MFM mit 250 kbit/s (16×256).
+Mischdichte gab es im Katalog schon (8″-System-34), **Mischrate** nicht.
+
+Volle Beschreibung samt Messwerten: **`doc/scp1700_diskettenformat.md`**.
+Hier nur, was am Entwurf hängt.
+
+### 22.1 Katalog
+
+Ein `formats:`-Eintrag mit drei Spurbereichen und dem neuen Schlüssel `rate:`
+
+```yaml
+- { cyls: 0, heads: 0, sectors: 16, size: 128, encoding: fm, rate: 125 }
+```
+
+sowie ein `filesystems:`-Profil `scp1700` (`data_start c2h0`, 2048-B-Blöcke, 128
+Verzeichnisplätze).  Der Eintrag hat seinen eigenen Grund im Sinne von §6.5:
+`CpaDpbRule` gilt hier nicht — sie bildet das CP/A-BIOS nach, nicht das SCP1700.
+
+`rate:` kennt genau zwei Werte, 250 (Vorgabe) und 125.  Es ist keine allgemeine
+Ratenverwaltung, sondern die Antwort auf einen belegten Fall; wer eine dritte Rate
+braucht, muss zuerst eine Diskette vorlegen, die sie trägt.
+
+### 22.2 Was der Kern lernen musste
+
+Drei Annahmen im Kern galten **je Diskette** und mussten **je Spur** werden:
+
+1. **Der Abtastfaktor des HFE-Lesers.**  Er wurde an der ersten Spur mit Marken
+   festgenagelt — hier die FM-Bootspur.  Danach galt deren Faktor für alle 159
+   MFM-Spuren, und die Diskette kam als „unformatiert" zurück.  Jetzt gilt: der
+   bewährte Faktor kommt zuerst und genügt sich selbst; ein anderer muss sich mit
+   **mindestens vier Adressmarken** ausweisen.  Die Vier ist kein Geschmack — eine
+   einzelne Scheinmarke aus dem Rauschen einer unformatierten Spur hatte den Faktor
+   früher schon einmal umgeworfen und die halbe Diskette unlesbar gemacht
+   (`TrackSync::completeRead`).  Dieselbe Regel gilt am echten Laufwerk.
+
+2. **Die Datenrate gehört an die Spur** — `TrackImage::cell_factor`.  Beim Laden wird
+   der Zellstrom heruntergerechnet, beim **Zurückschreiben wieder gestreckt**
+   (`BitCodec::upsampleCells`), in die Datei wie auf die echte Diskette.  Ohne das
+   ginge die Bootspur mit doppelter Rate auf die Scheibe: lesbar für uns, unlesbar für
+   den A7100.  `HfeCodec::save` bemisst die Spurlänge deshalb in **Zellen** statt in
+   Bytes ×2, sonst bekäme eine halbrate Spur nur die halbe Umdrehung.
+
+3. **„Überabgetastet" ist etwas anderes als „gemischt".**  Ein Flux-Mitschnitt über der
+   Nominalrate lässt sich nicht treu zurückschreiben und wird schreibgeschützt geöffnet.
+   Das gilt jetzt nur noch, wenn **keine** Spur mit nominaler Rate dabei ist —
+   sonst wäre jede SCP1700-Diskette unbeschreibbar.
+
+### 22.3 Erkennung: doppelt geschriebene Sektoren
+
+Die Bootspur des Referenzdatenträgers trägt **19 Adressmarken für 16 Sektoren**: hinter
+Sektor 16 stehen noch einmal 1…4, byteweise dieselben Daten wie am Spuranfang — sie
+wurde in einem Zug über den Index hinaus geschrieben.  Für den Abgleich mit einem
+Format zählen deshalb die **verschiedenen** IDs (`MeasuredTrack::uniqueSectors`); der
+Treiber liest über die ID, ein Doppelgänger bringt keinen Platz.  Nach der rohen Zahl
+(„19×128") passte die Diskette zu keinem Katalogformat.
+
+Ein `detect_rank` braucht es nicht: die FM-Bootspur trennt sauber.  Die Datenspuren
+allein (16×256 MFM) passten auch zu `cpa640`/`k5601_16x256` und damit zu UDOS1715 — für
+die ist c0h0 aber eine Lücke, und eine gewöhnliche 16×256-Diskette fällt bei
+`scp1700_640` mit „Verfahren mfm, Format sagt fm" durch.
+
+### 22.4 Wächter
+
+| Test | Was er festhält |
+|---|---|
+| `Scp1700.WirdOhneVorgabeErkannt` | Format und Dateisystem ohne `--fs` |
+| `Scp1700.BootspurIstFmMitHalberDatenrate` | FM + `cell_factor == 2` neben MFM + 1 |
+| `Scp1700.BootspurZaehltVerschiedeneSektorenNichtDoppelte` | Doppelgänger am Spurende |
+| `Scp1700.VerzeichnisUndInhaltStimmen` | 46 Dateien, Größen, Textinhalt, 2 KB frei |
+| `Scp1700.SchreibenUndZurueckschreibenBleibtLesbar` | Schreiben → Speichern → Öffnen, Bootspur behält ihre Rate |
+| `HfeCodec.FmSpurMitHalberRate_UeberlebtDenRundlauf` | **zwei** Rundläufe durch die Datei |
+
+Fixture: `tests/fixtures/disks/scp1700_640k_a7100_system.hfe` (die Aufnahme vom echten
+Laufwerk).  Am echten Laufwerk gegengeprüft (Greaseweazle F1): `--physical ls` erkennt
+`scp1700_640 / scp1700` und listet alle 46 Dateien, ein `--physical get` liefert
+byteweise dasselbe wie aus der Abbilddatei.
+
+### 22.5 Offen
+
+Ob eine mit `create --fs scp1700 --boot …` gebaute Diskette im A7100 **bootet**, ist
+nicht geprüft — es gibt kein Gerät dafür, und der Emulator kennt keinen 8086.  Vom
+Referenzdatenträger lässt sich das Bootabbild nicht herausschreiben: sein
+Bootspur-Sektor 10 ist beschädigt.

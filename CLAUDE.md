@@ -476,8 +476,8 @@ nicht mit „hängt" verwechseln; sie melden sich bei Abschluss selbst.
 
 ## k1520DiskTool — Dateiaustausch mit Disketten (`core/filesystem/`, `app/disktool/`)
 
-Zweites Anwenderprogramm neben dem Emulator: holt Dateien von CP/A-, SCPX-, **UDOS**- und
-**UDOS1715**-Disketten und schreibt sie zurück (`.img`/`.hfe`/`.dmk`).  Es teilt sich mit dem
+Zweites Anwenderprogramm neben dem Emulator: holt Dateien von CP/A-, SCPX-, **UDOS**-,
+**UDOS1715**- und **SCP1700**-Disketten (CP/M-86, A7100) und schreibt sie zurück (`.img`/`.hfe`/`.dmk`).  Es teilt sich mit dem
 Emulator die Container-/Medium-Schicht, hat aber **eine eigene Bibliothek**
 (`libk1520disk.so`) ohne Z80 und Karten.  Voller Entwurf: `doc/design/13_k1520disktool.md`,
 Bedienung: `tools/k1520disktool.md`.
@@ -493,6 +493,33 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 
 Was beim Weiterarbeiten zu wissen ist:
 
+- **SCP1700/CP/M-86 (A7100) — eine Diskette mit ZWEI Datenraten (2026-08-18,
+  `doc/scp1700_diskettenformat.md`, Entwurf §22).**  Die Disketten des **A7100**
+  tragen ein CP/M-86; das Dateisystem ist gewöhnliches CP/M (Verzeichnis ab
+  `c2h0`, 2048-B-Blöcke, 128 Plätze, 16-Bit-Zeiger — Profil `scp1700`).  Die
+  **Physik** ist der Punkt: **Spur 0 Kopf 0 ist FM mit HALBER Datenrate**
+  (125 kbit/s, 16×128), alle übrigen 159 Spuren MFM mit 250 (16×256).  Das CP/A-BIOS
+  weiss davon („A7100-System mit 5" FM …", `biosdsk.mac`).  Vier Festlegungen:
+  **(1) Der Abtastfaktor gilt JE SPUR**, nicht je Datei — er wurde an der ersten
+  Spur mit Marken festgenagelt, und das war hier die Bootspur: danach kamen alle
+  159 MFM-Spuren als „unformatiert" zurück.  Der bewährte Faktor kommt zuerst und
+  genügt sich selbst, ein anderer muss **≥ 4 Adressmarken** vorweisen (eine
+  einzelne Scheinmarke aus dem Rauschen hatte den Faktor früher schon einmal
+  umgeworfen — `TrackSync::completeRead`).
+  **(2) Die Rate hängt an der Spur** (`TrackImage::cell_factor`, im Katalog
+  `rate: 125`): beim Laden herunterrechnen, beim **Zurückschreiben strecken**
+  (`BitCodec::upsampleCells`) — sonst ginge die Bootspur mit doppelter Rate auf die
+  Scheibe.  Deshalb bemisst `HfeCodec::save` die Spurlänge in **Zellen**, nicht in
+  Bytes ×2.
+  **(3) „Überabgetastet" heisst: KEINE Spur liegt auf der Nominalrate** — sonst
+  wäre jede gemischte Diskette schreibgeschützt.
+  **(4) Verglichen werden VERSCHIEDENE Sektor-IDs** (`MeasuredTrack::uniqueSectors`):
+  die Bootspur wurde in einem Zug über den Index hinaus beschrieben und trägt 19
+  Adressmarken für 16 Sektoren.  Nebenbefund: der FM-Dekoder begann die Spur am
+  Markenbyte und warf dessen Sync-Feld weg — beim ZWEITEN Rundlauf durch die Datei
+  verschwand der erste Sektor.  Wächter: `Scp1700.*` (5 Fälle),
+  `HfeCodec.FmSpurMitHalberRate_UeberlebtDenRundlauf`.  Am echten Laufwerk
+  gegengeprüft.
 - **UDOS1715/NDOS — die zweite UDOS-Ausprägung (2026-08-17,
   `doc/udos1715_diskettenformat.md`, Entwurf §21).**  Die Disketten des **PC 1715**
   tragen dasselbe Betriebssystem, aber ein anderes Dateisystem, weil der **µPD765**

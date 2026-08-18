@@ -108,8 +108,12 @@ std::unique_ptr<DiskImage> DiskImage::create(const std::string& path,
         for (uint8_t h = 0; h < num_heads; ++h) {
             const TrackFormat* tf = fmt->findTrack(c, h);
             if (!tf) continue;   // Spur existiert im Format nicht → bleibt unformatiert
-            img->medium_.setTrack(
-                pc, h, TrackCodec::buildTrack(leereSektoren(*tf, c, h), tf->encoding));
+            TrackImage spur = TrackCodec::buildTrack(leereSektoren(*tf, c, h),
+                                                     tf->encoding);
+            // Halbe Datenrate ist eine Eigenschaft des Spurbereichs (`rate: 125`) und
+            // muss an der Spur haengen, sonst schriebe sie jeder Codec mit voller Rate.
+            spur.cell_factor = tf->cell_factor;
+            img->medium_.setTrack(pc, h, std::move(spur));
         }
     }
 
