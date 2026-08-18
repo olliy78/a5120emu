@@ -72,14 +72,25 @@ bool spurenGleich(const TrackImage& erwartet, const TrackImage& gelesen,
         const LogicalSector& b = ist[i];
         const std::string wo = "Sektor " + std::to_string(b.id);
 
-        if (!b.id_crc_ok)   { grund = wo + ": Pruefsumme des Adressfeldes falsch"; return false; }
-        if (!b.data_crc_ok) { grund = wo + ": Pruefsumme des Datenfeldes falsch";  return false; }
+        // Ein Sektor, der schon im ABBILD defekt ist, darf defekt zurueckkommen.
+        // Sonst liesse sich keine Spur mit Schadstelle je zurueckschreiben — und die
+        // gibt es wirklich: die SCP1700-Bootspur wurde in einem Zug ueber den Index
+        // hinaus beschrieben, ihre letzte Sektorkopie ist von der Naht abgeschnitten
+        // und traegt eine ungueltige Daten-CRC.  Verglichen wird dann nur noch die
+        // LAGE (Adressfeld); ihre Bytes zu vergleichen hiesse, Bruchstuecke zu
+        // vergleichen.  Fuer jeden heilen Sektor gilt die volle Strenge weiter.
+        const bool a_heil = a.id_crc_ok && a.data_crc_ok;
+        if (a_heil && !b.id_crc_ok)
+            { grund = wo + ": Pruefsumme des Adressfeldes falsch"; return false; }
+        if (a_heil && !b.data_crc_ok)
+            { grund = wo + ": Pruefsumme des Datenfeldes falsch";  return false; }
         if (a.id != b.id || a.cyl != b.cyl || a.head != b.head) {
             grund = wo + ": Adressfeld weicht ab (erwartet " + std::to_string(a.cyl)
                   + "/" + std::to_string(a.head) + " Sektor " + std::to_string(a.id) + ")";
             return false;
         }
         if (a.size != b.size) { grund = wo + ": andere Sektorlaenge"; return false; }
+        if (!a_heil) continue;                  // Bruchstueck: Inhalt sagt nichts
         if (a.data != b.data) { grund = wo + ": Nutzdaten weichen ab"; return false; }
         if (ohneGapEnde(a.tail) != ohneGapEnde(b.tail)) {
             grund = wo + ": die Bytes hinter der Daten-CRC weichen ab";

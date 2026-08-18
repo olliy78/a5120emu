@@ -513,6 +513,21 @@ Was beim Weiterarbeiten zu wissen ist:
   Bytes ×2.
   **(3) „Überabgetastet" heisst: KEINE Spur liegt auf der Nominalrate** — sonst
   wäre jede gemischte Diskette schreibgeschützt.
+  **(3a) HFE verschraenkt zwei Seiten zu je 256 B — auch bei EINSEITIGEN Dateien.**
+  Greaseweazle legt `gw read --tracks c=0:h=0` so ab (Seite 0 in den ersten 256 B,
+  Rest Gap); dieses Projekt schrieb einseitige Spuren kontinuierlich.  Wer eine
+  verschraenkte Datei kontinuierlich liest, zieht sich alle 256 B Gap-Bytes MITTEN
+  in den Datenstrom: die kurzen ID-Felder ueberleben das, ein 131-B-Datenfeld nie —
+  „alle Sektoren gefunden, keine einzige gueltige Daten-CRC".  Der Leser probiert
+  jetzt beide Sitten und entscheidet am Inhalt.  **Ueberhaupt gilt: ein
+  Abtastfaktor wird an GUELTIGEN CRCs gemessen, nicht an der Markenzahl** — unter
+  dem falschen Faktor faellt reichlich Scheinsync heraus.  Waechter
+  `HfeCodec.EinseitigeAufnahmeMitSeitenschlitzen`.
+  **(3b) Ein schon defekter Sektor darf defekt zurueckkommen** — das Pruef-Lesen
+  verlangte von jedem zurueckgelesenen Sektor eine gueltige Pruefsumme, auch von
+  einem, der schon im Abbild kaputt war; damit liess sich eine Spur mit Schadstelle
+  NIE zurueckschreiben.  Bei einem Bruchstueck wird nur noch die Lage verglichen.
+  Waechter `TrackSync.EinSchonDefekterSektorDarfDefektZurueckkommen`.
   **(4) Verglichen werden VERSCHIEDENE Sektor-IDs** (`MeasuredTrack::uniqueSectors`):
   die Bootspur wurde in einem Zug über den Index hinaus beschrieben und trägt 19
   Adressmarken für 16 Sektoren.  Nebenbefund: der FM-Dekoder begann die Spur am

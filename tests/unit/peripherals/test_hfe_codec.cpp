@@ -565,3 +565,85 @@ TEST(HfeCodec, FmSpurMitHalberRate_UeberlebtDenRundlauf) {
 
     std::filesystem::remove(tmp);
 }
+
+/**
+ * @test HfeCodec/EinseitigeAufnahmeMitSeitenschlitzen
+ * @brief Eine EINSEITIGE Datei nach Greaseweazle-/HxC-Sitte wird richtig gelesen.
+ *
+ * HFE verschränkt zwei Seiten zu je 256 B je 512-B-Block.  Greaseweazle legt auch
+ * eine einseitige Aufnahme so ab (`gw read --tracks c=0:h=0`): Seite 0 in den ersten
+ * 256 B, der Rest Gap.  Dieses Projekt schrieb einseitige Spuren dagegen
+ * **kontinuierlich** über den ganzen Block — beide Sitten müssen gelesen werden.
+ *
+ * Wer eine verschränkte Datei kontinuierlich liest, zieht sich alle 256 B einen
+ * Schwung Gap-Bytes mitten in den Datenstrom.  Das Tückische daran: die kurzen
+ * ID-Felder überleben es meistens, ein 131-B-Datenfeld nie — die Diskette sieht
+ * vollständig aus („alle Sektoren gefunden") und trägt doch **keine einzige gültige
+ * Daten-CRC**.  Genau so verlor eine einspurige Aufnahme der SCP1700-Bootspur ihren
+ * ganzen Inhalt.
+ */
+TEST(HfeCodec, EinseitigeAufnahmeMitSeitenschlitzen) {
+    // 1. Eine einseitige Spur bauen und regulär speichern (kontinuierliche Sitte).
+    DiskMedium m(1, 1, Encoding::MFM);
+    std::vector<LogicalSector> secs;
+    for (uint8_t s = 1; s <= 8; ++s) {
+        LogicalSector ls;
+        ls.cyl = 0; ls.head = 0; ls.id = s; ls.size = 256;
+        ls.data.assign(256, static_cast<uint8_t>(0x30 + s));
+        secs.push_back(std::move(ls));
+    }
+    m.setTrack(0, 0, TrackCodec::buildTrack(secs, Encoding::MFM));
+
+    const auto durchgehend = k1520test::tempPath("k1520_test_hfe_1seitig_durch.hfe");
+    std::string err;
+    ASSERT_TRUE(HfeCodec::save(durchgehend, m, err)) << err;
+
+    // Kontinuierlich abgelegt: liest sich (wie bisher) vollständig.
+    {
+        const DiskMedium back = loadHfe(durchgehend);
+        const auto zurueck = TrackCodec::parseTrack(back.track(0, 0));
+        ASSERT_EQ(zurueck.size(), 8u);
+        for (const auto& s : zurueck) EXPECT_TRUE(s.data_crc_ok);
+    }
+
+    // 2. Dieselbe Datei in die VERSCHRÄNKTE Sitte umbauen: jeder 512-B-Block traegt
+    //    nur noch 256 B Nutzzellen, dahinter Gap — so schreibt es Greaseweazle.
+    std::vector<uint8_t> roh;
+    {
+        std::ifstream f(durchgehend, std::ios::binary);
+        roh.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+    }
+    const size_t lut  = (roh[0x12] | (roh[0x13] << 8)) * 512u;
+    const size_t start = (roh[lut] | (roh[lut + 1] << 8)) * 512u;
+    const size_t laenge = static_cast<size_t>(roh[lut + 2] | (roh[lut + 3] << 8));
+
+    std::vector<uint8_t> neu(roh.begin(), roh.begin() + static_cast<long>(start));
+    for (size_t off = 0; off < laenge; off += 256) {
+        const size_t n = std::min<size_t>(256, laenge - off);
+        neu.insert(neu.end(), roh.begin() + static_cast<long>(start + off),
+                   roh.begin() + static_cast<long>(start + off + n));
+        neu.insert(neu.end(), 256, 0x88);            // Seite-1-Schlitz = Gap
+    }
+    // Spurlaenge verdoppelt sich dadurch.
+    const size_t neue_laenge = laenge * 2;
+    neu[lut + 2] = static_cast<uint8_t>(neue_laenge & 0xFF);
+    neu[lut + 3] = static_cast<uint8_t>((neue_laenge >> 8) & 0xFF);
+
+    const auto verschraenkt = k1520test::tempPath("k1520_test_hfe_1seitig_schlitz.hfe");
+    { std::ofstream f(verschraenkt, std::ios::binary);
+      f.write(reinterpret_cast<const char*>(neu.data()),
+              static_cast<std::streamsize>(neu.size())); }
+
+    const DiskMedium back = loadHfe(verschraenkt);
+    const auto zurueck = TrackCodec::parseTrack(back.track(0, 0));
+    ASSERT_EQ(zurueck.size(), 8u) << "verschraenkte einseitige Aufnahme nicht erkannt";
+    for (const auto& s : zurueck) {
+        EXPECT_TRUE(s.id_crc_ok)   << "Sektor " << int(s.id);
+        EXPECT_TRUE(s.data_crc_ok) << "Sektor " << int(s.id)
+                                   << " — genau hier faellt die falsche Sitte auf";
+        EXPECT_EQ(s.data[0], static_cast<uint8_t>(0x30 + s.id));
+    }
+
+    std::filesystem::remove(durchgehend);
+    std::filesystem::remove(verschraenkt);
+}

@@ -147,6 +147,32 @@ Drei Dinge im Kern waren auf **eine** Rate je Diskette gebaut:
    **keine** Spur mit nominaler Rate. Eine SCP1700-Diskette ist eine gewöhnliche
    Datei und bleibt beschreibbar.
 
+Beim Schreibtest an der echten Diskette kamen zwei weitere Befunde dazu, beide
+**unabhängig von SCP1700**:
+
+4. **Einseitige Greaseweazle-Aufnahmen wurden falsch gelesen.**  HFE verschränkt zwei
+   Seiten zu je 256 B in jedem 512-B-Block — und Greaseweazle legt auch eine
+   EINSEITIGE Aufnahme so ab (`gw read --tracks c=0:h=0`): Seite 0 in den ersten
+   256 B, der Rest Gap.  Dieses Projekt schrieb einseitige Spuren dagegen
+   kontinuierlich über den ganzen Block, und der Leser nahm das als die einzige
+   Sitte an.  Wer eine verschränkte Datei kontinuierlich liest, zieht sich alle 256 B
+   einen Schwung Gap-Bytes MITTEN in den Datenstrom.  Das Tückische: die kurzen
+   ID-Felder überleben das meistens, ein 131-B-Datenfeld nie — die Spur sieht
+   vollständig aus („alle Sektoren gefunden") und trägt doch **keine einzige gültige
+   Daten-CRC**.  Genau so schien eine frisch geschriebene Bootspur zerstört, während
+   Greaseweazles eigener Dekoder sie tadellos las.  Der Leser probiert jetzt beide
+   Sitten und entscheidet am Inhalt.  Wächter:
+   `HfeCodec.EinseitigeAufnahmeMitSeitenschlitzen`.
+5. **Ein schon defekter Sektor darf defekt zurückkommen.**  Das Prüf-Lesen verlangte
+   von JEDEM zurückgelesenen Sektor eine gültige Prüfsumme — auch von einem, der
+   schon im Abbild kaputt war.  Damit liess sich eine Spur mit Schadstelle nie
+   zurückschreiben: das Schreiben gelang, der Vergleich meldete „Prüfsumme des
+   Datenfeldes falsch".  Genau das passiert an der SCP1700-Bootspur, deren letzte
+   Sektorkopie von der Naht abgeschnitten ist (§1.1).  Verglichen wird bei so einem
+   Bruchstück jetzt nur noch die **Lage**; für jeden heilen Sektor gilt die volle
+   Strenge weiter.  Wächter:
+   `TrackSync.EinSchonDefekterSektorDarfDefektZurueckkommen`.
+
 Nebenbefund derselben Arbeit: der FM-Dekoder begann die Spur exakt am ersten
 Markenbyte und warf dessen Sync-Feld weg. Beim **zweiten** Rundlauf durch die Datei
 fehlte das 00-Sync-Feld, das `strong()` vor der Marke verlangt — der erste Sektor
@@ -160,8 +186,16 @@ Wächter: `HfeCodec.FmSpurMitHalberRate_UeberlebtDenRundlauf`.
   inbegriffen — das Dateisystem ist gewöhnliches CP/M.
 * **Anlegen**: `k1520disktool create <datei> --fs scp1700` erzeugt die Diskette mit
   korrekter FM-Bootspur (16×128, halbe Rate).
-* **Am echten Laufwerk nachgewiesen** (2026-08-18): Verzeichnis über den eigenen
-  Greaseweazle-Pfad gelesen, Dateien byteweise gleich wie aus der Abbilddatei.
+* **Am echten Laufwerk nachgewiesen** (2026-08-18), lesend UND schreibend:
+  Verzeichnis über den eigenen Greaseweazle-Pfad gelesen, Dateien byteweise gleich
+  wie aus der Abbilddatei; eine Datei geschrieben (*2 Spuren geschrieben, 2 geprüft,
+  0 Vergleiche misslungen*), frisch geöffnet byteweise zurückgelesen, wieder
+  gelöscht; die **FM-Bootspur mit halber Rate zurückgeschrieben** und geprüft.
+  Gegenprobe am Medium: eine Vollmessung vorher/nachher zeigt **genau die zwei
+  erwarteten Spuren** geändert (c2h0 Verzeichnis, c79h1 Datenblock) und sonst nichts
+  — die viermal neu geschriebene Bootspur c0h0 kommt sektorgleich zurück.  Danach
+  beide Spuren aus der Sicherung zurückgeschrieben; die Diskette ist wieder die vom
+  Anfang.
 * **Offen**: das Bootabbild der Referenzdiskette lässt sich nicht herausschreiben —
   ihr Bootspur-Sektor 10 ist beschädigt (§1.1). Ob eine so erzeugte Diskette im A7100
   **bootet**, ist nicht geprüft (kein Gerät zur Hand); der Emulator kennt keinen 8086.
@@ -176,6 +210,8 @@ Wächter: `HfeCodec.FmSpurMitHalberRate_UeberlebtDenRundlauf`.
 | `Scp1700.VerzeichnisUndInhaltStimmen` | 46 Dateien, Größen, Textinhalt, 2 KB frei |
 | `Scp1700.SchreibenUndZurueckschreibenBleibtLesbar` | Schreiben → Speichern → Öffnen |
 | `HfeCodec.FmSpurMitHalberRate_UeberlebtDenRundlauf` | zwei Rundläufe durch die Datei |
+| `HfeCodec.EinseitigeAufnahmeMitSeitenschlitzen` | beide Sitten einseitiger HFE-Dateien |
+| `TrackSync.EinSchonDefekterSektorDarfDefektZurueckkommen` | Spur mit Schadstelle ist zurückschreibbar |
 | `FormatCatalog.Formatnamen_SindEinStabilerVertrag` | `scp1700_640` im Katalog |
 | `FsCatalog.ProfilnamenSindEinStabilerVertrag` | `scp1700` im Katalog |
 

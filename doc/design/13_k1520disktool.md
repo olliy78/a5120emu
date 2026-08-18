@@ -2081,6 +2081,27 @@ allein (16×256 MFM) passten auch zu `cpa640`/`k5601_16x256` und damit zu UDOS17
 die ist c0h0 aber eine Lücke, und eine gewöhnliche 16×256-Diskette fällt bei
 `scp1700_640` mit „Verfahren mfm, Format sagt fm" durch.
 
+### 22.3a Zwei Befunde aus dem Schreibtest an echter Hardware
+
+Beide **unabhängig von SCP1700** — die Diskette hat sie nur ans Licht gebracht:
+
+* **Einseitige Greaseweazle-Aufnahmen wurden falsch gelesen.**  HFE verschränkt zwei
+  Seiten zu je 256 B je Block, und Greaseweazle legt auch eine einseitige Aufnahme so
+  ab; dieses Projekt schrieb einseitige Spuren kontinuierlich und las nur diese Sitte.
+  Folge: alle 256 B ein Schwung Gap-Bytes mitten im Datenstrom — die kurzen ID-Felder
+  überleben es, ein 131-B-Datenfeld nie.  Die Spur sieht vollständig aus und trägt
+  keine einzige gültige Daten-CRC; eine frisch geschriebene Bootspur schien dadurch
+  zerstört, während Greaseweazles eigener Dekoder sie tadellos las.  Der Leser
+  probiert jetzt beide Sitten und **entscheidet am Inhalt** — womit auch die Regel
+  fällt, den Abtastfaktor nach der Markenzahl zu wählen: gezählt werden Sektoren mit
+  **gültiger CRC**, denn unter einem falschen Faktor fällt reichlich Scheinsync heraus.
+* **Ein schon defekter Sektor darf defekt zurückkommen.**  Der Prüf-Vergleich (§7.1
+  des Physisch-Entwurfs) verlangte von jedem zurückgelesenen Sektor eine gültige
+  Prüfsumme.  Eine Spur mit Schadstelle liess sich damit nie zurückschreiben: das
+  Schreiben gelang, der Vergleich meldete „Prüfsumme des Datenfeldes falsch", die Spur
+  galt als Schadstelle.  Bei einem Sektor, der schon im Abbild kaputt ist, wird jetzt
+  nur noch die **Lage** verglichen; für jeden heilen gilt die volle Strenge weiter.
+
 ### 22.4 Wächter
 
 | Test | Was er festhält |
@@ -2091,11 +2112,17 @@ die ist c0h0 aber eine Lücke, und eine gewöhnliche 16×256-Diskette fällt bei
 | `Scp1700.VerzeichnisUndInhaltStimmen` | 46 Dateien, Größen, Textinhalt, 2 KB frei |
 | `Scp1700.SchreibenUndZurueckschreibenBleibtLesbar` | Schreiben → Speichern → Öffnen, Bootspur behält ihre Rate |
 | `HfeCodec.FmSpurMitHalberRate_UeberlebtDenRundlauf` | **zwei** Rundläufe durch die Datei |
+| `HfeCodec.EinseitigeAufnahmeMitSeitenschlitzen` | beide Sitten einseitiger HFE-Dateien |
+| `TrackSync.EinSchonDefekterSektorDarfDefektZurueckkommen` | Spur mit Schadstelle ist zurückschreibbar |
 
 Fixture: `tests/fixtures/disks/scp1700_640k_a7100_system.hfe` (die Aufnahme vom echten
-Laufwerk).  Am echten Laufwerk gegengeprüft (Greaseweazle F1): `--physical ls` erkennt
-`scp1700_640 / scp1700` und listet alle 46 Dateien, ein `--physical get` liefert
-byteweise dasselbe wie aus der Abbilddatei.
+Laufwerk).  Am echten Laufwerk gegengeprüft (Greaseweazle F1), **lesend und
+schreibend**: `--physical ls` erkennt `scp1700_640 / scp1700` und listet alle 46
+Dateien, `--physical get` liefert byteweise dasselbe wie aus der Abbilddatei,
+`--physical --write put/rm` schreibt und löscht (je *0 Vergleiche misslungen*), und
+die FM-Bootspur wurde mit halber Rate zurückgeschrieben und geprüft.  Eine Vollmessung
+vorher/nachher zeigt **genau die zwei erwarteten Spuren** geändert (c2h0 Verzeichnis,
+c79h1 Datenblock); die viermal neu geschriebene Bootspur kommt sektorgleich zurück.
 
 ### 22.5 Offen
 

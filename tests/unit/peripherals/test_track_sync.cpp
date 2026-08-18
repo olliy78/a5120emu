@@ -813,3 +813,47 @@ TEST(TrackSync, WirdWaehrendDesPruefLesensGeschriebenGiltDerNeueInhalt) {
     EXPECT_EQ(nochmal.cyl, 0);
     EXPECT_EQ(nochmal.head, 1);
 }
+
+/**
+ * @test TrackSync/EinSchonDefekterSektorDarfDefektZurueckkommen
+ * @brief Eine Spur mit Schadstelle IM ABBILD lässt sich zurückschreiben.
+ *
+ * Der Prüf-Vergleich verlangte von jedem zurückgelesenen Sektor eine gültige
+ * Prüfsumme — auch von einem, der schon im Abbild kaputt war.  Damit liess sich eine
+ * solche Spur **nie** zurückschreiben: das Schreiben gelang, der Vergleich meldete
+ * „Prüfsumme des Datenfeldes falsch", die Spur galt als Schadstelle.
+ *
+ * Das gibt es wirklich: die SCP1700-Bootspur des A7100 wurde in einem Zug über den
+ * Index hinaus beschrieben, ihre letzte Sektorkopie ist von der Naht abgeschnitten
+ * und trägt eine ungültige Daten-CRC (`doc/scp1700_diskettenformat.md` §1.1).
+ * Verglichen wird bei so einem Bruchstück nur noch die **Lage**; für jeden heilen
+ * Sektor gilt die volle Strenge weiter (die übrigen Tests hier).
+ */
+TEST(TrackSync, EinSchonDefekterSektorDarfDefektZurueckkommen) {
+    DiskMedium scheibe = echteDiskette();
+    DiskMedium abbild;
+    TrackSync  sync(spec(/*schreibbar=*/true), abbild);
+    Ersatzfaden faden(sync, scheibe);
+    faden.start();
+
+    // Spur mit einem kaputten Sektor: die Daten-CRC des letzten wird verbogen.
+    TrackImage spur = baueSpur(5, 0, 4);
+    const auto sekt = TrackCodec::parseTrack(spur);
+    ASSERT_EQ(sekt.size(), 4u);
+    const size_t crc_pos = sekt.back().data_pos + 1 + sekt.back().size;
+    ASSERT_LT(crc_pos + 1, spur.bytes.size());
+    spur.bytes[crc_pos] = static_cast<uint8_t>(spur.bytes[crc_pos] ^ 0xFF);
+    ASSERT_FALSE(TrackCodec::parseTrack(spur).back().data_crc_ok);
+
+    abbild.setTrack(5, 0, std::move(spur));
+    ASSERT_TRUE(warteBis([&] { return abbild.state(5, 0) == TrackState::Clean; }))
+        << "die Spur kam nie durch — " << sync.lastError();
+    faden.stop();
+
+    EXPECT_FALSE(sync.hasDefects()) << sync.lastError();
+    EXPECT_EQ(sync.stats().verify_failed, 0u);
+    // Auf der Scheibe stehen alle vier Sektoren, der letzte weiterhin mit falscher CRC.
+    const auto drauf = TrackCodec::parseTrack(scheibe.peek(5, 0));
+    ASSERT_EQ(drauf.size(), 4u);
+    EXPECT_FALSE(drauf.back().data_crc_ok);
+}
