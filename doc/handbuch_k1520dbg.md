@@ -10,6 +10,43 @@ nicht mehr liest.
 Es setzt Kenntnisse des Z80-Assemblers voraus, aber **keine** Kenntnis des
 Emulator-Quelltexts.
 
+### Zwei Dinge vorweg, die den Rahmen abstecken
+
+**Es gibt keine Bindung an ein bestimmtes Betriebssystem.** Der Debugger hängt an der
+*Maschine*, nicht am Gastsystem — und der Emulator führt echten Z80-Code aus, ohne
+Abkürzungen im BIOS. Untersuchen lassen sich deshalb **CP/A**, **SCPX** und **UDOS**
+gleichermaßen: das Betriebssystem selbst, seine Treiber und die Anwendungen darauf.
+UDOS 4.3 etwa fährt unter dem Debugger bis zu seinem `%`-Prompt hoch, und was dort
+abläuft — Nukleus, Lader, Dateisystem — lässt sich anhalten und ansehen wie jedes
+andere Programm. Wo es zum Gastsystem Quelltext gibt, aber kein Assembler-Listing
+(bei UDOS und SCPX der Normalfall), nimmt der Debugger den **rohen `.MAC`-Quelltext**
+und assembliert ihn selbst (§5).
+
+**Der A5120 hat zwei Prozessoren, und der Debugger sieht beide.** Auf der ZRE-Karte
+sitzt neben der Haupt-CPU **ZVE1** ein zweiter Z80, **ZVE2**, der als DMA-Prozessor die
+Diskettenübertragungen fährt; die beiden verständigen sich ausschließlich über gemeinsam
+genutzten Speicher und die `/BUSRQ`-Leitung. Genau dieses Zusammenspiel ist der
+undurchsichtigste Teil der Maschine — und der Debugger legt es offen: Haltepunkte,
+Einzelschritt und Register gibt es für **beide** CPUs (`b2`, `s2`, `r 2`), `where` zeigt
+sie nebeneinander samt Bus-Master und Zustand des Diskettenkontrollers, und
+`bbusrq`/`bxfer` halten **genau auf der Flanke** an, an der die Übergabe stattfindet:
+
+```
+(dbg) bbusrq
+(dbg) g
+** /BUSRQ asserted : ZVE2 PC=0000
+(dbg) where
+  ZVE1 01A7: 3E 7F          LD A,7FH
+  ZVE2 0000: C3 DD 01       JP 01DDH   [run]
+  BUSRQ=yes  bus-master=ZVE2  K5122: D0 mounted cyl=0 head=0 READING headPos=5/4576
+```
+
+Für **zeitliche Abhängigkeiten bei Diskettenzugriffen** ist das der entscheidende
+Hebel: wer wann den Bus hält, in welchem Takt ein Byte vom Lesekopf kommt, wo der
+Kopf gerade steht und welche CPU eine Speicherzelle beschrieben hat (Watchpoints nennen
+die auslösende CPU). An echter Hardware ist davon nichts messbar, ohne die Maschine zu
+verändern. Einzelheiten in §6, die Rezepte in §10.
+
 > **Die drei Dokumente zum Debugger**
 >
 > | Dokument | Was drin steht |
@@ -123,6 +160,15 @@ Fragt das System beim Start nach der Uhrzeit, kommt das davor:
 (dbg) gscreen "Uhrzeit"
 (dbg) keys 120000\r
 (dbg) gscreen "A>"
+```
+
+Jedes System hat da seine eigene Eröffnung — bei **UDOS** ist es die Datumsabfrage, und
+das Eingabefeld ist formatiert, braucht also **kein** Enter:
+
+```
+(dbg) gscreen "Neues Datum"
+(dbg) keys 150388
+(dbg) gscreen "UDOS BC.5120"      ← danach steht der %-Prompt
 ```
 
 ### Am Programmanfang anhalten
@@ -499,6 +545,46 @@ Dazu die Ereignis-Haltepunkte:
 Kopfposition, Zylinder, Seite, Sektorgröße und ob gerade übertragen wird. `disk verify`
 liest die ganze Diskette durch und meldet Sektor-IDs und CRC-Zustand je Spur — die
 Antwort auf „liegt es am Programm oder an der Diskette?".
+
+### Die zweite CPU: ZVE2 und die Übergabe des Busses
+
+Diskettenzugriffe laufen auf dem A5120 **nicht** über die Haupt-CPU. Auf der ZRE-Karte
+sitzt ein zweiter Z80, **ZVE2**, der die Übertragung fährt. Er läuft nur, solange
+`/BUSRQ` gehalten wird; verständigt wird sich über gemeinsam genutzten Speicher (beim
+Systemstart etwa über das Fertig-Byte bei `03F8H`).
+
+Alle Kommandos ohne Zusatz meinen ZVE1. Für die zweite CPU gibt es:
+
+| Befehl | Wirkung |
+|---|---|
+| `b2 <A>` | Haltepunkt auf **ZVE2** |
+| `s2 [N]` | ZVE2 einzeln schrittweise (wirkt nur während einer Übertragung) |
+| `r 2` / `rj2` | ZVE2-Register |
+| `where` | **beide** CPUs, Bus-Master, `/BUSRQ`, Kopfposition — auf einen Blick |
+| `bbusrq [assert\|release]` | anhalten **auf der Flanke** von `/BUSRQ`, also im Moment der Übergabe |
+| `bxfer [read\|write] [start\|end]` | anhalten am Beginn/Ende einer K5122-Übertragung |
+| `clock` | Lauf-Budgets zählen die **Maschinenuhr** (beide CPUs), nicht nur ZVE1 |
+
+```
+(dbg) bbusrq
+(dbg) g
+** /BUSRQ asserted : ZVE2 PC=0000
+(dbg) where
+  ZVE1 01A7: 3E 7F          LD A,7FH        ← wartet
+  ZVE2 0000: C3 DD 01       JP 01DDH  [run] ← übernimmt den Bus
+  BUSRQ=yes  bus-master=ZVE2  K5122: D0 mounted cyl=0 head=0 READING headPos=5/4576
+```
+
+Damit werden **zeitliche Abhängigkeiten** greifbar, die sonst niemand sieht: wer wann
+den Bus hält, wo der Lesekopf gerade steht (`headPos` zählt innerhalb der Umdrehung),
+in welchem Takt ein Byte ankommt — und, weil jeder Speicher- und Port-Beobachter die
+**auslösende CPU** meldet, auch wer eine gemeinsame Zelle beschrieben hat. Genau diese
+Klasse von Fehlern (eine CPU ist zu früh, die andere überschreibt ein Ergebnis) ist an
+echter Hardware praktisch nicht zu fassen.
+
+> **Häufigste Falle:** wer den Haltepunkt für die Lese-Koroutine mit `b` statt `b2`
+> setzt, wartet vergeblich — sie läuft auf ZVE2. Das Werkzeug gibt dann einen Hinweis
+> aus; `help dualcpu` und `help floppy` fassen die Rezepte im Programm zusammen.
 
 ---
 
