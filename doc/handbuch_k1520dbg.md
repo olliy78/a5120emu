@@ -33,10 +33,11 @@ Emulator-Quelltexts.
 6. [In die Hardware hinein: Karten, PIO, SIO, CTC](#6-in-die-hardware-hinein-karten-pio-sio-ctc)
 7. [Die Zeit anhalten: Snapshots, Rückwärtsschritt, Zustandsdateien](#7-die-zeit-anhalten-snapshots-rückwärtsschritt-zustandsdateien)
 8. [Programme fernsteuern und Sitzungen automatisieren](#8-programme-fernsteuern-und-sitzungen-automatisieren)
-9. [Rezepte für typische Fälle](#9-rezepte-für-typische-fälle)
-10. [Grenzen und Fallstricke](#10-grenzen-und-fallstricke)
-11. [In den eigenen Arbeitsablauf einbinden](#11-in-den-eigenen-arbeitsablauf-einbinden)
-12. [Spickzettel](#12-spickzettel)
+9. [Die Maschine live bedienen: der Konsolenmodus](#9-die-maschine-live-bedienen-der-konsolenmodus)
+10. [Rezepte für typische Fälle](#10-rezepte-für-typische-fälle)
+11. [Grenzen und Fallstricke](#11-grenzen-und-fallstricke)
+12. [In den eigenen Arbeitsablauf einbinden](#12-in-den-eigenen-arbeitsablauf-einbinden)
+13. [Spickzettel](#13-spickzettel)
 
 ---
 
@@ -88,11 +89,13 @@ wertvolle Diskette loslassen, ohne sie zu verlieren.
 ### Aufrufen
 
 ```sh
-k1520dbg meine_diskette.img            # Diskette in Laufwerk A:
-k1520dbg system.hfe -b daten.hfe       # zweite Diskette in Laufwerk B:
+k1520dbg meine_diskette.img               # Diskette in Laufwerk A:
+k1520dbg system.hfe -b daten.hfe          # zweite Diskette in Laufwerk B:
+k1520dbg a.hfe -b b.hfe -c c.hfe -d d.hfe # alle vier Laufwerke
+k1520dbg system.hfe --console             # sofort live bedienen (§9)
 ```
 
-Angenommen werden `.img`, `.hfe` und `.dmk`. Ohne Diskette startet der Debugger auch —
+Angenommen werden `.img`, `.hfe` und `.dmk`; die K5122 hat **vier** Laufwerke. Ohne Diskette startet der Debugger auch —
 dann kommt die Maschine allerdings nicht über das Boot-ROM hinaus.
 
 **Mountmodus** (nur wenn nötig):
@@ -609,7 +612,64 @@ Alle Ausgaben gehen auf die Fehlerausgabe und lassen sich damit mitschneiden:
 
 ---
 
-## 9. Rezepte für typische Fälle
+## 9. Die Maschine live bedienen: der Konsolenmodus
+
+Bis hierher wurde die Maschine *ferngesteuert* — `keys` tippt, `gscreen` wartet. Manchmal
+will man aber einfach **selbst tippen**: ein Menü durchklicken, eine Eingabe
+ausprobieren, ein Programm bedienen, bis der Fehler kommt. Dafür gibt es `console`.
+
+```
+(dbg) console
+```
+
+Ab da geht jeder Tastenanschlag an die Maschine, und der Bildschirm steht im Terminal —
+in Echtzeit. `console 4` läuft vierfach (praktisch, um über einen langen Selbsttest
+hinwegzukommen), `console 0.5` halb so schnell.
+
+| Taste | Wirkung |
+|---|---|
+| `Ctrl-]` | zurück in den Debugger |
+| `Ctrl-C` | geht **an das Gastprogramm** — nicht an den Debugger |
+| Pfeile, `Entf`, `Tab`, `Esc`, `F1`–`F8` | auf die Tasten der K7637 abgebildet |
+
+### Der eigentliche Grund: Haltepunkte bleiben scharf
+
+Das ist der Punkt, an dem der Konsolenmodus mehr ist als eine Notlösung ohne
+Oberfläche:
+
+```
+(dbg) b 0x0100
+(dbg) console
+… von Hand die Uhrzeit eingeben, „meinprog" tippen, Enter …
+** bp ZVE1 : ZVE1 PC=0100
+  => 0100: C3 5D 04       JP 045DH
+(dbg) bt
+```
+
+Der Konsolenmodus **verlässt sich selbst**, sobald ein Haltepunkt, ein Watchpoint oder
+eine `bscreen`-Bedingung greift — und man steht mit allen Werkzeugen (`bt`, `dev`,
+`snap`, `u`) genau im interessanten Moment. Bedienen und sezieren im selben Programm;
+die Oberfläche kann keine Haltepunkte, und bis 2026-08-19 konnte der Debugger nicht
+live tippen.
+
+Ein typischer Ablauf: `bscreen "FEHLER"` armen, in den Konsolenmodus gehen, das Programm
+von Hand bis zur Fehlermeldung bedienen — und in dem Augenblick, in dem sie erscheint,
+steht die Maschine.
+
+### Grenzen
+
+* Braucht ein **Terminal**. Über eine Pipe sagt `console` das und verweist auf
+  `keys`/`gscreen`.
+* Das Terminal sollte **80×25** Zeichen haben.
+* Dargestellt wird der Zeichencode als ASCII; wo der Zeichengenerator des A5120 eine
+  andere Glyphe zeigt, sieht man den ASCII-Code.
+* Programme, die die Tastatur **direkt abfragen** statt gepuffert zu lesen (HARDY tut
+  das), können einen live getippten Anschlag verpassen. Das ist originalgetreu — die
+  Maschine verhält sich so. Für solche Fälle bleibt `keyuntil` (§8).
+
+---
+
+## 10. Rezepte für typische Fälle
 
 ### „Mein Programm hängt"
 
@@ -678,7 +738,7 @@ k1520dbg diskette.img -l quelle.mac@auto     falls Quelle vorhanden
 
 ---
 
-## 10. Grenzen und Fallstricke
+## 11. Grenzen und Fallstricke
 
 - **Zwei CPUs.** Die ZRE-Karte trägt zwei Z80: **ZVE1** ist die Haupt-CPU, **ZVE2** ein
   DMA-Prozessor, der nur während Diskettenübertragungen läuft. Alle Kommandos ohne
@@ -700,7 +760,7 @@ k1520dbg diskette.img -l quelle.mac@auto     falls Quelle vorhanden
 
 ---
 
-## 11. In den eigenen Arbeitsablauf einbinden
+## 12. In den eigenen Arbeitsablauf einbinden
 
 Der Debugger ist kein Programm, das man doppelklickt und wieder schließt. Er steht
 neben Editor, Assembler und Konsole — der Ablauf ist *bearbeiten → assemblieren → auf
@@ -714,14 +774,13 @@ ihn dort hineinstellt.
 | `k1520dbg` | dieser Debugger — **nur** Kommandozeile |
 | `k1520disktool-cli` | Dateien auf die Diskette und zurück — **nur** Kommandozeile |
 | `k1520disktool` | dasselbe mit Oberfläche |
-| `a5120emu` | der Emulator — **nur** mit Oberfläche |
+| `a5120emu` | der Emulator mit Oberfläche (die Konsolenfassung ist `k1520dbg console`, §9) |
 
-> **Der Emulator hat keine Konsolenfassung.** Er nimmt auch keine Diskette auf der
-> Kommandozeile entgegen (einziges Argument ist `--paths`, eine Pfadauskunft). Wer die
-> Maschine ohne Oberfläche fahren will — im Skript, in einem Makefile, in der CI —
-> nimmt dafür **`k1520dbg`**: `keys` tippt, `screen` liest den Bildschirm als Text,
-> `gscreen` wartet auf eine Ausgabe, `dialog` fährt eine ganze Menüfolge ab. Mit `-x`
-> läuft das ohne jede Eingabe durch (§8).
+> **Das Programm `a5120emu` hat keine Konsolenfassung** — es nimmt nicht einmal eine
+> Diskette auf der Kommandozeile entgegen (einziges Argument ist `--paths`, eine
+> Pfadauskunft). **Die Konsolenfassung des Emulators ist `k1520dbg console`** (§9):
+> Maschine live bedienen, Bildschirm im Terminal. Für den nicht-interaktiven Betrieb —
+> Skript, Makefile, CI — gibt es `keys`/`screen`/`gscreen`/`dialog` mit `-x` (§8).
 
 ### Pfade
 
@@ -808,7 +867,7 @@ nach dem Beenden, sonst sieht man einen halb geschriebenen Stand.
 
 ---
 
-## 12. Spickzettel
+## 13. Spickzettel
 
 ```
 LAUFEN     g [N] · gu ADR · s [N] · n [N] · fin · rs [N] · rc
@@ -826,6 +885,7 @@ HARDWARE   dev · dev ctc · dev sio · dev pio [all|bs|k5122ctrl|k5122data]
 QUELLE     -l DATEI[@auto] · lst DATEI · list ADR · sym add NAME ADR · verify DATEI @ADR
 ZUSTAND    snap NAME · restore NAME · snap diff A B · savestate F · loadstate F
 STEUERN    keys TEXT (\r \s \e \xNN) · gscreen "TXT" · bscreen "TXT" · keyuntil
+LIVE       console [tempo]   selbst tippen; Ctrl-] zurueck; Haltepunkte bleiben scharf
 ÄNDERN     e ADR BYTES(hex) · set REG WERT
 SONST      reset · alias · source DATEI · q
 AUSDRÜCKE  A HL SP PC … · [ADR] Byte · [ADR]w Wort · + - * / & | ^ << >> · == != < >

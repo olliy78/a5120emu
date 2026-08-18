@@ -53,7 +53,7 @@ bestehen bleiben soll (z. B. Formatier-Versuche) — dann auf einer eigenen Kopi
 
 | Werkzeug | Zweck | Doku |
 |---|---|---|
-| **`k1520dbg`** | Interaktiver gdb-artiger Debugger für **beide** CPUs: bedingte und Ereignis-Breakpoints, Step into/over/out, Reverse-Step + Snapshots + Save-State, Watch auf Speicher/Ports, Logpoints, `x`-Examine, `.prn`/`.MAC`-Annotation, Chip-Zustand (`dev`, `ivt`), History-`bt` | **[k1520dbg.md](k1520dbg.md)** |
+| **`k1520dbg`** | Interaktiver gdb-artiger Debugger für **beide** CPUs — und mit `console` zugleich die **Konsolenfassung des Emulators** (live bedienen, Haltepunkte bleiben scharf): bedingte und Ereignis-Breakpoints, Step into/over/out, Reverse-Step + Snapshots + Save-State, Watch auf Speicher/Ports, Logpoints, `x`-Examine, `.prn`/`.MAC`-Annotation, Chip-Zustand (`dev`, `ivt`), History-`bt` | **[k1520dbg.md](k1520dbg.md)** |
 | **`boot_trace`** | Nicht-interaktiver Boot-/DMA-Tracer: Report mit Histogrammen, `[03F8]`-Done-Flag und VRAM-Banner; `--until`, `--coverage`/`--diff`, `--csv`, `--fold`, `--itrace`, Log-Gates | **[boot_trace.md](boot_trace.md)** |
 | `format_driver` | Skriptgesteuerter Treiber für interaktive Gastprogramme: bootet CP/A mit zwei Disketten, sendet Tastenfolgen, gibt zwischen den Schritten den 80×24-Text aus. Rückgrat der Formatier-Pipeline (`FORMAT.COM`/`FORMATB.COM`) | `doc/format.md` |
 | `kbd_test` | Tastatur-/Boot-Smoke: bootet, tippt Text + Enter, gibt Bildschirm, Tastatur-Portverkehr (0x5C/0x5D mit Quell-PC) und ein PC-Histogramm aus | unten |

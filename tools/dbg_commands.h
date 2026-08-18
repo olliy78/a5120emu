@@ -31,7 +31,7 @@ inline const std::vector<std::string>& names() {
         // memory / symbols / listings
         "load","save","sym","lst","verify",
         // misc
-        "mark","keys","keyuntil","screen","gscreen","bscreen","dialog",
+        "mark","keys","keyuntil","screen","gscreen","bscreen","dialog","console",
         "reset","disk","alias","unalias","source","help","q","quit",
     };
     return n;

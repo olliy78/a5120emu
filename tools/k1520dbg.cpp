@@ -58,6 +58,8 @@
 #include <csignal>
 #include <chrono>
 #include "core/util/os_compat.h"   // processId, isTerminal
+#include "tools/term_console.h"   // Konsolenmodus: Rohmodus, Tasten, Bildschirm
+#include <thread>
 
 using k1520::logging::Logger;
 using k1520::logging::Level;
@@ -153,8 +155,12 @@ static void dbgCompleter(ic_completion_env_t* cenv, const char* prefix){
 // =============================================================================
 int main(int argc, char** argv){
     // ── Phase 1: CLI parsing ── DISK [-x script] [-s symfile]… [-l listing.prn]…
-    const char* disk = nullptr;
-    const char* diskB = nullptr;           // -b: second disk, mounted on B: (drive 1)
+    // Disketten je Laufwerk: [0]=A: (erstes Argument ohne Schalter), [1..3]=B:/C:/D:
+    // ueber -b/-c/-d.  Die Hardware kann vier (K5122::drives_[4]); bis 2026-08-19 bot
+    // die Kommandozeile nur zwei an, was Kombi-Disketten (Fremdsystem auf C:) nur
+    // ueber den Umweg eines Skripts erreichbar machte.
+    const char* disks[4] = { nullptr, nullptr, nullptr, nullptr };
+    const char*& disk  = disks[0];
     const char* script = nullptr;
     std::vector<std::string> symfiles;     // -s: symbol tables (repeatable)
     std::vector<std::string> prnfiles;     // -l: MACRO-80 .prn listings (repeatable)
@@ -163,11 +169,15 @@ int main(int argc, char** argv){
     // (no more manual `mktemp; cp DISK $T; … $T; rm $T` ritual). `--rw` mounts the
     // original writable (writes persist); `--read-only`/`--ro` mounts write-protected.
     enum { MOUNT_COW=0, MOUNT_RW=1, MOUNT_RO=2 } mount_mode = MOUNT_COW;
+    bool start_console = false;   // --console: sofort in den Konsolenmodus (§9)
     for (int i=1;i<argc;++i){
         if (!strcmp(argv[i],"-x") && i+1<argc) script=argv[++i];
         else if (!strcmp(argv[i],"-s") && i+1<argc) symfiles.push_back(argv[++i]);
         else if (!strcmp(argv[i],"-l") && i+1<argc) prnfiles.push_back(argv[++i]);
-        else if (!strcmp(argv[i],"-b") && i+1<argc) diskB=argv[++i];
+        else if (!strcmp(argv[i],"-b") && i+1<argc) disks[1]=argv[++i];
+        else if (!strcmp(argv[i],"-c") && i+1<argc) disks[2]=argv[++i];
+        else if (!strcmp(argv[i],"-d") && i+1<argc) disks[3]=argv[++i];
+        else if (!strcmp(argv[i],"--console")) start_console=true;
         else if (!strcmp(argv[i],"--rw")) mount_mode=MOUNT_RW;
         else if (!strcmp(argv[i],"--cow")) mount_mode=MOUNT_COW;
         else if (!strcmp(argv[i],"--read-only")||!strcmp(argv[i],"--ro")) mount_mode=MOUNT_RO;
@@ -223,14 +233,19 @@ int main(int argc, char** argv){
             if (!hinweis.empty()) fprintf(stderr,"  ! %s\n",hinweis.c_str());
         }
     }
-    if (diskB){ bool wp; std::string mp=prepareDisk(diskB,wp);
-        if (!(m.mountDisk(1,mp,"cpa780",wp) || m.mountDisk(1,mp,"cpa800",wp))){
-            fprintf(stderr,"WARN: mount B '%s' failed: %s\n",diskB,m.lastError().c_str());
+    // B:/C:/D: — identisch behandelt, nur der Laufwerksbuchstabe wechselt.
+    for (int drv=1; drv<4; ++drv){
+        if (!disks[drv]) continue;
+        bool wp; std::string mp=prepareDisk(disks[drv],wp);
+        const char letter = (char)('A'+drv);
+        if (!(m.mountDisk(drv,mp,"cpa780",wp) || m.mountDisk(drv,mp,"cpa800",wp))){
+            fprintf(stderr,"WARN: mount %c '%s' failed: %s\n",letter,disks[drv],
+                    m.lastError().c_str());
             mount_failed = true;
         }
         else {
-            fprintf(stderr,"Mounted %s on B:%s\n",diskB,wp?" (read-only)":"");
-            const std::string hinweis = m.diskNotice(1);
+            fprintf(stderr,"Mounted %s on %c:%s\n",disks[drv],letter,wp?" (read-only)":"");
+            const std::string hinweis = m.diskNotice(drv);
             if (!hinweis.empty()) fprintf(stderr,"  ! %s\n",hinweis.c_str());
         }
     }
@@ -1152,6 +1167,81 @@ int main(int argc, char** argv){
         }
         return screenContains(pat);
     };
+    // ── Konsolenmodus: die Maschine LIVE bedienen ────────────────────────────
+    // Der eigentliche Gewinn ist nicht das Emulieren im Terminal (dafuer gibt es
+    // die Oberflaeche), sondern dass die HALTEPUNKTE SCHARF BLEIBEN: von Hand bis
+    // zum Fehler bedienen, dann steht die Maschine im Debugger. Das kann sonst
+    // nichts — die Oberflaeche hat keine Haltepunkte, der Debugger hatte keine
+    // lebende Eingabe.
+    //
+    // Warum das verlustfrei geht: der K7024 ist ein ZEICHENbildschirm, Bit [6:0]
+    // Code, Bit 7 Cursor (k7024.cpp). Ein Terminal gibt ihn Zelle fuer Zelle wieder.
+    auto consoleMode = [&](double speed){
+        if (!k1520::os::isTerminal(0)){
+            fprintf(stderr,"  console braucht ein Terminal — im Pipe-/Skriptbetrieb "
+                           "stattdessen keys/gscreen benutzen\n");
+            return;
+        }
+        k1520term::RawMode raw;
+        if (!raw.ok()){ fprintf(stderr,"  console: Terminal laesst sich nicht in den "
+                                       "Rohmodus schalten\n"); return; }
+        if (speed <= 0.0) speed = 1.0;
+
+        k1520term::Keyboard kb;
+        k1520term::ScreenDiff scr;
+        k1520term::ScreenDiff::clear(stderr);
+        scr.invalidate();
+
+        // Anschlagstakt: der K7637 sendet den Code SOFORT beim Druecken und wiederholt
+        // erst nach 500 ms (REPEAT_DELAY_MS). Also kurz halten (bleibt unter der
+        // Wiederholschwelle) und danach eine Luecke lassen, damit zwei gleiche Tasten
+        // hintereinander zwei Bytes ergeben (die Strecke laeuft mit 9600 Baud).
+        constexpr uint64_t kHold = 60000;   // ~24 ms Maschinenzeit
+        constexpr uint64_t kGap  = 20000;   // ~8 ms
+        std::deque<int> pending; int held=-1; uint64_t hold_until=0, gap_until=0;
+
+        const uint64_t per_frame = (uint64_t)(2450000.0 * 0.020 * speed);
+        auto next = std::chrono::steady_clock::now();
+        bool leave=false;
+
+        std::string status = "  Ctrl-]  zurueck in den Debugger";
+        if (disks[0]) status += "   |  A: " + std::string(disks[0]);
+        for (int d=1;d<4;++d) if (disks[d])
+            status += std::string("  ") + (char)('A'+d) + ": " + disks[d];
+
+        while (!leave){
+            for (;;){                                   // alle anliegenden Tasten holen
+                int k = kb.read();
+                if (k == k1520term::KEY_NONE) break;
+                if (k == k1520term::KEY_LEAVE){ leave=true; break; }
+                pending.push_back(k);
+            }
+            if (leave) break;
+
+            const uint64_t now = runClock();
+            if (held>=0 && now>=hold_until){ m.keyRelease(held); held=-1; gap_until=now+kGap; }
+            if (held<0 && !pending.empty() && now>=gap_until){
+                held = pending.front(); pending.pop_front();
+                m.keyPress((uint32_t)held,false,false);
+                hold_until = now + kHold;
+            }
+
+            goSilent(per_frame);
+            scr.render([&](int r,int c){
+                return m.memReadDebug((uint16_t)(0xF800 + r*80 + c)); }, stderr, status);
+            if (hit) break;                             // Haltepunkt → zurueck in den Debugger
+
+            next += std::chrono::milliseconds(20);
+            std::this_thread::sleep_until(next);
+        }
+
+        if (held>=0) m.keyRelease(held);
+        raw.disable();
+        k1520term::ScreenDiff::clear(stderr);
+        if (hit){ fprintf(stderr,"  (console verlassen: Haltepunkt)\n"); onStop(); }
+        else      fprintf(stderr,"  (console verlassen)\n");
+    };
+
     // set a register (ZVE1 default, cpu=2 → ZVE2)
     auto setReg = [&](int cpu, std::string name, long v)->bool{
         Z80& z = (cpu==2)? m.zve2Debug() : m.cpuDebug();
@@ -1291,6 +1381,7 @@ int main(int argc, char** argv){
     ic_set_history(nullptr, -1);               // History nur im Speicher, 200 Einträge
     ic_set_default_completer(dbgCompleter, nullptr);
 #endif
+    if (start_console) consoleMode(1.0);   // --console
     std::string line;
     for (;;){
         // read one command (echo script lines so piped sessions are readable)
@@ -1407,6 +1498,7 @@ int main(int argc, char** argv){
               "                    @auto = Ladeversatz aus den Objektbytes im RAM bestimmen\n"
               "                    @labels/@noanchor (nur .MAC): Mxxxx-Adressanker erzwingen/abschalten\n"
               "          keys <text> (\\r \\t \\e \\s \\xNN) ; screen [find \"txt\"] ; reset ; q\n"
+              "          console [tempo]  Maschine LIVE bedienen (Ctrl-] zurueck; Haltepunkte bleiben scharf)\n"
               "          gscreen \"txt\"|/re/ [maxcyc]   run until screen shows txt (deterministic menus)\n"
               "          bscreen \"txt\"|/re/ | off      arm: any g/gu/n stops on screen match\n"
               "          keyuntil \"<key>\" \"txt\" [maxcyc]  press key until screen shows txt (poll-robust)\n"
@@ -1916,9 +2008,16 @@ int main(int argc, char** argv){
             fprintf(stderr,"  (ivt all = auch gesperrte Quellen; ivt 2 = I-Register der ZVE2; ~ = SIO-Basisvektor)\n"); }
         else if (cmd=="disk"){   // §13 disk verify [B]: Sektor-/CRC-Health aller Spuren
             if (t.size()>=2 && t[1]=="verify"){
-                bool wantB = t.size()>=3 && (t[2]=="B"||t[2]=="b"||t[2]=="1");
-                diskVerify(wantB?diskB:disk, wantB?"B:":"A:");
-            } else fprintf(stderr,"  disk verify [B]   Sektor-/CRC-Health aller Spuren des Originals\n"); }
+                // Laufwerk als Buchstabe (A..D) oder Zahl (0..3); ohne Angabe A:.
+                int drv = 0;
+                if (t.size()>=3 && !t[2].empty()){
+                    char a = (char)toupper((unsigned char)t[2][0]);
+                    if (a>='A'&&a<='D') drv = a-'A';
+                    else if (a>='0'&&a<='3') drv = a-'0';
+                }
+                const char letter[2] = { (char)('A'+drv), 0 };
+                diskVerify(disks[drv], (std::string(letter)+":").c_str());
+            } else fprintf(stderr,"  disk verify [A|B|C|D]   Sektor-/CRC-Health aller Spuren des Originals\n"); }
         else if (cmd=="clock"){   // §7: Uhrenwahl für Lauf-Budgets (g/gu/gscreen/hist)
             if (t.size()>1){
                 if (t[1]=="zve1") clock_machine=false;
@@ -1927,6 +2026,9 @@ int main(int argc, char** argv){
             fprintf(stderr,"  Lauf-Uhr = %s   ZVE1=%llu  Maschine=%llu\n",
                     clock_machine?"Maschine (beide CPUs)":"ZVE1",
                     (unsigned long long)m.cpuCycles(),(unsigned long long)m.machineCycles()); }
+        else if (cmd=="console"){   // §9: Maschine live bedienen, Haltepunkte bleiben scharf
+            double sp = (t.size()>1)? atof(t[1].c_str()) : 1.0;
+            consoleMode(sp); }
         else if (cmd=="reset"){ m.reset(); fprintf(stderr,"  reset\n"); }
         // ── MISC: command aliases + sourcing a script mid-session ──
         else if (cmd=="alias"){
