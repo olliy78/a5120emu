@@ -569,8 +569,11 @@ Was beim Weiterarbeiten zu wissen ist:
   Zweite Eigenheit, die man nicht für einen Defekt halten darf: **der Systembereich ist
   grösser** — gesperrt ist Kopf 0 (Sektoren 0…15) der Spuren 0, **21** (Bootspur), 22
   und 23 ganz, Kopf 1 derselben Spuren trägt Dateidaten.  Wächter: `Udos1715P8000.*`
-  auf der Fixture `udos1715_640k_p8000_wega.img`.  Lesen **und** Schreiben am echten
-  Laufwerk gegengeprüft (Datei einfügen → 4 Spuren zurückgeschrieben und geprüft, frisch
+  auf der Fixture `udos1715_640k_p8000_wega.hfe` — sie liegt als `.hfe` vor, weil 13
+  ihrer Sektoren hinter der Daten-CRC die **Schreibnaht** eines überschriebenen Sektors
+  tragen und `rawCompatible()` dafür zu Recht `.img` verweigert (anders als beim
+  PC 1715, dessen Fixture ein `.img` ist).  Lesen **und** Schreiben am echten Laufwerk
+  gegengeprüft (Datei einfügen → 4 Spuren zurückgeschrieben und geprüft, frisch
   zurückgelesen byteweise gleich, löschen → 2 Spuren; Vollmessung zeigt genau die
   gemeldeten Spuren geändert, danach aus der Sicherung wiederhergestellt).
 - **UDOS1715/NDOS — die zweite UDOS-Ausprägung (2026-08-17,

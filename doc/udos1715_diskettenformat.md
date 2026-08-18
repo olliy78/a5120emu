@@ -171,7 +171,11 @@ Text sagte das; er war zu eng gefasst). Was bleibt:
 
 Geprüft wird deshalb nur noch, dass hinter dem Belegungsplan **`00` oder `77H`** steht,
 und Byte `179H` gar nicht mehr — beim P8000 trägt es `01`.
-Wächter: `Udos1715P8000.*` auf der Fixture `udos1715_640k_p8000_wega.img`.
+Wächter: `Udos1715P8000.*` auf der Fixture `udos1715_640k_p8000_wega.hfe` — sie liegt
+als `.hfe` vor, weil 13 ihrer Sektoren hinter der Daten-CRC die Schreibnaht eines
+nachträglich überschriebenen Sektors tragen (`4E xx yy yy …`); `rawCompatible()` sieht
+dort Bytes außerhalb der Nutzdaten und verweigert `.img`.  Das ist kein Widerspruch zu
+§8 — die Diskette DÜRFTE ein `.img` sein, diese Aufnahme ist es nur nicht.
 
 > **Der Systembereich ist beim P8000 größer.** Gesperrt ist dort jeweils der ganze
 > **Kopf 0** (Sektoren 0…15) der Spuren 0 (Urlader/BFOS), **21** (Bootspur), 22

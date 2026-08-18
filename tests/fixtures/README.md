@@ -58,7 +58,7 @@ gewähltem Laufwerk die zugehörigen Formate an (5¼″ einseitig, 8″ SD/DD) �
 Fremdformate testbar, obwohl physisch immer dasselbe Laufwerk emuliert wird.
 Details: `doc/format.md` §11 und §5/§3.5.
 
-## Warum die UDOS1715-Fixture ein `.img` ist
+## Warum die PC-1715-Fixture ein `.img` ist — und die P8000-Fixture keins
 
 Weil sie es sein DARF, und weil das 640 KB statt 2 MB im Verzeichnisbaum bedeutet.
 UDOS1715/NDOS hält die Dateiverkettung in eigenen Zeigersektoren *innerhalb* der
@@ -68,9 +68,15 @@ liegt und ein rohes Sektorabbild unbrauchbar macht. Genau das prüft
 Aufnahme derselben Diskette liegt als `disks/udos1715_640k_pc1715_system.hfe` im
 Arbeitsverzeichnis. Hintergrund: `doc/udos1715_diskettenformat.md` §8.
 
+Die **P8000**-Aufnahme ist trotzdem ein `.hfe`: 13 ihrer Sektoren tragen hinter der
+Daten-CRC die Schreibnaht eines nachträglich überschriebenen Sektors, und
+`rawCompatible()` verweigert `.img`, sobald dort Bytes außerhalb der Nutzdaten liegen.
+Eine Fixture, die das Werkzeug selbst nicht schreiben würde, wäre ein schlechter
+Prüfstein.
+
 ## Zwei UDOS1715-Disketten, weil zwei Rechner dasselbe Format verschieden füllen
 
-`udos1715_640k_pc1715_system.img` (PC 1715) und `udos1715_640k_p8000_wega.img`
+`udos1715_640k_pc1715_system.img` (PC 1715) und `udos1715_640k_p8000_wega.hfe`
 (Robotron P8000) tragen dasselbe Dateisystem an denselben Offsets.  Die P8000-Diskette
 kam trotzdem als „kein gueltiger UDOS1715-Diskettenbelegungsplan" zurück: ihr
 Formatierer lässt zwischen Belegungsplan und Zählern den `77H`-Nachlauf der ZDOS-Sitte
