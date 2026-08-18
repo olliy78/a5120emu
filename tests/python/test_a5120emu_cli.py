@@ -146,3 +146,25 @@ def test_zweite_diskette_landet_in_b():
         assert belegung.get(1) == str(DISK_MINI)
     finally:
         fenster.close()
+
+
+def test_die_ausgabe_ist_utf8_auch_wenn_die_umgebung_etwas_anderes_sagt():
+    """Umgeleitete Ausgabe unter Windows — der Fall, der in der CI zuschlug.
+
+    An einer echten Konsole schreibt Python unter Windows UTF-8; bei einer
+    UMGELEITETEN Ausgabe (Pipe, Datei) nimmt es die Kodepage des Systems.  Der
+    Hilfetext trägt einen Gedankenstrich, und der ist in cp1252 das Byte 0x97 —
+    wer die Ausgabe einliest, bekam `UnicodeDecodeError` statt der Hilfe
+    (windows-ci am 2026-08-18, `py_a5120emu_cli` rot mit
+    „argument of type 'NoneType' is not iterable").
+
+    Nachgestellt wird das mit ``PYTHONIOENCODING``: das ist genau der Hebel, mit
+    dem Python die Kodierung der Ströme bestimmt, und er wirkt auf jedem System.
+    """
+    umgebung = {**os.environ, "PYTHONIOENCODING": "cp1252"}
+    r = subprocess.run([sys.executable, str(MAIN), "--help"],
+                       capture_output=True, timeout=120,
+                       cwd=str(PROJECT_ROOT), env=umgebung)
+    assert r.returncode == 0, r.stderr
+    r.stdout.decode("utf-8")          # wirft, wenn es doch die Kodepage war
+    assert "—" in r.stdout.decode("utf-8"), "der Gedankenstrich ist der Prüfstein"

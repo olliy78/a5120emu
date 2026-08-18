@@ -136,12 +136,12 @@ jobs:
                        share/doc/lizenzen/greaseweazle-COPYING.txt; do
             [ -f "$root/$datei" ] || { echo "FEHLER: $datei fehlt im Paket"; exit 1; }
           done
-          # Das Greaseweazle-Rad liegt NEBEN der Payload (wie requirements.lock):
+          # Das Greaseweazle-wheel liegt NEBEN der Payload (wie requirements.lock):
           # der Installer spielt es in die Laufzeitumgebung ein, in der
           # Installation selbst hat es nichts verloren.
-          rad=$(ls "$root"/../wheels/greaseweazle-*-py3-none-any.whl 2>/dev/null | head -1)
-          [ -n "$rad" ] || { echo "FEHLER: kein plattformunabhaengiges Greaseweazle-Rad"; exit 1; }
-          echo "     $(basename "$rad")"
+          wheel=$(ls "$root"/../wheels/greaseweazle-*-py3-none-any.whl 2>/dev/null | head -1)
+          [ -n "$wheel" ] || { echo "FEHLER: kein plattformunabhaengiges Greaseweazle-wheel"; exit 1; }
+          echo "     $(basename "$wheel")"
           # Der Kern darf von Greaseweazle NICHTS wissen (Entwurf §14: kein USB,
           # kein Import, kein Rueckruf) — sonst waere ein anderer Adapter eine
           # Kernaenderung.
@@ -357,10 +357,10 @@ jobs:
                                'share\doc\lizenzen\greaseweazle-COPYING.txt')) {
             if (-not (Test-Path -LiteralPath "$root\$datei")) { throw "$datei fehlt im Paket" }
           }
-          $rad = Get-ChildItem "$root\..\wheels\greaseweazle-*-py3-none-any.whl" `
+          $wheel = Get-ChildItem "$root\..\wheels\greaseweazle-*-py3-none-any.whl" `
                  -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $rad) { throw 'kein plattformunabhaengiges Greaseweazle-Rad im Paket' }
-          Write-Host "     $($rad.Name)"
+          if (-not $wheel) { throw 'kein plattformunabhaengiges Greaseweazle-wheel im Paket' }
+          Write-Host "     $($wheel.Name)"
 
       - name: Paket als Artefakt
         uses: actions/upload-artifact@v4

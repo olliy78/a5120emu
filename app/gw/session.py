@@ -57,7 +57,7 @@ def verfuegbarkeit() -> Tuple[bool, str]:
         # im venv eines anderen Projekts, ist genau das die Auskunft, die fehlt.
         #
         # In einer Installation AUS DEM PAKET darf dieser Fall gar nicht auftreten:
-        # der Installer spielt ein mitgeliefertes Rad ein (packaging/gw_pins.txt).
+        # der Installer spielt ein mitgeliefertes wheel ein (packaging/gw_pins.txt).
         # Steht es trotzdem hier, ist beim Einrichten etwas schiefgegangen — deshalb
         # der Satz davor, sonst sucht der Anwender den Fehler bei sich.
         return False, ("Das Paket „greaseweazle“ ist in dieser Python-Umgebung nicht "

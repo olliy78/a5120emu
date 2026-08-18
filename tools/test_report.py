@@ -420,6 +420,17 @@ def zerlege_eintrag(eintrag: str) -> tuple[str, Path]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Unter Windows benutzt Python fuer eine UMGELEITETE Ausgabe die Kodepage des
+    # Systems statt UTF-8 — und genau so wird dieses Programm aufgerufen
+    # (`--summary-md - >> $GITHUB_STEP_SUMMARY`).  Die Kurzfassung traegt ein
+    # Kreuzchen und einen Haken; in cp1252 gibt es beide nicht, und das Programm
+    # brach beim Schreiben ab.  An einer echten Konsole aendert die Zeile nichts.
+    for _strom in (sys.stdout, sys.stderr):
+        try:
+            _strom.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+
     p = argparse.ArgumentParser(
         description="JUnit-XML (ctest/pytest) → eigenständiges HTML-Testprotokoll")
     p.add_argument("xml", nargs="+", metavar="[NAME:]DATEI",

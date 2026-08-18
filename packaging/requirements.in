@@ -14,9 +14,9 @@ PyYAML>=6.0
 
 # Abhängigkeiten der Greaseweazle-Anbindung (echte Diskettenlaufwerke am
 # Greaseweazle-Adapter, app/gw/).  Greaseweazle SELBST steht nicht hier: es
-# liegt nicht auf PyPI, sondern kommt als fertig gebautes Rad mit dem Paket
+# liegt nicht auf PyPI, sondern kommt als fertig gebautes wheel mit dem Paket
 # (packaging/gw_pins.txt).  Seine vier Abhängigkeiten liegen sehr wohl auf
-# PyPI — und nur mit ihnen zusammen ergibt das Rad ein lauffähiges Paket.
+# PyPI — und nur mit ihnen zusammen ergibt das wheel ein lauffähiges Paket.
 crcmod
 bitarray>=3
 pyserial

@@ -27,6 +27,22 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# ── Ausgabe auf UTF-8 festnageln ────────────────────────────────────────────
+#
+# Unter Windows benutzt Python fuer eine UMGELEITETE Ausgabe (Pipe, Datei) die
+# Kodepage des Systems, nicht UTF-8 — an einer echten Konsole dagegen sehr wohl
+# UTF-8.  Der Unterschied faellt genau dort auf, wo niemand hinsieht: `--help`
+# enthaelt einen Gedankenstrich, und der ist in cp1252 das Byte 0x97.  Wer die
+# Ausgabe in eine Datei leitet oder sie (wie die Testebene) einliest, bekam
+# `UnicodeDecodeError` bzw. gar nichts.  An der Konsole aendert die Zeile nichts,
+# dort ist UTF-8 ohnehin schon eingestellt.
+for _strom in (sys.stdout, sys.stderr):
+    try:
+        _strom.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):      # kein TextIO (z. B. umgebogen)
+        pass
+
+
 # --paths: aufgelöste Pfade ausgeben und beenden.  Steht VOR den Qt- und
 # Bindungs-Importen, damit die Auskunft auch dann kommt, wenn genau das fehlt,
 # wonach gefragt wird (Kernbibliothek, PySide6).  Rauchtest des Installers,

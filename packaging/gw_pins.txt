@@ -8,7 +8,10 @@
 # (`greaseweazle.optimised`), und die muesste beim ANWENDER uebersetzt werden.
 # Unter Windows hat er keinen Uebersetzer; die Installation braeche ab.
 #
-# Deshalb wird beim SCHNUEREN ein Rad („wheel") gebaut und dem Paket beigelegt
+# Deshalb wird beim SCHNUEREN ein **wheel** daraus gebaut und dem Paket beigelegt
+# (ein wheel, Endung `.whl`, ist das FERTIGE Installationsformat fuer
+# Python-Pakete — ein ZIP aus den einspielbaren Dateien plus `*.dist-info`;
+# der Gegensatz ist das Quellarchiv, das `pip` erst bauen muss)
 # (packaging/build_payload.sh, `--refresh-gw` frischt die Pins auf).  Der
 # Installer spielt es ohne Netz und ohne Uebersetzer ein; die vier
 # Abhaengigkeiten (crcmod, bitarray, pyserial, requests) liegen dagegen sehr wohl
@@ -19,7 +22,7 @@
 # haben einen Rueckfall in Python (`except AttributeError` in usb.py:487 und
 # track.py:406); gemessen am 2026-08-18 kostet der Verzicht rund 25 ms je Spur,
 # waehrend das Lesen einer Spur am echten Laufwerk 500–800 ms dauert.  Dafuer
-# gibt es EIN Rad fuer alle Systeme (py3-none-any), keinen Uebersetzer beim
+# gibt es EIN wheel fuer alle Systeme (py3-none-any), keinen Uebersetzer beim
 # Anwender und keine Bindung an die Python-Nebenversion.  Der Preis dafuer ist
 # eine Warnzeile auf der Standardausgabe beim Import — die faengt
 # app/gw/device.py ab (dort steht auch warum: die Ausgabe ist bei

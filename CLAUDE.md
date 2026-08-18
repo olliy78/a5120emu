@@ -237,16 +237,18 @@ Neben Emulator und DiskTool liefert das Paket den **Debugger `k1520dbg`** aus, d
 - **`k1520dbg` hat keinen `--help`-Schalter** — jedes freie Argument gilt als Diskette. Der
   Rauchtest ist deshalb überall `printf 'q\n' | k1520dbg` (Sitzung auf, Sitzung zu); eine
   Diskette braucht er dafür nicht.
-- **Greaseweazle liegt als fertiges Rad im Paket** (`packaging/gw_pins.txt`, `wheels/`
+- **Greaseweazle liegt als fertiges wheel im Paket** — ein *wheel* (`.whl`) ist das
+  einspielfertige Format für Python-Pakete, das `pip` nur noch auspackt statt es zu
+  bauen (`packaging/gw_pins.txt`, `wheels/`
   neben der Payload). Es liegt **nicht auf PyPI**, und sein Quellarchiv erklärt eine
   C-Erweiterung, die beim Anwender übersetzt werden müsste — unter Windows aussichtslos.
-  Das Rad ist daher **`py3-none-any`**, die Erweiterung entfällt über einen
+  Das wheel ist daher **`py3-none-any`**, die Erweiterung entfällt über einen
   **vorgeschalteten Aufsatz** (`setuptools.setup` abfangen, `ext_modules` verwerfen; nicht
   in `setup.py` schneiden — das hielte die nächste Fassung nicht). Kosten: **~25 ms je
-  Spur** gegen 500–800 ms Lesezeit. Solange `ext_modules` gesetzt ist, wird das Rad an
+  Spur** gegen 500–800 ms Lesezeit. Solange `ext_modules` gesetzt ist, wird das wheel an
   Plattform UND ABI gebunden, auch ohne Übersetzung — `build_payload.sh` prüft den Namen
   nach. Die vier Abhängigkeiten (crcmod, bitarray, pyserial, requests) kommen mit
-  Prüfsumme aus `requirements.lock`; das Rad selbst spielt der Installer mit **`--no-deps`**
+  Prüfsumme aus `requirements.lock`; das wheel selbst spielt der Installer mit **`--no-deps`**
   ein, und ein Fehlschlag dabei wirft die Installation NICHT hin.
 - **Ohne die C-Erweiterung meldet sich `greaseweazle.optimised` auf der STANDARDAUSGABE.**
   Bei `k1520disktool --physical` ist die die Nutzlast — `app/gw/device.py` liest die

@@ -1529,9 +1529,9 @@ def test_gw_pins_sind_vollstaendig():
 
 
 def test_die_abhaengigkeiten_der_anbindung_stehen_im_lock():
-    """greaseweazle selbst kommt als Rad — seine vier Abhängigkeiten von PyPI.
+    """greaseweazle selbst kommt als wheel — seine vier Abhängigkeiten von PyPI.
 
-    Ohne sie ist das Rad ein Paket, das sich einspielen lässt und beim ersten
+    Ohne sie ist das wheel ein Paket, das sich einspielen lässt und beim ersten
     Import auseinanderfällt.  `--require-hashes` verlangt dabei, dass sie
     festgenagelt sind.
     """
@@ -1549,7 +1549,7 @@ def test_das_rad_wird_plattformunabhaengig_gebaut():
 
     `setup.py` von greaseweazle erklärt eine C-Erweiterung.  Sie ist reine
     Beschleunigung (beide Aufrufstellen fallen auf Python zurück), aber solange
-    `ext_modules` gesetzt ist, wird das Rad an Plattform UND Python-Nebenversion
+    `ext_modules` gesetzt ist, wird das wheel an Plattform UND Python-Nebenversion
     gebunden — auch wenn gar nichts übersetzt wurde.
     """
     bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
@@ -1576,11 +1576,11 @@ def test_der_installer_spielt_das_rad_ohne_netz_ein():
         "ein Fehlschlag beim Einspielen darf die Installation nicht abbrechen"
 
     iss = _iss()
-    assert "ExtractTemporaryFile('{#GwRad}')" in iss
+    assert "ExtractTemporaryFile('{#GwWheel}')" in iss
     assert "--no-deps" in iss
     # Vor dem Schlankmachen — slim.py wirft pip aus der Laufzeitumgebung.
-    assert iss.index("{#GwRad}") < iss.index("Überflüssiges entfernen"), \
-        "das Rad muss eingespielt sein, BEVOR slim.py pip entfernt"
+    assert iss.index("{#GwWheel}") < iss.index("Überflüssiges entfernen"), \
+        "das wheel muss eingespielt sein, BEVOR slim.py pip entfernt"
 
 
 def test_der_assistent_sagt_vorher_dass_greaseweazle_dazukommt():

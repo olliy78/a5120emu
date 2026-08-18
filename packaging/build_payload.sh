@@ -201,13 +201,16 @@ lies_gw_pins() {
         || die "gw_pins.txt nennt keine Größe/Prüfsumme für $GW_DATEI"
 }
 
-# ─── Greaseweazle: das Rad bauen ─────────────────────────────────────────────
+# ─── Greaseweazle: das wheel bauen ───────────────────────────────────────────
 #
-#   gw_rad_bauen <radverzeichnis> <lizenzverzeichnis>
+#   gw_wheel_bauen <wheelverzeichnis> <lizenzverzeichnis>
+#
+# Ein wheel (Endung `.whl`) ist das fertige Installationsformat fuer
+# Python-Pakete: `pip` packt es nur noch aus, statt es erst zu bauen.
 #
 # Laedt das gepinnte Quellarchiv, prueft die Pruefsumme, baut daraus ein
-# plattformunabhaengiges Rad (py3-none-any) und legt COPYING daneben.  Setzt
-# GW_RAD auf den Dateinamen des Rades.
+# plattformunabhaengiges wheel (py3-none-any) und legt COPYING daneben.  Setzt
+# GW_WHEEL auf den Dateinamen des wheels.
 #
 # Warum hier und nicht beim Anwender: `setup.py` erklaert eine C-Erweiterung,
 # und der Anwender hat unter Windows keinen Uebersetzer.  Die Erweiterung ist
@@ -215,16 +218,16 @@ lies_gw_pins() {
 # wird sie herausgenommen.  Das geschieht ueber einen VORGESCHALTETEN Aufsatz
 # und nicht ueber einen Eingriff in setup.py selbst: der haelt auch dann noch,
 # wenn die naechste Fassung die Datei umschreibt.
-GW_RAD=
+GW_WHEEL=
 
-gw_rad_bauen() {
+gw_wheel_bauen() {
     _ziel=$1
     _lizenzen=$2
     lies_gw_pins
 
     _py=""
     for _k in python3 python; do have "$_k" && { _py=$_k; break; }; done
-    [ -n "$_py" ] || die "python3 wird zum Bauen des Greaseweazle-Rades gebraucht
+    [ -n "$_py" ] || die "python3 wird zum Bauen des Greaseweazle-wheels gebraucht
      (oder --no-gw: dann fehlt der Zugriff auf echte Diskettenlaufwerke)"
 
     # Ein Zwischenlager, damit ein zweiter Lauf nicht wieder laedt.  Es liegt
@@ -251,7 +254,7 @@ gw_rad_bauen() {
 
     # Der Aufsatz: `setup()` wird abgefangen und `ext_modules` fallengelassen.
     # setup.py holt sich `setup` erst DANACH aus setuptools und bekommt damit
-    # unsere Fassung.  Ohne leeres ext_modules bliebe das Rad an Plattform und
+    # unsere Fassung.  Ohne leeres ext_modules bliebe das wheel an Plattform und
     # Python-Nebenversion gebunden, auch wenn gar nichts uebersetzt wurde.
     cat > "$_baum/_ohne_erweiterung.py" <<'PYSHIM'
 # Vorgeschaltet von packaging/build_payload.sh — siehe packaging/gw_pins.txt.
@@ -267,7 +270,7 @@ PYSHIM
     mv "$_baum/setup.py.neu" "$_baum/setup.py"
 
     mkdir -p "$_ziel" "$_lizenzen"
-    info "Greaseweazle-Rad bauen (py3-none-any)"
+    info "Greaseweazle-wheel bauen (py3-none-any)"
 
     # Gebaut wird in einer EIGENEN Umgebung, nicht mit dem Systempython.  Der
     # Grund ist belegt (Release-Lauf 2026-08-18, ubuntu-22.04): dort leckte das
@@ -284,22 +287,22 @@ PYSHIM
         || { rm -rf "$_tmp"; die "Bauwerkzeug nicht ladbar (kein Netz? Proxy?)"; }
 
     ( cd "$_baum" && "$_bpy" -m pip wheel --no-deps --no-build-isolation --quiet -w "$_ziel" . ) \
-        || { rm -rf "$_tmp"; die "Greaseweazle-Rad liess sich nicht bauen"; }
+        || { rm -rf "$_tmp"; die "Greaseweazle-wheel liess sich nicht bauen"; }
 
-    GW_RAD=$(ls -1 "$_ziel"/greaseweazle-*.whl 2>/dev/null | head -1)
-    [ -n "$GW_RAD" ] || { rm -rf "$_tmp"; die "kein Greaseweazle-Rad im Ausgabeverzeichnis"; }
-    GW_RAD=$(basename "$GW_RAD")
-    case "$GW_RAD" in
+    GW_WHEEL=$(ls -1 "$_ziel"/greaseweazle-*.whl 2>/dev/null | head -1)
+    [ -n "$GW_WHEEL" ] || { rm -rf "$_tmp"; die "kein Greaseweazle-wheel im Ausgabeverzeichnis"; }
+    GW_WHEEL=$(basename "$GW_WHEEL")
+    case "$GW_WHEEL" in
         *-py3-none-any.whl) ;;
         *) rm -rf "$_tmp"
-           die "das Rad ist plattformgebunden ($GW_RAD) — der Aufsatz hat nicht gegriffen" ;;
+           die "das wheel ist plattformgebunden ($GW_WHEEL) — der Aufsatz hat nicht gegriffen" ;;
     esac
 
     # Gemeinfrei (Unlicence) — der Text reist trotzdem mit: er ist der Nachweis,
     # unter welchen Bedingungen dieses Stueck Fremdsoftware im Paket liegt.
     cp "$_baum/COPYING" "$_lizenzen/greaseweazle-COPYING.txt"
     rm -rf "$_tmp"
-    ok "$GW_RAD"
+    ok "$GW_WHEEL"
 }
 
 while [ $# -gt 0 ]; do
@@ -460,7 +463,7 @@ cp "$REPO/tools/z80_disasm2.py" "$STAGE/payload/share/tools/z80_disasm2.py"
 
 # Lizenzen der beigelegten Fremdsoftware.  isocline steckt EINKOMPILIERT im
 # Debugger (Zeilenbearbeitung) — man sieht es der Datei nicht an, also gehoert
-# der Text daneben.  Greaseweazle kommt weiter unten dazu (eigenes Rad).
+# der Text daneben.  Greaseweazle kommt weiter unten dazu (eigenes wheel).
 cp "$REPO/third_party/isocline/LICENSE" \
    "$STAGE/payload/share/doc/lizenzen/isocline-LICENSE.txt"
 
@@ -575,14 +578,14 @@ ok "$(grep -c '^[a-zA-Z]' "$STAGE/requirements.lock") Pakete festgenagelt"
 
 # ─── 4a. Greaseweazle — die Anbindung an echte Laufwerke ─────────────────────
 #
-# Sie liegt als fertiges Rad NEBEN der Payload (wie requirements.lock), nicht
+# Sie liegt als fertiges wheel NEBEN der Payload (wie requirements.lock), nicht
 # darin: der Installer spielt sie in die Laufzeitumgebung ein, in der
 # Installation selbst hat sie nichts verloren.  Die vier Abhaengigkeiten
 # (crcmod, bitarray, pyserial, requests) stehen in requirements.lock und kommen
 # mit Pruefsumme von PyPI — zusammen mit Qt.
 
 if [ "$GW" = yes ]; then
-    gw_rad_bauen "$STAGE/wheels" "$STAGE/payload/share/doc/lizenzen"
+    gw_wheel_bauen "$STAGE/wheels" "$STAGE/payload/share/doc/lizenzen"
 else
     warn "ohne Greaseweazle geschnuert — kein Zugriff auf echte Diskettenlaufwerke"
 fi
@@ -632,14 +635,14 @@ if [ "$SETUP" = yes ]; then
         die "iscc nicht gefunden — Inno Setup 6.5 oder neuer installieren (choco install innosetup)"
     fi
     lies_python_pins
-    # Der Assistent holt das Rad mit ExtractTemporaryFile und braucht dafuer den
+    # Der Assistent holt das wheel mit ExtractTemporaryFile und braucht dafuer den
     # NAMEN — ein Muster kennt Inno an der Stelle nicht.  Leer heisst „ohne
     # Greaseweazle" (--no-gw); die .iss laesst den Schritt dann aus.
-    _gw_rad=""
+    _gw_wheel=""
     _gw_version=""
     if [ "$GW" = yes ]; then
         lies_gw_pins
-        _gw_rad=$(basename "$(ls -1 "$STAGE/wheels"/greaseweazle-*.whl | head -1)")
+        _gw_wheel=$(basename "$(ls -1 "$STAGE/wheels"/greaseweazle-*.whl | head -1)")
         _gw_version=$GW_VERSION
     fi
     info "Windows-Installationsprogramm bauen (Python $PY_VERSION aus $PY_RELEASE)"
@@ -654,7 +657,7 @@ if [ "$SETUP" = yes ]; then
     iscc //Qp \
          "//DVersion=$_iss_version" \
          "//DPaket=$(cygpath -w "$STAGE")" \
-         "//DGwRad=$_gw_rad" \
+         "//DGwWheel=$_gw_wheel" \
          "//DGwVersion=$_gw_version" \
          "//DPyVersion=$PY_VERSION" \
          "//DPyRelease=$PY_RELEASE" \

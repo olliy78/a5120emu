@@ -380,7 +380,8 @@ ok "Laufzeitumgebung fertig"
 
 # ── Greaseweazle: der Zugriff auf ECHTE Diskettenlaufwerke ───────────────────
 #
-# Das Rad liegt fertig im Paket (packaging/gw_pins.txt sagt warum: die
+# Das wheel — das fertige Installationsformat fuer Python-Pakete, Endung
+# `.whl` — liegt im Paket (packaging/gw_pins.txt sagt warum: die
 # Hosttools liegen nicht auf PyPI, und ihr Quellarchiv wollte beim Anwender
 # uebersetzt werden).  Seine vier Abhaengigkeiten kamen gerade mit der Zeile
 # darueber — deshalb `--no-deps`: hier soll nichts mehr aus dem Netz kommen.
@@ -388,11 +389,11 @@ ok "Laufzeitumgebung fertig"
 # Scheitert es, ist das KEIN Grund, die Installation hinzuwerfen: der Emulator
 # und das Diskettenwerkzeug laufen ohne, es fehlt nur der Menuepunkt fuer das
 # echte Laufwerk (app/gw/session.py: `verfuegbarkeit`).
-_gw_rad=$(ls -1 "$SELF_DIR"/wheels/greaseweazle-*.whl 2>/dev/null | head -1)
-if [ -n "$_gw_rad" ]; then
+_gw_wheel=$(ls -1 "$SELF_DIR"/wheels/greaseweazle-*.whl 2>/dev/null | head -1)
+if [ -n "$_gw_wheel" ]; then
     info "Greaseweazle-Anbindung einspielen (echte Diskettenlaufwerke)"
-    if "$UV" pip install --python "$PREFIX/venv" --no-deps "$_gw_rad" >/dev/null 2>&1; then
-        ok "$(basename "$_gw_rad")"
+    if "$UV" pip install --python "$PREFIX/venv" --no-deps "$_gw_wheel" >/dev/null 2>&1; then
+        ok "$(basename "$_gw_wheel")"
     else
         warn "Greaseweazle liess sich nicht einspielen — der Emulator läuft,
      aber der Zugriff auf ein echtes Diskettenlaufwerk fehlt."

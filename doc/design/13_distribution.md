@@ -816,32 +816,38 @@ Wege standen zur Wahl:
 | PyPI (`greaseweazle` in `requirements.in`) | **liegt nicht auf PyPI** — 404, Stand 2026-08-18 |
 | `pip install git+https://…@v1.23` beim Anwender | braucht `git`, und die C-Erweiterung braucht einen Übersetzer |
 | Quellarchiv ins Paket, `pip install` beim Anwender | Übersetzer beim Anwender — unter Windows aussichtslos |
-| **Rad beim Schnüren bauen, ins Paket legen** | — |
+| **wheel beim Schnüren bauen, ins Paket legen** | — |
+
+*(Ein **wheel**, Dateiendung `.whl`, ist das fertige Installationsformat für
+Python-Pakete — ein ZIP aus den einspielbaren Dateien plus `*.dist-info`-Metadaten.
+Der Gegensatz ist das **Quellarchiv** (sdist): dort liegt der Quelltext samt
+`setup.py`, und `pip` muss beim Installieren erst einen Bauschritt fahren. Genau
+dieser Bauschritt ist hier das Problem — er bräuchte einen C-Übersetzer.)*
 
 Umgesetzt ist der vierte. `packaging/gw_pins.txt` nagelt das Quellarchiv des
 GitHub-Releases mit Größe und **SHA256** fest (dieselbe Sitte wie `uv_pins.txt` und
 `python_pins.txt`: die Prüfsumme reist mit dem Paket, nicht neben der Datei her);
-`build_payload.sh` lädt es, prüft, baut daraus ein Rad und legt es als
+`build_payload.sh` lädt es, prüft, baut daraus ein wheel und legt es als
 `wheels/greaseweazle-<v>-py3-none-any.whl` **neben** die Payload — wie
 `requirements.lock` gehört es dem Installer, nicht der Installation.
 
 Drei Festlegungen, die man nicht aufweichen darf:
 
-- **Das Rad ist `py3-none-any`, die C-Erweiterung entfällt bewusst.** `setup.py`
+- **Das wheel ist `py3-none-any`, die C-Erweiterung entfällt bewusst.** `setup.py`
   erklärt `greaseweazle.optimised`; beide Aufrufstellen haben aber einen Rückfall in
   Python (`except AttributeError` in `usb.py:487` und `track.py:406`). Gemessen am
   2026-08-18 kostet der Verzicht **~25 ms je Spur** — gegen 500–800 ms, die das Lesen
-  einer Spur am echten Laufwerk ohnehin dauert, also 3–5 %. Dafür gibt es EIN Rad für
+  einer Spur am echten Laufwerk ohnehin dauert, also 3–5 %. Dafür gibt es EIN wheel für
   alle Systeme, keinen Übersetzer beim Anwender und keine Bindung an die
   Python-Nebenversion. Herausgenommen wird die Erweiterung über einen **vorgeschalteten
   Aufsatz** (`setuptools.setup` wird abgefangen, `ext_modules` fällt weg) und nicht
   durch einen Eingriff in `setup.py` selbst: so hält es auch, wenn die nächste Fassung
-  die Datei umschreibt. Solange `ext_modules` gesetzt ist, wird das Rad an Plattform
+  die Datei umschreibt. Solange `ext_modules` gesetzt ist, wird das wheel an Plattform
   **und** ABI gebunden, auch wenn gar nichts übersetzt wurde — deshalb prüft
   `build_payload.sh` den Dateinamen nach.
 - **Die vier Abhängigkeiten kommen von PyPI, in `requirements.lock`** (crcmod,
   bitarray, pyserial, requests). Sie werden also zusammen mit Qt geladen und mit
-  `--require-hashes` geprüft; das Rad selbst spielt der Installer danach mit
+  `--require-hashes` geprüft; das wheel selbst spielt der Installer danach mit
   **`--no-deps`** ein — an der Stelle soll nichts mehr aus dem Netz kommen.
 - **Ein Fehlschlag beim Einspielen wirft die Installation NICHT hin.** Emulator und
   Diskettenwerkzeug laufen ohne; es fehlt nur der Zugriff auf ein echtes Laufwerk, und

@@ -466,12 +466,12 @@ jobs:
           for noetig in launcher.cmd disktool_launcher.cmd k1520dbg.cmd slim.py requirements.lock; do
               [ -f "$paket/$noetig" ] || { echo "FEHLER: $noetig fehlt" >&2; exit 1; }
           done
-          # Die Greaseweazle-Anbindung liegt als fertiges Rad BEI der Payload,
+          # Die Greaseweazle-Anbindung liegt als fertiges wheel BEI der Payload,
           # nicht darin: der Assistent spielt sie in die Laufzeitumgebung ein.
-          # Plattformunabhaengig muss sie sein — ein cp312-win_amd64-Rad hiesse,
+          # Plattformunabhaengig muss sie sein — ein cp312-win_amd64-wheel hiesse,
           # dass die C-Erweiterung doch mitgebaut wurde (packaging/gw_pins.txt).
           ls "$paket"/wheels/greaseweazle-*-py3-none-any.whl >/dev/null 2>&1 \
-              || { echo "FEHLER: kein plattformunabhaengiges Greaseweazle-Rad" >&2; exit 1; }
+              || { echo "FEHLER: kein plattformunabhaengiges Greaseweazle-wheel" >&2; exit 1; }
           for noetig in bin/k1520core.dll bin/k1520disk.dll bin/k1520disktool-cli.exe \
                         bin/k1520dbg.exe \
                         share/doc/handbuch_k1520dbg.md share/tools/z80_disasm2.py \

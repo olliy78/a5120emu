@@ -8,7 +8,7 @@
 ;
 ;   iscc /DVersion=1.2.3 /DPaket="C:\...\k1520emu-1.2.3-windows-x86_64" \
 ;        /DPyVersion=3.12.13 /DPyRelease=20260807 /DPySha256=… /DPySize=… \
-;        /DGwRad=greaseweazle-1.23-py3-none-any.whl /DGwVersion=1.23 \
+;        /DGwWheel=greaseweazle-1.23-py3-none-any.whl /DGwVersion=1.23 \
 ;        k1520emu.iss
 ;
 ; Die vier Py*-Angaben kommen aus packaging/python_pins.txt und werden vom
@@ -93,7 +93,8 @@
 #endif
 
 ; Die Greaseweazle-Anbindung (Zugriff auf ECHTE Diskettenlaufwerke).  Sie liegt
-; als fertiges Rad im Paket — nicht auf PyPI und nicht als Quellarchiv, weil
+; als fertiges wheel im Paket (Endung .whl, das einspielfertige Format fuer
+; Python-Pakete) — nicht auf PyPI und nicht als Quellarchiv, weil
 ; dessen C-Erweiterung beim Anwender uebersetzt werden muesste und der unter
 ; Windows keinen Uebersetzer hat (packaging/gw_pins.txt).
 ;
@@ -101,8 +102,8 @@
 ; dann faellt der Schritt aus, und in der Oberflaeche bleibt der Menuepunkt fuer
 ; das echte Laufwerk gesperrt.  Ein Fehler ist das nicht — deshalb hier kein
 ; #error wie bei den Py*-Angaben.
-#ifndef GwRad
-  #define GwRad ""
+#ifndef GwWheel
+  #define GwWheel ""
 #endif
 #ifndef GwVersion
   #define GwVersion ""
@@ -213,11 +214,11 @@ Source: "{#Paket}\disktool_launcher.cmd";  Flags: dontcopy
 ; k1520disktool-cli).  Wie die uebrigen Starter eine VORLAGE — der
 ; Installationsordner wird beim Einrichten eingetragen.
 Source: "{#Paket}\k1520dbg.cmd";           Flags: dontcopy
-; Das Greaseweazle-Rad.  `dontcopy` aus demselben Grund wie requirements.lock:
+; Das Greaseweazle-wheel.  `dontcopy` aus demselben Grund wie requirements.lock:
 ; es wird in PrepareToInstall gebraucht, also VOR dem Kopieren.  Der Eintrag
 ; entfaellt, wenn ohne Greaseweazle geschnuert wurde.
-#if GwRad != ""
-Source: "{#Paket}\wheels\{#GwRad}";        Flags: dontcopy
+#if GwWheel != ""
+Source: "{#Paket}\wheels\{#GwWheel}";        Flags: dontcopy
 #endif
 
 ; Python selbst steht NICHT hier: es wird schon vor dem Kopieren gebraucht
@@ -536,7 +537,7 @@ begin
 
   { ── Die Anbindung an ECHTE Diskettenlaufwerke ─────────────────────────────
 
-    Das Rad liegt fertig im Paket; seine vier Abhaengigkeiten (crcmod,
+    Das wheel liegt fertig im Paket; seine vier Abhaengigkeiten (crcmod,
     bitarray, pyserial, requests) kamen gerade mit requirements.lock — daher
     `--no-deps`: hier soll nichts mehr aus dem Netz kommen.
 
@@ -544,13 +545,13 @@ begin
     und Diskettenwerkzeug laufen ohne; es fehlt nur der Zugriff auf ein echtes
     Laufwerk, und die Oberflaeche sagt das dann von selbst (app\gw\session.py:
     `verfuegbarkeit` sperrt den Menuepunkt mit dem Grund im Tooltip). }
-#if GwRad != ""
+#if GwWheel != ""
   Melde('Greaseweazle einrichten (echte Diskettenlaufwerke)', MarkeGw);
-  ExtractTemporaryFile('{#GwRad}');
+  ExtractTemporaryFile('{#GwWheel}');
   if Laufe(VenvPy,
            '-m pip install --disable-pip-version-check --no-input --no-color'
            + ' --no-warn-script-location --no-deps "'
-           + ExpandConstant('{tmp}\{#GwRad}') + '"',
+           + ExpandConstant('{tmp}\{#GwWheel}') + '"',
            ExpandConstant('{app}')) <> 0 then
     Notiere('Warnung: Greaseweazle liess sich nicht einspielen — der Zugriff auf'
           + ' ein echtes Diskettenlaufwerk fehlt.')

@@ -6,7 +6,7 @@ Darstellung, die auch in einer ``.hfe``-Datei steht und die der Kern mit demselb
 ``BitCodec`` liest wie ein Dateiabbild (doc/design/14_physische_diskette.md §8).
 
 Die Hosttools liegen **nicht** auf PyPI.  In einer Installation aus dem Paket sind
-sie bereits eingerichtet (der Installer spielt ein mitgeliefertes Rad ein, siehe
+sie bereits eingerichtet (der Installer spielt ein mitgeliefertes wheel ein, siehe
 ``packaging/gw_pins.txt``); im Quellbaum installiert man sie von Hand::
 
     venv/bin/python3 -m pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"
@@ -42,7 +42,7 @@ def _leise(modul: str):
     """Ein Greaseweazle-Modul einlesen, ohne dass es auf die Ausgabe schreibt.
 
     ``greaseweazle.optimised`` meldet beim Einlesen auf der **Standardausgabe**, ob
-    seine C-Beschleunigung da ist — und im ausgelieferten Rad ist sie es bewusst
+    seine C-Beschleunigung da ist — und im ausgelieferten wheel ist sie es bewusst
     nicht (``packaging/gw_pins.txt``: beide Aufrufstellen fallen auf Python zurück,
     das kostet ~25 ms je Spur gegenüber 500–800 ms Lesezeit).  Die Zeile stünde damit
     mitten in der Nutzlast von ``k1520disktool --physical``, wo die Standardausgabe
