@@ -66,3 +66,27 @@ System-Interpreter.
 - **Eigenes Konfigurationsverzeichnis.** `conftest.py` setzt `XDG_CONFIG_HOME` auf
   ein Unterverzeichnis, damit `~/.config/k1520emu/config.yaml` des Nutzers
   unangetastet bleibt.
+- **`greaseweazle` gehört NICHT in die CI-Abhängigkeiten.** Es brächte keinen
+  einzigen zusätzlichen Testfall: hinter `verfuegbar()` steht in der zweiten Zeile
+  `util.usb_open` — alles dahinter braucht einen Adapter am Kabel, und die
+  Hardwarefälle in `test_gw_hardware.py` hängen ohnehin an `K1520_GW_HARDWARE=1`,
+  nicht am Paket (nachgemessen: mit und ohne Paket laufen dieselben 8 Fälle nicht).
+  Es zu installieren würde umgekehrt die Eigenschaft *verdecken*, die der Anwender
+  ohne das Paket erlebt. Geprüft wird sie deshalb ausdrücklich in
+  `test_gw_ohne_paket.py`, das den Import aktiv **ausblendet** — der Fall schlägt
+  damit auch auf einem Rechner an, auf dem das Paket installiert ist.
+- **Die Ebene läuft OHNE `greaseweazle`** — das Paket ist eine freiwillige
+  Abhängigkeit (nicht auf PyPI), und **in der CI ist es nie installiert**. Wer die
+  physische Diskette prüft, setzt ein *Ersatzlaufwerk* aus dem RAM ein; dazu gehört,
+  dass auch die **Verfügbarkeit** ersetzt wird (`hosttools_gelten_als_vorhanden` in
+  `test_gw_gui.py` setzt `app.gw.verfuegbar`). Die Bedienwege prüfen nämlich vor dem
+  Auswahldialog, ob die Hosttools da sind — richtig so, aber ohne die Ersetzung
+  schlägt die Prüfung zu, bevor das Ersatzlaufwerk zum Zug kommt.
+  `bitarray` steht deshalb ausdrücklich in `requirements-dev.txt`: `app/gw` rechnet
+  damit, und ohne `greaseweazle` käme es sonst nicht mit.
+- **Ein unerwartetes modales Fenster ist ein Fehlschlag, kein Hänger.** Die
+  autouse-Sperre `kein_unerwartetes_meldungsfenster` (conftest) lässt
+  `QMessageBox.critical` & Co. sofort scheitern; headless klickt sie sonst niemand
+  weg, und der Fall stünde bis zum ctest-Zeitüberlauf (300 s) — im Protokoll dann
+  nur „Timeout" ohne Grund. Tests, die ein Fenster **erwarten**, setzen ihren
+  eigenen `monkeypatch` im Testkörper; der greift später und gewinnt.

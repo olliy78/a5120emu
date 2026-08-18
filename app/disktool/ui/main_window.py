@@ -877,13 +877,19 @@ class MainWindow(QMainWindow):
             True, wenn die Diskette offen ist.  Abbruch durch den Bediener gilt
             als „nicht geöffnet", ohne Fehlermeldung.
         """
+        from app.gw import GreaseweazleFehlt
         from app.ui.physical_disk import PhysicalSession, verfuegbarkeit
 
-        ok, grund = verfuegbarkeit()
-        if not ok:
-            self._fehler("Physisches Laufwerk", grund)
-            return False
-
+        # **Hier steht KEINE Verfügbarkeitsprüfung mehr.**  Sie gehört an die
+        # Bedienwege davor (`_physisch_dialog`, `_physisch_schreiben_dialog`,
+        # Laufwerkskasten des Emulators — „erst prüfen, dann fragen") und an die
+        # Stelle, die die Hosttools wirklich braucht: `PhysicalSession.start`.
+        # Zwischen beiden war sie überflüssig — und schädlich: sie hing an einer
+        # FREIWILLIGEN Abhängigkeit, während diese Methode auch mit einer
+        # eingesetzten Ersatzsitzung gerufen wird (so prüft die Testebene das
+        # Laufwerk ohne Hardware).  Ohne `greaseweazle` lief sie dort in ein
+        # modales Meldungsfenster, das headless niemand wegklickt: aus einem
+        # Fehlschlag wurde ein 300-s-Hänger (`py_gw_gui`).
         drive = optionen.get("drive", "a")
         writable = bool(optionen.get("writable", False))
         self._close_tool()
@@ -892,6 +898,9 @@ class MainWindow(QMainWindow):
         except TypeError as e:                       # Signaturdrift, kein Gerätefehler
             self._fehler("Physisches Laufwerk",
                          f"Die Angaben passen nicht zum Laufwerkszugriff:\n{e}")
+            return False
+        except GreaseweazleFehlt:                    # Hosttools fehlen — mit Anleitung
+            self._fehler("Physisches Laufwerk", verfuegbarkeit()[1])
             return False
         except Exception as e:                       # noqa: BLE001
             self._fehler("Physisches Laufwerk",

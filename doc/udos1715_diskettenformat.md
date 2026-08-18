@@ -1,9 +1,12 @@
 # UDOS1715 / NDOS — Diskettenformat und Dateisystem
 
-**Stand:** 2026-08-17 · Referenzdatenträger: eine am Greaseweazle eingelesene
-Systemdiskette („SYSTEM", 67 Dateien, 80×32×256, 0 CRC-Fehler)
+**Stand:** 2026-08-18 · Referenzdatenträger: eine am Greaseweazle eingelesene
+Systemdiskette („SYSTEM", 67 Dateien, 80×32×256, 0 CRC-Fehler); als zweiter Beleg die
+**WEGA-Startdiskette des Robotron P8000** (UDOS 2.2, 42 Dateien, dieselbe Geometrie)
 
-UDOS1715 ist die Ausprägung von UDOS für den **PC 1715**. Sie benutzt zur
+UDOS1715 ist die Ausprägung von UDOS für den **PC 1715** — und, wie sich am zweiten
+Datenträger zeigte, ebenso für den **Robotron P8000**; dessen UDOS 2.2 legt dieselbe
+Struktur an (§3.0a nennt den einen Unterschied). Sie benutzt zur
 Diskettenverwaltung nicht ZDOS, sondern **NDOS**, und das ist kein Beiwerk, sondern der
 ganze Unterschied:
 
@@ -144,6 +147,37 @@ Spur 16H:  BC E7 00 00   Sektoren 0,2,3,4,5 und 8,9,10,13,14,15 belegt (DIRECTOR
 Spur 17H:  C0 00 00 00   Sektoren 0,1 belegt (die Karte selbst)
 Spur 4FH:  FF FF FF FF   voll
 ```
+
+### 3.0a Zwei Rechner, dieselbe Sitte — aber nicht dasselbe Füllmuster
+
+Die Diskette des **Robotron P8000** (UDOS 2.2, WEGA-Startdiskette) ist Feld für Feld
+dieselbe Karte — nur füllt ihr Formatierer den Platz zwischen Belegungsplan und
+Zählern nicht mit `00`, sondern mit dem **`77H`-Rest der ZDOS-Sitte**:
+
+```
+PC 1715:  158H…176H = 00 …
+P8000:    158H…15BH = 00 00 00 00 · 15CH…176H = 27 × 77H · 179H = 01
+```
+
+Damit taugt das Füllmuster **nicht** als Unterscheidungsmerkmal zu ZDOS (der frühere
+Text sagte das; er war zu eng gefasst). Was bleibt:
+
+* Die ZDOS-Kennzeichen `11×33H` und `F7H` liegen bei ZDOS auf **150H…15BH** — in einer
+  80-Spur-Karte ist das der Belegungsplan der Spuren 78 und 79, dort können sie also
+  nicht stehen.
+* **Der Zählerabgleich** `belegt + frei = Sektoren/Spur · Spuren` geht nur bei NDOS auf;
+  ZDOS rechnet gegen die Konstante 2464 (§3.1).
+* Sektorgröße und Spurlänge trennen ohnehin (26×128 gegen 32×256).
+
+Geprüft wird deshalb nur noch, dass hinter dem Belegungsplan **`00` oder `77H`** steht,
+und Byte `179H` gar nicht mehr — beim P8000 trägt es `01`.
+Wächter: `Udos1715P8000.*` auf der Fixture `udos1715_640k_p8000_wega.img`.
+
+> **Der Systembereich ist beim P8000 größer.** Gesperrt ist dort jeweils der ganze
+> **Kopf 0** (Sektoren 0…15) der Spuren 0 (Urlader/BFOS), **21** (Bootspur), 22
+> (DIRECTORY) und 23 (Belegungsplan) — beim PC 1715 nur die 13 tatsächlich benutzten
+> Sektoren der Spuren 22/23. Kopf 1 derselben Spuren trägt gewöhnliche Dateidaten.
+> Maßgeblich ist auch hier die Karte, nicht die Regel.
 
 ### 3.1 Anders als bei ZDOS: **die Zähler stimmen**
 
@@ -380,6 +414,28 @@ Python-Prüfskript gegengerechnet:
 | **Am echten Laufwerk beschrieben** (Greaseweazle F1) | Datei eingefügt, 4 Spuren zurückgeschrieben und **geprüft**, danach genau diese 4 Spuren geändert, 2560/2560 Sektoren fehlerfrei, Belegungsplan wieder sektorgenau |
 | **Belegungskarte ↔ Auszählung aus allen Dateien** | **1673 = 1673, beide Richtungen ohne Rest** |
 | Zähler `177H` + `17CH` = 80 · 32 | 1673 + 887 = 2560 ✔ |
+
+Am **zweiten** Datenträger — der WEGA-Startdiskette des Robotron P8000 (42 Dateien,
+UDOS 2.2) — dasselbe Bild:
+
+| Probe | Ergebnis |
+|---|---|
+| Alle 2560 Sektoren fehlerfrei gelesen (Greaseweazle F1, 250 kbit/s MFM) | 2560/2560 |
+| Belegungskarte ↔ Auszählung aus allen Dateien + Systembereich | **2533 = 2533, ohne Rest** |
+| Zähler `177H` + `17CH` = 80 · 32 | 2533 + 27 = 2560 ✔ |
+| **Am echten Laufwerk beschrieben** | Datei eingefügt: 4 Spuren zurückgeschrieben und geprüft, 0 misslungene Vergleiche; frisch zurückgelesen byteweise gleich; gelöscht: 2 Spuren; Vollmessung danach zeigt **genau** c0h0, c4h0, c22h0 geändert |
+| Sicherung zurückgeschrieben | die Diskette ist wieder byteweise die vom Anfang |
+
+Zwei Eigenheiten dieses Datenträgers sind echt und kein Fehler:
+
+* **`.img` geht hier nicht.**  13 Sektoren tragen hinter der Daten-CRC die
+  **Schreibnaht** eines nachträglich überschriebenen Sektors (`4E xx yy yy …`, z. B.
+  c12h0 Sektor 10 → `4E 13 93 93 93 93 93 93`).  Inhaltlich ist das nichts, aber
+  `rawCompatible()` kann das nicht wissen und verweigert das rohe Sektorabbild —
+  richtig so.  `save-as` in `.hfe` (oder `.dmk`) statt `.img`.
+* **Der eine freie Sektor in Spur 0.**  Die Karte gibt Spur 0 Sektor 1 als frei; das
+  Medium ist dort unbeschrieben.  Eine neu angelegte Datei landet also mitten im
+  Bootbereich — das tut UDOS selbst genauso, die Karte ist die Wahrheit.
 
 Die letzte Zeile ist die schärfste: die aus Descriptoren, Zeigersektoren und
 Datenrecords aller Dateien plus den 13+16 festen Sektoren errechnete Belegung stimmt

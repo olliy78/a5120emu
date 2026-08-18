@@ -9,3 +9,12 @@
 -r requirements.txt
 
 pytest>=8.0        # Testebene tests/python/ (C-ABI + GUI)
+
+# `app/gw` rechnet mit Bitzellen (`naht_vor_sektorkopf`, `Device.read_track`) und
+# braucht dafuer `bitarray`.  In der LAUFZEIT kommt das Paket mit `greaseweazle`
+# mit — das ist eine freiwillige Abhaengigkeit und liegt nicht auf PyPI, also auch
+# nicht in requirements.txt.  Die Testebene fuehrt das echte Laufwerk aber durch ein
+# Ersatzgeraet aus dem RAM vor und laeuft deshalb OHNE `greaseweazle` — dann fehlt
+# `bitarray`, der Arbeitsfaden stirbt still, und die wartenden Leser laufen in ihre
+# Frist (py_gw_gui lief 300 s in den Zeitueberlauf).  Darum hier ausdruecklich.
+bitarray>=2.9      # Bitzellen in app/gw (kommt sonst nur mit `greaseweazle` mit)

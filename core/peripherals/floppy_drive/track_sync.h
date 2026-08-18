@@ -81,6 +81,20 @@ struct TrackSyncSpec {
     bool     verify_writes = true;
     /// Zusätzliche Schreibversuche nach einem gescheiterten Vergleich (0 = keiner).
     uint8_t  write_verify_retries = 1;
+    /**
+     * @brief Zusätzliche LESEversuche, wenn eine Spur mit fehlerhafter Prüfsumme kommt.
+     *
+     * Eine gelesene Spur wird nur EINE Umdrehung lang abgetastet; auf einer gealterten
+     * Diskette liefert das gelegentlich einen Sektor mit falscher Daten-CRC, der beim
+     * nächsten Versuch fehlerfrei zurückkommt (an einer UDOS-Diskette von 1988
+     * beobachtet: ein Sektor unter 2560, beim Nachlesen dreimal fehlerfrei).  Ohne
+     * Wiederholung wanderte dieser Ausrutscher unbemerkt in eine Datei.
+     *
+     * Wiederholt wird nur, solange die Spur überhaupt Sektoren mit falscher Prüfsumme
+     * hat; übernommen wird am Ende der **beste** Versuch (die wenigsten Fehler), nicht
+     * der letzte.  Eine markenlose Spur gilt als unformatiert und wird nie wiederholt.
+     */
+    uint8_t  read_crc_retries = 2;
 };
 
 /// @brief Was ein Auftrag verlangt.
@@ -128,6 +142,8 @@ struct SyncStats {
     uint32_t writes_done   = 0;
     uint32_t verifies_done = 0;   ///< Prüf-Lesevorgänge, die bestanden haben
     uint32_t verify_failed = 0;   ///< Vergleiche, die nicht stimmten (inkl. Wiederholungen)
+    uint32_t read_retries  = 0;   ///< Lesewiederholungen wegen fehlerhafter Prüfsumme
+    uint32_t read_crc_bad  = 0;   ///< Spuren, die auch nach der letzten Wiederholung Fehler trugen
     uint32_t errors        = 0;
     uint8_t  busy_kind     = 0;   ///< @ref SyncJobKind des laufenden Auftrags
     uint8_t  busy_cyl      = 255; ///< 255 = gerade nichts zu tun
@@ -299,6 +315,12 @@ private:
         bool         dirty_pending  = false;
         /// Geschrieben, aber noch nicht zurückgelesen — wartet auf @ref SyncJobKind::Verify.
         bool         verify_pending = false;
+        /// Leseversuche für die laufende Anforderung (@ref TrackSyncSpec::read_crc_retries).
+        uint8_t      read_attempts = 0;
+        /// Bester bisheriger Leseversuch und seine Zahl fehlerhafter Sektoren.
+        /// Nur während einer Wiederholungsfolge belegt; danach wieder leer.
+        TrackImage   best_read{};
+        uint16_t     best_bad = 0xFFFF;
         /// Schreibversuche für den AKTUELLEN Inhalt (wird bei jeder Änderung genullt).
         uint8_t      write_attempts = 0;
         /// Endgültig gescheitert: mehrfach geschrieben, nie fehlerfrei zurückgelesen.

@@ -40,6 +40,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `cpa_mini.img` / `cpa_mini.hfe` | synthetische Mini-Diskette (2 KB / 26 KB), kein Systemabbild | `test_hfe_image`, `test_disk_image_raw` |
 | `udos_ds77_k5601_fremdsync.hfe` | UDOS 4.3, an einem **fremden** K1520-Rechner (K5601) beschrieben: Datenfeld-Sync mit nur ein bis zwei echten Sync-Marken (die übrigen 0xA1 regulär kodiert), ID-CRC **ohne** A1-Präambel, 34 + 12 Dateien | `DiskVolume.LiestEineDisketteMitFremderSyncSitte`, `test_gw_physical` (Naht) |
 | `udos1715_640k_pc1715_system.img` | **UDOS1715/NDOS** (PC 1715), Systemdiskette „SYSTEM": 80×32×256, 67 Dateien, darunter das Systemhandbuch `UDOS.TEXT` | `Udos1715.*`, `Udos1715Belegung.*`, `Udos1715Schreiben.*` |
+| `udos1715_640k_p8000_wega.hfe` | **UDOS1715/NDOS** vom **Robotron P8000** (UDOS 2.2), „WEGA-STARTDISKETTE": 80×32×256, 42 Dateien (UDOS-Dienstprogramme + die WEGA-Urlader und `sa.*`-Werkzeuge). Dieselbe Sitte wie der PC 1715 — nur mit `77H` statt `00` hinter dem Belegungsplan | `Udos1715P8000.*` |
 | `scp1700_640k_a7100_system.hfe` | **SCP1700/CP/M-86** (A7100), Systemdiskette: 80×2×16×256 MFM — aber **Spur 0 Kopf 0 in FM mit halber Datenrate** (16×128, 125 kbit/s), 46 Dateien | `Scp1700.*` |
 
 Die **gemischte** Diskette entstand am echten Laufwerk: erst vollständig als cpa800
@@ -66,6 +67,24 @@ liegt und ein rohes Sektorabbild unbrauchbar macht. Genau das prüft
 `FsCatalog.Udos1715ProfileSindImgFaehigUndEinseitigGezaehlt` mit; die spurbasierte
 Aufnahme derselben Diskette liegt als `disks/udos1715_640k_pc1715_system.hfe` im
 Arbeitsverzeichnis. Hintergrund: `doc/udos1715_diskettenformat.md` §8.
+
+## Zwei UDOS1715-Disketten, weil zwei Rechner dasselbe Format verschieden füllen
+
+`udos1715_640k_pc1715_system.img` (PC 1715) und `udos1715_640k_p8000_wega.img`
+(Robotron P8000) tragen dasselbe Dateisystem an denselben Offsets.  Die P8000-Diskette
+kam trotzdem als „kein gueltiger UDOS1715-Diskettenbelegungsplan" zurück: ihr
+Formatierer lässt zwischen Belegungsplan und Zählern den `77H`-Nachlauf der ZDOS-Sitte
+stehen, und `179H` trägt `01`.  Sie ist deshalb der Prüfstein dafür, dass die
+Unterscheidung zu ZDOS am **Zählerabgleich** hängt und nicht am Füllmuster
+(`doc/udos1715_diskettenformat.md` §3.0a).  Zweiter Prüfstein: ihr Systembereich ist
+größer — Kopf 0 der Spuren 0, 21, 22 und 23 ist ganz gesperrt.
+
+Sie liegt als **`.hfe`** vor, obwohl UDOS1715 `.img` erlaubt: 13 Sektoren tragen hinter
+der Daten-CRC die **Schreibnaht** eines nachträglich überschriebenen Sektors
+(`4E xx yy yy …`, z. B. c12h0 Sektor 10).  Inhaltlich ist das nichts — aber
+`rawCompatible()` sieht dort Bytes außerhalb der Nutzdaten und verweigert `.img`.  Eine
+Fixture, die das Werkzeug selbst nicht schreiben würde, wäre ein schlechter Prüfstein;
+`Udos1715P8000.WegaStartdisketteWirdErkannt` hält genau das fest.
 
 ## Die SCP1700-Diskette ist die einzige mit ZWEI Datenraten
 

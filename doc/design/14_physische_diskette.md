@@ -240,6 +240,35 @@ klappt oder der Bediener das Laufwerk abmeldet.  Eine verlorene Änderung wäre 
 schlimmere Ausgang: die Diskette im Laufwerk und das Abbild im Speicher lägen
 auseinander, ohne dass es jemand merkt.
 
+### 5.4a Der Leseausrutscher — eine Umdrehung ist nicht immer genug
+
+Zwischen „Spur unlesbar" und „Spur in Ordnung" liegt der häufigere Fall: **ein einzelner
+Sektor mit falscher Daten-CRC**, der beim nächsten Versuch fehlerfrei zurückkommt.  Der
+Arbeitsfaden tastet je Auftrag nur **eine Umdrehung** ab; auf einer gealterten Diskette
+reicht das gelegentlich nicht.  An der P8000-Diskette von 1988 gemessen: ein Sektor unter
+2560, danach dreimal hintereinander fehlerfrei nachgelesen.
+
+Ohne Gegenmaßnahme wanderte so ein Ausrutscher **unbemerkt in eine Datei** — die
+Prüfsumme steht auf der Diskette, nicht in der Datei, und niemand fragt sie danach noch
+einmal.  Deshalb:
+
+* Nach dem Dekodieren zählt `TrackSync` die Sektoren mit falscher **ID- oder Daten-CRC**
+  (beide, denn eine kaputte ID-CRC macht den Sektor unauffindbar, auch wenn seine Daten
+  heil sind — dieselbe Regel wie beim Prüf-Lesen, §7.1).
+* Sind es mehr als null, wird die Spur **erneut eingestellt** — derselbe Eintrag,
+  dieselbe Priorität, kein neuer Auftrag im Sinne der Statistik.  Vorgabe:
+  `read_crc_retries = 2` zusätzliche Versuche.
+* Übernommen wird am Ende der **beste** Versuch (die wenigsten fehlerhaften Sektoren),
+  nicht der letzte.  Bleibt ein Fehler übrig, wird die Spur trotzdem hergegeben —
+  mit Befund (`read_crc_bad`), denn eine halbe Datei ist mehr als keine.
+* Eine **markenlose** Spur gilt als unformatiert und wird nie wiederholt; sonst
+  brauchte jede Leerspur die dreifache Zeit.
+
+Eine fehlerfreie Diskette kostet das **nichts** — wiederholt wird nur, was auffällt.
+Wächter: `TrackSync.EinLeseausrutscherWirdWiederholtUndNichtUebernommen`,
+`TrackSync.EineDauerhaftSchadhafteSpurWirdNichtEwigWiederholt`,
+`TrackSync.EineHeileSpurWirdNiemalsZweimalGelesen`.
+
 ---
 
 ## 6. Lesen auf Anforderung — die Blockade
@@ -1356,6 +1385,8 @@ Prüfung ohne Hardware: `py_physical_cli` (14 Fälle) setzt das Ersatzlaufwerk a
    misslungener Schreibvorgang genau die Daten, die er zerstört hat.
 10. **Eine schadhafte Spur bleibt `Dirty`** und wird gemeldet, statt still zu
     verschwinden; nur so lässt sie sich auf einer heilen Diskette noch retten (§7.2).
+11. **Ein Sektor mit falscher Prüfsumme wird nachgelesen, nicht durchgereicht** (§5.4a).
+    Übernommen wird der beste Versuch; bleibt ein Fehler, wird er gemeldet.
 
 ---
 

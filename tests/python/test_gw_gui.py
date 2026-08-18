@@ -35,6 +35,25 @@ def app():
     yield a
 
 
+@pytest.fixture(autouse=True)
+def hosttools_gelten_als_vorhanden(monkeypatch):
+    """Das Ersatzlaufwerk vertritt **Adapter und Paket** — also auch deren Vorhandensein.
+
+    Die Bedienwege prüfen vor dem Auswahldialog, ob die Hosttools da sind („erst
+    prüfen, dann fragen"); das ist richtig und wird eigens geprüft.  Für die Tests,
+    die eine ERSATZSITZUNG einsetzen, ist es aber eine Falle: dort steht kein
+    Greaseweazle, das Paket ist eine freiwillige Abhängigkeit — und in der CI ist es
+    **nie** installiert.  Die Prüfung schlug dann zu, noch bevor die Ersatzsitzung
+    zum Zug kam, und die Fälle scheiterten (bzw. hingen an einem modalen Fenster).
+
+    Gesetzt wird die UNTERSTE Stufe (`app.gw.verfuegbar`), damit die beiden Fälle,
+    die das Fehlen ausdrücklich vorführen, sie im Testkörper weiter auf ``False``
+    ziehen können — ihr ``monkeypatch`` greift später und gewinnt.
+    """
+    import app.gw as gw
+    monkeypatch.setattr(gw, "verfuegbar", lambda: True)
+
+
 def _warte(pred, frist=30.0):
     ende = time.monotonic() + frist
     while time.monotonic() < ende and not pred():
@@ -1012,7 +1031,8 @@ def test_das_pruef_lesen_steht_in_der_statuszeile(app, hfe):
         original = type(sitzung).stats
         werte = Stats(tracks_total=160, tracks_known=8, tracks_dirty=1, tracks_failed=0,
                       tracks_defect=0, reads_done=8, writes_done=1, verifies_done=0,
-                      verify_failed=0, errors=0, busy_kind=4, busy_cyl=5, busy_head=1,
+                      verify_failed=0, read_retries=0, read_crc_bad=0, errors=0,
+                      busy_kind=4, busy_cyl=5, busy_head=1,
                       stopped=False)
         type(sitzung).stats = lambda self: werte
         try:

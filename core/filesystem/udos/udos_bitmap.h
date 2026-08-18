@@ -49,13 +49,15 @@ inline constexpr uint16_t kUdosCounterConstant = 2464;
  * @brief Welche der beiden Karten-Sitten gilt.
  *
  * Die **Feldoffsets sind in beiden identisch** (Name 0…23, Eintraege ab 24, Zaehler bei
- * 375/378/379/380).  Unterschiedlich sind nur drei Dinge — und genau die trennen die
- * Karten auch bei der Erkennung:
+ * 375/378/379/380).  Unterschiedlich sind nur vier Dinge; getrennt werden die Karten bei
+ * der Erkennung an den ZDOS-Kennzeichen `33H`/`F7H` (die in einer 80-Spur-Karte im
+ * Belegungsplan der Spuren 78/79 laegen) und am Zaehlerabgleich — **nicht** an der
+ * Fuellung dahinter, die beim P8000 wie bei ZDOS `77H` ist:
  *
- * | | @ref Zdos (A5120) | @ref Ndos1715 (PC 1715) |
+ * | | @ref Zdos (A5120) | @ref Ndos1715 (PC 1715 · P8000) |
  * |---|---|---|
  * | Spureintraege | 78 (bis Offset 335) | **80** (bis Offset 343) |
- * | Fuellung dahinter | `11×33H · F7H · 27×77H` | **`00`** |
+ * | Fuellung dahinter | `11×33H · F7H · 27×77H` | **`00`** (P8000: `77H`) |
  * | „belegt"-Zaehler | `2464 − frei` (Festwert aus FORMATPC.MAC) | **die wirkliche Zahl** |
  * | abgelegt in | 3 Sektoren à 128 B, IDs 1–3 | **2 Sektoren à 256 B, IDs 1–2** |
  *
@@ -63,7 +65,7 @@ inline constexpr uint16_t kUdosCounterConstant = 2464;
  */
 enum class UdosMapSitte : uint8_t {
     Zdos,      ///< UDOS 1526 / 4.x auf dem A5120
-    Ndos1715   ///< UDOS1715 auf dem PC 1715
+    Ndos1715   ///< UDOS1715/NDOS — PC 1715 und Robotron P8000 (UDOS 2.2)
 };
 
 /// @brief Anzahl der Spureintraege, die die Karte in dieser Sitte fuehrt.

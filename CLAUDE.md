@@ -130,6 +130,27 @@ pixels are not testable there). Install the test deps with
 `venv/bin/python3 -m pip install -r requirements-dev.txt`; without them CMake skips registering
 the layer and says so. Details + limits: `tests/python/README.md`.
 
+> **Die Python-Ebene muss OHNE `greaseweazle` laufen** (2026-08-18). Das Paket ist eine
+> freiwillige Abhängigkeit und liegt nicht auf PyPI — **in der CI ist es nie installiert**,
+> auf dem Entwicklungsrechner meistens schon. Genau daran lagen drei rote Tests auf `main`,
+> die lokal grün waren (`py_gw_gui` lief 300 s in den Zeitüberlauf, `py_gw_physical` und
+> `py_physical_cli` fielen um). Drei Festlegungen halten das jetzt zusammen:
+> **(1) `bitarray` steht in `requirements-dev.txt`** — `app/gw` rechnet damit, und ohne
+> `greaseweazle` käme es sonst nicht mit; fehlt es, stirbt der Arbeitsfaden still und die
+> wartenden Leser laufen in ihre Frist. **(2) Die Verfügbarkeitsprüfung gehört an die
+> BEDIENWEGE und an `PhysicalSession.start`, nicht dazwischen** — `MainWindow.open_physical`
+> und `physical_cli.main()` prüfen nicht mehr selbst (sie werden mit einer Ersatzsitzung
+> gerufen); wer eine Ersatzsitzung einsetzt, ersetzt auch die Verfügbarkeit
+> (`hosttools_gelten_als_vorhanden`). **(3) Ein unerwartetes modales Fenster scheitert
+> sofort** statt zu blockieren (`kein_unerwartetes_meldungsfenster` in `conftest.py`) —
+> sonst wird aus einem Fehlschlag ein Hänger ohne Begründung.
+> **Das Paket in der CI mitzuinstallieren ist NICHT die Lösung**: es brächte keinen
+> zusätzlichen Testfall (hinter `verfuegbar()` steht in der zweiten Zeile
+> `util.usb_open` — alles dahinter braucht Hardware; mit und ohne Paket bleiben
+> dieselben 8 Fälle übersprungen) und verdeckte die Lage des Anwenders. Wächter ist
+> stattdessen `tests/python/test_gw_ohne_paket.py`: er **blendet den Import aus** und
+> schlägt deshalb auch auf einem Entwicklungsrechner an, auf dem das Paket liegt.
+
 ## Verteilbares Paket (`packaging/`)
 
 `packaging/build_payload.sh` schnürt aus dem Baum ein Anwenderpaket (~2 MB:
@@ -567,6 +588,23 @@ Was beim Weiterarbeiten zu wissen ist:
   verschwand der erste Sektor.  Wächter: `Scp1700.*` (5 Fälle),
   `HfeCodec.FmSpurMitHalberRate_UeberlebtDenRundlauf`.  Am echten Laufwerk
   gegengeprüft.
+- **Der Robotron P8000 fährt dasselbe NDOS (2026-08-18,
+  `doc/udos1715_diskettenformat.md` §3.0a).**  Eine WEGA-Startdiskette des **P8000**
+  (UDOS 2.2, 80×32×256, 250 kbit/s MFM) galt als unlesbar.  Sie ist Feld für Feld eine
+  UDOS1715-Diskette; nur ihr Formatierer lässt zwischen Belegungsplan und Zählern den
+  **`77H`-Nachlauf der ZDOS-Sitte** stehen (`179H` = `01`), und darauf bestand
+  `UdosBitmap::looksValid` als Unterscheidungsmerkmal.  **Das Füllmuster trennt die
+  Karten NICHT** — die ZDOS-Kennzeichen `11×33H`/`F7H` liegen auf `150H…15BH` und damit
+  in einer 80-Spur-Karte mitten im Belegungsplan, und ZDOS scheitert ohnehin am
+  Zählerabgleich (`belegt + frei = Sektoren/Spur · Spuren`, bei ZDOS die Konstante
+  2464).  Geprüft wird jetzt nur noch „`00` **oder** `77H`"; `179H` gar nicht mehr.
+  Zweite Eigenheit, die man nicht für einen Defekt halten darf: **der Systembereich ist
+  grösser** — gesperrt ist Kopf 0 (Sektoren 0…15) der Spuren 0, **21** (Bootspur), 22
+  und 23 ganz, Kopf 1 derselben Spuren trägt Dateidaten.  Wächter: `Udos1715P8000.*`
+  auf der Fixture `udos1715_640k_p8000_wega.img`.  Lesen **und** Schreiben am echten
+  Laufwerk gegengeprüft (Datei einfügen → 4 Spuren zurückgeschrieben und geprüft, frisch
+  zurückgelesen byteweise gleich, löschen → 2 Spuren; Vollmessung zeigt genau die
+  gemeldeten Spuren geändert, danach aus der Sicherung wiederhergestellt).
 - **UDOS1715/NDOS — die zweite UDOS-Ausprägung (2026-08-17,
   `doc/udos1715_diskettenformat.md`, Entwurf §21).**  Die Disketten des **PC 1715**
   tragen dasselbe Betriebssystem, aber ein anderes Dateisystem, weil der **µPD765**
@@ -870,6 +908,18 @@ Was man beim Weiterarbeiten wissen muss:
   nicht (Vollspur-FORMAT ersetzt die Spur) — daran hängt, dass eine Leerdiskette im
   echten Laufwerk formatiert werden kann, ohne vorher gelesen zu werden.
   Wächter: `TrackSync.ReihenlaufLaedtNichtNach`.
+- **Ein Sektor mit falscher Pruefsumme wird NACHGELESEN** (2026-08-18, Entwurf §5.4a).
+  Der Arbeitsfaden tastet je Auftrag nur EINE Umdrehung ab; auf einer gealterten
+  Diskette liefert das gelegentlich einen Sektor mit falscher Daten-CRC, der beim
+  naechsten Versuch heil zurueckkommt (an der P8000-Diskette von 1988 gemessen: einer
+  unter 2560).  Ohne Wiederholung wanderte der Ausrutscher **unbemerkt in eine Datei**.
+  `TrackSync` zaehlt daher nach dem Dekodieren die Sektoren mit falscher ID- **oder**
+  Daten-CRC und stellt die Spur erneut ein (`read_crc_retries`, Vorgabe 2);
+  uebernommen wird der **beste** Versuch, nicht der letzte, und ein Rest wird gemeldet
+  (`read_crc_bad`) statt die Spur zu verweigern.  Eine **markenlose** Spur ist
+  unformatiert und wird nie wiederholt — sonst kostete jede Leerspur die dreifache
+  Zeit.  Waechter: `TrackSync.EinLeseausrutscher*`, `TrackSync.EineDauerhaft*`,
+  `TrackSync.EineHeileSpurWirdNiemalsZweimalGelesen`.
 - **Geschrieben gilt erst nach dem ZURUECKLESEN** (Entwurf §7.1).  Der Verify-Lauf des
   Gastsystems (`FORMAT`) prüft das **Speicherabbild gegen sich selbst** und sieht eine
   Schadstelle der Diskette nie — deshalb folgt jedem `Write` ein `Verify` (Spur

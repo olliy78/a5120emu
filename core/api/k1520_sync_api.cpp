@@ -52,6 +52,7 @@ extern "C" K1520Sync k1520s_create(const K1520SyncSpec* spec) {
     s.read_ahead     = spec->read_ahead;
     s.verify_writes  = spec->verify_writes;
     s.write_verify_retries = spec->write_verify_retries;
+    s.read_crc_retries     = spec->read_crc_retries;
     if (spec->write_settle_ms)    s.write_settle_ms    = spec->write_settle_ms;
     if (spec->request_timeout_ms) s.request_timeout_ms = spec->request_timeout_ms;
 
@@ -143,6 +144,8 @@ extern "C" bool k1520s_stats(K1520Sync h, K1520SyncStats* out) {
     out->writes_done   = st.writes_done;
     out->verifies_done = st.verifies_done;
     out->verify_failed = st.verify_failed;
+    out->read_retries  = st.read_retries;
+    out->read_crc_bad  = st.read_crc_bad;
     out->errors        = st.errors;
     out->busy_kind     = st.busy_kind;
     out->busy_cyl      = st.busy_cyl;

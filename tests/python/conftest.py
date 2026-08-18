@@ -128,6 +128,41 @@ def qapp():
     app.processEvents()
 
 
+@pytest.fixture(autouse=True)
+def kein_unerwartetes_meldungsfenster(monkeypatch):
+    """Ein nicht abgefangenes modales Fenster ist ein **Fehlschlag**, kein Hänger.
+
+    ``QMessageBox.critical`` & Co. blockieren, bis jemand klickt — headless klickt
+    niemand.  Ein Meldungsfenster auf einem Weg, den ein Test nicht erwartet hat,
+    liess den Fall deshalb bis zum ctest-Zeitüberlauf stehen (300 s) statt zu
+    scheitern, und im Protokoll stand nur „Timeout" ohne den Grund.  Genau so lag
+    ein echter Fehler eine Weile unbemerkt: ohne das freiwillige Paket
+    ``greaseweazle`` zeigte ``open_physical`` eine Meldung — in der CI, wo das Paket
+    nie installiert ist, hing die ganze Testebene.
+
+    Tests, die ein Fenster ERWARTEN, setzen ihren eigenen ``monkeypatch`` im
+    Testkörper; der greift später und gewinnt.  Diese Sperre fängt nur das, woran
+    niemand gedacht hat.
+    """
+    try:
+        from PySide6.QtWidgets import QMessageBox
+    except Exception:                                # noqa: BLE001
+        return                                       # ohne Qt gibt es nichts zu sperren
+
+    def sperre(name):
+        def melden(*args, **kwargs):
+            texte = [a for a in args if isinstance(a, str)]
+            raise AssertionError(
+                f"unerwartetes modales Meldungsfenster QMessageBox.{name}: "
+                + " | ".join(texte)
+                + "\nErwartet der Test es, gehoert ein monkeypatch in den Testkoerper.")
+        return melden
+
+    for name in ("critical", "warning", "information", "question", "about"):
+        monkeypatch.setattr(QMessageBox, name, staticmethod(sperre(name)),
+                            raising=False)
+
+
 # ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
 def run_until_text(emu, needle: str, max_cycles: int = 60_000_000,
