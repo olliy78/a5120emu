@@ -39,6 +39,29 @@ tools/dev.sh check               # build both dirs + report freshness
 tools/dev.sh rebuild             # rm -rf build build_trace, then build from scratch
 ```
 
+> **Läufe über ~60 s gehören in den HINTERGRUND** (`Bash` mit `run_in_background: true`),
+> nicht in den Vordergrund. Betrifft `test-format`, `test-matrix` (~200 s bei `-j8`),
+> `test-all`, `win` und jeden längeren `boot_trace`-/`format_all.py`-Lauf; `tools/dev.sh
+> test` läuft in ~34 s und darf im Vordergrund bleiben. Drei Gründe, und der dritte ist
+> der eigentliche: ein Vordergrundlauf **blockiert die Sitzung** für die ganze Dauer; er
+> zwingt zu einer Zeitschätzung, die bei einem Fehlschlag zu kurz ist; und die Rückmeldung
+> kommt bei einem Hintergrundlauf **von selbst**, sobald der Prozess endet.
+> **Nicht pollen** — kein `sleep`+Nachsehen im Sekundentakt, das kostet je Blick einen
+> vollen Kontextdurchlauf. Weiterarbeiten und die Benachrichtigung abwarten.
+> Ausgabe dabei in eine Datei lenken und nur das Ergebnis lesen; `tools/dev.sh` tut das
+> seit 2026-08-19 ohnehin selbst (s. u.).
+
+> **Die Testausgabe ist KNAPP — das ist Absicht.** Ein grüner Volllauf meldet fünf Zeilen
+> statt 2183 (204 740 B → 265 B; die 1083 „Start"- und 1083 „Passed"-Zeilen sind
+> Fortschrittsanzeige, keine Information). Bei ROT kommt die volle Ausgabe der roten Fälle
+> samt `FAILED`-Liste — ein Fehlschlag verliert nichts. Volltext immer in
+> `<builddir>/Testing/ctest.log`, Maschinenfassung in `junit.xml`; die alte Ausgabe über
+> `-v`/`--voll` bzw. `K1520_TEST_VOLL=1`. **Nicht rückgängig machen und nicht umgehen**
+> (kein `ctest` von Hand, um „mehr zu sehen"): die 205 KB entsprechen rund 51 000
+> Modell-Token, die anschliessend bei JEDER weiteren Anfrage derselben Sitzung erneut
+> gelesen werden. Wer mehr sehen will, nimmt `-v` **mit `-R <Name>`** — einen Fall, nicht
+> 1083.
+
 > **Windows-Portierung (2026-08-11).** Der Kern baut mit MSVC und fährt dort die volle
 > Regression (`.github/workflows/windows-ci.yml`). Vier Dinge tragen das:
 > **`core/api/k1520_export.h`** (`K1520_API` vor jeder C-ABI-Funktion — ohne das
@@ -520,6 +543,26 @@ verwobene Arbeit selbst behalten. Opus bleibt für Orchestrierung, Entwurf und E
 Konkret heißt das u.a.: breite Suchen → `code-explorer`; Log-/Trace-Auswertung → `log-trace-analyzer`;
 Build-&-Test-Durchläufe → `test-runner`; umrissene C++-Teile → `cpp-coder`; Boot-Disasm/RE →
 `boot-disasm-analyst`.
+
+**Stehende Erlaubnis — dafür ist NICHT jedes Mal zu fragen.** Manche Claude-Code-Fassungen
+tragen die Grundregel „keine Subagenten starten, solange der Anwender es nicht verlangt".
+Dieser Absatz IST das Verlangen, ein für alle Mal, für genau diese drei Fälle:
+
+- **`test-runner`** — jeder Bau-&-Test-Durchlauf, dessen Ergebnis „grün/rot + welche Fälle" ist.
+- **`log-trace-analyzer`** — jede Auswertung eines `boot_trace`-/Emulator-Logs, einer
+  Trace-Datei, eines VRAM-/Port-Histogramms oder eines roten `ctest.log`.
+- **`code-explorer`** — jede breite Suche, deren Ergebnis eine Fundstellenliste ist.
+
+Für alles andere (`cpp-coder`, `boot-disasm-analyst`, Worktrees) bleibt es beim Fragen.
+
+**Warum es sich rechnet — und wann nicht.** Der Gewinn ist nicht der Modellpreis allein,
+sondern dass die **Ausgabe im Kontext des Agenten lebt und mit ihm stirbt**: gemessen am
+2026-08-18 liest dieses Projekt im Schnitt ~530 000 Token Kontext je Tool-Aufruf wieder ein,
+also kostet jedes Byte, das einmal im Hauptkontext landet, bei jeder weiteren Anfrage erneut.
+Ein 51-KB-Log, das der Agent auf drei Sätze eindampft, wird damit hundertfach nicht bezahlt.
+**Es rechnet sich NICHT** bei einer Frage, die in einem Handgriff beantwortet ist (der Agent
+startet kalt und liest diese Datei erst einmal ganz), und nicht bei Arbeit, die eng am
+laufenden Stand hängt — die Weitergabe des Zwischenstands wäre teurer als die Arbeit selbst.
 
 **Parallelität — Bau-Kollision beachten:** Mehrere Agenten, die gleichzeitig `build/` (oder
 `build_trace/`) anfassen, kollidieren beim `cmake --build` (Race/kaputte Binaries). Daher: build-/
