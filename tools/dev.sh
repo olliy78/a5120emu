@@ -22,6 +22,9 @@
 #   tools/dev.sh build [trace]        build/ bauen (+ build_trace/ bei 'trace')
 #   tools/dev.sh test  [ctest-args]   build/ bauen, dann Regression (ctest)
 #                                     OHNE format_integration und format_matrix
+#                                     Ausgabe ist KNAPP (nur die Zusammen-
+#                                     fassung); -v bzw. --voll oder
+#                                     K1520_TEST_VOLL=1 druckt alles.
 #   tools/dev.sh test-all [ctest-args] wie test, ABER inkl. beider Format-Label
 #   tools/dev.sh test-format [args]   NUR die langsamen format_integration-Boot-Disk-Tests
 #   tools/dev.sh test-matrix [args]   NUR die 88 Format-Matrix-Tests (jedes FORMAT.COM-Menü
@@ -152,7 +155,71 @@ build_dir() {
     rm -f "$log"
 }
 
+# ─── Testausgabe: knapp statt vollstaendig ───────────────────────────────────
+# Ein GRUENER Volllauf schreibt 2183 Zeilen / 205 KB — je Testfall eine
+# „Start"- und eine „Passed"-Zeile.  Am Terminal ist das Fortschrittsanzeige;
+# in einem Protokoll, einer CI-Ausgabe oder im Kontext eines Agenten, der die
+# Ausgabe LIEST, ist es reines Rauschen: die Information ist „1081/1081 gruen"
+# und passt in eine Zeile.  Gemessen 2026-08-18: 205 KB entsprechen rund
+# 51 000 Modell-Token, die anschliessend bei JEDER weiteren Anfrage derselben
+# Sitzung erneut gelesen werden — der Kurzmodus spart davon rund 99,9 %.
+#
+# Deshalb laeuft ctest in eine Logdatei und es wird nur die Zusammenfassung
+# gedruckt.  Bei einem Fehlschlag kommt die volle Ausgabe der ROTEN Faelle
+# dazu (gefiltert werden ausschliesslich die beiden Rauschzeilenarten) — ein
+# roter Lauf verliert also nichts, was zur Fehlersuche taugt.
+#
+#   -v | --voll   (oder K1520_TEST_VOLL=1)   → alte, vollstaendige Ausgabe
+#
+# Der Volltext liegt IMMER in <builddir>/Testing/ctest.log, die Maschinen-
+# fassung unveraendert daneben in junit.xml.
+VOLL="${K1520_TEST_VOLL:-0}"
+
+# Zwei Zeilenarten sind das Rauschen: der Startvermerk und der gruene Fall.
+# Alles andere (Fehlerausgaben, die FAILED-Liste, die Zusammenfassung) bleibt.
+RAUSCHEN='^ *Start +[0-9]+:|Passed +[0-9.]+ sec *$'
+
+run_ctest() {
+    local dir="$1"; shift
+    local log="$dir/Testing/ctest.log" rc=0
+    if [ "$VOLL" = 1 ]; then
+        ctest --test-dir "$dir" --output-on-failure "${JUNIT[@]}" "$@"
+        return $?
+    fi
+    mkdir -p "$dir/Testing"
+    ctest --test-dir "$dir" --output-on-failure "${JUNIT[@]}" "$@" >"$log" 2>&1 || rc=$?
+    # Eine LEERE Auswahl (`-R` ohne Treffer) laesst ctest mit 0 enden und druckt
+    # nur „No tests were found!!!".  Ohne diese Pruefung meldete der Kurzmodus
+    # dafuer „gruen" — ein Fehlgruen, das genau dann zuschlaegt, wenn man sich
+    # im Testnamen vertippt hat.  Kein Zusammenfassungssatz ⇒ kein gruener Lauf.
+    if [ "$rc" = 0 ] && grep -qE '^[0-9]+% tests passed' "$log"; then
+        grep -E '^[0-9]+% tests passed|^Total Test time' "$log" | sed 's/^/   /'
+        c_grn ">> gruen  (Volltext: $log)"
+    else
+        # Bei Rot: alles ausser dem Rauschen — gedeckelt, damit ein Lauf, in dem
+        # ALLES rot ist, nicht doch wieder das ganze Log ausschuettet.
+        grep -vE "$RAUSCHEN" "$log" | head -250 | sed 's/^/   /' || true
+        c_red ">> ROT (Volltext: $log) — einzelner Fall: tools/dev.sh test -R <Name> -v"
+        [ "$rc" = 0 ] && rc=1
+    fi
+    return $rc
+}
+
 cmd="${1:-}"; shift || true
+
+# `-v`/`--voll` gilt NUR fuer die Testkommandos — bei `trace`/`tool` waere es
+# ein Argument des aufgerufenen Programms und darf nicht verschluckt werden.
+case "$cmd" in
+    test*)
+        _args=()
+        for _a in "$@"; do
+            case "$_a" in
+                -v|--voll) VOLL=1 ;;
+                *)         _args+=("$_a") ;;
+            esac
+        done
+        set -- ${_args[@]+"${_args[@]}"} ;;
+esac
 case "$cmd" in
     build)
         build_dir build
@@ -163,33 +230,33 @@ case "$cmd" in
         # LABEL format_integration (Boot-Disk-Kette) und format_matrix (88 Menüs).
         # Für nur diese: test-format bzw. test-matrix; für ALLES: test-all.
         c_ylw ">> ctest (build/, -j$JOBS) [ohne format_integration/format_matrix]"
-        ctest --test-dir build --output-on-failure "${JUNIT[@]}" -LE "format_(integration|matrix)" \
+        run_ctest build -LE "format_(integration|matrix)" \
               -j"$JOBS" "$@" ;;
     test-all)
         build_dir build
         c_ylw ">> ctest (build/) ALLE inkl. format_integration + format_matrix"
-        ctest --test-dir build --output-on-failure "${JUNIT[@]}" "$@" ;;
+        run_ctest build "$@" ;;
     test-format)
         build_dir build
         c_ylw ">> ctest (build/) NUR format_integration (langsam)"
-        ctest --test-dir build --output-on-failure "${JUNIT[@]}" -L format_integration "$@" ;;
+        run_ctest build -L format_integration "$@" ;;
     test-matrix)
         build_dir build
         c_ylw ">> ctest (build/) NUR format_matrix — 88 FORMAT.COM-Menues auf Leerdisketten"
-        ctest --test-dir build --output-on-failure "${JUNIT[@]}" -L format_matrix "$@" ;;
+        run_ctest build -L format_matrix "$@" ;;
     test-python)
         # pytest-Ebene: C-ABI (ctypes gegen libk1520core.so) + PySide6-GUI.
         # Braucht die gebaute Bibliothek — deshalb erst bauen.
         build_dir build
         c_ylw ">> ctest (build/, -j$JOBS) NUR Python-Tests (Label python)"
-        ctest --test-dir build --output-on-failure "${JUNIT[@]}" -L python -j"$JOBS" "$@" ;;
+        run_ctest build -L python -j"$JOBS" "$@" ;;
     test-level)
         # Testebenen (Labels, siehe tests/CMakeLists.txt):
         #   unit debugtools integration cli system python  —  quer dazu: fast slow
         lvl="${1:?Ebene fehlt: unit|debugtools|integration|cli|system|python}"; shift
         build_dir build
         c_ylw ">> ctest (build/, -j$JOBS) NUR Ebene '$lvl'"
-        ctest --test-dir build --output-on-failure "${JUNIT[@]}" -L "^$lvl$" -j"$JOBS" "$@" ;;
+        run_ctest build -L "^$lvl$" -j"$JOBS" "$@" ;;
     trace)
         build_dir build_trace
         c_ylw ">> build_trace/boot_trace$EXE $*"; exec "build_trace/boot_trace$EXE" "$@" ;;
@@ -208,7 +275,7 @@ case "$cmd" in
         # (jeder Prozessstart ~0,5 s) — Begründung oben bei JOBS.
         c_ylw ">> ctest (build_win/, unter wine, -j$JOBS) [ohne format_integration/format_matrix]"
         WINEDEBUG="${WINEDEBUG:--all}" \
-        ctest --test-dir build_win --output-on-failure "${JUNIT[@]}" -LE "format_(integration|matrix)" \
+        run_ctest build_win -LE "format_(integration|matrix)" \
               -j"$JOBS" "$@" ;;
     check)
         for d in build build_trace; do [ -d "$d" ] && build_dir "$d" || c_ylw ">> $d: nicht vorhanden"; done ;;
