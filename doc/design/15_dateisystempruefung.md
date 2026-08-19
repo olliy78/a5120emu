@@ -1,7 +1,8 @@
 # Dateisystemprüfung, Reparatur und Wiederherstellung (`fsck`)
 
-> **Stand:** 2026-08-19 · **Etappen 1 und 2 umgesetzt** (Modell, CP/M-,
-> ZDOS- und NDOS-Prüfung, Automatik beim Öffnen, `check --full`, Anzeige)
+> **Stand:** 2026-08-19 · **Etappen 1–3 umgesetzt bis auf die Oberfläche**
+> (Modell, CP/M-, ZDOS- und NDOS-Prüfung, Automatik beim Öffnen, `check --full`,
+> Anzeige; Reparatur in Kern, C-ABI und CLI — es fehlt der Reparaturdialog)
 > — s. §19 (Etappenplan)
 > **Gehört zu:** `doc/design/13_k1520disktool.md` (das Werkzeug), `doc/udos_diskettenformat.md`,
 > `doc/udos1715_diskettenformat.md`, `doc/design/14_physische_diskette.md`,
@@ -16,26 +17,25 @@
 Damit eine neue Sitzung nicht das ganze Dokument lesen muss, hier der Stand in
 Kürze. Die Begründungen dahinter stehen in den genannten Abschnitten.
 
-**Steht** (Etappen 1+2, §19):
+**Steht** (Etappen 1+2 ganz, Etappe 3 ohne Oberfläche, §19):
 
 | | |
 |---|---|
 | Modell | `core/filesystem/check/fs_check.{h,cpp}` — `FsFinding` · `FsSeverity` · `FsLayer` · `FsRepair` · `FsCheckReport` |
 | Prüfer | `cpm_check.cpp` (CP/A, SCPX, SCP1700) · `udos_check.cpp` (ZDOS) · `udos1715_check.cpp` (NDOS) |
-| Haken | `FileSystem::check(level, nachladen)` — überall umgesetzt; `FileSystem::repair()` ist ein **leerer** Haken |
-| Bündelung | `DiskVolume::check()` / `checkReport()`, Automatik am Ende von `oeffnenMit` |
-| C-ABI | `k1520d_check` · `k1520d_check_complete` · `k1520d_check_tracks_*` · `k1520d_check_summary` · `k1520d_finding_*` (der frühere Textbericht heißt jetzt `k1520d_check_report`) |
-| CLI | `check [--full] [--json]` |
+| Haken | `FileSystem::check(level, nachladen)` und `FileSystem::repair(const FsRepair&)` — beide überall umgesetzt |
+| Bündelung | `DiskVolume::check()` / `checkReport()`, Automatik am Ende von `oeffnenMit`; `DiskVolume::applyRepairs()` = Rangfolge + Transaktion + Nachprüfung (§12) |
+| C-ABI | `k1520d_check` · `k1520d_check_complete` · `k1520d_check_tracks_*` · `k1520d_check_summary` · `k1520d_finding_*` · `k1520d_repair_*` · `k1520d_apply_repairs` (der frühere Textbericht heißt jetzt `k1520d_check_report`) |
+| CLI | `check [--full] [--json]` · `fsck [--full] [--repair[=alle\|sicher\|<kennung>,…]] [--dry-run] [--json]` |
 | Oberfläche | Statuszeile · Meldungsstreifen (mit Rangfolge) · Protokoll · Diskettenangaben inkl. Schaltfläche *Vollprüfung* |
-| Tests | `tests/unit/filesystem/test_fs_check.cpp` (33) · `cli_dt_check_*` (5) · `py_disk_c_api` · `py_disktool_gui` |
+| Tests | `tests/unit/filesystem/test_fs_check.cpp` (45, davon 12 `FsCheckReparatur.*`) · `cli_dt_check_*` (5) · `py_disk_c_api` · `py_disktool_gui` |
 
 **Fehlt noch** — in dieser Reihenfolge (§19):
 
-3. **Reparatur.** `FileSystem::repair(const FsRepair&)` je Familie füllen, Rangfolge
-   und Transaktion in `DiskVolume::applyRepairs` (§12), C-ABI `k1520d_repair_*` +
-   `k1520d_apply_repairs`, `fsck --repair` in der CLI, Dialog `ui/fsck_dialog.py`,
-   Aktion `act_reparieren`. **Die Prüfer erzeugen bisher keine `FsRepair`-Vorschläge**
-   — die Listen in §8/§9.3/§10 sind der Bauplan dafür.
+3. **Reparatur — nur noch die Oberfläche.** Kern, C-ABI und CLI stehen; es fehlen
+   der Dialog `app/disktool/ui/fsck_dialog.py`, die Aktion `act_reparieren` und
+   der **Sprung in den Diskeditor** aus einem Befund heraus (Etappe 4, E9 — die
+   Befunde tragen Zylinder/Kopf/Sektor bereits).
 4. **Ebene Medium für UDOS breiter** — heute je Datei zusammengefasst; ein Reihenlauf
    über freie Bereiche fehlt.
 5. **Wiederherstellung CP/M** (§13): gelöschte Verzeichnisplätze + freie Blöcke mit
@@ -1022,7 +1022,7 @@ Alles bleibt in der schnellen Regression; nichts davon braucht ein Laufwerk oder
 |---|---|---|
 | **1** ✅ | Modell (`fs_check.h`), `FileSystem::check()`-Haken, CP/M-Prüfung (Verwaltung + Medium, beide Tiefen), Automatik in `DiskVolume::open`, `check --full` in der CLI, C-ABI, Streifen + Statuszeile + Protokoll + Diskettenangaben | **Umgesetzt 2026-08-18.**  Eine CP/A-Diskette sagt beim Öffnen, ob ihr Verzeichnis stimmt; `--full` findet zusätzlich Sektoren mit falscher CRC und nennt die Datei, die darauf liegt.  Noch keine Reparatur. |
 | **2** ✅ | ZDOS und NDOS: Ebene Verwaltung und Ebene Dateien, Kreuzbelegung, Abgleich Karte ↔ Ketten, Zählerabgleich (aus `info()` hierher verlagert), Begrenzung gleichartiger Befunde | **Umgesetzt 2026-08-19.**  Der Gefahrfall (`frei_aber_belegt`) wird erkannt — der wichtigste Befund überhaupt.  Alle vier UDOS-Fixturen (ZDOS beidseitig, fremde Sync-Sitte, PC 1715, P8000) prüfen ohne Befund. |
-| **3** | `FileSystem::repair()`, Transaktion + Rangfolge, Reparaturdialog, `fsck --repair` | Belegungsplan nachtragen und neu aufbauen, Zähler, Rückwärtszeiger, Kürzen. |
+| **3** ◐ | `FileSystem::repair()`, Transaktion + Rangfolge, Reparaturdialog, `fsck --repair` | **Kern, C-ABI und CLI umgesetzt 2026-08-19.**  Belegungsplan nachtragen und neu aufbauen, Zähler, Rückwärtszeiger, Kürzen, wilder Blockzeiger, Satzzahl — je Familie, mit E8-Sperre bei offenem Kettenfehler und Rücknahme der ganzen Momentaufnahme bei einem Fehlschlag.  **Offen ist die Oberfläche** (`ui/fsck_dialog.py`, `act_reparieren`). |
 | **4** ◐ | Ebene Medium: CRC-Übersicht mit Rückabbildung auf Dateien, **Sprung in den Diskeditor** | Die Rückabbildung ist mit den Etappen 1+2 mitgekommen („Satz 14 von `STAT.COM` liegt auf einem Sektor mit falscher CRC", bei UDOS je Datei zusammengefasst).  **Offen ist nur noch der Sprung**: jeder Befund trägt bereits Zylinder/Kopf/Sektor (E9, C-ABI `k1520d_finding_cyl/_head/_sector`) — es fehlt die Oberfläche, die daraus einen Doppelklick macht.  Gehört sinnvollerweise zum Reparaturdialog (Etappe 3). |
 | **5** | Wiederherstellung CP/M (Verzeichnisplätze + freie Blöcke) mit Dialog und `recover` | Der häufigste und einfachste Rettungsfall. |
 | **6** | Wiederherstellung UDOS/NDOS (Kopfsektorsuche, Kettenverfolgung, Beiblatt) | Der wertvollste — dreißig Jahre alte gelöschte Dateien mit vollständigen Angaben. |

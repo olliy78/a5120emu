@@ -90,6 +90,17 @@ public:
     FsInfo info() const override;
     /// @brief Pruefung — umgesetzt in `core/filesystem/check/cpm_check.cpp`.
     FsCheckReport check(FsCheckLevel level, bool nachladen) const override;
+    /**
+     * @brief EINE Reparatur ausfuehren (E3) — die Vorschlaege stellt `cpm_check.cpp`.
+     *
+     * | `kind` | Parameter |
+     * |---|---|
+     * | `cpm.platz.freigeben` | @c a = Verzeichnisplatz |
+     * | `cpm.zeiger.streichen` | @c a = Verzeichnisplatz (welche Zeiger unbrauchbar sind, rechnet die Klasse selbst nach) |
+     * | `cpm.rc.anpassen` | @c a = Verzeichnisplatz, @c b = neuer Wert von `RC` |
+     * | `cpm.kreuz.erstem_lassen` | @c a = Verzeichnisplatz der ZWEITEN Datei, @c b = Blocknummer |
+     */
+    bool repair(const FsRepair& r) override;
 
     /// @brief Ist @p name ein gueltiger CP/M-Name (8.3, Grossschrift, ohne Sonderzeichen)?
     ///        Liefert bei false den Grund in @p why.

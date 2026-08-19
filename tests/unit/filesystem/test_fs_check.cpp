@@ -25,11 +25,13 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <string>
 #include <vector>
 
 #include "core/filesystem/check/fs_check.h"
 #include "core/filesystem/disk_volume.h"
+#include "core/filesystem/udos/udos_bitmap.h"
 #include "tests/support/temp_path.h"
 
 namespace fs = std::filesystem;
@@ -1153,4 +1155,570 @@ TEST(FsCheckVertrag, SpurzaehlerZeigenBeiVollstaendigerPruefungNvonN) {
         const int voll    = v->check(FsCheckLevel::Voll, true).spuren_gesamt;
         EXPECT_LT(schnell, voll) << f.datei;
     }
+}
+
+// ═══ 5. Reparatur (Etappe 3, Entwurf §8/§9.3/§10/§12) ═════════════════════════
+//
+// Derselbe Dreischritt wie bei der Schadensinjektion, nur eine Stufe weiter:
+//   1. der erwartete Befund steht da UND traegt den erwarteten Vorschlag,
+//   2. die Reparatur laeuft, und die Nachpruefung ist an dieser Stelle sauber,
+//   3. **alle Dateien lesen sich Byte fuer Byte wie vorher** — das ist der Test,
+//      der eine uebereifrige Reparatur auffliegen laesst.
+//
+// Punkt 3 ist der eigentliche Grund dieses Abschnitts.  Eine Reparatur, die den
+// Befund beseitigt und dabei eine unbeteiligte Datei anfasst, ist schlimmer als
+// gar keine: der Anwender hat sie ausdruecklich verlangt und vertraut ihr.
+
+namespace {
+
+/// @brief Eine Diskette SCHREIBEND oeffnen — Reparaturen sind Schreibzugriffe.
+std::unique_ptr<DiskVolume> oeffneSchreibbar(const std::string& pfad,
+                                             const std::string& fsname = "") {
+    std::string err;
+    auto v = DiskVolume::open(pfad, fsname, formate(), dateisysteme(), err,
+                              /*read_only=*/false);
+    EXPECT_TRUE(v) << pfad << ": " << err;
+    if (v) v->setBackup(false);        // der Test raeumt selbst auf
+    return v;
+}
+
+/// @brief Jede Datei der Diskette, Byte fuer Byte — die Gegenprobe zu Punkt 3.
+///
+/// Herausgeholt wird ueber den normalen Weg (`extractAll`), nicht ueber den
+/// Pruefcode: was der Anwender bekaeme, ist der Massstab.
+std::map<std::string, std::vector<uint8_t>> inhalte(DiskVolume& v,
+                                                    const std::string& marke) {
+    const fs::path ordner = fs::temp_directory_path() / ("fscheck_inhalt_" + marke);
+    fs::remove_all(ordner);
+    fs::create_directories(ordner);
+    TransferOptions o;
+    o.overwrite = true;
+    EXPECT_TRUE(v.extractAll(ordner.string(), o)) << v.lastError();
+
+    std::map<std::string, std::vector<uint8_t>> out;
+    for (const fs::directory_entry& d : fs::recursive_directory_iterator(ordner)) {
+        if (!d.is_regular_file()) continue;
+        std::ifstream f(d.path(), std::ios::binary);
+        out[fs::relative(d.path(), ordner).string()] =
+            std::vector<uint8_t>(std::istreambuf_iterator<char>(f),
+                                 std::istreambuf_iterator<char>());
+    }
+    fs::remove_all(ordner);
+    return out;
+}
+
+/// @brief Die Auswahl `(Befund, Vorschlag)` fuer alle Vorschlaege dieser Kennung.
+std::vector<std::pair<int, int>> waehle(const FsCheckReport& r, const std::string& kind) {
+    std::vector<std::pair<int, int>> out;
+    for (size_t i = 0; i < r.findings.size(); ++i)
+        for (size_t j = 0; j < r.findings[i].repairs.size(); ++j)
+            if (r.findings[i].repairs[j].kind == kind)
+                out.emplace_back(static_cast<int>(i), static_cast<int>(j));
+    return out;
+}
+
+/// @brief @p wieviel wirklich freie Sektoren einer Datenspur suchen.
+///
+/// „Spur 40, Sektor 1" von Hand hinzuschreiben ging schief: dort lag eine Datei.
+/// Der verlorene Platz muss aber **frei** sein, sonst entsteht der Befund gar nicht.
+std::vector<std::pair<uint8_t, uint8_t>> freieSektoren(const UdosFileSystem& fs,
+                                                       const UdosBitmap& bm, int wieviel) {
+    std::vector<std::pair<uint8_t, uint8_t>> out;
+    for (uint8_t t = 0; t < bm.trackCount() && static_cast<int>(out.size()) < wieviel; ++t) {
+        if (fs.reservedTrack(t)) continue;
+        for (uint8_t sid = 1; sid <= bm.sectorsPerTrack()
+                              && static_cast<int>(out.size()) < wieviel; ++sid)
+            if (!bm.used(t, sid)) out.emplace_back(t, sid);
+    }
+    return out;
+}
+
+/// @brief Alle Vorschlaege eines Befundes als Text — fuer Fehlermeldungen.
+std::string vorschlaege(const FsCheckReport& r) {
+    std::string s;
+    for (const FsFinding& f : r.findings)
+        for (const FsRepair& x : f.repairs)
+            s += (s.empty() ? "" : ", ") + f.id + "->" + x.kind
+               + (x.gesperrt ? " [gesperrt]" : "");
+    return s.empty() ? "(kein Vorschlag)" : s;
+}
+
+}  // namespace
+
+/// @test Das geloeschte Kartenbit — der Gefahrfall — wird nachgetragen.
+///
+/// Der wichtigste Eingriff des ganzen Vorhabens: er **nimmt nur und gibt nie**,
+/// kann also unter keinen Umstaenden Daten freigeben.
+TEST(FsCheckReparatur, UdosKartenbitWirdNachgetragen) {
+    const std::string d = kopie("udos_boot_scp.hfe", "fsrep_udos_karte.hfe");
+
+    UdosPointer ziel{0, 0};
+    {
+        UdosSeite s = udosOeffne(d, 0, /*schreibbar=*/true);
+        ASSERT_TRUE(s) << s.err;
+        UdosFileHeader hdr;
+        std::vector<UdosPointer> kette;
+        std::vector<UdosDirEntry> verz;
+        const UdosDirEntry* e = findeDatei(*s.fs, 2, hdr, kette, verz);
+        ASSERT_NE(e, nullptr);
+        ziel = kette[1];
+        ASSERT_TRUE(karteBit(*s.space, 0, 23, ziel.track, ziel.sectorId(), false));
+        s.fs.reset(); s.space.reset();
+        ASSERT_TRUE(s.disk->flush());
+    }
+
+    auto v = oeffneSchreibbar(d);
+    ASSERT_TRUE(v);
+    const auto vorher_inhalt = inhalte(*v, "udoskarte_vor");
+
+    const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
+    const auto auswahl = waehle(r, "udos.karte.sektoren.sperren");
+    ASSERT_EQ(1u, auswahl.size()) << vorschlaege(r);
+    EXPECT_TRUE(r.findings[auswahl[0].first].repairs[auswahl[0].second].empfohlen);
+    EXPECT_FALSE(r.findings[auswahl[0].first].repairs[auswahl[0].second].datenverlust);
+
+    ASSERT_EQ(1, v->applyRepairs(auswahl)) << v->lastError();
+
+    // applyRepairs prueft selbst nach — der Bericht danach ist der neue Stand.
+    const FsCheckReport& nach = v->checkReport();
+    EXPECT_TRUE(mitId(nach, "udos.karte.frei_aber_belegt").empty()) << kennungen(nach);
+    EXPECT_TRUE(mitId(nach, "udos.karte.zaehler").empty()) << kennungen(nach);
+    EXPECT_EQ(0, nach.zaehlerAb(FsSeverity::Warnung)) << kennungen(nach);
+    EXPECT_EQ(vorher_inhalt, inhalte(*v, "udoskarte_nach"));
+    fs::remove(d);
+}
+
+/// @test Der falsche Freizaehler wird nachgerechnet — der harmloseste Eingriff.
+TEST(FsCheckReparatur, UdosZaehlerWirdNachgerechnet) {
+    const std::string d = kopie("udos_boot_scp.hfe", "fsrep_udos_zaehler.hfe");
+    {
+        UdosSeite s = udosOeffne(d, 0, true);
+        ASSERT_TRUE(s) << s.err;
+        // Nur den gespeicherten Zaehler verbiegen, kein einziges Bit anfassen.
+        SectorData sec;
+        ASSERT_TRUE(s.space->readSector(23, 0, 3, sec));
+        std::vector<uint8_t> daten(sec.data.begin(), sec.data.begin() + 128);
+        daten[124] = 0x11;    // 380/381 der Karte = Freizaehler (Sektor 3, Offset 124)
+        daten[125] = 0x22;
+        ASSERT_TRUE(s.space->writeSector(23, 0, 3, daten));
+        s.fs.reset(); s.space.reset();
+        ASSERT_TRUE(s.disk->flush());
+    }
+
+    auto v = oeffneSchreibbar(d);
+    ASSERT_TRUE(v);
+    const auto vorher_inhalt = inhalte(*v, "udoszaehler_vor");
+
+    const FsCheckReport& r = v->check(FsCheckLevel::Schnell, true);
+    const auto auswahl = waehle(r, "udos.karte.zaehler.neu");
+    ASSERT_FALSE(auswahl.empty()) << vorschlaege(r);
+    ASSERT_GE(v->applyRepairs({auswahl[0]}), 1) << v->lastError();
+
+    EXPECT_TRUE(mitId(v->checkReport(), "udos.karte.zaehler").empty())
+        << kennungen(v->checkReport());
+    EXPECT_EQ(vorher_inhalt, inhalte(*v, "udoszaehler_nach"));
+    fs::remove(d);
+}
+
+/// @test Der verdrehte Rueckwaertszeiger wird aus der Vorwaertskette neu geschrieben.
+///
+/// Angefasst wird dabei **nur der Nachspann** — Nutzdaten und CRC bleiben unberuehrt.
+/// Genau deshalb ist die Byte-Gegenprobe hier so aussagekraeftig.
+TEST(FsCheckReparatur, UdosRueckwaertszeigerWirdNeuGeschrieben) {
+    const std::string d = kopie("udos_boot_scp.hfe", "fsrep_udos_back.hfe");
+    {
+        UdosSeite s = udosOeffne(d, 0, true);
+        ASSERT_TRUE(s) << s.err;
+        UdosFileHeader hdr;
+        std::vector<UdosPointer> kette;
+        std::vector<UdosDirEntry> verz;
+        const UdosDirEntry* e = findeDatei(*s.fs, 3, hdr, kette, verz);
+        ASSERT_NE(e, nullptr);
+        SectorData sec;
+        ASSERT_TRUE(s.space->readSector(kette[2].track, 0, kette[2].sectorId(), sec));
+        ASSERT_GE(sec.tail.size(), 4u);
+        const UdosPointer fwd = UdosPointer::fromBytes(sec.tail.data() + 2);
+        ASSERT_TRUE(setzeZeiger(*s.space, 0, kette[2], UdosPointer{9, 9}, fwd));
+        s.fs.reset(); s.space.reset();
+        ASSERT_TRUE(s.disk->flush());
+    }
+
+    auto v = oeffneSchreibbar(d);
+    ASSERT_TRUE(v);
+    const auto vorher_inhalt = inhalte(*v, "udosback_vor");
+
+    const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
+    const auto auswahl = waehle(r, "udos.kette.rueckwaerts.neu");
+    ASSERT_EQ(1u, auswahl.size()) << vorschlaege(r);
+    ASSERT_EQ(1, v->applyRepairs(auswahl)) << v->lastError();
+
+    EXPECT_EQ(0, v->checkReport().zaehlerAb(FsSeverity::Warnung))
+        << kennungen(v->checkReport());
+    EXPECT_EQ(vorher_inhalt, inhalte(*v, "udosback_nach"));
+    fs::remove(d);
+}
+
+/// @test Der Neuaufbau des Belegungsplans gewinnt verlorenen Platz zurueck — und
+///       laesst die Systemspuren in Ruhe.
+///
+/// Dass die reservierten Spuren nur ERGAENZT und nie geleert werden, ist keine
+/// Feinheit: dort liegen Urlader und Bootabbild, die keiner Datei gehoeren.  Ein
+/// Neuaufbau, der sie freigibt, macht die Diskette beim naechsten Schreiben
+/// unbootbar — und der Befund, der ihn ausloeste, war eine blosse Warnung.
+TEST(FsCheckReparatur, UdosNeuaufbauGewinntPlatzZurueckUndSchontDieSystemspuren) {
+    const std::string d = kopie("udos_boot_scp.hfe", "fsrep_udos_neuaufbau.hfe");
+    int frei_vorher = 0;
+    {
+        UdosSeite s = udosOeffne(d, 0, true);
+        ASSERT_TRUE(s) << s.err;
+        frei_vorher = s.fs->bitmap().countFree();
+        // Drei WIRKLICH freie Sektoren belegen, ohne dass eine Datei sie braucht.
+        const auto frei = freieSektoren(*s.fs, s.fs->bitmap(), 3);
+        ASSERT_EQ(3u, frei.size());
+        for (const auto& [t, sid] : frei)
+            ASSERT_TRUE(karteBit(*s.space, 0, 23, t, sid, true));
+        s.fs.reset(); s.space.reset();
+        ASSERT_TRUE(s.disk->flush());
+    }
+
+    auto v = oeffneSchreibbar(d);
+    ASSERT_TRUE(v);
+    const auto vorher_inhalt = inhalte(*v, "udosneu_vor");
+
+    const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
+    const auto auswahl = waehle(r, "udos.karte.neu");
+    ASSERT_EQ(1u, auswahl.size()) << vorschlaege(r);
+    EXPECT_FALSE(r.findings[auswahl[0].first].repairs[auswahl[0].second].gesperrt);
+    ASSERT_EQ(1, v->applyRepairs(auswahl)) << v->lastError();
+
+    EXPECT_EQ(0, v->checkReport().zaehlerAb(FsSeverity::Warnung))
+        << kennungen(v->checkReport());
+    EXPECT_EQ(vorher_inhalt, inhalte(*v, "udosneu_nach"));
+
+    // Und der Platz ist wirklich zurueck — genau die drei Sektoren, nicht mehr.
+    // Erst schliessen: geschrieben wird in das Medium im Speicher, die Datei bekommt
+    // es beim Zurueckschreiben.
+    v.reset();
+    {
+        UdosSeite s = udosOeffne(d, 0, false);
+        ASSERT_TRUE(s) << s.err;
+        EXPECT_EQ(frei_vorher, s.fs->bitmap().countFree());
+    }
+    fs::remove(d);
+}
+
+/// @test Ein offener Kettenfehler SPERRT den Neuaufbau (E8).
+///
+/// Aus einer Diskette, deren Ketten sich nicht verfolgen lassen, einen
+/// Belegungsplan zu rechnen hiesse, das Unverfolgte fuer frei zu erklaeren — und
+/// beim naechsten Schreiben zu ueberschreiben.  Das ist der eine Fehler, den ein
+/// fsck niemals machen darf; deshalb steht die Sperre hier als eigener Fall.
+TEST(FsCheckReparatur, NeuaufbauIstBeiOffenemKettenfehlerGesperrt) {
+    const std::string d = kopie("udos_boot_scp.hfe", "fsrep_udos_gesperrt.hfe");
+    {
+        UdosSeite s = udosOeffne(d, 0, true);
+        ASSERT_TRUE(s) << s.err;
+        UdosFileHeader hdr;
+        std::vector<UdosPointer> kette;
+        std::vector<UdosDirEntry> verz;
+        const UdosDirEntry* e = findeDatei(*s.fs, 3, hdr, kette, verz);
+        ASSERT_NE(e, nullptr);
+        // Vorwaertszeiger ins Nirgendwo: die Kette laesst sich nicht mehr verfolgen.
+        SectorData sec;
+        ASSERT_TRUE(s.space->readSector(kette[1].track, 0, kette[1].sectorId(), sec));
+        ASSERT_GE(sec.tail.size(), 4u);
+        const UdosPointer back = UdosPointer::fromBytes(sec.tail.data());
+        ASSERT_TRUE(setzeZeiger(*s.space, 0, kette[1], back, UdosPointer{5, 200}));
+        // …und zusaetzlich verlorener Platz, damit der Befund ueberhaupt entsteht.
+        const auto frei = freieSektoren(*s.fs, s.fs->bitmap(), 3);
+        ASSERT_EQ(3u, frei.size());
+        for (const auto& [t, sid] : frei)
+            ASSERT_TRUE(karteBit(*s.space, 0, 23, t, sid, true));
+        s.fs.reset(); s.space.reset();
+        ASSERT_TRUE(s.disk->flush());
+    }
+
+    auto v = oeffneSchreibbar(d);
+    ASSERT_TRUE(v);
+    const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
+    const auto auswahl = waehle(r, "udos.karte.neu");
+    ASSERT_EQ(1u, auswahl.size()) << vorschlaege(r);
+    const FsRepair& rep = r.findings[auswahl[0].first].repairs[auswahl[0].second];
+    EXPECT_TRUE(rep.gesperrt) << "ein offener Kettenfehler MUSS den Neuaufbau sperren";
+    EXPECT_FALSE(rep.empfohlen);
+    EXPECT_NE(std::string::npos, rep.warum.find("Kettenfehler")) << rep.warum;
+
+    // Und der Versuch scheitert, ohne die Diskette anzufassen.
+    EXPECT_EQ(-1, v->applyRepairs(auswahl));
+    EXPECT_NE(std::string::npos, v->lastError().find("gesperrt")) << v->lastError();
+    fs::remove(d);
+}
+
+/// @test Der wilde CP/M-Blockzeiger wird gestrichen, die uebrigen Dateien bleiben heil.
+TEST(FsCheckReparatur, CpmWilderBlockzeigerWirdGestrichen) {
+    const std::string d = kopie("cpa_cpa780_k5601_noclock.img", "fsrep_cpm_wild.img");
+    const int platz_nr = ersterPlatz(d);
+    ASSERT_GE(platz_nr, 0);
+
+    // Der Vergleichsstand muss VOR dem Schaden entstehen: mit dem wilden Zeiger
+    // laesst sich die betroffene Datei gar nicht mehr herausholen — und genau das
+    // ist der Grund, warum es die Reparatur gibt.
+    std::string kaputte;
+    std::map<std::string, std::vector<uint8_t>> vorher_inhalt;
+    {
+        auto v0 = oeffneErzwungen(d);
+        ASSERT_TRUE(v0);
+        vorher_inhalt = inhalte(*v0, "cpmwild_vor");
+    }
+    // cpa780 hat 390 Bloecke → 16-Bit-Zeiger; der erste steht bei Offset 16.
+    schreib(d, platzOffset(platz_nr) + 16, {0x0F, 0x27});      // Block 9999
+
+    auto v = oeffneSchreibbar(d, "cpa780");
+    ASSERT_TRUE(v);
+    const FsCheckReport& r = v->check(FsCheckLevel::Schnell, true);
+    const auto auswahl = waehle(r, "cpm.zeiger.streichen");
+    ASSERT_FALSE(auswahl.empty()) << vorschlaege(r);
+    kaputte = r.findings[auswahl[0].first].object;
+
+    ASSERT_GE(v->applyRepairs({auswahl[0]}), 1) << v->lastError();
+
+    EXPECT_TRUE(mitId(v->checkReport(), "cpm.block.ausserhalb").empty())
+        << kennungen(v->checkReport());
+
+    // Punkt 3: alles, was die Reparatur NICHT betraf, liegt byteweise wie vorher da.
+    // Nur die eine Datei, deren Zeiger gestrichen wurde, ist kuerzer geworden.
+    const auto nachher_inhalt = inhalte(*v, "cpmwild_nach");
+    int veraendert = 0;
+    for (const auto& [name, daten] : vorher_inhalt) {
+        const auto it = nachher_inhalt.find(name);
+        if (it == nachher_inhalt.end() || it->second != daten) { ++veraendert; continue; }
+    }
+    EXPECT_LE(veraendert, 1) << "hoechstens die reparierte Datei darf sich aendern"
+                             << " (Befund an " << kaputte << ")";
+    fs::remove(d);
+}
+
+/// @test Eine zu grosse Satzzahl wird auf 128 gesetzt.
+TEST(FsCheckReparatur, CpmSatzzahlWirdAngepasst) {
+    const std::string d = kopie("cpa_cpa780_k5601_noclock.img", "fsrep_cpm_rc.img");
+    const int platz_nr = ersterPlatz(d);
+    ASSERT_GE(platz_nr, 0);
+    {
+        std::vector<uint8_t> p = lies(d, platzOffset(platz_nr), kPlatz);
+        p[15] = 200;
+        schreib(d, platzOffset(platz_nr), p);
+    }
+
+    auto v = oeffneSchreibbar(d, "cpa780");
+    ASSERT_TRUE(v);
+    const FsCheckReport& r = v->check(FsCheckLevel::Schnell, true);
+    const auto auswahl = waehle(r, "cpm.rc.anpassen");
+    ASSERT_EQ(1u, auswahl.size()) << vorschlaege(r);
+    ASSERT_EQ(1, v->applyRepairs(auswahl)) << v->lastError();
+    EXPECT_TRUE(mitId(v->checkReport(), "cpm.dir.rc").empty()) << kennungen(v->checkReport());
+    fs::remove(d);
+}
+
+/// @test Eine schreibgeschuetzte Diskette wird nicht repariert — auch nicht „nur ein bisschen".
+///
+/// Der Dialog zeigt den Befund auch mit gesetztem Schreibschutz; genau deshalb muss
+/// die AUSFUEHRUNG ihn selbst abweisen, statt sich auf die Oberflaeche zu verlassen.
+TEST(FsCheckReparatur, EineSchreibgeschuetzteDisketteWirdNichtRepariert) {
+    const std::string d = kopie("udos_boot_scp.hfe", "fsrep_udos_ro.hfe");
+    {
+        UdosSeite s = udosOeffne(d, 0, true);
+        ASSERT_TRUE(s) << s.err;
+        SectorData sec;
+        ASSERT_TRUE(s.space->readSector(23, 0, 3, sec));
+        std::vector<uint8_t> daten(sec.data.begin(), sec.data.begin() + 128);
+        daten[124] = 0x11;
+        daten[125] = 0x22;
+        ASSERT_TRUE(s.space->writeSector(23, 0, 3, daten));
+        s.fs.reset(); s.space.reset();
+        ASSERT_TRUE(s.disk->flush());
+    }
+
+    auto v = oeffne(d);                      // schreibgeschuetzt
+    ASSERT_TRUE(v);
+    const FsCheckReport& r = v->check(FsCheckLevel::Schnell, true);
+    const auto auswahl = waehle(r, "udos.karte.zaehler.neu");
+    ASSERT_FALSE(auswahl.empty()) << vorschlaege(r);
+    EXPECT_EQ(-1, v->applyRepairs(auswahl));
+    EXPECT_FALSE(v->lastError().empty());
+    // Und der Befund steht unveraendert da.
+    EXPECT_EQ(1u, mitId(v->checkReport(), "udos.karte.zaehler").size());
+    fs::remove(d);
+}
+
+/// @test Die Rangfolge steht fest: erst die Ketten, dann der Plan, zuletzt der Zaehler.
+///
+/// Die Auswahl wird bewusst in der VERKEHRTEN Reihenfolge uebergeben.  Liefe sie so,
+/// wie sie hereinkommt, bliebe der Platz der gekuerzten Kette verloren — der
+/// Neuaufbau haette ihn noch als belegt gesehen (§12.1).
+TEST(FsCheckReparatur, DieRangfolgeGiltUnabhaengigVonDerAuswahlreihenfolge) {
+    const std::string d = kopie("udos_boot_scp.hfe", "fsrep_udos_rang.hfe");
+    {
+        UdosSeite s = udosOeffne(d, 0, true);
+        ASSERT_TRUE(s) << s.err;
+        const auto frei = freieSektoren(*s.fs, s.fs->bitmap(), 3);
+        ASSERT_EQ(3u, frei.size());
+        for (const auto& [t, sid] : frei)
+            ASSERT_TRUE(karteBit(*s.space, 0, 23, t, sid, true));
+        // Zusaetzlich den Zaehler verbiegen, damit beide Stufen etwas zu tun haben.
+        SectorData sec;
+        ASSERT_TRUE(s.space->readSector(23, 0, 3, sec));
+        std::vector<uint8_t> daten(sec.data.begin(), sec.data.begin() + 128);
+        daten[124] = 0x11;
+        daten[125] = 0x22;
+        ASSERT_TRUE(s.space->writeSector(23, 0, 3, daten));
+        s.fs.reset(); s.space.reset();
+        ASSERT_TRUE(s.disk->flush());
+    }
+
+    auto v = oeffneSchreibbar(d);
+    ASSERT_TRUE(v);
+    const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
+    std::vector<std::pair<int, int>> auswahl;
+    for (const auto& p : waehle(r, "udos.karte.zaehler.neu")) auswahl.push_back(p);
+    for (const auto& p : waehle(r, "udos.karte.neu"))          auswahl.push_back(p);
+    ASSERT_EQ(2u, auswahl.size()) << vorschlaege(r);
+
+    ASSERT_EQ(2, v->applyRepairs(auswahl)) << v->lastError();
+    // Der Zaehler stimmt hinterher — obwohl er ZUERST ausgewaehlt war und der
+    // Neuaufbau ihn danach verstellt haette.
+    EXPECT_EQ(0, v->checkReport().zaehlerAb(FsSeverity::Warnung))
+        << kennungen(v->checkReport());
+    fs::remove(d);
+}
+
+
+/// @test NDOS: das geloeschte Planbit wird ebenso nachgetragen wie bei ZDOS.
+///
+/// Dieselbe Kennung, derselbe Eingriff — der Belegungsplan folgt bei beiden Sitten
+/// derselben Struktur.  Der Fall steht hier trotzdem eigens: die Adressrechnung ist
+/// eine andere (eine „Spur" ist der ganze Zylinder), und ein Vertippen daran fiele
+/// sonst erst an einer echten Diskette auf.
+TEST(FsCheckReparatur, NdosPlanbitWirdNachgetragen) {
+    const std::string d = kopie("udos1715_640k_pc1715_system.img", "fsrep_ndos_plan.img");
+    {
+        NdosDiskette s = ndosOeffne(d, true);
+        ASSERT_TRUE(s) << s.err;
+        UdosFileHeader hdr;
+        std::vector<UdosPointer> kette;
+        std::vector<UdosDirEntry> verz;
+        const UdosDirEntry* e = ndosFindeDatei(*s.fs, 2, hdr, kette, verz);
+        ASSERT_NE(e, nullptr);
+        ASSERT_TRUE(ndosPlanBit(*s.space, 23, kette[1].track, kette[1].sectorId(), false));
+        s.fs.reset(); s.space.reset();
+        ASSERT_TRUE(s.disk->flush());
+    }
+
+    auto v = oeffneSchreibbar(d);
+    ASSERT_TRUE(v);
+    const auto vorher_inhalt = inhalte(*v, "ndosplan_vor");
+
+    const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
+    const auto auswahl = waehle(r, "udos.karte.sektoren.sperren");
+    ASSERT_EQ(1u, auswahl.size()) << vorschlaege(r);
+    ASSERT_EQ(1, v->applyRepairs(auswahl)) << v->lastError();
+
+    EXPECT_EQ(0, v->checkReport().zaehlerAb(FsSeverity::Warnung))
+        << kennungen(v->checkReport());
+    EXPECT_EQ(vorher_inhalt, inhalte(*v, "ndosplan_nach"));
+    fs::remove(d);
+}
+
+/// @test NDOS: die Satzzahl im Descriptor wird auf die Zahl der Adressen gesetzt.
+///
+/// Die Adressen in den Zeigersektoren sind die Wahrheit — sie zeigen auf wirklich
+/// vorhandene Sektoren; die Satzzahl ist nur ihre Gegenprobe.
+TEST(FsCheckReparatur, NdosSatzzahlWirdAngepasst) {
+    const std::string d = kopie("udos1715_640k_pc1715_system.img", "fsrep_ndos_anzahl.img");
+    {
+        NdosDiskette s = ndosOeffne(d, true);
+        ASSERT_TRUE(s) << s.err;
+        UdosFileHeader hdr;
+        std::vector<UdosPointer> kette;
+        std::vector<UdosDirEntry> verz;
+        const UdosDirEntry* e = ndosFindeDatei(*s.fs, 2, hdr, kette, verz);
+        ASSERT_NE(e, nullptr);
+        std::vector<uint8_t> desc = ndosLies(*s.space, e->header);
+        ASSERT_EQ(256u, desc.size());
+        const uint16_t falsch = static_cast<uint16_t>(hdr.record_count + 3);
+        desc[13] = static_cast<uint8_t>(falsch & 0xFF);
+        desc[14] = static_cast<uint8_t>(falsch >> 8);
+        ASSERT_TRUE(ndosSchreib(*s.space, e->header, desc));
+        s.fs.reset(); s.space.reset();
+        ASSERT_TRUE(s.disk->flush());
+    }
+
+    auto v = oeffneSchreibbar(d);
+    ASSERT_TRUE(v);
+    const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
+    const auto auswahl = waehle(r, "ndos.zeiger.anzahl.anpassen");
+    ASSERT_EQ(1u, auswahl.size()) << vorschlaege(r);
+    ASSERT_EQ(1, v->applyRepairs(auswahl)) << v->lastError();
+
+    EXPECT_TRUE(mitId(v->checkReport(), "ndos.zeiger.anzahl").empty())
+        << kennungen(v->checkReport());
+    fs::remove(d);
+}
+
+/// @test Eine gebrochene Kette wird auf den erreichbaren Teil gekuerzt — und die
+///       Datei ist danach wieder in sich stimmig.
+///
+/// Das ist der einzige UDOS-Eingriff mit Datenverlust, und er ist genau deshalb
+/// **nicht vorausgewaehlt**: der Rest der Datei ist danach fort.  Was er kann, ist
+/// aus einer widerspruechlichen eine ehrliche Datei zu machen — und den Platz der
+/// abgeschnittenen Saetze gibt anschliessend der Neuaufbau des Plans zurueck.  Der
+/// Fall prueft deshalb beides in EINEM Lauf, in der Rangfolge des Entwurfs (§12.1).
+TEST(FsCheckReparatur, UdosGebrocheneKetteWirdGekuerzt) {
+    const std::string d = kopie("udos_boot_scp.hfe", "fsrep_udos_kuerzen.hfe");
+    std::string name;
+    {
+        UdosSeite s = udosOeffne(d, 0, true);
+        ASSERT_TRUE(s) << s.err;
+        UdosFileHeader hdr;
+        std::vector<UdosPointer> kette;
+        std::vector<UdosDirEntry> verz;
+        const UdosDirEntry* e = findeDatei(*s.fs, 3, hdr, kette, verz);
+        ASSERT_NE(e, nullptr);
+        name = e->name;
+        // Satz 1 endet die Kette — Saetze 2…n sind unerreichbar.
+        ASSERT_TRUE(setzeZeiger(*s.space, 0, kette[0], e->header, UdosPointer{0xFF, 0xFF}));
+        s.fs.reset(); s.space.reset();
+        ASSERT_TRUE(s.disk->flush());
+    }
+
+    auto v = oeffneSchreibbar(d);
+    ASSERT_TRUE(v);
+    const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
+    const auto kuerzen = waehle(r, "udos.kette.kuerzen");
+    ASSERT_EQ(1u, kuerzen.size()) << vorschlaege(r);
+    const FsRepair& rep = r.findings[kuerzen[0].first].repairs[kuerzen[0].second];
+    EXPECT_TRUE(rep.datenverlust) << "Kuerzen verwirft den Rest — das muss dranstehen";
+
+    // Der Neuaufbau des Plans ist JETZT noch gesperrt: der Kettenfehler ist offen.
+    const auto neu_vorher = waehle(r, "udos.karte.neu");
+    ASSERT_EQ(1u, neu_vorher.size()) << vorschlaege(r);
+    EXPECT_TRUE(r.findings[neu_vorher[0].first].repairs[neu_vorher[0].second].gesperrt);
+
+    ASSERT_EQ(1, v->applyRepairs(kuerzen)) << v->lastError();
+    EXPECT_TRUE(mitId(v->checkReport(), "udos.kette.bruch").empty())
+        << kennungen(v->checkReport());
+
+    // Und die Datei liest sich wieder — kuerzer, aber vollstaendig lesbar.
+    bool gefunden = false;
+    for (const FileEntry& e : v->list()) if (e.name == name) gefunden = true;
+    EXPECT_TRUE(gefunden) << name << " ist nach dem Kuerzen aus dem Verzeichnis";
+
+    // Jetzt ist der Neuaufbau frei — und gibt den Platz der abgeschnittenen Saetze
+    // zurueck.  In der umgekehrten Reihenfolge bliebe genau der verloren.
+    const auto neu = waehle(v->checkReport(), "udos.karte.neu");
+    ASSERT_EQ(1u, neu.size()) << vorschlaege(v->checkReport());
+    EXPECT_FALSE(v->checkReport().findings[neu[0].first].repairs[neu[0].second].gesperrt);
+    ASSERT_EQ(1, v->applyRepairs(neu)) << v->lastError();
+    EXPECT_EQ(0, v->checkReport().zaehlerAb(FsSeverity::Warnung))
+        << kennungen(v->checkReport());
+    fs::remove(d);
 }

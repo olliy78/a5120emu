@@ -93,6 +93,18 @@ public:
     FsInfo info() const override;
     /// @brief Pruefung — umgesetzt in `core/filesystem/check/udos1715_check.cpp`.
     FsCheckReport check(FsCheckLevel level, bool nachladen) const override;
+    /**
+     * @brief EINE Reparatur ausfuehren (E3) — die Vorschlaege stellt `udos1715_check.cpp`.
+     *
+     * | `kind` | Parameter |
+     * |---|---|
+     * | `udos.karte.zaehler.neu` | — |
+     * | `udos.karte.sektoren.sperren` / `udos.karte.system.sperren` | @c s = Sektorliste `"Spur:Index,…"` |
+     * | `udos.karte.neu` | — (der Plan wird aus den Zeigersektoren gerechnet) |
+     * | `ndos.zeiger.kette.neu` | @c s = Name der Datei |
+     * | `ndos.zeiger.anzahl.anpassen` | @c a/@c b = Descriptor (Spur/Index), @c c = Zahl der Adressen |
+     */
+    bool repair(const FsRepair& r) override;
 
     // ─── Innenansicht (Diagnose, Tests) ──────────────────────────────────────
 
@@ -170,6 +182,10 @@ private:
     bool removeDirEntry(const UdosDirEntry& e);
     /// @brief Die Datei DIRECTORY um einen Satz verlaengern (§4).
     bool growDirectory(UdosPointer& neuer_satz);
+
+    /// @brief Den Belegungsplan aus den Zeigersektoren neu aufbauen (`udos.karte.neu`).
+    ///        Reservierte Spuren werden nur ERGAENZT — s. `UdosFileSystem::karteNeuAufbauen`.
+    bool karteNeuAufbauen();
     /// @brief Eine Adresse an die Zeigersektorkette einer Datei anhaengen; legt bei
     ///        Bedarf einen weiteren Zeigersektor an.
     bool appendToPointerChain(const UdosFileHeader& hdr, UdosPointer neue_adresse);

@@ -241,6 +241,24 @@ public:
     FsInfo info() const override;
     /// @brief Pruefung — umgesetzt in `core/filesystem/check/udos_check.cpp`.
     FsCheckReport check(FsCheckLevel level, bool nachladen) const override;
+    /**
+     * @brief EINE Reparatur ausfuehren (E3) — die Vorschlaege stellt `udos_check.cpp`.
+     *
+     * Die Parameter von @ref FsRepair sind absichtlich namenlos; welche Bedeutung
+     * sie tragen, weiss allein diese Klasse.  Hier ist die Tabelle:
+     *
+     * | `kind` | Parameter |
+     * |---|---|
+     * | `udos.karte.zaehler.neu` | — |
+     * | `udos.karte.sektoren.sperren` | @c s = Sektorliste `"Spur:Index,…"` (Index 0-basiert) |
+     * | `udos.karte.system.sperren` | dito |
+     * | `udos.karte.neu` | — (der Plan wird aus den Ketten gerechnet) |
+     * | `udos.kette.rueckwaerts.neu` | @c a/@c b = Satz (Spur/Index), @c c/@c d = sein Vorgaenger |
+     * | `udos.kette.kuerzen` | @c a/@c b = Kopfsektor, @c c = erreichbare Saetze, @c s = letzter Satz `"Spur:Index"` |
+     * | `udos.kopf.rueckzeiger.neu` | @c a/@c b = Kopfsektor, @c c/@c d = richtiger Verzeichnissatz |
+     * | `udos.verz.eintrag.entfernen` | @c s = Name des Eintrags |
+     */
+    bool repair(const FsRepair& r) override;
 
     // ─── Innenansicht (Diagnose, Tests) ──────────────────────────────────────
 
@@ -305,6 +323,19 @@ private:
     bool removeDirEntry(const UdosDirEntry& e);
     /// @brief Verzeichnisdatei um einen Satz verlaengern.
     bool growDirectory(UdosPointer& neuer_satz);
+
+    /**
+     * @brief Den Belegungsplan aus den Ketten NEU aufbauen (`udos.karte.neu`).
+     *
+     * Auf den **reservierten** Spuren (0–2, Boot-, Verzeichnis- und Kartenspur)
+     * werden vorhandene Bits nur ERGAENZT, nie geloescht: dort liegen Urlader und
+     * Bootabbild, die keiner Datei gehoeren und trotzdem zu Recht belegt sind
+     * (§8.6) — sie sind Sitte und nicht ableitbar.  Ueberall sonst gilt: belegt ist,
+     * was in einer Kette steht.  Bricht auch nur eine Kette, wird nichts geschrieben.
+     */
+    bool karteNeuAufbauen();
+    /// @brief Ein 16-Bit-Feld im Kopfsektor setzen (Daten, Kontrollblock bleibt).
+    bool kopfFeldSetzen(UdosPointer kopf, size_t offset, uint16_t wert);
 
     SectorSpace& space_;
     FsProfile    prof_;

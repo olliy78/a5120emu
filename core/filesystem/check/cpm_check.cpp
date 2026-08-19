@@ -75,6 +75,32 @@ const char* sonderplatz(uint8_t user) {
     return "";
 }
 
+// ─── Reparaturvorschlaege (§8) ───────────────────────────────────────────────
+//
+// Die Parameter sind namenlos; ihre Bedeutung steht in der Tabelle am
+// `repair`-Haken in `cpm_fs.h`.  Sie hier zu bauen statt an jeder Fundstelle haelt
+// Kennung, Text und Parameter an EINER Stelle zusammen.
+
+/// @brief Nutzerbyte auf 0xE5 — der Rest des Platzes bleibt lesbar (§13).
+FsRepair platz_freigeben(int index) {
+    FsRepair r{"cpm.platz.freigeben",
+               "Verzeichnisplatz " + std::to_string(index) + " freigeben (Nutzerbyte"
+               " 0xE5).  Der Eintrag bleibt lesbar und ist wiederherstellbar",
+               /*datenverlust*/true, /*empfohlen*/true};
+    r.a = index;
+    return r;
+}
+
+/// @brief Unbrauchbare Blockzeiger nullen und `RC` nachziehen.
+FsRepair zeiger_streichen(int index) {
+    FsRepair r{"cpm.zeiger.streichen",
+               "Die unbrauchbaren Blockzeiger des Platzes " + std::to_string(index)
+               + " nullen und die Satzzahl nachziehen",
+               /*datenverlust*/true, /*empfohlen*/true};
+    r.a = index;
+    return r;
+}
+
 }  // namespace
 
 FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
@@ -244,7 +270,9 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
     // Extents je Datei einsammeln (der Name ueberlebt bei CP/M, das Gruppieren ist
     // also verlaesslich) und Blockbelegung mitzaehlen.
     std::map<std::pair<int, std::string>, std::vector<const CpmDirEntry*>> nach_datei;
-    std::map<uint16_t, std::vector<std::string>> blockbesitzer;
+    // Je Block: wer ihn beansprucht — Klartext UND Verzeichnisplatz.  Ohne den Platz
+    // liesse sich die Kreuzbelegung benennen, aber nicht aufloesen.
+    std::map<uint16_t, std::vector<std::pair<std::string, int>>> blockbesitzer;
     std::set<std::tuple<int, std::string, int>> gesehen;   // (user, name, extent)
 
     for (const CpmDirEntry& d : verz) {
@@ -262,10 +290,12 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
             if (*art) { ++sonder; if (sonder_art.empty()) sonder_art = art; continue; }
             char hex[8];
             std::snprintf(hex, sizeof hex, "0x%02X", static_cast<unsigned>(d.user));
-            b.add("cpm.dir.user", FsSeverity::Fehler, FsLayer::Verwaltung, platz(d.index),
+            FsFinding& f = b.add("cpm.dir.user", FsSeverity::Fehler, FsLayer::Verwaltung,
+                  platz(d.index),
                   std::string("Nutzerbyte ") + hex
                   + " ist weder ein Nutzerbereich (0…15) noch 0xE5 (frei) noch ein"
                     " bekannter Sondersatz");
+            f.repairs.push_back(platz_freigeben(d.index));
             continue;
         }
 
@@ -286,7 +316,8 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
         if (steuerzeichen || leer)
             b.add("cpm.dir.name", FsSeverity::Fehler, FsLayer::Verwaltung, platz(d.index),
                   leer ? "Der Platz ist belegt, traegt aber keinen Namen"
-                       : "Der Name enthaelt Steuerzeichen — der Platz ist vermutlich Muell");
+                       : "Der Name enthaelt Steuerzeichen — der Platz ist vermutlich Muell")
+             .repairs.push_back(platz_freigeben(d.index));
         else if (klein || trenner)
             b.add("cpm.dir.name", FsSeverity::Warnung, FsLayer::Verwaltung, platz(d.index),
                   "'" + d.name + "': "
@@ -300,10 +331,16 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
                   "Extent " + std::to_string(d.extent) + " von "
                   + datei(d.user, d.name) + " steht mehrfach im Verzeichnis");
 
-        if (d.records > 128)
+        if (d.records > 128) {
+            FsRepair rep{"cpm.rc.anpassen",
+                         "Die Satzzahl auf 128 setzen — mehr traegt ein Extent nicht",
+                         /*datenverlust*/false, /*empfohlen*/true};
+            rep.a = d.index;
+            rep.b = 128;
             b.add("cpm.dir.rc", FsSeverity::Warnung, FsLayer::Verwaltung, platz(d.index),
                   datei(d.user, d.name) + ": Satzzahl " + std::to_string(d.records)
-                  + " ist groesser als die 128 Saetze eines Extents");
+                  + " ist groesser als die 128 Saetze eines Extents").repairs.push_back(rep);
+        }
 
         int belegte = 0;
         bool luecke = false, nach_null = false;
@@ -316,7 +353,8 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
                       platz(d.index),
                       datei(d.user, d.name) + ": Blockzeiger " + std::to_string(blk)
                       + " liegt hinter dem Datenbereich (" + std::to_string(total_blocks_)
-                      + " Bloecke) — meist das falsche Dateisystemprofil");
+                      + " Bloecke) — meist das falsche Dateisystemprofil")
+                 .repairs.push_back(zeiger_streichen(d.index));
                 continue;
             }
             if (blk < dir_blocks_)
@@ -324,9 +362,10 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
                       platz(d.index),
                       datei(d.user, d.name) + " beansprucht Block " + std::to_string(blk)
                       + ", der zum VERZEICHNIS gehoert — ein Schreibvorgang darauf"
-                        " zerstoert das Verzeichnis");
-            blockbesitzer[blk].push_back(datei(d.user, d.name) + " Extent "
-                                         + std::to_string(d.extent));
+                        " zerstoert das Verzeichnis")
+                 .repairs.push_back(zeiger_streichen(d.index));
+            blockbesitzer[blk].push_back({datei(d.user, d.name) + " Extent "
+                                          + std::to_string(d.extent), d.index});
         }
         if (luecke)
             b.add("cpm.block.luecke", FsSeverity::Warnung, FsLayer::Verwaltung, platz(d.index),
@@ -345,12 +384,24 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
     for (const auto& [blk, wer] : blockbesitzer) {
         if (wer.size() < 2) continue;
         std::string liste;
-        for (const std::string& w : wer) liste += (liste.empty() ? "" : ", ") + w;
-        b.add("cpm.block.doppelt", FsSeverity::Gefahr, FsLayer::Verwaltung,
+        for (const auto& [w, ignoriert] : wer) liste += (liste.empty() ? "" : ", ") + w;
+        FsFinding& f = b.add("cpm.block.doppelt", FsSeverity::Gefahr, FsLayer::Verwaltung,
               "Block " + std::to_string(blk),
               "Block " + std::to_string(blk) + " wird von " + std::to_string(wer.size())
               + " Eintraegen beansprucht (" + liste
               + ") — wer als zweiter schreibt, zerstoert die Daten des ersten");
+        // Der Block bleibt bei der Datei mit dem KLEINEREN Verzeichnisindex; jede
+        // weitere bekommt dort einen Nullzeiger.  Das ist der verlustbehaftete, aber
+        // eindeutige Weg; `cpm.kreuz.kopieren` (§8) kommt spaeter.
+        for (size_t k = 1; k < wer.size(); ++k) {
+            FsRepair rep{"cpm.kreuz.erstem_lassen",
+                         "Block " + std::to_string(blk) + " bei '" + wer.front().first
+                         + "' lassen und bei '" + wer[k].first + "' streichen",
+                         /*datenverlust*/true, /*empfohlen*/k == 1};
+            rep.a = wer[k].second;
+            rep.b = blk;
+            f.repairs.push_back(rep);
+        }
     }
 
     // ── Fehlende Extents ─────────────────────────────────────────────────────

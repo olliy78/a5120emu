@@ -12,8 +12,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <cstdio>
 #include <ctime>
+#include <set>
 
 namespace {
 
@@ -1122,4 +1124,182 @@ bool UdosFileSystem::wouldFit(const std::vector<PlannedFile>& files, FitReport& 
                    + std::to_string(noetig) + " Sektoren (je Datei einen Kopfsektor), "
                      "frei sind " + std::to_string(frei);
     return true;
+}
+
+// ─── Reparatur (doc/design/15_dateisystempruefung.md §9.3) ───────────────────
+//
+// Gefunden wird ausserhalb, repariert wird innen (E3): `udos_check.cpp` beschreibt,
+// WAS geschehen soll, ausgefuehrt wird es hier — in der Klasse, die ihre Invarianten
+// und ihren Schreibpfad kennt.  Die Parametertabelle steht am `repair`-Haken in
+// `udos_fs.h`; sie ist die einzige Stelle, an der die namenlosen Felder von
+// @ref FsRepair eine Bedeutung bekommen.
+
+namespace {
+
+/// @brief Sektorliste `"Spur:Index,Spur:Index,…"` zerlegen (Index 0-basiert).
+///        Das Format ist die Verabredung zwischen `udos_check.cpp` und dieser Datei.
+std::vector<UdosPointer> sektorliste(const std::string& s) {
+    std::vector<UdosPointer> out;
+    size_t i = 0;
+    while (i < s.size()) {
+        const size_t komma = s.find(',', i);
+        const std::string teil = s.substr(i, komma == std::string::npos ? komma : komma - i);
+        const size_t doppel = teil.find(':');
+        if (doppel != std::string::npos) {
+            const int t = std::atoi(teil.c_str());
+            const int k = std::atoi(teil.c_str() + doppel + 1);
+            if (t >= 0 && t < 256 && k >= 0 && k < 256)
+                out.push_back(UdosPointer{static_cast<uint8_t>(k), static_cast<uint8_t>(t)});
+        }
+        if (komma == std::string::npos) break;
+        i = komma + 1;
+    }
+    return out;
+}
+
+}  // namespace
+
+bool UdosFileSystem::kopfFeldSetzen(UdosPointer kopf, size_t offset, uint16_t wert) {
+    std::vector<uint8_t> d;
+    UdosPointer back, fwd;
+    if (!readSector(kopf, d, back, fwd)) return false;
+    if (offset + 1 >= d.size()) return fail("Feldversatz liegt ausserhalb des Kopfsektors");
+    d[offset]     = static_cast<uint8_t>(wert & 0xFF);
+    d[offset + 1] = static_cast<uint8_t>(wert >> 8);
+    return writeData(kopf, d);
+}
+
+bool UdosFileSystem::karteNeuAufbauen() {
+    // Schritt 1: alles einsammeln, was eine Kette beansprucht — VOR der ersten
+    // Aenderung.  Bricht dabei etwas, bleibt die alte Karte unangetastet; aus halbem
+    // Wissen einen Plan zu bauen ist der eine Fehler, den ein fsck nie machen darf (E8).
+    std::set<uint32_t> belegt;
+    const uint8_t spt = secs_per_track_;
+    auto merke = [&](UdosPointer p) {
+        belegt.insert(static_cast<uint32_t>(p.track) * spt + p.sector_index);
+    };
+
+    for (uint8_t s = 1; s <= 3 && s <= spt; ++s)
+        merke(UdosPointer{static_cast<uint8_t>(s - 1), prof_.bitmap_track});
+    merke(directoryHeader());
+
+    UdosFileHeader dir_hdr;
+    if (!readHeader(directoryHeader(), dir_hdr)) return false;
+    std::vector<UdosPointer> dir_kette;
+    if (!recordChain(dir_hdr, dir_kette))
+        return fail("Die Satzkette der Verzeichnisdatei bricht ab — der Belegungsplan "
+                    "laesst sich daraus nicht ableiten");
+    const uint32_t dir_je_satz = std::max<uint32_t>(1u, dir_hdr.record_len / kSector);
+    for (const UdosPointer& satz : dir_kette)
+        for (uint32_t k = 0; k < dir_je_satz; ++k)
+            merke(UdosPointer{static_cast<uint8_t>(satz.sector_index + k), satz.track});
+
+    for (const UdosDirEntry& e : directory()) {
+        UdosFileHeader hdr;
+        if (!readHeader(e.header, hdr))
+            return fail("'" + e.name + "': der Kopfsektor ist nicht lesbar — der "
+                        "Belegungsplan laesst sich nicht ableiten");
+        merke(e.header);
+        std::vector<UdosPointer> kette;
+        if (!recordChain(hdr, kette))
+            return fail("'" + e.name + "': die Satzkette bricht ab — der Belegungsplan "
+                        "laesst sich nicht ableiten");
+        const uint32_t je_satz = std::max<uint32_t>(1u, hdr.record_len / kSector);
+        for (const UdosPointer& satz : kette)
+            for (uint32_t k = 0; k < je_satz; ++k)
+                merke(UdosPointer{static_cast<uint8_t>(satz.sector_index + k), satz.track});
+    }
+
+    // Schritt 2: schreiben.  Auf den reservierten Spuren wird nur ERGAENZT (s. Kopfdatei).
+    for (uint8_t t = 0; t < tracks_; ++t) {
+        const bool reserviert = reservedTrack(t);
+        for (uint8_t s = 1; s <= spt; ++s) {
+            const bool soll = belegt.count(static_cast<uint32_t>(t) * spt + (s - 1)) != 0;
+            if (reserviert && !soll) continue;
+            bitmap_.setUsed(t, s, soll);
+        }
+    }
+    return saveBitmap();
+}
+
+bool UdosFileSystem::repair(const FsRepair& r) {
+    if (r.gesperrt)
+        return fail("Die Reparatur '" + r.kind + "' ist gesperrt: " + r.warum);
+
+    if (r.kind == "udos.karte.zaehler.neu")
+        return saveBitmap();          // rechnet die Zaehler selbst nach
+
+    if (r.kind == "udos.karte.sektoren.sperren" || r.kind == "udos.karte.system.sperren") {
+        const std::vector<UdosPointer> liste = sektorliste(r.s);
+        if (liste.empty()) return fail("Die Reparatur nennt keinen einzigen Sektor");
+        // Nimmt nur, gibt nie — deshalb ist sie auch bei unvollstaendigem Wissen
+        // erlaubt (§9.3).
+        for (const UdosPointer& p : liste) bitmap_.setUsed(p.track, p.sectorId(), true);
+        return saveBitmap();
+    }
+
+    if (r.kind == "udos.karte.neu") return karteNeuAufbauen();
+
+    if (r.kind == "udos.kette.rueckwaerts.neu") {
+        const UdosPointer satz{static_cast<uint8_t>(r.b), static_cast<uint8_t>(r.a)};
+        const UdosPointer vorher{static_cast<uint8_t>(r.d), static_cast<uint8_t>(r.c)};
+        std::vector<uint8_t> d;
+        UdosPointer back, fwd;
+        if (!readSector(satz, d, back, fwd)) return false;
+        // Nur der Nachspann wird angefasst; Nutzdaten und Vorwaertszeiger bleiben.
+        return writeLinked(satz, d, vorher, fwd);
+    }
+
+    if (r.kind == "udos.kette.kuerzen") {
+        const UdosPointer kopf{static_cast<uint8_t>(r.b), static_cast<uint8_t>(r.a)};
+        const std::vector<UdosPointer> letzte = sektorliste(r.s);
+        if (letzte.empty()) return fail("Die Reparatur nennt den letzten Satz nicht");
+        UdosFileHeader hdr;
+        if (!readHeader(kopf, hdr)) return false;
+        if (r.c <= 0) return fail("Eine Datei ohne einen einzigen Satz laesst sich nicht "
+                                  "kuerzen — der Eintrag gehoert entfernt");
+        // Kopfsektor: Satzzahl, letzter Satz, „Bytes im letzten Satz".  Der neue letzte
+        // Satz ist ein voller Satz — der angebrochene lag hinter dem Bruch.
+        std::vector<uint8_t> d;
+        UdosPointer back, fwd;
+        if (!readSector(kopf, d, back, fwd)) return false;
+        d[10] = letzte.front().sector_index;
+        d[11] = letzte.front().track;
+        d[13] = static_cast<uint8_t>(r.c & 0xFF);
+        d[14] = static_cast<uint8_t>((r.c >> 8) & 0xFF);
+        d[22] = static_cast<uint8_t>(hdr.record_len & 0xFF);
+        d[23] = static_cast<uint8_t>(hdr.record_len >> 8);
+        // Der Kontrollblock des Kopfsektors traegt NICHT das Kettenende, sondern
+        // seine beiden ANKER: rueckwaerts der Verzeichnissatz, vorwaerts der ERSTE
+        // Satz (s. `readHeader`, das beide von dort nimmt).  Beim Kuerzen aendert
+        // sich keiner von beiden — deshalb `writeData`, nicht `writeLinked`.
+        if (!writeData(kopf, d)) return false;
+        // Und der neue letzte Satz bekommt das Kettenende.
+        std::vector<uint8_t> ld;
+        UdosPointer lback, lfwd;
+        if (!readSector(letzte.front(), ld, lback, lfwd)) return false;
+        return writeLinked(letzte.front(), ld, lback, UdosPointer{});
+    }
+
+    if (r.kind == "udos.kopf.rueckzeiger.neu") {
+        const UdosPointer kopf{static_cast<uint8_t>(r.b), static_cast<uint8_t>(r.a)};
+        const UdosPointer satz{static_cast<uint8_t>(r.d), static_cast<uint8_t>(r.c)};
+        std::vector<uint8_t> d;
+        UdosPointer back, fwd;
+        if (!readSector(kopf, d, back, fwd)) return false;
+        d[6] = satz.sector_index;
+        d[7] = satz.track;
+        // Beides: `readHeader` nimmt den Verzeichnissatz aus dem KONTROLLBLOCK, das
+        // Feld bei Offset 6 ist die Kopie im Datenfeld.  Wer nur eines von beiden
+        // setzt, hat den Befund nicht behoben, sondern verdoppelt.
+        return writeLinked(kopf, d, satz, fwd);
+    }
+
+    if (r.kind == "udos.verz.eintrag.entfernen") {
+        for (const UdosDirEntry& e : directory())
+            if (e.name == r.s) return removeDirEntry(e);
+        return fail("Im Verzeichnis steht kein Eintrag '" + r.s + "' mehr");
+    }
+
+    return FileSystem::repair(r);
 }

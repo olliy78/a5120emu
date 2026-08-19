@@ -44,6 +44,19 @@ std::string ort(UdosPointer p) {
     return "Spur " + std::to_string(p.track) + " Sektor " + std::to_string(p.sector_index);
 }
 
+/// @brief Sektorliste fuer @ref FsRepair::s — `"Spur:Index,…"` (Verabredung mit
+///        `udos1715_fs.cpp`, dort am `repair`-Haken in einer Tabelle festgehalten).
+std::string liste(const std::vector<UdosPointer>& ps) {
+    std::string s;
+    for (const UdosPointer& p : ps) {
+        if (!s.empty()) s += ',';
+        s += std::to_string(p.track) + ':' + std::to_string(p.sector_index);
+    }
+    return s;
+}
+
+std::string liste(UdosPointer p) { return liste(std::vector<UdosPointer>{p}); }
+
 }  // namespace
 
 FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) const {
@@ -98,18 +111,22 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
                 prof_.bitmap_track, 0);
 
     // Bei NDOS sind BEIDE Zaehler echt — anders als bei ZDOS.
+    const FsRepair zaehler_neu{"udos.karte.zaehler.neu",
+        "Frei- und Belegtzaehler auf die ausgezaehlten Werte "
+        + std::to_string(bitmap_.countFree()) + " / " + std::to_string(bitmap_.countUsed())
+        + " setzen", /*datenverlust*/false, /*empfohlen*/true};
     if (bitmap_.storedFree() != bitmap_.countFree())
         b.addAt("udos.karte.zaehler", FsSeverity::Warnung, FsLayer::Verwaltung,
                 "Belegungsplan",
                 "Der Freizaehler sagt " + std::to_string(bitmap_.storedFree())
                 + ", ausgezaehlt sind " + std::to_string(bitmap_.countFree())
-                + " Sektoren", prof_.bitmap_track, 0);
+                + " Sektoren", prof_.bitmap_track, 0).repairs.push_back(zaehler_neu);
     if (bitmap_.storedUsed() != bitmap_.countUsed())
         b.addAt("udos.karte.zaehler", FsSeverity::Warnung, FsLayer::Verwaltung,
                 "Belegungsplan",
                 "Der Belegtzaehler sagt " + std::to_string(bitmap_.storedUsed())
                 + ", ausgezaehlt sind " + std::to_string(bitmap_.countUsed())
-                + " Sektoren", prof_.bitmap_track, 0);
+                + " Sektoren", prof_.bitmap_track, 0).repairs.push_back(zaehler_neu);
 
     // ── Die Verzeichnisdatei ─────────────────────────────────────────────────
     if (!brauche(prof_.directory_track)) {
@@ -150,11 +167,18 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
         const uint8_t t = static_cast<uint8_t>(s / spt);
         const uint8_t i = static_cast<uint8_t>(s % spt);
         if (bitmap_.used(t, static_cast<uint8_t>(i + 1))) continue;
-        b.addAt("udos.karte.system", FsSeverity::Gefahr, FsLayer::Verwaltung, "Belegungsplan",
+        FsFinding& f = b.addAt("udos.karte.system", FsSeverity::Gefahr, FsLayer::Verwaltung,
+                "Belegungsplan",
                 "Spur " + std::to_string(t) + " Sektor " + std::to_string(i)
                 + " traegt das Dateisystem selbst (Belegungsplan oder Verzeichnis),"
                   " steht aber als FREI — NDOS vergibt ihn beim naechsten Schreiben",
                 t, 0);
+        FsRepair rep{"udos.karte.system.sperren",
+                     "Spur " + std::to_string(t) + " Sektor " + std::to_string(i)
+                     + " im Belegungsplan als belegt nachtragen",
+                     /*datenverlust*/false, /*empfohlen*/true};
+        rep.s = liste(UdosPointer{i, t});
+        f.repairs.push_back(rep);
     }
 
     const std::vector<UdosDirEntry> verz = directory();
@@ -245,11 +269,21 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
         UdosPointer bp = hdr.firstbl, davor = e.header;
         for (const Udos1715PointerBlock& blk : bloecke) {
             gehoert.emplace(nr(bp), e.name);
-            if (!(blk.back == davor))
-                b.addAt("ndos.zeiger.kette", FsSeverity::Warnung, FsLayer::Dateien, e.name,
+            if (!(blk.back == davor)) {
+                FsFinding& f = b.addAt("ndos.zeiger.kette", FsSeverity::Warnung,
+                        FsLayer::Dateien, e.name,
                         "Der Zeigersektor " + ort(bp) + " zeigt zurueck auf "
                         + (blk.back.end() ? std::string("FFFF") : ort(blk.back))
                         + ", davor liegt aber " + ort(davor), bp.track, 0);
+                // Vor- und Rueckwaertszeiger sind redundant — die Reihenfolge der
+                // Bloecke steht bereits fest, also sind sie ableitbar.
+                FsRepair rep{"ndos.zeiger.kette.neu",
+                             "Die Vor- und Rueckwaertszeiger der Zeigersektoren von '"
+                             + e.name + "' aus ihrer Reihenfolge neu schreiben",
+                             /*datenverlust*/false, /*empfohlen*/true};
+                rep.s = e.name;
+                f.repairs.push_back(rep);
+            }
             davor = bp;
             bp    = blk.forward;
         }
@@ -261,13 +295,23 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
                     hdr.firstbl.track, 0);
 
         const size_t daten = adressen.empty() ? 0 : adressen.size() - 1;
-        if (daten != hdr.record_count)
-            b.addAt("ndos.zeiger.anzahl",
+        if (daten != hdr.record_count) {
+            FsFinding& f = b.addAt("ndos.zeiger.anzahl",
                     daten < hdr.record_count ? FsSeverity::Fehler : FsSeverity::Warnung,
                     FsLayer::Dateien, e.name,
                     "Der Descriptor sagt " + std::to_string(hdr.record_count)
                     + " Saetze an, die Zeigersektoren nennen " + std::to_string(daten)
                     + " Adressen", e.header.track, 0);
+            // Die Adressen sind die Wahrheit — sie zeigen auf wirklich vorhandene
+            // Sektoren; die Satzzahl im Descriptor ist nur ihre Gegenprobe.
+            FsRepair rep{"ndos.zeiger.anzahl.anpassen",
+                         "Die Satzzahl im Descriptor auf " + std::to_string(daten)
+                         + " setzen — so viele Adressen stehen in den Zeigersektoren",
+                         /*datenverlust*/daten < hdr.record_count, /*empfohlen*/true};
+            rep.a = e.header.track; rep.b = e.header.sector_index;
+            rep.c = static_cast<int>(daten);
+            f.repairs.push_back(rep);
+        }
 
         // ── Die Datenrecords ─────────────────────────────────────────────────
         const uint32_t je_rec = sectorsPerRecord(hdr.record_len);
@@ -317,21 +361,29 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
 
     // ── Plan gegen Zeigersektoren ────────────────────────────────────────────
     if (bericht.vollstaendig) {
-        std::map<std::string, std::pair<int, UdosPointer>> offen;
+        std::map<std::string, std::vector<UdosPointer>> offen;
         for (const auto& [s, wem] : gehoert) {
             const uint8_t t = static_cast<uint8_t>(s / spt);
             const uint8_t i = static_cast<uint8_t>(s % spt);
             if (bitmap_.used(t, static_cast<uint8_t>(i + 1))) continue;
-            auto& [n, erster] = offen[wem];
-            if (n++ == 0) erster = UdosPointer{i, t};
+            offen[wem].push_back(UdosPointer{i, t});
         }
-        for (const auto& [wem, wieviel] : offen)
-            b.addAt("udos.karte.frei_aber_belegt", FsSeverity::Gefahr, FsLayer::Dateien, wem,
-                    std::to_string(wieviel.first) + " Sektor(en) von '" + wem
+        for (const auto& [wem, sektoren] : offen) {
+            FsFinding& f = b.addAt("udos.karte.frei_aber_belegt", FsSeverity::Gefahr,
+                    FsLayer::Dateien, wem,
+                    std::to_string(sektoren.size()) + " Sektor(en) von '" + wem
                     + "' stehen im Belegungsplan als FREI (der erste bei "
-                    + ort(wieviel.second) + ") — NDOS vergibt sie beim naechsten"
+                    + ort(sektoren.front()) + ") — NDOS vergibt sie beim naechsten"
                       " Schreiben und zerstoert die Datei",
-                    wieviel.second.track, 0);
+                    sektoren.front().track, 0);
+            FsRepair rep{"udos.karte.sektoren.sperren",
+                         "Die " + std::to_string(sektoren.size())
+                         + " Sektor(en) von '" + wem
+                         + "' im Belegungsplan als belegt nachtragen",
+                         /*datenverlust*/false, /*empfohlen*/true};
+            rep.s = liste(sektoren);
+            f.repairs.push_back(rep);
+        }
 
         int verloren = 0;
         uint8_t erste_spur = 0;
@@ -347,13 +399,36 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
                 if (verloren++ == 0) erste_spur = t;
             }
         }
-        if (verloren)
-            b.addAt("udos.karte.belegt_aber_frei", FsSeverity::Warnung, FsLayer::Verwaltung,
-                    "Belegungsplan",
+        if (verloren) {
+            FsFinding& f = b.addAt("udos.karte.belegt_aber_frei", FsSeverity::Warnung,
+                    FsLayer::Verwaltung, "Belegungsplan",
                     std::to_string(verloren) + " Sektoren stehen als belegt, gehoeren aber"
                     " zu keiner Datei (ab Spur " + std::to_string(erste_spur)
                     + ") — verlorener Platz; dort koennten geloeschte Dateien liegen",
                     erste_spur, 0);
+            // E8: der einzige Eingriff, der etwas FREIGIBT.  Gesperrt, solange auch
+            // nur eine Zeigersektorkette nicht zu verfolgen war — sonst erklaerte er
+            // deren Sektoren fuer frei.
+            std::string blockiert;
+            for (const FsFinding& g : bericht.findings) {
+                if (g.severity < FsSeverity::Fehler) continue;
+                if (g.id.rfind("ndos.", 0) != 0 && g.id != "udos.verz.eintrag_kaputt"
+                    && g.id != "udos.verz.kette" && g.id != "udos.karte.ungueltig") continue;
+                blockiert = g.id + " (" + g.object + ")";
+                break;
+            }
+            FsRepair rep{"udos.karte.neu",
+                         "Den Belegungsplan vollstaendig aus den Zeigersektoren neu"
+                         " aufbauen — das gibt die " + std::to_string(verloren)
+                         + " verlorenen Sektoren zurueck",
+                         /*datenverlust*/false, /*empfohlen*/blockiert.empty()};
+            if (!blockiert.empty()) {
+                rep.gesperrt = true;
+                rep.warum    = "Der Neuaufbau ist erst moeglich, wenn kein Fehler an den"
+                               " Zeigersektoren mehr offen ist — offen ist " + blockiert;
+            }
+            f.repairs.push_back(rep);
+        }
     }
 
     abschluss();

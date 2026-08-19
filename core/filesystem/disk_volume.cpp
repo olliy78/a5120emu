@@ -907,6 +907,7 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
 const FsCheckReport& DiskVolume::check(FsCheckLevel level, bool nachladen) {
     check_ = FsCheckReport{};
     check_.level = level;
+    check_nachladen_ = nachladen;
     for (size_t v = 0; v < volumes_.size(); ++v) {
         FsCheckReport teil = volumes_[v].fs->check(level, nachladen);
         for (FsFinding& f : teil.findings) f.volume = static_cast<int>(v);
@@ -915,6 +916,82 @@ const FsCheckReport& DiskVolume::check(FsCheckLevel level, bool nachladen) {
     check_.level = level;      // uebernimm() zieht nach oben, hier gilt das Verlangte
     check_.sortieren();
     return check_;
+}
+
+// ─── Reparatur (doc/design/15_dateisystempruefung.md §12) ────────────────────
+
+namespace {
+
+/**
+ * @brief Rang einer Reparatur — die Reihenfolge, in der sie laufen muss (§12.1).
+ *
+ * Jede spaetere Stufe setzt auf dem Ergebnis der frueheren auf: der Neuaufbau eines
+ * Belegungsplans nach dem Kuerzen einer Kette gibt die abgeschnittenen Sektoren
+ * frei; in der umgekehrten Reihenfolge bliebe genau dieser Platz verloren.  Und der
+ * Zaehler wird zuletzt nachgerechnet, weil ihn jede Kartenaenderung wieder verstellt.
+ */
+int rang(const std::string& kind) {
+    if (kind == "udos.karte.zaehler.neu")                    return 4;   // Zaehler
+    if (kind.find(".karte.") != std::string::npos)           return 3;   // Belegungsplan
+    if (kind.rfind("udos.kette.", 0) == 0
+        || kind.rfind("ndos.zeiger.", 0) == 0
+        || kind.rfind("cpm.zeiger.", 0) == 0
+        || kind.rfind("cpm.kreuz.", 0) == 0
+        || kind.rfind("cpm.rc.", 0) == 0)                    return 2;   // Ketten
+    return 1;                                                            // Verzeichnis
+}
+
+}  // namespace
+
+int DiskVolume::applyRepairs(const std::vector<std::pair<int, int>>& auswahl) {
+    if (read_only_) { fail(kSchreibschutz); return -1; }
+    if (auswahl.empty()) { fail("Es wurde keine Reparatur ausgewaehlt"); return -1; }
+    if (!disk_) { fail("keine Diskette geoeffnet"); return -1; }
+
+    // Schritt 1: die Auswahl aufloesen und urteilen — VOR der ersten Aenderung.
+    struct Auftrag { int rang; int volume; int cyl; int sec; FsRepair r; };
+    std::vector<Auftrag> plan;
+    for (const auto& [fi, ri] : auswahl) {
+        if (fi < 0 || static_cast<size_t>(fi) >= check_.findings.size()) {
+            fail("Befund " + std::to_string(fi) + " gibt es im letzten Bericht nicht");
+            return -1;
+        }
+        const FsFinding& f = check_.findings[static_cast<size_t>(fi)];
+        if (ri < 0 || static_cast<size_t>(ri) >= f.repairs.size()) {
+            fail("Zu '" + f.id + "' gibt es keine Reparatur " + std::to_string(ri));
+            return -1;
+        }
+        const FsRepair& r = f.repairs[static_cast<size_t>(ri)];
+        if (r.gesperrt) { fail("'" + r.kind + "' ist gesperrt: " + r.warum); return -1; }
+        if (!valid(f.volume)) { fail("Befund ohne gueltiges Volume"); return -1; }
+        plan.push_back({rang(r.kind), f.volume, f.cyl, f.sector_index, r});
+    }
+    // Innerhalb einer Stufe nach Ort — zwei Laeufe muessen dasselbe Ergebnis haben.
+    std::stable_sort(plan.begin(), plan.end(), [](const Auftrag& a, const Auftrag& b) {
+        if (a.rang != b.rang)     return a.rang < b.rang;
+        if (a.volume != b.volume) return a.volume < b.volume;
+        if (a.cyl != b.cyl)       return a.cyl < b.cyl;
+        return a.sec < b.sec;
+    });
+
+    // Schritt 2: ausfuehren, mit Ruecknahme (Muster aus insertAll).
+    const DiskMedium sicherung = disk_->medium();
+    int getan = 0;
+    for (const Auftrag& a : plan) {
+        if (volumes_[static_cast<size_t>(a.volume)].fs->repair(a.r)) { ++getan; continue; }
+        const std::string grund = volumes_[static_cast<size_t>(a.volume)].fs->lastError();
+        // restoreFrom statt einer Zuweisung: bei einer physischen Diskette steht der
+        // neuere Stand schon auf der Scheibe — nur eine erneute Rueckfuehrung stellt
+        // sie richtig (14_physische_diskette.md).
+        disk_->medium().restoreFrom(sicherung);
+        fail("'" + a.r.kind + "': " + grund + " — die Diskette wurde nicht veraendert.");
+        return -1;
+    }
+
+    // Schritt 3: neu pruefen.  Ein Befundzettel von vorhin beschriebe nach der ersten
+    // Aenderung eine Diskette, die es nicht mehr gibt (E6).
+    check(check_.level, check_nachladen_);
+    return getan;
 }
 
 std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,

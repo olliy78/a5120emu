@@ -51,6 +51,20 @@ std::string ort(UdosPointer p) {
     return "Spur " + std::to_string(p.track) + " Sektor " + std::to_string(p.sectorId());
 }
 
+/// @brief Sektorliste fuer @ref FsRepair::s — `"Spur:Index,…"`, Index 0-basiert.
+///        Das Format ist die Verabredung mit `udos_fs.cpp`; sie ist dort am
+///        `repair`-Haken in einer Tabelle festgehalten.
+std::string liste(const std::vector<UdosPointer>& ps) {
+    std::string s;
+    for (const UdosPointer& p : ps) {
+        if (!s.empty()) s += ',';
+        s += std::to_string(p.track) + ':' + std::to_string(p.sector_index);
+    }
+    return s;
+}
+
+std::string liste(UdosPointer p) { return liste(std::vector<UdosPointer>{p}); }
+
 }  // namespace
 
 FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
@@ -118,12 +132,18 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
     // bildet ihn als Festwert 2464 − frei (Konstante aus FORMATPC.MAC), er sagt
     // ueber die Diskette nichts aus.
     const int frei = bitmap_.countFree();
-    if (bitmap_.storedFree() != frei)
-        b.addAt("udos.karte.zaehler", FsSeverity::Warnung, FsLayer::Verwaltung,
+    if (bitmap_.storedFree() != frei) {
+        FsFinding& f = b.addAt("udos.karte.zaehler", FsSeverity::Warnung, FsLayer::Verwaltung,
                 "Belegungskarte",
                 "Der gespeicherte Freizaehler sagt " + std::to_string(bitmap_.storedFree())
                 + ", ausgezaehlt sind " + std::to_string(frei) + " Sektoren",
                 prof_.bitmap_track, head_);
+        // Der harmloseste Eingriff ueberhaupt: die Bits sind die Wahrheit, der
+        // Zaehler nur ihre Gegenprobe (§4.2).
+        f.repairs.push_back(FsRepair{"udos.karte.zaehler.neu",
+            "Freizaehler auf den ausgezaehlten Wert " + std::to_string(frei) + " setzen",
+            /*datenverlust*/false, /*empfohlen*/true});
+    }
 
     // ── Die Verzeichnisdatei ─────────────────────────────────────────────────
     //
@@ -179,12 +199,18 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
         const uint8_t t = static_cast<uint8_t>(s / spt);
         const uint8_t i = static_cast<uint8_t>(s % spt);
         if (bitmap_.used(t, static_cast<uint8_t>(i + 1))) continue;
-        b.addAt("udos.karte.system", FsSeverity::Gefahr, FsLayer::Verwaltung,
+        FsFinding& f = b.addAt("udos.karte.system", FsSeverity::Gefahr, FsLayer::Verwaltung,
                 "Belegungskarte",
                 "Spur " + std::to_string(t) + " Sektor " + std::to_string(i + 1)
                 + " traegt das Dateisystem selbst (Belegungskarte oder Verzeichnis),"
                   " steht aber als FREI — UDOS vergibt ihn beim naechsten Schreiben",
                 t, head_);
+        FsRepair rep{"udos.karte.system.sperren",
+                     "Spur " + std::to_string(t) + " Sektor " + std::to_string(i + 1)
+                     + " in der Belegungskarte als belegt nachtragen",
+                     /*datenverlust*/false, /*empfohlen*/true};
+        rep.s = liste(UdosPointer{i, t});
+        f.repairs.push_back(rep);
     }
 
     // ── Die Verzeichniseintraege ─────────────────────────────────────────────
@@ -219,20 +245,37 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
 
         UdosFileHeader hdr;
         if (!readHeader(e.header, hdr)) {
-            b.addAt("udos.verz.eintrag_kaputt", FsSeverity::Fehler, FsLayer::Dateien, e.name,
+            FsFinding& f = b.addAt("udos.verz.eintrag_kaputt", FsSeverity::Fehler,
+                    FsLayer::Dateien, e.name,
                     "Der Verzeichniseintrag zeigt auf " + ort(e.header)
                     + ", dort steht kein brauchbarer Kopfsektor: " + lastError(),
                     e.header.track, head_);
+            // Der Eintrag verweist ins Leere.  Herausschneiden macht das Verzeichnis
+            // wieder stimmig; die Daten dahinter waren ohnehin nicht erreichbar und
+            // bleiben fuer die Wiederherstellung liegen (§13).
+            FsRepair rep{"udos.verz.eintrag.entfernen",
+                         "Den Verzeichniseintrag '" + e.name + "' entfernen",
+                         /*datenverlust*/true, /*empfohlen*/true};
+            rep.s = e.name;
+            f.repairs.push_back(rep);
             continue;
         }
         gehoert.emplace(nr(e.header), e.name);
 
         // ── Der Kopfsektor ───────────────────────────────────────────────────
-        if (!(hdr.directory_sector == e.record))
-            b.addAt("udos.kopf.rueckzeiger", FsSeverity::Warnung, FsLayer::Dateien, e.name,
+        if (!(hdr.directory_sector == e.record)) {
+            FsFinding& f = b.addAt("udos.kopf.rueckzeiger", FsSeverity::Warnung,
+                    FsLayer::Dateien, e.name,
                     "Der Rueckwaertszeiger des Kopfsektors nennt " + ort(hdr.directory_sector)
                     + ", der Eintrag steht aber in " + ort(e.record),
                     e.header.track, head_);
+            FsRepair rep{"udos.kopf.rueckzeiger.neu",
+                         "Den Rueckwaertszeiger des Kopfsektors auf " + ort(e.record)
+                         + " setzen", /*datenverlust*/false, /*empfohlen*/true};
+            rep.a = e.header.track; rep.b = e.header.sector_index;
+            rep.c = e.record.track; rep.d = e.record.sector_index;
+            f.repairs.push_back(rep);
+        }
         // Die Segmentliste (Offset 40…121) endet mit `00 00 00 00`.  Laeuft sie bis
         // ans Ende durch, steht dort kein Abschluss — dann ist entweder Muell im
         // Kopfsektor, oder die Liste ist laenger, als er fassen kann.  Beides kostet
@@ -340,26 +383,50 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
 
             // Die Kette ist DOPPELT verkettet; der Rueckwaertszeiger ist damit
             // ableitbar und eine echte Gegenprobe (und spaeter reparierbar).
-            if (!(back == vorher))
-                b.addAt("udos.kette.rueckwaerts", FsSeverity::Warnung, FsLayer::Dateien, e.name,
+            if (!(back == vorher)) {
+                FsFinding& f = b.addAt("udos.kette.rueckwaerts", FsSeverity::Warnung,
+                        FsLayer::Dateien, e.name,
                         "Satz " + std::to_string(saetze + 1) + " bei " + ort(p)
                         + " zeigt zurueck auf " + (back.end() ? std::string("das Kettenende")
                                                               : ort(back))
                         + ", davor liegt aber " + ort(vorher),
                         p.track, head_);
+                // Die Kette ist doppelt verkettet — der Rueckwaertszeiger ist damit
+                // ableitbar.  Angefasst wird nur der Nachspann.
+                FsRepair rep{"udos.kette.rueckwaerts.neu",
+                             "Den Rueckwaertszeiger von " + ort(p) + " auf " + ort(vorher)
+                             + " setzen", /*datenverlust*/false, /*empfohlen*/true};
+                rep.a = p.track;      rep.b = p.sector_index;
+                rep.c = vorher.track; rep.d = vorher.sector_index;
+                f.repairs.push_back(rep);
+            }
             vorher = p;
             p      = fwd;
             ++saetze;
             if (saetze > static_cast<uint32_t>(tracks_) * spt) { abgebrochen = true; break; }
         }
 
-        if (!abgebrochen && saetze != hdr.record_count)
-            b.addAt("udos.kette.bruch",
+        if (!abgebrochen && saetze != hdr.record_count) {
+            FsFinding& f = b.addAt("udos.kette.bruch",
                     saetze < hdr.record_count ? FsSeverity::Fehler : FsSeverity::Warnung,
                     FsLayer::Dateien, e.name,
                     "Der Kopfsektor sagt " + std::to_string(hdr.record_count)
                     + " Saetze an, die Kette hat " + std::to_string(saetze),
                     e.header.track, head_);
+            // Kuerzen macht die Datei wieder in sich stimmig — sie ist danach kuerzer.
+            // Ohne einen einzigen erreichbaren Satz gibt es nichts zu kuerzen; dann
+            // gehoert der Eintrag entfernt, und das schlaegt `eintrag_kaputt` vor.
+            if (saetze > 0) {
+                FsRepair rep{"udos.kette.kuerzen",
+                             "Die Datei auf die erreichbaren " + std::to_string(saetze)
+                             + " Saetze kuerzen (letzter Satz " + ort(vorher) + ")",
+                             /*datenverlust*/true, /*empfohlen*/true};
+                rep.a = e.header.track; rep.b = e.header.sector_index;
+                rep.c = static_cast<int>(saetze);
+                rep.s = liste(vorher);
+                f.repairs.push_back(rep);
+            }
+        }
         if (crc_kaputt)
             b.addAt("udos.medium.crc", FsSeverity::Fehler, FsLayer::Medium, e.name,
                     std::to_string(crc_kaputt) + " Sektor(en) dieser Datei sind nicht"
@@ -380,21 +447,32 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
     // Gefahr (die Datei ist heil und wird beim naechsten Schreiben ueberschrieben),
     // die andere nur verlorener Platz.
     if (bericht.vollstaendig) {
-        std::map<std::string, std::pair<int, UdosPointer>> offen;   // Datei → Zahl, erster
+        std::map<std::string, std::vector<UdosPointer>> offen;   // Datei → ihre Sektoren
         for (const auto& [s, wem] : gehoert) {
             const uint8_t t = static_cast<uint8_t>(s / spt);
             const uint8_t i = static_cast<uint8_t>(s % spt);
             if (bitmap_.used(t, static_cast<uint8_t>(i + 1))) continue;
-            auto& [n, erster] = offen[wem];
-            if (n++ == 0) erster = UdosPointer{i, t};
+            offen[wem].push_back(UdosPointer{i, t});
         }
-        for (const auto& [wem, wieviel] : offen)
-            b.addAt("udos.karte.frei_aber_belegt", FsSeverity::Gefahr, FsLayer::Dateien, wem,
-                    std::to_string(wieviel.first) + " Sektor(en) von '" + wem
+        for (const auto& [wem, sektoren] : offen) {
+            FsFinding& f = b.addAt("udos.karte.frei_aber_belegt", FsSeverity::Gefahr,
+                    FsLayer::Dateien, wem,
+                    std::to_string(sektoren.size()) + " Sektor(en) von '" + wem
                     + "' stehen in der Belegungskarte als FREI (der erste bei "
-                    + ort(wieviel.second) + ") — UDOS vergibt sie beim naechsten"
+                    + ort(sektoren.front()) + ") — UDOS vergibt sie beim naechsten"
                       " Schreiben und zerstoert die Datei",
-                    wieviel.second.track, head_);
+                    sektoren.front().track, head_);
+            // Nachtragen nimmt nur und gibt nie — der Eingriff kann unter keinen
+            // Umstaenden Daten freigeben und ist deshalb auch bei unvollstaendigem
+            // Wissen erlaubt (§9.3).
+            FsRepair rep{"udos.karte.sektoren.sperren",
+                         "Die " + std::to_string(sektoren.size())
+                         + " Sektor(en) von '" + wem
+                         + "' in der Belegungskarte als belegt nachtragen",
+                         /*datenverlust*/false, /*empfohlen*/true};
+            rep.s = liste(sektoren);
+            f.repairs.push_back(rep);
+        }
 
         // Die Gegenrichtung: belegt, aber in keiner Kette.  Die Systemspuren bleiben
         // aussen vor — dort liegen Urlader und Bootabbild, die keiner Datei gehoeren
@@ -409,14 +487,41 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                 if (verloren++ == 0) erste_spur = t;
             }
         }
-        if (verloren)
-            b.addAt("udos.karte.belegt_aber_frei", FsSeverity::Warnung, FsLayer::Verwaltung,
-                    "Belegungskarte",
+        if (verloren) {
+            FsFinding& f = b.addAt("udos.karte.belegt_aber_frei", FsSeverity::Warnung,
+                    FsLayer::Verwaltung, "Belegungskarte",
                     std::to_string(verloren) + " Sektoren stehen als belegt, gehoeren aber"
                     " zu keiner Datei (ab Spur " + std::to_string(erste_spur)
                     + ") — verlorener Platz; er laesst sich zurueckgewinnen, und dort"
                       " koennten geloeschte Dateien liegen",
                     erste_spur, head_);
+            // Der wertvollste Eingriff ueberhaupt — und der einzige, der etwas
+            // FREIGIBT.  Deshalb E8: er setzt voraus, dass die Ketten vollstaendig
+            // gelesen und in sich heil sind; sonst erklaerte er die ungelesene
+            // Haelfte fuer frei.  Was ihn sperrt, sind genau die Befunde, die
+            // besagen „eine Kette liess sich nicht verfolgen" — ein falsches
+            // Kartenbit (frei_aber_belegt) gehoert nicht dazu, das ist ja der
+            // Schaden, den er behebt.
+            std::string blockiert;
+            for (const FsFinding& g : bericht.findings) {
+                if (g.severity < FsSeverity::Fehler) continue;
+                if (g.id.rfind("udos.kette.", 0) != 0 && g.id != "udos.verz.eintrag_kaputt"
+                    && g.id != "udos.verz.kette" && g.id != "udos.karte.ungueltig") continue;
+                blockiert = g.id + " (" + g.object + ")";
+                break;
+            }
+            FsRepair rep{"udos.karte.neu",
+                         "Den Belegungsplan vollstaendig aus den Ketten neu aufbauen —"
+                         " das gibt die " + std::to_string(verloren)
+                         + " verlorenen Sektoren zurueck",
+                         /*datenverlust*/false, /*empfohlen*/blockiert.empty()};
+            if (!blockiert.empty()) {
+                rep.gesperrt = true;
+                rep.warum    = "Der Neuaufbau ist erst moeglich, wenn kein Kettenfehler"
+                               " mehr offen ist — offen ist " + blockiert;
+            }
+            f.repairs.push_back(rep);
+        }
     }
 
     abschluss();

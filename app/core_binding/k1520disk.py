@@ -378,6 +378,25 @@ _lib.k1520d_finding_head.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_finding_head.restype = ctypes.c_int
 _lib.k1520d_finding_sector.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_finding_sector.restype = ctypes.c_int
+_lib.k1520d_repair_count.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_repair_count.restype = ctypes.c_int
+_lib.k1520d_repair_id.argtypes = [_H, ctypes.c_int, ctypes.c_int]
+_lib.k1520d_repair_id.restype = _CS
+_lib.k1520d_repair_text.argtypes = [_H, ctypes.c_int, ctypes.c_int]
+_lib.k1520d_repair_text.restype = _CS
+_lib.k1520d_repair_destructive.argtypes = [_H, ctypes.c_int, ctypes.c_int]
+_lib.k1520d_repair_destructive.restype = ctypes.c_bool
+_lib.k1520d_repair_recommended.argtypes = [_H, ctypes.c_int, ctypes.c_int]
+_lib.k1520d_repair_recommended.restype = ctypes.c_bool
+_lib.k1520d_repair_guessed.argtypes = [_H, ctypes.c_int, ctypes.c_int]
+_lib.k1520d_repair_guessed.restype = ctypes.c_bool
+_lib.k1520d_repair_blocked.argtypes = [_H, ctypes.c_int, ctypes.c_int]
+_lib.k1520d_repair_blocked.restype = ctypes.c_bool
+_lib.k1520d_repair_blocked_why.argtypes = [_H, ctypes.c_int, ctypes.c_int]
+_lib.k1520d_repair_blocked_why.restype = _CS
+_lib.k1520d_apply_repairs.argtypes = [_H, ctypes.POINTER(ctypes.c_int),
+                                      ctypes.POINTER(ctypes.c_int), ctypes.c_int]
+_lib.k1520d_apply_repairs.restype = ctypes.c_int
 
 
 def _s(raw) -> str:
@@ -537,6 +556,34 @@ EBENE_NAME = {EBENE_MEDIUM: "Medium", EBENE_VERWALTUNG: "Verwaltung",
 
 
 @dataclass(frozen=True)
+class Repair:
+    """Ein Reparaturvorschlag zu genau einem Befund.
+
+    ``blocked`` ist kein Versehen, sondern eine Zusage (E8): ein Eingriff, der
+    etwas **freigibt**, bleibt gesperrt, solange das Wissen über die Diskette
+    unvollständig ist — aus halbem Wissen einen Belegungsplan zu bauen ist der eine
+    Fehler, den ein fsck nie machen darf.
+    """
+
+    id: str            # stabile Kennung, z. B. "udos.karte.sektoren.sperren"
+    text: str
+    destructive: bool = False   # verwirft Nutzdaten oder einen Verweis darauf
+    recommended: bool = False   # höchstens einer je Befund
+    guessed: bool = False       # stellt einen nicht ableitbaren Wert her
+    blocked: bool = False
+    blocked_why: str = ""
+
+    @property
+    def vorauswaehlen(self) -> bool:
+        """Darf die Oberfläche ihn ankreuzen, ohne zu fragen?
+
+        Nur der empfohlene Weg, und nur wenn er nichts verwirft — nichts ist
+        vorausgewählt, was Daten kostet (Entwurf §16.3).
+        """
+        return self.recommended and not self.destructive and not self.blocked
+
+
+@dataclass(frozen=True)
 class Finding:
     """Ein Befund der Dateisystemprüfung.
 
@@ -554,6 +601,8 @@ class Finding:
     cyl: int = -1      # -1 = ortlos (kein Sprung in den Diskeditor)
     head: int = -1
     sector: int = -1
+    #: 0..n Reparaturvorschläge; leer = der Befund ist eine reine Auskunft.
+    repairs: tuple = ()
 
     @property
     def schwere(self) -> str:
@@ -1065,7 +1114,43 @@ class DiskTool:
             cyl=int(_lib.k1520d_finding_cyl(self._h, i)),
             head=int(_lib.k1520d_finding_head(self._h, i)),
             sector=int(_lib.k1520d_finding_sector(self._h, i)),
+            repairs=tuple(self._repair(i, j)
+                          for j in range(int(_lib.k1520d_repair_count(self._h, i)))),
         )
+
+    def _repair(self, i: int, j: int) -> "Repair":
+        return Repair(
+            id=_s(_lib.k1520d_repair_id(self._h, i, j)),
+            text=_s(_lib.k1520d_repair_text(self._h, i, j)),
+            destructive=bool(_lib.k1520d_repair_destructive(self._h, i, j)),
+            recommended=bool(_lib.k1520d_repair_recommended(self._h, i, j)),
+            guessed=bool(_lib.k1520d_repair_guessed(self._h, i, j)),
+            blocked=bool(_lib.k1520d_repair_blocked(self._h, i, j)),
+            blocked_why=_s(_lib.k1520d_repair_blocked_why(self._h, i, j)),
+        )
+
+    def apply_repairs(self, auswahl) -> int:
+        """Ausgewählte Reparaturen ausführen — **eine** Transaktion (Entwurf §12).
+
+        ``auswahl`` ist eine Folge von Paaren ``(Befundnummer, Vorschlagsnummer)``
+        in den zuletzt erhobenen Befund.  Die Reihenfolge ist gleichgültig:
+        ausgeführt wird nach Rang (Verzeichnis → Ketten → Belegungsplan → Zähler).
+        Danach wird automatisch neu geprüft — ``findings()`` trägt anschließend den
+        neuen Stand, und alle bisherigen Indizes sind hinfällig.
+
+        :return: Zahl der ausgeführten Reparaturen.
+        :raises K1520DiskError: wenn nichts geschah (die Diskette ist unverändert).
+        """
+        paare = list(auswahl)
+        if not paare:
+            raise K1520DiskError("Es wurde keine Reparatur ausgewaehlt")
+        n = len(paare)
+        befund = (ctypes.c_int * n)(*[int(a) for a, _ in paare])
+        repair = (ctypes.c_int * n)(*[int(b) for _, b in paare])
+        getan = int(_lib.k1520d_apply_repairs(self._h, befund, repair, n))
+        if getan < 0:
+            raise K1520DiskError(self._fail())
+        return getan
 
     # ── Übertragung ─────────────────────────────────────────────────────────
 

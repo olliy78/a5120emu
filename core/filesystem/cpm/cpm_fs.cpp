@@ -712,3 +712,81 @@ FsInfo CpmFileSystem::info() const {
                              "Datenbereich — vermutlich das falsche Dateisystemprofil");
     return i;
 }
+
+// ─── Reparatur (doc/design/15_dateisystempruefung.md §8) ─────────────────────
+//
+// Gefunden wird ausserhalb, repariert wird innen (E3).  Alle vier Eingriffe fassen
+// genau EINEN Verzeichnisplatz an — bei CP/M steht die ganze Verwaltung dort; einen
+// Belegungsplan gibt es nicht (er wird aus dem Verzeichnis gerechnet), und damit
+// heilt sich die Belegung von selbst, sobald das Verzeichnis stimmt.
+// Parametertabelle: `cpm_fs.h` am `repair`-Haken.
+
+bool CpmFileSystem::repair(const FsRepair& r) {
+    if (r.gesperrt)
+        return fail("Die Reparatur '" + r.kind + "' ist gesperrt: " + r.warum);
+
+    const bool platzsache = r.kind == "cpm.platz.freigeben"
+                         || r.kind == "cpm.zeiger.streichen"
+                         || r.kind == "cpm.rc.anpassen"
+                         || r.kind == "cpm.kreuz.erstem_lassen";
+    if (!platzsache) return FileSystem::repair(r);
+
+    std::vector<uint8_t> roh;
+    if (!directoryRaw(roh)) return false;
+    if (r.a < 0 || static_cast<size_t>(r.a) * 32 + 32 > roh.size())
+        return fail("Verzeichnisplatz " + std::to_string(r.a) + " gibt es nicht");
+    uint8_t* p = roh.data() + static_cast<size_t>(r.a) * 32;
+
+    if (r.kind == "cpm.platz.freigeben") {
+        // NUR das Nutzerbyte.  Die uebrigen 31 Byte bleiben stehen — genau so
+        // loescht CP/M selbst, und genau deshalb ist der Eintrag spaeter noch
+        // wiederherstellbar (§13).
+        p[0] = 0xE5;
+        return writeDirEntry(r.a, p);
+    }
+
+    // Blockzeiger lesen und schreiben — 8 oder 16 Bit breit, je nach Blockzahl.
+    const int n = ptrs_per_entry_;
+    auto zeiger = [&](int k) -> uint16_t {
+        return wide_ptr_ ? static_cast<uint16_t>(p[16 + 2 * k] | (p[17 + 2 * k] << 8))
+                         : p[16 + k];
+    };
+    auto setze = [&](int k, uint16_t v) {
+        if (wide_ptr_) { p[16 + 2 * k] = static_cast<uint8_t>(v & 0xFF);
+                         p[17 + 2 * k] = static_cast<uint8_t>(v >> 8); }
+        else             p[16 + k] = static_cast<uint8_t>(v);
+    };
+    // Wie viele 128-B-Saetze traegt ein Block?  Danach richtet sich RC.
+    const uint32_t saetze_je_block = std::max<uint32_t>(1u, prof_.block_size / 128);
+
+    if (r.kind == "cpm.zeiger.streichen") {
+        int gestrichen = 0;
+        for (int k = 0; k < n; ++k) {
+            const uint16_t blk = zeiger(k);
+            if (blk == 0) continue;
+            if (blk < total_blocks_ && blk >= dir_blocks_) continue;
+            setze(k, 0);
+            ++gestrichen;
+        }
+        if (!gestrichen) return fail("Dieser Platz traegt keinen unbrauchbaren Blockzeiger "
+                                     "mehr");
+    } else if (r.kind == "cpm.kreuz.erstem_lassen") {
+        int gestrichen = 0;
+        for (int k = 0; k < n; ++k)
+            if (zeiger(k) == static_cast<uint16_t>(r.b)) { setze(k, 0); ++gestrichen; }
+        if (!gestrichen) return fail("Dieser Platz beansprucht Block "
+                                     + std::to_string(r.b) + " nicht mehr");
+    }
+
+    // RC nachziehen: mehr Saetze, als die verbliebenen Bloecke tragen, gibt es nicht.
+    if (r.kind == "cpm.rc.anpassen") {
+        if (r.b < 0 || r.b > 128) return fail("RC muss zwischen 0 und 128 liegen");
+        p[15] = static_cast<uint8_t>(r.b);
+    } else {
+        uint32_t belegt = 0;
+        for (int k = 0; k < n; ++k) if (zeiger(k) != 0) ++belegt;
+        const uint32_t moeglich = std::min<uint32_t>(128u, belegt * saetze_je_block);
+        if (p[15] > moeglich) p[15] = static_cast<uint8_t>(moeglich);
+    }
+    return writeDirEntry(r.a, p);
+}

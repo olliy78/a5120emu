@@ -367,6 +367,27 @@ public:
      */
     const FsCheckReport& check(FsCheckLevel level, bool nachladen);
 
+    /**
+     * @brief Ausgewaehlte Reparaturen ausfuehren — als EINE Transaktion (E6).
+     *
+     * @param auswahl  Paare `(Befundnummer, Reparaturnummer)` in den **letzten**
+     *                 Bericht (@ref checkReport).  Die Reihenfolge der Auswahl ist
+     *                 gleichgueltig: ausgefuehrt wird nach Rang (§12.1) —
+     *                 Verzeichnis → Ketten → Belegungsplan → Zaehler.  Der Neuaufbau
+     *                 eines Plans setzt auf geraden Ketten auf; umgekehrt bliebe
+     *                 der abgeschnittene Platz verloren.
+     *
+     * Nach dem Lauf wird **automatisch neu geprueft** (@ref checkReport traegt danach
+     * den neuen Stand).  Scheitert auch nur eine Reparatur, wird das Medium auf die
+     * Momentaufnahme zurueckgesetzt — bei einer physischen Diskette ueber
+     * @c DiskMedium::restoreFrom, damit die betroffenen Spuren wirklich noch einmal
+     * auf die Scheibe gehen.
+     *
+     * @return Zahl der ausgefuehrten Reparaturen; -1 = nichts geschehen
+     *         (@ref lastError nennt den Grund).
+     */
+    int applyRepairs(const std::vector<std::pair<int, int>>& auswahl);
+
     int  volumeCount() const { return static_cast<int>(volumes_.size()); }
     /// @brief Unterverzeichnisname: "" bei einem Volume, sonst "Side0"/"Side1".
     std::string volumeDir(int v) const;
@@ -617,6 +638,10 @@ private:
     DetectionResult    detection_;
     /// @brief Ergebnis der letzten Pruefung (beim Oeffnen: die Schnellpruefung).
     FsCheckReport      check_;
+    /// @brief Wurde beim letzten @ref check nachgeladen?  @ref applyRepairs prueft
+    ///        danach mit denselben Bedingungen nach — sonst verglichen sich zwei
+    ///        Berichte ueber unterschiedlich viel Diskette.
+    bool               check_nachladen_ = false;
     /// @brief Teil des Befunds, der NICHT aus der Spurmessung stammt (CP/A-Regel,
     ///        Hinweise zum Container) — @ref refreshDetection laesst ihn stehen.
     std::string        befund_zusatz_;

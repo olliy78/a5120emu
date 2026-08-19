@@ -11,6 +11,8 @@
 #include "core/filesystem/udos/udos1715_fs.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <set>
 #include <cstdio>
 #include <ctime>
 
@@ -1033,4 +1035,132 @@ bool Udos1715FileSystem::wouldFit(const std::vector<PlannedFile>& files,
         out.detail = "Es fehlen " + std::to_string(static_cast<int>(noetig) - frei)
                    + " Sektoren zu je 256 B";
     return true;
+}
+
+// ─── Reparatur (doc/design/15_dateisystempruefung.md §10) ────────────────────
+//
+// Dieselben Kartenreparaturen wie bei ZDOS — der Belegungsplan folgt derselben
+// Struktur.  Eigen sind nur die beiden Eingriffe an den Zeigersektoren; sie treten
+// an die Stelle der Kettenreparaturen der Gap-Sitte.  Parametertabelle: `udos1715_fs.h`.
+
+namespace {
+
+/// @brief Sektorliste `"Spur:Index,…"` zerlegen — dasselbe Format wie bei ZDOS.
+std::vector<UdosPointer> sektorliste1715(const std::string& s) {
+    std::vector<UdosPointer> out;
+    size_t i = 0;
+    while (i < s.size()) {
+        const size_t komma = s.find(',', i);
+        const std::string teil = s.substr(i, komma == std::string::npos ? komma : komma - i);
+        const size_t doppel = teil.find(':');
+        if (doppel != std::string::npos) {
+            const int t = std::atoi(teil.c_str());
+            const int k = std::atoi(teil.c_str() + doppel + 1);
+            if (t >= 0 && t < 256 && k >= 0 && k < 256)
+                out.push_back(UdosPointer{static_cast<uint8_t>(k), static_cast<uint8_t>(t)});
+        }
+        if (komma == std::string::npos) break;
+        i = komma + 1;
+    }
+    return out;
+}
+
+}  // namespace
+
+bool Udos1715FileSystem::karteNeuAufbauen() {
+    // Erst alles einsammeln, dann schreiben — bricht eine Zeigersektorkette, bleibt
+    // der alte Plan unangetastet (E8).
+    std::set<uint32_t> belegt;
+    const uint8_t spt = secs_per_track_;
+    auto merke = [&](UdosPointer p) {
+        belegt.insert(static_cast<uint32_t>(p.track) * spt + p.sector_index);
+    };
+    for (uint8_t s = 1; s <= 2; ++s)
+        merke(UdosPointer{static_cast<uint8_t>(s - 1), prof_.bitmap_track});
+
+    std::vector<UdosPointer> dir_sektoren;
+    if (!sectorsOfFile(directoryDescriptor(), dir_sektoren))
+        return fail("Die Zeigersektoren der Verzeichnisdatei sind nicht schluessig — "
+                    "der Belegungsplan laesst sich daraus nicht ableiten");
+    for (const UdosPointer& p : dir_sektoren) merke(p);
+
+    for (const UdosDirEntry& e : directory()) {
+        std::vector<UdosPointer> sek;
+        if (!sectorsOfFile(e.header, sek))
+            return fail("'" + e.name + "': die Zeigersektoren sind nicht schluessig — "
+                        "der Belegungsplan laesst sich nicht ableiten");
+        for (const UdosPointer& p : sek) merke(p);
+    }
+
+    // Spur 0 und die Bootspur bleiben unangetastet: dort liegen Urlader und BFOS,
+    // die keiner Datei gehoeren und trotzdem zu Recht belegt sind (§7.5) — genau
+    // die Spuren, die auch die Pruefung beim verlorenen Platz auslaesst.
+    for (uint8_t t = 0; t < tracks_; ++t) {
+        const bool reserviert = reservedTrack(t) || t == 0 || t == prof_.boot_track;
+        for (uint8_t s = 1; s <= spt; ++s) {
+            const bool soll = belegt.count(static_cast<uint32_t>(t) * spt + (s - 1)) != 0;
+            if (reserviert && !soll) continue;
+            bitmap_.setUsed(t, s, soll);
+        }
+    }
+    return saveBitmap();
+}
+
+bool Udos1715FileSystem::repair(const FsRepair& r) {
+    if (r.gesperrt)
+        return fail("Die Reparatur '" + r.kind + "' ist gesperrt: " + r.warum);
+
+    if (r.kind == "udos.karte.zaehler.neu") return saveBitmap();
+
+    if (r.kind == "udos.karte.sektoren.sperren" || r.kind == "udos.karte.system.sperren") {
+        const std::vector<UdosPointer> liste = sektorliste1715(r.s);
+        if (liste.empty()) return fail("Die Reparatur nennt keinen einzigen Sektor");
+        for (const UdosPointer& p : liste) bitmap_.setUsed(p.track, p.sectorId(), true);
+        return saveBitmap();
+    }
+
+    if (r.kind == "udos.karte.neu") return karteNeuAufbauen();
+
+    if (r.kind == "ndos.zeiger.kette.neu") {
+        // Vor- und Rueckwaertszeiger der Zeigersektoren sind redundant: ihre
+        // Reihenfolge steht schon in der Kette, die `pointerBlocks` gelesen hat.
+        // Neu geschrieben werden nur diese vier Byte je Sektor — die Adressliste
+        // bleibt, wie sie ist.
+        UdosPointer descriptor{0xFF, 0xFF};
+        for (const UdosDirEntry& e : directory())
+            if (e.name == r.s) { descriptor = e.header; break; }
+        if (descriptor.end())
+            return fail("Im Verzeichnis steht kein Eintrag '" + r.s + "' mehr");
+
+        UdosFileHeader hdr;
+        if (!readDescriptor(descriptor, hdr)) return false;
+        std::vector<UdosPointer>          adressen;
+        std::vector<Udos1715PointerBlock> bloecke;
+        if (!pointerBlocks(hdr, adressen, bloecke)) return false;
+
+        UdosPointer p = hdr.firstbl, davor = descriptor;
+        for (size_t i = 0; i < bloecke.size(); ++i) {
+            Udos1715PointerBlock blk = bloecke[i];
+            const UdosPointer weiter = blk.forward;
+            blk.back    = davor;
+            blk.forward = (i + 1 < bloecke.size()) ? weiter : UdosPointer{};
+            if (!writePointerBlock(p, blk)) return false;
+            davor = p;
+            p     = weiter;
+        }
+        return true;
+    }
+
+    if (r.kind == "ndos.zeiger.anzahl.anpassen") {
+        const UdosPointer descriptor{static_cast<uint8_t>(r.b), static_cast<uint8_t>(r.a)};
+        std::vector<uint8_t> d;
+        if (!readSector(descriptor, d)) return false;
+        if (r.c < 0) return fail("negative Satzzahl");
+        // Offset 13/14: RECCTR (Satzzahl) — dieselbe Stelle wie bei ZDOS.
+        d[13] = static_cast<uint8_t>(r.c & 0xFF);
+        d[14] = static_cast<uint8_t>((r.c >> 8) & 0xFF);
+        return writeSector(descriptor, d);
+    }
+
+    return FileSystem::repair(r);
 }

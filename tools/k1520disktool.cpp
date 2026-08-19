@@ -88,6 +88,11 @@ struct Optionen {
     bool        voll    = false;
     bool        dry_run = false;
     bool        nobackup= false;
+    /// @brief --repair: `fsck` soll auch eingreifen (sonst prueft es nur).
+    bool        reparieren = false;
+    /// @brief Wert von `--repair=…`: "" = die sicheren, "alle" = auch die
+    ///        verlustbehafteten, sonst eine Liste von Kennungen.
+    std::string repair_wahl;
     std::vector<std::string> rest;  ///< uebrige Argumente (Abbild, Muster, Dateien)
 };
 
@@ -113,11 +118,15 @@ void gebrauch() {
         "  save-as <abbild> <ziel>                  Kopie, ggf. anderes Format\n"
         "  info   <abbild>                          Belegung und Erkennung\n"
         "  check  <abbild> [--full]                 Dateisystem pruefen (--full: jede Spur)\n"
+        "  fsck   <abbild> [--full] [--repair[=…]]  pruefen UND reparieren\n"
+        "         [--dry-run]                       … --repair: die empfohlenen ohne\n"
+        "                                             Datenverlust; =alle auch die mit;\n"
+        "                                             =kennung,… eine Auswahl\n"
         "  measure <abbild>                         Geometrie messen (auch ohne Dateisystem)\n"
         "  formats                                  bekannte Dateisysteme auflisten\n\n"
         "Gemeinsam: --fs NAME (Erkennung uebersteuern), --volume N (Seite),\n"
         "           --text|--binary, --force, --dry-run, --no-backup\n"
-        "  --json   maschinenlesbar — bei ls, info, check und formats\n\n"
+        "  --json   maschinenlesbar — bei ls, info, check, fsck und formats\n\n"
         "Bei beidseitigen UDOS-Disketten sind die Seiten `Side0`/`Side1`:\n"
         "  get  legt sie als Unterverzeichnisse an,\n"
         "  put  verlangt einen Ordner, der genau diese Unterverzeichnisse hat,\n"
@@ -174,6 +183,10 @@ bool zerlege(int argc, char** argv, int ab, Optionen& o, std::string& err) {
         else if (a == "--json")    o.json     = true;
         else if (a == "--full")    o.voll     = true;
         else if (a == "--dry-run") o.dry_run  = true;
+        else if (a == "--repair" || a.rfind("--repair=", 0) == 0) {
+            o.reparieren = true;
+            if (a.size() > 9) o.repair_wahl = a.substr(9);
+        }
         else if (a == "--no-backup") o.nobackup = true;
         else if (!a.empty() && a[0] == '-') { err = "unbekannter Schalter: " + a; return false; }
         else o.rest.push_back(a);
@@ -521,6 +534,125 @@ int cmd_check(const Optionen& o) {
                                               + " Dateien nicht lesbar")
                   << "\n";
     return sauber ? kOk : kFehler;
+}
+
+/**
+ * @brief `fsck` — pruefen und, auf Verlangen, reparieren (Entwurf §15).
+ *
+ * Ohne `--repair` ist es `check` mit anderer Ausgabe.  Mit `--repair` laeuft die
+ * Auswahl durch dieselbe Transaktion wie in der Oberflaeche (§12): eine
+ * Momentaufnahme, feste Rangfolge, danach eine neue Pruefung.  Der Vorgabewert ist
+ * bewusst eng — **nur der empfohlene Weg, und nur wenn er nichts verwirft**; das ist
+ * der Wert, den man in ein Skript schreiben darf.
+ *
+ * Rueckgabe: 0 ohne Befund · 1 Befunde vorhanden · 2 Reparatur gescheitert.
+ */
+int cmd_fsck(const Optionen& o) {
+    if (o.rest.size() < 2) { std::cerr << "Fehler: kein Abbild angegeben\n"; return kFehler; }
+    int rc = kOk;
+    // Schreibend nur, wenn wirklich eingegriffen wird — ein `--dry-run` darf die
+    // Datei nicht einmal beruehren.
+    const bool eingriff = o.reparieren && !o.dry_run;
+    auto v = oeffne(o, o.rest[1], rc, /*schreibend=*/eingriff);
+    if (!v) return rc;
+
+    const FsCheckLevel stufe = o.voll ? FsCheckLevel::Voll : FsCheckLevel::Schnell;
+    const FsCheckReport vorher = v->check(stufe, true);
+
+    // ── Auswahl treffen ──────────────────────────────────────────────────────
+    std::vector<std::string> kennungen;
+    if (!o.repair_wahl.empty() && o.repair_wahl != "alle" && o.repair_wahl != "sicher") {
+        size_t i = 0;
+        while (i <= o.repair_wahl.size()) {
+            const size_t k = o.repair_wahl.find(',', i);
+            kennungen.push_back(o.repair_wahl.substr(i, k == std::string::npos ? k : k - i));
+            if (k == std::string::npos) break;
+            i = k + 1;
+        }
+    }
+    const bool auch_verlust = o.repair_wahl == "alle";
+
+    std::vector<std::pair<int, int>> auswahl;
+    for (size_t fi = 0; fi < vorher.findings.size(); ++fi) {
+        const FsFinding& f = vorher.findings[fi];
+        for (size_t ri = 0; ri < f.repairs.size(); ++ri) {
+            const FsRepair& r = f.repairs[ri];
+            if (r.gesperrt) continue;
+            const bool gewaehlt = kennungen.empty()
+                ? (r.empfohlen && (auch_verlust || !r.datenverlust))
+                : std::find(kennungen.begin(), kennungen.end(), r.kind) != kennungen.end();
+            if (gewaehlt) auswahl.emplace_back(static_cast<int>(fi), static_cast<int>(ri));
+        }
+    }
+
+    // ── Anzeigen ─────────────────────────────────────────────────────────────
+    const bool mit_volume = v->volumeCount() > 1;
+    if (!o.json) {
+        std::cout << v->path() << "  " << v->detection().format << " / "
+                  << v->detection().filesystem << "  "
+                  << (o.voll ? "Vollpruefung" : "Schnellpruefung");
+        if (!vorher.vollstaendig)
+            std::cout << "  (UNVOLLSTAENDIG: " << vorher.spuren_gelesen << " von "
+                      << vorher.spuren_gesamt << " Spuren angesehen)";
+        std::cout << "\n";
+        if (!vorher.findings.empty()) std::cout << "\n" << vorher.alsText(mit_volume);
+        for (const FsFinding& f : vorher.findings)
+            for (const FsRepair& r : f.repairs)
+                std::cout << "   -> " << (r.gesperrt ? "GESPERRT " : "") << r.kind << "  "
+                          << (r.gesperrt ? r.warum : r.text)
+                          << (r.datenverlust ? "  [Datenverlust]" : "") << "\n";
+    }
+
+    if (!o.reparieren) {
+        if (o.json)
+            std::cout << "{\"image\":" << jsonText(v->path())
+                      << ",\"ok\":" << (vorher.ohneBefund() ? "true" : "false")
+                      << ",\"findings\":" << vorher.findings.size()
+                      << ",\"repairable\":" << auswahl.size() << "}\n";
+        else
+            std::cout << "\n" << (vorher.ohneBefund() ? "ohne Befund"
+                                                     : vorher.kurzfassung())
+                      << " — " << auswahl.size() << " Reparatur(en) waeren moeglich"
+                      << " (`--repair` fuehrt sie aus)\n";
+        return vorher.ohneBefund() ? kOk : kFehler;
+    }
+
+    if (auswahl.empty()) {
+        if (!o.json) std::cout << "\nNichts zu reparieren.\n";
+        else std::cout << "{\"image\":" << jsonText(v->path()) << ",\"repaired\":0,\"ok\":"
+                       << (vorher.ohneBefund() ? "true" : "false") << "}\n";
+        return vorher.ohneBefund() ? kOk : kFehler;
+    }
+
+    if (o.dry_run) {
+        std::cout << "\nEs geschaehe (dry-run):\n";
+        for (const auto& [fi, ri] : auswahl)
+            std::cout << "  " << vorher.findings[fi].repairs[ri].kind << "  "
+                      << vorher.findings[fi].repairs[ri].text << "\n";
+        return vorher.ohneBefund() ? kOk : kFehler;
+    }
+
+    const int getan = v->applyRepairs(auswahl);
+    if (getan < 0) {
+        std::cerr << "Fehler: " << v->lastError() << "\n";
+        return 2;
+    }
+    const FsCheckReport& nachher = v->checkReport();
+    if (o.json) {
+        std::cout << "{\"image\":" << jsonText(v->path())
+                  << ",\"repaired\":" << getan
+                  << ",\"before\":" << vorher.findings.size()
+                  << ",\"after\":" << nachher.findings.size()
+                  << ",\"ok\":" << (nachher.ohneBefund() ? "true" : "false") << "}\n";
+    } else {
+        std::cout << "\n" << getan << " Reparatur(en) ausgefuehrt.\n";
+        if (!nachher.findings.empty()) std::cout << "\n" << nachher.alsText(mit_volume);
+        std::cout << "\nvorher " << vorher.findings.size() << " Befunde ("
+                  << vorher.zaehler(FsSeverity::Gefahr) << " Gefahr) -> nachher "
+                  << nachher.findings.size() << " Befunde ("
+                  << nachher.zaehler(FsSeverity::Gefahr) << " Gefahr)\n";
+    }
+    return nachher.ohneBefund() ? kOk : kFehler;
 }
 
 int cmd_get(const Optionen& o) {
@@ -1036,6 +1168,7 @@ int main(int argc, char** argv) {
     if (befehl == "save-as") return cmd_save_as(o);
     if (befehl == "measure") return cmd_measure(o);
     if (befehl == "check")   return cmd_check(o);
+    if (befehl == "fsck")    return cmd_fsck(o);
     if (befehl == "formats") return cmd_formats(o);
 
     std::cerr << "Fehler: unbekanntes Kommando '" << befehl << "'\n\n";

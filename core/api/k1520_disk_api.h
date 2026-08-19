@@ -579,7 +579,7 @@ K1520_API const char* k1520d_version(void);
  * physischen Diskette keinen zusaetzlichen Spurzugriff.
  *
  * Die Pruefung **aendert nichts**.  Reparaturen sind ein eigener, ausdruecklicher
- * Schritt und kommen mit Etappe 3.
+ * Schritt (`k1520d_apply_repairs`, s. u.).
  */
 
 /**
@@ -618,6 +618,44 @@ K1520_API int         k1520d_finding_cyl(K1520Disk h, int i);
 K1520_API int         k1520d_finding_head(K1520Disk h, int i);
 /// @brief Laufende Nummer des Sektors in seiner Spur (wie @ref k1520d_span_index).
 K1520_API int         k1520d_finding_sector(K1520Disk h, int i);
+
+/* ─── Reparatur (§12) ──────────────────────────────────────────────────────── */
+/*
+ * Zu jedem Befund gehoeren 0..n Reparaturvorschlaege.  Kein Vorschlag heisst nicht
+ * „nichts zu machen", sondern „dafuer gibt es keinen ableitbaren Eingriff" — der
+ * Befund ist dann eine Auskunft.
+ *
+ * Ausgefuehrt wird ausschliesslich ueber `k1520d_apply_repairs`, und zwar ALLE
+ * ausgewaehlten in EINER Transaktion und in fester Rangfolge (Verzeichnis → Ketten →
+ * Belegungsplan → Zaehler).  Danach wird automatisch neu geprueft; alle
+ * `k1520d_finding_*`-Indizes beziehen sich anschliessend auf den NEUEN Bericht.
+ */
+
+/// @brief Zahl der Reparaturvorschlaege zu Befund @p i.
+K1520_API int         k1520d_repair_count(K1520Disk h, int i);
+/// @brief Stabile Kennung des Vorschlags, z. B. "udos.karte.sektoren.sperren".
+K1520_API const char* k1520d_repair_id(K1520Disk h, int i, int j);
+/// @brief Was genau geschieht — im Klartext, mit Zahlen.
+K1520_API const char* k1520d_repair_text(K1520Disk h, int i, int j);
+/// @brief Verwirft der Eingriff Nutzdaten oder einen Verweis darauf?
+K1520_API bool        k1520d_repair_destructive(K1520Disk h, int i, int j);
+/// @brief Der empfohlene Weg (hoechstens einer je Befund).  Vorausgewaehlt gehoert
+///        in einer Oberflaeche nur `recommended && !destructive`.
+K1520_API bool        k1520d_repair_recommended(K1520Disk h, int i, int j);
+/// @brief Stellt einen Wert her, der sich NICHT ableiten laesst (geraten).
+K1520_API bool        k1520d_repair_guessed(K1520Disk h, int i, int j);
+/// @brief Nicht ausfuehrbar (E8) — der Grund steht in @ref k1520d_repair_blocked_why.
+K1520_API bool        k1520d_repair_blocked(K1520Disk h, int i, int j);
+K1520_API const char* k1520d_repair_blocked_why(K1520Disk h, int i, int j);
+
+/**
+ * @brief Ausgewaehlte Reparaturen ausfuehren — eine Transaktion, danach neue Pruefung.
+ * @param befund  Feld von @p n Befundnummern
+ * @param repair  Feld von @p n Vorschlagsnummern (je zum gleichen Index in @p befund)
+ * @return Zahl der ausgefuehrten Reparaturen; -1 = nichts geschehen
+ *         (`k1520d_last_error` nennt den Grund, die Diskette ist unveraendert).
+ */
+K1520_API int k1520d_apply_repairs(K1520Disk h, const int* befund, const int* repair, int n);
 
 #ifdef __cplusplus
 }

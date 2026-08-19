@@ -64,6 +64,7 @@ struct Handle {
                 s_segments;
     std::string s_fmt, s_fs, s_alt, s_remarks, s_fit, s_check;
     std::string s_bid, s_bobj, s_btext, s_bsum;   ///< Puffer der Pruefung
+    std::string s_rid, s_rtext, s_rwhy;           ///< Puffer der Reparatur
 };
 
 Handle* H(K1520Disk h) { return static_cast<Handle*>(h); }
@@ -899,6 +900,67 @@ extern "C" int k1520d_finding_head(K1520Disk h, int i) {
 extern "C" int k1520d_finding_sector(K1520Disk h, int i) {
     const FsFinding* f = befund(h, i);
     return f ? f->sector_index : -1;
+}
+
+// ─── Reparatur ───────────────────────────────────────────────────────────────
+
+namespace {
+
+const FsRepair* vorschlag(K1520Disk h, int i, int j) {
+    const FsFinding* f = befund(h, i);
+    if (!f || j < 0 || static_cast<size_t>(j) >= f->repairs.size()) return nullptr;
+    return &f->repairs[static_cast<size_t>(j)];
+}
+
+}  // namespace
+
+extern "C" int k1520d_repair_count(K1520Disk h, int i) {
+    const FsFinding* f = befund(h, i);
+    return f ? static_cast<int>(f->repairs.size()) : 0;
+}
+
+extern "C" const char* k1520d_repair_id(K1520Disk h, int i, int j) {
+    const FsRepair* r = vorschlag(h, i, j);
+    return r ? halte(H(h)->s_rid, r->kind) : "";
+}
+
+extern "C" const char* k1520d_repair_text(K1520Disk h, int i, int j) {
+    const FsRepair* r = vorschlag(h, i, j);
+    return r ? halte(H(h)->s_rtext, r->text) : "";
+}
+
+extern "C" bool k1520d_repair_destructive(K1520Disk h, int i, int j) {
+    const FsRepair* r = vorschlag(h, i, j);
+    return r ? r->datenverlust : false;
+}
+
+extern "C" bool k1520d_repair_recommended(K1520Disk h, int i, int j) {
+    const FsRepair* r = vorschlag(h, i, j);
+    return r ? r->empfohlen : false;
+}
+
+extern "C" bool k1520d_repair_guessed(K1520Disk h, int i, int j) {
+    const FsRepair* r = vorschlag(h, i, j);
+    return r ? r->geraten : false;
+}
+
+extern "C" bool k1520d_repair_blocked(K1520Disk h, int i, int j) {
+    const FsRepair* r = vorschlag(h, i, j);
+    return r ? r->gesperrt : false;
+}
+
+extern "C" const char* k1520d_repair_blocked_why(K1520Disk h, int i, int j) {
+    const FsRepair* r = vorschlag(h, i, j);
+    return r ? halte(H(h)->s_rwhy, r->warum) : "";
+}
+
+extern "C" int k1520d_apply_repairs(K1520Disk h, const int* befund_nr, const int* repair_nr,
+                                    int n) {
+    if (!h || n <= 0 || !befund_nr || !repair_nr) return -1;
+    std::vector<std::pair<int, int>> auswahl;
+    auswahl.reserve(static_cast<size_t>(n));
+    for (int k = 0; k < n; ++k) auswahl.emplace_back(befund_nr[k], repair_nr[k]);
+    return H(h)->vol->applyRepairs(auswahl);
 }
 
 extern "C" const char* k1520d_version(void) { return "k1520disk 0.1"; }
