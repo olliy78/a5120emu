@@ -672,3 +672,72 @@ TEST(FsRecoverUdos, DerSuchlaufSchreibtNie) {
     EXPECT_EQ(vorher, fs::last_write_time(pfad));
     fs::remove(pfad);
 }
+
+// ═══ 7. Die Sektorliste eines Fundes ═════════════════════════════════════════
+//
+// Sie ist die Antwort auf die Frage, die vor jeder Rettung steht: *ist das
+// überhaupt, was ich suche?*  Ohne sie bliebe nur der Anfang — und bei UDOS liegen
+// die Sätze einer Datei nicht hintereinander, sondern verkettet über die Diskette
+// verstreut.
+
+/// @test Ein UDOS-Fund führt Kopfsektor UND alle Sätze auf, in Lesereihenfolge.
+TEST(FsRecoverUdos, DerFundFuehrtSeineSektorenAuf) {
+    const std::string pfad = kopie("udos_boot_scp.hfe", "fsrec_udos_orte.hfe");
+    auto v = oeffneSchreibend(pfad);
+    ASSERT_TRUE(v);
+    ASSERT_TRUE(v->erase(FileRef::parse(kUdosOpfer))) << v->lastError();
+
+    const FsRecoverReport& r = v->recoverScan(FsRecoverLevel::Verzeichnis, true);
+    ASSERT_EQ(1u, r.funde.size()) << namen(r);
+    const FsRecoverFind& f = r.funde.front();
+
+    // 16 Sätze zu 128 B — und davor der Kopfsektor.
+    ASSERT_EQ(17u, f.orte.size()) << "Kopfsektor + 16 Sätze";
+    // Der erste Eintrag IST der Ort des Fundes — sonst zeigte der Sprung woandershin
+    // als die Liste.
+    EXPECT_EQ(f.cyl,          f.orte.front().cyl);
+    EXPECT_EQ(f.head,         f.orte.front().head);
+    EXPECT_EQ(f.sector_index, f.orte.front().sector);
+
+    // Und sie liegen NICHT hintereinander: genau deshalb braucht der Bediener die
+    // Liste — von Hand fände er den zweiten Satz nicht.
+    bool verstreut = false;
+    for (size_t i = 1; i < f.orte.size(); ++i)
+        if (f.orte[i].sector != f.orte[i - 1].sector + 1) verstreut = true;
+    EXPECT_TRUE(verstreut) << "Die Sätze dieser Datei sind verkettet, nicht fortlaufend";
+
+    for (const FsRecoverOrt& o : f.orte) {
+        EXPECT_GE(o.cyl, 0);
+        EXPECT_GE(o.head, 0);
+        EXPECT_GT(o.sector, 0) << "Die Liste führt Sektor-KENNUNGEN, keine Versätze";
+    }
+
+    v.reset();
+    fs::remove(pfad);
+}
+
+/// @test Auch ein CP/M-Fund führt seine Sektoren auf — und der erste ist sein Ort.
+TEST(FsRecoverCpm, DerFundFuehrtSeineSektorenAuf) {
+    const std::string pfad = kopie("cpa_cpa780_k5601_noclock.img", "fsrec_cpm_orte.img");
+    auto v = oeffneSchreibend(pfad);
+    ASSERT_TRUE(v);
+    ASSERT_TRUE(v->erase(FileRef::parse(kOpfer, 0))) << v->lastError();
+
+    const int i = suche(v->recoverScan(FsRecoverLevel::Verzeichnis, true), kOpfer);
+    ASSERT_GE(i, 0) << namen(v->recoverReport());
+    const FsRecoverFind& f = v->recoverReport().funde[static_cast<size_t>(i)];
+
+    ASSERT_FALSE(f.orte.empty());
+    EXPECT_EQ(f.cyl,          f.orte.front().cyl);
+    EXPECT_EQ(f.head,         f.orte.front().head);
+    EXPECT_EQ(f.sector_index, f.orte.front().sector);
+    // Die Liste deckt die Datei ab.  Die Sektorgröße kennt der Test nicht (cpa780
+    // hat 1024er-Sektoren, andere Profile 128er) — gerechnet wird deshalb mit der
+    // GRÖSSTEN im Katalog, dann gilt die Aussage für jedes Profil.
+    EXPECT_GE(f.orte.size() * 1024u, f.size);
+    EXPECT_GT(f.orte.size(), 1u) << "Eine 7 KB grosse Datei belegt mehr als einen Sektor";
+    for (const FsRecoverOrt& o : f.orte) EXPECT_GT(o.sector, 0);
+
+    v.reset();
+    fs::remove(pfad);
+}

@@ -289,6 +289,18 @@ FsRecoverReport Udos1715FileSystem::recoverScan(FsRecoverLevel level, bool nachl
                 f.teile.push_back(p.track * 256 + p.sector_index);
             for (const UdosPointer& p : sektoren) vergeben.insert(nr(p));
             vergeben.insert(nr(desc));
+            // Sektorliste fuer den Dialog (§13.3b): Descriptor zuerst, dann die
+            // Datenrecords in Lesereihenfolge.  Die Zeigersektoren bleiben aussen
+            // vor — sie tragen Adressen, keinen Dateiinhalt.
+            f.orte.push_back(FsRecoverOrt{desc.track, headOf(desc), idOf(desc)});
+            for (const UdosPointer& rec : records)
+                for (uint32_t k = 0; k < sek_je_rec && f.orte.size() < kFsRecoverMaxOrte;
+                     ++k) {
+                    const UdosPointer p{static_cast<uint8_t>(rec.sector_index + k),
+                                        rec.track};
+                    if (p.sector_index < spt)
+                        f.orte.push_back(FsRecoverOrt{p.track, headOf(p), idOf(p)});
+                }
 
             f.type   = hdr.typeName();
             f.origin = "Descriptor " + ort(desc);
@@ -328,7 +340,6 @@ FsRecoverReport Udos1715FileSystem::recoverScan(FsRecoverLevel level, bool nachl
                                     : FsRecoverQuality::Sicher;
             f.wiederherstellbar = false;
             f.warum_nicht       = kWegZurueck;
-            (void)sek_je_rec;
 
             bericht.funde.push_back(std::move(f));
         }
@@ -353,7 +364,11 @@ FsRecoverReport Udos1715FileSystem::recoverScan(FsRecoverLevel level, bool nachl
             f.quality = FsRecoverQuality::Bruchstueck;
             f.size    = static_cast<uint64_t>(lauf.size()) * kSector;
             f.type    = fsRecoverEinordnung(lauf_daten);
-            for (const UdosPointer& p : lauf) f.teile.push_back(p.track * 256 + p.sector_index);
+            for (const UdosPointer& p : lauf) {
+                f.teile.push_back(p.track * 256 + p.sector_index);
+                if (f.orte.size() < kFsRecoverMaxOrte)
+                    f.orte.push_back(FsRecoverOrt{p.track, headOf(p), idOf(p)});
+            }
             f.cyl     = lauf.front().track;
             f.head    = headOf(lauf.front());
             f.sector_index = idOf(lauf.front());

@@ -705,6 +705,24 @@ K1520_API const char* k1520d_recover_blocked_why(K1520Disk h, int i);
 K1520_API int         k1520d_recover_cyl(K1520Disk h, int i);
 K1520_API int         k1520d_recover_head(K1520Disk h, int i);
 K1520_API int         k1520d_recover_sector(K1520Disk h, int i);
+
+/**
+ * @brief Wie viele Sektoren fuehrt der Fund in seiner Sektorliste?
+ *
+ * Die Liste ist eine **Bedienhilfe**, kein Abbild: mit ihr blaettert der
+ * Rettungsdialog durch die Sektoren eines Fundes, bevor irgendetwas geschieht.  Das
+ * ist der einzige Weg zu der Frage „ist das ueberhaupt, was ich suche?" — bei UDOS
+ * gibt es dafuer nicht einmal einen Namen, und die Saetze liegen verkettet ueber die
+ * Diskette verstreut.  Begrenzt (heute 512 Eintraege); ein groesserer Fund wird
+ * vollstaendig gerettet, nur nicht vollstaendig aufgezaehlt.
+ */
+K1520_API int k1520d_recover_part_count(K1520Disk h, int i);
+/**
+ * @brief Den @p k-ten Sektor des Fundes @p i holen (Kennung, nicht Versatz).
+ * @return false bei ungueltigem Index; @p cyl / @p head / @p sector duerfen NULL sein.
+ */
+K1520_API bool k1520d_recover_part(K1520Disk h, int i, int k,
+                                   int* cyl, int* head, int* sector);
 /**
  * @brief Die ersten @p n Byte des Fundes in @p buf — fuer die Vorschau.
  * @return gelieferte Bytes, -1 bei Fehler (`k1520d_last_error`).

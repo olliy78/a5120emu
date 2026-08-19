@@ -302,7 +302,27 @@ keiner Datei und zu keinem Kopfsektor gehören.  Sie heissen
 > Anders als bei CP/M sieht auch die billige Suchtiefe in die **Datenspuren**: nach dem
 > Löschen steht im Verzeichnis nichts Gesuchtes mehr.  Der Unterschied zu `--full` ist,
 > welche Sektoren als Kandidat gelten (nur die als frei geführten ↔ alle) und ob
-> Rohbereiche gesammelt werden.
+> Rohbereiche gesammelt werden.  An einer physischen Diskette (`--physical`) kostet das
+> **einmal** die ganze Scheibe; danach liegt sie im Speicher, und jeder weitere Lauf ist
+> so schnell wie an einer Datei.
+
+### Erst ansehen, dann handeln
+
+Vor jeder Rettung steht dieselbe Frage — *ist das überhaupt, was ich suche?* —, und bei
+UDOS gibt es dafür nicht einmal einen Namen.  Deshalb führt jeder Fund seine
+**vollständige Sektorliste**; im Suchdialog steht sie als Auswahl neben der Vorschau,
+und *Im Diskeditor zeigen* schlägt den gewählten Sektor auf.
+
+Das ist keine Bequemlichkeit: die Sätze einer UDOS-Datei liegen **nicht**
+hintereinander.  `NOTE.TO.SD` der Referenzdiskette belegt auf Spur 21 die Sektoren
+6, 7, 12, 23, 1, 8, … — verkettet über die Kontrollblöcke, physisch verschränkt.  Wer
+nur den ersten Sektor kennt, findet den zweiten nicht.  Bei UDOS steht der
+**Kopfsektor** vorn; dort stehen Typ, ENTRY und die Segmente — das, woran sich eine
+namenlose Datei erkennen lässt.
+
+In `--json` liefert `recover` zu jedem Fund `cyl`, `head` und `sector` des Anfangs;
+die ganze Liste gibt es über die C-ABI (`k1520d_recover_part_count` /
+`k1520d_recover_part`) bzw. `RecoverFind.parts` der Python-Bindung.
 
 ## Bootfähige Diskette anlegen
 

@@ -136,19 +136,34 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
                                                 : std::to_string(d.user) + ":" + d.name);
     }
 
-    // ── Ort eines Blocks (fuer den Sprung in den Diskeditor) ─────────────────
-    auto ortVonBlock = [&](uint16_t blk, int& cyl, int& head, int& idx) {
-        cyl = head = idx = -1;
-        const uint64_t off = static_cast<uint64_t>(blk) * prof_.block_size;
-        const size_t   ti  = static_cast<size_t>(off / track_bytes);
-        if (ti >= tracks) return;
+    // ── Ort eines Sektors innerhalb des Datenbereichs ────────────────────────
+    //
+    // Geliefert wird die Sektor-KENNUNG, nicht der Versatz in der Spur:
+    // `DiskEditorWindow.zeige_ort` sucht den Sektor ueber seine ID, und die faengt
+    // bei `first_id` an (meist 1).  Mit dem blossen Tabellenwert landete der Sprung
+    // um `first_id` daneben.
+    auto ortVonOffset = [&](uint64_t off) {
+        FsRecoverOrt o;
+        const size_t ti = static_cast<size_t>(off / track_bytes);
+        if (ti >= tracks) return o;
         const SectorSpace::TrackRef t = space_.trackAt(static_cast<size_t>(start) + ti);
-        cyl  = t.cyl;
-        head = t.head;
-        // Die KENNUNG, nicht der Versatz: `DiskEditorWindow.zeige_ort` sucht den
-        // Sektor ueber seine ID, und die faengt bei `first_id` an (meist 1).  Mit
-        // dem blossen Tabellenwert landete der Sprung um `first_id` daneben.
-        idx  = t.first_id + skew_tab_[(off % track_bytes) / sector_size_];
+        o.cyl    = t.cyl;
+        o.head   = t.head;
+        o.sector = t.first_id + skew_tab_[(off % track_bytes) / sector_size_];
+        return o;
+    };
+    auto ortVonBlock = [&](uint16_t blk) {
+        return ortVonOffset(static_cast<uint64_t>(blk) * prof_.block_size);
+    };
+    // ALLE Sektoren eines Blocks anhaengen — daraus wird die Sektorliste des Fundes,
+    // durch die der Dialog blaettern laesst (§13.3b).
+    auto sektorenAnhaengen = [&](FsRecoverFind& f, uint16_t blk) {
+        const uint64_t anfang = static_cast<uint64_t>(blk) * prof_.block_size;
+        for (uint32_t g = 0; g < prof_.block_size && f.orte.size() < kFsRecoverMaxOrte;
+             g += sector_size_) {
+            const FsRecoverOrt o = ortVonOffset(anfang + g);
+            if (o.cyl >= 0) f.orte.push_back(o);
+        }
     };
 
     // ── Einen Block lesen und dabei die CRCs beachten ────────────────────────
@@ -256,9 +271,11 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
                                      + " wird von einem zweiten geloeschten Eintrag"
                                        " beansprucht");
                 if (erster_ort) {
-                    ortVonBlock(blk, f.cyl, f.head, f.sector_index);
+                    const FsRecoverOrt o = ortVonBlock(blk);
+                    f.cyl = o.cyl; f.head = o.head; f.sector_index = o.sector;
                     erster_ort = false;
                 }
+                sektorenAnhaengen(f, blk);
                 // Die Pruefsummen kosten einen Spurzugriff je Block — das ist
                 // genau der Preis, den die Verzeichnissuche NICHT zahlen soll
                 // (an einer physischen Diskette zoege sie sonst die ganze
@@ -321,8 +338,9 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
             f.quality = FsRecoverQuality::Bruchstueck;   // ohne Struktur nie mehr
             f.size    = static_cast<uint64_t>(lauf.size()) * prof_.block_size;
             f.type    = fsRecoverEinordnung(lauf_daten);
-            for (uint16_t blk : lauf) f.teile.push_back(blk);
-            ortVonBlock(lauf.front(), f.cyl, f.head, f.sector_index);
+            for (uint16_t blk : lauf) { f.teile.push_back(blk); sektorenAnhaengen(f, blk); }
+            const FsRecoverOrt o = ortVonBlock(lauf.front());
+            f.cyl = o.cyl; f.head = o.head; f.sector_index = o.sector;
 
             char wo[48];
             std::snprintf(wo, sizeof wo, "fragment_c%dh%d_b%u-b%u.bin", f.cyl, f.head,

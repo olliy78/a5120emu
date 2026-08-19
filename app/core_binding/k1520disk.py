@@ -429,6 +429,13 @@ _lib.k1520d_recover_head.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_recover_head.restype = ctypes.c_int
 _lib.k1520d_recover_sector.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_recover_sector.restype = ctypes.c_int
+_lib.k1520d_recover_part_count.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_part_count.restype = ctypes.c_int
+_lib.k1520d_recover_part.argtypes = [_H, ctypes.c_int, ctypes.c_int,
+                                     ctypes.POINTER(ctypes.c_int),
+                                     ctypes.POINTER(ctypes.c_int),
+                                     ctypes.POINTER(ctypes.c_int)]
+_lib.k1520d_recover_part.restype = ctypes.c_bool
 _lib.k1520d_recover_preview.argtypes = [_H, ctypes.c_int,
                                         ctypes.POINTER(ctypes.c_uint8), ctypes.c_int]
 _lib.k1520d_recover_preview.restype = ctypes.c_int
@@ -717,6 +724,12 @@ class RecoverFind:
     cyl: int = -1
     head: int = -1
     sector: int = -1
+    #: **Alle** Sektoren des Fundes als ``(cyl, head, sektor_kennung)``, in
+    #: Lesereihenfolge — bei UDOS steht der Kopfsektor vorn.  Damit blättert der
+    #: Rettungsdialog durch den Fund, BEVOR etwas geschieht: „ist das überhaupt,
+    #: was ich suche?" lässt sich sonst nicht beantworten, und bei UDOS gibt es
+    #: dafür nicht einmal einen Namen.  Auf 512 Einträge begrenzt.
+    parts: tuple = ()
 
     @property
     def guete(self) -> str:
@@ -1292,7 +1305,18 @@ class DiskTool:
             cyl=int(_lib.k1520d_recover_cyl(self._h, i)),
             head=int(_lib.k1520d_recover_head(self._h, i)),
             sector=int(_lib.k1520d_recover_sector(self._h, i)),
+            parts=self._find_parts(i),
         )
+
+    def _find_parts(self, i: int) -> tuple:
+        """Die Sektoren eines Fundes als ``(cyl, head, sektor)``-Tupel."""
+        c, k, s = ctypes.c_int(), ctypes.c_int(), ctypes.c_int()
+        out = []
+        for n in range(int(_lib.k1520d_recover_part_count(self._h, i))):
+            if _lib.k1520d_recover_part(self._h, i, n,
+                                        ctypes.byref(c), ctypes.byref(k), ctypes.byref(s)):
+                out.append((c.value, k.value, s.value))
+        return tuple(out)
 
     def recover_preview(self, i: int, n: int = 512) -> bytes:
         """Die ersten ``n`` Byte des Fundes — für die Vorschau."""

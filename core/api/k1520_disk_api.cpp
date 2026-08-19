@@ -1059,6 +1059,22 @@ extern "C" int k1520d_recover_sector(K1520Disk h, int i) {
     return f ? f->sector_index : -1;
 }
 
+extern "C" int k1520d_recover_part_count(K1520Disk h, int i) {
+    const FsRecoverFind* f = fnd(h, i);
+    return f ? static_cast<int>(f->orte.size()) : 0;
+}
+
+extern "C" bool k1520d_recover_part(K1520Disk h, int i, int k,
+                                    int* cyl, int* head, int* sector) {
+    const FsRecoverFind* f = fnd(h, i);
+    if (!f || k < 0 || static_cast<size_t>(k) >= f->orte.size()) return false;
+    const FsRecoverOrt& o = f->orte[static_cast<size_t>(k)];
+    if (cyl)    *cyl    = o.cyl;
+    if (head)   *head   = o.head;
+    if (sector) *sector = o.sector;
+    return true;
+}
+
 extern "C" int k1520d_recover_preview(K1520Disk h, int i, uint8_t* buf, int n) {
     if (!h || !buf || n <= 0) return -1;
     std::vector<uint8_t> d;

@@ -18,6 +18,12 @@ Vier Festlegungen tragen diesen Dialog:
 * **Ein Fund ohne Namen ist trotzdem ein Fund.**  Namenlose bekommen einen
   Vorschlag, unter dem sie sich ohne Rückfrage speichern lassen; ändern lässt er
   sich in der Liste.
+* **Erst ansehen, dann handeln.**  Zu jedem Fund steht seine ganze Sektorliste
+  bereit, und jeder Sektor lässt sich im Diskeditor aufschlagen.  Das ist keine
+  Bequemlichkeit, sondern die einzige Antwort auf die Frage, die vor jeder Rettung
+  steht: *ist das überhaupt, was ich suche?*  Bei UDOS gibt es dafür nicht einmal
+  einen Namen — und die Sätze einer Datei liegen verkettet über die Diskette
+  verstreut, von Hand fände sie niemand.
 * **Die Suchtiefe ist eine Entscheidung des Bedieners.**  Die Verzeichnissuche
   sieht nur ins Verzeichnis, die Oberflächensuche in jeden freien Bereich — an
   einer echten Diskette ist das der Unterschied zwischen einem Wimpernschlag und
@@ -32,7 +38,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout,
-    QInputDialog, QLabel, QMessageBox, QSplitter, QTextBrowser, QTreeWidget,
+    QInputDialog, QLabel, QMessageBox, QPushButton, QSplitter, QTextBrowser,
+    QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -68,16 +75,19 @@ class RecoverDialog(QDialog):
 
     :param tool:        die offene Diskette (:class:`K1520Disk`)
     :param zielordner:  Startverzeichnis für „retten" (die Ordnerseite)
+    :param zeige_ort:   Rückruf ``(cyl, head, sector) -> None`` für den Sprung in den
+                        Diskeditor; ``None`` blendet Auswahl und Knopf aus.
     :param log:         Rückruf ``(text) -> None`` für das Protokoll des Fensters
     """
 
-    def __init__(self, tool, parent=None, zielordner=None, log=None):
+    def __init__(self, tool, parent=None, zielordner=None, log=None, zeige_ort=None):
         super().__init__(parent)
         self.setWindowTitle("Gelöschte Dateien suchen")
         self.resize(900, 620)
         self.tool = tool
         self._zielordner = str(zielordner or Path.home())
         self._log = log or (lambda text: None)
+        self._zeige_ort = zeige_ort
         #: Wurde etwas auf der Diskette eingetragen?  Dann muss das Fenster dahinter
         #: die Dateiliste neu lesen.
         self.wiederhergestellt = 0
@@ -130,6 +140,28 @@ class RecoverDialog(QDialog):
         zeile.addStretch(1)
         rechts_lay.addLayout(zeile)
         rechts_lay.addWidget(self.vorschau, 1)
+
+        # ── Die Sektoren des Fundes ──────────────────────────────────────────
+        #
+        # Die Vorschau zeigt den ANFANG der zusammengesetzten Datei; hier steht,
+        # woraus sie besteht.  Bei UDOS ist der erste Eintrag der Kopfsektor — dort
+        # stehen Typ, ENTRY und die Segmente, also genau das, woran sich eine
+        # namenlose Datei erkennen lässt.
+        self.sektoren = QComboBox()
+        self.sektoren.setToolTip(
+            "Die Sektoren dieses Fundes in Lesereihenfolge.  Einen auswählen und "
+            "„Im Diskeditor zeigen" " — so lässt sich vor jeder Aktion nachsehen, "
+            "was da wirklich steht.")
+        self.b_editor = QPushButton("Im &Diskeditor zeigen")
+        self.b_editor.clicked.connect(self._springen)
+        sektorzeile = QHBoxLayout()
+        sektorzeile.addWidget(QLabel("Sektor:"))
+        sektorzeile.addWidget(self.sektoren, 1)
+        sektorzeile.addWidget(self.b_editor)
+        rechts_lay.addLayout(sektorzeile)
+        if zeige_ort is None:
+            self.sektoren.hide()
+            self.b_editor.hide()
 
         teiler = QSplitter(Qt.Horizontal)
         teiler.addWidget(self.baum)
@@ -238,6 +270,7 @@ class RecoverDialog(QDialog):
         i = self._aktueller_index()
         if i is None:
             self.vorschau.setPlainText("")
+            self.sektoren.clear()
             self._knoepfe_nachziehen()
             return
         f = self.bericht.finds[i]
@@ -253,13 +286,46 @@ class RecoverDialog(QDialog):
         inhalt = (alsText(daten) if self.darstellung.currentText() == "Text"
                   else hexdump(daten))
         self.vorschau.setPlainText("\n".join(kopf) + "\n\n" + inhalt)
+        self._sektoren_fuellen(f)
         self._knoepfe_nachziehen()
+
+    def _sektoren_fuellen(self, f) -> None:
+        """Die Sektorliste des Fundes in die Auswahl — Lesereihenfolge, nummeriert.
+
+        Nummeriert, weil die Reihenfolge die Aussage ist: bei UDOS liegen die Sätze
+        einer Datei nicht hintereinander, sondern verkettet über die Diskette
+        verstreut.  Ohne die laufende Nummer wäre nicht zu sehen, welcher Sektor der
+        wievielte ist — und genau danach sucht man, wenn man ein Bruchstück beurteilt.
+        """
+        self.sektoren.blockSignals(True)
+        self.sektoren.clear()
+        for n, (cyl, kopf_nr, sektor) in enumerate(f.parts, start=1):
+            self.sektoren.addItem(f"{n}.  Spur {cyl}  Kopf {kopf_nr}  Sektor {sektor}",
+                                  (cyl, kopf_nr, sektor))
+        # Kein `parts` (älterer Fund, ortloser Rest)?  Dann wenigstens der Anfang.
+        if not self.sektoren.count() and f.ortbar:
+            self.sektoren.addItem(
+                f"Spur {f.cyl}  Kopf {f.head}  Sektor {f.sector}",
+                (f.cyl, f.head, f.sector))
+        self.sektoren.blockSignals(False)
+
+    def _springen(self) -> None:
+        """Den gewählten Sektor im Diskeditor aufschlagen."""
+        if self._zeige_ort is None:
+            return
+        ort = self.sektoren.currentData()
+        if ort is None:
+            return
+        self._zeige_ort(*ort)
 
     def _knoepfe_nachziehen(self) -> None:
         f = self._aktueller_fund()
         etwas = f is not None
         # Retten geht IMMER — auch schreibgeschützt, auch bei Bruchstücken (E7).
         self.b_retten.setEnabled(etwas)
+        # Ansehen erst recht: es ist der Schritt VOR jeder Entscheidung.
+        self.b_editor.setEnabled(bool(etwas and self.sektoren.count()))
+        self.sektoren.setEnabled(bool(etwas and self.sektoren.count()))
         self.b_alles.setEnabled(bool(self.bericht.ab(SICHER)))
         schreibgeschuetzt = bool(self.tool.read_only)
         self.b_zurueck.setEnabled(bool(etwas and f.restorable and not schreibgeschuetzt))

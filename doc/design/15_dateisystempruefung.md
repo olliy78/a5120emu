@@ -31,15 +31,15 @@ Kürze. Die Begründungen dahinter stehen in den genannten Abschnitten.
 | CLI | `check [--full] [--json]` · `fsck [--full] [--repair[=alle\|sicher\|<kennung>,…]] [--dry-run] [--json]` |
 | Oberfläche | Statuszeile · Meldungsstreifen (mit Rangfolge) · Protokoll · Diskettenangaben inkl. Schaltfläche *Vollprüfung* · **Reparaturdialog** `ui/fsck_dialog.py` (Aktion `act_reparieren`, Strg+F) mit Sprung in den Diskeditor (`DiskEditorWindow.zeige_ort`) |
 | Ebene 0 | `DiskVolume::merkeAblehnung` sammelt (Kandidat, Grund), `DiskVolume::ebene0` macht Befunde daraus (`erkennung.abgelehnt`, `erkennung.ohne_kandidat`, Ebene `FsLayer::Erkennung`); `check`/`fsck` öffnen roh, das Protokoll der Oberfläche führt die Gründe auf, der Prüfdialog geht auch ohne Dateisystem (§11) |
-| Rettung | `core/filesystem/check/fs_recover.{h,cpp}` (Modell + die geteilten Helfer `fsRecoverEinordnung`/`fsRecoverFuellmuster`/`fsRecoverBelege`) · `check/cpm_recover.cpp` (Suche, Lesen, Wiedereintragen) · `check/udos_recover.cpp` und `check/udos1715_recover.cpp` (Signatursuche, Kettenverfolgung, Rohbereiche — **nur lesend**, §13.3a) · `FileSystem::recoverScan/recoverRead/recoverRestore/recoverEntry` · `DiskVolume::recoverScan/recoverRead/recoverExtract/recoverRestore` (bei der UDOS-Familie schreibt `recoverExtract` das Beiblatt `udos-dateiangaben.txt`) · `k1520d_recover_*` · `recover` in der CLI · `ui/recover_dialog.py` (*Diskette ▸ Gelöschte Dateien suchen…*) |
-| Tests | `tests/unit/filesystem/test_fs_check.cpp` (47, davon 12 `FsCheckReparatur.*`) · `test_fs_recover.cpp` (19: 11 CP/M, 7 UDOS, 1 NDOS) · `cli_dt_check_*` (6) · `cli_dt_fsck_*` (4) · `cli_dt_recover_*` (5) · `py_disk_c_api` · `py_disktool_gui` (16 Prüf-/Reparatur-/Ebene-0-/Rettungsfälle) |
+| Rettung | `core/filesystem/check/fs_recover.{h,cpp}` (Modell + die geteilten Helfer `fsRecoverEinordnung`/`fsRecoverFuellmuster`/`fsRecoverBelege`) · `check/cpm_recover.cpp` (Suche, Lesen, Wiedereintragen) · `check/udos_recover.cpp` und `check/udos1715_recover.cpp` (Signatursuche, Kettenverfolgung, Rohbereiche — **nur lesend**, §13.3b) · `FileSystem::recoverScan/recoverRead/recoverRestore/recoverEntry` · `DiskVolume::recoverScan/recoverRead/recoverExtract/recoverRestore` (bei der UDOS-Familie schreibt `recoverExtract` das Beiblatt `udos-dateiangaben.txt`) · `k1520d_recover_*` (inkl. `_part_count`/`_part` — die Sektorliste eines Fundes, §13.3a) · `recover` in der CLI · `ui/recover_dialog.py` (*Diskette ▸ Gelöschte Dateien suchen…*) mit Sektorauswahl und Sprung in den Diskeditor |
+| Tests | `tests/unit/filesystem/test_fs_check.cpp` (47, davon 12 `FsCheckReparatur.*`) · `test_fs_recover.cpp` (21: 12 CP/M, 8 UDOS, 1 NDOS) · `cli_dt_check_*` (6) · `cli_dt_fsck_*` (4) · `cli_dt_recover_*` (5) · `py_disk_c_api` · `py_disktool_gui` (16 Prüf-/Reparatur-/Ebene-0-/Rettungsfälle) |
 
 **Fehlt noch.** Die Etappen 1–7 sind abgeschlossen; offen ist allein die Gegenprobe der
 Alternativprofile aus Etappe 7 — mit Grund, s. §20.
 
 **Etappe 5 — Rettung CP/M ist fertig** (2026-08-19).  Sie ist die einzige Familie, bei
 der auch **auf der Diskette** wiederhergestellt wird — dort ist es ein Byte, und der
-Name stimmt (§13.3a).  Der Suchlauf findet
+Name stimmt (§13.3b).  Der Suchlauf findet
 zweierlei: gelöschte **Verzeichnisplätze** (Nutzerbyte `0xE5`, Rest unversehrt — Name,
 `RC` und alle Blockzeiger stehen noch da) und, nur in der Oberflächensuche, **freie
 Blöcke mit Inhalt** als Rohbereiche ohne Namen.  Fünf Dinge, die man wissen will:
@@ -67,7 +67,7 @@ Blöcke mit Inhalt** als Rohbereiche ohne Namen.  Fünf Dinge, die man wissen wi
   freien Blöcke mit Inhalt sind kein Schaden, sondern ein Fund — sie erscheinen in der
   Suche, nicht in der Prüfung.
 
-**Etappe 6 — Rettung UDOS/NDOS ist fertig** (2026-08-19, §13.1/§13.3a).  Sie fiel
+**Etappe 6 — Rettung UDOS/NDOS ist fertig** (2026-08-19, §13.1/§13.3b).  Sie fiel
 **rein lesend** aus: gefunden, angezeigt und in den Linux-Ordner geschrieben wird, auf
 die Diskette zurückgeschrieben nicht.  Sechs Dinge, die man wissen will:
 
@@ -75,7 +75,7 @@ die Diskette zurückgeschrieben nicht.  Sechs Dinge, die man wissen will:
   und löscht die Kartenbits; der Kopfsektor bleibt mit Typ, Eigenschaften, ENTRY,
   Satzlänge, Blocklänge, allen Speichersegmenten, LOW/HIGH/STACK und beiden
   Datumsvermerken stehen.  Deshalb ist der Weg zurück *retten → benennen → `put`*, und
-  das Beiblatt `udos-dateiangaben.txt` trägt die Angaben hinüber (§13.3a).
+  das Beiblatt `udos-dateiangaben.txt` trägt die Angaben hinüber (§13.3b).
 * **Der Name im Dialog ist ein Vorschlag, nie eine Tatsache.**  `FsRecoverFind::name`
   bleibt bei UDOS **immer leer**; `vorschlag` ist ein Namensrest aus dem Verzeichnis
   (wenn einer überlebt hat) oder `GERETTET.001`.
@@ -88,7 +88,13 @@ die Diskette zurückgeschrieben nicht.  Sechs Dinge, die man wissen will:
 * **Rohbereiche enden an der Spurgrenze**, sonst nennt der Dateiname eine Sektornummer
   auf einer anderen Spur.
 * **Beide Suchtiefen fassen bei UDOS die Datenspuren an** — anders als bei CP/M steht
-  nach dem Löschen nichts Gesuchtes mehr im Verzeichnis (§20).
+  nach dem Löschen nichts Gesuchtes mehr im Verzeichnis.  An einer physischen Diskette
+  kostet das **einmal** die ganze Scheibe; danach liegt sie im Speicher (§20).
+* **Jeder Fund führt seine Sektoren auf** (§13.3a, für CP/M genauso): der
+  Rettungsdialog lässt jeden davon im Diskeditor aufschlagen — *erst ansehen, dann
+  handeln*.  Ohne diese Liste wäre der zweite Satz einer UDOS-Datei nicht zu finden;
+  sie liegen verkettet und physisch verschränkt (`NOTE.TO.SD`: Sektor 6, 7, 12, 23,
+  1, 8, …).
 
 **Etappe 7 — Ebene 0 ist fertig** (§11, 2026-08-19). Aus „nichts erkannt" ist eine
 Befundliste geworden: jeder geprüfte Kandidat mit seinem Grund, als eigene Ebene
@@ -831,7 +837,7 @@ lässt sich eine gerettete Datei später mit `put` **vollwertig** wieder einspie
   Block des Fundes gehört inzwischen einer lebenden Datei (sonst entstünde genau der
   `cpm.block.doppelt`, den die Prüfung als **Gefahr** meldet). Diese Prüfung läuft
   unmittelbar vor dem Schreiben noch einmal.
-* *UDOS/NDOS:* **gibt es nicht** — s. §13.3a.
+* *UDOS/NDOS:* **gibt es nicht** — s. §13.3b.
 
 **3. Als Rohbereich sichern** (Fragmente ohne Struktur): die Läufe werden als
 `fragment_c12h0_b40-b47.bin` herausgeschrieben — Ort des Anfangs **und** Blockspanne.
@@ -853,7 +859,32 @@ wie im Diskeditor.
 > in einem schreibgeschützten Zustand vollständig benutzbar ist: der häufigste Fall ist
 > „einmal alles retten, was noch da ist, dann die Diskette in Ruhe lassen".
 
-### 13.3a Bei UDOS und NDOS wird nicht auf der Diskette wiederhergestellt
+### 13.3a Jeder Fund führt seine Sektoren auf
+
+Vor jeder der drei Handlungen steht dieselbe Frage, und sie ist die schwierigste:
+**ist das überhaupt, was ich suche?** Ein Name hilft dabei nur bei CP/M — bei UDOS
+gibt es keinen, und bei einem Rohbereich in keiner Familie.
+
+Deshalb trägt jeder Fund seine **vollständige Sektorliste** in Lesereihenfolge
+(`FsRecoverFind::orte`, C-ABI `k1520d_recover_part_count` / `k1520d_recover_part`,
+Python `RecoverFind.parts`). Der Rettungsdialog macht daraus eine Auswahl neben der
+Vorschau; jeder Eintrag lässt sich mit *Im Diskeditor zeigen* aufschlagen — derselbe
+Weg, den der Prüfdialog für einen Befund geht (`MainWindow._befund_im_editor` →
+`DiskEditorWindow.zeige_ort`).
+
+Warum die ganze Liste und nicht nur der Anfang: **die Sätze einer UDOS-Datei liegen
+nicht hintereinander.** `NOTE.TO.SD` der Referenzdiskette belegt auf Spur 21 die
+Sektoren 6, 7, 12, 23, 1, 8, … — verkettet über die Kontrollblöcke, physisch
+verschränkt. Wer nur den ersten Sektor bekäme, könnte den zweiten nicht finden; die
+Liste ist damit kein Komfort, sondern die einzige Handhabe. Bei UDOS steht der
+**Kopfsektor** vorn (dort stehen Typ, ENTRY und die Segmente — das, woran sich eine
+namenlose Datei erkennen lässt), danach die Sätze.
+
+Geführt werden Sektor-**Kennungen**, nicht Versätze in der Spur, und die Liste ist auf
+`kFsRecoverMaxOrte` (512) Einträge begrenzt: sie ist eine Bedienhilfe, kein Abbild —
+ein größerer Fund wird vollständig gerettet, nur nicht vollständig aufgezählt.
+
+### 13.3b Bei UDOS und NDOS wird nicht auf der Diskette wiederhergestellt
 
 Eine Festlegung, kein Mangel — und die einzige Stelle, an der die beiden Familien
 verschieden bedient werden.
@@ -984,7 +1015,7 @@ k1520disktool recover <abbild> [--full] [--to <ordner>] [--list]
 **Umgesetzt sind `check`, `fsck` und `recover`** (Etappen 2, 3, 5 und 6), `recover` für
 CP/M, ZDOS und NDOS.  Es liefert **0**, solange der Lauf in Ordnung war — auch ohne
 Fund: eine Diskette ohne gelöschte Dateien ist kein Fehler.  `--restore` gibt es nur
-bei CP/M; bei UDOS/NDOS lehnt es ab und nennt den Weg über `put` (§13.3a).
+bei CP/M; bei UDOS/NDOS lehnt es ab und nennt den Weg über `put` (§13.3b).
 
 * `check` bleibt, was es ist, und bekommt `--full`. Der Bericht wird zeilenweise und
   greptauglich: `SCHWERE  EBENE  VOLUME  ORT  KENNUNG  Text`.
@@ -1240,7 +1271,7 @@ Alles bleibt in der schnellen Regression; nichts davon braucht ein Laufwerk oder
 | **3** ✅ | `FileSystem::repair()`, Transaktion + Rangfolge, Reparaturdialog, `fsck --repair` | **Umgesetzt 2026-08-19.**  Belegungsplan nachtragen und neu aufbauen, Zähler, Rückwärtszeiger, Kürzen, wilder Blockzeiger, Satzzahl — je Familie, mit E8-Sperre bei offenem Kettenfehler und Rücknahme der ganzen Momentaufnahme bei einem Fehlschlag.  Dialog `ui/fsck_dialog.py` (Strg+F) mit Vorauswahl nach E7, Einzelheiten und Doppelklick in den Diskeditor. |
 | **4** ✅ | Ebene Medium: CRC-Übersicht mit Rückabbildung auf Dateien, **Sprung in den Diskeditor** | Die Rückabbildung ist mit den Etappen 1+2 mitgekommen („Satz 14 von `STAT.COM` liegt auf einem Sektor mit falscher CRC", bei UDOS je Datei zusammengefasst).  Der **Sprung** kam 2026-08-19 mit dem Reparaturdialog: Doppelklick auf einen Befund → `MainWindow._befund_im_editor` → `DiskEditorWindow.zeige_ort(cyl, head, sector)`. |
 | **5** ✅ | Wiederherstellung CP/M (Verzeichnisplätze + freie Blöcke) mit Dialog und `recover` | **Umgesetzt 2026-08-19.**  Modell `fs_recover.h`, `check/cpm_recover.cpp` (Kandidatensuche, Güte mit Belegen, Lesen mit Auffüllen, Wiedereintragen mit erneuter Vorbedingungsprüfung), C-ABI `k1520d_recover_*`, `recover [--full] [--to] [--list] [--restore N[=NAME]]`, Dialog `ui/recover_dialog.py` (*Diskette ▸ Gelöschte Dateien suchen…*) mit Hexdump-/Textvorschau und den drei Wegen aus §13.3.  Wächter: 11 `FsRecover*`, 3 `cli_dt_recover_*`, 3 GUI-Fälle. |
-| **6** ✅ | Wiederherstellung UDOS/NDOS (Kopfsektorsuche, Kettenverfolgung, Beiblatt) | **Umgesetzt 2026-08-19, und zwar rein lesend.**  `check/udos_recover.cpp` und `check/udos1715_recover.cpp`: Signatursuche über Kopfsektor bzw. Descriptor, Kettenverfolgung über Kontrollblock bzw. Zeigersektoren, Rohbereiche, Namensrest als *Vorschlag*, Beiblatt `udos-dateiangaben.txt` aus dem überlebenden Kopfsektor.  **Kein Zurückschreiben auf die Diskette** (§13.3a) — der Weg zurück heißt retten, benennen, `put`.  Nachgewiesen an `udos_boot_scp.hfe` (`NOTE.TO.SD`, 2048 B) und `udos1715_640k_pc1715_system.img` (`ZLINK`, 25 088 B, sechs Segmente): beide bytegleich zurück, beide wieder einspielbar.  Wächter: 8 `FsRecoverUdos*`/`FsRecoverNdos*`, 2 `cli_dt_recover_udos*`. |
+| **6** ✅ | Wiederherstellung UDOS/NDOS (Kopfsektorsuche, Kettenverfolgung, Beiblatt) | **Umgesetzt 2026-08-19, und zwar rein lesend.**  `check/udos_recover.cpp` und `check/udos1715_recover.cpp`: Signatursuche über Kopfsektor bzw. Descriptor, Kettenverfolgung über Kontrollblock bzw. Zeigersektoren, Rohbereiche, Namensrest als *Vorschlag*, Beiblatt `udos-dateiangaben.txt` aus dem überlebenden Kopfsektor.  **Kein Zurückschreiben auf die Diskette** (§13.3b) — der Weg zurück heißt retten, benennen, `put`.  Nachgewiesen an `udos_boot_scp.hfe` (`NOTE.TO.SD`, 2048 B) und `udos1715_640k_pc1715_system.img` (`ZLINK`, 25 088 B, sechs Segmente): beide bytegleich zurück, beide wieder einspielbar.  Wächter: 8 `FsRecoverUdos*`/`FsRecoverNdos*`, 2 `cli_dt_recover_udos*`. |
 | **7** ◐ | Ebene 0 (Ablehnungsgründe der Erkennung) und die Gegenprobe der Alternativprofile | **Ebene 0 umgesetzt 2026-08-19.**  Aus „nichts erkannt" ist eine Diagnose geworden: `erkennung.abgelehnt` je Kandidat, eigene Ebene `FsLayer::Erkennung`, roh öffnendes `check`/`fsck`, Protokoll und Prüfdialog der Oberfläche.  Die **Gegenprobe** bleibt offen (§20). |
 
 Die Etappen 1–3 sind der Kern; 4–7 sind je für sich abschließbar und je für sich
@@ -1291,9 +1322,13 @@ nützlich.  Offen ist allein noch die Gegenprobe der Alternativprofile aus Etapp
   Gesuchte im Verzeichnis steht; bei UDOS steht dort nach dem Löschen *nichts* mehr, und
   beide Tiefen müssen die Datenspuren ansehen. Der Unterschied ist, **welche** Sektoren
   als Kandidat gelten (nur die in der Karte freien ↔ alle) und ob Rohbereiche gesammelt
-  werden — nicht, wie viele Spuren angefasst werden. An einer physischen Diskette heißt
-  das: eine UDOS-Suche kostet dort immer die ganze Scheibe. Umgehen ließe sich das nicht,
-  ohne die Suche selbst aufzugeben.
+  werden — nicht, wie viele Spuren angefasst werden.
+  An einer physischen Diskette kostet das **einmal** die ganze Scheibe, nicht bei jedem
+  Lauf: das Medium liegt danach vollständig im Speicher (`DiskMedium`, Spurzustand
+  `Clean`), und `DiskMedium::track()` lädt nur `Unknown`-Spuren nach
+  (`doc/design/14_physische_diskette.md`). Ein zweiter Suchlauf, ein Wechsel der
+  Suchtiefe oder eine anschließende Vollprüfung sind danach so schnell wie an einer
+  Datei. Wer die Diskette ohnehin schon ganz gelesen hat, zahlt gar nichts.
 * **Der Weg zurück bei UDOS hat zwei Kanten, die aus `put` stammen**, nicht aus der
   Rettung: das Beiblatt wird über den **Dateinamen** zugeordnet (wer die gerettete Datei
   umbenennt, muss den Schlüssel mit umbenennen), und zwei Kopfsektorfelder überleben den

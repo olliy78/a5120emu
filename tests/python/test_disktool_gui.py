@@ -2444,6 +2444,44 @@ def test_udos_fund_laesst_sich_retten_aber_nicht_eintragen(window, fixture_disks
     assert zeile and "typ=A" in zeile[0] and "satz=128" in zeile[0], zeile
 
 
+def test_der_fund_laesst_sich_sektorweise_im_diskeditor_ansehen(window, fixture_disks,
+                                                                tmp_path):
+    """Erst ansehen, dann handeln — und zwar SEKTORWEISE.
+
+    Der Schritt vor jeder Rettung ist die Frage „ist das überhaupt, was ich suche?".
+    Bei UDOS gibt es dafür nicht einmal einen Namen, und die Sätze einer Datei liegen
+    verkettet über die Diskette verstreut — der Bediener fände den zweiten Satz von
+    Hand nie.  Deshalb führt der Dialog die ganze Sektorliste und schlägt jeden
+    Eintrag im Diskeditor auf.
+    """
+    from app.disktool.ui.recover_dialog import RecoverDialog
+
+    gesprungen = []
+    abbild = _mit_geloeschter_datei(
+        fixture_disks / "udos_boot_scp.hfe", tmp_path / "rec_sektoren.hfe",
+        name="Side1/NOTE.TO.SD")
+    assert window.open_image(abbild)
+
+    dlg = RecoverDialog(window.tool, window, zielordner=str(tmp_path), log=window.log,
+                        zeige_ort=lambda *ort: gesprungen.append(ort))
+    fund = dlg.bericht.finds[0]
+    # Kopfsektor + 16 Sätze — und sie liegen nicht hintereinander.
+    assert len(fund.parts) == 17, fund.parts
+    assert dlg.sektoren.count() == 17
+    assert dlg.b_editor.isEnabled()
+
+    # Der erste Eintrag ist der Ort des Fundes selbst …
+    assert dlg.sektoren.itemData(0) == (fund.cyl, fund.head, fund.sector)
+    dlg._springen()
+    assert gesprungen == [(fund.cyl, fund.head, fund.sector)]
+
+    # … und jeder weitere lässt sich genauso aufschlagen.
+    dlg.sektoren.setCurrentIndex(3)
+    dlg._springen()
+    assert gesprungen[-1] == fund.parts[3]
+    assert gesprungen[-1] != gesprungen[0]
+
+
 def test_die_suche_laeuft_nicht_von_selbst_und_braucht_ein_dateisystem(window,
                                                                        fixture_disks,
                                                                        tmp_path):

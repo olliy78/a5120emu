@@ -2177,7 +2177,7 @@ was dort festgelegt wird und was es für diesen Entwurf bedeutet:
 > `check/cpm_recover.cpp`, `check/udos_recover.cpp`, `check/udos1715_recover.cpp`,
 > `recover` in der CLI, `ui/recover_dialog.py`).  Beide Menüeinträge stehen.
 >
-> **Ein Unterschied bleibt und ist gewollt** (§13.3a des Prüfentwurfs): *auf der
+> **Ein Unterschied bleibt und ist gewollt** (§13.3b des Prüfentwurfs): *auf der
 > Diskette* wiederhergestellt wird nur bei **CP/M** — dort ist es ein einziges Byte
 > und der Name stimmt.  Bei UDOS/NDOS ist die Rettung **rein lesend**; der Weg zurück
 > heisst *retten → benennen → `put`*, und das Beiblatt `udos-dateiangaben.txt` trägt

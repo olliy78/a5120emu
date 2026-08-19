@@ -405,7 +405,7 @@ Was beim Weiterarbeiten zu wissen ist:
   retten" über ALLE CP/M-Katalogprofile), `cli_dt_recover_*` (3), drei
   `py_disktool_gui`-Fälle.
 - **Etappe 6: Rettung gelöschter UDOS-/NDOS-Dateien** (2026-08-19, Entwurf §13.1
-  und §13.3a).  `check/udos_recover.cpp` (ZDOS) und `check/udos1715_recover.cpp`
+  und §13.3b).  `check/udos_recover.cpp` (ZDOS) und `check/udos1715_recover.cpp`
   (NDOS), dazu der Haken `FileSystem::recoverEntry` und das Beiblatt in
   `DiskVolume::recoverExtract`.  **Rein lesend.**  Sechs Festlegungen:
   **(1) Es gibt kein Zurückschreiben auf die Diskette.**  Bei CP/M ist es ein Byte
@@ -439,7 +439,23 @@ Was beim Weiterarbeiten zu wissen ist:
   **(6) Rohbereiche enden an der Spurgrenze** (`fragment_c12h0_s6-s26.bin`) — sonst
   nennt der Dateiname eine Sektornummer, die auf einer anderen Spur liegt.  Und
   **beide Suchtiefen fassen bei UDOS die Datenspuren an**: nach dem Löschen steht im
-  Verzeichnis nichts Gesuchtes mehr (Entwurf §20).
+  Verzeichnis nichts Gesuchtes mehr (Entwurf §20).  An einer physischen Diskette
+  kostet das **einmal** die ganze Scheibe — danach liegt sie im `DiskMedium`, und
+  jeder weitere Lauf ist so schnell wie an einer Datei.
+- **Erst ansehen, dann handeln — die Sektorliste eines Fundes** (Entwurf §13.3a,
+  gilt für CP/M genauso).  `FsRecoverFind::orte` führt ALLE Sektoren in
+  Lesereihenfolge (bei UDOS der Kopfsektor zuerst), C-ABI
+  `k1520d_recover_part_count`/`k1520d_recover_part`, Python `RecoverFind.parts`,
+  im Dialog eine Auswahl neben der Vorschau plus *Im Diskeditor zeigen*
+  (`MainWindow._befund_im_editor`).  **Warum die ganze Liste:** die Sätze einer
+  UDOS-Datei liegen verkettet und physisch verschränkt — `NOTE.TO.SD` belegt auf
+  Spur 21 die Sektoren 6, 7, 12, 23, 1, 8, …; wer nur den ersten bekommt, findet den
+  zweiten nicht.  Und bei UDOS gibt es keinen Namen, an dem man einen Fund
+  wiedererkennen könnte.  Geführt werden Sektor-KENNUNGEN (nicht Versätze), begrenzt
+  auf `kFsRecoverMaxOrte` = 512 — Bedienhilfe, kein Abbild.  Wächter:
+  `FsRecover{Udos,Cpm}.DerFundFuehrtSeineSektorenAuf` (der UDOS-Fall prüft
+  ausdrücklich, dass die Sektoren NICHT fortlaufend sind) und der GUI-Fall
+  `…sektorweise_im_diskeditor_ansehen`.
 
 - **Etappe 7: Ebene 0 — „warum wurde denn nichts erkannt?"** (2026-08-19, Entwurf
   §11).  Jede Positivprobe der Erkennung nennt einen Grund; der verfiel bisher im

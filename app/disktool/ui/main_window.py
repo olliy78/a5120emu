@@ -1911,7 +1911,7 @@ class MainWindow(QMainWindow):
         if self.tool is None:
             return
         dlg = RecoverDialog(self.tool, self, zielordner=self._ordner_startpunkt(),
-                            log=self.log)
+                            log=self.log, zeige_ort=self._befund_im_editor)
         dlg.exec()
         if dlg.wiederhergestellt:
             self._reload()

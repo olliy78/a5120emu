@@ -59,6 +59,13 @@ enum class FsRecoverQuality : uint8_t {
     Sicher         = 2   ///< nichts davon gehoert einer lebenden Datei
 };
 
+/// @brief Hoechstens so viele Sektoren fuehrt ein Fund in @ref FsRecoverFind::orte.
+///
+/// Eine 300-KB-Datei haette sonst 2400 Eintraege, durch die niemand blaettert; die
+/// Liste ist eine Bedienhilfe, kein Abbild.  Was darueber hinausgeht, wird gerettet
+/// wie eh und je — nur nicht mehr aufgezaehlt.
+inline constexpr size_t kFsRecoverMaxOrte = 512;
+
 const char* fsRecoverQualityName(FsRecoverQuality q);  ///< "sicher"|"wahrscheinlich"|"Bruchstueck"
 
 /// @name Gemeinsame Handgriffe der Suchlaeufe
@@ -94,6 +101,17 @@ void fsRecoverBelege(std::string& detail, const std::vector<std::string>& belege
 /// @}
 
 /**
+ * @struct FsRecoverOrt
+ * @brief Ein Sektor auf der Diskette — Zylinder, Kopf und die Sektor-**Kennung**.
+ *
+ * Die Kennung, nicht der Versatz in der Spur: `DiskEditorWindow.zeige_ort` sucht den
+ * Sektor ueber seine ID.
+ */
+struct FsRecoverOrt {
+    int cyl = -1, head = -1, sector = -1;
+};
+
+/**
  * @struct FsRecoverFind
  * @brief Ein Fund: eine geloeschte Datei oder ein Bereich mit Inhalt.
  */
@@ -124,6 +142,25 @@ struct FsRecoverFind {
     /// @{
     int cyl = -1, head = -1, sector_index = -1;
     /// @}
+
+    /**
+     * @brief **Alle** Sektoren des Fundes, in Lesereihenfolge.
+     *
+     * Der Grund, warum das neben @ref teile noch einmal dasteht: `teile` ist
+     * absichtlich privat und nur von der Dateisystemklasse zu deuten (Blocknummern,
+     * Satzanfaenge, …), die Oberflaeche braucht aber etwas, mit dem sie umgehen kann.
+     *
+     * Und sie braucht es wirklich.  Beim Retten ist die entscheidende Frage nicht
+     * „wo faengt das an", sondern **„ist das ueberhaupt das, was ich suche"** — und
+     * bei UDOS gibt es nicht einmal einen Namen, an dem man das ablesen koennte.  Nur
+     * mit dieser Liste kann der Dialog den Anwender durch die Sektoren des Fundes
+     * fuehren, bevor er irgendetwas tut; die Saetze einer UDOS-Datei sind verkettet
+     * und liegen keineswegs hintereinander — von Hand faende sie niemand.
+     *
+     * @ref cyl / @ref head / @ref sector_index sind der erste Eintrag (bzw. der
+     * Kopfsektor).  Begrenzt auf @ref kFsRecoverMaxOrte Eintraege.
+     */
+    std::vector<FsRecoverOrt> orte;
 
     /**
      * @brief Woraus der Fund besteht — **vom Dateisystem zu deuten**, wie bei

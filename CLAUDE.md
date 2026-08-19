@@ -452,7 +452,7 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 >   die Prüfung als Gefahr meldet), nachgeprüft unmittelbar vor dem Schreiben. Bei CP/M
 >   überlebt der Name, **nicht der Nutzerbereich** — er stand in ebendem Byte, das 0xE5
 >   wurde; die **billige Suchtiefe fasst dort keine Datenspur an**.
-> - **Bei UDOS/NDOS ist die Rettung rein lesend** (§13.3a). Gelöscht wird der
+> - **Bei UDOS/NDOS ist die Rettung rein lesend** (§13.3b). Gelöscht wird der
 >   VERZEICHNISEINTRAG, nicht ein Byte: der Kopfsektor überlebt mit Typ, Eigenschaften,
 >   ENTRY, Satzlänge und allen Segmenten — verloren ist **allein der Name**. Der Weg
 >   zurück heißt *retten → benennen → `put`*; `recoverExtract` legt dafür das Beiblatt
@@ -462,7 +462,14 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 >   trägt die Bytesignatur nicht** (die `FF 00`-Marken sind A5120-Sitte; getragen wird
 >   die Erkennung über `FIRSTBL` → Zeigersektor → erste Eintragung = der Descriptor), und
 >   **beide Suchtiefen fassen die Datenspuren an** — nach dem Löschen steht im
->   Verzeichnis nichts Gesuchtes mehr.
+>   Verzeichnis nichts Gesuchtes mehr (an einer physischen Diskette kostet das **einmal**
+>   die ganze Scheibe, danach liegt sie im `DiskMedium`).
+> - **Erst ansehen, dann handeln**: jeder Fund führt seine **ganze Sektorliste** in
+>   Lesereihenfolge (`FsRecoverFind::orte`, `k1520d_recover_part*`, `RecoverFind.parts`),
+>   und der Rettungsdialog schlägt jeden Eintrag im Diskeditor auf. Kein Komfort, sondern
+>   die einzige Handhabe: die Sätze einer UDOS-Datei liegen verkettet und physisch
+>   verschränkt (`NOTE.TO.SD`: Sektor 6, 7, 12, 23, 1, 8, …) — den zweiten fände von Hand
+>   niemand, und einen Namen zum Wiedererkennen gibt es dort auch nicht.
 
 ## Physische Diskette am Greaseweazle (`core/peripherals/floppy_drive/track_sync.*`, `app/gw/`)
 
