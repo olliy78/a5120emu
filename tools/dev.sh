@@ -82,9 +82,12 @@ if [ "$WINDOWS" = 1 ]; then EXE=".exe"; GENERATOR=(-G Ninja); fi
 # k1520test::tempPath() (tests/support/temp_path.h); unter Linux fiele ein
 # Verstoß nicht auf, unter Windows schlägt er als „Sharing violation" zu.
 #
-# Die langsamen Formatläufe bleiben bewusst außen vor: sie fahren FORMAT.COM über
-# ganze Disketten, sind E/A-gebunden, und slow-tests.yml gibt ihnen ohnehin ein
-# eigenes -j mit.
+# Seit 2026-08-19 gilt das auch für die langsamen Formatläufe: `run_ctest` setzt
+# -j$JOBS überall dort, wo der Aufrufer keins nennt.  Sie fahren FORMAT.COM über
+# ganze Disketten und sind E/A-gebunden, laufen aber trotzdem deutlich besser
+# nebeneinander — test-matrix seriell ~13 min, mit -j Minuten.  Wer eine eigene
+# Zahl braucht, gibt sie mit (slow-tests.yml tut das für test-matrix: -j4), und
+# die gewinnt.
 #
 # Kernzahl: `nproc` ist coreutils und in der Git-Bash nicht garantiert; Windows
 # setzt dafür NUMBER_OF_PROCESSORS in der Umgebung.  Ohne diesen Zwischenschritt
@@ -182,6 +185,11 @@ RAUSCHEN='^ *Start +[0-9]+:|Passed +[0-9.]+ sec *$'
 run_ctest() {
     local dir="$1"; shift
     local log="$dir/Testing/ctest.log" rc=0
+    # Vorgabe-Parallelitaet an EINER Stelle: wer selbst ein -j/--parallel angibt,
+    # behaelt es (die CI gibt test-matrix ein eigenes -j4 mit, das gewinnen muss).
+    local hat_j=0 a
+    for a in "$@"; do case "$a" in -j*|--parallel*) hat_j=1 ;; esac; done
+    [ "$hat_j" = 0 ] && set -- -j"$JOBS" "$@"
     if [ "$VOLL" = 1 ]; then
         ctest --test-dir "$dir" --output-on-failure "${JUNIT[@]}" "$@"
         return $?

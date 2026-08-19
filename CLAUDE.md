@@ -40,7 +40,7 @@ tools/dev.sh rebuild             # rm -rf build build_trace, then build from scr
 ```
 
 > **Läufe über ~60 s gehören in den HINTERGRUND** (`Bash` mit `run_in_background: true`),
-> nicht in den Vordergrund. Betrifft `test-format`, `test-matrix` (~200 s bei `-j8`),
+> nicht in den Vordergrund. Betrifft `test-format` (~60 s), `test-matrix` (~160 s),
 > `test-all`, `win` und jeden längeren `boot_trace`-/`format_all.py`-Lauf; `tools/dev.sh
 > test` läuft in ~34 s und darf im Vordergrund bleiben. Drei Gründe, und der dritte ist
 > der eigentliche: ein Vordergrundlauf **blockiert die Sitzung** für die ganze Dauer; er
@@ -466,7 +466,8 @@ zusätzlich die ganze Kette *Leerdiskette → FORMAT.COM → CPABCGEN → bootf�
 - `format_matrix` — die **Breite**: **88 Tests, jeder einzelne FORMAT.COM-Menüeintrag**
   (§3 K5601 80-DS, §3.4-Geometrien S/W/U/V/T, native Menüs von K5600.10/K5600.20/MF3200/
   MF6400), jeweils Leerdiskette + Vergleichs-Lesen, Umfang **Smoke (Spur 0–2, ~9 s je Format)**
-  — `tools/dev.sh test-matrix` (~200 s wall bei `-j8`). Die Matrix wird beim `cmake` aus
+  — `tools/dev.sh test-matrix` (~160 s wall bei `-j16`; `run_ctest` setzt die
+  Parallelität selbst, ein eigenes `-j` gewinnt — die CI gibt `-j4` mit). Die Matrix wird beim `cmake` aus
   `tests/system/drivers/format_all.py --list-matrix` erzeugt: neue Formate dort in die Tabellen eintragen,
   der Testsatz wächst automatisch mit. **Voll-Läufe bleiben manuell**
   (`python3 tests/system/drivers/format_all.py --all --full`) — dort sind K5601 `7` (`Fehler 'S'`) und `5`
