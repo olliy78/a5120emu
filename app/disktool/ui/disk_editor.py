@@ -1123,6 +1123,16 @@ class DiskEditorWindow(QDialog):
         t = self._spur_von(seite, spur)
         return [s for s in t.spans if s.kind == SECTOR] if t else []
 
+    def zeige_ort(self, zylinder: int, kopf: int, sektor: int = -1) -> bool:
+        """Auf den Ort springen, den ein Prüfbefund nennt (Entwurf E9).
+
+        Der öffentliche Eingang zu :meth:`_springe` — ein Befund trägt Zylinder,
+        Kopf und (wo es ihn gibt) die Sektor-KENNUNG, nicht dessen laufende
+        Nummer auf der Spur.  Genau die erwartet ``_springe`` als ``sektor_id``.
+        """
+        return self._springe(seite=kopf, spur=zylinder,
+                             sektor_id=sektor if sektor >= 0 else None)
+
     def _springe(self, seite: Optional[int] = None, spur: Optional[int] = None,
                  sektor_id: Optional[int] = None) -> bool:
         """Auf einen eingetippten Wert springen; die übrigen bleiben stehen.

@@ -2100,3 +2100,162 @@ def test_die_vollpruefung_ist_aus_den_diskettenangaben_erreichbar(window,
     assert window.info_bar.stufe == "fehler"
     assert "Gefahr" in window.info_bar.text()
     assert window.st_befund.text().startswith("⛔")
+
+
+# ─── Reparaturdialog (Entwurf §16.3) ─────────────────────────────────────────
+#
+# Prüfen und Reparieren stehen in EINEM Fenster.  Die Fälle hier sichern die drei
+# Festlegungen, die den Dialog tragen — Vorauswahl, Auskunft ohne Ankreuzfeld,
+# Schreibschutz — und den vollen Kreislauf Befund → Reparatur → neuer Befund.
+
+
+def _udos_mit_gefahr(quelle, ziel):
+    """Ein Bit im UDOS-Belegungsplan löschen: der Sektor gehört einer Datei,
+    steht aber frei.  Der wichtigste Befund überhaupt — und der einzige, dessen
+    Reparatur ohne Datenverlust auskommt."""
+    import shutil
+    from app.core_binding.k1520disk import DiskTool
+
+    shutil.copy(quelle, ziel)
+    with DiskTool.open(ziel) as d:
+        d.set_read_only(False)
+        idx = {s.id: s.index for s in d.track(23, 0).spans if s.size}
+        off = 24 + 30 * 4
+        sid, innen = off // 128 + 1, off % 128
+        plan = bytearray(d.sector_data(23, 0, idx[sid]))
+        plan[innen] &= 0x7F
+        d.sector_write(23, 0, idx[sid], bytes(plan))
+        d.flush()
+    return ziel
+
+
+def test_nichts_ist_vorausgewaehlt_was_daten_verwirft(window, fixture_disks, tmp_path):
+    """Die schärfste Zusage des Dialogs.
+
+    Bei der Kreuzbelegung ist die einzige Reparatur `empfohlen` UND verwirft
+    einen Verweis.  Angekreuzt darf sie trotzdem nicht sein — ein blindes
+    „Reparieren" darf niemals Daten kosten.
+    """
+    from PySide6.QtCore import Qt
+    from app.disktool.ui.fsck_dialog import FsckDialog
+
+    abbild = _mit_kreuzbelegung(
+        fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "kreuz5.img")
+    assert window.open_image(abbild, "cpa780")
+
+    dlg = FsckDialog(window.tool, window)
+    eintraege = [dlg.baum.topLevelItem(i) for i in range(dlg.baum.topLevelItemCount())]
+    mit_kasten = [e for e in eintraege if e.flags() & Qt.ItemIsUserCheckable]
+    assert mit_kasten, "die Kreuzbelegung ist reparierbar"
+    assert all(e.checkState(0) == Qt.Unchecked for e in mit_kasten)
+    assert dlg.auswahl() == []
+    assert not dlg.b_reparieren.isEnabled(), "ohne Auswahl gibt es nichts auszuführen"
+
+
+def test_ein_befund_ohne_reparatur_hat_kein_ankreuzfeld(window, fixture_disks):
+    """Eine Auskunft ist kein Versäumnis — ein leeres Kästchen läse sich so."""
+    from PySide6.QtCore import Qt
+    from app.disktool.ui.fsck_dialog import FsckDialog
+
+    assert window.open_image(fixture_disks / "scp1700_640k_a7100_system.hfe")
+    window.tool.check(voll=True)          # die Systemspur-Befunde sind medienseitig
+
+    dlg = FsckDialog(window.tool, window)
+    ohne = [dlg.baum.topLevelItem(i) for i in range(dlg.baum.topLevelItemCount())
+            if not dlg.bericht.findings[i].repairs]
+    assert ohne, "ein CRC-Fehler auf der Systemspur lässt sich nicht reparieren"
+    assert all(not (e.flags() & Qt.ItemIsUserCheckable) for e in ohne)
+    assert all(e.data(0, Qt.CheckStateRole) is None for e in ohne)
+
+
+def test_eine_schreibgeschuetzte_diskette_sperrt_den_reparaturknopf_mit_begruendung(
+        window, fixture_disks, tmp_path):
+    """Ein gesperrter Knopf ohne Grund ist eine Sackgasse — der Grund steht daneben."""
+    from app.disktool.ui.fsck_dialog import FsckDialog
+
+    abbild = _udos_mit_gefahr(fixture_disks / "udos_boot_scp.hfe",
+                              tmp_path / "udos_ro.hfe")
+    assert window.open_image(abbild)
+    window.tool.check(voll=True)
+    window.tool.set_read_only(True)
+
+    dlg = FsckDialog(window.tool, window)
+    assert dlg.auswahl(), "vorausgewählt ist die Reparatur ohne Datenverlust"
+    assert not dlg.b_reparieren.isEnabled()
+    assert "schreibgeschützt" in dlg.hinweis.text()
+
+
+def test_der_ganze_kreislauf_befund_reparatur_neuer_befund(window, fixture_disks,
+                                                           tmp_path, monkeypatch):
+    """Vollprüfung im Dialog, Reparatur ausführen, danach ohne Befund.
+
+    Und das Ergebnis muss bis in Statuszeile und Streifen des Hauptfensters
+    durchschlagen: der Befund ist ein Zustand der Diskette, kein Ergebnis eines
+    Dialogs.
+    """
+    from PySide6.QtWidgets import QMessageBox
+    from app.core_binding.k1520disk import GEFAHR
+    from app.disktool.ui.fsck_dialog import FsckDialog
+
+    monkeypatch.setattr(QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.Yes))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+
+    abbild = _udos_mit_gefahr(fixture_disks / "udos_boot_scp.hfe",
+                              tmp_path / "udos_reparieren.hfe")
+    assert window.open_image(abbild)
+
+    dlg = FsckDialog(window.tool, window, log=window.log)
+    assert dlg.bericht.hoechste < GEFAHR, "die Schnellprüfung sieht die Gefahr nicht"
+    dlg._vollpruefung()
+    assert dlg.bericht.hoechste == GEFAHR
+    gewaehlt = dlg.auswahl()
+    assert gewaehlt, "die Reparatur ohne Datenverlust ist vorausgewählt"
+    assert not dlg.b_reparieren.isEnabled(), "geöffnet wird schreibgeschützt"
+
+    # Der Weg des Bedieners: Schreibschutz im Hauptfenster aufheben.
+    window.act_schreibschutz.setChecked(False)
+    dlg._knoepfe_nachziehen()
+    assert dlg.b_reparieren.isEnabled()
+
+    dlg._reparieren()
+    assert dlg.repariert == len(gewaehlt)
+    assert not dlg.bericht.findings, "nach der Reparatur ist die Diskette heil"
+    assert dlg.tool.findings().complete
+    assert "Reparatur(en) ausgeführt" in window.protokoll.toPlainText()
+
+    window._medium_meldungen()
+    assert window.st_befund.text() in ("ohne Befund", "bislang ohne Befund")
+
+
+def test_ein_befund_fuehrt_per_doppelklick_in_den_diskeditor(window, fixture_disks,
+                                                             tmp_path):
+    """E9: kein Befund ohne Ort — und der Ort muss sich ansehen lassen."""
+    from app.disktool.ui.fsck_dialog import FsckDialog
+
+    abbild = _udos_mit_gefahr(fixture_disks / "udos_boot_scp.hfe",
+                              tmp_path / "udos_sprung.hfe")
+    assert window.open_image(abbild)
+    window.tool.check(voll=True)
+
+    gesehen = []
+    dlg = FsckDialog(window.tool, window,
+                     zeige_ort=lambda c, h, s: gesehen.append((c, h, s)))
+    ortbar = next(i for i, f in enumerate(dlg.bericht.findings) if f.ortbar)
+    dlg.baum.setCurrentItem(dlg.baum.topLevelItem(ortbar))
+    assert dlg._b_editor.isEnabled()
+    dlg._springen()
+    assert gesehen == [(dlg.bericht.findings[ortbar].cyl,
+                        dlg.bericht.findings[ortbar].head,
+                        dlg.bericht.findings[ortbar].sector)]
+
+
+def test_der_diskeditor_springt_wirklich_auf_den_genannten_ort(window, fixture_disks):
+    """Der Rückruf des Hauptfensters muss im Editor auch ankommen."""
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_noclock.img")
+    editor = window.open_disk_editor()
+    assert editor is not None
+    assert editor.zeige_ort(3, 0, 5)
+    seite, spur, _ = editor.aktuell
+    assert (seite, spur) == (0, 3)
+    editor.close()

@@ -338,6 +338,33 @@ Was beim Weiterarbeiten zu wissen ist:
   Kennung, dann eine Sammelzeile) — sonst brächte eine wirklich kaputte Diskette
   fünfhundert Zeilen hervor, und der Bericht wäre genau dann wertlos, wenn er am
   nötigsten ist.
+- **Etappe 3+4: Reparatur und der Sprung in den Diskeditor** (2026-08-19, Entwurf
+  §12/§16.3).  `FileSystem::repair(const FsRepair&)` je Familie,
+  `DiskVolume::applyRepairs()` als Klammer, C-ABI `k1520d_repair_*` +
+  `k1520d_apply_repairs`, CLI `fsck [--full] [--repair[=alle|sicher|<kennung>,…]]
+  [--dry-run]`, Dialog `app/disktool/ui/fsck_dialog.py` (Strg+F).  Fünf
+  Festlegungen:
+  **(1) Der ganze Lauf ist EINE Transaktion in fester Rangfolge** — Verzeichnis →
+  Ketten → Belegungsplan → Zähler.  Der Neuaufbau des Plans leitet sich aus den
+  Ketten ab; in der umgekehrten Reihenfolge bliebe der abgeschnittene Platz
+  verloren.  Danach wird **automatisch neu geprüft**, und jeder bisherige Index ist
+  hinfällig (die Oberfläche baut ihre Liste komplett neu auf).
+  **(2) Der Neuaufbau bleibt gesperrt, solange ein Kettenfehler offen ist** (E8) —
+  aus halbem Wissen einen Plan zu bauen heisst, die ungelesene Hälfte für frei zu
+  erklären.  Der gesperrte Vorschlag bleibt SICHTBAR und nennt seinen Grund.
+  **(3) Vorausgewählt wird nur `empfohlen && !datenverlust`** — in der CLI wie im
+  Dialog.  `--repair=alle` nimmt auch die verlustbehafteten; die Fusszeile nennt
+  **beide** Zahlen (möglich ≠ ausgewählt), sonst stand „0 Reparaturen" über einer
+  Zeile, die eine anbot.
+  **(4) Ein CP/M-Blockzeiger wird nie mitten aus der Liste gestrichen, sondern ab
+  dort ABGESCHNITTEN** (`cpm.zeiger.streichen`, `cpm.kreuz.erstem_lassen`).  Ein
+  Loch verschöbe jeden folgenden Satz — der Extent lieferte danach falsche Daten
+  aus statt weniger, und die Prüfung meldete prompt `cpm.block.luecke`.
+  **(5) Der Sprung in den Diskeditor** (E9) geht über
+  `DiskEditorWindow.zeige_ort(cyl, head, sector)`; `sector` ist die **Kennung** des
+  Sektors, nicht seine laufende Nummer auf der Spur.
+  Wächter: `FsCheckReparatur.*` (12), `cli_dt_fsck_*` (4, mit der neuen
+  Schadensinjektion `poke:` im `.cli`-Prüfstand), `py_disktool_gui`.
   Alle vier UDOS-Fixturen prüfen mit `--full` **ohne Befund** (Ketten, Kreuzbelegung,
   Karte↔Ketten, CRC, Nachspann).  Wächter: `FsCheckUdosSchaden.*` (8) und
   `FsCheckNdosSchaden.*` (5) mit gezielter Schadensinjektion.

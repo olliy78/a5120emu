@@ -778,6 +778,23 @@ bool CpmFileSystem::repair(const FsRepair& r) {
                                      + std::to_string(r.b) + " nicht mehr");
     }
 
+    // Kein LOCH hinterlassen.  Ein genullter Zeiger MITTEN in der Liste ist bei
+    // CP/M kein „Block fehlt", sondern verschiebt jeden folgenden Satz an eine
+    // Stelle, an der er nie stand — der Extent wuerde falsche Daten ausliefern,
+    // ohne dass es jemand merkt (und die Pruefung meldete danach prompt
+    // `cpm.block.luecke`).  Deshalb wird ab dem ersten Nullzeiger ABGESCHNITTEN:
+    // was davor steht, gehoert der Datei wirklich; was dahinter stand, ist
+    // ohnehin nur ueber den gestrichenen Zeiger erreichbar gewesen.  Bei einem
+    // unversehrten Eintrag greift die Schleife nicht — dort stehen hinter der
+    // ersten Null nur weitere Nullen.
+    if (r.kind != "cpm.rc.anpassen") {
+        bool abgeschnitten = false;
+        for (int k = 0; k < n; ++k) {
+            if (abgeschnitten) setze(k, 0);
+            else if (zeiger(k) == 0) abgeschnitten = true;
+        }
+    }
+
     // RC nachziehen: mehr Saetze, als die verbliebenen Bloecke tragen, gibt es nicht.
     if (r.kind == "cpm.rc.anpassen") {
         if (r.b < 0 || r.b > 128) return fail("RC muss zwischen 0 und 128 liegen");

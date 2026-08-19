@@ -1,0 +1,10 @@
+# Eine gesunde Diskette darf auch von `fsck --repair` NICHT angefasst werden
+# (Entwurf E1/E10): kein Befund, nichts zu reparieren, Exit 0.
+tool:   k1520disktool
+disk:   cpa_cpa780_k5601_noclock.img
+run:    fsck %DISK% --full --repair
+expect: Vollpruefung
+expect: Nichts zu reparieren
+forbid: Reparatur(en) ausgefuehrt
+forbid: Gefahr
+exit:   0

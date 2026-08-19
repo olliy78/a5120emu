@@ -28,6 +28,8 @@ Dateiformat (Zeilenweise, `#` ist Kommentar):
     stdin:                                  Block → auf die Standardeingabe
       <zeilen…>
 
+    poke:       %DATEI% <off> <bytes>       Bytes in eine Datei schreiben, hex,
+                                            VOR allen Läufen (Schadensinjektion)
     setup_run:  <argumente>                 Vorlauf, Ausgabe wird verworfen
     run:        <argumente>                 der gemessene Lauf
 
@@ -79,7 +81,7 @@ class CaseError(Exception):
 def parse_case(path):
     """`.cli`-Datei → dict.  Blockdirektiven sammeln eingerückte Folgezeilen."""
     case = {"expect": [], "expect_re": [], "forbid": [], "forbid_re": [],
-            "setup_run": [], "capture_file": [], "files": {}, "tmpfiles": [], "stdin": None,
+            "setup_run": [], "capture_file": [], "poke": [], "files": {}, "tmpfiles": [], "stdin": None,
             "tool": None, "disk": None, "disk_path": None, "run": None,
             "exit": None, "timeout": 120, "doc": []}
     block_key = None
@@ -125,7 +127,7 @@ def parse_case(path):
         elif key.startswith("tmpfile"):
             case["tmpfiles"].append(key[7:].strip())
         elif key in ("expect", "expect_re", "forbid", "forbid_re", "setup_run",
-                     "capture_file"):
+                     "capture_file", "poke"):
             case[key].append(value)
         elif key in ("tool", "disk", "disk_path", "run"):
             case[key] = value
@@ -213,6 +215,21 @@ def main():
         # Platzhalter gelten auch in der Standardeingabe — Debugger-Kommandos wie
         # `trace %datei%` oder `lst %quelle.mac%` brauchen den echten Pfad.
         stdin = expand(case["stdin"]) if case["stdin"] else None
+
+        # Schadensinjektion.  Die Prüfung soll gerade das melden, was auf einer
+        # gesunden Diskette NICHT vorkommt — dafür muss der Fall eine kaputt
+        # machen dürfen.  Über die Datei, nie über den Prüfcode: ein `.img` IST
+        # der lineare Sektorraum, ein Byte an der richtigen Stelle ist der
+        # ganze Schaden.
+        for zeile in case["poke"]:
+            teile = shlex.split(zeile)
+            if len(teile) != 3:
+                raise CaseError(f"poke: braucht <datei> <offset-hex> <bytes-hex>, "
+                                f"nicht {zeile!r}")
+            ziel, offset, bytes_hex = expand(teile[0]), int(teile[1], 16), teile[2]
+            with open(ziel, "r+b") as f:
+                f.seek(offset)
+                f.write(bytes.fromhex(bytes_hex))
 
         for extra in case["setup_run"]:
             subprocess.run(vorspann + [exe] + argv(extra),

@@ -1,8 +1,8 @@
 # Dateisystemprüfung, Reparatur und Wiederherstellung (`fsck`)
 
-> **Stand:** 2026-08-19 · **Etappen 1–3 umgesetzt bis auf die Oberfläche**
-> (Modell, CP/M-, ZDOS- und NDOS-Prüfung, Automatik beim Öffnen, `check --full`,
-> Anzeige; Reparatur in Kern, C-ABI und CLI — es fehlt der Reparaturdialog)
+> **Stand:** 2026-08-19 · **Etappen 1–4 umgesetzt** (Modell, CP/M-, ZDOS- und
+> NDOS-Prüfung, Automatik beim Öffnen, `check --full`, Anzeige; Reparatur in Kern,
+> C-ABI, CLI und Oberfläche samt Sprung in den Diskeditor)
 > — s. §19 (Etappenplan)
 > **Gehört zu:** `doc/design/13_k1520disktool.md` (das Werkzeug), `doc/udos_diskettenformat.md`,
 > `doc/udos1715_diskettenformat.md`, `doc/design/14_physische_diskette.md`,
@@ -17,7 +17,7 @@
 Damit eine neue Sitzung nicht das ganze Dokument lesen muss, hier der Stand in
 Kürze. Die Begründungen dahinter stehen in den genannten Abschnitten.
 
-**Steht** (Etappen 1+2 ganz, Etappe 3 ohne Oberfläche, §19):
+**Steht** (Etappen 1–4, §19):
 
 | | |
 |---|---|
@@ -27,15 +27,12 @@ Kürze. Die Begründungen dahinter stehen in den genannten Abschnitten.
 | Bündelung | `DiskVolume::check()` / `checkReport()`, Automatik am Ende von `oeffnenMit`; `DiskVolume::applyRepairs()` = Rangfolge + Transaktion + Nachprüfung (§12) |
 | C-ABI | `k1520d_check` · `k1520d_check_complete` · `k1520d_check_tracks_*` · `k1520d_check_summary` · `k1520d_finding_*` · `k1520d_repair_*` · `k1520d_apply_repairs` (der frühere Textbericht heißt jetzt `k1520d_check_report`) |
 | CLI | `check [--full] [--json]` · `fsck [--full] [--repair[=alle\|sicher\|<kennung>,…]] [--dry-run] [--json]` |
-| Oberfläche | Statuszeile · Meldungsstreifen (mit Rangfolge) · Protokoll · Diskettenangaben inkl. Schaltfläche *Vollprüfung* |
-| Tests | `tests/unit/filesystem/test_fs_check.cpp` (45, davon 12 `FsCheckReparatur.*`) · `cli_dt_check_*` (5) · `py_disk_c_api` · `py_disktool_gui` |
+| Oberfläche | Statuszeile · Meldungsstreifen (mit Rangfolge) · Protokoll · Diskettenangaben inkl. Schaltfläche *Vollprüfung* · **Reparaturdialog** `ui/fsck_dialog.py` (Aktion `act_reparieren`, Strg+F) mit Sprung in den Diskeditor (`DiskEditorWindow.zeige_ort`) |
+| Tests | `tests/unit/filesystem/test_fs_check.cpp` (45, davon 12 `FsCheckReparatur.*`) · `cli_dt_check_*` (5) · `cli_dt_fsck_*` (4) · `py_disk_c_api` · `py_disktool_gui` (11 Prüf-/Reparaturfälle) |
 
 **Fehlt noch** — in dieser Reihenfolge (§19):
 
-3. **Reparatur — nur noch die Oberfläche.** Kern, C-ABI und CLI stehen; es fehlen
-   der Dialog `app/disktool/ui/fsck_dialog.py`, die Aktion `act_reparieren` und
-   der **Sprung in den Diskeditor** aus einem Befund heraus (Etappe 4, E9 — die
-   Befunde tragen Zylinder/Kopf/Sektor bereits).
+3. ~~Reparatur~~ und ~~Sprung in den Diskeditor~~ — **fertig** (2026-08-19).
 4. **Ebene Medium für UDOS breiter** — heute je Datei zusammengefasst; ein Reihenlauf
    über freie Bereiche fehlt.
 5. **Wiederherstellung CP/M** (§13): gelöschte Verzeichnisplätze + freie Blöcke mit
@@ -833,7 +830,8 @@ Meldung.
 > dem Reparaturdialog um dieselbe Aufgabe konkurrierte.  **An einer physischen
 > Diskette ist die Schaltfläche gesperrt** und nennt den Grund: dort zöge die
 > Vollprüfung die ganze Scheibe ein und blockierte das Fenster ein bis zwei Minuten.
-> Das gehört in einen Arbeitsfaden mit Fortschritt und kommt mit Etappe 3.
+> Das gehört in einen Arbeitsfaden mit Fortschritt; der ist offen — an einer
+> physischen Diskette bleibt der Knopf bis dahin gesperrt und sagt warum.
 >
 > Ohne diesen Weg wäre der wichtigste Befund des ganzen Vorhabens
 > (`udos.karte.frei_aber_belegt`) in der Oberfläche unerreichbar gewesen — die
@@ -1022,8 +1020,8 @@ Alles bleibt in der schnellen Regression; nichts davon braucht ein Laufwerk oder
 |---|---|---|
 | **1** ✅ | Modell (`fs_check.h`), `FileSystem::check()`-Haken, CP/M-Prüfung (Verwaltung + Medium, beide Tiefen), Automatik in `DiskVolume::open`, `check --full` in der CLI, C-ABI, Streifen + Statuszeile + Protokoll + Diskettenangaben | **Umgesetzt 2026-08-18.**  Eine CP/A-Diskette sagt beim Öffnen, ob ihr Verzeichnis stimmt; `--full` findet zusätzlich Sektoren mit falscher CRC und nennt die Datei, die darauf liegt.  Noch keine Reparatur. |
 | **2** ✅ | ZDOS und NDOS: Ebene Verwaltung und Ebene Dateien, Kreuzbelegung, Abgleich Karte ↔ Ketten, Zählerabgleich (aus `info()` hierher verlagert), Begrenzung gleichartiger Befunde | **Umgesetzt 2026-08-19.**  Der Gefahrfall (`frei_aber_belegt`) wird erkannt — der wichtigste Befund überhaupt.  Alle vier UDOS-Fixturen (ZDOS beidseitig, fremde Sync-Sitte, PC 1715, P8000) prüfen ohne Befund. |
-| **3** ◐ | `FileSystem::repair()`, Transaktion + Rangfolge, Reparaturdialog, `fsck --repair` | **Kern, C-ABI und CLI umgesetzt 2026-08-19.**  Belegungsplan nachtragen und neu aufbauen, Zähler, Rückwärtszeiger, Kürzen, wilder Blockzeiger, Satzzahl — je Familie, mit E8-Sperre bei offenem Kettenfehler und Rücknahme der ganzen Momentaufnahme bei einem Fehlschlag.  **Offen ist die Oberfläche** (`ui/fsck_dialog.py`, `act_reparieren`). |
-| **4** ◐ | Ebene Medium: CRC-Übersicht mit Rückabbildung auf Dateien, **Sprung in den Diskeditor** | Die Rückabbildung ist mit den Etappen 1+2 mitgekommen („Satz 14 von `STAT.COM` liegt auf einem Sektor mit falscher CRC", bei UDOS je Datei zusammengefasst).  **Offen ist nur noch der Sprung**: jeder Befund trägt bereits Zylinder/Kopf/Sektor (E9, C-ABI `k1520d_finding_cyl/_head/_sector`) — es fehlt die Oberfläche, die daraus einen Doppelklick macht.  Gehört sinnvollerweise zum Reparaturdialog (Etappe 3). |
+| **3** ✅ | `FileSystem::repair()`, Transaktion + Rangfolge, Reparaturdialog, `fsck --repair` | **Umgesetzt 2026-08-19.**  Belegungsplan nachtragen und neu aufbauen, Zähler, Rückwärtszeiger, Kürzen, wilder Blockzeiger, Satzzahl — je Familie, mit E8-Sperre bei offenem Kettenfehler und Rücknahme der ganzen Momentaufnahme bei einem Fehlschlag.  Dialog `ui/fsck_dialog.py` (Strg+F) mit Vorauswahl nach E7, Einzelheiten und Doppelklick in den Diskeditor. |
+| **4** ✅ | Ebene Medium: CRC-Übersicht mit Rückabbildung auf Dateien, **Sprung in den Diskeditor** | Die Rückabbildung ist mit den Etappen 1+2 mitgekommen („Satz 14 von `STAT.COM` liegt auf einem Sektor mit falscher CRC", bei UDOS je Datei zusammengefasst).  Der **Sprung** kam 2026-08-19 mit dem Reparaturdialog: Doppelklick auf einen Befund → `MainWindow._befund_im_editor` → `DiskEditorWindow.zeige_ort(cyl, head, sector)`. |
 | **5** | Wiederherstellung CP/M (Verzeichnisplätze + freie Blöcke) mit Dialog und `recover` | Der häufigste und einfachste Rettungsfall. |
 | **6** | Wiederherstellung UDOS/NDOS (Kopfsektorsuche, Kettenverfolgung, Beiblatt) | Der wertvollste — dreißig Jahre alte gelöschte Dateien mit vollständigen Angaben. |
 | **7** | Ebene 0 (Ablehnungsgründe der Erkennung) und die Gegenprobe der Alternativprofile | Aus „nichts erkannt" wird eine Diagnose. |

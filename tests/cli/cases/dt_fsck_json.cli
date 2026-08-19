@@ -1,0 +1,11 @@
+# Die Maschinenfassung nennt beide Zahlen getrennt: was moeglich waere
+# (`repairable`) und was die jetzige Auswahl anfasst (`selected`).
+tool:   k1520disktool
+disk:   cpa_cpa780_k5601_noclock.img
+poke:   %DISK% 3b30 f00f
+run:    fsck %DISK% --fs cpa780 --json
+expect: "ok":false
+expect: "findings":1
+expect: "repairable":1
+expect: "selected":0
+exit:   1

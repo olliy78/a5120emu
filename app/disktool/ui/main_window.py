@@ -54,6 +54,7 @@ from app.disktool.ui.actions import erzeuge_aktionen
 from app.disktool.ui.disk_editor import DiskEditorWindow
 from app.disktool.ui.disk_header import DiskHeader, auswahlliste
 from app.disktool.ui.disk_info_dialog import DiskInfoDialog
+from app.disktool.ui.fsck_dialog import FsckDialog
 from app.disktool.ui.disk_view import DiskView
 from app.disktool.ui.folder_view import FolderView
 from app.disktool.ui.help_window import HelpWindow
@@ -246,6 +247,7 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_diskeditor)
         m.addSeparator()
         m.addAction(self.act_neu_beschreiben)
+        m.addAction(self.act_reparieren)
         m.addAction(self.act_angaben)
 
         m = leiste.addMenu("&Übertragung")
@@ -534,7 +536,7 @@ class MainWindow(QMainWindow):
         for a in (self.act_speichern_unter, self.act_diskeditor, self.act_angaben,
                   self.act_schliessen, self.act_aktualisieren):
             a.setEnabled(offen)
-        for a in (self.act_archivieren, self.act_alles_raus):
+        for a in (self.act_archivieren, self.act_alles_raus, self.act_reparieren):
             a.setEnabled(mit_fs)            # braucht Dateien
         self.act_speichern.setEnabled(schreibbar)
         self.act_alles_rein.setEnabled(schreibbar and mit_fs)
@@ -1864,6 +1866,30 @@ class MainWindow(QMainWindow):
         # und Protokoll (§20.4).
         if dlg.geprueft:
             self._medium_meldungen()
+
+    def _reparieren_dialog(self) -> None:
+        """Prüfbericht und Reparatur — und danach den Befund überall nachziehen.
+
+        Der Befund ist ein ZUSTAND der Diskette: wurde hier geprüft oder
+        repariert, gehört das neue Ergebnis in Streifen, Statuszeile und
+        Protokoll.  Eine Reparatur ändert dazu das Verzeichnis, also wird auch
+        die Dateiliste neu gelesen.
+        """
+        if self.tool is None or not self.tool.has_filesystem:
+            return
+        dlg = FsckDialog(self.tool, self, zeige_ort=self._befund_im_editor,
+                         log=self.log)
+        dlg.exec()
+        if dlg.repariert:
+            self._reload()
+        elif dlg.geprueft:
+            self._medium_meldungen()
+
+    def _befund_im_editor(self, zylinder: int, kopf: int, sektor: int) -> None:
+        """Den Ort eines Befundes im Diskeditor aufschlagen (Entwurf E9)."""
+        editor = self.open_disk_editor()
+        if editor is not None:
+            editor.zeige_ort(zylinder, kopf, sektor)
 
     def open_help(self):
         """Das Handbuch öffnen (nicht modal — man liest nach und arbeitet weiter).

@@ -572,12 +572,18 @@ int cmd_fsck(const Optionen& o) {
     }
     const bool auch_verlust = o.repair_wahl == "alle";
 
+    // Zwei Zahlen, die nicht dasselbe sind: was ueberhaupt reparierbar waere,
+    // und was die jetzige Auswahl davon anfasst.  Nur eine davon zu nennen war
+    // irrefuehrend — die Liste zeigte eine Reparatur, die Fusszeile sagte „0".
+    int moeglich = 0, nur_mit_verlust = 0;
     std::vector<std::pair<int, int>> auswahl;
     for (size_t fi = 0; fi < vorher.findings.size(); ++fi) {
         const FsFinding& f = vorher.findings[fi];
         for (size_t ri = 0; ri < f.repairs.size(); ++ri) {
             const FsRepair& r = f.repairs[ri];
             if (r.gesperrt) continue;
+            ++moeglich;
+            if (r.datenverlust) ++nur_mit_verlust;
             const bool gewaehlt = kennungen.empty()
                 ? (r.empfohlen && (auch_verlust || !r.datenverlust))
                 : std::find(kennungen.begin(), kennungen.end(), r.kind) != kennungen.end();
@@ -608,17 +614,35 @@ int cmd_fsck(const Optionen& o) {
             std::cout << "{\"image\":" << jsonText(v->path())
                       << ",\"ok\":" << (vorher.ohneBefund() ? "true" : "false")
                       << ",\"findings\":" << vorher.findings.size()
-                      << ",\"repairable\":" << auswahl.size() << "}\n";
-        else
+                      << ",\"repairable\":" << moeglich
+                      << ",\"selected\":" << auswahl.size() << "}\n";
+        else {
             std::cout << "\n" << (vorher.ohneBefund() ? "ohne Befund"
-                                                     : vorher.kurzfassung())
-                      << " — " << auswahl.size() << " Reparatur(en) waeren moeglich"
-                      << " (`--repair` fuehrt sie aus)\n";
+                                                     : vorher.kurzfassung());
+            if (moeglich == 0) std::cout << " — keine Reparatur moeglich\n";
+            else {
+                std::cout << " — " << moeglich << " Reparatur(en) moeglich";
+                if (auswahl.empty())
+                    std::cout << ", alle mit Datenverlust (`--repair=alle` fuehrt"
+                                 " sie aus)\n";
+                else if (nur_mit_verlust)
+                    std::cout << ", davon " << auswahl.size() << " ohne Datenverlust"
+                              << " (`--repair` fuehrt diese aus, `--repair=alle` alle)\n";
+                else
+                    std::cout << " (`--repair` fuehrt sie aus)\n";
+            }
+        }
         return vorher.ohneBefund() ? kOk : kFehler;
     }
 
     if (auswahl.empty()) {
-        if (!o.json) std::cout << "\nNichts zu reparieren.\n";
+        if (!o.json)
+            std::cout << (moeglich == 0
+                          ? "\nNichts zu reparieren.\n"
+                          : "\nNichts ausgefuehrt: die " + std::to_string(moeglich)
+                            + " moegliche(n) Reparatur(en) gehen alle mit Datenverlust"
+                              " einher — `--repair=alle` oder `--repair=<kennung>`"
+                              " fuehrt sie aus.\n");
         else std::cout << "{\"image\":" << jsonText(v->path()) << ",\"repaired\":0,\"ok\":"
                        << (vorher.ohneBefund() ? "true" : "false") << "}\n";
         return vorher.ohneBefund() ? kOk : kFehler;

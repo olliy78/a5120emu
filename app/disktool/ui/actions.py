@@ -102,6 +102,11 @@ _SPEC: List[Tuple] = [
      "open_disk_editor", False),
     ("angaben", "Disketten&angaben…", None, None,
      "Format, Geometrie, Erkennung und Belegung im Einzelnen", "_angaben_dialog", False),
+    # Prüfen UND reparieren stehen im selben Fenster: wer den Befund liest, will
+    # ihn beheben, und die Auswahl der Reparatur ergibt nur vor dem Befund Sinn.
+    ("reparieren", "Dateisystem &prüfen und reparieren…", "check", "Ctrl+F",
+     "Den Prüfbericht ansehen, eine Vollprüfung fahren und Befunde beheben",
+     "_reparieren_dialog", False),
 
     # ── Übertragung ─────────────────────────────────────────────────────────
     ("ordner", "&Zielordner wählen…", "folder", None,

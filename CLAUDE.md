@@ -425,10 +425,17 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 >   meisten Profile bitgleich nach, ein neuer Eintrag braucht einen eigenen Grund.
 > - **Die Dateisystemprüfung (`fsck`, `core/filesystem/check/`) schreibt NIE** — sonst wäre
 >   die Automatik beim Öffnen ein Schreibzugriff auf eine schreibgeschützt geöffnete
->   Diskette; Reparaturen gehören in `FileSystem::repair`. Beim Öffnen läuft nur die
+>   Diskette; Reparaturen gehen ausschliesslich über `FileSystem::repair`, gebündelt in
+>   `DiskVolume::applyRepairs` (EINE Transaktion, Rangfolge Verzeichnis→Ketten→Plan→Zähler,
+>   danach automatisch neu prüfen). Beim Öffnen läuft nur die
 >   SCHNELLprüfung (kein zusätzlicher Spurzugriff!), die Befundkennungen
 >   (`"cpm.block.doppelt"`) sind ein VERTRAG, und **Falschmeldungen sind schlimmer als
 >   fehlende** (Wächter `FsCheckKeineFalschmeldungen.*`).
+> - **Vorausgewählt wird nur, was keine Daten verwirft** — in der CLI (`fsck --repair`
+>   nimmt nur `empfohlen && !datenverlust`, `=alle` auch die übrigen) wie im Dialog
+>   (`app/disktool/ui/fsck_dialog.py`, Strg+F). Und ein CP/M-Blockzeiger wird nie
+>   mitten aus der Liste gestrichen, sondern **ab dort abgeschnitten**: ein Loch
+>   verschöbe jeden folgenden Satz, der Extent lieferte danach falsche Daten aus.
 
 ## Physische Diskette am Greaseweazle (`core/peripherals/floppy_drive/track_sync.*`, `app/gw/`)
 

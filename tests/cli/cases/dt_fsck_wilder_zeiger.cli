@@ -1,0 +1,22 @@
+# Der ganze Kreislauf an EINEM Schaden: ein Blockzeiger zeigt hinter den
+# Datenbereich (Verzeichnisplatz 1, erster Zeiger -> 0x0FF0).
+#
+# Drei Aussagen stehen hier auf dem Spiel:
+#   * `--fs` ist der Weg hinein — die Erkennung LEHNT eine Diskette mit
+#     unbrauchbarem Blockzeiger ab, die Pruefung kaeme sonst nie zum Zug.
+#   * Die einzige Reparatur geht mit Datenverlust einher, also fuehrt das
+#     blanke `--repair` sie NICHT aus — und sagt das auch, statt „0 Reparaturen"
+#     zu melden, waehrend eine dasteht.
+#   * `--repair=alle` fuehrt sie aus, und danach ist die Diskette ohne Befund
+#     (kein Loch in der Zeigerliste: es wird abgeschnitten, nicht ausgestanzt).
+tool:   k1520disktool
+disk:   cpa_cpa780_k5601_noclock.img
+poke:   %DISK% 3b30 f00f
+setup_run: fsck %DISK% --fs cpa780 --repair
+run:    fsck %DISK% --fs cpa780 --repair=alle
+expect: cpm.block.ausserhalb
+expect: cpm.zeiger.streichen
+expect: 1 Reparatur(en) ausgefuehrt
+expect: nachher 0 Befunde
+forbid: cpm.block.luecke
+exit:   0

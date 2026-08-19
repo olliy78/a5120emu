@@ -91,11 +91,14 @@ FsRepair platz_freigeben(int index) {
     return r;
 }
 
-/// @brief Unbrauchbare Blockzeiger nullen und `RC` nachziehen.
+/// @brief Unbrauchbare Blockzeiger nullen, ab dort abschneiden und `RC` nachziehen.
+///
+/// Abgeschnitten wird, weil ein Loch mitten in der Zeigerliste jeden folgenden
+/// Satz verschoebe — der Extent lieferte danach falsche Daten aus, statt weniger.
 FsRepair zeiger_streichen(int index) {
     FsRepair r{"cpm.zeiger.streichen",
-               "Die unbrauchbaren Blockzeiger des Platzes " + std::to_string(index)
-               + " nullen und die Satzzahl nachziehen",
+               "Platz " + std::to_string(index) + " ab dem ersten unbrauchbaren"
+               " Blockzeiger abschneiden und die Satzzahl nachziehen",
                /*datenverlust*/true, /*empfohlen*/true};
     r.a = index;
     return r;
@@ -396,7 +399,7 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
         for (size_t k = 1; k < wer.size(); ++k) {
             FsRepair rep{"cpm.kreuz.erstem_lassen",
                          "Block " + std::to_string(blk) + " bei '" + wer.front().first
-                         + "' lassen und bei '" + wer[k].first + "' streichen",
+                         + "' lassen und '" + wer[k].first + "' ab dort abschneiden",
                          /*datenverlust*/true, /*empfohlen*/k == 1};
             rep.a = wer[k].second;
             rep.b = blk;

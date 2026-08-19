@@ -330,7 +330,8 @@ erst ein Abbild sichern (*Speichern unter…*), und die Diskette nicht beschreib
 Der häufigste Fall ist, dass zwei Verzeichniseinträge denselben Bereich der
 Diskette beanspruchen — wer als Zweiter schreibt, überschreibt den Ersten.
 
-**Die volle Prüfung** steht unter *Diskette ▸ Diskettenangaben…* als Schaltfläche
+**Die volle Prüfung** steht unter *Diskette ▸ Dateisystem prüfen und reparieren…*
+(Strg+F) und, nur zum Lesen, unter *Diskette ▸ Diskettenangaben…* als Schaltfläche
 *Vollprüfung*. Sie fasst jede Spur an und findet dadurch, was beim Öffnen nicht zu
 sehen war: Kettenbrüche, doppelt belegte Bereiche, den Abgleich zwischen
 Belegungsplan und Dateien und Sektoren mit falscher Prüfsumme. Bei einer echten
@@ -348,6 +349,46 @@ Belegungsplan — zwei Angaben über dieselbe Sache. Widersprechen sie einander,
 sagt die Prüfung genau, welche Datei betroffen ist. Der ernste Fall heißt „ein
 Sektor gehört zu einer Datei, steht aber als frei": die Datei ist heil, und der
 nächste Schreibvorgang überschreibt sie.
+
+## Reparieren
+
+*Diskette ▸ Dateisystem prüfen und reparieren…* (Strg+F) zeigt denselben Befund
+noch einmal — diesmal mit dem, was sich daran tun lässt. Jede Zeile trägt links
+den Befund, rechts den Vorschlag; unten stehen die Einzelheiten mitsamt Ort, und
+ein Doppelklick auf eine Zeile schlägt diesen Ort im **Diskeditor** auf.
+
+Drei Dinge sind daran fest verabredet:
+
+* **Vorausgewählt ist nur, was keine Daten verwirft.** Ein Vorschlag, der etwas
+  wegwirft — eine gebrochene Kette kürzen, einen doppelt beanspruchten Bereich
+  einer der beiden Dateien wegnehmen —, steht da, ist aber nicht angekreuzt.
+  Er trägt die Marke `Datenverlust`.
+* **Ein Befund ohne Vorschlag hat kein Ankreuzfeld.** Er ist eine Auskunft, kein
+  Versäumnis: ein Sektor mit falscher Prüfsumme lässt sich nicht ausrechnen.
+* **Manche Vorschläge sind gesperrt**, solange die Diskette nicht vollständig
+  gelesen ist oder noch ein Kettenfehler offensteht. Der Grund steht daneben.
+  Einen Belegungsplan aus halbem Wissen neu aufzubauen hiesse, die ungelesene
+  Hälfte für frei zu erklären — und beim nächsten Schreiben zu überschreiben.
+
+Ausgeführt wird alles Angekreuzte in **einem** Zug und in der richtigen Reihenfolge
+(Verzeichnis → Ketten → Belegungsplan → Zähler); geht etwas schief, bleibt die
+Diskette unverändert. Danach wird sofort neu geprüft, und das Protokoll (F8) trägt
+die Bilanz: `vorher 3 Befunde (1 Gefahr) → nachher 0 Befunde (0 Gefahr)`.
+
+Die Sicherung entsteht von allein: beim ersten Schreiben legt das Werkzeug
+`<name>~` neben das Abbild. Bei einer **echten** Diskette gibt es die nicht — dort
+ist *Speichern unter…* vor dem Eingriff die einzige Umkehr.
+
+Dasselbe auf der Kommandozeile:
+
+```
+k1520disktool fsck <abbild> [--full] [--repair[=alle|<kennung>,…]] [--dry-run]
+```
+
+Ohne `--repair` wird nur geprüft. `--repair` führt die empfohlenen Reparaturen
+**ohne** Datenverlust aus, `--repair=alle` auch die übrigen, und
+`--repair=cpm.zeiger.streichen,…` genau die genannten. `--dry-run` sagt nur, was
+geschähe.
 
 ## Archivieren
 
@@ -448,6 +489,7 @@ gut. Dann hilft ein Blick in die Dateiliste: das falsche Profil zeigt Unsinn.
 | Alt+Eingabe | Eigenschaften |
 | Strg+R | Schreibschutz |
 | Strg+E | Diskeditor |
+| Strg+F | Dateisystem prüfen und reparieren |
 | F5 | Aktualisieren |
 | F8 | Protokoll |
 | F1 | Dieses Handbuch |
