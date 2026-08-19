@@ -30,19 +30,61 @@ Kürze. Die Begründungen dahinter stehen in den genannten Abschnitten.
 | Oberfläche | Statuszeile · Meldungsstreifen (mit Rangfolge) · Protokoll · Diskettenangaben inkl. Schaltfläche *Vollprüfung* · **Reparaturdialog** `ui/fsck_dialog.py` (Aktion `act_reparieren`, Strg+F) mit Sprung in den Diskeditor (`DiskEditorWindow.zeige_ort`) |
 | Tests | `tests/unit/filesystem/test_fs_check.cpp` (45, davon 12 `FsCheckReparatur.*`) · `cli_dt_check_*` (5) · `cli_dt_fsck_*` (4) · `py_disk_c_api` · `py_disktool_gui` (11 Prüf-/Reparaturfälle) |
 
-**Fehlt noch** — in dieser Reihenfolge (§19):
+**Fehlt noch.** Etappen 1–4 sind abgeschlossen; offen sind 5, 6 und 7 (§19). Jede
+ist für sich abschließbar — hier steht, wo man jeweils den Fuß hineinsetzt.
 
-3. ~~Reparatur~~ und ~~Sprung in den Diskeditor~~ — **fertig** (2026-08-19).
-4. **Ebene Medium für UDOS breiter** — heute je Datei zusammengefasst; ein Reihenlauf
-   über freie Bereiche fehlt.
-5. **Wiederherstellung CP/M** (§13): gelöschte Verzeichnisplätze + freie Blöcke mit
-   Inhalt (`cpm.medium.frei_beschrieben` ist dafür reserviert und noch nicht vergeben).
-6. **Wiederherstellung UDOS/NDOS** (§13): Kopfsektorsuche über die Signatur,
-   Kettenverfolgung, Beiblatt.
-7. **Ebene 0** (§11): die `why`-Texte der Positivproben einsammeln, statt sie in
-   `disk_volume.cpp` mit `continue` wegzuwerfen.
+**Etappe 5 — Wiederherstellung CP/M** (§13, das gesuchte Verfahren steht dort
+vollständig).  Der einfachste und häufigste Rettungsfall: Löschen setzt bei CP/M nur
+das Nutzerbyte auf `0xE5`, Name, `RC` und **alle Blockzeiger** bleiben stehen.
 
-**Drei Dinge, die beim Umsetzen anders kamen als hier ursprünglich entworfen** — sie
+* Vorhanden: **`CpmFileSystem::directoryRaw(std::vector<uint8_t>&)`** (`cpm_fs.h`)
+  liefert die 32-Byte-Plätze unzerlegt — genau das, was ein gelöschter Platz braucht,
+  denn zerlegt ist er nicht mehr zu beurteilen. Dazu `allocationMap()`, `totalBlocks()`,
+  `directoryBlocks()` und `SectorSpace::readSector()` mit beiden CRC-Bits.
+* Neu: `check/fs_recover.{h,cpp}` (Modell + Rahmen), `check/cpm_recover.cpp`
+  (Kandidatensuche §13.1, Güte §13.2), C-ABI `k1520d_recover_*`, `recover` in der CLI,
+  `app/disktool/ui/recover_dialog.py`.
+* Der Befund **`cpm.medium.frei_beschrieben`** (§8-Tabelle) ist für die freien Blöcke
+  mit Inhalt reserviert und wird bis heute **nicht vergeben** — er gehört hierher, nicht
+  in die Prüfung: er ist kein Schaden, sondern ein Fund.
+* **Retten geht vor Reparieren** (E7): Vorgabe ist *in den Linux-Ordner holen*, und das
+  muss auch an einer schreibgeschützten Diskette vollständig bedienbar sein.
+
+**Etappe 6 — Wiederherstellung UDOS/NDOS** (§13.1, Signatur des Kopfsektors).  Setzt
+Etappe 5 (Modell und Dialog) voraus.  Als einziger Lesezugang fehlt noch
+**`UdosFileSystem::readSectorRaw()`** — Nutzdaten **und** Nachspann eines beliebigen
+Sektors; die Kopfsektorsuche braucht beides, `recordChain()`/`readHeader()` gehen
+dagegen schon vom Verzeichnis aus.
+
+**Etappe 7 — Ebene 0, „warum wurde nichts erkannt?"** (§11).  Die kleinste der drei
+und die mit dem besten Verhältnis von Aufwand zu Nutzen: **die Begründungen liegen
+bereits vor und werden nur weggeworfen.**  Konkret in `core/filesystem/disk_volume.cpp`
+in der Erkennungsschleife (Stand 2026-08-19 um Z. 774–789):
+
+```cpp
+std::string warum;
+if (!UdosFileSystem::looksLikeUdos(probe, *p, 0, &warum)) continue;   // warum verfällt
+if (!Udos1715FileSystem::looksLikeUdos1715(probe, *p, &warum)) continue;
+if (!cpmVerzeichnisPlausibel(dv->disk_->medium(), *f, *p)) continue;  // ohne &warum!
+```
+
+Alle drei Proben können den Grund schon ausgeben (`cpmVerzeichnisPlausibel` hat den
+Parameter als vierten, voreingestellt `nullptr`) — es fehlt allein das Einsammeln nach
+`(Profilname, Grund)` und die Ausgabe als Befundliste bei `hasFileSystem() == false`.
+Der Rückfallzweig darunter (Z. ≈ 809) sammelt bereits einen Grund ein (`abgelehnt`),
+aber nur den **ersten**; das ist das Muster, nur eben vollständig.  Reparaturen gibt
+es auf dieser Ebene nicht.
+
+**Kleiner Rest, keine eigene Etappe:**
+
+* **Ebene Medium für UDOS breiter** — heute je Datei zusammengefasst; ein Reihenlauf
+  über die freien Bereiche fehlt.
+* **Vollprüfung an einer PHYSISCHEN Diskette** braucht einen Arbeitsfaden mit
+  Fortschritt (ein bis zwei Minuten, 0,5–0,8 s je Spur).  Bis dahin ist der Knopf in
+  **beiden** Dialogen gesperrt und sagt warum (`disk_info_dialog.py`,
+  `fsck_dialog.py`) — ein Fenster, das zwei Minuten steht, sieht aus wie ein Absturz.
+
+**Fünf Dinge, die beim Umsetzen anders kamen als hier ursprünglich entworfen** — sie
 sind an Ort und Stelle korrigiert, aber leicht zu übersehen:
 
 * Die **UDOS-Systemspuren 0–2 und die Bootspur werden nicht geprüft** (§9.1) — sie
@@ -50,6 +92,13 @@ sind an Ort und Stelle korrigiert, aber leicht zu übersehen:
 * Der **Rückwärtszeiger des ersten Satzes nennt den Kopfsektor**, nicht `FFFF` (§9.2).
 * Der Schnitt zwischen Schnell- und Vollprüfung geht durch **Bytes, nicht Spuren**
   (§6), und die **Spurzähler** bedeuten „gewollt" und „davon verfügbar" (§5).
+* Ein CP/M-Blockzeiger wird **nie mitten aus der Liste gestrichen, sondern ab dort
+  abgeschnitten** (§12.1a).  Ein Loch verschöbe jeden folgenden Satz des Extents — die
+  Datei lieferte danach *falsche* Daten statt weniger.
+* „Möglich" und „ausgewählt" sind **zwei Zahlen**.  Die CLI nannte nur die zweite und
+  meldete damit „0 Reparatur(en) waeren moeglich" über einer Zeile, die eine anbot
+  (die einzige trug `Datenverlust`, und den nimmt `--repair` ohne `=alle` nicht).
+  In `--json` heißen sie `repairable` und `selected`.
 
 ---
 
@@ -572,6 +621,22 @@ Der Neuaufbau des Plans nach dem Kürzen einer Kette gibt die abgeschnittenen Se
 frei; in der umgekehrten Reihenfolge bliebe genau dieser Platz verloren. Innerhalb
 einer Stufe wird nach Ort sortiert (Spur, Sektor) — reproduzierbare Reihenfolge, damit
 zwei Läufe dasselbe Ergebnis haben.
+
+### 12.1a Kein Loch hinterlassen (CP/M)
+
+Ein Blockzeiger, der gestrichen werden muss (`cpm.zeiger.streichen` bei einem Zeiger
+hinter dem Datenbereich oder ins Verzeichnis hinein, `cpm.kreuz.erstem_lassen` bei
+Kreuzbelegung), wird **nicht** an Ort und Stelle genullt.  Bei CP/M liegt Satz *k*
+eines Extents in Zeiger *k / (Blockgröße/128)* — eine Null mitten in der Liste
+verschiebt damit jeden folgenden Satz an eine Stelle, an der er nie stand.  Der Extent
+lieferte danach falsche Daten aus, ohne dass es jemandem auffiele, und die Prüfung
+meldete prompt `cpm.block.luecke`.
+
+Deshalb: ab dem ersten Nullzeiger wird **abgeschnitten** und `RC` auf die verbliebenen
+Blöcke nachgezogen.  Was davor steht, gehört der Datei wirklich; was dahinter stand,
+war ohnehin nur über den gestrichenen Zeiger erreichbar.  Bei einem unversehrten
+Eintrag greift die Regel nicht — dort stehen hinter der ersten Null nur weitere Nullen.
+Wächter: `FsCheckReparatur.CpmWilderBlockzeigerWirdGestrichen`, `cli_dt_fsck_wilder_zeiger`.
 
 ### 12.2 Transaktion
 

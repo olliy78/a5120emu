@@ -23,6 +23,8 @@ k1520disktool boot-get <abbild> <datei.bin>            Systemspuren herausschrei
 k1520disktool boot-put <abbild> <datei.bin>            Bootabbild einspielen
 k1520disktool info   <abbild>                          Belegung und Erkennung
 k1520disktool check  <abbild> [--full]                 Dateisystem prüfen
+k1520disktool fsck   <abbild> [--full] [--repair[=…]]  prüfen UND reparieren
+       [--dry-run]                                     … nur sagen, was geschähe
 k1520disktool formats                                  bekannte Dateisysteme
 ```
 
@@ -45,7 +47,7 @@ $ k1520disktool ls udos.hfe 2>/dev/null | wc -l
 
 Mit `-l` kommt die Tabelle mit Typ, Größe, Eigenschaften und Datum — für Menschen.
 
-**`--json`** liefert `ls`, `info`, `check` und `formats` maschinenlesbar:
+**`--json`** liefert `ls`, `info`, `check`, `fsck` und `formats` maschinenlesbar:
 
 ```sh
 $ k1520disktool info udos.hfe --json | jq '.volumes[].free'
@@ -123,8 +125,56 @@ sind, ist Sitte des jeweiligen Formatierers und keine Eigenschaft des Dateisyste
 an echten Disketten reicht das von „nur drei Sektoren" bis „völlig frei".
 
 > **Was `check` NICHT tut: etwas ändern.**  Die Prüfung ist durchgehend lesend.
-> Reparieren und gelöschte Dateien wiederherstellen sind eigene, ausdrückliche
-> Schritte — Entwurf und Stand: `doc/design/15_dateisystempruefung.md`.
+> Reparieren ist ein eigener, ausdrücklicher Schritt (`fsck --repair`, s. u.);
+> gelöschte Dateien wiederherstellen kommt später — Entwurf und Stand:
+> `doc/design/15_dateisystempruefung.md`.
+
+## Dateisystem reparieren (`fsck`)
+
+`fsck` prüft wie `check` und zeigt zu jedem Befund, was sich daran tun lässt.  **Ohne
+`--repair` ändert es nichts** — es ist dann `check` mit einer anderen Ausgabe:
+
+```sh
+$ k1520disktool fsck disk.img --fs cpa780
+disk.img  cpa780 / cpa780  Schnellpruefung
+
+Fehler  Verwaltung   Platz 1   cpm.block.ausserhalb   CPABCGEN.COM: Blockzeiger 4080
+        liegt hinter dem Datenbereich (390 Bloecke) — meist das falsche Profil
+   -> cpm.zeiger.streichen  Platz 1 ab dem ersten unbrauchbaren Blockzeiger
+      abschneiden und die Satzzahl nachziehen  [Datenverlust]
+
+1 Fehler — 1 Reparatur(en) moeglich, alle mit Datenverlust
+          (`--repair=alle` fuehrt sie aus)
+```
+
+Die Fußzeile nennt **zwei** Zahlen, und sie bedeuten Verschiedenes: wie viele
+Reparaturen es überhaupt gibt und wie viele die jetzige Wahl davon anfasst.  Denn:
+
+| Aufruf | Was ausgeführt wird |
+|---|---|
+| `--repair` | die **empfohlenen ohne Datenverlust** — die sichere Vorgabe |
+| `--repair=alle` | zusätzlich die, die etwas verwerfen (Kette kürzen, Zeiger streichen) |
+| `--repair=<kennung>,…` | genau die genannten, z. B. `--repair=udos.karte.zaehler` |
+| `--dry-run` | gar nichts; es sagt nur, was geschähe |
+
+Ausgeführt wird alles Gewählte in **einem** Zug und in fester Reihenfolge (Verzeichnis
+→ Ketten → Belegungsplan → Zähler); schlägt etwas fehl, bleibt die Diskette
+unverändert.  Danach wird sofort neu geprüft, und die Bilanz steht am Ende:
+
+```sh
+$ k1520disktool fsck disk.img --fs cpa780 --repair=alle
+…
+1 Reparatur(en) ausgefuehrt.
+
+vorher 1 Befunde (0 Gefahr) -> nachher 0 Befunde (0 Gefahr)
+```
+
+Der Exit-Code ist `0`, wenn die Diskette **danach** ohne Befund ist, sonst `1`.
+Manche Vorschläge sind **gesperrt** (`GESPERRT` in der Zeile) — einen Belegungsplan
+baut das Werkzeug nur neu auf, wenn alle Ketten vollständig gelesen und fehlerfrei
+sind; aus halbem Wissen entstünde sonst ein Plan, der die ungelesene Hälfte für frei
+erklärt.  Die Sicherung `<name>~` legt das Werkzeug beim ersten Schreiben von allein
+an (`--no-backup` schaltet sie ab).
 
 ## Bootfähige Diskette anlegen
 

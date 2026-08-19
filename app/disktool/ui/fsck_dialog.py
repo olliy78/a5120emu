@@ -143,6 +143,16 @@ class FsckDialog(QDialog):
         self.b_voll.setToolTip(
             "Jede Spur ansehen: Ketten, Kreuzbelegungen, Belegungsplan und Prüfsummen.")
         self.b_voll.clicked.connect(self._vollpruefung)
+        # An einer PHYSISCHEN Diskette zöge die Vollprüfung die ganze Scheibe ein
+        # (0,5–0,8 s je Spur) und liesse das Fenster ein bis zwei Minuten stehen.
+        # Das gehört in einen Arbeitsfaden mit Fortschritt; bis es den gibt, ist der
+        # Knopf gesperrt und sagt warum — dieselbe Regel wie in den Diskettenangaben.
+        if not tool.path:
+            self.b_voll.setEnabled(False)
+            self.b_voll.setToolTip(
+                "An einer echten Diskette müsste dafür jede Spur einzeln gelesen "
+                "werden (ein bis zwei Minuten) — das kommt mit einem Arbeitsfaden "
+                "mit Fortschrittsanzeige.")
         self.b_reparieren = self.knoepfe.addButton("&Ausgewählte reparieren",
                                                    QDialogButtonBox.ApplyRole)
         self.b_reparieren.clicked.connect(self._reparieren)

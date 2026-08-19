@@ -59,7 +59,7 @@ Testebene = Verzeichnis = ctest-Label. Quer dazu `fast` / `slow`.
 | `unit/` | 750 | Eine Klasse isoliert, keine Diskette, kein Boot. Struktur spiegelt `core/`: `primitives/ bus/ cards/ peripherals/ util/` |
 | `debugtools/` | 89 | Die header-only Bausteine, aus denen `k1520dbg` und `boot_trace` bestehen (`tools/*.h`) |
 | `integration/` | 72 | Ganze Maschine, echter Kaltboot von einer Fixture-Diskette |
-| `cli/` | 59 | Die gebauten Werkzeuge als Prozess. Fälle als Daten in `cli/cases/*.cli`, ausgeführt von `cli/run_case.py` |
+| `cli/` | 70 | Die gebauten Werkzeuge als Prozess. Fälle als Daten in `cli/cases/*.cli`, ausgeführt von `cli/run_case.py` |
 | `system/` | 106 | Originale DDR-Programme unter dem Emulator: FORMAT, CPABCGEN, SCPX INIT/MODF/SYSP, HARDY, UDOS — plus die 88er Format-Matrix. **Langsam** (Minuten) |
 | `python/` | 12 | pytest: C-ABI (ctypes ↔ `libk1520core.so`), PySide6-GUI headless, Pfadauflösung, Testprotokoll |
 | `support/` | — | Bibliothek `k1520_testsupport`, keine Tests |
@@ -133,6 +133,22 @@ Erwartungen sind normale Zeichenketten (`expect:`), Regex nur wo nötig
 (`expect_re:`); dazu `forbid:`, `exit:`, `setup_run:` für einen Vorlauf,
 `file <name>:`/`tmpfile <name>:` für Ein-/Ausgabedateien. Vollständige
 Direktivenliste: Kopf von `cli/run_case.py`.
+
+**Schaden injizieren:** `poke: %DISK% <offset-hex> <bytes-hex>` schreibt vor allen
+Läufen Bytes in eine Datei. Nötig für alles, was einen *defekten* Datenträger
+braucht — die Dateisystemprüfung etwa lässt sich sonst gar nicht auf der
+Kommandozeile prüfen, weil jede committete Fixture zu Recht schweigt (ein `fsck`,
+das bei gesunden Disketten meckert, ist wertlos). Ein `.img` **ist** der lineare
+Sektorraum, ein Byte an der richtigen Stelle ist der ganze Schaden:
+
+```
+disk:   cpa_cpa780_k5601_noclock.img
+poke:   %DISK% 3b30 f00f      # Verzeichnisplatz 1, erster Blockzeiger → 0x0FF0
+run:    fsck %DISK% --fs cpa780 --repair=alle
+```
+
+Zwei Fallen dabei: die **Erkennung lehnt** eine Diskette mit unbrauchbarem
+Blockzeiger ab (deshalb das `--fs`), und `.img` braucht die Geometrie mitgegeben.
 
 ## Gemeinsame Infrastruktur (`support/`)
 
