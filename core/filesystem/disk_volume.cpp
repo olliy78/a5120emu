@@ -603,6 +603,11 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
     std::unique_ptr<DiskVolume> dv(new DiskVolume);
     dv->path_      = path;
     dv->read_only_ = read_only;
+    // Die Kataloge werden nur GEZEIGT — sie leben in der Anwendung und ueberdauern
+    // jede Diskette.  Gebraucht werden sie fuer die Gegenprobe (§11a), die dieselbe
+    // Datei ein zweites Mal mit einem erzwungenen Profil oeffnet.
+    dv->formate_   = &formats;
+    dv->fs_kat_    = &fs_cat;
 
     // Scheitert die ERKENNUNG, ist die Diskette darum nicht wertlos: man will sie im
     // Sektoreditor ansehen, ihr Abbild sichern oder sie zurechtschneiden.  Mit
@@ -977,6 +982,7 @@ const FsCheckReport& DiskVolume::check(FsCheckLevel level, bool nachladen) {
         check_.uebernimm(teil);
     }
     if (!hasFileSystem()) ebene0(check_);
+    else                  gegenprobe(check_, level, nachladen);
     check_.level = level;      // uebernimm() zieht nach oben, hier gilt das Verlangte
     check_.sortieren();
     return check_;
@@ -1002,6 +1008,90 @@ void DiskVolume::ebene0(FsCheckReport& an) const {
     for (const auto& [kandidat, grund] : ablehnungen_)
         b.add("erkennung.abgelehnt", FsSeverity::Info, FsLayer::Erkennung,
               kandidat, grund);
+}
+
+namespace {
+/// @brief Laeuft gerade eine Gegenprobe?  Sonst pruefte die zweite Diskette wieder
+///        gegen, und das ohne Ende.
+thread_local bool g_gegenprobe_laeuft = false;
+
+struct GegenprobeSperre {
+    GegenprobeSperre()  { g_gegenprobe_laeuft = true;  }
+    ~GegenprobeSperre() { g_gegenprobe_laeuft = false; }
+};
+}  // namespace
+
+void DiskVolume::gegenprobe(FsCheckReport& an, FsCheckLevel level, bool nachladen) const {
+    // §11a.  Der Fall, um den es geht: **richtige Geometrie, falsches Profil**.  Die
+    // Diskette mountet, die Dateiliste sieht plausibel aus — aber Verzeichnisbereich
+    // oder Blockgroesse stimmen nicht, und die Pruefung meldet eine Handvoll
+    // unverstaendlicher Befunde auf einer voellig gesunden Diskette.  Zwei Profile,
+    // die sich nur in `dir_entries` unterscheiden, reichen dafuer schon: mit dem
+    // groesseren Wert wird der erste DATENblock als Verzeichnis gelesen.
+    if (detection_.unambiguous || detection_.alternatives.empty()) return;
+    if (g_gegenprobe_laeuft) return;
+    // Ohne Pfad gibt es kein zweites Oeffnen — an einer physischen Diskette hiesse
+    // das ohnehin, sie ein zweites Mal einzulesen.
+    if (path_.empty() || !formate_ || !fs_kat_) return;
+
+    const int    eigen          = an.zaehlerAb(FsSeverity::Warnung);
+    const size_t eigene_dateien = const_cast<DiskVolume*>(this)->list().size();
+    std::string  bester;
+    int          bester_wert    = eigen;
+    size_t       bester_dateien = eigene_dateien;
+
+    for (const std::string& name : detection_.alternatives) {
+        std::unique_ptr<DiskVolume> probe;
+        {
+            GegenprobeSperre sperre;
+            std::string warum;
+            probe = DiskVolume::open(path_, name, *formate_, *fs_kat_, warum,
+                                     /*read_only=*/true, /*roh_erlaubt=*/false);
+        }
+        if (!probe || !probe->hasFileSystem()) continue;
+        const int    wert    = probe->check(level, nachladen)
+                                    .zaehlerAb(FsSeverity::Warnung);
+        const size_t dateien = probe->list().size();
+        // Zwei Arten, besser zu sein — und beide muessen zaehlen:
+        //
+        //   * WENIGER Befunde.  Der Fall „falsche Blockgroesse": die Diskette ist
+        //     gesund, das Profil nicht, und die Pruefung meldet wilde Blockzeiger.
+        //   * MEHR Dateien bei nicht schlechteren Befunden.  Der heimtueckischere
+        //     Fall: ein zu KLEINER Verzeichnisbereich.  Die Probe der Erkennung
+        //     sieht nur die ersten Plaetze, findet sie tadellos — und die Haelfte
+        //     der Dateien bleibt unsichtbar, ohne dass irgendetwas auffaellt.  An
+        //     der Zahl der Befunde ist das NICHT zu erkennen.
+        //
+        // Gleichstand in beidem sagt nichts; dann sind beide Profile brauchbar, und
+        // eine Meldung waere blosses Rauschen (E10).
+        const bool sauberer = wert < bester_wert;
+        const bool mehr     = wert <= bester_wert && dateien > bester_dateien;
+        if (!sauberer && !mehr) continue;
+        bester         = name;
+        bester_wert    = wert;
+        bester_dateien = dateien;
+    }
+    if (bester.empty()) return;
+
+    FsFindings b(an);
+    std::string text = "Mit dem Dateisystem '" + bester + "' kommt diese Diskette"
+                       " besser durch: ";
+    if (bester_wert != eigen)
+        text += std::to_string(bester_wert) + " statt " + std::to_string(eigen)
+              + " Befund(e)";
+    if (bester_dateien != eigene_dateien) {
+        if (bester_wert != eigen) text += ", und ";
+        text += std::to_string(bester_dateien) + " statt "
+              + std::to_string(eigene_dateien) + " sichtbare Dateien";
+    }
+    text += ". Moeglicherweise ist '" + detection_.filesystem + "' die falsche Wahl —"
+            " nachsehen laesst sich das mit `--fs " + bester + "`.";
+    // Info, nicht Warnung: die Diskette ist womoeglich voellig in Ordnung, und die
+    // Gegenprobe AENDERT DIE WAHL NICHT.  Sie sagt sie nur an — bei sehr aehnlichen
+    // Profilen ist „welches prueft sauberer" kein stabiles Kriterium, und eine
+    // Automatik daraus liesse den Anwender bei jedem Oeffnen ein anderes
+    // Dateisystem sehen.
+    b.add("erkennung.alternative", FsSeverity::Info, FsLayer::Erkennung, bester, text);
 }
 
 // ─── Reparatur (doc/design/15_dateisystempruefung.md §12) ────────────────────

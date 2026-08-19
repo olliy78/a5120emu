@@ -442,6 +442,16 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 >   (`app/disktool/ui/fsck_dialog.py`, Strg+F). Und ein CP/M-Blockzeiger wird nie
 >   mitten aus der Liste gestrichen, sondern **ab dort abgeschnitten**: ein Loch
 >   verschöbe jeden folgenden Satz, der Extent lieferte danach falsche Daten aus.
+> - **Die Gegenprobe der Alternativprofile** (§11a): bei mehrdeutiger Erkennung öffnet
+>   `DiskVolume::gegenprobe` dieselbe Datei mit jedem Alternativprofil und meldet
+>   `erkennung.alternative` (Info), wenn eines **weniger Befunde ODER mehr sichtbare
+>   Dateien** liefert — beides zählt, denn ein zu KLEINER Verzeichnisbereich versteckt
+>   Dateien, ohne einen einzigen Befund zu erzeugen (ein zu großer fliegt dagegen schon
+>   bei `cpmVerzeichnisPlausibel` raus). **Sie ändert die Wahl nie**, sonst sähe der
+>   Anwender bei jedem Öffnen ein anderes Dateisystem. Prüfbar nur über den
+>   test-eigenen Katalog `tests/fixtures/formats_mehrdeutig.yaml` — `data/formats.yaml`
+>   wird bewusst eindeutig gehalten (`cpa640` wurde genau deshalb entfernt), Wächter
+>   `FsCheckGegenprobe.DerAusgelieferteKatalogIstEindeutig`.
 > - **„Nichts erkannt" ist selbst ein Befund** (Ebene 0, §11): die Ablehnungsgründe
 >   der Erkennung werden eingesammelt (`DiskVolume::merkeAblehnung`) statt im
 >   `continue` verworfen und bei `hasFileSystem() == false` als `erkennung.abgelehnt`

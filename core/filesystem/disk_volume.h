@@ -697,6 +697,17 @@ private:
     /// @brief Der eine Satz, mit dem @c oeffnenMit roh geoeffnet hat (Ebene 0).
     std::string        roh_grund_;
 
+    /// @name Die Kataloge, mit denen geoeffnet wurde — fuer die Gegenprobe (§11a)
+    ///
+    /// Sie werden nur GEZEIGT, nicht besessen: beide leben in der Anwendung und
+    /// ueberdauern jede Diskette.  Gebraucht werden sie an genau einer Stelle — die
+    /// Gegenprobe oeffnet dieselbe Datei ein zweites Mal mit einem erzwungenen
+    /// Profil, und dafuer braucht sie dieselben Kataloge wie beim ersten Mal.
+    /// @{
+    const FormatCatalog* formate_ = nullptr;
+    const FsCatalog*     fs_kat_  = nullptr;
+    /// @}
+
     /// @brief Einen Ablehnungsgrund der Erkennung merken (Ebene 0, §11).
     /// @param kandidat  Name des geprueften Dateisystemprofils
     /// @param format    Geometrie, auf der geprueft wurde
@@ -707,6 +718,21 @@ private:
     /// @brief Die Befunde der Ebene 0 an einen Bericht anhaengen (§11).
     ///        Laeuft nur bei @ref hasFileSystem @c false und kostet keinen Spurzugriff.
     void ebene0(FsCheckReport& an) const;
+
+    /**
+     * @brief Die Gegenprobe der Alternativprofile (§11a).
+     *
+     * Laeuft nur bei mehrdeutiger Erkennung — und die ist im ausgelieferten Katalog
+     * absichtlich der Ausnahmefall, weshalb sie praktisch nichts kostet.  Sie oeffnet
+     * dieselbe Datei ein zweites Mal mit jedem Alternativprofil und vergleicht, wie
+     * viele Befunde dabei herauskommen.
+     *
+     * **Sie aendert die Wahl NIE**, sie sagt sie nur an.  Bei sehr aehnlichen
+     * Profilen ist „welches prueft sauberer" kein stabiles Kriterium — eine Automatik
+     * daraus koennte zwischen zwei Profilen hin und her springen, und der Anwender
+     * saehe bei jedem Oeffnen ein anderes Dateisystem.
+     */
+    void gegenprobe(FsCheckReport& an, FsCheckLevel level, bool nachladen) const;
     /// @brief Teil des Befunds, der NICHT aus der Spurmessung stammt (CP/A-Regel,
     ///        Hinweise zum Container) — @ref refreshDetection laesst ihn stehen.
     std::string        befund_zusatz_;

@@ -4,8 +4,7 @@
 > NDOS-Prüfung, Automatik beim Öffnen, `check --full`, Anzeige; Reparatur in Kern,
 > C-ABI, CLI und Oberfläche samt Sprung in den Diskeditor; **Ebene 0** — warum wurde
 > nichts erkannt; **Rettung gelöschter Dateien** für CP/M, ZDOS und NDOS in Kern,
-> C-ABI, CLI und Oberfläche).  Offen ist nur noch die Gegenprobe der Alternativprofile
-> aus Etappe 7 — s. §19 und §20
+> C-ABI, CLI und Oberfläche; **Gegenprobe der Alternativprofile**, §11a) — s. §19
 > **Gehört zu:** `doc/design/13_k1520disktool.md` (das Werkzeug), `doc/udos_diskettenformat.md`,
 > `doc/udos1715_diskettenformat.md`, `doc/design/14_physische_diskette.md`,
 > `doc/design/09_floppy_drive.md`
@@ -34,8 +33,8 @@ Kürze. Die Begründungen dahinter stehen in den genannten Abschnitten.
 | Rettung | `core/filesystem/check/fs_recover.{h,cpp}` (Modell + die geteilten Helfer `fsRecoverEinordnung`/`fsRecoverFuellmuster`/`fsRecoverBelege`) · `check/cpm_recover.cpp` (Suche, Lesen, Wiedereintragen) · `check/udos_recover.cpp` und `check/udos1715_recover.cpp` (Signatursuche, Kettenverfolgung, Rohbereiche — **nur lesend**, §13.3b) · `FileSystem::recoverScan/recoverRead/recoverRestore/recoverEntry` · `DiskVolume::recoverScan/recoverRead/recoverExtract/recoverRestore` (bei der UDOS-Familie schreibt `recoverExtract` das Beiblatt `udos-dateiangaben.txt`) · `k1520d_recover_*` (inkl. `_part_count`/`_part` — die Sektorliste eines Fundes, §13.3a) · `recover` in der CLI · `ui/recover_dialog.py` (*Diskette ▸ Gelöschte Dateien suchen…*) mit Sektorauswahl und Sprung in den Diskeditor |
 | Tests | `tests/unit/filesystem/test_fs_check.cpp` (47, davon 12 `FsCheckReparatur.*`) · `test_fs_recover.cpp` (21: 12 CP/M, 8 UDOS, 1 NDOS) · `cli_dt_check_*` (6) · `cli_dt_fsck_*` (4) · `cli_dt_recover_*` (5) · `py_disk_c_api` · `py_disktool_gui` (16 Prüf-/Reparatur-/Ebene-0-/Rettungsfälle) |
 
-**Fehlt noch.** Die Etappen 1–7 sind abgeschlossen; offen ist allein die Gegenprobe der
-Alternativprofile aus Etappe 7 — mit Grund, s. §20.
+**Fehlt noch.** Nichts aus dem Etappenplan — die Etappen 1–7 sind abgeschlossen.  Was
+darüber hinaus offen ist, steht in §20 und ist je einzeln begründet.
 
 **Etappe 5 — Rettung CP/M ist fertig** (2026-08-19).  Sie ist die einzige Familie, bei
 der auch **auf der Diskette** wiederhergestellt wird — dort ist es ein Byte, und der
@@ -689,6 +688,60 @@ Sechs Festlegungen, die dabei entstanden sind:
 
 ---
 
+## 11a. Die Gegenprobe der Alternativprofile   ✅ *(umgesetzt 2026-08-19)*
+
+Ebene 0 beantwortet „warum wurde **nichts** erkannt". Der Fall daneben ist tückischer:
+**richtige Geometrie, falsches Profil.** Die Diskette mountet, die Dateiliste sieht
+plausibel aus — und trotzdem stimmt etwas nicht.
+
+Zwei Ausprägungen, und sie brauchen verschiedene Nasen:
+
+| Was falsch ist | Was man sieht |
+|---|---|
+| Blockgröße, Datenanfang | Die Prüfung meldet eine Handvoll unverständlicher Befunde („wilder Blockzeiger") auf einer völlig gesunden Diskette |
+| **Verzeichnisbereich zu klein** | **Gar nichts** — die Prüfung schweigt, und ein Teil der Dateien ist unsichtbar |
+
+Die zweite ist die gefährliche. Ein zu *großer* `dir_entries` fängt die Erkennung
+schon selbst: `cpmVerzeichnisPlausibel` liest **alle** Plätze, die überzähligen liegen
+in Dateidaten, dort steht fast sicher ein Nutzerbereich > 15 → das Profil wird
+abgelehnt. Ein zu *kleiner* kommt durch: die Probe sieht nur die erste Hälfte des
+Verzeichnisses und findet sie tadellos.
+
+**Deshalb zählt die Gegenprobe zwei Dinge, nicht eines.** Bei `unambiguous == false`
+öffnet `DiskVolume::gegenprobe` dieselbe Datei ein zweites Mal mit jedem
+Alternativprofil und vergleicht:
+
+* **weniger Befunde** ⇒ das andere Profil ist sauberer, oder
+* **mehr sichtbare Dateien bei nicht schlechteren Befunden** ⇒ das gewählte versteckt
+  etwas.
+
+Gleichstand in beidem sagt nichts — dann sind beide Profile brauchbar, und eine
+Meldung wäre bloßes Rauschen (E10). Der Befund heißt `erkennung.alternative`, liegt
+auf der Ebene `FsLayer::Erkennung` und trägt die Schwere **Info**: die Diskette ist ja
+womöglich völlig in Ordnung.
+
+> **Sie ändert die Wahl NIE, sie sagt sie nur an.** Bei sehr ähnlichen Profilen ist
+> „welches prüft sauberer" kein stabiles Kriterium — eine Automatik daraus könnte
+> zwischen zwei Profilen hin und her springen, und der Anwender sähe bei jedem Öffnen
+> ein anderes Dateisystem. Der Ausweg steht im Befundtext: `--fs <name>`.
+
+**Kosten: praktisch keine.** Sie läuft nur bei mehrdeutiger Erkennung, und
+`data/formats.yaml` wird bewusst eindeutig gehalten — keines der 31 Abbilder im Baum
+meldet Alternativen. Gegen Endlosrekursion (das zweite Volume würde wieder
+gegenprüfen) steht ein `thread_local`-Riegel; ohne Pfad (physische Diskette) läuft sie
+gar nicht erst.
+
+**Geprüft wird sie mit einem test-eigenen Katalog**, nicht mit dem ausgelieferten:
+`tests/fixtures/formats_mehrdeutig.yaml` fügt ein Profil hinzu, das sich vom echten
+`scp1700` in genau einer Angabe unterscheidet — 64 statt 128 Verzeichniseinträge — und
+über `detect_rank` gewinnt. Auf `scp1700_640k_a7100_system.hfe` sind damit **43 statt
+46 Dateien** sichtbar, bei identischer Befundzahl. Das ist der Fall, den kein
+Befundzähler findet. Wächter: `FsCheckGegenprobe.*` (drei Fälle, darunter
+`DerAusgelieferteKatalogIstEindeutig` — schlägt an, sobald jemand einen mehrdeutigen
+Eintrag in `data/formats.yaml` aufnimmt).
+
+---
+
 ## 12. Reparatur — Ausführung
 
 ### 12.1 Rangfolge (E6)
@@ -1300,10 +1353,10 @@ Alles bleibt in der schnellen Regression; nichts davon braucht ein Laufwerk oder
 | **4** ✅ | Ebene Medium: CRC-Übersicht mit Rückabbildung auf Dateien, **Sprung in den Diskeditor** | Die Rückabbildung ist mit den Etappen 1+2 mitgekommen („Satz 14 von `STAT.COM` liegt auf einem Sektor mit falscher CRC", bei UDOS je Datei zusammengefasst).  Der **Sprung** kam 2026-08-19 mit dem Reparaturdialog: Doppelklick auf einen Befund → `MainWindow._befund_im_editor` → `DiskEditorWindow.zeige_ort(cyl, head, sector)`. |
 | **5** ✅ | Wiederherstellung CP/M (Verzeichnisplätze + freie Blöcke) mit Dialog und `recover` | **Umgesetzt 2026-08-19.**  Modell `fs_recover.h`, `check/cpm_recover.cpp` (Kandidatensuche, Güte mit Belegen, Lesen mit Auffüllen, Wiedereintragen mit erneuter Vorbedingungsprüfung), C-ABI `k1520d_recover_*`, `recover [--full] [--to] [--list] [--restore N[=NAME]]`, Dialog `ui/recover_dialog.py` (*Diskette ▸ Gelöschte Dateien suchen…*) mit Hexdump-/Textvorschau und den drei Wegen aus §13.3.  Wächter: 11 `FsRecover*`, 3 `cli_dt_recover_*`, 3 GUI-Fälle. |
 | **6** ✅ | Wiederherstellung UDOS/NDOS (Kopfsektorsuche, Kettenverfolgung, Beiblatt) | **Umgesetzt 2026-08-19, und zwar rein lesend.**  `check/udos_recover.cpp` und `check/udos1715_recover.cpp`: Signatursuche über Kopfsektor bzw. Descriptor, Kettenverfolgung über Kontrollblock bzw. Zeigersektoren, Rohbereiche, Namensrest als *Vorschlag*, Beiblatt `udos-dateiangaben.txt` aus dem überlebenden Kopfsektor.  **Kein Zurückschreiben auf die Diskette** (§13.3b) — der Weg zurück heißt retten, benennen, `put`.  Nachgewiesen an `udos_boot_scp.hfe` (`NOTE.TO.SD`, 2048 B) und `udos1715_640k_pc1715_system.img` (`ZLINK`, 25 088 B, sechs Segmente): beide bytegleich zurück, beide wieder einspielbar.  Wächter: 8 `FsRecoverUdos*`/`FsRecoverNdos*`, 2 `cli_dt_recover_udos*`. |
-| **7** ◐ | Ebene 0 (Ablehnungsgründe der Erkennung) und die Gegenprobe der Alternativprofile | **Ebene 0 umgesetzt 2026-08-19.**  Aus „nichts erkannt" ist eine Diagnose geworden: `erkennung.abgelehnt` je Kandidat, eigene Ebene `FsLayer::Erkennung`, roh öffnendes `check`/`fsck`, Protokoll und Prüfdialog der Oberfläche.  Die **Gegenprobe** bleibt offen (§20). |
+| **7** ✅ | Ebene 0 (Ablehnungsgründe der Erkennung) und die Gegenprobe der Alternativprofile | **Ebene 0 umgesetzt 2026-08-19.**  Aus „nichts erkannt" ist eine Diagnose geworden: `erkennung.abgelehnt` je Kandidat, eigene Ebene `FsLayer::Erkennung`, roh öffnendes `check`/`fsck`, Protokoll und Prüfdialog der Oberfläche.  Die **Gegenprobe** kam 2026-08-19 nach (§11a): `DiskVolume::gegenprobe` öffnet bei mehrdeutiger Erkennung dieselbe Datei mit jedem Alternativprofil und meldet `erkennung.alternative`, wenn eines weniger Befunde ODER mehr sichtbare Dateien liefert — sie ändert die Wahl nie.  Prüfbar gemacht durch den test-eigenen Katalog `tests/fixtures/formats_mehrdeutig.yaml`, weil `data/formats.yaml` absichtlich eindeutig ist. |
 
 Die Etappen 1–3 sind der Kern; 4–7 sind je für sich abschließbar und je für sich
-nützlich.  Offen ist allein noch die Gegenprobe der Alternativprofile aus Etappe 7.  `✅` = fertig, `◐` = zum Teil (s. Bemerkung).
+nützlich.  `✅` = fertig.
 
 ---
 
@@ -1315,16 +1368,6 @@ nützlich.  Offen ist allein noch die Gegenprobe der Alternativprofile aus Etapp
   Spur 22 Sektor 1, die Kette ließe sich aus den Kontrollblöcken verfolgen), verlangt
   aber einen Reparaturweg **ohne** gemountetes Dateisystem. Zurückgestellt; der
   Diskeditor ist heute die Handhabe.
-* **Die Gegenprobe der Alternativprofile** (bei `unambiguous == false` jedes
-  Kandidatenprofil kurz prüfen und melden, wenn ein anderes sauberer prüft) ist billig
-  und nützlich, aber sie kann bei sehr ähnlichen Profilen zu einem Hin und Her führen;
-  sie dürfte deshalb **nie die Wahl ändern**, sondern sie nur ansagen.
-  **Zurückgestellt (2026-08-19), und zwar aus einem harten Grund: es gibt heute keinen
-  Fall, an dem sie prüfbar wäre.** `filesystems:` ist absichtlich eindeutig gehalten —
-  `cpa640` wurde 2026-08-11 genau deshalb *entfernt* („er sorgte nur dafür, dass jede
-  16×256-Diskette ‚nicht eindeutig' gemeldet wurde"), und keine Fixture im Baum meldet
-  Alternativen. Eine ungetestete Gegenprobe im Prüfpfad wäre teurer als ihr Nutzen; sie
-  gehört in dieselbe Änderung wie der erste Katalogeintrag, der wieder mehrdeutig ist.
 * **`cpm.block.luecke`** (Nullzeiger vor belegtem Zeiger) ist bei CP/M 2.2 fast immer
   ein Schaden, aber eben nicht sicher. Bleibt `Warnung` ohne Reparatur, bis ein echter
   Fall vorliegt.

@@ -1,0 +1,51 @@
+# Test-EIGENER Katalogzusatz: er erzeugt eine Mehrdeutigkeit, die es im
+# ausgelieferten `data/formats.yaml` absichtlich NICHT gibt.
+#
+# Warum das nötig ist: die Gegenprobe der Alternativprofile (Entwurf §11a) springt
+# nur an, wenn die Erkennung mehr als einen Kandidaten findet — und der
+# Auslieferungskatalog wird bewusst eindeutig gehalten.  `cpa640` wurde 2026-08-11
+# genau deshalb entfernt („Er sorgte nur dafür, dass jede 16×256-Diskette ‚nicht
+# eindeutig' gemeldet wurde").  Ohne diese Datei wäre die Gegenprobe ungetesteter
+# Code im Prüfpfad; sie gehört deshalb NICHT nach `data/`, sondern hierher.
+#
+# Der Fall ist realistisch nachgebaut, nicht erfunden: die beiden echten Profile
+# `cpa780` und `cpa800` unterscheiden sich in genau diesen zwei Angaben — Anfang des
+# Datenbereichs (Zylinder 2 gegen 0) und Zahl der Verzeichniseinträge (128 gegen
+# 192).  Nur trennt sie zusätzlich die GEOMETRIE, deshalb sind sie nie beide
+# Kandidat.  Hier bleibt die Geometrie gleich und nur die Verzeichnislänge weicht ab.
+#
+# Der Wert ist mit Bedacht zu KLEIN gewählt, nicht zu groß.  Ein zu großer fliegt
+# schon bei der Erkennung heraus: `cpmVerzeichnisPlausibel` liest ALLE Plätze, und
+# die überzähligen liegen in Dateidaten — der Nutzerbereich ist dort fast sicher
+# > 15, das Profil wird abgelehnt und ist nie Kandidat.  Die Erkennung fängt diesen
+# Fall also von selbst.
+#
+# Der GEFÄHRLICHE Fall ist der umgekehrte: bei 64 statt 128 Einträgen sieht die
+# Probe nur die erste Hälfte des Verzeichnisses, findet sie tadellos und lässt das
+# Profil durch.  Die Diskette mountet, die Prüfung schweigt — und die Hälfte der
+# Dateien ist unsichtbar, weil ihre Verzeichnisplätze jetzt als Datenblock gelten.
+# Genau davor soll die Gegenprobe warnen; an der Zahl der BEFUNDE wäre das nicht zu
+# erkennen, sondern nur an der Zahl der Dateien.
+
+filesystems:
+
+  - name:        cpa780_dir64
+    description: "TESTPROFIL — cpa780 mit 64 statt 128 Verzeichniseinträgen"
+    format:      cpa780
+    type:        cpm
+    data_start:  { cyl: 2, head: 0 }
+    block_size:  2048
+    # Der einzige Unterschied zum echten `cpa780`.  Kleinerer detect_rank = wird
+    # ZUERST genommen: der Test will, dass die Erkennung das FALSCHE Profil wählt
+    # und die Gegenprobe es merkt.
+    dir_entries: 64
+    detect_rank: -5
+
+  - name:        scp1700_dir64
+    description: "TESTPROFIL — scp1700 mit 64 statt 128 Verzeichniseinträgen"
+    format:      scp1700_640
+    type:        cpm
+    data_start:  { cyl: 2, head: 0 }
+    block_size:  2048
+    dir_entries: 64
+    detect_rank: -5

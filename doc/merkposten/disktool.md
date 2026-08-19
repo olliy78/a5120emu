@@ -442,6 +442,25 @@ Was beim Weiterarbeiten zu wissen ist:
   Verzeichnis nichts Gesuchtes mehr (Entwurf §20).  An einer physischen Diskette
   kostet das **einmal** die ganze Scheibe — danach liegt sie im `DiskMedium`, und
   jeder weitere Lauf ist so schnell wie an einer Datei.
+- **Gegenprobe der Alternativprofile** (2026-08-19, Entwurf §11a).
+  `DiskVolume::gegenprobe` öffnet bei `unambiguous == false` dieselbe Datei mit jedem
+  Alternativprofil und meldet `erkennung.alternative` (Info, Ebene `Erkennung`).
+  **Zwei Kriterien, und beide werden gebraucht:** weniger Befunde ODER mehr sichtbare
+  Dateien bei nicht schlechteren Befunden.  Der zweite Fall ist der gefährliche — ein
+  zu KLEINER `dir_entries` versteckt Dateien, ohne einen einzigen Befund zu erzeugen
+  (die Erkennungsprobe sieht ja nur die erste Hälfte des Verzeichnisses und findet sie
+  tadellos).  Ein zu GROSSER fliegt dagegen schon bei `cpmVerzeichnisPlausibel` raus,
+  weil die überzähligen Plätze in Dateidaten liegen.
+  **Sie ändert die Wahl NIE** — bei ähnlichen Profilen ist „welches prüft sauberer"
+  kein stabiles Kriterium, und der Anwender sähe bei jedem Öffnen ein anderes
+  Dateisystem.  Endlosrekursion sperrt ein `thread_local`-Riegel; ohne Pfad (physische
+  Diskette) läuft sie gar nicht.
+  **Prüfbar nur über einen test-eigenen Katalog**: `data/formats.yaml` wird bewusst
+  eindeutig gehalten (`cpa640` wurde 2026-08-11 genau deshalb entfernt), keines der 31
+  Abbilder im Baum meldet Alternativen.  `tests/fixtures/formats_mehrdeutig.yaml` legt
+  ein `scp1700` mit 64 statt 128 Verzeichniseinträgen daneben — auf der A7100-Fixture
+  sind damit 43 statt 46 Dateien sichtbar, bei gleicher Befundzahl.  Wächter
+  `FsCheckGegenprobe.*`, darunter `DerAusgelieferteKatalogIstEindeutig`.
 - **Physische Diskette: erst LADEN, dann Dialog** (2026-08-19).  Prüf- und
   Suchdialog rufen `MainWindow._abbild_vervollstaendigen`; fehlende Spuren kommen
   mit `app/ui/physical_disk.py::mit_fortschritt` herein — derselbe Balken wie bei der

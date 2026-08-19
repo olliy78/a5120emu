@@ -694,6 +694,121 @@ TEST(FsCheckUdosSchaden, EinGeloeschtesKartenbitIstGefahr) {
     fs::remove(d);
 }
 
+// ═══ 3a. Die Gegenprobe der Alternativprofile (§11a) ══════════════════════════
+//
+// Der Fall, um den es geht, ist **richtige Geometrie, falsches Profil**: die
+// Diskette mountet, die Dateiliste sieht plausibel aus — aber der Verzeichnisbereich
+// stimmt nicht.  Die Prüfung meldet dann eine Handvoll unverständlicher Befunde auf
+// einer völlig gesunden Diskette, und der Anwender sucht einen Schaden, den es nicht
+// gibt.
+//
+// Getestet werden kann das nur mit einem EIGENEN Katalog: `data/formats.yaml` wird
+// bewusst eindeutig gehalten (`cpa640` wurde 2026-08-11 genau deshalb entfernt), und
+// keines der 31 Abbilder im Baum meldet Alternativen.  Der Zusatzkatalog
+// `tests/fixtures/formats_mehrdeutig.yaml` stellt die Mehrdeutigkeit her, ohne den
+// ausgelieferten anzufassen.
+
+namespace {
+
+/// @brief Der Dateisystemkatalog PLUS dem absichtlich mehrdeutigen Testprofil.
+const FsCatalog& dateisysteme_mehrdeutig() {
+    static FsCatalog c = [] {
+        std::string f;
+        FsCatalog k = FsCatalog::load(
+            {K1520_FORMATS_DEFAULT, (fs::path(FIXTURE_DIR) / ".." /
+                                     "formats_mehrdeutig.yaml").string()},
+            formate(), &f);
+        EXPECT_TRUE(f.empty()) << f;
+        return k;
+    }();
+    return c;
+}
+
+}  // namespace
+
+/// @test Ein zu KLEINER Verzeichnisbereich versteckt Dateien, ohne dass etwas
+///       auffällt — genau davor warnt die Gegenprobe.
+///
+/// Der Fall in Zahlen: das Testprofil `scp1700_dir64` unterscheidet sich vom echten
+/// `scp1700` in einer einzigen Angabe — 64 statt 128 Verzeichniseinträge.  Beide
+/// mounten, beide melden dieselben zwei (echten) Systemspurbefunde.  Sichtbar sind
+/// aber **43 statt 46 Dateien**: drei Verzeichnisplätze liegen jetzt in einem
+/// Bereich, den das Profil für Daten hält.
+///
+/// An der Zahl der BEFUNDE ist das nicht zu erkennen — deshalb zählt die Gegenprobe
+/// beides, Befunde und sichtbare Dateien.  Ein zu GROSSER Wert wäre harmlos: den
+/// fängt schon `cpmVerzeichnisPlausibel`, weil die überzähligen Plätze in Dateidaten
+/// liegen und dort fast sicher ein Nutzerbereich > 15 steht.
+TEST(FsCheckGegenprobe, EinZuKleinesVerzeichnisVerstecktDateien) {
+    std::string err;
+    auto v = DiskVolume::open(fixture("scp1700_640k_a7100_system.hfe"), "", formate(),
+                              dateisysteme_mehrdeutig(), err, /*read_only=*/true);
+    ASSERT_TRUE(v) << err;
+
+    // Vorbedingung: die Erkennung ist mehrdeutig, und gewählt ist das FALSCHE Profil
+    // (es hat den kleineren `detect_rank`).
+    ASSERT_FALSE(v->detection().unambiguous)
+        << "ohne Mehrdeutigkeit prüft dieser Fall gar nichts";
+    ASSERT_EQ("scp1700_dir64", v->detection().filesystem);
+    ASSERT_EQ(43u, v->list().size()) << "drei Dateien sind unsichtbar";
+
+    const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
+    const std::vector<FsFinding> g = mitId(r, "erkennung.alternative");
+    ASSERT_EQ(1u, g.size()) << kennungen(r);
+    EXPECT_EQ(FsSeverity::Info, g[0].severity)
+        << "die Diskette ist völlig in Ordnung — das ist keine Warnung";
+    EXPECT_EQ(FsLayer::Erkennung, g[0].layer);
+    EXPECT_EQ("scp1700", g[0].object) << g[0].text;
+    EXPECT_NE(std::string::npos, g[0].text.find("46 statt 43")) << g[0].text;
+    EXPECT_NE(std::string::npos, g[0].text.find("--fs scp1700")) << g[0].text;
+
+    // Und die Kernzusage: die WAHL bleibt, wie sie war.  Eine Automatik daraus könnte
+    // bei ähnlichen Profilen hin und her springen — der Anwender sähe bei jedem
+    // Öffnen ein anderes Dateisystem.
+    EXPECT_EQ("scp1700_dir64", v->detection().filesystem);
+}
+
+/// @test Das richtige Profil bekommt KEINE Gegenprobenmeldung.
+///
+/// Die Gegenrichtung, und sie ist die wichtigere: die Meldung darf nur kommen, wenn
+/// das andere Profil ECHT besser ist.  Bei Gleichstand sind beide brauchbar, und
+/// eine Meldung wäre bloßes Rauschen (E10).
+TEST(FsCheckGegenprobe, DasRichtigeProfilBekommtKeineMeldung) {
+    std::string err;
+    auto v = DiskVolume::open(fixture("scp1700_640k_a7100_system.hfe"), "scp1700",
+                              formate(), dateisysteme_mehrdeutig(), err,
+                              /*read_only=*/true);
+    ASSERT_TRUE(v) << err;
+    EXPECT_EQ(46u, v->list().size());
+    const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
+    EXPECT_TRUE(mitId(r, "erkennung.alternative").empty()) << kennungen(r);
+    // Die zwei echten Systemspurbefunde dieser Fixture bleiben — sie haben mit der
+    // Gegenprobe nichts zu tun.
+    EXPECT_EQ(2, r.zaehlerAb(FsSeverity::Warnung)) << kennungen(r);
+}
+
+/// @test Mit dem ausgelieferten Katalog läuft die Gegenprobe NIE.
+///
+/// Der Wächter für die Entscheidung, sie nicht in `data/formats.yaml` prüfbar zu
+/// machen: der Katalog wird eindeutig gehalten, und solange das so bleibt, kostet
+/// die Gegenprobe im Betrieb keinen einzigen Dateizugriff.  Schlägt dieser Fall an,
+/// ist ein mehrdeutiger Eintrag hinzugekommen — dann gehört er geprüft, nicht der
+/// Test angepasst.
+TEST(FsCheckGegenprobe, DerAusgelieferteKatalogIstEindeutig) {
+    static const char* disketten[] = {
+        "cpa_cpa780_k5601_clock.hfe",   "cpa_cpa780_k5601_noclock.img",
+        "scpx17_cpa780_k5601.hfe",      "scpx17_5x1024_k5601_hardy.hfe",
+        "scp1700_640k_a7100_system.hfe",
+        "udos_boot_scp.hfe",            "udos1715_640k_pc1715_system.img",
+    };
+    for (const char* name : disketten) {
+        auto v = oeffne(fixture(name));
+        ASSERT_TRUE(v) << name;
+        EXPECT_TRUE(v->detection().unambiguous)
+            << name << ": auch möglich " << v->detection().alternatives.size();
+    }
+}
+
 /// @test Ein kaputter Sektor AUSSERHALB jeder Datei wird bei UDOS gefunden.
 ///
 /// Die Ebene Medium war bei UDOS bis 2026-08-19 schmaler als bei CP/M: geprüft wurde
