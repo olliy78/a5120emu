@@ -1972,3 +1972,131 @@ def test_folder_dialog_starts_in_the_users_file_directory(window, tmp_path,
     gesehen = _dialog_startpunkte(window, monkeypatch)
     window._ordner_dialog()
     assert gesehen["Ordner wählen"] == str(tmp_path)
+
+
+# ─── Dateisystemprüfung: die sechs Meldungsorte (§16.1) ──────────────────────
+
+def _mit_kreuzbelegung(quelle, ziel):
+    """Eine cpa780-Kopie, in der zwei Verzeichnisplätze denselben Block nennen."""
+    import shutil
+    shutil.copy(quelle, ziel)
+    roh = bytearray(ziel.read_bytes())
+    dirbase = 15104
+    belegt = [i for i in range(128) if roh[dirbase + i * 32] <= 15]
+    a, b = belegt[0], belegt[1]
+    roh[dirbase + b * 32 + 16: dirbase + b * 32 + 18] = \
+        roh[dirbase + a * 32 + 16: dirbase + a * 32 + 18]
+    ziel.write_bytes(bytes(roh))
+    return ziel
+
+
+def test_eine_heile_diskette_meldet_ohne_befund_und_verstellt_den_streifen_nicht(
+        window, fixture_disks):
+    """Die Statuszeile sagt „ohne Befund", der Streifen bleibt frei.
+
+    Wichtig, weil der Streifen die knappste Fläche im Fenster ist: eine Meldung,
+    die immer dasteht, verdeckt die eine, auf die es ankommt.
+    """
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_noclock.img")
+    assert window.st_befund.text() == "ohne Befund"
+    assert window.info_bar.text() == ""
+
+
+def test_ein_gefahrbefund_verdraengt_alles_andere_im_streifen(window, fixture_disks,
+                                                              tmp_path):
+    """Rangfolge aus §16.1: `Gefahr` steht über jeder anderen Einschränkung.
+
+    Sie sagt, dass der NÄCHSTE Schreibvorgang Daten zerstört, und das duldet
+    keinen Aufschub.  Der Knopf muss zum vollständigen Befund führen.
+    """
+    abbild = _mit_kreuzbelegung(
+        fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "kreuz.img")
+    assert window.open_image(abbild, "cpa780")
+
+    assert window.info_bar.stufe == "fehler"
+    assert "Gefahr" in window.info_bar.text()
+    assert "zwei" in window.info_bar.text() or "2 Eintraegen" in window.info_bar.text()
+    assert window.info_bar._knopf.isVisibleTo(window.info_bar)
+    assert window.st_befund.text().endswith("1")
+
+
+def test_jeder_befund_steht_mit_seiner_kennung_im_protokoll(window, fixture_disks,
+                                                            tmp_path):
+    """Das Protokoll ist der Ort zum Nachschlagen — dort steht ALLES, mit Kennung."""
+    abbild = _mit_kreuzbelegung(
+        fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "kreuz2.img")
+    assert window.open_image(abbild, "cpa780")
+
+    text = window.protokoll.toPlainText()
+    assert "cpm.block.doppelt" in text
+    assert "Befund Gefahr" in text
+
+
+def test_die_diskettenangaben_tragen_den_ganzen_bericht(window, fixture_disks,
+                                                        tmp_path):
+    """Der Streifen zeigt eine Zeile; nachschlagbar ist der Befund in den Angaben."""
+    from app.disktool.ui.disk_info_dialog import angaben_text
+
+    abbild = _mit_kreuzbelegung(
+        fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "kreuz3.img")
+    assert window.open_image(abbild, "cpa780")
+
+    text = angaben_text(window.tool)
+    assert "PRÜFBERICHT" in text
+    assert "Gefahr" in text
+    assert "Verwaltung" in text
+
+
+def test_der_befund_verschwindet_mit_der_diskette(window, fixture_disks, tmp_path):
+    """Ein stehengebliebener Befund gehörte zur vorigen Diskette — irreführend."""
+    abbild = _mit_kreuzbelegung(
+        fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "kreuz4.img")
+    assert window.open_image(abbild, "cpa780")
+    assert window.st_befund.text().endswith("1")
+
+    window.close_disk()
+    assert window.st_befund.text() == "" or not window.st_befund.isVisibleTo(window)
+
+
+def test_die_vollpruefung_ist_aus_den_diskettenangaben_erreichbar(window,
+                                                                  fixture_disks,
+                                                                  tmp_path):
+    """Der ernsteste Befund bei UDOS ist nur der VOLLEN Prüfung zugänglich.
+
+    Die Schnellprüfung beim Öffnen kann nicht sagen, dass ein Sektor einer Datei
+    im Belegungsplan als frei steht — dafür müsste sie jede Kette lesen. Ohne
+    einen Weg zur Vollprüfung wäre der wichtigste Befund des ganzen Vorhabens in
+    der Oberfläche gar nicht erreichbar.
+    """
+    import shutil
+    from app.core_binding.k1520disk import DiskTool, GEFAHR
+    from app.disktool.ui.disk_info_dialog import DiskInfoDialog
+
+    abbild = tmp_path / "udos_gefahr.hfe"
+    shutil.copy(fixture_disks / "udos_boot_scp.hfe", abbild)
+    with DiskTool.open(abbild) as d:
+        d.set_read_only(False)
+        idx = {s.id: s.index for s in d.track(23, 0).spans if s.size}
+        off = 24 + 30 * 4
+        sid, innen = off // 128 + 1, off % 128
+        plan = bytearray(d.sector_data(23, 0, idx[sid]))
+        plan[innen] &= 0x7F
+        d.sector_write(23, 0, idx[sid], bytes(plan))
+        d.flush()
+
+    assert window.open_image(abbild)
+    assert window.tool.findings().hoechste < GEFAHR, "die Schnellprüfung kann das nicht"
+
+    dlg = DiskInfoDialog(window.tool, window)
+    assert dlg.knopf_voll.isEnabled()
+    dlg._vollpruefung()
+    assert dlg.geprueft
+    assert "Gefahr" in dlg.text.toPlainText()
+    assert window.tool.findings().hoechste == GEFAHR
+
+    # Und der neue Befund muss bis in den Streifen durchschlagen — er ist ein
+    # Zustand der Diskette, kein Ergebnis eines Dialogs.
+    window._medium_meldungen()
+    assert window.info_bar.stufe == "fehler"
+    assert "Gefahr" in window.info_bar.text()
+    assert window.st_befund.text().startswith("⛔")

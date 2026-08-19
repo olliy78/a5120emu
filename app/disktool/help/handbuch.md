@@ -54,7 +54,8 @@ Erkennung übersteuern lässt.
 („nicht eindeutig erkannt", „Altbestand im Medium"). Er lässt sich wegklicken.
 
 **Statuszeile** — links das Ergebnis der letzten Aktion, rechts der Zustand:
-Zahl der Dateien, freier Platz je Seite, Übertragungsart und der Schreibschutz.
+Zahl der Dateien, freier Platz je Seite, der **Prüfbefund**, die Übertragungsart
+und der Schreibschutz.
 
 **Protokoll** (F8) — alles, was das Werkzeug gemeldet hat, mit Uhrzeit. Es ist
 beim Start zugeklappt und sammelt trotzdem mit; wer nachlesen will, klappt es auf.
@@ -302,6 +303,51 @@ Kurzhinweis sagt dann, was zu tun ist:
 ```
 pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"
 ```
+
+## Die Diskette wird beim Öffnen geprüft
+
+Sobald eine Diskette offen ist, sieht sich das Werkzeug ihr Dateisystem an — das
+Verzeichnis und, wo es eines gibt, den Belegungsplan. Das kostet nichts: es sind
+genau die Spuren, die zum Öffnen ohnehin gelesen wurden. Das Ergebnis steht
+
+* **in der Statuszeile** rechts: `ohne Befund` oder etwa `⛔ 2`,
+* **im Meldungsstreifen**, wenn etwas Ernstes dabei ist — mit dem Knopf
+  *Befund ansehen…*,
+* **im Protokoll** (F8) vollständig, mit Uhrzeit,
+* **unter *Diskette ▸ Diskettenangaben…*** als Abschnitt „Prüfbericht".
+
+Es gibt vier Schweregrade. Drei davon sind Auskunft; auf den vierten kommt es an:
+
+| | |
+|---|---|
+| Hinweis | bemerkenswert, aber nicht falsch |
+| Warnung | in sich widersprüchlich, ohne Folgen |
+| Fehler | etwas ist schon jetzt unerreichbar oder falsch |
+| **Gefahr** | **der nächste Schreibvorgang zerstört Daten** |
+
+Bei **Gefahr** ist die Antwort immer dieselbe: den Schreibschutz gesetzt lassen,
+erst ein Abbild sichern (*Speichern unter…*), und die Diskette nicht beschreiben.
+Der häufigste Fall ist, dass zwei Verzeichniseinträge denselben Bereich der
+Diskette beanspruchen — wer als Zweiter schreibt, überschreibt den Ersten.
+
+**Die volle Prüfung** steht unter *Diskette ▸ Diskettenangaben…* als Schaltfläche
+*Vollprüfung*. Sie fasst jede Spur an und findet dadurch, was beim Öffnen nicht zu
+sehen war: Kettenbrüche, doppelt belegte Bereiche, den Abgleich zwischen
+Belegungsplan und Dateien und Sektoren mit falscher Prüfsumme. Bei einer echten
+Diskette am Greaseweazle ist die Schaltfläche gesperrt — dort müsste dafür die
+ganze Scheibe eingelesen werden.
+
+Die Prüfung **ändert nie etwas**. Dasselbe geht auf der
+Kommandozeile mit `k1520disktool check <abbild> --full`; das fasst jede Spur an
+und findet zusätzlich Sektoren mit falscher Prüfsumme — und sagt dazu, **welche
+Datei** darauf liegt.
+
+Bei UDOS-Disketten (beide Ausprägungen) kann die volle Prüfung mehr als bei CP/M:
+dort steht die Verkettung der Dateien in den Daten selbst und daneben ein
+Belegungsplan — zwei Angaben über dieselbe Sache. Widersprechen sie einander,
+sagt die Prüfung genau, welche Datei betroffen ist. Der ernste Fall heißt „ein
+Sektor gehört zu einer Datei, steht aber als frei": die Datei ist heil, und der
+nächste Schreibvorgang überschreibt sie.
 
 ## Archivieren
 

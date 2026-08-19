@@ -47,7 +47,9 @@ from PySide6.QtWidgets import (
 from app import paths
 from app.disktool.archive import NAMENLOS, create_archive, dateiname
 
-from app.core_binding.k1520disk import DiskTool, K1520DiskError, filesystems
+from app.core_binding.k1520disk import (
+    FEHLER, GEFAHR, WARNUNG, DiskTool, K1520DiskError, filesystems,
+)
 from app.disktool.ui.actions import erzeuge_aktionen
 from app.disktool.ui.disk_editor import DiskEditorWindow
 from app.disktool.ui.disk_header import DiskHeader, auswahlliste
@@ -311,6 +313,10 @@ class MainWindow(QMainWindow):
         # während `st_inhalt` nur nach einer Aktion neu gesetzt wird.
         self.st_physisch = QLabel("")
         self.st_physisch.hide()
+        # Befund der Dateisystempruefung — ein ZUSTAND der Diskette, deshalb rechts
+        # und nicht als flüchtige Meldung (§20.4).
+        self.st_befund = QLabel("")
+        self.st_befund.hide()
         self.st_modus = QLabel("binär")
         self.st_modus.setToolTip("Übertragungsart — Menü „Übertragung\"")
         # Schloss als Bild, nicht als Emoji: 🔒 und 🔓 sehen in vielen Schriften
@@ -321,7 +327,7 @@ class MainWindow(QMainWindow):
 
         leiste = self.statusBar()
         leiste.setSizeGripEnabled(True)
-        for i, w in enumerate((self.st_inhalt, self.st_physisch,
+        for i, w in enumerate((self.st_inhalt, self.st_physisch, self.st_befund,
                                self.st_modus, self.st_schloss)):
             if i:                              # Trennstrich zwischen den Feldern
                 strich = QFrame()
@@ -793,22 +799,81 @@ class MainWindow(QMainWindow):
         return Path(self.tool.path).name if self.tool is not None else ""
 
     def _medium_meldungen(self) -> None:
-        """Was an dieser Diskette dauerhaft zu beachten ist → Streifen."""
+        """Was an dieser Diskette dauerhaft zu beachten ist → Streifen.
+
+        Der Streifen trägt **eine** Zeile, es kann aber mehreres zu melden geben.
+        Rangfolge (doc/design/15_dateisystempruefung.md §16.1), absteigend:
+        Gefahr-Befund → sonstige dauerhafte Einschränkung → Fehler-Befund →
+        Hinweis.  Der Knopf gehört immer zu der Meldung, die gerade dasteht.
+        """
         if self.tool is None:
             return
+
+        befund = self._befund_melden()          # Statuszeile + Protokoll, immer
+
         teile = []
         if not self.tool.unambiguous and self.tool.alternatives:
             teile.append("Das Dateisystem ist nicht eindeutig erkannt — auch "
                          f"möglich: {', '.join(self.tool.alternatives)}.")
         if self.tool.remarks:
             teile.append("Medium: " + self._kurzgefasst(self.tool.remarks))
+
+        # Ein Gefahr-Befund verdrängt alles: er sagt, dass der NÄCHSTE
+        # Schreibvorgang Daten zerstört, und das duldet keinen Aufschub.
+        if befund is not None and befund.severity >= GEFAHR:
+            self._befund_streifen(befund)
+            return
         if teile:
             self.info_bar.zeige(
                 " ".join(teile), "warnung",
                 knopf="Dateisystem wählen…" if not self.tool.unambiguous else None,
                 bei_klick=self.menue_fs.exec if not self.tool.unambiguous else None)
+        elif befund is not None:
+            self._befund_streifen(befund)
         else:
             self.info_bar.verbergen()
+
+    def _befund_streifen(self, befund) -> None:
+        """Den schwersten Befund in den Streifen setzen — mit Weg zum Ganzen."""
+        stufe = {GEFAHR: "fehler", FEHLER: "fehler",
+                 WARNUNG: "warnung"}.get(befund.severity, "hinweis")
+        bericht = self.tool.findings()
+        mehr = (f"  (und {len(bericht.findings) - 1} weitere)"
+                if len(bericht.findings) > 1 else "")
+        self.info_bar.zeige(f"{befund.schwere}: {befund.text}{mehr}", stufe,
+                            knopf="Befund ansehen…", bei_klick=self._angaben_dialog)
+
+    def _befund_melden(self):
+        """Statuszeile und Protokoll füllen; liefert den schwersten Befund.
+
+        Das Protokoll bekommt **jeden** Befund mit Uhrzeit — es ist der Ort zum
+        Nachschlagen.  Die Statuszeile bekommt nur die Zahl: sie zeigt Zustände,
+        keine Texte.
+        """
+        if not self.tool.has_filesystem:
+            self.st_befund.hide()
+            return None
+
+        bericht = self.tool.findings()
+        if not bericht.findings:
+            self.st_befund.setText("ohne Befund" if bericht.complete
+                                   else "bislang ohne Befund")
+            self.st_befund.setToolTip("Die Dateisystemprüfung hat nichts gefunden")
+            self.st_befund.show()
+            return None
+
+        for f in bericht.findings:
+            wo = f"c{f.cyl}h{f.head} " if f.ortbar else ""
+            self.log_dock.append(f"Befund {f.schwere}: {wo}{f.object} — {f.text}"
+                                 f"  [{f.id}]")
+
+        schwerster = max(bericht.findings, key=lambda f: f.severity)
+        zeichen = {GEFAHR: "⛔", FEHLER: "✖", WARNUNG: "⚠"}.get(schwerster.severity, "ℹ")
+        self.st_befund.setText(f"{zeichen} {len(bericht.findings)}")
+        self.st_befund.setToolTip(f"Dateisystemprüfung: {bericht.summary}"
+                                  f"  —  Einzelheiten unter „Diskettenangaben…\"")
+        self.st_befund.show()
+        return schwerster
 
     # ════════════════════════════════════════════════════════════════════════
     # Diskette öffnen / anlegen / schließen
@@ -1433,6 +1498,9 @@ class MainWindow(QMainWindow):
         if self.tool is not None:
             self.tool.close()
             self.tool = None
+        # Der Befund gehört zur geschlossenen Diskette und darf nicht stehenbleiben.
+        if hasattr(self, "st_befund"):
+            self.st_befund.hide()
         # Erst das Werkzeug, DANN die Sitzung: ~DiskImage schreibt Ausstehendes noch
         # über den Arbeitsfaden zurück und löst sich erst danach vom Medium.
         self._close_physisch()
@@ -1789,7 +1857,13 @@ class MainWindow(QMainWindow):
     def _angaben_dialog(self) -> None:
         if self.tool is None:
             return
-        DiskInfoDialog(self.tool, self).exec()
+        dlg = DiskInfoDialog(self.tool, self)
+        dlg.exec()
+        # Wurde dort eine Vollprüfung gefahren, gilt jetzt ein anderer Befund — und
+        # der ist ein ZUSTAND der Diskette, also gehört er in Streifen, Statuszeile
+        # und Protokoll (§20.4).
+        if dlg.geprueft:
+            self._medium_meldungen()
 
     def open_help(self):
         """Das Handbuch öffnen (nicht modal — man liest nach und arbeitet weiter).

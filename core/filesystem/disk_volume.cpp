@@ -895,7 +895,26 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
         dv->volumes_.push_back(std::move(v));
     }
 
+    // Automatik (E2): die Schnellpruefung sieht nur die Verwaltungsstrukturen an,
+    // die das Mounten gerade gelesen hat — sie kostet auch an einem echten Laufwerk
+    // keinen zusaetzlichen Spurzugriff.  Deshalb darf sie hier stehen, ohne das
+    // Oeffnen zu verlangsamen; nachgeladen wird ausdruecklich NICHT.
+    dv->check(FsCheckLevel::Schnell, false);
+
     return dv;
+}
+
+const FsCheckReport& DiskVolume::check(FsCheckLevel level, bool nachladen) {
+    check_ = FsCheckReport{};
+    check_.level = level;
+    for (size_t v = 0; v < volumes_.size(); ++v) {
+        FsCheckReport teil = volumes_[v].fs->check(level, nachladen);
+        for (FsFinding& f : teil.findings) f.volume = static_cast<int>(v);
+        check_.uebernimm(teil);
+    }
+    check_.level = level;      // uebernimm() zieht nach oben, hier gilt das Verlangte
+    check_.sortieren();
+    return check_;
 }
 
 std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,

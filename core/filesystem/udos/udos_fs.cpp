@@ -556,12 +556,10 @@ FsInfo UdosFileSystem::info() const {
     i.used_bytes  = i.total_bytes - i.free_bytes;
     i.files       = static_cast<int>(directory().size());
 
-    // §4.2: der gespeicherte Freizaehler ist eine Gegenprobe, nicht die Wahrheit.
-    const int gezaehlt = bitmap_.countFree();
-    if (bitmap_.storedFree() != gezaehlt)
-        i.warnings.push_back("Freizaehler der Belegungskarte sagt "
-                             + std::to_string(bitmap_.storedFree()) + ", ausgezaehlt sind "
-                             + std::to_string(gezaehlt) + " Sektoren");
+    // Der Zaehlerabgleich (§4.2) stand frueher hier.  Er gehoert in die PRUEFUNG
+    // (`check`, Kennung `udos.karte.zaehler`) — dort hat er eine Schwere, einen Ort
+    // und spaeter eine Reparatur, und er steht nicht doppelt an zwei Stellen
+    // (doc/design/15_dateisystempruefung.md §4).
     return i;
 }
 

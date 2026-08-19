@@ -342,10 +342,42 @@ _lib.k1520d_check_fit.restype = _CS
 # ── Zustand ─────────────────────────────────────────────────────────────────
 _lib.k1520d_dirty.argtypes = [_H]
 _lib.k1520d_dirty.restype = ctypes.c_bool
-_lib.k1520d_check.argtypes = [_H]
-_lib.k1520d_check.restype = _CS
+_lib.k1520d_check_report.argtypes = [_H]
+_lib.k1520d_check_report.restype = _CS
 _lib.k1520d_version.argtypes = []
 _lib.k1520d_version.restype = _CS
+
+# ── Dateisystemprüfung (doc/design/15_dateisystempruefung.md) ───────────────
+_lib.k1520d_check.argtypes = [_H, ctypes.c_int, ctypes.c_bool]
+_lib.k1520d_check.restype = ctypes.c_int
+_lib.k1520d_check_complete.argtypes = [_H]
+_lib.k1520d_check_complete.restype = ctypes.c_bool
+_lib.k1520d_check_tracks_read.argtypes = [_H]
+_lib.k1520d_check_tracks_read.restype = ctypes.c_int
+_lib.k1520d_check_tracks_total.argtypes = [_H]
+_lib.k1520d_check_tracks_total.restype = ctypes.c_int
+_lib.k1520d_check_summary.argtypes = [_H]
+_lib.k1520d_check_summary.restype = _CS
+_lib.k1520d_finding_count.argtypes = [_H]
+_lib.k1520d_finding_count.restype = ctypes.c_int
+_lib.k1520d_finding_id.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_finding_id.restype = _CS
+_lib.k1520d_finding_severity.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_finding_severity.restype = ctypes.c_int
+_lib.k1520d_finding_layer.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_finding_layer.restype = ctypes.c_int
+_lib.k1520d_finding_volume.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_finding_volume.restype = ctypes.c_int
+_lib.k1520d_finding_object.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_finding_object.restype = _CS
+_lib.k1520d_finding_text.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_finding_text.restype = _CS
+_lib.k1520d_finding_cyl.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_finding_cyl.restype = ctypes.c_int
+_lib.k1520d_finding_head.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_finding_head.restype = ctypes.c_int
+_lib.k1520d_finding_sector.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_finding_sector.restype = ctypes.c_int
 
 
 def _s(raw) -> str:
@@ -491,6 +523,75 @@ class Entry:
 
 #: Abschnittsarten einer Spur (``TrackSpan::Kind`` der Bibliothek).
 UNFORMATTED, GAP, SECTOR = 0, 1, 2
+
+
+#: Schweregrade eines Befundes — die Zahlen sind ein Vertrag mit der C-ABI.
+INFO, WARNUNG, FEHLER, GEFAHR = 0, 1, 2, 3
+#: Ebenen: worauf der Befund beruht.
+EBENE_MEDIUM, EBENE_VERWALTUNG, EBENE_DATEIEN = 0, 1, 2
+
+SCHWERE_NAME = {INFO: "Hinweis", WARNUNG: "Warnung",
+                FEHLER: "Fehler", GEFAHR: "Gefahr"}
+EBENE_NAME = {EBENE_MEDIUM: "Medium", EBENE_VERWALTUNG: "Verwaltung",
+              EBENE_DATEIEN: "Dateien"}
+
+
+@dataclass(frozen=True)
+class Finding:
+    """Ein Befund der Dateisystemprüfung.
+
+    ``severity == GEFAHR`` heißt nicht „Daten sind verloren", sondern **„der
+    nächste Schreibvorgang zerstört Daten"** — das ist die einzige Auskunft, die
+    eine sofortige Handlung nach sich zieht.
+    """
+
+    id: str            # stabile Kennung, z. B. "cpm.block.doppelt"
+    severity: int
+    layer: int
+    volume: int
+    object: str
+    text: str
+    cyl: int = -1      # -1 = ortlos (kein Sprung in den Diskeditor)
+    head: int = -1
+    sector: int = -1
+
+    @property
+    def schwere(self) -> str:
+        return SCHWERE_NAME.get(self.severity, "?")
+
+    @property
+    def ebene(self) -> str:
+        return EBENE_NAME.get(self.layer, "?")
+
+    @property
+    def ortbar(self) -> bool:
+        """Lässt sich der Befund im Diskeditor zeigen?"""
+        return self.cyl >= 0 and self.head >= 0
+
+
+@dataclass(frozen=True)
+class CheckReport:
+    """Das Ergebnis einer Prüfung."""
+
+    findings: tuple = ()
+    #: ``False`` = an einer physischen Diskette waren Spuren noch nicht gelesen.
+    #: „Ohne Befund" heißt dann nur „bislang ohne Befund".
+    complete: bool = True
+    tracks_read: int = 0
+    tracks_total: int = 0
+    summary: str = ""
+
+    def __bool__(self) -> bool:
+        """Wahr, wenn es etwas zu berichten gibt."""
+        return bool(self.findings)
+
+    @property
+    def hoechste(self) -> int:
+        return max((f.severity for f in self.findings), default=INFO)
+
+    def ab(self, schwere: int) -> tuple:
+        """Alle Befunde mindestens dieser Schwere."""
+        return tuple(f for f in self.findings if f.severity >= schwere)
 
 
 @dataclass(frozen=True)
@@ -924,9 +1025,47 @@ class DiskTool:
             details_loaded=bool(_lib.k1520d_entry_details_loaded(self._h, i)),
         )
 
-    def check(self) -> str:
-        """Mehrzeiliger Prüfbericht."""
-        return _s(_lib.k1520d_check(self._h))
+    def check_report(self) -> str:
+        """Mehrzeiliger Überblick als Text (Datenträger, Belegung, Auffälligkeiten)."""
+        return _s(_lib.k1520d_check_report(self._h))
+
+    # ── Dateisystemprüfung ──────────────────────────────────────────────────
+    #
+    # Beim Öffnen läuft automatisch eine Schnellprüfung; ``findings()`` liefert
+    # ihr Ergebnis, ohne dass jemand ``check()`` rufen müsste.
+
+    def check(self, *, voll: bool = False, nachladen: bool = True) -> "CheckReport":
+        """Neu prüfen und den Bericht liefern.  **Ändert die Diskette nicht.**
+
+        ``voll=True`` fasst jede Spur an — an einem echten Laufwerk sind das ein
+        bis zwei Minuten, der Aufruf gehört dann in einen Arbeitsfaden.
+        """
+        _lib.k1520d_check(self._h, 1 if voll else 0, nachladen)
+        return self.findings()
+
+    def findings(self) -> "CheckReport":
+        """Der zuletzt erhobene Befund (beim Öffnen: die Schnellprüfung)."""
+        return CheckReport(
+            findings=tuple(self._finding(i)
+                           for i in range(int(_lib.k1520d_finding_count(self._h)))),
+            complete=bool(_lib.k1520d_check_complete(self._h)),
+            tracks_read=int(_lib.k1520d_check_tracks_read(self._h)),
+            tracks_total=int(_lib.k1520d_check_tracks_total(self._h)),
+            summary=_s(_lib.k1520d_check_summary(self._h)),
+        )
+
+    def _finding(self, i: int) -> "Finding":
+        return Finding(
+            id=_s(_lib.k1520d_finding_id(self._h, i)),
+            severity=int(_lib.k1520d_finding_severity(self._h, i)),
+            layer=int(_lib.k1520d_finding_layer(self._h, i)),
+            volume=int(_lib.k1520d_finding_volume(self._h, i)),
+            object=_s(_lib.k1520d_finding_object(self._h, i)),
+            text=_s(_lib.k1520d_finding_text(self._h, i)),
+            cyl=int(_lib.k1520d_finding_cyl(self._h, i)),
+            head=int(_lib.k1520d_finding_head(self._h, i)),
+            sector=int(_lib.k1520d_finding_sector(self._h, i)),
+        )
 
     # ── Übertragung ─────────────────────────────────────────────────────────
 

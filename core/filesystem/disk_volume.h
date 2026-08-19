@@ -345,6 +345,28 @@ public:
     bool refreshDetection();
     const FsProfile&       profile()   const { return *profile_; }
 
+    // ─── Dateisystempruefung (doc/design/15_dateisystempruefung.md) ──────────
+
+    /**
+     * @brief Der letzte Pruefbericht.
+     *
+     * Beim Oeffnen laeuft **automatisch** eine Schnellpruefung: sie sieht nur die
+     * Verwaltungsstrukturen an, die das Mounten ohnehin gelesen hat, und kostet
+     * damit auch an einer physischen Diskette keinen zusaetzlichen Spurzugriff
+     * (Entwurf E2).  Wer mehr will, ruft @ref check.
+     */
+    const FsCheckReport& checkReport() const { return check_; }
+
+    /**
+     * @brief Neu pruefen und den Bericht ersetzen.  **Aendert die Diskette nicht** (E1).
+     *
+     * @param nachladen  Darf eine unbekannte Spur beschafft werden?  An einem echten
+     *                   Laufwerk zieht eine Vollpruefung damit die ganze Diskette ein
+     *                   (ein bis zwei Minuten) — der Aufruf gehoert dann in einen
+     *                   Arbeitsfaden mit Fortschrittsanzeige.
+     */
+    const FsCheckReport& check(FsCheckLevel level, bool nachladen);
+
     int  volumeCount() const { return static_cast<int>(volumes_.size()); }
     /// @brief Unterverzeichnisname: "" bei einem Volume, sonst "Side0"/"Side1".
     std::string volumeDir(int v) const;
@@ -593,6 +615,8 @@ private:
     ///        Gesetzt, wenn kein `formats:`-Eintrag passte; @ref format_ zeigt dann hierher.
     std::optional<DiskFormat> gemessenes_format_;
     DetectionResult    detection_;
+    /// @brief Ergebnis der letzten Pruefung (beim Oeffnen: die Schnellpruefung).
+    FsCheckReport      check_;
     /// @brief Teil des Befunds, der NICHT aus der Spurmessung stammt (CP/A-Regel,
     ///        Hinweise zum Container) — @ref refreshDetection laesst ihn stehen.
     std::string        befund_zusatz_;

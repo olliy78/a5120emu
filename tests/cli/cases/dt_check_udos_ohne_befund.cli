@@ -1,0 +1,12 @@
+# UDOS/ZDOS ist der Fall, in dem eine Pruefung wirklich etwas beweisen kann: es gibt
+# ZWEI unabhaengige Darstellungen derselben Wahrheit — den Belegungsplan auf Spur 23
+# und die Verkettung hinter jeder Daten-CRC.  Die Referenzdiskette von 1990 muss
+# diesen Abgleich ueber beide Seiten und 69 Dateien hinweg fehlerfrei bestehen.
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+run:    check %DISK% --full
+expect: Vollpruefung
+expect: ohne Befund
+forbid: Gefahr
+forbid: udos.
+exit:   0

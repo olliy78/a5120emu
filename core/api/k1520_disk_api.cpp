@@ -63,6 +63,7 @@ struct Handle {
     std::string s_error, s_name, s_type, s_attrs, s_date, s_dir, s_label, s_created,
                 s_segments;
     std::string s_fmt, s_fs, s_alt, s_remarks, s_fit, s_check;
+    std::string s_bid, s_bobj, s_btext, s_bsum;   ///< Puffer der Pruefung
 };
 
 Handle* H(K1520Disk h) { return static_cast<Handle*>(h); }
@@ -90,6 +91,9 @@ const TrackSpan* abschnitt(K1520Disk h, int i) {
     if (i < 0 || i >= static_cast<int>(p->spur.spans.size())) return nullptr;
     return &p->spur.spans[static_cast<size_t>(i)];
 }
+
+/// @brief Sicherer Zugriff auf einen Befund des letzten Pruefberichts.
+const FsFinding* befund(K1520Disk h, int i);
 
 TransferOptions optionen(K1520DMode mode, bool overwrite) {
     TransferOptions o;
@@ -786,7 +790,7 @@ extern "C" const char* k1520d_check_fit(K1520Disk h, const char* src_dir) {
 
 extern "C" bool k1520d_dirty(K1520Disk h) { return h && H(h)->vol->dirty(); }
 
-extern "C" const char* k1520d_check(K1520Disk h) {
+extern "C" const char* k1520d_check_report(K1520Disk h) {
     if (!h) return "";
     std::string b;
     DiskVolume& v = *H(h)->vol;
@@ -812,6 +816,89 @@ extern "C" const char* k1520d_check(K1520Disk h) {
     }
     if (defekt) b += "  ! " + std::to_string(defekt) + " Dateien nicht lesbar\n";
     return halte(H(h)->s_check, std::move(b));
+}
+
+namespace {
+const FsFinding* befund(K1520Disk h, int i) {
+    if (!h) return nullptr;
+    const std::vector<FsFinding>& f = H(h)->vol->checkReport().findings;
+    if (i < 0 || i >= static_cast<int>(f.size())) return nullptr;
+    return &f[static_cast<size_t>(i)];
+}
+}  // namespace
+
+// ─── Dateisystempruefung ─────────────────────────────────────────────────────
+
+extern "C" int k1520d_check(K1520Disk h, int level, bool nachladen) {
+    if (!h) return -1;
+    const FsCheckReport& r = H(h)->vol->check(
+        level >= 1 ? FsCheckLevel::Voll : FsCheckLevel::Schnell, nachladen);
+    return static_cast<int>(r.findings.size());
+}
+
+extern "C" bool k1520d_check_complete(K1520Disk h) {
+    return h ? H(h)->vol->checkReport().vollstaendig : false;
+}
+
+extern "C" int k1520d_check_tracks_read(K1520Disk h) {
+    return h ? H(h)->vol->checkReport().spuren_gelesen : 0;
+}
+
+extern "C" int k1520d_check_tracks_total(K1520Disk h) {
+    return h ? H(h)->vol->checkReport().spuren_gesamt : 0;
+}
+
+extern "C" const char* k1520d_check_summary(K1520Disk h) {
+    return h ? halte(H(h)->s_bsum, H(h)->vol->checkReport().kurzfassung()) : "";
+}
+
+extern "C" int k1520d_finding_count(K1520Disk h) {
+    return h ? static_cast<int>(H(h)->vol->checkReport().findings.size()) : 0;
+}
+
+extern "C" const char* k1520d_finding_id(K1520Disk h, int i) {
+    const FsFinding* f = befund(h, i);
+    return f ? halte(H(h)->s_bid, f->id) : "";
+}
+
+extern "C" int k1520d_finding_severity(K1520Disk h, int i) {
+    const FsFinding* f = befund(h, i);
+    return f ? static_cast<int>(f->severity) : 0;
+}
+
+extern "C" int k1520d_finding_layer(K1520Disk h, int i) {
+    const FsFinding* f = befund(h, i);
+    return f ? static_cast<int>(f->layer) : 0;
+}
+
+extern "C" int k1520d_finding_volume(K1520Disk h, int i) {
+    const FsFinding* f = befund(h, i);
+    return f ? f->volume : 0;
+}
+
+extern "C" const char* k1520d_finding_object(K1520Disk h, int i) {
+    const FsFinding* f = befund(h, i);
+    return f ? halte(H(h)->s_bobj, f->object) : "";
+}
+
+extern "C" const char* k1520d_finding_text(K1520Disk h, int i) {
+    const FsFinding* f = befund(h, i);
+    return f ? halte(H(h)->s_btext, f->text) : "";
+}
+
+extern "C" int k1520d_finding_cyl(K1520Disk h, int i) {
+    const FsFinding* f = befund(h, i);
+    return f ? f->cyl : -1;
+}
+
+extern "C" int k1520d_finding_head(K1520Disk h, int i) {
+    const FsFinding* f = befund(h, i);
+    return f ? f->head : -1;
+}
+
+extern "C" int k1520d_finding_sector(K1520Disk h, int i) {
+    const FsFinding* f = befund(h, i);
+    return f ? f->sector_index : -1;
 }
 
 extern "C" const char* k1520d_version(void) { return "k1520disk 0.1"; }

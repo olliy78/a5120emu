@@ -83,6 +83,9 @@ struct Optionen {
     bool        force   = false;
     bool        lang    = false;   ///< -l
     bool        json    = false;
+    /// @brief --full: Vollpruefung statt der Schnellpruefung (`check`).
+    ///        Sie fasst JEDE Spur an — an einem echten Laufwerk dauert das.
+    bool        voll    = false;
     bool        dry_run = false;
     bool        nobackup= false;
     std::vector<std::string> rest;  ///< uebrige Argumente (Abbild, Muster, Dateien)
@@ -109,7 +112,7 @@ void gebrauch() {
         "  boot-put <abbild> <datei.bin>            Bootabbild in die Systemspuren\n"
         "  save-as <abbild> <ziel>                  Kopie, ggf. anderes Format\n"
         "  info   <abbild>                          Belegung und Erkennung\n"
-        "  check  <abbild>                          Pruefbericht\n"
+        "  check  <abbild> [--full]                 Dateisystem pruefen (--full: jede Spur)\n"
         "  measure <abbild>                         Geometrie messen (auch ohne Dateisystem)\n"
         "  formats                                  bekannte Dateisysteme auflisten\n\n"
         "Gemeinsam: --fs NAME (Erkennung uebersteuern), --volume N (Seite),\n"
@@ -169,6 +172,7 @@ bool zerlege(int argc, char** argv, int ab, Optionen& o, std::string& err) {
         else if (a == "--force")   o.force    = true;
         else if (a == "-l")        o.lang     = true;
         else if (a == "--json")    o.json     = true;
+        else if (a == "--full")    o.voll     = true;
         else if (a == "--dry-run") o.dry_run  = true;
         else if (a == "--no-backup") o.nobackup = true;
         else if (!a.empty() && a[0] == '-') { err = "unbekannter Schalter: " + a; return false; }
@@ -451,43 +455,72 @@ int cmd_check(const Optionen& o) {
     auto v = oeffne(o, o.rest[1], rc);
     if (!v) return rc;
 
-    if (o.json) {
-        std::vector<std::string> unlesbar, warnungen;
+    const FsCheckLevel stufe = o.voll ? FsCheckLevel::Voll : FsCheckLevel::Schnell;
+    // An einer Datei ist jede Spur bekannt; das Nachladen betrifft nur ein echtes
+    // Laufwerk, und dort ist `check --full` genau die Aufforderung dazu.
+    const FsCheckReport& bericht = v->check(stufe, true);
+
+    // Dateien, die sich nicht lesen lassen, sind ein Befund der Dateiebene, den
+    // heute nur der Lesepfad kennt (`FileEntry::damaged`).  Bis die Ebene Dateien
+    // steht, wird er hier weiterhin eigens genannt.
+    std::vector<std::string> unlesbar;
+    if (o.voll)
         for (const FileEntry& e : v->list())
             if (e.damaged)
-                unlesbar.push_back((v->volumeCount() > 1
-                                        ? v->volumeDir(e.volume) + "/" : "")
+                unlesbar.push_back((v->volumeCount() > 1 ? v->volumeDir(e.volume) + "/" : "")
                                    + e.qualifiedName());
-        for (int i = 0; i < v->volumeCount(); ++i)
-            for (const std::string& w : v->volumeInfo(i).warnings) warnungen.push_back(w);
 
-        const bool ok = unlesbar.empty() && warnungen.empty();
+    const bool sauber = bericht.ohneBefund() && unlesbar.empty();
+
+    if (o.json) {
         std::cout << "{\"image\":" << jsonText(v->path())
-                  << ",\"ok\":" << (ok ? "true" : "false")
-                  << ",\"damaged\":" << jsonListe(unlesbar)
-                  << ",\"warnings\":" << jsonListe(warnungen)
-                  << ",\"remarks\":" << jsonText(v->detection().remarks) << "}\n";
-        return ok ? kOk : kFehler;
-    }
-
-    int defekt = 0;
-    for (const FileEntry& e : v->list()) {
-        if (!e.damaged) continue;
-        ++defekt;
-        std::cout << "  ! nicht lesbar: " << v->volumeDir(e.volume)
-                  << (v->volumeCount() > 1 ? "/" : "") << e.name << "\n";
-    }
-    int warnungen = 0;
-    for (int i = 0; i < v->volumeCount(); ++i)
-        for (const std::string& w : v->volumeInfo(i).warnings) {
-            ++warnungen;
-            std::cout << "  ! " << w << "\n";
+                  << ",\"level\":" << jsonText(o.voll ? "voll" : "schnell")
+                  << ",\"complete\":" << (bericht.vollstaendig ? "true" : "false")
+                  << ",\"ok\":" << (sauber ? "true" : "false")
+                  << ",\"findings\":[";
+        for (size_t i = 0; i < bericht.findings.size(); ++i) {
+            const FsFinding& f = bericht.findings[i];
+            if (i) std::cout << ",";
+            std::cout << "{\"id\":" << jsonText(f.id)
+                      << ",\"severity\":" << jsonText(fsSeverityName(f.severity))
+                      << ",\"layer\":" << jsonText(fsLayerName(f.layer))
+                      << ",\"volume\":" << f.volume
+                      << ",\"object\":" << jsonText(f.object)
+                      << ",\"text\":" << jsonText(f.text)
+                      << ",\"cyl\":" << f.cyl << ",\"head\":" << f.head
+                      << ",\"sector\":" << f.sector_index << "}";
         }
-    if (!v->detection().remarks.empty())
-        std::cout << "  Hinweis: " << v->detection().remarks << "\n";
+        std::cout << "],\"damaged\":" << jsonListe(unlesbar)
+                  << ",\"remarks\":" << jsonText(v->detection().remarks) << "}\n";
+        return sauber ? kOk : kFehler;
+    }
 
-    if (defekt == 0 && warnungen == 0) std::cout << "ohne Befund\n";
-    return (defekt || warnungen) ? kFehler : kOk;
+    std::cout << v->path() << "  " << v->detection().format << " / "
+              << v->detection().filesystem << "  "
+              << (o.voll ? "Vollpruefung" : "Schnellpruefung");
+    if (!bericht.vollstaendig)
+        std::cout << "  (UNVOLLSTAENDIG: " << bericht.spuren_gelesen << " von "
+                  << bericht.spuren_gesamt << " Spuren angesehen)";
+    std::cout << "\n";
+
+    if (!bericht.findings.empty())
+        std::cout << "\n" << bericht.alsText(v->volumeCount() > 1);
+    for (const std::string& d : unlesbar)
+        std::cout << "Fehler  Dateien    " << d << "  nicht lesbar\n";
+
+    if (!v->detection().remarks.empty())
+        std::cout << "\nHinweis zum Medium: " << v->detection().remarks << "\n";
+
+    std::cout << "\n";
+    if (sauber)
+        std::cout << (bericht.vollstaendig ? "ohne Befund\n" : "bislang ohne Befund\n");
+    else
+        std::cout << bericht.kurzfassung()
+                  << (unlesbar.empty() ? "" : (bericht.findings.empty() ? "" : ", ")
+                                              + std::to_string(unlesbar.size())
+                                              + " Dateien nicht lesbar")
+                  << "\n";
+    return sauber ? kOk : kFehler;
 }
 
 int cmd_get(const Optionen& o) {

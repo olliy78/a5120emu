@@ -773,6 +773,68 @@ Was beim Weiterarbeiten zu wissen ist:
   als zweite Tabelle „DATEIANGABEN IM EINZELNEN“ — für die Wiederherstellung von Hand;
   maschinell reichen die Beiblätter im selben Archiv.  Wächter: `CpmFileSystemAttrs.*`,
   `DiskVolume.CpmBeiblatt*`, `py_disktool_gui`.
+- **Dateisystempruefung (`fsck`) — Grundlagen und CP/M, Etappe 1** (2026-08-18,
+  `doc/design/15_dateisystempruefung.md`).  `core/filesystem/check/` liefert das
+  Modell (`FsFinding`/`FsSeverity`/`FsLayer`/`FsCheckReport`) und den CP/M-Pruefer;
+  `FileSystem::check(level, nachladen)` ist der Haken, `DiskVolume::check()` bündelt
+  über alle Volumes.  Fünf Festlegungen, die man nicht aufweichen darf:
+  **(1) Die Pruefung schreibt NIE** — sonst wäre die Automatik beim Öffnen ein
+  Schreibzugriff auf eine schreibgeschützt geöffnete Diskette.  Reparaturen sind ein
+  eigener Schritt (Etappe 3) und gehören in `FileSystem::repair`, nicht in den Prüfer:
+  die Klasse kennt ihre Invarianten.
+  **(2) Beim Öffnen läuft nur die SCHNELLpruefung** (`DiskVolume::oeffnenMit` ganz am
+  Ende, `nachladen=false`).  Sie sieht ausschliesslich die Verwaltungsstrukturen an,
+  die `mount()` ohnehin gelesen hat — an einer physischen Diskette kostet sie damit
+  **keinen einzigen zusätzlichen Spurzugriff** (0,5–0,8 s je Spur!).  Der Schnitt geht
+  durch **Bytes**, nicht durch Spuren: das cpa780-Verzeichnis endet nach 4096 von
+  5120 Byte mitten in c2h0.
+  **(3) `FsSeverity::Gefahr` heisst „der NÄCHSTE Schreibvorgang zerstört Daten"**,
+  nicht „Daten sind verloren".  Bei CP/M ist das genau ein Fall — derselbe Block in
+  zwei Verzeichnisplätzen (es gibt keinen gespeicherten Belegungsplan, „verlorener
+  Block" ist dort strukturell unmöglich).  Der Grad verdrängt im Meldungsstreifen
+  jede andere Meldung.
+  **(4) Die Kennungen sind ein VERTRAG** (`"cpm.block.doppelt"`), wie die
+  Formatnamen — sie stehen in `--json`, in Skripten und in den Tests.
+  **(5) Falschmeldungen sind schlimmer als fehlende.**  Erster Wächter ist deshalb
+  `FsCheckKeineFalschmeldungen.*`: jede unversehrte Fixture **und** jedes anlegbare
+  CP/M-Katalogprofil prüft ohne Befund ab Schwere `Warnung`.  Ausnahme mit Beleg: die
+  A7100-Fixture ist wirklich beschädigt (Bootspur-Sektor 5 CRC, Sektor 10 fehlt) —
+  dafür gibt es einen eigenen Fall.  Aus demselben Grund sind CP/M-3-Zeitstempel- und
+  Kennwortsätze nur ein **Hinweis**, und Systemspuren werden **physisch** durchgegangen
+  (`SectorSpace::trackSectors`), weil eine Bootspur eine ID doppelt tragen darf.
+  Bedienung: `check [--full]` (auch `--json`), C-ABI `k1520d_check`/`k1520d_finding_*`
+  (der alte Textbericht heisst jetzt **`k1520d_check_report`**), in der Oberfläche
+  Statuszeile + Streifen + Protokoll + *Diskettenangaben…*.
+- **Etappe 2: ZDOS und NDOS werden geprüft** (2026-08-19, Entwurf §9/§10) —
+  `core/filesystem/check/udos_check.cpp` und `udos1715_check.cpp`.  Hier kann eine
+  Prüfung wirklich etwas **beweisen**, weil UDOS zwei unabhängige Darstellungen
+  derselben Wahrheit führt: den gespeicherten Belegungsplan und die selbsttragende
+  Verkettung (ZDOS im Sektorkontrollblock, NDOS in Zeigersektoren).  Vier
+  Festlegungen:
+  **(1) Die Systemspuren 0–2 und die Bootspur werden NICHT geprüft** — sie sind
+  Sitte, nicht Struktur, und an echten Datenträgern uneinheitlich belegt (Seite 0 von
+  `udos_boot_scp.hfe`: Spur 0 nur Sektoren 1–3, Spur 1 die Sektoren 1–6 **und**
+  17–24; Seite 1 von `udos_ds77_k5601_fremdsync.hfe`: Spuren 0–2 völlig frei).
+  `udos.karte.system` prüft nur, was ABLEITBAR ist: die Kartensektoren selbst und die
+  Verzeichnisdatei.  Aus demselben Grund bleiben die reservierten Spuren beim Befund
+  `belegt_aber_frei` außen vor.
+  **(2) Der Rückwärtszeiger des ERSTEN Satzes nennt den Kopfsektor**, nicht `FFFF`.
+  Mit `FFFF` als Erwartung meldete die Prüfung jede gesunde Datei der
+  Referenzdiskette — 42 Warnungen auf einer fehlerfreien Diskette.
+  **(3) Der Zählerabgleich ist aus `info()` in die Prüfung gewandert**
+  (`udos.karte.zaehler`); bei ZDOS gilt nur der Freizähler (der „belegt"-Zähler ist
+  der Festwert 2464 − frei aus `FORMATPC.MAC`), bei NDOS sind beide echt.  Nebenbei
+  ist er der **billige Schatten** des teuren Befundes: nach einem gelöschten
+  Kartenbit schlägt schon die Schnellprüfung an, auch wenn erst die Vollprüfung sagen
+  kann, welche Datei betroffen ist.
+  **(4) Gleichartige Befunde werden begrenzt** (`FsCheckReport::begrenzen`, 20 je
+  Kennung, dann eine Sammelzeile) — sonst brächte eine wirklich kaputte Diskette
+  fünfhundert Zeilen hervor, und der Bericht wäre genau dann wertlos, wenn er am
+  nötigsten ist.
+  Alle vier UDOS-Fixturen prüfen mit `--full` **ohne Befund** (Ketten, Kreuzbelegung,
+  Karte↔Ketten, CRC, Nachspann).  Wächter: `FsCheckUdosSchaden.*` (8) und
+  `FsCheckNdosSchaden.*` (5) mit gezielter Schadensinjektion.
+  Offen: Reparatur, Wiederherstellung gelöschter Dateien (Etappen 3–7 des Entwurfs).
 - **`data/formats.yaml` hat jetzt ZWEI Sektionen.**  `formats:` (Physik, liest der
   Emulator) und `filesystems:` (logische Ebene, liest nur das DiskTool).  `data_start`
   ist dort eine **Spur**, kein Byte-Offset — bei gemischter Geometrie (cpa780: drei

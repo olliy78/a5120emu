@@ -91,6 +91,8 @@ public:
     bool   wouldFit(const std::vector<PlannedFile>& files, FitReport& out) const override;
     bool   mkfs() override;
     FsInfo info() const override;
+    /// @brief Pruefung — umgesetzt in `core/filesystem/check/udos1715_check.cpp`.
+    FsCheckReport check(FsCheckLevel level, bool nachladen) const override;
 
     // ─── Innenansicht (Diagnose, Tests) ──────────────────────────────────────
 

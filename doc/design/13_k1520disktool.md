@@ -2130,3 +2130,49 @@ Ob eine mit `create --fs scp1700 --boot …` gebaute Diskette im A7100 **bootet*
 nicht geprüft — es gibt kein Gerät dafür, und der Emulator kennt keinen 8086.  Vom
 Referenzdatenträger lässt sich das Bootabbild nicht herausschreiben: sein
 Bootspur-Sektor 10 ist beschädigt.
+
+---
+
+## 23. Dateisystemprüfung, Reparatur und Wiederherstellung — eigener Entwurf (2026-08-18)
+
+Der Umfang sprengt einen Abschnitt: **`doc/design/15_dateisystempruefung.md`**.  Kurz,
+was dort festgelegt wird und was es für diesen Entwurf bedeutet:
+
+* Eine **Prüfung läuft automatisch beim Öffnen**, sobald das Dateisystem erkannt ist —
+  aber nur als **Schnellprüfung** über die Verwaltungsstrukturen, die `mount()` ohnehin
+  gelesen hat (Verzeichnis, Belegungsplan).  Damit kostet sie auch an einer physischen
+  Diskette keinen einzigen zusätzlichen Spurzugriff.  Die **Vollprüfung** (Ketten,
+  Kreuzbelegung, CRC-Übersicht) ist ein ausdrücklicher Schritt mit Fortschrittsanzeige.
+* **Die Prüfung schreibt nie** (`FsCheck` ist durchgehend lesend); repariert wird nur
+  über ausdrücklich gewählte Reparaturen, und ausgeführt werden sie von der
+  Dateisystemklasse selbst (`FileSystem::repair`) — sie kennt ihre Invarianten.
+* Vier Schweregrade, und der oberste heißt **`Gefahr`**: *der nächste Schreibvorgang
+  zerstört Daten*.  Der Musterfall ist der UDOS-Sektor, der zu einer Datei gehört und
+  im Belegungsplan als frei steht.
+* Der **Belegungsplan lässt sich aus den Ketten neu aufbauen** — der wertvollste
+  Eingriff überhaupt, weil bei UDOS eine einzige beschädigte Spur (23) den Überblick
+  über die ganze Diskette kostet, ohne dass eine Datei Schaden genommen hätte.  Er ist
+  gesperrt, solange nicht jede Spur gelesen und jede Kette fehlerfrei ist.
+* **Gelöschte Dateien sind wiederherstellbar**, weil keines der drei Dateisysteme beim
+  Löschen Nutzdaten überschreibt: CP/M setzt nur das Nutzerbyte auf `0xE5` (Name,
+  Attribute und alle Blockzeiger bleiben stehen), UDOS und NDOS entfernen den
+  Verzeichniseintrag und die Bits der Karte — Kopfsektor, Kette und Daten bleiben
+  vollständig, verloren ist allein der **Name**.
+* Zwei neue Aktionen im Menü **Diskette** (`act_reparieren`, `act_wiederherstellen`),
+  angelegt wie alle anderen in `ui/actions.py`, dazu `ui/fsck_dialog.py` und
+  `ui/recover_dialog.py`.  Der Befund erscheint im **Meldungsstreifen** (eine Zeile,
+  mit Knopf), im Zustandsteil der Statuszeile, vollständig im Protokoll und im
+  Diskettenangaben-Dialog — kein siebter Meldungsort (§20.4 bleibt).
+* Neu in der C-ABI: `k1520d_check_*`, `k1520d_finding_*`, `k1520d_repair_*`,
+  `k1520d_recover_*`; neu in der CLI: `check --full`, `fsck`, `recover` (auch für
+  `--physical`).
+
+> **Stand 2026-08-19: Etappen 1 und 2 sind umgesetzt.**  Es gibt das Modell
+> (`core/filesystem/check/`), die Prüfung für **alle drei** Dateisystemfamilien
+> (CP/M inkl. SCP1700, ZDOS, NDOS), die Automatik beim Öffnen, `check [--full]` mit
+> `--json`, die C-ABI `k1520d_check`/`k1520d_finding_*` (der frühere Textbericht
+> heißt seitdem **`k1520d_check_report`**) und die Anzeige in Statuszeile,
+> Meldungsstreifen, Protokoll und Diskettenangaben — dort auch die Schaltfläche
+> *Vollprüfung*.  Noch **nicht** umgesetzt: Reparatur (`FileSystem::repair` ist ein
+> leerer Haken), Wiederherstellung gelöschter Dateien, die beiden Dialoge und die
+> Menüeinträge `act_reparieren` / `act_wiederherstellen`.

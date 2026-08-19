@@ -1,0 +1,363 @@
+/**
+ * @file udos1715_check.cpp
+ * @brief Die Pruefung des UDOS1715-/NDOS-Dateisystems (PC 1715, P8000).
+ *
+ * Umsetzung von `doc/design/15_dateisystempruefung.md` §10.  Dieselbe
+ * Betriebssystemfamilie wie ZDOS, aber der µPD765 erreicht die Bytes hinter der
+ * Daten-CRC nicht: die Verkettung steht in eigenen **Zeigersektoren** (je bis zu
+ * 125 Adressen, untereinander verkettet, `FIRSTBL` im Descriptor bei `80H`).
+ *
+ * Was das fuer die Pruefung aendert:
+ *
+ * * **Die Zeigersektoren sind selbst Sektoren** und muessen mitgezaehlt werden —
+ *   in der Kreuzbelegung wie im Abgleich mit dem Belegungsplan.
+ * * **Die Kette ist doppelt verkettet** (`BCKZGR`/`FORZGR`), also ableitbar und
+ *   spaeter reparierbar — genau wie der Sektorkontrollblock bei ZDOS.
+ * * **Eine Spur ist der ganze Zylinder** (32 Sektoren, `UDOS-Sektor = (ID−1) +
+ *   Kopf·16`).  Ein Record darf deshalb die **Kopf**grenze ueberschreiten (`CAT`
+ *   tut es), die **Spur**grenze nicht.
+ *
+ * Und ein Unterschied bei den Zaehlern: bei NDOS sind **beide** echt (§3.1 des
+ * Formatentwurfs), waehrend ZDOS den „belegt"-Zaehler als Festwert 2464 − frei
+ * bildet.  Hier lohnt sich also auch die zweite Gegenprobe.
+ *
+ * @see doc/design/15_dateisystempruefung.md §10 · doc/udos1715_diskettenformat.md
+ * @author Olaf Krieger
+ * @date 2026
+ * @license MIT License
+ */
+
+#include "core/filesystem/check/fs_check.h"
+#include "core/filesystem/udos/udos1715_fs.h"
+
+#include <algorithm>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
+
+namespace {
+
+constexpr size_t kMaxJeKennung = 20;
+
+std::string ort(UdosPointer p) {
+    return "Spur " + std::to_string(p.track) + " Sektor " + std::to_string(p.sector_index);
+}
+
+}  // namespace
+
+FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) const {
+    FsCheckReport bericht;
+    bericht.level = level;
+    FsFindings b(bericht);
+
+    const uint8_t spt = secs_per_track_;
+    // Buchfuehrung wie bei ZDOS: `gewollt` sind die Spuren, in die die Pruefung
+    // sehen wollte, `da` die davon verfuegbaren.  Eine „Spur" sind hier BEIDE
+    // Koepfe eines Zylinders (§1.1) — bekannt ist sie nur, wenn beide da sind.
+    std::set<uint8_t> gewollt, da;
+    auto brauche = [&](uint8_t t) {
+        gewollt.insert(t);
+        if (!nachladen && !(space_.trackKnown(t, 0)
+                            && (phys_spt_ == spt || space_.trackKnown(t, 1)))) {
+            bericht.vollstaendig = false;
+            return false;
+        }
+        da.insert(t);
+        return true;
+    };
+    // Vor JEDEM Verlassen: die Spurzaehler festschreiben.  Sie bedeuten „gewollt"
+    // und „davon verfuegbar" — an vier Stellen von Hand gesetzt liefen sie
+    // auseinander.
+    auto abschluss = [&] {
+        bericht.spuren_gelesen = static_cast<int>(da.size());
+        bericht.spuren_gesamt  = static_cast<int>(gewollt.size());
+    };
+    auto nr = [&](UdosPointer p) {
+        return static_cast<uint32_t>(p.track) * spt + p.sector_index;
+    };
+
+    // ═══ Ebene Verwaltung ════════════════════════════════════════════════════
+    //
+    // Die Kartenspur ist beim Mounten schon gelesen worden — sie wird hier nur noch
+    // gebucht, damit die Spurzaehler stimmen.
+    brauche(prof_.bitmap_track);
+
+    std::string warum;
+    if (!bitmap_.looksValid(spt, tracks_, &warum))
+        b.addAt("udos.karte.ungueltig", FsSeverity::Fehler, FsLayer::Verwaltung,
+                "Belegungsplan",
+                "Der Belegungsplan auf Spur " + std::to_string(prof_.bitmap_track)
+                + " ist nicht plausibel: " + warum, prof_.bitmap_track, 0);
+
+    if (bitmap_.sectorsPerTrack() != spt)
+        b.addAt("udos.karte.geometrie", FsSeverity::Fehler, FsLayer::Verwaltung,
+                "Belegungsplan",
+                "Der Plan nennt " + std::to_string(bitmap_.sectorsPerTrack())
+                + " Sektoren je Spur, gemessen sind " + std::to_string(spt),
+                prof_.bitmap_track, 0);
+
+    // Bei NDOS sind BEIDE Zaehler echt — anders als bei ZDOS.
+    if (bitmap_.storedFree() != bitmap_.countFree())
+        b.addAt("udos.karte.zaehler", FsSeverity::Warnung, FsLayer::Verwaltung,
+                "Belegungsplan",
+                "Der Freizaehler sagt " + std::to_string(bitmap_.storedFree())
+                + ", ausgezaehlt sind " + std::to_string(bitmap_.countFree())
+                + " Sektoren", prof_.bitmap_track, 0);
+    if (bitmap_.storedUsed() != bitmap_.countUsed())
+        b.addAt("udos.karte.zaehler", FsSeverity::Warnung, FsLayer::Verwaltung,
+                "Belegungsplan",
+                "Der Belegtzaehler sagt " + std::to_string(bitmap_.storedUsed())
+                + ", ausgezaehlt sind " + std::to_string(bitmap_.countUsed())
+                + " Sektoren", prof_.bitmap_track, 0);
+
+    // ── Die Verzeichnisdatei ─────────────────────────────────────────────────
+    if (!brauche(prof_.directory_track)) {
+        b.add("udos.verz.ungelesen", FsSeverity::Info, FsLayer::Verwaltung, "",
+              "Die Verzeichnisspur ist noch nicht gelesen — geprueft wurde nichts");
+        abschluss();
+        bericht.sortieren();
+        return bericht;
+    }
+    UdosFileHeader dir_hdr;
+    if (!readDescriptor(directoryDescriptor(), dir_hdr)) {
+        b.addAt("udos.verz.kaputt", FsSeverity::Fehler, FsLayer::Verwaltung, "DIRECTORY",
+                "Der Descriptor der Verzeichnisdatei (" + ort(directoryDescriptor())
+                + ") ist nicht lesbar: " + lastError(), prof_.directory_track, 0);
+        abschluss();
+        bericht.sortieren();
+        return bericht;
+    }
+    if ((dir_hdr.type_byte & 0x40) == 0)
+        b.addAt("udos.verz.kaputt", FsSeverity::Fehler, FsLayer::Verwaltung, "DIRECTORY",
+                "Der Descriptor der Verzeichnisdatei weist sich nicht als Typ D aus",
+                prof_.directory_track, 0);
+
+    // Was das Dateisystem SELBST belegt — das muss im Plan stehen.  Die Systemspuren
+    // (Urlader, BFOS) gehoeren NICHT dazu: ob es sie gibt, ist eine Eigenschaft der
+    // Diskette, nicht des Dateisystems (bei ZDOS gilt dasselbe).
+    std::set<uint32_t> eigen;
+    for (uint8_t s = 1; s <= 2; ++s)
+        eigen.insert(nr(UdosPointer{static_cast<uint8_t>(s - 1), prof_.bitmap_track}));
+    std::vector<UdosPointer> dir_sektoren;
+    if (!sectorsOfFile(directoryDescriptor(), dir_sektoren))
+        b.addAt("udos.verz.kette", FsSeverity::Fehler, FsLayer::Verwaltung, "DIRECTORY",
+                "Die Zeigersektoren der Verzeichnisdatei sind nicht schluessig: "
+                + lastError(), prof_.directory_track, 0);
+    for (const UdosPointer& p : dir_sektoren) eigen.insert(nr(p));
+
+    for (uint32_t s : eigen) {
+        const uint8_t t = static_cast<uint8_t>(s / spt);
+        const uint8_t i = static_cast<uint8_t>(s % spt);
+        if (bitmap_.used(t, static_cast<uint8_t>(i + 1))) continue;
+        b.addAt("udos.karte.system", FsSeverity::Gefahr, FsLayer::Verwaltung, "Belegungsplan",
+                "Spur " + std::to_string(t) + " Sektor " + std::to_string(i)
+                + " traegt das Dateisystem selbst (Belegungsplan oder Verzeichnis),"
+                  " steht aber als FREI — NDOS vergibt ihn beim naechsten Schreiben",
+                t, 0);
+    }
+
+    const std::vector<UdosDirEntry> verz = directory();
+    std::map<std::string, int> namen;
+    for (const UdosDirEntry& e : verz) {
+        if (++namen[e.name] == 2)
+            b.add("udos.verz.name", FsSeverity::Warnung, FsLayer::Verwaltung, e.name,
+                  "Der Name '" + e.name + "' steht mehrfach im Verzeichnis");
+        std::string w;
+        if (!validName(e.name, &w))
+            b.add("udos.verz.name", FsSeverity::Warnung, FsLayer::Verwaltung, e.name,
+                  "'" + e.name + "': " + w);
+    }
+
+    if (level == FsCheckLevel::Schnell) {
+        abschluss();
+        bericht.begrenzen(kMaxJeKennung);
+        bericht.sortieren();
+        return bericht;
+    }
+
+    // ═══ Ebene Dateien (nur Vollpruefung) ════════════════════════════════════
+
+    std::map<uint32_t, std::string> gehoert;
+    for (uint32_t s : eigen) gehoert.emplace(s, "DIRECTORY");
+
+    for (const UdosDirEntry& e : verz) {
+        if (!brauche(e.header.track)) continue;
+
+        UdosFileHeader hdr;
+        if (!readDescriptor(e.header, hdr)) {
+            b.addAt("udos.verz.eintrag_kaputt", FsSeverity::Fehler, FsLayer::Dateien, e.name,
+                    "Der Verzeichniseintrag zeigt auf " + ort(e.header)
+                    + ", dort steht kein brauchbarer Descriptor: " + lastError(),
+                    e.header.track, 0);
+            continue;
+        }
+        gehoert.emplace(nr(e.header), e.name);
+
+        // ── Der Descriptor ───────────────────────────────────────────────────
+        // Die Segmentliste (Offset 40…121) endet mit `00 00 00 00`.  Laeuft sie bis
+        // ans Ende durch, steht dort kein Abschluss — dann ist entweder Muell im
+        // Kopfsektor, oder die Liste ist laenger, als er fassen kann.  Beides kostet
+        // beim Zurueckschreiben Segmente, und eine Programmdatei ohne ihre Segmente
+        // startet nicht (doc/udos_diskettenformat.md §6.3).
+        if ((hdr.type_byte & 0x80) != 0 && hdr.segments.size() >= kUdosMaxSegments)
+            b.addAt("udos.kopf.segmente", FsSeverity::Warnung, FsLayer::Dateien, e.name,
+                    "Die Segmentliste des Descriptors hat keinen Abschluss "
+                    "(00 00 00 00) — sie fuellt alle "
+                    + std::to_string(kUdosMaxSegments) + " Plaetze",
+                    e.header.track, 0);
+        if (hdr.typeName().empty())
+            b.addAt("udos.kopf.typ", FsSeverity::Warnung, FsLayer::Dateien, e.name,
+                    "Das Typbyte des Descriptors hat kein Typbit gesetzt", e.header.track, 0);
+        if (hdr.bytes_in_last > hdr.record_len)
+            b.addAt("udos.kopf.letzter", FsSeverity::Warnung, FsLayer::Dateien, e.name,
+                    "„Bytes im letzten Satz" " = " + std::to_string(hdr.bytes_in_last)
+                    + " ist groesser als die Satzlaenge " + std::to_string(hdr.record_len),
+                    e.header.track, 0);
+        if ((hdr.type_byte & 0x80) != 0 &&
+            (hdr.low_addr == 0xFFFF || hdr.high_addr == 0xFFFF))
+            b.addAt("udos.kopf.speicher", FsSeverity::Fehler, FsLayer::Dateien, e.name,
+                    "Programmdatei ohne Speicherangabe (LOW/HIGH = FFFF) — sie laesst"
+                    " sich nicht starten", e.header.track, 0);
+
+        if (hdr.firstbl.end() || hdr.firstbl.track >= tracks_
+            || hdr.firstbl.sector_index >= spt) {
+            b.addAt("ndos.firstbl", FsSeverity::Fehler, FsLayer::Dateien, e.name,
+                    "FIRSTBL nennt " + (hdr.firstbl.end() ? std::string("FFFF")
+                                                          : ort(hdr.firstbl))
+                    + " — dort kann kein Zeigersektor liegen", e.header.track, 0);
+            continue;
+        }
+
+        // ── Die Zeigersektorkette ────────────────────────────────────────────
+        std::vector<UdosPointer>          adressen;
+        std::vector<Udos1715PointerBlock> bloecke;
+        if (!pointerBlocks(hdr, adressen, bloecke)) {
+            b.addAt("ndos.zeiger.kette", FsSeverity::Fehler, FsLayer::Dateien, e.name,
+                    "Die Zeigersektorkette ist nicht lesbar: " + lastError(),
+                    hdr.firstbl.track, 0);
+            continue;
+        }
+
+        // Vor- und Rueckwaertszeiger sind redundant und damit eine echte Gegenprobe:
+        // der erste Block zeigt auf den Descriptor zurueck, jeder weitere auf seinen
+        // Vorgaenger.
+        UdosPointer bp = hdr.firstbl, davor = e.header;
+        for (const Udos1715PointerBlock& blk : bloecke) {
+            gehoert.emplace(nr(bp), e.name);
+            if (!(blk.back == davor))
+                b.addAt("ndos.zeiger.kette", FsSeverity::Warnung, FsLayer::Dateien, e.name,
+                        "Der Zeigersektor " + ort(bp) + " zeigt zurueck auf "
+                        + (blk.back.end() ? std::string("FFFF") : ort(blk.back))
+                        + ", davor liegt aber " + ort(davor), bp.track, 0);
+            davor = bp;
+            bp    = blk.forward;
+        }
+
+        if (adressen.empty() || !(adressen.front() == e.header))
+            b.addAt("ndos.zeiger.kette", FsSeverity::Warnung, FsLayer::Dateien, e.name,
+                    "Die erste Adresse des ersten Zeigersektors muesste der Descriptor "
+                    + ort(e.header) + " sein",
+                    hdr.firstbl.track, 0);
+
+        const size_t daten = adressen.empty() ? 0 : adressen.size() - 1;
+        if (daten != hdr.record_count)
+            b.addAt("ndos.zeiger.anzahl",
+                    daten < hdr.record_count ? FsSeverity::Fehler : FsSeverity::Warnung,
+                    FsLayer::Dateien, e.name,
+                    "Der Descriptor sagt " + std::to_string(hdr.record_count)
+                    + " Saetze an, die Zeigersektoren nennen " + std::to_string(daten)
+                    + " Adressen", e.header.track, 0);
+
+        // ── Die Datenrecords ─────────────────────────────────────────────────
+        const uint32_t je_rec = sectorsPerRecord(hdr.record_len);
+        int crc_kaputt = 0;
+        UdosPointer erster_schaden{0xFF, 0xFF};
+
+        for (size_t i = 1; i < adressen.size(); ++i) {
+            const UdosPointer a = adressen[i];
+            if (a.track >= tracks_ || a.sector_index >= spt) {
+                b.addAt("ndos.zeiger.ausserhalb", FsSeverity::Fehler, FsLayer::Dateien, e.name,
+                        "Satz " + std::to_string(i) + " nennt " + ort(a)
+                        + " — das liegt ausserhalb der Diskette", e.header.track, 0);
+                continue;
+            }
+            // Die KOPFgrenze darf ein Record ueberschreiten (die Spur ist der ganze
+            // Zylinder), die Spurgrenze nicht.
+            if (a.sector_index + je_rec > spt) {
+                b.addAt("ndos.satz.spurwechsel", FsSeverity::Fehler, FsLayer::Dateien, e.name,
+                        "Satz " + std::to_string(i) + " beginnt bei " + ort(a)
+                        + " und braucht " + std::to_string(je_rec)
+                        + " Sektoren — das reicht ueber das Spurende hinaus", a.track, 0);
+                continue;
+            }
+            if (!brauche(a.track)) continue;
+
+            for (uint32_t k = 0; k < je_rec; ++k) {
+                const UdosPointer q{static_cast<uint8_t>(a.sector_index + k), a.track};
+                const auto [it, neu] = gehoert.emplace(nr(q), e.name);
+                if (!neu && it->second != e.name)
+                    b.addAt("ndos.zeiger.doppelt", FsSeverity::Gefahr, FsLayer::Dateien, e.name,
+                            ort(q) + " gehoert sowohl zu '" + it->second + "' als auch zu '"
+                            + e.name + "' — wer als zweiter schreibt, zerstoert die Daten"
+                              " des ersten", q.track, 0);
+                SectorData sec;
+                if (!space_.readSector(q.track, headOf(q), idOf(q), sec) || !sec.ok()) {
+                    if (erster_schaden.end()) erster_schaden = q;
+                    ++crc_kaputt;
+                }
+            }
+        }
+        if (crc_kaputt)
+            b.addAt("udos.medium.crc", FsSeverity::Fehler, FsLayer::Medium, e.name,
+                    std::to_string(crc_kaputt) + " Sektor(en) dieser Datei sind nicht"
+                    " lesbar oder tragen eine falsche Pruefsumme, der erste bei "
+                    + ort(erster_schaden), erster_schaden.track, 0);
+    }
+
+    // ── Plan gegen Zeigersektoren ────────────────────────────────────────────
+    if (bericht.vollstaendig) {
+        std::map<std::string, std::pair<int, UdosPointer>> offen;
+        for (const auto& [s, wem] : gehoert) {
+            const uint8_t t = static_cast<uint8_t>(s / spt);
+            const uint8_t i = static_cast<uint8_t>(s % spt);
+            if (bitmap_.used(t, static_cast<uint8_t>(i + 1))) continue;
+            auto& [n, erster] = offen[wem];
+            if (n++ == 0) erster = UdosPointer{i, t};
+        }
+        for (const auto& [wem, wieviel] : offen)
+            b.addAt("udos.karte.frei_aber_belegt", FsSeverity::Gefahr, FsLayer::Dateien, wem,
+                    std::to_string(wieviel.first) + " Sektor(en) von '" + wem
+                    + "' stehen im Belegungsplan als FREI (der erste bei "
+                    + ort(wieviel.second) + ") — NDOS vergibt sie beim naechsten"
+                      " Schreiben und zerstoert die Datei",
+                    wieviel.second.track, 0);
+
+        int verloren = 0;
+        uint8_t erste_spur = 0;
+        for (uint8_t t = 0; t < tracks_; ++t) {
+            // Systemspuren bleiben aussen vor: Spur 0 traegt auf einer
+            // Systemdiskette Urlader und BFOS, und der P8000 sperrt zusaetzlich
+            // Kopf 0 der Bootspur — beides gehoert keiner Datei und ist trotzdem
+            // zu Recht belegt.
+            if (reservedTrack(t) || t == 0 || t == prof_.boot_track) continue;
+            for (uint8_t s = 1; s <= spt; ++s) {
+                if (!bitmap_.used(t, s)) continue;
+                if (gehoert.count(nr(UdosPointer{static_cast<uint8_t>(s - 1), t}))) continue;
+                if (verloren++ == 0) erste_spur = t;
+            }
+        }
+        if (verloren)
+            b.addAt("udos.karte.belegt_aber_frei", FsSeverity::Warnung, FsLayer::Verwaltung,
+                    "Belegungsplan",
+                    std::to_string(verloren) + " Sektoren stehen als belegt, gehoeren aber"
+                    " zu keiner Datei (ab Spur " + std::to_string(erste_spur)
+                    + ") — verlorener Platz; dort koennten geloeschte Dateien liegen",
+                    erste_spur, 0);
+    }
+
+    abschluss();
+    bericht.begrenzen(kMaxJeKennung);
+    bericht.sortieren();
+    return bericht;
+}

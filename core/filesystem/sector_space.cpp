@@ -119,6 +119,12 @@ bool SectorSpace::trackFormatted(uint8_t cyl, uint8_t head) const {
     return !sectors(s).empty();
 }
 
+const std::vector<LogicalSector>& SectorSpace::trackSectors(uint8_t cyl, uint8_t head) const {
+    static const std::vector<LogicalSector> keine;
+    const int slot = slotOf(cyl, head);
+    return slot < 0 ? keine : sectors(slot);
+}
+
 bool SectorSpace::trackKnown(uint8_t cyl, uint8_t head) const {
     // Bewusst NICHT ueber sectors()/track(): beides holt die Spur.  Gefragt ist der
     // Zustand, nicht der Inhalt.

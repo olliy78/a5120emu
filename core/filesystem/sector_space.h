@@ -119,6 +119,20 @@ public:
     bool     trackFormatted(uint8_t cyl, uint8_t head) const;
 
     /**
+     * @brief Die Sektoren einer Spur, **so wie sie physisch dort liegen**.
+     *
+     * Nicht dasselbe wie „alle erwarteten IDs durchlesen": eine Spur darf eine ID
+     * doppelt tragen (die A7100-Bootspur wurde in einem Zug ueber den Index hinaus
+     * beschrieben und traegt 19 Adressmarken fuer 16 Sektoren) oder Luecken haben.
+     * Fuer den Betrieb ist das gleichgueltig — der Treiber sucht eine ID —, fuer die
+     * **Pruefung** nicht: ein zweiter, schadhafter Sektor mit derselben ID bliebe
+     * sonst unsichtbar.
+     *
+     * @return leere Liste, wenn die Spur nicht zum Raum gehoert.
+     */
+    const std::vector<LogicalSector>& trackSectors(uint8_t cyl, uint8_t head) const;
+
+    /**
      * @brief Ist die Spur schon bekannt? — **laedt NICHT nach**.
      *
      * Nur an einer physischen Diskette je @c false; bei einer Datei ist jede Spur

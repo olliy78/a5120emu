@@ -1,0 +1,12 @@
+# --json liefert die Befunde einzeln, mit ihrer stabilen Kennung: das ist der
+# Vertrag, an dem Skripte haengen (Entwurf E5).
+tool:   k1520disktool
+disk:   scp1700_640k_a7100_system.hfe
+run:    check %DISK% --full --json
+expect: "level":"voll"
+expect: "complete":true
+expect: "ok":false
+expect: "id":"cpm.medium.systemspur"
+expect: "severity":"Warnung"
+expect: "layer":"Medium"
+exit:   1

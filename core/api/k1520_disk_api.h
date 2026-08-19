@@ -563,9 +563,61 @@ K1520_API const char* k1520d_check_fit(K1520Disk h, const char* src_dir);
 
 /// @brief Ungespeicherte Aenderungen im Speicher?
 K1520_API bool        k1520d_dirty(K1520Disk h);
-/// @brief Mehrzeiliger Pruefbericht (Datentraeger, Belegung, Auffaelligkeiten).
-K1520_API const char* k1520d_check(K1520Disk h);
+/// @brief Mehrzeiliger Ueberblick (Datentraeger, Belegung, Auffaelligkeiten) als Text.
+///
+/// **Umbenannt 2026-08-18** — `k1520d_check` heisst jetzt die strukturierte
+/// Dateisystempruefung (s. u.).  Dieser hier bleibt der formlose Bericht fuer
+/// Anzeigen, die einfach etwas hinschreiben wollen.
+K1520_API const char* k1520d_check_report(K1520Disk h);
 K1520_API const char* k1520d_version(void);
+
+/* ─── Dateisystempruefung (doc/design/15_dateisystempruefung.md) ───────────── */
+/*
+ * Beim Oeffnen laeuft automatisch eine SCHNELLpruefung; ihr Ergebnis steht ohne
+ * weiteres Zutun in `k1520d_finding_*`.  Sie sieht nur die Verwaltungsstrukturen
+ * an, die das Mounten ohnehin gelesen hat, und kostet damit auch an einer
+ * physischen Diskette keinen zusaetzlichen Spurzugriff.
+ *
+ * Die Pruefung **aendert nichts**.  Reparaturen sind ein eigener, ausdruecklicher
+ * Schritt und kommen mit Etappe 3.
+ */
+
+/**
+ * @brief Neu pruefen.
+ * @param level     0 = schnell (nur Verwaltung), 1 = voll (auch Ketten und Medium)
+ * @param nachladen Darf eine unbekannte Spur beschafft werden?  An einem echten
+ *                  Laufwerk zieht `level=1, nachladen=true` die ganze Diskette ein
+ *                  (ein bis zwei Minuten) — dann in einen Arbeitsfaden damit.
+ * @return Zahl der Befunde, -1 bei ungueltigem Handle.
+ */
+K1520_API int k1520d_check(K1520Disk h, int level, bool nachladen);
+
+/// @brief Wurde alles angesehen?  false = an einer physischen Diskette fehlten
+///        Spuren; „ohne Befund" heisst dann nur „bislang ohne Befund".
+K1520_API bool k1520d_check_complete(K1520Disk h);
+/// @brief Angesehene bzw. insgesamt vorhandene Spuren des Dateisystembereichs.
+K1520_API int  k1520d_check_tracks_read(K1520Disk h);
+K1520_API int  k1520d_check_tracks_total(K1520Disk h);
+/// @brief Kurzfassung ("2 Gefahr, 1 Warnung"); "" = ohne Befund.
+K1520_API const char* k1520d_check_summary(K1520Disk h);
+
+K1520_API int         k1520d_finding_count(K1520Disk h);
+/// @brief Stabile Kennung, z. B. "cpm.block.doppelt" — Vertrag, kein Anzeigetext.
+K1520_API const char* k1520d_finding_id(K1520Disk h, int i);
+/// @brief 0 Hinweis · 1 Warnung · 2 Fehler · 3 **Gefahr** (der naechste
+///        Schreibvorgang zerstoert Daten).
+K1520_API int         k1520d_finding_severity(K1520Disk h, int i);
+/// @brief 0 Medium · 1 Verwaltung · 2 Dateien.
+K1520_API int         k1520d_finding_layer(K1520Disk h, int i);
+K1520_API int         k1520d_finding_volume(K1520Disk h, int i);
+/// @brief Woran es haengt ("TEST.COM", "Platz 37", "Systemspur").
+K1520_API const char* k1520d_finding_object(K1520Disk h, int i);
+K1520_API const char* k1520d_finding_text(K1520Disk h, int i);
+/// @brief Ort auf der Diskette fuer den Sprung in den Diskeditor; -1 = ortlos.
+K1520_API int         k1520d_finding_cyl(K1520Disk h, int i);
+K1520_API int         k1520d_finding_head(K1520Disk h, int i);
+/// @brief Laufende Nummer des Sektors in seiner Spur (wie @ref k1520d_span_index).
+K1520_API int         k1520d_finding_sector(K1520Disk h, int i);
 
 #ifdef __cplusplus
 }

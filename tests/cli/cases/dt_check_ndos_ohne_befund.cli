@@ -1,0 +1,10 @@
+# Die WEGA-Startdiskette des P8000 faehrt dasselbe NDOS wie der PC 1715, hat aber
+# einen groesseren Systembereich und 13 Sektoren mit Schreibnaht.  Sie ist damit der
+# schaerfste Waechter gegen zu enge Annahmen darueber, wie eine NDOS-Diskette
+# auszusehen hat (doc/udos1715_diskettenformat.md §3.0a).
+tool:   k1520disktool
+disk:   udosP8000_640k_wega.hfe
+run:    check %DISK% --full
+expect: ohne Befund
+forbid: ndos.
+exit:   0

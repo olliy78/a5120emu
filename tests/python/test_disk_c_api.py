@@ -567,3 +567,111 @@ def test_der_crc_dialekt_macht_die_sektoren_im_diskeditor_gruen(fixture_disks):
                         rot += 1
         assert rot == 0, f"{rot} Sektoren gelten als schadhaft"
         assert gruen == 7 * 2 * 26, "nicht jede Spurseite trug ihre 26 Sektoren"
+
+
+# ─── Dateisystemprüfung (doc/design/15_dateisystempruefung.md) ───────────────
+
+def test_das_oeffnen_prueft_schon_und_meldet_nichts_bei_heilen_disketten(fixture_disks):
+    """Die Schnellprüfung läuft beim Öffnen — ohne dass jemand danach fragt.
+
+    Und sie schweigt: eine gesunde Diskette darf keinen Befund hervorbringen,
+    sonst wird die ganze Anzeige weggeklickt (Entwurf E10).
+    """
+    from app.core_binding.k1520disk import DiskTool, WARNUNG
+
+    for name in ("cpa_cpa780_k5601_clock.hfe", "cpa_cpa780_k5601_noclock.img",
+                 "scpx17_cpa780_k5601.hfe", "udos_boot_scp.hfe"):
+        with DiskTool.open(fixture_disks / name) as d:
+            bericht = d.findings()
+            assert bericht.complete, name
+            assert not bericht.ab(WARNUNG), f"{name}: {[f.text for f in bericht.findings]}"
+
+
+def test_die_vollpruefung_findet_den_bekannten_schaden_des_a7100_traegers(fixture_disks):
+    """Sie nennt den SEKTOR — die Erkennung sagt nur „1 Sektor mit CRC-Fehler".
+
+    Der Referenzdatenträger ist wirklich beschädigt (§22 des Werkzeugentwurfs);
+    hier wird geprüft, dass die Prüfung den Schaden verortet und dass die
+    Schnellprüfung ihn NICHT meldet — er liegt auf einer Systemspur, und die
+    kostet einen eigenen Durchlauf.
+    """
+    from app.core_binding.k1520disk import DiskTool, EBENE_MEDIUM, WARNUNG
+
+    with DiskTool.open(fixture_disks / "scp1700_640k_a7100_system.hfe") as d:
+        assert not d.check(voll=False).ab(WARNUNG)
+
+        bericht = d.check(voll=True)
+        sys = [f for f in bericht.findings if f.id == "cpm.medium.systemspur"]
+        assert len(sys) == 2, [f.text for f in bericht.findings]
+        assert all(f.layer == EBENE_MEDIUM and f.ortbar and f.cyl == 0 for f in sys)
+        assert bericht.summary == "2 Warnung"
+
+
+def test_eine_kreuzbelegung_ist_gefahr_und_wird_benannt(fixture_disks, tmp_path):
+    """Der einzige `Gefahr`-Befund, den CP/M hervorbringen kann.
+
+    CP/M führt keinen gespeicherten Belegungsplan — „Block gehört niemandem" gibt
+    es dort nicht.  Zwei Dateien auf demselben Block dagegen schon, und das
+    Betriebssystem sagt nichts dazu.
+    """
+    import shutil
+    from app.core_binding.k1520disk import DiskTool, GEFAHR
+
+    abbild = tmp_path / "kreuz.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_noclock.img", abbild)
+
+    roh = bytearray(abbild.read_bytes())
+    dirbase = 15104                       # Verzeichnis von cpa780, nachgemessen
+    belegt = [i for i in range(128) if roh[dirbase + i * 32] <= 15]
+    a, b = belegt[0], belegt[1]
+    # Den ersten Blockzeiger von a auch in b eintragen (16 Bit, cpa780 hat 390 Blöcke).
+    roh[dirbase + b * 32 + 16: dirbase + b * 32 + 18] = \
+        roh[dirbase + a * 32 + 16: dirbase + a * 32 + 18]
+    abbild.write_bytes(bytes(roh))
+
+    with DiskTool.open(abbild, "cpa780") as d:
+        bericht = d.findings()            # schon beim Öffnen da
+        treffer = [f for f in bericht.findings if f.id == "cpm.block.doppelt"]
+        assert len(treffer) == 1, [f.text for f in bericht.findings]
+        assert treffer[0].severity == GEFAHR
+        assert bericht.hoechste == GEFAHR
+
+
+def test_ein_befund_nennt_die_seite_der_udos_diskette(fixture_disks, tmp_path):
+    """Bei UDOS ist jede **Seite** ein eigenes Dateisystem — der Befund muss sagen,
+    welche.  Sonst sucht man den Schaden auf der falschen Hälfte der Diskette.
+
+    Beschädigt wird der Belegungsplan von Seite 1: ein Sektor, der zu einer Datei
+    gehört, wird als frei markiert.  Die Datei bleibt heil — und genau darum ist es
+    `Gefahr`: UDOS vergibt den Sektor beim nächsten Schreiben weiter.
+    """
+    import shutil
+    from app.core_binding.k1520disk import DiskTool, GEFAHR
+
+    abbild = tmp_path / "udos_kaputt.hfe"
+    shutil.copy(fixture_disks / "udos_boot_scp.hfe", abbild)
+
+    with DiskTool.open(abbild) as d:
+        d.set_read_only(False)
+        # Belegungsplan Seite 1: Spur 23, Sektor 1..3 à 128 B.  Ein Bit für einen
+        # Sektor löschen, der auf einer Datenspur wirklich belegt ist.
+        spur = d.track(23, 1)
+        idx = {s.id: s.index for s in spur.spans if s.size}
+        # Spur 30 (Datenbereich), Sektor 1 — Bit 31 des Spureintrags.  Die Karte ist
+        # 384 B lang und liegt in DREI 128-B-Sektoren; das Byte will erst gefunden
+        # werden.
+        off = 24 + 30 * 4
+        sid, innen = off // 128 + 1, off % 128
+        plan = bytearray(d.sector_data(23, 1, idx[sid]))
+        assert plan[innen] & 0x80, "Spur 30 Sektor 1 war gar nicht belegt"
+        plan[innen] &= 0x7F
+        d.sector_write(23, 1, idx[sid], bytes(plan))
+        d.flush()
+
+    with DiskTool.open(abbild) as d:
+        bericht = d.check(voll=True)
+        treffer = [f for f in bericht.findings if f.id == "udos.karte.frei_aber_belegt"]
+        assert treffer, [f"{f.id}: {f.text}" for f in bericht.findings]
+        assert treffer[0].severity == GEFAHR
+        assert treffer[0].volume == 1, "der Befund muss Seite 1 nennen"
+        assert treffer[0].object, "und die betroffene Datei"

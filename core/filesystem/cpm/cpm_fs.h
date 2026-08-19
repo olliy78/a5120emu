@@ -88,6 +88,8 @@ public:
     bool   wouldFit(const std::vector<PlannedFile>& files, FitReport& out) const override;
     bool   mkfs() override;
     FsInfo info() const override;
+    /// @brief Pruefung — umgesetzt in `core/filesystem/check/cpm_check.cpp`.
+    FsCheckReport check(FsCheckLevel level, bool nachladen) const override;
 
     /// @brief Ist @p name ein gueltiger CP/M-Name (8.3, Grossschrift, ohne Sonderzeichen)?
     ///        Liefert bei false den Grund in @p why.
@@ -99,6 +101,16 @@ public:
 
     /// @brief Alle Verzeichnisplaetze, auch freie und fortgesetzte Extents.
     std::vector<CpmDirEntry> directory() const;
+
+    /**
+     * @brief Der Verzeichnisbereich **unzerlegt** (`dir_entries × 32` Byte).
+     *
+     * Fuer die Pruefung und die Wiederherstellung: ein Platz voller Muell laesst
+     * sich zerlegt nicht beurteilen, und ein GELOESCHTER Platz ist gerade daran zu
+     * erkennen, dass sein Nutzerbyte 0xE5 ist, die uebrigen 31 Byte aber **nicht**
+     * (so sieht ein nie benutzter Platz nach @ref mkfs aus).
+     */
+    bool directoryRaw(std::vector<uint8_t>& out) const;
 
     /**
      * @brief Besteht der Verzeichnisbereich aus EINEM immer gleichen Byte?

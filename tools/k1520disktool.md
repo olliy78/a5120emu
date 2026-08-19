@@ -22,7 +22,7 @@ k1520disktool attr   <abbild> <datei> [schalter…]      Dateiangaben zeigen/än
 k1520disktool boot-get <abbild> <datei.bin>            Systemspuren herausschreiben
 k1520disktool boot-put <abbild> <datei.bin>            Bootabbild einspielen
 k1520disktool info   <abbild>                          Belegung und Erkennung
-k1520disktool check  <abbild>                          Prüfbericht
+k1520disktool check  <abbild> [--full]                 Dateisystem prüfen
 k1520disktool formats                                  bekannte Dateisysteme
 ```
 
@@ -56,6 +56,75 @@ $ k1520disktool info udos.hfe --json | jq '.volumes[].free'
 **Exit-Codes** sind Teil der Schnittstelle:
 `0` ok · `1` Fehler · `2` Format/Dateisystem nicht erkannt · `3` passt nicht
 (kein Platz) · `4` Ordnerstruktur falsch (fehlendes `SideN/`).
+
+
+## Dateisystem prüfen (`check`)
+
+Beim Öffnen läuft **automatisch** eine Schnellprüfung — sie sieht nur die
+Verwaltungsstrukturen an (bei CP/M das Verzeichnis, bei UDOS Belegungsplan und
+Verzeichnisdatei), also genau das, was das Mounten ohnehin gelesen hat.  An einer
+physischen Diskette kostet sie deshalb **keinen einzigen zusätzlichen
+Spurzugriff**.  `check` zeigt ihr Ergebnis; `check --full` fasst jede Spur an und
+nimmt zusätzlich die Medienebene dazu.
+
+```sh
+$ k1520disktool check scp1700.hfe --full
+scp1700.hfe  scp1700_640 / scp1700  Vollpruefung
+
+Warnung Medium     c0h0        Systemspur      cpm.medium.systemspur   Daten-CRC von Sektor 5 …
+Warnung Medium     c0h0        Systemspur      cpm.medium.systemspur   Sektor 10 der Systemspur c0h0 fehlt
+
+2 Warnung
+```
+
+Eine Zeile je Befund, Spalten `SCHWERE  EBENE  [SEITE]  ORT  OBJEKT  KENNUNG  Text` —
+greptauglich.  Rückgabewert **0** ohne Befund, **1** mit.
+
+**Vier Schweregrade**, und der oberste ist der, auf den es ankommt:
+
+| | Bedeutung |
+|---|---|
+| `Hinweis` | bemerkenswert, nicht falsch (z. B. „7 gelöschte Verzeichnisplätze") |
+| `Warnung` | in sich widersprüchlich, aber ohne Folgen |
+| `Fehler` | etwas ist bereits unerreichbar oder falsch |
+| **`Gefahr`** | **der nächste Schreibvorgang zerstört Daten** — Schreibschutz drauflassen, sichern, dann erst anfassen |
+
+**Drei Ebenen**, nach dem, worauf ein Befund beruht: `Medium` (Adressmarken, CRCs,
+unformatierte Spuren), `Verwaltung` (Verzeichnis, Belegungsplan) und `Dateien`
+(Ketten, Kreuzbelegung).  Nur die Ebene *Verwaltung* läuft automatisch.
+
+Die **Kennung** (`cpm.block.doppelt`) ist ein stabiler Vertrag und für Skripte
+gedacht; der Text daneben darf sich ändern.  Mit `--json` kommt beides einzeln:
+
+```sh
+$ k1520disktool check disk.img --full --json | jq -r '.findings[] | "\(.severity) \(.id)"'
+Gefahr cpm.block.doppelt
+```
+
+### UDOS und NDOS: hier lässt sich etwas beweisen
+
+Bei CP/M steht alles im Verzeichnis — es gibt nichts, womit man es vergleichen
+könnte.  UDOS dagegen führt **zwei unabhängige Darstellungen derselben Wahrheit**:
+den gespeicherten Belegungsplan und die Verkettung, die in den Daten selbst steht
+(ZDOS in den vier Bytes hinter jeder Daten-CRC, NDOS in eigenen Zeigersektoren).
+Widersprechen sie einander, ist das kein Verdacht, sondern ein Beweis.
+
+Der wichtigste Befund daraus ist `udos.karte.frei_aber_belegt` und er hat die
+Schwere **Gefahr**: ein Sektor gehört zu einer Datei, steht aber als frei.  Die
+Datei ist heil — und weil der Belegungsplan bei UDOS die einzige Instanz ist, die
+den freien Platz kennt, vergibt das System diesen Sektor beim nächsten Schreiben
+weiter.  Solange das ansteht: Schreibschutz drauflassen, ein Abbild sichern.
+
+Die Gegenrichtung (`udos.karte.belegt_aber_frei`) ist nur eine Warnung — dort
+liegt Platz brach, und womöglich eine gelöschte Datei.
+
+**Nicht geprüft werden die Systemspuren 0–2 und die Bootspur.**  Wie weit sie belegt
+sind, ist Sitte des jeweiligen Formatierers und keine Eigenschaft des Dateisystems;
+an echten Disketten reicht das von „nur drei Sektoren" bis „völlig frei".
+
+> **Was `check` NICHT tut: etwas ändern.**  Die Prüfung ist durchgehend lesend.
+> Reparieren und gelöschte Dateien wiederherstellen sind eigene, ausdrückliche
+> Schritte — Entwurf und Stand: `doc/design/15_dateisystempruefung.md`.
 
 ## Bootfähige Diskette anlegen
 

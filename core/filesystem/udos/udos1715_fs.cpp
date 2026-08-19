@@ -454,17 +454,10 @@ FsInfo Udos1715FileSystem::info() const {
     i.used_bytes  = i.total_bytes - i.free_bytes;
     i.files       = static_cast<int>(directory().size());
 
-    // Anders als bei ZDOS sind BEIDE Zaehler echt (§3.1) — eine Abweichung ist deshalb
-    // meldenswert, nicht bloss zu erwarten.
-    const int frei = bitmap_.countFree();
-    if (bitmap_.storedFree() != frei)
-        i.warnings.push_back("Freizaehler des Belegungsplans sagt "
-                             + std::to_string(bitmap_.storedFree()) + ", ausgezaehlt sind "
-                             + std::to_string(frei) + " Sektoren");
-    if (bitmap_.storedUsed() != bitmap_.countUsed())
-        i.warnings.push_back("Belegtzaehler des Belegungsplans sagt "
-                             + std::to_string(bitmap_.storedUsed()) + ", ausgezaehlt sind "
-                             + std::to_string(bitmap_.countUsed()) + " Sektoren");
+    // Der Zaehlerabgleich stand frueher hier; er gehoert in die PRUEFUNG
+    // (`check`, Kennung `udos.karte.zaehler`) — dort traegt er Schwere und
+    // Ort und steht nicht doppelt (doc/design/15_dateisystempruefung.md §4).
+    // Bei NDOS sind BEIDE Zaehler echt, deshalb prueft sie dort beide.
     return i;
 }
 

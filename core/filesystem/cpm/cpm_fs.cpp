@@ -226,6 +226,10 @@ std::vector<CpmDirEntry> CpmFileSystem::directory() const {
     return result;
 }
 
+bool CpmFileSystem::directoryRaw(std::vector<uint8_t>& out) const {
+    return readDirectory(out);
+}
+
 int CpmFileSystem::directoryFill() const {
     std::vector<uint8_t> roh;
     if (!readDirectory(roh) || roh.empty()) return -1;

@@ -16,6 +16,8 @@
  */
 
 #pragma once
+#include "core/filesystem/check/fs_check.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -308,6 +310,34 @@ public:
 
     /// @brief Zustand des Volumes.
     virtual FsInfo info() const = 0;
+
+    // ─── Pruefung und Reparatur (doc/design/15_dateisystempruefung.md) ───────
+
+    /**
+     * @brief Das Dateisystem pruefen.  **Aendert nichts** (E1).
+     *
+     * @param level     @c Schnell = nur @ref FsLayer::Verwaltung, also die
+     *                  Strukturen, die das Mounten ohnehin gelesen hat; @c Voll
+     *                  zusaetzlich Ketten, Kreuzbelegung und Medienebene.
+     * @param nachladen Darf eine noch unbekannte Spur beschafft werden?  An einer
+     *                  physischen Diskette kostet das 0,5–0,8 s je Spur — mit
+     *                  @c false bleibt die Pruefung bei dem, was da ist, und setzt
+     *                  @ref FsCheckReport::vollstaendig auf @c false (E2/E8).
+     */
+    virtual FsCheckReport check(FsCheckLevel level, bool nachladen) const {
+        (void)level; (void)nachladen;
+        return {};
+    }
+
+    /**
+     * @brief EINE Reparatur ausfuehren.
+     *
+     * Die Klasse deutet @ref FsRepair::kind und seine Parameter selbst (E3) — sie
+     * kennt ihre Invarianten und ihren Schreibpfad.  Vorgabe: nicht unterstuetzt.
+     */
+    virtual bool repair(const FsRepair& r) {
+        return fail("Dieses Dateisystem kennt keine Reparatur '" + r.kind + "'");
+    }
 
     const std::string& lastError() const { return last_error_; }
 
