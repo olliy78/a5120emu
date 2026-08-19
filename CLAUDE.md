@@ -423,6 +423,12 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 >   Fehler rollt die Momentaufnahme des `DiskMedium` zurück. `list()` liest **immer** frisch.
 > - **`filesystems:` in `data/formats.yaml` soll KURZ bleiben**: `CpaDpbRule` rechnet die
 >   meisten Profile bitgleich nach, ein neuer Eintrag braucht einen eigenen Grund.
+> - **Teure Läufe an einer physischen Diskette werden VORGELADEN, nicht gesperrt.**
+>   Prüf- und Suchdialog rufen `MainWindow._abbild_vervollstaendigen` — fehlende Spuren
+>   kommen mit dem Fortschrittsdialog der Formaterkennung herein („X von Y Spuren
+>   geladen", abbrechbar). Die Sperre in den drei Dialogen fragt seitdem
+>   `abbild_vollstaendig` statt `tool.path`: eine physische Diskette, die schon ganz
+>   im `DiskMedium` liegt, war vorher grundlos gesperrt.
 > - **Die Dateisystemprüfung (`fsck`, `core/filesystem/check/`) schreibt NIE** — sonst wäre
 >   die Automatik beim Öffnen ein Schreibzugriff auf eine schreibgeschützt geöffnete
 >   Diskette; Reparaturen gehen ausschliesslich über `FileSystem::repair`, gebündelt in

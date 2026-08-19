@@ -80,7 +80,8 @@ class RecoverDialog(QDialog):
     :param log:         Rückruf ``(text) -> None`` für das Protokoll des Fensters
     """
 
-    def __init__(self, tool, parent=None, zielordner=None, log=None, zeige_ort=None):
+    def __init__(self, tool, parent=None, zielordner=None, log=None, zeige_ort=None,
+                 abbild_vollstaendig=True):
         super().__init__(parent)
         self.setWindowTitle("Gelöschte Dateien suchen")
         self.resize(900, 620)
@@ -102,15 +103,15 @@ class RecoverDialog(QDialog):
         self.tiefe.addItem("Ganze Oberfläche (jeder freie Bereich)", 1)
         self.tiefe.currentIndexChanged.connect(lambda *_: self._suchen())
         # An einer PHYSISCHEN Diskette zöge die Oberflächensuche die ganze Scheibe
-        # ein (0,5–0,8 s je Spur).  Dasselbe Zugeständnis wie bei der Vollprüfung:
-        # bis es einen Arbeitsfaden mit Fortschritt gibt, bleibt sie dort gesperrt —
-        # ein Fenster, das zwei Minuten steht, sieht aus wie ein Absturz.
-        if not tool.path:
+        # ein (0,5–0,8 s je Spur).  Gefragt wird deshalb nach der VOLLSTÄNDIGKEIT des
+        # Speicherabbilds, nicht danach, ob eine Datei vorliegt: das Hauptfenster lädt
+        # fehlende Spuren vor dem Öffnen nach (`_abbild_vervollstaendigen`), und
+        # danach ist die Oberflächensuche so billig wie an einer Datei.
+        if not abbild_vollstaendig:
             self.tiefe.model().item(1).setEnabled(False)
             self.tiefe.setToolTip(
-                "An einer echten Diskette müsste für die Oberflächensuche jede Spur "
-                "einzeln gelesen werden (ein bis zwei Minuten) — das kommt mit einem "
-                "Arbeitsfaden mit Fortschrittsanzeige.")
+                "Das Speicherabbild ist unvollständig — für die Oberflächensuche "
+                "müsste jede fehlende Spur einzeln vom Laufwerk gelesen werden.")
 
         kopfzeile = QHBoxLayout()
         kopfzeile.addWidget(QLabel("Suchtiefe:"))

@@ -105,8 +105,19 @@ Alternativprofile** — mit Grund, s. §20.
 
 **Kleiner Rest, keine eigene Etappe:**
 
-* **Ebene Medium für UDOS breiter** — heute je Datei zusammengefasst; ein Reihenlauf
-  über die freien Bereiche fehlt.
+* **Ebene Medium für UDOS** — erledigt (2026-08-19). Der Reihenlauf über *alle*
+  Sektoren steht jetzt auch bei ZDOS und NDOS (`udos.medium.frei_kaputt`, Warnung, je
+  Seite einmal zusammengefasst mit dem ersten Ort): ein schadhafter Sektor außerhalb
+  jeder Datei ist nicht nichts — dort liegen die gelöschten Dateien (§13), und dorthin
+  schreibt UDOS als nächstes. Dazu `udos.medium.unformatiert` (Fehler), wenn die
+  Belegungskarte auf einer markenlosen Spur Belegung behauptet.
+  **Ein FEHLENDER freier Sektor ist bewusst kein Befund**: er gehört zu keiner Datei,
+  es ist nichts verloren und nichts zu tun, und die Erkennung nennt ihn ohnehin als
+  Medienhinweis. Auf 35 Jahre alten Medien ist er der Normalfall —
+  `udos_boot_scp.hfe` hat einen auf Spur 51, und ein Prüfer, der die Referenzdiskette
+  deswegen anmahnt, wird zu Recht weggeklickt (E10). Wächter:
+  `FsCheckUdosSchaden.EinKaputterSektorAusserhalbJederDateiWirdGefunden` und
+  `FsCheckKeineFalschmeldungen.EinFehlenderFreierSektorIstKeinBefund`.
 * **Der Ort eines Befundes nennt seit 2026-08-19 auch den Sektor.** Vorher gaben alle
   drei Prüfer nur Spur und Kopf mit, obwohl der Befundtext den Sektor nennt („Spur 21
   Sektor 6") — der Sprung in den Diskeditor (E9) landete auf dem ersten Sektor der
@@ -116,16 +127,18 @@ Alternativprofile** — mit Grund, s. §20.
   Ohne Sektor bleiben nur Befunde über eine ganze Spur (`cpm.medium.unformatiert`,
   `cpm.medium.systemspur`, `udos.karte.belegt_aber_frei`) — dort ist `-1` die ehrliche
   Auskunft. Wächter: `FsCheckOrt.EinOrtbarerBefundNenntAuchDenSektor`.
-* **Vollprüfung und Oberflächensuche an einer PHYSISCHEN Diskette** brauchen einen
-  Arbeitsfaden mit Fortschritt (ein bis zwei Minuten, 0,5–0,8 s je Spur).  Bis dahin
-  ist der Knopf in **allen drei** Dialogen gesperrt und sagt warum
-  (`disk_info_dialog.py`, `fsck_dialog.py`, `recover_dialog.py`) — ein Fenster, das
-  zwei Minuten steht, sieht aus wie ein Absturz.
-  **Die Sperre ist heute zu streng**: sie fragt nur, ob eine physische Diskette
-  vorliegt, nicht, ob deren Spuren schon gelesen sind.  Ist das Medium bereits ganz im
-  Speicher (alle Spuren `Clean`), kostet der Lauf gar nichts mehr und könnte sofort
-  freigegeben werden.  Dafür fehlt eine Auskunft „wie viele Spuren sind bekannt" an
-  der C-ABI; sie gehört in dieselbe Änderung wie der Arbeitsfaden.
+* **Vollprüfung und Oberflächensuche an einer PHYSISCHEN Diskette** — erledigt
+  (2026-08-19). Beim Öffnen des Prüf- oder Suchdialogs lädt das Hauptfenster fehlende
+  Spuren **vorher** nach (`MainWindow._abbild_vervollstaendigen`), mit demselben
+  Fortschrittsdialog wie die Formaterkennung (`app/ui/physical_disk.py::mit_fortschritt`,
+  Balken plus „*X* von *Y* Spuren geladen", abbrechbar). Danach liegt das Medium ganz
+  im Speicher, und jeder weitere Lauf ist so schnell wie an einer Datei.
+  Die Sperre in den drei Dialogen (`disk_info_dialog.py`, `fsck_dialog.py`,
+  `recover_dialog.py`) fragt seitdem nicht mehr „ist das eine Datei" (`tool.path`),
+  sondern **`abbild_vollstaendig`** — eine physische Diskette, die schon ganz gelesen
+  ist, war vorher grundlos gesperrt. Die Antwort kommt aus der Sitzung
+  (`tracks_known` gegen `tracks_total`), nicht aus dem Kern; eine entsprechende
+  Auskunft an der C-ABI gibt es weiterhin nicht und wird auch nicht gebraucht.
 
 **Fünf Dinge, die beim Umsetzen anders kamen als hier ursprünglich entworfen** — sie
 sind an Ort und Stelle korrigiert, aber leicht zu übersehen:

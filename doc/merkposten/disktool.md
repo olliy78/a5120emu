@@ -442,6 +442,26 @@ Was beim Weiterarbeiten zu wissen ist:
   Verzeichnis nichts Gesuchtes mehr (Entwurf §20).  An einer physischen Diskette
   kostet das **einmal** die ganze Scheibe — danach liegt sie im `DiskMedium`, und
   jeder weitere Lauf ist so schnell wie an einer Datei.
+- **Physische Diskette: erst LADEN, dann Dialog** (2026-08-19).  Prüf- und
+  Suchdialog rufen `MainWindow._abbild_vervollstaendigen`; fehlende Spuren kommen
+  mit `app/ui/physical_disk.py::mit_fortschritt` herein — derselbe Balken wie bei der
+  Formaterkennung, „X von Y Spuren geladen", abbrechbar.  Die Sperre der teuren Läufe
+  fragt seitdem **`abbild_vollstaendig`** statt `tool.path` (`fsck_dialog.py`,
+  `recover_dialog.py`, `disk_info_dialog.py`): eine physische Diskette, die schon
+  ganz im `DiskMedium` liegt, war vorher grundlos gesperrt.  Die Antwort kommt aus
+  der Sitzung (`tracks_known` gegen `tracks_total`), nicht aus dem Kern.  Wächter:
+  `…ein_unvollstaendiges_abbild_sperrt_die_teuren_laeufe`.
+- **Ebene Medium bei UDOS/NDOS: der Reihenlauf über ALLES** (2026-08-19).  Geprüft
+  wurde vorher nur, was in einer Kette steht.  Jetzt zusätzlich
+  `udos.medium.frei_kaputt` (Warnung, je Seite einmal zusammengefasst): ein Sektor
+  mit falscher CRC außerhalb jeder Datei ist nicht nichts — **dort liegen die
+  gelöschten Dateien**, und dorthin schreibt UDOS als nächstes.  Dazu
+  `udos.medium.unformatiert` (Fehler), wenn die Karte auf einer markenlosen Spur
+  Belegung behauptet.  **Ein FEHLENDER freier Sektor ist bewusst KEIN Befund** —
+  nichts verloren, nichts zu tun, und die Erkennung nennt ihn als Medienhinweis;
+  `udos_boot_scp.hfe` hat einen auf Spur 51, und ein Prüfer, der die
+  Referenzdiskette anmahnt, wird zu Recht weggeklickt (E10).  Beide Richtungen haben
+  einen Wächter.
 - **Erst ansehen, dann handeln — die Sektorliste eines Fundes** (Entwurf §13.3a,
   gilt für CP/M genauso).  `FsRecoverFind::orte` führt ALLE Sektoren in
   Lesereihenfolge (bei UDOS der Kopfsektor zuerst), C-ABI

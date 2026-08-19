@@ -531,6 +531,75 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
         }
     }
 
+    // ═══ Ebene Medium: der Reihenlauf ueber ALLES ════════════════════════════
+    //
+    // Bis hierher ist nur geprueft, was in einer KETTE steht — die Ebene Medium war
+    // damit schmaler als bei CP/M, wo seit Etappe 1 jeder Sektor des Datenbereichs
+    // angesehen wird.  Ein schadhafter Sektor ausserhalb jeder Datei ist aber kein
+    // Nichts: **dort liegen die geloeschten Dateien** (§13), und dorthin schreibt
+    // UDOS als naechstes.  „Kein Datenverlust, aber die Diskette altert" ist eine
+    // Auskunft, die man vor dem Kopieren haben will.
+    //
+    // Gezaehlt und EINMAL gemeldet, nicht je Sektor: eine Liste mit vierhundert
+    // Zeilen liest niemand, und der erste Ort genuegt zum Nachsehen.
+    {
+        int frei_kaputt = 0;
+        UdosPointer erster{0xFF, 0xFF};
+        for (uint8_t t = 0; t < tracks_ && t < space_.trackCount(); ++t) {
+            if (!brauche(t)) continue;
+            if (!space_.trackFormatted(t, head_)) {
+                // Eine unformatierte Spur ist fuer sich genommen KEIN Schaden — eine
+                // Diskette darf unbeschriebene Spuren haben, und ein Pruefer, der das
+                // meldet, wird zu Recht weggeklickt (E10).  Behauptet die Karte dort
+                // aber Belegung, ist etwas faul: von dort ist nichts zu lesen.
+                int belegt = 0;
+                for (uint8_t s = 1; s <= spt; ++s) if (bitmap_.used(t, s)) ++belegt;
+                if (belegt)
+                    b.addAt("udos.medium.unformatiert", FsSeverity::Fehler,
+                            FsLayer::Medium, "Spur " + std::to_string(t),
+                            "Spur " + std::to_string(t) + " traegt keine Adressmarken,"
+                            " die Belegungskarte fuehrt dort aber "
+                            + std::to_string(belegt) + " Sektor(en) als belegt —"
+                              " von dieser Spur ist nichts zu lesen",
+                            t, head_);
+                continue;
+            }
+            // Nur die Sektoren, die es auf dieser Spur WIRKLICH gibt: eine Spur mit
+            // weniger Sektoren als das Format vorsieht ist Sache der Geometrie, nicht
+            // dieses Laufs — hier daraus „Sektor fehlt" zu machen waere eine
+            // Falschmeldung je fehlendem Sektor.
+            for (uint8_t s = 1; s <= spt; ++s) {
+                const UdosPointer p{static_cast<uint8_t>(s - 1), t};
+                if (gehoert.count(nr(p))) continue;   // je Datei bereits gemeldet
+                SectorData sec;
+                // Ein Sektor, den es auf der Spur gar nicht GIBT, ist hier kein
+                // Befund.  Er gehoert zu keiner Datei, es ist nichts verloren und
+                // nichts zu tun — und die Erkennung sagt es ohnehin schon als
+                // Medienhinweis („1 Spur mit fehlenden Sektoren").  Auf einer 35
+                // Jahre alten Diskette ist ein unbenutzter Sektor, der die
+                // Formatierung nicht ueberlebt hat, der Normalfall: `udos_boot_scp.hfe`
+                // hat einen auf Spur 51.  Ein Pruefer, der die Referenzdiskette
+                // deswegen anmahnt, wird zu Recht weggeklickt (E10).
+                //
+                // Eine falsche PRUEFSUMME ist etwas anderes: die Bytes sind da und
+                // nicht mehr lesbar.  Genau das will wissen, wer eine geloeschte
+                // Datei sucht.
+                if (!space_.readSector(t, head_, s, sec)) continue;
+                if (sec.ok()) continue;
+                if (erster.end()) erster = p;
+                ++frei_kaputt;
+            }
+        }
+        if (frei_kaputt)
+            b.addAt("udos.medium.frei_kaputt", FsSeverity::Warnung, FsLayer::Medium,
+                    "Medium",
+                    std::to_string(frei_kaputt) + " Sektor(en) ausserhalb jeder Datei"
+                    " tragen eine falsche Pruefsumme, der erste bei " + ort(erster)
+                    + " — verloren ist dort nichts, aber eine geloeschte Datei waere"
+                      " von dort nicht mehr zu retten",
+                    erster.track, head_, erster.sectorId());
+    }
+
     abschluss();
     bericht.begrenzen(kMaxJeKennung);
     bericht.sortieren();

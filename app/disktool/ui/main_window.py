@@ -1876,7 +1876,8 @@ class MainWindow(QMainWindow):
     def _angaben_dialog(self) -> None:
         if self.tool is None:
             return
-        dlg = DiskInfoDialog(self.tool, self)
+        dlg = DiskInfoDialog(self.tool, self,
+                             abbild_vollstaendig=self._abbild_vollstaendig())
         dlg.exec()
         # Wurde dort eine Vollprüfung gefahren, gilt jetzt ein anderer Befund — und
         # der ist ein ZUSTAND der Diskette, also gehört er in Streifen, Statuszeile
@@ -1894,8 +1895,10 @@ class MainWindow(QMainWindow):
         """
         if self.tool is None:
             return
+        if not self._abbild_vervollstaendigen("die Prüfung"):
+            return
         dlg = FsckDialog(self.tool, self, zeige_ort=self._befund_im_editor,
-                         log=self.log)
+                         log=self.log, abbild_vollstaendig=self._abbild_vollstaendig())
         dlg.exec()
         if dlg.repariert:
             self._reload()
@@ -1910,11 +1913,68 @@ class MainWindow(QMainWindow):
         """
         if self.tool is None:
             return
+        if not self._abbild_vervollstaendigen("die Suche"):
+            return
         dlg = RecoverDialog(self.tool, self, zielordner=self._ordner_startpunkt(),
-                            log=self.log, zeige_ort=self._befund_im_editor)
+                            log=self.log, zeige_ort=self._befund_im_editor,
+                            abbild_vollstaendig=self._abbild_vollstaendig())
         dlg.exec()
         if dlg.wiederhergestellt:
             self._reload()
+
+    def _abbild_vollstaendig(self) -> bool:
+        """Liegt das ganze Medium im Speicher?
+
+        Bei einer Datei immer — sie IST das Abbild.  An einer physischen Diskette
+        sagt es die Sitzung: ``tracks_known`` gegen ``tracks_total``.
+        """
+        if self._physisch is None:
+            return True
+        st = self._physisch.stats()
+        return st is None or st.tracks_known >= st.tracks_total
+
+    def _abbild_vervollstaendigen(self, zweck: str) -> bool:
+        """Fehlende Spuren mit Fortschrittsanzeige nachladen.
+
+        Prüfung und Rettung wollen die ganze Diskette sehen — an einem echten
+        Laufwerk kostet jede Spur 0,5–0,8 s, und im Oberflächenfaden wäre das ein
+        eingefrorenes Fenster.  Deshalb wird VOR dem Dialog geladen, mit demselben
+        Fortschrittsdialog wie bei der Formaterkennung (`mit_fortschritt`).
+
+        Danach ist die Frage erledigt: das Medium liegt vollständig im Speicher
+        (Spurzustand ``Clean``), und jeder weitere Lauf — zweite Suche, Wechsel der
+        Suchtiefe, Vollprüfung — ist so schnell wie an einer Datei.  Genau deshalb
+        wird hier **einmal** geladen statt in jedem Suchlauf nachzuziehen.
+
+        :return: ``False``, wenn der Bediener abgebrochen hat oder es schiefging —
+                 dann soll der Dialog gar nicht erst aufgehen.
+        """
+        if self.tool is None or self._abbild_vollstaendig():
+            return True
+        sitzung = self._physisch
+        st = sitzung.stats()
+        fehlend = st.tracks_total - st.tracks_known
+
+        def laden():
+            # `track()` holt eine unbekannte Spur (und blockiert dabei); `track_state`
+            # fragt, OHNE sie zu beschaffen — sonst zöge schon das Nachsehen die
+            # ganze Scheibe ein.
+            for zylinder in range(self.tool.medium_cylinders):
+                for kopf in range(self.tool.medium_heads):
+                    if self.tool.track_state(zylinder, kopf) == 0:
+                        self.tool.track(zylinder, kopf)
+
+        _, fehler = mit_fortschritt(
+            self, sitzung, laden,
+            titel="Diskette einlesen",
+            text=f"Für {zweck} wird die ganze Diskette gelesen…",
+            ziel=fehlend, was="Spuren geladen")
+        if fehler is not None:
+            self._fehler("Diskette einlesen", str(fehler))
+            return False
+        # Abgebrochen: `mit_fortschritt` liefert (None, None) und hat die Sitzung
+        # beendet — dann gibt es nichts mehr zu prüfen.
+        return self._physisch is None or bool(self._physisch.stats())
 
     def _befund_im_editor(self, zylinder: int, kopf: int, sektor: int) -> None:
         """Den Ort eines Befundes im Diskeditor aufschlagen (Entwurf E9)."""

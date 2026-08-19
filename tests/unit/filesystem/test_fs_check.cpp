@@ -694,6 +694,90 @@ TEST(FsCheckUdosSchaden, EinGeloeschtesKartenbitIstGefahr) {
     fs::remove(d);
 }
 
+/// @test Ein kaputter Sektor AUSSERHALB jeder Datei wird bei UDOS gefunden.
+///
+/// Die Ebene Medium war bei UDOS bis 2026-08-19 schmaler als bei CP/M: geprüft wurde
+/// nur, was in einer KETTE steht.  Ein schadhafter Sektor, der zu keiner Datei
+/// gehört, ist aber nicht nichts — **dort liegen die gelöschten Dateien** (§13), und
+/// dorthin schreibt UDOS als nächstes.
+///
+/// Angefasst wird ein Sektor, den die Belegungskarte als FREI führt: nur so ist
+/// sicher, dass keine Kette darüber läuft und der Befund wirklich aus dem Reihenlauf
+/// stammt und nicht aus der Dateiprüfung.
+TEST(FsCheckUdosSchaden, EinKaputterSektorAusserhalbJederDateiWirdGefunden) {
+    const std::string d = kopie("udos_boot_scp.hfe", "fscheck_udos_frei.hfe");
+
+    int spur = -1, kennung = -1;
+    {
+        std::string err;
+        auto v = DiskVolume::open(d, "", formate(), dateisysteme(), err, /*read_only=*/false);
+        ASSERT_TRUE(v) << err;
+        UdosSeite s = udosOeffne(d, 0, /*schreibbar=*/false);
+        ASSERT_TRUE(s) << s.err;
+        // Einen freien Sektor auf einer gewöhnlichen Datenspur suchen — die
+        // Systemspuren bleiben aussen vor, dort steht Sitte statt Struktur (§9.1).
+        for (uint8_t t = 3; t < 77 && spur < 0; ++t) {
+            if (t == 21 || t == 22 || t == 23) continue;      // reservierte Spuren
+            for (uint8_t sid = 1; sid <= 26; ++sid)
+                if (!s.fs->bitmap().used(t, sid)) { spur = t; kennung = sid; break; }
+        }
+        ASSERT_GE(spur, 0) << "kein freier Sektor gefunden";
+        s.fs.reset(); s.space.reset(); s.disk.reset();
+
+        const TrackView sicht = v->trackView(static_cast<uint8_t>(spur), 0);
+        int index = -1;
+        for (const TrackSpan& sp : sicht.spans)
+            if (sp.kind == TrackSpan::Kind::Sector && sp.id == kennung) index = sp.index;
+        ASSERT_GE(index, 0);
+
+        std::vector<uint8_t> daten;
+        uint16_t crc = 0;
+        ASSERT_TRUE(v->readSectorAt(static_cast<uint8_t>(spur), 0, index, daten, crc));
+        const uint16_t falsch = static_cast<uint16_t>(crc ^ 0xFFFF);
+        ASSERT_TRUE(v->writeSectorAt(static_cast<uint8_t>(spur), 0, index, daten, &falsch))
+            << v->lastError();
+        ASSERT_TRUE(v->flush()) << v->lastError();
+    }
+
+    auto v = oeffne(d);
+    ASSERT_TRUE(v);
+    // Die SCHNELLpruefung sieht ihn nicht — sie fasst keine Datenspur an (E2).
+    EXPECT_EQ(0, v->check(FsCheckLevel::Schnell, true).zaehlerAb(FsSeverity::Warnung));
+
+    const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
+    const std::vector<FsFinding> f = mitId(r, "udos.medium.frei_kaputt");
+    ASSERT_EQ(1u, f.size()) << kennungen(r);
+    EXPECT_EQ(FsSeverity::Warnung, f[0].severity)
+        << "kein Datenverlust — aber die Diskette altert";
+    EXPECT_EQ(FsLayer::Medium, f[0].layer);
+    EXPECT_EQ(spur, f[0].cyl);
+    EXPECT_EQ(kennung, f[0].sector_index);
+    // Er darf NICHT als Dateischaden durchgehen — dann wäre er der falschen Datei
+    // zugeschrieben.
+    EXPECT_TRUE(mitId(r, "udos.medium.crc").empty()) << kennungen(r);
+    fs::remove(d);
+    fs::remove(d + "~");
+}
+
+/// @test Ein FEHLENDER Sektor ausserhalb jeder Datei ist KEIN Befund.
+///
+/// Die Gegenprobe zum vorigen Fall, und sie hält eine Entscheidung fest: auf einer
+/// 35 Jahre alten Diskette ist ein unbenutzter Sektor, der die Formatierung nicht
+/// überlebt hat, der Normalfall — `udos_boot_scp.hfe` hat einen auf Spur 51.  Es ist
+/// nichts verloren, nichts zu tun, und die Erkennung sagt es ohnehin als
+/// Medienhinweis („1 Spur mit fehlenden Sektoren").  Wer die Referenzdiskette
+/// deswegen anmahnt, wird zu Recht weggeklickt (E10).
+TEST(FsCheckKeineFalschmeldungen, EinFehlenderFreierSektorIstKeinBefund) {
+    auto v = oeffne(fixture("udos_boot_scp.hfe"));
+    ASSERT_TRUE(v);
+    const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
+    EXPECT_EQ(0, r.zaehlerAb(FsSeverity::Warnung)) << kennungen(r);
+    // Dass die Diskette den fehlenden Sektor HAT, steht in den Medienhinweisen —
+    // verschwiegen wird also nichts, es ist nur kein Prüfbefund.
+    EXPECT_NE(std::string::npos, v->detection().remarks.find("fehlenden Sektoren"))
+        << v->detection().remarks;
+}
+
 /// @test Jeder ortbare Befund nennt auch den SEKTOR, nicht nur die Spur.
 ///
 /// Der Wächter für E9 über alle Familien: der Befundtext nennt fast immer einen

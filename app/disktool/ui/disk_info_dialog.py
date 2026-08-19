@@ -91,7 +91,7 @@ class DiskInfoDialog(QDialog):
     falscher Prüfsumme (doc/design/15_dateisystempruefung.md §6).
     """
 
-    def __init__(self, tool, parent=None):
+    def __init__(self, tool, parent=None, abbild_vollstaendig=True):
         super().__init__(parent)
         self.setWindowTitle("Diskettenangaben")
         self.resize(620, 420)
@@ -119,12 +119,15 @@ class DiskInfoDialog(QDialog):
             self.knopf_voll.setEnabled(False)
             self.knopf_voll.setToolTip("Ohne erkanntes Dateisystem gibt es nichts "
                                        "zu prüfen")
-        elif not tool.path:
+        elif not abbild_vollstaendig:
+            # Gefragt wird nach der VOLLSTÄNDIGKEIT des Speicherabbilds, nicht danach,
+            # ob eine Datei vorliegt: der Prüfdialog lädt fehlende Spuren mit
+            # Fortschrittsanzeige nach, und danach kostet die Vollprüfung nichts mehr.
             self.knopf_voll.setEnabled(False)
             self.knopf_voll.setToolTip(
-                "An einer echten Diskette müsste dafür jede Spur einzeln gelesen "
-                "werden (ein bis zwei Minuten) — das kommt mit dem "
-                "Reparaturdialog.")
+                "Das Speicherabbild ist unvollständig — für die Vollprüfung müsste "
+                "jede fehlende Spur einzeln vom Laufwerk gelesen werden.  "
+                "Der Prüfdialog lädt sie vorher.")
 
         self.knoepfe.rejected.connect(self.reject)
         self.knoepfe.accepted.connect(self.accept)

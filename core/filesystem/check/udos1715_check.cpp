@@ -435,6 +435,45 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
         }
     }
 
+    // ═══ Ebene Medium: der Reihenlauf ueber ALLES ════════════════════════════
+    //
+    // Wie bei ZDOS (s. `udos_check.cpp`): bis hierher ist nur geprueft, was in einer
+    // Zeigersektorkette steht.  Ein schadhafter Sektor ausserhalb jeder Datei ist
+    // aber die Stelle, an der geloeschte Dateien liegen (§13) und an die als
+    // naechstes geschrieben wird.
+    {
+        int frei_kaputt = 0;
+        UdosPointer erster{0xFF, 0xFF};
+        for (uint8_t t = 0; t < tracks_ && t < space_.trackCount(); ++t) {
+            if (!brauche(t)) continue;
+            for (uint8_t i = 0; i < spt; ++i) {
+                const UdosPointer p{i, t};
+                if (gehoert.count(nr(p))) continue;
+                // Die Spur umfasst BEIDE Seiten (§1.1) — ist die zweite Haelfte gar
+                // nicht da (einseitige Diskette), gibt es diese Sektoren nicht, und
+                // ihr Fehlen ist keine Auffaelligkeit.
+                if (headOf(p) >= space_.format().numHeads()) continue;
+                if (!space_.trackFormatted(t, headOf(p))) continue;
+                SectorData sec;
+                // Ein fehlender Sektor ausserhalb jeder Datei ist kein Befund —
+                // Begruendung im Gegenstueck in `udos_check.cpp` (E10).
+                if (!space_.readSector(t, headOf(p), idOf(p), sec)) continue;
+                if (sec.ok()) continue;
+                if (erster.end()) erster = p;
+                ++frei_kaputt;
+            }
+        }
+        if (frei_kaputt)
+            b.addAt("udos.medium.frei_kaputt", FsSeverity::Warnung, FsLayer::Medium,
+                    "Medium",
+                    std::to_string(frei_kaputt) + " Sektor(en) ausserhalb jeder Datei"
+                    " tragen eine falsche Pruefsumme, der erste auf Spur " + std::to_string(erster.track) + " Sektor "
+                    + std::to_string(erster.sector_index) + " — verloren ist dort"
+                      " nichts, aber eine geloeschte Datei waere von dort nicht mehr"
+                      " zu retten",
+                    erster.track, headOf(erster), idOf(erster));
+    }
+
     abschluss();
     bericht.begrenzen(kMaxJeKennung);
     bericht.sortieren();

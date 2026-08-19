@@ -88,7 +88,8 @@ class FsckDialog(QDialog):
     :param log:       Rückruf ``(text) -> None`` für das Protokoll des Fensters.
     """
 
-    def __init__(self, tool, parent=None, zeige_ort=None, log=None):
+    def __init__(self, tool, parent=None, zeige_ort=None, log=None,
+                 abbild_vollstaendig=True):
         super().__init__(parent)
         self.setWindowTitle("Dateisystem prüfen und reparieren")
         self.resize(860, 620)
@@ -148,14 +149,16 @@ class FsckDialog(QDialog):
         self.b_voll.clicked.connect(self._vollpruefung)
         # An einer PHYSISCHEN Diskette zöge die Vollprüfung die ganze Scheibe ein
         # (0,5–0,8 s je Spur) und liesse das Fenster ein bis zwei Minuten stehen.
-        # Das gehört in einen Arbeitsfaden mit Fortschritt; bis es den gibt, ist der
-        # Knopf gesperrt und sagt warum — dieselbe Regel wie in den Diskettenangaben.
-        if not tool.path:
+        # Gefragt wird deshalb nicht „ist das eine Datei", sondern **liegt das
+        # Medium schon im Speicher**: das Hauptfenster lädt fehlende Spuren vor dem
+        # Öffnen nach (`_abbild_vervollstaendigen`, mit Fortschrittsanzeige), und
+        # danach kostet die Vollprüfung nichts mehr.  Nur wenn das nicht geschehen
+        # ist, bleibt der Knopf gesperrt — und sagt warum.
+        if not abbild_vollstaendig:
             self.b_voll.setEnabled(False)
             self.b_voll.setToolTip(
-                "An einer echten Diskette müsste dafür jede Spur einzeln gelesen "
-                "werden (ein bis zwei Minuten) — das kommt mit einem Arbeitsfaden "
-                "mit Fortschrittsanzeige.")
+                "Das Speicherabbild ist unvollständig — für die Vollprüfung müsste "
+                "jede fehlende Spur einzeln vom Laufwerk gelesen werden.")
         self.b_reparieren = self.knoepfe.addButton("&Ausgewählte reparieren",
                                                    QDialogButtonBox.ApplyRole)
         self.b_reparieren.clicked.connect(self._reparieren)

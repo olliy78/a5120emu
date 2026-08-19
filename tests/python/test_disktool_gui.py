@@ -2482,6 +2482,41 @@ def test_der_fund_laesst_sich_sektorweise_im_diskeditor_ansehen(window, fixture_
     assert gesprungen[-1] != gesprungen[0]
 
 
+def test_ein_unvollstaendiges_abbild_sperrt_die_teuren_laeufe(window, fixture_disks,
+                                                              tmp_path):
+    """Die Sperre hängt an der VOLLSTÄNDIGKEIT, nicht daran, ob eine Datei vorliegt.
+
+    Vollprüfung und Oberflächensuche wollen jede Spur sehen.  An einem echten
+    Laufwerk kostet das 0,5–0,8 s je Spur — deshalb lädt das Hauptfenster sie VOR
+    dem Öffnen nach (``_abbild_vervollstaendigen``, mit Fortschrittsanzeige) und
+    sagt den Dialogen anschließend, dass alles da ist.  Bis 2026-08-19 fragten die
+    Dialoge stattdessen ``tool.path`` — eine physische Diskette blieb damit auch
+    dann gesperrt, wenn sie längst vollständig im Speicher lag.
+    """
+    from app.disktool.ui.fsck_dialog import FsckDialog
+    from app.disktool.ui.recover_dialog import RecoverDialog
+
+    abbild = _mit_geloeschter_datei(
+        fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "rec_sperre.img")
+    assert window.open_image(abbild)
+    # Eine Datei ist immer vollständig — und das sagt das Hauptfenster auch.
+    assert window._abbild_vollstaendig()
+    assert window._abbild_vervollstaendigen("den Test"), "hier ist nichts nachzuladen"
+
+    offen = FsckDialog(window.tool, window, abbild_vollstaendig=True)
+    assert offen.b_voll.isEnabled()
+    gesperrt = FsckDialog(window.tool, window, abbild_vollstaendig=False)
+    assert not gesperrt.b_voll.isEnabled()
+    assert "unvollständig" in gesperrt.b_voll.toolTip()
+
+    dlg = RecoverDialog(window.tool, window, zielordner=str(tmp_path),
+                        abbild_vollstaendig=True)
+    assert dlg.tiefe.model().item(1).isEnabled()
+    dlg2 = RecoverDialog(window.tool, window, zielordner=str(tmp_path),
+                         abbild_vollstaendig=False)
+    assert not dlg2.tiefe.model().item(1).isEnabled()
+
+
 def test_die_suche_laeuft_nicht_von_selbst_und_braucht_ein_dateisystem(window,
                                                                        fixture_disks,
                                                                        tmp_path):
