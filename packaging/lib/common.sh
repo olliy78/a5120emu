@@ -277,3 +277,15 @@ Abbruch — die heruntergeladene Datei wird nicht ausgeführt."
     [ -x "$_uv" ] || die "uv wurde nach dem Entpacken entfernt (Virenscanner? Richtlinie?)"
     echo "$_uv"
 }
+
+# ─── Greaseweazle ────────────────────────────────────────────────────────────
+
+# gw_pin <pins-datei> <schlüssel> — Wert aus packaging/gw_pins.txt lesen.
+gw_pin() {
+    awk -v key="$2" '$1 == key { print $2; exit }' "$1"
+}
+
+# gw_quelle_url <fassung> — Adresse des Quellarchivs am GitHub-Release.
+gw_quelle_url() {
+    echo "https://github.com/keirf/greaseweazle/releases/download/v$1/greaseweazle-$1.zip"
+}

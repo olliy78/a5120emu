@@ -5,6 +5,7 @@ K1520 Emulator - Main Window
 Main application window with display, controls, and status.
 """
 
+import sys
 import os
 
 from PySide6.QtWidgets import (
@@ -28,8 +29,14 @@ from app import drive_types as dt
 class MainWindow(QMainWindow):
     """Main emulator window."""
     
-    def __init__(self):
-        """Initialize main window."""
+    def __init__(self, disks=None):
+        """Initialize main window.
+
+        :param disks: Diskettenabbilder von der Kommandozeile, in Laufwerks-
+            reihenfolge (A:, B:, C:, D:).  Sie werden NACH der gespeicherten
+            Konfiguration eingelegt und überschreiben deren Belegung nur für die
+            angegebenen Laufwerke — was der Anwender beim Aufruf nennt, gewinnt.
+        """
         super().__init__()
         self.setWindowTitle("K1520 A5120 Emulator")
         self.setWindowIcon(QIcon.fromTheme("computer"))
@@ -115,6 +122,13 @@ class MainWindow(QMainWindow):
         # this applies CRT/speed, mounts the stored disks and restores the
         # window size + dock layout.
         self._load_or_create_default_config()
+
+        # Disketten von der Kommandozeile — NACH der Konfiguration, damit sie
+        # deren Belegung schlagen, und VOR power_on(), damit der Kaltstart schon
+        # von der genannten Diskette bootet (genau dafuer gibt man sie an).
+        # Nicht gespeichert: ein `a5120emu fremde.hfe` soll die gemerkte
+        # Belegung des Anwenders nicht dauerhaft ersetzen.
+        self._mount_cli_disks(disks)
 
         # Cold start with the restored disks present, then begin running.
         self.emulator.power_on()
@@ -460,6 +474,18 @@ class MainWindow(QMainWindow):
                     self._has_saved_layout = True
             except Exception:
                 pass
+
+    def _mount_cli_disks(self, disks):
+        """Diskettenargumente der Kommandozeile einlegen (A:, B:, C:, D:)."""
+        if not disks:
+            return
+        for drive, path in enumerate(disks[:4]):
+            if not path:
+                continue
+            if not self.drives_widget.mount_path(drive, str(path)):
+                # Kein Abbruch: die Oberflaeche laeuft, das Laufwerk bleibt leer.
+                print(f"a5120emu: '{path}' konnte nicht in Laufwerk "
+                      f"{chr(ord('A') + drive)}: eingelegt werden", file=sys.stderr)
 
     def _apply_config(self, data: dict):
         """Apply a loaded configuration to the running application.

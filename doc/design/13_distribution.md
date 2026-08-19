@@ -625,6 +625,255 @@ macOS-Tripel, `paths.py` kennt `.dylib` und `~/Library/Application Support`).
 
 ---
 
+## 10a. Werkzeuge mitliefern (✅ umgesetzt 2026-08-18)
+
+Der Werkzeugkasten in `tools/` ist zum größten Teil **Entwicklungswerkzeug für den
+Emulator** und hat im Anwenderpaket nichts verloren. Ein Teil davon ist aber genau das,
+wofür ein Anwender einen Emulator überhaupt benutzt: **fremde Programme untersuchen**.
+`k1520dbg` debuggt jedes native Programm — `FORMAT.COM` und `HARDY.COM` haben wir selbst
+so seziert —, und dieses Können ist nicht projektintern, sondern das dritte Produkt
+neben Emulator und DiskTool.
+
+### 10a.1 Was mitkommt und was nicht
+
+Maßstab: *Kann ein Anwender es auf seine eigenen Programme und Disketten anwenden,
+ohne den Emulatorquelltext zu kennen?*
+
+| Werkzeug | Paket? | Begründung |
+|---|---|---|
+| **`k1520dbg`** | **ja** | Der Debugger. Anwendungsfall unabhängig vom Projekt; Handbuch: `doc/handbuch_k1520dbg.md` |
+| `k1520disktool` (+ `-cli`) | ja *(bereits)* | Dateiaustausch — liegt schon in `bin/` |
+| **`z80_disasm2.py`** | **ja** | Statisches Vollisting einer `.COM`; ergänzt das interaktive `u` des Debuggers. Reines Python → läuft im mitgelieferten venv, kostet ~40 KB |
+| `boot_trace` | **nein** | Zielt auf die ZVE1↔ZVE2-Boot-DMA — Emulatorentwicklung. Wer es braucht, baut aus der Quelle |
+| `format_driver`, `kbd_test`, `floppy_diag`, `mk_disk_template`, `bench_run` | nein | Prüfstandsteile der eigenen Testpipeline; ihre Bedienung setzt Kenntnis der Fixtures voraus |
+| `romread/romread.com` | **als Diskettendatei** | Liest das Boot-EPROM **echter** Hardware aus. Kein Wirtsprogramm, sondern ein Gastprogramm — gehört zu `share/disks/`, nicht nach `bin/` |
+| übrige Python-Skripte | nein | Einmalanalysen, Generatoren für committete Artefakte, Testhilfen |
+
+`boot_trace` ist der Grenzfall: es teilt den halben Unterbau mit dem Debugger und wiegt
+nur 860 KB. Dagegen spricht die Erklärungslast — seine Ausgabe (Meilensteine der
+Boot-Kette, `[03F8]`-Handshake) ist ohne `doc/analyse_zre_rom_boot.md` nicht zu deuten.
+Ein Anwender, der es wirklich will, ist einer, der auch bauen kann.
+
+### 10a.2 Layout
+
+Die Werkzeuge kommen **in dieselbe Installation**, nicht in ein zweites Paket — sie
+teilen sich `formats.yaml`, die Beispieldisketten und den Datenordner:
+
+```
+<install-root>/
+  bin/          k1520core.so | k1520core.dll
+                a5120emu · k1520disktool          Starter (GUI)
+                k1520disktool-cli                 bereits vorhanden
+                k1520dbg[.exe]                    NEU  (~1,0 MB)
+  share/doc/    handbuch_k1520dbg.md              NEU
+                k1520disktool.md
+  share/tools/  z80_disasm2.py                    NEU
+```
+
+**Zuschnitt (entschieden 2026-08-18): das Werkzeug liegt im Paket, das Handbuch
+erklärt den Rest.** Ein Debugger ist nichts, was man doppelklickt und fertig — er wird
+in einen vorhandenen Arbeitsablauf aus Editor, Assembler und Konsole eingebunden, und
+wie der aussieht, weiß nur der Anwender. Also keine Startmenü-Automatik, keine
+geratenen Pfade: mitgeliefert werden das Programm, das Handbuch (§11 dort: Pfade,
+Umgebungsvariablen, die Runde bearbeiten→assemblieren→testen) und **eine Vorlage zum
+Anpassen**.
+
+- **Linux** — der Installer legt ohnehin einen Starter in `~/.local/bin` ab; dasselbe
+  für `k1520dbg`, und wer es anders will, setzt `PATH` selbst. Mehr braucht es nicht.
+- **Windows** — `packaging/k1520dbg.cmd.in` wird beim Einrichten mit dem
+  Installationsordner ausgefüllt und landet als `k1520dbg.cmd` im Paket. Es erweitert
+  `PATH` um `<root>\bin`, wechselt in einen Arbeitsordner und öffnet eine
+  Eingabeaufforderung. **Ausdrücklich zum Kopieren und Ändern gedacht** — Arbeitsordner
+  und eigener Assembler stehen als leere Zeilen mit Beispiel darin. Kein
+  Doppelklick-Symbol für den Debugger selbst: das öffnete ein Fenster, das mangels
+  Diskette sofort wieder zuginge.
+
+### 10a.3 Die drei Punkte, an denen es hakt
+
+**(1) GNU readline darf nicht mit ausgeliefert werden — Lizenz, nicht Technik.**
+`readline` steht unter der **GPLv3+** (`/usr/include/readline/readline.h`: „either
+version 3 of the License, or …"), dieses Projekt unter der **MIT-Lizenz** (`LICENSE`).
+Wer ein Programm verteilt, das readline einbindet, verteilt ein Gesamtwerk, das unter
+die GPLv3 fällt — beim **statischen** Linken unstrittig, beim dynamischen nach Lesart
+der FSF ebenso. Solange `k1520dbg` nur lokal gebaut wird, ist das kein Thema; mit dem
+ersten ausgelieferten Binärabbild wird es eines. Deshalb: **im Paket kein readline.**
+
+Der Rückfall auf `getline` ist ohnehin eine **Bau**zeitentscheidung, kein Laufzeit-
+Rückfall: wird readline beim Bauen gefunden, hängt das Ergebnis fest an
+`libreadline.so.8` *und* `libtinfo.so.6`.
+
+Gemessen am 2026-08-18 (x86-64, `-O2`, derselbe Objektstand):
+
+| Fassung | Größe | dynamisch gebunden |
+|---|---:|---|
+| heute, readline dynamisch | 1 012 KB | readline, tinfo, stdc++, gcc_s, c, m |
+| readline **statisch** | 1 501 KB | stdc++, gcc_s, c, m |
+| **ohne readline** | **990 KB** | stdc++, gcc_s, c, m |
+| ohne readline, `-static-libstdc++ -static-libgcc` | 2 632 KB | nur `libc.so.6` |
+| komplett `-static` | 3 463 KB | keine — **aber**: `getpwuid` in einem statisch gebundenen glibc verlangt zur Laufzeit dieselbe glibc-Fassung (Linkerwarnung), das ist das Gegenteil von portabel |
+
+**✅ Erledigt 2026-08-18: readline ist raus, `isocline` ist drin**
+(`third_party/isocline`, **MIT**, beigelegt — dort steht auch die Anleitung zum
+Aktualisieren). Damit ist die Frage nicht durch Verzicht gelöst, sondern besser als
+vorher:
+
+| | vorher (readline) | jetzt (isocline) |
+|---|---|---|
+| Lizenz | GPLv3+ neben MIT | MIT = dieselbe |
+| Linux | Zeilenbearbeitung, **hängt** an `libreadline.so.8` + `libtinfo.so.6` | Zeilenbearbeitung, **keine** Fremdabhängigkeit |
+| Windows | **gar keine** Zeilenbearbeitung | dieselbe wie Linux (Console-API) |
+| Größe | 1012 KB | 1173 KB (+161 KB einkompiliert) |
+| Nachzuinstallieren | `libreadline-dev` beim Bauen | nichts |
+
+Übrig bleiben als dynamische Bindungen `libstdc++`, `libgcc_s`, `libc`, `libm` — exakt
+die, die `libk1520core.so` ohnehin braucht. Das Paket bekommt also **keine einzige neue
+Abhängigkeit**. `-static-libstdc++` lohnt aus demselben Grund nicht: die C++-Laufzeit
+muss für die Kernbibliothek sowieso vorhanden sein.
+
+Umgesetzt in: `project(… LANGUAGES C CXX)` (isocline ist C), Ziel `isocline` als
+statische Bibliothek aus **einer** Übersetzungseinheit (`src/isocline.c` ist eine
+Amalgamation), `HAVE_ISOCLINE` in `tools/k1520dbg.cpp`. Der Skriptpfad blieb
+buchstabengetreu — die ~30 `cli_dbg_`-Tests pinnen den Wortlaut, isocline greift nur bei
+`isTerminal(0)`.
+
+Zwei Dinge, die dabei zu wissen sind:
+
+- **`ic_init(true)`** schaltet die Ausgabe des Editors auf **stderr**. Ohne das schriebe
+  der Prompt auf stdout, während der ganze Debugger auf stderr schreibt (`… 2>&1 | tee`).
+- **`ic_add_completion()` allein fügt EIN, statt zu ersetzen.** „whe"+TAB ergab
+  „whewhere"; erst `ic_complete_word()` richtet die Vorschläge am zu ersetzenden Wort
+  aus. Am Pseudoterminal gefunden, nicht am Quelltext — deshalb der Wächter
+  `py_dbg_interaktiv`.
+
+Wächter: `py_dbg_interaktiv` (Sitzung an einem echten Pseudoterminal: Prompt,
+Vervollständigung, „im Argument nichts anbieten", History, Rückschritt, Ctrl-D, `q`,
+und `ldd` ohne readline/tinfo) und `py_third_party_lizenzen` (jede beigelegte Quelle hat
+LICENSE + Herkunft und ist permissiv). Windows-Gegenprobe: `tools/dev.sh win` — 970/970
+unter wine, `k1520dbg.exe` hängt nur an `KERNEL32.dll` und `msvcrt.dll`.
+
+**(2) Der Release-Bau muss `-DK1520_FORMATS_DEFAULT=` auch für `k1520dbg` setzen.**
+Sonst trägt das ausgelieferte Programm den absoluten Pfad des Baurechners als
+Suchkandidaten für `formats.yaml` — dieselbe Falle wie bei der Kernbibliothek (§7),
+Wächter `py_packaging` entsprechend erweitern.
+
+**(3) `k1520dbg` linkt den Kern statisch.** Es benutzt `k1520_a5120`/`k1520_floppy`, nicht
+`libk1520core.so` — im Paket lägen dann **zwei** Kopien des Emulatorkerns (~1 MB extra)
+mit dem Risiko, dass sie nach einem Teilupdate auseinanderlaufen. Auf 116 MB
+Gesamtinstallation fällt das Gewicht nicht ins Auge; sauberer wäre, `k1520dbg` gegen die
+Shared Library zu linken. Das ist eine Bauänderung im Kern, kein Paketierungsthema, und
+sollte nicht mit der Auslieferung vermischt werden.
+
+### 10a.4 Umsetzung (2026-08-18)
+
+Alle fünf Schritte sind gefahren. Was dabei anders kam als geplant:
+
+1. ✅ `build_payload.sh` baut `k1520dbg` mit (Ziel in derselben `cmake --build`-Zeile
+   wie die Bibliotheken) und legt `share/doc/`, `share/doc/lizenzen/` und
+   `share/tools/` an.
+2. ✅ Zeilen­editor lizenzrein (§10a.3 (1)). Der Rauchtest „startet und beantwortet
+   `q`" steht jetzt in **beiden** Jobs von `release.yml` — samt einer Sitzung an einer
+   ausgepackten Beispieldiskette.
+3. ✅ Linux: Verweis in `~/.local/bin`. Dafür kam eine eigene Liste
+   **`KONSOLENWERKZEUGE`** in `install.sh` — und dabei fiel auf, dass
+   `k1520disktool-cli` seit jeher verlinkt, aber **in keiner Aufräumliste** stand: es
+   blieb beim Deinstallieren als toter Verweis liegen. Beide hängen jetzt an derselben
+   Liste. Wächter `test_installer_verweist_den_debugger_und_raeumt_ihn_wieder_weg`.
+4. ✅ Windows: `k1520dbg.cmd.in` → `bin\k1520dbg.cmd`. **Eine Abweichung vom
+   Zuschnitt**, mit Absicht: es gibt einen Startmenü-Eintrag *„K1520-Werkzeuge
+   (Eingabeaufforderung)"* — er zeigt auf die **`.cmd`**, nicht auf `k1520dbg.exe`.
+   Das Argument aus §10a.2 richtet sich gegen ein Symbol auf den *Debugger* (das
+   öffnete ein Fenster, das mangels Diskette sofort wieder zuginge); die `.cmd`
+   dagegen öffnet eine Eingabeaufforderung (`cmd /k`) und bleibt stehen. Ohne
+   irgendeinen Eintrag findet ein Windows-Anwender den Debugger nie — er liegt in
+   `bin\` und steht sonst nirgends. Wächter
+   `test_iss_schreibt_die_werkzeug_eingabeaufforderung` hält beides auseinander:
+   die `.cmd` **muss** im Abschnitt für die Symbole stehen, `k1520dbg.exe` **darf
+   nicht**.
+5. ✅ Der Hinweis auf den Debugger steht an **drei** Stellen, weil er sonst untergeht:
+   die Schlussmeldung von `install.sh`, eine eigene Assistentenseite **nach dem
+   Kopieren** (`CreateOutputMsgPage(wpInfoAfter, …)` — vorher wären die genannten
+   Pfade noch leer) und `paket_readme.md`.
+
+`(3)` aus §10a.3 bleibt offen wie beschrieben: `k1520dbg` linkt den Kern weiterhin
+statisch, im Paket liegen also zwei Kopien (~1 MB). `(2)` erledigte sich von selbst —
+`K1520_FORMATS_DEFAULT` hängt an `k1520_floppy2`, und das erbt `k1520dbg` mit; der
+Wächter dagegen steht trotzdem im Rauchtest beider Release-Jobs (er prüft jetzt
+`libk1520core.so` **und** `k1520dbg`).
+
+### 10a.5 Greaseweazle: mitgeliefert statt nachinstalliert (2026-08-18)
+
+Mit `--physical` in beiden Programmen ist der Zugriff auf ein echtes Laufwerk kein
+Sonderfall mehr, sondern eine Funktion des Produkts (`doc/design/14_physische_diskette.md`).
+Bis hierher war er eine **freiwillige Nachinstallation von Hand** — im ausgelieferten
+Paket ist das keine Option: dort gibt es kein `pip` im Blick des Anwenders und unter
+Windows nicht einmal `git`.
+
+**Der Weg dahin ist der einzige, der ohne Übersetzer beim Anwender auskommt.** Vier
+Wege standen zur Wahl:
+
+| Weg | woran er scheitert |
+|---|---|
+| PyPI (`greaseweazle` in `requirements.in`) | **liegt nicht auf PyPI** — 404, Stand 2026-08-18 |
+| `pip install git+https://…@v1.23` beim Anwender | braucht `git`, und die C-Erweiterung braucht einen Übersetzer |
+| Quellarchiv ins Paket, `pip install` beim Anwender | Übersetzer beim Anwender — unter Windows aussichtslos |
+| **wheel beim Schnüren bauen, ins Paket legen** | — |
+
+*(Ein **wheel**, Dateiendung `.whl`, ist das fertige Installationsformat für
+Python-Pakete — ein ZIP aus den einspielbaren Dateien plus `*.dist-info`-Metadaten.
+Der Gegensatz ist das **Quellarchiv** (sdist): dort liegt der Quelltext samt
+`setup.py`, und `pip` muss beim Installieren erst einen Bauschritt fahren. Genau
+dieser Bauschritt ist hier das Problem — er bräuchte einen C-Übersetzer.)*
+
+Umgesetzt ist der vierte. `packaging/gw_pins.txt` nagelt das Quellarchiv des
+GitHub-Releases mit Größe und **SHA256** fest (dieselbe Sitte wie `uv_pins.txt` und
+`python_pins.txt`: die Prüfsumme reist mit dem Paket, nicht neben der Datei her);
+`build_payload.sh` lädt es, prüft, baut daraus ein wheel und legt es als
+`wheels/greaseweazle-<v>-py3-none-any.whl` **neben** die Payload — wie
+`requirements.lock` gehört es dem Installer, nicht der Installation.
+
+Drei Festlegungen, die man nicht aufweichen darf:
+
+- **Das wheel ist `py3-none-any`, die C-Erweiterung entfällt bewusst.** `setup.py`
+  erklärt `greaseweazle.optimised`; beide Aufrufstellen haben aber einen Rückfall in
+  Python (`except AttributeError` in `usb.py:487` und `track.py:406`). Gemessen am
+  2026-08-18 kostet der Verzicht **~25 ms je Spur** — gegen 500–800 ms, die das Lesen
+  einer Spur am echten Laufwerk ohnehin dauert, also 3–5 %. Dafür gibt es EIN wheel für
+  alle Systeme, keinen Übersetzer beim Anwender und keine Bindung an die
+  Python-Nebenversion. Herausgenommen wird die Erweiterung über einen **vorgeschalteten
+  Aufsatz** (`setuptools.setup` wird abgefangen, `ext_modules` fällt weg) und nicht
+  durch einen Eingriff in `setup.py` selbst: so hält es auch, wenn die nächste Fassung
+  die Datei umschreibt. Solange `ext_modules` gesetzt ist, wird das wheel an Plattform
+  **und** ABI gebunden, auch wenn gar nichts übersetzt wurde — deshalb prüft
+  `build_payload.sh` den Dateinamen nach.
+- **Die vier Abhängigkeiten kommen von PyPI, in `requirements.lock`** (crcmod,
+  bitarray, pyserial, requests). Sie werden also zusammen mit Qt geladen und mit
+  `--require-hashes` geprüft; das wheel selbst spielt der Installer danach mit
+  **`--no-deps`** ein — an der Stelle soll nichts mehr aus dem Netz kommen.
+- **Ein Fehlschlag beim Einspielen wirft die Installation NICHT hin.** Emulator und
+  Diskettenwerkzeug laufen ohne; es fehlt nur der Zugriff auf ein echtes Laufwerk, und
+  die Oberfläche sagt das von selbst (`app/gw/session.py: verfuegbarkeit` sperrt den
+  Menüpunkt mit dem Grund im Tooltip).
+
+Dazu ein Nebenbefund, der ohne das Ausliefern nie aufgefallen wäre: **ohne die
+C-Erweiterung meldet sich `greaseweazle.optimised` beim Import auf der
+STANDARDAUSGABE.** Bei `k1520disktool --physical` ist die Standardausgabe die Nutzlast
+(§12.3 des Diskettenentwurfs) — eine Warnzeile mittendrin macht aus einer Dateiliste
+Kauderwelsch. `app/gw/device.py` liest die Schicht deshalb nur noch über **`_leise()`**
+ein (`contextlib.redirect_stdout(sys.stderr)`); umgeleitet, nicht verworfen, damit eine
+künftige Meldung sichtbar bleibt — nur eben am richtigen Ort. Wächter
+`test_die_anbindung_schreibt_nicht_auf_die_nutzlast` (es darf **keinen** Import an
+`_leise` vorbei geben).
+
+Der Assistent sagt beides **vorher** an — Greaseweazle auf der Seite „Bevor es losgeht"
+und noch einmal auf der letzten Seite vor dem Zugriff: er richtet etwas ein, das der
+Anwender nicht bestellt hat, und „Greaseweazle" allein sagt niemandem etwas, „echte
+Disketten in einem angeschlossenen Laufwerk" schon.
+
+Aufwand insgesamt: überschaubar, weil `k1520disktool-cli` den Weg für ein
+Kommandozeilenprogramm im Paket schon gebahnt hat.
+
+---
+
 ## 11. Offene Punkte
 
 - **Code Signing**: Windows-Zertifikat (SmartScreen) und Apple Developer ID
@@ -656,6 +905,33 @@ macOS-Tripel, `paths.py` kennt `.dylib` und `~/Library/Application Support`).
   `test_slim_wirft_pip_aus_der_laufzeitumgebung`, dazu die auf **130 MB**
   verschärfte Schranke im Paketjob (mit den vorherigen 220 MB gingen die
   163 MB als „in Ordnung" durch).
+- ~~**Der Emulator nimmt keine Diskette auf der Kommandozeile**~~ ✅ erledigt
+  2026-08-19: `a5120emu [DISKETTE …]` legt bis zu vier Abbilder in A:–D:, **vor**
+  `power_on()`, sodass der Kaltstart schon von der ersten bootet. Dazu `--help`.
+  Zwei Festlegungen: die Argumente werden **vor den Qt-Importen** ausgewertet (ein
+  Tippfehler ergibt eine Zeile im Terminal, auch ohne PySide6), und sie werden
+  **nicht gespeichert** — ein `a5120emu fremde.hfe` soll die gemerkte Belegung des
+  Anwenders nicht dauerhaft ersetzen.
+
+  Dabei fiel eine Falle auf, die auch von Hand zuschlägt: **der Kern prüft beim
+  Mounten die Dateigröße nicht gegen die Geometrie.** Ein 780K-`.img` lässt sich
+  klaglos als `cpa800` einlegen — und bootet dann nicht, weil die Spurbelegung nicht
+  stimmt. Für ein rohes Sektorabbild ist die Größe das einzige Merkmal, also wählt
+  `DriveWidget.mount_path()` unter den passenden Katalogformaten dasjenige, dessen
+  aus `formats.yaml` errechnete Abbildgröße zur Datei passt (`_abbildgroessen()`);
+  `.hfe`/`.dmk` tragen ihre Geometrie selbst und bleiben unberührt. Guards:
+  `py_a5120emu_cli` (8 Fälle, inkl. Kaltstart von der genannten Diskette).
+
+  **Eine Konsolenfassung des Emulators gibt es weiterhin nicht** — die ist
+  `k1520dbg console` (§10a.1, `tools/k1520dbg.md` §9).
+
+  Offen bleibt eine Kleinigkeit unter Windows: `launcher.cmd` startet
+  `pythonw.exe` (fensterlos, damit beim Doppelklick keine Konsole aufgeht) —
+  `a5120emu --help` und `--paths` schreiben dort also ins Leere. Wer die Auskunft
+  braucht, ruft `python.exe app\main.py --paths` aus der Eingabeaufforderung auf
+  (die Vorlage `k1520dbg.cmd.in` legt sie ohnehin bereit). Zu beheben wäre es mit
+  einem zweiten `.cmd`, das `python.exe` benutzt — lohnt erst, wenn jemand darüber
+  stolpert.
 - **Versionsprüfung Payload ↔ venv**: ob der Launcher bei Versionsversatz automatisch
   nachinstalliert oder nur warnt.
 - **Proxy-Umgebungen**: `uv` respektiert `HTTPS_PROXY`; ob der Installer danach fragt, wenn

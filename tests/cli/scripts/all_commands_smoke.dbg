@@ -130,6 +130,9 @@ bt
 bt scan
 screen
 screen find "x"
+# console: im Pipe-Betrieb gibt es kein Terminal -> Hinweis statt Rohmodus.
+# Genau so muss es sein; der lebende Pfad haengt an py_dbg_konsole.
+console
 keys \s
 
 # ── Snapshots / Reverse / Zustand auf Platte ───────────────────────────────

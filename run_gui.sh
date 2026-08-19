@@ -41,4 +41,4 @@ echo ""
 echo "Starting GUI..."
 echo ""
 
-exec "$PY" "$PROJECT_DIR/app/main.py"
+exec "$PY" "$PROJECT_DIR/app/main.py" "$@"

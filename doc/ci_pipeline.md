@@ -125,7 +125,7 @@ Die Standardrunde, identisch zu dem, was der `pre-push`-Hook lokal fährt:
 tools/dev.sh test        # baut build/, dann ctest ohne format_integration/format_matrix
 ```
 
-Der Job installiert dafür `build-essential cmake ccache libreadline-dev` und die vier
+Der Job installiert dafür `build-essential cmake ccache` und die vier
 Systembibliotheken, die PySide6 auch im Offscreen-Betrieb braucht (`libegl1 libgl1
 libxkbcommon0 libdbus-1-3`). Anschließend legt er ein `venv/` im Arbeitsbaum an und
 installiert `requirements-dev.txt` hinein — **ohne das registriert CMake die

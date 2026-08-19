@@ -28,7 +28,7 @@ Verzeichnis (und erst recht das Heimatverzeichnis) ab.
 * **Internet nur bei der Installation**: einmalig werden ~120 MB geladen
   (Python und Qt sind bewusst nicht im Paket, das hielte es klein).  Danach
   läuft der Emulator ohne Netz.
-* Platzbedarf nach der Installation: **~146 MB**.  Der Installer wirft dafür
+* Platzbedarf nach der Installation: **~160 MB**.  Der Installer wirft dafür
   alles weg, was der Emulator nie lädt (QML/Quick, Qt-Entwicklungswerkzeuge,
   CPythons Testsuite …) und prüft anschließend nach, dass die Oberfläche noch
   aufbaut.  `--no-slim` behält alles (~400 MB).
@@ -61,6 +61,41 @@ k1520disktool-cli ls disk.hfe # Kommandozeile
 
 Beim Öffnen ist eine Diskette **schreibgeschützt** — Ändern verlangt, den Haken
 „Nur lesen" zu entfernen. So kann beim bloßen Ansehen nichts kaputtgehen.
+
+### Echte Disketten am Greaseweazle
+
+Beide Programme können statt einer Datei ein **echtes Laufwerk** benutzen, wenn ein
+[Greaseweazle](https://github.com/keirf/greaseweazle)-Adapter angeschlossen ist:
+im Emulator der Knopf „Physisch…" am Laufwerkskasten, im Diskettenwerkzeug
+*Datei ▸ Physisches Laufwerk…* (oder `k1520disktool-cli --physical ls`). Gelesen und
+geschrieben wird **spurweise nach Bedarf** — der Umweg über ein Abbild entfällt.
+
+Die dafür nötigen Bausteine richtet der Installer mit ein; ohne Adapter stören sie
+nicht, der Menüpunkt bleibt dann gesperrt und nennt den Grund. Vor dem ersten
+Schreibversuch die Diskette sichern.
+
+### Der Debugger `k1520dbg`
+
+Das dritte Programm im Paket, und das einzige ohne Oberfläche: es untersucht fremde
+Programme Schritt für Schritt — Haltepunkte, Register, Speicher, Rückwärtslaufen,
+Disassemblat mit dem eigenen Quelltext daneben.
+
+```sh
+k1520dbg meine_diskette.hfe        # Sitzung öffnen, `help` zeigt die Befehle
+```
+
+| | |
+|---|---|
+| Handbuch | `<Installation>/share/doc/handbuch_k1520dbg.md` |
+| Dazu | `<Installation>/share/tools/z80_disasm2.py` — statisches Vollisting einer `.COM` |
+| Lizenzen der Fremdsoftware | `<Installation>/share/doc/lizenzen/` |
+
+Einen Startmenü-Eintrag hat er bewusst nicht — er wird in einen vorhandenen
+Arbeitsablauf aus Editor, Assembler und Konsole eingebunden. Unter **Windows** öffnet
+der Eintrag *„K1520-Werkzeuge (Eingabeaufforderung)"* eine Konsole, in der `k1520dbg`
+und `k1520disktool-cli` ohne Pfadangabe laufen; die Datei `bin\k1520dbg.cmd` dahinter
+ist ausdrücklich **zum Kopieren und Anpassen** gedacht (Arbeitsordner und eigener
+Assembler stehen als Beispielzeilen darin).
 
 ## Wo liegt was
 

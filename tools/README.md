@@ -4,9 +4,15 @@ Werkzeuge für Analyse, Disassemblierung, Boot-Tracing und interaktives Debuggen
 K1520-Emulation. Der Kasten wächst iterativ: fehlt bei einer Analyse eine Funktion, wird
 sie hier ergänzt und unter „Bekannte Lücken" notiert.
 
-> **Einstieg:** **[how_to_debug_and_trace.md](how_to_debug_and_trace.md)** — welches
-> Werkzeug wann, mit durchgerechneten Szenarien (Boot-Hänger, Programm sezieren,
-> Interrupt-/Uhr-Analyse, Coverage/Diff, Save-State).
+> **Einstieg für die Emulatorentwicklung:**
+> **[how_to_debug_and_trace.md](how_to_debug_and_trace.md)** — welches Werkzeug wann, mit
+> durchgerechneten Szenarien (Boot-Hänger, Programm sezieren, Interrupt-/Uhr-Analyse,
+> Coverage/Diff, Save-State).
+>
+> **Einstieg für Anwender:** **[doc/handbuch_k1520dbg.md](../doc/handbuch_k1520dbg.md)** —
+> Handbuch zum Debugger für alle, die *eigene* Gastprogramme untersuchen (mit und ohne
+> Quelltext, Blick in PIO/SIO/CTC, Rezepte). Für die Auslieferung an Anwender vorgesehen:
+> `doc/design/13_distribution.md` §10a.
 >
 > **Faustregel:** mit `boot_trace` die Phase **lokalisieren**, dann mit `k1520dbg`
 > **sezieren**.
@@ -34,7 +40,7 @@ bestehen bleiben soll (z. B. Formatier-Versuche) — dann auf einer eigenen Kopi
   *eine* maschinenlesbare Ergebniszeile statt ~880, dazu einen sinnvollen Exit-Code
   (`--until`: 0 erreicht / 2 nicht). Statt Zyklen zu raten: **`--until <cond>`**.
 - `k1520dbg`: im Stapelbetrieb über eine Pipe (`printf 'b 0x0437\ng\nrj\nq\n' | …`) oder
-  `-x skript.dbg`; `rj` druckt Register als JSON. Die REPL mit readline ist für Menschen.
+  `-x skript.dbg`; `rj` druckt Register als JSON. Die REPL mit Zeilenbearbeitung ist für Menschen.
 - **Einmal booten, oft fortsetzen:** `--save-state`/`--load-state` (boot_trace) bzw.
   `savestate`/`loadstate` (k1520dbg) sichern RAM+CPU+ROM-Mapping in eine Datei — der ~2 s
   lange Boot wird zur Einmalinvestition.
@@ -47,7 +53,7 @@ bestehen bleiben soll (z. B. Formatier-Versuche) — dann auf einer eigenen Kopi
 
 | Werkzeug | Zweck | Doku |
 |---|---|---|
-| **`k1520dbg`** | Interaktiver gdb-artiger Debugger für **beide** CPUs: bedingte und Ereignis-Breakpoints, Step into/over/out, Reverse-Step + Snapshots + Save-State, Watch auf Speicher/Ports, Logpoints, `x`-Examine, `.prn`/`.MAC`-Annotation, Chip-Zustand (`dev`, `ivt`), History-`bt` | **[k1520dbg.md](k1520dbg.md)** |
+| **`k1520dbg`** | Interaktiver gdb-artiger Debugger für **beide** CPUs — und mit `console` zugleich die **Konsolenfassung des Emulators** (live bedienen, Haltepunkte bleiben scharf): bedingte und Ereignis-Breakpoints, Step into/over/out, Reverse-Step + Snapshots + Save-State, Watch auf Speicher/Ports, Logpoints, `x`-Examine, `.prn`/`.MAC`-Annotation, Chip-Zustand (`dev`, `ivt`), History-`bt` | **[k1520dbg.md](k1520dbg.md)** |
 | **`boot_trace`** | Nicht-interaktiver Boot-/DMA-Tracer: Report mit Histogrammen, `[03F8]`-Done-Flag und VRAM-Banner; `--until`, `--coverage`/`--diff`, `--csv`, `--fold`, `--itrace`, Log-Gates | **[boot_trace.md](boot_trace.md)** |
 | `format_driver` | Skriptgesteuerter Treiber für interaktive Gastprogramme: bootet CP/A mit zwei Disketten, sendet Tastenfolgen, gibt zwischen den Schritten den 80×24-Text aus. Rückgrat der Formatier-Pipeline (`FORMAT.COM`/`FORMATB.COM`) | `doc/format.md` |
 | `kbd_test` | Tastatur-/Boot-Smoke: bootet, tippt Text + Enter, gibt Bildschirm, Tastatur-Portverkehr (0x5C/0x5D mit Quell-PC) und ein PC-Histogramm aus | unten |

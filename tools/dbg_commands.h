@@ -3,7 +3,7 @@
  * @brief Kanonische Liste der k1520dbg-Kommandos + Präfix-Vervollständigung.
  *
  * Nur die Kommando-Schlüsselwörter und ein einfacher Präfix-Matcher — getrennt vom
- * großen Dispatch in k1520dbg.cpp, damit die Tab-Completion (readline) ohne Maschine
+ * großen Dispatch in k1520dbg.cpp, damit die Tab-Vervollständigung (isocline) ohne Maschine
  * unit-testbar ist. Bei neuen Kommandos hier den Namen ergänzen (rein kosmetisch für
  * die Completion; die eigentliche Wirkung steckt im Dispatch).
  *
@@ -31,7 +31,7 @@ inline const std::vector<std::string>& names() {
         // memory / symbols / listings
         "load","save","sym","lst","verify",
         // misc
-        "mark","keys","keyuntil","screen","gscreen","bscreen","dialog",
+        "mark","keys","keyuntil","screen","gscreen","bscreen","dialog","console",
         "reset","disk","alias","unalias","source","help","q","quit",
     };
     return n;
