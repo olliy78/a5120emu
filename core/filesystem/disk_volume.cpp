@@ -1033,6 +1033,11 @@ void DiskVolume::gegenprobe(FsCheckReport& an, FsCheckLevel level, bool nachlade
     // Ohne Pfad gibt es kein zweites Oeffnen — an einer physischen Diskette hiesse
     // das ohnehin, sie ein zweites Mal einzulesen.
     if (path_.empty() || !formate_ || !fs_kat_) return;
+    // Und nicht, solange noch ungespeicherte Aenderungen im Medium stehen: die
+    // Gegenprobe liest die DATEI, und die haette dann einen anderen Stand als die
+    // Diskette, ueber die hier geurteilt wird.  Ein Vergleich zweier verschiedener
+    // Disketten ergibt keine brauchbare Aussage — lieber gar keine.
+    if (disk_ && disk_->medium().dirty()) return;
 
     const int    eigen          = an.zaehlerAb(FsSeverity::Warnung);
     const size_t eigene_dateien = const_cast<DiskVolume*>(this)->list().size();

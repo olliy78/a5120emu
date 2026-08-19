@@ -320,9 +320,16 @@ nur den ersten Sektor kennt, findet den zweiten nicht.  Bei UDOS steht der
 **Kopfsektor** vorn; dort stehen Typ, ENTRY und die Segmente — das, woran sich eine
 namenlose Datei erkennen lässt.
 
-In `--json` liefert `recover` zu jedem Fund `cyl`, `head` und `sector` des Anfangs;
-die ganze Liste gibt es über die C-ABI (`k1520d_recover_part_count` /
-`k1520d_recover_part`) bzw. `RecoverFind.parts` der Python-Bindung.
+In `--json` steht die Liste als `parts` bei jedem Fund:
+
+```json
+{"suggestion": "GERETTET.001", "size": 2048, "quality": "sicher",
+ "cyl": 21, "head": 1, "sector": 6,
+ "parts": [{"cyl":21,"head":1,"sector":6}, {"cyl":21,"head":1,"sector":7},
+           {"cyl":21,"head":1,"sector":12}, …]}
+```
+
+`cyl`/`head`/`sector` daneben bleiben der **Anfang** (bei UDOS der Kopfsektor).
 
 ## Bootfähige Diskette anlegen
 

@@ -1,0 +1,17 @@
+# `--json` muss dasselbe hergeben wie die Oberfläche — auch die SEKTORLISTE.
+#
+# Sie ist der Schritt vor jeder Entscheidung: „ist das überhaupt, was ich suche?"
+# Bei UDOS gibt es dafür nicht einmal einen Namen, und die Sätze einer Datei liegen
+# verkettet über die Diskette verstreut.  Ein Skript, das einen Fund vor dem Retten
+# ansehen will, braucht die Liste genauso wie der Dialog — `cyl`/`head`/`sector`
+# allein nennen nur den Anfang.
+#
+# `NOTE.TO.SD` sind 16 Sätze zu 128 B, dazu der Kopfsektor: 17 Einträge.
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+setup_run: rm %DISK% Side1/NOTE.TO.SD --no-backup
+run:    recover %DISK% --json
+expect_re: "parts":\[\{"cyl":21,"head":1,"sector":6\}
+expect: "restorable":false
+expect: "quality":"sicher"
+exit:   0

@@ -727,9 +727,12 @@ womöglich völlig in Ordnung.
 
 **Kosten: praktisch keine.** Sie läuft nur bei mehrdeutiger Erkennung, und
 `data/formats.yaml` wird bewusst eindeutig gehalten — keines der 31 Abbilder im Baum
-meldet Alternativen. Gegen Endlosrekursion (das zweite Volume würde wieder
-gegenprüfen) steht ein `thread_local`-Riegel; ohne Pfad (physische Diskette) läuft sie
-gar nicht erst.
+meldet Alternativen. Drei Riegel: gegen Endlosrekursion (das zweite Volume würde
+wieder gegenprüfen) ein `thread_local`-Flag; ohne Pfad (physische Diskette) läuft sie
+gar nicht erst; und **nicht bei ungespeicherten Änderungen** — sie liest die *Datei*,
+die dann einen anderen Stand hätte als die Diskette, über die geurteilt wird. Ein
+Vergleich zweier verschiedener Disketten ergibt keine brauchbare Aussage; lieber gar
+keine.
 
 **Geprüft wird sie mit einem test-eigenen Katalog**, nicht mit dem ausgelieferten:
 `tests/fixtures/formats_mehrdeutig.yaml` fügt ein Profil hinzu, das sich vom echten

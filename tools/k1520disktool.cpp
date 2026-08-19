@@ -784,7 +784,18 @@ int cmd_recover(const Optionen& o) {
                       << ",\"restorable\":" << (f.wiederherstellbar ? "true" : "false")
                       << ",\"detail\":" << jsonText(f.detail)
                       << ",\"cyl\":" << f.cyl << ",\"head\":" << f.head
-                      << ",\"sector\":" << f.sector_index << "}";
+                      << ",\"sector\":" << f.sector_index
+                      // Die ganze Sektorliste des Fundes (§13.3a).  In der
+                      // Oberflaeche blaettert man damit durch den Fund, BEVOR etwas
+                      // geschieht — ein Skript, das dasselbe tun will, braucht sie
+                      // genauso.  `cyl`/`head`/`sector` daneben bleiben der Anfang.
+                      << ",\"parts\":[";
+            for (size_t k = 0; k < f.orte.size(); ++k)
+                std::cout << (k ? "," : "")
+                          << "{\"cyl\":"    << f.orte[k].cyl
+                          << ",\"head\":"   << f.orte[k].head
+                          << ",\"sector\":" << f.orte[k].sector << "}";
+            std::cout << "]}";
         }
         std::cout << "]}\n";
     } else {
