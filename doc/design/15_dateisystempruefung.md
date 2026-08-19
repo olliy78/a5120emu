@@ -62,11 +62,89 @@ Blöcke mit Inhalt** als Rohbereiche ohne Namen.  Fünf Dinge, die man wissen wi
   freien Blöcke mit Inhalt sind kein Schaden, sondern ein Fund — sie erscheinen in der
   Suche, nicht in der Prüfung.
 
-**Etappe 6 — Wiederherstellung UDOS/NDOS** (§13.1, Signatur des Kopfsektors).  Setzt
-Etappe 5 (Modell und Dialog) voraus.  Als einziger Lesezugang fehlt noch
-**`UdosFileSystem::readSectorRaw()`** — Nutzdaten **und** Nachspann eines beliebigen
-Sektors; die Kopfsektorsuche braucht beides, `recordChain()`/`readHeader()` gehen
-dagegen schon vom Verzeichnis aus.
+**Etappe 6 — Wiederherstellung UDOS/NDOS** (§13.1, Signatur des Kopfsektors).  Das
+ist der einzige noch offene Punkt; hier steht alles, was eine neue Sitzung dafür
+braucht.
+
+*Was schon da ist und **nicht** noch einmal gebaut werden muss:* das ganze Modell
+(`check/fs_recover.{h,cpp}` — `FsRecoverFind`, `FsRecoverQuality`,
+`FsRecoverReport`), die Haken
+`FileSystem::recoverScan/recoverRead/recoverRestore`, die Klammer
+`DiskVolume::recoverScan/recoverRead/recoverExtract/recoverRestore` (inkl.
+Volume-Zuordnung, Momentaufnahme mit Rücknahme und Beiblatt), die C-ABI
+`k1520d_recover_*`, das Kommando `recover` und der Dialog `ui/recover_dialog.py`.
+**Alles davon ist dateisystemunabhängig** — es fragt nie, welche Familie vorliegt.
+Zu bauen ist deshalb nur ein neues `check/udos_recover.cpp` (und, wenn NDOS genug
+Eigenes hat, `check/udos1715_recover.cpp`) mit denselben drei Überschreibungen wie
+`cpm_recover.cpp`, plus die Zeilen in `CMakeLists.txt`.  `cpm_recover.cpp` ist die
+Schablone, an der sich ablesen lässt, welche Felder eines Fundes wofür gefüllt
+werden.
+
+*Der Lesezugang steht ebenfalls schon* — die frühere Notiz, es fehle ein
+`UdosFileSystem::readSectorRaw()`, ist **überholt**: `udos_recover.cpp` ist wie
+`udos_check.cpp` eine **Methode der Klasse** und kommt damit an das private
+`UdosFileSystem::readSector(UdosPointer, data, back, fwd)` — Nutzdaten **und** die
+beiden Zeiger des Kontrollblocks in einem Aufruf.  Dazu öffentlich: `directory()`,
+`readHeader()`, `recordChain()`, `bitmap()`, `directoryHeader()`,
+`reservedTrack()`.  Bei NDOS entsprechend `Udos1715FileSystem::readSector(p, data)`
+(dort trägt der Nachspann nichts — die Verkettung steht in eigenen Zeigersektoren),
+`readDescriptor()`, `pointerBlocks()`, `recordChain()`, `sectorsOfFile()`.
+
+*Sieben Dinge, die beim Bauen zu erwarten sind:*
+
+1. **`readHeader()` ist der erste Filter, aber nicht der ganze.**  Es weist eine
+   unmögliche Satzlänge schon beim Lesen ab (nicht 0, Vielfaches von 128) — die
+   sechs Nullbytes, das Typbit und die beiden `FF`-Marken aus §13.1 muss die
+   Kandidatenprüfung selbst nachrechnen, sonst wird jeder passende Datensektor zum
+   „Fund".  Hier gilt E10 doppelt: **ein erfundener Fund ist schlimmer als ein
+   verpasster.**
+2. **`readHeader()` überschreibt `directory_sector` und `first_record` mit den
+   Zeigern des Kontrollblocks** (die sind die verlässlichere Quelle).  Für die
+   Suche ist gerade der **Rückwärtszeiger** interessant: er nennt den
+   Verzeichnissatz, zu dem der Kopfsektor einmal gehörte — bei einer gelöschten
+   Datei steht dort inzwischen etwas anderes.
+3. **Lebende Kopfsektoren werden über `directory()` aussortiert**, nicht über die
+   Belegungskarte: die Karte ist genau das, was bei einer gelöschten Datei gelöscht
+   wurde.
+4. **Der Name ist fort und nur der Name** (§13, Kasten).  `removeDirEntry` schiebt
+   die folgenden Einträge nach vorn und zieht `FF` nach.  Der Suchlauf darf sich die
+   Verzeichnissätze nach **Namensresten** hinter dem `FF`-Ende ansehen und sie als
+   *Vorschlag* anbieten — nie als Tatsache; ohne Fund heißt der Fund `GERETTET.001`
+   (`FsRecoverFind::vorschlag`, `name` bleibt leer).
+5. **Die Güte kommt bei UDOS aus der Kette**, nicht aus einer Blockliste: jede
+   Verbindung beidseitig schlüssig ⇒ *sicher*; ein fehlender Rückwärtszeiger oder
+   eine falsche CRC ⇒ *wahrscheinlich*; ein Satz, der inzwischen einer lebenden
+   Datei gehört, oder ein Kettenabbruch ⇒ *Bruchstück* mit der Stelle im Klartext.
+6. **`recoverRestore` ist bei UDOS mehr als ein Byte**: Sektoren des Fundes in der
+   Karte belegen, einen Verzeichniseintrag mit dem gewählten Namen anlegen
+   (`appendDirEntry`), den Rückwärtszeiger des Kopfsektors auf den neuen
+   Verzeichnissatz setzen (`kopfFeldSetzen` bzw. der Schreibpfad des
+   Kontrollblocks).  **Die Daten selbst werden nicht angefasst.**  Und wie bei CP/M
+   gilt: die Vorbedingungen unmittelbar vor dem Schreiben noch einmal prüfen.
+7. **Das Beiblatt ist hier keine Kür.**  Ein UDOS-Kopfsektor trägt Typ,
+   Eigenschaften, ENTRY, Satzlänge und die Speichersegmente; ohne sie lässt sich
+   eine gerettete Datei nicht vollwertig zurückspielen.  Die Angaben gehören im
+   Format von `udos-dateiangaben.txt` heraus (`disk_volume.cpp`, `kUdosBeiblatt` —
+   dort steht auch der Leser, den `insertAll` benutzt), nicht in das
+   `<datei>.rettung.txt` der CP/M-Seite.
+
+*Womit sich das prüfen lässt* (`tests/fixtures/disks/`, s. `tests/fixtures/README.md`):
+`udos_boot_scp.hfe` (ZDOS, beidseitig — die Arbeitsfixture),
+`udos_ds77_k5601_fremdsync.hfe` (fremde Sync-Sitte),
+`udos1715_640k_pc1715_system.img` (NDOS vom PC 1715 — **`.img`**, bei NDOS erlaubt;
+bei ZDOS wäre es unmöglich) und `udosP8000_640k_wega.hfe` (dasselbe NDOS, anderer
+Systembereich).  Schaden bzw. Löschung wird über die
+**Werkzeugebene** erzeugt (`DiskVolume::erase`), nie über den Prüf- oder Suchcode
+selbst.  Die erste Zusage, die stehen muss, ist dieselbe wie bei CP/M: **eine frisch
+angelegte Diskette hat nichts zu retten** — der Wächter dafür läuft in
+`test_fs_recover.cpp` schon über alle CP/M-Profile und ist auf UDOS zu erweitern.
+Die drei `cli_dt_recover_*`-Fälle und die drei GUI-Fälle sind die Vorlage für die
+UDOS-Gegenstücke.
+
+*Was dabei NICHT anzufassen ist:* CLI, C-ABI, Python-Bindung und Dialog.  Kommt
+dort doch etwas hinzu, muss es im **selben Commit** auch in
+`app/core_binding/k1520disk.py` stehen — sonst ist `py_disk_c_api` rot
+(Driftwächter).
 
 **Etappe 7 — Ebene 0 ist fertig** (§11, 2026-08-19). Aus „nichts erkannt" ist eine
 Befundliste geworden: jeder geprüfte Kandidat mit seinem Grund, als eigene Ebene
@@ -416,7 +494,7 @@ zurückrechnen, der er gehört.  Bei UDOS (§9) liegt das genau andersherum.
 | `cpm.medium.crc` | Ein Sektor, der zu einem belegten Block gehört, hat eine falsche Daten- oder ID-CRC — **mit dem Namen der betroffenen Datei und der Satznummer** | Fehler |
 | `cpm.medium.unformatiert` | Eine Spur im Dateisystembereich trägt keine Adressmarken | Fehler |
 | `cpm.medium.fehlt` | Ein laut Geometrie erwarteter Sektor fehlt in der Spur | Fehler |
-| `cpm.medium.frei_beschrieben` | Ein freier Block ist nicht mit dem Füllbyte gefüllt: da liegt Altbestand.  **Noch nicht umgesetzt** — er ist kein Schaden, sondern ein Fund, und gehört damit zur Wiederherstellung (§13, Etappe 5) | Info |
+| `cpm.medium.frei_beschrieben` | Ein freier Block ist nicht mit dem Füllbyte gefüllt: da liegt Altbestand.  **Bleibt unvergeben** — er ist kein Schaden, sondern ein Fund: seit Etappe 5 erscheint er als **Rohbereich im Suchlauf** (§13.1), nicht im Prüfbericht | Info |
 | `cpm.medium.systemspur` | Ein Sektor der **Systemspuren** fehlt oder trägt eine falsche CRC.  Sie gehören keinem Dateisystem — das Lade-ROM liest Spur 0 blind ein —, aber ein Schaden dort kostet die Bootfähigkeit, und sonst sagt es niemand: die Erkennung meldet nur „1 Sektor mit CRC-Fehler", ohne zu sagen, welcher | Warnung |
 
 > **Systemspuren werden PHYSISCH durchgegangen**, nicht durch Lesen der erwarteten
@@ -766,8 +844,9 @@ c31h0 S9–11, die jetzt zu `HELP.DAT.00` gehören").
 ### 13.3 Was mit einem Fund geschehen kann
 
 **1. In den Ordner retten** (immer möglich, auch bei schreibgeschützter Diskette, auch
-bei Bruchstücken). Bruchstücke werden mit einem Beiblatt gerettet, das nennt, welche
-Bereiche fehlen; fehlende Sätze werden mit dem Füllbyte aufgefüllt, damit die Offsets
+bei Bruchstücken). Alles unterhalb der Güte *sicher* wird mit einem Beiblatt gerettet
+— bei CP/M als `<datei>.rettung.txt` neben der geretteten Datei —, das Herkunft, Güte
+und die Vorbehalte nennt; fehlende Sätze werden mit dem Füllbyte aufgefüllt, damit die Offsets
 stimmen — für ein Textdokument oder einen Binärdump ist das brauchbar, für ein Programm
 nicht, und genau das steht dann auch dabei. Bei UDOS werden die vollständigen
 Kopfsektorangaben in das bekannte Beiblatt `udos-dateiangaben.txt` geschrieben — damit
@@ -785,9 +864,17 @@ lässt sich eine gerettete Datei später mit `put` **vollwertig** wieder einspie
   Verzeichnissatz setzen. Die Daten selbst werden **nicht angefasst**.
 
 **3. Als Rohbereich sichern** (Fragmente ohne Struktur): die Läufe werden als
-`fragment_c12h0_s3-s14.bin` herausgeschrieben, mit einer Einordnung nach Inhalt —
-*Text* (über 90 % druckbar, oft mit `1A` am Ende), *Programm* (Z80-Einsprungmuster am
-Anfang, hoher Anteil gültiger Opcodes), *leer* (nur Füllbyte), *unklar*. Die Vorschau
+`fragment_c12h0_b40-b47.bin` herausgeschrieben — Ort des Anfangs **und** Blockspanne.
+(Der ursprünglich vorgesehene Name mit Sektorspanne wäre falsch geworden, sobald ein
+Lauf über eine Spurgrenze geht: die zweite Sektornummer läge dann auf einer anderen
+Spur als die erste.)  Dazu kommt eine Einordnung nach Inhalt —
+*Text* (mindestens 90 % druckbar, `1A` und die Zeilenenden zählen mit), *Programm*
+(Z80-Einsprungmuster am Anfang: `JP`, `LD SP,nn`, `DI`) oder *unklar*.  Ein *leerer*
+Bereich wird gar nicht erst angeboten: ein Block, der aus **einem immer gleichen
+Byte** besteht, ist Füllmuster und kein Inhalt — unabhängig davon, welches Byte es
+ist (FORMAT.COM füllt je nach Menüpunkt mit `0xE5`, `0xF6` oder dem Prüfmuster
+`0x53`).  Ohne diese Regel meldete die Oberflächensuche die halbe Diskette als
+Bruchstück.  Die Vorschau
 im Dialog zeigt die ersten 512 Byte hexadezimal mit ASCII-Spalte — dieselbe Darstellung
 wie im Diskeditor.
 
@@ -848,17 +935,27 @@ K1520_API const char* k1520d_repair_blocked_why(K1520Disk h, int i, int j);
  *  @return Zahl der ausgeführten Reparaturen, -1 = nichts (zurückgerollt). */
 K1520_API int k1520d_apply_repairs(K1520Disk h, const int* befund, const int* repair, int n);
 
-/* ── Wiederherstellung ────────────────────────────────────────────────── */
-/** level: 0 = nur Verzeichnisreste (billig), 1 = volle Oberflächensuche. */
-K1520_API int         k1520d_recover_scan(K1520Disk h, int level);
+/* ── Wiederherstellung (Etappe 5, so umgesetzt) ───────────────────────── */
+/** level: 0 = nur Verzeichnisreste (billig), 1 = volle Oberflächensuche.
+ *  nachladen wie bei k1520d_check.  @return Zahl der Funde, -1 bei Fehler. */
+K1520_API int         k1520d_recover_scan(K1520Disk h, int level, bool nachladen);
+K1520_API bool        k1520d_recover_complete(K1520Disk h);
 K1520_API int         k1520d_recover_count(K1520Disk h);
 K1520_API const char* k1520d_recover_name(K1520Disk h, int i);    /* "" = unbekannt */
 K1520_API const char* k1520d_recover_type(K1520Disk h, int i);
-K1520_API const char* k1520d_recover_origin(K1520Disk h, int i);  /* "Verzeichnisplatz" … */
+K1520_API const char* k1520d_recover_origin(K1520Disk h, int i);  /* "Verzeichnisplatz 37" … */
+/** Vorschlag für den Linux-Dateinamen — nie leer, auch ohne Namen. */
+K1520_API const char* k1520d_recover_suggestion(K1520Disk h, int i);
 K1520_API int         k1520d_recover_volume(K1520Disk h, int i);
 K1520_API uint64_t    k1520d_recover_size(K1520Disk h, int i);
 K1520_API int         k1520d_recover_quality(K1520Disk h, int i); /* 0 Bruchstück … 2 sicher */
 K1520_API const char* k1520d_recover_detail(K1520Disk h, int i);  /* Konflikte im Klartext */
+/** Lässt sich der Fund AUF DER DISKETTE eintragen?  (Herausholen geht immer.) */
+K1520_API bool        k1520d_recover_restorable(K1520Disk h, int i);
+K1520_API const char* k1520d_recover_blocked_why(K1520Disk h, int i);
+K1520_API int         k1520d_recover_cyl(K1520Disk h, int i);     /* -1 = ortlos */
+K1520_API int         k1520d_recover_head(K1520Disk h, int i);
+K1520_API int         k1520d_recover_sector(K1520Disk h, int i);
 K1520_API int         k1520d_recover_preview(K1520Disk h, int i, uint8_t* buf, int n);
 K1520_API bool        k1520d_recover_extract(K1520Disk h, int i, const char* pfad);
 K1520_API bool        k1520d_recover_restore(K1520Disk h, int i, const char* name);
@@ -994,9 +1091,10 @@ Festlegungen:
 
 ### 16.4 Der Wiederherstellungsdialog (`ui/recover_dialog.py`)
 
-Links die Fundliste (*Name · Typ · Größe · Güte · Herkunft · Konflikt*), rechts die
-Vorschau (Hexdump mit ASCII-Spalte, umschaltbar auf Text). Oben die Wahl der Suchtiefe
-(*Verzeichnisreste* ↔ *Ganze Oberfläche*) mit Fortschrittsbalken; unten drei Knöpfe:
+Links die Fundliste (*Name · Typ · Größe · Güte · Herkunft*, der Konflikt als
+Kurzhinweis an der Zeile und in voller Länge über der Vorschau), rechts die Vorschau
+(Hexdump mit ASCII-Spalte, umschaltbar auf Text). Oben die Wahl der Suchtiefe
+(*Verzeichnisreste* ↔ *Ganze Oberfläche*); unten drei Knöpfe:
 **„In den Ordner retten…"** (Vorgabe, immer bedienbar), **„Auf der Diskette
 wiederherstellen"** (nur bei Schreibrecht; bei Bruchstücken mit Rückfrage) und
 **„Alles Sichere retten…"**. Namenlose Funde bekommen ein direkt in der Liste
@@ -1005,6 +1103,14 @@ editierbares Namensfeld mit Vorbelegung.
 Der Zielordner ist der der Ordnerseite (`default_folder_dir()`, 13_k1520disktool.md §20.8) — kein Dialog
 ohne Startverzeichnis, der Wächter `test_every_file_dialog_gets_a_start_directory`
 gilt auch hier.
+
+> **Der Fortschrittsbalken ist entfallen** (Etappe 5) — und zwar nicht aus Bequemlich­keit:
+> an einer **Datei** ist auch die Oberflächensuche ein Wimpernschlag (Sanduhrzeiger genügt),
+> und an einer **physischen** Diskette ist die Oberflächensuche **gesperrt**, mit derselben
+> Begründung wie die Vollprüfung im Prüfdialog: sie zöge die ganze Scheibe ein und liesse
+> das Fenster ein bis zwei Minuten stehen.  Ein Balken hätte also nur dort etwas zu zeigen,
+> wo es den Lauf noch gar nicht gibt.  Er kommt mit dem Arbeitsfaden, der beide Läufe
+> zugleich betrifft.
 
 ---
 
@@ -1161,6 +1267,15 @@ nützlich.  `✅` = fertig, `◐` = zum Teil (s. Bemerkung).
   Fall vorliegt.
 * **Der Grad, ab dem ein Fragment „Programm" heißt**, ist eine Heuristik und wird als
   solche beschriftet. Kein Befund, keine Reparatur hängt davon ab.
+* **Zwei nacheinander gelöschte CP/M-Dateien gleichen Namens werden EIN Fund**
+  (Etappe 5). Der Nutzerbereich, der sie unterscheiden könnte, ist ja gerade das
+  gelöschte Byte; zusammengefasst wird deshalb über den Namen allein. Auseinander­halten
+  ließen sie sich nur über die Blocklisten — was in dem Moment falsch würde, in dem die
+  eine die Blöcke der anderen geerbt hat.
+* **Höchstens 200 Rohbereiche** meldet die Oberflächensuche (`kMaxRohbereiche`), aus
+  demselben Grund wie `FsCheckReport::begrenzen`: eine Liste, die niemand mehr liest,
+  ist genau dann wertlos, wenn sie am nötigsten wäre. Der Fall tritt praktisch nur bei
+  einer Diskette mit gemischtem Füllmuster ein.
 * **Zeitstempel** helfen bei der Wiederherstellung nicht: CP/M 2.2 führt keine, und die
   UDOS-Felder werden bei jeder Änderung überschrieben. Eine Sortierung „zuletzt
   gelöscht zuerst" ist deshalb nicht möglich; sortiert wird nach Ort.
