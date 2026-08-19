@@ -176,112 +176,27 @@ the layer and says so. Details + limits: `tests/python/README.md`.
 
 ## Verteilbares Paket (`packaging/`)
 
-`packaging/build_payload.sh` schnürt aus dem Baum ein Anwenderpaket (~2 MB:
-Kernbibliothek, GUI, `formats.yaml`, Beispieldisketten); `install.sh` darin holt sich mit
-**`uv`** Python und Qt in ein venv **innerhalb der Installation** — benutzerlokal, ohne
-Administratorrechte. Python/Qt werden bewusst nicht mitverteilt. Bedienung:
-`packaging/README.md`, Entwurf und Begründungen: **`doc/design/13_distribution.md`**.
-Umgesetzt sind Linux/macOS (Schritt 1+2) **und Windows**: `packaging/k1520emu.iss`
-(Inno Setup ≥ 6.5, per-user) — gebaut mit `build_payload.sh --setup`, gefahren im Job
-`paket` von `windows-ci.yml` (`-f paket=true`).
+`packaging/build_payload.sh` schnürt aus dem Baum ein Anwenderpaket (~2 MB); das `install.sh`
+darin holt sich Python und Qt in ein venv **innerhalb der Installation** — benutzerlokal, ohne
+Administratorrechte. Unter Windows installiert das Inno-Setup (`packaging/k1520emu.iss`)
+selbst; ein `install.ps1` gibt es nicht mehr. Bedienung: `packaging/README.md`, Entwurf und
+Begründungen: **`doc/design/13_distribution.md`**.
 
-**Der Windows-Assistent installiert SELBST — es gibt kein `install.ps1` mehr** (seit
-2026-08-14). Drei Dinge daran nicht kaputtmachen:
-- **Kein PowerShell im Installationsweg.** Es kostete ein schwarzes Fenster ohne
-  Rückmeldung und scheiterte an der Ausführungsrichtlinie. Guard:
-  `test_iss_ruft_kein_powershell`.
-- **Python kommt direkt von python-build-standalone** (`packaging/python_pins.txt`,
-  `--refresh-python`), NICHT über `uv`: dessen Junction auf die Nebenversion scheitert
-  unter OneDrive „Dateien bei Bedarf" mit `os error 448`
-  (`STATUS_UNTRUSTED_MOUNT_POINT`, astral-sh/uv #19616) — abschalten lässt er sich
-  nicht. Unter Linux bleibt uv.
-- **Alles Nachladbare läuft in `PrepareToInstall`, also VOR dem Kopieren.** Eine
-  Ausnahme in `ssPostInstall` räumt nichts zurück und hinterlässt eine halbe
-  Installation mit Startmenü-Einträgen ins Leere. Guards:
-  `test_iss_laedt_und_richtet_ein_bevor_kopiert_wird`,
-  `test_iss_raeumt_auf_wenn_das_nachladen_scheitert`. Dateien, die der Bootstrap dort
-  schon braucht, müssen `dontcopy` sein (`[Files]` wird erst danach abgearbeitet).
-
-Sieben Dinge, die man dabei nicht kaputtmachen darf:
-
-- **`--uninstall` löscht in seinem Ziel, und das Ziel wird ERFRAGT.** Deshalb zwei
-  Riegel in `install.sh`: Ziel werden darf nur ein leeres oder bereits von uns belegtes
-  Verzeichnis (nie `$HOME`, nie `/`), und gelöscht wird nur, was sich ausweist
-  (`.k1520emu-installation`, ersatzweise `VERSION`+`app/paths.py`+`share/k1520emu/`).
-  Ohne das löschte die Antwort „`~`" beim Deinstallieren das Heimatverzeichnis — belegt,
-  nicht theoretisch. Und gelöscht wird **nur das Inventar aus dem Ausweis** (die Einträge,
-  die der Installer anlegte; ein Eintrag ist ein NAME, kein Pfad), nicht die Wurzel als
-  Ganzes — fremde Dateien im Ordner überleben, dann bleibt auch der Ordner stehen. Guards:
-  `test_installer_verweigert_*`, `test_deinstallieren_loescht_nur_eine_installation`,
-  `test_deinstallieren_laesst_eigene_dateien_stehen`,
-  `test_deinstallieren_folgt_keinem_pfad_im_ausweis`.
-- **Ein Update findet seine Installation selbst** (`vorhandene_installation()` über den
-  Starter-Symlink) und schlägt sie als Ziel vor. Ohne das legte ein `install.sh` ohne
-  `--prefix` eine ZWEITE Installation am Standardort an und ließe die alte verwaisen.
-- **`slim.py` strippt Bibliotheken, aber NIE Programme.** Der Interpreter von
-  python-build-standalone überlebt `strip` in keiner Variante („allocated section `.dynstr'
-  not in segment" → „undefined symbol: , version"); gearbeitet wird auf einer Kopie, und
-  eine Warnung von `strip` verwirft sie. Ebenso: die `ldd`-Zeile wird an der **Ladeadresse
-  am Ende** getrennt, nicht am ersten Leerzeichen — sonst kippt bei einem Installationspfad
-  mit Leerzeichen die ganze Qt-Hülle in den Sicherheitsrückfall (223 statt 146 MB).
-  Begründungen: `doc/design/13_distribution.md` §8.1.
-- **`FormatCatalog` findet seine `formats.yaml` über den Pfad des *eigenen Moduls***
-  (`dladdr` / `GetModuleHandleEx`, `format_catalog.cpp: moduleDir()`), nicht über
-  `/proc/self/exe` — sonst sucht die per `ctypes` geladene Bibliothek neben dem
-  venv-Python. Guard: `py_paths`.
-- **Release-Bauten setzen `-DK1520_FORMATS_DEFAULT=`** — sonst trägt jede ausgelieferte
-  Bibliothek den absoluten Pfad des Baurechners als Suchkandidaten. Guard: `py_packaging`.
-- **Arbeitsdisketten liegen außerhalb der Installation**, im **Dokumentenordner**
-  (`<Dokumente>/K1520emu/Disketten`), weil der Autosave in die gemountete Datei
-  zurückschreibt. Der Ordnername ist sprachabhängig — maßgeblich ist `XDG_DOCUMENTS_DIR`
-  aus `~/.config/user-dirs.dirs`, und die Regel steht ZWEIMAL (`paths.documents_dir()` und
-  `dokumente_dir()` in `lib/common.sh`, damit `--purge` dort aufräumt, wo der Emulator
-  schreibt; Guard: `test_dokumentenordner_shell_und_python_stimmen_ueberein`). Im Paket
-  liegen die Abbilder **gepackt** (`*.hfe.gz`), ausgepackt wird beim ersten Start
-  (`paths.seed_user_disks()`).
-- **Produkt = `k1520emu`, Programm = `a5120emu`.** Installation, Paketname, `share/k1520emu/`,
-  Datenordner und Marker tragen den FAMILIENnamen (der Bus, nicht der Rechner); Starter,
-  Symbol und `.desktop` heißen nach der Maschine. Weitere K1520-Rechner bekommen ein eigenes
-  Programm in derselben Installation: eigener Block beim Starterschreiben + `<name>.desktop.in`
-  + Eintrag in `MASCHINEN` (`install.sh`), woran das Deinstallieren die Verknüpfungen findet.
-
-**Drei Programme, nicht eins** (2026-08-18, `doc/design/13_distribution.md` §10a/§10a.5).
-Neben Emulator und DiskTool liefert das Paket den **Debugger `k1520dbg`** aus, dazu die
-**Greaseweazle-Anbindung** für echte Laufwerke. Vier Festlegungen:
-- **Der Debugger hat kein Symbol, aber drei Hinweise.** Er wird in einen vorhandenen
-  Arbeitsablauf aus Editor, Assembler und Konsole eingebunden — deshalb nur ein Verweis
-  in `~/.local/bin` (Linux, Liste **`KONSOLENWERKZEUGE`** in `install.sh`; dabei fiel auf,
-  dass `k1520disktool-cli` in KEINER Aufräumliste stand und als toter Verweis liegenblieb)
-  bzw. `bin\k1520dbg.cmd` (Windows). Verknüpft wird unter Windows die **`.cmd`**
-  (`cmd /k`, bleibt stehen), NIE `k1520dbg.exe` (das Fenster ginge mangels Diskette sofort
-  wieder zu) — Wächter `test_iss_schreibt_die_werkzeug_eingabeaufforderung`. Gesagt wird es
-  in der Schlussmeldung von `install.sh`, auf einer eigenen Assistentenseite **nach dem
-  Kopieren** (`wpInfoAfter` — vorher wären die Pfade noch leer) und in `paket_readme.md`.
-- **`k1520dbg` hat keinen `--help`-Schalter** — jedes freie Argument gilt als Diskette. Der
-  Rauchtest ist deshalb überall `printf 'q\n' | k1520dbg` (Sitzung auf, Sitzung zu); eine
-  Diskette braucht er dafür nicht.
-- **Greaseweazle liegt als fertiges wheel im Paket** — ein *wheel* (`.whl`) ist das
-  einspielfertige Format für Python-Pakete, das `pip` nur noch auspackt statt es zu
-  bauen (`packaging/gw_pins.txt`, `wheels/`
-  neben der Payload). Es liegt **nicht auf PyPI**, und sein Quellarchiv erklärt eine
-  C-Erweiterung, die beim Anwender übersetzt werden müsste — unter Windows aussichtslos.
-  Das wheel ist daher **`py3-none-any`**, die Erweiterung entfällt über einen
-  **vorgeschalteten Aufsatz** (`setuptools.setup` abfangen, `ext_modules` verwerfen; nicht
-  in `setup.py` schneiden — das hielte die nächste Fassung nicht). Kosten: **~25 ms je
-  Spur** gegen 500–800 ms Lesezeit. Solange `ext_modules` gesetzt ist, wird das wheel an
-  Plattform UND ABI gebunden, auch ohne Übersetzung — `build_payload.sh` prüft den Namen
-  nach. Die vier Abhängigkeiten (crcmod, bitarray, pyserial, requests) kommen mit
-  Prüfsumme aus `requirements.lock`; das wheel selbst spielt der Installer mit **`--no-deps`**
-  ein, und ein Fehlschlag dabei wirft die Installation NICHT hin.
-- **Ohne die C-Erweiterung meldet sich `greaseweazle.optimised` auf der STANDARDAUSGABE.**
-  Bei `k1520disktool --physical` ist die die Nutzlast — `app/gw/device.py` liest die
-  Schicht deshalb nur noch über **`_leise()`** ein (`redirect_stdout(sys.stderr)`);
-  umgeleitet, nicht verworfen. Wächter `test_die_anbindung_schreibt_nicht_auf_die_nutzlast`
-  (es darf **keinen** Import an `_leise` vorbei geben).
-
-Tests: `py_paths` + `py_packaging` (schnell, ohne Netz, in der Standardregression). Der
-vollständige Installationslauf (lädt ~120 MB) liegt hinter
-`K1520_PACKAGING_FULL=1 venv/bin/python3 -m pytest tests/python/test_packaging.py`.
+> **Bevor du hier etwas änderst: `doc/merkposten/paketierung.md` lesen.** Dort stehen die
+> elf Festlegungen, die man nicht aufweichen darf, jeweils mit dem Wächter, der sie hält.
+> Die vier, bei denen es am teuersten wird:
+> - **`--uninstall` löscht in einem ERFRAGTEN Ziel.** Zwei Riegel in `install.sh`: Ziel darf
+>   nur leer oder bereits von uns belegt sein, und gelöscht wird nur das Inventar aus dem
+>   Ausweis (`.k1520emu-installation`). Ohne das löschte die Antwort „`~`" beim
+>   Deinstallieren das Heimatverzeichnis — belegt, nicht theoretisch.
+> - **Alles Nachladbare läuft im Assistenten in `PrepareToInstall`, also VOR dem Kopieren**
+>   (eine Ausnahme in `ssPostInstall` räumt nichts zurück und hinterlässt eine halbe
+>   Installation) — und **kein PowerShell** im Installationsweg.
+> - **Release-Bauten setzen `-DK1520_FORMATS_DEFAULT=`**, sonst trägt jede ausgelieferte
+>   Bibliothek den absoluten Pfad des Baurechners als Suchkandidaten (Wächter `py_packaging`).
+> - **Produkt = `k1520emu`, Programm = `a5120emu`**; Arbeitsdisketten liegen im
+>   **Dokumentenordner**, nicht in der Installation (der Autosave schreibt in die gemountete
+>   Datei zurück).
 
 ## K1520 core architecture (the part that needs multiple files to grasp)
 
@@ -401,128 +316,34 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
 
 ## Boot-ROM debugging workflow
 
-The full CP/A cold boot works (boot ROM → SYL loader → secondary loader → CP/A boot system →
-`@OS.COM` → running OS at the interactive prompt); the ZVE1↔ZVE2 DMA handshake is **solved**.
-This section is the reusable debug/trace toolkit for the boot path (still the trickiest code to
-poke at); `doc/analyse_zre_rom_boot.md` + `doc/K1520_architecture.md` §14 hold the analysis.
+Der volle CP/A-Kaltstart läuft (Boot-ROM → SYL-Lader → Zweitlader → CP/A-Bootsystem →
+`@OS.COM` → laufendes OS am Prompt); der ZVE1↔ZVE2-DMA-Handschlag ist **gelöst**. Zwei
+Werkzeuge, ergänzend zueinander: **`boot_trace`** (nicht-interaktiv — *lokalisiert*, wo es
+hängt) und **`k1520dbg`** (interaktiv, gdb-artig — *seziert* das Lokalisierte). Beide über
+`tools/dev.sh trace …` bzw. `tools/dev.sh tool k1520dbg …` aufrufen, nie direkt aus `build*/`.
 
-> **Start here: `tools/how_to_debug_and_trace.md`** is the task-oriented guide for the two
-> debug/trace tools (which one when, with worked scenarios). Full references:
-> `tools/k1520dbg.md` and `tools/boot_trace.md`. Two tools, complementary:
-> - **`boot_trace`** — non-interactive: run a boot to a cycle limit / `--until <cond>`,
->   get a report (milestones, `[03F8]` done-flag, PC histograms, VRAM banner). **Locates**
->   *where* the DMA/boot hangs; also `--coverage`/`--diff`/`--csv` exports, `--fold`
->   (PC-period loop-collapse — crushes even register-varying hot loops), `--itrace`
->   (accepted-INT/NMI CSV), and a K5122 read-attempt log via `--log-level info|debug`.
-> - **`k1520dbg`** — interactive gdb-style: breakpoints (incl. conditional / `bint`/`bnmi`/
->   `breti` and floppy `bbusrq`/`bxfer` event BPs), step into/over/out, `rs` reverse-step +
->   `rc` reverse-continue + `snap`/`snap diff`/`savestate`, watch mem/io, `logpoint`,
->   `itrace`, `x` examine, exact history `bt`, `where` (both CPUs at a glance), `hist`
->   (PC hotspots of both CPUs), `disk verify` (medium CRC health), `vars -f` (loadable
->   dashboard), `dev ctc/pio/sio` chip state, `help floppy`/`help dualcpu`. **Dissects** a
->   located problem. Full command list + the Dual-CPU/Floppy-read recipe:
->   `tools/how_to_debug_and_trace.md` §0b.
+Einstieg ist **`tools/how_to_debug_and_trace.md`** (aufgabenorientiert, mit durchgerechneten
+Szenarien); Referenzen: `tools/k1520dbg.md`, `tools/boot_trace.md`. Der volle Merkposten —
+alle Werkzeuge, der Stapelbetrieb für den Agenten (COW-Mount, `--quiet --json`, Save-State,
+`-x script.dbg`), `.prn`/`.MAC`-Annotation, Interrupt-Diagnose — liegt in
+**`doc/merkposten/boot_debugging.md`**.
+
+> **Die acht Boot-Invarianten dürfen nicht zurückfallen.** Volltext mit Begründung und
+> Wächtern in `doc/merkposten/boot_debugging.md` (Abschnitt „Boot chain"), Analyse in
+> `doc/K1520_architecture.md` §14.5 und `doc/analyse_zre_rom_boot.md`:
+> 1. Während der DMA ZVE2 **und** ZVE1 schrittweise fahren (auf echter HW parallel).
+> 2. Die Fertigmeldung `[0x03F8]` **flankengetriggert** beobachten, nicht pegelbasiert.
+> 3. ZVE2 startet aus dem Reset bei PC=0, sobald `/BUSRQ` anzieht.
+> 4. Treuer Lesestrom (`buildFaithfulReadTrack`, **4×A1-Sync**) samt **MK1-Resync**.
+> 5. Kopfwahl = Steuerport A Bit2 (`/FR`), übernommen nur an der `/STR`-Flanke.
+> 6. Gemischte Geometrie steht in `data/formats.yaml`; die 128-B-Systemspuren sind
+>    **MFM**, nicht FM — die FM→MFM-Probiererei des ROMs hängt daran.
+> 7. `/WR` (BS-PIO Port A, A5) ist ein **Strobe**, kein Dauerpegel.
+> 8. Reset ist ein **systemweiter `/RESET`**, nicht nur die CPU.
 >
-> **Run efficiently (this matters for the agent):**
-> - **Invoke via `tools/dev.sh`** (rebuilds first → never a stale binary, see Build & test):
->   `tools/dev.sh trace <boot_trace-args>` and `tools/dev.sh tool k1520dbg <args>`. The bare
->   tool names in the examples below stand for these wrappers.
-> - ✅ **Disk safety is now the default (Copy-on-Write).** Both tools copy the disk to a
->   temp file and mount that, so a committed fixture can't be corrupted — no more
->   `mktemp; cp DISK $D; … $D; rm $D` ritual; just pass the disk directly. Use `--rw` only
->   when a write must persist (e.g. FORMAT tests), then work on your own temp copy.
-> - boot_trace: `-L /dev/null` discards the verbose emulator log; **`--quiet --json`** gives
->   exactly one machine-readable result line (instead of ~880) + a meaningful exit code
->   (`--until`: 0 met / 2 not met). Prefer **`--until <cond>`** over guessing cycle counts.
-> - k1520dbg: drive it in one shot via a pipe (`printf 'b 0x0437\ng\nrj\nq\n' | k1520dbg $D`)
->   or `-x script.dbg`; `rj` prints registers as JSON. The interactive REPL (line editing via third_party/isocline) is for
->   humans — the agent uses batch mode.
-> - **Boot once, resume often:** `--save-state`/`--load-state` (boot_trace) and
->   `savestate`/`loadstate` (k1520dbg) persist RAM+CPU+ROM-mapping to a file, so the ~2 s
->   boot is a one-time cost. Load `-l <bios.prn>` to see commented source instead of raw disasm.
-
-Supporting tools (`tools/`):
-
-- `tools/z80_disasm2.py` — the canonical generic Z80 disassembler (configurable `--org`, repeatable `--entry`/`--label`). The other two disassemblers are format.com-specific.
-- **`k1520dbg`** (`tools/k1520dbg.md`) — the interactive debugger; expression-conditioned breakpoints, reverse-step, save-state, and `.prn`/symbol annotation make hand-disassembling RAM dumps mostly unnecessary. Delegate heavy log/trace reads to the `log-trace-analyzer` subagent.
-- **`.prn`-Listing-Annotation (`-l`, both `k1520dbg` and `boot_trace`)** — instead of hand-disassembling RAM dumps, load the commented MACRO-80 source listing of the running code (e.g. `-l ~/projects/CPA_Workbench/build/bios.prn`) and every disassembly/trace line + PC-histogram entry whose address is in the listing gets the **original label+mnemonic+comment** appended. Repeatable (multiple listings cover different ranges); `@OFFSET` (signed, `0x..`/`..h`/dec) relocates a listing's addresses to the runtime load address. Only absolute addresses — a BIOS listing covers ~`0xD200+` (and BIOS pieces mapped low, e.g. the CONIN keyboard poll at `0x041C–0x042B`). Parser: header-only `tools/prn_listing.h` (tests `tests/debugtools/test_prn_listing.cpp`, gtest suite `PrnListing`). See `tools/k1520dbg.md` §6 / `tools/boot_trace.md` §4.
-- **Fremdquellen `.MAC`/`.ASM` (`-l quelle.mac[@auto]`)** — für Fremd-OS (UDOS, SCPX …) gibt es kein `.prn`, nur reinen Quelltext ohne Adressspalte. `tools/mac_listing.h` **assembliert** ihn (Opcode-Tabelle wird zur Laufzeit aus `z80dis_min.h` *rückwärts* erzeugt; `ORG`/`EQU`/`DB`/`DW`/`DS`, `Mxxxx`-Adressanker mit Selbstkorrektur) und liefert dieselbe Adresse→Quellzeile-Tabelle. **`@auto`** bestimmt den Ladeversatz selbst (Objektbytes im RAM suchen, alle Kandidaten bewerten) und urteilt über die Passung (*identischer Build* … *anderer Build*). Ergänzend `verify <datei> @<adr>` (Datei↔RAM-Abgleich) und `dump <adr> <len> <datei>`. Tests `tests/debugtools/test_mac_listing.cpp` (`MacListing`). Doku: `tools/k1520dbg.md` §6.1, `tools/how_to_debug_and_trace.md` §0d.
-- **break-before-execute (Debugger-Halt)** — `Z80::abortBeforeExecute` (nur ausgewertet, wenn ein `traceCallback` installiert ist → im Produktivlauf gratis): fordert der Trace-Callback einen Halt an, kehrt `step()` mit **0 Takten** zurück und die Instruktion läuft NICHT. `A5120Machine::run` behandelt `used==0` als Laufende. Damit zeigen Haltezeile und jede Folgeabfrage (`r`/`rj`/`where`/`snap`/`savestate`) denselben Zustand — vorher lief die Instruktion noch zu Ende (Haltezeile 0135, `r` 0136). `k1520dbg` überspringt beim Fortsetzen einmalig die Halteprüfung auf der aktuellen Adresse (sonst hielte `g` sofort wieder), und `s` zählt so, dass N Instruktionen ausgeführt werden und VOR der (N+1)-ten gehalten wird (gdb-Semantik). Guards: `Z80Test.AbortBeforeExecute_*`, `MachineRunControl.*`, `cli_dbg_stop_is_before_instruction`, `cli_dbg_resume_past_breakpoint`, `cli_dbg_step_shows_next_instruction`.
-- **Debugger-Regressionsnetz** — `ctest -R cli_dbg_` sichert `k1520dbg` ab: `cli_dbg_all_commands_smoke` fährt über `tests/cli/scripts/all_commands_smoke.dbg` **jedes** Kommando einmal an (schlägt fehl, sobald eines aus der Dispatch-Kette fällt), dazu ~30 gezielte Tests auf den Meldungs-Wortlaut. Neue Kommandos gehören in beide. `MacListing.RoundTripsEveryDecodableInstruction` prüft Assembler↔Disassembler über den ganzen Befehlssatz.
-- **Interrupt-Diagnose** — `k1520dbg ivt` zeigt die IM-2-Vektortabelle (Vektor → Tabelleneintrag → Gerät → Status; findet die scharfe Quelle ohne Tabelleneintrag), `dev pio [all|bs|k5122ctrl|k5122data]` jetzt inkl. **beider K5122-PIOs**, `bint`/`--itrace` melden Vektor **und Quellbaustein** und unterscheiden `SPURIOUS` (kein Gerät hat quittiert) vom Vektor 0xFF. **Lauf-Budgets (`g N`) zählen die Maschinenuhr (beide CPUs)** — `clock zve1` schaltet zurück; Ctrl-C bricht einen langen Lauf ab.
-- `tools/disasm_difftest.py` — cross-checks the disassembler against the `z80dis` pip package (in `venv`); run it before changing the disassembler engine.
-- `tools/boot_trace.cpp` (`boot_trace` target) — traces **both** ZVE1 and ZVE2 per instruction and reports where the DMA freezes. Use `-L <file>` to divert the emulator log so the summary stays readable. A separate `build_trace/` build dir is conventionally configured with `-DLOG_LEVEL=5` (the compile ceiling). **Default base level is now ERROR — the run is quiet & fast.** Raise it with `--log-level <off|error|warn|info|debug|trace>`, or far better, boost only where it matters: `--log-pc LO:HI[:level]` (effective level while either CPU PC is in the range) and `--log-cycle FROM:TO[:level]` (while the cycle counter is in the window). **Gotcha:** a `--log-pc` gate on a *spin-loop* address fires for as long as the CPU parks there (can be tens of millions of cycles → multi-GB log) — pair it with a tight `--log-cycle`, or just use a cycle window. Reference: `boot_trace --log-level info …` (≈11 KB / 8 s for a full @OS.COM run) gives the K5122 `>>> READ` summaries; add a `--log-cycle` window for full TRACE only there.
-
-### Boot chain — SOLVED (don't regress these invariants)
-
-The full chained boot (ROM `0x01DD` → SYL loader `0x0437` → secondary loader `0x062E` → CP/A
-boot system `0x1800` → `@OS.COM`) runs end-to-end into the running OS. The read path was
-refactored to the format-agnostic TrackImage stack (§ "K1520 core architecture" and
-`doc/K1520_architecture.md` §8.5/§14.5); the load-bearing boot invariants a future editor
-must **not** break:
-
-1. **Concurrent ZVE1/ZVE2 stepping during DMA** (`A5120Machine::run`): while `/BUSRQ` is held
-   and ZVE2 active, step ZVE2 **and fall through to also step ZVE1** (parallel on real HW). ZVE1
-   must finish `CALL 0194` (tail writes `[0x03F8]=0`) and reach its poll loop `0x0168` before ZVE2
-   writes `[0x03F8]=3`, else the late `=0` clobbers the `=3` and boot hangs.
-2. **Transition-based completion watch** on `[0x03F8]` (0=running / 1=timeout / 3=done): the run
-   loop arms only after seeing `[0x03F8]!=3` (ZVE1 cleared it) and *then* treats `→3` as completion
-   — level detection fires on the stale `3` left from the previous round.
-3. **ZVE2 start-from-reset** (`K2526::zve2StartFromReset`): the 3rd stage poises ZVE2 via
-   `[0x0000]=JP 0x1F7D` + `OUT(04)=0x00` and restores `[0x0000]` immediately (no explicit bit0=1
-   start), so `run()` starts ZVE2 from PC=0 when `/BUSRQ` asserts while ZVE2 is in reset. `OUT(04H)`
-   bit0=1 also restarts ZVE2 from PC=0 every DMA round (reloads its IDAM regs).
-4. **Faithful read stream + MK/MK1 resync** (`K5122`): `startReadTransfer()` streams
-   `buildFaithfulReadTrack` (4×A1 sync — serves boot ROM *and* SYL loader); MK (ctrl Port A bit1) and
-   **MK1 (bit4)** re-sync edges call `resyncToNextMark` (IDAM→DATA→next IDAM). The **MK1 resync was
-   the final `@OS.COM` fix** — without it a data `0xA1` was mistaken for the A1 address-mark sync.
-   Standard IBM-CCITT CRC throughout.
-5. **Head-select = ctrl Port A bit2 (/FR)**, latched only at the `/STR` edge (bit5 is step DIRECTION
-   only, toggles with MK/MK1). **Track-end `/BUSRQ` release** on `OUT(13H),03H` during a 128-B read
-   (ZVE1 takes over before ZVE2's idle loop `L0696` corrupts `[07F8..07FC]`).
-6. **Asymmetric mixed geometry** — now declared in **`data/formats.yaml`** (`cpa780`:
-   `{0,0,0,1,26,128}` + `{1,1,0,0,26,128}` + `{1,1,1,1,5,1024}` + `{2,79,0,1,5,1024}`, all MFM);
-   index period `≈490000` cycles. Guarded by `test_format_catalog`
-   (`BootKritischeGeometrien_Unveraendert`). **Do not declare the 128-B system tracks as
-   `encoding: fm`** — the disks are plain IBM-MFM and the ROM's FM→MFM trial-and-error depends on
-   it (§14.5).
-7. **/WR (BS-PIO Port A, A5) ist ein Strobe, kein Dauerpegel** (`K2526::pulseWriteStrobe`, pro
-   ZVE1-Schreibzyklus gepulst; A0 `/M1` und A6 `/RDY` bleiben dauernd aktiv). Die
-   Speicher-Ausbaumessung des Lade-ROMs (`0040H–005AH`) schärft Port A mit Maske `9FH`
-   (A5 AND A6, aktiv-LOW), gibt `EI` und will den Interrupt **durch** das Testschreiben —
-   ihre ISR (`007AH`) prüft, ob das Byte ankam. Dauerpegel ⇒ Interrupt schon beim `EI` ⇒
-   die ISR sieht den ALTEN Speicherinhalt: bei frischem DRAM (0xFF) unauffällig, bei
-   **Reset/Power-Cycle aus dem laufenden Betrieb** meldet sie „kein Speicher" und der
-   Neustart entgleist. Dazu gehört, dass ein Interruptsteuerwort mit IE=0 eine anstehende
-   Anforderung **verwirft** (`Z80PIO::writeCtrl`) — sonst bleibt die vom Stack-Push der
-   Interruptannahme neu gesetzte Anforderung liegen. Guards: `test_k2526`
-   (`K2526WriteStrobe.*`), `test_hardy` (MEMDI-RDY-Test nutzt dieselbe Maske).
-8. **Reset ist ein SYSTEMWEITER /RESET, nicht nur die CPU** (`A5120Machine::resetHardware()`,
-   von `reset()` **und** `powerOn()` benutzt). Die /RESET-Leitung des Backplane räumt alle
-   Bausteine ab: `Z80CTC::reset` / `Z80PIO::reset` / `Z80SIO::reset` (neu),
-   `K2526::powerOn` (Q302-CTC + BS-PIO), `K5122::reset` (Transfer abbrechen, /BUSRQ frei,
-   PIOs; Disketten/Kopfposition bleiben), `K8025::reset`, `K7637::reset`, dazu
-   NMI/INT/WAIT lösen + `markIntDirty()`. **Ohne das** zählte nach einem Reset aus dem
-   laufenden Betrieb der System-CTC mit der IM2-Vektorbasis des alten OS (`vecBase=F8`,
-   INT frei) weiter → der erste Timer-Interrupt nach dem `EI` des Lade-ROMs landet auf
-   einem Fantasie-Vektor aus der ROM-Seite 0 → Boot-Kette entgleist (genau der Fall
-   „nach der Uhrzeit-Eingabe am `A>` geht weder Reset noch Power ON"). `powerOn()` löscht
-   zusätzlich das DRAM (`ops_.fill(0xFF)`) — Netz-Aus verliert den Inhalt, `reset()` nicht.
-   Guards: `test_boot_integration` (`RestartFromInteractivePromptRebootsFromRom`,
-   `ResetFromRunningSystemRebootsFromRom`, `PowerCycleFromRunningOsRebootsFromRom`).
-
-Handshake RAM: `[0x03F8]` done-flag, `[0x03F7]` index counter, `[0x03FD]` path byte (`0x87`),
-`[0x07F2]` target sector count, `[0x03F0]` load address. Key addresses: ZVE1 wait `0x0168`,
-ZVE2-start `0x0194`, ZVE2 entry `0x01DD`, index ISR `0x01C7`, SYL sig check `0x01B6`, loaded code
-`0x0437`, secondary loader `0x062E`, 3rd stage `0x1800`/read `0x1F7D`. Guard tests:
-`test_boot_integration` (`Stage3_FullyLoadsAndJumpsToOs`), `test_k5122`
-(`Continuous1024_MK1ResyncJumpsToNextAddressMark`), `test_k2526` (`K2526ZVE2FloppyChain`). Full
-analysis: `doc/analyse_zre_rom_boot.md`, `doc/analyse_bootloader.md`, `doc/K1520_architecture.md`
-§14.5/§14.5b/§14.5c.
-
-`boot_trace` post-boot tracing: `-p <cycles>` continues past `0x0437`; the summary then
-adds an I/O-port read/write histogram, VRAM write count + range, a loaded-code PC
-histogram, and an 80-col text dump of VRAM (`0xF800`) so the screen banner is visible.
+> Handschlag-RAM: `[0x03F8]` Fertigmeldung, `[0x03F7]` Indexzähler, `[0x03FD]` Pfadbyte,
+> `[0x07F2]` Sektorzahl, `[0x03F0]` Ladeadresse. Wächter: `test_boot_integration`,
+> `test_k5122`, `test_k2526`.
 
 ## Subagenten / Delegation an günstigere Modelle
 
@@ -575,498 +396,59 @@ nicht mit „hängt" verwechseln; sie melden sich bei Abschluss selbst.
 ## k1520DiskTool — Dateiaustausch mit Disketten (`core/filesystem/`, `app/disktool/`)
 
 Zweites Anwenderprogramm neben dem Emulator: holt Dateien von CP/A-, SCPX-, **UDOS**-,
-**UDOS1715**- und **SCP1700**-Disketten (CP/M-86, A7100) und schreibt sie zurück (`.img`/`.hfe`/`.dmk`).  Es teilt sich mit dem
-Emulator die Container-/Medium-Schicht, hat aber **eine eigene Bibliothek**
-(`libk1520disk.so`) ohne Z80 und Karten.  Voller Entwurf: `doc/design/13_k1520disktool.md`,
-Bedienung: `tools/k1520disktool.md`.
+**UDOS1715**- und **SCP1700**-Disketten (CP/M-86, A7100) und schreibt sie zurück
+(`.img`/`.hfe`/`.dmk`). Es teilt sich mit dem Emulator die Container-/Medium-Schicht, hat
+aber **eine eigene Bibliothek** (`libk1520disk.so`) ohne Z80 und Karten.
 
 ```
-core/filesystem/   SectorSpace (physisch + linear) · GeometryProbe (Erkennung Stufe 1)
-                   FsProfile/FsCatalog · CpmFileSystem · UdosFileSystem ·
-                   Udos1715FileSystem · DiskVolume
+core/filesystem/   SectorSpace (physisch + linear) · GeometryProbe · FsProfile/FsCatalog ·
+                   CpmFileSystem · UdosFileSystem · Udos1715FileSystem · DiskVolume
 core/api/k1520_disk_api.*   C-ABI  →  libk1520disk.so
 tools/k1520disktool.cpp     CLI    →  tools/dev.sh tool k1520disktool ls <abbild>
 app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 ```
 
-Was beim Weiterarbeiten zu wissen ist:
-
-- **SCP1700/CP/M-86 (A7100) — eine Diskette mit ZWEI Datenraten (2026-08-18,
-  `doc/scp1700_diskettenformat.md`, Entwurf §22).**  Die Disketten des **A7100**
-  tragen ein CP/M-86; das Dateisystem ist gewöhnliches CP/M (Verzeichnis ab
-  `c2h0`, 2048-B-Blöcke, 128 Plätze, 16-Bit-Zeiger — Profil `scp1700`).  Die
-  **Physik** ist der Punkt: **Spur 0 Kopf 0 ist FM mit HALBER Datenrate**
-  (125 kbit/s, 16×128), alle übrigen 159 Spuren MFM mit 250 (16×256).  Das CP/A-BIOS
-  weiss davon („A7100-System mit 5" FM …", `biosdsk.mac`).  Vier Festlegungen:
-  **(1) Der Abtastfaktor gilt JE SPUR**, nicht je Datei — er wurde an der ersten
-  Spur mit Marken festgenagelt, und das war hier die Bootspur: danach kamen alle
-  159 MFM-Spuren als „unformatiert" zurück.  Der bewährte Faktor kommt zuerst und
-  genügt sich selbst, ein anderer muss **≥ 4 Adressmarken** vorweisen (eine
-  einzelne Scheinmarke aus dem Rauschen hatte den Faktor früher schon einmal
-  umgeworfen — `TrackSync::completeRead`).
-  **(2) Die Rate hängt an der Spur** (`TrackImage::cell_factor`, im Katalog
-  `rate: 125`): beim Laden herunterrechnen, beim **Zurückschreiben strecken**
-  (`BitCodec::upsampleCells`) — sonst ginge die Bootspur mit doppelter Rate auf die
-  Scheibe.  Deshalb bemisst `HfeCodec::save` die Spurlänge in **Zellen**, nicht in
-  Bytes ×2.
-  **(3) „Überabgetastet" heisst: KEINE Spur liegt auf der Nominalrate** — sonst
-  wäre jede gemischte Diskette schreibgeschützt.
-  **(3a) HFE verschraenkt zwei Seiten zu je 256 B — auch bei EINSEITIGEN Dateien.**
-  Greaseweazle legt `gw read --tracks c=0:h=0` so ab (Seite 0 in den ersten 256 B,
-  Rest Gap); dieses Projekt schrieb einseitige Spuren kontinuierlich.  Wer eine
-  verschraenkte Datei kontinuierlich liest, zieht sich alle 256 B Gap-Bytes MITTEN
-  in den Datenstrom: die kurzen ID-Felder ueberleben das, ein 131-B-Datenfeld nie —
-  „alle Sektoren gefunden, keine einzige gueltige Daten-CRC".  Der Leser probiert
-  jetzt beide Sitten und entscheidet am Inhalt.  **Ueberhaupt gilt: ein
-  Abtastfaktor wird an GUELTIGEN CRCs gemessen, nicht an der Markenzahl** — unter
-  dem falschen Faktor faellt reichlich Scheinsync heraus.  Waechter
-  `HfeCodec.EinseitigeAufnahmeMitSeitenschlitzen`.
-  **(3b) Ein schon defekter Sektor darf defekt zurueckkommen** — das Pruef-Lesen
-  verlangte von jedem zurueckgelesenen Sektor eine gueltige Pruefsumme, auch von
-  einem, der schon im Abbild kaputt war; damit liess sich eine Spur mit Schadstelle
-  NIE zurueckschreiben.  Bei einem Bruchstueck wird nur noch die Lage verglichen.
-  Waechter `TrackSync.EinSchonDefekterSektorDarfDefektZurueckkommen`.
-  **(4) Verglichen werden VERSCHIEDENE Sektor-IDs** (`MeasuredTrack::uniqueSectors`):
-  die Bootspur wurde in einem Zug über den Index hinaus beschrieben und trägt 19
-  Adressmarken für 16 Sektoren.  Nebenbefund: der FM-Dekoder begann die Spur am
-  Markenbyte und warf dessen Sync-Feld weg — beim ZWEITEN Rundlauf durch die Datei
-  verschwand der erste Sektor.  Wächter: `Scp1700.*` (5 Fälle),
-  `HfeCodec.FmSpurMitHalberRate_UeberlebtDenRundlauf`.  Am echten Laufwerk
-  gegengeprüft.
-- **Der Robotron P8000 fährt dasselbe NDOS (2026-08-18,
-  `doc/udos1715_diskettenformat.md` §3.0a).**  Eine WEGA-Startdiskette des **P8000**
-  (UDOS 2.2, 80×32×256, 250 kbit/s MFM) galt als unlesbar.  Sie ist Feld für Feld eine
-  UDOS1715-Diskette; nur ihr Formatierer lässt zwischen Belegungsplan und Zählern den
-  **`77H`-Nachlauf der ZDOS-Sitte** stehen (`179H` = `01`), und darauf bestand
-  `UdosBitmap::looksValid` als Unterscheidungsmerkmal.  **Das Füllmuster trennt die
-  Karten NICHT** — die ZDOS-Kennzeichen `11×33H`/`F7H` liegen auf `150H…15BH` und damit
-  in einer 80-Spur-Karte mitten im Belegungsplan, und ZDOS scheitert ohnehin am
-  Zählerabgleich (`belegt + frei = Sektoren/Spur · Spuren`, bei ZDOS die Konstante
-  2464).  Geprüft wird jetzt nur noch „`00` **oder** `77H`"; `179H` gar nicht mehr.
-  Zweite Eigenheit, die man nicht für einen Defekt halten darf: **der Systembereich ist
-  grösser** — gesperrt ist Kopf 0 (Sektoren 0…15) der Spuren 0, **21** (Bootspur), 22
-  und 23 ganz, Kopf 1 derselben Spuren trägt Dateidaten.  Wächter: `Udos1715P8000.*`
-  auf der Fixture `udos1715_640k_p8000_wega.img`.  Lesen **und** Schreiben am echten
-  Laufwerk gegengeprüft (Datei einfügen → 4 Spuren zurückgeschrieben und geprüft, frisch
-  zurückgelesen byteweise gleich, löschen → 2 Spuren; Vollmessung zeigt genau die
-  gemeldeten Spuren geändert, danach aus der Sicherung wiederhergestellt).
-- **UDOS1715/NDOS — die zweite UDOS-Ausprägung (2026-08-17,
-  `doc/udos1715_diskettenformat.md`, Entwurf §21).**  Die Disketten des **PC 1715**
-  tragen dasselbe Betriebssystem, aber ein anderes Dateisystem, weil der **µPD765**
-  nichts hinter die Daten-CRC schreiben kann: die Verkettung steht in eigenen
-  **Zeigersektoren** (je bis zu 125 Adressen, `FIRSTBL` im Descriptor bei `80H`)
-  statt im Gap.  Maßgebliche Quelle ist das **Handbuch auf der Diskette selbst**
-  (`doc/original_docs/UDOS1715_Systemhandbuch.txt` = die Datei `UDOS.TEXT`).  Vier
-  Festlegungen, die man nicht aufweichen darf:
-  **(1) Die Spur ist der ganze ZYLINDER** — `UDOS-Sektor = (ID−1) + Kopf·16`, 32
-  Sektoren je Spur, EIN Datenträger (kein `Side0`/`Side1`).  Umgerechnet wird in
-  `headOf()`/`idOf()`, und nur dort.  Ein Record darf dabei die **Kopf**grenze
-  überschreiten, die Spurgrenze nicht (`CAT` tut es).
-  **(2) `.img` ist hier ERLAUBT** — es steht nichts außerhalb der Sektoren; deshalb
-  ist auch die Fixture ein 640-KB-`.img` statt eines 2-MB-`.hfe`.
-  **(3) Geteilt wird der Descriptor, nicht die Klasse.**  Die ersten 128 Byte sind
-  bitgleich mit ZDOS → `UdosFileHeader`/`UdosPointer`/`udosTypeByte`… gemeinsam
-  (`udos_fs.h`); dabei zeigte sich, dass das Typbyte ein **Bitfeld Typ+Subtyp** ist
-  (`81H` = P/Subtyp 1 = das alte „P1").  `UdosBitmap` bekam eine `UdosMapSitte`
-  statt eines Doppels — gleiche Offsets, aber 80 statt 78 Einträge, `00`-Füllung
-  statt des ZDOS-Nachlaufs, und **beide Zähler sind bei NDOS echt**.
-  **(3a) Der Kopfsektor-Bereich 40…121 ist eine LISTE von Speichersegmenten**,
-  kein Wertepaar plus vier rätselhafte Bytes (Handbuch §3.2.2: „mehrere Segmente
-  möglich; abgeschlossen mit `00 00 00 00`", `2AH…7FH` nur bei P-Dateien).  Das
-  erklärt `doc/udos_diskettenformat.md` §6.3 nachträglich — und es deckte einen
-  **Defekt** auf: `IMAGER` (3 Segmente) und `ZLINK` (6) kamen aus `get`→`put`
-  verstümmelt zurück.  Seitdem wird die Liste durchgehend geführt
-  (`FileEntry::segments`, `WriteOptions::udos_segments`, Beiblatt `segs=`, CLI
-  `--segment`, EIN Feld im Eigenschaften-Dialog); `segment_start`/`segment_len` und
-  `extra` bleiben nur als Sicht auf das erste Segment.  Bei Typ A steht dort
-  Anwenderinhalt — die Liste wird nur für Typ P gelesen.
-  **(4) `detect_rank` gilt jetzt über Geometriegrenzen hinweg.**  `cpa640` und
-  `k5601_16x256` sind dieselbe Rohgeometrie, und eine frische UDOS1715-Diskette ist
-  außerhalb ihrer Systemspuren voller 0xE5 — also ein plausibles leeres CP/M.  Ohne
-  die Regel gewann die zuerst gemessene Geometrie.  Wächter: `Udos1715*` (19 Fälle,
-  darunter der sektorgenaue Abgleich Belegungsplan ↔ alle 67 Dateien),
-  `FsCatalog.Udos1715ProfileSindImgFaehigUndEinseitigGezaehlt`.  Am echten Laufwerk
-  gegengeprüft.
-- **Bootfähige Disketten (2026-08-12, `doc/design/13_k1520disktool.md` §13a).**  Das
-  Werkzeug legt Disketten mit **Bootabbild** an: `create --fs NAME --boot datei.bin`
-  (GUI: Rückfrage + Dateiauswahl bei „Neue Diskette", Gegenstück „Bootabbild sichern…"
-  = `boot-get`).  Das Abbild ist ein **rohes Byteband** über die Systemspuren, deren
-  Umriss je Familie feststeht: CP/M = alles vor `data_cyl`/`data_head` (cpa780: 15104 B),
-  UDOS = Spuren 0–2 **plus Bootspur 21** (13312 B je Seite — ohne die Bootspur bricht
-  der UDOS-Kaltstart mit `ERROR: 45` ab).  **Geprüft wird VOR dem Formatieren**, sonst
-  bliebe bei einem zu grossen Abbild eine halbe Diskette liegen; kürzer ist erlaubt.
-  Fertige Abbilder: `disks/boot_{cpa780,scpx640,scpx798,udos43}.bin`.  Wächter
-  `test_disktool_bootdiskette` — baut die Diskette mit dem Werkzeug und **bootet sie**
-  (CP/A bis `A>`, SCPX in beiden Geometrien, UDOS bis `%`).
-- **UDOS-Dateien tragen mehr als ihre Bytes (2026-08-12, `doc/udos_diskettenformat.md`
-  §6/§14).**  Der Kopfsektor steuert, wie UDOS eine Datei **lädt**; am Ende (Offset
-  122/124/126) stehen **LOW ADDRESS / HIGH ADDRESS / STACK SIZE** — genau das, was
-  `EXTRACT` im laufenden System meldet.  Der Lader trägt LOW/HIGH nach `(1275H)/(1277H)`
-  und lässt sie vom Speicherverwalter (`1009H`) zuteilen; stehen dort `FFFF`, bricht er
-  mit **`MEMORY PROTECT VIOLATION`** ab (Fehler `43H`, Meldungstabelle `13C6H`/`12B2H`,
-  Index = A−40H).  Ebenso maßgeblich: **Offset 17** ist NICHT immer die Kopie der
-  Satzlänge (bei 256/512 = 0) — mit dem falschen Wert startet ein neu geschriebener
-  Nukleus (`OS`) nicht mehr.  Der Kopfsektor ist damit lückenlos zugeordnet; berechnet
-  werden beim Schreiben nur Zeiger (6–11), Satzanzahl (13) und Bytes im letzten Satz (22).
-  Alles andere führt das Werkzeug mit: `WriteOptions::udos_*` / `UdosAttrs` →
-  CLI `put --type/--props/--entry/--record-len/--block-len/--segment/--mem/--extra/
-  --created/--date`, `attr` zeigt und ändert sie an einer vorhandenen Datei, und ein
-  **Beiblatt** `udos-dateiangaben.txt` (Schlüssel=Wert) trägt sie durch `get`→`put`.
-  C-ABI: `k1520d_entry_*` + `k1520d_set_udos_attrs`.
-- **UDOS-Bootdisketten laufen (2026-08-13).**  `get` → `create --boot` → `put` ergibt
-  eine Diskette, die den Selbststart fährt (`OS.INIT`: Banner, `DATE`) und **Befehle
-  ausführt** (`CAT`, `STATUS`, `PRINT`).  Der letzte Stolperstein war: **das
-  Speicherabbild einer Programmdatei reicht über ihr logisches Dateiende hinaus** —
-  `OS` ist 5504 Byte lang (`bytes_in_last`), sein Abbild 5632 (11 volle Sätze à 512),
-  und in den 128 Byte dahinter steht Nukleus-Code, in den er selbst springt (`2580H`).
-  Wer auf `length()` kürzt, bekommt eine Diskette, die bootet und beim ersten Befehl in
-  den Monitor fällt (`BREAK 4150`).  Deshalb liefert `UdosFileSystem::readChain` **volle
-  Sätze**, sobald `segment_len > length()`, und `bytes_in_last` wird mitgeführt
-  (`rest=` im Beiblatt) statt ausgerechnet.  Kleinste bootfähige Diskette:
-  Systemspuren + `OS` + `ZDOS` (Urlader sucht beide über das VERZEICHNIS).  Wächter:
-  `DiskToolBootdiskette.GebauteUdosDisketteBootetUndFuehrtBefehleAus`.
-- **Oberfläche = gewöhnliche Anwendung (2026-08-14, `doc/design/13_k1520disktool.md` §20).**
-  Die zwei Knopfleisten auf halber Höhe sind weg; das Fenster hat **Menüleiste,
-  ausblendbare Symbolleiste** (`Ansicht ▸ Symbolleiste` = Qts eigene
-  `QToolBar.toggleViewAction()`), **Kopfbereich**, **Meldungsstreifen**, Statuszeile
-  und ein **Protokoll-Dock** (F8, beim Start zu).  Vier Festlegungen, die man nicht
-  aufweichen darf:
-  **(1) Jede Aktion steht in der Menüleiste** — die Leiste ist nur die Abkürzung und
-  ausblendbar; alle Aktionen entstehen EINMAL in `app/disktool/ui/actions.py`
-  (`_SPEC` → `fenster.act_<name>`), Menü/Leiste/Kontextmenüs/Mittelspalte zeigen
-  dasselbe Objekt.  Wächter `test_every_action_is_reachable_from_the_menu_bar` sucht
-  jede `act_*` im Menü — eine neu ergänzte Aktion fällt sofort auf.  Menütext lang,
-  Leistentext kurz (`QAction.setIconText`, Tabelle `KURZ`), sonst kippt die Leiste
-  bei 1150 px in den Überlauf.
-  **(2) Gesperrt wird nur in `_aktionen_pruefen()`**, in drei Stufen: *offen* /
-  *schreibbar* / *ausgewählt* (Holen, Schreiben, Löschen, Eigenschaften hängen an der
-  Auswahl der ZUSTÄNDIGEN Liste) — damit gibt es „Keine Datei ausgewählt" als
-  Meldungsfenster nicht mehr.
-  **(2a) Mittelspalte = vier Knöpfe** (`→→| →| |← |←←`: aussen die Stapel, innen die
-  Auswahl); beide Hälften sind gleich gebaut und gleich breit (Überschrift + Liste,
-  keine Fusszeile).  Der **Schreibschutzknopf zeigt seinen Zustand** — Symbol UND
-  Beschriftung wechseln (🔒 `R/O` ↔ 🔓 `R/W`, `_schutz_anzeigen()`); ein rastender
-  Knopf allein ist nicht lesbar.
-  **(3) Sechs Meldungsorte, sechs Rollen (§20.4):** Titel = Identität + Qt-eigene
-  Änderungsmarke (`[*]` + `setWindowModified`, **kein** selbstgemaltes `●`);
-  Kopfbereich = dauerhafte Eigenschaften; Streifen (`ui/info_bar.py`) = dauerhafte
-  Einschränkungen; Statuszeile links = letzte Aktion (flüchtig), rechts = Zustand als
-  Widget (Dateien/frei/Modus/Schloss); Protokoll = **alles** mit Uhrzeit; Meldungs­fenster
-  nur bei Abbruch/Rückfrage.  Ein Zustand gehört nie ins Protokoll.  Die **Statuszeile
-  ist NICHT abschaltbar** (Symbolleiste und Protokoll schon), und das Schloss darin
-  ist ein Bild, kein Emoji — 🔒 und 🔓 sehen in vielen Schriften gleich aus.
-  **(4) `QSettings` nur bei benannter Anwendung** — `main.py` setzt
-  `setOrganizationName`/`setApplicationName`, die Testläufe nicht; sonst schrieben
-  Tests in die Einstellungen des Anwenders und erbten dessen ausgeblendete Leiste
-  (`_einstellungen()` → `None`).  Symbole liegen als einfarbige SVG in `app/icons/`
-  und werden in `ui/icons.py` mit der Palettenfarbe eingefärbt (`currentColor`) —
-  `QIcon.fromTheme()` liefert unter Windows nichts.
-  **(5) Das Handbuch ist eine `.md`, die Qt selbst setzt** (§20.7):
-  `app/disktool/help/handbuch.md` → `ui/help_window.py` (F1, `QTextDocument::setMarkdown`).
-  Kein Bauschritt, keine Abhängigkeit — und die Datei MUSS unter `app/` liegen, weil
-  `build_payload.sh` nur diesen Baum einpackt (`doc/` ist nicht im Paket).  Qt vergibt
-  Überschriften **keine Anker**, das Inhaltsverzeichnis kommt daher aus den Blöcken mit
-  `headingLevel()==2`; Typografie nur über den Umweg `setMarkdown`→`toHtml`→`setHtml`
-  mit `defaultStyleSheet`.  Zwei Wächter halten Handbuch und Oberfläche zusammen:
-  die Tabelle „Tastenkürzel" wird in BEIDE Richtungen gegen die verdrahteten
-  `QAction`s geprüft.
-- **Arbeitsverzeichnisse = die des Emulators (2026-08-15, §20.8).**  Alle Dateidialoge
-  des DiskTool gingen mit LEEREM Startpfad auf — für Qt das Arbeitsverzeichnis, beim
-  installierten Programm also der Installationsordner.  Aufgelöst wird jetzt über
-  `app.paths` (dieselbe Stelle wie beim Emulator): Abbilder → `default_disk_dir()`,
-  Ordnerseite → **`default_folder_dir()`** = neu `user_files_dir()`
-  (`<Datenordner>/Dateien`, Gegenstück zu `Disketten`), „Speichern unter" → neben der
-  offenen Diskette.  Drei Fallen: **(1)** `K1520_DISKS` meint nur die ABBILDER und
-  verschiebt den Dateiordner nicht (dafür `K1520_DATA`).  **(2)** `ensure_user_files_dir()`
-  legt nur in einer INSTALLATION an — wie `seed_user_disks()`; im Quellbaum darf kein
-  Ordner im Heimatverzeichnis entstehen.  Beides ruft `app/disktool/main.py` beim Start.
-  **(3)** „Nie in der Installation" gilt für die ORDNERseite; bei den Abbildern fällt
-  `default_disk_dir()` bewusst auf die mitgelieferten Beispiele zurück, und die liegen
-  dort.  Wächter: `test_every_file_dialog_gets_a_start_directory` (kein Dialog ohne
-  Startpunkt — im Quellbaum faellt der Fehler sonst nicht auf, weil das
-  Arbeitsverzeichnis zufaellig stimmt).
-- **Diskeditor — die Diskette als Scheibe (2026-08-13, `doc/design/13_k1520disktool.md` §19).**
-  `Diskette ▸ Diskeditor` (Strg+E) → `app/disktool/ui/disk_editor.py`: zwei Scheiben
-  (Spur 0 **außen**, Sektor 0 bei **12 Uhr**, Seite 1 gespiegelt), Sektor grün/rot,
-  Gap orange, unformatiert grau; Klick **oder** Wählerzeile (`[−] Spur: [25] [+]`,
-  Sektorschritt geht in SPURreihenfolge, nicht nach ID) → Hexfeld (32 B/Zeile,
-  Überschreibmodus, ASCII-Spalte läuft mit) + CRC-Feld + *Reload/Fix CRC/Save*.
-  **`Save Sektor` schreibt bis in die Datei** (`sector_write`+`flush`) — bei einem
-  Sektoreditor wäre „nur im Speicher“ eine Falle; Ausnahme mit Ansage: `.img` führt
-  kein CRC-Feld, eine absichtlich falsche CRC lässt sich dort nicht ablegen.  Unterbau: `core/peripherals/floppy_drive/track_view.{h,cpp}`
-  (`scanTrack` → lückenlose Abschnittsfolge), `parseTrack` liefert jetzt zusätzlich
-  **Byte-Offsets + gespeicherte CRCs + `deleted`**, neu `TrackCodec::writeSectorAt`
-  und `sectorDataCrc`, C-ABI `k1520d_track_scan`/`k1520d_span_*`/`k1520d_sector_*`.
-  Vier Festlegungen: **(1) Der Winkel ist `Byteposition ÷ Spurlänge`** — eine
-  `TrackImage` IST eine Umdrehung; Bitrate/Drehzahl aus dem HFE-Kopf werden NICHT
-  gebraucht (die Schreibnaht ergibt darum eine sichtbare Spirale, keine Speiche; `.img`
-  hat gar keine Winkelinformation).  **(2) Gap ≠ unformatiert** — keine Adressmarke =
-  unformatiert (der Zustand von `createBlank`), sonst Gap.  **(3) Geschrieben wird über
-  die LAUFENDE NUMMER, nicht über die Sektor-ID** (IDs dürfen doppelt vorkommen).
-  **(4) Die CRC ist mitschreibbar** (`crc_woertlich`), sonst liesse sich eine schadhafte
-  Diskette nicht originalgetreu nachbilden.  **Sektoren anlegen/löschen (§19.4):**
-  `TrackCodec::createSector`/`eraseSectorAt`/`newSectorPosition` — **die ID bestimmt
-  die Lage** (hinter den vorhandenen mit der nächstkleineren ID, um den Gap versetzt;
-  ohne kleineren hinter den Index).  Daraus folgt: 0,1,5 angelegt ⇒ ein danach
-  angelegter Sektor 2 landet ebenfalls hinter der 1 und **überschreibt die 5** — das
-  ist gewollt (wer Platz lassen will, gibt bei der 5 einen grösseren Gap an), die
-  Oberfläche fragt vorher (`planSector` nennt Ziel, Länge und Betroffene).  Die
-  **Spurlänge bleibt fest** (Gap wird überschrieben, `bitcells` bleibt gültig);
-  FM/MFM ist an der SPUR, nicht am Sektor — auf einer formatierten Spur gesperrt.
-  Gap-Vorschlag = Median der Gaps DIESER Spur.  Dabei zeigt **`sync_pos` jetzt auf
-  den Anfang der Sync-Gruppe** (die 00 vor den A1), sonst wichen Anzeige und
-  `newSectorPosition` um die Sync-Länge ab.  **§19.5:** bei UDOS nennt die Sektorzeile
-  `IBM-MFM + UDOS-Erweiterung`, rechnet `128+4 Byte` (Nutzdaten+Kontrollblock; die CRC zählt wie bei CP/M nicht mit) und entschlüsselt die
-  Kettenzeiger — die vier Rohbytes in einem ÄNDERBAREN Feld (`writeSectorTail` fasst dabei weder Nutzdaten noch CRC an); ob es den Anhang gibt, weiss das DATEISYSTEM, nicht der Sektor.
-  Der Treffertest der Grafik ist analytisch
-  (Polarkoordinaten), nicht per Szenengraph — Wächter
-  `test_disk_editor_hit_test_finds_the_drawn_sector` rechnet jeden Sektor zurück; dazu
-  `TrackView.*`, `TrackCodecWriteSectorAt.*`, `py_disk_c_api`.  **Grenze:** der Editor
-  braucht eine geöffnete (= erkannte) Diskette — „roh öffnen“ gibt es noch nicht.
-- **Dateiangaben sehen und ändern (2026-08-13, `doc/design/13_k1520disktool.md` §13c).**
-  Rechtsklick/Doppelklick auf eine Datei → **Eigenschaften-Dialog**
-  (`app/disktool/ui/properties_dialog.py`): UDOS-Kopfsektor voll editierbar, CP/M
-  Nutzerbereich + R/O/SYS/ARC.  Dafür kam **`CpmAttrs` als zweite Überladung** von
-  `FileSystem::setAttributes` (nicht eine gemeinsame Struktur — die Familien haben
-  fachlich nichts gemeinsam), C-ABI `k1520d_set_cpm_attrs` + `k1520d_entry_bytes_in_last`,
-  CLI `attr --ro/--sys/--arc/--user`.  Drei Festlegungen: **(1)** Der Nutzerbereich ist
-  IDENTITÄT, kein Attribut — `--user` verschiebt nach `3:NAME.TYP` und wird abgelehnt,
-  wenn dort schon eine gleichnamige Datei liegt; geändert werden **alle Extents**.
-  **(2) Satzlänge und „Bytes im letzten Satz“ sind nicht änderbar** (sie bestimmen die
-  Sektorlage; Weg dahin ist `get` + `put --record-len`) — der Dialog fasst den *Inhalt*
-  einer Datei nie an.  **(3)** Geschrieben wird nur, was sich unterscheidet
-  (`aenderungen()`), sonst bewegte ein blosses Ansehen das Änderungsdatum.
-  Dazu ein **CP/M-Beiblatt `cpm-dateiangaben.txt`** analog zum UDOS-Beiblatt (ohne es
-  ging der Nutzerbereich beim Rundlauf `extractAll`→`insertAll` verloren; `zielName()`
-  benutzen **`checkFit` und `insertAll` gemeinsam**, sonst urteilt die Platzprüfung über
-  einen anderen Namen als die Ausführung).  Das **Archiv** druckt seitdem alle Angaben
-  als zweite Tabelle „DATEIANGABEN IM EINZELNEN“ — für die Wiederherstellung von Hand;
-  maschinell reichen die Beiblätter im selben Archiv.  Wächter: `CpmFileSystemAttrs.*`,
-  `DiskVolume.CpmBeiblatt*`, `py_disktool_gui`.
-- **`data/formats.yaml` hat jetzt ZWEI Sektionen.**  `formats:` (Physik, liest der
-  Emulator) und `filesystems:` (logische Ebene, liest nur das DiskTool).  `data_start`
-  ist dort eine **Spur**, kein Byte-Offset — bei gemischter Geometrie (cpa780: drei
-  128-B-Seiten, dann 1024 B) wäre er als Spurzahl gar nicht ausdrückbar; cpmtools trägt
-  deshalb `offset 15104` ein, was der `SectorSpace` aus `data_start c2h0` ausrechnet.
-  Mehrere Dateisysteme je Geometrie sind möglich (26×128 trägt UDOS *und* CP/M), aber
-  selten — die Sektion soll **kurz bleiben** (s. u.).  Neue Formatnamen gehören in die
-  Erwartungsliste von
-  `FormatCatalog.Formatnamen_SindEinStabilerVertrag` bzw. `FsCatalog.ProfilnamenSind…`.
-- **Ein fehlendes Dateisystemprofil ist KEIN Hindernis mehr — `CpaDpbRule` rechnet.**
-  `core/filesystem/cpm/cpa_dpb.{h,cpp}` bildet die Formaterkennung des CP/A-BIOS nach
-  (`biosdsk.mac`/`drdfrm`, Tabellen `dtrsl0..3`; Analyse: `doc/cpa_format_detection.md`):
-  aus Sektorlängencode der Datenspur (**Zylinder 3, Kopf 0** — `dlgint`, einseitig
-  adressiert), Spurzahl, ein-/beidseitig und dem Inhalt der Spur 0 entstehen
-  Systemspuren, Blockgröße, Verzeichnisplätze und Sektorversatz.  Ein benanntes
-  Katalogprofil **gewinnt immer**; die Ableitung ist der Rückfall und heißt `cpa_auto`
-  (`--fs cpa_auto` erzwingt sie).  Damit sind **104 von 117** erzeugten Abbildern
-  mountbar (vorher 12).  Die Regel reproduziert `cpa780`/`scpx798` exakt und korrigierte
-  dabei einen geratenen Wert: **`cpa800` hat 192 Verzeichnisplätze, nicht 128** — am
-  laufenden CP/A nachgewiesen (`DiskToolNeueDisketten.CpaFindetDateiJenseitsVonPlatz128`).
-  Beim Ändern der Tabellen: `test_cpa_dpb` hält sie gegen `biosdsk.mac`.
-- **Doppelschritt (`step: 2`) ist umgesetzt** (2026-08-11, war
-  `doc/feature_requests/doppelschritt_disketten.md`).  `tracks:` bleibt **logisch**,
-  `DiskFormat::physicalCylinder()` rechnet um; die Spurnummer im **ID-Feld ist die
-  logische** (physisch c4h0 meldet `cyl=2`) — sonst verwirft der Gast-Treiber jeden
-  Sektor.  Berührt `SectorSpace` (Slot kennt beide Nummern), `ImgCodec` (`.img` ist
-  logisch), `DiskImage::create` (ungerade Zylinder bleiben unformatiert), `GeometryProbe`
-  (die Lücken sind ein **positives** Kriterium, sonst würde eine gewöhnliche
-  40-Spur-Diskette verwechselt) und `formatFitsDrive` (physische Ausdehnung).
-  Guards: `ctest -R Doppelschritt` + `DiskToolNeueDisketten.CpaLiestDoppelschrittDiskette`.
-- **Ein fehlender `formats:`-Eintrag ist auch kein Hindernis mehr.** Passt keine
-  Katalogsgeometrie, baut `GeometryProbe::synthesize()` eine aus der Messung
-  (`detection().format == "(gemessen)"`) — Spurbereiche als echte **Rechtecke** (erst
-  Zylinder mit gleichem Kopf-Muster, dann die Köpfe; sonst bekäme cpa780 einen Bereich,
-  den es nicht gibt), Lückenmuster als `step: 2`. **Ein so gelesener Datenträger ist
-  unaufhebbar schreibgeschützt** (`setReadOnly(false)` verweigert,
-  `readOnlyForced()`) — die Geometrie ist geraten, nicht belegt. Abgewiesen wird
-  weiterhin, was keinen zusammenhängenden Sektorraum ergibt (Loch mitten im
-  beschriebenen Bereich, uneinheitliche Sektorgrößen INNERHALB einer Spur).
-  Dabei fiel eine alte Schwäche auf: „zu wenige Sektoren" war ein Schaden **ohne
-  Obergrenze**, sodass 7×512 als „k5601_ss40_9x512 mit 40 defekten Spuren" durchging —
-  jetzt ist mehr als ein Viertel abweichender Spuren ein anderes Format (Regel 4b).
-- **`filesystems:` soll KURZ bleiben.** Vier der fünf CP/M-Profile rechnet `CpaDpbRule`
-  bitgleich nach; sie stehen nur noch da, weil `create --fs NAME` einen Namen braucht und
-  „cpa780" die bessere Auskunft ist als „cpa_auto". Ein neuer Eintrag braucht einen
-  eigenen Grund. `cpa640` (Dateisystem ab Spur 0) wurde 2026-08-11 **entfernt**: CP/A
-  kann so eine Diskette nicht erzeugen (`dtrsl1` hat ein FESTES Offset von 4 log.
-  Spuren), der Eintrag machte nur jede 16×256-Diskette „nicht eindeutig". Guard:
-  `FsCatalog.SechzehnMalZweihundertsechsundfuenfzigHatNurEinProfilAbZylinderZwei`.
-- **Wächter „alle Formate sind mountbar"**:
-  `DiskVolume.JedesKatalogformatLaesstSichAnlegenUndWiederOeffnen` legt JEDES
-  `formats:`-Format an, öffnet es ohne `--fs` und prüft die Wiedererkennung.  Ein neuer
-  Katalogeintrag, den die Erkennung nicht wiederfindet, fällt sofort auf.
-- **`TrackCodec::writeSector`** ersetzt ein Datenfeld an Ort und Stelle und rechnet die
-  CRC neu.  `buildTrack()` taugt zum Schreiben **nicht**: es baut die Spur neu und
-  verlöre die Bytes hinter der Daten-CRC — bei UDOS die gesamte Dateiverkettung.
-- **UDOS: jede Seite ist ein eigenes Dateisystem**, für den Anwender aber EINE Diskette.
-  `DiskVolume` führt beide als `Side0`/`Side1`; `extractAll` legt die Unterverzeichnisse
-  an, `insertAll` verlangt sie.  UDOS auf `.img` ist unmöglich (Kontrollblock hinter der
-  Daten-CRC) und wird abgelehnt.
-- **Stapeloperationen sind Transaktionen**: erst planen und urteilen, dann schreiben;
-  ein Fehler rollt die Momentaufnahme des `DiskMedium` zurück.  `list()` liest **immer**
-  frisch aus dem Medium — es gibt keinen zwischengespeicherten Verzeichnisstand.
-- **Kreuzproben statt Selbstbestätigung** (`ctest -R DiskTool.*Roundtrip`, Label
-  `format_integration`): geschrieben wird mit dem Werkzeug, gelesen vom **laufenden
-  CP/A** (`TYPE`/`DIR`) bzw. **UDOS** (`CAT`/`PRINT`/`STATUS`).  Der CP/M-Lesepfad ist
-  zusätzlich byteweise gegen `cpmtools` verifiziert (nicht als Abhängigkeit — die
-  Prüfsummen im Test frieren das Ergebnis ein).
+> **Bevor du hier arbeitest: `doc/merkposten/disktool.md` lesen** — rund zwanzig
+> Festlegungen mit ihren Wächtern (die Dateisysteme SCP1700/UDOS1715/P8000, `CpaDpbRule`,
+> Doppelschritt, bootfähige Disketten, Diskeditor, Eigenschaften-Dialog, Aufbau der
+> Oberfläche, Arbeitsverzeichnisse). Entwurf: `doc/design/13_k1520disktool.md`,
+> Bedienung: `tools/k1520disktool.md`. Vier Dinge, die man ohne Nachschlagen wissen muss:
+> - **UDOS/ZDOS auf `.img` ist unmöglich** — die Dateiverkettung steht im Gap hinter der
+>   Daten-CRC; `rawCompatible()` sperrt es. Bei UDOS1715/NDOS ist `.img` dagegen **erlaubt**
+>   (dort trägt die Verkettung in eigenen Zeigersektoren).
+> - **`TrackCodec::writeSector` ersetzt ein Datenfeld an Ort und Stelle.** `buildTrack()`
+>   taugt zum Schreiben NICHT: es baut die Spur neu und verlöre alles hinter der Daten-CRC.
+> - **Stapeloperationen sind Transaktionen** — erst planen und urteilen, dann schreiben; ein
+>   Fehler rollt die Momentaufnahme des `DiskMedium` zurück. `list()` liest **immer** frisch.
+> - **`filesystems:` in `data/formats.yaml` soll KURZ bleiben**: `CpaDpbRule` rechnet die
+>   meisten Profile bitgleich nach, ein neuer Eintrag braucht einen eigenen Grund.
 
 ## Physische Diskette am Greaseweazle (`core/peripherals/floppy_drive/track_sync.*`, `app/gw/`)
 
-Neben der Datei (`.img`/`.hfe`/`.dmk`) gibt es seit 2026-08-15 eine **zweite Art von
-Bindung** des internen Mediums: ein **echtes Laufwerk** an einem
-[Greaseweazle](https://github.com/keirf/greaseweazle)-Adapter.  Der Unterschied ist
-nicht das Medium, sondern die **Körnung** — gelesen und geschrieben wird **spurweise
-nach Bedarf**, der Zwischenschritt „ganze Diskette in eine Datei" entfällt.  Voller
-Entwurf: **`doc/design/14_physische_diskette.md`**, Medium-Sicht:
-`doc/design/09_floppy_drive.md` §12, Architektur: `doc/K1520_architecture.md` §8.8.
+Neben der Datei (`.img`/`.hfe`/`.dmk`) gibt es eine **zweite Art von Bindung** des internen
+Mediums: ein echtes Laufwerk an einem
+[Greaseweazle](https://github.com/keirf/greaseweazle)-Adapter. Der Unterschied ist nicht das
+Medium, sondern die **Körnung** — gelesen und geschrieben wird **spurweise nach Bedarf**, der
+Zwischenschritt „ganze Diskette in eine Datei" entfällt. An echter Hardware nachgewiesen
+(0,5–0,8 s je Spur, Emulator-Kaltstart von der eingelegten Diskette, Schreiben mit
+Prüf-Lesen). Entwurf: **`doc/design/14_physische_diskette.md`**.
 
-```
-                                                    ┌── K5122 (Emulator)
-echte Diskette ◄─gw─► Arbeitsfaden ◄─Aufträge─► DiskMedium
-                       (app/gw/)                    └── DiskVolume (DiskTool)
-```
-
-Was man beim Weiterarbeiten wissen muss:
-
-- **Der Kern kennt Greaseweazle NICHT.**  Kein USB, kein Import, kein Rückruf in die
-  Anwendung.  `TrackSync` hat **keinen eigenen Faden**; ein fremder Arbeitsfaden holt
-  Aufträge ab (`k1520s_take_job` — die einzige blockierende ABI-Funktion, ctypes gibt
-  dabei die GIL frei) und liefert **HFE-Bitzellen** zurück, die durch denselben
-  `BitCodec::decode` laufen wie eine `.hfe`-Datei.  Ein anderer Adapter wäre ein anderes
-  `device` in `app/gw/`, keine Kernänderung.
-- **Je Spur ein Zustand** statt eines Dirty-Bits: `Unknown` (nie gelesen, Inhalt
-  **ungültig**) / `Clean` / `Dirty`.  Das ist **ein** Konzept für alle Medien — bei
-  einer Datei tritt `Unknown` nur nie auf.  Der Unterschied, an dem alles hängt:
-  **`loadTrack` (gelesen) macht sauber, `setTrack` (geschrieben) macht schmutzig**.  **`Unknown` ≠ „unformatiert"** — letzteres ist eine
-  belegte Aussage über die Diskette, ersteres gar keine; deshalb melden
-  `formatted()`/`rawCompatible()` zusätzlich `complete()`, sonst erklärte sich eine halb
-  gelesene Diskette für leer und ein `.img` schriebe die ungelesenen Spuren als
-  Füllbytes fest.
-- **Nachgeladen wird in `DiskMedium::track()` — und NUR dort.**  Das ist die einzige
-  Stelle, durch die jeder Verbraucher geht (K5122 über `FloppyDriveV2`, DiskTool über
-  `DiskVolume`, Erkennung über `GeometryProbe`); der Aufruf **blockiert** (0,5–0,8 s je
-  Spur, am echten Gerät gemessen).  Medienweite Reihenläufe benutzen **`peek()`** und
-  laden nie nach — sonst zieht eine beiläufige Statusabfrage die ganze Diskette ein.
-  `mutableTrack()` lädt nach (Sektorschreiben ist Lesen-Ändern-Schreiben), `setTrack()`
-  nicht (Vollspur-FORMAT ersetzt die Spur) — daran hängt, dass eine Leerdiskette im
-  echten Laufwerk formatiert werden kann, ohne vorher gelesen zu werden.
-  Wächter: `TrackSync.ReihenlaufLaedtNichtNach`.
-- **Ein Sektor mit falscher Pruefsumme wird NACHGELESEN** (2026-08-18, Entwurf §5.4a).
-  Der Arbeitsfaden tastet je Auftrag nur EINE Umdrehung ab; auf einer gealterten
-  Diskette liefert das gelegentlich einen Sektor mit falscher Daten-CRC, der beim
-  naechsten Versuch heil zurueckkommt (an der P8000-Diskette von 1988 gemessen: einer
-  unter 2560).  Ohne Wiederholung wanderte der Ausrutscher **unbemerkt in eine Datei**.
-  `TrackSync` zaehlt daher nach dem Dekodieren die Sektoren mit falscher ID- **oder**
-  Daten-CRC und stellt die Spur erneut ein (`read_crc_retries`, Vorgabe 2);
-  uebernommen wird der **beste** Versuch, nicht der letzte, und ein Rest wird gemeldet
-  (`read_crc_bad`) statt die Spur zu verweigern.  Eine **markenlose** Spur ist
-  unformatiert und wird nie wiederholt — sonst kostete jede Leerspur die dreifache
-  Zeit.  Waechter: `TrackSync.EinLeseausrutscher*`, `TrackSync.EineDauerhaft*`,
-  `TrackSync.EineHeileSpurWirdNiemalsZweimalGelesen`.
-- **Geschrieben gilt erst nach dem ZURUECKLESEN** (Entwurf §7.1).  Der Verify-Lauf des
-  Gastsystems (`FORMAT`) prüft das **Speicherabbild gegen sich selbst** und sieht eine
-  Schadstelle der Diskette nie — deshalb folgt jedem `Write` ein `Verify` (Spur
-  zurücklesen, auf **Sektorebene** vergleichen: IDs, Nutzdaten, Anhang hinter der
-  Daten-CRC und **beide CRCs des Sektors** — ID-Feld *und* Datenfeld tragen je eine,
-  und eine kaputte ID-CRC macht den Sektor unauffindbar, auch wenn die Daten heil sind;
-  nachlaufende Gap-Bytes werden abgeschnitten, byteweise gleich sind zwei Aufnahmen nie).  Erst dann wird `Dirty` gelöscht.  Stimmt es nicht:
-  **einmal** neu schreiben und erneut prüfen, sonst gilt die Spur als **schadhaft** —
-  sie bleibt `Dirty`, `flushPending()` meldet Misserfolg mit Spurnummer, und die
-  Oberfläche bietet **„Diskette neu beschreiben"** (`rewriteAll()`, stellt jede
-  **bekannte** Spur erneut ein; unbekannte bleiben weg, sie trügen Müll auf die neue
-  Diskette).  **Das Zurückgelesene wird NIE ins Abbild übernommen** — sonst
-  überschriebe ein misslungener Schreibvorgang genau die Daten, die er zerstört hat.
-  Für den Arbeitsfaden ist `Verify` dasselbe wie `Read`.  Abschaltbar über
-  `verify_writes`, Vorgabe **an**.
-- **Drei Prioritäten:** 1 Lesen auf Anforderung (jemand wartet) → 2 geänderte Spuren
-  zurückschreiben (samt Prüf-Lesen, das **vor** neuen Schreibvorgängen kommt) →
-  3 unbekannte Spuren vorauslesen (kürzester Kopfweg zuerst).
-  Prio 1 **verdrängt**, unterbricht aber **keinen laufenden** Zugriff (der Faden steckt
-  in einer Übertragung).  Zurückgeschrieben wird erst nach einer **Schreibpause**
-  (≈ 0,5 s) — dieselbe Regel wie der Autosave, sonst schriebe eine UDOS-Dateioperation
-  dieselbe Spur dutzendfach.  Eine gescheiterte Rückführung lässt die Spur `Dirty`
-  (eine verlorene Änderung wäre der schlimmere Ausgang); Abmelden wartet darauf.
-- **Physisch heißt schreibgeschützt, bis jemand widerspricht** — ein Fehler kostet hier
-  nicht eine Kopie, sondern die einzige noch existierende Diskette.
-- **Eine Rücknahme (`DiskVolume`-Transaktion) braucht `restoreFrom`**, nicht eine
-  Zuweisung: was schon auf der echten Scheibe steht, holt keine Kopie im Speicher
-  zurück — die zurückgesetzten Spuren müssen **erneut als geändert** gelten.
-- **Schreiben braucht die GEMESSENE Drehzahl.**  Die Bitzellen kommen mit der
-  *nominellen* Zellrate herein, das Laufwerk dreht mit seiner eigenen Drehzahl; die
-  Flusszeiten müssen auf `usb.read_track(2).ticks_per_rev` gestreckt werden (einmal je
-  Sitzung gemessen, je Spur `faktor = takte/fluss.ticks_to_index` mit mitgeschlepptem
-  Rundungsrest — wie `gw write`).  Ohne das bricht der Adapter mit **`Flux Underflow`**
-  ab; das war der einzige Stolperstein des Schreibpfads.
-- **Die Oberflächen liegen in `app/ui/physical_disk.py`** — Dialog, `PhysicalSession`
-  (Sync + Arbeitsfaden in einem, `close()` in der Reihenfolge Faden → Synchronisierer)
-  und `mit_fortschritt()`.  **Beide** Programme benutzen dasselbe Stück: der Emulator
-  einen Knopf „Physisch…" je Laufwerkskasten samt Füllstandszeile, das DiskTool
-  „Physisches Laufwerk…" mit Fortschrittsanzeige (das Öffnen misst nur eine Stichprobe, ~10 s).  Eine physische Diskette gehört **nicht** in `get_mounts()` und wird von
-  `remount_all()` nicht angefasst (kein Pfad, Handle verbraucht).
-- **Die Hosttools liegen nicht auf PyPI** und sind eine **freiwillige** Abhängigkeit:
-  `pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"` (der Zweigkopf
-  meldet sich als Pre-Release).  Fehlt das Paket, fehlt nur der Menüpunkt.
-- **Tests brauchen keine Hardware** (in der CI ist nie ein Laufwerk):
-  `TrackSync.*` (29 Fälle) mit einem Ersatz-Arbeitsfaden aus dem RAM — inkl.
-  **Schadstelle** (die Spur meldet Schreiberfolg, liefert beim Lesen aber den alten
-  Inhalt) —, `PhysicalBoot.*`
-  (**CP/A bootet spurweise bis `A>` und holt dabei weniger als die halbe Diskette**),
-  `py_gw_physical` (Ersatzlaufwerk über einer `.hfe` — **ohne** `greaseweazle`-Import;
-  dieselbe Diskette einmal als Datei und einmal „physisch" muss dasselbe liefern; dazu
-  ein **Drift-Wächter**, der die `ctypes.Structure` gegen den C-Kopf hält — eine
-  vertauschte Feldreihenfolge stürzt nicht ab, sie liefert still falsche Zahlen) und
-  `py_gw_gui` (beide Oberflächen, inkl. Schadstellen-Meldung und Ausweg).
-  Die echten Hardware-Tests liegen in `tests/python/test_gw_hardware.py`, sind **nicht**
-  in ctest registriert und laufen nur mit `K1520_GW_HARDWARE=1` (Schreiben zusätzlich
-  nur mit `K1520_GW_WRITE=1`).
-- **An echter Hardware nachgewiesen** (Greaseweazle F1 + K5601 + UDOS 4.3): Lesen
-  0,5–0,8 s je Spur; **Emulator-Kaltstart von der eingelegten Diskette** (UDOS meldet
-  sich bei erst 62 von 160 gelesenen Spuren); **Datei auf die echte Diskette
-  geschrieben** (4 Spuren zurückgeführt, danach die ganze Diskette neu eingelesen →
-  byteweise gleich); beide Oberflächen einmal durchgefahren.  Vor Schreibversuchen die
-  Diskette sichern (`gw read` über alle Spuren, 2 MB `.hfe`).
-- **Im DiskTool ist es eine AKTION, kein Knopf** (2026-08-16, beim Zusammenführen mit
-  `create_disktool`): `act_physisch` (*Datei ▸ Physisches Laufwerk…*, Strg+Umschalt+O)
-  und `act_neu_beschreiben` (*Diskette ▸ …*) entstehen wie alle anderen in
-  `app/disktool/ui/actions.py` — damit sperrt sie `_aktionen_pruefen()` an der EINEN
-  dafür zuständigen Stelle.  Der Ausweg aus einer Schadstelle (§7.2) ist **unsichtbar
-  statt gesperrt**, solange keine physische Sitzung läuft (an einer Datei gibt es keine
-  Schadstelle); fehlen die Hosttools, ist `act_physisch` **gesperrt mit dem Grund im
-  Tooltip**
-  (`_physisch_verfuegbarkeit()`, einmal beim Aufbau) statt zu verschwinden.  Weil eine
-  physische Diskette **keinen Pfad** hat (`DiskTool.open_physical` → `path=""`), nennen
-  `_bezeichnung()`/`_kurzname()` die Herkunft für Kopfzeile und Fenstertitel, und
-  `DiskHeader.setze()` nimmt sie als zweites Argument.
-- **Das Prüf-Lesen ist an echter Hardware gegengeprüft** (2026-08-17, Greaseweazle F1
-  + UDOS1715-Diskette): `K1520_GW_HARDWARE=1 K1520_GW_WRITE=1 … -k schreibt_eine_datei`
-  meldet **4 Spuren zurückgeschrieben, 4 geprüft, 0 misslungene Vergleiche, 0
-  Schadstellen**; die Datei kam beim zweiten, frischen Öffnen byteweise gleich zurück.
-  Gegenprobe am Medium: eine Vollmessung vorher/nachher zeigt **genau die vier
-  gemeldeten Spuren** geändert (c4h0, c5h0 = Descriptor/Zeigersektor+Record, c22h0
-  Verzeichnis, c23h0 Belegungsplan) und sonst nichts, 2560/2560 Sektoren fehlerfrei.
-  Danach die vier Spuren aus der Sicherung zurückgeschrieben (`gw write … --tracks`) —
-  die Diskette ist wieder **byteweise die vom Anfang**.  Vorgehen bei so einem Test:
-  erst sichern (`gw read` über alle Spuren), Identität der eingelegten Diskette gegen
-  die Sicherung prüfen, mit einer NACHWEISLICH FREIEN Spur anfangen (der
-  Belegungsplan sagt welche), dann erst über das Dateisystem schreiben.
-- **`k1520disktool --physical` gibt es** (2026-08-17, Entwurf §12.3): `ls`, `info`,
-  `check`, `get`, `put`, `rm`, `save-as`, `rewrite` gegen die eingelegte Diskette.
-  Sie haengt am **Python**-Einstieg (`app/disktool/main.py`, wie `--paths` VOR den
-  Qt-Importen) und nicht am C++-Werkzeug — der Kern kennt Greaseweazle nicht, der
-  Arbeitsfaden ist Python; `k1520disktool-cli` bleibt der Dateiaustausch mit
-  Abbildern.  Damit Oberflaeche und Kommandozeile dieselbe Sitzung aufmachen, liegt
-  der Qt-freie Teil jetzt in **`app/gw/session.py`** (`PhysicalSession`,
-  `verfuegbarkeit`, `LAUFWERKE`, `RATEN`); `app/ui/physical_disk.py` reicht ihn
-  weiter.  Vier Festlegungen: **ohne `--write` wird abgelehnt, BEVOR der Motor
-  anlaeuft** (Waechter prueft `geraet.gelesen == []`), **stdout ist die Nutzlast**
-  (Fortschritt und Befund auf stderr), **Fortschritt aus einem Nebenfaden**, weil
-  sonst zwei Minuten Schweigen wie ein Haenger aussehen, und eine **Schadstelle
-  endet in Exit 1** samt Ausweg im Text.  Waechter `py_physical_cli` (14 Faelle,
-  Ersatzlaufwerk aus `gw_fake.py`); am echten Laufwerk durchgefahren (§15.2).
-- **Offen:** das Merken der Sitzungsparameter (Laufwerk und Zellrate muessen bei
-  jedem Einlegen neu gewaehlt werden).
+> **Vor Arbeiten daran: `doc/merkposten/physische_diskette.md` lesen** (Prioritäten des
+> Arbeitsfadens, Leseausrutscher-Wiederholung, Oberflächen, `--physical` in der
+> Kommandozeile, Hardware-Tests). Die fünf Regeln, die den Aufbau tragen:
+> - **Der Kern kennt Greaseweazle NICHT.** Kein USB, kein Import, kein Rückruf in die
+>   Anwendung. Ein fremder Arbeitsfaden holt Aufträge ab und liefert **HFE-Bitzellen**
+>   zurück, die durch denselben `BitCodec::decode` laufen wie eine `.hfe`-Datei. Ein anderer
+>   Adapter wäre ein anderes `device` in `app/gw/`, keine Kernänderung.
+> - **Je Spur ein Zustand** statt eines Dirty-Bits: `Unknown` / `Clean` / `Dirty`.
+>   `Unknown` ist **nicht** „unformatiert" — letzteres ist eine belegte Aussage über die
+>   Diskette, ersteres gar keine.
+> - **Nachgeladen wird in `DiskMedium::track()` — und NUR dort.** Medienweite Reihenläufe
+>   benutzen `peek()` und laden nie nach, sonst zieht eine Statusabfrage die ganze Diskette ein.
+> - **Geschrieben gilt erst nach dem ZURÜCKLESEN** (Vergleich auf Sektorebene, beide CRCs).
+>   Das Zurückgelesene wird **nie** ins Abbild übernommen.
+> - **Physisch heißt schreibgeschützt, bis jemand widerspricht** — ein Fehler kostet hier
+>   nicht eine Kopie, sondern die einzige noch existierende Diskette.
 
 ## Diskettenformatierung (FORMAT.COM) — Scope
 
