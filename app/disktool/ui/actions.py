@@ -107,6 +107,12 @@ _SPEC: List[Tuple] = [
     ("reparieren", "Dateisystem &prüfen und reparieren…", "check", "Ctrl+F",
      "Den Prüfbericht ansehen, eine Vollprüfung fahren und Befunde beheben",
      "_reparieren_dialog", False),
+    # Bewusst OHNE Tastenkürzel: gesucht wird selten, und die Kürzeltabelle des
+    # Handbuchs ist ein Vertrag, den ein selten gebrauchter Eintrag nur verwässert.
+    ("wiederherstellen", "&Gelöschte Dateien suchen…", None, None,
+     "Was ein Löschen übriggelassen hat: gelöschte Dateien und Bruchstücke suchen, "
+     "in den Ordner retten oder auf der Diskette wieder eintragen",
+     "_wiederherstellen_dialog", False),
 
     # ── Übertragung ─────────────────────────────────────────────────────────
     ("ordner", "&Zielordner wählen…", "folder", None,

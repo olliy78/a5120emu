@@ -55,6 +55,7 @@ from app.disktool.ui.disk_editor import DiskEditorWindow
 from app.disktool.ui.disk_header import DiskHeader, auswahlliste
 from app.disktool.ui.disk_info_dialog import DiskInfoDialog
 from app.disktool.ui.fsck_dialog import FsckDialog
+from app.disktool.ui.recover_dialog import RecoverDialog
 from app.disktool.ui.disk_view import DiskView
 from app.disktool.ui.folder_view import FolderView
 from app.disktool.ui.help_window import HelpWindow
@@ -248,6 +249,7 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addAction(self.act_neu_beschreiben)
         m.addAction(self.act_reparieren)
+        m.addAction(self.act_wiederherstellen)
         m.addAction(self.act_angaben)
 
         m = leiste.addMenu("&Übertragung")
@@ -542,6 +544,10 @@ class MainWindow(QMainWindow):
         # der Bericht die Begründung, warum keines erkannt wurde (Ebene 0, §11) —
         # und das ist genau die Diskette, über die man etwas erfahren will.
         self.act_reparieren.setEnabled(offen)
+        # Suchen braucht dagegen ein Dateisystem: ohne eines gibt es weder ein
+        # Verzeichnis mit geloeschten Plaetzen noch einen Belegungsplan, gegen den
+        # sich „frei, aber beschrieben" bestimmen liesse.
+        self.act_wiederherstellen.setEnabled(mit_fs)
         self.act_speichern.setEnabled(schreibbar)
         self.act_alles_rein.setEnabled(schreibbar and mit_fs)
 
@@ -1895,6 +1901,20 @@ class MainWindow(QMainWindow):
             self._reload()
         elif dlg.geprueft:
             self._medium_meldungen()
+
+    def _wiederherstellen_dialog(self) -> None:
+        """Gelöschte Dateien suchen — und danach ggf. die Dateiliste nachziehen.
+
+        Der Suchlauf selbst ändert nichts (E7); wurde aber etwas auf der Diskette
+        wieder eingetragen, ist es jetzt eine Datei und gehört ins Verzeichnis.
+        """
+        if self.tool is None:
+            return
+        dlg = RecoverDialog(self.tool, self, zielordner=self._ordner_startpunkt(),
+                            log=self.log)
+        dlg.exec()
+        if dlg.wiederhergestellt:
+            self._reload()
 
     def _befund_im_editor(self, zylinder: int, kopf: int, sektor: int) -> None:
         """Den Ort eines Befundes im Diskeditor aufschlagen (Entwurf E9)."""

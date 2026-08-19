@@ -657,6 +657,66 @@ K1520_API const char* k1520d_repair_blocked_why(K1520Disk h, int i, int j);
  */
 K1520_API int k1520d_apply_repairs(K1520Disk h, const int* befund, const int* repair, int n);
 
+/* ─── Wiederherstellung (§13) ──────────────────────────────────────────────── */
+/*
+ * Keines der Dateisysteme ueberschreibt beim Loeschen Nutzdaten: bei CP/M bleiben
+ * Name, Satzzahl und alle Blockzeiger im Verzeichnisplatz stehen, nur das
+ * Nutzerbyte wird 0xE5.  Gesucht wird deshalb nicht nach Schaeden, sondern nach
+ * dem, was noch dasteht.
+ *
+ * Anders als die Pruefung laeuft die Suche **nicht** von selbst beim Oeffnen — sie
+ * kostet, und sie beantwortet eine Frage, die niemand gestellt hat.
+ *
+ * **Retten geht vor Wiederherstellen** (E7): `k1520d_recover_extract` holt einen
+ * Fund in einen Linux-Ordner und geht auch an einer schreibgeschuetzten Diskette;
+ * `k1520d_recover_restore` traegt ihn auf der Diskette wieder ein und ist der
+ * Ausnahmefall.
+ */
+
+/**
+ * @brief Nach geloeschten Dateien suchen.  Aendert nichts.
+ * @param level     0 = nur Verzeichnisreste (billig), 1 = volle Oberflaechensuche
+ * @param nachladen Darf eine unbekannte Spur beschafft werden?  (wie `k1520d_check`)
+ * @return Zahl der Funde, -1 bei ungueltigem Handle.
+ */
+K1520_API int  k1520d_recover_scan(K1520Disk h, int level, bool nachladen);
+/// @brief Wurde alles angesehen?  false = an einer physischen Diskette fehlten Spuren.
+K1520_API bool k1520d_recover_complete(K1520Disk h);
+K1520_API int  k1520d_recover_count(K1520Disk h);
+/// @brief Der ueberlieferte Name; **""** wo keiner ueberlebt hat (Rohbereich, UDOS).
+K1520_API const char* k1520d_recover_name(K1520Disk h, int i);
+/// @brief Dateityp bzw. Einordnung des Inhalts ("Text", "Programm", "unklar").
+K1520_API const char* k1520d_recover_type(K1520Disk h, int i);
+/// @brief Woher der Fund stammt ("Verzeichnisplatz 37", "freier Bereich, Block 12…19").
+K1520_API const char* k1520d_recover_origin(K1520Disk h, int i);
+/// @brief Vorschlag fuer den Linux-Dateinamen — nie leer, auch ohne Namen.
+K1520_API const char* k1520d_recover_suggestion(K1520Disk h, int i);
+K1520_API int         k1520d_recover_volume(K1520Disk h, int i);
+K1520_API uint64_t    k1520d_recover_size(K1520Disk h, int i);
+/// @brief 0 Bruchstueck · 1 wahrscheinlich · 2 sicher.
+K1520_API int         k1520d_recover_quality(K1520Disk h, int i);
+/// @brief Die Belege zur Guete im Klartext; "" = ohne Vorbehalt.
+K1520_API const char* k1520d_recover_detail(K1520Disk h, int i);
+/// @brief Laesst sich der Fund AUF DER DISKETTE wieder eintragen?  (Herausholen
+///        geht immer — der Grund fuer ein `false` steht in `_blocked_why`.)
+K1520_API bool        k1520d_recover_restorable(K1520Disk h, int i);
+K1520_API const char* k1520d_recover_blocked_why(K1520Disk h, int i);
+/// @brief Ort auf der Diskette fuer den Sprung in den Diskeditor; -1 = ortlos.
+K1520_API int         k1520d_recover_cyl(K1520Disk h, int i);
+K1520_API int         k1520d_recover_head(K1520Disk h, int i);
+K1520_API int         k1520d_recover_sector(K1520Disk h, int i);
+/**
+ * @brief Die ersten @p n Byte des Fundes in @p buf — fuer die Vorschau.
+ * @return gelieferte Bytes, -1 bei Fehler (`k1520d_last_error`).
+ */
+K1520_API int  k1520d_recover_preview(K1520Disk h, int i, uint8_t* buf, int n);
+/// @brief Den Fund in eine Linux-Datei retten.  Bei einer Guete unter „sicher"
+///        entsteht daneben ein Beiblatt `<pfad>.rettung.txt`.
+K1520_API bool k1520d_recover_extract(K1520Disk h, int i, const char* pfad);
+/// @brief Den Fund auf der Diskette wieder eintragen.  @p name leer = der
+///        ueberlieferte.  Danach wird neu gesucht UND neu geprueft.
+K1520_API bool k1520d_recover_restore(K1520Disk h, int i, const char* name);
+
 #ifdef __cplusplus
 }
 #endif

@@ -398,6 +398,62 @@ Ohne `--repair` wird nur geprüft. `--repair` führt die empfohlenen Reparaturen
 `--repair=cpm.zeiger.streichen,…` genau die genannten. `--dry-run` sagt nur, was
 geschähe.
 
+## Gelöschte Dateien suchen
+
+*Diskette ▸ Gelöschte Dateien suchen…* holt hervor, was ein Löschen übriggelassen
+hat. Und das ist überraschend viel: **CP/M löscht mit einem einzigen Byte.** Das
+Nutzerbyte des Verzeichnisplatzes wird 0xE5 — Name, Typ, Satzzahl und alle
+Blockzeiger bleiben unverändert stehen, die Daten selbst sind unberührt. Eine
+gelöschte Datei ist damit vollständig beschrieben; sie wird nur nicht mehr
+gefunden.
+
+Zwei Suchtiefen stehen oben im Fenster:
+
+* **Verzeichnisreste** — nur die gelöschten Verzeichnisplätze. Kostet nichts, denn
+  das Verzeichnis ist ohnehin gelesen.
+* **Ganze Oberfläche** — zusätzlich jeder freie Bereich der Diskette. Das findet
+  die Bruchstücke *ohne* Verzeichnisplatz (Verzeichnis neu aufgesetzt, Diskette
+  halb neu beschrieben). An einer echten Diskette am Greaseweazle ist diese Suche
+  noch gesperrt: sie zöge die ganze Scheibe ein.
+
+Jeder Fund trägt eine **Güte**, und die ist keine Schätzung, sondern eine Aussage
+mit Belegen — sie steht als Tooltip und unter der Vorschau im Klartext:
+
+| Güte | heißt |
+|---|---|
+| ✔ sicher | kein Block des Fundes gehört einer lebenden Datei — der Inhalt ist der von damals |
+| ≈ wahrscheinlich | vollständig, aber mit benannten Vorbehalten (falsche Prüfsumme, zweiter Anspruch) |
+| ✂ Bruchstück | ein Teil ist neu vergeben oder die Struktur bricht ab — nur der Anfang ist zu retten |
+
+Drei Wege stehen unten:
+
+* **In den Ordner retten…** ist der Vorgabeweg und geht **immer** — auch an einer
+  schreibgeschützten Diskette, auch bei einem Bruchstück. Der übliche Fall ist
+  „einmal alles retten, was noch da ist, dann die Diskette in Ruhe lassen".
+  Fehlende Bereiche werden mit Füllbytes aufgefüllt, damit die Offsets der übrigen
+  stimmen; daneben entsteht dann ein Beiblatt `<datei>.rettung.txt`, das genau das
+  festhält. Für ein Textdokument ist das brauchbar, für ein Programm nicht.
+* **Alles Sichere retten…** schreibt alle Funde der Güte *sicher* in einen Ordner.
+* **Auf der Diskette wiederherstellen** trägt den Fund wieder ins Verzeichnis ein
+  und verlangt Schreibrecht. Es geht nur, wenn kein Block des Fundes inzwischen
+  einer lebenden Datei gehört — sonst entstünde genau die Kreuzbelegung, die die
+  Prüfung als **Gefahr** meldet. Steht der Knopf still, sagt die Zeile darüber,
+  warum. Der ursprüngliche **Nutzerbereich** ist übrigens nicht zu retten: er stand
+  in ebendem Byte, das beim Löschen überschrieben wurde — wiederhergestellt wird
+  nach Bereich 0.
+
+Funde ohne Namen (die Bruchstücke) heißen `fragment_c12h0_b40-b47.bin`; der Name
+lässt sich in der Liste ändern, bevor man rettet.
+
+Dasselbe auf der Kommandozeile:
+
+```
+k1520disktool recover <abbild> [--full] [--to ordner] [--list] [--restore N[=NAME]]
+```
+
+Ohne `--to` wird nur aufgelistet; `--full` ist die Oberflächensuche, und
+`--restore 0=ALT.COM` trägt Fund 0 unter dem Namen `ALT.COM` wieder ein.
+
 ## Archivieren
 
 *Datei ▸ Archivieren* (Strg+Umschalt+A) packt in **eine** `.zip`:

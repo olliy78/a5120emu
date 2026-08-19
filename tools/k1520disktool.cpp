@@ -90,6 +90,11 @@ struct Optionen {
     bool        nobackup= false;
     /// @brief --repair: `fsck` soll auch eingreifen (sonst prueft es nur).
     bool        reparieren = false;
+    /// @brief --list: `recover` soll nur auflisten, auch wenn --to dasteht.
+    bool        nur_liste = false;
+    /// @brief --restore: `recover` soll den Fund AUF DER DISKETTE eintragen.
+    ///        Wert ist `<nr>` oder `<nr>=NAME`; "" = nicht verlangt.
+    std::string restore_wahl;
     /// @brief Wert von `--repair=…`: "" = die sicheren, "alle" = auch die
     ///        verlustbehafteten, sonst eine Liste von Kennungen.
     std::string repair_wahl;
@@ -122,6 +127,10 @@ void gebrauch() {
         "         [--dry-run]                       … --repair: die empfohlenen ohne\n"
         "                                             Datenverlust; =alle auch die mit;\n"
         "                                             =kennung,… eine Auswahl\n"
+        "  recover <abbild> [--full] [--to ordner]  geloeschte Dateien suchen und retten\n"
+        "         [--list] [--restore N[=NAME]]     … --full: auch die Bruchstuecke ohne\n"
+        "                                             Verzeichnisplatz; --restore traegt\n"
+        "                                             den Fund auf der Diskette ein\n"
         "  measure <abbild>                         Geometrie messen (auch ohne Dateisystem)\n"
         "  formats                                  bekannte Dateisysteme auflisten\n\n"
         "Gemeinsam: --fs NAME (Erkennung uebersteuern), --volume N (Seite),\n"
@@ -146,6 +155,9 @@ bool zerlege(int argc, char** argv, int ab, Optionen& o, std::string& err) {
         };
         if      (a == "--fs")      { if (!wert("--fs"))     return false; o.fs     = argv[++i]; }
         else if (a == "--to")      { if (!wert("--to"))     return false; o.ziel   = argv[++i]; }
+        else if (a == "--list")    { o.nur_liste = true; }
+        else if (a == "--restore") { if (!wert("--restore")) return false;
+                                     o.restore_wahl = argv[++i]; }
         else if (a == "--as")      { if (!wert("--as"))     return false; o.als    = argv[++i]; }
         else if (a == "--label")   { if (!wert("--label"))  return false; o.label  = argv[++i]; }
         else if (a == "--boot")    { if (!wert("--boot"))   return false; o.boot   = argv[++i]; }
@@ -711,6 +723,122 @@ int cmd_fsck(const Optionen& o) {
     return nachher.ohneBefund() ? kOk : kFehler;
 }
 
+/**
+ * @brief `recover` — geloeschte Dateien suchen, retten und wieder eintragen (§13).
+ *
+ * Die Reihenfolge der Schalter ist die Rangfolge des Entwurfs (E7): **retten geht
+ * vor wiederherstellen**.  Ohne `--to` und ohne `--restore` wird nur aufgelistet —
+ * und das ist der Normalfall, mit dem man anfaengt.
+ *
+ * Geoeffnet wird **lesend**, solange nicht `--restore` dabeisteht: der haeufigste
+ * Fall ist „einmal alles retten, was noch da ist, dann die Diskette in Ruhe lassen",
+ * und dabei darf das Werkzeug die Diskette nicht einmal beruehren.
+ *
+ * Rueckgabe: 0 = Lauf in Ordnung (auch ohne Fund — eine Diskette ohne geloeschte
+ * Dateien ist kein Fehler) · 1 = etwas ist schiefgegangen · 2 = nicht erkannt.
+ */
+int cmd_recover(const Optionen& o) {
+    if (o.rest.size() < 2) { std::cerr << "Fehler: kein Abbild angegeben\n"; return kFehler; }
+
+    // `--restore N` bzw. `--restore N=NAME` zerlegen — vor dem Oeffnen, damit ein
+    // Tippfehler die Diskette nicht schreibend aufmacht.
+    int         restore_nr = -1;
+    std::string restore_name;
+    if (!o.restore_wahl.empty()) {
+        const size_t g = o.restore_wahl.find('=');
+        const std::string nr = o.restore_wahl.substr(0, g);
+        if (g != std::string::npos) restore_name = o.restore_wahl.substr(g + 1);
+        try { restore_nr = std::stoi(nr); }
+        catch (...) {
+            std::cerr << "Fehler: --restore verlangt eine Fundnummer, nicht '"
+                      << nr << "'\n";
+            return kFehler;
+        }
+    }
+
+    int rc = kOk;
+    auto v = oeffne(o, o.rest[1], rc, /*schreibend=*/restore_nr >= 0);
+    if (!v) return rc;
+
+    const FsRecoverLevel stufe = o.voll ? FsRecoverLevel::Oberflaeche
+                                        : FsRecoverLevel::Verzeichnis;
+    const FsRecoverReport& r = v->recoverScan(stufe, true);
+    const bool mit_volume = v->volumeCount() > 1;
+
+    if (o.json) {
+        std::cout << "{\"image\":" << jsonText(v->path())
+                  << ",\"level\":" << jsonText(o.voll ? "oberflaeche" : "verzeichnis")
+                  << ",\"complete\":" << (r.vollstaendig ? "true" : "false")
+                  << ",\"finds\":[";
+        for (size_t i = 0; i < r.funde.size(); ++i) {
+            const FsRecoverFind& f = r.funde[i];
+            if (i) std::cout << ",";
+            std::cout << "{\"index\":" << i
+                      << ",\"name\":" << jsonText(f.name)
+                      << ",\"suggestion\":" << jsonText(f.vorschlag)
+                      << ",\"type\":" << jsonText(f.type)
+                      << ",\"origin\":" << jsonText(f.origin)
+                      << ",\"volume\":" << f.volume
+                      << ",\"size\":" << f.size
+                      << ",\"quality\":" << jsonText(fsRecoverQualityName(f.quality))
+                      << ",\"restorable\":" << (f.wiederherstellbar ? "true" : "false")
+                      << ",\"detail\":" << jsonText(f.detail)
+                      << ",\"cyl\":" << f.cyl << ",\"head\":" << f.head
+                      << ",\"sector\":" << f.sector_index << "}";
+        }
+        std::cout << "]}\n";
+    } else {
+        std::cout << v->path() << "  " << v->detection().filesystem << "  "
+                  << (o.voll ? "Oberflaechensuche" : "Verzeichnissuche");
+        if (!r.vollstaendig)
+            std::cout << "  (UNVOLLSTAENDIG: " << r.spuren_gelesen << " von "
+                      << r.spuren_gesamt << " Spuren angesehen)";
+        std::cout << "\n\n";
+        if (r.leer())
+            std::cout << (o.voll ? "nichts zu retten\n"
+                                 : "nichts zu retten — `--full` sieht auch in die"
+                                   " freien Bereiche\n");
+        else
+            std::cout << r.alsText(mit_volume) << "\n" << r.kurzfassung() << "\n";
+    }
+
+    // ── Retten (E7: das ist der Vorgabeweg, und er geht schreibgeschuetzt) ───
+    if (!o.ziel.empty() && !o.nur_liste && !r.leer()) {
+        std::error_code ec;
+        fs::create_directories(o.ziel, ec);
+        int gerettet = 0;
+        for (size_t i = 0; i < r.funde.size(); ++i) {
+            fs::path ziel = fs::path(o.ziel);
+            if (mit_volume) {
+                ziel /= v->volumeDir(r.funde[i].volume);
+                fs::create_directories(ziel, ec);
+            }
+            std::string datei = r.funde[i].vorschlag;
+            std::replace(datei.begin(), datei.end(), ':', '_');
+            ziel /= datei;
+            if (!v->recoverExtract(static_cast<int>(i), ziel.string())) {
+                std::cerr << "Fehler: " << v->lastError() << "\n";
+                return kFehler;
+            }
+            if (!o.json) std::cout << "gerettet: " << ziel.string() << "\n";
+            ++gerettet;
+        }
+        if (!o.json) std::cout << gerettet << " Fund(e) nach " << o.ziel << "\n";
+    }
+
+    // ── Auf der Diskette eintragen (der Ausnahmefall) ────────────────────────
+    if (restore_nr >= 0) {
+        if (!v->recoverRestore(restore_nr, restore_name)) {
+            std::cerr << "Fehler: " << v->lastError() << "\n";
+            return kFehler;
+        }
+        if (!o.json)
+            std::cout << "wiederhergestellt: Fund " << restore_nr
+                      << (restore_name.empty() ? "" : " als " + restore_name) << "\n";
+    }
+    return kOk;
+}
+
 int cmd_get(const Optionen& o) {
     if (o.rest.size() < 2) { std::cerr << "Fehler: kein Abbild angegeben\n"; return kFehler; }
     if (o.ziel.empty())    { std::cerr << "Fehler: --to <verzeichnis> fehlt\n"; return kFehler; }
@@ -1225,6 +1353,7 @@ int main(int argc, char** argv) {
     if (befehl == "measure") return cmd_measure(o);
     if (befehl == "check")   return cmd_check(o);
     if (befehl == "fsck")    return cmd_fsck(o);
+    if (befehl == "recover") return cmd_recover(o);
     if (befehl == "formats") return cmd_formats(o);
 
     std::cerr << "Fehler: unbekanntes Kommando '" << befehl << "'\n\n";

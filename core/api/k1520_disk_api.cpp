@@ -19,6 +19,7 @@
 #include "core/filesystem/disk_volume.h"
 #include "core/filesystem/geometry_probe.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -65,6 +66,8 @@ struct Handle {
     std::string s_fmt, s_fs, s_alt, s_remarks, s_fit, s_check;
     std::string s_bid, s_bobj, s_btext, s_bsum;   ///< Puffer der Pruefung
     std::string s_rid, s_rtext, s_rwhy;           ///< Puffer der Reparatur
+    std::string s_fname, s_ftype, s_forigin, s_fvor, s_fdetail, s_fwhy;
+                                                  ///< Puffer der Wiederherstellung
 };
 
 Handle* H(K1520Disk h) { return static_cast<Handle*>(h); }
@@ -964,3 +967,113 @@ extern "C" int k1520d_apply_repairs(K1520Disk h, const int* befund_nr, const int
 }
 
 extern "C" const char* k1520d_version(void) { return "k1520disk 0.1"; }
+
+// ─── Wiederherstellung (doc/design/15_dateisystempruefung.md §13) ────────────
+
+namespace {
+const FsRecoverFind* fnd(K1520Disk h, int i) {
+    if (!h) return nullptr;
+    const std::vector<FsRecoverFind>& f = H(h)->vol->recoverReport().funde;
+    if (i < 0 || i >= static_cast<int>(f.size())) return nullptr;
+    return &f[static_cast<size_t>(i)];
+}
+}  // namespace
+
+extern "C" int k1520d_recover_scan(K1520Disk h, int level, bool nachladen) {
+    if (!h) return -1;
+    const FsRecoverReport& r = H(h)->vol->recoverScan(
+        level >= 1 ? FsRecoverLevel::Oberflaeche : FsRecoverLevel::Verzeichnis, nachladen);
+    return static_cast<int>(r.funde.size());
+}
+
+extern "C" bool k1520d_recover_complete(K1520Disk h) {
+    return h ? H(h)->vol->recoverReport().vollstaendig : false;
+}
+
+extern "C" int k1520d_recover_count(K1520Disk h) {
+    return h ? static_cast<int>(H(h)->vol->recoverReport().funde.size()) : 0;
+}
+
+extern "C" const char* k1520d_recover_name(K1520Disk h, int i) {
+    const FsRecoverFind* f = fnd(h, i);
+    return f ? halte(H(h)->s_fname, f->name) : "";
+}
+
+extern "C" const char* k1520d_recover_type(K1520Disk h, int i) {
+    const FsRecoverFind* f = fnd(h, i);
+    return f ? halte(H(h)->s_ftype, f->type) : "";
+}
+
+extern "C" const char* k1520d_recover_origin(K1520Disk h, int i) {
+    const FsRecoverFind* f = fnd(h, i);
+    return f ? halte(H(h)->s_forigin, f->origin) : "";
+}
+
+extern "C" const char* k1520d_recover_suggestion(K1520Disk h, int i) {
+    const FsRecoverFind* f = fnd(h, i);
+    return f ? halte(H(h)->s_fvor, f->vorschlag) : "";
+}
+
+extern "C" int k1520d_recover_volume(K1520Disk h, int i) {
+    const FsRecoverFind* f = fnd(h, i);
+    return f ? f->volume : 0;
+}
+
+extern "C" uint64_t k1520d_recover_size(K1520Disk h, int i) {
+    const FsRecoverFind* f = fnd(h, i);
+    return f ? f->size : 0;
+}
+
+extern "C" int k1520d_recover_quality(K1520Disk h, int i) {
+    const FsRecoverFind* f = fnd(h, i);
+    return f ? static_cast<int>(f->quality) : 0;
+}
+
+extern "C" const char* k1520d_recover_detail(K1520Disk h, int i) {
+    const FsRecoverFind* f = fnd(h, i);
+    return f ? halte(H(h)->s_fdetail, f->detail) : "";
+}
+
+extern "C" bool k1520d_recover_restorable(K1520Disk h, int i) {
+    const FsRecoverFind* f = fnd(h, i);
+    return f ? f->wiederherstellbar : false;
+}
+
+extern "C" const char* k1520d_recover_blocked_why(K1520Disk h, int i) {
+    const FsRecoverFind* f = fnd(h, i);
+    return f ? halte(H(h)->s_fwhy, f->warum_nicht) : "";
+}
+
+extern "C" int k1520d_recover_cyl(K1520Disk h, int i) {
+    const FsRecoverFind* f = fnd(h, i);
+    return f ? f->cyl : -1;
+}
+
+extern "C" int k1520d_recover_head(K1520Disk h, int i) {
+    const FsRecoverFind* f = fnd(h, i);
+    return f ? f->head : -1;
+}
+
+extern "C" int k1520d_recover_sector(K1520Disk h, int i) {
+    const FsRecoverFind* f = fnd(h, i);
+    return f ? f->sector_index : -1;
+}
+
+extern "C" int k1520d_recover_preview(K1520Disk h, int i, uint8_t* buf, int n) {
+    if (!h || !buf || n <= 0) return -1;
+    std::vector<uint8_t> d;
+    if (!H(h)->vol->recoverRead(i, d)) return -1;
+    const int menge = static_cast<int>(std::min<size_t>(d.size(), static_cast<size_t>(n)));
+    std::copy(d.begin(), d.begin() + menge, buf);
+    return menge;
+}
+
+extern "C" bool k1520d_recover_extract(K1520Disk h, int i, const char* pfad) {
+    if (!h || !pfad) return false;
+    return H(h)->vol->recoverExtract(i, pfad);
+}
+
+extern "C" bool k1520d_recover_restore(K1520Disk h, int i, const char* name) {
+    if (!h) return false;
+    return H(h)->vol->recoverRestore(i, name ? name : "");
+}

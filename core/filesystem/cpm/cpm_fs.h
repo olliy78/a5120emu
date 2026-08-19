@@ -102,6 +102,20 @@ public:
      */
     bool repair(const FsRepair& r) override;
 
+    /**
+     * @brief Suche nach geloeschten Dateien — umgesetzt in `check/cpm_recover.cpp`.
+     *
+     * CP/M loescht, indem es EIN Byte setzt: das Nutzerbyte des Verzeichnisplatzes
+     * wird 0xE5.  Name, Typ, Attribute, Extentnummer, Satzzahl und **alle sechzehn
+     * Blockzeiger** bleiben stehen — die Datei ist vollstaendig beschrieben, sie
+     * wird nur nicht mehr gefunden.  Das ist der einfachste und haeufigste
+     * Rettungsfall ueberhaupt.
+     */
+    FsRecoverReport recoverScan(FsRecoverLevel level, bool nachladen) const override;
+    bool recoverRead(const FsRecoverFind& f, std::vector<uint8_t>& out) const override;
+    /// @brief Nutzerbyte zuruecksetzen (und ggf. umbenennen) — mehr ist es nicht.
+    bool recoverRestore(const FsRecoverFind& f, const std::string& name) override;
+
     /// @brief Ist @p name ein gueltiger CP/M-Name (8.3, Grossschrift, ohne Sonderzeichen)?
     ///        Liefert bei false den Grund in @p why.
     static bool validName(const std::string& name, std::string* why);

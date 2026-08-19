@@ -1048,6 +1048,89 @@ int DiskVolume::applyRepairs(const std::vector<std::pair<int, int>>& auswahl) {
     return getan;
 }
 
+// ─── Wiederherstellung (doc/design/15_dateisystempruefung.md §13) ────────────
+
+const FsRecoverReport& DiskVolume::recoverScan(FsRecoverLevel level, bool nachladen) {
+    recover_ = FsRecoverReport{};
+    recover_.level    = level;
+    recover_nachladen_ = nachladen;
+    for (size_t v = 0; v < volumes_.size(); ++v) {
+        FsRecoverReport teil = volumes_[v].fs->recoverScan(level, nachladen);
+        for (FsRecoverFind& f : teil.funde) f.volume = static_cast<int>(v);
+        recover_.uebernimm(teil);
+    }
+    recover_.level = level;      // uebernimm() zieht nach oben, hier gilt das Verlangte
+    recover_.sortieren();
+    return recover_;
+}
+
+namespace {
+/// @brief Sicherer Zugriff auf einen Fund des letzten Suchlaufs.
+const FsRecoverFind* fund(const FsRecoverReport& r, int i) {
+    if (i < 0 || static_cast<size_t>(i) >= r.funde.size()) return nullptr;
+    return &r.funde[static_cast<size_t>(i)];
+}
+}  // namespace
+
+bool DiskVolume::recoverRead(int fnr, std::vector<uint8_t>& out) const {
+    const FsRecoverFind* f = fund(recover_, fnr);
+    if (!f) return fail("Fund " + std::to_string(fnr) + " gibt es im letzten Suchlauf nicht");
+    if (!valid(f->volume)) return fail("Fund ohne gueltiges Volume");
+    FileSystem& fs = *volumes_[static_cast<size_t>(f->volume)].fs;
+    if (!fs.recoverRead(*f, out)) return fail(fs.lastError());
+    return true;
+}
+
+bool DiskVolume::recoverExtract(int fnr, const std::string& dest_path) {
+    const FsRecoverFind* f = fund(recover_, fnr);
+    if (!f) return fail("Fund " + std::to_string(fnr) + " gibt es im letzten Suchlauf nicht");
+
+    std::vector<uint8_t> d;
+    if (!recoverRead(fnr, d)) return false;
+
+    std::string err;
+    if (!schreibeDatei(dest_path, d, err)) return fail(err);
+
+    // Das Beiblatt (§13.3): eine mit Fuellbytes geflickte Datei sieht aus wie eine
+    // heile.  Wer sie in einem Jahr wiederfindet, muss lesen koennen, woran er ist.
+    if (f->quality != FsRecoverQuality::Sicher) {
+        std::string t;
+        t += "Gerettet aus " + path() + "\n";
+        t += "Herkunft:  " + f->origin + "\n";
+        t += "Guete:     " + std::string(fsRecoverQualityName(f->quality)) + "\n";
+        if (!f->detail.empty()) t += "Vorbehalt: " + f->detail + "\n";
+        t += "Fehlende Bereiche sind mit 0xE5 aufgefuellt, damit die Offsets der\n"
+             "uebrigen stimmen — fuer ein Textdokument ist das brauchbar, fuer ein\n"
+             "Programm nicht.\n";
+        const std::vector<uint8_t> bytes(t.begin(), t.end());
+        if (!schreibeDatei(dest_path + ".rettung.txt", bytes, err)) return fail(err);
+    }
+    return true;
+}
+
+bool DiskVolume::recoverRestore(int fnr, const std::string& name) {
+    if (read_only_) return fail(kSchreibschutz);
+    const FsRecoverFind* f = fund(recover_, fnr);
+    if (!f) return fail("Fund " + std::to_string(fnr) + " gibt es im letzten Suchlauf nicht");
+    if (!valid(f->volume)) return fail("Fund ohne gueltiges Volume");
+
+    // Wie bei der Reparatur: eine Momentaufnahme davor, damit ein halber Eingriff
+    // die Diskette nicht in einem Zwischenzustand hinterlaesst (§12, E6).
+    const DiskMedium sicherung = disk_->medium();
+    FileSystem& fs = *volumes_[static_cast<size_t>(f->volume)].fs;
+    const FsRecoverFind kopie = *f;      // der Suchlauf danach macht `f` ungueltig
+    if (!fs.recoverRestore(kopie, name)) {
+        const std::string grund = fs.lastError();
+        disk_->medium().restoreFrom(sicherung);
+        return fail(grund + " — die Diskette wurde nicht veraendert.");
+    }
+
+    // Neu suchen UND neu pruefen: der Fund ist jetzt eine Datei.
+    recoverScan(recover_.level, recover_nachladen_);
+    check(check_.level, check_nachladen_);
+    return true;
+}
+
 std::unique_ptr<DiskVolume> DiskVolume::open(const std::string& path,
                                              const std::string& fs_name,
                                              const FormatCatalog& formats,

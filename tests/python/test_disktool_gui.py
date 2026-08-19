@@ -2317,3 +2317,106 @@ def test_der_pruefdialog_geht_auch_ohne_dateisystem(window, fixture_disks, tmp_p
     eintraege = [dlg.baum.topLevelItem(i) for i in range(dlg.baum.topLevelItemCount())]
     assert all(not (e.flags() & Qt.ItemIsUserCheckable) for e in eintraege)
     assert not dlg.b_reparieren.isEnabled(), "hier gibt es nichts zu reparieren"
+
+
+# ═══ Gelöschte Dateien suchen (Entwurf §13, Etappe 5) ════════════════════════
+
+
+def _mit_geloeschter_datei(quelle, ziel, name="PIP.COM"):
+    """Eine Diskette, auf der genau eine Datei gelöscht ist — der Regelfall."""
+    import shutil
+    from app.core_binding.k1520disk import DiskTool
+
+    shutil.copy(quelle, ziel)
+    with DiskTool.open(ziel) as d:
+        d.set_read_only(False)
+        d.set_backup(False)
+        d.erase(name)
+        d.flush()
+    return ziel
+
+
+def test_retten_geht_auch_an_einer_schreibgeschuetzten_diskette(window, fixture_disks,
+                                                                tmp_path, monkeypatch):
+    """Die Kernzusage des Dialogs (E7): retten geht vor wiederherstellen.
+
+    Der häufigste Fall ist „einmal alles retten, was noch da ist, dann die
+    Diskette in Ruhe lassen" — und der muss ohne jedes Schreibrecht durchlaufen.
+    """
+    from PySide6.QtWidgets import QFileDialog
+    from app.disktool.ui.recover_dialog import RecoverDialog
+
+    abbild = _mit_geloeschter_datei(
+        fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "rec_ro.img")
+    assert window.open_image(abbild)
+    assert window.tool.read_only, "geöffnet wird schreibgeschützt"
+
+    dlg = RecoverDialog(window.tool, window, zielordner=str(tmp_path), log=window.log)
+    assert dlg.bericht.finds, "die gelöschte Datei steht noch da"
+    fund = dlg.bericht.finds[0]
+    assert fund.name == "PIP.COM"
+    assert fund.quality == 2, fund.detail          # sicher
+    assert fund.restorable
+
+    assert dlg.b_retten.isEnabled(), "retten geht immer"
+    assert not dlg.b_zurueck.isEnabled(), "eintragen nicht — schreibgeschützt"
+    assert "schreibgeschützt" in dlg.hinweis.text()
+
+    ziel = tmp_path / "gerettet.bin"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName",
+                        staticmethod(lambda *a, **k: (str(ziel), "")))
+    dlg._retten()
+    assert ziel.exists() and ziel.stat().st_size == fund.size
+    # Ein sicherer Fund kommt ohne Beiblatt — das gibt es nur mit Vorbehalt.
+    assert not (tmp_path / "gerettet.bin.rettung.txt").exists()
+    assert "gerettet" in window.protokoll.toPlainText()
+
+
+def test_der_ganze_kreislauf_suchen_wiederherstellen_verzeichnis(window, fixture_disks,
+                                                                 tmp_path, monkeypatch):
+    """Suchen, eintragen, und danach steht die Datei wieder im Verzeichnis."""
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+    from app.disktool.ui.recover_dialog import RecoverDialog
+
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(QInputDialog, "getText",
+                        staticmethod(lambda *a, **k: ("ALT.COM", True)))
+
+    abbild = _mit_geloeschter_datei(
+        fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "rec_zurueck.img")
+    assert window.open_image(abbild)
+    window.act_schreibschutz.setChecked(False)     # der Weg des Bedieners
+
+    dlg = RecoverDialog(window.tool, window, zielordner=str(tmp_path), log=window.log)
+    assert dlg.b_zurueck.isEnabled()
+    dlg._wiederherstellen()
+
+    assert dlg.wiederhergestellt == 1
+    assert not dlg.bericht.finds, "der Fund ist verbraucht — er ist jetzt eine Datei"
+    assert any(e.name == "ALT.COM" for e in window.tool.list())
+    assert "wiederhergestellt" in window.protokoll.toPlainText()
+    # Und die Diskette ist danach heil: kein doppelt beanspruchter Block.
+    assert not window.tool.check(voll=True).findings
+
+
+def test_die_suche_laeuft_nicht_von_selbst_und_braucht_ein_dateisystem(window,
+                                                                       fixture_disks,
+                                                                       tmp_path):
+    """Zwei Festlegungen auf einmal.
+
+    Die Suche kostet und beantwortet eine Frage, die niemand gestellt hat — sie
+    läuft deshalb nicht beim Öffnen.  Und sie braucht ein Dateisystem: ohne eines
+    gibt es kein Verzeichnis mit gelöschten Plätzen.
+    """
+    abbild = _mit_geloeschter_datei(
+        fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "rec_leer.img")
+    assert window.open_image(abbild)
+    assert not window.tool.recover_finds().finds, "beim Öffnen wird nicht gesucht"
+    assert window.act_wiederherstellen.isEnabled()
+
+    roh = _ohne_erkennbares_dateisystem(
+        fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "rec_roh.img")
+    assert window.open_image(roh)
+    assert not window.tool.has_filesystem
+    assert not window.act_wiederherstellen.isEnabled(), \
+        "ohne Dateisystem gibt es keine gelöschten Verzeichnisplätze"

@@ -397,6 +397,45 @@ _lib.k1520d_repair_blocked_why.restype = _CS
 _lib.k1520d_apply_repairs.argtypes = [_H, ctypes.POINTER(ctypes.c_int),
                                       ctypes.POINTER(ctypes.c_int), ctypes.c_int]
 _lib.k1520d_apply_repairs.restype = ctypes.c_int
+_lib.k1520d_recover_scan.argtypes = [_H, ctypes.c_int, ctypes.c_bool]
+_lib.k1520d_recover_scan.restype = ctypes.c_int
+_lib.k1520d_recover_complete.argtypes = [_H]
+_lib.k1520d_recover_complete.restype = ctypes.c_bool
+_lib.k1520d_recover_count.argtypes = [_H]
+_lib.k1520d_recover_count.restype = ctypes.c_int
+_lib.k1520d_recover_name.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_name.restype = _CS
+_lib.k1520d_recover_type.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_type.restype = _CS
+_lib.k1520d_recover_origin.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_origin.restype = _CS
+_lib.k1520d_recover_suggestion.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_suggestion.restype = _CS
+_lib.k1520d_recover_volume.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_volume.restype = ctypes.c_int
+_lib.k1520d_recover_size.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_size.restype = ctypes.c_uint64
+_lib.k1520d_recover_quality.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_quality.restype = ctypes.c_int
+_lib.k1520d_recover_detail.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_detail.restype = _CS
+_lib.k1520d_recover_restorable.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_restorable.restype = ctypes.c_bool
+_lib.k1520d_recover_blocked_why.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_blocked_why.restype = _CS
+_lib.k1520d_recover_cyl.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_cyl.restype = ctypes.c_int
+_lib.k1520d_recover_head.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_head.restype = ctypes.c_int
+_lib.k1520d_recover_sector.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_sector.restype = ctypes.c_int
+_lib.k1520d_recover_preview.argtypes = [_H, ctypes.c_int,
+                                        ctypes.POINTER(ctypes.c_uint8), ctypes.c_int]
+_lib.k1520d_recover_preview.restype = ctypes.c_int
+_lib.k1520d_recover_extract.argtypes = [_H, ctypes.c_int, _CS]
+_lib.k1520d_recover_extract.restype = ctypes.c_bool
+_lib.k1520d_recover_restore.argtypes = [_H, ctypes.c_int, _CS]
+_lib.k1520d_recover_restore.restype = ctypes.c_bool
 
 
 def _s(raw) -> str:
@@ -643,6 +682,67 @@ class CheckReport:
     def ab(self, schwere: int) -> tuple:
         """Alle Befunde mindestens dieser Schwere."""
         return tuple(f for f in self.findings if f.severity >= schwere)
+
+
+#: Güte eines Fundes — die Zahlen sind ein Vertrag mit der C-ABI.
+BRUCHSTUECK, WAHRSCHEINLICH, SICHER = 0, 1, 2
+#: Suchtiefe: nur die Verzeichnisreste (billig) oder die ganze Oberfläche.
+SUCHE_VERZEICHNIS, SUCHE_OBERFLAECHE = 0, 1
+
+GUETE_NAME = {SICHER: "sicher", WAHRSCHEINLICH: "wahrscheinlich",
+              BRUCHSTUECK: "Bruchstück"}
+
+
+@dataclass(frozen=True)
+class RecoverFind:
+    """Ein Fund der Wiederherstellung — eine gelöschte Datei oder ein Rohbereich.
+
+    ``restorable`` ist nicht dasselbe wie „rettbar": **herausholen** lässt sich
+    jeder Fund, auch an einer schreibgeschützten Diskette (E7).  Auf der Diskette
+    wieder **eintragen** lässt sich nur, was keiner lebenden Datei ins Gehege
+    kommt — sonst entstünde genau die Kreuzbelegung, die die Prüfung als Gefahr
+    meldet.  ``blocked_why`` nennt den Grund.
+    """
+
+    name: str          # "" = kein Name überliefert (Rohbereich, UDOS)
+    type: str          # Dateityp bzw. Einordnung des Inhalts
+    origin: str
+    suggestion: str    # Vorschlag für den Linux-Dateinamen — nie leer
+    volume: int
+    size: int
+    quality: int
+    detail: str = ""
+    restorable: bool = False
+    blocked_why: str = ""
+    cyl: int = -1
+    head: int = -1
+    sector: int = -1
+
+    @property
+    def guete(self) -> str:
+        return GUETE_NAME.get(self.quality, "?")
+
+    @property
+    def ortbar(self) -> bool:
+        """Lässt sich der Fund im Diskeditor zeigen?"""
+        return self.cyl >= 0 and self.head >= 0
+
+
+@dataclass(frozen=True)
+class RecoverReport:
+    """Das Ergebnis eines Suchlaufs."""
+
+    finds: tuple = ()
+    #: ``False`` = an einer physischen Diskette waren Spuren noch nicht gelesen;
+    #: „nichts gefunden" heißt dann nur „bislang nichts gefunden".
+    complete: bool = True
+
+    def __bool__(self) -> bool:
+        return bool(self.finds)
+
+    def ab(self, guete: int) -> tuple:
+        """Alle Funde mindestens dieser Güte."""
+        return tuple(f for f in self.finds if f.quality >= guete)
 
 
 @dataclass(frozen=True)
@@ -1153,6 +1253,72 @@ class DiskTool:
         if getan < 0:
             raise K1520DiskError(self._fail())
         return getan
+
+    # ── Wiederherstellung gelöschter Dateien (Entwurf §13) ──────────────────
+    #
+    # Anders als die Prüfung läuft die Suche **nicht** von selbst beim Öffnen: sie
+    # kostet, und sie beantwortet eine Frage, die niemand gestellt hat.
+
+    def recover_scan(self, *, voll: bool = False,
+                     nachladen: bool = True) -> "RecoverReport":
+        """Nach gelöschten Dateien suchen.  **Ändert die Diskette nicht.**
+
+        ``voll=True`` sieht zusätzlich jeden freien Bereich der Diskette an — das
+        findet die Bruchstücke ohne Verzeichnisplatz und kostet die ganze Scheibe.
+        """
+        _lib.k1520d_recover_scan(self._h, 1 if voll else 0, nachladen)
+        return self.recover_finds()
+
+    def recover_finds(self) -> "RecoverReport":
+        """Das Ergebnis des letzten Suchlaufs (leer, solange keiner lief)."""
+        return RecoverReport(
+            finds=tuple(self._find(i)
+                        for i in range(int(_lib.k1520d_recover_count(self._h)))),
+            complete=bool(_lib.k1520d_recover_complete(self._h)),
+        )
+
+    def _find(self, i: int) -> "RecoverFind":
+        return RecoverFind(
+            name=_s(_lib.k1520d_recover_name(self._h, i)),
+            type=_s(_lib.k1520d_recover_type(self._h, i)),
+            origin=_s(_lib.k1520d_recover_origin(self._h, i)),
+            suggestion=_s(_lib.k1520d_recover_suggestion(self._h, i)),
+            volume=int(_lib.k1520d_recover_volume(self._h, i)),
+            size=int(_lib.k1520d_recover_size(self._h, i)),
+            quality=int(_lib.k1520d_recover_quality(self._h, i)),
+            detail=_s(_lib.k1520d_recover_detail(self._h, i)),
+            restorable=bool(_lib.k1520d_recover_restorable(self._h, i)),
+            blocked_why=_s(_lib.k1520d_recover_blocked_why(self._h, i)),
+            cyl=int(_lib.k1520d_recover_cyl(self._h, i)),
+            head=int(_lib.k1520d_recover_head(self._h, i)),
+            sector=int(_lib.k1520d_recover_sector(self._h, i)),
+        )
+
+    def recover_preview(self, i: int, n: int = 512) -> bytes:
+        """Die ersten ``n`` Byte des Fundes — für die Vorschau."""
+        puffer = (ctypes.c_uint8 * n)()
+        menge = int(_lib.k1520d_recover_preview(self._h, i, puffer, n))
+        if menge < 0:
+            raise K1520DiskError(self._fail())
+        return bytes(puffer[:menge])
+
+    def recover_extract(self, i: int, dest_path) -> None:
+        """Den Fund in eine Linux-Datei retten — geht auch schreibgeschützt (E7).
+
+        Bei einer Güte unter *sicher* entsteht daneben ein Beiblatt
+        ``<datei>.rettung.txt``, das die Vorbehalte im Klartext nennt.
+        """
+        if not _lib.k1520d_recover_extract(self._h, i, _b(str(dest_path))):
+            raise K1520DiskError(self._fail())
+
+    def recover_restore(self, i: int, name: str = "") -> None:
+        """Den Fund **auf der Diskette** wieder eintragen.  Verlangt Schreibrecht.
+
+        ``name`` leer = der überlieferte Name.  Danach wird neu gesucht und neu
+        geprüft; alle bisherigen Indizes sind hinfällig.
+        """
+        if not _lib.k1520d_recover_restore(self._h, i, _b(name)):
+            raise K1520DiskError(self._fail())
 
     # ── Übertragung ─────────────────────────────────────────────────────────
 

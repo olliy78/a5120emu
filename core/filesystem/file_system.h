@@ -17,6 +17,7 @@
 
 #pragma once
 #include "core/filesystem/check/fs_check.h"
+#include "core/filesystem/check/fs_recover.h"
 
 #include <cstdint>
 #include <string>
@@ -337,6 +338,52 @@ public:
      */
     virtual bool repair(const FsRepair& r) {
         return fail("Dieses Dateisystem kennt keine Reparatur '" + r.kind + "'");
+    }
+
+    // ─── Wiederherstellung (doc/design/15_dateisystempruefung.md §13) ────────
+    //
+    // Keines der drei Dateisysteme ueberschreibt beim Loeschen Nutzdaten — bei CP/M
+    // ueberleben Name und Blockliste, bei UDOS die ganze Struktur ausser dem Namen.
+    // Gesucht wird deshalb NICHT nach Schaeden, sondern nach dem, was noch dasteht.
+
+    /**
+     * @brief Nach geloeschten Dateien und Bruchstuecken suchen.  **Aendert nichts.**
+     *
+     * @param level     @c Verzeichnis = nur die Verwaltungsstrukturen (billig);
+     *                  @c Oberflaeche zusaetzlich jeder freie Bereich der Diskette.
+     * @param nachladen Darf eine unbekannte Spur beschafft werden?  Wie bei
+     *                  @ref check: mit @c false bleibt die Suche bei dem, was da
+     *                  ist, und setzt @ref FsRecoverReport::vollstaendig auf @c false.
+     */
+    virtual FsRecoverReport recoverScan(FsRecoverLevel level, bool nachladen) const {
+        (void)level; (void)nachladen;
+        return {};
+    }
+
+    /**
+     * @brief Den Inhalt eines Fundes lesen — fuer Vorschau und Rettung.
+     *
+     * Fehlende Teile werden mit dem Fuellbyte aufgefuellt, damit die Offsets der
+     * uebrigen stimmen (§13.3); was fehlt, steht in @ref FsRecoverFind::detail.
+     */
+    virtual bool recoverRead(const FsRecoverFind& f, std::vector<uint8_t>& out) const {
+        (void)f; (void)out;
+        return fail("Dieses Dateisystem kennt keine Wiederherstellung");
+    }
+
+    /**
+     * @brief Einen Fund **auf der Diskette** wieder eintragen.
+     *
+     * @param name  Zielname; leer = der ueberlieferte Name des Fundes.
+     *
+     * Die Vorbedingungen werden unmittelbar vor dem Schreiben noch einmal geprueft —
+     * zwischen Suchlauf und Entscheidung kann die Diskette beschrieben worden sein,
+     * und aus einem uebersehenen Konflikt wuerde genau die Kreuzbelegung, die die
+     * Pruefung als @c Gefahr meldet.
+     */
+    virtual bool recoverRestore(const FsRecoverFind& f, const std::string& name) {
+        (void)f; (void)name;
+        return fail("Dieses Dateisystem kennt keine Wiederherstellung");
     }
 
     const std::string& lastError() const { return last_error_; }

@@ -368,7 +368,43 @@ Was beim Weiterarbeiten zu wissen ist:
   Alle vier UDOS-Fixturen prüfen mit `--full` **ohne Befund** (Ketten, Kreuzbelegung,
   Karte↔Ketten, CRC, Nachspann).  Wächter: `FsCheckUdosSchaden.*` (8) und
   `FsCheckNdosSchaden.*` (5) mit gezielter Schadensinjektion.
-  Offen: Wiederherstellung gelöschter Dateien (Etappen 5 und 6 des Entwurfs).
+  Offen: Wiederherstellung gelöschter UDOS-/NDOS-Dateien (Etappe 6 des Entwurfs).
+- **Etappe 5: Wiederherstellung gelöschter CP/M-Dateien** (2026-08-19, Entwurf §13).
+  Modell `core/filesystem/check/fs_recover.{h,cpp}`, Suche `check/cpm_recover.cpp`,
+  Haken `FileSystem::recoverScan/recoverRead/recoverRestore`, Klammer
+  `DiskVolume::recoverScan/recoverRead/recoverExtract/recoverRestore`, C-ABI
+  `k1520d_recover_*`, CLI `recover [--full] [--to ordner] [--list]
+  [--restore N[=NAME]]`, Dialog `app/disktool/ui/recover_dialog.py`.  Sechs
+  Festlegungen:
+  **(1) Retten geht vor Wiederherstellen** (E7).  Der Vorgabeweg ist *in den
+  Linux-Ordner holen*, und er ist an einer schreibgeschützten Diskette voll
+  bedienbar — der übliche Fall ist „einmal alles retten, dann die Diskette in Ruhe
+  lassen".  `restorable` (auf der Diskette eintragen) ist etwas ANDERES als rettbar.
+  **(2) Die billige Suchtiefe fasst keine Datenspur an.**  `FsRecoverLevel::
+  Verzeichnis` liest nur den Verzeichnisbereich; auch die Prüfsummenkontrolle der
+  Fundblöcke läuft erst in der Oberflächensuche.  Ohne diese Sperre zöge eine
+  „billige" Suche an einer physischen Diskette die ganze Scheibe ein.
+  **(3) Bei CP/M überlebt der Name, aber NICHT der Nutzerbereich** — er stand in
+  ebendem Byte, das `0xE5` geworden ist.  Zusammengefasst wird deshalb über den
+  Namen allein, und eingetragen wird nach Bereich 0.
+  **(4) Vor dem Schreiben werden die Vorbedingungen NOCH EINMAL geprüft**: Platz
+  noch frei, Name noch derselbe, kein Block inzwischen an eine lebende Datei
+  vergeben, kein gleichnamiger Eintrag.  Sonst erzeugte die Rettung genau den
+  `cpm.block.doppelt`, den die Prüfung als **Gefahr** meldet.
+  **(5) Ein Block aus EINEM immer gleichen Byte ist Füllmuster, kein Inhalt** —
+  unabhängig davon, welches (FORMAT.COM füllt je nach Menüpunkt mit `0xE5`, `0xF6`
+  oder dem Prüfmuster `0x53`).  Ohne diese Regel meldet die Oberflächensuche die
+  halbe Diskette als „Bruchstück".
+  **(6) Zwei Abweichungen vom Entwurf**, beide bewusst: Rohbereiche heissen
+  `fragment_c12h0_b40-b47.bin` (Ort **und** Blockspanne — die Sektorspanne aus
+  §13.3 wäre falsch, sobald ein Lauf über eine Spurgrenze geht), und das Beiblatt
+  eines Fundes mit Vorbehalt liegt als `<datei>.rettung.txt` neben der geretteten
+  Datei.  `cpm.medium.frei_beschrieben` bleibt **unvergeben**: freie Blöcke mit
+  Inhalt sind kein Schaden, sondern ein Fund — sie stehen in der Suche, nicht im
+  Prüfbericht.
+  Wächter: `FsRecover*` (11, darunter „eine frisch angelegte Diskette hat nichts zu
+  retten" über ALLE CP/M-Katalogprofile), `cli_dt_recover_*` (3), drei
+  `py_disktool_gui`-Fälle.
 - **Etappe 7: Ebene 0 — „warum wurde denn nichts erkannt?"** (2026-08-19, Entwurf
   §11).  Jede Positivprobe der Erkennung nennt einen Grund; der verfiel bisher im
   `continue`, und der Anwender bekam EINEN Satz statt einer Diagnose.  Jetzt sammelt

@@ -1,0 +1,10 @@
+# Waechter gegen Falschmeldungen: eine Diskette, auf der nichts geloescht wurde,
+# hat nichts zu retten — auch bei der teuren Oberflaechensuche.  Ein Werkzeug,
+# das dort Funde erfindet, ist wertlos (Entwurf E10, sinngemaess).
+tool:   k1520disktool
+disk:   cpa_cpa780_k5601_noclock.img
+run:    recover %DISK% --full
+expect: Oberflaechensuche
+expect: nichts zu retten
+forbid: fragment_
+exit:   0

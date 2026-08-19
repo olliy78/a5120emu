@@ -388,6 +388,45 @@ public:
      */
     int applyRepairs(const std::vector<std::pair<int, int>>& auswahl);
 
+    // ─── Wiederherstellung (§13) ─────────────────────────────────────────────
+
+    /// @brief Der letzte Suchlauf.  Leer, solange keiner lief — anders als die
+    ///        Pruefung laeuft die Suche **nicht** von selbst: sie kostet, und sie
+    ///        beantwortet eine Frage, die niemand gestellt hat.
+    const FsRecoverReport& recoverReport() const { return recover_; }
+
+    /**
+     * @brief Nach geloeschten Dateien suchen.  **Aendert die Diskette nicht** (E7).
+     *
+     * @param level      @c Verzeichnis = nur die Verwaltungsstrukturen (billig),
+     *                   @c Oberflaeche zusaetzlich jeder freie Bereich.
+     * @param nachladen  Darf eine unbekannte Spur beschafft werden?
+     */
+    const FsRecoverReport& recoverScan(FsRecoverLevel level, bool nachladen);
+
+    /// @brief Den Inhalt eines Fundes lesen (Vorschau, Rettung).
+    bool recoverRead(int fund, std::vector<uint8_t>& out) const;
+
+    /**
+     * @brief Einen Fund **in den Linux-Ordner** retten — immer moeglich, auch an
+     *        einer schreibgeschuetzten Diskette (E7).
+     *
+     * Ist der Fund kein sicherer, entsteht neben der Datei ein **Beiblatt**
+     * `<datei>.rettung.txt`: es nennt Herkunft, Guete und die Vorbehalte im
+     * Klartext.  Ohne das waere eine mit Fuellbytes geflickte Datei von einer
+     * heilen nicht zu unterscheiden.
+     */
+    bool recoverExtract(int fund, const std::string& dest_path);
+
+    /**
+     * @brief Einen Fund **auf der Diskette** wieder eintragen.  Verlangt Schreibrecht.
+     *
+     * @param name  Zielname; leer = der ueberlieferte.  Danach wird neu gesucht und
+     *              neu geprueft — der Fund ist jetzt eine Datei, und der Zettel von
+     *              vorhin beschriebe eine Diskette, die es nicht mehr gibt.
+     */
+    bool recoverRestore(int fund, const std::string& name);
+
     int  volumeCount() const { return static_cast<int>(volumes_.size()); }
     /// @brief Unterverzeichnisname: "" bei einem Volume, sonst "Side0"/"Side1".
     std::string volumeDir(int v) const;
@@ -638,6 +677,11 @@ private:
     DetectionResult    detection_;
     /// @brief Ergebnis der letzten Pruefung (beim Oeffnen: die Schnellpruefung).
     FsCheckReport      check_;
+    /// @brief Ergebnis des letzten Suchlaufs (@ref recoverScan); anfangs leer.
+    FsRecoverReport    recover_;
+    /// @brief Womit zuletzt gesucht wurde — @ref recoverRestore sucht danach mit
+    ///        denselben Bedingungen neu.
+    bool               recover_nachladen_ = false;
     /// @brief Wurde beim letzten @ref check nachgeladen?  @ref applyRepairs prueft
     ///        danach mit denselben Bedingungen nach — sonst verglichen sich zwei
     ///        Berichte ueber unterschiedlich viel Diskette.

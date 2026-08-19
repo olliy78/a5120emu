@@ -1,9 +1,10 @@
 # Dateisystemprüfung, Reparatur und Wiederherstellung (`fsck`)
 
-> **Stand:** 2026-08-19 · **Etappen 1–4 und 7 umgesetzt** (Modell, CP/M-, ZDOS- und
+> **Stand:** 2026-08-19 · **Etappen 1–5 und 7 umgesetzt** (Modell, CP/M-, ZDOS- und
 > NDOS-Prüfung, Automatik beim Öffnen, `check --full`, Anzeige; Reparatur in Kern,
 > C-ABI, CLI und Oberfläche samt Sprung in den Diskeditor; **Ebene 0** — warum wurde
-> nichts erkannt) — s. §19 (Etappenplan)
+> nichts erkannt; **Wiederherstellung gelöschter CP/M-Dateien** in Kern, C-ABI, CLI
+> und Oberfläche) — s. §19 (Etappenplan)
 > **Gehört zu:** `doc/design/13_k1520disktool.md` (das Werkzeug), `doc/udos_diskettenformat.md`,
 > `doc/udos1715_diskettenformat.md`, `doc/design/14_physische_diskette.md`,
 > `doc/design/09_floppy_drive.md`
@@ -29,27 +30,37 @@ Kürze. Die Begründungen dahinter stehen in den genannten Abschnitten.
 | CLI | `check [--full] [--json]` · `fsck [--full] [--repair[=alle\|sicher\|<kennung>,…]] [--dry-run] [--json]` |
 | Oberfläche | Statuszeile · Meldungsstreifen (mit Rangfolge) · Protokoll · Diskettenangaben inkl. Schaltfläche *Vollprüfung* · **Reparaturdialog** `ui/fsck_dialog.py` (Aktion `act_reparieren`, Strg+F) mit Sprung in den Diskeditor (`DiskEditorWindow.zeige_ort`) |
 | Ebene 0 | `DiskVolume::merkeAblehnung` sammelt (Kandidat, Grund), `DiskVolume::ebene0` macht Befunde daraus (`erkennung.abgelehnt`, `erkennung.ohne_kandidat`, Ebene `FsLayer::Erkennung`); `check`/`fsck` öffnen roh, das Protokoll der Oberfläche führt die Gründe auf, der Prüfdialog geht auch ohne Dateisystem (§11) |
-| Tests | `tests/unit/filesystem/test_fs_check.cpp` (47, davon 12 `FsCheckReparatur.*`) · `cli_dt_check_*` (6) · `cli_dt_fsck_*` (4) · `py_disk_c_api` · `py_disktool_gui` (13 Prüf-/Reparatur-/Ebene-0-Fälle) |
+| Rettung | `core/filesystem/check/fs_recover.{h,cpp}` (Modell) · `check/cpm_recover.cpp` (Suche, Lesen, Wiedereintragen) · `FileSystem::recoverScan/recoverRead/recoverRestore` · `DiskVolume::recoverScan/recoverRead/recoverExtract/recoverRestore` · `k1520d_recover_*` · `recover` in der CLI · `ui/recover_dialog.py` (*Diskette ▸ Gelöschte Dateien suchen…*) |
+| Tests | `tests/unit/filesystem/test_fs_check.cpp` (47, davon 12 `FsCheckReparatur.*`) · `test_fs_recover.cpp` (11) · `cli_dt_check_*` (6) · `cli_dt_fsck_*` (4) · `cli_dt_recover_*` (3) · `py_disk_c_api` · `py_disktool_gui` (16 Prüf-/Reparatur-/Ebene-0-/Rettungsfälle) |
 
-**Fehlt noch.** Etappen 1–4 und 7 sind abgeschlossen; offen sind **5 und 6** (§19).
-Jede ist für sich abschließbar — hier steht, wo man jeweils den Fuß hineinsetzt.
+**Fehlt noch.** Etappen 1–5 und 7 sind abgeschlossen; offen ist **6** (§19).
 
-**Etappe 5 — Wiederherstellung CP/M** (§13, das gesuchte Verfahren steht dort
-vollständig).  Der einfachste und häufigste Rettungsfall: Löschen setzt bei CP/M nur
-das Nutzerbyte auf `0xE5`, Name, `RC` und **alle Blockzeiger** bleiben stehen.
+**Etappe 5 — Wiederherstellung CP/M ist fertig** (2026-08-19).  Der Suchlauf findet
+zweierlei: gelöschte **Verzeichnisplätze** (Nutzerbyte `0xE5`, Rest unversehrt — Name,
+`RC` und alle Blockzeiger stehen noch da) und, nur in der Oberflächensuche, **freie
+Blöcke mit Inhalt** als Rohbereiche ohne Namen.  Fünf Dinge, die man wissen will:
 
-* Vorhanden: **`CpmFileSystem::directoryRaw(std::vector<uint8_t>&)`** (`cpm_fs.h`)
-  liefert die 32-Byte-Plätze unzerlegt — genau das, was ein gelöschter Platz braucht,
-  denn zerlegt ist er nicht mehr zu beurteilen. Dazu `allocationMap()`, `totalBlocks()`,
-  `directoryBlocks()` und `SectorSpace::readSector()` mit beiden CRC-Bits.
-* Neu: `check/fs_recover.{h,cpp}` (Modell + Rahmen), `check/cpm_recover.cpp`
-  (Kandidatensuche §13.1, Güte §13.2), C-ABI `k1520d_recover_*`, `recover` in der CLI,
-  `app/disktool/ui/recover_dialog.py`.
-* Der Befund **`cpm.medium.frei_beschrieben`** (§8-Tabelle) ist für die freien Blöcke
-  mit Inhalt reserviert und wird bis heute **nicht vergeben** — er gehört hierher, nicht
-  in die Prüfung: er ist kein Schaden, sondern ein Fund.
-* **Retten geht vor Reparieren** (E7): Vorgabe ist *in den Linux-Ordner holen*, und das
-  muss auch an einer schreibgeschützten Diskette vollständig bedienbar sein.
+* **Zwei Suchtiefen, und die billige fasst keine Datenspur an.**
+  `FsRecoverLevel::Verzeichnis` liest nur den Verzeichnisbereich — auch die
+  Prüfsummenkontrolle der Fundblöcke läuft erst in der Oberflächensuche, sonst zöge
+  eine „billige" Suche an einer physischen Diskette die ganze Scheibe ein.
+* **Verloren geht bei CP/M genau eines: der Nutzerbereich.**  Er stand in ebendem
+  Byte, das `0xE5` geworden ist; wiederhergestellt wird nach Bereich 0.
+* **Zusammengefasst wird über den NAMEN**, nicht über (Nutzer, Name) — der
+  Nutzerbereich ist ja fort.  Zwei nacheinander gelöschte Dateien gleichen Namens
+  werden dadurch ein Fund; auseinanderhalten ließen sie sich ohnehin nicht.
+* **`restorable` ist nicht „rettbar".**  Herausholen lässt sich jeder Fund, auch
+  schreibgeschützt (E7).  Auf der Diskette eintragen nur, wenn kein Block inzwischen
+  einer lebenden Datei gehört und kein gleichnamiger Eintrag existiert — sonst
+  entstünde genau der `cpm.block.doppelt`, den die Prüfung als **Gefahr** meldet.
+  Nachgeprüft wird unmittelbar vor dem Schreiben noch einmal.
+* **Zwei Abweichungen von diesem Entwurf**, beide bewusst: Rohbereiche heißen
+  `fragment_c12h0_b40-b47.bin` (Ort **und** Blockspanne — die Sektorspanne aus §13.3
+  wäre falsch, sobald ein Lauf über eine Spurgrenze geht), und ein Fund mit Vorbehalt
+  bekommt sein Beiblatt als `<datei>.rettung.txt` **neben** der geretteten Datei.
+* Der Befund **`cpm.medium.frei_beschrieben`** (§8-Tabelle) bleibt **unvergeben**: die
+  freien Blöcke mit Inhalt sind kein Schaden, sondern ein Fund — sie erscheinen in der
+  Suche, nicht in der Prüfung.
 
 **Etappe 6 — Wiederherstellung UDOS/NDOS** (§13.1, Signatur des Kopfsektors).  Setzt
 Etappe 5 (Modell und Dialog) voraus.  Als einziger Lesezugang fehlt noch
@@ -796,7 +807,12 @@ Bibliothek, kein Rückruf in die Anwendung.
 > `k1520d_check_progress` (es gibt noch keinen Aufruf, der lange genug läuft, um
 > Fortschritt zu brauchen: die Vollprüfung ist an einer Datei ein Wimpernschlag, und
 > an einer physischen Diskette ist sie noch gesperrt).  `k1520d_repair_*` und
-> `k1520d_recover_*` gibt es noch nicht.  Zwei Zusätze gegenüber dem Entwurf:
+> `k1520d_recover_*` steht seit Etappe 5 — mit drei Zusätzen gegenüber der Liste
+> unten: ein zweites Argument `nachladen` an `k1520d_recover_scan` (wie bei
+> `k1520d_check`), `k1520d_recover_suggestion` (der Namensvorschlag für einen
+> namenlosen Fund) und `k1520d_recover_restorable`/`_blocked_why` (ob sich der Fund
+> **auf der Diskette** eintragen lässt — herausholen geht immer).  Zwei Zusätze
+> gegenüber dem Entwurf:
 > `k1520d_check` nimmt ein drittes Argument `nachladen`, und
 > `k1520d_check_tracks_read`/`_total` liefern die Spurzähler.
 
@@ -864,8 +880,10 @@ k1520disktool recover <abbild> [--full] [--to <ordner>] [--list]
                                [--restore <nr>[=NAME]] [--json]
 ```
 
-**Umgesetzt ist bisher `check [--full] [--json]`**; `fsck` und `recover` kommen mit
-den Etappen 3 bzw. 5/6.
+**Umgesetzt sind `check`, `fsck` und `recover`** (Etappen 2, 3 und 5); bei `recover`
+fehlt allein die UDOS-Seite (Etappe 6).  `recover` liefert **0**, solange der Lauf
+in Ordnung war — auch ohne Fund: eine Diskette ohne gelöschte Dateien ist kein
+Fehler.
 
 * `check` bleibt, was es ist, und bekommt `--full`. Der Bericht wird zeilenweise und
   greptauglich: `SCHWERE  EBENE  VOLUME  ORT  KENNUNG  Text`.
@@ -1111,7 +1129,7 @@ Alles bleibt in der schnellen Regression; nichts davon braucht ein Laufwerk oder
 | **2** ✅ | ZDOS und NDOS: Ebene Verwaltung und Ebene Dateien, Kreuzbelegung, Abgleich Karte ↔ Ketten, Zählerabgleich (aus `info()` hierher verlagert), Begrenzung gleichartiger Befunde | **Umgesetzt 2026-08-19.**  Der Gefahrfall (`frei_aber_belegt`) wird erkannt — der wichtigste Befund überhaupt.  Alle vier UDOS-Fixturen (ZDOS beidseitig, fremde Sync-Sitte, PC 1715, P8000) prüfen ohne Befund. |
 | **3** ✅ | `FileSystem::repair()`, Transaktion + Rangfolge, Reparaturdialog, `fsck --repair` | **Umgesetzt 2026-08-19.**  Belegungsplan nachtragen und neu aufbauen, Zähler, Rückwärtszeiger, Kürzen, wilder Blockzeiger, Satzzahl — je Familie, mit E8-Sperre bei offenem Kettenfehler und Rücknahme der ganzen Momentaufnahme bei einem Fehlschlag.  Dialog `ui/fsck_dialog.py` (Strg+F) mit Vorauswahl nach E7, Einzelheiten und Doppelklick in den Diskeditor. |
 | **4** ✅ | Ebene Medium: CRC-Übersicht mit Rückabbildung auf Dateien, **Sprung in den Diskeditor** | Die Rückabbildung ist mit den Etappen 1+2 mitgekommen („Satz 14 von `STAT.COM` liegt auf einem Sektor mit falscher CRC", bei UDOS je Datei zusammengefasst).  Der **Sprung** kam 2026-08-19 mit dem Reparaturdialog: Doppelklick auf einen Befund → `MainWindow._befund_im_editor` → `DiskEditorWindow.zeige_ort(cyl, head, sector)`. |
-| **5** | Wiederherstellung CP/M (Verzeichnisplätze + freie Blöcke) mit Dialog und `recover` | Der häufigste und einfachste Rettungsfall. |
+| **5** ✅ | Wiederherstellung CP/M (Verzeichnisplätze + freie Blöcke) mit Dialog und `recover` | **Umgesetzt 2026-08-19.**  Modell `fs_recover.h`, `check/cpm_recover.cpp` (Kandidatensuche, Güte mit Belegen, Lesen mit Auffüllen, Wiedereintragen mit erneuter Vorbedingungsprüfung), C-ABI `k1520d_recover_*`, `recover [--full] [--to] [--list] [--restore N[=NAME]]`, Dialog `ui/recover_dialog.py` (*Diskette ▸ Gelöschte Dateien suchen…*) mit Hexdump-/Textvorschau und den drei Wegen aus §13.3.  Wächter: 11 `FsRecover*`, 3 `cli_dt_recover_*`, 3 GUI-Fälle. |
 | **6** | Wiederherstellung UDOS/NDOS (Kopfsektorsuche, Kettenverfolgung, Beiblatt) | Der wertvollste — dreißig Jahre alte gelöschte Dateien mit vollständigen Angaben. |
 | **7** ◐ | Ebene 0 (Ablehnungsgründe der Erkennung) und die Gegenprobe der Alternativprofile | **Ebene 0 umgesetzt 2026-08-19.**  Aus „nichts erkannt" ist eine Diagnose geworden: `erkennung.abgelehnt` je Kandidat, eigene Ebene `FsLayer::Erkennung`, roh öffnendes `check`/`fsck`, Protokoll und Prüfdialog der Oberfläche.  Die **Gegenprobe** bleibt offen (§20). |
 

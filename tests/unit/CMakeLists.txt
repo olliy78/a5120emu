@@ -83,3 +83,7 @@ k1520_add_test(disk_volume   SRC filesystem/test_disk_volume.cpp
 k1520_add_test(fs_check      SRC filesystem/test_fs_check.cpp
                              LIBS k1520_fs LABELS "${_lbl}"
                              DEFS K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")
+# Wiederherstellung geloeschter Dateien (§13) — Etappe 5: CP/M.
+k1520_add_test(fs_recover    SRC filesystem/test_fs_recover.cpp
+                             LIBS k1520_fs LABELS "${_lbl}"
+                             DEFS K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")

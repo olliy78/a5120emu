@@ -149,7 +149,9 @@ if(BUILD_K1520)
         core/filesystem/udos/udos1715_fs.cpp
         core/filesystem/disk_volume.cpp
         core/filesystem/check/fs_check.cpp
+        core/filesystem/check/fs_recover.cpp
         core/filesystem/check/cpm_check.cpp
+        core/filesystem/check/cpm_recover.cpp
         core/filesystem/check/udos_check.cpp
         core/filesystem/check/udos1715_check.cpp
     )

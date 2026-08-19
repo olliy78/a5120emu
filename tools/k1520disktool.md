@@ -25,6 +25,8 @@ k1520disktool info   <abbild>                          Belegung und Erkennung
 k1520disktool check  <abbild> [--full]                 Dateisystem prüfen
 k1520disktool fsck   <abbild> [--full] [--repair[=…]]  prüfen UND reparieren
        [--dry-run]                                     … nur sagen, was geschähe
+k1520disktool recover <abbild> [--full] [--to ordner] gelöschte Dateien suchen
+       [--list] [--restore N[=NAME]]                    … und retten bzw. eintragen
 k1520disktool formats                                  bekannte Dateisysteme
 ```
 
@@ -201,6 +203,62 @@ baut das Werkzeug nur neu auf, wenn alle Ketten vollständig gelesen und fehlerf
 sind; aus halbem Wissen entstünde sonst ein Plan, der die ungelesene Hälfte für frei
 erklärt.  Die Sicherung `<name>~` legt das Werkzeug beim ersten Schreiben von allein
 an (`--no-backup` schaltet sie ab).
+
+## Gelöschte Dateien suchen (`recover`)
+
+**CP/M löscht mit einem einzigen Byte.**  Das Nutzerbyte des Verzeichnisplatzes wird
+`0xE5` — Name, Typ, Satzzahl und alle Blockzeiger bleiben stehen, die Daten selbst
+sind unberührt.  Eine gelöschte Datei ist damit vollständig beschrieben; sie wird nur
+nicht mehr gefunden.
+
+```sh
+$ k1520disktool recover disk.img
+disk.img  cpa780  Verzeichnissuche
+
+  0  sicher         PIP.COM                   7424  Verzeichnisplatz 15
+
+1 sicher
+```
+
+`--full` sucht zusätzlich über jeden **freien Bereich** der Diskette und findet damit
+die Bruchstücke ohne Verzeichnisplatz (Verzeichnis neu aufgesetzt, Diskette halb neu
+beschrieben).  Sie heissen `fragment_c12h0_b40-b47.bin` und tragen eine Einordnung
+nach Inhalt (*Text*, *Programm*, *unklar*).
+
+Die **Güte** ist keine Schätzung, sondern eine Aussage mit Belegen — was sie
+einschränkt, steht in derselben Zeile:
+
+| Güte | heisst |
+|---|---|
+| `sicher` | kein Block des Fundes gehört einer lebenden Datei |
+| `wahrscheinlich` | vollständig, aber mit Vorbehalt (falsche Prüfsumme, zweiter Anspruch) |
+| `Bruchstueck` | ein Teil ist neu vergeben oder die Struktur bricht ab |
+
+Zwei Wege stehen offen, und sie sind absichtlich verschieden schwer zu gehen:
+
+```sh
+$ k1520disktool recover disk.img --to gerettet     # herausholen — ändert NICHTS
+$ k1520disktool recover disk.img --restore 0=ALT.COM   # auf der Diskette eintragen
+```
+
+**`--to` geht immer**, auch an einer schreibgeschützt geöffneten Diskette: das
+Werkzeug öffnet ohne `--restore` gar nicht erst schreibend.  Fehlende Bereiche werden
+mit Füllbytes aufgefüllt, damit die Offsets der übrigen stimmen; daneben entsteht dann
+ein Beiblatt `<datei>.rettung.txt`, das genau das festhält.
+
+**`--restore N[=NAME]`** trägt den Fund wieder ins Verzeichnis ein.  Es geht nur, wenn
+kein Block des Fundes inzwischen einer lebenden Datei gehört und kein gleichnamiger
+Eintrag dasteht — sonst entstünde genau die Kreuzbelegung, die `check` als **Gefahr**
+meldet; nachgeprüft wird unmittelbar vor dem Schreiben noch einmal.  Der ursprüngliche
+**Nutzerbereich** ist nicht zu retten: er stand in ebendem Byte, das beim Löschen
+überschrieben wurde — eingetragen wird nach Bereich 0.
+
+Exit-Code `0`, solange der Lauf in Ordnung war — auch ohne Fund: eine Diskette ohne
+gelöschte Dateien ist kein Fehler.  `--json` liefert dieselbe Liste maschinenlesbar.
+
+> **Nur CP/M** (CP/A, SCPX, SCP1700).  Bei UDOS/ZDOS und NDOS überlebt das Löschen
+> sogar die ganze Struktur — nur der Name nicht; die Kopfsektorsuche dafür kommt mit
+> Etappe 6 (`doc/design/15_dateisystempruefung.md` §13.1).
 
 ## Bootfähige Diskette anlegen
 

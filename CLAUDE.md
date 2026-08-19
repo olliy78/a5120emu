@@ -443,6 +443,14 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 >   (Rückgabewert 2), die Oberfläche schreibt sie ins Protokoll, der Prüfdialog geht
 >   auch ohne Dateisystem auf. Auf einer ERKANNTEN Diskette darf `erkennung.*` nie
 >   vorkommen (Wächter `…EineErkannteDisketteHatKeineBefundeDerEbene0`).
+> - **Retten geht vor Wiederherstellen** (`recover`, `core/filesystem/check/cpm_recover.cpp`,
+>   `app/disktool/ui/recover_dialog.py`): der Suchlauf ändert nichts, *in den Ordner
+>   holen* geht auch schreibgeschützt, und **auf der Diskette eintragen** nur, wenn kein
+>   Block inzwischen einer lebenden Datei gehört (sonst entstünde der `cpm.block.doppelt`,
+>   den die Prüfung als Gefahr meldet) — nachgeprüft unmittelbar vor dem Schreiben. Die
+>   **billige Suchtiefe fasst keine Datenspur an** (auch nicht für die Prüfsummen), sonst
+>   zöge sie an einer physischen Diskette die ganze Scheibe ein. Bei CP/M überlebt der
+>   Name, **nicht der Nutzerbereich** — er stand in ebendem Byte, das 0xE5 wurde.
 
 ## Physische Diskette am Greaseweazle (`core/peripherals/floppy_drive/track_sync.*`, `app/gw/`)
 

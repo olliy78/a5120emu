@@ -1,0 +1,15 @@
+# Der zweite Weg: den Fund AUF DER DISKETTE wieder eintragen — und zwar unter
+# einem anderen Namen, was der haeufigste Fall nach einem versehentlichen `ERA`
+# ist (die Datei wurde inzwischen neu angelegt, der alte Stand soll daneben).
+#
+# Danach steht sie im Verzeichnis, und die Pruefung schweigt: kein Doppelblock,
+# kein Loch.  Genau das ist die Vorbedingung, die `recoverRestore` unmittelbar
+# vor dem Schreiben noch einmal nachprueft.
+tool:   k1520disktool
+disk:   cpa_cpa780_k5601_noclock.img
+setup_run: rm %DISK% PIP.COM --no-backup
+setup_run: recover %DISK% --restore 0=ALT.COM --no-backup
+run:    check %DISK% --full
+expect: ohne Befund
+forbid: cpm.block.doppelt
+exit:   0

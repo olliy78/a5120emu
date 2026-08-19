@@ -1,0 +1,23 @@
+# Der Kern der Wiederherstellung: was geloescht wurde, steht noch da.
+#
+# CP/M loescht mit EINEM Byte — das Nutzerbyte des Verzeichnisplatzes wird 0xE5,
+# Name, Satzzahl und alle Blockzeiger bleiben stehen.  Drei Aussagen:
+#   * der Fund traegt seinen NAMEN und seine Groesse (7424 B, wie vorher),
+#   * seine Guete ist `sicher` — kein Block gehoert einer lebenden Datei,
+#   * und `--to` holt ihn heraus, OHNE dass die Diskette dafuer beschreibbar sein
+#     muesste (Entwurf E7: retten geht vor wiederherstellen).
+tool:   k1520disktool
+disk:   cpa_cpa780_k5601_noclock.img
+setup_run: rm %DISK% PIP.COM --no-backup
+run:    recover %DISK% --to gerettet
+expect: Verzeichnissuche
+expect: PIP.COM
+expect: 7424
+expect: sicher
+expect: Verzeichnisplatz
+expect: gerettet: 
+expect: 1 Fund(e)
+exit:   0
+
+# Eine unberuehrte Diskette hat nichts zu melden — auch das ist ein Waechter:
+# wer hier etwas findet, findet Fuellbytes und bietet dem Anwender Muell an.
