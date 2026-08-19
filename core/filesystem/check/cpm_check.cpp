@@ -217,7 +217,7 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
                             + "h" + std::to_string(t.head) + " fehlt"
                             + (wem.empty() ? " (kein Block einer Datei)" : " — " + wem
                                + " liegt darauf"),
-                            t.cyl, t.head);
+                            t.cyl, t.head, id);
                     continue;
                 }
                 if (!sec.ok()) {
@@ -234,7 +234,7 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
                                                          + 1)
                                         + " von " + wem + " liegt darauf"
                                       : " (freier Bereich)"),
-                            t.cyl, t.head);
+                            t.cyl, t.head, id);
                 }
             }
         }
@@ -485,14 +485,14 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
                         std::string(ls.id_crc_ok ? "Daten-CRC" : "ID-CRC")
                         + " von Sektor " + std::to_string(ls.id) + " der Systemspur " + wo
                         + " stimmt nicht — die Diskette bootet moeglicherweise nicht",
-                        t.cyl, t.head);
+                        t.cyl, t.head, ls.id);
             }
             for (uint8_t k = 0; k < t.sectors; ++k)
                 if (!da[k])
                     b.addAt("cpm.medium.systemspur", FsSeverity::Warnung, FsLayer::Medium,
                             "Systemspur",
                             "Sektor " + std::to_string(t.first_id + k) + " der Systemspur "
-                            + wo + " fehlt", t.cyl, t.head);
+                            + wo + " fehlt", t.cyl, t.head, t.first_id + k);
         }
     }
 

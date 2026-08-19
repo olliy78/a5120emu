@@ -47,6 +47,13 @@ constexpr size_t kSector = 128;
 /// @brief Hoechstens so viele Befunde je Kennung — der Rest wird zusammengezogen.
 constexpr size_t kMaxJeKennung = 20;
 
+/// @brief Sektor 1 der Kartenspur — dort faengt die Belegungskarte an (§4).
+///
+/// Jeder Befund traegt seinen Ort so genau, wie er ihn kennt: der Sprung in den
+/// Diskeditor (E9) soll den Sektor aufschlagen, den der Befundtext NENNT, nicht nur
+/// die Spur.  Wo nur die Spur bekannt ist, bleibt der Sektor -1.
+constexpr int kKarteSektor = 1;
+
 std::string ort(UdosPointer p) {
     return "Spur " + std::to_string(p.track) + " Sektor " + std::to_string(p.sectorId());
 }
@@ -112,20 +119,20 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                 "Belegungskarte",
                 "Die Belegungskarte auf Spur " + std::to_string(prof_.bitmap_track)
                 + " ist nicht plausibel: " + warum,
-                prof_.bitmap_track, head_);
+                prof_.bitmap_track, head_, kKarteSektor);
 
     if (bitmap_.sectorsPerTrack() != spt)
         b.addAt("udos.karte.geometrie", FsSeverity::Fehler, FsLayer::Verwaltung,
                 "Belegungskarte",
                 "Die Karte nennt " + std::to_string(bitmap_.sectorsPerTrack())
                 + " Sektoren je Spur, gemessen sind " + std::to_string(spt),
-                prof_.bitmap_track, head_);
+                prof_.bitmap_track, head_, kKarteSektor);
     if (bitmap_.trackCount() > space_.trackCount())
         b.addAt("udos.karte.geometrie", FsSeverity::Fehler, FsLayer::Verwaltung,
                 "Belegungskarte",
                 "Die Karte nennt " + std::to_string(bitmap_.trackCount())
                 + " Spuren, die Seite hat " + std::to_string(space_.trackCount()),
-                prof_.bitmap_track, head_);
+                prof_.bitmap_track, head_, kKarteSektor);
 
     // §4.2: Der gespeicherte Freizaehler ist eine GEGENPROBE, nicht die Wahrheit —
     // massgeblich sind die Bits.  Der „belegt"-Zaehler bleibt aussen vor: ZDOS
@@ -137,7 +144,7 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                 "Belegungskarte",
                 "Der gespeicherte Freizaehler sagt " + std::to_string(bitmap_.storedFree())
                 + ", ausgezaehlt sind " + std::to_string(frei) + " Sektoren",
-                prof_.bitmap_track, head_);
+                prof_.bitmap_track, head_, kKarteSektor);
         // Der harmloseste Eingriff ueberhaupt: die Bits sind die Wahrheit, der
         // Zaehler nur ihre Gegenprobe (§4.2).
         f.repairs.push_back(FsRepair{"udos.karte.zaehler.neu",
@@ -161,7 +168,7 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
         b.addAt("udos.verz.kaputt", FsSeverity::Fehler, FsLayer::Verwaltung, "DIRECTORY",
                 "Der Kopfsektor der Verzeichnisdatei (" + ort(directoryHeader())
                 + ") ist nicht lesbar: " + lastError(),
-                prof_.directory_track, head_);
+                prof_.directory_track, head_, directoryHeader().sectorId());
         abschluss();
         bericht.sortieren();
         return bericht;
@@ -169,7 +176,7 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
     if ((dir_hdr.type_byte & 0x40) == 0)
         b.addAt("udos.verz.kaputt", FsSeverity::Fehler, FsLayer::Verwaltung, "DIRECTORY",
                 "Der Kopfsektor der Verzeichnisdatei weist sich nicht als Typ D aus",
-                prof_.directory_track, head_);
+                prof_.directory_track, head_, directoryHeader().sectorId());
 
     // Alle Sektoren, die das Dateisystem SELBST braucht — sie MUESSEN in der Karte
     // stehen.  Das ist der ableitbare Teil; die Systemspuren sind es nicht (s. o.).
@@ -182,12 +189,12 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
     if (!recordChain(dir_hdr, dir_kette))
         b.addAt("udos.verz.kette", FsSeverity::Fehler, FsLayer::Verwaltung, "DIRECTORY",
                 "Die Satzkette der Verzeichnisdatei bricht ab: " + lastError(),
-                prof_.directory_track, head_);
+                prof_.directory_track, head_, directoryHeader().sectorId());
     else if (dir_kette.size() != dir_hdr.record_count)
         b.addAt("udos.verz.kette", FsSeverity::Fehler, FsLayer::Verwaltung, "DIRECTORY",
                 "Die Verzeichnisdatei sagt " + std::to_string(dir_hdr.record_count)
                 + " Saetze an, die Kette hat " + std::to_string(dir_kette.size()),
-                prof_.directory_track, head_);
+                prof_.directory_track, head_, directoryHeader().sectorId());
 
     const uint32_t dir_je_satz = std::max<uint32_t>(1u, dir_hdr.record_len / kSector);
     for (const UdosPointer& satz : dir_kette)
@@ -204,7 +211,7 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                 "Spur " + std::to_string(t) + " Sektor " + std::to_string(i + 1)
                 + " traegt das Dateisystem selbst (Belegungskarte oder Verzeichnis),"
                   " steht aber als FREI — UDOS vergibt ihn beim naechsten Schreiben",
-                t, head_);
+                t, head_, i + 1);
         FsRepair rep{"udos.karte.system.sperren",
                      "Spur " + std::to_string(t) + " Sektor " + std::to_string(i + 1)
                      + " in der Belegungskarte als belegt nachtragen",
@@ -249,7 +256,7 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                     FsLayer::Dateien, e.name,
                     "Der Verzeichniseintrag zeigt auf " + ort(e.header)
                     + ", dort steht kein brauchbarer Kopfsektor: " + lastError(),
-                    e.header.track, head_);
+                    e.header.track, head_, e.header.sectorId());
             // Der Eintrag verweist ins Leere.  Herausschneiden macht das Verzeichnis
             // wieder stimmig; die Daten dahinter waren ohnehin nicht erreichbar und
             // bleiben fuer die Wiederherstellung liegen (§13).
@@ -268,7 +275,7 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                     FsLayer::Dateien, e.name,
                     "Der Rueckwaertszeiger des Kopfsektors nennt " + ort(hdr.directory_sector)
                     + ", der Eintrag steht aber in " + ort(e.record),
-                    e.header.track, head_);
+                    e.header.track, head_, e.header.sectorId());
             FsRepair rep{"udos.kopf.rueckzeiger.neu",
                          "Den Rueckwaertszeiger des Kopfsektors auf " + ort(e.record)
                          + " setzen", /*datenverlust*/false, /*empfohlen*/true};
@@ -286,16 +293,16 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                     "Die Segmentliste des Kopfsektors hat keinen Abschluss "
                     "(00 00 00 00) — sie fuellt alle "
                     + std::to_string(kUdosMaxSegments) + " Plaetze",
-                    e.header.track, head_);
+                    e.header.track, head_, e.header.sectorId());
         if (hdr.typeName().empty())
             b.addAt("udos.kopf.typ", FsSeverity::Warnung, FsLayer::Dateien, e.name,
                     "Das Typbyte des Kopfsektors hat kein Typbit gesetzt",
-                    e.header.track, head_);
+                    e.header.track, head_, e.header.sectorId());
         if (hdr.bytes_in_last > hdr.record_len)
             b.addAt("udos.kopf.letzter", FsSeverity::Warnung, FsLayer::Dateien, e.name,
                     "„Bytes im letzten Satz" " = " + std::to_string(hdr.bytes_in_last)
                     + " ist groesser als die Satzlaenge " + std::to_string(hdr.record_len),
-                    e.header.track, head_);
+                    e.header.track, head_, e.header.sectorId());
         // §14: Der Lader traegt LOW/HIGH in die Nukleusvariablen und laesst den
         // Speicher zuteilen.  Steht dort FFFF, weist UDOS die Datei beim Starten mit
         // MEMORY PROTECT VIOLATION ab — die Datei ist also lesbar, aber unbrauchbar.
@@ -304,11 +311,11 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                 b.addAt("udos.kopf.speicher", FsSeverity::Fehler, FsLayer::Dateien, e.name,
                         "Programmdatei ohne Speicherangabe (LOW/HIGH = FFFF) — UDOS"
                         " weist sie beim Starten mit MEMORY PROTECT VIOLATION ab",
-                        e.header.track, head_);
+                        e.header.track, head_, e.header.sectorId());
             else if (hdr.high_addr < hdr.low_addr)
                 b.addAt("udos.kopf.speicher", FsSeverity::Fehler, FsLayer::Dateien, e.name,
                         "HIGH ADDRESS liegt vor LOW ADDRESS",
-                        e.header.track, head_);
+                        e.header.track, head_, e.header.sectorId());
         }
 
         // ── Die Satzkette ────────────────────────────────────────────────────
@@ -329,7 +336,7 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                         "Satz " + std::to_string(saetze + 1) + " zeigt auf " + ort(p)
                         + " — das liegt ausserhalb der Diskette ("
                         + std::to_string(tracks_) + " Spuren à " + std::to_string(spt) + ")",
-                        e.header.track, head_);
+                        e.header.track, head_, e.header.sectorId());
                 abgebrochen = true;
                 break;
             }
@@ -337,7 +344,7 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                 b.addAt("udos.kette.zyklus", FsSeverity::Fehler, FsLayer::Dateien, e.name,
                         "Die Satzkette laeuft im Kreis — bei " + ort(p)
                         + " schliesst sich die Schleife (nach " + std::to_string(saetze)
-                        + " Saetzen)", p.track, head_);
+                        + " Saetzen)", p.track, head_, p.sectorId());
                 abgebrochen = true;
                 break;
             }
@@ -350,7 +357,7 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                         "Satz " + std::to_string(saetze + 1) + " beginnt bei " + ort(p)
                         + " und braucht " + std::to_string(je_satz)
                         + " Sektoren — das reicht ueber das Spurende hinaus",
-                        p.track, head_);
+                        p.track, head_, p.sectorId());
                 abgebrochen = true;
                 break;
             }
@@ -378,7 +385,7 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                     b.addAt("udos.kette.doppelt", FsSeverity::Gefahr, FsLayer::Dateien, e.name,
                             ort(q) + " gehoert sowohl zu '" + it->second + "' als auch zu '"
                             + e.name + "' — wer als zweiter schreibt, zerstoert die Daten"
-                              " des ersten", q.track, head_);
+                              " des ersten", q.track, head_, q.sectorId());
             }
 
             // Die Kette ist DOPPELT verkettet; der Rueckwaertszeiger ist damit
@@ -390,7 +397,7 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                         + " zeigt zurueck auf " + (back.end() ? std::string("das Kettenende")
                                                               : ort(back))
                         + ", davor liegt aber " + ort(vorher),
-                        p.track, head_);
+                        p.track, head_, p.sectorId());
                 // Die Kette ist doppelt verkettet — der Rueckwaertszeiger ist damit
                 // ableitbar.  Angefasst wird nur der Nachspann.
                 FsRepair rep{"udos.kette.rueckwaerts.neu",
@@ -412,7 +419,7 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                     FsLayer::Dateien, e.name,
                     "Der Kopfsektor sagt " + std::to_string(hdr.record_count)
                     + " Saetze an, die Kette hat " + std::to_string(saetze),
-                    e.header.track, head_);
+                    e.header.track, head_, e.header.sectorId());
             // Kuerzen macht die Datei wieder in sich stimmig — sie ist danach kuerzer.
             // Ohne einen einzigen erreichbaren Satz gibt es nichts zu kuerzen; dann
             // gehoert der Eintrag entfernt, und das schlaegt `eintrag_kaputt` vor.
@@ -432,13 +439,13 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                     std::to_string(crc_kaputt) + " Sektor(en) dieser Datei sind nicht"
                     " lesbar oder tragen eine falsche Pruefsumme, der erste bei "
                     + ort(erster_schaden),
-                    erster_schaden.track, head_);
+                    erster_schaden.track, head_, erster_schaden.sectorId());
         if (ohne_nachspann)
             b.addAt("udos.medium.nachspann", FsSeverity::Gefahr, FsLayer::Medium, e.name,
                     std::to_string(ohne_nachspann) + " Sektor(en) dieser Datei haben"
                     " keinen Sektorkontrollblock hinter der Daten-CRC — dort laesst sich"
                     " die Verkettung nicht ablegen",
-                    e.header.track, head_);
+                    e.header.track, head_, e.header.sectorId());
     }
 
     // ── Karte gegen Ketten ───────────────────────────────────────────────────
@@ -461,7 +468,7 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
                     + "' stehen in der Belegungskarte als FREI (der erste bei "
                     + ort(sektoren.front()) + ") — UDOS vergibt sie beim naechsten"
                       " Schreiben und zerstoert die Datei",
-                    sektoren.front().track, head_);
+                    sektoren.front().track, head_, sektoren.front().sectorId());
             // Nachtragen nimmt nur und gibt nie — der Eingriff kann unter keinen
             // Umstaenden Daten freigeben und ist deshalb auch bei unvollstaendigem
             // Wissen erlaubt (§9.3).

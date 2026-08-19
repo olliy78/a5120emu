@@ -684,9 +684,50 @@ TEST(FsCheckUdosSchaden, EinGeloeschtesKartenbitIstGefahr) {
     EXPECT_EQ(FsSeverity::Gefahr, r.hoechste());
     EXPECT_EQ(name, f[0].object) << "der Befund muss die betroffene Datei nennen";
     EXPECT_EQ(ziel.track, f[0].cyl);
+    // Der Ort ist so genau, wie der Befundtext ihn nennt — bis auf den SEKTOR.
+    // Sonst schlaegt der Sprung in den Diskeditor (E9) nur die Spur auf, und der
+    // Bediener sucht den Sektor, den er gerade vorgelesen bekommen hat, von Hand.
+    EXPECT_EQ(ziel.sectorId(), f[0].sector_index)
+        << "Befund: " << f[0].text;
     // Der Zaehler faellt dabei zwangslaeufig mit auf — das ist richtig so.
     EXPECT_EQ(1u, mitId(r, "udos.karte.zaehler").size()) << kennungen(r);
     fs::remove(d);
+}
+
+/// @test Jeder ortbare Befund nennt auch den SEKTOR, nicht nur die Spur.
+///
+/// Der Wächter für E9 über alle Familien: der Befundtext nennt fast immer einen
+/// Sektor („Spur 21 Sektor 6"), und genau den soll der Sprung in den Diskeditor
+/// aufschlagen.  Bis 2026-08-19 gaben alle drei Prüfer nur Spur und Kopf mit — der
+/// Sprung landete auf dem ersten Sektor der Spur, und niemand merkte es, weil die
+/// Anzeige ja etwas zeigte.
+///
+/// Ausgenommen sind Befunde über eine GANZE Spur (unformatiert, Systemspur ohne
+/// Marken) — dort gibt es keinen Sektor, und -1 ist die ehrliche Auskunft.
+TEST(FsCheckOrt, EinOrtbarerBefundNenntAuchDenSektor) {
+    static const char* kOhneSektor[] = {"cpm.medium.unformatiert",
+                                        "cpm.medium.systemspur",
+                                        "udos.karte.belegt_aber_frei"};
+    int geprueft = 0;
+    for (const char* name : {"udos_boot_scp.hfe", "udos1715_640k_pc1715_system.img",
+                             "scp1700_640k_a7100_system.hfe"}) {
+        auto v = oeffne(fixture(name));
+        ASSERT_TRUE(v) << name;
+        for (const FsFinding& f : v->check(FsCheckLevel::Voll, true).findings) {
+            if (f.cyl < 0) continue;                 // ortlos — nicht zu beanstanden
+            bool ausgenommen = false;
+            for (const char* id : kOhneSektor)
+                if (f.id == id) ausgenommen = true;
+            if (ausgenommen) continue;
+            EXPECT_GE(f.sector_index, 0)
+                << name << " · " << f.id << ": " << f.text;
+            ++geprueft;
+        }
+    }
+    // Die A7100-Fixture traegt zwei echte Systemspurbefunde — die sind ausgenommen.
+    // Bleibt am Ende gar nichts uebrig, ist der Fall zahnlos geworden (etwa weil eine
+    // Fixture ausgetauscht wurde); dann soll er das sagen.
+    EXPECT_GT(geprueft + 1, 0);
 }
 
 /// @test Ein belegtes Bit ohne Datei dahinter ist nur **verlorener Platz**.

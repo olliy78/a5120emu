@@ -107,10 +107,25 @@ Alternativprofile** — mit Grund, s. §20.
 
 * **Ebene Medium für UDOS breiter** — heute je Datei zusammengefasst; ein Reihenlauf
   über die freien Bereiche fehlt.
-* **Vollprüfung an einer PHYSISCHEN Diskette** braucht einen Arbeitsfaden mit
-  Fortschritt (ein bis zwei Minuten, 0,5–0,8 s je Spur).  Bis dahin ist der Knopf in
-  **beiden** Dialogen gesperrt und sagt warum (`disk_info_dialog.py`,
-  `fsck_dialog.py`) — ein Fenster, das zwei Minuten steht, sieht aus wie ein Absturz.
+* **Der Ort eines Befundes nennt seit 2026-08-19 auch den Sektor.** Vorher gaben alle
+  drei Prüfer nur Spur und Kopf mit, obwohl der Befundtext den Sektor nennt („Spur 21
+  Sektor 6") — der Sprung in den Diskeditor (E9) landete auf dem ersten Sektor der
+  Spur, und es fiel niemandem auf, weil die Anzeige ja etwas zeigte. Bei NDOS kam
+  hinzu, dass der Kopf fest als `0` mitgegeben wurde; dort umfasst eine Spur **beide**
+  Seiten (32 Sektoren), also war jeder Befund ab Sektor 16 auf der falschen Seite.
+  Ohne Sektor bleiben nur Befunde über eine ganze Spur (`cpm.medium.unformatiert`,
+  `cpm.medium.systemspur`, `udos.karte.belegt_aber_frei`) — dort ist `-1` die ehrliche
+  Auskunft. Wächter: `FsCheckOrt.EinOrtbarerBefundNenntAuchDenSektor`.
+* **Vollprüfung und Oberflächensuche an einer PHYSISCHEN Diskette** brauchen einen
+  Arbeitsfaden mit Fortschritt (ein bis zwei Minuten, 0,5–0,8 s je Spur).  Bis dahin
+  ist der Knopf in **allen drei** Dialogen gesperrt und sagt warum
+  (`disk_info_dialog.py`, `fsck_dialog.py`, `recover_dialog.py`) — ein Fenster, das
+  zwei Minuten steht, sieht aus wie ein Absturz.
+  **Die Sperre ist heute zu streng**: sie fragt nur, ob eine physische Diskette
+  vorliegt, nicht, ob deren Spuren schon gelesen sind.  Ist das Medium bereits ganz im
+  Speicher (alle Spuren `Clean`), kostet der Lauf gar nichts mehr und könnte sofort
+  freigegeben werden.  Dafür fehlt eine Auskunft „wie viele Spuren sind bekannt" an
+  der C-ABI; sie gehört in dieselbe Änderung wie der Arbeitsfaden.
 
 **Fünf Dinge, die beim Umsetzen anders kamen als hier ursprünglich entworfen** — sie
 sind an Ort und Stelle korrigiert, aber leicht zu übersehen:

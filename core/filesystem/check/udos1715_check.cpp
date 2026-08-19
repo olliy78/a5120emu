@@ -101,14 +101,14 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
         b.addAt("udos.karte.ungueltig", FsSeverity::Fehler, FsLayer::Verwaltung,
                 "Belegungsplan",
                 "Der Belegungsplan auf Spur " + std::to_string(prof_.bitmap_track)
-                + " ist nicht plausibel: " + warum, prof_.bitmap_track, 0);
+                + " ist nicht plausibel: " + warum, prof_.bitmap_track, 0, 1);
 
     if (bitmap_.sectorsPerTrack() != spt)
         b.addAt("udos.karte.geometrie", FsSeverity::Fehler, FsLayer::Verwaltung,
                 "Belegungsplan",
                 "Der Plan nennt " + std::to_string(bitmap_.sectorsPerTrack())
                 + " Sektoren je Spur, gemessen sind " + std::to_string(spt),
-                prof_.bitmap_track, 0);
+                prof_.bitmap_track, 0, 1);
 
     // Bei NDOS sind BEIDE Zaehler echt — anders als bei ZDOS.
     const FsRepair zaehler_neu{"udos.karte.zaehler.neu",
@@ -140,7 +140,8 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
     if (!readDescriptor(directoryDescriptor(), dir_hdr)) {
         b.addAt("udos.verz.kaputt", FsSeverity::Fehler, FsLayer::Verwaltung, "DIRECTORY",
                 "Der Descriptor der Verzeichnisdatei (" + ort(directoryDescriptor())
-                + ") ist nicht lesbar: " + lastError(), prof_.directory_track, 0);
+                + ") ist nicht lesbar: " + lastError(), prof_.directory_track, headOf(directoryDescriptor()),
+                                   idOf(directoryDescriptor()));
         abschluss();
         bericht.sortieren();
         return bericht;
@@ -148,7 +149,8 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
     if ((dir_hdr.type_byte & 0x40) == 0)
         b.addAt("udos.verz.kaputt", FsSeverity::Fehler, FsLayer::Verwaltung, "DIRECTORY",
                 "Der Descriptor der Verzeichnisdatei weist sich nicht als Typ D aus",
-                prof_.directory_track, 0);
+                prof_.directory_track, headOf(directoryDescriptor()),
+                                   idOf(directoryDescriptor()));
 
     // Was das Dateisystem SELBST belegt — das muss im Plan stehen.  Die Systemspuren
     // (Urlader, BFOS) gehoeren NICHT dazu: ob es sie gibt, ist eine Eigenschaft der
@@ -160,7 +162,8 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
     if (!sectorsOfFile(directoryDescriptor(), dir_sektoren))
         b.addAt("udos.verz.kette", FsSeverity::Fehler, FsLayer::Verwaltung, "DIRECTORY",
                 "Die Zeigersektoren der Verzeichnisdatei sind nicht schluessig: "
-                + lastError(), prof_.directory_track, 0);
+                + lastError(), prof_.directory_track, headOf(directoryDescriptor()),
+                                   idOf(directoryDescriptor()));
     for (const UdosPointer& p : dir_sektoren) eigen.insert(nr(p));
 
     for (uint32_t s : eigen) {
@@ -172,7 +175,7 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
                 "Spur " + std::to_string(t) + " Sektor " + std::to_string(i)
                 + " traegt das Dateisystem selbst (Belegungsplan oder Verzeichnis),"
                   " steht aber als FREI — NDOS vergibt ihn beim naechsten Schreiben",
-                t, 0);
+                t, headOf(UdosPointer{i, t}), idOf(UdosPointer{i, t}));
         FsRepair rep{"udos.karte.system.sperren",
                      "Spur " + std::to_string(t) + " Sektor " + std::to_string(i)
                      + " im Belegungsplan als belegt nachtragen",
@@ -213,7 +216,7 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
             b.addAt("udos.verz.eintrag_kaputt", FsSeverity::Fehler, FsLayer::Dateien, e.name,
                     "Der Verzeichniseintrag zeigt auf " + ort(e.header)
                     + ", dort steht kein brauchbarer Descriptor: " + lastError(),
-                    e.header.track, 0);
+                    e.header.track, headOf(e.header), idOf(e.header));
             continue;
         }
         gehoert.emplace(nr(e.header), e.name);
@@ -229,27 +232,27 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
                     "Die Segmentliste des Descriptors hat keinen Abschluss "
                     "(00 00 00 00) — sie fuellt alle "
                     + std::to_string(kUdosMaxSegments) + " Plaetze",
-                    e.header.track, 0);
+                    e.header.track, headOf(e.header), idOf(e.header));
         if (hdr.typeName().empty())
             b.addAt("udos.kopf.typ", FsSeverity::Warnung, FsLayer::Dateien, e.name,
-                    "Das Typbyte des Descriptors hat kein Typbit gesetzt", e.header.track, 0);
+                    "Das Typbyte des Descriptors hat kein Typbit gesetzt", e.header.track, headOf(e.header), idOf(e.header));
         if (hdr.bytes_in_last > hdr.record_len)
             b.addAt("udos.kopf.letzter", FsSeverity::Warnung, FsLayer::Dateien, e.name,
                     "„Bytes im letzten Satz" " = " + std::to_string(hdr.bytes_in_last)
                     + " ist groesser als die Satzlaenge " + std::to_string(hdr.record_len),
-                    e.header.track, 0);
+                    e.header.track, headOf(e.header), idOf(e.header));
         if ((hdr.type_byte & 0x80) != 0 &&
             (hdr.low_addr == 0xFFFF || hdr.high_addr == 0xFFFF))
             b.addAt("udos.kopf.speicher", FsSeverity::Fehler, FsLayer::Dateien, e.name,
                     "Programmdatei ohne Speicherangabe (LOW/HIGH = FFFF) — sie laesst"
-                    " sich nicht starten", e.header.track, 0);
+                    " sich nicht starten", e.header.track, headOf(e.header), idOf(e.header));
 
         if (hdr.firstbl.end() || hdr.firstbl.track >= tracks_
             || hdr.firstbl.sector_index >= spt) {
             b.addAt("ndos.firstbl", FsSeverity::Fehler, FsLayer::Dateien, e.name,
                     "FIRSTBL nennt " + (hdr.firstbl.end() ? std::string("FFFF")
                                                           : ort(hdr.firstbl))
-                    + " — dort kann kein Zeigersektor liegen", e.header.track, 0);
+                    + " — dort kann kein Zeigersektor liegen", e.header.track, headOf(e.header), idOf(e.header));
             continue;
         }
 
@@ -259,7 +262,7 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
         if (!pointerBlocks(hdr, adressen, bloecke)) {
             b.addAt("ndos.zeiger.kette", FsSeverity::Fehler, FsLayer::Dateien, e.name,
                     "Die Zeigersektorkette ist nicht lesbar: " + lastError(),
-                    hdr.firstbl.track, 0);
+                    hdr.firstbl.track, headOf(hdr.firstbl), idOf(hdr.firstbl));
             continue;
         }
 
@@ -292,7 +295,7 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
             b.addAt("ndos.zeiger.kette", FsSeverity::Warnung, FsLayer::Dateien, e.name,
                     "Die erste Adresse des ersten Zeigersektors muesste der Descriptor "
                     + ort(e.header) + " sein",
-                    hdr.firstbl.track, 0);
+                    hdr.firstbl.track, headOf(hdr.firstbl), idOf(hdr.firstbl));
 
         const size_t daten = adressen.empty() ? 0 : adressen.size() - 1;
         if (daten != hdr.record_count) {
@@ -301,7 +304,7 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
                     FsLayer::Dateien, e.name,
                     "Der Descriptor sagt " + std::to_string(hdr.record_count)
                     + " Saetze an, die Zeigersektoren nennen " + std::to_string(daten)
-                    + " Adressen", e.header.track, 0);
+                    + " Adressen", e.header.track, headOf(e.header), idOf(e.header));
             // Die Adressen sind die Wahrheit — sie zeigen auf wirklich vorhandene
             // Sektoren; die Satzzahl im Descriptor ist nur ihre Gegenprobe.
             FsRepair rep{"ndos.zeiger.anzahl.anpassen",
@@ -323,7 +326,7 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
             if (a.track >= tracks_ || a.sector_index >= spt) {
                 b.addAt("ndos.zeiger.ausserhalb", FsSeverity::Fehler, FsLayer::Dateien, e.name,
                         "Satz " + std::to_string(i) + " nennt " + ort(a)
-                        + " — das liegt ausserhalb der Diskette", e.header.track, 0);
+                        + " — das liegt ausserhalb der Diskette", e.header.track, headOf(e.header), idOf(e.header));
                 continue;
             }
             // Die KOPFgrenze darf ein Record ueberschreiten (die Spur ist der ganze
@@ -375,7 +378,8 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
                     + "' stehen im Belegungsplan als FREI (der erste bei "
                     + ort(sektoren.front()) + ") — NDOS vergibt sie beim naechsten"
                       " Schreiben und zerstoert die Datei",
-                    sektoren.front().track, 0);
+                    sektoren.front().track, headOf(sektoren.front()),
+                                   idOf(sektoren.front()));
             FsRepair rep{"udos.karte.sektoren.sperren",
                          "Die " + std::to_string(sektoren.size())
                          + " Sektor(en) von '" + wem
