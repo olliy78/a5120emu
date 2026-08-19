@@ -413,23 +413,7 @@ bool Udos1715FileSystem::loadDetails(FileEntry& e) const {
             e.damaged = e.details_loaded = true;
             return false;
         }
-        e.size          = hdr.length();
-        e.type          = hdr.typeName();
-        e.attributes    = hdr.propertyLetters();
-        e.entry_addr    = hdr.entry_addr;
-        e.record_len    = hdr.record_len;
-        e.block_len     = hdr.block_len;
-        e.bytes_in_last = hdr.bytes_in_last;
-        e.extra         = hdr.extra;
-        e.created       = hdr.created;
-        e.segment_start = hdr.segment_start;
-        e.segment_len   = hdr.segment_len;
-        e.segments      = udosFormatSegments(hdr.segments);
-        e.low_addr      = hdr.low_addr;
-        e.high_addr     = hdr.high_addr;
-        e.stack_size    = hdr.stack_size;
-        e.date          = hdr.modified.empty() ? hdr.created : hdr.modified;
-        e.details_loaded = true;
+        udosKopfInEintrag(hdr, e);
         return true;
     }
     e.damaged = e.details_loaded = true;

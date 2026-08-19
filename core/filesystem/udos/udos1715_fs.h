@@ -106,6 +106,27 @@ public:
      */
     bool repair(const FsRepair& r) override;
 
+    /// @name Wiederherstellung — umgesetzt in `core/filesystem/check/udos1715_recover.cpp`
+    ///
+    /// Wie bei ZDOS ueber die Signatur des Descriptors; die Kette liegt hier aber in
+    /// den **Zeigersektoren** (`FIRSTBL`), nicht im Nachspann.  Felderbelegung von
+    /// @ref FsRecoverFind: @c a / @c b = Spur und Sektorindex des Descriptors,
+    /// @c c = Zahl der erreichbaren Records, @c teile = deren Anfaenge
+    /// (`Spur*256 + Sektorindex`), @c d = 0 fuer einen Descriptor-Fund und 1 fuer
+    /// einen Rohbereich.
+    ///
+    /// **Ein `recoverRestore` gibt es hier bewusst nicht** — der Weg zurueck fuehrt
+    /// ueber Retten, Benennen und `put`.
+    /// @{
+    FsRecoverReport recoverScan(FsRecoverLevel level, bool nachladen) const override;
+    bool recoverRead(const FsRecoverFind& f, std::vector<uint8_t>& out) const override;
+    bool recoverEntry(const FsRecoverFind& f, FileEntry& out) const override;
+    /// @brief Lehnt ab — **und nennt den Weg zurueck**.  Die Vorgabe der Basisklasse
+    ///        saegt nur „kennt keine Wiederherstellung"; wer das liest, weiss nicht,
+    ///        was er stattdessen tun soll.
+    bool recoverRestore(const FsRecoverFind& f, const std::string& name) override;
+    /// @}
+
     // ─── Innenansicht (Diagnose, Tests) ──────────────────────────────────────
 
     const UdosBitmap& bitmap() const { return bitmap_; }

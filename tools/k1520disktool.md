@@ -246,7 +246,8 @@ Werkzeug öffnet ohne `--restore` gar nicht erst schreibend.  Fehlende Bereiche 
 mit Füllbytes aufgefüllt, damit die Offsets der übrigen stimmen; daneben entsteht dann
 ein Beiblatt `<datei>.rettung.txt`, das genau das festhält.
 
-**`--restore N[=NAME]`** trägt den Fund wieder ins Verzeichnis ein.  Es geht nur, wenn
+**`--restore N[=NAME]`** trägt den Fund wieder ins Verzeichnis ein — **nur bei CP/M**
+(bei UDOS/NDOS s. u.).  Es geht nur, wenn
 kein Block des Fundes inzwischen einer lebenden Datei gehört und kein gleichnamiger
 Eintrag dasteht — sonst entstünde genau die Kreuzbelegung, die `check` als **Gefahr**
 meldet; nachgeprüft wird unmittelbar vor dem Schreiben noch einmal.  Der ursprüngliche
@@ -256,9 +257,52 @@ meldet; nachgeprüft wird unmittelbar vor dem Schreiben noch einmal.  Der urspr�
 Exit-Code `0`, solange der Lauf in Ordnung war — auch ohne Fund: eine Diskette ohne
 gelöschte Dateien ist kein Fehler.  `--json` liefert dieselbe Liste maschinenlesbar.
 
-> **Nur CP/M** (CP/A, SCPX, SCP1700).  Bei UDOS/ZDOS und NDOS überlebt das Löschen
-> sogar die ganze Struktur — nur der Name nicht; die Kopfsektorsuche dafür kommt mit
-> Etappe 6 (`doc/design/15_dateisystempruefung.md` §13.1).
+### Bei UDOS/ZDOS und NDOS
+
+Dort löscht das System nicht ein Byte, sondern den **Verzeichniseintrag** — und lässt
+alles andere stehen.  Der Kopfsektor überlebt vollständig: Typ, Eigenschaften, ENTRY,
+Satzlänge, alle Speichersegmente und beide Datumsvermerke.  **Verloren ist allein der
+Name.**  Gesucht wird deshalb nach der Signatur eines Kopfsektors, nicht nach einem
+Rest im Verzeichnis:
+
+```sh
+$ k1520disktool recover udos.hfe
+udos.hfe  udos_ds77  Verzeichnissuche
+
+  0  sicher         Vol1  GERETTET.001              2048  Kopfsektor Spur 21 Sektor 6
+
+1 sicher
+```
+
+`GERETTET.001` ist ein **Vorschlag**, kein überlieferter Name.  Findet sich hinter dem
+Ende eines Verzeichnissatzes noch ein Namensrest, wird er stattdessen angeboten — auch
+das als Vorschlag, und es steht in der Zeile dabei.
+
+**`--restore` gibt es hier nicht.**  Der Weg zurück führt über drei Schritte, und der
+mittlere ist Ihre Entscheidung:
+
+```sh
+$ k1520disktool recover udos.hfe --to gerettet     # 1. retten (ändert nichts)
+$ mv gerettet/Side1/GERETTET.001 gerettet/Side1/NOTE.TO.SD          # 2. benennen
+$ sed -i 's/^GERETTET.001 /NOTE.TO.SD /' gerettet/Side1/udos-dateiangaben.txt
+$ k1520disktool put udos.hfe gerettet/Side1/NOTE.TO.SD --volume 1   # 3. einspielen
+```
+
+Der zweite `sed`-Aufruf ist kein Beiwerk: `--to` legt neben der geretteten Datei das
+Beiblatt **`udos-dateiangaben.txt`** an, und `put` liest es von selbst wieder ein.  Es
+trägt genau die Angaben, die eine Linux-Datei nicht mitbringt — ohne sie käme eine
+Programmdatei als gewöhnliche Binärdatei mit 128er-Sätzen zurück und startete nicht
+mehr.  Zugeordnet wird über den **Dateinamen**; wer umbenennt, benennt die Zeile mit
+um.
+
+`--full` sammelt zusätzlich **Rohbereiche** — Läufe von Sektoren mit Inhalt, die zu
+keiner Datei und zu keinem Kopfsektor gehören.  Sie heissen
+`fragment_c12h0_s6-s26.bin` und enden an der Spurgrenze.
+
+> Anders als bei CP/M sieht auch die billige Suchtiefe in die **Datenspuren**: nach dem
+> Löschen steht im Verzeichnis nichts Gesuchtes mehr.  Der Unterschied zu `--full` ist,
+> welche Sektoren als Kandidat gelten (nur die als frei geführten ↔ alle) und ob
+> Rohbereiche gesammelt werden.
 
 ## Bootfähige Diskette anlegen
 

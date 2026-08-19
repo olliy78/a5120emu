@@ -22,6 +22,34 @@ const char* fsRecoverQualityName(FsRecoverQuality q) {
     return "?";
 }
 
+std::string fsRecoverEinordnung(const std::vector<uint8_t>& d) {
+    if (d.empty()) return "unklar";
+    size_t druckbar = 0;
+    for (uint8_t b : d)
+        if ((b >= 0x20 && b < 0x7F) || b == 0x09 || b == 0x0A || b == 0x0D || b == 0x1A)
+            ++druckbar;
+    if (druckbar * 10 >= d.size() * 9) return "Text";
+    // Z80-Einsprungmuster am Anfang: JP nn (C3), LD SP,nn (31), DI (F3).
+    if (d[0] == 0xC3 || d[0] == 0x31 || d[0] == 0xF3) return "Programm";
+    return "unklar";
+}
+
+bool fsRecoverFuellmuster(const std::vector<uint8_t>& d) {
+    if (d.empty()) return true;
+    for (uint8_t b : d) if (b != d[0]) return false;
+    return true;
+}
+
+void fsRecoverBelege(std::string& detail, const std::vector<std::string>& belege,
+                     const std::string& was) {
+    if (belege.empty()) return;
+    if (!detail.empty()) detail += "; ";
+    for (size_t i = 0; i < belege.size() && i < 3; ++i)
+        detail += (i ? ", " : "") + belege[i];
+    if (belege.size() > 3)
+        detail += " und " + std::to_string(belege.size() - 3) + " weitere " + was;
+}
+
 int FsRecoverReport::zaehler(FsRecoverQuality q) const {
     int n = 0;
     for (const FsRecoverFind& f : funde) if (f.quality == q) ++n;

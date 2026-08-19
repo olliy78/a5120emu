@@ -153,7 +153,9 @@ if(BUILD_K1520)
         core/filesystem/check/cpm_check.cpp
         core/filesystem/check/cpm_recover.cpp
         core/filesystem/check/udos_check.cpp
+        core/filesystem/check/udos_recover.cpp
         core/filesystem/check/udos1715_check.cpp
+        core/filesystem/check/udos1715_recover.cpp
     )
     target_link_libraries(k1520_fs PUBLIC k1520_floppy2 k1520_util)
     target_include_directories(k1520_fs PUBLIC ${CMAKE_SOURCE_DIR})

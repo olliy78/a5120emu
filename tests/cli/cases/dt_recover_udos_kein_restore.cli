@@ -1,0 +1,16 @@
+# Bei UDOS wird NICHT auf der Diskette wiederhergestellt — und es steht dabei,
+# wie es stattdessen geht.
+#
+# Das ist eine Festlegung, kein Mangel (Entwurf §13.3): der Name muss ohnehin frei
+# gewaehlt werden, und drei Schreibzugriffe (Karte, Verzeichnis, Rueckwaertszeiger)
+# auf einen Datentraeger, den man fuer eine Rettung gerade nicht anfassen will,
+# waeren der falsche Preis.  Der Weg zurueck heisst: retten, benennen, `put`.
+#
+# Der Fall prueft beides — dass `--restore` abgelehnt wird UND dass die Ablehnung
+# den Weg nennt.  Eine Absage ohne Ausweg waere hier das eigentliche Aergernis.
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+setup_run: rm %DISK% Side1/NOTE.TO.SD --no-backup
+run:    recover %DISK% --restore 0
+expect: put
+exit:   1

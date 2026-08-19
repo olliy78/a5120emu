@@ -329,6 +329,38 @@ bool schreibeBeiblatt(const fs::path& datei,
     return static_cast<bool>(f);
 }
 
+/// @brief Die Beiblattangaben eines Eintrags — die EINE Stelle, an der sie entstehen.
+///
+/// `extractAll` und die Rettung eines Fundes (@ref DiskVolume::recoverExtract)
+/// muessen dieselbe Zeile erzeugen: eine gerettete Datei soll sich genauso
+/// zurueckspielen lassen wie eine extrahierte.  Zwei Abschriften dieser Zuordnung
+/// liefen frueher oder spaeter auseinander, und das faellt erst beim Einspielen auf.
+UdosAngabe angabeAus(const FileEntry& e) {
+    UdosAngabe a;
+    a.typ           = e.type;
+    a.eigenschaften = e.attributes;
+    a.start         = e.entry_addr;
+    a.satzlaenge    = e.record_len;
+    a.ladeadresse   = e.segment_start;
+    a.abbildlaenge  = e.segment_len;
+    a.speicher_von  = e.low_addr;
+    a.speicher_bis  = e.high_addr;
+    a.speicher_kz   = e.stack_size;
+    a.blocklaenge   = e.block_len;
+    a.rest          = e.bytes_in_last;
+    a.blocklaenge_gesetzt = true;
+    a.zusatz        = e.extra;
+    // Nur wenn es mehr als ein Segment gibt — sonst blaeht es die Zeile auf, ohne
+    // etwas zu sagen, was `segment=` nicht schon sagt.
+    if (e.segments.find(' ') != std::string::npos) {
+        a.segmente = e.segments;
+        std::replace(a.segmente.begin(), a.segmente.end(), ' ', ',');
+    }
+    a.erstellt      = e.created;
+    a.geaendert     = e.date;
+    return a;
+}
+
 /// @brief Beiblatt lesen; fehlt es, kommt eine leere Tabelle zurueck (kein Fehler).
 std::map<std::string, UdosAngabe> leseBeiblatt(const fs::path& datei) {
     std::map<std::string, UdosAngabe> out;
@@ -1105,6 +1137,32 @@ bool DiskVolume::recoverExtract(int fnr, const std::string& dest_path) {
         const std::vector<uint8_t> bytes(t.begin(), t.end());
         if (!schreibeDatei(dest_path + ".rettung.txt", bytes, err)) return fail(err);
     }
+
+    // ── Die Kopfsektorangaben (UDOS-Familie) ─────────────────────────────────
+    //
+    // Bei UDOS ueberlebt das Loeschen ALLES ausser dem Namen: Typ, Eigenschaften,
+    // ENTRY, Satzlaenge, Blocklaenge, Segmente und beide Datumsvermerke stehen
+    // unveraendert im Kopfsektor.  Sie gehoeren deshalb in dasselbe Beiblatt, das
+    // `extractAll` schreibt und `insert`/`insertAll` von selbst wieder einlesen —
+    // erst damit ist der Weg zurueck vollstaendig: retten, benennen, `put`.  Ohne
+    // sie kaeme eine gerettete Programmdatei als gewoehnliche Binaerdatei mit
+    // 128er-Saetzen zurueck und startete nicht mehr (§13.3).
+    //
+    // Der Schluessel ist der Name der GERETTETEN Datei.  Wer sie umbenennt, muss den
+    // Namen im Beiblatt mit umbenennen — sonst findet `put` die Zeile nicht mehr.
+    FileEntry angaben;
+    if (profile_ && isUdosFamily(profile_->type)
+        && volumes_[static_cast<size_t>(f->volume)].fs->recoverEntry(*f, angaben)) {
+        const fs::path bb = fs::path(dest_path).parent_path() / kUdosBeiblatt;
+        // Ein vorhandenes Beiblatt wird ERGAENZT, nicht ersetzt: beim Retten mehrerer
+        // Funde landet jeder Aufruf in derselben Datei.
+        std::map<std::string, UdosAngabe> tabelle = leseBeiblatt(bb);
+        tabelle[fs::path(dest_path).filename().string()] = angabeAus(angaben);
+        const std::vector<std::pair<std::string, UdosAngabe>> zeilen(tabelle.begin(),
+                                                                     tabelle.end());
+        if (!schreibeBeiblatt(bb, zeilen))
+            return fail("Beiblatt nicht schreibbar: " + bb.string());
+    }
     return true;
 }
 
@@ -1691,29 +1749,8 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
             const std::string unter = volumeDir(v);
             for (const FileEntry& e : volumes_[static_cast<size_t>(v)].fs->list()) {
                 if (e.type == "D") continue;
-                UdosAngabe a;
-                a.typ           = e.type;
-                a.eigenschaften = e.attributes;
-                a.start         = e.entry_addr;
-                a.satzlaenge    = e.record_len;
-                a.ladeadresse   = e.segment_start;
-                a.abbildlaenge  = e.segment_len;
-                a.speicher_von  = e.low_addr;
-                a.speicher_bis  = e.high_addr;
-                a.speicher_kz   = e.stack_size;
-                a.blocklaenge   = e.block_len;
-                a.rest          = e.bytes_in_last;
-                a.blocklaenge_gesetzt = true;
-                a.zusatz        = e.extra;
-                // Nur wenn es mehr als ein Segment gibt — sonst blaeht es die Zeile
-                // auf, ohne etwas zu sagen, was `segment=` nicht schon sagt.
-                if (e.segments.find(' ') != std::string::npos) {
-                    a.segmente = e.segments;
-                    std::replace(a.segmente.begin(), a.segmente.end(), ' ', ',');
-                }
-                a.erstellt      = e.created;
-                a.geaendert     = e.date;
-                eintraege.emplace_back(unter.empty() ? e.name : unter + "/" + e.name, a);
+                eintraege.emplace_back(unter.empty() ? e.name : unter + "/" + e.name,
+                                       angabeAus(e));
             }
         }
         if (!eintraege.empty()

@@ -90,30 +90,6 @@ bool nameTaugt(const uint8_t* p) {
     return false;
 }
 
-/// @brief Einordnung eines Rohbereichs nach seinem Inhalt (§13.3).
-std::string einordnung(const std::vector<uint8_t>& d) {
-    if (d.empty()) return "unklar";
-    size_t druckbar = 0;
-    for (uint8_t b : d)
-        if ((b >= 0x20 && b < 0x7F) || b == 0x09 || b == 0x0A || b == 0x0D || b == 0x1A)
-            ++druckbar;
-    if (druckbar * 10 >= d.size() * 9) return "Text";
-    // Z80-Einsprungmuster am Anfang: JP nn (C3), LD SP,nn (31), DI (F3).
-    if (d[0] == 0xC3 || d[0] == 0x31 || d[0] == 0xF3) return "Programm";
-    return "unklar";
-}
-
-/// @brief Bis zu drei Belege aufzaehlen, den Rest zusammenfassen.
-void belegAnhaengen(std::string& detail, const std::vector<std::string>& belege,
-                    const std::string& was) {
-    if (belege.empty()) return;
-    if (!detail.empty()) detail += "; ";
-    for (size_t i = 0; i < belege.size() && i < 3; ++i)
-        detail += (i ? ", " : "") + belege[i];
-    if (belege.size() > 3)
-        detail += " und " + std::to_string(belege.size() - 3) + " weitere " + was;
-}
-
 }  // namespace
 
 // ─── Suchlauf ────────────────────────────────────────────────────────────────
@@ -169,7 +145,10 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
         const SectorSpace::TrackRef t = space_.trackAt(static_cast<size_t>(start) + ti);
         cyl  = t.cyl;
         head = t.head;
-        idx  = skew_tab_[(off % track_bytes) / sector_size_];
+        // Die KENNUNG, nicht der Versatz: `DiskEditorWindow.zeige_ort` sucht den
+        // Sektor ueber seine ID, und die faengt bei `first_id` an (meist 1).  Mit
+        // dem blossen Tabellenwert landete der Sprung um `first_id` daneben.
+        idx  = t.first_id + skew_tab_[(off % track_bytes) / sector_size_];
     };
 
     // ── Einen Block lesen und dabei die CRCs beachten ────────────────────────
@@ -303,9 +282,9 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
         if (luecke)
             wild.push_back("es fehlen Verzeichnisplaetze — der Fund hat Loecher");
 
-        belegAnhaengen(f.detail, streit, "Bloecke");
-        belegAnhaengen(f.detail, wild,   "Stellen");
-        belegAnhaengen(f.detail, karies, "Stellen");
+        fsRecoverBelege(f.detail, streit, "Bloecke");
+        fsRecoverBelege(f.detail, wild,   "Stellen");
+        fsRecoverBelege(f.detail, karies, "Stellen");
 
         f.quality = (!streit.empty() || !wild.empty()) ? FsRecoverQuality::Bruchstueck
                   : (!karies.empty())                  ? FsRecoverQuality::Wahrscheinlich
@@ -341,7 +320,7 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
             f.volume  = 0;
             f.quality = FsRecoverQuality::Bruchstueck;   // ohne Struktur nie mehr
             f.size    = static_cast<uint64_t>(lauf.size()) * prof_.block_size;
-            f.type    = einordnung(lauf_daten);
+            f.type    = fsRecoverEinordnung(lauf_daten);
             for (uint16_t blk : lauf) f.teile.push_back(blk);
             ortVonBlock(lauf.front(), f.cyl, f.head, f.sector_index);
 
@@ -371,12 +350,7 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
                 laufAbschliessen();
                 continue;
             }
-            // Ein Block aus EINEM immer gleichen Byte ist Fuellmuster, kein Inhalt —
-            // und zwar unabhaengig davon, welches (FORMAT.COM fuellt je nach
-            // Menuepunkt mit 0xE5, 0xF6 oder dem Pruefmuster 0x53).
-            bool einerlei = true;
-            for (uint8_t b : daten) if (b != daten[0]) { einerlei = false; break; }
-            if (einerlei) { laufAbschliessen(); continue; }
+            if (fsRecoverFuellmuster(daten)) { laufAbschliessen(); continue; }
 
             lauf.push_back(blk);
             if (lauf_daten.size() < 4096)

@@ -368,8 +368,7 @@ Was beim Weiterarbeiten zu wissen ist:
   Alle vier UDOS-Fixturen prüfen mit `--full` **ohne Befund** (Ketten, Kreuzbelegung,
   Karte↔Ketten, CRC, Nachspann).  Wächter: `FsCheckUdosSchaden.*` (8) und
   `FsCheckNdosSchaden.*` (5) mit gezielter Schadensinjektion.
-  Offen: Wiederherstellung gelöschter UDOS-/NDOS-Dateien (Etappe 6 des Entwurfs).
-- **Etappe 5: Wiederherstellung gelöschter CP/M-Dateien** (2026-08-19, Entwurf §13).
+- **Etappe 5: Rettung gelöschter CP/M-Dateien** (2026-08-19, Entwurf §13).
   Modell `core/filesystem/check/fs_recover.{h,cpp}`, Suche `check/cpm_recover.cpp`,
   Haken `FileSystem::recoverScan/recoverRead/recoverRestore`, Klammer
   `DiskVolume::recoverScan/recoverRead/recoverExtract/recoverRestore`, C-ABI
@@ -405,6 +404,43 @@ Was beim Weiterarbeiten zu wissen ist:
   Wächter: `FsRecover*` (11, darunter „eine frisch angelegte Diskette hat nichts zu
   retten" über ALLE CP/M-Katalogprofile), `cli_dt_recover_*` (3), drei
   `py_disktool_gui`-Fälle.
+- **Etappe 6: Rettung gelöschter UDOS-/NDOS-Dateien** (2026-08-19, Entwurf §13.1
+  und §13.3a).  `check/udos_recover.cpp` (ZDOS) und `check/udos1715_recover.cpp`
+  (NDOS), dazu der Haken `FileSystem::recoverEntry` und das Beiblatt in
+  `DiskVolume::recoverExtract`.  **Rein lesend.**  Sechs Festlegungen:
+  **(1) Es gibt kein Zurückschreiben auf die Diskette.**  Bei CP/M ist es ein Byte
+  und der Name stimmt; bei UDOS wären es drei Schreibzugriffe (Karte, Verzeichnis,
+  Rückwärtszeiger) für eine Datei, deren Name ohnehin erfunden werden muss.  Der Weg
+  zurück heisst *retten → benennen → `put`*.  `recoverRestore` ist überschrieben,
+  damit die Absage diesen Weg NENNT statt nur abzusagen (Wächter
+  `cli_dt_recover_udos_kein_restore` prüft auf das Wort `put`).
+  **(2) Verloren ist allein der Name.**  Typ, Eigenschaften, ENTRY, Satzlänge,
+  Blocklänge, alle Segmente, LOW/HIGH/STACK und beide Datumsvermerke stehen
+  unverändert im Kopfsektor.  `recoverExtract` schreibt sie in dasselbe Beiblatt
+  `udos-dateiangaben.txt`, das `extractAll` anlegt — erst damit ist der Weg zurück
+  vollständig.  Zugeordnet wird über den DATEINAMEN: wer die gerettete Datei
+  umbenennt, muss den Schlüssel im Beiblatt mit umbenennen.
+  **(3) `FsRecoverFind::name` bleibt bei UDOS IMMER leer.**  Was der Dialog zeigt,
+  ist `vorschlag` — ein Namensrest hinter dem `FF`-Ende eines Verzeichnissatzes
+  (falls einer überlebt hat) oder `GERETTET.001`.  Ein erfundener Name darf nie wie
+  eine gesicherte Angabe aussehen.
+  **(4) Die Systemspuren werden NICHT übersprungen.**  `NOTE.TO.SD` der
+  Referenzdiskette hat ihren Kopfsektor auf **Spur 21**, weil Seite 1 eine reine
+  Datenseite ohne Urlader ist — dieselbe Lehre wie bei der Prüfung: *Systemspuren
+  sind Sitte, nicht Struktur.*  Ausgeschlossen wird nur, was die Karte im
+  Bootbereich als belegt führt.  Wächter
+  `FsRecoverUdos.EinKopfsektorAufDerBootspurWirdGefunden` — ohne ihn ist der Fehler
+  stumm.
+  **(5) Bei NDOS trägt die Bytesignatur nicht.**  Die `FF 00`-Marken bei 1EH/26H
+  sind eine A5120-Sitte; auf einer echten PC-1715-Diskette stehen dort Nullbytes und
+  der Änderungsvermerk ist unbeschrieben.  Getragen wird die Erkennung strukturell:
+  `FIRSTBL` → Zeigersektor → dessen **erste Eintragung muss der Descriptor selbst
+  sein**.
+  **(6) Rohbereiche enden an der Spurgrenze** (`fragment_c12h0_s6-s26.bin`) — sonst
+  nennt der Dateiname eine Sektornummer, die auf einer anderen Spur liegt.  Und
+  **beide Suchtiefen fassen bei UDOS die Datenspuren an**: nach dem Löschen steht im
+  Verzeichnis nichts Gesuchtes mehr (Entwurf §20).
+
 - **Etappe 7: Ebene 0 — „warum wurde denn nichts erkannt?"** (2026-08-19, Entwurf
   §11).  Jede Positivprobe der Erkennung nennt einen Grund; der verfiel bisher im
   `continue`, und der Anwender bekam EINEN Satz statt einer Diagnose.  Jetzt sammelt

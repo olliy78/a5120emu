@@ -2167,17 +2167,22 @@ was dort festgelegt wird und was es für diesen Entwurf bedeutet:
   `k1520d_recover_*`; neu in der CLI: `check --full`, `fsck`, `recover` (auch für
   `--physical`).
 
-> **Stand 2026-08-19: Etappen 1–5 und 7 sind umgesetzt** (Einzelheiten und der
-> Übergabezettel stehen in §0 des Prüfentwurfs).  Es gibt das Modell
-> (`core/filesystem/check/`), die Prüfung für **alle drei** Dateisystemfamilien
-> (CP/M inkl. SCP1700, ZDOS, NDOS), die Automatik beim Öffnen, `check [--full]` mit
-> `--json`, die **Reparatur** (`FileSystem::repair`, `DiskVolume::applyRepairs`,
-> `fsck --repair`, `ui/fsck_dialog.py` mit Strg+F und Sprung in den Diskeditor), die
-> **Ebene 0** („warum wurde nichts erkannt") und die **Wiederherstellung gelöschter
-> CP/M-Dateien** (`check/fs_recover.*`, `check/cpm_recover.cpp`, `recover` in der
-> CLI, `ui/recover_dialog.py`).  Beide Menüeinträge stehen.
+> **Stand 2026-08-19: die Etappen 1–7 sind umgesetzt** (Einzelheiten in §0 des
+> Prüfentwurfs).  Es gibt das Modell (`core/filesystem/check/`), die Prüfung für
+> **alle drei** Dateisystemfamilien (CP/M inkl. SCP1700, ZDOS, NDOS), die Automatik
+> beim Öffnen, `check [--full]` mit `--json`, die **Reparatur** (`FileSystem::repair`,
+> `DiskVolume::applyRepairs`, `fsck --repair`, `ui/fsck_dialog.py` mit Strg+F und
+> Sprung in den Diskeditor), die **Ebene 0** („warum wurde nichts erkannt") und die
+> **Rettung gelöschter Dateien für alle drei Familien** (`check/fs_recover.*`,
+> `check/cpm_recover.cpp`, `check/udos_recover.cpp`, `check/udos1715_recover.cpp`,
+> `recover` in der CLI, `ui/recover_dialog.py`).  Beide Menüeinträge stehen.
 >
-> Offen ist allein **Etappe 6**: dieselbe Wiederherstellung für UDOS/ZDOS und NDOS.
-> Das Modell und der Dialog sind dateisystemunabhängig gebaut und stehen bereit; zu
-> bauen ist die Kopfsektorsuche (§13.1 des Prüfentwurfs) und als einziger fehlender
-> Lesezugang `UdosFileSystem::readSectorRaw()` — Nutzdaten **und** Nachspann.
+> **Ein Unterschied bleibt und ist gewollt** (§13.3a des Prüfentwurfs): *auf der
+> Diskette* wiederhergestellt wird nur bei **CP/M** — dort ist es ein einziges Byte
+> und der Name stimmt.  Bei UDOS/NDOS ist die Rettung **rein lesend**; der Weg zurück
+> heisst *retten → benennen → `put`*, und das Beiblatt `udos-dateiangaben.txt` trägt
+> Typ, Eigenschaften, ENTRY, Satzlänge und die Segmente hinüber — die überleben das
+> Löschen nämlich alle, verloren ist allein der Name.
+>
+> Offen ist nur noch die **Gegenprobe der Alternativprofile** aus Etappe 7, und zwar
+> mit Grund: es gibt heute keinen Katalogeintrag, an dem sie prüfbar wäre (§20).

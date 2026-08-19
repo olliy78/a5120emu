@@ -2399,6 +2399,51 @@ def test_der_ganze_kreislauf_suchen_wiederherstellen_verzeichnis(window, fixture
     assert not window.tool.check(voll=True).findings
 
 
+def test_udos_fund_laesst_sich_retten_aber_nicht_eintragen(window, fixture_disks,
+                                                           tmp_path, monkeypatch):
+    """Die UDOS-Seite des Dialogs — und der eine Unterschied zu CP/M.
+
+    Bei UDOS löscht das System den VERZEICHNISEINTRAG, nicht ein Byte: der Name ist
+    fort, alles andere steht noch da.  Zurückgeschrieben wird deshalb nicht (Entwurf
+    §13.3a) — der Dialog sperrt den Knopf und muss den **Weg über `put`** nennen.
+    Eine Absage ohne Ausweg wäre hier das eigentliche Ärgernis.
+
+    Und `--to` legt neben der geretteten Datei das Beiblatt an: ohne die
+    Kopfsektorangaben käme sie beim Zurückspielen mit falschem Typ und falscher
+    Satzlänge an.
+    """
+    from PySide6.QtWidgets import QFileDialog
+    from app.disktool.ui.recover_dialog import RecoverDialog
+
+    abbild = _mit_geloeschter_datei(
+        fixture_disks / "udos_boot_scp.hfe", tmp_path / "rec_udos.hfe",
+        name="Side1/NOTE.TO.SD")
+    assert window.open_image(abbild)
+
+    dlg = RecoverDialog(window.tool, window, zielordner=str(tmp_path), log=window.log)
+    assert len(dlg.bericht.finds) == 1, [f.suggestion for f in dlg.bericht.finds]
+    fund = dlg.bericht.finds[0]
+    assert fund.name == "", "der Name ist fort — was dasteht, ist ein Vorschlag"
+    assert fund.suggestion == "GERETTET.001"
+    assert fund.quality == 2, fund.detail          # sicher
+    assert not fund.restorable
+    assert "put" in fund.blocked_why, fund.blocked_why
+
+    assert dlg.b_retten.isEnabled(), "retten geht immer"
+    assert not dlg.b_zurueck.isEnabled(), "bei UDOS gibt es kein Eintragen"
+
+    ziel = tmp_path / "GERETTET.001"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName",
+                        staticmethod(lambda *a, **k: (str(ziel), "")))
+    dlg._retten()
+    assert ziel.exists() and ziel.stat().st_size == fund.size
+    beiblatt = tmp_path / "udos-dateiangaben.txt"
+    assert beiblatt.exists(), "ohne Beiblatt ist der Weg zurück nicht vollständig"
+    zeile = [z for z in beiblatt.read_text().splitlines()
+             if z.startswith("GERETTET.001 ")]
+    assert zeile and "typ=A" in zeile[0] and "satz=128" in zeile[0], zeile
+
+
 def test_die_suche_laeuft_nicht_von_selbst_und_braucht_ein_dateisystem(window,
                                                                        fixture_disks,
                                                                        tmp_path):

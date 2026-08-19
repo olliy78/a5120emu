@@ -443,14 +443,26 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 >   (Rückgabewert 2), die Oberfläche schreibt sie ins Protokoll, der Prüfdialog geht
 >   auch ohne Dateisystem auf. Auf einer ERKANNTEN Diskette darf `erkennung.*` nie
 >   vorkommen (Wächter `…EineErkannteDisketteHatKeineBefundeDerEbene0`).
-> - **Retten geht vor Wiederherstellen** (`recover`, `core/filesystem/check/cpm_recover.cpp`,
+> - **Retten geht vor Wiederherstellen** (`recover`, `check/cpm_recover.cpp`,
+>   `check/udos_recover.cpp`, `check/udos1715_recover.cpp`,
 >   `app/disktool/ui/recover_dialog.py`): der Suchlauf ändert nichts, *in den Ordner
->   holen* geht auch schreibgeschützt, und **auf der Diskette eintragen** nur, wenn kein
->   Block inzwischen einer lebenden Datei gehört (sonst entstünde der `cpm.block.doppelt`,
->   den die Prüfung als Gefahr meldet) — nachgeprüft unmittelbar vor dem Schreiben. Die
->   **billige Suchtiefe fasst keine Datenspur an** (auch nicht für die Prüfsummen), sonst
->   zöge sie an einer physischen Diskette die ganze Scheibe ein. Bei CP/M überlebt der
->   Name, **nicht der Nutzerbereich** — er stand in ebendem Byte, das 0xE5 wurde.
+>   holen* geht immer und auch schreibgeschützt. **Auf der Diskette eintragen gibt es
+>   nur bei CP/M** — dort ist es ein Byte und der Name stimmt; erlaubt, wenn kein Block
+>   inzwischen einer lebenden Datei gehört (sonst entstünde der `cpm.block.doppelt`, den
+>   die Prüfung als Gefahr meldet), nachgeprüft unmittelbar vor dem Schreiben. Bei CP/M
+>   überlebt der Name, **nicht der Nutzerbereich** — er stand in ebendem Byte, das 0xE5
+>   wurde; die **billige Suchtiefe fasst dort keine Datenspur an**.
+> - **Bei UDOS/NDOS ist die Rettung rein lesend** (§13.3a). Gelöscht wird der
+>   VERZEICHNISEINTRAG, nicht ein Byte: der Kopfsektor überlebt mit Typ, Eigenschaften,
+>   ENTRY, Satzlänge und allen Segmenten — verloren ist **allein der Name**. Der Weg
+>   zurück heißt *retten → benennen → `put`*; `recoverExtract` legt dafür das Beiblatt
+>   `udos-dateiangaben.txt` an. Drei Fallen: die **Systemspuren werden nicht
+>   übersprungen** (`NOTE.TO.SD` der Referenzdiskette hat ihren Kopfsektor auf Spur 21 —
+>   ausgeschlossen wird nur, was die Karte im Bootbereich als belegt führt), bei **NDOS
+>   trägt die Bytesignatur nicht** (die `FF 00`-Marken sind A5120-Sitte; getragen wird
+>   die Erkennung über `FIRSTBL` → Zeigersektor → erste Eintragung = der Descriptor), und
+>   **beide Suchtiefen fassen die Datenspuren an** — nach dem Löschen steht im
+>   Verzeichnis nichts Gesuchtes mehr.
 
 ## Physische Diskette am Greaseweazle (`core/peripherals/floppy_drive/track_sync.*`, `app/gw/`)
 

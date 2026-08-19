@@ -386,6 +386,23 @@ public:
         return fail("Dieses Dateisystem kennt keine Wiederherstellung");
     }
 
+    /**
+     * @brief Die Kopfsektorangaben eines Fundes — fuer das Beiblatt der Rettung.
+     *
+     * Nur die UDOS-Familie fuehrt welche, und ohne sie laesst sich eine gerettete
+     * Programmdatei nicht vollwertig zurueckspielen (§13.3): Typ, Eigenschaften,
+     * ENTRY, Satzlaenge und die Speichersegmente stehen im Kopfsektor, nicht in den
+     * Bytes der Datei.  @ref DiskVolume::recoverExtract schreibt daraus dieselbe
+     * Zeile in `udos-dateiangaben.txt`, die auch `extractAll` schriebe — deshalb
+     * kommt hier ein @ref FileEntry heraus und keine fertige Textzeile.
+     *
+     * @return false, wo es nichts zu berichten gibt (CP/M, Rohbereich).
+     */
+    virtual bool recoverEntry(const FsRecoverFind& f, FileEntry& out) const {
+        (void)f; (void)out;
+        return false;
+    }
+
     const std::string& lastError() const { return last_error_; }
 
 protected:

@@ -1,0 +1,32 @@
+# Der Kern der UDOS-Rettung — und drei Aussagen, die man leicht verliert.
+#
+# UDOS loescht anders als CP/M: der VERZEICHNISEINTRAG wird herausgeschnitten und
+# die Kartenbits geloescht.  Kopfsektor, Saetze und die ganze Verkettung bleiben
+# unangetastet — verloren ist allein der NAME.  Daraus folgt alles Weitere:
+#
+#   * der Fund heisst `GERETTET.001`, nicht `NOTE.TO.SD` — ein Name, den das
+#     Werkzeug erfindet, darf nie wie eine gesicherte Angabe aussehen;
+#   * seine Guete ist trotzdem `sicher`: die Kette ist beidseitig schluessig;
+#   * `--to` holt ihn heraus, und daneben entsteht das Beiblatt
+#     `udos-dateiangaben.txt` — ohne das kaeme die Datei beim Zurueckspielen mit
+#     falschem Typ und falscher Satzlaenge an.
+#
+# Nebenbei der Waechter gegen den naheliegendsten Fehlgriff: `NOTE.TO.SD` hat
+# ihren Kopfsektor auf **Spur 21**, der „Bootspur".  Seite 1 dieser Diskette ist
+# eine reine Datenseite; wer die Systemspuren ueberspringt, findet die Datei nie.
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+setup_run: rm %DISK% Side1/NOTE.TO.SD --no-backup
+run:    recover %DISK% --to gerettet
+capture_file: gerettet/Side1/udos-dateiangaben.txt
+expect: Verzeichnissuche
+expect: GERETTET.001
+expect: sicher
+expect: Kopfsektor Spur 21
+expect: 2048
+expect: gerettet: 
+expect: 1 Fund(e)
+expect: typ=A
+expect: satz=128
+forbid: NOTE.TO.SD
+exit:   0

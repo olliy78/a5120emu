@@ -61,6 +61,38 @@ enum class FsRecoverQuality : uint8_t {
 
 const char* fsRecoverQualityName(FsRecoverQuality q);  ///< "sicher"|"wahrscheinlich"|"Bruchstueck"
 
+/// @name Gemeinsame Handgriffe der Suchlaeufe
+///
+/// Sie stehen hier und nicht in `cpm_recover.cpp` bzw. `udos_recover.cpp`, weil der
+/// Anwender die Ergebnisse NEBENEINANDER sieht: eine CP/M- und eine UDOS-Diskette
+/// duerfen denselben Inhalt nicht verschieden einordnen und ihre Vorbehalte nicht
+/// verschieden aufzaehlen.
+/// @{
+
+/**
+ * @brief Einordnung eines Rohbereichs nach seinem Inhalt (§13.3).
+ *
+ * @return `"Text"` (mindestens 90 % druckbar, `1A` und die Zeilenenden zaehlen mit),
+ *         `"Programm"` (Z80-Einsprungmuster `JP` / `LD SP,nn` / `DI` am Anfang) oder
+ *         `"unklar"`.
+ */
+std::string fsRecoverEinordnung(const std::vector<uint8_t>& daten);
+
+/**
+ * @brief Ist der Bereich reines Fuellmuster?
+ *
+ * Ein Bereich aus EINEM immer gleichen Byte ist kein Inhalt — unabhaengig davon,
+ * welches Byte es ist (FORMAT.COM fuellt je nach Menuepunkt mit `0xE5`, `0xF6` oder
+ * dem Pruefmuster `0x53`).  Ohne diese Regel meldet eine Oberflaechensuche die halbe
+ * Diskette als Bruchstueck.
+ */
+bool fsRecoverFuellmuster(const std::vector<uint8_t>& daten);
+
+/// @brief Bis zu drei Belege an @p detail anhaengen, den Rest zusammenfassen.
+void fsRecoverBelege(std::string& detail, const std::vector<std::string>& belege,
+                     const std::string& was);
+/// @}
+
 /**
  * @struct FsRecoverFind
  * @brief Ein Fund: eine geloeschte Datei oder ein Bereich mit Inhalt.
@@ -99,6 +131,11 @@ struct FsRecoverFind {
      *
      * CP/M: bei @c a == 0 die Nummern der Verzeichnisplaetze, bei @c a == 1 die
      * Blocknummern des Rohbereichs.
+     *
+     * UDOS/NDOS: @c d nennt die Art (0 = Kopfsektor-Fund, 1 = Rohbereich), @c a und
+     * @c b Spur und Sektorindex des Anfangs, @c c die erreichbaren Saetze bzw. die
+     * Sektorzahl; @c teile fuehrt die Satzanfaenge bzw. Sektoren als
+     * `Spur * 256 + Sektorindex`.
      */
     std::vector<int> teile;
     int         a = 0, b = 0, c = 0, d = 0;   ///< Ausfuehrungsparameter der Klasse

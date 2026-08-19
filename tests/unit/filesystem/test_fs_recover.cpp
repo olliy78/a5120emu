@@ -1,6 +1,6 @@
 /**
  * @file test_fs_recover.cpp
- * @brief GoogleTests der Wiederherstellung — Etappe 5 (CP/M).
+ * @brief GoogleTests der Wiederherstellung — CP/M (Etappe 5) und UDOS/NDOS (Etappe 6).
  *
  * Der Aufbau folgt derselben Ordnung wie `test_fs_check.cpp`, aber die Fragen sind
  * andere.  Eine Pruefung darf nicht zu VIEL melden; eine Suche darf nicht zu WENIG
@@ -91,6 +91,30 @@ int suche(const FsRecoverReport& r, const std::string& name) {
 
 /// @brief Eine Datei, die auf der Fixture liegt und mehr als einen Block belegt.
 constexpr const char* kOpfer = "PIP.COM";
+
+/// @brief Das UDOS-Opfer: `NOTE.TO.SD` liegt auf Seite 1 von `udos_boot_scp.hfe` —
+///        16 Saetze zu 128 B, und ihr Kopfsektor liegt auf **Spur 21**, der
+///        „Bootspur".  Genau deshalb ist sie das richtige Opfer (s. u.).
+constexpr const char* kUdosOpfer = "Side1/NOTE.TO.SD";
+/// @brief Das NDOS-Opfer: `ZLINK` der PC-1715-Systemdiskette — eine Programmdatei
+///        mit SECHS Speichersegmenten, an der sich das Beiblatt beweisen laesst.
+constexpr const char* kNdosOpfer = "ZLINK";
+
+/// @brief Datei einlesen (fuer den byteweisen Vergleich).
+std::vector<uint8_t> bytes(const std::string& pfad) {
+    std::ifstream f(pfad, std::ios::binary);
+    return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)),
+                                 std::istreambuf_iterator<char>());
+}
+
+/// @brief Eine Zeile des Beiblatts `udos-dateiangaben.txt`; "" wenn es sie nicht gibt.
+std::string beiblattZeile(const std::string& ordner, const std::string& name) {
+    std::ifstream f(ordner + "/udos-dateiangaben.txt");
+    std::string zeile;
+    while (std::getline(f, zeile))
+        if (zeile.rfind(name + " ", 0) == 0) return zeile;
+    return "";
+}
 
 }  // namespace
 
@@ -395,4 +419,256 @@ TEST(FsRecoverVertrag, DasBesteStehtVorn) {
     EXPECT_EQ("c", r.funde[1].vorschlag);
     EXPECT_EQ("a", r.funde[2].vorschlag);
     EXPECT_EQ("1 sicher, 1 wahrscheinlich, 1 Bruchstueck", r.kurzfassung());
+}
+
+// ═══ 5. UDOS / ZDOS — Etappe 6 ═══════════════════════════════════════════════
+//
+// Der Schnitt ist hier ein anderer als bei CP/M, und das praegt jeden Fall:
+// UDOS loescht den VERZEICHNISEINTRAG, nicht ein Byte.  Erhalten bleibt der
+// Kopfsektor mit allem, was er traegt — verloren ist allein der Name.  Deshalb gibt
+// es kein Zurueckschreiben auf die Diskette; der Weg zurueck fuehrt ueber Retten,
+// Benennen und `put`, und das Beiblatt traegt die Angaben hinueber.
+
+/// @test Eine frisch angelegte UDOS-/NDOS-Diskette hat nichts zu retten.
+///
+/// Das Gegenstueck zum CP/M-Fall weiter oben, und es ist die schaerfere Probe: die
+/// Suche laeuft ueber die Signatur eines Kopfsektors, und die muss auf einer leeren
+/// Diskette **nirgends** zufaellig zutreffen.
+TEST(FsRecoverKeineFalschmeldungen, EineFrischAngelegteUdosDisketteHatNichtsZuRetten) {
+    int geprueft = 0;
+    for (const FsProfile& p : dateisysteme().profiles()) {
+        if (p.type != FsType::Udos && p.type != FsType::Udos1715) continue;
+        const std::string ext  = p.allow_hfe ? ".hfe" : ".img";
+        const std::string ziel = (fs::temp_directory_path()
+                                  / ("fsrec_udos_neu_" + p.name + ext)).string();
+        fs::remove(ziel);
+
+        std::string err;
+        auto v = DiskVolume::create(ziel, p.name, "", formate(), dateisysteme(), err);
+        ASSERT_TRUE(v) << p.name << ": " << err;
+
+        const FsRecoverReport& r = v->recoverScan(FsRecoverLevel::Oberflaeche, true);
+        EXPECT_TRUE(r.leer()) << p.name << ": " << namen(r);
+        ++geprueft;
+        v.reset();
+        fs::remove(ziel);
+    }
+    EXPECT_GT(geprueft, 1) << "Es wurde kaum ein UDOS-Profil geprueft — Katalog leer?";
+}
+
+/// @test Eine geloeschte UDOS-Datei wird gefunden und liest sich Byte fuer Byte wie vorher.
+TEST(FsRecoverUdos, EineGeloeschteDateiKommtByteFuerByteZurueck) {
+    const std::string pfad = kopie("udos_boot_scp.hfe", "fsrec_udos.hfe");
+    const std::string ordner = (fs::temp_directory_path() / "fsrec_udos_out").string();
+    fs::remove_all(ordner);
+    fs::create_directories(ordner);
+
+    auto v = oeffneSchreibend(pfad);
+    ASSERT_TRUE(v);
+    const FileRef opfer = FileRef::parse(kUdosOpfer);
+    ASSERT_TRUE(v->extract(opfer, ordner + "/original.bin", TransferOptions{}))
+        << v->lastError();
+    ASSERT_TRUE(v->erase(opfer)) << v->lastError();
+
+    const FsRecoverReport& r = v->recoverScan(FsRecoverLevel::Verzeichnis, true);
+    ASSERT_EQ(1u, r.funde.size()) << namen(r);
+    const FsRecoverFind& f = r.funde.front();
+
+    // Der Name ist FORT — er stand nur im Verzeichnis.  Was der Dialog zeigt, ist ein
+    // Vorschlag, und `name` bleibt leer; genau daran haengt, dass niemand ihn fuer
+    // eine gesicherte Angabe haelt.
+    EXPECT_TRUE(f.name.empty()) << f.name;
+    EXPECT_EQ("GERETTET.001", f.vorschlag);
+    EXPECT_EQ(FsRecoverQuality::Sicher, f.quality) << f.detail;
+    EXPECT_EQ("A", f.type);
+    EXPECT_EQ(1, f.volume) << "Die Datei lag auf Seite 1";
+    EXPECT_EQ(fs::file_size(ordner + "/original.bin"), f.size);
+
+    const std::string gerettet = ordner + "/gerettet.bin";
+    ASSERT_TRUE(v->recoverExtract(0, gerettet)) << v->lastError();
+    EXPECT_EQ(bytes(ordner + "/original.bin"), bytes(gerettet));
+
+    v.reset();
+    fs::remove_all(ordner);
+    fs::remove(pfad);
+}
+
+/// @test Ein Kopfsektor auf einer SYSTEMSPUR wird trotzdem gefunden.
+///
+/// Der Wächter gegen den naheliegendsten Fehlgriff: „auf Spur 0–2, 21, 22, 23 legt
+/// UDOS keine Datei an, also gar nicht erst hinsehen".  An der echten
+/// Referenzdiskette ist das **falsch** — `NOTE.TO.SD` hat ihren Kopfsektor auf Spur
+/// 21, weil Seite 1 eine reine Datenseite ohne Urlader ist.  Mit dem Spurfilter fand
+/// der Suchlauf diese Datei nicht, und zwar stillschweigend.  Es ist dieselbe Lehre
+/// wie in `udos_check.cpp`: **die Systemspuren sind Sitte, nicht Struktur.**
+TEST(FsRecoverUdos, EinKopfsektorAufDerBootspurWirdGefunden) {
+    const std::string pfad = kopie("udos_boot_scp.hfe", "fsrec_udos_systemspur.hfe");
+    auto v = oeffneSchreibend(pfad);
+    ASSERT_TRUE(v);
+    ASSERT_TRUE(v->erase(FileRef::parse(kUdosOpfer))) << v->lastError();
+
+    const FsRecoverReport& r = v->recoverScan(FsRecoverLevel::Verzeichnis, true);
+    ASSERT_EQ(1u, r.funde.size()) << namen(r);
+    EXPECT_EQ(21, r.funde.front().cyl)
+        << "Der Fund liegt auf der Bootspur — wer sie ueberspringt, findet ihn nie";
+    EXPECT_EQ(1, r.funde.front().head);
+    EXPECT_GT(r.funde.front().sector_index, 0)
+        << "Der Ort traegt die Sektor-KENNUNG (1-basiert), nicht ihren Versatz";
+
+    v.reset();
+    fs::remove(pfad);
+}
+
+/// @test Bei UDOS wird nicht auf der Diskette wiederhergestellt — und es steht dabei,
+///       wie es stattdessen geht.
+///
+/// Kein Mangel, sondern die Festlegung (§13.3): der Name ist ohnehin frei zu waehlen,
+/// und drei Schreibzugriffe auf einen Datentraeger, den man fuer eine Rettung gerade
+/// nicht anfassen will, waeren der falsche Preis dafuer.
+TEST(FsRecoverUdos, KeinZurueckschreibenAufDieDiskette) {
+    const std::string pfad = kopie("udos_boot_scp.hfe", "fsrec_udos_kein_restore.hfe");
+    auto v = oeffneSchreibend(pfad);
+    ASSERT_TRUE(v);
+    ASSERT_TRUE(v->erase(FileRef::parse(kUdosOpfer))) << v->lastError();
+
+    const FsRecoverReport& r = v->recoverScan(FsRecoverLevel::Verzeichnis, true);
+    ASSERT_EQ(1u, r.funde.size()) << namen(r);
+    EXPECT_FALSE(r.funde.front().wiederherstellbar);
+    EXPECT_NE(std::string::npos, r.funde.front().warum_nicht.find("put"))
+        << r.funde.front().warum_nicht;
+    EXPECT_FALSE(v->recoverRestore(0, "NEU"));
+
+    v.reset();
+    fs::remove(pfad);
+}
+
+/// @test Der ganze Weg zurueck: retten, benennen, `put` — und die Datei ist wieder da.
+///
+/// Das ist die eigentliche Zusage von Etappe 6, und sie haengt am **Beiblatt**: die
+/// Kopfsektorangaben ueberleben das Loeschen vollstaendig (nur der Name nicht), und
+/// nur weil `recoverExtract` sie in `udos-dateiangaben.txt` schreibt, nimmt `put` sie
+/// wieder an.  Ohne das kaeme die Datei mit falschem Typ und falscher Satzlaenge
+/// zurueck.
+TEST(FsRecoverUdos, RettenBenennenUndWiederEinspielen) {
+    const std::string pfad = kopie("udos_boot_scp.hfe", "fsrec_udos_rundlauf.hfe");
+    const std::string ordner = (fs::temp_directory_path() / "fsrec_udos_rund").string();
+    fs::remove_all(ordner);
+    fs::create_directories(ordner);
+
+    auto v = oeffneSchreibend(pfad);
+    ASSERT_TRUE(v);
+    const FileRef opfer = FileRef::parse(kUdosOpfer);
+    ASSERT_TRUE(v->extract(opfer, ordner + "/original.bin", TransferOptions{}))
+        << v->lastError();
+    ASSERT_TRUE(v->erase(opfer)) << v->lastError();
+    ASSERT_EQ(1u, v->recoverScan(FsRecoverLevel::Verzeichnis, true).funde.size());
+    ASSERT_TRUE(v->recoverExtract(0, ordner + "/NOTE.TO.SD")) << v->lastError();
+
+    // Das Beiblatt traegt die Angaben aus dem ueberlebenden Kopfsektor.
+    const std::string zeile = beiblattZeile(ordner, "NOTE.TO.SD");
+    ASSERT_FALSE(zeile.empty()) << "Ohne Beiblatt ist der Weg zurueck nicht vollstaendig";
+    EXPECT_NE(std::string::npos, zeile.find("typ=A"))    << zeile;
+    EXPECT_NE(std::string::npos, zeile.find("satz=128")) << zeile;
+
+    ASSERT_TRUE(v->insert(ordner + "/NOTE.TO.SD", FileRef::parse(kUdosOpfer),
+                          TransferOptions{})) << v->lastError();
+    ASSERT_TRUE(v->extract(opfer, ordner + "/zurueck.bin", TransferOptions{}))
+        << v->lastError();
+    EXPECT_EQ(bytes(ordner + "/original.bin"), bytes(ordner + "/zurueck.bin"));
+
+    v.reset();
+    fs::remove_all(ordner);
+    fs::remove(pfad);
+}
+
+/// @test Rohbereiche findet erst die Oberflaechensuche — und die Verzeichnissuche
+///       bleibt davon frei.
+TEST(FsRecoverUdos, RohbereicheErstBeiDerOberflaechensuche) {
+    const std::string pfad = kopie("udos_boot_scp.hfe", "fsrec_udos_roh.hfe");
+    auto v = oeffneSchreibend(pfad);
+    ASSERT_TRUE(v);
+
+    // Ohne Loeschung ist die Diskette in Ordnung: nichts zu retten.
+    EXPECT_TRUE(v->recoverScan(FsRecoverLevel::Verzeichnis, true).leer())
+        << namen(v->recoverReport());
+
+    const FsRecoverReport& r = v->recoverScan(FsRecoverLevel::Oberflaeche, true);
+    ASSERT_FALSE(r.leer()) << "Auf einer 35 Jahre alten Diskette steht Altbestand herum";
+    int rohbereiche = 0;
+    for (const FsRecoverFind& f : r.funde) {
+        if (f.vorschlag.rfind("fragment_", 0) != 0) continue;
+        ++rohbereiche;
+        EXPECT_EQ(FsRecoverQuality::Bruchstueck, f.quality);
+        EXPECT_TRUE(f.name.empty());
+        EXPECT_FALSE(f.wiederherstellbar);
+        EXPECT_GT(f.size, 0u);
+        EXPECT_FALSE(f.type.empty()) << "Ein Rohbereich braucht eine Einordnung";
+        EXPECT_GE(f.cyl, 0) << "Ein Fund ohne Ort laesst sich nicht ansehen";
+    }
+    EXPECT_GT(rohbereiche, 0) << namen(r);
+
+    v.reset();
+    fs::remove(pfad);
+}
+
+// ═══ 6. UDOS1715 / NDOS ══════════════════════════════════════════════════════
+
+/// @test Eine geloeschte NDOS-Datei kommt Byte fuer Byte zurueck — samt Segmentliste.
+///
+/// `ZLINK` ist mit Absicht gewaehlt: eine Programmdatei mit SECHS Speichersegmenten.
+/// Sie beweist beides auf einmal — dass die Zeigersektorkette wieder gelesen wird und
+/// dass das Beiblatt die Angaben traegt, ohne die das Programm nicht mehr startet.
+TEST(FsRecoverNdos, EineGeloeschteDateiKommtByteFuerByteZurueck) {
+    const std::string pfad = kopie("udos1715_640k_pc1715_system.img", "fsrec_ndos.img");
+    const std::string ordner = (fs::temp_directory_path() / "fsrec_ndos_out").string();
+    fs::remove_all(ordner);
+    fs::create_directories(ordner);
+
+    auto v = oeffneSchreibend(pfad);
+    ASSERT_TRUE(v);
+    const FileRef opfer = FileRef::parse(kNdosOpfer);
+    ASSERT_TRUE(v->extract(opfer, ordner + "/original.bin", TransferOptions{}))
+        << v->lastError();
+    ASSERT_TRUE(v->erase(opfer)) << v->lastError();
+
+    const FsRecoverReport& r = v->recoverScan(FsRecoverLevel::Verzeichnis, true);
+    ASSERT_EQ(1u, r.funde.size()) << namen(r);
+    const FsRecoverFind& f = r.funde.front();
+    EXPECT_TRUE(f.name.empty());
+    EXPECT_EQ(FsRecoverQuality::Sicher, f.quality) << f.detail;
+    EXPECT_EQ("P", f.type);
+    EXPECT_FALSE(f.wiederherstellbar);
+    EXPECT_EQ(fs::file_size(ordner + "/original.bin"), f.size);
+
+    ASSERT_TRUE(v->recoverExtract(0, ordner + "/ZLINK")) << v->lastError();
+    EXPECT_EQ(bytes(ordner + "/original.bin"), bytes(ordner + "/ZLINK"));
+
+    const std::string zeile = beiblattZeile(ordner, "ZLINK");
+    ASSERT_FALSE(zeile.empty());
+    EXPECT_NE(std::string::npos, zeile.find("typ=P"))   << zeile;
+    EXPECT_NE(std::string::npos, zeile.find("satz=512")) << zeile;
+    EXPECT_NE(std::string::npos, zeile.find("segs="))
+        << "Die sechs Segmente von ZLINK fehlen — so startet die Datei nicht mehr: "
+        << zeile;
+
+    v.reset();
+    fs::remove_all(ordner);
+    fs::remove(pfad);
+}
+
+/// @test Der Suchlauf schreibt auch bei UDOS nie (E1/E7).
+///
+/// Die Zusage, auf der das ganze Verfahren steht: eine physische Diskette wird fuer
+/// eine Rettung schreibgeschuetzt geoeffnet, und dabei muss der Suchlauf vollstaendig
+/// bedienbar bleiben.
+TEST(FsRecoverUdos, DerSuchlaufSchreibtNie) {
+    const std::string pfad = kopie("udos_boot_scp.hfe", "fsrec_udos_lesend.hfe");
+    std::string err;
+    auto v = DiskVolume::open(pfad, "", formate(), dateisysteme(), err, /*read_only=*/true);
+    ASSERT_TRUE(v) << err;
+    const auto vorher = fs::last_write_time(pfad);
+    v->recoverScan(FsRecoverLevel::Oberflaeche, true);
+    v.reset();
+    EXPECT_EQ(vorher, fs::last_write_time(pfad));
+    fs::remove(pfad);
 }

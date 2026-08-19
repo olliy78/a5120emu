@@ -177,6 +177,16 @@ struct UdosFileHeader {
     std::string propertyLetters() const;
 };
 
+/// @brief Kopfsektor-/Descriptorangaben in einen @ref FileEntry uebernehmen.
+///
+/// Die Felder liegen bei ZDOS und zu NDOS an denselben Offsets (s. o.), und beide
+/// Klassen brauchten sie schon in ihrem `loadDetails`.  Die Wiederherstellung
+/// braucht dieselbe Uebertragung ein drittes Mal — aus ihr entsteht das Beiblatt
+/// `udos-dateiangaben.txt` zu einem geretteten Fund (§13.3).  Deshalb steht sie
+/// hier an EINER Stelle; laufen die drei auseinander, kommt eine gerettete Datei
+/// mit anderen Angaben zurueck als eine extrahierte.
+void udosKopfInEintrag(const UdosFileHeader& hdr, FileEntry& e);
+
 /**
  * @struct UdosDirEntry
  * @brief Ein Eintrag der Verzeichnisdatei (§5): Flagbyte, Name, Zeiger auf den Kopfsektor.
@@ -259,6 +269,33 @@ public:
      * | `udos.verz.eintrag.entfernen` | @c s = Name des Eintrags |
      */
     bool repair(const FsRepair& r) override;
+
+    /// @name Wiederherstellung — umgesetzt in `core/filesystem/check/udos_recover.cpp`
+    ///
+    /// UDOS loescht mit dem Verzeichniseintrag und den Kartenbits; Kopfsektor, Saetze
+    /// und die ganze Verkettung bleiben stehen.  Gefunden wird deshalb ueber die
+    /// **Signatur des Kopfsektors** (§13.1), nicht ueber einen Rest im Verzeichnis.
+    /// Die namenlosen Felder von @ref FsRecoverFind tragen hier:
+    ///
+    /// | Feld | Bedeutung |
+    /// |---|---|
+    /// | @c d | 0 = Kopfsektor-Fund, 1 = Rohbereich |
+    /// | @c a / @c b | Spur und Sektorindex des Anfangs |
+    /// | @c c | erreichbare Saetze bzw. Sektoren |
+    /// | @c teile | Satzanfaenge bzw. Sektoren, je `Spur*256 + Sektorindex` |
+    ///
+    /// **Ein `recoverRestore` gibt es hier bewusst nicht** — der Weg zurueck fuehrt
+    /// ueber Retten, Benennen und `put` (Begruendung im Dateikopf von
+    /// `udos_recover.cpp`).  Die Vorgabe der Basisklasse lehnt mit Grund ab.
+    /// @{
+    FsRecoverReport recoverScan(FsRecoverLevel level, bool nachladen) const override;
+    bool recoverRead(const FsRecoverFind& f, std::vector<uint8_t>& out) const override;
+    bool recoverEntry(const FsRecoverFind& f, FileEntry& out) const override;
+    /// @brief Lehnt ab — **und nennt den Weg zurueck**.  Die Vorgabe der Basisklasse
+    ///        saegt nur „kennt keine Wiederherstellung"; wer das liest, weiss nicht,
+    ///        was er stattdessen tun soll.
+    bool recoverRestore(const FsRecoverFind& f, const std::string& name) override;
+    /// @}
 
     // ─── Innenansicht (Diagnose, Tests) ──────────────────────────────────────
 
