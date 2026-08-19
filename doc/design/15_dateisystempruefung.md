@@ -1,9 +1,9 @@
 # Dateisystemprüfung, Reparatur und Wiederherstellung (`fsck`)
 
-> **Stand:** 2026-08-19 · **Etappen 1–4 umgesetzt** (Modell, CP/M-, ZDOS- und
+> **Stand:** 2026-08-19 · **Etappen 1–4 und 7 umgesetzt** (Modell, CP/M-, ZDOS- und
 > NDOS-Prüfung, Automatik beim Öffnen, `check --full`, Anzeige; Reparatur in Kern,
-> C-ABI, CLI und Oberfläche samt Sprung in den Diskeditor)
-> — s. §19 (Etappenplan)
+> C-ABI, CLI und Oberfläche samt Sprung in den Diskeditor; **Ebene 0** — warum wurde
+> nichts erkannt) — s. §19 (Etappenplan)
 > **Gehört zu:** `doc/design/13_k1520disktool.md` (das Werkzeug), `doc/udos_diskettenformat.md`,
 > `doc/udos1715_diskettenformat.md`, `doc/design/14_physische_diskette.md`,
 > `doc/design/09_floppy_drive.md`
@@ -28,10 +28,11 @@ Kürze. Die Begründungen dahinter stehen in den genannten Abschnitten.
 | C-ABI | `k1520d_check` · `k1520d_check_complete` · `k1520d_check_tracks_*` · `k1520d_check_summary` · `k1520d_finding_*` · `k1520d_repair_*` · `k1520d_apply_repairs` (der frühere Textbericht heißt jetzt `k1520d_check_report`) |
 | CLI | `check [--full] [--json]` · `fsck [--full] [--repair[=alle\|sicher\|<kennung>,…]] [--dry-run] [--json]` |
 | Oberfläche | Statuszeile · Meldungsstreifen (mit Rangfolge) · Protokoll · Diskettenangaben inkl. Schaltfläche *Vollprüfung* · **Reparaturdialog** `ui/fsck_dialog.py` (Aktion `act_reparieren`, Strg+F) mit Sprung in den Diskeditor (`DiskEditorWindow.zeige_ort`) |
-| Tests | `tests/unit/filesystem/test_fs_check.cpp` (45, davon 12 `FsCheckReparatur.*`) · `cli_dt_check_*` (5) · `cli_dt_fsck_*` (4) · `py_disk_c_api` · `py_disktool_gui` (11 Prüf-/Reparaturfälle) |
+| Ebene 0 | `DiskVolume::merkeAblehnung` sammelt (Kandidat, Grund), `DiskVolume::ebene0` macht Befunde daraus (`erkennung.abgelehnt`, `erkennung.ohne_kandidat`, Ebene `FsLayer::Erkennung`); `check`/`fsck` öffnen roh, das Protokoll der Oberfläche führt die Gründe auf, der Prüfdialog geht auch ohne Dateisystem (§11) |
+| Tests | `tests/unit/filesystem/test_fs_check.cpp` (47, davon 12 `FsCheckReparatur.*`) · `cli_dt_check_*` (6) · `cli_dt_fsck_*` (4) · `py_disk_c_api` · `py_disktool_gui` (13 Prüf-/Reparatur-/Ebene-0-Fälle) |
 
-**Fehlt noch.** Etappen 1–4 sind abgeschlossen; offen sind 5, 6 und 7 (§19). Jede
-ist für sich abschließbar — hier steht, wo man jeweils den Fuß hineinsetzt.
+**Fehlt noch.** Etappen 1–4 und 7 sind abgeschlossen; offen sind **5 und 6** (§19).
+Jede ist für sich abschließbar — hier steht, wo man jeweils den Fuß hineinsetzt.
 
 **Etappe 5 — Wiederherstellung CP/M** (§13, das gesuchte Verfahren steht dort
 vollständig).  Der einfachste und häufigste Rettungsfall: Löschen setzt bei CP/M nur
@@ -56,24 +57,12 @@ Etappe 5 (Modell und Dialog) voraus.  Als einziger Lesezugang fehlt noch
 Sektors; die Kopfsektorsuche braucht beides, `recordChain()`/`readHeader()` gehen
 dagegen schon vom Verzeichnis aus.
 
-**Etappe 7 — Ebene 0, „warum wurde nichts erkannt?"** (§11).  Die kleinste der drei
-und die mit dem besten Verhältnis von Aufwand zu Nutzen: **die Begründungen liegen
-bereits vor und werden nur weggeworfen.**  Konkret in `core/filesystem/disk_volume.cpp`
-in der Erkennungsschleife (Stand 2026-08-19 um Z. 774–789):
-
-```cpp
-std::string warum;
-if (!UdosFileSystem::looksLikeUdos(probe, *p, 0, &warum)) continue;   // warum verfällt
-if (!Udos1715FileSystem::looksLikeUdos1715(probe, *p, &warum)) continue;
-if (!cpmVerzeichnisPlausibel(dv->disk_->medium(), *f, *p)) continue;  // ohne &warum!
-```
-
-Alle drei Proben können den Grund schon ausgeben (`cpmVerzeichnisPlausibel` hat den
-Parameter als vierten, voreingestellt `nullptr`) — es fehlt allein das Einsammeln nach
-`(Profilname, Grund)` und die Ausgabe als Befundliste bei `hasFileSystem() == false`.
-Der Rückfallzweig darunter (Z. ≈ 809) sammelt bereits einen Grund ein (`abgelehnt`),
-aber nur den **ersten**; das ist das Muster, nur eben vollständig.  Reparaturen gibt
-es auf dieser Ebene nicht.
+**Etappe 7 — Ebene 0 ist fertig** (§11, 2026-08-19). Aus „nichts erkannt" ist eine
+Befundliste geworden: jeder geprüfte Kandidat mit seinem Grund, als eigene Ebene
+`FsLayer::Erkennung` und mit `Info` als Schwere. `check`/`fsck` öffnen dafür **roh**
+(Rückgabewert 2), die Oberfläche schreibt die Gründe ins Protokoll und lässt den
+Prüfdialog auch ohne Dateisystem zu. Offen geblieben ist allein die **Gegenprobe der
+Alternativprofile** — mit Grund, s. §20.
 
 **Kleiner Rest, keine eigene Etappe:**
 
@@ -573,35 +562,63 @@ die Zahl der wirklich vorhandenen Adressen setzen).
 
 ---
 
-## 11. Ebene 0 — „Warum wurde denn nichts erkannt?"
+## 11. Ebene 0 — „Warum wurde denn nichts erkannt?"   ✅ *(umgesetzt 2026-08-19)*
 
 Der bisher unangenehmste Fall ist der, in dem das Werkzeug gar nicht erst hineinkommt:
-`roh geöffnet — kein Dateisystem erkannt` (§12.6). Der Anwender bekommt einen Satz und
+`roh geöffnet — kein Dateisystem erkannt` (§12.6). Der Anwender bekam einen Satz und
 keine Handhabe. Dabei **weiß** die Erkennung ziemlich genau, woran es lag: jede
 Positivprobe (`UdosFileSystem::looksLikeUdos`, `Udos1715FileSystem::looksLikeUdos1715`,
 `UdosBitmap::looksValid`, `CpaDpbRule::profile`, `cpmVerzeichnisPlausibel`) liefert
-einen `why`-Text — und `disk_volume.cpp` wirft ihn heute weg (`if (!… ) continue;`).
+einen `why`-Text — und `disk_volume.cpp` warf ihn im `continue` weg.
 
-Die Prüfung sammelt sie ein. Auf einer roh geöffneten Diskette liefert sie damit statt
-eines Berichts über das Dateisystem einen Bericht über die **Ablehnungen**:
+Jetzt sammelt `DiskVolume::merkeAblehnung` ihn als **(Kandidat, Grund)** ein, und
+`DiskVolume::check` macht daraus Befunde, sobald `hasFileSystem() == false` ist. Auf
+einer roh geöffneten Diskette liefert die Prüfung damit statt eines Berichts über das
+Dateisystem einen Bericht über die **Ablehnungen**:
 
 ```
-Kein Dateisystem erkannt.  Geprüfte Kandidaten:
-  udos43      Seite 0: Belegungskarte Spur 23: Zählerabgleich scheitert
-              (belegt 214 + frei 2248 ≠ 2002)
-  udos1715    Descriptor Spur 22 Sektor 0: Typbyte 00 ist kein Verzeichnistyp
-  cpa780      Verzeichnis c2h0: 96 von 128 Plätzen tragen ein Nutzerbyte > 15
-  (gemessen)  Geometrie 80×2×16×256 — die CP/A-Regel greift hier nicht:
-              Sektorlängencode der Datenspur ist 3, Spur 0 aber unformatiert
+$ k1520disktool check kaputt.img
+kaputt.img  cpa780 / (kein Dateisystem erkannt)  Schnellprüfung
+
+Hinweis Erkennung   cpa780    erkennung.abgelehnt   Geometrie cpa780: Verzeichnisplatz 0
+                                                    trägt Nutzerbereich 0xDC — das
+                                                    Verzeichnis ist nicht angelegt
+Hinweis Erkennung   cpa_auto  erkennung.abgelehnt   Geometrie cpa780: …
+
+kein Dateisystem erkannt — 2 geprüfte(r) Kandidat(en) oben          [exit 2]
 ```
 
 Das ist oft schon die ganze Diagnose. Genau so wurden die drei jüngsten Fremdformate
 gelöst (fremde Sync-Sitte, P8000, SCP1700) — jedes Mal war die Frage „welche Prüfung
 sagt Nein und mit welcher Zahl". Die Prüfung macht aus dieser Handarbeit eine Ausgabe.
 
-Diese Ebene braucht **kein** Dateisystem und läuft deshalb auch bei
-`hasFileSystem() == false`. Reparaturen gibt es hier nicht; die Handhaben sind die
-vorhandenen (`--fs` übersteuern, `keepEvenTracks`, `dropSecondSide`, Diskeditor).
+Sechs Festlegungen, die dabei entstanden sind:
+
+* **Eine eigene Ebene, `FsLayer::Erkennung`** (Zahl 3, additiv an die C-ABI angehängt,
+  `EBENE_ERKENNUNG` in `k1520disk.py`). Sie beschreibt nicht das Dateisystem, sondern
+  das Ausbleiben eines solchen — sie in `Verwaltung` zu stecken hieße, von einer
+  Verwaltung zu sprechen, die es nicht gibt.
+* **Schwere `Info`, nie mehr.** Ein Ablehnungsgrund ist kein Schaden, sondern ein
+  Fund. Auf einer erkannten Diskette darf `erkennung.*` gar nicht vorkommen — Wächter
+  `FsCheckKeineFalschmeldungen.EineErkannteDisketteHatKeineBefundeDerEbene0`.
+* **Kennungen:** `erkennung.abgelehnt` (ein Kandidat mit seinem Grund) und
+  `erkennung.ohne_kandidat` (es kam gar keine Dateisystemprobe zum Zug — dann lag es
+  schon an der Geometrie, und deren Grund steht im Text).
+* **Reparaturen gibt es hier nicht**; die Handhaben sind die vorhandenen (`--fs`
+  übersteuern, `keepEvenTracks`, `dropSecondSide`, Diskeditor).
+* **`check` und `fsck` öffnen roh** (`roh_erlaubt`), sonst käme die Ebene 0 auf der
+  Kommandozeile nie zum Zug — gerade die unerkannte Diskette ist die, über die man
+  etwas erfahren will. Rückgabewert bleibt `2` (nicht erkannt), nicht `1` (Befunde).
+  Mit `--repair` bleibt es beim Abbruch: reparieren lässt sich nur ein Dateisystem,
+  das es gibt.
+* **Die Geometrie gehört in den Befund, auch wenn kein Dateisystem darauf liegt** —
+  `detection().format` wird im rohen Zweig gesetzt; sonst zeigt die Anzeige ein leeres
+  Feld statt der einen Sache, die feststeht.
+
+> **Nebenbefund, an dem sich der Wert der Ebene 0 sofort zeigte:** der Grund aus
+> `cpmVerzeichnisPlausibel` lief in einen `char t[80]` und wurde mitten im Wort
+> abgeschnitten („… das Verzeichnis ist nicht ange"). Solange er weggeworfen wurde,
+> fiel das keinem auf. Jetzt baut ihn ein `std::string`.
 
 ---
 
@@ -1064,9 +1081,16 @@ beide Seiten beherrscht:
 * `FsRecover.UdosBeiblattTraegtDieKopfangaben` — geretteter UDOS-Fund lässt sich mit
   `put` wieder vollwertig einspielen.
 
-**Ebene 0:** `FsCheck.EineUnerkannteDisketteNenntDieAblehnungsgruende` — eine
-absichtlich verstümmelte Diskette roh öffnen und prüfen, dass jeder Kandidat mit
-seinem `why` auftaucht.
+**Ebene 0 ✅:** `FsCheck.EineUnerkannteDisketteNenntDieAblehnungsgruende` — eine
+absichtlich verstümmelte Diskette (Verzeichnisplatz 0 auf Nutzerbereich `0xDC`) roh
+öffnen und prüfen, dass jeder Kandidat mit seinem `why` auftaucht, dass Ebene und
+Schwere stimmen, dass keine Reparatur dranhängt und dass zweimaliges Prüfen dasselbe
+liefert.  Gegenprobe
+`FsCheckKeineFalschmeldungen.EineErkannteDisketteHatKeineBefundeDerEbene0` (kein
+`erkennung.*` auf einer erkannten Diskette).  Dazu `cli_dt_check_ebene0` (Textausgabe
+und Rückgabewert 2) und in der Oberfläche
+`test_eine_roh_geoeffnete_diskette_nennt_die_ablehnungsgruende` (Protokoll) und
+`test_der_pruefdialog_geht_auch_ohne_dateisystem`.
 
 **Oberfläche und ABI:** `py_disk_c_api` um die neuen Funktionen erweitern (der
 Driftwächter zwingt ohnehin dazu), `py_disktool_gui` um beide Dialoge (offscreen,
@@ -1089,7 +1113,7 @@ Alles bleibt in der schnellen Regression; nichts davon braucht ein Laufwerk oder
 | **4** ✅ | Ebene Medium: CRC-Übersicht mit Rückabbildung auf Dateien, **Sprung in den Diskeditor** | Die Rückabbildung ist mit den Etappen 1+2 mitgekommen („Satz 14 von `STAT.COM` liegt auf einem Sektor mit falscher CRC", bei UDOS je Datei zusammengefasst).  Der **Sprung** kam 2026-08-19 mit dem Reparaturdialog: Doppelklick auf einen Befund → `MainWindow._befund_im_editor` → `DiskEditorWindow.zeige_ort(cyl, head, sector)`. |
 | **5** | Wiederherstellung CP/M (Verzeichnisplätze + freie Blöcke) mit Dialog und `recover` | Der häufigste und einfachste Rettungsfall. |
 | **6** | Wiederherstellung UDOS/NDOS (Kopfsektorsuche, Kettenverfolgung, Beiblatt) | Der wertvollste — dreißig Jahre alte gelöschte Dateien mit vollständigen Angaben. |
-| **7** | Ebene 0 (Ablehnungsgründe der Erkennung) und die Gegenprobe der Alternativprofile | Aus „nichts erkannt" wird eine Diagnose. |
+| **7** ◐ | Ebene 0 (Ablehnungsgründe der Erkennung) und die Gegenprobe der Alternativprofile | **Ebene 0 umgesetzt 2026-08-19.**  Aus „nichts erkannt" ist eine Diagnose geworden: `erkennung.abgelehnt` je Kandidat, eigene Ebene `FsLayer::Erkennung`, roh öffnendes `check`/`fsck`, Protokoll und Prüfdialog der Oberfläche.  Die **Gegenprobe** bleibt offen (§20). |
 
 Die Etappen 1–3 sind der Kern; 4–7 sind je für sich abschließbar und je für sich
 nützlich.  `✅` = fertig, `◐` = zum Teil (s. Bemerkung).
@@ -1106,8 +1130,14 @@ nützlich.  `✅` = fertig, `◐` = zum Teil (s. Bemerkung).
   Diskeditor ist heute die Handhabe.
 * **Die Gegenprobe der Alternativprofile** (bei `unambiguous == false` jedes
   Kandidatenprofil kurz prüfen und melden, wenn ein anderes sauberer prüft) ist billig
-  und nützlich, aber sie kann bei sehr ähnlichen Profilen zu einem Hin und Her führen.
-  Sie kommt deshalb erst in Etappe 7 und **ändert nie die Wahl**, sie sagt sie nur an.
+  und nützlich, aber sie kann bei sehr ähnlichen Profilen zu einem Hin und Her führen;
+  sie dürfte deshalb **nie die Wahl ändern**, sondern sie nur ansagen.
+  **Zurückgestellt (2026-08-19), und zwar aus einem harten Grund: es gibt heute keinen
+  Fall, an dem sie prüfbar wäre.** `filesystems:` ist absichtlich eindeutig gehalten —
+  `cpa640` wurde 2026-08-11 genau deshalb *entfernt* („er sorgte nur dafür, dass jede
+  16×256-Diskette ‚nicht eindeutig' gemeldet wurde"), und keine Fixture im Baum meldet
+  Alternativen. Eine ungetestete Gegenprobe im Prüfpfad wäre teurer als ihr Nutzen; sie
+  gehört in dieselbe Änderung wie der erste Katalogeintrag, der wieder mehrdeutig ist.
 * **`cpm.block.luecke`** (Nullzeiger vor belegtem Zeiger) ist bei CP/M 2.2 fast immer
   ein Schaden, aber eben nicht sicher. Bleibt `Warnung` ohne Reparatur, bis ein echter
   Fall vorliegt.

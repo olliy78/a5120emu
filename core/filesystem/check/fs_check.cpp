@@ -30,6 +30,7 @@ const char* fsLayerName(FsLayer l) {
         case FsLayer::Medium:     return "Medium";
         case FsLayer::Verwaltung: return "Verwaltung";
         case FsLayer::Dateien:    return "Dateien";
+        case FsLayer::Erkennung:  return "Erkennung";
     }
     return "?";
 }

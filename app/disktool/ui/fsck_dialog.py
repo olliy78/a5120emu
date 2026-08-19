@@ -52,7 +52,10 @@ def kopfzeile(tool, bericht) -> str:
         n = sum(1 for f in bericht.findings if f.severity == schwere)
         if n:
             zahlen.append(f"{n} {wort}")
-    return (f"{tool.path or 'physische Diskette'} · {tool.filesystem} · {tiefe}{wo}\n"
+    # Ohne Dateisystem (roh geöffnet) steht hier die Ebene 0: der Bericht sagt dann
+    # nicht, wie es dem Dateisystem geht, sondern warum keines erkannt wurde (§11).
+    was = tool.filesystem if tool.has_filesystem else "kein Dateisystem erkannt"
+    return (f"{tool.path or 'physische Diskette'} · {was} · {tiefe}{wo}\n"
             + ("   ".join(zahlen) if zahlen else "ohne Befund"))
 
 

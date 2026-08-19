@@ -546,13 +546,15 @@ UNFORMATTED, GAP, SECTOR = 0, 1, 2
 
 #: Schweregrade eines Befundes — die Zahlen sind ein Vertrag mit der C-ABI.
 INFO, WARNUNG, FEHLER, GEFAHR = 0, 1, 2, 3
-#: Ebenen: worauf der Befund beruht.
-EBENE_MEDIUM, EBENE_VERWALTUNG, EBENE_DATEIEN = 0, 1, 2
+#: Ebenen: worauf der Befund beruht.  ``EBENE_ERKENNUNG`` ist die Ebene 0 (§11) —
+#: sie sagt nicht, was mit dem Dateisystem ist, sondern **warum keines erkannt
+#: wurde**; sie kommt nur an einer roh geöffneten Diskette vor.
+EBENE_MEDIUM, EBENE_VERWALTUNG, EBENE_DATEIEN, EBENE_ERKENNUNG = 0, 1, 2, 3
 
 SCHWERE_NAME = {INFO: "Hinweis", WARNUNG: "Warnung",
                 FEHLER: "Fehler", GEFAHR: "Gefahr"}
 EBENE_NAME = {EBENE_MEDIUM: "Medium", EBENE_VERWALTUNG: "Verwaltung",
-              EBENE_DATEIEN: "Dateien"}
+              EBENE_DATEIEN: "Dateien", EBENE_ERKENNUNG: "Erkennung"}
 
 
 @dataclass(frozen=True)

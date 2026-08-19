@@ -48,7 +48,7 @@ from app import paths
 from app.disktool.archive import NAMENLOS, create_archive, dateiname
 
 from app.core_binding.k1520disk import (
-    FEHLER, GEFAHR, WARNUNG, DiskTool, K1520DiskError, filesystems,
+    EBENE_ERKENNUNG, FEHLER, GEFAHR, WARNUNG, DiskTool, K1520DiskError, filesystems,
 )
 from app.disktool.ui.actions import erzeuge_aktionen
 from app.disktool.ui.disk_editor import DiskEditorWindow
@@ -536,8 +536,12 @@ class MainWindow(QMainWindow):
         for a in (self.act_speichern_unter, self.act_diskeditor, self.act_angaben,
                   self.act_schliessen, self.act_aktualisieren):
             a.setEnabled(offen)
-        for a in (self.act_archivieren, self.act_alles_raus, self.act_reparieren):
+        for a in (self.act_archivieren, self.act_alles_raus):
             a.setEnabled(mit_fs)            # braucht Dateien
+        # Prüfen geht auch OHNE Dateisystem: an einer roh geöffneten Diskette ist
+        # der Bericht die Begründung, warum keines erkannt wurde (Ebene 0, §11) —
+        # und das ist genau die Diskette, über die man etwas erfahren will.
+        self.act_reparieren.setEnabled(offen)
         self.act_speichern.setEnabled(schreibbar)
         self.act_alles_rein.setEnabled(schreibbar and mit_fs)
 
@@ -1191,6 +1195,13 @@ class MainWindow(QMainWindow):
         """
         grund = (self.tool.remarks or "").strip()
         self.log_dock.append("Kein Dateisystem erkannt. " + grund)
+        # Ebene 0 (§11): die Erkennung hat jeden Kandidaten befragt und jeder hat
+        # gesagt, woran es lag — das ist oft schon die ganze Diagnose.  Sie gehört
+        # ins Protokoll, denn dort schlägt man nach; der Streifen fasst zusammen.
+        abgelehnt = [f for f in self.tool.findings().findings
+                     if f.layer == EBENE_ERKENNUNG]
+        for f in abgelehnt:
+            self.log_dock.append(f"  geprüft: {f.object} — {f.text}")
         # Am Laufwerk läuft das Lesen weiter, bei einer Datei ist schon alles da —
         # ein Satz, der das Falsche verspricht, ist schlimmer als keiner.
         laeuft = self._physisch is not None
@@ -1875,7 +1886,7 @@ class MainWindow(QMainWindow):
         Protokoll.  Eine Reparatur ändert dazu das Verzeichnis, also wird auch
         die Dateiliste neu gelesen.
         """
-        if self.tool is None or not self.tool.has_filesystem:
+        if self.tool is None:
             return
         dlg = FsckDialog(self.tool, self, zeige_ort=self._befund_im_editor,
                          log=self.log)

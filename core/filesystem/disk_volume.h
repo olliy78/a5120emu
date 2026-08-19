@@ -642,6 +642,27 @@ private:
     ///        danach mit denselben Bedingungen nach — sonst verglichen sich zwei
     ///        Berichte ueber unterschiedlich viel Diskette.
     bool               check_nachladen_ = false;
+    /// @brief Ebene 0: **warum** hat kein Kandidat gepasst?  (Entwurf §11)
+    ///
+    /// Jede Positivprobe der Erkennung liefert einen Grund; frueher wurde er im
+    /// `continue` weggeworfen und der Anwender bekam einen Satz statt einer Diagnose.
+    /// Hier steht er als (Kandidat, Grund) — @ref check macht daraus die Befunde
+    /// `erkennung.abgelehnt`, sobald @ref hasFileSystem @c false ist.  Die Liste
+    /// kostet nichts: die Gruende fielen beim Oeffnen ohnehin an.
+    std::vector<std::pair<std::string, std::string>> ablehnungen_;
+    /// @brief Der eine Satz, mit dem @c oeffnenMit roh geoeffnet hat (Ebene 0).
+    std::string        roh_grund_;
+
+    /// @brief Einen Ablehnungsgrund der Erkennung merken (Ebene 0, §11).
+    /// @param kandidat  Name des geprueften Dateisystemprofils
+    /// @param format    Geometrie, auf der geprueft wurde
+    /// @param warum     Begruendung der Probe (darf leer sein)
+    void merkeAblehnung(const std::string& kandidat, const std::string& format,
+                        const std::string& warum);
+
+    /// @brief Die Befunde der Ebene 0 an einen Bericht anhaengen (§11).
+    ///        Laeuft nur bei @ref hasFileSystem @c false und kostet keinen Spurzugriff.
+    void ebene0(FsCheckReport& an) const;
     /// @brief Teil des Befunds, der NICHT aus der Spurmessung stammt (CP/A-Regel,
     ///        Hinweise zum Container) — @ref refreshDetection laesst ihn stehen.
     std::string        befund_zusatz_;

@@ -1722,3 +1722,82 @@ TEST(FsCheckReparatur, UdosGebrocheneKetteWirdGekuerzt) {
         << kennungen(v->checkReport());
     fs::remove(d);
 }
+
+// ═══ 6. Ebene 0 — „warum wurde denn nichts erkannt?" (§11) ═══════════════════
+//
+// Auf einer roh geoeffneten Diskette gibt es kein Dateisystem zu pruefen — wohl aber
+// etwas zu sagen: jede Positivprobe der Erkennung hat einen Grund genannt.  Frueher
+// verfiel er im `continue`, und der Anwender bekam einen Satz statt einer Diagnose.
+
+namespace {
+
+/// @brief Roh oeffnen — so wie es die Oberflaeche und `check` tun, wenn nichts passt.
+std::unique_ptr<DiskVolume> oeffneRoh(const std::string& pfad) {
+    std::string err;
+    auto v = DiskVolume::open(pfad, "", formate(), dateisysteme(), err,
+                              /*read_only=*/true, /*roh_erlaubt=*/true);
+    EXPECT_TRUE(v) << pfad << ": " << err;
+    return v;
+}
+
+}  // namespace
+
+/// @test Eine Diskette, auf der nichts erkannt wird, nennt jeden gepruefen Kandidaten
+///       mit seinem Ablehnungsgrund.
+TEST(FsCheck, EineUnerkannteDisketteNenntDieAblehnungsgruende) {
+    const std::string d = kopie("cpa_cpa780_k5601_noclock.img", "fscheck_ebene0.img");
+    const int platz = ersterPlatz(d);
+    ASSERT_GE(platz, 0);
+    // Ein Nutzerbereich > 15 macht den Platz unbrauchbar — genau daran scheitert die
+    // Erkennung, und genau das soll sie jetzt auch SAGEN.
+    schreib(d, platzOffset(platz), {0xDC});
+
+    auto v = oeffneRoh(d);
+    ASSERT_TRUE(v);
+    ASSERT_FALSE(v->hasFileSystem()) << "die Diskette darf hier nicht erkannt werden";
+    // Die Geometrie steht trotzdem fest und gehoert in den Befund.
+    EXPECT_EQ("cpa780", v->detection().format);
+
+    const FsCheckReport& r = v->check(FsCheckLevel::Schnell, true);
+    const std::vector<FsFinding> ab = mitId(r, "erkennung.abgelehnt");
+    ASSERT_FALSE(ab.empty()) << kennungen(r);
+
+    bool cpa780_dabei = false;
+    for (const FsFinding& f : r.findings) {
+        EXPECT_EQ(FsLayer::Erkennung, f.layer) << f.id;
+        EXPECT_EQ(FsSeverity::Info, f.severity) << f.id;   // ein Fund, kein Schaden
+        EXPECT_TRUE(f.repairs.empty()) << f.id << ": Ebene 0 repariert nichts";
+        if (f.object == "cpa780") cpa780_dabei = true;
+    }
+    EXPECT_TRUE(cpa780_dabei) << kennungen(r);
+
+    // Der Grund muss die ZAHL tragen und darf nicht abgeschnitten sein — er wird
+    // jetzt ausgegeben, und ein fester Puffer schnitt ihn frueher mitten im Wort ab.
+    const std::string t = ab.front().text;
+    EXPECT_NE(std::string::npos, t.find("0xDC")) << t;
+    EXPECT_NE(std::string::npos, t.find("nicht angelegt")) << t;
+    EXPECT_NE(std::string::npos, t.find("cpa780")) << t << " (Geometrie fehlt)";
+
+    // Zweimal pruefen liefert dasselbe — der Bericht wird bei jedem Lauf neu gebaut,
+    // die Gruende duerfen sich dabei nicht haeufen.
+    const size_t n = r.findings.size();
+    EXPECT_EQ(n, v->check(FsCheckLevel::Voll, true).findings.size());
+    fs::remove(d);
+}
+
+/// @test Gegenprobe: eine erkannte Diskette traegt KEINEN Befund der Ebene 0.
+///
+/// Die Kennung `erkennung.*` darf nur dort auftauchen, wo wirklich nichts erkannt
+/// wurde — sonst stuenden auf jeder gesunden Diskette Ablehnungen von Kandidaten,
+/// die schlicht nicht gemeint waren.
+TEST(FsCheckKeineFalschmeldungen, EineErkannteDisketteHatKeineBefundeDerEbene0) {
+    for (const char* name : {"cpa_cpa780_k5601_noclock.img", "udos_boot_scp.hfe",
+                             "udos1715_640k_pc1715_system.img"}) {
+        auto v = oeffneRoh(fixture(name));
+        ASSERT_TRUE(v) << name;
+        EXPECT_TRUE(v->hasFileSystem()) << name;
+        const FsCheckReport& r = v->check(FsCheckLevel::Schnell, true);
+        for (const FsFinding& f : r.findings)
+            EXPECT_NE(FsLayer::Erkennung, f.layer) << name << ": " << f.id;
+    }
+}

@@ -436,6 +436,13 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 >   (`app/disktool/ui/fsck_dialog.py`, Strg+F). Und ein CP/M-Blockzeiger wird nie
 >   mitten aus der Liste gestrichen, sondern **ab dort abgeschnitten**: ein Loch
 >   verschöbe jeden folgenden Satz, der Extent lieferte danach falsche Daten aus.
+> - **„Nichts erkannt" ist selbst ein Befund** (Ebene 0, §11): die Ablehnungsgründe
+>   der Erkennung werden eingesammelt (`DiskVolume::merkeAblehnung`) statt im
+>   `continue` verworfen und bei `hasFileSystem() == false` als `erkennung.abgelehnt`
+>   auf der Ebene `FsLayer::Erkennung` ausgegeben. `check`/`fsck` öffnen dafür **roh**
+>   (Rückgabewert 2), die Oberfläche schreibt sie ins Protokoll, der Prüfdialog geht
+>   auch ohne Dateisystem auf. Auf einer ERKANNTEN Diskette darf `erkennung.*` nie
+>   vorkommen (Wächter `…EineErkannteDisketteHatKeineBefundeDerEbene0`).
 
 ## Physische Diskette am Greaseweazle (`core/peripherals/floppy_drive/track_sync.*`, `app/gw/`)
 

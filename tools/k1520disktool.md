@@ -124,6 +124,32 @@ liegt Platz brach, und womöglich eine gelöschte Datei.
 sind, ist Sitte des jeweiligen Formatierers und keine Eigenschaft des Dateisystems;
 an echten Disketten reicht das von „nur drei Sektoren" bis „völlig frei".
 
+### Wenn gar nichts erkannt wird: `check` sagt, woran es lag
+
+Eine Diskette, auf der kein Dateisystem erkannt wird, bricht `check` nicht mehr mit
+einem Satz ab — sie wird **roh geöffnet**, und der Bericht besteht dann aus den
+Ablehnungsgründen der Erkennung (Ebene `Erkennung`, Kennung `erkennung.abgelehnt`).
+Jede Positivprobe weiß, woran sie sich gestoßen hat; genau diese Zahlen sind bei den
+zuletzt gelösten Fremdformaten die Diagnose gewesen:
+
+```sh
+$ k1520disktool check fremde.img
+fremde.img  cpa780 / (kein Dateisystem erkannt)  Schnellprüfung
+
+Hinweis Erkennung   cpa780    erkennung.abgelehnt   Geometrie cpa780: Verzeichnisplatz 0
+                                                    trägt Nutzerbereich 0xDC — das
+                                                    Verzeichnis ist nicht angelegt
+
+kein Dateisystem erkannt — 2 geprüfte(r) Kandidat(en) oben
+$ echo $?
+2
+```
+
+Der Rückgabewert ist **2** (nicht erkannt), nicht 1 (Befunde).  `fsck` verhält sich
+ohne `--repair` genauso; **mit** `--repair` bleibt es beim Abbruch — reparieren lässt
+sich nur ein Dateisystem, das es gibt.  Die Handhaben von hier aus sind `--fs NAME`
+(Erkennung übersteuern), `measure` und der Diskeditor der Oberfläche.
+
 > **Was `check` NICHT tut: etwas ändern.**  Die Prüfung ist durchgehend lesend.
 > Reparieren ist ein eigener, ausdrücklicher Schritt (`fsck --repair`, s. u.);
 > gelöschte Dateien wiederherstellen kommt später — Entwurf und Stand:

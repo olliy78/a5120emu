@@ -56,14 +56,18 @@ enum class FsSeverity : uint8_t {
  * - @c Verwaltung — Verzeichnis und Belegungsplan: wenige Spuren, beim Mounten ohnehin
  *   gelesen.  **Nur diese Ebene laeuft automatisch beim Oeffnen** (E2).
  * - @c Dateien — Kopfsektoren, Ketten, Kreuzbelegung: die ganze Diskette.
+ * - @c Erkennung — die Ebene 0 (§11): sie betrachtet gar kein Dateisystem, sondern
+ *   sagt, **warum keines erkannt wurde**.  Sie kommt nur an einer roh geoeffneten
+ *   Diskette vor, kostet nichts (die Gruende sind beim Oeffnen schon angefallen) und
+ *   traegt nie eine Reparatur.
  */
-enum class FsLayer : uint8_t { Medium = 0, Verwaltung = 1, Dateien = 2 };
+enum class FsLayer : uint8_t { Medium = 0, Verwaltung = 1, Dateien = 2, Erkennung = 3 };
 
 /// @brief Prueftiefe.  @c Schnell = nur @ref FsLayer::Verwaltung (E2).
 enum class FsCheckLevel : uint8_t { Schnell = 0, Voll = 1 };
 
 const char* fsSeverityName(FsSeverity s);   ///< "Hinweis"|"Warnung"|"Fehler"|"Gefahr"
-const char* fsLayerName(FsLayer l);         ///< "Medium"|"Verwaltung"|"Dateien"
+const char* fsLayerName(FsLayer l);         ///< "Medium"|"Verwaltung"|"Dateien"|"Erkennung"
 
 /**
  * @struct FsRepair

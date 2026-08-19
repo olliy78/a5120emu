@@ -2259,3 +2259,61 @@ def test_der_diskeditor_springt_wirklich_auf_den_genannten_ort(window, fixture_d
     seite, spur, _ = editor.aktuell
     assert (seite, spur) == (0, 3)
     editor.close()
+
+
+# ─── Ebene 0: „warum wurde denn nichts erkannt?" (Entwurf §11) ────────────────
+
+
+def _ohne_erkennbares_dateisystem(quelle, ziel):
+    """Eine cpa780-Kopie, deren erster Verzeichnisplatz einen Nutzerbereich > 15
+    trägt.  Daran scheitert die CP/M-Probe — die Diskette wird roh geöffnet."""
+    import shutil
+    shutil.copy(quelle, ziel)
+    roh = bytearray(ziel.read_bytes())
+    roh[15104] = 0xDC
+    ziel.write_bytes(bytes(roh))
+    return ziel
+
+
+def test_eine_roh_geoeffnete_diskette_nennt_die_ablehnungsgruende(window, fixture_disks,
+                                                                  tmp_path):
+    """Der unangenehmste Fall bekommt eine Diagnose statt eines Satzes.
+
+    Jede Positivprobe der Erkennung weiss, woran es lag; früher verfiel der Grund.
+    Er gehört ins Protokoll — dort schlägt man nach.
+    """
+    from app.core_binding.k1520disk import EBENE_ERKENNUNG
+
+    abbild = _ohne_erkennbares_dateisystem(
+        fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "roh_ebene0.img")
+    assert window.open_image(abbild)
+    assert not window.tool.has_filesystem
+
+    bericht = window.tool.findings()
+    assert bericht.findings, "roh geöffnet heisst nicht „keine Auskunft“"
+    assert all(f.layer == EBENE_ERKENNUNG for f in bericht.findings)
+    assert all(not f.repairs for f in bericht.findings), "Ebene 0 repariert nichts"
+    assert any(f.object == "cpa780" for f in bericht.findings)
+
+    text = window.protokoll.toPlainText()
+    assert "erkennung" in text.lower() or "geprüft: cpa780" in text
+    assert "0xDC" in text and "nicht angelegt" in text
+
+
+def test_der_pruefdialog_geht_auch_ohne_dateisystem(window, fixture_disks, tmp_path):
+    """Gerade die Diskette, auf der nichts erkannt wurde, ist die, über die man
+    etwas erfahren will — der Dialog zeigt dort die Ebene 0."""
+    from PySide6.QtCore import Qt
+    from app.disktool.ui.fsck_dialog import FsckDialog
+
+    abbild = _ohne_erkennbares_dateisystem(
+        fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "roh_dialog.img")
+    assert window.open_image(abbild)
+    assert window.act_reparieren.isEnabled(), "Prüfen braucht kein Dateisystem"
+
+    dlg = FsckDialog(window.tool, window)
+    assert dlg.baum.topLevelItemCount() == len(dlg.bericht.findings) > 0
+    assert "kein Dateisystem erkannt" in dlg.kopf.text()
+    eintraege = [dlg.baum.topLevelItem(i) for i in range(dlg.baum.topLevelItemCount())]
+    assert all(not (e.flags() & Qt.ItemIsUserCheckable) for e in eintraege)
+    assert not dlg.b_reparieren.isEnabled(), "hier gibt es nichts zu reparieren"

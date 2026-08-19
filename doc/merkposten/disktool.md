@@ -368,7 +368,35 @@ Was beim Weiterarbeiten zu wissen ist:
   Alle vier UDOS-Fixturen prüfen mit `--full` **ohne Befund** (Ketten, Kreuzbelegung,
   Karte↔Ketten, CRC, Nachspann).  Wächter: `FsCheckUdosSchaden.*` (8) und
   `FsCheckNdosSchaden.*` (5) mit gezielter Schadensinjektion.
-  Offen: Reparatur, Wiederherstellung gelöschter Dateien (Etappen 3–7 des Entwurfs).
+  Offen: Wiederherstellung gelöschter Dateien (Etappen 5 und 6 des Entwurfs).
+- **Etappe 7: Ebene 0 — „warum wurde denn nichts erkannt?"** (2026-08-19, Entwurf
+  §11).  Jede Positivprobe der Erkennung nennt einen Grund; der verfiel bisher im
+  `continue`, und der Anwender bekam EINEN Satz statt einer Diagnose.  Jetzt sammelt
+  ihn `DiskVolume::merkeAblehnung` als (Kandidat, Grund), und `DiskVolume::ebene0`
+  macht bei `hasFileSystem() == false` Befunde daraus.  Vier Festlegungen:
+  **(1) Eigene Ebene `FsLayer::Erkennung`** (Zahl 3, additiv an die C-ABI gehängt,
+  `EBENE_ERKENNUNG` in `k1520disk.py`) und Schwere **immer `Info`** — ein
+  Ablehnungsgrund ist ein Fund, kein Schaden.  Kennungen: `erkennung.abgelehnt` und
+  `erkennung.ohne_kandidat` (es kam gar keine Dateisystemprobe zum Zug).
+  **(2) Auf einer ERKANNTEN Diskette darf `erkennung.*` nicht vorkommen** — Wächter
+  `FsCheckKeineFalschmeldungen.EineErkannteDisketteHatKeineBefundeDerEbene0`.
+  **(3) `check` und `fsck` öffnen ROH** (`oeffne(..., roh_erlaubt)`), sonst käme die
+  Ebene 0 auf der Kommandozeile nie zum Zug; Rückgabewert bleibt **2** (nicht erkannt),
+  nicht 1 (Befunde).  Mit `--repair` bleibt es beim Abbruch.  In der Oberfläche gehen
+  die Gründe ins **Protokoll**, und der Prüfdialog (Strg+F) ist auch ohne Dateisystem
+  bedienbar.
+  **(4) Die Geometrie gehört auch dann in `detection().format`**, wenn kein
+  Dateisystem darauf liegt — sonst zeigt die Anzeige ein leeres Feld statt der einen
+  Sache, die feststeht.
+  Nebenbefund, der den Wert der Ebene 0 sofort belegt hat: der Grund aus
+  `cpmVerzeichnisPlausibel` lief in einen `char t[80]` und war mitten im Wort
+  abgeschnitten — solange er weggeworfen wurde, fiel das keinem auf.
+  **Die zweite Hälfte der Etappe, die Gegenprobe der Alternativprofile, ist
+  ZURÜCKGESTELLT** (Entwurf §20): `filesystems:` ist absichtlich eindeutig gehalten
+  (`cpa640` wurde genau deshalb entfernt), keine Fixture meldet Alternativen — es gibt
+  heute keinen Fall, an dem sie prüfbar wäre.
+  Wächter: `FsCheck.EineUnerkannteDisketteNenntDieAblehnungsgruende`,
+  `cli_dt_check_ebene0`, zwei `py_disktool_gui`-Fälle.
 - **`data/formats.yaml` hat jetzt ZWEI Sektionen.**  `formats:` (Physik, liest der
   Emulator) und `filesystems:` (logische Ebene, liest nur das DiskTool).  `data_start`
   ist dort eine **Spur**, kein Byte-Offset — bei gemischter Geometrie (cpa780: drei

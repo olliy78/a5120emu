@@ -85,10 +85,13 @@ bool cpmVerzeichnisPlausibel(DiskMedium& medium, const DiskFormat& f, const FsPr
         if (d.free()) { ++gut; continue; }
         const std::string wo = "Verzeichnisplatz " + std::to_string(d.index);
         if (d.user > 15) {
-            char t[80];
-            std::snprintf(t, sizeof t, "%s traegt Nutzerbereich 0x%02X — das "
-                          "Verzeichnis ist nicht angelegt", wo.c_str(), d.user);
-            return nein(t);
+            // Kein fester Puffer: seit Ebene 0 (§11) wird dieser Satz AUSGEGEBEN, und
+            // 80 Byte schnitten ihn mitten im Wort ab (der Gedankenstrich allein
+            // belegt drei).
+            char hex[8];
+            std::snprintf(hex, sizeof hex, "0x%02X", d.user);
+            return nein(wo + " traegt Nutzerbereich " + hex
+                        + " — das Verzeichnis ist nicht angelegt");
         }
         bool ok = !d.name.empty();
         for (char c : d.name)
@@ -579,6 +582,10 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
         dv->volumes_.clear();
         dv->detection_.filesystem = "";
         dv->detection_.remarks    = zusammen(dv->detection_.remarks, grund);
+        // Ebene 0 (§11): auf einer roh geoeffneten Diskette IST der Bericht die
+        // Begruendung.  Er kostet keinen Spurzugriff — alle Gruende liegen schon vor.
+        dv->roh_grund_ = grund;
+        dv->check(FsCheckLevel::Schnell, false);
         return std::move(dv);
     };
 
@@ -773,17 +780,23 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
             for (const FsProfile* p : fs_cat.forFormat(f->name)) {
                 if (!p->allowsContainer(ext)) continue;
 
+                // Der Grund einer Ablehnung wird EINGESAMMELT, nicht weggeworfen
+                // (Ebene 0, §11): bleibt die Erkennung am Ende ohne Ergebnis, ist
+                // genau diese Liste die Diagnose — „welche Probe sagt Nein und mit
+                // welcher Zahl" war bei jedem der drei zuletzt geloesten Fremdformate
+                // die entscheidende Frage.
+                std::string warum;
+                bool ja = false;
                 if (p->type == FsType::Udos) {
                     SectorSpace probe(dv->disk_->medium(), *f);
-                    std::string warum;
-                    if (!UdosFileSystem::looksLikeUdos(probe, *p, 0, &warum)) continue;
+                    ja = UdosFileSystem::looksLikeUdos(probe, *p, 0, &warum);
                 } else if (p->type == FsType::Udos1715) {
                     SectorSpace probe(dv->disk_->medium(), *f);
-                    std::string warum;
-                    if (!Udos1715FileSystem::looksLikeUdos1715(probe, *p, &warum)) continue;
+                    ja = Udos1715FileSystem::looksLikeUdos1715(probe, *p, &warum);
                 } else {
-                    if (!cpmVerzeichnisPlausibel(dv->disk_->medium(), *f, *p)) continue;
+                    ja = cpmVerzeichnisPlausibel(dv->disk_->medium(), *f, *p, &warum);
                 }
+                if (!ja) { dv->merkeAblehnung(p->name, f->name, warum); continue; }
                 hier.push_back(p);
             }
             if (hier.empty()) continue;
@@ -809,6 +822,7 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
                     || !cpmVerzeichnisPlausibel(dv->disk_->medium(), *f, abgeleitet, &warum,
                                                 /*uneingerichtet_zaehlt=*/true, &hinweis)) {
                     if (abgelehnt.empty()) abgelehnt = warum;
+                    dv->merkeAblehnung(CpaDpbRule::kName, f->name, warum);
                     continue;
                 }
                 dv->abgeleitet_ = abgeleitet;
@@ -833,6 +847,10 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
                     + ".\nGemessen:\n" + GeometryProbe::describe(gemessen);
                 return roh("kein Format und kein Dateisystem erkannt");
             }
+            // Die GEOMETRIE steht fest, auch wenn kein Dateisystem darauf liegt —
+            // sie gehoert in den Befund, sonst zeigt die Anzeige an einer roh
+            // geoeffneten Diskette ein leeres Feld statt der Erkenntnis (Ebene 0).
+            dv->detection_.format = kandidaten.front()->name;
             err = "Die Geometrie ist erkannt (" + std::string(kandidaten.front()->name)
                 + "), aber ";
             if (!dos.empty())
@@ -904,6 +922,19 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
     return dv;
 }
 
+void DiskVolume::merkeAblehnung(const std::string& kandidat, const std::string& format,
+                                const std::string& warum) {
+    std::pair<std::string, std::string> eintrag{
+        kandidat,
+        "Geometrie " + format + ": "
+            + (warum.empty() ? std::string("abgelehnt (ohne Begruendung)") : warum)};
+    // Derselbe Kandidat kann auf mehreren Geometrien geprueft werden; zweimal
+    // dieselbe Zeile ist keine zweite Auskunft.
+    for (const auto& da : ablehnungen_)
+        if (da == eintrag) return;
+    ablehnungen_.push_back(std::move(eintrag));
+}
+
 const FsCheckReport& DiskVolume::check(FsCheckLevel level, bool nachladen) {
     check_ = FsCheckReport{};
     check_.level = level;
@@ -913,9 +944,32 @@ const FsCheckReport& DiskVolume::check(FsCheckLevel level, bool nachladen) {
         for (FsFinding& f : teil.findings) f.volume = static_cast<int>(v);
         check_.uebernimm(teil);
     }
+    if (!hasFileSystem()) ebene0(check_);
     check_.level = level;      // uebernimm() zieht nach oben, hier gilt das Verlangte
     check_.sortieren();
     return check_;
+}
+
+void DiskVolume::ebene0(FsCheckReport& an) const {
+    // Ebene 0 (§11): kein Dateisystem heisst nicht „keine Auskunft".  Die Erkennung
+    // hat jede Probe befragt und jede hat gesagt, WORAN es lag — das ist oft schon
+    // die ganze Diagnose.  Reparaturen gibt es hier nicht; die Handhaben sind die
+    // vorhandenen (`--fs` uebersteuern, zurechtschneiden, Diskeditor).
+    FsFindings b(an);
+    if (ablehnungen_.empty()) {
+        // Es kam gar keine Dateisystemprobe zum Zug — dann lag es an der Geometrie,
+        // und der Grund dafuer steht im Befund des Oeffnens.
+        b.add("erkennung.ohne_kandidat", FsSeverity::Info, FsLayer::Erkennung,
+              "(Erkennung)",
+              roh_grund_.empty()
+                  ? std::string("Es wurde kein Dateisystem geprueft — schon die "
+                                "Geometrie liess keinen Kandidaten zu")
+                  : "Kein Kandidat kam zur Probe: " + roh_grund_);
+        return;
+    }
+    for (const auto& [kandidat, grund] : ablehnungen_)
+        b.add("erkennung.abgelehnt", FsSeverity::Info, FsLayer::Erkennung,
+              kandidat, grund);
 }
 
 // ─── Reparatur (doc/design/15_dateisystempruefung.md §12) ────────────────────

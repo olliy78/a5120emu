@@ -243,10 +243,10 @@ bool passt(const std::string& muster, const std::string& name) {
  * Aufruf schon der bewusste Schritt.
  */
 std::unique_ptr<DiskVolume> oeffne(const Optionen& o, const std::string& pfad, int& rc,
-                                   bool schreibend = false) {
+                                   bool schreibend = false, bool roh_erlaubt = false) {
     std::string err;
     auto v = DiskVolume::open(pfad, o.fs, formate(), dateisysteme(), err,
-                              /*read_only=*/!schreibend);
+                              /*read_only=*/!schreibend, roh_erlaubt);
     if (!v) {
         std::cerr << "Fehler: " << err << "\n";
         rc = kNichtErkannt;
@@ -465,7 +465,10 @@ int cmd_info(const Optionen& o) {
 int cmd_check(const Optionen& o) {
     if (o.rest.size() < 2) { std::cerr << "Fehler: kein Abbild angegeben\n"; return kFehler; }
     int rc = kOk;
-    auto v = oeffne(o, o.rest[1], rc);
+    // ROH oeffnen: gerade die Diskette, auf der nichts erkannt wurde, ist die, ueber
+    // die man etwas erfahren will (Ebene 0, Entwurf §11).  Der Bericht besteht dann
+    // aus den Ablehnungsgruenden — `check` sagt „warum nicht", statt abzubrechen.
+    auto v = oeffne(o, o.rest[1], rc, /*schreibend=*/false, /*roh_erlaubt=*/true);
     if (!v) return rc;
 
     const FsCheckLevel stufe = o.voll ? FsCheckLevel::Voll : FsCheckLevel::Schnell;
@@ -477,7 +480,7 @@ int cmd_check(const Optionen& o) {
     // heute nur der Lesepfad kennt (`FileEntry::damaged`).  Bis die Ebene Dateien
     // steht, wird er hier weiterhin eigens genannt.
     std::vector<std::string> unlesbar;
-    if (o.voll)
+    if (o.voll && v->hasFileSystem())
         for (const FileEntry& e : v->list())
             if (e.damaged)
                 unlesbar.push_back((v->volumeCount() > 1 ? v->volumeDir(e.volume) + "/" : "")
@@ -504,12 +507,17 @@ int cmd_check(const Optionen& o) {
                       << ",\"sector\":" << f.sector_index << "}";
         }
         std::cout << "],\"damaged\":" << jsonListe(unlesbar)
+                  << ",\"filesystem\":"
+                  << (v->hasFileSystem() ? jsonText(v->detection().filesystem)
+                                         : std::string("null"))
                   << ",\"remarks\":" << jsonText(v->detection().remarks) << "}\n";
+        if (!v->hasFileSystem()) return kNichtErkannt;
         return sauber ? kOk : kFehler;
     }
 
     std::cout << v->path() << "  " << v->detection().format << " / "
-              << v->detection().filesystem << "  "
+              << (v->hasFileSystem() ? v->detection().filesystem
+                                     : std::string("(kein Dateisystem erkannt)")) << "  "
               << (o.voll ? "Vollpruefung" : "Schnellpruefung");
     if (!bericht.vollstaendig)
         std::cout << "  (UNVOLLSTAENDIG: " << bericht.spuren_gelesen << " von "
@@ -525,6 +533,11 @@ int cmd_check(const Optionen& o) {
         std::cout << "\nHinweis zum Medium: " << v->detection().remarks << "\n";
 
     std::cout << "\n";
+    if (!v->hasFileSystem()) {
+        std::cout << "kein Dateisystem erkannt — " << bericht.findings.size()
+                  << " gepruefte(r) Kandidat(en) oben\n";
+        return kNichtErkannt;
+    }
     if (sauber)
         std::cout << (bericht.vollstaendig ? "ohne Befund\n" : "bislang ohne Befund\n");
     else
@@ -553,7 +566,11 @@ int cmd_fsck(const Optionen& o) {
     // Schreibend nur, wenn wirklich eingegriffen wird — ein `--dry-run` darf die
     // Datei nicht einmal beruehren.
     const bool eingriff = o.reparieren && !o.dry_run;
-    auto v = oeffne(o, o.rest[1], rc, /*schreibend=*/eingriff);
+    // Ohne Eingriff ist `fsck` ein `check` — dann gilt auch dessen Zugestaendnis:
+    // eine unerkannte Diskette wird roh geoeffnet und nennt die Ablehnungsgruende
+    // (Ebene 0, §11).  Mit `--repair` bleibt es beim Abbruch: reparieren laesst sich
+    // nur ein Dateisystem, das es gibt.
+    auto v = oeffne(o, o.rest[1], rc, /*schreibend=*/eingriff, /*roh_erlaubt=*/!eingriff);
     if (!v) return rc;
 
     const FsCheckLevel stufe = o.voll ? FsCheckLevel::Voll : FsCheckLevel::Schnell;
@@ -595,7 +612,8 @@ int cmd_fsck(const Optionen& o) {
     const bool mit_volume = v->volumeCount() > 1;
     if (!o.json) {
         std::cout << v->path() << "  " << v->detection().format << " / "
-                  << v->detection().filesystem << "  "
+                  << (v->hasFileSystem() ? v->detection().filesystem
+                                         : std::string("(kein Dateisystem erkannt)")) << "  "
                   << (o.voll ? "Vollpruefung" : "Schnellpruefung");
         if (!vorher.vollstaendig)
             std::cout << "  (UNVOLLSTAENDIG: " << vorher.spuren_gelesen << " von "
@@ -607,6 +625,20 @@ int cmd_fsck(const Optionen& o) {
                 std::cout << "   -> " << (r.gesperrt ? "GESPERRT " : "") << r.kind << "  "
                           << (r.gesperrt ? r.warum : r.text)
                           << (r.datenverlust ? "  [Datenverlust]" : "") << "\n";
+    }
+
+    if (!v->hasFileSystem()) {
+        // Ebene 0: die Befunde stehen oben, zu reparieren gibt es hier nichts.
+        if (o.json)
+            std::cout << "{\"image\":" << jsonText(v->path())
+                      << ",\"ok\":false,\"filesystem\":null"
+                      << ",\"findings\":" << vorher.findings.size()
+                      << ",\"repairable\":0,\"selected\":0}\n";
+        else
+            std::cout << "\nkein Dateisystem erkannt — " << vorher.findings.size()
+                      << " gepruefte(r) Kandidat(en) oben; zu reparieren ist hier"
+                         " nichts.\n";
+        return kNichtErkannt;
     }
 
     if (!o.reparieren) {

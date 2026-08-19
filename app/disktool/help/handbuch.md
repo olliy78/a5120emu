@@ -256,6 +256,14 @@ Dann ist die Diskette **trotzdem offen** — nur ungedeutet. Sie liegt im Speich
 der Diskeditor geht, das Abbild lässt sich mit *Speichern unter* sichern; gesperrt
 ist nur, was Dateien braucht. Im Hintergrund wird weitergelesen.
 
+**Warum nicht?** Das Protokoll (F8) sagt es: die Erkennung probiert jedes in Frage
+kommende Dateisystem durch, und jede Probe nennt, woran sie sich gestoßen hat —
+„Verzeichnisplatz 0 trägt Nutzerbereich 0xDC", „Belegungskarte Spur 23: der
+Zählerabgleich scheitert". Dieselbe Liste steht unter *Diskette ▸ Dateisystem
+prüfen und reparieren…* (Strg+F), der auch ohne erkanntes Dateisystem aufgeht;
+zu reparieren gibt es dort nichts, aber oft ist die Liste schon die ganze Auskunft
+darüber, um was für eine Diskette es sich handelt.
+
 Danach gibt es zwei Wege:
 
 * **Dateisystem im Kopfbereich wählen** — die Deutung wird am Speicherabbild
