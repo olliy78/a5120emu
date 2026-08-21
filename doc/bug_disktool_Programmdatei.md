@@ -147,9 +147,11 @@ Drei Festlegungen dazu:
 * **`name=` trägt den echten Namen auf der Diskette.** Bei CP/M mit Nutzerbereich
   (`3:SYSTEM.COM`), der im Linux-Dateinamen als `3_SYSTEM.COM` steht. Das leistet
   heute das Sammelbeiblatt; die Einzeldatei muss es genauso können.
-* **`.fileinfo` ist Zubehör, nie Nutzdatei.** `istBeiblatt()` muss es mit erfassen —
-  sonst landet es beim nächsten `put <ordner>` als Datei auf der Diskette. Eine Datei,
-  die auf der Diskette wirklich `X.FILEINFO` heißt, kollidiert damit; das ist
+* **`.fileinfo` ist Zubehör, nicht Nutzdatei.** Beim Einfügen eines Ordners wird es
+  *ausgewertet*, aber nicht mitkopiert — sonst landet es beim nächsten
+  `put <ordner>` als Datei auf der Diskette. Was geschieht, wenn jemand es
+  **ausdrücklich einzeln** einfügen will, steht in §2.5. Eine Datei, die auf der
+  Diskette wirklich `X.FILEINFO` heißt, kollidiert mit dieser Regel; das ist
   hinzunehmen und gehört in die Bedienungsanleitung.
 
 **Wo geschrieben wird:** in `DiskVolume::extract` — also an *einer* Stelle, durch die
@@ -230,6 +232,63 @@ Standardfehlerausgabe („ohne Angaben — Nutzerbereich 0, keine Attribute"), k
 Abbruch. Wer es strenger will, bekommt einen Schalter (`--strict`). Diese Festlegung
 ist **noch zu treffen**; das Dokument hält beide Wege offen.
 
+### 2.5 Wenn ein `.fileinfo` selbst eingefügt werden soll
+
+Sobald neben jeder Datei ein `.fileinfo` liegt, ist der Ordner voll davon — und damit
+wird die Frage praktisch, was beim Einfügen mit diesen Dateien geschieht. Sie hat zwei
+Antworten, je nachdem, ob der Anwender sie *gemeint* haben kann.
+
+**Mehrere Dateien ausgewählt (Ordner, Mehrfachauswahl): stillschweigend überspringen.**
+Wer einen ganzen Ordner auf die Diskette zieht, meint dessen *Inhalt* — die
+Zubehördateien sind für ihn nicht sichtbar Teil davon. Sie werden **ausgewertet**
+(genau dafür sind sie da) und **nicht kopiert**. Eine Rückfrage wäre hier eine Plage:
+bei dreißig Dateien käme sie dreißigmal, und die Antwort ist jedes Mal dieselbe.
+
+Zwei Dinge, die dabei gesagt werden müssen:
+
+* Die Zusammenfassung nennt die Zahl — „24 Dateien eingefügt, 24 `.fileinfo`
+  ausgewertet". Stillschweigend heißt nicht heimlich; wer nachzählt, soll die
+  Differenz erklärt bekommen.
+* Bleibt nach dem Überspringen **nichts** übrig (ein Ordner, in dem nur Zubehör
+  liegt), ist das eine Meldung und kein stiller Erfolg: „Der Ordner enthält nur
+  `.fileinfo`-Dateien — es gibt nichts einzufügen."
+
+**Eine einzelne Datei ausgewählt, und sie ist ein `.fileinfo`: nachfragen.** Das ist
+fast sicher ein Versehen — jemand hat in der Dateiauswahl die falsche der beiden
+gleichnamigen Zeilen erwischt. Stillschweigend zu überspringen wäre hier falsch: der
+Anwender bekäme keine Datei auf die Diskette und keinen Grund dafür. Also ein
+Abfragedialog:
+
+```
+Das ist eine .fileinfo-Datei
+
+„ACTIVATE.fileinfo" enthält die Kopfsektorangaben zu „ACTIVATE" — vermutlich
+ist nicht sie gemeint, sondern die Datei daneben.
+
+Trotzdem als Datei auf die Diskette kopieren?         [Ja]  [Nein]
+```
+
+`Nein` ist die Vorgabe (der voreingestellte Knopf). Es *gibt* einen legitimen Grund
+für `Ja` — etwa jemand, der eine Textdatei mit dieser Endung wirklich auf die Diskette
+bringen will —, und deshalb ist es eine Frage und kein Verbot.
+
+**In der Kommandozeile** gibt es keinen Dialog, also gilt dieselbe Aussage als
+Verweigerung mit Ausweg:
+
+```
+Fehler: 'ACTIVATE.fileinfo' ist eine Angabendatei, keine Nutzdatei — gemeint ist
+        vermutlich 'ACTIVATE'.  Mit --force wird sie trotzdem kopiert.
+```
+
+Beim Ordner-`put` (`insertAll`) wird dagegen wie in der Oberfläche stillschweigend
+übersprungen und gezählt.
+
+**Für die beiden Sammelbeiblätter gilt dasselbe.** `udos-dateiangaben.txt` und
+`cpm-dateiangaben.txt` werden heute schon von `istBeiblatt()` aus dem Stapel
+genommen; die Einzelabfrage bekommen sie mit derselben Begründung.
+
+---
+
 ---
 
 ## 3. Umsetzung
@@ -240,9 +299,11 @@ ist **noch zu treffen**; das Dokument hält beide Wege offen.
 | 2 | `.fileinfo` in `DiskVolume::extract` schreiben (damit auch in `extractAll`, `recoverExtract` und der Oberfläche) | `disk_volume.cpp` |
 | 3 | `istBeiblatt()` um `.fileinfo` erweitern — sonst wandert es als Nutzdatei auf die Diskette | `disk_volume.cpp` |
 | 4 | Rangfolge in `DiskVolume::insert`: `.fileinfo` → Sammelbeiblatt → Aufrufer | `disk_volume.cpp` |
+| 4a | Stapel überspringt Zubehördateien und **zählt sie** („24 eingefügt, 24 ausgewertet"); leerer Rest ist eine Meldung (§2.5) | `disk_volume.cpp` (`insertAll`) |
+| 4b | Einzelnes Einfügen einer Zubehördatei: eigener Grund „ist eine Angabendatei", damit CLI und Oberfläche verschieden darauf antworten können | `disk_volume.h`, C-ABI |
 | 5 | Neuer Rückgabewert/Grund „Angaben fehlen" (nicht bloß `false`) — die Oberfläche muss den Fall vom gewöhnlichen Fehler unterscheiden können | `disk_volume.h`, C-ABI `k1520d_insert_*` |
-| 6 | `cmd_put`: Abbruch mit der Meldung aus §2.2 | `tools/k1520disktool.cpp` |
-| 7 | Dialog + Verdrahtung in `_einfuegen_pfade` | `app/disktool/ui/fileinfo_dialog.py`, `main_window.py` |
+| 6 | `cmd_put`: Abbruch mit der Meldung aus §2.2; Verweigerung mit `--force`-Ausweg für eine einzelne Zubehördatei (§2.5) | `tools/k1520disktool.cpp` |
+| 7 | Eingabedialog (§2.3) + Rückfrage bei einer einzelnen Zubehördatei (§2.5), verdrahtet in `_einfuegen_pfade` | `app/disktool/ui/fileinfo_dialog.py`, `main_window.py` |
 | 8 | Bedienungsanleitung: `.fileinfo` erklären, den Fallstrick benennen | `tools/k1520disktool.md`, `doc/design/13_k1520disktool.md` §13a |
 
 ### 3.1 Wächter
@@ -259,10 +320,17 @@ und niemand hat es bemerkt, weil nur der Dateiinhalt verglichen wurde.
   Werte: das `.fileinfo` gewinnt.
 * `DiskToolFileinfo.FileinfoLandetNichtAlsDateiAufDerDiskette` — `put <ordner>` mit
   `.fileinfo`-Dateien darin.
+* `DiskToolFileinfo.StapelUeberspringtZubehoerUndZaehltEs` — Ordner mit `.fileinfo`
+  einfügen: keine davon landet auf der Diskette, alle werden ausgewertet, und die
+  Zahl steht in der Zusammenfassung.
 * `cli_dt_put_ohne_angaben` — Abbruch mit Exitcode ≠ 0, und die Meldung nennt den
   Ausweg (`--type`).
-* `py_disktool_gui`: Dialog geht auf, blendet ENTRY/Segmente/Speicher bei Typ `A` ab,
-  „für alle übernehmen" fragt nur einmal.
+* `cli_dt_put_fileinfo_einzeln` — Verweigerung mit Exitcode ≠ 0 und dem Hinweis auf
+  die gemeinte Datei; mit `--force` geht es durch.
+* `py_disktool_gui`: Eingabedialog geht auf, blendet ENTRY/Segmente/Speicher bei Typ
+  `A` ab, „für alle übernehmen" fragt nur einmal — und die Rückfrage aus §2.5
+  erscheint bei **einer** ausgewählten `.fileinfo`, aber **nicht** bei einer
+  Mehrfachauswahl.
 
 ---
 
