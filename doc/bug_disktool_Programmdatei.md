@@ -170,6 +170,9 @@ ebenfalls, zusätzlich zum vorhandenen `udos-dateiangaben.txt`.
    gehen **immer** vor, auch über ein vorhandenes `.fileinfo`.
 4. **Nichts davon** ⇒ das Werkzeug kann nicht wissen, was für eine Datei das ist.
 
+Fall 4 wird **nur bei der UDOS-Familie** behandelt; bei CP/M entsteht ohne Rückfrage
+eine Datei im Nutzerbereich 0 ohne Attribute (§2.4).
+
 **Fall 4 in der Kommandozeile: Abbruch mit Fehlermeldung.**
 
 ```
@@ -200,8 +203,13 @@ Zieldateisystem braucht — **Auswahlfelder, wo es eine feste Menge gibt**, und
 | LOW / HIGH / STACK | drei Eingaben, hexadezimal | **nur P/P1** |
 | Zusatz (Offset 44–47) | Eingabe, hexadezimal | **nur P/P1** |
 | erstellt / geändert | Eingabe `JJMMTT` | UDOS |
-| Nutzerbereich | Auswahl 0…15 | CP/M |
-| Attribute | Ankreuzfelder `R/O` `SYS` `ARCHIV` | CP/M |
+| Nutzerbereich | Auswahl 0…15 | CP/M *(s. u.)* |
+| Attribute | Ankreuzfelder `R/O` `SYS` `ARCHIV` | CP/M *(s. u.)* |
+
+Die beiden CP/M-Zeilen stehen hier der Vollständigkeit halber: **von selbst geht der
+Dialog bei CP/M nie auf** (§2.4). Sie beschreiben, was er zeigte, wenn er einmal
+ausdrücklich aufgerufen würde — dieselben Felder führt schon der
+Eigenschaften-Dialog.
 
 **Das Abblenden ist die eigentliche Leistung des Dialogs.** Bei Typ `A` oder `B` sind
 ENTRY, Segmente und LOW/HIGH/STACK **kein Anwenderinhalt, sondern schlicht
@@ -220,17 +228,28 @@ Drei Bedienzusagen:
 * **„Angaben als `.fileinfo` speichern"** (vorausgewählt): was hier eingetippt wurde,
   soll beim nächsten Mal nicht wieder eingetippt werden müssen.
 
-### 2.4 Was bei CP/M gelten soll — eine offene Entscheidung
+### 2.4 Bei CP/M geschieht nichts davon — entschieden
 
-Bei UDOS ist der Abbruch zwingend: ohne Typ und Satzlänge entsteht eine kaputte Datei.
-Bei CP/M ist die Lage anders — fehlen die Angaben, entsteht eine **brauchbare** Datei
-im Nutzerbereich 0 ohne Attribute. Ein Abbruch würde dort jeden bestehenden Ablauf
-brechen (`put datei.txt` auf eine CP/A-Diskette ist der Normalfall).
+**Der ganze Abschnitt 2.2 gilt nur für die UDOS-Familie.** Bei CP/M wird ohne
+Angaben weder abgebrochen noch gefragt noch gewarnt: die Datei wird **ohne Rückfrage**
+im **Nutzerbereich 0 ohne Attribute** angelegt.
 
-**Vorschlag:** Abbruch nur für die UDOS-Familie; bei CP/M ein Hinweis auf der
-Standardfehlerausgabe („ohne Angaben — Nutzerbereich 0, keine Attribute"), kein
-Abbruch. Wer es strenger will, bekommt einen Schalter (`--strict`). Diese Festlegung
-ist **noch zu treffen**; das Dokument hält beide Wege offen.
+Der Unterschied ist kein Zugeständnis an die Bequemlichkeit, sondern folgt aus der
+Sache. Bei UDOS *fehlen* die Angaben — ohne Typ und Satzlänge lässt sich der
+Kopfsektor nicht sinnvoll füllen, und was entsteht, ist eine Datei, die nicht läuft.
+Bei CP/M gibt es die Angaben so gar nicht: Nutzerbereich 0 und „keine Attribute" sind
+kein Notbehelf, sondern der **Normalfall**, den auch das echte CP/M erzeugt, wenn eine
+Datei neu angelegt wird. Es gibt nichts zu erraten und nichts zu beklagen.
+
+Dazu kommt, dass beides **nachträglich erreichbar** ist: Rechtsklick auf die Datei in
+der Diskettenliste → *Eigenschaften* (`act_eigenschaften` → `PropertiesDialog`) setzt
+Nutzerbereich und die drei Attributbits; auf der Kommandozeile tut es
+`attr <abbild> <datei> --user 3 --ro --sys`. Ein Dialog beim Einfügen würde also nur
+eine Frage vorziehen, die in neun von zehn Fällen niemand hat — und `put datei.txt`
+auf eine CP/A-Diskette ist der häufigste Vorgang, den dieses Werkzeug überhaupt kennt.
+
+Ein `--strict`-Schalter ist ausdrücklich **nicht** vorgesehen: er wäre ein Schalter für
+einen Fall, den es nicht gibt.
 
 ### 2.5 Wenn ein `.fileinfo` selbst eingefügt werden soll
 
@@ -323,8 +342,11 @@ und niemand hat es bemerkt, weil nur der Dateiinhalt verglichen wurde.
 * `DiskToolFileinfo.StapelUeberspringtZubehoerUndZaehltEs` — Ordner mit `.fileinfo`
   einfügen: keine davon landet auf der Diskette, alle werden ausgewertet, und die
   Zahl steht in der Zusammenfassung.
-* `cli_dt_put_ohne_angaben` — Abbruch mit Exitcode ≠ 0, und die Meldung nennt den
-  Ausweg (`--type`).
+* `cli_dt_put_ohne_angaben` — bei UDOS Abbruch mit Exitcode ≠ 0, und die Meldung
+  nennt den Ausweg (`--type`).
+* `DiskToolFileinfo.CpmBrauchtKeineAngaben` — die Gegenrichtung und ein Wächter gegen
+  Übereifer: eine Datei ohne jede Angabe auf eine CP/M-Diskette einfügen **gelingt**,
+  landet im Nutzerbereich 0 ohne Attribute und erzeugt **keine** Meldung (§2.4).
 * `cli_dt_put_fileinfo_einzeln` — Verweigerung mit Exitcode ≠ 0 und dem Hinweis auf
   die gemeinte Datei; mit `--force` geht es durch.
 * `py_disktool_gui`: Eingabedialog geht auf, blendet ENTRY/Segmente/Speicher bei Typ
@@ -342,6 +364,9 @@ und niemand hat es bemerkt, weil nur der Dateiinhalt verglichen wurde.
 * **Die Vorgaben von `insert` bleiben, wie sie sind** (Typ A/B, 128er Sätze). Sie
   gelten künftig nur dort, wo der Aufrufer sie ausdrücklich will — nicht mehr
   stillschweigend.
+* **Am CP/M-Einfügen ändert sich nichts.** Kein Abbruch, keine Rückfrage, kein
+  Hinweis (§2.4). Das `.fileinfo` entsteht dort trotzdem und wird gelesen, wenn es da
+  ist — es nimmt nur niemandem etwas weg, wenn es fehlt.
 * **Die Dateisystemprüfung wird nicht erweitert.** Sie kann den Schaden grundsätzlich
   nicht sehen (§1.2); ihn zu erraten hieße, jede als `B` eingetragene Datei zu
   verdächtigen, die wie Z80-Code aussieht. Das wäre genau die Falschmeldung, die der
