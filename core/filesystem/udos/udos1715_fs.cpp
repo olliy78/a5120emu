@@ -797,7 +797,10 @@ bool Udos1715FileSystem::write(const std::string& name, const std::vector<uint8_
     put16(h.data() + 0x11, blocklen);
     h[0x13] = udosPropertyByte(opt.udos_properties);
     put16(h.data() + 0x14, opt.udos_entry);
-    const uint16_t rest = opt.udos_bytes_in_last ? opt.udos_bytes_in_last
+    // Wie bei ZDOS: das KENNZEICHEN entscheidet, nicht der Wert — 0 ist eine Angabe.
+    // (LOW/HIGH/STACK haben das Problem hier nicht: der Descriptor ist mit 0x00
+    // vorbelegt und die drei Felder werden immer geschrieben.)
+    const uint16_t rest = opt.udos_bytes_in_last_gesetzt ? opt.udos_bytes_in_last
                         : (im_letzten ? im_letzten : reclen);
     put16(h.data() + 0x16, rest);
 

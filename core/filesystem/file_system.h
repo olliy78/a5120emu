@@ -133,13 +133,27 @@ struct WriteOptions {
     uint16_t    udos_low_addr   = 0;
     uint16_t    udos_high_addr  = 0;
     uint16_t    udos_stack_size = 0;
+    /// @brief Gelten die drei Werte darueber?
+    ///
+    /// **Notwendig, weil 0 hier eine ANGABE ist und keine Abwesenheit.**  Ohne das
+    /// Kennzeichen liess sich „alle drei sind 0" nicht von „keiner ist gesetzt"
+    /// unterscheiden — und der Schreibpfad liess den Kopfsektor dann bei seiner
+    /// 0xFF-Vorbelegung stehen.  Aus 0000 wurde damit FFFF, und das ist bei einer
+    /// PROGRAMMdatei kein Schoenheitsfehler: der Lader weist sie mit
+    /// `MEMORY PROTECT VIOLATION` ab (doc/udos_diskettenformat.md §14).
+    bool        udos_mem_gesetzt = false;
     /// @brief Zweite Laengenangabe (Offset 17); @ref udos_block_len_gesetzt sagt,
     ///        ob der Wert gilt — 0 ist ein GUELTIGER Wert (Nukleus).
     uint16_t    udos_block_len = 0;
     bool        udos_block_len_gesetzt = false;
-    /// @brief „Bytes im letzten Satz" (Offset 22); 0 = aus der Datengroesse rechnen.
-    ///        Noetig, wenn das Speicherabbild ueber das logische Dateiende hinausreicht.
+    /// @brief „Bytes im letzten Satz" (Offset 22).  Noetig, wenn das Speicherabbild
+    ///        ueber das logische Dateiende hinausreicht.
     uint16_t    udos_bytes_in_last = 0;
+    /// @brief Gilt der Wert darueber?  Ohne das Kennzeichen bedeutete 0 „ausrechnen",
+    ///        und ein Kopfsektor mit echter 0 kam als volle Satzlaenge zurueck.  Beide
+    ///        Schreibweisen heissen zwar dasselbe („letzter Satz ist voll") — aber ein
+    ///        Rundlauf soll die Diskette nicht veraendern, sondern erhalten.
+    bool        udos_bytes_in_last_gesetzt = false;
     /// @brief Kopfsektor Offset 44–47 (Bedeutung offen, unveraendert uebernehmen).
     uint32_t    udos_extra = 0;
     /// @brief Erstellungsvermerk (6 Zeichen; auch ein Versionstext wie "V 4.3 ");

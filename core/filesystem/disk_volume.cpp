@@ -267,7 +267,12 @@ struct UdosAngabe {
     /// @brief ALLE Speichersegmente, mit Komma getrennt (`4400+0041,8442+0026`).
     ///        Steht nur bei mehr als einem Segment in der Zeile — sonst genuegt `segment=`.
     std::string segmente;
+    /// @name Steht der Wert im Beiblatt?  (0 ist ueberall eine gueltige ANGABE)
+    /// @{
     bool        blocklaenge_gesetzt = false;
+    bool        rest_gesetzt        = false;
+    bool        mem_gesetzt         = false;
+    /// @}
 };
 
 std::string hex16(uint16_t v) {
@@ -348,7 +353,11 @@ UdosAngabe angabeAus(const FileEntry& e) {
     a.speicher_kz   = e.stack_size;
     a.blocklaenge   = e.block_len;
     a.rest          = e.bytes_in_last;
+    // Alle drei Werte stammen aus dem Kopfsektor der Diskette, sind also GEMESSEN
+    // und nicht „nicht angegeben" — auch dann, wenn sie 0 sind.
     a.blocklaenge_gesetzt = true;
+    a.rest_gesetzt        = true;
+    a.mem_gesetzt         = true;
     a.zusatz        = e.extra;
     // Nur wenn es mehr als ein Segment gibt — sonst blaeht es die Zeile auf, ohne
     // etwas zu sagen, was `segment=` nicht schon sagt.
@@ -387,7 +396,8 @@ std::map<std::string, UdosAngabe> leseBeiblatt(const fs::path& datei) {
             else if (k == "satz")   a.satzlaenge = static_cast<uint16_t>(zahl(v, 10));
             else if (k == "block") { a.blocklaenge = static_cast<uint16_t>(zahl(v, 10));
                                      a.blocklaenge_gesetzt = true; }
-            else if (k == "rest")   a.rest = static_cast<uint16_t>(zahl(v, 10));
+            else if (k == "rest") { a.rest = static_cast<uint16_t>(zahl(v, 10));
+                                    a.rest_gesetzt = true; }
             else if (k == "segment") {
                 const size_t d = v.find(':');
                 a.ladeadresse  = static_cast<uint16_t>(zahl(v.substr(0, d), 16));
@@ -407,6 +417,7 @@ std::map<std::string, UdosAngabe> leseBeiblatt(const fs::path& datei) {
                 a.speicher_von = static_cast<uint16_t>(zahl(p1, 16));
                 a.speicher_bis = static_cast<uint16_t>(zahl(p2, 16));
                 a.speicher_kz  = static_cast<uint16_t>(zahl(p3, 16));
+                a.mem_gesetzt  = true;
             }
         }
         out[name] = a;
@@ -1439,6 +1450,8 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
             mit.udos_block_len  = it->second.blocklaenge;
             mit.udos_bytes_in_last = it->second.rest;
             mit.udos_block_len_gesetzt = it->second.blocklaenge_gesetzt;
+            mit.udos_bytes_in_last_gesetzt = it->second.rest_gesetzt;
+            mit.udos_mem_gesetzt           = it->second.mem_gesetzt;
             mit.udos_extra      = it->second.zusatz;
             mit.udos_segments   = it->second.segmente;
             mit.udos_created    = it->second.erstellt;
@@ -1458,6 +1471,8 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
     wo.udos_block_len  = mit.udos_block_len;
     wo.udos_bytes_in_last = mit.udos_bytes_in_last;
     wo.udos_block_len_gesetzt = mit.udos_block_len_gesetzt;
+    wo.udos_bytes_in_last_gesetzt = mit.udos_bytes_in_last_gesetzt;
+    wo.udos_mem_gesetzt           = mit.udos_mem_gesetzt;
     wo.udos_extra      = mit.udos_extra;
     wo.udos_segments   = mit.udos_segments;
     wo.udos_created    = mit.udos_created;
@@ -2021,6 +2036,8 @@ bool DiskVolume::insertAll(const std::string& src_dir, const TransferOptions& op
                 o.udos_block_len  = it->second.blocklaenge;
                 o.udos_bytes_in_last = it->second.rest;
                 o.udos_block_len_gesetzt = it->second.blocklaenge_gesetzt;
+                o.udos_bytes_in_last_gesetzt = it->second.rest_gesetzt;
+                o.udos_mem_gesetzt           = it->second.mem_gesetzt;
                 o.udos_extra      = it->second.zusatz;
                 o.udos_segments   = it->second.segmente;
                 o.udos_created    = it->second.erstellt;

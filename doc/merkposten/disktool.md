@@ -442,6 +442,26 @@ Was beim Weiterarbeiten zu wissen ist:
   Verzeichnis nichts Gesuchtes mehr (Entwurf §20).  An einer physischen Diskette
   kostet das **einmal** die ganze Scheibe — danach liegt sie im `DiskMedium`, und
   jeder weitere Lauf ist so schnell wie an einer Datei.
+- **0 ist eine ANGABE, keine Abwesenheit** (2026-08-21).  Der Schreibpfad las bei
+  drei UDOS-Kopfsektorfeldern die 0 als „nicht angegeben" und setzte einen
+  Ersatzwert.  Bei `block_len` (Offset 17) war das lange bekannt und mit einem
+  eigenen Kennzeichen gelöst (`udos_block_len_gesetzt`) — die beiden anderen fehlten:
+  **„Bytes im letzten Satz"** (Offset 22; aus 0 wurde die volle Satzlänge) und
+  **LOW/HIGH/STACK** (Offset 122/124/126; waren alle drei 0, lief der Schreibblock
+  gar nicht und der Kopfsektor behielt seine **0xFF**-Vorbelegung — aus 0000 wurde
+  FFFF).  Letzteres ist bei einer PROGRAMMdatei ein echter Schaden: UDOS weist sie
+  mit `MEMORY PROTECT VIOLATION` ab, und die eigene Prüfung meldet
+  `udos.kopf.speicher`.  Auf den vier Referenzdisketten trifft es 30 Dateien, davon
+  keine vom Typ P — deshalb fiel es nie auf.  Jetzt `udos_bytes_in_last_gesetzt` und
+  `udos_mem_gesetzt`, gesetzt vom Beiblattleser, wenn der Schlüssel dasteht.
+  (NDOS war bei LOW/HIGH/STACK nie betroffen: sein Descriptor ist mit 0x00 vorbelegt
+  und die Felder werden immer geschrieben — die Satzrest-Zeile hatte es aber auch.)
+  **Warum es so lange unentdeckt blieb, ist die eigentliche Lehre:** der vorhandene
+  Rundlauftest verglich nur den DATEIINHALT.  Der neue Wächter
+  `DiskVolume.UdosRundlaufErhaeltAuchDieNullenImKopfsektor` vergleicht die
+  Kopfsektorangaben über alle Dateien der Referenzdiskette und stellt vorab sicher,
+  dass überhaupt Dateien mit Nullwerten dabei sind — sonst liefe er an der Sache
+  vorbei.
 - **Gegenprobe der Alternativprofile** (2026-08-19, Entwurf §11a).
   `DiskVolume::gegenprobe` öffnet bei `unambiguous == false` dieselbe Datei mit jedem
   Alternativprofil und meldet `erkennung.alternative` (Info, Ebene `Erkennung`).

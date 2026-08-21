@@ -885,7 +885,7 @@ bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
     // „Bytes im letzten Satz" bestimmt die LOGISCHE Laenge.  Kommt der Wert von
     // aussen (Beiblatt), gilt er — nur so behaelt eine Programmdatei, deren Abbild
     // ueber das Dateiende hinausreicht, ihre richtige Laenge.
-    const uint16_t rest = opt.udos_bytes_in_last ? opt.udos_bytes_in_last
+    const uint16_t rest = opt.udos_bytes_in_last_gesetzt ? opt.udos_bytes_in_last
                         : (im_letzten ? im_letzten : satzlen);
     h[22] = static_cast<uint8_t>(rest & 0xFF);
     h[23] = static_cast<uint8_t>(rest >> 8);
@@ -942,7 +942,13 @@ bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
     // LOW ADDRESS / HIGH ADDRESS / STACK SIZE ganz am Ende des Kopfsektors (122).
     // DIESE Werte nimmt der Lader (Nukleusvariablen 1275H/1277H) — ohne sie steht
     // dort FFFF und der Speicherverwalter lehnt mit `MEMORY PROTECT VIOLATION` ab.
-    if (opt.udos_low_addr || opt.udos_high_addr || opt.udos_stack_size) {
+    // `udos_mem_gesetzt`, nicht „irgendeiner ist ungleich 0": bei einer Datei, deren
+    // drei Werte alle 0 sind, bliebe der Kopfsektor sonst bei seiner 0xFF-Vorbelegung
+    // — aus 0000 wuerde FFFF, und eine Programmdatei liesse sich danach nicht mehr
+    // starten (§14).  Der Rundlauf `get`/`put` soll die Diskette erhalten, nicht
+    // umschreiben.
+    if (opt.udos_mem_gesetzt
+        || opt.udos_low_addr || opt.udos_high_addr || opt.udos_stack_size) {
         h[122] = static_cast<uint8_t>(opt.udos_low_addr & 0xFF);
         h[123] = static_cast<uint8_t>(opt.udos_low_addr >> 8);
         h[124] = static_cast<uint8_t>(opt.udos_high_addr & 0xFF);

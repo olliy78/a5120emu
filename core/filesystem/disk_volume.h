@@ -90,12 +90,17 @@ struct TransferOptions {
     uint16_t    udos_low_addr = 0;
     uint16_t    udos_high_addr   = 0;
     uint16_t    udos_stack_size = 0;
+    /// @brief Gelten die drei Werte darueber?  0 ist hier eine ANGABE — s.
+    ///        @ref WriteOptions::udos_mem_gesetzt.
+    bool        udos_mem_gesetzt = false;
     /// @brief Zweite Laengenangabe (Kopfsektor Offset 17); 0 ist ein gueltiger Wert,
     ///        deshalb das Kennzeichen daneben.
     uint16_t    udos_block_len = 0;
     bool        udos_block_len_gesetzt = false;
-    /// @brief „Bytes im letzten Satz" (Kopfsektor Offset 22); 0 = ausrechnen.
+    /// @brief „Bytes im letzten Satz" (Kopfsektor Offset 22).
     uint16_t    udos_bytes_in_last = 0;
+    /// @brief Gilt der Wert darueber?  s. @ref WriteOptions::udos_bytes_in_last_gesetzt.
+    bool        udos_bytes_in_last_gesetzt = false;
     /// @brief Kopfsektor Offset 44–47 (Bedeutung offen) und Erstellungsvermerk
     ///        (6 Zeichen, bei Systemdateien ein Versionstext wie "V 4.3 ").
     uint32_t    udos_extra = 0;

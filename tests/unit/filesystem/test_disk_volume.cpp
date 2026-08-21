@@ -581,6 +581,96 @@ TEST(DiskVolume, CpmBeiblattEntstehtNurWennEsEtwasZuSagenGibt) {
     EXPECT_FALSE(fs::exists(ordner / "cpm-dateiangaben.txt"));
 }
 
+/// @test Der Rundlauf `extractAll` → `insertAll` erhält den UDOS-Kopfsektor —
+///       **auch die Felder, die 0 sind.**
+///
+/// Bis 2026-08-21 verlor er zwei davon, und zwar an derselben Ursache: der
+/// Schreibpfad las die 0 als „nicht angegeben" und setzte einen Ersatzwert.
+///
+///   * „Bytes im letzten Satz" (Offset 22): aus 0 wurde die volle Satzlänge.
+///     Gleichbedeutend, aber nicht dasselbe Byte.
+///   * LOW/HIGH ADDRESS und STACK SIZE (Offset 122/124/126): waren alle drei 0,
+///     lief der Schreibblock gar nicht — und der Kopfsektor behielt seine
+///     0xFF-Vorbelegung.  **Aus 0000 wurde FFFF**, und das ist bei einer
+///     PROGRAMMdatei kein Schönheitsfehler: UDOS weist sie beim Starten mit
+///     `MEMORY PROTECT VIOLATION` ab (doc/udos_diskettenformat.md §14), und unsere
+///     eigene Prüfung meldet sie als `udos.kopf.speicher`.
+///
+/// Aufgefallen ist es nie, weil der vorhandene Rundlauftest den **Dateiinhalt**
+/// vergleicht.  Dieser hier vergleicht die Kopfsektorangaben, und zwar über ALLE
+/// Dateien der Referenzdiskette — auf ihr haben 11 Dateien alle drei Speicherwerte
+/// auf 0 und eine „letzter Satz" = 0.
+TEST(DiskVolume, UdosRundlaufErhaeltAuchDieNullenImKopfsektor) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_dv_udos_kopf.hfe");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    // Sollstand: Name → die Kopfsektorangaben, die eine Linux-Datei NICHT mitbringt.
+    struct Kopf {
+        std::string typ, attrs, erstellt, geaendert, segmente;
+        uint16_t entry = 0, satz = 0, block = 0, rest = 0;
+        uint16_t low = 0, high = 0, stack = 0;
+        uint32_t zusatz = 0;
+    };
+    std::map<std::string, Kopf> vorher;
+    int mit_null_speicher = 0, mit_null_rest = 0;
+    for (const FileEntry& e : dv->list()) {
+        if (e.type == "D") continue;         // die Verzeichnisdatei wandert nicht mit
+        const std::string schluessel = dv->volumeDir(e.volume) + "/" + e.name;
+        vorher[schluessel] = Kopf{e.type, e.attributes, e.created, e.date, e.segments,
+                                  e.entry_addr, e.record_len, e.block_len,
+                                  e.bytes_in_last, e.low_addr, e.high_addr,
+                                  e.stack_size, e.extra};
+        if (e.low_addr == 0 && e.high_addr == 0 && e.stack_size == 0)
+            ++mit_null_speicher;
+        if (e.bytes_in_last == 0) ++mit_null_rest;
+    }
+    ASSERT_FALSE(vorher.empty());
+    // Ohne diese beiden bewiese der Test nichts — er liefe an der Sache vorbei.
+    ASSERT_GT(mit_null_speicher, 0) << "keine Datei mit LOW/HIGH/STACK = 0";
+    ASSERT_GT(mit_null_rest, 0)     << "keine Datei mit „letzter Satz\" = 0";
+
+    TempOrdner ordner("k1520_test_dv_udos_kopf_o");
+    ASSERT_TRUE(dv->extractAll(ordner.path(), TransferOptions{})) << dv->lastError();
+    ASSERT_TRUE(fs::exists(ordner / "udos-dateiangaben.txt"))
+        << "ohne Beiblatt ist der Rundlauf von vornherein verloren";
+
+    // Alles löschen und aus dem Ordner zurückspielen.
+    for (const FileEntry& e : dv->list()) {
+        if (e.type == "D") continue;
+        ASSERT_TRUE(dv->erase(FileRef{e.volume, e.name})) << dv->lastError();
+    }
+    ASSERT_TRUE(dv->insertAll(ordner.path(), TransferOptions{})) << dv->lastError();
+
+    int geprueft = 0;
+    for (const FileEntry& e : dv->list()) {
+        if (e.type == "D") continue;
+        {
+            const std::string schluessel = dv->volumeDir(e.volume) + "/" + e.name;
+            const auto it = vorher.find(schluessel);
+            ASSERT_NE(it, vorher.end()) << schluessel << " ist neu dazugekommen";
+            const Kopf& a = it->second;
+            EXPECT_EQ(a.typ,   e.type)          << schluessel;
+            EXPECT_EQ(a.attrs, e.attributes)    << schluessel;
+            EXPECT_EQ(a.entry, e.entry_addr)    << schluessel;
+            EXPECT_EQ(a.satz,  e.record_len)    << schluessel;
+            EXPECT_EQ(a.block, e.block_len)     << schluessel;
+            EXPECT_EQ(a.rest,  e.bytes_in_last) << schluessel << " — „letzter Satz\"";
+            EXPECT_EQ(a.low,   e.low_addr)      << schluessel << " — LOW ADDRESS";
+            EXPECT_EQ(a.high,  e.high_addr)     << schluessel << " — HIGH ADDRESS";
+            EXPECT_EQ(a.stack, e.stack_size)    << schluessel << " — STACK SIZE";
+            EXPECT_EQ(a.zusatz, e.extra)        << schluessel;
+            EXPECT_EQ(a.segmente, e.segments)   << schluessel;
+            EXPECT_EQ(a.erstellt,  e.created)   << schluessel;
+            EXPECT_EQ(a.geaendert, e.date)      << schluessel;
+            ++geprueft;
+        }
+    }
+    EXPECT_EQ(vorher.size(), static_cast<size_t>(geprueft))
+        << "es sind nicht alle Dateien zurückgekommen";
+}
+
 TEST(DiskVolume, SideNPraefixImDateinamen) {
     EXPECT_EQ(FileRef::parse("Side1/HELP.DAT.00").volume, 1);
     EXPECT_EQ(FileRef::parse("Side1/HELP.DAT.00").name, "HELP.DAT.00");
