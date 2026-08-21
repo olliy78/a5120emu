@@ -1376,11 +1376,25 @@ nützlich.  `✅` = fertig.
   Fall vorliegt.
 * **Der Grad, ab dem ein Fragment „Programm" heißt**, ist eine Heuristik und wird als
   solche beschriftet. Kein Befund, keine Reparatur hängt davon ab.
-* **Zwei nacheinander gelöschte CP/M-Dateien gleichen Namens werden EIN Fund**
-  (Etappe 5). Der Nutzerbereich, der sie unterscheiden könnte, ist ja gerade das
-  gelöschte Byte; zusammengefasst wird deshalb über den Namen allein. Auseinander­halten
-  ließen sie sich nur über die Blocklisten — was in dem Moment falsch würde, in dem die
-  eine die Blöcke der anderen geerbt hat.
+* **Zwei nacheinander gelöschte CP/M-Dateien gleichen Namens sind zwei Funde**
+  (berichtigt 2026-08-21). Der Nutzerbereich, der sie unterscheiden könnte, ist ja
+  gerade das gelöschte Byte, und gruppiert wird deshalb über den Namen allein — bis
+  2026-08-21 wurden sie dadurch zu **einem** Fund zusammengeworfen. Das war falsch,
+  und zwar messbar: aus zwei gelöschten `PIP.COM` (3072 B und 7424 B) entstand ein
+  einziger Fund von 7424 B der Güte **sicher**, dessen erste 2048 Byte aus der
+  *anderen* Datei stammten. Eine Mischdatei, die sich sicher nennt — genau das, was
+  E10 verbietet.
+  Auseinanderzuhalten sind sie **beweisbar**: die **Extent-Nummer** kommt innerhalb
+  einer Datei genau einmal vor. Wiederholt sie sich, sind es zwei Dateien — keine
+  Heuristik, sondern eine Eigenschaft des Formats. Getrennt wird in der Reihenfolge
+  der Verzeichnisplätze (so vergibt CP/M sie beim Wachsen einer Datei); der zweite
+  Fund bekommt `NAME.2` als Vorschlag, damit „alles retten" den ersten nicht
+  überschreibt, und beide sagen im Klartext, dass es den Namen zweimal gibt.
+  **Ein Rest bleibt und wird als solcher gemeldet:** hat die eine Datei mehrere
+  Extents und die andere auch, steht zwar sicher fest, dass es zwei sind — aber nicht
+  zwangsläufig, welcher Folgeplatz zu welcher gehört. Dann wird nicht geraten,
+  sondern die Güte auf *wahrscheinlich* begrenzt und der Vorbehalt benannt. Wächter:
+  `FsRecoverCpm.ZweiGleichnamigeGeloeschteDateienSindZweiFunde`.
 * **Höchstens 200 Rohbereiche** meldet die Oberflächensuche (`kMaxRohbereiche`), aus
   demselben Grund wie `FsCheckReport::begrenzen`: eine Liste, die niemand mehr liest,
   ist genau dann wertlos, wenn sie am nötigsten wäre. Der Fall tritt praktisch nur bei

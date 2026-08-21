@@ -24,6 +24,18 @@
  * ### Zwei Arten von Fund
  * 1. **Geloeschte Verzeichnisplaetze** — mit Namen, Groesse und Blockliste.  Das ist
  *    der billige Teil: er kostet keinen Spurzugriff ausser dem Verzeichnis.
+ * ### Zwei gleichnamige geloeschte Dateien
+ * Der Name ist der einzige Schluessel, der das Loeschen ueberlebt (der Nutzerbereich
+ * stand in ebendem Byte, das 0xE5 wurde).  Zwei nacheinander geloeschte Dateien
+ * gleichen Namens landen deshalb beim Gruppieren im selben Topf — und
+ * zusammengeworfen ergaeben ihre Plaetze eine **Mischdatei aus zwei Quellen**, die
+ * sich obendrein „sicher" nennt.
+ *
+ * Auseinanderzuhalten sind sie trotzdem, und zwar **beweisbar**: die Extent-Nummer
+ * kommt innerhalb EINER Datei genau einmal vor.  Wiederholt sie sich, sind es zwei
+ * Dateien — keine Vermutung, sondern eine Eigenschaft des Formats.  Genau daran wird
+ * getrennt (§20).
+ *
  * 2. **Freie Bloecke mit Inhalt** (nur @c FsRecoverLevel::Oberflaeche) — die
  *    Bruchstuecke ohne Verzeichnisplatz: neu aufgesetztes Verzeichnis,
  *    ueberschriebener Verzeichnisbereich, halb neu beschriebene Diskette.  Sie
@@ -233,13 +245,47 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
     // Rohbereich anzubieten waere dieselbe Sache zweimal.
     std::set<uint16_t> vergeben;
 
-    for (auto& [name, teile] : nach_name) {
+    for (auto& [name, alle] : nach_name) {
+        // ── Gehoeren diese Plaetze wirklich zu EINER Datei? ──────────────────
+        //
+        // Die Extent-Nummer kommt innerhalb einer Datei genau einmal vor.  Wiederholt
+        // sie sich, liegen hier zwei nacheinander geloeschte Dateien gleichen Namens
+        // — beweisbar, nicht vermutet.  Getrennt wird in der Reihenfolge der
+        // VERZEICHNISPLAETZE: so vergibt CP/M sie, wenn eine Datei waechst.
+        std::sort(alle.begin(), alle.end(),
+                  [](const Teil& a, const Teil& b) { return a.slot < b.slot; });
+        std::vector<std::vector<Teil>> gruppen;
+        std::set<int> im_lauf;
+        for (Teil& t : alle) {
+            if (gruppen.empty() || !im_lauf.insert(t.extent).second) {
+                gruppen.emplace_back();
+                im_lauf.clear();
+                im_lauf.insert(t.extent);
+            }
+            gruppen.back().push_back(std::move(t));
+        }
+
+        // Steht die Zuordnung der HOEHEREN Extents fest?  Nur, wenn keine Gruppe mehr
+        // als einen Platz hat.  Sonst koennte ein Extent 1 zur falschen der beiden
+        // Dateien geschlagen worden sein — dass es ZWEI sind, ist sicher, WELCHER
+        // Folgeplatz zu welcher gehoert, nicht.  Geraten wird da nicht; es wird
+        // gesagt (E10).
+        bool zuordnung_sicher = gruppen.size() == 1;
+        if (!zuordnung_sicher) {
+            zuordnung_sicher = true;
+            for (const auto& g : gruppen) if (g.size() > 1) zuordnung_sicher = false;
+        }
+
+      for (size_t gi = 0; gi < gruppen.size(); ++gi) {
+        std::vector<Teil>& teile = gruppen[gi];
         std::sort(teile.begin(), teile.end(),
                   [](const Teil& a, const Teil& b) { return a.extent < b.extent; });
 
         FsRecoverFind f;
         f.name      = name;
-        f.vorschlag = name;
+        // Der Name gehoert BEIDEN — der Vorschlag darf sich nicht doppeln, sonst
+        // ueberschriebe „alles retten" den ersten Fund mit dem zweiten.
+        f.vorschlag = gi == 0 ? name : name + "." + std::to_string(gi + 1);
         f.volume    = 0;
         f.a         = 0;                       // Verzeichnisfund
         f.origin    = teile.size() == 1
@@ -249,9 +295,23 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
         f.size      = static_cast<uint64_t>(teile.back().extent) * kExtentBytes
                     + static_cast<uint64_t>(teile.back().records) * kRecordBytes;
 
-        std::vector<std::string> streit, wild, karies;
+        std::vector<std::string> streit, wild, karies, hinweise;
         int  schadhaft = 0;
         bool erster_ort = true;
+
+        if (gruppen.size() > 1) {
+            // Eine Auskunft, keine Einschraenkung: der Inhalt DIESER Gruppe ist so
+            // heil wie jeder andere Fund.  Der Anwender muss nur wissen, dass es den
+            // Namen zweimal gibt — sonst haelt er den zweiten Fund fuer ein Duplikat
+            // und wirft ihn weg.
+            hinweise.push_back("Es gibt " + std::to_string(gruppen.size())
+                               + " geloeschte Eintraege namens '" + name
+                               + "' — verschiedene Dateien; dies ist die "
+                               + std::to_string(gi + 1) + ".");
+            if (!zuordnung_sicher)
+                karies.push_back("Bei mehreren gleichnamigen Eintraegen steht nicht"
+                                 " fest, welcher Folgeplatz zu welcher Datei gehoert");
+        }
 
         for (const Teil& t : teile) {
             f.teile.push_back(t.slot);
@@ -299,6 +359,7 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
         if (luecke)
             wild.push_back("es fehlen Verzeichnisplaetze — der Fund hat Loecher");
 
+        fsRecoverBelege(f.detail, hinweise, "Hinweise");
         fsRecoverBelege(f.detail, streit, "Bloecke");
         fsRecoverBelege(f.detail, wild,   "Stellen");
         fsRecoverBelege(f.detail, karies, "Stellen");
@@ -318,9 +379,11 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
         f.wiederherstellbar = f.warum_nicht.empty();
 
         bericht.funde.push_back(std::move(f));
+      }
     }
 
     // ── 2. Freie Bloecke mit Inhalt (nur die Oberflaechensuche) ──────────────
+    const size_t verzeichnisfunde = bericht.funde.size();
     if (level == FsRecoverLevel::Oberflaeche) {
         const std::vector<bool> karte = allocationMap();
         std::vector<uint16_t>   lauf;
@@ -328,7 +391,7 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
 
         auto laufAbschliessen = [&]() {
             if (lauf.empty()) return;
-            if (bericht.funde.size() >= kMaxRohbereiche + nach_name.size()) {
+            if (bericht.funde.size() >= kMaxRohbereiche + verzeichnisfunde) {
                 lauf.clear(); lauf_daten.clear();
                 return;
             }

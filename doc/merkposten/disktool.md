@@ -462,6 +462,19 @@ Was beim Weiterarbeiten zu wissen ist:
   Kopfsektorangaben über alle Dateien der Referenzdiskette und stellt vorab sicher,
   dass überhaupt Dateien mit Nullwerten dabei sind — sonst liefe er an der Sache
   vorbei.
+- **Gleichnamige geloeschte CP/M-Dateien: an der EXTENT-NUMMER trennen**
+  (2026-08-21).  Gruppiert wird ueber den Namen — der Nutzerbereich ist ja das
+  geloeschte Byte.  Zwei nacheinander geloeschte Dateien gleichen Namens wurden
+  dadurch zu EINEM Fund zusammengeworfen: gemessen 7424 B, Guete „sicher", die
+  ersten 2048 B aus der anderen Datei.  **Die Extent-Nummer kommt innerhalb einer
+  Datei genau einmal vor** — wiederholt sie sich, sind es beweisbar zwei Dateien.
+  Getrennt wird in der Reihenfolge der Verzeichnisplaetze; der zweite Fund heisst
+  `NAME.2` (sonst ueberschreibt „alles retten" den ersten).  Hat jede der beiden
+  mehrere Extents, steht die Zuordnung der FOLGEplaetze nicht fest — dann Guete
+  hoechstens *wahrscheinlich* mit benanntem Vorbehalt, nicht geraten.  Waechter
+  `FsRecoverCpm.ZweiGleichnamigeGeloeschteDateienSindZweiFunde`; er braucht einen
+  freien Platz WEITER VORN, sonst belegt die neue Datei den Platz der geloeschten
+  gleich wieder und es gibt gar keine zwei Eintraege.
 - **Gegenprobe der Alternativprofile** (2026-08-19, Entwurf §11a).
   `DiskVolume::gegenprobe` öffnet bei `unambiguous == false` dieselbe Datei mit jedem
   Alternativprofil und meldet `erkennung.alternative` (Info, Ebene `Erkennung`).

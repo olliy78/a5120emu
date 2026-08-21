@@ -327,6 +327,88 @@ TEST(FsRecoverCpm, NeuVergebeneBloeckeMachenAusDemFundEinBruchstueck) {
     fs::remove(pfad);
 }
 
+/// @test Zwei nacheinander geloeschte Dateien GLEICHEN NAMENS sind zwei Funde.
+///
+/// Der Name ist der einzige Schlüssel, der das Löschen überlebt — der Nutzerbereich
+/// stand in ebendem Byte, das `0xE5` wurde.  Beide Dateien landen deshalb beim
+/// Gruppieren im selben Topf, und bis 2026-08-21 wurden sie zu **einem** Fund
+/// zusammengeworfen: 7424 Byte, Güte „sicher", und die ersten 2048 Byte davon
+/// stammten aus der ANDEREN Datei.  Eine Mischdatei, die sich sicher nennt — genau
+/// das, was E10 verbietet.
+///
+/// Auseinanderzuhalten sind sie **beweisbar**: die Extent-Nummer kommt innerhalb
+/// einer Datei genau einmal vor.  Hier tragen beide Extent 0.
+///
+/// Der Aufbau stellt nach, wie es im Betrieb dazu kommt — und er ist nicht
+/// selbstverständlich: normalerweise belegt die neue Datei den Verzeichnisplatz der
+/// gelöschten gleich wieder, und dann gibt es gar keine zwei Einträge.  Es braucht
+/// einen FREIEN Platz WEITER VORN, den die neue Datei stattdessen nimmt.
+TEST(FsRecoverCpm, ZweiGleichnamigeGeloeschteDateienSindZweiFunde) {
+    const std::string pfad   = kopie("cpa_cpa780_k5601_noclock.img", "fsrec_zwei.img");
+    const std::string ordner = (fs::temp_directory_path() / "fsrec_zwei_out").string();
+    fs::remove_all(ordner);
+    fs::create_directories(ordner);
+
+    auto v = oeffneSchreibend(pfad);
+    ASSERT_TRUE(v);
+
+    // Das Original sichern — der Vergleich am Ende braucht es.
+    ASSERT_TRUE(v->extract(FileRef::parse(kOpfer, 0), ordner + "/original.bin",
+                           TransferOptions{})) << v->lastError();
+    const std::vector<uint8_t> original = bytes(ordner + "/original.bin");
+    ASSERT_FALSE(original.empty());
+
+    // Einen Verzeichnisplatz WEITER VORN frei machen, damit die neue Datei nicht den
+    // Platz der gelöschten wiederbekommt.
+    const std::string frueh = v->list().front().name;
+    ASSERT_NE(frueh, kOpfer);
+    ASSERT_TRUE(v->erase(FileRef::parse(frueh, 0))) << v->lastError();
+    ASSERT_TRUE(v->erase(FileRef::parse(kOpfer, 0))) << v->lastError();
+
+    // Eine ANDERE Datei unter demselben Namen — und auch die wieder löschen.
+    {
+        std::ofstream f(ordner + "/neu.bin", std::ios::binary);
+        const std::vector<char> d(3000, 'A');
+        f.write(d.data(), static_cast<std::streamsize>(d.size()));
+    }
+    ASSERT_TRUE(v->insert(ordner + "/neu.bin", FileRef::parse(kOpfer, 0),
+                          TransferOptions{})) << v->lastError();
+    ASSERT_TRUE(v->erase(FileRef::parse(kOpfer, 0))) << v->lastError();
+
+    // ── Zwei Funde, nicht einer ──────────────────────────────────────────────
+    const FsRecoverReport& r = v->recoverScan(FsRecoverLevel::Verzeichnis, true);
+    std::vector<const FsRecoverFind*> gleich;
+    for (const FsRecoverFind& f : r.funde)
+        if (f.name == kOpfer) gleich.push_back(&f);
+    ASSERT_EQ(2u, gleich.size())
+        << "zusammengeworfen ergäbe das eine Mischdatei aus zwei Quellen: " << namen(r);
+
+    // Beide tragen denselben Namen — aber NICHT denselben Vorschlag, sonst
+    // überschriebe „alles retten" den einen mit dem anderen.
+    EXPECT_NE(gleich[0]->vorschlag, gleich[1]->vorschlag);
+    for (const FsRecoverFind* f : gleich) {
+        EXPECT_NE(std::string::npos, f->detail.find("2 geloeschte Eintraege"))
+            << "der Anwender muss wissen, dass es den Namen zweimal gibt: " << f->detail;
+        // Die Zuordnung ist hier eindeutig — jede Datei hat genau einen Platz.
+        EXPECT_EQ(FsRecoverQuality::Sicher, f->quality) << f->detail;
+    }
+
+    // ── Und der Inhalt stimmt: EINER der beiden ist byteweise das Original ───
+    int treffer = 0;
+    for (size_t i = 0; i < r.funde.size(); ++i) {
+        if (r.funde[i].name != kOpfer) continue;
+        const std::string ziel = ordner + "/" + std::to_string(i) + ".bin";
+        ASSERT_TRUE(v->recoverExtract(static_cast<int>(i), ziel)) << v->lastError();
+        if (bytes(ziel) == original) ++treffer;
+    }
+    EXPECT_EQ(1, treffer)
+        << "genau einer der beiden Funde muss byteweise die geloeschte Datei sein";
+
+    v.reset();
+    fs::remove_all(ordner);
+    fs::remove(pfad);
+}
+
 // ═══ 3. Rohbereiche — Funde ohne Verzeichnisplatz ═════════════════════════════
 
 /// @test Ohne Verzeichnisplatz findet erst die Oberflaechensuche etwas.
