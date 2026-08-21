@@ -40,7 +40,7 @@ from typing import List, Optional
 from PySide6.QtCore import QCoreApplication, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
-    QFileDialog, QFrame, QInputDialog, QLabel, QMainWindow, QMessageBox,
+    QApplication, QFileDialog, QFrame, QInputDialog, QLabel, QMainWindow, QMessageBox,
     QSplitter, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -2232,6 +2232,7 @@ class MainWindow(QMainWindow):
             return None
         vorhanden = getattr(self, "_diskeditor", None)
         if vorhanden is not None and vorhanden.isVisible() and vorhanden.tool is self.tool:
+            self._editor_an_modalen_dialog(vorhanden)
             vorhanden.raise_()
             vorhanden.activateWindow()
             return vorhanden
@@ -2240,8 +2241,58 @@ class MainWindow(QMainWindow):
         # Ein geschriebener Sektor ist eine Änderung wie jede andere: Titelmarke,
         # und die Dateiliste kann sich mitgeändert haben.
         self._diskeditor.disk_changed.connect(self._reload)
+        self._editor_an_modalen_dialog(self._diskeditor)
         self._diskeditor.show()
+        self._diskeditor.raise_()
+        self._diskeditor.activateWindow()
         return self._diskeditor
+
+    def _editor_an_modalen_dialog(self, editor) -> None:
+        """Den Diskeditor unter einen offenen modalen Dialog hängen.
+
+        Prüf- und Rettungsdialog laufen modal (`exec()`), und ein modaler Dialog
+        sperrt JEDES andere Fenster derselben Anwendung — auch das, das aus ihm
+        heraus geöffnet wurde.  Der Diskeditor erschien deshalb, rutschte hinter
+        das Hauptfenster und nahm keine Eingabe an; erst nach dem Schliessen des
+        Dialogs war er bedienbar.  Genau das macht „Im Diskeditor zeigen“
+        wertlos: nachsehen soll man ja VOR der Entscheidung.
+
+        Qt kennt eine einzige Ausnahme von der Sperre: Fenster **unterhalb** des
+        modalen Fensters (`isAncestorOf(..., IncludeTransients)`).  Also wird der
+        Editor, solange der Dialog steht, dessen Kindfenster — und beim Schliessen
+        wieder unseres, damit er den Dialog überlebt und nicht mit ihm stirbt.
+        """
+        dialog = QApplication.activeModalWidget()
+        if dialog is None or dialog is editor or dialog.isAncestorOf(editor):
+            return
+        self._fenster_umhaengen(editor, dialog)
+        # Der Dialog ist nach `exec()` nicht tot, nur unsichtbar (er bleibt Kind des
+        # Hauptfensters).  `finished` kommt vor jedem Abräumen — hier genügt es, den
+        # Editor zurückzuholen.  Eine Verbindung je Dialog: solange der Editor sein
+        # Kind ist, kehrt der Aufruf oben schon vorher um.
+        dialog.finished.connect(self._diskeditor_zurueckhaengen)
+
+    def _diskeditor_zurueckhaengen(self, *_) -> None:
+        editor = getattr(self, "_diskeditor", None)
+        if editor is not None:
+            self._fenster_umhaengen(editor, self)
+
+    @staticmethod
+    def _fenster_umhaengen(fenster, eltern) -> None:
+        """Ein eigenständiges Fenster an einen anderen Eltern hängen.
+
+        `setParent` nimmt dem Fenster Sichtbarkeit und Lage; beides wird deshalb
+        von Hand gerettet — sonst springt der Editor beim Umhängen in die Ecke
+        oder verschwindet ganz.
+        """
+        if fenster.parent() is eltern:
+            return
+        sichtbar = fenster.isVisible()
+        lage = fenster.geometry()
+        fenster.setParent(eltern, fenster.windowFlags())
+        fenster.setGeometry(lage)
+        if sichtbar:
+            fenster.show()
 
     # ── Schließen ───────────────────────────────────────────────────────────
 

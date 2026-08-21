@@ -362,7 +362,17 @@ Was beim Weiterarbeiten zu wissen ist:
   aus statt weniger, und die Prüfung meldete prompt `cpm.block.luecke`.
   **(5) Der Sprung in den Diskeditor** (E9) geht über
   `DiskEditorWindow.zeige_ort(cyl, head, sector)`; `sector` ist die **Kennung** des
-  Sektors, nicht seine laufende Nummer auf der Spur.
+  Sektors, nicht seine laufende Nummer auf der Spur.  Und er hängt den Editor,
+  solange der modale Dialog steht, **unter den Dialog**
+  (`MainWindow._editor_an_modalen_dialog`, 2026-08-21): ein modaler Dialog sperrt
+  jedes Fenster derselben Anwendung, das nicht unter ihm hängt — der Editor ging
+  sonst hinter das Hauptfenster und nahm keine Eingabe an, also war „Im Diskeditor
+  zeigen" erst NACH der Entscheidung zu gebrauchen.  Beim `finished` des Dialogs
+  wird er ans Hauptfenster zurückgehängt (Lage und Sichtbarkeit von Hand gerettet,
+  `setParent` nimmt beides), sonst stürbe er mit einem Dialog, den er überleben
+  soll.  Gemessen wird am `WindowBlocked`/`WindowUnblocked` des Editors, nicht an
+  der Elternschaft — die ist nur das Mittel
+  (`test_der_diskeditor_ist_neben_einem_modalen_dialog_bedienbar`).
   Wächter: `FsCheckReparatur.*` (12), `cli_dt_fsck_*` (4, mit der neuen
   Schadensinjektion `poke:` im `.cli`-Prüfstand), `py_disktool_gui`.
   Alle vier UDOS-Fixturen prüfen mit `--full` **ohne Befund** (Ketten, Kreuzbelegung,

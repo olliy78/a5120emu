@@ -2250,6 +2250,56 @@ def test_ein_befund_fuehrt_per_doppelklick_in_den_diskeditor(window, fixture_dis
                         dlg.bericht.findings[ortbar].sector)]
 
 
+def test_der_diskeditor_ist_neben_einem_modalen_dialog_bedienbar(window, fixture_disks):
+    """E9: „Im Diskeditor zeigen" muss AUS DEM DIALOG HERAUS etwas nützen.
+
+    Prüf- und Rettungsdialog laufen modal, und ein modaler Dialog sperrt jedes
+    Fenster derselben Anwendung, das nicht unter ihm hängt: der Editor erschien,
+    rutschte hinter das Hauptfenster und nahm keine Eingabe an — nachsehen ging
+    erst nach dem Schliessen des Dialogs, also nach der Entscheidung.  Qt meldet
+    die Sperre als ``WindowBlocked``; genau daran wird hier gemessen und nicht an
+    der Elternschaft, denn die ist nur das Mittel.
+    """
+    from PySide6.QtCore import QEvent, QObject
+    from PySide6.QtWidgets import QApplication, QDialog
+
+    class Horcher(QObject):
+        def __init__(self):
+            super().__init__()
+            self.gesperrt = None
+
+        def eventFilter(self, obj, ereignis):        # noqa: N802
+            if ereignis.type() == QEvent.WindowBlocked:
+                self.gesperrt = True
+            elif ereignis.type() == QEvent.WindowUnblocked:
+                self.gesperrt = False
+            return False
+
+    editor = _editor(window, fixture_disks / "cpa_cpa780_k5601_noclock.img")
+    horcher = Horcher()
+    editor.installEventFilter(horcher)
+
+    dlg = QDialog(window)
+    dlg.open()                       # anwendungsmodal, ohne eigene Ereignisschleife
+    QApplication.processEvents()
+    assert horcher.gesperrt is True, "Vorbedingung: der modale Dialog sperrt den Editor"
+
+    window._befund_im_editor(3, 0, 5)                # der Knopf „Im Diskeditor zeigen"
+    QApplication.processEvents()
+    assert horcher.gesperrt is False, "neben dem Dialog muss der Editor bedienbar sein"
+    assert editor.isVisible()
+    assert editor.aktuell[:2] == (0, 3), "und er muss auf dem genannten Ort stehen"
+
+    # Nach dem Dialog gehört er wieder dem Hauptfenster — sonst stürbe er mit einem
+    # Dialog, den er überleben soll.
+    dlg.done(0)
+    QApplication.processEvents()
+    assert editor.parent() is window
+    assert editor.isVisible(), "das Umhaengen darf ihn nicht wegblenden"
+    assert horcher.gesperrt is False
+    editor.close()
+
+
 def test_der_diskeditor_springt_wirklich_auf_den_genannten_ort(window, fixture_disks):
     """Der Rückruf des Hauptfensters muss im Editor auch ankommen."""
     assert window.open_image(fixture_disks / "cpa_cpa780_k5601_noclock.img")
