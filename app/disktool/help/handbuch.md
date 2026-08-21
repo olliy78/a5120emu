@@ -342,9 +342,13 @@ Diskette beanspruchen — wer als Zweiter schreibt, überschreibt den Ersten.
 (Strg+F) und, nur zum Lesen, unter *Diskette ▸ Diskettenangaben…* als Schaltfläche
 *Vollprüfung*. Sie fasst jede Spur an und findet dadurch, was beim Öffnen nicht zu
 sehen war: Kettenbrüche, doppelt belegte Bereiche, den Abgleich zwischen
-Belegungsplan und Dateien und Sektoren mit falscher Prüfsumme. Bei einer echten
-Diskette am Greaseweazle ist die Schaltfläche gesperrt — dort müsste dafür die
-ganze Scheibe eingelesen werden.
+Belegungsplan und Dateien und Sektoren mit falscher Prüfsumme.
+
+Bei einer **echten Diskette am Greaseweazle** kostet das die ganze Scheibe (0,5–0,8 s
+je Spur). Deshalb lädt das Werkzeug die fehlenden Spuren **vorher** nach und zeigt
+dabei einen Fortschrittsbalken mit „*x* von *y* Spuren geladen" — abbrechbar. Danach
+liegt die Diskette vollständig im Speicher, und jeder weitere Lauf ist so schnell wie
+an einer Datei.
 
 Die Prüfung **ändert nie etwas**. Dasselbe geht auf der
 Kommandozeile mit `k1520disktool check <abbild> --full`; das fasst jede Spur an
@@ -358,12 +362,18 @@ sagt die Prüfung genau, welche Datei betroffen ist. Der ernste Fall heißt „e
 Sektor gehört zu einer Datei, steht aber als frei": die Datei ist heil, und der
 nächste Schreibvorgang überschreibt sie.
 
+Die volle Prüfung sieht dort außerdem in die **freien** Bereiche. Ein Sektor mit
+falscher Prüfsumme, der zu keiner Datei gehört, ist nämlich nicht nichts: dort liegen
+die gelöschten Dateien, und dorthin schreibt UDOS als nächstes. Es ist kein
+Datenverlust — aber ein Grund, die Diskette zu kopieren, solange es noch geht.
+
 ## Reparieren
 
 *Diskette ▸ Dateisystem prüfen und reparieren…* (Strg+F) zeigt denselben Befund
 noch einmal — diesmal mit dem, was sich daran tun lässt. Jede Zeile trägt links
-den Befund, rechts den Vorschlag; unten stehen die Einzelheiten mitsamt Ort, und
-ein Doppelklick auf eine Zeile schlägt diesen Ort im **Diskeditor** auf.
+den Befund, rechts den Vorschlag; unten stehen die Einzelheiten mitsamt Ort. Ein
+Doppelklick auf eine Zeile — oder der Knopf *Im Diskeditor zeigen* — schlägt genau
+den **Sektor** auf, den der Befundtext nennt, nicht bloß die Spur.
 
 Drei Dinge sind daran fest verabredet:
 
@@ -401,20 +411,33 @@ geschähe.
 ## Gelöschte Dateien suchen
 
 *Diskette ▸ Gelöschte Dateien suchen…* holt hervor, was ein Löschen übriggelassen
-hat. Und das ist überraschend viel: **CP/M löscht mit einem einzigen Byte.** Das
-Nutzerbyte des Verzeichnisplatzes wird 0xE5 — Name, Typ, Satzzahl und alle
-Blockzeiger bleiben unverändert stehen, die Daten selbst sind unberührt. Eine
-gelöschte Datei ist damit vollständig beschrieben; sie wird nur nicht mehr
-gefunden.
+hat. Und das ist überraschend viel — **keines der Dateisysteme überschreibt beim
+Löschen die Daten.** Nur *was* übrigbleibt, ist verschieden:
+
+| | Was das Löschen tut | Was übrigbleibt |
+|---|---|---|
+| **CP/M** | setzt **ein Byte** — den Nutzerbereich des Verzeichnisplatzes auf 0xE5 | Name, Typ, Satzzahl und alle Blockzeiger stehen unverändert da |
+| **UDOS / ZDOS / NDOS** | schneidet den **Verzeichniseintrag** heraus und löscht die Bits im Belegungsplan | Der Kopfsektor **vollständig** und die ganze Kette. Verloren ist **allein der Name** |
+
+Daraus folgt der Unterschied, der beim Bedienen auffällt: bei CP/M kennt der Fund
+seinen Namen, bei UDOS nicht. Dort heißt er `GERETTET.001` — es sei denn, im
+Verzeichnis steht noch ein Namensrest, dann wird der **vorgeschlagen** (nie als
+Tatsache ausgegeben; er lässt sich in der Liste ändern).
 
 Zwei Suchtiefen stehen oben im Fenster:
 
-* **Verzeichnisreste** — nur die gelöschten Verzeichnisplätze. Kostet nichts, denn
-  das Verzeichnis ist ohnehin gelesen.
-* **Ganze Oberfläche** — zusätzlich jeder freie Bereich der Diskette. Das findet
-  die Bruchstücke *ohne* Verzeichnisplatz (Verzeichnis neu aufgesetzt, Diskette
-  halb neu beschrieben). An einer echten Diskette am Greaseweazle ist diese Suche
-  noch gesperrt: sie zöge die ganze Scheibe ein.
+* **Verzeichnisreste** — bei CP/M nur die gelöschten Verzeichnisplätze, und das
+  kostet nichts: das Verzeichnis ist ohnehin gelesen.
+* **Ganze Oberfläche** — zusätzlich jeder freie Bereich der Diskette. Das findet die
+  Bruchstücke *ohne* Verzeichnisplatz (Verzeichnis neu aufgesetzt, Diskette halb neu
+  beschrieben).
+
+**Bei UDOS kosten beide Tiefen gleich viel.** Nach dem Löschen steht im Verzeichnis
+nichts Gesuchtes mehr — gesucht wird nach der Signatur des Kopfsektors, und dafür
+müssen die Datenspuren angesehen werden. Die beiden Tiefen unterscheiden sich dort
+nur darin, *welche* Sektoren als Kandidat gelten und ob Rohbereiche gesammelt werden.
+An einer echten Diskette wird vorher geladen, mit Fortschrittsbalken; danach ist es
+so schnell wie an einer Datei.
 
 Jeder Fund trägt eine **Güte**, und die ist keine Schätzung, sondern eine Aussage
 mit Belegen — sie steht als Tooltip und unter der Vorschau im Klartext:
@@ -435,15 +458,51 @@ Drei Wege stehen unten:
   festhält. Für ein Textdokument ist das brauchbar, für ein Programm nicht.
 * **Alles Sichere retten…** schreibt alle Funde der Güte *sicher* in einen Ordner.
 * **Auf der Diskette wiederherstellen** trägt den Fund wieder ins Verzeichnis ein
-  und verlangt Schreibrecht. Es geht nur, wenn kein Block des Fundes inzwischen
-  einer lebenden Datei gehört — sonst entstünde genau die Kreuzbelegung, die die
-  Prüfung als **Gefahr** meldet. Steht der Knopf still, sagt die Zeile darüber,
-  warum. Der ursprüngliche **Nutzerbereich** ist übrigens nicht zu retten: er stand
-  in ebendem Byte, das beim Löschen überschrieben wurde — wiederhergestellt wird
-  nach Bereich 0.
+  und verlangt Schreibrecht. **Das gibt es nur bei CP/M** — dort ist es ein einziges
+  Byte, und der Name stimmt. Es geht nur, wenn kein Block des Fundes inzwischen einer
+  lebenden Datei gehört — sonst entstünde genau die Kreuzbelegung, die die Prüfung als
+  **Gefahr** meldet. Steht der Knopf still, sagt die Zeile darüber, warum. Der
+  ursprüngliche **Nutzerbereich** ist übrigens nicht zu retten: er stand in ebendem
+  Byte, das beim Löschen überschrieben wurde — wiederhergestellt wird nach Bereich 0.
 
-Funde ohne Namen (die Bruchstücke) heißen `fragment_c12h0_b40-b47.bin`; der Name
-lässt sich in der Liste ändern, bevor man rettet.
+**Bei UDOS führt der Weg zurück über den Ordner**, und er ist vollwertig:
+
+1. Fund in den Ordner retten.
+2. Der Datei dort den passenden Namen geben — und denselben Namen in der Zeile der
+   Datei `udos-dateiangaben.txt` daneben.
+3. Mit *Einfügen* wieder auf die Diskette bringen.
+
+Dass das trägt, liegt am Kopfsektor: er überlebt das Löschen **ganz**. Typ,
+Eigenschaften, Startadresse, Satzlänge, alle Speichersegmente und beide
+Datumsvermerke sind noch da, und das Werkzeug schreibt sie beim Retten in ebendieses
+Beiblatt. Verloren ist wirklich nur der Name — die Attribute kommen von selbst mit.
+
+### Erst ansehen, dann handeln
+
+Neben der Vorschau steht die **Sektorliste** des Fundes, und *Im Diskeditor zeigen*
+schlägt den gewählten Sektor auf. Damit lässt sich vor jeder Aktion nachsehen, was da
+wirklich steht.
+
+Das ist keine Bequemlichkeit, sondern bei UDOS die einzige Handhabe: es gibt keinen
+Namen zum Wiedererkennen, und die Sätze einer Datei liegen **nicht** hintereinander.
+`NOTE.TO.SD` der Referenzdiskette belegt auf Spur 21 die Sektoren 6, 7, 12, 23, 1,
+8, … — verkettet und physisch verschränkt. Wer nur den ersten Sektor kennt, findet den
+zweiten nicht. Der erste Eintrag der Liste ist bei UDOS der **Kopfsektor**; dort
+stehen Typ, Startadresse und die Segmente — also genau das, woran sich eine namenlose
+Datei erkennen lässt.
+
+### Zwei Funde mit demselben Namen
+
+Bei CP/M kann derselbe Name zweimal in der Liste stehen. Das ist kein Fehler: es sind
+zwei nacheinander gelöschte, **verschiedene** Dateien. Der Nutzerbereich, der sie
+unterscheiden würde, ist ja das gelöschte Byte — auseinandergehalten werden sie an der
+Extentnummer. Der Text sagt es dazu („es gibt 2 gelöschte Einträge dieses Namens"),
+und der zweite bekommt den Speichervorschlag `NAME.2`, damit *Alles Sichere retten*
+den einen nicht mit dem anderen überschreibt.
+
+Funde ohne Namen (die Bruchstücke) heißen `fragment_c12h0_b40-b47.bin`, bei UDOS
+`fragment_c12h0_s6-s26.bin`; der Name lässt sich in der Liste ändern, bevor man
+rettet.
 
 Dasselbe auf der Kommandozeile:
 
@@ -452,7 +511,9 @@ k1520disktool recover <abbild> [--full] [--to ordner] [--list] [--restore N[=NAM
 ```
 
 Ohne `--to` wird nur aufgelistet; `--full` ist die Oberflächensuche, und
-`--restore 0=ALT.COM` trägt Fund 0 unter dem Namen `ALT.COM` wieder ein.
+`--restore 0=ALT.COM` trägt Fund 0 unter dem Namen `ALT.COM` wieder ein — **nur bei
+CP/M**; bei UDOS lehnt es ab und nennt den Weg über den Ordner. `--json` gibt
+dieselbe Liste maschinenlesbar aus, samt der Sektoren jedes Fundes.
 
 ## Archivieren
 
@@ -533,6 +594,14 @@ Das Werkzeug rät nicht. Es geht der Reihe nach vor:
 Steht im Streifen „nicht eindeutig erkannt", passen mehrere Dateisysteme gleich
 gut. Dann hilft ein Blick in die Dateiliste: das falsche Profil zeigt Unsinn.
 Über das Auswahlfeld im Kopf lässt sich das andere ausprobieren.
+
+Die Prüfung nimmt einem diese Arbeit weitgehend ab: sie probiert die übrigen Profile
+still durch und sagt es, wenn eines besser durchkommt — „mit `scp1700` kommt diese
+Diskette besser durch: 46 statt 43 sichtbare Dateien". **Die Wahl ändert sie nie**,
+sie sagt sie nur an; entschieden wird im Auswahlfeld. Der zweite Teil dieser Auskunft
+ist der wichtigere: ein Profil mit einem zu kleinen Verzeichnisbereich mountet
+anstandslos, prüft ohne Befund — und **verschweigt einen Teil der Dateien**. An der
+Zahl der Befunde ist das nicht zu erkennen, an der Zahl der Dateien schon.
 
 ## Tastenkürzel
 
