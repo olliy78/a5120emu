@@ -408,10 +408,19 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
         uint8_t erste_spur = 0;
         for (uint8_t t = 0; t < tracks_; ++t) {
             // Systemspuren bleiben aussen vor: Spur 0 traegt auf einer
-            // Systemdiskette Urlader und BFOS, und der P8000 sperrt zusaetzlich
-            // Kopf 0 der Bootspur — beides gehoert keiner Datei und ist trotzdem
-            // zu Recht belegt.
-            if (reservedTrack(t) || t == 0 || t == prof_.boot_track) continue;
+            // Systemdiskette Urlader und BFOS, und der P8000 sperrt darueber hinaus
+            // **Kopf 0 der Spuren 0, 21, 22 und 23** (Merkposten §NDOS) — das
+            // gehoert keiner Datei und ist trotzdem zu Recht belegt.
+            //
+            // Hier gilt bewusst eine ANDERE Regel als beim Belegen: der Allokator
+            // fragt nur den Belegungsplan (dort steht genau, was frei ist), die
+            // Pruefung dagegen darf nicht anklagen, was sie nicht sicher als
+            // verloren erkennt.  Wuerde sie die vier Spuren mitrechnen, meldete
+            // jede P8000-Diskette 21 „verlorene" Sektoren, die in Wahrheit ihr
+            // Systembereich sind — und eine Falschmeldung wiegt schwerer als eine
+            // fehlende (doc/design/15_dateisystempruefung.md E10).
+            if (t == 0 || t == prof_.boot_track
+                || t == prof_.directory_track || t == prof_.bitmap_track) continue;
             for (uint8_t s = 1; s <= spt; ++s) {
                 if (!bitmap_.used(t, s)) continue;
                 if (gehoert.count(nr(UdosPointer{static_cast<uint8_t>(s - 1), t}))) continue;

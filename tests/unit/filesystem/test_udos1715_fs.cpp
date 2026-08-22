@@ -616,12 +616,37 @@ TEST(Udos1715Schreiben, NamenMuessenMitEinemBuchstabenBeginnen) {
     EXPECT_FALSE(Udos1715FileSystem::validName(std::string(33, 'A'), &warum));
 }
 
-TEST(Udos1715Schreiben, SystemspurenBleibenTabu) {
+/**
+ * @test Udos1715Schreiben/SystembereichBleibtTabu
+ * @brief Was das Dateisystem selbst belegt, vergibt der Allokator nie — und nur das.
+ *
+ * **Geändert am 2026-08-22.**  Bis dahin verlangte dieser Fall, dass auf Spur 17H
+ * ausser den beiden Sektoren des Belegungsplans **nichts** liegt.  Das war die
+ * Beschreibung einer zu strengen Umsetzung, nicht des Formats: NDOS belegt dort nur
+ * den Kopf und benutzt den Rest wie jede andere Spur — auf der WEGA-Startdiskette
+ * sind alle 32 Sektoren beider Verwaltungsspuren in Gebrauch, drei Dateien haben
+ * ihren Kopfsektor auf Spur 16H.  Eine so beschriebene Diskette liess sich nach dem
+ * Leeren nicht mehr zurückschreiben (`Diskette voll`, 8 Sektoren zu wenig).
+ *
+ * Der Maßstab ist deshalb jetzt der richtige: **was `format()` als belegt einträgt —
+ * Descriptor, Zeigersektor, Verzeichnissätze, die beiden Kartensektoren, bei einer
+ * Systemdiskette Spur 0 — muss belegt bleiben.**  Alles andere ist gewöhnlicher
+ * Platz.  Seit die Spursperre gefallen ist, hängt der Schutz allein an diesem
+ * Eintrag; genau das prüft der Fall.
+ */
+TEST(Udos1715Schreiben, SystembereichBleibtTabu) {
     Leerdiskette l;
     ASSERT_TRUE(l) << l.fehler;
 
-    // Die Diskette bis zum Rand fuellen und danach pruefen, dass Verzeichnis- und
-    // Belegungsplanspur unangetastet blieben.
+    // Der Sollstand: alles, was die frische Diskette schon belegt.
+    struct Ort { uint8_t t, s; };
+    std::vector<Ort> unantastbar;
+    for (uint8_t t = 0; t < 80; ++t)
+        for (uint8_t s = 1; s <= 32; ++s)
+            if (l.fs().bitmap().used(t, s)) unantastbar.push_back(Ort{t, s});
+    ASSERT_FALSE(unantastbar.empty()) << "eine frische Diskette belegt schon etwas";
+
+    // Bis zum Rand fuellen.
     const std::vector<uint8_t> brocken(16 * 1024, 0x33);
     int geschrieben = 0;
     for (int i = 0; i < 200; ++i) {
@@ -633,10 +658,21 @@ TEST(Udos1715Schreiben, SystemspurenBleibenTabu) {
     EXPECT_GT(geschrieben, 30) << "die Diskette fasst deutlich mehr";
     EXPECT_NE(l.fs().lastError().find("voll"), std::string::npos) << l.fs().lastError();
 
-    // Spur 17H traegt weiterhin NUR die beiden Sektoren des Belegungsplans …
-    for (uint8_t s = 2; s < 32; ++s)
-        EXPECT_FALSE(l.fs().bitmap().used(0x17, static_cast<uint8_t>(s + 1)))
-            << "Spur 17H Sektor " << int(s) << " wurde vergeben";
+    for (const Ort& o : unantastbar)
+        ASSERT_TRUE(l.fs().bitmap().used(o.t, o.s))
+            << "Spur " << int(o.t) << " Sektor " << int(o.s)
+            << " gehoerte zur Verwaltung und wurde vergeben";
+
+    // Die Verwaltungsspuren sind jetzt MITBENUTZBAR — sonst prüfte der Fall nur,
+    // dass eine Sperre wirkt, die es nicht mehr gibt.
+    int auf_verwaltung = 0;
+    for (uint8_t s = 1; s <= 32; ++s) {
+        if (l.fs().bitmap().used(0x16, s)) ++auf_verwaltung;
+        if (l.fs().bitmap().used(0x17, s)) ++auf_verwaltung;
+    }
+    EXPECT_GT(auf_verwaltung, static_cast<int>(unantastbar.size()) / 2)
+        << "auf Spur 16H/17H liegt keine einzige Datei — die Lockerung greift nicht";
+
     // … und das Verzeichnis ist noch lesbar.
     EXPECT_GE(l.fs().list().size(), static_cast<size_t>(geschrieben));
 }
@@ -889,4 +925,133 @@ TEST(Udos1715P8000, SchreibenLesenLoeschenLaesstDenNachlaufStehen) {
     EXPECT_EQ(d.fs->bitmap().raw(), vorher)
         << "Belegungsplan (inkl. Nachlauf und Byte 179H) hat sich veraendert";
     EXPECT_EQ(d.fs->info().files, 42);
+}
+
+/**
+ * @test Udos1715P8000/GeleerteDisketteNimmtAlleDateienWiederAuf
+ * @brief Der Befund vom 2026-08-22: eine volle Diskette liess sich nicht
+ *        zurückschreiben, obwohl dieselben Dateien vorher daraufpassten.
+ *
+ * `Diskette voll: 189 Records zu je 2 Sektoren noetig` — bei 41 von 41 Dateien und
+ * 104 KB scheinbar freiem Platz.  Ursache war ein `reservedTrack()`, das Verzeichnis-
+ * und Kartenspur **ganz** sperrte (64 Sektoren, 16 KB), während NDOS dort nur den
+ * Kopf belegt: auf dieser Diskette liegen 34 Sektoren Nutzdaten auf den beiden
+ * Spuren, drei Dateien haben ihren **Kopfsektor** auf Spur 22.  Der Belegungsplan
+ * führte sie als frei, vergeben wurden sie nie — die Diskette war 7 Sektoren zu
+ * klein für ihren eigenen Inhalt.
+ *
+ * Seitdem entscheidet allein der Belegungsplan.  Er ist dafür genau genug: `mkfs`
+ * trägt Descriptor, Zeigersektor, Verzeichnissätze, die beiden Kartensektoren und —
+ * bei einer Systemdiskette — die ganze Spur 0 dort ein.
+ *
+ * @par Kriterium  Alle 41 Dateien kommen zurück, bytegleich, und die Vollprüfung
+ *                 bleibt ohne Befund (keine doppelt vergebenen Sektoren).
+ */
+TEST(Udos1715P8000, GeleerteDisketteNimmtAlleDateienWiederAuf) {
+    const std::string kopie = k1520test::tempPath("k1520_test_p8000_rundlauf.hfe");
+    std::error_code ec;
+    std::filesystem::copy_file(fixture(kFixtureP8000), kopie,
+                               std::filesystem::copy_options::overwrite_existing, ec);
+    ASSERT_FALSE(ec) << ec.message();
+    struct Weg { std::string p; ~Weg() { std::error_code e; std::filesystem::remove(p, e); } }
+        weg{kopie};
+
+    Diskette d = p8000(/*nur_lesen=*/false, kopie);
+    ASSERT_TRUE(d) << d.error;
+
+    // Alles herausholen — Name → Bytes und die Kopfsektorangaben, die beim
+    // Zurückschreiben mitmüssen.
+    struct Datei { std::vector<uint8_t> bytes; WriteOptions wo; uint64_t groesse = 0; };
+    std::map<std::string, Datei> vorher;
+    for (const FileEntry& e : d.fs->list()) {
+        if (e.type == "D") continue;
+        Datei f;
+        ASSERT_TRUE(d.fs->read(e.name, f.bytes)) << e.name << ": " << d.fs->lastError();
+        f.groesse            = e.size;
+        f.wo.udos_type       = e.type;
+        f.wo.udos_properties = e.attributes;
+        f.wo.udos_entry      = e.entry_addr;
+        f.wo.udos_record_len = e.record_len;
+        vorher.emplace(e.name, std::move(f));
+    }
+    ASSERT_EQ(vorher.size(), 41u) << "die Fixture ist nicht mehr die erwartete";
+
+    for (const auto& [name, f] : vorher)
+        ASSERT_TRUE(d.fs->erase(name)) << name << ": " << d.fs->lastError();
+
+    // DAS ist der Schritt, der vorher scheiterte.
+    for (const auto& [name, f] : vorher)
+        ASSERT_TRUE(d.fs->write(name, f.bytes, f.wo))
+            << name << " passt nicht mehr auf die eigene Diskette: " << d.fs->lastError();
+
+    for (const auto& [name, f] : vorher) {
+        std::vector<uint8_t> zurueck;
+        ASSERT_TRUE(d.fs->read(name, zurueck)) << name << ": " << d.fs->lastError();
+        EXPECT_EQ(zurueck, f.bytes) << name << " kam verändert zurück";
+    }
+    EXPECT_EQ(d.fs->info().files, 42) << "die Verzeichnisdatei zählt mit";
+
+    // Und kein Sektor ist doppelt vergeben — das wäre die stille Variante desselben
+    // Fehlers: es „passt", aber die zuletzt geschriebene Datei frisst die davor.
+    const FsCheckReport bericht = d.fs->check(FsCheckLevel::Voll, /*nachladen=*/true);
+    EXPECT_TRUE(bericht.ohneBefund()) << bericht.kurzfassung();
+}
+
+/**
+ * @test Udos1715P8000/DerSystembereichBleibtUnangetastet
+ * @brief Die Gegenprobe zur gelockerten Regel: was keiner Datei gehört, bleibt belegt.
+ *
+ * Seit die Spursperre gefallen ist, hängt der Schutz des Systembereichs **allein am
+ * Belegungsplan**.  Beim P8000 ist er grösser als beim PC 1715 — Kopf 0 der Spuren 0,
+ * 21, 22 und 23 —, und er steht nirgends sonst geschrieben.  Ginge er verloren,
+ * überschriebe die erste geschriebene Datei den Urlader, ohne jede Meldung.
+ *
+ * Maßstab ist deshalb: **was nach dem Leeren der Diskette noch als belegt dasteht,
+ * gehört keiner Datei** — es ist Systembereich, Verzeichnis oder Karte.  Kein noch so
+ * volles Beschreiben darf einen dieser Sektoren vergeben.
+ */
+TEST(Udos1715P8000, DerSystembereichBleibtUnangetastet) {
+    const std::string kopie = k1520test::tempPath("k1520_test_p8000_system.hfe");
+    std::error_code ec;
+    std::filesystem::copy_file(fixture(kFixtureP8000), kopie,
+                               std::filesystem::copy_options::overwrite_existing, ec);
+    ASSERT_FALSE(ec) << ec.message();
+    struct Weg { std::string p; ~Weg() { std::error_code e; std::filesystem::remove(p, e); } }
+        weg{kopie};
+
+    Diskette d = p8000(/*nur_lesen=*/false, kopie);
+    ASSERT_TRUE(d) << d.error;
+
+    // Leerräumen — danach steht nur noch belegt, was keiner Datei gehört.
+    for (const FileEntry& e : d.fs->list()) {
+        if (e.type == "D") continue;
+        ASSERT_TRUE(d.fs->erase(e.name)) << d.fs->lastError();
+    }
+    struct Ort { uint8_t t, s; };
+    std::vector<Ort> unantastbar;
+    for (uint8_t t = 0; t < 80; ++t)
+        for (uint8_t s = 1; s <= 32; ++s)
+            if (d.fs->bitmap().used(t, s)) unantastbar.push_back(Ort{t, s});
+    // Ohne diese Probe bewiese der Fall nichts: der Systembereich MUSS Sektoren auf
+    // Kopf 0 der Spuren 0/21/22/23 haben, sonst prüft der Test ins Leere.
+    int auf_systemspuren = 0;
+    for (const Ort& o : unantastbar)
+        if ((o.t == 0 || o.t == 21 || o.t == 22 || o.t == 23) && o.s <= 16)
+            ++auf_systemspuren;
+    ASSERT_GT(auf_systemspuren, 20) << "kein Systembereich auf Kopf 0 der Spuren 0/21/22/23";
+
+    // Und jetzt so voll wie möglich schreiben — der Allokator läuft dabei über die
+    // ganze Diskette, Spur 0 zuerst.
+    WriteOptions wo;
+    wo.udos_type = "B";
+    for (int i = 0; i < 40; ++i) {
+        const std::vector<uint8_t> brocken(24u * 1024u, static_cast<uint8_t>(i));
+        if (!d.fs->write("FUELL." + std::to_string(i), brocken, wo)) break;   // voll = gut
+    }
+    ASSERT_LT(d.fs->info().free_bytes, 24u * 1024u) << "die Diskette wurde nicht voll";
+
+    for (const Ort& o : unantastbar)
+        ASSERT_TRUE(d.fs->bitmap().used(o.t, o.s))
+            << "Spur " << int(o.t) << " Sektor " << int(o.s)
+            << " gehörte keiner Datei und wurde trotzdem vergeben";
 }

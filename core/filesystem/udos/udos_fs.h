@@ -323,8 +323,19 @@ public:
     /// @brief Ist @p name ein gueltiger UDOS-Name?  (bis 32 Zeichen, Punkt ist normal)
     static bool validName(const std::string& name, std::string* why);
 
-    /// @brief Spuren, die ein Werkzeug nie beschreiben darf (§8.6): 0, 1, 2 und 21–23.
+    /// @brief Spuren, die ein Werkzeug nie beschreiben darf: 0, 1, 2 und die Bootspur.
+    ///
+    /// Nicht aus Vorsicht: **der Belegungsplan schuetzt den Urlader dort nicht.**  Auf
+    /// der bootfaehigen Seite der Referenzdiskette stehen 35 Sektoren dieser Spuren
+    /// als frei und tragen trotzdem die Meldungstabelle des Nukleus (Wächter
+    /// `UdosFileSystem.DerBelegungsplanSchuetztDenUrladerNICHT`).  Verzeichnis- und
+    /// Kartenspur gehoeren NICHT dazu — dort sagt der Plan, was belegt ist, und UDOS
+    /// selbst legt Dateien dorthin.
     bool reservedTrack(uint8_t track) const;
+
+    /// @brief Nachsatz zu „Diskette voll": wie viele freie Sektoren auf den
+    ///        ausgesparten Systemspuren liegen (leer, wenn keine).
+    std::string systemspurHinweis() const;
 
 private:
     UdosFileSystem(SectorSpace& space, const FsProfile& prof, uint8_t head);

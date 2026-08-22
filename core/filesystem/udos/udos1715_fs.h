@@ -151,9 +151,6 @@ public:
     ///        (Handbuch §3.1).
     static bool validName(const std::string& name, std::string* why);
 
-    /// @brief Spuren, die ein Werkzeug nie beschreiben darf: 16H und 17H — und auf
-    ///        einer Systemdiskette Spur 0 (§7.5).
-    bool reservedTrack(uint8_t track) const;
 
     /// @brief Sektoren je Spur, wie das Dateisystem zaehlt (32 beidseitig, 16 einseitig).
     uint8_t sectorsPerTrack() const { return secs_per_track_; }

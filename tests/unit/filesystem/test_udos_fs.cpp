@@ -775,3 +775,89 @@ TEST(UdosFileSystem, VierundvierzigBisSiebenundvierzigIstDasZweiteSegment) {
     EXPECT_EQ(a_mit, 0)     << "bei Typ A steht dort Anwenderinhalt, keine Segmente";
     EXPECT_GT(a_ges, 0);
 }
+
+/**
+ * @test UdosFileSystemWrite/VersionstextImAenderungsfeldUeberlebt
+ * @brief Das Änderungsfeld trägt nicht immer ein Datum — und das darf nicht auffallen.
+ *
+ * Auf fremd beschriebenen Disketten steht bei Offset 32 statt `JJMMTT` ein
+ * **Versionstext** („V 4.3 "). Sein Leerzeichen am Ende geht beim Lesen verloren, der
+ * Wert kommt also mit fünf Zeichen zurück — und der Schreibpfad verwarf ihn dann als
+ * „kein Datum" und setzte stillschweigend den heutigen Tag. Auf
+ * `udos_ds77_k5601_fremdsync.hfe` traf das 13 von 44 Dateien; gemerkt hätte es
+ * niemand, denn der Dateiinhalt war korrekt.
+ *
+ * Für den Erstellungsvermerk daneben wurde genau das schon berücksichtigt
+ * (`erstellt.resize(6, ' ')`) — hier fehlte es.
+ */
+TEST(UdosFileSystemWrite, VersionstextImAenderungsfeldUeberlebt) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_udos_versionstext.hfe");
+    Seite s = oeffneSchreibbar(k.path(), 0);
+    ASSERT_TRUE(s) << s.error;
+
+    const std::vector<uint8_t> daten(300, 0x41);
+    WriteOptions o;
+    o.date = "V 4.3";                    // fünf Zeichen — so kommt er vom Lesen zurück
+    o.udos_created = "V 4.3";
+    ASSERT_TRUE(s.fs->write("VERSION.TXT", daten, o)) << s.fs->lastError();
+
+    bool gefunden = false;
+    for (const FileEntry& e : s.fs->list()) {
+        if (e.name != "VERSION.TXT") continue;
+        gefunden = true;
+        EXPECT_EQ(e.date, "V 4.3") << "der Versionstext wurde durch ein Datum ersetzt";
+        EXPECT_EQ(e.created, "V 4.3");
+    }
+    EXPECT_TRUE(gefunden);
+
+    // Und ein leeres Feld heisst weiterhin „heute", nicht „sechs Leerzeichen".
+    WriteOptions ohne;
+    ASSERT_TRUE(s.fs->write("HEUTE.TXT", daten, ohne)) << s.fs->lastError();
+    for (const FileEntry& e : s.fs->list())
+        if (e.name == "HEUTE.TXT") {
+            EXPECT_EQ(e.date.size(), 6u);
+            EXPECT_NE(e.date, "      ");
+        }
+}
+
+/**
+ * @test UdosFileSystem/DerBelegungsplanSchuetztDenUrladerNICHT
+ * @brief Der Grund, warum Spur 0–2 und die Bootspur bei ZDOS gesperrt bleiben.
+ *
+ * Seit 2026-08-22 entscheidet sonst überall der Belegungsplan, welcher Sektor frei
+ * ist — bei NDOS ohne jede Ausnahme. Bei ZDOS bleiben vier Spuren ausgenommen, und
+ * dieser Fall hält fest, **warum**: auf der bootfähigen Seite der Referenzdiskette
+ * führt der Plan 35 Sektoren der Systemspuren als *frei*, und **alle 35 tragen
+ * Inhalt** — die Meldungstabelle des Nukleus („MEMORY PROTECT VIOLATION" …).
+ *
+ * UDOS schützt seinen eigenen Urlader dort also nicht. Liesse man den Plan
+ * entscheiden, überschriebe die nächste geschriebene Datei diese Sektoren; die
+ * Diskette bootete weiter und fiele erst später auf merkwürdige Weise um. Die
+ * Spursperre ist hier keine Vorsicht, sondern das Einzige, was den Bereich hält —
+ * sie kostet 35 von 850 Sektoren (4 %).
+ *
+ * @par Bricht der Fall, ist das kein Fehler dieses Tests: dann hat jemand die
+ *      Sperre gelockert, und die Begründung dafür muss neu erbracht werden.
+ */
+TEST(UdosFileSystem, DerBelegungsplanSchuetztDenUrladerNICHT) {
+    Seite s = oeffne(/*head=*/0);
+    ASSERT_TRUE(s) << s.error;
+
+    int frei = 0, frei_mit_inhalt = 0;
+    for (uint8_t t : {0, 1, 2, 21}) {
+        for (uint8_t id = 1; id <= 26; ++id) {
+            if (s.fs->bitmap().used(t, id)) continue;
+            ++frei;
+            SectorData sek;
+            if (!s.space->readSector(t, 0, id, sek)) continue;
+            const bool leer = std::all_of(sek.data.begin(), sek.data.end(),
+                                          [](uint8_t b) { return b == 0xE5 || b == 0x00; });
+            if (!leer) ++frei_mit_inhalt;
+        }
+    }
+    EXPECT_EQ(frei, 35);
+    EXPECT_EQ(frei_mit_inhalt, 35)
+        << "der Plan fuehrt " << frei << " Sektoren der Systemspuren als frei, "
+        << frei_mit_inhalt << " davon tragen Inhalt — genau deshalb bleibt die "
+           "Spursperre bei ZDOS bestehen";
+}

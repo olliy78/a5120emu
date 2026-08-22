@@ -1020,6 +1020,55 @@ TEST(DiskVolume, SystemspurenFassenEineFesteZahlBytes) {
  *                 wieder hinein — sonst ist das Abbild wertlos.  Der Rest der
  *                 Systemspuren bleibt Leerdiskette (0xE5).
  */
+/**
+ * @test DiskVolume/KurzesBootabbildLaesstDenRestDerSystemspurenInRuhe
+ * @brief `boot-put` schreibt so viele Sektoren, wie das Abbild Bytes hat — nicht mehr.
+ *
+ * Der Nachbar darüber prüft das auf einer FRISCHEN Diskette (dahinter steht 0xE5).
+ * Hier ist die schärfere Frage gestellt: auf einer **bestehenden** Diskette muss der
+ * Rest der Systemspuren *unverändert* bleiben, nicht bloss leer sein.  Daran hängt,
+ * ob ein Bootabbild ein Werkzeug ist, das man gezielt einsetzen kann — oder eine
+ * Abrissbirne für den ganzen Systembereich.
+ *
+ * @par Kriterium  Ein Abbild über 5 Sätze fasst genau 5 Sektoren der Spur 0 an; die
+ *                 übrigen 21 dieser Spur und die Spuren 1, 2 und 21 bleiben Byte für
+ *                 Byte, wie sie waren.
+ */
+TEST(DiskVolume, KurzesBootabbildLaesstDenRestDerSystemspurenInRuhe) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_dv_bootkurz.hfe");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    // Sollstand: alle Sektoren der vier Systemspuren, Seite 0.
+    auto lies = [&](uint8_t cyl, int idx) {
+        std::vector<uint8_t> d;
+        uint16_t crc = 0;
+        dv->readSectorAt(cyl, 0, idx, d, crc);
+        return d;
+    };
+    std::map<std::pair<uint8_t, int>, std::vector<uint8_t>> vorher;
+    for (uint8_t cyl : {0, 1, 2, 21})
+        for (int i = 0; i < 26; ++i) vorher[std::make_pair(cyl, i)] = lies(cyl, i);
+    const std::vector<uint8_t> erster = vorher[std::make_pair(uint8_t{0}, 0)];
+    ASSERT_FALSE(erster.empty()) << "Systemspur nicht lesbar";
+
+    // Ein Abbild über 5 Sätze (128 B Daten + 4 B Nachspann je Satz).
+    const std::vector<uint8_t> kurz(5 * (128 + 4), 0x5A);
+    ASSERT_TRUE(dv->writeBootImage(kurz)) << dv->lastError();
+
+    int angefasst = 0, fremd = 0;
+    for (uint8_t cyl : {0, 1, 2, 21}) {
+        for (int i = 0; i < 26; ++i) {
+            if (lies(cyl, i) == vorher[std::make_pair(cyl, i)]) continue;
+            ++angefasst;
+            if (!(cyl == 0 && i < 5)) ++fremd;
+        }
+    }
+    EXPECT_EQ(angefasst, 5) << "es wurden mehr Sektoren geschrieben als das Abbild fasst";
+    EXPECT_EQ(fremd, 0) << "ausserhalb der ersten fünf Sektoren wurde etwas verändert";
+}
+
 TEST(DiskVolume, BootabbildGehtUnveraendertInDieSystemspuren) {
     std::string err;
     auto quelle = oeffne(fixture("cpa_cpa780_k5601_clock.img"), "cpa780", err);

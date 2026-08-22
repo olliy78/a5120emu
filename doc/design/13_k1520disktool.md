@@ -1166,6 +1166,91 @@ fragt einmal, Einzelrückfrage ja / Mehrfachauswahl nein, Archiv).
 
 ---
 
+## 13e. Der Belegungsplan entscheidet — nicht die Spurnummer (2026-08-22)
+
+Eine fremd beschriebene NDOS-Diskette (die WEGA-Startdiskette des P8000) liess sich
+**nicht mehr zurückschreiben**, nachdem man sie geleert hatte: `Diskette voll`, acht
+Sektoren zu wenig — bei denselben 41 Dateien, die vorher daraufgepasst hatten. Die
+Anzeige meldete dabei 104 KB frei.
+
+Die Ursache war keine Fragmentierung (nachgemessen: von 373 belegbaren freien
+Sektoren liessen sich 186 Satzpaare bilden, ein einziger Sektor blieb übrig), sondern
+eine **zu weit gefasste Sperre**. Beide UDOS-Schreibpfade sperrten Spuren *pauschal*:
+
+| | gesperrt war | wirklich belegt ist dort |
+|---|---|---|
+| NDOS (`udos1715`) | Verzeichnis- **und** Kartenspur ganz (64 Sektoren) | Descriptor, Zeigersektor, Verzeichnissätze, 2 Kartensektoren |
+| ZDOS (`udos`) | Spur 0–2, Boot-, Verzeichnis- und Kartenspur | dito, plus Urlader/Nukleus/Bootabbild |
+
+Das echte Betriebssystem hält sich daran nicht: auf der WEGA-Diskette liegen **34
+Sektoren Nutzdaten** auf den beiden Verwaltungsspuren, drei Dateien haben ihren
+**Kopfsektor auf Spur 22**; auf der A5120-Referenzdiskette sind es elf. Eine solche
+Diskette ist für unser Werkzeug systematisch zu klein für ihren eigenen Inhalt.
+
+Vier Entscheidungen:
+
+1. **Der Belegungsplan ist die Wahrheit.** Bei NDOS ist `reservedTrack()` ganz
+   entfallen: `mkfs` trägt Descriptor, Zeigersektor, Verzeichnissätze, die beiden
+   Kartensektoren und — bei `system_track0` — die ganze Spur 0 ein, und der Allokator
+   geht an jedem belegten Bit ohnehin vorbei. Das war für Spur 0 schon immer die
+   Regel; sie gilt jetzt überall.
+2. **Bei ZDOS bleiben Spur 0–2 und die Bootspur gesperrt** — und der Grund ist ein
+   stärkerer, als zunächst gedacht: **der Belegungsplan schützt den Urlader dort
+   nicht.** Auf der bootfähigen Seite von `udos_boot_scp.hfe` führt er 35 Sektoren
+   dieser vier Spuren als *frei*, und **alle 35 tragen Inhalt** — die Meldungstabelle
+   des Nukleus („MEMORY PROTECT VIOLATION" …). Liesse man hier den Plan entscheiden,
+   vergäbe die nächste Datei diese Sektoren; die Diskette bootete weiter und fiele
+   erst später auf merkwürdige Weise um. Der Preis: 35 von 850 freien Sektoren (4 %).
+   Verzeichnis- und Kartenspur haben dieses Problem nicht — dort findet dieselbe
+   Messung keinen einzigen freien Sektor mit Inhalt. Bei NDOS gibt es die Sperre gar
+   nicht mehr: dort trägt der Formatierer den ganzen Systembereich in den Plan ein
+   (beim P8000 Kopf 0 der Spuren 0/21/22/23).
+
+   Der zweite, ursprünglich angeführte Grund — `writeBootImage` schreibe am
+   Dateisystem vorbei — wiegt leichter, als er klingt: **es schreibt nur so viele
+   Sektoren, wie das Abbild Bytes hat** (`if (her >= img.size()) return true;`); ein
+   660-B-Abbild fasst genau fünf Sektoren der Spur 0 an und lässt alles andere in
+   Ruhe. Weil `readBootImage` aber immer den *ganzen* Systembereich liefert und auf
+   allen gemessenen Disketten noch der **letzte** Sektor Inhalt trägt (0 abschneidbare
+   Leersektoren bei `udos_ds77`, `udos1715` und `cpa780`), deckt ein `boot-get` →
+   `boot-put` in der Praxis doch alles ab. Ein kürzeres Abbild zu erzeugen brächte
+   also nichts.
+3. **Prüfung und Kartenreparatur behalten die weite Regel.** Das ist kein
+   Widerspruch, sondern eine andere Frage. Der Allokator fragt *„darf ich hier
+   schreiben?"* — das sagt der Plan genau. Die Prüfung fragt *„ist dieser belegte
+   Sektor verloren?"* und darf nicht anklagen, was sie nicht sicher weiss: der P8000
+   sperrt **Kopf 0 der Spuren 0, 21, 22 und 23**, und das steht nirgends ausser im
+   Plan. Ohne diese Rücksicht meldete jede P8000-Diskette 21 „verlorene" Sektoren.
+   Eine Falschmeldung wiegt schwerer als eine fehlende (§15 E10). Dieselbe Rücksicht
+   in `karteNeuAufbauen`: dort wird auf diesen Spuren nur **ergänzt**, nie freigegeben.
+4. **„Frei" bleibt die Zahl der Diskette — der Nachsatz erklärt den Rest.** Es lag
+   nahe, `info().free_bytes` auf das zu kürzen, was unser Schreiber wirklich vergibt.
+   Das wäre falsch: 850 ist die Zahl, die das laufende UDOS selbst meldet
+   (`STATUS DRIVE 0: 850 SECTORS AVAILABLE`), und drei Tests halten sie genau
+   deshalb fest — die Kreuzprobe gegen das echte System ist mehr wert als eine
+   Anzeige, die zu unserem Allokator passt. Bei ZDOS bleiben also 35 Sektoren auf den
+   ausgesparten Systemspuren in der Zahl enthalten; wo das den Ausschlag gibt, sagt es
+   die **Meldung**: „Diskette voll: 423 Saetze … (35 freie Sektoren liegen auf den
+   Systemspuren 0-2 und 21 — dort schreibt das Werkzeug nicht, weil ein Bootabbild sie
+   in einem Zug überschreibt)". Bei NDOS entfällt der Unterschied ganz, dort gibt es
+   keine ausgesparte Spur mehr. Unberührt bleibt, dass ein 256-B-Satz **zwei
+   benachbarte** Sektoren derselben Spur braucht: die Zahl zählt Sektoren, nicht Paare.
+
+Gemessen danach: die WEGA-Diskette nimmt alle 41 Dateien wieder auf, bytegleich, mit
+6656 B frei (vorher 6912 B — ein Sektor Verwaltung mehr); die PC-1715-Diskette 66 von
+66, die A5120-Referenzdiskette 67 von 67.
+
+Wächter: `Udos1715P8000.GeleerteDisketteNimmtAlleDateienWiederAuf` (schlägt mit der
+alten Regel fehl — genau der gemeldete Fall), `…DerSystembereichBleibtUnangetastet`
+und `Udos1715Schreiben.SystembereichBleibtTabu` (beide prüfen gegen den Sollstand
+*nach* dem Leeren bzw. Formatieren, nicht gegen Spurnummern), sowie die eigentliche
+Probe **`DiskToolBootdiskette.GeleerteUndZurueckgeschriebeneUdosDisketteBootet`**:
+Referenzdiskette leeren, alles zurückschreiben, im Emulator kalt starten, `CAT`
+nachladen — mit der ausdrücklichen Zusatzprobe, dass dabei wirklich Dateien auf Spur
+22/23 landen. Ohne sie prüfte der Fall die Lockerung gar nicht.
+
+---
+
 ## 14. Sicherheit beim Schreiben
 
 > **Entscheidung 2026-08-10 (E5): kein atomares Schreiben.** Der Entwurf sah ursprünglich

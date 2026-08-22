@@ -500,10 +500,19 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
         // Die Gegenrichtung: belegt, aber in keiner Kette.  Die Systemspuren bleiben
         // aussen vor — dort liegen Urlader und Bootabbild, die keiner Datei gehoeren
         // und trotzdem zu Recht belegt sind (§8.6).
+        //
+        // Verzeichnis- und Kartenspur stehen hier MIT dabei, obwohl der Allokator
+        // sie seit 2026-08-22 belegen darf: das sind zwei verschiedene Fragen.  Der
+        // Allokator fragt den Belegungsplan — der sagt genau, was frei ist.  Die
+        // Pruefung dagegen darf nicht anklagen, was sie nicht sicher als verloren
+        // erkennt, und was dort neben Karte und Verzeichnissaetzen liegt, kann auch
+        // Systembereich einer fremden Ausprägung sein.  Eine Falschmeldung wiegt
+        // schwerer als eine fehlende (doc/design/15_dateisystempruefung.md E10).
         int verloren = 0;
         uint8_t erste_spur = 0;
         for (uint8_t t = 0; t < tracks_ && t < space_.trackCount(); ++t) {
-            if (reservedTrack(t)) continue;
+            if (reservedTrack(t) || t == prof_.directory_track
+                || t == prof_.bitmap_track) continue;
             for (uint8_t s = 1; s <= spt; ++s) {
                 if (!bitmap_.used(t, s)) continue;
                 if (gehoert.count(nr(UdosPointer{static_cast<uint8_t>(s - 1), t}))) continue;

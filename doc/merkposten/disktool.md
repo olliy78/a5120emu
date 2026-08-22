@@ -769,3 +769,65 @@ Was beim Weiterarbeiten zu wissen ist:
   `k1520d_insert_with_info` durch, statt zwanzig Felder durch die C-ABI zu schleusen.
   Wächter: `DiskToolFileinfo.*` (elf Fälle), `cli_dt_fileinfo_rundlauf`,
   `cli_dt_put_ohne_angaben`, `cli_dt_put_fileinfo_einzeln`, `py_disktool_gui`.
+- **Der Belegungsplan entscheidet, nicht die Spurnummer** (2026-08-22, Entwurf §13e).
+  Beide UDOS-Schreibpfade sperrten Spuren **pauschal**; das echte Betriebssystem
+  belegt dort nur den Kopf und benutzt den Rest wie jede andere Spur.  Folge: eine
+  fremd beschriebene Diskette liess sich nach dem Leeren **nicht mehr
+  zurückschreiben** — die WEGA-Startdiskette des P8000 meldete `Diskette voll`,
+  acht Sektoren zu wenig, obwohl dieselben 41 Dateien vorher daraufpassten.
+  - **NDOS/UDOS1715: `reservedTrack()` ist ganz entfallen.**  Es sperrte Verzeichnis-
+    und Kartenspur ganz (64 Sektoren = 16 KB); belegt sind dort in Wahrheit nur
+    Descriptor, Zeigersektor, die Verzeichnissätze und zwei Kartensektoren — und
+    `mkfs` trägt genau die in den Plan ein (Spur 0 bei `system_track0` ebenso).  Auf
+    der WEGA-Diskette lagen 34 Sektoren Nutzdaten auf den beiden Spuren, **drei
+    Kopfsektoren auf Spur 22**.
+  - **ZDOS: `reservedTrack()` deckt nur noch Spur 0–2 und die Bootspur** — und der
+    Grund ist gemessen, nicht vermutet: **der Belegungsplan schützt den Urlader dort
+    NICHT.**  Auf der bootfähigen Seite von `udos_boot_scp.hfe` stehen 35 Sektoren
+    dieser vier Spuren als *frei* und tragen trotzdem Inhalt (die Meldungstabelle des
+    Nukleus, „MEMORY PROTECT VIOLATION" …).  Ohne die Sperre vergäbe die nächste Datei
+    sie — die Diskette bootete weiter und fiele später merkwürdig um.  Preis: 35 von
+    850 Sektoren (4 %).  Wächter `UdosFileSystem.DerBelegungsplanSchuetztDenUrladerNICHT`.
+    Verzeichnis- und Kartenspur sind dagegen vollständig im Plan geführt (dieselbe
+    Messung findet dort 0 freie Sektoren mit Inhalt); auf `udos_boot_scp.hfe` liegen
+    elf Kopfsektoren auf Spur 22.
+    **Nicht der Grund** ist „`writeBootImage` schreibt die Spur in einem Zug": es
+    schreibt nur so viele Sektoren, wie das Abbild Bytes hat (`if (her >= img.size())
+    return true;`) — ein 660-B-Abbild fasst fünf Sektoren an.  Nur liefert
+    `readBootImage` immer den ganzen Systembereich, und auf allen gemessenen Disketten
+    trägt noch der LETZTE Sektor Inhalt (0 abschneidbare Leersektoren) — ein kürzeres
+    Abbild zu erzeugen brächte also nichts.
+  - **Prüfung und Kartenreparatur behalten die alte, weite Regel.**  Das ist kein
+    Widerspruch, sondern eine andere Frage: der Allokator fragt „darf ich hier
+    schreiben?" — das sagt der Plan genau; die Prüfung fragt „ist dieser belegte
+    Sektor verloren?" und darf nicht anklagen, was sie nicht sicher weiss.  Ohne
+    diese Trennung meldete **jede P8000-Diskette 21 „verlorene" Sektoren**, die in
+    Wahrheit ihr Systembereich sind (Kopf 0 der Spuren 0/21/22/23) — und eine
+    Falschmeldung wiegt schwerer als eine fehlende (E10).  Dieselbe Rücksicht in
+    `karteNeuAufbauen`: auf diesen Spuren wird nur ERGÄNZT, nie freigegeben.
+  - **„Frei" bleibt die Zahl der DISKETTE, nicht die unseres Allokators.**  Der
+    naheliegende Schritt — `info().free_bytes` auf das Belegbare kürzen — ist
+    falsch: 850 ist, was das laufende UDOS mit `STATUS` meldet, und drei Tests
+    halten das als Kreuzprobe fest.  Bei ZDOS stecken darin weiter 35 Sektoren der
+    ausgesparten Systemspuren; wo das den Ausschlag gibt, sagt es der **Nachsatz an
+    der Meldung** (`systemspurHinweis()`), nicht eine stillschweigend kleinere
+    Anzeige.  Bei NDOS entfällt der Unterschied ganz.  Dass ein 256-B-Satz **zwei
+    benachbarte** Sektoren derselben Spur braucht, bleibt davon unberührt: die Zahl
+    zählt Sektoren, nicht Paare.
+  Wächter: `Udos1715P8000.GeleerteDisketteNimmtAlleDateienWiederAuf` (schlägt mit
+  der alten Regel fehl — genau der gemeldete Fall), `…DerSystembereichBleibtUnan­
+  getastet`, `Udos1715Schreiben.SystembereichBleibtTabu` und vor allem
+  **`DiskToolBootdiskette.GeleerteUndZurueckgeschriebeneUdosDisketteBootet`**: die
+  Referenzdiskette leeren, alles zurückschreiben, im Emulator kalt starten und `CAT`
+  nachladen — mit der ausdrücklichen Probe, dass dabei wirklich Dateien auf Spur
+  22/23 landen, sonst prüfte der Fall die Lockerung gar nicht.
+- **Das Änderungsfeld trägt nicht immer ein Datum** (2026-08-22).  Bei Offset 32
+  steht auf fremd beschriebenen Disketten ein **Versionstext** („V 4.3 "); sein
+  Leerzeichen am Ende geht beim Lesen verloren, der Wert kommt mit fünf Zeichen
+  zurück — und `UdosFileSystem::write` verwarf ihn als „kein Datum" und setzte den
+  heutigen Tag.  13 von 44 Dateien auf `udos_ds77_k5601_fremdsync.hfe` waren
+  betroffen; der Dateiinhalt war dabei korrekt, gemerkt hätte es niemand.  Jetzt wird
+  **aufgefüllt statt verworfen** — wie beim Erstellungsvermerk daneben, wo genau das
+  schon berücksichtigt war.  Wächter:
+  `UdosFileSystemWrite.VersionstextImAenderungsfeldUeberlebt` (prüft mit derselben
+  Probe, dass ein LEERES Feld weiterhin „heute" heisst und nicht sechs Leerzeichen).

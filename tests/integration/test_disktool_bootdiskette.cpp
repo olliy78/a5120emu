@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -369,4 +370,121 @@ TEST(DiskToolBootdiskette, UdosSystemspurenGehenMitUndZwarBeideSeiten) {
                                 [](uint8_t b) { return b == 0xE5; }))
             << "Seite 1 hat ein Bootabbild bekommen, obwohl keines angegeben war "
                "(Satz bei Byte " << i << ")";
+}
+
+/**
+ * @test DiskToolBootdiskette/GeleerteUndZurueckgeschriebeneUdosDisketteBootet
+ * @brief Die schärfste Probe auf den Belegungsplan: leeren, zurückschreiben, booten.
+ *
+ * Anlass war eine fremd beschriebene NDOS-Diskette (P8000), die sich nach dem Leeren
+ * **nicht mehr vollständig** zurückschreiben liess: `Diskette voll`, acht Sektoren zu
+ * wenig, obwohl dieselben Dateien vorher daraufgepasst hatten.  Ursache war ein
+ * `reservedTrack()`, das Verzeichnis- und Kartenspur GANZ sperrte, während das echte
+ * Betriebssystem dort nur den Kopf belegt und den Rest wie jede andere Spur benutzt —
+ * auf der A5120-Referenzdiskette liegen elf Kopfsektoren auf Spur 22.
+ *
+ * Seitdem entscheidet allein der **Belegungsplan**, welcher Sektor frei ist.  Genau
+ * das prüft dieser Fall, und zwar am schärfstmöglichen Maßstab: nicht „die Zahlen
+ * stimmen", sondern **die Maschine startet davon**.  Ein Fehler im Plan fiele hier
+ * sofort auf — er vergäbe einen Sektor doppelt, und die zuletzt geschriebene Datei
+ * überschriebe die Systemdatei, die davor dort lag.
+ *
+ * @par Kriterium  Alle Dateien kommen zurück, die Diskette bootet bis zum
+ *                 UDOS-Prompt, und `CAT` wird von ihr nachgeladen und listet.
+ * @par Abgrenzung  @ref GebauteUdosDisketteBootetUndFuehrtBefehleAus baut auf einer
+ *                  FRISCHEN Diskette auf — dort ist der Plan jungfräulich.  Hier ist
+ *                  er der gewachsene der Originaldiskette, mit allem, was das echte
+ *                  UDOS über die Jahre hineingeschrieben hat.
+ */
+TEST(DiskToolBootdiskette, GeleerteUndZurueckgeschriebeneUdosDisketteBootet) {
+    TempPfad ziel("k1520_udos_neu_beschrieben.hfe");
+    {
+        std::string err;
+        auto quelle = DiskVolume::open(diskPath("udos_boot_scp.hfe"), "udos_ds77",
+                                       formate(), dateisysteme(), err);
+        ASSERT_NE(quelle, nullptr) << err;
+        ASSERT_TRUE(quelle->saveAs(ziel.get())) << quelle->lastError();
+    }
+
+    std::string err;
+    auto dv = DiskVolume::open(ziel.get(), "udos_ds77", formate(), dateisysteme(), err);
+    ASSERT_NE(dv, nullptr) << err;
+    dv->setReadOnly(false);
+    dv->setBackup(false);
+
+    TempOrdner ordner("k1520_udos_neu_dateien");
+    ASSERT_TRUE(dv->extractAll(ordner.path(), TransferOptions{})) << dv->lastError();
+
+    // Sollstand: Name → Größe.  Jede Datei muss zurückkommen, keine darf schrumpfen.
+    std::map<std::string, uint64_t> vorher;
+    for (const FileEntry& e : dv->list()) {
+        if (e.type == "D") continue;
+        vorher[dv->volumeDir(e.volume) + "/" + e.name] = e.size;
+    }
+    ASSERT_GT(vorher.size(), 60u) << "die Referenzdiskette ist unerwartet leer";
+
+    // Leeren — danach ist der Belegungsplan bis auf System- und Verwaltungsspuren frei.
+    for (const FileEntry& e : dv->list()) {
+        if (e.type == "D") continue;
+        ASSERT_TRUE(dv->erase(FileRef{e.volume, e.name})) << dv->lastError();
+    }
+
+    // Und alles wieder hinein.  DAS ist der Schritt, der vorher scheiterte.
+    ASSERT_TRUE(dv->insertAll(ordner.path(), TransferOptions{})) << dv->lastError();
+
+    int gezaehlt = 0;
+    for (const FileEntry& e : dv->list()) {
+        if (e.type == "D") continue;
+        const std::string schluessel = dv->volumeDir(e.volume) + "/" + e.name;
+        const auto it = vorher.find(schluessel);
+        ASSERT_NE(it, vorher.end()) << schluessel << " ist neu dazugekommen";
+        EXPECT_EQ(it->second, e.size) << schluessel;
+        ++gezaehlt;
+    }
+    EXPECT_EQ(vorher.size(), static_cast<size_t>(gezaehlt))
+        << "es sind nicht alle Dateien zurückgekommen";
+
+    // Und der Fall muss die gelockerte Regel WIRKLICH anfassen: liegt keine einzige
+    // Datei auf Verzeichnis- oder Kartenspur, prüft er nur noch, dass 106 KB freier
+    // Platz für 67 Dateien reichen — das täte er auch mit der alten Sperre.
+    int auf_verwaltungsspur = 0;
+    for (const FileEntry& e : dv->list()) {
+        if (e.type == "D") continue;
+        int cyl = -1, head = -1, sektor = -1;
+        if (!dv->firstSector(FileRef{e.volume, e.name}, cyl, head, sektor)) continue;
+        if (cyl == 22 || cyl == 23) ++auf_verwaltungsspur;   // udos_ds77: 16H/17H
+    }
+    EXPECT_GT(auf_verwaltungsspur, 0)
+        << "keine Datei liegt auf Spur 22/23 — der Fall prüft die gelockerte Regel nicht";
+
+    // Die Prüfung muss die neu beschriebene Diskette ohne Befund durchlassen —
+    // insbesondere ohne doppelt vergebene Sektoren.
+    const FsCheckReport bericht = dv->check(FsCheckLevel::Voll, /*nachladen=*/true);
+    EXPECT_TRUE(bericht.ohneBefund()) << bericht.kurzfassung();
+
+    ASSERT_TRUE(dv->flush()) << dv->lastError();
+    dv.reset();
+
+    // ── Die eigentliche Probe: die Maschine startet davon ────────────────────
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, ziel.get(), "udos_ds77", /*wp=*/false))
+        << machine.lastError();
+    machine.powerOn();
+
+    ASSERT_TRUE(runSmallUntil(machine, "UDOS 4.3", 150'000'000))
+        << "die neu beschriebene Diskette startete OS.INIT nicht:\n" << vramText(machine);
+    ASSERT_TRUE(runSmallUntil(machine, "Neues Datum", 40'000'000))
+        << "keine Datumsabfrage:\n" << vramText(machine);
+    runCycles(machine, 2'000'000);
+    typeString(machine, "010187");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "UDOS BC.5120", 60'000'000))
+        << "nach der Datumseingabe kam das System nicht hoch:\n" << vramText(machine);
+
+    // Und ein Befehl wird wirklich von DIESER Diskette nachgeladen.
+    runCycles(machine, 4'000'000);
+    typeString(machine, "cat");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "HELP.DAT.00", 60'000'000))
+        << "CAT lud/lief nicht:\n" << vramText(machine);
 }

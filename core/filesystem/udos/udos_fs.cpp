@@ -572,6 +572,14 @@ FsInfo UdosFileSystem::info() const {
     FsInfo i;
     i.label       = bitmap_.label();
     i.total_bytes = static_cast<uint64_t>(tracks_) * secs_per_track_ * kSector;
+    // „Frei" ist die Zahl, die die DISKETTE fuehrt — dieselbe, die das laufende UDOS
+    // mit `STATUS` meldet („850 SECTORS AVAILABLE").  Sie hier auf das zu kuerzen,
+    // was UNSER Schreiber vergibt, hiesse dem Anwender eine andere Zahl zu zeigen als
+    // seine Maschine; die Kreuzprobe gegen das echte System ist mehr wert.
+    //
+    // Unser Schreiber spart darueber hinaus die Systemspuren 0–2 und die Bootspur aus
+    // (s. @ref reservedTrack) — rund 35 Sektoren.  Wo das den Ausschlag gibt, sagt es
+    // die Meldung beim Schreiben, nicht eine stillschweigend kleinere Anzeige.
     i.free_bytes  = static_cast<uint64_t>(bitmap_.countFree()) * kSector;
     i.used_bytes  = i.total_bytes - i.free_bytes;
     i.files       = static_cast<int>(directory().size());
@@ -598,15 +606,61 @@ FsInfo UdosFileSystem::info() const {
 //     gleichwertig.
 //
 // Unangetastet bleiben die Systembereiche aus §8.6: die Spuren 0, 1, 2 (Urlader und
-// Nukleus) und 21–23 (Bootabbild, Verzeichnis, Belegungskarte).  Die beiden Bytes
-// HINTER dem Kontrollblock (`41 F2` …, §13.5) werden nie beschrieben — sie sind als
+// Nukleus) und die Bootspur 21 (Bootabbild).  Die beiden Bytes HINTER dem
+// Kontrollblock (`41 F2` …, §13.5) werden nie beschrieben — sie sind als
 // Gap/Schreibnaht eingeordnet, und TrackCodec::writeSector laesst sie stehen.
-
+//
+// **Verzeichnis- und Kartenspur (22/23) stehen seit 2026-08-22 NICHT mehr dabei.**
+// Dort sind es nur die Karte selbst (Sektor 1–3) und die Verzeichnissaetze, die
+// keiner Datei gehoeren — und die traegt `mkfs` sauber in den Belegungsplan ein.
+// Den REST benutzt UDOS wie jede andere Spur: auf `udos_boot_scp.hfe` liegen elf
+// Kopfsektoren auf Spur 22 und einer auf Spur 21.  Beide Spuren ganz zu sperren
+// kostete rund 50 Sektoren, die eine fremd beschriebene Diskette bereits belegt hat
+// — sie liess sich danach nicht mehr vollstaendig zurueckschreiben.
+//
+// Warum 0–2 und die Bootspur bleiben — und zwar aus einem staerkeren Grund, als es
+// zunaechst schien: **der Belegungsplan schuetzt den Urlader dort NICHT.**  Auf der
+// bootfaehigen Seite von `udos_boot_scp.hfe` fuehrt er 35 Sektoren dieser vier
+// Spuren als FREI, und alle 35 tragen Inhalt — die Meldungstabelle des Nukleus
+// („MEMORY PROTECT VIOLATION" …).  Liesse man hier den Plan entscheiden, vergaebe
+// die naechste geschriebene Datei diese Sektoren; die Diskette bootete weiter und
+// fiele erst spaeter auf merkwuerdige Weise um.  Gemessen und festgehalten in
+// `UdosFileSystem.DerBelegungsplanSchuetztDenUrladerNICHT`.
+//
+// Der zweite Grund kommt hinzu, wiegt aber leichter: @ref DiskVolume::writeBootImage
+// schreibt am Dateisystem vorbei.  Es schreibt allerdings NUR so viele Sektoren, wie
+// das Abbild Bytes hat (`if (her >= img.size()) return true;`) — ein kurzes Abbild
+// laesst den Rest in Ruhe.  Weil @ref DiskVolume::readBootImage aber immer den
+// ganzen Systembereich liefert und auf allen gemessenen Disketten noch der LETZTE
+// Sektor Inhalt traegt, deckt ein `boot-get` → `boot-put` in der Praxis alles ab.
+//
+// Der Preis der Sperre: 35 von 850 freien Sektoren (4 %) auf Seite 0.  Bei NDOS gibt
+// es sie nicht — dort traegt `mkfs` (bzw. beim P8000 der Formatierer) den ganzen
+// Systembereich in den Plan ein, und die Messung findet keinen freien Sektor mit
+// Inhalt.
 bool UdosFileSystem::reservedTrack(uint8_t track) const {
-    return track <= 2
-        || track == prof_.boot_track
-        || track == prof_.directory_track
-        || track == prof_.bitmap_track;
+    return track <= 2 || track == prof_.boot_track;
+}
+
+/// @brief Der Nachsatz zu „Diskette voll", wenn die ausgesparten Systemspuren noch
+///        freie Sektoren haetten.
+///
+/// Ohne ihn steht der Anwender vor „Diskette voll" neben einer Anzeige mit 100 KB
+/// frei — die Zahl dort ist die der DISKETTE (dieselbe, die UDOS mit `STATUS`
+/// meldet), unser Schreiber spart aber Urlader- und Bootspur aus.  Das gehoert in
+/// die Meldung, nicht in eine stillschweigend kleinere Anzeige.
+std::string UdosFileSystem::systemspurHinweis() const {
+    int uebrig = 0;
+    for (uint8_t t = 0; t < tracks_; ++t) {
+        if (!reservedTrack(t)) continue;
+        for (uint8_t s = 1; s <= secs_per_track_; ++s)
+            if (!bitmap_.used(t, s)) ++uebrig;
+    }
+    if (uebrig == 0) return "";
+    return " (" + std::to_string(uebrig) + " freie Sektoren liegen auf den Systemspuren"
+           " 0-2 und " + std::to_string(prof_.boot_track)
+           + " — dort schreibt das Werkzeug nicht, weil ein Bootabbild sie in einem"
+             " Zug ueberschreibt)";
 }
 
 bool UdosFileSystem::validName(const std::string& name, std::string* why) {
@@ -652,7 +706,8 @@ bool UdosFileSystem::allocSectors(uint32_t n, std::vector<UdosPointer>& out) {
         // Belegte Bits wieder freigeben — ein Fehlschlag darf nichts hinterlassen.
         for (const UdosPointer& p : out) bitmap_.setUsed(p.track, p.sectorId(), false);
         out.clear();
-        return fail("Diskette voll: " + std::to_string(n) + " Sektoren noetig");
+        return fail("Diskette voll: " + std::to_string(n) + " Sektoren noetig"
+                    + systemspurHinweis());
     }
     return true;
 }
@@ -690,7 +745,8 @@ bool UdosFileSystem::allocRecords(uint32_t saetze, uint32_t sek_je_satz,
         for (const UdosPointer& p : out) bitmap_.setUsed(p.track, p.sectorId(), false);
         out.clear();
         return fail("Diskette voll: " + std::to_string(saetze) + " Saetze zu je "
-                    + std::to_string(sek_je_satz) + " Sektoren noetig");
+                    + std::to_string(sek_je_satz) + " Sektoren noetig"
+                    + systemspurHinweis());
     }
     return true;
 }
@@ -904,7 +960,14 @@ bool UdosFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
     h[22] = static_cast<uint8_t>(rest & 0xFF);
     h[23] = static_cast<uint8_t>(rest >> 8);
 
+    // Auch das Aenderungsfeld traegt nicht immer ein Datum: auf fremd beschriebenen
+    // Disketten steht dort ein Versionstext („V 4.3 "), und dessen Leerzeichen am
+    // Ende gehen beim Lesen verloren — er kaeme mit 5 Zeichen zurueck.  Genau wie
+    // beim Erstellungsvermerk darunter wird deshalb AUFGEFUELLT statt verworfen;
+    // sonst ersetzte der Rundlauf `V 4.3` stillschweigend durch das heutige Datum
+    // (gemessen an 13 Dateien von `udos_ds77_k5601_fremdsync.hfe`).
     std::string datum = opt.date;
+    if (!datum.empty() && datum.size() < 6) datum.resize(6, ' ');
     if (datum.size() != 6) {
         const std::time_t jetzt = std::time(nullptr);
         std::tm tm{};
@@ -1234,9 +1297,13 @@ bool UdosFileSystem::karteNeuAufbauen() {
                 merke(UdosPointer{static_cast<uint8_t>(satz.sector_index + k), satz.track});
     }
 
-    // Schritt 2: schreiben.  Auf den reservierten Spuren wird nur ERGAENZT (s. Kopfdatei).
+    // Schritt 2: schreiben.  Auf den Systemspuren wird nur ERGAENZT (s. Kopfdatei) —
+    // und Verzeichnis- wie Kartenspur gehoeren hier dazu, obwohl der Allokator sie
+    // belegen darf: was dort belegt steht und keiner Datei gehoert, ist im Zweifel
+    // Systembereich einer fremden Ausprägung und nicht verlorener Platz.
     for (uint8_t t = 0; t < tracks_; ++t) {
-        const bool reserviert = reservedTrack(t);
+        const bool reserviert = reservedTrack(t) || t == prof_.directory_track
+                             || t == prof_.bitmap_track;
         for (uint8_t s = 1; s <= spt; ++s) {
             const bool soll = belegt.count(static_cast<uint32_t>(t) * spt + (s - 1)) != 0;
             if (reserviert && !soll) continue;

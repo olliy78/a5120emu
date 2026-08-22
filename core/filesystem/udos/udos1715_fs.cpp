@@ -462,17 +462,24 @@ FsInfo Udos1715FileSystem::info() const {
 
 // ─── Belegung ────────────────────────────────────────────────────────────────
 
-bool Udos1715FileSystem::reservedTrack(uint8_t track) const {
-    if (track == prof_.directory_track || track == prof_.bitmap_track) return true;
-    // Spur 0 traegt auf einer Systemdiskette Urlader und BFOS (§2).  Ob das so ist,
-    // sagt der Belegungsplan — er ist beim Formatieren entsprechend gesetzt worden.
-    return false;
-}
+// Frueher stand hier ein `reservedTrack()`, das Verzeichnis- und Belegungsplanspur
+// GANZ gesperrt hat — 64 Sektoren (16 KB).  Das war zu viel: NDOS belegt dort nur den
+// Kopf (Descriptor, Zeigersektor, die Verzeichnissaetze bzw. zwei Kartensektoren) und
+// benutzt den Rest wie jede andere Spur.  Auf der WEGA-Startdiskette liegen dort 34
+// Sektoren Nutzdaten, drei Dateien haben ihren KOPFSEKTOR auf Spur 22 — eine solche
+// Diskette liess sich nach dem Leeren nicht mehr vollstaendig zurueckschreiben, obwohl
+// sie vorher hineingepasst hatte („Diskette voll", 8 Sektoren zu wenig).
+//
+// Massgeblich ist jetzt allein der BELEGUNGSPLAN, wie es fuer die Systemspur 0 schon
+// immer galt: `mkfs` traegt Descriptor, Zeigersektor, Verzeichnissaetze, die beiden
+// Kartensektoren und — bei `system_track0` — die ganze Spur 0 dort ein, und
+// `allocSectors`/`allocRecords` gehen ohnehin an jedem belegten Bit vorbei.  Damit
+// stimmt auch die Auskunft „frei" wieder: sie zaehlte Sektoren mit, die nie vergeben
+// wurden.
 
 bool Udos1715FileSystem::allocSectors(uint32_t n, std::vector<UdosPointer>& out) {
     out.clear();
     for (uint8_t t = 0; t < tracks_ && out.size() < n; ++t) {
-        if (reservedTrack(t)) continue;
         for (uint8_t s = 0; s < secs_per_track_ && out.size() < n; ++s) {
             if (bitmap_.used(t, static_cast<uint8_t>(s + 1))) continue;
             out.push_back(UdosPointer{s, t});
@@ -498,7 +505,6 @@ bool Udos1715FileSystem::allocRecords(uint32_t records, uint32_t sec_je_record,
 
     uint32_t gefunden = 0;
     for (uint8_t t = 0; t < tracks_ && gefunden < records; ++t) {
-        if (reservedTrack(t)) continue;
         // Ein Record ueberschreitet nie die Spurgrenze (§5.3) — die KOPFgrenze
         // innerhalb des Zylinders dagegen sehr wohl, denn die Spur ist der Zylinder.
         for (uint16_t s = 0; s + sec_je_record <= secs_per_track_ && gefunden < records; ) {
@@ -1002,12 +1008,9 @@ bool Udos1715FileSystem::wouldFit(const std::vector<PlannedFile>& files,
                                   FitReport& out) const {
     out = FitReport{};
 
-    int frei = 0;
-    for (uint8_t t = 0; t < tracks_; ++t) {
-        if (reservedTrack(t)) continue;
-        for (uint8_t s = 0; s < secs_per_track_; ++s)
-            if (!bitmap_.used(t, static_cast<uint8_t>(s + 1))) ++frei;
-    }
+    // Frei ist, was der Plan als frei fuehrt — es gibt keine Spur mehr, die zwar
+    // frei aussieht, aber nicht vergeben wird.
+    int frei = bitmap_.countFree();
 
     // Ersetzte gleichnamige Dateien geben ihre Sektoren zurueck.
     const std::vector<UdosDirEntry> verz = directory();
@@ -1092,11 +1095,18 @@ bool Udos1715FileSystem::karteNeuAufbauen() {
         for (const UdosPointer& p : sek) merke(p);
     }
 
-    // Spur 0 und die Bootspur bleiben unangetastet: dort liegen Urlader und BFOS,
-    // die keiner Datei gehoeren und trotzdem zu Recht belegt sind (§7.5) — genau
-    // die Spuren, die auch die Pruefung beim verlorenen Platz auslaesst.
+    // Auf den Systemspuren wird nur ERGAENZT, nie freigegeben: dort liegen Urlader
+    // und BFOS, beim P8000 zusaetzlich Kopf 0 der Spuren 21, 22 und 23 — das gehoert
+    // keiner Datei und ist trotzdem zu Recht belegt.  Es sind genau die Spuren, die
+    // auch die Pruefung beim verlorenen Platz auslaesst; wuerde die Reparatur sie
+    // freigeben, vergaebe die naechste Datei den Systembereich.
+    //
+    // Der Allokator geht seit 2026-08-22 einen anderen Weg — er fragt nur den
+    // Belegungsplan.  Das ist kein Widerspruch: was hier BELEGT stehenbleibt, gibt er
+    // ohnehin nicht aus.
     for (uint8_t t = 0; t < tracks_; ++t) {
-        const bool reserviert = reservedTrack(t) || t == 0 || t == prof_.boot_track;
+        const bool reserviert = t == 0 || t == prof_.boot_track
+                             || t == prof_.directory_track || t == prof_.bitmap_track;
         for (uint8_t s = 1; s <= spt; ++s) {
             const bool soll = belegt.count(static_cast<uint32_t>(t) * spt + (s - 1)) != 0;
             if (reserviert && !soll) continue;
