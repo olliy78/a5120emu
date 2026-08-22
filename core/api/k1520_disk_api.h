@@ -543,6 +543,18 @@ K1520_API bool k1520d_insert (K1520Disk h, const char* src, const char* name, K1
 K1520_API bool k1520d_erase  (K1520Disk h, const char* name);
 
 /**
+ * @brief Erster Sektor einer Datei — fuer „Im Diskeditor oeffnen".
+ *
+ * Bei CP/M der erste Block von Extent 0, bei UDOS/NDOS der Kopfsektor (dort steht
+ * auch das, woran man die Datei erkennt).  @p sector ist die **Kennung**, wie bei
+ * `k1520d_recover_part_*`.
+ *
+ * @return false, wenn es die Datei nicht gibt oder sie keinen Block belegt.
+ */
+K1520_API bool k1520d_file_first_sector(K1520Disk h, const char* name,
+                                        int* cyl, int* head, int* sector);
+
+/**
  * @brief Alles extrahieren.  Bei mehreren Seiten entstehen `Side0/`, `Side1/` …
  */
 K1520_API bool k1520d_extract_all(K1520Disk h, const char* dest_dir, K1520DMode mode);
@@ -592,6 +604,10 @@ K1520_API const char* k1520d_version(void);
  */
 K1520_API int k1520d_check(K1520Disk h, int level, bool nachladen);
 
+/// @brief Prueftiefe des letzten Berichts: 0 = Schnell, 1 = Voll.  **Nicht**
+///        dasselbe wie @ref k1520d_check_complete — eine Vollpruefung kann
+///        unvollstaendig sein (fehlende Spuren), eine Schnellpruefung vollstaendig.
+K1520_API int  k1520d_check_level(K1520Disk h);
 /// @brief Wurde alles angesehen?  false = an einer physischen Diskette fehlten
 ///        Spuren; „ohne Befund" heisst dann nur „bislang ohne Befund".
 K1520_API bool k1520d_check_complete(K1520Disk h);
@@ -600,6 +616,28 @@ K1520_API int  k1520d_check_tracks_read(K1520Disk h);
 K1520_API int  k1520d_check_tracks_total(K1520Disk h);
 /// @brief Kurzfassung ("2 Gefahr, 1 Warnung"); "" = ohne Befund.
 K1520_API const char* k1520d_check_summary(K1520Disk h);
+
+/* ─── Die Checkliste: welche Schritte lief die Pruefung? (§5a) ─────────────── */
+/*
+ * Ein Bericht „ohne Befund" sagt nicht, WORAUF gesehen wurde — und ein Lauf, der
+ * 70 ms dauert, sieht ohne diese Liste aus, als waere er gar nicht gelaufen.  Die
+ * Schritte kommen aus den Pruefern selbst; die Oberflaeche erfindet keinen.
+ */
+
+/// @brief Zahl der Schritte des letzten Pruefberichts.
+K1520_API int         k1520d_check_step_count(K1520Disk h);
+/// @brief Stabile Kennung des Schritts, z. B. "cpm.schritt.verzeichnis".
+K1520_API const char* k1520d_check_step_id(K1520Disk h, int k);
+/// @brief Klartextzeile fuer die Anzeige.
+K1520_API const char* k1520d_check_step_title(K1520Disk h, int k);
+/// @brief Ist er gelaufen?  false = uebersprungen, Grund in `k1520d_check_step_why`.
+K1520_API bool        k1520d_check_step_done(K1520Disk h, int k);
+/// @brief Warum er uebersprungen wurde ("nur bei der Vollpruefung"); "" wenn gelaufen.
+K1520_API const char* k1520d_check_step_why(K1520Disk h, int k);
+/// @brief Wie viele Befunde in ihm entstanden.
+K1520_API int         k1520d_check_step_findings(K1520Disk h, int k);
+/// @brief Schwerster Befund darin (wie `k1520d_finding_severity`).
+K1520_API int         k1520d_check_step_severity(K1520Disk h, int k);
 
 K1520_API int         k1520d_finding_count(K1520Disk h);
 /// @brief Stabile Kennung, z. B. "cpm.block.doppelt" — Vertrag, kein Anzeigetext.
@@ -681,7 +719,19 @@ K1520_API int k1520d_apply_repairs(K1520Disk h, const int* befund, const int* re
  */
 K1520_API int  k1520d_recover_scan(K1520Disk h, int level, bool nachladen);
 /// @brief Wurde alles angesehen?  false = an einer physischen Diskette fehlten Spuren.
+/// @brief Suchtiefe des letzten Laufs: 0 = Verzeichnis, 1 = Oberflaeche.
+K1520_API int  k1520d_recover_level(K1520Disk h);
 K1520_API bool k1520d_recover_complete(K1520Disk h);
+/// @name Die Checkliste des Suchlaufs — wie bei der Pruefung (§5a)
+/// @{
+K1520_API int         k1520d_recover_step_count(K1520Disk h);
+K1520_API const char* k1520d_recover_step_id(K1520Disk h, int k);
+K1520_API const char* k1520d_recover_step_title(K1520Disk h, int k);
+K1520_API bool        k1520d_recover_step_done(K1520Disk h, int k);
+K1520_API const char* k1520d_recover_step_why(K1520Disk h, int k);
+/// @brief Wie viele Funde in diesem Schritt entstanden.
+K1520_API int         k1520d_recover_step_finds(K1520Disk h, int k);
+/// @}
 K1520_API int  k1520d_recover_count(K1520Disk h);
 /// @brief Der ueberlieferte Name; **""** wo keiner ueberlebt hat (Rohbereich, UDOS).
 K1520_API const char* k1520d_recover_name(K1520Disk h, int i);

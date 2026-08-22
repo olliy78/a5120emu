@@ -188,6 +188,8 @@ FsRecoverReport UdosFileSystem::recoverScan(FsRecoverLevel level, bool nachladen
         return static_cast<uint32_t>(p.track) * spt + p.sector_index;
     };
 
+    bericht.schritt("udos.suche.lebend",
+                    "Lebende Dateien einlesen — ihre Sektoren sind tabu");
     // ── 1. Was LEBT?  Sektoren und Namen ─────────────────────────────────────
     //
     // Ohne das Verzeichnis ist kein Fund zu bewerten: „gehoert dieser Sektor
@@ -242,6 +244,8 @@ FsRecoverReport UdosFileSystem::recoverScan(FsRecoverLevel level, bool nachladen
     }
 
     // ── 2. Namensreste im Verzeichnis (§13, Kasten) ──────────────────────────
+    bericht.schritt("udos.suche.namensreste",
+                    "Namensreste im Verzeichnis — der Name ist das einzige, was fehlt");
     //
     // `removeDirEntry` schiebt die folgenden Eintraege nach vorn und zieht `FF` nach
     // — der geloeschte Name ist damit ueberschrieben.  Fremde UDOS-Auspraegungen
@@ -283,6 +287,8 @@ FsRecoverReport UdosFileSystem::recoverScan(FsRecoverLevel level, bool nachladen
     }
 
     // ── 3. Kandidaten: Sektoren mit der Signatur eines Kopfsektors ───────────
+    bericht.schritt("udos.suche.kopfsektoren",
+                    "Kopfsektoren suchen und ihre Satzketten verfolgen");
     std::set<uint32_t> vergeben;     // gehoert schon zu einem Fund
     int laufende_nummer = 0;
 
@@ -446,7 +452,7 @@ FsRecoverReport UdosFileSystem::recoverScan(FsRecoverLevel level, bool nachladen
             f.wiederherstellbar = false;
             f.warum_nicht       = kWegZurueck;
 
-            bericht.funde.push_back(std::move(f));
+            bericht.hinzu(std::move(f));
         }
     }
 
@@ -457,6 +463,13 @@ FsRecoverReport UdosFileSystem::recoverScan(FsRecoverLevel level, bool nachladen
     // einer anderen Spur liegt (bei CP/M dieselbe Ueberlegung, dort mit Bloecken,
     // §13.3).  Es ist auch die Koernung des Dateisystems selbst — ein UDOS-Satz
     // ueberschreitet die Spurgrenze nie (§7).
+    if (level == FsRecoverLevel::Oberflaeche)
+        bericht.schritt("udos.suche.oberflaeche",
+                        "Rohbereiche: Inhalt ohne Kopfsektor");
+    else
+        bericht.schrittEntfaellt("udos.suche.oberflaeche",
+                                 "Rohbereiche: Inhalt ohne Kopfsektor",
+                                 "nur bei der Suche ueber die ganze Oberflaeche");
     if (level == FsRecoverLevel::Oberflaeche) {
         std::vector<UdosPointer> lauf;
         std::vector<uint8_t>     lauf_daten;
@@ -492,7 +505,7 @@ FsRecoverReport UdosFileSystem::recoverScan(FsRecoverLevel level, bool nachladen
                           " gerettet wird der Rohinhalt (" + f.type + ")";
             f.warum_nicht = "Ein Rohbereich hat keinen Kopfsektor, aus dem sich eine Datei"
                             " bauen liesse — herausholen laesst er sich aber";
-            bericht.funde.push_back(std::move(f));
+            bericht.hinzu(std::move(f));
             lauf.clear();
             lauf_daten.clear();
         };
@@ -518,6 +531,7 @@ FsRecoverReport UdosFileSystem::recoverScan(FsRecoverLevel level, bool nachladen
         laufAbschliessen();
     }
 
+    bericht.schrittEnde();
     abschluss();
     return bericht;
 }

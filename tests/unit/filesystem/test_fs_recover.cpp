@@ -178,6 +178,36 @@ TEST(FsRecoverAutomatik, DerSuchlaufSchreibtNie) {
     fs::remove(pfad);
 }
 
+/// @test Auch der Suchlauf fuehrt seine Checkliste (§5a) — und ein Fund landet in
+///       dem Schritt, der ihn gefunden hat.
+TEST(FsRecoverCheckliste, JederLaufMeldetSeineSchritte) {
+    const std::string pfad = kopie("cpa_cpa780_k5601_noclock.img", "fsrec_liste.img");
+    auto v = oeffneSchreibend(pfad);
+    ASSERT_TRUE(v);
+    ASSERT_TRUE(v->erase(FileRef::parse(kOpfer, 0)));
+
+    const FsRecoverReport& flach = v->recoverScan(FsRecoverLevel::Verzeichnis, true);
+    ASSERT_FALSE(flach.schritte.empty());
+    const auto oberflaeche = std::find_if(
+        flach.schritte.begin(), flach.schritte.end(),
+        [](const FsSchritt& s) { return s.id == "cpm.suche.oberflaeche"; });
+    ASSERT_NE(flach.schritte.end(), oberflaeche);
+    EXPECT_FALSE(oberflaeche->ausgefuehrt);
+    EXPECT_FALSE(oberflaeche->grund.empty());
+
+    const FsRecoverReport& tief = v->recoverScan(FsRecoverLevel::Oberflaeche, true);
+    int summe = 0;
+    for (const FsSchritt& s : tief.schritte) summe += s.treffer;
+    EXPECT_EQ(static_cast<int>(tief.funde.size()), summe)
+        << "jeder Fund gehoert in genau einen Schritt";
+    const auto verzeichnis = std::find_if(
+        tief.schritte.begin(), tief.schritte.end(),
+        [](const FsSchritt& s) { return s.id == "cpm.suche.verzeichnis"; });
+    ASSERT_NE(tief.schritte.end(), verzeichnis);
+    EXPECT_GT(verzeichnis->treffer, 0) << "die geloeschte Datei kam aus dem Verzeichnis";
+    fs::remove(pfad);
+}
+
 // ═══ 2. Der Kern: geloescht, gefunden, Byte fuer Byte zurueck ═════════════════
 
 /// @test Eine geloeschte Datei wird gefunden und liest sich wie vorher.

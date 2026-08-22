@@ -4,9 +4,20 @@ Der Meldungsstreifen trägt eine Zeile, die Diskettenangaben tragen den ganzen
 Bericht — aber beide sind nur zum Lesen.  Hier steht derselbe Befund mit dem, was
 sich daran tun lässt (doc/design/15_dateisystempruefung.md §16.3).
 
-Drei Festlegungen tragen diesen Dialog; sie sind der Grund für den meisten Code
+Fünf Festlegungen tragen diesen Dialog; sie sind der Grund für den meisten Code
 darin:
 
+* **Er prüft beim Öffnen, und zwar voll** (§5a).  Früher zeigte er nur den Befund
+  der Schnellprüfung vom Mounten und tat selbst nichts, bis jemand auf
+  „Vollprüfung" klickte — an einer gesunden Diskette also gar nichts.  Der Grund
+  für die Schnellprüfung liegt beim ÖFFNEN der Diskette (kein zusätzlicher
+  Spurzugriff, E2), nicht hier: wer diesen Dialog aufruft, hat die Prüfung
+  verlangt.  Nur wenn das Speicherabbild unvollständig ist (physische Diskette,
+  Spuren noch nicht gelesen), bleibt es bei der Schnellprüfung — und der Kopf
+  sagt, warum.
+* **Die Checkliste steht über dem Befund.**  „Ohne Befund" allein sagt nicht,
+  worauf gesehen wurde; die Schritte kommen aus dem Prüfer selbst
+  (`ui/checkliste.py`).
 * **Nichts ist vorausgewählt, was Daten verwirft.**  Angekreuzt kommt nur, was
   ``empfohlen`` und nicht ``datenverlust`` ist (:pyattr:`Repair.vorauswaehlen`).
 * **Ein Befund ohne Reparatur steht ohne Ankreuzfeld da.**  Er ist eine Auskunft,
@@ -33,6 +44,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core_binding.k1520disk import FEHLER, GEFAHR, WARNUNG
+from app.disktool.ui.checkliste import Checkliste
 
 #: Zeichen je Schwere — dieselben wie in der Statuszeile des Hauptfensters.
 ZEICHEN = {GEFAHR: "⛔", FEHLER: "✖", WARNUNG: "⚠"}
@@ -43,7 +55,7 @@ ROLLE_BEFUND = int(Qt.UserRole) + 1
 
 def kopfzeile(tool, bericht) -> str:
     """Eine Zeile Datenträger + eine Zeile Zählwerk."""
-    tiefe = "Vollprüfung" if bericht.complete else "Schnellprüfung"
+    tiefe = "Vollprüfung" if bericht.voll else "Schnellprüfung"
     wo = (f" · {bericht.tracks_read} von {bericht.tracks_total} Spuren angesehen"
           if bericht.tracks_total else "")
     zahlen = []
@@ -55,7 +67,10 @@ def kopfzeile(tool, bericht) -> str:
     # Ohne Dateisystem (roh geöffnet) steht hier die Ebene 0: der Bericht sagt dann
     # nicht, wie es dem Dateisystem geht, sondern warum keines erkannt wurde (§11).
     was = tool.filesystem if tool.has_filesystem else "kein Dateisystem erkannt"
-    return (f"{tool.path or 'physische Diskette'} · {was} · {tiefe}{wo}\n"
+    gelaufen = sum(1 for s in bericht.schritte if s.ausgefuehrt)
+    schritte = (f" · {gelaufen} von {len(bericht.schritte)} Schritten ausgeführt"
+                if bericht.schritte else "")
+    return (f"{tool.path or 'physische Diskette'} · {was} · {tiefe}{wo}{schritte}\n"
             + ("   ".join(zahlen) if zahlen else "ohne Befund"))
 
 
@@ -106,6 +121,8 @@ class FsckDialog(QDialog):
         self.kopf = QLabel("")
         self.kopf.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
+        self.liste = Checkliste(was="Befund")
+
         self.baum = QTreeWidget()
         self.baum.setColumnCount(3)
         self.baum.setHeaderLabels(["Befund", "Ort", "Reparatur"])
@@ -121,6 +138,7 @@ class FsckDialog(QDialog):
         self.details.setLineWrapMode(QTextBrowser.NoWrap)
 
         teiler = QSplitter(Qt.Vertical)
+        teiler.addWidget(self.liste)
         teiler.addWidget(self.baum)
         unten = QWidget()
         unten_lay = QVBoxLayout(unten)
@@ -134,8 +152,11 @@ class FsckDialog(QDialog):
             self._b_editor.hide()
         unten_lay.addWidget(self.knopf_editor)
         teiler.addWidget(unten)
-        teiler.setStretchFactor(0, 3)
-        teiler.setStretchFactor(1, 2)
+        # Die Checkliste ist die Nebensache: sie bekommt ihre natürliche Höhe, den
+        # Rest teilen sich Befundliste und Einzelheiten.
+        teiler.setStretchFactor(0, 0)
+        teiler.setStretchFactor(1, 3)
+        teiler.setStretchFactor(2, 2)
 
         #: Warum gerade nicht repariert werden kann — steht ÜBER den Knöpfen, nicht
         #: in einem Tooltip: ein gesperrter Knopf ohne Begründung ist eine Sackgasse.
@@ -143,9 +164,13 @@ class FsckDialog(QDialog):
         self.hinweis.setWordWrap(True)
 
         self.knoepfe = QDialogButtonBox(QDialogButtonBox.Close)
-        self.b_voll = self.knoepfe.addButton("&Vollprüfung", QDialogButtonBox.ActionRole)
+        # Geprüft wird beim Öffnen; der Knopf ist die WIEDERHOLUNG — nach einer
+        # Reparatur von Hand, nach einem Eingriff im Diskeditor.
+        self.b_voll = self.knoepfe.addButton("Noch einmal &prüfen",
+                                             QDialogButtonBox.ActionRole)
         self.b_voll.setToolTip(
-            "Jede Spur ansehen: Ketten, Kreuzbelegungen, Belegungsplan und Prüfsummen.")
+            "Vollprüfung wiederholen: jede Spur ansehen — Ketten, Kreuzbelegungen, "
+            "Belegungsplan und Prüfsummen.")
         self.b_voll.clicked.connect(self._vollpruefung)
         # An einer PHYSISCHEN Diskette zöge die Vollprüfung die ganze Scheibe ein
         # (0,5–0,8 s je Spur) und liesse das Fenster ein bis zwei Minuten stehen.
@@ -154,6 +179,7 @@ class FsckDialog(QDialog):
         # Öffnen nach (`_abbild_vervollstaendigen`, mit Fortschrittsanzeige), und
         # danach kostet die Vollprüfung nichts mehr.  Nur wenn das nicht geschehen
         # ist, bleibt der Knopf gesperrt — und sagt warum.
+        self._voll_moeglich = bool(abbild_vollstaendig)
         if not abbild_vollstaendig:
             self.b_voll.setEnabled(False)
             self.b_voll.setToolTip(
@@ -170,7 +196,13 @@ class FsckDialog(QDialog):
         lay.addWidget(self.hinweis)
         lay.addWidget(self.knoepfe)
 
-        self._fuellen()
+        # Wer diesen Dialog aufruft, hat die Prüfung verlangt — sie läuft sofort.
+        # An einer Datei kostet die Vollprüfung rund 70 ms; die Schnellprüfung
+        # bleibt dem Fall vorbehalten, in dem nicht alle Spuren im Speicher sind.
+        if self._voll_moeglich:
+            self._vollpruefung()
+        else:
+            self._fuellen()
 
     # ── Aufbau ──────────────────────────────────────────────────────────────
 
@@ -180,6 +212,7 @@ class FsckDialog(QDialog):
         self._waehler.clear()
         self.bericht = self.tool.findings()
         self.kopf.setText(kopfzeile(self.tool, self.bericht))
+        self.liste.setze(self.bericht.schritte)
 
         for i, f in enumerate(self.bericht.findings):
             eintrag = QTreeWidgetItem(self.baum)

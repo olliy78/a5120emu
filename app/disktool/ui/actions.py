@@ -51,6 +51,11 @@ _SPEC: List[Tuple] = [
      "_einfuegen_auswahl", False),
     ("loeschen", "&Löschen", "delete", "Del",
      "Die ausgewählten Dateien von der Diskette löschen", "_loeschen_auswahl", False),
+    # Der Weg von der Datei zu ihren Bytes: er gehoert neben „Eigenschaften",
+    # weil beides dieselbe Frage beantwortet — was steht da eigentlich?
+    ("datei_im_editor", "Im Disk&editor öffnen", "disk-editor", None,
+     "Den ersten Sektor der ausgewählten Datei im Diskeditor aufschlagen",
+     "_datei_im_editor", False),
     ("eigenschaften", "&Eigenschaften…", "properties", "Alt+Return",
      "Die Dateiangaben ansehen und ändern", "_eigenschaften_auswahl", False),
 
@@ -117,6 +122,13 @@ _SPEC: List[Tuple] = [
     # ── Übertragung ─────────────────────────────────────────────────────────
     ("ordner", "&Zielordner wählen…", "folder", None,
      "Den Linux-Ordner der rechten Hälfte wählen", "_ordner_dialog", False),
+    # Beides arbeitet im ORDNER des Wirtsystems, nicht auf der Diskette — dort
+    # gibt es weder Unterverzeichnisse noch ein Umbenennen an Ort und Stelle.
+    ("neuer_ordner", "Neuen &Ordner anlegen", "folder", "Ctrl+Shift+N",
+     "Im Ordner der rechten Hälfte ein Unterverzeichnis anlegen und benennen",
+     "_neuer_ordner", False),
+    ("umbenennen", "&Umbenennen", None, "F2",
+     "Den ausgewählten Eintrag der rechten Hälfte umbenennen", "_umbenennen", False),
 
     # ── Ansicht ─────────────────────────────────────────────────────────────
     ("aktualisieren", "&Aktualisieren", "refresh", "F5",
@@ -145,6 +157,7 @@ KURZ = {'oeffnen': 'Öffnen',
     'holen': 'Holen',
     'schreiben': 'Schreiben',
     'loeschen': 'Löschen',
+    'datei_im_editor': 'Sektor',
     'eigenschaften': 'Angaben',
     'schreibschutz': 'R/O',
     'alles_raus': 'Alles holen',
@@ -155,6 +168,8 @@ KURZ = {'oeffnen': 'Öffnen',
     'diskeditor': 'Diskeditor',
     'angaben': 'Diskette',
     'ordner': 'Ordner',
+    'neuer_ordner': 'Neuer Ordner',
+    'umbenennen': 'Umbenennen',
     'aktualisieren': 'Neu lesen',
     'hilfe': 'Handbuch',
     'ueber': 'Über'}

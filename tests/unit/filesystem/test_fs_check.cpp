@@ -138,6 +138,24 @@ std::string kennungen(const FsCheckReport& r) {
     return s;
 }
 
+/// @brief Name eines Verzeichnisplatzes, wie ihn `list()` fuehrt ("TEST.COM").
+std::string nameVon(const std::string& pfad, int slot) {
+    const std::vector<uint8_t> p = lies(pfad, platzOffset(slot), kPlatz);
+    std::string name, typ;
+    for (int k = 1; k <= 8; ++k)  name += static_cast<char>(p[static_cast<size_t>(k)] & 0x7F);
+    for (int k = 9; k <= 11; ++k) typ  += static_cast<char>(p[static_cast<size_t>(k)] & 0x7F);
+    while (!name.empty() && name.back() == ' ') name.pop_back();
+    while (!typ.empty()  && typ.back()  == ' ') typ.pop_back();
+    return typ.empty() ? name : name + "." + typ;
+}
+
+/// @brief Groesse, die das Verzeichnis fuer diese Datei angibt.
+uint64_t groesseLaut(DiskVolume& v, const std::string& name) {
+    for (const FileEntry& e : v.list())
+        if (e.qualifiedName() == name) return e.size;
+    return 0;
+}
+
 /// @brief Inhaltsverzeichnis + alle Dateiinhalte — die Gegenprobe „nichts kaputtgemacht".
 std::vector<std::pair<std::string, uint64_t>> bestand(DiskVolume& v) {
     std::vector<std::pair<std::string, uint64_t>> out;
@@ -251,6 +269,78 @@ TEST(FsCheckAutomatik, DasOeffnenPruefRSchonSelbst) {
     EXPECT_TRUE(v->checkReport().ohneBefund()) << kennungen(v->checkReport());
 }
 
+// ═══ 2a. Die Checkliste (§5a) ════════════════════════════════════════════════
+
+/// @test Jeder Lauf meldet seine Schritte, und jeder Befund landet in genau einem.
+///       Ohne das sagt „ohne Befund" nicht, WORAUF gesehen wurde.
+TEST(FsCheckCheckliste, JederLaufMeldetSeineSchritte) {
+    auto v = oeffne(fixture("cpa_cpa780_k5601_noclock.img"));
+    ASSERT_TRUE(v);
+    const FsCheckReport& schnell = v->check(FsCheckLevel::Schnell, true);
+    ASSERT_FALSE(schnell.schritte.empty());
+    // Auch der uebersprungene Schritt steht in der Liste — mit seinem Grund.
+    const auto datenbereich = std::find_if(
+        schnell.schritte.begin(), schnell.schritte.end(),
+        [](const FsSchritt& s) { return s.id == "cpm.schritt.datenbereich"; });
+    ASSERT_NE(schnell.schritte.end(), datenbereich);
+    EXPECT_FALSE(datenbereich->ausgefuehrt);
+    EXPECT_FALSE(datenbereich->grund.empty());
+
+    const FsCheckReport& voll = v->check(FsCheckLevel::Voll, true);
+    const auto voll_daten = std::find_if(
+        voll.schritte.begin(), voll.schritte.end(),
+        [](const FsSchritt& s) { return s.id == "cpm.schritt.datenbereich"; });
+    ASSERT_NE(voll.schritte.end(), voll_daten);
+    EXPECT_TRUE(voll_daten->ausgefuehrt);
+    EXPECT_TRUE(voll_daten->grund.empty());
+    // Eine gesunde Diskette: jeder Schritt gelaufen, keiner mit Treffern.
+    for (const FsSchritt& s : voll.schritte) {
+        EXPECT_TRUE(s.ausgefuehrt) << s.id;
+        EXPECT_EQ(0, s.treffer) << s.id;
+    }
+}
+
+/// @test Ein Befund wird dem Schritt zugeschlagen, in dem er entsteht — und die
+///       Summe der Schritte deckt sich mit der Zahl der Befunde.
+TEST(FsCheckCheckliste, BefundeLandenInIhremSchritt) {
+    const std::string d = kopie("cpa_cpa780_k5601_noclock.img", "fscheck_schritt.img");
+    const int slot = ersterPlatz(d);
+    ASSERT_GE(slot, 0);
+    // Steuerzeichen im Namen — ein Befund der Verzeichnisebene.
+    schreib(d, kCpa780Dir + static_cast<uint64_t>(slot) * kPlatz + 1, {0x01});
+
+    auto v = oeffneErzwungen(d);
+    ASSERT_TRUE(v);
+    const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
+    ASSERT_FALSE(r.findings.empty());
+
+    int summe = 0;
+    for (const FsSchritt& s : r.schritte) summe += s.treffer;
+    EXPECT_EQ(static_cast<int>(r.findings.size()), summe)
+        << "jeder Befund gehoert in genau einen Schritt";
+
+    const auto verz = std::find_if(
+        r.schritte.begin(), r.schritte.end(),
+        [](const FsSchritt& s) { return s.id == "cpm.schritt.verzeichnis"; });
+    ASSERT_NE(r.schritte.end(), verz);
+    EXPECT_GT(verz->treffer, 0);
+    EXPECT_GE(static_cast<int>(verz->hoechste), static_cast<int>(FsSeverity::Warnung));
+}
+
+/// @test Ueber beide Seiten einer UDOS-Diskette bleibt die Checkliste EINE Liste:
+///       dieselbe Kennung ist derselbe Schritt, die Treffer addieren sich.
+TEST(FsCheckCheckliste, ZweiSeitenErgebenEineListe) {
+    auto v = oeffne(fixture("udos_boot_scp.hfe"));
+    ASSERT_TRUE(v);
+    ASSERT_GT(v->volumeCount(), 1u);
+    const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
+
+    std::map<std::string, int> wie_oft;
+    for (const FsSchritt& s : r.schritte) ++wie_oft[s.id];
+    for (const auto& [id, n] : wie_oft)
+        EXPECT_EQ(1, n) << "Schritt " << id << " steht " << n << "-mal in der Liste";
+}
+
 /// @test Die Zahlenwerte der Schweregrade sind ein Vertrag (E5) — sie gehen als
 ///       `int` ueber die C-ABI und stehen in `--json`.
 TEST(FsCheckVertrag, SchweregradeUndEbenenSindStabil) {
@@ -311,6 +401,62 @@ TEST(FsCheckCpmSchaden, WilderBlockzeiger) {
 
     // Die uebrigen Dateien stehen unveraendert da.
     EXPECT_EQ(vorher.size(), bestand(*v).size());
+    fs::remove(d);
+}
+
+/// @test Die angesagte GROESSE muss durch Blockzeiger gedeckt sein (§7.1a).
+///
+/// Der Fall, um den es geht, faellt sonst NIEMANDEM auf: `CpmFileSystem::read`
+/// fuellt einen leeren Blockzeiger mit Nullen und schneidet am Schluss auf die im
+/// Verzeichnis angesagte Laenge.  Die Datei kommt also in voller Groesse heraus —
+/// zur Haelfte erfunden.  Genau deshalb prueft der Abgleich die Zeiger gegen die
+/// Satzzahl, und zwar schon in der Schnellpruefung.
+TEST(FsCheckCpmSchaden, AngesagteGroesseOhneDeckung) {
+    const std::string d = kopie("cpa_cpa780_k5601_noclock.img", "fscheck_groesse.img");
+    const int slot = ersterPlatz(d);
+    ASSERT_GE(slot, 0);
+
+    const std::string name = nameVon(d, slot);
+    {
+        auto v0 = oeffneErzwungen(d);
+        ASSERT_TRUE(v0);
+        ASSERT_GT(groesseLaut(*v0, name), 4096u)
+            << "die Fixture-Datei ist zu klein fuer den Fall";
+    }
+
+    // Die hinteren sechs der acht 16-Bit-Zeiger loeschen: die Satzzahl bleibt, die
+    // Daten dahinter sind nicht mehr benannt.
+    schreib(d, platzOffset(slot) + 20, std::vector<uint8_t>(12, 0x00));
+
+    // Schreibend, weil dieser Test die Reparatur mitfaehrt.
+    std::string err;
+    auto v = DiskVolume::open(d, "cpa780", formate(), dateisysteme(), err,
+                              /*read_only=*/false);
+    ASSERT_TRUE(v) << err;
+    const FsCheckReport& r = v->check(FsCheckLevel::Schnell, true);
+    const std::vector<FsFinding> f = mitId(r, "cpm.dir.groesse");
+    ASSERT_EQ(1u, f.size()) << kennungen(r);
+    EXPECT_EQ(FsSeverity::Fehler, f[0].severity);
+    EXPECT_NE(std::string::npos, f[0].text.find("Nullen")) << f[0].text;
+    // Der Vorschlag macht die Angabe ehrlich, statt Daten zu erfinden.
+    ASSERT_EQ(1u, f[0].repairs.size());
+    EXPECT_EQ("cpm.rc.anpassen", f[0].repairs[0].kind);
+    EXPECT_TRUE(f[0].repairs[0].datenverlust);
+
+    // Und die Probe aufs Exempel — die Frage des Anwenders: ist die Datei nach dem
+    // Herausholen so gross, wie das Verzeichnis sagt?  VOR der Reparatur ist sie es
+    // auch, nur besteht der Fehlbetrag aus erfundenen Nullen; NACH ihr stimmt beides
+    // mit dem ueberein, was wirklich auf der Diskette steht.
+    ASSERT_GT(v->applyRepairs({{0, 0}}), 0) << v->lastError();
+    EXPECT_EQ(2u * 2048u, groesseLaut(*v, name)) << "zwei verbliebene Bloecke a 2048 B";
+    EXPECT_TRUE(v->check(FsCheckLevel::Schnell, true).ohneBefund())
+        << kennungen(v->checkReport());
+
+    const std::string ziel = d + ".raus";
+    ASSERT_TRUE(v->extract(FileRef::parse(name, 0), ziel, TransferOptions{}))
+        << v->lastError();
+    EXPECT_EQ(groesseLaut(*v, name), fs::file_size(ziel));
+    fs::remove(ziel);
     fs::remove(d);
 }
 

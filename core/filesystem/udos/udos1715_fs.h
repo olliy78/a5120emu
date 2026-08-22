@@ -80,6 +80,8 @@ public:
 
     std::vector<FileEntry> list() const override;
     std::vector<FileEntry> listNames() const override;
+    /// @brief Erster Sektor = der Kopfsektor bzw. Descriptor der Datei (§7.1b).
+    bool firstSector(const std::string& name, FsRecoverOrt& out) const override;
     bool detailsReady(const FileEntry& e) const override;
     bool loadDetails(FileEntry& e) const override;
     bool   read (const std::string& name, std::vector<uint8_t>& out) override;

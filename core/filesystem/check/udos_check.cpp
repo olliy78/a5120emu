@@ -113,6 +113,8 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
     brauche(prof_.bitmap_track);
 
     // ── Die Karte selbst ─────────────────────────────────────────────────────
+    bericht.schritt("udos.schritt.karte",
+                    "Belegungskarte: Plausibilitaet, Geometrie und Freizaehler");
     std::string warum;
     if (!bitmap_.looksValid(spt, static_cast<uint8_t>(space_.trackCount()), &warum))
         b.addAt("udos.karte.ungueltig", FsSeverity::Fehler, FsLayer::Verwaltung,
@@ -153,6 +155,8 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
     }
 
     // ── Die Verzeichnisdatei ─────────────────────────────────────────────────
+    bericht.schritt("udos.schritt.verzeichnisdatei",
+                    "Verzeichnisdatei: Kopfsektor, Typ und Satzkette");
     //
     // Sie ist der einzige feste Einstiegspunkt (§5).  Was hier bricht, macht die
     // ganze Seite unlesbar — deshalb steht sie noch in der Schnellpruefung.
@@ -221,6 +225,8 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
     }
 
     // ── Die Verzeichniseintraege ─────────────────────────────────────────────
+    bericht.schritt("udos.schritt.verzeichniseintraege",
+                    "Verzeichniseintraege: Namen und Zeiger auf die Kopfsektoren");
     const std::vector<UdosDirEntry> verz = directory();
     std::map<std::string, int> namen;
     for (const UdosDirEntry& e : verz) {
@@ -234,6 +240,12 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
     }
 
     if (level == FsCheckLevel::Schnell) {
+        bericht.schrittEntfaellt("udos.schritt.dateien",
+                                 "Jede Datei: Kopfsektor, Satzkette und Kreuzbelegung",
+                                 "nur bei der Vollpruefung");
+        bericht.schrittEntfaellt("udos.schritt.karte_gegen_ketten",
+                                 "Karte gegen Ketten: belegte Sektoren, die als frei "
+                                 "gefuehrt sind", "nur bei der Vollpruefung");
         abschluss();
         bericht.begrenzen(kMaxJeKennung);
         bericht.sortieren();
@@ -244,6 +256,8 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
 
     // Jeder Sektor, der zu einer Datei gehoert — Schluessel fuer Kreuzbelegung und
     // fuer den Abgleich mit der Karte.
+    bericht.schritt("udos.schritt.dateien",
+                    "Jede Datei: Kopfsektor, Satzkette und Kreuzbelegung");
     std::map<uint32_t, std::string> gehoert;
     for (uint32_t s : eigen) gehoert.emplace(s, "DIRECTORY");
 
@@ -454,6 +468,8 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
     // Gefahr (die Datei ist heil und wird beim naechsten Schreiben ueberschrieben),
     // die andere nur verlorener Platz.
     if (bericht.vollstaendig) {
+        bericht.schritt("udos.schritt.karte_gegen_ketten",
+                        "Karte gegen Ketten: belegte Sektoren, die als frei gefuehrt sind");
         std::map<std::string, std::vector<UdosPointer>> offen;   // Datei → ihre Sektoren
         for (const auto& [s, wem] : gehoert) {
             const uint8_t t = static_cast<uint8_t>(s / spt);
@@ -602,6 +618,12 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
 
     abschluss();
     bericht.begrenzen(kMaxJeKennung);
+    if (!bericht.vollstaendig)
+        bericht.schrittEntfaellt("udos.schritt.karte_gegen_ketten",
+                                 "Karte gegen Ketten: belegte Sektoren, die als frei gefuehrt sind",
+                                 "das Speicherabbild ist unvollstaendig — der Abgleich "
+                                 "braucht jede Spur");
+    bericht.schrittEnde();
     bericht.sortieren();
     return bericht;
 }

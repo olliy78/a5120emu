@@ -127,8 +127,9 @@ class MainWindow(QMainWindow):
         self._zustand_laden()
 
         self._aktionen_pruefen()
-        if folder:
-            self.folder_view.set_folder(folder)
+        # Die Ordnerseite ist NIE leer: ohne Angabe steht der Standardordner
+        # darin (§20.10) — von dort klickt man sich zum Ziel.
+        self.folder_view.set_folder(folder or paths.default_folder_dir())
         if image:
             self.open_image(image)
 
@@ -143,6 +144,14 @@ class MainWindow(QMainWindow):
 
         self.disk_view = DiskView()
         self.folder_view = FolderView()
+        # Beide Listen sollen auf derselben Höhe beginnen.  Links steht eine
+        # Überschrift, rechts eine Adresszeile mit Knopf — die ist höher, und der
+        # Unterschied fiel als Versatz zwischen den beiden Hälften auf.  Gebunden
+        # wird an die GRÖSSERE der beiden, damit nichts abgeschnitten wird.
+        hoehe = max(self.disk_view.titel.sizeHint().height(),
+                    self.folder_view.kopfzeile.sizeHint().height())
+        self.disk_view.titel.setFixedHeight(hoehe)
+        self.folder_view.kopfzeile.setFixedHeight(hoehe)
 
         # Die Mittelspalte bleibt: räumlich ist „von hier nach dort" eindeutiger
         # als jeder Menüpunkt.  Sie zeigt dieselben Aktionen wie Menü und Leiste.
@@ -223,6 +232,7 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_schreiben)
         m.addAction(self.act_loeschen)
         m.addSeparator()
+        m.addAction(self.act_datei_im_editor)
         m.addAction(self.act_eigenschaften)
 
         m = leiste.addMenu("Dis&kette")
@@ -257,6 +267,8 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_text)
         m.addSeparator()
         m.addAction(self.act_ordner)
+        m.addAction(self.act_neuer_ordner)
+        m.addAction(self.act_umbenennen)
 
         self.menue_ansicht = leiste.addMenu("&Ansicht")   # gefüllt in _baue_leiste
 
@@ -385,6 +397,9 @@ class MainWindow(QMainWindow):
         self.kopf.filesystem_gewaehlt.connect(
             lambda name: self._fs_setzen(name, neu_oeffnen=True))
         self.folder_view.choose_requested.connect(self._ordner_dialog)
+        self.folder_view.hinweis.connect(self.log)
+        # Der Ordnerwechsel entscheidet mit über „Neuer Ordner"/„Umbenennen".
+        self.folder_view.folder_changed.connect(lambda _: self._aktionen_pruefen())
         self.folder_view.disk_files_dropped.connect(self._extrahieren_refs)
         self.disk_view.files_dropped.connect(self._einfuegen_pfade)
         self.disk_view.properties_requested.connect(self._eigenschaften_ref)
@@ -394,9 +409,11 @@ class MainWindow(QMainWindow):
         self.folder_view.tree.itemSelectionChanged.connect(self._aktionen_pruefen)
 
         # Beide Listen zeigen dieselben Aktionen im Kontextmenü.
-        self.disk_view.setze_aktionen(self.act_eigenschaften, self.act_holen,
-                                      self.act_loeschen)
-        self.folder_view.setze_aktionen(self.act_schreiben, self.act_ordner)
+        self.disk_view.setze_aktionen(self.act_eigenschaften, self.act_datei_im_editor,
+                                      None, self.act_holen, self.act_loeschen)
+        self.folder_view.setze_aktionen(self.act_schreiben, None,
+                                        self.act_neuer_ordner, self.act_umbenennen,
+                                        None, self.act_ordner)
 
         self.gruppe_modus.triggered.connect(lambda *_: self._modus_geaendert())
 
@@ -554,8 +571,16 @@ class MainWindow(QMainWindow):
         self.act_holen.setEnabled(offen and disk_auswahl)
         self.act_eigenschaften.setEnabled(offen and len(
             self.disk_view.selected_refs()) == 1)
+        # Genau EINE Datei — ein Sprung führt an einen Ort, nicht an drei.
+        self.act_datei_im_editor.setEnabled(
+            mit_fs and len(self.disk_view.selected_refs()) == 1)
         self.act_loeschen.setEnabled(schreibbar and disk_auswahl)
         self.act_schreiben.setEnabled(schreibbar and ordner_auswahl)
+
+        # Die beiden Ordner-Aktionen hängen NICHT an der Diskette: sie arbeiten im
+        # Wirtsystem und gelten auch dann, wenn gar keine Diskette offen ist.
+        self.act_neuer_ordner.setEnabled(self.folder_view.folder is not None)
+        self.act_umbenennen.setEnabled(self.folder_view.umbenennbar() is not None)
 
         # Systemspuren gibt es nicht überall — eine Datendiskette (cpa800) beginnt
         # auf Zylinder 0 und hat nichts zu sichern.
@@ -1976,6 +2001,27 @@ class MainWindow(QMainWindow):
         # beendet — dann gibt es nichts mehr zu prüfen.
         return self._physisch is None or bool(self._physisch.stats())
 
+    def _datei_im_editor(self) -> None:
+        """Die ausgewählte Datei im Diskeditor aufschlagen — an ihrem ERSTEN Sektor.
+
+        Bei CP/M ist das der erste Block von Extent 0, bei UDOS/NDOS der Kopfsektor;
+        dort stehen Typ, Länge und Segmente, also das, was man sehen will.  Gibt es
+        den Ort nicht (Datei ohne Block), sagt es die Statuszeile — ein Sprung ins
+        Nichts wäre schlimmer als keiner.
+        """
+        refs = self.disk_view.selected_refs()
+        if self.tool is None or len(refs) != 1:
+            return
+        ort = self.tool.first_sector(refs[0])
+        if ort is None:
+            self.statusBar().showMessage(
+                f"{refs[0]}: kein Sektor zu zeigen — die Datei belegt keinen Block.",
+                STATUS_DAUER)
+            return
+        self._befund_im_editor(*ort)
+        self.log(f"{refs[0]} beginnt auf Zylinder {ort[0]}, Kopf {ort[1]}, "
+                 f"Sektor {ort[2]}")
+
     def _befund_im_editor(self, zylinder: int, kopf: int, sektor: int) -> None:
         """Den Ort eines Befundes im Diskeditor aufschlagen (Entwurf E9)."""
         editor = self.open_disk_editor()
@@ -2075,6 +2121,14 @@ class MainWindow(QMainWindow):
             self, "Ordner wählen", self._ordner_startpunkt())
         if pfad:
             self.folder_view.set_folder(pfad)
+
+    # Anlegen und Umbenennen geschehen im ORDNER; das Fenster reicht nur durch,
+    # damit es die eine Aktion für Menü und Kontextmenü gibt (§20.3).
+    def _neuer_ordner(self) -> None:
+        self.folder_view.neuer_ordner()
+
+    def _umbenennen(self) -> None:
+        self.folder_view.umbenennen_starten()
 
     def _fs_setzen(self, name: str, *, neu_oeffnen: bool) -> None:
         """Dateisystemwahl in Kopf UND Menü setzen — und ggf. neu öffnen.

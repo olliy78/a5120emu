@@ -396,6 +396,19 @@ std::vector<FileEntry> Udos1715FileSystem::list() const {
     return out;
 }
 
+bool Udos1715FileSystem::firstSector(const std::string& name, FsRecoverOrt& out) const {
+    // Wie bei ZDOS der Kopfsektor — hier heisst er Descriptor, und eine „Spur" ist
+    // der ganze Zylinder: der Kopf ergibt sich aus dem Sektorindex (§21.3).
+    for (const UdosDirEntry& e : directory()) {
+        if (e.name != name) continue;
+        out.cyl    = e.header.track;
+        out.head   = headOf(e.header);
+        out.sector = idOf(e.header);
+        return true;
+    }
+    return false;
+}
+
 bool Udos1715FileSystem::detailsReady(const FileEntry& e) const {
     if (e.details_loaded) return true;
     for (const UdosDirEntry& d : directory())

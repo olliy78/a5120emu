@@ -75,14 +75,28 @@ nimmt zusätzlich die Medienebene dazu.
 $ k1520disktool check scp1700.hfe --full
 scp1700.hfe  scp1700_640 / scp1700  Vollpruefung
 
+  [x] Spuren bereitstellen — was gelesen ist, wird angesehen
+  [x] Verzeichnissektoren: Adressmarken und Pruefsummen
+  [x] Verzeichnis: Plaetze, Namen, Extents und Blockzeiger
+  [x] Kreuzbelegung: gehoert ein Block zwei Dateien?
+  [x] Vollstaendigkeit der Dateien: fehlt ein Extent?
+  [x] Datenbereich: jeder Sektor jeder Spur, mit Zuordnung zur Datei
+  [!] Systemspuren: Adressmarken und Pruefsummen (Bootfaehigkeit)  — 2 Befund(e)
+  [x] Erkennung gegenproben: passt ein anderes Profil besser?
+
 Warnung Medium     c0h0        Systemspur      cpm.medium.systemspur   Daten-CRC von Sektor 5 …
 Warnung Medium     c0h0        Systemspur      cpm.medium.systemspur   Sektor 10 der Systemspur c0h0 fehlt
 
 2 Warnung
 ```
 
-Eine Zeile je Befund, Spalten `SCHWERE  EBENE  [SEITE]  ORT  OBJEKT  KENNUNG  Text` —
-greptauglich.  Rückgabewert **0** ohne Befund, **1** mit.
+Zuerst die **Checkliste** — je Arbeitsschritt eine Zeile: `[x]` gelaufen und ohne
+Befund, `[!]` gelaufen und fündig, `[-]` übersprungen (mit Grund, etwa „nur bei der
+Vollprüfung").  Sie beantwortet das, was „ohne Befund" offenlässt: worauf wurde
+gesehen.  Mit `--json` steht sie unter `"steps"`.
+
+Danach eine Zeile je Befund, Spalten `SCHWERE  EBENE  [SEITE]  ORT  OBJEKT  KENNUNG
+Text` — greptauglich.  Rückgabewert **0** ohne Befund, **1** mit.
 
 **Vier Schweregrade**, und der oberste ist der, auf den es ankommt:
 

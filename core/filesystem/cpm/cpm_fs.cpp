@@ -278,6 +278,46 @@ std::vector<FileEntry> CpmFileSystem::list() const {
     return out;
 }
 
+bool CpmFileSystem::firstSector(const std::string& name, FsRecoverOrt& out) const {
+    int gesucht_user = 0;
+    std::string gesucht_name;
+    splitUser(name, gesucht_user, gesucht_name);
+    gesucht_name = upper(gesucht_name);
+
+    // Der Anfang der Datei ist der erste Blockzeiger des KLEINSTEN Extents — nicht
+    // der des ersten gefundenen Verzeichnisplatzes: die Plaetze einer Datei stehen
+    // im Verzeichnis in beliebiger Reihenfolge.
+    // KOPIE, kein Zeiger: `directory()` gibt den Vektor als Wert zurueck — ein
+    // Zeiger hinein zeigte nach der Schleife ins Leere (und lieferte stumm nichts).
+    CpmDirEntry anfang;
+    bool gefunden = false;
+    for (const CpmDirEntry& d : directory()) {
+        if (d.free() || d.user > 15) continue;
+        if (d.user != gesucht_user || upper(d.name) != gesucht_name) continue;
+        if (!gefunden || d.extent < anfang.extent) { anfang = d; gefunden = true; }
+    }
+    if (!gefunden) return false;
+
+    uint16_t blk = 0;
+    for (uint16_t b : anfang.blocks) if (b != 0) { blk = b; break; }
+    if (blk == 0 || blk >= total_blocks_) return false;
+
+    const int start = space_.trackIndexOf(prof_.data_cyl, prof_.data_head);
+    if (start < 0) return false;
+    const uint64_t track_bytes = static_cast<uint64_t>(secs_per_track_) * sector_size_;
+    const uint64_t off = static_cast<uint64_t>(blk) * prof_.block_size;
+    const size_t   ti  = static_cast<size_t>(off / track_bytes);
+    if (static_cast<size_t>(start) + ti >= space_.trackCount()) return false;
+
+    const SectorSpace::TrackRef t = space_.trackAt(static_cast<size_t>(start) + ti);
+    out.cyl  = t.cyl;
+    out.head = t.head;
+    // Die KENNUNG, nicht der Versatz in der Spur (wie bei den Funden der Rettung):
+    // der Diskeditor sucht den Sektor ueber seine ID.
+    out.sector = t.first_id + skew_tab_[(off % track_bytes) / sector_size_];
+    return true;
+}
+
 bool CpmFileSystem::read(const std::string& name, std::vector<uint8_t>& out) {
     int gesucht_user = 0;
     std::string gesucht_name;

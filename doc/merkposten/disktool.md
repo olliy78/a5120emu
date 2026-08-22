@@ -184,6 +184,30 @@ Was beim Weiterarbeiten zu wissen ist:
   keine Fusszeile).  Der **Schreibschutzknopf zeigt seinen Zustand** — Symbol UND
   Beschriftung wechseln (🔒 `R/O` ↔ 🔓 `R/W`, `_schutz_anzeigen()`); ein rastender
   Knopf allein ist nicht lesbar.
+  **(2b) Die Ordnerseite ist ein kleiner DATEIBROWSER (§20.10)** — Adresszeile
+  (editierbar, Eingabetaste wechselt) + Ordnerknopf oben, `..` als erste Zeile,
+  Verzeichnis öffnen beim Aktivieren (`itemActivated`, also Doppelklick/`Enter` —
+  und einfacher Klick, wo das Thema es so vorsieht), Rücktaste = hinauf.  Beim Start
+  steht der **Standardordner** darin; den Zustand „kein Ordner gewählt" gibt es nicht
+  mehr.  Zwei Dinge nicht aufweichen: **`SideN/` bleibt die EINZIGE aufgeklappte
+  Gruppe** (jeder andere Ordner ist ein Wegpunkt — sonst stünde in einem
+  Heimatverzeichnis der Inhalt sämtlicher Unterordner), und **navigiert wird nur beim
+  Aktivieren, nicht bei der Auswahl**: ein Einfachklick auf `Side0/` muss die Gruppe
+  auswählen können, denn daran hängt `selected_side()` = die Zielseite beim Schreiben.
+  Die Kopfzeilen BEIDER Hälften werden auf dieselbe Höhe gebunden (`_baue_mitte`),
+  sonst begänne die rechte Liste tiefer als die linke.
+  **(2c) Anlegen/Umbenennen im Ordner + der leere Fall (§20.11).**  Links steht
+  „Keine Dateien gefunden" **im Hintergrund des leeren Feldes** (`_Tree.paintEvent`),
+  sobald eine GEÖFFNETE Diskette nichts hergibt (leer formatiert oder roh geöffnet) —
+  keine Platzhalterzeile, die sich auswählen und mitzählen liesse; ohne Diskette bleibt
+  es leer.  Rechts legt `Neuer Ordner` (Strg+Umschalt+N) `neu`/`neu2`/… an und öffnet
+  sofort das Eingabefeld, `Umbenennen` (F2) tut es an einem vorhandenen Eintrag.
+  Drei Fallen: der Baum braucht **`NoEditTriggers`** (sonst öffnet der navigierende
+  Doppelklick das Feld), `itemChanged` darf **nur für die gemerkte Zeile** gelten
+  (es kommt auch beim Listenaufbau), und der **Schrägstrich am Ordnernamen ist
+  Darstellung** — er gehört nicht ins Eingabefeld.  Fehlschläge (Name vergeben,
+  `/` im Namen, Fehler des Wirtsystems) gehen über `hinweis` in Statuszeile und
+  Protokoll; überschrieben wird nie.
   **(3) Sechs Meldungsorte, sechs Rollen (§20.4):** Titel = Identität + Qt-eigene
   Änderungsmarke (`[*]` + `setWindowModified`, **kein** selbstgemaltes `●`);
   Kopfbereich = dauerhafte Eigenschaften; Streifen (`ui/info_bar.py`) = dauerhafte
@@ -280,6 +304,49 @@ Was beim Weiterarbeiten zu wissen ist:
   als zweite Tabelle „DATEIANGABEN IM EINZELNEN“ — für die Wiederherstellung von Hand;
   maschinell reichen die Beiblätter im selben Archiv.  Wächter: `CpmFileSystemAttrs.*`,
   `DiskVolume.CpmBeiblatt*`, `py_disktool_gui`.
+- **Von der Datei zu ihren Bytes — `firstSector`** (2026-08-22, §7.1b).  Rechtsklick
+  auf eine Datei → *Im Diskeditor öffnen* springt auf ihren ersten Sektor (CP/M: erster
+  Blockzeiger des KLEINSTEN Extents; UDOS/NDOS: der Kopfsektor aus dem
+  Verzeichniseintrag, ohne Spurzugriff).  Geliefert wird die Sektor-**Kennung**, nicht
+  der Versatz.  **Falle:** `directory()` gibt den Vektor als WERT zurück — ein Zeiger
+  hinein zeigt nach der Schleife ins Leere und lieferte für jede CP/M-Datei stumm
+  „nichts" (deshalb eine Kopie).  Dazu sind die UDOS-Zeiger im Diskeditor jetzt
+  **Verweise** (`zurück:`/`vor:` anklickbar, Kettenende bleibt Text) — die Sätze einer
+  UDOS-Datei liegen verstreut, und die Kette war vorher nur durch Abtippen zu
+  verfolgen.  Wächter: `test_eine_datei_laesst_sich_im_diskeditor_aufschlagen`,
+  `test_die_udos_zeiger_im_diskeditor_sind_verweise`.
+- **Stimmt die angesagte Dateigrösse? — `cpm.dir.groesse`** (2026-08-21, §7.1a).
+  Bei CP/M steht die LAENGE im Verzeichnis (EX + RC), die DATEN stehen in den
+  Blockzeigern; laufen beide auseinander, merkt es **niemand**: `CpmFileSystem::read`
+  füllt einen leeren Zeiger mit Nullen und schneidet auf die angesagte Länge — die
+  Datei kommt in voller Grösse heraus, teilweise erfunden.  Nachgestellt (6 von 8
+  Zeigern genullt): `check --full` sagte „ohne Befund", `get` lieferte 14464 Byte mit
+  10368 Byte Nullen.  Jetzt rechnet die Prüfung je Platz `belegte Zeiger` gegen
+  `aufgerundet(angesagt / Blockgrösse)` — zu wenig = Fehler (Vorschlag
+  `cpm.rc.anpassen`, als Datenverlust gekennzeichnet), zu viel = Warnung.  Drei
+  Fallen: der Abgleich läuft schon in der **Schnellprüfung** (er braucht nur das
+  Verzeichnis), `belegte == 0 && RC > 0` bleibt `cpm.dir.leer`, und bei **`RC > 128`
+  wird gar nicht gerechnet** (das ist `cpm.dir.rc`, sonst zwei Befunde für einen
+  Schaden — genau das deckte `FsCheckReparatur.CpmSatzzahlWirdAngepasst` auf).
+  Bei UDOS/NDOS gab es den Abgleich längst (`udos.kette.bruch`, `ndos.zeiger.anzahl`).
+  Wächter: `FsCheckCpmSchaden.AngesagteGroesseOhneDeckung` (fährt bis zum `extract`
+  und vergleicht die Bytezahl).
+- **Die Checkliste — und beide Dialoge rechnen beim Öffnen los** (2026-08-21,
+  `doc/design/15_dateisystempruefung.md` §5a).  Der Prüfdialog zeigte vorher nur den
+  Befund der Schnellprüfung vom Mounten, der Suchdialog stand auf „Verzeichnisreste":
+  an einer gesunden Diskette taten beide sichtbar **nichts**.  Jetzt läuft beim Öffnen
+  die Vollprüfung bzw. die Oberflächensuche (an einer Datei ~70 ms), und oben steht
+  eine Checkliste — eine Zeile je Schritt, mit Haken, Ergebnis und, bei einem
+  übersprungenen Schritt, dem Grund.  Fünf Festlegungen: **die Schritte kommen aus dem
+  Prüfer** (`FsSchritt`, `bericht.schritt(id, titel)`), nicht aus der Oberfläche;
+  **gezählt wird eifrig** in `FsFindings::add` bzw. `FsRecoverReport::hinzu` (die
+  vorzeitigen `return bericht;` und das spätere `sortieren()` machten jede
+  Nachrechnung über Indexbereiche kaputt); **ein übersprungener Schritt bleibt
+  sichtbar**; `uebernimm()` **führt gleiche Kennungen zusammen** (sonst steht jede
+  Zeile bei einer zweiseitigen UDOS-Diskette doppelt); und **E2 gilt weiter fürs
+  ÖFFNEN der Diskette**, nicht für den Dialog — bleibt das Abbild unvollständig
+  (physische Diskette), fällt es auf die Schnellprüfung zurück.  Wächter:
+  `FsCheckCheckliste.*`, `FsRecoverCheckliste.*`, `py_disktool_gui`.
 - **Dateisystempruefung (`fsck`) — Grundlagen und CP/M, Etappe 1** (2026-08-18,
   `doc/design/15_dateisystempruefung.md`).  `core/filesystem/check/` liefert das
   Modell (`FsFinding`/`FsSeverity`/`FsLayer`/`FsCheckReport`) und den CP/M-Pruefer;

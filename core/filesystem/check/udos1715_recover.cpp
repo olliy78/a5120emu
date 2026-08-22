@@ -144,6 +144,8 @@ FsRecoverReport Udos1715FileSystem::recoverScan(FsRecoverLevel level, bool nachl
         return static_cast<uint32_t>(p.track) * spt + p.sector_index;
     };
 
+    bericht.schritt("udos.suche.lebend",
+                    "Lebende Dateien einlesen — ihre Sektoren sind tabu");
     // ── 1. Was LEBT? ─────────────────────────────────────────────────────────
     if (!brauche(prof_.directory_track)) { abschluss(); return bericht; }
     brauche(prof_.bitmap_track);
@@ -176,6 +178,8 @@ FsRecoverReport Udos1715FileSystem::recoverScan(FsRecoverLevel level, bool nachl
     }
 
     // ── 2. Namensreste im Verzeichnis (§13, Kasten) ──────────────────────────
+    bericht.schritt("udos.suche.namensreste",
+                    "Namensreste im Verzeichnis — der Name ist das einzige, was fehlt");
     //
     // Wie bei ZDOS: `removeDirEntry` kompaktiert, der Name ist damit ueberschrieben.
     // Was hinter dem Endebyte noch wie ein Eintrag aussieht, gilt als **Vorschlag**.
@@ -214,6 +218,8 @@ FsRecoverReport Udos1715FileSystem::recoverScan(FsRecoverLevel level, bool nachl
     }
 
     // ── 3. Kandidaten: Sektoren mit der Signatur eines Descriptors ───────────
+    bericht.schritt("udos.suche.kopfsektoren",
+                    "Descriptoren suchen und ihre Zeigerketten verfolgen");
     std::set<uint32_t> vergeben;
     int laufende_nummer = 0;
 
@@ -341,7 +347,7 @@ FsRecoverReport Udos1715FileSystem::recoverScan(FsRecoverLevel level, bool nachl
             f.wiederherstellbar = false;
             f.warum_nicht       = kWegZurueck;
 
-            bericht.funde.push_back(std::move(f));
+            bericht.hinzu(std::move(f));
         }
     }
 
@@ -349,6 +355,13 @@ FsRecoverReport Udos1715FileSystem::recoverScan(FsRecoverLevel level, bool nachl
     //
     // Laeufe enden an der SPURGRENZE — sonst naenne der Dateiname eine zweite
     // Sektornummer, die auf einer anderen Spur liegt (§13.3).
+    if (level == FsRecoverLevel::Oberflaeche)
+        bericht.schritt("udos.suche.oberflaeche",
+                        "Rohbereiche: Inhalt ohne Descriptor");
+    else
+        bericht.schrittEntfaellt("udos.suche.oberflaeche",
+                                 "Rohbereiche: Inhalt ohne Descriptor",
+                                 "nur bei der Suche ueber die ganze Oberflaeche");
     if (level == FsRecoverLevel::Oberflaeche) {
         std::vector<UdosPointer> lauf;
         std::vector<uint8_t>     lauf_daten;
@@ -384,7 +397,7 @@ FsRecoverReport Udos1715FileSystem::recoverScan(FsRecoverLevel level, bool nachl
                           " gerettet wird der Rohinhalt (" + f.type + ")";
             f.warum_nicht = "Ein Rohbereich hat keinen Descriptor, aus dem sich eine Datei"
                             " bauen liesse — herausholen laesst er sich aber";
-            bericht.funde.push_back(std::move(f));
+            bericht.hinzu(std::move(f));
             lauf.clear();
             lauf_daten.clear();
         };
@@ -405,6 +418,7 @@ FsRecoverReport Udos1715FileSystem::recoverScan(FsRecoverLevel level, bool nachl
         laufAbschliessen();
     }
 
+    bericht.schrittEnde();
     abschluss();
     return bericht;
 }

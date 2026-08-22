@@ -34,6 +34,7 @@
 #include <string>
 #include <vector>
 
+#include "core/filesystem/check/fs_check.h"
 #include "core/filesystem/disk_volume.h"
 #include "core/filesystem/geometry_probe.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
@@ -211,6 +212,83 @@ TEST(Scp1700, VerzeichnisUndInhaltStimmen) {
 
     // 2 KB frei — die Diskette ist praktisch voll.
     EXPECT_EQ(dv->volumeInfo(0).free_bytes, 2048u);
+}
+
+/**
+ * @test Scp1700.AngesagteGroesseIstGedeckt
+ * @brief Der Groessenabgleich (15_dateisystempruefung.md §7.1a) an einer FREMDEN
+ *        CP/M-86-Diskette — erst als Gegenprobe, dann mit Schaden.
+ *
+ * Zwei Gruende, warum das hier eigens steht und nicht mit dem CP/A-Fall abgetan
+ * ist: die Diskette stammt von einem **anderen Betriebssystem** (CP/M-86, A7100)
+ * und ist eine **echte Aufnahme** vom Laufwerk.  Wenn die Rechnung
+ * `Blockzeiger × Blockgroesse ≥ Extent + Satzzahl` irgendwo an einer fremden
+ * Sitte scheitert, dann hier — und eine Falschmeldung auf 46 gesunden Dateien
+ * waere schlimmer als gar keine Pruefung (E10).
+ *
+ * Der zweite Teil ist die Frage des Anwenders: *ist die Datei beim Herausholen so
+ * gross, wie sie angegeben ist?*  Nachgemessen wird sie fuer JEDE der 46 Dateien.
+ */
+TEST(Scp1700, AngesagteGroesseIstGedeckt) {
+    std::string err;
+    auto dv = oeffne(fixture(kFixture), err);
+    ASSERT_TRUE(dv) << err;
+
+    const FsCheckReport& r = dv->check(FsCheckLevel::Voll, true);
+    for (const FsFinding& f : r.findings)
+        EXPECT_NE("cpm.dir.groesse", f.id) << f.text;
+
+    // Und die Probe: angesagte Groesse == herausgeholte Bytes, Datei fuer Datei.
+    TempOrdner ziel("k1520_test_scp1700_groesse");
+    for (const FileEntry& e : dv->list()) {
+        const std::string pfad = (ziel / e.qualifiedName()).string();
+        ASSERT_TRUE(dv->extract(FileRef{0, e.qualifiedName()}, pfad, TransferOptions{}))
+            << e.qualifiedName() << ": " << dv->lastError();
+        EXPECT_EQ(e.size, fs::file_size(pfad)) << e.qualifiedName();
+    }
+}
+
+/**
+ * @test Scp1700.FehlendeBlockzeigerWerdenGemeldet
+ * @brief Derselbe Schaden wie im CP/A-Fall, aber auf der echten A7100-Diskette.
+ *
+ * Beschaedigt wird ueber den **Sektorweg** (`writeSectorAt`), nicht ueber die Datei:
+ * eine `.hfe` ist kein linearer Sektorraum, in den sich mit `pwrite` hineingreifen
+ * liesse.
+ */
+TEST(Scp1700, FehlendeBlockzeigerWerdenGemeldet) {
+    Arbeitskopie kopie("scp1700_groesse.hfe");
+    std::string err;
+    auto dv = oeffne(kopie.pfad(), err);
+    ASSERT_TRUE(dv) << err;
+    dv->setReadOnly(false);
+
+    // Erster Verzeichnissektor: c2h0, Sektor 0 (das Dateisystem beginnt dort).
+    std::vector<uint8_t> sektor;
+    uint16_t crc = 0;
+    ASSERT_TRUE(dv->readSectorAt(2, 0, 0, sektor, crc)) << dv->lastError();
+    ASSERT_GE(sektor.size(), 32u);
+
+    // Ersten belegten Platz suchen und die hinteren sechs 16-Bit-Zeiger loeschen.
+    int platz = -1;
+    for (size_t i = 0; i + 32 <= sektor.size(); i += 32)
+        if (sektor[i] <= 15) { platz = static_cast<int>(i / 32); break; }
+    ASSERT_GE(platz, 0);
+    const size_t p = static_cast<size_t>(platz) * 32;
+    const uint8_t saetze = sektor[p + 15];
+    ASSERT_GT(saetze, 96) << "die Datei muss mehr als 6 Bloecke belegen";
+    for (size_t k = 20; k < 32; ++k) sektor[p + k] = 0;
+    ASSERT_TRUE(dv->writeSectorAt(2, 0, 0, sektor, nullptr)) << dv->lastError();
+
+    const FsCheckReport& r = dv->check(FsCheckLevel::Schnell, true);
+    int getroffen = 0;
+    for (const FsFinding& f : r.findings)
+        if (f.id == "cpm.dir.groesse") {
+            ++getroffen;
+            EXPECT_EQ(FsSeverity::Fehler, f.severity);
+            EXPECT_NE(std::string::npos, f.text.find("Nullen")) << f.text;
+        }
+    EXPECT_EQ(1, getroffen);
 }
 
 /**

@@ -72,12 +72,60 @@ void FsRecoverReport::sortieren() {
     });
 }
 
+FsSchritt& FsRecoverReport::schritt(std::string id, std::string titel) {
+    for (size_t k = 0; k < schritte.size(); ++k)
+        if (schritte[k].id == id) {
+            aktueller_schritt = static_cast<int>(k);
+            schritte[k].ausgefuehrt = true;
+            schritte[k].grund.clear();
+            return schritte[k];
+        }
+    FsSchritt s;
+    s.id    = std::move(id);
+    s.titel = std::move(titel);
+    schritte.push_back(std::move(s));
+    aktueller_schritt = static_cast<int>(schritte.size()) - 1;
+    return schritte.back();
+}
+
+void FsRecoverReport::schrittEntfaellt(std::string id, std::string titel,
+                                       std::string grund) {
+    for (const FsSchritt& vorhanden : schritte)
+        if (vorhanden.id == id) return;
+    FsSchritt s;
+    s.id          = std::move(id);
+    s.titel       = std::move(titel);
+    s.ausgefuehrt = false;
+    s.grund       = std::move(grund);
+    schritte.push_back(std::move(s));
+    aktueller_schritt = -1;
+}
+
+void FsRecoverReport::hinzu(FsRecoverFind f) {
+    funde.push_back(std::move(f));
+    if (aktueller_schritt >= 0 && static_cast<size_t>(aktueller_schritt) < schritte.size())
+        ++schritte[static_cast<size_t>(aktueller_schritt)].treffer;
+}
+
 void FsRecoverReport::uebernimm(const FsRecoverReport& anderer) {
     funde.insert(funde.end(), anderer.funde.begin(), anderer.funde.end());
     if (!anderer.vollstaendig) vollstaendig = false;
     spuren_gelesen += anderer.spuren_gelesen;
     spuren_gesamt  += anderer.spuren_gesamt;
     if (anderer.level > level) level = anderer.level;
+    // Wie bei der Pruefung: dieselbe Kennung ist derselbe Schritt (beide Seiten
+    // einer UDOS-Diskette ergeben sonst zweimal dieselbe Zeile).
+    for (const FsSchritt& s : anderer.schritte) {
+        auto gefunden = std::find_if(schritte.begin(), schritte.end(),
+                                     [&](const FsSchritt& x) { return x.id == s.id; });
+        if (gefunden == schritte.end()) { schritte.push_back(s); continue; }
+        gefunden->treffer += s.treffer;
+        if (s.ausgefuehrt && !gefunden->ausgefuehrt) {
+            gefunden->ausgefuehrt = true;
+            gefunden->grund.clear();
+        }
+    }
+    aktueller_schritt = -1;
 }
 
 std::string FsRecoverReport::alsText(bool mit_volume) const {

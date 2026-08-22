@@ -65,6 +65,7 @@ struct Handle {
                 s_segments;
     std::string s_fmt, s_fs, s_alt, s_remarks, s_fit, s_check;
     std::string s_bid, s_bobj, s_btext, s_bsum;   ///< Puffer der Pruefung
+    std::string s_sid, s_stitel, s_swarum;        ///< Puffer der Checkliste (§5a)
     std::string s_rid, s_rtext, s_rwhy;           ///< Puffer der Reparatur
     std::string s_fname, s_ftype, s_forigin, s_fvor, s_fdetail, s_fwhy;
                                                   ///< Puffer der Wiederherstellung
@@ -772,6 +773,13 @@ extern "C" bool k1520d_erase(K1520Disk h, const char* name) {
     return H(h)->vol->erase(FileRef::parse(name));
 }
 
+extern "C" bool k1520d_file_first_sector(K1520Disk h, const char* name,
+                                        int* cyl, int* head, int* sector) {
+    if (!h || !name || !cyl || !head || !sector) return false;
+    *cyl = *head = *sector = -1;
+    return H(h)->vol->firstSector(FileRef::parse(name), *cyl, *head, *sector);
+}
+
 extern "C" bool k1520d_extract_all(K1520Disk h, const char* dest_dir, K1520DMode mode) {
     if (!h || !dest_dir) return false;
     return H(h)->vol->extractAll(dest_dir, optionen(mode, /*overwrite=*/true));
@@ -854,6 +862,81 @@ extern "C" int k1520d_check_tracks_total(K1520Disk h) {
 
 extern "C" const char* k1520d_check_summary(K1520Disk h) {
     return h ? halte(H(h)->s_bsum, H(h)->vol->checkReport().kurzfassung()) : "";
+}
+
+// ─── Die Checkliste (§5a) ────────────────────────────────────────────────────
+namespace {
+/// @brief Schritt @p k des Pruefberichts, oder nullptr.
+const FsSchritt* pschritt(K1520Disk h, int k) {
+    if (!h || k < 0) return nullptr;
+    const auto& liste = H(h)->vol->checkReport().schritte;
+    return static_cast<size_t>(k) < liste.size() ? &liste[static_cast<size_t>(k)] : nullptr;
+}
+/// @brief Schritt @p k des Suchlaufs, oder nullptr.
+const FsSchritt* sschritt(K1520Disk h, int k) {
+    if (!h || k < 0) return nullptr;
+    const auto& liste = H(h)->vol->recoverReport().schritte;
+    return static_cast<size_t>(k) < liste.size() ? &liste[static_cast<size_t>(k)] : nullptr;
+}
+}  // namespace
+
+extern "C" int k1520d_check_level(K1520Disk h) {
+    return h ? static_cast<int>(H(h)->vol->checkReport().level) : 0;
+}
+extern "C" int k1520d_recover_level(K1520Disk h) {
+    return h ? static_cast<int>(H(h)->vol->recoverReport().level) : 0;
+}
+
+extern "C" int k1520d_check_step_count(K1520Disk h) {
+    return h ? static_cast<int>(H(h)->vol->checkReport().schritte.size()) : 0;
+}
+extern "C" const char* k1520d_check_step_id(K1520Disk h, int k) {
+    const FsSchritt* s = pschritt(h, k);
+    return s ? halte(H(h)->s_sid, s->id) : "";
+}
+extern "C" const char* k1520d_check_step_title(K1520Disk h, int k) {
+    const FsSchritt* s = pschritt(h, k);
+    return s ? halte(H(h)->s_stitel, s->titel) : "";
+}
+extern "C" bool k1520d_check_step_done(K1520Disk h, int k) {
+    const FsSchritt* s = pschritt(h, k);
+    return s ? s->ausgefuehrt : false;
+}
+extern "C" const char* k1520d_check_step_why(K1520Disk h, int k) {
+    const FsSchritt* s = pschritt(h, k);
+    return s ? halte(H(h)->s_swarum, s->grund) : "";
+}
+extern "C" int k1520d_check_step_findings(K1520Disk h, int k) {
+    const FsSchritt* s = pschritt(h, k);
+    return s ? s->treffer : 0;
+}
+extern "C" int k1520d_check_step_severity(K1520Disk h, int k) {
+    const FsSchritt* s = pschritt(h, k);
+    return s ? static_cast<int>(s->hoechste) : 0;
+}
+
+extern "C" int k1520d_recover_step_count(K1520Disk h) {
+    return h ? static_cast<int>(H(h)->vol->recoverReport().schritte.size()) : 0;
+}
+extern "C" const char* k1520d_recover_step_id(K1520Disk h, int k) {
+    const FsSchritt* s = sschritt(h, k);
+    return s ? halte(H(h)->s_sid, s->id) : "";
+}
+extern "C" const char* k1520d_recover_step_title(K1520Disk h, int k) {
+    const FsSchritt* s = sschritt(h, k);
+    return s ? halte(H(h)->s_stitel, s->titel) : "";
+}
+extern "C" bool k1520d_recover_step_done(K1520Disk h, int k) {
+    const FsSchritt* s = sschritt(h, k);
+    return s ? s->ausgefuehrt : false;
+}
+extern "C" const char* k1520d_recover_step_why(K1520Disk h, int k) {
+    const FsSchritt* s = sschritt(h, k);
+    return s ? halte(H(h)->s_swarum, s->grund) : "";
+}
+extern "C" int k1520d_recover_step_finds(K1520Disk h, int k) {
+    const FsSchritt* s = sschritt(h, k);
+    return s ? s->treffer : 0;
 }
 
 extern "C" int k1520d_finding_count(K1520Disk h) {

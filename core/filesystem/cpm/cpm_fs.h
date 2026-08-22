@@ -71,6 +71,8 @@ public:
                                                 std::string& err);
 
     std::vector<FileEntry> list() const override;
+    /// @brief Erster Sektor der Datei (Extent 0, erster Blockzeiger) — §7.1b.
+    bool   firstSector(const std::string& name, FsRecoverOrt& out) const override;
     bool   read (const std::string& name, std::vector<uint8_t>& out) override;
     bool   write(const std::string& name, const std::vector<uint8_t>& data,
                  const WriteOptions& opt) override;

@@ -1548,8 +1548,9 @@ Fensters in der rekursiv durchlaufenen Menüleiste). Eine künftig ergänzte Akt
 die nur in die Symbolleiste gehängt wird, fällt sofort auf; sie wäre nach dem
 Ausblenden der Leiste unerreichbar.
 
-**Beide Hälften sind gleich gebaut und gleich breit**: Überschrift + Liste, sonst
-nichts. Die frühere Fusszeile unter dem Ordner („12 Dateien") ist entfallen —
+**Beide Hälften sind gleich gebaut und gleich breit**: eine Kopfzeile + Liste,
+sonst nichts (links die Überschrift der Diskette, rechts seit §20.10 die
+Adresszeile mit dem Ordnerknopf). Die frühere Fusszeile unter dem Ordner („12 Dateien") ist entfallen —
 Zahlen stehen in der Statuszeile —, und der Teiler startet mittig mit gleichen
 Dehnungsfaktoren. Ungleiche Spalten lesen sich wie eine Aussage darüber, welche
 Seite die wichtigere sei; das ist keine. Guards:
@@ -1857,6 +1858,113 @@ Wächter: `test_disktool_archiviert_eine_physische_diskette` (der ganze Klickweg
 `test_disk_label_becomes_a_usable_file_name`. Und
 `test_every_file_dialog_gets_a_start_directory` beantwortet die neue Frage mit,
 sonst stünde der Testlauf an einem modalen Fenster.
+
+### 20.10 Die Ordnerseite ist ein kleiner Dateibrowser (2026-08-21)
+
+Die rechte Hälfte zeigte den gewählten Ordner — aber es gab keinen Weg **hinein
+oder hinaus** ausser dem Auswahldialog, und beim Start stand dort „kein Ordner
+gewählt (klicken)". Der Anwender begann also jede Sitzung in einem Zustand, in
+dem die Hälfte nichts zeigt und die Übertragungsknöpfe ins Leere zielen.
+
+Der Umbau macht aus der Hälfte, was sie ohnehin schon sein wollte:
+
+| Teil | Verhalten |
+|---|---|
+| **Adresszeile** (`QLineEdit`, ersetzt die Überschrift) | zeigt den Pfad und ist **editierbar**: eintippen, Eingabetaste — wie in einem Browser. `~` wird aufgelöst. |
+| **Ordnerknopf** rechts daneben | öffnet den gewohnten Auswahldialog (`choose_requested` → `_ordner_dialog`, derselbe Weg wie *Übertragung ▸ Zielordner wählen*) |
+| **`..`** als erste Zeile | eine Ebene hinauf; entfällt nur an der Wurzel. Die **Rücktaste** in der Liste tut dasselbe. |
+| **Verzeichniszeile** | öffnet sich beim **Aktivieren** — Doppelklick oder `Enter`, und einfacher Klick dort, wo das Thema Einfachklick-Aktivierung vorsieht (`itemActivated` überlässt das der Plattform) |
+| **Start** | `paths.default_folder_dir()` (§20.8), sofern kein `--folder` angegeben ist |
+
+Die Adresszeile ist **höher** als die Überschrift der Diskettenseite; ohne
+Gegenmassnahme begänne die rechte Liste ein paar Pixel tiefer als die linke. Das
+Fenster bindet beide Kopfzeilen deshalb auf dieselbe Höhe (die grössere der
+beiden, damit nichts abgeschnitten wird) — dafür ist die Kopfzeile der
+Ordnerseite ein eigenes Widget (`FolderView.kopfzeile`). Wächter:
+`test_both_lists_begin_at_the_same_height`.
+
+Vier Festlegungen:
+
+1. **Es gibt keinen Zustand „kein Ordner gewählt" mehr.** Der Standardordner steht
+   beim Start darin; `_ziel_ordner()` behält den Dialog nur als Rückfall. Wächter:
+   `test_the_folder_pane_is_never_empty_at_start`.
+2. **Navigiert wird beim AKTIVIEREN, nicht bei der Auswahl.** Ein Einfachklick muss
+   `Side0/` auswählen können — daran hängt `selected_side()`, also die Zielseite
+   beim Schreiben (§9.1). Einfachklick-Navigation nähme genau das weg.
+3. **`SideN/` bleibt die einzige aufgeklappte Gruppe.** Vorher klappte die Ansicht
+   *jedes* Unterverzeichnis auf und listete seinen Inhalt — im Ordner eines
+   Auszugs eine Auskunft, in einem Heimatverzeichnis eine Wand. Jedes andere
+   Verzeichnis ist jetzt eine Zeile ohne Kinder, also ein Wegpunkt. Wächter:
+   `test_only_side_folders_are_unfolded`.
+4. **Fehleingaben melden, nicht abweisen.** Ein unsinniger Pfad geht über
+   `FolderView.hinweis` an `MainWindow.log` — Statuszeile plus Protokoll, kein
+   Meldungsfenster (§20.4) —, und die Zeile nimmt den alten Pfad wieder an. Zeigt
+   die Adresse auf eine **Datei**, ist ihr Ordner gemeint; sie steht danach
+   ausgewählt in der Liste. Dasselbe gilt für einen unlesbaren Ordner: `..` wird
+   deshalb **vor** dem `iterdir()` eingehängt, sonst sässe man darin fest.
+
+Wächter zusätzlich: `test_the_folder_pane_navigates_up_and_down`,
+`test_the_address_line_takes_a_typed_path`,
+`test_a_nonsense_address_is_reported_and_taken_back`,
+`test_the_folder_button_opens_the_same_dialog_as_the_menu`.
+
+### 20.11 Anlegen und Umbenennen im Ordner — und der leere Fall (2026-08-21)
+
+Zwei Lücken, die zusammengehören: die linke Hälfte **schwieg**, wenn eine
+Diskette keine Dateien hergab, und die rechte konnte **nichts anlegen und nichts
+benennen** — wer einen Auszug in einen eigenen Ordner legen wollte, musste dafür
+den Dateimanager öffnen.
+
+**Links: „Keine Dateien gefunden".** Eine leer formatierte Diskette und eine mit
+unpassendem Format geöffnete (`has_filesystem == false`, `entries == []`) sehen
+in der Liste genauso aus wie „noch nichts geöffnet" — der Anwender kann nicht
+unterscheiden, ob nichts da ist oder ob er noch auf etwas wartet. Der Satz steht
+deshalb **im Hintergrund des leeren Feldes** (`_Tree.paintEvent`, mittig, in der
+gedämpften Textfarbe), nicht als Platzhalterzeile: eine Zeile liesse sich
+auswählen, ziehen und mitzählen, ein gemalter Text nicht. **Ohne** geöffnete
+Diskette bleibt das Feld leer — dort ist „leer" keine Auskunft, sondern der
+Normalfall (`clear()` setzt `leer_text = ""`).
+
+**Rechts: `Neuer Ordner` (Strg+Umschalt+N) und `Umbenennen` (F2)**, beide im
+Kontextmenü der Ordnerseite und — wie jede Aktion, §20.3 — auch im Menü
+*Übertragung*. Der neue Ordner heisst `neu`, sonst `neu2`, `neu3`, … (der erste
+freie Name der Reihe) und geht **sofort ins Eingabefeld**; benannt wird an Ort
+und Stelle, wie es der Anwender von Windows kennt: Eingabetaste oder ein Klick
+daneben übernimmt (das erledigt Qts Editor von selbst), `Esc` verwirft.
+
+Vier Festlegungen:
+
+1. **Der Baum hat `NoEditTriggers`.** Sonst öffnete der Doppelklick, der hier
+   *navigiert* (§20.10), stattdessen das Eingabefeld — die beiden gebräuchlichsten
+   Gesten lägen auf derselben Taste. Editiert wird nur auf Ansage (`editItem`).
+   Wächter: `test_a_double_click_navigates_and_does_not_open_the_editor`.
+2. **`itemChanged` gilt nur für die eine Zeile im Eingabefeld.** Das Signal kommt
+   auch beim Aufbau der Liste; ohne diese Bedingung würde jeder `refresh()` zu
+   einem Schwung Umbenennungen. Gemerkt wird die Zeile in `_umbenennen_item`,
+   und `refresh()` vergisst sie (die Zeilen von eben gibt es dann nicht mehr).
+3. **Der Schrägstrich hinter einem Ordnernamen ist Darstellung, kein Name.** Er
+   wird vor dem Öffnen des Feldes weggenommen und beim nächsten `refresh()`
+   wieder aufgebaut — sonst stünde er im Eingabefeld und würde mitbenannt.
+4. **Was nicht gehen kann, wird gemeldet und zurückgenommen**: leerer Name,
+   `/` im Namen, ein schon vergebener Name, ein Fehler des Wirtsystems. Alles
+   geht über `hinweis` in Statuszeile und Protokoll (§20.4) — kein
+   Meldungsfenster —, und die Liste wird neu gelesen, steht also wieder so da wie
+   vorher. Überschrieben wird **nie**.
+
+Beide Aktionen hängen **nicht** an der geöffneten Diskette: sie arbeiten im
+Wirtsystem und sind auch ohne Diskette bedienbar (`_aktionen_pruefen`; `Neuer
+Ordner`, sobald ein Ordner gewählt ist — also immer —, `Umbenennen`, sobald eine
+Zeile ausgewählt ist, die kein `..` ist). Damit die Freigabe nach dem Start
+stimmt, prüft `folder_changed` die Aktionen mit nach.
+
+Wächter: `test_the_empty_disk_says_that_it_is_empty`,
+`test_a_disk_without_a_filesystem_says_it_too`,
+`test_a_new_folder_is_created_and_goes_straight_into_the_editor`,
+`test_the_name_is_taken_with_enter_and_with_a_click_beside_the_field` (fährt den
+**echten** Editor, beide Wege der Übernahme),
+`test_renaming_happens_in_place_for_files_and_folders`,
+`test_a_rename_that_cannot_work_is_reported_and_undone`,
+`test_the_folder_actions_are_in_the_context_menu_and_gated`.
 
 ---
 

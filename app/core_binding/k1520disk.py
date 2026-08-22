@@ -347,6 +347,12 @@ _lib.k1520d_check_report.restype = _CS
 _lib.k1520d_version.argtypes = []
 _lib.k1520d_version.restype = _CS
 
+_lib.k1520d_file_first_sector.argtypes = [_H, ctypes.c_char_p,
+                                          ctypes.POINTER(ctypes.c_int),
+                                          ctypes.POINTER(ctypes.c_int),
+                                          ctypes.POINTER(ctypes.c_int)]
+_lib.k1520d_file_first_sector.restype = ctypes.c_bool
+
 # ── Dateisystemprüfung (doc/design/15_dateisystempruefung.md) ───────────────
 _lib.k1520d_check.argtypes = [_H, ctypes.c_int, ctypes.c_bool]
 _lib.k1520d_check.restype = ctypes.c_int
@@ -358,6 +364,24 @@ _lib.k1520d_check_tracks_total.argtypes = [_H]
 _lib.k1520d_check_tracks_total.restype = ctypes.c_int
 _lib.k1520d_check_summary.argtypes = [_H]
 _lib.k1520d_check_summary.restype = _CS
+_lib.k1520d_check_level.argtypes = [_H]
+_lib.k1520d_check_level.restype = ctypes.c_int
+_lib.k1520d_recover_level.argtypes = [_H]
+_lib.k1520d_recover_level.restype = ctypes.c_int
+_lib.k1520d_check_step_count.argtypes = [_H]
+_lib.k1520d_check_step_count.restype = ctypes.c_int
+_lib.k1520d_check_step_id.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_check_step_id.restype = _CS
+_lib.k1520d_check_step_title.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_check_step_title.restype = _CS
+_lib.k1520d_check_step_done.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_check_step_done.restype = ctypes.c_bool
+_lib.k1520d_check_step_why.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_check_step_why.restype = _CS
+_lib.k1520d_check_step_findings.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_check_step_findings.restype = ctypes.c_int
+_lib.k1520d_check_step_severity.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_check_step_severity.restype = ctypes.c_int
 _lib.k1520d_finding_count.argtypes = [_H]
 _lib.k1520d_finding_count.restype = ctypes.c_int
 _lib.k1520d_finding_id.argtypes = [_H, ctypes.c_int]
@@ -401,6 +425,18 @@ _lib.k1520d_recover_scan.argtypes = [_H, ctypes.c_int, ctypes.c_bool]
 _lib.k1520d_recover_scan.restype = ctypes.c_int
 _lib.k1520d_recover_complete.argtypes = [_H]
 _lib.k1520d_recover_complete.restype = ctypes.c_bool
+_lib.k1520d_recover_step_count.argtypes = [_H]
+_lib.k1520d_recover_step_count.restype = ctypes.c_int
+_lib.k1520d_recover_step_id.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_step_id.restype = _CS
+_lib.k1520d_recover_step_title.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_step_title.restype = _CS
+_lib.k1520d_recover_step_done.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_step_done.restype = ctypes.c_bool
+_lib.k1520d_recover_step_why.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_step_why.restype = _CS
+_lib.k1520d_recover_step_finds.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_recover_step_finds.restype = ctypes.c_int
 _lib.k1520d_recover_count.argtypes = [_H]
 _lib.k1520d_recover_count.restype = ctypes.c_int
 _lib.k1520d_recover_name.argtypes = [_H, ctypes.c_int]
@@ -667,6 +703,36 @@ class Finding:
 
 
 @dataclass(frozen=True)
+class Schritt:
+    """Eine Zeile der Checkliste — was die Prüfung bzw. die Suche getan hat (§5a).
+
+    Sie kommt aus dem Prüfer selbst, nicht aus der Oberfläche: eine Checkliste,
+    die etwas behauptet, was nicht gelaufen ist, wäre schlimmer als gar keine.
+    ``ausgefuehrt=False`` heißt „übersprungen" und trägt den Grund — das ist
+    ebenfalls eine Auskunft und darf nicht weggelassen werden.
+    """
+
+    id: str = ""
+    titel: str = ""
+    ausgefuehrt: bool = True
+    grund: str = ""
+    #: Befunde (Prüfung) bzw. Funde (Suche), die in diesem Schritt entstanden.
+    treffer: int = 0
+    #: Schwerste Schwere darin — bei der Suche immer ``INFO``.
+    hoechste: int = 0
+
+    @property
+    def zeichen(self) -> str:
+        """Haken, Warnzeichen oder Strich — die Anzeige in einem Zeichen."""
+        if not self.ausgefuehrt:
+            return "–"
+        # Ein Haken auch dann, wenn etwas herauskam, solange nichts davon ein
+        # Mangel ist: bei der SUCHE sind Treffer die gute Nachricht, und ein
+        # Hinweis der Prüfung („7 gelöschte Plätze") ist keiner.
+        return {GEFAHR: "⛔", FEHLER: "✖", WARNUNG: "⚠"}.get(self.hoechste, "✔")
+
+
+@dataclass(frozen=True)
 class CheckReport:
     """Das Ergebnis einer Prüfung."""
 
@@ -677,6 +743,11 @@ class CheckReport:
     tracks_read: int = 0
     tracks_total: int = 0
     summary: str = ""
+    #: Lief eine **Vollprüfung**?  Nicht dasselbe wie ``complete`` (das sagt, ob
+    #: alle Spuren dafür da waren).
+    voll: bool = False
+    #: Die abgearbeitete Checkliste (:class:`Schritt`), in der Reihenfolge des Laufs.
+    schritte: tuple = ()
 
     def __bool__(self) -> bool:
         """Wahr, wenn es etwas zu berichten gibt."""
@@ -749,6 +820,10 @@ class RecoverReport:
     #: ``False`` = an einer physischen Diskette waren Spuren noch nicht gelesen;
     #: „nichts gefunden" heißt dann nur „bislang nichts gefunden".
     complete: bool = True
+    #: Lief die Suche über die **ganze Oberfläche**?
+    voll: bool = False
+    #: Die abgearbeitete Checkliste (:class:`Schritt`), in der Reihenfolge des Laufs.
+    schritte: tuple = ()
 
     def __bool__(self) -> bool:
         return bool(self.finds)
@@ -1216,6 +1291,17 @@ class DiskTool:
             tracks_read=int(_lib.k1520d_check_tracks_read(self._h)),
             tracks_total=int(_lib.k1520d_check_tracks_total(self._h)),
             summary=_s(_lib.k1520d_check_summary(self._h)),
+            voll=int(_lib.k1520d_check_level(self._h)) == 1,
+            schritte=tuple(
+                Schritt(
+                    id=_s(_lib.k1520d_check_step_id(self._h, k)),
+                    titel=_s(_lib.k1520d_check_step_title(self._h, k)),
+                    ausgefuehrt=bool(_lib.k1520d_check_step_done(self._h, k)),
+                    grund=_s(_lib.k1520d_check_step_why(self._h, k)),
+                    treffer=int(_lib.k1520d_check_step_findings(self._h, k)),
+                    hoechste=int(_lib.k1520d_check_step_severity(self._h, k)),
+                )
+                for k in range(int(_lib.k1520d_check_step_count(self._h)))),
         )
 
     def _finding(self, i: int) -> "Finding":
@@ -1288,6 +1374,16 @@ class DiskTool:
             finds=tuple(self._find(i)
                         for i in range(int(_lib.k1520d_recover_count(self._h)))),
             complete=bool(_lib.k1520d_recover_complete(self._h)),
+            voll=int(_lib.k1520d_recover_level(self._h)) == 1,
+            schritte=tuple(
+                Schritt(
+                    id=_s(_lib.k1520d_recover_step_id(self._h, k)),
+                    titel=_s(_lib.k1520d_recover_step_title(self._h, k)),
+                    ausgefuehrt=bool(_lib.k1520d_recover_step_done(self._h, k)),
+                    grund=_s(_lib.k1520d_recover_step_why(self._h, k)),
+                    treffer=int(_lib.k1520d_recover_step_finds(self._h, k)),
+                )
+                for k in range(int(_lib.k1520d_recover_step_count(self._h)))),
         )
 
     def _find(self, i: int) -> "RecoverFind":
@@ -1365,6 +1461,19 @@ class DiskTool:
     def erase(self, name: str) -> None:
         if not _lib.k1520d_erase(self._h, _b(name)):
             raise K1520DiskError(self._fail())
+
+    def first_sector(self, name: str):
+        """Der erste Sektor der Datei als ``(cyl, head, sector)`` — sonst ``None``.
+
+        Bei CP/M der erste Block von Extent 0, bei UDOS/NDOS der Kopfsektor.  Der
+        Wert ist die Sektor-**Kennung**, wie sie der Diskeditor sucht.
+        """
+        c, k, s = ctypes.c_int(), ctypes.c_int(), ctypes.c_int()
+        if not _lib.k1520d_file_first_sector(self._h, _b(name),
+                                             ctypes.byref(c), ctypes.byref(k),
+                                             ctypes.byref(s)):
+            return None
+        return (c.value, k.value, s.value)
 
     def extract_all(self, dest_dir, text: bool = False) -> None:
         """Alles herausholen; bei mehreren Seiten entstehen ``Side0/``, ``Side1/``."""

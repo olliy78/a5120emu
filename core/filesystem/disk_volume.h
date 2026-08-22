@@ -456,6 +456,14 @@ public:
     bool erase  (const FileRef& ref);
 
     /**
+     * @brief Erster Sektor einer Datei — fuer den Sprung in den Diskeditor (§7.1b).
+     *
+     * Bei CP/M der erste Block von Extent 0, bei UDOS/NDOS der Kopfsektor.  Die
+     * Sektorangabe ist die **Kennung** (wie @ref FsRecoverFind::orte).
+     */
+    bool firstSector(const FileRef& ref, int& cyl, int& head, int& sector) const;
+
+    /**
      * @brief Kopfsektorangaben einer vorhandenen UDOS-Datei aendern.
      *
      * Fuer die Oberflaeche: Typ, Eigenschaften, ENTRY, Speicherangaben … lassen sich

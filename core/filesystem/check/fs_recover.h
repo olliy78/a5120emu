@@ -34,6 +34,11 @@
 #include <string>
 #include <vector>
 
+// Nur wegen @ref FsSchritt: die Checkliste (§5a) ist fuer Pruefung und Suche
+// dieselbe Sache, und der Anwender sieht beide nebeneinander — zwei Modelle
+// dafuer waeren zwei Erklaerungen fuer eine Bedienung.
+#include "core/filesystem/check/fs_check.h"
+
 /**
  * @enum FsRecoverLevel
  * @brief Wie tief wird gesucht?
@@ -193,6 +198,22 @@ struct FsRecoverReport {
     int  spuren_gelesen = 0, spuren_gesamt = 0;
 
     std::vector<FsRecoverFind> funde;
+
+    /// @brief Die abgearbeitete Checkliste, wie bei der Pruefung (§5a).
+    std::vector<FsSchritt> schritte;
+    /// @brief Index des offenen Schritts (-1 = keiner).
+    int aktueller_schritt = -1;
+
+    /// @brief Einen Schritt beginnen (und den vorigen damit beenden).
+    FsSchritt& schritt(std::string id, std::string titel);
+    /// @brief Einen Schritt vermerken, der NICHT gelaufen ist, mit Begruendung.
+    void schrittEntfaellt(std::string id, std::string titel, std::string grund);
+    /// @brief Keinen Schritt mehr offen halten.
+    void schrittEnde() { aktueller_schritt = -1; }
+
+    /// @brief Einen Fund aufnehmen und ihn dem offenen Schritt zuschlagen.
+    ///        **Der** Weg in @ref funde — direkt anhaengen zaehlt nicht mit.
+    void hinzu(FsRecoverFind f);
 
     bool leer() const { return funde.empty(); }
     /// @brief Wie viele Funde dieser Guete?

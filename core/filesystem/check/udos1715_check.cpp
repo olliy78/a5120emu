@@ -96,6 +96,8 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
     // gebucht, damit die Spurzaehler stimmen.
     brauche(prof_.bitmap_track);
 
+    bericht.schritt("udos.schritt.karte",
+                    "Belegungsplan: Plausibilitaet, Geometrie und beide Zaehler");
     std::string warum;
     if (!bitmap_.looksValid(spt, tracks_, &warum))
         b.addAt("udos.karte.ungueltig", FsSeverity::Fehler, FsLayer::Verwaltung,
@@ -129,6 +131,8 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
                 + " Sektoren", prof_.bitmap_track, 0).repairs.push_back(zaehler_neu);
 
     // ── Die Verzeichnisdatei ─────────────────────────────────────────────────
+    bericht.schritt("udos.schritt.verzeichnisdatei",
+                    "Verzeichnisdatei: Descriptor, Typ und Zeigersektoren");
     if (!brauche(prof_.directory_track)) {
         b.add("udos.verz.ungelesen", FsSeverity::Info, FsLayer::Verwaltung, "",
               "Die Verzeichnisspur ist noch nicht gelesen — geprueft wurde nichts");
@@ -197,6 +201,12 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
     }
 
     if (level == FsCheckLevel::Schnell) {
+        bericht.schrittEntfaellt("udos.schritt.dateien",
+                                 "Jede Datei: Descriptor, Zeigerkette und Datenrecords",
+                                 "nur bei der Vollpruefung");
+        bericht.schrittEntfaellt("udos.schritt.karte_gegen_ketten",
+                                 "Plan gegen Zeigersektoren: belegte Sektoren, die als "
+                                 "frei gefuehrt sind", "nur bei der Vollpruefung");
         abschluss();
         bericht.begrenzen(kMaxJeKennung);
         bericht.sortieren();
@@ -205,6 +215,8 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
 
     // ═══ Ebene Dateien (nur Vollpruefung) ════════════════════════════════════
 
+    bericht.schritt("udos.schritt.dateien",
+                    "Jede Datei: Descriptor, Zeigerkette und Datenrecords");
     std::map<uint32_t, std::string> gehoert;
     for (uint32_t s : eigen) gehoert.emplace(s, "DIRECTORY");
 
@@ -364,6 +376,9 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
 
     // ── Plan gegen Zeigersektoren ────────────────────────────────────────────
     if (bericht.vollstaendig) {
+        bericht.schritt("udos.schritt.karte_gegen_ketten",
+                        "Plan gegen Zeigersektoren: belegte Sektoren, die als frei "
+                        "gefuehrt sind");
         std::map<std::string, std::vector<UdosPointer>> offen;
         for (const auto& [s, wem] : gehoert) {
             const uint8_t t = static_cast<uint8_t>(s / spt);
@@ -476,6 +491,13 @@ FsCheckReport Udos1715FileSystem::check(FsCheckLevel level, bool nachladen) cons
 
     abschluss();
     bericht.begrenzen(kMaxJeKennung);
+    if (!bericht.vollstaendig)
+        bericht.schrittEntfaellt("udos.schritt.karte_gegen_ketten",
+                                 "Plan gegen Zeigersektoren: belegte Sektoren, die als "
+                                 "frei gefuehrt sind",
+                                 "das Speicherabbild ist unvollstaendig — der Abgleich "
+                                 "braucht jede Spur");
+    bericht.schrittEnde();
     bericht.sortieren();
     return bericht;
 }

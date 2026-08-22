@@ -1361,12 +1361,18 @@ def test_udos_tail_is_an_editable_field_with_decimal_reading(window, fixture_dis
 
     assert ed.tail_feld.text() == "05 16 05 16"
     assert ed.tail_bytes() == b"\x05\x16\x05\x16"
-    assert ed.tail_deutung.text() == \
+    # Der Text ist seit §7.1b Rich Text mit anklickbaren Verweisen; geprüft wird
+    # hier die AUSSAGE, nicht das Markup (dafür `…sind_verweise`).
+    def klartext(html):
+        import re
+        return re.sub(r"<[^>]+>", "", html).replace("&nbsp;", " ")
+
+    assert klartext(ed.tail_deutung.text()) == \
         "zurück: Spur 22/Sektor 6    vor: Spur 22/Sektor 6"
 
     # Beim Tippen läuft die Deutung mit.
     ed.tail_feld.setText("07 15 FF FF")
-    assert ed.tail_deutung.text() == "zurück: Spur 21/Sektor 8    vor: Ende"
+    assert klartext(ed.tail_deutung.text()) == "zurück: Spur 21/Sektor 8    vor: Ende"
 
     # Unvollständige Eingabe wird benannt, nicht geraten.
     ed.tail_feld.setText("07 15")
@@ -1611,12 +1617,281 @@ def test_both_panes_are_the_same_width(window):
     window.hide()
 
 
+def test_both_lists_begin_at_the_same_height(window, qt_app):
+    """Links eine Überschrift, rechts eine Adresszeile — die Listen darunter fluchten.
+
+    Die Adresszeile ist höher als die Überschrift; ohne Bindung begänne die
+    rechte Liste ein paar Pixel tiefer, und die beiden Hälften sähen aus wie
+    zwei verschiedene Dinge.
+    """
+    from PySide6.QtCore import QPoint
+
+    window.show()
+    qt_app.processEvents()
+    try:
+        assert window.disk_view.titel.height() == window.folder_view.kopfzeile.height()
+        oben = [ansicht.tree.mapTo(window, QPoint(0, 0)).y()
+                for ansicht in (window.disk_view, window.folder_view)]
+        assert oben[0] == oben[1], oben
+    finally:
+        window.hide()
+
+
 def test_the_folder_pane_has_no_footer_line(window, tmp_path):
-    """Beide Hälften sind gleich gebaut: Überschrift + Liste, sonst nichts."""
+    """Beide Hälften sind gleich gebaut: Adress-/Überschriftzeile + Liste, sonst nichts."""
     assert not hasattr(window.folder_view, "fuss")
     (tmp_path / "EINS.TXT").write_text("x")
     window.folder_view.set_folder(tmp_path)
-    assert window.folder_view.tree.topLevelItemCount() == 1
+    # `..` + die eine Datei — mehr steht nicht drin (keine Fusszeile).
+    assert gruppen(window.folder_view) == ["..", "EINS.TXT"]
+
+
+# ─── Die Ordnerseite ist ein kleiner Dateibrowser (§20.10) ───────────────────
+
+def test_the_folder_pane_is_never_empty_at_start(window):
+    """Es gibt keinen Zustand „kein Ordner gewählt" mehr."""
+    from app import paths
+
+    assert window.folder_view.folder == paths.default_folder_dir()
+    assert window.folder_view.adresse.text() == str(paths.default_folder_dir())
+
+
+def test_the_folder_pane_navigates_up_and_down(window, tmp_path):
+    """`..` führt hinauf, ein Verzeichniseintrag hinein — beides beim Aktivieren."""
+    unten = tmp_path / "unten"
+    unten.mkdir()
+    (unten / "DREIN.TXT").write_text("x")
+    ansicht = window.folder_view
+    ansicht.set_folder(tmp_path)
+
+    assert gruppen(ansicht) == ["..", "unten/"]
+
+    hinein = ansicht.tree.topLevelItem(1)
+    ansicht.tree.itemActivated.emit(hinein, 0)
+    assert ansicht.folder == unten
+    assert ansicht.adresse.text() == str(unten)
+    assert "DREIN.TXT" in gruppen(ansicht)
+
+    ansicht.tree.itemActivated.emit(ansicht.tree.topLevelItem(0), 0)
+    assert ansicht.folder == tmp_path
+
+    # … und die Rücktaste tut dasselbe wie `..`.
+    ansicht.hinauf()
+    assert ansicht.folder == tmp_path.parent
+
+
+def test_only_side_folders_are_unfolded(window, tmp_path):
+    """`SideN/` ist die Darstellung des Datenträgers — jeder andere Ordner ein Wegpunkt.
+
+    Sonst stünde in einem Heimatverzeichnis der Inhalt sämtlicher Unterordner.
+    """
+    (tmp_path / "Side0").mkdir()
+    (tmp_path / "Side0" / "AUF.SEITE").write_text("x")
+    (tmp_path / "sonst").mkdir()
+    (tmp_path / "sonst" / "TIEF.TXT").write_text("x")
+    ansicht = window.folder_view
+    ansicht.set_folder(tmp_path)
+
+    seite = ansicht.tree.topLevelItem(1)
+    sonst = ansicht.tree.topLevelItem(2)
+    assert (seite.text(0), sonst.text(0)) == ("Side0/", "sonst/")
+    assert seite.childCount() == 1 and seite.isExpanded()
+    assert sonst.childCount() == 0
+
+
+def test_the_address_line_takes_a_typed_path(window, tmp_path):
+    """Wie im Browser: Pfad eintragen, Eingabetaste — und man ist dort."""
+    ziel = tmp_path / "ziel"
+    ziel.mkdir()
+    ansicht = window.folder_view
+
+    ansicht.adresse.setText(str(ziel))
+    ansicht.adresse.returnPressed.emit()
+    assert ansicht.folder == ziel
+
+    # Eine DATEI ist kein Fehler: gemeint ist ihr Ordner, sie steht ausgewählt da.
+    datei = ziel / "EINE.TXT"
+    datei.write_text("x")
+    ansicht.adresse.setText(str(datei))
+    ansicht.adresse.returnPressed.emit()
+    assert ansicht.folder == ziel
+    assert ansicht.selected_paths() == [str(datei)]
+
+
+def test_a_nonsense_address_is_reported_and_taken_back(window, tmp_path):
+    """Keine Fehlerbox — die Statuszeile sagt es, das Protokoll behält es (§20.4)."""
+    ansicht = window.folder_view
+    ansicht.set_folder(tmp_path)
+
+    ansicht.adresse.setText("/gibt/es/nicht")
+    ansicht.adresse.returnPressed.emit()
+
+    assert ansicht.folder == tmp_path
+    assert ansicht.adresse.text() == str(tmp_path)
+    assert "Kein Ordner: /gibt/es/nicht" in window.protokoll.toPlainText()
+
+
+def test_the_folder_button_opens_the_same_dialog_as_the_menu(window, tmp_path,
+                                                             monkeypatch):
+    """Der Knopf neben der Adresszeile ist derselbe Weg wie *Zielordner wählen*."""
+    from PySide6.QtWidgets import QFileDialog
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory",
+                        lambda *a, **k: str(tmp_path))
+
+    window.folder_view.knopf_ordner.click()
+    assert window.folder_view.folder == tmp_path
+
+
+def test_the_empty_disk_says_that_it_is_empty(window, fixture_disks, tmp_path):
+    """Eine Diskette ohne Dateien sieht sonst aus wie „noch nichts geöffnet"."""
+    import shutil
+    abbild = tmp_path / "leer.img"
+    shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
+    assert window.open_image(abbild)
+    assert window.disk_view.tree.leer_text == ""      # sie hat ja Dateien
+
+    window.set_read_only(False)
+    assert window.erase_refs(alle_namen(window.disk_view))
+    assert window.disk_view.tree.leer_text == "Keine Dateien gefunden"
+
+    # Ohne Diskette ist „leer" dagegen keine Auskunft.
+    assert window.save()
+    window.close_disk()
+    assert window.disk_view.tree.leer_text == ""
+
+
+def test_a_disk_without_a_filesystem_says_it_too(window, fixture_disks):
+    """Roh geöffnet (kein erkanntes Dateisystem) — dieselbe Lage, derselbe Satz."""
+    assert window.open_image(fixture_disks / "cpa_mini.hfe")
+    assert not window.tool.has_filesystem
+    assert window.disk_view.tree.leer_text == "Keine Dateien gefunden"
+
+
+def test_a_new_folder_is_created_and_goes_straight_into_the_editor(window, tmp_path):
+    """`neu`, `neu2`, `neu3` — und das Eingabefeld steht sofort offen."""
+    ansicht = window.folder_view
+    ansicht.set_folder(tmp_path)
+
+    window.act_neuer_ordner.trigger()
+    assert (tmp_path / "neu").is_dir()
+    assert ansicht._umbenennen_item is not None, "das Eingabefeld muss offen stehen"
+    assert ansicht._umbenennen_item.text(0) == "neu", "ohne Schrägstrich im Feld"
+
+    window.act_neuer_ordner.trigger()
+    window.act_neuer_ordner.trigger()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["neu", "neu2", "neu3"]
+
+
+def test_renaming_happens_in_place_for_files_and_folders(window, tmp_path):
+    """Übernommen wird, was im Feld steht — Datei wie Ordner."""
+    (tmp_path / "ALT.TXT").write_text("x")
+    (tmp_path / "altordner").mkdir()
+    ansicht = window.folder_view
+    ansicht.set_folder(tmp_path)
+
+    datei = ansicht._finde(str(tmp_path / "ALT.TXT"))
+    ansicht.umbenennen_starten(datei)
+    datei.setText(0, "NEU.TXT")               # das tut sonst der Editor
+    assert (tmp_path / "NEU.TXT").is_file() and not (tmp_path / "ALT.TXT").exists()
+
+    ordner = ansicht._finde(str(tmp_path / "altordner"))
+    ansicht.umbenennen_starten(ordner)
+    assert ordner.text(0) == "altordner"      # der Schrägstrich ist Darstellung
+    ordner.setText(0, "neuordner")
+    assert (tmp_path / "neuordner").is_dir()
+    assert gruppen(ansicht) == ["..", "neuordner/", "NEU.TXT"]
+
+
+def test_the_name_is_taken_with_enter_and_with_a_click_beside_the_field(window,
+                                                                        tmp_path,
+                                                                        qt_app):
+    """Der ECHTE Editor, nicht ein gesetzter Text: beide Wege der Übernahme.
+
+    Dafür muss das Fenster wirklich angezeigt werden (offscreen genügt) — ohne
+    das legt Qt kein Eingabefeld an.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QLineEdit
+
+    ansicht = window.folder_view
+    ansicht.set_folder(tmp_path)
+    window.show()
+    try:
+        window.act_neuer_ordner.trigger()
+        qt_app.processEvents()
+        feld = ansicht.tree.findChild(QLineEdit)
+        assert feld is not None and feld.text() == "neu"
+
+        feld.setText("Fotos")
+        QTest.keyClick(feld, Qt.Key_Return)
+        qt_app.processEvents()
+        assert (tmp_path / "Fotos").is_dir()
+
+        # … und ein Klick daneben (= Fokusverlust) übernimmt genauso.
+        (tmp_path / "ALT.TXT").write_text("x")
+        ansicht.refresh()
+        ansicht.umbenennen_starten(ansicht._finde(str(tmp_path / "ALT.TXT")))
+        qt_app.processEvents()
+        feld = ansicht.tree.findChild(QLineEdit)
+        feld.setText("NEU.TXT")
+        ansicht.adresse.setFocus()
+        qt_app.processEvents()
+        assert (tmp_path / "NEU.TXT").is_file()
+    finally:
+        window.hide()
+
+
+def test_a_rename_that_cannot_work_is_reported_and_undone(window, tmp_path):
+    """Doppelter oder unsinniger Name: die Liste bleibt, wie sie war (§20.4)."""
+    (tmp_path / "EINS.TXT").write_text("x")
+    (tmp_path / "ZWEI.TXT").write_text("x")
+    ansicht = window.folder_view
+    ansicht.set_folder(tmp_path)
+
+    item = ansicht._finde(str(tmp_path / "EINS.TXT"))
+    ansicht.umbenennen_starten(item)
+    item.setText(0, "ZWEI.TXT")
+    assert (tmp_path / "EINS.TXT").is_file(), "nichts überschrieben"
+    assert "Gibt es schon: ZWEI.TXT" in window.protokoll.toPlainText()
+
+    item = ansicht._finde(str(tmp_path / "EINS.TXT"))
+    ansicht.umbenennen_starten(item)
+    item.setText(0, "unter/verzeichnis")
+    assert (tmp_path / "EINS.TXT").is_file()
+    assert "Kein gültiger Name" in window.protokoll.toPlainText()
+
+
+def test_the_folder_actions_are_in_the_context_menu_and_gated(window, tmp_path):
+    """Rechtsklick zeigt beide Wege; Umbenennen braucht einen Eintrag."""
+    assert window.act_neuer_ordner in window.folder_view._aktionen
+    assert window.act_umbenennen in window.folder_view._aktionen
+
+    ansicht = window.folder_view
+    ansicht.set_folder(tmp_path)            # leer: nur `..`, nichts zu benennen
+    window._aktionen_pruefen()
+    assert window.act_neuer_ordner.isEnabled()
+    assert not window.act_umbenennen.isEnabled()
+
+    (tmp_path / "DA.TXT").write_text("x")
+    ansicht.refresh()
+    ansicht._auswaehlen(str(tmp_path / "DA.TXT"))
+    window._aktionen_pruefen()
+    assert window.act_umbenennen.isEnabled()
+
+    # `..` ist kein Eintrag, den man umbenennen könnte.
+    ansicht.tree.clearSelection()
+    auf = ansicht.tree.topLevelItem(0)
+    auf.setSelected(True)
+    ansicht.tree.setCurrentItem(auf)
+    window._aktionen_pruefen()
+    assert not window.act_umbenennen.isEnabled()
+
+
+def test_a_double_click_navigates_and_does_not_open_the_editor(window, tmp_path):
+    """Beides hängt am Doppelklick — deshalb hat der Baum keine Editier-Auslöser."""
+    from PySide6.QtWidgets import QAbstractItemView
+    assert window.folder_view.tree.editTriggers() == QAbstractItemView.NoEditTriggers
 
 
 def test_the_middle_column_offers_selection_and_everything(window):
@@ -1925,6 +2200,8 @@ def test_folder_side_never_starts_in_the_installation(window, tmp_path,
     monkeypatch.setenv(paths.ENV_HOME, str(prog))
     monkeypatch.setenv(paths.ENV_DATA, str(tmp_path / "daten"))
 
+    # Ohne gewählten Ordner greift der Rückfall — und genau um den geht es hier.
+    window.folder_view.set_folder(None)
     gesehen = _dialog_startpunkte(window, monkeypatch)
     window._ordner_dialog()
 
@@ -1962,7 +2239,8 @@ def test_folder_dialog_starts_in_the_users_file_directory(window, tmp_path,
     """Ordnerseite: der Dateiordner des Anwenders — und danach der gewählte."""
     from app import paths
 
-    assert window.folder_view.folder is None
+    # Beim Start steht der Standardordner darin (§20.10), also auch im Dialog.
+    assert window.folder_view.folder == paths.default_folder_dir()
     assert window._ordner_startpunkt() == str(paths.default_folder_dir())
 
     # Sobald einer gewählt ist, geht der nächste Dialog dort auf.
@@ -2205,10 +2483,12 @@ def test_der_ganze_kreislauf_befund_reparatur_neuer_befund(window, fixture_disks
                               tmp_path / "udos_reparieren.hfe")
     assert window.open_image(abbild)
 
+    # Der Dialog prüft beim Öffnen selbst, und zwar VOLL (§5a) — die Gefahr steht
+    # also da, ohne dass jemand einen Knopf drücken musste.
     dlg = FsckDialog(window.tool, window, log=window.log)
-    assert dlg.bericht.hoechste < GEFAHR, "die Schnellprüfung sieht die Gefahr nicht"
-    dlg._vollpruefung()
+    assert dlg.bericht.voll, "beim Öffnen läuft die Vollprüfung"
     assert dlg.bericht.hoechste == GEFAHR
+    assert dlg.liste.topLevelItemCount() == len(dlg.bericht.schritte) > 0
     gewaehlt = dlg.auswahl()
     assert gewaehlt, "die Reparatur ohne Datenverlust ist vorausgewählt"
     assert not dlg.b_reparieren.isEnabled(), "geöffnet wird schreibgeschützt"
@@ -2248,6 +2528,67 @@ def test_ein_befund_fuehrt_per_doppelklick_in_den_diskeditor(window, fixture_dis
     assert gesehen == [(dlg.bericht.findings[ortbar].cyl,
                         dlg.bericht.findings[ortbar].head,
                         dlg.bericht.findings[ortbar].sector)]
+
+
+def test_eine_datei_laesst_sich_im_diskeditor_aufschlagen(window, fixture_disks):
+    """Von der Datei zu ihren Bytes — ohne Zahlen abzutippen (§7.1b).
+
+    Der Sprung geht auf den ERSTEN Sektor: bei CP/M der erste Block von Extent 0,
+    bei UDOS der Kopfsektor, in dem Typ, Länge und Segmente stehen.
+    """
+    assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
+
+    ref = "Side0/ASM"
+    ort = window.tool.first_sector(ref)
+    assert ort is not None and ort[0] >= 0
+
+    from PySide6.QtCore import Qt as _Qt
+    eintrag = window.disk_view.tree.findItems(
+        "ASM", _Qt.MatchExactly | _Qt.MatchRecursive)[0]
+    window.disk_view.tree.setCurrentItem(eintrag)
+    eintrag.setSelected(True)
+    window._aktionen_pruefen()
+    assert window.act_datei_im_editor.isEnabled()
+    assert window.act_datei_im_editor in window.disk_view._aktionen
+
+    window.act_datei_im_editor.trigger()
+    editor = window._diskeditor
+    assert editor is not None
+    # (Kopf, Zylinder, laufende Nummer) — der Sprung ging über die Sektorkennung.
+    assert editor.aktuell[0] == ort[1] and editor.aktuell[1] == ort[0]
+    assert f"Zylinder {ort[0]}" in window.protokoll.toPlainText()
+
+
+def test_die_udos_zeiger_im_diskeditor_sind_verweise(window, fixture_disks):
+    """Die Sätze einer UDOS-Datei liegen verstreut — der Kette folgt man klickend.
+
+    Vorher musste man Spur und Sektor aus der Deutung abtippen oder sich mit den
+    Pfeiltasten hinnavigieren.
+    """
+    import re
+    assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
+    editor = window.open_disk_editor()
+    assert editor is not None
+
+    kopf = window.tool.first_sector("Side0/ASM")
+    assert editor.zeige_ort(*kopf)
+    ziele = re.findall(r'href="([^"]+)"', editor.tail_deutung.text())
+    assert len(ziele) == 2, editor.tail_deutung.text()
+
+    vorher = editor.aktuell
+    editor._zeiger_folgen(ziele[1])            # dem Vorwärtszeiger folgen
+    assert editor.aktuell != vorher
+    spur, sektor = (int(x) for x in ziele[1].split(":"))
+    assert editor.aktuell[1] == spur
+
+    # Und zurück: der Rückwärtszeiger des Nachfolgers zeigt auf den Kopfsektor.
+    zurueck = re.findall(r'href="([^"]+)"', editor.tail_deutung.text())[0]
+    assert zurueck == f"{kopf[0]}:{kopf[2]}"
+
+    # Ein Kettenende ist kein Verweis — es gibt dort nichts anzuspringen.
+    editor.tail_feld.setText("FF FF FF FF")
+    assert "href" not in editor.tail_deutung.text()
+    assert "Ende" in editor.tail_deutung.text()
 
 
 def test_der_diskeditor_ist_neben_einem_modalen_dialog_bedienbar(window, fixture_disks):
@@ -2471,13 +2812,18 @@ def test_udos_fund_laesst_sich_retten_aber_nicht_eintragen(window, fixture_disks
     assert window.open_image(abbild)
 
     dlg = RecoverDialog(window.tool, window, zielordner=str(tmp_path), log=window.log)
-    assert len(dlg.bericht.finds) == 1, [f.suggestion for f in dlg.bericht.finds]
-    fund = dlg.bericht.finds[0]
+    # Gesucht wird beim Öffnen über die GANZE Oberfläche (§5a); die gelöschte Datei
+    # ist der eine Fund mit Kopfsektor, die übrigen sind Rohbereiche.
+    assert dlg.bericht.voll
+    kopffunde = [f for f in dlg.bericht.finds if f.suggestion == "GERETTET.001"]
+    assert len(kopffunde) == 1, [f.suggestion for f in dlg.bericht.finds]
+    fund = kopffunde[0]
+    nummer = dlg.bericht.finds.index(fund)
     assert fund.name == "", "der Name ist fort — was dasteht, ist ein Vorschlag"
-    assert fund.suggestion == "GERETTET.001"
     assert fund.quality == 2, fund.detail          # sicher
     assert not fund.restorable
     assert "put" in fund.blocked_why, fund.blocked_why
+    dlg.baum.setCurrentItem(dlg.baum.topLevelItem(nummer))
 
     assert dlg.b_retten.isEnabled(), "retten geht immer"
     assert not dlg.b_zurueck.isEnabled(), "bei UDOS gibt es kein Eintragen"
@@ -2565,6 +2911,60 @@ def test_ein_unvollstaendiges_abbild_sperrt_die_teuren_laeufe(window, fixture_di
     dlg2 = RecoverDialog(window.tool, window, zielordner=str(tmp_path),
                          abbild_vollstaendig=False)
     assert not dlg2.tiefe.model().item(1).isEnabled()
+
+
+def test_beide_dialoge_laufen_beim_oeffnen_los_und_zeigen_ihre_checkliste(
+        window, fixture_disks, tmp_path):
+    """§5a: Wer den Dialog aufruft, hat den Lauf verlangt — er startet sofort.
+
+    Vorher zeigte der Prüfdialog nur den Befund der Schnellprüfung vom Mounten
+    und der Suchdialog stand auf „Verzeichnisreste"; an einer gesunden Diskette
+    sah beides aus, als täte die Funktion nichts.
+    """
+    from app.disktool.ui.fsck_dialog import FsckDialog
+    from app.disktool.ui.recover_dialog import RecoverDialog
+
+    abbild = _mit_geloeschter_datei(
+        fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "auto_lauf.img")
+    assert window.open_image(abbild)
+    assert not window.tool.findings().voll, "beim Öffnen läuft nur die Schnellprüfung"
+
+    pruef = FsckDialog(window.tool, window)
+    assert pruef.bericht.voll, "der Dialog prüft beim Öffnen selbst, und zwar voll"
+    assert pruef.geprueft, "das Hauptfenster muss den neuen Befund nachziehen"
+    assert pruef.liste.topLevelItemCount() == len(pruef.bericht.schritte) > 0
+    # Jede Zeile trägt ihr Zeichen und ihr Ergebnis — nichts steht leer da.
+    for i in range(pruef.liste.topLevelItemCount()):
+        zeile = pruef.liste.topLevelItem(i)
+        assert zeile.text(0) and zeile.text(1) and zeile.text(2), i
+
+    suche = RecoverDialog(window.tool, window, zielordner=str(tmp_path))
+    assert suche.bericht.voll, "Vorgabe ist die Suche über die ganze Oberfläche"
+    assert suche.bericht.finds, "die gelöschte Datei steht sofort da"
+    assert suche.liste.topLevelItemCount() == len(suche.bericht.schritte) > 0
+
+
+def test_ein_uebersprungener_schritt_steht_mit_seinem_grund_da(window, fixture_disks,
+                                                               tmp_path):
+    """„Nicht geprüft" ist eine Auskunft — „fehlt in der Liste" ist keine.
+
+    Bleibt das Speicherabbild unvollständig (physische Diskette), läuft nur die
+    Schnellprüfung; die teuren Schritte stehen trotzdem in der Checkliste.
+    """
+    from app.disktool.ui.fsck_dialog import FsckDialog
+
+    abbild = _mit_geloeschter_datei(
+        fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "teil_lauf.img")
+    assert window.open_image(abbild)
+
+    dlg = FsckDialog(window.tool, window, abbild_vollstaendig=False)
+    assert not dlg.bericht.voll, "unvollständig ⇒ es bleibt bei der Schnellprüfung"
+    uebersprungen = [s for s in dlg.bericht.schritte if not s.ausgefuehrt]
+    assert uebersprungen, "die teuren Schritte gehören sichtbar in die Liste"
+    assert all(s.grund for s in uebersprungen), "und jeder nennt seinen Grund"
+    zeilen = [dlg.liste.topLevelItem(i).text(2)
+              for i in range(dlg.liste.topLevelItemCount())]
+    assert any(z.startswith("übersprungen —") for z in zeilen), zeilen
 
 
 def test_die_suche_laeuft_nicht_von_selbst_und_braucht_ein_dateisystem(window,

@@ -518,6 +518,16 @@ int cmd_check(const Optionen& o) {
                       << ",\"cyl\":" << f.cyl << ",\"head\":" << f.head
                       << ",\"sector\":" << f.sector_index << "}";
         }
+        std::cout << "],\"steps\":[";
+        for (size_t k = 0; k < bericht.schritte.size(); ++k) {
+            const FsSchritt& sch = bericht.schritte[k];
+            if (k) std::cout << ",";
+            std::cout << "{\"id\":" << jsonText(sch.id)
+                      << ",\"title\":" << jsonText(sch.titel)
+                      << ",\"done\":" << (sch.ausgefuehrt ? "true" : "false")
+                      << ",\"why\":" << jsonText(sch.grund)
+                      << ",\"findings\":" << sch.treffer << "}";
+        }
         std::cout << "],\"damaged\":" << jsonListe(unlesbar)
                   << ",\"filesystem\":"
                   << (v->hasFileSystem() ? jsonText(v->detection().filesystem)
@@ -535,6 +545,22 @@ int cmd_check(const Optionen& o) {
         std::cout << "  (UNVOLLSTAENDIG: " << bericht.spuren_gelesen << " von "
                   << bericht.spuren_gesamt << " Spuren angesehen)";
     std::cout << "\n";
+
+    // Die Checkliste: was hat die Pruefung angesehen?  Ohne sie sagt „ohne Befund"
+    // nicht, WORAUF sich das bezieht — in der Oberflaeche steht sie aus demselben
+    // Grund oben im Dialog (Entwurf §5a).
+    if (!bericht.schritte.empty()) {
+        std::cout << "\n";
+        for (const FsSchritt& sch : bericht.schritte) {
+            const char* marke = !sch.ausgefuehrt ? "[-]" : (sch.treffer ? "[!]" : "[x]");
+            std::cout << "  " << marke << " " << sch.titel;
+            if (!sch.ausgefuehrt)
+                std::cout << "  — uebersprungen: " << sch.grund;
+            else if (sch.treffer)
+                std::cout << "  — " << sch.treffer << " Befund(e)";
+            std::cout << "\n";
+        }
+    }
 
     if (!bericht.findings.empty())
         std::cout << "\n" << bericht.alsText(v->volumeCount() > 1);

@@ -6,7 +6,7 @@ Löschen Nutzdaten — bei CP/M bleiben Name, Satzzahl und alle Blockzeiger im
 Verzeichnisplatz stehen, nur das Nutzerbyte wird 0xE5
 (doc/design/15_dateisystempruefung.md §13).
 
-Vier Festlegungen tragen diesen Dialog:
+Sechs Festlegungen tragen diesen Dialog:
 
 * **Retten geht vor Wiederherstellen** (E7).  „In den Ordner retten…" ist der
   Vorgabeknopf und bleibt an einer schreibgeschützten Diskette voll bedienbar —
@@ -24,10 +24,15 @@ Vier Festlegungen tragen diesen Dialog:
   steht: *ist das überhaupt, was ich suche?*  Bei UDOS gibt es dafür nicht einmal
   einen Namen — und die Sätze einer Datei liegen verkettet über die Diskette
   verstreut, von Hand fände sie niemand.
-* **Die Suchtiefe ist eine Entscheidung des Bedieners.**  Die Verzeichnissuche
-  sieht nur ins Verzeichnis, die Oberflächensuche in jeden freien Bereich — an
-  einer echten Diskette ist das der Unterschied zwischen einem Wimpernschlag und
-  ein bis zwei Minuten, und deshalb ist sie dort (noch) gesperrt.
+* **Gesucht wird beim Öffnen, und zwar tief** (§5a).  Vorher stand die Suchtiefe
+  auf „Verzeichnisreste" und der Dialog zeigte an einer gesunden Diskette nichts —
+  wer nicht wusste, dass er umstellen muss, hielt die Funktion für kaputt.  Die
+  Suchtiefe bleibt eine Entscheidung des Bedieners, aber die **Vorgabe ist die
+  tiefe Suche**; sie fällt nur dann auf die Verzeichnissuche zurück, wenn das
+  Speicherabbild unvollständig ist (physische Diskette).  An einer Datei kostet
+  der ganze Lauf rund 70 ms.
+* **Die Checkliste steht über der Fundliste.**  Sie sagt, was der Lauf angesehen
+  hat — „nichts gefunden" allein sagt das nicht (`ui/checkliste.py`).
 """
 
 from __future__ import annotations
@@ -44,6 +49,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core_binding.k1520disk import BRUCHSTUECK, SICHER
+from app.disktool.ui.checkliste import Checkliste
 
 #: Zeichen je Güte — dieselbe Sprache wie die Schwerezeichen des Prüfdialogs.
 ZEICHEN = {SICHER: "✔", 1: "≈", BRUCHSTUECK: "✂"}
@@ -101,6 +107,9 @@ class RecoverDialog(QDialog):
         self.tiefe = QComboBox()
         self.tiefe.addItem("Verzeichnisreste (schnell)", 0)
         self.tiefe.addItem("Ganze Oberfläche (jeder freie Bereich)", 1)
+        # Vorgabe ist die TIEFE Suche (s. Kopf) — umgestellt wird sie hier, und
+        # jede Umstellung sucht sofort neu.
+        self.tiefe.setCurrentIndex(1 if abbild_vollstaendig else 0)
         self.tiefe.currentIndexChanged.connect(lambda *_: self._suchen())
         # An einer PHYSISCHEN Diskette zöge die Oberflächensuche die ganze Scheibe
         # ein (0,5–0,8 s je Spur).  Gefragt wird deshalb nach der VOLLSTÄNDIGKEIT des
@@ -116,6 +125,8 @@ class RecoverDialog(QDialog):
         kopfzeile = QHBoxLayout()
         kopfzeile.addWidget(QLabel("Suchtiefe:"))
         kopfzeile.addWidget(self.tiefe, 1)
+
+        self.liste = Checkliste(was="Fund")
 
         self.baum = QTreeWidget()
         self.baum.setColumnCount(5)
@@ -170,6 +181,14 @@ class RecoverDialog(QDialog):
         teiler.setStretchFactor(0, 3)
         teiler.setStretchFactor(1, 2)
 
+        # Die Checkliste über beiden Spalten: sie gehört zum LAUF, nicht zur
+        # Fundliste — und der Lauf hat auch dann etwas zu sagen, wenn nichts kam.
+        senkrecht = QSplitter(Qt.Vertical)
+        senkrecht.addWidget(self.liste)
+        senkrecht.addWidget(teiler)
+        senkrecht.setStretchFactor(0, 0)
+        senkrecht.setStretchFactor(1, 3)
+
         #: Warum gerade nicht wiederhergestellt werden kann — über den Knöpfen,
         #: nicht im Tooltip: ein gesperrter Knopf ohne Begründung ist eine Sackgasse.
         self.hinweis = QLabel("")
@@ -190,7 +209,7 @@ class RecoverDialog(QDialog):
         lay = QVBoxLayout(self)
         lay.addWidget(self.kopf)
         lay.addLayout(kopfzeile)
-        lay.addWidget(teiler, 1)
+        lay.addWidget(senkrecht, 1)
         lay.addWidget(self.hinweis)
         lay.addWidget(self.knoepfe)
 
@@ -232,12 +251,19 @@ class RecoverDialog(QDialog):
         for spalte in range(5):
             self.baum.resizeColumnToContents(spalte)
 
+        self.liste.setze(self.bericht.schritte)
+
         gefunden = len(self.bericht.finds)
         was = "kein Fund" if not gefunden else f"{gefunden} Fund(e)"
+        tiefe = ("ganze Oberfläche" if self.bericht.voll else "nur Verzeichnisreste")
+        gelaufen = sum(1 for s in self.bericht.schritte if s.ausgefuehrt)
+        schritte = (f" · {gelaufen} von {len(self.bericht.schritte)} Schritten ausgeführt"
+                    if self.bericht.schritte else "")
         unvollstaendig = "" if self.bericht.complete else \
             " — UNVOLLSTÄNDIG: es wurden nicht alle Spuren angesehen"
         self.kopf.setText(
-            f"{self.tool.path or 'physische Diskette'} · {self.tool.filesystem}\n"
+            f"{self.tool.path or 'physische Diskette'} · {self.tool.filesystem}"
+            f" · {tiefe}{schritte}\n"
             f"{was}{unvollstaendig}")
 
         if self.bericht.finds:

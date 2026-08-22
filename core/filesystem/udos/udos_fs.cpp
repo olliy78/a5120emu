@@ -524,6 +524,20 @@ std::vector<FileEntry> UdosFileSystem::listNames() const {
     return out;
 }
 
+bool UdosFileSystem::firstSector(const std::string& name, FsRecoverOrt& out) const {
+    // Bei UDOS ist der Anfang der Datei ihr KOPFSEKTOR — dort stehen Typ, Laenge,
+    // ENTRY und die Segmente, also genau das, weswegen man nachsieht.  Er steht
+    // ohne jeden Spurzugriff im Verzeichniseintrag.
+    for (const UdosDirEntry& e : directory()) {
+        if (e.name != name) continue;
+        out.cyl    = e.header.track;
+        out.head   = head_;
+        out.sector = e.header.sectorId();
+        return true;
+    }
+    return false;
+}
+
 bool UdosFileSystem::detailsReady(const FileEntry& e) const {
     if (e.details_loaded) return true;
     for (const UdosDirEntry& d : directory())

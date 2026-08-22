@@ -7,6 +7,11 @@ CP/M-Diskette entfällt die Gruppierung ersatzlos.
 Die Ansicht hält **keinen** eigenen Verzeichnisstand: `set_disk()` bekommt bei
 jedem Aufruf die frisch gelesene Liste (§9.3).
 
+Eine Ausnahme: enthält eine GEÖFFNETE Diskette keine Dateien — leer formatiert,
+oder mit einem Format geöffnet, das nicht zu ihr passt —, steht das im leeren
+Feld („Keine Dateien gefunden").  Ohne diesen Satz sieht die Hälfte genauso aus
+wie vor dem Öffnen, und der Anwender weiss nicht, ob er auf etwas wartet.
+
 Sie trägt seit dem Umbau §20 auch **keine Meldungen** mehr: Pfad und Format stehen
 im Kopfbereich des Fensters, Auffälligkeiten im Meldungsstreifen, die Belegung
 rechts in der Statuszeile.  Hier ist nur noch die Liste.
@@ -17,7 +22,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from PySide6.QtCore import Qt, QMimeData, Signal
-from PySide6.QtGui import QDrag
+from PySide6.QtGui import QDrag, QPainter, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView, QHeaderView, QLabel, QMenu, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
@@ -36,6 +41,9 @@ class _Tree(QTreeWidget):
 
     files_dropped = Signal(list, int)   # (Pfade, Ziel-Seite)
 
+    #: Satz für die leere Liste — gesetzt von :meth:`DiskView.set_disk`.
+    leer_text = ""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
@@ -46,6 +54,21 @@ class _Tree(QTreeWidget):
         self.setUniformRowHeights(True)
         self.setAlternatingRowColors(True)
         self.setSortingEnabled(False)
+
+    # ── Der leere Fall sagt, dass er leer IST ───────────────────────────────
+
+    def paintEvent(self, event):  # noqa: N802
+        """Den Satz mittig ins leere Feld schreiben (wie Qts eigene Ansichten).
+
+        Kein Platzhalter-Eintrag: der liesse sich auswählen, ziehen und zählen —
+        ein Text im Hintergrund kann das alles nicht.
+        """
+        super().paintEvent(event)
+        if not self.leer_text:
+            return
+        maler = QPainter(self.viewport())
+        maler.setPen(self.palette().color(QPalette.Disabled, QPalette.Text))
+        maler.drawText(self.viewport().rect(), Qt.AlignCenter, self.leer_text)
 
     # ── Ziehen: die ausgewählten Dateien als Referenzliste ──────────────────
 
@@ -139,6 +162,7 @@ class DiskView(QWidget):
 
     def clear(self) -> None:
         self.tree.clear()
+        self.tree.leer_text = ""     # ohne Diskette ist leer keine Auskunft
         self.titel.setText("Diskette")
 
     def set_disk(self, tool, entries) -> None:
@@ -154,6 +178,9 @@ class DiskView(QWidget):
             return
 
         self.titel.setText(f"Diskette — {tool.filesystem}")
+        # Leer formatiert oder mit unpassendem Format geöffnet: beides sieht hier
+        # gleich aus, und beides muss beim Namen genannt werden.
+        self.tree.leer_text = "" if entries else "Keine Dateien gefunden"
 
         mehrseitig = tool.volume_count > 1
         gruppen = {}

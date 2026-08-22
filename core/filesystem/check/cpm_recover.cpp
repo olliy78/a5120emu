@@ -136,6 +136,8 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
     std::vector<uint8_t> roh;
     if (!directoryRaw(roh)) return bericht;
 
+    bericht.schritt("cpm.suche.lebend",
+                    "Lebende Dateien einlesen — ihre Bloecke sind tabu");
     // ── Was LEBT?  Bloecke und Namen ─────────────────────────────────────────
     std::map<uint16_t, std::string> lebend;      // Block → Datei, die ihn hat
     std::set<std::string>           lebt_name;   // Name (gross) einer lebenden Datei
@@ -206,6 +208,8 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
     };
 
     // ── 1. Geloeschte Verzeichnisplaetze ─────────────────────────────────────
+    bericht.schritt("cpm.suche.verzeichnis",
+                    "Geloeschte Verzeichnisplaetze: Name, Saetze und Blockzeiger");
     //
     // Zusammengefasst wird ueber den NAMEN: er ueberlebt das Loeschen, der
     // Nutzerbereich nicht.  Zwei nacheinander geloeschte Dateien gleichen Namens
@@ -378,11 +382,19 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
                             " unter einem anderen Namen geht es";
         f.wiederherstellbar = f.warum_nicht.empty();
 
-        bericht.funde.push_back(std::move(f));
+        bericht.hinzu(std::move(f));
       }
     }
 
     // ── 2. Freie Bloecke mit Inhalt (nur die Oberflaechensuche) ──────────────
+    if (level == FsRecoverLevel::Oberflaeche)
+        bericht.schritt("cpm.suche.oberflaeche",
+                        "Freie Bloecke mit Inhalt: jeder Bereich ohne Verzeichnisplatz");
+    else
+        bericht.schrittEntfaellt("cpm.suche.oberflaeche",
+                                 "Freie Bloecke mit Inhalt: jeder Bereich ohne "
+                                 "Verzeichnisplatz",
+                                 "nur bei der Suche ueber die ganze Oberflaeche");
     const size_t verzeichnisfunde = bericht.funde.size();
     if (level == FsRecoverLevel::Oberflaeche) {
         const std::vector<bool> karte = allocationMap();
@@ -416,7 +428,7 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
                           " gerettet wird der Rohinhalt (" + f.type + ")";
             f.warum_nicht = "Ein Rohbereich hat keinen Verzeichnisplatz, den man"
                             " zurueckholen koennte — herausholen laesst er sich aber";
-            bericht.funde.push_back(std::move(f));
+            bericht.hinzu(std::move(f));
             lauf.clear();
             lauf_daten.clear();
         };
@@ -442,6 +454,7 @@ FsRecoverReport CpmFileSystem::recoverScan(FsRecoverLevel level, bool nachladen)
         laufAbschliessen();
     }
 
+    bericht.schrittEnde();
     bericht.sortieren();
     return bericht;
 }

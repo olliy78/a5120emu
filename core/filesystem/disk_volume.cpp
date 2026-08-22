@@ -992,8 +992,16 @@ const FsCheckReport& DiskVolume::check(FsCheckLevel level, bool nachladen) {
         for (FsFinding& f : teil.findings) f.volume = static_cast<int>(v);
         check_.uebernimm(teil);
     }
+    // Die Erkennung ist selbst ein Schritt der Checkliste: an einer roh geoeffneten
+    // Diskette ist sie der EINZIGE, der etwas sagt (Ebene 0, §11), und an einer
+    // erkannten belegt sie, dass die Wahl des Dateisystems nachgeprueft wurde (§11a).
+    check_.schritt("erkennung.schritt",
+                   hasFileSystem()
+                       ? "Erkennung gegenproben: passt ein anderes Profil besser?"
+                       : "Dateisystem erkennen — warum kam keines in Frage?");
     if (!hasFileSystem()) ebene0(check_);
     else                  gegenprobe(check_, level, nachladen);
+    check_.schrittEnde();
     check_.level = level;      // uebernimm() zieht nach oben, hier gilt das Verlangte
     check_.sortieren();
     return check_;
@@ -1528,6 +1536,16 @@ bool DiskVolume::erase(const FileRef& ref) {
     if (!volumes_[static_cast<size_t>(ref.volume)].fs->erase(ref.name))
         return fail(volumes_[static_cast<size_t>(ref.volume)].fs->lastError());
     return true;
+}
+
+bool DiskVolume::firstSector(const FileRef& ref, int& cyl, int& head,
+                            int& sector) const {
+    if (!valid(ref.volume)) return false;
+    FsRecoverOrt o;
+    if (!volumes_[static_cast<size_t>(ref.volume)].fs->firstSector(ref.name, o))
+        return false;
+    cyl = o.cyl; head = o.head; sector = o.sector;
+    return o.cyl >= 0;
 }
 
 // ─── Sektoransicht (Diskeditor, §19) ─────────────────────────────────────────

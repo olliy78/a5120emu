@@ -237,6 +237,8 @@ public:
     /// Diskette; an einem echten Laufwerk ist das der Unterschied zwischen zwei
     /// Sekunden und einer halben Minute (14_physische_diskette.md §11.2b).
     std::vector<FileEntry> listNames() const override;
+    /// @brief Erster Sektor = der Kopfsektor bzw. Descriptor der Datei (§7.1b).
+    bool firstSector(const std::string& name, FsRecoverOrt& out) const override;
     bool detailsReady(const FileEntry& e) const override;
     bool loadDetails(FileEntry& e) const override;
     bool   read (const std::string& name, std::vector<uint8_t>& out) override;

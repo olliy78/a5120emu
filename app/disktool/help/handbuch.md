@@ -14,9 +14,20 @@ dieselbe Bibliothek und kommen deshalb immer zum selben Ergebnis.
 1. **Diskette öffnen** — *Datei ▸ Abbild öffnen* (Strg+O).
    Das Werkzeug erkennt Format und Dateisystem selbst; was es erkannt hat, steht
    im Kopfbereich.
-2. **Ansehen** — die Dateien stehen in der linken Liste, der Linux-Ordner rechts.
-   Den Ordner wählt man über seinen Pfad in der Überschrift oder über
-   *Übertragung ▸ Zielordner wählen*.
+2. **Ansehen** — die Dateien stehen in der linken Liste, der Ordner des
+   Wirtsystems rechts. Beim Start steht dort der Standardordner (siehe unten);
+   von da aus navigiert man wie in einem Dateimanager: `..` ganz oben führt
+   hinauf (auch die Rücktaste), ein Doppelklick auf einen Ordnernamen hinein.
+   Die **Adresszeile** darüber lässt sich überschreiben — Pfad eintippen,
+   Eingabetaste. Der Knopf mit dem Ordnersymbol daneben öffnet stattdessen den
+   gewohnten Auswahldialog (auch *Übertragung ▸ Zielordner wählen*).
+   Ein Rechtsklick in die rechte Liste legt einen **neuen Ordner** an
+   (`neu`, `neu2`, …, Strg+Umschalt+N) oder **benennt** den angeklickten Eintrag
+   **um** (F2). Beides geschieht im Feld an Ort und Stelle: Name eintippen,
+   Eingabetaste oder ein Klick daneben übernimmt ihn, `Esc` verwirft.
+   Findet das Werkzeug auf der Diskette keine Datei — leer formatiert oder mit
+   einem unpassenden Format geöffnet —, steht das in der linken Hälfte:
+   *Keine Dateien gefunden*.
 3. **Holen** — Dateien links markieren, dann `→|`. Ganze Diskette: `→→|`.
 4. **Ändern erlaubt?** Eine geöffnete Diskette ist zunächst **schreibgeschützt**.
    Wer schreiben will, hebt den Schutz bewusst auf: *Diskette ▸ Schreibschutz*
@@ -344,6 +355,17 @@ Diskette beanspruchen — wer als Zweiter schreibt, überschreibt den Ersten.
 sehen war: Kettenbrüche, doppelt belegte Bereiche, den Abgleich zwischen
 Belegungsplan und Dateien und Sektoren mit falscher Prüfsumme.
 
+**Sie läuft, sobald das Fenster aufgeht** — wer es öffnet, hat die Prüfung
+verlangt; an einer Datei dauert sie den Bruchteil einer Sekunde. Der Knopf *Noch
+einmal prüfen* wiederholt sie, etwa nach einem Eingriff im Diskeditor. Nur wenn
+eine echte Diskette noch nicht vollständig gelesen ist, bleibt es bei der
+Schnellprüfung.
+
+Oben im Fenster steht die **Checkliste**: eine Zeile je Arbeitsschritt, mit Haken
+und Ergebnis. Sie beantwortet die Frage, die „ohne Befund" offenlässt — *worauf*
+wurde denn gesehen. Ein Schritt, der nicht gelaufen ist, steht mit dazu und nennt
+den Grund (etwa „nur bei der Vollprüfung").
+
 Bei einer **echten Diskette am Greaseweazle** kostet das die ganze Scheibe (0,5–0,8 s
 je Spur). Deshalb lädt das Werkzeug die fehlenden Spuren **vorher** nach und zeigt
 dabei einen Fortschrittsbalken mit „*x* von *y* Spuren geladen" — abbrechbar. Danach
@@ -354,6 +376,26 @@ Die Prüfung **ändert nie etwas**. Dasselbe geht auf der
 Kommandozeile mit `k1520disktool check <abbild> --full`; das fasst jede Spur an
 und findet zusätzlich Sektoren mit falscher Prüfsumme — und sagt dazu, **welche
 Datei** darauf liegt.
+
+**Stimmt die angegebene Größe?** Ja, das wird geprüft — und zwar für jede Datei.
+Bei CP/M steht die Länge im Verzeichnis, die Daten stehen dort, wohin die
+Blockzeiger des Eintrags weisen; die Prüfung rechnet nach, ob die Zeiger die
+angesagte Länge überhaupt decken. Das ist wichtiger, als es klingt: fehlt ein
+Zeiger, kommt die Datei beim Herausholen **trotzdem in voller Größe** heraus — der
+Fehlbetrag besteht dann aus Nullen. Die Prüfung sagt es genau: *„14464 Byte
+angesagt (113 Sätze), aber nur 4096 Byte durch Blockzeiger gedeckt — beim
+Herausholen kämen 10368 Byte Nullen heraus."* Der Vorschlag dazu setzt die
+Satzzahl auf das, was wirklich dasteht; er ist als *Datenverlust* gekennzeichnet
+und deshalb nicht vorausgewählt, denn die Datei wird dadurch kürzer.
+
+Bei UDOS und NDOS gibt es dieselbe Nachrechnung schon länger — dort steht die
+Satzzahl im Kopfsektor und die Kette der Sätze ist die zweite Auskunft darüber
+(*„Der Kopfsektor sagt 11 Sätze an, die Kette hat 7"*).
+
+Ist die Prüfung ohne Befund, dann ist die Datei beim Herausholen **byte-genau so
+groß, wie sie angegeben ist** — im Übertragungsmodus *binär*. Im Modus *Text*
+werden Zeilenenden umgesetzt (CR LF ↔ LF), und dabei ändert sich die Bytezahl
+gewollt.
 
 Bei UDOS-Disketten (beide Ausprägungen) kann die volle Prüfung mehr als bei CP/M:
 dort steht die Verkettung der Dateien in den Daten selbst und daneben ein
@@ -366,6 +408,12 @@ Die volle Prüfung sieht dort außerdem in die **freien** Bereiche. Ein Sektor m
 falscher Prüfsumme, der zu keiner Datei gehört, ist nämlich nicht nichts: dort liegen
 die gelöschten Dateien, und dorthin schreibt UDOS als nächstes. Es ist kein
 Datenverlust — aber ein Grund, die Diskette zu kopieren, solange es noch geht.
+
+**Von der Datei zu ihren Bytes:** ein Rechtsklick auf eine Datei in der linken
+Liste bietet *Im Diskeditor öffnen* an — das schlägt ihren ersten Sektor auf (bei
+UDOS den Kopfsektor mit Typ, Länge und Segmenten). Im Diskeditor sind bei UDOS die
+Zeilen *zurück:* und *vor:* **anklickbar**: so folgt man der Kette einer Datei von
+Satz zu Satz, ohne Spur und Sektor abzutippen.
 
 ## Reparieren
 
@@ -423,6 +471,11 @@ Daraus folgt der Unterschied, der beim Bedienen auffällt: bei CP/M kennt der Fu
 seinen Namen, bei UDOS nicht. Dort heißt er `GERETTET.001` — es sei denn, im
 Verzeichnis steht noch ein Namensrest, dann wird der **vorgeschlagen** (nie als
 Tatsache ausgegeben; er lässt sich in der Liste ändern).
+
+**Gesucht wird sofort beim Öffnen des Fensters**, und zwar über die ganze
+Oberfläche — an einer Datei kostet das den Bruchteil einer Sekunde. Wie bei der
+Prüfung steht oben eine **Checkliste** mit den Schritten des Laufs und dem, was
+jeder gefunden hat.
 
 Zwei Suchtiefen stehen oben im Fenster:
 
@@ -609,6 +662,7 @@ Zahl der Befunde ist das nicht zu erkennen, an der Zahl der Dateien schon.
 |--------|---------|
 | Strg+O | Abbild öffnen |
 | Strg+N | Neue Diskette |
+| Strg+Umschalt+N | Neuen Ordner anlegen (rechte Hälfte) |
 | Strg+Umschalt+O | Physische Diskette laden |
 | Strg+S | Speichern |
 | Strg+Umschalt+S | Speichern unter |
@@ -623,6 +677,7 @@ Zahl der Befunde ist das nicht zu erkennen, an der Zahl der Dateien schon.
 | Strg+R | Schreibschutz |
 | Strg+E | Diskeditor |
 | Strg+F | Dateisystem prüfen und reparieren |
+| F2 | Umbenennen (rechte Hälfte) |
 | F5 | Aktualisieren |
 | F8 | Protokoll |
 | F1 | Dieses Handbuch |

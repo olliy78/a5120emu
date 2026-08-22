@@ -71,12 +71,68 @@ void FsCheckReport::sortieren() {
     });
 }
 
+FsSchritt& FsCheckReport::schritt(std::string id, std::string titel) {
+    for (size_t k = 0; k < schritte.size(); ++k)
+        if (schritte[k].id == id) {
+            // Fortsetzung: ein Schritt, der zweimal drankommt (je Volume, je
+            // Durchgang), bleibt EINE Zeile der Checkliste.
+            aktueller_schritt = static_cast<int>(k);
+            schritte[k].ausgefuehrt = true;
+            schritte[k].grund.clear();
+            return schritte[k];
+        }
+    FsSchritt s;
+    s.id    = std::move(id);
+    s.titel = std::move(titel);
+    schritte.push_back(std::move(s));
+    aktueller_schritt = static_cast<int>(schritte.size()) - 1;
+    return schritte.back();
+}
+
+void FsCheckReport::schrittEntfaellt(std::string id, std::string titel,
+                                     std::string grund) {
+    // Der uebersprungene Schritt gehoert in die Liste, nicht weggelassen: „nicht
+    // geprueft" ist eine Auskunft, „fehlt in der Liste" ist keine.
+    for (const FsSchritt& vorhanden : schritte)
+        if (vorhanden.id == id) return;      // schon gelaufen — dann gilt das
+    FsSchritt s;
+    s.id          = std::move(id);
+    s.titel       = std::move(titel);
+    s.ausgefuehrt = false;
+    s.grund       = std::move(grund);
+    schritte.push_back(std::move(s));
+    aktueller_schritt = -1;
+}
+
+void FsCheckReport::zaehleImSchritt(FsSeverity s) {
+    if (aktueller_schritt < 0 || static_cast<size_t>(aktueller_schritt) >= schritte.size())
+        return;
+    FsSchritt& sch = schritte[static_cast<size_t>(aktueller_schritt)];
+    ++sch.treffer;
+    if (s > sch.hoechste) sch.hoechste = s;
+}
+
 void FsCheckReport::uebernimm(const FsCheckReport& anderer) {
     findings.insert(findings.end(), anderer.findings.begin(), anderer.findings.end());
     if (!anderer.vollstaendig) vollstaendig = false;
     spuren_gelesen += anderer.spuren_gelesen;
     spuren_gesamt  += anderer.spuren_gesamt;
     if (anderer.level > level) level = anderer.level;
+    // Die Checkliste wird ueber die Volumes hinweg zu EINER: dieselbe Kennung ist
+    // derselbe Schritt, seine Treffer addieren sich.  Zwei Seiten einer Diskette
+    // ergeben sonst zweimal dieselbe Zeile.
+    for (const FsSchritt& s : anderer.schritte) {
+        auto gefunden = std::find_if(schritte.begin(), schritte.end(),
+                                     [&](const FsSchritt& x) { return x.id == s.id; });
+        if (gefunden == schritte.end()) { schritte.push_back(s); continue; }
+        gefunden->treffer += s.treffer;
+        if (s.hoechste > gefunden->hoechste) gefunden->hoechste = s.hoechste;
+        if (s.ausgefuehrt && !gefunden->ausgefuehrt) {
+            gefunden->ausgefuehrt = true;
+            gefunden->grund.clear();
+        }
+    }
+    aktueller_schritt = -1;
 }
 
 void FsCheckReport::begrenzen(size_t je_kennung) {
@@ -159,6 +215,7 @@ FsFinding& FsFindings::add(std::string id, FsSeverity sev, FsLayer layer,
     f.object   = std::move(object);
     f.text     = std::move(text);
     an_.findings.push_back(std::move(f));
+    an_.zaehleImSchritt(sev);      // eifrig: ueberlebt jeden vorzeitigen Ausstieg
     return an_.findings.back();
 }
 

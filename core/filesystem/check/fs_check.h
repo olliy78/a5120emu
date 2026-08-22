@@ -70,6 +70,31 @@ const char* fsSeverityName(FsSeverity s);   ///< "Hinweis"|"Warnung"|"Fehler"|"G
 const char* fsLayerName(FsLayer l);         ///< "Medium"|"Verwaltung"|"Dateien"|"Erkennung"
 
 /**
+ * @struct FsSchritt
+ * @brief Ein **Arbeitsschritt** der Pruefung bzw. der Suche — die Checkliste (§5a).
+ *
+ * Der Grund, warum es das gibt: eine Pruefung, die „ohne Befund" meldet, sagt dem
+ * Bediener nicht, WORAUF sie gesehen hat.  Bei einer dreissig Jahre alten Diskette
+ * ist das der Unterschied zwischen einer Entwarnung und einem Achselzucken — und
+ * ein Lauf, der 70 ms dauert, sieht ohne diese Liste aus, als haette er gar nicht
+ * stattgefunden.
+ *
+ * Die Schritte werden von den Pruefern selbst gemeldet (@ref FsCheckReport::schritt),
+ * nicht von der Oberflaeche erfunden: eine Checkliste, die etwas behauptet, was
+ * nicht gelaufen ist, waere schlimmer als gar keine.  Gezaehlt wird **eifrig** —
+ * jeder Befund landet im gerade offenen Schritt, sobald er entsteht; damit ueberlebt
+ * die Zaehlung auch die vorzeitigen Ausstiege und das spaetere Umsortieren.
+ */
+struct FsSchritt {
+    std::string id;                     ///< stabile Kennung, z. B. "cpm.schritt.verzeichnis"
+    std::string titel;                  ///< eine Zeile Klartext fuer die Anzeige
+    bool        ausgefuehrt = true;     ///< @c false = uebersprungen, Grund in @ref grund
+    std::string grund;                  ///< warum uebersprungen ("nur bei der Vollpruefung")
+    int         treffer = 0;            ///< Befunde bzw. Funde, die in ihm entstanden
+    FsSeverity  hoechste = FsSeverity::Info;  ///< schwerster Befund darin (Pruefung)
+};
+
+/**
  * @struct FsRepair
  * @brief Ein Reparaturvorschlag zu genau einem Befund.
  *
@@ -146,6 +171,22 @@ struct FsCheckReport {
     /// @}
 
     std::vector<FsFinding> findings;   ///< nach @ref sortieren geordnet
+
+    /// @brief Die abgearbeitete Checkliste, in der Reihenfolge der Ausfuehrung (§5a).
+    std::vector<FsSchritt> schritte;
+    /// @brief Index des offenen Schritts (-1 = keiner) — Buchhaltung, nicht Ergebnis.
+    int aktueller_schritt = -1;
+
+    /// @brief Einen Schritt beginnen (und den vorigen damit beenden).
+    ///        Ein zweites Mal mit derselben @p id fuehrt den bestehenden fort.
+    FsSchritt& schritt(std::string id, std::string titel);
+    /// @brief Einen Schritt vermerken, der NICHT gelaufen ist, mit Begruendung.
+    void schrittEntfaellt(std::string id, std::string titel, std::string grund);
+    /// @brief Keinen Schritt mehr offen halten (alles Weitere zaehlt nirgends).
+    void schrittEnde() { aktueller_schritt = -1; }
+    /// @brief Einen entstandenen Befund dem offenen Schritt zuschlagen.
+    ///        Ruft @ref FsFindings; von Hand braucht es das nicht.
+    void zaehleImSchritt(FsSeverity s);
 
     bool       ohneBefund() const { return findings.empty(); }
     /// @brief Hoechste vorkommende Schwere; bei leerem Bericht @c Info.

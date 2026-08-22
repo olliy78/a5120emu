@@ -279,6 +279,22 @@ public:
     virtual bool loadDetails(FileEntry& e) const { (void)e; return true; }
 
     /// @brief Dateiinhalt lesen.  @p name wie @ref FileEntry::qualifiedName.
+    /**
+     * @brief Wo die Datei ANFAENGT — fuer den Sprung in den Diskeditor.
+     *
+     * Geliefert wird der erste Sektor in **Lesereihenfolge**: bei CP/M der erste
+     * Sektor des ersten Blocks von Extent 0, bei UDOS und NDOS der Kopfsektor
+     * bzw. der Descriptor (dort steht auch das, woran man die Datei erkennt).
+     * Die Sektorangabe ist die **Kennung**, nicht der Versatz in der Spur — wie
+     * bei @ref FsRecoverFind::orte, und aus demselben Grund.
+     *
+     * @return `false`, wenn die Datei nicht existiert oder das Dateisystem die
+     *         Auskunft nicht geben kann (Vorgabe).
+     */
+    virtual bool firstSector(const std::string& name, FsRecoverOrt& out) const {
+        (void)name; (void)out; return false;
+    }
+
     virtual bool read(const std::string& name, std::vector<uint8_t>& out) = 0;
 
     /// @brief Datei einfuegen/ersetzen.

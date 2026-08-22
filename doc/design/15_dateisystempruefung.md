@@ -370,6 +370,80 @@ const FsCheckReport& check(FsCheckLevel, bool nachladen); ///< neu prüfen
 int  applyRepairs(const std::vector<std::pair<int,int>>& auswahl);  ///< Transaktion (E6)
 ```
 
+### 5a. Die Checkliste — was hat der Lauf getan?   *(2026-08-21)*
+
+Am fertigen Werkzeug fiel eine Lücke auf, die keine Falschaussage ist, aber
+dieselbe Wirkung hat: **ein Bericht „ohne Befund" sagt nicht, worauf gesehen
+wurde.** Dazu kommt die Geschwindigkeit — eine Vollprüfung über 160 Spuren dauert
+an einer Datei rund 70 ms. Beides zusammen ergibt einen Dialog, der aussieht, als
+täte er nichts. Der Bediener kann nicht unterscheiden zwischen *„geprüft, alles in
+Ordnung"* und *„hier passiert gar nichts"* — und genau das war die Rückmeldung.
+
+Deshalb führt jeder Lauf eine **Checkliste** mit: eine Zeile je Arbeitsschritt,
+mit Haken und Ergebnis.
+
+```
+✔  Verzeichnissektoren: Adressmarken und Prüfsummen        ohne Befund
+✔  Verzeichnis: Plätze, Namen, Extents und Blockzeiger     ohne Befund
+⚠  Kreuzbelegung: gehört ein Block zwei Dateien?           2 Befunde
+–  Systemspuren: Adressmarken und Prüfsummen               übersprungen — nur bei der Vollprüfung
+```
+
+Das Modell ist ein Datensatz, kein Text: `FsSchritt { id, titel, ausgefuehrt,
+grund, treffer, hoechste }`, geführt in `FsCheckReport::schritte` und
+`FsRecoverReport::schritte`. Fünf Festlegungen:
+
+1. **Die Schritte kommen aus dem Prüfer, nicht aus der Oberfläche.** Eine
+   Checkliste, die einen Schritt behauptet, den es nicht gab, wäre schlimmer als
+   gar keine — sie wäre genau die Falschmeldung, die E10 verbietet. Jeder Prüfer
+   ruft `bericht.schritt(id, titel)` an der Stelle, an der er diesen Abschnitt
+   beginnt.
+2. **Gezählt wird eifrig, nicht am Ende.** `FsFindings::add` schlägt jeden Befund
+   dem gerade offenen Schritt zu, `FsRecoverReport::hinzu` jeden Fund. Eine
+   Nachrechnung über Indexbereiche wäre an den vorzeitigen Ausstiegen
+   (`return bericht;` bei unlesbarem Verzeichnis) und am späteren `sortieren()`
+   gescheitert.
+3. **Ein übersprungener Schritt steht mit in der Liste**
+   (`schrittEntfaellt(id, titel, grund)`). „Nicht geprüft" ist eine Auskunft;
+   „fehlt in der Liste" ist keine. Der Grund steht dabei — *„nur bei der
+   Vollprüfung"*, *„das Speicherabbild ist unvollständig"*.
+4. **Über die Volumes hinweg ist es EINE Liste.** `uebernimm()` führt Schritte
+   gleicher Kennung zusammen und addiert ihre Treffer; beide Seiten einer
+   UDOS-Diskette ergäben sonst jede Zeile doppelt.
+5. **Die Kennung ist ein Vertrag wie die der Befunde** (E5):
+   `cpm.schritt.verzeichnis`, `udos.suche.oberflaeche`, … Sie steht in `--json`
+   und in den Tests.
+
+Sichtbar wird sie an drei Stellen: oben in beiden Dialogen (`ui/checkliste.py`,
+gleich gebaut für Prüfung und Suche), als `[x]`/`[!]`/`[-]`-Block in
+`k1520disktool check` und als `"steps"` in dessen `--json`. Wächter:
+`FsCheckCheckliste.*`, `FsRecoverCheckliste.*`,
+`test_beide_dialoge_laufen_beim_oeffnen_los_und_zeigen_ihre_checkliste`,
+`test_ein_uebersprungener_schritt_steht_mit_seinem_grund_da`.
+
+#### Und der Lauf startet von selbst
+
+Zur selben Rückmeldung gehört die zweite Hälfte: **beide Dialoge rechnen beim
+Öffnen los** — der Prüfdialog mit der *Vollprüfung*, der Suchdialog mit der
+*Oberflächensuche*. Vorher zeigte der eine nur den Befund der Schnellprüfung vom
+Mounten und der andere stand auf „Verzeichnisreste"; an einer gesunden Diskette
+zeigten beide nichts an, bis jemand einen Knopf fand.
+
+Das ist **kein Widerspruch zu E2**. E2 begründet, warum beim **Öffnen der
+Diskette** nur die Schnellprüfung läuft: dort ist die Prüfung ein Nebenprodukt,
+und an einer physischen Diskette dürfte sie keinen einzigen zusätzlichen
+Spurzugriff kosten. Wer dagegen *„Dateisystem prüfen"* aufruft, hat den Lauf
+verlangt.
+
+Die eine Bedingung bleibt die Vollständigkeit des Speicherabbilds: ist es
+unvollständig (physische Diskette mit ungelesenen Spuren), bleibt es bei der
+Schnellprüfung bzw. der Verzeichnissuche, und die Checkliste sagt mit ihren
+übersprungenen Zeilen, was deshalb nicht geschah. In der Praxis lädt das
+Hauptfenster vorher nach (`_abbild_vervollstaendigen`, §17), sodass beide Dialoge
+auch an einer echten Diskette voll rechnen. Der frühere Knopf „Vollprüfung" heißt
+seitdem **„Noch einmal prüfen"** — er ist die Wiederholung nach einem Eingriff,
+nicht der Anfang.
+
 ---
 
 ## 6. Drei Ebenen, zwei Tiefen
@@ -453,7 +527,8 @@ zurückrechnen, der er gehört.  Bei UDOS (§9) liegt das genau andersherum.
 | `cpm.dir.name` | Name enthält Kleinbuchstaben, Steuerzeichen oder eines von `<>.,;:=?*[]`; leerer Name bei belegtem Platz | Fehler |
 | `cpm.dir.doppelt` | Zwei Plätze mit gleichem Nutzerbereich, Namen **und** Extentnummer | Fehler |
 | `cpm.dir.extentluecke` | Die Extents einer Datei sind nicht 0…n lückenlos (Extent 2 vorhanden, 1 fehlt) | Fehler |
-| `cpm.dir.rc` | `RC > 128`; oder `RC ≠ 128` in einem Extent, dem weitere folgen; oder `RC` passt nicht zur Zahl belegter Blockzeiger | Warnung (Länge falsch) |
+| `cpm.dir.rc` | `RC > 128` — mehr Sätze, als ein Extent trägt | Warnung |
+| `cpm.dir.groesse` | Die **angesagte Größe ist nicht durch Blockzeiger gedeckt** (Fehler) — oder es sind mehr Blöcke belegt, als die Satzzahl braucht (Warnung).  Siehe §7.1a | Fehler / Warnung |
 | `cpm.block.ausserhalb` | Blockzeiger ≥ `totalBlocks()` — der heutige Hinweis „vermutlich das falsche Dateisystemprofil" | Fehler |
 | `cpm.block.verzeichnis` | Blockzeiger zeigt in die Verzeichnisblöcke: die Datei „enthält" das Verzeichnis | Gefahr |
 | `cpm.block.doppelt` | Ein Block steht in zwei Verzeichnisplätzen | **Gefahr** |
@@ -463,6 +538,97 @@ zurückrechnen, der er gehört.  Bei UDOS (§9) liegt das genau andersherum.
 | `cpm.dir.geloescht` | *n* freie Plätze tragen noch einen lesbaren Eintrag: wiederherstellbar (§13) | Info |
 | `cpm.verz.ungelesen` | Die Verzeichnisspur ist an einer physischen Diskette noch nicht gelesen — geprüft wurde nichts | Info |
 | `cpm.verz.unlesbar` / `cpm.bereich.fehlt` | Der Verzeichnisbereich bzw. `data_start` ist nicht erreichbar | Fehler |
+
+#### 7.1a Stimmt die angesagte Größe?   *(2026-08-21)*
+
+Die Frage, die dahintersteht, ist die des Anwenders: **„Wenn da 14 464 Byte
+stehen — stehen die auch wirklich auf der Diskette, und bekomme ich beim
+Herausholen genau so viele?"** Bei CP/M sind das zwei verschiedene Angaben:
+
+* die **Länge** steht im Verzeichnis (höchste Extentnummer × 16 384 + `RC` × 128),
+* die **Daten** stehen dort, wohin die 8 bzw. 16 Blockzeiger des Platzes zeigen.
+
+Laufen sie auseinander, fällt es **beim Herausholen nicht auf**:
+`CpmFileSystem::read` füllt einen leeren Blockzeiger mit Nullen und schneidet am
+Schluss auf die angesagte Länge. Die Datei kommt also in voller Größe heraus —
+zum Teil erfunden. Nachgestellt (sechs von acht Zeigern eines Platzes genullt):
+das Verzeichnis sagt weiter 14 464 Byte, `get` liefert 14 464 Byte, davon 10 368
+Byte Nullen, und die Prüfung sagte **„ohne Befund"**.
+
+Deshalb rechnet die Prüfung je Verzeichnisplatz nach:
+
+```
+angesagt = (Extentnummer mod Extents je Platz) × 16384 + min(RC,128) × 128
+nötig    = aufgerundet(angesagt / Blockgröße)          Blöcke
+belegt   = Zahl der Blockzeiger ≠ 0
+```
+
+* `belegt < nötig` → **Fehler**: *„14464 Byte angesagt (113 Sätze), aber nur 4096
+  Byte durch Blockzeiger gedeckt — beim Herausholen kämen 10368 Byte Nullen
+  heraus."* Vorschlag: `cpm.rc.anpassen` auf die gedeckte Satzzahl (als
+  `Datenverlust` gekennzeichnet und darum **nicht** vorausgewählt — die Datei wird
+  dadurch kürzer, dafür ehrlich). Der Vorschlag entfällt, wenn der Platz nicht bei
+  seinem ersten logischen Extent steht: dann müsste auch die Extentnummer geändert
+  werden, und das wäre geraten.
+* `belegt > nötig` → **Warnung**: es sind Blöcke belegt, die über das Verzeichnis
+  nicht erreichbar sind (verlorener Platz, meist eine zu klein geratene `RC`).
+
+Drei Dinge daran sind Absicht:
+
+1. **Der Abgleich läuft schon in der Schnellprüfung** — er braucht nur das
+   Verzeichnis, und das ist beim Mounten ohnehin gelesen (E2 bleibt gewahrt).
+2. **`belegt == 0 && RC > 0` bleibt `cpm.dir.leer`** — derselbe Sachverhalt in
+   seiner extremen Ausprägung hatte schon eine Kennung, und zwei Befunde für eine
+   Sache sind einer zu viel.
+3. **Bei `RC > 128` wird gar nicht erst gerechnet.** Das ist für sich schon
+   `cpm.dir.rc` mit eigenem Vorschlag; eine Größenlücke obendrauf wäre zweimal
+   derselbe Schaden — und nach dem Richtigstellen der Satzzahl rechnet der
+   nächste Lauf ohnehin ehrlich nach.  (Gefunden hat das der Wächter
+   `FsCheckReparatur.CpmSatzzahlWirdAngepasst`: seine Injektion `RC = 200`
+   erzeugte prompt beide Befunde.)
+
+**Bei UDOS und NDOS gibt es diesen Befund längst** — dort ist die Länge im
+Kopfsektor (`record_count`) und die Kette bzw. die Zeigersektoren sind die zweite
+Darstellung derselben Sache: `udos.kette.bruch` (*„Der Kopfsektor sagt 11 Sätze
+an, die Kette hat 7"*) und `ndos.zeiger.anzahl` sind genau dieser Abgleich.  CP/M
+war die Lücke, weil dort *scheinbar* alles im Verzeichnis steht.
+
+#### 7.1b Von der Datei zu ihren Bytes: `firstSector`   *(2026-08-22)*
+
+Die Prüfung führt jeden Befund an seinen Ort (E9), die Rettung jeden Fund
+(§13.3a) — nur die **lebende Datei** hatte keinen Weg in den Diskeditor. Wer
+nachsehen wollte, was in einer Datei wirklich steht, musste Spur und Sektor
+ausrechnen.
+
+`FileSystem::firstSector(name, FsRecoverOrt&)` schließt das: Rechtsklick auf eine
+Datei → *Im Diskeditor öffnen* springt auf ihren **ersten Sektor**.
+
+| Dateisystem | Was „erster Sektor" heißt |
+|---|---|
+| CP/M / SCP1700 | der erste Blockzeiger ≠ 0 des **kleinsten** Extents — nicht des ersten gefundenen Verzeichnisplatzes: die Plätze einer Datei stehen im Verzeichnis in beliebiger Reihenfolge |
+| UDOS / ZDOS | der **Kopfsektor** — er steht ohne jeden Spurzugriff im Verzeichniseintrag, und dort stehen Typ, Länge, ENTRY und die Segmente |
+| UDOS1715 / NDOS | der **Descriptor**, dazu der aus dem Sektorindex abgeleitete Kopf (§21.3) |
+
+Zwei Festlegungen: die Sektorangabe ist die **Kennung**, nicht der Versatz in der
+Spur (wie bei `FsRecoverFind::orte` — der Diskeditor sucht über die ID), und eine
+Datei **ohne** Block liefert `false`; die Statuszeile sagt es dann, statt ins Leere
+zu springen.
+
+> **Falle beim Bauen:** `directory()` gibt seinen Vektor als **Wert** zurück. Ein
+> Zeiger auf den besten Eintrag zeigte nach der Schleife ins Leere — die Funktion
+> lieferte für jede CP/M-Datei stumm „nichts". Deshalb hält `firstSector` eine
+> **Kopie** des Eintrags.
+
+**Und im Diskeditor sind die UDOS-Zeiger Verweise.** Der Nachspann eines Sektors
+(`zurück: Spur 22/Sektor 16   vor: Spur 34/Sektor 17`) ist anklickbar; ein Klick
+springt dorthin, das Kettenende bleibt Text. Das ist kein Komfort, sondern die
+Bedienung, die zur Sache passt: die Sätze einer UDOS-Datei liegen physisch
+verstreut (`NOTE.TO.SD`: Sektor 6, 7, 12, 23, 1, 8 …), und die Kette zu verfolgen
+hieß vorher, jedes Paar abzutippen. Die **Seite** kommt beim Klick aus dem gerade
+gezeigten Sektor — eine UDOS-Kette wechselt die Seite nie (§9.1).
+
+Wächter: `test_eine_datei_laesst_sich_im_diskeditor_aufschlagen`,
+`test_die_udos_zeiger_im_diskeditor_sind_verweise`.
 
 ### 7.2 Ebene Dateien und Medium (Vollprüfung)
 
@@ -1027,7 +1193,16 @@ Bibliothek, kein Rückruf in die Anwendung.
 /** level: 0 = schnell, 1 = voll.  nachladen=false bleibt bei bekannten Spuren.
  *  @return Zahl der Befunde, -1 bei Fehler (k1520d_last_error). */
 K1520_API int  k1520d_check(K1520Disk h, int level, bool nachladen);
+K1520_API int  k1520d_check_level(K1520Disk h);      /* 0 schnell, 1 voll */
 K1520_API bool k1520d_check_complete(K1520Disk h);
+/* Die Checkliste (§5a) — je Schritt eine Zeile, aus dem Prüfer selbst. */
+K1520_API int         k1520d_check_step_count(K1520Disk h);
+K1520_API const char* k1520d_check_step_id(K1520Disk h, int k);     /* "cpm.schritt.verzeichnis" */
+K1520_API const char* k1520d_check_step_title(K1520Disk h, int k);
+K1520_API bool        k1520d_check_step_done(K1520Disk h, int k);   /* false = übersprungen */
+K1520_API const char* k1520d_check_step_why(K1520Disk h, int k);    /* warum übersprungen */
+K1520_API int         k1520d_check_step_findings(K1520Disk h, int k);
+K1520_API int         k1520d_check_step_severity(K1520Disk h, int k);
 /** Fortschritt eines laufenden Prüf- oder Suchlaufs.  Die EINZIGE Funktion, die
  *  nebenläufig zum laufenden Lauf gerufen werden darf (wie k1520s_stats). */
 K1520_API void k1520d_check_progress(K1520Disk h, int* getan, int* gesamt);
@@ -1058,7 +1233,15 @@ K1520_API int k1520d_apply_repairs(K1520Disk h, const int* befund, const int* re
 /** level: 0 = nur Verzeichnisreste (billig), 1 = volle Oberflächensuche.
  *  nachladen wie bei k1520d_check.  @return Zahl der Funde, -1 bei Fehler. */
 K1520_API int         k1520d_recover_scan(K1520Disk h, int level, bool nachladen);
+K1520_API int         k1520d_recover_level(K1520Disk h);   /* 0 Verzeichnis, 1 Oberfläche */
 K1520_API bool        k1520d_recover_complete(K1520Disk h);
+/* Checkliste des Suchlaufs, wie bei der Prüfung (§5a). */
+K1520_API int         k1520d_recover_step_count(K1520Disk h);
+K1520_API const char* k1520d_recover_step_id(K1520Disk h, int k);
+K1520_API const char* k1520d_recover_step_title(K1520Disk h, int k);
+K1520_API bool        k1520d_recover_step_done(K1520Disk h, int k);
+K1520_API const char* k1520d_recover_step_why(K1520Disk h, int k);
+K1520_API int         k1520d_recover_step_finds(K1520Disk h, int k);
 K1520_API int         k1520d_recover_count(K1520Disk h);
 K1520_API const char* k1520d_recover_name(K1520Disk h, int i);    /* "" = unbekannt */
 K1520_API const char* k1520d_recover_type(K1520Disk h, int i);
@@ -1176,6 +1359,10 @@ Richtungen prüft; das Handbuch bekommt stattdessen einen eigenen Abschnitt.
 ┌─ Dateisystem prüfen und reparieren ─────────────────────────────────────┐
 │ udos_boot_scp.hfe · udos43 · Vollprüfung · 160 von 160 Spuren angesehen │
 │ 2 Gefahr   1 Fehler   4 Warnungen   3 Hinweise                          │
+├─ Checkliste ────────────────────────────────────────────────────────────┤
+│ ✔ Belegungsplan: Plausibilität, Geometrie, Freizähler     ohne Befund   │
+│ ⛔ Karte gegen Ketten: belegt, aber als frei geführt        2 Befunde    │
+│ – Systemspuren: Adressmarken und Prüfsummen    übersprungen — nur voll  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ ☑ ⛔ Side0  c31h0 S9   Sektor gehört zu HELP.DAT.00, steht aber frei    │
 │      ↳ [Sektor im Belegungsplan nachtragen           ▾]  empfohlen      │
@@ -1192,12 +1379,16 @@ Richtungen prüft; das Handbuch bekommt stattdessen einen eigenen Abschnitt.
 │ nächsten Schreiben vergeben.                    [Im Diskeditor zeigen]  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ 🔒 Die Diskette ist schreibgeschützt — Reparieren nicht möglich.        │
-│ [Vollprüfung]  [Bericht speichern…]     [Ausgewählte reparieren] [Zu]   │
+│ [Noch einmal prüfen]                    [Ausgewählte reparieren] [Zu]   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 Festlegungen:
 
+* **Er prüft beim Öffnen, und zwar voll** (§5a); der Knopf ist die Wiederholung.
+  Nur ein unvollständiges Speicherabbild lässt es bei der Schnellprüfung.
+* **Die Checkliste steht über dem Befund** — sonst sagt „ohne Befund" nicht, worauf
+  gesehen wurde.
 * **Nichts ist vorausgewählt, was Daten verwirft.** Vorausgewählt sind ausschließlich
   Reparaturen mit `empfohlen && !datenverlust`.
 * Ein Befund **ohne** Reparatur steht ohne Ankreuzfeld da — er ist kein Versäumnis,
@@ -1212,8 +1403,9 @@ Festlegungen:
 
 Links die Fundliste (*Name · Typ · Größe · Güte · Herkunft*, der Konflikt als
 Kurzhinweis an der Zeile und in voller Länge über der Vorschau), rechts die Vorschau
-(Hexdump mit ASCII-Spalte, umschaltbar auf Text). Oben die Wahl der Suchtiefe
-(*Verzeichnisreste* ↔ *Ganze Oberfläche*); unten drei Knöpfe:
+(Hexdump mit ASCII-Spalte, umschaltbar auf Text), darüber die Checkliste des Laufs
+(§5a). Oben die Wahl der Suchtiefe (*Verzeichnisreste* ↔ *Ganze Oberfläche*) —
+**vorgewählt ist die ganze Oberfläche**, und gesucht wird schon beim Öffnen; unten drei Knöpfe:
 **„In den Ordner retten…"** (Vorgabe, immer bedienbar), **„Auf der Diskette
 wiederherstellen"** (nur bei Schreibrecht; bei Bruchstücken mit Rückfrage) und
 **„Alles Sichere retten…"**. Namenlose Funde bekommen ein direkt in der Liste

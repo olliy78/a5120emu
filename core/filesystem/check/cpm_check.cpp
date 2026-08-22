@@ -40,6 +40,8 @@
 namespace {
 
 constexpr uint32_t kRecordBytes = 128;
+/// @brief Bytes eines logischen CP/M-Extents (wie in `cpm_fs.cpp`).
+constexpr uint32_t kExtentBytes = 16384;
 
 /// @brief "NAME    TYP" aus einem rohen Platz, ohne die Attributhochbits.
 std::string rohName(const uint8_t* p) {
@@ -143,6 +145,8 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
                                              ? space_.trackCount() : bis);
 
     // ── Ist ueberhaupt zu lesen, was zu lesen ist? ───────────────────────────
+    bericht.schritt("cpm.schritt.spuren",
+                    "Spuren bereitstellen — was gelesen ist, wird angesehen");
     //
     // An einer physischen Diskette darf die Pruefung nicht von sich aus Spuren
     // holen (E2).  Fehlt eine, wird sie uebersprungen und der Bericht sagt es —
@@ -158,6 +162,7 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
         // Ohne die erste Spur gibt es kein Verzeichnis und damit gar keine Pruefung.
         b.add("cpm.verz.ungelesen", FsSeverity::Info, FsLayer::Verwaltung, "",
               "Die Verzeichnisspur ist noch nicht gelesen — geprueft wurde nichts");
+        bericht.sortieren();
         return bericht;
     }
 
@@ -239,9 +244,13 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
             }
         }
     };
+    bericht.schritt("cpm.schritt.verzeichnissektoren",
+                    "Verzeichnissektoren: Adressmarken und Pruefsummen");
     sektorenPruefen(0, dir_bytes, false);
 
     // ── Ebene Verwaltung: das Verzeichnis ────────────────────────────────────
+    bericht.schritt("cpm.schritt.verzeichnis",
+                    "Verzeichnis: Plaetze, Namen, Extents und Blockzeiger");
 
     const int fuell = directoryFill();
     if (fuell >= 0 && fuell != 0xE5) {
@@ -380,10 +389,70 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
                   + ": " + std::to_string(d.records)
                   + " Saetze angesagt, aber kein einziger Block genannt");
 
+        // ── Deckt die Blockbelegung die angesagte Groesse? (§7.1a) ───────────
+        //
+        // Die Laenge einer CP/M-Datei steht im VERZEICHNIS (Extentnummer + Satzzahl),
+        // die Daten stehen in den Blockzeigern.  Laufen beide auseinander, faellt es
+        // beim Herausholen NICHT auf: `CpmFileSystem::read` fuellt einen leeren
+        // Zeiger mit Nullen und schneidet am Schluss auf die angesagte Laenge — die
+        // Datei kommt also in voller Groesse heraus, teilweise erfunden.  Genau
+        // deshalb gehoert der Abgleich in die Pruefung, und zwar in die
+        // SCHNELLpruefung: er kostet nichts ausser dem Verzeichnis, das ohnehin
+        // gelesen ist.
+        // Eine Satzzahl jenseits von 128 ist fuer sich schon `cpm.dir.rc`; sie hier
+        // noch einmal als Groessenluecke zu melden waere ZWEIMAL derselbe Schaden.
+        // Nach der Reparatur der Satzzahl rechnet der naechste Lauf ehrlich nach.
+        const uint32_t saetze_je_block = prof_.block_size / kRecordBytes;
+        const uint64_t angesagt =
+            static_cast<uint64_t>(d.extent % ext_per_entry_) * kExtentBytes
+            + static_cast<uint64_t>(d.records) * kRecordBytes;
+        const uint64_t noetig = (angesagt + prof_.block_size - 1) / prof_.block_size;
+
+        if (d.records > 128) {
+            // nichts weiter: der Befund steht schon oben
+        } else if (belegte > 0 && static_cast<uint64_t>(belegte) < noetig) {
+            const uint64_t gedeckt = static_cast<uint64_t>(belegte) * prof_.block_size;
+            FsFinding& f = b.add("cpm.dir.groesse", FsSeverity::Fehler,
+                  FsLayer::Verwaltung, platz(d.index),
+                  datei(d.user, d.name) + ", Extent " + std::to_string(d.extent) + ": "
+                  + std::to_string(angesagt) + " Byte angesagt ("
+                  + std::to_string(d.records) + " Saetze), aber nur "
+                  + std::to_string(gedeckt) + " Byte durch Blockzeiger gedeckt — beim"
+                    " Herausholen kaemen " + std::to_string(angesagt - gedeckt)
+                  + " Byte Nullen heraus");
+            // Ehrlich machen laesst sich das nur ueber die Satzzahl — und nur, wenn
+            // dieser Platz bei seinem ersten logischen Extent steht; sonst muesste
+            // auch die Extentnummer geaendert werden, und das ist geraten.
+            if (d.extent % ext_per_entry_ == 0) {
+                const uint32_t moeglich =
+                    std::min<uint32_t>(128u, belegte * saetze_je_block);
+                FsRepair rep{"cpm.rc.anpassen",
+                             "Die Satzzahl auf die gedeckten " + std::to_string(moeglich)
+                             + " Saetze setzen — die Datei wird dadurch kuerzer, aber"
+                               " sie liefert dann nur noch, was wirklich dasteht",
+                             /*datenverlust*/true, /*empfohlen*/true};
+                rep.a = d.index;
+                rep.b = static_cast<int>(moeglich);
+                f.repairs.push_back(rep);
+            }
+        } else if (d.records <= 128 && static_cast<uint64_t>(belegte) > noetig) {
+            const uint64_t ueberhang =
+                (static_cast<uint64_t>(belegte) - noetig) * prof_.block_size;
+            b.add("cpm.dir.groesse", FsSeverity::Warnung, FsLayer::Verwaltung,
+                  platz(d.index),
+                  datei(d.user, d.name) + ", Extent " + std::to_string(d.extent) + ": "
+                  + std::to_string(belegte) + " Bloecke belegt, fuer "
+                  + std::to_string(angesagt) + " Byte reichen "
+                  + std::to_string(noetig) + " — " + std::to_string(ueberhang)
+                  + " Byte sind belegt, ueber das Verzeichnis aber nicht erreichbar");
+        }
+
         nach_datei[{d.user, d.name}].push_back(&d);
     }
 
     // ── Kreuzbelegung: derselbe Block in zwei Dateien ────────────────────────
+    bericht.schritt("cpm.schritt.kreuzbelegung",
+                    "Kreuzbelegung: gehoert ein Block zwei Dateien?");
     for (const auto& [blk, wer] : blockbesitzer) {
         if (wer.size() < 2) continue;
         std::string liste;
@@ -414,6 +483,8 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
     // Platzes.  Wie ein fremdes BDOS die Extentnummern innerhalb eines Platzes
     // zaehlt, ist nicht ueberall gleich — daraus einen Fehler zu machen brachte
     // Falschmeldungen auf gesunden Disketten (E10).
+    bericht.schritt("cpm.schritt.extents",
+                    "Vollstaendigkeit der Dateien: fehlt ein Extent?");
     for (const auto& [schluessel, teile] : nach_datei) {
         std::vector<int> ext;
         for (const CpmDirEntry* d : teile) ext.push_back(d->extent);
@@ -433,6 +504,10 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
                       + std::to_string(ext[k]) + " fehlen Verzeichnisplaetze");
     }
 
+    // Zurueck zur Verzeichniszeile der Checkliste: die beiden Hinweise sind
+    // Auskuenfte ueber das Verzeichnis, nicht ueber die Extents.
+    bericht.schritt("cpm.schritt.verzeichnis",
+                    "Verzeichnis: Plaetze, Namen, Extents und Blockzeiger");
     if (sonder)
         b.add("cpm.dir.sonderplatz", FsSeverity::Info, FsLayer::Verwaltung, "Verzeichnis",
               std::to_string(sonder) + " Verzeichnisplaetze tragen eine Sonderfunktion ("
@@ -444,8 +519,15 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
               " wiederherstellen lassen");
 
     // ── Ebene Medium: der Datenbereich (nur Vollpruefung) ────────────────────
-    if (level == FsCheckLevel::Voll)
+    if (level == FsCheckLevel::Voll) {
+        bericht.schritt("cpm.schritt.datenbereich",
+                        "Datenbereich: jeder Sektor jeder Spur, mit Zuordnung zur Datei");
         sektorenPruefen(dir_bytes, data_bytes_, true);
+    } else {
+        bericht.schrittEntfaellt("cpm.schritt.datenbereich",
+                                 "Datenbereich: jeder Sektor jeder Spur, mit Zuordnung zur Datei",
+                                 "nur bei der Vollpruefung");
+    }
 
     // ── Ebene Medium: die Systemspuren (nur Vollpruefung) ────────────────────
     //
@@ -456,6 +538,8 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
     // Systemspuren eine ANDERE Geometrie haben duerfen als der Datenbereich
     // (cpa780: drei 128-B-Seiten, dann 1024 B).
     if (level == FsCheckLevel::Voll && start > 0) {
+        bericht.schritt("cpm.schritt.systemspuren",
+                        "Systemspuren: Adressmarken und Pruefsummen (Bootfaehigkeit)");
         for (int i = 0; i < start; ++i) {
             const SectorSpace::TrackRef t = space_.trackAt(static_cast<size_t>(i));
             if (!nachladen && !space_.trackKnown(t.cyl, t.head)) {
@@ -496,6 +580,12 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
         }
     }
 
+    if (level != FsCheckLevel::Voll || start == 0)
+        bericht.schrittEntfaellt("cpm.schritt.systemspuren",
+                                 "Systemspuren: Adressmarken und Pruefsummen (Bootfaehigkeit)",
+                                 start == 0 ? "diese Diskette hat keine Systemspuren"
+                                            : "nur bei der Vollpruefung");
+    bericht.schrittEnde();
     bericht.sortieren();
     return bericht;
 }

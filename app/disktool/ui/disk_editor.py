@@ -841,8 +841,15 @@ class DiskEditorWindow(QDialog):
             "Je Zeiger: Sektorindex (0-basiert), Spurnummer.  FF FF = Kettenende.\n"
             "„Save Sektor“ schreibt ihn mit.")
         self.tail_feld.textChanged.connect(self._tail_deuten)
+        # Die gedeuteten Zeiger sind **Verweise**: die Kette einer UDOS-Datei liegt
+        # physisch verstreut (Sektor 6, 7, 12, 23, 1, …), und wer ihr folgen will,
+        # sollte die Werte nicht abtippen müssen.
         self.tail_deutung = QLabel("")
-        self.tail_deutung.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.tail_deutung.setTextFormat(Qt.RichText)
+        self.tail_deutung.setTextInteractionFlags(Qt.TextSelectableByMouse
+                                                  | Qt.LinksAccessibleByMouse)
+        self.tail_deutung.setToolTip("Anklicken springt zu diesem Sektor.")
+        self.tail_deutung.linkActivated.connect(self._zeiger_folgen)
 
         # Alles zum Sektor in EINER Zeile: Format, Größe, die vier Rohbytes, ihre
         # Deutung.  Eine eigene Zeile für den Anhang kostete Höhe, die im Fenster
@@ -1272,16 +1279,44 @@ class DiskEditorWindow(QDialog):
             return None
 
     def _tail_deuten(self) -> None:
-        """Die vier Bytes in Klartext übersetzen — Spur und Sektor dezimal."""
+        """Die vier Bytes in Klartext übersetzen — und als Sprungziel anbieten."""
         roh = self.tail_bytes()
         if roh is None:
             self.tail_deutung.setText(
                 f"— {UDOS_TAIL} Bytes hexadezimal erwartet")
             self.tail_deutung.setStyleSheet("color: #cc2b2b;")
             return
-        self.tail_deutung.setStyleSheet("color: #505050;")
+        self.tail_deutung.setStyleSheet("")
         self.tail_deutung.setText(
-            f"zurück: {udos_zeiger(roh[0:2])}    vor: {udos_zeiger(roh[2:4])}")
+            f"zurück: {self._zeiger_verweis(roh[0:2])}"
+            f"&nbsp;&nbsp;&nbsp;&nbsp;vor: {self._zeiger_verweis(roh[2:4])}")
+
+    @staticmethod
+    def _zeiger_verweis(roh: bytes) -> str:
+        """Der Zeiger als anklickbarer Verweis — das Kettenende bleibt Text.
+
+        Das Ziel steht als ``spur:sektor-id`` im Verweis; die SEITE kommt beim
+        Klicken aus dem gerade gezeigten Sektor: eine UDOS-Kette wechselt die Seite
+        nie (jede Seite ist ein eigenes Dateisystem, §9.1).
+        """
+        text = udos_zeiger(roh)
+        if len(roh) < 2 or text in ("Ende", "?"):
+            return text
+        return f'<a href="{roh[1]}:{roh[0] + 1}">{text}</a>'
+
+    def _zeiger_folgen(self, ziel: str) -> None:
+        """Einem angeklickten Zeiger folgen (Spur + Sektorkennung)."""
+        try:
+            spur, sektor = (int(x) for x in ziel.split(":"))
+        except ValueError:
+            return
+        kopf = self.aktuell[0] if self.aktuell else 0
+        if not self._springe(seite=kopf, spur=spur, sektor_id=sektor):
+            # Kein Meldungsfenster: der Zeiger kann ins Leere zeigen, und genau das
+            # ist dann die Auskunft.
+            self.hinweis.setText(
+                f"Spur {spur}, Sektor {sektor} gibt es auf dieser Seite nicht — "
+                f"der Zeiger führt ins Leere.")
 
     def _crc_bewerten(self) -> None:
         """Sagt, ob die eingetragene CRC zu den angezeigten Daten passt."""
