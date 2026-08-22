@@ -181,10 +181,35 @@ zeigt die Angaben, die ein Linux-Dateisystem nicht tragen kann:
 Der Nutzerbereich gehört zur **Identität** einer CP/M-Datei: ihn zu ändern
 benennt die Datei um (`3:PIP.COM`).
 
-Beim Extrahieren schreibt das Werkzeug diese Angaben in ein **Beiblatt**
-(`udos-dateiangaben.txt` bzw. `cpm-dateiangaben.txt`) neben die Dateien. Legt man
-den Ordner später wieder auf eine Diskette, werden sie daraus zurückgelesen —
-ohne das Beiblatt gingen sie verloren.
+### Wo diese Angaben bleiben, wenn eine Datei den Ordner erreicht
+
+Beim Herausholen legt das Werkzeug neben **jede** Datei eine gleichnamige
+Textdatei mit der Endung `.fileinfo` — `ACTIVATE` und `ACTIVATE.fileinfo`. Darin
+steht alles, was oben im Eigenschaften-Fenster zu sehen ist. Schreibt man die Datei
+später wieder auf eine Diskette, wird sie von selbst gelesen; die Datei ist damit
+**für sich genommen vollständig**, gleich wohin man sie kopiert. Beim Herausholen
+des *ganzen* Inhalts entsteht zusätzlich ein Sammelbeiblatt
+(`udos-dateiangaben.txt` bzw. `cpm-dateiangaben.txt`) — es bleibt bestehen, aber
+man ist nicht mehr darauf angewiesen.
+
+Ein `.fileinfo` ist **Zubehör, keine Datei der Diskette**: schreibt man einen
+ganzen Ordner zurück, wird es ausgewertet und nicht mitkopiert (im Protokoll steht
+dann „… (24 .fileinfo ausgewertet)"). Wählt man dagegen **nur** eine `.fileinfo`
+aus, fragt das Werkzeug nach — das ist fast immer die falsche der beiden
+gleichnamigen Zeilen.
+
+**Bei UDOS entsteht das `.fileinfo` immer.** Dort ist es der Unterschied zwischen
+einem lauffähigen Programm und einem, das mit `MEMORY PROTECT VIOLATION` abgewiesen
+wird: ohne die Angaben wüsste UDOS nicht, dass es ein Programm ist, wohin es geladen
+gehört und wo es anfängt. Fehlen sie beim Zurückschreiben, wird deshalb **gefragt
+statt geraten** — ein Fenster erhebt Typ, Satzlänge und, bei einem Programm,
+Einsprung und Speicherangaben. Bei mehreren Dateien genügt „Für alle übernehmen".
+
+**Bei CP/M entsteht es nur auf Wunsch** — *Übertragung ▸ Bei CP/M je Datei ein
+.fileinfo anlegen*. Dort gibt es nichts zu retten, was sonst verloren ginge:
+Nutzerbereich 0 ohne Attribute ist der Normalfall, den auch das echte CP/M erzeugt,
+und beides lässt sich jederzeit über *Eigenschaften* nachtragen. Wer eine Sammlung
+führt und jede Datei für sich vollständig haben will, schaltet es ein.
 
 ## Neue Disketten und Bootdisketten
 
@@ -521,14 +546,17 @@ Drei Wege stehen unten:
 **Bei UDOS führt der Weg zurück über den Ordner**, und er ist vollwertig:
 
 1. Fund in den Ordner retten.
-2. Der Datei dort den passenden Namen geben — und denselben Namen in der Zeile der
-   Datei `udos-dateiangaben.txt` daneben.
+2. Der Datei dort den passenden Namen geben — und die `.fileinfo` daneben
+   mitbenennen (aus `GERETTET.001` und `GERETTET.001.fileinfo` werden
+   `NOTE.TO.SD` und `NOTE.TO.SD.fileinfo`); im Sammelbeiblatt
+   `udos-dateiangaben.txt` steht der Name ebenfalls.
 3. Mit *Einfügen* wieder auf die Diskette bringen.
 
 Dass das trägt, liegt am Kopfsektor: er überlebt das Löschen **ganz**. Typ,
 Eigenschaften, Startadresse, Satzlänge, alle Speichersegmente und beide
-Datumsvermerke sind noch da, und das Werkzeug schreibt sie beim Retten in ebendieses
-Beiblatt. Verloren ist wirklich nur der Name — die Attribute kommen von selbst mit.
+Datumsvermerke sind noch da, und das Werkzeug schreibt sie beim Retten in die
+`.fileinfo` und ins Beiblatt. Verloren ist wirklich nur der Name — die Attribute
+kommen von selbst mit.
 
 ### Erst ansehen, dann handeln
 
@@ -575,6 +603,7 @@ dieselbe Liste maschinenlesbar aus, samt der Sektoren jedes Fundes.
 * das verlustfreie Abbild als `.hfe` (auch wenn die Quelle ein `.img` war),
 * alle Dateien einzeln, nach Seiten sortiert,
 * ein lesbares Inhaltsverzeichnis mit allen Dateiangaben und einer Legende,
+* ein maschinenlesbares Verzeichnis `diskarchive.yaml`,
 * die maschinenlesbaren Beiblätter.
 
 Vorher wird nach der **Beschriftung** der Diskette gefragt — dem Text auf dem
@@ -588,6 +617,38 @@ Datenträgername.
 Gedacht als Langzeitablage: aus dem Textteil allein lässt sich in zwanzig Jahren
 noch nachvollziehen, was auf der Diskette stand. Archivieren ist eine reine
 Leseoperation und geht auch mit gesetztem Schreibschutz.
+
+**`diskarchive.yaml` — für die Inventur einer Sammlung.** Dieselbe Auskunft für
+Programme: je Datei ihr Pfad im Archiv, Verzeichnis und Name, die Größe und eine
+SHA-256-Prüfsumme, dazu die Prüfsumme des Abbilds als Kennzeichen der Diskette
+selbst. Damit lässt sich über einen Stapel Archive auszählen, wie viele Fassungen
+von `XYZ.COM` es gibt und auf welchen Disketten sie liegen — ohne eine einzige
+`.zip` auszupacken:
+
+```python
+import zipfile, yaml, collections
+fassungen = collections.defaultdict(set)
+for archiv in Path("archive").glob("*.zip"):
+    with zipfile.ZipFile(archiv) as z:
+        for f in yaml.safe_load(z.read("diskarchive.yaml"))["files"]:
+            fassungen[f["name"].upper()].add((f["sha256"], archiv.name))
+```
+
+**Auf der Kommandozeile** — für eine ganze Sammlung, Diskette für Diskette:
+
+```sh
+python3 -m app.disktool.archive abbild.hfe archiv.zip "CP/A Arbeit 7"
+k1520disktool --physical archive archiv.zip --label "UDOS 4.3 Nr. 7"
+```
+
+Der zweite Weg archiviert die Diskette im **echten Laufwerk**; `--label` ist dort
+der Aufkleber (ohne ihn gilt der Datenträgername). Ein vorhandenes Archiv wird
+nicht überschrieben — dafür braucht es `--force`.
+
+Angaben des Dateisystems stehen dort bewusst nicht — die führen das
+Inhaltsverzeichnis und die Beiblätter. Der Kopf der Datei erklärt jedes Feld;
+`diskarchive: 1` ist die Fassung des Formats, künftige Erweiterungen kommen als
+zusätzliche Felder hinzu.
 
 ## Der Diskeditor
 

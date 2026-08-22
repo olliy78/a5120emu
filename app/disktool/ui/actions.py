@@ -130,6 +130,17 @@ _SPEC: List[Tuple] = [
     ("umbenennen", "&Umbenennen", None, "F2",
      "Den ausgewählten Eintrag der rechten Hälfte umbenennen", "_umbenennen", False),
 
+    # Bei UDOS entsteht das `.fileinfo` IMMER — dort ist es der Unterschied
+    # zwischen einer lauffähigen Programmdatei und einer, die es nicht mehr ist.
+    # Bei CP/M gibt es nichts zu retten, was ohne die Datei verloren ginge
+    # (Nutzerbereich 0, keine Attribute ist der Normalfall): dort ist es ein
+    # Angebot für den, der eine Sammlung führt — und darum abschaltbar.
+    ("cpm_fileinfo", "Bei CP/M je Datei ein .&fileinfo anlegen", None, None,
+     "Beim Herausholen aus einer CP/M-Diskette neben jede Datei eine Textdatei mit "
+     "Nutzerbereich und Attributen legen.  Bei UDOS geschieht das immer — dort "
+     "wäre eine Datei ohne diese Angaben nicht mehr lauffähig",
+     "_cpm_fileinfo_umgeschaltet", True),
+
     # ── Ansicht ─────────────────────────────────────────────────────────────
     ("aktualisieren", "&Aktualisieren", "refresh", "F5",
      "Verzeichnis und Ordner neu einlesen", "_aktualisieren", False),

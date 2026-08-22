@@ -683,6 +683,10 @@ def test_eine_schadstelle_wird_gemeldet_statt_verschwiegen(hfe, tmp_path):
                 geraet.schadhaft = set(geraet._spuren)      # NICHTS nimmt mehr an
                 quelle = tmp_path / "PROBE.TXT"
                 quelle.write_bytes(b"schadstelle\r\n" * 4)
+                # Bei UDOS gehören die Kopfsektorangaben zur Datei; ohne sie wird
+                # nicht mehr geraten (doc/bug_disktool_Programmdatei.md §2.2).
+                (tmp_path / "PROBE.TXT.fileinfo").write_text(
+                    "fs=udos\\nname=PROBE.TXT\\ntyp=A\\nsatz=128\\n")
                 ziel = eintraege[0].side_prefix.replace("Side1/", "Side0/") + "PROBE.TXT"
                 d.insert(quelle, ziel, overwrite=True)
                 # Das Speichern MUSS scheitern — und die Meldung muss die Spur nennen,

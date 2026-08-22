@@ -1084,6 +1084,88 @@ Eingabe, Schreibschutz, Archivtabellen).
 
 ---
 
+## 13d. Die Angaben je Datei — `.fileinfo` (2026-08-22)
+
+Die Beiblätter aus §13b/§13c hatten eine Lücke, die niemandem auffiel, weil sie
+**unsichtbar** war: sie entstehen nur beim **Vollexport**. Eine einzeln
+herausgeholte UDOS-Programmdatei (`get` mit Muster, ein Zug in der Oberfläche) kam
+ohne jede Angabe zurück — Typ `B` statt `P`, Satzlänge 128 statt 1024, ENTRY `0000`,
+LOW/HIGH `FFFF`, und damit `MEMORY PROTECT VIOLATION` beim Laden. Der Dateiinhalt
+war dabei bytegleich, es gab keine Meldung, und die Dateisystemprüfung *kann* den
+Schaden nicht sehen: `udos.kopf.speicher` beanstandet `FFFF` nur bei Typ `P`, und
+der Typ war ja gerade mit verlorengegangen. Voller Befund:
+`doc/bug_disktool_Programmdatei.md`.
+
+Fünf Entscheidungen:
+
+1. **Zu jeder extrahierten Datei entsteht ein gleichnamiges `<datei>.fileinfo`** —
+   dieselben Schlüsselwörter wie im Sammelbeiblatt, nur eines je Zeile, mit `fs=` in
+   der ersten Sachzeile. Geschrieben wird es in `DiskVolume::extract`, also an
+   **einer** Stelle, durch die alle Wege laufen (CLI, Oberfläche, `extractAll`,
+   `recoverExtract`). Auch beim Vollexport, wo die Angabe damit doppelt steht: die
+   einzelne Datei soll für sich genommen vollständig sein, gleich aus welchem Ordner
+   sie stammt und wohin sie später kopiert wird. Genau der Ordner, dessen
+   Sammelbeiblatt beim Umsortieren zurückbleibt, war der Fall, der schiefging.
+2. **Bei der UDOS-Familie immer, bei CP/M nur auf Verlangen** (`setCpmFileinfo`,
+   C-ABI `k1520d_set_cpm_fileinfo`, CLI `get --fileinfo`, in der Oberfläche der
+   Menüpunkt *Übertragung → Bei CP/M je Datei ein .fileinfo anlegen*). Der
+   Unterschied folgt aus der Sache: bei UDOS **fehlen** die Angaben, und ohne sie
+   entsteht eine Datei, die nicht läuft. Bei CP/M gibt es sie so gar nicht —
+   Nutzerbereich 0 und „keine Attribute" sind der Normalfall, den auch das echte
+   CP/M erzeugt. Ein `.fileinfo` je Datei wäre dort Ballast neben dem
+   Sammelbeiblatt, das ohnehin entsteht; wer eine Sammlung führt, schaltet es ein.
+3. **Beim Einfügen wird gesucht, nicht geraten.** Rangfolge: `<datei>.fileinfo` →
+   Sammelbeiblatt (Ordner der Quelle und eine Ebene darüber) → ausdrückliche Angaben
+   des Aufrufers, die **immer** vorgehen. Findet sich nichts, ist das bei der
+   UDOS-Familie ein Fehlschlag mit eigenem Grund (`InsertHindernis::AngabenFehlen`,
+   C-ABI `k1520d_last_insert_problem`) — die Kommandozeile bricht mit dem Ausweg in
+   der Meldung ab, die Oberfläche öffnet den Eingabedialog. Damit gilt: **die
+   Vorgaben von `insert` (Typ A/B, 128er Sätze) gelten nur noch dort, wo der
+   Aufrufer sie ausdrücklich will.** Bei CP/M geschieht nichts davon — dort entsteht
+   ohne Rückfrage eine Datei im Bereich 0 ohne Attribute, und beides ist
+   nachträglich über den Eigenschaften-Dialog erreichbar.
+4. **`.fileinfo` ist Zubehör, nicht Nutzdatei.** Im Stapel (`insertAll`, Ordner-`put`,
+   Mehrfachauswahl) wird es *ausgewertet* und **nicht kopiert**, und die
+   Zusammenfassung nennt die Zahl („24 eingefügt, 24 `.fileinfo` ausgewertet") —
+   stillschweigend heisst nicht heimlich. Bleibt nach dem Überspringen nichts übrig,
+   ist das eine Meldung und kein stiller Erfolg. Eine **einzeln** angegebene
+   Angabendatei wird dagegen abgelehnt (`InsertHindernis::Zubehoerdatei`): das ist
+   fast sicher ein Versehen, und wortlos zu überspringen liesse den Anwender ohne
+   Datei und ohne Grund zurück. Es gibt einen zulässigen Grund dafür — deshalb
+   `put --force` bzw. eine Rückfrage, kein Verbot.
+5. **Der Eingabedialog blendet ab, statt zu ignorieren**
+   (`app/disktool/ui/fileinfo_dialog.py`). Bei Typ `A`/`B` sind ENTRY, Segmente und
+   LOW/HIGH/STACK kein Anwenderinhalt, sondern schlicht unbelegt; dort etwas
+   einzutragen erzeugte einen Kopfsektor, den es so auf keiner echten Diskette gibt.
+   Die Felder werden beim Typwechsel abgeblendet **und auf 0 gesetzt**. Der Dialog
+   gibt keinen Feldsalat heraus, sondern schreibt eine fertige Angabendatei
+   (`app/disktool/fileinfo.py`, Qt-frei — `physical_cli` benutzt sie auch) und
+   reicht deren Pfad an `k1520d_insert_with_info`. So gibt es für die
+   Kopfsektorangaben genau **eine** Zeilenform und **einen** Leser, den im Kern,
+   statt zwanzig Feldern durch die C-ABI.
+
+Zwei Feinheiten, die man beim Ändern nicht aufweichen darf:
+
+* **`rest=` (Bytes im letzten Satz) darf nicht raten.** 0 ist dort ein *gültiger*
+  Wert; steht die Zeile da, hält der Leser sie für eine Angabe und der Schreibpfad
+  rechnet sie nicht mehr aus. Der Eingabedialog schreibt sie deshalb nicht.
+* **Das `name=` einer geretteten Datei ist der Name, den der Anwender ihr gegeben
+  hat**, nicht der Platzhalter aus dem Fund: bei UDOS ist der Name das Einzige, was
+  das Löschen *nicht* überlebt (§13.3b), und der Weg zurück heisst *retten →
+  benennen → `put`*. Und der Name aus dem `.fileinfo` setzt sich nur bei **CP/M**
+  über den Dateinamen hinweg — dort steckt der Nutzerbereich darin (`3:SYSTEM.COM`
+  gegen `3_SYSTEM.COM`).
+
+Wächter: `DiskToolFileinfo.*` (elf Fälle: Rundlauf einer Programmdatei über alle
+Kopfsektorfelder, `.fileinfo` zu jeder Datei, CP/M-Vorgabe aus, CP/M ohne Angaben
+gelingt, UDOS ohne Angaben wird abgelehnt, `.fileinfo` schlägt Sammelbeiblatt,
+Stapel zählt das Zubehör, nur-Zubehör-Ordner, Einzelablehnung, fremdes `fs=`,
+CP/M-Nutzerbereich), `cli_dt_fileinfo_rundlauf`, `cli_dt_put_ohne_angaben`,
+`cli_dt_put_fileinfo_einzeln`, `py_disktool_gui` (Dialog blendet ab, „für alle"
+fragt einmal, Einzelrückfrage ja / Mehrfachauswahl nein, Archiv).
+
+---
+
 ## 14. Sicherheit beim Schreiben
 
 > **Entscheidung 2026-08-10 (E5): kein atomares Schreiben.** Der Entwurf sah ursprünglich
@@ -2294,3 +2376,113 @@ was dort festgelegt wird und was es für diesen Entwurf bedeutet:
 >
 > Offen ist nur noch die **Gegenprobe der Alternativprofile** aus Etappe 7, und zwar
 > mit Grund: es gibt heute keinen Katalogeintrag, an dem sie prüfbar wäre (§20).
+
+## 24. Das maschinenlesbare Archivverzeichnis — `diskarchive.yaml` (2026-08-22)
+
+Ein Archiv (§ *Archivieren*, `app/disktool/archive.py`) trug bisher **ein**
+Inhaltsverzeichnis: `<name>.txt`, gesetzt für den Menschen — mit Legende, Spalten
+und allen Dateiangaben, die ein Wirtsdateisystem nicht tragen kann.  Damit ist eine
+einzelne Diskette in zwanzig Jahren noch verständlich, eine **Sammlung** aber nicht
+auswertbar: die Frage *„wie viele Fassungen von `XYZ.COM` habe ich, und auf welchen
+Disketten liegen sie?"* verlangt, jedes Archiv auszupacken und eine Tabelle mit den
+Augen zu lesen.
+
+Deshalb liegt seitdem ein **zweites** Verzeichnis in derselben `.zip`:
+`diskarchive.yaml` — dieselbe Auskunft für die Maschine.  Zwei Verzeichnisse, weil
+es zwei Leser gibt; keines ersetzt das andere.
+
+### 24.1 Was drinsteht — und was ausdrücklich nicht
+
+Die Datei ist eine **Inventurliste**, keine zweite Beschreibung der Diskette.  Sie
+führt je Datei nur vier Dinge: **Pfad, Verzeichnis+Name, Grösse, SHA-256**.
+Dateisystemangaben (UDOS-Kopfsektor, CP/M-Attribute, Nutzerbereich, Format,
+Belegung) stehen bewusst **nicht** darin — die führen das `.txt` und die Beiblätter,
+und eine zweite Quelle für dieselbe Angabe wäre eine Quelle, die irgendwann
+abweicht.
+
+```yaml
+diskarchive: 1                    # Fassung DIESES Datenformats
+generator: k1520DiskTool (k1520disk 0.1)
+created: '2026-08-22T10:29:03+02:00'
+transfer: binary                  # oder 'text' — die Pruefsumme haengt daran
+label: UDOS 4.3 System            # der Aufkleber (kann leer sein)
+source: udos_boot_scp.hfe         # Abbildname ODER Herkunft im Klartext
+image:     {path: UDOS_4.3_System.hfe, size: 2049024, sha256: 90cc83cf…}
+catalogue: {path: UDOS_4.3_System.txt, size: 18185,   sha256: 0ad62182…}
+files_root: dateien
+files:
+  - path: dateien/Side1/HELP.DAT.00
+    dir: Side1
+    name: HELP.DAT.00
+    size: 6144
+    sha256: 1a83a88b…
+  - path: dateien/3_DIENST.COM
+    dir: ''
+    name: 3_DIENST.COM
+    disk_name: '3:DIENST.COM'     # nur wenn abweichend
+    size: 14848
+    sha256: 7ff57273…
+attachments:
+  - {path: dateien/udos-dateiangaben.txt, size: 10089, sha256: af9babd2…}
+```
+
+Sechs Festlegungen, die den Nutzen tragen:
+
+1. **`path` ist der Eintrag der `.zip`**, nicht ein Pfad im Wirtsdateisystem:
+   `/`-getrennt, immer relativ, ohne `..`.  Ein Auswerter kann damit ohne Auspacken
+   direkt `ZipFile.read(path)` rufen — genau das macht den Reihenlauf über hundert
+   Archive erst billig.
+2. **`dir` + `name` sind derselbe Pfad, zerlegt**, relativ zu `files_root`.  Es gilt
+   immer `path == files_root + '/' + (dir + '/' wenn dir) + name`.  Die Redundanz
+   ist Absicht: `name` ist der Schlüssel, nach dem gruppiert wird („alle `PIP.COM`"),
+   `dir` die Herkunft innerhalb der Diskette.  Heute steht dort `''` oder
+   `Side0`/`Side1`; die Form trägt aber ohne Formatänderung auch **mehrstufige**
+   Pfade (`SYS/BIN`), wie sie ein hierarchisches Dateisystem (FAT, Unix) hätte —
+   dafür ist sie so und nicht als „Seite" geschnitten.
+3. **Gerechnet wird über die Dateien, wie sie IM ARCHIV liegen** — nach dem Auszug,
+   nicht über die Längenangabe des Verzeichnisses.  Nur dann passen `size` und
+   `sha256` zu dem, was der Auswerter in Händen hält: CP/M rundet auf 128-B-Sätze
+   auf, und ein Textauszug setzt Zeilenenden um.  Deshalb steht `transfer` im Kopf:
+   dieselbe Datei ergibt binär und als Text verschiedene Prüfsummen, und ohne diese
+   Angabe hielte die Inventur das für zwei Fassungen.
+4. **Das Beiblatt ist kein Dateieintrag.**  `udos-dateiangaben.txt` /
+   `cpm-dateiangaben.txt` liegen zwar im Dateiordner, sind aber Angaben *über* die
+   Dateien — stünden sie unter `files`, wäre in der Sammlung jedes Beiblatt eine
+   „Fassung" derselben Datei.  Sie stehen deshalb unter `attachments`, mit derselben
+   Form.  Die Unterscheidung fällt nicht über eine Namensliste, sondern darüber,
+   **ob der Name im Verzeichnis der Diskette steht** — was `extractAll` sonst noch
+   ablegt, landet damit von selbst richtig.
+5. **`image` kennzeichnet die Diskette als Ganzes.**  Zwei Archive mit demselben
+   `image.sha256` sind dieselbe Diskette (zweimal eingelesen), auch wenn die
+   Beschriftung abweicht — das ist die Handhabe gegen Doppelzählung in der Sammlung.
+6. **`damaged: true`** steht an einer Datei, die nicht vollständig lesbar war.  Ihr
+   Inhalt ist unvollständig; ihre Prüfsumme darf nicht als Fassung gezählt werden.
+   Der Schlüssel fehlt, wenn alles in Ordnung ist — Rauschen kostet auch beim Lesen.
+
+**`disk_name`** steht nur, wenn der Name auf der Diskette ein anderer ist als der
+Dateiname: CP/M führt den Nutzerbereich als Präfix (`3:DIENST.COM`), und ein `:`
+geht auf FAT nicht (`extractAll` macht `_` daraus).  Ohne beide Namen wäre in der
+Inventur weder die Datei wiederzufinden noch der Bereich zu rekonstruieren.  Die
+Zuordnung `Verzeichniseintrag → Datei im Archiv` bildet `_erwartete_namen()` nach —
+sie **wiederholt die Namensregel von `DiskVolume::extractAll`** (Nutzerbereich mit
+`_`, Typ `D` gar nicht ausgelesen); ändert sich die dort, muss sie hier mit.
+Wächter dafür ist `test_archive_verzeichnis_nennt_den_namen_auf_der_diskette`.
+
+### 24.2 Erweitern ohne die Fassung zu erhöhen
+
+`diskarchive: 1` ist die Fassung des **Datenformats**, nicht die des Werkzeugs.
+Die Verabredung: **neue Schlüssel kommen ohne Erhöhung hinzu, wer liest, überliest
+Unbekanntes.**  Erhöht wird nur, wenn ein Leser der alten Fassung das Archiv
+*falsch* verstünde — etwa wenn `size` einmal etwas anderes bedeuten sollte als die
+Bytezahl im Archiv.  Der Kopf der Datei erklärt jeden Schlüssel im Klartext
+(`INVENTAR_KOPF`), aus demselben Grund, aus dem das `.txt` eine Legende hat.
+
+### 24.3 Wächter
+
+* `test_archive_traegt_ein_maschinenlesbares_verzeichnis` — die Fassung, die
+  Zerlegung `path == files_root/dir/name`, `size`/`sha256` **gegen den wirklichen
+  Inhalt des ZIP-Eintrags** nachgerechnet, das Beiblatt unter `attachments`, die
+  UDOS-Verzeichnisdatei (Typ `D`) nirgends — und die Vollständigkeit: jedes
+  Mitglied der `.zip` ist genau einmal erklärt.
+* `test_archive_verzeichnis_nennt_den_namen_auf_der_diskette` — der
+  CP/M-Nutzerbereich in beiden Schreibweisen.

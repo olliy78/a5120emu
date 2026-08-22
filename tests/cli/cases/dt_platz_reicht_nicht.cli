@@ -1,8 +1,13 @@
 # Passt eine Datei nicht auf die Diskette, wird gar nicht erst geschrieben (§9.2).
 # Als garantiert zu grosse Quelle dient das Diskettenabbild selbst (2 MB).
 # Exit 3 = passt nicht.
+#
+# `--type A` weil die Quelle eine NEUE Datei ist: bei der UDOS-Familie raet das
+# Werkzeug die Kopfsektorangaben nicht mehr (doc/bug_disktool_Programmdatei.md
+# §2.2).  Ohne den Schalter scheiterte es an den fehlenden Angaben statt am Platz —
+# und der Fall pruefte nicht mehr, was er prueft.
 tool:   k1520disktool
 disk:   udos_boot_scp.hfe
-run:    put %DISK% %DISK%
+run:    put %DISK% %DISK% --type A
 expect: voll
 exit:   3

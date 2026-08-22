@@ -1,0 +1,12 @@
+# Eine einzeln angegebene Angabendatei ist fast sicher ein Versehen — jemand hat
+# die falsche der beiden gleichnamigen Zeilen erwischt (§2.5).  Verweigerung MIT
+# Ausweg; mit --force geht es durch (es gibt einen zulaessigen Grund dafuer).
+tool:   k1520disktool
+disk:   cpa_cpa780_k5601_noclock.hfe
+tmpfile ordner:
+setup_run: get %DISK% --to %ordner% --fileinfo BRUN.COM
+run:    put %DISK% %ordner%/BRUN.COM.fileinfo
+expect: Angabendatei
+expect: BRUN.COM
+expect: --force
+exit:   1

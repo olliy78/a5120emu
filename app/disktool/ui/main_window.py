@@ -34,14 +34,15 @@ bei Abbruch oder Rückfrage.
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 from typing import List, Optional
 
 from PySide6.QtCore import QCoreApplication, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QFrame, QInputDialog, QLabel, QMainWindow, QMessageBox,
-    QSplitter, QToolBar, QToolButton, QVBoxLayout, QWidget,
+    QApplication, QDialog, QFileDialog, QFrame, QInputDialog, QLabel, QMainWindow,
+    QMessageBox, QSplitter, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
 from app import paths
@@ -54,6 +55,7 @@ from app.disktool.ui.actions import erzeuge_aktionen
 from app.disktool.ui.disk_editor import DiskEditorWindow
 from app.disktool.ui.disk_header import DiskHeader, auswahlliste
 from app.disktool.ui.disk_info_dialog import DiskInfoDialog
+from app.disktool.ui.fileinfo_dialog import FileinfoDialog, schreibe_fileinfo
 from app.disktool.ui.fsck_dialog import FsckDialog
 from app.disktool.ui.recover_dialog import RecoverDialog
 from app.disktool.ui.disk_view import DiskView
@@ -266,6 +268,8 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_binaer)
         m.addAction(self.act_text)
         m.addSeparator()
+        m.addAction(self.act_cpm_fileinfo)
+        m.addSeparator()
         m.addAction(self.act_ordner)
         m.addAction(self.act_neuer_ordner)
         m.addAction(self.act_umbenennen)
@@ -464,6 +468,8 @@ class MainWindow(QMainWindow):
         if s.value("uebertragung/text", "0") == "1":
             self.act_text.setChecked(True)
             self._modus_geaendert()
+        self.act_cpm_fileinfo.setChecked(
+            s.value("uebertragung/cpm_fileinfo", "0") == "1")
         self._zuletzt = self._als_liste(s.value("zuletzt", []))
         self._menue_zuletzt_bauen()
         # `restoreState()` kann die Statuszeile verborgen haben (ältere Fassung
@@ -478,6 +484,8 @@ class MainWindow(QMainWindow):
         s.setValue("fenster/zustand", self.saveState())
         s.setValue("fenster/leistenstil", int(self.leiste.toolButtonStyle().value))
         s.setValue("uebertragung/text", "1" if self.text_mode else "0")
+        s.setValue("uebertragung/cpm_fileinfo",
+                   "1" if self.act_cpm_fileinfo.isChecked() else "0")
         s.setValue("zuletzt", self._zuletzt)
 
     def _leistenstil(self, stil, merken: bool = True) -> None:
@@ -1571,6 +1579,7 @@ class MainWindow(QMainWindow):
         """Alles extrahieren; bei mehreren Seiten entstehen `Side0/`, `Side1/`."""
         if self.tool is None:
             return False
+        self._fileinfo_anwenden()
         try:
             self.tool.extract_all(dest_dir, text=self.text_mode)
         except K1520DiskError as e:
@@ -1592,17 +1601,31 @@ class MainWindow(QMainWindow):
         try:
             self.tool.insert_all(src_dir, text=self.text_mode)
         except K1520DiskError as e:
-            self._fehler("Einfügen", str(e))
+            text = str(e)
+            # Der Stapel ist eine Transaktion — ein Eingabedialog mittendrin ginge
+            # nicht, ohne sie aufzubrechen.  Also der ehrliche Weg: sagen, wo die
+            # Angaben erfragt werden (dort gibt es „Für alle übernehmen“).
+            if self.tool.last_insert_problem == DiskTool.INSERT_ANGABEN_FEHLEN:
+                text += ("\n\nDateien, die keine Angaben mitbringen, einzeln "
+                         "einfügen: im Ordner auswählen und „Auf die Diskette "
+                         "schreiben“ — dort wird nach Typ und Satzlänge gefragt, "
+                         "einmal für alle.")
+            self._fehler("Einfügen", text)
             self._reload()
             return False
         self._reload()
-        self.log(f"Eingefügt aus {src_dir}")
+        # Stillschweigend heisst nicht heimlich: wer nachzählt, soll die Differenz
+        # zwischen Ordnerinhalt und Diskette erklärt bekommen (§2.5).
+        zubehoer = self.tool.last_accessory_count
+        self.log(f"Eingefügt aus {src_dir}"
+                 + (f" ({zubehoer} .fileinfo ausgewertet)" if zubehoer else ""))
         return True
 
     def extract_refs(self, refs: List[str], dest_dir) -> bool:
         """Ausgewählte Dateien holen; mehrseitige Disketten in ihre `SideN/`."""
         if self.tool is None or not refs:
             return False
+        self._fileinfo_anwenden()
         ziel = Path(dest_dir)
         ziel.mkdir(parents=True, exist_ok=True)
         try:
@@ -1621,27 +1644,130 @@ class MainWindow(QMainWindow):
         return True
 
     def insert_paths(self, paths: List[str], volume: int = 0) -> bool:
-        """Einzelne Dateien auf eine Seite schreiben."""
+        """Einzelne Dateien auf eine Seite schreiben.
+
+        Zwei Sonderfälle, beide aus `doc/bug_disktool_Programmdatei.md` §2.5:
+
+        * **Angabendateien** (`.fileinfo`, Sammelbeiblatt) sind Zubehör des
+          Auszugs, keine Nutzdatei.  Bei einer Mehrfachauswahl werden sie
+          stillschweigend übersprungen und *gezählt* — wer einen Ordner zieht,
+          meint dessen Inhalt.  Ist es die **einzige** ausgewählte Datei, ist das
+          fast sicher ein Versehen; dann wird gefragt, statt sie wortlos zu
+          verschlucken.
+        * **Fehlen die Kopfsektorangaben** (nur UDOS-Familie), geht der
+          Eingabedialog auf.  Geraten wird nicht: was ohne Typ und Satzlänge
+          entstünde, wäre eine Datei, die nicht läuft.
+        """
         if self.tool is None or not paths:
             return False
+
+        pfade, uebersprungen = self._zubehoer_aussortieren(paths)
+        if pfade is None:
+            return False
+        if not pfade:
+            self._fehler("Einfügen",
+                         "Es sind nur Angabendateien (.fileinfo) ausgewählt — "
+                         "es gibt nichts einzufügen.")
+            return False
+
         praefix = ""
         if self.tool.volume_count > 1:
             praefix = f"{self.tool.volume_dir(volume)}/"
-        try:
-            for p in paths:
-                if Path(p).is_dir():
-                    raise K1520DiskError(
-                        f"{p} ist ein Ordner — Ordner bitte über „Alles einfügen“")
-                name = praefix + Path(p).name
-                text = self.text_mode or Path(p).suffix.lower() in TEXT_ENDUNGEN
-                self.tool.insert(p, name, text=text, overwrite=True)
-        except K1520DiskError as e:
-            self._fehler("Einfügen", str(e))
-            self._reload()
-            return False
+        # Die Angaben, die im Dialog für ALLE gelten sollen; None = noch keine.
+        vorlage: Optional[dict] = None
+        geschrieben = 0
+        with tempfile.TemporaryDirectory(prefix="k1520_fileinfo_") as tmp:
+            try:
+                for p in pfade:
+                    if Path(p).is_dir():
+                        raise K1520DiskError(
+                            f"{p} ist ein Ordner — Ordner bitte über „Alles einfügen“")
+                    name = praefix + Path(p).name
+                    text = self.text_mode or Path(p).suffix.lower() in TEXT_ENDUNGEN
+                    force = self.tool.accessory_reason(p) != ""
+                    try:
+                        self.tool.insert(p, name, text=text, overwrite=True,
+                                         force=force)
+                    except K1520DiskError:
+                        if self.tool.last_insert_problem != DiskTool.INSERT_ANGABEN_FEHLEN:
+                            raise
+                        info, vorlage = self._angaben_erfragen(
+                            p, vorlage, Path(tmp), mehrere=len(pfade) > 1)
+                        if info is None:
+                            self.log(f"Einfügen abgebrochen bei {Path(p).name} — "
+                                     "ohne Angaben wird nichts geschrieben")
+                            break
+                        self.tool.insert(p, name, text=text, overwrite=True,
+                                         info=info)
+                    geschrieben += 1
+            except K1520DiskError as e:
+                self._fehler("Einfügen", str(e))
+                self._reload()
+                return False
         self._reload()
-        self.log(f"{len(paths)} Dateien auf die Diskette")
-        return True
+        self.log(f"{geschrieben} Dateien auf die Diskette"
+                 + (f" ({uebersprungen} .fileinfo ausgewertet)" if uebersprungen else ""))
+        return geschrieben > 0
+
+    def _zubehoer_aussortieren(self, paths: List[str]):
+        """Angabendateien aus der Auswahl nehmen — mit der Rückfrage aus §2.5.
+
+        Returns:
+            ``(pfade, anzahl_uebersprungen)``; ``(None, 0)``, wenn der Anwender
+            die Rückfrage verneint hat und gar nichts geschehen soll.
+        """
+        zubehoer = [p for p in paths if self.tool.accessory_reason(p)]
+        if not zubehoer:
+            return list(paths), 0
+
+        # EINE ausgewählte Angabendatei ist fast sicher ein Versehen — jemand hat
+        # in der Auswahl die falsche der beiden gleichnamigen Zeilen erwischt.
+        # Stillschweigend zu überspringen wäre hier falsch: der Anwender bekäme
+        # weder eine Datei auf die Diskette noch einen Grund dafür.
+        if len(paths) == 1:
+            grund = self.tool.accessory_reason(paths[0])
+            frage = QMessageBox(QMessageBox.Question, "Das ist eine .fileinfo-Datei",
+                                grund + "\n\nTrotzdem als Datei auf die Diskette "
+                                        "kopieren?",
+                                QMessageBox.Yes | QMessageBox.No, self)
+            frage.setDefaultButton(QMessageBox.No)
+            if frage.exec() != QMessageBox.Yes:
+                self.log("Einfügen abgebrochen — Angabendatei, keine Nutzdatei")
+                return None, 0
+            return list(paths), 0
+
+        # Mehrere: der Anwender meint den INHALT, nicht das Zubehör.  Eine
+        # Rückfrage käme bei dreißig Dateien dreißigmal, und die Antwort wäre
+        # jedes Mal dieselbe.
+        return [p for p in paths if not self.tool.accessory_reason(p)], len(zubehoer)
+
+    def _angaben_erfragen(self, pfad: str, vorlage: Optional[dict],
+                          tmp: Path, mehrere: bool):
+        """Den Eingabedialog zeigen (oder die Vorlage anwenden).
+
+        Returns:
+            ``(pfad_der_angabendatei, vorlage)`` — ``(None, …)`` bei Abbruch.
+        """
+        name = Path(pfad).name
+        if vorlage is not None:
+            return schreibe_fileinfo(tmp / f"{name}.fileinfo", vorlage, name), vorlage
+
+        dlg = FileinfoDialog(pfad, mehrere=mehrere, parent=self)
+        if dlg.exec() != QDialog.Accepted:
+            return None, vorlage
+        angaben = dlg.angaben()
+        # „Speichern" schreibt neben die Datei — dann steht beim nächsten Mal
+        # nichts mehr zu tippen an; sonst reicht eine flüchtige Datei.
+        ziel = (Path(pfad).with_name(f"{name}.fileinfo") if dlg.merken
+                else tmp / f"{name}.fileinfo")
+        try:
+            info = schreibe_fileinfo(ziel, angaben, name)
+        except OSError as e:
+            # Ein schreibgeschützter Ordner darf das Einfügen nicht verhindern.
+            self.log(f"Angaben nicht neben der Datei speicherbar ({e}) — "
+                     "sie gelten trotzdem für diesen Vorgang")
+            info = schreibe_fileinfo(tmp / f"{name}.fileinfo", angaben, name)
+        return info, (angaben if dlg.fuer_alle else None)
 
     def erase_refs(self, refs: List[str]) -> bool:
         if self.tool is None or not refs:
@@ -1688,6 +1814,11 @@ class MainWindow(QMainWindow):
         """
         if self.tool is None:
             return False
+        # Das Archiv soll sich wie ein Auszug verhalten: bei UDOS liegt neben jeder
+        # Datei ihr `.fileinfo` (ohne das ist eine einzeln entnommene Programmdatei
+        # unbrauchbar), bei CP/M nur, wenn der Anwender es verlangt — dort genügt
+        # das Sammelbeiblatt, das ohnehin mit ins Archiv geht.
+        self._fileinfo_anwenden()
         try:
             ziel = create_archive(self.tool, zip_path, text_mode=self.text_mode,
                                   bezeichnung=bezeichnung,
@@ -2160,6 +2291,27 @@ class MainWindow(QMainWindow):
 
     def _modus_geaendert(self) -> None:
         self.st_modus.setText("Text" if self.text_mode else "binär")
+
+    def _cpm_fileinfo_umgeschaltet(self, an: bool) -> None:
+        """Nur eine Notiz — gewirkt wird beim nächsten Extrahieren.
+
+        Der Zustand wandert nicht in das geöffnete Werkzeug, sondern wird bei
+        JEDEM Extrahieren frisch gesetzt (:meth:`_fileinfo_anwenden`).  Sonst
+        gälte für eine Diskette, die vor dem Umschalten geöffnet wurde, noch die
+        alte Einstellung — ein Unterschied, den niemand sähe.
+        """
+        self.log("Bei CP/M wird je Datei ein .fileinfo angelegt" if an
+                 else "Bei CP/M wird kein .fileinfo angelegt")
+
+    def _fileinfo_anwenden(self) -> None:
+        """Die Menüeinstellung in das geöffnete Werkzeug tragen.
+
+        Bei der UDOS-Familie ist das `.fileinfo` unabhängig davon immer an — dort
+        ist es der Unterschied zwischen einer lauffähigen Programmdatei und einer,
+        die es nicht mehr ist.
+        """
+        if self.tool is not None:
+            self.tool.cpm_fileinfo = self.act_cpm_fileinfo.isChecked()
 
     def _aktualisieren(self) -> None:
         self._reload()

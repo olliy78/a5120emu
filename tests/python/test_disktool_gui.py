@@ -239,6 +239,12 @@ def test_round_trip_through_the_window(window, fixture_disks, tmp_path):
     (quelle / "Side1").mkdir(parents=True)
     (quelle / "Side0" / "EINS.DAT").write_bytes(b"\x01" * 500)
     (quelle / "Side1" / "ZWEI.DAT").write_bytes(b"\x02" * 300)
+    # Seit dem `.fileinfo` rät das Werkzeug die Kopfsektorangaben nicht mehr; bei
+    # UDOS gehören sie zur Datei dazu (doc/bug_disktool_Programmdatei.md §2.2).
+    (quelle / "Side0" / "EINS.DAT.fileinfo").write_text(
+        "fs=udos\nname=EINS.DAT\ntyp=B\nsatz=128\n")
+    (quelle / "Side1" / "ZWEI.DAT.fileinfo").write_text(
+        "fs=udos\nname=ZWEI.DAT\ntyp=B\nsatz=128\n")
 
     assert window.insert_all(quelle)
     namen = alle_namen(window.disk_view)
@@ -362,6 +368,109 @@ def test_archive_bundles_image_files_and_catalogue(window, fixture_disks, tmp_pa
     assert "PROCEDURE" in text
     # Der Altbestand des Mediums wird mitdokumentiert.
     assert "Altbestand" in text
+
+
+def test_archive_traegt_ein_maschinenlesbares_verzeichnis(window, fixture_disks,
+                                                          tmp_path):
+    """`diskarchive.yaml` — die Inventur einer Sammlung ohne Auspacken.
+
+    Geprüft wird das, worauf sich ein Auswerter verlassen können muss: die
+    Formatfassung, dass jeder `path` wirklich ein Eintrag der .zip ist, dass
+    Größe und Prüfsumme zu dessen Inhalt passen, und dass `dir`/`name` denselben
+    Pfad zerlegen (die Form, die auch FAT/Unix-Unterverzeichnisse tragen würde).
+    """
+    import hashlib
+    import zipfile
+
+    import yaml
+
+    from app.disktool.archive import INVENTAR_DATEI, INVENTAR_VERSION
+
+    assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
+    ziel = tmp_path / "archiv.zip"
+    assert window.archive(ziel, bezeichnung="UDOS 4.3 System")
+
+    with zipfile.ZipFile(ziel) as z:
+        namen = set(z.namelist())
+        assert INVENTAR_DATEI in namen
+        daten = yaml.safe_load(z.read(INVENTAR_DATEI))
+
+        assert daten["diskarchive"] == INVENTAR_VERSION
+        assert daten["transfer"] == "binary"
+        assert daten["label"] == "UDOS 4.3 System"
+        assert daten["files_root"] == "dateien"
+
+        # Das Abbild kennzeichnet die DISKETTE — daran hängt „auf welcher lag es".
+        for teil in (daten["image"], daten["catalogue"]):
+            assert teil["path"] in namen
+            inhalt = z.read(teil["path"])
+            assert teil["size"] == len(inhalt)
+            assert teil["sha256"] == hashlib.sha256(inhalt).hexdigest()
+
+        for f in daten["files"]:
+            assert f["path"] in namen, f["path"]
+            zerlegt = f"{f['dir']}/{f['name']}" if f["dir"] else f["name"]
+            assert f["path"] == f"dateien/{zerlegt}", f
+            inhalt = z.read(f["path"])
+            assert f["size"] == len(inhalt), f["path"]
+            assert f["sha256"] == hashlib.sha256(inhalt).hexdigest(), f["path"]
+
+    pfade = {f["path"] for f in daten["files"]}
+    assert "dateien/Side0/ASM" in pfade
+    assert "dateien/Side1/HELP.DAT.00" in pfade
+    # Die UDOS-Verzeichnisdatei (Typ D) ist Struktur, keine Nutzdatei — sie wird
+    # nicht ausgelesen und darf deshalb auch nicht im Verzeichnis stehen.
+    assert not any(f["name"] == "DIRECTORY" for f in daten["files"])
+    assert {f["dir"] for f in daten["files"]} == {"Side0", "Side1"}
+
+    # Beiblatt und `.fileinfo` sind Angaben ÜBER die Dateien, keine Dateien der
+    # Diskette — in der Inventur wären sie sonst auf jeder Diskette eine „Fassung".
+    anhang = {a["path"] for a in daten["attachments"]}
+    assert "dateien/udos-dateiangaben.txt" in anhang
+    assert anhang - {"dateien/udos-dateiangaben.txt"} == {p + ".fileinfo"
+                                                          for p in pfade}, \
+        "zu jeder Datei gehört ihre Angabendatei — und keine mehr"
+    assert not (pfade & anhang)
+
+    # Nichts fällt unter den Tisch: jedes Mitglied der .zip ist erklärt.
+    erklaert = pfade | anhang | {daten["image"]["path"], daten["catalogue"]["path"],
+                                 INVENTAR_DATEI}
+    assert {n for n in namen if not n.endswith("/")} == erklaert
+
+
+def test_archive_verzeichnis_nennt_den_namen_auf_der_diskette(window, temp_disk,
+                                                              tmp_path):
+    """Der CP/M-Nutzerbereich steht im Namen — auf der Diskette mit `:`.
+
+    Im Dateisystem des Wirts wird daraus ein `_` (ein `:` geht auf FAT nicht).
+    Das Verzeichnis führt beides, sonst wäre in der Inventur weder die Datei
+    wiederzufinden noch der Bereich zu rekonstruieren.
+    """
+    import zipfile
+
+    import yaml
+
+    from app.core_binding.k1520disk import DiskTool
+    from app.disktool.archive import INVENTAR_DATEI
+
+    pfad = temp_disk("cpa_cpa780_k5601_clock.img")
+    with DiskTool.open(pfad, read_only=False) as d:
+        d.set_cpm_attrs("DIENST.COM", user=3)
+        d.flush()
+
+    assert window.open_image(pfad)
+    ziel = tmp_path / "nutzerbereich.zip"
+    assert window.archive(ziel)
+
+    with zipfile.ZipFile(ziel) as z:
+        daten = yaml.safe_load(z.read(INVENTAR_DATEI))
+        namen = set(z.namelist())
+
+    treffer = [f for f in daten["files"] if "DIENST" in f["name"]]
+    assert len(treffer) == 1, treffer
+    assert treffer[0]["name"] == "3_DIENST.COM"
+    assert treffer[0]["disk_name"] == "3:DIENST.COM"
+    assert treffer[0]["path"] in namen
 
 
 def test_archive_works_read_only_and_does_not_rebind(window, fixture_disks, tmp_path):
@@ -2988,3 +3097,192 @@ def test_die_suche_laeuft_nicht_von_selbst_und_braucht_ein_dateisystem(window,
     assert not window.tool.has_filesystem
     assert not window.act_wiederherstellen.isEnabled(), \
         "ohne Dateisystem gibt es keine gelöschten Verzeichnisplätze"
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# `.fileinfo` — die Angaben je Datei (doc/bug_disktool_Programmdatei.md)
+# ════════════════════════════════════════════════════════════════════════════
+
+def test_extrahieren_legt_bei_udos_immer_ein_fileinfo_an(window, fixture_disks,
+                                                         tmp_path):
+    """Bei UDOS ist es der Unterschied zwischen lauffähig und nicht."""
+    assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
+    ziel = tmp_path / "einzeln"
+    assert window.extract_refs(["Side0/ACTIVATE"], ziel)
+    assert (ziel / "Side0" / "ACTIVATE").exists()
+    text = (ziel / "Side0" / "ACTIVATE.fileinfo").read_text()
+    assert "fs=udos" in text
+    assert "typ=P" in text
+    assert "mem=4000:43FF:0080" in text
+
+
+def test_bei_cpm_entsteht_das_fileinfo_nur_auf_verlangen(window, fixture_disks,
+                                                         tmp_path):
+    """Vorgabe AUS — Bereich 0 ohne Attribute ist bei CP/M der Normalfall (§2.4)."""
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_noclock.hfe")
+    assert not window.act_cpm_fileinfo.isChecked(), "die Vorgabe muss AUS sein"
+
+    aus = tmp_path / "aus"
+    assert window.extract_refs(["BRUN.COM"], aus)
+    assert not (aus / "BRUN.COM.fileinfo").exists()
+
+    window.act_cpm_fileinfo.setChecked(True)
+    an = tmp_path / "an"
+    assert window.extract_refs(["BRUN.COM"], an)
+    assert (an / "BRUN.COM.fileinfo").read_text().startswith("#")
+    assert "fs=cpm" in (an / "BRUN.COM.fileinfo").read_text()
+
+
+def test_eingabedialog_blendet_die_programmfelder_bei_typ_a_ab(qt_app, tmp_path):
+    """Die eigentliche Leistung des Dialogs (§2.3).
+
+    Bei Typ ``A``/``B`` sind ENTRY, Segmente und LOW/HIGH/STACK kein
+    Anwenderinhalt, sondern schlicht unbelegt — sie werden abgeblendet UND auf 0
+    gesetzt, nicht bloß ignoriert.
+    """
+    from app.disktool.ui.fileinfo_dialog import FileinfoDialog
+
+    datei = tmp_path / "PROG.COM"
+    datei.write_bytes(b"\xc3\x00\x40" + b"\x00" * 100)
+    dlg = FileinfoDialog(datei)
+    assert dlg.typ == "P", "die Endung .COM und das C3 sprechen für ein Programm"
+    assert dlg.kasten_programm.isEnabled()
+
+    dlg.f_entry.setText("4000")
+    dlg.f_low.setText("4000")
+    dlg.f_typ.setCurrentIndex(dlg.f_typ.findData("A"))
+    assert not dlg.kasten_programm.isEnabled()
+    assert dlg.f_entry.text() == "0000"
+    assert dlg.f_low.text() == "0000"
+    assert dlg.angaben()["start"] == "0000"
+
+
+def test_eingabedialog_schreibt_eine_lesbare_angabendatei(qt_app, tmp_path):
+    from app.disktool.ui.fileinfo_dialog import FileinfoDialog
+
+    datei = tmp_path / "TREIBER"
+    datei.write_bytes(b"\xf3" + b"\x00" * 50)
+    dlg = FileinfoDialog(datei)
+    dlg.f_typ.setCurrentIndex(dlg.f_typ.findData("P1"))
+    dlg.f_satz.setCurrentIndex(dlg.f_satz.findData(1024))
+    dlg.f_entry.setText("2600")
+    dlg.f_segs.setText("2600+1591")
+    dlg.f_eig["W"].setChecked(True)
+    ziel = dlg.schreibe(tmp_path / "x.fileinfo")
+
+    text = ziel.read_text()
+    assert "fs=udos" in text
+    assert "name=TREIBER" in text
+    assert "typ=P1" in text
+    assert "satz=1024" in text
+    assert "start=2600" in text
+    assert "eig=W" in text
+    # `rest=` darf NICHT dastehen: 0 ist dort ein gültiger Wert, und der
+    # Schreibpfad rechnet ihn selbst aus dem Datenstrom aus.
+    assert "rest=" not in text
+
+
+def test_eingabedialog_geht_auf_wenn_die_angaben_fehlen(window, fixture_disks,
+                                                        tmp_path, monkeypatch):
+    """Geraten wird nicht — was ohne Typ entstünde, liefe nicht (§2.2)."""
+    from PySide6.QtWidgets import QDialog
+    from app.disktool.ui import main_window as mw
+
+    abbild = tmp_path / "udos.hfe"
+    shutil.copy(fixture_disks / "udos_boot_scp.hfe", abbild)
+    assert window.open_image(abbild)
+    window.set_read_only(False)
+
+    quelle = tmp_path / "neu"
+    quelle.mkdir()
+    for name in ("A.NEU", "B.NEU"):
+        (quelle / name).write_bytes(b"\x00" * 200)
+
+    gesehen = []
+
+    class Dialog:
+        def __init__(self, pfad, mehrere=False, parent=None):
+            gesehen.append((Path(pfad).name, mehrere))
+            self.merken = False
+            self.fuer_alle = True     # „Für alle übernehmen"
+
+        def exec(self):
+            return QDialog.Accepted
+
+        def angaben(self):
+            return {"fs": "udos", "typ": "B", "satz": "128"}
+
+    monkeypatch.setattr(mw, "FileinfoDialog", Dialog)
+    assert window.insert_paths([str(quelle / "A.NEU"), str(quelle / "B.NEU")])
+
+    assert [n for n, _ in gesehen] == ["A.NEU"], \
+        "„Für alle übernehmen“ darf nur EINMAL fragen"
+    assert gesehen[0][1] is True, "bei mehreren Dateien gibt es den Haken"
+    namen = alle_namen(window.disk_view)
+    assert "A.NEU" in namen and "B.NEU" in namen
+
+
+def test_eine_einzelne_fileinfo_wird_erfragt_mehrere_nicht(window, fixture_disks,
+                                                           tmp_path, monkeypatch):
+    """§2.5: die Einzelauswahl ist fast sicher ein Versehen, der Stapel nicht."""
+    from PySide6.QtWidgets import QMessageBox
+
+    abbild = tmp_path / "udos.hfe"
+    shutil.copy(fixture_disks / "udos_boot_scp.hfe", abbild)
+    assert window.open_image(abbild)
+    window.set_read_only(False)
+
+    ordner = tmp_path / "auszug"
+    assert window.extract_refs(["Side0/ACTIVATE", "Side0/CAT"], ordner)
+    unter = ordner / "Side0"
+
+    gefragt = []
+    monkeypatch.setattr(QMessageBox, "exec",
+                        lambda self: gefragt.append(1) or QMessageBox.No)
+
+    # EINE Angabendatei: es wird gefragt, und „Nein" schreibt nichts.
+    assert not window.insert_paths([str(unter / "ACTIVATE.fileinfo")])
+    assert len(gefragt) == 1
+
+    # Mehrere: stillschweigend überspringen und ZÄHLEN — keine Rückfrage.
+    gefragt.clear()
+    assert window.insert_paths([str(unter / "ACTIVATE"),
+                                str(unter / "ACTIVATE.fileinfo"),
+                                str(unter / "CAT"),
+                                str(unter / "CAT.fileinfo")])
+    assert not gefragt, "bei einer Mehrfachauswahl gibt es keine Rückfrage"
+    assert "2 .fileinfo ausgewertet" in window.protokoll.toPlainText()
+    for e in window.tool.list():
+        assert not e.name.endswith(".fileinfo")
+
+
+def test_archiv_einer_udos_diskette_enthaelt_die_fileinfo(window, fixture_disks,
+                                                          tmp_path):
+    """Die einzelne Datei soll auch aus dem Archiv heraus vollständig sein."""
+    import zipfile
+
+    assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
+    ziel = tmp_path / "archiv.zip"
+    assert window.archive(ziel)
+
+    namen = zipfile.ZipFile(ziel).namelist()
+    nutz = [n for n in namen
+            if n.startswith("dateien/") and not n.endswith(("/", ".fileinfo"))
+            and "dateiangaben" not in n]
+    angaben = [n for n in namen if n.endswith(".fileinfo")]
+    assert len(angaben) == len(nutz), "zu jeder Datei gehört ihre Angabendatei"
+    assert "dateien/Side0/ACTIVATE.fileinfo" in namen
+    # Das Sammelbeiblatt bleibt daneben bestehen — es tritt nicht an seine Stelle.
+    assert "dateien/udos-dateiangaben.txt" in namen
+
+
+def test_archiv_einer_cpm_diskette_kommt_ohne_fileinfo_aus(window, fixture_disks,
+                                                           tmp_path):
+    """Bei CP/M genügt das Sammelbeiblatt — die Angaben sind dort kein Verlust."""
+    import zipfile
+
+    assert window.open_image(fixture_disks / "cpa_cpa780_k5601_noclock.hfe")
+    ziel = tmp_path / "cpm.zip"
+    assert window.archive(ziel)
+    namen = zipfile.ZipFile(ziel).namelist()
+    assert not [n for n in namen if n.endswith(".fileinfo")]

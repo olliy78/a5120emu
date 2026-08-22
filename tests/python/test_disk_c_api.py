@@ -151,6 +151,10 @@ def test_create_write_read_roundtrip(tmp_path):
 
     quelle = tmp_path / "quelle.bin"
     quelle.write_bytes(bytes(range(256)) * 4)
+    # Bei UDOS gehören die Kopfsektorangaben zur Datei; ohne sie wird nicht mehr
+    # geraten (doc/bug_disktool_Programmdatei.md §2.2).
+    (tmp_path / "quelle.bin.fileinfo").write_text(
+        "fs=udos\nname=quelle.bin\ntyp=B\nsatz=128\n")
 
     abbild = tmp_path / "neu.hfe"
     with DiskTool.create(abbild, "udos_ds77", label="PYTEST") as d:
@@ -179,6 +183,8 @@ def test_insert_all_requires_the_side_directories(tmp_path, fixture_disks):
     quelle = tmp_path / "quelle"
     (quelle / "Side0").mkdir(parents=True)
     (quelle / "Side0" / "NUR.EINE").write_text("Seite 0")
+    (quelle / "Side0" / "NUR.EINE.fileinfo").write_text(
+        "fs=udos\nname=NUR.EINE\ntyp=A\nsatz=128\n")
 
     with DiskTool.open(abbild, read_only=False) as d:
         with pytest.raises(K1520DiskError) as exc:
@@ -189,6 +195,8 @@ def test_insert_all_requires_the_side_directories(tmp_path, fixture_disks):
         # Mit beiden Unterverzeichnissen geht es.
         (quelle / "Side1").mkdir()
         (quelle / "Side1" / "UND.EINE").write_text("Seite 1")
+        (quelle / "Side1" / "UND.EINE.fileinfo").write_text(
+            "fs=udos\nname=UND.EINE\ntyp=A\nsatz=128\n")
         d.insert_all(quelle)
         refs = {e.ref for e in d.list()}
         assert "Side0/NUR.EINE" in refs and "Side1/UND.EINE" in refs

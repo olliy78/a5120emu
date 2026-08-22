@@ -116,6 +116,39 @@ struct TransferOptions {
     bool cpm_read_only = false;
     bool cpm_system    = false;
     bool cpm_archived  = false;
+
+    /// @brief Eine ZUBEHOERdatei (`.fileinfo`, Sammelbeiblatt) trotzdem als Nutzdatei
+    ///        auf die Diskette schreiben.
+    ///
+    /// Vorgabe ist `false`: wer eine einzelne `ACTIVATE.fileinfo` einfuegt, hat fast
+    /// sicher die falsche der beiden gleichnamigen Zeilen erwischt (§2.5 des
+    /// Fehlerberichts).  Es gibt aber einen zulaessigen Grund dafuer — deshalb ein
+    /// Schalter (`put --force`, in der Oberflaeche die Rueckfrage) und kein Verbot.
+    bool zubehoer_als_datei = false;
+
+    /// @brief Pfad einer ANGABENdatei (`.fileinfo`-Zeilenform), die statt der
+    ///        neben der Quelle liegenden gilt.
+    ///
+    /// Der Weg der Oberflaeche: was der Anwender im Eingabedialog eingetippt hat,
+    /// wird in eine solche Datei geschrieben und hier uebergeben — damit gibt es
+    /// fuer die Kopfsektorangaben genau EINE Zeilenform und EINEN Leser, statt
+    /// zwanzig Felder durch die C-ABI zu reichen.  Leer = nicht gesetzt.
+    std::string angaben_datei;
+};
+
+/**
+ * @enum InsertHindernis
+ * @brief Warum ein @ref DiskVolume::insert abgelehnt wurde — jenseits von `false`.
+ *
+ * Die Oberflaeche muss die beiden Faelle vom gewoehnlichen Fehler unterscheiden
+ * koennen: auf @ref AngabenFehlen antwortet sie mit dem Eingabedialog, auf
+ * @ref Zubehoerdatei mit einer Rueckfrage.  Die Kommandozeile antwortet auf
+ * dieselben Faelle mit zwei verschiedenen Meldungen.
+ */
+enum class InsertHindernis {
+    Kein = 0,           ///< gewoehnlicher Ablauf (auch der gewoehnliche Fehler)
+    AngabenFehlen = 1,  ///< UDOS-Familie, und es gibt weder `.fileinfo` noch Beiblatt
+    Zubehoerdatei = 2,  ///< die Quelle ist selbst ein `.fileinfo`/Sammelbeiblatt
 };
 
 /**
@@ -451,9 +484,47 @@ public:
 
     // ─── Einzeloperationen ───────────────────────────────────────────────────
 
+    /**
+     * @brief Eine Datei herausholen — samt ihrer Angaben.
+     *
+     * Neben die Datei kommt ein gleichnamiges `<datei>.fileinfo` mit dem, was eine
+     * Linux-Datei nicht traegt (Typ, Satzlaenge, ENTRY, Segmente, Speicheranforderung
+     * bzw. bei CP/M Nutzerbereich und Attribute).  Bei der UDOS-Familie **immer** —
+     * ohne diese Angaben ist eine einzeln herausgeholte Programmdatei beim
+     * Zurueckschreiben unbrauchbar; bei CP/M nur, wenn @ref setCpmFileinfo es
+     * verlangt (dort ist „Bereich 0, keine Attribute" der Normalfall, kein Verlust).
+     */
     bool extract(const FileRef& ref, const std::string& dest_path, const TransferOptions&);
     bool insert (const std::string& src_path, const FileRef& ref, const TransferOptions&);
     bool erase  (const FileRef& ref);
+
+    /// @brief Warum das letzte @ref insert / @ref insertAll abgelehnt wurde.
+    ///        Nur aussagekraeftig, wenn der Aufruf `false` lieferte.
+    InsertHindernis lastInsertHindernis() const { return insert_hindernis_; }
+
+    /// @brief Unter welchem Namen das letzte @ref insert wirklich geschrieben hat.
+    ///        Er kann vom gewuenschten abweichen: bei CP/M setzt das `.fileinfo` den
+    ///        Nutzerbereich wieder ein (`3_SYSTEM.COM` → `3:SYSTEM.COM`), und eine
+    ///        Meldung, die den Linux-Namen nennt, waere schlicht falsch.
+    const std::string& lastInsertedName() const { return insert_name_; }
+
+    /// @brief Wie viele Zubehoerdateien das letzte @ref insertAll ausgewertet und
+    ///        uebersprungen hat („24 Dateien eingefuegt, 24 `.fileinfo` ausgewertet").
+    int lastAccessoryCount() const { return zubehoer_gezaehlt_; }
+
+    /// @brief Legt @ref extract auch bei **CP/M** ein `.fileinfo` an?  Vorgabe: nein.
+    ///
+    /// Bei CP/M gibt es nichts zu retten, was ohne die Datei verloren ginge:
+    /// Nutzerbereich 0 und „keine Attribute" sind der Normalfall, den auch das echte
+    /// CP/M erzeugt.  Ein Zubehoerdatei je Datei waere dort nur Ballast — wer sie
+    /// trotzdem will (Sammlung, Archiv), schaltet sie ein.  Bei der UDOS-Familie ist
+    /// das `.fileinfo` unabhaengig davon immer an.
+    void setCpmFileinfo(bool an) { cpm_fileinfo_ = an; }
+    bool cpmFileinfo() const     { return cpm_fileinfo_; }
+
+    /// @brief Ist @p pfad eine Zubehoerdatei (`.fileinfo` oder Sammelbeiblatt)?
+    ///        Leer = nein; sonst der Grund im Klartext, samt gemeinter Nutzdatei.
+    static std::string zubehoerGrund(const std::string& pfad);
 
     /**
      * @brief Erster Sektor einer Datei — fuer den Sprung in den Diskeditor (§7.1b).
@@ -674,8 +745,19 @@ private:
     bool valid(int v) const { return v >= 0 && v < static_cast<int>(volumes_.size()); }
 
     /// @brief Erwartete Unterverzeichnisse pruefen und Dateien je Volume einsammeln.
+    ///        Zubehoerdateien bleiben draussen und werden in @p zubehoer gezaehlt.
     bool sammleQuelldateien(const std::string& src_dir,
-                            std::vector<std::vector<std::string>>& je_volume) const;
+                            std::vector<std::vector<std::string>>& je_volume,
+                            int* zubehoer = nullptr) const;
+
+    /// @brief Gemeinsamer Kern von @ref extract; @p bekannt spart das erneute
+    ///        Einlesen des Verzeichnisses, wenn der Aufrufer den Eintrag schon hat
+    ///        (bei UDOS kostet jeder Eintrag einen Kopfsektor).
+    bool extractMit(const FileRef& ref, const std::string& dest_path,
+                    const TransferOptions& opt, const FileEntry* bekannt);
+
+    /// @brief Das `.fileinfo` neben @p dest_path schreiben — die EINE Stelle dafuer.
+    bool schreibeAngabenDatei(const FileEntry& e, const std::string& dest_path);
 
     std::string        path_;
     std::unique_ptr<DiskImage> disk_;
@@ -756,5 +838,13 @@ private:
     bool               nur_lesen_erzwungen_ = false;
     bool               backup_      = true;
     bool               backup_getan_= false;
+    /// @brief Legt @ref extract auch bei CP/M ein `.fileinfo` an?  s. @ref setCpmFileinfo.
+    bool               cpm_fileinfo_ = false;
+    /// @brief Grund der letzten Ablehnung beim Einfuegen (@ref lastInsertHindernis).
+    mutable InsertHindernis insert_hindernis_ = InsertHindernis::Kein;
+    /// @brief Zubehoerdateien des letzten @ref insertAll (@ref lastAccessoryCount).
+    mutable int        zubehoer_gezaehlt_ = 0;
+    /// @brief Name, unter dem das letzte @ref insert geschrieben hat.
+    std::string        insert_name_;
     mutable std::string last_error_;
 };

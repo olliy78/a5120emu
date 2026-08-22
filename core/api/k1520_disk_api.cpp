@@ -768,6 +768,46 @@ extern "C" bool k1520d_insert(K1520Disk h, const char* src, const char* name,
     return H(h)->vol->insert(src, FileRef::parse(name), optionen(mode, overwrite));
 }
 
+extern "C" bool k1520d_insert_forced(K1520Disk h, const char* src, const char* name,
+                                     K1520DMode mode, bool overwrite) {
+    if (!h || !src || !name) return false;
+    TransferOptions o = optionen(mode, overwrite);
+    o.zubehoer_als_datei = true;
+    return H(h)->vol->insert(src, FileRef::parse(name), o);
+}
+
+extern "C" bool k1520d_insert_with_info(K1520Disk h, const char* src, const char* name,
+                                        K1520DMode mode, bool overwrite,
+                                        const char* info_pfad) {
+    if (!h || !src || !name) return false;
+    TransferOptions o = optionen(mode, overwrite);
+    if (info_pfad) o.angaben_datei = info_pfad;
+    return H(h)->vol->insert(src, FileRef::parse(name), o);
+}
+
+extern "C" int k1520d_last_insert_problem(K1520Disk h) {
+    return h ? static_cast<int>(H(h)->vol->lastInsertHindernis()) : 0;
+}
+
+extern "C" int k1520d_last_accessory_count(K1520Disk h) {
+    return h ? H(h)->vol->lastAccessoryCount() : 0;
+}
+
+extern "C" const char* k1520d_accessory_reason(const char* pfad) {
+    // Statisch — die Oberflaeche fragt das, BEVOR sie eine Diskette anfasst.
+    static std::string puffer;
+    puffer = pfad ? DiskVolume::zubehoerGrund(pfad) : std::string();
+    return puffer.c_str();
+}
+
+extern "C" void k1520d_set_cpm_fileinfo(K1520Disk h, bool an) {
+    if (h) H(h)->vol->setCpmFileinfo(an);
+}
+
+extern "C" bool k1520d_cpm_fileinfo(K1520Disk h) {
+    return h && H(h)->vol->cpmFileinfo();
+}
+
 extern "C" bool k1520d_erase(K1520Disk h, const char* name) {
     if (!h || !name) return false;
     return H(h)->vol->erase(FileRef::parse(name));

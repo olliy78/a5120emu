@@ -343,11 +343,21 @@ TEST(DiskVolume, ExtrahiertBeideSeitenInSideOrdner) {
     // Je Seite EINE Datei weniger als im Verzeichnis (47/22): die UDOS-Datei
     // DIRECTORY (Typ D) ist Dateisystemstruktur und wird zwar gelistet, aber
     // nicht extrahiert — sonst waere sie beim Zurueckschreiben ein Fremdkoerper.
-    int n0 = 0, n1 = 0;
-    for (const auto& e : fs::directory_iterator(ziel / "Side0")) { (void)e; ++n0; }
-    for (const auto& e : fs::directory_iterator(ziel / "Side1")) { (void)e; ++n1; }
+    // Daneben liegt je Datei ihr `.fileinfo` (die Kopfsektorangaben, die eine
+    // Linux-Datei nicht traegt) — es wird getrennt gezaehlt, sonst pruefte der
+    // Test nur noch, dass irgendetwas im Ordner liegt.
+    auto zaehle = [](const fs::path& ordner, int& nutz, int& angaben) {
+        for (const auto& e : fs::directory_iterator(ordner)) {
+            if (e.path().extension() == ".fileinfo") ++angaben; else ++nutz;
+        }
+    };
+    int n0 = 0, n1 = 0, a0 = 0, a1 = 0;
+    zaehle(ziel / "Side0", n0, a0);
+    zaehle(ziel / "Side1", n1, a1);
     EXPECT_EQ(n0, 46);
     EXPECT_EQ(n1, 21);
+    EXPECT_EQ(a0, 46) << "zu jeder Datei gehoert ihre Angabendatei";
+    EXPECT_EQ(a1, 21);
     EXPECT_FALSE(fs::exists(ziel / "Side0" / "DIRECTORY"));
 
     // Stichprobe: der Inhalt ist der der Diskette.
@@ -697,7 +707,12 @@ TEST(DiskVolume, UdosStapelUeberBeideSeitenHinUndZurueck) {
     schreibe(quelle / "Side0" / "VON.SEITE.NULL", std::string(700, 'A'));
     schreibe(quelle / "Side1" / "VON.SEITE.EINS", std::string(300, 'B'));
 
-    ASSERT_TRUE(dv->insertAll(quelle.path(), TransferOptions{})) << dv->lastError();
+    // Neue Dateien bringen keine Kopfsektorangaben mit; seit dem `.fileinfo`
+    // raet das Werkzeug sie nicht mehr, sondern verlangt sie ausdruecklich
+    // (doc/bug_disktool_Programmdatei.md §2.2, Fall 4).  Das ist hier `--type A`.
+    TransferOptions neu;
+    neu.udos_type = "A";
+    ASSERT_TRUE(dv->insertAll(quelle.path(), neu)) << dv->lastError();
 
     // Jede Datei liegt auf IHRER Seite — und nur dort.
     const std::vector<FileEntry> nachher = dv->list();
@@ -732,7 +747,12 @@ TEST(DiskVolume, UdosGleicherNameAufBeidenSeitenBleibtGetrennt) {
     TempOrdner quelle("k1520_test_dv_udos_gleich_q");
     schreibe(quelle / "Side0" / "GLEICH.NAME", "Seite null");
     schreibe(quelle / "Side1" / "GLEICH.NAME", "Seite eins");
-    ASSERT_TRUE(dv->insertAll(quelle.path(), TransferOptions{})) << dv->lastError();
+    // Neue Dateien bringen keine Kopfsektorangaben mit; seit dem `.fileinfo`
+    // raet das Werkzeug sie nicht mehr, sondern verlangt sie ausdruecklich
+    // (doc/bug_disktool_Programmdatei.md §2.2, Fall 4).  Das ist hier `--type A`.
+    TransferOptions neu;
+    neu.udos_type = "A";
+    ASSERT_TRUE(dv->insertAll(quelle.path(), neu)) << dv->lastError();
 
     TempOrdner ziel("k1520_test_dv_udos_gleich_z");
     ASSERT_TRUE(dv->extract(FileRef::parse("Side0/GLEICH.NAME"),
@@ -820,7 +840,12 @@ TEST(DiskVolume, NeuAngelegteDisketteIstBeschreibbar) {
     TempOrdner q("k1520_test_dv_neu_q");
     schreibe(q / "Side0" / "A.DAT", "x");
     schreibe(q / "Side1" / "B.DAT", "y");
-    EXPECT_TRUE(dv->insertAll(q.path(), TransferOptions{})) << dv->lastError();
+    // Neue Dateien bringen keine Kopfsektorangaben mit; seit dem `.fileinfo`
+    // raet das Werkzeug sie nicht mehr, sondern verlangt sie ausdruecklich
+    // (doc/bug_disktool_Programmdatei.md §2.2, Fall 4).  Das ist hier `--type A`.
+    TransferOptions neu;
+    neu.udos_type = "A";
+    EXPECT_TRUE(dv->insertAll(q.path(), neu)) << dv->lastError();
 
     // Erst schliessen, dann loeschen: ~DiskImage() flusht, sonst legt die eben
     // beschriebene Diskette die Datei NACH dem remove() wieder an.
@@ -1292,4 +1317,286 @@ TEST(DiskVolume, SektorAnlegenUndLoeschenUeberDieFassade) {
         EXPECT_NEAR(s.start * nachher.bytes, von, 1.0);
     }
     EXPECT_TRUE(gefunden);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `.fileinfo` — die Angaben JE DATEI (doc/bug_disktool_Programmdatei.md)
+//
+// Ohne diese Wächter wäre der Fehler in einem Jahr wieder da — er WAR schon
+// einmal da, und niemand hat es bemerkt, weil nur der Dateiinhalt verglichen
+// wurde.  Genau darin liegt seine Bosheit: die Bytes stimmen, es gibt keine
+// Meldung, und die Dateisystemprüfung kann ihn grundsätzlich nicht sehen.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+/// @brief Der Eintrag zu @p name auf Seite @p volume — sonst ein leerer.
+FileEntry eintrag(const DiskVolume& dv, int volume, const std::string& name) {
+    for (const FileEntry& e : dv.list())
+        if (e.volume == volume && e.name == name) return e;
+    return {};
+}
+
+}  // namespace
+
+TEST(DiskToolFileinfo, EinzelneProgrammdateiUeberlebtDenRundlauf) {
+    // Genau der Fall aus dem Fehlerbericht §1: EINE Programmdatei herausholen und
+    // auf eine zweite Diskette zurückschreiben.  Vorher wurde daraus Typ B mit
+    // 128er-Sätzen ohne Startadresse und LOW/HIGH = FFFF — eine Datei, die UDOS
+    // mit MEMORY PROTECT VIOLATION abweist.
+    Kopie q("udos_boot_scp.hfe", "k1520_test_fi_quelle.hfe");
+    Kopie z("udos_boot_scp.hfe", "k1520_test_fi_ziel.hfe");
+    std::string err;
+    auto quelle = oeffneSchreibbar(q.path(), "", err);
+    ASSERT_NE(quelle, nullptr) << err;
+    auto ziel = oeffneSchreibbar(z.path(), "", err);
+    ASSERT_NE(ziel, nullptr) << err;
+
+    const FileEntry vorher = eintrag(*quelle, 0, "ACTIVATE");
+    ASSERT_EQ(vorher.type, "P") << "die Fixture trägt keine Programmdatei mehr";
+
+    TempOrdner o("k1520_test_fi_o");
+    ASSERT_TRUE(quelle->extract(FileRef{0, "ACTIVATE"}, (o / "ACTIVATE").string(),
+                                TransferOptions{})) << quelle->lastError();
+    ASSERT_TRUE(fs::exists(o / "ACTIVATE.fileinfo"))
+        << "ohne die Angabendatei ist der Rundlauf von vornherein verloren";
+
+    ASSERT_TRUE(ziel->erase(FileRef{0, "ACTIVATE"})) << ziel->lastError();
+    ASSERT_TRUE(ziel->insert((o / "ACTIVATE").string(), FileRef{0, "ACTIVATE"},
+                             TransferOptions{})) << ziel->lastError();
+
+    const FileEntry nachher = eintrag(*ziel, 0, "ACTIVATE");
+    EXPECT_EQ(nachher.type,          vorher.type);
+    EXPECT_EQ(nachher.attributes,    vorher.attributes);
+    EXPECT_EQ(nachher.entry_addr,    vorher.entry_addr);
+    EXPECT_EQ(nachher.record_len,    vorher.record_len);
+    EXPECT_EQ(nachher.block_len,     vorher.block_len);
+    EXPECT_EQ(nachher.bytes_in_last, vorher.bytes_in_last);
+    EXPECT_EQ(nachher.segment_start, vorher.segment_start);
+    EXPECT_EQ(nachher.segment_len,   vorher.segment_len);
+    EXPECT_EQ(nachher.segments,      vorher.segments);
+    EXPECT_EQ(nachher.low_addr,      vorher.low_addr)   << "LOW ADDRESS";
+    EXPECT_EQ(nachher.high_addr,     vorher.high_addr)  << "HIGH ADDRESS";
+    EXPECT_EQ(nachher.stack_size,    vorher.stack_size) << "STACK SIZE";
+    EXPECT_EQ(nachher.extra,         vorher.extra);
+    EXPECT_EQ(nachher.created,       vorher.created);
+    EXPECT_EQ(nachher.date,          vorher.date);
+}
+
+TEST(DiskToolFileinfo, JedeExtrahierteDateiHatEinFileinfo) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_fi_alle.hfe");
+    std::string err;
+    auto dv = oeffne(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    TempOrdner o("k1520_test_fi_alle_o");
+    ASSERT_TRUE(dv->extractAll(o.path(), TransferOptions{})) << dv->lastError();
+
+    int gezaehlt = 0;
+    for (const FileEntry& e : dv->list()) {
+        if (e.type == "D") continue;          // Dateisystemstruktur, keine Nutzdatei
+        const fs::path datei = o / dv->volumeDir(e.volume) / e.name;
+        ASSERT_TRUE(fs::exists(datei)) << datei.string();
+        EXPECT_TRUE(fs::exists(datei.string() + ".fileinfo"))
+            << "ohne Angabendatei: " << datei.string();
+        ++gezaehlt;
+    }
+    EXPECT_GT(gezaehlt, 0);
+}
+
+TEST(DiskToolFileinfo, CpmSchreibtNurAufVerlangenEinFileinfo) {
+    // Bei CP/M ist „Nutzerbereich 0, keine Attribute" der Normalfall — es geht
+    // nichts verloren, und eine Zubehördatei je Datei wäre blosser Ballast.  Also
+    // Vorgabe AUS; wer eine Sammlung führt, schaltet sie ein.
+    Kopie k("cpa_cpa780_k5601_noclock.hfe", "k1520_test_fi_cpm.hfe");
+    std::string err;
+    auto dv = oeffne(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+    EXPECT_FALSE(dv->cpmFileinfo()) << "die Vorgabe muss AUS sein";
+
+    TempOrdner aus("k1520_test_fi_cpm_aus");
+    ASSERT_TRUE(dv->extractAll(aus.path(), TransferOptions{})) << dv->lastError();
+    int mit_angaben = 0;
+    for (const auto& e : fs::directory_iterator(aus.path()))
+        if (e.path().extension() == ".fileinfo") ++mit_angaben;
+    EXPECT_EQ(mit_angaben, 0);
+
+    dv->setCpmFileinfo(true);
+    TempOrdner an("k1520_test_fi_cpm_an");
+    ASSERT_TRUE(dv->extractAll(an.path(), TransferOptions{})) << dv->lastError();
+    for (const FileEntry& e : dv->list()) {
+        std::string datei = e.qualifiedName();
+        std::replace(datei.begin(), datei.end(), ':', '_');
+        EXPECT_TRUE(fs::exists((an / datei).string() + ".fileinfo")) << datei;
+    }
+}
+
+TEST(DiskToolFileinfo, CpmBrauchtKeineAngaben) {
+    // Die Gegenrichtung und ein Wächter gegen Übereifer (§2.4): eine Datei OHNE
+    // jede Angabe auf eine CP/M-Diskette einfügen GELINGT, landet im Nutzerbereich
+    // 0 ohne Attribute und ist kein Sonderfall.
+    Kopie k("cpa_cpa780_k5601_noclock.hfe", "k1520_test_fi_cpm_put.hfe");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    TempOrdner o("k1520_test_fi_cpm_put_o");
+    schreibe(o / "NEU.TXT", "ohne jede Angabe");
+    ASSERT_TRUE(dv->insert((o / "NEU.TXT").string(), FileRef{0, "NEU.TXT"},
+                           TransferOptions{})) << dv->lastError();
+    EXPECT_EQ(dv->lastInsertHindernis(), InsertHindernis::Kein);
+
+    const FileEntry e = eintrag(*dv, 0, "NEU.TXT");
+    EXPECT_EQ(e.user, 0);
+    EXPECT_TRUE(e.attributes.empty()) << e.attributes;
+}
+
+TEST(DiskToolFileinfo, UdosOhneAngabenWirdAbgelehnt) {
+    // Geraten wird nicht: was ohne Typ und Satzlänge entstünde, wäre eine Datei,
+    // die nicht läuft — und man sähe es ihr nicht an.
+    Kopie k("udos_boot_scp.hfe", "k1520_test_fi_ohne.hfe");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    TempOrdner o("k1520_test_fi_ohne_o");
+    schreibe(o / "NACKT", "keine Angaben weit und breit");
+    EXPECT_FALSE(dv->insert((o / "NACKT").string(), FileRef{0, "NACKT"},
+                            TransferOptions{}));
+    EXPECT_EQ(dv->lastInsertHindernis(), InsertHindernis::AngabenFehlen);
+    EXPECT_NE(dv->lastError().find("--type"), std::string::npos)
+        << "die Meldung muss den Ausweg nennen: " << dv->lastError();
+
+    // Mit ausdrücklichen Angaben geht es durch — sie gehen allem vor.
+    TransferOptions mit;
+    mit.udos_type = "B";
+    mit.udos_record_len = 128;
+    EXPECT_TRUE(dv->insert((o / "NACKT").string(), FileRef{0, "NACKT"}, mit))
+        << dv->lastError();
+}
+
+TEST(DiskToolFileinfo, FileinfoSchlaegtSammelbeiblatt) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_fi_vorrang.hfe");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    TempOrdner o("k1520_test_fi_vorrang_o");
+    schreibe(o / "STREIT", "Inhalt");
+    // Das Sammelbeiblatt sagt A/128, das `.fileinfo` daneben P1/1024.
+    schreibe(o / "udos-dateiangaben.txt",
+             "STREIT typ=A eig=- start=0000 satz=128 block=128 rest=0 "
+             "segment=0000:0 mem=0000:0000:0000 zusatz=0 erst=- geaend=-\n");
+    schreibe(o / "STREIT.fileinfo",
+             "fs=udos\nname=STREIT\ntyp=P1\neig=WS\nstart=4000\nsatz=1024\n"
+             "block=1024\nmem=4000:43FF:0080\nzusatz=0\n");
+
+    ASSERT_TRUE(dv->insert((o / "STREIT").string(), FileRef{0, "STREIT"},
+                           TransferOptions{})) << dv->lastError();
+    const FileEntry e = eintrag(*dv, 0, "STREIT");
+    EXPECT_EQ(e.type, "P1");
+    EXPECT_EQ(e.record_len, 1024);
+    EXPECT_EQ(e.entry_addr, 0x4000);
+    EXPECT_EQ(e.low_addr, 0x4000);
+}
+
+TEST(DiskToolFileinfo, StapelUeberspringtZubehoerUndZaehltEs) {
+    Kopie k("udos_boot_scp.hfe", "k1520_test_fi_stapel.hfe");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+    ASSERT_EQ(dv->volumeCount(), 2);
+
+    TempOrdner o("k1520_test_fi_stapel_o");
+    schreibe(o / "Side0" / "EINS", "Inhalt eins");
+    schreibe(o / "Side0" / "EINS.fileinfo",
+             "fs=udos\nname=EINS\ntyp=A\neig=-\nstart=0000\nsatz=128\n");
+    schreibe(o / "Side1" / "ZWEI", "Inhalt zwei");
+    schreibe(o / "Side1" / "ZWEI.fileinfo",
+             "fs=udos\nname=ZWEI\ntyp=B\neig=-\nstart=0000\nsatz=128\n");
+
+    const size_t vorher = dv->list().size();
+    ASSERT_TRUE(dv->insertAll(o.path(), TransferOptions{})) << dv->lastError();
+    EXPECT_EQ(dv->list().size(), vorher + 2)
+        << "die .fileinfo sind als Dateien auf der Diskette gelandet";
+    EXPECT_EQ(dv->lastAccessoryCount(), 2);
+    EXPECT_EQ(eintrag(*dv, 0, "EINS").type, "A");
+    EXPECT_EQ(eintrag(*dv, 1, "ZWEI").type, "B");
+    for (const FileEntry& e : dv->list())
+        EXPECT_EQ(e.name.find(".fileinfo"), std::string::npos) << e.name;
+}
+
+TEST(DiskToolFileinfo, NurZubehoerImOrdnerIstEineMeldung) {
+    Kopie k("cpa_cpa780_k5601_noclock.hfe", "k1520_test_fi_leer.hfe");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    TempOrdner o("k1520_test_fi_leer_o");
+    schreibe(o / "X.fileinfo", "fs=cpm\nname=X\nattr=-\n");
+    EXPECT_FALSE(dv->insertAll(o.path(), TransferOptions{}));
+    EXPECT_NE(dv->lastError().find("nichts einzufuegen"), std::string::npos)
+        << dv->lastError();
+}
+
+TEST(DiskToolFileinfo, EinzelneAngabendateiWirdAbgelehnt) {
+    // Fast sicher ein Versehen — jemand hat in der Auswahl die falsche der beiden
+    // gleichnamigen Zeilen erwischt.  Es GIBT einen zulässigen Grund dafür,
+    // deshalb ein Schalter und kein Verbot (§2.5).
+    Kopie k("cpa_cpa780_k5601_noclock.hfe", "k1520_test_fi_einzeln.hfe");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    TempOrdner o("k1520_test_fi_einzeln_o");
+    schreibe(o / "X.fileinfo", "fs=cpm\nname=X\nattr=-\n");
+    EXPECT_FALSE(dv->insert((o / "X.fileinfo").string(), FileRef{0, "X.fileinfo"},
+                            TransferOptions{}));
+    EXPECT_EQ(dv->lastInsertHindernis(), InsertHindernis::Zubehoerdatei);
+    EXPECT_NE(dv->lastError().find("Angabendatei"), std::string::npos)
+        << dv->lastError();
+
+    TransferOptions doch;
+    doch.zubehoer_als_datei = true;
+    EXPECT_TRUE(dv->insert((o / "X.fileinfo").string(), FileRef{0, "X.FIL"}, doch))
+        << dv->lastError();
+}
+
+TEST(DiskToolFileinfo, FremdesDateisystemImFileinfoIstEineMeldung) {
+    // `fs=` ist kein Zierat: ein .fileinfo einer CP/M-Datei darf nicht
+    // stillschweigend als UDOS-Angabe gelesen werden — und umgekehrt.
+    Kopie k("cpa_cpa780_k5601_noclock.hfe", "k1520_test_fi_fremd.hfe");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+
+    TempOrdner o("k1520_test_fi_fremd_o");
+    schreibe(o / "Y.TXT", "Inhalt");
+    schreibe(o / "Y.TXT.fileinfo", "fs=udos\nname=Y.TXT\ntyp=P\nsatz=1024\n");
+    EXPECT_FALSE(dv->insert((o / "Y.TXT").string(), FileRef{0, "Y.TXT"},
+                            TransferOptions{}));
+    EXPECT_NE(dv->lastError().find("passen nicht zusammen"), std::string::npos)
+        << dv->lastError();
+}
+
+TEST(DiskToolFileinfo, CpmNutzerbereichKommtAusDemFileinfoZurueck) {
+    Kopie k("cpa_cpa780_k5601_noclock.hfe", "k1520_test_fi_user.hfe");
+    std::string err;
+    auto dv = oeffneSchreibbar(k.path(), "", err);
+    ASSERT_NE(dv, nullptr) << err;
+    dv->setCpmFileinfo(true);
+
+    TempOrdner o("k1520_test_fi_user_o");
+    schreibe(o / "3_GEHEIM.TXT", "im Bereich 3, System, nur lesen");
+    schreibe(o / "3_GEHEIM.TXT.fileinfo",
+             "fs=cpm\nname=3:GEHEIM.TXT\nattr=RS\n");
+    ASSERT_TRUE(dv->insert((o / "3_GEHEIM.TXT").string(),
+                           FileRef{0, "3_GEHEIM.TXT"}, TransferOptions{}))
+        << dv->lastError();
+    EXPECT_EQ(dv->lastInsertedName(), "3:GEHEIM.TXT");
+
+    const FileEntry e = eintrag(*dv, 0, "GEHEIM.TXT");
+    EXPECT_EQ(e.user, 3);
+    EXPECT_NE(e.attributes.find("RO"),  std::string::npos) << e.attributes;
+    EXPECT_NE(e.attributes.find("SYS"), std::string::npos) << e.attributes;
 }

@@ -702,3 +702,70 @@ Was beim Weiterarbeiten zu wissen ist:
   CP/A** (`TYPE`/`DIR`) bzw. **UDOS** (`CAT`/`PRINT`/`STATUS`).  Der CP/M-Lesepfad ist
   zusätzlich byteweise gegen `cpmtools` verifiziert (nicht als Abhängigkeit — die
   Prüfsummen im Test frieren das Ergebnis ein).
+- **Ein Archiv trägt ZWEI Inhaltsverzeichnisse** (2026-08-22, Entwurf §24):
+  `<name>.txt` für den Menschen und **`diskarchive.yaml`** für die Maschine — je Datei
+  Pfad im Archiv, `dir`+`name`, Grösse, SHA-256; im Kopf Fassung, `transfer`
+  (`binary`/`text`), Beschriftung und die Prüfsumme des `.hfe` als Kennzeichen der
+  **Diskette**.  Zweck ist die Inventur einer Sammlung („wie viele Fassungen von
+  `XYZ.COM`, auf welchen Disketten"), deshalb: **keine Dateisystemangaben** (die führen
+  `.txt` und Beiblätter — eine zweite Quelle weicht irgendwann ab), gerechnet wird über
+  die Dateien **wie sie im Archiv liegen** (nicht über die Verzeichnislänge — CP/M
+  rundet auf 128 B, ein Textauszug setzt Zeilenenden um), und die **Beiblätter stehen
+  unter `attachments`**, nicht unter `files`, sonst wäre jedes eine „Fassung".
+  `_erwartete_namen()` in `app/disktool/archive.py` **wiederholt die Namensregel von
+  `DiskVolume::extractAll`** (CP/M-Nutzerbereich `3:X.COM` → `3_X.COM`, Typ `D` gar
+  nicht ausgelesen) — ändert sie sich dort, muss sie hier mit.  Neue Schlüssel dürfen
+  ohne Erhöhung von `diskarchive: 1` hinzukommen; erhöht wird nur, wenn ein alter Leser
+  das Archiv **falsch** verstünde.  Wächter:
+  `test_archive_traegt_ein_maschinenlesbares_verzeichnis` (rechnet `size`/`sha256`
+  gegen den wirklichen ZIP-Eintrag nach und verlangt, dass jedes Mitglied der `.zip`
+  genau einmal erklärt ist).
+- **`.fileinfo` — die Angaben JE DATEI** (2026-08-22, Entwurf §13d, Befund
+  `doc/bug_disktool_Programmdatei.md`).  Die Sammelbeiblätter entstehen nur beim
+  **Vollexport**; eine einzeln herausgeholte UDOS-Programmdatei kam deshalb ohne
+  jede Angabe zurück — Typ `B` statt `P`, 128er Sätze, ENTRY `0000`, LOW/HIGH
+  `FFFF` (= `MEMORY PROTECT VIOLATION`).  Der Schaden war **unsichtbar**: die Bytes
+  stimmten, es gab keine Meldung, und die Prüfung *kann* ihn nicht sehen
+  (`udos.kopf.speicher` beanstandet `FFFF` nur bei Typ `P` — und der Typ war ja mit
+  weg).  Seitdem liegt neben JEDER extrahierten Datei ein `<datei>.fileinfo`.  Sechs
+  Dinge, die man nicht aufweichen darf:
+  - **Geschrieben wird an EINER Stelle**, `DiskVolume::extract` — durch sie laufen
+    CLI, Oberfläche, `extractAll` und `recoverExtract`.  `extractAll` reicht seinen
+    schon gelesenen `FileEntry` durch (`extractMit`), sonst holte jede Datei das
+    Verzeichnis erneut: bei UDOS heisst das jeden Kopfsektor der Seite, an einer
+    physischen Diskette Spur um Spur.
+  - **Bei der UDOS-Familie immer, bei CP/M nur auf Verlangen** (`setCpmFileinfo`,
+    `get --fileinfo`, Menüpunkt *Übertragung*).  Bei UDOS *fehlen* die Angaben; bei
+    CP/M gibt es sie so gar nicht — Bereich 0 ohne Attribute ist der Normalfall, den
+    auch das echte CP/M erzeugt.  Ein `put` ohne jede Angabe gelingt dort **ohne
+    Rückfrage und ohne Warnung** (Wächter `DiskToolFileinfo.CpmBrauchtKeineAngaben`
+    — ein Wächter gegen Übereifer).
+  - **Rangfolge beim Einfügen**: `.fileinfo` → Sammelbeiblatt → ausdrückliche
+    Angaben des Aufrufers (die gehen immer vor).  Nichts davon ⇒ bei UDOS Fehlschlag
+    mit `InsertHindernis::AngabenFehlen`.  **Das ist die eigentliche Verhaltens­
+    änderung**: die Vorgaben von `insert` (Typ A/B, 128er Sätze) gelten nur noch
+    dort, wo der Aufrufer sie ausdrücklich will.  Eine *neue* Datei auf eine
+    UDOS-Diskette braucht darum `--type` (CLI und `physical_cli`) bzw. beantwortet
+    in der Oberfläche den Eingabedialog.
+  - **`rest=` (Bytes im letzten Satz) darf nicht geraten werden.**  0 ist dort ein
+    *gültiger* Wert; steht die Zeile da, hält der Leser sie für eine Angabe und der
+    Schreibpfad rechnet sie nicht mehr aus.  Der Eingabedialog schreibt sie deshalb
+    nicht — dasselbe gilt für `mem=` und `block=` bei den Feldern, die 0 sein dürfen.
+  - **`name=` einer GERETTETEN Datei ist der Name, den der Anwender ihr gegeben
+    hat**, nicht der Platzhalter aus dem Fund: bei UDOS ist der Name das Einzige,
+    was das Löschen nicht überlebt, und der Weg zurück heisst *retten → benennen →
+    `put`*.  Und `name=` setzt sich nur bei **CP/M** über den Dateinamen hinweg
+    (dort steckt der Nutzerbereich darin: `3:SYSTEM.COM` ↔ `3_SYSTEM.COM`) — bei
+    UDOS würde es das Umbenennen im Ordner aushebeln.
+  - **Zubehör wird ausgewertet, nicht kopiert.**  `istBeiblatt()` deckt `.fileinfo`
+    mit ab; der Stapel zählt die übersprungenen (`lastAccessoryCount`, „24 eingefügt,
+    24 ausgewertet"), ein Ordner mit *nur* Zubehör ist eine Meldung.  Eine **einzeln**
+    angegebene Angabendatei wird abgelehnt (`InsertHindernis::Zubehoerdatei`,
+    `put --force` bzw. Rückfrage) — wortlos zu überspringen liesse den Anwender ohne
+    Datei und ohne Grund zurück.
+  Die Zeilenform hat **einen Leser** (`leseFileinfo` im Kern) und drei Schreiber:
+  den Kern, `app/disktool/fileinfo.py` (Qt-frei, für Dialog *und* `physical_cli`)
+  und niemanden sonst.  Der Eingabedialog reicht seinen Pfad über
+  `k1520d_insert_with_info` durch, statt zwanzig Felder durch die C-ABI zu schleusen.
+  Wächter: `DiskToolFileinfo.*` (elf Fälle), `cli_dt_fileinfo_rundlauf`,
+  `cli_dt_put_ohne_angaben`, `cli_dt_put_fileinfo_einzeln`, `py_disktool_gui`.

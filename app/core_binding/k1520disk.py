@@ -332,6 +332,21 @@ _lib.k1520d_insert.argtypes = [_H, _CS, _CS, ctypes.c_int, ctypes.c_bool]
 _lib.k1520d_insert.restype = ctypes.c_bool
 _lib.k1520d_erase.argtypes = [_H, _CS]
 _lib.k1520d_erase.restype = ctypes.c_bool
+_lib.k1520d_insert_forced.argtypes = [_H, _CS, _CS, ctypes.c_int, ctypes.c_bool]
+_lib.k1520d_insert_forced.restype = ctypes.c_bool
+_lib.k1520d_insert_with_info.argtypes = [_H, _CS, _CS, ctypes.c_int, ctypes.c_bool, _CS]
+_lib.k1520d_insert_with_info.restype = ctypes.c_bool
+_lib.k1520d_last_insert_problem.argtypes = [_H]
+_lib.k1520d_last_insert_problem.restype = ctypes.c_int
+_lib.k1520d_last_accessory_count.argtypes = [_H]
+_lib.k1520d_last_accessory_count.restype = ctypes.c_int
+_lib.k1520d_accessory_reason.argtypes = [_CS]
+_lib.k1520d_accessory_reason.restype = ctypes.c_char_p
+_lib.k1520d_set_cpm_fileinfo.argtypes = [_H, ctypes.c_bool]
+_lib.k1520d_set_cpm_fileinfo.restype = None
+_lib.k1520d_cpm_fileinfo.argtypes = [_H]
+_lib.k1520d_cpm_fileinfo.restype = ctypes.c_bool
+
 _lib.k1520d_extract_all.argtypes = [_H, _CS, ctypes.c_int]
 _lib.k1520d_extract_all.restype = ctypes.c_bool
 _lib.k1520d_insert_all.argtypes = [_H, _CS, ctypes.c_int, ctypes.c_bool]
@@ -1452,11 +1467,77 @@ class DiskTool:
             raise K1520DiskError(self._fail())
 
     def insert(self, src, name: str, text: bool = False,
-               overwrite: bool = False) -> None:
-        """Eine Datei einfügen."""
-        if not _lib.k1520d_insert(self._h, _b(os.fspath(src)), _b(name),
-                                  TEXT if text else BINARY, overwrite):
+               overwrite: bool = False, force: bool = False,
+               info=None) -> None:
+        """Eine Datei einfügen.
+
+        Die Kopfsektorangaben kommen — in dieser Rangfolge — aus
+        ``<src>.fileinfo``, aus dem Sammelbeiblatt des Ordners, sonst
+        nirgendwoher: bei der UDOS-Familie ist das ein
+        :class:`K1520DiskError`, kein Raten.  Welcher Fall es war, sagt
+        :attr:`last_insert_problem`.
+
+        Args:
+            force: eine ANGABENdatei (``.fileinfo``, Sammelbeiblatt) trotzdem
+                als gewöhnliche Datei auf die Diskette schreiben.
+            info: Pfad einer Angabendatei in der ``.fileinfo``-Zeilenform, die
+                statt der neben der Quelle liegenden gilt — der Weg des
+                Eingabedialogs.
+        """
+        if info is not None:
+            ok = _lib.k1520d_insert_with_info(
+                self._h, _b(os.fspath(src)), _b(name),
+                TEXT if text else BINARY, overwrite, _b(os.fspath(info)))
+        else:
+            fn = _lib.k1520d_insert_forced if force else _lib.k1520d_insert
+            ok = fn(self._h, _b(os.fspath(src)), _b(name),
+                    TEXT if text else BINARY, overwrite)
+        if not ok:
             raise K1520DiskError(self._fail())
+
+    #: :attr:`last_insert_problem` — gewöhnlicher Ablauf (auch der normale Fehler).
+    INSERT_OK = 0
+    #: UDOS-Familie, und es gibt weder ``.fileinfo`` noch Sammelbeiblatt.
+    INSERT_ANGABEN_FEHLEN = 1
+    #: Die Quelle ist selbst eine Angabendatei.
+    INSERT_ZUBEHOER = 2
+
+    @property
+    def last_insert_problem(self) -> int:
+        """Warum das letzte :meth:`insert` abgelehnt wurde — s. ``INSERT_*``.
+
+        Nur nach einem Fehlschlag aussagekräftig.  Die Oberfläche antwortet auf
+        die beiden Fälle verschieden: auf ``INSERT_ANGABEN_FEHLEN`` mit dem
+        Eingabedialog, auf ``INSERT_ZUBEHOER`` mit einer Rückfrage.
+        """
+        return int(_lib.k1520d_last_insert_problem(self._h))
+
+    @property
+    def last_accessory_count(self) -> int:
+        """Wie viele Angabendateien das letzte :meth:`insert_all` übersprang."""
+        return int(_lib.k1520d_last_accessory_count(self._h))
+
+    @staticmethod
+    def accessory_reason(pfad) -> str:
+        """``''`` oder der Grund, warum ``pfad`` eine Angabendatei ist.
+
+        Statisch — die Oberfläche fragt das, **bevor** sie eine Diskette anfasst.
+        """
+        return _s(_lib.k1520d_accessory_reason(_b(os.fspath(pfad))))
+
+    @property
+    def cpm_fileinfo(self) -> bool:
+        """Legt :meth:`extract` auch bei **CP/M** ein ``.fileinfo`` an?
+
+        Vorgabe: nein.  Bei CP/M ist „Nutzerbereich 0, keine Attribute" der
+        Normalfall, den auch das echte CP/M erzeugt — es geht nichts verloren.
+        Bei der UDOS-Familie entsteht das ``.fileinfo`` unabhängig davon immer.
+        """
+        return bool(_lib.k1520d_cpm_fileinfo(self._h))
+
+    @cpm_fileinfo.setter
+    def cpm_fileinfo(self, an: bool) -> None:
+        _lib.k1520d_set_cpm_fileinfo(self._h, bool(an))
 
     def erase(self, name: str) -> None:
         if not _lib.k1520d_erase(self._h, _b(name)):

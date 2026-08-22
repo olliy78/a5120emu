@@ -193,12 +193,93 @@ def test_save_as_sichert_die_ganze_diskette(cli, capsys, tmp_path, hfe):
                [e.name for e in orig.list_names()]
 
 
+@pytest.mark.parametrize("befehl,ziel", [("save-as", "sicherung.hfe"),
+                                         ("archive", "archiv.zip")])
+def test_wer_eine_datei_anlegt_ueberschreibt_sie_nicht(cli, capsys, tmp_path,
+                                                       befehl, ziel):
+    """`save-as` und `archive` folgen derselben Regel — und zwar VOR dem Motor.
+
+    Beide legen eine Datei an, beide werden im Stapel gefahren: derselbe Zielname
+    zweimal ist ein Tippfehler, und die Diskette davor liegt dann schon wieder im
+    Schrank.  Geprüft wird deshalb, bevor eingelesen wird — sonst kämen zwei
+    Minuten Lesen und danach der Abbruch.
+    """
+    p = tmp_path / ziel
+    p.write_bytes(b"schon da")
+    assert cli.geraet.gelesen == [], "Vorbedingung: noch nichts gelesen"
+
+    rc = cli(befehl, str(p), "-q")
+    aus = capsys.readouterr()
+    assert rc == 1
+    assert "gibt es schon" in aus.err and "--force" in aus.err
+    assert p.read_bytes() == b"schon da", "die vorhandene Datei wurde angefasst"
+    assert cli.geraet.gelesen == [], "die Diskette wurde trotz Abbruch gelesen"
+
+    assert cli(befehl, str(p), "--force", "-q") == 0, capsys.readouterr().err
+    assert p.read_bytes() != b"schon da"
+
+
+@pytest.mark.parametrize("befehl", ["save-as", "archive"])
+def test_vergessener_zielname_faengt_gar_nicht_erst_an(cli, capsys, befehl):
+    """Auch der fehlende Dateiname darf die Diskette nicht kosten."""
+    rc = cli(befehl, "-q")
+    aus = capsys.readouterr()
+    assert rc == 1
+    assert "Zieldateinamen" in aus.err
+    assert cli.geraet.gelesen == [], "die Diskette wurde trotz Abbruch gelesen"
+
+
+def test_archive_sichert_diskette_und_verzeichnisse(cli, capsys, tmp_path):
+    """`archive` ist `save-as` fuer eine Sammlung — mit beiden Verzeichnissen.
+
+    Der Aufkleber muss durchkommen: eine physische Diskette hat keinen Dateinamen,
+    und ohne ihn stuende in der Inventur nicht, WELCHE Diskette das war.
+    """
+    import zipfile
+
+    import yaml
+
+    ziel = tmp_path / "archiv.zip"
+    rc = cli("archive", str(ziel), "--label", "UDOS 4.3 Nr. 7", "-q")
+    aus = capsys.readouterr()
+    assert rc == 0, aus.err
+    assert ziel.exists()
+    assert "archiviert:" in aus.out
+
+    with zipfile.ZipFile(ziel) as z:
+        namen = set(z.namelist())
+        daten = yaml.safe_load(z.read("diskarchive.yaml"))
+    assert "UDOS_4.3_Nr._7.hfe" in namen and "UDOS_4.3_Nr._7.txt" in namen
+    assert any(n.startswith("dateien/") for n in namen)
+    assert daten["label"] == "UDOS 4.3 Nr. 7"
+    assert "Greaseweazle" in daten["source"], "die Herkunft fehlt"
+    assert daten["files"]
+
+
+def test_archive_ohne_label_nimmt_den_datentraegernamen(cli, capsys, tmp_path):
+    """Ohne Aufkleber bleibt das, was die Diskette selbst ueber sich sagt."""
+    import zipfile
+
+    import yaml
+
+    ziel = tmp_path / "ohne_label.zip"
+    assert cli("archive", str(ziel), "-q") == 0, capsys.readouterr().err
+    capsys.readouterr()
+
+    with zipfile.ZipFile(ziel) as z:
+        daten = yaml.safe_load(z.read("diskarchive.yaml"))
+    assert daten["label"], "weder Aufkleber noch Datentraegername"
+    assert daten["label"] != "diskette", "das ist der letzte Rueckfall, kein Name"
+
+
 def test_put_schreibt_und_fuehrt_zurueck(cli, capsys, tmp_path):
     """Der ganze Schreibweg — samt Prüf-Lesen und Rückführung ans Laufwerk."""
     quelle = tmp_path / "CLI.TXT"
     quelle.write_bytes(b"aus der Kommandozeile\r\n" * 4)
 
-    rc = cli("--write", "put", str(quelle), "--force", "-q")
+    # Eine NEUE Datei bringt keine Kopfsektorangaben mit; bei UDOS werden sie
+    # seit dem `.fileinfo` verlangt statt geraten (doc/bug_disktool_Programmdatei.md §2.2).
+    rc = cli("--write", "put", str(quelle), "--force", "-q", "--type", "A")
     aus = capsys.readouterr()
     assert rc == 0, aus.err + aus.out
     assert cli.geraet.geschrieben, "es wurde nichts ans Laufwerk zurueckgegeben"
@@ -223,7 +304,7 @@ def test_schadstelle_wird_gemeldet_und_der_ausweg_genannt(cli, capsys, tmp_path)
     cli.geraet.schadhaft = {(c, h) for c in range(cli.geraet.num_cyls)
                             for h in range(cli.geraet.num_heads)}
 
-    rc = cli("--write", "put", str(quelle), "--force", "-q")
+    rc = cli("--write", "put", str(quelle), "--force", "-q", "--type", "A")
     aus = capsys.readouterr()
     assert rc == 1
     assert "Schadstelle" in aus.err

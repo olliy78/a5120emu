@@ -392,7 +392,7 @@ Der UDOS-Urlader sucht sein System **über das Verzeichnis** — mit den Systems
 allein meldet er `OS NOT FOUND`. Eine vollständige, laufende Diskette entsteht so:
 
 ```sh
-k1520disktool get    udos_boot_scp.hfe --to auszug     # Dateien + Beiblatt
+k1520disktool get    udos_boot_scp.hfe --to auszug     # Dateien + Angaben
 k1520disktool create neu.hfe --fs udos_ds77 --label UDOS.SYS.4.3 --boot boot_udos43.bin
 k1520disktool put    neu.hfe auszug
 ```
@@ -402,8 +402,9 @@ Befehle aus (`CAT`, `STATUS`, `PRINT`) — Wächter
 `DiskToolBootdiskette.GebauteUdosDisketteBootetUndFuehrtBefehleAus`. Die kleinste
 bootfähige Diskette ist Systemspuren + `OS` + `ZDOS`.
 
-Das **Beiblatt aus `get` muss dabei sein** (s. u.): ohne die Kopfsektorangaben wird aus
-einer Systemdatei eine gewöhnliche Binärdatei, und die Diskette bootet nicht.
+Die **Angaben aus `get` müssen dabei sein** (s. u.) — das `.fileinfo` neben jeder
+Datei und das Sammelbeiblatt: ohne die Kopfsektorangaben wird aus einer Systemdatei
+eine gewöhnliche Binärdatei, und die Diskette bootet nicht.
 
 ## UDOS: was eine Datei ausser ihren Bytes hat
 
@@ -462,10 +463,59 @@ ZDOS                 Typ P1  Eigenschaften WS      5632 Byte
 $ k1520disktool attr udos.hfe CAT --props WEL --mem 4000:5FFF:0200
 ```
 
-**Von Hand angeben muss man das selten**: `get` legt neben den Dateien ein Beiblatt
-`udos-dateiangaben.txt` an, und `put` liest es wieder — sowohl beim Einfügen eines
-ganzen Ordners als auch bei einer einzelnen Datei daraus (auch aus der Oberfläche).
-Ausdrückliche Schalter gehen dem Beiblatt vor.
+**Von Hand angeben muss man das selten.** `get` legt zu **jeder** Datei ein
+gleichnamiges `<datei>.fileinfo` daneben, und `put` liest es von selbst wieder —
+beim Einfügen eines ganzen Ordners wie bei einer einzelnen Datei daraus (auch aus
+der Oberfläche). Zusätzlich entsteht beim Vollexport das Sammelbeiblatt
+`udos-dateiangaben.txt`. Gesucht wird in dieser Rangfolge:
+
+1. `<datei>.fileinfo` neben der Datei — sie gehört zu *dieser* Datei und wandert
+   mit ihr mit,
+2. das Sammelbeiblatt im Ordner der Datei oder eine Ebene darüber,
+3. ausdrückliche Schalter (`--type`, `--record-len`, …) — die gehen **immer** vor.
+
+Findet sich nichts davon, bricht `put` bei UDOS **ab**, statt zu raten:
+
+```
+$ k1520disktool put udos.hfe NEU.DAT
+Fehler: Zu 'NEU.DAT' gibt es keine Angaben (weder NEU.DAT.fileinfo noch
+        udos-dateiangaben.txt). udos_ds77 braucht Typ, Satzlaenge und — bei einem
+        Programm — Startadresse und Speicherangaben; ohne sie entstuende eine
+        Datei, die nicht laeuft. …
+```
+
+Das ist der Kern der Sache: ohne diese Angaben ist der Dateiinhalt zwar korrekt,
+die Datei aber **nicht mehr lauffähig** — und man sieht es ihr nicht an, auch die
+Dateisystemprüfung nicht. Für eine *neue* Datei genügt meist
+`put … --type A --record-len 128`.
+
+Ein `.fileinfo` trägt eine Angabe je Zeile:
+
+```
+fs=udos
+name=ACTIVATE
+typ=P
+eig=WS
+start=4000
+satz=1024
+block=1024
+rest=1024
+segment=4000:1022
+mem=4000:43FF:0080
+zusatz=0
+erst=791019
+geaend=900808
+```
+
+`fs=` steht dabei nicht zur Zierde: ein `.fileinfo` einer CP/M-Datei wird auf einer
+UDOS-Diskette **abgelehnt**, statt stillschweigend als UDOS-Angabe gelesen zu
+werden.
+
+> **`.fileinfo` ist Zubehör, keine Nutzdatei.** Beim Einfügen eines Ordners wird es
+> ausgewertet und *nicht* mitkopiert; die Zusammenfassung nennt die Zahl
+> („eingefuegt aus auszug (24 .fileinfo ausgewertet)"). Gibt man **eine einzelne**
+> `.fileinfo` an, wird sie abgelehnt — das ist fast sicher ein Versehen. `--force`
+> kopiert sie trotzdem.
 
 Je Datei eine Zeile aus `schluessel=wert`-Paaren (hier umbrochen, in der Datei steht
 sie in einer Zeile):
@@ -518,6 +568,14 @@ Doppelpunkt ein Unterstrich (`3_PIP.COM`) — der echte Name steht im Beiblatt.
 Eine Zeile entsteht nur für Dateien, die *etwas zu sagen* haben; eine gewöhnliche
 Datei im Bereich 0 ohne Attribute braucht keine, und ohne solche Dateien entsteht
 gar kein Beiblatt.
+
+> **Ein `.fileinfo` je Datei entsteht bei CP/M nur auf Verlangen** (`get --fileinfo`;
+> in der Oberfläche der Menüpunkt *Übertragung → Bei CP/M je Datei ein .fileinfo
+> anlegen*). Bei UDOS ist es immer an, weil dort ohne die Angaben eine unbrauchbare
+> Datei entsteht — bei CP/M sind Nutzerbereich 0 und „keine Attribute" der
+> Normalfall, den auch das echte CP/M erzeugt. `put` einer Datei ohne jede Angabe
+> gelingt hier **ohne Rückfrage und ohne Warnung**; Nutzerbereich und Attribute
+> lassen sich jederzeit mit `attr` nachtragen.
 
 ## Beidseitige UDOS-Disketten
 
@@ -598,11 +656,21 @@ k1520disktool --physical ls -l
 k1520disktool --physical save-as sicherung.hfe        # VOR jedem Schreibversuch
 k1520disktool --physical --write put NEU.TXT
 k1520disktool --physical --drive 0 --cyls 40 --double-step ls
+k1520disktool --physical archive archiv.zip --label "UDOS 4.3 Nr. 7"
 ```
 
-Befehle: `ls`, `info`, `check`, `get`, `put`, `rm`, `save-as`, `rewrite`.
+Befehle: `ls`, `info`, `check`, `get`, `put`, `rm`, `save-as`, `archive`, `rewrite`.
 Sitzungsschalter: `--drive a|b|0…3`, `--cyls`, `--heads`, `--rate`, `--rpm`,
-`--double-step`, dazu `--fs`, `--raw`, `--no-verify`, `-q`.
+`--double-step`, dazu `--fs`, `--raw`, `--no-verify`, `--label`, `-q`.
+
+* **`archive` ist der Weg für eine Sammlung**: es packt dasselbe Bündel wie die
+  Oberfläche — Abbild als `.hfe`, alle Dateien, das lesbare Inhaltsverzeichnis und
+  das maschinenlesbare `diskarchive.yaml`. `--label` ist der **Aufkleber** (ohne ihn
+  gilt der Datenträgername); er benennt auch die Dateien im Archiv, denn eine
+  physische Diskette hat keinen Dateinamen.
+* **`save-as` und `archive` ersetzen keine vorhandene Datei** — dafür `--force`.
+  Der Aufruf bricht ab und erfindet keinen Ausweichnamen; geprüft wird, **bevor**
+  das Laufwerk anläuft (sonst kämen zwei Minuten Einlesen und danach der Abbruch).
 
 * **Ohne `--write` ist die Diskette schreibgeschützt.** `put`, `rm` und `rewrite`
   lehnen ab, **bevor der Motor anläuft** — ein Original ist meist ein Einzelstück.

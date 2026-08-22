@@ -142,7 +142,8 @@ Was man beim Weiterarbeiten wissen muss:
   die Sicherung prüfen, mit einer NACHWEISLICH FREIEN Spur anfangen (der
   Belegungsplan sagt welche), dann erst über das Dateisystem schreiben.
 - **`k1520disktool --physical` gibt es** (2026-08-17, Entwurf §12.3): `ls`, `info`,
-  `check`, `get`, `put`, `rm`, `save-as`, `rewrite` gegen die eingelegte Diskette.
+  `check`, `get`, `put`, `rm`, `save-as`, `archive`, `rewrite` gegen die eingelegte
+  Diskette.
   Sie haengt am **Python**-Einstieg (`app/disktool/main.py`, wie `--paths` VOR den
   Qt-Importen) und nicht am C++-Werkzeug — der Kern kennt Greaseweazle nicht, der
   Arbeitsfaden ist Python; `k1520disktool-cli` bleibt der Dateiaustausch mit
@@ -153,7 +154,24 @@ Was man beim Weiterarbeiten wissen muss:
   anlaeuft** (Waechter prueft `geraet.gelesen == []`), **stdout ist die Nutzlast**
   (Fortschritt und Befund auf stderr), **Fortschritt aus einem Nebenfaden**, weil
   sonst zwei Minuten Schweigen wie ein Haenger aussehen, und eine **Schadstelle
-  endet in Exit 1** samt Ausweg im Text.  Waechter `py_physical_cli` (14 Faelle,
+  endet in Exit 1** samt Ausweg im Text.  Waechter `py_physical_cli` (17 Faelle,
   Ersatzlaufwerk aus `gw_fake.py`); am echten Laufwerk durchgefahren (§15.2).
+- **`--physical archive <ziel.zip>` ist der Stapelweg fuer eine SAMMLUNG**
+  (2026-08-22): dasselbe Archiv wie in der Oberflaeche (Abbild, Dateien,
+  Inhaltsverzeichnis, `diskarchive.yaml`), nur ohne Klickweg.  Zwei Unterschiede zu
+  `save-as`, beide mit Grund: der Aufkleber kommt ueber **`--label`** herein (ohne
+  ihn gilt der Datentraegername — eine physische Diskette hat keinen Dateinamen, aus
+  dem sich etwas ableiten liesse), und eine **vorhandene Datei wird nicht
+  ueberschrieben** (`--force`), weil derselbe Zielname zweimal im Stapelbetrieb ein
+  Tippfehler ist und die erste Diskette dann schon wieder im Schrank liegt.  Der
+  Aufruf bricht ab (Exit 1) und erfindet **keinen** Ausweichnamen.  Diese zweite
+  Regel gilt seit 2026-08-22 auch fuer **`save-as`** — beide Befehle gehen durch
+  `_zieldatei()` (Tabelle `SCHREIBT_DATEI`), und geprueft wird samt fehlendem
+  Zieldateinamen **vor dem Motor**: dazwischen laege das Einlesen der ganzen
+  Diskette.
+  `source` in der `.yaml` traegt dann `Echtes Laufwerk A am Greaseweazle`.
+  Waechter: `test_archive_sichert_diskette_und_verzeichnisse`,
+  `test_archive_ueberschreibt_nicht_von_selbst`,
+  `test_archive_ohne_label_nimmt_den_datentraegernamen`.
 - **Offen:** das Merken der Sitzungsparameter (Laufwerk und Zellrate muessen bei
   jedem Einlegen neu gewaehlt werden).

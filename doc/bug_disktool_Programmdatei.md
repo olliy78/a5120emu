@@ -1,11 +1,18 @@
 # Eine einzeln herausgeholte Programmdatei ist beim Zurückschreiben zerstört
 
-> **Stand:** 2026-08-21 · **Befund gemessen, Lösung entworfen, noch nicht umgesetzt**
-> **Betrifft:** `core/filesystem/disk_volume.cpp` (Beiblätter, `extract`/`insert`),
-> `core/filesystem/file_system.h` (`WriteOptions`), `tools/k1520disktool.cpp`
-> (`cmd_get`/`cmd_put`), `app/disktool/` (Oberfläche)
-> **Gehört zu:** `doc/design/13_k1520disktool.md` §13a (Beiblatt),
-> `doc/udos_diskettenformat.md` §6 und §14 (Kopfsektor, Lader)
+> **Stand:** 2026-08-22 · **BEHOBEN** — umgesetzt wie unten entworfen, mit **einer
+> Abweichung**: das `.fileinfo` entsteht bei CP/M nicht mehr von selbst, sondern nur
+> auf Verlangen (`get --fileinfo`, Menüpunkt *Übertragung ▸ Bei CP/M je Datei ein
+> .fileinfo anlegen*).  Bei der UDOS-Familie ist es immer an.  Begründung: dieselbe,
+> aus der schon §2.4 folgt — bei CP/M geht ohne die Angaben nichts verloren, das
+> Sammelbeiblatt genügt, und eine Zubehördatei je Datei wäre dort blosser Ballast.
+> **Betrifft:** `core/filesystem/disk_volume.{h,cpp}` (`.fileinfo`, `extract`/`insert`),
+> `core/api/k1520_disk_api.{h,cpp}`, `tools/k1520disktool.cpp` (`cmd_get`/`cmd_put`),
+> `app/disktool/fileinfo.py`, `app/disktool/ui/fileinfo_dialog.py`,
+> `app/disktool/ui/main_window.py`, `app/disktool/physical_cli.py`
+> **Gehört zu:** `doc/design/13_k1520disktool.md` **§13d** (die Umsetzung) und §13a
+> (Beiblatt), `doc/udos_diskettenformat.md` §6 und §14 (Kopfsektor, Lader),
+> `doc/merkposten/disktool.md`
 
 ---
 
@@ -353,6 +360,36 @@ und niemand hat es bemerkt, weil nur der Dateiinhalt verglichen wurde.
   `A` ab, „für alle übernehmen" fragt nur einmal — und die Rückfrage aus §2.5
   erscheint bei **einer** ausgewählten `.fileinfo`, aber **nicht** bei einer
   Mehrfachauswahl.
+
+---
+
+## 3.2 Was daraus geworden ist (2026-08-22)
+
+Alles aus §3 ist umgesetzt; die Wächter aus §3.1 stehen unter den dort genannten
+Namen, ergänzt um `cli_dt_fileinfo_rundlauf` (der Fall aus §1 als
+Kommandozeilenlauf) und drei GUI-Fälle.  Vier Dinge, die beim Umsetzen dazukamen:
+
+* **`k1520d_insert_with_info`** statt zwanzig Feldern durch die C-ABI: der
+  Eingabedialog schreibt eine fertige Angabendatei (`app/disktool/fileinfo.py`,
+  Qt-frei) und reicht deren Pfad durch.  Damit hat die Zeilenform **einen** Leser
+  (im Kern) und zwei Schreiber — und `physical_cli` kann sie mitbenutzen.
+* **`--type` / `--record-len` auch in `physical_cli`**: `put` einer *neuen* Datei
+  auf eine physische UDOS-Diskette wäre sonst ohne Ausweg gewesen.
+* **`rest=` schreibt der Dialog NICHT.**  0 ist dort ein gültiger Wert (§1.4); mit
+  der Zeile hielte der Leser sie für eine Angabe und der Schreibpfad rechnete sie
+  nicht mehr aus.
+* **Der Name aus dem `.fileinfo` gilt nur bei CP/M.**  Dort steckt der
+  Nutzerbereich darin (`3:SYSTEM.COM` ↔ `3_SYSTEM.COM`); bei UDOS hebelte er das
+  Umbenennen im Ordner aus — und genau das ist der Weg zurück aus der Rettung
+  (`FsRecoverUdos.RettenBenennenUndWiederEinspielen` hat das sofort gezeigt).
+  Aus demselben Grund trägt eine gerettete Datei im `.fileinfo` den Namen, den der
+  Anwender ihr gegeben hat, nicht den Platzhalter aus dem Fund.
+
+**Die eine sichtbare Nebenwirkung** (so gewollt, §4): eine *neue* Datei — eine, die
+nicht aus einem Auszug stammt — lässt sich auf einer UDOS-Diskette nur noch mit
+ausdrücklichen Angaben einfügen.  `put datei --type A` in der Kommandozeile, der
+Eingabedialog in der Oberfläche.  Sechs bestehende Tests haben genau das
+festgehalten und wurden entsprechend nachgezogen.
 
 ---
 

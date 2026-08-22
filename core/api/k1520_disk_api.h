@@ -537,10 +537,75 @@ K1520_API int k1520d_sector_plan_len(K1520Disk h, int cyl, int head,
 /* ─── Uebertragung ───────────────────────────────────────────────────────────
  * `name` darf das Seitenpraefix tragen: "Side1/HELP.DAT.00".                  */
 
+/**
+ * @brief Eine Datei herausholen — samt `<dest>.fileinfo`.
+ *
+ * Neben die Datei kommt ein gleichnamiges `.fileinfo` mit dem, was eine Datei des
+ * Wirtsystems nicht traegt: Typ, Eigenschaften, Satzlaenge, ENTRY, Segmente und
+ * Speicheranforderung (UDOS) bzw. Nutzerbereich und Attribute (CP/M).  Bei der
+ * UDOS-Familie **immer** — ohne diese Angaben ist eine einzeln herausgeholte
+ * Programmdatei beim Zurueckschreiben unbrauchbar, und man sieht es ihr nicht an.
+ * Bei CP/M nur nach @ref k1520d_set_cpm_fileinfo (Vorgabe: aus).
+ */
 K1520_API bool k1520d_extract(K1520Disk h, const char* name, const char* dest, K1520DMode mode);
+
+/**
+ * @brief Eine Datei einfuegen.
+ *
+ * Die Kopfsektorangaben kommen — in dieser Rangfolge — aus `<src>.fileinfo`, aus
+ * dem Sammelbeiblatt des Ordners, sonst nirgendwoher: bei der UDOS-Familie ist das
+ * ein Fehlschlag mit @ref K1520D_INSERT_ANGABEN_FEHLEN, kein Raten.  Ist @p src
+ * selbst eine Angabendatei, wird sie abgelehnt (@ref K1520D_INSERT_ZUBEHOER).
+ * Welcher der beiden Faelle es war, sagt @ref k1520d_last_insert_problem.
+ */
 K1520_API bool k1520d_insert (K1520Disk h, const char* src, const char* name, K1520DMode mode,
                               bool overwrite);
+
+/// @brief Wie @ref k1520d_insert, aber schreibt eine ANGABENdatei als Nutzdatei
+///        (`put --force`, in der Oberflaeche nach der Rueckfrage).
+K1520_API bool k1520d_insert_forced(K1520Disk h, const char* src, const char* name,
+                                    K1520DMode mode, bool overwrite);
+
+/**
+ * @brief Wie @ref k1520d_insert, aber die Angaben stehen in @p info_pfad.
+ *
+ * @p info_pfad ist eine Datei in der `.fileinfo`-Zeilenform; sie darf irgendwo
+ * liegen (die Oberflaeche schreibt das, was der Anwender im Eingabedialog
+ * eingetippt hat, in eine temporaere Datei).  Sie geht dem `.fileinfo` neben der
+ * Quelle vor.  NULL oder "" = wie @ref k1520d_insert.
+ */
+K1520_API bool k1520d_insert_with_info(K1520Disk h, const char* src, const char* name,
+                                       K1520DMode mode, bool overwrite,
+                                       const char* info_pfad);
+
 K1520_API bool k1520d_erase  (K1520Disk h, const char* name);
+
+/// @name Warum das letzte Einfuegen abgelehnt wurde (@ref k1520d_last_insert_problem)
+/// @{
+#define K1520D_INSERT_OK              0  ///< gewoehnlicher Ablauf (auch: normaler Fehler)
+#define K1520D_INSERT_ANGABEN_FEHLEN  1  ///< UDOS, und es gibt weder `.fileinfo` noch Beiblatt
+#define K1520D_INSERT_ZUBEHOER        2  ///< die Quelle ist selbst eine Angabendatei
+/// @}
+
+/// @brief Grund der letzten Ablehnung; nur aussagekraeftig nach `false`.
+K1520_API int k1520d_last_insert_problem(K1520Disk h);
+
+/// @brief Wie viele Angabendateien das letzte @ref k1520d_insert_all ausgewertet
+///        und uebersprungen hat („24 Dateien eingefuegt, 24 .fileinfo ausgewertet").
+K1520_API int k1520d_last_accessory_count(K1520Disk h);
+
+/// @brief Ist @p pfad eine Angabendatei?  Leer = nein, sonst der Grund im Klartext.
+///        Statisch — braucht kein geoeffnetes Abbild.
+K1520_API const char* k1520d_accessory_reason(const char* pfad);
+
+/// @brief Legt @ref k1520d_extract auch bei **CP/M** ein `.fileinfo` an?
+///
+/// Vorgabe: nein.  Bei CP/M ist „Nutzerbereich 0, keine Attribute" der Normalfall,
+/// den auch das echte CP/M erzeugt — es geht nichts verloren, und eine Zubehoerdatei
+/// je Datei waere blosser Ballast.  Bei der UDOS-Familie ist das `.fileinfo`
+/// unabhaengig davon immer an.
+K1520_API void k1520d_set_cpm_fileinfo(K1520Disk h, bool an);
+K1520_API bool k1520d_cpm_fileinfo(K1520Disk h);
 
 /**
  * @brief Erster Sektor einer Datei — fuer „Im Diskeditor oeffnen".

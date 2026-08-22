@@ -1,0 +1,18 @@
+# Der Fall aus §1: EINE UDOS-Programmdatei herausholen und zurueckschreiben.
+# Geprueft wird nicht der Inhalt (der stimmte immer), sondern der KOPFSEKTOR.
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+tmpfile ordner:
+tmpfile ziel.hfe:
+setup_run: save-as %DISK% %ziel.hfe%
+setup_run: get %DISK% --to %ordner% Side0/ACTIVATE
+setup_run: rm %ziel.hfe% Side0/ACTIVATE
+setup_run: put %ziel.hfe% %ordner%/Side0/ACTIVATE --volume 0
+run:    attr %ziel.hfe% Side0/ACTIVATE
+expect: Typ P
+expect: Eigenschaften WS
+expect: ENTRY 4000
+expect: Satzlaenge 1024
+expect: LOW 4000  HIGH 43FF  STACK 0080
+expect: erstellt '791019'
+exit:   0

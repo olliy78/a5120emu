@@ -13,6 +13,7 @@ from __future__ import annotations
 import time
 
 import pytest
+import yaml
 
 from gw_fake import fake_session
 
@@ -860,10 +861,19 @@ def test_disktool_archiviert_eine_physische_diskette(app, hfe, tmp_path, monkeyp
     with zipfile.ZipFile(ziel) as z:
         namen = z.namelist()
         text = z.read("UDOS_4.3_Nr._7.txt").decode("utf-8")
+        inventar = yaml.safe_load(z.read("diskarchive.yaml"))
     assert "UDOS_4.3_Nr._7.hfe" in namen, namen
     assert any(n.startswith("dateien/") for n in namen), "die Dateien fehlen"
     assert "Beschriftung  UDOS 4.3 Nr. 7" in text
     assert "Greaseweazle" in text, "die Herkunft steht nicht im Inhaltsverzeichnis"
+
+    # Dasselbe maschinenlesbar: eine physische Diskette hat keinen Dateinamen —
+    # `label` ist der Aufkleber, `source` die Herkunft im Klartext.  Stünde dort
+    # nichts, waere in der Inventur nicht mehr zu sagen, WO diese Diskette lag.
+    assert inventar["label"] == "UDOS 4.3 Nr. 7"
+    assert "Greaseweazle" in inventar["source"]
+    assert inventar["image"]["path"] == "UDOS_4.3_Nr._7.hfe"
+    assert inventar["files"], "kein einziger Dateieintrag"
 
 
 def test_disktool_bricht_das_archivieren_ohne_beschriftung_ab(app, hfe, monkeypatch):
@@ -937,6 +947,10 @@ def test_disktool_meldet_die_schadstelle_beim_speichern(app, hfe, tmp_path,
 
         quelle = tmp_path / "PROBE.TXT"
         quelle.write_bytes(b"schadstelle\r\n" * 4)
+        # Bei UDOS gehören die Kopfsektorangaben zur Datei; ohne sie wird
+        # nicht mehr geraten (doc/bug_disktool_Programmdatei.md §2.2).
+        (tmp_path / "PROBE.TXT.fileinfo").write_text(
+            "fs=udos\\nname=PROBE.TXT\\ntyp=A\\nsatz=128\\n")
         ziel = ("Side0/" if fenster.tool.volume_count > 1 else "") + "PROBE.TXT"
         fenster.tool.insert(quelle, ziel, overwrite=True)
 

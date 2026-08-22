@@ -496,9 +496,156 @@ std::map<std::string, CpmAngabe> leseCpmBeiblatt(const fs::path& datei) {
     return out;
 }
 
-/// @brief Ist das eines der beiden Beiblaetter?  Sie sind Zubehoer, keine Nutzdatei.
+// ─── `.fileinfo` — die Angaben JE DATEI ──────────────────────────────────────
+//
+// Die beiden Sammelbeiblaetter oben entstehen nur beim VOLLexport.  Wer eine
+// einzelne Datei herausholt (`get` mit Muster, ein Zug in der Oberflaeche), bekam
+// deshalb nichts als die Bytes — und beim Zurueckschreiben wurde aus einer
+// UDOS-Programmdatei eine Binaerdatei mit 128er-Saetzen ohne Startadresse.  Der
+// Dateiinhalt stimmte dabei, die Datei lief nicht mehr, und weder `get` noch `put`
+// noch die Dateisystempruefung konnten es merken (doc/bug_disktool_Programmdatei.md).
+//
+// Deshalb liegt jetzt neben JEDER extrahierten Datei ein gleichnamiges
+// `<datei>.fileinfo` — auch beim Vollexport, wo die Angabe damit doppelt steht.
+// Das ist gewollt: die einzelne Datei soll fuer sich genommen vollstaendig sein,
+// gleich aus welchem Ordner sie stammt und wohin sie spaeter kopiert wird.
+
+constexpr const char* kFileinfoEndung = ".fileinfo";
+
+/**
+ * @struct FileAngaben
+ * @brief Die Vereinigung von @ref UdosAngabe und @ref CpmAngabe samt Herkunft.
+ *
+ * `fs=` steht in der ersten Zeile und ist kein Zierat: ein `.fileinfo` einer
+ * CP/M-Datei darf nicht stillschweigend als UDOS-Angabe gelesen werden.  Passt es
+ * nicht zum Ziel, ist das eine Meldung und keine Vorgabe.
+ */
+struct FileAngaben {
+    bool        udos = false;   ///< `fs=udos` (ZDOS/NDOS) statt `fs=cpm`
+    std::string name;           ///< der ECHTE Name auf der Diskette ("3:SYSTEM.COM")
+    UdosAngabe  u;
+    CpmAngabe   c;
+};
+
+/// @brief Ist @p name ein `.fileinfo`?  (Endungsvergleich ohne Ruecksicht auf Gross/Klein)
+bool istFileinfo(const fs::path& name) {
+    std::string e = name.extension().string();
+    for (char& c : e) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return e == kFileinfoEndung;
+}
+
+/// @brief Der Pfad des `.fileinfo` zu @p datei — schlicht die Endung angehaengt,
+///        damit beide im Ordner nebeneinander stehen (`ACTIVATE` · `ACTIVATE.fileinfo`).
+fs::path fileinfoPfad(const fs::path& datei) {
+    return fs::path(datei.string() + kFileinfoEndung);
+}
+
+/// @brief Ein `.fileinfo` schreiben — dieselben Schluesselwoerter wie das
+///        Sammelbeiblatt, nur EINES JE ZEILE.
+bool schreibeFileinfo(const fs::path& ziel, const FileAngaben& a) {
+    std::ofstream f(ziel, std::ios::binary);
+    if (!f) return false;
+    f << "# k1520DiskTool — Angaben zu '" << a.name << "'.\n"
+         "# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie\n"
+         "# wieder uebernommen.\n";
+    // Der Satz danach sagt, WAS ohne sie verlorenginge — und das ist bei den beiden
+    // Familien sehr Verschiedenes: bei UDOS die Lauffaehigkeit, bei CP/M der
+    // Nutzerbereich.  Ein gemeinsamer Satz waere fuer eine der beiden Seiten falsch.
+    if (a.udos)
+        f << "# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —\n"
+             "# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.\n";
+    else
+        f << "# Ohne sie landet die Datei im Nutzerbereich 0 ohne Attribute — das ist\n"
+             "# bei CP/M der Normalfall und selten ein Verlust.\n";
+    f << "# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in\n"
+         "# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.\n";
+    f << "fs=" << (a.udos ? "udos" : "cpm") << '\n';
+    f << "name=" << a.name << '\n';
+    if (a.udos) {
+        f << "typ=" << (a.u.typ.empty() ? "-" : a.u.typ) << '\n'
+          << "eig=" << (a.u.eigenschaften.empty() ? "-" : a.u.eigenschaften) << '\n'
+          << "start=" << hex16(a.u.start) << '\n'
+          << "satz=" << a.u.satzlaenge << '\n'
+          << "block=" << a.u.blocklaenge << '\n'
+          << "rest=" << a.u.rest << '\n'
+          << "segment=" << hex16(a.u.ladeadresse) << ':' << a.u.abbildlaenge << '\n'
+          << "mem=" << hex16(a.u.speicher_von) << ':' << hex16(a.u.speicher_bis)
+          << ':' << hex16(a.u.speicher_kz) << '\n'
+          << "zusatz=" << std::hex << std::uppercase << a.u.zusatz
+          << std::dec << std::nouppercase << '\n';
+        // Nur bei MEHR als einem Segment — sonst sagt die Zeile nichts, was
+        // `segment=` nicht schon sagt (`ZLINK` der PC-1715-Diskette hat sechs).
+        if (!a.u.segmente.empty()) f << "segs=" << a.u.segmente << '\n';
+        f << "erst=" << (a.u.erstellt.empty() ? "-" : ohneLeer(a.u.erstellt)) << '\n'
+          << "geaend=" << (a.u.geaendert.empty() ? "-" : ohneLeer(a.u.geaendert)) << '\n';
+    } else {
+        f << "attr=" << cpmAttrText(a.c) << '\n';
+    }
+    return static_cast<bool>(f);
+}
+
+/// @brief Ein `.fileinfo` lesen; gibt es keines, kommt `false` (kein Fehler).
+bool leseFileinfo(const fs::path& datei, FileAngaben& out) {
+    std::ifstream f(datei);
+    if (!f) return false;
+    auto zahl = [](const std::string& t, int basis) -> unsigned long {
+        return std::strtoul(t.c_str(), nullptr, basis);
+    };
+    FileAngaben a;
+    bool etwas = false;
+    std::string zeile;
+    while (std::getline(f, zeile)) {
+        if (!zeile.empty() && zeile.back() == '\r') zeile.pop_back();
+        if (zeile.empty() || zeile[0] == '#') continue;
+        const size_t g = zeile.find('=');
+        if (g == std::string::npos) continue;
+        const std::string k = zeile.substr(0, g), v = zeile.substr(g + 1);
+        etwas = true;
+        if      (k == "fs")     a.udos = (v != "cpm");
+        else if (k == "name")   a.name = v;
+        else if (k == "attr") { if (v != "-") {
+                                    a.c.read_only = v.find('R') != std::string::npos;
+                                    a.c.system    = v.find('S') != std::string::npos;
+                                    a.c.archived  = v.find('A') != std::string::npos; } }
+        else if (k == "typ")    a.u.typ = (v == "-") ? "" : v;
+        else if (k == "eig")    a.u.eigenschaften = (v == "-") ? "" : v;
+        else if (k == "start")  a.u.start = static_cast<uint16_t>(zahl(v, 16));
+        else if (k == "satz")   a.u.satzlaenge = static_cast<uint16_t>(zahl(v, 10));
+        else if (k == "block") { a.u.blocklaenge = static_cast<uint16_t>(zahl(v, 10));
+                                 a.u.blocklaenge_gesetzt = true; }
+        else if (k == "rest")  { a.u.rest = static_cast<uint16_t>(zahl(v, 10));
+                                 a.u.rest_gesetzt = true; }
+        else if (k == "segment") {
+            const size_t d = v.find(':');
+            a.u.ladeadresse = static_cast<uint16_t>(zahl(v.substr(0, d), 16));
+            if (d != std::string::npos)
+                a.u.abbildlaenge = static_cast<uint16_t>(zahl(v.substr(d + 1), 10));
+        }
+        else if (k == "zusatz") a.u.zusatz = static_cast<uint32_t>(zahl(v, 16));
+        else if (k == "segs")   a.u.segmente = v;
+        else if (k == "erst")   a.u.erstellt = (v == "-") ? "" : mitLeer(v);
+        else if (k == "geaend") a.u.geaendert = (v == "-") ? "" : mitLeer(v);
+        else if (k == "mem") {
+            std::string x = v;
+            std::replace(x.begin(), x.end(), ':', ' ');
+            std::istringstream m(x);
+            std::string p1, p2, p3;
+            m >> p1 >> p2 >> p3;
+            a.u.speicher_von = static_cast<uint16_t>(zahl(p1, 16));
+            a.u.speicher_bis = static_cast<uint16_t>(zahl(p2, 16));
+            a.u.speicher_kz  = static_cast<uint16_t>(zahl(p3, 16));
+            a.u.mem_gesetzt  = true;
+        }
+    }
+    if (!etwas) return false;
+    out = a;
+    return true;
+}
+
+/// @brief Ist das eines der beiden Beiblaetter oder ein `.fileinfo`?
+///        Alles davon ist Zubehoer des Auszugs, keine Nutzdatei.
 bool istBeiblatt(const fs::path& name) {
-    return name == kUdosBeiblatt || name == kCpmBeiblatt;
+    return name == kUdosBeiblatt || name == kCpmBeiblatt || istFileinfo(name);
 }
 
 /**
@@ -512,6 +659,11 @@ std::string zielName(const std::string& quelle, FsType typ,
                      const std::map<std::string, CpmAngabe>& beiblatt) {
     const std::string datei = fs::path(quelle).filename().string();
     if (isUdosFamily(typ)) return datei;
+    // Das `.fileinfo` gehoert zu GENAU dieser Datei und geht dem Sammelbeiblatt
+    // vor — es wandert mit ihr mit, das Beiblatt bleibt beim Umsortieren zurueck.
+    FileAngaben ein;
+    if (leseFileinfo(fileinfoPfad(quelle), ein) && !ein.udos && !ein.name.empty())
+        return ein.name;
     const auto it = beiblatt.find(datei);
     if (it != beiblatt.end() && !it->second.name.empty()) return it->second.name;
     return CpmFileSystem::toCpmName(quelle);
@@ -1276,6 +1428,16 @@ bool DiskVolume::recoverExtract(int fnr, const std::string& dest_path) {
                                                                      tabelle.end());
         if (!schreibeBeiblatt(bb, zeilen))
             return fail("Beiblatt nicht schreibbar: " + bb.string());
+        // Und dasselbe je Datei: wer den geretteten `ACTIVATE` allein weiterreicht,
+        // soll seine Angaben mitnehmen — das Sammelbeiblatt bleibt im Ordner zurueck.
+        angaben.volume = f->volume;
+        // Der Name ist bei UDOS das EINZIGE, was das Loeschen nicht ueberlebt (§13.3b).
+        // Massgeblich ist deshalb der Name, den der Anwender der geretteten Datei
+        // gegeben hat — nicht der Platzhalter aus dem Fund.  Stuende der im
+        // `.fileinfo`, landete die Datei beim `put` wieder unter ihm.
+        angaben.name = fs::path(dest_path).filename().string();
+        angaben.user = 0;
+        if (!schreibeAngabenDatei(angaben, dest_path)) return false;
     }
     return true;
 }
@@ -1394,8 +1556,47 @@ bool DiskVolume::loadDetails(FileEntry& e) const {
 
 // ─── Einzeloperationen ───────────────────────────────────────────────────────
 
+std::string DiskVolume::zubehoerGrund(const std::string& pfad) {
+    const fs::path name = fs::path(pfad).filename();
+    if (istFileinfo(name)) {
+        // Der Name der gemeinten Nutzdatei steht im Namen selbst — die Endung weg.
+        std::string gemeint = name.string();
+        gemeint.erase(gemeint.size() - std::char_traits<char>::length(kFileinfoEndung));
+        return "'" + name.string() + "' ist eine Angabendatei, keine Nutzdatei — "
+               "gemeint ist vermutlich '" + gemeint + "'.";
+    }
+    if (name == kUdosBeiblatt || name == kCpmBeiblatt)
+        return "'" + name.string() + "' ist das Beiblatt zu den Dateien dieses "
+               "Ordners, keine Nutzdatei.";
+    return "";
+}
+
+bool DiskVolume::schreibeAngabenDatei(const FileEntry& e, const std::string& dest_path) {
+    if (!profile_) return true;
+    FileAngaben a;
+    a.udos = isUdosFamily(profile_->type);
+    a.name = e.qualifiedName();
+    if (a.udos) {
+        a.u = angabeAus(e);
+    } else {
+        a.c.name      = e.qualifiedName();
+        a.c.read_only = e.attributes.find("RO")  != std::string::npos;
+        a.c.system    = e.attributes.find("SYS") != std::string::npos;
+        a.c.archived  = e.attributes.find("ARC") != std::string::npos;
+    }
+    const fs::path ziel = fileinfoPfad(dest_path);
+    if (!schreibeFileinfo(ziel, a))
+        return fail("Angabendatei nicht schreibbar: " + ziel.string());
+    return true;
+}
+
 bool DiskVolume::extract(const FileRef& ref, const std::string& dest_path,
                          const TransferOptions& opt) {
+    return extractMit(ref, dest_path, opt, nullptr);
+}
+
+bool DiskVolume::extractMit(const FileRef& ref, const std::string& dest_path,
+                            const TransferOptions& opt, const FileEntry* bekannt) {
     if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
                                         + " gibt es auf dieser Diskette nicht");
     std::vector<uint8_t> d;
@@ -1411,14 +1612,50 @@ bool DiskVolume::extract(const FileRef& ref, const std::string& dest_path,
 
     std::string err;
     if (!schreibeDatei(dest_path, d, err)) return fail(err);
-    return true;
+
+    // ── Die Angaben, die eine Linux-Datei nicht traegt (§2.1) ────────────────
+    //
+    // Bei der UDOS-Familie IMMER: ohne Typ, Satzlaenge, ENTRY und Speicherabbild
+    // ist eine einzeln herausgeholte Programmdatei beim Zurueckschreiben Schrott,
+    // und man sieht es ihr nicht an.  Bei CP/M nur auf Verlangen (@ref
+    // setCpmFileinfo): dort sind Nutzerbereich 0 und „keine Attribute" der
+    // Normalfall, den auch das echte CP/M erzeugt — es geht nichts verloren, und
+    // eine Zubehoerdatei je Datei waere blosser Ballast.
+    if (!profile_) return true;
+    if (!isUdosFamily(profile_->type) && !cpm_fileinfo_) return true;
+
+    if (bekannt) return schreibeAngabenDatei(*bekannt, dest_path);
+
+    // Einzelweg: den Eintrag holen.  Bei UDOS kostet das die Kopfsektoren der
+    // Seite — deshalb reicht `extractAll` seinen Eintrag durch (@p bekannt).
+    for (FileEntry e : volumes_[static_cast<size_t>(ref.volume)].fs->list()) {
+        if (e.qualifiedName() != ref.name && e.name != ref.name) continue;
+        e.volume = ref.volume;
+        return schreibeAngabenDatei(e, dest_path);
+    }
+    return true;      // die Datei war lesbar, steht aber nicht im Verzeichnis
 }
 
 bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
                         const TransferOptions& opt) {
+    insert_hindernis_ = InsertHindernis::Kein;
     if (read_only_) return fail(kSchreibschutz);
     if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
                                         + " gibt es auf dieser Diskette nicht");
+
+    // Eine einzeln angegebene Zubehoerdatei ist fast sicher ein Versehen — jemand
+    // hat in der Dateiauswahl die falsche der beiden gleichnamigen Zeilen erwischt.
+    // Stillschweigend zu ueberspringen waere hier falsch: der Anwender bekaeme
+    // weder eine Datei auf die Diskette noch einen Grund dafuer (§2.5).  Im STAPEL
+    // gilt das Gegenteil — dort filtert `sammleQuelldateien` sie vorher heraus.
+    if (!opt.zubehoer_als_datei) {
+        const std::string grund = zubehoerGrund(src_path);
+        if (!grund.empty()) {
+            insert_hindernis_ = InsertHindernis::Zubehoerdatei;
+            return fail(grund);
+        }
+    }
+
     std::vector<uint8_t> d;
     std::string err;
     if (!leseDatei(src_path, d, err)) return fail(err);
@@ -1432,8 +1669,52 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
     // Kopfsektorangaben von dort — so behaelt auch eine EINZELN aus der Oberflaeche
     // herübergezogene Systemdatei ihren Typ und ihr Speicherabbild.  Ausdrueckliche
     // Angaben des Aufrufers gehen immer vor.
+    // ── Rangfolge der Angaben (§2.2) ─────────────────────────────────────────
+    //
+    // 1. `<datei>.fileinfo` neben der Datei — die genaueste Auskunft, sie gehoert
+    //    zu GENAU dieser Datei und wandert mit ihr mit.
+    // 2. das Sammelbeiblatt im Ordner der Datei oder eine Ebene darueber.
+    // 3. ausdrueckliche Angaben des Aufrufers — die gehen IMMER vor, auch ueber
+    //    ein vorhandenes `.fileinfo` (deshalb die Abfrage auf `udos_type`).
+    // 4. nichts davon ⇒ bei der UDOS-Familie kann das Werkzeug nicht wissen, was
+    //    fuer eine Datei das ist; geraten wird nicht (@ref InsertHindernis).
     TransferOptions mit = opt;
+    bool angaben_gefunden = false;
     if (profile_ && isUdosFamily(profile_->type) && opt.udos_type.empty()) {
+        FileAngaben ein;
+        // Eine ausdruecklich uebergebene Angabendatei geht der neben der Quelle
+        // liegenden vor — sie IST die Angabe des Aufrufers, nur in Zeilenform.
+        const fs::path woher = opt.angaben_datei.empty()
+                             ? fileinfoPfad(src_path) : fs::path(opt.angaben_datei);
+        if (leseFileinfo(woher, ein)) {
+            if (!ein.udos)
+                return fail("'" + fs::path(src_path).filename().string()
+                            + kFileinfoEndung + "' traegt CP/M-Angaben (fs=cpm), die "
+                            "Diskette ist eine der UDOS-Familie — die Angaben passen "
+                            "nicht zusammen.");
+            angaben_gefunden       = true;
+            mit.udos_type          = ein.u.typ;
+            mit.udos_properties    = ein.u.eigenschaften;
+            mit.udos_entry         = ein.u.start;
+            mit.udos_record_len    = ein.u.satzlaenge;
+            mit.udos_segment       = ein.u.ladeadresse;
+            mit.udos_segment_len   = ein.u.abbildlaenge;
+            mit.udos_low_addr      = ein.u.speicher_von;
+            mit.udos_high_addr     = ein.u.speicher_bis;
+            mit.udos_stack_size    = ein.u.speicher_kz;
+            mit.udos_block_len     = ein.u.blocklaenge;
+            mit.udos_bytes_in_last = ein.u.rest;
+            mit.udos_block_len_gesetzt     = ein.u.blocklaenge_gesetzt;
+            mit.udos_bytes_in_last_gesetzt = ein.u.rest_gesetzt;
+            mit.udos_mem_gesetzt           = ein.u.mem_gesetzt;
+            mit.udos_extra         = ein.u.zusatz;
+            mit.udos_segments      = ein.u.segmente;
+            mit.udos_created       = ein.u.erstellt;
+            mit.udos_modified      = ein.u.geaendert;
+        }
+    }
+    if (profile_ && isUdosFamily(profile_->type) && opt.udos_type.empty()
+        && !angaben_gefunden) {
         const fs::path quelle(src_path);
         for (const fs::path& ordner : {quelle.parent_path(),
                                        quelle.parent_path().parent_path()}) {
@@ -1446,6 +1727,7 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
             auto it = tabelle.find(lang);
             if (it == tabelle.end()) it = tabelle.find(kurz);
             if (it == tabelle.end()) continue;
+            angaben_gefunden    = true;
             mit.udos_type       = it->second.typ;
             mit.udos_properties = it->second.eigenschaften;
             mit.udos_entry      = it->second.start;
@@ -1467,6 +1749,24 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
             break;
         }
     }
+    // Fall 4: es gibt nichts, woraus sich der Kopfsektor fuellen liesse.  Die
+    // Vorgaben (Typ B, 128er Saetze, keine Startadresse) gelten kuenftig nur dort,
+    // wo der Aufrufer sie AUSDRUECKLICH will — stillschweigend entstuende sonst eine
+    // Datei, die nicht laeuft, und niemand saehe es ihr an.  Bei CP/M gibt es diesen
+    // Fall nicht: Bereich 0 ohne Attribute ist dort der Normalfall (§2.4).
+    if (profile_ && isUdosFamily(profile_->type)
+        && mit.udos_type.empty() && !angaben_gefunden) {
+        insert_hindernis_ = InsertHindernis::AngabenFehlen;
+        const std::string kurz = fs::path(src_path).filename().string();
+        return fail("Zu '" + kurz + "' gibt es keine Angaben (weder " + kurz
+                    + kFileinfoEndung + " noch " + kUdosBeiblatt + "). " + profile_->name
+                    + " braucht Typ, Satzlaenge und — bei einem Programm — Startadresse "
+                      "und Speicherangaben; ohne sie entstuende eine Datei, die nicht "
+                      "laeuft. Entweder die Datei mit ihrem " + kFileinfoEndung
+                    + " herueberholen, oder die Angaben mitgeben: "
+                      "--type P --record-len 1024 --entry 4000 --mem 4000:43FF:0080");
+    }
+
     wo.udos_type       = mit.udos_type;
     wo.udos_properties = mit.udos_properties;
     wo.udos_entry      = mit.udos_entry;
@@ -1493,9 +1793,24 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
     wo.cpm_archived  = opt.cpm_archived;
     if (profile_ && profile_->type == FsType::Cpm
         && !opt.cpm_read_only && !opt.cpm_system && !opt.cpm_archived) {
+        FileAngaben ein;
+        const fs::path woher = opt.angaben_datei.empty()
+                             ? fileinfoPfad(src_path) : fs::path(opt.angaben_datei);
+        const bool hat_fileinfo = leseFileinfo(woher, ein);
+        if (hat_fileinfo && ein.udos)
+            return fail("'" + fs::path(src_path).filename().string() + kFileinfoEndung
+                        + "' traegt UDOS-Angaben (fs=udos), die Diskette ist eine "
+                          "CP/M-Diskette — die Angaben passen nicht zusammen.");
+        const bool aus_fileinfo = hat_fileinfo;
+        if (aus_fileinfo) {
+            wo.cpm_read_only = ein.c.read_only;
+            wo.cpm_system    = ein.c.system;
+            wo.cpm_archived  = ein.c.archived;
+        }
         const fs::path quelle(src_path);
         for (const fs::path& ordner : {quelle.parent_path(),
                                        quelle.parent_path().parent_path()}) {
+            if (aus_fileinfo) break;          // das `.fileinfo` gewinnt
             if (ordner.empty()) continue;
             const auto tabelle = leseCpmBeiblatt(ordner / kCpmBeiblatt);
             const auto it = tabelle.find(quelle.filename().string());
@@ -1506,8 +1821,30 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
             break;
         }
     }
-    if (!volumes_[static_cast<size_t>(ref.volume)].fs->write(ref.name, d, wo))
+    // Der Name AUF DER DISKETTE.  Bei CP/M traegt das `.fileinfo` ihn samt
+    // Nutzerbereich ("3:SYSTEM.COM"); im Linux-Dateinamen steht dafuer ein
+    // Unterstrich, und ohne diese Ruecksetzung landete die Systemdatei im
+    // Bereich 0.  Nur wenn der Aufrufer nicht ausdruecklich umbenannt hat — ein
+    // `put --as NEU.COM` gewinnt immer.
+    std::string ziel_name = ref.name;
+    // NUR bei CP/M, und nur dort, wo der Aufrufer nicht ausdruecklich umbenannt hat:
+    // dort traegt das `.fileinfo` den Nutzerbereich ("3:SYSTEM.COM"), fuer den im
+    // Linux-Dateinamen ein Unterstrich steht — ohne diese Ruecksetzung landete die
+    // Systemdatei im Bereich 0.  Bei UDOS ist der Diskettenname der Dateiname; ihn
+    // aus dem `.fileinfo` zu nehmen hiesse, ein Umbenennen im Ordner zu ignorieren —
+    // und genau das Umbenennen ist dort der Weg zurueck aus der Rettung.
+    if (profile_ && !isUdosFamily(profile_->type)
+        && ref.name == fs::path(src_path).filename().string()) {
+        FileAngaben ein;
+        const fs::path woher = opt.angaben_datei.empty()
+                             ? fileinfoPfad(src_path) : fs::path(opt.angaben_datei);
+        if (leseFileinfo(woher, ein) && !ein.name.empty())
+            ziel_name = ein.name;
+    }
+
+    if (!volumes_[static_cast<size_t>(ref.volume)].fs->write(ziel_name, d, wo))
         return fail(volumes_[static_cast<size_t>(ref.volume)].fs->lastError());
+    insert_name_ = ziel_name;
     return true;
 }
 
@@ -1866,7 +2203,12 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
             // Nutzerbereich-Praefix ("3:NAME") ist im Dateinamen unbrauchbar.
             std::string datei = e.qualifiedName();
             std::replace(datei.begin(), datei.end(), ':', '_');
-            if (!extract(r, (ziel / datei).string(), opt)) return false;
+            // Der Eintrag ist hier schon vollstaendig gelesen — durchreichen, sonst
+            // holte `extract` das Verzeichnis JE DATEI erneut (bei UDOS heisst das:
+            // jeden Kopfsektor der Seite, an einer physischen Diskette Spur um Spur).
+            FileEntry mit = e;
+            mit.volume = v;
+            if (!extractMit(r, (ziel / datei).string(), opt, &mit)) return false;
         }
     }
 
@@ -1912,8 +2254,20 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
 }
 
 bool DiskVolume::sammleQuelldateien(const std::string& src_dir,
-                                    std::vector<std::vector<std::string>>& je_volume) const {
+                                    std::vector<std::vector<std::string>>& je_volume,
+                                    int* zubehoer) const {
     je_volume.assign(volumes_.size(), {});
+    if (zubehoer) *zubehoer = 0;
+    // Wer einen ganzen Ordner auf die Diskette zieht, meint dessen INHALT — die
+    // Zubehoerdateien (`.fileinfo`, Sammelbeiblatt) sind fuer ihn nicht sichtbar
+    // Teil davon.  Sie werden ausgewertet und nicht kopiert; eine Rueckfrage kaeme
+    // bei dreissig Dateien dreissigmal, und die Antwort waere jedes Mal dieselbe
+    // (§2.5).  Gezaehlt werden sie trotzdem: stillschweigend heisst nicht heimlich.
+    auto ist_zubehoer = [&](const fs::path& pfad) {
+        if (!istBeiblatt(pfad.filename())) return false;
+        if (zubehoer) ++*zubehoer;
+        return true;
+    };
 
     std::error_code ec;
     if (!fs::is_directory(src_dir, ec)) return fail("Kein Ordner: " + src_dir);
@@ -1921,7 +2275,7 @@ bool DiskVolume::sammleQuelldateien(const std::string& src_dir,
     if (volumes_.size() == 1) {
         for (const auto& e : fs::directory_iterator(src_dir, ec)) {
             if (e.is_directory()) continue;         // Unterordner kennt CP/M nicht
-            if (istBeiblatt(e.path().filename())) continue;       // Beiblatt, keine Datei
+            if (ist_zubehoer(e.path())) continue;
             je_volume[0].push_back(e.path().string());
         }
         return true;
@@ -1936,7 +2290,7 @@ bool DiskVolume::sammleQuelldateien(const std::string& src_dir,
     for (const auto& e : fs::directory_iterator(src_dir, ec)) {
         if (!e.is_directory()) {
             // Das Beiblatt gehoert dorthin und ist keine „lose Datei".
-            if (!istBeiblatt(e.path().filename()))
+            if (!ist_zubehoer(e.path()))
                 lose.push_back(e.path().filename().string());
             continue;
         }
@@ -1974,6 +2328,7 @@ bool DiskVolume::sammleQuelldateien(const std::string& src_dir,
             if (e.is_directory())
                 return fail("Unterverzeichnisse kennt das Dateisystem nicht: "
                             + e.path().string());
+            if (ist_zubehoer(e.path())) continue;
             je_volume[static_cast<size_t>(v)].push_back(e.path().string());
         }
     }
@@ -2014,9 +2369,20 @@ bool DiskVolume::checkFit(const std::string& src_dir, std::string& bericht) cons
 }
 
 bool DiskVolume::insertAll(const std::string& src_dir, const TransferOptions& opt) {
+    insert_hindernis_ = InsertHindernis::Kein;
+    zubehoer_gezaehlt_ = 0;
     if (read_only_) return fail(kSchreibschutz);
     std::vector<std::vector<std::string>> je_volume;
-    if (!sammleQuelldateien(src_dir, je_volume)) return false;
+    if (!sammleQuelldateien(src_dir, je_volume, &zubehoer_gezaehlt_)) return false;
+
+    // Bleibt nach dem Ueberspringen NICHTS uebrig, ist das eine Meldung und kein
+    // stiller Erfolg — sonst meldete das Werkzeug „eingefuegt" und die Diskette
+    // waere unveraendert (§2.5).
+    size_t nutzdateien = 0;
+    for (const auto& v : je_volume) nutzdateien += v.size();
+    if (nutzdateien == 0 && zubehoer_gezaehlt_ > 0)
+        return fail("Der Ordner " + src_dir + " enthaelt nur Angabendateien ("
+                    + std::to_string(zubehoer_gezaehlt_) + ") — es gibt nichts einzufuegen.");
 
     // Schritt 2: urteilen — VOR der ersten Aenderung.
     std::string bericht;
@@ -2037,6 +2403,9 @@ bool DiskVolume::insertAll(const std::string& src_dir, const TransferOptions& op
             const std::string name = zielName(quelle, profile_->type, cpm_beiblatt);
             TransferOptions o = opt;
             o.overwrite = true;          // im Stapel ersetzt der Ordner den Bestand
+            // Gefiltert ist hier schon; die Einzelsperre wuerde nur noch einmal
+            // dieselbe Frage stellen (§2.5).
+            o.zubehoer_als_datei = true;
             // Kopfsektorangaben aus dem Beiblatt, sofern der Aufrufer keine vorgibt.
             const std::string schluessel = volumes_.size() == 1
                                          ? name : volumeDir(static_cast<int>(v)) + "/" + name;

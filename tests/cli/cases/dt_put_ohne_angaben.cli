@@ -1,0 +1,13 @@
+# UDOS ohne jede Angabe: Abbruch statt Raten (doc/bug_disktool_Programmdatei.md §2.2).
+#
+# Vorher entstand hier stillschweigend eine Datei vom Typ B mit 128er-Saetzen und
+# LOW/HIGH = FFFF — der Inhalt stimmte, die Datei lief nicht, und weder `put` noch
+# die Dateisystempruefung konnten es merken.  Die Meldung MUSS den Ausweg nennen.
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+file nackt.dat:
+  irgendwelche Bytes ohne Angaben
+run:    put %DISK% %nackt.dat% --volume 0
+expect: keine Angaben
+expect: --type
+exit:   1

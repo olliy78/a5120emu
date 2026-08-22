@@ -1326,10 +1326,12 @@ reicht ihn weiter, vorhandene Aufrufe gelten unverändert.
 | `put <datei\|ordner…>` | einfügen — **braucht `--write`** |
 | `rm <muster…>` | löschen — **braucht `--write`** |
 | `save-as <ziel.hfe>` | die ganze Diskette als Abbild sichern |
+| `archive <ziel.zip> [--label …]` | Abbild + Dateien + beide Inhaltsverzeichnisse (§12.3a) |
 | `rewrite` | Diskette neu beschreiben (§7.2) — **braucht `--write`** |
 
 Sitzungsschalter: `--drive a|b|0…3`, `--cyls`, `--heads`, `--rate`, `--rpm`,
-`--double-step`, `--fs NAME`, `--raw`, `--no-verify`, `--text`, `--force`, `-q`.
+`--double-step`, `--fs NAME`, `--raw`, `--no-verify`, `--text`, `--force`,
+`--label TEXT`, `-q`.
 
 Vier Festlegungen:
 
@@ -1356,10 +1358,52 @@ k1520disktool --physical ls -l
 k1520disktool --physical save-as sicherung.hfe        # VOR jedem Schreibversuch
 k1520disktool --physical --write put NEU.TXT
 k1520disktool --physical --drive 0 --cyls 40 --double-step ls
+k1520disktool --physical archive archiv.zip --label "UDOS 4.3 Nr. 7"
 ```
 
-Prüfung ohne Hardware: `py_physical_cli` (14 Fälle) setzt das Ersatzlaufwerk aus
+Prüfung ohne Hardware: `py_physical_cli` (17 Fälle) setzt das Ersatzlaufwerk aus
 `gw_fake.py` an die Stelle von `PhysicalSession.start` — derselbe Weg, nur ohne USB.
+
+### 12.3a `archive` — eine Sammlung im Stapel einlesen (2026-08-22)
+
+`save-as` sichert das Abbild; für eine **Sammlung** ist das zu wenig: dort will man
+je Diskette dasselbe Bündel wie in der Oberfläche — Abbild als `.hfe`, alle Dateien
+einzeln, das lesbare Inhaltsverzeichnis und das maschinenlesbare `diskarchive.yaml`
+(Entwurf `doc/design/13_k1520disktool.md` §24), aus dem sich später auszählen lässt,
+welche Fassung von `XYZ.COM` auf welcher Diskette lag.  Der Befehl ruft dieselbe
+`app.disktool.archive.create_archive` wie der Klickweg; es gibt keinen zweiten Pfad,
+der eine `.zip` schnürt.
+
+Drei Festlegungen, alle drei aus der Eigenart „physisch" heraus:
+
+1. **Der Aufkleber kommt über `--label` herein**, ohne ihn gilt der
+   *Datenträgername* der Diskette.  Eine physische Diskette hat keinen Dateinamen,
+   aus dem sich etwas ableiten liesse (`DiskTool.open_physical` → `path=""`) — die
+   Beschriftung ist die einzige Auskunft darüber, welche Diskette das war, und sie
+   benennt auch die Dateien **im** Archiv.  Der Datenträgername ist der beste
+   automatische Rückfall; `NAMENLOS` („diskette") bliebe der letzte.
+2. **Eine vorhandene Datei wird nicht überschrieben** — dafür gibt es `--force`.
+   Das gilt seit 2026-08-22 für **`save-as` und `archive` gleichermassen**
+   (`SCHREIBT_DATEI`, `_zieldatei()`): beide legen eine Datei an, beide werden im
+   Stapel gefahren, und derselbe Zielname zweimal ist dort ein Tippfehler, dessen
+   Schaden endgültig ist — die Diskette davor liegt schon wieder im Schrank.  Der
+   Aufruf **bricht ab** (Exit 1) und erfindet **keinen** Ausweichnamen: der
+   Zielname ist die Aussage darüber, welche Diskette das ist — ein stillschweigendes
+   `archiv-2.zip` ergäbe eine Sammlung, deren Dateinamen nichts mehr sagen, und der
+   Tippfehler bliebe unbemerkt.  Geprüft wird **vor** dem Motor, zusammen mit dem
+   fehlenden Zieldateinamen (`_zieldatei()`, gerufen aus der Vorabprüfung *und* aus
+   dem Befehl): dazwischen läge das Einlesen der ganzen Diskette — zwei Minuten, um
+   dann abzubrechen.  Wächter: `cli.geraet.gelesen == []` in beiden Fällen, je
+   Befehl durchgespielt.
+3. **`source` in der `.yaml` trägt die Herkunft im Klartext**
+   („Echtes Laufwerk A am Greaseweazle"), nicht einen leeren Dateinamen; die
+   Beschriftung steht getrennt davon in `label`.
+
+Der Befehl ist **rein lesend** und braucht deshalb kein `--write`; er liest die
+ganze Diskette (Abbild + Dateien), der Füllstand läuft wie bei jedem anderen über
+den Fortschrittsfaden.  Wächter: `test_archive_sichert_diskette_und_verzeichnisse`,
+`test_archive_ueberschreibt_nicht_von_selbst`,
+`test_archive_ohne_label_nimmt_den_datentraegernamen`.
 
 ## 13. Festlegungen, die man nicht aufweichen darf
 

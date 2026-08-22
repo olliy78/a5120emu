@@ -88,6 +88,9 @@ struct Optionen {
     bool        voll    = false;
     bool        dry_run = false;
     bool        nobackup= false;
+    /// @brief --fileinfo: auch bei CP/M je Datei ein `.fileinfo` schreiben.
+    ///        Bei der UDOS-Familie entsteht es immer, dort ist der Schalter wirkungslos.
+    bool        fileinfo = false;
     /// @brief --repair: `fsck` soll auch eingreifen (sonst prueft es nur).
     bool        reparieren = false;
     /// @brief --list: `recover` soll nur auflisten, auch wenn --to dasteht.
@@ -106,6 +109,8 @@ void gebrauch() {
         "k1520disktool — Dateien zwischen Linux und K1520-Disketten austauschen\n\n"
         "  ls     <abbild> [-l]                     Verzeichnis (nur Namen; -l ausfuehrlich)\n"
         "  get    <abbild> <muster…> --to <ordner>  Dateien herausholen\n"
+        "         [--fileinfo]                      … bei CP/M je Datei ein .fileinfo\n"
+        "                                             (bei UDOS entsteht es immer)\n"
         "  put    <abbild> <datei|ordner…>          Dateien einfuegen\n"
         "         [--type P1 --props WS --entry 0]  … UDOS-Kopfsektor (Typ/Eigensch./Start)\n"
         "         [--record-len 1024]               … UDOS-Satzlaenge (Vielfaches von 128)\n"
@@ -135,6 +140,11 @@ void gebrauch() {
         "  formats                                  bekannte Dateisysteme auflisten\n\n"
         "Gemeinsam: --fs NAME (Erkennung uebersteuern), --volume N (Seite),\n"
         "           --text|--binary, --force, --dry-run, --no-backup\n"
+        "  Neben jeder herausgeholten Datei liegt ein <datei>.fileinfo mit dem, was\n"
+        "  eine Linux-Datei nicht traegt (Typ, Satzlaenge, ENTRY, Segmente…).  `put`\n"
+        "  liest es von selbst wieder; ohne es fehlen einer UDOS-Programmdatei genau\n"
+        "  die Angaben, die sie lauffaehig machen.  --force schreibt eine .fileinfo\n"
+        "  ausnahmsweise als gewoehnliche Datei auf die Diskette.\n"
         "  --json   maschinenlesbar — bei ls, info, check, fsck und formats\n\n"
         "Bei beidseitigen UDOS-Disketten sind die Seiten `Side0`/`Side1`:\n"
         "  get  legt sie als Unterverzeichnisse an,\n"
@@ -191,6 +201,7 @@ bool zerlege(int argc, char** argv, int ab, Optionen& o, std::string& err) {
         else if (a == "--text")    o.text     = true;
         else if (a == "--binary")  o.binaer   = true;
         else if (a == "--force")   o.force    = true;
+        else if (a == "--fileinfo") o.fileinfo = true;
         else if (a == "-l")        o.lang     = true;
         else if (a == "--json")    o.json     = true;
         else if (a == "--full")    o.voll     = true;
@@ -887,6 +898,9 @@ int cmd_get(const Optionen& o) {
     t.text      = o.text;
     t.overwrite = o.force;
     t.dry_run   = o.dry_run;
+    // Bei UDOS entsteht das `.fileinfo` immer; bei CP/M nur auf Verlangen — dort ist
+    // „Bereich 0, keine Attribute" der Normalfall und nichts geht verloren (§2.4).
+    v->setCpmFileinfo(o.fileinfo);
 
     // Ohne Muster: alles (mit SideN-Ordnern, wenn die Diskette mehrere Seiten hat).
     if (o.rest.size() == 2) {
@@ -943,6 +957,9 @@ int cmd_put(const Optionen& o) {
     t.text      = o.text;
     t.overwrite = o.force;
     t.dry_run   = o.dry_run;
+    // --force ist beim Einfuegen zweierlei: vorhandene Dateien ersetzen UND eine
+    // ausdruecklich genannte Angabendatei als Nutzdatei durchlassen (§2.5).
+    t.zubehoer_als_datei = o.force;
     t.udos_type       = o.udos_typ;
     t.udos_properties = o.udos_eig;
     t.udos_entry      = static_cast<uint16_t>(o.udos_entry);
@@ -992,7 +1009,12 @@ int cmd_put(const Optionen& o) {
             return kPasstNicht;
         }
         if (!v->flush()) { std::cerr << "Fehler: " << v->lastError() << "\n"; return kFehler; }
-        std::cout << "eingefuegt aus " << o.rest[2] << "\n";
+        std::cout << "eingefuegt aus " << o.rest[2];
+        // Stillschweigend heisst nicht heimlich: wer nachzaehlt, soll die Differenz
+        // zwischen Ordnerinhalt und Diskette erklaert bekommen (§2.5).
+        if (v->lastAccessoryCount() > 0)
+            std::cout << " (" << v->lastAccessoryCount() << " .fileinfo ausgewertet)";
+        std::cout << "\n";
         return kOk;
     }
 
@@ -1006,9 +1028,16 @@ int cmd_put(const Optionen& o) {
         FileRef ref = FileRef::parse(name, o.volume);
         if (!v->insert(o.rest[i], ref, t)) {
             std::cerr << "Fehler: " << v->lastError() << "\n";
+            // Beide Hindernisse haben einen AUSWEG — er gehoert in die Meldung, sonst
+            // steht der Anwender vor einer Ablehnung ohne Handhabe.
+            if (v->lastInsertHindernis() == InsertHindernis::Zubehoerdatei)
+                std::cerr << "       Mit --force wird sie trotzdem kopiert.\n";
             return v->lastError().find("voll") != std::string::npos ? kPasstNicht : kFehler;
         }
-        std::cout << o.rest[i] << " → " << name << "\n";
+        // Nicht `name`: bei CP/M setzt das `.fileinfo` den Nutzerbereich wieder ein
+        // (`3_SYSTEM.COM` → `3:SYSTEM.COM`), und die Meldung soll sagen, was auf der
+        // Diskette steht, nicht was verlangt wurde.
+        std::cout << o.rest[i] << " → " << v->lastInsertedName() << "\n";
     }
     if (o.dry_run) return kOk;
     if (!v->flush()) { std::cerr << "Fehler: " << v->lastError() << "\n"; return kFehler; }

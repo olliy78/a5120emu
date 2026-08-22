@@ -22,6 +22,13 @@ Warum drei Dinge und nicht nur das Abbild:
   einfacher — die Beiblätter `udos-dateiangaben.txt` bzw. `cpm-dateiangaben.txt`
   liegen im Ordner `dateien/` und werden beim Einfügen von selbst wieder gelesen.
 
+* Das **maschinenlesbare Verzeichnis** (`diskarchive.yaml`) ist dasselbe für
+  Programme: Dateiname, Verzeichnis, Größe und SHA-256 jeder Datei im Archiv.
+  Es beantwortet die Frage, für die man sonst jedes Archiv auspacken müsste —
+  *wie viele Fassungen von `XYZ.COM` gibt es in meiner Sammlung und auf welchen
+  Disketten liegen sie?*  Absichtlich **ohne** Dateisystemangaben: die stehen im
+  Inhaltsverzeichnis und in den Beiblättern, hier zählt die Inventur.
+
 Benutzbar aus der Oberfläche und als Skript::
 
     python3 -m app.disktool.archive disks/udos_boot_scp.hfe archiv.zip
@@ -30,12 +37,15 @@ Benutzbar aus der Oberfläche und als Skript::
 from __future__ import annotations
 
 import datetime
+import hashlib
 import re
 import sys
 import tempfile
 import zipfile
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+import yaml
 
 if TYPE_CHECKING:                                   # pragma: no cover
     from app.core_binding.k1520disk import DiskTool
@@ -45,6 +55,16 @@ DATEI_ORDNER = "dateien"
 
 #: Name der Dateien im Archiv, wenn nichts Besseres bekannt ist.
 NAMENLOS = "diskette"
+
+#: Name des maschinenlesbaren Verzeichnisses im Archiv.
+INVENTAR_DATEI = "diskarchive.yaml"
+
+#: Fassung des Datenformats von :data:`INVENTAR_DATEI` (Schlüssel ``diskarchive``).
+#:
+#: Erhöht wird sie nur, wenn ein Leser der alten Fassung das Archiv **falsch**
+#: verstünde.  Neue Schlüssel kommen ohne Erhöhung hinzu — wer liest, überliest
+#: Unbekanntes; das ist die ganze Verabredung zur Erweiterbarkeit.
+INVENTAR_VERSION = 1
 
 
 def dateiname(bezeichnung: str) -> str:
@@ -251,9 +271,162 @@ def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
     return "\n".join(z) + "\n"
 
 
+# ════════════════════════════════════════════════════════════════════════════
+# Maschinenlesbares Verzeichnis (`diskarchive.yaml`)
+# ════════════════════════════════════════════════════════════════════════════
+
+#: Kopf der `diskarchive.yaml` — das Format erklärt sich selbst, wie das
+#: Inhaltsverzeichnis auch.  Ein Archiv aus dieser Sammlung soll in zwanzig
+#: Jahren auch ohne dieses Werkzeug auswertbar sein.
+INVENTAR_KOPF = """\
+# k1520DiskTool — maschinenlesbares Verzeichnis dieses Archivs.
+#
+# Zweck ist die INVENTUR einer Sammlung: welche Datei liegt auf welcher Diskette,
+# und welche Fassungen davon gibt es (Vergleich ueber sha256) — beantwortbar,
+# ohne die Archive auszupacken.  Angaben des Dateisystems stehen hier bewusst
+# NICHT; die fuehren das Inhaltsverzeichnis (.txt) und die Beiblaetter.
+#
+#   diskarchive   Fassung dieses Datenformats.  Neue Schluessel koennen ohne
+#                 Erhoehung hinzukommen — wer liest, ueberliest Unbekanntes.
+#   transfer      'binary' = Byte fuer Byte ausgelesen, 'text' = beim Auszug
+#                 umgesetzt (Zeilenenden, Textende).  Die Pruefsumme haengt daran.
+#   label         Beschriftung der Diskette (der Aufkleber), kann leer sein.
+#   source        Woher sie kam: Dateiname des Abbilds oder ein Klartext wie
+#                 'Echtes Laufwerk A am Greaseweazle'.
+#   image         das verlustfreie .hfe-Abbild; sein sha256 kennzeichnet die
+#                 DISKETTE als Ganzes (zwei gleiche Abbilder = dieselbe Diskette).
+#   catalogue     das menschenlesbare Inhaltsverzeichnis.
+#   files_root    Ordner im Archiv, unter dem die Dateien liegen.
+#   files         eine Zeile je Datei der Diskette:
+#     path        Pfad IM ARCHIV (Eintrag der .zip), Trenner '/', stets relativ.
+#     dir         Verzeichnis relativ zu files_root — leer, 'Side0'/'Side1' bei
+#                 zweiseitigen UDOS-Disketten, und bei hierarchischen Datei-
+#                 systemen (FAT, Unix) spaeter auch mehrstufig 'A/B'.
+#     name        Dateiname ohne Verzeichnis.  Es gilt immer:
+#                 path == files_root + '/' + (dir + '/' wenn dir) + name
+#     size        Groesse in Byte, sha256 die Pruefsumme — beide der Datei IM
+#                 ARCHIV, nicht der Laengenangabe des Verzeichnisses.
+#     disk_name   nur wenn der Name auf der Diskette ein anderer ist als der
+#                 Dateiname (CP/M-Nutzerbereich: '3:X.COM' -> '3_X.COM').
+#     damaged     nur wenn wahr: die Datei war nicht vollstaendig lesbar; ihr
+#                 Inhalt ist unvollstaendig und zaehlt nicht als Fassung.
+#   attachments   Beiblaetter des Auszugs — Angaben ueber die Dateien, aber
+#                 selbst KEINE Dateien der Diskette.
+"""
+
+
+def _sha256(pfad: Path) -> str:
+    """Prüfsumme einer Datei — stückweise, ein Abbild kann gross sein."""
+    h = hashlib.sha256()
+    with open(pfad, "rb") as f:
+        for stueck in iter(lambda: f.read(1 << 20), b""):
+            h.update(stueck)
+    return h.hexdigest()
+
+
+def _angabe(im_archiv: str, groesse: int, pruefsumme: str) -> dict:
+    return {"path": im_archiv, "size": groesse, "sha256": pruefsumme}
+
+
+def _angabe_datei(pfad: Path, im_archiv: str) -> dict:
+    return _angabe(im_archiv, pfad.stat().st_size, _sha256(pfad))
+
+
+def _erwartete_namen(eintraege) -> dict:
+    """Pfad im Dateiordner → Verzeichniseintrag.
+
+    Die Zuordnung muss der Namensgebung von ``extractAll`` folgen: der
+    Nutzerbereich steht als Präfix im Namen (``3:X.COM``) und wird für das
+    Wirtsdateisystem zu ``3_X.COM``; die UDOS-Verzeichnisdatei (Typ ``D``) ist
+    Dateisystemstruktur und wird gar nicht erst ausgelesen.
+    """
+    erwartet = {}
+    for e in eintraege:
+        if e.type == "D":
+            continue
+        datei = e.name.replace(":", "_")
+        erwartet[f"{e.side_dir}/{datei}" if e.side_dir else datei] = e
+    return erwartet
+
+
+def inventar(eintraege, dateien_ordner: Path, *, abbild: Path, abbild_name: str,
+             verzeichnis_name: str, verzeichnis_text: str,
+             bezeichnung: str = "", quelle: str = "", herkunft: str = "",
+             text_mode: bool = False) -> dict:
+    """Das maschinenlesbare Verzeichnis als Datenstruktur.
+
+    Gerechnet wird über die Dateien, wie sie **im Archiv landen** — nicht über
+    das Verzeichnis der Diskette.  Nur so passen Grösse und Prüfsumme zu dem,
+    was ein Auswerter später in Händen hält (CP/M rundet auf 128-B-Sätze auf,
+    ein Textauszug setzt Zeilenenden um).
+
+    Args:
+        eintraege: Das Verzeichnis der Diskette (``DiskTool.list()``) — es wird
+            hier nicht erneut gelesen; an einer physischen Diskette kostet das
+            bei UDOS jeden Kopfsektor.
+        dateien_ordner: Der vorbereitete Ordner mit den ausgelesenen Dateien.
+    """
+    erwartet = _erwartete_namen(eintraege)
+    dateien, beiblaetter = [], []
+    for p in sorted(dateien_ordner.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(dateien_ordner).as_posix()
+        angabe = _angabe_datei(p, f"{DATEI_ORDNER}/{rel}")
+        e = erwartet.get(rel)
+        if e is None:
+            # Was nicht im Verzeichnis stand, ist ein Beiblatt des Auszugs.
+            beiblaetter.append(angabe)
+            continue
+        ordner, _, name = rel.rpartition("/")
+        eintrag = {"path": angabe["path"], "dir": ordner, "name": name,
+                   "size": angabe["size"], "sha256": angabe["sha256"]}
+        if e.name != name:
+            eintrag["disk_name"] = e.name
+        if e.damaged:
+            eintrag["damaged"] = True
+        dateien.append(eintrag)
+
+    return {
+        "diskarchive": INVENTAR_VERSION,
+        "generator": _erzeuger(),
+        "created": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "transfer": "text" if text_mode else "binary",
+        "label": bezeichnung,
+        "source": Path(quelle).name if quelle else herkunft,
+        "image": _angabe_datei(abbild, abbild_name),
+        "catalogue": _angabe(verzeichnis_name,
+                             len(verzeichnis_text.encode("utf-8")),
+                             hashlib.sha256(
+                                 verzeichnis_text.encode("utf-8")).hexdigest()),
+        "files_root": DATEI_ORDNER,
+        "files": dateien,
+        "attachments": beiblaetter,
+    }
+
+
+def _erzeuger() -> str:
+    """Wer das Archiv geschrieben hat — bei einem Formatstreit die erste Frage."""
+    try:
+        from app.core_binding.k1520disk import version
+        return f"k1520DiskTool ({version()})"
+    except Exception:                                # pragma: no cover
+        return "k1520DiskTool"
+
+
+def inventar_yaml(daten: dict) -> str:
+    """:func:`inventar` als YAML-Text — mit dem erklärenden Kopf davor."""
+    return INVENTAR_KOPF + yaml.safe_dump(
+        daten, sort_keys=False, allow_unicode=True, default_flow_style=False)
+
+
 def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False,
                    bezeichnung: str = "", herkunft: str = "") -> Path:
-    """Abbild, Dateien und Inhaltsverzeichnis in eine `.zip` packen.
+    """Abbild, Dateien und beide Inhaltsverzeichnisse in eine `.zip` packen.
+
+    Zwei Verzeichnisse, weil zwei Leser: `<name>.txt` fuer den Menschen (mit
+    Legende und allen Dateiangaben), :data:`INVENTAR_DATEI` fuer die Maschine
+    (Pfad, Groesse, sha256 — die Inventur einer ganzen Sammlung).
 
     Das Abbild wird immer als **`.hfe`** abgelegt — auch wenn die Quelle ein `.img`
     oder `.dmk` ist: HFE trägt die Spurstruktur und damit auch das, was ein rohes
@@ -279,6 +452,7 @@ def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False,
 
     stamm = dateiname(bezeichnung) or Path(tool.path).stem or NAMENLOS
     text = inhaltsverzeichnis(tool, bezeichnung=bezeichnung, herkunft=herkunft)
+    eintraege = tool.list()
 
     with tempfile.TemporaryDirectory(prefix="k1520_archiv_") as tmp:
         tmpdir = Path(tmp)
@@ -292,11 +466,20 @@ def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False,
         dateien.mkdir()
         tool.extract_all(dateien, text=text_mode)
 
-        # 3) Alles einpacken.
+        # 3) Das maschinenlesbare Verzeichnis — es rechnet ueber die Dateien,
+        #    wie sie gleich in die .zip gehen, also nach dem Auszug.
+        daten = inventar(eintraege, dateien, abbild=abbild,
+                         abbild_name=abbild.name,
+                         verzeichnis_name=f"{stamm}.txt", verzeichnis_text=text,
+                         bezeichnung=bezeichnung, quelle=tool.path,
+                         herkunft=herkunft, text_mode=text_mode)
+
+        # 4) Alles einpacken.
         ziel.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(ziel, "w", zipfile.ZIP_DEFLATED) as z:
             z.write(abbild, abbild.name)
             z.writestr(f"{stamm}.txt", text)
+            z.writestr(INVENTAR_DATEI, inventar_yaml(daten))
             for p in sorted(dateien.rglob("*")):
                 if p.is_file():
                     z.write(p, str(Path(DATEI_ORDNER) / p.relative_to(dateien)))

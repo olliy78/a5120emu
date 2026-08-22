@@ -24,11 +24,15 @@ from __future__ import annotations
 
 import argparse
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import List, Optional
 
-BEFEHLE = ("ls", "info", "check", "get", "put", "rm", "save-as", "rewrite")
+from app.disktool.fileinfo import schreibe_fileinfo
+
+BEFEHLE = ("ls", "info", "check", "get", "put", "rm", "save-as", "archive",
+           "rewrite")
 
 
 # ─── Sitzung ─────────────────────────────────────────────────────────────────
@@ -45,8 +49,14 @@ def _parser() -> argparse.ArgumentParser:
   check                       Pruefbericht
   get <muster…> --to <ordner> Dateien herausholen (ohne Muster: alles)
   put <datei|ordner…>         Dateien einfuegen            [--write]
+                              … bei UDOS braucht eine NEUE Datei --type (und ggf.
+                                --record-len); zu einer herausgeholten liegt ihr
+                                .fileinfo daneben und wird von selbst gelesen
   rm  <muster…>               Dateien loeschen             [--write]
   save-as <ziel.hfe>          die ganze Diskette als Abbild sichern
+  archive <ziel.zip>          Abbild + Dateien + beide Inhaltsverzeichnisse
+                              [--label "Aufkleber"]
+  (save-as und archive ersetzen eine vorhandene Datei nur mit --force)
   rewrite                     Diskette neu beschreiben     [--write]
 
 Ohne --write ist die Diskette schreibgeschuetzt — ein Original ist meist ein
@@ -55,6 +65,7 @@ Einzelstueck.  Vor dem ersten Schreibversuch lohnt `save-as`.
 Beispiele:
   k1520disktool --physical ls -l
   k1520disktool --physical save-as sicherung.hfe
+  k1520disktool --physical archive archiv.zip --label "UDOS 4.3 Nr. 7"
   k1520disktool --physical --write put NEU.TXT
   k1520disktool --physical --drive 0 --cyls 40 --double-step ls
 """)
@@ -81,7 +92,18 @@ Beispiele:
                    help="roh oeffnen — ohne Dateisystem (nur save-as/rewrite)")
     z.add_argument("--text", action="store_true", help="Zeilenenden umsetzen")
     z.add_argument("--force", action="store_true", help="vorhandene ersetzen")
+    # Bei der UDOS-Familie raet `put` die Kopfsektorangaben nicht mehr, sondern
+    # verlangt sie (doc/bug_disktool_Programmdatei.md §2.2).  Neben einer aus dem
+    # Auszug stammenden Datei liegt ihr `.fileinfo`; eine NEUE Datei bringt keines
+    # mit — dafuer diese beiden Schalter.
+    z.add_argument("--type", metavar="T", dest="udos_typ",
+                   help="UDOS-Dateityp fuer put (A, B, P, P1…)")
+    z.add_argument("--record-len", metavar="N", type=int, dest="udos_satz",
+                   help="UDOS-Satzlaenge fuer put (Vielfaches von 128)")
     z.add_argument("--to", metavar="ORDNER", help="Zielordner fuer get")
+    z.add_argument("--label", metavar="TEXT",
+                   help="Beschriftung der Diskette (der Aufkleber) fuer archive; "
+                        "ohne sie gilt der Datentraegername")
     z.add_argument("-l", "--long", action="store_true", help="ausfuehrliches ls")
     z.add_argument("-q", "--quiet", action="store_true",
                    help="keine Fortschrittsanzeige")
@@ -215,13 +237,27 @@ def _cmd_put(d, o) -> int:
     if not o.rest:
         print("Fehler: put braucht Dateien oder einen Ordner", file=sys.stderr)
         return 1
-    for pfad in o.rest:
-        q = Path(pfad)
-        if q.is_dir():
-            d.insert_all(q, text=o.text, overwrite=o.force)
-            print(f"eingefuegt aus {q}")
-        else:
-            d.insert(q, q.name, text=o.text, overwrite=o.force)
+    # `--type`/`--record-len` werden zu einer fluechtigen Angabendatei — dieselbe
+    # Zeilenform, die der Kern ohnehin liest.  Sie geht dem `.fileinfo` neben der
+    # Quelle vor: ausdrueckliche Angaben des Aufrufers gewinnen immer (§2.2).
+    angaben = {}
+    if o.udos_typ:
+        angaben["typ"] = o.udos_typ
+    if o.udos_satz:
+        angaben["satz"] = str(o.udos_satz)
+
+    with tempfile.TemporaryDirectory(prefix="k1520_fileinfo_") as tmp:
+        for pfad in o.rest:
+            q = Path(pfad)
+            if q.is_dir():
+                d.insert_all(q, text=o.text, overwrite=o.force)
+                print(f"eingefuegt aus {q}")
+                continue
+            info = None
+            if angaben:
+                info = schreibe_fileinfo(Path(tmp) / f"{q.name}.fileinfo",
+                                         dict(angaben), q.name)
+            d.insert(q, q.name, text=o.text, overwrite=o.force, info=info)
             print(f"{q} → {q.name}")
     return 0
 
@@ -245,15 +281,77 @@ def _cmd_rm(d, o) -> int:
 
 
 def _cmd_save_as(d, o) -> int:
-    if not o.rest:
-        print("Fehler: save-as braucht einen Zieldateinamen", file=sys.stderr)
+    ziel, grund = _zieldatei(o)
+    if ziel is None:
+        print(f"Fehler: {grund}", file=sys.stderr)
         return 1
-    ziel = Path(o.rest[0])
     # export_image schreibt eine Kopie und laesst die Bindung, wie sie ist — bei
     # einer physischen Diskette gibt es keine Datei, an die man sich neu binden
     # koennte (§12.2).
     d.export_image(ziel)
     print(f"gesichert: {ziel} ({ziel.stat().st_size} Byte)")
+    return 0
+
+
+#: Befehle, die eine DATEI ANLEGEN — Ziel und Beispiel je Befehl, dazu die
+#: Endung, auf die bestanden wird (leer = jede; `save-as` schreibt jeden
+#: Container, den die Endung nennt).
+SCHREIBT_DATEI = {"save-as": ("sicherung.hfe", ""), "archive": ("archiv.zip", ".zip")}
+
+
+def _zieldatei(o) -> tuple:
+    """``(Pfad, Fehlertext)`` für einen Befehl aus :data:`SCHREIBT_DATEI`.
+
+    Die Regel steht nur hier und wird **zweimal** gerufen: als Vorabprüfung, bevor
+    das Laufwerk angefasst wird, und im Befehl selbst.  Rechnen statt merken ist
+    billiger als ein durchgereichter Zustand — und es hält beide Aufrufwege an
+    derselben Regel.
+
+    Zwei Dinge werden geprüft, und beide gehören **vor** den Motor: der vergessene
+    Zieldateiname und die schon vorhandene Datei.  Dazwischen läge sonst das
+    Einlesen der ganzen Diskette — zwei Minuten, um dann abzubrechen.  Überschrieben
+    wird nur mit ``--force``: im Stapelbetrieb ist derselbe Zielname zweimal ein
+    Tippfehler, und die Diskette davor liegt dann schon wieder im Schrank.  Ein
+    Ausweichname wird **nicht** erfunden — der Zielname ist die Aussage darüber,
+    welche Diskette das ist.
+    """
+    beispiel, endung = SCHREIBT_DATEI[o.befehl]
+    if not o.rest:
+        return None, f"{o.befehl} braucht einen Zieldateinamen ({beispiel})"
+    ziel = Path(o.rest[0])
+    if endung and ziel.suffix.lower() != endung:
+        ziel = ziel.with_suffix(endung)
+    if ziel.exists() and not o.force:
+        return None, f"{ziel} gibt es schon — mit --force ersetzen."
+    return ziel, ""
+
+
+def _cmd_archive(d, o) -> int:
+    """Die eingelegte Diskette als Archiv sichern — Abbild, Dateien, Verzeichnisse.
+
+    Der Fall, für den es diesen Befehl gibt: eine **Sammlung** einlesen, Diskette
+    für Diskette, ohne Oberfläche.  Deshalb zwei Unterschiede zu `save-as`:
+
+    * Die **Beschriftung** ist hier die einzige Auskunft darüber, welche Diskette
+      das war — es gibt keinen Dateinamen, aus dem sich etwas ableiten liesse.
+      Ohne ``--label`` gilt der Datenträgername, den die Diskette selbst führt;
+      das ist besser als :data:`~app.disktool.archive.NAMENLOS`, aber es ist auch
+      nicht der Aufkleber.
+    * Ein vorhandenes Archiv wird **nicht** stillschweigend überschrieben.  Im
+      Stapelbetrieb ist derselbe Zieldateiname zweimal ein Tippfehler, der sonst
+      die erste Diskette vernichtet — und die liegt dann schon wieder im Schrank.
+    """
+    from app.disktool.archive import create_archive
+
+    ziel, grund = _zieldatei(o)
+    if ziel is None:
+        print(f"Fehler: {grund}", file=sys.stderr)
+        return 1
+
+    bezeichnung = o.label or (d.volumes()[0].label if d.volumes() else "")
+    ziel = create_archive(d, ziel, text_mode=o.text, bezeichnung=bezeichnung,
+                          herkunft=f"Echtes Laufwerk {o.drive.upper()} am Greaseweazle")
+    print(f"archiviert: {ziel} ({ziel.stat().st_size} Byte)")
     return 0
 
 
@@ -281,6 +379,15 @@ def main(argv: Optional[List[str]] = None) -> int:
               f"braucht es --write.\nEine echte Diskette ist meist ein Einzelstueck; "
               f"vorher lohnt `--physical save-as sicherung.hfe`.", file=sys.stderr)
         return 1
+    if o.befehl in SCHREIBT_DATEI:
+        # Das Ziel wird HIER geprueft, nicht erst im Befehl: dazwischen liegt das
+        # Einlesen der ganzen Diskette (zwei Minuten).  Eine schon vorhandene Datei
+        # oder ein vergessener Dateiname soll die Diskette gar nicht erst anfassen —
+        # dieselbe Regel wie bei --write.
+        _ziel, _grund = _zieldatei(o)
+        if _ziel is None:
+            print(f"Fehler: {_grund}", file=sys.stderr)
+            return 1
     if o.raw and o.befehl not in ("save-as", "rewrite", "info"):
         print(f"Fehler: --raw gibt es ohne Dateisystem — '{o.befehl}' braucht eines.",
               file=sys.stderr)
@@ -328,7 +435,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                     print(_mit_ticker(sitzung, d.check, o.quiet, "pruefen: "))
                 else:
                     tabelle = {"ls": _cmd_ls, "info": _cmd_info, "get": _cmd_get,
-                               "put": _cmd_put, "rm": _cmd_rm, "save-as": _cmd_save_as}
+                               "put": _cmd_put, "rm": _cmd_rm, "save-as": _cmd_save_as,
+                               "archive": _cmd_archive}
                     rc = _mit_ticker(sitzung, lambda: tabelle[o.befehl](d, o),
                                      o.quiet, f"{o.befehl}: ")
                     if rc:
