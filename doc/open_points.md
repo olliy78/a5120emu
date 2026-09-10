@@ -1,156 +1,187 @@
-# K1520 Emulator - Open Points
+# K1520 — Offene Punkte
 
-Updated: 2026-07-22
-Branch: `formating-disks` (baseline) / `scpx_boot` (SCPX 1526, items §4/§5 + disabled-tests)
-Status: A5120 boots CP/A fully to the interactive prompt; keyboard, clock, disk
-read **and** write, and FORMAT.COM disk formatting all work — including self-made
-bootable disks (format → CPABCGEN → boot) for 5¼″-MFM and 8″-FM/mixed-density.
-On `scpx_boot`, SCPX 1526 also boots to `A>` with keyboard, `DIR`, `.COM` loading and
-runtime writes working; the former `PIP`/`REN` same-name rename hang is now resolved
-(§4) — only a regression guard test is still to be added.
-Remaining work is a short tail of exotic disk formats plus a few known limits — not
-architecture blockers.
+> **Stand:** 2026-09-10 · Zweig `greaseweazle_integration` (42 Commits vor `origin`,
+> `origin/main` ist Vorfahr ⇒ Fast-Forward möglich).
+> **Sprache:** Dieses Dokument war bis 2026-07-22 englisch. Es ist jetzt deutsch wie
+> alles, worauf es verweist (`doc/design/*`, `doc/merkposten/*`).
 
-> Earlier "open frontier" items — full CP/A cold boot, the ZVE1↔ZVE2 DMA handshake,
-> keyboard (K7637), the clock timing, disk write, GUI validation, and basic FORMAT.COM
-> formatting — are all **resolved**. History lives in git and the analysis docs
-> (`doc/analyse_zre_rom_boot.md`, `doc/analyse_bootloader.md`,
-> `doc/K1520_architecture.md` §8.5/§14, `doc/format.md`).
+Der Emulator ist an keiner Stelle mehr blockiert: A5120 bootet CP/A, SCPX 1526 und
+UDOS 4.3 vollständig bis zum Prompt; Tastatur, Uhr, Lesen, Schreiben und FORMAT.COM
+laufen, selbstgebaute Bootdisketten booten. Das Werkzeug `k1520DiskTool` liest und
+schreibt CP/A, SCPX, UDOS/ZDOS, UDOS1715/NDOS und SCP1700; die Dateisystemprüfung
+(`fsck`, Etappen 1–7) samt Reparatur und Rettung gelöschter Dateien ist fertig. Eine
+physische Diskette am Greaseweazle ist an echter Hardware nachgewiesen.
 
-## Remaining open points
+Was hier steht, ist damit **Nacharbeit und ein kurzer Rest exotischer Fälle** —
+keine Architekturfragen mehr.
 
-### 1) Disk formatting — exotic-format tail
+---
 
-The formatting pipeline (`tests/system/drivers/format_all.py` + `tools/format_driver`) covers the
-native K5601 §3 formats and the §3.4 single-sided / 40-track geometries as both `.hfe`
-and `.img`, plus the four foreign drive types via combo-boot disks. Full status:
-`doc/format.md` §8. What is left:
+## 1. Fällig: der Merge nach `main`
 
-- **(a) "Sektorfolge 1,4,7" interleave formats — Format 7 ("ZIK-NK") and W:6
-  ("BAP2001")** report `Fehler 'S' SPUR DEFEKT` in Verify, on **both** `.hfe` and
-  `.img`. Black-box diagnosis shows the emulator writes provably-correct sectors
-  (IDs 1–16 sequential) and behaves identically on passing and failing tracks — the
-  `'S'` is a FORMAT.COM-internal data-track verdict, not a differential emulator bug.
-  Definitive root cause needs **disassembly of FORMAT.COM's `'S'`-verify path**.
-  Scope: 2 of ~30 formats.
-  `doc/format.md` §8.4. Repro: `python3 tests/system/drivers/format_all.py 7 --type img --upto 5`.
-- **(b) Double-step 40-track geometries T/U as `.img`** are skipped: the card only
-  knows step pulses, so `cur_cyl_` = 2×logical and a logical-40-track `.img` would
-  need a physical→logical mapping. Workaround: use `.hfe` (faithful bit-track model)
-  for double-step disks. `doc/format.md` §8.3.
-- **(c) 1024-B FM/SD read path (`mf3200_fmt1`)** — an 8″-SD/FM disk formatted with
-  1024-B data sectors formats + CPABCGEN + boots, but a running-OS `DIR` fails with
-  `Bdos Err On A: Bad Sector` reading the 1024-B FM data track. 256-B FM
-  (`mf3200_fmt7`) works and shares the read-stream build, so the difference is the
-  sector size on the FM read path. Rare format; preset kept for analysis, not a test.
-  `doc/format.md` §8.6.1.
+`greaseweazle_integration` trägt 42 nicht gepushte Commits (26 davon nicht auf
+`origin/main`): die ganze fsck-Arbeit, den `.fileinfo`-Rundlauf, die Ordnerseite als
+Dateibrowser und den Belegungsplan-Fix vom 22.08. Lokales `main` ist 16 Commits
+hinter `origin/main` — vor dem Merge also `git fetch` und `main` nachziehen.
 
-### 2) Fresh gap-blank `.hfe` format hang (known limit, workaround active)
+**Vor dem Merge alle vier Lanes**, nicht nur den `pre-push`-Hook (der deckt bloss die
+erste ab) — der Zweig hat `core/filesystem/` breit angefasst:
 
-Formatting a **freshly `create`d, gap-empty `.hfe`** directly hangs (ZVE2 read
-co-routine `0x1D0F/0x1D21` pre-reading an unformatted data track on the first seek
-past cyl 1; index-interrupt / dual-CPU coordination race). The "keep index
-mask-independent" and "motor/index stops" hypotheses were both tested and disproved
-(`doc/format.md` §8.2/§8.2.1). **Workaround in the pipeline:** copy B: from a valid
-template, or use `.img` via `create` (0xE5 reads as valid). A real fix needs
-cycle-level dual-CPU tracing of the retry loop's break condition across the cyl1→cyl2
-seek.
+| Lane | Befehl | Stand 2026-09-10 |
+|------|--------|------------------|
+| Regression | `tools/dev.sh test` | grün (38 s) |
+| Tiefe | `tools/dev.sh test-format` | grün (59 s) |
+| Breite | `tools/dev.sh test-matrix` | grün (156 s) |
+| Windows | `tools/dev.sh win` | grün (1182/1182 unter wine) |
 
-### 3) Post-boot VRAM wipe after ~50–65M idle cycles
+> Die Windows-Lane war beim ersten Lauf rot — zweimal derselbe Test
+> (`FsRecoverCpm.EineGeloeschteDateiKommtByteFuerByteZurueck`), zweimal aus einem Grund,
+> den es unter Linux nicht gibt: der byteweise Vergleich hielt zwei `std::ifstream`
+> offen, während `fs::remove_all()` den Ordner löschte (`Sharing violation` — Windows
+> löscht keine offene Datei), und der dadurch liegengebliebene Ordner brachte den
+> Folgelauf zu Fall (`Zieldatei existiert bereits`). Behoben in
+> `tests/unit/filesystem/test_fs_recover.cpp`: Vergleich über den vorhandenen Helfer
+> `bytes()` (liest in eigenem Gültigkeitsbereich und schliesst), und `remove_all()`
+> **vor** `create_directories()` — so machen es die vier Schwestertests längst.
+> **Merke:** Ein Test, der nur beim Aufräumen am Ende sauber macht, ist unter Windows
+> nach dem ersten Fehlschlag dauerhaft rot.
 
-After reaching the prompt, VRAM is wiped after tens of millions of idle cycles —
-suspected leftover clock/timing drift and/or spurious residual ZVE2 floppy activity.
-Low priority (cosmetic, well past the reached-prompt milestone).
-`project_os_boot_reaches_prompt` memory has trace hints.
+Die Python-Ebene muss dabei **ohne** `greaseweazle` grün sein (in der CI ist das Paket
+nie installiert; Wächter `tests/python/test_gw_ohne_paket.py`).
 
-### 4) SCPX runtime `PIP`/`REN` rename hang (branch `scpx_boot`) — ✅ RESOLVED 2026-07-12, needs a guard test
+**Aufräumen davor:** zwei ungetrackte Abbilder in `disks/` aus dem Hardware-Schreibtest
+— `sicherung_udos_vor_schreibtest.hfe` (15.08.) und `udos_boot_test01.hfe` (12.08.).
+Entweder als Fixture einchecken (dann mit einem Satz in `tests/fixtures/README.md`,
+welche Diskette das ist) oder löschen.
 
-> Branch `scpx_boot` (SCPX 1526 V1.7). SCPX boots to `A>`; keyboard, `DIR`, `.COM`
-> loading and runtime disk writes all work. Full analysis: `doc/analyse_scpx_pip_rename.md`.
+---
 
-**Was hanging (never returned to `A>`):**
-- `PIP B:=A:STAT.COM` — cross-drive copy with **identical source AND destination name**.
-- `REN B:STAT.COM=B:STAT2.COM` — rename onto a name with a **deleted** directory entry.
+## 2. k1520DiskTool
 
-**Now fixed** — the fix was **not** a dedicated change but a **side effect of the K5122
-rotation-coupled, encoding-dependent byte-timing rework** (commit `1d547d0` **plus the ongoing
-working-tree refinements** to `k5122.cpp/.h` — `consumeByteSlot()`/`currentBytePeriod()`, the
-byte-slot spacing — that were uncommitted when this was verified; verify against the committed
-state once those land). This matches the diagnosed root cause exactly: the hang lived in
-the K5122 read-stream **byte pacing / `resyncToNextMark`** for the `E671` read that ZVE1 drives
-unpaced (see `doc/analyse_scpx_pip_rename.md` §4d/§4e — `[EC0D]=0xE295` was the *constant*
-data-CRC seed, never stale; the real issue was `head_pos_` pinning under the old flat
-`kBytePeriodCycles=150` timing). The new rotation-coupled timing unpins it.
+### 2.1 Doppelschritt-Disketten sind nicht katalogisierbar (der grösste offene Posten)
 
-**Verified 2026-07-12** (k1520dbg, fresh boot + keystrokes): both `PIP B:=A:STAT.COM` and
-`REN B:STAT.COM=B:STAT2.COM` complete, `DIR B:` shows `STAT COM`, and the `A>` prompt returns.
+`tracks:` im Formatkatalog beschreibt zusammenhängende Bereiche; Austauschformate mit
+Doppelschritt belegen nur jeden zweiten Zylinder. Die Erkennung lehnt sie deshalb
+ausdrücklich ab (Kriterium `gap_tracks`), statt ein 80-Spur-Format darüberzuziehen und
+Datenmüll zu lesen. **Betroffen: 13 der erzeugten Prüfabbilder** (CP/A-Geometrien `T`/`U`).
 
-**Remaining action (small):** there is **no automated regression guard** for this path. Add one
-to `ScpxIntegration` (`tests/integration/test_boot_integration.cpp`): boot → `ERA B:STAT.COM` →
-`PIP B:=A:STAT.COM` → assert return-to-`A>` + `STAT COM` present on B: (and/or the `REN` variant).
-This locks in the fix so a future timing change can't silently re-break it. Repro script in
-`doc/analyse_scpx_pip_rename.md` §3.
+Abhilfe wäre ein Attribut `step: 2` am Format; zu ändern sind `TrackFormat`/`DiskFormat`,
+die Spurabbildung im `SectorSpace` und das Lückenkriterium im `GeometryProbe`.
+Ausgearbeitet: `doc/feature_requests/doppelschritt_disketten.md`, Entwurf
+`doc/design/13_k1520disktool.md` §18.8.
 
-### 5) SCPX `INIT.COM` disk formatting — verify fails on half the tracks — ✅ RESOLVED 2026-07-22
+> Der **Kern** kann Doppelschritt seit 2026-08-12 (`FloppyDriveV2::mount()` übersetzt die
+> Spurdichte, Wächter `FloppyDriveV2.Doppelschritt_IstDieselbeDisketteWieEinDoppelschrittAbbild`).
+> Offen ist die Katalogseite — und nachzumessen, ob die Formatier-Pipeline `T`/`U`
+> seitdem auch als `.img` erzeugen könnte; heute macht sie dort nur `.hfe`.
 
-> **→ Fallstudie/Analyse: `doc/analyse_scpx_init_verify_handoff.md`.**
-> `INIT.COM` is SCPX's FORMAT.COM equivalent (dialog-driven formatter that programs the
-> K5122 **directly**, no BIOS call). Full analysis: `doc/analyse_scpx_init_format.md`;
-> memory `project_scpx_init_format`.
+### 2.2 Reparatur ohne gemountetes Dateisystem
 
-**Fixed:** `INIT` formats drive A: (default DD-DS 16×256) fully and reports
-**`BAD TRACKS: - NO -`**. Root cause was an **index-pulse phase** problem — **not** the read
-path (already HW-faithful via `f96ea01`) and **not** the compare logic. INIT's per-track verify
-index-syncs on the flag `[0x12A8]`: the index ISR (`0x124D`, on **ZVE1**) sets `[0x12A8]=0xFF`
-each disk index; ZVE1 clears it per track (`0x0EF0`), then ZVE2 requires it **clear** at the
-track start (`0x1115 BIT 0,(HL); 0x1119 JR NZ → bad`) before waiting for the next index
-(`0x111B`). Our index pulse ran **free** (`index_cycle_acc_`, period 490000) relative to the byte
-clock, and the ZVE1-clear→ZVE2-check window is ≈ one index period long, so exactly one index fell
-**inside** the window → `[0x12A8]` set → bad. The phase was stable ⇒ every track but the first
-failed deterministically (head 1 / odd cylinders). On real HW the full-track format write ends
-**exactly at the index** (write is index-to-index = one rotation), so the clear sits right after
-an index and the next index lands in the `0x111B` wait. **Fix:** `K5122::commitFormatTrack` sets
-`index_cycle_acc_ = 0` (couples the index phase to the track end). Remaining first-attempt misses
-are absorbed by INIT's 5× retry → no bad tracks. Guard test:
-`ScpxInit.InitFormatsDriveAWithNoBadTracks` (`tests/system/test_scpx_init.cpp`, own executable,
-label `format_integration`). 592/592 ctest + 58/58 legacy + 6/6 format_integration green (CP/A
-FORMAT.COM unaffected).
+Bricht bei UDOS die Kette der **Verzeichnisdatei selbst**, scheitert schon `mount()`,
+und geprüft wird nur noch auf Ebene 0. Grundsätzlich reparierbar — der Kopfsektor der
+Verzeichnisdatei liegt fest auf Spur 22 Sektor 1, die Kette liesse sich aus den
+Kontrollblöcken verfolgen —, verlangt aber einen Reparaturweg **ohne** Dateisystem.
+Zurückgestellt; heute ist der Diskeditor die Handhabe.
+`doc/design/15_dateisystempruefung.md` §20.
 
-**Earlier partial work (context):** drive-speed gate solved (`feaae01`, `[12A6]≈6282`);
-HW-faithful read-path/head-select (`f96ea01`, `K5122::setHead`) — a necessary side fix, but the
-BAD TRACKS failure happened **before** the read (at the index-flag check `0x1119`), so the read
-bytes were never the blocker.
+### 2.3 Kleinere Vorbehalte
 
-## Known non-issues (do not re-investigate)
+- **`HIGH ADDRESS` / `STACK SIZE`** im UDOS-Kopfsektor sind nicht eindeutig zugeordnet
+  (`doc/udos_diskettenformat.md` §13.3). Beim Einfügen einer Datei vom Typ `P`/`P1`
+  werden sie deshalb nicht gesetzt — für Datendateien belanglos, für ausführbare ein
+  benannter Vorbehalt. Entwurf §18.3.
+- **Zwei Kopfsektorfelder überleben den Rundlauf `get`/`put` nicht**: `bytes_in_last == 0`
+  wird beim Schreiben zur vollen Satzlänge, und LOW/HIGH/STACK werden nur geschrieben,
+  wenn mindestens einer der drei Werte ≠ 0 ist (`udos_fs.cpp`, `write()`). Bewusst
+  unangetastet, weil die Regel „0 heisst nicht angegeben" an anderer Stelle tragend ist.
+- **CP/M-3-Zeitstempel** (`os: cpm3`): das Schema sieht das Feld vor, ob im Bestand
+  solche Disketten liegen, ist ungeprüft. Entwurf §18.2.
+- **`cpm.block.luecke`** (Nullzeiger vor belegtem Zeiger) bleibt `Warnung` ohne
+  Reparatur, bis ein echter Fall vorliegt.
+- **Was UDOS beim Löschen wirklich tut**, ist an unserer Umsetzung abgelesen und an
+  einer echten Diskette nur stichprobenhaft gegengeprüft.
 
-- **Native 8″ drive** — the K5122 is format-agnostic and drive type is pure BIOS
-  software, so 8″ formats (MF3200 SD/FM, MF6400 DD/mixed-density) are testable and
-  bootable via the combo-boot disks and the `mf3200_8_ss77` / `mf6400_8_ss77` drive
-  profiles (`doc/format.md` §8.5/§8.6, §11). No dedicated 8″ card is needed.
+---
 
-## Non-blocking / housekeeping
+## 3. Physische Diskette (Greaseweazle)
 
-- **Test suite is fully green on this branch** — 583/583 ctest + 58 legacy-harness
-  tests pass, plus 5 slow `format_integration` boot-disk tests (excluded from the
-  default `tools/dev.sh test` run via `-LE format_integration`; run them with
-  `tools/dev.sh test-format`).
-- **Documentation coverage**: essentially done. All non-generated `core/` headers
-  carry file/class-level comments. Remaining low-priority nicety: fuller Doxygen on
-  some Python helpers.
-- **Review the disabled/skipped tests** — go through the `DISABLED_`/skipped tests and
-  decide re-enable vs. delete vs. keep-as-documentation:
-  - `KeyboardIntegration.DISABLED_TypeCommandAtCcpEchoesAndProcesses`
-    (`tests/integration/test_boot_integration.cpp:484`) — CP/A "type a command at the CCP,
-    expect echo + processing" check. Disabled because of a harness clock / timer-ISR
-    timing peculiarity (the CCP drops the command while time-entry input works). The
-    serial-latency mechanism itself is regression-guarded by the K7637 unit tests, so
-    this is a *harness* gap, not a product bug. Re-enable once the harness clock issue
-    is understood; note that on `scpx_boot` the interactive CCP input path
-    (`ScpxIntegration`) *is* exercised, so check whether that already covers the intent.
-  - **Stale comment to clean up**: `tests/integration/test_boot_integration.cpp:282` still
-    references "`DISABLED_Stage3_FullyLoadsAndJumpsToOs`", but that test is now
-    **enabled and passing** (`BootIntegration.Stage3_FullyLoadsAndJumpsToOs`, line 316).
-    Update the comment.
-  - Sweep for any other deactivation forms while here (`GTEST_SKIP`, `#if 0`,
-    commented-out `TEST(...)`), and confirm the `format_integration`-labelled slow
-    tests are *excluded-by-label*, not broken (run `tools/dev.sh test-format`).
+- **Die Sitzungsparameter merkt sich niemand** — Laufwerk und Zellrate sind bei jedem
+  Einlegen neu zu wählen. Kleine, im Betrieb spürbare Nacharbeit.
+- **Ein zweites physisches Laufwerk am selben Adapter ist ungetestet**
+  (`doc/design/14_physische_diskette.md` §15/§16).
+
+---
+
+## 4. Diskettenformate — der exotische Rest
+
+Voller Stand: `doc/format.md` §8. Alles hier ist Randlage, nichts blockiert.
+
+- **(a) `Fehler 'S' SPUR DEFEKT` bei den Interleave-Formaten** K5601 `7` („ZIK-NK") und
+  W:6 („BAP2001"), auf `.hfe` **und** `.img`. Der Emulator schreibt nachweislich
+  korrekte Sektoren (IDs 1–16 fortlaufend) und verhält sich auf bestandenen und
+  fallenden Spuren gleich — das `'S'` ist ein FORMAT.COM-internes Urteil, kein
+  differenzieller Emulatorfehler. Endgültige Ursache braucht die **Disassemblierung
+  des `'S'`-Verify-Pfads**. 2 von ~30 Formaten, im Smoke der Matrix fallen sie nicht an.
+  `doc/format.md` §8.4.
+- **(b) 1024-B-FM-Lesepfad (`mf3200_fmt1`)** — eine 8″-SD/FM-Diskette mit 1024-B-Sektoren
+  formatiert, wird bootfähig und bootet, aber ein `DIR` am laufenden OS scheitert mit
+  `Bdos Err On A: Bad Sector`. 256-B-FM (`mf3200_fmt7`) läuft und teilt den Lesestrom —
+  der Unterschied ist die Sektorgrösse auf dem FM-Pfad. `doc/format.md` §8.6.1.
+- **(c) 8″-Datenrate im `DriveProfile` zu niedrig** (Nebenbefund 2026-08-07):
+  `bytePeriodCycles` rechnet für **alle** Laufwerke mit der 5,25″-Rate (125/250 kbit/s);
+  8″ läuft real mit 250/500. Bei 360 min⁻¹ passen im Modell 2617 statt 5208 Bytes je
+  Umdrehung, eine 8″-FM-Spur (4576 B) also **nicht in eine Umdrehung**. Die Korrektur
+  wurde probeweise gebaut — 782/782 ctest und alle 17 `format_matrix_8inchCombo_*`
+  blieben grün, aber `bootdisk_mf3200_fmt7` und `bootdisk_mf6400_fmt1` fielen um: die
+  CP/A-8″-Bootkette kompensiert die falsche Rate offenbar anderswo. Deshalb **nicht
+  übernommen**. `doc/udos_diskettenformat.md` §12.3 (Nebenbefund am Ende).
+- **(d) `--full`-Läufe der Formatmatrix bleiben manuell**
+  (`python3 tests/system/drivers/format_all.py --all --full`); dort sind K5601 `7` und
+  `5` als `.hfe` bekannt rot (siehe (a)).
+
+---
+
+## 5. Emulator — Restposten
+
+- **VRAM-Wischer nach ~50–65 Mio. Leerlauftakten** nach Erreichen des Prompts.
+  Vermutet: Rest-Drift der Uhr und/oder sporadische ZVE2-Floppyaktivität. Kosmetisch,
+  seit 2026-07 nicht wieder nachgeprüft. Spuren im Merkposten
+  `project_os_boot_reaches_prompt`.
+
+---
+
+## 6. Erledigt seit dem letzten Stand dieses Dokuments (2026-07-22)
+
+Nur zur Orientierung — die Einzelheiten stehen in den Analysedokumenten und in git.
+
+- **Gap-leere `.hfe` hängt beim Formatieren** → gelöst 2026-07-06; die Ablehnung
+  markenloser Abbilder beim Öffnen (`hasFormattedData`) ist ersatzlos entfallen. Der
+  Nachzügler `Fehler 'U' SPUR DEFEKT` auf einer echten Leerdiskette ist seit 2026-08-06
+  behoben (verwaister FORMAT-Schreibpuffer), `doc/analyse_format_leerspur.md`.
+- **Doppelschritt im Kern** (siehe §2.1) → 2026-08-12.
+- **SCPX `PIP`/`REN`-Hänger: Wächter fehlt** → es gibt ihn,
+  `ScpxInit.CreateFormatBThenPipCopyFromBootDisk` (Temp-Diskette heisst nicht umsonst
+  `scpx_pip_guard_B.hfe`) sowie `ScpxIntegration.EraDeletesFileOnDriveBWithoutBadSector`.
+- **Deaktivierte Tests durchsehen** → erledigt: im Testbaum steht kein `DISABLED_` und
+  kein `GTEST_SKIP` mehr, der veraltete Kommentar in `test_boot_integration.cpp` ist
+  berichtigt.
+- **`.img` für Doppelschritt-Geometrien `T`/`U`** → im Kern gelöst, in der Pipeline
+  nicht nachgezogen (siehe §2.1).
+
+---
+
+## 7. Bekannte Nicht-Probleme (nicht erneut untersuchen)
+
+- **Kein 8″-Laufwerkskarte nötig.** Der K5122 ist formatagnostisch, der Laufwerkstyp ist
+  reine BIOS-Software; 8″-Formate sind über Combo-Boot-Disketten und die Profile
+  `mf3200_8_ss77` / `mf6400_8_ss77` testbar und bootfähig.
+- **Die vier UDOS-`SET DISKCON`-Fehlschläge sind Gastverhalten**, kein Emulatorfehler:
+  Sektorlänge ≠ 128 (FORMAT.COM nutzt nur das Typ-Nibble und formatiert fest 26×128),
+  8″-Typen `11`/`21` (UDOS schreibt das Datenfeld ohne den 4-Byte-Sektorkontrollblock),
+  Typ `61` (FORMAT schreibt einfachschrittig, der Treiber liest schrittverdoppelt).
+  Kontrollkreuz gerechnet: gleiche 5,25″-Hardware + `21` scheitert, 8″-Hardware + `41`
+  bootet. `doc/udos_diskettenformat.md` §12.3.
+- **Strikter „gehaltener Bus" für die ZVE1↔ZVE2-Arbitrierung** ist eine verifizierte
+  Sackgasse — nicht erneut versuchen. Gültig ist das per-Byte-`/BUSRQ`-Modell.
+- **`.img` für UDOS/ZDOS ist unmöglich** (Verkettung im Gap hinter der Daten-CRC),
+  `rawCompatible()` sperrt es. Bei UDOS1715/NDOS ist `.img` dagegen erlaubt.
