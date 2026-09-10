@@ -218,6 +218,7 @@ TEST(FsRecoverCpm, EineGeloeschteDateiKommtByteFuerByteZurueck) {
 
     // Erst lesen, dann loeschen — der Vergleich braucht das Original.
     const std::string ordner = (fs::temp_directory_path() / "fsrec_kern_out").string();
+    fs::remove_all(ordner);  // Rest eines abgebrochenen Laufs
     fs::create_directories(ordner);
     const std::string vorher_datei = ordner + "/original.bin";
     ASSERT_TRUE(v->extract(FileRef::parse(kOpfer, 0), vorher_datei, TransferOptions{}))
@@ -241,12 +242,7 @@ TEST(FsRecoverCpm, EineGeloeschteDateiKommtByteFuerByteZurueck) {
     // einzuschraenken gibt.
     EXPECT_FALSE(fs::exists(gerettet + ".rettung.txt"));
 
-    std::ifstream a(vorher_datei, std::ios::binary), b(gerettet, std::ios::binary);
-    const std::vector<uint8_t> da((std::istreambuf_iterator<char>(a)),
-                                   std::istreambuf_iterator<char>());
-    const std::vector<uint8_t> db((std::istreambuf_iterator<char>(b)),
-                                   std::istreambuf_iterator<char>());
-    EXPECT_EQ(da, db);
+    EXPECT_EQ(bytes(vorher_datei), bytes(gerettet));
 
     v.reset();
     fs::remove_all(ordner);
@@ -319,6 +315,7 @@ TEST(FsRecoverCpm, UmbenennenBeimWiederherstellen) {
 TEST(FsRecoverCpm, NeuVergebeneBloeckeMachenAusDemFundEinBruchstueck) {
     const std::string pfad = kopie("cpa_cpa780_k5601_noclock.img", "fsrec_streit.img");
     const std::string ordner = (fs::temp_directory_path() / "fsrec_streit_in").string();
+    fs::remove_all(ordner);  // Rest eines abgebrochenen Laufs
     fs::create_directories(ordner);
     {
         std::ofstream f(ordner + "/GROSS.DAT", std::ios::binary);
