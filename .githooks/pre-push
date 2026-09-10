@@ -48,7 +48,11 @@ if [ "$only_deletions" -eq 1 ]; then
 fi
 
 c_ylw ">> pre-push: tools/dev.sh test (Regression, ohne format_integration)"
-if ! tools/dev.sh test; then
+# stdin kommt hier als ERSCHOEPFTE Pipe an (die Ref-Schleife oben hat sie
+# leergelesen).  Ein Lesezugriff darauf blockiert, statt EOF zu liefern —
+# `py_dbg_konsole` faellt dadurch reproduzierbar um, obwohl derselbe Baum
+# ausserhalb des Hooks gruen ist.  Deshalb: eigener, sofort endender Kanal.
+if ! tools/dev.sh test < /dev/null; then
     echo
     c_red "PUSH ABGEBROCHEN — die Regressionstests sind nicht grün."
     echo "  Erneut ansehen:  tools/dev.sh test --output-on-failure"
