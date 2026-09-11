@@ -75,6 +75,13 @@ PA 1…3, CLEAR, REC, FM, DUP, EREOF, ERINP, PF 1…PF 12, MON, RESET, `00`, die
 zusätzlichen Kursortasten); der Kurzhinweis an jeder Taste nennt den Code. PRINT und
 HLT sind unbelegt — ihr Code steht in keiner vorliegenden Codetabelle.
 
+Beim Tippen auf der **echten** Tastatur hebt die Nachbildung die Taste hervor, die
+dabei angesprochen wird — gehaltene Modifikatoren (Strg, Umschalt) eingeschlossen, damit
+man z.B. Strg+C sieht. Der Feststeller überträgt sich in beide Richtungen: den der
+PC-Tastatur liest die Nachbildung mit, und ihr eigener wirkt auf die PC-Eingabe (der
+Buchstabe wird auf dem Weg zum Gast umgesetzt — die Feststelltaste des PC selbst kann ein
+Programm nicht schalten).
+
 Die acht **Leuchtdioden** arbeiten: die fünf Funktionsanzeigen über den Selektortasten
 und die blinkende Fehleranzeige schaltet der Rechner über die Kommandos an die Tastatur
 (`k1520_keyboard_leds`), die Betriebsanzeige hängt am Netzschalter, die LOCK-Anzeige am

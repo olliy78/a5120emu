@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QKeyEvent, QMouseEvent
 
 from app.ui import keyboard as kbd
 
@@ -266,3 +266,104 @@ def test_power_display_follows_the_mains_switch(widget):
     assert betrieb_an()
     widget.set_powered(False)
     assert not betrieb_an()
+
+
+# ── Die echte Tastatur mitzeigen ─────────────────────────────────────────────
+
+def _taste(key, text="", mods=Qt.NoModifier, typ=None):
+    """Ein Host-Tastenereignis bauen."""
+    from PySide6.QtCore import QEvent
+    typ = typ or QEvent.Type.KeyPress
+    return QKeyEvent(typ, int(key), mods, text)
+
+
+def _hell(widget, name_or_low):
+    """Leuchtet die Taste mit dieser Beschriftung/diesem Namen gerade auf?"""
+    return any(k.low == name_or_low or k.name == name_or_low
+               for keys in widget._host_down.values() for k in keys)
+
+
+def test_host_key_highlights_the_matching_key(widget):
+    """Tippen auf der PC-Tastatur zeigt auf der Nachbildung, was angesprochen wird."""
+    ev = _taste(Qt.Key_A, "a")
+    widget.host_key_press(ev)
+    assert _hell(widget, "A")
+    widget.host_key_release(_taste(Qt.Key_A, "a", typ=QEvent.Type.KeyRelease))
+    assert not _hell(widget, "A")
+
+
+def test_host_special_keys_find_their_physical_key(widget):
+    """Sondertasten leuchten dort auf, wohin der Kern sie übersetzt."""
+    for qtkey, beschriftung in ((Qt.Key_Return, "ET1"), (Qt.Key_Enter, "ENTER"),
+                                (Qt.Key_Up, "↑"), (Qt.Key_Tab, "|←|"),
+                                (Qt.Key_F1, "PF 1")):
+        widget.host_key_press(_taste(qtkey))
+        assert _hell(widget, beschriftung), f"{beschriftung} leuchtet nicht"
+        widget.host_key_release(_taste(qtkey, typ=QEvent.Type.KeyRelease))
+        assert not _hell(widget, beschriftung)
+
+
+def test_held_modifiers_are_visible(widget):
+    """Strg gedrückt halten sieht man — beide Steuertasten leuchten."""
+    widget.host_key_press(_taste(Qt.Key_Control, mods=Qt.ControlModifier))
+    assert _hell(widget, "CTRL") and _hell(widget, "ET2")
+    # …und Strg+C hebt zusätzlich das C hervor.
+    widget.host_key_press(_taste(Qt.Key_C, "\x03", Qt.ControlModifier))
+    assert _hell(widget, "C")
+    widget.host_key_release(_taste(Qt.Key_Control, mods=Qt.NoModifier,
+                                   typ=QEvent.Type.KeyRelease))
+    assert not _hell(widget, "CTRL")
+
+
+def test_shift_shows_both_shift_keys(widget):
+    widget.host_key_press(_taste(Qt.Key_Shift, mods=Qt.ShiftModifier))
+    hell = [k for keys in widget._host_down.values() for k in keys]
+    assert len(hell) == 2 and all(k.kind == "shift" for k in hell)
+
+
+def test_numpad_digit_highlights_the_numeric_block(widget):
+    """Dieselbe Ziffer gibt es zweimal — die Herkunft entscheidet."""
+    from PySide6.QtCore import Qt as _Qt
+    widget.host_key_press(_taste(_Qt.Key_7, "7", _Qt.KeypadModifier))
+    treffer = [k for keys in widget._host_down.values() for k in keys]
+    assert treffer and treffer[0].name == "Ziffernblock 7"
+    widget._host_down.clear()
+    widget.host_key_press(_taste(_Qt.Key_7, "7"))
+    treffer = [k for keys in widget._host_down.values() for k in keys]
+    assert treffer and treffer[0].name != "Ziffernblock 7"
+
+
+def test_host_caps_lock_shows_on_the_emulated_keyboard(widget):
+    """Der Feststeller der PC-Tastatur überträgt sich — abgelesen am Buchstaben."""
+    assert not widget.lock_active()
+    widget.host_key_press(_taste(Qt.Key_A, "A"))       # Großbuchstabe ohne Shift
+    assert widget.lock_active(), "Feststeller der echten Tastatur nicht erkannt"
+    widget.host_key_press(_taste(Qt.Key_A, "a"))       # wieder klein
+    assert not widget.lock_active()
+
+
+def test_onscreen_lock_uppercases_host_keys(widget):
+    """Rückrichtung: der Feststeller der Nachbildung wirkt auf die PC-Eingabe.
+
+    Die Feststelltaste der echten Tastatur lässt sich von einem Programm aus
+    nicht schalten; stattdessen setzt die Nachbildung den Buchstaben selbst um.
+    """
+    _click(widget, next(k for k in widget._keys if k.kind == "lock"))
+    assert widget.map_host_key(_taste(Qt.Key_A, "a")) == (ord("A"), True, False)
+    # Ohne Feststeller bleibt es beim Kleinbuchstaben.
+    _click(widget, next(k for k in widget._keys if k.kind == "lock"))
+    assert widget.map_host_key(_taste(Qt.Key_A, "a")) == (ord("a"), False, False)
+
+
+def test_onscreen_ctrl_applies_to_host_keys(widget):
+    """Angeklicktes CTRL wirkt auf die nächste Taste der echten Tastatur."""
+    _click(widget, next(k for k in widget._keys if k.kind == "ctrl"))
+    assert widget.map_host_key(_taste(Qt.Key_C, "c")) == (ord("c"), False, True)
+
+
+def test_focus_loss_clears_stuck_highlights(widget):
+    """Ohne Fokus kommt kein Loslassen mehr — sonst bliebe die Taste hell."""
+    widget.host_key_press(_taste(Qt.Key_A, "a"))
+    assert widget._host_down
+    widget.clear_host_keys()
+    assert not widget._host_down

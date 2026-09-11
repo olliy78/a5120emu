@@ -375,6 +375,9 @@ class ScreenWidget(QOpenGLWidget):
 
         self.emulator = None
         self.params = CRTParams()
+        # Bildschirmtastatur, die Host-Tasten mitanzeigen darf (s. _map_key);
+        # ohne sie geht die Eingabe unverändert direkt an den Kern.
+        self.key_sink = None
 
         # Power state: when off, the tube is dark and the framebuffer is not
         # polled (as if the machine had no power).
@@ -475,7 +478,7 @@ class ScreenWidget(QOpenGLWidget):
     def _forward_key_press(self, event) -> bool:
         if self.emulator is None or event.isAutoRepeat():
             return False
-        mapped = qt_event_to_core_key(event)
+        mapped = self._map_key(event, press=True)
         if mapped is None:
             return False
         self.emulator.key_press(*mapped)
@@ -484,11 +487,33 @@ class ScreenWidget(QOpenGLWidget):
     def _forward_key_release(self, event) -> bool:
         if self.emulator is None or event.isAutoRepeat():
             return False
-        mapped = qt_event_to_core_key(event)
+        mapped = self._map_key(event, press=False)
         if mapped is None:
             return False
         self.emulator.key_release(mapped[0])
         return True
+
+    def focusOutEvent(self, event):
+        # Ohne Fokus kommt kein Loslassen mehr an — sonst bliebe die zuletzt
+        # gedrückte Taste auf der Nachbildung für immer hell.
+        if self.key_sink is not None:
+            self.key_sink.clear_host_keys()
+        super().focusOutEvent(event)
+
+    def _map_key(self, event, press: bool):
+        """Host-Taste → Kern-Tripel, wenn möglich über die Bildschirmtastatur.
+
+        Ist eine gesetzt (:attr:`key_sink`), geht jede Host-Taste durch sie
+        hindurch: sie hebt die angesprochene Taste hervor und bringt ihren
+        Feststeller zur Geltung.  Auch Tasten, die der Kern nicht bekommt
+        (Umschalt, Strg, Feststeller), werden ihr gezeigt — nur sichtbar
+        machen lässt sich ein Modifikator sonst nicht.
+        """
+        sink = self.key_sink
+        if sink is None:
+            return qt_event_to_core_key(event)
+        return (sink.host_key_press(event) if press
+                else sink.host_key_release(event))
 
     # ── Framebuffer polling (runs outside the GL context) ────────────────────
 

@@ -397,7 +397,37 @@ zeichnet. Das **Blinken** der Fehleranzeige macht die Oberfläche (Zeitgeber,
 Betriebsanzeige hängt am Netzschalter des Fensters (`set_powered`), die
 LOCK-Anzeige am Feststeller der Bildschirmtastatur selbst.
 
-### 7.4 Größe im Dock
+### 7.4 Die echte Tastatur wird mitgezeigt
+
+Jede Host-Taste geht durch die Nachbildung: `MainWindow` setzt
+`ScreenWidget.key_sink = keyboard_widget`, und `ScreenWidget._map_key` reicht
+jedes Tastenereignis an `host_key_press`/`host_key_release` weiter — auch die
+reinen Modifikatoren, die der Kern nie sieht (sonst ließe sich ein gehaltenes
+Strg nicht darstellen). Drei Dinge passieren dort:
+
+- **Hervorheben.** `_keys_for_host_event` sucht die Taste der Nachbildung, die
+  der Kern tatsächlich anspricht — über den Code, nicht über die Beschriftung.
+  Die Tabelle `_HOST_SPECIAL` muss deshalb `K7637::translateKey` entsprechen
+  (Return → ET1 0xFF, Enter → 0xC0, Tab → 0x9F, Esc → DEL L 0xB3, …), sonst
+  leuchtet etwas anderes auf, als gesendet wird. Ziffern gibt es zweimal; den
+  Ausschlag gibt `Qt::KeypadModifier`.
+- **Feststeller lesen.** Qt meldet den Zustand der Feststelltaste nicht. Er
+  lässt sich aber an jedem Buchstaben ablesen: Großbuchstabe *ohne*
+  Umschalttaste heißt festgestellt (`_note_host_caps`, korrigiert sich bei jedem
+  weiteren Buchstaben selbst); die Feststelltaste selbst kippt ihn sofort mit.
+- **Feststeller wirken lassen.** Die Gegenrichtung — den Feststeller der echten
+  Tastatur *einschalten* — kann ein Programm nicht: kein Betriebssystem gibt
+  diesen Zustand für die ganze Maschine frei (unter Wayland gar nicht, sonst nur
+  über systemweite Eingriffe, die jedes andere Fenster mitbeträfen). Sie ist
+  auch nicht nötig: `map_host_key` setzt den Buchstaben selbst um, sobald der
+  Feststeller der Nachbildung gesetzt ist — der Gast bekommt Großbuchstaben,
+  genau das war der Zweck. Ebenso wirken angeklicktes SHIFT/CTRL auf die nächste
+  Taste der echten Tastatur.
+
+Bleibt eine Taste hängen (Fokuswechsel, während sie gedrückt ist), räumt
+`ScreenWidget.focusOutEvent` → `clear_host_keys()` auf.
+
+### 7.5 Größe im Dock
 
 Das Widget ist maßstabstreu und kennt sein Seitenverhältnis
 (`heightForWidth`); `MainWindow._shrink_keyboard` setzt die Dock-Höhe danach,
@@ -415,4 +445,5 @@ damit die Tastatur die Breite der linken Spalte genau ausfüllt.
 | Anzeigen und Ton (§2.4) | `K7637.LedCommands_ToggleTheirDisplay`, `K7637.ErrorDisplay_TogglesAndBeepsWhenSwitchedOn`, `K7637.BeepCommand_RunsForAboutOneSecond`, `K7637.ResetCommand_ClearsAllDisplays`, `K7637.EveryCommandByteIsAcknowledged` |
 | Host-Taste → Kern-Keycode | `tests/python/test_keyboard_map.py` |
 | Tastenfeld der Bildschirmtastatur (Codes, Umschaltebene, ASCII-Vollständigkeit, keine überlappenden Tasten) | `tests/python/test_keyboard_layout.py` |
+| Mitzeigen der echten Tastatur (§7.4): Hervorhebung, Sondertasten, gehaltene Modifikatoren, Ziffernblock, Feststeller in beide Richtungen | `tests/python/test_keyboard_layout.py` (`test_host_*`, `test_onscreen_lock_uppercases_host_keys`) |
 | Tastatur am laufenden System | `tests/python/test_boot_smoke.py::test_keyboard_input_reaches_the_machine` |

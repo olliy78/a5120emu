@@ -202,6 +202,9 @@ class MainWindow(QMainWindow):
         self.keyboard_widget = KeyboardWidget()
         self.keyboard_widget.keyPressed.connect(self._on_kbd_press)
         self.keyboard_widget.keyReleased.connect(self._on_kbd_release)
+        # Die echte Tastatur geht durch die Nachbildung: sie zeigt mit, welche
+        # Taste angesprochen wird, und bringt ihren Feststeller zur Geltung.
+        self.screen_widget.key_sink = self.keyboard_widget
 
         self.keyboard_dock = QDockWidget("Tastatur", self)
         self.keyboard_dock.setObjectName("keyboard_dock")
