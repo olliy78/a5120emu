@@ -283,6 +283,40 @@ _lib.k1520_serial_set_rx_cb.restype = None
 # Textbildschirm des K7024: 80x24 Zeichen ab 0xF800 (Bit7 = Invers-Attribut).
 VRAM_BASE, VRAM_COLS, VRAM_ROWS = 0xF800, 80, 24
 
+# ── Tastendiagnose: was schickt die Oberfläche wirklich an die Maschine? ─────
+# Mit `K1520_TASTEN_LOG=1` schreibt JEDER Tastendruck eine Zeile nach stderr —
+# gleichgültig, ob er von der PC-Tastatur, der Bildschirmtastatur oder einem
+# Skript kommt (alle drei Wege laufen durch `key_press`).  Sie beantwortet die
+# drei Fragen, die man bei „die Taste tut etwas anderes als erwartet" hat:
+# WELCHER Code geht hinein, welches BYTE macht der K7637 daraus (das ist, was
+# das Betriebssystem sieht), und kommt der Druck EINMAL oder wiederholt an
+# (fehlendes Loslassen ⇒ die Tastenwiederholung des K7637 läuft weiter).
+_TASTEN_LOG = os.environ.get("K1520_TASTEN_LOG", "") not in ("", "0")
+
+
+def _taste_klartext(keycode: int) -> str:
+    """Lesbarer Name des Keycodes — Rohcode, ASCII oder Qt-Sondertaste."""
+    if (keycode & ~0xFF) == 0x02000000:
+        return f"Rohcode 0x{keycode & 0xFF:02X} (Taste der Nachbildung)"
+    if 0x20 <= keycode <= 0x7E:
+        return f"ASCII '{chr(keycode)}'"
+    if keycode & 0x01000000:
+        return f"Qt-Sondertaste 0x{keycode:08X}"
+    return f"0x{keycode:02X}"
+
+
+def _protokolliere_taste(was: str, keycode: int, shift: bool = False,
+                         ctrl: bool = False):
+    try:
+        byte = K1520Emulator.translate_key(keycode, shift, ctrl)
+    except Exception:                      # ältere Bibliothek ohne die Funktion
+        byte = None
+    ziel = "" if byte is None else f"  → K7637 sendet 0x{byte:02X}"
+    print(f"[taste] {was:11s} {_taste_klartext(keycode)}"
+          f"  shift={int(shift)} ctrl={int(ctrl)}{ziel}",
+          file=sys.stderr, flush=True)
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # K1520 Emulator Python Class
 # ════════════════════════════════════════════════════════════════════════════
@@ -432,6 +466,8 @@ class K1520Emulator:
             shift: Shift key state
             ctrl: Control key state
         """
+        if _TASTEN_LOG:
+            _protokolliere_taste("gedrueckt", keycode, shift, ctrl)
         _lib.k1520_key_press(self._handle, ctypes.c_uint32(keycode), ctypes.c_bool(shift), ctypes.c_bool(ctrl))
     
     def key_release(self, keycode: int):
@@ -441,6 +477,8 @@ class K1520Emulator:
         Args:
             keycode: Z80 keyboard scan code
         """
+        if _TASTEN_LOG:
+            _protokolliere_taste("losgelassen", keycode)
         _lib.k1520_key_release(self._handle, ctypes.c_uint32(keycode))
     
     @staticmethod

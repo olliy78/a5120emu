@@ -513,6 +513,33 @@ Das Widget ist maßstabstreu und kennt sein Seitenverhältnis
 (`heightForWidth`); `MainWindow._shrink_keyboard` setzt die Dock-Höhe danach,
 damit die Tastatur die Breite der linken Spalte genau ausfüllt.
 
+### 7.7 Was kommt wirklich an? (`K1520_TASTEN_LOG=1`)
+
+„Die Taste tut etwas anderes als erwartet" hat drei mögliche Ursachen, und von
+außen sehen alle drei gleich aus: die Oberfläche bildet falsch ab, der K7637
+macht ein anderes Byte daraus, oder das *Betriebssystem* deutet das Byte anders
+als gedacht. Mit
+
+```sh
+K1520_TASTEN_LOG=1 bash run_gui.sh
+```
+
+schreibt jeder Tastendruck eine Zeile nach stderr — von der PC-Tastatur, von der
+Bildschirmtastatur und aus einem Skript gleichermaßen, denn alle drei Wege gehen
+durch `K1520Emulator.key_press` (`app/core_binding/k1520.py`):
+
+```
+[taste] gedrueckt   Rohcode 0xBB (Taste der Nachbildung)  shift=0 ctrl=0  → K7637 sendet 0xBB
+[taste] losgelassen Rohcode 0xBB (Taste der Nachbildung)  shift=0 ctrl=0  → K7637 sendet 0xBB
+```
+
+Damit ist die Frage in einem Anschlag entschieden: steht dort ein anderer Code
+als erwartet, liegt es an der Abbildung; steht der richtige, liegt es am Gast;
+und kommen viele Zeilen ohne „losgelassen", läuft die **Tastenwiederholung** des
+K7637 weiter (ein verlorenes Loslassen löscht dann eine ganze Zeile, obwohl nur
+einmal getippt wurde). Das übersetzte Byte kommt aus `k1520_translate_key` —
+derselben Funktion, die der Kern beim Tastendruck benutzt.
+
 ---
 
 ## 8. Wächter
