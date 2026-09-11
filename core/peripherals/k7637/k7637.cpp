@@ -237,9 +237,15 @@ uint8_t K7637::translateKey(int qt_keycode, bool shift, bool ctrl) const {
     switch (qt_keycode) {
         case QK_RETURN:    return 0xFF;   // ET1 (main Return)   → cp37: 0xFF→0x0D (CR)
         case QK_ENTER:     return 0xC0;   // numeric ENTER       → cp37: 0xC0→pf0c
-        case QK_BACKSPACE: return 0x08;   // BS — ASCII control, passes through
+        // Rückschritt und ESC liegen auf den Tasten, die im Gast auch das tun:
+        // DEL CH löscht ein Zeichen rückwärts, die ESC-Taste schickt 0x1B
+        // (ASCII, wird durchgereicht — in cp37 steht sie nicht).  Am laufenden
+        // CP/A nachgemessen; 0xB3 (DEL L) wäre nach cp37 ebenfalls ESC, aber
+        // dann leuchtet auf der Bildschirmtastatur die falsche Taste auf, und
+        // andere Betriebssysteme kodieren 0xB3 anders.
+        case QK_BACKSPACE: return 0xBB;   // DEL CH              → cp37: 0xBB→spcdel
         case QK_TAB:       return 0x9F;   // |<-| key            → cp37: 0x9F→0x09 (TAB)
-        case QK_ESCAPE:    return 0xB3;   // DELL key (Ersatz ESC) → cp37: 0xB3→0x1B (ESC)
+        case QK_ESCAPE:    return 0x1B;   // ESC-Taste (ASCII)
         case QK_DELETE:    return 0xBB;   // DELCH key           → cp37: 0xBB→spcdel
         case QK_UP:        return 0x94;   // cursor up           → cp37: 0x94→kcurup
         case QK_DOWN:      return 0x95;   // cursor down         → cp37: 0x95→kcurdw

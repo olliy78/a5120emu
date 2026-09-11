@@ -15,8 +15,8 @@
  *  - Printable ASCII characters are forwarded unchanged.
  *  - Ctrl+key is mapped to the control code (e.g. Ctrl+A → 0x01).
  *  - Main Return = ET1 → 0xFF (BIOS → CR); numeric ENTER → 0xC0 (distinct key).
- *  - Cursor Up/Down/Left/Right → 0x94/0x95/0x96/0x97; Escape(DELL) → 0xB3;
- *    Tab → 0x9F; Delete(DELCH) → 0xBB.
+ *  - Cursor Up/Down/Left/Right → 0x94/0x95/0x96/0x97; Escape → 0x1B (ESC-Taste);
+ *    Tab → 0x9F (|<-|); Backspace und Delete → 0xBB (DEL CH).
  *  - Function keys F1–F8 → 0xC1–0xC8.
  *
  * Serial timing: keyboard→host bytes (key codes AND type-code acks) are not
@@ -207,8 +207,9 @@ TEST(K7637, KeyPress_Enter_Sends_PF0) {
 
 /**
  * @test K7637/KeyPress_Backspace_Sends_BS
- * @brief Pressing Backspace (QK_BACKSPACE) injects 0x08 (BS control code).
- * @par Pass criterion  drainRx returns one byte == 0x08.
+ * @brief Backspace liegt auf DEL CH (0xBB) — der Taste, die im Gast ein Zeichen
+ *        rückwärts löscht (am laufenden CP/A nachgemessen).
+ * @par Pass criterion  drainRx returns one byte == 0xBB.
  */
 TEST(K7637, KeyPress_Backspace_Sends_BS) {
     Z80SIO sio;
@@ -220,7 +221,7 @@ TEST(K7637, KeyPress_Backspace_Sends_BS) {
 
     auto bytes = drainRx(kb, sio);
     ASSERT_EQ(bytes.size(), 1u);
-    EXPECT_EQ(bytes[0], 0x08);
+    EXPECT_EQ(bytes[0], 0xBB);
 }
 
 /**
@@ -256,7 +257,7 @@ TEST(K7637, KeyPress_Escape_Sends_ESC) {
 
     auto bytes = drainRx(kb, sio);
     ASSERT_EQ(bytes.size(), 1u);
-    EXPECT_EQ(bytes[0], 0xB3);
+    EXPECT_EQ(bytes[0], 0x1B);
 }
 
 /**

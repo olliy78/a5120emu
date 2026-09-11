@@ -133,7 +133,8 @@ _HOST_SPECIAL = {
     int(Qt.Key_Return):    0xFF,   # ET1
     int(Qt.Key_Enter):     0xC0,   # ENTER des Ziffernblocks
     int(Qt.Key_Tab):       0x9F,   # |←|
-    int(Qt.Key_Escape):    0xB3,   # DEL L (im CP/A der Ersatz für ESC)
+    int(Qt.Key_Escape):    0x1B,   # ESC-Taste
+    int(Qt.Key_Backspace): 0xBB,   # DEL CH — löscht ein Zeichen rückwärts
     int(Qt.Key_Delete):    0xBB,   # DEL CH
     int(Qt.Key_Up):        0x94,
     int(Qt.Key_Down):      0x95,
@@ -287,7 +288,7 @@ def _build_layout() -> List[_Key]:
                   kind="dead", name="PRINT — Tastencode unbekannt"))
     k.append(_Key(x=16.0, y=1.0, low="HLT", style="light", shape="rect",
                   kind="dead", name="HLT — Tastencode unbekannt"))
-    k.append(_Key(x=17.0, y=1.0, low="ESC", code=0x1B, style="light",
+    k.append(_Key(x=17.0, y=1.0, low="ESC", code=raw(0x1B), style="light",
                   shape="rect", name="ESC (0x1B)"))
     k.append(_Key(x=18.0, y=1.0, w=0.5, style="filler", shape="rect",
                   kind="dead", name="Blindmodul"))
@@ -977,6 +978,12 @@ class KeyboardWidget(QWidget):
         return " · ".join(parts)
 
     # ── Host-Tasten auch verarbeiten, wenn die Tastatur den Fokus hat --------
+
+    def focusNextPrevChild(self, weiter: bool) -> bool:
+        # Die Tabulatortaste gehoert dem emulierten Rechner, nicht dem
+        # Fokuswechsel: Qt fragt hier VOR keyPressEvent und verschluckt die
+        # Taste sonst — im Gast käme nie ein Tabulator an.
+        return False
 
     def focusOutEvent(self, event):
         self.clear_host_keys()

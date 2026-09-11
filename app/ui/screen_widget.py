@@ -493,6 +493,12 @@ class ScreenWidget(QOpenGLWidget):
         self.emulator.key_release(mapped[0])
         return True
 
+    def focusNextPrevChild(self, weiter: bool) -> bool:
+        # Tab gehoert dem emulierten Rechner. Qt fragt diese Methode VOR
+        # keyPressEvent und wechselt sonst den Fokus, statt die Taste
+        # weiterzureichen — der Gast saehe nie einen Tabulator.
+        return False
+
     def focusOutEvent(self, event):
         # Ohne Fokus kommt kein Loslassen mehr an — sonst bliebe die zuletzt
         # gedrückte Taste auf der Nachbildung für immer hell.

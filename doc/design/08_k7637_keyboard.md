@@ -238,10 +238,10 @@ vor-übersetzten ASCII-Wert, sonst fallen physisch verschiedene Tasten zusammen.
 |----------|-----------------------|------------------|
 | **Return (Haupttaste = ET1)** | **0xFF** | 0x0D (CR) |
 | **Enter (Ziffernblock)** | **0xC0** | pf0c (≠ CR!) |
-| Escape (DELL) | 0xB3 | 0x1B (ESC) |
+| Escape | 0x1B | — (ASCII, durchgereicht) |
 | Tab (\|<-\|) | 0x9F | 0x09 (TAB) |
 | Delete (DELCH) | 0xBB | spcdel |
-| Backspace | 0x08 | — (ASCII, durchgereicht) |
+| Backspace | **0xBB** (DEL CH) | spcdel |
 | Cursor ↑ / ↓ / ← / → | 0x94 / 0x95 / 0x96 / 0x97 | kcurup/kcurdw/kcurlf/kcurri |
 | F1 … F8 | 0xC1 … 0xC8 | pf1c … pf8c |
 | Ctrl+\<Taste\> | \<Taste\> & 0x1F | — (Steuercode <0x20, durchgereicht) |
@@ -250,6 +250,20 @@ vor-übersetzten ASCII-Wert, sonst fallen physisch verschiedene Tasten zusammen.
 > Ziffernblock-Enter-Taste (physisch **0xC0**) sind auf der echten K7637 zwei
 > verschiedene Tasten: ET1 wird zu CR recodiert, Enter zur Funktion pf0c.
 >
+> **Esc und Rückschritt liegen auf den Tasten, die im Gast auch das tun** —
+> am laufenden CP/A nachgemessen (0xBB löscht ein Zeichen rückwärts, die
+> ESC-Taste schickt 0x1B). Früher ging Escape auf 0xB3 (DEL L), was cp37
+> ebenfalls zu ESC macht; auf der Bildschirmtastatur leuchtete dann aber die
+> falsche Taste auf, und ein anderes Betriebssystem kodiert 0xB3 anders.
+> **Ein Code unter 0x20 muss als Rohcode kommen**: `translateKey` reicht nur
+> 0x20…0x7E durch, alles darunter fällt sonst still unter den Tisch (daran war
+> die ESC-Taste der Nachbildung wirkungslos). Wächter:
+> `test_every_code_survives_the_core_translation`.
+>
+> **Tab gehört dem Gast, nicht dem Fokuswechsel**: Qt fragt
+> `focusNextPrevChild()` VOR `keyPressEvent` und verschluckt die Taste sonst —
+> Bildschirm und Bildschirmtastatur antworten dort mit `False`.
+
 > **CTRL** ist real die ET2-Taste (physisch **0xFE** beim *Loslassen*, setzt ein
 > Einmal-Flag für die nächste Taste). Das Modell nimmt die Abkürzung `Code & 0x1F`.
 

@@ -493,3 +493,39 @@ def test_error_lamp_sits_above_the_reset_key(widget):
     fehler = next(cx for cx, _, _, name in widget._led_spots(unit, ox, oy)
                   if name.startswith("Fehleranzeige"))
     assert abs(fehler - mitte) < 0.5
+
+
+def test_every_code_survives_the_core_translation(keys):
+    """Jeder Tastencode muss den Kern auch erreichen.
+
+    `K7637::translateKey` reicht nur druckbares ASCII (0x20…0x7E) durch; alles
+    darunter fällt unter den Tisch, wenn es nicht als **Rohcode** kommt.  Genau
+    daran war die ESC-Taste still wirkungslos: sie trug 0x1B als blanken
+    Tastencode und sendete deshalb gar nichts.
+    """
+    for k in keys:
+        for code in (k.code, k.shift_code):
+            if code is None:
+                continue
+            roh = (code & ~0xFF) == kbd.RAW_BASE
+            assert roh or 0x20 <= code <= 0x7E, (
+                f"{k.name}: 0x{code:X} ist weder Rohcode noch druckbares ASCII")
+
+
+@pytest.mark.parametrize("qtkey, taste", [
+    (Qt.Key_Escape, "ESC"),
+    (Qt.Key_Backspace, "DEL CH"),
+    (Qt.Key_Tab, "|←|"),
+])
+def test_host_keys_hit_the_key_that_does_the_job(widget, qtkey, taste):
+    """Esc, Rückschritt und Tabulator treffen die Taste, die im Gast wirkt.
+
+    Am laufenden CP/A nachgemessen: **DEL CH** löscht ein Zeichen rückwärts
+    (0x08 als blanker Code täte gar nichts), die **ESC-Taste** schickt 0x1B —
+    vorher lag Esc auf DEL L, was im CP/A zwar auch ESC ergibt, auf der
+    Nachbildung aber die falsche Taste aufleuchten ließ.
+    """
+    widget.host_key_press(_taste(qtkey))
+    hell = [k for keys in widget._host_down.values() for k in keys]
+    assert hell and (hell[0].low == taste or hell[0].name.startswith(taste)), (
+        f"{taste} leuchtet nicht: {[k.low for k in hell]}")
