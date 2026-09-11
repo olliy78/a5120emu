@@ -390,7 +390,18 @@ ASCII-Zeichen muss auf genau einer Taste erreichbar sein.
 ### 7.3 Aufbau: die Tastatur ist modular
 
 Das Tastenfeld besteht aus Modulen im Rastermaß, und nicht jedes trägt eine
-Taste. Die Nachbildung führt sie als Blindelemente mit:
+Taste. **Der Versatz der Reihen gegeneinander entsteht durch diese Module, nicht
+durch breitere Tasten** — genau daran war die erste Fassung falsch: CTRL und
+`→|` sind je *eine* Taste breit, und vor `→|` sitzt ein halbes Blindmodul. So
+steht die `1` der Ziffernreihe genau unter der `1` der Funktionsreihe und PF 4
+über der `9`, und zwischen PF 12 und RESET klafft keine Lücke. Die Buchstaben
+laufen wie auf jeder Schreibmaschine schräg nach rechts unten (1 → Q → A → Z);
+rechts fangen die etwas breitere **CE**-Taste und die breiten
+**Umschalttasten** den Versatz auf, damit der Ziffernblock rechteckig bleibt.
+Die linke Umschalttaste ist aus Symmetriegründen ebenso breit wie die rechte und
+ragt dadurch links aus dem Raster heraus.
+
+Die Nachbildung führt die Blindelemente mit:
 
 - **halbbreite Module mit Anzeige**: links neben dem Umschaltfeststeller (C99)
   und am rechten Ende der Ziffernreihe (E54, dort wo die Einbauvariante ihre

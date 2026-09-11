@@ -395,7 +395,7 @@ def test_leds_in_the_keyfield_sit_in_half_width_modules(keys):
 
 def test_blind_modules_flank_the_space_bar(keys):
     """Links und rechts der Leertaste und neben ET1 sitzt je ein Blindmodul."""
-    blind = sorted(k.x for k in keys if k.name == "Blindmodul")
+    blind = sorted(k.x for k in keys if k.name == "Blindmodul" and k.y == 5.0)
     assert len(blind) == 3
     space = next(k for k in keys if k.name == "Leertaste")
     et1 = next(k for k in keys if k.low == "ET1")
@@ -407,3 +407,48 @@ def test_enter_is_labelled_letter_by_letter(by_name):
     enter = by_name["ENTER (Ziffernblock, ≠ ET1)"]
     assert enter.vertical and enter.low == "ENTER"
     assert enter.h > 2.5, "der ENTER-Balken geht über drei Reihen"
+
+
+def test_digit_row_is_flush_with_the_function_row(keys):
+    """CTRL ist EINE Taste breit — dadurch steht 1 über 1 und PF 4 über 9.
+
+    Mit einer breiteren CTRL-Taste verrutscht die ganze Ziffernreihe um eine
+    halbe Tastenbreite, und die Spalten stimmen nirgends mehr.
+    """
+    ctrl = next(k for k in keys if k.low == "CTRL")
+    assert ctrl.w < 1.0, "CTRL hat normale Tastenbreite"
+
+    def mitte(k):
+        return k.x + k.w / 2
+
+    fn = {k.low: k for k in keys if k.y == 0.0}
+    ziffern = {k.low: k for k in keys if k.y == 1.0 and k.low in ("1", "2", "9")}
+    assert abs(mitte(ziffern["1"]) - mitte(fn["1"])) < 0.1
+    assert abs(mitte(ziffern["2"]) - mitte(fn["2"])) < 0.1
+    assert abs(mitte(ziffern["9"]) - mitte(fn["PF 4"])) < 0.1, "PF 4 steht über 9"
+    # …und zwischen PF 12 und RESET klafft keine Lücke mehr.
+    assert abs(fn["RESET"].x - (fn["PF 12"].x + 1.0)) < 0.05
+
+
+def test_letter_rows_step_down_to_the_right(by_name):
+    """1, Q, A, Z sind wie auf jeder Schreibmaschine schräg nach rechts versetzt."""
+    def mitte(k):
+        return k.x + k.w / 2
+
+    eins = mitte(by_name["1 / !"])
+    for oben, unten in (("1 / !", "Q"), ("Q", "A"), ("A", "Z")):
+        assert mitte(by_name[unten]) > mitte(by_name[oben]) + 0.05, (
+            f"{unten} muss rechts von {oben} stehen")
+    assert mitte(by_name["Z"]) - eins < 1.5, "der Versatz bleibt unter einer Taste"
+
+
+def test_the_block_stays_rectangular_on_the_right(keys):
+    """Ziffernblock rechteckig: CE und die rechte Umschalttaste fangen den Versatz auf."""
+    ce = next(k for k in keys if k.low == "CE")
+    shifts = [k for k in keys if k.kind == "shift"]
+    assert ce.w > 1.0, "CE ist breiter als eine Taste"
+    assert all(k.w > 1.0 for k in shifts), "beide Umschalttasten sind breit"
+    # Alle vier Spalten des Ziffernblocks beginnen bündig übereinander.
+    spalten = {round(k.x, 2) for k in keys
+               if k.name.startswith("Ziffernblock") and k.style == "dark"}
+    assert len(spalten) == 4, f"Ziffernblock nicht rechteckig: {sorted(spalten)}"
