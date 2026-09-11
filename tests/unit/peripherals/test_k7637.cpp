@@ -16,8 +16,9 @@
  *  - Ctrl+key is mapped to the control code (e.g. Ctrl+A → 0x01).
  *  - Main Return = ET1 → 0xFF (BIOS → CR); numeric ENTER → 0xC0 (distinct key).
  *  - Cursor Up/Down/Left/Right → 0x94/0x95/0x96/0x97; Escape → 0x1B (ESC-Taste);
- *    Tab → 0x9F (|<-|); Backspace und Delete → 0xBB (DEL CH).
- *  - Function keys F1–F8 → 0xC1–0xC8.
+ *    Backspace → 0x9F (Rücktaste |<-|); Tab → 0x91 (->|) und Umschalt+Tab →
+ *    0x9B (|<-); Delete → 0xBB (DEL CH).
+ *  - Funktionstasten F1–F12 → 0xC1–0xCC (PF 1 … PF 12).
  *
  * Serial timing: keyboard→host bytes (key codes AND type-code acks) are not
  * delivered to the SIO RX instantly — they are released by service() after one
@@ -41,7 +42,7 @@
  * |---------------------------|---------------------------------------------------------|
  * | Basic key press           | ASCII printable, Shift, Ctrl; ET1/Return 0xFF ≠ ENTER 0xC0 |
  * | Cursor keys               | Up/Down/Left/Right → 0x94/0x95/0x96/0x97               |
- * | Function keys             | F1 → 0xC1; F8 → 0xC8                                   |
+ * | Funktionstasten           | F1 → 0xC1; F8 → 0xC8; F12 → 0xCC                       |
  * | Serial timing             | Byte delivered only after one 9600-baud byte-time; FIFO order |
  * | Key repeat                | Initial delay, repeat period, key release stops repeat  |
  * | Rohcodes                  | `QK_RAW_BASE | code` unverändert, auch mit Ctrl          |
@@ -61,6 +62,7 @@
 // Qt keycode constants (must match k7637.h / k7637.cpp)
 static constexpr int QK_ESCAPE    = 0x01000000;
 static constexpr int QK_TAB       = 0x01000001;
+static constexpr int QK_BACKTAB   = 0x01000002;
 static constexpr int QK_BACKSPACE = 0x01000003;
 static constexpr int QK_RETURN    = 0x01000004;
 static constexpr int QK_ENTER     = 0x01000005;
@@ -207,9 +209,11 @@ TEST(K7637, KeyPress_Enter_Sends_PF0) {
 
 /**
  * @test K7637/KeyPress_Backspace_Sends_BS
- * @brief Backspace liegt auf DEL CH (0xBB) — der Taste, die im Gast ein Zeichen
- *        rückwärts löscht (am laufenden CP/A nachgemessen).
- * @par Pass criterion  drainRx returns one byte == 0xBB.
+ * @brief Die Rücktaste des PC spricht die RÜCKTASTE der K7637 an: `|<-|`
+ *        (Reihe 2, Position 14, physisch 0x9F) — nicht DEL CH.  Welche Taste
+ *        ein Zeichen löscht, ist Sache des Gastes und je OS verschieden
+ *        (SCPX: `|<-|`, CP/A und UDOS: DEL CH = die Entf-Taste des PC).
+ * @par Pass criterion  drainRx returns one byte == 0x9F.
  */
 TEST(K7637, KeyPress_Backspace_Sends_BS) {
     Z80SIO sio;
@@ -221,7 +225,7 @@ TEST(K7637, KeyPress_Backspace_Sends_BS) {
 
     auto bytes = drainRx(kb, sio);
     ASSERT_EQ(bytes.size(), 1u);
-    EXPECT_EQ(bytes[0], 0xBB);
+    EXPECT_EQ(bytes[0], 0x9F);
 }
 
 /**
@@ -261,11 +265,15 @@ TEST(K7637, KeyPress_Escape_Sends_ESC) {
 }
 
 /**
- * @test K7637/KeyPress_Tab_Sends_0x9F
- * @brief Pressing Tab (QK_TAB) injects 0x09 (HT character).
- * @par Pass criterion  drainRx returns one byte == 0x09.
+ * @test K7637/KeyPress_Tab_Sends_0x91
+ * @brief Die Tabulatortaste des PC spricht die Taste an IHRER Stelle an: `->|`
+ *        (Reihe 3, Position 1, physisch 0x91), Umschalt+Tab deren Gegenstück
+ *        `|<-` (0x9B).  Dass CP/A seinen Tabulator auf die RÜCKTASTE legt
+ *        (cp37: „|<-| als Ersatz Tab"), ist BIOS-Sache — ein echter 0x09 kommt
+ *        über Strg+I.
+ * @par Pass criterion  drainRx returns one byte == 0x91 bzw. 0x9B.
  */
-TEST(K7637, KeyPress_Tab_Sends_0x9F) {
+TEST(K7637, KeyPress_Tab_Sends_0x91) {
     Z80SIO sio;
     sio.setIEI(true);
     K7637 kb;
@@ -275,7 +283,20 @@ TEST(K7637, KeyPress_Tab_Sends_0x9F) {
 
     auto bytes = drainRx(kb, sio);
     ASSERT_EQ(bytes.size(), 1u);
-    EXPECT_EQ(bytes[0], 0x9F);
+    EXPECT_EQ(bytes[0], 0x91);
+}
+
+TEST(K7637, KeyPress_BackTab_Sends_0x9B) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    K7637 kb;
+    kb.connect(sio, 0);
+
+    kb.keyPress(QK_BACKTAB, true, false);
+
+    auto bytes = drainRx(kb, sio);
+    ASSERT_EQ(bytes.size(), 1u);
+    EXPECT_EQ(bytes[0], 0x9B);
 }
 
 // ─── Cursor keys ─────────────────────────────────────────────────────────────
@@ -388,6 +409,26 @@ TEST(K7637, FunctionKey_F8_Sends_0xC8) {
     auto bytes = drainRx(kb, sio);
     ASSERT_EQ(bytes.size(), 1u);
     EXPECT_EQ(bytes[0], 0xC8);
+}
+
+/**
+ * @test K7637/FunctionKey_F12_Sends_0xCC
+ * @brief Die K7637 hat ZWÖLF Funktionstasten — F9…F12 gehören ebenso dazu
+ *        (PF 9 … PF 12 = 0xC9 … 0xCC).  Nur F11 fängt die Oberfläche für das
+ *        Vollbild ab; der Kern kennt kein Vollbild und bildet sie mit ab.
+ * @par Pass criterion  F9 → 0xC9, F12 → 0xCC.
+ */
+TEST(K7637, FunctionKey_F12_Sends_0xCC) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    K7637 kb;
+    kb.connect(sio, 0);
+
+    kb.keyPress(QK_F1 + 8, false, false);   // F9
+    EXPECT_EQ(drainRx(kb, sio).at(0), 0xC9);
+
+    kb.keyPress(QK_F1 + 11, false, false);  // F12
+    EXPECT_EQ(drainRx(kb, sio).at(0), 0xCC);
 }
 
 // ─── Rohcodes (Bildschirmtastatur) ──────────────────────────────────────────

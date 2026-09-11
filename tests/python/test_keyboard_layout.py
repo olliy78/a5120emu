@@ -55,13 +55,13 @@ def test_raw_base_matches_the_core():
     ("M / MON (BIOS: PF 14)",             0xB0),
     ("RESET (BIOS: PF 15)",               0xAF),
     ("Ziffernblock 00",                   0xB1),
-    ("Tabulator (BIOS: TAB)",             0x9F),
+    ("Rücktaste (BIOS CP/A: als Ersatz-Tabulator)", 0x9F),
     ("Kursor aufwärts",                   0x94),
     ("Kursor abwärts",                    0x95),
     ("Kursor links",                      0x96),
     ("Kursor rechts",                     0x97),
-    ("Kursor Wort zurück",                0x9B),
-    ("Kursor Wort vorwärts",              0x91),
+    ("Tabulator zurück |← (BIOS: Kursor Wort zurück)",   0x9B),
+    ("Tabulator →| (BIOS: Kursor Wort vorwärts)",        0x91),
     ("Kursor Seite zurück",               0x9C),
     ("Kursor Seite vorwärts",             0x9A),
     ("INS MD / INS L",                    0xA8),
@@ -295,7 +295,7 @@ def test_host_key_highlights_the_matching_key(widget):
 def test_host_special_keys_find_their_physical_key(widget):
     """Sondertasten leuchten dort auf, wohin der Kern sie übersetzt."""
     for qtkey, beschriftung in ((Qt.Key_Return, "ET1"), (Qt.Key_Enter, "ENTER"),
-                                (Qt.Key_Up, "↑"), (Qt.Key_Tab, "|←|"),
+                                (Qt.Key_Up, "↑"), (Qt.Key_Tab, "→|"),
                                 (Qt.Key_F1, "PF 1")):
         widget.host_key_press(_taste(qtkey))
         assert _hell(widget, beschriftung), f"{beschriftung} leuchtet nicht"
@@ -514,14 +514,18 @@ def test_every_code_survives_the_core_translation(keys):
 
 @pytest.mark.parametrize("qtkey, taste", [
     (Qt.Key_Escape, "ESC"),
-    (Qt.Key_Backspace, "DEL CH"),
-    (Qt.Key_Tab, "|←|"),
+    (Qt.Key_Backspace, "|←|"),
+    (Qt.Key_Delete, "DEL CH"),
+    (Qt.Key_Tab, "→|"),
+    (Qt.Key_Backtab, "|←"),
 ])
 def test_host_keys_hit_the_key_that_does_the_job(widget, qtkey, taste):
-    """Esc, Rückschritt und Tabulator treffen die Taste, die im Gast wirkt.
+    """Jede Host-Sondertaste hebt die Taste hervor, die sie wirklich anspricht.
 
-    Am laufenden CP/A nachgemessen: **DEL CH** löscht ein Zeichen rückwärts
-    (0x08 als blanker Code täte gar nichts), die **ESC-Taste** schickt 0x1B —
+    Die **Rücktaste** des PC ist die Rücktaste der K7637 (`|←|`, Reihe 2
+    Position 14) — dieselbe Taste, die CP/A als Ersatz-Tabulator benutzt; die
+    **Entf**-Taste ist DEL CH.  Welche von beiden im Gast ein Zeichen löscht,
+    ist OS-Sache (§5.1a des Feinentwurfs).  Die **ESC-Taste** schickt 0x1B —
     vorher lag Esc auf DEL L, was im CP/A zwar auch ESC ergibt, auf der
     Nachbildung aber die falsche Taste aufleuchten ließ.
     """
@@ -539,20 +543,22 @@ def _klickcode(widget, key):
 
 
 @pytest.mark.parametrize("zustand", ["nichts", "pc-feststeller", "lock"])
-def test_backspace_stays_delete_character(widget, zustand):
-    """Die Rücktaste des PC bleibt DEL CH — in JEDEM Feststeller-Zustand.
+def test_loeschtasten_bleiben_auf_der_grundebene(widget, zustand):
+    """Rücktaste und Entf bleiben in JEDEM Feststeller-Zustand, was sie sind.
 
-    Ein eingerasteter Feststeller darf aus ihr nicht DEL L („Zeile löschen")
-    machen: wer die Feststelltaste seines Rechners an hat, drückt trotzdem eine
-    Rücktaste.  Umgeschaltet wird nur, wer die Umschalttaste der ECHTEN
-    Tastatur hält (s. test_shift_reaches_the_upper_legend_of_special_keys).
+    Ein eingerasteter Feststeller darf aus der Entf-Taste nicht DEL L („Zeile
+    löschen") machen: wer die Feststelltaste seines Rechners an hat, drückt
+    trotzdem Entf und keine Zeilenlöschung.  Umgeschaltet wird nur, wer die
+    Umschalttaste der ECHTEN Tastatur hält
+    (s. test_shift_reaches_the_upper_legend_of_special_keys).
     """
     if zustand == "pc-feststeller":
         widget._host_caps = True
     elif zustand == "lock":
         widget._lock = True
 
-    assert widget.map_host_key(_taste(Qt.Key_Backspace, "\b"))[0] == kbd.raw(0xBB)
+    assert widget.map_host_key(_taste(Qt.Key_Backspace, "\b"))[0] == kbd.raw(0x9F)
+    assert widget.map_host_key(_taste(Qt.Key_Delete))[0] == kbd.raw(0xBB)
 
 
 def test_host_caps_does_not_switch_special_keys(widget):
@@ -563,8 +569,34 @@ def test_host_caps_does_not_switch_special_keys(widget):
     ist seine Aufgabe.)
     """
     widget._host_caps = True
-    assert widget.map_host_key(_taste(Qt.Key_Backspace, "\b"))[0] == kbd.raw(0xBB)
+    assert widget.map_host_key(_taste(Qt.Key_Backspace, "\b"))[0] == kbd.raw(0x9F)
+    assert widget.map_host_key(_taste(Qt.Key_Delete))[0] == kbd.raw(0xBB)
     assert widget.map_host_key(_taste(Qt.Key_A, "A"))[0] == ord("A")
+
+
+@pytest.mark.parametrize("qtkey, code, taste", [
+    (Qt.Key_F9,  0xC9, "PF 9"),
+    (Qt.Key_F10, 0xCA, "PF 10"),
+    (Qt.Key_F12, 0xCC, "PF 12"),
+])
+def test_alle_zwoelf_funktionstasten_kommen_an(widget, qtkey, code, taste):
+    """Die K7637 hat ZWÖLF PF-Tasten — F9…F12 gehören dazu.
+
+    Ausgenommen ist allein **F11**: die fängt das Fenster für das Vollbild ab,
+    PF 11 bleibt über die Bildschirmtastatur erreichbar (darum steht sie hier
+    nicht in der Liste).
+    """
+    widget.host_key_press(_taste(qtkey))
+    assert widget.map_host_key(_taste(qtkey))[0] == kbd.raw(code)
+    hell = [k for keys in widget._host_down.values() for k in keys]
+    assert hell and hell[0].name.startswith(taste), (
+        f"{taste} leuchtet nicht: {[k.name for k in hell]}")
+
+
+def test_umschalt_f10_ist_ereof(widget):
+    """Auch die neuen Funktionstasten haben ihre obere Beschriftung."""
+    assert widget.map_host_key(
+        _taste(Qt.Key_F10, mods=Qt.ShiftModifier))[0] == kbd.raw(0x98)
 
 
 def test_shift_reaches_the_upper_legend_of_special_keys(widget):

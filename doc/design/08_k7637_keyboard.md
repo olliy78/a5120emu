@@ -239,22 +239,23 @@ vor-übersetzten ASCII-Wert, sonst fallen physisch verschiedene Tasten zusammen.
 | **Return (Haupttaste = ET1)** | **0xFF** | 0x0D (CR) |
 | **Enter (Ziffernblock)** | **0xC0** | pf0c (≠ CR!) |
 | Escape | 0x1B | — (ASCII, durchgereicht) |
-| Tab (\|<-\|) | 0x9F | 0x09 (TAB) |
-| Delete (DELCH) | 0xBB | spcdel |
-| Backspace | **0xBB** (DEL CH) | spcdel |
+| Tab | **0x91** (`->\|`, Reihe 3 Pos. 1) | kcurwr |
+| Umschalt+Tab | **0x9B** (`\|<-`, Reihe 3 rechts) | kcurwl |
+| **Backspace** | **0x9F** (Rücktaste `\|<-\|`, Reihe 2 Pos. 14) | 0x09 (TAB) |
+| Delete | **0xBB** (DEL CH) | spcdel |
 | Cursor ↑ / ↓ / ← / → | 0x94 / 0x95 / 0x96 / 0x97 | kcurup/kcurdw/kcurlf/kcurri |
-| F1 … F8 | 0xC1 … 0xC8 | pf1c … pf8c |
+| F1 … F12 | 0xC1 … 0xCC | pf1c … pfcc |
+| (F11 fängt das Fenster fürs Vollbild ab) | — | PF 11 nur über die Bildschirmtastatur |
 | Ctrl+\<Taste\> | \<Taste\> & 0x1F | — (Steuercode <0x20, durchgereicht) |
 
 > **ET1 ≠ Enter.** Die Haupt-Return-Taste (ET1, physisch **0xFF**) und die
 > Ziffernblock-Enter-Taste (physisch **0xC0**) sind auf der echten K7637 zwei
 > verschiedene Tasten: ET1 wird zu CR recodiert, Enter zur Funktion pf0c.
 >
-> **Esc und Rückschritt liegen auf den Tasten, die im Gast auch das tun** —
-> am laufenden CP/A nachgemessen (0xBB löscht ein Zeichen rückwärts, die
-> ESC-Taste schickt 0x1B). Früher ging Escape auf 0xB3 (DEL L), was cp37
-> ebenfalls zu ESC macht; auf der Bildschirmtastatur leuchtete dann aber die
-> falsche Taste auf, und ein anderes Betriebssystem kodiert 0xB3 anders.
+> **Esc schickt 0x1B** — die ESC-Taste. Früher ging Escape auf 0xB3 (DEL L),
+> was cp37 ebenfalls zu ESC macht; auf der Bildschirmtastatur leuchtete dann
+> aber die falsche Taste auf, und ein anderes Betriebssystem kodiert 0xB3
+> anders.
 > **Ein Code unter 0x20 muss als Rohcode kommen**: `translateKey` reicht nur
 > 0x20…0x7E durch, alles darunter fällt sonst still unter den Tisch (daran war
 > die ESC-Taste der Nachbildung wirkungslos). Wächter:
@@ -266,6 +267,39 @@ vor-übersetzten ASCII-Wert, sonst fallen physisch verschiedene Tasten zusammen.
 
 > **CTRL** ist real die ET2-Taste (physisch **0xFE** beim *Loslassen*, setzt ein
 > Einmal-Flag für die nächste Taste). Das Modell nimmt die Abkürzung `Code & 0x1F`.
+
+### 5.1a Welche Taste löscht ein Zeichen? Das entscheidet der Gast
+
+Die K7637 hat **zwei** Tasten, die dafür in Frage kommen, und die
+Betriebssysteme sind sich nicht einig, welche es ist. Am laufenden System
+nachgemessen (jeweils „ABCD" am Prompt getippt, dann die Taste):
+
+| physische Taste | Code | CP/A 780 | UDOS 4.3 | SCPX 1526 |
+|---|---|---|---|---|
+| **\|<-\|** Rücktaste (Reihe 2, Pos. 14) | 0x9F | Tab — nichts | nichts | **löscht ein Zeichen** |
+| **DEL CH** (Reihe 0, mit DEL L darüber) | 0xBB | **löscht ein Zeichen** | **löscht ein Zeichen** | echot es (CP/M-Rubout) |
+| **<-** Kursor links | 0x96 | **löscht ein Zeichen** | nichts | **löscht ein Zeichen** |
+
+Daraus folgt die Aufteilung oben: **abgebildet wird die Hardware, nicht eine
+Wirkung** — jede PC-Taste spricht die K7637-Taste an, die an *ihrer* Stelle
+sitzt und *ihr* Zeichen trägt. Die Rücktaste des PC ist die Rücktaste der K7637 (`|<-|`), die
+Entf-Taste ist DEL CH. Damit hat der Anwender beide unter den Fingern und nimmt
+die, die sein Gast erwartet — unter CP/A und UDOS **Entf**, unter SCPX die
+**Rücktaste**. Eine Abbildung „auf die Taste, die gerade löscht" gibt es nicht:
+sie wäre für jedes zweite Betriebssystem falsch, und die Bildschirmtastatur
+hübe dann eine Taste hervor, die der Anwender am echten Gerät nie gedrückt
+hätte.
+
+**Derselbe Grundsatz trägt den Tabulator.** Dass CP/A seinen TAB (0x09)
+ausgerechnet auf die *Rücktaste* legt (`cp37`: `db 09FH,009h ;|<-| als Ersatz
+Tab`), ist eine Eigenheit dieses BIOS und keine Eigenschaft der Tastatur — die
+K7637 hat an der Tabulatorstelle (Reihe 3) ihre eigenen Tasten `->|` und
+`|<-`, und dorthin gehen Tab und Umschalt+Tab des PC. Ein echter 0x09 bleibt
+über **Strg+I** erreichbar (`Code & 0x1F`), und wer CP/As Ersatz-Tabulator
+will, drückt die Rücktaste — dieselbe Taste wie am Original.
+
+> Bleibt eine Taste unerwartet wirkungslos, zeigt `K1520_TASTEN_LOG=1`
+> (§7.7) in einer Zeile, welcher Code tatsächlich hinausgeht.
 
 ### 5.2 Rohcodes — der Weg für Tasten, die der PC nicht hat
 
@@ -481,7 +515,8 @@ Strg nicht darstellen). Drei Dinge passieren dort:
 - **Hervorheben.** `_keys_for_host_event` sucht die Taste der Nachbildung, die
   der Kern tatsächlich anspricht — über den Code, nicht über die Beschriftung.
   Die Tabelle `_HOST_SPECIAL` muss deshalb `K7637::translateKey` entsprechen
-  (Return → ET1 0xFF, Enter → 0xC0, Tab → 0x9F, Esc → DEL L 0xB3, …), sonst
+  (Return → ET1 0xFF, Enter → 0xC0, Rücktaste → `|←|` 0x9F, Tab → `→|` 0x91,
+  Esc → 0x1B, Entf → DEL CH 0xBB, …), sonst
   leuchtet etwas anderes auf, als gesendet wird. Ziffern gibt es zweimal; den
   Ausschlag gibt `Qt::KeypadModifier`.
 - **Feststeller lesen.** Qt meldet den Zustand der Feststelltaste nicht. Er
@@ -492,7 +527,7 @@ Strg nicht darstellen). Drei Dinge passieren dort:
   (`_lock`) schaltet sie auf die **Umschaltebene** — dieselbe Taste schickt dann
   DEL L statt DEL CH, PA 1 statt PF 1, wie am Original. Der erkannte Feststeller
   der *echten* Tastatur (`_host_caps`) tut das **nicht**: er macht dort auch nur
-  aus Buchstaben Großbuchstaben, die Rücktaste bleibt die Rücktaste. Wer beides
+  aus Buchstaben Großbuchstaben, die Entf-Taste bleibt DEL CH. Wer beides
   vermischt, bekommt zwei Eingabewege, die für dieselbe Taste verschiedene Codes
   schicken (Wächter `test_host_key_and_click_agree`).
 - **Feststeller wirken lassen.** Die Gegenrichtung — den Feststeller der echten

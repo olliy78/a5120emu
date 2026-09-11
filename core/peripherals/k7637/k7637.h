@@ -199,6 +199,7 @@ private:
     // ── Qt keycode constants (no Qt headers needed) ───────────────────────
     static constexpr int QK_ESCAPE    = 0x01000000;
     static constexpr int QK_TAB       = 0x01000001;
+    static constexpr int QK_BACKTAB   = 0x01000002;   // Umschalt+Tab
     static constexpr int QK_BACKSPACE = 0x01000003;
     static constexpr int QK_RETURN    = 0x01000004;
     static constexpr int QK_ENTER     = 0x01000005;
@@ -209,4 +210,5 @@ private:
     static constexpr int QK_DOWN      = 0x01000015;
     static constexpr int QK_F1        = 0x01000030;
     static constexpr int QK_F8        = 0x01000037;
+    static constexpr int QK_F12       = 0x0100003B;
 };

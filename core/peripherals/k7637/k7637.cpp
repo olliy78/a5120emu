@@ -237,14 +237,33 @@ uint8_t K7637::translateKey(int qt_keycode, bool shift, bool ctrl) {
     switch (qt_keycode) {
         case QK_RETURN:    return 0xFF;   // ET1 (main Return)   → cp37: 0xFF→0x0D (CR)
         case QK_ENTER:     return 0xC0;   // numeric ENTER       → cp37: 0xC0→pf0c
-        // Rückschritt und ESC liegen auf den Tasten, die im Gast auch das tun:
-        // DEL CH löscht ein Zeichen rückwärts, die ESC-Taste schickt 0x1B
-        // (ASCII, wird durchgereicht — in cp37 steht sie nicht).  Am laufenden
-        // CP/A nachgemessen; 0xB3 (DEL L) wäre nach cp37 ebenfalls ESC, aber
-        // dann leuchtet auf der Bildschirmtastatur die falsche Taste auf, und
-        // andere Betriebssysteme kodieren 0xB3 anders.
-        case QK_BACKSPACE: return 0xBB;   // DEL CH              → cp37: 0xBB→spcdel
-        case QK_TAB:       return 0x9F;   // |<-| key            → cp37: 0x9F→0x09 (TAB)
+        // Die Rücktaste des PC spricht die RÜCKTASTE der K7637 an — das ist
+        // `|<-|` (Reihe 2, Position 14, physisch 0x9F), nicht DEL CH.  Welche
+        // Taste ein Zeichen löscht, entscheidet das Betriebssystem, und die
+        // drei widersprechen sich (am laufenden System nachgemessen, jeweils
+        // „ABCD" getippt und die Taste gedrückt):
+        //
+        //     Code          CP/A            UDOS 4.3        SCPX 1526
+        //     0x9F  |<-|    Tab (nichts)    nichts          löscht ein Zeichen
+        //     0xBB  DEL CH  löscht          löscht          echot das Zeichen
+        //     0x96  <-      löscht          nichts          löscht ein Zeichen
+        //
+        // Deshalb bildet die Tastatur die HARDWARE ab und nicht eine Wirkung:
+        // jede PC-Taste spricht die K7637-Taste an, die an IHRER Stelle sitzt
+        // und ihr Zeichen trägt.  Rücktaste → `|<-|` (Reihe 2, Position 14),
+        // Entf → DEL CH; der Anwender hat damit beide Löschtasten unter den
+        // Fingern und nimmt die, die sein Gast erwartet (CP/A und UDOS: Entf,
+        // SCPX: Rücktaste).  Ebenso Tab → `->|` und Umschalt+Tab → `|<-` (die
+        // beiden Tasten an der Tabulatorstelle, Reihe 3).  Dass CP/A seinen
+        // Tabulator (0x09) ausgerechnet auf die RÜCKTASTE legt (`cp37`:
+        // „|<-| als Ersatz Tab"), ist Sache des BIOS und keine Eigenschaft der
+        // Tastatur — ein echter 0x09 kommt weiterhin über Strg+I.
+        // ESC schickt 0x1B (ASCII, in cp37 nicht enthalten); 0xB3 (DEL L) wäre
+        // nach cp37 ebenfalls ESC, aber dann leuchtet die falsche Taste auf,
+        // und andere Betriebssysteme kodieren 0xB3 anders.
+        case QK_BACKSPACE: return 0x9F;   // |<-| Rücktaste      → cp37: 0x9F→0x09 (TAB)
+        case QK_TAB:       return 0x91;   // ->|  Tabulator      → cp37: 0x91→kcurwr
+        case QK_BACKTAB:   return 0x9B;   // |<-  Tab rückwärts  → cp37: 0x9B→kcurwl
         case QK_ESCAPE:    return 0x1B;   // ESC-Taste (ASCII)
         case QK_DELETE:    return 0xBB;   // DELCH key           → cp37: 0xBB→spcdel
         case QK_UP:        return 0x94;   // cursor up           → cp37: 0x94→kcurup
@@ -254,8 +273,11 @@ uint8_t K7637::translateKey(int qt_keycode, bool shift, bool ctrl) {
         default: break;
     }
 
-    // Function keys F1..F8 → physical codes 0xC1..0xC8 (cp37: 0xC1→pf1c …).
-    if (qt_keycode >= QK_F1 && qt_keycode <= QK_F8) {
+    // Funktionstasten F1..F12 → physische Codes 0xC1..0xCC (cp37: 0xC1→pf1c …).
+    // Die K7637 hat zwölf davon; F11 fängt die Oberfläche für das Vollbild ab
+    // (PF 11 bleibt über die Bildschirmtastatur erreichbar), der Kern bildet
+    // sie hier trotzdem ab — er kennt kein Vollbild.
+    if (qt_keycode >= QK_F1 && qt_keycode <= QK_F12) {
         return static_cast<uint8_t>(0xC1 + (qt_keycode - QK_F1));
     }
 

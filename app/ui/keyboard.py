@@ -11,7 +11,7 @@ Zwei Dinge leben hier:
    * **Druckbares ASCII (0x20..0x7E)** wird als der *erzeugte* Zeichencode
      übergeben (Shift/Layout stecken bereits im Wert: ``'A'``=0x41, ``'a'``=0x61,
      ``'!'``=0x21).  Der Core reicht ihn unverändert durch.
-   * **Sondertasten** (Return/Enter/Tab/Backspace/Esc/Delete/Cursor/F1..F8)
+   * **Sondertasten** (Return/Enter/Tab/Backspace/Esc/Delete/Cursor/F1..F12)
      werden als ``Qt::Key_*``-Konstante übergeben — die ``QK_*``-Werte im Core
      sind mit ``Qt::Key_*`` identisch.
    * **Ctrl+Buchstabe** → Basis-ASCII des Buchstabens + ``ctrl=True``; der Core
@@ -57,6 +57,7 @@ _SPECIAL_KEYS = {
     int(Qt.Key_Enter),
     int(Qt.Key_Backspace),
     int(Qt.Key_Tab),
+    int(Qt.Key_Backtab),           # Umschalt+Tab — Qt schickt eine EIGENE Taste
     int(Qt.Key_Escape),
     int(Qt.Key_Delete),
     int(Qt.Key_Up),
@@ -83,7 +84,7 @@ def qt_event_to_core_key(event) -> Optional[Tuple[int, bool, bool]]:
         return None
 
     # Sondertasten: als Qt::Key_* durchreichen (Core kennt die Werte 1:1).
-    if key in _SPECIAL_KEYS or (int(Qt.Key_F1) <= key <= int(Qt.Key_F8)):
+    if key in _SPECIAL_KEYS or (int(Qt.Key_F1) <= key <= int(Qt.Key_F12)):
         return (key, shift, ctrl)
 
     # Ctrl+Buchstabe: Basis-ASCII + ctrl-Flag (Core rechnet & 0x1F).
@@ -132,9 +133,10 @@ _BLINK_MS = 500
 _HOST_SPECIAL = {
     int(Qt.Key_Return):    0xFF,   # ET1
     int(Qt.Key_Enter):     0xC0,   # ENTER des Ziffernblocks
-    int(Qt.Key_Tab):       0x9F,   # |←|
+    int(Qt.Key_Tab):       0x91,   # →| — die Taste an der Tabulatorstelle (Reihe 3)
+    int(Qt.Key_Backtab):   0x9B,   # |← — Umschalt+Tab, ihre Gegenstück-Taste
     int(Qt.Key_Escape):    0x1B,   # ESC-Taste
-    int(Qt.Key_Backspace): 0xBB,   # DEL CH — löscht ein Zeichen rückwärts
+    int(Qt.Key_Backspace): 0x9F,   # |←| — DIE Rücktaste der K7637 (Reihe 2, Pos. 14)
     int(Qt.Key_Delete):    0xBB,   # DEL CH
     int(Qt.Key_Up):        0x94,
     int(Qt.Key_Down):      0x95,
@@ -281,7 +283,7 @@ def _build_layout() -> List[_Key]:
                       code=_a(low), shift_code=_a(shift_ch),
                       name=f"{low} / {shift_ch}"))
     k.append(_Key(x=13.0, y=1.0, low="|←|", code=raw(0x9F),
-                  name="Tabulator (BIOS: TAB)"))
+                  name="Rücktaste (BIOS CP/A: als Ersatz-Tabulator)"))
     k.append(_Key(x=14.0, y=1.0, low="↰", code=raw(0x9C), style="light",
                   shape="rect", name="Kursor Seite zurück"))
     k.append(_Key(x=15.0, y=1.0, low="PRINT", style="light", shape="rect",
@@ -303,7 +305,7 @@ def _build_layout() -> List[_Key]:
     k.append(_Key(x=0.0, y=2.0, w=0.25, style="filler", shape="rect",
                   kind="dead", name="Blindmodul"))
     k.append(_Key(x=0.25, y=2.0, low="→|", code=raw(0x91), style="light",
-                  shape="rect", name="Kursor Wort vorwärts"))
+                  shape="rect", name="Tabulator →| (BIOS: Kursor Wort vorwärts)"))
     for i, ch in enumerate("QWERTYUIOP"):
         k.append(_Key(x=1.25 + i, y=2.0, low=ch, code=_a(ch.lower()),
                       shift_code=_a(ch), name=ch))
@@ -312,7 +314,7 @@ def _build_layout() -> List[_Key]:
     k.append(_Key(x=12.25, y=2.0, low="[", up="{", code=_a("["),
                   shift_code=_a("{"), name="[ / {"))
     k.append(_Key(x=13.25, y=2.0, low="|←", code=raw(0x9B), style="light",
-                  shape="rect", name="Kursor Wort zurück"))
+                  shape="rect", name="Tabulator zurück |← (BIOS: Kursor Wort zurück)"))
     # CE ist 1,25 Tasten breit: sie fängt den Reihenversatz zum rechteckigen
     # Ziffernblock auf.
     k.append(_Key(x=14.25, y=2.0, low="CE", w=1.25, code=raw(0xB9),
@@ -899,7 +901,7 @@ class KeyboardWidget(QWidget):
 
     @staticmethod
     def _ist_funktionstaste(event) -> bool:
-        return int(Qt.Key_F1) <= int(event.key()) <= int(Qt.Key_F8)
+        return int(Qt.Key_F1) <= int(event.key()) <= int(Qt.Key_F12)
 
     def clear_host_keys(self):
         """Alle Hervorhebungen löschen (Fokusverlust: das Loslassen fehlt sonst)."""
@@ -940,7 +942,7 @@ class KeyboardWidget(QWidget):
 
         if key in _HOST_SPECIAL:
             return self._by_code.get(raw(_HOST_SPECIAL[key]), [])[:1]
-        if int(Qt.Key_F1) <= key <= int(Qt.Key_F8):
+        if int(Qt.Key_F1) <= key <= int(Qt.Key_F12):
             return self._by_code.get(raw(0xC1 + key - int(Qt.Key_F1)), [])[:1]
 
         mapped = qt_event_to_core_key(event)
