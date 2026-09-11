@@ -529,3 +529,48 @@ def test_host_keys_hit_the_key_that_does_the_job(widget, qtkey, taste):
     hell = [k for keys in widget._host_down.values() for k in keys]
     assert hell and (hell[0].low == taste or hell[0].name.startswith(taste)), (
         f"{taste} leuchtet nicht: {[k.low for k in hell]}")
+
+
+# ── Beide Eingabewege müssen dasselbe schicken ──────────────────────────────
+
+def _klickcode(widget, key):
+    """Was ein Mausklick auf diese Taste sendet."""
+    return int(key.code_for(widget.schicht())) & 0xFF
+
+
+@pytest.mark.parametrize("zustand", ["nichts", "pc-feststeller", "lock"])
+def test_host_key_and_click_agree(widget, zustand):
+    """Rücktaste am PC und angeklickte DEL-CH-Taste schicken DASSELBE Byte.
+
+    Vorher nicht: der *erkannte* Feststeller der PC-Tastatur schaltete die
+    Nachbildung auf die Umschaltebene, die Host-Tasten aber nicht — dann sendete
+    der Klick DEL L (0xB3) und die Rücktaste DEL CH (0xBB).  Dieselbe Taste,
+    zwei Wirkungen, je nach Eingabeweg.
+    """
+    if zustand == "pc-feststeller":
+        widget._host_caps = True
+    elif zustand == "lock":
+        widget._lock = True
+
+    delch = next(k for k in widget._keys if k.name.startswith("DEL CH"))
+    host = widget.map_host_key(_taste(Qt.Key_Backspace, "\b"))[0] & 0xFF
+    assert host == _klickcode(widget, delch)
+
+
+def test_host_caps_does_not_switch_special_keys(widget):
+    """Die Feststelltaste des PC macht aus Buchstaben Großbuchstaben — mehr nicht.
+
+    Auf der echten Tastatur schaltet SIE keine Sondertaste um: die Rücktaste
+    bleibt die Rücktaste.  (Der Feststeller der Nachbildung dagegen schon — das
+    ist seine Aufgabe.)
+    """
+    widget._host_caps = True
+    assert widget.map_host_key(_taste(Qt.Key_Backspace, "\b"))[0] == kbd.raw(0xBB)
+    assert widget.map_host_key(_taste(Qt.Key_A, "A"))[0] == ord("A")
+
+
+def test_shift_reaches_the_upper_legend_of_special_keys(widget):
+    """Umschalt+F1 ist PA 1 — die obere Beschriftung, wie an der echten Tastatur."""
+    assert widget.map_host_key(
+        _taste(Qt.Key_F1, mods=Qt.ShiftModifier))[0] == kbd.raw(0xFA)
+    assert widget.map_host_key(_taste(Qt.Key_F1))[0] == kbd.raw(0xC1)

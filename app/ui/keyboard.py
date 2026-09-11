@@ -770,7 +770,7 @@ class KeyboardWidget(QWidget):
         if key.kind == "dead" or key.code is None:
             return
 
-        shift_active = self._shift or self.lock_active()
+        shift_active = self.schicht()
         code = key.code_for(shift_active)
         if code is None:
             return
@@ -802,6 +802,18 @@ class KeyboardWidget(QWidget):
             self._shift = False
             self._ctrl = False
         self.update()
+
+    def schicht(self) -> bool:
+        """Steht die Nachbildung auf der Umschaltebene?
+
+        Das entscheidet, welchen Code eine Taste mit zwei Beschriftungen
+        schickt (DEL CH/DEL L, PF 1/PA 1, …).  **Nur die Modifikatoren der
+        Nachbildung zählen** — nicht die Feststelltaste der echten Tastatur:
+        die schaltet dort auch keine Sondertaste um (Rücktaste bleibt
+        Rücktaste), sie macht nur aus Buchstaben Großbuchstaben.  Sonst schickte
+        dieselbe Taste je nach Eingabeweg etwas anderes.
+        """
+        return self._shift or self._lock
 
     def lock_active(self) -> bool:
         """Ist die Umschaltung festgestellt?
@@ -867,10 +879,25 @@ class KeyboardWidget(QWidget):
             return None
         code, shift, ctrl = mapped
         ctrl = ctrl or self._ctrl              # angeklickte CTRL/ET2-Taste
-        if (self._lock or self._shift) and 0x61 <= code <= 0x7A and not ctrl:
+
+        # Sondertasten gehen über die Taste der Nachbildung — mit derselben
+        # Ebene wie ein Mausklick.  Sonst schickt die Rücktaste des PC etwas
+        # anderes als die angeklickte DEL-CH-Taste, sobald umgeschaltet ist,
+        # und Umschalt+F1 käme nie als PA 1 an.
+        ebene = shift or self.schicht()
+        if int(event.key()) in _HOST_SPECIAL or self._ist_funktionstaste(event):
+            tasten = self._keys_for_host_event(event)
+            if tasten and tasten[0].code is not None:
+                return (int(tasten[0].code_for(ebene)), ebene, ctrl)
+
+        if ebene and 0x61 <= code <= 0x7A and not ctrl:
             code -= 0x20                       # a…z → A…Z
             shift = True
         return (code, shift, ctrl)
+
+    @staticmethod
+    def _ist_funktionstaste(event) -> bool:
+        return int(Qt.Key_F1) <= int(event.key()) <= int(Qt.Key_F8)
 
     def clear_host_keys(self):
         """Alle Hervorhebungen löschen (Fokusverlust: das Loslassen fehlt sonst)."""

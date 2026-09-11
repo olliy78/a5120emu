@@ -488,6 +488,13 @@ Strg nicht darstellen). Drei Dinge passieren dort:
   lässt sich aber an jedem Buchstaben ablesen: Großbuchstabe *ohne*
   Umschalttaste heißt festgestellt (`_note_host_caps`, korrigiert sich bei jedem
   weiteren Buchstaben selbst); die Feststelltaste selbst kippt ihn sofort mit.
+- **Zwei Feststeller auseinanderhalten.** Der Feststeller der *Nachbildung*
+  (`_lock`) schaltet sie auf die **Umschaltebene** — dieselbe Taste schickt dann
+  DEL L statt DEL CH, PA 1 statt PF 1, wie am Original. Der erkannte Feststeller
+  der *echten* Tastatur (`_host_caps`) tut das **nicht**: er macht dort auch nur
+  aus Buchstaben Großbuchstaben, die Rücktaste bleibt die Rücktaste. Wer beides
+  vermischt, bekommt zwei Eingabewege, die für dieselbe Taste verschiedene Codes
+  schicken (Wächter `test_host_key_and_click_agree`).
 - **Feststeller wirken lassen.** Die Gegenrichtung — den Feststeller der echten
   Tastatur *einschalten* — kann ein Programm nicht: kein Betriebssystem gibt
   diesen Zustand für die ganze Maschine frei (unter Wayland gar nicht, sonst nur
@@ -495,7 +502,7 @@ Strg nicht darstellen). Drei Dinge passieren dort:
   auch nicht nötig: `map_host_key` setzt den Buchstaben selbst um, sobald der
   Feststeller der Nachbildung gesetzt ist — der Gast bekommt Großbuchstaben,
   genau das war der Zweck. Ebenso wirken angeklicktes SHIFT/CTRL auf die nächste
-  Taste der echten Tastatur.
+  Taste der echten Tastatur, und Umschalt+F1 schickt PA 1 statt PF 1.
 
 Bleibt eine Taste hängen (Fokuswechsel, während sie gedrückt ist), räumt
 `ScreenWidget.focusOutEvent` → `clear_host_keys()` auf.
