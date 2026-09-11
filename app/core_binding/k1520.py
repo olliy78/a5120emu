@@ -137,6 +137,10 @@ _lib.k1520_key_press.restype = None
 _lib.k1520_key_release.argtypes = [K1520Handle, ctypes.c_uint32]
 _lib.k1520_key_release.restype = None
 
+# k1520_keyboard_leds(K1520Handle) -> uint32_t
+_lib.k1520_keyboard_leds.argtypes = [K1520Handle]
+_lib.k1520_keyboard_leds.restype = ctypes.c_uint32
+
 # k1520_mount_disk(K1520Handle, drive: int, path: const char*, format: const char*, wp: bool) -> bool
 _lib.k1520_mount_disk.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_bool]
 _lib.k1520_mount_disk.restype = ctypes.c_bool
@@ -435,6 +439,14 @@ class K1520Emulator:
         """
         _lib.k1520_key_release(self._handle, ctypes.c_uint32(keycode))
     
+    def keyboard_leds(self) -> int:
+        """Zustand der Tastaturanzeigen (K7637).
+
+        Bit 0…4 = Funktionsanzeigen G00…G04, Bit 5 = Fehleranzeige (blinkt,
+        solange gesetzt), Bit 7 = akustisches Signal läuft.
+        """
+        return int(_lib.k1520_keyboard_leds(self._handle))
+
     def mount_disk(self, drive: int, path: str, format_name: str, write_protect: bool = False) -> bool:
         """
         Mount a disk image.

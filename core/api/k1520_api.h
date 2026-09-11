@@ -84,6 +84,16 @@ K1520_API bool k1520_console_poll(K1520Handle h, int* x, int* y, char* ch);
 K1520_API void k1520_key_press(K1520Handle h, uint32_t keycode, bool shift, bool ctrl);
 K1520_API void k1520_key_release(K1520Handle h, uint32_t keycode);
 K1520_API void k1520_console_key(K1520Handle h, char c);
+/**
+ * @brief Zustand der Tastaturanzeigen der K7637.
+ *
+ * Bit 0…4 = Funktionsanzeigen G00…G04 (der Rechner schaltet sie mit den fünf
+ * LED-Kommandos UM), Bit 5 = Fehleranzeige G53 — sie **blinkt**, solange das
+ * Bit gesetzt ist —, Bit 7 = akustisches Signal läuft (≈1 s).  Die
+ * Betriebsanzeige E54 und die LOCK-Anzeige C99 stehen nicht darin: die eine
+ * hängt an der Spannung, die andere am Umschaltfeststeller der Tastatur.
+ */
+K1520_API uint32_t k1520_keyboard_leds(K1520Handle h);
 
 /* ─── Disk drives ────────────────────────────────────────────────────────── */
 /** @brief Mount a disk image into a drive slot. */

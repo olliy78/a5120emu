@@ -1,0 +1,268 @@
+"""`app/ui/keyboard.py` — das nachgebildete K7637-Tastenfeld.
+
+Die Bildschirmtastatur ist eine *Nachbildung*: Jede Taste trägt ihren
+**physischen** K7637-Code aus der BIOS-Umkodiertabelle `cp37`.  Genau daran
+kann man sich vertun, ohne dass es auffällt — ein falscher Code sieht auf dem
+Bild richtig aus und kommt im Gast als etwas anderes an.  Geprüft wird deshalb
+die Tabelle selbst, nicht das Aussehen.
+
+Der Rohcode-Weg (`RAW_BASE`) muss mit `K7637::QK_RAW_BASE` im Kern
+übereinstimmen; die C++-Seite hat dafür ihren eigenen Wächter
+(`K7637.RawCode_IsSentVerbatim`).
+"""
+
+import re
+from pathlib import Path
+
+import pytest
+
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QMouseEvent
+
+from app.ui import keyboard as kbd
+
+
+REPO = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(scope="module")
+def keys():
+    return kbd._build_layout()
+
+
+@pytest.fixture(scope="module")
+def by_name(keys):
+    return {k.name: k for k in keys}
+
+
+def test_raw_base_matches_the_core():
+    """`RAW_BASE` ist ein Vertrag mit `core/peripherals/k7637/k7637.h`."""
+    header = (REPO / "core/peripherals/k7637/k7637.h").read_text(encoding="utf-8")
+    m = re.search(r"QK_RAW_BASE\s*=\s*(0x[0-9A-Fa-f]+)", header)
+    assert m, "QK_RAW_BASE im Kern-Header nicht gefunden"
+    assert int(m.group(1), 16) == kbd.RAW_BASE
+
+
+@pytest.mark.parametrize("name, code", [
+    # Die Codes stammen aus cp37 (disks/cpa_cpa780_*.prn).
+    ("ET1 (BIOS: CR)",                    0xFF),
+    ("ENTER (Ziffernblock, ≠ ET1)",       0xC0),
+    ("CE (Eingabe löschen)",              0xB9),
+    ("SEL 0",                             0xA0),
+    ("SEL 3",                             0xA3),
+    ("PF 1 / PA 1",                       0xC1),
+    ("PF 12",                             0xCC),
+    ("M / MON (BIOS: PF 14)",             0xB0),
+    ("RESET (BIOS: PF 15)",               0xAF),
+    ("Ziffernblock 00",                   0xB1),
+    ("Tabulator (BIOS: TAB)",             0x9F),
+    ("Kursor aufwärts",                   0x94),
+    ("Kursor abwärts",                    0x95),
+    ("Kursor links",                      0x96),
+    ("Kursor rechts",                     0x97),
+    ("Kursor Wort zurück",                0x9B),
+    ("Kursor Wort vorwärts",              0x91),
+    ("Kursor Seite zurück",               0x9C),
+    ("Kursor Seite vorwärts",             0x9A),
+    ("INS MD / INS L",                    0xA8),
+    ("DEL CH / DEL L",                    0xBB),
+])
+def test_special_keys_carry_their_physical_code(by_name, name, code):
+    key = by_name[name]
+    assert key.code == kbd.raw(code), f"{name}: 0x{key.code & 0xFF:02X} statt 0x{code:02X}"
+
+
+@pytest.mark.parametrize("name, code", [
+    ("PF 1 / PA 1",      0xFA),   # PA 1
+    ("PF 3 / PA 3",      0xF8),   # PA 3
+    ("PF 5 / CLEAR",     0xFC),
+    ("PF 7 / FM",        0xBE),
+    ("PF 10 / EREOF",    0x98),
+    ("PF 11 / ERINP",    0x99),
+    ("INS MD / INS L",   0x93),   # INS L
+    ("DEL CH / DEL L",   0xB3),   # DEL L
+])
+def test_upper_legend_sends_the_shift_code(by_name, name, code):
+    """Die obere Beschriftung ist die Umschaltebene — eigener Code, nicht `code`."""
+    key = by_name[name]
+    assert key.shift_code == kbd.raw(code)
+    assert key.code_for(shift=True) == kbd.raw(code)
+    assert key.code_for(shift=False) == key.code
+
+
+def test_et1_and_enter_are_two_different_keys(by_name):
+    """Auf der echten Tastatur zwei Tasten — ET1 wird zu CR, ENTER zu pf0c."""
+    assert by_name["ET1 (BIOS: CR)"].code != by_name["ENTER (Ziffernblock, ≠ ET1)"].code
+
+
+def test_printable_keys_send_ascii(keys):
+    """Buchstaben/Ziffern gehen als ASCII — der Kern reicht sie unverändert durch."""
+    letters = {k.low: k for k in keys if len(k.low) == 1 and k.low.isalpha()}
+    assert letters["Q"].code == ord("q") and letters["Q"].shift_code == ord("Q")
+    assert len(letters) == 26, "es fehlen Buchstabentasten"
+
+
+def test_ascii_set_is_complete(keys):
+    """Jedes druckbare ASCII-Zeichen ist auf genau einer Taste erreichbar.
+
+    Die Ziffernreihe der K7637 ist bitgepaart; ein Tippfehler in einer
+    Umschaltebene fällt nur dadurch auf, dass ein Zeichen fehlt (oder doppelt
+    ist — der Ziffernblock ist die einzige gewollte Doppelung).
+    """
+    reachable = set()
+    for k in keys:
+        for code in (k.code, k.shift_code):
+            if code is not None and 0x20 <= code <= 0x7E:
+                reachable.add(code)
+    # Kleinbuchstaben stehen für die ungeshifteten Buchstabentasten.
+    missing = {c for c in range(0x20, 0x7F)} - reachable - set(range(0x41, 0x5B))
+    assert not missing, "nicht erreichbar: " + " ".join(
+        f"{chr(c)}(0x{c:02X})" for c in sorted(missing))
+
+
+def test_print_and_hlt_send_nothing(by_name):
+    """PRINT/HLT stehen in keiner vorliegenden Codetabelle — lieber nichts senden."""
+    for name in ("PRINT — Tastencode unbekannt", "HLT — Tastencode unbekannt"):
+        key = by_name[name]
+        assert key.code is None and key.kind == "dead"
+
+
+def test_modifiers_have_no_code(keys):
+    mods = [k for k in keys if k.kind in ("shift", "ctrl", "lock")]
+    assert [k.kind for k in mods].count("shift") == 2, "zwei Umschalttasten"
+    assert [k.kind for k in mods].count("ctrl") == 2, "CTRL und ET2"
+    assert [k.kind for k in mods].count("lock") == 1
+    assert all(k.code is None for k in mods)
+
+
+def test_keys_do_not_overlap(keys):
+    """Zwei Tasten auf derselben Fläche wären im Bild nicht unterscheidbar."""
+    for i, a in enumerate(keys):
+        for b in keys[i + 1:]:
+            overlap_x = a.x < b.x + b.w - 1e-6 and b.x < a.x + a.w - 1e-6
+            overlap_y = a.y < b.y + b.h - 1e-6 and b.y < a.y + a.h - 1e-6
+            assert not (overlap_x and overlap_y), (
+                f"{a.name or a.low!r} und {b.name or b.low!r} überlappen")
+
+
+# ── Bedienung: Klick → Signal ────────────────────────────────────────────────
+
+def _click(widget, key, button=Qt.LeftButton):
+    """Eine Taste der Nachbildung anklicken (Drücken UND Loslassen)."""
+    unit, ox, oy = widget._geometry()
+    center = widget._rect_of(key, unit, ox, oy).center()
+    for typ in (QMouseEvent.Type.MouseButtonPress, QMouseEvent.Type.MouseButtonRelease):
+        ev = QMouseEvent(typ, center, widget.mapToGlobal(center.toPoint()),
+                         button, button, Qt.NoModifier)
+        if typ == QMouseEvent.Type.MouseButtonPress:
+            widget.mousePressEvent(ev)
+        else:
+            widget.mouseReleaseEvent(ev)
+
+
+@pytest.fixture
+def widget(qapp):
+    w = kbd.KeyboardWidget()
+    w.resize(w.sizeHint())
+    return w
+
+
+def _recorder(widget):
+    seen = []
+    widget.keyPressed.connect(lambda c, s, x: seen.append((c, s, x)))
+    return seen
+
+
+def test_click_sends_the_physical_code(widget):
+    """Ein Klick auf CE schickt 0xB9 als Rohcode — nicht irgendein ASCII."""
+    seen = _recorder(widget)
+    ce = next(k for k in widget._keys if k.low == "CE")
+    _click(widget, ce)
+    assert seen == [(kbd.raw(0xB9), False, False)]
+
+
+def test_shift_applies_to_exactly_one_key(widget):
+    """SHIFT ist ein Einmal-Modifikator: '1'→'!', danach wieder '1'."""
+    seen = _recorder(widget)
+    shift = next(k for k in widget._keys if k.kind == "shift")
+    one = next(k for k in widget._keys if k.low == "1" and k.up == "!")
+    _click(widget, shift)
+    _click(widget, one)
+    _click(widget, one)
+    assert [c for c, _, _ in seen] == [ord("!"), ord("1")]
+
+
+def test_lock_stays_until_shift_releases_it(widget):
+    """LOCK rastet ein; SHIFT hebt ihn auf (wie am Original)."""
+    seen = _recorder(widget)
+    lock = next(k for k in widget._keys if k.kind == "lock")
+    shift = next(k for k in widget._keys if k.kind == "shift")
+    a = next(k for k in widget._keys if k.low == "A")
+    _click(widget, lock)
+    _click(widget, a)
+    _click(widget, a)
+    _click(widget, shift)
+    _click(widget, a)
+    assert [c for c, _, _ in seen] == [ord("A"), ord("A"), ord("a")]
+
+
+def test_dead_keys_send_nothing(widget):
+    seen = _recorder(widget)
+    for name in ("PRINT — Tastencode unbekannt", "HLT — Tastencode unbekannt"):
+        _click(widget, next(k for k in widget._keys if k.name == name))
+    assert seen == []
+
+
+# ── Anzeigen ─────────────────────────────────────────────────────────────────
+
+def test_led_bits_match_the_core_header():
+    """Die Bitmaske ist ein Vertrag mit `k1520_keyboard_leds`."""
+    header = (REPO / "core/peripherals/k7637/k7637.h").read_text(encoding="utf-8")
+    for name, wert in (("LED_G00", kbd.LED_G00), ("LED_G01", kbd.LED_G01),
+                       ("LED_G02", kbd.LED_G02), ("LED_G03", kbd.LED_G03),
+                       ("LED_G04", kbd.LED_G04), ("LED_ERROR", kbd.LED_ERROR)):
+        m = re.search(rf"{name}\s*=\s*(0x[0-9A-Fa-f]+)", header)
+        assert m, f"{name} im Kern-Header nicht gefunden"
+        assert int(m.group(1), 16) == wert, name
+
+
+def test_function_leds_follow_the_mask(widget):
+    """Die fünf Funktionsanzeigen zeigen, was der Kern meldet."""
+    widget.set_leds(kbd.LED_G00 | kbd.LED_G03)
+    unit, ox, oy = widget._geometry()
+    an = [name for _, _, lit, name in widget._led_spots(unit, ox, oy) if lit]
+    assert "Selektor 0 (G00)" in an and "Selektor 3 (G03)" in an
+    assert "Selektor 1 (G01)" not in an
+
+
+def test_error_display_blinks_only_while_switched_on(widget):
+    """Die Fehleranzeige blinkt — der Zeitgeber läuft nur, solange sie an ist."""
+    assert not widget._blink_timer.isActive()
+    widget.set_leds(kbd.LED_ERROR)
+    assert widget._blink_timer.isActive()
+    widget.set_leds(0)
+    assert not widget._blink_timer.isActive()
+
+
+def test_lock_display_follows_the_shift_lock(widget):
+    """Die LOCK-Anzeige hängt an der Tastatur selbst, nicht am Rechner."""
+    def lock_an():
+        unit, ox, oy = widget._geometry()
+        return next(lit for _, _, lit, name in widget._led_spots(unit, ox, oy)
+                    if name.startswith("Umschaltfeststeller"))
+
+    assert not lock_an()
+    _click(widget, next(k for k in widget._keys if k.kind == "lock"))
+    assert lock_an()
+
+
+def test_power_display_follows_the_mains_switch(widget):
+    """Die Betriebsanzeige leuchtet, solange die Tastatur Spannung hat."""
+    def betrieb_an():
+        unit, ox, oy = widget._geometry()
+        return next(lit for _, _, lit, name in widget._led_spots(unit, ox, oy)
+                    if name.startswith("Betriebsanzeige"))
+
+    assert betrieb_an()
+    widget.set_powered(False)
+    assert not betrieb_an()

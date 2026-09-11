@@ -26,10 +26,14 @@
  * Auto-repeat: after a key is held for the initial delay (≈500 ms), the key
  * code is re-sent at the repeat period (≈100 ms) until the key is released.
  *
- * TX commands from the firmware (via SIO TX FIFO):
- *  - 0x00: keyboard reset (clears LED state)
- *  - 0x44: beep
- *  - 0x52 + LED byte: set LED state (bit0=CAPS, bit1=SCROLL, bit2=NUM)
+ * TX commands from the firmware (via SIO TX FIFO).  The real keyboard decodes
+ * them by the NUMBER OF PULSE EDGES, not by the byte value (manual §2.2.3):
+ *  - counter 14 (e.g. 0x00, 0xFF): software reset — all displays off
+ *  - counter 13 (0x20): error display blink on/off (+ ~1 s beep when enabled)
+ *  - counter 12 (0x44): ~1 s beep
+ *  - counter 11 (0x52) and 8/7/6/5 (0x55 + 0x20/0x44/0x52/0x55): toggle one of
+ *    the five function displays G00…G04
+ *  - counter 10 (0x55 alone): pre-command — the next byte keeps counting
  *
  * ## Test groups
  *
@@ -40,7 +44,8 @@
  * | Function keys             | F1 → 0xC1; F8 → 0xC8                                   |
  * | Serial timing             | Byte delivered only after one 9600-baud byte-time; FIFO order |
  * | Key repeat                | Initial delay, repeat period, key release stops repeat  |
- * | processTxCommands         | Beep (no crash), reset (clears LEDs), LED control byte |
+ * | Rohcodes                  | `QK_RAW_BASE | code` unverändert, auch mit Ctrl          |
+ * | processTxCommands         | Flankenzählung, die fünf LED-Kommandos (umschaltend), Fehleranzeige + Ton, Reset, Quittung |
  * | Channel B connectivity    | Keyboard can inject into SIO channel B                  |
  * | No connection             | keyPress/tick/processTxCommands without connect() = no crash |
  *
@@ -50,6 +55,8 @@
 
 #include <gtest/gtest.h>
 #include "core/peripherals/k7637/k7637.h"
+#include <ios>
+#include <initializer_list>
 
 // Qt keycode constants (must match k7637.h / k7637.cpp)
 static constexpr int QK_ESCAPE    = 0x01000000;
@@ -382,6 +389,52 @@ TEST(K7637, FunctionKey_F8_Sends_0xC8) {
     EXPECT_EQ(bytes[0], 0xC8);
 }
 
+// ─── Rohcodes (Bildschirmtastatur) ──────────────────────────────────────────
+
+/**
+ * @test K7637/RawCode_IsSentVerbatim
+ * @brief `QK_RAW_BASE | code` sendet genau dieses Byte.
+ * @details Die Bildschirmtastatur bildet die echte K7637 nach und kennt Tasten,
+ *          die eine PC-Tastatur nicht hat (CE 0xB9, SEL0 0xA0, PF10 0xCA, …).
+ *          Ohne den Rohcode-Weg wären sie über die Qt-Abbildung unerreichbar.
+ * @par Pass criterion  drainRx liefert je ein Byte == dem übergebenen Code.
+ */
+TEST(K7637, RawCode_IsSentVerbatim) {
+    for (uint8_t code : {uint8_t(0xB9), uint8_t(0xA0), uint8_t(0xCA),
+                         uint8_t(0xFA), uint8_t(0x9B), uint8_t(0xB1)}) {
+        Z80SIO sio;
+        sio.setIEI(true);
+        K7637 kb;
+        kb.connect(sio, 0);
+
+        kb.keyPress(K7637::QK_RAW_BASE | code, false, false);
+
+        auto bytes = drainRx(kb, sio);
+        ASSERT_EQ(bytes.size(), 1u) << "Code 0x" << std::hex << int(code);
+        EXPECT_EQ(bytes[0], code);
+    }
+}
+
+/**
+ * @test K7637/RawCode_IgnoresCtrl
+ * @brief Ein Rohcode ist der physische Tastencode — Ctrl rechnet nicht daran.
+ * @details `& 0x1F` gilt nur für druckbares ASCII; ein Rohcode 0xC1 (PF1) bliebe
+ *          sonst als 0x01 liegen und käme im Gast als Steuerzeichen an.
+ * @par Pass criterion  drainRx liefert 0xC1, nicht 0x01.
+ */
+TEST(K7637, RawCode_IgnoresCtrl) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    K7637 kb;
+    kb.connect(sio, 0);
+
+    kb.keyPress(K7637::QK_RAW_BASE | 0xC1, false, /*ctrl=*/true);
+
+    auto bytes = drainRx(kb, sio);
+    ASSERT_EQ(bytes.size(), 1u);
+    EXPECT_EQ(bytes[0], 0xC1);
+}
+
 // ─── Key repeat ───────────────────────────────────────────────────────────────
 
 /**
@@ -494,73 +547,176 @@ TEST(K7637, TxCommand_Beep_NoCrash) {
 }
 
 /**
- * @test K7637/TxCommand_Reset_ClearsLedState
- * @brief Sending command 0x00 (reset) clears all LED lock flags set by a previous 0x52 command.
- * @par Pass criterion  capsLock(), scrollLock(), numLock() all return false after reset command.
+ * @test K7637/CommandDecoding_CountsFallingEdges
+ * @brief Die Kommandoerkennung zählt Flanken, nicht Bytewerte.
+ * @details Handbuch §2.2.3: die Impulse des empfangenen Bytes zählen einen auf
+ *          15 voreingestellten Zähler herunter; sein Stand IST das Kommando.
+ *          Die Tabelle dort nennt neun Zählerstände — sie müssen sich alle aus
+ *          der Zahl der fallenden Flanken ergeben, sonst stimmt das Modell nicht.
+ * @par Pass criterion  15 − Flanken == der im Handbuch angegebene Zählerstand.
  */
-TEST(K7637, TxCommand_Reset_ClearsLedState) {
-    Z80SIO sio;
-    sio.setIEI(true);
-    K7637 kb;
-    kb.connect(sio, 0);
+TEST(K7637, CommandDecoding_CountsFallingEdges) {
+    EXPECT_EQ(15 - K7637::fallingEdges(0x00), 14);   // Software-RESET
+    EXPECT_EQ(15 - K7637::fallingEdges(0x20), 13);   // Fehleranzeige
+    EXPECT_EQ(15 - K7637::fallingEdges(0x44), 12);   // akustisches Signal
+    EXPECT_EQ(15 - K7637::fallingEdges(0x52), 11);   // LED G00
+    EXPECT_EQ(15 - K7637::fallingEdges(0x55), 10);   // Vorkommando
+    // Zweibyte-Kommandos: der Zähler läuft über beide Bytes weiter.
+    const int pre = K7637::fallingEdges(0x55);
+    EXPECT_EQ(15 - (pre + K7637::fallingEdges(0x00)), 9);   // Grundzustand
+    EXPECT_EQ(15 - (pre + K7637::fallingEdges(0x20)), 8);   // LED G01
+    EXPECT_EQ(15 - (pre + K7637::fallingEdges(0x44)), 7);   // LED G02
+    EXPECT_EQ(15 - (pre + K7637::fallingEdges(0x52)), 6);   // LED G03
+    EXPECT_EQ(15 - (pre + K7637::fallingEdges(0x55)), 5);   // LED G04
+}
 
-    // First set some LED state via 0x52 command.
-    sio.ioWrite(0, 0x52);
-    kb.processTxCommands();   // consumes 0x52, awaits LED byte
-    sio.ioWrite(0, 0x07);     // caps + scroll + num lock
-    kb.processTxCommands();   // consumes LED byte
-
-    EXPECT_TRUE(kb.capsLock());
-    EXPECT_TRUE(kb.scrollLock());
-    EXPECT_TRUE(kb.numLock());
-
-    // Now send reset.
-    sio.ioWrite(0, 0x00);
-    kb.processTxCommands();
-
-    EXPECT_FALSE(kb.capsLock());
-    EXPECT_FALSE(kb.scrollLock());
-    EXPECT_FALSE(kb.numLock());
+// Ein Kommando an die Tastatur schicken (ein oder zwei Bytes).
+static void sendCmd(K7637& kb, Z80SIO& sio, std::initializer_list<uint8_t> bytes) {
+    for (uint8_t b : bytes) { sio.ioWrite(0, b); kb.processTxCommands(); }
 }
 
 /**
- * @test K7637/TxCommand_LedControl_SetsLockFlags
- * @brief The LED control command (0x52 + LED byte) sets the CAPS, SCROLL, and NUM lock flags.
- * @details LED byte bit 0 = CAPS, bit 1 = SCROLL, bit 2 = NUM lock.
- * @par Pass criterion  capsLock() == true; scrollLock() == false; numLock() == true for LED byte 0x05.
+ * @test K7637/LedCommands_ToggleTheirDisplay
+ * @brief Die fünf LED-Kommandos schalten je eine Funktionsanzeige UM.
+ * @details „Ein- bzw. Ausschalten von LED-Anzeigen (vorheriger Zustand wird
+ *          negiert)" — ein zweites gleiches Kommando schaltet wieder aus.
+ * @par Pass criterion  Jedes Kommando setzt genau sein Bit und löscht es wieder.
  */
-TEST(K7637, TxCommand_LedControl_SetsLockFlags) {
-    Z80SIO sio;
-    sio.setIEI(true);
-    K7637 kb;
-    kb.connect(sio, 0);
+TEST(K7637, LedCommands_ToggleTheirDisplay) {
+    struct { std::initializer_list<uint8_t> cmd; uint8_t bit; } cases[] = {
+        { {0x52},       K7637::LED_G00 },
+        { {0x55, 0x20}, K7637::LED_G01 },
+        { {0x55, 0x44}, K7637::LED_G02 },
+        { {0x55, 0x52}, K7637::LED_G03 },
+        { {0x55, 0x55}, K7637::LED_G04 },
+    };
+    for (const auto& c : cases) {
+        Z80SIO sio; sio.setIEI(true);
+        K7637 kb;   kb.connect(sio, 0);
 
-    // Send 0x52 followed by the LED byte (bit0=CAPS, bit1=SCROLL, bit2=NUM).
-    sio.ioWrite(0, 0x52);
-    kb.processTxCommands();
-    sio.ioWrite(0, 0x05);   // CAPS + NUM
-    kb.processTxCommands();
-
-    EXPECT_TRUE(kb.capsLock());
-    EXPECT_FALSE(kb.scrollLock());
-    EXPECT_TRUE(kb.numLock());
+        sendCmd(kb, sio, c.cmd);
+        EXPECT_EQ(kb.leds(), c.bit);
+        sendCmd(kb, sio, c.cmd);
+        EXPECT_EQ(kb.leds(), 0);
+    }
 }
 
 /**
- * @test K7637/TxCommand_ExtendedCmd_NoCrash
- * @brief An extended two-byte command (0x55 + second byte) is consumed without crashing.
- * @par Pass criterion  No exception or assertion failure.
+ * @test K7637/ErrorDisplay_TogglesAndBeepsWhenSwitchedOn
+ * @brief Kommando 20H schaltet die Fehleranzeige um; beim EINschalten piept es ~1 s.
+ * @par Pass criterion  LED_ERROR gesetzt und beeping(); beim zweiten Mal beides aus.
  */
-TEST(K7637, TxCommand_ExtendedCmd_NoCrash) {
-    Z80SIO sio;
-    sio.setIEI(true);
-    K7637 kb;
-    kb.connect(sio, 0);
+TEST(K7637, ErrorDisplay_TogglesAndBeepsWhenSwitchedOn) {
+    Z80SIO sio; sio.setIEI(true);
+    K7637 kb;   kb.connect(sio, 0);
 
-    sio.ioWrite(0, 0x55);
-    kb.processTxCommands();
-    sio.ioWrite(0, 0xAA);   // second byte
-    EXPECT_NO_FATAL_FAILURE(kb.processTxCommands());
+    sendCmd(kb, sio, {0x20});
+    EXPECT_TRUE(kb.leds() & K7637::LED_ERROR);
+    EXPECT_TRUE(kb.beeping());
+
+    // Nach einer Sekunde Maschinenzeit ist der Ton vorbei, die Anzeige bleibt.
+    kb.service(3000000);
+    EXPECT_FALSE(kb.beeping());
+    EXPECT_TRUE(kb.leds() & K7637::LED_ERROR);
+
+    sendCmd(kb, sio, {0x20});
+    EXPECT_FALSE(kb.leds() & K7637::LED_ERROR);
+    EXPECT_FALSE(kb.beeping());
+}
+
+/**
+ * @test K7637/BeepCommand_RunsForAboutOneSecond
+ * @brief Kommando 44H löst ein akustisches Signal von ca. 1 s aus — ohne Anzeige.
+ * @par Pass criterion  beeping() ist an, nach 1 s Maschinenzeit aus; leds() bleibt 0.
+ */
+TEST(K7637, BeepCommand_RunsForAboutOneSecond) {
+    Z80SIO sio; sio.setIEI(true);
+    K7637 kb;   kb.connect(sio, 0);
+
+    sendCmd(kb, sio, {0x44});
+    EXPECT_TRUE(kb.beeping());
+    EXPECT_EQ(kb.leds(), 0);
+
+    kb.service(2400000);          // knapp unter einer Sekunde
+    EXPECT_TRUE(kb.beeping());
+    kb.service(2600000);
+    EXPECT_FALSE(kb.beeping());
+}
+
+/**
+ * @test K7637/ResetCommand_ClearsAllDisplays
+ * @brief 00H und 55H,00H stellen den Grundzustand her: alle Funktionsanzeigen aus.
+ * @par Pass criterion  leds() == 0 nach jedem der beiden Reset-Kommandos.
+ */
+TEST(K7637, ResetCommand_ClearsAllDisplays) {
+    for (std::initializer_list<uint8_t> reset : {std::initializer_list<uint8_t>{0x00},
+                                                 std::initializer_list<uint8_t>{0x55, 0x00}}) {
+        Z80SIO sio; sio.setIEI(true);
+        K7637 kb;   kb.connect(sio, 0);
+
+        sendCmd(kb, sio, {0x52});          // G00 an
+        sendCmd(kb, sio, {0x20});          // Fehleranzeige an
+        EXPECT_NE(kb.leds(), 0);
+
+        sendCmd(kb, sio, reset);
+        EXPECT_EQ(kb.leds(), 0);
+        EXPECT_FALSE(kb.beeping());
+    }
+}
+
+/**
+ * @test K7637/CommandDecoding_IgnoresTheByteValue
+ * @brief Ein Byte mit derselben Flankenzahl wirkt wie das Kommando aus der Tabelle.
+ * @details Die Bytes der Handbuchtabelle sind nur die übliche Schreibweise; die
+ *          Hardware zählt Flanken.  0xFF hat wie 0x00 genau eine fallende
+ *          Flanke (nur das Startbit) und ist damit derselbe Software-RESET.
+ *          Ein Modell, das auf den Bytewert schaut, verwürfe es als unbekanntes
+ *          Kommando — und träfe die Hardware nur dort, wo die Systemsoftware
+ *          zufällig das kanonische Byte sendet.
+ * @par Pass criterion  0xFF löscht die Anzeigen wie 0x00.
+ */
+TEST(K7637, CommandDecoding_IgnoresTheByteValue) {
+    Z80SIO sio; sio.setIEI(true);
+    K7637 kb;   kb.connect(sio, 0);
+
+    sendCmd(kb, sio, {0x52});
+    EXPECT_EQ(kb.leds(), K7637::LED_G00);
+
+    sendCmd(kb, sio, {0xFF});          // eine fallende Flanke, wie 0x00
+    EXPECT_EQ(kb.leds(), 0);
+}
+
+/**
+ * @test K7637/PreCommand_NeedsTheSecondByte
+ * @brief Nach dem Vorkommando 55H allein passiert nichts — der Zähler wartet.
+ * @par Pass criterion  leds() bleibt 0, bis das zweite Byte kommt.
+ */
+TEST(K7637, PreCommand_NeedsTheSecondByte) {
+    Z80SIO sio; sio.setIEI(true);
+    K7637 kb;   kb.connect(sio, 0);
+
+    sendCmd(kb, sio, {0x55});
+    EXPECT_EQ(kb.leds(), 0);
+    sendCmd(kb, sio, {0x20});
+    EXPECT_EQ(kb.leds(), K7637::LED_G01);
+}
+
+/**
+ * @test K7637/EveryCommandByteIsAcknowledged
+ * @brief Die Tastatur quittiert JEDES empfangene Byte mit dem Typcode 0x80.
+ * @details Daran hängt die Tastaturerkennung des BIOS und der LED-Handschlag;
+ *          ohne die Quittung wartet `lmpout` ewig.
+ * @par Pass criterion  Nach zwei Kommandobytes stehen zwei 0x80 im RX.
+ */
+TEST(K7637, EveryCommandByteIsAcknowledged) {
+    Z80SIO sio; sio.setIEI(true);
+    K7637 kb;   kb.connect(sio, 0);
+
+    sendCmd(kb, sio, {0x55, 0x52});
+    auto bytes = drainRx(kb, sio);
+    ASSERT_EQ(bytes.size(), 2u);
+    EXPECT_EQ(bytes[0], 0x80);
+    EXPECT_EQ(bytes[1], 0x80);
 }
 
 // ─── Channel B connectivity ───────────────────────────────────────────────────

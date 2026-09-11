@@ -66,7 +66,19 @@ Diskette eine unformatierte Spur oder Daten hinter der Daten-CRC enthält
 Tastendrücke werden nach dem Vertrag des K7637-Kerns übersetzt (`ui/keyboard.py`):
 druckbares ASCII als erzeugter Zeichencode, Sondertasten als `Qt::Key_*`-Konstante
 (die `QK_*`-Werte im Kern sind damit identisch), Strg+Buchstabe als Basiscode plus
-Strg-Flag. Zusätzlich gibt es eine anklickbare Bildschirmtastatur im K7637-Stil.
+Strg-Flag.
+
+Der Tastatur-Dock zeigt eine **maßstäbliche Nachbildung der echten K7637** (Layout und
+Doppelbeschriftung nach einem Foto, Farben schwarz/weiß/rot). Jede Taste sendet ihren
+*physischen* Tastencode — auch die, die eine PC-Tastatur nicht hat (CE, SEL 0…3,
+PA 1…3, CLEAR, REC, FM, DUP, EREOF, ERINP, PF 1…PF 12, MON, RESET, `00`, die vier
+zusätzlichen Kursortasten); der Kurzhinweis an jeder Taste nennt den Code. PRINT und
+HLT sind unbelegt — ihr Code steht in keiner vorliegenden Codetabelle.
+
+Die acht **Leuchtdioden** arbeiten: die fünf Funktionsanzeigen über den Selektortasten
+und die blinkende Fehleranzeige schaltet der Rechner über die Kommandos an die Tastatur
+(`k1520_keyboard_leds`), die Betriebsanzeige hängt am Netzschalter, die LOCK-Anzeige am
+Umschaltfeststeller. Einzelheiten: `doc/design/08_k7637_keyboard.md` §2.3, §2.4 und §7.
 
 ## Steuerung und Konfiguration
 

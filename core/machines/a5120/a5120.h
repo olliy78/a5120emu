@@ -192,6 +192,16 @@ public:
     void keyPress(uint32_t qt_keycode, bool shift, bool ctrl);
     void keyRelease(uint32_t qt_keycode);
 
+    /**
+     * @brief Zustand der Tastaturanzeigen (K7637-Doku §2.1/§2.2.3).
+     *
+     * Bit 0…4 = Funktionsanzeigen G00…G04, Bit 5 = Fehleranzeige G53 (blinkt,
+     * solange gesetzt), Bit 7 = akustisches Signal läuft.  Die Betriebsanzeige
+     * E54 hängt an der Spannung und die LOCK-Anzeige C99 am Feststeller der
+     * Tastatur selbst — beide kommen hier nicht vor.
+     */
+    uint8_t keyboardLeds() const;
+
     // Framebuffer
     const uint8_t* framebuffer() const;
     int  fbWidth()  const { return 640; }

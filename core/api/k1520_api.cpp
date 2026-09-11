@@ -147,6 +147,10 @@ void k1520_key_release(K1520Handle h, uint32_t kc) {
     toA5120(h)->keyRelease(kc);
 }
 
+uint32_t k1520_keyboard_leds(K1520Handle h) {
+    return toA5120(h)->keyboardLeds();
+}
+
 void k1520_console_key(K1520Handle h, char c) {
     // Inject ASCII char as if typed (keycode = ASCII value, no modifiers)
     toA5120(h)->keyPress(static_cast<uint32_t>(c), false, false);

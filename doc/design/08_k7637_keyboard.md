@@ -36,15 +36,82 @@ Tastendruck → Matrixscan (intern K7637) → 1 Byte Tastencode senden
 - Wiederholfunktion: 500ms Verzögerung, dann alle 100ms
 - Prellunterdrückung: 2 aufeinanderfolgende Matrixscans (~10.9ms)
 
-### 2.3 Kommandos (K8025 → K7637)
+### 2.3 Kommandos (K8025 → K7637) — erkannt an der **Flankenzahl**
 
-| Byte | Funktion |
-|------|---------|
-| 00H | Software-RESET |
-| 20H | Fehler-LED blinken an/aus |
-| 44H | Akustisches Signal (~1s) |
-| 52H | LED-Anzeigen ein/aus |
-| 55H + xxH | Erweiterte LED-Steuerung |
+Die Tastatur wertet **nicht den Bytewert** aus. Die Impulse der empfangenen
+Bytes zählen einen auf 15 voreingestellten Binärzähler (D7:1) herunter; sein
+Stand *ist* das Kommando (Handbuch §2.2.3: „lediglich die Anzahl der
+Einzelimpulse … ist entscheidend"). Maßgeblich sind die **fallenden Flanken**
+des seriellen Rahmens — Ruhepegel 1, Startbit 0, acht Datenbits LSB zuerst,
+Stoppbit 1:
+
+| Zählerstand | Kanonisches Byte | Wirkung |
+|---|---|---|
+| 14 | `00H` | Software-RESET → Grundzustand, alle Funktionsanzeigen aus |
+| 13 | `20H` | Fehleranzeige G53 **blinken** an/aus (umschaltend); beim Einschalten ≈1 s Ton |
+| 12 | `44H` | akustisches Signal ≈1 s |
+| 11 | `52H` | Funktionsanzeige **G00** umschalten |
+| 10 | `55H` | **Vorkommando** — das nächste Byte zählt weiter mit |
+| 9 | `55H 00H` | Grundzustand herstellen |
+| 8 | `55H 20H` | **G01** umschalten |
+| 7 | `55H 44H` | **G02** umschalten |
+| 6 | `55H 52H` | **G03** umschalten |
+| 5 | `55H 55H` | **G04** umschalten |
+
+> **Der Bytewert ist nur eine bequeme Schreibweise.** Jedes Byte mit derselben
+> Flankenzahl löst dasselbe Kommando aus; die Tabelle nennt je Zählerstand nur
+> das Byte, das die Systemsoftware üblicherweise schickt. Ein Modell, das
+> `switch (byte)` rechnet, trifft die Hardware also nur zufällig. Wächter:
+> `K7637.CommandDecoding_CountsFallingEdges` (rechnet alle neun Zählerstände der
+> Handbuchtabelle nach) und `K7637.CommandDecoding_IgnoresTheByteValue`.
+
+**Was CP/A daraus macht** (BIOS-Routine `kbdmd2`, im Listing ausdrücklich
+„Routine fuer K7637"): Es schickt **je geändertem Bit** seines Lampenpuffers
+(`lampbf`, 0x0040) ein Kommando — passend dazu, dass die Kommandos *umschalten*.
+Die Zweibyte-Kommandos gibt es dabei als 55H **ohne** Warten auf die Quittung,
+dann das zweite Byte mit Warten (`lmpout`) — genau die Ausnahme, die das
+Handbuch für das Vorkommando nennt.
+
+| `lampbf`-Bit | Bedeutung im CP/A | gesendet | Anzeige |
+|---|---|---|---|
+| 0 | Selektor 0 | `52H` | G00 |
+| 1 | Selektor 1 | `55H 20H` | G01 |
+| 2 | Selektor 2 | `55H 44H` | G02 |
+| 3 | Selektor 3 | `55H 52H` | G03 |
+| 7 | Hardcopy / INS-Modus | `55H 55H` | G04 |
+| 6 | Fehlerlampe | `20H` | G53 (blinkt) |
+
+Die Bits 4/5 (Zweibahndrucker) kennt die K7637-Routine nicht. Am laufenden CP/A
+sind die fünf Funktionsanzeigen also **die vier Selektorlampen über den Tasten
+`0 1 2 3` plus die INS-Modus-Lampe**.
+
+> **Die andere Routine ist eine Falle.** `lmp34` (Adresse 0619) sendet den
+> invertierten Lampenpuffer über einen Parallelport und gehört zu den Tastaturen
+> K7604/06/34/36; `coi84l` („Typcode 80h") hängt an `km8454`, einer K7634-artigen
+> Tastatur mit Typcode 80H — **nicht** an der K7637. Deren Eintrag `km37` trägt
+> für die Lampen `coidum`, also *keine* Modifikation: es bleibt bei `kbdmd2`.
+
+**Quittung.** Ein gültiges Kommando quittiert die Tastatur mit dem Zeichen TYP
+(0x80). Das Modell quittiert **jedes** empfangene Byte — daran hängen die
+Tastaturerkennung (`coityp`: Reset senden, Typcode erwarten) und der
+LED-Handschlag (`lmpout` wartet nach jedem Byte).
+
+### 2.4 Die acht Anzeigen
+
+| Anzeige | Ort | Wer schaltet sie |
+|---|---|---|
+| **G00…G04** | die fünf über den Selektortasten | der Rechner, mit den fünf LED-Kommandos (**umschaltend**, nicht setzend) |
+| **G53** | rechts in derselben Leiste | der Rechner, Kommando `20H` — sie **blinkt**, solange eingeschaltet |
+| **E54** | neben dem Blindplatz der Einschalttaste | die Betriebsspannung: leuchtet, solange die Tastatur versorgt ist, und bleibt es auch im Grundzustand |
+| **C99** | links neben dem Umschaltfeststeller | die Tastatur selbst — sie folgt dem LOCK-Zustand, kein Kommando |
+
+Die Zuordnung G00…G04/G53 zu den Kommandos steht im ROM (Adressen 4A0H…4A4H)
+und ist je Tastaturvariante anders; hier gilt die Standardbelegung aus dem
+Handbuch. **Welcher Leuchtpunkt am Gerät welche Position trägt**, sagt das
+Handbuch nicht; die Zuordnung oben ist erschlossen: G00…G04 sitzen als Gruppe
+über den Selektortasten, E54 liegt laut Handbuch neben der Einschalttaste
+(Tastenposition E53,5 — am Auftischgerät der Blindplatz rechts in der
+Ziffernreihe), C99 ist als LOCK-Anzeige benannt (Feststeller = C00).
 
 ---
 
@@ -186,6 +253,27 @@ vor-übersetzten ASCII-Wert, sonst fallen physisch verschiedene Tasten zusammen.
 > **CTRL** ist real die ET2-Taste (physisch **0xFE** beim *Loslassen*, setzt ein
 > Einmal-Flag für die nächste Taste). Das Modell nimmt die Abkürzung `Code & 0x1F`.
 
+### 5.2 Rohcodes — der Weg für Tasten, die der PC nicht hat
+
+Die Qt-Abbildung oben reicht nur so weit, wie eine PC-Tastatur reicht. Die
+Bildschirmtastatur (`app/ui/keyboard.py`) bildet aber die **ganze** K7637 nach,
+und die hat Tasten, für die es keine Qt-Taste gibt: CE, SEL 0…3, PA 1…3, CLEAR,
+REC, FM, DUP, EREOF, ERINP, PF 9…PF 12, MON, RESET, `00`, die vier zusätzlichen
+Kursortasten. Dafür gibt es den **Rohcode-Fluchtweg**:
+
+```
+K7637::QK_RAW_BASE | <Byte>     (QK_RAW_BASE = 0x0200_0000)
+```
+
+`translateKey()` erkennt den Bereich als erstes und sendet das Byte unverändert
+— insbesondere **ohne** die `& 0x1F`-Rechnung, die nur für druckbares ASCII
+gilt (sonst käme PF 1 = 0xC1 mit gedrücktem CTRL als 0x01 an). Der Bereich liegt
+über den `Qt::Key_*`-Werten (0x0100_0000), kollidiert also mit nichts.
+
+Wächter: `K7637.RawCode_IsSentVerbatim`, `K7637.RawCode_IgnoresCtrl`; auf der
+Python-Seite vergleicht `test_keyboard_layout.py::test_raw_base_matches_the_core`
+die Konstante mechanisch mit dem Kern-Header.
+
 ---
 
 ## 6. IFSS-Verbindung im Emulator
@@ -239,60 +327,92 @@ void K7637::tick(int ms_elapsed) {
 
 ---
 
-## 7. GUI-Tastatur-Widget (Python)
+## 7. Bildschirmtastatur (`app/ui/keyboard.py`)
 
-Die Python-GUI kann eine stilisierte Darstellung der K7637-Tastatur anzeigen:
+Die GUI zeigt die Tastatur als **maßstäbliche Nachbildung** der K7637.50
+(Standard-Latein, US-Anordnung) — die Vorlage ist ein Foto der echten Tastatur,
+das Rastermaß daran abgemessen. Nicht aus Knöpfen zusammengesetzt, sondern
+gezeichnet (`paintEvent`): runde Kappen im quadratischen Schacht, Ovale für
+SHIFT/ET1/ET2/Leertaste, der dreireihige ENTER-Balken und die Doppelbeschriftung
+(oben Umschaltebene, unten Grundebene) sind mit Widgets nicht sinnvoll
+nachzubauen. Farben schwarz/weiß/rot wie am Original; der Codierstecker am
+rechten Rand fehlt (er wirkt nur unter SIOS).
 
-```python
-class KeyboardWidget(QWidget):
-    """Visuelle Darstellung der K7637-Tastatur"""
+Ein Klick sendet `keyPressed(keycode, shift, ctrl)`, das Loslassen
+`keyReleased` — gedrückt gehalten läuft also die Tastenwiederholung des
+emulierten K7637 an. SHIFT und CTRL/ET2 wirken auf genau die nächste Taste,
+LOCK bleibt gesetzt und wird (wie am Original) mit SHIFT aufgehoben.
 
-    keyPressed  = Signal(int, bool, bool)  # qt_key, shift, ctrl
-    keyReleased = Signal(int)
+### 7.1 Die Tastencodes des Tastenfelds
 
-    def __init__(self):
-        super().__init__()
-        # Tastaturlayout aus Dokumentation (107 Tasten)
-        self._buildLayout()
+Alle Sondercodes stammen aus der BIOS-Umkodiertabelle **`cp37`** (Listing
+`disks/cpa_cpa780_*.prn`) — sie ist die einzige vorliegende Quelle für die
+physischen Codes, das Tastatur-EPROM fehlt.
 
-    def updateLEDs(self, led_state: dict):
-        """Aktualisiert LED-Anzeigen (LOCK, Fehler, Selektoren)"""
+| Taste(n) | Grundebene | Umschaltebene |
+|----------|-----------|---------------|
+| `0` `1` `2` `3` (links oben) | SEL 0…3 = 0xA0…0xA3 | — |
+| INS MD / INS L | 0xA8 | 0x93 |
+| DEL CH / DEL L | 0xBB | 0xB3 |
+| PF 1…PF 3 / PA 1…PA 3 | 0xC1…0xC3 | 0xFA / 0xF9 / 0xF8 |
+| PF 4 | 0xC4 | — |
+| PF 5…PF 8 / CLEAR, REC, FM, DUP | 0xC5…0xC8 | 0xFC, 0xFD, 0xBE, 0xBC |
+| PF 9 (POWER) | 0xC9 | — (am Auftischgerät ohne Funktion) |
+| PF 10, PF 11 / EREOF, ERINP | 0xCA, 0xCB | 0x98, 0x99 |
+| PF 12 | 0xCC | — |
+| RESET, M (MON) | 0xAF, 0xB0 | — |
+| Kursor ↑ ↓ ← → | 0x94, 0x95, 0x96, 0x97 | — |
+| `|←|` (Tab), `|←`, `→|`, `↰`, `↵` | 0x9F, 0x9B, 0x91, 0x9C, 0x9A | — |
+| CE | 0xB9 | — |
+| ET1 / ENTER (Ziffernblock) | 0xFF / 0xC0 | — |
+| `00` | 0xB1 | — |
+| Zeichentasten, Ziffernblock | ASCII | ASCII |
 
-    def _buildLayout(self):
-        """Baut die Tastatur-Schaltflächen nach K7637-Layout"""
-```
+> **Drei Tasten sind bewusst unbelegt bzw. behelfsmäßig belegt.** **PRINT** und
+> **HLT** stehen in keiner vorliegenden Codetabelle — sie werden gezeichnet,
+> senden aber nichts (ein erfundener Code löste im Gast Unsinn aus). Die rote
+> **`−`** des Ziffernblocks sendet ASCII `-`; ihr echter Code ist ebenfalls
+> unbekannt, `cp37` führt INS MD ausdrücklich als „Ersatz num. Minus". Die weiße
+> **ESC**-Taste sendet 0x1B (ASCII, wird durchgereicht) — im CP/A ist ESC sonst
+> über DELL erreichbar („DELL als Ersatz ESC").
+
+### 7.2 Beschriftung der Ziffernreihe
+
+Die Umschaltebene ist **bitgepaart** (Shift löscht Bit 0x10): `1`→`!`, `2`→`"`,
+… `9`→`)`, und ebenso `-`→`=`, `;`→`+`, `:`→`*`, `,`→`<`, `.`→`>`, `/`→`?`. Zwei
+Beschriftungen sind auf dem Foto nur als Balken lesbar und wurden über die
+Vollständigkeit des ASCII-Vorrats erschlossen: `0` trägt oben `_` (0x5F), `^`
+trägt oben `‾` (0x7E, im A5120-Zeichensatz als Überstrich gezeichnet); `¤` auf
+der `4` ist die Darstellung von 0x24. Wächter ist
+`test_keyboard_layout.py::test_ascii_set_is_complete`: jedes druckbare
+ASCII-Zeichen muss auf genau einer Taste erreichbar sein.
+
+### 7.3 Anzeigen
+
+`k1520_keyboard_leds` liefert die Bitmaske (Bit 0…4 = G00…G04, Bit 5 =
+Fehleranzeige, Bit 7 = Ton läuft); `MainWindow._run_emulator` holt sie je Bild
+ab und gibt sie an `KeyboardWidget.set_leds()`, das nur bei echter Änderung neu
+zeichnet. Das **Blinken** der Fehleranzeige macht die Oberfläche (Zeitgeber,
+500 ms) — der Kern kennt keine Wanduhr, er meldet nur „blinkt". Die
+Betriebsanzeige hängt am Netzschalter des Fensters (`set_powered`), die
+LOCK-Anzeige am Feststeller der Bildschirmtastatur selbst.
+
+### 7.4 Größe im Dock
+
+Das Widget ist maßstabstreu und kennt sein Seitenverhältnis
+(`heightForWidth`); `MainWindow._shrink_keyboard` setzt die Dock-Höhe danach,
+damit die Tastatur die Breite der linken Spalte genau ausfüllt.
 
 ---
 
-## 8. Testbarkeit
+## 8. Wächter
 
-```python
-# tests/python/test_k7637.py
-def test_key_A_generates_code(k7637_lib, mock_sio):
-    kb = k7637_lib.k7637_create()
-    k7637_lib.k7637_connect(kb, mock_sio)
-    k7637_lib.k7637_key_press(kb, Qt.Key_A, False, False)
-    assert mock_sio.last_rx_byte == ord('a')  # Kleinbuchstabe ohne Shift
-
-def test_key_A_shift_generates_uppercase(k7637_lib, mock_sio):
-    kb = k7637_lib.k7637_create()
-    k7637_lib.k7637_connect(kb, mock_sio)
-    k7637_lib.k7637_key_press(kb, Qt.Key_A, True, False)  # Shift
-    assert mock_sio.last_rx_byte == ord('A')
-
-def test_repeat_after_delay(k7637_lib, mock_sio):
-    kb = k7637_lib.k7637_create()
-    k7637_lib.k7637_connect(kb, mock_sio)
-    k7637_lib.k7637_key_press(kb, Qt.Key_A, False, False)
-    count_before = mock_sio.rx_count
-    k7637_lib.k7637_tick(kb, 600)  # 600ms gehalten
-    assert mock_sio.rx_count > count_before + 1  # Wiederholung
-
-def test_led_command(k7637_lib, mock_sio):
-    kb = k7637_lib.k7637_create()
-    k7637_lib.k7637_connect(kb, mock_sio)
-    mock_sio.inject_tx(0x52)  # LED-Kommando
-    k7637_lib.k7637_tick(kb, 10)
-    leds = k7637_lib.k7637_get_leds(kb)
-    # Nach 0x52: LED-Zustand geändert
-```
+| Was | Wo |
+|-----|----|
+| Tastencodes, Ctrl, ET1≠ENTER, Kursor, Wiederholung, LED-Kommandos, Byte-Laufzeit | `tests/unit/peripherals/test_k7637.cpp` |
+| Rohcode-Weg (§5.2) | `K7637.RawCode_IsSentVerbatim`, `K7637.RawCode_IgnoresCtrl` |
+| Kommandodekodierung über Flankenzählung (§2.3) | `K7637.CommandDecoding_CountsFallingEdges`, `K7637.CommandDecoding_IgnoresTheByteValue`, `K7637.PreCommand_NeedsTheSecondByte` |
+| Anzeigen und Ton (§2.4) | `K7637.LedCommands_ToggleTheirDisplay`, `K7637.ErrorDisplay_TogglesAndBeepsWhenSwitchedOn`, `K7637.BeepCommand_RunsForAboutOneSecond`, `K7637.ResetCommand_ClearsAllDisplays`, `K7637.EveryCommandByteIsAcknowledged` |
+| Host-Taste → Kern-Keycode | `tests/python/test_keyboard_map.py` |
+| Tastenfeld der Bildschirmtastatur (Codes, Umschaltebene, ASCII-Vollständigkeit, keine überlappenden Tasten) | `tests/python/test_keyboard_layout.py` |
+| Tastatur am laufenden System | `tests/python/test_boot_smoke.py::test_keyboard_input_reaches_the_machine` |

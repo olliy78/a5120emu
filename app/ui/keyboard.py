@@ -17,19 +17,37 @@ Zwei Dinge leben hier:
    * **Ctrl+Buchstabe** → Basis-ASCII des Buchstabens + ``ctrl=True``; der Core
      bildet daraus den Steuercode (``code & 0x1F``).
 
-2. :class:`KeyboardWidget` — eine anklickbare Bildschirmtastatur im K7637-Stil.
+2. :class:`KeyboardWidget` — eine **Nachbildung der echten K7637** (Layout,
+   Doppelbeschriftung, Farben Schwarz/Weiß/Rot), gezeichnet statt aus Knöpfen
+   zusammengesetzt: die Tastenformen (runde Kappen im Schacht, Ovale, der
+   dreireihige ENTER-Balken) sind mit Widgets nicht sinnvoll nachzubauen.
+
    Sie sendet dieselben ``(keycode, shift, ctrl)``-Ereignisse über die Signale
-   :attr:`keyPressed` / :attr:`keyReleased`.  Das Aussehen ist bewusst schlicht
-   gehalten und wird später an die echte Tastatur angeglichen.
+   :attr:`keyPressed` / :attr:`keyReleased`.
+
+**Woher die Tastencodes kommen.** Die K7637 sendet den *physischen* Code aus
+ihrer ROM-Codetabelle; das CP/A-BIOS rekodiert die hohen Codes über die Tabelle
+``cp37`` (im Listing ``disks/cpa_cpa780_*.prn``).  Daraus stammen alle
+Sondercodes unten — SEL0..3 (die Tasten ``0 1 2 3`` links oben) 0xA0..0xA3,
+PF1..PF12 0xC1..0xCC, die Umschaltebene PA1..PA3/CLEAR/REC/FM/DUP/EREOF/ERINP,
+CE 0xB9, ENTER 0xC0, ET1 0xFF, MON (``M``) 0xB0, RESET 0xAF, ``00`` 0xB1 sowie
+die acht Kursorcodes.  Gesendet werden sie über den **Rohcode-Fluchtweg**
+``K7637::QK_RAW_BASE`` (= :data:`RAW_BASE`): ``RAW_BASE | 0xC1`` ist „PF1", ohne
+den Umweg über eine PC-Taste, die es für diese Tasten gar nicht gibt.
+
+Nicht belegt sind **PRINT** und **HLT** (stehen in keiner vorliegenden
+Codetabelle, das Tastatur-EPROM fehlt): sie werden gezeichnet, senden aber
+nichts.  Die rote ``−`` des Ziffernblocks sendet ASCII ``-``; ihr echter Code
+ist ebenfalls unbekannt (``cp37`` führt INS MD ausdrücklich als „Ersatz num.
+Minus").
 """
 
-from typing import Optional, Tuple
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (
-    QWidget, QGridLayout, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QSizePolicy,
-)
+from PySide6.QtCore import Qt, Signal, QEvent, QPointF, QRectF, QSize, QTimer
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter
+from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 
 # ── Qt-Sondertasten, die der Core direkt als Qt::Key_* versteht ───────────────
@@ -86,257 +104,606 @@ def qt_event_to_core_key(event) -> Optional[Tuple[int, bool, bool]]:
     return None
 
 
-# ── Bildschirmtastatur ────────────────────────────────────────────────────────
+# ── Rohcode-Fluchtweg in den Kern ────────────────────────────────────────────
+#: Muss ``K7637::QK_RAW_BASE`` entsprechen (``core/peripherals/k7637/k7637.h``).
+RAW_BASE = 0x02000000
 
+
+def raw(code: int) -> int:
+    """Physischen K7637-Tastencode (ein Byte) in einen Kern-Keycode packen."""
+    return RAW_BASE | (code & 0xFF)
+
+
+# ── Anzeigen: Bitmaske aus `k1520_keyboard_leds` ────────────────────────────
+#: Die fünf Funktionsanzeigen über den Selektortasten (Handbuch: G00…G04).
+LED_G00, LED_G01, LED_G02, LED_G03, LED_G04 = 0x01, 0x02, 0x04, 0x08, 0x10
+#: Fehleranzeige G53 — sie **blinkt**, solange das Bit gesetzt ist.
+LED_ERROR = 0x20
+#: Akustisches Signal (hier nicht dargestellt, nur der Vollständigkeit halber).
+LED_BEEP = 0x80
+
+#: Blinktakt der Fehleranzeige in Millisekunden.
+_BLINK_MS = 500
+
+
+# ── Farben (dem Foto der echten Tastatur abgenommen) ─────────────────────────
+_C_BACK      = QColor(0x1e, 0x1e, 0x1e)   # Fläche neben der Tastatur
+_C_BEZEL     = QColor(0x6e, 0x6a, 0x55)   # Tastaturwanne, oliv
+_C_HOLDER    = QColor(0x54, 0x52, 0x49)   # Schacht um die runden Kappen
+_C_DARK      = QColor(0x2c, 0x2c, 0x2e)   # schwarze Kappe
+_C_DARK_TXT  = QColor(0xef, 0xea, 0xd8)
+_C_LIGHT     = QColor(0xd6, 0xd3, 0xc6)   # helle (durchscheinende) Kappe
+_C_LIGHT_TXT = QColor(0x4a, 0x49, 0x45)
+_C_RED       = QColor(0xd2, 0x3b, 0x30)
+_C_RED_TXT   = QColor(0xff, 0xff, 0xff)
+_C_FILLER    = QColor(0x3f, 0x3f, 0x3b)   # Blindtasten ohne Beschriftung
+_C_LED_OFF   = QColor(0x7a, 0x4a, 0x42)   # rote LED, unbeleuchtet (milchig-dunkel)
+_C_LED_ON    = QColor(0xff, 0x3b, 0x2a)
+_C_ACTIVE    = QColor(0xff, 0xd0, 0x40)   # rastender Modifikator an
+
+
+@dataclass
 class _Key:
-    """Definition einer einzelnen Taste im Bildschirm-Layout."""
+    """Eine Taste der Nachbildung.
 
-    __slots__ = ("label", "shift_label", "code", "shift_code", "span", "kind")
+    Geometrie in **Tastenrastern** (1.0 = ein Rastermaß); der Zeichencode ist
+    entweder ASCII (0x20..0x7E) oder ein Rohcode (:func:`raw`).
+    """
 
-    def __init__(self, label, code, *, shift_label=None, shift_code=None,
-                 span=1, kind="normal"):
-        self.label = label            # Beschriftung (unshifted)
-        self.shift_label = shift_label  # Beschriftung mit Shift (optional)
-        self.code = code              # Core-Keycode ohne Shift
-        self.shift_code = shift_code if shift_code is not None else code
-        self.span = span              # Spalten im Grid
-        self.kind = kind              # "normal" | "shift" | "ctrl" | "lock"
+    x: float
+    y: float
+    low: str = ""              # Beschriftung unten = Grundebene
+    up: str = ""               # Beschriftung oben  = Umschaltebene
+    code: Optional[int] = None
+    shift_code: Optional[int] = None
+    w: float = 0.95
+    h: float = 0.92
+    style: str = "dark"        # dark | light | red | filler
+    shape: str = "round"       # round | rect | oval
+    kind: str = "normal"       # normal | shift | lock | ctrl | dead
+    name: str = ""             # Klartext für den Kurzhinweis
+    vertical: bool = False     # Beschriftung um 90° gedreht (ENTER)
+    dual: bool = False         # zweizeilig beschriften, auch ohne Umschaltebene
+
+    def code_for(self, shift: bool) -> Optional[int]:
+        if shift and self.shift_code is not None:
+            return self.shift_code
+        return self.code
 
 
-def _c(ch: str) -> int:
+def _a(ch: str) -> int:
+    """ASCII-Code eines Zeichens."""
     return ord(ch)
 
 
+def _build_layout() -> List[_Key]:
+    """Das Tastenfeld der K7637.50 (Standard-Latein), Reihe für Reihe.
+
+    Die x-Werte sind am Foto abgemessen (Rastermaß ≈ 157 px); die Reihen sind
+    gegeneinander versetzt wie im Original.  Der Codierstecker am rechten Rand
+    ist weggelassen — er wirkt nur unter SIOS.
+    """
+    k: List[_Key] = []
+
+    # ── Reihe 0: Funktionstasten, helle Quadrate ─────────────────────────────
+    # Obere Beschriftung = Umschaltebene.  Codes: SEL0..3 und PF1..PF12 aus
+    # cp37; die Umschaltcodes (PA1…ERINP) stehen dort als eigene Einträge.
+    fn = [
+        ("",       "0",     raw(0xA0), None,       "SEL 0"),
+        ("",       "1",     raw(0xA1), None,       "SEL 1"),
+        ("",       "2",     raw(0xA2), None,       "SEL 2"),
+        ("",       "3",     raw(0xA3), None,       "SEL 3"),
+        ("INS L",  "INS MD", raw(0xA8), raw(0x93), "INS MD / INS L"),
+        ("DEL L",  "DEL CH", raw(0xBB), raw(0xB3), "DEL CH / DEL L"),
+        ("PA 1",   "PF 1",  raw(0xC1), raw(0xFA),  "PF 1 / PA 1"),
+        ("PA 2",   "PF 2",  raw(0xC2), raw(0xF9),  "PF 2 / PA 2"),
+        ("PA 3",   "PF 3",  raw(0xC3), raw(0xF8),  "PF 3 / PA 3"),
+        ("",       "PF 4",  raw(0xC4), None,       "PF 4"),
+        ("CLEAR",  "PF 5",  raw(0xC5), raw(0xFC),  "PF 5 / CLEAR"),
+        ("REC",    "PF 6",  raw(0xC6), raw(0xFD),  "PF 6 / REC"),
+        ("FM",     "PF 7",  raw(0xC7), raw(0xBE),  "PF 7 / FM"),
+        ("DUP",    "PF 8",  raw(0xC8), raw(0xBC),  "PF 8 / DUP"),
+        ("POWER",  "PF 9",  raw(0xC9), None,       "PF 9 (POWER: am Auftischgerät ohne Funktion)"),
+        ("EREOF",  "PF 10", raw(0xCA), raw(0x98),  "PF 10 / EREOF"),
+        ("ERINP",  "PF 11", raw(0xCB), raw(0x99),  "PF 11 / ERINP"),
+        ("",       "PF 12", raw(0xCC), None,       "PF 12"),
+    ]
+    for i, (up, low, code, sc, name) in enumerate(fn):
+        k.append(_Key(x=float(i), y=0.0, low=low, up=up, code=code,
+                      shift_code=sc, h=0.85, style="light", shape="rect",
+                      dual=True, name=name))
+    k.append(_Key(x=18.3, y=0.0, low="RESET", code=raw(0xAF), h=0.85,
+                  style="light", shape="rect", name="RESET (BIOS: PF 15)"))
+    k.append(_Key(x=19.3, y=0.0, low="M", code=raw(0xB0), h=0.85,
+                  style="light", shape="rect", name="M / MON (BIOS: PF 14)"))
+
+    # ── Reihe 1: Ziffernreihe ────────────────────────────────────────────────
+    k.append(_Key(x=0.0, y=1.0, low="CTRL", w=1.25, style="light", shape="rect",
+                  kind="ctrl", name="CTRL (Steuerebene)"))
+    digits = [
+        ("!", "1"), ('"', "2"), ("#", "3"), ("¤", "4"), ("%", "5"),
+        ("&", "6"), ("'", "7"), ("(", "8"), (")", "9"), ("_", "0"),
+        ("=", "-"), ("‾", "^"),
+    ]
+    for i, (up, low) in enumerate(digits):
+        # Die Umschaltebene ist bitgepaart (ASCII): '1'→'!', '-'→'=', '^'→'~'.
+        # '¤' ist die Darstellung von 0x24 im A5120-Zeichensatz, '‾' die von
+        # 0x7E (Tilde).
+        shift_ch = {"¤": "$", "‾": "~"}.get(up, up)
+        k.append(_Key(x=1.4 + i, y=1.0, low=low, up=up,
+                      code=_a(low), shift_code=_a(shift_ch),
+                      name=f"{low} / {shift_ch}"))
+    k.append(_Key(x=13.4, y=1.0, low="|←|", code=raw(0x9F),
+                  name="Tabulator (BIOS: TAB)"))
+    k.append(_Key(x=14.5, y=1.0, low="↰", code=raw(0x9C), style="light",
+                  shape="rect", name="Kursor Seite zurück"))
+    k.append(_Key(x=15.5, y=1.0, low="PRINT", style="light", shape="rect",
+                  kind="dead", name="PRINT — Tastencode unbekannt"))
+    k.append(_Key(x=16.5, y=1.0, low="HLT", style="light", shape="rect",
+                  kind="dead", name="HLT — Tastencode unbekannt"))
+    k.append(_Key(x=17.5, y=1.0, low="ESC", code=0x1B, style="light",
+                  shape="rect", name="ESC (0x1B)"))
+    k.append(_Key(x=18.5, y=1.0, w=1.2, style="filler", shape="rect",
+                  kind="dead", name="Blindtaste"))
+
+    # ── Reihe 2: QWERTY ──────────────────────────────────────────────────────
+    k.append(_Key(x=0.3, y=2.0, low="→|", w=1.3, code=raw(0x91), style="light",
+                  shape="rect", name="Kursor Wort vorwärts"))
+    for i, ch in enumerate("QWERTYUIOP"):
+        k.append(_Key(x=1.8 + i, y=2.0, low=ch, code=_a(ch.lower()),
+                      shift_code=_a(ch), name=ch))
+    k.append(_Key(x=11.8, y=2.0, low="@", up="`", code=_a("@"),
+                  shift_code=_a("`"), name="@ / `"))
+    k.append(_Key(x=12.8, y=2.0, low="[", up="{", code=_a("["),
+                  shift_code=_a("{"), name="[ / {"))
+    k.append(_Key(x=13.9, y=2.0, low="|←", code=raw(0x9B), style="light",
+                  shape="rect", name="Kursor Wort zurück"))
+    k.append(_Key(x=14.9, y=2.0, low="CE", code=raw(0xB9), style="red",
+                  name="CE (Eingabe löschen)"))
+    for i, ch in enumerate("789"):
+        k.append(_Key(x=16.05 + i, y=2.0, low=ch, code=_a(ch), name=f"Ziffernblock {ch}"))
+    k.append(_Key(x=19.05, y=2.0, low=".", code=_a("."), name="Ziffernblock ."))
+
+    # ── Reihe 3: ASDF ────────────────────────────────────────────────────────
+    k.append(_Key(x=0.55, y=3.0, low="↕", kind="lock",
+                  name="LOCK (Umschaltfeststeller)"))
+    for i, ch in enumerate("ASDFGHJKL"):
+        k.append(_Key(x=1.55 + i, y=3.0, low=ch, code=_a(ch.lower()),
+                      shift_code=_a(ch), name=ch))
+    k.append(_Key(x=10.55, y=3.0, low=";", up="+", code=_a(";"),
+                  shift_code=_a("+"), name="; / +"))
+    k.append(_Key(x=11.55, y=3.0, low=":", up="*", code=_a(":"),
+                  shift_code=_a("*"), name=": / *"))
+    k.append(_Key(x=12.55, y=3.0, low="]", up="}", code=_a("]"),
+                  shift_code=_a("}"), name="] / }"))
+    k.append(_Key(x=13.9, y=3.0, low="↵", code=raw(0x9A), style="light",
+                  shape="rect", name="Kursor Seite vorwärts"))
+    k.append(_Key(x=14.9, y=3.0, low="−", code=_a("-"), style="red",
+                  name="Ziffernblock − (sendet ASCII '-')"))
+    for i, ch in enumerate("456"):
+        k.append(_Key(x=16.05 + i, y=3.0, low=ch, code=_a(ch), name=f"Ziffernblock {ch}"))
+    k.append(_Key(x=19.05, y=3.0, low="ENTER", code=raw(0xC0), h=2.92,
+                  shape="oval", vertical=True, name="ENTER (Ziffernblock, ≠ ET1)"))
+
+    # ── Reihe 4: ZXCV ────────────────────────────────────────────────────────
+    k.append(_Key(x=0.0, y=4.0, low="↕", w=1.05, shape="oval", kind="shift",
+                  name="Umschalttaste (SHIFT)"))
+    k.append(_Key(x=1.1, y=4.0, low="\\", up="|", code=_a("\\"),
+                  shift_code=_a("|"), name="\\ / |"))
+    for i, ch in enumerate("ZXCVBNM"):
+        k.append(_Key(x=2.15 + i, y=4.0, low=ch, code=_a(ch.lower()),
+                      shift_code=_a(ch), name=ch))
+    k.append(_Key(x=9.15, y=4.0, low=",", up="<", code=_a(","),
+                  shift_code=_a("<"), name=", / <"))
+    k.append(_Key(x=10.15, y=4.0, low=".", up=">", code=_a("."),
+                  shift_code=_a(">"), name=". / >"))
+    k.append(_Key(x=11.15, y=4.0, low="/", up="?", code=_a("/"),
+                  shift_code=_a("?"), name="/ / ?"))
+    k.append(_Key(x=12.15, y=4.0, low="↕", w=1.55, shape="oval", kind="shift",
+                  name="Umschalttaste (SHIFT)"))
+    k.append(_Key(x=13.9, y=4.0, low="↓", code=raw(0x95), style="light",
+                  shape="rect", name="Kursor abwärts"))
+    k.append(_Key(x=14.9, y=4.0, low="↑", code=raw(0x94), style="light",
+                  shape="rect", name="Kursor aufwärts"))
+    for i, ch in enumerate("123"):
+        k.append(_Key(x=16.05 + i, y=4.0, low=ch, code=_a(ch), name=f"Ziffernblock {ch}"))
+
+    # ── Reihe 5: Leertastenreihe ─────────────────────────────────────────────
+    k.append(_Key(x=0.1, y=5.0, w=0.8, style="filler", shape="rect",
+                  kind="dead", name="Blindtaste"))
+    k.append(_Key(x=1.0, y=5.0, low="ET2", w=1.5, shape="oval", kind="ctrl",
+                  name="ET2 (wirkt als Steuertaste)"))
+    k.append(_Key(x=2.75, y=5.0, w=8.2, shape="oval", code=0x20,
+                  name="Leertaste"))
+    k.append(_Key(x=11.65, y=5.0, low="ET1", w=1.5, shape="oval",
+                  code=raw(0xFF), name="ET1 (BIOS: CR)"))
+    k.append(_Key(x=13.9, y=5.0, low="←", code=raw(0x96), style="light",
+                  shape="rect", name="Kursor links"))
+    k.append(_Key(x=14.9, y=5.0, low="→", code=raw(0x97), style="light",
+                  shape="rect", name="Kursor rechts"))
+    k.append(_Key(x=16.05, y=5.0, low="0", code=_a("0"), name="Ziffernblock 0"))
+    k.append(_Key(x=17.05, y=5.0, low="00", code=raw(0xB1), name="Ziffernblock 00"))
+    k.append(_Key(x=18.05, y=5.0, low=",", code=_a(","), name="Ziffernblock ,"))
+
+    return k
+
+
 class KeyboardWidget(QWidget):
-    """Anklickbare Darstellung der K7637-Tastatur.
+    """Anklickbare Nachbildung der K7637-Tastatur.
 
     Emittiert für jede betätigte Taste :attr:`keyPressed` (mit Shift-/Ctrl-Zustand)
-    gefolgt von :attr:`keyReleased`.  Shift/Ctrl/Lock sind rastende Modifikatoren:
-    Shift/Ctrl wirken auf genau die nächste Taste, Lock bleibt gesetzt.
+    und beim Loslassen :attr:`keyReleased`.  (Eine Tastenwiederholung entsteht
+    daraus nicht: die Wiederholung des K7637-Modells hängt an ``tick()``, das der
+    laufende Rechner nicht aufruft.)
+
+    SHIFT und CTRL/ET2 wirken auf genau die nächste Taste, LOCK bleibt gesetzt
+    (wie auf der echten Tastatur, die mit SHIFT zurückgeschaltet wird).
     """
 
     keyPressed = Signal(int, bool, bool)   # keycode, shift, ctrl
     keyReleased = Signal(int)              # keycode
+
+    #: Kleinstes Rastermaß in Pixeln — darunter ist nichts mehr lesbar.
+    MIN_UNIT = 21.0
+    #: Rastermaß, das die Tastatur von sich aus vorschlägt.
+    PREF_UNIT = 34.0
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._shift = False
         self._ctrl = False
         self._lock = False
-        self._mod_buttons = {}   # kind -> QPushButton (zum Rückspiegeln)
-        self._build_ui()
-        # Damit die Tastatur auch echte Host-Tasten weiterreicht, wenn sie den
-        # Fokus hat (die Bildschirm-Widget-Weiterleitung ist der Hauptpfad).
+        self._keys = _build_layout()
+        self._pressed: Optional[_Key] = None     # aktuell gedrückte Taste
+        self._pressed_code: Optional[int] = None
+        self._leds = 0                           # Bitmaske aus dem Kern
+        self._blink_on = True                    # Phase der Fehleranzeige
+        self._powered = True                     # Betriebsanzeige E54
+
+        # Die Fehleranzeige blinkt — die echte tut es auch.  Der Zeitgeber läuft
+        # nur, solange sie eingeschaltet ist.
+        self._blink_timer = QTimer(self)
+        self._blink_timer.setInterval(_BLINK_MS)
+        self._blink_timer.timeout.connect(self._toggle_blink)
+
+        span_x = max(k.x + k.w for k in self._keys)
+        span_y = max(k.y + k.h for k in self._keys)
+        # Ränder: oben mehr, dort sitzt die LED-Leiste der echten Tastatur.
+        self._pad = (0.35, 0.75, 0.35, 0.35)     # links, oben, rechts, unten
+        self._units_w = span_x + self._pad[0] + self._pad[2]
+        self._units_h = span_y + self._pad[1] + self._pad[3]
+
         self.setFocusPolicy(Qt.StrongFocus)
+        self.setMouseTracking(False)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setAutoFillBackground(False)
 
-    # ── Layout ---------------------------------------------------------------
+    # ── Anzeigen ────────────────────────────────────────────────────────────
 
-    def _build_ui(self):
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(6, 6, 6, 6)
-        outer.setSpacing(8)
+    def set_leds(self, mask: int):
+        """Zustand der Tastaturanzeigen übernehmen (`k1520_keyboard_leds`).
 
-        # Funktionstastenreihe.
-        frow = [
-            _Key("ESC", int(Qt.Key_Escape)),
-            _Key("F1", int(Qt.Key_F1)), _Key("F2", int(Qt.Key_F2)),
-            _Key("F3", int(Qt.Key_F3)), _Key("F4", int(Qt.Key_F4)),
-            _Key("F5", int(Qt.Key_F5)), _Key("F6", int(Qt.Key_F6)),
-            _Key("F7", int(Qt.Key_F7)), _Key("F8", int(Qt.Key_F8)),
-        ]
-
-        # Haupt-QWERTZ-Block (deutsche Belegung, vereinfacht).
-        main_rows = [
-            [
-                _Key("1", _c("1"), shift_label="!", shift_code=_c("!")),
-                _Key("2", _c("2"), shift_label='"', shift_code=_c('"')),
-                _Key("3", _c("3"), shift_label="§", shift_code=_c("3")),
-                _Key("4", _c("4"), shift_label="$", shift_code=_c("$")),
-                _Key("5", _c("5"), shift_label="%", shift_code=_c("%")),
-                _Key("6", _c("6"), shift_label="&", shift_code=_c("&")),
-                _Key("7", _c("7"), shift_label="/", shift_code=_c("/")),
-                _Key("8", _c("8"), shift_label="(", shift_code=_c("(")),
-                _Key("9", _c("9"), shift_label=")", shift_code=_c(")")),
-                _Key("0", _c("0"), shift_label="=", shift_code=_c("=")),
-                _Key("ß", _c("-"), shift_label="?", shift_code=_c("?")),
-                _Key("'", _c("'"), shift_label="`", shift_code=_c("`")),
-                _Key("<--", int(Qt.Key_Backspace), span=2),
-            ],
-            [
-                _Key("Tab", int(Qt.Key_Tab), span=2),
-                _Key("Q", _c("q"), shift_label="Q", shift_code=_c("Q")),
-                _Key("W", _c("w"), shift_label="W", shift_code=_c("W")),
-                _Key("E", _c("e"), shift_label="E", shift_code=_c("E")),
-                _Key("R", _c("r"), shift_label="R", shift_code=_c("R")),
-                _Key("T", _c("t"), shift_label="T", shift_code=_c("T")),
-                _Key("Z", _c("z"), shift_label="Z", shift_code=_c("Z")),
-                _Key("U", _c("u"), shift_label="U", shift_code=_c("U")),
-                _Key("I", _c("i"), shift_label="I", shift_code=_c("I")),
-                _Key("O", _c("o"), shift_label="O", shift_code=_c("O")),
-                _Key("P", _c("p"), shift_label="P", shift_code=_c("P")),
-                _Key("Ü", _c("["), shift_label="Ü", shift_code=_c("{")),
-                _Key("+", _c("+"), shift_label="*", shift_code=_c("*")),
-            ],
-            [
-                _Key("LOCK", 0, span=2, kind="lock"),
-                _Key("A", _c("a"), shift_label="A", shift_code=_c("A")),
-                _Key("S", _c("s"), shift_label="S", shift_code=_c("S")),
-                _Key("D", _c("d"), shift_label="D", shift_code=_c("D")),
-                _Key("F", _c("f"), shift_label="F", shift_code=_c("F")),
-                _Key("G", _c("g"), shift_label="G", shift_code=_c("G")),
-                _Key("H", _c("h"), shift_label="H", shift_code=_c("H")),
-                _Key("J", _c("j"), shift_label="J", shift_code=_c("J")),
-                _Key("K", _c("k"), shift_label="K", shift_code=_c("K")),
-                _Key("L", _c("l"), shift_label="L", shift_code=_c("L")),
-                _Key("Ö", _c(";"), shift_label="Ö", shift_code=_c(":")),
-                _Key("Ä", _c("'"), shift_label="Ä", shift_code=_c('"')),
-                _Key("ET1", int(Qt.Key_Return), span=2),
-            ],
-            [
-                _Key("SHIFT", 0, span=2, kind="shift"),
-                _Key("Y", _c("y"), shift_label="Y", shift_code=_c("Y")),
-                _Key("X", _c("x"), shift_label="X", shift_code=_c("X")),
-                _Key("C", _c("c"), shift_label="C", shift_code=_c("C")),
-                _Key("V", _c("v"), shift_label="V", shift_code=_c("V")),
-                _Key("B", _c("b"), shift_label="B", shift_code=_c("B")),
-                _Key("N", _c("n"), shift_label="N", shift_code=_c("N")),
-                _Key("M", _c("m"), shift_label="M", shift_code=_c("M")),
-                _Key(",", _c(","), shift_label=";", shift_code=_c(";")),
-                _Key(".", _c("."), shift_label=":", shift_code=_c(":")),
-                _Key("-", _c("-"), shift_label="_", shift_code=_c("_")),
-                _Key("SHIFT", 0, span=2, kind="shift"),
-            ],
-            [
-                _Key("CTRL", 0, span=2, kind="ctrl"),
-                _Key("Leertaste", _c(" "), span=8),
-                _Key("DELCH", int(Qt.Key_Delete), span=2),
-            ],
-        ]
-
-        # Ziffernblock rechts.
-        num_rows = [
-            [_Key("7", _c("7")), _Key("8", _c("8")), _Key("9", _c("9")),
-             _Key("/", _c("/"))],
-            [_Key("4", _c("4")), _Key("5", _c("5")), _Key("6", _c("6")),
-             _Key("*", _c("*"))],
-            [_Key("1", _c("1")), _Key("2", _c("2")), _Key("3", _c("3")),
-             _Key("-", _c("-"))],
-            [_Key("0", _c("0"), span=2), _Key(".", _c(".")),
-             _Key("ENTER", int(Qt.Key_Enter))],
-        ]
-
-        # Cursor-Cluster.
-        cursor_rows = [
-            [None, _Key("↑", int(Qt.Key_Up)), None],
-            [_Key("←", int(Qt.Key_Left)), _Key("↓", int(Qt.Key_Down)),
-             _Key("→", int(Qt.Key_Right))],
-        ]
-
-        # Funktionstastenreihe rendern.
-        outer.addWidget(self._make_row(frow))
-
-        # Mittlerer Bereich: Hauptblock | Cursor | Ziffernblock.
-        mid = QHBoxLayout()
-        mid.setSpacing(12)
-
-        main_box = QVBoxLayout()
-        main_box.setSpacing(4)
-        for row in main_rows:
-            main_box.addWidget(self._make_row(row))
-        main_w = QWidget()
-        main_w.setLayout(main_box)
-        mid.addWidget(main_w, 5)
-
-        cursor_grid = self._make_grid(cursor_rows)
-        mid.addWidget(cursor_grid, 0, Qt.AlignBottom)
-
-        num_grid = self._make_grid(num_rows)
-        mid.addWidget(num_grid, 0, Qt.AlignTop)
-
-        mid_w = QWidget()
-        mid_w.setLayout(mid)
-        outer.addWidget(mid_w)
-
-        # Übriger vertikaler Platz geht in einen Abstandhalter unten, damit die
-        # Tastenreihen kompakt oben bleiben (statt sich in die Höhe zu ziehen).
-        outer.addStretch(1)
-
-    def _make_row(self, keys) -> QWidget:
-        """Eine horizontale Tastenreihe (span steuert die relative Breite)."""
-        w = QWidget()
-        lay = QHBoxLayout(w)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(4)
-        for k in keys:
-            if k is None:
-                lay.addStretch(1)
-                continue
-            lay.addWidget(self._make_button(k), k.span)
-        return w
-
-    def _make_grid(self, rows) -> QWidget:
-        """Ein Raster fester Zellen (Ziffernblock / Cursor)."""
-        w = QWidget()
-        grid = QGridLayout(w)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(4)
-        for r, row in enumerate(rows):
-            col = 0
-            for k in row:
-                if k is None:
-                    col += 1
-                    continue
-                btn = self._make_button(k)
-                grid.addWidget(btn, r, col, 1, k.span)
-                col += k.span
-        return w
-
-    def _make_button(self, k: _Key) -> QPushButton:
-        btn = QPushButton(k.label)
-        btn.setFocusPolicy(Qt.NoFocus)   # Fokus soll beim Bildschirm bleiben
-        btn.setFixedHeight(32)   # feste Höhe → Reihen wachsen nicht mit dem Dock
-        btn.setMinimumWidth(26)
-        # Kompakte Tasten: Padding klein halten, damit die Bildschirmtastatur
-        # das Fenster nicht unnötig breit macht (Look wird später angepasst).
-        btn.setStyleSheet("QPushButton { padding: 1px 2px; }")
-        btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        if k.kind in ("shift", "ctrl", "lock"):
-            btn.setCheckable(True)
-            btn.clicked.connect(lambda checked, kind=k.kind: self._on_mod(kind, checked))
-            self._mod_buttons[k.kind] = btn
-        else:
-            btn.clicked.connect(lambda _=False, key=k: self._on_key(key))
-        return btn
-
-    # ── Ereignisverarbeitung -------------------------------------------------
-
-    def _on_mod(self, kind: str, checked: bool):
-        if kind == "shift":
-            self._shift = checked
-        elif kind == "ctrl":
-            self._ctrl = checked
-        elif kind == "lock":
-            self._lock = checked
-
-    def _on_key(self, k: _Key):
-        shift_active = self._shift or self._lock
-        code = k.shift_code if shift_active else k.code
-        if code == 0:
+        Wird je Bild gerufen; neu gezeichnet wird nur bei echter Änderung.
+        """
+        mask = int(mask) & 0xFF
+        if mask == self._leds:
             return
-        self.keyPressed.emit(int(code), shift_active, self._ctrl)
-        self.keyReleased.emit(int(code))
-        # Shift/Ctrl sind Einmal-Modifikatoren (Lock bleibt bestehen).
-        if self._shift:
-            self._shift = False
-            self._reflect_mod("shift", False)
-        if self._ctrl:
-            self._ctrl = False
-            self._reflect_mod("ctrl", False)
+        self._leds = mask
+        if mask & LED_ERROR:
+            if not self._blink_timer.isActive():
+                self._blink_on = True
+                self._blink_timer.start()
+        else:
+            self._blink_timer.stop()
+        self.update()
 
-    def _reflect_mod(self, kind: str, state: bool):
-        btn = self._mod_buttons.get(kind)
-        if btn is not None:
-            btn.setChecked(state)
+    def set_powered(self, on: bool):
+        """Betriebsanzeige E54 — sie hängt an der Spannung, nicht am Rechner."""
+        if bool(on) != self._powered:
+            self._powered = bool(on)
+            self.update()
+
+    def _toggle_blink(self):
+        self._blink_on = not self._blink_on
+        self.update()
+
+    # ── Größen ──────────────────────────────────────────────────────────────
+
+    def _size_for_unit(self, unit: float) -> QSize:
+        return QSize(int(round(self._units_w * unit)),
+                     int(round(self._units_h * unit)))
+
+    def sizeHint(self) -> QSize:
+        return self._size_for_unit(self.PREF_UNIT)
+
+    def minimumSizeHint(self) -> QSize:
+        return self._size_for_unit(self.MIN_UNIT)
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        """Höhe, bei der die Tastatur die Breite @p width genau ausfüllt."""
+        unit = max(self.MIN_UNIT, width / self._units_w)
+        return int(round(self._units_h * unit))
+
+    def _geometry(self) -> Tuple[float, float, float]:
+        """(Rastermaß, x-Versatz, y-Versatz) für die aktuelle Widgetgröße."""
+        unit = min(self.width() / self._units_w, self.height() / self._units_h)
+        unit = max(unit, 1.0)
+        ox = (self.width() - self._units_w * unit) / 2.0
+        oy = (self.height() - self._units_h * unit) / 2.0
+        return unit, ox, oy
+
+    def _rect_of(self, key: _Key, unit: float, ox: float, oy: float) -> QRectF:
+        return QRectF(ox + (self._pad[0] + key.x) * unit,
+                      oy + (self._pad[1] + key.y) * unit,
+                      key.w * unit, key.h * unit)
+
+    def _key_at(self, pos) -> Optional[_Key]:
+        unit, ox, oy = self._geometry()
+        for key in self._keys:
+            if self._rect_of(key, unit, ox, oy).contains(QPointF(pos)):
+                return key
+        return None
+
+    # ── Zeichnen ────────────────────────────────────────────────────────────
+
+    def paintEvent(self, event):
+        unit, ox, oy = self._geometry()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.fillRect(self.rect(), _C_BACK)
+
+        # Tastaturwanne.
+        p.setPen(Qt.NoPen)
+        p.setBrush(_C_BEZEL)
+        p.drawRoundedRect(QRectF(ox, oy, self._units_w * unit,
+                                 self._units_h * unit),
+                          0.25 * unit, 0.25 * unit)
+
+        # Die acht Anzeigen (Handbuch §2.1/§2.2.3/§2.3):
+        #   G00…G04  die fünf über den Selektortasten — der Rechner schaltet sie
+        #   G53      Fehleranzeige, blinkend, rechts in derselben Leiste
+        #   E54      Betriebsanzeige neben dem Blindplatz der Einschalttaste
+        #   C99      LOCK, folgt dem Feststeller der Tastatur selbst
+        led_r = 0.08 * unit
+        for cx, cy, lit, _ in self._led_spots(unit, ox, oy):
+            self._draw_led(p, cx, cy, led_r, lit)
+
+        for key in self._keys:
+            self._draw_key(p, key, unit, ox, oy)
+
+        p.end()
+
+    def _led_spots(self, unit: float, ox: float, oy: float):
+        """Die acht Leuchtpunkte als ``(x, y, leuchtet, Bezeichnung)``.
+
+        Eine Stelle für Zeichnen und Kurzhinweis — sonst wandern die Punkte
+        beim nächsten Feilen am Layout auseinander.
+        """
+        led_y = oy + 0.38 * unit
+        spots = []
+        namen = ("Selektor 0 (G00)", "Selektor 1 (G01)", "Selektor 2 (G02)",
+                 "Selektor 3 (G03)", "INS-Modus (G04)")
+        for i, bit in enumerate((LED_G00, LED_G01, LED_G02, LED_G03, LED_G04)):
+            spots.append((ox + (0.6 + i * 0.9) * unit, led_y,
+                          bool(self._leds & bit), namen[i]))
+        spots.append((ox + (self._units_w - 0.7) * unit, led_y,
+                      bool(self._leds & LED_ERROR) and self._blink_on,
+                      "Fehleranzeige (G53) — blinkt"))
+        spots.append((ox + (self._pad[0] + 19.85) * unit,
+                      oy + (self._pad[1] + 1.45) * unit,
+                      self._powered, "Betriebsanzeige (E54)"))
+        spots.append((ox + (self._pad[0] + 0.2) * unit,
+                      oy + (self._pad[1] + 3.45) * unit,
+                      self._lock, "Umschaltfeststeller (C99)"))
+        return spots
+
+    def _draw_led(self, p: QPainter, cx: float, cy: float, r: float,
+                  lit: bool = False):
+        """Eine rote Anzeigediode.
+
+        Rot wie am Original; unbeleuchtet bleibt sie milchig-dunkel.
+        """
+        p.setPen(Qt.NoPen)
+        p.setBrush(_C_LED_ON if lit else _C_LED_OFF)
+        p.drawEllipse(QPointF(cx, cy), r, r)
+
+    def _cap_colors(self, key: _Key) -> Tuple[QColor, QColor]:
+        if key.style == "light":
+            return _C_LIGHT, _C_LIGHT_TXT
+        if key.style == "red":
+            return _C_RED, _C_RED_TXT
+        if key.style == "filler":
+            return _C_FILLER, _C_FILLER
+        return _C_DARK, _C_DARK_TXT
+
+    def _is_active(self, key: _Key) -> bool:
+        return ((key.kind == "shift" and self._shift)
+                or (key.kind == "ctrl" and self._ctrl)
+                or (key.kind == "lock" and self._lock))
+
+    def _draw_key(self, p: QPainter, key: _Key, unit: float, ox: float, oy: float):
+        rect = self._rect_of(key, unit, ox, oy)
+        cap, txt = self._cap_colors(key)
+        if key is self._pressed:
+            cap = cap.darker(135) if key.style != "dark" else cap.lighter(160)
+
+        p.setPen(Qt.NoPen)
+        if key.shape == "round":
+            # Runde Kappe im quadratischen Schacht — die Bauform der K7637.
+            p.setBrush(_C_HOLDER)
+            p.drawRoundedRect(rect, 0.12 * unit, 0.12 * unit)
+            inset = 0.06 * unit
+            cap_rect = rect.adjusted(inset, inset, -inset, -inset)
+            p.setBrush(cap)
+            p.drawEllipse(cap_rect)
+        elif key.shape == "oval":
+            p.setBrush(_C_HOLDER)
+            p.drawRoundedRect(rect, 0.12 * unit, 0.12 * unit)
+            inset = 0.05 * unit
+            cap_rect = rect.adjusted(inset, inset, -inset, -inset)
+            r = min(cap_rect.width(), cap_rect.height()) / 2.0
+            p.setBrush(cap)
+            p.drawRoundedRect(cap_rect, r, r)
+        else:
+            p.setBrush(cap)
+            p.drawRoundedRect(rect, 0.15 * unit, 0.15 * unit)
+
+        if self._is_active(key):
+            pen = p.pen()
+            p.setBrush(Qt.NoBrush)
+            p.setPen(_C_ACTIVE)
+            p.drawRoundedRect(rect.adjusted(1, 1, -1, -1),
+                              0.15 * unit, 0.15 * unit)
+            p.setPen(pen)
+
+        self._draw_legend(p, key, rect, txt, unit)
+
+    def _draw_legend(self, p: QPainter, key: _Key, rect: QRectF,
+                     color: QColor, unit: float):
+        if not key.low and not key.up:
+            return
+        p.setPen(color)
+
+        if key.vertical:
+            p.save()
+            p.translate(rect.center())
+            p.rotate(90)
+            box = QRectF(-rect.height() / 2, -rect.width() / 2,
+                         rect.height(), rect.width())
+            self._draw_text(p, key.low, box, unit * 0.30)
+            p.restore()
+            return
+
+        if key.up or key.dual:
+            # Doppelbeschriftung: oben die Umschaltebene, unten die Grundebene.
+            top = QRectF(rect.x(), rect.y() + rect.height() * 0.12,
+                         rect.width(), rect.height() * 0.40)
+            bot = QRectF(rect.x(), rect.y() + rect.height() * 0.50,
+                         rect.width(), rect.height() * 0.40)
+            self._draw_text(p, key.up, top, unit * 0.26)
+            self._draw_text(p, key.low, bot, unit * 0.26)
+        else:
+            self._draw_text(p, key.low, rect, unit * 0.34)
+
+    def _draw_text(self, p: QPainter, text: str, box: QRectF, size: float):
+        """Text mittig in @p box — die Schrift schrumpft, bis sie hineinpasst."""
+        if not text:
+            return
+        font = QFont(p.font())
+        size = max(5.0, size)
+        avail = box.width() * 0.88
+        while size > 5.0:
+            font.setPixelSize(max(5, int(round(size))))
+            if QFontMetricsF(font).horizontalAdvance(text) <= avail:
+                break
+            size -= 0.75
+        font.setPixelSize(max(5, int(round(size))))
+        p.setFont(font)
+        p.drawText(box, Qt.AlignCenter, text)
+
+    # ── Maus ────────────────────────────────────────────────────────────────
+
+    def mousePressEvent(self, event):
+        if event.button() != Qt.LeftButton:
+            super().mousePressEvent(event)
+            return
+        key = self._key_at(event.position() if hasattr(event, "position")
+                           else event.pos())
+        if key is None:
+            return
+        if key.kind in ("shift", "ctrl", "lock"):
+            self._toggle_mod(key.kind)
+            self.update()   # LOCK-Anzeige C99 hängt an diesem Zustand
+            return
+        if key.kind == "dead" or key.code is None:
+            return
+
+        shift_active = self._shift or self._lock
+        code = key.code_for(shift_active)
+        if code is None:
+            return
+        self._pressed = key
+        self._pressed_code = int(code)
+        self.update()
+        self.keyPressed.emit(int(code), shift_active, self._ctrl)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() != Qt.LeftButton:
+            super().mouseReleaseEvent(event)
+            return
+        self._release_pressed()
+
+    def leaveEvent(self, event):
+        # Maus verlässt das Widget mit gedrückter Taste: nicht hängen lassen,
+        # sonst läuft die Tastenwiederholung des K7637 endlos weiter.
+        self._release_pressed()
+        super().leaveEvent(event)
+
+    def _release_pressed(self):
+        if self._pressed_code is None:
+            return
+        self.keyReleased.emit(int(self._pressed_code))
+        self._pressed = None
+        self._pressed_code = None
+        # SHIFT/CTRL wirken nur auf die eine Taste (LOCK bleibt bestehen).
+        if self._shift or self._ctrl:
+            self._shift = False
+            self._ctrl = False
+        self.update()
+
+    def _toggle_mod(self, kind: str):
+        if kind == "shift":
+            # Wie am Original: SHIFT hebt auch den Feststeller wieder auf.
+            if self._lock:
+                self._lock = False
+                self._shift = False
+            else:
+                self._shift = not self._shift
+        elif kind == "ctrl":
+            self._ctrl = not self._ctrl
+        elif kind == "lock":
+            self._lock = not self._lock
+            self._shift = False
+
+    # ── Kurzhinweis: welche Taste ist das, und welchen Code sendet sie? ─────
+
+    def event(self, event):
+        if event.type() == QEvent.ToolTip:
+            key = self._key_at(event.pos())
+            if key is not None:
+                QToolTip.showText(event.globalPos(), self._tip(key), self)
+                return True
+            led = self._led_at(event.pos())
+            if led is not None:
+                QToolTip.showText(event.globalPos(), led, self)
+            else:
+                QToolTip.hideText()
+            return True
+        return super().event(event)
+
+    def _led_at(self, pos) -> Optional[str]:
+        """Bezeichnung der Anzeige unter @p pos (oder ``None``)."""
+        unit, ox, oy = self._geometry()
+        r = 0.22 * unit                   # großzügiger als der Punkt selbst
+        for cx, cy, lit, name in self._led_spots(unit, ox, oy):
+            if (pos.x() - cx) ** 2 + (pos.y() - cy) ** 2 <= r * r:
+                return f"{name}: {'an' if lit else 'aus'}"
+        return None
+
+    @staticmethod
+    def _tip(key: _Key) -> str:
+        name = key.name or key.low or "Taste"
+        if key.kind in ("shift", "ctrl", "lock"):
+            return name
+        if key.kind == "dead" or key.code is None:
+            return f"{name} — sendet nichts"
+        parts = [f"{name}: Code 0x{key.code & 0xFF:02X}"]
+        if key.shift_code is not None and key.shift_code != key.code:
+            parts.append(f"mit SHIFT 0x{key.shift_code & 0xFF:02X}")
+        return " · ".join(parts)
 
     # ── Host-Tasten auch verarbeiten, wenn die Tastatur den Fokus hat --------
 

@@ -94,3 +94,36 @@ def test_keyboard_input_reaches_the_machine(booted):
     assert "12:34:56" in after, (
         "getippte Uhrzeit erscheint nicht im Eingabefeld:\n" + after
     )
+
+
+def test_selector_key_lights_the_keyboard_lamp(booted):
+    """Die Tastaturanzeigen am laufenden CP/A — der ganze Weg, nicht nur das Papier.
+
+    Gedrückt wird die Selektortaste ``0`` mit ihrem PHYSISCHEN Code 0xA0.  Was
+    danach passiert, geht durch alles hindurch: BIOS kippt Bit 0 seines
+    Lampenpuffers, `lampen` schickt das Kommando 52H an die Tastatur, die
+    K7637 erkennt es an der FLANKENZAHL und schaltet die Anzeige G00 um.
+    Nochmal gedrückt schaltet sie wieder aus — die Kommandos negieren, sie
+    setzen nicht (K7637-Doku §2.2.3).
+    """
+    from app.ui.keyboard import LED_G00, LED_G01, raw
+
+    assert run_until_text(booted, "Bitte Uhrzeit eingeben")
+    for char in "120000":
+        booted.key_press(ord(char)); booted.run(300_000)
+        booted.key_release(ord(char)); booted.run(300_000)
+    booted.key_press(0x01000004); booted.key_release(0x01000004)   # ET1
+    assert run_until_text(booted, "A>"), "CP/A kam nicht zum Prompt"
+
+    assert booted.keyboard_leds() == 0, "am Prompt brennt noch keine Anzeige"
+
+    def taste(code):
+        booted.key_press(raw(code)); booted.key_release(raw(code))
+        booted.run(6_000_000)
+
+    taste(0xA0)                                   # Selektor 0
+    assert booted.keyboard_leds() == LED_G00
+    taste(0xA1)                                   # Selektor 1 kommt dazu
+    assert booted.keyboard_leds() == LED_G00 | LED_G01
+    taste(0xA0)                                   # und Selektor 0 wieder aus
+    assert booted.keyboard_leds() == LED_G01

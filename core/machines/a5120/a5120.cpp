@@ -341,10 +341,20 @@ bool A5120Machine::restoreState(const MachineSnapshot& s) {
 // It is parsed sequentially per chip with bounds checks, so a shorter (older) blob
 // loads fine — trailing chips simply keep their current state. Versions:
 //   1 = no device state, 2 = + keyboard subsystem, 3 = + K5122 floppy controller,
-//   4 = + K7024 VRAM (2 KB), so `screen`/framebuffer survive a loadstate.
+//   4 = + K7024 VRAM (2 KB), so `screen`/framebuffer survive a loadstate,
+//   5 = K7637-Block umgebaut (LED-Maske + Flankenzähler statt der erfundenen
+//       Caps/Scroll/Num-Rasten).  Der Blob trägt keine Längen je Chip, also
+//       verschöbe ein v4-Block alles dahinter — ein älterer Stand wird deshalb
+//       OHNE Geräteteil geladen (Geräte behalten ihren Zustand, wie bei v1).
 namespace {
 const char    kStateMagicPrefix[7] = {'K','1','5','2','0','S','S'};
-constexpr uint8_t kStateVersion    = 4;
+constexpr uint8_t kStateVersion    = 5;
+}
+
+uint8_t A5120Machine::keyboardLeds() const {
+    uint8_t mask = kbd_.leds();
+    if (kbd_.beeping()) mask |= 0x80;
+    return mask;
 }
 
 bool A5120Machine::saveState(const std::string& path) const {
@@ -375,7 +385,7 @@ bool A5120Machine::loadState(const std::string& path) {
     char magic[7]; f.read(magic, sizeof magic);
     if (!f || std::memcmp(magic, kStateMagicPrefix, sizeof magic) != 0) return false;
     uint8_t version = 0; f.read(reinterpret_cast<char*>(&version), 1);
-    if (!f || version < 1 || version > 4) return false;
+    if (!f || version < 1 || version > kStateVersion) return false;
     uint32_t regsize = 0; f.read(reinterpret_cast<char*>(&regsize), sizeof regsize);
     if (!f || regsize != (uint32_t)sizeof(MachineSnapshot::Z80Regs)) return false;
     MachineSnapshot s;
@@ -391,6 +401,9 @@ bool A5120Machine::loadState(const std::string& path) {
         s.device_state.resize(dev_len);
         if (dev_len) f.read(reinterpret_cast<char*>(s.device_state.data()), dev_len);
         if (!f) return false;
+        // Vor v5 hat der K7637-Block ein anderes Format; sequentiell gelesen
+        // verschöbe er jeden folgenden Chip.  Lieber ohne Geräteteil laden.
+        if (version < 5) s.device_state.clear();
     }
     s.rom_enabled=flags[0]; s.busrq_active=flags[1]; s.dma_progress=flags[2]; s.bus_master_zve2=flags[3];
     return restoreState(s);

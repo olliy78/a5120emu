@@ -34,6 +34,19 @@ public:
     // beep, …).  Call whenever sio.channelX().txAvailable() is true.
     /// @return true, wenn mindestens ein Kommando-Byte verarbeitet wurde
     ///         (kann den SIO-Interruptzustand ändern).
+    ///
+    /// **Kommandos erkennt die K7637 an der Zahl der Impulsflanken, nicht am
+    /// Bytewert** (Handbuch §2.2.3): die empfangenen Flanken zählen einen auf
+    /// 15 voreingestellten Zähler herunter, und dessen Stand ist das Kommando.
+    /// Die Bytes der Handbuchtabelle (00H, 20H, 44H, 52H, 55H) sind nur die
+    /// übliche Schreibweise — jedes Byte mit derselben Flankenzahl wirkt gleich.
+    /// Ein Zählerstand 10 (ein einzelnes 55H) ist das **Vorkommando**: dann
+    /// zählt das nächste Byte weiter mit.
+    ///
+    /// CP/A schickt je GEÄNDERTEM Bit seines Lampenpuffers ein Kommando
+    /// (BIOS-Routine `kbdmd2`, „Routine fuer K7637"): Selektor 0…3 → 52H bzw.
+    /// 55H 20H/44H/52H, INS-Modus → 55H 55H, Fehlerlampe → 20H.  Das passt zu
+    /// der umschaltenden Wirkung der Kommandos.
     bool processTxCommands();
 
     // Per-instruction service: advance the serial-transmit timing (release any
@@ -75,16 +88,39 @@ public:
         pressed_key_ = 0; pressed_scancode_ = 0;
         shift_ = ctrl_ = false;
         repeat_delay_ms_ = repeat_period_ms_ = 0;
-        caps_lock_ = scroll_lock_ = num_lock_ = false;
-        expect_second_byte_ = false; first_cmd_byte_ = 0;
+        led_mask_ = 0; edge_acc_ = 0; beep_until_cycle_ = 0;
         tx_queue_.clear();
         cur_cycle_ = 0; next_tx_cycle_ = 0;
     }
 
-    // ── LED / lock state ──────────────────────────────────────────────────
-    bool capsLock()   const { return caps_lock_;   }
-    bool scrollLock() const { return scroll_lock_; }
-    bool numLock()    const { return num_lock_;    }
+    // ── Anzeigen und akustisches Signal ───────────────────────────────────
+    // Die Tastatur hat acht Leuchtdioden (K7637-Doku §2.1, §2.2.3, §2.3):
+    // fünf frei belegbare Funktionsanzeigen G00…G04, die blinkende
+    // Fehleranzeige G53, die Betriebsanzeige E54 (leuchtet, solange die
+    // Tastatur Spannung hat) und die LOCK-Anzeige C99 (folgt dem
+    // Umschaltfeststeller, also der Tastatur selbst — kein Kommando).
+    // Nur die ersten sechs schaltet der Rechner; sie stehen hier.  Die Codes
+    // sind die der Zuordnungstabelle im Handbuch.
+    static constexpr uint8_t LED_G00   = 0x01;
+    static constexpr uint8_t LED_G01   = 0x02;
+    static constexpr uint8_t LED_G02   = 0x04;
+    static constexpr uint8_t LED_G03   = 0x08;
+    static constexpr uint8_t LED_G04   = 0x10;
+    static constexpr uint8_t LED_ERROR = 0x20;   // G53 — blinkt, wenn gesetzt
+
+    /// Eingeschaltete Anzeigen als Bitmaske (LED_G00 … LED_ERROR).
+    uint8_t leds() const { return led_mask_; }
+    /// Läuft gerade das akustische Signal (≈1 s nach Kommando 44H)?
+    bool beeping() const { return beep_until_cycle_ > cur_cycle_; }
+
+    /**
+     * @brief Fallende Flanken im seriellen Rahmen eines Bytes.
+     *
+     * Ruhepegel 1, Startbit 0, acht Datenbits (LSB zuerst), Stoppbit 1.  Die
+     * Tastatur erkennt Kommandos **allein an dieser Zahl** (s. @ref
+     * processTxCommands), nicht am Bytewert.
+     */
+    static int fallingEdges(uint8_t byte);
 
 private:
     // Translate a keycode + modifiers to the A5120 scancode byte.
@@ -118,13 +154,16 @@ private:
     static constexpr int REPEAT_DELAY_MS  = 500;
     static constexpr int REPEAT_PERIOD_MS = 100;
 
-    // ── LED / command state ───────────────────────────────────────────────
-    bool caps_lock_   = false;
-    bool scroll_lock_ = false;
-    bool num_lock_    = false;
+    // ── Anzeigen / Kommandodekodierung ────────────────────────────────────
+    uint8_t  led_mask_         = 0;   // LED_G00 … LED_ERROR
+    uint8_t  edge_acc_         = 0;   // Flanken seit dem letzten Kommando
+    uint64_t beep_until_cycle_ = 0;   // akustisches Signal läuft bis …
 
-    bool    expect_second_byte_ = false;
-    uint8_t first_cmd_byte_     = 0;
+    /// Dauer des akustischen Signals: ≈1 s bei 2,5 MHz ZVE1-Takt.
+    static constexpr uint64_t BEEP_CYCLES = 2500000;
+
+    /// Ein empfangenes Kommandobyte auswerten (Flankenzählung).
+    void applyCommandByte(uint8_t byte);
 
     // ── Serial-transmit timing (keyboard → host) ──────────────────────────
     // One byte at 9600 baud (1 start + 8 data + 1 stop) = 10 bit-times.
@@ -134,6 +173,17 @@ private:
     uint64_t cur_cycle_      = 0;   // last cycle stamp seen via service()
     uint64_t next_tx_cycle_  = 0;   // earliest cycle the line is free again
 
+public:
+    // Rohcode-Fluchtweg für eine Bedienoberfläche, die die ECHTE Tastatur
+    // nachbildet: `QK_RAW_BASE | <Byte>` sendet genau dieses Byte als
+    // physischen K7637-Code (z.B. 0xB9 = CE, 0xCA = PF10, 0xA0 = SEL0).
+    // Über die Qt-Abbildung unten sind nur die Tasten erreichbar, die eine
+    // PC-Tastatur auch hat — die Bildschirmtastatur hat alle.
+    // Der Bereich liegt über den Qt::Key_*-Werten (0x0100_0000), kollidiert
+    // also weder mit ihnen noch mit druckbarem ASCII.
+    static constexpr int QK_RAW_BASE  = 0x02000000;
+
+private:
     // ── Qt keycode constants (no Qt headers needed) ───────────────────────
     static constexpr int QK_ESCAPE    = 0x01000000;
     static constexpr int QK_TAB       = 0x01000001;

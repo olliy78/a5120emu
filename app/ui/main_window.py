@@ -282,7 +282,11 @@ class MainWindow(QMainWindow):
         if (getattr(self, "keyboard_dock", None) is not None
                 and self.keyboard_dock.isVisible()
                 and not self.keyboard_dock.isFloating()):
-            h = self.keyboard_widget.minimumSizeHint().height()
+            # Die Tastatur ist eine maßstäbliche Nachbildung: die nötige Höhe
+            # hängt an der Breite, die ihr die linke Spalte lässt.
+            kw = self.keyboard_widget
+            h = (kw.heightForWidth(kw.width()) if kw.width() > 0
+                 else kw.minimumSizeHint().height())
             self.resizeDocks([self.screen_dock, self.keyboard_dock],
                              [max(1, self.height() - h), h], Qt.Vertical)
 
@@ -603,10 +607,14 @@ class MainWindow(QMainWindow):
             self.frame_count = 0
             self.run_timer.start()
             self.screen_widget.set_powered(True)
+            self.keyboard_widget.set_powered(True)
         else:
             self.power_btn.setText("Power OFF")
             self.run_timer.stop()
             self.screen_widget.set_powered(False)
+            # Betriebsanzeige der Tastatur aus, Funktionsanzeigen mit ihr.
+            self.keyboard_widget.set_powered(False)
+            self.keyboard_widget.set_leds(0)
         # Statusanzeige sofort aktualisieren (Zähler eingefroren bzw. auf 0).
         self._update_status()
     
@@ -641,6 +649,11 @@ class MainWindow(QMainWindow):
             cycles = self.emulator.run(self._cycles_per_frame())
             self.cycles += cycles
             self.frame_count += 1
+            # Die Tastaturanzeigen hängen am Kommandostrom zur Tastatur, ändern
+            # sich also mitten im Lauf; einmal je Bild abholen (die
+            # Bildschirmtastatur zeichnet nur bei echter Änderung neu).
+            if self.keyboard_dock.isVisible():
+                self.keyboard_widget.set_leds(self.emulator.keyboard_leds())
         except Exception as e:
             self._on_error(f"Emulator error: {e}")
     
