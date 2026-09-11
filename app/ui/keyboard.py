@@ -880,17 +880,19 @@ class KeyboardWidget(QWidget):
         code, shift, ctrl = mapped
         ctrl = ctrl or self._ctrl              # angeklickte CTRL/ET2-Taste
 
-        # Sondertasten gehen über die Taste der Nachbildung — mit derselben
-        # Ebene wie ein Mausklick.  Sonst schickt die Rücktaste des PC etwas
-        # anderes als die angeklickte DEL-CH-Taste, sobald umgeschaltet ist,
-        # und Umschalt+F1 käme nie als PA 1 an.
-        ebene = shift or self.schicht()
+        # Sondertasten gehen über die Taste der Nachbildung, damit Umschalt+F1
+        # als PA 1 ankommt.  Maßgeblich ist dabei **allein die Umschalttaste der
+        # echten Tastatur** — der eingerastete Feststeller der Nachbildung darf
+        # aus der Rücktaste des PC nicht DEL L machen: wer seine Feststelltaste
+        # an hat, drückt trotzdem eine Rücktaste und keine „Zeile löschen".
+        ebene = shift
         if int(event.key()) in _HOST_SPECIAL or self._ist_funktionstaste(event):
             tasten = self._keys_for_host_event(event)
             if tasten and tasten[0].code is not None:
                 return (int(tasten[0].code_for(ebene)), ebene, ctrl)
 
-        if ebene and 0x61 <= code <= 0x7A and not ctrl:
+        # Buchstaben dagegen folgen dem Feststeller — genau dafür ist er da.
+        if (ebene or self.schicht()) and 0x61 <= code <= 0x7A and not ctrl:
             code -= 0x20                       # a…z → A…Z
             shift = True
         return (code, shift, ctrl)

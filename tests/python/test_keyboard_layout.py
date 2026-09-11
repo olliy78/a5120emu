@@ -539,22 +539,20 @@ def _klickcode(widget, key):
 
 
 @pytest.mark.parametrize("zustand", ["nichts", "pc-feststeller", "lock"])
-def test_host_key_and_click_agree(widget, zustand):
-    """Rücktaste am PC und angeklickte DEL-CH-Taste schicken DASSELBE Byte.
+def test_backspace_stays_delete_character(widget, zustand):
+    """Die Rücktaste des PC bleibt DEL CH — in JEDEM Feststeller-Zustand.
 
-    Vorher nicht: der *erkannte* Feststeller der PC-Tastatur schaltete die
-    Nachbildung auf die Umschaltebene, die Host-Tasten aber nicht — dann sendete
-    der Klick DEL L (0xB3) und die Rücktaste DEL CH (0xBB).  Dieselbe Taste,
-    zwei Wirkungen, je nach Eingabeweg.
+    Ein eingerasteter Feststeller darf aus ihr nicht DEL L („Zeile löschen")
+    machen: wer die Feststelltaste seines Rechners an hat, drückt trotzdem eine
+    Rücktaste.  Umgeschaltet wird nur, wer die Umschalttaste der ECHTEN
+    Tastatur hält (s. test_shift_reaches_the_upper_legend_of_special_keys).
     """
     if zustand == "pc-feststeller":
         widget._host_caps = True
     elif zustand == "lock":
         widget._lock = True
 
-    delch = next(k for k in widget._keys if k.name.startswith("DEL CH"))
-    host = widget.map_host_key(_taste(Qt.Key_Backspace, "\b"))[0] & 0xFF
-    assert host == _klickcode(widget, delch)
+    assert widget.map_host_key(_taste(Qt.Key_Backspace, "\b"))[0] == kbd.raw(0xBB)
 
 
 def test_host_caps_does_not_switch_special_keys(widget):
