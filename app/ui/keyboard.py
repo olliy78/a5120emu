@@ -990,7 +990,13 @@ class KeyboardWidget(QWidget):
         super().focusOutEvent(event)
 
     def keyPressEvent(self, event):
-        mapped = qt_event_to_core_key(event)
+        # Falls die Nachbildung doch einmal den Fokus hat (ein Klick auf sie
+        # holt ihn): DERSELBE Weg wie über den Bildschirm — sonst gölte hier
+        # weder Hervorhebung noch Feststeller, und zwei Eingabewege verhielten
+        # sich verschieden.
+        if event.isAutoRepeat():
+            return
+        mapped = self.host_key_press(event)
         if mapped is not None:
             self.keyPressed.emit(*mapped)
             event.accept()
@@ -998,7 +1004,9 @@ class KeyboardWidget(QWidget):
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
-        mapped = qt_event_to_core_key(event)
+        if event.isAutoRepeat():
+            return
+        mapped = self.host_key_release(event)
         if mapped is not None:
             self.keyReleased.emit(mapped[0])
             event.accept()
