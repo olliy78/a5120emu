@@ -367,3 +367,43 @@ def test_focus_loss_clears_stuck_highlights(widget):
     assert widget._host_down
     widget.clear_host_keys()
     assert not widget._host_down
+
+
+# ── Aufbau: was auf dem Foto zu sehen ist ────────────────────────────────────
+
+def test_function_leds_sit_centred_above_their_keys(widget):
+    """Die fünf Anzeigen stehen mittig über SEL 0…3 und INS MD.
+
+    Genau die Tasten, deren Lampen CP/A schaltet (Selektor 0…3 + INS-Modus) —
+    daneben verlöre die Leiste ihre Bedeutung.
+    """
+    unit, ox, oy = widget._geometry()
+    reihe0 = sorted((k for k in widget._keys if k.y == 0.0), key=lambda k: k.x)[:5]
+    for key, (cx, _, _, _) in zip(reihe0, widget._led_spots(unit, ox, oy)):
+        mitte = widget._rect_of(key, unit, ox, oy).center().x()
+        assert abs(cx - mitte) < 0.5, f"Anzeige über {key.low!r} sitzt nicht mittig"
+
+
+def test_leds_in_the_keyfield_sit_in_half_width_modules(keys):
+    """LOCK- und Betriebsanzeige stecken in einem Modul halber Tastenbreite."""
+    module = [k for k in keys if k.led]
+    assert len(module) == 2
+    for m in module:
+        assert 0.3 < m.w < 0.6, f"{m.name}: {m.w} ist keine halbe Tastenbreite"
+        assert m.kind == "dead" and m.code is None
+
+
+def test_blind_modules_flank_the_space_bar(keys):
+    """Links und rechts der Leertaste und neben ET1 sitzt je ein Blindmodul."""
+    blind = sorted(k.x for k in keys if k.name == "Blindmodul")
+    assert len(blind) == 3
+    space = next(k for k in keys if k.name == "Leertaste")
+    et1 = next(k for k in keys if k.low == "ET1")
+    assert blind[0] < space.x < blind[1] < et1.x < blind[2]
+
+
+def test_enter_is_labelled_letter_by_letter(by_name):
+    """ENTER traegt seine Grossbuchstaben aufrecht untereinander."""
+    enter = by_name["ENTER (Ziffernblock, ≠ ET1)"]
+    assert enter.vertical and enter.low == "ENTER"
+    assert enter.h > 2.5, "der ENTER-Balken geht über drei Reihen"

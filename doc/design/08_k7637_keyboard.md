@@ -387,7 +387,26 @@ der `4` ist die Darstellung von 0x24. Wächter ist
 `test_keyboard_layout.py::test_ascii_set_is_complete`: jedes druckbare
 ASCII-Zeichen muss auf genau einer Taste erreichbar sein.
 
-### 7.3 Anzeigen
+### 7.3 Aufbau: die Tastatur ist modular
+
+Das Tastenfeld besteht aus Modulen im Rastermaß, und nicht jedes trägt eine
+Taste. Die Nachbildung führt sie als Blindelemente mit:
+
+- **halbbreite Module mit Anzeige**: links neben dem Umschaltfeststeller (C99)
+  und am rechten Ende der Ziffernreihe (E54, dort wo die Einbauvariante ihre
+  Einschalttaste hat — Tastenposition E53,5),
+- **halbbreite Blindmodule** ohne alles: links und rechts der Leertaste und
+  rechts neben ET1,
+- eine **volle Blindtaste** links unten und eine rechts neben ESC.
+
+Die fünf Funktionsanzeigen sitzen frei in der Wanne, **mittig über SEL 0…3 und
+INS MD** — genau über den Tasten, deren Lampen CP/A dort schaltet (§2.3); die
+Fehleranzeige am rechten Ende derselben Leiste. Gezeichnet werden die Dioden
+zuletzt, sonst verdeckte sie ihr eigenes Modul. Es sind 5-mm-Dioden mit hellem,
+milchigem Gehäuse: aus hellgrau, an rot — auf dem Foto ist keine von ihnen rot
+eingefärbt.
+
+### 7.4 Anzeigen
 
 `k1520_keyboard_leds` liefert die Bitmaske (Bit 0…4 = G00…G04, Bit 5 =
 Fehleranzeige, Bit 7 = Ton läuft); `MainWindow._run_emulator` holt sie je Bild
@@ -397,7 +416,7 @@ zeichnet. Das **Blinken** der Fehleranzeige macht die Oberfläche (Zeitgeber,
 Betriebsanzeige hängt am Netzschalter des Fensters (`set_powered`), die
 LOCK-Anzeige am Feststeller der Bildschirmtastatur selbst.
 
-### 7.4 Die echte Tastatur wird mitgezeigt
+### 7.5 Die echte Tastatur wird mitgezeigt
 
 Jede Host-Taste geht durch die Nachbildung: `MainWindow` setzt
 `ScreenWidget.key_sink = keyboard_widget`, und `ScreenWidget._map_key` reicht
@@ -427,7 +446,7 @@ Strg nicht darstellen). Drei Dinge passieren dort:
 Bleibt eine Taste hängen (Fokuswechsel, während sie gedrückt ist), räumt
 `ScreenWidget.focusOutEvent` → `clear_host_keys()` auf.
 
-### 7.5 Größe im Dock
+### 7.6 Größe im Dock
 
 Das Widget ist maßstabstreu und kennt sein Seitenverhältnis
 (`heightForWidth`); `MainWindow._shrink_keyboard` setzt die Dock-Höhe danach,
@@ -445,5 +464,5 @@ damit die Tastatur die Breite der linken Spalte genau ausfüllt.
 | Anzeigen und Ton (§2.4) | `K7637.LedCommands_ToggleTheirDisplay`, `K7637.ErrorDisplay_TogglesAndBeepsWhenSwitchedOn`, `K7637.BeepCommand_RunsForAboutOneSecond`, `K7637.ResetCommand_ClearsAllDisplays`, `K7637.EveryCommandByteIsAcknowledged` |
 | Host-Taste → Kern-Keycode | `tests/python/test_keyboard_map.py` |
 | Tastenfeld der Bildschirmtastatur (Codes, Umschaltebene, ASCII-Vollständigkeit, keine überlappenden Tasten) | `tests/python/test_keyboard_layout.py` |
-| Mitzeigen der echten Tastatur (§7.4): Hervorhebung, Sondertasten, gehaltene Modifikatoren, Ziffernblock, Feststeller in beide Richtungen | `tests/python/test_keyboard_layout.py` (`test_host_*`, `test_onscreen_lock_uppercases_host_keys`) |
+| Mitzeigen der echten Tastatur (§7.5): Hervorhebung, Sondertasten, gehaltene Modifikatoren, Ziffernblock, Feststeller in beide Richtungen | `tests/python/test_keyboard_layout.py` (`test_host_*`, `test_onscreen_lock_uppercases_host_keys`) |
 | Tastatur am laufenden System | `tests/python/test_boot_smoke.py::test_keyboard_input_reaches_the_machine` |

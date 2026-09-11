@@ -152,8 +152,11 @@ _C_LIGHT_TXT = QColor(0x4a, 0x49, 0x45)
 _C_RED       = QColor(0xd2, 0x3b, 0x30)
 _C_RED_TXT   = QColor(0xff, 0xff, 0xff)
 _C_FILLER    = QColor(0x3f, 0x3f, 0x3b)   # Blindtasten ohne Beschriftung
-_C_LED_OFF   = QColor(0x7a, 0x4a, 0x42)   # rote LED, unbeleuchtet (milchig-dunkel)
-_C_LED_ON    = QColor(0xff, 0x3b, 0x2a)
+# Die Leuchtdioden haben ein helles, milchiges Gehäuse (5 mm): aus wirken sie
+# hellgrau, an leuchten sie rot.
+_C_LED_OFF   = QColor(0xc9, 0xc6, 0xba)
+_C_LED_ON    = QColor(0xf4, 0x2e, 0x1e)
+_C_LED_RAND  = QColor(0x2a, 0x2a, 0x26)   # Fassung/Bohrung
 _C_ACTIVE    = QColor(0xff, 0xd0, 0x40)   # rastender Modifikator an
 
 
@@ -177,7 +180,8 @@ class _Key:
     shape: str = "round"       # round | rect | oval
     kind: str = "normal"       # normal | shift | lock | ctrl | dead
     name: str = ""             # Klartext für den Kurzhinweis
-    vertical: bool = False     # Beschriftung um 90° gedreht (ENTER)
+    vertical: bool = False     # Beschriftung Buchstabe für Buchstabe untereinander
+    led: str = ""              # Modul trägt eine Anzeige (Name für den Hinweis)
     dual: bool = False         # zweizeilig beschriften, auch ohne Umschaltebene
 
     def code_for(self, shift: bool) -> Optional[int]:
@@ -258,8 +262,12 @@ def _build_layout() -> List[_Key]:
                   kind="dead", name="HLT — Tastencode unbekannt"))
     k.append(_Key(x=17.5, y=1.0, low="ESC", code=0x1B, style="light",
                   shape="rect", name="ESC (0x1B)"))
-    k.append(_Key(x=18.5, y=1.0, w=1.2, style="filler", shape="rect",
+    k.append(_Key(x=18.55, y=1.0, w=1.0, style="filler", shape="rect",
                   kind="dead", name="Blindtaste"))
+    # Halbbreites Modul mit der Betriebsanzeige — dort, wo die Einbauvariante
+    # ihre Einschalttaste hat (Tastenposition E53,5, die Anzeige daneben).
+    k.append(_Key(x=19.6, y=1.0, w=0.45, style="filler", shape="rect",
+                  kind="dead", led="Betriebsanzeige (E54)", name="Betriebsanzeige"))
 
     # ── Reihe 2: QWERTY ──────────────────────────────────────────────────────
     k.append(_Key(x=0.3, y=2.0, low="→|", w=1.3, code=raw(0x91), style="light",
@@ -280,6 +288,8 @@ def _build_layout() -> List[_Key]:
     k.append(_Key(x=19.05, y=2.0, low=".", code=_a("."), name="Ziffernblock ."))
 
     # ── Reihe 3: ASDF ────────────────────────────────────────────────────────
+    k.append(_Key(x=0.08, y=3.0, w=0.45, style="filler", shape="rect",
+                  kind="dead", led="Umschaltfeststeller (C99)", name="LOCK-Anzeige"))
     k.append(_Key(x=0.55, y=3.0, low="↕", kind="lock",
                   name="LOCK (Umschaltfeststeller)"))
     for i, ch in enumerate("ASDFGHJKL"):
@@ -324,14 +334,20 @@ def _build_layout() -> List[_Key]:
         k.append(_Key(x=16.05 + i, y=4.0, low=ch, code=_a(ch), name=f"Ziffernblock {ch}"))
 
     # ── Reihe 5: Leertastenreihe ─────────────────────────────────────────────
-    k.append(_Key(x=0.1, y=5.0, w=0.8, style="filler", shape="rect",
+    k.append(_Key(x=0.15, y=5.0, w=0.95, style="filler", shape="rect",
                   kind="dead", name="Blindtaste"))
-    k.append(_Key(x=1.0, y=5.0, low="ET2", w=1.5, shape="oval", kind="ctrl",
+    k.append(_Key(x=1.2, y=5.0, low="ET2", w=1.4, shape="oval", kind="ctrl",
                   name="ET2 (wirkt als Steuertaste)"))
-    k.append(_Key(x=2.75, y=5.0, w=8.2, shape="oval", code=0x20,
+    k.append(_Key(x=2.75, y=5.0, w=0.45, style="filler", shape="rect",
+                  kind="dead", name="Blindmodul"))
+    k.append(_Key(x=3.3, y=5.0, w=7.95, shape="oval", code=0x20,
                   name="Leertaste"))
-    k.append(_Key(x=11.65, y=5.0, low="ET1", w=1.5, shape="oval",
+    k.append(_Key(x=11.32, y=5.0, w=0.45, style="filler", shape="rect",
+                  kind="dead", name="Blindmodul"))
+    k.append(_Key(x=11.8, y=5.0, low="ET1", w=1.45, shape="oval",
                   code=raw(0xFF), name="ET1 (BIOS: CR)"))
+    k.append(_Key(x=13.3, y=5.0, w=0.45, style="filler", shape="rect",
+                  kind="dead", name="Blindmodul"))
     k.append(_Key(x=13.9, y=5.0, low="←", code=raw(0x96), style="light",
                   shape="rect", name="Kursor links"))
     k.append(_Key(x=14.9, y=5.0, low="→", code=raw(0x97), style="light",
@@ -391,7 +407,12 @@ class KeyboardWidget(QWidget):
                 if code is not None:
                     self._by_code.setdefault(int(code), []).append(key)
 
-        span_x = max(k.x + k.w for k in self._keys)
+        # Die fünf Tasten, über denen die Funktionsanzeigen sitzen (SEL 0…3
+        # und INS MD) — die Anzeigen werden an IHNEN ausgerichtet.
+        self._funktionstasten = sorted(
+            (k for k in self._keys if k.y == 0.0), key=lambda k: k.x)[:5]
+
+        self._span_x = span_x = max(k.x + k.w for k in self._keys)
         span_y = max(k.y + k.h for k in self._keys)
         # Ränder: oben mehr, dort sitzt die LED-Leiste der echten Tastatur.
         self._pad = (0.35, 0.75, 0.35, 0.35)     # links, oben, rechts, unten
@@ -492,12 +513,14 @@ class KeyboardWidget(QWidget):
         #   G53      Fehleranzeige, blinkend, rechts in derselben Leiste
         #   E54      Betriebsanzeige neben dem Blindplatz der Einschalttaste
         #   C99      LOCK, folgt dem Feststeller der Tastatur selbst
-        led_r = 0.08 * unit
-        for cx, cy, lit, _ in self._led_spots(unit, ox, oy):
-            self._draw_led(p, cx, cy, led_r, lit)
-
         for key in self._keys:
             self._draw_key(p, key, unit, ox, oy)
+
+        # Zuletzt die Dioden: zwei von ihnen sitzen IN einem Modul und wären
+        # sonst davon verdeckt.
+        led_r = 0.12 * unit          # 5-mm-Diode bei ~19 mm Tastenraster
+        for cx, cy, lit, _ in self._led_spots(unit, ox, oy):
+            self._draw_led(p, cx, cy, led_r, lit)
 
         p.end()
 
@@ -505,33 +528,41 @@ class KeyboardWidget(QWidget):
         """Die acht Leuchtpunkte als ``(x, y, leuchtet, Bezeichnung)``.
 
         Eine Stelle für Zeichnen und Kurzhinweis — sonst wandern die Punkte
-        beim nächsten Feilen am Layout auseinander.
+        beim nächsten Feilen am Layout auseinander.  Fünf sitzen frei in der
+        Wanne, **mittig über den Selektortasten und der INS-MD-Taste** (genau
+        die Lampen, die CP/A dort schaltet), die Fehleranzeige am rechten Ende
+        derselben Leiste; die beiden übrigen stecken in halbbreiten Modulen im
+        Tastenfeld und kommen aus dem Layout.
         """
         led_y = oy + 0.38 * unit
-        spots = []
         namen = ("Selektor 0 (G00)", "Selektor 1 (G01)", "Selektor 2 (G02)",
                  "Selektor 3 (G03)", "INS-Modus (G04)")
-        for i, bit in enumerate((LED_G00, LED_G01, LED_G02, LED_G03, LED_G04)):
-            spots.append((ox + (0.6 + i * 0.9) * unit, led_y,
-                          bool(self._leds & bit), namen[i]))
-        spots.append((ox + (self._units_w - 0.7) * unit, led_y,
+        spots = []
+        for key, bit, name in zip(self._funktionstasten,
+                                  (LED_G00, LED_G01, LED_G02, LED_G03, LED_G04),
+                                  namen):
+            spots.append((self._rect_of(key, unit, ox, oy).center().x(), led_y,
+                          bool(self._leds & bit), name))
+        spots.append((ox + (self._pad[0] + self._span_x - 0.5) * unit, led_y,
                       bool(self._leds & LED_ERROR) and self._blink_on,
                       "Fehleranzeige (G53) — blinkt"))
-        spots.append((ox + (self._pad[0] + 19.85) * unit,
-                      oy + (self._pad[1] + 1.45) * unit,
-                      self._powered, "Betriebsanzeige (E54)"))
-        spots.append((ox + (self._pad[0] + 0.2) * unit,
-                      oy + (self._pad[1] + 3.45) * unit,
-                      self.lock_active(), "Umschaltfeststeller (C99)"))
+        for key in self._keys:
+            if not key.led:
+                continue
+            r = self._rect_of(key, unit, ox, oy)
+            an = self._powered if key.led.startswith("Betrieb") else self.lock_active()
+            spots.append((r.center().x(), r.center().y(), an, key.led))
         return spots
 
     def _draw_led(self, p: QPainter, cx: float, cy: float, r: float,
                   lit: bool = False):
         """Eine rote Anzeigediode.
 
-        Rot wie am Original; unbeleuchtet bleibt sie milchig-dunkel.
+        Milchiges Gehäuse in einer dunklen Fassung: aus hellgrau, an rot.
         """
         p.setPen(Qt.NoPen)
+        p.setBrush(_C_LED_RAND)
+        p.drawEllipse(QPointF(cx, cy), r * 1.2, r * 1.2)
         p.setBrush(_C_LED_ON if lit else _C_LED_OFF)
         p.drawEllipse(QPointF(cx, cy), r, r)
 
@@ -601,13 +632,18 @@ class KeyboardWidget(QWidget):
         p.setPen(color)
 
         if key.vertical:
-            p.save()
-            p.translate(rect.center())
-            p.rotate(90)
-            box = QRectF(-rect.height() / 2, -rect.width() / 2,
-                         rect.height(), rect.width())
-            self._draw_text(p, key.low, box, unit * 0.30)
-            p.restore()
+            # ENTER trägt seine Großbuchstaben AUFRECHT untereinander, nicht
+            # gekippt — auf der langen Taste des Ziffernblocks ist Platz dafür.
+            zeichen = [c for c in key.low if not c.isspace()]
+            if not zeichen:
+                return
+            hoehe = rect.height() * 0.66 / len(zeichen)
+            oben = rect.center().y() - (hoehe * len(zeichen)) / 2
+            for i, c in enumerate(zeichen):
+                self._draw_text(p, c,
+                                QRectF(rect.x(), oben + i * hoehe,
+                                       rect.width(), hoehe),
+                                min(unit * 0.34, hoehe * 0.95))
             return
 
         if key.up or key.dual:
@@ -843,7 +879,7 @@ class KeyboardWidget(QWidget):
     def _led_at(self, pos) -> Optional[str]:
         """Bezeichnung der Anzeige unter @p pos (oder ``None``)."""
         unit, ox, oy = self._geometry()
-        r = 0.22 * unit                   # großzügiger als der Punkt selbst
+        r = 0.25 * unit                   # großzügiger als der Punkt selbst
         for cx, cy, lit, name in self._led_spots(unit, ox, oy):
             if (pos.x() - cx) ** 2 + (pos.y() - cy) ** 2 <= r * r:
                 return f"{name}: {'an' if lit else 'aus'}"
