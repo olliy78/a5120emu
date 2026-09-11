@@ -94,6 +94,15 @@ K1520_API void k1520_console_key(K1520Handle h, char c);
  * hängt an der Spannung, die andere am Umschaltfeststeller der Tastatur.
  */
 K1520_API uint32_t k1520_keyboard_leds(K1520Handle h);
+/**
+ * @brief Welchen physischen K7637-Code erzeugt dieser Tastencode?
+ *
+ * Dieselbe Abbildung, die `k1520_key_press` benutzt — ohne Maschine und ohne
+ * Seiteneffekt.  Gedacht für Tests und für die Fehlersuche an der Oberfläche:
+ * beantwortet „welche Taste der echten Tastatur spricht dieser Anschlag an?"
+ * ohne den Umweg über einen laufenden Gast.  0 heißt: keine.
+ */
+K1520_API uint8_t k1520_translate_key(uint32_t keycode, bool shift, bool ctrl);
 
 /* ─── Disk drives ────────────────────────────────────────────────────────── */
 /** @brief Mount a disk image into a drive slot. */

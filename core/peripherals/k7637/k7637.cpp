@@ -215,7 +215,7 @@ bool K7637::processTxCommands() {
 // Private helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-uint8_t K7637::translateKey(int qt_keycode, bool shift, bool ctrl) const {
+uint8_t K7637::translateKey(int qt_keycode, bool shift, bool ctrl) {
     // The real K7637 sends the *physical* key code from its ROM code table
     // (CTAB1/CTAB2); the A5120 BIOS keyboard driver then recodes the high codes
     // (>=0x80, plus 0xFF/0xFE) to its virtual codes via the `cp37` table in

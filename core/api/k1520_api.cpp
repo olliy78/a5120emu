@@ -1,6 +1,7 @@
 #include "k1520_api.h"
 #include "core/api/k1520_sync_internal.h"
 #include "core/machines/a5120/a5120.h"
+#include "core/peripherals/k7637/k7637.h"
 #include "core/logger.h"
 #include <cstring>
 #include <memory>
@@ -145,6 +146,10 @@ void k1520_key_press(K1520Handle h, uint32_t kc, bool shift, bool ctrl) {
 
 void k1520_key_release(K1520Handle h, uint32_t kc) {
     toA5120(h)->keyRelease(kc);
+}
+
+uint8_t k1520_translate_key(uint32_t keycode, bool shift, bool ctrl) {
+    return K7637::codeFor(static_cast<int>(keycode), shift, ctrl);
 }
 
 uint32_t k1520_keyboard_leds(K1520Handle h) {

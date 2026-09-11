@@ -10,6 +10,8 @@ import pytest
 
 from PySide6.QtCore import Qt
 
+from conftest import requires_core
+
 from app.ui.keyboard import qt_event_to_core_key
 
 
@@ -82,3 +84,44 @@ def test_unknown_key_without_text_is_dropped():
 def test_non_ascii_text_is_dropped():
     """Umlaute kennt der A5120-Zeichensatz an dieser Stelle nicht."""
     assert qt_event_to_core_key(FakeKeyEvent(Qt.Key_Odiaeresis, "ö")) is None
+
+
+# ─── Die Abbildung im Kern selbst (ohne Maschine) ────────────────────────────
+
+@requires_core
+@pytest.mark.parametrize("qtkey, code, taste", [
+    (Qt.Key_Return,    0xFF, "ET1"),
+    (Qt.Key_Enter,     0xC0, "ENTER des Ziffernblocks"),
+    (Qt.Key_Backspace, 0xBB, "DEL CH"),
+    (Qt.Key_Delete,    0xBB, "DEL CH"),
+    (Qt.Key_Tab,       0x9F, "|←|"),
+    (Qt.Key_Escape,    0x1B, "ESC-Taste"),
+    (Qt.Key_Up,        0x94, "Kursor aufwärts"),
+    (Qt.Key_Down,      0x95, "Kursor abwärts"),
+    (Qt.Key_Left,      0x96, "Kursor links"),
+    (Qt.Key_Right,     0x97, "Kursor rechts"),
+    (Qt.Key_F1,        0xC1, "PF 1"),
+    (Qt.Key_F8,        0xC8, "PF 8"),
+])
+def test_core_maps_host_keys_to_the_right_physical_key(qtkey, code, taste):
+    """Welche Taste der echten K7637 spricht ein Host-Anschlag an?
+
+    Bis hierher war das nur am laufenden Gast zu sehen; `k1520_translate_key`
+    beantwortet es ohne Maschine.  Rueckschritt und Esc liegen bewusst auf den
+    Tasten, die im Gast auch das tun (DEL CH loescht ein Zeichen, die ESC-Taste
+    schickt 0x1B) — nicht auf 0x08 bzw. DEL L.
+    """
+    from app.core_binding.k1520 import K1520Emulator
+    assert K1520Emulator.translate_key(int(qtkey)) == code, taste
+
+
+@requires_core
+def test_printable_and_raw_codes_pass_through():
+    from app.core_binding.k1520 import K1520Emulator as E
+    assert E.translate_key(ord("a")) == ord("a")
+    assert E.translate_key(ord("A")) == ord("A")
+    assert E.translate_key(ord("c"), ctrl=True) == 0x03      # Strg-C
+    assert E.translate_key(0x02000000 | 0xB9) == 0xB9        # Rohcode CE
+    # Ein Steuerzeichen als BLANKER Tastencode kommt nicht durch — genau daran
+    # war die ESC-Taste der Bildschirmtastatur wirkungslos.
+    assert E.translate_key(0x1B) == 0x00

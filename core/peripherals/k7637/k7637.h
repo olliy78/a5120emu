@@ -114,6 +114,17 @@ public:
     bool beeping() const { return beep_until_cycle_ > cur_cycle_; }
 
     /**
+     * @brief Welchen physischen Tastencode erzeugt dieser Qt-Tastencode?
+     *
+     * Dieselbe Abbildung, die :meth:`keyPress` benutzt — nur ohne Maschine und
+     * ohne Seiteneffekt.  Für Tests und für die Fehlersuche an der
+     * Bedienoberfläche („welche Taste schickt die Tastatur wirklich?").
+     */
+    static uint8_t codeFor(int qt_keycode, bool shift = false, bool ctrl = false) {
+        return translateKey(qt_keycode, shift, ctrl);
+    }
+
+    /**
      * @brief Fallende Flanken im seriellen Rahmen eines Bytes.
      *
      * Ruhepegel 1, Startbit 0, acht Datenbits (LSB zuerst), Stoppbit 1.  Die
@@ -123,8 +134,9 @@ public:
     static int fallingEdges(uint8_t byte);
 
 private:
-    // Translate a keycode + modifiers to the A5120 scancode byte.
-    uint8_t translateKey(int qt_keycode, bool shift, bool ctrl) const;
+    // Translate a keycode + modifiers to the A5120 scancode byte.  Zustandslos
+    // (nur Konstanten), deshalb statisch — s. codeFor().
+    static uint8_t translateKey(int qt_keycode, bool shift, bool ctrl);
 
     // Inject one byte into the connected SIO channel RX FIFO.
     void sendByte(uint8_t byte);
