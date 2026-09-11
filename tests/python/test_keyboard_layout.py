@@ -416,7 +416,7 @@ def test_digit_row_is_flush_with_the_function_row(keys):
     halbe Tastenbreite, und die Spalten stimmen nirgends mehr.
     """
     ctrl = next(k for k in keys if k.low == "CTRL")
-    assert ctrl.w < 1.0, "CTRL hat normale Tastenbreite"
+    assert ctrl.w == 1.0, "CTRL hat normale Tastenbreite"
 
     def mitte(k):
         return k.x + k.w / 2
@@ -428,6 +428,8 @@ def test_digit_row_is_flush_with_the_function_row(keys):
     assert abs(mitte(ziffern["9"]) - mitte(fn["PF 4"])) < 0.1, "PF 4 steht über 9"
     # …und zwischen PF 12 und RESET klafft keine Lücke mehr.
     assert abs(fn["RESET"].x - (fn["PF 12"].x + 1.0)) < 0.05
+    # Die Fehleranzeige steht über RESET, nicht über M.
+    unit, ox, oy = 40.0, 0.0, 0.0
 
 
 def test_letter_rows_step_down_to_the_right(by_name):
@@ -452,3 +454,42 @@ def test_the_block_stays_rectangular_on_the_right(keys):
     spalten = {round(k.x, 2) for k in keys
                if k.name.startswith("Ziffernblock") and k.style == "dark"}
     assert len(spalten) == 4, f"Ziffernblock nicht rechteckig: {sorted(spalten)}"
+
+
+def test_the_key_field_has_no_gaps(keys):
+    """Zwischen den Modulen ist kein Blech: jede Reihe ist lückenlos gefüllt.
+
+    Ausgenommen ist die Funktionsreihe — sie sitzt frei auf der Wanne.
+    """
+    for y in (1.0, 2.0, 3.0, 4.0, 5.0):
+        reihe = sorted((k for k in keys if k.y == y), key=lambda k: k.x)
+        for links, rechts in zip(reihe, reihe[1:]):
+            assert abs((links.x + links.w) - rechts.x) < 1e-6, (
+                f"Lücke in Reihe {y:.0f} zwischen {links.name!r} und {rechts.name!r}")
+
+
+def test_cursor_and_numeric_block_abut_the_letters(keys):
+    """Kursor- und Ziffernblock schließen direkt an den Buchstabenblock an."""
+    def rechte_kante(name):
+        k = next(x for x in keys if x.name == name)
+        return k.x + k.w
+
+    # Linke Kante des Kursorblocks: die Abwärtstaste steht dort ganz links.
+    kursor = next(k.x for k in keys if k.name == "Kursor abwärts")
+    ziffern = min(k.x for k in keys if k.name.startswith("Ziffernblock")
+                  and k.style == "dark")
+    assert abs(rechte_kante("] / }") - kursor) < 1e-6, "Kursorblock klebt am ]"
+    assert abs(kursor + 2.0 - ziffern) < 1e-6, "Ziffernblock klebt am Kursorblock"
+    # Die rechte Umschalttaste und das Blindmodul neben ET1 enden dort ebenfalls.
+    rechte_shift = max((k for k in keys if k.kind == "shift"), key=lambda k: k.x)
+    assert abs(rechte_shift.x + rechte_shift.w - kursor) < 1e-6
+
+
+def test_error_lamp_sits_above_the_reset_key(widget):
+    """Die Fehleranzeige steht über RESET — nicht über M."""
+    unit, ox, oy = widget._geometry()
+    reset = next(k for k in widget._keys if k.low == "RESET")
+    mitte = widget._rect_of(reset, unit, ox, oy).center().x()
+    fehler = next(cx for cx, _, _, name in widget._led_spots(unit, ox, oy)
+                  if name.startswith("Fehleranzeige"))
+    assert abs(fehler - mitte) < 0.5

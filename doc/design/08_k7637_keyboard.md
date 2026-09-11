@@ -401,18 +401,30 @@ rechts fangen die etwas breitere **CE**-Taste und die breiten
 Die linke Umschalttaste ist aus Symmetriegründen ebenso breit wie die rechte und
 ragt dadurch links aus dem Raster heraus.
 
+**Lückenlos.** Zwischen den Modulen ist kein Blech zu sehen — die Fassungen
+stoßen aneinander, die sichtbaren Fugen sind die Fassungen selbst. Nur die
+Funktionsreihe sitzt frei auf der Wanne. Kursor- und Ziffernblock schließen
+direkt an den Buchstabenblock an: die Buchstabenreihen enden bei Raster 13.5,
+dort beginnt der Kursorblock, und bei 15.5 der rechteckige Ziffernblock (vier
+Spalten bis 19.5 — eine halbe Tastenbreite links der Betriebsanzeige, die bis
+20 reicht).
+
 Die Nachbildung führt die Blindelemente mit:
 
 - **halbbreite Module mit Anzeige**: links neben dem Umschaltfeststeller (C99)
   und am rechten Ende der Ziffernreihe (E54, dort wo die Einbauvariante ihre
   Einschalttaste hat — Tastenposition E53,5),
 - **halbbreite Blindmodule** ohne alles: links und rechts der Leertaste und
-  rechts neben ET1,
-- eine **volle Blindtaste** links unten und eine rechts neben ESC.
+  rechts neben ET1 (dieses schließt mit der rechten Umschalttaste und der
+  `]`-Taste ab),
+- eine **volle Blindtaste** links unten und eine rechts neben ESC, dort mit
+  einem **halben** Blindmodul davor,
+- ein **Viertelmodul** vor der `→|`-Taste, das den Versatz der QWERTY-Reihe
+  macht.
 
 Die fünf Funktionsanzeigen sitzen frei in der Wanne, **mittig über SEL 0…3 und
 INS MD** — genau über den Tasten, deren Lampen CP/A dort schaltet (§2.3); die
-Fehleranzeige am rechten Ende derselben Leiste. Gezeichnet werden die Dioden
+Fehleranzeige **über der RESET-Taste**. Gezeichnet werden die Dioden
 zuletzt, sonst verdeckte sie ihr eigenes Modul. Es sind 5-mm-Dioden mit hellem,
 milchigem Gehäuse: aus hellgrau, an rot — auf dem Foto ist keine von ihnen rot
 eingefärbt.

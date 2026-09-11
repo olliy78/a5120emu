@@ -174,8 +174,8 @@ class _Key:
     up: str = ""               # Beschriftung oben  = Umschaltebene
     code: Optional[int] = None
     shift_code: Optional[int] = None
-    w: float = 0.95
-    h: float = 0.92
+    w: float = 1.0             # volle Zellbreite — die Module stoßen aneinander
+    h: float = 1.0
     style: str = "dark"        # dark | light | red | filler
     shape: str = "round"       # round | rect | oval
     kind: str = "normal"       # normal | shift | lock | ctrl | dead
@@ -183,6 +183,7 @@ class _Key:
     vertical: bool = False     # Beschriftung Buchstabe für Buchstabe untereinander
     led: str = ""              # Modul trägt eine Anzeige (Name für den Hinweis)
     dual: bool = False         # zweizeilig beschriften, auch ohne Umschaltebene
+    holder: bool = True        # sitzt in der dunklen Fassung (Reihe 0: nein)
 
     def code_for(self, shift: bool) -> Optional[int]:
         if shift and self.shift_code is not None:
@@ -198,29 +199,34 @@ def _a(ch: str) -> int:
 def _build_layout() -> List[_Key]:
     r"""Das Tastenfeld der K7637.50 (Standard-Latein, US-Anordnung).
 
-    Alle x-Werte sind **Tastenraster** (1.0 = eine Tastenbreite), am Foto
-    abgemessen.  Die Tastatur ist modular aufgebaut: jede Reihe füllt dasselbe
-    Raster, und wo keine Taste sitzt, sitzt ein Blindelement — meist halber
-    Breite.  Genau diese Elemente erzeugen den Versatz der Reihen
-    gegeneinander, nicht etwa breitere Tasten:
+    Alle Werte sind **Tastenraster** (1.0 = eine Tastenbreite).  Die Tastatur
+    ist modular und **lückenlos**: jede Reihe füllt dasselbe Raster Modul an
+    Modul, und wo keine Taste sitzt, sitzt ein Blindelement.  Genau diese
+    Elemente erzeugen den Versatz der Reihen — nicht etwa breitere Tasten.
+    Zwischen den Modulen ist kein Blech zu sehen; die sichtbaren Fugen sind die
+    Fassungen, in denen die Kappen stecken.
 
     ```
-    Reihe 0  |0|1|2|3|INS|DEL|PF1 …                     20 Tasten, bündig
-    Reihe 1  |CTRL|1|2|3|4 …                            CTRL ist EINE Taste breit,
-                                                        1 steht unter 1, PF4 über 9
-    Reihe 2  |½|→|  |Q|W|E …                            halbes Blindmodul vorn
-    Reihe 3  |½LED|LOCK|A|S|D …                         Modul mit der LOCK-Anzeige
-    Reihe 4  |SHIFT (breit, ragt links heraus)|\|Z|X …
-    Reihe 5  |Blind|ET2|½|Leertaste|½|ET1|½|
+    Reihe 0  0 1 2 3 INS DEL PF1 … PF12 RESET M      20 Tasten, bündig
+    Reihe 1  CTRL 1 2 … ^ |←|  ↰ PRINT HLT ESC ½ 1 ½LED
+    Reihe 2  ¼ →| Q W … @ [ |← CE(1¼) ┊ Ziffernblock
+    Reihe 3  ½LED LOCK A S … ] ↵ − ┊ Ziffernblock
+    Reihe 4  SHIFT(1½, ragt links heraus) \ Z … / SHIFT(1½) ↓ ↑ ┊
+    Reihe 5  1 ET2(1½) ½ Leertaste(8) ½ ET1(1½) ½ ← → ┊
     ```
 
-    Der Ziffernblock rechts ist rechteckig; den Reihenversatz fangen dort die
-    etwas breitere **CE**-Taste und die breite rechte **Umschalttaste** auf.
-    Der Codierstecker am rechten Rand fehlt — er wirkt nur unter SIOS.
+    Die Spalten rechts liegen fest: die Buchstabenblöcke enden bei 13.5, dort
+    beginnt der Kursorblock (13.5 / 14.5), und bei **15.5** beginnt der
+    rechteckige Ziffernblock (vier Spalten bis 19.5).  Die etwas breitere
+    **CE**-Taste und die breiten **Umschalttasten** fangen den Reihenversatz
+    auf, damit das aufgeht.  Der Codierstecker am rechten Rand fehlt — er wirkt
+    nur unter SIOS.
     """
     k: List[_Key] = []
+    ZB = 15.5          # linke Kante des Ziffernblocks
+    KB = 13.5          # linke Kante des Kursorblocks
 
-    # ── Reihe 0: Funktionstasten, helle Quadrate, bündig im Raster ───────────
+    # ── Reihe 0: Funktionstasten, helle Quadrate auf der Wanne ───────────────
     # Obere Beschriftung = Umschaltebene.  Codes: SEL0..3 und PF1..PF12 aus
     # cp37; die Umschaltcodes (PA1…ERINP) stehen dort als eigene Einträge.
     fn = [
@@ -247,8 +253,8 @@ def _build_layout() -> List[_Key]:
     ]
     for i, (up, low, code, sc, name) in enumerate(fn):
         k.append(_Key(x=float(i), y=0.0, low=low, up=up, code=code,
-                      shift_code=sc, h=0.85, style="light", shape="rect",
-                      dual=True, name=name))
+                      shift_code=sc, h=0.8, style="light", shape="rect",
+                      holder=False, dual=True, name=name))
 
     # ── Reihe 1: Ziffernreihe — CTRL ist genau eine Taste breit ──────────────
     k.append(_Key(x=0.0, y=1.0, low="CTRL", style="light", shape="rect",
@@ -268,111 +274,115 @@ def _build_layout() -> List[_Key]:
                       name=f"{low} / {shift_ch}"))
     k.append(_Key(x=13.0, y=1.0, low="|←|", code=raw(0x9F),
                   name="Tabulator (BIOS: TAB)"))
-    k.append(_Key(x=14.3, y=1.0, low="↰", code=raw(0x9C), style="light",
+    k.append(_Key(x=14.0, y=1.0, low="↰", code=raw(0x9C), style="light",
                   shape="rect", name="Kursor Seite zurück"))
-    k.append(_Key(x=15.3, y=1.0, low="PRINT", style="light", shape="rect",
+    k.append(_Key(x=15.0, y=1.0, low="PRINT", style="light", shape="rect",
                   kind="dead", name="PRINT — Tastencode unbekannt"))
-    k.append(_Key(x=16.3, y=1.0, low="HLT", style="light", shape="rect",
+    k.append(_Key(x=16.0, y=1.0, low="HLT", style="light", shape="rect",
                   kind="dead", name="HLT — Tastencode unbekannt"))
-    k.append(_Key(x=17.3, y=1.0, low="ESC", code=0x1B, style="light",
+    k.append(_Key(x=17.0, y=1.0, low="ESC", code=0x1B, style="light",
                   shape="rect", name="ESC (0x1B)"))
-    k.append(_Key(x=18.4, y=1.0, w=1.0, style="filler", shape="rect",
+    k.append(_Key(x=18.0, y=1.0, w=0.5, style="filler", shape="rect",
+                  kind="dead", name="Blindmodul"))
+    k.append(_Key(x=18.5, y=1.0, w=1.0, style="filler", shape="rect",
                   kind="dead", name="Blindtaste"))
     # Halbbreites Modul mit der Betriebsanzeige — dort, wo die Einbauvariante
     # ihre Einschalttaste hat (Tastenposition E53,5, die Anzeige daneben).
     k.append(_Key(x=19.5, y=1.0, w=0.5, style="filler", shape="rect",
                   kind="dead", led="Betriebsanzeige (E54)", name="Betriebsanzeige"))
 
-    # ── Reihe 2: QWERTY — das halbe Blindmodul vorn macht den Versatz ────────
-    k.append(_Key(x=0.0, y=2.0, w=0.4, style="filler", shape="rect",
+    # ── Reihe 2: QWERTY — das Viertelmodul vorn macht den Versatz ────────────
+    k.append(_Key(x=0.0, y=2.0, w=0.25, style="filler", shape="rect",
                   kind="dead", name="Blindmodul"))
-    k.append(_Key(x=0.5, y=2.0, low="→|", code=raw(0x91), style="light",
+    k.append(_Key(x=0.25, y=2.0, low="→|", code=raw(0x91), style="light",
                   shape="rect", name="Kursor Wort vorwärts"))
     for i, ch in enumerate("QWERTYUIOP"):
-        k.append(_Key(x=1.5 + i, y=2.0, low=ch, code=_a(ch.lower()),
+        k.append(_Key(x=1.25 + i, y=2.0, low=ch, code=_a(ch.lower()),
                       shift_code=_a(ch), name=ch))
-    k.append(_Key(x=11.5, y=2.0, low="@", up="`", code=_a("@"),
+    k.append(_Key(x=11.25, y=2.0, low="@", up="`", code=_a("@"),
                   shift_code=_a("`"), name="@ / `"))
-    k.append(_Key(x=12.5, y=2.0, low="[", up="{", code=_a("["),
+    k.append(_Key(x=12.25, y=2.0, low="[", up="{", code=_a("["),
                   shift_code=_a("{"), name="[ / {"))
-    k.append(_Key(x=13.85, y=2.0, low="|←", code=raw(0x9B), style="light",
+    k.append(_Key(x=13.25, y=2.0, low="|←", code=raw(0x9B), style="light",
                   shape="rect", name="Kursor Wort zurück"))
-    # CE ist etwas breiter: sie fängt den Reihenversatz zum rechteckigen
+    # CE ist 1,25 Tasten breit: sie fängt den Reihenversatz zum rechteckigen
     # Ziffernblock auf.
-    k.append(_Key(x=14.85, y=2.0, low="CE", w=1.2, code=raw(0xB9), style="red",
-                  name="CE (Eingabe löschen)"))
+    k.append(_Key(x=14.25, y=2.0, low="CE", w=1.25, code=raw(0xB9),
+                  style="red", name="CE (Eingabe löschen)"))
     for i, ch in enumerate("789"):
-        k.append(_Key(x=16.1 + i, y=2.0, low=ch, code=_a(ch), name=f"Ziffernblock {ch}"))
-    k.append(_Key(x=19.1, y=2.0, low=".", code=_a("."), name="Ziffernblock ."))
+        k.append(_Key(x=ZB + i, y=2.0, low=ch, code=_a(ch), name=f"Ziffernblock {ch}"))
+    k.append(_Key(x=ZB + 3, y=2.0, low=".", code=_a("."), name="Ziffernblock ."))
 
     # ── Reihe 3: ASDF ───────────────────────────────────────────────────────
-    k.append(_Key(x=0.1, y=3.0, w=0.45, style="filler", shape="rect",
+    k.append(_Key(x=0.0, y=3.0, w=0.5, style="filler", shape="rect",
                   kind="dead", led="Umschaltfeststeller (C99)", name="LOCK-Anzeige"))
-    k.append(_Key(x=0.62, y=3.0, low="↕", kind="lock",
+    k.append(_Key(x=0.5, y=3.0, low="↕", kind="lock",
                   name="LOCK (Umschaltfeststeller)"))
     for i, ch in enumerate("ASDFGHJKL"):
-        k.append(_Key(x=1.62 + i, y=3.0, low=ch, code=_a(ch.lower()),
+        k.append(_Key(x=1.5 + i, y=3.0, low=ch, code=_a(ch.lower()),
                       shift_code=_a(ch), name=ch))
-    k.append(_Key(x=10.62, y=3.0, low=";", up="+", code=_a(";"),
+    k.append(_Key(x=10.5, y=3.0, low=";", up="+", code=_a(";"),
                   shift_code=_a("+"), name="; / +"))
-    k.append(_Key(x=11.62, y=3.0, low=":", up="*", code=_a(":"),
+    k.append(_Key(x=11.5, y=3.0, low=":", up="*", code=_a(":"),
                   shift_code=_a("*"), name=": / *"))
-    k.append(_Key(x=12.62, y=3.0, low="]", up="}", code=_a("]"),
+    k.append(_Key(x=12.5, y=3.0, low="]", up="}", code=_a("]"),
                   shift_code=_a("}"), name="] / }"))
-    k.append(_Key(x=14.0, y=3.0, low="↵", code=raw(0x9A), style="light",
+    k.append(_Key(x=KB, y=3.0, low="↵", code=raw(0x9A), style="light",
                   shape="rect", name="Kursor Seite vorwärts"))
-    k.append(_Key(x=15.0, y=3.0, low="−", w=1.05, code=_a("-"), style="red",
+    k.append(_Key(x=KB + 1, y=3.0, low="−", code=_a("-"), style="red",
                   name="Ziffernblock − (sendet ASCII '-')"))
     for i, ch in enumerate("456"):
-        k.append(_Key(x=16.1 + i, y=3.0, low=ch, code=_a(ch), name=f"Ziffernblock {ch}"))
-    k.append(_Key(x=19.1, y=3.0, low="ENTER", code=raw(0xC0), h=2.92,
+        k.append(_Key(x=ZB + i, y=3.0, low=ch, code=_a(ch), name=f"Ziffernblock {ch}"))
+    k.append(_Key(x=ZB + 3, y=3.0, low="ENTER", code=raw(0xC0), h=3.0,
                   shape="oval", vertical=True, name="ENTER (Ziffernblock, ≠ ET1)"))
 
-    # ── Reihe 4: ZXCV — die Umschalttasten sind breit, die linke ragt heraus ─
-    k.append(_Key(x=-0.25, y=4.0, low="↕", w=1.24, shape="oval", kind="shift",
+    # ── Reihe 4: ZXCV — die Umschalttasten sind 1,5 breit ────────────────────
+    # Die rechte schließt mit der ]-Taste ab; die linke ist aus Symmetrie
+    # ebenso breit und ragt dadurch links aus dem Raster heraus.
+    k.append(_Key(x=-0.5, y=4.0, low="↕", w=1.5, shape="oval", kind="shift",
                   name="Umschalttaste (SHIFT)"))
-    k.append(_Key(x=1.04, y=4.0, low="\\", up="|", code=_a("\\"),
+    k.append(_Key(x=1.0, y=4.0, low="\\", up="|", code=_a("\\"),
                   shift_code=_a("|"), name="\\ / |"))
     for i, ch in enumerate("ZXCVBNM"):
-        k.append(_Key(x=2.08 + i, y=4.0, low=ch, code=_a(ch.lower()),
+        k.append(_Key(x=2.0 + i, y=4.0, low=ch, code=_a(ch.lower()),
                       shift_code=_a(ch), name=ch))
-    k.append(_Key(x=9.08, y=4.0, low=",", up="<", code=_a(","),
+    k.append(_Key(x=9.0, y=4.0, low=",", up="<", code=_a(","),
                   shift_code=_a("<"), name=", / <"))
-    k.append(_Key(x=10.08, y=4.0, low=".", up=">", code=_a("."),
+    k.append(_Key(x=10.0, y=4.0, low=".", up=">", code=_a("."),
                   shift_code=_a(">"), name=". / >"))
-    k.append(_Key(x=11.08, y=4.0, low="/", up="?", code=_a("/"),
+    k.append(_Key(x=11.0, y=4.0, low="/", up="?", code=_a("/"),
                   shift_code=_a("?"), name="/ / ?"))
-    k.append(_Key(x=12.15, y=4.0, low="↕", w=1.24, shape="oval", kind="shift",
+    k.append(_Key(x=12.0, y=4.0, low="↕", w=1.5, shape="oval", kind="shift",
                   name="Umschalttaste (SHIFT)"))
-    k.append(_Key(x=14.1, y=4.0, low="↓", code=raw(0x95), style="light",
+    k.append(_Key(x=KB, y=4.0, low="↓", code=raw(0x95), style="light",
                   shape="rect", name="Kursor abwärts"))
-    k.append(_Key(x=15.1, y=4.0, low="↑", code=raw(0x94), style="light",
+    k.append(_Key(x=KB + 1, y=4.0, low="↑", code=raw(0x94), style="light",
                   shape="rect", name="Kursor aufwärts"))
     for i, ch in enumerate("123"):
-        k.append(_Key(x=16.1 + i, y=4.0, low=ch, code=_a(ch), name=f"Ziffernblock {ch}"))
+        k.append(_Key(x=ZB + i, y=4.0, low=ch, code=_a(ch), name=f"Ziffernblock {ch}"))
 
     # ── Reihe 5: Leertastenreihe ────────────────────────────────────────────
-    k.append(_Key(x=0.05, y=5.0, w=0.85, style="filler", shape="rect",
+    k.append(_Key(x=0.0, y=5.0, w=1.0, style="filler", shape="rect",
                   kind="dead", name="Blindtaste"))
-    k.append(_Key(x=1.2, y=5.0, low="ET2", w=1.24, shape="oval", kind="ctrl",
+    k.append(_Key(x=1.0, y=5.0, low="ET2", w=1.5, shape="oval", kind="ctrl",
                   name="ET2 (wirkt als Steuertaste)"))
-    k.append(_Key(x=2.7, y=5.0, w=0.4, style="filler", shape="rect",
+    k.append(_Key(x=2.5, y=5.0, w=0.5, style="filler", shape="rect",
                   kind="dead", name="Blindmodul"))
-    k.append(_Key(x=3.25, y=5.0, w=7.9, shape="oval", code=0x20,
+    k.append(_Key(x=3.0, y=5.0, w=8.0, shape="oval", code=0x20,
                   name="Leertaste"))
-    k.append(_Key(x=11.3, y=5.0, w=0.4, style="filler", shape="rect",
+    k.append(_Key(x=11.0, y=5.0, w=0.5, style="filler", shape="rect",
                   kind="dead", name="Blindmodul"))
-    k.append(_Key(x=11.9, y=5.0, low="ET1", w=1.24, shape="oval",
+    k.append(_Key(x=11.5, y=5.0, low="ET1", w=1.5, shape="oval",
                   code=raw(0xFF), name="ET1 (BIOS: CR)"))
-    k.append(_Key(x=13.25, y=5.0, w=0.4, style="filler", shape="rect",
+    k.append(_Key(x=13.0, y=5.0, w=0.5, style="filler", shape="rect",
                   kind="dead", name="Blindmodul"))
-    k.append(_Key(x=14.1, y=5.0, low="←", code=raw(0x96), style="light",
+    k.append(_Key(x=KB, y=5.0, low="←", code=raw(0x96), style="light",
                   shape="rect", name="Kursor links"))
-    k.append(_Key(x=15.1, y=5.0, low="→", code=raw(0x97), style="light",
+    k.append(_Key(x=KB + 1, y=5.0, low="→", code=raw(0x97), style="light",
                   shape="rect", name="Kursor rechts"))
-    k.append(_Key(x=16.1, y=5.0, low="0", code=_a("0"), name="Ziffernblock 0"))
-    k.append(_Key(x=17.1, y=5.0, low="00", code=raw(0xB1), name="Ziffernblock 00"))
-    k.append(_Key(x=18.1, y=5.0, low=",", code=_a(","), name="Ziffernblock ,"))
+    k.append(_Key(x=ZB, y=5.0, low="0", code=_a("0"), name="Ziffernblock 0"))
+    k.append(_Key(x=ZB + 1, y=5.0, low="00", code=raw(0xB1), name="Ziffernblock 00"))
+    k.append(_Key(x=ZB + 2, y=5.0, low=",", code=_a(","), name="Ziffernblock ,"))
 
     # Die linke Umschalttaste ragt nach links aus dem Raster heraus; damit die
     # Geometrie bei 0 beginnt, wird das ganze Feld um diesen Betrag geschoben.
@@ -433,8 +443,10 @@ class KeyboardWidget(QWidget):
 
         # Die fünf Tasten, über denen die Funktionsanzeigen sitzen (SEL 0…3
         # und INS MD) — die Anzeigen werden an IHNEN ausgerichtet.
-        self._funktionstasten = sorted(
-            (k for k in self._keys if k.y == 0.0), key=lambda k: k.x)[:5]
+        reihe0 = sorted((k for k in self._keys if k.y == 0.0), key=lambda k: k.x)
+        self._funktionstasten = reihe0[:5]
+        # Die Fehleranzeige sitzt über der RESET-Taste.
+        self._reset_taste = next(k for k in reihe0 if k.low == "RESET")
 
         self._span_x = span_x = max(k.x + k.w for k in self._keys)
         span_y = max(k.y + k.h for k in self._keys)
@@ -567,8 +579,8 @@ class KeyboardWidget(QWidget):
                                   namen):
             spots.append((self._rect_of(key, unit, ox, oy).center().x(), led_y,
                           bool(self._leds & bit), name))
-        spots.append((ox + (self._pad[0] + self._span_x - 0.5) * unit, led_y,
-                      bool(self._leds & LED_ERROR) and self._blink_on,
+        spots.append((self._rect_of(self._reset_taste, unit, ox, oy).center().x(),
+                      led_y, bool(self._leds & LED_ERROR) and self._blink_on,
                       "Fehleranzeige (G53) — blinkt"))
         for key in self._keys:
             if not key.led:
@@ -611,6 +623,13 @@ class KeyboardWidget(QWidget):
                 or (key.kind == "lock" and self.lock_active()))
 
     def _draw_key(self, p: QPainter, key: _Key, unit: float, ox: float, oy: float):
+        """Eine Zelle zeichnen: Fassung, Kappe, Beschriftung.
+
+        Die **Fassung füllt die ganze Zelle** und stößt an die der Nachbarn —
+        am Original ist zwischen den Modulen kein Blech zu sehen, die sichtbaren
+        Fugen sind die Fassungen selbst.  Nur die Funktionsreihe (``holder =
+        False``) sitzt frei auf der Wanne.
+        """
         rect = self._rect_of(key, unit, ox, oy)
         cap, txt = self._cap_colors(key)
         if self._is_down(key):
@@ -619,35 +638,33 @@ class KeyboardWidget(QWidget):
             cap = cap.darker(125) if key.style != "dark" else cap.lighter(230)
 
         p.setPen(Qt.NoPen)
+        if key.holder:
+            p.setBrush(_C_HOLDER)
+            p.drawRect(rect)
+
+        einzug = (0.09 if key.holder else 0.03) * unit
+        kappe = rect.adjusted(einzug, einzug, -einzug, -einzug)
+        p.setBrush(cap)
         if key.shape == "round":
             # Runde Kappe im quadratischen Schacht — die Bauform der K7637.
-            p.setBrush(_C_HOLDER)
-            p.drawRoundedRect(rect, 0.12 * unit, 0.12 * unit)
-            inset = 0.06 * unit
-            cap_rect = rect.adjusted(inset, inset, -inset, -inset)
-            p.setBrush(cap)
-            p.drawEllipse(cap_rect)
+            d = min(kappe.width(), kappe.height())
+            m = kappe.center()
+            p.drawEllipse(QRectF(m.x() - d / 2, m.y() - d / 2, d, d))
         elif key.shape == "oval":
-            p.setBrush(_C_HOLDER)
-            p.drawRoundedRect(rect, 0.12 * unit, 0.12 * unit)
-            inset = 0.05 * unit
-            cap_rect = rect.adjusted(inset, inset, -inset, -inset)
-            r = min(cap_rect.width(), cap_rect.height()) / 2.0
-            p.setBrush(cap)
-            p.drawRoundedRect(cap_rect, r, r)
+            r = min(kappe.width(), kappe.height()) / 2.0
+            p.drawRoundedRect(kappe, r, r)
         else:
-            p.setBrush(cap)
-            p.drawRoundedRect(rect, 0.15 * unit, 0.15 * unit)
+            p.drawRoundedRect(kappe, 0.12 * unit, 0.12 * unit)
 
         if self._is_active(key):
             pen = p.pen()
             p.setBrush(Qt.NoBrush)
             p.setPen(_C_ACTIVE)
-            p.drawRoundedRect(rect.adjusted(1, 1, -1, -1),
-                              0.15 * unit, 0.15 * unit)
+            p.drawRoundedRect(kappe.adjusted(1, 1, -1, -1),
+                              0.12 * unit, 0.12 * unit)
             p.setPen(pen)
 
-        self._draw_legend(p, key, rect, txt, unit)
+        self._draw_legend(p, key, kappe, txt, unit)
 
     def _draw_legend(self, p: QPainter, key: _Key, rect: QRectF,
                      color: QColor, unit: float):
