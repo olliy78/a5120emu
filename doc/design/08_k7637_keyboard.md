@@ -401,9 +401,20 @@ rechts fangen die etwas breitere **CE**-Taste und die breiten
 Die linke Umschalttaste ist aus Symmetriegründen ebenso breit wie die rechte und
 ragt dadurch links aus dem Raster heraus.
 
-**Lückenlos.** Zwischen den Modulen ist kein Blech zu sehen — die Fassungen
-stoßen aneinander, die sichtbaren Fugen sind die Fassungen selbst. Nur die
-Funktionsreihe sitzt frei auf der Wanne. Kursor- und Ziffernblock schließen
+**Ein Ausschnitt, schwarzer Grund.** Das Blech hat **ein** abgerundetes Loch
+über *alle* Reihen — auch zwischen Funktions- und Ziffernreihe liegt kein Blech.
+Darin ist es schwarz; das ist es, was man in den Spalten zwischen den Tasten
+sieht (≈1,5 mm breit), und ringsum bleibt zwischen den äußersten Tasten und dem
+Blech ein gleichmäßiger Spalt von ~1 mm.
+
+**Der Aufbau einer Taste** ist zweistufig und je nach Farbe verschieden:
+
+| Tastenart | tieferliegende Ebene | Kappe |
+|---|---|---|
+| schwarz | graue Fassung, rechteckig mit runden Ecken | runde schwarze Kappe |
+| rot | Fassung **rot mit Grauschleier** (das Teil ist aus rotem Kunststoff) | runde rote Kappe |
+| hell | **keine** — ringsum gleich der schwarze Grund | abgerundetes Rechteck |
+| Blindmodul | nur die Fassung | keine | Kursor- und Ziffernblock schließen
 direkt an den Buchstabenblock an: die Buchstabenreihen enden bei Raster 13.5,
 dort beginnt der Kursorblock, und bei 15.5 der rechteckige Ziffernblock (vier
 Spalten bis 19.5 — eine halbe Tastenbreite links der Betriebsanzeige, die bis

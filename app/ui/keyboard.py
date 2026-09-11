@@ -142,16 +142,22 @@ _HOST_SPECIAL = {
 
 
 # ── Farben (dem Foto der echten Tastatur abgenommen) ─────────────────────────
-_C_BACK      = QColor(0x1e, 0x1e, 0x1e)   # Fläche neben der Tastatur
+_C_BACK      = QColor(0x1a, 0x1a, 0x18)   # Fläche neben der Tastatur
 _C_BEZEL     = QColor(0x6e, 0x6a, 0x55)   # Tastaturwanne, oliv
-_C_HOLDER    = QColor(0x54, 0x52, 0x49)   # Schacht um die runden Kappen
+_C_FELD      = QColor(0x14, 0x14, 0x13)   # Grund im Ausschnitt — die Spalten
+                                          # zwischen den Tasten sind SCHWARZ
+_C_SOCKEL    = QColor(0x4c, 0x4a, 0x45)   # tieferliegende Ebene der schwarzen
+                                          # Tasten (Fassung, in der die Kappe sitzt)
 _C_DARK      = QColor(0x2c, 0x2c, 0x2e)   # schwarze Kappe
 _C_DARK_TXT  = QColor(0xef, 0xea, 0xd8)
-_C_LIGHT     = QColor(0xd6, 0xd3, 0xc6)   # helle (durchscheinende) Kappe
+_C_LIGHT     = QColor(0xd6, 0xd3, 0xc6)   # helle (durchscheinende) Kappe —
+                                          # ohne Sockel, sie steht direkt im Feld
 _C_LIGHT_TXT = QColor(0x4a, 0x49, 0x45)
-_C_RED       = QColor(0xd2, 0x3b, 0x30)
+_C_RED       = QColor(0xd2, 0x3b, 0x30)   # rote Kappe
+_C_RED_SOCKEL= QColor(0x8c, 0x46, 0x3e)   # ihr Sockel: rot mit Grauschleier —
+                                          # das Teil ist aus rotem Kunststoff
 _C_RED_TXT   = QColor(0xff, 0xff, 0xff)
-_C_FILLER    = QColor(0x3f, 0x3f, 0x3b)   # Blindtasten ohne Beschriftung
+_C_FILLER    = QColor(0x3b, 0x3a, 0x37)   # Blindmodule ohne Kappe
 # Die Leuchtdioden haben ein helles, milchiges Gehäuse (5 mm): aus wirken sie
 # hellgrau, an leuchten sie rot.
 _C_LED_OFF   = QColor(0xc9, 0xc6, 0xba)
@@ -449,7 +455,7 @@ class KeyboardWidget(QWidget):
         self._reset_taste = next(k for k in reihe0 if k.low == "RESET")
 
         self._span_x = span_x = max(k.x + k.w for k in self._keys)
-        span_y = max(k.y + k.h for k in self._keys)
+        self._span_y = span_y = max(k.y + k.h for k in self._keys)
         # Ränder: oben mehr, dort sitzt die LED-Leiste der echten Tastatur.
         self._pad = (0.35, 0.75, 0.35, 0.35)     # links, oben, rechts, unten
         self._units_w = span_x + self._pad[0] + self._pad[2]
@@ -544,11 +550,16 @@ class KeyboardWidget(QWidget):
                                  self._units_h * unit),
                           0.25 * unit, 0.25 * unit)
 
-        # Die acht Anzeigen (Handbuch §2.1/§2.2.3/§2.3):
-        #   G00…G04  die fünf über den Selektortasten — der Rechner schaltet sie
-        #   G53      Fehleranzeige, blinkend, rechts in derselben Leiste
-        #   E54      Betriebsanzeige neben dem Blindplatz der Einschalttaste
-        #   C99      LOCK, folgt dem Feststeller der Tastatur selbst
+        # Ausschnitt im Blech: EIN abgerundetes Loch über ALLE Reihen (auch die
+        # Funktionsreihe — zwischen ihr und der Ziffernreihe ist am Original
+        # kein Blech).  Darin ist es schwarz; das ist es, was man in den Spalten
+        # zwischen den Tasten sieht.
+        p.setBrush(_C_FELD)
+        p.drawRoundedRect(QRectF(ox + self._pad[0] * unit,
+                                 oy + self._pad[1] * unit,
+                                 self._span_x * unit, self._span_y * unit),
+                          0.22 * unit, 0.22 * unit)
+
         for key in self._keys:
             self._draw_key(p, key, unit, ox, oy)
 
@@ -602,14 +613,15 @@ class KeyboardWidget(QWidget):
         p.setBrush(_C_LED_ON if lit else _C_LED_OFF)
         p.drawEllipse(QPointF(cx, cy), r, r)
 
-    def _cap_colors(self, key: _Key) -> Tuple[QColor, QColor]:
+    def _cap_colors(self, key: _Key):
+        """(Sockel, Kappe, Schriftfarbe) — ``None``, wo es das Teil nicht gibt."""
         if key.style == "light":
-            return _C_LIGHT, _C_LIGHT_TXT
+            return None, _C_LIGHT, _C_LIGHT_TXT      # kein Sockel: direkt im Feld
         if key.style == "red":
-            return _C_RED, _C_RED_TXT
+            return _C_RED_SOCKEL, _C_RED, _C_RED_TXT
         if key.style == "filler":
-            return _C_FILLER, _C_FILLER
-        return _C_DARK, _C_DARK_TXT
+            return _C_FILLER, None, None             # Blindmodul: nur die Fassung
+        return _C_SOCKEL, _C_DARK, _C_DARK_TXT
 
     def _is_down(self, key: _Key) -> bool:
         """Taste gerade betätigt — mit der Maus oder auf der echten Tastatur."""
@@ -622,49 +634,67 @@ class KeyboardWidget(QWidget):
                 or (key.kind == "ctrl" and self._ctrl)
                 or (key.kind == "lock" and self.lock_active()))
 
-    def _draw_key(self, p: QPainter, key: _Key, unit: float, ox: float, oy: float):
-        """Eine Zelle zeichnen: Fassung, Kappe, Beschriftung.
+    #: Spalt zwischen zwei Modulen, je Seite (≈1,5 mm bei 19 mm Raster).
+    SPALT = 0.05
 
-        Die **Fassung füllt die ganze Zelle** und stößt an die der Nachbarn —
-        am Original ist zwischen den Modulen kein Blech zu sehen, die sichtbaren
-        Fugen sind die Fassungen selbst.  Nur die Funktionsreihe (``holder =
-        False``) sitzt frei auf der Wanne.
+    def _draw_key(self, p: QPainter, key: _Key, unit: float, ox: float, oy: float):
+        """Eine Zelle zeichnen: Sockel, Kappe, Beschriftung.
+
+        Der Aufbau folgt dem Original: die **schwarzen und roten** Tasten sitzen
+        mit ihrer runden Kappe in einer tieferliegenden, rechteckigen Fassung;
+        die **hellen** Tasten haben keine — um sie herum sieht man gleich den
+        schwarzen Grund des Ausschnitts.  Die rote Fassung ist rot mit
+        Grauschleier, nicht grau: das Teil ist aus rotem Kunststoff.
         """
-        rect = self._rect_of(key, unit, ox, oy)
-        cap, txt = self._cap_colors(key)
+        zelle = self._rect_of(key, unit, ox, oy)
+        spalt = self.SPALT * unit
+        modul = zelle.adjusted(spalt, spalt, -spalt, -spalt)
+        ecke = 0.17 * unit
+
+        sockel, cap, txt = self._cap_colors(key)
         if self._is_down(key):
             # Betätigt = deutlich heller (die schwarzen Kappen) bzw. dunkler
             # (die hellen) — man soll es beim Tippen im Augenwinkel sehen.
-            cap = cap.darker(125) if key.style != "dark" else cap.lighter(230)
+            if cap is not None:
+                cap = cap.darker(125) if key.style == "light" else cap.lighter(230)
+            elif sockel is not None:
+                sockel = sockel.lighter(160)
 
         p.setPen(Qt.NoPen)
-        if key.holder:
-            p.setBrush(_C_HOLDER)
-            p.drawRect(rect)
-
-        einzug = (0.09 if key.holder else 0.03) * unit
-        kappe = rect.adjusted(einzug, einzug, -einzug, -einzug)
-        p.setBrush(cap)
-        if key.shape == "round":
-            # Runde Kappe im quadratischen Schacht — die Bauform der K7637.
-            d = min(kappe.width(), kappe.height())
-            m = kappe.center()
-            p.drawEllipse(QRectF(m.x() - d / 2, m.y() - d / 2, d, d))
-        elif key.shape == "oval":
-            r = min(kappe.width(), kappe.height()) / 2.0
-            p.drawRoundedRect(kappe, r, r)
+        if sockel is not None:
+            p.setBrush(sockel)
+            p.drawRoundedRect(modul, ecke, ecke)
+            # Die Kappe sitzt deutlich kleiner in ihrer Fassung — am Original
+            # sieht man rundum den tieferliegenden Rand.
+            einzug = 0.09 * unit
         else:
-            p.drawRoundedRect(kappe, 0.12 * unit, 0.12 * unit)
+            # Ohne Fassung steht die Kappe frei im schwarzen Feld; ein Hauch
+            # mehr Luft, damit die Spalte so breit wirkt wie zwischen den
+            # Fassungen.
+            einzug = 0.015 * unit
+        kappe = modul.adjusted(einzug, einzug, -einzug, -einzug)
+
+        if cap is not None:
+            p.setBrush(cap)
+            if key.shape == "round":
+                d = min(kappe.width(), kappe.height())
+                m = kappe.center()
+                p.drawEllipse(QRectF(m.x() - d / 2, m.y() - d / 2, d, d))
+            elif key.shape == "oval":
+                r = min(kappe.width(), kappe.height()) / 2.0
+                p.drawRoundedRect(kappe, r, r)
+            else:
+                p.drawRoundedRect(kappe, ecke, ecke)
 
         if self._is_active(key):
             pen = p.pen()
             p.setBrush(Qt.NoBrush)
             p.setPen(_C_ACTIVE)
-            p.drawRoundedRect(kappe.adjusted(1, 1, -1, -1),
-                              0.12 * unit, 0.12 * unit)
+            p.drawRoundedRect(kappe.adjusted(1, 1, -1, -1), ecke, ecke)
             p.setPen(pen)
 
-        self._draw_legend(p, key, kappe, txt, unit)
+        if cap is not None:
+            self._draw_legend(p, key, kappe, txt, unit)
 
     def _draw_legend(self, p: QPainter, key: _Key, rect: QRectF,
                      color: QColor, unit: float):
