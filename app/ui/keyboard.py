@@ -36,8 +36,8 @@ die acht Kursorcodes.  Gesendet werden sie über den **Rohcode-Fluchtweg**
 den Umweg über eine PC-Taste, die es für diese Tasten gar nicht gibt.
 
 Nicht belegt sind **PRINT** und **HLT** (stehen in keiner vorliegenden
-Codetabelle, das Tastatur-EPROM fehlt): sie werden gezeichnet, senden aber
-nichts.  Die rote ``−`` des Ziffernblocks sendet ASCII ``-``; ihr echter Code
+Codetabelle, das Tastatur-EPROM fehlt): sie lassen sich drücken und federn
+zurück, senden aber nichts.  Die rote ``−`` des Ziffernblocks sendet ASCII ``-``; ihr echter Code
 ist ebenfalls unbekannt (``cp37`` führt INS MD ausdrücklich als „Ersatz num.
 Minus").
 """
@@ -218,7 +218,7 @@ def _build_layout() -> List[_Key]:
 
     ```
     Reihe 0  0 1 2 3 INS DEL PF1 … PF12 RESET M      20 Tasten, bündig
-    Reihe 1  CTRL 1 2 … ^ |←|  ↰ PRINT HLT ESC ½ 1 ½LED
+    Reihe 1  CTRL 1 2 … ^ |←|  ↰ PRINT HLT ESC ½ Abdeckung ½LED
     Reihe 2  ¼ →| Q W … @ [ |← CE(1¼) ┊ Ziffernblock
     Reihe 3  ½LED LOCK A S … ] ↵ − ┊ Ziffernblock
     Reihe 4  SHIFT(1½, ragt links heraus) \ Z … / SHIFT(1½) ↓ ↑ ┊
@@ -294,8 +294,10 @@ def _build_layout() -> List[_Key]:
                   shape="rect", name="ESC (0x1B)"))
     k.append(_Key(x=18.0, y=1.0, w=0.5, style="filler", shape="rect",
                   kind="dead", name="Blindmodul"))
-    k.append(_Key(x=18.5, y=1.0, w=1.0, style="light", shape="rect",
-                  kind="dead", name="Blindtaste"))
+    # Rechts von ESC sitzt KEINE Taste, sondern eine Abdeckung in Tastengröße
+    # (am Gerät nachgesehen) — also ein Blindmodul, keine helle Kappe.
+    k.append(_Key(x=18.5, y=1.0, w=1.0, style="filler", shape="rect",
+                  kind="dead", name="Blindabdeckung (keine Taste)"))
     # Halbbreites Modul mit der Betriebsanzeige — dort, wo die Einbauvariante
     # ihre Einschalttaste hat (Tastenposition E53,5, die Anzeige daneben).
     k.append(_Key(x=19.5, y=1.0, w=0.5, style="filler", shape="rect",
@@ -770,6 +772,15 @@ class KeyboardWidget(QWidget):
             self.update()   # LOCK-Anzeige C99 hängt an diesem Zustand
             return
         if key.kind == "dead" or key.code is None:
+            # PRINT und HLT sind ECHTE Tasten mit unbekanntem Code (das
+            # Tastatur-EPROM fehlt): sie lassen sich drücken und federn zurück
+            # — sonst wirken sie wie ein Fehler der Nachbildung.  Gesendet wird
+            # nichts.  Blindmodule und Abdeckungen (`style == "filler"`) sind
+            # keine Tasten und reagieren gar nicht.
+            if key.style != "filler":
+                self._pressed = key
+                self._pressed_code = None
+                self.update()
             return
 
         shift_active = self.schicht()
@@ -794,9 +805,10 @@ class KeyboardWidget(QWidget):
         super().leaveEvent(event)
 
     def _release_pressed(self):
-        if self._pressed_code is None:
+        if self._pressed is None and self._pressed_code is None:
             return
-        self.keyReleased.emit(int(self._pressed_code))
+        if self._pressed_code is not None:      # nicht bei PRINT/HLT
+            self.keyReleased.emit(int(self._pressed_code))
         self._pressed = None
         self._pressed_code = None
         # SHIFT/CTRL wirken nur auf die eine Taste (LOCK bleibt bestehen).

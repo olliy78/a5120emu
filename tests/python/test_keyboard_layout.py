@@ -167,6 +167,20 @@ def widget(qapp):
     return w
 
 
+def _druecke(widget, key):
+    """Nur DRÜCKEN (ohne Loslassen) — für Tasten, die nichts senden."""
+    unit, ox, oy = widget._geometry()
+    center = widget._rect_of(key, unit, ox, oy).center()
+    widget.mousePressEvent(QMouseEvent(
+        QMouseEvent.Type.MouseButtonPress, center,
+        widget.mapToGlobal(center.toPoint()),
+        Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+
+
+def _lasse_los(widget):
+    widget._release_pressed()
+
+
 def _recorder(widget):
     seen = []
     widget.keyPressed.connect(lambda c, s, x: seen.append((c, s, x)))
@@ -211,6 +225,35 @@ def test_dead_keys_send_nothing(widget):
     for name in ("PRINT — Tastencode unbekannt", "HLT — Tastencode unbekannt"):
         _click(widget, next(k for k in widget._keys if k.name == name))
     assert seen == []
+
+
+def test_print_und_hlt_federn_trotzdem(widget):
+    """PRINT und HLT sind ECHTE Tasten — sie gehen unter dem Finger nach unten.
+
+    Ihr Code steht in keiner vorliegenden Tabelle (das Tastatur-EPROM fehlt),
+    also schicken sie nichts.  Eine Taste, die sich nicht einmal drücken lässt,
+    sieht aber aus wie ein Fehler der Nachbildung.
+    """
+    taste = next(k for k in widget._keys if k.name.startswith("PRINT"))
+    _druecke(widget, taste)
+    assert widget._pressed is taste, "PRINT federt nicht"
+    assert widget._pressed_code is None, "PRINT darf keinen Code halten"
+    _lasse_los(widget)
+    assert widget._pressed is None, "PRINT bleibt gedrückt hängen"
+
+
+def test_die_abdeckung_neben_esc_ist_keine_taste(widget):
+    """Rechts von ESC sitzt eine Abdeckung in Tastengröße, keine helle Kappe.
+
+    Am Gerät nachgesehen: dort ist nur schwarzes Blindmaterial.  Sie reagiert
+    deshalb auf gar nichts — anders als PRINT/HLT, die federn.
+    """
+    esc = next(k for k in widget._keys if k.name.startswith("ESC"))
+    rechts = [k for k in widget._keys if k.y == esc.y and k.x > esc.x]
+    abdeckung = next(k for k in rechts if k.w >= 1.0)
+    assert abdeckung.style == "filler", f"{abdeckung.name} ist hell gezeichnet"
+    _druecke(widget, abdeckung)
+    assert widget._pressed is None, "die Abdeckung federt"
 
 
 # ── Anzeigen ─────────────────────────────────────────────────────────────────

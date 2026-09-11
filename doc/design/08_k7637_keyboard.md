@@ -417,8 +417,11 @@ physischen Codes, das Tastatur-EPROM fehlt.
 | Zeichentasten, Ziffernblock | ASCII | ASCII |
 
 > **Drei Tasten sind bewusst unbelegt bzw. behelfsmäßig belegt.** **PRINT** und
-> **HLT** stehen in keiner vorliegenden Codetabelle — sie werden gezeichnet,
-> senden aber nichts (ein erfundener Code löste im Gast Unsinn aus). Die rote
+> **HLT** stehen in keiner vorliegenden Codetabelle — sie **federn unter dem
+> Finger**, senden aber nichts (ein erfundener Code löste im Gast Unsinn aus);
+> eine Taste, die sich nicht einmal drücken lässt, sieht nach einem Fehler der
+> Nachbildung aus. Die Blindmodule und die Abdeckung neben ESC sind dagegen
+> keine Tasten und reagieren auf gar nichts. Die rote
 > **`−`** des Ziffernblocks sendet ASCII `-`; ihr echter Code ist ebenfalls
 > unbekannt, `cp37` führt INS MD ausdrücklich als „Ersatz num. Minus". Die weiße
 > **ESC**-Taste sendet 0x1B (ASCII, wird durchgereicht) — im CP/A ist ESC sonst
@@ -482,8 +485,9 @@ Die Nachbildung führt die Blindelemente mit:
 - **halbbreite Blindmodule** ohne alles: links und rechts der Leertaste und
   rechts neben ET1 (dieses schließt mit der rechten Umschalttaste und der
   `]`-Taste ab),
-- eine **volle Blindtaste** links unten und eine rechts neben ESC, dort mit
-  einem **halben** Blindmodul davor,
+- eine **volle Blindtaste** links unten und rechts neben ESC eine **Abdeckung
+  in Tastengröße** (schwarzes Blindmaterial, keine helle Kappe — am Gerät
+  nachgesehen), dort mit einem **halben** Blindmodul davor,
 - ein **Viertelmodul** vor der `→|`-Taste, das den Versatz der QWERTY-Reihe
   macht.
 
