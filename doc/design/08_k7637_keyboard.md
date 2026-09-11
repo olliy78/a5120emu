@@ -401,11 +401,17 @@ rechts fangen die etwas breitere **CE**-Taste und die breiten
 Die linke Umschalttaste ist aus Symmetriegründen ebenso breit wie die rechte und
 ragt dadurch links aus dem Raster heraus.
 
-**Ein Ausschnitt, schwarzer Grund.** Das Blech hat **ein** abgerundetes Loch
-über *alle* Reihen — auch zwischen Funktions- und Ziffernreihe liegt kein Blech.
-Darin ist es schwarz; das ist es, was man in den Spalten zwischen den Tasten
-sieht (≈1,5 mm breit), und ringsum bleibt zwischen den äußersten Tasten und dem
-Blech ein gleichmäßiger Spalt von ~1 mm.
+**Ein Ausschnitt in Form des Tastenblocks.** Das Blech hat **ein** Loch über
+*alle* Reihen — auch zwischen Funktions- und Ziffernreihe liegt keines, dort ist
+derselbe schmale Spalt wie zwischen allen anderen Reihen. Der Ausschnitt ist
+**kein Rechteck**, sondern folgt dem Umriss des Tastenblocks (die linke
+Umschalttaste ragt heraus, der Ziffernblock endet eine halbe Taste vor der
+Betriebsanzeige): es gibt keine großen schwarzen Flächen, nur den schmalen
+schwarzen Spalt ringsum. Gezeichnet wird er als **Vereinigung aller Zellen**
+(`QPainterPath.simplified()`), deren Ecken ein Strich mit rundem Gehrungsstoß
+rundet — die Zellen werden dafür vorher um denselben Betrag geschrumpft, damit
+der Umriss sie genau abdeckt. In den Spalten sieht man den schwarzen Grund
+(≈1,5 mm breit).
 
 **Der Aufbau einer Taste** ist zweistufig und je nach Farbe verschieden:
 

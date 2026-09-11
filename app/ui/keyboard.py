@@ -46,7 +46,8 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from PySide6.QtCore import Qt, Signal, QEvent, QPointF, QRectF, QSize, QTimer
-from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter
+from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QPainter,
+                           QPainterPath, QPen)
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 
@@ -259,7 +260,7 @@ def _build_layout() -> List[_Key]:
     ]
     for i, (up, low, code, sc, name) in enumerate(fn):
         k.append(_Key(x=float(i), y=0.0, low=low, up=up, code=code,
-                      shift_code=sc, h=0.8, style="light", shape="rect",
+                      shift_code=sc, style="light", shape="rect",
                       holder=False, dual=True, name=name))
 
     # ── Reihe 1: Ziffernreihe — CTRL ist genau eine Taste breit ──────────────
@@ -290,7 +291,7 @@ def _build_layout() -> List[_Key]:
                   shape="rect", name="ESC (0x1B)"))
     k.append(_Key(x=18.0, y=1.0, w=0.5, style="filler", shape="rect",
                   kind="dead", name="Blindmodul"))
-    k.append(_Key(x=18.5, y=1.0, w=1.0, style="filler", shape="rect",
+    k.append(_Key(x=18.5, y=1.0, w=1.0, style="light", shape="rect",
                   kind="dead", name="Blindtaste"))
     # Halbbreites Modul mit der Betriebsanzeige — dort, wo die Einbauvariante
     # ihre Einschalttaste hat (Tastenposition E53,5, die Anzeige daneben).
@@ -550,15 +551,22 @@ class KeyboardWidget(QWidget):
                                  self._units_h * unit),
                           0.25 * unit, 0.25 * unit)
 
-        # Ausschnitt im Blech: EIN abgerundetes Loch über ALLE Reihen (auch die
-        # Funktionsreihe — zwischen ihr und der Ziffernreihe ist am Original
-        # kein Blech).  Darin ist es schwarz; das ist es, was man in den Spalten
-        # zwischen den Tasten sieht.
+        # Ausschnitt im Blech: **kein Rechteck**, sondern der Umriss des
+        # Tastenblocks — rundum bleibt nur der schmale schwarze Spalt zwischen
+        # Tasten und Blech, keine großen schwarzen Flächen.  Gebaut als
+        # Vereinigung aller Zellen; die Ecken rundet ein Strich mit rundem
+        # Gehrungsstoß (die Zellen werden dafür vorher um denselben Betrag
+        # geschrumpft, damit der Umriss die Zellen genau abdeckt).
+        r = 0.09 * unit
+        pfad = QPainterPath()
+        for key in self._keys:
+            zelle = self._rect_of(key, unit, ox, oy)
+            pfad.addRect(zelle.adjusted(r, r, -r, -r))
+        pfad = pfad.simplified()
         p.setBrush(_C_FELD)
-        p.drawRoundedRect(QRectF(ox + self._pad[0] * unit,
-                                 oy + self._pad[1] * unit,
-                                 self._span_x * unit, self._span_y * unit),
-                          0.22 * unit, 0.22 * unit)
+        p.setPen(QPen(_C_FELD, 2 * r, Qt.SolidLine, Qt.FlatCap, Qt.RoundJoin))
+        p.drawPath(pfad)
+        p.setPen(Qt.NoPen)
 
         for key in self._keys:
             self._draw_key(p, key, unit, ox, oy)
