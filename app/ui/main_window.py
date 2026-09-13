@@ -43,6 +43,7 @@ from app.ui_icons import icon
 from app.core_binding.k1520 import K1520Emulator
 from app import config_io
 from app import drive_types as dt
+from app import paths
 from app import takt
 
 
@@ -105,6 +106,9 @@ class MainWindow(QMainWindow):
         # Last "normal" (non-fullscreen/-maximized) window size, persisted so the
         # size is restored on the next start.
         self._normal_size = QSize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
+        # „maximiert" aus der Konfiguration, nachzuholen beim ersten Anzeigen
+        # (`showEvent`) — vorher verfällt es (siehe `_maximiert_herstellen`).
+        self._maximiert_nachholen = None
 
         self.run_timer = QTimer()
         self.run_timer.timeout.connect(self._run_emulator)
@@ -580,6 +584,8 @@ class MainWindow(QMainWindow):
             if stil == self.controls_bar.toolButtonStyle():
                 a.setChecked(True)
         view_menu.addAction(self.act_leiste_einrichten)
+        view_menu.addSeparator()
+        view_menu.addAction(self.act_standard)
 
         # ── Hilfe ────────────────────────────────────────────────────────────
         help_menu = menu_bar.addMenu("&Hilfe")
@@ -851,6 +857,7 @@ class MainWindow(QMainWindow):
                     normal = self.normalGeometry().size()
                     self._normal_size = (normal if normal.isValid()
                                          and not normal.isEmpty() else self.size())
+                    self._maximiert_herstellen(win)
                     return
             except Exception:
                 pass
@@ -865,8 +872,70 @@ class MainWindow(QMainWindow):
                 w, h = self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT
         self.resize(w, h)
         self._normal_size = QSize(w, h)
-        if bool(win.get("maximized", False)):
+        self._maximiert_herstellen(win)
+
+    def _maximiert_herstellen(self, win: dict):
+        """„Maximiert" wiederherstellen — aus UNSEREM Feld und NACH dem Anzeigen.
+
+        Zwei Dinge stehen dem im Weg, und beide zusammen liessen ein maximiert
+        beendetes Fenster im Fenstermodus wieder aufgehen:
+
+        1. **Qts Geometrieblock trägt den Zustand nicht zurück.**
+           ``saveGeometry`` schreibt ihn zwar mit, ``restoreGeometry`` meldet
+           Erfolg und stellt die Größe her — ``isMaximized()`` bleibt danach
+           trotzdem falsch (nachgemessen mit Qt 6.11 unter X11).  Also
+           entscheidet hier **immer** unser eigenes ``maximized``-Feld, und der
+           Block liefert nur noch Größe und Lage.
+        2. **Vor dem Anzeigen verfällt der Zustand.**  Ein
+           ``setWindowState(WindowMaximized)`` auf dem noch unsichtbaren Fenster
+           — und ebenso eines aus ``showEvent`` heraus — wird vom
+           Fensterverwalter verworfen (GNOME Shell/X11: das Fenster geht in
+           seiner normalen Größe auf, und der Zustand fällt binnen 200 ms auf
+           „normal" zurück).  Erst ein Zug **nach** dem Anzeigen, aus der
+           Ereignisschleife heraus, hält.  Der Wunsch wird deshalb gemerkt und
+           von :meth:`showEvent` nachgeholt.
+
+        Dass es lange unbemerkt blieb, liegt an der Prüfung: unter
+        ``QT_QPA_PLATFORM=offscreen`` scheitert ``restoreGeometry`` (der
+        gespeicherte Bildschirm passt nicht), und der Rückfall setzte den
+        Zustand von Hand auf einem Fenster, das der Test schon angezeigt hatte —
+        der Wächter lief also durch beide Zweige NICHT, die der Anwender geht.
+        """
+        maximiert = bool(win.get("maximized", False))
+        if not self.isVisible():
+            # Den Zustand am unsichtbaren Fenster AUSDRÜCKLICH löschen und den
+            # Wunsch merken.  Ohne das Löschen bliebe die Marke stehen, die
+            # ``restoreGeometry`` hinterlässt — und die ist eine Lüge: das
+            # Fenster geht trotzdem normal auf, aber der nachgeholte Zug hielte
+            # sie für schon erfüllt und täte nichts.  Erst ein WECHSEL am
+            # sichtbaren Fenster erreicht den Fensterverwalter.
+            self.setWindowState(self.windowState() & ~Qt.WindowMaximized)
+            self._maximiert_nachholen = maximiert
+            return
+        self._maximiert_setzen(maximiert)
+
+    def _maximiert_setzen(self, an: bool):
+        """Den Fensterzustand *maximiert* setzen oder lösen (ohne Umweg über show)."""
+        if an == self.isMaximized():
+            return
+        if an:
             self.setWindowState(self.windowState() | Qt.WindowMaximized)
+        else:
+            self.setWindowState(self.windowState() & ~Qt.WindowMaximized)
+
+    def showEvent(self, event):
+        """Beim ERSTEN Anzeigen das gemerkte „maximiert" nachholen.
+
+        Nicht hier direkt, sondern eine Runde der Ereignisschleife später: zum
+        Zeitpunkt des ``showEvent`` ist das Fenster noch nicht auf dem Schirm,
+        und ein Zustandswechsel geht dann verloren (siehe
+        :meth:`_maximiert_herstellen`).
+        """
+        super().showEvent(event)
+        wunsch = getattr(self, "_maximiert_nachholen", None)
+        if wunsch is not None:
+            self._maximiert_nachholen = None
+            QTimer.singleShot(0, lambda: self._maximiert_setzen(wunsch))
 
     def _mount_cli_disks(self, disks):
         """Diskettenargumente der Kommandozeile einlegen (A:, B:, C:, D:)."""
@@ -884,7 +953,15 @@ class MainWindow(QMainWindow):
         """Apply a loaded configuration to the running application.
 
         Applies the CRT look and speed, and (re)mounts the stored disks.  Guards
-        against triggering an autosave loop while values are being restored."""
+        against triggering an autosave loop while values are being restored.
+
+        **Ein FEHLENDER Abschnitt heisst „nicht anfassen", ein leerer „leeren".**
+        Das betrifft die Disketten: ``disks: []`` wirft alles aus, ein gar nicht
+        vorhandenes ``disks`` lässt die Laufwerke, wie sie sind.  Genau davon
+        lebt die Auslieferungskonfiguration (`app/config_io.py`), die keine
+        Diskettenpfade trägt — *Ansicht ▸ Standard zurücksetzen* stellt damit
+        die Ansicht her, ohne die Maschine leerzuräumen.
+        """
         self._loading_config = True
         try:
             self.screen_widget.params.update_from_dict(data.get("crt", {}))
@@ -902,7 +979,8 @@ class MainWindow(QMainWindow):
             self._apply_drive_types(
                 data.get("drive_types") or dt.DEFAULT_DRIVE_TYPES, cold_restart=False)
 
-            self.drives_widget.load_mounts(data.get("disks") or [])
+            if "disks" in data:
+                self.drives_widget.load_mounts(data.get("disks") or [])
 
             if "window" in data:
                 self._apply_window_state(data.get("window") or {})
@@ -910,7 +988,19 @@ class MainWindow(QMainWindow):
             self._loading_config = False
 
     def _load_or_create_default_config(self):
-        """Load ``~/.config/k1520emu/config.yaml`` or create it from defaults."""
+        """Die Konfiguration des Anwenders laden — oder die Auslieferung nehmen.
+
+        Beim ersten Start (nach der Erstinstallation) gibt es noch keine
+        ``config.yaml``.  Dann kommt die **mitgelieferte**
+        Auslieferungskonfiguration zum Zug (``data/default_config.yaml``, siehe
+        :func:`app.config_io.standard_konfiguration`) und wird gleich als die
+        neue ``config.yaml`` des Anwenders geschrieben — von da an gehört sie
+        ihm und wird fortgeschrieben.
+
+        Findet sich auch die nicht (unvollständige Installation), bleibt es bei
+        den im Programm eingebauten Vorgaben; geschrieben wird die Datei
+        trotzdem, damit es ab jetzt eine gibt.
+        """
         path = config_io.default_config_path()
         if os.path.exists(path):
             try:
@@ -920,12 +1010,57 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(
                     self, "Konfiguration",
                     f"Konnte {path} nicht laden:\n{e}\n\nStandardwerte werden verwendet.")
-        # First run (or unreadable): write the current defaults as the new config.
+        self._apply_config(config_io.standard_konfiguration())
         try:
             config_io.save_config(path, self._gather_config())
         except Exception as e:
             QMessageBox.warning(self, "Konfiguration",
                                 f"Konnte Standard-Konfiguration nicht anlegen:\n{e}")
+
+    def _standard_zuruecksetzen(self):
+        """*Ansicht ▸ Standard zurücksetzen* — zurück zur Auslieferung.
+
+        Stellt Bildröhre, Tempo, Laufwerksbestückung, Fenstergröße,
+        Kastenaufteilung und Symbolleiste so her, wie der Emulator nach der
+        Erstinstallation aussieht, und **überschreibt damit die gespeicherte
+        Konfiguration** — deshalb die Rückfrage.
+
+        Die eingelegten Disketten bleiben liegen: die Auslieferungskonfiguration
+        trägt keinen ``disks``-Abschnitt (siehe :meth:`_apply_config`), und ein
+        Zurücksetzen der Ansicht soll die Maschine nicht leerräumen.
+        """
+        vorgabe = config_io.standard_konfiguration()
+        if not vorgabe:
+            QMessageBox.warning(
+                self, "Standard zurücksetzen",
+                "Die mitgelieferte Standard-Konfiguration wurde nicht gefunden.\n\n"
+                "Gesucht wurde:\n" + "\n".join(
+                    str(p) for p in paths.default_config_candidates()))
+            return
+        if QMessageBox.question(
+                self, "Standard zurücksetzen",
+                "Bildröhre, Tempo, Laufwerksbestückung, Fenstergröße, Kästen und "
+                "Symbolleiste auf die Auslieferung zurücksetzen?\n\n"
+                "Die gespeicherte Konfiguration wird dabei überschrieben; die "
+                "eingelegten Disketten bleiben liegen.  Ändert sich dabei die "
+                "Laufwerksbestückung, startet die Maschine kalt.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No) != QMessageBox.Yes:
+            return
+        vorher = list(self._drive_types)
+        self._apply_config(vorgabe)
+        # Ein geänderter Laufwerksschacht bedeutet eine NEUE Maschine
+        # (:meth:`_apply_drive_types`), und die ist noch nicht eingeschaltet:
+        # beim Wiederherstellen kommt das Einschalten sonst später von selbst,
+        # hier läuft die alte schon.  Ohne Bestückungswechsel bleibt die Maschine
+        # in Ruhe — ein Zurücksetzen der Ansicht soll kein CP/A abwürgen.
+        if self._drive_types != vorher:
+            self._cold_restart()
+        # Sofort schreiben, nicht über den sammelnden Autosave: der Anwender hat
+        # das Überschreiben eben bestätigt, es darf nicht an einem Absturz in den
+        # nächsten 400 ms hängen.
+        self._autosave_now()
+        self.statusBar().showMessage("Standard-Konfiguration wiederhergestellt.", 4000)
 
     def _schedule_autosave(self):
         """Queue a debounced write of the current config to the default path."""
@@ -1091,7 +1226,14 @@ class MainWindow(QMainWindow):
     def _update_drive_lamps(self):
         """Nur die Leuchten — im 120-ms-Takt, damit ein Zugriff sichtbar wird.
 
-        Dieselbe Quelle wie die Leuchte im Laufwerkskasten (`is_disk_led_on`).
+        Dieselbe Quelle wie die Leuchte im Laufwerkskasten (`is_disk_led_on`) —
+        und dieselbe Aussage: **der Zugriff zaehlt, nicht der Inhalt**.  Ein
+        angesprochenes LEERES Laufwerk leuchtet deshalb genauso rot wie ein
+        belegtes.  Das ist kein Schoenheitsfehler, sondern die Auskunft, auf die
+        es dann ankommt: wer sucht, warum das Gastsystem haengt, will sehen, dass
+        es auf B: wartet — und dass dort nichts liegt.  Vorher blieb der Ring in
+        genau diesem Fall leer und die Anzeige schwieg.
+
         Im Sekundentakt abgetastet blitzte hier praktisch nie etwas auf: ein
         Sektorzugriff ist in wenigen Zehntelsekunden vorbei.
         """
@@ -1106,7 +1248,7 @@ class MainWindow(QMainWindow):
                 aktiv = False
             belegt = (self.drives_widget.is_mounted(drive)
                       or bool(self._disk_path(drive)))
-            lampe.set_zustand(status_bar.ZUGRIFF if aktiv and belegt
+            lampe.set_zustand(status_bar.ZUGRIFF if aktiv
                               else status_bar.BELEGT if belegt
                               else status_bar.LEER)
 

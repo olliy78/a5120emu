@@ -199,6 +199,12 @@ const char* k1520_disk_container(K1520Handle h, int drive) {
     return buf.c_str();
 }
 
+const char* k1520_disk_detected_format(K1520Handle h, int drive) {
+    static thread_local std::string buf;
+    buf = toA5120(h)->detectedFormatName(drive);
+    return buf.c_str();
+}
+
 const char* k1520_disk_notice(K1520Handle h, int drive) {
     static thread_local std::string buf;
     buf = toA5120(h)->diskNotice(drive);

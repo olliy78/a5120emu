@@ -381,3 +381,80 @@ TEST(A5120DiskApi, NachStartabbruch_BleibtMaschineWeiterBaubar) {
     EXPECT_EQ(m.defaultFormatName(0), "cpa800");
     EXPECT_FALSE(m.formatCatalog().sources().empty());
 }
+
+// ─── Erkanntes Diskettenformat ───────────────────────────────────────────────
+//
+// Die Oberflaeche zeigt hinter „Format:" nicht mehr eine Einstellung, sondern
+// einen BEFUND — und sperrt den `.img`-Export, solange es keinen gibt.  Beides
+// haengt an detectedFormatName(); dieselbe Geometrie-Erkennung, die auch das
+// k1520DiskTool benutzt (GeometryProbe).
+
+/**
+ * @test A5120DiskApi/DetectedFormat_MisstDieEingelegteDiskette
+ * @brief Ein selbstbeschreibender Container wird VERMESSEN — der Formatname beim
+ *        Mounten ist dort nur ein Platzhalter und darf nicht durchschlagen.
+ * @par Kriterium  Eine als "cpa800" eingelegte cpa780-Diskette wird als cpa780 erkannt.
+ */
+TEST(A5120DiskApi, DetectedFormat_MisstDieEingelegteDiskette) {
+    A5120Machine m;                                    // 4× K5601
+    k1520test::TempDisk d("cpa_cpa780_k5601_noclock.hfe");
+
+    ASSERT_TRUE(m.mountDisk(0, d.path(), "cpa800", /*wp=*/true)) << m.lastError();
+    EXPECT_EQ(m.detectedFormatName(0), "cpa780")
+        << "der beim Mounten genannte Name ist bei .hfe ein Platzhalter";
+    m.unmountDisk(0);
+}
+
+/**
+ * @test A5120DiskApi/DetectedFormat_RohabbildNenntDasErklaerteFormat
+ * @brief Bei `.img` gibt es nichts zu messen: das Format ist Vereinbarung.
+ *
+ * Ein rohes Sektorimage traegt keine Adressmarken — seine Einteilung ist die beim
+ * Einlegen ERKLAERTE.  Genau die kommt zurueck, sonst waere der Befund ein Zirkel
+ * mit anderem Namen.
+ */
+TEST(A5120DiskApi, DetectedFormat_RohabbildNenntDasErklaerteFormat) {
+    A5120Machine m;
+    k1520test::TempDisk d("cpa_cpa780_k5601_noclock.img");
+
+    ASSERT_TRUE(m.mountDisk(0, d.path(), "cpa780", /*wp=*/true)) << m.lastError();
+    EXPECT_EQ(m.detectedFormatName(0), "cpa780");
+    m.unmountDisk(0);
+}
+
+/**
+ * @test A5120DiskApi/DetectedFormat_LeerdisketteIstUnbekannt
+ * @brief Eine unformatierte Diskette hat kein Format — nicht das naechstbeste.
+ * @par Kriterium  detectedFormatName() leer; leeres Laufwerk ebenso.
+ */
+TEST(A5120DiskApi, DetectedFormat_LeerdisketteIstUnbekannt) {
+    A5120Machine m(withDrives("K5600.10"));
+    k1520test::TempDisk path_disk = tmpPath("erkennung_leer.hfe");
+    std::filesystem::remove(path_disk.path());
+
+    EXPECT_TRUE(m.detectedFormatName(0).empty()) << "ohne Diskette gibt es nichts";
+    ASSERT_TRUE(m.createDisk(0, path_disk.path(), "", /*wp=*/false)) << m.lastError();
+    EXPECT_TRUE(m.detectedFormatName(0).empty());
+    m.unmountDisk(0);
+}
+
+/**
+ * @test A5120DiskApi/DetectedFormat_GleicheGeometrieUnterZweiNamenGiltAlsErkannt
+ * @brief Zwei Katalogeintraege derselben Rohgeometrie sind KEINE Mehrdeutigkeit.
+ *
+ * `cpa640` und `k5601_16x256` beschreiben bis auf den Namen dieselbe Diskette
+ * (80×2×16×256 MFM).  Waere jeder zweite Treffer ein Abbruch, hiesse jede solche
+ * Diskette „unbekannt" — und liesse sich nicht mehr als `.img` speichern, obwohl
+ * beide Namen byteweise dasselbe Abbild ergaeben.
+ * @par Kriterium  Eine 16×256-Diskette wird erkannt (einer der beiden Namen).
+ */
+TEST(A5120DiskApi, DetectedFormat_GleicheGeometrieUnterZweiNamenGiltAlsErkannt) {
+    A5120Machine m;
+    k1520test::TempDisk d("scpx17_cpa780_k5601.hfe");   // 80×2×16×256
+
+    ASSERT_TRUE(m.mountDisk(0, d.path(), "cpa800", /*wp=*/true)) << m.lastError();
+    const std::string name = m.detectedFormatName(0);
+    EXPECT_TRUE(name == "cpa640" || name == "k5601_16x256")
+        << "erkannt wurde: '" << name << "'";
+    m.unmountDisk(0);
+}

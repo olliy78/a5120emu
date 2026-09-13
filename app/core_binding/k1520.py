@@ -173,6 +173,10 @@ _lib.k1520_disk_path.restype = ctypes.c_char_p
 _lib.k1520_disk_container.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_disk_container.restype = ctypes.c_char_p
 
+# k1520_disk_detected_format(K1520Handle, drive: int) -> const char*
+_lib.k1520_disk_detected_format.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_disk_detected_format.restype = ctypes.c_char_p
+
 # k1520_disk_notice(K1520Handle, drive: int) -> const char*
 _lib.k1520_disk_notice.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_disk_notice.restype = ctypes.c_char_p
@@ -606,6 +610,18 @@ class K1520Emulator:
         """Container of the bound file ("img" | "hfe" | "dmk"; "" = none)."""
         c = _lib.k1520_disk_container(self._handle, ctypes.c_int(drive))
         return c.decode('utf-8', 'replace') if c else ""
+
+    def detected_format(self, drive: int) -> str:
+        """Auf der eingelegten Diskette ERKANNTES Katalogformat ("" = unbekannt).
+
+        Dieselbe Geometrie-Erkennung wie im k1520DiskTool.  Leer heisst *unbekannt*
+        und fasst die drei Fälle zusammen, die die Oberfläche gleich behandeln muss:
+        nichts eingelegt, kein Katalogformat passt, oder zwei passen gleich gut.
+        Eine Diskette mit unbekanntem Format lässt sich nicht als ``.img``
+        ausgeben — die Sektorreihenfolge wäre geraten.
+        """
+        f = _lib.k1520_disk_detected_format(self._handle, ctypes.c_int(drive))
+        return f.decode('utf-8', 'replace') if f else ""
 
     def disk_notice(self, drive: int) -> str:
         """Wie die eingelegte Diskette ans Laufwerk angepasst wurde ("" = passt).

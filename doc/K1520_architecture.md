@@ -1070,8 +1070,30 @@ Datei, Zeile, Name und Grund auf stderr (und ins Log) gemeldet, die übrigen For
 [Formatkatalog] …/formats.yaml:8: Format 'kaputt' übersprungen — 'size': 777 — erlaubt sind 128, 256, 512, 1024
 ```
 
-GUI (`app/ui/drive_widget.py`): `_populate_format_combo()` zeigt `"<name> — <description>"` als
-Label (Standard mit Präfix `Standard: `) und behält den Katalognamen in `userData`.
+GUI (`app/ui/drive_widget.py`): der Laufwerkskasten zeigt hinter *Format:* das **erkannte**
+Format (`k1520_disk_detected_format` → `A5120Machine::detectedFormatName`, §8.6.9), nicht eine
+Einstellung.  Eine Formatauswahl gibt es nur noch als **Rückfrage bei `.img`**
+(`app/ui/format_dialog.py`) — dort zeigt die Liste `"<name> — <description>"` und behält den
+Katalognamen in `Qt::UserRole`.
+
+#### 8.6.9 Erkanntes Diskettenformat (`detectedFormatName`)
+
+Dieselbe Geometrie-Erkennung wie im k1520DiskTool (`GeometryProbe`, doc/design/13_k1520disktool.md
+§12.1), angewandt auf das Medium, das gerade im Laufwerk liegt.  Dafür steht `geometry_probe.cpp`
+seit 2026-09-13 in einer **eigenen** statischen Bibliothek `k1520_geometry`; sie ist das einzige
+Stück der Dateisystem-Schicht, das auch `libk1520core.so` braucht — die beiden gemeinsamen
+Bibliotheken bleiben ansonsten getrennt (§10 des DiskTool-Entwurfs).
+
+Drei Fälle liefern **leer** ≡ „unbekannt": kein Katalogformat passt, zwei passen *gleich gut und
+beschreiben verschiedene Sektorräume*, oder die Diskette liegt erst teilweise im Speicher
+(physisches Laufwerk — eine Messung zöge dort die ganze Scheibe ein).  Die Einschränkung im
+zweiten Fall ist wesentlich: `cpa640` und `k5601_16x256` sind bis auf den Namen derselbe Eintrag,
+und ein gleich guter Treffer mit **identischer** aufgelöster Spurbelegung ist keine Mehrdeutigkeit
+— beide Namen ergäben byteweise dasselbe `.img`.
+
+Bei `.img` wird nicht gemessen, sondern das beim Einlegen **erklärte** Format gemeldet
+(`DiskImage::diskFormat()`): ein rohes Sektorabbild trägt keine Adressmarken, seine Geometrie ist
+Vereinbarung, nicht Befund.  Wächter: `A5120DiskApi.DetectedFormat_*`.
 
 #### 8.6.8 Etappen
 

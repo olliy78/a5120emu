@@ -9,7 +9,7 @@ import functools
 import os
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QComboBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QLineEdit, QCheckBox, QFileDialog, QFrame, QMessageBox
 )
 from PySide6.QtCore import Qt, Signal, QTimer
@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt, Signal, QTimer
 from app import drive_types as dt
 from app import paths
 from app.ui.focus import release_focus
+from app.ui.format_dialog import FormatDialog
 
 
 def _spanne(wert) -> int:
@@ -105,6 +106,14 @@ class DriveWidget(QWidget):
         self._led_timer.timeout.connect(self._refresh_leds)
         self._led_timer.start(120)
 
+        # Das erkannte Format aendert sich im Betrieb — FORMAT.COM schreibt der
+        # Diskette eine andere Geometrie ein.  Eigener, langsamer Takt: eine
+        # Messung kostet ein paar Millisekunden (alle 160 Spuren durchgesehen),
+        # im 120-ms-Takt der Leuchten waere das Verschwendung.
+        self._format_timer = QTimer(self)
+        self._format_timer.timeout.connect(self._refresh_format_labels)
+        self._format_timer.start(1000)
+
     # Dateifilter für Öffnen: alle drei Container.
     DISK_FILTER = "Disk Images (*.img *.hfe *.dmk);;All Files (*)"
     # Neue Leerdiskette: nur self-describing Container — ein rohes Sektorimage
@@ -119,46 +128,82 @@ class DriveWidget(QWidget):
         """Indices of the K5122 slots that carry a drive (in slot order)."""
         return [i for i, t in enumerate(self.drive_types) if dt.is_present(t)]
 
-    def _populate_format_combo(self, combo, drive: int):
-        """Fill *combo* with the formats that fit the drive in *drive* (from core).
+    #: Anzeige, wenn die Formaterkennung nichts Eindeutiges liefert.
+    FORMAT_UNBEKANNT = "unbekannt"
 
-        Entry 0 is the drive-type default (labelled "Standard (<name>)"); the
-        remaining geometry-compatible formats follow.  Each entry's userData is the
-        concrete core format name passed to mount/create.
+    def _drive_formats(self, drive: int) -> list:
+        """Die Katalogformate, die auf das Laufwerk in *drive* passen.
+
+        Standardformat des Laufwerkstyps zuerst — dieselbe Reihenfolge, die der
+        Kern liefert und die der Formatdialog anbietet.
         """
-        combo.clear()
         try:
-            formats = self.emulator.drive_formats(drive)
+            formats = list(self.emulator.drive_formats(drive))
             default = self.emulator.drive_default_format(drive)
         except Exception:
-            formats, default = [], ""
-
-        def add(name: str):
-            """Eintrag mit dem reinen Formatnamen; die Katalogbeschreibung wird
-            nur als Tooltip angeboten, damit das Auswahlfeld schmal bleibt."""
-            combo.addItem(name, name)
-            try:
-                desc = self.emulator.format_description(name)
-            except Exception:
-                desc = ""
-            if desc:
-                combo.setItemData(combo.count() - 1, desc, Qt.ToolTipRole)
-
+            return []
         if default:
-            add(default)
-        for name in formats:
-            if name != default:
-                add(name)
-        if combo.count() == 0:
-            # Fallback (should not happen for a present drive): plain default name.
-            combo.addItem(default or "cpa800", default or "cpa800")
-        combo.setCurrentIndex(0)
+            formats = [default] + [f for f in formats if f != default]
+        return formats
 
-    @staticmethod
-    def _selected_format(combo, drive: int) -> str:
-        """Concrete core format name currently selected in *combo*."""
-        data = combo.currentData()
-        return data if data else (combo.currentText() or "")
+    def _format_nach_groesse(self, drive: int, path: str) -> str:
+        """Das Katalogformat, dessen Abbildgröße genau zur Datei passt ("" = keins).
+
+        Die Bytezahl ist das EINZIGE, was ein rohes Sektorimage über sich selbst
+        verrät — als Vorauswahl im Formatdialog trifft sie fast immer, und wo
+        mehrere Formate dieselbe Größe haben, ist die Vorauswahl eben eine
+        Vorauswahl.
+        """
+        try:
+            groesse = os.path.getsize(path)
+        except OSError:
+            return ""
+        for name in self._drive_formats(drive):
+            if _abbildgroessen().get(name) == groesse:
+                return name
+        return ""
+
+    def _frage_img_format(self, drive: int, *, path: str = "",
+                          anlegen: bool = False) -> str:
+        """Formatwahl für ein rohes Sektorabbild ("" = abgebrochen).
+
+        Gefragt wird NUR hier — bei ``.hfe``/``.dmk`` steht die Geometrie in der
+        Datei (siehe :mod:`app.ui.format_dialog`).
+        """
+        formate = self._drive_formats(drive)
+        if not formate:
+            return ""
+        if anlegen:
+            erklaerung = (
+                "Ein rohes Sektorabbild (<code>.img</code>) kann „unformatiert“ nicht "
+                "ausdrücken — es entsteht deshalb eine <b>vorformatierte</b> Diskette. "
+                "In welchem Format?")
+            vorauswahl = formate[0]
+        else:
+            erklaerung = (
+                "Ein rohes Sektorabbild (<code>.img</code>) enthält nur die "
+                "Sektorinhalte — Spur- und Sektoreinteilung stehen nicht darin. "
+                "Welches Format soll gelten?")
+            vorauswahl = self._format_nach_groesse(drive, path) or formate[0]
+
+        def beschreibung(name: str) -> str:
+            try:
+                return self.emulator.format_description(name)
+            except Exception:
+                return ""
+
+        wahl = FormatDialog.frage(
+            self, formate=formate, vorauswahl=vorauswahl, erklaerung=erklaerung,
+            titel=f"Diskettenformat — Laufwerk {chr(65 + drive)}:",
+            beschreibung=beschreibung)
+        return wahl or ""
+
+    def _erkanntes_format(self, drive: int) -> str:
+        """Das vom Kern erkannte Katalogformat ("" = unbekannt)."""
+        try:
+            return self.emulator.detected_format(drive)
+        except Exception:
+            return ""
 
     def _fail_msg(self, drive: int, action: str) -> str:
         """Fehlermeldung mit dem konkreten Grund aus dem Core (falls vorhanden)."""
@@ -271,15 +316,16 @@ class DriveWidget(QWidget):
         notice_label.setVisible(False)
         layout.addWidget(notice_label)
 
-        # Format selection — populated from the core with the formats that fit
-        # this slot's drive type (default first), so a non-K5601 drive offers its
-        # own geometries instead of the fixed K5601 CP/A set.
+        # Format: das ERKANNTE, nicht ein eingestelltes.  Hier stand ein
+        # Auswahlfeld — es galt fuer alle Dateiarten, obwohl nur das rohe
+        # Sektorimage eine Formatangabe braucht, und es stand VOR der
+        # Dateiauswahl.  Gefragt wird jetzt nach dem Oeffnen und nur bei `.img`
+        # (app/ui/format_dialog.py); hier steht seitdem der Befund.
         format_layout = QHBoxLayout()
-        format_label = QLabel("Format:")
-        format_combo = QComboBox()
-        self._populate_format_combo(format_combo, drive)
-        format_layout.addWidget(format_label)
-        format_layout.addWidget(format_combo)
+        format_layout.addWidget(QLabel("Format:"))
+        format_value = QLabel("—")
+        format_layout.addWidget(format_value)
+        format_layout.addStretch()
         layout.addLayout(format_layout)
 
         # Füllstand einer physischen Diskette („47 von 160 Spuren gelesen").
@@ -289,11 +335,18 @@ class DriveWidget(QWidget):
         phys_label.setVisible(False)
         layout.addWidget(phys_label)
 
-        # Buttons: Toggle (Mount ⇄ Unmount) + "Neue Diskette" + "Speichern unter…"
-        # + "Physisch…" (echtes Laufwerk am Greaseweazle).
+        # Buttons: Toggle (Mount ⇄ Unmount) + "Leere Diskette" + "Speichern unter…"
+        # + "Physisch…" (echtes Laufwerk am Greaseweazle).  „Leere" statt „Neue":
+        # was entsteht, ist eine UNFORMATIERTE Diskette, die das Gastsystem erst
+        # formatieren muss — „neu" liess an eine fertig benutzbare denken.
         buttons_layout = QHBoxLayout()
         toggle_btn = QPushButton("Mount")
-        create_btn = QPushButton("Neue Diskette")
+        create_btn = QPushButton("Leere Diskette")
+        create_btn.setToolTip(
+            "Legt eine echte LEERDISKETTE in der Geometrie des Laufwerks an — "
+            "unformatiert, damit das Gastsystem sie selbst formatieren kann.\n"
+            "Nur als .hfe/.dmk; ein rohes .img kann „unformatiert“ nicht "
+            "ausdrücken und entsteht deshalb vorformatiert.")
         saveas_btn = QPushButton("Speichern unter…")
         phys_btn = QPushButton("Physisch…")
         # Ausweg aus einer Schadstelle: neue Diskette einlegen, alles noch einmal
@@ -316,6 +369,7 @@ class DriveWidget(QWidget):
             self._mounts[drive] = (path, fmt, wp)
             saveas_btn.setEnabled(True)
             self._update_notice(drive)
+            self._update_format_label(drive)
             self.disk_mounted.emit(drive, path)
 
         def set_unmounted():
@@ -328,6 +382,7 @@ class DriveWidget(QWidget):
             phys_label.setVisible(False)
             rewrite_btn.setVisible(False)
             self._update_notice(drive)
+            self._update_format_label(drive)
             self.disk_unmounted.emit(drive)
 
         def on_toggle():
@@ -352,7 +407,19 @@ class DriveWidget(QWidget):
             )
             if not path:
                 return
-            fmt = self._selected_format(format_combo, drive)
+            # Nur ein rohes Sektorabbild braucht eine Formatangabe; `.hfe`/`.dmk`
+            # tragen ihre Geometrie selbst und bekommen deshalb keinen Dialog.
+            if path.lower().endswith(".img"):
+                fmt = self._frage_img_format(drive, path=path)
+                if not fmt:
+                    return
+            else:
+                # Bei `.hfe`/`.dmk` kommt die Geometrie aus der DATEI; der Kern
+                # verlangt trotzdem einen gueltigen Katalognamen und benutzt ihn
+                # als Platzhalter (A5120Machine::mountDisk).  Also der Standard
+                # des Laufwerkstyps — gefragt wird dafuer niemand.
+                formate = self._drive_formats(drive)
+                fmt = formate[0] if formate else "cpa800"
             wp = wp_check.isChecked()
             try:
                 if self.emulator.mount_disk(drive, path, fmt, wp):
@@ -377,8 +444,12 @@ class DriveWidget(QWidget):
             # Ohne Endung → .hfe (Leerdiskette).
             if not os.path.splitext(path)[1]:
                 path += ".hfe"
-            is_img = path.lower().endswith(".img")
-            fmt = self._selected_format(format_combo, drive) if is_img else ""
+            if path.lower().endswith(".img"):
+                fmt = self._frage_img_format(drive, anlegen=True)
+                if not fmt:
+                    return
+            else:
+                fmt = ""
             wp = wp_check.isChecked()
             try:
                 if self.emulator.create_disk(drive, path, fmt, wp):
@@ -397,6 +468,10 @@ class DriveWidget(QWidget):
                 raw_ok = self.emulator.disk_raw_compatible(drive)
             except Exception:
                 raw_ok = False
+            # `.img` braucht ausserdem ein ERKANNTES Format — ohne das waere die
+            # Sektorreihenfolge geraten (siehe _update_format_label).
+            erkannt = self._erkanntes_format(drive)
+            raw_ok = raw_ok and bool(erkannt)
             flt = self.SAVE_FILTER_ALL if raw_ok else self.SAVE_FILTER_BITSTREAM
             path, _ = QFileDialog.getSaveFileName(
                 self, f"Diskette speichern unter — Laufwerk {chr(65 + drive)}:",
@@ -408,14 +483,19 @@ class DriveWidget(QWidget):
                 path += ".hfe"
             is_img = path.lower().endswith(".img")
             if is_img and not raw_ok:
+                grund = ("Das Format dieser Diskette ist unbekannt — die "
+                         "Sektorreihenfolge eines rohen Abbilds wäre geraten."
+                         if not erkannt else
+                         "unformatierte Spuren oder Nutzdaten hinter der Daten-CRC "
+                         "(z. B. UDOS-Sektorkontrollblock) gingen dabei verloren.")
                 QMessageBox.critical(
                     self, "Nicht möglich",
                     "Diese Diskette lässt sich nicht als rohes Sektorimage (.img) "
-                    "speichern:\nunformatierte Spuren oder Nutzdaten hinter der "
-                    "Daten-CRC (z. B. UDOS-Sektorkontrollblock) gingen dabei "
-                    "verloren.\n\nBitte .hfe oder .dmk wählen.")
+                    "speichern:\n" + grund + "\n\nBitte .hfe oder .dmk wählen.")
                 return
-            fmt = self._selected_format(format_combo, drive) if is_img else ""
+            # Ausgegeben wird im ERKANNTEN Format: was auf der Diskette steht,
+            # nicht was jemand eingestellt hat.
+            fmt = erkannt if is_img else ""
             try:
                 if self.emulator.save_disk_as(drive, path, fmt):
                     # Ab jetzt zeigt die Bindung auf die neue Datei.
@@ -482,6 +562,7 @@ class DriveWidget(QWidget):
             rewrite_btn.setVisible(bool(wahl["writable"]))
             self._update_physical_status(drive)
             self._update_notice(drive)
+            self._update_format_label(drive)
             self.disk_mounted.emit(drive, path_display.text())
 
         def on_rewrite():
@@ -527,7 +608,7 @@ class DriveWidget(QWidget):
         group._create_btn = create_btn
         group._saveas_btn = saveas_btn
         group._wp_check = wp_check
-        group._format_combo = format_combo
+        group._format_value = format_value
         group._notice_label = notice_label
         group._phys_label = phys_label
         group._phys_btn = phys_btn
@@ -537,6 +618,7 @@ class DriveWidget(QWidget):
         # Dateidialog danebenher wuerde beim naechsten Umbau auseinanderlaufen.
         group._on_toggle = on_toggle
         self._panels[drive] = group
+        self._update_format_label(drive)
 
         return group
 
@@ -571,6 +653,45 @@ class DriveWidget(QWidget):
         label.setText("\n".join("⚠ " + l for l in lines))
         label.setToolTip("\n\n".join(self.NOTICE_HELP.get(l, l) for l in lines))
         label.setVisible(bool(lines))
+
+    # ── Erkanntes Diskettenformat ────────────────────────────────────────────
+
+    def _update_format_label(self, drive: int):
+        """Die Zeile „Format:" aus dem Kern nachziehen.
+
+        Der Kern misst die Spuren der eingelegten Diskette und haelt das
+        Gemessene gegen den Formatkatalog (dieselbe Erkennung wie im
+        k1520DiskTool).  Drei Faelle fallen zu **unbekannt** zusammen: kein
+        Katalogformat passt, zwei passen gleich gut, oder die Diskette liegt
+        erst teilweise im Speicher (physisches Laufwerk).  Alle drei heissen
+        fuer den Bediener dasselbe — das Format ist nicht belegt, und ein
+        `.img`-Export waere geraten.
+        """
+        panel = self._panels.get(drive)
+        if panel is None or not hasattr(panel, "_format_value"):
+            return
+        label = panel._format_value
+        if not self.is_mounted(drive):
+            label.setText("—")
+            label.setToolTip("Keine Diskette eingelegt.")
+            return
+
+        name = self._erkanntes_format(drive)
+        if not name:
+            label.setText(self.FORMAT_UNBEKANNT)
+            label.setToolTip(
+                "Die Spuren dieser Diskette passen zu keinem Eintrag in "
+                "formats.yaml — oder zu mehreren gleich gut.\n"
+                "Lesen und Schreiben geht trotzdem (der K5122 arbeitet "
+                "formatagnostisch); nur als rohes Sektorimage (.img) laesst sie "
+                "sich nicht speichern.")
+            return
+        label.setText(name)
+        try:
+            beschreibung = self.emulator.format_description(name)
+        except Exception:
+            beschreibung = ""
+        label.setToolTip(beschreibung or f"Erkanntes Diskettenformat: {name}")
 
     # ── Physisches Laufwerk (Greaseweazle) ───────────────────────────────────
 
@@ -718,14 +839,13 @@ class DriveWidget(QWidget):
                     continue
             except Exception:
                 continue
-            idx = panel._format_combo.findData(name)
-            panel._format_combo.setCurrentIndex(idx if idx >= 0 else 0)
             panel._wp_check.setChecked(wp)
             panel._path_display.setText(path)
             panel._toggle_btn.setText("Unmount")
             panel._saveas_btn.setEnabled(True)
             self._mounts[drive] = (path, name, wp)
             self._update_notice(drive)
+            self._update_format_label(drive)
             return True
         return False
 
@@ -762,6 +882,8 @@ class DriveWidget(QWidget):
                 panel._saveas_btn.setEnabled(False)
                 self._update_notice(drive)
         self._mounts.clear()
+        for drive in self._panels:
+            self._update_format_label(drive)
 
         # 2) Aus der Config mounten (dieselbe Stelle wie die Kommandozeile).
         for m in mounts or []:
@@ -787,6 +909,11 @@ class DriveWidget(QWidget):
                 self.emulator.mount_disk(drive, path, fmt, wp)
             except Exception:
                 pass
+
+    def _refresh_format_labels(self):
+        """Die Formatzeile aller bestueckten Laufwerke nachziehen."""
+        for drive in list(self._panels):
+            self._update_format_label(drive)
 
     def _refresh_leds(self):
         """Update all drive LED indicators from emulator state."""

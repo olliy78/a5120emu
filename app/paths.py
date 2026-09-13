@@ -10,8 +10,8 @@ aus einem verteilten Paket (Konzept: ``doc/design/13_distribution.md``).
 Jede Auflösung geht dieselbe Reihenfolge durch:
 
 1. **Umgebungsvariable** — ``K1520_LIB``, ``K1520_FORMATS``, ``K1520_HOME``,
-   ``K1520_DISKS``.  Hat immer Vorrang, damit sich von außen (Launcher, Test,
-   Fehlersuche) jeder Pfad umbiegen lässt.
+   ``K1520_DISKS``, ``K1520_DEFAULT_CONFIG``.  Hat immer Vorrang, damit sich von
+   außen (Launcher, Test, Fehlersuche) jeder Pfad umbiegen lässt.
 2. **Installationslayout** ``<root>/{bin,app,share/k1520emu,share/disks}``
 3. **Quellbaum** ``<repo>/{build,app,data,disks}``
 
@@ -45,12 +45,20 @@ ENV_LIB = "K1520_LIB"          # Kernbibliothek (Datei oder Verzeichnis)
 ENV_FORMATS = "K1520_FORMATS"  # Formatkatalog (Datei oder Verzeichnis)
 ENV_DATA = "K1520_DATA"        # Datenordner des Anwenders (enthält Disketten/)
 ENV_DISKS = "K1520_DISKS"      # Verzeichnis der Arbeitsdisketten
+ENV_DEFAULT_CONFIG = "K1520_DEFAULT_CONFIG"   # Auslieferungskonfiguration (Datei oder Verzeichnis)
 # ENV_DISKS ist die SPEZIELLERE Angabe und schlägt deshalb ENV_DATA: wer nur die
 # Disketten woanders haben will, soll dafür nicht den ganzen Datenordner
 # verschieben müssen (dort liegen auch Zustände und `logs/`).
 
 #: Name des Formatkatalogs (identisch mit ``kCatalogFileName`` im Kern).
 FORMATS_FILE = "formats.yaml"
+
+#: Name der mitgelieferten Auslieferungskonfiguration (``data/default_config.yaml``
+#: im Quellbaum, ``share/k1520emu/`` in einer Installation).  Sie ist der Zustand
+#: nach der Erstinstallation UND das Ziel von *Ansicht ▸ Standard zurücksetzen*;
+#: die Konfiguration des Anwenders heisst dagegen ``config.yaml`` und liegt in
+#: :func:`config_dir`.
+DEFAULT_CONFIG_FILE = "default_config.yaml"
 
 #: Verzeichnisname der Benutzerkonfiguration — historisch ``k1520emu``,
 #: NICHT ``a5120emu``; eine Umbenennung würde bestehende Konfigurationen
@@ -242,6 +250,36 @@ def formats_candidates() -> List[Path]:
 def formats_file() -> Optional[Path]:
     """Erster existierender Formatkatalog — oder ``None``."""
     for p in formats_candidates():
+        if p.is_file():
+            return p.resolve()
+    return None
+
+
+# ─── Auslieferungskonfiguration ──────────────────────────────────────────────
+
+def default_config_candidates() -> List[Path]:
+    """Kandidaten für ``default_config.yaml`` in absteigender Priorität.
+
+    Dieselbe Reihenfolge wie beim Formatkatalog — Installation vor Quellbaum —,
+    nur OHNE den Benutzerordner: die Vorgabe ist das, womit ausgeliefert wurde,
+    und darf nicht von der Datei überschrieben werden, die zurückgesetzt werden
+    soll.  Wer eine eigene Vorgabe braucht, setzt :data:`ENV_DEFAULT_CONFIG`.
+    """
+    out: List[Path] = []
+    env = os.environ.get(ENV_DEFAULT_CONFIG)
+    if env:
+        p = Path(env).expanduser()
+        out.append(p / DEFAULT_CONFIG_FILE if p.is_dir() else p)
+
+    base = base_dir()
+    out.append(base / "share" / "k1520emu" / DEFAULT_CONFIG_FILE)   # Installation
+    out.append(base / "data" / DEFAULT_CONFIG_FILE)                 # Quellbaum
+    return out
+
+
+def default_config_file() -> Optional[Path]:
+    """Erste existierende Auslieferungskonfiguration — oder ``None``."""
+    for p in default_config_candidates():
         if p.is_file():
             return p.resolve()
     return None
@@ -552,6 +590,7 @@ def describe() -> str:
     except FileNotFoundError:
         lib = "NICHT GEFUNDEN"
     fmt = formats_file()
+    vorgabe = default_config_file()
     bundled = bundled_disks_dir()
     layout = "Installation" if is_installed_layout() else "Quellbaum"
     return "\n".join([
@@ -563,4 +602,5 @@ def describe() -> str:
         f"Disketten (Nutzer):{user_disks_dir()}",
         f"Dateien (DiskTool):{user_files_dir()}",
         f"Konfiguration:     {config_dir()}",
+        f"Vorgabe-Konfig.:   {vorgabe if vorgabe else 'NICHT GEFUNDEN'}",
     ])

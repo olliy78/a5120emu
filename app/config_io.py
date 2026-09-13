@@ -41,6 +41,14 @@ Example::
 The auto-persisted configuration lives under ``~/.config/k1520emu/config.yaml``
 (honouring ``$XDG_CONFIG_HOME``); every exported/loaded file uses the very same
 syntax, so a saved config can later be loaded back verbatim.
+
+**Die Auslieferungskonfiguration** (:func:`standard_konfiguration`) ist eine
+Datei desselben Aufbaus, die mit dem Programm kommt statt vom Anwender:
+``data/default_config.yaml`` im Quellbaum, ``share/k1520emu/`` in einer
+Installation.  Sie ist der Zustand nach der Erstinstallation und das Ziel von
+*Ansicht ▸ Standard zurücksetzen*.  Sie trägt bewusst KEINEN ``disks``-Abschnitt
+— Diskettenpfade sind rechnerspezifisch, und ohne den Abschnitt lässt das
+Zurücksetzen die eingelegten Disketten in Ruhe.
 """
 
 import os
@@ -99,3 +107,27 @@ def load_config(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return data or {}
+
+
+def standard_konfiguration() -> dict:
+    """Die mitgelieferte Auslieferungskonfiguration (``{}``, wenn es keine gibt).
+
+    Sie liegt als ``default_config.yaml`` neben dem Formatkatalog
+    (:func:`app.paths.default_config_file`) und wird an zwei Stellen gebraucht:
+    beim ERSTEN Start, solange es noch keine ``config.yaml`` gibt, und bei
+    *Ansicht ▸ Standard zurücksetzen*.
+
+    **Ein Fehlschlag ist kein Grund, den Start abzubrechen**: fehlt oder bricht
+    die Datei, kommt ein leeres Verzeichnis zurück und der Emulator bleibt bei
+    den im Programm eingebauten Vorgaben (CRTParams(), Tempo 1,0,
+    ``dt.DEFAULT_DRIVE_TYPES``, Standard-Symbolleiste).  Sie ist eine Beigabe,
+    keine Voraussetzung.
+    """
+    pfad = paths.default_config_file()
+    if pfad is None:
+        return {}
+    try:
+        return load_config(str(pfad))
+    except Exception as e:           # defekte YAML-Datei, Leserechte …
+        print(f"[config] Vorgabe-Konfiguration {pfad} nicht lesbar: {e}")
+        return {}

@@ -67,6 +67,12 @@ _SPEC: List[Tuple] = [
     ("leiste_einrichten", "Symbolleiste &einrichten…", None, None,
      "Welche Schaltflächen die Symbolleiste zeigt und in welcher Reihenfolge",
      "_leiste_einrichten", False),
+    # Kein Kürzel: ein Griff, den man selten und mit Bedacht tut — und jedes
+    # weitere Strg+Umschalt+… ist eines mehr, das im Handbuch stehen muss.
+    ("standard", "&Standard zurücksetzen", "reset-view", None,
+     "Bildröhre, Tempo, Laufwerke, Fenster, Kästen und Symbolleiste auf die "
+     "Auslieferung zurücksetzen — überschreibt die gespeicherte Konfiguration",
+     "_standard_zuruecksetzen", False),
 
     # ── Hilfe ───────────────────────────────────────────────────────────────
     ("hilfe", "&Handbuch…", "help", "Ctrl+Shift+H",
@@ -84,6 +90,7 @@ KURZ = {
     "power": "Power",
     "reset": "Reset",
     "vollbild": "Vollbild",
+    "standard": "Standard",
     "hilfe": "Hilfe",
 }
 
@@ -109,7 +116,7 @@ REIHENFOLGE: List = [
     None,
     "dock_drives", "dock_settings", "dock_screen", "dock_keyboard",
     None,
-    "vollbild", "hilfe",
+    "vollbild", "standard", "hilfe",
 ]
 
 #: Was beim ersten Start darin steht — genau die Wege, die man täglich geht.

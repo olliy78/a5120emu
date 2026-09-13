@@ -145,6 +145,17 @@ K1520_API const char* k1520_disk_path(K1520Handle h, int drive);
 /** @brief Container of the bound file ("img" | "hfe" | "dmk"; "" = none). */
 K1520_API const char* k1520_disk_container(K1520Handle h, int drive);
 /**
+ * @brief Catalog format DETECTED on the mounted disk ("" = unknown).
+ *
+ * The geometry detection of the k1520DiskTool (`GeometryProbe`), run over the medium
+ * that is actually in the drive.  "" means *unknown* and covers all three cases the
+ * GUI must treat alike: nothing mounted / no catalog format matches / two formats
+ * match equally well.  A disk of unknown format must not be exported as `.img` —
+ * the sector order would be guessed.  For a raw `.img` the format is not measured
+ * but the one DECLARED at mount time.  See A5120Machine::detectedFormatName.
+ */
+K1520_API const char* k1520_disk_detected_format(K1520Handle h, int drive);
+/**
  * @brief Operating notices about how the mounted disk had to be adapted to the drive.
  *
  * One line per restriction, separated by '\n'; "" = the disk fits as it is.  This is

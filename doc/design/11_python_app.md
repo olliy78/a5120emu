@@ -589,6 +589,31 @@ Dinge waren kaputt und sind behoben:
   eigener Schritt** — als früher `return` in `_apply_window_state` verschluckte
   der geglückte Geometrieweg die Wiederherstellung von Symbolleiste und
   Kästen.
+* **…aber den maximierten Zustand trägt der Blob NICHT zurück** (2026-09-14,
+  nachgemessen mit Qt 6.11 unter X11): `restoreGeometry()` meldet `True`, stellt
+  die Grösse her — und `isMaximized()` bleibt falsch.  Und selbst von Hand
+  gesetzt verfällt der Zustand am **unsichtbaren** Fenster: der Fensterverwalter
+  (GNOME Shell/X11) zeigt es normal und lässt die Marke binnen 200 ms
+  zurückfallen; ein `setWindowState` aus dem `showEvent` heraus genügt ebenfalls
+  nicht, erst ein Zug eine Runde der Ereignisschleife SPÄTER hält.  Deshalb:
+  `_maximiert_herstellen` löscht am unsichtbaren Fenster die (gelogene) Marke,
+  merkt den Wunsch in `_maximiert_nachholen`, und `showEvent` holt ihn per
+  `QTimer.singleShot(0, …)` nach.  Auf einem schon sichtbaren Fenster — der Weg
+  von *Konfiguration laden* und *Standard zurücksetzen* — wirkt er sofort.
+  Entschieden wird dabei **immer** nach unserem eigenen `maximized`-Feld; der
+  Qt-Blob liefert nur noch Grösse und Lage.
+
+  > **Warum es zweimal durch die Prüfung ging.** Unter
+  > `QT_QPA_PLATFORM=offscreen` **scheitert** `restoreGeometry()` (der
+  > gespeicherte Bildschirm passt nicht), also lief der Wächter durch den
+  > Rückfallzweig — und auf einem Fenster, das er selbst schon angezeigt hatte.
+  > Geprüft wurde damit genau der Weg, den der Anwender nie geht.  Die beiden
+  > neuen Wächter stellen das ohne Fensterverwalter nach:
+  > `test_maximized_comes_back_even_when_qt_drops_it_from_its_geometry` lässt
+  > `restoreGeometry` gelingen, ohne etwas zu tun, und
+  > `test_maximized_is_applied_after_the_window_is_shown` prüft, dass am
+  > unsichtbaren Fenster nur gemerkt und beim Anzeigen gesetzt wird.  Beide
+  > fallen ohne die Behebung um.
 
 ### 10.6 Diskette einlegen — im Menü, mit Untermenü je Laufwerk
 
@@ -598,3 +623,49 @@ Laufwerkskasten; ein zweiter Dateidialog daneben liefe beim nächsten Umbau
 auseinander.  Gefüllt wird das Untermenü beim **Aufklappen**, weil sich die
 Bestückung über *Einstellungen ▸ Laufwerke* ändert; gesperrt ist, was nicht
 geht (einlegen bei belegtem, auswerfen bei leerem Laufwerk).
+
+### 10.7 Auslieferungskonfiguration und „Standard zurücksetzen" (2026-09-14)
+
+Der Zustand, in dem der Emulator **nach der Erstinstallation** aufgeht, ist
+keine Sammlung von Vorgabewerten im Programmtext mehr, sondern **eine Datei
+desselben Aufbaus wie die Konfiguration des Anwenders**:
+`data/default_config.yaml` im Quellbaum, `share/k1520emu/default_config.yaml` in
+einer Installation (`packaging/build_payload.sh` legt sie dorthin, Wächter
+`py_packaging`).  Aufgelöst wird sie in `app/paths.py`
+(`default_config_file()`), gelesen in `app/config_io.py`
+(`standard_konfiguration()`), gebraucht an genau zwei Stellen:
+
+* `MainWindow._load_or_create_default_config` — beim ersten Start, solange es
+  noch keine `config.yaml` gibt; sie wird anschliessend als die neue
+  `config.yaml` des Anwenders geschrieben und gehört von da an ihm.
+* `MainWindow._standard_zuruecksetzen` — *Ansicht ▸ Standard zurücksetzen*
+  (`act_standard`, kein Tastenkürzel, Symbol `reset-view`).  Nach Rückfrage
+  wird die Vorgabe angewandt und **sofort** geschrieben (`_autosave_now()`, nicht
+  über den sammelnden Timer): das Überschreiben ist bestätigt und darf nicht an
+  einem Absturz in den nächsten 400 ms hängen.
+
+Vier Festlegungen, die das tragen:
+
+* **Ein FEHLENDER Abschnitt heisst „nicht anfassen", ein leerer „leeren".**
+  `_apply_config` mountet nur noch, wenn `disks` überhaupt vorkommt.  Die
+  Vorgabe trägt den Abschnitt bewusst nicht — Diskettenpfade sind absolut und
+  rechnerspezifisch, und das Zurücksetzen der *Ansicht* darf die Maschine nicht
+  leerräumen.  Wächter `test_reset_to_default_leaves_the_mounted_disks_alone`.
+* **`window.geometry` gehört nicht in die Auslieferung** (darin steckt die
+  Bildschirmposition des Baurechners).  `width`/`height`/`dock_state` reichen;
+  wo das Fenster aufgeht, entscheidet der Fensterverwalter.  Wächter
+  `test_the_shipped_default_config_is_found_and_complete`.
+* **Der Benutzerordner ist KEIN Fundort.**  Anders als beim Formatkatalog
+  endet die Kandidatenliste vor `config_dir()` — sonst setzte *Standard
+  zurücksetzen* auf den Zustand zurück, den es gerade überschreiben will.
+  Umbiegen lässt sich der Fundort über `K1520_DEFAULT_CONFIG` (Datei oder
+  Verzeichnis).  Wächter `test_vorgabe_konfiguration_ignoriert_den_benutzerordner`.
+* **Ohne die Datei läuft alles weiter.**  `standard_konfiguration()` gibt `{}`
+  zurück; der erste Start bleibt dann bei den im Programm eingebauten Vorgaben
+  (`CRTParams()`, Tempo 1,0, `dt.DEFAULT_DRIVE_TYPES`, `actions.STANDARD`) und
+  schreibt trotzdem eine `config.yaml`, *Standard zurücksetzen* meldet, wo es
+  gesucht hat.  Sie ist eine Beigabe, keine Voraussetzung.
+
+Eine andere Auslieferung herzustellen ist damit ein Kopiervorgang: Fenster
+einrichten, den Inhalt der eigenen `config.yaml` nach `data/default_config.yaml`
+übernehmen, `disks:` und `window.geometry` streichen.

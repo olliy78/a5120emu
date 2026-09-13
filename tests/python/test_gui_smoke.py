@@ -10,6 +10,8 @@ Was hier NICHT geprüft wird: gerenderte Pixel.  Der Bildschirm ist ein
 das VRAM bzw. ``tools/fb_ocr.py``.
 """
 
+import os
+
 import pytest
 
 from conftest import requires_core
@@ -267,9 +269,16 @@ def test_status_bar_shows_a_field_per_present_drive(window):
 
 
 def test_drive_lamp_tells_empty_from_mounted_from_busy(window, qapp, temp_disk):
-    """Die drei Zustände der Leuchte: leerer Ring, gefüllt, rot."""
+    """Die drei Zustände der Leuchte: leerer Ring, gefüllt, rot.
+
+    Die Leuchte des Kerns wird dabei stillgelegt: sie folgt dem ZUGRIFF, und die
+    anlaufende Maschine fragt von sich aus nach Laufwerk A: — „leer" wäre sonst
+    ein Wettlauf gegen das Boot-ROM (und bei zehnfachem Takt einer, den der Test
+    verliert).  Geprüft wird hier der Übergang, nicht das Abtasten.
+    """
     from app.ui import status_bar
 
+    window.emulator.is_disk_led_on = lambda drive: False
     window.drives_widget.load_mounts([])
     qapp.processEvents()
     window._update_drive_status()
@@ -383,7 +392,9 @@ def test_the_file_menu_can_actually_mount_a_disk(window, qapp, monkeypatch,
     window.drives_widget.load_mounts([])
     qapp.processEvents()
 
-    path = temp_disk("cpa_cpa780_k5601_clock.img")
+    # BEWUSST ein `.hfe`: ein rohes `.img` fragt beim Einlegen nach seinem Format
+    # (eigener Wächter unten), und das hat mit dem Menüweg nichts zu tun.
+    path = temp_disk("cpa_cpa780_k5601_clock.hfe")
     monkeypatch.setattr("app.ui.drive_widget.QFileDialog.getOpenFileName",
                         staticmethod(lambda *a, **k: (path, "")))
 
@@ -584,10 +595,11 @@ def test_window_state_carries_size_maximized_and_dock_layout(window):
 
 
 def test_maximized_survives_a_config_roundtrip(window, qapp):
-    """Maximiert speichern und wiederherstellen — über Qts eigene Geometrie.
+    """Maximiert speichern und am SICHTBAREN Fenster wiederherstellen.
 
-    Getragen wird das von ``saveGeometry``/``restoreGeometry``: dort steckt der
-    Fensterzustand mit drin, und es wirkt auf dem noch unsichtbaren Fenster.
+    Das ist der Weg von *Konfiguration laden* und *Standard zurücksetzen*.  Den
+    Weg des Programmstarts — Konfiguration anwenden, DANN anzeigen — prüfen die
+    beiden Tests darunter.
     """
     window.showMaximized()
     qapp.processEvents()
@@ -604,6 +616,67 @@ def test_maximized_survives_a_config_roundtrip(window, qapp):
     window._apply_window_state(zustand)
     qapp.processEvents()
     assert window.isMaximized(), "maximiert muss wiederkommen"
+
+
+# Der Weg des ANWENDERS beim Programmstart: `_apply_window_state` läuft im
+# `__init__`, also am noch UNSICHTBAREN Fenster, und `show()` kommt erst danach.
+# Zweimal ist daran schon ein maximiert beendetes Fenster im Fenstermodus wieder
+# aufgegangen, und beide Male lief die Prüfung am sichtbaren Fenster vorbei:
+#
+#   * Qts ``restoreGeometry`` meldet Erfolg, stellt die Größe her und lässt
+#     ``isMaximized()`` falsch (gemessen mit Qt 6.11/X11).  Unter
+#     ``offscreen`` scheitert es dagegen, und der Rückfallzweig setzte den
+#     Zustand von Hand — grün geprüft, kaputt beim Anwender.
+#   * Ein Zustandswechsel am unsichtbaren Fenster verfällt: der
+#     Fensterverwalter (GNOME Shell/X11) zeigt das Fenster normal und lässt den
+#     Zustand binnen 200 ms zurückfallen.  Erst ein Zug NACH dem Anzeigen hält.
+#
+# Beide Tests stellen das ohne Fensterverwalter nach: der erste lässt
+# ``restoreGeometry`` gelingen, ohne etwas zu tun (genau das reale Verhalten),
+# der zweite prüft, dass der Zug nicht im `__init__` verpufft.
+
+def test_maximized_comes_back_even_when_qt_drops_it_from_its_geometry(window, qapp,
+                                                                      monkeypatch):
+    """Unser eigenes ``maximized``-Feld entscheidet, nicht Qts Geometrieblock."""
+    window.showNormal()
+    qapp.processEvents()
+
+    zustand = window._gather_window_state()
+    zustand["maximized"] = True
+    assert zustand["geometry"], "ohne Qt-Geometrie prüfte der Test den Rückfall"
+
+    # Qt 6.11/X11 in Reinform: „ja, angewandt" — und der Zustand fehlt trotzdem.
+    monkeypatch.setattr(type(window), "restoreGeometry",
+                        lambda self, blob: True)
+    window._apply_window_state(zustand)
+    qapp.processEvents()
+    assert window.isMaximized(), \
+        "der Zustand darf nicht davon abhängen, was Qt aus seinem Block macht"
+
+
+def test_maximized_is_applied_after_the_window_is_shown(window, qapp):
+    """Am unsichtbaren Fenster wird nur GEMERKT, gesetzt wird beim Anzeigen.
+
+    Ein ``setWindowState`` vor dem Anzeigen verfällt beim Fensterverwalter —
+    das Fenster ginge normal auf, und der gespeicherte Zustand wäre beim
+    nächsten Beenden „nicht maximiert": der Fehler löschte seine eigene Spur.
+    """
+    window.showNormal()
+    qapp.processEvents()
+    zustand = window._gather_window_state()
+    zustand["maximized"] = True
+
+    window.hide()
+    qapp.processEvents()
+    window._apply_window_state(zustand)
+    assert not window.isMaximized(), \
+        "am unsichtbaren Fenster darf der Zustand noch nicht stehen"
+    assert window._maximiert_nachholen is True, "der Wunsch muss gemerkt sein"
+
+    window.show()
+    qapp.processEvents()          # das singleShot(0) aus showEvent abarbeiten
+    assert window._maximiert_nachholen is None, "nur einmal nachholen"
+    assert window.isMaximized(), "nach dem Anzeigen muss es maximiert sein"
 
 
 def test_an_older_config_without_geometry_still_restores(window, qapp):
@@ -808,3 +881,358 @@ def test_the_keyboard_is_refitted_when_it_is_docked_elsewhere(window, qapp):
     kw = window.keyboard_widget
     balken = kw.height() - kw.heightForWidth(kw.width())
     assert balken <= 2, f"schwarze Balken über/unter der Tastatur: {balken} px"
+
+
+# ─── Diskettenformat: erfragt statt eingestellt ──────────────────────────────
+#
+# Im Laufwerkskasten stand einmal ein Auswahlfeld „Format:".  Es galt für ALLE
+# Dateiarten, obwohl nur das rohe Sektorimage eine Formatangabe braucht, und es
+# stand VOR der Dateiauswahl.  Jetzt fragt ein Dialog nach dem Öffnen und nur
+# bei `.img`; an der Stelle des Auswahlfeldes steht das ERKANNTE Format.
+
+def test_the_drive_panel_has_no_format_dropdown_any_more(window):
+    """Kein Auswahlfeld mehr — an seiner Stelle steht ein Befund."""
+    from PySide6.QtWidgets import QComboBox
+
+    panel = window.drives_widget._panels[0]
+    assert not panel.findChildren(QComboBox), \
+        "das Format wird erfragt, nicht eingestellt"
+    assert hasattr(panel, "_format_value"), "die Anzeige des erkannten Formats fehlt"
+
+
+def test_a_raw_image_asks_for_its_format(window, qapp, monkeypatch, temp_disk):
+    """`.img` einlegen → Formatdialog; die Antwort geht an den Kern.
+
+    Ein rohes Sektorabbild enthält nur Sektorinhalte — die Einteilung steht
+    nirgends darin und darf deshalb nicht geraten werden.
+    """
+    window.drives_widget.load_mounts([])
+    qapp.processEvents()
+
+    path = temp_disk("cpa_cpa780_k5601_clock.img")
+    monkeypatch.setattr("app.ui.drive_widget.QFileDialog.getOpenFileName",
+                        staticmethod(lambda *a, **k: (path, "")))
+    gefragt = []
+    monkeypatch.setattr("app.ui.drive_widget.FormatDialog.frage",
+                        classmethod(lambda cls, *a, **k: (gefragt.append(k), "cpa780")[1]))
+
+    window.drives_widget.toggle_mount(0)
+    qapp.processEvents()
+
+    assert gefragt, "beim rohen Sektorimage muss gefragt werden"
+    assert gefragt[0]["vorauswahl"] == "cpa780", \
+        "die Dateigröße ist das einzige Merkmal — sie trägt die Vorauswahl"
+    assert window.drives_widget.is_mounted(0)
+    assert window.emulator.disk_path(0) == path
+
+
+def test_a_bitstream_image_is_not_asked_about_its_format(window, qapp, monkeypatch,
+                                                         temp_disk):
+    """`.hfe`/`.dmk` tragen ihre Geometrie selbst — da gibt es nichts zu fragen."""
+    window.drives_widget.load_mounts([])
+    qapp.processEvents()
+
+    path = temp_disk("cpa_cpa780_k5601_clock.hfe")
+    monkeypatch.setattr("app.ui.drive_widget.QFileDialog.getOpenFileName",
+                        staticmethod(lambda *a, **k: (path, "")))
+    monkeypatch.setattr("app.ui.drive_widget.FormatDialog.frage",
+                        classmethod(lambda cls, *a, **k: pytest.fail(
+                            "ein selbstbeschreibender Container braucht keine Rückfrage")))
+
+    window.drives_widget.toggle_mount(0)
+    qapp.processEvents()
+    assert window.drives_widget.is_mounted(0)
+
+
+def test_a_cancelled_format_dialog_mounts_nothing(window, qapp, monkeypatch,
+                                                  temp_disk):
+    """Abbruch im Formatdialog heisst Abbruch — nicht „dann eben irgendeins"."""
+    window.drives_widget.load_mounts([])
+    qapp.processEvents()
+
+    path = temp_disk("cpa_cpa780_k5601_clock.img")
+    monkeypatch.setattr("app.ui.drive_widget.QFileDialog.getOpenFileName",
+                        staticmethod(lambda *a, **k: (path, "")))
+    monkeypatch.setattr("app.ui.drive_widget.FormatDialog.frage",
+                        classmethod(lambda cls, *a, **k: None))
+
+    window.drives_widget.toggle_mount(0)
+    qapp.processEvents()
+    assert not window.drives_widget.is_mounted(0)
+
+
+def test_the_drive_panel_shows_the_detected_format(window, qapp, temp_disk):
+    """Hinter „Format:" steht, was auf der Diskette ERKANNT wurde."""
+    drives = window.drives_widget
+    drives.load_mounts([])
+    qapp.processEvents()
+    assert drives._panels[0]._format_value.text() == "—", "leeres Laufwerk: kein Befund"
+
+    path = temp_disk("cpa_cpa780_k5601_noclock.hfe")
+    assert drives.mount_path(0, path)
+    qapp.processEvents()
+    assert drives._panels[0]._format_value.text() == "cpa780"
+
+
+def test_an_unrecognisable_disk_is_called_unknown(window, qapp, tmp_path):
+    """Passt kein Katalogformat, heisst das „unbekannt" — nicht der beste Rat.
+
+    Eine echte Leerdiskette trägt keine Adressmarke; es gibt nichts zu messen.
+    """
+    drives = window.drives_widget
+    path = str(tmp_path / "leerdiskette.hfe")
+    assert window.emulator.create_disk(0, path, "", False), window.emulator.last_error()
+    drives._mounts[0] = (path, "", False)
+    drives._update_format_label(0)
+    assert drives._panels[0]._format_value.text() == drives.FORMAT_UNBEKANNT
+
+
+def test_saving_as_a_raw_image_uses_the_detected_format(window, qapp, monkeypatch,
+                                                        temp_disk, tmp_path):
+    """„Speichern unter" gibt im ERKANNTEN Format aus, nicht im eingestellten."""
+    drives = window.drives_widget
+    path = temp_disk("cpa_cpa780_k5601_noclock.hfe")
+    assert drives.mount_path(0, path)
+    qapp.processEvents()
+
+    ziel = str(tmp_path / "ausgabe.img")
+    monkeypatch.setattr("app.ui.drive_widget.QFileDialog.getSaveFileName",
+                        staticmethod(lambda *a, **k: (ziel, "")))
+    gesehen = []
+    echt = window.emulator.save_disk_as
+    monkeypatch.setattr(window.emulator, "save_disk_as",
+                        lambda d, p, f="": (gesehen.append(f), echt(d, p, f))[1])
+
+    drives._panels[0]._saveas_btn.click()
+    qapp.processEvents()
+    assert gesehen == ["cpa780"], "das erkannte Format geht in den Export"
+    assert os.path.exists(ziel)
+
+
+def test_an_unknown_format_cannot_be_exported_as_a_raw_image(window, qapp,
+                                                             monkeypatch, tmp_path):
+    """Unbekanntes Format → kein `.img`: die Sektorreihenfolge wäre geraten."""
+    drives = window.drives_widget
+    quelle = str(tmp_path / "leer.hfe")
+    assert window.emulator.create_disk(0, quelle, "", False), window.emulator.last_error()
+    drives._mounts[0] = (quelle, "", False)
+    drives._panels[0]._saveas_btn.setEnabled(True)
+
+    monkeypatch.setattr("app.ui.drive_widget.QFileDialog.getSaveFileName",
+                        staticmethod(lambda *a, **k: (str(tmp_path / "x.img"), "")))
+    gemeldet = []
+    monkeypatch.setattr("app.ui.drive_widget.QMessageBox.critical",
+                        staticmethod(lambda parent, titel, text, *a, **k:
+                                     gemeldet.append(text)))
+    monkeypatch.setattr(window.emulator, "save_disk_as",
+                        lambda *a, **k: pytest.fail("darf gar nicht erst schreiben"))
+
+    drives._panels[0]._saveas_btn.click()
+    qapp.processEvents()
+    assert gemeldet and "unbekannt" in gemeldet[0].lower()
+
+
+def test_the_blank_disk_button_says_that_it_makes_a_blank_one(window):
+    """„Leere Diskette", nicht „Neue": was entsteht, muss erst formatiert werden."""
+    knopf = window.drives_widget._panels[0]._create_btn
+    assert knopf.text() == "Leere Diskette"
+    assert "unformatiert" in knopf.toolTip()
+
+
+def test_an_access_to_an_empty_drive_turns_the_lamp_red(window, qapp):
+    """Ein angesprochenes LEERES Laufwerk leuchtet — wie am echten Gerät.
+
+    Vorher blieb der Ring leer, und die Anzeige schwieg genau dann, wenn sie
+    etwas zu sagen hatte: das Gastsystem wartet auf eine Diskette, die niemand
+    eingelegt hat.
+    """
+    from app.ui import status_bar
+
+    window.drives_widget.load_mounts([])
+    qapp.processEvents()
+    window.emulator.is_disk_led_on = lambda drive: drive == 1
+    window._update_drive_lamps()
+
+    assert window.status_widget.lampe(1).zustand() == status_bar.ZUGRIFF
+    assert window.status_widget.lampe(0).zustand() == status_bar.LEER
+
+    window.emulator.is_disk_led_on = lambda drive: False
+    window._update_drive_lamps()
+    assert window.status_widget.lampe(1).zustand() == status_bar.LEER
+
+
+# ─── Auslieferungskonfiguration und „Standard zurücksetzen" ──────────────────
+#
+# Zwei Wege führen zu derselben Datei (`data/default_config.yaml`): der ERSTE
+# Start nach der Installation, wo es noch keine `config.yaml` gibt, und
+# *Ansicht ▸ Standard zurücksetzen*, das die vorhandene überschreibt.  Was beide
+# tragen muss: die Datei wird wirklich gefunden und angewandt, die eingelegten
+# Disketten bleiben dabei liegen, und ohne die Datei stürzt nichts ab.
+
+def test_the_shipped_default_config_is_found_and_complete():
+    """Die ausgelieferte Vorgabe muss da sein — und keine Pfade fremder Rechner tragen."""
+    from app import config_io, paths
+
+    assert paths.default_config_file() is not None, \
+        "data/default_config.yaml fehlt:\n" + "\n".join(
+            str(p) for p in paths.default_config_candidates())
+    vorgabe = config_io.standard_konfiguration()
+    for abschnitt in ("crt", "general", "drive_types", "window"):
+        assert abschnitt in vorgabe, f"'{abschnitt}' fehlt in der Vorgabe"
+    # Diskettenpfade sind rechnerspezifisch — und ihr Fehlen ist es, was das
+    # Zurücksetzen die eingelegten Disketten in Ruhe lassen lässt.
+    assert "disks" not in vorgabe
+    assert "geometry" not in vorgabe["window"], \
+        "die Bildschirmposition des Baurechners gehört nicht in die Auslieferung"
+    assert [n for n in vorgabe["window"].get("toolbar", []) if n] , \
+        "eine Auslieferung ohne Symbolleiste"
+
+
+def test_a_fresh_installation_starts_from_the_shipped_default(window):
+    """Erster Start ohne ``config.yaml``: die Vorgabe zieht — und wird geschrieben.
+
+    Die Fixture räumt die gemerkte Konfiguration weg, das Fenster steht also im
+    Zustand nach der Erstinstallation.
+    """
+    from app import config_io
+
+    vorgabe = config_io.standard_konfiguration()
+    assert window.speed_factor == float(vorgabe["general"]["speed"])
+    assert window.screen_widget.params.to_dict()["brightness"] == \
+        vorgabe["crt"]["brightness"]
+
+
+def test_a_fresh_installation_writes_the_config_it_started_from(window, tmp_path,
+                                                                monkeypatch):
+    """Und sie gehört ab jetzt dem Anwender: die ``config.yaml`` wird angelegt.
+
+    Geprüft an einem EIGENEN Pfad, nicht am gemeinsamen Testverzeichnis: die
+    ctest-Fälle der Python-Ebene laufen parallel und teilen sich
+    ``$XDG_CONFIG_HOME`` — wer dort auf eine Datei wartet, prüft den Nachbarn mit.
+    """
+    from app import config_io
+
+    ziel = tmp_path / "config.yaml"
+    monkeypatch.setattr(config_io, "default_config_path", lambda: str(ziel))
+    window._load_or_create_default_config()
+
+    assert ziel.is_file()
+    geschrieben = config_io.load_config(str(ziel))
+    vorgabe = config_io.standard_konfiguration()
+    assert geschrieben["general"]["speed"] == vorgabe["general"]["speed"]
+    # Die geschriebene Fassung ist die VOLLE (mit `disks`) — sie beschreibt von
+    # jetzt an den ganzen Zustand des Anwenders, nicht nur die Vorgabe.
+    assert "disks" in geschrieben
+
+
+def test_reset_to_default_restores_the_shipped_look_and_overwrites_the_config(
+        window, qapp, monkeypatch, tmp_path):
+    """*Ansicht ▸ Standard zurücksetzen* — die Rückfrage bejaht, alles steht wieder.
+
+    Geschrieben wird auf einen EIGENEN Pfad: die ctest-Fälle der Python-Ebene
+    laufen parallel und teilen sich ``$XDG_CONFIG_HOME``.
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    from app import config_io
+
+    vorgabe = config_io.standard_konfiguration()
+    monkeypatch.setattr(config_io, "default_config_path",
+                        lambda: str(tmp_path / "config.yaml"))
+    monkeypatch.setattr(QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.Yes))
+
+    # Vom Standard wegdrehen — Tempo, Bildröhre und Symbolleiste.
+    window._apply_speed(1.0)
+    window.screen_widget.params.brightness = 0.25
+    window._leiste_fuellen(["power"])
+    config_io.save_config(config_io.default_config_path(), window._gather_config())
+
+    window._standard_zuruecksetzen()
+    qapp.processEvents()
+
+    assert window.speed_factor == float(vorgabe["general"]["speed"])
+    assert window.screen_widget.params.brightness == vorgabe["crt"]["brightness"]
+    gezeigt = [a for a in window.controls_bar.actions() if not a.isSeparator()]
+    assert len(gezeigt) == len([n for n in vorgabe["window"]["toolbar"] if n])
+    # Und die gespeicherte Konfiguration ist überschrieben, nicht erst beim
+    # nächsten Autosave.
+    gemerkt = config_io.load_config(config_io.default_config_path())
+    assert gemerkt["general"]["speed"] == vorgabe["general"]["speed"]
+
+
+def test_reset_to_default_can_be_declined(window, monkeypatch):
+    """„Nein" heisst: nichts angefasst."""
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.No))
+    window._apply_speed(1.0)
+    window._standard_zuruecksetzen()
+    assert window.speed_factor == 1.0
+
+
+def test_reset_to_default_leaves_the_mounted_disks_alone(window, qapp, monkeypatch,
+                                                         temp_disk):
+    """Zurückgesetzt wird die EINRICHTUNG, nicht die Maschine.
+
+    Ein Zurücksetzen der Ansicht, das die Diskette auswirft, wäre eine böse
+    Überraschung — und die Vorgabe könnte gar nicht sagen, welche Diskette
+    stattdessen hineingehört.
+    """
+    from pathlib import Path
+
+    from PySide6.QtWidgets import QMessageBox
+
+    pfad = temp_disk("cpa_cpa780_k5601_clock.img")
+    assert window.drives_widget.mount_path(0, pfad, "cpa780", False)
+
+    monkeypatch.setattr(QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.Yes))
+    window._standard_zuruecksetzen()
+    qapp.processEvents()
+
+    assert window.drives_widget.is_mounted(0)
+    assert Path(window.drives_widget.mounted_path(0)) == Path(pfad)
+
+
+def test_reset_to_default_without_the_shipped_file_says_so(window, monkeypatch):
+    """Fehlt die Datei, kommt eine Meldung — kein Absturz und kein leeres Fenster."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from app import config_io
+
+    monkeypatch.setattr(config_io, "standard_konfiguration", lambda: {})
+    gemeldet = []
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a, **k: gemeldet.append(a[2])))
+    monkeypatch.setattr(QMessageBox, "question",
+                        staticmethod(lambda *a, **k: pytest.fail(
+                            "ohne Vorgabe darf gar nicht erst gefragt werden")))
+    window._standard_zuruecksetzen()
+    assert gemeldet and "nicht gefunden" in gemeldet[0]
+
+
+def test_reset_to_default_restarts_only_when_the_drive_bay_changed(window, qapp,
+                                                                   monkeypatch):
+    """Neue Bestückung = neue Maschine, und die muss eingeschaltet werden.
+
+    Ohne Bestückungswechsel bleibt die laufende Maschine dagegen unangetastet —
+    ein Zurücksetzen der Ansicht soll kein laufendes CP/A abwürgen.
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.Yes))
+
+    kaltstarts = []
+    monkeypatch.setattr(window, "_cold_restart",
+                        lambda: kaltstarts.append(list(window._drive_types)))
+
+    window._standard_zuruecksetzen()          # Bestückung schon die der Vorgabe
+    assert kaltstarts == [], "ohne Bestückungswechsel kein Kaltstart"
+
+    window._apply_drive_types(["K5601", "none", "none", "none"], cold_restart=False)
+    qapp.processEvents()
+    window._standard_zuruecksetzen()
+    assert len(kaltstarts) == 1, "die neue Maschine bliebe sonst ausgeschaltet"

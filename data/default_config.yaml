@@ -1,0 +1,87 @@
+# K1520-Emulator — AUSLIEFERUNGSKONFIGURATION
+# ===========================================
+#
+# Das ist der Zustand, in dem der Emulator nach der Erstinstallation aufgeht:
+# Bildröhre, Tempo, Laufwerksbestückung, Fenstergröße, Kastenaufteilung und
+# Symbolleiste.  Gelesen wird sie an genau zwei Stellen (`app/config_io.py`,
+# `standard_konfiguration()`):
+#
+#   * beim ERSTEN Start, solange es noch keine `config.yaml` des Anwenders gibt
+#     (`MainWindow._load_or_create_default_config`), und
+#   * bei *Ansicht ▸ Standard zurücksetzen* — dort überschreibt sie die
+#     Konfiguration des Anwenders.
+#
+# Der Aufbau ist derselbe wie in der gespeicherten `config.yaml`
+# (`app/config_io.py`), eine gesicherte Konfiguration lässt sich also
+# unverändert hierher kopieren.  ZWEI Abschnitte gehören aber bewusst NICHT
+# hinein:
+#
+#   * `disks:` — Diskettenabbilder stehen mit absolutem Pfad darin, und der
+#     Pfad des Baurechners ist auf keinem anderen Rechner gültig.  Ohne den
+#     Abschnitt lässt das Zurücksetzen die eingelegten Disketten in Ruhe (siehe
+#     `MainWindow._apply_config`) — das Zurücksetzen der ANSICHT soll die
+#     Maschine nicht leerräumen.
+#   * `window.geometry` — darin steckt die Bildschirmposition des Fensters.
+#     `width`/`height` reichen; wo das Fenster aufgeht, entscheidet der
+#     Fensterverwalter.
+version: 1
+
+# Bildröhre — der Standardlook (siehe app/ui/screen_widget.py::CRTParams).
+crt:
+  phosphor_on: '#78D41D'
+  phosphor_off: '#050F05'
+  brightness: 2.47
+  contrast: 2.0
+  contrast_small_factor: 0.7
+  scanline_strength: 1.4
+  scanline_count: 288.0
+  scanline_min_height: 768.0
+  glow_strength: 1.0
+  glow_radius: 2.5
+  mask_strength: 0.0
+  mask_pitch: 1.0
+  curvature:
+  - 0.1
+  - 0.1
+  corner_radius: 0.0
+  vignette_strength: 0.35
+  flicker_strength: 0.0
+  scale_x: 0.98
+  scale_y: 0.98
+  offset_x: 0.0
+  offset_y: 0.0
+
+# Tempo als Vielfaches des Nenntakts (app/takt.py: 1,0 = 2,45 MHz, 0,0 = unbegrenzt).
+general:
+  speed: 10.0
+
+# Laufwerksschacht: ein Kernprofil je K5122-Steckplatz, "none" = leer.
+drive_types:
+- K5601
+- K5601
+- K5601
+- none
+
+window:
+  width: 1262
+  height: 768
+  maximized: false
+  # QMainWindow.saveState(), base64: welche Kästen sichtbar sind, wo sie liegen
+  # und wie breit sie sind.  Neu aufzunehmen, indem man das Fenster einrichtet
+  # und den `window`-Abschnitt der eigenen config.yaml hierher kopiert.
+  dock_state: AAAA/wAAAAD9AAAAAgAAAAAAAAMnAAACkfwCAAAAAfsAAAAWAHMAYwByAGUAZQBuAF8AZABvAGMAawEAAABUAAACkQAAAQQA////AAAAAQAAAcEAAAKR/AIAAAAC/AAAAFQAAAHgAAAA6AEAAB36AAAAAAIAAAAC+wAAABYAZAByAGkAdgBlAHMAXwBkAG8AYwBrAQAAAAD/////AAAAWgD////7AAAAGgBzAGUAdAB0AGkAbgBnAHMAXwBkAG8AYwBrAQAAAAD/////AAAAygD////7AAAAGgBrAGUAeQBiAG8AYQByAGQAXwBkAG8AYwBrAQAAAjoAAACrAAAAqQD///8AAAAAAAACkQAAAAEAAAACAAAAAQAAAAL8AAAAAQAAAAIAAAABAAAAIABjAG8AbgB0AHIAbwBsAHMAXwB0AG8AbwBsAGIAYQByAQAAAAD/////AAAAAAAAAAA=
+  # Inhalt der Symbolleiste: Aktionsnamen aus app/ui/actions.py, '' = Trennstrich.
+  toolbar:
+  - konfig_laden
+  - konfig_speichern
+  - ''
+  - power
+  - reset
+  - ''
+  - dock_settings
+  - dock_drives
+  - dock_keyboard
+  - ''
+  - hilfe
+  # Qt.ToolButtonStyle: 3 = Symbol mit Text darunter.
+  toolbar_style: 3

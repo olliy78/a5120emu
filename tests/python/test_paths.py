@@ -44,7 +44,8 @@ def at_root(monkeypatch):
     """Setzt ``K1520_HOME`` und räumt die übrigen Pfadvariablen ab."""
     def _apply(root: Path):
         monkeypatch.setenv(paths.ENV_HOME, str(root))
-        for var in (paths.ENV_LIB, paths.ENV_FORMATS, paths.ENV_DISKS):
+        for var in (paths.ENV_LIB, paths.ENV_FORMATS, paths.ENV_DISKS,
+                    paths.ENV_DEFAULT_CONFIG):
             monkeypatch.delenv(var, raising=False)
         return root
     return _apply
@@ -381,6 +382,9 @@ def test_describe_nennt_layout_und_alle_pfade(tmp_path, at_root):
     # Dialog am falschen Ort aufgeht.
     assert str(paths.user_disks_dir()) in text
     assert str(paths.user_files_dir()) in text
+    # Und die Auslieferungskonfiguration: bleibt sie unauffindbar, geht der
+    # Emulator in anderen Vorgaben auf als gewollt — das muss `--paths` sagen.
+    assert "Vorgabe-Konfig." in text
 
 
 # ─── Verschiebbarkeit des Pakets (Kern) ──────────────────────────────────────
@@ -424,3 +428,58 @@ def test_installierte_bibliothek_findet_eigenen_formatkatalog(tmp_path):
     # („…/bin/../share/…") — für den Vergleich normalisieren.
     geladen = {Path(p).resolve() for p in out.stdout.strip().split(":") if p}
     assert (root / "share" / "k1520emu" / "formats.yaml").resolve() in geladen, out.stdout
+
+
+# ─── Auslieferungskonfiguration ──────────────────────────────────────────────
+#
+# `default_config.yaml` reist mit dem Programm (nicht mit dem Anwender) und wird
+# an zwei Stellen gebraucht: beim ersten Start und bei *Ansicht ▸ Standard
+# zurücksetzen*.  Sie wird deshalb wie der Formatkatalog aufgelöst — mit EINEM
+# Unterschied, den der letzte Test festhält.
+
+def test_vorgabe_konfiguration_im_quellbaum(at_root):
+    at_root(PROJECT_ROOT)
+    assert paths.default_config_file() == \
+        (PROJECT_ROOT / "data" / "default_config.yaml").resolve()
+
+
+def test_vorgabe_konfiguration_in_der_installation(tmp_path, at_root):
+    root = _fake_install(tmp_path)
+    ziel = root / "share" / "k1520emu" / "default_config.yaml"
+    ziel.write_text("version: 1\n")
+    at_root(root)
+    assert paths.default_config_file() == ziel
+
+
+def test_vorgabe_konfiguration_ueber_umgebungsvariable(tmp_path, at_root,
+                                                      monkeypatch):
+    """``K1520_DEFAULT_CONFIG`` nimmt eine Datei ODER ein Verzeichnis."""
+    at_root(_fake_install(tmp_path))
+    eigen = tmp_path / "eigene.yaml"
+    eigen.write_text("version: 1\n")
+    monkeypatch.setenv(paths.ENV_DEFAULT_CONFIG, str(eigen))
+    assert paths.default_config_file() == eigen.resolve()
+
+    ordner = tmp_path / "vorgaben"
+    ordner.mkdir()
+    (ordner / "default_config.yaml").write_text("version: 1\n")
+    monkeypatch.setenv(paths.ENV_DEFAULT_CONFIG, str(ordner))
+    assert paths.default_config_file() == (ordner / "default_config.yaml").resolve()
+
+
+def test_vorgabe_konfiguration_ignoriert_den_benutzerordner(tmp_path, at_root,
+                                                            monkeypatch):
+    """Der Konfigurationsordner des Anwenders zählt NICHT als Fundort.
+
+    Anders als beim Formatkatalog: was zurückgesetzt werden soll, darf die
+    Vorgabe nicht selbst liefern — sonst setzte *Standard zurücksetzen* auf den
+    Zustand zurück, den es gerade überschreiben will.
+    """
+    at_root(_fake_install(tmp_path))
+    xdg = tmp_path / "xdg"
+    (xdg / paths.CONFIG_DIRNAME).mkdir(parents=True)
+    (xdg / paths.CONFIG_DIRNAME / "default_config.yaml").write_text("version: 1\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    assert paths.config_dir() not in [p.parent
+                                      for p in paths.default_config_candidates()]
+    assert paths.default_config_file() is None

@@ -15,7 +15,10 @@ Maschine**:
 * **je Laufwerk eine Leuchte und ein Feld** — die Leuchte sagt den Zustand
   (leerer Ring = keine Diskette, schwarz = eingelegt, rot = Zugriff läuft), das
   Feld nennt die Abbilddatei und ob sie schreibgeschützt ist (``R/O``) oder
-  nicht (``R/W``).  Ein leerer Steckplatz bekommt beides nicht.
+  nicht (``R/W``).  Ein leerer Steckplatz bekommt beides nicht.  Rot leuchtet
+  auch ein LEERES Laufwerk, sobald es angesprochen wird — genau wie die Leuchte
+  am echten Gerät, und genau das will man sehen, wenn ein Gastsystem auf eine
+  Diskette wartet, die niemand eingelegt hat.
 
 Der ganze Streifen ist eine Anzeige und kein Bedienelement: er nimmt keinen
 Tastaturfokus (der gehört der emulierten Maschine, siehe `app/ui/focus.py`).
@@ -34,9 +37,9 @@ from app import drive_types as dt
 from app import takt
 
 #: Zustände der Laufwerksleuchte.
-LEER = "leer"          #: keine Diskette — nur der Umriss
+LEER = "leer"          #: keine Diskette, kein Zugriff — nur der Umriss
 BELEGT = "belegt"      #: Diskette liegt im Laufwerk
-ZUGRIFF = "zugriff"    #: gerade wird gelesen oder geschrieben
+ZUGRIFF = "zugriff"    #: das Laufwerk ist angesprochen (auch ohne Diskette)
 
 #: Farbe des laufenden Zugriffs (dieselbe rote Leuchtfarbe wie im Laufwerkskasten).
 FARBE_ZUGRIFF = "#d0342c"
@@ -77,7 +80,8 @@ class DriveLamp(QWidget):
         self.setToolTip({
             LEER: "Keine Diskette eingelegt",
             BELEGT: "Diskette eingelegt",
-            ZUGRIFF: "Zugriff läuft — es wird gelesen oder geschrieben",
+            ZUGRIFF: "Das Laufwerk ist angesprochen — liegt keine Diskette "
+                     "darin, wartet das Gastsystem vergeblich.",
         }.get(zustand, ""))
         self.update()
 

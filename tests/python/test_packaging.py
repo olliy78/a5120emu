@@ -1099,6 +1099,11 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
         "payload/app/main.py", "payload/app/paths.py",
         "payload/app/core_binding/k1520.py", "payload/app/ui/main_window.py",
         "payload/share/k1520emu/formats.yaml",
+        # Ohne die Auslieferungskonfiguration geht der Emulator nach der
+        # Erstinstallation in den eingebauten Vorgaben auf (kein Absturz, aber
+        # eine andere Oberflaeche als die gewollte) und *Ansicht > Standard
+        # zuruecksetzen* meldet „nicht gefunden".
+        "payload/share/k1520emu/default_config.yaml",
         "payload/share/icons/a5120emu.svg",
         # k1520DiskTool: Bibliothek, Kommandozeile, Oberflaeche, Starter.
         # Ohne diese Zeilen laege app/disktool/ zwar im Paket (die ganze app/-

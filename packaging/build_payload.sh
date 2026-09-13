@@ -477,6 +477,10 @@ cp "$REPO/third_party/isocline/LICENSE" \
     || die "app/disktool/main.py fehlt in der Payload"
 
 cp "$REPO/data/formats.yaml" "$STAGE/payload/share/k1520emu/formats.yaml"
+# Auslieferungskonfiguration: der Zustand nach der Erstinstallation und das Ziel
+# von *Ansicht > Standard zuruecksetzen* (app/config_io.py::standard_konfiguration).
+cp "$REPO/data/default_config.yaml" \
+   "$STAGE/payload/share/k1520emu/default_config.yaml"
 cp "$SELF_DIR/icon.svg"      "$STAGE/payload/share/icons/a5120emu.svg"
 # Windows braucht ein .ico (Startmenue, Deinstallationseintrag, Setup selbst).
 # Es liegt eingecheckt daneben, weil der Windows-Laeufer weder Qt noch

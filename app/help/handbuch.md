@@ -44,8 +44,8 @@ Taste die echte Tastatur gerade anspricht, und trägt die Anzeigen des Rechners
 (Feststeller, Betriebsanzeige). Beim ersten Start ist sie zugeklappt.
 
 **Laufwerke** — je bestücktem Steckplatz ein Kasten: Leuchte, Dateiname,
-Schreibschutz, Format, und die Knöpfe zum Einlegen, Anlegen, Speichern unter und
-für die echte Diskette.
+Schreibschutz, das erkannte Format, und die Knöpfe zum Einlegen, Anlegen,
+Speichern unter und für die echte Diskette.
 
 **Einstellungen** — drei Reiter: *Allgemein* (Takt), *Laufwerke*
 (welcher Laufwerkstyp in welchem Steckplatz steckt) und *CRT* (das Aussehen der
@@ -85,9 +85,13 @@ er schwankt von Sekunde zu Sekunde und liest sich wie ein Fehler, wo keiner ist.
 
 | Leuchte | Bedeutung |
 |---------|-----------|
-| leerer Kreis | keine Diskette im Laufwerk |
+| leerer Kreis | keine Diskette im Laufwerk, kein Zugriff |
 | schwarzer Kreis | Diskette eingelegt |
-| roter Kreis | es wird gerade gelesen oder geschrieben |
+| roter Kreis | das Laufwerk ist angesprochen |
+
+Rot leuchtet auch ein **leeres** Laufwerk, sobald es angesprochen wird — genau
+wie die Leuchte am echten Gerät. Das ist die Auskunft, auf die es dann ankommt:
+das Gastsystem wartet auf eine Diskette, die niemand eingelegt hat.
 
 Daneben `A: cpa780.hfe  R/W`: Buchstabe, Name der eingelegten Abbilddatei und ob
 die Maschine darauf schreiben darf (`R/W`) oder nicht (`R/O`). Der volle Pfad
@@ -117,10 +121,20 @@ Schreibzugriff, nicht erst beim Beenden.
 Ein Laufwerk nimmt nur eine Diskette: wo schon eine liegt, ist der Menüpunkt
 gesperrt — erst auswerfen.
 
-**Das Format** wählt man im Kasten daneben. Bei `.hfe` und `.dmk` ist das eine
-Formsache — diese Behälter tragen ihre Geometrie selbst. Ein rohes Sektorabbild
-(`.img`) trägt sie **nicht**; dort entscheidet die Wahl darüber, ob die Diskette
-lesbar ist. Passt genau ein Katalogformat zur Dateigröße, wird es vorgeschlagen.
+**Nach dem Format wird gefragt — aber nur bei `.img`.** Ein `.hfe` oder `.dmk`
+trägt seine Geometrie selbst; da gibt es nichts zu wählen. Ein rohes
+Sektorabbild enthält dagegen nur die Sektorinhalte, und wie sie sich auf Spuren
+verteilen, steht nirgends darin. Deshalb geht nach der Dateiauswahl ein Dialog
+auf. Vorgeschlagen wird das Katalogformat, dessen Abbildgröße genau zur Datei
+passt — das einzige Merkmal, das ein `.img` über sich selbst preisgibt.
+
+**Hinter „Format:" steht der Befund**, nicht eine Einstellung: der Emulator
+vermisst die eingelegte Diskette und hält das Gemessene gegen den Formatkatalog.
+Steht dort **unbekannt**, passt kein Eintrag — oder es passen zwei gleich gut.
+Lesen und Schreiben geht trotzdem, der Diskettencontroller arbeitet
+formatunabhängig; nur als `.img` lässt sich so eine Diskette nicht speichern
+(siehe unten). Der Befund zieht im laufenden Betrieb nach: formatiert das
+Gastsystem die Diskette um, steht dort kurz darauf das neue Format.
 
 **Schreibschutz** — der Haken *Write-Protect* wirkt sofort, auch bei laufender
 Maschine, und steht in der Statuszeile als `R/O`. Bei einer unersetzlichen
@@ -131,20 +145,23 @@ letzten Schreibbewegung (eine Schreibpause von etwa einer halben Sekunde
 Maschinenzeit). Ein Formatierlauf schreibt die Datei deshalb einmal am Ende neu
 und nicht einmal je Spur.
 
-## Neue Disketten und „Speichern unter"
+## Leere Disketten und „Speichern unter"
 
-*Neue Diskette* legt eine **echte Leerdiskette** an — unformatiert, in der
+*Leere Diskette* legt eine **echte Leerdiskette** an — unformatiert, in der
 Geometrie des Laufwerks. Genau das ist der Anwenderfall: das Gastsystem
 formatiert sie selbst (`FORMAT.COM` unter CP/A, ebenso UDOS). Dafür braucht es
 einen Behälter, der „unformatiert" ausdrücken kann, also `.hfe` oder `.dmk`. Ein
 rohes `.img` kennt diesen Zustand nicht; wählt man es, wird vorformatiert
-angelegt.
+angelegt — und dann wird nach dem Format gefragt.
 
 *Speichern unter…* schreibt die eingelegte Diskette unter neuem Namen — auch in
 einen **anderen Behälter** (`.img` → `.hfe`, `.hfe` → `.dmk`) — und arbeitet ab
-dann dort weiter. `.img` wird dabei verweigert, sobald die Diskette etwas trägt,
-was ein Sektorabbild nicht darstellen kann: eine unformatierte Spur oder Daten
-hinter der Datenprüfsumme (UDOS legt dort seine Verkettung ab).
+dann dort weiter. Ausgegeben wird im **erkannten** Format; gefragt wird hier
+nicht. `.img` ist aus zwei Gründen verwehrt: wenn die Diskette etwas trägt, was
+ein Sektorabbild nicht darstellen kann (eine unformatierte Spur, oder Daten
+hinter der Datenprüfsumme — dort legt UDOS seine Verkettung ab), und wenn das
+Format **unbekannt** ist. Im zweiten Fall wäre die Sektorreihenfolge des Abbilds
+geraten, und ein geratenes Abbild sieht heil aus und ist es nicht.
 
 ## Laufwerke bestücken
 
@@ -246,12 +263,24 @@ Einrichtungen nebeneinander (etwa „CP/A mit drei Laufwerken" und „UDOS mit 8
 *Konfiguration laden…* holt sie zurück, startet die Maschine kalt und übernimmt
 die geladene Einrichtung als die neue laufende.
 
+*Ansicht ▸ Standard zurücksetzen* geht den umgekehrten Weg: es stellt den
+Zustand her, in dem der Emulator nach der Installation aufgeht — Bildröhre,
+Takt, Laufwerksbestückung, Fenstergröße, Kästen und Symbolleiste — und
+**überschreibt damit die gespeicherte Konfiguration**; deshalb wird gefragt. Die
+eingelegten Disketten bleiben dabei liegen: was zurückgesetzt wird, ist die
+Einrichtung, nicht die Maschine. Die Vorgabe selbst ist eine Datei des
+Programms (`share/k1520emu/default_config.yaml`, im Quellbaum
+`data/default_config.yaml`) und hat denselben Aufbau wie eine gespeicherte
+Konfiguration — wer einen anderen Auslieferungszustand will, kopiert seinen
+`config.yaml`-Inhalt dorthin.
+
 ## Wo die Dateien liegen
 
 | Ordner | Wofür |
 |--------|-------|
 | `K1520emu/Disketten` (im Dokumentenordner) | die Abbilder |
 | `~/.config/k1520emu/config.yaml` | die Konfiguration |
+| `share/k1520emu/default_config.yaml` (in der Installation) | der Auslieferungszustand |
 
 Beim ersten Start nach einer Installation werden die mitgelieferten
 Beispieldisketten dorthin ausgepackt. Verschieben lässt sich das mit den
@@ -298,8 +327,9 @@ Betriebssystem sieht den Wechsel nicht von selbst — *Rückstellen* (oder beim
 Gastsystem einen Warmstart auslösen).
 
 **Ein `.img` liest sich als Müll.** Das rohe Sektorabbild trägt seine Geometrie
-nicht; im Laufwerkskasten das passende Format wählen und neu einlegen. `.hfe`
-und `.dmk` haben dieses Problem nicht.
+nicht — im Formatdialog beim Einlegen wurde das falsche gewählt. Auswerfen, neu
+einlegen, ein anderes Format nehmen. `.hfe` und `.dmk` haben dieses Problem
+nicht.
 
 **Der Tooltip am Takt meldet, dass der Wirtsrechner nicht mitkommt.** Meist, weil die
 Bildröhre mit allen Effekten auf einer großen Fläche gezeichnet wird. Fenster

@@ -51,15 +51,22 @@ Wählbare Typen:
 | MF3200 | 8″ SS, 77 Spuren, nur FM, 300 K |
 | MF6400 | 8″ SS, 77 Spuren, FM+MFM, 600 K |
 
-Je Laufwerk: **Mount/Unmount**, **Neue Diskette** und **Speichern unter…**, dazu
+Je Laufwerk: **Mount/Unmount**, **Leere Diskette** und **Speichern unter…**, dazu
 Schreibschutz. Dateiformate sind `.img` (rohes Sektorabbild), **HFE v1** und **DMK**.
 
-„Neue Diskette" mit **leerem** Formatnamen legt eine echte **unformatierte** Diskette in
-der Geometrie des Laufwerks an — der Gast kann sie dann selbst mit `FORMAT.COM`
-formatieren. Für `.img` geht das nicht: ein rohes Sektorabbild kennt den Zustand
-„unformatiert" nicht. Aus demselben Grund lehnt „Speichern unter…" `.img` ab, sobald die
-Diskette eine unformatierte Spur oder Daten hinter der Daten-CRC enthält
-(`k1520_disk_raw_compatible`).
+„Leere Diskette" legt eine echte **unformatierte** Diskette in der Geometrie des
+Laufwerks an — der Gast kann sie dann selbst mit `FORMAT.COM` formatieren. Für `.img`
+geht das nicht: ein rohes Sektorabbild kennt den Zustand „unformatiert" nicht; wählt man
+es trotzdem, entsteht eine vorformatierte Diskette und der **Formatdialog** fragt, in
+welchem Format.
+
+**Das Format wird nur bei `.img` erfragt** (`app/ui/format_dialog.py`) — `.hfe`/`.dmk`
+tragen ihre Geometrie selbst. Hinter *Format:* steht im Laufwerkskasten stattdessen das
+**erkannte** Format (`k1520_disk_detected_format`, dieselbe Erkennung wie im
+k1520DiskTool) oder `unbekannt`. „Speichern unter…" gibt im erkannten Format aus und
+lehnt `.img` in zwei Fällen ab: wenn die Diskette eine unformatierte Spur oder Daten
+hinter der Daten-CRC enthält (`k1520_disk_raw_compatible`), und wenn das Format unbekannt
+ist — dann wäre die Sektorreihenfolge geraten.
 
 ## Tastatur
 
@@ -100,6 +107,13 @@ Die Konfiguration — CRT-Werte, Geschwindigkeit, Laufwerksbestückung, eingeleg
 wird automatisch nach `~/.config/k1520emu/config.yaml` geschrieben und beim Start wieder
 angewandt. Über **File → Save/Load Configuration…** lassen sich zusätzlich benannte
 YAML-Stände ablegen und laden.
+
+Beim **ersten** Start gibt es diese Datei noch nicht; dann zieht die mitgelieferte
+Auslieferungskonfiguration `data/default_config.yaml` (in einer Installation
+`share/k1520emu/default_config.yaml`) und wird gleich als die `config.yaml` des
+Anwenders geschrieben. **Ansicht → Standard zurücksetzen** holt sie nach Rückfrage
+zurück und überschreibt damit die gespeicherte Konfiguration; die eingelegten
+Disketten bleiben dabei liegen. Einzelheiten: `doc/design/11_python_app.md` §10.7.
 
 ## Tests
 
