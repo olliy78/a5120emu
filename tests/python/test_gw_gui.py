@@ -312,6 +312,12 @@ def test_disktool_fuehrt_den_fuellstand_nach(app, hfe, monkeypatch):
         # (der QTimer feuert ohne laufende Ereignisschleife nicht).
         stand = sitzung.stats().tracks_known
         _warte(lambda: sitzung.stats().tracks_known > stand, 5.0)
+        # Vor dem Vergleich das Vorauslesen ANHALTEN: sonst wandert der Wert
+        # zwischen Tick und Vergleich weiter, und der Test faellt auf einer
+        # belasteten Maschine um ("80 von 160 Spuren gelesen" gegen
+        # "80 von 160 … · liest 37/1").  Geprueft bleibt, worum es geht — dass
+        # die Anzeige dem Sync folgt und nicht dem Stand des letzten _reload.
+        sitzung.worker.stop()
         fenster._physisch_tick()
         assert fenster.st_physisch.text(), "nach dem Tick ist die Anzeige leer"
         # Der Wert muss dem Sync folgen, nicht einem Stand von früher.
