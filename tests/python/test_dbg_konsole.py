@@ -53,6 +53,7 @@ class Pty:
             env=dict(os.environ, TERM="xterm-256color", COLUMNS="100", LINES="30"))
         os.close(sklave)
         self.aus = ""
+        self._prompt_ab = 0      # bis hierher sind Eingabeaufforderungen verbraucht
 
     def lesen(self, dauer):
         ende = time.time() + dauer
@@ -79,6 +80,45 @@ class Pty:
     def tippe(self, roh: bytes, ruhe=0.4):
         os.write(self.master, roh)
         self.lesen(ruhe)
+
+    def warte_auf_prompt(self, timeout=30.0) -> bool:
+        """Warten, bis eine Eingabeaufforderung OFFEN ist (und sie verbrauchen).
+
+        Nur dann nimmt der Zeileneditor Getipptes an — s. :meth:`befehl`.
+        """
+        ende = time.time() + timeout
+        while True:
+            letzte = None
+            for letzte in re.finditer(r"\(dbg\) ", self.aus[self._prompt_ab:]):
+                pass
+            if letzte is not None:
+                self._prompt_ab += letzte.end()
+                return True
+            if time.time() >= ende:
+                return False
+            self.lesen(0.1)
+
+    def befehl(self, zeile: bytes, fertig: str, timeout=60.0) -> bool:
+        """Einen Debugger-Befehl tippen und auf SEINE Ausgabe warten.
+
+        **Nie blind weitertippen.**  Der Zeileneditor (isocline) schaltet den
+        Rohmodus mit ``tcsetattr(..., TCSAFLUSH)`` ein (``third_party/isocline/
+        src/tty.c``): alles, was WÄHREND eines laufenden Befehls getippt wurde,
+        verwirft er, sobald die nächste Eingabeaufforderung aufgeht — das
+        Terminal hat es zwar im Kanonikmodus schon zurückgeschrieben, der
+        Debugger bekommt es aber nie zu sehen.
+
+        Genau daran fiel dieser Test auf einer belasteten Maschine um: `gscreen`
+        brauchte dort länger als die Pause danach, `b 0x0100` ging im Rauschen
+        unter, der Haltepunkt wurde nie gesetzt — und das Programm lief
+        erwartungsgemäß durch.  Sichtbar war nur „Haltepunkt griff nicht", was
+        in die falsche Richtung zeigt.  Deshalb wartet jeder Befehl hier auf
+        seine eigene Rückmeldung.
+        """
+        if not self.warte_auf_prompt():
+            return False
+        os.write(self.master, zeile)
+        return self.warte_auf(fertig, timeout=timeout)
 
     @property
     def klartext(self):
@@ -128,14 +168,14 @@ def test_console_zeichnet_und_kehrt_mit_ctrl_klammer_zurueck():
     t = Pty()
     try:
         assert t.warte_auf(r"\(dbg\)")
-        t.tippe(b"console\r", 1.2)
+        assert t.befehl(b"console\r", r"Ctrl-\]"), "Hinweiszeile fehlt"
         # Der Bildschirm wird per ANSI-Positionierung gezeichnet.
         assert re.search(r"\x1b\[\d+;\d+H", t.aus), "keine Bildschirmausgabe im Konsolenmodus"
-        assert "Ctrl-]" in t.aus, "Hinweiszeile fehlt"
-        t.tippe(b"\x1d", 1.0)                       # Ctrl-] = zurueck
-        assert "console verlassen" in t.klartext
-        t.tippe(b"where\r", 1.0)                    # Debugger nimmt wieder Befehle
-        assert t.warte_auf(r"BUSRQ=")
+        t.tippe(b"\x1d", 0.2)                       # Ctrl-] = zurueck
+        assert t.warte_auf(r"console verlassen")
+        # …und der Debugger nimmt wieder Befehle.  Auch hier auf die offene
+        # Eingabeaufforderung warten: der Stopp-Block wird erst noch gedruckt.
+        assert t.befehl(b"where\r", r"BUSRQ=")
     finally:
         t.ende()
 
@@ -150,11 +190,19 @@ def test_live_getippte_eingabe_kommt_im_gast_an_und_haltepunkt_greift():
     t = Pty()
     try:
         assert t.warte_auf(r"\(dbg\)")
-        t.tippe(b'gscreen "Uhrzeit"\r', 0.5)
-        assert t.warte_auf(r"Uhrzeit", timeout=60), "CP/A erreichte die Uhrzeitabfrage nicht"
-        t.tippe(b"b 0x0100\r", 0.5)
-        t.tippe(b"console\r", 1.0)
+        # Jeder Befehl wartet auf SEINE Rueckmeldung, bevor der naechste kommt
+        # (s. Pty.befehl): waehrend eines laufenden Befehls Getipptes verwirft
+        # der Zeileneditor.
+        assert t.befehl(b'gscreen "Uhrzeit"\r', r"screen matched"), \
+            "CP/A erreichte die Uhrzeitabfrage nicht"
+        assert t.befehl(b"b 0x0100\r", r"bp ZVE1 @0100"), \
+            "der Haltepunkt wurde nicht gesetzt — ohne ihn prueft der Rest nichts"
+        assert t.befehl(b"console\r", r"Ctrl-\]"), "Konsolenmodus kam nicht hoch"
 
+        # Ab hier geht das Getippte an den GAST.  Die Zeitpunkte sind
+        # unkritisch: der Konsolenmodus stellt die Tasten in eine Schlange und
+        # gibt sie nach MASCHINENZEIT aus (kHold/kGap in k1520dbg.cpp), nicht
+        # nach Wanduhr — eine langsame Wirtsmaschine verschiebt hier nichts.
         t.tippe(b"120000\r", 3.0)     # LIVE: Uhrzeit -> CP/A geht zum Prompt
         t.tippe(b"hardy\r", 1.0)      # LIVE: Programm starten
         # Auf das ENDE der Haltezeile warten, nicht auf ihren Anfang: „** bp ZVE1"
