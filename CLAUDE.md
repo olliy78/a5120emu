@@ -143,6 +143,29 @@ python3 -m venv venv && source venv/bin/activate && pip install -r requirements.
 bash run_gui.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
 ```
 
+> **Die Oberfläche des Emulators ist wie die des DiskTool geschnitten**
+> (2026-09-13, `doc/design/11_python_app.md` §10): **jede Bedienung ist eine
+> `QAction` in `app/ui/actions.py`** (Menü und Leiste zeigen dieselbe), die
+> **Symbolleiste wird aus einer Namensliste gebaut** (`window.toolbar` in der
+> Konfiguration, einrichtbar über `app/ui/toolbar_config.py`), die
+> **Statuszeile zeigt Zustand statt Zähler** (`app/ui/status_bar.py`:
+> EINGESTELLTER Takt aus `app/takt.py` — der gemessene schwankt und steht nur im
+> Tooltip —, Laufwerksleuchte, Abbildname, R/O ↔ R/W; Cycles/FPS sind weg), und das **Handbuch**
+> liegt als `app/help/handbuch.md` (Fenster: `app/ui_help.py`, von beiden
+> Programmen benutzt, ebenso `app/ui_icons.py`).  Vier Dinge, die man nicht
+> aufweichen darf:
+> - **Kein Tastenkürzel ohne `Strg+Umschalt`** (Ausnahme `F11`): Qt wertet
+>   Kürzel VOR dem Widget aus, und `^S`/`^P`/`^C`/F-Tasten gehören dem
+>   emulierten Rechner.  Wächter `test_no_shortcut_steals_a_key_from_the_emulated_machine`.
+> - **Die Kürzeltabelle des Handbuchs ist ein Vertrag** — zwei Wächter prüfen
+>   beide Richtungen.
+> - **`QToolBar.clear()` gibt die Hülle eines `toggleViewAction()` frei**
+>   (C++-Objekt überlebt).  Deshalb einzeln `removeAction()` und die
+>   Kastenschalter in `_aktion()` FRISCH beim Kasten holen — sonst stirbt der
+>   zweite Leistenaufbau, also genau der aus einer gespeicherten Konfiguration.
+> - **Ein unbekannter Leisten-Name wird übergangen**, nicht als Fehler behandelt
+>   (ältere Konfigurationen).
+
 **Tests for this side live in `tests/python/`** (pytest, registered with ctest under label
 `python`, one ctest case per module: `py_c_api`, `py_binding`, `py_boot_smoke`, …). They cover
 the two things C++ tests cannot reach: the **C-ABI** (`core/api/k1520_api.h` ↔ `libk1520core.so`

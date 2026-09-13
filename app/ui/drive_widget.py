@@ -239,9 +239,15 @@ class DriveWidget(QWidget):
         led.setStyleSheet("border-radius: 7px; background-color: #2b2b2b; border: 1px solid #666;")
         head_layout.addWidget(led)
         type_label = dt.short_label(self.drive_types[drive])
-        head_layout.addWidget(QLabel(f"<b>Drive {drive}</b> — {type_label}"))
+        # Der Laufwerksbuchstabe ist das, was auch das Gastsystem und die
+        # Statuszeile benutzen — „Drive 0" hiess hier nur historisch so.
+        head_layout.addWidget(
+            QLabel(f"<b>Laufwerk {chr(ord('A') + drive)}:</b> — {type_label}"))
         head_layout.addStretch()
         wp_check = QCheckBox("Write-Protect")
+        # Er wirkt SOFORT, nicht erst beim naechsten Einlegen: sonst zeigte die
+        # Statuszeile „R/O", waehrend die Maschine weiter schreiben darf.
+        wp_check.toggled.connect(lambda an, d=drive: self._wp_umgeschaltet(d, an))
         head_layout.addWidget(wp_check)
         layout.addLayout(head_layout)
         self._drive_leds[drive] = led
@@ -341,7 +347,7 @@ class DriveWidget(QWidget):
                 return
 
             path, _ = QFileDialog.getOpenFileName(
-                self, f"Mount Disk Image - Drive {drive}",
+                self, f"Diskette einlegen — Laufwerk {chr(65 + drive)}:",
                 self._default_disk_dir(), self.DISK_FILTER
             )
             if not path:
@@ -363,7 +369,7 @@ class DriveWidget(QWidget):
             # Diskette im ausgewählten Katalogformat (ein rohes Sektorimage kann
             # "unformatiert" nicht darstellen).
             path, _ = QFileDialog.getSaveFileName(
-                self, f"Neue Diskette - Drive {drive}",
+                self, f"Neue Diskette — Laufwerk {chr(65 + drive)}:",
                 self._default_disk_dir(), self.BLANK_FILTER
             )
             if not path:
@@ -393,7 +399,7 @@ class DriveWidget(QWidget):
                 raw_ok = False
             flt = self.SAVE_FILTER_ALL if raw_ok else self.SAVE_FILTER_BITSTREAM
             path, _ = QFileDialog.getSaveFileName(
-                self, f"Diskette speichern unter - Drive {drive}",
+                self, f"Diskette speichern unter — Laufwerk {chr(65 + drive)}:",
                 self._default_disk_dir(), flt
             )
             if not path:
@@ -527,6 +533,9 @@ class DriveWidget(QWidget):
         group._phys_btn = phys_btn
         group._rewrite_btn = rewrite_btn
         group._led = led
+        # Derselbe Weg fuer das Menue „Diskette einlegen/auswerfen": ein zweiter
+        # Dateidialog danebenher wuerde beim naechsten Umbau auseinanderlaufen.
+        group._on_toggle = on_toggle
         self._panels[drive] = group
 
         return group
@@ -614,6 +623,49 @@ class DriveWidget(QWidget):
         """Alle physischen Sitzungen beenden (Programmende, Konfigurationswechsel)."""
         for drive in list(self._physical):
             self._stop_physical(drive)
+
+    # ── Zugriff von aussen (Menue, Statuszeile) ──────────────────────────────
+
+    def toggle_mount(self, drive: int) -> None:
+        """Diskette einlegen bzw. auswerfen — genau wie der Knopf im Kasten.
+
+        Das Menue „Datei ▸ Diskette einlegen/auswerfen" ruft hier herein, damit
+        es KEINEN zweiten Dateidialog gibt: ein Laufwerk, das sich ueber zwei
+        Wege unterschiedlich bedienen laesst, laeuft irgendwann auseinander.
+        """
+        panel = self._panels.get(drive)
+        if panel is not None and hasattr(panel, "_on_toggle"):
+            panel._on_toggle()
+
+    def is_mounted(self, drive: int) -> bool:
+        """Liegt in *drive* etwas — eine Datei oder eine echte Diskette?"""
+        return drive in self._mounts or drive in self._physical
+
+    def is_physical(self, drive: int) -> bool:
+        """Ist *drive* ein echtes Laufwerk am Greaseweazle?"""
+        return drive in self._physical
+
+    def mounted_path(self, drive: int) -> str:
+        """Pfad des eingelegten Abbilds (leer bei leerem oder echtem Laufwerk)."""
+        eintrag = self._mounts.get(drive)
+        return eintrag[0] if eintrag else ""
+
+    def _wp_umgeschaltet(self, drive: int, an: bool) -> None:
+        """Schreibschutz am laufenden Laufwerk setzen.
+
+        Ohne eingelegte Diskette ist das nur die Vorwahl fuer das naechste
+        Einlegen — dann gibt es im Kern nichts zu setzen.
+        """
+        if not self.is_mounted(drive):
+            return
+        try:
+            self.emulator.set_disk_write_protect(drive, bool(an))
+        except Exception:
+            return
+        eintrag = self._mounts.get(drive)
+        if eintrag is not None:
+            self._mounts[drive] = (eintrag[0], eintrag[1], bool(an))
+            self.disk_mounted.emit(drive, eintrag[0])   # Konfiguration nachfuehren
 
     # ── Config-Persistenz (gemountete Disketten) ─────────────────────────────
 

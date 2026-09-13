@@ -806,30 +806,3 @@ class ScreenWidget(QOpenGLWidget):
         f.glUniform1f(u("uTime"), float(self._clock.elapsed() / 1000.0))
         f.glUniform2f(u("uScale"), float(p.scale_x), float(p.scale_y))
         f.glUniform2f(u("uOffset"), float(p.offset_x), float(p.offset_y))
-
-
-class StatusWidget(QWidget):
-    """Status bar showing emulator state."""
-
-    def __init__(self, parent=None):
-        """Initialize status widget."""
-        super().__init__(parent)
-        from PySide6.QtWidgets import QHBoxLayout, QLabel
-
-        layout = QHBoxLayout(self)
-
-        self.cycles_label = QLabel("Cycles: 0")
-        self.fps_label = QLabel("FPS: 0")
-        self.disk_label = QLabel("Drives: ----")
-
-        layout.addWidget(self.cycles_label)
-        layout.addWidget(self.fps_label)
-        layout.addWidget(self.disk_label, 1)
-
-        self.setStyleSheet("background-color: #f0f0f0; padding: 2px;")
-
-    def update_status(self, cycles: int, fps: float, disk_states: str):
-        """Update status display."""
-        self.cycles_label.setText(f"Cycles: {cycles:,}")
-        self.fps_label.setText(f"FPS: {fps:.1f}")
-        self.disk_label.setText(f"Drives: {disk_states}")

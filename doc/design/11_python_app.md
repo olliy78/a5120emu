@@ -3,6 +3,12 @@
 **Modul:** `app/`  
 **Framework:** PySide6 (Qt6, offizielle Python-Bindung)
 
+> **Lesehinweis.** Die Abschnitte 2–9 sind der URSPRÜNGLICHE Entwurf und an
+> mehreren Stellen von der Umsetzung überholt (es gibt keinen `emulator_thread`,
+> keine `themes/`, keine `machine_view`; der Lauf hängt an einem `QTimer` im
+> Hauptfenster).  Wie die Oberfläche **heute** geschnitten ist, steht in
+> **§10**; der Rest ist als Begründung der Grundentscheidungen weiter nützlich.
+
 ---
 
 ## 1. Aufgabe
@@ -427,3 +433,168 @@ Installation:
 pip install -r app/requirements.txt
 python app/main.py --machine a5120 --disk-a disks/cpadisk.img:cpa780
 ```
+
+---
+
+## 10. Oberfläche des Emulators — heutiger Stand (2026-09-13)
+
+Das Fenster ist nach demselben Muster geschnitten wie das des k1520DiskTool
+(`doc/design/13_k1520disktool.md` §20), damit beide Programme sich gleich
+bedienen lassen.  Was sie sich dafür teilen, liegt **neben** beiden
+Oberflächen, nicht in einer von ihnen:
+
+| Modul | Was | Benutzt von |
+|-------|-----|-------------|
+| `app/ui_icons.py` | Symbole aus `app/icons/*.svg`, in der Palettenfarbe eingefärbt | beide |
+| `app/ui_help.py`  | Handbuchfenster (Markdown, Inhaltsverzeichnis, Suche) | beide |
+| `app/ui/help_window.py` · `app/disktool/ui/help_window.py` | nur noch Titel und Pfad der jeweiligen `.md` | je eins |
+
+### 10.1 Jede Bedienung ist eine `QAction` (`app/ui/actions.py`)
+
+Menü und Symbolleiste zeigen **dieselbe** Aktion; es gibt sie genau einmal,
+mitsamt Kürzel, Symbol, Kurzwort und Statustext.  Neue Bedienwege kommen dort
+hinzu, nicht im Fenster.  `erzeuge_aktionen(fenster)` legt sie als
+`fenster.act_<name>` ab und ruft `fenster.addAction()` — ohne das gälte ein
+Kürzel nur, solange die Aktion in einem **sichtbaren** Menü hängt, im Vollbild
+also nicht mehr.
+
+**Kein Kürzel ohne `Strg+Umschalt`** (Ausnahme `F11`).  Die Tastatur gehört dem
+emulierten Rechner: `screen_widget` reicht jeden Tastendruck an den K7637 weiter,
+auch `^S`, `^P`, `^C` und die Funktionstasten — und genau die braucht CP/M.  Qt
+wertet ein Kürzel aber **vor** dem Widget aus; was das Fenster beansprucht, kommt
+beim Gast nie an.  Das frühere `Strg+Q` (Beenden) und `Strg+F5` (Reset) sind
+deshalb umgezogen.
+
+### 10.2 Die Symbolleiste ist einrichtbar
+
+Sie wird aus einer **Liste von Aktionsnamen** gebaut (`_leiste_fuellen`),
+`None` ist ein Trennstrich.  Die Liste steht in der Konfiguration
+(`window.toolbar`, `window.toolbar_style`), zusammengestellt wird sie über
+*Ansicht ▸ Symbolleiste einrichten…* (`app/ui/toolbar_config.py`).  Ausblenden
+geht über Qts eigenen `toggleViewAction()`.  **Im Menü steht immer alles** —
+eine leergeräumte Leiste macht nichts unerreichbar.
+
+Zwei Fallen, beide mit Wächter in `tests/python/test_gui_smoke.py`:
+
+* **`QToolBar.clear()` gibt die Python-Hülle eines `toggleViewAction()` frei**
+  (das C++-Objekt überlebt).  Ein gemerkter Verweis darauf ist danach tot, und
+  der zweite Aufbau der Leiste — genau den löst eine gespeicherte Konfiguration
+  aus — scheiterte mit „Internal C++ object already deleted".  Deshalb: einzeln
+  `removeAction()` statt `clear()`, und die Kastenschalter werden in `_aktion()`
+  **frisch beim Kasten geholt**.
+* **Ein unbekannter Name wird übergangen**, nicht als Fehler behandelt — sonst
+  stürbe die Oberfläche an einer Konfiguration aus einer älteren Fassung.
+
+### 10.3 Die Statuszeile zeigt Zustand, keine Zähler (`app/ui/status_bar.py`)
+
+Rechts steht, was dauerhaft gilt: der **eingestellte Takt** und **je bestücktem
+Steckplatz eine Leuchte samt Feld** (Dateiname der eingelegten Diskette,
+`R/O`/`R/W`).  Gefragt wird der Kern (`disk_path`, `is_disk_write_protected`,
+`is_disk_led_on`); nur „das ist ein echtes Laufwerk am Greaseweazle" weiss allein
+der Laufwerkskasten.
+
+* **Der Takt ist der EINGESTELLTE**, wortgleich mit dem Auswahlfeld — beide
+  Beschriftungen kommen aus `app/takt.py` (`2,45 MHz`, `10 × 2,45 MHz`,
+  `unbegrenzt`).  Hier stand zuerst der *gemessene*; der schwankt im
+  Sekundentakt (`10,0×`, `9,8×`, `10×`) und las sich wie ein Fehler, wo keiner
+  war.  Gemessen wird weiter — der Wert steht im **Tooltip**, mitsamt dem Satz
+  „Der Wirtsrechner kommt nicht mit", sobald er unter 90 % der Einstellung
+  fällt.  Damit bleibt die Diagnose erreichbar, ohne dass die Zeile zappelt.
+* **Die Leuchte ist gezeichnet, nicht getippt** (`DriveLamp.paintEvent`): leerer
+  Ring = keine Diskette, gefüllt = eingelegt, rot = Zugriff.  Ein Emoji-Kreis
+  (`○`/`●`) sieht in vielen Schriften fast gleich aus — derselbe Grund, aus dem
+  das DiskTool sein Schloss zeichnet (§20.4 dort).
+* **Sie hat einen EIGENEN, schnellen Takt** (`_lamp_timer`, 120 ms — derselbe wie
+  `DriveWidget._led_timer`).  Am Sekundentakt des übrigen Statuszeilen-Aufbaus
+  blitzte sie praktisch nie auf: ein Sektorzugriff ist in wenigen
+  Zehntelsekunden vorbei.  Die Abfrage ist billig (eine je Laufwerk), und
+  `DriveLamp.set_zustand` zeichnet nur bei echter Änderung neu.
+
+Zykluszähler und Bildrate standen hier früher und sind ersatzlos weg — beide
+sagen über die Maschine nichts, was man beim Arbeiten wissen will.
+
+Damit das Feld stimmt, wirkt der Haken *Write-Protect* seit dieser Fassung
+**sofort** (`DriveWidget._wp_umgeschaltet` → `set_disk_write_protect`) und nicht
+erst beim nächsten Einlegen.
+
+### 10.4 Das Handbuch (`app/help/handbuch.md`)
+
+Eine `.md`-Datei, die Qt selbst setzt — kein Bauschritt, keine zusätzliche
+Abhängigkeit.  Sie liegt unter `app/`, weil `doc/` im Anwenderpaket nicht dabei
+ist (`packaging/build_payload.sh` kopiert `app/` als Ganzes).  Die Tabelle
+*Tastenkürzel* ist ein **Vertrag**: zwei Tests prüfen beide Richtungen — jedes
+genannte Kürzel hängt an einer Aktion, und kein verdrahtetes Kürzel fehlt im
+Handbuch.
+
+### 10.5 Fensterzustand — was gespeichert wird und was daran hakte
+
+`window` trägt `geometry` (Qts `saveGeometry()`), daneben lesbar
+`width`/`height`/`maximized`, den `dock_state` (Qts `saveState()`: welche Kästen
+sichtbar sind, wo sie liegen, **wie breit** sie sind) und die Symbolleiste.  Drei
+Dinge waren kaputt und sind behoben:
+
+* **Ein Zug an der Trennlinie zwischen zwei Kästen wurde nie gespeichert.** Er
+  ändert nur die Kästen, nicht das Fenster — es gab weder ein `resizeEvent` des
+  Fensters (daran hing das Speichern) noch ein Signal.  Die Aufteilung überlebte
+  nur, wenn zufällig etwas anderes ein Speichern auslöste.  Jetzt hängt ein
+  Ereignisfilter an den vier Kästen (`MainWindow.eventFilter`, `QEvent.Resize`)
+  und stösst den Autosave an, der ein Ziehen wie gehabt zu EINER Schreibung
+  sammelt.  Dazu schreibt `closeEvent` jetzt **immer**, nicht nur eine anstehende
+  Änderung.
+* **Der Kasten der Tastatur war in der Höhe festgenagelt.**  `KeyboardWidget`
+  trug senkrecht `QSizePolicy.Fixed`; damit nimmt Qt die Wunschhöhe zugleich als
+  Mindest- **und** Höchsthöhe (`min == max == 257`), und die Trennlinie darüber
+  lässt sich überhaupt nicht ziehen.  Solange die Tastatur unter dem Bildschirm
+  sass, fiel es nicht auf — `_shrink_keyboard` rückte sie nach jedem Resize auf
+  die zur Breite passende Höhe.  Sobald sie woanders andockte (etwa unter die
+  Laufwerke), stand sie auf ihrer Wunschhöhe: schwarze Balken über und unter dem
+  Tastenfeld (die Zeichnung hält ihr Seitenverhältnis) und der Nachbarkasten im
+  Rollbalken.  Jetzt `Preferred` (min 165, max unbegrenzt), dazu passt
+  `_tastatur_einpassen` die Höhe beim **Umdocken** an die neue Breite an —
+  dort ändert sie sich sprunghaft.  Wächter:
+  `test_the_keyboard_dock_can_be_resized_at_all`.
+* **Und die Startaufteilung zog ihn wieder zurück.** `_shrink_keyboard` (Tastatur
+  auf Inhaltshöhe, Seitenkästen schmal, Bildschirm bekommt den Rest) lief nach
+  JEDEM Fenster-Resize, solange kein Layout gespeichert war — die waagerechte
+  Trennlinie unter dem Bildschirm liess sich damit scheinbar nicht verschieben.
+  Sie ist jetzt das, was ihr Name sagt: die Aufteilung für den Start.  Sobald
+  eine Kastengrösse sich ändert, ohne dass wir selbst gerade umbauen
+  (`_layout_laeuft`), gilt das als Anordnung des Anwenders (`_nutzer_layout`) und
+  die Startaufteilung hält sich heraus.  Die Marke `_layout_laeuft` deckt drei
+  eigene Umbauten ab — Fenster-Resize, Ein-/Ausblenden eines Kastens
+  (`_kasten_sichtbarkeit`) und die Startaufteilung selbst — und wird jeweils erst
+  eine Runde der Ereignisschleife später zurückgenommen, weil Qt das Layout
+  verzögert zustellt.  Wächter: `test_a_dragged_separator_is_not_pushed_back`
+  und die beiden Gegenproben daneben.  `_startaufteilung` setzt dabei nur noch
+  die Größe des SEITENKASTENS (`resizeDocks([kasten], …)`); das frühere Paar
+  (Bildschirm, Kasten) setzte voraus, dass beide nebeneinander liegen, und
+  streckte den Bildschirm, sobald der Anwender einen Kasten woanders andockte.
+* **Maximieren fiel beim nächsten Start auf die Vorgabegrösse zurück.** Die
+  Ursache lag nicht am Speichern des Schalters, sondern an der gemerkten Grösse:
+  beim Maximieren trifft das `resizeEvent` mit der neuen Grösse ein, **bevor**
+  `isMaximized()` wahr wird (der Fensterverwalter meldet den Zustand erst
+  danach).  Damit wurde die „normale" Grösse die maximierte (z. B. 1920×1080) —
+  und die fiel beim nächsten Start durch die Prüfung „passt das noch auf den
+  Bildschirm?" (die nutzbare Fläche ist wegen der Leisten kleiner) auf
+  1024×680 zurück.  Der Wechsel wird jetzt im `changeEvent`
+  (`QEvent.WindowStateChange`) mitgeschrieben, wo `normalGeometry()` noch die
+  Grösse VOR dem Maximieren führt.
+* **Getragen wird die Geometrie seitdem von Qt selbst.**  `saveGeometry()`
+  bündelt Grösse, Bildschirmposition, den maximierten Zustand und die normale
+  Grösse in einem Blob; `restoreGeometry()` wirkt auf dem noch unsichtbaren
+  Fenster (kein `showMaximized()` im `showEvent` — das zeigte das Fenster mit
+  halb aufgebauten Kästen) und prüft selbst, ob die Lage auf einen heute
+  vorhandenen Bildschirm fällt.  `width`/`height`/`maximized` bleiben als
+  lesbarer Rückfall daneben stehen; **`_geometrie_herstellen` ist deshalb ein
+  eigener Schritt** — als früher `return` in `_apply_window_state` verschluckte
+  der geglückte Geometrieweg die Wiederherstellung von Symbolleiste und
+  Kästen.
+
+### 10.6 Diskette einlegen — im Menü, mit Untermenü je Laufwerk
+
+*Datei ▸ Diskette einlegen ▸ Laufwerk …* (früher ein Menüpunkt ohne Wirkung)
+ruft `DriveWidget.toggle_mount(drive)` — denselben Weg wie der Knopf im
+Laufwerkskasten; ein zweiter Dateidialog daneben liefe beim nächsten Umbau
+auseinander.  Gefüllt wird das Untermenü beim **Aufklappen**, weil sich die
+Bestückung über *Einstellungen ▸ Laufwerke* ändert; gesperrt ist, was nicht
+geht (einlegen bei belegtem, auswerfen bei leerem Laufwerk).

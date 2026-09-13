@@ -469,7 +469,15 @@ class KeyboardWidget(QWidget):
 
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(False)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # Senkrecht **Preferred**, nicht Fixed: mit `Fixed` nimmt Qt die
+        # Wunschhöhe zugleich als Mindest- UND Höchsthöhe — der Kasten, in dem
+        # die Tastatur sitzt, ist dann in der Höhe festgenagelt und die
+        # Trennlinie darüber lässt sich NICHT ziehen.  Aufgefallen ist das,
+        # seit die Tastatur auch neben dem Bildschirm andocken kann: dort
+        # blieb sie auf ihrer Wunschhöhe stehen (schwarze Balken über und
+        # unter dem Tastenfeld, weil die Zeichnung ihr Seitenverhältnis hält)
+        # und drückte den Nachbarkasten in den Rollbalken.
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setAutoFillBackground(False)
 
     # ── Anzeigen ────────────────────────────────────────────────────────────
