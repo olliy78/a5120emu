@@ -309,6 +309,29 @@ diesen Lauf; gespeichert wird davon nichts.
 Ohne Oberfläche fährt dieselbe Maschine unter `k1520dbg` (Fehlersuche,
 Skriptbetrieb); `k1520dbg DISKETTE --console` ist die Konsolenfassung.
 
+## Die anderen Werkzeuge
+
+Im Menü **Werkzeuge** stehen die beiden Programme, die zur selben Installation
+gehören und dieselben Disketten anfassen:
+
+* **k1520DiskTool starten** — das Diskettenwerkzeug: Dateien von einer Diskette
+  in einen Ordner holen und wieder zurückschreiben, Disketten anlegen, prüfen,
+  reparieren. Es startet als eigenes Programm und läuft neben dem Emulator
+  weiter; das Diskettenwerkzeug hat sein eigenes Handbuch.
+* **Werkzeugkonsole öffnen** — ein Konsolenfenster, in dem der Debugger
+  `k1520dbg` und die Kommandozeile des DiskTool **ohne Pfadangabe** laufen. Es
+  steht bereits im Diskettenordner, und beim Öffnen steht ein Beispielaufruf
+  mit einer wirklich vorhandenen Diskette da.
+
+Die Konsole wird über eine Startdatei geöffnet, die im Konfigurationsordner
+liegt (`werkzeugkonsole.sh`, unter Windows `werkzeugkonsole.cmd`). Sie wird bei
+jedem Öffnen neu geschrieben — wer sie anpassen will (ein eigener Assembler im
+Suchpfad, ein anderer Arbeitsordner), kopiert sie sich woandershin.
+
+> Eine Diskette, die hier im Laufwerk liegt, darf zugleich unter `k1520dbg`
+> offen sein: der Debugger arbeitet standardmäßig auf einer Kopie und schreibt
+> nicht in die Datei zurück.
+
 ## Tastenkürzel
 
 | Kürzel | Wirkung |

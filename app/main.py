@@ -16,7 +16,7 @@ Requirements:
 Setup (details: SETUP.md):
     1. Build the C++ core:      tools/dev.sh build
     2. Python dependencies:     python3 -m pip install -r requirements.txt
-    3. Run the GUI:             bash run_gui.sh
+    3. Run the GUI:             bash run_a5120emu.sh
        (sets LD_LIBRARY_PATH=build, activates venv, runs this file)
 """
 

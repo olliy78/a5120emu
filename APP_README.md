@@ -16,7 +16,7 @@ app/main.py
        libk1520core.so             core/api/k1520_api.h
 ```
 
-Einrichten und starten steht in **[SETUP.md](SETUP.md)**; kurz: `bash run_gui.sh`.
+Einrichten und starten steht in **[SETUP.md](SETUP.md)**; kurz: `bash run_a5120emu.sh`.
 
 ## Bildschirm
 
@@ -133,7 +133,7 @@ tools/dev.sh build
 export LD_LIBRARY_PATH=$PWD/build:$LD_LIBRARY_PATH
 ```
 
-`run_gui.sh` erledigt beides mit. Gesucht wird zuerst in `build/` der Arbeitskopie.
+`run_a5120emu.sh` erledigt beides mit. Gesucht wird zuerst in `build/` der Arbeitskopie.
 
 **`ModuleNotFoundError: No module named 'PySide6'`** — das venv ist nicht aktiv
 (`source venv/bin/activate`) oder die Abhängigkeiten fehlen (`SETUP.md`, Schritt 1).

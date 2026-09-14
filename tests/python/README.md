@@ -51,6 +51,7 @@ System-Interpreter.
 | `test_config_io.py` | Speichern/Laden, CRT-Parameter-Rundlauf, Toleranz gegen fremde Schlüssel |
 | `test_keyboard_map.py` | `qt_event_to_core_key`: Zeichen, Sondertasten, F1–F8, Ctrl-Kombinationen, Modifikatoren allein |
 | `test_gui_smoke.py` | Hauptfenster offscreen: alle Panels, Emulator, Laufwerksleiste, Konfigurationsrundlauf |
+| `test_programme.py` | Nachbarprogramme starten (`app/programme.py`): Befehlszeile, Abkopplung, Startdatei der Werkzeugkonsole, Werkzeugmenü beider Oberflächen |
 
 ## Grenzen
 

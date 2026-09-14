@@ -669,3 +669,59 @@ Vier Festlegungen, die das tragen:
 Eine andere Auslieferung herzustellen ist damit ein Kopiervorgang: Fenster
 einrichten, den Inhalt der eigenen `config.yaml` nach `data/default_config.yaml`
 übernehmen, `disks:` und `window.geometry` streichen.
+
+### 10.8 Die Nachbarprogramme starten — Werkzeugmenü und Werkzeugkonsole (2026-09-14)
+
+Zur Installation gehören vier Programme, die dieselben Disketten anfassen: die
+beiden Oberflächen (`a5120emu`, `k1520DiskTool`) und die beiden Konsolenwerkzeuge
+(`k1520dbg`, `k1520disktool-cli`).  Wer eines davon offen hat, braucht
+regelmässig ein zweites.  Beide Oberflächen haben deshalb ein Menü
+**„Werkzeuge"** vor „Hilfe":
+
+| Programm | Eintrag | Aktion |
+|----------|---------|--------|
+| Emulator | *k1520DiskTool starten* | `act_disktool` → `MainWindow._disktool_starten` |
+| Emulator | *Werkzeugkonsole öffnen* | `act_konsole` → `MainWindow._konsole_starten` |
+| DiskTool | *A5120-Emulator starten* | `act_emulator` → `MainWindow._emulator_starten` |
+
+Das Wie steht an **einer** Stelle: `app/programme.py`
+(`programm_starten()`, `konsole_starten()`).  Die Pfade der Konsolenwerkzeuge
+und ihrer Handbücher kommen wie alles andere aus `app/paths.py`
+(`tools_dir()`, `debugger()`, `disktool_cli()`, `doc_dir()`/`doc_file()`;
+`--paths` zeigt sie seitdem mit).  Wächter: `py_programme`.
+
+Vier Festlegungen, die man nicht aufweichen darf:
+
+* **Gestartet wird der eigene Interpreter mit dem Skript des anderen Programms**
+  (`sys.executable` + `<root>/app/…/main.py`), nicht der Starter aus `bin/`:
+  den gibt es nur in einer Installation, der Quellbaum hat `run_a5120emu.sh` /
+  `run_disktool.sh`.  Über den Interpreter ist der Weg in beiden Layouts
+  derselbe, und die Umgebung (`K1520_HOME`, `K1520_DATA`, `LD_LIBRARY_PATH`)
+  erbt das Kind ohnehin.  Unter Windows wird `pythonw.exe` genommen — sonst
+  stünde hinter dem Fenster eine leere Eingabeaufforderung.
+* **Das Kind wird abgekoppelt** (`start_new_session` bzw.
+  `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`) und läuft im
+  **Diskettenordner** des Anwenders — dieselbe Wahl wie in
+  `packaging/launcher.sh`, damit der Kern sein `logs/` nicht irgendwo anlegt.
+  Ohne eigene Sitzung nähme das Beenden des Elternteils es mit.
+* **Die Konsole ist eine erzeugte Startdatei, kein Kommandoband**:
+  `<config_dir>/werkzeugkonsole.sh` bzw. `.cmd`, bei jedem Öffnen neu
+  geschrieben.  Sie setzt `K1520_HOME`, `K1520_FORMATS` und den `PATH` auf
+  `tools_dir()`, wechselt in den Diskettenordner, druckt einen **abtippbaren
+  Beispielaufruf mit einer wirklich vorhandenen Diskette** samt Verweis auf
+  `handbuch_k1520dbg.md` und endet auf einer interaktiven Shell
+  (`exec "$SHELL" -i` bzw. `cmd /k`) — ohne die schlösse sich das Fenster
+  sofort wieder.  Wer sie anpassen will, hat eine Vorlage vor sich; dasselbe
+  Muster wie `packaging/k1520dbg.cmd.in`, das weiterhin der Startmenü-Eintrag
+  des Windows-Installers ist.
+* **Die Windows-Startdatei bleibt ASCII** (`_nur_ascii`): `cmd.exe` liest eine
+  Batchdatei in der eingestellten Kodepage, nicht in UTF-8.  Wächter
+  `test_die_windows_startdatei_bleibt_ascii` — ein `?` darin heisst, dass ein
+  Zeichen in der Umschrifttabelle fehlt.
+
+**Kein Tastenkürzel** für die drei Einträge: jedes weitere `Strg+Umschalt+…`
+müsste in die Kürzeltabelle des Handbuchs, und die ist ein Vertrag (§10.1).
+Das Terminalprogramm wird unter Linux der Reihe nach gesucht
+(`$TERMINAL`, dann `x-terminal-emulator`, `konsole`, `gnome-terminal`, …);
+findet sich keines, nennt die Meldung den Pfad der vorbereiteten Startdatei,
+statt kommentarlos nichts zu tun.

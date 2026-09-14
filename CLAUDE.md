@@ -140,7 +140,7 @@ lib built:
 
 ```sh
 python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
-bash run_gui.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
+bash run_a5120emu.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
 ```
 
 > **Die Oberfläche des Emulators ist wie die des DiskTool geschnitten**
@@ -187,6 +187,20 @@ bash run_gui.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
 >
 > Der Knopf heisst **„Leere Diskette"** (nicht „Neue"): was entsteht, ist
 > unformatiert und muss vom Gastsystem erst formatiert werden.
+>
+> **Beide Oberflächen starten einander — Menü „Werkzeuge"** (2026-09-14,
+> `doc/design/11_python_app.md` §10.8).  Das Wie steht an EINER Stelle
+> (`app/programme.py`), die Pfade der Konsolenwerkzeuge wie alles andere in
+> `app/paths.py` (`tools_dir`/`debugger`/`disktool_cli`/`doc_file`).  Gestartet
+> wird der **eigene Interpreter mit dem Skript des anderen Programms**, nicht der
+> Starter aus `bin/` (den gibt es nur in einer Installation), abgekoppelt und im
+> Diskettenordner.  Der Emulator öffnet zusätzlich eine **Werkzeugkonsole**: eine
+> bei jedem Öffnen neu erzeugte Startdatei in der Benutzerkonfiguration
+> (`werkzeugkonsole.sh`/`.cmd`), die `PATH`/`K1520_HOME`/`K1520_FORMATS` setzt,
+> einen abtippbaren Beispielaufruf druckt und auf einer interaktiven Shell endet.
+> Sie bleibt unter Windows **ASCII** (`cmd.exe` liest Batchdateien in der
+> Kodepage).  Kein Tastenkürzel für die drei Einträge — die Kürzeltabelle des
+> Handbuchs ist ein Vertrag.  Wächter: `py_programme`.
 >
 > **Der Auslieferungszustand ist eine DATEI, kein Programmtext** (2026-09-14,
 > `doc/design/11_python_app.md` §10.7): `data/default_config.yaml` (in der

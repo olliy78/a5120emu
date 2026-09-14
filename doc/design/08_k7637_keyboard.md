@@ -560,7 +560,7 @@ macht ein anderes Byte daraus, oder das *Betriebssystem* deutet das Byte anders
 als gedacht. Mit
 
 ```sh
-K1520_TASTEN_LOG=1 bash run_gui.sh
+K1520_TASTEN_LOG=1 bash run_a5120emu.sh
 ```
 
 schreibt jeder Tastendruck eine Zeile nach stderr — von der PC-Tastatur, von der

@@ -1,5 +1,5 @@
 #!/bin/bash
-# K1520 A5120 Emulator - GUI Launcher
+# a5120emu — Starter des Emulators (Gegenstück zu run_disktool.sh)
 # Automatically activates venv and starts the GUI
 
 set -e

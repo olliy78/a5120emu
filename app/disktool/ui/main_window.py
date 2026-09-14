@@ -276,6 +276,12 @@ class MainWindow(QMainWindow):
 
         self.menue_ansicht = leiste.addMenu("&Ansicht")   # gefüllt in _baue_leiste
 
+        # Das Nachbarprogramm derselben Installation.  Eigenes Menü, weil es
+        # weder die Diskette noch den Ordner betrifft: hier wird ein ZWEITES
+        # Programm gestartet, das neben diesem weiterläuft.
+        m = leiste.addMenu("&Werkzeuge")
+        m.addAction(self.act_emulator)
+
         m = leiste.addMenu("&Hilfe")
         m.addAction(self.act_hilfe)
         m.addAction(self.act_ueber)
@@ -2173,6 +2179,32 @@ class MainWindow(QMainWindow):
         self._hilfe = HelpWindow(self)
         self._hilfe.show()
         return self._hilfe
+
+    def _emulator_starten(self) -> None:
+        """Den A5120-Emulator als eigenständiges Programm daneben öffnen.
+
+        Bewusst ein zweiter Prozess: die beiden benutzen verschiedene
+        Bibliotheken (``libk1520disk`` gegen ``libk1520core``).  Eine Diskette,
+        die hier ungespeicherte Änderungen trägt, kommt dort noch NICHT an —
+        der Emulator liest die Datei, nicht unser Speicherabbild.
+        """
+        from app import programme
+        if self.tool is not None and self.tool.dirty:
+            antwort = QMessageBox.question(
+                self, "Ungespeicherte Änderungen",
+                "Die Diskette hat ungespeicherte Änderungen — der Emulator "
+                "würde den Stand der Datei sehen, nicht diesen.\n\n"
+                "Vorher speichern?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save)
+            if antwort == QMessageBox.Cancel:
+                return
+            if antwort == QMessageBox.Save and not self.save():
+                return
+        try:
+            programme.programm_starten(programme.EMULATOR)
+        except RuntimeError as e:
+            QMessageBox.warning(self, "A5120-Emulator", str(e))
 
     def _ueber_dialog(self) -> None:
         from app.core_binding.k1520disk import version

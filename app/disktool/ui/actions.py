@@ -145,6 +145,13 @@ _SPEC: List[Tuple] = [
     ("aktualisieren", "&Aktualisieren", "refresh", "F5",
      "Verzeichnis und Ordner neu einlesen", "_aktualisieren", False),
 
+    # ── Werkzeuge ───────────────────────────────────────────────────────────
+    # Das Nachbarprogramm derselben Installation.  Es fasst dieselben Disketten
+    # an, also gehört es aus dem laufenden Programm heraus erreichbar.
+    ("emulator", "&A5120-Emulator starten", None, None,
+     "Den Emulator öffnen — er bootet von einer Diskette und läuft neben dem "
+     "DiskTool weiter", "_emulator_starten", False),
+
     # ── Hilfe ───────────────────────────────────────────────────────────────
     ("hilfe", "&Handbuch…", None, "F1", "Bedienung, Begriffe und Tastenkürzel",
      "open_help", False),
@@ -182,6 +189,7 @@ KURZ = {'oeffnen': 'Öffnen',
     'neuer_ordner': 'Neuer Ordner',
     'umbenennen': 'Umbenennen',
     'aktualisieren': 'Neu lesen',
+    'emulator': 'Emulator',
     'hilfe': 'Handbuch',
     'ueber': 'Über'}
 

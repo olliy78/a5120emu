@@ -126,7 +126,7 @@ Vollständige Anleitung: **[SETUP.md](SETUP.md)**. Kurz:
 python3 -m venv venv && source venv/bin/activate
 python3 -m pip install -r requirements.txt -r requirements-dev.txt
 tools/dev.sh build          # baut build/ (Release, LOG_LEVEL=3)
-bash run_gui.sh             # setzt LD_LIBRARY_PATH und startet app/main.py
+bash run_a5120emu.sh             # setzt LD_LIBRARY_PATH und startet app/main.py
 ```
 
 Voraussetzungen: C++17-Compiler, CMake ≥ 3.16, Python ≥ 3.8. Gebaut und geprüft wird

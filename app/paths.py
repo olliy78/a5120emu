@@ -581,6 +581,86 @@ def seed_user_disks(patterns=("*.hfe", "*.dmk", "*.img")) -> int:
     return count
 
 
+# ─── Konsolenwerkzeuge und ihre Handbücher ───────────────────────────────────
+#
+# Neben den beiden Oberflächen liegen zwei Programme für die Kommandozeile: der
+# Debugger ``k1520dbg`` und die Kommandozeilenfassung des DiskTool.  Der Emulator
+# öffnet für sie ein Konsolenfenster (*Werkzeuge ▸ Werkzeugkonsole*,
+# :mod:`app.programme`) und muss dafür wissen, wo sie liegen — dieselbe Frage wie
+# bei der Bibliothek, deshalb dieselbe Stelle.
+
+#: Der Debugger.  Ein Name, aber :func:`tool` hängt unter Windows ``.exe`` an.
+DEBUGGER_NAMEN = ("k1520dbg",)
+
+#: Die Kommandozeile des DiskTool.  In einer **Installation** heisst sie
+#: ``k1520disktool-cli``, weil ``bin/k1520disktool`` dort der Starter der
+#: OBERFLÄCHE ist; im Quellbaum gibt es nur das eine gebaute Programm.  Die
+#: Reihenfolge ist deshalb bindend — andersherum startete die Konsole eine GUI.
+DISKTOOL_CLI_NAMEN = ("k1520disktool-cli", "k1520disktool")
+
+
+def tools_dir() -> Path:
+    """Verzeichnis der Konsolenwerkzeuge — ``<root>/bin`` bzw. ``<repo>/build``.
+
+    Es ist dasselbe Verzeichnis wie das der Bibliothek (der Kern wird in den
+    Debugger hineingebunden, er steht also neben ihr).  Existiert keines von
+    beiden, wird der Quellbaum-Pfad geliefert — für die Fehlermeldung.
+    """
+    base = base_dir()
+    for cand in (base / "bin", base / "build"):
+        if cand.is_dir():
+            return cand
+    return base / "build"
+
+
+def tool(*namen: str) -> Optional[Path]:
+    """Erstes vorhandenes Konsolenwerkzeug aus ``namen`` — oder ``None``.
+
+    Unter Windows wird jeder Name auch mit ``.exe`` probiert.
+    """
+    d = tools_dir()
+    for name in namen:
+        kandidaten = [name + ".exe", name] if _is_windows() else [name]
+        for k in kandidaten:
+            p = d / k
+            if p.is_file():
+                return p.resolve()
+    return None
+
+
+def debugger() -> Optional[Path]:
+    """Pfad von ``k1520dbg`` — oder ``None``, wenn er nicht mitgeliefert wurde."""
+    return tool(*DEBUGGER_NAMEN)
+
+
+def disktool_cli() -> Optional[Path]:
+    """Pfad der DiskTool-Kommandozeile — oder ``None``."""
+    return tool(*DISKTOOL_CLI_NAMEN)
+
+
+def doc_dir() -> Optional[Path]:
+    """Verzeichnis der mitgelieferten Handbücher — oder ``None``.
+
+    Installation ``<root>/share/doc``, Quellbaum ``<repo>/doc``.  Gemeint sind
+    die Handbücher der KONSOLENWERKZEUGE; die Kurzhandbücher der beiden
+    Oberflächen reisen in ``app/`` mit und werden dort gefunden.
+    """
+    base = base_dir()
+    for cand in (base / "share" / "doc", base / "doc"):
+        if cand.is_dir():
+            return cand
+    return None
+
+
+def doc_file(name: str) -> Optional[Path]:
+    """Ein Handbuch aus :func:`doc_dir` — oder ``None``."""
+    d = doc_dir()
+    if d is None:
+        return None
+    p = d / name
+    return p.resolve() if p.is_file() else None
+
+
 # ─── Diagnose ────────────────────────────────────────────────────────────────
 
 def describe() -> str:
@@ -592,6 +672,8 @@ def describe() -> str:
     fmt = formats_file()
     vorgabe = default_config_file()
     bundled = bundled_disks_dir()
+    dbg = debugger()
+    cli = disktool_cli()
     layout = "Installation" if is_installed_layout() else "Quellbaum"
     return "\n".join([
         f"Layout:            {layout}",
@@ -603,4 +685,7 @@ def describe() -> str:
         f"Dateien (DiskTool):{user_files_dir()}",
         f"Konfiguration:     {config_dir()}",
         f"Vorgabe-Konfig.:   {vorgabe if vorgabe else 'NICHT GEFUNDEN'}",
+        f"Debugger:          {dbg if dbg else '— (nicht mitgeliefert)'}",
+        f"DiskTool (CLI):    {cli if cli else '— (nicht mitgeliefert)'}",
+        f"Handbücher:        {doc_dir() if doc_dir() else '—'}",
     ])
