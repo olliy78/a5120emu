@@ -4,6 +4,7 @@
 #include <cstring>
 #include <fstream>
 #include <stdexcept>
+#include "core/filesystem/geometry_probe.h"
 #include "core/logger.h"
 
 namespace {
@@ -341,10 +342,20 @@ bool A5120Machine::restoreState(const MachineSnapshot& s) {
 // It is parsed sequentially per chip with bounds checks, so a shorter (older) blob
 // loads fine — trailing chips simply keep their current state. Versions:
 //   1 = no device state, 2 = + keyboard subsystem, 3 = + K5122 floppy controller,
-//   4 = + K7024 VRAM (2 KB), so `screen`/framebuffer survive a loadstate.
+//   4 = + K7024 VRAM (2 KB), so `screen`/framebuffer survive a loadstate,
+//   5 = K7637-Block umgebaut (LED-Maske + Flankenzähler statt der erfundenen
+//       Caps/Scroll/Num-Rasten).  Der Blob trägt keine Längen je Chip, also
+//       verschöbe ein v4-Block alles dahinter — ein älterer Stand wird deshalb
+//       OHNE Geräteteil geladen (Geräte behalten ihren Zustand, wie bei v1).
 namespace {
 const char    kStateMagicPrefix[7] = {'K','1','5','2','0','S','S'};
-constexpr uint8_t kStateVersion    = 4;
+constexpr uint8_t kStateVersion    = 5;
+}
+
+uint8_t A5120Machine::keyboardLeds() const {
+    uint8_t mask = kbd_.leds();
+    if (kbd_.beeping()) mask |= 0x80;
+    return mask;
 }
 
 bool A5120Machine::saveState(const std::string& path) const {
@@ -375,7 +386,7 @@ bool A5120Machine::loadState(const std::string& path) {
     char magic[7]; f.read(magic, sizeof magic);
     if (!f || std::memcmp(magic, kStateMagicPrefix, sizeof magic) != 0) return false;
     uint8_t version = 0; f.read(reinterpret_cast<char*>(&version), 1);
-    if (!f || version < 1 || version > 4) return false;
+    if (!f || version < 1 || version > kStateVersion) return false;
     uint32_t regsize = 0; f.read(reinterpret_cast<char*>(&regsize), sizeof regsize);
     if (!f || regsize != (uint32_t)sizeof(MachineSnapshot::Z80Regs)) return false;
     MachineSnapshot s;
@@ -391,6 +402,9 @@ bool A5120Machine::loadState(const std::string& path) {
         s.device_state.resize(dev_len);
         if (dev_len) f.read(reinterpret_cast<char*>(s.device_state.data()), dev_len);
         if (!f) return false;
+        // Vor v5 hat der K7637-Block ein anderes Format; sequentiell gelesen
+        // verschöbe er jeden folgenden Chip.  Lieber ohne Geräteteil laden.
+        if (version < 5) s.device_state.clear();
     }
     s.rom_enabled=flags[0]; s.busrq_active=flags[1]; s.dma_progress=flags[2]; s.bus_master_zve2=flags[3];
     return restoreState(s);
@@ -839,6 +853,76 @@ bool A5120Machine::isDiskFormatted(int drive) const {
     if (drive < 0 || drive > 3) return false;
     const DiskImage* img = afs_.drive(drive).image();
     return img && img->medium().formatted();
+}
+
+namespace {
+
+/// Stehen zwei Treffer der Geometrie-Erkennung auf demselben Rang?
+bool gleichPlatziert(const GeometryMatch& a, const GeometryMatch& b) {
+    return a.gap_tracks   == b.gap_tracks   && a.stray_tracks == b.stray_tracks
+        && a.slack_cyls   == b.slack_cyls   && a.defect_tracks == b.defect_tracks
+        && a.empty_tracks == b.empty_tracks;
+}
+
+/// Die Spurbelegung eines Formats als Zeichenkette — sein Sektorraum, aufgeloest.
+///
+/// Zwei Katalogeintraege mit gleicher Zeichenkette liefern byteweise dasselbe
+/// `.img`; sie sind fuer die Erkennung dasselbe Format unter zwei Namen.
+std::string sektorraum(const DiskFormat* f) {
+    if (!f) return "";
+    std::string s = "step" + std::to_string(f->step) + ";";
+    for (uint8_t c = 0; c < f->physicalCylinders(); ++c) {
+        for (uint8_t h = 0; h < f->numHeads(); ++h) {
+            const TrackFormat* t = f->findTrack(c, h);
+            if (!t) { s += "-;"; continue; }
+            s += std::to_string(t->secs_per_track) + "x"
+               + std::to_string(t->bytes_per_sec)  + "@"
+               + std::to_string(t->first_sector_id)
+               + (t->encoding == Encoding::FM ? "f" : "m") + ";";
+        }
+    }
+    return s;
+}
+
+}  // namespace
+
+std::string A5120Machine::detectedFormatName(int drive) const {
+    if (drive < 0 || drive > 3) return "";
+    std::lock_guard<std::mutex> lk(disk_mutex_);
+    const DiskImage* img = afs_.drive(drive).image();
+    if (!img) return "";
+
+    // Rohes Sektorabbild: hier gibt es nichts zu messen.  Ein `.img` traegt keine
+    // Adressmarken — seine Geometrie ist die beim Einlegen ERKLAERTE, und genau die
+    // steht am Abbild (DiskImage::diskFormat() ist nur fuer `.img` besetzt).
+    if (const DiskFormat* erklaert = img->diskFormat()) return erklaert->name;
+
+    // Eine Diskette, die ihre Spuren erst bei Bedarf holt (physisches Laufwerk),
+    // wird NICHT vermessen: GeometryProbe::measure() geht ueber DiskMedium::track()
+    // und zoege damit die ganze Scheibe ein (doc/merkposten/physische_diskette.md).
+    // Sobald der Vorausleser sie vollstaendig im Speicher hat, misst es sich umsonst.
+    const DiskMedium& med = img->medium();
+    if (med.loader() != nullptr && !med.complete()) return "";
+
+    const std::vector<MeasuredTrack> gemessen = GeometryProbe::measure(med);
+    const std::vector<GeometryMatch> treffer =
+        GeometryProbe::matchAll(gemessen, disk_formats_.formats());
+    if (treffer.empty()) return "";
+
+    // Zwei gleich gut platzierte Treffer heissen „unbekannt", nicht „der erste":
+    // die Rangfolge in matchAll() entschiede sonst per Katalogreihenfolge.
+    //
+    // ABER nur, wenn sie auch verschiedene Disketten BESCHREIBEN.  `cpa640` und
+    // `k5601_16x256` sind bis auf den Namen derselbe Eintrag (80×2×16×256 MFM) —
+    // da ist nichts geraten: beide Namen bezeichnen denselben Sektorraum, und
+    // genau der ist es, was ein `.img`-Export festhaelt.  Verglichen wird deshalb
+    // die aufgeloeste Spurbelegung, nicht die Bereichsliste: dieselbe Geometrie
+    // laesst sich im Katalog verschieden zerlegen.
+    for (size_t i = 1; i < treffer.size(); ++i) {
+        if (!gleichPlatziert(treffer[0], treffer[i])) break;
+        if (sektorraum(treffer[0].format) != sektorraum(treffer[i].format)) return "";
+    }
+    return treffer.front().format ? treffer.front().format->name : std::string();
 }
 
 bool A5120Machine::flushDisks() {

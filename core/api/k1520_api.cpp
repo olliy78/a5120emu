@@ -1,6 +1,7 @@
 #include "k1520_api.h"
 #include "core/api/k1520_sync_internal.h"
 #include "core/machines/a5120/a5120.h"
+#include "core/peripherals/k7637/k7637.h"
 #include "core/logger.h"
 #include <cstring>
 #include <memory>
@@ -147,6 +148,14 @@ void k1520_key_release(K1520Handle h, uint32_t kc) {
     toA5120(h)->keyRelease(kc);
 }
 
+uint8_t k1520_translate_key(uint32_t keycode, bool shift, bool ctrl) {
+    return K7637::codeFor(static_cast<int>(keycode), shift, ctrl);
+}
+
+uint32_t k1520_keyboard_leds(K1520Handle h) {
+    return toA5120(h)->keyboardLeds();
+}
+
 void k1520_console_key(K1520Handle h, char c) {
     // Inject ASCII char as if typed (keycode = ASCII value, no modifiers)
     toA5120(h)->keyPress(static_cast<uint32_t>(c), false, false);
@@ -187,6 +196,12 @@ const char* k1520_disk_path(K1520Handle h, int drive) {
 const char* k1520_disk_container(K1520Handle h, int drive) {
     static thread_local std::string buf;
     buf = toA5120(h)->diskContainer(drive);
+    return buf.c_str();
+}
+
+const char* k1520_disk_detected_format(K1520Handle h, int drive) {
+    static thread_local std::string buf;
+    buf = toA5120(h)->detectedFormatName(drive);
     return buf.c_str();
 }
 

@@ -47,11 +47,9 @@ void K7637::serialize(std::vector<uint8_t>& out) const {
     putPod(out, ctrl_);
     putPod(out, repeat_delay_ms_);
     putPod(out, repeat_period_ms_);
-    putPod(out, caps_lock_);
-    putPod(out, scroll_lock_);
-    putPod(out, num_lock_);
-    putPod(out, expect_second_byte_);
-    putPod(out, first_cmd_byte_);
+    putPod(out, led_mask_);
+    putPod(out, edge_acc_);
+    putPod(out, beep_until_cycle_);
     putPod(out, cur_cycle_);
     putPod(out, next_tx_cycle_);
     uint32_t n = static_cast<uint32_t>(tx_queue_.size());
@@ -67,11 +65,9 @@ bool K7637::deserialize(const uint8_t*& p, const uint8_t* end) {
     ok = ok && getPod(p, end, ctrl_);
     ok = ok && getPod(p, end, repeat_delay_ms_);
     ok = ok && getPod(p, end, repeat_period_ms_);
-    ok = ok && getPod(p, end, caps_lock_);
-    ok = ok && getPod(p, end, scroll_lock_);
-    ok = ok && getPod(p, end, num_lock_);
-    ok = ok && getPod(p, end, expect_second_byte_);
-    ok = ok && getPod(p, end, first_cmd_byte_);
+    ok = ok && getPod(p, end, led_mask_);
+    ok = ok && getPod(p, end, edge_acc_);
+    ok = ok && getPod(p, end, beep_until_cycle_);
     ok = ok && getPod(p, end, cur_cycle_);
     ok = ok && getPod(p, end, next_tx_cycle_);
     uint32_t n = 0;
@@ -140,6 +136,59 @@ void K7637::tick(int ms_elapsed) {
     processTxCommands();
 }
 
+int K7637::fallingEdges(uint8_t byte) {
+    // Leitung: Ruhe 1 → Startbit 0 (eine fallende Flanke) → d0…d7 (LSB zuerst)
+    // → Stoppbit 1 (steigend, zählt nicht).
+    int edges = 1;
+    int prev  = 0;                       // Startbit
+    for (int i = 0; i < 8; ++i) {
+        const int bit = (byte >> i) & 1;
+        if (prev == 1 && bit == 0) ++edges;
+        prev = bit;
+    }
+    return edges;
+}
+
+void K7637::applyCommandByte(uint8_t byte) {
+    // Der Zähler D7:1 ist auf 15 voreingestellt und zählt je Flanke herunter;
+    // sein (negierter) Stand ist das Kommando.  Über zwei Bytes hinweg zählt er
+    // weiter — daher die Zweibyte-Kommandos mit dem Vorkommando 55H.
+    edge_acc_ = static_cast<uint8_t>(edge_acc_ + fallingEdges(byte));
+    const uint8_t counter = static_cast<uint8_t>((15 - edge_acc_) & 0x0F);
+
+    if (counter == 10) return;           // Vorkommando 55H: zweites Byte abwarten
+    edge_acc_ = 0;
+
+    switch (counter) {
+        case 14:                          // 00H      Software-RESET
+        case 9:                           // 55H 00H  Grundzustand
+            // Grundzustand nach Handbuch §2.1: alle Funktionsanzeigen aus
+            // (die Betriebsanzeige E54 hängt an der Spannung, nicht am Kommando).
+            led_mask_         = 0;
+            beep_until_cycle_ = 0;
+            break;
+
+        case 13:                          // 20H      Fehleranzeige blinken an/aus
+            led_mask_ ^= LED_ERROR;
+            // „Beim Einschalten Erzeugung eines akustischen Signals von ca. 1 s".
+            if (led_mask_ & LED_ERROR) beep_until_cycle_ = cur_cycle_ + BEEP_CYCLES;
+            break;
+
+        case 12:                          // 44H      akustisches Signal ≈1 s
+            beep_until_cycle_ = cur_cycle_ + BEEP_CYCLES;
+            break;
+
+        // Die fünf LED-Kommandos schalten UM ("vorheriger Zustand wird negiert").
+        case 11: led_mask_ ^= LED_G00; break;   // 52H
+        case 8:  led_mask_ ^= LED_G01; break;   // 55H 20H
+        case 7:  led_mask_ ^= LED_G02; break;   // 55H 44H
+        case 6:  led_mask_ ^= LED_G03; break;   // 55H 52H
+        case 5:  led_mask_ ^= LED_G04; break;   // 55H 55H
+
+        default: break;                   // kein gültiges Kommando
+    }
+}
+
 bool K7637::processTxCommands() {
     if (!sio_) return false;
     Z80SIO::Channel& ch = pickChannel(*sio_, ch_idx_);
@@ -149,61 +198,15 @@ bool K7637::processTxCommands() {
         touched = true;
         uint8_t byte = ch.txGet();
 
-        // The real K7637 acknowledges every command byte it receives by
-        // returning its type/status byte (high nibble 0x8x).  The BIOS relies
-        // on this for keyboard detection (reset 0x00 → type code) and for the
-        // LED-control handshake (`lmpout` waits for it after each command).
-        // A stray type-code byte read as a keystroke is harmless: it is not in
-        // the K7637 scan-code table and decodes to 0 (ignored).
+        // Die echte K7637 quittiert ein als gültig erkanntes Kommando mit dem
+        // Zeichen TYP (hohes Nibble 0x8x).  Wir quittieren JEDES Byte: das BIOS
+        // wartet nach jedem gesendeten Byte auf diese Antwort — bei der
+        // Tastaturerkennung (`coityp`: Reset senden, Typcode erwarten) wie im
+        // LED-Handschlag (`lmpout`).  Ein Typcode-Byte, das als Taste gelesen
+        // wird, ist harmlos: es steht in keiner Codetabelle und liefert 0.
         sendByte(TYPE_CODE);
 
-        if (expect_second_byte_) {
-            expect_second_byte_ = false;
-            // Handle second byte of a two-byte command.
-            if (first_cmd_byte_ == 0x52) {
-                // LED control byte: bits encode which LEDs to set.
-                // Bit mapping from K7637 documentation:
-                //   bit 0 = CAPS LOCK, bit 1 = SCROLL LOCK, bit 2 = NUM LOCK
-                caps_lock_   = (byte & 0x01) != 0;
-                scroll_lock_ = (byte & 0x02) != 0;
-                num_lock_    = (byte & 0x04) != 0;
-            }
-            // Extended (0x55) command: just consume; we don't act on it.
-        } else {
-            switch (byte) {
-                case 0x00:
-                    // Software reset: clear LED state.
-                    caps_lock_   = false;
-                    scroll_lock_ = false;
-                    num_lock_    = false;
-                    expect_second_byte_ = false;
-                    break;
-
-                case 0x20:
-                    // Error LED blink toggle – nothing to store in this impl.
-                    break;
-
-                case 0x44:
-                    // Acoustic signal (beep) – acknowledged, no action.
-                    break;
-
-                case 0x52:
-                    // LED control: next byte carries the LED bitmask.
-                    first_cmd_byte_     = byte;
-                    expect_second_byte_ = true;
-                    break;
-
-                case 0x55:
-                    // Extended command: next byte is the sub-command.
-                    first_cmd_byte_     = byte;
-                    expect_second_byte_ = true;
-                    break;
-
-                default:
-                    // Unknown command – ignore.
-                    break;
-            }
-        }
+        applyCommandByte(byte);
     }
     return touched;
 }
@@ -212,7 +215,7 @@ bool K7637::processTxCommands() {
 // Private helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-uint8_t K7637::translateKey(int qt_keycode, bool shift, bool ctrl) const {
+uint8_t K7637::translateKey(int qt_keycode, bool shift, bool ctrl) {
     // The real K7637 sends the *physical* key code from its ROM code table
     // (CTAB1/CTAB2); the A5120 BIOS keyboard driver then recodes the high codes
     // (>=0x80, plus 0xFF/0xFE) to its virtual codes via the `cp37` table in
@@ -224,12 +227,44 @@ uint8_t K7637::translateKey(int qt_keycode, bool shift, bool ctrl) const {
     // In particular ET1 (the main Return key) and the numeric ENTER key are two
     // different keys on the K7637: ET1 sends 0xFF (recoded to CR) while ENTER
     // sends 0xC0 (recoded to the programmable pf0c code).
+    // Rohcode: die Bildschirmtastatur bildet die echte K7637 nach und kennt
+    // für jede Taste ihren physischen Code (auch für die, die eine PC-Tastatur
+    // gar nicht hat — CE, PA1..PA3, SEL0..3, EREOF, …).  Unverändert senden.
+    if ((qt_keycode & ~0xFF) == QK_RAW_BASE) {
+        return static_cast<uint8_t>(qt_keycode & 0xFF);
+    }
+
     switch (qt_keycode) {
         case QK_RETURN:    return 0xFF;   // ET1 (main Return)   → cp37: 0xFF→0x0D (CR)
         case QK_ENTER:     return 0xC0;   // numeric ENTER       → cp37: 0xC0→pf0c
-        case QK_BACKSPACE: return 0x08;   // BS — ASCII control, passes through
-        case QK_TAB:       return 0x9F;   // |<-| key            → cp37: 0x9F→0x09 (TAB)
-        case QK_ESCAPE:    return 0xB3;   // DELL key (Ersatz ESC) → cp37: 0xB3→0x1B (ESC)
+        // Die Rücktaste des PC spricht die RÜCKTASTE der K7637 an — das ist
+        // `|<-|` (Reihe 2, Position 14, physisch 0x9F), nicht DEL CH.  Welche
+        // Taste ein Zeichen löscht, entscheidet das Betriebssystem, und die
+        // drei widersprechen sich (am laufenden System nachgemessen, jeweils
+        // „ABCD" getippt und die Taste gedrückt):
+        //
+        //     Code          CP/A            UDOS 4.3        SCPX 1526
+        //     0x9F  |<-|    Tab (nichts)    nichts          löscht ein Zeichen
+        //     0xBB  DEL CH  löscht          löscht          echot das Zeichen
+        //     0x96  <-      löscht          nichts          löscht ein Zeichen
+        //
+        // Deshalb bildet die Tastatur die HARDWARE ab und nicht eine Wirkung:
+        // jede PC-Taste spricht die K7637-Taste an, die an IHRER Stelle sitzt
+        // und ihr Zeichen trägt.  Rücktaste → `|<-|` (Reihe 2, Position 14),
+        // Entf → DEL CH; der Anwender hat damit beide Löschtasten unter den
+        // Fingern und nimmt die, die sein Gast erwartet (CP/A und UDOS: Entf,
+        // SCPX: Rücktaste).  Ebenso Tab → `->|` und Umschalt+Tab → `|<-` (die
+        // beiden Tasten an der Tabulatorstelle, Reihe 3).  Dass CP/A seinen
+        // Tabulator (0x09) ausgerechnet auf die RÜCKTASTE legt (`cp37`:
+        // „|<-| als Ersatz Tab"), ist Sache des BIOS und keine Eigenschaft der
+        // Tastatur — ein echter 0x09 kommt weiterhin über Strg+I.
+        // ESC schickt 0x1B (ASCII, in cp37 nicht enthalten); 0xB3 (DEL L) wäre
+        // nach cp37 ebenfalls ESC, aber dann leuchtet die falsche Taste auf,
+        // und andere Betriebssysteme kodieren 0xB3 anders.
+        case QK_BACKSPACE: return 0x9F;   // |<-| Rücktaste      → cp37: 0x9F→0x09 (TAB)
+        case QK_TAB:       return 0x91;   // ->|  Tabulator      → cp37: 0x91→kcurwr
+        case QK_BACKTAB:   return 0x9B;   // |<-  Tab rückwärts  → cp37: 0x9B→kcurwl
+        case QK_ESCAPE:    return 0x1B;   // ESC-Taste (ASCII)
         case QK_DELETE:    return 0xBB;   // DELCH key           → cp37: 0xBB→spcdel
         case QK_UP:        return 0x94;   // cursor up           → cp37: 0x94→kcurup
         case QK_DOWN:      return 0x95;   // cursor down         → cp37: 0x95→kcurdw
@@ -238,8 +273,11 @@ uint8_t K7637::translateKey(int qt_keycode, bool shift, bool ctrl) const {
         default: break;
     }
 
-    // Function keys F1..F8 → physical codes 0xC1..0xC8 (cp37: 0xC1→pf1c …).
-    if (qt_keycode >= QK_F1 && qt_keycode <= QK_F8) {
+    // Funktionstasten F1..F12 → physische Codes 0xC1..0xCC (cp37: 0xC1→pf1c …).
+    // Die K7637 hat zwölf davon; F11 fängt die Oberfläche für das Vollbild ab
+    // (PF 11 bleibt über die Bildschirmtastatur erreichbar), der Kern bildet
+    // sie hier trotzdem ab — er kennt kein Vollbild.
+    if (qt_keycode >= QK_F1 && qt_keycode <= QK_F12) {
         return static_cast<uint8_t>(0xC1 + (qt_keycode - QK_F1));
     }
 

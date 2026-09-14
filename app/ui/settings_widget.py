@@ -25,6 +25,7 @@ from PySide6.QtGui import QColor
 
 from app.ui.screen_widget import CRTParams
 from app import drive_types as dt
+from app import takt
 
 
 class SettingsWidget(QWidget):
@@ -39,14 +40,10 @@ class SettingsWidget(QWidget):
     # DriveProfile names (one per K5122 slot, "none" = empty slot).
     driveTypesChanged = Signal(list)
 
-    # (label, factor) — factor 0.0 means "unlimited / as fast as possible".
-    SPEED_OPTIONS = [
-        ("1× (Echtzeit)", 1.0),
-        ("2×", 2.0),
-        ("5×", 5.0),
-        ("10×", 10.0),
-        ("Unbegrenzt", 0.0),
-    ]
+    #: (Beschriftung, Faktor) — Faktor 0.0 heisst „unbegrenzt".  Die Stufen
+    #: stehen in :mod:`app.takt`, damit Auswahlfeld und Statuszeile dasselbe
+    #: sagen: der Nenntakt des A5120 (2,45 MHz) und seine Vielfachen.
+    SPEED_OPTIONS = takt.auswahl()
 
     def __init__(self, screen_widget, parent=None):
         super().__init__(parent)
@@ -181,7 +178,11 @@ class SettingsWidget(QWidget):
         for label, factor in self.SPEED_OPTIONS:
             self.speed_combo.addItem(label, float(factor))
         self.speed_combo.currentIndexChanged.connect(self._on_speed_combo)
-        form.addRow("Geschwindigkeit:", self.speed_combo)
+        self.speed_combo.setToolTip(
+            f"Der A5120 läuft mit {takt.NENNTAKT_TEXT}.  Ein Vielfaches davon "
+            "kürzt einen Kaltstart ab — die Uhr des Gastsystems zählt aber "
+            "Taktzyklen und geht dann entsprechend falsch.")
+        form.addRow("Takt:", self.speed_combo)
 
         return inner
 

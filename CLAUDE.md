@@ -143,6 +143,71 @@ python3 -m venv venv && source venv/bin/activate && pip install -r requirements.
 bash run_gui.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
 ```
 
+> **Die Oberfläche des Emulators ist wie die des DiskTool geschnitten**
+> (2026-09-13, `doc/design/11_python_app.md` §10): **jede Bedienung ist eine
+> `QAction` in `app/ui/actions.py`** (Menü und Leiste zeigen dieselbe), die
+> **Symbolleiste wird aus einer Namensliste gebaut** (`window.toolbar` in der
+> Konfiguration, einrichtbar über `app/ui/toolbar_config.py`), die
+> **Statuszeile zeigt Zustand statt Zähler** (`app/ui/status_bar.py`:
+> EINGESTELLTER Takt aus `app/takt.py` — der gemessene schwankt und steht nur im
+> Tooltip —, Laufwerksleuchte, Abbildname, R/O ↔ R/W; Cycles/FPS sind weg), und das **Handbuch**
+> liegt als `app/help/handbuch.md` (Fenster: `app/ui_help.py`, von beiden
+> Programmen benutzt, ebenso `app/ui_icons.py`).  Vier Dinge, die man nicht
+> aufweichen darf:
+> - **Kein Tastenkürzel ohne `Strg+Umschalt`** (Ausnahme `F11`): Qt wertet
+>   Kürzel VOR dem Widget aus, und `^S`/`^P`/`^C`/F-Tasten gehören dem
+>   emulierten Rechner.  Wächter `test_no_shortcut_steals_a_key_from_the_emulated_machine`.
+> - **Die Kürzeltabelle des Handbuchs ist ein Vertrag** — zwei Wächter prüfen
+>   beide Richtungen.
+> - **`QToolBar.clear()` gibt die Hülle eines `toggleViewAction()` frei**
+>   (C++-Objekt überlebt).  Deshalb einzeln `removeAction()` und die
+>   Kastenschalter in `_aktion()` FRISCH beim Kasten holen — sonst stirbt der
+>   zweite Leistenaufbau, also genau der aus einer gespeicherten Konfiguration.
+> - **Ein unbekannter Leisten-Name wird übergangen**, nicht als Fehler behandelt
+>   (ältere Konfigurationen).
+>
+> **Das Diskettenformat wird ERFRAGT, nicht eingestellt** (2026-09-13).  Das
+> dauerhafte Auswahlfeld im Laufwerkskasten ist weg; an seiner Stelle steht hinter
+> *Format:* das **erkannte** Format (`k1520_disk_detected_format` →
+> `A5120Machine::detectedFormatName`, Architektur §8.6.9) oder `unbekannt`.
+> Gefragt wird nur noch bei `.img` (`app/ui/format_dialog.py`) — und dort auch beim
+> Anlegen.  Vier Dinge dazu:
+> - **`.hfe`/`.dmk` bekommen NIE einen Formatdialog**: die Geometrie steht in der
+>   Datei.  Der Kern verlangt beim Mounten trotzdem einen gültigen Katalognamen und
+>   benutzt ihn als Platzhalter — die Oberfläche gibt dafür den Laufwerksstandard.
+> - **`unbekannt` sperrt den `.img`-Export.** Zweiter Grund neben
+>   `rawCompatible()`; ohne Befund wäre die Sektorreihenfolge geraten, und ein
+>   geratenes Abbild sieht heil aus und ist es nicht.
+> - **Gleich gute Treffer mit demselben Sektorraum sind KEINE Mehrdeutigkeit**
+>   (`cpa640` ≡ `k5601_16x256`) — sonst hiesse jede 16×256-Diskette „unbekannt".
+>   Verglichen wird die aufgelöste Spurbelegung, nicht die Bereichsliste.
+> - **Die Statuszeilen-Leuchte folgt dem ZUGRIFF, nicht dem Inhalt**: ein
+>   angesprochenes LEERES Laufwerk leuchtet rot, wie am echten Gerät.  Wächter
+>   `test_an_access_to_an_empty_drive_turns_the_lamp_red`.
+>
+> Der Knopf heisst **„Leere Diskette"** (nicht „Neue"): was entsteht, ist
+> unformatiert und muss vom Gastsystem erst formatiert werden.
+>
+> **Der Auslieferungszustand ist eine DATEI, kein Programmtext** (2026-09-14,
+> `doc/design/11_python_app.md` §10.7): `data/default_config.yaml` (in der
+> Installation `share/k1520emu/`) hat denselben Aufbau wie die `config.yaml` des
+> Anwenders und wird an zwei Stellen gebraucht — beim ERSTEN Start, solange es
+> noch keine `config.yaml` gibt, und bei *Ansicht ▸ Standard zurücksetzen*, das
+> sie nach Rückfrage anwendet und **sofort** zurückschreibt.  Aufgelöst in
+> `app/paths.py::default_config_file()`, gelesen in
+> `app/config_io.py::standard_konfiguration()`.  Vier Dinge dazu:
+> - **Ein FEHLENDER Abschnitt heisst „nicht anfassen", ein leerer „leeren"** —
+>   `_apply_config` mountet nur bei vorhandenem `disks`.  Die Vorgabe trägt
+>   keins: Diskettenpfade sind rechnerspezifisch, und das Zurücksetzen der
+>   *Ansicht* räumt die Maschine nicht leer.
+> - **Kein `window.geometry` in der Vorgabe** (das ist die Bildschirmposition
+>   des Baurechners); `width`/`height`/`dock_state` reichen.
+> - **Der Benutzerordner ist KEIN Fundort** — anders als beim Formatkatalog;
+>   sonst setzte man auf das zurück, was gerade überschrieben werden soll.
+>   Umbiegbar über `K1520_DEFAULT_CONFIG`.
+> - **Ohne die Datei läuft alles weiter** (`{}` → eingebaute Vorgaben); sie ist
+>   eine Beigabe, keine Voraussetzung.
+
 **Tests for this side live in `tests/python/`** (pytest, registered with ctest under label
 `python`, one ctest case per module: `py_c_api`, `py_binding`, `py_boot_smoke`, …). They cover
 the two things C++ tests cannot reach: the **C-ABI** (`core/api/k1520_api.h` ↔ `libk1520core.so`

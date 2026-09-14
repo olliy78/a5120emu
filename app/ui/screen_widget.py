@@ -93,11 +93,26 @@ class CRTParams:
     # Overall image (adjustable).
     brightness: float = 2.5
     contrast: float = 2.0
+    # Dämpfung des Kontrasts auf dem verkleinerten Schirm — ein FAKTOR auf
+    # ``contrast``, kein Ersatzwert: der Regler muss in jeder Fenstergrösse
+    # wirken, nur eben sanfter.  Grund: der Kontrast-Term rechnet (i-1)*c+1,
+    # dreht Teildeckung also ins Negative — bei c=2,0 wird ein zur Hälfte
+    # gedeckter Bildpunkt SCHWARZ.  Teildeckung gibt es überall, sobald 640
+    # Rasterspalten auf weniger Ausgabepixel abgebildet werden, und dann frisst
+    # genau dieser Term die dünnen Striche der Glyphen weg.  0,7 × 2,0 = 1,4 ist
+    # der am Bildschirmabzug ausgemessene Wert (s. Fragment-Shader).
+    contrast_small_factor: float = 0.7
 
     # Scanlines: strength, count = number of horizontal lines (image rows).
     # Fixed (no GUI control).
     scanline_strength: float = 1.4
     scanline_count: float = float(FB_HEIGHT)   # 288
+    # Ab welcher DARSTELLUNGSHÖHE (Ausgabepixel) die Streifen überhaupt gezeichnet
+    # werden.  288 Rasterzeilen brauchen Platz: unterhalb von ~2,7 Ausgabepixeln je
+    # Zeile frisst die dunkle Hälfte jedes Streifens die Glyphen auf, statt sie zu
+    # strukturieren (kleines Fenster = unleserlich).  Voll ab diesem Wert,
+    # ausgeblendet bei 0,8 davon (s. Fragment-Shader).
+    scanline_min_height: float = 768.0
 
     # Phosphor glow / bloom: strength and blur radius in framebuffer texels.
     # Fixed (no GUI control).
@@ -137,8 +152,10 @@ class CRTParams:
             "phosphor_off": rgb_to_hex(self.phosphor_off),
             "brightness": self.brightness,
             "contrast": self.contrast,
+            "contrast_small_factor": self.contrast_small_factor,
             "scanline_strength": self.scanline_strength,
             "scanline_count": self.scanline_count,
+            "scanline_min_height": self.scanline_min_height,
             "glow_strength": self.glow_strength,
             "glow_radius": self.glow_radius,
             "mask_strength": self.mask_strength,
@@ -163,8 +180,10 @@ class CRTParams:
                 setattr(self, key, hex_to_rgb(v) if isinstance(v, str) else tuple(v))
         if "curvature" in d and d["curvature"] is not None:
             self.curvature = tuple(d["curvature"])
-        for key in ("brightness", "contrast", "scanline_strength",
-                    "scanline_count", "glow_strength", "glow_radius",
+        for key in ("brightness", "contrast", "contrast_small_factor",
+                    "scanline_strength",
+                    "scanline_count", "scanline_min_height",
+                    "glow_strength", "glow_radius",
                     "mask_strength", "mask_pitch", "corner_radius",
                     "vignette_strength", "flicker_strength", "scale_x",
                     "scale_y", "offset_x", "offset_y"):
@@ -193,8 +212,10 @@ uniform vec3  uPhosphorOn;
 uniform vec3  uPhosphorOff;
 uniform float uBrightness;
 uniform float uContrast;
+uniform float uContrastSmallFactor;
 uniform float uScanline;
 uniform float uScanlineCount;
+uniform float uScanlineMinHeight;
 uniform float uGlow;
 uniform float uGlowRadius;
 uniform float uMask;
@@ -286,7 +307,18 @@ void main() {
     // scale the output stays on the phosphor off<->on line; the overdrive terms
     // below take over once the beam is driven past that point.
     // Contrast pivots around the "on" level: contrast=0 -> whole screen "on".
-    lit = (lit - 1.0) * uContrast + 1.0;
+    // Waagerechte Verkleinerung: Texel je Ausgabepixel.  <=1 heisst, jede
+    // Rasterspalte hat mindestens einen eigenen Bildpunkt (der Kontrast darf voll
+    // wirken); >1 heisst, ein Strich von einem Texel Breite trägt nur noch
+    // Teildeckung — und die würde der volle Kontrast-Term auslöschen.  Deshalb
+    // wird der Kontrast zwischen 1,0 und 1,2 Texel/Pixel auf das
+    // uContrastSmallFactor-fache gedämpft — ein FAKTOR, damit der Regler auch im
+    // kleinen Fenster durchschlägt.  (Der Nenner steckt in uv, also zählt die
+    // wirkliche Rasterbreite inkl. uScale, nicht die Fensterbreite.)
+    float shrinkX = fwidth(uv.x * uResolution.x);
+    float contrast = uContrast * mix(1.0, uContrastSmallFactor,
+                                     smoothstep(1.0, 1.2, shrinkX));
+    lit = (lit - 1.0) * contrast + 1.0;
     float inten = lit * uBrightness;         // may exceed 1.0 (overdrive headroom)
     float litC = clamp(inten, 0.0, 1.0);
 
@@ -311,15 +343,19 @@ void main() {
     // Faded out with overdrive (veilFade) so high brightness lifts the "grey
     // veil" instead of banding the image darker.
     //
-    // Resolution-aware attenuation: uScanlineCount humps are fixed to the raster,
-    // so when the widget is scaled down a single output pixel can span a whole
-    // scanline period (or more).  Below the Nyquist limit the pattern can't be
-    // drawn faithfully and instead beats against the host display's pixel rows
-    // (moiré / bright-dark banding) while eating the glyphs.  fwidth(sp) is the
-    // number of scanline periods covered by one output pixel; once that reaches
-    // ~0.5 (i.e. < 2 output px per line) we fade the scanlines out entirely.
+    // Größenabhängige Ausblendung: die uScanlineCount Streifen hängen am Raster,
+    // nicht am Fenster — wird das Widget kleiner, deckt ein Ausgabepixel bald eine
+    // ganze Streifenperiode ab.  Dann lässt sich das Muster nicht mehr treu
+    // zeichnen: es schwebt gegen die Pixelzeilen des Wirtsbildschirms (Moiré) und
+    // legt schwarze Balken über die Glyphen, statt sie zu strukturieren — genau
+    // der unleserliche Kleinfenster-Fall.  fwidth(sp) ist die Zahl der
+    // Streifenperioden je Ausgabepixel, also uScanlineCount/Darstellungshöhe;
+    // daraus wird die Schwelle direkt in Ausgabepixeln ausgedrückt.  Voll ab
+    // uScanlineMinHeight, ganz weg bei 0,8 davon (ein weicher Übergang statt
+    // eines Sprungs beim Ziehen am Fensterrand).
     float sp = uv.y * uScanlineCount;
-    float scanVis = 1.0 - smoothstep(0.5, 1.0, fwidth(sp));
+    float needed = uScanlineCount / max(uScanlineMinHeight, 1.0);
+    float scanVis = 1.0 - smoothstep(needed, needed / 0.8, fwidth(sp));
     float scanStr = uScanline * (1.0 - veilFade) * scanVis;
     float f = fract(sp);
     float scan = 1.0 - scanStr * (1.0 - sin(f * PI));
@@ -356,6 +392,21 @@ void main() {
 """
 
 
+def _set_anisotropy(tex, level: float = 16.0):
+    """Anisotrope Filterung einschalten, wo die GL sie hergibt.
+
+    Die Mipmap-Stufe wird aus der GRÖSSTEN Ableitung gewählt und halbiert dann
+    BEIDE Achsen.  Im schmalen Fenster wird waagerecht verkleinert, senkrecht
+    aber vergrössert — ohne Anisotropie verwischt die gewählte Stufe damit auch
+    die Zeilen, die eigentlich scharf sein dürften.  Kein Fehler, wenn die
+    Erweiterung fehlt: dann bleibt es beim trilinearen Verhalten von vorher.
+    """
+    try:
+        tex.setMaximumAnisotropy(level)
+    except (AttributeError, RuntimeError):
+        pass
+
+
 class ScreenWidget(QOpenGLWidget):
     """GPU CRT display widget for the K1520 framebuffer."""
 
@@ -375,6 +426,9 @@ class ScreenWidget(QOpenGLWidget):
 
         self.emulator = None
         self.params = CRTParams()
+        # Bildschirmtastatur, die Host-Tasten mitanzeigen darf (s. _map_key);
+        # ohne sie geht die Eingabe unverändert direkt an den Kern.
+        self.key_sink = None
 
         # Power state: when off, the tube is dark and the framebuffer is not
         # polled (as if the machine had no power).
@@ -475,7 +529,7 @@ class ScreenWidget(QOpenGLWidget):
     def _forward_key_press(self, event) -> bool:
         if self.emulator is None or event.isAutoRepeat():
             return False
-        mapped = qt_event_to_core_key(event)
+        mapped = self._map_key(event, press=True)
         if mapped is None:
             return False
         self.emulator.key_press(*mapped)
@@ -484,11 +538,39 @@ class ScreenWidget(QOpenGLWidget):
     def _forward_key_release(self, event) -> bool:
         if self.emulator is None or event.isAutoRepeat():
             return False
-        mapped = qt_event_to_core_key(event)
+        mapped = self._map_key(event, press=False)
         if mapped is None:
             return False
         self.emulator.key_release(mapped[0])
         return True
+
+    def focusNextPrevChild(self, weiter: bool) -> bool:
+        # Tab gehoert dem emulierten Rechner. Qt fragt diese Methode VOR
+        # keyPressEvent und wechselt sonst den Fokus, statt die Taste
+        # weiterzureichen — der Gast saehe nie einen Tabulator.
+        return False
+
+    def focusOutEvent(self, event):
+        # Ohne Fokus kommt kein Loslassen mehr an — sonst bliebe die zuletzt
+        # gedrückte Taste auf der Nachbildung für immer hell.
+        if self.key_sink is not None:
+            self.key_sink.clear_host_keys()
+        super().focusOutEvent(event)
+
+    def _map_key(self, event, press: bool):
+        """Host-Taste → Kern-Tripel, wenn möglich über die Bildschirmtastatur.
+
+        Ist eine gesetzt (:attr:`key_sink`), geht jede Host-Taste durch sie
+        hindurch: sie hebt die angesprochene Taste hervor und bringt ihren
+        Feststeller zur Geltung.  Auch Tasten, die der Kern nicht bekommt
+        (Umschalt, Strg, Feststeller), werden ihr gezeigt — nur sichtbar
+        machen lässt sich ein Modifikator sonst nicht.
+        """
+        sink = self.key_sink
+        if sink is None:
+            return qt_event_to_core_key(event)
+        return (sink.host_key_press(event) if press
+                else sink.host_key_release(event))
 
     # ── Framebuffer polling (runs outside the GL context) ────────────────────
 
@@ -606,6 +688,7 @@ class ScreenWidget(QOpenGLWidget):
         tex.setMipLevels(tex.maximumMipLevels())
         tex.setMinificationFilter(QOpenGLTexture.LinearMipMapLinear)
         tex.setMagnificationFilter(QOpenGLTexture.Linear)
+        _set_anisotropy(tex)
         tex.setWrapMode(QOpenGLTexture.ClampToEdge)
         tex.allocateStorage(QOpenGLTexture.Red, QOpenGLTexture.UInt8)
         self._texture = tex
@@ -632,6 +715,7 @@ class ScreenWidget(QOpenGLWidget):
             tex = QOpenGLTexture(img)
             tex.setMinificationFilter(QOpenGLTexture.LinearMipMapLinear)
             tex.setMagnificationFilter(QOpenGLTexture.Linear)
+            _set_anisotropy(tex)
             tex.setWrapMode(QOpenGLTexture.ClampToEdge)
             self._texture = tex
 
@@ -706,8 +790,11 @@ class ScreenWidget(QOpenGLWidget):
         f.glUniform3f(u("uPhosphorOff"), *[float(c) for c in p.phosphor_off])
         f.glUniform1f(u("uBrightness"), float(p.brightness))
         f.glUniform1f(u("uContrast"), float(p.contrast))
+        f.glUniform1f(u("uContrastSmallFactor"),
+                      float(p.contrast_small_factor))
         f.glUniform1f(u("uScanline"), float(p.scanline_strength))
         f.glUniform1f(u("uScanlineCount"), float(p.scanline_count))
+        f.glUniform1f(u("uScanlineMinHeight"), float(p.scanline_min_height))
         f.glUniform1f(u("uGlow"), float(p.glow_strength))
         f.glUniform1f(u("uGlowRadius"), float(p.glow_radius))
         f.glUniform1f(u("uMask"), float(p.mask_strength))
@@ -719,30 +806,3 @@ class ScreenWidget(QOpenGLWidget):
         f.glUniform1f(u("uTime"), float(self._clock.elapsed() / 1000.0))
         f.glUniform2f(u("uScale"), float(p.scale_x), float(p.scale_y))
         f.glUniform2f(u("uOffset"), float(p.offset_x), float(p.offset_y))
-
-
-class StatusWidget(QWidget):
-    """Status bar showing emulator state."""
-
-    def __init__(self, parent=None):
-        """Initialize status widget."""
-        super().__init__(parent)
-        from PySide6.QtWidgets import QHBoxLayout, QLabel
-
-        layout = QHBoxLayout(self)
-
-        self.cycles_label = QLabel("Cycles: 0")
-        self.fps_label = QLabel("FPS: 0")
-        self.disk_label = QLabel("Drives: ----")
-
-        layout.addWidget(self.cycles_label)
-        layout.addWidget(self.fps_label)
-        layout.addWidget(self.disk_label, 1)
-
-        self.setStyleSheet("background-color: #f0f0f0; padding: 2px;")
-
-    def update_status(self, cycles: int, fps: float, disk_states: str):
-        """Update status display."""
-        self.cycles_label.setText(f"Cycles: {cycles:,}")
-        self.fps_label.setText(f"FPS: {fps:.1f}")
-        self.disk_label.setText(f"Drives: {disk_states}")

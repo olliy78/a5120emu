@@ -138,9 +138,20 @@ if(BUILD_K1520)
     # Rein logisch: kein Z80, keine Karten.  Setzt auf denselben Container-/Medium-
     # Bausteinen auf wie der Emulator (k1520_floppy2), sieht aber nur DiskMedium.
     # Feinentwurf: doc/design/13_k1520disktool.md
+    # Die Geometrie-Erkennung steht ALLEIN, weil sie als einziges Stueck der
+    # Dateisystem-Schicht auch der Emulator braucht (er zeigt das erkannte Format
+    # in der Statuszeile an).  Sie haengt nur an TrackCodec; k1520_fs mit seinen
+    # Dateisystemen in libk1520core.so zu ziehen waere der falsche Tausch
+    # (doc/design/13_k1520disktool.md §10: die beiden Bibliotheken sind bewusst
+    # getrennt und teilen nur die Container-/Medium-Bausteine).
+    add_library(k1520_geometry STATIC
+        core/filesystem/geometry_probe.cpp
+    )
+    target_link_libraries(k1520_geometry PUBLIC k1520_floppy2)
+    target_include_directories(k1520_geometry PUBLIC ${CMAKE_SOURCE_DIR})
+
     add_library(k1520_fs STATIC
         core/filesystem/sector_space.cpp
-        core/filesystem/geometry_probe.cpp
         core/filesystem/fs_catalog.cpp
         core/filesystem/cpm/cpm_fs.cpp
         core/filesystem/cpm/cpa_dpb.cpp
@@ -157,7 +168,7 @@ if(BUILD_K1520)
         core/filesystem/check/udos1715_check.cpp
         core/filesystem/check/udos1715_recover.cpp
     )
-    target_link_libraries(k1520_fs PUBLIC k1520_floppy2 k1520_util)
+    target_link_libraries(k1520_fs PUBLIC k1520_geometry k1520_floppy2 k1520_util)
     target_include_directories(k1520_fs PUBLIC ${CMAKE_SOURCE_DIR})
 
     # PIO primitive
@@ -224,7 +235,7 @@ if(BUILD_K1520)
     target_link_libraries(k1520_a5120 PUBLIC
         k1520_z80
         k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122
-        k1520_k7637 k1520_floppy k1520_floppy2 k1520_bus k1520_logger
+        k1520_k7637 k1520_floppy k1520_floppy2 k1520_geometry k1520_bus k1520_logger
     )
     target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})
 

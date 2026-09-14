@@ -84,6 +84,25 @@ K1520_API bool k1520_console_poll(K1520Handle h, int* x, int* y, char* ch);
 K1520_API void k1520_key_press(K1520Handle h, uint32_t keycode, bool shift, bool ctrl);
 K1520_API void k1520_key_release(K1520Handle h, uint32_t keycode);
 K1520_API void k1520_console_key(K1520Handle h, char c);
+/**
+ * @brief Zustand der Tastaturanzeigen der K7637.
+ *
+ * Bit 0…4 = Funktionsanzeigen G00…G04 (der Rechner schaltet sie mit den fünf
+ * LED-Kommandos UM), Bit 5 = Fehleranzeige G53 — sie **blinkt**, solange das
+ * Bit gesetzt ist —, Bit 7 = akustisches Signal läuft (≈1 s).  Die
+ * Betriebsanzeige E54 und die LOCK-Anzeige C99 stehen nicht darin: die eine
+ * hängt an der Spannung, die andere am Umschaltfeststeller der Tastatur.
+ */
+K1520_API uint32_t k1520_keyboard_leds(K1520Handle h);
+/**
+ * @brief Welchen physischen K7637-Code erzeugt dieser Tastencode?
+ *
+ * Dieselbe Abbildung, die `k1520_key_press` benutzt — ohne Maschine und ohne
+ * Seiteneffekt.  Gedacht für Tests und für die Fehlersuche an der Oberfläche:
+ * beantwortet „welche Taste der echten Tastatur spricht dieser Anschlag an?"
+ * ohne den Umweg über einen laufenden Gast.  0 heißt: keine.
+ */
+K1520_API uint8_t k1520_translate_key(uint32_t keycode, bool shift, bool ctrl);
 
 /* ─── Disk drives ────────────────────────────────────────────────────────── */
 /** @brief Mount a disk image into a drive slot. */
@@ -125,6 +144,17 @@ K1520_API bool k1520_disk_raw_compatible(K1520Handle h, int drive);
 K1520_API const char* k1520_disk_path(K1520Handle h, int drive);
 /** @brief Container of the bound file ("img" | "hfe" | "dmk"; "" = none). */
 K1520_API const char* k1520_disk_container(K1520Handle h, int drive);
+/**
+ * @brief Catalog format DETECTED on the mounted disk ("" = unknown).
+ *
+ * The geometry detection of the k1520DiskTool (`GeometryProbe`), run over the medium
+ * that is actually in the drive.  "" means *unknown* and covers all three cases the
+ * GUI must treat alike: nothing mounted / no catalog format matches / two formats
+ * match equally well.  A disk of unknown format must not be exported as `.img` —
+ * the sector order would be guessed.  For a raw `.img` the format is not measured
+ * but the one DECLARED at mount time.  See A5120Machine::detectedFormatName.
+ */
+K1520_API const char* k1520_disk_detected_format(K1520Handle h, int drive);
 /**
  * @brief Operating notices about how the mounted disk had to be adapted to the drive.
  *

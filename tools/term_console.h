@@ -257,7 +257,7 @@ private:
             case 'D': consumed = 3; return QK_LEFT;
             default: break;
         }
-        // ESC [ <zahl> ~   (Entf, F5..F8)
+        // ESC [ <zahl> ~   (Entf, F5..F12)
         size_t i = 2; int num = 0;
         while (i < buf_.size() && buf_[i] >= '0' && buf_[i] <= '9') { num = num*10 + (buf_[i]-'0'); ++i; }
         if (i >= buf_.size()) return KEY_NONE;          // Zahl noch nicht zu Ende
@@ -269,6 +269,10 @@ private:
             case 17: return QK_F1 + 5;
             case 18: return QK_F1 + 6;
             case 19: return QK_F1 + 7;                  // F8
+            case 20: return QK_F1 + 8;                  // F9  — die K7637 hat
+            case 21: return QK_F1 + 9;                  // F10   zwoelf PF-Tasten
+            case 23: return QK_F1 + 10;                 // F11
+            case 24: return QK_F1 + 11;                 // F12
             default: return KEY_NONE;
         }
     }

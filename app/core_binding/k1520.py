@@ -137,6 +137,14 @@ _lib.k1520_key_press.restype = None
 _lib.k1520_key_release.argtypes = [K1520Handle, ctypes.c_uint32]
 _lib.k1520_key_release.restype = None
 
+# k1520_translate_key(keycode: uint32_t, shift: bool, ctrl: bool) -> uint8_t
+_lib.k1520_translate_key.argtypes = [ctypes.c_uint32, ctypes.c_bool, ctypes.c_bool]
+_lib.k1520_translate_key.restype = ctypes.c_uint8
+
+# k1520_keyboard_leds(K1520Handle) -> uint32_t
+_lib.k1520_keyboard_leds.argtypes = [K1520Handle]
+_lib.k1520_keyboard_leds.restype = ctypes.c_uint32
+
 # k1520_mount_disk(K1520Handle, drive: int, path: const char*, format: const char*, wp: bool) -> bool
 _lib.k1520_mount_disk.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_bool]
 _lib.k1520_mount_disk.restype = ctypes.c_bool
@@ -164,6 +172,10 @@ _lib.k1520_disk_path.restype = ctypes.c_char_p
 # k1520_disk_container(K1520Handle, drive: int) -> const char*
 _lib.k1520_disk_container.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_disk_container.restype = ctypes.c_char_p
+
+# k1520_disk_detected_format(K1520Handle, drive: int) -> const char*
+_lib.k1520_disk_detected_format.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_disk_detected_format.restype = ctypes.c_char_p
 
 # k1520_disk_notice(K1520Handle, drive: int) -> const char*
 _lib.k1520_disk_notice.argtypes = [K1520Handle, ctypes.c_int]
@@ -274,6 +286,40 @@ _lib.k1520_serial_set_rx_cb.restype = None
 
 # Textbildschirm des K7024: 80x24 Zeichen ab 0xF800 (Bit7 = Invers-Attribut).
 VRAM_BASE, VRAM_COLS, VRAM_ROWS = 0xF800, 80, 24
+
+# ── Tastendiagnose: was schickt die Oberfläche wirklich an die Maschine? ─────
+# Mit `K1520_TASTEN_LOG=1` schreibt JEDER Tastendruck eine Zeile nach stderr —
+# gleichgültig, ob er von der PC-Tastatur, der Bildschirmtastatur oder einem
+# Skript kommt (alle drei Wege laufen durch `key_press`).  Sie beantwortet die
+# drei Fragen, die man bei „die Taste tut etwas anderes als erwartet" hat:
+# WELCHER Code geht hinein, welches BYTE macht der K7637 daraus (das ist, was
+# das Betriebssystem sieht), und kommt der Druck EINMAL oder wiederholt an
+# (fehlendes Loslassen ⇒ die Tastenwiederholung des K7637 läuft weiter).
+_TASTEN_LOG = os.environ.get("K1520_TASTEN_LOG", "") not in ("", "0")
+
+
+def _taste_klartext(keycode: int) -> str:
+    """Lesbarer Name des Keycodes — Rohcode, ASCII oder Qt-Sondertaste."""
+    if (keycode & ~0xFF) == 0x02000000:
+        return f"Rohcode 0x{keycode & 0xFF:02X} (Taste der Nachbildung)"
+    if 0x20 <= keycode <= 0x7E:
+        return f"ASCII '{chr(keycode)}'"
+    if keycode & 0x01000000:
+        return f"Qt-Sondertaste 0x{keycode:08X}"
+    return f"0x{keycode:02X}"
+
+
+def _protokolliere_taste(was: str, keycode: int, shift: bool = False,
+                         ctrl: bool = False):
+    try:
+        byte = K1520Emulator.translate_key(keycode, shift, ctrl)
+    except Exception:                      # ältere Bibliothek ohne die Funktion
+        byte = None
+    ziel = "" if byte is None else f"  → K7637 sendet 0x{byte:02X}"
+    print(f"[taste] {was:11s} {_taste_klartext(keycode)}"
+          f"  shift={int(shift)} ctrl={int(ctrl)}{ziel}",
+          file=sys.stderr, flush=True)
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # K1520 Emulator Python Class
@@ -424,6 +470,8 @@ class K1520Emulator:
             shift: Shift key state
             ctrl: Control key state
         """
+        if _TASTEN_LOG:
+            _protokolliere_taste("gedrueckt", keycode, shift, ctrl)
         _lib.k1520_key_press(self._handle, ctypes.c_uint32(keycode), ctypes.c_bool(shift), ctypes.c_bool(ctrl))
     
     def key_release(self, keycode: int):
@@ -433,8 +481,30 @@ class K1520Emulator:
         Args:
             keycode: Z80 keyboard scan code
         """
+        if _TASTEN_LOG:
+            _protokolliere_taste("losgelassen", keycode)
         _lib.k1520_key_release(self._handle, ctypes.c_uint32(keycode))
     
+    @staticmethod
+    def translate_key(keycode: int, shift: bool = False, ctrl: bool = False) -> int:
+        """Physischer K7637-Code zu einem Tastencode — ohne Maschine.
+
+        Beantwortet „welche Taste der echten Tastatur spricht dieser Anschlag
+        an?" und ist damit das Werkzeug, wenn die Oberfläche etwas anderes zu
+        tun scheint als erwartet.
+        """
+        return int(_lib.k1520_translate_key(ctypes.c_uint32(keycode),
+                                            ctypes.c_bool(shift),
+                                            ctypes.c_bool(ctrl)))
+
+    def keyboard_leds(self) -> int:
+        """Zustand der Tastaturanzeigen (K7637).
+
+        Bit 0…4 = Funktionsanzeigen G00…G04, Bit 5 = Fehleranzeige (blinkt,
+        solange gesetzt), Bit 7 = akustisches Signal läuft.
+        """
+        return int(_lib.k1520_keyboard_leds(self._handle))
+
     def mount_disk(self, drive: int, path: str, format_name: str, write_protect: bool = False) -> bool:
         """
         Mount a disk image.
@@ -540,6 +610,18 @@ class K1520Emulator:
         """Container of the bound file ("img" | "hfe" | "dmk"; "" = none)."""
         c = _lib.k1520_disk_container(self._handle, ctypes.c_int(drive))
         return c.decode('utf-8', 'replace') if c else ""
+
+    def detected_format(self, drive: int) -> str:
+        """Auf der eingelegten Diskette ERKANNTES Katalogformat ("" = unbekannt).
+
+        Dieselbe Geometrie-Erkennung wie im k1520DiskTool.  Leer heisst *unbekannt*
+        und fasst die drei Fälle zusammen, die die Oberfläche gleich behandeln muss:
+        nichts eingelegt, kein Katalogformat passt, oder zwei passen gleich gut.
+        Eine Diskette mit unbekanntem Format lässt sich nicht als ``.img``
+        ausgeben — die Sektorreihenfolge wäre geraten.
+        """
+        f = _lib.k1520_disk_detected_format(self._handle, ctypes.c_int(drive))
+        return f.decode('utf-8', 'replace') if f else ""
 
     def disk_notice(self, drive: int) -> str:
         """Wie die eingelegte Diskette ans Laufwerk angepasst wurde ("" = passt).

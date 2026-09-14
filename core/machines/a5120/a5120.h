@@ -150,6 +150,31 @@ public:
     /// @brief Trägt die eingelegte Diskette überhaupt Adressmarken? (false = Leerdiskette)
     bool isDiskFormatted(int drive) const;
 
+    /**
+     * @brief Name des Katalogformats, das auf der eingelegten Diskette ERKANNT wurde.
+     *
+     * Dieselbe Geometrie-Erkennung, die auch das k1520DiskTool benutzt
+     * (@ref GeometryProbe, doc/design/13_k1520disktool.md §12.1): jede Spur wird
+     * vermessen und der gemessene Spurbereichsplan gegen den Katalog gehalten.
+     *
+     * Drei Fälle liefern **leer** — für die Anzeige heisst das „unbekannt":
+     *  - kein Datenträger im Laufwerk oder keine formatierte Spur;
+     *  - kein Katalogformat passt (die Diskette ist deshalb trotzdem benutzbar —
+     *    der K5122 liest formatagnostisch);
+     *  - zwei Formate passen **gleich gut**.  Dann ist der Name geraten, und ein
+     *    geratenes Format als `.img` zu exportieren verlöre Daten.
+     *
+     * Bei einem rohen Sektorimage (`.img`) wird nicht gemessen, sondern das beim
+     * Einlegen ERKLÄRTE Format zurückgegeben: ein `.img` trägt keine Adressmarken,
+     * seine Geometrie ist Vereinbarung, nicht Befund.
+     *
+     * @warning Misst über das ganze Medium.  Bei einer Diskette, die ihre Spuren
+     *          erst bei Bedarf nachlädt (physisches Laufwerk am Greaseweazle) und
+     *          noch nicht vollständig gelesen ist, kommt deshalb **leer** zurück —
+     *          eine Messung zöge dort die ganze Scheibe ein (0,5–0,8 s je Spur).
+     */
+    std::string detectedFormatName(int drive) const;
+
     /// @brief Ausstehende Änderungen aller Laufwerke sofort in die Dateien schreiben.
     bool flushDisks();
 
@@ -191,6 +216,16 @@ public:
     // Keyboard (enqueued thread-safely, consumed in run())
     void keyPress(uint32_t qt_keycode, bool shift, bool ctrl);
     void keyRelease(uint32_t qt_keycode);
+
+    /**
+     * @brief Zustand der Tastaturanzeigen (K7637-Doku §2.1/§2.2.3).
+     *
+     * Bit 0…4 = Funktionsanzeigen G00…G04, Bit 5 = Fehleranzeige G53 (blinkt,
+     * solange gesetzt), Bit 7 = akustisches Signal läuft.  Die Betriebsanzeige
+     * E54 hängt an der Spannung und die LOCK-Anzeige C99 am Feststeller der
+     * Tastatur selbst — beide kommen hier nicht vor.
+     */
+    uint8_t keyboardLeds() const;
 
     // Framebuffer
     const uint8_t* framebuffer() const;
