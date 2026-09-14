@@ -260,6 +260,10 @@ public:
      * @p bitcells die Zahl gültiger Zellen.  Das Verfahren (FM/MFM) wird dabei selbst
      * bestimmt (@ref BitCodec::decodeAuto); eine markenlose Spur wird als **leere**
      * (unformatierte) Spur abgelegt, damit der Controller Gap-Flux streamt.
+     *
+     * Wurde die Spur **während** des Auftrags geschrieben, ist das Gelesene veraltet
+     * und wird verworfen (Feinentwurf §5.2a) — sonst überschriebe der Vorausleser
+     * lautlos die Spur, die das Gastsystem gerade formatiert hat.
      */
     bool completeRead(uint32_t id, const uint8_t* cells, size_t len, uint32_t bitcells);
 
@@ -361,6 +365,8 @@ private:
     bool      stop_        = false;
     bool      abholung_laeuft_ = false;   ///< genau ein Arbeitsfaden
     uint8_t   letzter_cyl_ = 0;           ///< Kopfweg-Schätzung für das Vorauslesen
+    /// Fahrtrichtung des Rückführungs-Fahrstuhls (§7.3): false = zu höheren Zylindern.
+    bool      rueckwaerts_ = false;
     SyncJob   laufend_{};
     /// Einmal bestimmter Ueberabtastfaktor der Quelle (0 = noch unbekannt, §8.1).
     /// Ausserhalb der Sperre gelesen — daher atomar.

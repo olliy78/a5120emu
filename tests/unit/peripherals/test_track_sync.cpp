@@ -987,3 +987,122 @@ TEST(TrackSync, EineHeileSpurWirdNiemalsZweimalGelesen) {
     EXPECT_EQ(sync.stats().read_retries, 0u);
     faden.stop();
 }
+
+/**
+ * @test TrackSync/WirdWaehrendDesLesensGeschriebenGiltDerNeueInhalt
+ * @brief Ein Leseauftrag darf eine inzwischen GEÄNDERTE Spur nicht überschreiben.
+ *
+ * Der Gegenstück zu @ref TrackSync/WirdWaehrendDesPruefLesensGeschriebenGiltDerNeueInhalt,
+ * nur für den gewöhnlichen **Lese**auftrag — und der Fall, in dem es am meisten weh
+ * tut: beim Formatieren einer physischen Diskette holt der Vorausleser gerade die
+ * Spur, die das Gastsystem im selben Moment formatiert.  Das Fenster ist eine ganze
+ * Spurlänge breit (0,5–0,8 s am echten Gerät) und wird bei jedem Formatierlauf
+ * getroffen.
+ *
+ * Ohne die Prüfung ersetzte @ref DiskMedium::loadTrack den frisch formatierten Inhalt
+ * durch den alten Scheibeninhalt und löschte dabei `dirty` — die Spur wäre **nie**
+ * zurückgeschrieben worden, ohne eine einzige Meldung.
+ */
+TEST(TrackSync, WirdWaehrendDesLesensGeschriebenGiltDerNeueInhalt) {
+    DiskMedium abbild;
+    TrackSync  sync(spec(/*schreibbar=*/true, /*vorauslesen=*/true), abbild);
+
+    // Der Vorausleser holt eine noch unbekannte Spur …
+    SyncJob lesen;
+    ASSERT_TRUE(sync.takeJob(lesen, 1000));
+    ASSERT_EQ(lesen.kind, SyncJobKind::Read);
+    ASSERT_EQ(lesen.prio, SyncPriority::Readahead);
+
+    // … und währenddessen formatiert das Gastsystem genau sie.
+    abbild.setTrack(lesen.cyl, lesen.head, baueSpur(lesen.cyl, lesen.head, 8));
+
+    // Was der Adapter jetzt abliefert, ist veraltet.
+    const TrackImage alt = baueSpur(lesen.cyl, lesen.head, 3);
+    const uint32_t   bc  = static_cast<uint32_t>(alt.size() * 16);
+    const auto       zellen = BitCodec::encode(alt, bc);
+    ASSERT_TRUE(sync.completeRead(lesen.id, zellen.data(), zellen.size(), bc));
+
+    // Der Inhalt des Gastes steht noch da — und die Spur gilt weiter als GEÄNDERT.
+    EXPECT_EQ(TrackCodec::parseTrack(abbild.peek(lesen.cyl, lesen.head)).size(), 8u);
+    EXPECT_EQ(abbild.state(lesen.cyl, lesen.head), TrackState::Dirty);
+
+    // Und sie wird auch wirklich eingestellt, nicht bloss als schmutzig vermerkt.
+    // (Vorauslesen aus, sonst greift der naechste Auftrag die naechste UNBEKANNTE
+    // Spur ab, bevor diese hier ihre Ruhefrist hinter sich hat.)
+    sync.setReadAhead(false);
+    SyncJob schreiben;
+    ASSERT_TRUE(sync.takeJob(schreiben, 2000));
+    EXPECT_EQ(schreiben.kind, SyncJobKind::Write);
+    EXPECT_EQ(schreiben.cyl, lesen.cyl);
+    EXPECT_EQ(schreiben.head, lesen.head);
+}
+
+/**
+ * @test TrackSync/DasVorauslesenRuhtSolangeEtwasZurueckzuschreibenIst
+ * @brief Prio 3 ruht bei Rückstand — auch während dessen Ruhefrist.
+ *
+ * Vorher trat das Vorauslesen nur *hinter* Prio 2 zurück.  Solange eine geänderte
+ * Spur aber noch ihre Schreibpause absitzt, ist Prio 2 nicht abrufbar — und der
+ * Adapter las in genau dieser Lücke Spuren ein, die das Gastsystem im nächsten
+ * Augenblick überschreibt.  Bei einem Formatierlauf ist das jede Spur: lesen,
+ * überschreiben, schreiben, prüfen — dreifache Arbeit für nichts.
+ */
+TEST(TrackSync, DasVorauslesenRuhtSolangeEtwasZurueckzuschreibenIst) {
+    DiskMedium abbild;
+    TrackSync  sync(spec(/*schreibbar=*/true, /*vorauslesen=*/true, /*verify=*/false),
+                   abbild);
+
+    abbild.setTrack(3, 0, baueSpur(3, 0));   // das Gastsystem formatiert eine Spur
+
+    // Der nächste Auftrag ist die Rückführung — NICHT das Vorauslesen einer der
+    // 15 noch unbekannten Spuren, das ohne Ruhefrist sofort zu haben wäre.
+    SyncJob j;
+    ASSERT_TRUE(sync.takeJob(j, 2000));
+    EXPECT_EQ(j.kind, SyncJobKind::Write);
+    EXPECT_EQ(j.cyl, 3);
+    ASSERT_TRUE(sync.completeWrite(j.id));
+
+    // Ist nichts mehr offen, läuft es wie gehabt weiter.
+    ASSERT_TRUE(sync.takeJob(j, 2000));
+    EXPECT_EQ(j.kind, SyncJobKind::Read);
+    EXPECT_EQ(j.prio, SyncPriority::Readahead);
+}
+
+/**
+ * @test TrackSync/DieRueckfuehrungFaehrtFahrstuhl
+ * @brief Zurückgeschrieben wird in Fahrtrichtung, nicht nach Alter — und die
+ *        Rückfahrt holt ab, was dabei übersprungen wurde.
+ *
+ * Nach Eintreffreihenfolge nimmt der Synchronisierer immer die HINTERSTE Spur,
+ * während das Gastsystem vorn arbeitet: jedes Auftragspaar fährt die ganze Strecke
+ * hin und zurück, und der Weg wächst mit dem Rückstand.  Am Formatierlauf gemessen
+ * (20 Zylinder, `FD_PHYSICAL_B`): 399 → 146 Spuren Kopfweg.
+ */
+TEST(TrackSync, DieRueckfuehrungFaehrtFahrstuhl) {
+    DiskMedium abbild;
+    TrackSync  sync(spec(/*schreibbar=*/true, /*vorauslesen=*/false, /*verify=*/false),
+                   abbild);
+
+    // Eintreffreihenfolge: erst die FERNE Spur, dann die nahe.
+    abbild.setTrack(5, 0, baueSpur(5, 0));
+    std::this_thread::sleep_for(20ms);
+    abbild.setTrack(1, 0, baueSpur(1, 0));
+    std::this_thread::sleep_for(80ms);            // beide sind zur Ruhe gekommen
+
+    // Der Kopf steht auf 0: nach Alter käme Spur 5 zuerst, im Fahrstuhl kommt 1.
+    SyncJob j;
+    ASSERT_TRUE(sync.takeJob(j, 1000));
+    EXPECT_EQ(j.cyl, 1);
+    ASSERT_TRUE(sync.completeWrite(j.id));
+
+    ASSERT_TRUE(sync.takeJob(j, 1000));
+    EXPECT_EQ(j.cyl, 5);
+    ASSERT_TRUE(sync.completeWrite(j.id));
+
+    // Und was HINTER dem Kopf liegt, bleibt nicht liegen: die Wende holt es ab.
+    abbild.setTrack(0, 1, baueSpur(0, 1));
+    std::this_thread::sleep_for(80ms);
+    ASSERT_TRUE(sync.takeJob(j, 1000));
+    EXPECT_EQ(j.cyl, 0);
+    EXPECT_EQ(j.head, 1);
+}

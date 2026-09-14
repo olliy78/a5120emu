@@ -212,6 +212,22 @@ die schon ein Prio-3-Auftrag ansteht, wird **dessen Priorität angehoben** (und 
 Wartende daran gehängt), statt einen zweiten Auftrag einzustellen.  Ohne das läse man
 dieselbe Spur zweimal — einmal für den Wartenden, einmal für den Vorratsbau.
 
+### 5.2a Ein Leseauftrag, den das Gastsystem überholt hat
+
+Ein Auftrag läuft eine ganze Spurlänge lang (0,5–0,8 s am echten Gerät).  In dieser
+Zeit kann die Spur, die gerade von der Scheibe kommt, im Abbild **neu geschrieben**
+worden sein — beim Formatieren ist das der Regelfall und nicht die Ausnahme: der
+Vorausleser holt genau die Spur, die FORMAT.COM im selben Moment formatiert.
+
+Das Gelesene ist dann **veraltet und wird verworfen**.  Es zu übernehmen hiesse, die
+Änderung des Gastes wegzuwerfen, und zwar lautlos: `DiskMedium::loadTrack()` ersetzt
+den Inhalt *und* löscht `dirty`, die Spur würde also nie zurückgeschrieben und niemand
+erführe davon.  Erkannt wird es am Änderungszähler der Spur (`changes` gegen
+`changes_at_handout`, derselbe Vergleich wie beim Prüf-Lesen in §7.1 und beim
+Schreiben).  Die Schreib-Buchführung bleibt dabei unangetastet — sie ist ja gerade
+das, was erhalten bleiben soll.  Wächter:
+`TrackSync.WirdWaehrendDesLesensGeschriebenGiltDerNeueInhalt`.
+
 ### 5.3 Vorauslesen (Prio 3)
 
 Steht kein Auftrag an, erzeugt `TrackSync` bei der nächsten Abholung selbst einen: die
@@ -220,10 +236,17 @@ Kopf 0 vor Kopf 1.  Damit füllt sich das Abbild von der zuletzt gebrauchten Ste
 außen — bei UDOS also rund um die Systemspuren und das Verzeichnis, wo als nächstes
 gelesen wird, statt stur bei Spur 0 zu beginnen.
 
-Das Vorauslesen ist **abschaltbar** (`setReadAhead(false)`) und ist es standardmäßig
-in einem Fall: solange die Diskette **schreibbar** gemountet ist und noch geänderte
-Spuren anstehen, ruht es nicht — es tritt nur hinter Prio 2 zurück.  Abgeschaltet wird es
-von der Oberfläche, wenn der Bediener das Laufwerk still haben will.
+Es **ruht**, solange überhaupt etwas zurückzuschreiben ist — auch während die
+geänderten Spuren noch ihre Schreibpause absitzen.  Hinter Prio 2 zurückzutreten
+genügt dafür nicht: in der Ruhefrist ist Prio 2 gar nicht abrufbar, und genau in
+dieser Lücke las der Adapter bisher Spuren ein, die das Gastsystem im nächsten
+Augenblick überschreibt.  Bei einem Formatierlauf ist das *jede* Spur — lesen,
+überschreiben, schreiben, prüfen —, und es ist zugleich das Fenster, in dem ein
+Leseergebnis vom Gastsystem überholt wird (§5.2a).  Wächter:
+`TrackSync.DasVorauslesenRuhtSolangeEtwasZurueckzuschreibenIst`.
+
+Darüber hinaus ist das Vorauslesen **abschaltbar** (`setReadAhead(false)`) — von der
+Oberfläche, wenn der Bediener das Laufwerk still haben will.
 
 ### 5.4 Fehler
 
@@ -456,6 +479,30 @@ Zwei weitere Festlegungen:
   **eingelegt** — der Haken im Kasten steht dann von Anfang an.  Wächter:
   `test_der_emulator_legt_physisch_schreibend_ein_und_der_haken_sperrt_sofort`,
   `test_ohne_haken_liegt_die_physische_diskette_schreibgeschuetzt_im_laufwerk`.
+
+### 7.3 Die Reihenfolge der Rückführung — ein Fahrstuhl
+
+Fällige Spuren werden **in der laufenden Fahrtrichtung** abgearbeitet: die nächste
+Spur ab der aktuellen Kopfposition nach oben (bzw. nach unten), und erst wenn in
+dieser Richtung keine mehr liegt, wird gewendet.
+
+Nach der *Eintreffreihenfolge* zu gehen — die am längsten ruhende zuerst — klingt
+gerechter, ist am echten Laufwerk aber der teuerste Weg: das Gastsystem arbeitet
+vorn, die älteste geänderte Spur liegt hinten, und weil jedes Lesen auf Anforderung
+(Prio 1) den Kopf wieder nach vorn holt, fährt der Kopf zwischen beiden hin und her.
+Der Weg wächst dabei mit dem Rückstand — beim Formatieren also über die ganze
+Diskette.  Am Formatierlauf gemessen (20 Zylinder, `FD_PHYSICAL_B`, s. §14):
+
+| | Kopfweg | Kopfsprung je Paar |
+|---|---|---|
+| nach Alter | 399 Spuren | wächst auf 16 Zylinder |
+| Fahrstuhl | **146 Spuren** | bleibt bei 1–3 Zylindern |
+
+Verhungern kann dabei nichts: was eine Fahrt überspringt, holt die Rückfahrt ab —
+im Mitschnitt oben sind das die Spuren, die der Kopf während des Aufstiegs hinter
+sich lässt; sobald das Gastsystem fertig ist, sammelt die Abwärtsfahrt sie ein
+(41 Spuren geändert, 41 geschrieben, keine zweimal).  Wächter:
+`TrackSync.DieRueckfuehrungFaehrtFahrstuhl`.
 
 ---
 
@@ -1479,7 +1526,7 @@ vorkommt: alles unterhalb von „Aufträge und Bitzellen“ ist ohne Adapter pr�
 
 | Ebene | Test | Ersatz für die Hardware |
 |-------|------|-------------------------|
-| `TrackSync` (Warteschlange, Prioritäten, Zustände) | `TrackSync.*` — 20 Fälle in `tests/unit/peripherals/test_track_sync.cpp` | **Ersatz-Arbeitsfaden** in C++: bedient Aufträge aus einem `DiskMedium` im Speicher, mit anhaltbarer Auslieferung |
+| `TrackSync` (Warteschlange, Prioritäten, Zustände) | `TrackSync.*` — 37 Fälle in `tests/unit/peripherals/test_track_sync.cpp` | **Ersatz-Arbeitsfaden** in C++: bedient Aufträge aus einem `DiskMedium` im Speicher, mit anhaltbarer Auslieferung |
 | Verdrängung | `TrackSync.LeseanforderungVerdraengtDasVorauslesen` | derselbe, Aufträge von Hand abgeholt (keine Zufallsreihenfolge) |
 | Blockade | `TrackSync.ZugriffBlockiertBisDieSpurDaIst`, `…ZeitueberschreitungLiefertDieLeereSpur` | angehaltener Ersatzfaden bzw. gar keiner |
 | Rückführung | `TrackSync.SchreibpauseFasstEinenBurstZusammen`, `…AbmeldenWartetAufDieRueckfuehrung`, `…GescheitertesSchreibenLaesstDieAenderungStehen`, `…SchreibgeschuetzteDisketteWirdNieBeschrieben` | derselbe |
@@ -1498,6 +1545,31 @@ Bitzellen, die der Greaseweazle liefern würde (die Aufnahme *ist* ja eine), ink
 Phasenversatz und Jitter einer echten Aufnahme, wenn man eine echte Aufnahme nimmt.
 Damit ist der gesamte Weg — Zustandsverwaltung, Warteschlange, Decodierung, Boot —
 in der Regression, und die Hardware fügt nur noch USB hinzu.
+
+### 14.1 Den ganzen Weg messen, ohne Laufwerk
+
+Was die Tabelle nicht abdeckt, ist das **Zusammenspiel unter Last**: wie sich die
+Auftragsfolge verhält, während ein Gastsystem eine physische Diskette formatiert.
+Dafür gibt es einen Schalter im `format_driver` (`tools/format_driver.cpp`):
+
+```sh
+FD_PHYSICAL_B=200 tools/dev.sh tool format_driver \
+    disks/cpa_cpa780_k5601_clock.img /dev/null script.txt
+```
+
+Laufwerk B: hängt dann an einem `TrackSync` mit einem Ersatz-Arbeitsfaden, der
+Kopfweg (3 ms je Spur) und Umdrehung (`FD_PHYSICAL_B` = Millisekunden) **simuliert**
+und jeden Auftrag mitschreibt:
+
+```
+[gw    3.049] WRITE  c01 h0 prio2  Kopf 2->1 (1 Spuren)
+[gw    3.268] READ   c03 h1 prio1  Kopf 1->3 (2 Spuren)
+```
+
+`FD_PHYSICAL_PRELOAD=1` liest die Diskette vorher ganz ein, `FD_PHYSICAL_READAHEAD=0`
+schaltet Prio 3 ab.  Daraus stammen die Zahlen in §5.3 und §7.3 — und der Befund, dass
+CP/A **vor** jedem Zylinder dessen Kopf-1-Spur liest (Index-Timeout auf der leeren
+Spur), womit jeder Formatierlauf je Zylinder einmal auf Prio 1 blockiert.
 
 Die Hardware-Tests laufen von Hand:
 
