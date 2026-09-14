@@ -8,6 +8,45 @@ von Original-Disketten: **CP/A**, **SCPX** und **UDOS**.
 
 Beschreibung, Aufbau und Entwicklungsstand: **[Projektseite mit README](https://github.com/olliy78/a5120emu#readme)**
 
+<!-- Der folgende Abschnitt gehoert zur JEWEILIGEN Version und wird vor jedem
+     Tag neu geschrieben.  Er steht hier und nicht in einer CHANGELOG-Datei,
+     weil die Release-Seite der einzige Ort ist, an dem ein Downloader ihn
+     liest.  Alles darunter ist versionsunabhaengig. -->
+
+---
+
+## Was ist neu in @VERSION@
+
+Der Schwerpunkt dieser Vorabversion liegt auf **echten Disketten** und auf dem, was man
+mit ihnen anstellen kann, wenn sie beschädigt oder von einem fremden Rechner sind.
+
+- **Echte Diskette am Greaseweazle-Adapter.** Ein angeschlossenes 5,25″- oder 8″-Laufwerk
+  wird **spurweise nach Bedarf** gelesen und beschrieben — der Zwischenschritt „ganze
+  Diskette in eine Datei" entfällt, eine Diskette ist in Sekunden statt Minuten offen.
+  Beide Programme können es, an echter Hardware nachgewiesen. Geschrieben gilt dabei erst
+  nach dem **Zurücklesen**, sodass Schadstellen auffallen statt unbemerkt zu bleiben.
+- **Dateisystemprüfung und Reparatur im k1520DiskTool** (`fsck`): Eine Diskette wird beim
+  Öffnen geprüft, Befunde lassen sich einzeln reparieren, und **gelöschte Dateien** kann
+  man wiederfinden und herausholen — bei CP/M, ZDOS und NDOS. Vorausgewählt ist dabei nur,
+  was keine Daten verwirft.
+- **Drei weitere Dateisysteme gelesen und geschrieben:** **UDOS1715/NDOS** (PC 1715),
+  **SCP1700/CP/M-86** (A7100) und die NDOS-Ausprägung der **P8000**.
+- **Fremd beschriebene Disketten** — an einem anderen K1520-Rechner geschriebene UDOS-
+  Disketten waren bisher unlesbar; Sync-Gruppe, CRC-Sitte und Spurnaht sind nachgezogen.
+- **Diskeditor**: die Diskette Sektor für Sektor ansehen und ändern, Spuren einfügen und
+  löschen, den UDOS-Anhang hinter der Prüfsumme bearbeiten.
+- **Bootfähige Disketten anlegen** — CP/A, SCPX und UDOS, aus einer Leerdiskette heraus.
+- **Nachgebildete K7637-Tastatur** im Emulator: das Tastenfeld zeigt mit, jede PC-Taste
+  spricht die Taste an ihrer Stelle an.
+- **Überarbeitete Oberflächen** in beiden Programmen: einrichtbare Symbolleiste,
+  Zustandszeile statt Zähler, mitgeliefertes Handbuch, erkanntes Diskettenformat — und ein
+  Menü *Werkzeuge*, über das beide Programme einander und eine Konsole für Debugger und
+  Kommandozeile starten.
+- **Der Debugger `k1520dbg` liegt jetzt bei** (Linux und Windows), mit Konsolenmodus und
+  eigenem Handbuch.
+
+Alles im Einzelnen: der Änderungsverlauf am Ende dieser Seite.
+
 ---
 
 ## Welche Datei brauche ich?
