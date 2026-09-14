@@ -518,6 +518,34 @@ TEST(TrackSync, GescheitertesSchreibenLaesstDieAenderungStehen) {
     EXPECT_EQ(nochmal.kind, SyncJobKind::Write);
 }
 
+TEST(TrackSync, EinLaufwerkDasNichtSchreibenKannHaeltDieRueckfuehrungNichtAuf) {
+    // Scheitert der Schreibvorgang nicht an der Diskette, sondern am LAUFWERK (kein
+    // Indexsignal, Adapter weg), kommt bei jedem Versuch derselbe Fehler zurueck.  Ohne
+    // Obergrenze stellte sich die Spur endlos selbst wieder ein: der Arbeitsfaden kaeme
+    // nie zur Ruhe, flushPending wartete auf ein Ende, das es nicht gibt, und das
+    // Abmelden saesse seine ganze Frist ab — von aussen sieht das aus wie ein Haenger.
+    DiskMedium abbild;
+    TrackSync  sync(spec(/*schreibbar=*/true), abbild);
+
+    abbild.setTrack(0, 0, baueSpur(0, 0));
+    for (int i = 0; i < 2; ++i) {                    // ein Versuch + eine Wiederholung
+        SyncJob j;
+        ASSERT_TRUE(sync.takeJob(j, 1000)) << "Schreibversuch " << i;
+        ASSERT_EQ(j.kind, SyncJobKind::Write);
+        sync.failJob(j.id, "GetFluxStatus: No Index");
+    }
+
+    SyncJob mehr;
+    EXPECT_FALSE(sync.takeJob(mehr, 300)) << "es wird ein drittes Mal versucht";
+    EXPECT_TRUE(sync.hasDefects());
+    EXPECT_EQ(sync.defectText(), "0/0");
+    EXPECT_NE(sync.lastError().find("No Index"), std::string::npos)
+        << "der Grund des Laufwerks muss im Klartext stehenbleiben";
+    // Das Abbild bleibt GEAENDERT — auf einer heilen Diskette ist es noch zu retten.
+    EXPECT_EQ(abbild.state(0, 0), TrackState::Dirty);
+    EXPECT_FALSE(sync.flushPending(200)) << "das Abmelden darf das nicht als Erfolg buchen";
+}
+
 TEST(TrackSync, UnlesbareSpurWirdNichtEndlosWiederholt) {
     DiskMedium abbild;
     TrackSync  sync(spec(/*schreibbar=*/false, /*vorauslesen=*/true), abbild);

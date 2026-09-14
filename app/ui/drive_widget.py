@@ -737,8 +737,11 @@ class DriveWidget(QWidget):
         neu = sitzung.neue_defekte()
         if neu:
             panel._rewrite_btn.setVisible(True)
+            # Der Grund gehoert dazu: eine Schadstelle der Diskette und ein Laufwerk,
+            # das gar nicht erst geschrieben hat (kein Indexsignal, Schreibschutz),
+            # sehen von hier aus gleich aus — nur der Text des Adapters trennt sie.
             QMessageBox.warning(self, f"Schreibfehler — Laufwerk {drive}",
-                                sitzung.defekt_meldung(neu))
+                                sitzung.defekt_meldung(neu, sitzung.sync.last_error))
 
     def close_physical_sessions(self):
         """Alle physischen Sitzungen beenden (Programmende, Konfigurationswechsel)."""

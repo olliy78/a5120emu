@@ -15,13 +15,14 @@ Voller Entwurf: ``doc/design/14_physische_diskette.md``.
 """
 
 from .device import (Adapter, Device, GreaseweazleFehlt, GwFehler, KeinAdapter,
-                     finde_adapter, open_device, verfuegbar)
+                     LaufwerkMeldet, finde_adapter, open_device, verfuegbar)
 from .session import LAUFWERKE, RATEN, PhysicalSession, verfuegbarkeit
 from .sync import Job, JobKind, Priority, Stats, Sync
 from .worker import TrackDevice, TrackWorker
 
 __all__ = [
     "Adapter", "Device", "GreaseweazleFehlt", "GwFehler", "KeinAdapter",
+    "LaufwerkMeldet",
     "finde_adapter", "open_device", "verfuegbar",
     "LAUFWERKE", "RATEN", "PhysicalSession", "verfuegbarkeit",
     "Job", "JobKind", "Priority", "Stats", "Sync",

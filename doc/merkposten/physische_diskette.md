@@ -78,6 +78,21 @@ Was man beim Weiterarbeiten wissen muss:
   (≈ 0,5 s) — dieselbe Regel wie der Autosave, sonst schriebe eine UDOS-Dateioperation
   dieselbe Spur dutzendfach.  Eine gescheiterte Rückführung lässt die Spur `Dirty`
   (eine verlorene Änderung wäre der schlimmere Ausgang); Abmelden wartet darauf.
+- **Auch der Schreibvorgang wird nicht ENDLOS wiederholt** (2026-09-14, Entwurf §5.4).
+  Nach `write_verify_retries` Versuchen gilt die Spur als **nicht beschreibbar** — wie
+  eine Schadstelle, mit demselben Ausweg.  Denn ein Schreibfehler hat zwei ganz
+  verschiedene Ursachen: liegt sie auf der Diskette, hilft die Wiederholung; liegt sie
+  am **Gerät** (kein Indexsignal, Adapter abgezogen, Schreibschutz), kommt bei jedem
+  Versuch derselbe Fehler, und ohne Obergrenze kommt der Arbeitsfaden nie zur Ruhe,
+  `flushPending()` wartet auf ein Ende, das es nicht gibt, und das Abmelden sitzt seine
+  Frist ab — **das Programm sieht aus, als hinge es** (am echten Gerät beobachtet,
+  nachdem CP/A eine physische Diskette formatiert hatte: jede Spur
+  `GetFluxStatus: No Index`).  Damit man die beiden Ursachen unterscheiden kann,
+  **deutet `app/gw/device.py` die Meldung der Hosttools** (`_gedeutet` →
+  `LaufwerkMeldet`: englischer Wortlaut, dahinter auf Deutsch, wo zu suchen ist), und
+  das Meldungsfenster nennt den Grund (`defekt_meldung(spuren, grund)`).
+  Wächter: `TrackSync.EinLaufwerkDasNichtSchreibenKannHaeltDieRueckfuehrungNichtAuf`,
+  `test_ein_laufwerk_das_nicht_schreibt_haelt_die_rueckfuehrung_nicht_auf`.
 - **Physisch heißt schreibgeschützt, bis jemand widerspricht** — ein Fehler kostet hier
   nicht eine Kopie, sondern die einzige noch existierende Diskette.
 - **Eine Rücknahme (`DiskVolume`-Transaktion) braucht `restoreFrom`**, nicht eine

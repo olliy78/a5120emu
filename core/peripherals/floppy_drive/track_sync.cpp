@@ -685,8 +685,24 @@ void TrackSync::failJob(uint32_t id, const std::string& msg) {
     if (war == SyncJobKind::Read) {
         // Unlesbare Spur: unbekannt lassen, aber nicht endlos wiederholen.
         e->failed = true;
+    } else if (e->write_attempts > spec_.write_verify_retries) {
+        // Auch der SCHREIBVORGANG selbst wird nicht endlos wiederholt.  Scheitert er
+        // nicht an der Diskette, sondern am Laufwerk (kein Indexsignal, Adapter weg,
+        // schreibgeschützt), kommt bei jedem Versuch derselbe Fehler zurück: der
+        // Arbeitsfaden käme nie zur Ruhe, @ref flushPending wartete auf ein Ende, das
+        // es nicht gibt, und das Abmelden sässe seine ganze Frist ab — von aussen
+        // sieht das aus, als hinge das Programm.  Gezählt wird mit demselben Zähler
+        // wie beim Pruef-Lesen (@ref TrackSyncSpec::write_verify_retries; er wächst
+        // bei der Ausgabe des Auftrags), und am Ende steht derselbe Befund: die Spur
+        // ist nicht beschreibbar.  Das Abbild im Speicher bleibt GEÄNDERT — auf einer
+        // heilen Diskette lässt es sich noch retten (§7.2).
+        e->defect        = true;
+        e->dirty_pending = false;
+        letzter_fehler_  = "Spur " + std::to_string(c) + "/" + std::to_string(h) +
+                           " liess sich nicht schreiben: " + msg;
     } else {
-        // Nicht geschriebene Änderung: erneut einstellen, sofort fällig.
+        // Nicht geschriebene Änderung: erneut einstellen — nach der Ruhefrist, damit
+        // ein hängendes Laufwerk nicht im Sekundentakt angefahren wird.
         e->dirty_pending = true;
         e->dirty_since   = Uhr::now();
     }

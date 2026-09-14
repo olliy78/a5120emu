@@ -235,10 +235,29 @@ was ein echtes Laufwerk an einer kaputten Spur liefert (Index-Timeout, §09 7). 
 Fehlertext geht in `lastError()` und in die Statistik; die Spur wird nicht endlos
 neu angefordert (`failed`-Markierung, erst ein neuer Zugriff versucht es wieder).
 
-Für den **Schreibfall** bleibt die Spur `Geändert` und wird erneut eingestellt, bis es
-klappt oder der Bediener das Laufwerk abmeldet.  Eine verlorene Änderung wäre der
-schlimmere Ausgang: die Diskette im Laufwerk und das Abbild im Speicher lägen
-auseinander, ohne dass es jemand merkt.
+Für den **Schreibfall** bleibt die Spur `Geändert` und wird erneut eingestellt.  Eine
+verlorene Änderung wäre der schlimmere Ausgang: die Diskette im Laufwerk und das Abbild
+im Speicher lägen auseinander, ohne dass es jemand merkt.
+
+**Aber nicht endlos** (2026-09-14): nach `write_verify_retries` Wiederholungen gilt die
+Spur als **nicht beschreibbar** — derselbe Befund und derselbe Ausweg wie bei einer
+Schadstelle (§7.2).  Der Grund ist, dass ein Schreibfehler zwei ganz verschiedene
+Ursachen haben kann.  Liegt sie auf der Diskette, hilft die Wiederholung; liegt sie am
+**Gerät** — kein Indexsignal, Adapter abgezogen, Schreibschutz —, kommt bei jedem
+Versuch derselbe Fehler zurück, und ohne Obergrenze stellt sich jede Spur sofort wieder
+ein: der Arbeitsfaden kommt nie zur Ruhe, `flushPending()` wartet auf ein Ende, das es
+nicht gibt, und das Abmelden sitzt seine ganze Frist ab.  Von aussen sieht das aus, als
+hinge das Programm — am echten Gerät beobachtet, nachdem CP/A eine physische Diskette
+formatiert hatte und jede Spur mit `GetFluxStatus: No Index` zurückkam.  Wächter:
+`TrackSync.EinLaufwerkDasNichtSchreibenKannHaeltDieRueckfuehrungNichtAuf` und
+`test_ein_laufwerk_das_nicht_schreibt_haelt_die_rueckfuehrung_nicht_auf`.
+
+Damit der Bediener die beiden Ursachen auseinanderhalten kann, **deutet die Gerätehälfte
+die Meldung der Hosttools** (`app/gw/device.py::_gedeutet` → `LaufwerkMeldet`): der
+englische Wortlaut bleibt stehen, dahinter steht auf Deutsch, wo zu suchen ist.  Der
+Text geht unverändert durch `failJob()` in `lastError()` und von dort in das
+Meldungsfenster (`PhysicalSession.defekt_meldung(spuren, grund)`) — ohne ihn stünde dort
+„Schadstelle der Diskette", während in Wahrheit das Laufwerk nicht dreht.
 
 ### 5.4a Der Leseausrutscher — eine Umdrehung ist nicht immer genug
 

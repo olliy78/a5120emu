@@ -79,7 +79,8 @@ struct TrackSyncSpec {
      * des Gastsystems gegen das Speicherabbild läuft, nicht gegen die Scheibe.
      */
     bool     verify_writes = true;
-    /// Zusätzliche Schreibversuche nach einem gescheiterten Vergleich (0 = keiner).
+    /// Zusätzliche Schreibversuche, wenn der Vergleich scheitert ODER der
+    /// Schreibvorgang selbst (0 = keiner); danach gilt die Spur als nicht beschreibbar.
     uint8_t  write_verify_retries = 1;
     /**
      * @brief Zusätzliche LESEversuche, wenn eine Spur mit fehlerhafter Prüfsumme kommt.
@@ -272,7 +273,10 @@ public:
      * Lesen: die Spur bleibt unbekannt und wird als „gescheitert" vermerkt, damit das
      * Vorauslesen sie nicht endlos wiederholt; der Wartende bekommt die leere Spur.
      * Schreiben: die Spur bleibt **geändert** und wird erneut eingestellt — eine
-     * verlorene Änderung wäre der schlimmere Ausgang.
+     * verlorene Änderung wäre der schlimmere Ausgang.  Aber auch das nicht endlos:
+     * nach @ref TrackSyncSpec::write_verify_retries Wiederholungen gilt die Spur als
+     * nicht beschreibbar (@ref hasDefects), sonst hinge ein Laufwerk, das gar nicht
+     * schreiben kann, die Rückführung und das Abmelden auf Dauer fest.
      */
     void failJob(uint32_t id, const std::string& msg);
 

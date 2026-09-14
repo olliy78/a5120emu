@@ -986,6 +986,22 @@ def test_defektmeldung_erscheint_nur_einmal_je_spur(app, hfe, monkeypatch):
         sitzung.close()
 
 
+def test_die_meldung_nennt_den_grund_des_adapters(app, hfe):
+    """Schadstelle oder Gerät? — das trennt nur der Wortlaut des Adapters.
+
+    Ohne ihn stünde im Fenster „Schadstelle der Diskette", waehrend in Wahrheit das
+    Laufwerk nicht dreht; der Bediener suchte dann bei der Diskette.
+    """
+    sitzung = fake_session(hfe)
+    try:
+        text = sitzung.defekt_meldung("5/1", "GetFluxStatus: No Index — kein Indexpuls")
+        assert "No Index" in text
+        assert "Laufwerk" in text, "der zweite moegliche Grund fehlt"
+        assert "Speichern unter" in text, "der Ausweg muss auch hier dabeistehen"
+    finally:
+        sitzung.close()
+
+
 def test_die_meldung_sagt_was_zu_tun_ist(app, hfe):
     sitzung = fake_session(hfe)
     try:
