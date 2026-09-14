@@ -206,8 +206,15 @@ von der eingelegten Scheibe.
 
 Drei Dinge, die man wissen sollte:
 
-* **Schreibgeschützt, bis man widerspricht.** Ein Fehler kostet hier nicht eine
-  Kopie, sondern die einzige noch existierende Diskette.
+* **Zwei Schlösser.** Der Haken *Auf die echte Diskette schreiben* im Dialog
+  entscheidet, ob überhaupt auf die Scheibe geschrieben werden darf — er ist
+  gesetzt, denn im Emulator wird die Diskette benutzt und nicht angesehen. Nimmt
+  man ihn heraus, liegt sie schreibgeschützt im Laufwerk. Das zweite Schloss ist
+  der Haken *Write-Protect* im Laufwerkskasten: er wirkt wie die Kerbe am Rand
+  der echten Diskette, sofort und auch bei laufender Maschine, das Gastsystem
+  meldet dann „schreibgeschützt" — und weil so gar keine geänderte Spur entsteht,
+  geht auch nichts an den Adapter. Bei einer unersetzlichen Diskette ist er die
+  billigste Versicherung; in der Pfadzeile steht, was gerade gilt.
 * **Geschrieben gilt erst nach dem Zurücklesen.** Jede geschriebene Spur wird
   sofort wieder gelesen und verglichen; der Füllstand steht im Laufwerkskasten.
 * **Eine Spur, die sich nicht schreiben lässt**, meldet sich mit einem Fenster.

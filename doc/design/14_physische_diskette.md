@@ -441,10 +441,21 @@ Zwei weitere Festlegungen:
 * **Beim Abmelden wird gewartet.**  `unmount()`/Schließen stellt alle geänderten Spuren
   sofort ein und wartet, bis sie geschrieben sind (mit Fortschritt und Abbruchmöglichkeit).
   Wer das Fenster schließt, während drei Spuren anstehen, muss es wissen.
-* **Schreiben ist die Ausnahme, nicht die Vorgabe.**  Eine physische Diskette wird
-  **schreibgeschützt** gemountet, solange der Bediener nicht ausdrücklich etwas anderes
-  sagt.  Das Gegenstück zur Abbilddatei — dort kostet ein Fehler eine Kopie, hier die
-  einzige noch existierende Diskette.
+* **Zwei Schlösser hintereinander** (2026-09-14).  Das erste ist die **Sitzung**: darf
+  auf die Scheibe überhaupt geschrieben werden?  Das zweite ist das **Laufwerk**: darf
+  die Maschine es versuchen?  Wer ein Programm benutzt, um eine Diskette *anzusehen*,
+  soll sie nicht in Gefahr bringen — im **k1520DiskTool** wird deshalb weiter
+  **schreibgeschützt** geöffnet, solange der Bediener nicht ausdrücklich widerspricht.
+  Im **Emulator** ist es umgekehrt: dort wird die Diskette nicht angesehen, sondern
+  **benutzt**, und ein Gastsystem, das nichts schreiben kann, ist kein Rechner mit
+  Laufwerk.  Der Haken im Dialog kommt deshalb gesetzt; die Sperre sitzt dafür da, wo
+  sie am echten Gerät auch sitzt — am **Laufwerk** (Haken „Write-Protect" im
+  Laufwerkskasten).  Er wirkt sofort, der K5122 meldet ihn dem Gastsystem im
+  Statusport, und weil dann keine geänderte Spur entsteht, geht auch nichts an den
+  Adapter.  Nimmt man den Haken im Dialog heraus, wird die Diskette schreibgeschützt
+  **eingelegt** — der Haken im Kasten steht dann von Anfang an.  Wächter:
+  `test_der_emulator_legt_physisch_schreibend_ein_und_der_haken_sperrt_sofort`,
+  `test_ohne_haken_liegt_die_physische_diskette_schreibgeschuetzt_im_laufwerk`.
 
 ---
 
@@ -790,8 +801,10 @@ Programmen dasselbe.
 Im Laufwerkskasten steht neben *Mount* / *Neue Diskette* / *Speichern unter…* ein
 vierter Knopf **„Physisch…"**.  Danach:
 
-* Die Pfadzeile zeigt `[echtes Laufwerk A am Greaseweazle]`, der Mount-Knopf heißt
-  **„Auswerfen"**, und „Physisch…" ist gesperrt (zweimal einlegen gibt es nicht).
+* Die Pfadzeile zeigt `[echtes Laufwerk A am Greaseweazle, schreibend]` — bzw.
+  `nur lesen` (die Sitzung darf nicht schreiben) oder `schreibgeschützt am Laufwerk`
+  (sie dürfte, der Haken im Kasten sperrt es).  Der Mount-Knopf heißt **„Auswerfen"**,
+  und „Physisch…" ist gesperrt (zweimal einlegen gibt es nicht).
 * Darunter läuft die **Füllstandszeile** mit: `⏵ 63 von 160 Spuren gelesen · liest 5/1`
   — sie wird vom vorhandenen LED-Zeitgeber (120 ms) nachgeführt, kostet also keinen
   eigenen Zeitgeber.
@@ -1440,7 +1453,12 @@ den Fortschrittsfaden.  Wächter: `test_archive_sichert_diskette_und_verzeichnis
    geführt (§5.1).
 5. **Geänderte Spuren gehen nie verloren.**  Ein gescheitertes Rückschreiben lässt die
    Spur geändert; das Abmelden wartet auf die Rückführung (§7).
-6. **Physisch heißt schreibgeschützt, bis jemand widerspricht.**
+6. **Der Schreibschutz muss SICHTBAR sein, wo er gilt.**  Im k1520DiskTool heisst
+   physisch weiterhin schreibgeschützt, bis jemand widerspricht (Öffnen ist ein
+   Lesevorgang).  Im Emulator liegt die Diskette wie im echten Laufwerk — benutzbar,
+   mit einem Schreibschutz am Laufwerk, der sofort wirkt und dem Gastsystem gemeldet
+   wird (§7.2).  Was der Kern sperrt, muss der Kasten zeigen: eine Diskette, auf die
+   die Maschine nicht schreiben darf, mit leerem Haken anzuzeigen, ist eine Lüge.
 7. **Ein Auftrag je Spur** (§5.2) — sonst liest das Vorauslesen gegen den Vordergrund an.
 8. **Geschrieben gilt erst nach dem Zurücklesen** (§7.1).  Wer `Dirty` schon beim
    Abschluss des `Write` löscht, macht die ganze Prüfung wirkungslos.

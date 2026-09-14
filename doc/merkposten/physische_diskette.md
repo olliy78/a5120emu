@@ -93,8 +93,19 @@ Was man beim Weiterarbeiten wissen muss:
   das Meldungsfenster nennt den Grund (`defekt_meldung(spuren, grund)`).
   Wächter: `TrackSync.EinLaufwerkDasNichtSchreibenKannHaeltDieRueckfuehrungNichtAuf`,
   `test_ein_laufwerk_das_nicht_schreibt_haelt_die_rueckfuehrung_nicht_auf`.
-- **Physisch heißt schreibgeschützt, bis jemand widerspricht** — ein Fehler kostet hier
-  nicht eine Kopie, sondern die einzige noch existierende Diskette.
+- **Zwei Schlösser, und beide müssen sichtbar sein** (2026-09-14, Entwurf §7.2).
+  Die **Sitzung** sagt, ob auf die Scheibe geschrieben werden darf; das **Laufwerk**
+  (Haken „Write-Protect" im Kasten), ob die Maschine es versuchen darf.  Im
+  **k1520DiskTool** heisst physisch weiter *schreibgeschützt, bis jemand
+  widerspricht* — Öffnen ist dort ein Lesevorgang, und ein Fehler kostet nicht eine
+  Kopie, sondern die einzige noch existierende Diskette.  Im **Emulator** kommt der
+  Haken im Dialog dagegen **gesetzt**: dort wird die Diskette benutzt, nicht
+  angesehen.  Die Sperre sitzt dafür am Laufwerk, wirkt sofort, wird dem Gastsystem
+  gemeldet (K5122-Statusport) und verhindert damit, dass überhaupt eine geänderte
+  Spur entsteht — an den Adapter geht dann nichts.  **Was der Kern sperrt, muss der
+  Kasten zeigen**: bis dahin lag die Diskette schreibgeschützt im Laufwerk, während
+  der Haken leer blieb.  Wächter: `test_der_emulator_legt_physisch_schreibend_ein_*`,
+  `test_ohne_haken_liegt_die_physische_diskette_schreibgeschuetzt_im_laufwerk`.
 - **Eine Rücknahme (`DiskVolume`-Transaktion) braucht `restoreFrom`**, nicht eine
   Zuweisung: was schon auf der echten Scheibe steht, holt keine Kopie im Speicher
   zurück — die zurückgesetzten Spuren müssen **erneut als geändert** gelten.

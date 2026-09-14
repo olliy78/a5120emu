@@ -290,6 +290,13 @@ class DriveWidget(QWidget):
             QLabel(f"<b>Laufwerk {chr(ord('A') + drive)}:</b> — {type_label}"))
         head_layout.addStretch()
         wp_check = QCheckBox("Write-Protect")
+        wp_check.setToolTip(
+            "Der Schreibschutz des LAUFWERKS — wie die Kerbe am Rand der Diskette.\n"
+            "Das Gastsystem sieht ihn und meldet „schreibgeschützt“, statt in einen "
+            "Fehler zu laufen.\n"
+            "Bei einer echten Diskette am Greaseweazle ist er das zweite Schloss: "
+            "die Sitzung darf auf die Scheibe schreiben, die Maschine trotzdem nicht "
+            "— dann geht auch nichts an den Adapter.")
         # Er wirkt SOFORT, nicht erst beim naechsten Einlegen: sonst zeigte die
         # Statuszeile „R/O", waehrend die Maschine weiter schreiben darf.
         wp_check.toggled.connect(lambda an, d=drive: self._wp_umgeschaltet(d, an))
@@ -517,8 +524,15 @@ class DriveWidget(QWidget):
                 return
 
             cyls, heads, rate, rpm = dt.geometrie(self.drive_types[drive])
+            # Im EMULATOR ist der Haken gesetzt: hier wird die Diskette nicht
+            # angesehen, sondern BENUTZT — ein Gastsystem, das nicht schreiben kann,
+            # ist kein Rechner mit Laufwerk.  Der Schreibschutz sitzt trotzdem nicht
+            # im Dialog, sondern wie am echten Gerät am LAUFWERK: der Haken
+            # „Write-Protect" im Kasten bleibt bedienbar und wirkt sofort.  (Das
+            # DiskTool bleibt bei „schreibgeschützt, bis jemand widerspricht" — dort
+            # ist Öffnen ein Lesevorgang.)
             wahl = PhysicalDiskDialog.frage(
-                self, num_cyls=cyls, num_heads=heads,
+                self, num_cyls=cyls, num_heads=heads, writable=True,
                 drive_label=dt.short_label(self.drive_types[drive]))
             if wahl is None:
                 return
@@ -552,9 +566,12 @@ class DriveWidget(QWidget):
                 return
 
             self._physical[drive] = sitzung
-            path_display.setText(
-                f"[echtes Laufwerk {wahl['drive'].upper()} am Greaseweazle"
-                + (", schreibend]" if wahl["writable"] else "]"))
+            # Eingelegt wurde mit `not writable` als Schreibschutz — der Haken muss
+            # das zeigen, sonst steht im Kasten „beschreibbar", während die Maschine
+            # keinen einzigen Sektor schreiben darf.  Ohne Signal, denn im Kern ist
+            # es schon gesetzt.
+            self._wp_haken_nachziehen(drive, not wahl["writable"])
+            path_display.setText(self._physisch_text(drive))
             toggle_btn.setText("Auswerfen")
             phys_btn.setEnabled(False)
             saveas_btn.setEnabled(True)     # „Speichern unter…" zieht die Diskette ab
@@ -779,6 +796,11 @@ class DriveWidget(QWidget):
 
         Ohne eingelegte Diskette ist das nur die Vorwahl fuer das naechste
         Einlegen — dann gibt es im Kern nichts zu setzen.
+
+        Gilt auch fuer eine ECHTE Diskette am Greaseweazle, und dort ist es der
+        eigentliche Zweck: die Sitzung darf schreiben, das LAUFWERK aber nicht.
+        Der Gast sieht den Schreibschutz (der K5122 fuehrt ihn im Statusport), es
+        entsteht keine geaenderte Spur — und damit geht auch nichts an den Adapter.
         """
         if not self.is_mounted(drive):
             return
@@ -790,6 +812,47 @@ class DriveWidget(QWidget):
         if eintrag is not None:
             self._mounts[drive] = (eintrag[0], eintrag[1], bool(an))
             self.disk_mounted.emit(drive, eintrag[0])   # Konfiguration nachfuehren
+        elif drive in self._physical:
+            panel = self._panels.get(drive)
+            if panel is not None and hasattr(panel, "_path_display"):
+                panel._path_display.setText(self._physisch_text(drive))
+
+    def _wp_haken_nachziehen(self, drive: int, an: bool) -> None:
+        """Den Haken auf *an* stellen, OHNE ihn auszulösen.
+
+        Der Kern hat den Schreibschutz an dieser Stelle schon (er kam beim Mounten
+        mit); ein ausgelöstes `toggled` setzte ihn nur ein zweites Mal und schickte
+        nebenbei ein `disk_mounted` los, das keine Diskettendatei meint.
+        """
+        panel = self._panels.get(drive)
+        if panel is None or not hasattr(panel, "_wp_check"):
+            return
+        haken = panel._wp_check
+        alt = haken.blockSignals(True)
+        haken.setChecked(bool(an))
+        haken.blockSignals(alt)
+
+    def _physisch_text(self, drive: int) -> str:
+        """Die Zeile „Image:" eines echten Laufwerks — samt Schreibrecht.
+
+        Zwei Schlösser hintereinander, und beide gehören in die Zeile: die **Sitzung**
+        sagt, ob auf die Scheibe überhaupt geschrieben werden darf, das **Laufwerk**
+        (Haken „Write-Protect"), ob die Maschine es versuchen darf.
+        """
+        sitzung = self._physical.get(drive)
+        if sitzung is None:
+            return ""
+        try:
+            wp = self.emulator.is_disk_write_protected(drive)
+        except Exception:
+            wp = False
+        if not sitzung.writable:
+            wie = "nur lesen"
+        elif wp:
+            wie = "schreibgeschützt am Laufwerk"
+        else:
+            wie = "schreibend"
+        return f"[echtes Laufwerk {sitzung.drive.upper()} am Greaseweazle, {wie}]"
 
     # ── Config-Persistenz (gemountete Disketten) ─────────────────────────────
 

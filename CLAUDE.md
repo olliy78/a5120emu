@@ -576,8 +576,13 @@ Prüf-Lesen). Entwurf: **`doc/design/14_physische_diskette.md`**.
 >   benutzen `peek()` und laden nie nach, sonst zieht eine Statusabfrage die ganze Diskette ein.
 > - **Geschrieben gilt erst nach dem ZURÜCKLESEN** (Vergleich auf Sektorebene, beide CRCs).
 >   Das Zurückgelesene wird **nie** ins Abbild übernommen.
-> - **Physisch heißt schreibgeschützt, bis jemand widerspricht** — ein Fehler kostet hier
->   nicht eine Kopie, sondern die einzige noch existierende Diskette.
+> - **Zwei Schlösser, und beide müssen sichtbar sein** (2026-09-14): die **Sitzung**
+>   darf auf die Scheibe schreiben oder nicht, das **Laufwerk** („Write-Protect" im
+>   Laufwerkskasten) lässt die Maschine es versuchen oder nicht.  Im **DiskTool** heisst
+>   physisch weiter *schreibgeschützt, bis jemand widerspricht* (Öffnen ist ein
+>   Lesevorgang; ein Fehler kostet dort die einzige noch existierende Diskette), im
+>   **Emulator** kommt der Haken gesetzt — dort wird die Diskette benutzt.  Was der Kern
+>   sperrt, muss der Kasten zeigen.
 
 ## Diskettenformatierung (FORMAT.COM) — Scope
 
