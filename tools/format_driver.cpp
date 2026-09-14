@@ -25,6 +25,11 @@
 //   FD_PCHIST=1        per-boot-batch ZVE1/busMaster PC histogram + /BUSRQ share to stderr
 //   FD_DISKC=<path>    zusätzlich Laufwerk C: (Index 2) mounten (für FORMAT auf C:).
 //                      FD_DISKC_FMT=<DiskFormat> → C: via create NEU anlegen statt öffnen.
+//   FD_PHYSICAL_B=<ms> B: als PHYSISCHE Diskette (TrackSync + Ersatz-Arbeitsfaden statt
+//                      Datei) — <ms> = simulierte Umdrehungsdauer, Kopfweg 3 ms/Spur.
+//                      Jeder Auftrag geht nach stderr ([gw t] ART cCC hH prioP Kopfweg);
+//                      so wird die Auftragsfolge am Greaseweazle ohne Hardware sichtbar.
+//                      FD_PHYSICAL_READAHEAD=0 schaltet das Vorauslesen ab.
 //
 //   NOTE: DEBUG/TRACE lines live in the CORE libraries (k5122/a5120), which build/ compiles
 //   at LOG_LEVEL=3 (DEBUG/TRACE stripped).  Run build_trace/format_driver (LOG_LEVEL=5) for
@@ -35,6 +40,11 @@
 // uses.  Disks are mounted read/write so FORMAT writes land in the diskB file.
 #include "core/machines/a5120/a5120.h"
 #include "core/logger.h"
+#include "core/peripherals/floppy_drive/disk_image.h"
+#include "core/peripherals/floppy_drive/bit_codec.h"
+#include <atomic>
+#include <chrono>
+#include <thread>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -56,6 +66,68 @@ static constexpr uint32_t QK_LEFT      = 0x01000012;
 static constexpr uint32_t QK_UP        = 0x01000013;
 static constexpr uint32_t QK_RIGHT     = 0x01000014;
 static constexpr uint32_t QK_DOWN      = 0x01000015;
+
+
+// ── FD_PHYSICAL_B: Laufwerk B: als PHYSISCHE Diskette (Ersatz-Greaseweazle) ──
+// Diagnosehilfe fuer doc/design/14: statt einer Datei haengt an B: ein TrackSync,
+// den ein Ersatz-Arbeitsfaden bedient — mit simuliertem Kopfweg und Umdrehung.
+// Jeder Auftrag wird nach stderr protokolliert, so wird die Auftragsfolge (und
+// damit der Kopfweg) sichtbar, ohne dass Hardware noetig waere.
+namespace {
+class Ersatzlaufwerk {
+public:
+    Ersatzlaufwerk(TrackSync& s, int step_ms, int rev_ms)
+        : sync_(s), step_ms_(step_ms), rev_ms_(rev_ms) {
+        scheibe_.resize(s.spec().num_cyls, s.spec().num_heads);
+        t0_ = std::chrono::steady_clock::now();
+    }
+    ~Ersatzlaufwerk() { stop(); }
+    void start() { faden_ = std::thread([this] { schleife(); }); }
+    void stop() {
+        sync_.shutdown();
+        if (faden_.joinable()) faden_.join();
+    }
+private:
+    double t() const {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0_).count();
+    }
+    void warte(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
+    void schleife() {
+        for (;;) {
+            SyncJob j;
+            if (!sync_.takeJob(j, 50)) continue;
+            if (j.kind == SyncJobKind::Stop) return;
+            const int weg = std::abs(static_cast<int>(j.cyl) - pos_);
+            const char* art = j.kind == SyncJobKind::Read ? "READ"
+                            : j.kind == SyncJobKind::Write ? "WRITE" : "VERIFY";
+            fprintf(stderr, "[gw %8.3f] %-6s c%02u h%u prio%u  Kopf %d->%d (%d Spuren)\n",
+                    t(), art, j.cyl, j.head, static_cast<unsigned>(j.prio),
+                    pos_, j.cyl, weg);
+            fflush(stderr);
+            warte(weg * step_ms_ + (weg ? 15 : 0));
+            pos_ = j.cyl;
+            if (j.kind == SyncJobKind::Write) {
+                std::vector<uint8_t> zellen; uint32_t bc = 0;
+                if (!sync_.fetchWrite(j.id, zellen, bc)) { sync_.failJob(j.id, "fetch"); continue; }
+                warte(rev_ms_);
+                scheibe_.setTrack(j.cyl, j.head, BitCodec::decodeAuto(zellen, bc, Encoding::MFM));
+                sync_.completeWrite(j.id);
+            } else {
+                warte(2 * rev_ms_ + 100);     // 2 Umdrehungen + USB/Dekodierung
+                const TrackImage& s = scheibe_.peek(j.cyl, j.head);
+                const uint32_t bits = s.bitcells ? s.bitcells : sync_.nominalBitcells();
+                const std::vector<uint8_t> z = BitCodec::encode(s, bits);
+                sync_.completeRead(j.id, z.data(), z.size(), bits);
+            }
+        }
+    }
+    TrackSync& sync_;
+    DiskMedium scheibe_;
+    int pos_ = 0, step_ms_, rev_ms_;
+    std::thread faden_;
+    std::chrono::steady_clock::time_point t0_;
+};
+}  // namespace
 
 static void dumpScreen(A5120Machine& m, const char* label) {
     printf("\n=== SCREEN: %s ===\n", label);
@@ -180,7 +252,30 @@ int main(int argc, char** argv) {
         fprintf(stderr, "ERROR: mount A '%s': %s\n", diskA, machine.lastError().c_str());
         return 1;
     }
-    if (createB) {
+    std::unique_ptr<Ersatzlaufwerk> gw;
+    if (const char* ph = std::getenv("FD_PHYSICAL_B")) {
+        TrackSyncSpec spec;
+        spec.num_cyls = 80; spec.num_heads = 2; spec.writable = true;
+        if (const char* rd = std::getenv("FD_PHYSICAL_READAHEAD")) spec.read_ahead = atoi(rd) != 0;
+        auto img = DiskImage::openPhysical(spec);
+        TrackSync* sync = img->sync();
+        if (!machine.mountDiskImage(1, std::move(img), false)) {
+            fprintf(stderr, "ERROR: mount B physisch: %s\n", machine.lastError().c_str());
+            return 1;
+        }
+        const int rev_ms = atoi(ph) > 0 ? atoi(ph) : 200;
+        gw = std::make_unique<Ersatzlaufwerk>(*sync, 3, rev_ms);
+        gw->start();
+        fprintf(stderr, "B: als PHYSISCHE Diskette (Umdrehung %d ms, readahead=%d)\n",
+                rev_ms, spec.read_ahead);
+        // FD_PHYSICAL_PRELOAD: erst die GANZE Diskette einlesen (wie „warten, bis der
+        // Vorausleser durch ist"), dann das Script fahren.
+        if (std::getenv("FD_PHYSICAL_PRELOAD")) {
+            fprintf(stderr, "[preload] lese alle Spuren …\n");
+            const bool ok = sync->loadAll();
+            fprintf(stderr, "[preload] fertig (%s)\n", ok ? "vollstaendig" : "mit Fehlern");
+        }
+    } else if (createB) {
         // B: NEU anlegen (create) im angegebenen Katalogformat: VORFORMATIERT
         // (echte IDAM/DATA/CRC, Nutzdaten 0xE5) — nicht die neue Leerdiskette.
         if (!machine.createDisk(1, diskB, createB, false)) {

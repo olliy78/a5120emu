@@ -19,6 +19,7 @@ Menüpunkt und nennt den Grund, sonst ändert sich nichts.
 from __future__ import annotations
 
 import contextlib
+import functools
 import importlib
 import sys
 import time
@@ -36,6 +37,69 @@ class GreaseweazleFehlt(GwFehler):
 
 class KeinAdapter(GwFehler):
     """Kein Greaseweazle am USB gefunden (oder keine Rechte am Anschluss)."""
+
+
+class LaufwerkMeldet(GwFehler):
+    """Der Adapter hat den Auftrag abgelehnt — und der Grund liegt am Gerät.
+
+    Abgegrenzt von einer schadhaften Diskette: was hier ankommt, ist keine Stelle,
+    die nicht mehr trägt, sondern ein Laufwerk, das den Auftrag gar nicht erst
+    ausführen konnte.  Beides landet sonst als derselbe „Schreibfehler" vor dem
+    Bediener, und er sucht an der falschen Stelle.
+    """
+
+
+#: Meldungen der Hosttools, die NICHT an der Diskette liegen — mit dem Satz, der sagt,
+#: wo zu suchen ist.  Der Wortlaut stammt aus ``greaseweazle.usb.Ack``: die Firmware
+#: meldet eine Zahl, die Hosttools setzen den englischen Text, und der steht danach
+#: unübersetzt in der Fehlermeldung („GetFluxStatus: No Index").
+_DEUTUNG = (
+    ("No Index",
+     "Der Adapter sieht keinen Indexpuls, also keine Umdrehung.  Meist dreht die "
+     "Diskette gar nicht: falsches Laufwerk am Kabel gewählt (a/b gegenüber 0…3), "
+     "keine Diskette eingelegt, Klappe offen — oder die Indexleitung des Kabels "
+     "fehlt.  Ohne Index geht weder Lesen noch Schreiben."),
+    ("Write Protected",
+     "Die eingelegte Diskette ist schreibgeschützt — bei 5,25″ ist die Kerbe am Rand "
+     "offen, bei 8″ zugeklebt."),
+    ("Track 0 not found",
+     "Der Kopf findet den Anschlag nicht.  Das ist ein Laufwerks- oder Kabelfehler, "
+     "keine Eigenschaft der Diskette."),
+    ("No drive unit selected",
+     "Es ist kein Laufwerk gewählt — der Adapter wurde zwischendurch zurückgesetzt."),
+    ("No bus type",
+     "Dem Adapter fehlt die Kabelart (Shugart oder IBM/PC) — er wurde zwischendurch "
+     "zurückgesetzt."),
+)
+
+
+def _gedeutet(e: Exception) -> Exception:
+    """Eine Meldung der Hosttools um ihre Ursache ergänzen (sonst unverändert)."""
+    text = str(e)
+    for marke, satz in _DEUTUNG:
+        if marke.lower() in text.lower():
+            return LaufwerkMeldet(f"{text} — {satz}")
+    return e
+
+
+def _mit_deutung(fn):
+    """Auftrag ausführen und einen Gerätefehler auf Deutsch weiterreichen.
+
+    Der Arbeitsfaden reicht den Text unverändert in den Kern (``failJob``), von dort
+    kommt er in die Statuszeile und ins Meldungsfenster.  „GetFluxStatus: No Index"
+    allein schickt den Bediener auf die Suche nach einer kaputten Diskette.
+    """
+    @functools.wraps(fn)
+    def huelle(*a, **k):
+        try:
+            return fn(*a, **k)
+        except Exception as e:                   # noqa: BLE001 — gw wirft vielerlei
+            gedeutet = _gedeutet(e)
+            if gedeutet is e:
+                raise
+            raise gedeutet from e
+
+    return huelle
 
 
 def _leise(modul: str):
@@ -287,6 +351,7 @@ class Device:
         """Logische Spur → physischer Zylinder (§12.5)."""
         return cyl * 2 if self.double_step else cyl
 
+    @_mit_deutung
     def read_track(self, cyl: int, head: int) -> tuple[bytes, int]:
         """Eine Spurseite lesen.
 
@@ -346,6 +411,7 @@ class Device:
             self._ticks_per_rev = self._usb.read_track(2).ticks_per_rev
         return self._ticks_per_rev
 
+    @_mit_deutung
     def write_track(self, cyl: int, head: int, cells: bytes, bitcells: int) -> None:
         """Eine Spurseite schreiben — ganze Spur, ab Index bis Index."""
         from bitarray import bitarray

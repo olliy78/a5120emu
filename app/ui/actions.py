@@ -74,6 +74,19 @@ _SPEC: List[Tuple] = [
      "Auslieferung zurücksetzen — überschreibt die gespeicherte Konfiguration",
      "_standard_zuruecksetzen", False),
 
+    # ── Werkzeuge ───────────────────────────────────────────────────────────
+    # Die Nachbarprogramme derselben Installation.  Sie fassen dieselben
+    # Disketten an, also gehören sie erreichbar — und zwar aus dem laufenden
+    # Programm heraus, nicht nur aus dem Startmenü.
+    ("disktool", "&k1520DiskTool starten", None, None,
+     "Das Diskettenwerkzeug öffnen — Dateien von einer Diskette holen und auf "
+     "sie schreiben; es läuft neben dem Emulator weiter",
+     "_disktool_starten", False),
+    ("konsole", "&Werkzeugkonsole öffnen", None, None,
+     "Ein Konsolenfenster, in dem der Debugger k1520dbg und die Kommandozeile "
+     "des DiskTool ohne Pfadangabe laufen — es steht im Diskettenordner",
+     "_konsole_starten", False),
+
     # ── Hilfe ───────────────────────────────────────────────────────────────
     ("hilfe", "&Handbuch…", "help", "Ctrl+Shift+H",
      "Bedienung, Begriffe und Tastenkürzel", "open_help", False),
@@ -91,6 +104,8 @@ KURZ = {
     "reset": "Reset",
     "vollbild": "Vollbild",
     "standard": "Standard",
+    "disktool": "DiskTool",
+    "konsole": "Konsole",
     "hilfe": "Hilfe",
 }
 

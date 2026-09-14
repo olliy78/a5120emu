@@ -44,6 +44,7 @@ from app.core_binding.k1520 import K1520Emulator
 from app import config_io
 from app import drive_types as dt
 from app import paths
+from app import programme
 from app import takt
 
 
@@ -586,6 +587,14 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.act_leiste_einrichten)
         view_menu.addSeparator()
         view_menu.addAction(self.act_standard)
+
+        # ── Werkzeuge ────────────────────────────────────────────────────────
+        # Die Nachbarprogramme derselben Installation.  Eigenes Menü, weil es
+        # weder Dateien noch die Maschine betrifft: hier wird ein ZWEITES
+        # Programm gestartet, das neben diesem weiterläuft.
+        tools_menu = menu_bar.addMenu("&Werkzeuge")
+        tools_menu.addAction(self.act_disktool)
+        tools_menu.addAction(self.act_konsole)
 
         # ── Hilfe ────────────────────────────────────────────────────────────
         help_menu = menu_bar.addMenu("&Hilfe")
@@ -1344,6 +1353,33 @@ class MainWindow(QMainWindow):
         self.run_timer.stop()
         self.act_power.setChecked(False)
     
+    # ── Nachbarprogramme ────────────────────────────────────────────────────
+
+    def _disktool_starten(self):
+        """Das k1520DiskTool als eigenständiges Programm daneben öffnen.
+
+        Bewusst ein zweiter Prozess und kein zweites Fenster in diesem hier: die
+        beiden benutzen verschiedene Bibliotheken (``libk1520core`` gegen
+        ``libk1520disk``), und ein hängendes Diskettenwerkzeug soll die laufende
+        Maschine nicht mitreissen.
+        """
+        try:
+            programme.programm_starten(programme.DISKTOOL)
+        except RuntimeError as e:
+            QMessageBox.warning(self, "k1520DiskTool", str(e))
+
+    def _konsole_starten(self):
+        """Ein Konsolenfenster mit den K1520-Kommandozeilenwerkzeugen öffnen.
+
+        Der Debugger mountet seine Diskette standardmässig als Kopie
+        (Copy-on-Write, siehe ``tools/k1520dbg.md`` §1), eine hier eingelegte
+        Diskette nimmt also keinen Schaden, wenn sie dort zugleich offen ist.
+        """
+        try:
+            programme.konsole_starten()
+        except RuntimeError as e:
+            QMessageBox.warning(self, "Werkzeugkonsole", str(e))
+
     def _on_about(self):
         """Fassung und Herkunft — die Fassung kommt aus der Bibliothek selbst."""
         from app.core_binding.k1520 import K1520Emulator as _E

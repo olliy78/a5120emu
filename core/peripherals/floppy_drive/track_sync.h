@@ -79,7 +79,8 @@ struct TrackSyncSpec {
      * des Gastsystems gegen das Speicherabbild läuft, nicht gegen die Scheibe.
      */
     bool     verify_writes = true;
-    /// Zusätzliche Schreibversuche nach einem gescheiterten Vergleich (0 = keiner).
+    /// Zusätzliche Schreibversuche, wenn der Vergleich scheitert ODER der
+    /// Schreibvorgang selbst (0 = keiner); danach gilt die Spur als nicht beschreibbar.
     uint8_t  write_verify_retries = 1;
     /**
      * @brief Zusätzliche LESEversuche, wenn eine Spur mit fehlerhafter Prüfsumme kommt.
@@ -259,6 +260,10 @@ public:
      * @p bitcells die Zahl gültiger Zellen.  Das Verfahren (FM/MFM) wird dabei selbst
      * bestimmt (@ref BitCodec::decodeAuto); eine markenlose Spur wird als **leere**
      * (unformatierte) Spur abgelegt, damit der Controller Gap-Flux streamt.
+     *
+     * Wurde die Spur **während** des Auftrags geschrieben, ist das Gelesene veraltet
+     * und wird verworfen (Feinentwurf §5.2a) — sonst überschriebe der Vorausleser
+     * lautlos die Spur, die das Gastsystem gerade formatiert hat.
      */
     bool completeRead(uint32_t id, const uint8_t* cells, size_t len, uint32_t bitcells);
 
@@ -272,7 +277,10 @@ public:
      * Lesen: die Spur bleibt unbekannt und wird als „gescheitert" vermerkt, damit das
      * Vorauslesen sie nicht endlos wiederholt; der Wartende bekommt die leere Spur.
      * Schreiben: die Spur bleibt **geändert** und wird erneut eingestellt — eine
-     * verlorene Änderung wäre der schlimmere Ausgang.
+     * verlorene Änderung wäre der schlimmere Ausgang.  Aber auch das nicht endlos:
+     * nach @ref TrackSyncSpec::write_verify_retries Wiederholungen gilt die Spur als
+     * nicht beschreibbar (@ref hasDefects), sonst hinge ein Laufwerk, das gar nicht
+     * schreiben kann, die Rückführung und das Abmelden auf Dauer fest.
      */
     void failJob(uint32_t id, const std::string& msg);
 
@@ -357,6 +365,8 @@ private:
     bool      stop_        = false;
     bool      abholung_laeuft_ = false;   ///< genau ein Arbeitsfaden
     uint8_t   letzter_cyl_ = 0;           ///< Kopfweg-Schätzung für das Vorauslesen
+    /// Fahrtrichtung des Rückführungs-Fahrstuhls (§7.3): false = zu höheren Zylindern.
+    bool      rueckwaerts_ = false;
     SyncJob   laufend_{};
     /// Einmal bestimmter Ueberabtastfaktor der Quelle (0 = noch unbekannt, §8.1).
     /// Ausserhalb der Sperre gelesen — daher atomar.

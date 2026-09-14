@@ -707,6 +707,79 @@ def test_eine_schadstelle_wird_gemeldet_statt_verschwiegen(hfe, tmp_path):
         assert "liess sich nicht schreiben" in s.last_error
 
 
+class StummesLaufwerk(HfeDevice):
+    """Ein Laufwerk, das den Schreibauftrag GAR NICHT ausführt.
+
+    Der Unterschied zur Schadstelle (``HfeDevice.schadhaft``): dort meldet der
+    Schreibvorgang Erfolg und erst das Prüf-Lesen entlarvt ihn.  Hier scheitert schon
+    der Auftrag — und zwar bei jedem Versuch gleich, weil die Ursache nicht auf der
+    Diskette liegt, sondern am Gerät (kein Indexsignal, Adapter abgezogen).
+    """
+
+    def __init__(self, pfad):
+        super().__init__(pfad)
+        self.versuche = []
+
+    def write_track(self, cyl, head, cells, bitcells):
+        self.versuche.append((cyl, head))
+        raise RuntimeError("GetFluxStatus: No Index")
+
+
+def test_ein_laufwerk_das_nicht_schreibt_haelt_die_rueckfuehrung_nicht_auf(hfe):
+    """Ein Gerätefehler wiederholt sich endlos — die Rückführung darf es nicht.
+
+    Am echten Gerät beobachtet (2026-09-14): nach dem Formatieren einer physischen
+    Diskette meldete jede Spur ``GetFluxStatus: No Index``.  Ohne Obergrenze stellte
+    sich jede Spur sofort wieder ein: der Arbeitsfaden kam nie zur Ruhe, das Abmelden
+    sass seine ganze Frist ab, und das Programm sah aus, als hinge es.
+    """
+    geraet = StummesLaufwerk(hfe)
+    with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
+              writable=True, read_ahead=True, write_settle_ms=50) as s:
+        worker = TrackWorker(s, geraet, poll_ms=30)
+        worker.start()
+        try:
+            ende = time.monotonic() + 20
+            while time.monotonic() < ende and s.stats.tracks_known < 3:
+                time.sleep(0.02)
+            s.set_read_ahead(False)             # ab hier passiert nur noch das Gewollte
+            gestellt = s.rewrite_all()
+            assert gestellt >= 3, "zu wenig gelesen, um etwas zurückzustellen"
+
+            ende = time.monotonic() + 20
+            while time.monotonic() < ende and s.stats.tracks_defect < gestellt:
+                time.sleep(0.02)
+            assert s.stats.tracks_defect == gestellt, "es wird immer noch geschrieben"
+            # EIN Versuch und EINE Wiederholung je Spur — dann ist Ruhe.
+            assert len(geraet.versuche) == 2 * gestellt, len(geraet.versuche)
+            time.sleep(0.4)
+            assert len(geraet.versuche) == 2 * gestellt, "es wird weiter versucht"
+            # Die Spur bleibt im Abbild GEAENDERT — auf einer heilen Diskette ist sie
+            # noch zu retten (§7.2); deshalb zaehlt sie weiter als „zu schreiben".
+            assert s.stats.tracks_dirty == gestellt
+            # Und das Abmelden kommt sofort zurück, statt seine Frist abzusitzen.
+            angefangen = time.monotonic()
+            assert not s.flush(5000), "der Fehlschlag wurde als Erfolg verbucht"
+            assert time.monotonic() - angefangen < 2.0, "flush hat gewartet"
+            assert "No Index" in s.last_error
+        finally:
+            worker.stop()
+
+
+def test_die_meldung_des_adapters_wird_gedeutet():
+    """„GetFluxStatus: No Index" allein schickt den Bediener zur falschen Ursache."""
+    from app.gw.device import LaufwerkMeldet, _gedeutet
+
+    gedeutet = _gedeutet(RuntimeError("GetFluxStatus: No Index"))
+    assert isinstance(gedeutet, LaufwerkMeldet)
+    assert "No Index" in str(gedeutet), "der Wortlaut des Adapters muss stehenbleiben"
+    assert "Indexpuls" in str(gedeutet)
+
+    # Was nicht vom Gerät kommt, wird nicht umgedeutet.
+    fremd = RuntimeError("irgendetwas anderes")
+    assert _gedeutet(fremd) is fremd
+
+
 def test_neu_beschreiben_stellt_alles_wieder_ein(hfe):
     """Der Ausweg: heile Diskette einlegen, alles Bekannte erneut wegschreiben."""
     geraet = HfeDevice(hfe)

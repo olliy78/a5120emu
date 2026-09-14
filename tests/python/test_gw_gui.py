@@ -78,7 +78,13 @@ def test_auswahl_liefert_genau_die_argumente_der_sitzung(app):
     erlaubt = set(inspect.signature(PhysicalSession.start).parameters) - {"cls"}
     assert set(wahl) <= erlaubt, f"unbekannte Argumente: {set(wahl) - erlaubt}"
     assert wahl["num_cyls"] == 40 and wahl["num_heads"] == 1
-    assert wahl["writable"] is False, "Schreiben darf nicht die Vorgabe sein"
+    # Die VORGABE des Dialogs bleibt „nicht schreiben" — sie gilt fuer das
+    # k1520DiskTool, wo Oeffnen ein Lesevorgang ist.  Der Emulator setzt den Haken
+    # ausdruecklich (`writable=True` beim Aufruf), dort wird die Diskette benutzt;
+    # Waechter dafuer ist
+    # `test_der_emulator_legt_physisch_schreibend_ein_und_der_haken_sperrt_sofort`.
+    # Wer hier die Vorgabe umdreht, macht aus dem Ansehen einer Diskette ein Risiko.
+    assert wahl["writable"] is False, "Schreiben darf nicht die Vorgabe des Dialogs sein"
 
 
 def test_disktool_oeffnet_mit_der_vollen_dialogauswahl(app, hfe, monkeypatch):
@@ -226,6 +232,83 @@ def test_emulator_legt_eine_physische_diskette_ein_und_zeigt_sie_an(app, hfe,
     assert panel._toggle_btn.text() == "Mount"
     assert panel._phys_btn.isEnabled()
     assert panel._phys_label.isHidden()
+
+
+def test_der_emulator_legt_physisch_schreibend_ein_und_der_haken_sperrt_sofort(
+        app, hfe, monkeypatch):
+    """Zwei Schlösser hintereinander — und beide müssen im Kasten zu sehen sein.
+
+    Im Emulator wird die Diskette nicht angesehen, sondern **benutzt**: der Haken im
+    Dialog ist deshalb gesetzt.  Der Schreibschutz sitzt dafür am LAUFWERK, wie die
+    Kerbe am Rand der echten Diskette — er wirkt sofort, das Gastsystem sieht ihn,
+    und es entsteht keine geänderte Spur, die an den Adapter ginge.
+    """
+    from app.core_binding.k1520 import K1520Emulator
+    from app.ui import physical_disk
+    from app.ui.drive_widget import DriveWidget
+
+    sitzung = fake_session(hfe, writable=True, read_ahead=False, for_emulator=True)
+    gefragt = {}
+    monkeypatch.setattr(physical_disk.PhysicalSession, "start",
+                        classmethod(lambda cls, **kw: sitzung))
+
+    def frage(cls, parent=None, **kw):
+        gefragt.update(kw)
+        return {"drive": "a", "cell_rate_kbps": 250, "num_cyls": 80,
+                "num_heads": 2, "writable": True, "read_ahead": False}
+    monkeypatch.setattr(physical_disk.PhysicalDiskDialog, "frage", classmethod(frage))
+
+    emu = K1520Emulator()
+    w = DriveWidget(emu)
+    panel = w._panels[0]
+    try:
+        panel._phys_btn.click()
+        assert gefragt.get("writable") is True, "der Haken kommt nicht vorbelegt"
+        assert not emu.is_disk_write_protected(0), "schreibend eingelegt, aber gesperrt"
+        assert not panel._wp_check.isChecked()
+        assert "schreibend" in panel._path_display.text()
+
+        # Zweites Schloss: das Laufwerk sperren, ohne die Sitzung anzufassen.
+        panel._wp_check.setChecked(True)
+        assert emu.is_disk_write_protected(0), "der Haken erreicht die Maschine nicht"
+        assert sitzung.writable, "die Sitzung darf davon nichts merken"
+        assert "schreibgeschützt" in panel._path_display.text()
+
+        panel._wp_check.setChecked(False)
+        assert not emu.is_disk_write_protected(0)
+    finally:
+        w.close_physical_sessions()
+
+
+def test_ohne_haken_liegt_die_physische_diskette_schreibgeschuetzt_im_laufwerk(
+        app, hfe, monkeypatch):
+    """Nimmt man den Haken heraus, muss die Sperre auch ANGEZEIGT werden.
+
+    Vorher war sie nur wirksam: die Maschine konnte nicht schreiben, der Kasten
+    zeigte trotzdem einen leeren „Write-Protect"-Haken.
+    """
+    from app.core_binding.k1520 import K1520Emulator
+    from app.ui import physical_disk
+    from app.ui.drive_widget import DriveWidget
+
+    sitzung = fake_session(hfe, read_ahead=False, for_emulator=True)
+    monkeypatch.setattr(physical_disk.PhysicalSession, "start",
+                        classmethod(lambda cls, **kw: sitzung))
+    monkeypatch.setattr(physical_disk.PhysicalDiskDialog, "frage",
+                        classmethod(lambda cls, parent=None, **kw: {
+                            "drive": "a", "cell_rate_kbps": 250, "num_cyls": 80,
+                            "num_heads": 2, "writable": False, "read_ahead": False}))
+
+    emu = K1520Emulator()
+    w = DriveWidget(emu)
+    panel = w._panels[0]
+    try:
+        panel._phys_btn.click()
+        assert emu.is_disk_write_protected(0)
+        assert panel._wp_check.isChecked(), "der Schreibschutz steht nicht im Kasten"
+        assert "nur lesen" in panel._path_display.text()
+    finally:
+        w.close_physical_sessions()
 
 
 def test_emulator_merkt_sich_kein_physisches_laufwerk_in_der_konfiguration(
@@ -982,6 +1065,22 @@ def test_defektmeldung_erscheint_nur_einmal_je_spur(app, hfe, monkeypatch):
         assert sitzung.neue_defekte() == ""             # unverändert → still
         assert sitzung.neue_defekte() == "5/1, 12/0"    # neue Spur → wieder melden
         assert sitzung.neue_defekte() == ""
+    finally:
+        sitzung.close()
+
+
+def test_die_meldung_nennt_den_grund_des_adapters(app, hfe):
+    """Schadstelle oder Gerät? — das trennt nur der Wortlaut des Adapters.
+
+    Ohne ihn stünde im Fenster „Schadstelle der Diskette", waehrend in Wahrheit das
+    Laufwerk nicht dreht; der Bediener suchte dann bei der Diskette.
+    """
+    sitzung = fake_session(hfe)
+    try:
+        text = sitzung.defekt_meldung("5/1", "GetFluxStatus: No Index — kein Indexpuls")
+        assert "No Index" in text
+        assert "Laufwerk" in text, "der zweite moegliche Grund fehlt"
+        assert "Speichern unter" in text, "der Ausweg muss auch hier dabeistehen"
     finally:
         sitzung.close()
 

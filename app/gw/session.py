@@ -188,14 +188,26 @@ class PhysicalSession:
         self.gemeldete_defekte = jetzt
         return jetzt
 
-    def defekt_meldung(self, spuren: str) -> str:
-        """Der Text, den der Bediener zu sehen bekommt — samt Ausweg."""
-        return (
-            f"Die Diskette liess sich an dieser Stelle nicht beschreiben:\n\n"
-            f"    Spur {spuren}\n\n"
-            "Geschrieben wurde es zweimal und danach zurückgelesen — beide Male kam "
-            "etwas anderes zurück.  Das ist eine Schadstelle der Diskette, kein "
-            "Fehler des Programms.\n\n"
+    def defekt_meldung(self, spuren: str, grund: str = "") -> str:
+        """Der Text, den der Bediener zu sehen bekommt — samt Ausweg.
+
+        Args:
+            spuren: die betroffenen Spuren, z. B. ``"5/1, 12/0"``.
+            grund: die letzte Meldung des Adapters.  Sie gehört DAZU: eine Spur, die
+                sich nicht beschreiben lässt, kann eine Schadstelle der Diskette sein
+                — oder ein Laufwerk, das den Auftrag gar nicht erst ausgeführt hat
+                (kein Indexsignal, Schreibschutz).  Ohne den Grund sucht der Bediener
+                bei der Diskette, obwohl das Kabel steckt.
+        """
+        text = (f"Die Diskette liess sich an dieser Stelle nicht beschreiben:\n\n"
+                f"    Spur {spuren}\n\n")
+        if grund:
+            text += f"Zuletzt gemeldet:\n    {grund}\n\n"
+        return text + (
+            "Versucht wurde es zweimal.  Kam dabei etwas anderes zurück, als "
+            "geschrieben wurde, ist es eine Schadstelle der Diskette; hat das "
+            "Laufwerk den Auftrag abgelehnt, nennt der Grund oben die Ursache — dann "
+            "ist die Diskette in Ordnung und das Gerät zu prüfen.\n\n"
             "Das Abbild im Speicher ist unversehrt.  Retten Sie es, solange dieses "
             "Fenster offen ist:\n"
             "  • „Speichern unter…“ schreibt es in eine Datei, oder\n"

@@ -317,16 +317,30 @@ bool TrackSync::waehleAuftrag(SyncJob& out) {
         if (bester != SIZE_MAX) { art = SyncJobKind::Verify; prio = SyncPriority::Writeback; }
     }
 
-    // 2b) Rückführung — die am längsten ruhende zuerst.
+    // 2b) Rückführung — **Fahrstuhl**: in der laufenden Fahrtrichtung die nächste
+    // fällige Spur, und erst wenn dort keine mehr liegt, umkehren (Feinentwurf §7.3).
+    //
+    // Nach der Eintreffreihenfolge zu gehen hiesse, immer die HINTERSTE Spur zu nehmen,
+    // während das Gastsystem vorn arbeitet: jedes Auftragspaar führe die ganze Strecke
+    // hin und zurück, und weil der Rückstand während eines Formatierlaufs wächst, würde
+    // die Strecke immer länger.  Der Fahrstuhl verhungert dabei niemanden — was in
+    // einer Fahrtrichtung übersprungen wird, holt die Rückfahrt ab.
     if (bester == SIZE_MAX && spec_.writable) {
-        Uhr::time_point aelteste{};
-        for (size_t i = 0; i < eintraege_.size(); ++i) {
-            const Eintrag& e = eintraege_[i];
-            if (e.job_id != 0 || !e.dirty_pending) continue;
-            if (jetzt - e.dirty_since < ruhe) continue;     // noch nicht zur Ruhe gekommen
-            if (bester == SIZE_MAX || e.dirty_since < aelteste) {
-                bester = i; aelteste = e.dirty_since;
+        auto faellig = [&](const Eintrag& e) {
+            return e.job_id == 0 && e.dirty_pending && (jetzt - e.dirty_since >= ruhe);
+        };
+        const int hier = static_cast<int>(letzter_cyl_);
+        for (int wende = 0; wende < 2 && bester == SIZE_MAX; ++wende) {
+            int bester_cyl = 0;
+            for (size_t i = 0; i < eintraege_.size(); ++i) {
+                if (!faellig(eintraege_[i])) continue;
+                const int c = static_cast<int>(i / spec_.num_heads);
+                if (rueckwaerts_ ? (c > hier) : (c < hier)) continue;   // hinter uns
+                const bool naeher = (bester == SIZE_MAX) ||
+                                    (rueckwaerts_ ? c > bester_cyl : c < bester_cyl);
+                if (naeher) { bester = i; bester_cyl = c; }
             }
+            if (bester == SIZE_MAX) rueckwaerts_ = !rueckwaerts_;       // Wende
         }
         if (bester != SIZE_MAX) {
             art = SyncJobKind::Write; prio = SyncPriority::Writeback;
@@ -335,7 +349,19 @@ bool TrackSync::waehleAuftrag(SyncJob& out) {
     }
 
     // 3) Vorauslesen — unbekannte Spur mit dem kürzesten Kopfweg.
-    if (bester == SIZE_MAX && spec_.read_ahead) {
+    //
+    // Es ruht, solange überhaupt etwas zurückzuschreiben ist (§5.3) — auch wenn diese
+    // Spuren gerade noch ihre Ruhefrist absitzen.  Sonst liest der Adapter mitten in
+    // einem Formatierlauf Spuren ein, die im nächsten Augenblick überschrieben werden:
+    // dreifache Arbeit für nichts, und genau das Fenster, in dem ein Leseergebnis vom
+    // Gastsystem überholt wird (§5.2a).
+    auto rueckstand = [this] {
+        if (!spec_.writable) return false;
+        for (const Eintrag& e : eintraege_)
+            if (e.dirty_pending || e.verify_pending) return true;
+        return false;
+    };
+    if (bester == SIZE_MAX && spec_.read_ahead && !rueckstand()) {
         int bester_weg = 0;
         for (uint8_t c = 0; c < spec_.num_cyls; ++c)
             for (uint8_t h = 0; h < spec_.num_heads; ++h) {
@@ -561,6 +587,33 @@ bool TrackSync::completeRead(uint32_t id, const uint8_t* cells, size_t len,
         return true;
     }
 
+    // ── Waehrenddessen neu beschrieben: das Gelesene ist VERALTET ───────────
+    // Es zu uebernehmen hiesse, die Aenderung des Gastes wegzuwerfen — und zwar
+    // lautlos: @ref DiskMedium::loadTrack ersetzt den Inhalt UND loescht `dirty`, die
+    // Spur wuerde also nie zurueckgeschrieben und niemand erfuehre davon.  Das Fenster
+    // ist eine ganze Spurlaenge breit (0,5-0,8 s am echten Geraet) und wird bei jedem
+    // Formatierlauf getroffen: der Vorausleser holt gerade die Spur, die das
+    // Gastsystem im selben Moment formatiert.  Beim Schreiben (@ref completeWrite) und
+    // beim Pruef-Lesen wird derselbe Fall laengst geprueft; hier fehlte er.
+    //
+    // Die Schreib-Buchfuehrung (`dirty_pending`/`dirty_since` aus @ref trackChanged)
+    // bleibt dabei UNANGETASTET — sie ist ja gerade das, was erhalten bleiben soll.
+    if (e->changes != e->changes_at_handout) {
+        e->job_id        = 0;
+        e->kind          = SyncJobKind::None;
+        e->prio          = SyncPriority::None;
+        e->read_attempts = 0;
+        e->best_read     = {};
+        e->best_bad      = 0xFFFF;
+        zaehler_.busy_cyl = zaehler_.busy_head = 255;
+        zaehler_.busy_kind = 0;
+        // Ein Wartender in @ref ensureLoaded ist trotzdem bedient: geschrieben heisst
+        // bekannt, die Spur ist nicht mehr @ref TrackState::Unknown.
+        cv_fertig_.notify_all();
+        cv_arbeit_.notify_all();
+        return true;
+    }
+
     // ── Fehlerhafte Pruefsumme: NOCH EINMAL lesen ────────────────────────────
     // Eine Umdrehung reicht auf einer gealterten Diskette nicht immer.  Wiederholt
     // wird nur, solange Sektoren mit falscher CRC dabei sind; uebernommen wird der
@@ -685,8 +738,24 @@ void TrackSync::failJob(uint32_t id, const std::string& msg) {
     if (war == SyncJobKind::Read) {
         // Unlesbare Spur: unbekannt lassen, aber nicht endlos wiederholen.
         e->failed = true;
+    } else if (e->write_attempts > spec_.write_verify_retries) {
+        // Auch der SCHREIBVORGANG selbst wird nicht endlos wiederholt.  Scheitert er
+        // nicht an der Diskette, sondern am Laufwerk (kein Indexsignal, Adapter weg,
+        // schreibgeschützt), kommt bei jedem Versuch derselbe Fehler zurück: der
+        // Arbeitsfaden käme nie zur Ruhe, @ref flushPending wartete auf ein Ende, das
+        // es nicht gibt, und das Abmelden sässe seine ganze Frist ab — von aussen
+        // sieht das aus, als hinge das Programm.  Gezählt wird mit demselben Zähler
+        // wie beim Pruef-Lesen (@ref TrackSyncSpec::write_verify_retries; er wächst
+        // bei der Ausgabe des Auftrags), und am Ende steht derselbe Befund: die Spur
+        // ist nicht beschreibbar.  Das Abbild im Speicher bleibt GEÄNDERT — auf einer
+        // heilen Diskette lässt es sich noch retten (§7.2).
+        e->defect        = true;
+        e->dirty_pending = false;
+        letzter_fehler_  = "Spur " + std::to_string(c) + "/" + std::to_string(h) +
+                           " liess sich nicht schreiben: " + msg;
     } else {
-        // Nicht geschriebene Änderung: erneut einstellen, sofort fällig.
+        // Nicht geschriebene Änderung: erneut einstellen — nach der Ruhefrist, damit
+        // ein hängendes Laufwerk nicht im Sekundentakt angefahren wird.
         e->dirty_pending = true;
         e->dirty_since   = Uhr::now();
     }

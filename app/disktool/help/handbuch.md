@@ -717,6 +717,20 @@ ist der wichtigere: ein Profil mit einem zu kleinen Verzeichnisbereich mountet
 anstandslos, prüft ohne Befund — und **verschweigt einen Teil der Dateien**. An der
 Zahl der Befunde ist das nicht zu erkennen, an der Zahl der Dateien schon.
 
+## Die anderen Werkzeuge
+
+Im Menü **Werkzeuge** steht *A5120-Emulator starten*: der Emulator des
+Bürocomputers, der von einer Diskette bootet und das Betriebssystem wirklich
+laufen lässt. Er startet als eigenes Programm und läuft neben dem
+Diskettenwerkzeug weiter.
+
+Beide Programme lesen dieselbe Datei, aber jedes für sich. Hat die Diskette hier
+ungespeicherte Änderungen, wird vor dem Start danach gefragt — der Emulator
+sieht sonst den Stand der **Datei**, nicht den auf dem Bildschirm. Und umgekehrt:
+was der Emulator auf die Diskette schreibt, kommt hier erst an, wenn das Abbild
+neu geöffnet wird — *Aktualisieren* (F5) baut nur die Ansicht aus dem
+Speicherabbild neu auf und liest die Datei nicht noch einmal.
+
 ## Tastenkürzel
 
 | Kürzel | Wirkung |

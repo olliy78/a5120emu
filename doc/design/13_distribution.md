@@ -422,7 +422,7 @@ Installation im Temp-Verzeichnis nach und lädt sie in einem eigenen Prozess —
 
 Vorher waren die Pfade verstreut und auf die Repo-Struktur verdrahtet: die Bindung suchte
 `libk1520core.so` nur in `<repo>/build/`, das Diskettenverzeichnis kam aus dreifachem
-`dirname`, `run_gui.sh` setzte `LD_LIBRARY_PATH`.
+`dirname`, `run_a5120emu.sh` setzte `LD_LIBRARY_PATH`.
 
 Jetzt löst `app/paths.py` alles an einer Stelle auf — `core_library()`, `formats_file()`,
 `bundled_disks_dir()`, `user_disks_dir()`, `config_dir()`, `default_disk_dir()`,
@@ -443,7 +443,7 @@ Mit erledigt:
 - `main.py --paths` gibt die ganze Auflösung aus (Rauchtest des Installers, erste Frage bei
   „findet die Bibliothek nicht"); die Ladehinweise der Bindung liegen hinter `K1520_DEBUG`
 
-Der Quellbaum-Zweig bleibt erhalten: `run_gui.sh` und die Entwicklung aus `build/` heraus
+Der Quellbaum-Zweig bleibt erhalten: `run_a5120emu.sh` und die Entwicklung aus `build/` heraus
 laufen unverändert.
 
 ---

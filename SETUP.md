@@ -58,7 +58,7 @@ python3 app/main.py
 
 **Oder einfacher:**
 ```bash
-bash run_gui.sh
+bash run_a5120emu.sh
 ```
 
 ---

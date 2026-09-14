@@ -43,6 +43,16 @@ Was man beim Weiterarbeiten wissen muss:
   nicht (Vollspur-FORMAT ersetzt die Spur) — daran hängt, dass eine Leerdiskette im
   echten Laufwerk formatiert werden kann, ohne vorher gelesen zu werden.
   Wächter: `TrackSync.ReihenlaufLaedtNichtNach`.
+- **Ein Leseauftrag, den das Gastsystem ueberholt hat, wird VERWORFEN** (2026-09-14,
+  Entwurf §5.2a).  Ein Auftrag laeuft eine ganze Spurlaenge lang; wird die Spur in
+  dieser Zeit im Abbild neu geschrieben, ist das Gelesene veraltet.  Es zu uebernehmen
+  hiesse, die Aenderung des Gastes lautlos wegzuwerfen — `DiskMedium::loadTrack()`
+  ersetzt den Inhalt UND loescht `dirty`, die Spur wuerde also nie zurueckgeschrieben
+  und niemand erfuehre davon.  Beim **Formatieren ist das der Regelfall**: der
+  Vorausleser holt genau die Spur, die FORMAT.COM im selben Moment formatiert.
+  Erkannt wird es am Aenderungszaehler (`changes` gegen `changes_at_handout`) — derselbe
+  Vergleich, den Schreiben und Pruef-Lesen schon immer machten.  Waechter:
+  `TrackSync.WirdWaehrendDesLesensGeschriebenGiltDerNeueInhalt`.
 - **Ein Sektor mit falscher Pruefsumme wird NACHGELESEN** (2026-08-18, Entwurf §5.4a).
   Der Arbeitsfaden tastet je Auftrag nur EINE Umdrehung ab; auf einer gealterten
   Diskette liefert das gelegentlich einen Sektor mit falscher Daten-CRC, der beim
@@ -73,13 +83,49 @@ Was man beim Weiterarbeiten wissen muss:
 - **Drei Prioritäten:** 1 Lesen auf Anforderung (jemand wartet) → 2 geänderte Spuren
   zurückschreiben (samt Prüf-Lesen, das **vor** neuen Schreibvorgängen kommt) →
   3 unbekannte Spuren vorauslesen (kürzester Kopfweg zuerst).
+  **Prio 3 ruht, solange überhaupt etwas zurückzuschreiben ist** (2026-09-14,
+  Entwurf §5.3) — auch waehrend deren Schreibpause; hinter Prio 2 zurueckzutreten
+  genuegt nicht, weil Prio 2 in der Ruhefrist gar nicht abrufbar ist und der Adapter
+  in dieser Luecke Spuren einlas, die gleich ueberschrieben werden.
+  **Prio 2 faehrt FAHRSTUHL, nicht nach Alter** (Entwurf §7.3): die naechste faellige
+  Spur in Fahrtrichtung, dann Wende.  Nach Alter liegt die aelteste Spur immer hinten,
+  waehrend der Gast vorn arbeitet — der Kopfweg waechst dann mit dem Rueckstand
+  (gemessen 399 → 146 Spuren bei 20 formatierten Zylindern).  Waechter:
+  `TrackSync.DasVorauslesenRuhtSolangeEtwasZurueckzuschreibenIst`,
+  `TrackSync.DieRueckfuehrungFaehrtFahrstuhl`.
   Prio 1 **verdrängt**, unterbricht aber **keinen laufenden** Zugriff (der Faden steckt
   in einer Übertragung).  Zurückgeschrieben wird erst nach einer **Schreibpause**
   (≈ 0,5 s) — dieselbe Regel wie der Autosave, sonst schriebe eine UDOS-Dateioperation
   dieselbe Spur dutzendfach.  Eine gescheiterte Rückführung lässt die Spur `Dirty`
   (eine verlorene Änderung wäre der schlimmere Ausgang); Abmelden wartet darauf.
-- **Physisch heißt schreibgeschützt, bis jemand widerspricht** — ein Fehler kostet hier
-  nicht eine Kopie, sondern die einzige noch existierende Diskette.
+- **Auch der Schreibvorgang wird nicht ENDLOS wiederholt** (2026-09-14, Entwurf §5.4).
+  Nach `write_verify_retries` Versuchen gilt die Spur als **nicht beschreibbar** — wie
+  eine Schadstelle, mit demselben Ausweg.  Denn ein Schreibfehler hat zwei ganz
+  verschiedene Ursachen: liegt sie auf der Diskette, hilft die Wiederholung; liegt sie
+  am **Gerät** (kein Indexsignal, Adapter abgezogen, Schreibschutz), kommt bei jedem
+  Versuch derselbe Fehler, und ohne Obergrenze kommt der Arbeitsfaden nie zur Ruhe,
+  `flushPending()` wartet auf ein Ende, das es nicht gibt, und das Abmelden sitzt seine
+  Frist ab — **das Programm sieht aus, als hinge es** (am echten Gerät beobachtet,
+  nachdem CP/A eine physische Diskette formatiert hatte: jede Spur
+  `GetFluxStatus: No Index`).  Damit man die beiden Ursachen unterscheiden kann,
+  **deutet `app/gw/device.py` die Meldung der Hosttools** (`_gedeutet` →
+  `LaufwerkMeldet`: englischer Wortlaut, dahinter auf Deutsch, wo zu suchen ist), und
+  das Meldungsfenster nennt den Grund (`defekt_meldung(spuren, grund)`).
+  Wächter: `TrackSync.EinLaufwerkDasNichtSchreibenKannHaeltDieRueckfuehrungNichtAuf`,
+  `test_ein_laufwerk_das_nicht_schreibt_haelt_die_rueckfuehrung_nicht_auf`.
+- **Zwei Schlösser, und beide müssen sichtbar sein** (2026-09-14, Entwurf §7.2).
+  Die **Sitzung** sagt, ob auf die Scheibe geschrieben werden darf; das **Laufwerk**
+  (Haken „Write-Protect" im Kasten), ob die Maschine es versuchen darf.  Im
+  **k1520DiskTool** heisst physisch weiter *schreibgeschützt, bis jemand
+  widerspricht* — Öffnen ist dort ein Lesevorgang, und ein Fehler kostet nicht eine
+  Kopie, sondern die einzige noch existierende Diskette.  Im **Emulator** kommt der
+  Haken im Dialog dagegen **gesetzt**: dort wird die Diskette benutzt, nicht
+  angesehen.  Die Sperre sitzt dafür am Laufwerk, wirkt sofort, wird dem Gastsystem
+  gemeldet (K5122-Statusport) und verhindert damit, dass überhaupt eine geänderte
+  Spur entsteht — an den Adapter geht dann nichts.  **Was der Kern sperrt, muss der
+  Kasten zeigen**: bis dahin lag die Diskette schreibgeschützt im Laufwerk, während
+  der Haken leer blieb.  Wächter: `test_der_emulator_legt_physisch_schreibend_ein_*`,
+  `test_ohne_haken_liegt_die_physische_diskette_schreibgeschuetzt_im_laufwerk`.
 - **Eine Rücknahme (`DiskVolume`-Transaktion) braucht `restoreFrom`**, nicht eine
   Zuweisung: was schon auf der echten Scheibe steht, holt keine Kopie im Speicher
   zurück — die zurückgesetzten Spuren müssen **erneut als geändert** gelten.
@@ -99,7 +145,7 @@ Was man beim Weiterarbeiten wissen muss:
   `pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"` (der Zweigkopf
   meldet sich als Pre-Release).  Fehlt das Paket, fehlt nur der Menüpunkt.
 - **Tests brauchen keine Hardware** (in der CI ist nie ein Laufwerk):
-  `TrackSync.*` (29 Fälle) mit einem Ersatz-Arbeitsfaden aus dem RAM — inkl.
+  `TrackSync.*` (37 Fälle) mit einem Ersatz-Arbeitsfaden aus dem RAM — inkl.
   **Schadstelle** (die Spur meldet Schreiberfolg, liefert beim Lesen aber den alten
   Inhalt) —, `PhysicalBoot.*`
   (**CP/A bootet spurweise bis `A>` und holt dabei weniger als die halbe Diskette**),
@@ -108,6 +154,10 @@ Was man beim Weiterarbeiten wissen muss:
   ein **Drift-Wächter**, der die `ctypes.Structure` gegen den C-Kopf hält — eine
   vertauschte Feldreihenfolge stürzt nicht ab, sie liefert still falsche Zahlen) und
   `py_gw_gui` (beide Oberflächen, inkl. Schadstellen-Meldung und Ausweg).
+  **Das Zusammenspiel unter Last** misst `FD_PHYSICAL_B=<ms>` im `format_driver`
+  (Entwurf §14.1): Laufwerk B: haengt an einem `TrackSync` mit simuliertem Kopfweg,
+  jeder Auftrag geht mitsamt Kopfweg nach stderr.  Damit ist die Auftragsfolge waehrend
+  eines Formatierlaufs ohne Hardware nachvollziehbar — daher die Zahlen in §5.3/§7.3.
   Die echten Hardware-Tests liegen in `tests/python/test_gw_hardware.py`, sind **nicht**
   in ctest registriert und laufen nur mit `K1520_GW_HARDWARE=1` (Schreiben zusätzlich
   nur mit `K1520_GW_WRITE=1`).

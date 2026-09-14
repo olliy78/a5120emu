@@ -27,6 +27,7 @@
 #include "core/peripherals/floppy_drive/track_codec.h"
 #include "core/peripherals/floppy_drive/disk_format.h"
 #include "core/peripherals/floppy_drive/drive_profile.h"
+#include "core/peripherals/floppy_drive/track_sync.h"
 #include "tests/support/temp_path.h"
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
@@ -360,6 +361,61 @@ TEST(FloppyDriveV2, WriteTrackAt_SchreibtInsMedium) {
     // Schreibschutz sperrt den Pfad.
     drv.setWriteProtect(true);
     EXPECT_FALSE(drv.writeTrackAt(6, 0, spur));
+}
+
+/**
+ * @brief Schreibschutz am Laufwerk = **kein Auftrag** an die echte Diskette.
+ *
+ * Das ist der Sinn des zweiten Schlosses (doc/design/14_physische_diskette.md §7.2):
+ * die Sitzung darf auf die Scheibe schreiben (`spec.writable`), die Maschine trotzdem
+ * nicht.  Geprueft wird deshalb nicht nur, dass `writeTrackAt` ablehnt, sondern dass
+ * daraus gar keine geaenderte Spur — und damit kein Schreibauftrag fuer den
+ * Arbeitsfaden — entsteht.  Ohne die zweite Haelfte koennte der Schreibschutz still
+ * umgangen werden, und der Bediener saehe „R/O" waehrend seine einzige Diskette
+ * ueberschrieben wird.
+ *
+ * Der Test ist zugleich sein eigener Gegenbeweis: nach dem Loesen des Schreibschutzes
+ * MUSS derselbe Aufruf einen Auftrag erzeugen.
+ */
+TEST(FloppyDriveV2, SchreibschutzAmLaufwerkLaesstKeinenAuftragEntstehen) {
+    TrackSyncSpec spec;
+    spec.num_cyls        = 80;
+    spec.num_heads       = 2;
+    spec.writable        = true;      // die SITZUNG duerfte schreiben
+    spec.read_ahead      = false;     // nur das Gewollte soll Auftraege erzeugen
+    spec.write_settle_ms = 20;
+
+    auto img = DiskImage::openPhysical(spec);
+    ASSERT_TRUE(img);
+    TrackSync& sync = *img->sync();
+
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));
+    ASSERT_TRUE(drv.mount(std::move(img), /*write_protect=*/true));
+
+    std::vector<LogicalSector> sektoren;
+    for (uint8_t id = 1; id <= 2; ++id) {
+        LogicalSector ls;
+        ls.cyl = 5; ls.head = 1; ls.id = id; ls.size = 128;
+        ls.data.assign(128, 0x5A);
+        sektoren.push_back(std::move(ls));
+    }
+    const TrackImage spur = TrackCodec::buildTrack(sektoren, Encoding::MFM);
+
+    EXPECT_FALSE(drv.writeTrackAt(5, 1, spur)) << "der Schreibschutz greift nicht";
+    SyncJob j;
+    // Die Wartezeit liegt deutlich ueber der Schreibpause: „noch nicht faellig"
+    // duerfte hier nicht als „kein Auftrag" durchgehen.
+    EXPECT_FALSE(sync.takeJob(j, 300))
+        << "trotz Schreibschutz ging ein Auftrag an die echte Diskette";
+
+    // Gegenprobe: ohne Schreibschutz entsteht er sehr wohl.
+    drv.setWriteProtect(false);
+    EXPECT_TRUE(drv.writeTrackAt(5, 1, spur));
+    ASSERT_TRUE(sync.takeJob(j, 1000));
+    EXPECT_EQ(j.kind, SyncJobKind::Write);
+    EXPECT_EQ(j.cyl, 5);
+    EXPECT_EQ(j.head, 1);
+    sync.shutdown();
 }
 
 // ─── Gruppe 6: Spurdichte — Diskette und Laufwerk passen nicht zusammen ──────

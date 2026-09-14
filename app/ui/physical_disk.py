@@ -50,10 +50,16 @@ class PhysicalDiskDialog(QDialog):
             abbild: Geometrie des zu schreibenden Abbilds als Text; wird angezeigt,
                 damit man sieht, was man wohin schreibt.
             allow_write: darf überhaupt geschrieben werden?
-            writable: Vorbelegung des Hakens.  Vorgabe **aus** — beim blossen Lesen
-                soll die Diskette gar nicht in Gefahr sein.  Wer sie ausdrücklich
-                überschreiben will, hat das vorher schon bestätigt; dort wäre ein
-                leerer Haken eine Stolperfalle.
+            writable: Vorbelegung des Hakens — **der Aufrufer entscheidet**, weil die
+                beiden Programme die Diskette verschieden anfassen.  Vorgabe **aus**:
+                Öffnen im k1520DiskTool ist ein Lesevorgang, und dabei soll die
+                Diskette gar nicht erst in Gefahr sein.  Der **Emulator** gibt
+                dagegen `True` herein — dort wird die Diskette nicht angesehen,
+                sondern benutzt, und der Schreibschutz sitzt wie am echten Gerät am
+                Laufwerk (Haken „Write-Protect" im Laufwerkskasten, wirkt sofort und
+                wird dem Gastsystem gemeldet).  Wer eine Diskette ausdrücklich
+                überschreiben will, bekommt den Haken ebenfalls gesetzt; dort wäre
+                ein leerer eine Stolperfalle.
         """
         super().__init__(parent)
         self.setWindowTitle(titel or "Physisches Laufwerk einlegen")

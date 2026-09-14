@@ -121,7 +121,7 @@ app/
       k1520disk.py              ← NEU: ctypes-Bindung an libk1520disk.so        ✅
 
 data/formats.yaml               ← ERWEITERT: `filesystems:` + UDOS-Geometrien (§6)
-run_disktool.sh                 ← NEU (Analogon zu run_gui.sh)                  ✅
+run_disktool.sh                 ← NEU (Analogon zu run_a5120emu.sh)                  ✅
 ```
 
 > **Warum unter `core/`?** `core/` ist im Projekt die C++-Seite mit Include-Wurzel
@@ -789,7 +789,7 @@ Arbeitsablauf ist, den die beiden alten Werkzeuge künstlich auf zwei Programme 
 - Fortschritt + Protokollbereich für lange Läufe (ganze Diskette extrahieren).
 
 Start: `run_disktool.sh` (setzt `LD_LIBRARY_PATH=build`, ruft `app/disktool/main.py`), analog
-zu `run_gui.sh`.
+zu `run_a5120emu.sh`.
 
 ---
 

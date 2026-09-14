@@ -206,8 +206,15 @@ von der eingelegten Scheibe.
 
 Drei Dinge, die man wissen sollte:
 
-* **Schreibgeschützt, bis man widerspricht.** Ein Fehler kostet hier nicht eine
-  Kopie, sondern die einzige noch existierende Diskette.
+* **Zwei Schlösser.** Der Haken *Auf die echte Diskette schreiben* im Dialog
+  entscheidet, ob überhaupt auf die Scheibe geschrieben werden darf — er ist
+  gesetzt, denn im Emulator wird die Diskette benutzt und nicht angesehen. Nimmt
+  man ihn heraus, liegt sie schreibgeschützt im Laufwerk. Das zweite Schloss ist
+  der Haken *Write-Protect* im Laufwerkskasten: er wirkt wie die Kerbe am Rand
+  der echten Diskette, sofort und auch bei laufender Maschine, das Gastsystem
+  meldet dann „schreibgeschützt" — und weil so gar keine geänderte Spur entsteht,
+  geht auch nichts an den Adapter. Bei einer unersetzlichen Diskette ist er die
+  billigste Versicherung; in der Pfadzeile steht, was gerade gilt.
 * **Geschrieben gilt erst nach dem Zurücklesen.** Jede geschriebene Spur wird
   sofort wieder gelesen und verglichen; der Füllstand steht im Laufwerkskasten.
 * **Eine Spur, die sich nicht schreiben lässt**, meldet sich mit einem Fenster.
@@ -301,6 +308,29 @@ diesen Lauf; gespeichert wird davon nichts.
 
 Ohne Oberfläche fährt dieselbe Maschine unter `k1520dbg` (Fehlersuche,
 Skriptbetrieb); `k1520dbg DISKETTE --console` ist die Konsolenfassung.
+
+## Die anderen Werkzeuge
+
+Im Menü **Werkzeuge** stehen die beiden Programme, die zur selben Installation
+gehören und dieselben Disketten anfassen:
+
+* **k1520DiskTool starten** — das Diskettenwerkzeug: Dateien von einer Diskette
+  in einen Ordner holen und wieder zurückschreiben, Disketten anlegen, prüfen,
+  reparieren. Es startet als eigenes Programm und läuft neben dem Emulator
+  weiter; das Diskettenwerkzeug hat sein eigenes Handbuch.
+* **Werkzeugkonsole öffnen** — ein Konsolenfenster, in dem der Debugger
+  `k1520dbg` und die Kommandozeile des DiskTool **ohne Pfadangabe** laufen. Es
+  steht bereits im Diskettenordner, und beim Öffnen steht ein Beispielaufruf
+  mit einer wirklich vorhandenen Diskette da.
+
+Die Konsole wird über eine Startdatei geöffnet, die im Konfigurationsordner
+liegt (`werkzeugkonsole.sh`, unter Windows `werkzeugkonsole.cmd`). Sie wird bei
+jedem Öffnen neu geschrieben — wer sie anpassen will (ein eigener Assembler im
+Suchpfad, ein anderer Arbeitsordner), kopiert sie sich woandershin.
+
+> Eine Diskette, die hier im Laufwerk liegt, darf zugleich unter `k1520dbg`
+> offen sein: der Debugger arbeitet standardmäßig auf einer Kopie und schreibt
+> nicht in die Datei zurück.
 
 ## Tastenkürzel
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# k1520DiskTool — Starter (Gegenstück zu run_gui.sh)
+# k1520DiskTool — Starter (Gegenstück zu run_a5120emu.sh)
 # Aktiviert das venv, setzt den Bibliothekspfad und startet die Oberfläche.
 
 set -e
