@@ -11,6 +11,7 @@
 #include <string>
 
 #include "core/machines/a5120/a5120.h"
+#include "core/machines/k8915/k8915.h"
 
 namespace k1520test {
 
@@ -29,5 +30,12 @@ std::string vramText(A5120Machine& m);
 /// Wie vramText(), aber in 24 Zeilen à 80 Zeichen mit '\n' getrennt (Ausgabe in
 /// Fehlermeldungen — so ist das Bild im Testprotokoll lesbar).
 std::string vramLines(A5120Machine& m);
+
+/// K8915: Bildspeicher der K7024 bei 1000H (doc/design/16_k8915.md §3.3), direkt
+/// von der Karte gelesen — über die CPU wäre 1000H nur bei A8H-Bit0 = 0 sichtbar.
+/// Bit 7 ist dort Cursorbit und wird ausgeblendet, sonst verschwände das Zeichen
+/// unter dem Cursor aus jeder Suche.
+std::string vramText(K8915Machine& m);
+std::string vramLines(K8915Machine& m);
 
 }  // namespace k1520test

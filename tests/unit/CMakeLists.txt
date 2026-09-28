@@ -22,6 +22,8 @@ k1520_add_test(k3526 SRC cards/test_k3526.cpp      LIBS k1520_k3526 k1520_bus LA
 k1520_add_test(k5122 SRC cards/test_k5122.cpp      LIBS k1520_k5122 LABELS "${_lbl}")
 k1520_add_test(k7024 SRC cards/test_k7024.cpp      LIBS k1520_k7024 k1520_bus LABELS "${_lbl}")
 k1520_add_test(k8025 SRC cards/test_k8025.cpp      LIBS k1520_k8025 LABELS "${_lbl}")
+# ZRE 045-8762 des K8915: Speicherbild je A8H-Wert (doc/design/16_k8915.md §4.2a)
+k1520_add_test(zre8762 SRC cards/test_zre8762.cpp  LIBS k1520_zre8762 LABELS "${_lbl}")
 
 # ── core/peripherals/ ────────────────────────────────────────────────────────
 k1520_add_test(k7637          SRC peripherals/test_k7637.cpp

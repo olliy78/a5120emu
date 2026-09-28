@@ -86,6 +86,8 @@ public:
          *
          * VRAM at 0x1000 (not 0xF800) and the card's own character generator
          * (2× 2716, A10 tied low → only the Latin half of each is reachable).
+         * No Lesesperre (read_protect = false): nothing on the K8915 bus answers
+         * reads at 0x1000 instead of the card, and the boot ROM tests the VRAM as RAM.
          * See doc/design/16_k8915.md §3.3.
          */
         static A5120Config forK8915();

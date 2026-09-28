@@ -239,6 +239,19 @@ if(BUILD_K1520)
     )
     target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # ZRE 045-8762 (K8915): U880, CTC, 4-KB-Boot-EPROM, 2 × 64 KB DRAM, Register A8H
+    add_library(k1520_zre8762 STATIC core/cards/zre8762/zre8762.cpp)
+    target_link_libraries(k1520_zre8762 PUBLIC k1520_z80 k1520_ctc k1520_bus k1520_logger)
+    target_include_directories(k1520_zre8762 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # K8915 V3 (doc/design/16_k8915.md) — Etappe 1: ZRE + K7024.  Noch NICHT in
+    # libk1520core.so: k1520_create(K1520_MACHINE_K8915) bleibt NULL mit Grund, bis
+    # die Oberfläche mit der Maschine etwas anfangen kann (Tastatur, Laufwerke).
+    add_library(k1520_k8915 STATIC core/machines/k8915/k8915.cpp)
+    target_link_libraries(k1520_k8915 PUBLIC
+        k1520_zre8762 k1520_k7024 k1520_floppy2 k1520_bus k1520_logger)
+    target_include_directories(k1520_k8915 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # libk1520core.so — stable C-API shared library
     add_library(k1520core SHARED
         core/api/k1520_api.cpp

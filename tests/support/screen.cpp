@@ -12,8 +12,8 @@ std::string vramText(A5120Machine& m) {
     return s;
 }
 
-std::string vramLines(A5120Machine& m) {
-    const std::string flat = vramText(m);
+namespace {
+std::string zeilen(const std::string& flat) {
     std::string out;
     out.reserve(flat.size() + kVramRows);
     for (int row = 0; row < kVramRows; ++row) {
@@ -22,5 +22,21 @@ std::string vramLines(A5120Machine& m) {
     }
     return out;
 }
+}  // namespace
+
+std::string vramLines(A5120Machine& m) { return zeilen(vramText(m)); }
+
+std::string vramText(K8915Machine& m) {
+    std::string s;
+    s.reserve(kVramCols * kVramRows);
+    for (int row = 0; row < kVramRows; ++row)
+        for (int col = 0; col < kVramCols; ++col) {
+            const uint8_t c = m.screen().vramRead(col, row) & 0x7F;
+            s.push_back((c >= 0x20 && c < 0x7F) ? static_cast<char>(c) : ' ');
+        }
+    return s;
+}
+
+std::string vramLines(K8915Machine& m) { return zeilen(vramText(m)); }
 
 }  // namespace k1520test

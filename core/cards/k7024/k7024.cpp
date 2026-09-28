@@ -39,6 +39,11 @@ K7024::A5120Config K7024::A5120Config::forK8915()
     cfg.vram_base_hi     = 0x10;
     cfg.chargen_rows0_7  = CHARGEN_K8915_ZG1_LATIN;
     cfg.chargen_rows8_11 = CHARGEN_K8915_ZG2_LATIN;
+    // Keine Lesesperre: im K8915 liegt unter 1000H kein RAM auf dem Systembus, das
+    // an Stelle der Karte antworten könnte — der Bildspeicher MUSS lesbar sein.  Das
+    // Boot-ROM prüft ihn beim Selbsttest als RAM (F0EDH: 1000H, 07F0H Bytes, bei
+    // A8H = 06H) und löscht das Cursorbit per `RES 7,(HL)` (doc/design/16_k8915.md §3.3).
+    cfg.read_protect     = false;
     return cfg;
 }
 
