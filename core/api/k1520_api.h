@@ -85,7 +85,12 @@ K1520_API void k1520_key_press(K1520Handle h, uint32_t keycode, bool shift, bool
 K1520_API void k1520_key_release(K1520Handle h, uint32_t keycode);
 K1520_API void k1520_console_key(K1520Handle h, char c);
 /**
- * @brief Zustand der Tastaturanzeigen der K7637.
+ * @brief Zustand der Tastaturanzeigen — Bitbelegung je Tastaturmodell.
+ *
+ * **K8915 (K7672):** Abbild des Firmware-Registers 21H, nachgebildet Bit 3 =
+ * Senden frei (an nach `DC1`, aus nach `DC3`) und Bit 0 = `ESC [?13h`/`l` [?].
+ *
+ * **A5120 (K7637):**
  *
  * Bit 0…4 = Funktionsanzeigen G00…G04 (der Rechner schaltet sie mit den fünf
  * LED-Kommandos UM), Bit 5 = Fehleranzeige G53 — sie **blinkt**, solange das
@@ -223,6 +228,33 @@ K1520_API void        k1520_mem_write(K1520Handle h, uint16_t addr, uint8_t data
 K1520_API uint8_t     k1520_io_read(K1520Handle h, uint8_t port);
 K1520_API const char* k1520_last_error(K1520Handle h);
 K1520_API const char* k1520_version(void);
+
+/* ─── Machine-neutral indicators (appended 2026-09-28, AP-E4b) ────────────────
+ * Every machine answers these; the A5120 has no panel and no bell counter and
+ * returns 0.  The K8915 mirrors its indicators at the end of each k1520_run(),
+ * so they may be read from any thread. */
+/** @brief K1520MachineType of the handle (0 = A5120, 2 = K8915). */
+K1520_API int      k1520_machine_type(K1520Handle h);
+/**
+ * @brief Raw byte of the text screen memory (80 × 24, bit 7 = attribute/cursor),
+ *        read directly from the screen card — NOT through the CPU view.
+ *
+ * On the K8915 the CPU view (k1520_mem_read) of the screen memory at 1000H is
+ * covered by ZRE RAM as soon as port A8H bit0 is set; use this function to read
+ * the screen.  0 for col/row outside 0…79 / 0…23.  Not thread-safe (like mem_read).
+ */
+K1520_API uint8_t  k1520_screen_char(K1520Handle h, int col, int row);
+/**
+ * @brief Front panel lamps: raw byte of the K8915 display latch at port 61H,
+ *        ACTIVE LOW (bit4 read, bit5 write, bit6 ready, bit7 error; FFH after
+ *        /RESET = all dark).  A5120: 0 (no panel — check k1520_machine_type).
+ */
+K1520_API uint8_t  k1520_panel_lamps(K1520Handle h);
+/**
+ * @brief Running count of bell tones (K8915: BEL received by the K7672).
+ *        Never decreases; the GUI beeps on the difference.  A5120: 0.
+ */
+K1520_API uint32_t k1520_bell_count(K1520Handle h);
 
 #ifdef __cplusplus
 }

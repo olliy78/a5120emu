@@ -12,6 +12,7 @@
 namespace {
 
 constexpr uint8_t BEL = 0x07, DC1 = 0x11, DC3 = 0x13, ESC = 0x1B;
+constexpr uint8_t LED_13 = 0x01, LED_FREI = 0x08;   // Firmware-Register 21H
 
 // Befehlstabelle der Firmware bei 06F8H — die Zeichen NACH dem ESC.  Die Einträge
 // hinter den Präfixen `ESC [?` und `ESC [2` sind hier ausgeschrieben.
@@ -46,6 +47,7 @@ void K7672::powerOn()
     esc_folge_.clear();
     gesperrt_ = false;
     modus_    = Modus::Scp;
+    leds_     = 0;
     ++selbsttests_;
 }
 
@@ -83,8 +85,8 @@ void K7672::empfangeVomRechner(uint8_t b)
     // in einer Folge.
     switch (b) {
         case BEL: ++summer_;        return;
-        case DC3: gesperrt_ = true;  return;
-        case DC1: gesperrt_ = false; return;
+        case DC3: gesperrt_ = true;  leds_ &= static_cast<uint8_t>(~LED_FREI); return;   // LED 21H Bit3 aus
+        case DC1: gesperrt_ = false; leds_ |=  LED_FREI; return;   // LED 21H Bit3 an
         case ESC:
             esc_aktiv_ = true;
             esc_folge_.clear();
@@ -124,6 +126,9 @@ void K7672::befehl(const std::string& f)
         LOG_INFO("K7672", "DCP-Modus eingeschaltet (Scancodes Satz 1)");
         return;
     }
+    // 04B1H / 04A6H: LED 21H Bit0 an / aus [?] — welche Lampe, sagt die Firmware nicht.
+    if (f == "[?13h") { leds_ |= LED_13;  return; }
+    if (f == "[?13l") { leds_ &= static_cast<uint8_t>(~LED_13); return; }
     // Kennung, Status, VT52/ANSI, LED-Modi: die Antworttexte fehlen in den Dumps
     // (README), für den Selbsttest nicht nötig — erkannt und verworfen.
     LOG_DEBUG("K7672", "Befehl ESC %s ohne Nachbildung", f.c_str());
@@ -135,6 +140,7 @@ void K7672::neustart(bool mit_test)
     // Der Speicherlöscher 7FH…04H setzt auch den DCP-Modus (29H) zurück.
     gesperrt_ = false;
     modus_    = Modus::Scp;
+    leds_     = 0;                    // 21H liegt im Speicherlöscher 04H…7FH
     if (mit_test) {
         selbsttest();
     } else {

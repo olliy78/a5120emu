@@ -5,7 +5,8 @@
  * Stand Etappe 3 (doc/design/16_k8915.md §8, AP-E1…AP-E3): ZRE 045-8762, ATS
  * K7028.30 mit Tastatur K7672, K7024 (012-6820) und K5122 im `/WAIT`-Betrieb mit
  * zwei K5601.  Die Laufwerksverwaltung ist der gemeinsame Baustein @ref Laufwerke
- * (wie beim A5120).  DFÜ nach außen fehlt noch (Etappe 4).
+ * (wie beim A5120).  DFÜ nach außen fehlt noch (AP-E4c).  Seit AP-E4b in
+ * `libk1520core` (`k1520_create(K1520_MACHINE_K8915)`).
  *
  * Steckplätze am Gerät (§6.4): 3 = K5122, 4 = ZRE, 6 = ATS, 7 = K7024.
  */
@@ -20,6 +21,8 @@
 #include "core/machines/laufwerke.h"
 #include "core/peripherals/k7672/k7672.h"
 #include <atomic>
+#include <deque>
+#include <mutex>
 
 class K8915Machine : public K1520Machine {
 public:
@@ -65,10 +68,30 @@ public:
     bool consolePoll(int& x, int& y, char& ch) override {
         return screen_.pollTextChange(x, y, ch);
     }
+    /// Bildspeicher der K7024 bei 1000H direkt von der Karte — die CPU-Sicht
+    /// (`memReadDebug`) sähe dort bei A8H-Bit0 = 1 das RAM der ZRE.
+    uint8_t screenChar(int col, int row) const override { return screen_.vramRead(col, row); }
 
     // ─── Tastatur K7672 an SIO2-B der ATS ────────────────────────────────────
-    void keyPress(uint32_t k, bool shift, bool ctrl) override { kbd_.keyPress(k, shift, ctrl); }
-    void keyRelease(uint32_t k) override { kbd_.keyRelease(k); }
+    /**
+     * @brief Tastenereignis aus einem BELIEBIGEN Faden (Oberfläche): nur unter
+     *        Sperre eingereiht, weitergereicht an die K7672 erst am Anfang von
+     *        run() im Lauffaden — wie beim A5120 (`key_queue_`).  Direkt an `kbd_`
+     *        wäre es ein Wettlauf mit `kbd_.service()` (AP-E4b).  Tests im Lauffaden
+     *        können weiter `keyboard()` direkt benutzen.
+     */
+    void keyPress(uint32_t k, bool shift, bool ctrl) override;
+    void keyRelease(uint32_t k) override;
+    /** @brief K7672-Register 21H (Bit 3 = Senden frei/XON, Bit 0 = `ESC [?13h`),
+     *         Stand am Ende des letzten run() — fadensicher lesbar. */
+    uint8_t keyboardLeds() const override { return leds_.load(std::memory_order_relaxed); }
+
+    // ─── Anzeigen außerhalb des Bildes (Stand am Ende des letzten run()) ─────
+    int machineType() const override { return 2; }   // K1520_MACHINE_K8915
+    /** @brief Anzeigefeld, Rohbyte des Latches 61H (aktiv low, §6.2; Reset FFH). */
+    uint8_t panelLamps() const override { return lampen_.load(std::memory_order_relaxed); }
+    /** @brief Empfangene `BEL` der K7672 (Summer), fortlaufend seit Erzeugung. */
+    uint32_t bellCount() const override { return summer_.load(std::memory_order_relaxed); }
 
     // ─── Disketten: K5122 (Platz 3) über den gemeinsamen Laufwerksbaustein ───
     bool mountDisk(int d, const std::string& p, const std::string& f, bool wp) override {
@@ -129,6 +152,8 @@ public:
 
 private:
     void resetHardware();
+    void tastenAbgeben();     ///< Warteschlange an die K7672 (nur im Lauffaden)
+    void anzeigenSpiegeln();  ///< Anzeigen für fremde Fäden spiegeln (nur im Lauffaden)
 
     K1520Bus  bus_;
     K8915Zre  zre_;       // Platz 4
@@ -141,4 +166,12 @@ private:
     std::atomic<bool> stop_{false};
     uint64_t          total_cycles_ = 0;
     bool              prev_afs_int_ = false;   // Flanke des K5122-Interrupts (Index, MKE)
+
+    struct TastenEreignis { uint32_t code; bool shift, ctrl, gedrueckt; };
+    std::mutex                 tasten_sperre_;
+    std::deque<TastenEreignis> tasten_;
+
+    std::atomic<uint8_t>  lampen_{0xFF};
+    std::atomic<uint8_t>  leds_{0};
+    std::atomic<uint32_t> summer_{0};
 };

@@ -85,24 +85,78 @@ def test_create_and_destroy_roundtrip():
 
 
 def test_unbuilt_machine_type_is_refused_with_a_reason():
-    """Ein vorgesehener, aber noch nicht gebauter Maschinentyp (K8915 = 2) gibt NULL
+    """Ein vorgesehener, aber nicht gebauter Maschinentyp (PRG710 = 1) gibt NULL
     zurück — mit einem Grund in `k1520_last_init_error`, nicht still.
 
-    Die C-ABI wählt die Maschine über `K1520Machine` (core/machines/machine.h,
-    doc/design/16_k8915.md §7.1); fällt dieser Fall weg, sobald der K8915 steht,
-    wird aus diesem Wächter der Erzeugungstest der zweiten Maschine.
+    Bis AP-E4b (doc/design/16_k8915.md §8a) stand hier der K8915 (= 2); seitdem ist
+    er gebaut, und dieser Wächter hält den verbleibenden Typ und einen Wert
+    außerhalb der Aufzählung.
     """
     from app.core_binding.k1520 import _lib, K1520Handle
 
-    assert not _lib.k1520_create(2)
-    grund = _lib.k1520_last_init_error().decode()
-    assert "nicht implementiert" in grund, grund
+    for typ in (1, 7):
+        assert not _lib.k1520_create(typ), typ
+        grund = _lib.k1520_last_init_error().decode()
+        assert "nicht implementiert" in grund, grund
+        assert not _lib.k1520_create_configured(typ, None, None, None, None), typ
+        assert "nicht implementiert" in _lib.k1520_last_init_error().decode()
 
     # Der Grund darf einen folgenden, erfolgreichen Aufruf nicht überdauern.
     handle = _lib.k1520_create(0)
     assert handle
     assert _lib.k1520_last_init_error() == b""
     _lib.k1520_destroy(K1520Handle(handle))
+
+
+def test_k8915_can_be_created_and_reports_its_type():
+    """`k1520_create(K1520_MACHINE_K8915)` liefert seit AP-E4b eine Maschine;
+    `k1520_machine_type` meldet 2, die Anzeigen haben ihren Ruhezustand."""
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    handle = _lib.k1520_create(2)
+    assert handle, _lib.k1520_last_init_error()
+    h = K1520Handle(handle)
+    try:
+        assert _lib.k1520_machine_type(h) == 2
+        assert (_lib.k1520_fb_width(h), _lib.k1520_fb_height(h)) == (640, 288)
+        _lib.k1520_power_on(h)
+        assert _lib.k1520_panel_lamps(h) == 0xFF, "Latch 61H nach /RESET: alles dunkel"
+        assert _lib.k1520_bell_count(h) == 0
+        assert _lib.k1520_run(h, 100_000) > 0
+        # Vorgabebestückung des Geräts: 2 × K5601, Platz 2/3 leer.
+        assert _lib.k1520_drive_format_count(h, 0) > 0
+        assert _lib.k1520_drive_format_count(h, 2) == 0
+    finally:
+        _lib.k1520_destroy(h)
+
+    # Bestückung über create_configured, wie beim A5120.
+    handle = _lib.k1520_create_configured(2, b"K5601", b"K5600.20", None, None)
+    assert handle, _lib.k1520_last_init_error()
+    h = K1520Handle(handle)
+    try:
+        assert _lib.k1520_machine_type(h) == 2
+        assert _lib.k1520_drive_format_count(h, 1) > 0
+    finally:
+        _lib.k1520_destroy(h)
+
+
+def test_a5120_answers_the_machine_neutral_indicators(booted):
+    """Die angehängten Anzeigefunktionen ändern am A5120 nichts: Typ 0, kein
+    Anzeigefeld, kein Summerzähler; `k1520_screen_char` liest dasselbe Bild wie
+    der bisherige Weg über den Bus (F800H) — sobald das Bild steht (vorher kann
+    der Bus bei F800H etwas anderes zeigen als die Karte)."""
+    from app.core_binding.k1520 import _lib
+
+    emulator = booted
+    h = emulator._handle
+    assert _lib.k1520_machine_type(h) == 0
+    assert _lib.k1520_panel_lamps(h) == 0
+    assert _lib.k1520_bell_count(h) == 0
+    for r in range(24):
+        for c in range(80):
+            assert _lib.k1520_screen_char(h, c, r) == emulator.mem_read(0xF800 + r * 80 + c)
+    for c, r in ((-1, 0), (80, 0), (0, 24), (0, -1)):
+        assert _lib.k1520_screen_char(h, c, r) == 0
 
 
 def test_framebuffer_geometry_matches_pointer_size(emulator):

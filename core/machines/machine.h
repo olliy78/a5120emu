@@ -42,12 +42,27 @@ public:
     virtual void fbClearDirty() = 0;
     virtual void setConsoleMode(bool on) = 0;
     virtual bool consolePoll(int& x, int& y, char& ch) = 0;
+    /**
+     * @brief Ein Byte des Textbildspeichers (80 × 24, zeilenweise) direkt von der
+     *        Bildschirmkarte — NICHT über die CPU-Sicht (`memReadDebug`), die beim
+     *        K8915 je nach A8H den Bildspeicher überdeckt (§8a AP-E4b).
+     * @return Rohbyte samt Bit 7 (Attribut/Cursor); 0 außerhalb des Bildes.
+     */
+    virtual uint8_t screenChar(int col, int row) const = 0;
 
     // ─── Tastatur (fadensicher eingereiht, verbraucht in run()) ───────────────
     virtual void keyPress(uint32_t qt_keycode, bool shift, bool ctrl) = 0;
     virtual void keyRelease(uint32_t qt_keycode) = 0;
     /** @brief Anzeigen der Tastatur; Bitbelegung je Tastaturmodell (0 = keine). */
     virtual uint8_t keyboardLeds() const { return 0; }
+
+    // ─── Anzeigen außerhalb des Bildes (AP-E4b; Vorgabe = keine, A5120) ───────
+    /** @brief Maschinentyp als Wert von `K1520MachineType` (0 = A5120). */
+    virtual int machineType() const { return 0; }
+    /** @brief Rohbyte des Anzeigefelds (K8915: Latch 61H, aktiv low); 0 = keins. */
+    virtual uint8_t panelLamps() const { return 0; }
+    /** @brief Fortlaufender Zähler der Summertöne (die Oberfläche bildet die Differenz). */
+    virtual uint32_t bellCount() const { return 0; }
 
     // ─── Disketten ─────────────────────────────────────────────────────────────
     virtual bool mountDisk(int drive, const std::string& path,

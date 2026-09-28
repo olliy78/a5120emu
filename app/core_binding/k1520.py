@@ -284,6 +284,26 @@ _lib.k1520_serial_set_rx_cb.argtypes = [K1520Handle, ctypes.c_int,
                                         K1520SerialRxCb, ctypes.c_void_p]
 _lib.k1520_serial_set_rx_cb.restype = None
 
+# ── Maschinenneutrale Anzeigen (AP-E4b, doc/design/16_k8915.md §8a) ─────────
+# k1520_machine_type(K1520Handle) -> int (K1520MachineType)
+_lib.k1520_machine_type.argtypes = [K1520Handle]
+_lib.k1520_machine_type.restype = ctypes.c_int
+
+# k1520_screen_char(K1520Handle, col, row) -> uint8_t (Bildspeicher der Karte)
+_lib.k1520_screen_char.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_int]
+_lib.k1520_screen_char.restype = ctypes.c_uint8
+
+# k1520_panel_lamps(K1520Handle) -> uint8_t (K8915: Latch 61H, aktiv low)
+_lib.k1520_panel_lamps.argtypes = [K1520Handle]
+_lib.k1520_panel_lamps.restype = ctypes.c_uint8
+
+# k1520_bell_count(K1520Handle) -> uint32_t (fortlaufend)
+_lib.k1520_bell_count.argtypes = [K1520Handle]
+_lib.k1520_bell_count.restype = ctypes.c_uint32
+
+# Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
+MACHINE_TYPES = {"a5120": 0, "k8915": 2}
+
 # Textbildschirm des K7024: 80x24 Zeichen ab 0xF800 (Bit7 = Invers-Attribut).
 VRAM_BASE, VRAM_COLS, VRAM_ROWS = 0xF800, 80, 24
 
@@ -328,22 +348,28 @@ def _protokolliere_taste(was: str, keycode: int, shift: bool = False,
 class K1520Emulator:
     """Python wrapper for K1520 A5120 emulator."""
     
-    def __init__(self, drive_types: Optional[list] = None):
+    def __init__(self, drive_types: Optional[list] = None, machine: str = "a5120"):
         """Initialize emulator instance.
 
         Args:
             drive_types: optional list of up to 4 core DriveProfile names, one per
                 K5122 slot (e.g. ``["K5601", "K5601", "K5601", "none"]``).  An entry
-                that is ``None`` or ``""`` keeps the slot default (K5601); ``"none"``
+                that is ``None`` or ``""`` keeps the slot default; ``"none"``
                 marks an empty slot ("kein Laufwerk").  ``None`` (the default) builds
-                the standard machine (4× K5601).
+                the standard machine (A5120: 4× K5601; K8915: K5601, K5601, none, none).
+            machine: ``"a5120"`` (Vorgabe) oder ``"k8915"`` — siehe
+                :data:`MACHINE_TYPES`.
         """
         # Zuerst setzen: schlägt die Erzeugung fehl, läuft __del__ trotzdem und
         # darf nicht über ein fehlendes Attribut stolpern.
         self._handle = None
         self._drive_types = list(drive_types) if drive_types else None
+        if machine not in MACHINE_TYPES:
+            raise ValueError(f"unbekannte Maschine {machine!r} "
+                             f"(bekannt: {', '.join(MACHINE_TYPES)})")
+        self._machine = machine
         try:
-            handle = self._create_handle(self._drive_types)
+            handle = self._create_handle(self._drive_types, MACHINE_TYPES[machine])
         except Exception as e:
             raise RuntimeError(f"Failed to create K1520 emulator: {e}")
         if not handle:
@@ -358,10 +384,10 @@ class K1520Emulator:
         self._thread: Optional[threading.Thread] = None
 
     @staticmethod
-    def _create_handle(drive_types: Optional[list]):
+    def _create_handle(drive_types: Optional[list], machine_type: int = 0):
         """Create a core handle, configured with per-slot drive profiles if given."""
         if not drive_types:
-            return _lib.k1520_create(0)  # K1520_MACHINE_A5120 = 0, default 4× K5601
+            return _lib.k1520_create(machine_type)  # Vorgabebestückung der Maschine
 
         names = list(drive_types)[:4] + [None] * (4 - len(drive_types))
 
@@ -369,7 +395,25 @@ class K1520Emulator:
             return name.encode("utf-8") if name else None  # None/"" → core keeps default
 
         return _lib.k1520_create_configured(
-            0, enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
+            machine_type, enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
+
+    @property
+    def machine(self) -> str:
+        """Name der Maschine, mit der dieses Objekt erzeugt wurde (``"a5120"``/``"k8915"``)."""
+        return self._machine
+
+    def machine_type(self) -> int:
+        """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 2 = K8915)."""
+        return int(_lib.k1520_machine_type(self._handle))
+
+    def panel_lamps(self) -> int:
+        """Anzeigefeld: Rohbyte des K8915-Latches 61H, **aktiv low** (FFH = alles
+        dunkel; Bit4 Lesen, Bit5 Schreiben, Bit6 bereit, Bit7 Fehler).  A5120: 0."""
+        return int(_lib.k1520_panel_lamps(self._handle))
+
+    def bell_count(self) -> int:
+        """Fortlaufender Zähler der Summertöne — die Oberfläche piept bei Zuwachs."""
+        return int(_lib.k1520_bell_count(self._handle))
 
     @property
     def drive_types(self) -> Optional[list]:
@@ -498,10 +542,11 @@ class K1520Emulator:
                                             ctypes.c_bool(ctrl)))
 
     def keyboard_leds(self) -> int:
-        """Zustand der Tastaturanzeigen (K7637).
+        """Zustand der Tastaturanzeigen, Bitbelegung je Tastatur.
 
-        Bit 0…4 = Funktionsanzeigen G00…G04, Bit 5 = Fehleranzeige (blinkt,
-        solange gesetzt), Bit 7 = akustisches Signal läuft.
+        A5120 (K7637): Bit 0…4 = Funktionsanzeigen G00…G04, Bit 5 = Fehleranzeige
+        (blinkt, solange gesetzt), Bit 7 = akustisches Signal läuft.
+        K8915 (K7672): Register 21H — Bit 3 = Senden frei (XON), Bit 0 = ``ESC [?13h``.
         """
         return int(_lib.k1520_keyboard_leds(self._handle))
 
@@ -727,7 +772,14 @@ class K1520Emulator:
 
         Liest das K7024-Bildwiederholram direkt — unabhängig vom gerenderten
         Framebuffer und damit die robuste Art, den Bildschirminhalt zu prüfen.
+        Beim K8915 über ``k1520_screen_char`` von der Karte: die CPU-Sicht
+        (``mem_read``) zeigt bei 1000H je nach Port A8H das RAM der ZRE.
         """
+        if self._machine != "a5120":
+            return "\n".join(
+                "".join(chr(_lib.k1520_screen_char(self._handle, c, r) & 0x7F)
+                        for c in range(VRAM_COLS))
+                for r in range(VRAM_ROWS))
         chars = [chr(self.mem_read(VRAM_BASE + i) & 0x7F)
                  for i in range(VRAM_COLS * VRAM_ROWS)]
         return "\n".join("".join(chars[r * VRAM_COLS:(r + 1) * VRAM_COLS])

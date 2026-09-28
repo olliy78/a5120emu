@@ -260,9 +260,8 @@ if(BUILD_K1520)
     target_link_libraries(k1520_k7672 PUBLIC k1520_sio k1520_logger)
     target_include_directories(k1520_k7672 PUBLIC ${CMAKE_SOURCE_DIR})
 
-    # K8915 V3 (doc/design/16_k8915.md) — Etappe 2: ZRE + ATS/K7672 + K7024.  Noch NICHT in
-    # libk1520core.so: k1520_create(K1520_MACHINE_K8915) bleibt NULL mit Grund, bis
-    # die Oberfläche mit der Maschine etwas anfangen kann (Tastatur, Laufwerke).
+    # K8915 V3 (doc/design/16_k8915.md) — ZRE + ATS/K7672 + K7024 + K5122 (/WAIT).  Seit
+    # AP-E4b in libk1520core.so: k1520_create(K1520_MACHINE_K8915).
     add_library(k1520_k8915 STATIC core/machines/k8915/k8915.cpp)
     target_link_libraries(k1520_k8915 PUBLIC
         k1520_zre8762 k1520_k7028 k1520_k7672 k1520_k7024 k1520_k5122 k1520_laufwerke
@@ -274,7 +273,7 @@ if(BUILD_K1520)
         core/api/k1520_api.cpp
         core/api/k1520_sync_api.cpp   # physische Diskette — steht in BEIDEN Bibliotheken
     )
-    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_logger)
+    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_k8915 k1520_logger)
     target_include_directories(k1520core PUBLIC ${CMAKE_SOURCE_DIR})
     # K1520_BUILD_SHARED schaltet K1520_API auf __declspec(dllexport).  OHNE das
     # exportiert eine MSVC-DLL GAR NICHTS und ctypes findet keine Funktion

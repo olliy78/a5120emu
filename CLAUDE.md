@@ -399,11 +399,11 @@ Robotron K8915 (5¼″, V3) neben dem A5120, eigener Zweig unter `core/machines/
 Karten `zre8762` (CPU + 128 KB RAM, Speicherumschaltung Port A8H), `k7028` (ATS,
 2×SIO+2×CTC), Peripherie `k7672` (Tastatur); wiederverwendet `K7024` und `K5122`
 (zweite Betriebsart `/WAIT`, **ohne** ZVE2 — eigener Zweig, rührt den `/BUSRQ`-Weg/die
-A5120-Boot-Invarianten nicht an), gemeinsamer Baustein `Laufwerke`. **Noch nicht in
-`libk1520core.so`** (`k1520_create(K1520_MACHINE_K8915)` → NULL mit Grund), noch ohne
-`boot_trace`/`k1520dbg`-Unterstützung. **Stand 2026-09-28:** Etappen 1–3 fertig (SCPX
-8915 V5.3 bootet bis zum Prompt); Etappe 4/5 offen, Arbeitspakete in
-`doc/design/16_k8915.md` §8a.
+A5120-Boot-Invarianten nicht an), gemeinsamer Baustein `Laufwerke`. **In `libk1520core.so`** (`k1520_create(K1520_MACHINE_K8915)`,
+Python `K1520Emulator(machine="k8915")`; Bild dort nur über `k1520_screen_char`, nie
+`mem_read`), noch ohne `boot_trace`/`k1520dbg`-Unterstützung. **Stand 2026-09-28:**
+Etappen 1–3 fertig (SCPX 8915 V5.3 bootet bis zum Prompt), AP-E4a/E4b fertig (C-ABI);
+Rest von Etappe 4/5 offen, Arbeitspakete in `doc/design/16_k8915.md` §8a.
 
 **Vor Arbeiten daran: `doc/merkposten/k8915.md` lesen** — die Festlegungen mit ihrem
 Wächter (A8H-Brückenfeld, `/WAIT`-Zweig der K5122, `Z80PIO`/`Z80SIO`-Korrekturen, K7672

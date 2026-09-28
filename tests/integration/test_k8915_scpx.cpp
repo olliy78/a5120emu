@@ -17,7 +17,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <atomic>
+#include <chrono>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "core/filesystem/disk_volume.h"
@@ -183,5 +186,55 @@ TEST(K8915Scpx, DirSaveEraWarmstartUndRamDisk)
     ASSERT_TRUE(befehl(m, "save 1 e:x.com")) << vramLines(m);
     ASSERT_TRUE(befehl(m, "dir e:")) << vramLines(m);
     EXPECT_TRUE(enthaelt(m, "E: X        COM")) << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
+}
+
+/**
+ * @test K8915Scpx.TastenAusZweitemFadenKommenVollstaendigUndInFolgeAn
+ * @brief AP-E4b: `keyPress`/`keyRelease` der Maschine sind der Weg der Oberfläche und
+ *        werden aus DEREN Faden gerufen, während der Lauffaden `run()` fährt.  Sie
+ *        landen nur unter Sperre in einer Warteschlange; die K7672 bekommt sie erst im
+ *        Lauffaden (vorher ein Wettlauf mit `kbd_.service()`).  Geprüft am Echo des
+ *        CCP: jede Taste genau einmal, in der getippten Reihenfolge — über viele
+ *        run()-Abschnitte verteilt (der Tippfaden schläft zwischen den Tasten).
+ *        Ohne Datenwettlauf auch unter TSan (einziger geteilter Zustand: die Schlange).
+ */
+TEST(K8915Scpx, TastenAusZweitemFadenKommenVollstaendigUndInFolgeAn)
+{
+    Aufbau x;
+    K8915Machine& m = x.m;
+    m.powerOn();
+    m.zre().bankPoke(0, 0x0000, 0xC3);
+    m.zre().bankPoke(0, 0x0005, 0xC3);
+    ASSERT_TRUE(bis(m, "* Coldstart *  Disk on A: ready", 5'000'000)) << vramLines(m);
+    ladenBisPrompt(m);
+
+    const std::string text = "dir qwertz12.abc";
+    constexpr uint32_t QK_RETURN = 0x01000004;
+    std::atomic<bool> fertig{false};
+    std::thread tipper([&] {
+        for (char c : text) {
+            m.keyPress(static_cast<uint8_t>(c), false, false);
+            std::this_thread::sleep_for(std::chrono::microseconds(300));
+            m.keyRelease(static_cast<uint8_t>(c));
+            std::this_thread::sleep_for(std::chrono::microseconds(300));
+        }
+        m.keyPress(QK_RETURN, false, false);
+        m.keyRelease(QK_RETURN);
+        fertig.store(true);
+    });
+    // Lauffaden: in kleinen Abschnitten, damit sich Tippen und run() verschränken.
+    for (long long t = 0; t < 400'000'000 && !fertig.load(); t += m.run(20'000)) {}
+    tipper.join();
+    ASSERT_TRUE(fertig.load());
+
+    bool echo = false;
+    for (long long t = 0; t < 60'000'000; t += m.run(kSchritt)) {
+        const bool prompt = letzteZeile(m) == "A>";
+        echo = echo || !prompt;
+        if (echo && prompt && !m.keyboard().sendetNoch() && m.memReadDebug(0xF150) == 0) break;
+    }
+    EXPECT_TRUE(enthaelt(m, "A>" + text)) << vramLines(m);
+    EXPECT_EQ(letzteZeile(m), "A>") << vramLines(m);
     EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
 }

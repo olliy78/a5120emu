@@ -54,17 +54,54 @@ void K8915Machine::powerOn()
     zre_.powerOn(0x00);
     kbd_.powerOn();          // Selbsttest der Tastatur, KEIN DC1 (Firmware 000CH)
     resetHardware();
+    anzeigenSpiegeln();
     LOG_INFO("K8915", "Netz ein: A8H=00H, Boot-ROM bei 0000H");
 }
 
 void K8915Machine::reset()
 {
     resetHardware();
+    anzeigenSpiegeln();
     LOG_INFO("K8915", "Reset");
+}
+
+void K8915Machine::keyPress(uint32_t k, bool shift, bool ctrl)
+{
+    std::lock_guard<std::mutex> lk(tasten_sperre_);
+    tasten_.push_back({k, shift, ctrl, true});
+}
+
+void K8915Machine::keyRelease(uint32_t k)
+{
+    std::lock_guard<std::mutex> lk(tasten_sperre_);
+    tasten_.push_back({k, false, false, false});
+}
+
+void K8915Machine::tastenAbgeben()
+{
+    // Erst unter Sperre umhängen, dann ohne Sperre abgeben: die K7672 darf beim
+    // Einreihen nichts vom Oberflächenfaden aufhalten.
+    std::deque<TastenEreignis> jetzt;
+    {
+        std::lock_guard<std::mutex> lk(tasten_sperre_);
+        jetzt.swap(tasten_);
+    }
+    for (const auto& e : jetzt) {
+        if (e.gedrueckt) kbd_.keyPress(e.code, e.shift, e.ctrl);
+        else             kbd_.keyRelease(e.code);
+    }
+}
+
+void K8915Machine::anzeigenSpiegeln()
+{
+    lampen_.store(ats_.anzeige(), std::memory_order_relaxed);
+    leds_.store(kbd_.leds(), std::memory_order_relaxed);
+    summer_.store(kbd_.summerZaehler(), std::memory_order_relaxed);
 }
 
 int K8915Machine::run(int max_cycles)
 {
+    tastenAbgeben();
     Z80& cpu = zre_.cpu();
     int remaining = max_cycles;
     while (remaining > 0 && !stop_.load(std::memory_order_relaxed)) {
@@ -105,5 +142,6 @@ int K8915Machine::run(int max_cycles)
         if (dirty) bus_.markIntDirty();
     }
     lw_.autoFlush(total_cycles_);
+    anzeigenSpiegeln();
     return max_cycles - remaining;
 }

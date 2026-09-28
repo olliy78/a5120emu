@@ -101,6 +101,16 @@ public:
     Modus    modus() const          { return modus_; }
     bool     sendenGesperrt() const { return gesperrt_; }
     unsigned summerZaehler() const  { return summer_; }   ///< empfangene `BEL`
+    /**
+     * @brief Anzeige-LEDs, Abbild des Firmware-Registers 21H (README „Protokoll
+     *        Rechner → Tastatur“).  Nachgebildet sind nur zwei Bits:
+     *        **Bit 3** = Senden frei (an nach `DC1`, aus nach `DC3` — die
+     *        XON/XOFF-Lampe) und **Bit 0** = `ESC [?13h` / `ESC [?13l` **[?]**
+     *        (welche Lampe das ist, sagt die Firmware nicht).  Einschalten und
+     *        Neustart (`ESC c`, `ESC [2;0y`) löschen das Register mit dem
+     *        Speicherlöscher 04H…7FH.
+     */
+    uint8_t  leds() const           { return leds_; }
     unsigned selbsttests() const    { return selbsttests_; }
     /// Liegen noch Bytes auf der Leitung zum Rechner?  (Tests: „alles getippt“)
     bool sendetNoch() const         { return !unterwegs_.empty(); }
@@ -123,6 +133,7 @@ private:
     Modus    modus_    = Modus::Scp;
     bool     gesperrt_ = false;       ///< Firmware 60H Bit2 (DC3)
     unsigned summer_   = 0;
+    uint8_t  leds_     = 0;           ///< Firmware 21H (nur Bit 0 und Bit 3)
     unsigned selbsttests_ = 0;
 
     // DCP-Modus: was der Rechner über die Umschalttasten weiß, und je gedrückter

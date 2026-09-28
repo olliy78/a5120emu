@@ -241,6 +241,8 @@ public:
     bool consolePoll(int& x, int& y, char& ch) override {
         return screen_.pollTextChange(x, y, ch);
     }
+    /// Bildspeicher der K7024 direkt (Bereichsprüfung in der C-ABI).
+    uint8_t screenChar(int col, int row) const override { return screen_.vramRead(col, row); }
 
     // Serial callbacks (DFÜ, printer)
     using SerialCb = std::function<void(uint8_t)>;

@@ -217,3 +217,28 @@ TEST(K7672, DcpSendeZeichenTipptDieTaste)
     a.kbd.sendeZeichen('d');
     EXPECT_TRUE(alles(a).empty());
 }
+
+/// AP-E4b: Anzeige-LEDs als Abbild des Firmware-Registers 21H — Bit 3 folgt DC1/DC3
+/// (XON/XOFF-Lampe), Bit 0 `ESC [?13h`/`l`; `ESC c` löscht 21H (Speicherlöscher
+/// 04H…7FH); `BEL` zählt den Summer fortlaufend, auch über einen Neustart.
+TEST(K7672, LedsRegister21HUndSummer)
+{
+    Aufbau a;
+    EXPECT_EQ(a.kbd.leds(), 0x00) << "Einschalten löscht 21H";
+    a.sende({DC1});
+    EXPECT_EQ(a.kbd.leds(), 0x08);
+    a.sende({ESC, '[', '?', '1', '3', 'h'});
+    EXPECT_EQ(a.kbd.leds(), 0x09);
+    a.sende({DC3});
+    EXPECT_EQ(a.kbd.leds(), 0x01);
+    a.sende({ESC, '[', '?', '1', '3', 'l'});
+    EXPECT_EQ(a.kbd.leds(), 0x00);
+    a.sende({DC1, ESC, '[', '?', '1', '3', 'h'});
+    EXPECT_EQ(a.kbd.leds(), 0x09);
+    a.sende({0x07, 0x07});
+    EXPECT_EQ(a.kbd.summerZaehler(), 2u);
+    a.sende({ESC, 'c'});
+    EXPECT_EQ(a.kbd.leds(), 0x00) << "Neustart löscht 21H";
+    a.sende({0x07});
+    EXPECT_EQ(a.kbd.summerZaehler(), 3u) << "Summerzähler läuft über den Neustart weiter";
+}

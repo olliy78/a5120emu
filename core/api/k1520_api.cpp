@@ -1,6 +1,7 @@
 #include "k1520_api.h"
 #include "core/api/k1520_sync_internal.h"
 #include "core/machines/a5120/a5120.h"
+#include "core/machines/k8915/k8915.h"
 #include "core/machines/machine.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/logger.h"
@@ -64,22 +65,32 @@ K1520Handle k1520_create_configured(K1520MachineType type,
                                     const char* d0, const char* d1,
                                     const char* d2, const char* d3) {
     g_init_error.clear();
-    if (type != K1520_MACHINE_A5120) {
-        // K8915 (doc/design/16_k8915.md) und PRG710 sind im Typ vorgesehen, aber
-        // noch nicht gebaut.  Kein stilles NULL: die Oberfläche soll sagen können, warum.
+    if (type != K1520_MACHINE_A5120 && type != K1520_MACHINE_K8915) {
+        // PRG710 ist im Typ vorgesehen, aber nicht gebaut.  Kein stilles NULL: die
+        // Oberfläche soll sagen können, warum.
         g_init_error = "Maschinentyp " + std::to_string(static_cast<int>(type)) +
-                       " ist noch nicht implementiert (nur A5120)";
+                       " ist noch nicht implementiert (nur A5120, K8915)";
         return nullptr;
     }
 
     setup_logging();
 
     try {
-        A5120Machine::Config cfg;                      // Default = 4× K5601
         const char* names[4] = { d0, d1, d2, d3 };
-        for (int i = 0; i < 4; ++i)
-            if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
-        K1520Machine* m = new A5120Machine(cfg);
+        K1520Machine* m = nullptr;
+        if (type == K1520_MACHINE_K8915) {
+            // doc/design/16_k8915.md §8a AP-E4b.  Vorgabe = Gerät des Anwenders:
+            // K5601/K5601/none/none; NULL/"" behält den Platz bei dieser Vorgabe.
+            K8915Machine::Config cfg;
+            for (int i = 0; i < 4; ++i)
+                if (names[i] && names[i][0]) cfg.laufwerke[i] = names[i];
+            m = new K8915Machine(cfg);
+        } else {
+            A5120Machine::Config cfg;                  // Default = 4× K5601
+            for (int i = 0; i < 4; ++i)
+                if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
+            m = new A5120Machine(cfg);
+        }
         return m;
     } catch (const std::exception& e) {
         g_init_error = e.what();
@@ -319,6 +330,25 @@ const char* k1520_last_error(K1520Handle h) {
 
 const char* k1520_version(void) {
     return VERSION;
+}
+
+// ─── Maschinenneutrale Anzeigen (doc/design/16_k8915.md §8a AP-E4b) ─────────
+
+int k1520_machine_type(K1520Handle h) {
+    return toMachine(h)->machineType();
+}
+
+uint8_t k1520_screen_char(K1520Handle h, int col, int row) {
+    if (col < 0 || col >= 80 || row < 0 || row >= 24) return 0;
+    return toMachine(h)->screenChar(col, row);
+}
+
+uint8_t k1520_panel_lamps(K1520Handle h) {
+    return toMachine(h)->panelLamps();
+}
+
+uint32_t k1520_bell_count(K1520Handle h) {
+    return toMachine(h)->bellCount();
 }
 
 } // extern "C"
