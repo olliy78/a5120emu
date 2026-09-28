@@ -119,6 +119,42 @@ c(0x00C0, "[KOPIERROUTINE] LDIR ROM(00D0H..0FFEH) -> RAM(F0D0H..FFFEH), BC=0F2FH
           "Sprung/Call-Zieladresse.")
 
 c(0x0400, "[LADEREINSPRUNG] JP 041AH -- indirekter erster Schritt, siehe dort")
+c(0x0907, "[MELDUNGSROUTINE, 'CALL 0907H'-Konvention geklaert 2026-09-28] Alle 6 Aufrufer "
+          "(043EH/04E7H/0571H/06C8H/0834H/0870H) legen den anzuzeigenden Text NICHT per "
+          "Zeiger in HL/DE ab, sondern INLINE direkt hinter dem 'CALL 0907H' im Code; das "
+          "letzte Zeichen traegt Bit7 gesetzt (Endemarke). Belegt: '* Coldstart * Disk on "
+          "A: read...', 'Drive A: not ready, check', 'Disk-error, change disk', "
+          "'No system disk, change disk', 'Loading complete, replace disk...' (2x) -- "
+          "deckungsgleich mit den in Design-Doc §4.3 genannten Meldungen. Ablauf: OUT(61H) "
+          "mit dem von JEDEM Aufrufer vorher gesetzten A (nur zwei Werte im ROM: B0H vor "
+          "'Coldstart'/'Loading complete', 60H vor den drei Fehlermeldungen -- vermutlich "
+          "zwei Zustaende einer Anzeige/eines Summers, Design-Doc §6.2 [?] bleibt offen fuer "
+          "die genaue Bitbedeutung); Kanal-2-Baudrate der Tastatur-CTC (Port 5AH, 2 Byte aus "
+          "096FH) und SIO2B/Tastatur-Steuerwoerter (Port 53H, 10 Byte ab 0971H) neu "
+          "ausgeben (derselbe Wertesatz wie sub_FC46/FC9E-FCA8 im Selbsttest-Block, siehe "
+          "dort); Bildschirmbereich 1050H-177FH um 50H=80 Byte (1 Zeile) nach 1000H hoch-"
+          "scrollen, neue Zeile mit Leerzeichen fuellen.")
+c(0x092E, "'POP HL' holt hier NICHT irgendeinen geretteten Wert, sondern die eigene "
+          "CALL-Ruecksprungadresse vom Stack -- die zeigt exakt auf den Meldungstext, der "
+          "im Aufrufer direkt hinter 'CALL 0907H' liegt (s.o.). Schleife bei 092FH kopiert "
+          "byteweise nach [DE] (in die frisch gescrollte Bildzeile) und loescht dabei Bit7 "
+          "(RLCA+SRL A) -- bis zu dem Byte, dessen Bit7 GESETZT war (das ist die Endemarke "
+          "UND das letzte kopierte Zeichen). PUSH HL (= Adresse hinter der Endemarke, also "
+          "die korrekte Fortsetzungsadresse im Aufrufer) + PUSH DE sichern beide fuer den "
+          "Ausgang der Routine.")
+c(0x093A, "Haengt einen festen 12-Byte-Text '--> <ENTER>>' aus 097BH an die kopierte "
+          "Meldung an (Aufforderung zum Weiterdruecken).")
+c(0x0942, "Wartet auf ein Tastaturzeichen (Port 53H/52H = SIO2B, Tastatur K7672, Design-"
+          "Doc §3.2): CR(0DH)/7CH/1CH/ESC(1BH) beenden direkt, ESC gefolgt von 'c'(63H) "
+          "ebenfalls (zweite Schleife ab 095AH) -- passt zu 'ESC c' als Rueckstell-Befehl "
+          "der K7672 aus Design-Doc §3.5.")
+c(0x0966, "POP HL holt jetzt das bei 093AH gesicherte DE zurueck (Position direkt hinter "
+          "der kopierten Meldung, VOR dem angehaengten '--> <ENTER>>'); die folgende "
+          "Schleife loescht genau diese 12 Byte wieder (der Eingabe-Hinweis verschwindet, "
+          "die Meldung selbst bleibt stehen). Danach 'RET': das holt das bei 092EH "
+          "GEPUSHTE HL vom Stack -- der urspruengliche Ruecksprung ist laengst konsumiert, "
+          "der Call kehrt also nicht hinter 'CALL 0907H' zurueck, sondern hinter die "
+          "inline liegende Meldung im Aufrufer.")
 c(0x041A, "Kopiert den 23-Byte-'Warmstart-Stub' (Quelle 0987H, s.u.) nach FFE0H und "
           "springt ihn an. Der Stub liegt bewusst in der IMMER-RAM-Seite oberhalb 0C000H "
           "(Design-Doc §3.1 Seitendekoder D23), damit sein eigener Code-Fetch nicht davon "
@@ -131,11 +167,14 @@ c(0x0428, "Rueckkehrpunkt aus dem Stub (FFF4H: JP 0428H). Z-Flag noch von der le
 c(0x0987, "[WARMSTART-STUB, Quelltext bei 0987H] Wird nach FFE0H kopiert (s. 041AH) und "
           "NUR DORT ausgefuehrt -- die Bytes hier sind reine Vorlage, kein Sprungziel. "
           "Deckt sich exakt mit §4.1 Zeile 4 (0987H-099DH -> FFE0H, 23 Byte).")
-c(0x09A0, "[MELDUNGS-/FUELLROUTINE, noch nicht im Detail zugeordnet] Fuellt einen "
-          "Bildschirmbereich (LD B,50H; Schleife (HL)<-A), entpackt danach byteweise per "
-          "RLCA+SRL A (Nibble-Extraktion?) 12 Bytes ab 097BH nach [DE] -- vermutlich Teil "
-          "der 'Meldungsroutine 0907' aus §4.1, aber die genaue Bedeutung ist noch offen "
-          "[?] (Etappe 1/2).")
+c(0x09A0, "[TOTER CODE -- geklaert 2026-09-28] Byteidentische Kopie von 0921H-097FH "
+          "(dem hinteren Teil der Meldungsroutine 0907H, ab 'LD H,D' bis zum Ende inkl. "
+          "ihrer eingebetteten Datentabelle und dem '--> <ENTER>>'-Text) -- NICHT der "
+          "Vorspann mit den beiden OTIRs/dem Scroll-LDIR (0907H-0920H fehlt hier). Kein "
+          "einziges CALL/JP im gesamten ROM zielt auf 09A0H (durchsucht: alle "
+          "16-Bit-Little-Endian-Vorkommen von A0 09 mit vorangehendem CD/C3/…) -- die "
+          "96 Byte sind unerreichbarer Fuellcode, vermutlich ein Assembler-/Link-Rest "
+          "einer frueheren Fassung dieser Routine, ohne Funktion.")
 c(0x09C2, "[TASTATURABFRAGE waehrend des Ladevorlaufs] Pollt SIO-Port 53H (Status) / 52H "
           "(Daten) -- das ist laut Design-Doc §3.2 SIO 2 Kanal B = Tastatur K7672. Prueft "
           "gelesene Zeichen gegen 0DH/7CH/1CH/1BH (CR bzw. ESC-artige Codes -- passt zum "
@@ -172,15 +211,56 @@ c(0xFC19, "sub_FC19: kopiert Text ab HL in die Statuszeile 1770H (3 Byte) + 1740
 c(0xFC2C, "sub_FC2C: einfache DJNZ/DEC-C-Verzoegerungsschleife (B*256+C-artig)")
 c(0xFC34, "sub_FC34: zweite, laengere Verzoegerungsschleife mit EXX (schont HL/BC des "
           "Aufrufers)")
-c(0xFC46, "sub_FC46: zwei OTIR-Bloecke (2 Byte ab FC9EH, 9 Byte ab FC53H) -- Ausgabe "
-          "vorgefertigter Init-Tabellen an Ports, vermutlich SIO/CTC-Steuerworte fuer ATS "
-          "oder ZRE-PIO (Ports aus der Tabelle selbst noch nicht ausgewertet)")
+c(0xFC46, "sub_FC46 -- geklaert 2026-09-28, deckt sich mit Design-Doc §3.2: LD HL,FC9EH; "
+          "zwei OTIRs OHNE HL neu zu laden, HL laeuft also durch. Erster OTIR (2 Byte "
+          "FC9EH/FC9FH = 07H,01H) an Port 5AH = CTC2-Kanal K2 (Tastatur-Baudrate): "
+          "Steuerwort 07H (Zeitgeber, Vorteiler 16), Zeitkonstante 01H -- "
+          "2,4576 MHz/16 = 153,6 kHz. Zweiter OTIR (9 Byte, HL jetzt bei FCA0H = "
+          "18H,04H,44H,03H,C1H,05H,EAH,01H,00H) an Port 53H = SIO2-Kanal B (Tastatur "
+          "K7672, Design-Doc §3.2): Z80-SIO-Zeigerprotokoll ausgewertet -- 18H (WR0, "
+          "Pointerbits=0, Reset-artiger Befehl), dann je Zeiger+Wert: WR4=44H "
+          "('x16, 1 Stop, keine Paritaet' -- exakt Design-Doc-Wert), WR3=C1H "
+          "('Rx enable, 8 Bit' -- exakt Design-Doc-Wert), WR5=EAH (Design-Doc-Wert), "
+          "WR1=00H (keine Interrupts). Dieselben elf Bytes (07,01,18,04,44,03,C1,05,EA,01, "
+          "mit einer zusaetzlichen 00H) liegen als eingebettete Datentabelle nochmal bei "
+          "096FH/0971H -- vom Lader-Meldungsroutine 0907H per eigenem OTIR gelesen "
+          "(s. dort); zwei getrennte Kopien derselben Init-Konstanten, keine gemeinsame "
+          "Tabelle.")
 c(0xFC56, "sub_FC56: kurzer Summerton (Port 52H 1BH/63H mit Verzoegerung dazwischen) -- "
           "ACHTUNG Port 52H ist laut §3.2 SIO2-A Datenport (Tastatur/V.24), hier vermutlich "
           "zweckentfremdet oder Bezeichnung [?] noch zu pruefen")
 c(0xFC64, "[CTC-INTERRUPT-ISR, Ziel des Vektors bei FFF6H] INC A; EI; RETI -- die minimale "
           "Zaehl-ISR fuer den CTC-Interrupttest aus §4.3 ('CTC: ... jeweils Kanal 3 als "
           "Zeitgeber mit Interrupt').")
+c(0xFC68, "[TEXT-/TABELLENBLOCK FC68H-FCF7H -- geklaert 2026-09-28, war im Plan (§8, "
+          "Etappe 0) noch als '[?]' offen] Reiner Datenbereich, vom Disassembler streckenweise "
+          "als Fake-Code gezeigt (keine Verstaendnisluecke, nur die Grenze eines blinden "
+          "Disassemblers -- s. Design-Doc §8). Fuenf Teile: "
+          "(1) FC68H-FC76H Text 'ROMRAMSIOKEYCTC' -- die 5 Spaltenkoepfe der Statuszeile "
+          "(sub_FC19 kopiert sie nach 1740H, s. dort); "
+          "(2) FC77H-FC9DH Text 'DIAGNOSTIC ENTER: LADER  /  \"#\": ZYKL. ' -- die zweite "
+          "Statuszeile; "
+          "(3) FC9EH-FCA8H die CTC2-K2/SIO2B-Init-Tabelle von sub_FC46H (s. dort); "
+          "(4) FCA9H-FCB0H die Bytes 1BH,5BH,32H,3BH,31H,79H = 'ESC [2;1y' (VT100-DECTST, "
+          "Design-Doc §3.5) plus zwei Fuellbytes; "
+          "(5) FCB1H-FCE6H eine Spaltenlayout-Tabelle (Breiten/Schrittweiten fuer die 5 "
+          "Statuszeilen-Spalten ROM/RAM/SIO/KEY/CTC, inkl. des Trennzeichens 48H), gelesen "
+          "vom noch nicht kommentierten Rahmen-Zeichenprogramm bei F2D6H (Selbsttest-Block, "
+          "Aufruf ueber sub_FC46+sub_FC09+sub_FC00 ab F2F7H) -- Bedeutung der einzelnen "
+          "Tabellenwerte im Detail offen, aber die Adresse und ihr Verbraucher sind jetzt "
+          "bekannt, keine 'Fake-Code'-Verwechslung mehr; "
+          "(6) FCE7H-FCF7H+ Init-Tabelle 'FCEFH' fuer SIO1-A/B + SIO2-A (V.24/IFSS, Design-"
+          "Doc §4.3 'je 200H Muster AAH/55H'): ab FCEFH per Zeigerprotokoll WR3=C1H, "
+          "WR4=45H ('x16, 1 Stop, UNGERADE Paritaet' -- exakt Design-Doc-Wert fuer IFSS), "
+          "WR5=68H (exakt Design-Doc-Wert), Rest ausserhalb dieses Blocks.")
+c(0xF2D6, "[STATUSZEILEN-RAHMEN, laeuft als RAM-Spiegel] Zeichnet die 5-Spalten-Anzeige "
+          "'MROM RAM SIO KEY CTC' der Statuszeile (Design-Doc §4.3) mithilfe der "
+          "Layout-Tabelle FCB1H-FCE6H (s. FC68H-Kommentar) -- Trennzeichen 48H "
+          "wiederholt ueber die Zeilen, danach je Spalte ein Fuellwert aus FCF9H/FCFAH. "
+          "Aufgerufen ueber F2F7H (DI; CALL sub_FC46; CALL sub_FC09; CALL sub_FC00) aus "
+          "dem RAM-Testabschnitt heraus -- Detailsemantik der einzelnen Tabellenbytes "
+          "(FCBBH/FCBDH/FCBFH/FCC0H...) noch nicht Byte-fuer-Byte zugeordnet, aber "
+          "Routine und Datenquelle sind jetzt bekannt.")
 
 HDR = """; ============================================================================
 ; k8915_zre.prn  -  K8915 V3 Boot-EPROM (045-8762 'ZRE fuer K8G'), 2732, 4 KB, 0000H-0FFFH
