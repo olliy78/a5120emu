@@ -102,6 +102,8 @@ public:
     bool     sendenGesperrt() const { return gesperrt_; }
     unsigned summerZaehler() const  { return summer_; }   ///< empfangene `BEL`
     unsigned selbsttests() const    { return selbsttests_; }
+    /// Liegen noch Bytes auf der Leitung zum Rechner?  (Tests: „alles getippt“)
+    bool sendetNoch() const         { return !unterwegs_.empty(); }
 
 private:
     void empfangeVomRechner(uint8_t b);

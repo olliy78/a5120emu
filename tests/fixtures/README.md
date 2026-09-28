@@ -19,7 +19,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 
 | Segment | Werte |
 |---------|-------|
-| system | `cpa` = CP/A · `scpx17` = SCPX 1526 V1.7 · `udos` = UDOS 4.3 · `udos1715` = UDOS1715/NDOS (PC 1715) |
+| system | `cpa` = CP/A · `scpx17` = SCPX 1526 V1.7 · `k8915scpx` = SCPX 8915 · `udos` = UDOS 4.3 · `udos1715` = UDOS1715/NDOS (PC 1715) |
 | diskformat | physisches Format des Mediums: `cpa780` (5¼″ 80 Spuren DS MFM, 26×128 Sys + 5×1024 Daten), `5x1024`, `mini` |
 | laufwerkskonfiguration | Laufwerkstypen, die das BIOS des Systems für A:/B:/C: annimmt |
 | merkmale | `clock`/`noclock` (Uhrzeit-Abfrage beim Kaltstart), `hardy` (HARDY.COM an Bord) |
@@ -42,6 +42,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `udos1715_640k_pc1715_system.img` | **UDOS1715/NDOS** (PC 1715), Systemdiskette „SYSTEM": 80×32×256, 67 Dateien, darunter das Systemhandbuch `UDOS.TEXT` | `Udos1715.*`, `Udos1715Belegung.*`, `Udos1715Schreiben.*` |
 | `udosP8000_640k_wega.hfe` | **UDOS1715/NDOS** vom **Robotron P8000** (UDOS 2.2), „WEGA-STARTDISKETTE": 80×32×256, 42 Dateien (UDOS-Dienstprogramme + die WEGA-Urlader und `sa.*`-Werkzeuge). **Anderer Rechner als der PC 1715**, gleiche Diskettensitte — nur mit `77H` statt `00` hinter dem Belegungsplan | `Udos1715P8000.*` |
 | `scp1700_640k_a7100_system.hfe` | **SCP1700/CP/M-86** (A7100), Systemdiskette: 80×2×16×256 MFM — aber **Spur 0 Kopf 0 in FM mit halber Datenrate** (16×128, 125 kbit/s), 46 Dateien | `Scp1700.*` |
+| `k8915scpx_boot1.hfe` | **SCPX 8915 V5.3** (K8915), Bootdiskette des Anwenders (Greaseweazle-Abzug, gleich `disks/k8915scpx_boot1.hfe`): `cpa800`, Systemspuren 5×1024 ab Zylinder 0, `RADE.COM` (Autostart), `DISGEN`, `FORMAT`, Turbo Pascal | `K8915Scpx.*` |
 
 Die **gemischte** Diskette entstand am echten Laufwerk: erst vollständig als cpa800
 formatiert, dann mit UDOS `ss40` im Doppelschritt überschrieben.  Sie ist die einzige

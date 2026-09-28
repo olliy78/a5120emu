@@ -35,7 +35,14 @@ k1520_add_test(disktool_bootdiskette SRC test_disktool_bootdiskette.cpp
                                      LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
 
 # K8915 Etappe 1+2 (doc/design/16_k8915.md §8a AP-E1/AP-E2): ZRE 045-8762, ATS
-# K7028.30 + K7672, K7024 — Selbsttest bis zur Coldstart-Meldung.  Keine Diskette.
+# K7028.30 + K7672, K7024 — Selbsttest bis zur Coldstart-Meldung.  Keine Diskette
+# (die K5122 ist bestückt, die Laufwerke bleiben leer ⇒ „Drive A: not ready“).
 k1520_add_test(k8915_boot SRC test_k8915_boot.cpp
                           LIBS k1520_k8915 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# K8915 Etappe 3 (doc/design/16_k8915.md §8a AP-E3): SCPX 8915 von der eigenen Diskette
+# bis zum Prompt, dann dir/save/era/Warmstart/RAM-Disk.  Je Fall ≈ 2–3 s.
+k1520_add_test(k8915_scpx SRC test_k8915_scpx.cpp
+                          LIBS k1520_k8915 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
