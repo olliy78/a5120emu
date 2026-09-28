@@ -228,13 +228,18 @@ if(BUILD_K1520)
     target_link_libraries(k1520_k5122 PUBLIC k1520_pio k1520_floppy2 k1520_bus k1520_logger)
     target_include_directories(k1520_k5122 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # EM064/EM256 – Erweiterungsmodul des A5120.16, 8-Bit-Seite (doc/design/17_a5120_16.md)
+    add_library(k1520_em STATIC core/cards/em/em.cpp)
+    target_link_libraries(k1520_em PUBLIC k1520_pio k1520_bus k1520_logger)
+    target_include_directories(k1520_em PUBLIC ${CMAKE_SOURCE_DIR})
+
     # A5120 machine (wires all cards + Z80 CPU)
     add_library(k1520_a5120 STATIC
         core/machines/a5120/a5120.cpp
     )
     target_link_libraries(k1520_a5120 PUBLIC
         k1520_z80
-        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122
+        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_em
         k1520_k7637 k1520_floppy k1520_floppy2 k1520_geometry k1520_bus k1520_logger
     )
     target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})

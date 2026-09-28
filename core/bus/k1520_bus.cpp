@@ -69,17 +69,34 @@ void K1520Bus::setInterruptChain(std::initializer_list<InterruptSlave*> chain) {
     LOG_DEBUG("K1520Bus", "Interrupt-Daisy-Chain: %zu Geräte gesetzt", int_chain_.size());
 }
 
+// Welcher Vorrangspeicher zieht für @p addr /MEMDI?  nullptr = keiner (Normalfall).
+MemdiDriver* K1520Bus::memdiDriverFor(uint16_t addr) {
+    for (auto* d : memdi_drivers_)
+        if (d->drivesMemdi(addr)) return d;
+    return nullptr;
+}
+
 uint8_t K1520Bus::memRead(uint16_t addr) {
-    // Das globale /MEMDI (BS-PIO Q301 Port A Bit7 → MEMDI1/2 auf dem Backplane)
-    // gatet den Speicher NICHT: es ist die „Speicherbereichsumschaltung", die nur
-    // OPS-Gruppen abschaltet, die per Jumper auf MEMDI1/2 verdrahtet sind. Auf dem
-    // hier modellierten Standard-A5120 ist KEINE Gruppe darauf verdrahtet → /MEMDI
-    // bleibt für Lesen, Fetch UND Schreiben wirkungslos (eine per Jumper geschaltete
-    // Gruppe würde über K3526::setMemDI abgebildet, nicht über dieses globale Gate).
-    // Wichtig: Der laufende Code muss weiterlaufen, während /MEMDI aktiv ist —
-    // HARDYs MEMDI-Test setzt /MEMDI und führt danach EI/RET sowie Stack-/BDOS-
-    // Operationen aus. Ein Read-Gate (→0xFF) ließe die CPU 0xFF (=RST 38H) holen
-    // → Endlos-RST-38-Schleife; ein Write-Gate blockierte die Stack-Writes.
+    // Bus-/MEMDI (X1 C09) ist ein JE ZUGRIFF getriebenes Signal: ein Vorrangspeicher
+    // (Erweiterungsmodul) zieht es allein aus der anliegenden Adresse und bedient den
+    // Zyklus selbst; die auf /MEMDI gebrückten K3526-Gruppen bleiben still.
+    //
+    // WÄCHTER: Der BS-PIO (K2526 Port A Bit7) treibt NICHT diese Leitung, sondern
+    // MEMDI1/2 der Rückverdrahtung (Koppelbus), auf die am A5120 keine Gruppe hört.
+    // Beides war früher EIN Flag — und weil HARDYs MEMDI-Test A7 setzt und danach
+    // weiterläuft (EI/RET, Stack, BDOS), war /MEMDI deshalb ganz wirkungslos gemacht
+    // worden.  Ein globales Lese-Gate hier liesse die CPU 0xFF (RST 38H) holen.
+    // Ohne angemeldeten Vorrangspeicher kostet das genau einen Vergleich.
+    if (!memdi_drivers_.empty()) {
+        if (MemdiDriver* d = memdiDriverFor(addr)) {
+            memdi_ = true;
+            const uint8_t v = d->memRead(addr);
+            memdi_ = false;
+            if (trace_cb_) trace_cb_(false, true, addr, v);
+            LOG_TRACE("K1520Bus", "MEM RD 0x%04X => 0x%02X (/MEMDI, Vorrangspeicher)", addr, v);
+            return v;
+        }
+    }
 
     // Take the last READABLE device that covers this address.
     // Devices with isReadable()=false (e.g. K7024 with Lesesperre active)
@@ -102,8 +119,11 @@ uint8_t K1520Bus::memRead(uint16_t addr) {
 }
 
 void K1520Bus::memWrite(uint16_t addr, uint8_t data) {
-    // /MEMDI gatet auch Schreibzugriffe nicht — siehe ausführliche Begründung in
-    // memRead(): das globale /MEMDI ist auf dem Standard-A5120 wirkungslos.
+    // /MEMDI je Zugriff (s. memRead): zieht ein Vorrangspeicher es, bekommt er den
+    // Schreibzyklus; der Broadcast unten läuft trotzdem an alle, und wer auf /MEMDI
+    // hört (K3526-Gruppe am Bus-/MEMDI), verwirft ihn über memdiActive().
+    MemdiDriver* md = memdi_drivers_.empty() ? nullptr : memdiDriverFor(addr);
+    memdi_ = md != nullptr;
     // Write to ALL writable devices that cover this address.
     // On real K1520 hardware the write signal (/WR + /MREQ) is broadcast on the
     // bus; every device whose address decoder fires will latch the data.
@@ -124,11 +144,15 @@ void K1520Bus::memWrite(uint16_t addr, uint8_t data) {
                     wrote = true;
                 }
     }
+    if (md) { md->memWrite(addr, data); wrote = true; }
+    memdi_ = false;
     if (trace_cb_) trace_cb_(false, false, addr, data);
     LOG_TRACE("K1520Bus", "MEM WR 0x%04X <= 0x%02X%s", addr, data, wrote ? "" : " (kein beschreibbares Gerät)");
 }
 
-uint8_t K1520Bus::ioRead(uint8_t port) {
+uint8_t K1520Bus::ioRead(uint16_t addr) {
+    io_addr_ = addr;
+    const uint8_t port = static_cast<uint8_t>(addr);
     if (iodi_) {
         LOG_TRACE("K1520Bus", "ioRead 0x%02X: /IODI aktiv → 0xFF", port);
         return 0xFF;
@@ -141,7 +165,9 @@ uint8_t K1520Bus::ioRead(uint8_t port) {
     return val;
 }
 
-void K1520Bus::ioWrite(uint8_t port, uint8_t data) {
+void K1520Bus::ioWrite(uint16_t addr, uint8_t data) {
+    io_addr_ = addr;
+    const uint8_t port = static_cast<uint8_t>(addr);
     if (iodi_) {
         LOG_TRACE("K1520Bus", "ioWrite 0x%02X=0x%02X: /IODI aktiv → ignoriert", port, data);
         return;

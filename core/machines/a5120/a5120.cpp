@@ -73,6 +73,13 @@ A5120Machine::A5120Machine(const Config& cfg)
         }
     }
 
+    // Erweiterungsmodul (A5120.16) — nur auf ausdrücklichen Wunsch.
+    if (cfg.em != Config::Em::none) {
+        EM::Config ec;
+        ec.variante = cfg.em == Config::Em::em064 ? EM::Variante::EM064 : EM::Variante::EM256;
+        em_ = std::make_unique<EM>(bus_, ec);
+    }
+
     // ZVE1 (Haupt-CPU) lebt jetzt auf der K2526-Karte.
     // Verdrahtung mit dem Bus erfolgt im K2526-Konstruktor.
     wireBackplane();
@@ -97,7 +104,28 @@ void A5120Machine::wireBackplane() {
 
     // Interrupt chain (physical slot order: AFS→ASS→ZRE→ABS, OPS has no IRQ)
     // ZRE BS-PIO is on the second chain via Koppelbus (lowest priority)
-    bus_.setInterruptChain({&afs_, &ass_, &zre_});
+    if (em_) {
+        // A5120.16: E/A-Tore A8H–AFH + Vorrangspeicher (/MEMDI je Zugriff).  Die PIO
+        // A32 steht in der IEI/IEO-Kette; empfohlene Steckplätze (Handbuch §1.1):
+        // ASS · ZRE16 · EM064/256 · ZRE — also zwischen ASS und ZRE.  Die Kette selbst
+        // wird laut Handbuch nach Montagevorschrift gewickelt (liegt nicht vor).
+        em_->attachToBus();
+        bus_.setInterruptChain({&afs_, &ass_, em_.get(), &zre_});
+    } else {
+        bus_.setInterruptChain({&afs_, &ass_, &zre_});
+    }
+
+    // MEMDI1/2 der Rückverdrahtung (BS-PIO A7).  KoppelbusSignal führt den
+    // elektrischen Pegel der aktiv-LOW-Leitung (true = H = inaktiv).  Darauf hört nur
+    // eine K3526-Gruppe, die dorthin gebrückt ist (memdi_source = true) — am A5120
+    // keine; Bus-/MEMDI (K1520Bus::memdiActive) ist davon getrennt.
+    zre_.onMemdi12([this](bool asserted) {
+        koppel_.memdi1.drive(!asserted);
+        koppel_.memdi2.drive(!asserted);
+    });
+    for (int g = 0; g < 4; ++g)
+        if (ops_.config().groups[g].memdi_source)
+            koppel_.memdi1.connect([this, g](bool level) { ops_.setMemDI(g, !level); });
 
     // Break-before-execute für Debugger (s. Z80::abortBeforeExecute): fordert ein
     // Trace-Callback mitten in der Instruktionsvorbereitung einen Halt an (stop()),
@@ -155,6 +183,7 @@ void A5120Machine::resetHardware() {
     afs_.reset();       // K5122: Transfer abbrechen, /BUSRQ frei, PIOs zurück
     ass_.reset();       // K8025: Baud-CTC + beide SIOs
     kbd_.reset();       // K7637: Tastenwiederholung/LEDs/serielle Warteschlange
+    if (em_) em_->reset();  // EM: PIO hochohmig ⇒ RESET16/Pull-ups; DRAM + A22 bleiben
     bus_.clearNMI();
     bus_.releaseINT();
     bus_.releaseWAIT();
@@ -180,6 +209,7 @@ void A5120Machine::powerOn() {
     // Löschen liefe ein Power-Cycle aus dem laufenden Betrieb auf altem RAM-Inhalt
     // weiter — inklusive der Reste des vorherigen OS.
     ops_.fill(0xFF);
+    if (em_) em_->powerOn();
     resetHardware();
     LOG_INFO("A5120", "Power on: ZVE1 Reset, Lade-ROM aktiv");
 
@@ -257,6 +287,7 @@ std::vector<A5120Machine::IntSource> A5120Machine::interruptSources() const {
     addSio(ass_.sioA33(),  "K8025 SIO-A33 (DFUE)");
     addSio(ass_.sioA32(),  "K8025 SIO-A32 (Tastatur)");
     addCtc(ass_.ctcA34(),  "K8025 CTC-A34");
+    if (em_) addPio(em_->pio(), "EM PIO-A32");
     addCtc(zre_.ctc(),     "K2526 CTC");
     addPio(zre_.bsPio(),   "K2526 BS-PIO");
     return out;
