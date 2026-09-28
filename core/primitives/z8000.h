@@ -82,6 +82,21 @@ struct Z8kConfig {
     bool spuriousFetchBeforeAck = true;
 };
 
+/// Ablaufzustand neben den Registern — für Save-State/Snapshot (S4/S5).
+struct Z8kRunState {
+    bool resetLine = false, resetPending = false;
+    bool nmiLine = false, nmiPending = false, vi = false, nvi = false;
+    bool stopLine = false, busReq = false, mi = false, mo = false, busAck = false;
+    bool halted = false, stopped = false, haveW0 = false, inRepeat = false;
+    uint16_t w0 = 0;                 ///< schon geholtes erstes Wort (Stop-Zustand)
+    uint16_t repWords[6] = {};       ///< laufender Wiederholungsbefehl: seine Worte
+    uint8_t  repNwords = 0;
+    bool     repSeg = false;
+    uint16_t repNext = 0, lastPc = 0;
+    uint8_t  lastPcSeg = 0;
+    int      refreshAcc = 0;
+};
+
 class Z8000 {
 public:
     using Model = Z8kModel;
@@ -175,6 +190,10 @@ public:
     void     setRQ(unsigned n, uint64_t v);
     /// Segmentierte Adresse wie im Registerpaar: 0sss ssss 0000 0000 | offset.
     uint32_t pcLong() const { return (uint32_t(pcSeg & 0x7F) << 24) | pc; }
+
+    /// Ablaufzustand lesen/setzen (Register sind öffentliche Member).
+    Z8kRunState runState() const;
+    void setRunState(const Z8kRunState& s);
 
     /// Beginn des laufenden/letzten Befehls (für Debugger/Trace).
     uint16_t lastPc() const { return lastPc_; }

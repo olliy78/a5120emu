@@ -214,6 +214,33 @@ void Z8000::setFcw(uint16_t v) {
     fcw = v;
 }
 
+Z8kRunState Z8000::runState() const {
+    Z8kRunState s;
+    s.resetLine = resetLine_; s.resetPending = resetPending_;
+    s.nmiLine = nmiLine_; s.nmiPending = nmiPending_; s.vi = vi_; s.nvi = nvi_;
+    s.stopLine = stopLine_; s.busReq = busReq_; s.mi = mi_; s.mo = mo_; s.busAck = busAck_;
+    s.halted = halted_; s.stopped = stopped_; s.haveW0 = haveW0_; s.inRepeat = inRepeat_;
+    s.w0 = w0_;
+    if (inRepeat_) {
+        s.repNwords = uint8_t(rep_.nwords);
+        for (int i = 0; i < rep_.nwords && i < 6; ++i) s.repWords[i] = rep_.w[i];
+        s.repSeg = rep_.seg;
+    }
+    s.repNext = repNext_; s.lastPc = lastPc_; s.lastPcSeg = lastPcSeg_;
+    s.refreshAcc = refreshAcc_;
+    return s;
+}
+
+void Z8000::setRunState(const Z8kRunState& s) {
+    resetLine_ = s.resetLine; resetPending_ = s.resetPending;
+    nmiLine_ = s.nmiLine; nmiPending_ = s.nmiPending; vi_ = s.vi; nvi_ = s.nvi;
+    stopLine_ = s.stopLine; busReq_ = s.busReq; mi_ = s.mi; mo_ = s.mo; busAck_ = s.busAck;
+    halted_ = s.halted; stopped_ = s.stopped; haveW0_ = s.haveW0; w0_ = s.w0;
+    inRepeat_ = s.inRepeat && z8k::decodeWords(s.repWords, s.repNwords, s.repSeg, rep_);
+    repNext_ = s.repNext; lastPc_ = s.lastPc; lastPcSeg_ = s.lastPcSeg;
+    refreshAcc_ = s.refreshAcc;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Pins
 // ─────────────────────────────────────────────────────────────────────────────

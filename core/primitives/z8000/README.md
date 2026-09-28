@@ -10,7 +10,7 @@ Assembler in `tools/z8000/` benutzen sie von hier).
 | `../z8000.h` | Klasse `Z8000`, `Z8kBusCycle`, `Z8kStatus`, `Z8kConfig` |
 | `../z8000.cpp` | Ausführung, Ausnahmen, Pins |
 | `z8k_table.h`, `z8k_codec.h` | Befehlstabelle, Dekoder (S2) |
-| `tests/unit/primitives/test_z8000.cpp` | 80 Tests je Befehlsgruppe, Programme mit z8kasm |
+| `tests/unit/primitives/test_z8000.cpp` | 81 Tests je Befehlsgruppe, Programme mit z8kasm |
 | `tests/oracle/` | Differenzprüfung gegen MAMEs z8000 (`tools/dev.sh test-oracle`) |
 
 ## Busschnittstelle
@@ -70,9 +70,10 @@ std::function<void(const Z8kBusCycle&, uint16_t)> write;   // bekommt AD0..15
   **STOP (PIO B3):** `setStop`. **BUSRQ/BUSAK:** `setBusReq`/`onBusAck`.
 - Resetvektor kommt über `read` mit `MemInstr`, System, Segment 0 — in Mode 0 bei
   gelöschtem A33 also Segment 0.
-- Save-State: Register, FCW, PC, PSAP, REFRESH und `cycles` sind öffentlich. **Nicht**
-  exportiert ist der Ablaufzustand (Halt, Stop mit schon geholtem erstem Wort, laufender
-  Wiederholungsbefehl, NMI-Merker) — für Save-State v5 in S4 nachzureichen.
+- Save-State: Register, FCW, PC, PSAP, REFRESH und `cycles` sind öffentliche Member; der
+  Ablaufzustand (Pins, Halt, Stop mit schon geholtem erstem Wort, laufender
+  Wiederholungsbefehl als seine Befehlsworte, NMI-Merker) über `runState()`/`setRunState()`
+  (`Z8kRunState`, POD). Wächter `Z8000Zustand.AblaufzustandMittenImLdirUebertragbar`.
 
 ## Antworten auf die offenen Punkte aus Plan §8
 

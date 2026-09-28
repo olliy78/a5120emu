@@ -1205,3 +1205,24 @@ TEST(Z8000Befund, GesichertesPcSegmentwortOhneBit15) {
     r.runToHalt();
     EXPECT_EQ(r.w(0, 0xEFFC), 0x0500);           // 0sss ssss 0000 0000 (MAME: %8500)
 }
+
+TEST(Z8000Zustand, AblaufzustandMittenImLdirUebertragbar) {
+    Rig a;
+    for (int i = 0; i < 4; ++i) a.setW(1, uint16_t(0x100 + 2 * i), uint16_t(0xA0 + i));
+    a.load("  SEG\n  ORG <<0>>%0100\n  LDIR @RR2,@RR4,R6\n  HALT\n", true);
+    a.boot(SEGSYS, 0, 0x100);
+    a.cpu.setRR(2, 0x02000200); a.cpu.setRR(4, 0x01000100); a.cpu.setR(6, 4);
+    a.cpu.step(); a.cpu.step();
+    ASSERT_TRUE(a.cpu.inRepeat());
+    // Zweite CPU mit Registern + Ablaufzustand der ersten, gleicher Speicher
+    Rig b;
+    b.mem = a.mem;
+    for (int i = 0; i < 14; ++i) b.cpu.Rg[i] = a.cpu.Rg[i];
+    b.cpu.R14[1] = a.cpu.R14[1]; b.cpu.R15[1] = a.cpu.R15[1];
+    b.cpu.fcw = a.cpu.fcw; b.cpu.pc = a.cpu.pc; b.cpu.pcSeg = a.cpu.pcSeg;
+    b.cpu.setRunState(a.cpu.runState());
+    EXPECT_TRUE(b.cpu.inRepeat());
+    b.runToHalt();
+    for (int i = 0; i < 4; ++i) EXPECT_EQ(b.w(2, uint16_t(0x200 + 2 * i)), 0xA0 + i);
+    EXPECT_EQ(b.count(Z8kStatus::MemInstrFirst), 1);   // nur HALT neu geholt
+}
