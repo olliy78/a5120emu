@@ -330,10 +330,18 @@ Z8000::Ea Z8000::ea(const Operand& o, uint16_t pcNext) const {
     }
 }
 
-void Z8000::pushW(uint16_t v) { unsigned sp = spReg(); ptrAdd(sp, -2); memWW(ptr(sp), v); }
-void Z8000::pushL(uint32_t v) { unsigned sp = spReg(); ptrAdd(sp, -4); memWL(ptr(sp), v); }
-uint16_t Z8000::popW() { unsigned sp = spReg(); uint16_t v = memW(ptr(sp)); ptrAdd(sp, 2); return v; }
-uint32_t Z8000::popL() { unsigned sp = spReg(); uint32_t v = memL(ptr(sp)); ptrAdd(sp, 4); return v; }
+// Stapelzeiger-Fortschaltung mit Ausrichtung: ein ungerader Zeiger landet nach
+// PUSH/POP auf der geraden Nachbaradresse (o += delta − Bit 0).  Das Handbuch
+// schweigt; MAME tut es so (Commit 9e78116399, „correct misaligned stack pointers",
+// am System 8000 erprobt) — README §„Ungerade Zeiger".
+void Z8000::stackAdd(unsigned reg, int delta) {
+    uint16_t& o = segMode() ? rw((reg & 14) | 1) : rw(reg);
+    o = uint16_t(o + delta - (o & 1));
+}
+void Z8000::pushW(uint16_t v) { unsigned sp = spReg(); stackAdd(sp, -2); memWW(ptr(sp), v); }
+void Z8000::pushL(uint32_t v) { unsigned sp = spReg(); stackAdd(sp, -4); memWL(ptr(sp), v); }
+uint16_t Z8000::popW() { unsigned sp = spReg(); uint16_t v = memW(ptr(sp)); stackAdd(sp, 2); return v; }
+uint32_t Z8000::popL() { unsigned sp = spReg(); uint32_t v = memL(ptr(sp)); stackAdd(sp, 4); return v; }
 
 void Z8000::pushPc(uint16_t off) {
     if (segMode()) pushL((uint32_t(pcSeg & 0x7F) << 24) | off);
@@ -779,13 +787,13 @@ int Z8000::execute(const Decoded& d, uint16_t pcNext) {
     }
     case Op::Push: {
         uint32_t v = rdOp(o[1], w, pcNext);
-        ptrAdd(o[0].reg, -w);
+        stackAdd(o[0].reg, -w);
         memWrite(ptr(o[0].reg), w, v);
         break;
     }
     case Op::Pop: {
         uint32_t v = memRead(ptr(o[1].reg), w);
-        ptrAdd(o[1].reg, w);
+        stackAdd(o[1].reg, w);
         wrOp(o[0], w, v, pcNext);
         break;
     }
@@ -1075,7 +1083,7 @@ int Z8000::execute(const Decoded& d, uint16_t pcNext) {
             case 3: refresh = uint16_t(v & 0xFFFE); break;
             case 4: if (z8001()) psapSeg = uint16_t(v & 0x7F00); break;
             case 5: psapOff = uint16_t(v & 0xFF00); break;
-            case 6: R14[0] = v; break;
+            case 6: if (z8001()) R14[0] = v; break;          // Z8002: kein NSPSEG
             case 7: R15[0] = v; break;
             }
         } else {
@@ -1085,7 +1093,7 @@ int Z8000::execute(const Decoded& d, uint16_t pcNext) {
             case 3: v = uint16_t(refresh & 0xFFFE); break;
             case 4: v = uint16_t(psapSeg & 0x7F00); break;
             case 5: v = uint16_t(psapOff & 0xFF00); break;
-            case 6: v = R14[0]; break;
+            case 6: v = z8001() ? R14[0] : 0; break;
             case 7: v = R15[0]; break;
             }
             setR(rg, v);

@@ -223,6 +223,7 @@ private:
     uint8_t  dataSeg() const { return z8001() ? pcSeg : 0; }  // nichtsegmentiert
     Ea       ptr(unsigned reg, int32_t disp = 0) const;
     void     ptrAdd(unsigned reg, int delta);
+    void     stackAdd(unsigned reg, int delta);
     Ea       ea(const z8k::Operand& o, uint16_t pcNext) const;
     unsigned spReg() const { return segMode() ? 14 : 15; }
     void     pushW(uint16_t v);

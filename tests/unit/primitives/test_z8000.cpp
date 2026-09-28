@@ -1152,3 +1152,56 @@ TEST(Z8000Cycles, Stichproben) {
     r.cpu.setR(1, 1);
     EXPECT_EQ(r.cpu.step(), 11);   // DJNZ
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Festlegungen, die das MAME-Orakel geschärft hat (README „Befunde")
+// ═════════════════════════════════════════════════════════════════════════════
+
+TEST(Z8000Befund, DabNeunundsechzigPlusVierundsechzig) {
+    // 96 + 64 = 160: binär %FA, H = 0, C = 0 → Handbuch-Zeile „0, 9-F, 0, A-F → 66, C=1".
+    // MAME (Stand 741d827a) liefert %00/C=0 — bekannte Abweichung im Orakel.
+    Rig r(M::Z8002);
+    runNonseg(r, "  LDB RL0,#%96\n  ADDB RL0,#%64\n  DAB RL0");
+    EXPECT_EQ(r.cpu.rb(8), 0x60);
+    EXPECT_TRUE(F(r, Z8000::F_C));
+}
+
+TEST(Z8000Befund, PcUeberlaeuftImSegment) {
+    // Adressrechnung ohne Übertrag ins Segment (Handbuch §5.5); MAME trägt über.
+    Rig r;
+    r.setW(2, 0xFFFE, 0x8D07);                   // NOP an <<2>>%FFFE
+    r.setW(2, 0x0000, 0x7A00);                   // HALT an <<2>>%0000
+    r.boot(SEGSYS, 2, 0xFFFE);
+    r.runToHalt();
+    EXPECT_EQ(r.cpu.pcSeg, 2);
+    EXPECT_EQ(r.cpu.pc, 0x0002);
+}
+
+TEST(Z8000Befund, UngeraderStapelzeigerWirdBeimPushGerade) {
+    Rig r;
+    r.load("  SEG\n  ORG <<0>>%0100\n  PUSH @RR14,#%1234\n  POP R1,@RR14\n  HALT\n", true);
+    r.boot(SEGSYS, 0, 0x100);
+    r.cpu.R14[1] = 0; r.cpu.R15[1] = 0x2001;
+    r.cpu.step();
+    EXPECT_EQ(r.cpu.R15[1], 0x1FFE);             // 0x2001 − 2 − Bit 0
+    EXPECT_EQ(r.w(0, 0x1FFE), 0x1234);
+    r.cpu.step();
+    EXPECT_EQ(r.cpu.r(1), 0x1234);
+    EXPECT_EQ(r.cpu.R15[1], 0x2000);
+}
+
+TEST(Z8000Befund, Z8002KenntKeinNspseg) {
+    Rig r(M::Z8002);
+    runNonseg(r, "  LD R14,#%1111\n  LD R0,#%2222\n  LDCTL NSPSEG,R0\n  LDCTL R1,NSPSEG");
+    EXPECT_EQ(r.cpu.r(14), 0x1111);
+    EXPECT_EQ(r.cpu.r(1), 0);
+}
+
+TEST(Z8000Befund, GesichertesPcSegmentwortOhneBit15) {
+    Rig r;
+    r.load("  SEG\n  ORG <<5>>%0100\n  CALL <<5>>%0200\n  ORG <<5>>%0200\n  HALT\n", true);
+    r.boot(SEGSYS, 5, 0x100);
+    r.cpu.R14[1] = 0; r.cpu.R15[1] = 0xF000;
+    r.runToHalt();
+    EXPECT_EQ(r.w(0, 0xEFFC), 0x0500);           // 0sss ssss 0000 0000 (MAME: %8500)
+}
