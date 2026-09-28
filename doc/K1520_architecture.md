@@ -1788,7 +1788,7 @@ Hat die K3526 außer dem 64KB DRAM irgendwelche Steuerlogik (Banking-Register, S
 
 ### 15.2 PRG710 / K8915 Hardware
 
-K8915: Stand und Planung in `doc/design/16_k8915.md`. PRG710: es fehlen noch alle Hardware-Informationen. Die Architektur unterstützt sie bereits als Konfiguration, aber die konkreten Karten und deren Verdrahtung müssen noch ermittelt werden.
+K8915: Stand und Planung in `doc/design/16_k8915.md`, Festlegungen mit Wächtern in `doc/merkposten/k8915.md`. PRG710: es fehlen noch alle Hardware-Informationen. Die Architektur unterstützt sie bereits als Konfiguration, aber die konkreten Karten und deren Verdrahtung müssen noch ermittelt werden.
 
 ---
 
