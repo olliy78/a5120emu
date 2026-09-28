@@ -34,8 +34,8 @@ k1520_add_test(disktool_bootdiskette SRC test_disktool_bootdiskette.cpp
                                      LIBS ${_libs} k1520_fs
                                      LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
 
-# K8915 Etappe 1 (doc/design/16_k8915.md §8a AP-E1): ZRE 045-8762 + K7024, das
-# Boot-ROM bis zur Selbsttest-Statuszeile.  Keine Diskette.
+# K8915 Etappe 1+2 (doc/design/16_k8915.md §8a AP-E1/AP-E2): ZRE 045-8762, ATS
+# K7028.30 + K7672, K7024 — Selbsttest bis zur Coldstart-Meldung.  Keine Diskette.
 k1520_add_test(k8915_boot SRC test_k8915_boot.cpp
                           LIBS k1520_k8915 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2)

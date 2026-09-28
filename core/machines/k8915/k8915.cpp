@@ -7,14 +7,18 @@
 #include "core/machines/k8915/k8915.h"
 #include "core/logger.h"
 
-K8915Machine::K8915Machine()
+K8915Machine::K8915Machine() : K8915Machine(Config{}) {}
+
+K8915Machine::K8915Machine(const Config& cfg)
     : zre_(bus_)
+    , ats_(cfg.pruefstecker ? K7028::Config::mitPruefstecker() : K7028::Config{})
     , screen_(bus_, K7024::A5120Config::forK8915())   // registriert VRAM 1000H–17FFH
 {
     zre_.attachToBus(bus_);
-    // Interruptkette: vorerst nur die CTC der ZRE.  Vorgabe für später (§6.4,
-    // Platzfolge): K5122 → ZRE-CTC → ATS.
-    bus_.setInterruptChain({&zre_});
+    ats_.attachToBus(bus_);
+    if (cfg.tastatur) kbd_.connect(ats_.sio2(), 1);   // sonst: Kabel gezogen
+    // Interruptkette nach der Platzfolge (§6.4 [?]): (K5122 →) ZRE-CTC → ATS.
+    bus_.setInterruptChain({&zre_, &ats_});
     zre_.cpu().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };
 }
 
@@ -22,6 +26,7 @@ void K8915Machine::resetHardware()
 {
     stop_.store(false);
     zre_.reset();            // A8H := 00H, CTC, CPU
+    ats_.reset();            // SIOs, CTCs, Latch; die Tastatur hat eigenen Takt und Reset
     bus_.clearNMI();
     bus_.releaseINT();
     bus_.releaseWAIT();
@@ -32,6 +37,7 @@ void K8915Machine::resetHardware()
 void K8915Machine::powerOn()
 {
     zre_.powerOn(0x00);
+    kbd_.powerOn();          // Selbsttest der Tastatur, KEIN DC1 (Firmware 000CH)
     resetHardware();
     LOG_INFO("K8915", "Netz ein: A8H=00H, Boot-ROM bei 0000H");
 }
@@ -64,7 +70,11 @@ int K8915Machine::run(int max_cycles)
         remaining     -= used;
         total_cycles_ += used;
 
-        if (zre_.clockTick(used)) bus_.markIntDirty();
+        bool dirty = zre_.clockTick(used);
+        dirty |= ats_.clockTick(used);
+        dirty |= ats_.service(total_cycles_);
+        dirty |= kbd_.service(total_cycles_);
+        if (dirty) bus_.markIntDirty();
     }
     return max_cycles - remaining;
 }

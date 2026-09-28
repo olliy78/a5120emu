@@ -1,7 +1,8 @@
 /**
  * @file test_k8915_boot.cpp
- * @brief K8915 Etappe 1 (doc/design/16_k8915.md §8a AP-E1): das Boot-ROM läuft auf
- *        der K8915Machine (ZRE 045-8762 + K7024) bis zur Selbsttest-Statuszeile.
+ * @brief K8915 Etappe 1 und 2 (doc/design/16_k8915.md §8a AP-E1/AP-E2): das Boot-ROM
+ *        läuft auf der K8915Machine (ZRE 045-8762 + ATS K7028.30 mit K7672 + K7024)
+ *        durch den Selbsttest bis zur Coldstart-Meldung des Laders.
  *
  * **Wie die Statuszeile wirklich aussieht** (am Lauf festgestellt, §4.3): Das ROM
  * zeigt KEINE Zeile „ROM RAM SIO KEY CTC" auf einmal.  `sub_FC19` schreibt
@@ -10,10 +11,11 @@
  * ROM → RAM → RAZ (Bank 2) → KEY → CTC → SIO.  Nach bestandener Prüfsumme macht das
  * ROM aus „ROM" per `LD (1771H),'A'` einfach „RAM".
  *
- * Ohne ATS (40H–5FH, 61H lesen FFH) scheitert KEY absichtlich: `ESC c` bekommt kein
- * `DC1` ⇒ Fehler 'A' bei 1776H.  Danach wartet das ROM in F3C0H auf eine Taste; weil
- * der offene Bus bei 53H Bit0 = 1 („Zeichen da") liest, löscht es dort das Bild in
- * einer Schleife — der Test hält deshalb an, sobald „KEY" mit Fehlerbuchstaben steht.
+ * Etappe 2: mit Tastatur und Prüfstecker besteht der Selbsttest ohne Buchstaben und
+ * geht über F3F3H in den Lader („* Coldstart *  Disk on A: ready ? --> <ENTER>").
+ * Gegenproben: ohne Tastatur scheitert KEY mit 'A' (keine Antwort auf `ESC c`), ohne
+ * Prüfstecker SIO mit 'G' (kein Echo auf SIO1-A, SIO1-B, SIO2-A).  Nach einem Fehler
+ * wartet das ROM in F3C0H auf eine Taste; `CR` startet den Lader trotzdem.
  */
 
 #include <gtest/gtest.h>
@@ -60,12 +62,18 @@ struct Verlauf {
     long long takte = -1;
 };
 
-/// Läuft, bis ein Fehlerbuchstabe steht (oder die Frist abläuft); zeichnet die Namen auf.
+bool coldstart(K8915Machine& m) {
+    return vramText(m).find("* Coldstart *  Disk on A: ready") != std::string::npos;
+}
+
+/// Läuft, bis ein Fehlerbuchstabe oder die Coldstart-Meldung steht (oder die Frist
+/// abläuft); zeichnet die Namen auf.
 Verlauf selbsttest(K8915Machine& m) {
     Verlauf v;
     long long done = 0;
     while (done < kFrist) {
         done += m.run(kSchritt);
+        if (coldstart(m)) { v.takte = done; break; }
         const std::string n = testname(m);
         if (bekannterName(n) && (v.namen.empty() || v.namen.back() != n))
             v.namen.push_back(n);
@@ -86,17 +94,71 @@ std::string folge(const std::vector<std::string>& v) {
 
 }  // namespace
 
+K8915Machine::Config ohneTastatur() { K8915Machine::Config c; c.tastatur = false; return c; }
+K8915Machine::Config ohnePruefstecker() { K8915Machine::Config c; c.pruefstecker = false; return c; }
+
 /**
- * @test K8915Boot.SelbsttestZeigtStatuszeile
- * @brief Vom Einschalten (A8H = 00H) über Kopieren, Warmstartprobe (Stub FFE0H bei 87H,
- *        frisches RAM ⇒ kein `JP` bei 0000H/0005H) in den Selbsttest; die Statuszeile
- *        zeigt „DIAGNOSTIC" und nacheinander ROM, RAM, RAZ, KEY.  ROM-, RAM- und
- *        Bank-2-Test bestehen (kein Fehlerbuchstabe davor), KEY scheitert mangels
- *        Tastatur mit 'A'.
+ * @test K8915Boot.SelbsttestFehlerfreiBisColdstart
+ * @brief Fertig-Kriterium Etappe 2 (AP-E2): mit K7672 und Prüfstecker zeigt die
+ *        Statuszeile nacheinander ROM, RAM, RAZ, KEY, CTC, SIO, kein Test setzt einen
+ *        Fehlerbuchstaben, und das ROM geht ohne Tastendruck in den Lader —
+ *        „* Coldstart *  Disk on A: ready".  KEY: zwei `DC1` der Tastatur (nach `ESC c`
+ *        und `ESC [2;1y`); CTC: je CTC genau ein Interrupt in ihrem DJNZ-Fenster (A = 4);
+ *        SIO: Echo auf allen drei Kanälen.
  */
-TEST(K8915Boot, SelbsttestZeigtStatuszeile)
+TEST(K8915Boot, SelbsttestFehlerfreiBisColdstart)
 {
     K8915Machine m;
+    m.powerOn();
+    const Verlauf v = selbsttest(m);
+    ASSERT_GE(v.takte, 0) << "weder Fehler noch Coldstart, PC=" << std::hex
+                          << m.zre().cpu().PC << " Folge: " << folge(v.namen) << "\n"
+                          << vramLines(m);
+    EXPECT_EQ(v.fehler, ' ') << "Fehler '" << v.fehler << "' unter " << v.fehlerBei
+                             << "\n" << vramLines(m);
+    const std::vector<std::string> soll = {"ROM", "RAM", "RAZ", "KEY", "CTC", "SIO"};
+    EXPECT_EQ(v.namen, soll) << "Folge: " << folge(v.namen);
+    EXPECT_TRUE(coldstart(m)) << vramLines(m);
+    EXPECT_EQ(m.keyboard().selbsttests(), 3u) << "Einschalten, ESC c, ESC [2;1y";
+    EXPECT_FALSE(m.keyboard().sendenGesperrt()) << "zum Schluss DC1 an die Tastatur";
+    EXPECT_EQ(m.ats().anzeige(), 0xB0) << "0907H meldet Coldstart mit 61H = B0H";
+}
+
+/**
+ * @test K8915Boot.OhnePruefsteckerScheitertSioMitG
+ * @brief Ohne Rückschleife kommt auf keinem der drei Kanäle ein Echo: Fehlermaske
+ *        111B | 40H = 'G' unter „SIO".  Das ROM wartet dann in F3C0H; ein `CR` von der
+ *        Tastatur startet den Lader trotzdem.  Welche Vorgabe dem Gerät entspricht,
+ *        klärt §6.10.
+ */
+TEST(K8915Boot, OhnePruefsteckerScheitertSioMitG)
+{
+    K8915Machine m(ohnePruefstecker());
+    m.powerOn();
+    const Verlauf v = selbsttest(m);
+    ASSERT_GE(v.takte, 0) << vramLines(m);
+    EXPECT_EQ(v.fehlerBei, "SIO") << folge(v.namen) << "\n" << vramLines(m);
+    EXPECT_EQ(v.fehler, 'G') << vramLines(m);
+    EXPECT_FALSE(coldstart(m));
+
+    // F167H: 16 × BEL (BC = 1040H, je ≈ 213 000 Takte Pause — die 64 × gelten nur
+    // für den ROM-/RAM-Fehlerweg 005AH), dann F3C0H: CR ⇒ Lader.
+    m.run(4'000'000);
+    EXPECT_EQ(m.keyboard().summerZaehler(), 16u);
+    m.keyboard().sendeZeichen(0x0D);
+    for (long long done = 0; done < 3'000'000 && !coldstart(m); done += m.run(5'000)) {}
+    EXPECT_TRUE(coldstart(m)) << vramLines(m);
+}
+
+/**
+ * @test K8915Boot.OhneTastaturScheitertKeyMitA
+ * @brief Gegenprobe zu AP-E1: ohne K7672 (Kabel gezogen) bekommt `ESC c` kein `DC1`
+ *        ⇒ 'A' unter KEY.  ROM-, RAM- und Bank-2-Test davor bestehen; die Statuszeile
+ *        zeigt „DIAGNOSTIC" und nacheinander ROM, RAM, RAZ, KEY.
+ */
+TEST(K8915Boot, OhneTastaturScheitertKeyMitA)
+{
+    K8915Machine m(ohneTastatur());
     m.powerOn();
     const Verlauf v = selbsttest(m);
     ASSERT_GE(v.takte, 0) << "kein Fehlerbuchstabe innerhalb der Frist, PC="
