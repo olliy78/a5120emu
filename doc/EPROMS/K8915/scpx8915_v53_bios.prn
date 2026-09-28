@@ -343,7 +343,7 @@ DA5C  CB 47         	BIT 0,A
 DA5E  C2 EF DA      	JP NZ,DAEFH
 DA61  CB 57         	BIT 2,A
 DA63  20 23         	JR NZ,DA88H
-DA65  3A 4E F1      	LD A,(F14EH)		;[Grundbelegung] erst Ziffernblock DCD5H, dann DC1CH; Kleinbuchstaben -> GROSS (ohne Umschalt liefert die Tastatur Grossbuchstaben)
+DA65  3A 4E F1      	LD A,(F14EH)		;[nur Feststell] erst Ziffernblock DCD5H, dann DC1CH; Kleinbuchstaben -> GROSS (ohne Umschalttaste gehen die Tabellenwerte ueber DB5EH unveraendert -- klein; am Lauf bestaetigt, AP-E3)
 DA68  21 D5 DC      	LD HL,DCD5H
 DA6B  CD D9 DB      	CALL DBD9H
 DA6E  CA 77 DB      	JP Z,DB77H

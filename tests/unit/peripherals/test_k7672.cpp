@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <initializer_list>
+#include <vector>
 
 #include "core/peripherals/k7672/k7672.h"
 #include "core/primitives/z80_sio.h"
@@ -123,4 +124,96 @@ TEST(K7672, DcpZustandUndUnbekannteFolgen)
     EXPECT_EQ(a.kbd.modus(), K7672::Modus::Scp);
     a.sende({0x07, 0x07});
     EXPECT_EQ(a.kbd.summerZaehler(), 2u);
+}
+
+// ─── DCP-Modus: Scancodes Satz 1 (AP-E3b) ─────────────────────────────────────
+
+namespace {
+/// Alle bis jetzt gesendeten Bytes abholen (Zeit genug für jede Zeichenzeit).
+std::vector<int> alles(Aufbau& a) {
+    std::vector<int> v;
+    for (int i = 0; i < 64; ++i) {
+        a.laufe(K7672::ZEICHEN_TAKTE);
+        const int b = a.lies();
+        if (b >= 0) v.push_back(b);
+    }
+    return v;
+}
+void dcp(Aufbau& a) { a.sende({ESC, '[', '?', '2', '2', 'h'}); }
+}  // namespace
+
+/**
+ * @test K7672.DcpBuchstabeDrueckenUndLoslassen
+ * @brief Host-Taste 'a' ⇒ 1EH beim Drücken, 9EH beim Loslassen.  DIN-Belegung nach
+ *        der BIOS-Tabelle DC1CH: 'z' auf 15H, 'y' auf 2CH; 'Y' = Umschalt + 2CH.
+ */
+TEST(K7672, DcpBuchstabeDrueckenUndLoslassen)
+{
+    Aufbau a;
+    dcp(a);
+    a.kbd.keyPress('a', false, false);
+    a.kbd.keyRelease('a');
+    a.kbd.keyPress('z', false, false);
+    a.kbd.keyRelease('z');
+    a.kbd.keyPress('Y', true, false);   // Grossbuchstabe: mit Umschalt (BIOS DAC8H)
+    a.kbd.keyRelease('Y');
+    EXPECT_EQ(alles(a), (std::vector<int>{0x1E, 0x9E, 0x15, 0x95, 0x2A, 0x2C, 0xAC, 0xAA}));
+}
+
+/**
+ * @test K7672.DcpUmschaltUndStrg
+ * @brief Ein Zeichen, das auf der K7672 Umschalt braucht ('!' = Umschalt + 1), bekommt
+ *        2AH/AAH darum; Strg+C = 1DH 2EH AEH 9DH; Enter 1CH, Rück 0EH, F1 3BH.
+ */
+TEST(K7672, DcpUmschaltUndStrg)
+{
+    Aufbau a;
+    dcp(a);
+    a.kbd.keyPress('!', true, false);
+    a.kbd.keyRelease('!');
+    EXPECT_EQ(alles(a), (std::vector<int>{0x2A, 0x02, 0x82, 0xAA}));
+    a.kbd.keyPress('c', false, true);   // so liefert die Oberfläche Strg+C (keyboard.py)
+    a.kbd.keyRelease('c');
+    EXPECT_EQ(alles(a), (std::vector<int>{0x1D, 0x2E, 0xAE, 0x9D}));
+    a.kbd.keyPress(0x01000004, false, false);   // Return
+    a.kbd.keyRelease(0x01000004);
+    a.kbd.keyPress(0x01000003, false, false);   // Backspace
+    a.kbd.keyRelease(0x01000003);
+    a.kbd.keyPress(0x01000030, false, false);   // F1
+    a.kbd.keyRelease(0x01000030);
+    EXPECT_EQ(alles(a), (std::vector<int>{0x1C, 0x9C, 0x0E, 0x8E, 0x3B, 0xBB}));
+}
+
+/**
+ * @test K7672.DcpUmschalttasteSelbstUndGehalteneUmschaltung
+ * @brief Die Umschalttaste des Hosts meldet sich als 2AH/AAH.  Hält der Host Umschalt
+ *        für ein Zeichen, das ohne Umschalt entsteht ('+' liegt auf 1BH), wird sie
+ *        für diese Taste losgelassen und danach wieder gedrückt.
+ */
+TEST(K7672, DcpUmschalttasteSelbstUndGehalteneUmschaltung)
+{
+    Aufbau a;
+    dcp(a);
+    a.kbd.keyPress(0x01000020, true, false);   // Shift
+    a.kbd.keyPress('+', true, false);
+    a.kbd.keyRelease('+');
+    a.kbd.keyRelease(0x01000020);
+    EXPECT_EQ(alles(a), (std::vector<int>{0x2A, 0xAA, 0x1B, 0x9B, 0x2A, 0xAA}));
+}
+
+/**
+ * @test K7672.DcpSendeZeichenTipptDieTaste
+ * @brief `sendeZeichen` im DCP-Modus (Tests, Werkzeuge): das Zeichen wird getippt —
+ *        "d" ⇒ 20H A0H, CR ⇒ 1CH 9CH; DC3 sperrt auch hier.
+ */
+TEST(K7672, DcpSendeZeichenTipptDieTaste)
+{
+    Aufbau a;
+    dcp(a);
+    a.kbd.sendeZeichen('d');
+    a.kbd.sendeZeichen(0x0D);
+    EXPECT_EQ(alles(a), (std::vector<int>{0x20, 0xA0, 0x1C, 0x9C}));
+    a.sende({DC3});
+    a.kbd.sendeZeichen('d');
+    EXPECT_TRUE(alles(a).empty());
 }

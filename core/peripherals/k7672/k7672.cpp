@@ -119,7 +119,9 @@ void K7672::befehl(const std::string& f)
     if (f == "[?22h") {
         // 043DH: 29H Bit0 — Scancodes statt Zeichen; zurück nur über ESC c.
         modus_ = Modus::Dcp;
-        LOG_INFO("K7672", "DCP-Modus eingeschaltet (Scancodes, Etappe 3)");
+        umschalt_unten_ = strg_unten_ = false;
+        gedrueckt_.clear();
+        LOG_INFO("K7672", "DCP-Modus eingeschaltet (Scancodes Satz 1)");
         return;
     }
     // Kennung, Status, VT52/ANSI, LED-Modi: die Antworttexte fehlen in den Dumps
@@ -170,28 +172,177 @@ uint8_t K7672::zeichenFuer(uint32_t k, bool /*shift*/, bool ctrl)
     return 0;
 }
 
-void K7672::sendeZeichen(uint8_t ch)
-{
-    if (gesperrt_) return;            // 60H Bit2: die Tastatur sendet nichts
-    sende(ch);
-}
-
 void K7672::keyPress(uint32_t k, bool shift, bool ctrl)
 {
-    if (modus_ == Modus::Dcp) { tasteDcp(k, true); return; }
+    if (modus_ == Modus::Dcp) { tasteDcp(k, true, shift, ctrl); return; }
     const uint8_t z = zeichenFuer(k, shift, ctrl);
     if (z) sendeZeichen(z);
 }
 
 void K7672::keyRelease(uint32_t k)
 {
-    if (modus_ == Modus::Dcp) tasteDcp(k, false);
+    if (modus_ == Modus::Dcp) tasteDcp(k, false, false, false);
     // SCP-Modus: Loslassen erzeugt nichts.
 }
 
-void K7672::tasteDcp(uint32_t, bool)
+// ─── DCP-Modus: Scancodes Satz 1 ────────────────────────────────────────────
+
+namespace {
+
+constexpr uint8_t SC_STRG = 0x1D, SC_UMSCHALT = 0x2A, SC_FESTSTELL = 0x3A, SC_ALT = 0x38;
+constexpr uint32_t QK_SHIFT = 0x01000020, QK_CONTROL = 0x01000021, QK_ALT = 0x01000023,
+                   QK_CAPSLOCK = 0x01000024, QK_F1 = 0x01000030,
+                   QK_LEFT = 0x01000012, QK_UP = 0x01000013, QK_RIGHT = 0x01000014,
+                   QK_DOWN = 0x01000015, QK_PGUP = 0x01000016, QK_PGDN = 0x01000017;
+
+// Grundbelegung des BIOS SCPX 8915 V5.3 (Tabelle DC1CH, Scancode → Zeichen), hier
+// umgekehrt: Zeichen → Scancode.  DIN-Belegung (Z/Y getauscht, [\] für Ä/Ö, ~ auf ß).
+struct Paar { uint8_t zeichen; uint8_t code; };
+constexpr Paar kGrund[] = {
+    {0x1B,0x01},{'1',0x02},{'2',0x03},{'3',0x04},{'4',0x05},{'5',0x06},{'6',0x07},
+    {'7',0x08},{'8',0x09},{'9',0x0A},{'0',0x0B},{'~',0x0C},{'\'',0x0D},{0x7F,0x0E},
+    {0x09,0x0F},{'q',0x10},{'w',0x11},{'e',0x12},{'r',0x13},{'t',0x14},{'z',0x15},
+    {'u',0x16},{'i',0x17},{'o',0x18},{'p',0x19},{']',0x1A},{'+',0x1B},{0x0D,0x1C},
+    {'a',0x1E},{'s',0x1F},{'d',0x20},{'f',0x21},{'g',0x22},{'h',0x23},{'j',0x24},
+    {'k',0x25},{'l',0x26},{'\\',0x27},{'[',0x28},{'#',0x29},{'<',0x2B},{'y',0x2C},
+    {'x',0x2D},{'c',0x2E},{'v',0x2F},{'b',0x30},{'n',0x31},{'m',0x32},{',',0x33},
+    {'.',0x34},{'-',0x35},{' ',0x39},{'*',0x37},{'/',0x7A},
+};
+// Umschaltung (Tabelle DCA5H, nach Zeichen geschlüsselt, und die Ziffernregel DAB3H:
+// '1'…'9' außer 3/7 ⇒ AND EFH): Zielzeichen ← Grundzeichen.
+constexpr Paar kUmschalt[] = {
+    {'>','<'},{'=','0'},{'?','~'},{'`','\''},{'*','+'},{'^','#'},{'_','-'},{':','.'},
+    {';',','},{'}',']'},{'{','['},{'|','\\'},{'@','3'},{'/','7'},
+    {'!','1'},{'"','2'},{'$','4'},{'%','5'},{'&','6'},{'(','8'},{')','9'},
+};
+
+bool grundCode(uint8_t ch, uint8_t& code) {
+    for (const Paar& p : kGrund)
+        if (p.zeichen == ch) { code = p.code; return true; }
+    return false;
+}
+
+}  // namespace
+
+bool K7672::tasteFuer(uint8_t ch, DcpTaste& t)
 {
-    // Etappe 3: PC/XT-Scancode Satz 1 (Drücken = Code, Loslassen = Code | 80H,
-    // Umschalt/Strg einzeln als 2AH/1DH), Firmware 0320H–035FH.
-    LOG_WARN("K7672", "DCP-Modus: Scancodes noch nicht nachgebildet, Taste verworfen");
+    t = DcpTaste{};
+    // Grossbuchstaben = Umschalt + Buchstabe (BIOS DAC8H; ohne Feststell).
+    if (ch >= 'A' && ch <= 'Z' && grundCode(static_cast<uint8_t>(ch + 0x20), t.code)) {
+        t.umschalt = true;
+        return true;
+    }
+    if (grundCode(ch, t.code)) return true;
+    for (const Paar& p : kUmschalt)
+        if (p.zeichen == ch && grundCode(p.code, t.code)) { t.umschalt = true; return true; }
+    // Steuerzeichen: Strg + Buchstabe (DB17H: AND 9FH) bzw. Tabelle DC0FH.
+    if (ch >= 0x01 && ch <= 0x1A && grundCode(static_cast<uint8_t>(ch + 0x60), t.code)) {
+        t.strg = true;
+        return true;
+    }
+    switch (ch) {
+        case 0x1C: t.code = 0x27; t.strg = true; return true;
+        case 0x1D: t.code = 0x1A; t.strg = true; return true;
+        case 0x1E: t.code = 0x29; t.strg = true; return true;
+        case 0x1F: t.code = 0x35; t.strg = true; return true;
+        default: break;
+    }
+    return false;
+}
+
+void K7672::sendeCode(uint8_t b)
+{
+    if (gesperrt_) return;            // 60H Bit2: die Tastatur sendet nichts
+    sende(b);
+}
+
+void K7672::dcpDruecken(uint32_t schluessel, const DcpTaste& t)
+{
+    Gedrueckt g{schluessel, t.code, 0, 0};
+    if (t.strg && !strg_unten_) { sendeCode(SC_STRG); strg_unten_ = true; g.strg = +1; }
+    if (t.umschalt != umschalt_unten_) {
+        sendeCode(t.umschalt ? SC_UMSCHALT : static_cast<uint8_t>(SC_UMSCHALT | 0x80));
+        umschalt_unten_ = t.umschalt;
+        g.umschalt = t.umschalt ? +1 : -1;
+    }
+    sendeCode(t.code);
+    gedrueckt_.push_back(g);
+}
+
+void K7672::dcpLoslassen(uint32_t schluessel)
+{
+    for (auto it = gedrueckt_.begin(); it != gedrueckt_.end(); ++it) {
+        if (it->schluessel != schluessel) continue;
+        sendeCode(static_cast<uint8_t>(it->code | 0x80));
+        // Was das Drücken an Umschalt/Strg verstellt hat, zurücknehmen.
+        if (it->umschalt == +1) { sendeCode(SC_UMSCHALT | 0x80); umschalt_unten_ = false; }
+        if (it->umschalt == -1) { sendeCode(SC_UMSCHALT);        umschalt_unten_ = true;  }
+        if (it->strg == +1)     { sendeCode(SC_STRG | 0x80);     strg_unten_ = false;     }
+        gedrueckt_.erase(it);
+        return;
+    }
+}
+
+void K7672::tasteDcp(uint32_t k, bool gedrueckt, bool /*shift*/, bool ctrl)
+{
+    // Umschalttasten selbst: eigene Codes, Zustand mitführen.
+    auto modifikator = [&](uint8_t code, bool* zustand) {
+        sendeCode(gedrueckt ? code : static_cast<uint8_t>(code | 0x80));
+        if (zustand) *zustand = gedrueckt;
+    };
+    switch (k) {
+        case QK_SHIFT:    modifikator(SC_UMSCHALT, &umschalt_unten_); return;
+        case QK_CONTROL:  modifikator(SC_STRG, &strg_unten_);         return;
+        case QK_ALT:      modifikator(SC_ALT, nullptr);               return;
+        case QK_CAPSLOCK: modifikator(SC_FESTSTELL, nullptr);         return;
+        default: break;
+    }
+    if (!gedrueckt) { dcpLoslassen(k); return; }
+
+    DcpTaste t;
+    if ((k & ~0xFFu) == QK_RAW_BASE) {
+        t.code = static_cast<uint8_t>(k & 0x7F);   // Rohcode: Taste so, wie sie ist
+    } else if (k >= QK_F1 && k < QK_F1 + 10) {
+        t.code = static_cast<uint8_t>(0x3B + (k - QK_F1));   // F1…F10 → 3BH…44H
+    } else {
+        switch (k) {
+            // Cursor = Umschalt + Ziffernblock (Tabelle DCC2H: ^H ^X ^D ^E, 9BH/9CH).
+            case QK_LEFT:  t = {0x4B, true, false}; break;
+            case QK_DOWN:  t = {0x50, true, false}; break;
+            case QK_RIGHT: t = {0x4D, true, false}; break;
+            case QK_UP:    t = {0x48, true, false}; break;
+            case QK_PGUP:  t = {0x49, true, false}; break;
+            case QK_PGDN:  t = {0x51, true, false}; break;
+            case QK_BACKSPACE:
+            case QK_DELETE: t.code = 0x0E; break;   // BIOS: 0EH → 7FH
+            default: {
+                const uint8_t z = zeichenFuer(k, false, false);
+                if (!z || !tasteFuer(z, t)) {
+                    LOG_DEBUG("K7672", "DCP: keine Taste für Host-Code %08X", k);
+                    return;
+                }
+                break;
+            }
+        }
+    }
+    if (ctrl) t.strg = true;
+    dcpDruecken(k, t);
+}
+
+void K7672::sendeZeichen(uint8_t ch)
+{
+    if (modus_ == Modus::Scp) {
+        if (gesperrt_) return;        // 60H Bit2: die Tastatur sendet nichts
+        sende(ch);
+        return;
+    }
+    // DCP-Modus: das Zeichen als Tastendruck tippen (Drücken, Loslassen).
+    DcpTaste t;
+    if (!tasteFuer(ch, t)) {
+        LOG_WARN("K7672", "DCP: Zeichen %02X hat keine Taste", ch);
+        return;
+    }
+    constexpr uint32_t kTipp = 0xFFFFFFFFu;   // eigener Schlüssel, kein Host-Code
+    dcpDruecken(kTipp, t);
+    dcpLoslassen(kTipp);
 }

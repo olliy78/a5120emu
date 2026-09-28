@@ -184,8 +184,9 @@ c(0xDA19, "[ISR SIO2-B Rx-Zeichen = TASTATUR] Scancode (PC/XT Satz 1) von der K7
 c(0xDA2F, "1DH/9DH Strg druecken/loslassen, 2AH/36H bzw. AAH/B6H Umschalt links/rechts, "
           "3AH Feststell (wechselt Bit1), 7EH sendet 'ESC[?18l' an die Tastatur")
 c(0xDA57, "keine Umschaltung aktiv -> DB5EH (Loslassen-Codes mit Bit7 werden dort verworfen)")
-c(0xDA65, "[Grundbelegung] erst Ziffernblock DCD5H, dann DC1CH; Kleinbuchstaben -> GROSS "
-          "(ohne Umschalt liefert die Tastatur Grossbuchstaben)")
+c(0xDA65, "[nur Feststell] erst Ziffernblock DCD5H, dann DC1CH; Kleinbuchstaben -> GROSS "
+          "(ohne Umschalttaste gehen die Tabellenwerte ueber DB5EH unveraendert -- klein; "
+          "am Lauf bestaetigt, AP-E3)")
 c(0xDA88, "[Umschalt] 4FH (Zif.-1) = Drucker-Schnittstelle neu (DE82H); 47H (Zif.-7) ruft "
           "DEABH -- mitten in LISTST, vermutlich veraltete Adresse [?]")
 c(0xDAA1, "Umschalttabelle DCC2H (Cursor), sonst DC1CH; Ziffern 1..9 ausser 3/7 -> AND EFH "
