@@ -48,7 +48,8 @@ def disasm(args):
 
 
 # ---- drei Disassemblier-Durchgaenge, je im passenden Adressraum ----------
-low = disasm(["--org", "0", "--entry", "0x0000", "--entry", "0x001B", "--entry", "0x0400",
+low = disasm(["--org", "0", "--entry", "0x0000", "--entry", "0x001B", "--entry", "0x0066",
+              "--entry", "0x0400",
               "--entry", "0x0428", "--entry", "0x0FFA", "--range", "0x09A0:0x0C00"])
 selftest = disasm(["--org", "0xF000", "--entry", "0xF0D0", "--range", "0xF0D0:0xF400"])
 helpers = disasm(["--org", "0xF000", "--entry", "0xFC00", "--range", "0xFC00:0xFD00"])
@@ -78,8 +79,8 @@ def c(addr, text):
     C[addr] = text
 
 
-c(0x0000, "[RESET-EINSPRUNG] DI/IM2/SP=F000H, dann OUT(61H),FFH (ATS-Steuerlatch? [?], "
-          "vgl. Design-Doc §3.2 Port 61H) und OUT(A8H),8EH = Bankregister: ROM an, RAM "
+c(0x0000, "[RESET-EINSPRUNG] DI/IM2/SP=F000H, dann OUT(61H),FFH (alle Lampen des "
+          "Anzeigefelds aus, Design-Doc §3.6) und OUT(A8H),8EH = Bankregister: ROM an, RAM "
           "darueber (Design-Doc §4.2)")
 c(0x000E, "CALL sub_00C0: kopiert ROM 00D0H-0FFEH (BC=0F2FH Bytes) nach F0D0H-FFFEH -- "
           "'waehrend das ROM bei 0000 sichtbar ist' (§4.2); danach existiert derselbe "
@@ -105,6 +106,11 @@ c(0x004D, "Vergleich laufende Summe (DE:A) gegen die abgelegte 24-Bit-Pruefsumme
 c(0x005A, "[ROM-/RAM-FEHLER] Fehlerpfad: OUT(61H),7FH, Kennbuchstabe 'F' (46H) nach 1776H "
           "unter dem angezeigten Testnamen, 64 x BEL an die Tastatur (52H), dann JP F3C0H "
           "(Tastenschleife: '#' = zyklisch, CR = Lader)")
+c(0x0066, "[NMI-EINSPRUNG] NMI-Taster der Frontplatte (orange, Design-Doc §3.6): alle Lampen "
+          "aus (61H = FFH) und JP 001BH = Selbsttest von vorn. Wirkt so nur, solange das ROM "
+          "bei 0000H eingeblendet ist (A8H Bit0 = 0: 06H/8EH, also ROM-Selbsttest und "
+          "Lader); unter SCPX (A8H = 87H) landet der NMI im RAM bei 0066H = mitten im "
+          "Standard-FCB 005CH ff. -- das BIOS legt dort nichts ab [STATISCH]")
 c(0x0083, "[ROM OK] LD (1771H),'A' macht aus dem Namen 'ROM' den Namen 'RAM' (naechster "
           "Test) -- kein Pruefvermerk [LAUFZEIT 2026-09-28]; danach RAM-Test: "
           "4000H-BFFFH mit 55H fuellen (LDIR), dann mit AAH/00H vergleichend gegenlesen "
@@ -129,9 +135,9 @@ c(0x0907, "[MELDUNGSROUTINE, 'CALL 0907H'-Konvention geklaert 2026-09-28] Alle 6
           "'No system disk, change disk', 'Loading complete, replace disk...' (2x) -- "
           "deckungsgleich mit den in Design-Doc §4.3 genannten Meldungen. Ablauf: OUT(61H) "
           "mit dem von JEDEM Aufrufer vorher gesetzten A (nur zwei Werte im ROM: B0H vor "
-          "'Coldstart'/'Loading complete', 60H vor den drei Fehlermeldungen -- vermutlich "
-          "zwei Zustaende einer Anzeige/eines Summers, Design-Doc §6.2 [?] bleibt offen fuer "
-          "die genaue Bitbedeutung); Kanal-2-Baudrate der Tastatur-CTC (Port 5AH, 2 Byte aus "
+          "'Coldstart'/'Loading complete', 60H vor den drei Fehlermeldungen -- Anzeigefeld "
+          "der Frontplatte, aktiv low: B0H = RUN Mode, 60H = ERROR + Input File, Design-Doc "
+          "§3.6); Kanal-2-Baudrate der Tastatur-CTC (Port 5AH, 2 Byte aus "
           "096FH) und SIO2B/Tastatur-Steuerwoerter (Port 53H, 10 Byte ab 0971H) neu "
           "ausgeben (derselbe Wertesatz wie sub_FC46/FC9E-FCA8 im Selbsttest-Block, siehe "
           "dort); Bildschirmbereich 1050H-177FH um 50H=80 Byte (1 Zeile) nach 1000H hoch-"
@@ -202,8 +208,9 @@ c(0x0FFD, "[PRUEFSUMME] 24-Bit-Summe ueber 0000H-0FFBH = 09AB70H (§1: 'die ROM-
           "Pruefsumme stimmt' -- gegen den eigenen Dump verifiziert 2026-09-27).")
 
 # FC00-FCFF Helfer
-c(0xFC00, "sub_FC00: Summer AUS (Port 61H = 0)")
-c(0xFC04, "sub_FC04: Summer AN (Port 61H = FFH)")
+c(0xFC00, "sub_FC00: Lampentest -- alle Lampen des Anzeigefelds AN (61H = 00H, aktiv low; "
+          "nur im Diagnosemodus F2F7H, Design-Doc §3.6)")
+c(0xFC04, "sub_FC04: alle Lampen AUS (61H = FFH) -- beim Verlassen des Diagnosemodus")
 c(0xFC09, "sub_FC09: Bildspeicher 1000H-177FH loeschen (0780H=80x24 Byte) mit dem Fuellwert "
           "aus FCF8H, dann Statuszeile ab 1780H nochmal explizit setzen -- deckt sich mit "
           "VRAM bei 1000H aus Design-Doc §3.3")
@@ -302,7 +309,8 @@ HDR = """; =====================================================================
 ; (aktiv bei 0), Bit1 = Seite 1.
 ;
 ; Bekannte Portbezuege in diesem ROM (Design-Doc §3):
-;   61H       vermutlich ATS-Steuerlatch/Summer [?] (§3.2, D3:01)
+;   61H       Anzeigefeld der Frontplatte, aktiv low (Design-Doc §3.6): Bit4 Input
+;             File, Bit5 Output File, Bit6 RUN Mode, Bit7 ERROR
 ;   A8H       Bankregister der ZRE (dieses Blatt, §3.1 Blatt 3)
 ;   52H/53H   SIO2-B = Tastatur K7672 (§3.2), 9600 Bd
 ; ============================================================================

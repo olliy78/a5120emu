@@ -35,14 +35,15 @@
 ; (aktiv bei 0), Bit1 = Seite 1.
 ;
 ; Bekannte Portbezuege in diesem ROM (Design-Doc §3):
-;   61H       vermutlich ATS-Steuerlatch/Summer [?] (§3.2, D3:01)
+;   61H       Anzeigefeld der Frontplatte, aktiv low (Design-Doc §3.6): Bit4 Input
+;             File, Bit5 Output File, Bit6 RUN Mode, Bit7 ERROR
 ;   A8H       Bankregister der ZRE (dieses Blatt, §3.1 Blatt 3)
 ;   52H/53H   SIO2-B = Tastatur K7672 (§3.2), 9600 Bd
 ; ============================================================================
 
 	ORG	0000H
 ; ---- Reset / Pruefsumme / Kopierroutine (0000H-00CFH) ----------------------
-0000  F3            	DI		;[RESET-EINSPRUNG] DI/IM2/SP=F000H, dann OUT(61H),FFH (ATS-Steuerlatch? [?], vgl. Design-Doc §3.2 Port 61H) und OUT(A8H),8EH = Bankregister: ROM an, RAM darueber (Design-Doc §4.2)
+0000  F3            	DI		;[RESET-EINSPRUNG] DI/IM2/SP=F000H, dann OUT(61H),FFH (alle Lampen des Anzeigefelds aus, Design-Doc §3.6) und OUT(A8H),8EH = Bankregister: ROM an, RAM darueber (Design-Doc §4.2)
 L0001:
 0001  ED 5E         	IM 2
 0003  31 00 F0      	LD SP,F000H
@@ -95,13 +96,9 @@ L005A:
 005E  CD C0 00      	CALL sub_00C0
 0061  CD 46 FC      	CALL FC46H
 0064  18 07         	JR L006D
-0066  3E            	DB	3EH
-0067  FF            	DB	FFH
-0068  D3            	DB	D3H
-0069  61            	DB	61H
-006A  C3            	DB	C3H
-006B  1B            	DB	1BH
-006C  00            	DB	00H
+0066  3E FF         	LD A,FFH		;[NMI-EINSPRUNG] NMI-Taster der Frontplatte (orange, Design-Doc §3.6): alle Lampen aus (61H = FFH) und JP 001BH = Selbsttest von vorn. Wirkt so nur, solange das ROM bei 0000H eingeblendet ist (A8H Bit0 = 0: 06H/8EH, also ROM-Selbsttest und Lader); unter SCPX (A8H = 87H) landet der NMI im RAM bei 0066H = mitten im Standard-FCB 005CH ff. -- das BIOS legt dort nichts ab [STATISCH]
+0068  D3 61         	OUT (61H),A
+006A  C3 1B 00      	JP L001B
 L006D:
 006D  21 76 17      	LD HL,1776H
 0070  36 46         	LD (HL),46H
@@ -1438,7 +1435,7 @@ L0901:
 0904  20 D8         	JR NZ,L08DE
 0906  C9            	RET
 sub_0907:
-0907  D3 61         	OUT (61H),A		;[MELDUNGSROUTINE, 'CALL 0907H'-Konvention geklaert 2026-09-28] Alle 6 Aufrufer (043EH/04E7H/0571H/06C8H/0834H/0870H) legen den anzuzeigenden Text NICHT per Zeiger in HL/DE ab, sondern INLINE direkt hinter dem 'CALL 0907H' im Code; das letzte Zeichen traegt Bit7 gesetzt (Endemarke). Belegt: '* Coldstart * Disk on A: read...', 'Drive A: not ready, check', 'Disk-error, change disk', 'No system disk, change disk', 'Loading complete, replace disk...' (2x) -- deckungsgleich mit den in Design-Doc §4.3 genannten Meldungen. Ablauf: OUT(61H) mit dem von JEDEM Aufrufer vorher gesetzten A (nur zwei Werte im ROM: B0H vor 'Coldstart'/'Loading complete', 60H vor den drei Fehlermeldungen -- vermutlich zwei Zustaende einer Anzeige/eines Summers, Design-Doc §6.2 [?] bleibt offen fuer die genaue Bitbedeutung); Kanal-2-Baudrate der Tastatur-CTC (Port 5AH, 2 Byte aus 096FH) und SIO2B/Tastatur-Steuerwoerter (Port 53H, 10 Byte ab 0971H) neu ausgeben (derselbe Wertesatz wie sub_FC46/FC9E-FCA8 im Selbsttest-Block, siehe dort); Bildschirmbereich 1050H-177FH um 50H=80 Byte (1 Zeile) nach 1000H hoch-scrollen, neue Zeile mit Leerzeichen fuellen.
+0907  D3 61         	OUT (61H),A		;[MELDUNGSROUTINE, 'CALL 0907H'-Konvention geklaert 2026-09-28] Alle 6 Aufrufer (043EH/04E7H/0571H/06C8H/0834H/0870H) legen den anzuzeigenden Text NICHT per Zeiger in HL/DE ab, sondern INLINE direkt hinter dem 'CALL 0907H' im Code; das letzte Zeichen traegt Bit7 gesetzt (Endemarke). Belegt: '* Coldstart * Disk on A: read...', 'Drive A: not ready, check', 'Disk-error, change disk', 'No system disk, change disk', 'Loading complete, replace disk...' (2x) -- deckungsgleich mit den in Design-Doc §4.3 genannten Meldungen. Ablauf: OUT(61H) mit dem von JEDEM Aufrufer vorher gesetzten A (nur zwei Werte im ROM: B0H vor 'Coldstart'/'Loading complete', 60H vor den drei Fehlermeldungen -- Anzeigefeld der Frontplatte, aktiv low: B0H = RUN Mode, 60H = ERROR + Input File, Design-Doc §3.6); Kanal-2-Baudrate der Tastatur-CTC (Port 5AH, 2 Byte aus 096FH) und SIO2B/Tastatur-Steuerwoerter (Port 53H, 10 Byte ab 0971H) neu ausgeben (derselbe Wertesatz wie sub_FC46/FC9E-FCA8 im Selbsttest-Block, siehe dort); Bildschirmbereich 1050H-177FH um 50H=80 Byte (1 Zeile) nach 1000H hoch-scrollen, neue Zeile mit Leerzeichen fuellen.
 0909  21 6F 09      	LD HL,096FH
 090C  01 5A 02      	LD BC,025AH
 090F  ED B3         	OTIR
@@ -1582,10 +1579,10 @@ L09E9:
 0A00  FF            	DS	512		;[UNBELEGT] 0A00H-0BFFH durchgehend FFH (unprogrammierte EPROM-Zellen) -- kein Code, keine Daten.
 
 ; ---- Hilfsroutinen, laufen als RAM-Spiegel bei FC00H (Quelle 0C00H-0CFFH) --
-FC00  AF            	XOR A		;sub_FC00: Summer AUS (Port 61H = 0)
+FC00  AF            	XOR A		;sub_FC00: Lampentest -- alle Lampen des Anzeigefelds AN (61H = 00H, aktiv low; nur im Diagnosemodus F2F7H, Design-Doc §3.6)
 FC01  D3 61         	OUT (61H),A
 FC03  C9            	RET
-FC04  3E FF         	LD A,FFH		;sub_FC04: Summer AN (Port 61H = FFH)
+FC04  3E FF         	LD A,FFH		;sub_FC04: alle Lampen AUS (61H = FFH) -- beim Verlassen des Diagnosemodus
 FC06  D3 61         	OUT (61H),A
 FC08  C9            	RET
 sub_FC09:
