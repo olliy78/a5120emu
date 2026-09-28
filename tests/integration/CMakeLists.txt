@@ -45,3 +45,9 @@ k1520_add_test(em256_adr SRC test_em256_adr.cpp LIBS ${_libs} k1520_fs
                          LABELS "${_lbl}" TIMEOUT 180
                          DEFS LOG_LEVEL=2
                               "EM256ADR_COM=\"${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/em256adr.com\"")
+
+
+# Erste Eingabe nach der Reset-Taste (Befund S1): Schattenram-Falle beim Warten auf
+# den Prompt, Helfer k1520test::wipeVram().
+k1520_add_test(kbd_nach_reset SRC test_kbd_nach_reset.cpp LIBS ${_libs}
+                              LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)

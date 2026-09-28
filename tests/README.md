@@ -156,8 +156,8 @@ Namensraum `k1520test`, für Integrations- und Systemtests gedacht:
 
 | Header | Inhalt |
 |--------|--------|
-| `screen.h` | `vramText()` — Textbildschirm (0xF800) als Zeichenkette; `vramLines()` für lesbare Fehlerausgaben |
-| `machine_run.h` | `runCycles()`, `runSmallUntil()`, `runUntilVramContains()`, `runUntilPC()` |
+| `screen.h` | `vramText()` — Textbildschirm (0xF800) als Zeichenkette; `visibleText()` nur die 24 sichtbaren Zeilen; `vramLines()` für lesbare Fehlerausgaben; `wipeVram()` vor `reset()` |
+| `machine_run.h` | `runCycles()`, `runSmallUntil()`, `runSmallUntilVisible()`, `runUntilVramContains()`, `runUntilPC()` |
 | `keyboard.h` | `typeKey()`, `typeString()`, `typeCtrl()`, `pressKeyUntil()`, `QK_RETURN` |
 | `fixtures.h` | `diskPath()`, `readFileBytes()`, `TempDisk` |
 
@@ -171,6 +171,11 @@ Zwei Regeln, die dahinterstecken:
    eine 9600-Baud-Strecke, das BIOS holt die Zeichen per Timer-ISR ab. Mit
    groben Batches driftet die CTC-Phase so weit, dass Anschläge verlorengehen.
    Ohne Tastaturbezug ist `runUntilVramContains` (100 000) richtig und schneller.
+3. **Nach `reset()` erst den Schirm wischen, dann auf den SICHTBAREN Prompt
+   warten** (`wipeVram()`, `runSmallUntilVisible(m, "A>", …)`). Gelesen wird das
+   K3526-Schattenram — es überlebt die Reset-Taste —, und die CP/A-Statuszeile
+   hinter Zeile 24 enthält „A>" schon vor der Tastaturinitialisierung des BIOS;
+   ein Anschlag dort wird vom Gast verworfen (`KbdNachReset.*`).
 
 ## Vier Windows-Fallen beim Testschreiben
 

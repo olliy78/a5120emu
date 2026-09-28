@@ -516,8 +516,7 @@ constexpr const char* kRebootNeedle = "Bitte Uhrzeit eingeben!";
 // bedient das K3526-Schattenram, das reset() NICHT löscht — ohne dieses Wischen
 // würde der Text des vorigen Laufs sofort „gefunden" und der Test wäre blind.
 void blankVram(A5120Machine& m) {
-    for (int a = 0xF800; a <= 0xFFFF; ++a)
-        m.memWriteDebug(static_cast<uint16_t>(a), 0x00);
+    k1520test::wipeVram(m);
     ASSERT_EQ(vramText(m).find(kRebootNeedle), std::string::npos)
         << "Bildschirm-Wischen wirkungslos — der Neustart-Test wäre blind";
 }

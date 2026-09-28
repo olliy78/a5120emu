@@ -39,6 +39,14 @@ void runCycles(A5120Machine& m, long long cycles);
 bool runSmallUntil(A5120Machine& m, const std::string& needle, long long max_cycles,
                    long long check_every = kSmallBatch);
 
+/// Wie runSmallUntil(), sucht aber nur in den 24 sichtbaren Zeilen (visibleText()).
+///
+/// Für das Warten auf den Prompt `A>`, bevor getippt wird: die CP/A-Statuszeile
+/// hinter Zeile 24 enthält ebenfalls „A>" und steht schon, BEVOR das BIOS die
+/// Tastatur initialisiert (SIO-Kanal-Reset, Reset-Byte 00H an die K7637) — ein
+/// Anschlag in diesem Fenster wird vom Gast verworfen (Wächter KbdNachReset.*).
+bool runSmallUntilVisible(A5120Machine& m, const std::string& needle, long long max_cycles);
+
 /// Läuft in GROBEN Batches, bis @p needle im Textbildschirm steht.
 /// Für reine Ausgabe-Meilensteine (Banner, Meldungen) ohne Tastaturbeteiligung.
 bool runUntilVramContains(A5120Machine& m, const std::string& needle, long long max_cycles);

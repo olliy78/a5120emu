@@ -12,6 +12,10 @@ std::string vramText(A5120Machine& m) {
     return s;
 }
 
+std::string visibleText(A5120Machine& m) {
+    return vramText(m).substr(0, static_cast<size_t>(kVramCols) * kVramRows);
+}
+
 std::string vramLines(A5120Machine& m) {
     const std::string flat = vramText(m);
     std::string out;
@@ -21,6 +25,11 @@ std::string vramLines(A5120Machine& m) {
         out.push_back('\n');
     }
     return out;
+}
+
+void wipeVram(A5120Machine& m) {
+    for (int a = kVramBase; a <= kVramEnd; ++a)
+        m.memWriteDebug(static_cast<uint16_t>(a), 0x00);
 }
 
 }  // namespace k1520test

@@ -106,13 +106,14 @@ TEST(Em256RamFloppy, KaltstartErkenntKarteUndBenutztM) {
     ASSERT_TRUE(runSmallUntil(m, "A>", kInputBudget));
 
     // Reset-Taste: das BIOS findet seine Kennung und legt M: NICHT neu an.
+    // Schirm vorher wischen — sonst stünde der alte Prompt noch im Schattenram
+    // (k1520test::wipeVram, Wächter KbdNachReset.*).
+    // Nach der Reset-Taste meldet sich CP/A ohne Banner/RAM-Test, nur mit `A>` —
+    // gewartet wird auf den SICHTBAREN Prompt, nicht auf die Statuszeile (die steht
+    // schon vor der Tastaturinitialisierung, s. KbdNachReset.*).
+    k1520test::wipeVram(m);
     m.reset();
-    ASSERT_TRUE(runUntilVramContains(m, "TPA ist OK!", kBootBudget)) << vramText(m);
-    ASSERT_TRUE(runSmallUntil(m, "A>", kInputBudget));
-    // Die erste Eingabe nach der Reset-Taste geht verloren — auch OHNE EM (gegengeprüft
-    // mit dem A5120 pur, `DIR A:` nach reset()); eine Leerzeile schluckt das.
-    typeKey(m, k1520test::QK_RETURN);
-    k1520test::runCycles(m, 20'000'000);
+    ASSERT_TRUE(k1520test::runSmallUntilVisible(m, "A>", kBootBudget)) << vramText(m);
     ASSERT_TRUE(kommando(m, "DIR M:", "M: PIP      COM"))
         << "M: nach der Reset-Taste leer — Kennung nicht wiedergefunden:\n" << vramText(m);
     ASSERT_TRUE(runSmallUntil(m, "A>", kInputBudget));
