@@ -286,13 +286,16 @@ HDR = """; =====================================================================
 ;   0D00-0FF5  unbelegt (FFH)
 ;   0FF6-0FFF  laeuft bei FFF6H  IM2-Vektor Kanal 3 (-> FC64H), Sprung 001BH, Pruefsumme
 ;
-; Bankregister A8H (Design-Doc §4.2, Bitbelegung noch NICHT aus dem Stromlaufplan
-; hergeleitet -- offener Punkt §6.1):
+; Bankregister A8H (Design-Doc §4.2, s. Nachtrag unten):
 ;   8EH  Reset/Kopieren/Bildtest      ROM an, RAM darueber
 ;   06H  Normalbetrieb (Lader)         ROM an (Lader laeuft bei 0400H)
 ;   87H  Stub bei FFE0H                ROM AUS (liest 0000H/0005H aus dem RAM)
 ;   44H/54H/64H/74H  RAM-Test          waehlt eine von vier 16-KB-Baenken ins Fenster
 ;                                      4000H-7FFFH ein
+; Nachtrag 2026-09-28: aus Blatt 3 hergeleitet (Design-Doc §4.2a) -- Bit0 = Seite 0
+; RAM statt ROM, Bit1/Bit2 = Seite 1/3 (Bank 1), Bit6 = Bank 2 ins Fenster 4000H,
+; Bit5:4 = welches Viertel von Bank 2, Bit7 = /MEMDI. Offen nur noch Bit3 (Seite 2?)
+; und die Polaritaet von Bit7 -- beides Brueckenfeld X8-X27.
 ;
 ; Bekannte Portbezuege in diesem ROM (Design-Doc §3):
 ;   61H       vermutlich ATS-Steuerlatch/Summer [?] (§3.2, D3:01)
