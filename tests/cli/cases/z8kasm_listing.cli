@@ -1,0 +1,16 @@
+# z8kasm: Quelltext (segmentiert) assemblieren, Listing und Abbildgroesse pruefen
+tool:   z8kasm
+run:    -s -l -o %bild% %quelle.s%
+tmpfile bild:
+
+file quelle.s:
+          ORG   <<3>>%0100
+  START:  LD    R0,#%ED4D      ! Zilog-Kommentar !
+          CALL  START          ; lange Segmentadresse
+          JR    START
+
+expect: <<3>>0100   2100 ED4D
+expect: <<3>>0104   5F00 8300 0100
+expect: <<3>>010A   E8FA
+expect: 12 Bytes ab <<3>>%0100
+exit:   0

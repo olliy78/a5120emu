@@ -1,0 +1,12 @@
+# z8kasm: Fehler mit Zeilennummer, Exit-Code 1, kein Abbild
+tool:   z8kasm
+run:    %quelle.s%
+
+file quelle.s:
+          LD    R0,#1
+          LDL   RR3,RR4
+          JR    NIRGENDS
+
+expect: quelle.s:2: Fehler: ungueltiges Registerpaar RR3
+expect: quelle.s:3: Fehler: unbekanntes Symbol
+exit:   1
