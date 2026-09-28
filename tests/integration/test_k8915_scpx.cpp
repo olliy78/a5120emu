@@ -9,8 +9,10 @@
  * Diskette) → CCP mit dem vorbelegten Tastaturpuffer `rade` → RAM-Disk E: in Bank 2 →
  * Prompt.  Danach Kommandos über die Tastatur (K7672, Scancodes Satz 1).
  *
- * Die Bootdiskette ist `tests/fixtures/disks/k8915scpx_boot1.hfe` (Abzug der Diskette des
- * Anwenders, `cpa800`) — immer als TempDisk, der Emulator schreibt zurück.
+ * Die Bootdiskette ist `tests/fixtures/disks/k8915scpx_boot1.hfe` (Diskette 901 des
+ * Anwenders, BIOS-Fassung „V24 (XON/XOFF)“, `cpa800`); AP-B2 fügt die Disketten 900
+ * (Fassung „55 K“) und 904 (langer Autostart) hinzu — immer als TempDisk, der Emulator
+ * schreibt zurück.
  */
 
 #include <gtest/gtest.h>
@@ -77,11 +79,11 @@ bool befehl(K8915Machine& m, const std::string& cmd, long long frist = 60'000'00
     return false;
 }
 
-/// Maschine mit der Bootdiskette in A:.
+/// Maschine mit einer Bootdiskette in A: (Vorgabe: Diskette 901, Fassung V24 XON/XOFF).
 struct Aufbau {
-    TempDisk     a{"k8915scpx_boot1.hfe"};
+    TempDisk     a;
     K8915Machine m;
-    Aufbau() {
+    explicit Aufbau(const char* fixture = "k8915scpx_boot1.hfe") : a(fixture) {
         EXPECT_TRUE(m.mountDisk(0, a.path(), "cpa800", false)) << m.lastError();
     }
 };
@@ -237,4 +239,79 @@ TEST(K8915Scpx, TastenAusZweitemFadenKommenVollstaendigUndInFolgeAn)
     EXPECT_TRUE(enthaelt(m, "A>" + text)) << vramLines(m);
     EXPECT_EQ(letzteZeile(m), "A>") << vramLines(m);
     EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
+}
+
+/// Kurzer Weg zur Coldstart-Meldung (s. DirSaveEraWarmstartUndRamDisk): `JP` bei
+/// 0000H/0005H im RAM ⇒ das ROM überspringt den Selbsttest wie nach einem Reset.
+void ohneSelbsttestZurColdstartMeldung(K8915Machine& m) {
+    m.powerOn();
+    m.zre().bankPoke(0, 0x0000, 0xC3);
+    m.zre().bankPoke(0, 0x0005, 0xC3);
+    ASSERT_TRUE(bis(m, "* Coldstart *  Disk on A: ready", 5'000'000)) << vramLines(m);
+}
+
+/**
+ * @test K8915Scpx.Fassung55KVonDiskette900BisZumPrompt
+ * @brief AP-B2: die Diskette 900 des Anwenders trägt die ANDERE BIOS-Fassung
+ *        „55 K SCPX 8915 BIOS-Version 5.3“ (IOBYTE-Weiche in CONST/CONIN/CONOUT/LIST/
+ *        PUNCH/READER, Drucker 7 Bit ungerade Parität; §4.4 in 16_k8915.md).  Sie startet
+ *        auf demselben Kern unverändert bis zum Prompt, `rade` richtet E: ein, `dir` listet
+ *        die Diskette.  Die IOBYTE-Weiche ist dabei im Spiel: jedes Zeichen am Bildschirm
+ *        geht über CONOUT DCF2H mit IOBYTE = 95H (CON: = CRT).
+ */
+TEST(K8915Scpx, Fassung55KVonDiskette900BisZumPrompt)
+{
+    Aufbau x("k8915scpx_cpa800_k5601_bios55k-disk900.hfe");
+    K8915Machine& m = x.m;
+    ohneSelbsttestZurColdstartMeldung(m);
+    ladenBisPrompt(m);
+    EXPECT_TRUE(enthaelt(m, "Konfigurierbare Datenstation   K 8915")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "55 K   SCPX 8915   BIOS-Version 5.3")) << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "Anpassung"));
+    EXPECT_TRUE(enthaelt(m, "* RAM-device for SCPX 8915, version 1.5 *"));
+    EXPECT_EQ(m.memReadDebug(0x0003), 0x95) << "IOBYTE: CON: = CRT, LST: = LPT";
+    EXPECT_EQ(m.ats().anzeige(), 0xB0);
+
+    ASSERT_TRUE(befehl(m, "dir")) << vramLines(m);
+    for (const char* n : {"SOFTKEY  COM", "PIP      COM", "XSUB     COM", "***900   VOL"})
+        EXPECT_TRUE(enthaelt(m, n)) << n << "\n" << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
+}
+
+/**
+ * @test K8915Scpx.Grundsoftware904AutostartLaeuftInsLeere
+ * @brief AP-B2: die Diskette 904 („Grundsoftware“) trägt dieselbe BIOS-Fassung wie 901,
+ *        aber per DISGEN einen längeren Autostart: 33 Zeichen
+ *        `rade CR ␠dbase CR ␠CR ␠use lohn CR ␠do lohn CR` im Tastaturpuffer (D641H).
+ *        Auf der Diskette fehlen **RADE.COM und DBASE.COM** (dBASE-Befehle `use`/`do`
+ *        wären erst in dBASE sinnvoll) — der CCP antwortet der Reihe nach mit `RADE?`,
+ *        `DBASE?`, einer leeren Zeile, `USE?`, `DO?` und steht dann am Prompt, ohne
+ *        RAM-Disk.  Beobachtetes Verhalten, festgehalten, nicht angepasst: die Diskette
+ *        ist offenbar eine Kopie eines anders bestückten Arbeitssystems (REDABAS statt
+ *        dBASE).
+ */
+TEST(K8915Scpx, Grundsoftware904AutostartLaeuftInsLeere)
+{
+    Aufbau x("k8915scpx_cpa800_k5601_v24xonxoff-autodbase-disk904.hfe");
+    K8915Machine& m = x.m;
+    ohneSelbsttestZurColdstartMeldung(m);
+    m.keyboard().sendeZeichen(0x0D);
+    ASSERT_TRUE(bis(m, "A> do lohn", 150'000'000)) << vramLines(m);
+    for (long long t = 0; t < 20'000'000 && !(letzteZeile(m) == "A>" && m.memReadDebug(0xF150) == 0);
+         t += m.run(kSchritt)) {}
+    ASSERT_EQ(letzteZeile(m), "A>") << vramLines(m);
+    EXPECT_EQ(m.memReadDebug(0xF150), 0) << "Tastaturpuffer leer";
+
+    EXPECT_TRUE(enthaelt(m, "SCPX 8915  V 5.3  Anpassung:  V24  (XON/XOFF)")) << vramLines(m);
+    const std::string t = vramText(m);
+    const char* folge[] = {"A>rade", "RADE?", "A> dbase", "DBASE?", "A> use lohn", "USE?",
+                           "A> do lohn", "DO?"};
+    size_t pos = 0;
+    for (const char* f : folge) {
+        const size_t p = t.find(f, pos);
+        ASSERT_NE(p, std::string::npos) << f << "\n" << vramLines(m);
+        pos = p + 1;
+    }
+    EXPECT_FALSE(enthaelt(m, "RAM-device")) << "RADE.COM fehlt auf 904";
+    EXPECT_EQ(m.ats().anzeige(), 0xB0);
 }

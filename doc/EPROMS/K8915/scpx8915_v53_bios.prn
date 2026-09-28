@@ -26,7 +26,14 @@
 ;   - Interrupts (IM 2, I = FFH): SIO2-B (Tastatur) D0H..D6H, K5122-PIO1 A
 ;     (Index) F0H, PIO1 B Bit1 (Marke) F2H, CTC-ZRE K3 (Zeitgeber 37,6 Hz) FEH.
 ;   - Tastatur: K7672 im DCP-Modus, Scancodes Satz 1, Tabellen DC0FH..DCF1H.
-;   - Port 61H = Anzeigefeld (E0H Lesen, D0H Schreiben, B0H bereit, 60H/50H Fehler).
+;   - Port 61H = Anzeigefeld der Frontplatte (E0H Lesen, D0H Schreiben, B0H bereit,
+;     60H/50H Fehler; Design-Doc §3.6).
+;
+; FASSUNG: dieses Listing ist die Fassung 'SCPX 8915 V 5.3 Anpassung: V24 (XON/XOFF)'
+; (Disketten 901 und 904). Die Fassung '55 K SCPX 8915 BIOS-Version 5.3' (Diskette
+; 900) weicht in 318 Byte ab (IOBYTE-Weiche, LIST/LISTST/PUNCH/READER, Drucker 7 Bit
+; ungerade Paritaet) -- Tabelle im Design-Doc §4.4, AP-B2. D639H-D7FEH sind der
+; DISGEN-Konfigurationsbereich und je Diskette verschieden (Autostart, F-Tasten, DPB).
 ;   - A8H nur 87H (Betrieb) und 06H (Bildspeicher, Warmstart ueber ROM 0406H).
 ; ============================================================================
 
@@ -94,7 +101,7 @@ D711                	DB	00H,00H,00H,00H,00H,00H,00H,00H,2AH,EFH,74H,D7H,31H,F0H,
 D721                	DB	00H,00H,00H,00H,00H,00H,00H,00H,2AH,EFH,97H,D7H,85H,F0H,52H,F0H
 D731                	DB	00H,00H,00H,00H,00H,00H,00H,00H,2AH,EFH,BAH,D7H,D9H,F0H,A6H,F0H
 D741                	DB	00H,00H,00H,00H,00H,00H,00H,00H,2AH,EFH,DDH,D7H,2DH,F1H,FAH,F0H
-D751                	DB	50H,00H,04H,0FH,00H,85H,01H,7FH,00H,C0H,00H,20H,00H,02H,00H,03H		;5 DPB + Treiberangaben, je 23H Byte (SELDSK: DPH+10 -> IY). A: 5x1024 (SPT 80, DSM 389, DRM 127, OFF 2) = cpa800; B: 16x256 (SPT 64, DSM 311); C:/D:/E: wie A:. IY+15 Sektorgroesse 0/1/2/3=128..1024, IY+20 Sektoren je Spur, IY+24 Laufwerksnummer, IY+21 Seiten
+D751                	DB	50H,00H,04H,0FH,00H,85H,01H,7FH,00H,C0H,00H,20H,00H,02H,00H,03H		;5 DPB + Treiberangaben, je 23H Byte (SELDSK: DPH+10 -> IY). A: 5x1024 (SPT 80, DSM 389, DRM 127, OFF 2) = cpa800; B: 16x256 (SPT 64, DSM 311); C:/D:/E: wie A:. IY+15 Sektorgroesse 0/1/2/3=128..1024, IY+20 Sektoren je Spur, IY+24 Laufwerksnummer, IY+21 Seiten. B: ist DISGEN-Sache: nur diese Diskette (901) hat 16x256, 900/904 tragen B: wie A: (AP-B2)
 D761                	DB	16H,01H,03H,01H,05H,02H,50H,01H,00H,48H,50H,03H,32H,12H,50H,03H
 D771                	DB	00H,00H,00H,40H,00H,04H,0FH,00H,37H,01H,7FH,00H,C0H,00H,20H,00H
 D781                	DB	02H,00H,01H,16H,04H,03H,01H,10H,02H,50H,01H,01H,48H,50H,03H,32H
@@ -104,25 +111,25 @@ D7B1                	DB	50H,03H,32H,12H,50H,03H,00H,00H,00H,50H,00H,04H,0FH,00H,
 D7C1                	DB	7FH,00H,C0H,00H,20H,00H,02H,00H,03H,16H,01H,03H,01H,05H,02H,50H
 D7D1                	DB	01H,03H,48H,50H,03H,32H,12H,50H,03H,00H,00H,00H,50H,00H,04H,0FH
 D7E1                	DB	00H,85H,01H,7FH,00H,C0H,00H,20H,00H,02H,00H,03H,16H,01H,03H,01H
-D7F1                	DB	05H,02H,50H,01H,04H,48H,50H,03H,32H,12H,50H,03H,00H,00H
-D7FF                	DB	00H,01H,07H,0DH,13H,19H,05H,0BH,11H,17H,03H,09H,0FH,15H,02H,08H		;Sektoruebersetzung 26 Sektoren, Versatz 6 (8-Zoll-Standard) -- kein DPH verweist darauf (alle XLT=0)
-D80F                	DB	0EH,14H,1AH,06H,0CH,12H,18H,04H,0AH,10H
-D819                	DB	16H,0AH,0DH,20H,20H,20H,20H,20H,20H,20H,20H,20H,20H,3EH,3EH,3EH		;Texte: Einschaltmeldung '>>>>> Konfigurierbare Datenstation K 8915 <<<<<', 'SCPX 8915 V 5.3 Anpassung: V24 (XON/XOFF)', 'System ?'
-D829                	DB	'>>    Konfigurie'
-D839                	DB	'rbare Datenstati'
-D849                	DB	'on   K 8915    <'
-D859                	DB	3CH,3CH,3CH,3CH,0AH,0AH,0DH,20H,20H,20H,20H,20H,20H,20H,20H,20H
-D869                	DB	' SCPX 8915  V 5.'
-D879                	DB	'3  Anpassung:  V'
-D889                	DB	32H,34H,20H,20H,28H,58H,4FH,4EH,2FH,58H,4FH,46H,46H,29H,0AH,0DH
-D899                	DB	24H,0AH,0DH,53H,79H,73H,74H,65H,6DH,20H,3FH,0AH,0DH,24H
+D7F1                	DB	05H,02H,50H,01H,04H,48H,50H,03H,32H,12H,50H,03H,00H,00H,00H
+D800                	DB	01H,07H,0DH,13H,19H,05H,0BH,11H,17H,03H,09H,0FH,15H,02H,08H,0EH		;Sektoruebersetzung 26 Sektoren, Versatz 6 (8-Zoll-Standard) -- kein DPH verweist darauf (alle XLT=0)
+D810                	DB	14H,1AH,06H,0CH,12H,18H,04H,0AH,10H,16H
+D81A                	DB	0AH,0DH,20H,20H,20H,20H,20H,20H,20H,20H,20H,20H,3EH,3EH,3EH,3EH		;Texte: Einschaltmeldung '>>>>> Konfigurierbare Datenstation K 8915 <<<<<', 'SCPX 8915 V 5.3 Anpassung: V24 (XON/XOFF)', 'System ?'
+D82A                	DB	'>    Konfigurier'
+D83A                	DB	'bare Datenstatio'
+D84A                	DB	'n   K 8915    <<'
+D85A                	DB	3CH,3CH,3CH,0AH,0AH,0DH,20H,20H,20H,20H,20H,20H,20H,20H,20H,20H
+D86A                	DB	'SCPX 8915  V 5.3'
+D87A                	DB	'  Anpassung:  V2'
+D88A                	DB	34H,20H,20H,28H,58H,4FH,4EH,2FH,58H,4FH,46H,46H,29H,0AH,0DH,24H
+D89A                	DB	0AH,0DH,53H,79H,73H,74H,65H,6DH,20H,3FH,0AH,0DH,24H
 BOOT:
 D8A7  3E 87         	LD A,87H		;[BOOT] A8H=87H: Seiten 0-3 RAM, ROM aus (Design-Doc §4.2a)
 D8A9  D3 A8         	OUT (A8H),A
 D8AB  31 00 01      	LD SP,0100H
 D8AE  3E 95         	LD A,95H		;IOBYTE (0003H) = 95H
 D8B0  32 03 00      	LD (0003H),A
-D8B3  21 E0 F7      	LD HL,F7E0H		;F7E0H..F7FAH loeschen und bei F7FBH 'JP D8F8H' ablegen (IOBYTE setzen + WBOOT) -- ein fester Einsprung fuer Fremdprogramme; weder ROM noch BIOS rufen F7FBH [?]
+D8B3  21 E0 F7      	LD HL,F7E0H		;F7E0H..F7FAH loeschen und bei F7FBH 'JP D8F8H' ablegen (IOBYTE setzen + WBOOT): das ist die Sprungtabelle der IOBYTE-Geraete (F7E0H CONST, F7E3H CONIN, F7E6H CONOUT fuer CON:=UC1, F7E9H/F7ECH READER UR1/UR2, F7EFH/F7F2H PUNCH UP1/UP2, F7F5H/F7F8H LISTST/LIST fuer LST:=UL1). Nur die Fassung '55 K' (Diskette 900) springt sie an; diese Fassung hat die IOBYTE-Weiche durch je zehn NOP ersetzt (D960H/D972H/DCF2H). Ein nicht belegter Eintrag laeuft ueber die NOPs nach F7FBH = IOBYTE 95H + WBOOT (Design-Doc §4.4, AP-B2)
 D8B6  06 1B         	LD B,1BH
 D8B8  36 00         	LD (HL),00H
 D8BA  23            	INC HL
@@ -911,7 +918,7 @@ E006  DD 7E 00      	LD A,(IX+0)
 E009  FE 70         	CP 70H
 E00B  3E E0         	LD A,E0H
 E00D  28 02         	JR Z,E011H
-E00F  3E D0         	LD A,D0H		;Port 61H: E0H vor Lesen, D0H vor Schreiben, B0H danach; bei Fehler 60H (Lesen) bzw. 50H (Schreiben). => Anzeigefeld, aktiv low: Bit4 Lesen, Bit5 Schreiben, Bit6 bereit, Bit7 Fehler [?]
+E00F  3E D0         	LD A,D0H		;Port 61H: E0H vor Lesen, D0H vor Schreiben, B0H danach; bei Fehler 60H (Lesen) bzw. 50H (Schreiben). => Anzeigefeld der Frontplatte, aktiv low: Bit4 'Input File', Bit5 'Output File', Bit6 'RUN Mode', Bit7 'ERROR' (Design-Doc §3.6)
 E011  D3 61         	OUT (61H),A
 E013  DD 7E 01      	LD A,(IX+1)		;Laufwerk 4 (E:) -> RAM-Disk D636H, sonst K5122-Treiber E2E1H
 E016  FE 04         	CP 04H

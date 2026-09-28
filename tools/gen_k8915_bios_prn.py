@@ -69,6 +69,7 @@ LINEAR = [(0xE9EB, 0xEA1D), (0xEB16, 0xEBC7), (0xEBD1, 0xEBEF)]
 # (start, ende_exklusiv, beschreibung); Text wird als ASCII gezeigt, sonst DB-Hex.
 DATEN = [
     (0xD613, 0xD615, "Rest von PUNCH (RET + 2 Fuellbytes)"),
+    # D639H-D7FFH: DISGEN-Konfigurationsbereich, je Diskette verschieden (Design-Doc §4.4)
     (0xD639, 0xD641, "Konfiguration (DISGEN): D639H <>0 = Laufwerk E: (RAM-Disk) zugelassen, "
                      "setzt RADE; D63AH Zeiger F150H (Tastaturpuffer); D63CH Laufwerkszahl (2); "
                      "D63DH Versionsfeld '5.3M' (BIOS+3DH, von RADE geprueft)"),
@@ -79,13 +80,14 @@ DATEN = [
                      "F10 'NSWP'CR, Umsch+BildAuf 'POWER'CR, Umsch+BildAb 'DIR'CR"),
     (0xD6AD, 0xD701, "frei (00H)"),
     (0xD701, 0xD751, "5 DPH (A:..E:), je 16 Byte: XLT=0, DIRBUF EF2AH, DPB, CSV, ALV"),
-    (0xD751, 0xD7FF, "5 DPB + Treiberangaben, je 23H Byte (SELDSK: DPH+10 -> IY). A: 5x1024 "
+    (0xD751, 0xD800, "5 DPB + Treiberangaben, je 23H Byte (SELDSK: DPH+10 -> IY). A: 5x1024 "
                      "(SPT 80, DSM 389, DRM 127, OFF 2) = cpa800; B: 16x256 (SPT 64, DSM 311); "
                      "C:/D:/E: wie A:. IY+15 Sektorgroesse 0/1/2/3=128..1024, IY+20 Sektoren je "
-                     "Spur, IY+24 Laufwerksnummer, IY+21 Seiten"),
-    (0xD7FF, 0xD819, "Sektoruebersetzung 26 Sektoren, Versatz 6 (8-Zoll-Standard) -- kein DPH "
+                     "Spur, IY+24 Laufwerksnummer, IY+21 Seiten. B: ist DISGEN-Sache: nur diese Diskette "
+                     "(901) hat 16x256, 900/904 tragen B: wie A: (AP-B2)"),
+    (0xD800, 0xD81A, "Sektoruebersetzung 26 Sektoren, Versatz 6 (8-Zoll-Standard) -- kein DPH "
                      "verweist darauf (alle XLT=0)"),
-    (0xD819, 0xD8A7, "Texte: Einschaltmeldung '>>>>> Konfigurierbare Datenstation K 8915 <<<<<', "
+    (0xD81A, 0xD8A7, "Texte: Einschaltmeldung '>>>>> Konfigurierbare Datenstation K 8915 <<<<<', "
                      "'SCPX 8915 V 5.3 Anpassung: V24 (XON/XOFF)', 'System ?'"),
     (0xD9C7, 0xD9D5, "Init CTC2-K2 (5AH: 07H,01H = 9600 Bd) und SIO2-B (53H: 00,18H Kanalreset, "
                      "WR4=44H, WR3=C1H, WR5=EAH, WR1=17H, WR2=D0H Vektor)"),
@@ -144,8 +146,13 @@ c(0xD636, "Einhaengepunkt RAM-Disk E: (Laufwerksnummer 4, s. E019H/E225H): hier 
           "RET' = Fehler; RADE.COM patcht es auf seinen Treiber bei EE00H")
 c(0xD8A7, "[BOOT] A8H=87H: Seiten 0-3 RAM, ROM aus (Design-Doc §4.2a)")
 c(0xD8AE, "IOBYTE (0003H) = 95H")
-c(0xD8B3, "F7E0H..F7FAH loeschen und bei F7FBH 'JP D8F8H' ablegen (IOBYTE setzen + WBOOT) -- "
-          "ein fester Einsprung fuer Fremdprogramme; weder ROM noch BIOS rufen F7FBH [?]")
+c(0xD8B3, "F7E0H..F7FAH loeschen und bei F7FBH 'JP D8F8H' ablegen (IOBYTE setzen + WBOOT): "
+          "das ist die Sprungtabelle der IOBYTE-Geraete (F7E0H CONST, F7E3H CONIN, F7E6H CONOUT "
+          "fuer CON:=UC1, F7E9H/F7ECH READER UR1/UR2, F7EFH/F7F2H PUNCH UP1/UP2, F7F5H/F7F8H "
+          "LISTST/LIST fuer LST:=UL1). Nur die Fassung '55 K' (Diskette 900) springt sie an; "
+          "diese Fassung hat die IOBYTE-Weiche durch je zehn NOP ersetzt (D960H/D972H/DCF2H). "
+          "Ein nicht belegter Eintrag laeuft ueber die NOPs nach F7FBH = IOBYTE 95H + WBOOT "
+          "(Design-Doc §4.4, AP-B2)")
 c(0xD8F8, "[Einsprung ueber F7FBH] IOBYTE = 95H, weiter in WBOOT")
 c(0xD8C5, "Laufwerk/Nutzer (0004H) = 0, Zaehler Cursoradressierung (F1B7H) = 0")
 c(0xD8CC, "Port 61H = B0H: Anzeige 'bereit' (s. E011H)")
@@ -227,8 +234,8 @@ c(0xDFB8, "Parameterblock IX = F1B9H fuellen: +0 Befehl (70H Lesen, 50H Schreibe
           "Ruecksetzen), +1 Laufwerk (IY+24), +2 Spur, +3 Kopf, +4 Sektor, +5..+9 aus dem DPB, "
           "+10/11 Puffer, +12/13 Zeiger, +14 = Fehlerbuchstabe (Rueckgabe). F1C8H = 5 Versuche")
 c(0xE00F, "Port 61H: E0H vor Lesen, D0H vor Schreiben, B0H danach; bei Fehler 60H (Lesen) "
-          "bzw. 50H (Schreiben). => Anzeigefeld, aktiv low: Bit4 Lesen, Bit5 Schreiben, "
-          "Bit6 bereit, Bit7 Fehler [?]")
+          "bzw. 50H (Schreiben). => Anzeigefeld der Frontplatte, aktiv low: Bit4 'Input "
+          "File', Bit5 'Output File', Bit6 'RUN Mode', Bit7 'ERROR' (Design-Doc §3.6)")
 c(0xE013, "Laufwerk 4 (E:) -> RAM-Disk D636H, sonst K5122-Treiber E2E1H")
 c(0xE03C, "nur Fehler 'K' (4BH) wird wiederholt (bis 5 Mal), jeder andere -> A = FFH")
 c(0xE049, "[WRITE] wie READ; C = Schreibart (0 normal, 1 Verzeichnis, 2 unbelegter Block)")
@@ -387,7 +394,14 @@ HDR = """; =====================================================================
 ;   - Interrupts (IM 2, I = FFH): SIO2-B (Tastatur) D0H..D6H, K5122-PIO1 A
 ;     (Index) F0H, PIO1 B Bit1 (Marke) F2H, CTC-ZRE K3 (Zeitgeber 37,6 Hz) FEH.
 ;   - Tastatur: K7672 im DCP-Modus, Scancodes Satz 1, Tabellen DC0FH..DCF1H.
-;   - Port 61H = Anzeigefeld (E0H Lesen, D0H Schreiben, B0H bereit, 60H/50H Fehler).
+;   - Port 61H = Anzeigefeld der Frontplatte (E0H Lesen, D0H Schreiben, B0H bereit,
+;     60H/50H Fehler; Design-Doc §3.6).
+;
+; FASSUNG: dieses Listing ist die Fassung 'SCPX 8915 V 5.3 Anpassung: V24 (XON/XOFF)'
+; (Disketten 901 und 904). Die Fassung '55 K SCPX 8915 BIOS-Version 5.3' (Diskette
+; 900) weicht in 318 Byte ab (IOBYTE-Weiche, LIST/LISTST/PUNCH/READER, Drucker 7 Bit
+; ungerade Paritaet) -- Tabelle im Design-Doc §4.4, AP-B2. D639H-D7FEH sind der
+; DISGEN-Konfigurationsbereich und je Diskette verschieden (Autostart, F-Tasten, DPB).
 ;   - A8H nur 87H (Betrieb) und 06H (Bildspeicher, Warmstart ueber ROM 0406H).
 ; ============================================================================
 """

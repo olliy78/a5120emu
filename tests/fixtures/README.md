@@ -22,7 +22,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | system | `cpa` = CP/A · `scpx17` = SCPX 1526 V1.7 · `k8915scpx` = SCPX 8915 · `udos` = UDOS 4.3 · `udos1715` = UDOS1715/NDOS (PC 1715) |
 | diskformat | physisches Format des Mediums: `cpa780` (5¼″ 80 Spuren DS MFM, 26×128 Sys + 5×1024 Daten), `5x1024`, `mini` |
 | laufwerkskonfiguration | Laufwerkstypen, die das BIOS des Systems für A:/B:/C: annimmt |
-| merkmale | `clock`/`noclock` (Uhrzeit-Abfrage beim Kaltstart), `hardy` (HARDY.COM an Bord) |
+| merkmale | `clock`/`noclock` (Uhrzeit-Abfrage beim Kaltstart), `hardy` (HARDY.COM an Bord); beim K8915 BIOS-Fassung (`bios55k`, `v24xonxoff`), Besonderheit (`autodbase`) und Diskettennummer des Anwenders (`disk900`) |
 
 ## Dateien
 
@@ -42,7 +42,9 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `udos1715_640k_pc1715_system.img` | **UDOS1715/NDOS** (PC 1715), Systemdiskette „SYSTEM": 80×32×256, 67 Dateien, darunter das Systemhandbuch `UDOS.TEXT` | `Udos1715.*`, `Udos1715Belegung.*`, `Udos1715Schreiben.*` |
 | `udosP8000_640k_wega.hfe` | **UDOS1715/NDOS** vom **Robotron P8000** (UDOS 2.2), „WEGA-STARTDISKETTE": 80×32×256, 42 Dateien (UDOS-Dienstprogramme + die WEGA-Urlader und `sa.*`-Werkzeuge). **Anderer Rechner als der PC 1715**, gleiche Diskettensitte — nur mit `77H` statt `00` hinter dem Belegungsplan | `Udos1715P8000.*` |
 | `scp1700_640k_a7100_system.hfe` | **SCP1700/CP/M-86** (A7100), Systemdiskette: 80×2×16×256 MFM — aber **Spur 0 Kopf 0 in FM mit halber Datenrate** (16×128, 125 kbit/s), 46 Dateien | `Scp1700.*` |
-| `k8915scpx_boot1.hfe` | **SCPX 8915 V5.3** (K8915), Bootdiskette des Anwenders (Greaseweazle-Abzug, gleich `disks/k8915scpx_boot1.hfe`): `cpa800`, Systemspuren 5×1024 ab Zylinder 0, `RADE.COM` (Autostart), `DISGEN`, `FORMAT`, Turbo Pascal | `K8915Scpx.*` |
+| `k8915scpx_boot1.hfe` | **SCPX 8915 V5.3, Fassung „V24 (XON/XOFF)“** (K8915) = **Diskette 901** des Anwenders (`***901.VOL`; Greaseweazle-Abzug, gleich `disks/k8915scpx_boot1.hfe`; Name aus der Zeit, als es die einzige war): `cpa800`, Systemspuren 5×1024 ab Zylinder 0, DISGEN-Einstellung B: = 16×256, Autostart `rade`, `RADE.COM`, `DISGEN`, `FORMAT`, Turbo Pascal | `K8915Scpx.*` |
+| `k8915scpx_cpa800_k5601_bios55k-disk900.hfe` | **SCPX 8915 V5.3, Fassung „55 K … BIOS-Version 5.3“** = Diskette 900 (`***900.VOL`): IOBYTE-Weiche, anderer Druckertreiber (7 Bit, ungerade Parität), B: = 5×1024, Autostart `rade`; nur Systemprogramme (DISGEN, FORMAT, PIP, POWER, RADE, SOFTKEY, STAT, SUBM, XSUB, DUMP) | `K8915Scpx.Fassung55KVonDiskette900BisZumPrompt` |
+| `k8915scpx_cpa800_k5601_v24xonxoff-autodbase-disk904.hfe` | **Fassung „V24 (XON/XOFF)“** wie 901, anders per DISGEN konfiguriert = Diskette 904 „Grundsoftware“ (`***904.VOL`): Autostart `rade`/`dbase`/`use lohn`/`do lohn`, eigene F-Tasten, B: = 5×1024; **ohne** RADE.COM und DBASE.COM (Autostart läuft absichtlich ins Leere), dafür REDABAS, KP, Turbo Pascal | `K8915Scpx.Grundsoftware904AutostartLaeuftInsLeere` |
 
 Die **gemischte** Diskette entstand am echten Laufwerk: erst vollständig als cpa800
 formatiert, dann mit UDOS `ss40` im Doppelschritt überschrieben.  Sie ist die einzige
