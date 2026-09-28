@@ -104,7 +104,8 @@ K8915Machine::Config ohnePruefstecker() { K8915Machine::Config c; c.pruefstecker
  *        Fehlerbuchstaben, und das ROM geht ohne Tastendruck in den Lader —
  *        „* Coldstart *  Disk on A: ready".  KEY: zwei `DC1` der Tastatur (nach `ESC c`
  *        und `ESC [2;1y`); CTC: je CTC genau ein Interrupt in ihrem DJNZ-Fenster (A = 4);
- *        SIO: Echo auf allen drei Kanälen.
+ *        SIO: Echo auf allen drei Kanälen.  Danach `CR` ⇒ Lader ⇒ ohne K5122
+ *        „Drive A: not ready, check".
  */
 TEST(K8915Boot, SelbsttestFehlerfreiBisColdstart)
 {
@@ -122,6 +123,15 @@ TEST(K8915Boot, SelbsttestFehlerfreiBisColdstart)
     EXPECT_EQ(m.keyboard().selbsttests(), 3u) << "Einschalten, ESC c, ESC [2;1y";
     EXPECT_FALSE(m.keyboard().sendenGesperrt()) << "zum Schluss DC1 an die Tastatur";
     EXPECT_EQ(m.ats().anzeige(), 0xB0) << "0907H meldet Coldstart mit 61H = B0H";
+
+    // CR von der Tastatur (0942H liest 53H/52H) ⇒ Lader.  Ohne K5122 (Etappe 3) lesen
+    // 10H–18H den offenen Bus: das Laufwerk meldet sich nicht bereit.
+    m.keyboard().sendeZeichen(0x0D);
+    for (long long done = 0; done < 10'000'000 &&
+         vramText(m).find("Drive A: not ready, check") == std::string::npos;
+         done += m.run(5'000)) {}
+    EXPECT_NE(vramText(m).find("Drive A: not ready, check"), std::string::npos) << vramLines(m);
+    EXPECT_EQ(m.ats().anzeige(), 0x60) << "Fehlermeldungen mit 61H = 60H";
 }
 
 /**
