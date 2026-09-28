@@ -17,3 +17,5 @@ k1520_add_test(mac_listing       SRC test_mac_listing.cpp       LABELS "${_lbl}"
 # U8001/U8002 (Z8000): Befehlstabelle, Disassembler, Assembler — tools/z8000/
 k1520_add_test(z8k_table         SRC test_z8k_table.cpp         LABELS "${_lbl}")  # tools/z8000/z8k_table.h + z8k_codec.h
 k1520_add_test(z8k_disasm        SRC test_z8k_disasm.cpp        LABELS "${_lbl}")  # tools/z8000/z8k_disasm.h
+k1520_add_test(z8k_asm           SRC test_z8k_asm.cpp           LABELS "${_lbl}"   # tools/z8000/z8k_asm.h
+               DEFS "Z8K_FIXTURE_DIR=\"${CMAKE_SOURCE_DIR}/tests/fixtures/z8000\"")
