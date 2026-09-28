@@ -91,8 +91,10 @@ c(0x001B, "[PRUEFSUMMEN-EINSPRUNG L001B] Zweiter Einstieg, erreicht ueber JP 0FF
           "JP 001BH am Ende des Ladervorlaufs (§4.3 Schritt 3), wenn KEIN Fremdsystem im "
           "RAM gefunden wurde. SP neu setzen, Bildspeicher 17FFH loeschen (Cursor-Byte?), "
           "Statuszeile mit Leerzeichen fuellen (FCF8H), ROM erneut nach F0D0H kopieren.")
-c(0x002D, "HL=FC77H: Zeiger auf Init-Tabelle fuer die Statuszeile 'MROM RAM SIO KEY CTC' "
-          "(sub_FC19 kopiert 10 Bytes davon nach 1740H, vgl. FC77H-Bereich im Helper-Block)")
+c(0x002D, "HL=FC68H: Name 'ROM' aus der Namenstabelle 'ROMRAMSIOKEYCTC' -- sub_FC19 "
+          "schreibt ihn nach 1770H und 'DIAGNOSTIC' (FC77H) nach 1740H. Die Statuszeile ist "
+          "eine LAUFANZEIGE (Name des gerade laufenden Tests), keine Zeile 'ROM RAM SIO "
+          "KEY CTC' [LAUFZEIT 2026-09-28, K8915Machine, Design-Doc §4.3]")
 c(0x0037, "24-Bit-Pruefsummen-Vergleich: IY=0FFDH zeigt auf die im ROM abgelegte Summe "
           "0FFDH-0FFFH (=09AB70H, Design-Doc §1/§4.1), HL/DE-Schleife (0044H) bildet die "
           "laufende Summe ueber 0000H-0FFBH")
@@ -100,11 +102,11 @@ c(0x0044, "24-Bit-Additionsschleife: A+=[HL], Carry->DE++ (Ueberlauf in DE:A), C
           "BC (=0FFCH Bytes) herunter; PE (BC!=0) haelt die Schleife")
 c(0x004D, "Vergleich laufende Summe (DE:A) gegen die abgelegte 24-Bit-Pruefsumme (IY) -- "
           "bei Gleichheit (Z) weiter zu L0083 (ROM-Test bestanden)")
-c(0x005A, "[ROM-FEHLER] Fehlerpfad: OUT(61H),7FH, Statuszeile 'ROM' auf Fehler (46H='F'?), "
-          "9 Zeichen Verzoegerungsschleife -> BEL-Sturm (F3C0H, ausserhalb -- 64x BEL "
-          "gemaess §4.3 letzter Punkt vermutlich in der noch nicht disassemblierten "
-          "F3C0H-Region)")
-c(0x0083, "[ROM OK] Statuszeile 1770H+2 = 'A' (ROM-Test bestanden), danach RAM-Test: "
+c(0x005A, "[ROM-/RAM-FEHLER] Fehlerpfad: OUT(61H),7FH, Kennbuchstabe 'F' (46H) nach 1776H "
+          "unter dem angezeigten Testnamen, 64 x BEL an die Tastatur (52H), dann JP F3C0H "
+          "(Tastenschleife: '#' = zyklisch, CR = Lader)")
+c(0x0083, "[ROM OK] LD (1771H),'A' macht aus dem Namen 'ROM' den Namen 'RAM' (naechster "
+          "Test) -- kein Pruefvermerk [LAUFZEIT 2026-09-28]; danach RAM-Test: "
           "4000H-BFFFH mit 55H fuellen (LDIR), dann mit AAH/00H vergleichend gegenlesen "
           "(§4.3 'RAM: Muster 55H/AAH/00H ueber alle Baenke')")
 c(0x00BA, "Test dieser 16-KB-Seite (4000H-7FFFH) fertig -> erneut kopieren + Sprung in "
@@ -205,9 +207,9 @@ c(0xFC04, "sub_FC04: Summer AN (Port 61H = FFH)")
 c(0xFC09, "sub_FC09: Bildspeicher 1000H-177FH loeschen (0780H=80x24 Byte) mit dem Fuellwert "
           "aus FCF8H, dann Statuszeile ab 1780H nochmal explizit setzen -- deckt sich mit "
           "VRAM bei 1000H aus Design-Doc §3.3")
-c(0xFC19, "sub_FC19: kopiert Text ab HL in die Statuszeile 1770H (3 Byte) + 1740H (10 Byte "
-          "ab FC77H) -- die Init-Tabelle fuer 'MROM RAM SIO KEY CTC' liegt direkt danach im "
-          "selben Helferblock (ab FC68H/FC77H)")
+c(0xFC19, "sub_FC19: kopiert den Testnamen ab HL (3 Byte aus 'ROMRAMSIOKEYCTC', FC68H) "
+          "nach 1770H und 'DIAGNOSTIC' (10 Byte ab FC77H) nach 1740H. Fehlerbuchstabe "
+          "steht bei 1776H [LAUFZEIT 2026-09-28]")
 c(0xFC2C, "sub_FC2C: einfache DJNZ/DEC-C-Verzoegerungsschleife (B*256+C-artig)")
 c(0xFC34, "sub_FC34: zweite, laengere Verzoegerungsschleife mit EXX (schont HL/BC des "
           "Aufrufers)")
@@ -250,15 +252,16 @@ c(0xFC68, "[TEXT-/TABELLENBLOCK FC68H-FCF7H -- geklaert 2026-09-28, war im Plan 
           "Tabellenwerte im Detail offen, aber die Adresse und ihr Verbraucher sind jetzt "
           "bekannt, keine 'Fake-Code'-Verwechslung mehr; "
           "(6) FCE7H-FCF7H+ Init-Tabelle 'FCEFH' fuer SIO1-A/B + SIO2-A (V.24/IFSS, Design-"
-          "Doc §4.3 'je 200H Muster AAH/55H'): ab FCEFH per Zeigerprotokoll WR3=C1H, "
+          "Doc §4.3, zwei Runden AAH/55H): ab FCEFH per Zeigerprotokoll WR3=C1H, "
           "WR4=45H ('x16, 1 Stop, UNGERADE Paritaet' -- exakt Design-Doc-Wert fuer IFSS), "
           "WR5=68H (exakt Design-Doc-Wert), Rest ausserhalb dieses Blocks.")
-c(0xF2D6, "[STATUSZEILEN-RAHMEN, laeuft als RAM-Spiegel] Zeichnet die 5-Spalten-Anzeige "
-          "'MROM RAM SIO KEY CTC' der Statuszeile (Design-Doc §4.3) mithilfe der "
+c(0xF2D6, "[DIAGNOSEMODUS, laeuft als RAM-Spiegel] Erreicht nur mit DEL (7FH) an der "
+          "Tastatur (F1B7H). Zeichnet ein TESTBILD (nicht die Statuszeile, berichtigt "
+          "2026-09-28) mithilfe der "
           "Layout-Tabelle FCB1H-FCE6H (s. FC68H-Kommentar) -- Trennzeichen 48H "
           "wiederholt ueber die Zeilen, danach je Spalte ein Fuellwert aus FCF9H/FCFAH. "
-          "Aufgerufen ueber F2F7H (DI; CALL sub_FC46; CALL sub_FC09; CALL sub_FC00) aus "
-          "dem RAM-Testabschnitt heraus -- Detailsemantik der einzelnen Tabellenbytes "
+          "Danach (F3B5H) 'ENTER: LADER / \"#\": ZYKL.' nach 1734H und weiter in die "
+          "Tastenschleife F3C0H -- Detailsemantik der einzelnen Tabellenbytes "
           "(FCBBH/FCBDH/FCBFH/FCC0H...) noch nicht Byte-fuer-Byte zugeordnet, aber "
           "Routine und Datenquelle sind jetzt bekannt.")
 

@@ -64,7 +64,7 @@ L001B:
 0025  36 20         	LD (HL),20H
 0027  CD C0 00      	CALL sub_00C0
 002A  CD 09 FC      	CALL FC09H
-002D  21 68 FC      	LD HL,FC68H		;HL=FC77H: Zeiger auf Init-Tabelle fuer die Statuszeile 'MROM RAM SIO KEY CTC' (sub_FC19 kopiert 10 Bytes davon nach 1740H, vgl. FC77H-Bereich im Helper-Block)
+002D  21 68 FC      	LD HL,FC68H		;HL=FC68H: Name 'ROM' aus der Namenstabelle 'ROMRAMSIOKEYCTC' -- sub_FC19 schreibt ihn nach 1770H und 'DIAGNOSTIC' (FC77H) nach 1740H. Die Statuszeile ist eine LAUFANZEIGE (Name des gerade laufenden Tests), keine Zeile 'ROM RAM SIO KEY CTC' [LAUFZEIT 2026-09-28, K8915Machine, Design-Doc §4.3]
 L0030:
 0030  CD 19 FC      	CALL FC19H
 0033  08            	EX AF,AF'
@@ -90,7 +90,7 @@ L0048:
 0057  9A            	SBC A,D
 0058  28 29         	JR Z,L0083
 L005A:
-005A  3E 7F         	LD A,7FH		;[ROM-FEHLER] Fehlerpfad: OUT(61H),7FH, Statuszeile 'ROM' auf Fehler (46H='F'?), 9 Zeichen Verzoegerungsschleife -> BEL-Sturm (F3C0H, ausserhalb -- 64x BEL gemaess §4.3 letzter Punkt vermutlich in der noch nicht disassemblierten F3C0H-Region)
+005A  3E 7F         	LD A,7FH		;[ROM-/RAM-FEHLER] Fehlerpfad: OUT(61H),7FH, Kennbuchstabe 'F' (46H) nach 1776H unter dem angezeigten Testnamen, 64 x BEL an die Tastatur (52H), dann JP F3C0H (Tastenschleife: '#' = zyklisch, CR = Lader)
 005C  D3 61         	OUT (61H),A
 005E  CD C0 00      	CALL sub_00C0
 0061  CD 46 FC      	CALL FC46H
@@ -115,7 +115,7 @@ L0075:
 007E  10 F5         	DJNZ L0075
 0080  C3 C0 F3      	JP F3C0H
 L0083:
-0083  21 70 17      	LD HL,1770H		;[ROM OK] Statuszeile 1770H+2 = 'A' (ROM-Test bestanden), danach RAM-Test: 4000H-BFFFH mit 55H fuellen (LDIR), dann mit AAH/00H vergleichend gegenlesen (§4.3 'RAM: Muster 55H/AAH/00H ueber alle Baenke')
+0083  21 70 17      	LD HL,1770H		;[ROM OK] LD (1771H),'A' macht aus dem Namen 'ROM' den Namen 'RAM' (naechster Test) -- kein Pruefvermerk [LAUFZEIT 2026-09-28]; danach RAM-Test: 4000H-BFFFH mit 55H fuellen (LDIR), dann mit AAH/00H vergleichend gegenlesen (§4.3 'RAM: Muster 55H/AAH/00H ueber alle Baenke')
 0086  23            	INC HL
 0087  36 41         	LD (HL),41H
 0089  21 00 40      	LD HL,4000H
@@ -437,7 +437,7 @@ F2CE  CB 57         	BIT 2,A
 F2D0  CA F3 F3      	JP Z,LF3F3
 F2D3  C3 2A 00      	JP 002AH
 LF2D6:
-F2D6  31 00 F0      	LD SP,F000H		;[STATUSZEILEN-RAHMEN, laeuft als RAM-Spiegel] Zeichnet die 5-Spalten-Anzeige 'MROM RAM SIO KEY CTC' der Statuszeile (Design-Doc §4.3) mithilfe der Layout-Tabelle FCB1H-FCE6H (s. FC68H-Kommentar) -- Trennzeichen 48H wiederholt ueber die Zeilen, danach je Spalte ein Fuellwert aus FCF9H/FCFAH. Aufgerufen ueber F2F7H (DI; CALL sub_FC46; CALL sub_FC09; CALL sub_FC00) aus dem RAM-Testabschnitt heraus -- Detailsemantik der einzelnen Tabellenbytes (FCBBH/FCBDH/FCBFH/FCC0H...) noch nicht Byte-fuer-Byte zugeordnet, aber Routine und Datenquelle sind jetzt bekannt.
+F2D6  31 00 F0      	LD SP,F000H		;[DIAGNOSEMODUS, laeuft als RAM-Spiegel] Erreicht nur mit DEL (7FH) an der Tastatur (F1B7H). Zeichnet ein TESTBILD (nicht die Statuszeile, berichtigt 2026-09-28) mithilfe der Layout-Tabelle FCB1H-FCE6H (s. FC68H-Kommentar) -- Trennzeichen 48H wiederholt ueber die Zeilen, danach je Spalte ein Fuellwert aus FCF9H/FCFAH. Danach (F3B5H) 'ENTER: LADER / "#": ZYKL.' nach 1734H und weiter in die Tastenschleife F3C0H -- Detailsemantik der einzelnen Tabellenbytes (FCBBH/FCBDH/FCBFH/FCC0H...) noch nicht Byte-fuer-Byte zugeordnet, aber Routine und Datenquelle sind jetzt bekannt.
 F2D9  3E 8E         	LD A,8EH
 F2DB  D3 A8         	OUT (A8H),A
 F2DD  21 00 10      	LD HL,1000H
@@ -1598,7 +1598,7 @@ FC12  3A F8 FC      	LD A,(FCF8H)
 FC15  77            	LD (HL),A
 FC16  ED B0         	LDIR
 FC18  C9            	RET
-FC19  11 70 17      	LD DE,1770H		;sub_FC19: kopiert Text ab HL in die Statuszeile 1770H (3 Byte) + 1740H (10 Byte ab FC77H) -- die Init-Tabelle fuer 'MROM RAM SIO KEY CTC' liegt direkt danach im selben Helferblock (ab FC68H/FC77H)
+FC19  11 70 17      	LD DE,1770H		;sub_FC19: kopiert den Testnamen ab HL (3 Byte aus 'ROMRAMSIOKEYCTC', FC68H) nach 1770H und 'DIAGNOSTIC' (10 Byte ab FC77H) nach 1740H. Fehlerbuchstabe steht bei 1776H [LAUFZEIT 2026-09-28]
 FC1C  01 03 00      	LD BC,0003H
 FC1F  ED B0         	LDIR
 FC21  21 77 FC      	LD HL,FC77H
@@ -1643,7 +1643,7 @@ FC63  C9            	RET
 FC64  3C            	INC A		;[CTC-INTERRUPT-ISR, Ziel des Vektors bei FFF6H] INC A; EI; RETI -- die minimale Zaehl-ISR fuer den CTC-Interrupttest aus §4.3 ('CTC: ... jeweils Kanal 3 als Zeitgeber mit Interrupt').
 FC65  FB            	EI
 FC66  ED 4D         	RETI
-FC68  52            	LD D,D		;[TEXT-/TABELLENBLOCK FC68H-FCF7H -- geklaert 2026-09-28, war im Plan (§8, Etappe 0) noch als '[?]' offen] Reiner Datenbereich, vom Disassembler streckenweise als Fake-Code gezeigt (keine Verstaendnisluecke, nur die Grenze eines blinden Disassemblers -- s. Design-Doc §8). Fuenf Teile: (1) FC68H-FC76H Text 'ROMRAMSIOKEYCTC' -- die 5 Spaltenkoepfe der Statuszeile (sub_FC19 kopiert sie nach 1740H, s. dort); (2) FC77H-FC9DH Text 'DIAGNOSTIC ENTER: LADER  /  "#": ZYKL. ' -- die zweite Statuszeile; (3) FC9EH-FCA8H die CTC2-K2/SIO2B-Init-Tabelle von sub_FC46H (s. dort); (4) FCA9H-FCB0H die Bytes 1BH,5BH,32H,3BH,31H,79H = 'ESC [2;1y' (VT100-DECTST, Design-Doc §3.5) plus zwei Fuellbytes; (5) FCB1H-FCE6H eine Spaltenlayout-Tabelle (Breiten/Schrittweiten fuer die 5 Statuszeilen-Spalten ROM/RAM/SIO/KEY/CTC, inkl. des Trennzeichens 48H), gelesen vom noch nicht kommentierten Rahmen-Zeichenprogramm bei F2D6H (Selbsttest-Block, Aufruf ueber sub_FC46+sub_FC09+sub_FC00 ab F2F7H) -- Bedeutung der einzelnen Tabellenwerte im Detail offen, aber die Adresse und ihr Verbraucher sind jetzt bekannt, keine 'Fake-Code'-Verwechslung mehr; (6) FCE7H-FCF7H+ Init-Tabelle 'FCEFH' fuer SIO1-A/B + SIO2-A (V.24/IFSS, Design-Doc §4.3 'je 200H Muster AAH/55H'): ab FCEFH per Zeigerprotokoll WR3=C1H, WR4=45H ('x16, 1 Stop, UNGERADE Paritaet' -- exakt Design-Doc-Wert fuer IFSS), WR5=68H (exakt Design-Doc-Wert), Rest ausserhalb dieses Blocks.
+FC68  52            	LD D,D		;[TEXT-/TABELLENBLOCK FC68H-FCF7H -- geklaert 2026-09-28, war im Plan (§8, Etappe 0) noch als '[?]' offen] Reiner Datenbereich, vom Disassembler streckenweise als Fake-Code gezeigt (keine Verstaendnisluecke, nur die Grenze eines blinden Disassemblers -- s. Design-Doc §8). Fuenf Teile: (1) FC68H-FC76H Text 'ROMRAMSIOKEYCTC' -- die 5 Spaltenkoepfe der Statuszeile (sub_FC19 kopiert sie nach 1740H, s. dort); (2) FC77H-FC9DH Text 'DIAGNOSTIC ENTER: LADER  /  "#": ZYKL. ' -- die zweite Statuszeile; (3) FC9EH-FCA8H die CTC2-K2/SIO2B-Init-Tabelle von sub_FC46H (s. dort); (4) FCA9H-FCB0H die Bytes 1BH,5BH,32H,3BH,31H,79H = 'ESC [2;1y' (VT100-DECTST, Design-Doc §3.5) plus zwei Fuellbytes; (5) FCB1H-FCE6H eine Spaltenlayout-Tabelle (Breiten/Schrittweiten fuer die 5 Statuszeilen-Spalten ROM/RAM/SIO/KEY/CTC, inkl. des Trennzeichens 48H), gelesen vom noch nicht kommentierten Rahmen-Zeichenprogramm bei F2D6H (Selbsttest-Block, Aufruf ueber sub_FC46+sub_FC09+sub_FC00 ab F2F7H) -- Bedeutung der einzelnen Tabellenwerte im Detail offen, aber die Adresse und ihr Verbraucher sind jetzt bekannt, keine 'Fake-Code'-Verwechslung mehr; (6) FCE7H-FCF7H+ Init-Tabelle 'FCEFH' fuer SIO1-A/B + SIO2-A (V.24/IFSS, Design-Doc §4.3, zwei Runden AAH/55H): ab FCEFH per Zeigerprotokoll WR3=C1H, WR4=45H ('x16, 1 Stop, UNGERADE Paritaet' -- exakt Design-Doc-Wert fuer IFSS), WR5=68H (exakt Design-Doc-Wert), Rest ausserhalb dieses Blocks.
 FC69  4F            	LD C,A
 FC6A  4D            	LD C,L
 FC6B  52            	LD D,D
