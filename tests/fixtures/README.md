@@ -33,6 +33,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `cpa_cpa780_combo5zoll_noclock.img` | CP/A ohne Uhr, A: K5601 · **B: K5600.10** · **C: K5600.20** | `make_bootdisk` (Presets k5600_10_fmt1, k5600_20_fmt1) |
 | `cpa_cpa780_combo8zoll_noclock.img` | CP/A ohne Uhr, A: K5601 · **B: MF3200** · **C: K5602.10/MF6400** | `make_bootdisk` (Presets mf3200_fmt7, mf6400_fmt1) |
 | `cpa_cpa780_k5601_noclock-em256.img` | CP/A ohne Uhr, K5601, **@OS.COM mit `em256 equ 1`** (A5120.16, RAM-Floppy M: im EM256) | `Em256RamFloppy.*` |
+| `cpa_cpa780_k5601_noclock.img` + **`../cpm/em256adr.com`** | G1-Prüfprogramm (A5120.16) — wird im Test auf die Temp-Kopie geschrieben | `Em256Adr.*` |
 | `scpx17_cpa780_k5601.hfe` | SCPX 1526 V1.7, System im **16×256**-Datenformat | `ScpxIntegration.*`, `ScpxInit.*` |
 | `scpx17_5x1024_k5601_hardy.hfe` | SCPX 1526 V1.7, System im **5×1024**-Datenformat, mit `HARDY.COM` | `test_hardy` |
 | `udos_boot_scp.hfe` | UDOS 4.3, bootfähig (SCP-Laufwerkstyp) | `UdosIntegration.*`, `test_udos_format` |
@@ -155,3 +156,14 @@ am EM-Teil (`biosremc.mac`/`biosrem.mac` unverändert):
 `diskA equ 11580` (statt 10877, 8″), `uhrvar equ 0` (keine Uhrzeitabfrage),
 `kltbef: db 0` (statt `SUBM AUTOEXEC`).  Eingespielt mit
 `k1520disktool rm/put`.  Kaltstart am A5120 **ohne** EM meldet „RAM-Floppy ?? mit ??? kByte".
+
+## `cpm/em256adr.com`: G1-Prüfprogramm aus der CPA-Workbench
+
+Keine Diskette, sondern ein CP/A-Programm: `tools/16bitTest/build/em256adr.com` der
+CPA-Workbench (Quelle `tools/16bitTest/src/em256adr.mac`, Bau
+`python3 tools/16bitTest/build.py em256adr`; Stand Workbench `bedeb6f`).  Es misst am
+echten A5120.16 Portbasis und Attributspeicher des EM256 (doc/design/17_a5120_16.md §3 G1).
+`test_em256_adr` schreibt es mit `CpmFileSystem::write` auf eine `TempDisk` von
+`cpa_cpa780_k5601_noclock.img` und startet es — mit EM256 (beide `EM::A22Lesart`) und ohne.
+Ändert sich das Programm in der Workbench, die Datei hier ersetzen (der Pfad kommt als
+`EM256ADR_COM` aus `tests/integration/CMakeLists.txt`).

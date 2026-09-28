@@ -77,6 +77,7 @@ A5120Machine::A5120Machine(const Config& cfg)
     if (cfg.em != Config::Em::none) {
         EM::Config ec;
         ec.variante = cfg.em == Config::Em::em064 ? EM::Variante::EM064 : EM::Variante::EM256;
+        ec.lesart   = cfg.em_a22_lesart;
         em_ = std::make_unique<EM>(bus_, ec);
     }
 

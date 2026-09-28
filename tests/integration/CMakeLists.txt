@@ -38,3 +38,10 @@ k1520_add_test(disktool_bootdiskette SRC test_disktool_bootdiskette.cpp
 # (doc/design/17_a5120_16.md §3 S1).
 k1520_add_test(em256_ramfloppy SRC test_em256_ramfloppy.cpp LIBS ${_libs} k1520_fs
                                LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# A5120.16, G1: Prüfprogramm em256adr.com (CPA-Workbench) gegen das EM256 — Portbasis,
+# Attributspeicher, Lesart der Leseadresse (doc/design/17_a5120_16.md §3 G1).
+k1520_add_test(em256_adr SRC test_em256_adr.cpp LIBS ${_libs} k1520_fs
+                         LABELS "${_lbl}" TIMEOUT 180
+                         DEFS LOG_LEVEL=2
+                              "EM256ADR_COM=\"${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/em256adr.com\"")

@@ -43,6 +43,9 @@ public:
         /// `none`: ohne EM ist die Maschine bitgleich der A5120 von vorher.
         enum class Em { none, em064, em256 };
         Em em = Em::none;
+        /// Leseadresse des Attributspeichers A22 (EM::A22Lesart).  Vorgabe = belegte
+        /// Lesart (Scan 9005/2); die Handbuchlesart nur als Gegenprobe (G1-Test).
+        EM::A22Lesart em_a22_lesart = EM::A22Lesart::ZyklusAdresse;
     };
 
     /** @brief Construct with the default configuration (4× 5,25"-MFM, K5601). */
