@@ -26,39 +26,52 @@
  */
 
 #include "core/cards/k7024/k7024.h"
-#include "core/cards/k7024/chargen_zg1.h"      // obere Zeilen 0–7  (EPROM A103 / v171)
-#include "core/cards/k7024/chargen_zg2.h"      // untere Zeilen 8–11 (EPROM A123 / v172)
+#include "core/cards/k7024/chargen_zg1.h"      // obere Zeilen 0–7  (EPROM A103 / v171, A5120)
+#include "core/cards/k7024/chargen_zg2.h"      // untere Zeilen 8–11 (EPROM A123 / v172, A5120)
+#include "core/cards/k7024/chargen_k8915_zg1.h" // obere Zeilen 0–7  (EPROM Y411, K8915 012-6820)
+#include "core/cards/k7024/chargen_k8915_zg2.h" // untere Zeilen 8–11 (EPROM Y412, K8915 012-6820)
 #include <algorithm>
 #include <cstring>
+
+K7024::A5120Config K7024::A5120Config::forK8915()
+{
+    A5120Config cfg;
+    cfg.vram_base_hi     = 0x10;
+    cfg.chargen_rows0_7  = CHARGEN_K8915_ZG1_LATIN;
+    cfg.chargen_rows8_11 = CHARGEN_K8915_ZG2_LATIN;
+    return cfg;
+}
 
 // ─── Character-generator lookup ───────────────────────────────────────────────
 
 /**
- * @brief Zeichengenerator-Lookup für den lateinischen Zeichensatz (A5120 v171/v172).
+ * @brief Zeichengenerator-Lookup für den konfigurierten lateinischen Zeichensatz.
  *
  * Zweistufiger Zeichengenerator, roh nach 7-Bit-Code adressiert (Design-Doc §4:
  * `EPROM-Adresse = (code & 0x7F) << 3 | zeile`):
- *   - Pixelzeilen 0–7 : obere EPROM-Ebene @ref CHARGEN_ZG1_LATIN (v171, /LP3 = 0)
- *   - Pixelzeilen 8–11: untere Ebene @ref CHARGEN_ZG2_LATIN (v172, /LP3 = 1; deren
- *                       Zeilen 0–3, liefert Descender g/j/p/q/y + Punkt/Komma)
+ *   - Pixelzeilen 0–7 : obere EPROM-Ebene cfg_.chargen_rows0_7
+ *   - Pixelzeilen 8–11: untere Ebene cfg_.chargen_rows8_11 (deren Zeilen 0–3, liefert
+ *                       Descender g/j/p/q/y + Punkt/Komma)
  *
- * v171/v172 sind der **vollständige** A5120-Satz mit echten Klein- **und**
- * Großbuchstaben (Codes 0x20–0x7F direkt programmiert) — daher kein Versal-Fold.
- * Steuerzeichen < 0x20 bleiben leer.
+ * Standardmässig (chargen_rows0_7/8_11 == nullptr) der A5120-Satz v171/v172 — der
+ * **vollständige** Satz mit echten Klein- **und** Grossbuchstaben (Codes 0x20–0x7F
+ * direkt programmiert), daher kein Versal-Fold. Andere Karten (K8915 012-6820) haben
+ * eine eigene EPROM-Bestückung mit derselben Adressierung, siehe
+ * doc/design/16_k8915.md §3.3. Steuerzeichen < 0x20 bleiben leer.
  *
  * @param charCode  Zeichencode (0x00–0x7F)
  * @param pixelRow  Pixelzeile in der Zelle (0–11)
  * @return 8-Bit-Pixelzeile (Bit 7 = linkestes Pixel)
  */
-static inline uint8_t chargenLookupLatin(uint8_t charCode, int pixelRow)
+uint8_t K7024::chargenLookupLatin(uint8_t charCode, int pixelRow) const
 {
     if (pixelRow >= 12) return 0x00;
     uint8_t code = charCode & 0x7F;
     if (code < 0x20) return 0x00;
 
     if (pixelRow < 8)
-        return CHARGEN_ZG1_LATIN[code * 8 + pixelRow];
-    return CHARGEN_ZG2_LATIN[code * 8 + (pixelRow - 8)];  // Zeilen 8–11 ← v172 0–3
+        return cfg_.chargen_rows0_7[code * 8 + pixelRow];
+    return cfg_.chargen_rows8_11[code * 8 + (pixelRow - 8)];
 }
 
 // ─── K7024 implementation ─────────────────────────────────────────────────────
@@ -76,6 +89,9 @@ static inline uint8_t chargenLookupLatin(uint8_t charCode, int pixelRow)
 K7024::K7024(K1520Bus& bus, const A5120Config& cfg)
     : bus_(bus), cfg_(cfg)
 {
+    if (!cfg_.chargen_rows0_7)  cfg_.chargen_rows0_7  = CHARGEN_ZG1_LATIN;
+    if (!cfg_.chargen_rows8_11) cfg_.chargen_rows8_11 = CHARGEN_ZG2_LATIN;
+
     // Real DRAM powers on to an indeterminate but typically 0xFF state.
     // The boot ROM relies on this: the Z80 stack starts at 0xFFFF (in K7024
     // VRAM), and RET M at ROM[0x0016] pops [0xFFFF] as PCL.  With 0xFF the

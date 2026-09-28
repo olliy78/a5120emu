@@ -582,3 +582,73 @@ TEST_F(K7024Test, Charset_DescendersUseLowerRows)
     EXPECT_EQ(a[10], 0x00) << "'A' sollte in Zeile 10 leer sein";
     EXPECT_EQ(a[11], 0x00) << "'A' sollte in Zeile 11 leer sein";
 }
+
+// ─── 11. K8915-Konfiguration: eigener Zeichengenerator (012-6820) ────────────
+//
+// Der K8915 nutzt dieselbe K7024-Karte, aber ein anderes VRAM-Fenster (0x1000
+// statt 0xF800) und eine eigene EPROM-Bestückung (Y411/Y412 statt v171/v172;
+// A10 fest auf Masse ⇒ nur die lateinische Hälfte erreichbar). Siehe
+// doc/design/16_k8915.md §3.3.
+
+/**
+ * @test K7024, ForK8915_SetsVramBaseAndOwnCharset
+ * @brief K7024::A5120Config::forK8915() setzt vram_base_hi=0x10 und einen von A5120 abweichenden Zeichensatz.
+ * @par Pass criterion  vram_base_hi == 0x10; Glyphe '$' unterscheidet sich von der A5120-Bitmap in
+ *   mindestens einer Pixelzeile (A5120 v171/v172 kodiert '$' anders als das Y411/Y412-ROM).
+ */
+TEST(K7024, ForK8915_SetsVramBaseAndOwnCharset)
+{
+    K7024::A5120Config cfg = K7024::A5120Config::forK8915();
+    EXPECT_EQ(cfg.vram_base_hi, 0x10);
+    ASSERT_NE(cfg.chargen_rows0_7,  nullptr);
+    ASSERT_NE(cfg.chargen_rows8_11, nullptr);
+
+    K1520Bus bus;
+    K7024    screen(bus, cfg);
+
+    uint8_t got[12];
+    screen.vramWrite(0, 0, 0x24);  // '$'
+    glyphBitmap(screen.getFramebuffer(), 0, 0, got);
+
+    // Golden-Bitmap aus doc/EPROMS/K8915/k8915_k7024_y411.bin + _y412.bin (roh
+    // ausgelesen, nicht aus der Klartext-Tabelle abgetippt).
+    static const uint8_t kGlyphK8915Dollar[12] =
+        { 0x00,0x10,0x7E,0x90,0x90,0x7C,0x12,0x12,0xFC,0x10,0x00,0x00 };
+    for (int pr = 0; pr < 12; ++pr)
+        EXPECT_EQ(got[pr], kGlyphK8915Dollar[pr])
+            << "K8915-Glyph '$' Pixelzeile " << pr << " weicht ab";
+
+    // Gegenprobe: dieselbe Zelle mit dem A5120-Satz ergibt eine andere Bitmap
+    // (A5120 v171/v172 hat bei 0x24 das Waehrungszeichen '¤', nicht '$').
+    K1520Bus a5120_bus;
+    K7024    a5120_screen(a5120_bus);
+    uint8_t a5120_got[12];
+    a5120_screen.vramWrite(0, 0, 0x24);
+    glyphBitmap(a5120_screen.getFramebuffer(), 0, 0, a5120_got);
+    bool differs = false;
+    for (int pr = 0; pr < 12; ++pr)
+        if (a5120_got[pr] != got[pr]) differs = true;
+    EXPECT_TRUE(differs) << "K8915- und A5120-Zeichensatz rendern 0x24 identisch";
+}
+
+/**
+ * @test K7024, DefaultConfig_StillUsesA5120Charset
+ * @brief Ohne cfg.chargen_rows0_7/8_11 (nullptr) faellt K7024 weiter auf den eingebauten A5120-Satz zurueck.
+ * @details Regressionswaechter fuer den Umbau auf konfigurierbare Zeichengeneratoren
+ *   (doc/design/16_k8915.md §3.3) — der Default-Konstruktorpfad darf sich nicht aendern.
+ * @par Pass criterion  Glyph 'A' mit A5120Config{} == kGlyphA (bestehender Golden-Wert).
+ */
+TEST(K7024, DefaultConfig_StillUsesA5120Charset)
+{
+    K1520Bus bus;
+    K7024::A5120Config cfg;
+    ASSERT_EQ(cfg.chargen_rows0_7,  nullptr);
+    ASSERT_EQ(cfg.chargen_rows8_11, nullptr);
+    K7024 screen(bus, cfg);
+
+    uint8_t got[12];
+    screen.vramWrite(0, 0, 0x41);
+    glyphBitmap(screen.getFramebuffer(), 0, 0, got);
+    for (int pr = 0; pr < 12; ++pr)
+        EXPECT_EQ(got[pr], kGlyphA[pr]) << "Pixelzeile " << pr << " weicht ab";
+}
