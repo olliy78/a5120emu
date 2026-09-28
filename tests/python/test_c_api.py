@@ -84,6 +84,27 @@ def test_create_and_destroy_roundtrip():
     _lib.k1520_destroy(K1520Handle(handle))
 
 
+def test_unbuilt_machine_type_is_refused_with_a_reason():
+    """Ein vorgesehener, aber noch nicht gebauter Maschinentyp (K8915 = 2) gibt NULL
+    zurück — mit einem Grund in `k1520_last_init_error`, nicht still.
+
+    Die C-ABI wählt die Maschine über `K1520Machine` (core/machines/machine.h,
+    doc/design/16_k8915.md §7.1); fällt dieser Fall weg, sobald der K8915 steht,
+    wird aus diesem Wächter der Erzeugungstest der zweiten Maschine.
+    """
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    assert not _lib.k1520_create(2)
+    grund = _lib.k1520_last_init_error().decode()
+    assert "nicht implementiert" in grund, grund
+
+    # Der Grund darf einen folgenden, erfolgreichen Aufruf nicht überdauern.
+    handle = _lib.k1520_create(0)
+    assert handle
+    assert _lib.k1520_last_init_error() == b""
+    _lib.k1520_destroy(K1520Handle(handle))
+
+
 def test_framebuffer_geometry_matches_pointer_size(emulator):
     """`k1520_fb_width/height` und der Zeigerinhalt passen zusammen.
 

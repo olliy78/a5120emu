@@ -1,10 +1,12 @@
 #include "k1520_api.h"
 #include "core/api/k1520_sync_internal.h"
 #include "core/machines/a5120/a5120.h"
+#include "core/machines/machine.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/logger.h"
 #include <cstring>
 #include <memory>
+#include <string>
 #include <ctime>
 #include <cstdio>
 #include <filesystem>
@@ -12,8 +14,11 @@
 
 #define VERSION "0.1.0"
 
-static A5120Machine* toA5120(K1520Handle h) {
-    return static_cast<A5120Machine*>(h);
+// Das Handle zeigt IMMER auf die Basisklasse — erzeugt wird es in makeMachine()
+// ausdrücklich als K1520Machine*, damit der Rückweg über void* kein Zeigerversatz
+// einer Mehrfachvererbung verfehlen kann.
+static K1520Machine* toMachine(K1520Handle h) {
+    return static_cast<K1520Machine*>(h);
 }
 
 // Grund eines fehlgeschlagenen k1520_create*.  Ein Startabbruch (z. B. fehlender
@@ -52,37 +57,30 @@ static void setup_logging() {
 extern "C" {
 
 K1520Handle k1520_create(K1520MachineType type) {
-    if (type != K1520_MACHINE_A5120) return nullptr;  // only A5120 for now
-    
-    setup_logging();
-    
-    try {
-        g_init_error.clear();
-        return new A5120Machine();
-    } catch (const std::exception& e) {
-        g_init_error = e.what();
-        std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
-        return nullptr;
-    } catch (...) {
-        g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
-        return nullptr;
-    }
+    return k1520_create_configured(type, nullptr, nullptr, nullptr, nullptr);
 }
 
 K1520Handle k1520_create_configured(K1520MachineType type,
                                     const char* d0, const char* d1,
                                     const char* d2, const char* d3) {
-    if (type != K1520_MACHINE_A5120) return nullptr;  // only A5120 for now
+    g_init_error.clear();
+    if (type != K1520_MACHINE_A5120) {
+        // K8915 (doc/design/16_k8915.md) und PRG710 sind im Typ vorgesehen, aber
+        // noch nicht gebaut.  Kein stilles NULL: die Oberfläche soll sagen können, warum.
+        g_init_error = "Maschinentyp " + std::to_string(static_cast<int>(type)) +
+                       " ist noch nicht implementiert (nur A5120)";
+        return nullptr;
+    }
 
     setup_logging();
 
     try {
-        g_init_error.clear();
         A5120Machine::Config cfg;                      // Default = 4× K5601
         const char* names[4] = { d0, d1, d2, d3 };
         for (int i = 0; i < 4; ++i)
             if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
-        return new A5120Machine(cfg);
+        K1520Machine* m = new A5120Machine(cfg);
+        return m;
     } catch (const std::exception& e) {
         g_init_error = e.what();
         std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
@@ -98,40 +96,40 @@ const char* k1520_last_init_error(void) {
 }
 
 void k1520_destroy(K1520Handle h) {
-    delete toA5120(h);
+    delete toMachine(h);
 }
 
-void k1520_reset(K1520Handle h)     { toA5120(h)->reset(); }
-void k1520_power_on(K1520Handle h)  { toA5120(h)->powerOn(); }
+void k1520_reset(K1520Handle h)     { toMachine(h)->reset(); }
+void k1520_power_on(K1520Handle h)  { toMachine(h)->powerOn(); }
 
 int  k1520_run(K1520Handle h, int max_cycles) {
-    return toA5120(h)->run(max_cycles);
+    return toMachine(h)->run(max_cycles);
 }
 
-void k1520_stop(K1520Handle h) { toA5120(h)->stop(); }
+void k1520_stop(K1520Handle h) { toMachine(h)->stop(); }
 
 const uint8_t* k1520_framebuffer(K1520Handle h) {
-    return toA5120(h)->framebuffer();
+    return toMachine(h)->framebuffer();
 }
 
-int  k1520_fb_width(K1520Handle h)  { return toA5120(h)->fbWidth(); }
-int  k1520_fb_height(K1520Handle h) { return toA5120(h)->fbHeight(); }
+int  k1520_fb_width(K1520Handle h)  { return toMachine(h)->fbWidth(); }
+int  k1520_fb_height(K1520Handle h) { return toMachine(h)->fbHeight(); }
 
 bool k1520_fb_dirty(K1520Handle h) {
-    return toA5120(h)->fbDirty();
+    return toMachine(h)->fbDirty();
 }
 
 void k1520_fb_clear_dirty(K1520Handle h) {
-    toA5120(h)->fbClearDirty();
+    toMachine(h)->fbClearDirty();
 }
 
 void k1520_set_console_mode(K1520Handle h, bool enable) {
-    toA5120(h)->setConsoleMode(enable);
+    toMachine(h)->setConsoleMode(enable);
 }
 
 bool k1520_console_poll(K1520Handle h, int* x, int* y, char* ch) {
     int cx, cy; char c;
-    if (toA5120(h)->consolePoll(cx, cy, c)) {
+    if (toMachine(h)->consolePoll(cx, cy, c)) {
         if (x)  *x  = cx;
         if (y)  *y  = cy;
         if (ch) *ch = c;
@@ -141,11 +139,11 @@ bool k1520_console_poll(K1520Handle h, int* x, int* y, char* ch) {
 }
 
 void k1520_key_press(K1520Handle h, uint32_t kc, bool shift, bool ctrl) {
-    toA5120(h)->keyPress(kc, shift, ctrl);
+    toMachine(h)->keyPress(kc, shift, ctrl);
 }
 
 void k1520_key_release(K1520Handle h, uint32_t kc) {
-    toA5120(h)->keyRelease(kc);
+    toMachine(h)->keyRelease(kc);
 }
 
 uint8_t k1520_translate_key(uint32_t keycode, bool shift, bool ctrl) {
@@ -153,19 +151,19 @@ uint8_t k1520_translate_key(uint32_t keycode, bool shift, bool ctrl) {
 }
 
 uint32_t k1520_keyboard_leds(K1520Handle h) {
-    return toA5120(h)->keyboardLeds();
+    return toMachine(h)->keyboardLeds();
 }
 
 void k1520_console_key(K1520Handle h, char c) {
     // Inject ASCII char as if typed (keycode = ASCII value, no modifiers)
-    toA5120(h)->keyPress(static_cast<uint32_t>(c), false, false);
+    toMachine(h)->keyPress(static_cast<uint32_t>(c), false, false);
 }
 
 bool k1520_mount_disk(K1520Handle h, int drive,
                       const char* image_path, const char* format_name,
                       bool write_protect) {
     if (!image_path || !format_name) return false;
-    return toA5120(h)->mountDisk(drive, image_path, format_name, write_protect);
+    return toMachine(h)->mountDisk(drive, image_path, format_name, write_protect);
 }
 
 bool k1520_create_disk(K1520Handle h, int drive,
@@ -173,41 +171,41 @@ bool k1520_create_disk(K1520Handle h, int drive,
                        bool write_protect) {
     if (!image_path) return false;
     // NULL/"" format_name → genuinely blank, unformatted disk in drive geometry.
-    return toA5120(h)->createDisk(drive, image_path,
+    return toMachine(h)->createDisk(drive, image_path,
                                   format_name ? format_name : "", write_protect);
 }
 
 bool k1520_save_disk_as(K1520Handle h, int drive,
                         const char* image_path, const char* format_name) {
     if (!image_path) return false;
-    return toA5120(h)->saveDiskAs(drive, image_path, format_name ? format_name : "");
+    return toMachine(h)->saveDiskAs(drive, image_path, format_name ? format_name : "");
 }
 
 bool k1520_disk_raw_compatible(K1520Handle h, int drive) {
-    return toA5120(h)->isDiskRawCompatible(drive);
+    return toMachine(h)->isDiskRawCompatible(drive);
 }
 
 const char* k1520_disk_path(K1520Handle h, int drive) {
     static thread_local std::string buf;
-    buf = toA5120(h)->diskPath(drive);
+    buf = toMachine(h)->diskPath(drive);
     return buf.c_str();
 }
 
 const char* k1520_disk_container(K1520Handle h, int drive) {
     static thread_local std::string buf;
-    buf = toA5120(h)->diskContainer(drive);
+    buf = toMachine(h)->diskContainer(drive);
     return buf.c_str();
 }
 
 const char* k1520_disk_detected_format(K1520Handle h, int drive) {
     static thread_local std::string buf;
-    buf = toA5120(h)->detectedFormatName(drive);
+    buf = toMachine(h)->detectedFormatName(drive);
     return buf.c_str();
 }
 
 const char* k1520_disk_notice(K1520Handle h, int drive) {
     static thread_local std::string buf;
-    buf = toA5120(h)->diskNotice(drive);
+    buf = toMachine(h)->diskNotice(drive);
     return buf.c_str();
 }
 
@@ -217,24 +215,24 @@ bool k1520_mount_physical(K1520Handle h, int drive, K1520Sync sync, bool write_p
     // (doc/design/14_physische_diskette.md §10).
     std::unique_ptr<DiskImage> abbild = k1520s_take_image(sync);
     if (!abbild) return false;
-    return toA5120(h)->mountDiskImage(drive, std::move(abbild), write_protect);
+    return toMachine(h)->mountDiskImage(drive, std::move(abbild), write_protect);
 }
 
 bool k1520_flush_disks(K1520Handle h) {
-    return toA5120(h)->flushDisks();
+    return toMachine(h)->flushDisks();
 }
 
 bool k1520_unmount_disk(K1520Handle h, int drive) {
-    return toA5120(h)->unmountDisk(drive);
+    return toMachine(h)->unmountDisk(drive);
 }
 
 int k1520_drive_format_count(K1520Handle h, int drive) {
-    return static_cast<int>(toA5120(h)->compatibleFormats(drive).size());
+    return static_cast<int>(toMachine(h)->compatibleFormats(drive).size());
 }
 
 const char* k1520_drive_format_name(K1520Handle h, int drive, int index) {
     static thread_local std::string buf;
-    const auto v = toA5120(h)->compatibleFormats(drive);
+    const auto v = toMachine(h)->compatibleFormats(drive);
     if (index < 0 || index >= static_cast<int>(v.size())) return nullptr;
     buf = v[static_cast<size_t>(index)];
     return buf.c_str();
@@ -242,20 +240,20 @@ const char* k1520_drive_format_name(K1520Handle h, int drive, int index) {
 
 const char* k1520_drive_default_format(K1520Handle h, int drive) {
     static thread_local std::string buf;
-    buf = toA5120(h)->defaultFormatName(drive);
+    buf = toMachine(h)->defaultFormatName(drive);
     return buf.c_str();
 }
 
 const char* k1520_format_description(K1520Handle h, const char* name) {
     static thread_local std::string buf;
-    buf = name ? toA5120(h)->formatDescription(name) : std::string();
+    buf = name ? toMachine(h)->formatDescription(name) : std::string();
     return buf.c_str();
 }
 
 const char* k1520_formats_source(K1520Handle h) {
     static thread_local std::string buf;
     buf.clear();
-    for (const auto& s : toA5120(h)->formatCatalog().sources()) {
+    for (const auto& s : toMachine(h)->formatCatalog().sources()) {
         if (!buf.empty()) buf += ":";
         buf += s;
     }
@@ -263,32 +261,32 @@ const char* k1520_formats_source(K1520Handle h) {
 }
 
 bool k1520_disk_active(K1520Handle h, int drive) {
-    return toA5120(h)->isDiskActive(drive);
+    return toMachine(h)->isDiskActive(drive);
 }
 
 bool k1520_disk_write_protected(K1520Handle h, int drive) {
-    return toA5120(h)->isDiskWriteProtected(drive);
+    return toMachine(h)->isDiskWriteProtected(drive);
 }
 
 bool k1520_disk_led(K1520Handle h, int drive) {
-    return toA5120(h)->isDiskLedOn(drive);
+    return toMachine(h)->isDiskLedOn(drive);
 }
 
 bool k1520_disk_motor(K1520Handle h, int drive) {
-    return toA5120(h)->isMotorOn(drive);
+    return toMachine(h)->isMotorOn(drive);
 }
 
 bool k1520_head_loaded(K1520Handle h) {
-    return toA5120(h)->isHeadLoaded();
+    return toMachine(h)->isHeadLoaded();
 }
 
 void k1520_set_write_protect(K1520Handle h, int drive, bool wp) {
-    toA5120(h)->setDiskWriteProtect(drive, wp);
+    toMachine(h)->setDiskWriteProtect(drive, wp);
 }
 
 void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
                               K1520SerialCallback cb, void* ctx) {
-    auto m = toA5120(h);
+    auto m = toMachine(h);
     if (port == K1520_SERIAL_DFU) {
         m->setDFUECallback([cb, ctx](uint8_t b){ if (cb) cb(ctx, b); });
     }
@@ -297,25 +295,25 @@ void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
 
 void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte) {
     if (port == K1520_SERIAL_DFU)
-        toA5120(h)->dfueSend(byte);
+        toMachine(h)->dfueSend(byte);
 }
 
 uint8_t k1520_mem_read(K1520Handle h, uint16_t addr) {
     // Direct bus access for debugging (not thread-safe, call from run thread).
-    return toA5120(h)->memReadDebug(addr);
+    return toMachine(h)->memReadDebug(addr);
 }
 
 void k1520_mem_write(K1520Handle h, uint16_t addr, uint8_t data) {
-    toA5120(h)->memWriteDebug(addr, data);
+    toMachine(h)->memWriteDebug(addr, data);
 }
 
 uint8_t k1520_io_read(K1520Handle h, uint8_t port) {
-    return toA5120(h)->ioReadDebug(port);
+    return toMachine(h)->ioReadDebug(port);
 }
 
 const char* k1520_last_error(K1520Handle h) {
     static thread_local std::string buf;
-    buf = toA5120(h)->lastError();
+    buf = toMachine(h)->lastError();
     return buf.c_str();
 }
 
