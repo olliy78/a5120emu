@@ -1,6 +1,6 @@
-// Unit-Tests der U8001/U8002-Befehlstabelle (tools/z8000/z8k_table.h, z8k_codec.h):
+// Unit-Tests der U8001/U8002-Befehlstabelle (core/primitives/z8000/z8k_table.h, z8k_codec.h):
 // Aufbau, Eindeutigkeit, Takte/Merkmale gegen das Zilog-Handbuch (Anhang C).
-#include "tools/z8000/z8k_codec.h"
+#include "core/primitives/z8000/z8k_codec.h"
 
 #include <gtest/gtest.h>
 

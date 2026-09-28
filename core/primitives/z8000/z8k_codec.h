@@ -16,7 +16,7 @@
  * @license MIT
  */
 #pragma once
-#include "tools/z8000/z8k_table.h"
+#include "core/primitives/z8000/z8k_table.h"
 
 #include <cstdint>
 #include <string>

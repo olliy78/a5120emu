@@ -23,7 +23,7 @@
  * @license MIT
  */
 #pragma once
-#include "tools/z8000/z8k_codec.h"
+#include "core/primitives/z8000/z8k_codec.h"
 
 #include <algorithm>
 #include <cctype>
