@@ -204,6 +204,8 @@ TEST(Z80SIO, InterruptVector_FromWR2) {
     // Write WR2 on channel B (port 3 = Ch B control)
     sio.ioWrite(3, 0x02); // WR0: select WR2
     sio.ioWrite(3, 0x60); // WR2 = 0x60
+    sio.ioWrite(3, 0x01); // WR0: select WR1 (Ch B)
+    sio.ioWrite(3, 0x04); // WR1 Bit2 = status affects vector
 
     // Enable RX int on channel A
     sio.ioWrite(1, 0x01);
@@ -230,7 +232,7 @@ TEST(Z80SIO, Priority_ChA_OverChB) {
 
     // Enable RX int on both channels
     sio.ioWrite(1, 0x01); sio.ioWrite(1, 0x08); // Ch A WR1
-    sio.ioWrite(3, 0x01); sio.ioWrite(3, 0x08); // Ch B WR1
+    sio.ioWrite(3, 0x01); sio.ioWrite(3, 0x0C); // Ch B WR1 (+ status affects vector)
 
     // Set WR2 (B ctrl port)
     sio.ioWrite(3, 0x02); // select WR2
@@ -244,6 +246,43 @@ TEST(Z80SIO, Priority_ChA_OverChB) {
     // Vector should reflect Ch A (higher priority)
     uint8_t vec = sio.getVector();
     EXPECT_EQ(vec & 0x0E, 0x0C); // Ch A Rx = 110 in bits[3:1]
+}
+
+/**
+ * @test Z80SIO/StatusAffectsVector_ZilogKodierung
+ * @brief Mit WR1 Bit2 (Kanal B) ersetzen die Bits 3…1 die Quelle nach Zilog:
+ *        B-Tx 000, B-Ext 001, B-Rx 010, A-Tx 100, A-Ext 101, A-Rx 110.  Das BIOS des
+ *        K8915 (SIO2-B, WR1 = 17H, WR2 = D0H) erwartet seine Tx-Routine bei D0H und den
+ *        Empfang bei D4H (doc/design/16_k8915.md §4.4, AP-E3).
+ */
+TEST(Z80SIO, StatusAffectsVector_ZilogKodierung) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(3, 0x02); sio.ioWrite(3, 0xD0);   // WR2 = D0H
+    sio.ioWrite(3, 0x01); sio.ioWrite(3, 0x17);   // Ch B WR1 = 17H (Ext, Tx, SAV, Rx alle)
+
+    sio.channelB().rxByte(0x1E);
+    EXPECT_EQ(sio.getVector(), 0xD4) << "Kanal B Empfang";
+    sio.onRETI();
+    sio.setIEI(true);
+
+    sio.ioWrite(2, 0x41);                          // Senden …
+    sio.channelB().txGet();                        // … Puffer geleert → Tx-Interrupt
+    ASSERT_TRUE(sio.hasInterrupt());
+    EXPECT_EQ(sio.getVector(), 0xD0) << "Kanal B Tx-Puffer leer";
+}
+
+/**
+ * @test Z80SIO/OhneStatusAffectsVector_BleibtDerVektor
+ * @brief Ohne WR1 Bit2 liefert die SIO den Vektor aus WR2 unverändert.
+ */
+TEST(Z80SIO, OhneStatusAffectsVector_BleibtDerVektor) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(3, 0x02); sio.ioWrite(3, 0x60);
+    sio.ioWrite(1, 0x01); sio.ioWrite(1, 0x08);   // Ch A: Rx-Interrupt, kein SAV
+    sio.channelA().rxByte(0x01);
+    EXPECT_EQ(sio.getVector(), 0x60);
 }
 
 // ─── IEI/IEO pass-through ────────────────────────────────────────────────────

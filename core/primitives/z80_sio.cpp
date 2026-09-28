@@ -333,44 +333,52 @@ void Z80SIO::setIEI(bool iei) {
 uint8_t Z80SIO::getVector() const {
     if (!iei_) return 0xFF;
 
-    // Base vector from WR2 of channel B
-    uint8_t vec = ch_b_.wr[2];
+    // Basisvektor aus WR2 von Kanal B.  Mit „status affects vector“ (WR1 Bit2 von
+    // Kanal B) ersetzt die SIO die Bits 3…1 durch die Quelle (Zilog Z80 SIO, WR1/WR2;
+    // U856 gleich):  B: Tx 000, Ext/Status 001, Rx 010, Sonderfall 011 —
+    //                A: Tx 100, Ext/Status 101, Rx 110, Sonderfall 111.
+    // Ohne das Bit bleibt der Vektor unverändert.  (Bis 2026-09-28 waren A-Ext/Status
+    // und B-Tx vertauscht (000/101) und das Bit wurde nicht beachtet; das BIOS des
+    // K8915 legt seine Tx-Routine auf D0H und lief dadurch in die Leere, AP-E3.)
+    const uint8_t basis = ch_b_.wr[2];
+    const bool    sav   = ch_b_.status_affects_vector;
+    auto vektor = [&](uint8_t v321) -> uint8_t {
+        return sav ? static_cast<uint8_t>((basis & 0xF1) | (v321 << 1)) : basis;
+    };
 
-    // Determine which interrupt is active (A > B, Rx > Tx > Ext)
-    // Check IEI and IUS for proper daisy chain handling
-    // Bits [3:1] of vector encode interrupt source per Z80 SIO spec
+    // Rangfolge innerhalb der SIO: A vor B, Rx vor Tx vor Ext/Status.
     if (ch_a_.iei && ch_a_.irq_rx && !ch_a_.ius) {
         ch_a_.irq_rx = false;
         ch_a_.ius = true;
-        return (vec & 0xF1) | 0x0C;  // 110 = Ch A Rx
+        return vektor(0b110);
     }
     if (ch_a_.iei && ch_a_.irq_tx && !ch_a_.ius) {
         ch_a_.irq_tx = false;
         ch_a_.ius = true;
-        return (vec & 0xF1) | 0x08;  // 100 = Ch A Tx
+        return vektor(0b100);
     }
     if (ch_a_.iei && ch_a_.irq_ext && !ch_a_.ius) {
         ch_a_.irq_ext = false;
         ch_a_.ius = true;
-        return (vec & 0xF1) | 0x00;  // 000 = Ch A Ext/Status
+        return vektor(0b101);
     }
     if (ch_b_.iei && ch_b_.irq_rx && !ch_b_.ius) {
         ch_b_.irq_rx = false;
         ch_b_.ius = true;
-        return (vec & 0xF1) | 0x04;  // 010 = Ch B Rx
+        return vektor(0b010);
     }
     if (ch_b_.iei && ch_b_.irq_tx && !ch_b_.ius) {
         ch_b_.irq_tx = false;
         ch_b_.ius = true;
-        return (vec & 0xF1) | 0x0A;  // 101 = Ch B Tx (spec)
+        return vektor(0b000);
     }
     if (ch_b_.iei && ch_b_.irq_ext && !ch_b_.ius) {
         ch_b_.irq_ext = false;
         ch_b_.ius = true;
-        return (vec & 0xF1) | 0x02;  // 001 = Ch B Ext/Status
+        return vektor(0b001);
     }
 
-    return vec;
+    return basis;
 }
 
 void Z80SIO::onRETI() {

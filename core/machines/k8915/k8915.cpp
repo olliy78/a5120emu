@@ -9,28 +9,43 @@
 
 K8915Machine::K8915Machine() : K8915Machine(Config{}) {}
 
+namespace {
+std::array<DriveProfile, 4> profile(const K8915Machine::Config& cfg) {
+    return { builtinDriveProfile(cfg.laufwerke[0]), builtinDriveProfile(cfg.laufwerke[1]),
+             builtinDriveProfile(cfg.laufwerke[2]), builtinDriveProfile(cfg.laufwerke[3]) };
+}
+}  // namespace
+
 K8915Machine::K8915Machine(const Config& cfg)
     : zre_(bus_)
     , ats_(cfg.pruefstecker ? K7028::Config::mitPruefstecker() : K7028::Config{})
     , screen_(bus_, K7024::A5120Config::forK8915())   // registriert VRAM 1000H–17FFH
+    , afs_(bus_, profile(cfg), CPU_HZ)
+    , lw_(afs_, profile(cfg))
 {
     zre_.attachToBus(bus_);
     ats_.attachToBus(bus_);
+    // K5122 062-8390 auf /WAIT gebrückt (am Gerät abgelesen, §3.4): keine ZVE2.
+    afs_.setSynchronisation(K5122::Synchronisation::Wait);
+    bus_.registerIO(&afs_, 0x10, 9);
     if (cfg.tastatur) kbd_.connect(ats_.sio2(), 1);   // sonst: Kabel gezogen
-    // Interruptkette nach der Platzfolge (§6.4 [?]): (K5122 →) ZRE-CTC → ATS.
-    bus_.setInterruptChain({&zre_, &ats_});
+    // Interruptkette nach der Platzfolge (§6.4 [?]): K5122 → ZRE-CTC → ATS.
+    bus_.setInterruptChain({&afs_, &zre_, &ats_});
     zre_.cpu().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };
 }
 
 void K8915Machine::resetHardware()
 {
     stop_.store(false);
+    afs_.flushDisks();       // das interne Abbild überlebt den Reset, die Datei folgt ihm
     zre_.reset();            // A8H := 00H, CTC, CPU
+    afs_.reset();            // K5122: PIOs, Marken-FF; Disketten und Kopfposition bleiben
     ats_.reset();            // SIOs, CTCs, Latch; die Tastatur hat eigenen Takt und Reset
     bus_.clearNMI();
     bus_.releaseINT();
     bus_.releaseWAIT();
     bus_.markIntDirty();
+    prev_afs_int_ = false;
     screen_.clearScreen();
 }
 
@@ -54,6 +69,12 @@ int K8915Machine::run(int max_cycles)
     int remaining = max_cycles;
     while (remaining > 0 && !stop_.load(std::memory_order_relaxed)) {
         k1520::logging::Logger::instance().update(total_cycles_, cpu.PC, 0);
+        // Index-Puls und Marken-FF der K5122 entstehen zeitgetrieben in update(), nicht
+        // bei einem Portzugriff — die Flanke muss die Kette neu bewerten lassen.
+        {
+            const bool fi = afs_.hasInterrupt();
+            if (fi != prev_afs_int_) { bus_.markIntDirty(); prev_afs_int_ = fi; }
+        }
         bus_.updateInterruptChain();
 
         if (bus_.isINT() && cpu.IFF1) {
@@ -65,16 +86,24 @@ int K8915Machine::run(int max_cycles)
             bus_.clearNMI();
         }
 
-        const int used = cpu.step();
+        int used = cpu.step();
         if (used == 0 && stop_.load(std::memory_order_relaxed)) break;   // Debugger-Halt
+        // /WAIT der K5122: die CPU stand, bis das Byte unter dem Kopf war — die Zeit
+        // vergeht für alle anderen Bausteine mit (Zeitgeber, SIO, Index).
+        if (const int w = bus_.takeWaitCycles(); w > 0) {
+            used += w;
+            cpu.cycles += static_cast<uint64_t>(w);
+        }
         remaining     -= used;
         total_cycles_ += used;
 
+        afs_.update(used);
         bool dirty = zre_.clockTick(used);
         dirty |= ats_.clockTick(used);
         dirty |= ats_.service(total_cycles_);
         dirty |= kbd_.service(total_cycles_);
         if (dirty) bus_.markIntDirty();
     }
+    lw_.autoFlush(total_cycles_);
     return max_cycles - remaining;
 }

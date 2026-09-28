@@ -62,7 +62,10 @@ uint8_t K5122::ioRead(uint8_t port) {
         LOG_DEBUG("K5122", "CTRL PIO read  port=0x%02X (sub=%u) => 0x%02X",
                   port, port - 0x10, result);
     } else if (port >= 0x14 && port <= 0x17) {
-        if (port == 0x16 && transferring_ && !write_mode_) {
+        if (port == 0x16 && wait_betrieb_) {
+            // /WAIT-Betrieb (K8915): drehgekoppelt, ggf. mit Wartetakten (k5122_wait.cpp).
+            result = waitRead();
+        } else if (port == 0x16 && transferring_ && !write_mode_) {
             // Streaming-Datenpfad: Bytes des TrackImage byteweise ausgeben.
             // Der Kopf rotiert zyklisch — bei Erreichen des Spurendes wieder von vorn.
             if (cur_track_ && !cur_track_->empty()) {
@@ -146,7 +149,8 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
             ctrl_pio_.ioWrite(port - 0x10, data);
         }
         if (port == 0x10) {
-            handleCtrlPortAWrite(data);
+            if (wait_betrieb_) waitCtrlPortAWrite(data);   // K8915: eigener Weg
+            else               handleCtrlPortAWrite(data);
         }
         // (Kein OUT(13H)-Track-Ende-Hack mehr: ZVE2 verliert den Bus jetzt
         //  hardware-echt über die Per-Byte-Drossel + /STR=1-Abtastung, s. update().)
@@ -154,7 +158,8 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
         LOG_DEBUG("K5122", "DATA PIO write port=0x%02X data=0x%02X", port, data);
         data_pio_.ioWrite(port - 0x14, data);
         if (port == 0x14) {
-            handleDataPortAWrite(data);
+            if (wait_betrieb_) waitWrite(data);             // K8915: /WAIT je Byte
+            else               handleDataPortAWrite(data);
         }
     } else if (port == 0x18) {
         // 8212 (A4): **high** nibble = /SE0../SE3 (Select), **low** nibble =
@@ -193,6 +198,7 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
                  data, selected_drive_,
                  drive_selected_[0], drive_selected_[1], drive_selected_[2], drive_selected_[3],
                  motor_on_[0], motor_on_[1], motor_on_[2], motor_on_[3]);
+        if (wait_betrieb_) waitMkePlanen(false);   // anderes Laufwerk ⇒ andere Spur
         updateStatusPortB();
     } else {
         LOG_WARN("K5122", "ioWrite unbekannter port=0x%02X data=0x%02X", port, data);
@@ -375,6 +381,12 @@ void K5122::reset() {
     read_enc_overridden_ = false;
     head_loaded_ = false;
     index_cycle_acc_ = 0;
+    // /WAIT-Betrieb: Marken-FF fällt, der Daten-PIO ist leer; die Uhr läuft weiter.
+    w_scharf_ = w_mke_ = false;
+    w_mke_time_    = UINT64_MAX;
+    w_status_gilt_ = false;
+    w_strom_gilt_  = false;
+    if (wait_betrieb_) updateStatusPortB();
     LOG_INFO("K5122", "Hardware-Reset: Transfer abgebrochen, /BUSRQ frei, PIOs zurückgesetzt");
 }
 
@@ -426,6 +438,16 @@ void K5122::releaseHeldRead() {
  * der die Port-A-Interrupt-Logik auslöst.
  */
 void K5122::update(int cycles) {
+    w_now_ += static_cast<uint64_t>(cycles);
+    // ── /WAIT-Betrieb: Marken-FF setzt, sobald die geplante Sync-Gruppe durch ist ──
+    if (wait_betrieb_ && w_scharf_ && !w_mke_) {
+        if (w_mke_time_ == UINT64_MAX && waitDreht()) waitMkePlanen(false);   // Motor jetzt auf Drehzahl
+        if (w_now_ >= w_mke_time_) {
+            w_mke_ = true;
+            updateStatusPortB();
+            LOG_TRACE("K5122", "WAIT: MKE (Marke erkannt)");
+        }
+    }
     // ── /STR=1 (gelatcht/abgetastet): Datenübertragung beenden ───────────────
     // /STR=1 unterdrückt /BUSRQ (Anschluss inaktiv).  Nur ein über mehrere
     // Byteperioden anhaltendes /STR=1 wird vom Datenseparator durchgetaktet —
@@ -822,6 +844,15 @@ void K5122::updateStatusPortB() {
         // bit6 /FW bleibt 1 (kein Laufwerksfehler modelliert)
     }
 
+    if (wait_betrieb_) {
+        // Marken-FF (MKE) gibt es nur im Wait-Betrieb; der BusRq-Weg zeigt weiter 0.
+        if (w_mke_) s |= (1u << 1);
+        // Nur Änderungen an die PIO: im Mode 3 fordert jedes portBWrite bei erfüllter
+        // Bedingung erneut einen Interrupt an — ein unverändertes MKE = 1 (etwa beim
+        // OUT (18H) im Kopf-ISR) gäbe sonst einen zweiten, falschen Marken-Interrupt.
+        if (w_status_gilt_ && s == w_status_) return;
+        w_status_ = s; w_status_gilt_ = true;
+    }
     ctrl_pio_.portBWrite(s);
 }
 

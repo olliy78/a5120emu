@@ -224,9 +224,15 @@ if(BUILD_K1520)
 
     # K5122 AFS – Anschlusssteuerung Floppy-disk Speicher (formatagnostischer
     # Streaming-Controller, TrackImage/DiskImage-basiert; bootet CP/A inkl. HFE)
-    add_library(k1520_k5122 STATIC core/cards/k5122/k5122.cpp)
+    add_library(k1520_k5122 STATIC core/cards/k5122/k5122.cpp core/cards/k5122/k5122_wait.cpp)
     target_link_libraries(k1520_k5122 PUBLIC k1520_pio k1520_floppy2 k1520_bus k1520_logger)
     target_include_directories(k1520_k5122 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # Laufwerksverwaltung (K5122 + vier Laufwerke + Formatkatalog) — gemeinsamer
+    # Baustein von A5120 und K8915 (doc/design/16_k8915.md §7.1)
+    add_library(k1520_laufwerke STATIC core/machines/laufwerke.cpp)
+    target_link_libraries(k1520_laufwerke PUBLIC k1520_k5122 k1520_floppy2 k1520_geometry k1520_logger)
+    target_include_directories(k1520_laufwerke PUBLIC ${CMAKE_SOURCE_DIR})
 
     # A5120 machine (wires all cards + Z80 CPU)
     add_library(k1520_a5120 STATIC
@@ -234,7 +240,7 @@ if(BUILD_K1520)
     )
     target_link_libraries(k1520_a5120 PUBLIC
         k1520_z80
-        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122
+        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_laufwerke
         k1520_k7637 k1520_floppy k1520_floppy2 k1520_geometry k1520_bus k1520_logger
     )
     target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})
@@ -259,7 +265,8 @@ if(BUILD_K1520)
     # die Oberfläche mit der Maschine etwas anfangen kann (Tastatur, Laufwerke).
     add_library(k1520_k8915 STATIC core/machines/k8915/k8915.cpp)
     target_link_libraries(k1520_k8915 PUBLIC
-        k1520_zre8762 k1520_k7028 k1520_k7672 k1520_k7024 k1520_floppy2 k1520_bus k1520_logger)
+        k1520_zre8762 k1520_k7028 k1520_k7672 k1520_k7024 k1520_k5122 k1520_laufwerke
+        k1520_floppy2 k1520_bus k1520_logger)
     target_include_directories(k1520_k8915 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # libk1520core.so — stable C-API shared library

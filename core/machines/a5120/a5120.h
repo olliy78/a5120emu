@@ -15,6 +15,7 @@
 #include "core/cards/k7024/k7024.h"
 #include "core/cards/k8025/k8025.h"
 #include "core/cards/k5122/k5122.h"
+#include "core/machines/laufwerke.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/peripherals/floppy_drive/disk_format.h"
 #include "core/peripherals/floppy_drive/format_catalog.h"
@@ -201,7 +202,7 @@ public:
     std::string formatDescription(const std::string& format_name) const override;
 
     /** @brief Geladener Formatkatalog (Diagnose: Quelldateien, übersprungene Formate). */
-    const FormatCatalog& formatCatalog() const override { return disk_formats_; }
+    const FormatCatalog& formatCatalog() const override { return lw_.formatCatalog(); }
 
     bool unmountDisk(int drive) override;
     bool isDiskActive(int drive) const override;
@@ -337,7 +338,7 @@ public:
     const K1520Bus::IntAck& lastIntAck() const { return bus_.lastIntAck(); }
 
     // Debug
-    std::string lastError() const override { return last_error_; }
+    std::string lastError() const override { return lw_.lastError(); }
 
     // ─── Snapshot / reverse-debugging support ──────────────────────────────────
     /**
@@ -425,12 +426,10 @@ private:
 
     K7637         kbd_;
 
-    FormatCatalog disk_formats_;                  // aus data/formats.yaml (§8.6)
-    std::array<DriveProfile, 4> drive_profiles_;  // Bestückung je Slot (für create-Default)
+    Laufwerke     lw_;        // Laufwerksverwaltung (gemeinsamer Baustein, laufwerke.h)
 
     std::atomic<bool>  stop_{false};
 
-    mutable std::mutex disk_mutex_;
     mutable std::mutex key_mutex_;
     std::deque<KeyEvent> key_queue_;
 
@@ -474,10 +473,4 @@ private:
     // evaluation (cycle windows) once per instruction.
     uint64_t total_cycles_ = 0;
 
-    /// @brief Abstand zweier Autosave-Prüfungen in Maschinentakten (≈ 40 ms @ 2,45 MHz).
-    ///        Die eigentliche Ruhezeit vor dem Schreiben ist @ref kAutoFlushDelayCycles.
-    static constexpr uint64_t kDiskFlushCheckInterval = 100'000;
-    uint64_t next_disk_flush_check_ = kDiskFlushCheckInterval;
-
-    std::string last_error_;
 };

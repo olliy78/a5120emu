@@ -76,6 +76,25 @@ public:
                      std::array<DriveProfile, 4> profiles = {},
                      uint32_t cpu_hz = 2450000);
 
+    /**
+     * @brief Brücke der Synchronisationssteuerung (Doku K5122 §5.6.3, Decoder A3.3).
+     *
+     * - **BusRq** (Werksbelegung, A5120): die Karte fordert je Byte `/BUSRQ` an, die
+     *   ZVE2 der K2526 holt es ab (§7.2 des Feinentwurfs) — der eingespielte Weg.
+     * - **Wait** (K8915, am Gerät abgelesen): es gibt keine zweite CPU; ein Zugriff auf
+     *   den Datenport (`IN (16H)`/`OUT (14H)`) hält die EINZIGE CPU per `/WAIT` an,
+     *   bis das nächste Byte unter dem Kopf ist.  Eigener, drehgekoppelter Datenweg
+     *   samt Marken-FF (MKE, Tor B Bit1) — siehe k5122_wait.cpp und
+     *   doc/design/07_k5122_afs.md §7.7.  Der BusRq-Weg bleibt davon unberührt.
+     */
+    enum class Synchronisation : uint8_t { BusRq, Wait };
+    void setSynchronisation(Synchronisation s);
+    Synchronisation synchronisation() const {
+        return wait_betrieb_ ? Synchronisation::Wait : Synchronisation::BusRq;
+    }
+    /// @brief Marken-FF (MKE): im Wait-Betrieb seit dem Scharfmachen eine Sync-Gruppe gesehen.
+    bool markeErkannt() const { return w_mke_; }
+
     // ─── BusDevice (Ports 0x10–0x18) ─────────────────────────────────────────
     uint8_t     ioRead(uint8_t port) override;
     void        ioWrite(uint8_t port, uint8_t data) override;
@@ -265,6 +284,44 @@ public:
     void reset();
 
 private:
+    // ─── /WAIT-Betrieb (K8915, k5122_wait.cpp) ───────────────────────────────
+    /// Steuerport A im Wait-Betrieb (eigener Handler, BusRq-Weg bleibt unberührt).
+    void waitCtrlPortAWrite(uint8_t data);
+    /// `IN (16H)`: nächstes Byte unter dem Kopf, ggf. mit Wartetakten.
+    uint8_t waitRead();
+    /// `OUT (14H)`: Schreibbyte im nächsten Bytefenster (Wartetakte), sammeln.
+    void waitWrite(uint8_t data);
+    /// Zeitpunkt des laufenden Zugriffs (Uhr + schon verlangte Wartetakte).
+    uint64_t waitJetzt() const;
+    /// Dreht die Scheibe des gewählten Laufwerks (eingelegt, Motor auf Drehzahl)?
+    bool waitDreht() const;
+    /// Lesestrom der Spur unter dem Kopf (zwischengespeichert, neu bei Spur-/Inhaltswechsel).
+    const TrackImage& waitStrom();
+    /// Byte des Bytefensters @p slot der laufenden Umdrehung.
+    uint8_t waitByte(size_t slot);
+    /// Marken-FF neu bewerten: scharf?  wann läuft die nächste Sync-Gruppe durch?
+    void waitMkePlanen(bool neu_scharf);
+    /// Nächstes freies Bytefenster ab @p t belegen; liefert sein Ende und die Nummer.
+    uint64_t waitFenster(uint64_t t, size_t& slot);
+
+    bool     wait_betrieb_  = false;
+    uint64_t w_now_         = 0;        ///< Takte seit dem Einschalten (update())
+    uint64_t w_last_done_   = 0;        ///< Ende des zuletzt abgeholten Bytefensters
+    uint8_t  w_latch_       = 0xFF;     ///< zuletzt übergebenes Byte (Daten-PIO)
+    bool     w_scharf_      = false;    ///< /STR = 0 und MR = 0: Marken-FF sucht
+    bool     w_mke_         = false;    ///< Marken-FF gesetzt (Tor B Bit1)
+    uint64_t w_mke_time_    = UINT64_MAX; ///< wann die nächste Sync-Gruppe durch ist
+    uint8_t  w_status_      = 0x00;     ///< zuletzt an Tor B gelegter Status
+    bool     w_status_gilt_ = false;
+    // Lesestrom-Zwischenspeicher
+    TrackImage  w_strom_;
+    bool        w_strom_gilt_ = false;
+    int         w_strom_lw_   = -1;
+    uint8_t     w_strom_zyl_  = 0xFF, w_strom_kopf_ = 0xFF;
+    uint64_t    w_strom_rev_  = 0;
+    const void* w_strom_med_  = nullptr;
+    std::vector<size_t> w_sync_;        ///< Bytefenster, in denen eine Sync-Gruppe beginnt
+
     // ─── PIO-/Signal-Handler ─────────────────────────────────────────────────
     void handleCtrlPortAWrite(uint8_t data);
     void handleDataPortAWrite(uint8_t data);

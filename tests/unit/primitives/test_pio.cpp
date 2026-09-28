@@ -516,3 +516,27 @@ TEST(Z80PIO, SerializeRoundTrip) {
     EXPECT_EQ(db.port[1].out, 0x99);
     EXPECT_EQ(db.port[0].mode, 1);
 }
+
+/**
+ * @test Z80PIO/FreigabewortAendertNurDieFreigabe
+ * @brief Das Interrupt-Freigabewort xx03H schaltet nur EI (D7); UND/ODER und die aktive
+ *        Flanke bleiben, wie das Steuerwort xx07H sie gesetzt hat (Zilog Z80 PIO, U855).
+ *        Das BIOS des K8915 schreibt 37H („ODER, bei high“, Maske FDH) und später 83H —
+ *        mit „bei low“ käme sofort ein falscher Marken-Interrupt (doc/design/16_k8915.md
+ *        AP-E3).
+ */
+TEST(Z80PIO, FreigabewortAendertNurDieFreigabe) {
+    Z80PIO pio;
+    pio.setIEI(true);
+    pio.ioWrite(3, 0xF2);   // Vektor
+    pio.ioWrite(3, 0xCF);   // Mode 3
+    pio.ioWrite(3, 0xF3);   // Richtung
+    pio.ioWrite(3, 0x37);   // ODER, bei high, Maske folgt, gesperrt
+    pio.ioWrite(3, 0xFD);   // nur Bit1
+    pio.portBWrite(0x00);   // Bit1 = 0
+    pio.ioWrite(3, 0x83);   // frei
+    EXPECT_FALSE(pio.hasInterrupt()) << "83H hat auf „bei low“ umgestellt";
+    pio.portBWrite(0x02);   // Bit1 = 1
+    EXPECT_TRUE(pio.hasInterrupt());
+    EXPECT_EQ(pio.getVector(), 0xF2);
+}
