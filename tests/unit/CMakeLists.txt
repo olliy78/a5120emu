@@ -5,6 +5,8 @@ set(_lbl "unit;fast")
 
 # ── core/primitives/ ─────────────────────────────────────────────────────────
 k1520_add_test(z80   SRC primitives/test_z80.cpp   LIBS k1520_z80 LABELS "${_lbl}")
+# U8001/U8002 (S3): Testprogramme mit z8kasm (tools/z8000/, header-only)
+k1520_add_test(z8000 SRC primitives/test_z8000.cpp LIBS k1520_z8000 LABELS "${_lbl}")
 k1520_add_test(pio   SRC primitives/test_pio.cpp   LIBS k1520_pio LABELS "${_lbl}")
 k1520_add_test(ctc   SRC primitives/test_ctc.cpp   LIBS k1520_ctc LABELS "${_lbl}")
 k1520_add_test(sio   SRC primitives/test_sio.cpp   LIBS k1520_sio LABELS "${_lbl}")

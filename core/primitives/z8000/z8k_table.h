@@ -7,7 +7,8 @@
  * (z8k_disasm.h), Assembler (z8k_asm.h) — und der CPU-Kern (S3), der die
  * Takte übernimmt.  Quelle: Zilog Z8000 CPU User's Reference Manual (Kap. 6,
  * Anhang C „Clock Cycles", Opcode-Map); Abweichungen und Unsicherheiten:
- * tools/z8000/README.md.
+ * tools/z8000/README.md (Befunde) und
+ * core/primitives/z8000/README.md (CPU-Kern).
  *
  * Aufbau einer Zeile (RowSrc):
  *   mn     Mnemonik in Zilog-Schreibweise

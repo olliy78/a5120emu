@@ -1,12 +1,14 @@
 # U8001/U8002 (Z8001/Z8002): Befehlstabelle, Disassembler, Assembler
 
-Header-only, ohne Abhängigkeiten außer der Standardbibliothek. Arbeitspaket S2 aus
+Header-only, ohne Abhängigkeiten außer der Standardbibliothek. Tabelle und Dekoder liegen
+seit S3 unter `core/primitives/z8000/`, weil der CPU-Kern sie benutzt (eine Tabelle, nicht
+zwei). Arbeitspaket S2 aus
 `doc/design/17_a5120_16.md`.
 
 | Datei | Inhalt |
 |---|---|
-| `z8k_table.h` | **Die** Befehlstabelle `kRows` (438 Zeilen, 195 Mnemoniks) + aufbereitete Form `Insn` + Schnellsuche `Table::candidates(w0)` + Namen (cc, Steuerregister) |
-| `z8k_codec.h` | `decode()` (Worte per Rückruf, nur so viele wie nötig) und `encode()`; `Decoded::cycles()` |
+| `core/primitives/z8000/z8k_table.h` | **Die** Befehlstabelle `kRows` (438 Zeilen, 195 Mnemoniks) + aufbereitete Form `Insn` + Schnellsuche `Table::candidates(w0)` + Namen (cc, Steuerregister) |
+| `core/primitives/z8000/z8k_codec.h` | `decode()` (Worte per Rückruf, nur so viele wie nötig) und `encode()`; `Decoded::cycles()` |
 | `z8k_disasm.h` | Text in Zilog-Syntax: `disasm()`, `formatDecoded()` |
 | `z8k_asm.h` | Zwei-Pass-Assembler `assemble()`, Einzelbefehl `assembleLine()`, Listing |
 | `../z8kasm.cpp` | Kommandozeile (`tools/dev.sh tool z8kasm …`) |

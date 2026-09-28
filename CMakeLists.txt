@@ -192,6 +192,11 @@ if(BUILD_K1520)
             core/primitives/z80.cpp
         )
         target_include_directories(k1520_z80 PUBLIC ${CMAKE_SOURCE_DIR})
+        # U8001/U8002 (Z8001/Z8002) CPU-Primitive; Tabelle/Dekoder header-only in core/primitives/z8000/
+        add_library(k1520_z8000 STATIC
+            core/primitives/z8000.cpp
+        )
+        target_include_directories(k1520_z8000 PUBLIC ${CMAKE_SOURCE_DIR})
 
     target_link_libraries(k1520_sio PUBLIC k1520_bus)
     target_include_directories(k1520_sio PUBLIC ${CMAKE_SOURCE_DIR})
