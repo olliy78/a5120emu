@@ -32,6 +32,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `cpa_cpa780_k5601_noclock.img` / `.hfe` | CP/A **ohne Uhr**, A:/B:/C: = K5601 | `test_boot_integration` (Boot von B:/C:, .img vs .hfe) |
 | `cpa_cpa780_combo5zoll_noclock.img` | CP/A ohne Uhr, A: K5601 · **B: K5600.10** · **C: K5600.20** | `make_bootdisk` (Presets k5600_10_fmt1, k5600_20_fmt1) |
 | `cpa_cpa780_combo8zoll_noclock.img` | CP/A ohne Uhr, A: K5601 · **B: MF3200** · **C: K5602.10/MF6400** | `make_bootdisk` (Presets mf3200_fmt7, mf6400_fmt1) |
+| `cpa_cpa780_k5601_noclock-em256.img` | CP/A ohne Uhr, K5601, **@OS.COM mit `em256 equ 1`** (A5120.16, RAM-Floppy M: im EM256) | `Em256RamFloppy.*` |
 | `scpx17_cpa780_k5601.hfe` | SCPX 1526 V1.7, System im **16×256**-Datenformat | `ScpxIntegration.*`, `ScpxInit.*` |
 | `scpx17_5x1024_k5601_hardy.hfe` | SCPX 1526 V1.7, System im **5×1024**-Datenformat, mit `HARDY.COM` | `test_hardy` |
 | `udos_boot_scp.hfe` | UDOS 4.3, bootfähig (SCP-Laufwerkstyp) | `UdosIntegration.*`, `test_udos_format` |
@@ -142,3 +143,15 @@ Beide zeigen auf `tests/fixtures/disks`.
 > Schema gilt für die Disketten, die es zum Umbauzeitpunkt gab; neue von origin
 > umzubenennen würde jeden künftigen Merge unnötig erschweren. Python-Treiber (`make_bootdisk.py`, `format_all.py`)
 bilden denselben Pfad über `ROOT/tests/fixtures/disks`.
+
+## Die EM256-Diskette: Original-BIOS, drei Zeilen angepasst
+
+`cpa_cpa780_k5601_noclock-em256.img` ist `cpa_cpa780_k5601_noclock.img` mit ausgetauschtem
+`@OS.COM`.  Gebaut aus `~/projects/CPA_Workbench/src/bc_a5120/bios_org.mac` (Workbench
+`bedeb6f`, Robotron-Originalstand mit `em256 equ 1`, `em256adr = 4000H`, `modadr = A8H`) ohne
+GUI, mit den Schritten von `tools/cpa_builder.py::build_os` (M80/LINKMT unter `tools/cparun`,
+`/p:B980`).  Geändert gegenüber `bios_org.mac` — nur, was die Testmaschine betrifft, nichts
+am EM-Teil (`biosremc.mac`/`biosrem.mac` unverändert):
+`diskA equ 11580` (statt 10877, 8″), `uhrvar equ 0` (keine Uhrzeitabfrage),
+`kltbef: db 0` (statt `SUBM AUTOEXEC`).  Eingespielt mit
+`k1520disktool rm/put`.  Kaltstart am A5120 **ohne** EM meldet „RAM-Floppy ?? mit ??? kByte".

@@ -33,3 +33,8 @@ k1520_add_test(disktool_neue_disketten SRC test_disktool_neue_disketten.cpp
 k1520_add_test(disktool_bootdiskette SRC test_disktool_bootdiskette.cpp
                                      LIBS ${_libs} k1520_fs
                                      LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# A5120.16, Abnahme S1: Original-BIOS (em256 equ 1) erkennt das EM256, RAM-Floppy M:
+# (doc/design/17_a5120_16.md §3 S1).
+k1520_add_test(em256_ramfloppy SRC test_em256_ramfloppy.cpp LIBS ${_libs} k1520_fs
+                               LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)

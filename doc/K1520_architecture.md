@@ -361,11 +361,30 @@ public:
     // DMA-Prioritätskette
     void setDMAChain(std::vector<DMADevice*> chain);
 
-    // /MEMDI (Speicherzugriff sperren)
-    void setMEMDI(bool disabled);
-    bool isMEMDI() const;
+    // /MEMDI (X1 C09) — JE ZUGRIFF von einem Vorrangspeicher gezogen (s. §5.1a)
+    void addMemdiDriver(MemdiDriver* dev);
+    bool memdiActive() const;   // nur während memRead()/memWrite() gültig
 };
 ```
+
+#### 5.1a /MEMDI gegen MEMDI1/2 (seit 2026-09-28, A5120.16 S1)
+
+Zwei Leitungen, die der Emulator früher in einem Flag zusammenwarf:
+
+- **Bus-/MEMDI (X1 C09)** ist die Speicherprioritätenkette.  Ein `MemdiDriver`
+  (heute nur das Erweiterungsmodul EM064/EM256, `core/cards/em/`) entscheidet **je
+  Zugriff allein aus der Adresse**, ob er den Zyklus übernimmt; dann liefert ER das
+  Byte, und eine K3526-Gruppe mit `memdi_source = false` verwirft den Schreibzyklus.
+  Beim EM ist das MEN = ¬(8/16 ∧ RAMEN ∧ PEN) (A310/12 → A112 → A17/11, Scan 9005/2),
+  **nicht** PEN allein.
+- **MEMDI1/2** der Rückverdrahtung ist ein statischer Pegel vom BS-PIO A7
+  (`K2526::onMemdi12` → Koppelbus).  Darauf hört nur eine Gruppe mit
+  `memdi_source = true` — am A5120 keine.  Deshalb läuft HARDYs MEMDI-Test durch.
+
+Ohne angemeldeten Vorrangspeicher kostet das im Speicherpfad einen Vergleich.  Die
+E/A-Zyklen tragen seit demselben Umbau die volle Adresse AB0–15 (`ioAddress()`),
+weil der Attributspeicher des EM256 über AB12–15 adressiert wird (`OUT (n),A` legt
+dabei **A** auf AB8–15).
 
 ### 5.2 Koppelbus
 
