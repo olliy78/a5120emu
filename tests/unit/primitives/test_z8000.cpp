@@ -1009,6 +1009,22 @@ TEST(Z8000Bus, ByteHaelftenSpeicherUndEa) {
     EXPECT_TRUE(seen);
 }
 
+/**
+ * @test Z8000Bus/EaByteLageNachA0
+ * @brief Ein E/A-Byte wird nach A0 gelesen wie ein Speicherbyte: gerade Portadresse
+ *   AD8..15, ungerade AD0..7 — auch dort, wo das Handbuch die Adresse verbietet
+ *   (Standard gerade, Spezial ungerade).  Am A5120.16 belegt: `INB RL0,%0080` liest
+ *   Status-8 von AD8..15.
+ */
+TEST(Z8000Bus, EaByteLageNachA0) {
+    Rig r;
+    r.io[0x0080] = 0xC3FF;
+    r.sio[0x00A9] = 0x1122;
+    runSeg(r, "  INB RL3,%0080\n  SINB RH3,%00A9");
+    EXPECT_EQ(r.cpu.rb(11), 0xC3);               // Standard, gerade: AD8..15
+    EXPECT_EQ(r.cpu.rb(3), 0x22);                // Spezial, ungerade: AD0..7
+}
+
 TEST(Z8000Bus, IoByteNurEineHaelfteKonfigurierbar) {
     Z8000::Config cfg; cfg.ioByteOnBothHalves = false;
     Z8000 cpu(cfg);

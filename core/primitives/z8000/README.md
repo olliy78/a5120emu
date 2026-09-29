@@ -41,7 +41,9 @@ std::function<void(const Z8kBusCycle&, uint16_t)> write;   // bekommt AD0..15
   (§4.3.2); Z8002 immer 0.
 - **Daten:** Speicherwort: `addr` gerade (A0 gelöscht). Speicherbyte: `addr` mit A0, gelesen
   wird die Hälfte (gerade → AD8..15), geschrieben liegt das Byte auf **beiden** Hälften
-  (§9.4.2). Standard-E/A-Byte liest AD0..7, Spezial-E/A-Byte AD8..15 (§9.4.3).
+  (§9.4.2). E/A-Byte lesen: **Lage nach A0 wie beim Speicher** (ungerade AD0..7, gerade
+  AD8..15); §9.4.3 nennt nur die zulässigen Fälle (Standard-Byteports ungerade, Spezial
+  gerade). Am A5120.16 gemessen: `INB RL0,%0080` liest das auf AD8..15 liegende Status-8.
 - **WAIT:** der Rückruf ruft `cpu.addWaitCycles(n)`; die Takte zählen im laufenden `step()`.
 - **Takte:** `step()` = ein Befehl bzw. ein Durchlauf eines Wiederholungsbefehls, ein
   Trap-/Interrupteintritt, ein Halt-/Stop-/Bus-Takt. Tabellenwert + `perN·n` + WAIT. Eigene
@@ -80,10 +82,12 @@ std::function<void(const Z8kBusCycle&, uint16_t)> write;   // bekommt AD0..15
 1. **Byte-OUT auf Standard-E/A — liegt das Byte auf beiden Hälften?** Das Handbuch sagt es
    nur für Speicher-Schreibzyklen (§9.4.2: „the CPU places the same byte on both halves");
    für E/A nur, welche Hälfte gilt (§9.4.3: Standard AD0..7, Spezial AD8..15). MAME schreibt
-   den verdoppelten Wert mit Lanenmaske — kein Beleg. **Nicht belegt.** Der Kern verdoppelt
+   den verdoppelten Wert mit Lanenmaske. **Am A5120.16 belegt (2026-09-29):** `OUTB %0081`
+   mit 01H ⇒ A35 (AD8..15) = 01H. Der Kern verdoppelt
    (`Z8kConfig::ioByteOnBothHalves = true`, abschaltbar: dann nur die gültige Hälfte). Folge
    für A35: ein `OUTB` an eine Adresse mit Bit 7 schreibt A33 **und** A35 mit demselben Byte.
-   Messbar in G2: `OUTB` an %0081 mit bekanntem Byte, danach A35 am U880 (AEH) lesen.
+   Beim **Lesen** gilt die Hälfte nach A0 (gerade AD8..15), auch für Standard-E/A an
+   gerader Adresse: `INB RL0,%0080` liest am Gerät Status-8 (A36 treibt nur AD8..15).
 2. **Ungerade Register als Zeiger (segmentiert, `@R3`):** Das Handbuch verlangt ein
    Registerpaar mit gerader Nummer. MAME liest einen Zeiger als RR(n & ~1) — `@RR3` ≡ `@RR2`;
    beim **Schreiben** einer Adresse (LDA/LDAR in RR3) schreibt MAME dagegen R3 zweimal — in

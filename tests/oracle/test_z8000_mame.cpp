@@ -48,10 +48,9 @@ struct HashMem {
     uint8_t base(uint32_t a) const { return uint8_t(mix(a * 2654435761u ^ seed)); }
     uint8_t b(uint32_t a) const { auto it = over.find(a); return it == over.end() ? base(a) : it->second; }
     uint16_t w(uint32_t a) const { a &= ~1u; return uint16_t(b(a) << 8 | b(a + 1)); }
-    uint16_t io(int sp, uint16_t port) const {   // beide Hälften gleich: Lage egal
+    uint16_t io(int sp, uint16_t port) const {   // Hälften VERSCHIEDEN: prüft die Bytelage
         port &= 0xFFFE;                           // MAME liest Wortweise an der geraden Adresse
-        uint8_t v = uint8_t(mix(uint32_t(port) * 40503u ^ seed ^ uint32_t(sp) << 20));
-        return uint16_t(v << 8 | v);
+        return uint16_t(mix(uint32_t(port) * 40503u ^ seed ^ uint32_t(sp) << 20));
     }
 };
 
@@ -131,8 +130,12 @@ struct Ours {
     HashMem* mem = nullptr;
     explicit Ours(bool is8001) : cpu(cfg(is8001)) {
         cpu.read = [this](const Z8kBusCycle& c) -> uint16_t {
-            if (c.st == Z8kStatus::Io) return mem->io(0, c.addr);
-            if (c.st == Z8kStatus::SpecialIo) return mem->io(1, c.addr);
+            if (c.st == Z8kStatus::Io || c.st == Z8kStatus::SpecialIo) {
+                uint16_t v = mem->io(c.st == Z8kStatus::SpecialIo, c.addr);
+                // MAMEs Wort an ungerader Adresse kommt vertauscht (s. Schreiben)
+                if (c.word && (c.addr & 1)) v = uint16_t(v << 8 | v >> 8);
+                return v;
+            }
             if (c.isMemory()) return mem->w(lin(c.seg, c.addr));
             return 0xFFFF;
         };

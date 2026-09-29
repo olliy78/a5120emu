@@ -23,8 +23,8 @@
  *   U8001-Zugriffs (@ref cellFor16); dieselbe Zelle wie beim U880 (big-endian, §7.5).
  * - A33/A35 über Standard-E/A (nur AD7 dekodiert, Schreiben = beide Register),
  *   Status-8 beim E/A-Lesen auf AD8–15, VI-Quittung = Vektor A34 (low) + Status-8
- *   (high) und löscht /VI, NVI-Quittung lädt den Einzelbefehlszähler A53, NMI-Quittung
- *   setzt das Paritäts-FF zurück.
+ *   (high) und löscht /VI, NVI-Quittung lädt den Einzelbefehlszähler A53 und hält
+ *   ihn geladen (Selbsthaltekreis A54), bis A33 Bit 3 ihn freigibt.
  * - µI = /TRQ8, TREN = ¬µ0, /BUSRQ = ¬(TREN ∧ TRQ8), BUSAK → FF A29, STOP = PIO B3.
  * - A29 wird mit dem M1 des U880 getaktet (@ref onU880M1).
  * - Zeit: @ref advance zieht den U8001 befehlsweise auf die Maschinenzeit nach
@@ -82,17 +82,23 @@ public:
         Variante  variante = Variante::EM256;
         uint8_t   modadr   = 0xA8;   ///< X10: 1–2, 3–6, 4–5; X11: 3–9 (Handbuch §1.7.1)
         A22Lesart lesart   = A22Lesart::ZyklusAdresse;
-        /// N/S des U8001 ist im Reset laut Zilog §9.7 *undefiniert*; was PIO A5 dann
-        /// zeigt, ist nicht belegt.  Vorgabe: H (Normal).
-        bool      ns_im_reset = true;
+        /// N/S des U8001 ist im Reset laut Zilog §9.7 *undefiniert*.  **Am Gerät
+        /// gemessen (2026-09-29, `em256adr`/`em256tst`: PIO A = 48H): L** — der Pin
+        /// zeigt im Reset den Systemmodus.  Vorgabe daher L.
+        bool      ns_im_reset = false;
         /// Takt des U880 (Maschinentakt des A5120 im Emulator, app/takt.py) und des U8001
         /// (A55 DS8127: 16-MHz-Quarz / 4).  Nur das Verhältnis zählt.
         uint32_t  takt_u880_hz  = 2'450'000;
         uint32_t  takt_u8001_hz = 4'000'000;
-        /// Vorlast des Einzelbefehlszählers A53 (74193, rückwärts): A2/A3 fest H, A0/A1
-        /// über Brückenfeld X12 — **nicht belegt** (Plan §8, Messung G3).  Vorgabe 15 =
-        /// X12 offen (offene TTL-Eingänge = H) ⇒ QD fällt nach 8 Stapelzugriffen.
-        uint8_t   a53_vorlast = 15;
+        /// Vorlast des Einzelbefehlszählers A53 (74193, rückwärts, QD → NVI).  **Nur A3
+        /// ist fest H**; A0, A1 **und A2** gehen an das Brückenfeld X12 (9005/1: X12/1,
+        /// 2, 3 an A0..A2, X12/4 = H, X12/5 = L; Handbuch Abb. 8).  QD fällt nach
+        /// (Vorlast − 7) Stapelzugriffen.  Zweck laut Handbuch §1.12: „nach dem letzten
+        /// STACK-Zugriff“ des Rücksprungs aus dem Debugger — `IRET` des U8001
+        /// (segmentiert) holt 4 Worte vom Stapel ⇒ Vorlast 11 (A2 = L, A0 = A1 = H).
+        /// **Am Gerät gemessen (2026-09-29, `em16abl` G3): 4 Stapelzugriffe ⇒ 11.**
+        /// Werte unter 8 sind nicht beschaltbar (A3 = H) und werden zu 8 angehoben.
+        uint8_t   a53_vorlast = 11;
     };
 
     explicit EM(K1520Bus& bus);
@@ -160,7 +166,10 @@ public:
     /// DRAM-Zelle eines U8001-Speicherzyklus (Segmentweiche + Umschalter A41, §7.3/§7.5).
     uint32_t cellFor16(const Z8kBusCycle& c) const;
     uint8_t  a53() const       { return a53_; }       ///< Einzelbefehlszähler A53
-    bool     nviLine() const   { return nvi_ff_; }    ///< NVI am U8001 (A53 QD, gehalten)
+    /// NVI am U8001 = ¬QD von A53 (Pegel, Handbuch Abb. 8: A53/07 direkt an NVI).
+    bool     nviLine() const   { return !(a53_ & 0x08); }
+    /// Selbsthaltekreis A54 (Q an A54/10 → A53 LOAD): true = Zähler freigegeben.
+    bool     a54Freigabe() const { return a54_zaehlt_; }
     bool     busRq16() const   { return tren_ && trq8_; }   ///< BUSRQ am U8001
     bool     busAck16() const  { return busak_; }
     bool     stop16() const    { return stop_; }      ///< STOP am U8001 (PIO B3 = 0)
@@ -185,7 +194,7 @@ public:
         A33A35,         ///< U8001 OUT (addr = Port, value = A35:A33)
         Status8Lesen,   ///< U8001 IN (value = Status-8 auf AD8–15)
         ViQuittung,     ///< U8001 VI-Quittung (value = Kennung)
-        NviQuittung,    ///< U8001 NVI-Quittung (A53 neu geladen)
+        NviQuittung,    ///< U8001 NVI-Quittung (A53 neu geladen, A54 hält die Ladung)
         NmiQuittung,
         Modus,          ///< FF A29 gekippt (value 1 = 8-Bit-Mode, 0 = 16-Bit-Mode)
         Int16,          ///< A33 Bit 4 (value = neuer Pegel)
@@ -325,6 +334,9 @@ private:
     // 16-Bit-Seite
     Z8000   u8k_;
     int64_t guthaben_ = 0;      ///< Zeitguthaben des U8001 in (U880-Takt × f16) − (U8001-Takt × f8)
-    uint8_t a53_      = 15;     ///< Einzelbefehlszähler
-    bool    nvi_ff_   = false;  ///< QD gefallen, gehalten bis NVI-Quittung (Selbsthaltekreis A54)
+    uint8_t a53_      = 11;     ///< Einzelbefehlszähler
+    /// Selbsthaltekreis A54 (zwei NOR 7402): A33 Bit 3 = 1 gibt frei (Q10 = H ⇒ LOAD
+    /// inaktiv, A53 zählt jeden Stapelzugriff), die NVI-Quittung lädt A53 und hält ihn
+    /// geladen (Q10 = L), sofern Bit 3 dann 0 ist.  RESET16 wirkt auf beide nicht.
+    bool    a54_zaehlt_ = false;
 };

@@ -303,7 +303,12 @@ void Z8000::memWrite(const Ea& a, int w, uint32_t v) {
 uint16_t Z8000::ioRead(bool special, uint16_t port, bool word) {
     uint16_t v = bus(special ? Z8kStatus::SpecialIo : Z8kStatus::Io, 0, port, word, true);
     if (word) return v;
-    return special ? uint8_t(v >> 8) : uint8_t(v);   // §9.4.3: Standard AD0..7, Spezial AD8..15
+    // Bytelage nach A0 wie bei Speicherzugriffen (§9.4.2): ungerade AD0..7, gerade
+    // AD8..15.  §9.4.3 („Standard AD0..7, Spezial AD8..15") ist davon die Folge, weil
+    // Standard-Byteports ungerade, Spezial-Byteports gerade sein MÜSSEN.  Belegt am
+    // A5120.16 (2026-09-29): `INB RL0,%0080` (gerade, Standard-E/A) liest Status-8,
+    // den A36 nur auf AD8..15 legt.  MAME wählt die Lage ebenso nach A0.
+    return (port & 1) ? uint8_t(v) : uint8_t(v >> 8);
 }
 
 void Z8000::ioWrite(bool special, uint16_t port, bool word, uint16_t v) {

@@ -203,22 +203,26 @@ TEST(EM16, A33A35_WortOutSchreibtBeide_NurAD7) {
 }
 
 /**
- * @test EM16/Status8_WortInHighByte_InbNicht
+ * @test EM16/Status8_WortInHighByte_InbNachA0
  * @brief Status-8 (ACH) liegt beim E/A-Lesen auf AD8–15: Wort-IN sieht es im oberen
- *   Byte, INB (AD0–7) nicht; eine Adresse ohne Bit 7 liefert nichts.
+ *   Byte; INB an GERADER Adresse liest AD8–15 und damit Status-8 (am Gerät gemessen
+ *   2026-09-29: „INB liest untere Haelfte: C3H“), INB an ungerader Adresse liest
+ *   AD0–7, die niemand treibt (FFH); eine Adresse ohne Bit 7 liefert nichts.
  */
-TEST(EM16, Status8_WortInHighByte_InbNicht) {
+TEST(EM16, Status8_WortInHighByte_InbNachA0) {
     Rig r;
     r.load(std::string(kKopf) +
            "  IN R0,%0080\n  LD <<0>>%0080,R0\n"
            "  INB RL1,%0080\n  LDB <<0>>%0083,RL1\n"
+           "  INB RL1,%0081\n  LDB <<0>>%0086,RL1\n"
            "  IN R2,%0040\n  LD <<0>>%0084,R2\n  HALT\n");
     r.vektor(0, 0, 0x0100);
     r.bus.ioWrite(kSt8, 0xC3);
     r.start();
     r.lauf(200);
     EXPECT_EQ(r.em.peek(0x80), 0xC3);
-    EXPECT_EQ(r.em.peek(0x83), 0xFF);
+    EXPECT_EQ(r.em.peek(0x83), 0xC3);
+    EXPECT_EQ(r.em.peek(0x86), 0xFF);
     EXPECT_EQ(r.w(0x84), 0xFFFF);
 }
 
@@ -283,8 +287,9 @@ TEST(EM16, Int16_A33Bit4_PioA4_InterruptZumU880) {
 
 /**
  * @test EM16/A53_NviNachStapelzugriffen
- * @brief Mit A33 Bit 3 zählt A53 Stapelzugriffe rückwärts; QD fällt nach
- *   (Vorlast − 7) Zugriffen ⇒ NVI.  Vorlast 15 ⇒ 8, Vorlast 12 ⇒ 5; ohne Bit 3 nie.
+ * @brief A33 Bit 3 gibt A53 frei (A54); A53 zählt Stapelzugriffe rückwärts, QD fällt
+ *   nach (Vorlast − 7) Zugriffen ⇒ NVI.  Vorlage 11 (am Gerät gemessen: 4), 15 ⇒ 8,
+ *   12 ⇒ 5; ohne Bit 3 bleibt A53 nach Netz-Ein geladen ⇒ nie.
  */
 TEST(EM16, A53_NviNachStapelzugriffen) {
     const std::string fw = std::string(kKopf) +
@@ -294,8 +299,10 @@ TEST(EM16, A53_NviNachStapelzugriffen) {
         "  LD R0,#%FFFF\n  LD <<0>>%0080,R0\n  HALT\n"
         "  ORG <<0>>%0300\n  LD <<0>>%0080,R4\n  LD R0,#0\n  OUT %0080,R0\n  HALT\n"
         "  ORG <<0>>%0400+%32\n  DW %C000,%0000,%0300\n";
-    for (auto [vorlast, bit3, soll] : {std::tuple{15, true, 8}, {12, true, 5}, {15, false, -1}}) {
-        EM::Config c; c.a53_vorlast = uint8_t(vorlast);
+    for (auto [vorlast, bit3, soll] :
+         {std::tuple{-1, true, 4}, {15, true, 8}, {12, true, 5}, {15, false, -1}}) {
+        EM::Config c;
+        if (vorlast >= 0) c.a53_vorlast = uint8_t(vorlast);
         Rig r(c);
         r.load(fw);
         r.setW(0x90, bit3 ? 0x0008 : 0x0000);
@@ -304,6 +311,42 @@ TEST(EM16, A53_NviNachStapelzugriffen) {
         r.lauf(3000);
         EXPECT_EQ(int16_t(r.w(0x80)), soll) << "Vorlast " << vorlast << " Bit3 " << bit3;
     }
+}
+
+/**
+ * @test EM16/A54_SelbsthaltungNachQuittung
+ * @brief Ablauf nach Handbuch §1.12: Bit 3 setzen und VOR dem Rücksprung wieder
+ *   löschen — A54 hält die Freigabe, A53 zählt.  Die NVI-Quittung (Bit 3 = 0) lädt A53
+ *   und hält ihn geladen: danach löst keine Stapelfolge mehr NVI aus, bis Bit 3 neu
+ *   gesetzt wird.  RESET16 lässt A53/A54 unberührt.
+ */
+TEST(EM16, A54_SelbsthaltungNachQuittung) {
+    Rig r;
+    r.load(std::string(kKopf) +
+           "  LD R0,#%0008\n  OUT %0080,R0\n  CLR R0\n  OUT %0080,R0\n"   // Freigabe
+           "  EI NVI\n  CLR R4\n"
+           "L1: INC R4\n  PUSH @RR14,R4\n  CP R4,#40\n  JR NZ,L1\n"
+           "  HALT\n"
+           "  ORG <<0>>%0300\n"                                           // NVI-Handler
+           "  LD R0,<<0>>%0088\n  INC R0\n  LD <<0>>%0088,R0\n"
+           "  LD <<0>>%0080,R4\n"
+           "  LDL RR14,#<<0>>%0FF0\n  EI NVI\n  CLR R4\n"
+           "L2: INC R4\n  PUSH @RR14,R4\n  CP R4,#40\n  JR NZ,L2\n"
+           "  LD R0,#%AAAA\n  LD <<0>>%008A,R0\n  HALT\n"
+           "  ORG <<0>>%0400+%32\n  DW %C000,%0000,%0300\n");
+    r.vektor(0, 0, 0x0100);
+    r.setW(0x88, 0);
+    r.start();
+    r.lauf(4000);
+    EXPECT_EQ(r.w(0x80), 4);          // Vorlast 11
+    EXPECT_EQ(r.w(0x88), 1);          // genau ein NVI
+    EXPECT_EQ(r.w(0x8A), 0xAAAA);     // zweite Folge ohne NVI durchgelaufen
+    EXPECT_FALSE(r.em.a54Freigabe());
+    EXPECT_EQ(r.em.a53(), 11);
+    r.portB(RESET16 | N_TRQ8);        // RESET16: A53/A54 unverändert
+    r.lauf(10);
+    EXPECT_FALSE(r.em.a54Freigabe());
+    EXPECT_EQ(r.em.a53(), 11);
 }
 
 // ─── Segmentweiche ───────────────────────────────────────────────────────────

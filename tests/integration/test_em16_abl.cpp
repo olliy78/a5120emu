@@ -101,7 +101,7 @@ std::string lasseLaufen(A5120Machine& m) {
     std::string abschrift;
     long long rest = kProgBudget;
     // Erst den Start abwarten: das Banner verdrängt die Kommandozeile „A>EM256ADR".
-    if (!runSmallUntil(m, "EM16ABL 1.0", kInputBudget)) return vramLines(m);
+    if (!runSmallUntil(m, "EM16ABL 1.", kInputBudget)) return vramLines(m);
     while (rest > 0) {
         k1520test::runCycles(m, 200'000);
         rest -= 200'000;
@@ -151,9 +151,11 @@ A5120Machine::Config em256() {
 
 /**
  * @test Em16Abl/AlleAblaeufeOk
- * @brief Jede Zeile A–G „OK", Ergebnis „alle Abläufe OK"; dazu die beiden Messwerte
- *   für G2/G3 so, wie der Kern sie annimmt (OUTB auf beiden Hälften ⇒ A35 = 01H;
- *   A53-Vorlast 15 ⇒ NVI nach 8 Stapelzugriffen); danach Ruhezustand der Karte.
+ * @brief Jede Zeile A–G „OK", Ergebnis „alle Abläufe OK"; dazu die Messwerte so, wie
+ *   das Gerät sie 2026-09-29 zeigte (OUTB auf beiden Hälften ⇒ A35 = 01H; INB an
+ *   gerader Adresse liest Status-8 = C3H; A53-Vorlast 11 ⇒ NVI nach 4 Stapelzugriffen)
+ *   und die v1.1-Zusätze (INB ungerade = FFH, Vorlauf ohne NVI, Parität überall 1);
+ *   danach Ruhezustand der Karte.
  */
 TEST(Em16Abl, AlleAblaeufeOk) {
     Lauf l;
@@ -174,9 +176,12 @@ TEST(Em16Abl, AlleAblaeufeOk) {
              "E Einzelbefehlszaehler A53 -> NVI                OK",
              "F STOP haelt den U8001 an                        OK",
              "G RESET16: 8-Bit-Mode, A33 geloescht             OK",
-             "INB liest untere Haelfte: FFH",
+             "INB liest untere Haelfte: C3H (Status-8 war C3H)",
+             "INB %81 (ungerade, AD0-7): FFH (Soll FFH)",
              "G2: OUTB %81,01H -> A35 = 01H, PIO A0-2 = 1",
-             "G3: NVI nach 0008H Stapelzugriffen",
+             "G3: NVI nach 0004H Stapelzugriffen",
+             "Vorlauf ohne Bit 3: NVI nach 0000H",
+             "H Paritaet /PE Start,PR,PR-EM,EM,K1520: 1 1 1 1 1 (1 = ok)",
              "ERGEBNIS: alle Ablaeufe OK"})
         EXPECT_TRUE(enthaelt(t, z)) << z << "\n" << t;
     EXPECT_FALSE(enthaelt(t, "FEHLER")) << t;

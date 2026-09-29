@@ -67,16 +67,17 @@ TEST(EM, NachNetzEin_8BitMode_KeineSeite) {
 /**
  * @test EM/PioA_ZeigtRegisterUndBetriebsart
  * @brief PIO Port A (alles Eingang): PIOA-0..2 = A33 = 0, /VI = 1, INT-16 = 0,
- *   N/S = H (Vorgabe im Reset), 8/16 = 1, TREN = 0  ⇒ 0x68.
+ *   N/S = L im Reset (am Gerät gemessen 2026-09-29: 48H), 8/16 = 1, TREN = 0 ⇒ 0x48.
+ *   `ns_im_reset = true` bleibt als Gegenprobe (0x68).
  */
 TEST(EM, PioA_ZeigtRegisterUndBetriebsart) {
     Rig r;
     r.pioInit();
-    EXPECT_EQ(r.bus.ioRead(kPA), 0x68);
-    EM::Config c; c.ns_im_reset = false;
+    EXPECT_EQ(r.bus.ioRead(kPA), 0x48);
+    EM::Config c; c.ns_im_reset = true;
     Rig r2(c);
     r2.pioInit();
-    EXPECT_EQ(r2.bus.ioRead(kPA), 0x48);
+    EXPECT_EQ(r2.bus.ioRead(kPA), 0x68);
 }
 
 // ─── E/A-Decoder ─────────────────────────────────────────────────────────────
@@ -88,7 +89,7 @@ TEST(EM, PioA_ZeigtRegisterUndBetriebsart) {
 TEST(EM, Decoder_AchtToreAbModadr_AB8bis15Egal) {
     Rig r;
     r.pioInit();
-    EXPECT_EQ(r.bus.ioRead(0x12A8), 0x68);        // AB8–15 beliebig
+    EXPECT_EQ(r.bus.ioRead(0x12A8), 0x48);        // AB8–15 beliebig
     EXPECT_EQ(r.bus.ioRead(0xA7), 0xFF);          // Nachbartore: niemand
     EXPECT_EQ(r.bus.ioRead(0xB0), 0xFF);
 

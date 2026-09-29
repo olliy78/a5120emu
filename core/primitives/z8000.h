@@ -16,8 +16,9 @@
  *  - Speicher, Byte:  gerade Adresse → AD8..15, ungerade → AD0..7; die CPU nimmt
  *    die Hälfte selbst.  Beim Schreiben liegt das Byte auf BEIDEN Hälften.
  *  - Speicher, Wort:  Adresse immer gerade (A0 wird von der CPU gelöscht).
- *  - Standard-E/A, Byte: AD0..7;  Spezial-E/A, Byte: AD8..15.  Beim Schreiben
- *    doppelt (Config::ioByteOnBothHalves, §8-Frage — siehe README).
+ *  - E/A, Byte: Lage nach A0 wie beim Speicher (ungerade AD0..7, gerade AD8..15;
+ *    zulässig sind Standard ungerade, Spezial gerade — §9.4.3).  Beim Schreiben
+ *    doppelt (Config::ioByteOnBothHalves; am A5120.16 belegt, siehe README).
  *
  * Takte: step() führt einen Befehl (bzw. einen Durchlauf eines Wiederholungs-
  * befehls, einen Interrupt-/Trapeintritt, einen Stop-/Halt-/Bus-Takt) aus und
@@ -73,8 +74,8 @@ enum class Z8kModel : uint8_t { Z8001, Z8002 };
 struct Z8kConfig {
     Z8kModel model = Z8kModel::Z8001;
     /// Byte-OUT (Standard- wie Spezial-E/A): Byte auf beiden Bushälften.
-    /// Das Handbuch sagt es nur für Speicher-Schreibzyklen (§9.4.2); für E/A
-    /// nennt es nur die Hälfte, die gilt (§9.4.3).  Annahme — README §8.
+    /// Das Handbuch sagt es nur für Speicher-Schreibzyklen (§9.4.2).  **Am A5120.16
+    /// gemessen (2026-09-29): `OUTB %0081,#01` schreibt A35 (AD8..15) = 01H.**
     bool ioByteOnBothHalves = true;
     /// Refresh-Zyklen (Status 0001) als Buszyklus melden, wenn RE = 1.
     bool emitRefreshCycles = true;

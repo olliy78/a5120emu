@@ -33,6 +33,9 @@ constexpr uint8_t kAttrNA15 = 1u << 3;  ///< /A15-8
 
 EM::EM(K1520Bus& bus) : EM(bus, Config{}) {}
 
+/// Vorlast von A53: A3 fest H (9005/1), A0..A2 über X12.
+static uint8_t a53Vorlast(const EM::Config& cfg) { return uint8_t((cfg.a53_vorlast & 0x0F) | 0x08); }
+
 static Z8kConfig z8kConfigFor(const EM::Config& cfg) {
     Z8kConfig z;
     // EM256: U8001 (segmentiert); EM064: U8002 (Handbuch §1.2, Plan §6).
@@ -46,7 +49,7 @@ EM::EM(K1520Bus& bus, const Config& cfg)
       u8k_(z8kConfigFor(cfg))
 {
     attr_.fill(0x0F);
-    a53_ = uint8_t(cfg_.a53_vorlast & 0x0F);
+    a53_ = a53Vorlast(cfg_);
     u8k_.read     = [this](const Z8kBusCycle& c) { return read16(c); };
     u8k_.write    = [this](const Z8kBusCycle& c, uint16_t v) { write16(c, v); };
     u8k_.onMO     = [this](bool) { updateMode(); };
@@ -69,6 +72,11 @@ void EM::powerOn() {
     std::fill(dram_.begin(), dram_.end(), 0xFF);
     attr_.fill(0x0F);
     status16_ = 0;
+    // A53/A54 nach Netz-Ein unbestimmt.  Gewählt: geladen und gehalten — so zeigt es
+    // die Messung (em16abl 2026-09-29: ohne A33 Bit 3 kein NVI, danach Vorlast 11).
+    a53_ = a53Vorlast(cfg_);
+    a54_zaehlt_ = false;
+    u8k_.setNVI(nviLine());
     reset();
 }
 
@@ -225,10 +233,8 @@ void EM::updateMode() {
         vector8_ = 0;
         vi_pending_ = false;
         u8k_.setVI(false);
-        // A53 im Reset neu geladen, NVI-Halt gelöscht — ANNAHME (Plan §8, X12/A54).
-        a53_ = uint8_t(cfg_.a53_vorlast & 0x0F);
-        nvi_ff_ = false;
-        u8k_.setNVI(false);
+        // A53 (CLR an Masse) und A54 hängen NICHT an RESET16 (9005/1, Abb. 8): Zähler-
+        // stand und Selbsthaltung überstehen ihn; nur A33 Bit 3 fällt mit A33.
     }
     // TREN = ¬µ0 (A38): µ0 ist aktiv (L) nur nach MSET/MREQ des U8001; im Reset H.
     tren_  = !reset16_ && !u8k_.inReset() && u8k_.moActive();
@@ -264,7 +270,7 @@ void EM::updatePioInputs() {
 uint8_t EM::pegelSignatur() const {
     return uint8_t((mode8_ ? 0x01 : 0) | ((a33_ & 0x10) ? 0x02 : 0) | (tren_ ? 0x04 : 0) |
                    (busRq16() ? 0x08 : 0) | (busak_ ? 0x10 : 0) | (reset16_ ? 0x20 : 0) |
-                   (nvi_ff_ ? 0x40 : 0) | (stop_ ? 0x80 : 0));
+                   (nviLine() ? 0x40 : 0) | (stop_ ? 0x80 : 0));
 }
 
 void EM::pegelMelden() {
@@ -344,16 +350,14 @@ uint32_t EM::cellFor16(const Z8kBusCycle& c) const {
 }
 
 void EM::stapelZyklus() {
-    // A53 zählt STATUS 9 · DS rückwärts, nur mit A33 Bit 3 (Einzelbefehl-Freigabe).
-    if (!(a33_ & 0x08)) return;
-    const bool qd_vor = (a53_ & 0x08) != 0;
+    // A53 (74193) zählt rückwärts an T2 = ¬(DS · STATUS 9) — jeden Stapelzugriff,
+    // Lesen wie Schreiben (Handbuch Abb. 8).  Gesperrt ist er nur über LOAD (A54/10):
+    // nach einer NVI-Quittung bleibt er geladen, bis A33 Bit 3 A54 umlegt.
+    if (!a54_zaehlt_) return;
     a53_ = uint8_t((a53_ - 1) & 0x0F);
-    if (qd_vor && !(a53_ & 0x08) && !nvi_ff_) {
-        // QD fällt ⇒ NVI.  Gehalten bis zur NVI-Quittung (Selbsthaltekreis A54) —
-        // ANNAHME: sonst liesse der 74193 bei 0 → 15 das NVI wieder los.
-        nvi_ff_ = true;
-        u8k_.setNVI(true);
-    }
+    // NVI = ¬QD als Pegel: fällt QD (Stand 7), liegt NVI an; zählt der Zähler bis
+    // 0 → 15 weiter (NVI gesperrt), lässt er es von selbst wieder los.
+    u8k_.setNVI(nviLine());
 }
 
 // ─── U8001: Buszyklen ────────────────────────────────────────────────────────
@@ -366,7 +370,10 @@ uint16_t EM::read16(const Z8kBusCycle& c) {
     switch (c.st) {
         case Z8kStatus::Io:
             // /READ STATUS (A48 · A47): nur AD7 dekodiert, Status-8 auf AD8–15; die untere
-            // Hälfte treibt niemand (offen = H, Annahme).
+            // Hälfte treibt niemand (offen = H).  Ein INB an GERADER Portadresse liest
+            // trotzdem Status-8 — der U8001 nimmt die Hälfte nach A0 (Z8000::ioRead;
+            // am Gerät gemessen 2026-09-29).  Nachtest offen: INB an ungerader Adresse
+            // ⇒ FFH.
             if (c.addr & 0x80) {
                 emit(Ereignis::Status8Lesen, c.addr, status8_, true);
                 return uint16_t((status8_ << 8) | 0x00FF);
@@ -382,19 +389,20 @@ uint16_t EM::read16(const Z8kBusCycle& c) {
             return id;
         }
         case Z8kStatus::NviAck:
-            // Ladeimpuls für A53 (Status 6 · DS · R/W), NVI-Halt gelöst.
-            a53_ = uint8_t(cfg_.a53_vorlast & 0x0F);
-            nvi_ff_ = false;
-            u8k_.setNVI(false);
+            // DS · R/W · Status 6 an A54/08 legt Q10 (= LOAD von A53) auf L: A53 lädt
+            // die Vorlast (QD = H ⇒ NVI weg) und BLEIBT geladen.  Steht A33 Bit 3 noch
+            // auf 1, hält es A54/13 auf L und Q10 kehrt nach dem Impuls auf H zurück —
+            // der Zähler läuft weiter (Handbuch §1.12: Bit 3 vor dem RET rücksetzen).
+            a53_ = a53Vorlast(cfg_);
+            a54_zaehlt_ = (a33_ & 0x08) != 0;
+            u8k_.setNVI(nviLine());
             emit(Ereignis::NviQuittung, 0, a53_, true);
             if (on_event_) pegelMelden();
             return 0xFFFF;
         case Z8kStatus::NmiAck:
-            // Setzt das Paritätsfehler-FF der Speicherkarte zurück (Handbuch §1.3).  Eine
-            // NMI-Quelle ist in §7 nicht belegt — der Pin bleibt unbeschaltet.
-            per_ff_ = false;
+            // Nur gemeldet.  Das Paritäts-FF A46 der Speicherkarte löscht allein /PR
+            // (Handbuch §2.7, Setzeingang) — die Quittung berührt es nicht.
             emit(Ereignis::NmiQuittung, 0, 0, true);
-            updatePioInputs();
             return 0xFFFF;
         default:
             return 0xFFFF;                             // Spezial-E/A (3) nicht dekodiert
@@ -419,6 +427,8 @@ void EM::write16(const Z8kBusCycle& c, uint16_t v) {
         // STB A33 + A35 = Status 2 · DS · Schreiben · AD7 (X13 3–4): BEIDE Register.
         a33_      = uint8_t(v);
         status16_ = uint8_t(v >> 8);
+        // A33/10 (Bit 3) an A54/12: gibt A53 frei (Selbsthaltung bis zur NVI-Quittung).
+        if (a33_ & 0x08) a54_zaehlt_ = true;
         LOG_DEBUG("EM", "U8001 OUT %04X: A33=%02X A35=%02X", c.addr, a33_, status16_);
         emit(Ereignis::A33A35, c.addr, uint16_t((status16_ << 8) | a33_), true);
         updatePioInputs();
@@ -448,7 +458,7 @@ void EM::serialize(std::vector<uint8_t>& o) const {
     o.insert(o.end(), attr_.begin(), attr_.end());
     pio_.serialize(o);
     const uint8_t f[] = {mode8_, a33_, status8_, vector8_, vi_pending_, status16_,
-                         per_ff_, last_mem_page_, pio_a_in_, pio_b_in_, a53_, nvi_ff_};
+                         per_ff_, last_mem_page_, pio_a_in_, pio_b_in_, a53_, a54_zaehlt_};
     o.insert(o.end(), std::begin(f), std::end(f));
     put(o, guthaben_);
     // U8001: Register + Ablaufzustand (POD, derselbe Bau liest es wieder).
@@ -495,7 +505,7 @@ bool EM::deserialize(const uint8_t*& p, const uint8_t* end) {
     pio_.deserialize(pp, end);
     mode8_ = f[0]; a33_ = f[1]; status8_ = f[2]; vector8_ = f[3]; vi_pending_ = f[4];
     status16_ = f[5]; per_ff_ = f[6]; last_mem_page_ = f[7]; pio_a_in_ = f[8];
-    pio_b_in_ = f[9]; a53_ = f[10]; nvi_ff_ = f[11];
+    pio_b_in_ = f[9]; a53_ = f[10]; a54_zaehlt_ = f[11];
     guthaben_ = guthaben;
     std::copy(std::begin(z.Rg), std::end(z.Rg), std::begin(u8k_.Rg));
     u8k_.R14[0] = z.R14[0]; u8k_.R14[1] = z.R14[1];
