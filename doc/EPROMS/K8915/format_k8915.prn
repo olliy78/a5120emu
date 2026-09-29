@@ -1,0 +1,351 @@
+; ============================================================================
+; format_k8915.prn  -  FORMAT.COM V1.7 (K8915, SCPX 8915 V5.3, 900/901/904 byteidentisch)
+;
+; Kommentiertes Teil-Listing fuer k1520dbg/boot_trace (-l). Erzeugt von
+; tools/gen_k8915_format_prn.py direkt aus FORMAT.COM (TPA 0100H, kein RAM-Dump
+; noetig). Arbeitspaket AP-E4e, doc/design/16_k8915.md §8a/§4.4.
+;
+; Kern: FORMAT.COM programmiert die K5122 DIREKT (Ports 10H/11H/12H/14H/16H/18H,
+; Design-Doc 07_k5122_afs.md §3) -- der Schreibstrom-Kern ab 1AEDH baut eine
+; (Datenbyte,Steuerwort)-Paartabelle im RAM und schreibt sie per OUTI/OUT(10H)
+; im Bus-Takt hinaus (kein Pruef-Lesen). DISGEN.COM dagegen bleibt beim normalen
+; BIOS-WRITE (nur EIN OUT im ganzen Programm, ein PIO-Reset an 17H) und braucht
+; keinen neuen /WAIT-Schreibpfad, s. §4.4.
+; ============================================================================
+
+;  ---- 0100..0124 ----
+0100  C3 25 01    	JP L0125		;[Einsprung] JP ueber den Klartext-Kopf; ID-Text 'REZ 14.10.1988 FORMAT V 1.7  K5122*' (0103H ff.) belegt: FORMAT.COM programmiert die K5122 DIREKT (anders als DISGEN.COM, das nur ueber die normale BIOS-WRITE-Funktion schreibt, s. Design-Doc §4.4 Fassungsvergleich/DISGEN-Abschnitt)
+0103  52          	DB	52H
+0104  45          	DB	45H
+0105  5A          	DB	5AH
+0106  20          	DB	20H
+0107  31          	DB	31H
+0108  34          	DB	34H
+0109  2E          	DB	2EH
+010A  31          	DB	31H
+010B  30          	DB	30H
+010C  2E          	DB	2EH
+010D  31          	DB	31H
+010E  39          	DB	39H
+010F  38          	DB	38H
+0110  38          	DB	38H
+0111  20          	DB	20H
+0112  46          	DB	46H
+0113  4F          	DB	4FH
+0114  52          	DB	52H
+0115  4D          	DB	4DH
+0116  41          	DB	41H
+0117  54          	DB	54H
+0118  20          	DB	20H
+0119  56          	DB	56H
+011A  20          	DB	20H
+011B  31          	DB	31H
+011C  2E          	DB	2EH
+011D  37          	DB	37H
+011E  20          	DB	20H
+011F  20          	DB	20H
+0120  4B          	DB	4BH
+0121  35          	DB	35H
+0122  31          	DB	31H
+0123  32          	DB	32H
+0124  32          	DB	32H
+
+;  ---- 1946..1AEC ----
+1946  FD 7E 02    	LD A,(IY+2)		;[Feldkopie] Parameterblock (IY) in Arbeitsvariablen 3500H ff. umkopieren (Tabelle 1BECH: Feldlaengen+Zielzeiger je Byte)
+1949  D3 12       	OUT (12H),A
+194B  FD 7E 03    	LD A,(IY+3)
+194E  32 84 35    	LD (3584H),A
+1951  E5          	PUSH HL
+1952  D5          	PUSH DE
+1953  C5          	PUSH BC
+1954  FD 6E 04    	LD L,(IY+4)
+1957  FD 66 05    	LD H,(IY+5)
+195A  E5          	PUSH HL
+195B  FD E1       	POP IY
+195D  21 EC 1B    	LD HL,1BECH
+1960  46          	LD B,(HL)
+1961  23          	INC HL
+1962  5E          	LD E,(HL)
+1963  23          	INC HL
+1964  56          	LD D,(HL)
+1965  FD 7E 00    	LD A,(IY+0)
+1968  12          	LD (DE),A
+1969  FD 23       	INC IY
+196B  10 F4       	DJNZ L1961
+196D  C1          	POP BC
+196E  D1          	POP DE
+196F  E1          	POP HL
+1970  FD E1       	POP IY
+1972  C9          	RET
+1973  3E 21       	LD A,21H		;L1973/sub_1977/L1992/199F/19A3: waehlen den Operationscode (3599H) nach den Schaltern 3579H/357BH — 21H/22H/23H/03H/04H je nach Lesen/Schreiben/Formatieren und Sektorgroesse [?] (Bedeutung der einzelnen Codes nicht abschliessend geklaert)
+1975  18 2E       	JR L19A5
+1977  21 5F 35    	LD HL,355FH		;sub_1977: 11 Byte ab 355FH bitweise setzen/loeschen (Bit 2) — vermutlich eine Sektor-Belegungs-/Attributtabelle fuer die kommende Spur, abhaengig von (3579H) [?]
+197A  06 0B       	LD B,0BH
+197C  3A 79 35    	LD A,(3579H)
+197F  FE 02       	CP 02H
+1981  30 20       	JR NC,L19A3
+1983  A7          	AND A
+1984  20 06       	JR NZ,L198C
+1986  CB D6       	SET 2,(HL)
+1988  23          	INC HL
+1989  10 FB       	DJNZ L1986
+198B  C9          	RET
+198C  CB 96       	RES 2,(HL)
+198E  23          	INC HL
+198F  10 FB       	DJNZ L198C
+1991  C9          	RET
+1992  3A 7B 35    	LD A,(357BH)
+1995  FE 00       	CP 00H
+1997  3E 04       	LD A,04H
+1999  20 0A       	JR NZ,L19A5
+199B  3E 03       	LD A,03H
+199D  18 06       	JR L19A5
+199F  3E 22       	LD A,22H
+19A1  18 02       	JR L19A5
+19A3  3E 23       	LD A,23H
+19A5  32 99 35    	LD (3599H),A
+19A8  DD 22 05    	35	LD (3505H),IX
+19AC  FD 22 07    	35	LD (3507H),IY
+19B0  22 09 35    	LD (3509H),HL
+19B3  ED 53 0B    	35	LD (350BH),DE
+19B7  ED 43 0D    	35	LD (350DH),BC
+19BB  32 0F 35    	LD (350FH),A
+19BE  CD E6 1E    	CALL sub_1EE6		;CALL sub_1EE6 (Bildschirmausgabe/Status), dann IX=(3503H): Parameterblock des aktuellen Laufwerks/Formats
+19C1  DD 2A 03    	35	LD IX,(3503H)
+19C5  DD 36 26    	00	LD (IX+38),00H
+19C9  CD 01 1A    	CALL sub_1A01		;CALL sub_1A01 — PIO-Modus setzen (s. dort), dann zurueck in den Menue-Dispatch (L129AH)
+19CC  C3 9A 12    	JP L129A
+19CF  3A 86 35    	LD A,(3586H)		;sub_19CF/sub_19EE: Dispatch nach Menuecode (3586H: 'L'/'J'/'S' = sub_1AB8, 'N'/'S'/'J' = sub_1A2F) [?] — welcher Buchstabe zu welchem Menuepunkt gehoert, ist aus dem Code allein nicht sicher (kein String-Vergleich im erreichten Bereich)
+19D2  FE 4C       	CP 4CH
+19D4  28 13       	JR Z,L19E9
+19D6  FE 4A       	CP 4AH
+19D8  28 0F       	JR Z,L19E9
+19DA  FE 53       	CP 53H
+19DC  28 0B       	JR Z,L19E9
+19DE  D5          	PUSH DE
+19DF  11 67 00    	LD DE,0067H
+19E2  CD 4E 1E    	CALL sub_1E4E
+19E5  D1          	POP DE
+19E6  F6 FF       	OR FFH
+19E8  C9          	RET
+19E9  CD B8 1A    	CALL sub_1AB8
+19EC  AF          	XOR A
+19ED  C9          	RET
+19EE  3A 86 35    	LD A,(3586H)
+19F1  FE 4E       	CP 4EH
+19F3  28 07       	JR Z,L19FC
+19F5  FE 53       	CP 53H
+19F7  28 03       	JR Z,L19FC
+19F9  FE 4A       	CP 4AH
+19FB  C0          	RET NZ
+19FC  CD 2F 1A    	CALL sub_1A2F
+19FF  AF          	XOR A
+1A00  C9          	RET
+1A01  F3          	DI		;sub_1A01: DI; A=03H -> OUT(11H) = Steuer-PIO Tor A, Modus-Kontrollwort (Bit1:0=11B => Mode-0/Ausgabe-Festlegung — die Steuerausgaenge /WE, MK, /FR, /STR, MK1, MR/SD, /HL, /ST sind reine Ausgaenge, s. Design-Doc §4 in 07_k5122_afs.md); danach CALL sub_1ED8 (weitere Initialisierung, hier nicht verfolgt) und EI
+1A02  3E 03       	LD A,03H
+1A04  D3 11       	OUT (11H),A
+1A06  CD D8 1E    	CALL sub_1ED8
+1A09  FB          	EI
+1A0A  C9          	RET
+1A0B  F5          	DB	F5H
+1A0C  E5          	DB	E5H
+1A0D  21          	DB	21H
+1A0E  81          	DB	81H
+1A0F  35          	DB	35H
+1A10  34          	DB	34H
+1A11  3E          	DB	3EH
+1A12  01          	DB	01H
+1A13  32          	DB	32H
+1A14  80          	DB	80H
+1A15  35          	DB	35H
+1A16  E1          	DB	E1H
+1A17  F1          	DB	F1H
+1A18  FB          	DB	FBH
+1A19  ED          	DB	EDH
+1A1A  4D          	DB	4DH
+1A1B  36 00       	LD (HL),00H
+1A1D  23          	INC HL
+1A1E  46          	LD B,(HL)
+1A1F  23          	INC HL
+1A20  86          	ADD A,(HL)
+1A21  D2 A3 19    	JP NC,L19A3
+1A24  4F          	LD C,A
+1A25  23          	INC HL
+1A26  7E          	LD A,(HL)
+1A27  B8          	CP B
+1A28  C2 A3 19    	JP NZ,L19A3
+1A2B  2B          	DEC HL
+1A2C  71          	LD (HL),C
+1A2D  18 21       	JR L1A50
+1A2F  2A 11 35    	LD HL,(3511H)		;sub_1A2F: HL=(3511H) = Zeiger auf den Track-/Sektor-Deskriptor (Sync-Laenge, 3-fache Pruefschleife auf ein Erwartungsbyte); baut die Zeiger (3523H Byte-Zahl, 3527H Datenzeiger) fuer den kommenden Schreib-/Lesevorgang auf
+1A32  7E          	LD A,(HL)
+1A33  D3 14       	OUT (14H),A
+1A35  23          	INC HL
+1A36  7E          	LD A,(HL)
+1A37  32 F6 1A    	LD (1AF6H),A
+1A3A  23          	INC HL
+1A3B  06 03       	LD B,03H
+1A3D  BE          	CP (HL)
+1A3E  C2 A3 19    	JP NZ,L19A3
+1A41  23          	INC HL
+1A42  10 F9       	DJNZ L1A3D
+1A44  22 23 35    	LD (3523H),HL
+1A47  2A 15 35    	LD HL,(3515H)
+1A4A  7E          	LD A,(HL)
+1A4B  D6 05       	SUB 05H
+1A4D  38 CC       	JR C,L1A1B
+1A4F  77          	LD (HL),A
+1A50  22 27 35    	LD (3527H),HL
+1A53  23          	INC HL
+1A54  7E          	LD A,(HL)
+1A55  32 EF 1A    	LD (1AEFH),A
+1A58  DB 16       	IN A,(16H)		;IN A,(16H): Lesedatenport EINMAL abgefragt/geleert (Alt-Inhalt verwerfen), dann OUT(10H) zweimal — erst ein Steuerwort mit geloeschtem Bit 2 (RES 2,A auf (3569H)), dann das ungeaenderte (3567H): vermutlich /FR (Seitenwahl, Bit 2) kurz umschalten und zurueck, um den Kopf/die Seite an der /STR-Flanke neu zu latchen (Design-Doc §4 in 07_k5122_afs.md: /FR wird NUR an der /STR-Flanke uebernommen)
+1A5A  3A 69 35    	LD A,(3569H)
+1A5D  CB 97       	RES 2,A
+1A5F  D3 10       	OUT (10H),A
+1A61  3A 67 35    	LD A,(3567H)
+1A64  D3 10       	OUT (10H),A
+1A66  DB 12       	IN A,(12H)		;IN A,(12H); BIT 5,A — Status-PIO Tor B Bit 5 = /WP (Write Protect); Design-Doc §5 in 07_k5122_afs.md: 0 = schreibgeschuetzt. Bit=0 (Z gesetzt) -> L1A83 (Fehlercode 11H nach 3599H, kein Schreibzugriff); sonst weiter mit dem Schreibvorgang. FORMAT.COM prueft den Schreibschutz also SELBST, bevor es die Spur programmiert — nicht erst der BIOS-Treiber
+1A68  CB 6F       	BIT 5,A
+1A6A  28 17       	JR Z,L1A83
+1A6C  18 07       	JR L1A75
+1A6E  CD          	DB	CDH
+1A6F  B0          	DB	B0H
+1A70  1C          	DB	1CH
+1A71  3E          	DB	3EH
+1A72  26          	DB	26H
+1A73  18          	DB	18H
+1A74  02          	DB	02H
+1A75  3E 24       	LD A,24H		;L1A75/1A77: DI, kurze Verzoegerungsschleife (12H = 18 Durchlaeufe), dann OUT(11H)=A (24H oder 26H je nach Vorzweig 1A6E) — vermutlich ein zweites PIO-Steuerwort [?], danach CALL sub_1A89 (Wartefunktion, s. dort)
+1A77  F3          	DI
+1A78  06 12       	LD B,12H
+1A7A  10 FE       	DJNZ L1A7A
+1A7C  D3 11       	OUT (11H),A
+1A7E  FB          	EI
+1A7F  CD 89 1A    	CALL sub_1A89
+1A82  C9          	RET
+1A83  3E 11       	LD A,11H		;L1A83: Fehlerpfad 'DISK READ/ONLY' — Fehlercode 11H nach (3599H), kein Zugriff auf die K5122
+1A85  32 99 35    	LD (3599H),A
+1A88  C9          	RET
+1A89  D5          	PUSH DE		;sub_1A89: Wartet auf (359AH) Bit 1 (fertig?) oder Bit 7 (Timeout-Flag, per DE-Abwaertszaehler FFFFH gesetzt, wenn nichts passiert) — Timeout-Polling ohne Interrupt; im Timeout-Fall (L1AA7) wird trotzdem ein Byte an 14H nachgeschoben (IN(16H) gefolgt von OUT(14H) — Daten-PIO-Latch leeren/vorbelegen, kein Pruef-Lesen im Sinn eines CRC-Vergleichs)
+1A8A  11 FF FF    	LD DE,FFFFH
+1A8D  3A 9A 35    	LD A,(359AH)
+1A90  CB 4F       	BIT 1,A
+1A92  20 21       	JR NZ,L1AB5
+1A94  CB 7F       	BIT 7,A
+1A96  20 0F       	JR NZ,L1AA7
+1A98  1B          	DEC DE
+1A99  7A          	LD A,D
+1A9A  B3          	OR E
+1A9B  20 F0       	JR NZ,L1A8D
+1A9D  3A 9A 35    	LD A,(359AH)
+1AA0  CB E7       	SET 4,A
+1AA2  CB FF       	SET 7,A
+1AA4  32 9A 35    	LD (359AH),A
+1AA7  F3          	DI
+1AA8  3E 20       	LD A,20H
+1AAA  D3 11       	OUT (11H),A
+1AAC  3A 67 35    	LD A,(3567H)
+1AAF  D3 10       	OUT (10H),A
+1AB1  DB 16       	IN A,(16H)
+1AB3  D3 14       	OUT (14H),A
+1AB5  D1          	POP DE
+1AB6  FB          	EI
+1AB7  C9          	RET
+1AB8  2A 1D 35    	LD HL,(351DH)		;sub_1AB8: baut Zeiger (352FH Ende, 3523H Byte-Zahl, 3527H->3511H Anfangszeiger) fuer den GESAMTEN zu schreibenden Bereich einer Operation (HL+=BC*n je nach Feldgroesse); OUT(14H)=00H + IN(16H) + OUT(10H) als Vorbereitung, dann OUT(11H)=22H (PIO scharf) und CALL sub_1A89 (auf Bereitschaft warten) — der eigentliche Bytestrom folgt erst in sub bei 1AEDH (s. u.), von hier per Sprungtabelle/berechnetem Aufruf erreicht (daher als eigene 'range'-Region disassembliert, nicht vom rekursiven Abstieg gefunden)
+1ABB  4E          	LD C,(HL)
+1ABC  23          	INC HL
+1ABD  46          	LD B,(HL)
+1ABE  11 05 00    	LD DE,0005H
+1AC1  19          	ADD HL,DE
+1AC2  22 2F 35    	LD (352FH),HL
+1AC5  2A 11 35    	LD HL,(3511H)
+1AC8  18 05       	JR L1ACF
+1ACA  09          	DB	09H
+1ACB  09          	DB	09H
+1ACC  09          	DB	09H
+1ACD  09          	DB	09H
+1ACE  09          	DB	09H
+1ACF  09          	ADD HL,BC
+1AD0  22 23 35    	LD (3523H),HL
+1AD3  3E 00       	LD A,00H
+1AD5  D3 14       	OUT (14H),A
+1AD7  DB 16       	IN A,(16H)
+1AD9  3A 67 35    	LD A,(3567H)
+1ADC  D3 10       	OUT (10H),A
+1ADE  3E 00       	LD A,00H
+1AE0  32 9A 35    	LD (359AH),A
+1AE3  3E 22       	LD A,22H
+1AE5  F3          	DI
+1AE6  D3 11       	OUT (11H),A
+1AE8  FB          	EI
+1AE9  CD 89 1A    	CALL sub_1A89
+1AEC  C9          	RET
+
+;  ---- 1AED..1B60 ----
+1AED  F5          	PUSH AF		;[SCHREIBSTROM-KERN, /WAIT-Betrieb — das Herz fuer AP-E4f] PUSH AF; OUT(10H)=00H (alle Steuerausgaenge low: /WE, MK, /FR, /STR, MK1, MR/SD, /HL, /ST = 0 — Ruhezustand vor dem Strom); OUT(14H)=00H (Schreibdatenport vorbelegen/leeren)
+1AEE  3E 00       	LD A,00H
+1AF0  D3 10       	OUT (10H),A
+1AF2  E5          	PUSH HL
+1AF3  D5          	PUSH DE
+1AF4  C5          	PUSH BC
+1AF5  3E 00       	LD A,00H
+1AF7  D3 14       	OUT (14H),A
+1AF9  2A 23 35    	LD HL,(3523H)		;HL=(3523H) = Byte-Zahl des Bereichs (von sub_1AB8/sub_1A2F vorbereitet), DE=(3527H) = Zeiger auf eine RAM-Tabelle aus BYTE-PAAREN (Datenbyte, Steuerwort) — je ein Paar pro auszugebender Spurposition. C=14H fest fuer die folgenden OUTI/OUT(C) (Schreibdatenport)
+1AFC  ED 5B 27    	35	LD DE,(3527H)
+1B00  0E 14       	LD C,14H
+1B02  47          	LD B,A
+1B03  ED 41       	OUT (C),B		;dreifaches OUT(C),B (=OUT(14H),00H) als Priming/Anlauf, dazwischen OUT(11H)=20H (PIO-Steuerwort, vermutlich Freigabe [?]) und CALL sub_1A18 (EI; RETI — sub_1A18 wird sowohl als echtes ISR-Ende ALS AUCH hier als gewoehnliches 'EI + Ruecksprung' benutzt, RETI wirkt bei CALL wie RET); (3580H)=00H, (3581H) inkrementiert (Versuchs-/Durchlaufzaehler)
+1B05  3E 20       	LD A,20H
+1B07  D3 11       	OUT (11H),A
+1B09  CD 18 1A    	CALL sub_1A18
+1B0C  ED 41       	OUT (C),B
+1B0E  3E 00       	LD A,00H
+1B10  32 80 35    	LD (3580H),A
+1B13  3A 81 35    	LD A,(3581H)
+1B16  3C          	INC A
+1B17  32 81 35    	LD (3581H),A
+1B1A  ED 41       	OUT (C),B
+1B1C  1A          	LD A,(DE)		;HAUPTSCHLEIFE: A=(DE)=Datenbyte -> B, DE++; A=(DE)=Steuerwort, DE++; OUTI (schreibt (HL)->Port(C=14H): DAS DATENBYTE aus (HL), HL++, B--) — HL zeigt dabei NICHT auf die (DE)-Tabelle, sondern auf denselben laufenden Speicherbereich wie der Datenstrom [Bytezaehlung ueber B/OUTI, das Tabellen-Byte-Paar liefert nur das STEUERWORT fuer OUT(10H) direkt danach]; OUT(10H)=A (das zuvor aus (DE) gelesene STEUERWORT) — je Byte wird also SOFORT NACH dem Datenbyte ein Steuerwort ausgegeben (MK-Bit fuer Sync-/Adressmarken-Bytes wie A1/FE/FB, sonst 0 fuer normale Gap-/Daten-Bytes) — die Spur ist als (Byte,Steuerwort)-Paartabelle im RAM vorgebaut und wird im Bus-Takt hinausgeschrieben, ANALOG zur Lesestrom-Seite des /BUSRQ-Wegs (buildFaithfulReadTrack, Design-Doc §7.6/§7.7 in 07_k5122_afs.md); doppeltes OUTI je Schleifendurchlauf (1B21H/1B28H), danach ein drittes bedingt ueber den (3580H)-Rest-Zaehler (1B2CH ff.) fuer das letzte Byte einer nicht durch 2 teilbaren Menge
+1B1D  47          	LD B,A
+1B1E  13          	INC DE
+1B1F  1A          	LD A,(DE)
+1B20  13          	INC DE
+1B21  ED A3       	OUTI
+1B23  D3 10       	OUT (10H),A
+1B25  CA 1C 1B    	JP Z,L1B1C
+1B28  ED A3       	OUTI
+1B2A  28 F0       	JR Z,L1B1C
+1B2C  3A 80 35    	LD A,(3580H)
+1B2F  A7          	AND A
+1B30  20 06       	JR NZ,L1B38
+1B32  ED A3       	OUTI
+1B34  28 E6       	JR Z,L1B1C
+1B36  18 F4       	JR L1B2C
+1B38  EB          	EX DE,HL		;Abschluss: EX DE,HL (Bytezaehler HL<->DE); OUT(10H)=(3567H) (Steuerwort zuruecksetzen); IN A,(16H) (Lesedatenport LEEREN/entladen — kein Vergleich mit dem Geschriebenen, also KEIN Pruef-Lesen an dieser Stelle; passt zur Doku-Lage 'Treiber schreibt ohne Pruef-Lesen', Design-Doc 07_k5122_afs.md §7.7); Bit 1 in (359AH) setzen (Fertig-Flag fuer sub_1A89-Wartende); Restlaenge HL=HL-DE+5 nach (352BH) ablegen (Buchfuehrung fuer den Aufrufer)
+1B39  3A 67 35    	LD A,(3567H)
+1B3C  D3 10       	OUT (10H),A
+1B3E  DB 16       	IN A,(16H)
+1B40  21 9A 35    	LD HL,359AH
+1B43  CB CE       	SET 1,(HL)
+1B45  2A 23 35    	LD HL,(3523H)
+1B48  A7          	AND A
+1B49  EB          	EX DE,HL
+1B4A  ED 52       	SBC HL,DE
+1B4C  11 05 00    	LD DE,0005H
+1B4F  19          	ADD HL,DE
+1B50  EB          	EX DE,HL
+1B51  2A 2B 35    	LD HL,(352BH)
+1B54  73          	LD (HL),E
+1B55  23          	INC HL
+1B56  72          	LD (HL),D
+1B57  C1          	POP BC
+1B58  D1          	POP DE
+1B59  E1          	POP HL
+1B5A  F1          	POP AF
+1B5B  C9          	RET
+1B5C  DD E5       	PUSH IX
+1B5E  F5          	PUSH AF
+1B5F  E5          	PUSH HL
+1B60  D5          	DB	D5H
+
