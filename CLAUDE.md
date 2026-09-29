@@ -411,8 +411,10 @@ Werkzeuge, **FORMAT.COM + DISGEN.COM laufen**: Leerdiskette → FORMAT → DISGE
 Wächter `K8915Format.*` in `test-format`; **Drucker (SIO1-B) + DFÜ (SIO2-A, vorläufig) nach
 außen** über `K1520Machine::setPrinterCallback`/`printerSend` bzw.
 `setDFUECallback`/`dfueSend`, `Z80SIO` liefert bei leerem Empfänger jetzt das zuletzt
-empfangene Byte statt FFH — Datenblatt-Korrektur, für den A5120 folgenlos); Rest von
-Etappe 4/5 offen, Arbeitspakete in
+empfangene Byte statt FFH — Datenblatt-Korrektur, für den A5120 folgenlos); **DiskTool
+(Etappe 5): AP-E5a/E5b/E5c fertig** — BIOS-DPB, `.img`-Export, **bootfähige K8915-Disketten**
+(`create --fs scpx8915 --boot` / `boot-put --fs scpx8915`, Ladekopf wird vor dem Schreiben
+geprüft, A5120-Abbild abgewiesen); Rest von Etappe 4 offen, Arbeitspakete in
 `doc/design/16_k8915.md` §8a. Im `/WAIT`-Zweig liefert das Lesen die Spur **so, wie sie auf
 der Scheibe liegt** (FORMAT.COM prüft Byte für Byte nach), `.img`-Spuren mit Normlücken —
 nicht den nachgebauten 4×A1-Strom des A5120-Wegs.

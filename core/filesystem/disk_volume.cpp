@@ -15,6 +15,7 @@
 #include "core/filesystem/geometry_probe.h"
 #include "core/filesystem/udos/udos1715_fs.h"
 #include "core/filesystem/udos/udos_fs.h"
+#include "core/peripherals/floppy_drive/track_codec.h"
 
 #include <algorithm>
 #include <limits>
@@ -248,6 +249,59 @@ uint64_t systemspurBytes(const SectorSpace& raum, const FsProfile& p) {
     for (const SectorSpace::TrackRef& t : systemspuren(raum, p))
         n += static_cast<uint64_t>(t.sectors) * (t.sector_size + nachspannBytes(p));
     return n;
+}
+
+
+// ─── K8915-Ladekopf (AP-E5c, doc/design/16_k8915.md §4.4) ───────────────────
+//
+// Die ersten 16 Byte von Sektor 1 (c0h0) liest der ROM-Lader nach F700H und prueft sie
+// mit CRC-CCITT (Startwert FFFFH, Ergebnis ueber alle 16 Byte = 0); Byte 4–6 sind die
+// Sektoren je Zylinder 0/1/2 — zusammen die Zahl der Sektoren, die er nachlaedt.  Ein
+// CP/A-Bootabbild des A5120 (128-B-Systemspuren, anderer Lader) traegt nichts davon;
+// auf eine K8915-Diskette geschrieben, lieferte es einen Kaltstart, der mit `C`
+// scheitert — und die Diskette sieht heil aus.  Deshalb wird VOR dem Schreiben geprueft.
+
+/// @brief Ladekopf gueltig?  @p sektoren = Zahl der zu ladenden Sektoren (Summe Byte 4–6).
+bool k8915Ladekopf(const uint8_t* p, size_t n, unsigned& sektoren) {
+    if (n < 16) return false;
+    if (TrackCodec::crc16Ccitt(p, 16) != 0) return false;
+    sektoren = static_cast<unsigned>(p[4]) + p[5] + p[6];
+    return sektoren > 0;
+}
+
+/**
+ * @brief Beurteilt ein Bootabbild gegen den K8915-Ladekopf; "" = in Ordnung.
+ *
+ * Geprueft wird, wenn das Profil es verlangt (`boot_header: k8915`) ODER die Diskette
+ * schon einen gueltigen Ladekopf traegt (dann ist es eine K8915-Systemdiskette, auch
+ * wenn die Erkennung sie als `cpa800` fuehrt).  Das Abbild muss ausserdem die vom
+ * Ladekopf verlangten Sektoren ganz enthalten.
+ */
+std::string k8915Bootabbildproblem(const FsProfile& p, const SectorSpace& raum,
+                                   const std::vector<uint8_t>& img) {
+    const auto spuren = systemspuren(raum, p);
+    if (spuren.empty()) return {};
+    bool pruefen = (p.boot_header == "k8915");
+    if (!pruefen && spuren.front().sector_size == 1024) {
+        SectorData s;
+        unsigned n = 0;
+        if (raum.readSector(spuren.front().cyl, spuren.front().head, spuren.front().first_id, s)
+            && k8915Ladekopf(s.data.data(), s.data.size(), n))
+            pruefen = true;
+    }
+    if (!pruefen) return {};
+
+    unsigned n = 0;
+    if (!k8915Ladekopf(img.data(), img.size(), n))
+        return "Das Bootabbild traegt keinen gueltigen K8915-Ladekopf (Sektor 1, die ersten "
+               "16 Byte mit CRC-CCITT) — es stammt nicht von einer K8915-Systemdiskette. "
+               "Ein A5120-Bootabbild (CP/A) bootet am K8915 nicht.";
+    const uint64_t noetig = static_cast<uint64_t>(n) * spuren.front().sector_size;
+    if (img.size() < noetig)
+        return "Das Bootabbild ist " + std::to_string(img.size()) + " Byte gross, der Ladekopf "
+               "verlangt aber " + std::to_string(n) + " Sektoren (" + std::to_string(noetig)
+               + " Byte) — der Lader bliebe mitten im System stehen.";
+    return {};
 }
 
 
@@ -2594,6 +2648,13 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
         if (boot.empty()) { err = "Bootabbild ist leer: " + boot_image; return nullptr; }
         const uint64_t platz = bootAreaCapacity(*profil, *fmt);
         if (platz == 0) { err = keineSystemspuren(*profil); return nullptr; }
+        {
+            // Ladekopf VOR dem Anlegen beurteilen (leeres Medium: nur das Profil zaehlt).
+            DiskMedium leer(fmt->numCylinders(), fmt->numHeads(), fmt->predominantEncoding());
+            const SectorSpace raum(leer, *fmt, SectorSpace::kAllHeads);
+            err = k8915Bootabbildproblem(*profil, raum, boot);
+            if (!err.empty()) return nullptr;
+        }
         if (boot.size() > platz) {
             err = "Das Bootabbild ist " + std::to_string(boot.size())
                 + " Byte gross, die Systemspuren von '" + profil->name + "' fassen aber nur "
@@ -2744,6 +2805,8 @@ bool DiskVolume::writeBootImage(const std::vector<uint8_t>& img, int volume) {
                     + "' fassen aber nur " + std::to_string(n) + " Byte.");
 
     SectorSpace& raum = *volumes_[static_cast<size_t>(volume)].space;
+    if (const std::string problem = k8915Bootabbildproblem(*profile_, raum, img); !problem.empty())
+        return fail(problem);
     const uint8_t nach = nachspannBytes(*profile_);
     size_t her = 0;
 

@@ -148,6 +148,63 @@ TEST(K8915Format, LeerdisketteFormatDisgenKaltstart)
     EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
 }
 
+/**
+ * @test K8915Format.FormatDisketteGetBootPutBootetOhneDisgen
+ * @brief AP-E5c: dieselbe Leerdiskette, aber statt DISGEN das DiskTool — FORMAT.COM
+ *        (Verfahren 24) formatiert B:, `boot-get` holt die Systemspuren von A: (900),
+ *        `boot-put` mit `--fs scpx8915` (ohne das Profil hat die frisch formatierte
+ *        Diskette für das DiskTool keine Systemspuren) bringt sie auf B:.  Danach sind sie
+ *        byteweise gleich der Quelle, und ein neuer Kaltstart von B: läuft bis `A>`.
+ */
+TEST(K8915Format, FormatDisketteGetBootPutBootetOhneDisgen)
+{
+    TempDisk a("k8915scpx_cpa800_k5601_bios55k-disk900.hfe");
+    TempDisk b = TempDisk::empty("k8915_format_bootput.hfe");
+    {
+        K8915Machine m;
+        ASSERT_TRUE(m.mountDisk(0, a.path(), "cpa800", false)) << m.lastError();
+        ASSERT_TRUE(m.createDisk(1, b.path(), "", false)) << m.lastError();
+        ASSERT_TRUE(kaltstartBisPrompt(m)) << vramLines(m);
+        FormatLauf f;
+        f.verfahren = "24";
+        const std::string bild = formatiere(m, f, 900'000'000);
+        ASSERT_NE(bild.find("FUNCTION COMPLETE"), std::string::npos) << bild;
+        ASSERT_EQ(bild.find("ERROR"), std::string::npos) << bild;
+        ASSERT_TRUE(m.flushDisks());
+    }
+
+    Kataloge k;
+    std::string err;
+    std::vector<uint8_t> quelle;
+    {
+        auto v = DiskVolume::open(a.path(), "", k.formate, k.fs, err);
+        ASSERT_TRUE(v) << err;
+        ASSERT_TRUE(v->readBootImage(quelle)) << v->lastError();
+    }
+    {
+        auto v = DiskVolume::open(b.path(), "scpx8915", k.formate, k.fs, err, /*read_only=*/false);
+        ASSERT_TRUE(v) << err;
+        ASSERT_TRUE(v->writeBootImage(quelle)) << v->lastError();
+        ASSERT_TRUE(v->flush()) << v->lastError();
+    }
+    {
+        auto v = DiskVolume::open(b.path(), "scpx8915", k.formate, k.fs, err);
+        ASSERT_TRUE(v) << err;
+        std::vector<uint8_t> n;
+        ASSERT_TRUE(v->readBootImage(n)) << v->lastError();
+        EXPECT_EQ(n, quelle) << "Systemspuren weichen von der Quelle ab";
+        EXPECT_TRUE(v->check(FsCheckLevel::Voll, true).ohneBefund());
+    }
+
+    K8915Machine m;
+    ASSERT_TRUE(m.mountDisk(0, b.path(), "cpa800", false)) << m.lastError();
+    ASSERT_TRUE(kaltstartBisPrompt(m)) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "55 K   SCPX 8915   BIOS-Version 5.3")) << vramLines(m);
+    ASSERT_TRUE(befehl(m, "dir")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "NO FILE")) << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // AP-E5a (doc/design/16_k8915.md §8a): frisch mit FORMAT.COM formatierte Disketten im
 // k1520DiskTool — ohne Systemspuren, leeres Verzeichnis, dann Rundreise mit dem K8915.

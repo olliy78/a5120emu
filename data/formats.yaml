@@ -694,6 +694,9 @@ filesystems:
     block_size:  2048
     dir_entries: 128
     detect:      false
+    # Bootabbilder muessen einen K8915-Ladekopf tragen (Sektor 1: 16 Byte, CRC 0) —
+    # ein A5120-CP/A-Abbild wird abgewiesen statt still geschrieben (AP-E5c).
+    boot_header: k8915
 
   # ══ SCP1700 / CP/M-86 (A7100) ══════════════════════════════════════════════
   # CP/M-86 führt dasselbe Verzeichnis wie CP/M 2.2 — 32-B-Einträge, Extents,

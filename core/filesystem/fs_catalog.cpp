@@ -78,7 +78,7 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
     const std::string where = file + ":" + std::to_string(node.line);
     collectUnknownKeys(node,
                        {"name", "description", "format", "type", "data_start",
-                        "containers", "detect_rank", "detect",
+                        "containers", "detect_rank", "detect", "boot_header",
                         "block_size", "dir_entries", "skew", "os",
                         "sides_separate", "boot_track", "directory_track",
                         "bitmap_track", "usable_tracks"},
@@ -155,6 +155,11 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
         if (!n->isScalar() || !yaml::toBool(n->scalar, b))
             { why = "'detect' muss true/false sein"; return false; }
         out.detect = b;
+    }
+    if (const yaml::Node* n = node.find("boot_header")) {
+        if (!n->isScalar() || (n->scalar != "k8915" && !n->scalar.empty()))
+            { why = "'boot_header' muss k8915 sein (oder fehlen)"; return false; }
+        out.boot_header = n->scalar;
     }
 
     // ── typabhaengige Felder ─────────────────────────────────────────────────

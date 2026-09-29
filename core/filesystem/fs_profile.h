@@ -73,6 +73,13 @@ struct FsProfile {
     ///        K8915 darauf geschrieben hat, findet es die CP/A-Regel ohnehin selbst.
     bool detect = true;
 
+    /// @brief Bauart des **Ladekopfs** in Sektor 1 der Systemspuren, den ein Bootabbild
+    ///        tragen muss; "" = keine Pruefung.  Bisher nur `k8915` (AP-E5c): die ersten
+    ///        16 Byte mit CRC-CCITT (Startwert FFFFH, Ergebnis 0) — ein CP/A-Bootabbild
+    ///        des A5120 traegt keinen und wuerde sonst still auf eine Diskette
+    ///        geschrieben, die der K8915-Lader mit `C` abweist.
+    std::string boot_header;
+
     // ── nur FsType::Cpm ──────────────────────────────────────────────────────
     uint32_t block_size  = 2048;   ///< Zuordnungseinheit
     uint16_t dir_entries = 128;    ///< Verzeichniseintraege (maxdir)

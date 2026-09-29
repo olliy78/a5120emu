@@ -135,6 +135,20 @@ Was beim Weiterarbeiten zu wissen ist:
   Fertige Abbilder: `disks/boot_{cpa780,scpx640,scpx798,udos43}.bin`.  Wächter
   `test_disktool_bootdiskette` — baut die Diskette mit dem Werkzeug und **bootet sie**
   (CP/A bis `A>`, SCPX in beiden Geometrien, UDOS bis `%`).
+- **K8915-Bootdisketten: der Ladekopf wird VOR dem Schreiben geprüft** (2026-09-29,
+  `doc/design/16_k8915.md` AP-E5c).  `scpx8915` (`detect: false`, nur `--fs`) hat als
+  Systemspuren Zylinder 0–1 beidseitig = 20480 B; der Weg `boot-get` → `create --boot` /
+  `boot-put --fs scpx8915` stand schon, neu ist `k8915Bootabbildproblem`
+  (`disk_volume.cpp`): erste 16 Byte CRC-CCITT = 0, Abbild ≥ Sektoren laut Byte 4–6.
+  Geprüft wird bei `FsProfile::boot_header == "k8915"` **oder** wenn Sektor 1 der Diskette
+  schon einen gültigen Ladekopf trägt (auch unter Profil `cpa800`).  **Nicht aufweichen:**
+  kein Profil-Eintrag ohne `boot_header` für ein K8915-Dateisystem, keine Prüfung auf
+  Disketten ohne Ladekopf (leere 5×1024 ist von CP/A nicht zu unterscheiden), und beim
+  Anlegen wird VOR dem Formatieren geurteilt.  Eine frisch mit FORMAT.COM formatierte
+  Diskette braucht bei `boot-put` das `--fs scpx8915`.  Wächter:
+  `K8915Scpx.DiskToolBautBootdisketteAus*`, `.FremdeSystemspurWirdFuerDenK8915Abgelehnt`,
+  `.BootPutMachtEineLeereDisketteBootfaehig`, `K8915Format.FormatDisketteGetBootPutBootetOhneDisgen`
+  (langsam).  Keine C-ABI-Änderung.
 - **UDOS-Dateien tragen mehr als ihre Bytes (2026-08-12, `doc/udos_diskettenformat.md`
   §6/§14).**  Der Kopfsektor steuert, wie UDOS eine Datei **lädt**; am Ende (Offset
   122/124/126) stehen **LOW ADDRESS / HIGH ADDRESS / STACK SIZE** — genau das, was

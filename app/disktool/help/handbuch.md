@@ -222,6 +222,10 @@ sein soll. Dann braucht es ein Bootabbild (`.bin`) — das holt man sich mit
 Abbild nicht in die Systemspuren, wird gar nichts angelegt und die Meldung nennt
 beide Größen.
 
+Für den **K8915** (SCPX 8915) heißt das Dateisystem `scpx8915`; das Bootabbild muss den
+Ladekopf einer K8915-Systemdiskette tragen — ein A5120-Abbild wird abgewiesen, bevor
+etwas angelegt wird. Fertige Abbilder liegen im Ordner `disks/` des Quellbaums.
+
 Eine bootfähige Diskette braucht danach noch die Systemdateien: bei CP/A `@OS.COM`
 und die Dienstprogramme, bei UDOS mindestens `OS` und `ZDOS`.
 

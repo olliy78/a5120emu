@@ -799,3 +799,207 @@ TEST(K8915Scpx, ImgRundreiseDerSystemdisketteBootet)
     EXPECT_TRUE(enthaelt(m, "A: X        COM")) << vramLines(m);
     EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
 }
+
+// ─── AP-E5c: bootfähige K8915-Disketten mit dem DiskTool ─────────────────────
+
+namespace {
+
+const char* const kSys900 = "k8915scpx_cpa800_k5601_bios55k-disk900.hfe";   // Fassung „55 K“
+const char* const kSys901 = "k8915scpx_boot1.hfe";                          // Fassung „V24“
+const char* const kBanner900 = "55 K   SCPX 8915   BIOS-Version 5.3";
+const char* const kBanner901 = "SCPX 8915  V 5.3  Anpassung:  V24  (XON/XOFF)";
+
+/// Systemspuren (Bootabbild) einer Diskette aus den Fixtures — über eine TempDisk.
+std::vector<uint8_t> systemabbild(const char* fixture, const char* fs = "") {
+    TempDisk q(fixture);
+    DtKataloge k;
+    std::string err;
+    auto vol = DiskVolume::open(q.path(), fs, k.formate, k.fs, err);
+    std::vector<uint8_t> out;
+    EXPECT_TRUE(vol) << err;
+    if (vol) EXPECT_TRUE(vol->readBootImage(out)) << vol->lastError();
+    return out;
+}
+
+void schreibeBin(const std::string& pfad, const std::vector<uint8_t>& b) {
+    std::ofstream o(pfad, std::ios::binary | std::ios::trunc);
+    o.write(reinterpret_cast<const char*>(b.data()), static_cast<std::streamsize>(b.size()));
+}
+
+/// Kaltstart von @p pfad in A: bis zum Prompt; der Autostart `rade` findet nichts.
+void bootetBisPromptOhneRade(K8915Machine& m, const std::string& pfad) {
+    ASSERT_TRUE(m.mountDisk(0, pfad, "cpa800", false)) << m.lastError();
+    ohneSelbsttestZurColdstartMeldung(m);
+    m.keyboard().sendeZeichen(0x0D);
+    ASSERT_TRUE(bis(m, "RADE?", 150'000'000)) << vramLines(m);
+    for (long long t = 0; t < 20'000'000 && letzteZeile(m) != "A>"; t += m.run(kSchritt)) {}
+    ASSERT_EQ(letzteZeile(m), "A>") << vramLines(m);
+}
+
+/**
+ * Die ganze Kette: `boot-get` von @p quelle → `create --fs scpx8915 --boot` (Endung
+ * @p ext) → Systemspuren byteweise gleich der Quelle → eine Datei per DiskTool → der
+ * K8915 bootet davon bis `A>`, listet die Datei, gibt sie aus und schreibt selbst.
+ */
+void bautBootdiskette(const char* quelle, const char* ext, const char* banner) {
+    const std::vector<uint8_t> sys = systemabbild(quelle);
+    ASSERT_EQ(sys.size(), 20480u);
+    TempDisk bin = TempDisk::empty("k8915_boot.bin");
+    schreibeBin(bin.path(), sys);
+
+    TempDisk neu = TempDisk::empty(std::string("k8915_bootdisk.") + ext);
+    DtKataloge k;
+    std::string err;
+    {
+        auto v = DiskVolume::create(neu.path(), "scpx8915", "", k.formate, k.fs, err, bin.path());
+        ASSERT_TRUE(v) << err;
+        EXPECT_EQ(v->bootAreaSize(), 20480u);
+    }
+    {
+        // Maßstab: Systemspuren byteweise gleich der Quelle; das Dateisystem ist leer und heil.
+        auto v = DiskVolume::open(neu.path(), "scpx8915", k.formate, k.fs, err);
+        ASSERT_TRUE(v) << err;
+        std::vector<uint8_t> n;
+        ASSERT_TRUE(v->readBootImage(n)) << v->lastError();
+        EXPECT_EQ(n, sys) << "Systemspuren weichen von der Quelle ab";
+        EXPECT_TRUE(v->list().empty());
+        EXPECT_TRUE(v->check(FsCheckLevel::Voll, true).ohneBefund());
+    }
+    ASSERT_NO_FATAL_FAILURE(dtPut(neu.path(), "scpx8915", "VOMDT.TXT", "AUF BOOTDISKETTE\n"));
+    {
+        // Mit Dateien darauf erkennt das DiskTool die Diskette ohne `--fs` als K8915.
+        auto v = DiskVolume::open(neu.path(), "", k.formate, k.fs, err);
+        ASSERT_TRUE(v) << err;
+        EXPECT_EQ(v->profile().data_cyl, 2) << v->detection().filesystem;
+    }
+
+    K8915Machine m;
+    ASSERT_NO_FATAL_FAILURE(bootetBisPromptOhneRade(m, neu.path()));
+    EXPECT_TRUE(enthaelt(m, banner)) << vramLines(m);
+    ASSERT_TRUE(befehl(m, "dir")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "VOMDT    TXT")) << vramLines(m);
+    ASSERT_TRUE(befehl(m, "type vomdt.txt")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "AUF BOOTDISKETTE")) << vramLines(m);
+    ASSERT_TRUE(befehl(m, "save 2 x.com")) << vramLines(m);
+    ASSERT_TRUE(befehl(m, "dir x.com")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "A: X        COM")) << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
+}
+
+}  // namespace
+
+/// @test AP-E5c: `create --fs scpx8915 --boot` aus den Systemspuren der Diskette 900 (.hfe).
+TEST(K8915Scpx, DiskToolBautBootdisketteAus900Hfe) { bautBootdiskette(kSys900, "hfe", kBanner900); }
+/// @test Wie oben aus der Diskette 901 (BIOS-Fassung V24 XON/XOFF).
+TEST(K8915Scpx, DiskToolBautBootdisketteAus901Hfe) { bautBootdiskette(kSys901, "hfe", kBanner901); }
+/// @test Als `.img` (seit AP-E5b zulässig) — die aus Sektoren gebaute Spur bootet ebenso.
+TEST(K8915Scpx, DiskToolBautBootdisketteAus900Img) { bautBootdiskette(kSys900, "img", kBanner900); }
+TEST(K8915Scpx, DiskToolBautBootdisketteAus901Img) { bautBootdiskette(kSys901, "img", kBanner901); }
+
+/**
+ * @test K8915Scpx.BootPutMachtEineLeereDisketteBootfaehig
+ * @brief `boot-put` auf eine leere, formatierte Diskette (ohne Systemspuren, wie nach
+ *        FORMAT.COM): ohne `--fs scpx8915` sind das für das DiskTool eine CP/A-Datendiskette
+ *        ohne Systemspuren (Meldung „keine Systemspuren“), mit dem Profil geht es.
+ */
+TEST(K8915Scpx, BootPutMachtEineLeereDisketteBootfaehig)
+{
+    const std::vector<uint8_t> sys = systemabbild(kSys900);
+    TempDisk leer = TempDisk::empty("k8915_bootput.hfe");
+    DtKataloge k;
+    std::string err;
+    ASSERT_TRUE(DiskVolume::create(leer.path(), "cpa800", "", k.formate, k.fs, err)) << err;
+    {
+        auto v = DiskVolume::open(leer.path(), "", k.formate, k.fs, err, /*read_only=*/false);
+        ASSERT_TRUE(v) << err;
+        EXPECT_FALSE(v->writeBootImage(sys)) << "cpa800 ab c0h0 hat keine Systemspuren";
+        EXPECT_NE(v->lastError().find("keine Systemspuren"), std::string::npos);
+    }
+    {
+        auto v = DiskVolume::open(leer.path(), "scpx8915", k.formate, k.fs, err, false);
+        ASSERT_TRUE(v) << err;
+        ASSERT_TRUE(v->writeBootImage(sys)) << v->lastError();
+        ASSERT_TRUE(v->flush()) << v->lastError();
+    }
+    {
+        auto v = DiskVolume::open(leer.path(), "scpx8915", k.formate, k.fs, err);
+        ASSERT_TRUE(v) << err;
+        std::vector<uint8_t> n;
+        ASSERT_TRUE(v->readBootImage(n)) << v->lastError();
+        EXPECT_EQ(n, sys);
+    }
+    K8915Machine m;
+    ASSERT_NO_FATAL_FAILURE(bootetBisPromptOhneRade(m, leer.path()));
+    EXPECT_TRUE(enthaelt(m, kBanner900)) << vramLines(m);
+}
+
+/**
+ * @test K8915Scpx.FremdeSystemspurWirdFuerDenK8915Abgelehnt
+ * @brief Ein A5120-CP/A-Bootabbild (kein Ladekopf), ein Abbild mit zerstörter Ladekopf-CRC
+ *        und eines, das kürzer ist als der Ladekopf verlangt, werden abgewiesen — beim
+ *        Anlegen (dann bleibt keine Datei liegen) wie bei `boot-put` (Systemspuren
+ *        unverändert), auch wenn die Diskette nur an ihrem Ladekopf als K8915 kenntlich
+ *        ist (Profil `cpa800`, ohne `--fs`).  Ein gültiges Abbild geht danach durch.
+ */
+TEST(K8915Scpx, FremdeSystemspurWirdFuerDenK8915Abgelehnt)
+{
+    const std::vector<uint8_t> a5120 = systemabbild("cpa_cpa780_k5601_noclock.hfe");
+    ASSERT_GT(a5120.size(), 0u);
+    std::vector<uint8_t> kaputt = systemabbild(kSys900);
+    kaputt[3] ^= 0x01;                                  // Einsprung verändert, CRC bleibt
+    std::vector<uint8_t> kurz = systemabbild(kSys900);
+    kurz.resize(5 * 1024);                              // Ladekopf verlangt 12 Sektoren
+
+    DtKataloge k;
+    for (const std::vector<uint8_t>* schlecht : {static_cast<const std::vector<uint8_t>*>(&a5120), static_cast<const std::vector<uint8_t>*>(&kaputt), static_cast<const std::vector<uint8_t>*>(&kurz)}) {
+        TempDisk bin = TempDisk::empty("k8915_fremd.bin");
+        schreibeBin(bin.path(), *schlecht);
+        TempDisk neu = TempDisk::empty("k8915_fremd_neu.hfe");
+        std::string err;
+        EXPECT_FALSE(DiskVolume::create(neu.path(), "scpx8915", "", k.formate, k.fs, err, bin.path()));
+        EXPECT_FALSE(err.empty());
+        EXPECT_FALSE(std::ifstream(neu.path()).good() && std::ifstream(neu.path()).peek() != EOF)
+            << "es darf keine halbe Diskette liegen bleiben";
+
+        // boot-put auf einer vorhandenen K8915-Systemdiskette (erkannt als cpa800).
+        TempDisk sys(kSys900);
+        auto v = DiskVolume::open(sys.path(), "", k.formate, k.fs, err, /*read_only=*/false);
+        ASSERT_TRUE(v) << err;
+        std::vector<uint8_t> vorher;
+        ASSERT_TRUE(v->readBootImage(vorher));
+        EXPECT_FALSE(v->writeBootImage(*schlecht)) << "Abbild " << schlecht->size() << " B";
+        EXPECT_NE(v->lastError().find("Ladekopf"), std::string::npos) << v->lastError();
+        std::vector<uint8_t> nachher;
+        ASSERT_TRUE(v->readBootImage(nachher));
+        EXPECT_EQ(nachher, vorher) << "abgelehnt heisst: nichts geschrieben";
+    }
+
+    // Gegenprobe: ein gültiges Abbild (auch das der anderen Fassung) geht auf 900.
+    TempDisk sys(kSys900);
+    std::string err;
+    auto v = DiskVolume::open(sys.path(), "", k.formate, k.fs, err, false);
+    ASSERT_TRUE(v) << err;
+    const std::vector<uint8_t> s901 = systemabbild(kSys901);
+    ASSERT_TRUE(v->writeBootImage(s901)) << v->lastError();
+    std::vector<uint8_t> n;
+    ASSERT_TRUE(v->readBootImage(n));
+    EXPECT_EQ(n, s901);
+}
+
+/**
+ * @test K8915Scpx.AusgelieferteBootabbilderSindDieSystemspurenDerDisketten
+ * @brief `disks/boot_scpx8915_{55k,v24}.bin` (README) = `boot-get` der Disketten 900/901 —
+ *        sonst läge dort ein Abbild, dessen Herkunft niemand mehr belegen kann.
+ */
+TEST(K8915Scpx, AusgelieferteBootabbilderSindDieSystemspurenDerDisketten)
+{
+    using k1520test::diskPath;
+    using k1520test::readFileBytes;
+    for (const auto& p : {std::pair<const char*, const char*>{"boot_scpx8915_55k.bin", kSys900},
+                          {"boot_scpx8915_v24.bin", kSys901}}) {
+        const std::string datei = readFileBytes(diskPath(std::string("../../../disks/") + p.first));
+        const std::vector<uint8_t> sys = systemabbild(p.second);
+        ASSERT_EQ(datei.size(), 20480u) << p.first;
+        EXPECT_EQ(std::vector<uint8_t>(datei.begin(), datei.end()), sys) << p.first;
+    }
+}
