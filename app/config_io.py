@@ -6,7 +6,9 @@ The configuration file is a top-level YAML mapping so further sections can be
 added over time.  Sections carried today:
 
 * ``crt``     — picture-tube look (see :class:`~app.ui.screen_widget.CRTParams`)
-* ``general`` — general emulator settings (currently the emulation ``speed``)
+* ``general`` — general emulator settings: emulation ``speed`` and the machine
+  ``model`` (``"a5120"``/``"a5120.16"``, ``app/modell.py``; missing = ``"a5120"``,
+  so older configurations keep running unchanged)
 * ``drive_types`` — the drive-bay configuration: one core ``DriveProfile`` name
   per K5122 slot (``"none"`` = empty slot), restored on the next start
 * ``disks``   — the mounted disk images, so they are restored on the next start
