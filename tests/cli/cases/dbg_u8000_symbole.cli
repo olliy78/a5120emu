@@ -1,0 +1,36 @@
+# S5b: Symboldatei aus z8kasm (--sym) im Debugger — laden, Anzeige in u/bl, Haltepunkt
+# per Name, Programm per load in den EM-Speicher (durch die Segmentweiche).
+tool:      k1520dbg
+tmpfile bild:
+tmpfile marken:
+file quelle.s:
+          ORG   <<3>>%0100
+  START:  LD    R0,#%ED4D
+  LOOP:   CALL  UP
+          JR    LOOP
+  UP:     RET
+setup_run: @z8kasm -s -o %bild% --sym %marken% %quelle.s%
+run:       --em em256
+stdin:
+  cpu u8000
+  fcw %C000
+  load %bild% <<3>>%0100
+  sym %marken%
+  sym list
+  u START 4
+  b LOOP+0
+  bl
+  verify %bild% @START
+  x/2a START
+  q
+exit:      0
+forbid:    unknown command
+expect:    loaded 0 symbol(s) + 3 U8001-Symbol(e) mit Segment
+expect:    <<3>>%0104 LOOP
+expect:    <<3>>%0100 <START>: 2100 ED4D                 LD R0,#%ED4D
+expect:    <<3>>%0104 <LOOP>: 5F00 8300 010C            CALL <<3>>%010C <UP>
+expect:    <<3>>%010A: E8FC                      JR <<3>>%0104 <LOOP>
+expect:    <<3>>%010C <UP>: 9E08                      RET
+expect:    bp U8001 @<<3>>%0104 <LOOP>
+expect:    <<3>>%0104 <LOOP>  hits=0
+expect:    14 identisch (100.0 %)

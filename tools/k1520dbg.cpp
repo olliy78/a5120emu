@@ -2647,6 +2647,8 @@ int main(int argc, char** argv){
                 dbg16::Addr16 a; if (dbg16::parseAddr(t[3],0,a) && a.kind==dbg16::Addr16::Seg){ sym16.add(t[2],a.key());
                     fprintf(stderr,"  sym %s=%s (U8001)\n",t[2].c_str(),dbg16::addrText(a.seg,a.off,true).c_str()); }
                 else fprintf(stderr,"  ? Adresse '%s'\n",t[3].c_str()); }
+            else if (t.size()>=4 && t[1]=="add" && isRawTok(t[3]))
+                fprintf(stderr,"  ? Symbole zeigen auf <<seg>>off (U8001) oder eine Z80-Adresse, nicht auf em:\n");
             else if (t.size()>=4 && t[1]=="add"){ symAdd(t[2],(uint16_t)parseNum(t[3])); fprintf(stderr,"  sym %s=%04X\n",t[2].c_str(),(uint16_t)parseNum(t[3])); }
             else if (t.size()>=2 && t[1]=="list"){ for(auto&kv:sym_by_addr) fprintf(stderr,"  %04X %s\n",kv.first,kv.second.c_str());
                 for(auto&kv:sym16.byKey()) fprintf(stderr,"  %s %s\n",dbg16::addrText(uint8_t(kv.first>>16),uint16_t(kv.first),true).c_str(),kv.second.c_str()); }

@@ -83,8 +83,31 @@ Registernummer wie geschrieben.
 
 ```sh
 tools/dev.sh tool z8kasm -s -l -o fw.bin fw.s              # assemblieren, Listing
+tools/dev.sh tool z8kasm -s -o fw.bin --sym fw.sym fw.s    # dazu Symboldatei für k1520dbg
 tools/dev.sh tool z8kasm -d fw.bin -s --start %40          # disassemblieren
 ```
+
+### Symboldatei für den Debugger (`--sym`, S5b)
+
+`--sym DATEI` schreibt die **Marken** des Programms (keine `EQU`-Konstanten — sie sind keine
+Adressen und würden jede gleichlautende Zahl im Disassembler beschriften), eine je Zeile,
+nach Adresse sortiert:
+
+```
+# z8kasm-Symbole (U8001) fuer k1520dbg: <<SEG>>%OFFS NAME — fw.s
+<<3>>%0100 START
+<<3>>%0104 LOOP
+```
+
+- Segmentiert assemblierte Marken tragen ihr Segment (Wert `s·2²⁴ + o` → `<<s>>%o`).
+- Nichtsegmentiert assemblierte Marken haben keins; sie bekommen `--sym-seg N` (Vorgabe 0) —
+  das Segment, in dem das Programm läuft.
+- `k1520dbg` liest die Datei mit `sym datei` bzw. `-s datei` (U8001-Zeilen erkennt es am
+  `<<`; Z80-Zeilen `ADDR NAME` dürfen in derselben Datei stehen). Auch `NAME <<s>>%o` und
+  `NAME = <<s>>%o` werden gelesen. Anzeige und Gebrauch: `tools/k1520dbg.md` §11.
+- Baustein: `z8k::formatSymbols(AsmResult, nonsegSeg)`, Marken in `AsmResult::labels`;
+  Wächter `Z8kAsm.SymboldateiNurMarkenMitSegment`, `cli_z8kasm_symbole`,
+  `cli_dbg_u8000_symbole`.
 
 ## Quellen, Lücken, Unsicherheiten
 

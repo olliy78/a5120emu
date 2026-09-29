@@ -18,3 +18,28 @@ expect:  bp U8001 @<<0>>%0104
 expect:  U8001 breakpoints:
 expect:  "u8001_pc":"<<0>>%0000"
 expect:  U8001: (no samples)
+# S5b
+expect:  bp U8001 @<<0>>%0104 if (R3==%BEEF) & ([<<0>>%0200]w==%1234) & (C==0)
+expect:  logpoint U8001 @<<0>>%0104 exprs: R3 RR4 [<<0>>%0200]l FCW PCSEG A33 MODE
+expect:  [16:0] watch-write [<<0>>%0200..<<0>>%020F]  (logisch: U8001)
+expect:  [16:2] watch-rw [<<0>>%0400..<<0>>%0400] == 12  (logisch: U8001)
+expect:  [16:3] break-write [em:00200..em:00200] changed  (roh: U8001 und U880)
+expect:  [16:4] break-read [em:00300..em:00303]  (roh: U8001 und U880)
+expect:  removed 1 U8001-watch(es) covering em:00300
+expect:  U8001 io-break: %0081
+expect:  events: u8001-vi/nvi u8001-nmi u8001-iret
+expect:  disp[1] = RH1+[<<0>>%0200]  (U8001)
+expect:  <<0>>%0100 START
+expect:  <<0>>%0100 <START>: 2100 1234                 LD R0,#%1234
+expect:  <<0>>%0100    : 8448 4660
+expect:  nicht auf em:
+expect:  8 Bytes @<<0>>%0100, 8 identisch (100.0 %), 0 Abweichung(en)
+expect:  8 Bytes @em:00210, 8 identisch (100.0 %), 0 Abweichung(en)
+expect:  8 Bytes @<<0>>%0100, 7 identisch (87.5 %), 1 Abweichung(en):
+expect:  U8001: R5 5678→0505
+expect:  EM-DRAM em:00300..em:00300 (1 B)
+expect:  A46 (Paritaets-FF, Merker)=0
+expect:  A53 (Einzelbefehlszaehler)=11 (Vorlast 11)
+forbid:  nicht auswertbar
+forbid:  ? Adresse
+forbid:  ? Bereich

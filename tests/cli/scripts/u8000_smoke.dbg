@@ -35,6 +35,72 @@ bi <<0>>%0104 2
 bl
 bd <<0>>%0104
 bt
+bt 3
+bt scan
+# S5b: Bedingungen, Logpoints, Watchpoints, Ports, Ereignisse, Symbole, Zustand
+b <<0>>%0104 if (R3==%BEEF) & ([<<0>>%0200]w==%1234) & (C==0)
+b <<0>>%0106 if [em:00202]==%56
+lp <<0>>%0104 R3 RR4 [<<0>>%0200]l FCW PCSEG A33 MODE
+lpl
+lpd <<0>>%0104
+wp <<0>>%0200..%020F
+wpr <<0>>%0300
+wpa <<0>>%0400 == 12
+wb em:00200 changed
+wbr em:00300..00303
+wba em:00400 != 00
+wl
+wd <<0>>%0200
+wd em:00300
+wd all
+iow %0080
+iob %0081
+iol
+iod %0080
+iod %0081
+bint
+bnmi
+breti
+bl
+bint off
+bnmi off
+breti off
+mark <<0>>%0100
+hist 20000 <<0>>%0100 %0200
+disp R3
+disp RH1+[<<0>>%0200]
+sym add START <<0>>%0100
+sym add RAM em:0
+sym list
+u START 2
+b START
+bd START
+x/2dw START
+x/2uw START
+x/4c START
+x/2tb START
+x/2ow START
+x/2a START
+x/1s START
+x/2xl START
+x
+x/2xb RR4
+save u16.bin START 8
+verify u16.bin @START
+load u16.bin em:00210
+verify u16.bin @em:00210
+e START 00
+verify u16.bin @START
+dump START 4 u16b.bin
+snap vorher
+e em:00300 AA
+set R5 %0505
+snap nachher
+snap diff vorher nachher
+cpu zve1
+wp em:00000
+wd em:00000
+cpu u8000
 s
 n
 bmode 16
