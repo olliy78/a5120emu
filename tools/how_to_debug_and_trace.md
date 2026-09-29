@@ -183,6 +183,55 @@ Lange Läufe drucken jetzt alle 2 s eine Fortschrittszeile; **Ctrl-C** bricht de
 
 ---
 
+## 0e. K8915 (`--machine k8915`) — durchgerechnetes Szenario
+
+Beide Werkzeuge fahren seit AP-E4d auch den K8915 (eine CPU, Speicherbild über A8H,
+K5122 im `/WAIT`-Betrieb). Referenz: `tools/k1520dbg.md` §11, `tools/boot_trace.md` §7.
+
+**Wo steht der Boot?** — `boot_trace` bis zum Prompt, Ereignisprotokoll lesen:
+
+```sh
+tools/dev.sh trace --machine k8915 tests/fixtures/disks/k8915scpx_boot1.hfe \
+    -l doc/EPROMS/K8915/k8915_zre.prn -l doc/EPROMS/K8915/k8915_zre.prn@0xF000:00D0-03FF \
+    -l doc/EPROMS/K8915/scpx8915_v53_bios.prn -L /dev/null 2>&1 | less
+#  [ev c47   PC=000C] OUT (A8H)=8E  ZRE Speicherregister  map=R...111111111111 /MEMDI  ; OUT (A8H),A
+#  [ev c12312405 PC=F11B] OUT (A8H)=44 …  map=R...222211111111      ← RAM-Test, Bank-2-Viertel
+#  [ev c29071227 PC=0498] OUT (61H)=E0  Anzeigefeld  Lampen: Input File
+#  Prompt:      JA ("A>")
+```
+
+**Coldstart → CR → Haltepunkt im Marken-ISR E965H** (das BIOS liest dort den
+Sektorkopf ausgerollt per `/WAIT`):
+
+```sh
+printf 'gscreen "Coldstart" 20000000\nkeys \\r\nb 0xE965\ng 200000000\nwhere\nbt\nq\n' | \
+  tools/dev.sh tool k1520dbg --machine k8915 --skip-selftest tests/fixtures/disks/k8915scpx_boot1.hfe \
+    -l doc/EPROMS/K8915/scpx8915_v53_bios.prn
+```
+
+Ausgabe (gekürzt):
+
+```
+   screen matched after 250038 cyc
+   keys: 1 Zeichen getippt, 750095 cyc (PC=055E)
+  bp CPU @E965
+** bp CPU : CPU PC=E965
+  => E965: F5   PUSH AF  ; PUSH AF ;[ISR PIO1 B = MARKE ERKANNT] liest den Sektorkopf AUSGEROLLT …
+  state: A8H=87 map=1111111111111111 /MEMDI=1 61H=E0  c-cyc=5275506
+  K5122 (/WAIT): D0 mounted cyl=2 head=0 idle headPos=0/0
+  #1 E537 (call → E6AE, ret E53A)  ; CALL E6AEH
+```
+
+Drei Dinge, die anders sind als am A5120: (1) `keys` tippt über `K7672::sendeZeichen`,
+unter SCPX (DCP-Modus) also als Scancodes — `\x03` ist ^C (Warmstart über den ROM-Lader
+bei 0406H, Wächter `cli_dbg_k8915_ctrlc_warmstart_bp`). (2) ROM-Listingzeilen
+annotieren nur, solange das ROM eingeblendet ist (A8H=06H/8EH); im Betrieb (87H) steht
+bei 0000H RAM. (3) ZVE2, `bbusrq`/`bxfer`, Snapshots und Savestates gibt es nicht — die
+Kommandos melden „nicht vorhanden“. **Einmal booten, oft fortsetzen** geht deshalb am
+K8915 (noch) nicht; `--skip-selftest` spart den teuersten Teil (≈ 29 Mio. Takte).
+
+---
+
 ## 1. Schnellstart
 
 ```sh

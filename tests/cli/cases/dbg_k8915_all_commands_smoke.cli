@@ -1,0 +1,18 @@
+# Dispatch-Smoke am K8915 (§8a AP-E4d): jedes Kommando einmal; was es nur am A5120
+# gibt (ZVE2, /BUSRQ-/DMA-Flanken, Snapshots, Savestates), meldet "nicht vorhanden"
+# statt abzustuerzen.  Neue Kommandos gehoeren in dieses Skript UND in das A5120-Skript.
+tool:    k1520dbg
+disk:    k8915scpx_boot1.hfe
+run:     --machine k8915 %DISK% -x %CLI_DIR%/scripts/all_commands_smoke_k8915.dbg
+timeout: 300
+exit:    0
+forbid:  unknown command
+expect:  's2' gibt es am K8915 nicht
+expect:  'bbusrq' gibt es am K8915 nicht
+expect:  'savestate' gibt es am K8915 nicht
+expect:  ZVE2 ('r 2') gibt es am K8915 nicht
+expect:  Die BS-PIO (K2526) gibt es am K8915 nicht
+expect:  0000-0FFF  ROM
+expect:  ZRE CTC ch3
+expect:  SIO2 (ATS; B = Tastatur K7672)
+expect:  "machine":"k8915"

@@ -150,6 +150,31 @@ public:
     K1520Bus&  bus()    { return bus_; }
     uint64_t   totalCycles() const { return total_cycles_; }
 
+    // ─── Werkzeuge (k1520dbg, boot_trace; §8a AP-E4d) ────────────────────────
+    /** @brief Einen mit stop() angeforderten Halt zurücknehmen (vor dem nächsten run()). */
+    void clearStop() { stop_.store(false); }
+    uint16_t cpuPC() const { return zre_.cpu().PC; }
+    /**
+     * @brief Beobachter vor JEDEM Befehl der CPU.  Zusammen mit dem im Konstruktor
+     *        gesetzten `abortBeforeExecute` (= stop_) hält ein stop() aus dem Rückruf
+     *        die Maschine VOR dem Befehl an (run() kehrt dann mit 0 Takten zurück) —
+     *        dieselbe Einzelschrittschnittstelle wie beim A5120.
+     */
+    void setCpuTraceCallback(std::function<void(const Z80&)> cb) {
+        zre_.cpu().traceCallback = std::move(cb);
+    }
+    /**
+     * @brief Beobachter für JEDEN Speicher- und E/A-Zugriff der CPU: der Busbeobachter
+     *        UND der der ZRE (deren eigener Speicher geht nicht über den Bus, s.
+     *        K8915Zre::setMemTrace).  Leer = beide aus.
+     */
+    void setBusTrace(K1520Bus::BusTrace cb) {
+        zre_.setMemTrace(cb);
+        bus_.setTraceCallback(std::move(cb));
+    }
+    /** @brief Letzte Interrupt-Quittung des Busses (Vektor + Quellgerät). */
+    const K1520Bus::IntAck& lastIntAck() const { return bus_.lastIntAck(); }
+
 private:
     void resetHardware();
     void tastenAbgeben();     ///< Warteschlange an die K7672 (nur im Lauffaden)

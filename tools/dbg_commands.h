@@ -33,6 +33,8 @@ inline const std::vector<std::string>& names() {
         // misc
         "mark","keys","keyuntil","screen","gscreen","bscreen","dialog","console",
         "reset","disk","alias","unalias","source","help","q","quit",
+        // K8915 (--machine k8915): A8H-Speicherbild, DRAM-Bänke direkt
+        "map","bank",
     };
     return n;
 }

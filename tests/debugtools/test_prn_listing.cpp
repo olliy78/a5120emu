@@ -199,3 +199,87 @@ TEST(PrnListing, LoadCollectsBytesUnderRuntimeAddresses){
     EXPECT_EQ(l.bytes_by_addr[0x0502], 0x06);
     std::filesystem::remove(p);
 }
+
+// --- Quellbereich, Byteabgleich, nächstes Label (§8a AP-E4d, K8915) ----------
+
+TEST(PrnListing, SplitSpecRangeKennt_Versatz_Bereich_UndBeides){
+    std::string p; long off; int lo, hi;
+    ASSERT_TRUE(prnlst::splitSpecRange("rom.prn", p, off, lo, hi));
+    EXPECT_EQ(p, "rom.prn"); EXPECT_EQ(off, 0); EXPECT_EQ(lo, -1); EXPECT_EQ(hi, -1);
+
+    ASSERT_TRUE(prnlst::splitSpecRange("rom.prn@0xF000", p, off, lo, hi));
+    EXPECT_EQ(off, 0xF000); EXPECT_EQ(lo, -1);
+
+    ASSERT_TRUE(prnlst::splitSpecRange("rom.prn@0xF000:00D0-03FF", p, off, lo, hi));
+    EXPECT_EQ(p, "rom.prn"); EXPECT_EQ(off, 0xF000); EXPECT_EQ(lo, 0x00D0); EXPECT_EQ(hi, 0x03FF);
+
+    ASSERT_TRUE(prnlst::splitSpecRange("rom.prn@:0x0400-9FFH", p, off, lo, hi));
+    EXPECT_EQ(off, 0); EXPECT_EQ(lo, 0x0400); EXPECT_EQ(hi, 0x09FF);
+
+    EXPECT_FALSE(prnlst::splitSpecRange("rom.prn@", p, off, lo, hi));
+    EXPECT_FALSE(prnlst::splitSpecRange("rom.prn@0xF000:03FF-00D0", p, off, lo, hi)) << "BIS < VON";
+    EXPECT_FALSE(prnlst::splitSpecRange("rom.prn@0xF000:00D0", p, off, lo, hi)) << "ohne BIS";
+    EXPECT_FALSE(prnlst::splitSpecRange("rom.prn@0xF000:zz-10", p, off, lo, hi));
+}
+
+TEST(PrnListing, LoadNurQuellbereichUnterVersatz){
+    const std::string p = k1520test::tempPath("k1520_prn_range_test.prn");
+    { std::ofstream f(p);
+      f << "0000  F3            \tDI\t\t;Reset\n"
+        << "00D0  3E 01         \tLD A,01H\t;Selbsttest\n"
+        << "0400  C3 00 04      \tJP 0400H\t;Lader\n"; }
+    prnlst::Listing l;
+    ASSERT_EQ(l.load(p, 0xF000, false, 0x00D0, 0x03FF), 1);
+    EXPECT_NE(l.find(0xF0D0), nullptr);
+    EXPECT_EQ(l.find(0xF000), nullptr) << "0000H liegt außerhalb des Quellbereichs";
+    EXPECT_EQ(l.find(0xF400), nullptr);
+    std::filesystem::remove(p);
+}
+
+TEST(PrnListing, MatchesVergleichtDieObjektbytesDerZeile){
+    const std::string p = k1520test::tempPath("k1520_prn_match_test.prn");
+    { std::ofstream f(p);
+      f << "0100  C3 00 04      \tJP 0400H\n"
+        << "0103  00            \tNOP\n"; }
+    prnlst::Listing ohne;  ASSERT_EQ(ohne.load(p), 2);
+    EXPECT_TRUE(ohne.matches(0x0100, [](uint16_t){ return uint8_t(0xFF); }))
+        << "ohne Objektbytes gibt es nichts zu prüfen";
+
+    prnlst::Listing l;     ASSERT_EQ(l.load(p, 0, true), 2);
+    uint8_t mem[0x200] = {};
+    mem[0x100] = 0xC3; mem[0x101] = 0x00; mem[0x102] = 0x04; mem[0x103] = 0x00;
+    auto rd = [&](uint16_t a){ return mem[a & 0x1FF]; };
+    EXPECT_TRUE(l.matches(0x0100, rd));
+    EXPECT_TRUE(l.matches(0x0103, rd));
+    mem[0x102] = 0x05;                                    // anderer Code (RAM statt ROM)
+    EXPECT_FALSE(l.matches(0x0100, rd));
+    EXPECT_TRUE(l.matches(0x0103, rd)) << "die Nachbarzeile ist nicht betroffen";
+    std::filesystem::remove(p);
+}
+
+TEST(PrnListing, LabelNearLiefertNameUndAbstand){
+    const std::string p = k1520test::tempPath("k1520_prn_label_test.prn");
+    { std::ofstream f(p);
+      f << "E960  F5            ISR:\tPUSH AF\n"
+        << "E961  DB 16         \tIN A,(16H)\n"
+        << "E963  77            \tLD (HL),A\n"; }
+    prnlst::Listing l; ASSERT_EQ(l.load(p), 3);
+    EXPECT_EQ(l.labelNear(0xE960), "ISR");
+    EXPECT_EQ(l.labelNear(0xE963), "ISR+3");
+    EXPECT_EQ(l.labelNear(0xE95F), "");
+    EXPECT_EQ(l.labelNear(0xE963, 2), "") << "außer Reichweite";
+    std::filesystem::remove(p);
+}
+
+TEST(PrnListing, LabelNearKenntAllein_stehendeLabelzeilen){
+    // Die selbst erzeugten K8915-Listings setzen das Label auf eine eigene Zeile.
+    const std::string p = k1520test::tempPath("k1520_prn_label2_test.prn");
+    { std::ofstream f(p);
+      f << "L055E:\n"
+        << "055E  DB 12         \tIN A,(12H)\n"
+        << "0560  E6 02         \tAND 02H\n"; }
+    prnlst::Listing l; ASSERT_EQ(l.load(p), 2);
+    EXPECT_EQ(l.labelNear(0x0560), "L055E+2");
+    EXPECT_EQ(prnlst::labelOf(*l.find(0x055E)), "") << "by_addr bleibt unverändert";
+    std::filesystem::remove(p);
+}

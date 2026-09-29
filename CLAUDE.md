@@ -401,9 +401,12 @@ Karten `zre8762` (CPU + 128 KB RAM, Speicherumschaltung Port A8H), `k7028` (ATS,
 (zweite Betriebsart `/WAIT`, **ohne** ZVE2 — eigener Zweig, rührt den `/BUSRQ`-Weg/die
 A5120-Boot-Invarianten nicht an), gemeinsamer Baustein `Laufwerke`. **In `libk1520core.so`** (`k1520_create(K1520_MACHINE_K8915)`,
 Python `K1520Emulator(machine="k8915")`; Bild dort nur über `k1520_screen_char`, nie
-`mem_read`), noch ohne `boot_trace`/`k1520dbg`-Unterstützung. **Stand 2026-09-28:**
+`mem_read`). **`boot_trace`/`k1520dbg` mit `--machine k8915`** (AP-E4d: eine CPU,
+A8H-Speicherbild, `map`/`bank`, Ereignisprotokoll K5122/61H/A8H/Interrupts, Abbruch am
+Prompt; ZVE2/`bbusrq`/`bxfer`/Snapshots/Savestates melden „nicht vorhanden“ —
+`tools/k1520dbg.md` §11, `tools/boot_trace.md` §7). **Stand 2026-09-29:**
 Etappen 1–3 fertig (SCPX 8915 V5.3 bootet bis zum Prompt — beide BIOS-Fassungen,
-drei Systemdisketten als Fixtures, AP-B2), AP-E4a/E4b fertig (C-ABI);
+drei Systemdisketten als Fixtures, AP-B2), AP-E4a/E4b/E4d fertig (C-ABI, Werkzeuge);
 Rest von Etappe 4/5 offen, Arbeitspakete in `doc/design/16_k8915.md` §8a.
 
 **Vor Arbeiten daran: `doc/merkposten/k8915.md` lesen** — die Festlegungen mit ihrem

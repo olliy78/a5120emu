@@ -1,0 +1,23 @@
+# K8915 (§8a AP-E4d, Szenario aus tools/how_to_debug_and_trace.md): Coldstart → CR →
+# Haltepunkt im Marken-ISR E965H des BIOS.  Die BIOS-Zeile annotiert; das ROM-Listing
+# annotiert 0000H nur, solange dort das ROM eingeblendet ist (vor dem Lauf ja, im
+# Betrieb mit A8H=87H nicht — dann steht dort RAM).
+tool:    k1520dbg
+disk:    k8915scpx_boot1.hfe
+timeout: 180
+stdin:
+  u 0x0000 1
+  gscreen "Coldstart" 20000000
+  keys \r
+  b 0xE965
+  g 200000000
+  where
+  gscreen /^A>\s*$/ 250000000
+  u 0x0000 1
+  q
+run:     --machine k8915 --skip-selftest %DISK% -l %CLI_DIR%/../../doc/EPROMS/K8915/k8915_zre.prn -l %CLI_DIR%/../../doc/EPROMS/K8915/scpx8915_v53_bios.prn
+exit:    0
+expect:  0000: F3             DI  ; DI ;[RESET-EINSPRUNG]
+expect:  ** bp CPU : CPU PC=E965
+expect:  [ISR PIO1 B = MARKE ERKANNT]
+expect:  K5122 (/WAIT): D0 mounted

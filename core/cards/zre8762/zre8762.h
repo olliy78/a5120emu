@@ -139,6 +139,18 @@ public:
     uint8_t bankPeek(int bank, uint16_t addr) const { return ram_[bank & 1][addr]; }
     void    bankPoke(int bank, uint16_t addr, uint8_t v) { ram_[bank & 1][addr] = v; }
 
+    /**
+     * @brief Beobachter für Speicherzugriffe, die die ZRE SELBST bedient (ROM, Bank 1,
+     *        Bank 2) — Signatur wie K1520Bus::BusTrace, `isIO` ist immer false.
+     *
+     * Der Busbeobachter (K1520Bus::setTraceCallback) sieht diese Zugriffe nicht, weil
+     * sie nicht auf den Systembus gehen (s. o. „Speicherpfad“).  Werkzeuge
+     * (k1520dbg-Watchpoints, boot_trace `--watch`) hängen sich deshalb an beide;
+     * K8915Machine::setBusTrace erledigt das.  Leer = aus (Vorgabe, kostet einen Test
+     * je Zugriff).  §8a AP-E4d.
+     */
+    void setMemTrace(K1520Bus::BusTrace cb) { mem_trace_ = std::move(cb); }
+
 private:
     /// Pegel einer linken Klemme für den Registerwert @p r (offen ⇒ H).
     static bool klemme(uint8_t nr, uint8_t r);
@@ -159,4 +171,6 @@ private:
     /// Abbildung in 4-KB-Schritten: Quelle + Basis innerhalb der Quelle.
     struct Slot { Quelle quelle; uint32_t basis; };
     std::array<Slot, 16> map_{};
+
+    K1520Bus::BusTrace mem_trace_;   ///< s. setMemTrace()
 };

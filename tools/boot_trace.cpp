@@ -17,6 +17,10 @@
  *                    loaded code (0x0437). Reports I/O-port activity, VRAM writes,
  *                    a loaded-code PC histogram, and the screen as text.
  *
+ * --machine k8915 fährt statt des A5120 einen K8915 (eigener Zweig,
+ * tools/boot_trace_k8915.cpp): Ereignisprotokoll K5122/61H/A8H/Interrupts,
+ * PC-Histogramm mit Listing-Namen, Abbruch bei `A>` oder Stillstand.
+ *
  * Traces BOTH CPUs: ZVE1 (main, sampled at batch boundaries) and ZVE2 (DMA-CPU,
  * every instruction via a trace callback). ZVE2 runs only while /BUSRQ is held,
  * so without the callback the boot-sector DMA is invisible. The tool reports
@@ -32,6 +36,7 @@
 #include "tools/coverage_diff.h"
 #include "tools/until_cond.h"
 #include "tools/event_bp.h"
+#include "tools/boot_trace_k8915.h"   // --machine k8915 (§8a AP-E4d)
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -269,6 +274,11 @@ int main(int argc, char** argv) {
     // is mounted, so a committed fixture is never modified (no more `mktemp; cp` ritual).
     // --rw mounts the original writable; --read-only/--ro mounts it write-protected.
     enum { MOUNT_COW=0, MOUNT_RW=1, MOUNT_RO=2 } mount_mode = MOUNT_COW;
+    // --machine k8915 und seine eigenen Schalter (§8a AP-E4d)
+    bool        machine_k8915 = false;
+    bool        limit_set     = false;   // -c angegeben? (Vorgabe je Maschine verschieden)
+    K8915TraceOpts k8o;
+    std::vector<std::string> nur_a5120;   // am K8915 wirkungslose Schalter (Meldung)
 
     // Runtime log control (new gated logging). Default base = ERROR so a plain
     // run is quiet and fast; raise globally with --log-level or, far better,
@@ -280,7 +290,19 @@ int main(int argc, char** argv) {
 
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
-        if (!strcmp(argv[i], "-c") && i+1 < argc) { total_limit = atoi(argv[++i]); }
+        if (!strcmp(argv[i], "-c") && i+1 < argc) { total_limit = atoi(argv[++i]); limit_set = true;
+                                                    k8o.limit = atoll(argv[i]); }
+        else if (!strcmp(argv[i], "--machine") && i+1 < argc) {
+            std::string mn = argv[++i];
+            if (mn == "k8915" || mn == "K8915") machine_k8915 = true;
+            else if (mn != "a5120" && mn != "A5120") {
+                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915)\n", mn.c_str()); return 2; }
+        }
+        else if (!strcmp(argv[i], "--skip-selftest")) { k8o.skip_selftest = true; }
+        else if (!strcmp(argv[i], "--no-cr"))         { k8o.auto_cr = false; }
+        else if (!strcmp(argv[i], "--stall") && i+1 < argc) { k8o.stall = atoll(argv[++i]); }
+        else if (!strcmp(argv[i], "--events") && i+1 < argc) { k8o.events_path = argv[++i]; }
+        else if (!strcmp(argv[i], "--events-cap") && i+1 < argc) { k8o.events_cap = atol(argv[++i]); }
         else if (!strcmp(argv[i], "--drive") && i+1 < argc) { mount_drive = atoi(argv[++i]); }
         else if (!strcmp(argv[i], "--log-level") && i+1 < argc) {
             log_base = Logger::levelFromString(argv[++i], Level::ERROR);
@@ -296,11 +318,11 @@ int main(int argc, char** argv) {
             sscanf(argv[++i], "%llu:%llu:%15s", &from, &to, lvl);
             Logger::instance().addCycleGate(from, to, Logger::levelFromString(lvl, Level::TRACE));
         }
-        else if (!strcmp(argv[i], "-s"))            { single_step = true; }
+        else if (!strcmp(argv[i], "-s"))            { single_step = true; nur_a5120.push_back("-s"); }
         else if (!strcmp(argv[i], "-n") && i+1 < argc) { single_step_count = atoi(argv[++i]); }
-        else if (!strcmp(argv[i], "-v"))            { verbose = true; }
+        else if (!strcmp(argv[i], "-v"))            { verbose = true; nur_a5120.push_back("-v"); }
         else if (!strcmp(argv[i], "-L") && i+1 < argc) { log_path = argv[++i]; }
-        else if (!strcmp(argv[i], "-p") && i+1 < argc) { post_cycles = atoi(argv[++i]); }
+        else if (!strcmp(argv[i], "-p") && i+1 < argc) { post_cycles = atoi(argv[++i]); nur_a5120.push_back("-p"); }
         else if (!strcmp(argv[i], "-d") && i+1 < argc) {  // -d 0x0400:0x0600 [file]
             sscanf(argv[++i], "%i:%i", &dump_start, &dump_end);
             if (i+1 < argc && argv[i+1][0] != '-') dump_path = argv[++i];
@@ -309,7 +331,7 @@ int main(int argc, char** argv) {
             sscanf(argv[++i], "%i:%i", &win_start, &win_end);
         }
         else if (!strcmp(argv[i], "-z") && i+1 < argc) {  // -z 0x1F00:0x1FFF (ZVE2 window)
-            sscanf(argv[++i], "%i:%i", &win2_start, &win2_end);
+            sscanf(argv[++i], "%i:%i", &win2_start, &win2_end); nur_a5120.push_back("-z");
         }
         else if (!strcmp(argv[i], "-W") && i+1 < argc) { win_cap = atoi(argv[++i]); }
         else if (!strcmp(argv[i], "-l") && i+1 < argc) { prn_specs.push_back(argv[++i]); }
@@ -323,10 +345,10 @@ int main(int argc, char** argv) {
         }
         else if (!strcmp(argv[i], "--csv") && i+1 < argc) { csv_path = argv[++i]; }
         else if (!strcmp(argv[i], "--itrace") && i+1 < argc) { itrace_path = argv[++i]; }
-        else if (!strcmp(argv[i], "--save-state") && i+1 < argc) { save_state_path = argv[++i]; }
-        else if (!strcmp(argv[i], "--load-state") && i+1 < argc) { load_state_path = argv[++i]; }
+        else if (!strcmp(argv[i], "--save-state") && i+1 < argc) { save_state_path = argv[++i]; nur_a5120.push_back("--save-state"); }
+        else if (!strcmp(argv[i], "--load-state") && i+1 < argc) { load_state_path = argv[++i]; nur_a5120.push_back("--load-state"); }
         else if (!strcmp(argv[i], "--json")) { json_summary = true; }
-        else if (!strcmp(argv[i], "--fold")) { fold_on = true; }
+        else if (!strcmp(argv[i], "--fold")) { fold_on = true; nur_a5120.push_back("--fold"); }
         else if (!strcmp(argv[i], "--rw")) { mount_mode = MOUNT_RW; }
         else if (!strcmp(argv[i], "--cow")) { mount_mode = MOUNT_COW; }
         else if (!strcmp(argv[i], "--read-only")||!strcmp(argv[i], "--ro")) { mount_mode = MOUNT_RO; }
@@ -379,8 +401,9 @@ int main(int argc, char** argv) {
     //    von tools/mac_listing.h assembliert — s. k1520dbg `lst`.
     prnlst::Listing prn;
     for (auto& spec : prn_specs) {
-        std::string path; long off = 0;
-        if (!prnlst::splitSpec(spec, path, off)) { fprintf(stderr, "WARN: bad @offset in '%s'\n", spec.c_str()); continue; }
+        std::string path; long off = 0; int src_lo = -1, src_hi = -1;
+        if (!prnlst::splitSpecRange(spec, path, off, src_lo, src_hi)) {
+            fprintf(stderr, "WARN: bad @offset[:von-bis] in '%s'\n", spec.c_str()); continue; }
         if (maclst::isSourceFile(path)) {
             maclst::Result mr;
             if (!maclst::assemble(path, off, prn, mr))
@@ -392,7 +415,8 @@ int main(int argc, char** argv) {
                         mr.unknown, "");
             continue;
         }
-        int n = prn.load(path, off);
+        // K8915: mit Objektbytes — annotiert wird nur, solange sie im Speicher stehen.
+        int n = prn.load(path, off, /*want_bytes=*/machine_k8915, src_lo, src_hi);
         if (n < 0) fprintf(stderr, "WARN: could not open listing '%s'\n", path.c_str());
         else if (off) fprintf(stderr, "Listing:    %s — %d line(s), offset %+ld (0x%04X)\n", path.c_str(), n, off, (uint16_t)off);
         else fprintf(stderr, "Listing:    %s — %d line(s)\n", path.c_str(), n);
@@ -402,6 +426,42 @@ int main(int argc, char** argv) {
     auto prnTail = [&](uint16_t a) -> std::string {
         const std::string* s = prn.find(a); return s ? ("  ; " + *s) : std::string();
     };
+
+    if (machine_k8915) {
+        for (auto& f : nur_a5120)
+            fprintf(stderr, "WARN: %s gibt es am K8915 nicht (A5120: ZVE2/DMA/Savestates/Boot-ROM-Schritte) — ignoriert\n", f.c_str());
+        for (int i = 0; i < watchio_n; ++i)
+            if (watchio_cpu[i] == 2) fprintf(stderr, "WARN: --watchio …:zve2 — der K8915 hat keine ZVE2\n");
+        k8o.quiet = quiet; k8o.json = json_summary; k8o.drive = mount_drive; k8o.until = until;
+        if (!limit_set) k8o.limit = 250'000'000;
+        k8o.coverage = coverage_on; if (coverage_path) k8o.coverage_path = coverage_path;
+        if (csv_path) k8o.csv_path = csv_path;
+        if (itrace_path) k8o.itrace_path = itrace_path;
+        k8o.win_lo = win_start; k8o.win_hi = win_end; k8o.win_cap = win_cap;
+        for (int i = 0; i < watch_n; ++i) k8o.watch.push_back(watch_addr[i]);
+        for (int i = 0; i < watchio_n; ++i) k8o.watchio.push_back(watchio_port[i]);
+        k8o.dump_lo = dump_start; k8o.dump_hi = dump_end; k8o.dump_path = dump_path;
+        std::string cow_temp;
+        if (disk_path && strcmp(disk_path, "disk_b.img") != 0) {
+            k8o.disk = disk_path; k8o.mount_path = disk_path;
+            k8o.write_protect = (mount_mode == MOUNT_RO);
+            if (mount_mode == MOUNT_COW) {
+                std::error_code ec;
+                std::filesystem::path src(disk_path);
+                std::filesystem::path tmp = std::filesystem::temp_directory_path() /
+                    ("boot_trace_cow_"+std::to_string(k1520::os::processId())+src.extension().string());
+                std::filesystem::copy_file(src, tmp, std::filesystem::copy_options::overwrite_existing, ec);
+                if (ec) fprintf(stderr, "WARN: COW copy of '%s' failed (%s) — mounting original writable\n",
+                                disk_path, ec.message().c_str());
+                else { k8o.mount_path = cow_temp = tmp.string();
+                       if (!quiet) fprintf(stderr, "COW: '%s' → %s (writes discarded; --rw to persist)\n",
+                                           disk_path, cow_temp.c_str()); }
+            }
+        }
+        const int rc = bootTraceK8915(k8o, prn);
+        if (!cow_temp.empty()) { std::error_code ec; std::filesystem::remove(cow_temp, ec); }
+        return rc;
+    }
 
     if (!quiet) {   // --quiet: suppress the startup banner (and all narrative below)
     fprintf(stderr, "=== A5120 Boot Trace ===\n");

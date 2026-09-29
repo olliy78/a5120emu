@@ -176,3 +176,48 @@ Am Ende eines (nicht `--quiet`-)Laufs druckt `boot_trace`:
 
 Hintergrund zum Bootpfad und zur ZVE1↔ZVE2-DMA-Logik: `doc/analyse_zre_rom_boot.md`,
 `doc/K1520_architecture.md` §8.5/§14.x.
+
+## 7. K8915 (`--machine k8915`)
+
+Seit AP-E4d (2026-09-29) fährt `boot_trace` auch den K8915 — in einem eigenen Zweig
+(`tools/boot_trace_k8915.cpp`), weil vom A5120-Bericht (ZVE2, `[03F8]`, Meilensteine des
+A5120-ROMs) nichts passt. Ablauf: Netz-Ein → Selbsttest → Coldstart-Meldung → **CR wird
+selbst getippt** → Lader → SCPX → Abbruch am **stabilen Prompt**.
+
+```sh
+tools/dev.sh trace --machine k8915 --skip-selftest tests/fixtures/disks/k8915scpx_boot1.hfe \
+    -l doc/EPROMS/K8915/k8915_zre.prn -l doc/EPROMS/K8915/k8915_zre.prn@0xF000:00D0-03FF \
+    -l doc/EPROMS/K8915/scpx8915_v53_bios.prn
+tools/dev.sh trace --machine k8915 --quiet --json DISK      # eine Zeile, Exit 0 = Prompt
+```
+
+| Option | Wirkung |
+|---|---|
+| `--machine k8915` | K8915 statt A5120; `-c` ist dann 250 Mio. Takte (voller Boot mit Selbsttest ≈ 84 Mio., ≈ 7 s) |
+| `--skip-selftest` | wie in k1520dbg: `JP` bei 0000H/0005H, kein Selbsttest |
+| `--no-cr` | nach „* Coldstart *“ **kein** CR tippen (der Lader wartet dann) |
+| `--stall <takte>` | Stillstand = so lange weder Bildänderung noch Schreibzugriff auf 10H–18H/61H/A8H (Vorgabe 30 Mio.) → Abbruch, Exit 1 |
+| `--events <datei>` / `--events-cap <n>` | Ereignisprotokoll in eine Datei statt nach stderr; höchstens n Zeilen (Vorgabe 3000) |
+| weiterhin | `-c -l --until --quiet --json --coverage --csv --itrace -w -W -d --watch --watchio --drive -L --log-* --rw/--ro/--cow` |
+| wirkungslos (Warnung) | `-s -v -p -z --fold --save-state --load-state`, `--watchio …:zve2` |
+
+**Ereignisprotokoll** (`[ev c<takt> PC=…]`, PC = der zugreifende Befehl): jeder Zugriff
+auf die K5122 (10H–18H, mit Portnamen), das Anzeigefeld 61H (mit den leuchtenden Lampen),
+das Speicherregister A8H (mit dem entstehenden Speicherbild `map=R...1111…`: je 4-KB-Seite
+`R` ROM, `1`/`2` Bank, `.` Bus), jeder angenommene Interrupt mit Vektor, Quellbaustein
+und ISR. Gleiche aufeinanderfolgende Ereignisse werden gefaltet (`×N`); an den
+Datenports 14H/16H zählen dabei weder Wert noch PC (der Lese-ISR liest ausgerollt), der
+PC-Bereich steht dann als `PC=E965..E9A0` da. Die Listing-Annotation wird beim Entstehen
+des Ereignisses festgehalten.
+
+**PC-Histogramm** mit Kennung `ROM` (Befehl kam aus dem Boot-ROM — 0100H im ROM und
+0100H im TPA sind verschiedener Code), nächstem Listing-Label (`<L055E+2>`, auch aus
+allein stehenden Labelzeilen) und Listingzeile, beide beim ersten Auftreten festgehalten.
+Dazu Portstatistik, Endzustand (A8H/Speicherbild, 61H) und das Bild der K7024.
+
+**Abbruch/Exit:** Prompt = letzte Bildzeile `X>` **und** Bild 2 Mio. Takte unverändert
+(sonst hielte schon das `A>` vor dem Autostart `rade`) → 0; `--until` erfüllt → 0 /
+nicht erfüllt → 2; Stillstand oder `-c` → 1. `--json`: `machine, prompt, stall, cycles,
+final_pc, a8, lamps, cpu_addrs, instr, events, ints, until{…}`.
+Wächter: `cli_bt_k8915_prompt`, `cli_bt_k8915_events`, `cli_bt_k8915_stillstand`.
+

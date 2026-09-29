@@ -134,13 +134,16 @@ uint8_t K8915Zre::memRead(uint16_t addr)
 {
     const Slot& s = map_[addr >> 12];
     const uint32_t off = s.basis + (addr & 0x0FFFu);
+    uint8_t v;
     switch (s.quelle) {
-        case Quelle::Rom:   return K8915_ZRE_BOOT_ROM[off];
-        case Quelle::Bank1: return ram_[0][off];
-        case Quelle::Bank2: return ram_[1][off];
-        case Quelle::Bus:   break;
+        case Quelle::Rom:   v = K8915_ZRE_BOOT_ROM[off]; break;
+        case Quelle::Bank1: v = ram_[0][off]; break;
+        case Quelle::Bank2: v = ram_[1][off]; break;
+        case Quelle::Bus:
+        default:            return bus_.memRead(addr);   // Bus meldet selbst
     }
-    return bus_.memRead(addr);
+    if (mem_trace_) mem_trace_(false, true, addr, v);
+    return v;
 }
 
 void K8915Zre::memWrite(uint16_t addr, uint8_t data)
@@ -148,10 +151,13 @@ void K8915Zre::memWrite(uint16_t addr, uint8_t data)
     const Slot& s = map_[addr >> 12];
     const uint32_t off = s.basis + (addr & 0x0FFFu);
     switch (s.quelle) {
-        case Quelle::Rom:   return;                 // EPROM: Schreiben folgenlos
-        case Quelle::Bank1: ram_[0][off] = data; return;
-        case Quelle::Bank2: ram_[1][off] = data; return;
-        case Quelle::Bus:   break;
+        case Quelle::Rom:   break;                  // EPROM: Schreiben folgenlos
+        case Quelle::Bank1: ram_[0][off] = data; break;
+        case Quelle::Bank2: ram_[1][off] = data; break;
+        case Quelle::Bus:
+        default:            bus_.memWrite(addr, data); return;   // Bus meldet selbst
     }
-    bus_.memWrite(addr, data);
+    // Auch der folgenlose ROM-Schreibzyklus wird gemeldet: die CPU HAT geschrieben
+    // (ein Watchpoint auf 0000H soll das sehen, wie am A5120 über den Bus).
+    if (mem_trace_) mem_trace_(false, false, addr, data);
 }
