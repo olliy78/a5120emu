@@ -1,0 +1,20 @@
+# Dispatch-Smoke des U8001-Kontexts (S5): jedes neue Kommando einmal, mit EM256.
+tool:    k1520dbg
+run:     --em em256 -x %CLI_DIR%/scripts/u8000_smoke.dbg
+timeout: 120
+exit:    0
+forbid:  unknown command
+forbid:  kein EM
+expect:  CPU-Kontext: U8001
+expect:  U8001 PC=<<0>>%0000
+expect:  EM EM256 (U8001, 256 KB) an MODADR A8H
+expect:  <<0>>%0100: 2100 1234                 LD R0,#%1234
+expect:  <<0>>%0104: A900                      INC R0,#1
+expect:  <<0>>%0200    : 1234 56FF
+expect:  U8001 R3 := %BEEF
+expect:  "cpu":"u8001"
+expect:  U8001 laeuft nicht: RESET16
+expect:  bp U8001 @<<0>>%0104
+expect:  U8001 breakpoints:
+expect:  "u8001_pc":"<<0>>%0000"
+expect:  U8001: (no samples)

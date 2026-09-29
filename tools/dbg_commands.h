@@ -33,6 +33,8 @@ inline const std::vector<std::string>& names() {
         // misc
         "mark","keys","keyuntil","screen","gscreen","bscreen","dialog","console",
         "reset","disk","alias","unalias","source","help","q","quit",
+        // A5120.16 (U8001-Kontext)
+        "cpu","a","fcw","psa","bmode","bvi","bint16","emlog",
     };
     return n;
 }

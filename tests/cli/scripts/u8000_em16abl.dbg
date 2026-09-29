@@ -1,0 +1,23 @@
+# Der lebende U8001: em16abl.com (Abnahmeprogramm S4) unter CP/A starten und am
+# ersten Wechsel in den 16-Bit-Mode anhalten, dann den U8001 schrittweise fahren,
+# Haltepunkt, Aufrufstapel, EM-Protokoll und VI-Halt.
+gscreen "A>" 150000000
+bmode 16
+keys EM16ABL\r
+g 100000000
+cpu u8000
+n
+s 3
+b <<0>>%0132
+g 2000000
+bd <<0>>%0132
+emlog on
+g 3000000
+emlog off
+bt
+dev em
+bmode off
+bvi
+g 400000000
+where
+q

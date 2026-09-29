@@ -1,0 +1,58 @@
+# Dispatch-Smoke fuer den U8001-Kontext (k1520dbg --em em256, ohne Diskette).
+# Jedes Kommando des Kontexts einmal; der U8001 steht nach Netz-Ein im RESET16,
+# gelaufen wird deshalb nur, was ohne laufenden U8001 Sinn hat (Schritte melden
+# „laeuft nicht").  Den lebenden U8001 faehrt dbg_u8000_em16abl.cli.
+cpu u8000
+r
+rj
+fcw
+fcw %C000
+psa 2
+dev em
+where
+where --json
+a <<0>>%0100 LD R0,#%1234
+a . INC R0
+u <<0>>%0100 2
+u
+x/4w <<0>>%0100
+x/4xb <<0>>%0100
+d <<0>>%0100 16
+d em:00100 16
+e <<0>>%0200 12 34
+e em:00202 56
+x/2w <<0>>%0200
+set R3 %BEEF
+set RR4 %12345678
+set RH1 %AB
+set PC %0100
+r
+b <<0>>%0104
+tb <<0>>%0108
+bdis <<0>>%0104
+be <<0>>%0104
+bi <<0>>%0104 2
+bl
+bd <<0>>%0104
+bt
+s
+n
+bmode 16
+bmode off
+bvi on
+bvi off
+bint16 on
+bint16 off
+emlog on
+emlog off
+g 20000
+hist 20000
+snap eins
+snap list
+rs 1
+cpu zve2
+r
+cpu zve1
+r
+help u8000
+q

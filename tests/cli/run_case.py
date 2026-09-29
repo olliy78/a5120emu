@@ -31,6 +31,10 @@ Dateiformat (Zeilenweise, `#` ist Kommentar):
     poke:       %DATEI% <off> <bytes>       Bytes in eine Datei schreiben, hex,
                                             VOR allen Läufen (Schadensinjektion)
     setup_run:  <argumente>                 Vorlauf, Ausgabe wird verworfen
+                @<werkzeug> <argumente>     … mit einem ANDEREN Werkzeug (z. B.
+                                            `@k1520disktool put %DISK% …`, um vor
+                                            einem Debuggerlauf eine Datei auf die
+                                            Diskettenkopie zu legen)
     run:        <argumente>                 der gemessene Lauf
 
     expect:     <text>                      muss in der Ausgabe vorkommen
@@ -232,7 +236,13 @@ def main():
                 f.write(bytes.fromhex(bytes_hex))
 
         for extra in case["setup_run"]:
-            subprocess.run(vorspann + [exe] + argv(extra),
+            vor_exe = exe
+            if extra.startswith("@"):
+                name, _, extra = extra[1:].partition(" ")
+                if name not in tools:
+                    raise CaseError(f"setup_run: unbekanntes Werkzeug {name!r}")
+                vor_exe = tools[name]
+            subprocess.run(vorspann + [vor_exe] + argv(extra),
                            input=stdin, cwd=tmpdir, **TEXT,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                            timeout=case["timeout"])

@@ -15,7 +15,11 @@
  *   - a MARKER that zeroes a RELATIVE cycle counter (`mark`) so post-boot / per-
  *     program timing is measured from a chosen origin,
  *   - DISPLAY expressions shown at every stop, register edit, backtrace, memory
- *     dump/poke/load/save, keystroke injection and a screen view.
+ *     dump/poke/load/save, keystroke injection and a screen view,
+ *   - A5120.16 (`--em em256`): the U8001 of the expansion module as a THIRD CPU
+ *     context (`cpu u8000`) with its own disassembler/assembler, breakpoints, steps,
+ *     Segmentweiche-aware memory commands, `dev em`, `fcw`/`psa` and event breaks
+ *     on mode change / VI / INT-16 (`bmode`, `bvi`, `bint16`).
  *
  * Commands come from stdin (interactive or piped) and/or a -x script file.
  * Type `help` for the command list.  See tools/k1520dbg.md for the full manual.
@@ -34,6 +38,10 @@
 #include "tools/expr_eval.h"
 #include "tools/event_bp.h"
 #include "tools/mem_watch.h"
+#include "tools/dbg_u8000.h"      // U8001-Kontext: Adressen, FCW, Aufrufstapel
+#include "tools/em_trace.h"       // EM-Ereignisse als Text (emlog, boot_trace --em)
+#include "tools/z8000/z8k_disasm.h"
+#include "tools/z8000/z8k_asm.h"
 #ifdef HAVE_ISOCLINE
 #include <isocline.h>          // third_party/isocline (MIT) — Zeileneditor, s. dortige README
 #endif
@@ -170,6 +178,7 @@ int main(int argc, char** argv){
     // original writable (writes persist); `--read-only`/`--ro` mounts write-protected.
     enum { MOUNT_COW=0, MOUNT_RW=1, MOUNT_RO=2 } mount_mode = MOUNT_COW;
     bool start_console = false;   // --console: sofort in den Konsolenmodus (§9)
+    const char* em_opt = nullptr; // --em none|em064|em256: A5120.16 mit Erweiterungsmodul
     for (int i=1;i<argc;++i){
         if (!strcmp(argv[i],"-x") && i+1<argc) script=argv[++i];
         else if (!strcmp(argv[i],"-s") && i+1<argc) symfiles.push_back(argv[++i]);
@@ -178,6 +187,7 @@ int main(int argc, char** argv){
         else if (!strcmp(argv[i],"-c") && i+1<argc) disks[2]=argv[++i];
         else if (!strcmp(argv[i],"-d") && i+1<argc) disks[3]=argv[++i];
         else if (!strcmp(argv[i],"--console")) start_console=true;
+        else if (!strcmp(argv[i],"--em") && i+1<argc) em_opt=argv[++i];
         else if (!strcmp(argv[i],"--rw")) mount_mode=MOUNT_RW;
         else if (!strcmp(argv[i],"--cow")) mount_mode=MOUNT_COW;
         else if (!strcmp(argv[i],"--read-only")||!strcmp(argv[i],"--ro")) mount_mode=MOUNT_RO;
@@ -196,8 +206,16 @@ int main(int argc, char** argv){
     }
     Logger::instance().setBaseLevel(baseLvl);
 
-    A5120Machine m;
+    A5120Machine::Config mcfg;
+    if (em_opt){
+        const std::string e = em_opt;
+        if      (e=="em256") mcfg.em = A5120Machine::Config::Em::em256;
+        else if (e=="em064") mcfg.em = A5120Machine::Config::Em::em064;
+        else if (e!="none"){ fprintf(stderr,"--em: unbekanntes Modul '%s' (none|em064|em256)\n",em_opt); return 2; }
+    }
+    A5120Machine m(mcfg);
     m.powerOn();
+    EM* em = m.em();          // nullptr ohne --em
     bool mount_failed = false;
     // COW temp copies to unlink at exit (empty unless mount_mode==MOUNT_COW).
     std::vector<std::string> cow_temps;
@@ -338,6 +356,20 @@ int main(int argc, char** argv){
     // `hist` profiles straight through breakpoints instead of tripping them.
     bool hist_on=false; int hist_lo=-1, hist_hi=-1;
     std::map<uint16_t,uint32_t> hist1, hist2;
+
+    // ─── A5120.16: U8001-Kontext (S5) ─────────────────────────────────────────
+    int  cpu_ctx = 1;                           // 1 = ZVE1, 2 = ZVE2, 3 = U8001 (`cpu …`)
+    std::map<uint32_t,Bp> bp16;                 // U8001-Haltepunkte, Schlüssel seg<<16|off
+    long step16_rem=0; bool step16_active=false;
+    long resume_skip16=-1, gu16=-1;             // wie resume_skip1 / gu_pc
+    bool fin16_active=false; uint16_t fin16_sp=0;
+    uint32_t hit_key16=0;                       // Halteadresse, wenn hit_cpu==3
+    std::string ev16_why;                       // Halt vor dem nächsten U8001-Befehl (VI)
+    int  brk_mode=0; bool brk_vi=false, brk_int16=false;   // bmode (1=→16, 2=→8), bvi, bint16
+    FILE* emlog_fp=nullptr; bool emlog_file=false;          // emlog: EM-Transaktionen protokollieren
+    dbg16::CallStack16 cs16;
+    std::map<uint32_t,uint32_t> hist16;
+    long last_u16=-1, last_a16=-1;
 
     // ─── Phase 3: helper lambdas (capture all state above by reference) ─────────
     // Small formatting/util helpers first, then symbols, .prn, the expression
@@ -761,6 +793,152 @@ int main(int argc, char** argv){
         hitMem(isRead, addr, data);
     });
 
+    // ═══ A5120.16: der U8001 als dritte CPU (S5, Plan 17 §3) ═══════════════════
+    // Mit EM (`--em em256|em064`) gibt es neben ZVE1/ZVE2 den U8001 auf der Steuerkarte.
+    // `cpu u8000` schaltet r/s/n/u/a/b/where/hist/bt/snap/rs/x/d/e/set auf ihn um.
+    // Speicher sieht er NUR über die Segmentweiche A42 (wie ein Befehl im jetzigen
+    // Zustand: A33, N/S, Status), roh über `em:ZELLE`.  Haltepunkte greifen VOR dem
+    // Befehl: EM::setStepHook hält den U8001 an, bevor er ihn ausführt; die Zeit
+    // bleibt als Guthaben stehen und wird beim Fortsetzen nachgeholt.
+    auto z16 = [&]()->Z8000& { return em->u8001(); };
+    auto key16 = [](uint8_t seg, uint16_t off)->uint32_t{ return (uint32_t(seg&0x7F)<<16)|off; };
+    auto pcKey16 = [&](const Z8000& z)->uint32_t{ return key16(z.pcSeg, z.pc); };
+    // SP-Offset, wie ihn der laufende Modus benutzt (segmentiert: R15 von RR14).
+    auto sp16 = [&](const Z8000& z)->uint16_t{ return z.r(15); };
+    auto cycle16 = [&](uint8_t seg, uint16_t off, bool instr)->Z8kBusCycle{
+        Z8kBusCycle c; c.st = instr? Z8kStatus::MemInstr : Z8kStatus::MemData;
+        c.system = em->u8001().systemMode(); c.word = false; c.read = true;
+        c.seg = seg; c.addr = off; return c; };
+    // Byte über die Segmentweiche (instr = Programmspeicher, für Mode 1 relevant).
+    auto rdb16 = [&](uint8_t seg, uint16_t off, bool instr)->uint8_t{
+        return em->peek(em->cellFor16(cycle16(seg,off,instr))); };
+    auto wrb16 = [&](uint8_t seg, uint16_t off, bool instr, uint8_t v){
+        em->poke(em->cellFor16(cycle16(seg,off,instr)), v); };
+    auto rdw16 = [&](uint8_t seg, uint16_t off, bool instr)->uint16_t{
+        off = uint16_t(off & ~1u);
+        return uint16_t((rdb16(seg,off,instr)<<8) | rdb16(seg,uint16_t(off+1),instr)); };
+    // Addr16 (Segmentweiche oder roh) + Versatz → Byte / Schreiben.
+    auto rdA16 = [&](const dbg16::Addr16& a, uint32_t i)->uint8_t{
+        if (a.kind==dbg16::Addr16::Raw) return em->peek(a.cell+i);
+        return rdb16(a.seg, uint16_t(a.off+i), false); };
+    auto wrA16 = [&](const dbg16::Addr16& a, uint32_t i, uint8_t v){
+        if (a.kind==dbg16::Addr16::Raw) em->poke(a.cell+i, v);
+        else wrb16(a.seg, uint16_t(a.off+i), false, v); };
+    auto a16Text = [&](const dbg16::Addr16& a, uint32_t i)->std::string{
+        char b[32];
+        if (a.kind==dbg16::Addr16::Raw){ snprintf(b,sizeof b,"em:%05X",(unsigned)((a.cell+i)%em->size())); return b; }
+        return dbg16::addrText(a.seg, uint16_t(a.off+i), true); };
+    // Adresse der 16-Bit-Seite aus einem Wort; Vorgabesegment = PC-Segment.
+    auto parse16 = [&](const std::string& tok, dbg16::Addr16& a)->bool{
+        auto sym=[&](const std::string& n, long& v)->bool{
+            auto it=sym_by_name.find(n); if(it==sym_by_name.end()) return false; v=it->second; return true; };
+        if (!dbg16::parseAddr(tok, em? em->u8001().pcSeg : 0, a, sym)){
+            fprintf(stderr,"  ? Adresse '%s' (<<seg>>off | em:ZELLE | Zahl)\n",tok.c_str()); return false; }
+        return true; };
+    auto disasm16 = [&](uint8_t seg, uint16_t off, char* out, size_t n)->int{
+        const Z8000& z = em->u8001();
+        z8k::Line l = z8k::disasm([&](uint16_t o){ return rdw16(seg,o,true); }, off, z.segMode(), seg);
+        char hex[32]={0};
+        for (int i=0;i<l.bytes && i<10;i+=2){ char w[8]; snprintf(w,sizeof w,"%04X ",rdw16(seg,uint16_t(off+i),true)); strcat(hex,w); }
+        snprintf(out,n,"%s: %-25s %s", dbg16::addrText(seg,off,z.segMode()).c_str(), hex, l.text.c_str());
+        return l.bytes; };
+    auto showInsn16 = [&](const char* tag, uint32_t key){
+        char l[160]; disasm16(uint8_t(key>>16), uint16_t(key), l, sizeof l);
+        fprintf(stderr,"  %s %s\n",tag,l); };
+    auto state16 = [&](const Z8000& z)->const char*{
+        if (z.inReset()) return em->reset16()? "RESET16" : "Reset-Ablauf";
+        if (z.stopped()) return "STOP";
+        if (z.busAck())  return "BUSAK";
+        if (z.halted())  return "HALT";
+        return "run"; };
+    auto printRegs16 = [&]{
+        const Z8000& z = em->u8001();
+        fprintf(stderr,"  U8001 PC=%s FCW=%%%04X %s  PSAP=%s REFRESH=%%%04X cyc=%llu [%s]\n",
+                dbg16::addrText(z.pcSeg,z.pc,true).c_str(), z.fcw, dbg16::fcwText(z.fcw).c_str(),
+                dbg16::addrText(uint8_t((z.psapSeg>>8)&0x7F), z.psapOff, true).c_str(),
+                z.refresh, (unsigned long long)z.cycles, state16(z));
+        fprintf(stderr,"   ");
+        for (int i=0;i<16;++i){ fprintf(stderr," R%-2d=%04X",i,z.r(i)); if(i==7) fprintf(stderr,"\n   "); }
+        // die andere Bank von R14/R15 (System ↔ Normal)
+        const int other = z.systemMode()? 0 : 1;
+        fprintf(stderr,"\n    %s: R14'=%04X R15'=%04X\n", other? "System-SP":"Normal-SP",
+                z.R14[other], z.R15[other]);
+    };
+    auto emLine = [&]{
+        fprintf(stderr,"  EM: %s-Bit-Mode  A33=%02X (SegMode %u) A35=%02X Status8=%02X Vektor8=%02X%s  "
+                       "TREN=%d TRQ8=%d BUSRQ16=%d BUSAK16=%d RESET16=%d STOP=%d RAMEN=%d\n",
+                em->mode8()?"8":"16", em->steuer16(), em->segMode(), em->status16(), em->status8(),
+                em->vector8(), em->viPending()?" VI!":"", em->tren(), em->trq8(), em->busRq16(),
+                em->busAck16(), em->reset16(), em->stop16(), em->ramEnabled()); };
+    auto stopAt16 = [&](const std::string& why){
+        hit=true; hit_cpu=3; hit_key16=pcKey16(em->u8001()); stop_reason=why; m.stop(); };
+    // Trace-Zeile des U8001 (Konsole bzw. Datei).
+    auto traceLine16To = [&](FILE* fp, const Z8000& z){
+        char l[160]; disasm16(z.pcSeg, z.pc, l, sizeof l);
+        fprintf(fp,"T3 %c%-9lld %-58s FCW=%04X R0=%04X R1=%04X R2=%04X R3=%04X SP=%04X\n",
+                rcpfx(), rc(m.cpuCycles()), l, z.fcw, z.r(0), z.r(1), z.r(2), z.r(3), sp16(z)); };
+    if (em){
+        em->setStepHook([&](const Z8000& z)->bool{
+            // Ein anderer Halt (Haltepunkt, Überwachung, Ereignis) ist schon beschlossen:
+            // der U8001 läuft dann nicht mehr weiter (sonst holte er den Rest des Guthabens nach).
+            if (hit && !hist_on) return true;
+            // Keine Befehlsgrenze: Resetablauf (RESET16 gerade gelöst), HALT, Stop-Refresh,
+            // BUSAK, laufender Wiederholungsbefehl.
+            if (z.inReset() || z.halted() || z.stopped() || z.busAck() || z.inRepeat()) return false;
+            const uint32_t key = pcKey16(z);
+            if (hist_on){ hist16[key]++; return false; }
+            bool skip = (resume_skip16 >= 0 && key == (uint32_t)resume_skip16);
+            resume_skip16 = -1;
+            // Aufrufstapel: vor dem Befehl einordnen, CALL vormerken (Dekodieren kostet —
+            // aber nur, solange der U8001 läuft).
+            const uint16_t sp = sp16(z);
+            cs16.onInstruction(key, sp);
+            z8k::Line l = z8k::disasm([&](uint16_t o){ return rdw16(z.pcSeg,o,true); }, z.pc, z.segMode(), z.pcSeg);
+            if (l.dec.insn && l.dec.insn->has(z8k::Z8K_CALL))
+                cs16.noteCall(key, key16(z.pcSeg, uint16_t(z.pc + l.bytes)), sp);
+            if (trace_fp && trace_lines < trace_cap){ traceLine16To(trace_fp, z); ++trace_lines; }
+            if (!ev16_why.empty()){ std::string w=ev16_why; ev16_why.clear(); stopAt16(w); return true; }
+            if (step16_active){
+                if (step16_rem<=0){ step16_active=false; stopAt16("step U8001"); return true; }
+                traceLine16To(stderr, z); --step16_rem; return false;
+            }
+            if (fin16_active && sp > fin16_sp){ fin16_active=false; stopAt16("step-out U8001"); return true; }
+            if (skip) return false;
+            if (gu16 >= 0 && key == (uint32_t)gu16){ gu16=-1; stopAt16("run-until U8001"); return true; }
+            auto it=bp16.find(key);
+            if (it!=bp16.end() && it->second.enabled){
+                it->second.hits++;
+                if (it->second.ignore>0){ it->second.ignore--; return false; }
+                if (it->second.temp) bp16.erase(it);
+                stopAt16("bp U8001"); return true;
+            }
+            return false;
+        });
+        em->setEventHook([&](const EM::EreignisInfo& e){
+            if (emlog_fp){
+                const Z8000& z = em->u8001();
+                fprintf(emlog_fp,"EM %c%-9lld %-52s ZVE1.PC=%04X U8001.PC=%s\n", rcpfx(), rc(m.cpuCycles()),
+                        emtrace::text(e).c_str(), m.cpuPC(), dbg16::addrText(z.pcSeg,z.pc,true).c_str());
+            }
+            if (hist_on || hit) return;
+            using E = EM::Ereignis;
+            auto stopEv = [&](const std::string& why){
+                // Anhalten am Befehlsende der CPU, die gerade läuft; gezeigt wird der Kontext.
+                if (cpu_ctx==3){ hit=true; hit_cpu=3; hit_key16=pcKey16(em->u8001()); stop_reason=why; m.stop(); }
+                else stopFromBus(why);
+            };
+            if (brk_mode && e.kind==E::Modus && ((e.value==0 && (brk_mode&1)) || (e.value==1 && (brk_mode&2))))
+                stopEv(e.value? "Moduswechsel → 8-Bit-Mode" : "Moduswechsel → 16-Bit-Mode");
+            else if (brk_int16 && e.kind==E::Int16 && e.value==1)
+                stopEv("INT-16 (A33 Bit 4 → PIO A4)");
+            else if (brk_vi && e.kind==E::ViQuittung){
+                // Mitten im Interrupteintritt: gehalten wird VOR dem ersten Befehl der ISR.
+                char w[64]; snprintf(w,sizeof w,"VI angenommen, Kennung=%04X",e.value); ev16_why=w; }
+            else if (brk_vi && e.kind==E::Vektor8)
+                fprintf(stderr,"  [vi] U880 OUT ADH=%02X → VI am U8001 (Halt bei der Quittung)\n",e.value&0xFF);
+        });
+    }
+
     // ─── helpers ───────────────────────────────────────────────────────────────
     auto printSnap = [&](int cpu){
         const Snap& s = (cpu==2)?snap2:snap1;
@@ -774,10 +952,12 @@ int main(int argc, char** argv){
             s.I,s.R, s.halted?" HALT":"", (unsigned long long)s.cyc);
     };
     auto stateLine = [&]{
-        fprintf(stderr,"  state: ROM=%s BUSRQ=%s ZVE2=%s  %c-cyc=%lld%s\n",
+        fprintf(stderr,"  state: ROM=%s BUSRQ=%s ZVE2=%s  %c-cyc=%lld%s",
             m.isRomEnabled()?"on":"off", m.isBUSRQ()?"yes":"no",
             m.isZVE2InReset()?"reset":(m.isZVE2Waiting()?"wait":"run"),
             rcpfx(), rc(m.cpuCycles()), rel_armed?" (rel)":"");
+        if (em) fprintf(stderr,"  EM=%s-Bit U8001=%s",em->mode8()?"8":"16",state16(em->u8001()));
+        fprintf(stderr,"\n");
     };
     auto dump = [&](uint16_t a, int len){
         for (int o=0;o<len;o+=16){
@@ -878,6 +1058,16 @@ int main(int argc, char** argv){
                            "Fetch liest 0xFF (Speicher gegated/disabled?), kein echter RST-Handler\n");
     };
     auto onStop = [&]{
+        if (hit_cpu==3 && em){
+            fprintf(stderr,"** %s : U8001 PC=%s\n",stop_reason.c_str(),
+                    dbg16::addrText(uint8_t(hit_key16>>16),uint16_t(hit_key16),true).c_str());
+            printRegs16(); showInsn16("=>",pcKey16(em->u8001())); emLine(); stateLine();
+            if (stop_reason.rfind("bp",0)==0){
+                bphit_ring.emplace_back(); m.captureState(bphit_ring.back());
+                while (bphit_ring.size()>bphit_cap) bphit_ring.pop_front(); }
+            return;
+        }
+        if (hit_cpu==3) hit_cpu=1;
         fprintf(stderr,"** %s : ZVE%d PC=%04X\n",stop_reason.c_str(),hit_cpu,hit_pc);
         printSnap(hit_cpu);
         showInsn("=>", hit_pc);
@@ -986,16 +1176,23 @@ int main(int argc, char** argv){
             fprintf(stderr,
               "\n{\"zve1_pc\":\"0x%04X\",\"zve2_pc\":\"0x%04X\",\"zve2\":\"%s\",\"busrq\":%s,"
               "\"busmaster\":\"%s\",\"k5122\":{\"drive\":%u,\"mounted\":%s,\"cyl\":%u,\"head\":%u,"
-              "\"transferring\":%s,\"write\":%s,\"headPos\":%zu,\"trackLen\":%zu}}\n",
+              "\"transferring\":%s,\"write\":%s,\"headPos\":%zu,\"trackLen\":%zu}",
               pc1,pc2,z2s, m.isBUSRQ()?"true":"false", zve2Active()?"ZVE2":"ZVE1",
               (unsigned)k.drive,k.mounted?"true":"false",(unsigned)k.cylinder,(unsigned)k.head,
               k.transferring?"true":"false",k.writeMode?"true":"false",k.headPos,k.trackLen);
+            if (em){ const Z8000& z3=em->u8001();
+                fprintf(stderr,",\"u8001_pc\":\"%s\",\"u8001\":\"%s\",\"em_mode\":%d",
+                        dbg16::addrText(z3.pcSeg,z3.pc,true).c_str(),state16(z3),em->mode8()?8:16); }
+            fprintf(stderr,",\"cpu\":\"%s\"}\n", cpu_ctx==3?"u8000":cpu_ctx==2?"zve2":"zve1");
             return;
         }
         char l1[120],l2[120]; disasmAt(pc1,l1,sizeof l1); disasmAt(pc2,l2,sizeof l2);
         std::string p1=prnFor(pc1), p2=prnFor(pc2);
         fprintf(stderr,"  ZVE1 %s%s%s\n",l1,p1.empty()?"":"  ; ",p1.c_str());
         fprintf(stderr,"  ZVE2 %s%s%s   [%s]\n",l2,p2.empty()?"":"  ; ",p2.c_str(),z2s);
+        if (em){ char l3[160]; const Z8000& z3=em->u8001(); disasm16(z3.pcSeg,z3.pc,l3,sizeof l3);
+            fprintf(stderr,"  U8001 %s   [%s] %s-Bit-Mode%s\n",l3,state16(z3),em->mode8()?"8":"16",
+                    cpu_ctx==3?"  <- Kontext":""); }
         fprintf(stderr,"  BUSRQ=%s  bus-master=%s  K5122: D%d %s cyl=%u head=%u %s%s headPos=%zu/%zu\n",
                 m.isBUSRQ()?"yes":"no", zve2Active()?"ZVE2":"ZVE1",
                 k.drive,k.mounted?"mounted":"EMPTY",(unsigned)k.cylinder,(unsigned)k.head,
@@ -1025,7 +1222,7 @@ int main(int argc, char** argv){
     // §9 `hist <cycles> [lo hi]`: run N cycles profiling BOTH CPUs' PCs, print the
     // hotspots (with symbol/.prn annotation). One glance instead of reading a trace file.
     auto runHist = [&](uint64_t cycles, int lo, int hi){
-        hist1.clear(); hist2.clear(); hist_lo=lo; hist_hi=hi; hist_on=true;
+        hist1.clear(); hist2.clear(); hist16.clear(); hist_lo=lo; hist_hi=hi; hist_on=true;
         uint64_t start=runClock(); m.clearStop(); hit=false;
         g_int_flag=0; g_in_run=1;
         auto last_prog = std::chrono::steady_clock::now();
@@ -1053,12 +1250,23 @@ int main(int argc, char** argv){
                     p.empty()?"":"  ; ",p.c_str()); }
         };
         top(hist1,"ZVE1"); top(hist2,"ZVE2");
+        if (em){
+            if (hist16.empty()){ fprintf(stderr,"  U8001: (no samples)\n"); return; }
+            std::vector<std::pair<uint32_t,uint32_t>> v; uint64_t tot=0;
+            for (auto& kv:hist16){ v.push_back({kv.second,kv.first}); tot+=kv.second; }
+            std::sort(v.rbegin(),v.rend());
+            fprintf(stderr,"  U8001 top (%llu instrs, %zu distinct PCs):\n",(unsigned long long)tot,hist16.size());
+            for (size_t i=0;i<v.size() && i<15;++i){ char l[160];
+                disasm16(uint8_t(v[i].second>>16),uint16_t(v[i].second),l,sizeof l);
+                fprintf(stderr,"    %6.2f%%  %6u  %s\n",100.0*v[i].first/(double)tot,v[i].first,l); }
+        }
     };
     // silent run kernel: runs until a stop is signalled or budget/cap reached.
     // Beim Fortsetzen wird die aktuelle Adresse beider CPUs als „einmal nicht halten"
     // vorgemerkt — sonst hielte ein Breakpoint, auf dem wir gerade STEHEN, sofort wieder
     // (break-before-execute, s. tools/k1520dbg.md §2).
-    auto armResume = [&]{ resume_skip1 = (int)m.cpuPC(); resume_skip2 = (int)m.zve2PC(); };
+    auto armResume = [&]{ resume_skip1 = (int)m.cpuPC(); resume_skip2 = (int)m.zve2PC();
+        resume_skip16 = em? (long)pcKey16(em->u8001()) : -1; };
     auto goSilent = [&](uint64_t budget)->uint64_t{
         hit=false; m.clearStop(); tw_n=0; armResume();
         uint64_t start=runClock();
@@ -1328,11 +1536,14 @@ int main(int argc, char** argv){
     auto applySnapshot = [&](const A5120Machine::MachineSnapshot& s,const char* what){
         bool ok = m.restoreState(s);
         callstack.clear();                 // call history can't be reconstructed
+        cs16.clear();
         snap1=grab(m.cpuDebug()); snap2=Snap{};
         if(!ok) fprintf(stderr,"  note: ROM-mapping differs from snapshot — RAM+regs restored,"
                                " but this snapshot predates/postdates the boot-ROM unmap.\n");
         fprintf(stderr,"  restored %s\n",what);
-        showInsn("=>",m.cpuPC()); stateLine();
+        if (cpu_ctx==3 && em) showInsn16("=>",pcKey16(em->u8001()));
+        else showInsn("=>",m.cpuPC());
+        stateLine();
     };
     // Reverse-step: undo the last N forward commands.
     auto reverseStep = [&](long n){
@@ -1353,6 +1564,166 @@ int main(int argc, char** argv){
         char w[64]; snprintf(w,sizeof w,"reverse-continue → previous bp hit PC=%04X (%zu left)",
                              s.zve1.PC,bphit_ring.size());
         applySnapshot(s,w);
+    };
+
+    // ─── U8001-Kontext: Kommandos, die `cpu u8000` umschaltet (S5) ─────────────
+    // Liefert true, wenn das Kommando hier erledigt wurde.  Speicherkommandos mit
+    // einer `em:`-Adresse landen in JEDEM Kontext hier (roh ins DRAM des EM).
+    auto isRawTok = [](const std::string& s){ return s.size()>3 && (s.compare(0,3,"em:")==0||s.compare(0,3,"EM:")==0); };
+    // Geparkt (RESET16, Bus abgegeben, STOP): dann gibt es keinen Befehl zum Schritt.
+    auto parked16 = [&]()->bool{
+        const Z8000& z = em->u8001();
+        if (em->reset16() || (z.busAck() && em->busRq16()) || (z.stopped() && em->stop16())){
+            fprintf(stderr,"  (U8001 laeuft nicht: %s — erst RESET16/BUSRQ/STOP loesen)\n",state16(z)); return true; }
+        return false; };
+    // Einzelschritte laufen, bis der Schritt-Rückruf hält; höchstens 50 Mio. Takte
+    // (parkt der U8001 unterwegs, z. B. per TRQ8/BUSAK, kommt er nicht mehr voran).
+    auto runStep16 = [&](long k){
+        step16_rem=k; step16_active=true; m.clearStop(); hit=false; armResume();
+        uint64_t start=runClock();
+        while(step16_active){ int n=m.run(20000); if(n==0||hit) break;
+            if (runClock()-start > 50000000ULL){ fprintf(stderr,"  (U8001 kam in 50 Mio. Takten nicht voran — geparkt?)\n"); break; } }
+        step16_active=false; };
+    auto step16 = [&](long k){
+        if (parked16()) return;
+        runStep16(k);
+        if(hit){ hit=false; onStop(); } else stateLine(); };
+    auto handle16 = [&](const std::vector<std::string>& t)->bool{
+        const std::string& cmd=t[0];
+        const bool ctx = (cpu_ctx==3);
+        const bool raw1 = t.size()>1 && isRawTok(t[1]);
+        if (!ctx && !(raw1 && (cmd=="d"||cmd=="dump"||cmd=="e"||cmd=="x"||cmd.rfind("x/",0)==0||cmd=="u")))
+            return false;
+        if (!em){ fprintf(stderr,"  (kein EM in dieser Maschine — Start mit --em em256)\n"); return true; }
+        Z8000& z = z16();
+        if (cmd=="r"){ printRegs16(); showInsn16("=>",pcKey16(z)); emLine(); stateLine(); return true; }
+        if (cmd=="rj"){
+            fprintf(stderr,"\n{\"cpu\":\"u8001\",\"pc\":\"%s\",\"pcseg\":%u,\"pcoff\":\"0x%04X\",\"fcw\":\"0x%04X\",\"r\":[",
+                    dbg16::addrText(z.pcSeg,z.pc,true).c_str(), z.pcSeg, z.pc, z.fcw);
+            for (int i=0;i<16;++i) fprintf(stderr,"%s\"0x%04X\"", i?",":"", z.r(i));
+            fprintf(stderr,"],\"state\":\"%s\",\"mode\":%d,\"a33\":\"0x%02X\",\"cyc\":%llu}\n",
+                    state16(z), em->mode8()?8:16, em->steuer16(), (unsigned long long)z.cycles);
+            return true; }
+        if (cmd=="s"){ pushHistory(); step16(t.size()>1?parseNum(t[1]):1); return true; }
+        if (cmd=="n"){ if (parked16()) return true;
+            pushHistory(); long k=t.size()>1?parseNum(t[1]):1;
+            for (long i=0;i<k;++i){
+                z8k::Line l = z8k::disasm([&](uint16_t o){ return rdw16(z.pcSeg,o,true); }, z.pc, z.segMode(), z.pcSeg);
+                if (l.dec.insn && l.dec.insn->has(z8k::Z8K_CALL|z8k::Z8K_REPEAT)){
+                    gu16=(long)key16(z.pcSeg,uint16_t(z.pc+l.bytes)); goSilent(0);
+                    if (hit && stop_reason=="run-until U8001"){ hit=false; } else if (hit) break;
+                } else { runStep16(1);
+                    if (hit && stop_reason=="step U8001") hit=false; else break; }
+            }
+            if(hit){ hit=false; onStop(); } else { showInsn16("=>",pcKey16(z)); stateLine(); }
+            return true; }
+        if (cmd=="fin"){ pushHistory(); fin16_sp=sp16(z); fin16_active=true; go(0); fin16_active=false; return true; }
+        if (cmd=="gu" && t.size()>1){ dbg16::Addr16 a; if(!parse16(t[1],a)) return true;
+            pushHistory(); gu16=(long)a.key(); go(0); gu16=-1; return true; }
+        if ((cmd=="b"||cmd=="tb") && t.size()>1){ dbg16::Addr16 a; if(!parse16(t[1],a)) return true;
+            Bp bp; bp.temp=(cmd=="tb");
+            if (t.size()>2) fprintf(stderr,"  (Bedingungen gibt es fuer U8001-Haltepunkte nicht — ignoriert)\n");
+            bp16[a.key()]=bp;
+            fprintf(stderr,"  %sbp U8001 @%s\n",bp.temp?"temp ":"",dbg16::addrText(a.seg,a.off,true).c_str()); return true; }
+        if (cmd=="bd" && t.size()>1){ dbg16::Addr16 a; if(!parse16(t[1],a)) return true; bp16.erase(a.key()); return true; }
+        if ((cmd=="be"||cmd=="bdis"||cmd=="bi") && t.size()>1){ dbg16::Addr16 a; if(!parse16(t[1],a)) return true;
+            auto it=bp16.find(a.key());
+            if (it==bp16.end()){ fprintf(stderr,"  no bp @%s\n",dbg16::addrText(a.seg,a.off,true).c_str()); return true; }
+            if (cmd=="bi"){ it->second.ignore = t.size()>2? parseNum(t[2]) : 1;
+                fprintf(stderr,"  bp U8001 @%s: ignore next %ld hit(s)\n",dbg16::addrText(a.seg,a.off,true).c_str(),it->second.ignore); }
+            else { it->second.enabled=(cmd=="be");
+                fprintf(stderr,"  bp U8001 @%s %s\n",dbg16::addrText(a.seg,a.off,true).c_str(),it->second.enabled?"enabled":"disabled"); }
+            return true; }
+        if (cmd=="bt"){
+            const auto& f = cs16.frames();
+            fprintf(stderr,"  #0 %s\n",dbg16::addrText(z.pcSeg,z.pc,true).c_str());
+            int depth = t.size()>1? (int)parseNum(t[1]) : 8, frame=1;
+            for (auto it=f.rbegin(); it!=f.rend() && frame<=depth; ++it,++frame)
+                fprintf(stderr,"  #%d %s (call → %s, ret %s)\n", frame,
+                        dbg16::addrText(uint8_t(it->site>>16),uint16_t(it->site),true).c_str(),
+                        dbg16::addrText(uint8_t(it->target>>16),uint16_t(it->target),true).c_str(),
+                        dbg16::addrText(uint8_t(it->ret>>16),uint16_t(it->ret),true).c_str());
+            if (f.empty()) fprintf(stderr,"  (Aufrufstapel leer — erst laufen/schrittweise fahren)\n");
+            return true; }
+        if (cmd=="u"){
+            dbg16::Addr16 a; a.seg=z.pcSeg; a.off=z.pc;
+            if (t.size()>1){ if(!parse16(t[1],a)) return true; }
+            else if (last_u16>=0){ a.seg=uint8_t(last_u16>>16); a.off=uint16_t(last_u16); }
+            if (a.kind==dbg16::Addr16::Raw){
+                // roh: Zelle → <<SG>>off (Zelle = SG·64K + Offset)
+                a.kind=dbg16::Addr16::Seg; a.seg=uint8_t((a.cell>>16)&3); a.off=uint16_t(a.cell);
+                fprintf(stderr,"  (em:-Adresse als Segment %u der Weiche gelesen; Weiche steht auf Mode %u)\n",a.seg,em->segMode()); }
+            int cnt = t.size()>2? (int)parseNum(t[2]) : 12;
+            uint16_t o=a.off;
+            for (int i=0;i<cnt;++i){ char l[160]; int len=disasm16(a.seg,o,l,sizeof l);
+                fprintf(stderr,"  %s\n",l); o=uint16_t(o+len); }
+            last_u16=(long)key16(a.seg,o); return true; }
+        if (cmd=="a" && t.size()>2){
+            // a <adr>|. <Befehl …>  — ein Befehl, z8kasm-Syntax, über die Segmentweiche
+            // in den PROGRAMMspeicher (Status 1100; in Mode 1 zählt das).
+            dbg16::Addr16 a;
+            if (t[1]=="."){ if(last_a16<0){ fprintf(stderr,"  (noch keine a-Adresse)\n"); return true; }
+                a.seg=uint8_t(last_a16>>16); a.off=uint16_t(last_a16); }
+            else if(!parse16(t[1],a)) return true;
+            if (a.kind!=dbg16::Addr16::Seg){ fprintf(stderr,"  (a braucht eine Segmentadresse, kein em:)\n"); return true; }
+            std::string text; for (size_t i=2;i<t.size();++i){ if(i>2) text+=" "; text+=t[i]; }
+            std::vector<uint16_t> words; std::string err;
+            if (!z8k::assembleLine(text, z.segMode(), a.seg, a.off, words, err)){
+                fprintf(stderr,"  ? %s\n",err.c_str()); return true; }
+            for (size_t i=0;i<words.size();++i){
+                wrb16(a.seg,uint16_t(a.off+2*i),true,uint8_t(words[i]>>8));
+                wrb16(a.seg,uint16_t(a.off+2*i+1),true,uint8_t(words[i])); }
+            char l[160]; disasm16(a.seg,a.off,l,sizeof l); fprintf(stderr,"  %s\n",l);
+            last_a16=(long)key16(a.seg,uint16_t(a.off+2*words.size())); return true; }
+        if ((cmd=="d"||cmd=="dump") && t.size()>1){
+            dbg16::Addr16 a; if(!parse16(t[1],a)) return true;
+            if (t.size()>3){                          // dump <A> <N> <datei>
+                int n=(int)parseNum(t[2]); std::ofstream f(t[3],std::ios::binary);
+                if(!f){ fprintf(stderr,"  cannot write %s\n",t[3].c_str()); return true; }
+                for(int i=0;i<n;++i) f.put((char)rdA16(a,(uint32_t)i));
+                fprintf(stderr,"  dumped %d byte(s) from %s → %s\n",n,a16Text(a,0).c_str(),t[3].c_str()); return true; }
+            int len = t.size()>2? (int)parseNum(t[2]) : 64;
+            for (int o=0;o<len;o+=16){ char asc[17]={0};
+                fprintf(stderr,"  %-14s ",a16Text(a,(uint32_t)o).c_str());
+                for (int i=0;i<16;++i){ if(o+i<len){ uint8_t b=rdA16(a,(uint32_t)(o+i));
+                    fprintf(stderr,"%02X ",b); asc[i]=(b>=0x20&&b<0x7F)?(char)b:'.'; }
+                    else { fprintf(stderr,"   "); asc[i]=' '; } }
+                fprintf(stderr," |%s|\n",asc); }
+            return true; }
+        if (cmd=="e" && t.size()>2){ dbg16::Addr16 a; if(!parse16(t[1],a)) return true;
+            for (size_t i=2;i<t.size();++i) wrA16(a,(uint32_t)(i-2),(uint8_t)strtol(t[i].c_str(),nullptr,16));
+            fprintf(stderr,"  poked %zu byte(s) @%s\n",t.size()-2,a16Text(a,0).c_str()); return true; }
+        if (cmd=="x" || cmd.rfind("x/",0)==0){
+            // x/<N><x|i><b|w> <A>  — Worte big-endian (gerade Adresse = oberes Byte)
+            std::string spec = cmd.find('/')!=std::string::npos? cmd.substr(cmd.find('/')+1) : (t.size()>2? t[2] : "");
+            int cnt=0; char fmt='x'; int size=2;
+            for (char c: spec){ if(c>='0'&&c<='9') cnt=cnt*10+(c-'0'); else if(c=='b') size=1; else if(c=='w'||c=='h') size=2; else fmt=c; }
+            if (cnt<1) cnt = 8;
+            dbg16::Addr16 a; a.seg=z.pcSeg; a.off=z.pc;
+            if (t.size()>1 && !parse16(t[1],a)) return true;
+            if (fmt=='i'){ uint16_t o=a.off; for(int k=0;k<cnt;++k){ char l[160]; o=uint16_t(o+disasm16(a.seg,o,l,sizeof l)); fprintf(stderr,"  %s\n",l);} return true; }
+            uint32_t o=0;
+            for (int k=0;k<cnt;){ fprintf(stderr,"  %-14s:",a16Text(a,o).c_str());
+                for (int col=0; col<8 && k<cnt; ++col,++k){
+                    if (size==2){ fprintf(stderr," %02X%02X",rdA16(a,o),rdA16(a,o+1)); o+=2; }
+                    else { fprintf(stderr," %02X",rdA16(a,o)); o+=1; } }
+                fprintf(stderr,"\n"); }
+            return true; }
+        if (cmd=="set" && t.size()>=3){
+            std::string rn=t[1]; for(auto&c:rn) c=(char)toupper((unsigned char)c);
+            long v=parseNum(t[2]); { long pv; if (dbg16::parseNumber(t[2],pv)) v=pv; }
+            unsigned n=0; bool ok=true;
+            if (rn=="PC") z.pc=(uint16_t)v;
+            else if (rn=="PCSEG") z.pcSeg=(uint8_t)(v&0x7F);
+            else if (rn=="FCW") z.fcw=(uint16_t)v;
+            else if (rn.rfind("RR",0)==0 && sscanf(rn.c_str()+2,"%u",&n)==1 && n<16) z.setRR(n,(uint32_t)v);
+            else if (rn.rfind("RH",0)==0 && sscanf(rn.c_str()+2,"%u",&n)==1 && n<8) z.setRB(n,(uint8_t)v);
+            else if (rn.rfind("RL",0)==0 && sscanf(rn.c_str()+2,"%u",&n)==1 && n<8) z.setRB(8+n,(uint8_t)v);
+            else if (rn[0]=='R' && sscanf(rn.c_str()+1,"%u",&n)==1 && n<16) z.setR(n,(uint16_t)v);
+            else ok=false;
+            if (ok) fprintf(stderr,"  U8001 %s := %%%lX\n",rn.c_str(),v); else fprintf(stderr,"  ? bad register (R0..R15 RR RH RL PC PCSEG FCW)\n");
+            return true; }
+        return false;   // alles Übrige (g, where, hist, snap, rs, …) wie gewohnt
     };
 
     // ═══ Phase 4: the REPL ══════════════════════════════════════════════════════
@@ -1410,11 +1781,22 @@ int main(int argc, char** argv){
               for(size_t i=1;i<t.size();++i){ ex+=" "; ex+=t[i]; }
               std::istringstream is2(ex); t.clear(); std::string w2;
               while(is2>>w2) t.push_back(w2); if(t.empty()) continue; } }
+        // Kontext ZVE2 (`cpu zve2`): die ZVE1-Kommandos auf ihre 2-Varianten umbiegen.
+        if (cpu_ctx==2){
+            static const std::map<std::string,std::string> z2={{"b","b2"},{"s","s2"},{"bd","bd2"},
+                {"be","be2"},{"bdis","bdis2"},{"bi","bi2"},{"rj","rj2"}};
+            auto it=z2.find(t[0]);
+            if (it!=z2.end()) t[0]=it->second;
+            else if (t[0]=="r" && t.size()==1) t.push_back("2");
+            else if (t[0]=="set" && t.size()>=3 && t[1]!="2") t.insert(t.begin()+1,"2");
+        }
+        // Kontext U8001 (`cpu u8000`) bzw. eine `em:`-Adresse: eigener Zweig.
+        if (handle16(t)) continue;
         const std::string& cmd=t[0];
 
         // §0 discoverability: when ZVE2 is the current bus master, a ZVE1-only command is
         // almost always a mistake (the DMA/read runs on ZVE2). Nudge toward the 2-variants.
-        if (zve2Active()){
+        if (zve2Active() && cpu_ctx==1){
             static const std::set<std::string> zve1only={"b","s","n","fin","gu","rj"};
             if (zve1only.count(cmd))
                 fprintf(stderr,"  [hint] bus-master is ZVE2 now — '%s' acts on ZVE1; "
@@ -1450,6 +1832,26 @@ int main(int argc, char** argv){
               "      hist <cyc>      PC hotspots of BOTH CPUs (finds the spin loop instantly)\n"
               "    bbusrq / bxfer    stop exactly at the DMA hand-off / read-transfer edge\n"
               "    A ZVE1-only command while ZVE2 is bus master prints a [hint].\n");
+        }
+        else if ((cmd=="help"||cmd=="h"||cmd=="?") && t.size()>1 &&
+                 (t[1]=="u8000"||t[1]=="u8001"||t[1]=="em"||t[1]=="16")){
+            fprintf(stderr,
+              "  A5120.16 / U8001 (Start mit --em em256|em064)\n"
+              "    cpu [zve1|zve2|u8000]   CPU-Kontext; u8000 schaltet um:\n"
+              "      r / rj   Register (R0..R15, FCW, PSAP, Zustand) ;  set R3|RR2|RH0|PC|PCSEG|FCW <v>\n"
+              "      s [N] / n [N] / fin / gu <A>   Schritt, ueber CALL/Blockbefehl, heraus, bis A\n"
+              "      u [A] [N]   Disassembler ;  a <A>|. <Befehl>   Inline-Assembler (z8kasm-Syntax)\n"
+              "      b/tb/bd/be/bdis/bi <A>   Haltepunkte (vor dem Befehl) ;  bt  Aufrufstapel\n"
+              "      d/e/x <A>   Speicher DURCH DIE SEGMENTWEICHE (wie ein Datenzugriff jetzt)\n"
+              "    Adressen: <<seg>>off (<<0>>%%0100), Zahl = PC-Segment, em:ZELLE = roh ins DRAM\n"
+              "              (d/e/x/u mit em: gehen in jedem Kontext)\n"
+              "    dev em      Steuerkarte: A22, A33..A36, PIO A32, A29 8/16, TREN, BUSRQ/BUSAK, A53, Guthaben\n"
+              "    fcw [v]     FCW anzeigen/setzen ;  psa [n]  Program Status Area (+ n VI-Eintraege)\n"
+              "    bmode [16|8|both|off]   Halt beim Moduswechsel (FF A29)\n"
+              "    bvi [on|off]            Halt, wenn der U8001 ein VI annimmt (vor dem 1. ISR-Befehl)\n"
+              "    bint16 [on|off]         Halt bei INT-16 (A33 Bit 4 → PIO A4 → U880)\n"
+              "    emlog [on|off|<datei>]  jede EM-Transaktion eine Zeile (wie boot_trace --em)\n"
+              "    where / hist / snap / rs   zeigen bzw. sichern den U8001 mit\n");
         }
         else if (cmd=="help"||cmd=="h"||cmd=="?"){
             fprintf(stderr,
@@ -1503,7 +1905,9 @@ int main(int argc, char** argv){
               "          bscreen \"txt\"|/re/ | off      arm: any g/gu/n stops on screen match\n"
               "          keyuntil \"<key>\" \"txt\" [maxcyc]  press key until screen shows txt (poll-robust)\n"
               "          dialog <file>   drive a menu: per line  \"screen-txt\" \"keys\" [maxcyc]\n"
-              "          alias <name> <expansion..> | unalias <name> | alias ; source <file>\n");
+              "          alias <name> <expansion..> | unalias <name> | alias ; source <file>\n"
+              "  A5120.16 cpu [zve1|zve2|u8000] ; dev em ; fcw ; psa ; bmode ; bvi ; bint16 ; emlog\n"
+              "          (help u8000 — der U8001 des Erweiterungsmoduls, Start mit --em em256)\n");
         }
         // ══ RUN: continue / step (each snapshots first via pushHistory for `rs`) ══
         else if (cmd=="g"||cmd=="c"){ pushHistory(); go(t.size()>1? (uint64_t)parseNum(t[1]) : 0); }
@@ -1577,10 +1981,18 @@ int main(int argc, char** argv){
                         kv.second.ignore>0?(" ignore="+std::to_string(kv.second.ignore)).c_str():"",
                         kv.second.cond.empty()?"":(" if "+kv.second.cond).c_str()); } };
             show(bp1,"ZVE1"); show(bp2,"ZVE2");
-            if(brk_int||brk_nmi||brk_reti||brk_busrq||brk_xfer||brk_wxfer)
-                fprintf(stderr,"  events:%s%s%s%s%s%s\n",
+            if (em){ fprintf(stderr,"  U8001 breakpoints:\n");
+                if (bp16.empty()) fprintf(stderr,"    (none)\n");
+                for (auto& kv:bp16) fprintf(stderr,"    %s  hits=%ld%s%s%s\n",
+                        dbg16::addrText(uint8_t(kv.first>>16),uint16_t(kv.first),true).c_str(), kv.second.hits,
+                        kv.second.enabled?"":" [disabled]", kv.second.temp?" [temp]":"",
+                        kv.second.ignore>0?(" ignore="+std::to_string(kv.second.ignore)).c_str():""); }
+            if(brk_int||brk_nmi||brk_reti||brk_busrq||brk_xfer||brk_wxfer||brk_mode||brk_vi||brk_int16)
+                fprintf(stderr,"  events:%s%s%s%s%s%s%s%s%s\n",
                 brk_int?" interrupt":"",brk_nmi?" nmi":"",brk_reti?" reti":"",
-                brk_busrq?" busrq":"",brk_xfer?" read-xfer":"",brk_wxfer?" write-xfer":""); }
+                brk_busrq?" busrq":"",brk_xfer?" read-xfer":"",brk_wxfer?" write-xfer":"",
+                brk_mode==1?" mode→16":brk_mode==2?" mode→8":brk_mode==3?" mode":"",
+                brk_vi?" vi":"", brk_int16?" int16":""); }
         // event breakpoints: break on interrupt / NMI / RETI (toggle; "off" disarms)
         else if (cmd=="bint"||cmd=="bnmi"||cmd=="breti"){
             bool on = !(t.size()>1 && t[1]=="off");
@@ -1960,12 +2372,34 @@ int main(int argc, char** argv){
                 for(int i=0;i<2;++i){ auto& ch=s.ch[i];
                     fprintf(stderr,"    %c rr0=%02X rr1=%02X wr1=%02X vec=%02X  irq(rx=%s tx=%s ext=%s) ius=%s iei=%s  rxQ=%zu txBusy=%s\n",
                         i?'B':'A',ch.rr0,ch.rr1,ch.wr1,ch.wr2,Y(ch.irqRx),Y(ch.irqTx),Y(ch.irqExt),Y(ch.ius),Y(ch.iei),ch.rxQueued,Y(ch.txBusy)); } }
+            else if (w=="em"){
+                if (!em) fprintf(stderr,"  (kein EM — Start mit --em em256|em064)\n");
+                else {
+                    const Z8000& z=em->u8001();
+                    fprintf(stderr,"  EM %s an MODADR %02XH  %s-Bit-Mode (A29)  LED V1(RAMEN)=%d V2(8-Bit)=%d\n",
+                            em->config().variante==EM::Variante::EM256?"EM256 (U8001, 256 KB)":"EM064 (U8002, 64 KB)",
+                            em->config().modadr, em->mode8()?"8":"16", em->ledV1(), em->ledV2());
+                    fprintf(stderr,"  A22 Seiten (PEN WE A15 A14):");
+                    for (int pg=0;pg<16;++pg){ uint8_t a=em->attribute(pg);
+                        fprintf(stderr,"%s%X:%c%c%d%d", pg%8?" ":"\n    ", pg, (a&1)?'-':'P', (a&2)?'-':'W', !(a&8), !(a&4)); }
+                    fprintf(stderr,"\n  A33=%02X (SegMode %u, SG=%u, INT16=%d, A53-Freigabe=%d)  A35=%02X  A36/Status8=%02X  A34/Vektor8=%02X%s\n",
+                            em->steuer16(), em->segMode(), (em->steuer16()>>5)&3, (em->steuer16()>>4)&1, (em->steuer16()>>3)&1,
+                            em->status16(), em->status8(), em->vector8(), em->viPending()?" (VI anstehend)":"");
+                    fprintf(stderr,"  PIO B: SG=%u RAMEN=%d STOP=%d RESET16=%d TRQ8=%d  PE=%d\n",
+                            em->segment(), em->ramEnabled(), em->stop16(), em->reset16(), em->trq8(), em->parityError());
+                    fprintf(stderr,"  TREN=%d BUSRQ16=%d BUSAK16=%d  A53=%u NVI=%d  U8001=%s  Guthaben=%.1f Takte  cyc16=%llu\n",
+                            em->tren(), em->busRq16(), em->busAck16(), em->a53(), em->nviLine(), state16(z),
+                            em->guthabenTakte16(), (unsigned long long)z.cycles);
+                    auto p=em->pio().debugState();
+                    for(int i=0;i<2;++i){ auto& pt=p.port[i];
+                        fprintf(stderr,"  PIO-A32 %c mode=%u out=%02X in=%02X dir=%02X vec=%02X  INT(en=%d pend=%d ius=%d)\n",
+                                i?'B':'A',pt.mode,pt.out,pt.in,pt.dir,pt.vector,pt.ie,pt.pending,pt.ius); } } }
             else { auto k=m.k5122State();
                 fprintf(stderr,"  K5122: D%d %s  cyl=%u head=%u  %s%s  headPos=%zu/%zu secSize=%u  /BUSRQ-pend=%s\n",
                         k.drive, k.mounted?"mounted":"EMPTY", k.cylinder, k.head,
                         k.transferring?"READING":"idle", k.writeMode?"+WRITE":"",
                         k.headPos, k.trackLen, k.sectorSize, k.busrq?"yes":"no");
-                fprintf(stderr,"  (dev ctc | dev pio [all|bs|k5122ctrl|k5122data] | dev sio | dev sio2)\n"); } }
+                fprintf(stderr,"  (dev ctc | dev pio [all|bs|k5122ctrl|k5122data] | dev sio | dev sio2 | dev em)\n"); } }
         else if (cmd=="ivt"){    // §6: IM-2-Vektortabelle auf einen Blick
             // Für jede Interruptquelle der Daisy-Chain: programmierter Vektor →
             // Tabellenadresse (I<<8 | vec&0xFE) → dort eingetragene ISR-Adresse.
@@ -2043,9 +2477,79 @@ int main(int argc, char** argv){
             else { std::vector<std::string> ls; std::string l; while(std::getline(f,l)) ls.push_back(l);
                 pending.insert(pending.begin(), ls.begin(), ls.end());
                 fprintf(stderr,"  sourced %zu line(s) from %s\n",ls.size(),t[1].c_str()); } }
+        // ══ A5120.16: CPU-Kontext, U8001-Zustand, Ereignis-Halte (S5) ══
+        else if (cmd=="cpu"){
+            if (t.size()>1){
+                std::string c=t[1]; for(auto&ch:c) ch=(char)tolower((unsigned char)ch);
+                if (c=="zve1"||c=="1") cpu_ctx=1;
+                else if (c=="zve2"||c=="2") cpu_ctx=2;
+                else if (c=="u8000"||c=="u8001"||c=="u8002"||c=="16"||c=="3"){
+                    if (!em) fprintf(stderr,"  (kein EM in dieser Maschine — Start mit --em em256)\n");
+                    else cpu_ctx=3; }
+                else fprintf(stderr,"  cpu [zve1|zve2|u8000]\n"); }
+            fprintf(stderr,"  CPU-Kontext: %s\n", cpu_ctx==3?"U8001 (r s n u a b where hist bt x d e set)":
+                                                cpu_ctx==2?"ZVE2":"ZVE1");
+            if (cpu_ctx==3) showInsn16("=>",pcKey16(em->u8001()));
+            else showInsn("=>", cpu_ctx==2? m.zve2PC() : m.cpuPC()); }
+        else if (cmd=="fcw"){
+            if (!em) fprintf(stderr,"  (kein EM)\n");
+            else { Z8000& z=em->u8001();
+                if (t.size()>1){ long v; if(dbg16::parseNumber(t[1],v)) z.fcw=(uint16_t)v; else fprintf(stderr,"  ? Wert\n"); }
+                fprintf(stderr,"  FCW=%%%04X  %s\n",z.fcw,dbg16::fcwText(z.fcw).c_str()); } }
+        else if (cmd=="psa"){
+            // Program Status Area: je Eintrag neues FCW + neuer PC; VI mit Sprungtabelle.
+            if (!em) fprintf(stderr,"  (kein EM)\n");
+            else { const Z8000& z=em->u8001();
+                const bool z1 = z.isZ8001(); const int mult = z1? 2 : 1;
+                const uint8_t sg = z1? uint8_t((z.psapSeg>>8)&0x7F) : 0;
+                const uint16_t base = uint16_t(z.psapOff & 0xFF00);
+                fprintf(stderr,"  PSAP=%s (%s; gelesen über die Segmentweiche als Programmspeicher, System)\n",
+                        dbg16::addrText(sg,base,z1).c_str(), z1?"U8001":"U8002");
+                struct E{ const char* n; uint16_t off; } es[]={{"EPA",Z8000::PSA_EPA},{"PRIV",Z8000::PSA_PRIV},
+                    {"SC",Z8000::PSA_SC},{"SEGT",Z8000::PSA_SEGT},{"NMI",Z8000::PSA_NMI},{"NVI",Z8000::PSA_NVI},{"VI",Z8000::PSA_VI}};
+                // PSA-Lesen hat Status 1100 und läuft im Systemmodus.
+                auto rw=[&](uint16_t o)->uint16_t{ Z8kBusCycle c; c.st=Z8kStatus::MemInstr; c.system=true; c.seg=sg; c.addr=uint16_t(o&~1u);
+                    uint32_t cell=em->cellFor16(c)&~1u; return uint16_t((em->peek(cell)<<8)|em->peek(cell+1)); };
+                int nvec = t.size()>1? (int)parseNum(t[1]) : 4;
+                for (auto& e: es){
+                    uint16_t f = uint16_t(base + e.off*mult + (z1?2:0));
+                    uint16_t fcw=rw(f);
+                    if (z1) fprintf(stderr,"  %-4s @%s  FCW=%04X  PC=%s\n",e.n,dbg16::addrText(sg,f,true).c_str(),fcw,
+                                    dbg16::addrText(uint8_t((rw(uint16_t(f+2))>>8)&0x7F),rw(uint16_t(f+4)),true).c_str());
+                    else    fprintf(stderr,"  %-4s @%%%04X  FCW=%04X  PC=%%%04X\n",e.n,f,fcw,rw(uint16_t(f+2)));
+                }
+                uint16_t fv = uint16_t(base + Z8000::PSA_VI*mult + (z1?2:0));
+                for (int i=0;i<nvec;++i){ const int id = z1? 2*i : i;   // Z8001: 4 Byte je Eintrag ⇒ gerade Kennungen
+                    uint16_t p=uint16_t(fv+2+2*id);
+                    if (z1) fprintf(stderr,"    VI-Kennung %02X → %s\n",id,
+                                    dbg16::addrText(uint8_t((rw(p)>>8)&0x7F),rw(uint16_t(p+2)),true).c_str());
+                    else    fprintf(stderr,"    VI-Kennung %02X → %%%04X\n",id,rw(p)); }
+                fprintf(stderr,"  (psa <n> = n VI-Einträge; Eintrag = PSAP+VI+2+2·(Kennung & FF))\n"); } }
+        else if (cmd=="bmode"||cmd=="bvi"||cmd=="bint16"){
+            if (!em){ fprintf(stderr,"  (kein EM)\n"); }
+            else if (cmd=="bmode"){
+                int mode = 3;
+                if (t.size()>1){ if(t[1]=="16") mode=1; else if(t[1]=="8") mode=2; else if(t[1]=="off") mode=0; else if(t[1]=="both"||t[1]=="on") mode=3; }
+                else if (brk_mode) mode=0;          // blosses Kommando schaltet um
+                brk_mode=mode;
+                fprintf(stderr,"  break-on-Moduswechsel %s\n", mode==0?"off":mode==1?"→16":mode==2?"→8":"both"); }
+            else { bool& f = cmd=="bvi"? brk_vi : brk_int16;
+                f = (t.size()>1)? (t[1]!="off") : !f;
+                fprintf(stderr,"  break-on-%s %s\n", cmd=="bvi"?"VI (Quittung am U8001)":"INT-16 (A33 Bit 4)", f?"ON":"off"); } }
+        else if (cmd=="emlog"){
+            if (!em){ fprintf(stderr,"  (kein EM)\n"); }
+            else {
+                if (emlog_fp && emlog_file) fclose(emlog_fp);
+                emlog_fp=nullptr; emlog_file=false;
+                if (t.size()<2 || t[1]=="on"){ emlog_fp=stderr; fprintf(stderr,"  emlog → Konsole (jede EM-Transaktion eine Zeile; emlog off)\n"); }
+                else if (t[1]=="off") fprintf(stderr,"  emlog off\n");
+                else { emlog_fp=fopen(t[1].c_str(),"w"); emlog_file=emlog_fp!=nullptr;
+                    if(!emlog_fp) fprintf(stderr,"  cannot open %s\n",t[1].c_str());
+                    else fprintf(stderr,"  emlog → %s\n",t[1].c_str()); } } }
         else fprintf(stderr,"  ? unknown command '%s' (try help)\n",cmd.c_str());
     }
     if (trace_fp){ fclose(trace_fp); fprintf(stderr,"trace closed (%ld line(s))\n",trace_lines); }
+    if (emlog_fp && emlog_file) fclose(emlog_fp);
     if (itrace_fp){ fclose(itrace_fp); fprintf(stderr,"itrace closed (%ld INT/NMI)\n",itrace_n); }
     for (auto& t : cow_temps){ std::error_code ec; std::filesystem::remove(t,ec); }   // drop COW temps
     return mount_failed ? 1 : 0;   // non-zero exit if a requested disk failed to mount
