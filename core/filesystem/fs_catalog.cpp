@@ -78,7 +78,7 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
     const std::string where = file + ":" + std::to_string(node.line);
     collectUnknownKeys(node,
                        {"name", "description", "format", "type", "data_start",
-                        "containers", "detect_rank",
+                        "containers", "detect_rank", "detect",
                         "block_size", "dir_entries", "skew", "os",
                         "sides_separate", "boot_track", "directory_track",
                         "bitmap_track", "usable_tracks"},
@@ -150,6 +150,12 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
     long v = 0;
     if (!intField(node, "detect_rank", -999, 999, v, why)) return false;
     out.detect_rank = static_cast<int>(v);
+    if (const yaml::Node* n = node.find("detect")) {
+        bool b = true;
+        if (!n->isScalar() || !yaml::toBool(n->scalar, b))
+            { why = "'detect' muss true/false sein"; return false; }
+        out.detect = b;
+    }
 
     // ── typabhaengige Felder ─────────────────────────────────────────────────
     if (out.type == FsType::Cpm) {

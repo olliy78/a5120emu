@@ -81,6 +81,10 @@ TEST(FsCatalog, ProfilnamenSindEinStabilerVertrag) {
         // CP/M-86 des A7100: eigener Eintrag, weil die CP/A-Regel hier NICHT gilt
         // (sie bildet das CP/A-BIOS nach, nicht das SCP1700).
         "scp1700",
+        // SCPX 8915 (K8915): festes OFF 2 auch ohne Systemspuren.  Nur mit `--fs`
+        // (`detect: false`) — eine LEERE Diskette ist sonst von `cpa800` nicht zu
+        // unterscheiden (doc/design/16_k8915.md §8a AP-E5a).
+        "scpx8915",
     };
     for (const auto& n : erwartet)
         EXPECT_NE(cat.find(n), nullptr) << "Dateisystem '" << n << "' fehlt";

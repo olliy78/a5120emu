@@ -114,11 +114,11 @@ const TrackImage& K5122::waitStrom()
                 w_strom_ = spur;
             } else {
                 // Aus logischen Sektoren gebaute Spur (.img, .dmk-Kopie, BusRq-Weg):
-                // ihre Lücken sind die knappen von gapsFor() (Lücke 2 = 11 × 4E), und
-                // das BIOS liest nach dem Kennfeld (F780H) − 6 Lückenbytes, bevor es neu
-                // scharf macht — dann wäre die A1-Gruppe des Datenfelds schon vorbei.
-                // Unter dem Kopf liegt deshalb dieselbe Spur mit NORM-Lücken, wie sie
-                // FORMAT.COM schreibt (§4.4 in doc/design/16_k8915.md).
+                // ihre Lücken sind die von gapsFor() (Vorspann 16, Lücke 3 = 24 — und bis
+                // AP-E5a Lücke 2 = 11 × 4E, zu knapp: das BIOS liest nach dem Kennfeld
+                // (F780H) − 6 Lückenbytes, bevor es neu scharf macht).  Unter dem Kopf
+                // liegt deshalb dieselbe Spur mit NORM-Lücken, wie sie FORMAT.COM
+                // schreibt (§4.4 in doc/design/16_k8915.md).
                 w_strom_ = waitNormspur(spur);
             }
             if (w_strom_.marks.size() != w_strom_.bytes.size())

@@ -946,6 +946,11 @@ TEST(FsCheckGegenprobe, DerAusgelieferteKatalogIstEindeutig) {
         "scpx17_cpa780_k5601.hfe",      "scpx17_5x1024_k5601_hardy.hfe",
         "scp1700_640k_a7100_system.hfe",
         "udos_boot_scp.hfe",            "udos1715_640k_pc1715_system.img",
+        // K8915 (AP-E5a): `scpx8915` steht mit `detect: false` im Katalog und darf
+        // die drei Systemdisketten nicht mehrdeutig machen.
+        "k8915scpx_boot1.hfe",
+        "k8915scpx_cpa800_k5601_bios55k-disk900.hfe",
+        "k8915scpx_cpa800_k5601_v24xonxoff-autodbase-disk904.hfe",
     };
     for (const char* name : disketten) {
         auto v = oeffne(fixture(name));

@@ -676,6 +676,27 @@ Was beim Weiterarbeiten zu wissen ist:
   Dabei fiel eine alte Schwäche auf: „zu wenige Sektoren" war ein Schaden **ohne
   Obergrenze**, sodass 7×512 als „k5601_ss40_9x512 mit 40 defekten Spuren" durchging —
   jetzt ist mehr als ein Viertel abweichender Spuren ein anderes Format (Regel 4b).
+- **Ein LEER gelesenes Verzeichnis ist kein Nachweis — und `scpx8915` wird nie
+  erkannt** (2026-09-29, K8915 AP-E5a, `doc/design/16_k8915.md` §8a).  Das BIOS des K8915
+  hat einen FESTEN DPB (OFF 2, 128 Plätze), auch ohne Systemspuren.  Auf einer vom K8915
+  beschriebenen Diskette ohne Systemspuren gewann `cpa800` (ab c0h0), weil die
+  0xE5-Zylinder 0–1 ein tadellos leeres Verzeichnis ergeben — die Diskette erschien leer,
+  und das nächste `put` legte Block 10 über das Verzeichnis des K8915.  Drei Festlegungen:
+  **(1)** Ein benanntes CP/M-Profil mit **null belegten** Plätzen verliert gegen die
+  CP/A-Regel, wenn diese das Verzeichnis woanders sieht und dort **belegte** Plätze findet
+  (`DiskVolume::open`, nach Stufe 2) — dasselbe tut `selsy` im CP/A-BIOS.  Ein belegtes
+  benanntes Verzeichnis gewinnt weiter immer.
+  **(2)** Eine LEERE 5×1024-Diskette bleibt `cpa800` (192 Plätze, am CP/A nachgewiesen) —
+  das Medium unterscheidet sie nicht von einer leeren K8915-Diskette.  Für die gibt es
+  **`scpx8915`** mit dem neuen Katalogschlüssel **`detect: false`** (nur mit `--fs`); der
+  eigene Grund ist genau diese Leerdiskette.  `info` nennt ihn als Hinweis
+  („Verzeichnis leer — ebenso gut scpx8915 …“).  In die Erkennung darf er NICHT: dort
+  machte er jede leere `cpa800` mehrdeutig und jede CP/A-Diskette mit freier c2h0
+  verdächtig.
+  **(3)** Lücke 2 der aus Sektoren gebauten MFM-Spuren ist **22 × 4E** (vorher 11): mit
+  11 war jede per `create`/`put` erzeugte `.hfe` am K8915 unlesbar („BAD SECTOR“).
+  Wächter: `DiskVolume.Scpx8915*`, `K8915Scpx.DiskTool*` (Rundreise am laufenden K8915),
+  `K8915FormatDiskTool.*` (echtes FORMAT.COM, `format_integration`).
 - **`filesystems:` soll KURZ bleiben.** Vier der fünf CP/M-Profile rechnet `CpaDpbRule`
   bitgleich nach; sie stehen nur noch da, weil `create --fs NAME` einen Namen braucht und
   „cpa780" die bessere Auskunft ist als „cpa_auto". Ein neuer Eintrag braucht einen

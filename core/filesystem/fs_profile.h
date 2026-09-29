@@ -66,6 +66,12 @@ struct FsProfile {
     bool allow_dmk = true;
 
     int detect_rank = 0;       ///< kleiner = frueher bei mehrdeutiger Erkennung
+    /// @brief false = **nur auf Anforderung** (`--fs NAME`, `create --fs NAME`), nie in
+    ///        der Erkennung.  Fuer ein Dateisystem, das das Medium nicht von einem
+    ///        anderen unterscheidet — `scpx8915` (K8915, festes OFF 2) ist auf einer
+    ///        LEEREN Diskette dasselbe wie `cpa800` (CP/A, ab Zylinder 0).  Sobald der
+    ///        K8915 darauf geschrieben hat, findet es die CP/A-Regel ohnehin selbst.
+    bool detect = true;
 
     // ── nur FsType::Cpm ──────────────────────────────────────────────────────
     uint32_t block_size  = 2048;   ///< Zuordnungseinheit

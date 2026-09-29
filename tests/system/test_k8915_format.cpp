@@ -17,6 +17,8 @@
 
 #include <gtest/gtest.h>
 
+#include <fstream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -145,3 +147,119 @@ TEST(K8915Format, LeerdisketteFormatDisgenKaltstart)
     EXPECT_TRUE(enthaelt(m, "NO FILE")) << vramLines(m);
     EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AP-E5a (doc/design/16_k8915.md §8a): frisch mit FORMAT.COM formatierte Disketten im
+// k1520DiskTool — ohne Systemspuren, leeres Verzeichnis, dann Rundreise mit dem K8915.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+struct DtFall {
+    const char* verfahren;
+    const char* bootdiskette;   ///< deren DISGEN-Einstellung bestimmt B:
+    int         sektoren;
+    bool        fuenf_mal_1024;
+};
+
+void PrintTo(const DtFall& f, std::ostream* os) { *os << f.verfahren; }
+
+class K8915FormatDiskTool : public ::testing::TestWithParam<DtFall> {};
+
+std::unique_ptr<DiskVolume> dtOeffne(const std::string& p, const std::string& fs,
+                                     bool schreiben = false) {
+    static Kataloge k;
+    std::string err;
+    auto v = DiskVolume::open(p, fs, k.formate, k.fs, err, !schreiben);
+    EXPECT_TRUE(v) << err;
+    return v;
+}
+
+}  // namespace
+
+/**
+ * @test K8915FormatDiskTool.FrischFormatiertUndRundreise
+ * @brief Verfahren 24/31 (5 × 1024, mit/ohne Indexmarke) auf Diskette 900 (B: = A:),
+ *        22/37 (16 × 256) auf Diskette 901 (B: per DISGEN 16 × 256), Zylinder 00–79.
+ *  1. Frisch formatiert, leer: 16 × 256 ⇒ OFF 2 / 128 Plätze (festes Offset der Regel);
+ *     5 × 1024 ⇒ `cpa800` (192 ab c0h0 — vom Medium nicht von einer leeren CP/A-
+ *     Datendiskette zu unterscheiden), mit dem Hinweis auf `--fs scpx8915`.
+ *  2. Der K8915 schreibt (`save`): das DiskTool findet die Datei, OFF 2 / 128 Plätze,
+ *     Vollprüfung ohne Befund.
+ *  3. Das DiskTool schreibt (ohne `--fs`): der K8915 listet beide Dateien und `type`
+ *     gibt die neue aus.
+ */
+TEST_P(K8915FormatDiskTool, FrischFormatiertUndRundreise)
+{
+    const DtFall c = GetParam();
+    TempDisk a(c.bootdiskette);
+    TempDisk b = TempDisk::empty(std::string("k8915_dt_fmt_") + c.verfahren + ".hfe");
+    K8915Machine m;
+    ASSERT_TRUE(m.mountDisk(0, a.path(), "cpa800", false)) << m.lastError();
+    ASSERT_TRUE(m.createDisk(1, b.path(), "", false)) << m.lastError();
+    ASSERT_TRUE(kaltstartBisPrompt(m)) << vramLines(m);
+
+    FormatLauf f;
+    f.verfahren = c.verfahren;
+    const std::string bild = formatiere(m, f, 900'000'000);
+    ASSERT_NE(bild.find("FUNCTION COMPLETE"), std::string::npos) << bild;
+    ASSERT_EQ(bild.find("ERROR"), std::string::npos) << bild;
+    ASSERT_TRUE(m.flushDisks());
+    {
+        auto v = dtOeffne(b.path(), "");
+        ASSERT_TRUE(v);
+        EXPECT_TRUE(v->list().empty());
+        EXPECT_TRUE(v->detection().unambiguous);
+        EXPECT_TRUE(v->check(FsCheckLevel::Voll, true).ohneBefund());
+        if (c.fuenf_mal_1024) {
+            EXPECT_EQ(v->detection().filesystem, "cpa800");
+            EXPECT_NE(v->detection().remarks.find("--fs scpx8915"), std::string::npos)
+                << v->detection().remarks;
+        } else {
+            EXPECT_EQ(v->profile().data_cyl, 2);
+            EXPECT_EQ(v->profile().dir_entries, 128);
+        }
+    }
+
+    ASSERT_TRUE(befehl(m, "save 3 b:vomk8915.com")) << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
+    ASSERT_TRUE(m.flushDisks());
+    ASSERT_TRUE(m.unmountDisk(1));
+    {
+        auto v = dtOeffne(b.path(), "");
+        ASSERT_TRUE(v);
+        EXPECT_EQ(v->profile().data_cyl, 2) << v->detection().filesystem;
+        EXPECT_EQ(v->profile().dir_entries, 128) << v->detection().filesystem;
+        ASSERT_EQ(v->list().size(), 1u) << v->detection().remarks;
+        EXPECT_EQ(v->list().front().name, "VOMK8915.COM");
+        EXPECT_TRUE(v->check(FsCheckLevel::Voll, true).ohneBefund());
+    }
+    {
+        auto v = dtOeffne(b.path(), "", /*schreiben=*/true);
+        ASSERT_TRUE(v);
+        TempDisk q = TempDisk::empty("k8915_dt_fmt_quelle.txt");
+        { std::ofstream(q.path(), std::ios::binary) << "VOM DISKTOOL\n"; }
+        TransferOptions o;
+        o.text = true;
+        ASSERT_TRUE(v->insert(q.path(), FileRef::parse("VOMDT.TXT"), o)) << v->lastError();
+        ASSERT_TRUE(v->flush()) << v->lastError();
+    }
+    ASSERT_TRUE(m.mountDisk(1, b.path(), "cpa800", false)) << m.lastError();
+    m.keyboard().sendeZeichen(0x03);   // Warmstart: Laufwerke neu anmelden
+    ASSERT_TRUE(bisPrompt(m, 30'000'000)) << vramLines(m);
+    ASSERT_TRUE(befehl(m, "dir b:")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "VOMK8915 COM")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "VOMDT    TXT")) << vramLines(m);
+    ASSERT_TRUE(befehl(m, "type b:vomdt.txt")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "VOM DISKTOOL")) << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Verfahren, K8915FormatDiskTool,
+    ::testing::Values(
+        DtFall{"24", "k8915scpx_cpa800_k5601_bios55k-disk900.hfe", 5, true},
+        DtFall{"31", "k8915scpx_cpa800_k5601_bios55k-disk900.hfe", 5, true},
+        DtFall{"22", "k8915scpx_boot1.hfe", 16, false},
+        DtFall{"37", "k8915scpx_boot1.hfe", 16, false}),
+    [](const ::testing::TestParamInfo<DtFall>& i) { return std::string("V") + i.param.verfahren; });

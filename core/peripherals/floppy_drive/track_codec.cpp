@@ -119,7 +119,12 @@ GapParams gapsFor(Encoding enc) {
         g.sync_len  = 12;
         g.with_iam  = true;
         g.gap1      = 16;
-        g.gap2      = 11;
+        // Lücke 2 = 22 × 4E (IBM-Norm, so schreibt auch FORMAT.COM des K8915).  Bis
+        // 2026-09-29 standen hier 11: jede aus Sektoren gebaute Spur (DiskImage::create,
+        // k1520DiskTool `create`) kam damit in die `.hfe`, und das BIOS des K8915 — liest
+        // nach dem Kennfeld (F780H) − 6 Lückenbytes, bevor es neu scharf macht — fand
+        // das Datenfeld nicht mehr („BAD SECTOR“, doc/design/16_k8915.md AP-E5a).
+        g.gap2      = 22;
         g.gap3      = 24;
         g.gap4a     = 16;
     } else {

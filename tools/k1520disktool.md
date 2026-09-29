@@ -376,6 +376,7 @@ Wie gross die Systemspuren sind, hängt am Dateisystem — `info` sagt es:
 | `scpx798` | 18432 B | 2 × 16×256 + 2 × 5×1024 |
 | `udos_*`  | 13312 B | Spuren 0–2 (Urlader + Nukleus) **+ Bootspur 21**, je Seite |
 | `cpa800`  | — | keine: das Dateisystem beginnt auf Zylinder 0 |
+| `scpx8915` | 20480 B | Zylinder 0–1 beidseitig (5×1024) — K8915 |
 
 Ein **kürzeres** Abbild ist erlaubt (der Rest bleibt formatierte Leerspur), ein
 **längeres** ist ein Fehler — und zwar bevor irgendetwas angelegt wird:
@@ -616,6 +617,36 @@ $ k1520disktool create neu.hfe --fs scp1700
 
 Hintergrund und Messwerte: `doc/scp1700_diskettenformat.md`.
 
+## SCPX 8915 — Disketten des K8915
+
+Das BIOS des K8915 hat einen **festen** DPB: Verzeichnis ab Zylinder 2 (OFF 2),
+128 Plätze, 2-KB-Blöcke — auch auf einer Diskette ohne Systemspuren.  Erkannt wird das
+von selbst (`cpa_auto`, 4 Systemspuren, 128 Plätze), sobald die Diskette Systemspuren
+trägt oder der K8915 darauf geschrieben hat; B: in 16×256 ohnehin immer.
+
+Die Ausnahme ist eine **leere**, frisch formatierte 5×1024-Diskette: Sektor für Sektor
+dieselbe wie eine leere CP/A-Datendiskette.  Das Werkzeug nimmt dann `cpa800`
+(Verzeichnis ab Zylinder 0, 192 Plätze) und sagt es:
+
+```
+$ k1520disktool info leer.hfe
+Dateisystem: cpa800
+Medium:      Verzeichnis leer — ebenso gut scpx8915 (…); dafuer --fs scpx8915
+```
+
+Soll sie für den K8915 gefüllt werden, **muss** es beim ersten Schreiben gesagt werden —
+sonst liegt das Verzeichnis dort, wo der K8915 seine Systemspuren erwartet, und er sieht
+keine Datei:
+
+```
+$ k1520disktool put leer.hfe BRIEF.TXT --fs scpx8915
+$ k1520disktool create neu.hfe --fs scpx8915
+```
+
+Danach erkennt das Werkzeug die Diskette ohne `--fs`.  `scpx8915` selbst wird nie
+erkannt (`detect: false` im Katalog), eine CP/A-Diskette geht also nie als K8915-Diskette
+durch.
+
 ## UDOS1715 — dieselbe Familie, anderes Dateisystem
 
 Disketten des **PC 1715** tragen UDOS mit dem Treiber **NDOS**; erkannt werden sie
@@ -721,8 +752,12 @@ Medium:      nach der CP/A-Regel abgeleitet — 2 Systemspuren, 2048-B-Bloecke,
              128 Verzeichnisplaetze, Versatz 6
 ```
 
-Ein **benanntes** Profil geht immer vor; mit `--fs cpa_auto` lässt sich die Regel
-trotzdem erzwingen (z. B. um sie gegen ein Profil zu halten).
+Ein **benanntes** Profil geht vor; mit `--fs cpa_auto` lässt sich die Regel
+trotzdem erzwingen (z. B. um sie gegen ein Profil zu halten).  **Eine Ausnahme:** hat
+das benannte Profil ein ganz LEERES Verzeichnis und findet die Regel an ihrer Stelle
+belegte Plätze, gilt die Regel — so macht es das CP/A-BIOS auch (Spur 0 leer ⇒ an der
+ersten Datenspur nachsehen).  Der Fall ist eine K8915-Diskette ohne Systemspuren,
+auf die der K8915 geschrieben hat (s. „SCPX 8915“).
 
 Zwei Dinge, die dabei auffallen können:
 

@@ -499,3 +499,153 @@ TEST(K8915Scpx, ListGibtUeberV24AusUndHaeltBeiXoffFassung900)
     for (size_t i = 0; i < text.size(); ++i)
         EXPECT_EQ(empfangen[vorXoff + i], text[i] & 0x7F);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AP-E5a: DiskTool ↔ K8915 auf einer Diskette OHNE Systemspuren (doc/design/16_k8915.md
+// §8a).  Das BIOS hat einen festen DPB (OFF 2, DRM 127) — das DiskTool muss dieselben
+// Plätze benutzen, sonst sieht die eine Seite die Dateien der anderen nicht oder
+// überschreibt sie.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+struct DtKataloge {
+    FormatCatalog formate;
+    FsCatalog     fs;
+    DtKataloge() {
+        std::string f;
+        formate = FormatCatalog::loadDefault(&f);
+        fs      = FsCatalog::loadDefault(formate, &f);
+    }
+};
+
+/// Strg+C am Prompt: Warmstart, das BDOS meldet die Laufwerke neu an (nach Diskettenwechsel).
+void warmstart(K8915Machine& m) {
+    m.keyboard().sendeZeichen(0x03);
+    for (long long t = 0; t < 30'000'000; t += m.run(kSchritt))
+        if (enthaelt(m, "A>^C") && letzteZeile(m) == "A>" && m.memReadDebug(0xF150) == 0) break;
+}
+
+/// Datei @p name mit @p inhalt per DiskTool auf @p pfad legen (@p fs: "" = erkennen).
+void dtPut(const std::string& pfad, const std::string& fs, const std::string& name,
+           const std::string& inhalt) {
+    DtKataloge k;
+    TempDisk q = TempDisk::empty("k8915_dt_quelle.txt");
+    { std::ofstream(q.path(), std::ios::binary) << inhalt; }
+    std::string err;
+    auto vol = DiskVolume::open(pfad, fs, k.formate, k.fs, err, /*read_only=*/false);
+    ASSERT_TRUE(vol) << err;
+    TransferOptions o;
+    o.text = true;
+    ASSERT_TRUE(vol->insert(q.path(), FileRef::parse(name), o)) << vol->lastError();
+    ASSERT_TRUE(vol->flush()) << vol->lastError();
+}
+
+/**
+ * Die Rundreise auf einer leeren Diskette in B: — erst schreibt der K8915, dann das
+ * DiskTool (ohne `--fs`), dann liest der K8915 beides.
+ */
+void rundreise(const char* bootdiskette, const char* format, const char* temp) {
+    Aufbau x(bootdiskette);
+    K8915Machine& m = x.m;
+    TempDisk b = TempDisk::empty(temp);
+    ASSERT_TRUE(m.createDisk(1, b.path(), format, false)) << m.lastError();
+    ohneSelbsttestZurColdstartMeldung(m);
+    m.keyboard().sendeZeichen(0x0D);
+    ASSERT_TRUE(bis(m, "A>", 150'000'000)) << vramLines(m);
+    for (long long t = 0; t < 60'000'000 && !(letzteZeile(m) == "A>" && m.memReadDebug(0xF150) == 0);
+         t += m.run(kSchritt)) {}
+
+    ASSERT_TRUE(befehl(m, "save 2 b:vomk8915.com")) << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
+    ASSERT_TRUE(m.flushDisks());
+    ASSERT_TRUE(m.unmountDisk(1));
+
+    {
+        DtKataloge k;
+        std::string err;
+        auto vol = DiskVolume::open(b.path(), "", k.formate, k.fs, err);
+        ASSERT_TRUE(vol) << err;
+        EXPECT_EQ(vol->profile().data_cyl, 2) << vol->detection().filesystem;
+        EXPECT_EQ(vol->profile().dir_entries, 128) << vol->detection().filesystem;
+        ASSERT_EQ(vol->list().size(), 1u) << vol->detection().remarks;
+        EXPECT_EQ(vol->list().front().name, "VOMK8915.COM");
+        EXPECT_EQ(vol->list().front().size, 512u);
+        EXPECT_TRUE(vol->check(FsCheckLevel::Voll, true).ohneBefund());
+    }
+    ASSERT_NO_FATAL_FAILURE(dtPut(b.path(), "", "VOMDT.TXT", "VOM DISKTOOL GESCHRIEBEN\n"));
+
+    ASSERT_TRUE(m.mountDisk(1, b.path(), format, false)) << m.lastError();
+    warmstart(m);
+    ASSERT_TRUE(befehl(m, "dir b:")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "VOMK8915 COM")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "VOMDT    TXT")) << vramLines(m);
+    ASSERT_TRUE(befehl(m, "type b:vomdt.txt")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "VOM DISKTOOL GESCHRIEBEN")) << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
+}
+
+}  // namespace
+
+/**
+ * @test K8915Scpx.DiskToolRundreiseFuenfMal1024OhneSystemspuren
+ * @brief Diskette 900 (B: = 5 × 1024 wie A:), leere Diskette in B:.  Vor AP-E5a hielt
+ *        das DiskTool sie nach dem `save` des K8915 für eine LEERE CP/A-Datendiskette
+ *        (`cpa800`, Verzeichnis ab c0h0) — jetzt gilt die CP/A-Regel (OFF 2, 128 Plätze),
+ *        und die Datei des DiskTools erscheint am K8915.
+ */
+TEST(K8915Scpx, DiskToolRundreiseFuenfMal1024OhneSystemspuren)
+{
+    rundreise("k8915scpx_cpa800_k5601_bios55k-disk900.hfe", "cpa800", "k8915_dt_b1024.hfe");
+}
+
+/**
+ * @test K8915Scpx.DiskToolRundreiseSechzehnMal256
+ * @brief Diskette 901: B: ist per DISGEN 16 × 256 (SPT 64, DSM 311, DRM 127, OFF 2) —
+ *        die Regel hat dort ein festes Offset, die Rundreise geht ohne Katalogeintrag.
+ */
+TEST(K8915Scpx, DiskToolRundreiseSechzehnMal256)
+{
+    rundreise("k8915scpx_boot1.hfe", "k5601_16x256", "k8915_dt_b256.hfe");
+}
+
+/**
+ * @test K8915Scpx.DiskToolFuelltLeereDisketteNurMitFsScpx8915
+ * @brief Die eine Mehrdeutigkeit, die das Medium nicht auflöst: eine LEERE 5 × 1024-
+ *        Diskette.  Ohne `--fs` wird sie, was CP/A daraus macht (`cpa800`, Verzeichnis ab
+ *        c0h0) — der K8915 sieht die Datei dann NICHT (sein Verzeichnis liegt ab c2h0).
+ *        Mit `--fs scpx8915` liegt sie dort, wo das BIOS sucht.  Festgehalten, weil genau
+ *        dieser Unterschied der Grund für den Katalogeintrag ist.
+ */
+TEST(K8915Scpx, DiskToolFuelltLeereDisketteNurMitFsScpx8915)
+{
+    TempDisk cpa = TempDisk::empty("k8915_dt_leer_cpa.hfe");
+    TempDisk k89 = TempDisk::empty("k8915_dt_leer_k89.hfe");
+    {
+        DtKataloge k;
+        std::string err;
+        for (const TempDisk* d : {&cpa, &k89})
+            ASSERT_TRUE(DiskVolume::create(d->path(), "cpa800", "", k.formate, k.fs, err)) << err;
+    }
+    ASSERT_NO_FATAL_FAILURE(dtPut(cpa.path(), "", "CPA.TXT", "NUR FUER CP/A\n"));
+    ASSERT_NO_FATAL_FAILURE(dtPut(k89.path(), "scpx8915", "K89.TXT", "FUER DEN K8915\n"));
+
+    Aufbau x("k8915scpx_cpa800_k5601_bios55k-disk900.hfe");
+    K8915Machine& m = x.m;
+    ASSERT_TRUE(m.mountDisk(1, cpa.path(), "cpa800", false)) << m.lastError();
+    ohneSelbsttestZurColdstartMeldung(m);
+    m.keyboard().sendeZeichen(0x0D);
+    ASSERT_TRUE(bis(m, "A>", 150'000'000)) << vramLines(m);
+    for (long long t = 0; t < 60'000'000 && !(letzteZeile(m) == "A>" && m.memReadDebug(0xF150) == 0);
+         t += m.run(kSchritt)) {}
+    ASSERT_TRUE(befehl(m, "dir b:")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "NO FILE")) << "CP/A-Verzeichnis ab c0h0 sieht der K8915 nicht\n"
+                                        << vramLines(m);
+
+    ASSERT_TRUE(m.unmountDisk(1));
+    ASSERT_TRUE(m.mountDisk(1, k89.path(), "cpa800", false)) << m.lastError();
+    warmstart(m);
+    ASSERT_TRUE(befehl(m, "type b:k89.txt")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "FUER DEN K8915")) << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
+}

@@ -52,11 +52,14 @@ std::string endung(const std::string& pfad) {
  * @param uneingerichtet_zaehlt „formatiert, aber nie eingerichtet" durchgehen lassen
  *                             (nur beim abgeleiteten Profil, s. u.)
  * @param hinweis              dann der Klartext dazu
+ * @param belegt               wenn gesetzt: Zahl der BELEGTEN Plaetze (0 = leer gelesen)
  */
 bool cpmVerzeichnisPlausibel(DiskMedium& medium, const DiskFormat& f, const FsProfile& p,
                              std::string* warum = nullptr,
                              bool uneingerichtet_zaehlt = false,
-                             std::string* hinweis = nullptr) {
+                             std::string* hinweis = nullptr,
+                             int* belegt = nullptr) {
+    if (belegt) *belegt = 0;
     auto nein = [&](const std::string& t) { if (warum) *warum = t; return false; };
 
     SectorSpace raum(medium, f);
@@ -101,6 +104,7 @@ bool cpmVerzeichnisPlausibel(DiskMedium& medium, const DiskFormat& f, const FsPr
         if (d.records > 0x80) ok = false;
         if (!ok) return nein(wo + " ist kein gueltiger Eintrag");
         ++gut;
+        if (belegt) ++*belegt;
     }
     if (gut == 0) return nein("Verzeichnis ist leer gelesen worden");
     return true;
@@ -968,10 +972,11 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
         // ein bloss unwidersprochenes Verzeichnis.  Bei lauter gleichen Raengen — dem
         // Normalfall — ist das Verhalten unveraendert.
         std::vector<const FsProfile*> passend;
+        std::map<const FsProfile*, int> belegte_plaetze;   // nur CP/M: belegte Plaetze
         auto besterRang = [&](const DiskFormat* f) {
             int r = std::numeric_limits<int>::max();
             for (const FsProfile* p : fs_cat.forFormat(f->name))
-                if (p->allowsContainer(ext)) r = std::min(r, p->detect_rank);
+                if (p->allowsContainer(ext) && p->detect) r = std::min(r, p->detect_rank);
             return r;
         };
         for (const DiskFormat* f : kandidaten) {
@@ -979,6 +984,11 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
             std::vector<const FsProfile*> hier;
             for (const FsProfile* p : fs_cat.forFormat(f->name)) {
                 if (!p->allowsContainer(ext)) continue;
+                // `detect: false` — nur auf Anforderung (`--fs`).  Solche Profile
+                // beschreiben eine Diskette, die das Medium nicht von einer anderen
+                // unterscheidet (leere SCPX-8915-Diskette ≡ leere CP/A-Datendiskette);
+                // in der Erkennung machten sie nur jede dieser Disketten mehrdeutig.
+                if (!p->detect) continue;
 
                 // Der Grund einer Ablehnung wird EINGESAMMELT, nicht weggeworfen
                 // (Ebene 0, §11): bleibt die Erkennung am Ende ohne Ergebnis, ist
@@ -994,7 +1004,10 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
                     SectorSpace probe(dv->disk_->medium(), *f);
                     ja = Udos1715FileSystem::looksLikeUdos1715(probe, *p, &warum);
                 } else {
-                    ja = cpmVerzeichnisPlausibel(dv->disk_->medium(), *f, *p, &warum);
+                    int belegt = 0;
+                    ja = cpmVerzeichnisPlausibel(dv->disk_->medium(), *f, *p, &warum,
+                                                 false, nullptr, &belegt);
+                    belegte_plaetze[p] = belegt;
                 }
                 if (!ja) { dv->merkeAblehnung(p->name, f->name, warum); continue; }
                 hier.push_back(p);
@@ -1006,13 +1019,54 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
             }
         }
 
+        // ── Ein LEERES Verzeichnis ist kein Nachweis (AP-E5a, K8915) ──────────
+        // Ein benanntes CP/M-Profil, dessen Verzeichnis ganz leer gelesen wurde, ist
+        // nur „unwidersprochen", nicht nachgewiesen.  Legt die CP/A-Regel dasselbe
+        // Medium ANDERS aus und findet dort belegte Plaetze, gilt die Regel — genau
+        // so entscheidet das CP/A-BIOS selbst (`selsy`: Spur 0 durchgehend 0xE5 ⇒ an
+        // der ersten Datenspur nachsehen).  Der Fall ist eine SCPX-8915-Diskette ohne
+        // Systemspuren, auf die der K8915 geschrieben hat (festes OFF 2, 128 Plaetze
+        // ab c2h0): ohne diese Probe hielt `cpa800` (ab c0h0, 192 Plaetze) sie fuer
+        // leer — und das naechste `put` legte seine Bloecke ueber das Verzeichnis des
+        // K8915.  Wer so eine Diskette bewusst anders lesen will: `--fs`.
+        if (!passend.empty() && dv->format_) {
+            bool alle_leer = true;
+            for (const FsProfile* p : passend)
+                if (p->type != FsType::Cpm || belegte_plaetze[p] != 0) alle_leer = false;
+            FsProfile abgeleitet;
+            SectorSpace raum(dv->disk_->medium(), *dv->format_);
+            std::string warum;
+            int belegt = 0;
+            if (alle_leer
+                && CpaDpbRule::profile(*dv->format_, raum, abgeleitet, &warum)
+                && abgeleitet.allowsContainer(ext)
+                && (abgeleitet.data_cyl != passend.front()->data_cyl
+                    || abgeleitet.data_head != passend.front()->data_head)
+                && cpmVerzeichnisPlausibel(dv->disk_->medium(), *dv->format_, abgeleitet,
+                                           &warum, false, nullptr, &belegt)
+                && belegt > 0) {
+                const std::string wo = "c" + std::to_string(abgeleitet.data_cyl) + "h"
+                                     + std::to_string(abgeleitet.data_head);
+                for (const FsProfile* p : passend)
+                    dv->merkeAblehnung(p->name, dv->format_->name,
+                                       "Verzeichnis leer, die CP/A-Regel findet ab " + wo
+                                     + " " + std::to_string(belegt) + " belegte Plaetze");
+                passend.clear();
+                dv->abgeleitet_    = abgeleitet;
+                dv->befund_zusatz_ = abgeleitet.description
+                                   + "; Systemspuren leer, Verzeichnis ab " + wo;
+                dv->detection_.remarks =
+                    zusammen(dv->detection_.remarks, dv->befund_zusatz_);
+            }
+        }
+
         // ── Rueckfall: die CP/A-Regel rechnen lassen ─────────────────────────
         // Der Katalog nennt nur die Disketten, die man staendig in der Hand hat.
         // Alles andere leitet dieselbe Regel ab, die das CP/A-BIOS beim LOGIN
         // anwendet (@ref CpaDpbRule) — damit ist jede CP/A-formatierte Diskette
         // lesbar, ohne dass ihr Format im Katalog stehen muss.
         std::string abgelehnt;
-        if (passend.empty()) {
+        if (passend.empty() && !dv->abgeleitet_) {
             for (const DiskFormat* f : kandidaten) {
                 FsProfile abgeleitet;
                 SectorSpace raum(dv->disk_->medium(), *f);
@@ -1070,6 +1124,20 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
         dv->detection_.unambiguous = (passend.size() == 1);
         for (size_t i = 1; i < passend.size(); ++i)
             dv->detection_.alternatives.push_back(passend[i]->name);
+
+        // Leeres CP/M-Verzeichnis: das Medium entscheidet nicht zwischen diesem Profil
+        // und einem `detect: false`-Profil derselben Geometrie (leere CP/A-Datendiskette
+        // ≡ leere SCPX-8915-Diskette).  Kein Befund, aber ein Hinweis mit dem Ausweg —
+        // wer die Diskette fuer den K8915 fuellen will, muss es jetzt sagen.
+        if (dv->profile_->type == FsType::Cpm && !dv->abgeleitet_
+            && belegte_plaetze[dv->profile_] == 0) {
+            for (const FsProfile* p : fs_cat.forFormat(dv->format_->name))
+                if (!p->detect && p->type == FsType::Cpm && p->allowsContainer(ext))
+                    dv->detection_.remarks = zusammen(
+                        dv->detection_.remarks,
+                        "Verzeichnis leer — ebenso gut " + p->name + " (" + p->description
+                      + "); dafuer --fs " + p->name);
+        }
     }
 
     // ── Volumes aufsetzen ────────────────────────────────────────────────────
