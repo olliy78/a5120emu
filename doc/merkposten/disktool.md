@@ -82,8 +82,8 @@ Was beim Weiterarbeiten zu wissen ist:
   und 23 ganz, Kopf 1 derselben Spuren trägt Dateidaten.  Wächter: `Udos1715P8000.*`
   auf der Fixture `udosP8000_640k_wega.hfe` — sie liegt als `.hfe` vor, weil 13
   ihrer Sektoren hinter der Daten-CRC die **Schreibnaht** eines überschriebenen Sektors
-  tragen und `rawCompatible()` dafür zu Recht `.img` verweigert (anders als beim
-  PC 1715, dessen Fixture ein `.img` ist).  Lesen **und** Schreiben am echten Laufwerk
+  tragen (bis 2026-09-29 verweigerte `rawCompatible()` dafür `.img`; seit AP-E5b gilt
+  das als Schreibnachlauf, s. u., und `.img` geht).  Lesen **und** Schreiben am echten Laufwerk
   gegengeprüft (Datei einfügen → 4 Spuren zurückgeschrieben und geprüft, frisch
   zurückgelesen byteweise gleich, löschen → 2 Spuren; Vollmessung zeigt genau die
   gemeldeten Spuren geändert, danach aus der Sicherung wiederhergestellt).
@@ -708,6 +708,23 @@ Was beim Weiterarbeiten zu wissen ist:
   `DiskVolume.JedesKatalogformatLaesstSichAnlegenUndWiederOeffnen` legt JEDES
   `formats:`-Format an, öffnet es ohne `--fs` und prüft die Wiedererkennung.  Ein neuer
   Katalogeintrag, den die Erkennung nicht wiederfindet, fällt sofort auf.
+- **Ein reiner SCHREIBNACHLAUF hinter der Daten-CRC sperrt `.img` nicht — ein
+  UDOS-Kontrollblock schon** (2026-09-29, `doc/design/16_k8915.md` AP-E5b).  Jeder an Ort
+  und Stelle geschriebene Sektor einer echt gelesenen Diskette trägt hinter der CRC das
+  geschriebene Lückenbyte `4E` und dann die Naht in die alte Lücke (verrutschter
+  Byterahmen, Taktbits, Reste früherer Schreibläufe): `4E C2 42 42 …`,
+  `4E 43 DC 08 F2 12 12 12`, `4F E4 24 24 …` — K8915 (693 Sektoren auf 900/901/904), P8000
+  (13).  `DiskMedium::computeRawCompatible` lässt das zu, **eng**: nur MFM, Byte 0 =
+  `4E`/`4F`, letztes Byte = eine der 16 Drehungen von `4E`/`90`; dazwischen wird nichts
+  gedeutet.  Der Riegel gegen UDOS ist Byte 0 — dort beginnt der Rückwärtszeiger mit dem
+  Sektorindex (0…25) oder `FF`.  **Nicht aufweichen:** kein Urteil über das erkannte
+  Dateisystem (Mischdisketten), keine FM-Ausnahme ohne Messung, und Byte 0 bleibt Pflicht
+  — ein falsches Zulassen verliert Daten, ein falsches Sperren nicht.  Wächter:
+  `DiskMedium.RawCompatible_SchreibnachlaufIstKeinInhalt`,
+  `.RawCompatible_UdosKontrollblockBleibtGesperrt`,
+  `K8915Scpx.ImgExportSchreibnachlaufJaUdosNein` (drei UDOS-Fixtures gesperrt allein
+  wegen des Kontrollblocks), `Udos1715P8000.WegaStartdisketteWirdErkannt` (jetzt
+  `.img`-fähig).
 - **`TrackCodec::writeSector`** ersetzt ein Datenfeld an Ort und Stelle und rechnet die
   CRC neu.  `buildTrack()` taugt zum Schreiben **nicht**: es baut die Spur neu und
   verlöre die Bytes hinter der Daten-CRC — bei UDOS die gesamte Dateiverkettung.

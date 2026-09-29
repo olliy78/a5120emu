@@ -275,7 +275,13 @@ Eine **Spur** ist `.img`-tauglich, wenn sie
 1. mindestens einen Sektor enthält (`TrackCodec::parseTrack` liefert ≥ 1 Sektor),
 2. bei allen Sektoren **ID- und Daten-CRC gültig** sind,
 3. und hinter jeder Daten-CRC **nur Gap-Füllbytes** stehen
-   (`0x4E`, `0xFF`, `0x00`; geprüft über `LogicalSector::tail`).
+   (`0x4E`, `0xFF`, `0x00`; geprüft über `LogicalSector::tail`) — **oder ein reiner
+   Schreibnachlauf** (seit 2026-09-29, `doc/design/16_k8915.md` AP-E5b): auf einer
+   MFM-Spur Byte 0 = `4E`/`4F` (das geschriebene Lückenbyte) und das letzte Byte eine
+   Drehung von `4E` oder `90` (die alte Lücke, nach der Schreibnaht im falschen
+   Byterahmen gelesen).  So sieht jeder an Ort und Stelle geschriebene Sektor einer echt
+   gelesenen Diskette aus (K8915, P8000); ein UDOS-Kontrollblock beginnt dagegen mit
+   Sektorindex oder `FF` und bleibt gesperrt.
 
 Punkt 3 ist der eigentliche Auslöser: **UDOS** schreibt je Sektor einen
 Sektorkontrollblock (Rückwärts-/Vorwärtszeiger + eigene CRC) direkt hinter die

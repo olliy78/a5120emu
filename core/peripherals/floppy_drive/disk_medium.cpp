@@ -25,6 +25,47 @@ TrackImage       g_dummy{};
 bool istGapFueller(uint8_t b) {
     return b == 0x4E || b == 0xFF || b == 0x00;
 }
+
+/// @brief Ein Byte aus dem MFM-Gap 4E, gelesen mit verrutschtem Byterahmen?
+///
+/// Nach einer Schreibnaht liest der Decoder die ALTE Lücke im Rahmen der neuen
+/// Aufzeichnung weiter: um 0–7 Bit versetzt (die acht Drehungen von 4E) oder um eine
+/// halbe Zelle, dann sieht er die Taktbits des 4E-Stroms (die acht Drehungen von 90H).
+bool istVersetzteLuecke(uint8_t b) {
+    for (int r = 0; r < 8; ++r) {
+        const auto dreh = [r](uint8_t x) {
+            return static_cast<uint8_t>(r == 0 ? x : ((x << r) | (x >> (8 - r))));
+        };
+        if (b == dreh(0x4E) || b == dreh(0x90)) return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Ist @p tail ein reiner **Schreibnachlauf** (doc/design/16_k8915.md AP-E5b)?
+ *
+ * Ein Treiber, der ein Datenfeld an Ort und Stelle schreibt, hängt an die CRC noch ein
+ * Lückenbyte und schaltet dann `/WE` ab; dahinter liegt die ALTE Aufzeichnung — mit
+ * anderer Bitlage und, bei oft beschriebenen Sektoren, mit Resten früherer Schreibläufe.
+ * Am Gerät (K8915, SCPX-8915-BIOS und DISGEN, Greaseweazle-Abzüge) sieht das so aus:
+ * `4E 43 DC 08 F2 12 12 12`, `4E C2 42 42 42 42 42 42`, `4F E4 24 24 …`.
+ *
+ * Bewusst ENG, denn ein falsches Zulassen verliert Daten, ein falsches Sperren nicht:
+ *   1. nur MFM-Spuren (nur dort gemessen);
+ *   2. das ERSTE Byte ist das geschriebene Lückenbyte 4E — mindestens seine oberen
+ *      7 Bit (4E/4F: die Naht fällt in das letzte Bit).  Das ist der Riegel gegen UDOS:
+ *      dort steht an dieser Stelle der Rückwärtszeiger, Byte 0 = Sektorindex (0…25)
+ *      oder FFH — nie 4EH/4FH, ausser bei einem nie beschriebenen Sektor, dessen
+ *      Block ohnehin `4E 4E 4E 4E` lautet und nichts trägt;
+ *   3. das LETZTE Byte ist wieder Lücke, wenn auch versetzt (@ref istVersetzteLuecke):
+ *      die Naht ist vorbei, die alte Lücke läuft.
+ * Was dazwischen steht, wird nicht gedeutet: Nahtbits oder Reste früherer
+ * Schreibläufe (alte CRC, altes 4E) — auf keinem bekannten System liest sie jemand.
+ */
+bool istSchreibnachlauf(const std::vector<uint8_t>& tail) {
+    if (tail.size() < 2) return false;
+    return (tail.front() & 0xFE) == 0x4E && istVersetzteLuecke(tail.back());
+}
 }  // namespace
 
 // ─── Konstruktion / Geometrie ────────────────────────────────────────────────
@@ -213,8 +254,13 @@ bool DiskMedium::computeRawCompatible(const TrackImage& t) {
         if (!s.id_crc_ok || !s.data_crc_ok) return false;
         // Bytes hinter der Daten-CRC: nur Gap zulässig.  Alles andere (z. B. der
         // UDOS-Sektorkontrollblock) ginge beim Speichern als .img verloren.
+        // Ausnahme: der Schreibnachlauf eines an Ort und Stelle geschriebenen
+        // Datenfelds (MFM, AP-E5b) — Lücke mit Naht, keine Information.
+        bool nurLuecke = true;
         for (uint8_t b : s.tail)
-            if (!istGapFueller(b)) return false;
+            if (!istGapFueller(b)) { nurLuecke = false; break; }
+        if (!nurLuecke && !(t.encoding == Encoding::MFM && istSchreibnachlauf(s.tail)))
+            return false;
     }
     return true;
 }

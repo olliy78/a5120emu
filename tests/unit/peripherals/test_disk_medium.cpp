@@ -196,6 +196,81 @@ TEST(DiskMedium, RawCompatible_CacheWirdBeiAenderungVerworfen) {
     EXPECT_TRUE(m.trackRawCompatible(0, 0)) << "Cache nicht invalidiert";
 }
 
+// ─── Schreibnachlauf (doc/design/16_k8915.md AP-E5b) ─────────────────────────
+
+namespace {
+
+/// @brief Spur aus zwei Sektoren, deren zweiter @p tail hinter der Daten-CRC trägt.
+TrackImage spurMitNachspann(const std::vector<uint8_t>& tail,
+                            Encoding enc = Encoding::MFM) {
+    std::vector<LogicalSector> secs;
+    for (int i = 1; i <= 2; ++i) {
+        LogicalSector ls;
+        ls.id   = static_cast<uint8_t>(i);
+        ls.size = 128;
+        ls.data.assign(128, 0xE5);
+        if (i == 2) ls.tail = tail;
+        secs.push_back(std::move(ls));
+    }
+    TrackImage t = TrackCodec::buildTrack(secs, enc);
+    EXPECT_EQ(TrackCodec::parseTrack(t).at(1).tail, tail) << "Nachspann nicht auf der Spur";
+    return t;
+}
+
+bool imgFaehig(const TrackImage& t) {
+    DiskMedium m(1, 1, t.encoding);
+    m.setTrack(0, 0, t);
+    return m.rawCompatible();
+}
+
+}  // namespace
+
+/**
+ * @test DiskMedium/RawCompatible_SchreibnachlaufIstKeinInhalt
+ * @brief AP-E5b: die Nachläufe vom Gerät (K8915-Disketten 900/901/904, Greaseweazle) —
+ *        geschriebenes 4E, dann die Naht in die alte Lücke (verrutschter Byterahmen,
+ *        Taktbits, Reste früherer Schreibläufe) — sperren den `.img`-Export nicht;
+ *        ebenso der Nachlauf, den der Emulator selbst schreibt (`4E 4E 4E` + alt).
+ */
+TEST(DiskMedium, RawCompatible_SchreibnachlaufIstKeinInhalt) {
+    const std::vector<std::vector<uint8_t>> amGeraet = {
+        {0x4E, 0x43, 0xDC, 0x08, 0xF2, 0x12, 0x12, 0x12},   // 901 c09 (DISGEN)
+        {0x4E, 0xC2, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42},   // 900 c03
+        {0x4E, 0x67, 0x27, 0x27, 0x27, 0x27, 0x27, 0x27},   // 904
+        {0x4F, 0xE4, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24},   // 904: Naht im letzten Bit
+        {0x4E, 0x40, 0x04, 0x07, 0x01, 0x04, 0x2C, 0xE4},   // 900 c00: lange Naht
+        {0x4E, 0xCC, 0x4C, 0x80, 0x02, 0x16, 0x4E, 0x4E},   // 900 c00: wieder im Takt
+        {0x4E, 0x4E, 0x4E, 0x12, 0x14, 0x12, 0x12, 0x12},   // Emulator: 3 × 4E + alt
+    };
+    for (const auto& n : amGeraet)
+        EXPECT_TRUE(imgFaehig(spurMitNachspann(n))) << static_cast<int>(n[1]);
+}
+
+/**
+ * @test DiskMedium/RawCompatible_UdosKontrollblockBleibtGesperrt
+ * @brief Gegenwächter zu AP-E5b: ein UDOS-Kontrollblock beginnt mit dem Sektorindex
+ *        des Rückwärtszeigers (0…25) oder FFH — mit JEDEM solchen ersten Byte bleibt
+ *        die Spur gesperrt, auch wenn dahinter dieselbe Naht in die alte Lücke folgt
+ *        wie beim K8915 (`05 16 05 16 41 F2 12 12` stammt von der Referenzdiskette).
+ *        Ebenso gesperrt: 4E vorn, aber am Ende keine Lücke; und FM-Spuren (dort ist
+ *        kein Nachlauf gemessen).
+ */
+TEST(DiskMedium, RawCompatible_UdosKontrollblockBleibtGesperrt) {
+    EXPECT_FALSE(imgFaehig(spurMitNachspann({0x05, 0x16, 0x05, 0x16, 0x41, 0xF2, 0x12, 0x12})));
+    EXPECT_FALSE(imgFaehig(spurMitNachspann({0xFF, 0xFF, 0x05, 0x16, 0x41, 0xF2, 0x12, 0x12})));
+    for (int b0 = 0; b0 < 256; ++b0) {
+        if (b0 == 0x4E || b0 == 0x4F) continue;
+        const std::vector<uint8_t> t = {static_cast<uint8_t>(b0), 0x16, 0x07, 0x16,
+                                        0x41, 0xF2, 0x12, 0x12};
+        EXPECT_FALSE(imgFaehig(spurMitNachspann(t))) << "erstes Byte " << b0;
+    }
+    EXPECT_FALSE(imgFaehig(spurMitNachspann({0x4E, 0x05, 0x16, 0x05, 0x16, 0x00, 0x01, 0x07})))
+        << "4E vorn, aber keine Lücke am Ende";
+    EXPECT_FALSE(imgFaehig(spurMitNachspann({0x4E, 0x43, 0xDC, 0x08, 0xF2, 0x12, 0x12, 0x12},
+                                            Encoding::FM)))
+        << "FM: kein Nachlauf gemessen, die Ausnahme gilt nicht";
+}
+
 // ─── Mischdichte ─────────────────────────────────────────────────────────────
 
 TEST(DiskMedium, Geometry_UniformFalschBeiMischdichte) {

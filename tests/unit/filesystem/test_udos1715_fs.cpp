@@ -804,12 +804,12 @@ TEST(Udos1715P8000, WegaStartdisketteWirdErkannt) {
     std::string warum;
     EXPECT_TRUE(Udos1715FileSystem::looksLikeUdos1715(raum, *p, &warum)) << warum;
 
-    // Und sie ist NICHT als rohes Sektorabbild darstellbar: 13 Sektoren tragen die
-    // Schreibnaht eines ueberschriebenen Sektors hinter der Daten-CRC.  Das ist zwar
-    // kein Inhalt, aber das Werkzeug kann es nicht wissen — und darf es nicht
-    // stillschweigend wegwerfen.
-    EXPECT_FALSE(disk->medium().rawCompatible());
-    EXPECT_NE(disk->medium().rawIncompatibleReason(), "");
+    // Und sie IST als rohes Sektorabbild darstellbar: 13 Sektoren tragen hinter der
+    // Daten-CRC die Schreibnaht eines ueberschriebenen Sektors (`4E 13 93 93 …`) —
+    // kein Inhalt, NDOS verkettet in Zeigersektoren.  Bis 2026-09-29 sperrte das den
+    // Export; seit AP-E5b (doc/design/16_k8915.md) erkennt rawCompatible() den reinen
+    // Schreibnachlauf (4E vorn, versetzte Luecke hinten) — dieselbe Naht wie am K8915.
+    EXPECT_TRUE(disk->medium().rawCompatible()) << disk->medium().rawIncompatibleReason();
 }
 
 TEST(Udos1715P8000, DatentraegerAngabenStimmen) {

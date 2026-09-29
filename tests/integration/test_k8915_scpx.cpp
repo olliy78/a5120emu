@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <atomic>
 #include <fstream>
 #include <chrono>
@@ -29,7 +30,9 @@
 #include "core/filesystem/disk_volume.h"
 #include "core/filesystem/fs_catalog.h"
 #include "core/machines/k8915/k8915.h"
+#include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/format_catalog.h"
+#include "core/peripherals/floppy_drive/track_codec.h"
 #include "tests/support/fixtures.h"
 #include "tests/support/screen.h"
 
@@ -647,5 +650,152 @@ TEST(K8915Scpx, DiskToolFuelltLeereDisketteNurMitFsScpx8915)
     warmstart(m);
     ASSERT_TRUE(befehl(m, "type b:k89.txt")) << vramLines(m);
     EXPECT_TRUE(enthaelt(m, "FUER DEN K8915")) << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
+}
+
+// ─── AP-E5b: Schreibnachlauf hinter der Daten-CRC vs. `.img`-Export ─────────
+
+namespace {
+
+/// Sektoren eines Abbilds, deren Bytes hinter der Daten-CRC NICHT reine Lückenfüller
+/// (4E/FF/00) sind — je Sektor „c/h/id: hex“.
+std::vector<std::string> sektorenMitNachlauf(const DiskMedium& med) {
+    std::vector<std::string> out;
+    for (uint8_t c = 0; c < med.numCylinders(); ++c)
+        for (uint8_t h = 0; h < med.numHeads(); ++h)
+            for (const LogicalSector& s : TrackCodec::parseTrack(med.track(c, h))) {
+                bool gap = true;
+                for (uint8_t b : s.tail) gap = gap && (b == 0x4E || b == 0xFF || b == 0x00);
+                if (gap) continue;
+                char buf[64];
+                std::string hex;
+                for (uint8_t b : s.tail) { std::snprintf(buf, sizeof buf, "%02X", b); hex += buf; }
+                std::snprintf(buf, sizeof buf, "%u/%u/%u: ", c, h, s.id);
+                out.push_back(buf + hex);
+            }
+    return out;
+}
+
+/// Spuren, auf denen JEDE CRC stimmt und die trotzdem nicht `.img`-fähig sind — dann
+/// sperrt allein der Inhalt hinter der Daten-CRC.
+int spurenGesperrtNurWegenNachspann(const DiskMedium& med) {
+    int n = 0;
+    for (uint8_t c = 0; c < med.numCylinders(); ++c)
+        for (uint8_t h = 0; h < med.numHeads(); ++h) {
+            const auto secs = TrackCodec::parseTrack(med.track(c, h));
+            if (secs.empty()) continue;
+            bool crc = true;
+            for (const auto& s : secs) crc = crc && s.id_crc_ok && s.data_crc_ok;
+            if (crc && !med.trackRawCompatible(c, h)) ++n;
+        }
+    return n;
+}
+
+}  // namespace
+
+/**
+ * @test K8915Scpx.ImgExportSchreibnachlaufJaUdosNein
+ * @brief AP-E5b: die am Gerät vom SCPX-8915-BIOS und von DISGEN beschriebenen Sektoren
+ *        tragen hinter der Daten-CRC ein 4E und danach die Schreibnaht (alte Lücke mit
+ *        verrutschtem Byterahmen) — das sperrt den `.img`-Export nicht mehr.  Die
+ *        Disketten 900 und 904 sind damit exportierbar; 901 bleibt es begründet NICHT
+ *        (echter Daten-CRC-Fehler auf c48h0, §4.4).  Gegenwächter: jede UDOS-Fixture
+ *        bleibt gesperrt, und zwar auf Spuren mit lauter gültigen CRCs — also allein
+ *        wegen des Kontrollblocks.
+ */
+TEST(K8915Scpx, ImgExportSchreibnachlaufJaUdosNein)
+{
+    for (const char* f : {"k8915scpx_cpa800_k5601_bios55k-disk900.hfe",
+                          "k8915scpx_cpa800_k5601_v24xonxoff-autodbase-disk904.hfe"}) {
+        TempDisk d(f);
+        auto img = DiskImage::open(d.path(), std::nullopt, true);
+        ASSERT_TRUE(img) << f;
+        EXPECT_GT(sektorenMitNachlauf(img->medium()).size(), 20u)
+            << f << ": ohne Schreibnachlauf prüfte der Fall nichts";
+        EXPECT_TRUE(img->rawCompatible()) << f << ": " << img->medium().rawIncompatibleReason();
+    }
+    {
+        TempDisk d("k8915scpx_boot1.hfe");
+        auto img = DiskImage::open(d.path(), std::nullopt, true);
+        ASSERT_TRUE(img);
+        EXPECT_FALSE(img->rawCompatible());
+        EXPECT_EQ(img->medium().rawIncompatibleReason(), "Spur 48/0")
+            << "901: gesperrt NUR wegen des CRC-Fehlers c48h0 #1";
+        EXPECT_EQ(spurenGesperrtNurWegenNachspann(img->medium()), 0);
+    }
+    for (const char* f : {"udos_boot_scp.hfe", "udos_ds77_k5601_fremdsync.hfe",
+                          "mixed_udos_ss40_over_cpa800.hfe"}) {
+        TempDisk d(f);
+        auto img = DiskImage::open(d.path(), std::nullopt, true);
+        ASSERT_TRUE(img) << f;
+        EXPECT_FALSE(img->rawCompatible()) << f;
+        EXPECT_GT(spurenGesperrtNurWegenNachspann(img->medium()), 0)
+            << f << ": der UDOS-Kontrollblock allein muss sperren";
+    }
+}
+
+/**
+ * @test K8915Scpx.VomEmulatorGeschriebenerSektorIstImgFaehig
+ * @brief AP-E5b: was das BIOS im Emulator schreibt (`save`), trägt hinter der CRC
+ *        `4E 4E 4E` und danach den alten Nachspann des Sektors — dieselbe Art Naht wie
+ *        am Gerät (dort überlebt nur das erste 4E, der Rest fällt in die Abschaltung
+ *        von /WE).  Das Abbild bleibt `.img`-fähig.
+ */
+TEST(K8915Scpx, VomEmulatorGeschriebenerSektorIstImgFaehig)
+{
+    Aufbau x("k8915scpx_cpa800_k5601_bios55k-disk900.hfe");
+    K8915Machine& m = x.m;
+    std::vector<std::string> vorher;
+    {
+        auto img = DiskImage::open(x.a.path(), std::nullopt, true);
+        ASSERT_TRUE(img);
+        vorher = sektorenMitNachlauf(img->medium());
+    }
+    ohneSelbsttestZurColdstartMeldung(m);
+    ladenBisPrompt(m);
+    ASSERT_TRUE(befehl(m, "save 40 gross.com")) << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
+    ASSERT_TRUE(m.flushDisks());
+
+    auto img = DiskImage::open(x.a.path(), std::nullopt, true);
+    ASSERT_TRUE(img);
+    // Das BIOS schreibt hinter die CRC drei Lückenbytes (EAF7H–EB03H: 3 × OUT (14H),A;
+    // das `LD A,00H` des Listings ist zur Laufzeit auf 4EH gepatcht) und schaltet dann
+    // /WE ab.  Dahinter bleibt stehen, was vorher dort lag.
+    EXPECT_EQ(m.memReadDebug(0xEAF8), 0x4E);
+    int neu = 0;
+    for (const auto& s : sektorenMitNachlauf(img->medium())) {
+        if (std::find(vorher.begin(), vorher.end(), s) != vorher.end()) continue;
+        ++neu;
+        EXPECT_EQ(s.substr(s.find(": ") + 2, 6), "4E4E4E") << s;
+    }
+    EXPECT_GT(neu, 0) << "save hat keinen Sektor mit altem Nachlauf überschrieben";
+    EXPECT_TRUE(img->rawCompatible()) << img->medium().rawIncompatibleReason();
+}
+
+/**
+ * @test K8915Scpx.ImgRundreiseDerSystemdisketteBootet
+ * @brief AP-E5b: die Diskette 900 (Systemspuren von DISGEN, Dateien vom BIOS — alles mit
+ *        Schreibnachlauf) wird im Emulator als `.img` gespeichert; von diesem Abbild
+ *        startet der K8915 bis `A>`, `dir` listet die Dateien, `save` schreibt.
+ */
+TEST(K8915Scpx, ImgRundreiseDerSystemdisketteBootet)
+{
+    TempDisk img = TempDisk::empty("k8915_rundreise900.img");
+    {
+        Aufbau x("k8915scpx_cpa800_k5601_bios55k-disk900.hfe");
+        ASSERT_TRUE(x.m.saveDiskAs(0, img.path(), "cpa800")) << x.m.lastError();
+    }
+    K8915Machine m;
+    ASSERT_TRUE(m.mountDisk(0, img.path(), "cpa800", false)) << m.lastError();
+    ohneSelbsttestZurColdstartMeldung(m);
+    ladenBisPrompt(m);
+    EXPECT_TRUE(enthaelt(m, "55 K   SCPX 8915   BIOS-Version 5.3")) << vramLines(m);
+    ASSERT_TRUE(befehl(m, "dir")) << vramLines(m);
+    for (const char* n : {"DISGEN   COM", "FORMAT   COM", "***900   VOL"})
+        EXPECT_TRUE(enthaelt(m, n)) << n << "\n" << vramLines(m);
+    ASSERT_TRUE(befehl(m, "save 2 x.com")) << vramLines(m);
+    ASSERT_TRUE(befehl(m, "dir x.com")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "A: X        COM")) << vramLines(m);
     EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
 }
