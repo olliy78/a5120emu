@@ -15,6 +15,9 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
+#include <fstream>
+#include <sstream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -188,4 +191,106 @@ TEST(Em16Abl, OhneKarte) {
     Lauf l;
     ASSERT_NO_FATAL_FAILURE(starte(l, A5120Machine::Config{}, "k1520_em16abl_ohne.img"));
     EXPECT_TRUE(enthaelt(l.abschrift, "ERGEBNIS: keine Karte an A8H")) << l.abschrift;
+}
+
+/**
+ * @test Em16Abl/AltePruefprogrammeAbschrift
+ * @brief Nur von Hand (Plan §3 S4: „danach em256tst/em256ful im Emulator laufen lassen"):
+ *   mit `K1520_EM256_ALT=<Verzeichnis mit em256tst.com/em256ful.com>` wird jedes der
+ *   beiden alten Workbench-Programme gestartet, jede Tastenpause mit Leertaste
+ *   quittiert und die Abschrift ausgegeben.  Keine Erwartung: die Programme sind
+ *   Hypothesen (liefen nie am Gerät); Abweichungen sind Befunde über SIE.
+ */
+TEST(Em16Abl, AltePruefprogrammeAbschrift) {
+    const char* dir = std::getenv("K1520_EM256_ALT");
+    if (!dir) GTEST_SKIP() << "K1520_EM256_ALT nicht gesetzt";
+    for (const char* name : {"EM256TST", "EM256FUL"}) {
+        std::string lower(name);
+        for (auto& c : lower) c = char(std::tolower(static_cast<unsigned char>(c)));
+        std::ifstream f(std::string(dir) + "/" + lower + ".com", std::ios::binary);
+        ASSERT_TRUE(f) << lower;
+        std::stringstream ss; ss << f.rdbuf();
+        const std::string prog = ss.str();
+        TempDisk disk(kFixture, ("k1520_" + lower + ".img").c_str());
+        {
+            std::string e;
+            static FormatCatalog fk = FormatCatalog::loadDefault(&e);
+            static FsCatalog     fs = FsCatalog::loadDefault(fk, &e);
+            const FsProfile*  p  = fs.find("cpa780");
+            const DiskFormat* df = fk.find(p->format);
+            auto img = DiskImage::open(disk.path(), std::optional<DiskFormat>(*df), false);
+            ASSERT_TRUE(img);
+            SectorSpace space(img->medium(), *df);
+            auto vol = CpmFileSystem::mount(space, *p, e);
+            ASSERT_TRUE(vol) << e;
+            vol->erase(std::string(name) + ".COM");   // die Fixture kann eine alte Fassung tragen
+            ASSERT_TRUE(vol->write(std::string(name) + ".COM",
+                                   std::vector<uint8_t>(prog.begin(), prog.end()), {}))
+                << vol->lastError();
+            ASSERT_TRUE(img->flush());
+        }
+        A5120Machine m(em256());
+        ASSERT_TRUE(m.mountDisk(0, disk.path(), "cpa780", false));
+        m.powerOn();
+        ASSERT_TRUE(runUntilVramContains(m, "TPA ist OK!", kBootBudget));
+        ASSERT_TRUE(runSmallUntil(m, "A>", kInputBudget));
+        typeString(m, name);
+        typeKey(m, k1520test::QK_RETURN);
+        k1520test::runCycles(m, 2'000'000);
+        // Abschrift über das Rollen hinweg: je Blick nur die neu hinzugekommenen Zeilen.
+        std::vector<std::string> alt;
+        std::string abschrift;
+        auto zeilen = [&] {
+            std::vector<std::string> z;
+            const std::string v = k1520test::visibleText(m);
+            for (size_t i = 0; i + 80 <= v.size(); i += 80) {
+                std::string l = v.substr(i, 80);
+                l.erase(l.find_last_not_of(' ') + 1);
+                z.push_back(l);
+            }
+            if (!z.empty()) z.pop_back();          // letzte Zeile ist evtl. noch im Entstehen
+            return z;
+        };
+        auto nimm = [&] {
+            // Nur ein ruhiges Bild auswerten (nicht mitten im Rollen des BIOS).
+            auto neu = zeilen();
+            k1520test::runCycles(m, 5'000);
+            if (zeilen() != neu) return;
+            size_t k = 0;   // größte Überdeckung: Anfang von neu == Ende von alt
+            for (size_t n = std::min(neu.size(), alt.size()); n > 0; --n)
+                if (std::equal(neu.begin(), neu.begin() + long(n), alt.end() - long(n))) { k = n; break; }
+            for (size_t i = k; i < neu.size(); ++i) abschrift += neu[i] + "\n";
+            alt = neu;
+        };
+        long long rest = 3'000'000'000LL;
+        const char* pausen[] = {"weiter mit Taste", "Taste druecken", "Beliebige Taste"};
+        while (rest > 0) {
+            k1520test::runCycles(m, 20'000);
+            rest -= 25'000;
+            nimm();
+            const std::string v = vramText(m);
+            bool pause = false;
+            for (const char* pz : pausen) pause |= v.find(pz) != std::string::npos;
+            if (pause) {
+                typeKey(m, ' ');
+                for (int i = 0; i < 100; ++i) {
+                    k1520test::runCycles(m, 100'000);
+                    rest -= 100'000;
+                    bool noch = false;
+                    for (const char* pz : pausen) noch |= vramText(m).find(pz) != std::string::npos;
+                    if (!noch) break;
+                }
+                continue;
+            }
+            if (letzteZeile(m) == "A>") break;
+        }
+        abschrift += "[letztes Bild]\n" + vramLines(m);
+        std::printf("===== %s (Rest %lld Takte) =====\n%s\n", name, rest, abschrift.c_str());
+        const EM& em = *m.em();
+        std::printf("EM: reset16=%d mode8=%d tren=%d busak=%d A33=%02X A35=%02X U8001 pc=<<%u>>%04X "
+                    "fcw=%04X halted=%d illegal=%llu\n",
+                    em.reset16(), em.mode8(), em.tren(), em.busAck16(), em.steuer16(),
+                    em.status16(), em.u8001().pcSeg, em.u8001().pc, em.u8001().fcw,
+                    em.u8001().halted(), (unsigned long long)em.u8001().illegalCount());
+    }
 }

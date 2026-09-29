@@ -186,7 +186,7 @@ public:
     bool     reset16() const     { return reset16_; }     ///< PIO B4 (Pull-up R4:2)
     bool     ramEnabled() const  { return ramen_; }       ///< RAMEN = ¬/RAMEN (PIO B2)
     bool     trq8() const        { return trq8_; }        ///< TRQ8 = ¬/TRQ8 (PIO B5)
-    bool     tren() const        { return tren_; }        ///< TREN = ¬µ0 (ohne U8001: 0)
+    bool     tren() const        { return tren_; }        ///< TREN = ¬µ0 (µ0 nur nach MSET/MREQ aktiv)
     uint8_t  segment() const     { return seg_; }         ///< SG1P:SG0P (PIO B1:B0)
     bool     parityError() const { return per_ff_; }
     bool     ledV1() const       { return ramen_; }       ///< V1 an A17/08 ← RAMEN (A31/10)
@@ -196,7 +196,7 @@ public:
     uint8_t  status8() const     { return status8_; }     ///< A36 (→ U8001 AD8–15)
     uint8_t  vector8() const     { return vector8_; }     ///< A34 (→ U8001 AD0–7)
     bool     viPending() const   { return vi_pending_; }  ///< A34 INT aktiv (PIO A3 = 0)
-    uint8_t  steuer16() const    { return a33_; }         ///< A33 (vom U8001; ohne ihn 0)
+    uint8_t  steuer16() const    { return a33_; }         ///< A33 (vom U8001, RESET16 löscht)
     uint8_t  status16() const    { return status16_; }    ///< A35 (vom U8001)
     /// MRDY: der U880-Zugriff auf @p addr wird von der Karte bestätigt (= MEN).
     bool     memRdy(uint16_t addr) const { return (men_mask_ >> (addr >> 12)) & 1; }

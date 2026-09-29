@@ -386,6 +386,23 @@ E/A-Zyklen tragen seit demselben Umbau die volle Adresse AB0–15 (`ioAddress()`
 weil der Attributspeicher des EM256 über AB12–15 adressiert wird (`OUT (n),A` legt
 dabei **A** auf AB8–15).
 
+#### 5.1b Zweite CPU auf dem EM: U8001 und Maschinenzeit (seit 2026-09-29, A5120.16 S4)
+
+Der U8001 (`Z8000`, `core/primitives/z8000.h`) sitzt auf der EM-Karte (`EM::u8001()`)
+und sieht **nur** den EM-Speicher und die Register A33/A35/A34/A36 — die Karte
+übersetzt jeden seiner Buszyklen (Status ST3..0, N/S, SN) über Segmentweiche A42 und
+Umschalter A41 in eine DRAM-Zelle (`EM::cellFor16`, dieselbe Zelle wie beim U880,
+big-endian).  Zeit: nach jedem Schritt des U880 (bzw. ZVE2/WAIT-Takt) ruft die
+Maschine `EM::advance(n)`; die Karte zieht den U8001 befehlsweise im Verhältnis
+f16/f8 (4 MHz / 2,45 MHz, `EM::Config`) nach und führt den Rest als Guthaben.  Im
+Reset, bei abgegebenem Bus (BUSAK bei anliegendem BUSRQ) und im Stop wird die Zeit
+nur verbucht.  Jeder Befehl des U880 beginnt mit `EM::onU880M1()` — der Takt des FF
+A29 (8/16).  **Der U880 läuft im 16-Bit-Mode weiter** (Handbuch §1.7.3); BUSRQ/BUSAK
+ist der Handschlag zwischen Karte und U8001.  Ohne EM (`Config::em = none`) fällt jeder
+dieser Aufrufe weg — der Lauf ist bitgleich dem A5120.  Save-State v6 hängt den
+EM-Block (DRAM, A22, PIO, Register, U8001 mit `runState()`) mit Kennbyte an den
+Geräteteil an.
+
 ### 5.2 Koppelbus
 
 Der Koppelbus modelliert die Wickelbrücken-Verdrahtung der Backplane. Er ist kein generischer Bus, sondern ein **Signal-Router**: Karten können benannte Signale anbieten und empfangen. Die Verdrahtung ist in `machines/a5120/backplane.h` definiert.
