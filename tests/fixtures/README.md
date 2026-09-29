@@ -34,6 +34,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `cpa_cpa780_combo8zoll_noclock.img` | CP/A ohne Uhr, A: K5601 · **B: MF3200** · **C: K5602.10/MF6400** | `make_bootdisk` (Presets mf3200_fmt7, mf6400_fmt1) |
 | `cpa_cpa780_k5601_noclock-em256.img` | CP/A ohne Uhr, K5601, **@OS.COM mit `em256 equ 1`** (A5120.16, RAM-Floppy M: im EM256) | `Em256RamFloppy.*` |
 | `cpa_cpa780_k5601_noclock.img` + **`../cpm/em256adr.com`** | G1-Prüfprogramm (A5120.16) — wird im Test auf die Temp-Kopie geschrieben | `Em256Adr.*` |
+| `cpa_cpa780_k5601_noclock.img` + **`../cpm/em16abl.com`** | S4-Abnahme/G2-Vorlage (A5120.16, U8001) — ebenso | `Em16Abl.*` |
 | `scpx17_cpa780_k5601.hfe` | SCPX 1526 V1.7, System im **16×256**-Datenformat | `ScpxIntegration.*`, `ScpxInit.*` |
 | `scpx17_5x1024_k5601_hardy.hfe` | SCPX 1526 V1.7, System im **5×1024**-Datenformat, mit `HARDY.COM` | `test_hardy` |
 | `udos_boot_scp.hfe` | UDOS 4.3, bootfähig (SCP-Laufwerkstyp) | `UdosIntegration.*`, `test_udos_format` |
@@ -167,3 +168,12 @@ echten A5120.16 Portbasis und Attributspeicher des EM256 (doc/design/17_a5120_16
 `cpa_cpa780_k5601_noclock.img` und startet es — mit EM256 (beide `EM::A22Lesart`) und ohne.
 Ändert sich das Programm in der Workbench, die Datei hier ersetzen (der Pfad kommt als
 `EM256ADR_COM` aus `tests/integration/CMakeLists.txt`).
+
+## `cpm/em16abl.com`: S4-Abnahme / G2-Vorlage aus der CPA-Workbench
+
+`tools/16bitTest/build/em16abl.com` der CPA-Workbench (Quellen `tools/16bitTest/src/
+em16abl.mac` + `fw16abl.s`, U8001-Teil mit **z8kasm** aus diesem Repo; Bau
+`python3 tools/16bitTest/build.py em16abl`, braucht `build/z8kasm` bzw. `Z8KASM=`; Stand
+Workbench `e396fc6`).  Fährt die belegten Abläufe des 16-Bit-Mode (doc/design/17_a5120_16.md
+§3 S4) und ist die Vorlage für G2 am Gerät.  `test_em16_abl` schreibt es auf eine `TempDisk`
+von `cpa_cpa780_k5601_noclock.img` (Pfad `EM16ABL_COM`).
