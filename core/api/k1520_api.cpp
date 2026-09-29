@@ -300,13 +300,20 @@ void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
     auto m = toMachine(h);
     if (port == K1520_SERIAL_DFU) {
         m->setDFUECallback([cb, ctx](uint8_t b){ if (cb) cb(ctx, b); });
+    } else if (port == K1520_SERIAL_PRINTER) {
+        // Am A5120 ohne Wirkung (K1520Machine-Vorgabe leer, AP-E4c) — der Drucker
+        // dort hat eine eigene, ältere Poll-Schnittstelle (K8025::printerTxAvailable/
+        // TxGet), noch nicht an diese ABI gehängt.
+        m->setPrinterCallback([cb, ctx](uint8_t b){ if (cb) cb(ctx, b); });
     }
-    // Printer callback not yet wired
 }
 
 void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte) {
+    auto m = toMachine(h);
     if (port == K1520_SERIAL_DFU)
-        toMachine(h)->dfueSend(byte);
+        m->dfueSend(byte);
+    else if (port == K1520_SERIAL_PRINTER)
+        m->printerSend(byte);
 }
 
 uint8_t k1520_mem_read(K1520Handle h, uint16_t addr) {

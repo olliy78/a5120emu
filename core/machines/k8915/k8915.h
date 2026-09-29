@@ -2,11 +2,13 @@
  * @file k8915.h
  * @brief K8915 V3 (5¼″, 1989) — zweite Maschine des Kerns.
  *
- * Stand Etappe 3 (doc/design/16_k8915.md §8, AP-E1…AP-E3): ZRE 045-8762, ATS
+ * Stand Etappe 4 (doc/design/16_k8915.md §8, AP-E1…AP-E4c): ZRE 045-8762, ATS
  * K7028.30 mit Tastatur K7672, K7024 (012-6820) und K5122 im `/WAIT`-Betrieb mit
  * zwei K5601.  Die Laufwerksverwaltung ist der gemeinsame Baustein @ref Laufwerke
- * (wie beim A5120).  DFÜ nach außen fehlt noch (AP-E4c).  Seit AP-E4b in
- * `libk1520core` (`k1520_create(K1520_MACHINE_K8915)`).
+ * (wie beim A5120).  Drucker (SIO1-B) und DFÜ (SIO2-A, vorläufig) gehen seit
+ * AP-E4c über die ABI nach außen (`setDFUECallback`/`dfueSend`,
+ * `setPrinterCallback`/`printerSend`).  Seit AP-E4b in `libk1520core`
+ * (`k1520_create(K1520_MACHINE_K8915)`).
  *
  * Steckplätze am Gerät (§6.4): 3 = K5122, 4 = ZRE, 6 = ATS, 7 = K7024.
  */
@@ -130,9 +132,23 @@ public:
     bool isHeadLoaded() const override              { return lw_.isHeadLoaded(); }
     void setDiskWriteProtect(int d, bool wp) override { lw_.setDiskWriteProtect(d, wp); }
 
-    // ─── DFÜ (V.24/IFSS nach außen: Etappe 4) ────────────────────────────────
-    void setDFUECallback(SerialCb) override {}
-    void dfueSend(uint8_t) override {}
+    // ─── DFÜ (SIO2-A) und Drucker (SIO1-B) nach außen (§8a AP-E4c) ───────────
+    // Kanalzuordnung: Drucker = SIO1-B (vom BIOS benutzt, §4.4 belegt); DFÜ =
+    // vorläufig SIO2-A — die IFSS-Kanalzuordnung ist eine offene Anwenderfrage
+    // (§6.6 [?]).  Ein gesetzter Callback ERSETZT den Prüfstecker (Rückschleife)
+    // nur auf seinem EIGENEN Kanal (`K7028::service`); die beiden übrigen Kanäle
+    // bleiben zurückgeschleift, solange `Config::pruefstecker` es vorsieht — sonst
+    // schlüge der ROM-Selbsttest mit einem angeschlossenen Abnehmer fehl.
+    void setDFUECallback(SerialCb cb) override {
+        ats_.setAbnehmer(K7028::Sio2A, std::move(cb));
+    }
+    /// Byte von AUSSEN am DFÜ-Kanal empfangen (z. B. ein Antwortzeichen).
+    void dfueSend(uint8_t byte) override { ats_.empfange(K7028::Sio2A, byte); }
+    void setPrinterCallback(SerialCb cb) override {
+        ats_.setAbnehmer(K7028::Sio1B, std::move(cb));
+    }
+    /// Byte von AUSSEN am Druckerkanal empfangen (XON/XOFF eines Druckers).
+    void printerSend(uint8_t byte) override { ats_.empfange(K7028::Sio1B, byte); }
 
     // ─── Diagnose ────────────────────────────────────────────────────────────
     /** @brief Speicher aus Sicht der CPU (A8H-Abbildung, sonst Systembus). */

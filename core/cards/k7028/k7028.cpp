@@ -161,22 +161,31 @@ bool K7028::service(uint64_t now)
         const Kanal k = static_cast<Kanal>(i);
         Z80SIO::Channel& ch = kanal(k);
         if (ch.txAvailable()) {
-            const uint8_t b = ch.txGet();
+            uint8_t b = ch.txGet();
+            // Zeichenformat aus WR5 beachten (AP-E4c): bei < 8 Datenbits (Fassung
+            // 900 des K8915-BIOS: 7 Bit) trägt die Leitung nur diese Bits — Parität
+            // selbst bleibt unnachgebildet (kein Paritätsfehler vom Host).
+            if (ch.tx_bits_per_char < 8)
+                b &= static_cast<uint8_t>((1u << ch.tx_bits_per_char) - 1);
             geaendert = true;
-            if (cfg_.rueckschleife[i]) {
-                // Zeichen für Zeichen über die Leitung: das nächste beginnt frühestens,
-                // wenn das vorige angekommen ist.
+            // Ein angeschlossener Abnehmer ERSETZT die Rückschleife dieses Kanals
+            // (AP-E4c) — Drucker/DFÜ statt Prüfstecker-Echo, sobald jemand zuhört.
+            // Beide Wege teilen sich dieselbe Leitungspacing: das nächste Zeichen
+            // beginnt frühestens, wenn das vorige "angekommen" ist.
+            if (abnehmer_[i] || cfg_.rueckschleife[i]) {
                 const uint64_t start = std::max(now, frei_ab_[i]);
                 frei_ab_[i] = start + ZEICHEN_TAKTE;
-                schleife_[i].push_back({frei_ab_[i], b});
-            } else if (abnehmer_[i]) {
-                abnehmer_[i](b);
+                schleife_[i].push_back({frei_ab_[i], b, abnehmer_[i] != nullptr});
             }
             // sonst: offene Leitung, das Byte geht verloren
         }
         auto& q = schleife_[i];
         while (!q.empty() && q.front().faellig <= now) {
-            ch.rxByte(q.front().byte);
+            if (q.front().nachAussen) {
+                if (abnehmer_[i]) abnehmer_[i](q.front().byte);
+            } else {
+                ch.rxByte(q.front().byte);
+            }
             q.pop_front();
             geaendert = true;
         }

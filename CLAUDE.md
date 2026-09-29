@@ -406,9 +406,13 @@ A8H-Speicherbild, `map`/`bank`, Ereignisprotokoll K5122/61H/A8H/Interrupts, Abbr
 Prompt; ZVE2/`bbusrq`/Snapshots/Savestates melden „nicht vorhanden“ —
 `tools/k1520dbg.md` §11, `tools/boot_trace.md` §7). **Stand 2026-09-29:**
 Etappen 1–3 fertig (SCPX 8915 V5.3 bootet bis zum Prompt — beide BIOS-Fassungen,
-drei Systemdisketten als Fixtures, AP-B2), AP-E4a/E4b/E4d/E4e/E4f fertig (C-ABI, Werkzeuge,
-**FORMAT.COM + DISGEN.COM laufen**: Leerdiskette → FORMAT → DISGEN → Kaltstart, Wächter
-`K8915Format.*` in `test-format`); Rest von Etappe 4/5 offen, Arbeitspakete in
+drei Systemdisketten als Fixtures, AP-B2), AP-E4a/E4b/**E4c**/E4d/E4e/E4f fertig (C-ABI,
+Werkzeuge, **FORMAT.COM + DISGEN.COM laufen**: Leerdiskette → FORMAT → DISGEN → Kaltstart,
+Wächter `K8915Format.*` in `test-format`; **Drucker (SIO1-B) + DFÜ (SIO2-A, vorläufig) nach
+außen** über `K1520Machine::setPrinterCallback`/`printerSend` bzw.
+`setDFUECallback`/`dfueSend`, `Z80SIO` liefert bei leerem Empfänger jetzt das zuletzt
+empfangene Byte statt FFH — Datenblatt-Korrektur, für den A5120 folgenlos); Rest von
+Etappe 4/5 offen, Arbeitspakete in
 `doc/design/16_k8915.md` §8a. Im `/WAIT`-Zweig liefert das Lesen die Spur **so, wie sie auf
 der Scheibe liegt** (FORMAT.COM prüft Byte für Byte nach), `.img`-Spuren mit Normlücken —
 nicht den nachgebauten 4×A1-Strom des A5120-Wegs.

@@ -206,6 +206,21 @@ public:
         std::deque<uint8_t>      rx_fifo; ///< Receive FIFO buffer
         std::optional<uint8_t>   tx_buf;  ///< Transmit buffer
 
+        /**
+         * @brief Letztes physisch empfangenes Byte (Datenpfad hinter dem
+         *        Empfangsschieberegister, unabhängig vom FIFO-Füllstand).
+         *
+         * Die echte U856/Z80-SIO hat am Datenregister keinen "leer"-Zustand — es ist
+         * der Ausgang des FIFOs, kein separat abschaltbarer Bustreiber. Liest die CPU,
+         * während der Empfangs-FIFO leer ist, kommt daher **das zuletzt empfangene
+         * Byte** zurück, nicht FFH (`doc/design/16_k8915.md` §8a AP-E4c, Befund aus
+         * AP-E2: K8915-BIOS `LISTST` liest 42H ohne RR0-Prüfung und erwartet dort das
+         * zuletzt empfangene XON/XOFF). Das Datenblatt (`doc/trascripted/SIO_U856D.md`)
+         * beschreibt diesen Grenzfall nicht ausdrücklich; `last_rx` wie alle anderen
+         * Kanalregister mit dem Reset auf 00H gesetzt (Annahme, keine Messung).
+         */
+        uint8_t last_rx = 0x00;
+
         bool cts_    = false;   ///< Internal CTS state
         bool rts_    = false;   ///< Internal RTS state
 

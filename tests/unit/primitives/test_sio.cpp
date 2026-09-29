@@ -119,6 +119,44 @@ TEST(Z80SIO, RX_FIFO_MultipleBytes) {
 }
 
 /**
+ * @test Z80SIO.LeererEmpfaengerLiefertLetztesByte
+ * @brief Die echte U856/Z80-SIO hat am Datenregister keinen eigenen "leer"-Zustand:
+ *        Es ist der Ausgang des Empfangs-FIFO, kein separat abschaltbarer Bustreiber.
+ *        Ist der FIFO leer, liefert ein Lesezugriff daher das zuletzt empfangene
+ *        Byte, nicht FFH (`doc/design/16_k8915.md` §8a AP-E4c, Befund AP-E2: das
+ *        K8915-BIOS liest `LISTST` ohne RR0-Prüfung und erwartet dort das letzte
+ *        XON/XOFF-Byte).  Nach Reset (vor dem ersten empfangenen Byte) ist der
+ *        Ruhewert 00H — eine Annahme, das Datenblatt macht dazu keine Aussage.
+ * @par Pass criterion  Direkt nach Reset liefert ein leerer Kanal 00H; nach dem
+ *      Abholen des einzigen empfangenen Bytes liefert ein erneutes Lesen dasselbe
+ *      Byte erneut (nicht FFH); das gilt für beide Kanäle unabhängig voneinander.
+ */
+TEST(Z80SIO, LeererEmpfaengerLiefertLetztesByte) {
+    Z80SIO sio;
+
+    // Direkt nach Reset, noch nie ein Byte empfangen.
+    EXPECT_EQ(sio.ioRead(0), 0x00);
+    EXPECT_EQ(sio.ioRead(2), 0x00);
+
+    sio.channelA().rxByte(0x13);   // XOFF
+    EXPECT_EQ(sio.ioRead(0), 0x13);
+    // FIFO jetzt leer — ein erneutes Lesen liefert weiter 0x13, nicht FFH.
+    EXPECT_EQ(sio.ioRead(0), 0x13);
+    EXPECT_EQ(sio.ioRead(0), 0x13);
+
+    sio.channelA().rxByte(0x11);   // XON überschreibt das zuletzt empfangene Byte
+    EXPECT_EQ(sio.ioRead(0), 0x11);
+    EXPECT_EQ(sio.ioRead(0), 0x11);
+
+    // Kanal B unabhängig davon weiterhin auf seinem eigenen Ruhewert.
+    EXPECT_EQ(sio.ioRead(2), 0x00);
+    sio.channelB().rxByte(0xAA);
+    EXPECT_EQ(sio.ioRead(2), 0xAA);
+    EXPECT_EQ(sio.ioRead(2), 0xAA);
+    EXPECT_EQ(sio.ioRead(0), 0x11) << "Kanal A unverändert";
+}
+
+/**
  * @test Z80SIO/RX_FIFO_Full
  * @brief After three bytes the FIFO is full; a fourth byte causes RR1 overrun bit to be set.
  * @par Pass criterion  rxFull() == true after 3 bytes; RR1 bit 3 (overrun) set after 4th byte.

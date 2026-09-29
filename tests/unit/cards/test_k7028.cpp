@@ -46,7 +46,9 @@ TEST(K7028, SpiegeladressenUndKanalreihenfolge)
     a.ats.sio2().channelB().rxByte(0x55);
     EXPECT_EQ(a.bus.ioRead(0x57) & 0x01, 0x01);   // 57H = Spiegel von 53H
     EXPECT_EQ(a.bus.ioRead(0x53) & 0x01, 0x01);
-    EXPECT_EQ(a.bus.ioRead(0x42 + 4), 0xFF) << "leer: Z80SIO liefert FFH";
+    EXPECT_EQ(a.bus.ioRead(0x42 + 4), 0x22)
+        << "leer, aber schon einmal 0x22 empfangen (oben): Z80SIO liefert das "
+           "zuletzt empfangene Byte weiter (AP-E4c), nicht FFH";
 
     // CTC 2 Kanal 2 über 5AH und 5EH, CTC 1 Kanal 0 über 4CH.
     a.bus.ioWrite(0x5E, 0x07);   // Zeitgeber, Vorteiler 16, ZK folgt
@@ -83,7 +85,9 @@ TEST(K7028, RueckschleifeJeKanalMitZeichenzeit)
     a.ats.service(5001);
     a.ats.service(5000 + K7028::ZEICHEN_TAKTE);
     EXPECT_EQ(a.bus.ioRead(0x44), 0x55);
-    EXPECT_EQ(a.bus.ioRead(0x44), 0xFF) << "zweites Zeichen noch unterwegs";
+    EXPECT_EQ(a.bus.ioRead(0x44), 0x55)
+        << "zweites Zeichen noch unterwegs: FIFO leer, Z80SIO liefert das zuletzt "
+           "empfangene Byte (AP-E4c), nicht FFH";
     a.ats.service(5000 + 2 * K7028::ZEICHEN_TAKTE);
     EXPECT_EQ(a.bus.ioRead(0x44), 0x5A);
 }
@@ -104,9 +108,9 @@ TEST(K7028, OhneRueckschleifeKeinEcho)
     a.ats.service(0);
     a.ats.service(100'000);
     EXPECT_EQ(ab, std::vector<uint8_t>{0x31});
-    EXPECT_EQ(a.bus.ioRead(0x40), 0xFF);
+    EXPECT_EQ(a.bus.ioRead(0x40), 0x00) << "nie empfangen: Reset-Ruhewert (AP-E4c)";
     EXPECT_EQ(a.bus.ioRead(0x42), 0x32);
-    EXPECT_EQ(a.bus.ioRead(0x50), 0xFF);
+    EXPECT_EQ(a.bus.ioRead(0x50), 0x00) << "nie empfangen: Reset-Ruhewert (AP-E4c)";
     EXPECT_TRUE(a.ats.sio2().channelB().txAvailable()) << "SIO2-B gehört der Tastatur";
 }
 
@@ -161,5 +165,7 @@ TEST(K7028, AnzeigelatchUndReset)
     a.ats.reset();
     a.ats.service(1'000'000);
     EXPECT_EQ(a.ats.anzeige(), 0xFF);
-    EXPECT_EQ(a.bus.ioRead(0x44), 0xFF) << "Zeichen auf der Leitung verworfen";
+    EXPECT_EQ(a.bus.ioRead(0x44), 0x00)
+        << "Zeichen auf der Leitung verworfen (reset() zieht die Schlange ab); der "
+           "Empfänger meldet danach seinen Reset-Ruhewert, nicht FFH (AP-E4c)";
 }

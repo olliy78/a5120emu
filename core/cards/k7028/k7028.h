@@ -23,7 +23,12 @@
  * (sie müssen trotzdem laufen: der CTC-Test und spätere Programme lesen sie).
  * Ein gesendetes Byte holt der Empfänger mit `txGet()` ab: die Tastatur (SIO2-B,
  * @ref K7672), eine Rückschleife (@ref Config::rueckschleife) oder ein
- * Abnehmer nach außen (@ref setAbnehmer).
+ * Abnehmer nach außen (@ref setAbnehmer) — beide Wege bekommen das Byte erst nach
+ * einer Zeichenzeit (@ref ZEICHEN_TAKTE), nicht sofort mit `txGet()` (AP-E4c). Ein
+ * gesetzter Abnehmer **ersetzt** die Rückschleife nur auf seinem eigenen Kanal
+ * (Drucker/DFÜ angeschlossen ⇒ kein Prüfstecker-Echo mehr auf diesem Kanal); die
+ * beiden anderen Kanäle bleiben für den ROM-Selbsttest zurückgeschleift, solange
+ * `Config::rueckschleife` es für sie vorsieht.
  *
  * **Rückschleife/Prüfstecker.**  Der Selbsttest des ROMs sendet AAH/55H an
  * SIO1-A, SIO1-B und SIO2-A und verlangt dasselbe Byte zurück (§4.3).  Ob das am
@@ -133,7 +138,9 @@ private:
     uint8_t latch_  = 0xFF;
     bool    iei_in_ = false;
 
-    struct Unterwegs { uint64_t faellig; uint8_t byte; };
+    /// @p nachAussen: an den Abnehmer (setAbnehmer) statt in den eigenen Empfänger
+    /// zurückgeschleift — beide teilen sich dieselbe Zeichenzeit-Pacing (Leitung).
+    struct Unterwegs { uint64_t faellig; uint8_t byte; bool nachAussen; };
     std::array<std::deque<Unterwegs>, KanalAnzahl> schleife_{};
     std::array<uint64_t, KanalAnzahl>              frei_ab_{};   ///< Leitung frei ab Takt
     std::array<Abnehmer, KanalAnzahl>              abnehmer_{};

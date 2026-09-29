@@ -98,6 +98,17 @@ public:
     virtual void setDFUECallback(SerialCb cb) = 0;
     virtual void dfueSend(uint8_t byte) = 0;
 
+    // ─── Serielle Schnittstelle nach außen (Drucker) ──────────────────────────
+    // Vorgabe = keine Wirkung (AP-E4c): der A5120 verdrahtet seinen Druckerkanal
+    // (K8025 SIO A32-B) in diesem AP absichtlich nicht — er hat eine eigene,
+    // bereits bestehende Poll-Schnittstelle (`K8025::printerTxAvailable/TxGet`),
+    // die ein späteres AP an dieselbe ABI hängen kann. `setPrinterCallback`:
+    // Byte, das die Maschine an den Drucker SENDET (Abnehmer nach außen).
+    // `printerSend`: Byte, das von AUSSEN am Druckerkanal EMPFANGEN wird (z. B.
+    // XON/XOFF eines angeschlossenen Druckers).
+    virtual void setPrinterCallback(SerialCb) {}
+    virtual void printerSend(uint8_t) {}
+
     // ─── Diagnose ──────────────────────────────────────────────────────────────
     virtual uint8_t memReadDebug(uint16_t addr) = 0;
     virtual void    memWriteDebug(uint16_t addr, uint8_t data) = 0;

@@ -97,6 +97,49 @@ void ladenBisPrompt(K8915Machine& m) {
     ASSERT_EQ(letzteZeile(m), "A>") << vramLines(m);
 }
 
+/// Freie TPA-Adresse für die kleine Druckroutine unten (weit weg von CCP/BDOS/BIOS,
+/// weit weg vom eigenen Stapel).
+constexpr uint16_t kDruckCode  = 0x2000;
+constexpr uint16_t kDruckStack = 0x2F00;
+
+/**
+ * @brief @p bytes über den stabilen BIOS-Sprungtabelleneintrag `JLIST` (D60FH) ausgeben
+ *        lassen — dieselbe Adresse in BEIDEN BIOS-Fassungen (901: `JP DE99H`, 900:
+ *        `JP DEABH`; §4.4/AP-B2), nur das Sprungziel dahinter unterscheidet sich.
+ *
+ * Pokt eine kleine Maschinencode-Schleife nach @ref kDruckCode (Bytezeichen bis 00H),
+ * die je Zeichen `LD C,<Byte>` + `CALL 0D60FH` macht und danach in sich selbst springt;
+ * setzt PC/SP der CPU direkt darauf. Kapert damit die laufende Maschine zwischen zwei
+ * Tastatureingaben am Prompt — unabhängig vom CCP-Zustand, denn `LIST` selbst prüft nur
+ * die SIO, nicht den Aufrufer. `HL` wird um den Aufruf herum gerettet (`PUSH`/`POP`) —
+ * die Fassung „55 K“ benutzt `HL` selbst (F1B8H-Zähler, IOBYTE-Weiche) und liefert es
+ * anders als die Fassung „V24 XON/XOFF“ nicht unangetastet zurück.
+ */
+void druckeUeberBios(K8915Machine& m, const std::vector<uint8_t>& bytes) {
+    const uint16_t msg = kDruckCode + 0x13;
+    const uint8_t code[] = {
+        0x21, static_cast<uint8_t>(msg & 0xFF), static_cast<uint8_t>(msg >> 8),  // LD HL,msg
+        0x7E,                                                                    // L: LD A,(HL)
+        0xB7,                                                                    // OR A
+        0x28, 0x09,                                                              // JR Z,E
+        0x4F,                                                                    // LD C,A
+        0xE5,                                                                    // PUSH HL
+        0xCD, 0x0F, 0xD6,                                                        // CALL D60FH
+        0xE1,                                                                    // POP HL
+        0x23,                                                                    // INC HL
+        0x18, 0xF3,                                                              // JR L
+        0xC3, 0x10, 0x20,                                                        // E: JP E
+    };
+    static_assert(sizeof(code) == 0x13, "Codegroesse <-> Nachrichtadresse (msg)");
+    uint16_t a = kDruckCode;
+    for (uint8_t b : code) m.memWriteDebug(a++, b);
+    for (uint8_t b : bytes) m.memWriteDebug(a++, b);
+    m.memWriteDebug(a, 0x00);   // Endemarke der Zeichenkette
+
+    m.zre().cpu().PC = kDruckCode;
+    m.zre().cpu().SP = kDruckStack;
+}
+
 }  // namespace
 
 /**
@@ -360,4 +403,99 @@ TEST(K8915Scpx, BootetUndSchreibtVonEinemImgAbbild)
     ASSERT_TRUE(befehl(m, "dir")) << vramLines(m);
     EXPECT_TRUE(enthaelt(m, "A: X        COM")) << vramLines(m);
     EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
+}
+
+/**
+ * @test K8915Scpx.ListGibtUeberV24AusUndHaeltBeiXoff
+ * @brief AP-E4c (Fassung V24 XON/XOFF, Diskette 901): die BIOS-`LIST`-Routine (D60FH →
+ *        DE99H) gibt Zeichen über SIO1-B (V.24) aus; `LISTST` (DEA2H) liest dafür das
+ *        zuletzt empfangene Byte aus 42H OHNE RR0-Prüfung (Befund AP-E2). Ein vom Host
+ *        gesendetes XOFF (13H) hält den Druck deshalb an — auch nachdem der
+ *        Empfangs-FIFO wieder leer ist, was ohne die `Z80SIO`-Korrektur dieses AP
+ *        (leerer Empfänger liefert FFH statt des zuletzt empfangenen Bytes) das XOFF
+ *        nach dem ersten Lesen verloren hätte. XON (11H) gibt frei. 8 Bit, keine
+ *        Parität (WR5 68H) — der Abnehmer bekommt das volle Byte.
+ */
+TEST(K8915Scpx, ListGibtUeberV24AusUndHaeltBeiXoff)
+{
+    Aufbau x;
+    K8915Machine& m = x.m;
+    std::vector<uint8_t> empfangen;
+    m.setPrinterCallback([&](uint8_t b) { empfangen.push_back(b); });
+    m.powerOn();
+    m.zre().bankPoke(0, 0x0000, 0xC3);
+    m.zre().bankPoke(0, 0x0005, 0xC3);
+    ASSERT_TRUE(bis(m, "* Coldstart *  Disk on A: ready", 5'000'000)) << vramLines(m);
+    ladenBisPrompt(m);
+
+    // Leitung anhalten, BEVOR gedruckt wird: LISTST liest 13H zurück, LIST bleibt in
+    // seinem eigenen Wartezweig (JR Z,DE99H) hängen -- kein Byte geht hinaus, obwohl
+    // die CPU weiterläuft.
+    m.printerSend(0x13);   // XOFF
+    const std::vector<uint8_t> text = {'T', 'E', 'S', 'T', '-', '4', 'C', 0xC1};
+    druckeUeberBios(m, text);
+    for (long long t = 0; t < 2'000'000; t += m.run(kSchritt)) {}
+    EXPECT_TRUE(empfangen.empty())
+        << "haelt bei XOFF an, " << empfangen.size() << " Byte durchgekommen";
+
+    m.printerSend(0x11);   // XON
+    for (long long t = 0; t < 500'000 && empfangen.size() < text.size(); t += m.run(kSchritt)) {}
+    ASSERT_EQ(empfangen.size(), text.size()) << "nach XON muss der Rest ankommen";
+    EXPECT_EQ(empfangen, text) << "8 Bit, keine Parität: das volle Byte kommt an";
+}
+
+/**
+ * @test K8915Scpx.ListGibtUeberV24AusUndHaeltBeiXoffFassung900
+ * @brief AP-E4c (Fassung „55 K“, Diskette 900): eigener Druckertreiber — 7 Bit,
+ *        ungerade Parität (WR5 28H), `DEL` (7FH) unaufgefordert beim Kaltstart
+ *        (`DE82H`, unabhängig von XON/XOFF — vor jeder eigenen Ausgabe), `LISTST`
+ *        (DEE4H) mit umgekehrter Polarität, ebenfalls ohne RR0-Prüfung.
+ *
+ *        Solange der Drucker seit dem Kaltstart nie ein XON gesendet hat (Reset-
+ *        Ruhewert von `Z80SIO::Channel::last_rx`, AP-E4c: 00H — eine Annahme, das
+ *        Datenblatt macht dazu keine Aussage), schiebt `LIST` (DEABH) vor dem ERSTEN
+ *        eigenen Zeichen ein LF+CR ein (F1B8H = 0, „zuletzt kein XON"; §4.4 [?], Zweck
+ *        laut Listing unklar) — hier beobachtet und festgehalten, nicht weggetestet.
+ *        Danach hält ein XOFF unabhängig davon an, ein XON gibt frei; der Abnehmer
+ *        bekommt nur die unteren 7 Bit.
+ */
+TEST(K8915Scpx, ListGibtUeberV24AusUndHaeltBeiXoffFassung900)
+{
+    TempDisk     a("k8915scpx_cpa800_k5601_bios55k-disk900.hfe");
+    K8915Machine m;
+    ASSERT_TRUE(m.mountDisk(0, a.path(), "cpa800", false)) << m.lastError();
+    std::vector<uint8_t> empfangen;
+    m.setPrinterCallback([&](uint8_t b) { empfangen.push_back(b); });
+    ohneSelbsttestZurColdstartMeldung(m);
+    ladenBisPrompt(m);
+
+    ASSERT_FALSE(empfangen.empty()) << "DEL beim Kaltstart fehlt";
+    EXPECT_EQ(empfangen.front(), 0x7F) << "DE82H sendet DEL direkt an den Drucker";
+    const size_t nachDel = empfangen.size();
+
+    const std::vector<uint8_t> text = {'K', 'K', static_cast<uint8_t>('K' | 0x80)};
+    druckeUeberBios(m, text);
+    for (long long t = 0; t < 1'000'000 && empfangen.size() < nachDel + 2 + text.size();
+         t += m.run(kSchritt)) {}
+    ASSERT_GE(empfangen.size(), nachDel + 2) << vramLines(m);
+    EXPECT_EQ(empfangen[nachDel], 0x0A) << "eingeschobenes LF (direkt an 42H)";
+    EXPECT_EQ(empfangen[nachDel + 1], 0x0D) << "eingeschobenes CR (über LIST)";
+    ASSERT_EQ(empfangen.size(), nachDel + 2 + text.size()) << vramLines(m);
+    for (size_t i = 0; i < text.size(); ++i)
+        EXPECT_EQ(empfangen[nachDel + 2 + i], text[i] & 0x7F) << "7 Bit, i=" << i;
+
+    // Ab hier steht 42H auf einem "richtigen" Wert (kein XOFF) -- der LF/CR-Sonderfall
+    // ist unabhängig davon pruefbar: XOFF haelt an, XON gibt den Rest frei.
+    const size_t vorXoff = empfangen.size();
+    m.printerSend(0x13);   // XOFF
+    druckeUeberBios(m, text);
+    for (long long t = 0; t < 2'000'000; t += m.run(kSchritt)) {}
+    EXPECT_EQ(empfangen.size(), vorXoff) << "haelt bei XOFF an";
+
+    m.printerSend(0x11);   // XON
+    for (long long t = 0; t < 500'000 && empfangen.size() < vorXoff + text.size();
+         t += m.run(kSchritt)) {}
+    ASSERT_EQ(empfangen.size(), vorXoff + text.size());
+    for (size_t i = 0; i < text.size(); ++i)
+        EXPECT_EQ(empfangen[vorXoff + i], text[i] & 0x7F);
 }

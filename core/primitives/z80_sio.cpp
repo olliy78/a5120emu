@@ -105,6 +105,7 @@ void Z80SIO::Channel::reset() {
     rx_fifo.clear();
     tx_buf.reset();
     irq_rx = irq_tx = irq_ext = false;
+    last_rx = 0x00;
 }
 
 void Z80SIO::Channel::updateRR0() {
@@ -125,6 +126,7 @@ bool Z80SIO::Channel::txIntEnabled() const {
 }
 
 void Z80SIO::Channel::rxByte(uint8_t byte) {
+    last_rx = byte;  // Datenpfad hinter dem Schieberegister, unabhängig vom FIFO (s. h-Datei).
     if (rx_fifo.size() < RX_FIFO_DEPTH) {
         rx_fifo.push_back(byte);
         if (rx_fifo.size() == 1) {
@@ -281,6 +283,7 @@ void visitChannelPod(ChT& ch, F& f) {
     f(ch.dtr_); f(ch.dcd_); f(ch.cts_latch); f(ch.dcd_latch); f(ch.sync_latch);
     f(ch.rx_state); f(ch.rx_shift_reg); f(ch.rx_bit_count); f(ch.rx_sample_count);
     f(ch.tx_underrun); f(ch.break_abort_detected);
+    f(ch.last_rx);
 }
 }  // namespace
 
@@ -499,7 +502,9 @@ uint8_t Z80SIO::ioRead(uint8_t port) {
                 ch_a_.updateRR0();
                 return b;
             }
-            return 0xFF;
+            // Leerer Empfänger: keine eigene Ruhelage am Datenregister — die echte
+            // U856 liefert das zuletzt empfangene Byte (last_rx), nicht FFH.
+            return ch_a_.last_rx;
         }
         case 1: // Ch A control
             return readControl(ch_a_, false);
@@ -511,7 +516,7 @@ uint8_t Z80SIO::ioRead(uint8_t port) {
                 ch_b_.updateRR0();
                 return b;
             }
-            return 0xFF;
+            return ch_b_.last_rx;
         }
         case 3: // Ch B control
             return readControl(ch_b_, true);
