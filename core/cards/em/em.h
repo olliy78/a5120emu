@@ -157,7 +157,11 @@ public:
     void advance(int u880Takte);
     /// M1-Zyklus des U880: Takt des FF A29 (A16 = NAND(/M1, /RST) = M1 ∨ RST, 9005/2).
     void onU880M1() {
-        if (!mode8_ && m1_setzt_a29_) { mode8_ = true; updateMode(); }
+        if (!mode8_ && m1_setzt_a29_) {
+            im_m1_ = true;                     // Ereignisse jetzt: ausgelöst vom M1 (Debugger)
+            mode8_ = true; updateMode();
+            im_m1_ = false;
+        }
     }
     Z8000&       u8001()       { return u8k_; }
     const Z8000& u8001() const { return u8k_; }
@@ -205,11 +209,20 @@ public:
         Nvi,            ///< NVI-Anforderung aus A53 (value = neuer Pegel)
         Stop,           ///< STOP (PIO B3, value = neuer Pegel)
     };
+    /**
+     * @brief Ein Ereignis und wer es ausgelöst hat.
+     *
+     * `by16`: im Buszyklus/Schritt des U8001 entstanden (auch Pegelwechsel wie
+     * Moduswechsel durch BUSAK oder INT-16 durch `OUT`).  `m1`: vom M1 des U880
+     * (Takt des FF A29) — der Befehl dahinter ist dann noch nicht gelaufen.
+     * Sonst: von einem E/A-Zugriff des U880 (während seines Befehls).
+     */
     struct EreignisInfo {
         Ereignis kind;
         uint16_t addr  = 0;
         uint16_t value = 0;
         bool     by16  = false;
+        bool     m1    = false;
     };
     static const char* ereignisName(Ereignis e);
     /// Ereignis-Rückruf; ohne ihn kostet jede Stelle nur einen Test.
@@ -224,6 +237,32 @@ public:
      * zurück; die Zeit bleibt als Guthaben stehen (Debugger: Halt vor dem Befehl).
      */
     void setStepHook(std::function<bool(const Z8000&)> f) { on_step_ = std::move(f); }
+    /**
+     * @brief Ein Zugriff auf den Speicher des EM oder ein E/A-Zyklus des U8001
+     *        (Debugger: Watchpoints auf `<<seg>>off`, `em:ZELLE` und U8001-Ports).
+     *
+     * - U8001-Speicher (`by16`, `io` = false): `cycle` wie an den Pins (Status, N/S,
+     *   SN, Offset), `cell` = DRAM-Zelle hinter der Segmentweiche.  Wort: `cell`
+     *   gerade, `value` = Wort (gerade Zelle = oberes Byte).  Byte: `cell` = die Zelle
+     *   des Bytes, `value` = das Byte.
+     * - U8001-E/A (`by16`, `io`): `cycle.addr` = Port, `value` = AD0..15 (Wort) bzw. das Byte.
+     * - U880 über das Fenster (`by16` = false): `addr8` = U880-Adresse, `cell`, Byte.
+     *   `wirksam` = false: Schreiben auf eine Seite ohne WE (der Zyklus gehört der
+     *   Karte, geschrieben wird nichts).
+     */
+    struct Zugriff {
+        uint32_t    cell = 0;
+        uint16_t    value = 0;
+        bool        read = true;
+        bool        word = false;
+        bool        by16 = false;
+        bool        io = false;
+        bool        wirksam = true;
+        Z8kBusCycle cycle{};
+        uint16_t    addr8 = 0;
+    };
+    /// Zugriffs-Rückruf; ohne ihn kostet jeder Zugriff nur einen Test.
+    void setAccessHook(std::function<void(const Zugriff&)> f) { on_access_ = std::move(f); }
     /// Zeitguthaben des U8001 in U8001-Takten (negativ = Vorlauf).
     double guthabenTakte16() const {
         return double(guthaben_) / double(cfg_.takt_u880_hz);
@@ -252,7 +291,10 @@ public:
     bool     trq8() const        { return trq8_; }        ///< TRQ8 = ¬/TRQ8 (PIO B5)
     bool     tren() const        { return tren_; }        ///< TREN = ¬µ0 (µ0 nur nach MSET/MREQ aktiv)
     uint8_t  segment() const     { return seg_; }         ///< SG1P:SG0P (PIO B1:B0)
-    bool     parityError() const { return per_ff_; }
+    bool     parityError() const { return per_ff_; }   ///< FF A46 (Merker, /PE = PIO B7 = 0)
+    bool     prLine() const      { return pr_; }       ///< PR (PIO B6): hält A46 zurückgesetzt
+    /// Vorlast von A53 (A3 fest H, A0..A2 über X12).
+    uint8_t  a53Ladewert() const { return uint8_t((cfg_.a53_vorlast & 0x0F) | 0x08); }
     bool     ledV1() const       { return ramen_; }       ///< V1 an A17/08 ← RAMEN (A31/10)
     bool     ledV2() const       { return mode8_; }       ///< V2 an A29 /Q: leuchtet im 8-Bit-Mode
     /// Gespeicherter (= geschriebener) Wert der Seite @p page; F0..F3 sind invertiert.
@@ -290,17 +332,22 @@ private:
     void pinsToCpu();
     // U8001-Busrückrufe
     uint16_t read16(const Z8kBusCycle& c);
+    uint16_t read16Io(const Z8kBusCycle& c);   ///< alles außer Speicher
     void     write16(const Z8kBusCycle& c, uint16_t v);
     void     stapelZyklus();
     // Debug
     void emit(Ereignis e, uint16_t addr, uint16_t value, bool by16) {
-        if (on_event_) on_event_(EreignisInfo{e, addr, value, by16});
+        if (on_event_) on_event_(EreignisInfo{e, addr, value, by16 || im_schritt16_, im_m1_});
     }
+    void meldeZugriff(const Zugriff& z) { if (on_access_) on_access_(z); }
     uint8_t pegelSignatur() const;
     void    pegelMelden();
     std::function<void(const EreignisInfo&)> on_event_;
     std::function<bool(const Z8000&)>        on_step_;
+    std::function<void(const Zugriff&)>      on_access_;
     uint8_t dbg_prev_ = 0;
+    bool    im_schritt16_ = false;   ///< advance(): gerade im Schritt des U8001
+    bool    im_m1_ = false;          ///< onU880M1(): FF A29 kippt vom M1
 
     K1520Bus& bus_;
     Config    cfg_;

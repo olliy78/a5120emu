@@ -309,3 +309,18 @@ TEST(Z8kFirmware, DisassemblesReadablySegmented) {
         EXPECT_GT(n, 5) << name;
     }
 }
+
+// S5b: Symboldatei für k1520dbg (`z8kasm --sym`) — nur Marken, mit Segment.
+TEST(Z8kAsm, SymboldateiNurMarkenMitSegment) {
+    AsmOptions o; o.seg = true;
+    AsmResult r = assemble("        ORG <<3>>%0100\nSTART:  LD R0,#1\nLOOP:   JR LOOP\nK EQU 5\n", o);
+    ASSERT_TRUE(r.ok());
+    const std::string s = formatSymbols(r);
+    EXPECT_NE(s.find("<<3>>%0100 START\n"), std::string::npos) << s;
+    EXPECT_NE(s.find("<<3>>%0104 LOOP\n"), std::string::npos) << s;
+    EXPECT_EQ(s.find(" K\n"), std::string::npos) << "EQU ist keine Marke";
+    // nichtsegmentiert: das Segment kommt von aussen
+    AsmResult n = assemble("        ORG %0200\nHIER:   NOP\n", AsmOptions{});
+    ASSERT_TRUE(n.ok());
+    EXPECT_NE(formatSymbols(n, 5).find("<<5>>%0200 HIER\n"), std::string::npos);
+}

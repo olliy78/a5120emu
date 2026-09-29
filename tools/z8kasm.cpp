@@ -2,7 +2,7 @@
  * @file z8kasm.cpp
  * @brief z8kasm — Assembler/Disassembler für U8001/U8002 auf der Kommandozeile.
  *
- *   z8kasm [-s] [-l] [-o abbild.bin] quelle.s        assemblieren
+ *   z8kasm [-s] [-l] [-o abbild.bin] [--sym datei.sym] quelle.s   assemblieren
  *   z8kasm -d abbild.bin [-s] [--org ADR] [--len N]  disassemblieren
  *
  * Alles Inhaltliche steckt in tools/z8000/ (header-only); hier nur Ein-/Ausgabe.
@@ -31,6 +31,9 @@ void usage() {
         "  -o DATEI      Binaerabbild schreiben (Vorgabe: quelle mit .bin)\n"
         "  -l            Listing auf die Standardausgabe\n"
         "  -s, --seg     segmentiert beginnen (U8001); Vorgabe nichtsegmentiert\n"
+        "  --sym DATEI   Symboldatei fuer k1520dbg schreiben (Marken, je Zeile\n"
+        "                <<SEG>>%%OFFS NAME; laden mit sym/-s)\n"
+        "  --sym-seg N   Segment fuer nichtsegmentiert assemblierte Marken (Vorgabe 0)\n"
         "  --lax         wie z8001asm.py: @Rn/@RRn in beiden Modi, Registernummer wie\n"
         "                geschrieben (auch ungerade)\n"
         "  -d, --disasm  DATEI disassemblieren statt assemblieren\n"
@@ -97,7 +100,8 @@ int disassemble(const std::string& path, bool seg, int64_t org, int64_t start, i
 } // namespace
 
 int main(int argc, char** argv) {
-    std::string in, out, dis;
+    std::string in, out, dis, symOut;
+    long symSeg = 0;
     bool seg = false, listing = false, lax = false;
     int64_t org = 0, start = -1, len = -1;
     for (int i = 1; i < argc; ++i) {
@@ -111,6 +115,12 @@ int main(int argc, char** argv) {
         else if (a == "-s" || a == "--seg") seg = true;
         else if (a == "--lax") lax = true;
         else if (a == "-d" || a == "--disasm") next(dis);
+        else if (a == "--sym") next(symOut);
+        else if (a == "--sym-seg") {
+            std::string v; next(v); int64_t x;
+            if (!parseAddr(v, x) || x < 0 || x > 127) { std::fprintf(stderr, "z8kasm: --sym-seg: Segment 0..127, nicht %s\n", v.c_str()); return 2; }
+            symSeg = long(x);
+        }
         else if (a == "--org" || a == "--start" || a == "--len") {
             std::string v; next(v); int64_t x;
             if (!parseAddr(v, x)) { std::fprintf(stderr, "z8kasm: %s: Wert ungueltig: %s\n", a.c_str(), v.c_str()); return 2; }
@@ -131,6 +141,12 @@ int main(int argc, char** argv) {
     for (auto& e : r.errors) std::fprintf(stderr, "%s:%d: Fehler: %s\n", in.c_str(), e.line, e.text.c_str());
     if (listing) std::fputs(z8k::formatListing(r).c_str(), stdout);
     if (!r.ok()) return 1;
+    if (!symOut.empty()) {
+        std::ofstream sf(symOut);
+        if (!sf) { std::fprintf(stderr, "z8kasm: %s nicht schreibbar\n", symOut.c_str()); return 1; }
+        sf << z8k::formatSymbols(r, uint8_t(symSeg), in);
+        std::fprintf(stderr, "z8kasm: %s — %zu Marke(n)\n", symOut.c_str(), r.labels.size());
+    }
     if (out.empty()) {
         out = in;
         size_t dot = out.find_last_of('.');

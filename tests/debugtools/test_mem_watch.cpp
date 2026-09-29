@@ -53,3 +53,10 @@ TEST(MemWatch, AnyConditionAlwaysFires){
     EXPECT_TRUE(w.matches(false, 0x40, 0x00));
     EXPECT_TRUE(w.matches(false, 0x40, 0xFF));
 }
+
+TEST(MemWatch, BreiteAdressenFuerDenU8001){
+    memwatch::MemWatch32 w; w.lo=0x31000; w.hi=0x310FF; w.rd=true; w.wr=true;
+    EXPECT_TRUE (w.matches(true,  0x31080, 0x00));
+    EXPECT_FALSE(w.matches(true,  0x21080, 0x00));   // anderes Segment
+    EXPECT_FALSE(w.matches(false, 0x31100, 0x00));
+}

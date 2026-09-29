@@ -174,14 +174,24 @@ bool EM::drivesMemdi(uint16_t addr) {
 }
 
 uint8_t EM::memRead(uint16_t addr) {
-    return dram_[cellFor(addr)];
+    const uint8_t v = dram_[cellFor(addr)];
+    if (on_access_) {
+        Zugriff z; z.cell = cellFor(addr); z.value = v; z.read = true; z.addr8 = addr;
+        meldeZugriff(z);
+    }
+    return v;
 }
 
 void EM::memWrite(uint16_t addr, uint8_t data) {
     // WE = 0 unterdrückt nur WRI (A26/06); der Zyklus selbst gehört trotzdem der Karte
     // (MEMDI), der K1520-RAM wird also auch nicht beschrieben.
-    if ((we_mask_ >> (addr >> 12)) & 1)
-        dram_[cellFor(addr)] = data;
+    const bool we = (we_mask_ >> (addr >> 12)) & 1;
+    if (we) dram_[cellFor(addr)] = data;
+    if (on_access_) {
+        Zugriff z; z.cell = cellFor(addr); z.value = data; z.read = false; z.addr8 = addr;
+        z.wirksam = we;
+        meldeZugriff(z);
+    }
 }
 
 void EM::rebuildMap() {
@@ -326,7 +336,9 @@ void EM::advance(int u880Takte) {
             break;
         }
         if (on_step_ && on_step_(u8k_)) break;   // Debugger: Halt VOR dem Schritt
+        im_schritt16_ = true;                    // Ereignisse jetzt: vom U8001 ausgelöst
         int c = u8k_.step();
+        im_schritt16_ = false;
         if (c <= 0) c = 1;
         guthaben_ -= int64_t(c) * f8;
     }
@@ -358,6 +370,7 @@ void EM::stapelZyklus() {
     // NVI = ¬QD als Pegel: fällt QD (Stand 7), liegt NVI an; zählt der Zähler bis
     // 0 → 15 weiter (NVI gesperrt), lässt er es von selbst wieder los.
     u8k_.setNVI(nviLine());
+    if (on_event_) pegelMelden();              // NVI-Flanke dem auslösenden Zyklus zuordnen
 }
 
 // ─── U8001: Buszyklen ────────────────────────────────────────────────────────
@@ -365,8 +378,26 @@ uint16_t EM::read16(const Z8kBusCycle& c) {
     if (c.isMemory()) {
         if (c.st == Z8kStatus::MemStack) stapelZyklus();
         const uint32_t z = cellFor16(c) & ~1u;           // gerade Adresse = oberes Byte
-        return uint16_t((dram_[z] << 8) | dram_[z + 1]);
+        const uint16_t w = uint16_t((dram_[z] << 8) | dram_[z + 1]);
+        if (on_access_) {
+            Zugriff a; a.by16 = true; a.read = true; a.cycle = c; a.word = c.word;
+            a.cell  = c.word ? z : z + (c.addr & 1u);
+            a.value = c.word ? w : uint16_t((c.addr & 1u) ? (w & 0xFF) : (w >> 8));
+            meldeZugriff(a);
+        }
+        return w;
     }
+    if (on_access_ && (c.st == Z8kStatus::Io || c.st == Z8kStatus::SpecialIo)) {
+        const uint16_t v = read16Io(c);
+        Zugriff a; a.by16 = true; a.io = true; a.read = true; a.cycle = c; a.word = c.word;
+        a.value = c.word ? v : uint16_t((c.addr & 1u) ? (v & 0xFF) : (v >> 8));
+        meldeZugriff(a);
+        return v;
+    }
+    return read16Io(c);
+}
+
+uint16_t EM::read16Io(const Z8kBusCycle& c) {
     switch (c.st) {
         case Z8kStatus::Io:
             // /READ STATUS (A48 · A47): nur AD7 dekodiert, Status-8 auf AD8–15.  Die
@@ -428,7 +459,18 @@ void EM::write16(const Z8kBusCycle& c, uint16_t v) {
         } else {
             dram_[z] = uint8_t(v >> 8);                 // gerade = AD8–15
         }
+        if (on_access_) {
+            Zugriff a; a.by16 = true; a.read = false; a.cycle = c; a.word = c.word;
+            a.cell  = c.word ? z : z + (c.addr & 1u);
+            a.value = c.word ? v : uint16_t((c.addr & 1u) ? (v & 0xFF) : (v >> 8));
+            meldeZugriff(a);
+        }
         return;
+    }
+    if (on_access_ && (c.st == Z8kStatus::Io || c.st == Z8kStatus::SpecialIo)) {
+        Zugriff a; a.by16 = true; a.io = true; a.read = false; a.cycle = c; a.word = c.word;
+        a.value = c.word ? v : uint16_t((c.addr & 1u) ? (v & 0xFF) : (v >> 8));
+        meldeZugriff(a);
     }
     if (c.st == Z8kStatus::Io && (c.addr & 0x80)) {
         // STB A33 + A35 = Status 2 · DS · Schreiben · AD7 (X13 3–4): BEIDE Register.

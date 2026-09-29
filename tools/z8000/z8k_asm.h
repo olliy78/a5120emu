@@ -60,6 +60,9 @@ struct AsmResult {
     std::map<uint32_t, uint8_t> image;       ///< lineare Adresse (seg<<16 | off) → Byte
     std::vector<ListLine> listing;
     std::map<std::string, int64_t> symbols;  ///< Namen in Großbuchstaben
+    /// Marken (Adresse eines Befehls/Datums) mit Segment — ohne EQU-Konstanten.
+    /// Nichtsegmentiert steht hier das Segment 0 (`formatSymbols` setzt es ein).
+    std::map<std::string, std::pair<bool, uint32_t>> labels;   ///< Name → (segmentiert, seg<<16|off)
     bool ok() const { return errors.empty(); }
 
     /// Zusammenhängendes Abbild von der kleinsten bis zur größten belegten Adresse
@@ -776,7 +779,8 @@ inline AsmResult assemble(const std::string& source, const AsmOptions& opt = {})
             if (!st.label.empty() && !isEqu) {
                 if (pass == 1) {
                     if (syms.count(st.label)) addErr(st.line, "Marke doppelt: " + st.label);
-                    else { syms[st.label] = here(); defLine[st.label] = st.line; }
+                    else { syms[st.label] = here(); defLine[st.label] = st.line;
+                           res.labels[st.label] = {seg, (uint32_t(seg ? curSeg : 0) << 16) | uint16_t(off)}; }
                 } else if (syms[st.label] != here() && defLine[st.label] == st.line) {
                     addErr(st.line, "Marke " + st.label + " hat sich zwischen den Durchlaeufen verschoben");
                 }
@@ -903,6 +907,34 @@ inline AsmResult assemble(const std::string& source, const AsmOptions& opt = {})
                      [](const AsmMessage& a, const AsmMessage& b) { return a.line < b.line; });
     res.symbols = syms;
     return res;
+}
+
+/**
+ * @brief Symboldatei für k1520dbg (`sym`/`-s`): eine Marke je Zeile, `<<SEG>>%OFFS NAME`.
+ *
+ * Nur Marken (EQU-Konstanten nicht — sie sind keine Adressen und würden sonst jede
+ * gleichlautende Zahl im Disassembler beschriften).  Nichtsegmentiert assemblierte
+ * Marken haben kein Segment; sie bekommen @p nonsegSeg (dort, wohin das Programm
+ * geladen wird).  Sortiert nach Adresse.
+ */
+inline std::string formatSymbols(const AsmResult& r, uint8_t nonsegSeg = 0,
+                                 const std::string& source = "") {
+    std::vector<std::pair<uint32_t, std::string>> v;
+    for (auto& kv : r.labels) {
+        uint32_t k = kv.second.second;
+        if (!kv.second.first) k = (uint32_t(nonsegSeg & 0x7F) << 16) | (k & 0xFFFF);
+        v.push_back({k, kv.first});
+    }
+    std::sort(v.begin(), v.end());
+    std::string out = "# z8kasm-Symbole (U8001) fuer k1520dbg: <<SEG>>%OFFS NAME";
+    if (!source.empty()) out += " — " + source;
+    out += "\n";
+    char buf[32];
+    for (auto& e : v) {
+        std::snprintf(buf, sizeof buf, "<<%u>>%%%04X ", unsigned(e.first >> 16), unsigned(e.first & 0xFFFF));
+        out += buf + e.second + "\n";
+    }
+    return out;
 }
 
 /// Listing als Text: Adresse, Bytes (höchstens 8 je Zeile, Rest in Folgezeilen), Quelle.

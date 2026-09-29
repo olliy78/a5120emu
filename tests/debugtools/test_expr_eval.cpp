@@ -127,3 +127,39 @@ TEST(ExprEval, ErrorsSetOkFalse){
     // Gegenprobe: gültiger Ausdruck → ok
     e.evOk("1+2*3", ok);     EXPECT_TRUE(ok);
 }
+
+// ── S5b: Zilog-Schreibweisen und die allgemeine Umgebung (U8001) ─────────────
+
+TEST(ExprEval, ProzentHexUndSegmentLiteral){
+    Env e;
+    EXPECT_EQ(e.ev("%1A"), 0x1A);                  // % an Operandenstelle = hex
+    EXPECT_EQ(e.ev("17 % %5"), 2);                 // dazwischen weiter der Rest
+    EXPECT_EQ(e.ev("<<3>>%1234"), 0x31234);        // seg·2^16 + off
+    EXPECT_EQ(e.ev("1 << 4"), 16);                 // Schieben unverändert
+    bool ok; e.evOk("<<200>>%0", ok); EXPECT_FALSE(ok);   // Segment > 127
+}
+
+TEST(ExprEval, EnvMitEigenemRegisterUndSpeicher){
+    expreval::Env env;
+    std::map<long long,uint8_t> mem{{0x31000,0x12},{0x31001,0x34},{0x31002,0x56},{0x31003,0x78}};
+    std::map<long long,uint8_t> raw{{0x1F000,0xAB}};
+    env.reg = [](const std::string& U, long long& v){ if(U=="R3"){ v=0x1000; return true; }
+                                                      if(U=="RQ0"){ v=0x0102030405060708LL; return true; } return false; };
+    env.mem = [&](long long a, int size, bool isRaw, long long& v){
+        auto& m = isRaw? raw : mem; v=0;
+        for(int k=0;k<size;++k){ auto it=m.find(a+k); if(it==m.end()) return false; v=(v<<8)|it->second; }
+        return true; };                            // big-endian wie der U8001
+    bool ok;
+    EXPECT_EQ(expreval::evalEnv("[<<3>>%1000]", env, ok), 0x12);         EXPECT_TRUE(ok);
+    EXPECT_EQ(expreval::evalEnv("[<<3>>R3]w", env, ok), 0x1234);         EXPECT_TRUE(ok);
+    EXPECT_EQ(expreval::evalEnv("[<<3>>%1000]l", env, ok), 0x12345678);  EXPECT_TRUE(ok);
+    EXPECT_EQ(expreval::evalEnv("[em:1F000]", env, ok), 0xAB);           EXPECT_TRUE(ok);
+    EXPECT_EQ(expreval::evalEnv("RQ0 >> 32", env, ok), 0x01020304);      EXPECT_TRUE(ok);   // 64 Bit
+    expreval::evalEnv("[em:2F000]", env, ok);  EXPECT_FALSE(ok);        // Leser verneint
+    expreval::evalEnv("(HL)", env, ok);        EXPECT_FALSE(ok);        // nur Z80-Sicht
+}
+
+TEST(ExprEval, Z80SichtKenntKeinEm){
+    Env e; bool ok;
+    e.evOk("[em:1000]", ok); EXPECT_FALSE(ok);     // roh gibt es nur beim U8001
+}
