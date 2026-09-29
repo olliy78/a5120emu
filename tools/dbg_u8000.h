@@ -289,7 +289,7 @@ public:
     }
     /// Nächstes Symbol darunter im selben Segment, höchstens @p maxDist entfernt:
     /// "NAME" bzw. "NAME+%1A" (für bt/where/hist); sonst leer.
-    std::string near(uint32_t key, uint32_t maxDist = 0x400) const {
+    std::string nearest(uint32_t key, uint32_t maxDist = 0x400) const {
         auto it = byKey_.upper_bound(key);
         if (it == byKey_.begin()) return {};
         --it;

@@ -863,7 +863,7 @@ int main(int argc, char** argv){
         return true; };
     // Symbol für eine Adresse der 16-Bit-Seite: genau / nächstes darunter (bt, hist).
     auto symAt16   = [&](uint32_t key)->std::string{ return sym16.at(key); };
-    auto symNear16 = [&](uint32_t key)->std::string{ return sym16.near(key); };
+    auto symNear16 = [&](uint32_t key)->std::string{ return sym16.nearest(key); };
     auto disasm16 = [&](uint8_t seg, uint16_t off, char* out, size_t n)->int{
         const Z8000& z = em->u8001();
         z8k::Line l = z8k::disasm([&](uint16_t o){ return rdw16(seg,o,true); }, off, z.segMode(), seg);
@@ -906,7 +906,7 @@ int main(int argc, char** argv){
         for (uint32_t c=0;c<em->size();++c) s.dram[c]=em->peek(c); };
     auto printRegs16 = [&]{
         const Z8000& z = em->u8001();
-        std::string sy = sym16.near(pcKey16(z));
+        std::string sy = sym16.nearest(pcKey16(z));
         fprintf(stderr,"  U8001 PC=%s%s%s%s FCW=%%%04X %s  PSAP=%s REFRESH=%%%04X cyc=%llu [%s]\n",
                 dbg16::addrText(z.pcSeg,z.pc,true).c_str(), sy.empty()?"":" <",sy.c_str(),sy.empty()?"":">",
                 z.fcw, dbg16::fcwText(z.fcw).c_str(),
@@ -2946,7 +2946,7 @@ int main(int argc, char** argv){
                     if (!em) fprintf(stderr,"  (kein EM in dieser Maschine — Start mit --em em256)\n");
                     else cpu_ctx=3; }
                 else fprintf(stderr,"  cpu [zve1|zve2|u8000]\n"); }
-            fprintf(stderr,"  CPU-Kontext: %s\n", cpu_ctx==3?"U8001 (r s n u a b where hist bt x d e set)":
+            fprintf(stderr,"  CPU-Kontext: %s\n", cpu_ctx==3?"U8001 (r s n fin gu u a b lp wp.. bt x d e set … — help u8000)":
                                                 cpu_ctx==2?"ZVE2":"ZVE1");
             if (cpu_ctx==3) showInsn16("=>",pcKey16(em->u8001()));
             else showInsn("=>", cpu_ctx==2? m.zve2PC() : m.cpuPC()); }

@@ -128,9 +128,9 @@ TEST(DbgU8000Symbole, ZeilenformatUndNaechstesSymbol) {
     ASSERT_TRUE(t.find("START+%10", k)); EXPECT_EQ(k, 0x30110u);
     ASSERT_TRUE(t.find("START-2", k));  EXPECT_EQ(k, 0x300FEu);
     EXPECT_EQ(t.at(0x30100), "START");
-    EXPECT_EQ(t.near(0x30106), "LOOP+%2");
-    EXPECT_EQ(t.near(0x40106), "");                             // anderes Segment
-    EXPECT_EQ(t.near(0x300FF), "");                             // davor gibt es nichts
+    EXPECT_EQ(t.nearest(0x30106), "LOOP+%2");
+    EXPECT_EQ(t.nearest(0x40106), "");                             // anderes Segment
+    EXPECT_EQ(t.nearest(0x300FF), "");                             // davor gibt es nichts
     dbg16::Addr16 a;                                            // parseAddr mit Symbol
     ASSERT_TRUE(dbg16::parseAddr("LOOP", 0, a, [&](const std::string& n, long& v){
         uint32_t kk; if(!t.find(n,kk)) return false; v=long(kk); return true; }));
