@@ -1046,9 +1046,11 @@ int main(int argc, char** argv){
             fprintf(stderr,"  CPU  %s%s%s\n",l1,p1.empty()?"":"  ; ",p1.c_str());
             fprintf(stderr,"  A8H=%02X  map=%s  (R=ROM 1=Bank1 2=Bank2 .=Bus; je 4 KB ab 0000H)  /MEMDI=%s\n",
                     k8.zre().reg(),dbgm::speicherbild(k8.zre()).c_str(),k8.zre().memdi()?"1":"0");
-            fprintf(stderr,"  K5122 (/WAIT): D%d %s cyl=%u head=%u %s%s headPos=%zu/%zu\n",
+            fprintf(stderr,"  K5122 (/WAIT): D%d %s cyl=%u head=%u %s%s headPos=%zu/%zu MKE=%d"
+                    " geschrieben=%zu B, ganze Spuren=%llu\n",
                     k.drive,k.mounted?"mounted":"EMPTY",(unsigned)k.cylinder,(unsigned)k.head,
-                    k.transferring?"READING":"idle",k.writeMode?"+WRITE":"",k.headPos,k.trackLen);
+                    k.transferring?"READING":"idle",k.writeMode?"+WRITE":"",k.headPos,k.trackLen,
+                    k.waitMke?1:0,k.waitSchreibBytes,(unsigned long long)k.waitSpuren);
             fprintf(stderr,"  Anzeigefeld 61H=%02X (%s)   Takte=%llu\n",k8.ats().anzeige(),
                     dbgm::lampen61(k8.ats().anzeige()).c_str(),(unsigned long long)m.machineCycles());
             rst38Hint();
@@ -1570,7 +1572,8 @@ int main(int argc, char** argv){
               "    Listings: -l k8915_zre.prn -l k8915_zre.prn@0xF000:00D0-03FF\n"
               "              -l k8915_zre.prn@0xF000:0C00-0FFF -l scpx8915_v53_bios.prn\n"
               "              (annotiert wird nur, solange die Bytes der Zeile im Speicher stehen)\n"
-              "    Nicht vorhanden: s2/b2/rj2/r 2 (ZVE2), bbusrq/bxfer, snap/restore/rs/rc, savestate/loadstate\n");
+              "    Nicht vorhanden: s2/b2/rj2/r 2 (ZVE2), bbusrq, snap/restore/rs/rc, savestate/loadstate\n"
+              "    bxfer [read|write]: Datenfluss /STR=0 bzw. /WE=0 (K5122 im /WAIT-Betrieb)\n");
         }
         else if (cmd=="help"||cmd=="h"||cmd=="?"){
             fprintf(stderr,
@@ -2114,7 +2117,9 @@ int main(int argc, char** argv){
                     w=="sio2"?"DFUE":"kbd/prn", w=="sio2"?"A33":"A32");
                 showSio(titel,s); }
             else { auto k=m.k5122State();
-                if (K8) fprintf(stderr,"  (K8915: K5122 im /WAIT-Betrieb — keine ZVE2, kein /BUSRQ)\n");
+                if (K8) fprintf(stderr,"  (K8915: K5122 im /WAIT-Betrieb — keine ZVE2, kein /BUSRQ;"
+                                        " MKE=%d, geschrieben=%zu B, ganze Spuren=%llu)\n",
+                                k.waitMke?1:0, k.waitSchreibBytes,(unsigned long long)k.waitSpuren);
                 fprintf(stderr,"  K5122: D%d %s  cyl=%u head=%u  %s%s  headPos=%zu/%zu secSize=%u  /BUSRQ-pend=%s\n",
                         k.drive, k.mounted?"mounted":"EMPTY", k.cylinder, k.head,
                         k.transferring?"READING":"idle", k.writeMode?"+WRITE":"",

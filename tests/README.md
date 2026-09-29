@@ -60,7 +60,7 @@ Testebene = Verzeichnis = ctest-Label. Quer dazu `fast` / `slow`.
 | `debugtools/` | 89 | Die header-only Bausteine, aus denen `k1520dbg` und `boot_trace` bestehen (`tools/*.h`) |
 | `integration/` | 72 | Ganze Maschine, echter Kaltboot von einer Fixture-Diskette |
 | `cli/` | 70 | Die gebauten Werkzeuge als Prozess. Fälle als Daten in `cli/cases/*.cli`, ausgeführt von `cli/run_case.py` |
-| `system/` | 106 | Originale DDR-Programme unter dem Emulator: FORMAT, CPABCGEN, SCPX INIT/MODF/SYSP, HARDY, UDOS — plus die 88er Format-Matrix. **Langsam** (Minuten) |
+| `system/` | 106 | Originale DDR-Programme unter dem Emulator: FORMAT, CPABCGEN, SCPX INIT/MODF/SYSP, HARDY, UDOS, K8915 FORMAT/DISGEN (`test_k8915_format*.cpp`, Bedienhelfer `k8915_bedienung.h`) — plus die 88er Format-Matrix und die sechs K8915-Verfahren. **Langsam** (Minuten) |
 | `python/` | 12 | pytest: C-ABI (ctypes ↔ `libk1520core.so`), PySide6-GUI headless, Pfadauflösung, Testprotokoll |
 | `support/` | — | Bibliothek `k1520_testsupport`, keine Tests |
 | `fixtures/` | — | Testdisketten (`tests/fixtures/README.md`) |

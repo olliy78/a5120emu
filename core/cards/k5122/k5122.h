@@ -236,6 +236,14 @@ public:
                                  ///< treuen Lesepfad: bei Mismatch findet ZVE2 später kein IDAM
         int      indexAccum;     ///< aufgelaufene Index-Phase (Takte seit letztem Index-Puls);
                                  ///< commitFormatTrack setzt sie auf 0 (Index ans Spur-Ende koppeln)
+        // ── /WAIT-Betrieb (K8915, AP-E4f) ──────────────────────────────────────
+        // Im Wait-Betrieb wird nichts „gestreamt“; @ref transferring und @ref writeMode
+        // bedeuten dort: Datenfluss zum Lesen (/STR = 0, /WE = 1, Scheibe dreht) bzw.
+        // Schreiben (/WE = 0) — so gelten `bxfer`/`where` an beiden Maschinen.
+        bool     waitBetrieb;    ///< Brücke /WAIT gesetzt (K8915)
+        bool     waitMke;        ///< Marken-FF (Tor B Bit1)
+        size_t   waitSchreibBytes; ///< im laufenden Schreiben gesammelte Bytes
+        uint64_t waitSpuren;     ///< ganze Spuren (FORMAT) seit dem Einschalten
     };
     DebugState debugState() const {
         DebugState s{};
@@ -256,6 +264,20 @@ public:
                                     : Encoding::MFM;
         s.encodingMatch = s.mounted && (s.readEncoding == s.trackEncoding);
         s.indexAccum = index_cycle_acc_;
+        s.waitBetrieb = wait_betrieb_;
+        if (wait_betrieb_) {
+            const bool dreht = s.mounted && motorAtSpeed(selected_drive_);
+            s.writeMode    = we_writing_;
+            s.transferring = dreht && !(prev_ctrl_a_ & 0x08) && !we_writing_;
+            s.busrq        = false;
+            s.trackLen     = w_strom_gilt_ ? w_strom_.size() : 0;
+            const int per  = dreht ? drives_[selected_drive_].profile()
+                                         .bytePeriodCycles(waitVerfahrenGemerkt(), cpu_hz_) : 0;
+            s.headPos      = per > 0 ? static_cast<size_t>(index_cycle_acc_ / per) : 0;
+            s.waitMke          = w_mke_;
+            s.waitSchreibBytes = we_writing_ ? write_buf_.size() : 0;
+            s.waitSpuren       = w_spuren_geschrieben_;
+        }
         return s;
     }
 
@@ -303,6 +325,18 @@ private:
     void waitMkePlanen(bool neu_scharf);
     /// Nächstes freies Bytefenster ab @p t belegen; liefert sein Ende und die Nummer.
     uint64_t waitFenster(uint64_t t, size_t& slot);
+    /// Schreiben beendet (/WE 0→1 oder /STR 0→1): ganze Spur oder Datenfeld übernehmen.
+    void waitSchreibenUebernehmen();
+    /// Ganze Spur: jedes Byte an sein Fenster der Umdrehung, Marken setzen, ins Medium.
+    void waitSpurSchreiben(Encoding enc, size_t kennfelder);
+    /// Datenfeld an Ort und Stelle in den Sektor, dessen Kennfeld zuletzt durchlief.
+    void waitFeldSchreiben();
+    /// Aus Sektoren gebaute Spur (bitcells = 0) mit den Normlücken von FORMAT.COM neu legen.
+    TrackImage waitNormspur(const TrackImage& spur) const;
+    /// Verfahren der Spur unter dem Kopf (leer: MFM, wenn das Laufwerk es kann) — Datenrate.
+    Encoding waitVerfahrenGemerkt() const;
+    /// Byteperiode im Wait-Betrieb (aus dem Verfahren der Spur, NICHT aus dem MK-Bit).
+    int waitByteperiode();
 
     bool     wait_betrieb_  = false;
     uint64_t w_now_         = 0;        ///< Takte seit dem Einschalten (update())
@@ -320,7 +354,17 @@ private:
     uint8_t     w_strom_zyl_  = 0xFF, w_strom_kopf_ = 0xFF;
     uint64_t    w_strom_rev_  = 0;
     const void* w_strom_med_  = nullptr;
-    std::vector<size_t> w_sync_;        ///< Bytefenster, in denen eine Sync-Gruppe beginnt
+    // Bytefenster, in denen eine Sync-Gruppe beginnt — je nach Markenerkennung (MK):
+    std::vector<size_t> w_sync_a1_;     ///< MFM, MK = 0: A1-Gruppe vor Kennfeld/Datenfeld
+    std::vector<size_t> w_sync_idx_;    ///< MFM, MK = 1: C2-Gruppe vor der Indexmarke
+    std::vector<size_t> w_sync_fm_;     ///< FM,  MK = 1: Byte vor jeder Marke
+    bool                w_plan_mk_ = false;  ///< MK, mit dem das MKE geplant wurde
+    std::vector<size_t> w_schreib_fenster_;  ///< je geschriebenes Byte sein Fenster (SIZE_MAX = keins)
+    // Schreiben (Datenfeld oder ganze Spur) — Ort/Seite beim /WE-Beginn gemerkt
+    uint8_t     w_schreib_zyl_   = 0;     ///< Kopfposition beim Beginn
+    uint8_t     w_schreib_kopf_  = 0;     ///< Seite aus /FR des Schreib-Steuerworts
+    uint64_t    w_schreib_start_ = 0;     ///< Zeitpunkt des Beginns (Takte)
+    uint64_t    w_spuren_geschrieben_ = 0; ///< ganze Spuren seit dem Einschalten (Debugger)
 
     // ─── PIO-/Signal-Handler ─────────────────────────────────────────────────
     void handleCtrlPortAWrite(uint8_t data);

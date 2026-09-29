@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cctype>
 #include <atomic>
+#include <fstream>
 #include <chrono>
 #include <string>
 #include <thread>
@@ -314,4 +315,49 @@ TEST(K8915Scpx, Grundsoftware904AutostartLaeuftInsLeere)
     }
     EXPECT_FALSE(enthaelt(m, "RAM-device")) << "RADE.COM fehlt auf 904";
     EXPECT_EQ(m.ats().anzeige(), 0xB0);
+}
+
+/**
+ * @test K8915Scpx.BootetUndSchreibtVonEinemImgAbbild
+ * @brief AP-E4f: seit das `/WAIT`-Lesen die Spur „so, wie sie liegt“ liefert, bekommt eine
+ *        Diskette OHNE eigene Aufzeichnung (`.img`: Spuren aus logischen Sektoren) die
+ *        Normlücken von FORMAT.COM.  Mit den knappen Lücken von `gapsFor()` (Lücke 2 =
+ *        11 × 4E) fand das BIOS kein Datenfeld mehr („SCPX ERR ON A: BAD SECTOR“).
+ *        Das Abbild: die Systemspuren der Diskette 900, sonst E5H — Kaltstart bis zum
+ *        Prompt, `save`/`dir` auf A:.
+ */
+TEST(K8915Scpx, BootetUndSchreibtVonEinemImgAbbild)
+{
+    std::vector<uint8_t> system;
+    {
+        TempDisk q("k8915scpx_cpa800_k5601_bios55k-disk900.hfe");
+        std::string f, err;
+        const FormatCatalog formate = FormatCatalog::loadDefault(&f);
+        const FsCatalog     fs      = FsCatalog::loadDefault(formate, &f);
+        auto vol = DiskVolume::open(q.path(), "", formate, fs, err);
+        ASSERT_TRUE(vol) << err;
+        ASSERT_TRUE(vol->readBootImage(system)) << vol->lastError();
+        ASSERT_EQ(system.size(), 20480u) << "Zylinder 0–1, 5 × 1024 beidseitig";
+    }
+    TempDisk img = TempDisk::empty("k8915_system900.img");
+    {
+        std::vector<uint8_t> abbild = system;
+        abbild.resize(80u * 2u * 5u * 1024u, 0xE5);
+        std::ofstream o(img.path(), std::ios::binary | std::ios::trunc);
+        o.write(reinterpret_cast<const char*>(abbild.data()),
+                static_cast<std::streamsize>(abbild.size()));
+    }
+    K8915Machine m;
+    ASSERT_TRUE(m.mountDisk(0, img.path(), "cpa800", false)) << m.lastError();
+    ohneSelbsttestZurColdstartMeldung(m);
+    m.keyboard().sendeZeichen(0x0D);
+    ASSERT_TRUE(bis(m, "RADE?", 150'000'000)) << vramLines(m);
+    for (long long t = 0; t < 20'000'000 && letzteZeile(m) != "A>"; t += m.run(kSchritt)) {}
+    ASSERT_EQ(letzteZeile(m), "A>") << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "55 K   SCPX 8915   BIOS-Version 5.3")) << vramLines(m);
+
+    ASSERT_TRUE(befehl(m, "save 2 x.com")) << vramLines(m);
+    ASSERT_TRUE(befehl(m, "dir")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "A: X        COM")) << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
 }

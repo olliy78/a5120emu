@@ -41,9 +41,12 @@ ORG = 0x100
 # Regionen: (entry_fuer_disassembler, lo, hi, mode)
 REGIONS = [
     (0x100, 0x100, 0x124, "entry"),   # Kopf: CRC-Sprung + Klartext-ID
-    (0x100, 0x1946, 0x1AEC, "entry"),  # Auswahl-Dispatch, Feldpositionierung, /WP-Pruefung
-    (0x100, 0x1AED, 0x1B60, "range"),  # Schreibstrom-Kern (nur per Sprungtabelle erreicht,
-                                        # rekursiver Abstieg findet ihn nicht von selbst)
+    (0x100, 0x1946, 0x1A0A, "entry"),  # Auswahl-Dispatch, Feldpositionierung
+    (0x100, 0x1A0B, 0x1A1A, "range"),  # Index-ISR (Vektor 20H), setzt (3580H)
+    (0x100, 0x1A1B, 0x1AEC, "entry"),  # Vorbereitung, /WP-Pruefung, Warten
+    (0x100, 0x1AED, 0x1B5B, "range"),  # Schreibkern = Index-ISR (Vektor 24H; nur ueber die
+                                        # IM-2-Tabelle erreicht, der Abstieg findet ihn nicht)
+    (0x100, 0x1B5C, 0x1BD9, "range"),  # Pruef-Lesen = Index-ISR (Vektor 22H, AP-E4f)
 ]
 
 COMMENTS = {
@@ -86,53 +89,61 @@ COMMENTS = {
             "Schreibvorgang. FORMAT.COM prueft den Schreibschutz also SELBST, bevor es "
             "die Spur programmiert — nicht erst der BIOS-Treiber",
     0x1A75: "L1A75/1A77: DI, kurze Verzoegerungsschleife (12H = 18 Durchlaeufe), dann "
-            "OUT(11H)=A (24H oder 26H je nach Vorzweig 1A6E) — vermutlich ein zweites "
-            "PIO-Steuerwort [?], danach CALL sub_1A89 (Wartefunktion, s. dort)",
+            "OUT(11H)=A: 24H = INTERRUPTVEKTOR der Steuer-PIO Tor A (Bit0 = 0) — der naechste "
+            "Index-Interrupt springt ueber FF24H in den Schreibkern 1AEDH (26H im Vorzweig "
+            "1A6E); dann CALL sub_1A89 = warten, bis der ISR fertig meldet (am Lauf "
+            "bestaetigt, AP-E4f)",
+    0x1A0B: "[Index-ISR, Vektor 20H] (3581H)++, (3580H)=1: 'Index gesehen' — beendet die "
+            "Schreibschleife im Kern (1B2CH) nach einer Umdrehung; EI; RETI",
     0x1A83: "L1A83: Fehlerpfad 'DISK READ/ONLY' — Fehlercode 11H nach (3599H), kein Zugriff "
             "auf die K5122",
-    0x1A89: "sub_1A89: Wartet auf (359AH) Bit 1 (fertig?) oder Bit 7 (Timeout-Flag, per "
-            "DE-Abwaertszaehler FFFFH gesetzt, wenn nichts passiert) — Timeout-Polling ohne "
-            "Interrupt; im Timeout-Fall (L1AA7) wird trotzdem ein Byte an 14H nachgeschoben "
-            "(IN(16H) gefolgt von OUT(14H) — Daten-PIO-Latch leeren/vorbelegen, kein "
-            "Pruef-Lesen im Sinn eines CRC-Vergleichs)",
+    0x1A89: "sub_1A89: Wartet auf (359AH) Bit 1 (ISR fertig) oder Bit 7 (Timeout-Flag, per "
+            "DE-Abwaertszaehler FFFFH gesetzt, wenn nichts passiert); im Timeout-Fall (L1AA7) "
+            "Vektor 20H, /STR = 1, Daten-PIO leeren",
     0x1AB8: "sub_1AB8: baut Zeiger (352FH Ende, 3523H Byte-Zahl, 3527H->3511H "
             "Anfangszeiger) fuer den GESAMTEN zu schreibenden Bereich einer Operation "
             "(HL+=BC*n je nach Feldgroesse); OUT(14H)=00H + IN(16H) + OUT(10H) als "
             "Vorbereitung, dann OUT(11H)=22H (PIO scharf) und CALL sub_1A89 (auf Bereitschaft "
-            "warten) — der eigentliche Bytestrom folgt erst in sub bei 1AEDH (s. u.), von "
-            "hier per Sprungtabelle/berechnetem Aufruf erreicht (daher als eigene 'range'-"
-            "Region disassembliert, nicht vom rekursiven Abstieg gefunden)",
-    0x1AED: "[SCHREIBSTROM-KERN, /WAIT-Betrieb — das Herz fuer AP-E4f] PUSH AF; OUT(10H)=00H "
-            "(alle Steuerausgaenge low: /WE, MK, /FR, /STR, MK1, MR/SD, /HL, /ST = 0 — "
-            "Ruhezustand vor dem Strom); OUT(14H)=00H (Schreibdatenport vorbelegen/leeren)",
-    0x1AF9: "HL=(3523H) = Byte-Zahl des Bereichs (von sub_1AB8/sub_1A2F vorbereitet), "
-            "DE=(3527H) = Zeiger auf eine RAM-Tabelle aus BYTE-PAAREN (Datenbyte, Steuerwort) "
-            "— je ein Paar pro auszugebender Spurposition. C=14H fest fuer die folgenden "
-            "OUTI/OUT(C) (Schreibdatenport)",
-    0x1B03: "dreifaches OUT(C),B (=OUT(14H),00H) als Priming/Anlauf, dazwischen OUT(11H)=20H "
-            "(PIO-Steuerwort, vermutlich Freigabe [?]) und CALL sub_1A18 (EI; RETI — "
+            "warten) — OUT(11H)=22H ist der VEKTOR fuer das Pruef-Lesen: der naechste Index "
+            "springt ueber FF22H in 1B5CH (s. u., AP-E4f)",
+    0x1AED: "[SCHREIBKERN = Index-ISR, Vektor 24H, /WAIT-Betrieb] PUSH AF; OUT(10H)=Schreib-"
+            "steuerwort (das 00H ist ein PLATZHALTER, 1A55H setzt das erste Steuerwort der "
+            "Tabelle ein: 90H = /WE 0, /STR 0, Kopf 1 bzw. 94H = Kopf 0); OUT(14H)=00H",
+    0x1AF9: "HL=(3523H) = Zeiger auf den vorgebauten ROHSTROM der Spur (Luecken, C2/A1, "
+            "Kennfelder samt CRC, Daten E5), DE=(3527H) = Tabelle aus Paaren (ANZAHL, "
+            "STEUERWORT) — je Lauf gleicher Steuerung ein Paar (am Lauf: 57H/90H, 03H/92H "
+            "(C2 C2 C2), 3FH/90H, … ; Anzahl 00H = 256). C=14H fuer OUTI",
+    0x1B03: "dreifaches OUT(C),B (=OUT(14H),00H) als Anlauf, dazwischen OUT(11H)=20H "
+            "(Vektor 20H: der naechste Index geht an 1A0BH) und CALL sub_1A18 (EI; RETI — "
             "sub_1A18 wird sowohl als echtes ISR-Ende ALS AUCH hier als gewoehnliches "
             "'EI + Ruecksprung' benutzt, RETI wirkt bei CALL wie RET); (3580H)=00H, "
             "(3581H) inkrementiert (Versuchs-/Durchlaufzaehler)",
-    0x1B1C: "HAUPTSCHLEIFE: A=(DE)=Datenbyte -> B, DE++; A=(DE)=Steuerwort, DE++; OUTI "
-            "(schreibt (HL)->Port(C=14H): DAS DATENBYTE aus (HL), HL++, B--) — HL zeigt dabei "
-            "NICHT auf die (DE)-Tabelle, sondern auf denselben laufenden Speicherbereich wie "
-            "der Datenstrom [Bytezaehlung ueber B/OUTI, das Tabellen-Byte-Paar liefert nur "
-            "das STEUERWORT fuer OUT(10H) direkt danach]; OUT(10H)=A (das zuvor aus (DE) "
-            "gelesene STEUERWORT) — je Byte wird also SOFORT NACH dem Datenbyte ein "
-            "Steuerwort ausgegeben (MK-Bit fuer Sync-/Adressmarken-Bytes wie A1/FE/FB, "
-            "sonst 0 fuer normale Gap-/Daten-Bytes) — die Spur ist als (Byte,Steuerwort)-"
-            "Paartabelle im RAM vorgebaut und wird im Bus-Takt hinausgeschrieben, ANALOG zur "
-            "Lesestrom-Seite des /BUSRQ-Wegs (buildFaithfulReadTrack, Design-Doc §7.6/§7.7 in "
-            "07_k5122_afs.md); doppeltes OUTI je Schleifendurchlauf (1B21H/1B28H), danach ein "
-            "drittes bedingt ueber den (3580H)-Rest-Zaehler (1B2CH ff.) fuer das letzte Byte "
-            "einer nicht durch 2 teilbaren Menge",
-    0x1B38: "Abschluss: EX DE,HL (Bytezaehler HL<->DE); OUT(10H)=(3567H) (Steuerwort "
-            "zuruecksetzen); IN A,(16H) (Lesedatenport LEEREN/entladen — kein Vergleich mit "
-            "dem Geschriebenen, also KEIN Pruef-Lesen an dieser Stelle; passt zur Doku-Lage "
-            "'Treiber schreibt ohne Pruef-Lesen', Design-Doc 07_k5122_afs.md §7.7); Bit 1 in "
-            "(359AH) setzen (Fertig-Flag fuer sub_1A89-Wartende); Restlaenge HL=HL-DE+5 nach "
-            "(352BH) ablegen (Buchfuehrung fuer den Aufrufer)",
+    0x1B1C: "HAUPTSCHLEIFE (am Lauf berichtigt, AP-E4f): B=(DE) = ANZAHL, A=(DE+1) = "
+            "STEUERWORT; OUTI schreibt ein Byte des Rohstroms (HL) an 14H (jedes OUT wartet "
+            "per /WAIT auf sein Bytefenster), dann OUT(10H)=Steuerwort (92H = MK 1 fuer die "
+            "Synchronbytes C2/A1, 90H sonst); weitere OUTI, bis B = 0, dann das naechste "
+            "Paar. Ab 1B2CH wird nach jedem Byte (3580H) abgefragt: setzt der Index-ISR "
+            "1A0BH es, endet der Strom (eine Umdrehung, die Luecke laeuft bis zum Index)",
+    0x1B38: "Abschluss: OUT(10H)=(3567H) (z. B. BBH: /WE = /STR = 1 — hier geht die Spur "
+            "auf die Scheibe); IN A,(16H) (Daten-PIO leeren); Bit 1 in (359AH) = fertig "
+            "(sub_1A89); Restlaenge nach (352BH). Nachgeprueft wird im NAECHSTEN "
+            "Index-ISR (1B5CH)",
+    0x1B5C: "[PRUEF-LESEN = Index-ISR, Vektor 22H, AP-E4f] HL = Rohstrom (3523H), IX = "
+            "Tabelle (352FH), je Eintrag 6 Byte: (IX-2) Abstand im Rohstrom, (IX+0)/(IX+1) "
+            "Anzahl (B + 256*(E-1)), (IX+2) Frist fuer MKE, (IX+3) Lesesteuerwort; "
+            "Tabellenende = FFH/FFH",
+    0x1B87: "OUT(10H)=Lesesteuerwort: 83H/87H (MK = 1: Markenerkennung MFM-INDEXMARKE C2) "
+            "fuer den ersten Eintrag, 81H/85H (MK = 0: A1) fuer Kennfeld und Datenfeld",
+    0x1B8C: "auf MKE warten (12H Bit1), hoechstens D Abfragen (FFH ≈ 130 Bytezeiten), sonst "
+            "1BB7H: Fehler C0H",
+    0x1B95: "VERGLEICH Byte fuer Byte: IN A,(16H) mit dem Rohstrom (HL) — das erste Byte ist "
+            "das erkannte Sync-Byte selbst (C2 bzw. A1), dann die Marke, das Feld samt CRC, "
+            "Luecke 2 (22 x 4E) und 6 Byte 00. Ungleich ⇒ 1BBBH: Fehler A0H",
+    0x1BA0: "Feld fertig: OUT(10H)=(3566H) (MR = 1, Marken-FF zurueck), OUT(10H)=(3567H) "
+            "(/STR = 1), naechster Eintrag",
+    0x1BB3: "alle Eintraege gleich: A = 02H nach (359AH) = Spur in Ordnung",
+    0x1BCC: "Vektor 20H zurueck, CALL 1A0BH (Index-Zaehler), RET — Ergebnis in (359AH): 02H "
+            "gut, A0H Abweichung, C0H keine Marke ⇒ 'ERROR ===> BAD TRACK'",
 }
 
 LINE_RE = re.compile(r"^([0-9A-Fa-f]{4})\s+((?:[0-9A-Fa-f]{2} )+)\s*\t?(.*)$")
@@ -175,9 +186,11 @@ def main():
         "; noetig). Arbeitspaket AP-E4e, doc/design/16_k8915.md §8a/§4.4.",
         ";",
         "; Kern: FORMAT.COM programmiert die K5122 DIREKT (Ports 10H/11H/12H/14H/16H/18H,",
-        "; Design-Doc 07_k5122_afs.md §3) -- der Schreibstrom-Kern ab 1AEDH baut eine",
-        "; (Datenbyte,Steuerwort)-Paartabelle im RAM und schreibt sie per OUTI/OUT(10H)",
-        "; im Bus-Takt hinaus (kein Pruef-Lesen). DISGEN.COM dagegen bleibt beim normalen",
+        "; Design-Doc 07_k5122_afs.md §3) -- der Schreibkern ab 1AEDH (Index-ISR, Vektor",
+        "; 24H) schreibt einen vorgebauten Rohstrom der Spur per OUTI mit /WAIT, gesteuert",
+        "; von (Anzahl,Steuerwort)-Paaren; das Pruef-Lesen ab 1B5CH (naechster Index,",
+        "; Vektor 22H) vergleicht die Spur Byte fuer Byte (am Lauf berichtigt, AP-E4f).",
+        "; DISGEN.COM dagegen bleibt beim normalen",
         "; BIOS-WRITE (nur EIN OUT im ganzen Programm, ein PIO-Reset an 17H) und braucht",
         "; keinen neuen /WAIT-Schreibpfad, s. §4.4.",
         "; ============================================================================",

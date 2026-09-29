@@ -1,0 +1,22 @@
+# K8915 (§8a AP-E4f, Befund E4d): `bxfer` gibt es seit dem DebugState-Feld für den
+# /WAIT-Betrieb auch am K8915 — „write“ ist dort der Datenfluss mit /WE = 0.  `save`
+# schreibt über den BIOS-Schreibpfad (EA94H) auf A:; der Haltepunkt greift an der
+# ersten /WE-Flanke, `dev` zeigt den laufenden Schreibvorgang.
+tool:    k1520dbg
+disk:    k8915scpx_boot1.hfe
+timeout: 180
+stdin:
+  gscreen "Coldstart" 20000000
+  keys \r
+  gscreen /^A>\s*$/ 250000000
+  bxfer write start
+  keys save 1 x.com\r
+  g 20000000
+  dev
+  q
+run:     --machine k8915 --skip-selftest %DISK%
+exit:    0
+forbid:  gibt es am K8915 nicht
+expect:  break-on-K5122-write-xfer assert/start
+expect:  K5122 write-xfer start
+expect_re: K5122: D0 mounted .*\+WRITE

@@ -6,9 +6,11 @@
 ; noetig). Arbeitspaket AP-E4e, doc/design/16_k8915.md §8a/§4.4.
 ;
 ; Kern: FORMAT.COM programmiert die K5122 DIREKT (Ports 10H/11H/12H/14H/16H/18H,
-; Design-Doc 07_k5122_afs.md §3) -- der Schreibstrom-Kern ab 1AEDH baut eine
-; (Datenbyte,Steuerwort)-Paartabelle im RAM und schreibt sie per OUTI/OUT(10H)
-; im Bus-Takt hinaus (kein Pruef-Lesen). DISGEN.COM dagegen bleibt beim normalen
+; Design-Doc 07_k5122_afs.md §3) -- der Schreibkern ab 1AEDH (Index-ISR, Vektor
+; 24H) schreibt einen vorgebauten Rohstrom der Spur per OUTI mit /WAIT, gesteuert
+; von (Anzahl,Steuerwort)-Paaren; das Pruef-Lesen ab 1B5CH (naechster Index,
+; Vektor 22H) vergleicht die Spur Byte fuer Byte (am Lauf berichtigt, AP-E4f).
+; DISGEN.COM dagegen bleibt beim normalen
 ; BIOS-WRITE (nur EIN OUT im ganzen Programm, ein PIO-Reset an 17H) und braucht
 ; keinen neuen /WAIT-Schreibpfad, s. §4.4.
 ; ============================================================================
@@ -50,7 +52,7 @@
 0123  32          	DB	32H
 0124  32          	DB	32H
 
-;  ---- 1946..1AEC ----
+;  ---- 1946..1A0A ----
 1946  FD 7E 02    	LD A,(IY+2)		;[Feldkopie] Parameterblock (IY) in Arbeitsvariablen 3500H ff. umkopieren (Tabelle 1BECH: Feldlaengen+Zielzeiger je Byte)
 1949  D3 12       	OUT (12H),A
 194B  FD 7E 03    	LD A,(IY+3)
@@ -147,22 +149,20 @@
 1A06  CD D8 1E    	CALL sub_1ED8
 1A09  FB          	EI
 1A0A  C9          	RET
-1A0B  F5          	DB	F5H
-1A0C  E5          	DB	E5H
-1A0D  21          	DB	21H
-1A0E  81          	DB	81H
-1A0F  35          	DB	35H
-1A10  34          	DB	34H
-1A11  3E          	DB	3EH
-1A12  01          	DB	01H
-1A13  32          	DB	32H
-1A14  80          	DB	80H
-1A15  35          	DB	35H
-1A16  E1          	DB	E1H
-1A17  F1          	DB	F1H
-1A18  FB          	DB	FBH
-1A19  ED          	DB	EDH
-1A1A  4D          	DB	4DH
+
+;  ---- 1A0B..1A1A ----
+1A0B  F5          	PUSH AF		;[Index-ISR, Vektor 20H] (3581H)++, (3580H)=1: 'Index gesehen' — beendet die Schreibschleife im Kern (1B2CH) nach einer Umdrehung; EI; RETI
+1A0C  E5          	PUSH HL
+1A0D  21 81 35    	LD HL,3581H
+1A10  34          	INC (HL)
+1A11  3E 01       	LD A,01H
+1A13  32 80 35    	LD (3580H),A
+1A16  E1          	POP HL
+1A17  F1          	POP AF
+1A18  FB          	EI
+1A19  ED 4D       	RETI
+
+;  ---- 1A1B..1AEC ----
 1A1B  36 00       	LD (HL),00H
 1A1D  23          	INC HL
 1A1E  46          	LD B,(HL)
@@ -216,7 +216,7 @@
 1A72  26          	DB	26H
 1A73  18          	DB	18H
 1A74  02          	DB	02H
-1A75  3E 24       	LD A,24H		;L1A75/1A77: DI, kurze Verzoegerungsschleife (12H = 18 Durchlaeufe), dann OUT(11H)=A (24H oder 26H je nach Vorzweig 1A6E) — vermutlich ein zweites PIO-Steuerwort [?], danach CALL sub_1A89 (Wartefunktion, s. dort)
+1A75  3E 24       	LD A,24H		;L1A75/1A77: DI, kurze Verzoegerungsschleife (12H = 18 Durchlaeufe), dann OUT(11H)=A: 24H = INTERRUPTVEKTOR der Steuer-PIO Tor A (Bit0 = 0) — der naechste Index-Interrupt springt ueber FF24H in den Schreibkern 1AEDH (26H im Vorzweig 1A6E); dann CALL sub_1A89 = warten, bis der ISR fertig meldet (am Lauf bestaetigt, AP-E4f)
 1A77  F3          	DI
 1A78  06 12       	LD B,12H
 1A7A  10 FE       	DJNZ L1A7A
@@ -227,7 +227,7 @@
 1A83  3E 11       	LD A,11H		;L1A83: Fehlerpfad 'DISK READ/ONLY' — Fehlercode 11H nach (3599H), kein Zugriff auf die K5122
 1A85  32 99 35    	LD (3599H),A
 1A88  C9          	RET
-1A89  D5          	PUSH DE		;sub_1A89: Wartet auf (359AH) Bit 1 (fertig?) oder Bit 7 (Timeout-Flag, per DE-Abwaertszaehler FFFFH gesetzt, wenn nichts passiert) — Timeout-Polling ohne Interrupt; im Timeout-Fall (L1AA7) wird trotzdem ein Byte an 14H nachgeschoben (IN(16H) gefolgt von OUT(14H) — Daten-PIO-Latch leeren/vorbelegen, kein Pruef-Lesen im Sinn eines CRC-Vergleichs)
+1A89  D5          	PUSH DE		;sub_1A89: Wartet auf (359AH) Bit 1 (ISR fertig) oder Bit 7 (Timeout-Flag, per DE-Abwaertszaehler FFFFH gesetzt, wenn nichts passiert); im Timeout-Fall (L1AA7) Vektor 20H, /STR = 1, Daten-PIO leeren
 1A8A  11 FF FF    	LD DE,FFFFH
 1A8D  3A 9A 35    	LD A,(359AH)
 1A90  CB 4F       	BIT 1,A
@@ -252,7 +252,7 @@
 1AB5  D1          	POP DE
 1AB6  FB          	EI
 1AB7  C9          	RET
-1AB8  2A 1D 35    	LD HL,(351DH)		;sub_1AB8: baut Zeiger (352FH Ende, 3523H Byte-Zahl, 3527H->3511H Anfangszeiger) fuer den GESAMTEN zu schreibenden Bereich einer Operation (HL+=BC*n je nach Feldgroesse); OUT(14H)=00H + IN(16H) + OUT(10H) als Vorbereitung, dann OUT(11H)=22H (PIO scharf) und CALL sub_1A89 (auf Bereitschaft warten) — der eigentliche Bytestrom folgt erst in sub bei 1AEDH (s. u.), von hier per Sprungtabelle/berechnetem Aufruf erreicht (daher als eigene 'range'-Region disassembliert, nicht vom rekursiven Abstieg gefunden)
+1AB8  2A 1D 35    	LD HL,(351DH)		;sub_1AB8: baut Zeiger (352FH Ende, 3523H Byte-Zahl, 3527H->3511H Anfangszeiger) fuer den GESAMTEN zu schreibenden Bereich einer Operation (HL+=BC*n je nach Feldgroesse); OUT(14H)=00H + IN(16H) + OUT(10H) als Vorbereitung, dann OUT(11H)=22H (PIO scharf) und CALL sub_1A89 (auf Bereitschaft warten) — OUT(11H)=22H ist der VEKTOR fuer das Pruef-Lesen: der naechste Index springt ueber FF22H in 1B5CH (s. u., AP-E4f)
 1ABB  4E          	LD C,(HL)
 1ABC  23          	INC HL
 1ABD  46          	LD B,(HL)
@@ -282,8 +282,8 @@
 1AE9  CD 89 1A    	CALL sub_1A89
 1AEC  C9          	RET
 
-;  ---- 1AED..1B60 ----
-1AED  F5          	PUSH AF		;[SCHREIBSTROM-KERN, /WAIT-Betrieb — das Herz fuer AP-E4f] PUSH AF; OUT(10H)=00H (alle Steuerausgaenge low: /WE, MK, /FR, /STR, MK1, MR/SD, /HL, /ST = 0 — Ruhezustand vor dem Strom); OUT(14H)=00H (Schreibdatenport vorbelegen/leeren)
+;  ---- 1AED..1B5B ----
+1AED  F5          	PUSH AF		;[SCHREIBKERN = Index-ISR, Vektor 24H, /WAIT-Betrieb] PUSH AF; OUT(10H)=Schreib-steuerwort (das 00H ist ein PLATZHALTER, 1A55H setzt das erste Steuerwort der Tabelle ein: 90H = /WE 0, /STR 0, Kopf 1 bzw. 94H = Kopf 0); OUT(14H)=00H
 1AEE  3E 00       	LD A,00H
 1AF0  D3 10       	OUT (10H),A
 1AF2  E5          	PUSH HL
@@ -291,11 +291,11 @@
 1AF4  C5          	PUSH BC
 1AF5  3E 00       	LD A,00H
 1AF7  D3 14       	OUT (14H),A
-1AF9  2A 23 35    	LD HL,(3523H)		;HL=(3523H) = Byte-Zahl des Bereichs (von sub_1AB8/sub_1A2F vorbereitet), DE=(3527H) = Zeiger auf eine RAM-Tabelle aus BYTE-PAAREN (Datenbyte, Steuerwort) — je ein Paar pro auszugebender Spurposition. C=14H fest fuer die folgenden OUTI/OUT(C) (Schreibdatenport)
+1AF9  2A 23 35    	LD HL,(3523H)		;HL=(3523H) = Zeiger auf den vorgebauten ROHSTROM der Spur (Luecken, C2/A1, Kennfelder samt CRC, Daten E5), DE=(3527H) = Tabelle aus Paaren (ANZAHL, STEUERWORT) — je Lauf gleicher Steuerung ein Paar (am Lauf: 57H/90H, 03H/92H (C2 C2 C2), 3FH/90H, … ; Anzahl 00H = 256). C=14H fuer OUTI
 1AFC  ED 5B 27    	35	LD DE,(3527H)
 1B00  0E 14       	LD C,14H
 1B02  47          	LD B,A
-1B03  ED 41       	OUT (C),B		;dreifaches OUT(C),B (=OUT(14H),00H) als Priming/Anlauf, dazwischen OUT(11H)=20H (PIO-Steuerwort, vermutlich Freigabe [?]) und CALL sub_1A18 (EI; RETI — sub_1A18 wird sowohl als echtes ISR-Ende ALS AUCH hier als gewoehnliches 'EI + Ruecksprung' benutzt, RETI wirkt bei CALL wie RET); (3580H)=00H, (3581H) inkrementiert (Versuchs-/Durchlaufzaehler)
+1B03  ED 41       	OUT (C),B		;dreifaches OUT(C),B (=OUT(14H),00H) als Anlauf, dazwischen OUT(11H)=20H (Vektor 20H: der naechste Index geht an 1A0BH) und CALL sub_1A18 (EI; RETI — sub_1A18 wird sowohl als echtes ISR-Ende ALS AUCH hier als gewoehnliches 'EI + Ruecksprung' benutzt, RETI wirkt bei CALL wie RET); (3580H)=00H, (3581H) inkrementiert (Versuchs-/Durchlaufzaehler)
 1B05  3E 20       	LD A,20H
 1B07  D3 11       	OUT (11H),A
 1B09  CD 18 1A    	CALL sub_1A18
@@ -306,7 +306,7 @@
 1B16  3C          	INC A
 1B17  32 81 35    	LD (3581H),A
 1B1A  ED 41       	OUT (C),B
-1B1C  1A          	LD A,(DE)		;HAUPTSCHLEIFE: A=(DE)=Datenbyte -> B, DE++; A=(DE)=Steuerwort, DE++; OUTI (schreibt (HL)->Port(C=14H): DAS DATENBYTE aus (HL), HL++, B--) — HL zeigt dabei NICHT auf die (DE)-Tabelle, sondern auf denselben laufenden Speicherbereich wie der Datenstrom [Bytezaehlung ueber B/OUTI, das Tabellen-Byte-Paar liefert nur das STEUERWORT fuer OUT(10H) direkt danach]; OUT(10H)=A (das zuvor aus (DE) gelesene STEUERWORT) — je Byte wird also SOFORT NACH dem Datenbyte ein Steuerwort ausgegeben (MK-Bit fuer Sync-/Adressmarken-Bytes wie A1/FE/FB, sonst 0 fuer normale Gap-/Daten-Bytes) — die Spur ist als (Byte,Steuerwort)-Paartabelle im RAM vorgebaut und wird im Bus-Takt hinausgeschrieben, ANALOG zur Lesestrom-Seite des /BUSRQ-Wegs (buildFaithfulReadTrack, Design-Doc §7.6/§7.7 in 07_k5122_afs.md); doppeltes OUTI je Schleifendurchlauf (1B21H/1B28H), danach ein drittes bedingt ueber den (3580H)-Rest-Zaehler (1B2CH ff.) fuer das letzte Byte einer nicht durch 2 teilbaren Menge
+1B1C  1A          	LD A,(DE)		;HAUPTSCHLEIFE (am Lauf berichtigt, AP-E4f): B=(DE) = ANZAHL, A=(DE+1) = STEUERWORT; OUTI schreibt ein Byte des Rohstroms (HL) an 14H (jedes OUT wartet per /WAIT auf sein Bytefenster), dann OUT(10H)=Steuerwort (92H = MK 1 fuer die Synchronbytes C2/A1, 90H sonst); weitere OUTI, bis B = 0, dann das naechste Paar. Ab 1B2CH wird nach jedem Byte (3580H) abgefragt: setzt der Index-ISR 1A0BH es, endet der Strom (eine Umdrehung, die Luecke laeuft bis zum Index)
 1B1D  47          	LD B,A
 1B1E  13          	INC DE
 1B1F  1A          	LD A,(DE)
@@ -322,7 +322,7 @@
 1B32  ED A3       	OUTI
 1B34  28 E6       	JR Z,L1B1C
 1B36  18 F4       	JR L1B2C
-1B38  EB          	EX DE,HL		;Abschluss: EX DE,HL (Bytezaehler HL<->DE); OUT(10H)=(3567H) (Steuerwort zuruecksetzen); IN A,(16H) (Lesedatenport LEEREN/entladen — kein Vergleich mit dem Geschriebenen, also KEIN Pruef-Lesen an dieser Stelle; passt zur Doku-Lage 'Treiber schreibt ohne Pruef-Lesen', Design-Doc 07_k5122_afs.md §7.7); Bit 1 in (359AH) setzen (Fertig-Flag fuer sub_1A89-Wartende); Restlaenge HL=HL-DE+5 nach (352BH) ablegen (Buchfuehrung fuer den Aufrufer)
+1B38  EB          	EX DE,HL		;Abschluss: OUT(10H)=(3567H) (z. B. BBH: /WE = /STR = 1 — hier geht die Spur auf die Scheibe); IN A,(16H) (Daten-PIO leeren); Bit 1 in (359AH) = fertig (sub_1A89); Restlaenge nach (352BH). Nachgeprueft wird im NAECHSTEN Index-ISR (1B5CH)
 1B39  3A 67 35    	LD A,(3567H)
 1B3C  D3 10       	OUT (10H),A
 1B3E  DB 16       	IN A,(16H)
@@ -343,9 +343,73 @@
 1B58  D1          	POP DE
 1B59  E1          	POP HL
 1B5A  F1          	POP AF
-1B5B  C9          	RET
-1B5C  DD E5       	PUSH IX
+1B5B  C9          	DB	C9H
+
+;  ---- 1B5C..1BD9 ----
+1B5C  DD E5       	PUSH IX		;[PRUEF-LESEN = Index-ISR, Vektor 22H, AP-E4f] HL = Rohstrom (3523H), IX = Tabelle (352FH), je Eintrag 6 Byte: (IX-2) Abstand im Rohstrom, (IX+0)/(IX+1) Anzahl (B + 256*(E-1)), (IX+2) Frist fuer MKE, (IX+3) Lesesteuerwort; Tabellenende = FFH/FFH
 1B5E  F5          	PUSH AF
 1B5F  E5          	PUSH HL
-1B60  D5          	DB	D5H
+1B60  D5          	PUSH DE
+1B61  C5          	PUSH BC
+1B62  2A 23 35    	LD HL,(3523H)
+1B65  DD 2A 2F    	35	LD IX,(352FH)
+1B69  00          	NOP
+1B6A  00          	NOP
+1B6B  00          	NOP
+1B6C  DD 56 FF    	LD D,(IX-1)
+1B6F  DD 5E FE    	LD E,(IX-2)
+1B72  19          	ADD HL,DE
+1B73  DD 5E 01    	LD E,(IX+1)
+1B76  DD 46 00    	LD B,(IX+0)
+1B79  DD 56 02    	LD D,(IX+2)
+1B7C  7B          	LD A,E
+1B7D  A0          	AND B
+1B7E  FE FF       	CP FFH
+1B80  28 31       	JR Z,L1BB3
+1B82  1C          	INC E
+1B83  04          	INC B
+1B84  10 01       	DJNZ L1B87
+1B86  1D          	DEC E
+1B87  DD 7E 03    	LD A,(IX+3)		;OUT(10H)=Lesesteuerwort: 83H/87H (MK = 1: Markenerkennung MFM-INDEXMARKE C2) fuer den ersten Eintrag, 81H/85H (MK = 0: A1) fuer Kennfeld und Datenfeld
+1B8A  D3 10       	OUT (10H),A
+1B8C  15          	DEC D		;auf MKE warten (12H Bit1), hoechstens D Abfragen (FFH ≈ 130 Bytezeiten), sonst 1BB7H: Fehler C0H
+1B8D  28 28       	JR Z,L1BB7
+1B8F  DB 12       	IN A,(12H)
+1B91  E6 02       	AND 02H
+1B93  28 F7       	JR Z,L1B8C
+1B95  DB 16       	IN A,(16H)		;VERGLEICH Byte fuer Byte: IN A,(16H) mit dem Rohstrom (HL) — das erste Byte ist das erkannte Sync-Byte selbst (C2 bzw. A1), dann die Marke, das Feld samt CRC, Luecke 2 (22 x 4E) und 6 Byte 00. Ungleich ⇒ 1BBBH: Fehler A0H
+1B97  BE          	CP (HL)
+1B98  20 21       	JR NZ,L1BBB
+1B9A  23          	INC HL
+1B9B  10 F8       	DJNZ L1B95
+1B9D  1D          	DEC E
+1B9E  20 F5       	JR NZ,L1B95
+1BA0  3A 66 35    	LD A,(3566H)		;Feld fertig: OUT(10H)=(3566H) (MR = 1, Marken-FF zurueck), OUT(10H)=(3567H) (/STR = 1), naechster Eintrag
+1BA3  D3 10       	OUT (10H),A
+1BA5  3A 67 35    	LD A,(3567H)
+1BA8  D3 10       	OUT (10H),A
+1BAA  DB 16       	IN A,(16H)
+1BAC  11 06 00    	LD DE,0006H
+1BAF  DD 19       	ADD IX,DE
+1BB1  18 B9       	JR L1B6C
+1BB3  3E 02       	LD A,02H		;alle Eintraege gleich: A = 02H nach (359AH) = Spur in Ordnung
+1BB5  18 06       	JR L1BBD
+1BB7  3E C0       	LD A,C0H
+1BB9  18 02       	JR L1BBD
+1BBB  3E A0       	LD A,A0H
+1BBD  32 9A 35    	LD (359AH),A
+1BC0  3A 66 35    	LD A,(3566H)
+1BC3  D3 10       	OUT (10H),A
+1BC5  3A 67 35    	LD A,(3567H)
+1BC8  D3 10       	OUT (10H),A
+1BCA  DB 16       	IN A,(16H)
+1BCC  3E 20       	LD A,20H		;Vektor 20H zurueck, CALL 1A0BH (Index-Zaehler), RET — Ergebnis in (359AH): 02H gut, A0H Abweichung, C0H keine Marke ⇒ 'ERROR ===> BAD TRACK'
+1BCE  D3 11       	OUT (11H),A
+1BD0  CD 0B 1A    	CALL sub_1A0B
+1BD3  C1          	POP BC
+1BD4  D1          	POP DE
+1BD5  E1          	POP HL
+1BD6  F1          	POP AF
+1BD7  DD E1       	POP IX
+1BD9  C9          	DB	C9H
 

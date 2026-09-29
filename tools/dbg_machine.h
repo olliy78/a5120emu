@@ -49,7 +49,7 @@ inline bool parseMachine(const std::string& s, bool& k8915) {
 inline bool nurA5120Kommando(const std::string& cmd) {
     static const std::set<std::string> s = {
         "s2", "b2", "bd2", "be2", "bdis2", "bi2", "rj2",      // ZVE2
-        "bbusrq", "bxfer",                                   // /BUSRQ- und DMA-Transferflanken
+        "bbusrq",                                            // /BUSRQ-Flanken (bxfer geht seit AP-E4f auch am K8915)
         "snap", "restore", "rs", "bs", "rc",                 // Snapshots / Reverse
         "savestate", "loadstate",                            // Zustand auf Platte
     };

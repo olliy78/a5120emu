@@ -107,3 +107,14 @@ else()
     message(STATUS "Format-Matrix: ${_fmt_n} Tests registriert (LABEL format_matrix)")
 endif()
 
+
+# ─── K8915 (doc/design/16_k8915.md §8a AP-E4f): FORMAT.COM + DISGEN.COM im /WAIT-Betrieb ──
+# Die Kette Leerdiskette → FORMAT (80 Zylinder) → DISGEN → Kaltstart ist die TIEFE
+# (format_integration, ≈ 500 Mio. Takte); jedes zweiseitige 80-Zylinder-Verfahren des
+# FORMAT-Menüs auf Zylinder 00–02 die BREITE (format_matrix, wie die A5120-Matrix).
+k1520_add_test(k8915_format SRC test_k8915_format.cpp
+                            LIBS k1520_k8915 k1520_fs k1520_logger k1520_testsupport
+                            LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 TIMEOUT 600)
+k1520_add_test(k8915_format_verfahren SRC test_k8915_format_verfahren.cpp
+                            LIBS k1520_k8915 k1520_logger k1520_testsupport
+                            LABELS "system;slow;format_matrix" DEFS LOG_LEVEL=2 TIMEOUT 300)

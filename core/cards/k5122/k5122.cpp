@@ -386,6 +386,7 @@ void K5122::reset() {
     w_mke_time_    = UINT64_MAX;
     w_status_gilt_ = false;
     w_strom_gilt_  = false;
+    w_schreib_fenster_.clear();
     if (wait_betrieb_) updateStatusPortB();
     LOG_INFO("K5122", "Hardware-Reset: Transfer abgebrochen, /BUSRQ frei, PIOs zurückgesetzt");
 }

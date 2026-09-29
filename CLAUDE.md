@@ -403,15 +403,20 @@ A5120-Boot-Invarianten nicht an), gemeinsamer Baustein `Laufwerke`. **In `libk15
 Python `K1520Emulator(machine="k8915")`; Bild dort nur über `k1520_screen_char`, nie
 `mem_read`). **`boot_trace`/`k1520dbg` mit `--machine k8915`** (AP-E4d: eine CPU,
 A8H-Speicherbild, `map`/`bank`, Ereignisprotokoll K5122/61H/A8H/Interrupts, Abbruch am
-Prompt; ZVE2/`bbusrq`/`bxfer`/Snapshots/Savestates melden „nicht vorhanden“ —
+Prompt; ZVE2/`bbusrq`/Snapshots/Savestates melden „nicht vorhanden“ —
 `tools/k1520dbg.md` §11, `tools/boot_trace.md` §7). **Stand 2026-09-29:**
 Etappen 1–3 fertig (SCPX 8915 V5.3 bootet bis zum Prompt — beide BIOS-Fassungen,
-drei Systemdisketten als Fixtures, AP-B2), AP-E4a/E4b/E4d fertig (C-ABI, Werkzeuge);
-Rest von Etappe 4/5 offen, Arbeitspakete in `doc/design/16_k8915.md` §8a.
+drei Systemdisketten als Fixtures, AP-B2), AP-E4a/E4b/E4d/E4e/E4f fertig (C-ABI, Werkzeuge,
+**FORMAT.COM + DISGEN.COM laufen**: Leerdiskette → FORMAT → DISGEN → Kaltstart, Wächter
+`K8915Format.*` in `test-format`); Rest von Etappe 4/5 offen, Arbeitspakete in
+`doc/design/16_k8915.md` §8a. Im `/WAIT`-Zweig liefert das Lesen die Spur **so, wie sie auf
+der Scheibe liegt** (FORMAT.COM prüft Byte für Byte nach), `.img`-Spuren mit Normlücken —
+nicht den nachgebauten 4×A1-Strom des A5120-Wegs.
 
 **Vor Arbeiten daran: `doc/merkposten/k8915.md` lesen** — die Festlegungen mit ihrem
-Wächter (A8H-Brückenfeld, `/WAIT`-Zweig der K5122, `Z80PIO`/`Z80SIO`-Korrekturen, K7672
-SCP/DCP, vorläufige Prüfstecker-Vorgabe, `TempDisk`). Plan: `doc/design/16_k8915.md`.
+Wächter (A8H-Brückenfeld, `/WAIT`-Zweig der K5122 samt Spur-wie-sie-liegt und MK = nur
+Markenerkennung, `Z80PIO`/`Z80SIO`-Korrekturen, K7672 SCP/DCP, vorläufige Prüfstecker-Vorgabe,
+`TempDisk`, FORMAT.COM-Bedienung). Plan: `doc/design/16_k8915.md`.
 
 ## Boot-ROM debugging workflow
 
