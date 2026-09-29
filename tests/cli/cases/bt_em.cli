@@ -1,0 +1,11 @@
+# boot_trace --em (S5): jede Kommunikationstransaktion des Erweiterungsmoduls eine
+# Zeile.  Das CP/A-BIOS mit em256-Treiber richtet beim Kaltstart PIO A32 und den
+# Attributspeicher A22 ein (RAM-Floppy M:) und schaltet RESET16 einmal durch.
+tool:      boot_trace
+disk:      cpa_cpa780_k5601_noclock-em256.img
+run:       -L /dev/null --em em256 -c 60000000 --until "screen ~ \"A>\"" %DISK%
+expect:    EM:         em256
+expect:    PIO-OUT            U880  OUT PIO B-Steuer=CF
+expect:    A22-OUT            U880  OUT Seite 0=7
+expect:    RESET16            1
+expect_re: EM:         8-Bit-Mode, [0-9]+ Transaktion\(en\), U8001 PC=<<
