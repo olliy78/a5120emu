@@ -143,3 +143,51 @@ def test_formats_source_points_at_a_real_file(emulator):
     source = emulator.formats_source()
     assert source, "formats_source ist leer — Katalog nicht geladen"
     assert "formats.yaml" in source
+
+
+# ─── A5120.16: Erweiterungsmodul (S5) ────────────────────────────────────────
+
+def test_em_state_struct_matches_the_c_layout():
+    """`K1520EmState` in ctypes hat genau den Aufbau des C-Headers.
+
+    Eine vergessene oder verschobene Komponente fiele sonst erst in der
+    Oberfläche auf — als falsche Registerwerte, nicht als Fehler.
+    """
+    from app.core_binding.k1520 import _lib, K1520EmState
+    assert ctypes.sizeof(K1520EmState) == _lib.k1520_em_state_size()
+
+
+def test_machine_without_em_reports_nothing(emulator):
+    assert emulator.em_variant() == ""
+    assert emulator.em_leds() == (False, False)
+    assert not emulator.em_mode16()
+    assert emulator.em_state() is None
+
+
+def test_unknown_em_name_is_refused():
+    from app.core_binding.k1520 import _lib
+    h = _lib.k1520_create_with_em(0, None, None, None, None, b"em999")
+    assert not h
+    assert b"em999" in _lib.k1520_last_init_error()
+
+
+@pytest.mark.parametrize("variant,model", [("em256", 1), ("em064", 2)])
+def test_machine_with_em_after_power_on(variant, model):
+    """Netz-Ein: 8-Bit-Mode (V2 an), RAMEN aus (V1 aus), U8001 im RESET16."""
+    from app.core_binding.k1520 import K1520Emulator
+    emu = K1520Emulator(em=variant)
+    try:
+        emu.power_on()
+        assert emu.em_variant() == variant
+        assert emu.em_leds() == (False, True)
+        assert not emu.em_mode16()
+        st = emu.em_state()
+        assert st is not None
+        assert st.model == model
+        assert st.mode8 and st.reset16 and st.in_reset
+        assert st.a33 == 0 and st.seg_mode == 0
+        # Ein kurzer Lauf ändert daran nichts (das Boot-ROM fasst das EM nicht an).
+        emu.run(20000)
+        assert emu.em_leds()[1]
+    finally:
+        del emu

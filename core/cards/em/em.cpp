@@ -87,27 +87,42 @@ static inline uint8_t pioIndex(uint8_t rel) { return uint8_t(((rel & 1) << 1) | 
 
 uint8_t EM::ioRead(uint8_t port) {
     const uint8_t rel = uint8_t(port - cfg_.modadr);
+    uint8_t v = 0xFF;                      // ACH/ADH sind nur beschreibbar
     switch (rel) {
-        case 0: case 1: case 2: case 3: return pio_.ioRead(pioIndex(rel));
-        case 6: return status16_;          // A35 über Treiber A11
-        case 7: return readA22();
-        default: return 0xFF;              // ACH/ADH sind nur beschreibbar
+        case 0: case 1: case 2: case 3:
+            v = pio_.ioRead(pioIndex(rel));
+            emit(Ereignis::PioLesen, rel, v, false);
+            break;
+        case 6:                            // A35 über Treiber A11
+            v = status16_;
+            emit(Ereignis::Status16Lesen, port, v, false);
+            break;
+        case 7:
+            v = readA22();
+            emit(Ereignis::A22Lesen, uint16_t((bus_.ioAddress() >> 12) & 0x0F), v, false);
+            break;
+        default:
+            break;
     }
+    return v;
 }
 
 void EM::ioWrite(uint8_t port, uint8_t data) {
     const uint8_t rel = uint8_t(port - cfg_.modadr);
     switch (rel) {
         case 0: case 1: case 2: case 3:
+            emit(Ereignis::PioSchreiben, rel, data, false);
             pio_.ioWrite(pioIndex(rel), data);
             updateFromPio();
             break;
         case 4:                            // STB STATUS-8 'AC' → A36
             status8_ = data;
+            emit(Ereignis::Status8, port, data, false);
             break;
         case 5:                            // STB VEKTOR 'AD' → A34, INT → U8001 VI + PIO A3
             // A34 (8212) hängt mit A33 an X15/RESET OUT: solange RESET16 anliegt, ist
             // das Register gelöscht und die Anforderung abgeschaltet.
+            emit(Ereignis::Vektor8, port, data, false);
             if (!reset16_) {
                 vector8_    = data;
                 vi_pending_ = true;
@@ -130,6 +145,7 @@ void EM::writeA22(uint8_t data) {
     const uint8_t page = uint8_t((bus_.ioAddress() >> 12) & 0x0F);
     attr_[page] = data & 0x0F;
     rebuildMap();
+    emit(Ereignis::A22Schreiben, page, uint16_t(data & 0x0F), false);
     LOG_DEBUG("EM", "A22[%X] <- %X (PEN=%d WE=%d A15/A14-8=%d%d)", page, data & 0x0F,
               !(data & kAttrNPen), !(data & kAttrNWe), !(data & kAttrNA15), !(data & kAttrNA14));
 }
@@ -241,6 +257,52 @@ void EM::updatePioInputs() {
     const uint8_t b = uint8_t(0x7F | (per_ff_ ? 0 : kPbNPe));
     if (a != pio_a_in_) { pio_a_in_ = a; pio_.portAWrite(a); bus_.markIntDirty(); }
     if (b != pio_b_in_) { pio_b_in_ = b; pio_.portBWrite(b); bus_.markIntDirty(); }
+    if (on_event_) pegelMelden();
+}
+
+// ─── Debug: Pegelwechsel ─────────────────────────────────────────────────────
+uint8_t EM::pegelSignatur() const {
+    return uint8_t((mode8_ ? 0x01 : 0) | ((a33_ & 0x10) ? 0x02 : 0) | (tren_ ? 0x04 : 0) |
+                   (busRq16() ? 0x08 : 0) | (busak_ ? 0x10 : 0) | (reset16_ ? 0x20 : 0) |
+                   (nvi_ff_ ? 0x40 : 0) | (stop_ ? 0x80 : 0));
+}
+
+void EM::pegelMelden() {
+    const uint8_t neu = pegelSignatur();
+    const uint8_t diff = uint8_t(neu ^ dbg_prev_);
+    if (!diff) return;
+    dbg_prev_ = neu;
+    static const Ereignis k[8] = {Ereignis::Modus, Ereignis::Int16, Ereignis::Tren,
+                                  Ereignis::BusRq, Ereignis::BusAk, Ereignis::Reset16,
+                                  Ereignis::Nvi,   Ereignis::Stop};
+    for (int i = 0; i < 8; ++i)
+        if (diff & (1u << i)) emit(k[i], 0, (neu >> i) & 1u, false);
+}
+
+const char* EM::ereignisName(Ereignis e) {
+    switch (e) {
+        case Ereignis::PioSchreiben:  return "PIO-OUT";
+        case Ereignis::PioLesen:      return "PIO-IN";
+        case Ereignis::Status8:       return "A36-Status8";
+        case Ereignis::Vektor8:       return "A34-Vektor8";
+        case Ereignis::Status16Lesen: return "A35-Status16-IN";
+        case Ereignis::A22Schreiben:  return "A22-OUT";
+        case Ereignis::A22Lesen:      return "A22-IN";
+        case Ereignis::A33A35:        return "U8001-OUT-A33/A35";
+        case Ereignis::Status8Lesen:  return "U8001-IN-Status8";
+        case Ereignis::ViQuittung:    return "VI-Quittung";
+        case Ereignis::NviQuittung:   return "NVI-Quittung";
+        case Ereignis::NmiQuittung:   return "NMI-Quittung";
+        case Ereignis::Modus:         return "Moduswechsel";
+        case Ereignis::Int16:         return "INT-16";
+        case Ereignis::Tren:          return "TREN";
+        case Ereignis::BusRq:         return "BUSRQ16";
+        case Ereignis::BusAk:         return "BUSAK16";
+        case Ereignis::Reset16:       return "RESET16";
+        case Ereignis::Nvi:           return "NVI";
+        case Ereignis::Stop:          return "STOP16";
+    }
+    return "?";
 }
 
 // ─── U8001: Zeit ─────────────────────────────────────────────────────────────
@@ -257,6 +319,7 @@ void EM::advance(int u880Takte) {
             guthaben_ -= c * f8;
             break;
         }
+        if (on_step_ && on_step_(u8k_)) break;   // Debugger: Halt VOR dem Schritt
         int c = u8k_.step();
         if (c <= 0) c = 1;
         guthaben_ -= int64_t(c) * f8;
@@ -304,13 +367,17 @@ uint16_t EM::read16(const Z8kBusCycle& c) {
         case Z8kStatus::Io:
             // /READ STATUS (A48 · A47): nur AD7 dekodiert, Status-8 auf AD8–15; die untere
             // Hälfte treibt niemand (offen = H, Annahme).
-            if (c.addr & 0x80) return uint16_t((status8_ << 8) | 0x00FF);
+            if (c.addr & 0x80) {
+                emit(Ereignis::Status8Lesen, c.addr, status8_, true);
+                return uint16_t((status8_ << 8) | 0x00FF);
+            }
             return 0xFFFF;
         case Z8kStatus::ViAck: {
             // READ VEKTOR: A34 auf AD0–7, Status-8 auf AD8–15; löscht INT von A34.
             const uint16_t id = uint16_t((status8_ << 8) | vector8_);
             vi_pending_ = false;
             u8k_.setVI(false);
+            emit(Ereignis::ViQuittung, 0, id, true);
             updatePioInputs();
             return id;
         }
@@ -319,11 +386,14 @@ uint16_t EM::read16(const Z8kBusCycle& c) {
             a53_ = uint8_t(cfg_.a53_vorlast & 0x0F);
             nvi_ff_ = false;
             u8k_.setNVI(false);
+            emit(Ereignis::NviQuittung, 0, a53_, true);
+            if (on_event_) pegelMelden();
             return 0xFFFF;
         case Z8kStatus::NmiAck:
             // Setzt das Paritätsfehler-FF der Speicherkarte zurück (Handbuch §1.3).  Eine
             // NMI-Quelle ist in §7 nicht belegt — der Pin bleibt unbeschaltet.
             per_ff_ = false;
+            emit(Ereignis::NmiQuittung, 0, 0, true);
             updatePioInputs();
             return 0xFFFF;
         default:
@@ -350,6 +420,7 @@ void EM::write16(const Z8kBusCycle& c, uint16_t v) {
         a33_      = uint8_t(v);
         status16_ = uint8_t(v >> 8);
         LOG_DEBUG("EM", "U8001 OUT %04X: A33=%02X A35=%02X", c.addr, a33_, status16_);
+        emit(Ereignis::A33A35, c.addr, uint16_t((status16_ << 8) | a33_), true);
         updatePioInputs();
     }
 }
@@ -437,6 +508,7 @@ bool EM::deserialize(const uint8_t*& p, const uint8_t* end) {
     // tren_/busak_/A29-Freigabe/Abbildung nachziehen; der Rest ist mit dem Gesicherten
     // gleich (unter RESET16 waren A33/A34 ohnehin gelöscht).
     updateMode();
+    dbg_prev_ = pegelSignatur();                 // ein Laden ist kein Pegelwechsel
     p = q;
     return true;
 }

@@ -41,6 +41,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <vector>
 #include "core/bus/k1520_bus.h"
 #include "core/primitives/z80_pio.h"
@@ -170,6 +171,55 @@ public:
     /// Gegenstück; false bei zu kurzem/falschem Block (dann ist nichts verändert).
     bool deserialize(const uint8_t*& p, const uint8_t* end);
 
+    // ─── Debug-Anschluss (S5: k1520dbg, boot_trace) ─────────────────────────
+    /// Kommunikationstransaktionen und Pegelwechsel der Karte, wie sie ein Debugger
+    /// oder Trace sehen will.  `by16` = vom U8001 ausgelöst (sonst U880).
+    enum class Ereignis : uint8_t {
+        PioSchreiben,   ///< U880 OUT an die PIO A32 (addr = Tor 0..3 relativ, value = Byte)
+        PioLesen,       ///< U880 IN von der PIO A32
+        Status8,        ///< U880 OUT ACH → A36
+        Vektor8,        ///< U880 OUT ADH → A34 (value = Vektor; löst VI aus)
+        Status16Lesen,  ///< U880 IN AEH ← A35
+        A22Schreiben,   ///< U880 OUT AFH (addr = Seite, value = Attribut)
+        A22Lesen,       ///< U880 IN AFH
+        A33A35,         ///< U8001 OUT (addr = Port, value = A35:A33)
+        Status8Lesen,   ///< U8001 IN (value = Status-8 auf AD8–15)
+        ViQuittung,     ///< U8001 VI-Quittung (value = Kennung)
+        NviQuittung,    ///< U8001 NVI-Quittung (A53 neu geladen)
+        NmiQuittung,
+        Modus,          ///< FF A29 gekippt (value 1 = 8-Bit-Mode, 0 = 16-Bit-Mode)
+        Int16,          ///< A33 Bit 4 (value = neuer Pegel)
+        Tren,           ///< TREN (value = neuer Pegel)
+        BusRq,          ///< BUSRQ am U8001 (value = neuer Pegel)
+        BusAk,          ///< BUSAK vom U8001 (value = neuer Pegel)
+        Reset16,        ///< RESET16 (value = neuer Pegel)
+        Nvi,            ///< NVI-Anforderung aus A53 (value = neuer Pegel)
+        Stop,           ///< STOP (PIO B3, value = neuer Pegel)
+    };
+    struct EreignisInfo {
+        Ereignis kind;
+        uint16_t addr  = 0;
+        uint16_t value = 0;
+        bool     by16  = false;
+    };
+    static const char* ereignisName(Ereignis e);
+    /// Ereignis-Rückruf; ohne ihn kostet jede Stelle nur einen Test.
+    void setEventHook(std::function<void(const EreignisInfo&)> f) {
+        on_event_ = std::move(f);
+        dbg_prev_ = pegelSignatur();
+    }
+    /**
+     * @brief Rückruf VOR jedem Schritt des U8001 (nicht im Reset/BUSAK/STOP geparkt).
+     *
+     * Liefert er true, wird der Schritt NICHT ausgeführt und @ref advance kehrt sofort
+     * zurück; die Zeit bleibt als Guthaben stehen (Debugger: Halt vor dem Befehl).
+     */
+    void setStepHook(std::function<bool(const Z8000&)> f) { on_step_ = std::move(f); }
+    /// Zeitguthaben des U8001 in U8001-Takten (negativ = Vorlauf).
+    double guthabenTakte16() const {
+        return double(guthaben_) / double(cfg_.takt_u880_hz);
+    }
+
     // ─── Testhaken ──────────────────────────────────────────────────────────
     /**
      * @brief Paritätsfehler auslösen (FF auf der Speicherkarte → /PE = PIO B7 = 0).
@@ -228,6 +278,15 @@ private:
     uint16_t read16(const Z8kBusCycle& c);
     void     write16(const Z8kBusCycle& c, uint16_t v);
     void     stapelZyklus();
+    // Debug
+    void emit(Ereignis e, uint16_t addr, uint16_t value, bool by16) {
+        if (on_event_) on_event_(EreignisInfo{e, addr, value, by16});
+    }
+    uint8_t pegelSignatur() const;
+    void    pegelMelden();
+    std::function<void(const EreignisInfo&)> on_event_;
+    std::function<bool(const Z8000&)>        on_step_;
+    uint8_t dbg_prev_ = 0;
 
     K1520Bus& bus_;
     Config    cfg_;
