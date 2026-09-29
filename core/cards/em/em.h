@@ -16,16 +16,27 @@
  * - Seitenabbildung: 16 Seiten × 4 KB; je Seite PEN, WE, A14-8, A15-8.  Übernimmt
  *   die Karte einen Zugriff, zieht sie Bus-/MEMDI (MemdiDriver) — der K1520-RAM
  *   bleibt still.
- * - Betriebsartensteuerung, U880-Hälfte: RESET16, FF A29 (8/16), TRQ8, TREN.
+ * - Betriebsartensteuerung: RESET16, FF A29 (8/16), TRQ8, TREN, BUSRQ/BUSAK.
+ *
+ * Seit S4 sitzt der **U8001** (bzw. U8002 beim EM064) auf der Karte (@ref u8001):
+ * - Segmentweiche A42 (drei Modi aus A33 Bit 5–7) + Umschalter A41 ⇒ Zelle des
+ *   U8001-Zugriffs (@ref cellFor16); dieselbe Zelle wie beim U880 (big-endian, §7.5).
+ * - A33/A35 über Standard-E/A (nur AD7 dekodiert, Schreiben = beide Register),
+ *   Status-8 beim E/A-Lesen auf AD8–15, VI-Quittung = Vektor A34 (low) + Status-8
+ *   (high) und löscht /VI, NVI-Quittung lädt den Einzelbefehlszähler A53, NMI-Quittung
+ *   setzt das Paritäts-FF zurück.
+ * - µI = /TRQ8, TREN = ¬µ0, /BUSRQ = ¬(TREN ∧ TRQ8), BUSAK → FF A29, STOP = PIO B3.
+ * - A29 wird mit dem M1 des U880 getaktet (@ref onU880M1).
+ * - Zeit: @ref advance zieht den U8001 befehlsweise auf die Maschinenzeit nach
+ *   (U880-Takte × f16/f8; beide Takte in @ref Config).
  *
  * Belegt aus den Schaltplänen, Stand und Quellen: doc/design/17_a5120_16.md §7;
  * die beiden in S1 geklärten Fragen (MEMDI-Quelle, Leseadresse A22) stehen bei
  * @ref EM::drivesMemdi bzw. @ref EM::A22Lesart.
  *
- * **Ohne U8001** (S1): µ0 bleibt high (nach Reset erzwungen, gesetzt würde es nur
- * durch `MSET`/`MREQ` des U8001) ⇒ TREN = 0 ⇒ TRQ8 bewirkt nichts; 8/16 = RESET16.
- * Das ist kein Platzhalter: genau so verhält sich die Karte mit einem U8001, der nie
- * `MSET` ausführt (Plan §3 S1 „Einstieg").
+ * **Der U880 läuft im 16-Bit-Mode weiter** (Handbuch §1.7.3: „Der U 880 arbeitet in
+ * seinem Systemspeicher weiter, kann aber nicht auf den RAM des EM zugreifen").
+ * BUSRQ/BUSAK ist ein Handschlag zwischen Karte und U8001, nicht mit dem U880.
  */
 #pragma once
 #include <array>
@@ -33,6 +44,7 @@
 #include <vector>
 #include "core/bus/k1520_bus.h"
 #include "core/primitives/z80_pio.h"
+#include "core/primitives/z8000.h"
 
 class EM : public MemdiDriver, public BusDevice, public InterruptSlave {
 public:
@@ -72,6 +84,14 @@ public:
         /// N/S des U8001 ist im Reset laut Zilog §9.7 *undefiniert*; was PIO A5 dann
         /// zeigt, ist nicht belegt.  Vorgabe: H (Normal).
         bool      ns_im_reset = true;
+        /// Takt des U880 (Maschinentakt des A5120 im Emulator, app/takt.py) und des U8001
+        /// (A55 DS8127: 16-MHz-Quarz / 4).  Nur das Verhältnis zählt.
+        uint32_t  takt_u880_hz  = 2'450'000;
+        uint32_t  takt_u8001_hz = 4'000'000;
+        /// Vorlast des Einzelbefehlszählers A53 (74193, rückwärts): A2/A3 fest H, A0/A1
+        /// über Brückenfeld X12 — **nicht belegt** (Plan §8, Messung G3).  Vorgabe 15 =
+        /// X12 offen (offene TTL-Eingänge = H) ⇒ QD fällt nach 8 Stapelzugriffen.
+        uint8_t   a53_vorlast = 15;
     };
 
     explicit EM(K1520Bus& bus);
@@ -79,6 +99,9 @@ public:
 
     /// E/A-Tore MODADR..MODADR+7 und den Vorrangspeicher am Bus anmelden.
     void attachToBus();
+
+    EM(const EM&) = delete;
+    EM& operator=(const EM&) = delete;
 
     /// Netz-Ein: DRAM und Attributspeicher unbestimmt, danach /RESET.
     void powerOn();
@@ -114,6 +137,38 @@ public:
     bool    hasInterrupt() const override  { return pio_.hasInterrupt(); }
     uint8_t getVector() const override     { return pio_.getVector(); }
     void    onRETI() override              { pio_.onRETI(); }
+
+    // ─── 16-Bit-Seite: U8001 und Maschinenzeit ──────────────────────────────
+    /**
+     * @brief Maschinenzeit ist um @p u880Takte Takte des U880 vorgerückt: den U8001
+     *        befehlsweise nachziehen (Rest wird als Guthaben/Schuld mitgeführt).
+     *
+     * Solange der U8001 im Reset steht oder den Bus abgegeben hat (BUSAK bei
+     * anliegendem BUSRQ), wird nicht Schritt für Schritt gerechnet — dort ändert sich
+     * nichts, bis der U880 an der Karte etwas tut.
+     */
+    void advance(int u880Takte);
+    /// M1-Zyklus des U880: Takt des FF A29 (A16 = NAND(/M1, /RST) = M1 ∨ RST, 9005/2).
+    void onU880M1() {
+        if (!mode8_ && m1_setzt_a29_) { mode8_ = true; updateMode(); }
+    }
+    Z8000&       u8001()       { return u8k_; }
+    const Z8000& u8001() const { return u8k_; }
+    /// Segmentweiche A42: 0 = Segment aus A33 Bit 5/6, 1 = INSTR × N/S, 2 = SN0/SN1.
+    uint8_t  segMode() const   { return (a33_ & 0x80) ? ((a33_ & 0x40) ? 2 : 1) : 0; }
+    /// DRAM-Zelle eines U8001-Speicherzyklus (Segmentweiche + Umschalter A41, §7.3/§7.5).
+    uint32_t cellFor16(const Z8kBusCycle& c) const;
+    uint8_t  a53() const       { return a53_; }       ///< Einzelbefehlszähler A53
+    bool     nviLine() const   { return nvi_ff_; }    ///< NVI am U8001 (A53 QD, gehalten)
+    bool     busRq16() const   { return tren_ && trq8_; }   ///< BUSRQ am U8001
+    bool     busAck16() const  { return busak_; }
+    bool     stop16() const    { return stop_; }      ///< STOP am U8001 (PIO B3 = 0)
+
+    // ─── Save-State ─────────────────────────────────────────────────────────
+    /// Ganzer Kartenzustand inkl. DRAM, PIO, U8001 (Register + Ablaufzustand).
+    void serialize(std::vector<uint8_t>& out) const;
+    /// Gegenstück; false bei zu kurzem/falschem Block (dann ist nichts verändert).
+    bool deserialize(const uint8_t*& p, const uint8_t* end);
 
     // ─── Testhaken ──────────────────────────────────────────────────────────
     /**
@@ -165,6 +220,14 @@ private:
     void updateMode();
     void updatePioInputs();
     void rebuildMap();
+    /// Pins aus dem PIO-Ausgang B ableiten (ohne Rückwirkung auf die CPU).
+    void pinsFromPio();
+    /// RESET16/µI/STOP/BUSRQ an den U8001 legen.
+    void pinsToCpu();
+    // U8001-Busrückrufe
+    uint16_t read16(const Z8kBusCycle& c);
+    void     write16(const Z8kBusCycle& c, uint16_t v);
+    void     stapelZyklus();
 
     K1520Bus& bus_;
     Config    cfg_;
@@ -183,10 +246,12 @@ private:
     bool    reset16_  = true;
     bool    trq8_     = false;
     bool    pr_       = true;
+    bool    stop_     = false;  ///< STOP am U8001 (PIO B3 = /STOP = 0)
     // Betriebsartensteuerung
     bool    mode8_    = true;   ///< FF A29
     bool    tren_     = false;  ///< ¬µ0; µ0 setzt nur MSET des U8001
-    bool    busak_    = false;  ///< BUSAK' (U8001 gibt den Bus nie ab, solange TREN = 0)
+    bool    busak_    = false;  ///< BUSAK' vom U8001
+    bool    m1_setzt_a29_ = false;  ///< /S und /R inaktiv ⇒ nächster M1 setzt A29
     // Register
     uint8_t a33_      = 0;
     uint8_t status8_  = 0;
@@ -197,4 +262,10 @@ private:
 
     uint8_t pio_a_in_ = 0xFF;
     uint8_t pio_b_in_ = 0xFF;
+
+    // 16-Bit-Seite
+    Z8000   u8k_;
+    int64_t guthaben_ = 0;      ///< Zeitguthaben des U8001 in (U880-Takt × f16) − (U8001-Takt × f8)
+    uint8_t a53_      = 15;     ///< Einzelbefehlszähler
+    bool    nvi_ff_   = false;  ///< QD gefallen, gehalten bis NVI-Quittung (Selbsthaltekreis A54)
 };

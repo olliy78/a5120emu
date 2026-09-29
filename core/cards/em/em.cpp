@@ -1,12 +1,13 @@
 /**
  * @file em.cpp
- * @brief Erweiterungsmodul EM064/EM256 — 8-Bit-Seite (U880-Sicht), ohne U8001.
+ * @brief Erweiterungsmodul EM064/EM256 — U880-Seite (S1) und U8001-Seite (S4).
  *
  * Belege: doc/design/17_a5120_16.md §7 (Scans 062-9005/9000), hier in S1 ergänzt um
  * die Quelle von /MEMDI (MEN) und die Leseadresse von A22 (em.h).
  */
 #include "em.h"
 #include <algorithm>
+#include <cstring>
 #include "core/logger.h"
 
 namespace {
@@ -18,6 +19,7 @@ constexpr uint8_t kPaM816  = 1u << 6;   ///< 8/16 (A29 Q)
 constexpr uint8_t kPaTren  = 1u << 7;   ///< TREN = ¬µ0
 // PIO A32 Port B
 constexpr uint8_t kPbNRamen = 1u << 2;  ///< /RAMEN (Pull-up R4:1)
+constexpr uint8_t kPbNStop  = 1u << 3;  ///< /STOP (direkt an U8001 STOP)
 constexpr uint8_t kPbReset  = 1u << 4;  ///< RESET16 (Pull-up R4:2)
 constexpr uint8_t kPbNTrq8  = 1u << 5;  ///< /TRQ8 (ohne Pull-up; offener TTL-Eingang = H)
 constexpr uint8_t kPbPr     = 1u << 6;  ///< PR (Pull-up R4:4)
@@ -31,11 +33,24 @@ constexpr uint8_t kAttrNA15 = 1u << 3;  ///< /A15-8
 
 EM::EM(K1520Bus& bus) : EM(bus, Config{}) {}
 
+static Z8kConfig z8kConfigFor(const EM::Config& cfg) {
+    Z8kConfig z;
+    // EM256: U8001 (segmentiert); EM064: U8002 (Handbuch §1.2, Plan §6).
+    z.model = cfg.variante == EM::Variante::EM256 ? Z8kModel::Z8001 : Z8kModel::Z8002;
+    return z;
+}
+
 EM::EM(K1520Bus& bus, const Config& cfg)
     : bus_(bus), cfg_(cfg),
-      dram_(cfg.variante == Variante::EM256 ? 256u * 1024u : 64u * 1024u, 0xFF)
+      dram_(cfg.variante == Variante::EM256 ? 256u * 1024u : 64u * 1024u, 0xFF),
+      u8k_(z8kConfigFor(cfg))
 {
     attr_.fill(0x0F);
+    a53_ = uint8_t(cfg_.a53_vorlast & 0x0F);
+    u8k_.read     = [this](const Z8kBusCycle& c) { return read16(c); };
+    u8k_.write    = [this](const Z8kBusCycle& c, uint16_t v) { write16(c, v); };
+    u8k_.onMO     = [this](bool) { updateMode(); };
+    u8k_.onBusAck = [this](bool) { updateMode(); };
     reset();
 }
 
@@ -61,6 +76,7 @@ void EM::reset() {
     pio_.reset();          // beide Tore Eingabe ⇒ Ausgänge hochohmig
     pio_a_in_ = pio_b_in_ = 0xFF;
     per_ff_ = false;
+    guthaben_ = 0;
     updateFromPio();
 }
 
@@ -95,6 +111,7 @@ void EM::ioWrite(uint8_t port, uint8_t data) {
             if (!reset16_) {
                 vector8_    = data;
                 vi_pending_ = true;
+                u8k_.setVI(true);              // Netz 28 → VI (pegelgetriggert)
                 updatePioInputs();
             }
             break;
@@ -159,17 +176,29 @@ void EM::rebuildMap() {
 }
 
 // ─── PIO-Ausgänge → Betriebsartensteuerung ───────────────────────────────────
-void EM::updateFromPio() {
+void EM::pinsFromPio() {
     const auto st = pio_.debugState().port[1];
     const uint8_t drive = st.mode == 0 ? 0xFF : st.mode == 3 ? uint8_t(~st.dir) : 0x00;
     // Wo die PIO nicht treibt: Pull-ups R4 bzw. offene TTL-Eingänge ⇒ H.
     const uint8_t pins = uint8_t((st.out & drive) | ~drive);
     seg_     = pins & 0x03;
     ramen_   = !(pins & kPbNRamen);
+    stop_    = !(pins & kPbNStop);
     reset16_ = (pins & kPbReset) != 0;
     trq8_    = !(pins & kPbNTrq8);
     pr_      = (pins & kPbPr) != 0;
     if (pr_) per_ff_ = false;                  // PR hält das Paritäts-FF zurückgesetzt
+}
+
+void EM::pinsToCpu() {
+    u8k_.setResetLine(reset16_);               // /RES = ¬RESET16 (A31, A55)
+    u8k_.setMI(trq8_);                         // µI = /TRQ8 (Q12), aktiv = L
+    u8k_.setStop(stop_);                       // STOP = PIO B3
+}
+
+void EM::updateFromPio() {
+    pinsFromPio();
+    pinsToCpu();
     updateMode();
 }
 
@@ -179,15 +208,23 @@ void EM::updateMode() {
         a33_ = 0;
         vector8_ = 0;
         vi_pending_ = false;
-        tren_  = false;
-        busak_ = false;
+        u8k_.setVI(false);
+        // A53 im Reset neu geladen, NVI-Halt gelöscht — ANNAHME (Plan §8, X12/A54).
+        a53_ = uint8_t(cfg_.a53_vorlast & 0x0F);
+        nvi_ff_ = false;
+        u8k_.setNVI(false);
     }
-    // FF A29 (§7.4): /S = ¬RESET16, /R = ¬(¬(TREN ∧ BUSAK' ∧ TRQ8) ∧ ¬RESET16).
-    // Takt = M1 des U880 bei D = H — braucht TREN ∧ BUSAK', also den U8001 (S4).
+    // TREN = ¬µ0 (A38): µ0 ist aktiv (L) nur nach MSET/MREQ des U8001; im Reset H.
+    tren_  = !reset16_ && !u8k_.inReset() && u8k_.moActive();
+    busak_ = !reset16_ && u8k_.busAck();
+    u8k_.setBusReq(tren_ && trq8_);            // /BUSRQ = ¬(TREN ∧ TRQ8), A212/11 → Q11
+    // FF A29 (§7.4): /S = ¬RESET16, /R = ¬(¬(TREN ∧ BUSAK' ∧ TRQ8) ∧ ¬RESET16),
+    // D = H, C = M1 des U880 (onU880M1).
     const bool s_n = !reset16_;
     const bool r_n = !(!(tren_ && busak_ && trq8_) && !reset16_);
     if (!s_n)      mode8_ = true;              // /S hat bei /S = /R = 0 beim 7474 Q = H
     else if (!r_n) mode8_ = false;
+    m1_setzt_a29_ = s_n && r_n;
     rebuildMap();
     updatePioInputs();
 }
@@ -196,12 +233,212 @@ void EM::updatePioInputs() {
     uint8_t a = uint8_t(a33_ & 0x07);
     if (!vi_pending_)   a |= kPaNVi;
     if (a33_ & 0x10)    a |= kPaInt16;
-    if (cfg_.ns_im_reset) a |= kPaNS;          // U8001 läuft in S1 nie: Wert aus dem Reset
+    // N/S = H im Normalmodus.  Im Reset ist der Pin laut Zilog §9.7 undefiniert.
+    const bool normal = u8k_.inReset() ? cfg_.ns_im_reset : !u8k_.systemMode();
+    if (normal)         a |= kPaNS;
     if (mode8_)         a |= kPaM816;
     if (tren_)          a |= kPaTren;
     const uint8_t b = uint8_t(0x7F | (per_ff_ ? 0 : kPbNPe));
     if (a != pio_a_in_) { pio_a_in_ = a; pio_.portAWrite(a); bus_.markIntDirty(); }
     if (b != pio_b_in_) { pio_b_in_ = b; pio_.portBWrite(b); bus_.markIntDirty(); }
+}
+
+// ─── U8001: Zeit ─────────────────────────────────────────────────────────────
+void EM::advance(int u880Takte) {
+    guthaben_ += int64_t(u880Takte) * cfg_.takt_u8001_hz;
+    const int64_t f8 = cfg_.takt_u880_hz;
+    while (guthaben_ > 0) {
+        // Geparkt: im Reset, Bus abgegeben (BUSAK bei anliegendem BUSRQ) oder im Stop.
+        // Bis der U880 an der Karte etwas ändert, geschieht dort nichts — die Zeit
+        // wird nur verbucht, statt sie in 1-Takt-Schritten abzuzählen.
+        if (reset16_ || (u8k_.busAck() && tren_ && trq8_) || (u8k_.stopped() && stop_)) {
+            const int64_t c = (guthaben_ + f8 - 1) / f8;
+            u8k_.cycles += uint64_t(c);
+            guthaben_ -= c * f8;
+            break;
+        }
+        int c = u8k_.step();
+        if (c <= 0) c = 1;
+        guthaben_ -= int64_t(c) * f8;
+    }
+    updatePioInputs();                         // N/S kann sich geändert haben
+}
+
+// ─── U8001: Segmentweiche A42 + Umschalter A41 ───────────────────────────────
+uint32_t EM::cellFor16(const Z8kBusCycle& c) const {
+    uint32_t sg = 0;
+    switch (segMode()) {
+        case 0:  sg = (a33_ >> 5) & 3u;                              // SG0 = AD5*, SG1 = AD6*
+                 break;
+        case 1:  sg = (c.isInstructionFetch() ? 1u : 0u)              // SG0 = INSTR (Status 12/13)
+                    | (c.system ? 0u : 2u);                           // SG1 = N/S (H = Normal)
+                 break;
+        default: sg = c.seg & 3u;                                    // SG0/SG1 = SN0/SN1
+                 break;
+    }
+    // EM064: SG0/SG1 gehen nicht in die Matrix ⇒ Modulo 64 KB spiegelt.
+    return ((sg << 16) | c.addr) % uint32_t(dram_.size());
+}
+
+void EM::stapelZyklus() {
+    // A53 zählt STATUS 9 · DS rückwärts, nur mit A33 Bit 3 (Einzelbefehl-Freigabe).
+    if (!(a33_ & 0x08)) return;
+    const bool qd_vor = (a53_ & 0x08) != 0;
+    a53_ = uint8_t((a53_ - 1) & 0x0F);
+    if (qd_vor && !(a53_ & 0x08) && !nvi_ff_) {
+        // QD fällt ⇒ NVI.  Gehalten bis zur NVI-Quittung (Selbsthaltekreis A54) —
+        // ANNAHME: sonst liesse der 74193 bei 0 → 15 das NVI wieder los.
+        nvi_ff_ = true;
+        u8k_.setNVI(true);
+    }
+}
+
+// ─── U8001: Buszyklen ────────────────────────────────────────────────────────
+uint16_t EM::read16(const Z8kBusCycle& c) {
+    if (c.isMemory()) {
+        if (c.st == Z8kStatus::MemStack) stapelZyklus();
+        const uint32_t z = cellFor16(c) & ~1u;           // gerade Adresse = oberes Byte
+        return uint16_t((dram_[z] << 8) | dram_[z + 1]);
+    }
+    switch (c.st) {
+        case Z8kStatus::Io:
+            // /READ STATUS (A48 · A47): nur AD7 dekodiert, Status-8 auf AD8–15; die untere
+            // Hälfte treibt niemand (offen = H, Annahme).
+            if (c.addr & 0x80) return uint16_t((status8_ << 8) | 0x00FF);
+            return 0xFFFF;
+        case Z8kStatus::ViAck: {
+            // READ VEKTOR: A34 auf AD0–7, Status-8 auf AD8–15; löscht INT von A34.
+            const uint16_t id = uint16_t((status8_ << 8) | vector8_);
+            vi_pending_ = false;
+            u8k_.setVI(false);
+            updatePioInputs();
+            return id;
+        }
+        case Z8kStatus::NviAck:
+            // Ladeimpuls für A53 (Status 6 · DS · R/W), NVI-Halt gelöst.
+            a53_ = uint8_t(cfg_.a53_vorlast & 0x0F);
+            nvi_ff_ = false;
+            u8k_.setNVI(false);
+            return 0xFFFF;
+        case Z8kStatus::NmiAck:
+            // Setzt das Paritätsfehler-FF der Speicherkarte zurück (Handbuch §1.3).  Eine
+            // NMI-Quelle ist in §7 nicht belegt — der Pin bleibt unbeschaltet.
+            per_ff_ = false;
+            updatePioInputs();
+            return 0xFFFF;
+        default:
+            return 0xFFFF;                             // Spezial-E/A (3) nicht dekodiert
+    }
+}
+
+void EM::write16(const Z8kBusCycle& c, uint16_t v) {
+    if (c.isMemory()) {
+        if (c.st == Z8kStatus::MemStack) stapelZyklus();
+        const uint32_t z = cellFor16(c) & ~1u;
+        if (c.word) {
+            dram_[z]     = uint8_t(v >> 8);
+            dram_[z + 1] = uint8_t(v);
+        } else if (c.addr & 1) {
+            dram_[z + 1] = uint8_t(v);                  // ungerade = AD0–7
+        } else {
+            dram_[z] = uint8_t(v >> 8);                 // gerade = AD8–15
+        }
+        return;
+    }
+    if (c.st == Z8kStatus::Io && (c.addr & 0x80)) {
+        // STB A33 + A35 = Status 2 · DS · Schreiben · AD7 (X13 3–4): BEIDE Register.
+        a33_      = uint8_t(v);
+        status16_ = uint8_t(v >> 8);
+        LOG_DEBUG("EM", "U8001 OUT %04X: A33=%02X A35=%02X", c.addr, a33_, status16_);
+        updatePioInputs();
+    }
+}
+
+// ─── Save-State ──────────────────────────────────────────────────────────────
+namespace {
+constexpr uint8_t kEmStateVersion = 1;
+template <class T> void put(std::vector<uint8_t>& o, const T& v) {
+    const auto* b = reinterpret_cast<const uint8_t*>(&v);
+    o.insert(o.end(), b, b + sizeof(T));
+}
+template <class T> bool get(const uint8_t*& p, const uint8_t* end, T& v) {
+    if (size_t(end - p) < sizeof(T)) return false;
+    std::memcpy(&v, p, sizeof(T));
+    p += sizeof(T);
+    return true;
+}
+}  // namespace
+
+void EM::serialize(std::vector<uint8_t>& o) const {
+    put(o, kEmStateVersion);
+    put(o, uint8_t(cfg_.variante));
+    put(o, uint32_t(dram_.size()));
+    o.insert(o.end(), dram_.begin(), dram_.end());
+    o.insert(o.end(), attr_.begin(), attr_.end());
+    pio_.serialize(o);
+    const uint8_t f[] = {mode8_, a33_, status8_, vector8_, vi_pending_, status16_,
+                         per_ff_, last_mem_page_, pio_a_in_, pio_b_in_, a53_, nvi_ff_};
+    o.insert(o.end(), std::begin(f), std::end(f));
+    put(o, guthaben_);
+    // U8001: Register + Ablaufzustand (POD, derselbe Bau liest es wieder).
+    for (uint16_t r : u8k_.Rg) put(o, r);
+    put(o, u8k_.R14[0]); put(o, u8k_.R14[1]);
+    put(o, u8k_.R15[0]); put(o, u8k_.R15[1]);
+    put(o, u8k_.fcw); put(o, u8k_.pc); put(o, u8k_.pcSeg);
+    put(o, u8k_.psapSeg); put(o, u8k_.psapOff); put(o, u8k_.refresh); put(o, u8k_.cycles);
+    put(o, u8k_.runState());
+}
+
+bool EM::deserialize(const uint8_t*& p, const uint8_t* end) {
+    const uint8_t* q = p;
+    uint8_t ver = 0, var = 0;
+    uint32_t n = 0;
+    if (!get(q, end, ver) || ver != kEmStateVersion) return false;
+    if (!get(q, end, var) || var != uint8_t(cfg_.variante)) return false;
+    if (!get(q, end, n) || n != dram_.size() || size_t(end - q) < n + attr_.size()) return false;
+    const uint8_t* dram = q;
+    q += n;
+    const uint8_t* attr = q;
+    q += attr_.size();
+    Z80PIO pio("tmp");
+    if (!pio.deserialize(q, end)) return false;
+    uint8_t f[12];
+    if (size_t(end - q) < sizeof f) return false;
+    std::memcpy(f, q, sizeof f);
+    q += sizeof f;
+    int64_t guthaben = 0;
+    Z8000 z;                                     // Zwischenablage für die Register
+    if (!get(q, end, guthaben)) return false;
+    for (uint16_t& r : z.Rg) if (!get(q, end, r)) return false;
+    Z8kRunState rs;
+    if (!get(q, end, z.R14[0]) || !get(q, end, z.R14[1]) || !get(q, end, z.R15[0]) ||
+        !get(q, end, z.R15[1]) || !get(q, end, z.fcw) || !get(q, end, z.pc) ||
+        !get(q, end, z.pcSeg) || !get(q, end, z.psapSeg) || !get(q, end, z.psapOff) ||
+        !get(q, end, z.refresh) || !get(q, end, z.cycles) || !get(q, end, rs))
+        return false;
+
+    // Alles gelesen — jetzt übernehmen.
+    std::memcpy(dram_.data(), dram, n);
+    std::memcpy(attr_.data(), attr, attr_.size());
+    const uint8_t* pp = p + 1 + 1 + 4 + n + attr_.size();
+    pio_.deserialize(pp, end);
+    mode8_ = f[0]; a33_ = f[1]; status8_ = f[2]; vector8_ = f[3]; vi_pending_ = f[4];
+    status16_ = f[5]; per_ff_ = f[6]; last_mem_page_ = f[7]; pio_a_in_ = f[8];
+    pio_b_in_ = f[9]; a53_ = f[10]; nvi_ff_ = f[11];
+    guthaben_ = guthaben;
+    std::copy(std::begin(z.Rg), std::end(z.Rg), std::begin(u8k_.Rg));
+    u8k_.R14[0] = z.R14[0]; u8k_.R14[1] = z.R14[1];
+    u8k_.R15[0] = z.R15[0]; u8k_.R15[1] = z.R15[1];
+    u8k_.fcw = z.fcw; u8k_.pc = z.pc; u8k_.pcSeg = z.pcSeg;
+    u8k_.psapSeg = z.psapSeg; u8k_.psapOff = z.psapOff; u8k_.refresh = z.refresh;
+    u8k_.cycles = z.cycles;
+    u8k_.setRunState(rs);                        // Pins der CPU wie gesichert
+    pinsFromPio();                               // abgeleitete Pins (ohne Rückwirkung)
+    // tren_/busak_/A29-Freigabe/Abbildung nachziehen; der Rest ist mit dem Gesicherten
+    // gleich (unter RESET16 waren A33/A34 ohnehin gelöscht).
+    updateMode();
+    p = q;
+    return true;
 }
 
 void EM::injectParityError() {
