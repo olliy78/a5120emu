@@ -52,11 +52,13 @@ k1520_add_test(em16_maschine SRC test_em16_maschine.cpp LIBS ${_libs} k1520_z800
                              LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 60)
 
 # A5120.16, Abnahme S4: Prüfprogramm em16abl.com (CPA-Workbench, U8001-Teil mit z8kasm)
-# unter CP/A — alle in §7 belegten Abläufe des 16-Bit-Mode Ende-zu-Ende.
+# unter CP/A — alle in §7 belegten Abläufe des 16-Bit-Mode Ende-zu-Ende; dazu em256ful.com
+# v2.0 (G2b, nach §7 repariert), Gruppen A–E.
 k1520_add_test(em16_abl SRC test_em16_abl.cpp LIBS ${_libs} k1520_fs
                         LABELS "${_lbl}" TIMEOUT 180
                         DEFS LOG_LEVEL=2
-                             "EM16ABL_COM=\"${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/em16abl.com\"")
+                             "EM16ABL_COM=\"${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/em16abl.com\""
+                             "EM256FUL_COM=\"${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/em256ful.com\"")
 
 # Erste Eingabe nach der Reset-Taste (Befund S1): Schattenram-Falle beim Warten auf
 # den Prompt, Helfer k1520test::wipeVram().

@@ -177,3 +177,12 @@ em16abl.mac` + `fw16abl.s`, U8001-Teil mit **z8kasm** aus diesem Repo; Bau
 Workbench `e396fc6`).  Fährt die belegten Abläufe des 16-Bit-Mode (doc/design/17_a5120_16.md
 §3 S4) und ist die Vorlage für G2 am Gerät.  `test_em16_abl` schreibt es auf eine `TempDisk`
 von `cpa_cpa780_k5601_noclock.img` (Pfad `EM16ABL_COM`).
+
+## `cpm/em256ful.com`: em256ful v2.0 aus der CPA-Workbench (G2b)
+
+`additions/bc_a5120/em256ful.com` der CPA-Workbench, v2.0 (Quellen `tools/16bitTest/src/
+em256ful.mac` + `fw_*.s`, U8001-Teil mit **z8kasm**; Bau `python3 tools/16bitTest/build.py
+em256ful`; Stand Workbench `563dd21`).  Das alte Umfassend-Prüfprogramm, nach
+doc/design/17_a5120_16.md §7 repariert (Plan §3 G2b): Gruppen A–E, im Emulator 21/21.
+`test_em16_abl` (`Em256Ful.*`) schreibt es auf eine `TempDisk` von
+`cpa_cpa780_k5601_noclock.img` (Pfad `EM256FUL_COM`), mit EM256 und ohne EM.
