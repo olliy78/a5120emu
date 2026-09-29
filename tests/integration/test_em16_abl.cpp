@@ -154,7 +154,9 @@ A5120Machine::Config em256() {
  * @brief Jede Zeile A–G „OK", Ergebnis „alle Abläufe OK"; dazu die Messwerte so, wie
  *   das Gerät sie 2026-09-29 zeigte (OUTB auf beiden Hälften ⇒ A35 = 01H; INB an
  *   gerader Adresse liest Status-8 = C3H; A53-Vorlast 11 ⇒ NVI nach 4 Stapelzugriffen)
- *   und die v1.1-Zusätze (INB ungerade = FFH, Vorlauf ohne NVI, Parität überall 1);
+ *   und die Zusätze aus v1.1/v1.2 (INB ungerade = Adressbyte 81H wie am Gerät; Vorlauf
+ *   ohne NVI, weil A54 im Emulator nach Netz-Ein geladen hält; Parität überall 1 — ohne
+ *   Paritätsbits im DRAM kann das Lesen nie beschriebener Zellen keinen Fehler setzen);
  *   danach Ruhezustand der Karte.
  */
 TEST(Em16Abl, AlleAblaeufeOk) {
@@ -177,11 +179,12 @@ TEST(Em16Abl, AlleAblaeufeOk) {
              "F STOP haelt den U8001 an                        OK",
              "G RESET16: 8-Bit-Mode, A33 geloescht             OK",
              "INB liest untere Haelfte: C3H (Status-8 war C3H)",
-             "INB %81 (ungerade, AD0-7): FFH (Soll FFH)",
+             "INB %81 (ungerade, AD0-7): 81H (Soll 81H = Adressbyte)",
              "G2: OUTB %81,01H -> A35 = 01H, PIO A0-2 = 1",
              "G3: NVI nach 0004H Stapelzugriffen",
-             "Vorlauf ohne Bit 3: NVI nach 0000H",
+             "Vorlauf ohne Bit 3: 0000H (0 = kein NVI, 80nnH = NVI nach nn)",
              "H Paritaet /PE Start,PR,PR-EM,EM,K1520: 1 1 1 1 1 (1 = ok)",
+             "H PR wie em256ful, Leer-EM lesen, danach: 1 1 1 (0 0 = Merker)",
              "ERGEBNIS: alle Ablaeufe OK"})
         EXPECT_TRUE(enthaelt(t, z)) << z << "\n" << t;
     EXPECT_FALSE(enthaelt(t, "FEHLER")) << t;

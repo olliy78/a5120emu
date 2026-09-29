@@ -206,8 +206,10 @@ TEST(EM16, A33A35_WortOutSchreibtBeide_NurAD7) {
  * @test EM16/Status8_WortInHighByte_InbNachA0
  * @brief Status-8 (ACH) liegt beim E/A-Lesen auf AD8–15: Wort-IN sieht es im oberen
  *   Byte; INB an GERADER Adresse liest AD8–15 und damit Status-8 (am Gerät gemessen
- *   2026-09-29: „INB liest untere Haelfte: C3H“), INB an ungerader Adresse liest
- *   AD0–7, die niemand treibt (FFH); eine Adresse ohne Bit 7 liefert nichts.
+ *   2026-09-29: „INB liest untere Haelfte: C3H“).  Die andere Hälfte treibt niemand
+ *   und AD hat keine Pull-ups: sie hält die Portadresse aus der Adressphase — am
+ *   Gerät „INB %81 (ungerade, AD0-7): 81H“ (G5).  Ohne Bit 7 bleibt die ganze
+ *   Adresse stehen.
  */
 TEST(EM16, Status8_WortInHighByte_InbNachA0) {
     Rig r;
@@ -215,15 +217,48 @@ TEST(EM16, Status8_WortInHighByte_InbNachA0) {
            "  IN R0,%0080\n  LD <<0>>%0080,R0\n"
            "  INB RL1,%0080\n  LDB <<0>>%0083,RL1\n"
            "  INB RL1,%0081\n  LDB <<0>>%0086,RL1\n"
-           "  IN R2,%0040\n  LD <<0>>%0084,R2\n  HALT\n");
+           "  IN R2,%0040\n  LD <<0>>%0084,R2\n"
+           "  IN R3,%0081\n  LD <<0>>%0088,R3\n"
+           "  SIN R4,%0012\n  LD <<0>>%008A,R4\n  HALT\n");
     r.vektor(0, 0, 0x0100);
     r.bus.ioWrite(kSt8, 0xC3);
     r.start();
     r.lauf(200);
-    EXPECT_EQ(r.em.peek(0x80), 0xC3);
+    EXPECT_EQ(r.w(0x80), 0xC380);                    // unten: Adressbyte 80H
     EXPECT_EQ(r.em.peek(0x83), 0xC3);
-    EXPECT_EQ(r.em.peek(0x86), 0xFF);
-    EXPECT_EQ(r.w(0x84), 0xFFFF);
+    EXPECT_EQ(r.em.peek(0x86), 0x81);
+    EXPECT_EQ(r.w(0x84), 0x0040);
+    EXPECT_EQ(r.w(0x88), 0xC381);
+    EXPECT_EQ(r.w(0x8A), 0x0012);                    // Spezial-E/A: nicht dekodiert
+}
+
+/**
+ * @test EM16/NmiQuittung_LoeschtParitaetsfehler
+ * @brief /PR = ¬PR · /NMI-ACK (9005/1: A45 Y5 → A38 → A212/06 → A48/04): die
+ *   NMI-Quittung des U8001 setzt das FF A46 wie PR (Handbuch §1.3) ⇒ /PE wieder 1.
+ *   Die NMI-Quelle selbst (A27/06 = A25/09 ∨ /PER) liegt hinter einer offenen
+ *   Trennstelle — die Karte löst keinen NMI aus, der Test legt ihn direkt an.
+ */
+TEST(EM16, NmiQuittung_LoeschtParitaetsfehler) {
+    Rig r;
+    r.load(std::string(kKopf) +
+           "L: JR L\n"
+           "  ORG <<0>>%0300\n  INC R9\n  LD <<0>>%0080,R9\n  IRET\n"
+           "  ORG <<0>>%0400+%2A\n  DW %C000,%0000,%0300\n");
+    r.vektor(0, 0, 0x0100);
+    r.start();
+    r.lauf(100);
+    r.em.injectParityError();
+    EXPECT_TRUE(r.em.parityError());
+    EXPECT_EQ(r.bus.ioRead(kPB) & 0x80, 0x00);
+    r.lauf(100);
+    EXPECT_TRUE(r.em.parityError());                 // bleibender Merker
+    r.em.u8001().setNMI(true);
+    r.lauf(100);
+    r.em.u8001().setNMI(false);
+    EXPECT_EQ(r.w(0x80), 1);                         // genau eine NMI-Quittung
+    EXPECT_FALSE(r.em.parityError());
+    EXPECT_EQ(r.bus.ioRead(kPB) & 0x80, 0x80);
 }
 
 // ─── Interrupts ──────────────────────────────────────────────────────────────

@@ -19,6 +19,8 @@
  *  - E/A, Byte: Lage nach A0 wie beim Speicher (ungerade AD0..7, gerade AD8..15;
  *    zulässig sind Standard ungerade, Spezial gerade — §9.4.3).  Beim Schreiben
  *    doppelt (Config::ioByteOnBothHalves; am A5120.16 belegt, siehe README).
+ *    Was auf einer Hälfte liegt, die beim Lesen niemand treibt, entscheidet die
+ *    Karte (`read`): am A5120.16 die Portadresse aus der Adressphase (EM::read16).
  *
  * Takte: step() führt einen Befehl (bzw. einen Durchlauf eines Wiederholungs-
  * befehls, einen Interrupt-/Trapeintritt, einen Stop-/Halt-/Bus-Takt) aus und

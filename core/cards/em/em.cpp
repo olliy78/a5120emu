@@ -369,16 +369,16 @@ uint16_t EM::read16(const Z8kBusCycle& c) {
     }
     switch (c.st) {
         case Z8kStatus::Io:
-            // /READ STATUS (A48 · A47): nur AD7 dekodiert, Status-8 auf AD8–15; die untere
-            // Hälfte treibt niemand (offen = H).  Ein INB an GERADER Portadresse liest
-            // trotzdem Status-8 — der U8001 nimmt die Hälfte nach A0 (Z8000::ioRead;
-            // am Gerät gemessen 2026-09-29).  Nachtest offen: INB an ungerader Adresse
-            // ⇒ FFH.
+            // /READ STATUS (A48 · A47): nur AD7 dekodiert, Status-8 auf AD8–15.  Die
+            // andere Hälfte treibt niemand, und Pull-ups hat AD auf 9005/1 nicht: sie
+            // behält, was der U8001 in der Adressphase darauf legte (Buskapazität) —
+            // die Portadresse.  Am Gerät 2026-09-29: `INB RL0,%0081` = 81H (G5).  Ohne
+            // Bit 7 treibt keiner etwas, der Wert ist die ganze Adresse.
             if (c.addr & 0x80) {
                 emit(Ereignis::Status8Lesen, c.addr, status8_, true);
-                return uint16_t((status8_ << 8) | 0x00FF);
+                return uint16_t((status8_ << 8) | (c.addr & 0x00FF));
             }
-            return 0xFFFF;
+            return c.addr;
         case Z8kStatus::ViAck: {
             // READ VEKTOR: A34 auf AD0–7, Status-8 auf AD8–15; löscht INT von A34.
             const uint16_t id = uint16_t((status8_ << 8) | vector8_);
@@ -400,12 +400,19 @@ uint16_t EM::read16(const Z8kBusCycle& c) {
             if (on_event_) pegelMelden();
             return 0xFFFF;
         case Z8kStatus::NmiAck:
-            // Nur gemeldet.  Das Paritäts-FF A46 der Speicherkarte löscht allein /PR
-            // (Handbuch §2.7, Setzeingang) — die Quittung berührt es nicht.
+            // /PR = ¬PR · /NMI-ACK (9005/1: A45 Y5 → A38/08 → A212/06 → A48/04; A48/06
+            // → X3 A13 → Setzeingang A46/10 auf 9000/1) — die Quittung löscht den
+            // Paritätsfehler wie PR (Handbuch §1.3, G5).  Kennung: niemand treibt AD,
+            // und eine Adresse legt der U8001 dabei nicht an (Zilog §9.4.5) ⇒ FFFFH
+            // bleibt eine Annahme.
+            per_ff_ = false;
             emit(Ereignis::NmiQuittung, 0, 0, true);
+            updatePioInputs();
             return 0xFFFF;
+        case Z8kStatus::SpecialIo:
+            return c.addr;                             // nicht dekodiert: Adresse bleibt auf AD
         default:
-            return 0xFFFF;                             // Spezial-E/A (3) nicht dekodiert
+            return 0xFFFF;
     }
 }
 

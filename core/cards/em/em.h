@@ -234,7 +234,12 @@ public:
      * @brief Paritätsfehler auslösen (FF auf der Speicherkarte → /PE = PIO B7 = 0).
      *
      * Paritätsbits werden nicht nachgebildet; ein Fehler entsteht nur über diesen
-     * Haken.  Solange PR (PIO B6) = 1 anliegt, bleibt das FF zurückgesetzt.
+     * Haken.  Das FF A46 (9000/1) ist ein **bleibender Merker**: sein Takt A43/03 =
+     * NAND(RDI, Q) sperrt sich, sobald Q = 0 (Fehler) — erst /PR (Setzeingang) löscht
+     * ihn, und /PR = ¬PR · /NMI-ACK (9005/1).  Solange PR (PIO B6) = 1 anliegt, bleibt
+     * das FF zurückgesetzt; eine NMI-Quittung des U8001 löscht es ebenfalls.
+     * RDI = NAND(/MRD-16, /MRD-8) (9005/2 A112/08), /MRD-8 nur mit MREQ-8 und damit
+     * MEN — Lesezugriffe des U880 ausserhalb des EM takten A46 nicht (G5).
      */
     void injectParityError();
 
