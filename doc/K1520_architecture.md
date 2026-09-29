@@ -403,6 +403,16 @@ dieser Aufrufe weg — der Lauf ist bitgleich dem A5120.  Save-State v6 hängt d
 EM-Block (DRAM, A22, PIO, Register, U8001 mit `runState()`) mit Kennbyte an den
 Geräteteil an.
 
+*Debug-Anschluss (S5):* `EM::setStepHook` wird **vor** jedem Schritt des U8001 gerufen
+(nicht, solange er geparkt ist); liefert er true, kehrt `advance` sofort zurück und die
+Zeit bleibt als Guthaben stehen — so hält `k1520dbg` den U8001 vor dem Befehl an.
+`EM::setEventHook` meldet jede Kommunikationstransaktion (PIO A32, A33–A36, A22,
+Quittungen) und jeden Pegelwechsel (FF A29, INT-16, TREN, BUSRQ/BUSAK, RESET16, NVI,
+STOP) als `EM::EreignisInfo`; Text dazu in `tools/em_trace.h` (`boot_trace --em`,
+`k1520dbg emlog`).  Ohne Rückruf kostet jede Stelle einen Test.  Nach aussen:
+`k1520_create_with_em`, `k1520_em_variant`, `k1520_em_led_v1/_v2`, `k1520_em_mode16`,
+`k1520_em_state` (`K1520EmState`: Register, FCW, PSAP, Kartenzustand).
+
 ### 5.2 Koppelbus
 
 Der Koppelbus modelliert die Wickelbrücken-Verdrahtung der Backplane. Er ist kein generischer Bus, sondern ein **Signal-Router**: Karten können benannte Signale anbieten und empfangen. Die Verdrahtung ist in `machines/a5120/backplane.h` definiert.

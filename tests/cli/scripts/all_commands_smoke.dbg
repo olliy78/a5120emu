@@ -155,6 +155,23 @@ verify dbg_smoke_mem.bin @0x6100
 lst
 lst list
 
+# ── A5120.16 ohne EM: jedes Kommando meldet sich, keines faellt aus der Kette ─
+# (mit EM: dbg_u8000_smoke.cli)
+cpu
+cpu u8000
+cpu zve2
+r
+cpu zve1
+dev em
+fcw
+psa
+bmode
+bvi
+bint16
+emlog off
+help u8000
+d em:0 16
+
 # ── Rest ────────────────────────────────────────────────────────────────────
 reset
 q
