@@ -1106,9 +1106,11 @@ def test_a_fresh_installation_writes_the_config_it_started_from(window, tmp_path
                                                                 monkeypatch):
     """Und sie gehört ab jetzt dem Anwender: die ``config.yaml`` wird angelegt.
 
-    Geprüft an einem EIGENEN Pfad, nicht am gemeinsamen Testverzeichnis: die
-    ctest-Fälle der Python-Ebene laufen parallel und teilen sich
-    ``$XDG_CONFIG_HOME`` — wer dort auf eine Datei wartet, prüft den Nachbarn mit.
+    Geprüft an einem EIGENEN Pfad, nicht an ``$XDG_CONFIG_HOME`` selbst: das
+    Verzeichnis ist zwar seit der PID-Trennung (conftest.py) nicht mehr über
+    ctest-Fälle hinweg geteilt, wohl aber über die anderen Tests DIESES Moduls
+    (``window`` räumt nur die eine gemerkte Datei weg) — ein eigener ``tmp_path``
+    ist hier einfacher als sich auf die Reihenfolge zu verlassen.
     """
     from app import config_io
 
@@ -1129,8 +1131,9 @@ def test_reset_to_default_restores_the_shipped_look_and_overwrites_the_config(
         window, qapp, monkeypatch, tmp_path):
     """*Ansicht ▸ Standard zurücksetzen* — die Rückfrage bejaht, alles steht wieder.
 
-    Geschrieben wird auf einen EIGENEN Pfad: die ctest-Fälle der Python-Ebene
-    laufen parallel und teilen sich ``$XDG_CONFIG_HOME``.
+    Geschrieben wird auf einen EIGENEN Pfad statt auf die gemerkte Konfiguration
+    dieses Moduls, damit dieser Test unabhängig von der Reihenfolge der anderen
+    ``window``-Tests bleibt.
     """
     from PySide6.QtWidgets import QMessageBox
 
