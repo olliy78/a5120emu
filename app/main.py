@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """
-K1520 A5120 Emulator
-====================
+K1520 Emulator — A5120 Emulator und K8915 Emulator
+==================================================
 
-Main entry point for the Qt6 GUI application.
+Main entry point for the Qt6 GUI application.  EIN Programm, zwei Gesichter:
+``--machine k8915`` wählt das Programmprofil des K8915 Emulators (eigene
+Konfiguration, Tastatur K7672, Frontplatte, NMI-Taster — `app/profil.py`);
+ohne Schalter ist es der A5120 Emulator.  Die Starter übergeben den Schalter
+fest (``run_k8915emu.sh``, ``bin/k8915emu``, Startmenü „K8915 Emulator“).
 
 Usage:
-    python3 app/main.py
+    python3 app/main.py [--machine a5120|k8915] [DISKETTE …]
 
 Requirements:
     - PySide6 (Qt6 Python bindings)
@@ -43,6 +47,31 @@ for _strom in (sys.stdout, sys.stderr):
         pass
 
 
+# --machine: Programmprofil wählen — ebenfalls vor allem anderen, denn --help und
+# die Diskettenprüfung reden schon vom Programm.  Der Schalter wird aus argv
+# entfernt, damit ihn keine spätere Auswertung (Qt, Disketten) als Datei nimmt.
+from app import profil as _profile
+
+_MASCHINE = ""
+_rest = []
+_args = iter(sys.argv[1:])
+for _arg in _args:
+    if _arg == "--machine":
+        _MASCHINE = next(_args, "")
+        if not _MASCHINE:
+            print("--machine braucht einen Namen: a5120 oder k8915", file=sys.stderr)
+            sys.exit(2)
+    elif _arg.startswith("--machine="):
+        _MASCHINE = _arg.split("=", 1)[1]
+    else:
+        _rest.append(_arg)
+try:
+    PROFIL = _profile.profil(_MASCHINE)
+except ValueError as _e:
+    print(f"--machine: {_e}", file=sys.stderr)
+    sys.exit(2)
+sys.argv[1:] = _rest
+
 # --paths: aufgelöste Pfade ausgeben und beenden.  Steht VOR den Qt- und
 # Bindungs-Importen, damit die Auskunft auch dann kommt, wenn genau das fehlt,
 # wonach gefragt wird (Kernbibliothek, PySide6).  Rauchtest des Installers,
@@ -53,11 +82,20 @@ if "--paths" in sys.argv[1:]:
     sys.exit(0)
 
 # --help: ebenfalls vor den Qt-Importen, damit die Hilfe auch ohne PySide6 kommt.
-HILFE = """a5120emu — Emulator des Buerocomputers A5120 (K1520-Bus)
+# Laufwerke, die das Profil ab Werk bestückt (A5120: A:–C: + leerer D:-Platz, also
+# vier Steckplätze; K8915: zwei) — so viele Disketten nimmt die Kommandozeile.
+_ANZAHL_LAUFWERKE = 4 if PROFIL.maschine == "a5120" else 2
+_LAUFWERKE_TEXT = ("bis zu vier Abbilder, in Laufwerksreihenfolge A: B: C: D:"
+                   if _ANZAHL_LAUFWERKE == 4 else
+                   "bis zu zwei Abbilder, in Laufwerksreihenfolge A: B:")
+_KOPF = {"a5120": "Emulator des Buerocomputers A5120 (K1520-Bus)",
+         "k8915": "Emulator des Arbeitsplatzcomputers K8915 (K1520-Bus)"}
+_P = PROFIL.programm
+HILFE = f"""{_P} — {_KOPF[PROFIL.maschine]}
 
-  a5120emu [DISKETTE …]     bis zu vier Abbilder, in Laufwerksreihenfolge A: B: C: D:
-  a5120emu --paths          aufgeloeste Pfade zeigen (Bibliothek, Katalog, Disketten)
-  a5120emu --help           diese Hilfe
+  {_P} [DISKETTE …]     {_LAUFWERKE_TEXT}
+  {_P} --paths          aufgeloeste Pfade zeigen (Bibliothek, Katalog, Disketten)
+  {_P} --help           diese Hilfe
 
 Angenommen werden .img, .hfe und .dmk.  Die genannten Disketten liegen beim
 Kaltstart bereits im Laufwerk — die Maschine bootet also von der ersten.  Sie
@@ -78,15 +116,16 @@ if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
 CLI_DISKS = []
 for _arg in sys.argv[1:]:
     if _arg.startswith("-"):
-        print(f"a5120emu: unbekannte Option '{_arg}' — `--help` zeigt die Bedienung",
+        print(f"{_P}: unbekannte Option '{_arg}' — `--help` zeigt die Bedienung",
               file=sys.stderr)
         sys.exit(2)
     if not Path(_arg).is_file():
-        print(f"a5120emu: '{_arg}' gibt es nicht", file=sys.stderr)
+        print(f"{_P}: '{_arg}' gibt es nicht", file=sys.stderr)
         sys.exit(2)
     CLI_DISKS.append(_arg)
-if len(CLI_DISKS) > 4:
-    print(f"a5120emu: {len(CLI_DISKS)} Disketten angegeben, die Maschine hat vier "
+if len(CLI_DISKS) > _ANZAHL_LAUFWERKE:
+    _zahl = "vier" if _ANZAHL_LAUFWERKE == 4 else "zwei"
+    print(f"{_P}: {len(CLI_DISKS)} Disketten angegeben, die Maschine hat {_zahl} "
           f"Laufwerke", file=sys.stderr)
     sys.exit(2)
 
@@ -119,7 +158,7 @@ def main():
 
     # Create and show main window
     try:
-        window = MainWindow(CLI_DISKS)
+        window = MainWindow(CLI_DISKS, profil=PROFIL)
         window.show()
     except Exception as e:
         # Startabbrüche des Cores (z. B. fehlender Diskettenformat-Katalog

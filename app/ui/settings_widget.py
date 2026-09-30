@@ -25,6 +25,7 @@ from PySide6.QtGui import QColor
 
 from app.ui.screen_widget import CRTParams
 from app import drive_types as dt
+from app import profil as profile
 from app import takt
 
 
@@ -42,12 +43,15 @@ class SettingsWidget(QWidget):
 
     #: (Beschriftung, Faktor) — Faktor 0.0 heisst „unbegrenzt".  Die Stufen
     #: stehen in :mod:`app.takt`, damit Auswahlfeld und Statuszeile dasselbe
-    #: sagen: der Nenntakt des A5120 (2,45 MHz) und seine Vielfachen.
+    #: sagen: der Nenntakt des A5120 (2,45 MHz) und seine Vielfachen.  Das
+    #: Profil des K8915 bekommt seine eigene Liste (2,4576 MHz), siehe __init__.
     SPEED_OPTIONS = takt.auswahl()
 
-    def __init__(self, screen_widget, parent=None):
+    def __init__(self, screen_widget, parent=None, profil=None):
         super().__init__(parent)
         self.screen = screen_widget
+        self.profil = profil or profile.VORGABE
+        self.SPEED_OPTIONS = takt.auswahl(self.profil.nenntakt_text)
 
         # Refreshers re-read control values from params (used by "Reset").
         self._refreshers: List[Callable[[], None]] = []
@@ -179,7 +183,8 @@ class SettingsWidget(QWidget):
             self.speed_combo.addItem(label, float(factor))
         self.speed_combo.currentIndexChanged.connect(self._on_speed_combo)
         self.speed_combo.setToolTip(
-            f"Der A5120 läuft mit {takt.NENNTAKT_TEXT}.  Ein Vielfaches davon "
+            f"Der {self.profil.rechner} läuft mit {self.profil.nenntakt_text}.  "
+            "Ein Vielfaches davon "
             "kürzt einen Kaltstart ab — die Uhr des Gastsystems zählt aber "
             "Taktzyklen und geht dann entsprechend falsch.")
         form.addRow("Takt:", self.speed_combo)
@@ -216,7 +221,7 @@ class SettingsWidget(QWidget):
 
         for slot in range(dt.NUM_SLOTS):
             combo = QComboBox()
-            for _short, core, _desc in dt.DRIVE_TYPES:
+            for _short, core, _desc in self.profil.waehlbare_laufwerke():
                 combo.addItem(dt.combo_label(core), core)
             combo.addItem(dt.NO_DRIVE_LABEL, dt.NO_DRIVE)
             combo.currentIndexChanged.connect(self._on_drive_combo)
@@ -224,7 +229,7 @@ class SettingsWidget(QWidget):
             form.addRow(f"Laufwerk {slot}:", combo)
 
         # Start from the standard configuration until a config restore sets it.
-        self.set_drive_types(dt.DEFAULT_DRIVE_TYPES)
+        self.set_drive_types(self.profil.standard_laufwerke())
         return inner
 
     def _on_drive_combo(self, _idx: int):

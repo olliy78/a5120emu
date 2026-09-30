@@ -1,6 +1,8 @@
 """Der Takt der emulierten Maschine — eine Stelle für Zahl und Beschriftung.
 
-Der A5120 läuft mit **2,45 MHz** (U880).  Die Oberfläche bietet diesen Nenntakt
+Der A5120 läuft mit **2,45 MHz** (U880), der K8915 mit **2,4576 MHz** — der
+Nenntakt steht im Programmprofil (`app/profil.py`), die Voreinstellung der
+Funktionen hier ist der A5120.  Die Oberfläche bietet diesen Nenntakt
 und ein paar Vielfache davon an; damit Auswahlfeld
 (:class:`~app.ui.settings_widget.SettingsWidget`) und Statuszeile
 (:mod:`app.ui.status_bar`) dieselbe Sprache sprechen, stehen Stufen und
@@ -23,18 +25,18 @@ NENNTAKT_TEXT = "2,45 MHz"
 STUFEN = (1.0, 2.0, 5.0, 10.0, 0.0)
 
 
-def beschriftung(faktor: float) -> str:
-    """„2,45 MHz", „10 × 2,45 MHz" oder „unbegrenzt"."""
+def beschriftung(faktor: float, nenntakt: str = NENNTAKT_TEXT) -> str:
+    """„2,45 MHz", „10 × 2,45 MHz" oder „unbegrenzt" (*nenntakt* aus dem Profil)."""
     faktor = float(faktor)
     if faktor <= 0.0:
         return "unbegrenzt"
     if abs(faktor - 1.0) < 1e-9:
-        return NENNTAKT_TEXT
+        return nenntakt
     # Ganze Vielfache ohne Nachkommastelle — „2 ×" liest sich, „2,0 ×" nicht.
     zahl = f"{faktor:g}".replace(".", ",")
-    return f"{zahl} × {NENNTAKT_TEXT}"
+    return f"{zahl} × {nenntakt}"
 
 
-def auswahl() -> list:
+def auswahl(nenntakt: str = NENNTAKT_TEXT) -> list:
     """[(Beschriftung, Faktor)] für ein Auswahlfeld."""
-    return [(beschriftung(f), f) for f in STUFEN]
+    return [(beschriftung(f, nenntakt), f) for f in STUFEN]

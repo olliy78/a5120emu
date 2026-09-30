@@ -723,9 +723,10 @@ Zahl der Befunde ist das nicht zu erkennen, an der Zahl der Dateien schon.
 
 ## Die anderen Werkzeuge
 
-Im Menü **Werkzeuge** steht *A5120-Emulator starten*: der Emulator des
-Bürocomputers, der von einer Diskette bootet und das Betriebssystem wirklich
-laufen lässt. Er startet als eigenes Programm und läuft neben dem
+Im Menü **Werkzeuge** stehen *A5120 Emulator starten* und
+*K8915 Emulator starten*: die Emulatoren des Bürocomputers A5120 bzw. des
+Arbeitsplatzcomputers K8915, die von einer Diskette booten und das Betriebssystem wirklich laufen
+lassen. Jeder startet als eigenes Programm und läuft neben dem
 Diskettenwerkzeug weiter.
 
 Beide Programme lesen dieselbe Datei, aber jedes für sich. Hat die Diskette hier

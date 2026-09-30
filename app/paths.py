@@ -53,12 +53,14 @@ ENV_DEFAULT_CONFIG = "K1520_DEFAULT_CONFIG"   # Auslieferungskonfiguration (Date
 #: Name des Formatkatalogs (identisch mit ``kCatalogFileName`` im Kern).
 FORMATS_FILE = "formats.yaml"
 
-#: Name der mitgelieferten Auslieferungskonfiguration (``data/default_config.yaml``
-#: im Quellbaum, ``share/k1520emu/`` in einer Installation).  Sie ist der Zustand
-#: nach der Erstinstallation UND das Ziel von *Ansicht ▸ Standard zurücksetzen*;
-#: die Konfiguration des Anwenders heisst dagegen ``config.yaml`` und liegt in
-#: :func:`config_dir`.
-DEFAULT_CONFIG_FILE = "default_config.yaml"
+#: Name der mitgelieferten Auslieferungskonfiguration des A5120 Emulators
+#: (``data/default_config_a5120.yaml`` im Quellbaum, ``share/k1520emu/`` in einer
+#: Installation).  Sie ist der Zustand nach der Erstinstallation UND das Ziel von
+#: *Ansicht ▸ Standard zurücksetzen*; die Konfiguration des Anwenders heisst dagegen
+#: ``a5120emu.yaml`` und liegt in :func:`config_dir`.  Der K8915 Emulator hat seine
+#: eigenen beiden Dateien (``default_config_k8915.yaml``/``k8915emu.yaml``) —
+#: der Name steht im Programmprofil (`app/profil.py`), gesucht wird hier.
+DEFAULT_CONFIG_FILE = "default_config_a5120.yaml"
 
 #: Verzeichnisname der Benutzerkonfiguration — historisch ``k1520emu``,
 #: NICHT ``a5120emu``; eine Umbenennung würde bestehende Konfigurationen
@@ -257,29 +259,32 @@ def formats_file() -> Optional[Path]:
 
 # ─── Auslieferungskonfiguration ──────────────────────────────────────────────
 
-def default_config_candidates() -> List[Path]:
-    """Kandidaten für ``default_config.yaml`` in absteigender Priorität.
+def default_config_candidates(name: str = DEFAULT_CONFIG_FILE) -> List[Path]:
+    """Kandidaten für die Auslieferungskonfiguration *name* in absteigender Priorität.
 
-    Dieselbe Reihenfolge wie beim Formatkatalog — Installation vor Quellbaum —,
-    nur OHNE den Benutzerordner: die Vorgabe ist das, womit ausgeliefert wurde,
-    und darf nicht von der Datei überschrieben werden, die zurückgesetzt werden
-    soll.  Wer eine eigene Vorgabe braucht, setzt :data:`ENV_DEFAULT_CONFIG`.
+    *name* kommt aus dem Programmprofil (``default_config_a5120.yaml`` bzw.
+    ``default_config_k8915.yaml``).  Dieselbe Reihenfolge wie beim Formatkatalog —
+    Installation vor Quellbaum —, nur OHNE den Benutzerordner: die Vorgabe ist
+    das, womit ausgeliefert wurde, und darf nicht von der Datei überschrieben
+    werden, die zurückgesetzt werden soll.  Wer eine eigene Vorgabe braucht,
+    setzt :data:`ENV_DEFAULT_CONFIG` — eine Datei (gilt dann für beide Programme)
+    oder ein Verzeichnis (darin wird *name* gesucht).
     """
     out: List[Path] = []
     env = os.environ.get(ENV_DEFAULT_CONFIG)
     if env:
         p = Path(env).expanduser()
-        out.append(p / DEFAULT_CONFIG_FILE if p.is_dir() else p)
+        out.append(p / name if p.is_dir() else p)
 
     base = base_dir()
-    out.append(base / "share" / "k1520emu" / DEFAULT_CONFIG_FILE)   # Installation
-    out.append(base / "data" / DEFAULT_CONFIG_FILE)                 # Quellbaum
+    out.append(base / "share" / "k1520emu" / name)   # Installation
+    out.append(base / "data" / name)                 # Quellbaum
     return out
 
 
-def default_config_file() -> Optional[Path]:
-    """Erste existierende Auslieferungskonfiguration — oder ``None``."""
-    for p in default_config_candidates():
+def default_config_file(name: str = DEFAULT_CONFIG_FILE) -> Optional[Path]:
+    """Erste existierende Auslieferungskonfiguration *name* — oder ``None``."""
+    for p in default_config_candidates(name):
         if p.is_file():
             return p.resolve()
     return None
@@ -671,6 +676,7 @@ def describe() -> str:
         lib = "NICHT GEFUNDEN"
     fmt = formats_file()
     vorgabe = default_config_file()
+    vorgabe_k8915 = default_config_file("default_config_k8915.yaml")
     bundled = bundled_disks_dir()
     dbg = debugger()
     cli = disktool_cli()
@@ -685,6 +691,7 @@ def describe() -> str:
         f"Dateien (DiskTool):{user_files_dir()}",
         f"Konfiguration:     {config_dir()}",
         f"Vorgabe-Konfig.:   {vorgabe if vorgabe else 'NICHT GEFUNDEN'}",
+        f"Vorgabe (K8915):   {vorgabe_k8915 if vorgabe_k8915 else 'NICHT GEFUNDEN'}",
         f"Debugger:          {dbg if dbg else '— (nicht mitgeliefert)'}",
         f"DiskTool (CLI):    {cli if cli else '— (nicht mitgeliefert)'}",
         f"Handbücher:        {doc_dir() if doc_dir() else '—'}",

@@ -20,6 +20,15 @@ Maschine**:
   am echten Gerät, und genau das will man sehen, wenn ein Gastsystem auf eine
   Diskette wartet, die niemand eingelegt hat.
 
+* **K8915: die sechs Lampen der Frontplatte** (nur im Programmprofil mit
+  ``frontplatte``, `app/profil.py`) — in Reihenfolge und Farbe des Geräts
+  (doc/design/16_k8915.md §3.6): **Run** grün, **Input File**, **Output File**,
+  **RUN Mode** gelb, **ERROR** und **Power** rot.  Die vier mittleren sind das
+  Anzeigelatch 61H (``k1520_panel_lamps``, aktiv low: Bit 4/5/6/7).  **Run** und
+  **Power** hängen nicht am Latch: Power leuchtet, solange der Rechner
+  eingeschaltet ist; Run hängt am Gerät vermutlich an ``/HALT`` **[?]** und
+  leuchtet hier, solange die Emulation läuft.
+
 Der ganze Streifen ist eine Anzeige und kein Bedienelement: er nimmt keinen
 Tastaturfokus (der gehört der emulierten Maschine, siehe `app/ui/focus.py`).
 """
@@ -34,6 +43,7 @@ from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QWidget
 
 from app import drive_types as dt
+from app import profil as profile
 from app import takt
 
 #: Zustände der Laufwerksleuchte.
@@ -139,12 +149,116 @@ class DriveField(QLabel):
                if wp else "Beschreibbar — Änderungen gehen in die Datei zurück."))
 
 
-class MachineStatus(QWidget):
-    """Der dauerhafte Teil der Statuszeile (Takt + Laufwerke)."""
+# ── Frontplatte des K8915 ─────────────────────────────────────────────────
+
+#: Farben der Lampen (Gerät, doc/design/16_k8915.md §3.6).
+FARBE_GRUEN = "#35c43a"
+FARBE_GELB = "#f2c230"
+FARBE_ROT = "#e0352b"
+
+#: (Name, Farbe, Latch-Bit oder None, Bedeutung) in Gerätereihenfolge, oben → unten
+#: an der Frontplatte, hier links → rechts.  Bit = None: nicht am Latch 61H.
+FRONTPLATTE = (
+    ("Run", FARBE_GRUEN, None,
+     "Rechner läuft.  Am Gerät vermutlich /HALT der CPU [?] — hier: leuchtet, "
+     "solange die Emulation läuft."),
+    ("Input File", FARBE_GELB, 4,
+     "Diskette wird gelesen (Anzeigelatch 61H Bit 4)."),
+    ("Output File", FARBE_GELB, 5,
+     "Diskette wird beschrieben (Anzeigelatch 61H Bit 5)."),
+    ("RUN Mode", FARBE_GELB, 6,
+     "System bereit — erlischt während eines Diskettenzugriffs (61H Bit 6)."),
+    ("ERROR", FARBE_ROT, 7,
+     "Fehler: Selbsttest, Lese- oder Schreibfehler (61H Bit 7)."),
+    ("Power", FARBE_ROT, None,
+     "Netzanzeige — leuchtet, solange der Rechner eingeschaltet ist."),
+)
+
+
+class PanelLamp(QWidget):
+    """Eine Lampe der Frontplatte: farbig an, dunkel (dieselbe Farbe, gedämpft) aus.
+
+    Gezeichnet wie die Laufwerksleuchte — ein Emoji-Kreis sähe je nach Schrift
+    anders aus.  Der Tooltip nennt Name, Bedeutung und Zustand.
+    """
+
+    KANTE = 10
+
+    def __init__(self, name: str, farbe: str, bedeutung: str, parent=None):
+        super().__init__(parent)
+        self.name, self.farbe, self.bedeutung = name, QColor(farbe), bedeutung
+        self._an = False
+        self.setFixedSize(QSize(self.KANTE + 4, self.KANTE + 4))
+        self.setFocusPolicy(Qt.NoFocus)
+        self._tooltip()
+
+    def an(self) -> bool:
+        return self._an
+
+    def set_an(self, an: bool) -> None:
+        """Nur bei echter Änderung neu zeichnen — läuft im 120-ms-Takt."""
+        an = bool(an)
+        if an == self._an:
+            return
+        self._an = an
+        self._tooltip()
+        self.update()
+
+    def _tooltip(self):
+        self.setToolTip(f"{self.name}: {'an' if self._an else 'aus'}\n{self.bedeutung}")
+
+    def paintEvent(self, event):
+        malen = QPainter(self)
+        malen.setRenderHint(QPainter.Antialiasing)
+        kreis = self.rect().adjusted(2, 2, -2, -2)
+        fuellung = self.farbe if self._an else self.farbe.darker(330)
+        malen.setPen(QPen(self.farbe.darker(160), 1.0))
+        malen.setBrush(fuellung)
+        malen.drawEllipse(kreis)
+        malen.end()
+
+
+class Frontplatte(QWidget):
+    """Die sechs Lampen des K8915 nebeneinander (Quelle: :meth:`zeige`)."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFocusPolicy(Qt.NoFocus)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(2, 0, 2, 0)
+        lay.setSpacing(2)
+        self._lampen: List[PanelLamp] = []
+        self._bits = []
+        for name, farbe, bit, bedeutung in FRONTPLATTE:
+            lampe = PanelLamp(name, farbe, bedeutung)
+            lay.addWidget(lampe)
+            self._lampen.append(lampe)
+            self._bits.append(bit)
+
+    def lampen(self) -> List[PanelLamp]:
+        """Die Lampen in Gerätereihenfolge (Run … Power)."""
+        return list(self._lampen)
+
+    def zeige(self, latch: int, laeuft: bool, eingeschaltet: bool) -> None:
+        """*latch* = Rohbyte von ``k1520_panel_lamps`` (aktiv low)."""
+        for lampe, bit, (name, *_rest) in zip(self._lampen, self._bits, FRONTPLATTE):
+            if bit is None:
+                lampe.set_an(eingeschaltet if name == "Power" else laeuft)
+            else:
+                lampe.set_an(eingeschaltet and not (int(latch) >> bit) & 1)
+
+    def zustand(self) -> dict:
+        """{Name: an?} — für Tests und Abfragen."""
+        return {l.name: l.an() for l in self._lampen}
+
+
+class MachineStatus(QWidget):
+    """Der dauerhafte Teil der Statuszeile (Takt + Laufwerke, K8915: Frontplatte)."""
+
+    def __init__(self, parent=None, profil=None):
+        super().__init__(parent)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.profil = profil or profile.VORGABE
 
         self.takt = QLabel()
         self.takt.setMargin(2)
@@ -155,11 +269,19 @@ class MachineStatus(QWidget):
         self._lay = QHBoxLayout(self)
         self._lay.setContentsMargins(0, 0, 0, 0)
         self._lay.setSpacing(4)
+        # Feste Einträge vorn (K8915: Frontplatte + Strich, dann der Takt);
+        # set_drive_types räumt nur, was dahinter kommt.
+        self.frontplatte: Optional[Frontplatte] = None
+        if self.profil.frontplatte:
+            self.frontplatte = Frontplatte()
+            self._lay.addWidget(self.frontplatte)
+            self._lay.addWidget(_trennstrich())
         self._lay.addWidget(self.takt)
+        self._fest = self._lay.count()
 
         self._felder: List[DriveField] = []
         self._lampen: List[DriveLamp] = []
-        self.set_drive_types(dt.DEFAULT_DRIVE_TYPES)
+        self.set_drive_types(self.profil.standard_laufwerke())
 
     # ── Takt ─────────────────────────────────────────────────────────────────
 
@@ -177,13 +299,14 @@ class MachineStatus(QWidget):
             self.takt.setText("Takt: —")
             self.takt.setToolTip("Die Maschine läuft nicht.")
             return
-        self.takt.setText(f"Takt: {takt.beschriftung(faktor)}")
+        self.takt.setText(f"Takt: {takt.beschriftung(faktor, self.profil.nenntakt_text)}")
 
-        tipp = [f"Eingestellt unter Einstellungen ▸ Allgemein.  Der A5120 läuft "
-                f"mit {takt.NENNTAKT_TEXT}."]
+        nenntakt = self.profil.nenntakt_text
+        tipp = [f"Eingestellt unter Einstellungen ▸ Allgemein.  Der "
+                f"{self.profil.rechner} läuft mit {nenntakt}."]
         if gemessen is not None:
             wert = f"{gemessen:.1f}".replace(".", ",")
-            tipp.append(f"Gemessen: {wert} × {takt.NENNTAKT_TEXT}.")
+            tipp.append(f"Gemessen: {wert} × {nenntakt}.")
             if faktor > 0.0 and gemessen < faktor * 0.9:
                 tipp.append("Der Wirtsrechner kommt nicht mit.")
         self.takt.setToolTip("\n".join(tipp))
@@ -194,8 +317,8 @@ class MachineStatus(QWidget):
         """Felder neu aufbauen — je bestücktem K5122-Steckplatz eines."""
         # Alles ausser dem Taktfeld abräumen — auch die Dehnfuge am Ende, sonst
         # sammeln sich bei jedem Laufwerkswechsel weitere an.
-        while self._lay.count() > 1:
-            eintrag = self._lay.takeAt(1)
+        while self._lay.count() > self._fest:
+            eintrag = self._lay.takeAt(self._fest)
             w = eintrag.widget()
             if w is not None:
                 w.setParent(None)

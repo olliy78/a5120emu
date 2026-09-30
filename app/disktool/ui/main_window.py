@@ -281,6 +281,7 @@ class MainWindow(QMainWindow):
         # Programm gestartet, das neben diesem weiterläuft.
         m = leiste.addMenu("&Werkzeuge")
         m.addAction(self.act_emulator)
+        m.addAction(self.act_k8915emu)
 
         m = leiste.addMenu("&Hilfe")
         m.addAction(self.act_hilfe)
@@ -2180,8 +2181,13 @@ class MainWindow(QMainWindow):
         self._hilfe.show()
         return self._hilfe
 
-    def _emulator_starten(self) -> None:
-        """Den A5120-Emulator als eigenständiges Programm daneben öffnen.
+    def _k8915emu_starten(self) -> None:
+        """Den K8915 Emulator daneben öffnen (siehe :meth:`_emulator_starten`)."""
+        self._emulator_starten(kennung="k8915emu", titel="K8915 Emulator")
+
+    def _emulator_starten(self, kennung: str = "emulator",
+                          titel: str = "A5120 Emulator") -> None:
+        """Den A5120 Emulator (bzw. *kennung*) als eigenständiges Programm daneben öffnen.
 
         Bewusst ein zweiter Prozess: die beiden benutzen verschiedene
         Bibliotheken (``libk1520disk`` gegen ``libk1520core``).  Eine Diskette,
@@ -2202,9 +2208,9 @@ class MainWindow(QMainWindow):
             if antwort == QMessageBox.Save and not self.save():
                 return
         try:
-            programme.programm_starten(programme.EMULATOR)
+            programme.programm_starten(kennung)
         except RuntimeError as e:
-            QMessageBox.warning(self, "A5120-Emulator", str(e))
+            QMessageBox.warning(self, titel, str(e))
 
     def _ueber_dialog(self) -> None:
         from app.core_binding.k1520disk import version

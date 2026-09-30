@@ -1063,8 +1063,8 @@ def test_an_access_to_an_empty_drive_turns_the_lamp_red(window, qapp):
 
 # ─── Auslieferungskonfiguration und „Standard zurücksetzen" ──────────────────
 #
-# Zwei Wege führen zu derselben Datei (`data/default_config.yaml`): der ERSTE
-# Start nach der Installation, wo es noch keine `config.yaml` gibt, und
+# Zwei Wege führen zu derselben Datei (`data/default_config_a5120.yaml`): der
+# ERSTE Start nach der Installation, wo es noch keine `a5120emu.yaml` gibt, und
 # *Ansicht ▸ Standard zurücksetzen*, das die vorhandene überschreibt.  Was beide
 # tragen muss: die Datei wird wirklich gefunden und angewandt, die eingelegten
 # Disketten bleiben dabei liegen, und ohne die Datei stürzt nichts ab.
@@ -1074,7 +1074,7 @@ def test_the_shipped_default_config_is_found_and_complete():
     from app import config_io, paths
 
     assert paths.default_config_file() is not None, \
-        "data/default_config.yaml fehlt:\n" + "\n".join(
+        "data/default_config_a5120.yaml fehlt:\n" + "\n".join(
             str(p) for p in paths.default_config_candidates())
     vorgabe = config_io.standard_konfiguration()
     for abschnitt in ("crt", "general", "drive_types", "window"):
@@ -1089,7 +1089,7 @@ def test_the_shipped_default_config_is_found_and_complete():
 
 
 def test_a_fresh_installation_starts_from_the_shipped_default(window):
-    """Erster Start ohne ``config.yaml``: die Vorgabe zieht — und wird geschrieben.
+    """Erster Start ohne ``a5120emu.yaml``: die Vorgabe zieht — und wird geschrieben.
 
     Die Fixture räumt die gemerkte Konfiguration weg, das Fenster steht also im
     Zustand nach der Erstinstallation.
@@ -1104,7 +1104,7 @@ def test_a_fresh_installation_starts_from_the_shipped_default(window):
 
 def test_a_fresh_installation_writes_the_config_it_started_from(window, tmp_path,
                                                                 monkeypatch):
-    """Und sie gehört ab jetzt dem Anwender: die ``config.yaml`` wird angelegt.
+    """Und sie gehört ab jetzt dem Anwender: die ``a5120emu.yaml`` wird angelegt.
 
     Geprüft an einem EIGENEN Pfad, nicht an ``$XDG_CONFIG_HOME`` selbst: das
     Verzeichnis ist zwar seit der PID-Trennung (conftest.py) nicht mehr über
@@ -1114,8 +1114,8 @@ def test_a_fresh_installation_writes_the_config_it_started_from(window, tmp_path
     """
     from app import config_io
 
-    ziel = tmp_path / "config.yaml"
-    monkeypatch.setattr(config_io, "default_config_path", lambda: str(ziel))
+    ziel = tmp_path / "a5120emu.yaml"
+    monkeypatch.setattr(config_io, "default_config_path", lambda *_: str(ziel))
     window._load_or_create_default_config()
 
     assert ziel.is_file()
@@ -1141,7 +1141,7 @@ def test_reset_to_default_restores_the_shipped_look_and_overwrites_the_config(
 
     vorgabe = config_io.standard_konfiguration()
     monkeypatch.setattr(config_io, "default_config_path",
-                        lambda: str(tmp_path / "config.yaml"))
+                        lambda *_: str(tmp_path / "a5120emu.yaml"))
     monkeypatch.setattr(QMessageBox, "question",
                         staticmethod(lambda *a, **k: QMessageBox.Yes))
 
@@ -1205,7 +1205,7 @@ def test_reset_to_default_without_the_shipped_file_says_so(window, monkeypatch):
 
     from app import config_io
 
-    monkeypatch.setattr(config_io, "standard_konfiguration", lambda: {})
+    monkeypatch.setattr(config_io, "standard_konfiguration", lambda *_: {})
     gemeldet = []
     monkeypatch.setattr(QMessageBox, "warning",
                         staticmethod(lambda *a, **k: gemeldet.append(a[2])))

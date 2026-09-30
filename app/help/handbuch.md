@@ -1,7 +1,10 @@
-# a5120emu — Kurzhandbuch
+# a5120emu / k8915emu — Kurzhandbuch
 
 Dieses Programm ist ein Emulator des Bürocomputers **robotron A5120** und seiner
-Verwandten am K1520-Bus. Nachgebildet werden **Bus und Steckkarten** — Z80,
+Verwandten am K1520-Bus. Es gibt ihn in zwei Gestalten: den **A5120 Emulator**
+(`a5120emu`) und den **K8915 Emulator** (`k8915emu`) — dasselbe Programm mit
+eigener Konfiguration, eigener Tastatur und der Frontplatte des K8915; was nur
+den K8915 betrifft, steht im Abschnitt „Der K8915 Emulator". Nachgebildet werden **Bus und Steckkarten** — Z80,
 Speicher, Bildschirmkarte, Tastatur und Diskettensteuerung; der Z80-Code von
 Boot-ROM, BIOS und Betriebssystem läuft darin **unverändert**. Es gibt deshalb
 keine eingebauten Abkürzungen und keine Betriebssystem-Nachbauten: was auf der
@@ -260,7 +263,10 @@ und die Funktionstasten, die CP/M braucht —, trägt jede Bedienung des Fenster
 ## Konfiguration — was gemerkt wird und wo
 
 Alles, was man einstellt, landet fortlaufend in
-`~/.config/k1520emu/config.yaml` (Windows: `%APPDATA%\K1520emu`): Bildröhre,
+`~/.config/k1520emu/a5120emu.yaml` bzw. `k8915emu.yaml` (Windows:
+`%APPDATA%\K1520emu`) — jedes der beiden Programme hat seine eigene Datei, man
+kann also den A5120 mit drei Laufwerken und sichtbarer Tastatur und den K8915 mit
+zwei Laufwerken ohne Tastatur nebeneinander führen. Gemerkt werden Bildröhre,
 Takt, Laufwerksbestückung, eingelegte Disketten, Größe und Lage des Fensters
 (auch „maximiert"), die Lage und Breite der Kästen samt der Trennlinien
 dazwischen, und der Inhalt der Symbolleiste.
@@ -276,18 +282,22 @@ Takt, Laufwerksbestückung, Fenstergröße, Kästen und Symbolleiste — und
 **überschreibt damit die gespeicherte Konfiguration**; deshalb wird gefragt. Die
 eingelegten Disketten bleiben dabei liegen: was zurückgesetzt wird, ist die
 Einrichtung, nicht die Maschine. Die Vorgabe selbst ist eine Datei des
-Programms (`share/k1520emu/default_config.yaml`, im Quellbaum
-`data/default_config.yaml`) und hat denselben Aufbau wie eine gespeicherte
-Konfiguration — wer einen anderen Auslieferungszustand will, kopiert seinen
-`config.yaml`-Inhalt dorthin.
+Programms (`share/k1520emu/default_config_a5120.yaml` bzw.
+`default_config_k8915.yaml`, im Quellbaum unter `data/`) und hat denselben
+Aufbau wie eine gespeicherte Konfiguration — wer einen anderen
+Auslieferungszustand will, kopiert den Inhalt seiner `a5120emu.yaml` dorthin.
+
+Frühere Fassungen hießen die Datei des A5120 `config.yaml`. Findet der A5120
+Emulator beim Start noch eine `config.yaml`, aber keine `a5120emu.yaml`, benennt
+er sie **einmal** um — die Einrichtung geht beim Update also nicht verloren.
 
 ## Wo die Dateien liegen
 
 | Ordner | Wofür |
 |--------|-------|
 | `K1520emu/Disketten` (im Dokumentenordner) | die Abbilder |
-| `~/.config/k1520emu/config.yaml` | die Konfiguration |
-| `share/k1520emu/default_config.yaml` (in der Installation) | der Auslieferungszustand |
+| `~/.config/k1520emu/a5120emu.yaml`, `k8915emu.yaml` | die Konfiguration je Programm |
+| `share/k1520emu/default_config_a5120.yaml`, `…_k8915.yaml` (in der Installation) | der Auslieferungszustand |
 
 Beim ersten Start nach einer Installation werden die mitgelieferten
 Beispieldisketten dorthin ausgepackt. Verschieben lässt sich das mit den
@@ -298,9 +308,13 @@ Abbilder). Wo das Programm gerade sucht, sagt `a5120emu --paths`.
 
 ```
 a5120emu [DISKETTE …]     bis zu vier Abbilder, in Laufwerksreihenfolge A: B: C: D:
+k8915emu [DISKETTE …]     bis zu zwei Abbilder, A: B:
 a5120emu --paths          aufgelöste Pfade zeigen
 a5120emu --help           Kurzhilfe
 ```
+
+Im Quellbaum heißen die Starter `run_a5120emu.sh` und `run_k8915emu.sh`; beide
+rufen `app/main.py` auf, der zweite mit `--machine k8915`.
 
 Die genannten Disketten liegen **beim Kaltstart schon im Laufwerk** — die
 Maschine bootet also von der ersten. Sie ersetzen die gemerkte Belegung nur für
@@ -311,8 +325,11 @@ Skriptbetrieb); `k1520dbg DISKETTE --console` ist die Konsolenfassung.
 
 ## Die anderen Werkzeuge
 
-Im Menü **Werkzeuge** stehen die beiden Programme, die zur selben Installation
+Im Menü **Werkzeuge** stehen die Programme, die zur selben Installation
 gehören und dieselben Disketten anfassen:
+
+* **K8915 Emulator starten** bzw. **A5120 Emulator starten** — der jeweils
+  andere Emulator, als eigenes Programm mit eigener Konfiguration.
 
 * **k1520DiskTool starten** — das Diskettenwerkzeug: Dateien von einer Diskette
   in einen Ordner holen und wieder zurückschreiben, Disketten anlegen, prüfen,
@@ -331,6 +348,55 @@ Suchpfad, ein anderer Arbeitsordner), kopiert sie sich woandershin.
 > Eine Diskette, die hier im Laufwerk liegt, darf zugleich unter `k1520dbg`
 > offen sein: der Debugger arbeitet standardmäßig auf einer Kopie und schreibt
 > nicht in die Datei zurück.
+
+## Der K8915 Emulator
+
+`k8915emu` ist derselbe Emulator für den **robotron K8915** (Version 3, 5¼″):
+ZRE mit 128 KB, Bildschirmkarte K7024, Tastatur K7672, Diskettensteuerung K5122
+mit zwei K5601. Was anders ist:
+
+* **Einschalten** startet den Selbsttest des Boot-ROMs (ROM, RAM, KEY, CTC, SIO —
+  in der letzten Zeile unter „DIAGNOSTIC"). Er dauert rund 12 Sekunden
+  Maschinenzeit, bei der Vorgabe 10 × Takt also gut eine Sekunde. Danach steht
+  `* Coldstart *  Disk on A: ready ? --> <ENTER>` — **RETURN** lädt das System
+  von A:. SCPX 8915 richtet beim Start die RAM-Disk E: ein und meldet sich mit `A>`.
+* **Takt** 2,4576 MHz (`10 × 2,4576 MHz` usw.).
+* **Laufwerke:** zwei K5601 wie am Gerät; wählbar sind nur 5¼″-Laufwerke.
+* **Die Frontplatte in der Statuszeile** — sechs Lampen, von links nach rechts
+  wie am Gerät von oben nach unten:
+
+  | Lampe | Farbe | leuchtet |
+  |-------|-------|----------|
+  | Run | grün | solange die Emulation läuft (am Gerät vermutlich `/HALT` der CPU — nicht belegt) |
+  | Input File | gelb | beim Lesen von der Diskette |
+  | Output File | gelb | beim Schreiben auf die Diskette |
+  | RUN Mode | gelb | System bereit (erlischt während eines Diskettenzugriffs) |
+  | ERROR | rot | Fehler — Selbsttest, Lesen oder Schreiben |
+  | Power | rot | solange der Rechner eingeschaltet ist |
+
+  Die vier mittleren schaltet das Betriebssystem selbst (Anzeigelatch 61H).
+* **NMI-Taster** — *Maschine ▸ NMI-Taster* und in der Symbolleiste neben
+  *Reset*, ohne Tastenkürzel. Wie am Gerät ist das kein Rückstellen: solange das
+  Boot-ROM eingeblendet ist (Selbsttest, Lader), gehen die Lampen aus und der
+  Selbsttest beginnt von vorn. **Unter SCPX** liegt an der Einsprungstelle RAM —
+  die CPU springt dorthin, meist in einen Absturz. Das ist das Verhalten des
+  Geräts nach den Unterlagen und wird bewusst nicht abgefangen; danach hilft
+  *Rückstellen*.
+* **Die Bildschirmtastatur ist die K7672** (*Ansicht ▸ Tastatur*): deutsche
+  Belegung, Funktionsreihe CTRL · ALT1 ^S MOD2 PF1 · PF2–PF9 · CLEAR RESET BREAK,
+  Mittelblock PF10–PF12, PA1–PA3, GRAPH und Kursorkreuz, Ziffernblock mit CE, `=`
+  und ENTER. Die roten, grünen und grauen Zweitbeschriftungen sind die des
+  Originals (rot = die PC-Bedeutung der Taste: `Pause`, `Pg Up`, `Prt Sc` …).
+  Jede Taste sendet, was die Tastatur-Firmware für sie vorsieht: unter SCPX den
+  PC-Scancode, im Boot-ROM das Zeichen. Tasten, für die es dort nichts gibt
+  (die Funktionstasten im Boot-ROM, `CL` — schaltet am Gerät nur den
+  Tastenklick um), federn zurück und senden nichts. **Umschalt** und **CTRL**
+  rasten für genau eine Taste, **CAPS LOCK** ist eine echte Taste. Die drei
+  Lampen **GRAPH**, **CAPS** und **READY** (grün: die Tastatur darf senden)
+  zeigen den Zustand der Tastatur.
+* Die **PC-Tastatur** geht wie beim A5120 an den Rechner; SCPX setzt die
+  Tasten selbst in Zeichen um (deutsche Belegung: `z`/`y` getauscht). `Strg+Pause`
+  des K8915 liegt auf `^S` der Bildschirmtastatur.
 
 ## Tastenkürzel
 
@@ -368,6 +434,10 @@ kleiner machen oder unter *CRT* die aufwendigen Regler zurücknehmen.
 **Die Tastatur tippt ins Leere.** Der Fokus liegt nicht auf der Röhre: einmal
 hineinklicken. (Normalerweise holt das Fenster ihn von selbst zurück.)
 
-**Gar nichts startet.** `a5120emu --paths` sagt, wo das Programm die
+**Der K8915 bleibt nach dem Selbsttest mit einem Buchstaben stehen.** Der
+Buchstabe hinter dem Testnamen ist die Fehlerkennung des Boot-ROMs; RETURN
+lädt trotzdem.
+
+**Gar nichts startet.** `a5120emu --paths` (bzw. `k8915emu --paths`) sagt, wo das Programm die
 Kernbibliothek und den Formatkatalog sucht — das ist die erste Frage, wenn
 etwas nicht gefunden wird.

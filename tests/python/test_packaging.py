@@ -1103,7 +1103,8 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
         # Erstinstallation in den eingebauten Vorgaben auf (kein Absturz, aber
         # eine andere Oberflaeche als die gewollte) und *Ansicht > Standard
         # zuruecksetzen* meldet „nicht gefunden".
-        "payload/share/k1520emu/default_config.yaml",
+        "payload/share/k1520emu/default_config_a5120.yaml",
+        "payload/share/k1520emu/default_config_k8915.yaml",
         "payload/share/icons/a5120emu.svg",
         # k1520DiskTool: Bibliothek, Kommandozeile, Oberflaeche, Starter.
         # Ohne diese Zeilen laege app/disktool/ zwar im Paket (die ganze app/-

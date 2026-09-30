@@ -1,5 +1,7 @@
 #!/bin/bash
-# a5120emu — Starter des Emulators (Gegenstück zu run_disktool.sh)
+# k8915emu — Starter des K8915 Emulators (Gegenstück zu run_a5120emu.sh)
+# Dasselbe Programm wie der A5120 Emulator, mit dem Programmprofil des K8915
+# (app/profil.py): eigene Konfiguration k8915emu.yaml, Tastatur K7672, Frontplatte.
 # Automatically activates venv and starts the GUI
 
 set -e
@@ -31,7 +33,7 @@ PY="$VENV_DIR/bin/python3"
 export LD_LIBRARY_PATH="$BUILD_DIR:$LD_LIBRARY_PATH"
 
 # Start GUI
-echo "A5120 Emulator"
+echo "K8915 Emulator"
 echo "=============="
 echo ""
 echo "Python: $PY"
@@ -41,4 +43,4 @@ echo ""
 echo "Starting GUI..."
 echo ""
 
-exec "$PY" "$PROJECT_DIR/app/main.py" "$@"
+exec "$PY" "$PROJECT_DIR/app/main.py" --machine k8915 "$@"

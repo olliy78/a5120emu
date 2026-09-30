@@ -66,6 +66,31 @@ DEFAULT_DRIVE_TYPES = ["K5601", "K5601", "K5601", NO_DRIVE]
 
 NUM_SLOTS = 4
 
+# ── Je Maschine (Programmprofil, app/profil.py) ─────────────────────────────
+#: Bestückung ab Werk.  K8915: wie das Gerät des Anwenders — zwei K5601
+#: (doc/design/16_k8915.md §6.4), Steckplatz 2/3 leer.
+_STANDARD_JE_MASCHINE = {
+    "a5120": DEFAULT_DRIVE_TYPES,
+    "k8915": ["K5601", "K5601", NO_DRIVE, NO_DRIVE],
+}
+#: Wählbare Typen.  K8915 nur 5¼″: 8″-Laufwerke sind dort nicht belegt [?] — die
+#: Karte (K5122) wäre dieselbe, aber weder Gerät noch BIOS geben Anlass dazu.
+_TYPEN_JE_MASCHINE = {
+    "a5120": [core for _s, core, _d in DRIVE_TYPES],
+    "k8915": ["K5601", "K5600.10", "K5600.20"],
+}
+
+
+def default_drive_types(maschine: str = "a5120") -> list:
+    """Bestückung ab Werk der Maschine *maschine* (Kopie, je Steckplatz ein Name)."""
+    return list(_STANDARD_JE_MASCHINE.get(maschine, DEFAULT_DRIVE_TYPES))
+
+
+def drive_types_for(maschine: str = "a5120") -> list:
+    """Die Einträge aus :data:`DRIVE_TYPES`, die an *maschine* wählbar sind."""
+    erlaubt = _TYPEN_JE_MASCHINE.get(maschine, _TYPEN_JE_MASCHINE["a5120"])
+    return [e for e in DRIVE_TYPES if e[1] in erlaubt]
+
 _BY_CORE = {core: (short, desc) for short, core, desc in DRIVE_TYPES}
 
 

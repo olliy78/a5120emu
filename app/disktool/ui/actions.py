@@ -146,11 +146,15 @@ _SPEC: List[Tuple] = [
      "Verzeichnis und Ordner neu einlesen", "_aktualisieren", False),
 
     # ── Werkzeuge ───────────────────────────────────────────────────────────
-    # Das Nachbarprogramm derselben Installation.  Es fasst dieselben Disketten
-    # an, also gehört es aus dem laufenden Programm heraus erreichbar.
-    ("emulator", "&A5120-Emulator starten", None, None,
-     "Den Emulator öffnen — er bootet von einer Diskette und läuft neben dem "
-     "DiskTool weiter", "_emulator_starten", False),
+    # Die Nachbarprogramme derselben Installation — die beiden Emulatoren.  Sie
+    # fassen dieselben Disketten an, also gehören sie aus dem laufenden
+    # Programm heraus erreichbar.
+    ("emulator", "&A5120 Emulator starten", None, None,
+     "Den A5120 Emulator öffnen — er bootet von einer Diskette und läuft neben "
+     "dem DiskTool weiter", "_emulator_starten", False),
+    ("k8915emu", "&K8915 Emulator starten", None, None,
+     "Den K8915 Emulator öffnen — er bootet von einer Diskette und läuft neben "
+     "dem DiskTool weiter", "_k8915emu_starten", False),
 
     # ── Hilfe ───────────────────────────────────────────────────────────────
     ("hilfe", "&Handbuch…", None, "F1", "Bedienung, Begriffe und Tastenkürzel",
@@ -189,7 +193,8 @@ KURZ = {'oeffnen': 'Öffnen',
     'neuer_ordner': 'Neuer Ordner',
     'umbenennen': 'Umbenennen',
     'aktualisieren': 'Neu lesen',
-    'emulator': 'Emulator',
+    'emulator': 'A5120',
+    'k8915emu': 'K8915',
     'hilfe': 'Handbuch',
     'ueber': 'Über'}
 

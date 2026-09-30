@@ -38,14 +38,22 @@ Example::
       toolbar: [konfig_laden, konfig_speichern, '', power, reset]
       toolbar_style: 3
 
-The auto-persisted configuration lives under ``~/.config/k1520emu/config.yaml``
-(honouring ``$XDG_CONFIG_HOME``); every exported/loaded file uses the very same
-syntax, so a saved config can later be loaded back verbatim.
+The auto-persisted configuration lives under ``~/.config/k1520emu/`` (honouring
+``$XDG_CONFIG_HOME``) — **one file per program**, named in the program profile
+(`app/profil.py`): ``a5120emu.yaml`` for the A5120 Emulator, ``k8915emu.yaml`` for
+the K8915 Emulator (doc/design/18_k8915emu_oberflaeche.md §2).  Every
+exported/loaded file uses the very same syntax, so a saved config can later be
+loaded back verbatim.
+
+**Umzug der Altdatei** (:func:`konfig_umziehen`): bis 2026-09 hiess die Datei des
+A5120 ``config.yaml``.  Findet der A5120 Emulator beim Start noch eine
+``config.yaml``, aber keine ``a5120emu.yaml``, wird sie EINMAL umbenannt — sonst
+stünde der Anwender nach dem Update mit dem Auslieferungszustand da.
 
 **Die Auslieferungskonfiguration** (:func:`standard_konfiguration`) ist eine
 Datei desselben Aufbaus, die mit dem Programm kommt statt vom Anwender:
-``data/default_config.yaml`` im Quellbaum, ``share/k1520emu/`` in einer
-Installation.  Sie ist der Zustand nach der Erstinstallation und das Ziel von
+``data/default_config_a5120.yaml`` bzw. ``data/default_config_k8915.yaml`` im
+Quellbaum, ``share/k1520emu/`` in einer Installation.  Sie ist der Zustand nach der Erstinstallation und das Ziel von
 *Ansicht ▸ Standard zurücksetzen*.  Sie trägt bewusst KEINEN ``disks``-Abschnitt
 — Diskettenpfade sind rechnerspezifisch, und ohne den Abschnitt lässt das
 Zurücksetzen die eingelegten Disketten in Ruhe.
@@ -56,9 +64,13 @@ import os
 import yaml
 
 from app import paths
+from app import profil as profile
 from app.ui.screen_widget import CRTParams
 
 CONFIG_VERSION = 1
+
+#: Name der Konfiguration des A5120 bis 2026-09 — Quelle des einmaligen Umzugs.
+ALTE_KONFIG_DATEI = "config.yaml"
 
 
 def default_config_dir() -> str:
@@ -70,9 +82,40 @@ def default_config_dir() -> str:
     return str(paths.config_dir())
 
 
-def default_config_path() -> str:
-    """Path of the auto-persisted configuration file."""
-    return os.path.join(default_config_dir(), "config.yaml")
+def default_config_path(profil: "profile.Programmprofil" = None) -> str:
+    """Path of the auto-persisted configuration file of *profil* (default A5120)."""
+    profil = profil or profile.VORGABE
+    return os.path.join(default_config_dir(), profil.konfig_datei)
+
+
+def konfig_umziehen(profil: "profile.Programmprofil" = None) -> str:
+    """Die Altdatei ``config.yaml`` einmalig in ``a5120emu.yaml`` umbenennen.
+
+    Nur für den A5120 Emulator (dem gehörte die Altdatei), nur wenn die neue
+    Datei noch fehlt, und nur als UMBENENNUNG — nicht kopiert (sonst lägen zwei
+    Stände nebeneinander, und niemand wüsste, welcher gilt) und nicht gelöscht
+    ohne Ersatz.  Die Meldung geht ins Protokoll (stdout), wie die übrigen
+    ``[config]``-Zeilen.
+
+    Returns:
+        Die Meldung, wenn umgezogen wurde, sonst ``""``.
+    """
+    profil = profil or profile.VORGABE
+    if profil.maschine != "a5120":
+        return ""
+    alt = os.path.join(default_config_dir(), ALTE_KONFIG_DATEI)
+    neu = default_config_path(profil)
+    if not os.path.isfile(alt) or os.path.exists(neu):
+        return ""
+    try:
+        os.rename(alt, neu)
+    except OSError as e:
+        meldung = f"[config] Umzug {alt} → {neu} gescheitert: {e}"
+        print(meldung)
+        return ""
+    meldung = f"[config] Konfiguration umgezogen: {alt} → {neu}"
+    print(meldung)
+    return meldung
 
 
 def build_config(crt: CRTParams, general: dict, disks: list,
@@ -109,21 +152,23 @@ def load_config(path: str) -> dict:
     return data or {}
 
 
-def standard_konfiguration() -> dict:
+def standard_konfiguration(profil: "profile.Programmprofil" = None) -> dict:
     """Die mitgelieferte Auslieferungskonfiguration (``{}``, wenn es keine gibt).
 
-    Sie liegt als ``default_config.yaml`` neben dem Formatkatalog
+    Sie liegt als ``default_config_<maschine>.yaml`` neben dem Formatkatalog
     (:func:`app.paths.default_config_file`) und wird an zwei Stellen gebraucht:
-    beim ERSTEN Start, solange es noch keine ``config.yaml`` gibt, und bei
-    *Ansicht ▸ Standard zurücksetzen*.
+    beim ERSTEN Start, solange es noch keine Konfiguration des Anwenders
+    (``a5120emu.yaml``/``k8915emu.yaml``) gibt, und bei *Ansicht ▸ Standard
+    zurücksetzen*.
 
     **Ein Fehlschlag ist kein Grund, den Start abzubrechen**: fehlt oder bricht
     die Datei, kommt ein leeres Verzeichnis zurück und der Emulator bleibt bei
     den im Programm eingebauten Vorgaben (CRTParams(), Tempo 1,0,
-    ``dt.DEFAULT_DRIVE_TYPES``, Standard-Symbolleiste).  Sie ist eine Beigabe,
+    Laufwerke des Profils, Standard-Symbolleiste).  Sie ist eine Beigabe,
     keine Voraussetzung.
     """
-    pfad = paths.default_config_file()
+    profil = profil or profile.VORGABE
+    pfad = paths.default_config_file(profil.vorgabe_datei)
     if pfad is None:
         return {}
     try:
