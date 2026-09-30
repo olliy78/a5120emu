@@ -163,7 +163,8 @@ TEST(K7672, DcpBuchstabeDrueckenUndLoslassen)
 /**
  * @test K7672.DcpUmschaltUndStrg
  * @brief Ein Zeichen, das auf der K7672 Umschalt braucht ('!' = Umschalt + 1), bekommt
- *        2AH/AAH darum; Strg+C = 1DH 2EH AEH 9DH; Enter 1CH, Rück 0EH, F1 3BH.
+ *        2AH/AAH darum; Strg+C = 1DH 2EH AEH 9DH; Enter 1CH, F1 3BH (Rücktaste:
+ *        DcpRuecktasteIstKursorLinks).
  */
 TEST(K7672, DcpUmschaltUndStrg)
 {
@@ -177,11 +178,9 @@ TEST(K7672, DcpUmschaltUndStrg)
     EXPECT_EQ(alles(a), (std::vector<int>{0x1D, 0x2E, 0xAE, 0x9D}));
     a.kbd.keyPress(0x01000004, false, false);   // Return
     a.kbd.keyRelease(0x01000004);
-    a.kbd.keyPress(0x01000003, false, false);   // Backspace
-    a.kbd.keyRelease(0x01000003);
     a.kbd.keyPress(0x01000030, false, false);   // F1
     a.kbd.keyRelease(0x01000030);
-    EXPECT_EQ(alles(a), (std::vector<int>{0x1C, 0x9C, 0x0E, 0x8E, 0x3B, 0xBB}));
+    EXPECT_EQ(alles(a), (std::vector<int>{0x1C, 0x9C, 0x3B, 0xBB}));
 }
 
 /**
@@ -354,4 +353,40 @@ TEST(K7672, MatrixScpZeichenAusDerFirmware)
     tippe(a, 0x20);
     tippe(a, 0x00);                          // '1' bleibt '1'
     EXPECT_EQ(alles(a), (std::vector<int>{'A', '1'}));
+}
+
+/**
+ * @test K7672.DcpRuecktasteIstKursorLinks
+ * @brief AP-E4m: die PC-Rücktaste trifft im DCP-Modus die Taste Kursor ← (Matrix 28H,
+ *        Scancode CBH = Umschalt-Vorsatz + 4BH) — daraus macht das BIOS 08H (Tabelle
+ *        DCC2H), und das BDOS löscht das Zeichen sichtbar.  Die Taste |←| (67H, 0EH)
+ *        ergäbe 7FH (DC1CH) = Rubout mit Echo.  Entf = Taste DEL (47H, D3H: 2AH 53H).
+ *        Qt-Code und Matrixposition liefern byteweise dasselbe.
+ */
+TEST(K7672, DcpRuecktasteIstKursorLinks)
+{
+    constexpr uint32_t QK_BACKSPACE = 0x01000003, QK_DELETE = 0x01000007,
+                       QK_LEFT = 0x01000012;
+    Aufbau a;
+    dcp(a);
+    a.kbd.keyPress(QK_BACKSPACE, false, false);
+    a.kbd.keyRelease(QK_BACKSPACE);
+    const std::vector<int> rueck = alles(a);
+    EXPECT_EQ(rueck, (std::vector<int>{0x2A, 0x4B, 0xCB, 0xAA}));
+    tippe(a, 0x28);                                   // Kursor ← der Nachbildung
+    EXPECT_EQ(alles(a), rueck);
+    a.kbd.keyPress(QK_LEFT, false, false);
+    a.kbd.keyRelease(QK_LEFT);
+    EXPECT_EQ(alles(a), rueck);
+
+    a.kbd.keyPress(QK_DELETE, false, false);
+    a.kbd.keyRelease(QK_DELETE);
+    const std::vector<int> entf = alles(a);
+    EXPECT_EQ(entf, (std::vector<int>{0x2A, 0x53, 0xD3, 0xAA}));
+    tippe(a, 0x47);                                   // DEL der Nachbildung
+    EXPECT_EQ(alles(a), entf);
+
+    tippe(a, 0x67);                                   // |←|: Scancode 0EH ohne Vorsatz
+    EXPECT_EQ(alles(a), (std::vector<int>{0x0E, 0x8E}));
+    EXPECT_EQ(K7672::scpZeichen(0x67, false), 0x08) << "SCP-Modus: |←| = BS";
 }

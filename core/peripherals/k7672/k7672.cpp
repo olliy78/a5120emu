@@ -385,8 +385,15 @@ void K7672::tasteDcp(uint32_t k, bool gedrueckt, bool /*shift*/, bool ctrl)
             case QK_UP:    t = {0x48, true, false}; break;
             case QK_PGUP:  t = {0x49, true, false}; break;
             case QK_PGDN:  t = {0x51, true, false}; break;
-            case QK_BACKSPACE:
-            case QK_DELETE: t.code = 0x0E; break;   // BIOS: 0EH → 7FH
+            // AP-E4m: die PC-Rücktaste trifft die Taste, mit der man unter SCPX die
+            // Eingabezeile SICHTBAR korrigiert — Kursor ← (Matrix 28H, 2AH 4BH), das
+            // BIOS macht daraus 08H (DCC2H), das BDOS löscht mit BS-Leer-BS (CA03H).
+            // Die Taste |←| (Matrix 67H, 0EH) ergibt dagegen 7FH (DC1CH): „Rubout“ —
+            // das BDOS nimmt das Zeichen aus dem Puffer, wiederholt es aber am Schirm
+            // (CA14H), die Eingabe steht dann als „dirxx“ da.  Entf = Taste DEL
+            // (Matrix 47H, 2AH 53H → 07H, ^G wie in TP/WordStar: Zeichen unter dem Kursor).
+            case QK_BACKSPACE: t = {0x4B, true, false}; break;
+            case QK_DELETE:    t = {0x53, true, false}; break;
             default: {
                 const uint8_t z = zeichenFuer(k, false, false);
                 if (!z || !tasteFuer(z, t)) {

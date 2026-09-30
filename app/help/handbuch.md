@@ -397,7 +397,13 @@ mit zwei K5601. Was anders ist:
   zeigen den Zustand der Tastatur.
 * Die **PC-Tastatur** geht wie beim A5120 an den Rechner; SCPX setzt die
   Tasten selbst in Zeichen um (deutsche Belegung: `z`/`y` getauscht). `Strg+Pause`
-  des K8915 liegt auf `^S` der Bildschirmtastatur.
+  des K8915 liegt auf `^S` der Bildschirmtastatur. Die **Rücktaste** des PCs
+  ist die Kursortaste `←` der K7672: SCPX macht daraus `^H`, und die
+  Eingabezeile löscht das Zeichen auch am Schirm. Die Taste `|←|` ergibt unter
+  SCPX dagegen `DEL` — das Zeichen verschwindet aus der Eingabe, wird aber noch
+  einmal angezeigt (`A>dirxx` führt `dir` aus), wie am Gerät. **Entf** ist die
+  Taste `DEL` der K7672 (`^G`, in Editoren wie TP: Zeichen unter dem Kursor
+  löschen).
 
 ### Bootdiskette mit DISGEN erstellen
 

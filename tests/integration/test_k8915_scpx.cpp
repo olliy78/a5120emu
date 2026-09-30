@@ -288,6 +288,76 @@ TEST(K8915Scpx, TastenAusZweitemFadenKommenVollstaendigUndInFolgeAn)
     EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
 }
 
+void ohneSelbsttestZurColdstartMeldung(K8915Machine& m);
+
+namespace {
+
+/// Tasten über den Weg der Oberfläche (`keyPress`/`keyRelease` mit Qt-Code bzw.
+/// Matrixposition) tippen, danach bis zum Prompt hinter der Ausgabe laufen.
+bool tippeUeberOberflaeche(K8915Machine& m, const std::vector<uint32_t>& codes) {
+    for (uint32_t k : codes) {
+        m.keyPress(k, false, false);
+        m.keyRelease(k);
+    }
+    bool echo = false;
+    for (long long t = 0; t < 60'000'000; t += m.run(kSchritt)) {
+        const bool prompt = letzteZeile(m) == "A>";
+        echo = echo || !prompt;
+        if (echo && prompt && !m.keyboard().sendetNoch() && m.memReadDebug(0xF150) == 0)
+            return true;
+    }
+    return false;
+}
+
+constexpr uint32_t QK_BACKSPACE = 0x01000003, QK_RETURN_ = 0x01000004;
+
+}  // namespace
+
+/**
+ * @test K8915Scpx.RuecktasteKorrigiertDieEingabezeile
+ * @brief AP-E4m (Anwenderbefund: „Rücktaste geht nicht“): `dirx`, PC-Rücktaste, RETURN
+ *        über den Tastenweg der Oberfläche.  Die Rücktaste trifft Kursor ← (2AH 4BH),
+ *        das BIOS liefert 08H (DCC2H), das BDOS (Funktion 10, CA03H) löscht das `x`
+ *        aus Puffer UND Bild — die Zeile steht als `A>dir` da, `dir` läuft.
+ *
+ *        Gegenprobe mit der Taste |←| der Nachbildung (Matrix 67H, 0EH → 7FH, DC1CH):
+ *        das BDOS nimmt das `x` aus dem Puffer, wiederholt es aber am Schirm (Rubout,
+ *        CA14H) — `A>dirxx`, und trotzdem läuft `dir`.  Genau das sah der Anwender, als
+ *        die PC-Rücktaste noch auf |←| lag.
+ */
+TEST(K8915Scpx, RuecktasteKorrigiertDieEingabezeile)
+{
+    Aufbau x;
+    K8915Machine& m = x.m;
+    ohneSelbsttestZurColdstartMeldung(m);
+    ladenBisPrompt(m);
+
+    ASSERT_TRUE(tippeUeberOberflaeche(m, {'d', 'i', 'r', 'x', QK_BACKSPACE, QK_RETURN_}))
+        << vramLines(m);
+    const std::string t = vramText(m);
+    size_t zeile = t.rfind("A>dir");
+    ASSERT_NE(zeile, std::string::npos) << vramLines(m);
+    zeile -= zeile % 80;
+    std::string eingabe = t.substr(zeile, 80);
+    while (!eingabe.empty() && (eingabe.back() == ' ' || eingabe.back() == '\0')) eingabe.pop_back();
+    EXPECT_EQ(eingabe, "A>dir") << "das x ist vom Schirm gelöscht\n" << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "A: RADE     COM")) << "dir ausgeführt\n" << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "DIRX?")) << vramLines(m);
+
+    // Gegenprobe: |←| der Nachbildung = Rubout mit Echo, Puffer trotzdem richtig.
+    const size_t vorher = vramText(m).find("A>dirxx");
+    ASSERT_EQ(vorher, std::string::npos) << vramLines(m);
+    ASSERT_TRUE(tippeUeberOberflaeche(m, {'d', 'i', 'r', 'x', K7672::QK_TASTE_BASE | 0x67,
+                                          QK_RETURN_}))
+        << vramLines(m);
+    const std::string u = vramText(m);
+    const size_t p = u.find("A>dirxx");
+    ASSERT_NE(p, std::string::npos) << "Rubout wiederholt das x\n" << vramLines(m);
+    EXPECT_NE(u.find("A: RADE     COM", p), std::string::npos) << "dir läuft trotzdem\n"
+                                                                << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "DIRX?")) << vramLines(m);
+}
+
 /// Kurzer Weg zur Coldstart-Meldung (s. DirSaveEraWarmstartUndRamDisk): `JP` bei
 /// 0000H/0005H im RAM ⇒ das ROM überspringt den Selbsttest wie nach einem Reset.
 void ohneSelbsttestZurColdstartMeldung(K8915Machine& m) {

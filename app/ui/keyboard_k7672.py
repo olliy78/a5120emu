@@ -599,7 +599,7 @@ class KeyboardK7672Widget(KeyboardWidget):
     _HOST_MATRIX = {
         int(Qt.Key_Return): 0x38, int(Qt.Key_Enter): 0x37, int(Qt.Key_Tab): 0x06,
         int(Qt.Key_Backtab): 0x57, int(Qt.Key_Escape): 0x56,
-        int(Qt.Key_Backspace): 0x67, int(Qt.Key_Delete): 0x47,
+        int(Qt.Key_Backspace): 0x28, int(Qt.Key_Delete): 0x47,   # AP-E4m: ← statt |←|
         int(Qt.Key_Up): 0x79, int(Qt.Key_Down): 0x18, int(Qt.Key_Left): 0x28,
         int(Qt.Key_Right): 0x08, int(Qt.Key_CapsLock): 0x26,
         int(Qt.Key_Alt): 0x6D, int(Qt.Key_Space): 0x77,
