@@ -1679,9 +1679,11 @@ def test_der_kern_bindet_nichts_von_greaseweazle_ein():
     Kernänderung.  Geprüft werden die EINBINDUNGEN, nicht das Wort: in
     Kommentaren steht `greaseweazle` völlig zu Recht (der Entwurf erklärt ja,
     wofür `TrackSync` da ist) — eine `#include`-Zeile wäre der Bruch.
+    `serial` meint eine Schnittstellenbibliothek (`<serial/…>`, `"serial.h"`),
+    nicht den eigenen Zweig `core/serial/` (Entwurf 19, Telnet/RFC 2217).
     """
     treffer = _sh("grep", "-rn", "-E",
-                  r"^\s*#\s*include.*(greaseweazle|libusb|serial)",
+                  r"^\s*#\s*include\s*[<\"](.*greaseweazle|.*libusb|serial)",
                   str(PROJECT_ROOT / "core"))
     assert treffer.stdout.strip() == "", \
         f"der Kern bindet Adapter-/USB-Kram ein:\n{treffer.stdout}"
