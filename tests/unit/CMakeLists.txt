@@ -56,6 +56,9 @@ k1520_add_test(format_catalog SRC peripherals/test_format_catalog.cpp LIBS k1520
 
 # ── core/util/ ───────────────────────────────────────────────────────────────
 k1520_add_test(yaml_lite SRC util/test_yaml_lite.cpp LIBS k1520_util LABELS "${_lbl}")
+# Serielle Schnittstellen nach außen, Netzschicht (Entwurf 19 §11) — nur Loopback, nie feste Ports.
+k1520_add_test(serial_adresse SRC util/test_serial_adresse.cpp LIBS k1520_serial_net LABELS "${_lbl}")
+k1520_add_test(serial_netz    SRC util/test_serial_netz.cpp    LIBS k1520_serial_net LABELS "${_lbl}")
 
 # ── core/serial/ (serielle Schnittstellen nach aussen, Entwurf 19) ───────────
 k1520_add_test(telnet_codec  SRC util/test_telnet_codec.cpp  LIBS k1520_serial_codec LABELS "${_lbl}")
