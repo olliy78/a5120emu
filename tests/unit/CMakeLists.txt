@@ -48,6 +48,10 @@ k1520_add_test(format_catalog SRC peripherals/test_format_catalog.cpp LIBS k1520
 # ── core/util/ ───────────────────────────────────────────────────────────────
 k1520_add_test(yaml_lite SRC util/test_yaml_lite.cpp LIBS k1520_util LABELS "${_lbl}")
 
+# ── core/serial/ (serielle Schnittstellen nach aussen, Entwurf 19) ───────────
+k1520_add_test(telnet_codec  SRC util/test_telnet_codec.cpp  LIBS k1520_serial_codec LABELS "${_lbl}")
+k1520_add_test(rfc2217_codec SRC util/test_rfc2217_codec.cpp LIBS k1520_serial_codec LABELS "${_lbl}")
+
 # ── core/filesystem/ (k1520DiskTool) ─────────────────────────────────────────
 # Prüft gegen die AUSGELIEFERTE data/formats.yaml und die committeten Disketten.
 k1520_add_test(sector_space SRC filesystem/test_sector_space.cpp
