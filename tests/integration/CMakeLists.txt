@@ -41,6 +41,12 @@ k1520_add_test(k8915_boot SRC test_k8915_boot.cpp
                           LIBS k1520_k8915 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2)
 
+# K8915Machine ohne Boot (AP-T1a): DFÜ/Drucker-Kanal, Fehlerwege von `Laufwerke`,
+# Durchreichungen, Konsolenmodus.  Kein CPU-Lauf, < 1 s.
+k1520_add_test(k8915_maschine SRC test_k8915_maschine.cpp
+                          LIBS k1520_k8915 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
 # K8915 Etappe 3 (doc/design/16_k8915.md §8a AP-E3): SCPX 8915 von der eigenen Diskette
 # bis zum Prompt, dann dir/save/era/Warmstart/RAM-Disk.  Je Fall ≈ 2–3 s.
 k1520_add_test(k8915_scpx SRC test_k8915_scpx.cpp
