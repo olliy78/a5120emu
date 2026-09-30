@@ -531,3 +531,131 @@ def test_k8915emu_boots_to_the_prompt_and_the_on_screen_keyboard_types_dir(
         assert kb.lampen()["READY"]
     finally:
         _zu(w, qapp)
+
+
+# ─── AP-T1a: Wege, die der Abdeckungsbau ungeprüft fand ─────────────────────
+
+def test_an_unknown_machine_is_refused_with_the_known_names():
+    """Profil und Bindung lehnen einen unbekannten Maschinennamen mit den bekannten
+    im Text ab (``--machine``-Tippfehler, alte Konfiguration); Groß/klein zählt
+    beim Profil nicht (der Starter übergibt klein, ein Anwender vielleicht nicht)."""
+    from app import profil
+    from app.core_binding.k1520 import K1520Emulator
+
+    assert profil.profil("K8915") is profil.K8915
+    assert profil.profil("") is profil.VORGABE is profil.A5120
+    with pytest.raises(ValueError, match="k8915"):
+        profil.profil("z9001")
+    with pytest.raises(ValueError, match="z9001"):
+        K1520Emulator(machine="z9001")
+
+
+def test_a_failed_config_move_keeps_the_old_file_and_says_why(konfig_ordner, monkeypatch,
+                                                             capsys):
+    """Scheitert das Umbenennen ``config.yaml`` → ``a5120emu.yaml`` (Rechte, anderes
+    Laufwerk), bleibt die Altdatei liegen, der Start geht weiter und das Protokoll
+    nennt den Grund."""
+    from app import config_io, profil
+
+    alt = konfig_ordner / "config.yaml"
+    alt.write_text("version: 1\n", encoding="utf-8")
+
+    def verweigert(a, b):
+        raise PermissionError("Zugriff verweigert")
+
+    monkeypatch.setattr(config_io.os, "rename", verweigert)
+    assert config_io.konfig_umziehen(profil.A5120) == ""
+    assert alt.is_file()
+    assert not (konfig_ordner / "a5120emu.yaml").exists()
+    out = capsys.readouterr().out
+    assert "gescheitert" in out and "Zugriff verweigert" in out
+
+
+def test_host_keys_on_the_k7672_widget(qapp):
+    """Host-Tasten an der Bildschirmtastatur K7672: die rastende Umschalttaste der
+    Nachbildung macht einen Host-Buchstaben groß, die Feststelltaste des PCs geht als
+    eigene Taste an den Kern (das BIOS führt die Feststellung); F1 leuchtet auf
+    PF1-Position, Umschalt/Strg auf den Umschalttasten.  Kurzhinweise nennen
+    Scancode und Vorsatz — oder „sendet nichts"."""
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from app.ui.keyboard_k7672 import KeyboardK7672Widget
+
+    kb = KeyboardK7672Widget()
+    ev = lambda key, text="": QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier, text)
+
+    assert kb.map_host_key(ev(Qt.Key_CapsLock)) == (int(Qt.Key_CapsLock), False, False)
+    assert kb.map_host_key(ev(Qt.Key_A, "a")) == (0x61, False, False)
+    kb._shift = True
+    assert kb.map_host_key(ev(Qt.Key_A, "a")) == (0x41, True, False)
+    assert kb.map_host_key(ev(Qt.Key_1, "1"))[0] == 0x31, "Umschaltung nur für Buchstaben"
+    kb._shift = False
+    assert kb.lock_active() is False
+
+    f1 = kb._keys_for_host_event(ev(Qt.Key_F1))
+    assert [k.matrix for k in f1] == [kb._F_MATRIX[0]]
+    assert all(k.kind == "shift" for k in kb._keys_for_host_event(ev(Qt.Key_Shift)))
+    assert kb._keys_for_host_event(ev(Qt.Key_Shift))
+    assert all(k.kind == "ctrl" for k in kb._keys_for_host_event(ev(Qt.Key_Control)))
+    assert kb._keys_for_host_event(ev(Qt.Key_F24)) == []
+
+    tips = {kb._tip(k) for k in kb._keys}
+    assert any("mit Vorsatz" in t for t in tips)
+    assert any(t.endswith("— sendet nichts") for t in tips)
+    kb.close()
+
+
+def test_the_toolbar_dialog_offers_only_the_programs_own_actions(qapp, konfig_ordner,
+                                                                  monkeypatch):
+    """*Symbolleiste einrichten* bietet je Programm nur, was es dort gibt: der
+    K8915 den NMI-Taster, der A5120 nicht.  Jeder angebotene Name hat einen Text (sonst leere Zeile im Dialog)."""
+    from app.ui import main_window as mw
+
+    angebote = {}
+
+    class Attrappe:
+        def __init__(self, reihenfolge, inhalt, namen, standard, eltern):
+            angebote[eltern.profil.maschine] = (list(reihenfolge), dict(namen), standard)
+
+        def exec(self):
+            return False
+
+    monkeypatch.setattr(mw, "ToolbarDialog", Attrappe)
+    for maschine in ("a5120", "k8915"):
+        w = _fenster(qapp, maschine)
+        try:
+            w._leiste_einrichten()
+        finally:
+            _zu(w, qapp)
+
+    folge_a, namen_a, std_a = angebote["a5120"]
+    folge_k, namen_k, std_k = angebote["k8915"]
+    assert "nmi" in folge_k and "nmi" not in folge_a
+    for folge, namen in ((folge_a, namen_a), (folge_k, namen_k)):
+        for name in filter(None, folge):
+            assert namen.get(name), f"kein Dialogtext für {name!r}"
+    assert "nmi" in std_k and "nmi" not in std_a
+
+
+def test_a_failed_start_of_the_other_emulator_is_reported(qapp, konfig_ordner,
+                                                          monkeypatch):
+    """Lässt sich der andere Emulator nicht starten (Skript fehlt, Interpreter weg),
+    sagt ein Hinweisfenster warum — mit dem Titel des ANDEREN Programms."""
+    from app import programme
+    from app.ui import main_window as mw
+
+    def scheitert(kennung, *a, **kw):
+        raise RuntimeError(f"{kennung} nicht gefunden")
+
+    gemeldet = []
+    monkeypatch.setattr(programme, "programm_starten", scheitert)
+    monkeypatch.setattr(mw.QMessageBox, "warning",
+                        lambda eltern, titel, text: gemeldet.append((titel, text)))
+    w = _fenster(qapp, "k8915")
+    try:
+        w.act_a5120emu.trigger()
+    finally:
+        _zu(w, qapp)
+    assert len(gemeldet) == 1
+    titel, text = gemeldet[0]
+    assert "A5120" in titel and "nicht gefunden" in text
