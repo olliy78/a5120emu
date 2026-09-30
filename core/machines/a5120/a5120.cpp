@@ -330,9 +330,11 @@ bool A5120Machine::restoreState(const MachineSnapshot& s) {
 //       Caps/Scroll/Num-Rasten).  Der Blob trägt keine Längen je Chip, also
 //       verschöbe ein v4-Block alles dahinter — ein älterer Stand wird deshalb
 //       OHNE Geräteteil geladen (Geräte behalten ihren Zustand, wie bei v1).
+//   6 = Z80SIO-Kanal um Break-Eingang und Ext/Status-Latch erweitert (AP-S3,
+//       doc/design/19 §6.4) — gleiche Folge: ältere Stände ohne Geräteteil.
 namespace {
 const char    kStateMagicPrefix[7] = {'K','1','5','2','0','S','S'};
-constexpr uint8_t kStateVersion    = 5;
+constexpr uint8_t kStateVersion    = 6;
 }
 
 uint8_t A5120Machine::keyboardLeds() const {
@@ -385,9 +387,10 @@ bool A5120Machine::loadState(const std::string& path) {
         s.device_state.resize(dev_len);
         if (dev_len) f.read(reinterpret_cast<char*>(s.device_state.data()), dev_len);
         if (!f) return false;
-        // Vor v5 hat der K7637-Block ein anderes Format; sequentiell gelesen
-        // verschöbe er jeden folgenden Chip.  Lieber ohne Geräteteil laden.
-        if (version < 5) s.device_state.clear();
+        // Vor v5 hat der K7637-Block, vor v6 der SIO-Block ein anderes Format;
+        // sequentiell gelesen verschöbe das jeden folgenden Chip.  Lieber ohne
+        // Geräteteil laden.
+        if (version < 6) s.device_state.clear();
     }
     s.rom_enabled=flags[0]; s.busrq_active=flags[1]; s.dma_progress=flags[2]; s.bus_master_zve2=flags[3];
     return restoreState(s);

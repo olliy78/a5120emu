@@ -938,3 +938,97 @@ TEST(Z80CTC, SerializeRoundTrip) {
     EXPECT_TRUE(db.ch[0].running);
     EXPECT_EQ(db.ch[0].timeConst, 0x50);
 }
+
+// =============================================================================
+// teilerTakte — Maschinentakte je ZC/TO-Impuls (AP-S3, doc/design/19 §6.2)
+// =============================================================================
+
+/**
+ * @brief Zeitgeber: Vorteiler 16 bzw. 256 mal Zeitkonstante, bezogen auf φ.
+ */
+TEST(Z80CTC, TeilerTakte_Zeitgeber16Und256) {
+    Z80CTC ctc;
+    configChannel(ctc, 0, 0x05, 10);      // Zeitgeber, ÷16, TC 10
+    configChannel(ctc, 1, 0x25, 3);       // Zeitgeber, ÷256, TC 3
+    EXPECT_EQ(ctc.teilerTakte(0), 160u);
+    EXPECT_EQ(ctc.teilerTakte(1), 768u);
+
+    // Der Wert stimmt mit dem tatsächlichen Abstand der ZC/TO-Impulse überein.
+    uint64_t t = 0, erster = 0, zweiter = 0;
+    ctc.setZCTOCallback([&](int ch, bool level) {
+        if (ch != 0 || level) return;
+        if (!erster) erster = t; else if (!zweiter) zweiter = t;
+    });
+    for (t = 1; t <= 400; ++t) ctc.clockTick();
+    EXPECT_EQ(zweiter - erster, ctc.teilerTakte(0));
+}
+
+/**
+ * @brief TC = 0 bedeutet 256 — beim Zeitgeber wie beim Zähler.
+ */
+TEST(Z80CTC, TeilerTakte_Zeitkonstante0Ist256) {
+    Z80CTC ctc;
+    configChannel(ctc, 0, 0x05, 0);       // ÷16 × 256
+    EXPECT_EQ(ctc.teilerTakte(0), 16u * 256u);
+    configChannel(ctc, 1, 0x45, 0);       // Zähler, TC 0 = 256
+    ctc.setzeEingangsPeriode(1, 10);
+    EXPECT_EQ(ctc.teilerTakte(1), 2560u);
+}
+
+/**
+ * @brief Zähler: Zeitkonstante mal Periode des CLK/TRG-Eingangs.
+ */
+TEST(Z80CTC, TeilerTakte_ZaehlerMitBekannterEingangsperiode) {
+    Z80CTC ctc;
+    configChannel(ctc, 2, 0x47, 4);       // Zähler, TC 4 (D1 = Reset)
+    ctc.setzeEingangsPeriode(2, 8);       // z. B. 307,2 kHz bei φ = 2,4576 MHz
+    EXPECT_EQ(ctc.teilerTakte(2), 32u);
+}
+
+/**
+ * @brief Zähler an einem Eingang unbekannter Herkunft → 0 = unbekannt; ebenso ein
+ *        nicht programmierter Kanal und ein Zeitgeber, der noch auf seinen Trigger wartet.
+ */
+TEST(Z80CTC, TeilerTakte_UnbekanntIstNull) {
+    Z80CTC ctc;
+    EXPECT_EQ(ctc.teilerTakte(0), 0u);    // nach dem Einschalten: nichts programmiert
+    configChannel(ctc, 1, 0x45, 4);       // Zähler ohne Angabe zur Quelle
+    EXPECT_EQ(ctc.teilerTakte(1), 0u);
+    ctc.setzeEingangsPeriode(1, 5);
+    EXPECT_EQ(ctc.teilerTakte(1), 20u);
+    ctc.setzeEingangsPeriode(1, 0);       // Quelle wieder unbekannt
+    EXPECT_EQ(ctc.teilerTakte(1), 0u);
+    configChannel(ctc, 2, 0x0D, 4);       // Zeitgeber mit CLK/TRG-Start: wartet
+    EXPECT_EQ(ctc.teilerTakte(2), 0u);
+    ctc.ioWrite(3, 0x07);                 // Steuerwort mit Reset, TC folgt …
+    EXPECT_EQ(ctc.teilerTakte(3), 0u);    // … aber noch nicht geschrieben
+    EXPECT_EQ(ctc.teilerTakte(7), 0u);    // Kanal außerhalb 0…3
+}
+
+/**
+ * @brief Kaskade: Kanal 1 zählt die ZC/TO-Impulse von Kanal 0 — die Periode wird
+ *        über eine Rückfrage rekursiv ermittelt und folgt einer Umprogrammierung.
+ */
+TEST(Z80CTC, TeilerTakte_KaskadeRekursiv) {
+    Z80CTC ctc;
+    ctc.setzeEingangsQuelle(1, [&] { return ctc.teilerTakte(0); });
+    configChannel(ctc, 0, 0x05, 2);       // Zeitgeber ÷16 × 2 = 32
+    configChannel(ctc, 1, 0x55, 3);       // Zähler, steigende Flanke, TC 3
+    EXPECT_EQ(ctc.teilerTakte(1), 96u);
+
+    // Gegenprobe am laufenden Baustein: Abstand der Impulse von Kanal 1.
+    uint64_t t = 0, erster = 0, zweiter = 0;
+    ctc.setZCTOCallback([&](int ch, bool level) {
+        if (ch == 0) ctc.clkTrg(1, level);   // ZC/TO0 → CLK/TRG1
+        if (ch == 1 && !level) { if (!erster) erster = t; else if (!zweiter) zweiter = t; }
+    });
+    for (t = 1; t <= 400; ++t) ctc.clockTick();
+    EXPECT_EQ(zweiter - erster, 96u);
+
+    configChannel(ctc, 0, 0x25, 1);       // Kanal 0 neu: ÷256 × 1 (wirkt am nächsten Nulldurchgang)
+    EXPECT_EQ(ctc.teilerTakte(1), 768u);
+
+    // Eine (falsch verdrahtete) Schleife endet nicht in einer Endlosrekursion.
+    ctc.setzeEingangsQuelle(1, [&] { return ctc.teilerTakte(1); });
+    EXPECT_EQ(ctc.teilerTakte(1), 0u);
+}

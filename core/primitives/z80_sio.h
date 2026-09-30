@@ -197,6 +197,55 @@ public:
          */
         bool getCTS() const;
 
+        // ─── Abfrage- und Leitungsweg für Schnittstellen nach außen (AP-S3) ────
+        // doc/design/19_serielle_schnittstellen.md §6.2/§6.4.  Alles hier liest
+        // die REGISTER (wr[]), nicht die abgeleiteten Felder — die überleben einen
+        // Kanalreset, die Register nicht.
+
+        /// Zeichenformat eines Kanals, wie es der Gast programmiert hat.
+        struct Format {
+            uint8_t teiler      = 1; ///< Taktteiler ×1/×16/×32/×64 (WR4 D7–6)
+            uint8_t stopp_halbe = 0; ///< Stoppbits in halben Bits: 2=1, 3=1½, 4=2; 0 = synchron (WR4 D3–2 = 00)
+            uint8_t paritaet    = 0; ///< 0 keine, 1 ungerade, 2 gerade (WR4 D1–0)
+            uint8_t tx_bits     = 5; ///< Sendebits je Zeichen (WR5 D6–5)
+            uint8_t rx_bits     = 5; ///< Empfangsbits je Zeichen (WR3 D7–6)
+            bool asynchron() const { return stopp_halbe != 0; }
+        };
+        Format format() const;
+
+        bool rts() const         { return (wr[5] & 0x02) != 0; } ///< Ausgang RTS (WR5 D1), true = aktiv
+        bool dtr() const         { return (wr[5] & 0x80) != 0; } ///< Ausgang DTR (WR5 D7), true = aktiv
+        bool breakSenden() const { return (wr[5] & 0x10) != 0; } ///< Break senden (WR5 D4)
+        bool autoEnables() const { return (wr[3] & 0x20) != 0; } ///< WR3 D5
+
+        /// Eingänge /CTS, /DCD — true = aktiv (Pin low; so zeigt es RR0 D5/D3).
+        /// Vorgabe nach dem Einschalten: INAKTIV.  Grund: so lief die Emulation bis
+        /// AP-S3 (RR0 D5/D3 = 0, niemand setzte die Eingänge); jeder heutige Gast-
+        /// pfad (K8025/K7637, K7028/K7672/Drucker/Prüfstecker) sieht damit dasselbe
+        /// RR0 wie vorher.  Auto Enables setzt kein bekannter Gast (Messung über die
+        /// volle Regression + test-format, AP-S3) — sonst stünde deren Sender still.
+        /// Ein Kanalreset ändert die Eingänge nicht (sie sind Pins, keine Register).
+        bool cts() const { return cts_; }
+        bool dcd() const { return dcd_; }
+        /// Pegelwechsel an /CTS bzw. /DCD.  Bei freigegebenem Ext/Status-Interrupt
+        /// (WR1 D0) hält RR0 den Stand zur Zeit der Änderung fest und der Kanal
+        /// fordert einen Ext/Status-Interrupt an, bis „Reset Ext/Status“ (WR0
+        /// Befehl 2) das Latch freigibt; ohne Freigabe folgt RR0 dem Eingang.
+        void setzeCTS(bool aktiv);
+        void setzeDCD(bool aktiv);
+        /// Empfangenes Break (RxD dauerhaft Space): RR0 D7, Ext/Status an Anfang
+        /// UND Ende (Datenblatt RR0 D7).
+        void setzeBreakEmpfang(bool aktiv);
+        bool breakEmpfangen() const { return break_rx_; }
+
+        /// Wandlerseite (§5.1/§6.1).  „Sender hat Zeichen“: Tx-Puffer belegt und
+        /// — bei Auto Enables — /CTS aktiv.  Abnehmen mit txGet(), einspeisen mit
+        /// rxByte().  „Empfänger hat Platz“: FIFO nicht voll und — bei Auto Enables —
+        /// /DCD aktiv.  Rx/Tx-Enable (WR3 D0/WR5 D3) werden bewusst NICHT
+        /// ausgewertet, wie in den übrigen Pfaden dieses Bausteins.
+        bool senderHatZeichen() const { return txAvailable(); }
+        bool empfaengerFrei() const;
+
         // Internal state (public for Z80SIO access)
         uint8_t wr[8]  = {};    ///< Write registers 0-7
         uint8_t rr0    = 0x04;  ///< Read register 0 (Status): TxEmpty set by default
@@ -285,6 +334,16 @@ public:
         bool cts_latch = false;       ///< CTS state latch for change detection
         bool dcd_latch = false;       ///< DCD state latch for change detection
         bool sync_latch = false;      ///< Sync status latch
+        bool break_rx_  = false;      ///< Eingang: Break wird empfangen (AP-S3)
+        bool ext_latch_ = false;      ///< RR0 D3/D5/D7 festgehalten (Ext/Status-Änderung)
+        uint8_t ext_rr0_ = 0;         ///< festgehaltener Stand von RR0 D3/D5/D7
+
+        /// RR0 D3/D5/D7 aus den Eingängen (ungelatcht).
+        uint8_t extStatusEingaenge() const {
+            return static_cast<uint8_t>((dcd_ ? 0x08 : 0) | (cts_ ? 0x20 : 0) | (break_rx_ ? 0x80 : 0));
+        }
+        /// Eine Ext/Status-Quelle hat sich geändert (Datenblatt Befehl 2, RR0 D3/D5/D7).
+        void extStatusGeaendert();
 
         // ─── Receive state machine ──────────────────────────────────────────
         SIORxState rx_state = SIORxState::IDLE;
