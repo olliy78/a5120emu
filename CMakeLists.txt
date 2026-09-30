@@ -96,6 +96,13 @@ if(BUILD_K1520)
     )
     target_include_directories(k1520_util PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # Serielle Schnittstellen nach aussen: reine Protokoll-Codecs ohne Socket (Entwurf 19, AP-S2)
+    add_library(k1520_serial_codec STATIC
+        core/serial/telnet_codec.cpp
+        core/serial/rfc2217_codec.cpp
+    )
+    target_include_directories(k1520_serial_codec PUBLIC ${CMAKE_SOURCE_DIR})
+
     # Floppy peripheral: Diskettenformat-Datenmodell (DiskFormat/TrackFormat)
     add_library(k1520_floppy STATIC
         core/peripherals/floppy_drive/disk_format.cpp
