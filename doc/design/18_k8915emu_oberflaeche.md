@@ -24,11 +24,21 @@ den bisherigen Zuschnitt von **E4h** (Maschinenwahl) und **E4i** (Frontplatte).
   Name der Konfigurationsdatei, Tastatur-Widget, Laufwerksbestückung, Lampen, zusätzliche
   Aktionen. Alles Programm-Spezifische hängt an diesem Profil — keine `if machine == …`-
   Streuung durch die Oberfläche.
-- **Konfiguration:** gleiches Verzeichnis (`paths.config_dir()` → `~/.config/k1520emu/`),
-  andere Datei: `config.yaml` (A5120, unverändert — bestehende Anwenderkonfigurationen
-  bleiben gültig) und **`k8915emu.yaml`**. Eigene Auslieferungsvorgabe
-  `data/default_config_k8915.yaml` (gleicher Aufbau, `paths.default_config_file()` bekommt
-  das Profil). Die Werkzeugkonsole und das Diskettenverzeichnis bleiben gemeinsam.
+- **Konfiguration — für beide Programme gleich benannt** (Anwender 2026-09-29):
+  gleiches Verzeichnis (`paths.config_dir()` → `~/.config/k1520emu/`), je Programm eine
+  Datei **`a5120emu.yaml`** bzw. **`k8915emu.yaml`**; Auslieferungsvorgaben
+  **`data/default_config_a5120.yaml`** bzw. **`data/default_config_k8915.yaml`** (in der
+  Installation `share/k1520emu/`; `paths.default_config_file()` bekommt das Profil,
+  `K1520_DEFAULT_CONFIG` wirkt weiter). **Umzug der Altdatei:** gibt es beim Start des
+  A5120-Emulators noch eine `config.yaml`, aber keine `a5120emu.yaml`, wird sie EINMAL
+  umbenannt (nicht kopiert, nicht gelöscht ohne Ersatz) und das im Protokoll vermerkt —
+  sonst stünde der Anwender nach dem Update mit Auslieferungszustand da. Das DiskTool hat
+  eine eigene Konfiguration und ist nicht betroffen (prüfen, nicht voraussetzen). Alle
+  Fundstellen von `config.yaml`/`default_config.yaml` (app/, packaging/, Handbuch, CLAUDE.md,
+  doc/design/11_python_app.md §10.7, Merkposten) mitziehen. Werkzeugkonsole und
+  Diskettenverzeichnis bleiben gemeinsam.
+- **Fenstertitel — gleichartig:** „**A5120 Emulator**“ bzw. „**K8915 Emulator**“ (Titel des
+  Hauptfensters, Startmenü-Eintrag, `.desktop`-Name, Kopfzeile der Startskripte).
 - **Laufwerke:** K8915 = 2 Steckplätze (K5601, K5601) wie das Gerät; Laufwerkskasten und
   Statuszeile zeigen nur die bestückten. Laufwerkstypen je Maschine aus `app/drive_types.py`.
 - **Takt:** 2,4576 MHz als eingestellter Takt (`app/takt.py` je Profil).
