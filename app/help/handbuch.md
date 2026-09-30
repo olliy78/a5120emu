@@ -399,6 +399,34 @@ mit zwei K5601. Was anders ist:
   Tasten selbst in Zeichen um (deutsche Belegung: `z`/`y` getauscht). `Strg+Pause`
   des K8915 liegt auf `^S` der Bildschirmtastatur.
 
+### Bootdiskette mit DISGEN erstellen
+
+DISGEN ist ein Maskenprogramm: In einem **Auswahlfeld** wählt der
+**Anfangsbuchstabe** (klein genügt) oder **Esc** schaltet zum nächsten Eintrag,
+**Return** übernimmt das Feld bzw. den ganzen Block, die **Kursortasten**
+wandern zwischen den Feldern eines Blocks, **Strg+C** geht eine Ebene zurück
+(im Befehlsfeld: DISGEN beenden).
+
+1. In A: die Systemdiskette, in B: eine leere Diskette (*Leere Diskette*).
+2. B: formatieren: `format` Return, Verfahren `24` Return, Laufwerk `B`
+   (groß, mit Umschalt) Return, `00` Return, `79` Return, `01` Return, `Y`
+   Return — nach „FUNCTION COMPLETE“ `Y` Return.
+3. `disgen` Return, dann Return (Read system tracks) und Return (Laufwerk A).
+4. **Nur mit der Diskette 901** (sie stellt B: auf 16 × 256 Byte ein):
+   `c` Return (Change device properties), Return (number of drives),
+   `b` Return, zweimal Pfeil ↓ bis `sector length`, zweimal Esc bis `1024`,
+   Return, Return.
+5. `w` Return (Write system tracks), `b` Return.
+6. `e` Return (Exit). Die neue Diskette startet jetzt, in A: eingelegt, bis `A>`.
+
+**`write error or device not ready`** beim Schreiben heißt fast immer: B: ist
+in DISGEN anders eingestellt, als die Diskette formatiert ist (Schritt 4
+vergessen). Return bringt nur ins Laufwerksfeld zurück — mit **Strg+C**
+heraus, dann mit `e` Return beenden und bei Schritt 3 neu anfangen: eine
+Umstellung **nach** dem Fehlschlag reicht nicht, erst der Neustart von DISGEN
+räumt den Puffer des BIOS. Wer DISGEN mit Strg+C verlässt und danach
+Steuerzeichen (`^D` …) statt Buchstaben sieht: einmal Strg drücken.
+
 ## Tastenkürzel
 
 | Kürzel | Wirkung |

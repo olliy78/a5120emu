@@ -52,6 +52,7 @@ System-Interpreter.
 | `test_keyboard_map.py` | `qt_event_to_core_key`: Zeichen, Sondertasten, F1–F8, Ctrl-Kombinationen, Modifikatoren allein |
 | `test_gui_smoke.py` | Hauptfenster offscreen: alle Panels, Emulator, Laufwerksleiste, Konfigurationsrundlauf |
 | `test_k8915emu_gui.py` | K8915 Emulator (AP-UI1): Profil/Titel, eigene Konfiguration + Umzug `config.yaml` → `a5120emu.yaml`, Laufwerke/Takt je Profil, Frontplatte, NMI, Tastatur K7672 gegen das EPROM, Boot bis `A>` + `dir` über die Bildschirmtastatur |
+| `test_k8915_disgen.py` | K8915 (AP-E4n): Bootdiskette mit DISGEN über `QKeyEvent` am Bildschirm-Widget — Fehlschlag bei B: 16 × 256 auf 901, Hostpuffer-Falle, B: auf 1024 ⇒ Kaltstart bis `A>` |
 | `test_programme.py` | Nachbarprogramme starten (`app/programme.py`): Befehlszeile, Abkopplung, Startdatei der Werkzeugkonsole, Werkzeugmenü beider Oberflächen |
 
 ## Grenzen
