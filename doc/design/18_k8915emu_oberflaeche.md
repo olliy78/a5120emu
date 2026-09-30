@@ -152,3 +152,57 @@ den bisherigen Zuschnitt von **E4h** (Maschinenwahl) und **E4i** (Frontplatte).
 
 Drucker/V.24-Oberfläche (E4j), physische Diskette (E4k), Tastenwiederholung der K7672
 (E4g), Paketinhalt „Bootdiskette“ (E4l).
+
+## 6. Nachtrag AP-UI2 — Tastaturbild und Frontplatte nach Anwenderbefund (2026-09-30)
+
+Rückmeldung des Anwenders zum Stand AP-UI1 (Bildschirmfoto mit Markierungen, zwei Fotos
+der echten K7672). Umgesetzt in `app/ui/keyboard_k7672.py` und `app/ui/status_bar.py`.
+
+> **Stand (erledigt 2026-09-30).**
+>
+> 1. **„Rot": Gehäuse über den Tasten um ↕/RETURN/CL.** Ursache: die schwarze Einfassung
+>    je Block war EIN Pfad aus allen vergrößerten, sich überlappenden Zellen
+>    (`addRect` + `WindingFill` + `QPainterPath.simplified()`). Qts Pfadvereinigung
+>    verliert bei bestimmten Fließkomma-Lagen fast zusammenfallender Kanten ganze
+>    Teilflächen — nachgemessen fehlte bei **342 von 934** Fensterformaten (600–2000 px)
+>    die Einfassung von RETURN bzw. der rechten Umschalttaste, z. B. bei 1203 × 381.
+>    Rundung, Zeichenreihenfolge oder ganzzahlige Pixel waren es nicht. **Jetzt ohne
+>    Mengenlehre:** jede Zelle als abgerundetes Rechteck, dazu eckige Brücken zwischen
+>    aneinanderstoßenden Zellen desselben Blocks (Mitte zu Mitte), alles deckend
+>    übereinander gemalt (`ausschnitt_flaechen`). Das kann bei keiner Größe etwas
+>    verlieren. Wächter `test_k7672_cutouts_never_lose_a_key_or_cover_one` (in
+>    Kennfarben gezeichnet: jede Kappe ist Kappe, jede Fuge ist Ausschnitt, zwischen den
+>    Blöcken Gehäuse; fünf Größen, darunter 1203 px; außerhalb der Testsuite über alle
+>    Breiten 700–2100 px grün).
+> 2. **„Blau": Abstände.** Am Foto nachgemessen (Raster 55,9 px): Kappe 0,925, Fuge 0,075,
+>    Mittelblock 0,50 hinter DEL, Ziffernblock 0,50 hinter PF12, Funktionsreihe 0,5 über
+>    Reihe 1 — **das Raster stimmte schon**. Zu groß *wirkte* es durch zu schmale Kappen
+>    (0,88) in einer schwarzen Einfassung von 0,07 je Seite; jetzt Kappe 0,925, Ausschnitt
+>    0,03 + Kante 0,025 über die Kappe hinaus (`FUGE`, `GRUND_RAND`, `KANTE_RAND`).
+> 3. **Ausschnitte folgen der Rundung der Tasten** (Eckradius = Kappenecke + Rand),
+>    Innenecken schließen die Brücken.
+> 4. **Kein schwarzer Schacht:** Grund des Ausschnitts = Gehäusegrau im Schatten, außen
+>    eine schmale dunklere Kante; Kappen mit Flanke (vorn am breitesten) und hellerer
+>    Oberseite. Farben am Foto gemessen (Gehäuse 190/184/164, Oberseite ~200/194/175,
+>    Flanke ~138/132/116, Fuge ~40 — 1–3 px) und für den Bildschirm aufgehellt.
+> 5. **Beschriftung wie auf dem Foto: links oben.** Umlauttasten: links oben `}`/`|`/`{`,
+>    links unten `]`/`\`/`[`, rechts groß `Ü`/`Ö`/`Ä`. Beim Abgleich der übrigen
+>    Mehrfachbeschriftungen fiel **ß** auf: links oben `?`, links unten `¯` (die
+>    ASCII-Lage 7EH von ß als Überstrich), rechts **unten** `ß`. Alle anderen
+>    (`!`/`1` … `^`/`#`, `@ §`/`3`, `PA 2`/`PA 1`, `PA 3`/`↖`) stimmten; Kursorpfeile
+>    stehen mittig. Lage testbar ohne Pixel über `legenden_boxen`
+>    (`test_k7672_umlaut_keys_are_labelled_like_the_photo`).
+> 6. **RETURN** war schon EINE Taste (h = 2, Matrix 38H); auf dem Bildschirmfoto sah sie
+>    nur durch die fehlende Einfassung (Punkt 1) wie zwei aus. Jetzt oben groß `↵`, unten
+>    klein `RETURN`. Wächter `test_k7672_keys_do_not_overlap_and_return_is_one_tall_key`.
+>    **Neu:** das **Blindstück** links neben CAPS LOCK (Foto; `BLINDSTUECKE`, keine
+>    Taste) — CAPS LOCK beginnt deshalb bei 0,5 und ist 1,25 breit (war 1,75).
+> 7. **Frontplatte:** neben jeder Lampe ihr Schild `Run Input Output Mode Error Power`
+>    (`status_bar.BESCHRIFTUNG`), voller Name und Bedeutung im Tooltip von Lampe und
+>    Schild. Wächter `test_every_panel_lamp_carries_its_label_next_to_it`.
+>
+> Scancodes/Matrixpositionen unverändert (`test_the_k7672_keys_carry_the_scancodes_of_the_firmware`
+> grün). Vergleichsbilder beim Abschluss: `/tmp/claude-1000/k7672_ap-ui2_{28,40,64}.png`,
+> `k7672_vorher_1203px.png` ↔ `k7672_ap-ui2_1203px.png`, `statuszeile_k8915.png`.
+> Offen **[?]**: die kleinen Zweitbeschriftungen vorn an `1`/`2`/`0`/`,` des
+> Ziffernblocks sind auf dem Foto nicht lesbar und fehlen weiter.

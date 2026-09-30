@@ -363,7 +363,8 @@ mit zwei K5601. Was anders ist:
 * **Takt** 2,4576 MHz (`10 × 2,4576 MHz` usw.).
 * **Laufwerke:** zwei K5601 wie am Gerät; wählbar sind nur 5¼″-Laufwerke.
 * **Die Frontplatte in der Statuszeile** — sechs Lampen, von links nach rechts
-  wie am Gerät von oben nach unten:
+  wie am Gerät von oben nach unten, jede mit ihrem Schild daneben (`Run`, `Input`,
+  `Output`, `Mode`, `Error`, `Power`; der volle Name steht im Tooltip):
 
   | Lampe | Farbe | leuchtet |
   |-------|-------|----------|
