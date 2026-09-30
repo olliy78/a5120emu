@@ -390,3 +390,118 @@ TEST(K7672, DcpRuecktasteIstKursorLinks)
     EXPECT_EQ(alles(a), (std::vector<int>{0x0E, 0x8E}));
     EXPECT_EQ(K7672::scpZeichen(0x67, false), 0x08) << "SCP-Modus: |←| = BS";
 }
+
+// ─── AP-T1a: Host-Tasten, die der Abdeckungsbau ungeprüft fand ───────────────
+
+namespace {
+constexpr uint32_t QK_TAB = 0x01000001, QK_BACKTAB = 0x01000002, QK_BACKSPACE = 0x01000003,
+                   QK_SHIFT = 0x01000020, QK_CONTROL = 0x01000021, QK_ALT = 0x01000023,
+                   QK_CAPSLOCK = 0x01000024, QK_LEFT = 0x01000012, QK_UP = 0x01000013,
+                   QK_RIGHT = 0x01000014, QK_DOWN = 0x01000015, QK_PGUP = 0x01000016,
+                   QK_PGDN = 0x01000017, QK_HOME = 0x01000010;
+
+/// Die Taste der K7672-Matrix mit diesem Scancode, -1 = keine.  In der Firmwaretabelle
+/// heißt Bit 7 „mit Vorsatz"; @p vorsatz verlangt zusätzlich den Vorsatz 2AH (nicht 1DH).
+int matrixMit(uint8_t code, bool vorsatz) {
+    const uint8_t soll = vorsatz ? static_cast<uint8_t>(code | 0x80) : code;
+    for (int m = 0; m < 128; ++m)
+        if (K7672::scancode(static_cast<uint8_t>(m)) == soll
+            && K7672::vorsatzUmschalt(static_cast<uint8_t>(m)) == vorsatz)
+            return m;
+    return -1;
+}
+}  // namespace
+
+/**
+ * @test K7672.DcpKursortastenDesHostsSindTastenDerFirmware
+ * @brief Die Host-Zuordnung in `tasteDcp` ist von Hand geschrieben ({Code, Umschalt});
+ *        jede Kursortaste muss eine echte Taste der Matrix treffen, die in den
+ *        Firmware-Tabellen (EPROM D3 0080H/0100H) denselben Scancode MIT Vorsatz 2AH
+ *        trägt — und byteweise dasselbe senden wie diese Taste der Nachbildung.
+ */
+TEST(K7672, DcpKursortastenDesHostsSindTastenDerFirmware)
+{
+    const struct { uint32_t qk; uint8_t code; } tab[] = {
+        {QK_LEFT, 0x4B}, {QK_RIGHT, 0x4D}, {QK_UP, 0x48}, {QK_DOWN, 0x50},
+        {QK_PGUP, 0x49}, {QK_PGDN, 0x51},
+    };
+    for (const auto& z : tab) {
+        Aufbau a;
+        dcp(a);
+        a.kbd.keyPress(z.qk, false, false);
+        a.kbd.keyRelease(z.qk);
+        const std::vector<int> host = alles(a);
+        EXPECT_EQ(host, (std::vector<int>{0x2A, z.code, z.code | 0x80, 0xAA}))
+            << std::hex << "Qt " << z.qk;
+        const int m = matrixMit(z.code, true);
+        ASSERT_GE(m, 0) << std::hex << "keine Matrixtaste mit Vorsatz für " << int(z.code);
+        tippe(a, static_cast<uint8_t>(m));
+        EXPECT_EQ(alles(a), host) << std::hex << "Matrix " << m;
+    }
+}
+
+/**
+ * @test K7672.DcpUmschalttastenDesHostsUndFeststellLampe
+ * @brief Strg 1DH/9DH, Alt 38H/B8H, Feststell 3AH/BAH; die Feststelltaste des Hosts
+ *        schaltet LED 21H Bit 7 beim DRÜCKEN um (Firmware 0303H) wie die Taste der
+ *        Nachbildung.  Eine Taste ohne Zuordnung (Pos1) sendet nichts.
+ */
+TEST(K7672, DcpUmschalttastenDesHostsUndFeststellLampe)
+{
+    Aufbau a;
+    dcp(a);
+    a.kbd.keyPress(QK_CONTROL, false, true);
+    a.kbd.keyRelease(QK_CONTROL);
+    a.kbd.keyPress(QK_ALT, false, false);
+    a.kbd.keyRelease(QK_ALT);
+    EXPECT_EQ(alles(a), (std::vector<int>{0x1D, 0x9D, 0x38, 0xB8}));
+
+    EXPECT_EQ(a.kbd.leds() & 0x80, 0);
+    a.kbd.keyPress(QK_CAPSLOCK, false, false);
+    EXPECT_EQ(a.kbd.leds() & 0x80, 0x80);
+    a.kbd.keyRelease(QK_CAPSLOCK);
+    EXPECT_EQ(a.kbd.leds() & 0x80, 0x80) << "Loslassen schaltet nicht zurück";
+    a.kbd.keyPress(QK_CAPSLOCK, false, false);
+    a.kbd.keyRelease(QK_CAPSLOCK);
+    EXPECT_EQ(a.kbd.leds() & 0x80, 0);
+    EXPECT_EQ(alles(a), (std::vector<int>{0x3A, 0xBA, 0x3A, 0xBA}));
+
+    a.kbd.keyPress(QK_HOME, false, false);
+    a.kbd.keyRelease(QK_HOME);
+    EXPECT_TRUE(alles(a).empty());
+}
+
+/**
+ * @test K7672.DcpSteuerzeichenOhneBuchstabe
+ * @brief `sendeZeichen` im DCP-Modus: 1CH…1FH sind Strg + ein Nicht-Buchstabe
+ *        (BIOS-Tabelle DC0FH): 1CH = Strg+\ (27H), 1DH = Strg+] (1AH), 1EH = Strg+#
+ *        (29H), 1FH = Strg+- (35H).  Ein Zeichen ohne Taste (80H) sendet nichts.
+ */
+TEST(K7672, DcpSteuerzeichenOhneBuchstabe)
+{
+    Aufbau a;
+    dcp(a);
+    const struct { uint8_t z, code; } tab[] = {{0x1C, 0x27}, {0x1D, 0x1A}, {0x1E, 0x29}, {0x1F, 0x35}};
+    for (const auto& t : tab) {
+        a.kbd.sendeZeichen(t.z);
+        EXPECT_EQ(alles(a), (std::vector<int>{0x1D, t.code, t.code | 0x80, 0x9D}))
+            << std::hex << int(t.z);
+    }
+    a.kbd.sendeZeichen(0x80);
+    EXPECT_TRUE(alles(a).empty());
+}
+
+/**
+ * @test K7672.ScpTabRuecktasteUndUnbekannteTaste
+ * @brief SCP-Modus (Boot-ROM, Monitor): Tab und Umschalt+Tab ⇒ 09H, Rücktaste ⇒ 08H;
+ *        eine Host-Taste ohne Zeichen (Umschalt allein, Kursor) sendet nichts.
+ */
+TEST(K7672, ScpTabRuecktasteUndUnbekannteTaste)
+{
+    Aufbau a;
+    for (uint32_t k : {QK_TAB, QK_BACKTAB, QK_BACKSPACE, QK_SHIFT, QK_LEFT}) {
+        a.kbd.keyPress(k, false, false);
+        a.kbd.keyRelease(k);
+    }
+    EXPECT_EQ(alles(a), (std::vector<int>{0x09, 0x09, 0x08}));
+}
