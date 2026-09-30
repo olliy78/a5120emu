@@ -14,6 +14,7 @@
 #include "core/cards/k7024/k7024.h"
 #include "core/cards/k8025/k8025.h"
 #include "core/cards/k5122/k5122.h"
+#include "core/cards/em/em.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/peripherals/floppy_drive/disk_format.h"
 #include "core/peripherals/floppy_drive/format_catalog.h"
@@ -24,6 +25,7 @@
 #include <array>
 #include <vector>
 #include <functional>
+#include <memory>
 
 class A5120Machine {
 public:
@@ -36,6 +38,14 @@ public:
     struct Config {
         /// DriveProfile-Namen je K5122-Slot (siehe builtinDriveProfile). Default: 4× K5601.
         std::array<std::string, 4> drive_profiles = {"K5601", "K5601", "K5601", "K5601"};
+
+        /// Erweiterungsmodul des A5120.16 (doc/design/17_a5120_16.md).  Vorgabe
+        /// `none`: ohne EM ist die Maschine bitgleich der A5120 von vorher.
+        enum class Em { none, em064, em256 };
+        Em em = Em::none;
+        /// Leseadresse des Attributspeichers A22 (EM::A22Lesart).  Vorgabe = belegte
+        /// Lesart (Scan 9005/2); die Handbuchlesart nur als Gegenprobe (G1-Test).
+        EM::A22Lesart em_a22_lesart = EM::A22Lesart::ZyklusAdresse;
     };
 
     /** @brief Construct with the default configuration (4× 5,25"-MFM, K5601). */
@@ -273,6 +283,10 @@ public:
     /** @brief Mutable ZVE2 core for debuggers (register edit, flag inspection). */
     Z80& zve2Debug() { return zre_.zve2(); }
 
+    /** @brief Erweiterungsmodul (nullptr ohne EM, Config::em == none). */
+    EM*       em()       { return em_.get(); }
+    const EM* em() const { return em_.get(); }
+
     // ─── ZVE2 (DMA-CPU) diagnostics ──────────────────────────────────────────
     /** @brief Current PC of the ZVE2 (DMA Z80). */
     uint16_t zve2PC() const { return zre_.zve2PC(); }
@@ -421,6 +435,7 @@ private:
     K7024         screen_;    // slot 5: video
     K8025         ass_;       // slot 3: serial
     K5122         afs_;       // slot 2: floppy (formatagnostischer Streaming-Controller)
+    std::unique_ptr<EM> em_;  // A5120.16: Erweiterungsmodul (nur mit Config::em)
 
     K7637         kbd_;
 

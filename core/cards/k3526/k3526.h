@@ -114,7 +114,9 @@ public:
      * @brief Write one byte to the K3526 memory array.
      *
      * If the group covering @p addr has /MEMDI asserted, the write is silently
-     * dropped (write-protect).
+     * dropped (write-protect).  /MEMDI heisst hier je nach Brücke der Gruppe:
+     * MEMDI1/2 der Rückverdrahtung (setMemDI) oder die Bus-Leitung /MEMDI des
+     * laufenden Zyklus (K1520Bus::memdiActive, gezogen z. B. vom EM256).
      *
      * @param addr 16-bit bus address
      * @param data Byte to write
@@ -156,6 +158,9 @@ public:
      * @param disabled true to assert /MEMDI for the group (disable access)
      */
     void setMemDI(int group, bool disabled);
+
+    /** @brief Brückenstellung der Gruppen (Basisadresse, /MEMDI-Quelle). */
+    const A5120Config& config() const { return cfg_; }
 
     // ─── Utility helpers ────────────────────────────────────────────────────
 
@@ -200,6 +205,7 @@ public:
 
 private:
     A5120Config                cfg_;              ///< Group base addresses and /MEMDI sources
+    const K1520Bus*            bus_ = nullptr;    ///< für Bus-/MEMDI je Zugriff (attachToBus)
     std::array<uint8_t, 65536> mem_{};            ///< Flat 64 KB backing array
     bool                       group_memdi_[4]{}; ///< true = group is disabled (/MEMDI asserted)
 };

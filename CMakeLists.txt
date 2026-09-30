@@ -192,6 +192,11 @@ if(BUILD_K1520)
             core/primitives/z80.cpp
         )
         target_include_directories(k1520_z80 PUBLIC ${CMAKE_SOURCE_DIR})
+        # U8001/U8002 (Z8001/Z8002) CPU-Primitive; Tabelle/Dekoder header-only in core/primitives/z8000/
+        add_library(k1520_z8000 STATIC
+            core/primitives/z8000.cpp
+        )
+        target_include_directories(k1520_z8000 PUBLIC ${CMAKE_SOURCE_DIR})
 
     target_link_libraries(k1520_sio PUBLIC k1520_bus)
     target_include_directories(k1520_sio PUBLIC ${CMAKE_SOURCE_DIR})
@@ -228,13 +233,18 @@ if(BUILD_K1520)
     target_link_libraries(k1520_k5122 PUBLIC k1520_pio k1520_floppy2 k1520_bus k1520_logger)
     target_include_directories(k1520_k5122 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # EM064/EM256 – Erweiterungsmodul des A5120.16 mit U8001/U8002 (doc/design/17_a5120_16.md)
+    add_library(k1520_em STATIC core/cards/em/em.cpp)
+    target_link_libraries(k1520_em PUBLIC k1520_pio k1520_z8000 k1520_bus k1520_logger)
+    target_include_directories(k1520_em PUBLIC ${CMAKE_SOURCE_DIR})
+
     # A5120 machine (wires all cards + Z80 CPU)
     add_library(k1520_a5120 STATIC
         core/machines/a5120/a5120.cpp
     )
     target_link_libraries(k1520_a5120 PUBLIC
         k1520_z80
-        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122
+        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_em
         k1520_k7637 k1520_floppy k1520_floppy2 k1520_geometry k1520_bus k1520_logger
     )
     target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})
@@ -276,6 +286,10 @@ if(BUILD_K1520)
     add_executable(k1520disktool tools/k1520disktool.cpp)
     target_link_libraries(k1520disktool PRIVATE k1520_fs)
     target_include_directories(k1520disktool PRIVATE ${CMAKE_SOURCE_DIR})
+
+    # z8kasm: Assembler/Disassembler fuer U8001/U8002 (header-only tools/z8000/)
+    add_executable(z8kasm tools/z8kasm.cpp)
+    target_include_directories(z8kasm PRIVATE ${CMAKE_SOURCE_DIR})
 
     # boot_trace: standalone boot diagnostic tool (LOG_LEVEL=5 for full trace)
     add_executable(boot_trace tools/boot_trace.cpp)

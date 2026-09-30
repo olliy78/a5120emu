@@ -30,6 +30,9 @@
 #   tools/dev.sh test-matrix [args]   NUR die 88 Format-Matrix-Tests (jedes FORMAT.COM-Menü
 #                                     jedes Laufwerkstyps, Leerdiskette, Smoke Spur 0-2)
 #   tools/dev.sh test-python [args]   NUR die Python-Ebene (C-ABI + GUI, Label python)
+#   tools/dev.sh test-oracle [args]   U8001/U8002-Primitive gegen MAMEs z8000 (Differenz-
+#                                     prüfung, Label mame_oracle, eigenes build_oracle/,
+#                                     braucht beim ersten Mal Netz)
 #   tools/dev.sh test-level <ebene>   NUR eine Testebene (unit|debugtools|integration|
 #                                     cli|system|python) — entspricht `ctest -L <ebene>`
 #   tools/dev.sh trace [boot_trace…]  build_trace/ bauen, dann boot_trace starten
@@ -48,12 +51,12 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_DIR"
 
 # Build-Dir → LOG_LEVEL
-declare -A LOG_LEVEL=( [build]=3 [build_trace]=5 [build_win]=3 )
+declare -A LOG_LEVEL=( [build]=3 [build_trace]=5 [build_win]=3 [build_oracle]=3 )
 # Build-Dir → CMAKE_BUILD_TYPE.  Ohne Typ baut GCC mit -O0 (keine Optimierung) →
 # der Z80-Interpreter läuft ~5-8x zu langsam.  build/ = Release (-O3, Normalbetrieb
 # + Tests), build_trace/ = RelWithDebInfo (-O2 -g, schnell UND mit Host-Symbolen
 # fürs Trace-Werkzeug).
-declare -A BUILD_TYPE=( [build]=Release [build_trace]=RelWithDebInfo [build_win]=Release )
+declare -A BUILD_TYPE=( [build]=Release [build_trace]=RelWithDebInfo [build_win]=Release [build_oracle]=Release )
 
 # ─── Windows (Git-Bash/MSYS unter GitHub Actions oder auf einem Windows-Rechner) ──
 # Zwei Unterschiede, beide zwingend:
@@ -122,6 +125,11 @@ configure_if_needed() {
     if [ "$dir" = build_win ]; then
         extra=(-DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain-mingw64.cmake"
                -DBUILD_PYTHON_TESTS=OFF)
+    fi
+    # build_oracle/ = eigenes Verzeichnis für das MAME-Orakel der U8001-Primitive
+    # (lädt MAME-Quellen beim Konfigurieren; build/ bleibt davon unberührt).
+    if [ "$dir" = build_oracle ]; then
+        extra=(-DK1520_Z8K_MAME_ORACLE=ON -DBUILD_PYTHON_TESTS=OFF)
     fi
     if [ ! -f "$dir/CMakeCache.txt" ]; then
         c_ylw ">> konfiguriere $dir (LOG_LEVEL=${LOG_LEVEL[$dir]}, ${BUILD_TYPE[$dir]})"
@@ -252,6 +260,10 @@ case "$cmd" in
         build_dir build
         c_ylw ">> ctest (build/) NUR format_matrix — 88 FORMAT.COM-Menues auf Leerdisketten"
         run_ctest build -L format_matrix "$@" ;;
+    test-oracle)
+        build_dir build_oracle
+        c_ylw ">> ctest (build_oracle/) NUR mame_oracle — U8001 gegen MAME z8000"
+        run_ctest build_oracle -L mame_oracle "$@" ;;
     test-python)
         # pytest-Ebene: C-ABI (ctypes gegen libk1520core.so) + PySide6-GUI.
         # Braucht die gebaute Bibliothek — deshalb erst bauen.

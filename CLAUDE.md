@@ -34,6 +34,7 @@ tools/dev.sh trace <boot_trace-args>   # build build_trace/, then run boot_trace
 tools/dev.sh tool <name> [args]  # build build/, then run build/<name> (floppy_diag, k1520dbg, kbd_test…)
 tools/dev.sh test-python         # only the pytest layer (C-ABI + GUI, label "python")
 tools/dev.sh test-level unit     # one test level: unit|debugtools|integration|cli|system|python
+tools/dev.sh test-oracle         # Z8000-Kern gegen MAME (build_oracle/, lädt MAME beim Konfigurieren)
 tools/dev.sh win [ctest-args]    # Cross-Bau nach WINDOWS (MinGW-w64) + Tests unter wine
 tools/dev.sh check               # build both dirs + report freshness
 tools/dev.sh rebuild             # rm -rf build build_trace, then build from scratch

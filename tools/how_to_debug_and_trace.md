@@ -183,6 +183,23 @@ Lange Läufe drucken jetzt alle 2 s eine Fortschrittszeile; **Ctrl-C** bricht de
 
 ---
 
+## 0e. A5120.16: den U8001 sezieren (`--em em256`, `cpu u8000`)
+
+Der U8001 hat dieselben Werkzeuge wie ZVE1, mit derselben Syntax (`tools/k1520dbg.md` §11):
+
+| Willst du … | Befehl |
+|---|---|
+| am Wechsel in den 16-Bit-Mode anhalten | **`bmode 16`** — hält genau an der Flanke, Zeile `ausgeloest:` nennt den Befehl |
+| Namen statt Adressen | **`z8kasm --sym prog.sym`**, dann **`sym prog.sym`** (`<<s>>%off NAME`) |
+| erst beim n-ten Durchlauf halten | **`b SCHLEIFE if R2==%60`** (Register, Flags, `[RR14]w`, `A53` …) |
+| mitschreiben ohne Halt | **`lp SCHLEIFE R1 [<<0>>%0080]w`** |
+| wer schreibt in die Mailbox? | **`wp <<0>>%0080..%00BF`** (U8001) · **`wpa em:00080..000BF`** (auch der U880) |
+| Portzugriffe des U8001 | **`iow %0080`** / **`iob %0081`** |
+| was hat sich im EM geändert? | **`snap a` … `snap b`, `snap diff a b`** |
+| A46/A53/A54 auf einen Blick | **`dev em`** |
+
+---
+
 ## 1. Schnellstart
 
 ```sh

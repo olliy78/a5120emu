@@ -25,6 +25,7 @@ from PySide6.QtGui import QColor
 
 from app.ui.screen_widget import CRTParams
 from app import drive_types as dt
+from app import modell
 from app import takt
 
 
@@ -39,6 +40,9 @@ class SettingsWidget(QWidget):
     # Emitted when a drive-type dropdown changes; carries the list of 4 core
     # DriveProfile names (one per K5122 slot, "none" = empty slot).
     driveTypesChanged = Signal(list)
+    # Emitted when the model dropdown changes; carries the model key
+    # (app.modell.A5120 / app.modell.A5120_16).
+    modelChanged = Signal(str)
 
     #: (Beschriftung, Faktor) — Faktor 0.0 heisst „unbegrenzt".  Die Stufen
     #: stehen in :mod:`app.takt`, damit Auswahlfeld und Statuszeile dasselbe
@@ -56,6 +60,8 @@ class SettingsWidget(QWidget):
         # Guards the drive-type combos against emitting while set programmatically.
         self._drive_guard = False
         self._drive_combos: List[QComboBox] = []
+        # Guards the model combo against emitting while set programmatically.
+        self._model_guard = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -174,6 +180,16 @@ class SettingsWidget(QWidget):
         inner = QWidget()
         form = QFormLayout(inner)
 
+        self.model_combo = QComboBox()
+        for schluessel, _em, beschriftung in modell.MODELS:
+            self.model_combo.addItem(beschriftung, schluessel)
+        self.model_combo.currentIndexChanged.connect(self._on_model_combo)
+        self.model_combo.setToolTip(
+            "A5120.16 fügt dem A5120 die Steuerkarte und das Erweiterungsmodul "
+            "EM256 mit dem U8001 hinzu.  Ein Wechsel erzeugt die Maschine neu "
+            "(wie ein Kaltstart).")
+        form.addRow("Modell:", self.model_combo)
+
         self.speed_combo = QComboBox()
         for label, factor in self.SPEED_OPTIONS:
             self.speed_combo.addItem(label, float(factor))
@@ -185,6 +201,23 @@ class SettingsWidget(QWidget):
         form.addRow("Takt:", self.speed_combo)
 
         return inner
+
+    def _on_model_combo(self, _idx: int):
+        if self._model_guard:
+            return
+        self.modelChanged.emit(self.model_value())
+
+    def model_value(self) -> str:
+        """Der aktuell gewählte Modellschlüssel (``app.modell.A5120``/``A5120_16``)."""
+        data = self.model_combo.currentData()
+        return modell.normalize(data)
+
+    def set_model_value(self, model: str):
+        """Den Eintrag für *model* wählen (ohne Signal)."""
+        self._model_guard = True
+        idx = self.model_combo.findData(modell.normalize(model))
+        self.model_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._model_guard = False
 
     def _on_speed_combo(self, _idx: int):
         if self._speed_guard:

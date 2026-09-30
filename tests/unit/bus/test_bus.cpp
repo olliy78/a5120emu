@@ -202,30 +202,98 @@ TEST(K1520Bus, MemDispatch_ROMIgnoresWrite) {
     EXPECT_EQ(rom.buf[0], 0xEE);  // unchanged
 }
 
+/// Vorrangspeicher für die MEMDI-Tests: übernimmt genau eine 256-B-Seite.
+class MockMemdi : public MemdiDriver {
+public:
+    uint16_t base;
+    uint8_t  buf[256] = {};
+    bool     claim = true;
+    const K1520Bus* bus = nullptr;
+    bool     memdi_seen_in_read = false;
+    explicit MockMemdi(uint16_t b) : base(b) { std::fill(buf, buf + 256, 0x5A); }
+    bool    drivesMemdi(uint16_t a) override { return claim && (a & 0xFF00) == base; }
+    uint8_t memRead(uint16_t a) override {
+        if (bus) memdi_seen_in_read = bus->memdiActive();
+        return buf[a - base];
+    }
+    void    memWrite(uint16_t a, uint8_t d) override { buf[a - base] = d; }
+};
+
+/// Hört auf Bus-/MEMDI wie eine K3526-Gruppe mit memdi_source = false.
+class ListeningMem : public MockMem {
+public:
+    const K1520Bus& bus;
+    ListeningMem(uint16_t b, const K1520Bus& bus_) : MockMem(b), bus(bus_) {}
+    void memWrite(uint16_t a, uint8_t d) override { if (!bus.memdiActive()) MockMem::memWrite(a, d); }
+};
+
 /**
- * @test K1520Bus/MEMDI_DoesNotGateMemory
- * @brief The global /MEMDI signal does not gate memory access on the standard
- *   A5120 — it only disables OPS groups jumpered onto MEMDI1/2, and none are.
- *   While asserted, reads, instruction fetch AND writes all pass through. This
- *   mirrors the real A5120, where code keeps executing while /MEMDI is active
- *   (HARDYs MEMDI test sets /MEMDI and then runs EI/RET plus stack/BDOS ops).
- *   A read gate would make the CPU fetch 0xFF (=RST 38H) and loop forever; a
- *   write gate would block the stack.
- * @par Pass criterion  with /MEMDI asserted, reads and writes behave normally;
- *   getMEMDI still reflects the signal level.
+ * @test K1520Bus/MEMDI_OhneVorrangspeicherWirkungslos
+ * @brief Ohne angemeldeten Vorrangspeicher ist Bus-/MEMDI nie aktiv — der A5120
+ *   ohne Erweiterungsmodul liest und schreibt wie bisher (HARDY-Wächter: dessen
+ *   MEMDI-Test zieht MEMDI1/2, nicht diese Leitung).
  */
-TEST(K1520Bus, MEMDI_DoesNotGateMemory) {
+TEST(K1520Bus, MEMDI_OhneVorrangspeicherWirkungslos) {
     K1520Bus bus;
-    MockMem mem(0x1000);
+    ListeningMem mem(0x1000, bus);
     mem.buf[0] = 0x42;
     bus.registerMem(&mem, 0x1000, 256);
-    bus.setMEMDI(true);
 
-    EXPECT_TRUE(bus.getMEMDI());          // signal level tracked
-    EXPECT_EQ(bus.memRead(0x1000), 0x42); // read/fetch passes
-    bus.memWrite(0x1000, 0x99);           // write passes (not gated)
+    EXPECT_FALSE(bus.memdiActive());
+    EXPECT_EQ(bus.memRead(0x1000), 0x42);
+    bus.memWrite(0x1000, 0x99);
     EXPECT_EQ(mem.buf[0], 0x99);
-    EXPECT_EQ(bus.memRead(0x1000), 0x99);
+}
+
+/**
+ * @test K1520Bus/MEMDI_JeZugriffVomVorrangspeicher
+ * @brief Ein MemdiDriver zieht /MEMDI nur für die Zugriffe, die er übernimmt:
+ *   er liefert das Byte, bekommt den Schreibzyklus, und eine auf /MEMDI hörende
+ *   Gruppe verwirft ihn.  Ausserhalb des Zyklus ist die Leitung wieder frei.
+ */
+TEST(K1520Bus, MEMDI_JeZugriffVomVorrangspeicher) {
+    K1520Bus bus;
+    ListeningMem ram(0x1000, bus);
+    ListeningMem ram2(0x2000, bus);
+    ram.buf[0] = 0x11;
+    ram2.buf[0] = 0x22;
+    bus.registerMem(&ram, 0x1000, 256);
+    bus.registerMem(&ram2, 0x2000, 256);
+    MockMemdi em(0x1000);
+    em.bus = &bus;
+    bus.addMemdiDriver(&em);
+
+    EXPECT_EQ(bus.memRead(0x1000), 0x5A);        // Vorrangspeicher liefert
+    EXPECT_TRUE(em.memdi_seen_in_read);          // /MEMDI während des Zyklus
+    EXPECT_FALSE(bus.memdiActive());             // und danach wieder frei
+    EXPECT_EQ(bus.memRead(0x2000), 0x22);        // andere Seite: K1520-RAM
+
+    bus.memWrite(0x1000, 0x77);
+    EXPECT_EQ(em.buf[0], 0x77);                  // Schreiben geht an den EM …
+    EXPECT_EQ(ram.buf[0], 0x11);                 // … die gebrückte Gruppe schweigt
+    bus.memWrite(0x2000, 0x33);
+    EXPECT_EQ(ram2.buf[0], 0x33);
+
+    em.claim = false;                            // Seite abgeschaltet
+    EXPECT_EQ(bus.memRead(0x1000), 0x11);
+    bus.memWrite(0x1000, 0x44);
+    EXPECT_EQ(ram.buf[0], 0x44);
+}
+
+/**
+ * @test K1520Bus/IoAddress_TraegtAB8bis15
+ * @brief Der Bus reicht die volle E/A-Adresse durch: verteilt wird nach AB0–7,
+ *   AB8–15 bleibt über ioAddress() abfragbar (Attributspeicher des EM256).
+ */
+TEST(K1520Bus, IoAddress_TraegtAB8bis15) {
+    K1520Bus bus;
+    MockIO dev;
+    bus.registerIO(&dev, 0xAF, 1);
+    bus.ioWrite(0x53AF, 0x12);
+    EXPECT_EQ(dev.last_port_written, 0xAF);
+    EXPECT_EQ(bus.ioAddress(), 0x53AF);
+    (void)bus.ioRead(0xC0AF);
+    EXPECT_EQ(bus.ioAddress(), 0xC0AF);
 }
 
 /**

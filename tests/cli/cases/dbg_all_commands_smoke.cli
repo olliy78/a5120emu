@@ -7,3 +7,6 @@ run:     %DISK% -x %CLI_DIR%/scripts/all_commands_smoke.dbg
 timeout: 300
 exit:    0
 forbid:  unknown command
+expect:  [3] watch-rw [6009..6009]
+expect:  [4] break-read [600A..600A]
+expect:  [5] break-rw [600B..600C] != 00

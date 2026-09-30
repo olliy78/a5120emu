@@ -214,6 +214,56 @@ K1520_API void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
                                        K1520SerialCallback cb, void* ctx);
 K1520_API void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte);
 
+/* ─── A5120.16: Erweiterungsmodul EM064/EM256 mit U8001 ─────────────────────
+ * doc/design/17_a5120_16.md (S4/S5).  Ohne EM (k1520_create/_configured) liefern
+ * alle k1520_em_* „nichts": Variante "", LEDs aus, Zustand false. */
+
+/**
+ * @brief Wie k1520_create_configured, zusätzlich mit Erweiterungsmodul.
+ *
+ * @param em  "none" / NULL / "" = A5120 ohne EM, "em064" (U8002, 64 KB),
+ *            "em256" (U8001, 256 KB) = A5120.16.  Unbekannter Name → NULL
+ *            (Grund in k1520_last_init_error).
+ */
+K1520_API K1520Handle k1520_create_with_em(K1520MachineType type,
+                                           const char* drive0, const char* drive1,
+                                           const char* drive2, const char* drive3,
+                                           const char* em);
+/** @brief Bestückung: "" (kein EM), "em064" oder "em256". */
+K1520_API const char* k1520_em_variant(K1520Handle h);
+/** @brief LED V1 der Steuerkarte — zeigt RAMEN (nicht den Paritätsfehler). */
+K1520_API bool k1520_em_led_v1(K1520Handle h);
+/** @brief LED V2 der Steuerkarte — leuchtet im 8-Bit-Mode (FF A29). */
+K1520_API bool k1520_em_led_v2(K1520Handle h);
+/** @brief true im 16-Bit-Mode (FF A29 zurückgesetzt, der U8001 hat den Bus). */
+K1520_API bool k1520_em_mode16(K1520Handle h);
+
+/** Zustand von U8001 und Steuerkarte (Momentaufnahme, nur lesen). */
+typedef struct {
+    uint16_t r[14];          /* R0..R13 (ungebankt) */
+    uint16_t r14[2];         /* R14 [0] = Normal, [1] = System */
+    uint16_t r15[2];         /* R15 [0] = Normal, [1] = System */
+    uint16_t fcw;
+    uint16_t pc;
+    uint16_t psap_seg;       /* wie LDCTL PSAPSEG */
+    uint16_t psap_off;
+    uint16_t refresh;
+    uint8_t  pc_seg;
+    uint8_t  model;          /* 1 = U8001 (Z8001), 2 = U8002 */
+    uint64_t cycles;         /* Takte des U8001 */
+    /* Zustand der CPU */
+    bool     in_reset, halted, stopped, bus_ack, mo_active;
+    /* Steuerkarte */
+    bool     mode8;          /* FF A29: 1 = 8-Bit-Mode */
+    bool     ramen, tren, trq8, busrq16, stop16, reset16, vi_pending, nvi, parity_error;
+    uint8_t  a33, a35, status8, vector8, a53, segment, seg_mode, reserved;
+} K1520EmState;
+
+/** @brief sizeof(K1520EmState) — damit die Bindung ihren Aufbau prüfen kann. */
+K1520_API int  k1520_em_state_size(void);
+/** @brief Zustand lesen; false ohne EM (dann bleibt @p out unverändert). */
+K1520_API bool k1520_em_state(K1520Handle h, K1520EmState* out);
+
 /* ─── Debug ──────────────────────────────────────────────────────────────── */
 /** @brief Read memory through the machine bus for diagnostics. */
 K1520_API uint8_t     k1520_mem_read(K1520Handle h, uint16_t addr);

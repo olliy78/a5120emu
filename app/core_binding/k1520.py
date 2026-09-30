@@ -245,6 +245,75 @@ _lib.k1520_head_loaded.restype = ctypes.c_bool
 _lib.k1520_stop.argtypes = [K1520Handle]
 _lib.k1520_stop.restype = None
 
+# ─── A5120.16: Erweiterungsmodul (EM064/EM256 mit U8001) ─────────────────────
+class K1520EmState(ctypes.Structure):
+    """Spiegel von `K1520EmState` (core/api/k1520_api.h) — Aufbau wird gegen
+    `k1520_em_state_size()` geprüft (tests/python/test_c_api.py)."""
+    _fields_ = [
+        ("r", ctypes.c_uint16 * 14),
+        ("r14", ctypes.c_uint16 * 2),
+        ("r15", ctypes.c_uint16 * 2),
+        ("fcw", ctypes.c_uint16),
+        ("pc", ctypes.c_uint16),
+        ("psap_seg", ctypes.c_uint16),
+        ("psap_off", ctypes.c_uint16),
+        ("refresh", ctypes.c_uint16),
+        ("pc_seg", ctypes.c_uint8),
+        ("model", ctypes.c_uint8),
+        ("cycles", ctypes.c_uint64),
+        ("in_reset", ctypes.c_bool),
+        ("halted", ctypes.c_bool),
+        ("stopped", ctypes.c_bool),
+        ("bus_ack", ctypes.c_bool),
+        ("mo_active", ctypes.c_bool),
+        ("mode8", ctypes.c_bool),
+        ("ramen", ctypes.c_bool),
+        ("tren", ctypes.c_bool),
+        ("trq8", ctypes.c_bool),
+        ("busrq16", ctypes.c_bool),
+        ("stop16", ctypes.c_bool),
+        ("reset16", ctypes.c_bool),
+        ("vi_pending", ctypes.c_bool),
+        ("nvi", ctypes.c_bool),
+        ("parity_error", ctypes.c_bool),
+        ("a33", ctypes.c_uint8),
+        ("a35", ctypes.c_uint8),
+        ("status8", ctypes.c_uint8),
+        ("vector8", ctypes.c_uint8),
+        ("a53", ctypes.c_uint8),
+        ("segment", ctypes.c_uint8),
+        ("seg_mode", ctypes.c_uint8),
+        ("reserved", ctypes.c_uint8),
+    ]
+
+
+# k1520_create_with_em(type, d0..d3, em: const char*) -> K1520Handle
+_lib.k1520_create_with_em.argtypes = [
+    ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+    ctypes.c_char_p
+]
+_lib.k1520_create_with_em.restype = K1520Handle
+
+# k1520_em_variant(K1520Handle) -> const char*   ("" | "em064" | "em256")
+_lib.k1520_em_variant.argtypes = [K1520Handle]
+_lib.k1520_em_variant.restype = ctypes.c_char_p
+
+# k1520_em_led_v1 / _v2 / k1520_em_mode16 (K1520Handle) -> bool
+_lib.k1520_em_led_v1.argtypes = [K1520Handle]
+_lib.k1520_em_led_v1.restype = ctypes.c_bool
+_lib.k1520_em_led_v2.argtypes = [K1520Handle]
+_lib.k1520_em_led_v2.restype = ctypes.c_bool
+_lib.k1520_em_mode16.argtypes = [K1520Handle]
+_lib.k1520_em_mode16.restype = ctypes.c_bool
+
+# k1520_em_state_size() -> int
+_lib.k1520_em_state_size.argtypes = []
+_lib.k1520_em_state_size.restype = ctypes.c_int
+
+# k1520_em_state(K1520Handle, K1520EmState*) -> bool
+_lib.k1520_em_state.argtypes = [K1520Handle, ctypes.POINTER(K1520EmState)]
+_lib.k1520_em_state.restype = ctypes.c_bool
+
 # k1520_version() -> const char*
 _lib.k1520_version.argtypes = []
 _lib.k1520_version.restype = ctypes.c_char_p
@@ -328,7 +397,7 @@ def _protokolliere_taste(was: str, keycode: int, shift: bool = False,
 class K1520Emulator:
     """Python wrapper for K1520 A5120 emulator."""
     
-    def __init__(self, drive_types: Optional[list] = None):
+    def __init__(self, drive_types: Optional[list] = None, em: Optional[str] = None):
         """Initialize emulator instance.
 
         Args:
@@ -337,13 +406,16 @@ class K1520Emulator:
                 that is ``None`` or ``""`` keeps the slot default (K5601); ``"none"``
                 marks an empty slot ("kein Laufwerk").  ``None`` (the default) builds
                 the standard machine (4× K5601).
+            em: Erweiterungsmodul des A5120.16 — ``None``/``"none"`` = A5120 ohne EM,
+                ``"em064"`` oder ``"em256"``.
         """
         # Zuerst setzen: schlägt die Erzeugung fehl, läuft __del__ trotzdem und
         # darf nicht über ein fehlendes Attribut stolpern.
         self._handle = None
         self._drive_types = list(drive_types) if drive_types else None
+        self._em = em if em and em != "none" else None
         try:
-            handle = self._create_handle(self._drive_types)
+            handle = self._create_handle(self._drive_types, self._em)
         except Exception as e:
             raise RuntimeError(f"Failed to create K1520 emulator: {e}")
         if not handle:
@@ -358,16 +430,20 @@ class K1520Emulator:
         self._thread: Optional[threading.Thread] = None
 
     @staticmethod
-    def _create_handle(drive_types: Optional[list]):
+    def _create_handle(drive_types: Optional[list], em: Optional[str] = None):
         """Create a core handle, configured with per-slot drive profiles if given."""
-        if not drive_types:
+        if not drive_types and not em:
             return _lib.k1520_create(0)  # K1520_MACHINE_A5120 = 0, default 4× K5601
 
-        names = list(drive_types)[:4] + [None] * (4 - len(drive_types))
+        drive_types = list(drive_types or [])
+        names = drive_types[:4] + [None] * (4 - len(drive_types[:4]))
 
         def enc(name):
             return name.encode("utf-8") if name else None  # None/"" → core keeps default
 
+        if em:
+            return _lib.k1520_create_with_em(
+                0, enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]), enc(em))
         return _lib.k1520_create_configured(
             0, enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
 
@@ -709,6 +785,28 @@ class K1520Emulator:
         return _lib.k1520_head_loaded(self._handle)
 
     # ─── Speicher-/Portzugriff (Diagnose, Tests) ─────────────────────────────
+
+    # ─── A5120.16 ──────────────────────────────────────────────────────────
+    def em_variant(self) -> str:
+        """Bestückung des Erweiterungsmoduls: "" (keins), "em064" oder "em256"."""
+        v = _lib.k1520_em_variant(self._handle)
+        return v.decode("ascii") if v else ""
+
+    def em_leds(self) -> tuple:
+        """(V1, V2) der Steuerkarte: V1 = RAMEN, V2 = 8-Bit-Mode."""
+        return (bool(_lib.k1520_em_led_v1(self._handle)),
+                bool(_lib.k1520_em_led_v2(self._handle)))
+
+    def em_mode16(self) -> bool:
+        """True im 16-Bit-Mode (der U8001 hat den Bus)."""
+        return bool(_lib.k1520_em_mode16(self._handle))
+
+    def em_state(self) -> Optional[K1520EmState]:
+        """Register des U8001 und Zustand der Steuerkarte; None ohne EM."""
+        st = K1520EmState()
+        if not _lib.k1520_em_state(self._handle, ctypes.byref(st)):
+            return None
+        return st
 
     def mem_read(self, addr: int) -> int:
         """Read one byte through the bus (memory map of the running machine)."""

@@ -208,25 +208,31 @@ TEST(K2526, BSPioPortB_Bit0High_RomStaysEnabled)
 // ─── MEMDI signal via BS-PIO Port A bit 7 (MEMDI1/2 output) ─────────────────
 
 /**
- * @test K2526/BSPioPortA_Bit7_SetsMEMDI
- * @brief BS-PIO Port A bit 7 controls the K1520 bus MEMDI signal.
- * @details A7=1 asserts MEMDI (bus.getMEMDI() == true); A7=0 releases it.
- * @par Pass criterion  getMEMDI() toggles correctly with Port A bit 7.
+ * @test K2526/BSPioPortA_Bit7_TreibtMemdi12NichtBusMemdi
+ * @brief BS-PIO Port A Bit 7 ist MEMDI1/2 der Rückverdrahtung (onMemdi12), NICHT die
+ *   Bus-Leitung /MEMDI — die zieht je Zugriff nur ein Vorrangspeicher (EM256).
+ * @par Pass criterion  memdi12() und der Rückruf folgen A7; bus.memdiActive() bleibt
+ *   false, der Speicher bleibt erreichbar.
  */
-TEST(K2526, BSPioPortA_Bit7_SetsMEMDI)
+TEST(K2526, BSPioPortA_Bit7_TreibtMemdi12NichtBusMemdi)
 {
     K1520Bus bus;
     K2526 card(bus);
     card.attachToBus(bus);
     card.powerOn();
+    int  calls = 0;
+    bool last  = false;
+    card.onMemdi12([&](bool a) { ++calls; last = a; });
 
-    EXPECT_FALSE(bus.getMEMDI());
-
-    bus.ioWrite(BSPIO_PORTA_DATA, 0x80);   // A7=1 → MEMDI active
-    EXPECT_TRUE(bus.getMEMDI());
-
-    bus.ioWrite(BSPIO_PORTA_DATA, 0x00);   // A7=0 → MEMDI released
-    EXPECT_FALSE(bus.getMEMDI());
+    EXPECT_FALSE(card.memdi12());
+    bus.ioWrite(BSPIO_PORTA_DATA, 0x80);   // A7=1 → MEMDI1/2 aktiv
+    EXPECT_TRUE(card.memdi12());
+    EXPECT_TRUE(last);
+    EXPECT_FALSE(bus.memdiActive());
+    bus.ioWrite(BSPIO_PORTA_DATA, 0x00);   // A7=0 → frei
+    EXPECT_FALSE(card.memdi12());
+    EXPECT_FALSE(last);
+    EXPECT_EQ(calls, 2);
 }
 
 // ─── clockTick() ─────────────────────────────────────────────────────────────

@@ -82,6 +82,9 @@ bscreen off
 wp 0x6005 == 99
 wpr 0x6006
 wb 0x6007..0x6008 changed
+wpa 0x6009
+wbr 0x600A
+wba 0x600B..0x600C != 00
 wl
 wd 0x6005
 wd all
@@ -154,6 +157,29 @@ verify dbg_smoke_mem.bin @0x6100
 # ── Listings ────────────────────────────────────────────────────────────────
 lst
 lst list
+
+# ── A5120.16 ohne EM: jedes Kommando meldet sich, keines faellt aus der Kette ─
+# (mit EM: dbg_u8000_smoke.cli)
+cpu
+cpu u8000
+cpu zve2
+r
+cpu zve1
+dev em
+fcw
+psa
+bmode
+bvi
+bint16
+emlog off
+help u8000
+d em:0 16
+wp em:0
+wbr em:0..em:F
+load dbg_smoke_mem.bin em:0
+save dbg_smoke_mem16.bin em:0 4
+verify dbg_smoke_mem.bin @em:0
+sym add NIRGENDS <<0>>%0100
 
 # ── Rest ────────────────────────────────────────────────────────────────────
 reset

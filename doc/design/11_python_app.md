@@ -725,3 +725,38 @@ Das Terminalprogramm wird unter Linux der Reihe nach gesucht
 (`$TERMINAL`, dann `x-terminal-emulator`, `konsole`, `gnome-terminal`, …);
 findet sich keines, nennt die Meldung den Pfad der vorbereiteten Startdatei,
 statt kommentarlos nichts zu tun.
+
+### 10.9 Modellwahl A5120/A5120.16 und die EM-Leuchten (2026-09-29, S6)
+
+`doc/design/17_a5120_16.md` fügt dem A5120 optional die Steuerkarte 062-9005
+samt Erweiterungsmodul (EM256, U8001) hinzu — am Kern nichts als ein weiterer
+Konstruktorparameter (`K1520Emulator(drive_types, em="em256")`). Die
+Oberfläche behandelt einen Modellwechsel deshalb genau wie einen geänderten
+Laufwerksschacht: **eine neue Maschine**, über dieselbe Stelle
+(`MainWindow._apply_drive_types`, jetzt zusätzlich `em=modell.em_for(self._model)`),
+ohne eigene Rückfrage — die vergleichbare Aktion (das Laufwerks-Auswahlfeld)
+fragt auch nicht nach.
+
+* **Eine Zeile Code, ein Modul**: `app/modell.py` (Schnitt wie
+  `app/drive_types.py`/`app/takt.py`) ist die einzige Stelle, die einen
+  Modellschlüssel (`"a5120"`/`"a5120.16"`) auf den core-`em`-Parameter und den
+  Anzeigenamen abbildet. `general.model` in der Konfiguration (`app/config_io.py`,
+  `data/default_config.yaml`) trägt den Schlüssel; **ein fehlender Eintrag ist
+  die Vorgabe `"a5120"`** — ältere Konfigurationen laufen unverändert weiter.
+* **Die Auswahl sitzt in *Einstellungen ▸ Allgemein*** (`SettingsWidget.model_combo`,
+  neben dem Takt) — kein Menüpunkt, keine `QAction`, kein Tastenkürzel: dasselbe
+  Muster wie Takt und Laufwerkstyp, die auch schon Auswahlfelder statt Menüs
+  sind, und die Kürzeltabelle des Handbuchs bleibt unberührt.
+* **Statuszeile**: zwei zusätzliche Leuchten V1/V2 (`app/ui/status_bar.py`,
+  `EmLamp`) plus `Modus: 8-Bit`/`16-Bit`, an fester Stelle zwischen Takt und
+  Laufwerken (`MachineStatus.set_em_sichtbar`/`set_em`) — sichtbar nur, wenn
+  `self._model` ein Erweiterungsmodul hat. Abgefragt wird `em_leds()`/`em_mode16()`
+  im selben Sekundentakt wie der Rest (`MainWindow._update_status` →
+  `_update_em_status`), reine Abfrage, kein Rückruf (Anschluss aus S5).
+  **V1 zeigt RAMEN, nicht den Paritätsfehler** — der Plan belegt das am
+  Schaltplan (062-9005, Scan 9005/2: A17/08 treibt V1, A17/09+10 hängen an
+  A31/10 = RAMEN).
+* **`set_drive_types` darf die EM-Widgets nicht mit wegräumen**: sie räumt
+  bisher alles nach dem Taktfeld ab und baut die Laufwerksfelder neu auf. Die
+  EM-Anzeige steht jetzt an einer FESTEN Stelle direkt nach dem Takt
+  (`MachineStatus._em_widgets`), und die Räumschleife beginnt erst danach.

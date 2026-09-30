@@ -45,7 +45,8 @@ foreach(_case IN LISTS _cli_cases)
                 ${_cli_emulator}
                 --tool "k1520dbg=$<TARGET_FILE:k1520dbg>"
                 --tool "boot_trace=$<TARGET_FILE:boot_trace>"
-                --tool "k1520disktool=$<TARGET_FILE:k1520disktool>")
+                --tool "k1520disktool=$<TARGET_FILE:k1520disktool>"
+                --tool "z8kasm=$<TARGET_FILE:z8kasm>")
     set_tests_properties(cli_${_name} PROPERTIES TIMEOUT 120 LABELS "cli;fast")
 endforeach()
 

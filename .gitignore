@@ -1,6 +1,7 @@
 build/
 build_trace/
 build_win/
+build_oracle/
 *.o
 *.d
 *.pyc

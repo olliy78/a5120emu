@@ -361,11 +361,57 @@ public:
     // DMA-Prioritätskette
     void setDMAChain(std::vector<DMADevice*> chain);
 
-    // /MEMDI (Speicherzugriff sperren)
-    void setMEMDI(bool disabled);
-    bool isMEMDI() const;
+    // /MEMDI (X1 C09) — JE ZUGRIFF von einem Vorrangspeicher gezogen (s. §5.1a)
+    void addMemdiDriver(MemdiDriver* dev);
+    bool memdiActive() const;   // nur während memRead()/memWrite() gültig
 };
 ```
+
+#### 5.1a /MEMDI gegen MEMDI1/2 (seit 2026-09-28, A5120.16 S1)
+
+Zwei Leitungen, die der Emulator früher in einem Flag zusammenwarf:
+
+- **Bus-/MEMDI (X1 C09)** ist die Speicherprioritätenkette.  Ein `MemdiDriver`
+  (heute nur das Erweiterungsmodul EM064/EM256, `core/cards/em/`) entscheidet **je
+  Zugriff allein aus der Adresse**, ob er den Zyklus übernimmt; dann liefert ER das
+  Byte, und eine K3526-Gruppe mit `memdi_source = false` verwirft den Schreibzyklus.
+  Beim EM ist das MEN = ¬(8/16 ∧ RAMEN ∧ PEN) (A310/12 → A112 → A17/11, Scan 9005/2),
+  **nicht** PEN allein.
+- **MEMDI1/2** der Rückverdrahtung ist ein statischer Pegel vom BS-PIO A7
+  (`K2526::onMemdi12` → Koppelbus).  Darauf hört nur eine Gruppe mit
+  `memdi_source = true` — am A5120 keine.  Deshalb läuft HARDYs MEMDI-Test durch.
+
+Ohne angemeldeten Vorrangspeicher kostet das im Speicherpfad einen Vergleich.  Die
+E/A-Zyklen tragen seit demselben Umbau die volle Adresse AB0–15 (`ioAddress()`),
+weil der Attributspeicher des EM256 über AB12–15 adressiert wird (`OUT (n),A` legt
+dabei **A** auf AB8–15).
+
+#### 5.1b Zweite CPU auf dem EM: U8001 und Maschinenzeit (seit 2026-09-29, A5120.16 S4)
+
+Der U8001 (`Z8000`, `core/primitives/z8000.h`) sitzt auf der EM-Karte (`EM::u8001()`)
+und sieht **nur** den EM-Speicher und die Register A33/A35/A34/A36 — die Karte
+übersetzt jeden seiner Buszyklen (Status ST3..0, N/S, SN) über Segmentweiche A42 und
+Umschalter A41 in eine DRAM-Zelle (`EM::cellFor16`, dieselbe Zelle wie beim U880,
+big-endian).  Zeit: nach jedem Schritt des U880 (bzw. ZVE2/WAIT-Takt) ruft die
+Maschine `EM::advance(n)`; die Karte zieht den U8001 befehlsweise im Verhältnis
+f16/f8 (4 MHz / 2,45 MHz, `EM::Config`) nach und führt den Rest als Guthaben.  Im
+Reset, bei abgegebenem Bus (BUSAK bei anliegendem BUSRQ) und im Stop wird die Zeit
+nur verbucht.  Jeder Befehl des U880 beginnt mit `EM::onU880M1()` — der Takt des FF
+A29 (8/16).  **Der U880 läuft im 16-Bit-Mode weiter** (Handbuch §1.7.3); BUSRQ/BUSAK
+ist der Handschlag zwischen Karte und U8001.  Ohne EM (`Config::em = none`) fällt jeder
+dieser Aufrufe weg — der Lauf ist bitgleich dem A5120.  Save-State v6 hängt den
+EM-Block (DRAM, A22, PIO, Register, U8001 mit `runState()`) mit Kennbyte an den
+Geräteteil an.
+
+*Debug-Anschluss (S5):* `EM::setStepHook` wird **vor** jedem Schritt des U8001 gerufen
+(nicht, solange er geparkt ist); liefert er true, kehrt `advance` sofort zurück und die
+Zeit bleibt als Guthaben stehen — so hält `k1520dbg` den U8001 vor dem Befehl an.
+`EM::setEventHook` meldet jede Kommunikationstransaktion (PIO A32, A33–A36, A22,
+Quittungen) und jeden Pegelwechsel (FF A29, INT-16, TREN, BUSRQ/BUSAK, RESET16, NVI,
+STOP) als `EM::EreignisInfo`; Text dazu in `tools/em_trace.h` (`boot_trace --em`,
+`k1520dbg emlog`).  Ohne Rückruf kostet jede Stelle einen Test.  Nach aussen:
+`k1520_create_with_em`, `k1520_em_variant`, `k1520_em_led_v1/_v2`, `k1520_em_mode16`,
+`k1520_em_state` (`K1520EmState`: Register, FCW, PSAP, Kartenzustand).
 
 ### 5.2 Koppelbus
 

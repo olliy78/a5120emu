@@ -1,0 +1,18 @@
+# Der U8001-Kontext am laufenden Programm (S5): em16abl.com auf die Diskettenkopie,
+# CP/A booten, starten, am Moduswechsel halten, U8001 schrittweise, Haltepunkt,
+# Aufrufstapel, EM-Protokoll (jede Transaktion eine Zeile), VI-Halt.
+tool:      k1520dbg
+disk:      cpa_cpa780_k5601_noclock.img
+setup_run: @k1520disktool put %DISK% %CLI_DIR%/../fixtures/cpm/em16abl.com
+run:       --em em256 %DISK% -x %CLI_DIR%/scripts/u8000_em16abl.dbg
+timeout:   120
+exit:      0
+forbid:    unknown command
+expect:    ** Moduswechsel → 16-Bit-Mode : ZVE1
+expect:    <<0>>%0100: 140E 0000 0FF0            LDL RR14,#%00000FF0
+expect:    ** bp U8001 : U8001 PC=<<0>>%0132
+expect:    U8001-OUT-A33/A35  U8001 OUT %0080  A33=05 A35=A5
+expect:    Moduswechsel       8-Bit-Mode
+expect:    #1 <<0>>%0174 (call → <<0>>%030E, ret <<0>>%017A)
+expect:    ** VI angenommen, Kennung=5A04 : U8001
+expect_re: U8001 <<0>>%[0-9A-F]{4}: .*16-Bit-Mode  <- Kontext

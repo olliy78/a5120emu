@@ -24,7 +24,7 @@ inline const std::vector<std::string>& names() {
         "b","b2","tb","bd","bd2","be","bdis","be2","bdis2","bi","bi2","bl",
         "bint","bnmi","breti","bbusrq","bxfer",
         // watch / log
-        "wp","wpr","wb","wd","wl","iow","iob","iod","iol",
+        "wp","wpr","wpa","wb","wbr","wba","wd","wl","iow","iob","iod","iol",
         "logpoint","lp","lpd","lpl","trace","itrace",
         // inspect
         "r","rj","rj2","where","w","hist","bt","d","dump","e","u","x","list","l","set","disp","undisp","vars","dev","ivt",
@@ -33,6 +33,8 @@ inline const std::vector<std::string>& names() {
         // misc
         "mark","keys","keyuntil","screen","gscreen","bscreen","dialog","console",
         "reset","disk","alias","unalias","source","help","q","quit",
+        // A5120.16 (U8001-Kontext)
+        "cpu","a","fcw","psa","bmode","bvi","bint16","emlog",
     };
     return n;
 }

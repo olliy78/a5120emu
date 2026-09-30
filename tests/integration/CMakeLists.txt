@@ -33,3 +33,34 @@ k1520_add_test(disktool_neue_disketten SRC test_disktool_neue_disketten.cpp
 k1520_add_test(disktool_bootdiskette SRC test_disktool_bootdiskette.cpp
                                      LIBS ${_libs} k1520_fs
                                      LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# A5120.16, Abnahme S1: Original-BIOS (em256 equ 1) erkennt das EM256, RAM-Floppy M:
+# (doc/design/17_a5120_16.md §3 S1).
+k1520_add_test(em256_ramfloppy SRC test_em256_ramfloppy.cpp LIBS ${_libs} k1520_fs
+                               LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# A5120.16, G1: Prüfprogramm em256adr.com (CPA-Workbench) gegen das EM256 — Portbasis,
+# Attributspeicher, Lesart der Leseadresse (doc/design/17_a5120_16.md §3 G1).
+k1520_add_test(em256_adr SRC test_em256_adr.cpp LIBS ${_libs} k1520_fs
+                         LABELS "${_lbl}" TIMEOUT 180
+                         DEFS LOG_LEVEL=2
+                              "EM256ADR_COM=\"${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/em256adr.com\"")
+
+
+# A5120.16, S4: U880 + U8001 auf gemeinsamer Maschinenzeit, Save-State v6 (ohne CP/A).
+k1520_add_test(em16_maschine SRC test_em16_maschine.cpp LIBS ${_libs} k1520_z8000
+                             LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 60)
+
+# A5120.16, Abnahme S4: Prüfprogramm em16abl.com (CPA-Workbench, U8001-Teil mit z8kasm)
+# unter CP/A — alle in §7 belegten Abläufe des 16-Bit-Mode Ende-zu-Ende; dazu em256ful.com
+# v2.0 (G2b, nach §7 repariert), Gruppen A–E.
+k1520_add_test(em16_abl SRC test_em16_abl.cpp LIBS ${_libs} k1520_fs
+                        LABELS "${_lbl}" TIMEOUT 180
+                        DEFS LOG_LEVEL=2
+                             "EM16ABL_COM=\"${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/em16abl.com\""
+                             "EM256FUL_COM=\"${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/em256ful.com\"")
+
+# Erste Eingabe nach der Reset-Taste (Befund S1): Schattenram-Falle beim Warten auf
+# den Prompt, Helfer k1520test::wipeVram().
+k1520_add_test(kbd_nach_reset SRC test_kbd_nach_reset.cpp LIBS ${_libs}
+                              LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)

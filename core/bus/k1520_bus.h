@@ -96,6 +96,31 @@ public:
 };
 
 /**
+ * @brief Speicher mit **Vorrang** über die Bus-Leitung /MEMDI (Speicherprioritätenkette).
+ *
+ * Ein solches Gerät entscheidet **je Zugriff allein aus der anliegenden Adresse**
+ * (und seinem eigenen Zustand), ob es den Zugriff übernimmt.  Übernimmt es ihn, zieht
+ * es für genau diesen Buszyklus /MEMDI (X1 C09) und bedient ihn selbst; jede Speicher-
+ * gruppe, die auf die Bus-Leitung /MEMDI gebrückt ist, bleibt dann still
+ * (K3526-Gruppe mit `memdi_source = false`).  Einziges solches Gerät ist heute das
+ * Erweiterungsmodul EM064/EM256 des A5120.16 (`core/cards/em/`, MEN → /MEMDI).
+ *
+ * Nicht zu verwechseln mit MEMDI1/2 der Rückverdrahtung (Koppelbus): das ist ein
+ * *statischer* Pegel vom BS-PIO A7, auf den nur eigens gebrückte Gruppen hören.
+ */
+class MemdiDriver : public MemDevice {
+public:
+    /**
+     * @brief Übernimmt das Gerät den Zugriff auf @p addr (zieht es /MEMDI)?
+     *
+     * Wird auf dem heißen Pfad bei JEDEM Speicherzugriff gefragt, solange das Gerät
+     * eingesteckt ist — muss also billig sein.  Nicht const: ein Gerät darf sich die
+     * Adresse merken (Adresslatch).
+     */
+    virtual bool drivesMemdi(uint16_t addr) = 0;
+};
+
+/**
  * @brief Base class for interrupt-enabled devices (daisy-chain support).
  * 
  * Z80-compatible interrupt devices (K2526, K8025, K5122, K7024) support
@@ -222,6 +247,14 @@ public:
      * @param dev Device to unregister
      */
     void unregisterMem(MemDevice* dev);
+
+    /**
+     * @brief Ein Gerät mit Vorrang über /MEMDI anmelden (s. @ref MemdiDriver).
+     *
+     * Solange keines angemeldet ist, kostet das im Speicherpfad genau einen Vergleich
+     * — der A5120 ohne Erweiterungsmodul läuft unverändert.
+     */
+    void addMemdiDriver(MemdiDriver* dev) { memdi_drivers_.push_back(dev); }
     
     /**
      * @brief Set the interrupt daisy-chain priority order.
@@ -239,9 +272,8 @@ public:
     /**
      * @brief Perform a memory read access.
      * 
-     * Dispatched to the MemDevice containing the address.
-     * The global /MEMDI signal does NOT gate memory access (see setMEMDI):
-     * reads, fetch and writes always reach the memory on the standard A5120.
+     * Zieht ein @ref MemdiDriver für diese Adresse /MEMDI, liefert ER das Byte;
+     * sonst das zuletzt registrierte lesbare Gerät der Adresse.
      *
      * @param addr Address to read (0x0000–0xFFFF)
      * @return Data byte at that address
@@ -251,8 +283,9 @@ public:
     /**
      * @brief Perform a memory write access.
      * 
-     * Dispatched to the MemDevice containing the address.
-     * If /MEMDI is asserted, write is blocked (no-op).
+     * Broadcast an alle beschreibbaren Geräte der Adresse; zieht ein @ref MemdiDriver
+     * /MEMDI, bekommt er den Zugriff zusätzlich, und Geräte, die auf /MEMDI hören
+     * (@ref memdiActive), verwerfen ihn.
      * 
      * @param addr Address to write
      * @param data Byte to write
@@ -265,10 +298,12 @@ public:
      * Dispatched to the BusDevice registered for this port.
      * If /IODI is asserted, returns 0xFF.
      * 
-     * @param port Port address (0x00–0xFF)
+     * @param addr volle E/A-Adresse AB0–AB15 (IN r,(C): BC; IN A,(n): A·256+n).
+     *             Verteilt wird nach AB0–7; AB8–15 bleiben für die Dauer des
+     *             Zyklus über @ref ioAddress abfragbar.
      * @return Data byte from device
      */
-    uint8_t ioRead(uint8_t port);
+    uint8_t ioRead(uint16_t addr);
     
     /**
      * @brief Perform an I/O write (OUT instruction).
@@ -276,10 +311,19 @@ public:
      * Dispatched to the BusDevice registered for this port.
      * If /IODI is asserted, write is blocked.
      * 
-     * @param port Port address
+     * @param addr volle E/A-Adresse AB0–AB15 (OUT (C),r: BC; OUT (n),A: A·256+n)
      * @param data Byte to write
      */
-    void    ioWrite(uint8_t port, uint8_t data);
+    void    ioWrite(uint16_t addr, uint8_t data);
+
+    /**
+     * @brief Volle Adresse AB0–AB15 des laufenden (bzw. letzten) E/A-Zyklus.
+     *
+     * Für Karten, die AB8–15 eines E/A-Zyklus auswerten — der Attributspeicher des
+     * EM256 wird über AB12–15 adressiert (`OUT (C),A` → Register B; Falle:
+     * `OUT (n),A` legt **A** auf AB8–15).
+     */
+    uint16_t ioAddress() const { return io_addr_; }
     
     /**
      * @brief Interrupt acknowledge cycle (CPU's interrupt response).
@@ -406,27 +450,18 @@ public:
     bool busMasterIsZVE2() const   { return bus_master_zve2_; }
     
     /**
-     * @brief Assert/release the global /MEMDI signal (from BS-PIO Q301 Port A
-     *        bit7 → backplane MEMDI1/MEMDI2).
+     * @brief Ist die Bus-Leitung /MEMDI im **laufenden** Speicherzyklus aktiv?
      *
-     * /MEMDI is the K1520 "Speicherbereichsumschaltung": it only disables OPS
-     * memory groups that are jumpered onto MEMDI1/MEMDI2. On the standard A5120
-     * modeled here NO group is wired to it, so asserting /MEMDI has NO effect on
-     * memory — reads, instruction fetch and writes all pass through. The flag is
-     * still tracked (getMEMDI) and driven by the BS-PIO so HARDYs MEMDI test can
-     * read it back, but it does not gate memRead/memWrite. (A jumpered group
-     * would be modeled via K3526::setMemDI, not this global signal.) Real
-     * hardware likewise keeps executing code while /MEMDI is asserted.
+     * /MEMDI (X1 C09) ist KEIN statischer Pegel: ein @ref MemdiDriver zieht es je
+     * Zugriff aus der anliegenden Adresse (Erweiterungsmodul: MEN).  Gültig nur
+     * während memRead()/memWrite() — Speichergruppen, die auf /MEMDI hören, fragen
+     * es dort ab.  Ausserhalb eines Zyklus immer false.
      *
-     * @param disabled true to assert /MEMDI, false to release
+     * Der BS-PIO (K2526 A7) treibt NICHT diese Leitung, sondern MEMDI1/2 der
+     * Rückverdrahtung (Koppelbus) — beides war früher in einem Flag
+     * zusammengeworfen (doc/design/17_a5120_16.md §3 S1).
      */
-    void setMEMDI(bool disabled) { memdi_ = disabled; }
-    
-    /**
-     * @brief Query /MEMDI status.
-     * @return true if memory access is currently disabled
-     */
-    bool getMEMDI() const { return memdi_; }
+    bool memdiActive() const { return memdi_; }
     
     /**
      * @brief Disable I/O access via /IODI signal.
@@ -537,6 +572,7 @@ private:
     std::array<PageEntry, kNumPages> page_table_{};
     bool page_table_valid_ = false;
     void rebuildPageTable();
+    MemdiDriver* memdiDriverFor(uint16_t addr);
 
     /// Interrupt priority chain (first = highest priority)
     std::vector<InterruptSlave*> int_chain_;
@@ -547,7 +583,9 @@ private:
     bool nmi_pending_    = false;  ///< /NMI edge was detected
     bool wait_asserted_  = false;  ///< /WAIT is asserted (stall access)
     bool reset_asserted_ = false;  ///< /RESET is asserted (system initializing)
-    bool memdi_          = false;  ///< /MEMDI: memory access disabled
+    bool memdi_          = false;  ///< /MEMDI im laufenden Speicherzyklus (s. memdiActive)
+    uint16_t io_addr_    = 0;      ///< AB0–15 des laufenden/letzten E/A-Zyklus
+    std::vector<MemdiDriver*> memdi_drivers_;  ///< Vorrangspeicher (meist leer)
     bool iodi_           = false;  ///< /IODI: I/O access disabled
     bool busrq_asserted_ = false;  ///< /BUSRQ: DMA device holds the bus (ZVE1 suspended)
     bool bus_master_zve2_ = false; ///< aktueller Buszyklus stammt von ZVE2 (DMA-Prozessor)
