@@ -286,12 +286,22 @@ Schreibfehler → Zustand Fehler, Text im Block.
 - Nicht blockierende Sockets, `TCP_NODELAY` an (Terminalbetrieb).
 - Namensauflösung (`getaddrinfo`, blockierend) im I/O-Faden, nicht in der GUI; der Client
   probiert alle gelieferten Adressen der Reihe nach (IPv6 und IPv4).
-- **Server:** eine Verbindung zur Zeit. Weitere Anfragen werden angenommen und sofort
-  geschlossen (bei Telnet mit einer kurzen Textzeile „belegt"). Trennt der Client, lauscht
-  der Server weiter.
-- **Client:** keine Wiederholung im laufenden Betrieb. Scheitert der Aufbau oder bricht
-  die Verbindung ab → Zustand Fehler/Getrennt, Knopf springt auf „Verbinden", Grund im Block.
-  (Wiederaufnahme beim Programmstart: §7.4a.)
+- **Server:** eine Verbindung zur Zeit. **Ist ein Client verbunden, wird jede weitere
+  Anfrage abgelehnt**: angenommen und sofort geschlossen (bei Telnet mit einer kurzen
+  Textzeile „belegt"), die bestehende Verbindung bleibt unberührt. Das Lauschen wird dafür
+  nicht beendet — sonst könnte ein anderes Programm den Port in der Zwischenzeit belegen.
+  Trennt der Client, lauscht der Server weiter.
+- **Client — Dauerversuch (festgelegt 2026-09-30):** Nach „Verbinden" ist der Client
+  **aktiv**, bis „Trennen" gedrückt wird; nur der Knopf beendet das. Solange er aktiv und
+  nicht verbunden ist, versucht er **alle 1000 ms** (Uhrzeit, nicht Maschinenzeit) eine
+  Verbindung aufzubauen: nach einem gescheiterten Versuch, nach einem Abbruch und nach
+  einem Trennen durch den Server gleichermaßen. Jeder Versuch löst den Namen neu auf
+  (DHCP, geänderte Einträge). Ein Versuch, der länger als 1000 ms hängt (nicht
+  blockierendes `connect`), wird abgebrochen und zählt als gescheitert.
+  Der Knopf zeigt während der Versuche **„Trennen"**; der Block zeigt „verbindet …" mit dem
+  letzten Grund (z. B. „Verbindung abgewiesen") und der Zahl der Versuche. Zustand
+  `K1520_SER_VERBINDET`; `K1520_SER_FEHLER` gibt es beim Client nur für Dinge, die ein
+  neuer Versuch nicht behebt (ungültiger Host).
 
 ### 7.2 Portwahl im Server
 
@@ -335,9 +345,8 @@ beim nächsten Start **nach dem Einschalten der Maschine** wiederhergestellt:
   Grund: ein Gegenüber, das fest auf 5000 verbindet, soll nicht stillschweigend einen
   anderen Emulator erreichen oder ins Leere laufen.
   Der eingetragene Port wird erst mit dem nächsten Speichern der Konfiguration dauerhaft.
-- **Client:** baut die Verbindung automatisch auf (ein Versuch, alle Adressen der
-  Namensauflösung). Scheitert er → Zustand Fehler mit Grund, Knopf „Verbinden"; kein
-  weiterer Versuch.
+- **Client:** wird wieder aktiv und geht in den Dauerversuch (§7.1), bis er verbunden ist
+  oder „Trennen" gedrückt wird.
 - **Datei:** wird wieder geöffnet — **anhängend**, nicht überschreibend (ein Neustart soll
   eine Druckerausgabe nicht löschen); fehlt die Datei, wird sie angelegt.
 - **Loop gesetzt** → kein automatischer Start (Loop und Verbindung schließen sich aus, §6.5).
@@ -388,7 +397,8 @@ typedef struct { uint32_t groesse; int zustand; uint16_t port_aktiv; char gegens
                  bool format_gueltig; uint32_t baud_gegenseite; bool baud_abweichend;
                  bool rts, cts, dtr, dsr, dcd; uint64_t bytes_gesendet, bytes_empfangen;
                  uint32_t puffer_senden, puffer_empfangen;
-                 uint16_t port_vorschlag; } K1520SerStatus;
+                 uint16_t port_vorschlag; int rolle, betriebsart;
+                 uint32_t versuche; /* Client: Versuche seit dem letzten Verbinden */ } K1520SerStatus;
 
 K1520_API int  k1520_serial_count(K1520Handle h);              /* einstellbare */
 K1520_API bool k1520_serial_info(K1520Handle h, int i, K1520SerInfo* out);
@@ -435,9 +445,24 @@ schaltbar (wie die übrigen Kästen). Blöcke im Stil von `drive_widget.py`:
 - Host-Feld im Server deaktiviert (Inhalt bleibt). RTS/CTS-Brücke und Leitungsanzeige nur
   bei V.24; Leitungsanzeige bei Telnet mit Vermerk „nicht übertragen". Rolle/Host/Port bei
   Datei ausgeblendet, stattdessen Dateiname + „…"-Knopf.
+- Knopf „Trennen" beim Client, sobald er aktiv ist — auch während er noch versucht (§7.1).
 - Zustandspunkt: grau aus, gelb lauscht/verbindet, grün verbunden, rot Fehler;
   Fehlertext als Zeile im Block (kein Meldungsfenster — vgl. `diskNotice`).
 - Aktualisierung per `QTimer` (≈ 4 Hz) über `k1520_serial_status`.
+- **Statuszeile** (`app/ui/status_bar.py`, festgelegt 2026-09-30) — zwei Felder, die
+  jeweils **nur erscheinen, wenn sie etwas zu sagen haben** (ausgeblendet, nicht leer):
+  - **Server:** `Telnet/RFC2217 Server Port: 5000, 5001, 5002` — die *tatsächlichen* Ports
+    (§7.2) aller Schnittstellen im Zustand LAUSCHT oder VERBUNDEN in Rolle Server,
+    aufsteigend nach Schnittstellenreihenfolge. Kein Server aktiv ⇒ Feld weg.
+  - **Verbindungen:** `V.24 verbunden, Drucker verbunden` — alle Schnittstellen im Zustand
+    VERBUNDEN (Server mit Client wie Client mit Server), in Schnittstellenreihenfolge, mit
+    dem Namen aus dem Kern. Getrennte, lauschende und gerade versuchende Schnittstellen
+    erscheinen **nicht** — erfolglose Versuche tauchen in der Statuszeile nie auf (nur im
+    Block). Keine Verbindung ⇒ Feld weg.
+  - Tooltip je Feld: Protokoll und Gegenstelle (`V.24: RFC2217-Client → 10.0.0.5:5000`).
+  - Betriebsart **Datei** zählt nicht als Verbindung und erscheint in keinem Feld **[?]**.
+  - Quelle ist dieselbe Statusabfrage wie im Dock; beide Programme, gleiche Darstellung
+    (kein Profileintrag nötig).
 - **Kein Tastenkürzel** (Kürzeltabelle des Handbuchs ist ein Vertrag).
 - Handbuch `app/help/handbuch.md`: Abschnitt „Schnittstellen" mit Beispielen
   (`telnet 127.0.0.1 5000`, zwei Emulatoren koppeln, `ser2net`/`socat`, pyserial
@@ -452,7 +477,7 @@ schaltbar (wie die übrigen Kästen). Blöcke im Stil von `drive_widget.py`:
 ## 10. Nicht im Umfang
 
 Synchronbetrieb (SDLC/Bisync) über das Netz, Parität-/Rahmenfehler-Nachbildung,
-Überlauf-Nachbildung, V125/Ferneinschaltung, automatische Wiederverbindung, mehrere
+Überlauf-Nachbildung, V125/Ferneinschaltung, mehrere
 Clients je Server, TLS/Anmeldung, echte Host-COM-Ports ohne Umweg (geht über `ser2net`
 bzw. `com0com`+`hub4com` mit RFC 2217), Schnittstellen in `boot_trace`/`k1520dbg`
 (dort bleibt alles unverbunden), Einbeziehung in Savestates (Verbindungen sind
@@ -467,10 +492,11 @@ Host-Ressourcen; Pufferinhalte gehen beim Laden verloren).
 | unit/util | `Rfc2217Codec.*` | alle Befehle, +100-Antworten, Baud in Netzreihenfolge, Masken |
 | unit/primitives | `Z80SIO.Format*`, `Z80SIO.AutoEnables*`, `Z80CTC.TeilerTakte*` | Parameterabfrage, CTS-Halt, Ext/Status-IRQ bei Leitungswechsel |
 | unit/util | `SerialWandler.*` (Attrappe statt Socket) | Zeichentakt, Rückstau beidseitig, nie Überlauf, XOFF-Halt, RTS-Halt, Loop, Nullmodem-Kreuzung |
+| unit/util | `SerialClientDauerversuch.*` | Server erst nach 2,5 s gestartet → Client verbindet beim nächsten 1000-ms-Takt; Server trennt → Client verbindet erneut; „Trennen" beendet die Versuche sofort; zweiter Client am belegten Server abgewiesen, erster bleibt verbunden |
 | unit/util | `SerialNetz.*` | Loopback-Server/Client v4 und v6 (v6 übersprungen, wenn nicht verfügbar), Port belegt → +1 (Hand) bzw. kein Start + Vorschlag (automatisch), `SO_EXCLUSIVEADDRUSE` unter Windows |
 | unit/cards | `K8025Seriell.*`, `K7028Seriell.*` | Kanalzuordnung, Taktquelle, V.24-Verknüpfungen, Tastatur unberührt |
 | integration | `SerielleKopplung.*` | zwei Maschinen im selben Prozess über echtes TCP, eine mit 1×, eine mit 10× Takt: 64 KiB mit XON/XOFF und mit RTS/CTS verlustfrei, unterschiedliche Baud → Hinweis |
-| python | `py_serial_api`, `py_serial_gui` | ctypes-Bindung; Blockzustände, Knopftexte, Host-Feld im Server aus, Klassifikationsetikett, Sperren im Betrieb, Wiederaufnahme (`aktiv` → Server lauscht; Port belegt → nicht gestartet, Vorschlag im Feld; Client-Fehlschlag ohne Wiederholung; Datei anhängend) |
+| python | `py_serial_api`, `py_serial_gui` | ctypes-Bindung; Blockzustände, Knopftexte, Host-Feld im Server aus, Klassifikationsetikett, Sperren im Betrieb, Wiederaufnahme (`aktiv` → Server lauscht; Port belegt → nicht gestartet, Vorschlag im Feld; Client geht in den Dauerversuch; Datei anhängend); Statuszeile: Serverfeld mit den tatsächlichen Ports bzw. ausgeblendet, Verbindungsfeld nur mit VERBUNDEN, nie mit versuchenden Clients; Client-Knopf „Trennen" während der Versuche |
 | python | `py_serial_pyserial` (übersprungen ohne `pyserial`) | Interop: pyserial `rfc2217://` als Client gegen den Emulator-Server |
 
 **Nie feste Ports in Tests** (parallel `ctest -j`): Port 0 bzw. die +1-Suche benutzen und
@@ -506,3 +532,5 @@ Start (§7.4a), UI-Namen der K7028 = „V.24"/„IFS 1"/„IFS 2" (§3.2).
 2. **K8025:** Pegel der CTS/DCD-Eingänge der IFSS-Kanäle und der A32; Weg ZRE-CTC K0 → K8025
    im Emulator (§3.1).
 3. **K8915 Loop-Vorgabe:** läuft das BIOS ohne Prüfstecker-Echo? (§4)
+4. **Statuszeile und Datei:** Soll eine offene Druckdatei in der Statuszeile erscheinen
+   (etwa „Drucker → druck.txt")? Entwurf: nein, nur Netzverbindungen (§9).
