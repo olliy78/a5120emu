@@ -27,7 +27,9 @@ Maschine**:
   Anzeigelatch 61H (``k1520_panel_lamps``, aktiv low: Bit 4/5/6/7).  **Run** und
   **Power** hängen nicht am Latch: Power leuchtet, solange der Rechner
   eingeschaltet ist; Run hängt am Gerät vermutlich an ``/HALT`` **[?]** und
-  leuchtet hier, solange die Emulation läuft.
+  leuchtet hier, solange die Emulation läuft.  Jede Lampe trägt ihre
+  Beschriftung daneben (``Run Input Output Mode Error Power``, AP-UI2) — drei
+  gelbe Lampen unterscheidet man an der Farbe nicht.
 
 Der ganze Streifen ist eine Anzeige und kein Bedienelement: er nimmt keinen
 Tastaturfokus (der gehört der emulierten Maschine, siehe `app/ui/focus.py`).
@@ -158,6 +160,8 @@ FARBE_ROT = "#e0352b"
 
 #: (Name, Farbe, Latch-Bit oder None, Bedeutung) in Gerätereihenfolge, oben → unten
 #: an der Frontplatte, hier links → rechts.  Bit = None: nicht am Latch 61H.
+#: Neben jeder Lampe steht ihre Beschriftung (:data:`BESCHRIFTUNG`) — an der
+#: Farbe allein erkennt man nicht, welche der drei gelben gerade leuchtet.
 FRONTPLATTE = (
     ("Run", FARBE_GRUEN, None,
      "Rechner läuft.  Am Gerät vermutlich /HALT der CPU [?] — hier: leuchtet, "
@@ -173,6 +177,12 @@ FRONTPLATTE = (
     ("Power", FARBE_ROT, None,
      "Netzanzeige — leuchtet, solange der Rechner eingeschaltet ist."),
 )
+
+
+#: Beschriftung neben der Lampe — kurz, damit die Statuszeile nicht überläuft,
+#: aber eindeutig; der volle Name steht im Tooltip.
+BESCHRIFTUNG = {"Run": "Run", "Input File": "Input", "Output File": "Output",
+                "RUN Mode": "Mode", "ERROR": "Error", "Power": "Power"}
 
 
 class PanelLamp(QWidget):
@@ -219,7 +229,8 @@ class PanelLamp(QWidget):
 
 
 class Frontplatte(QWidget):
-    """Die sechs Lampen des K8915 nebeneinander (Quelle: :meth:`zeige`)."""
+    """Die sechs Lampen des K8915 nebeneinander, jede mit ihrer Beschriftung
+    (Quelle: :meth:`zeige`)."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -228,16 +239,32 @@ class Frontplatte(QWidget):
         lay.setContentsMargins(2, 0, 2, 0)
         lay.setSpacing(2)
         self._lampen: List[PanelLamp] = []
+        self._schilder: List[QLabel] = []
         self._bits = []
-        for name, farbe, bit, bedeutung in FRONTPLATTE:
+        for i, (name, farbe, bit, bedeutung) in enumerate(FRONTPLATTE):
+            if i:
+                lay.addSpacing(6)
             lampe = PanelLamp(name, farbe, bedeutung)
+            schild = QLabel(BESCHRIFTUNG[name])
+            schild.setToolTip(f"{name}\n{bedeutung}")
+            schild.setFocusPolicy(Qt.NoFocus)
             lay.addWidget(lampe)
+            lay.addWidget(schild)
             self._lampen.append(lampe)
+            self._schilder.append(schild)
             self._bits.append(bit)
 
     def lampen(self) -> List[PanelLamp]:
         """Die Lampen in Gerätereihenfolge (Run … Power)."""
         return list(self._lampen)
+
+    def beschriftungen(self) -> List[str]:
+        """Die Beschriftungen neben den Lampen, in Gerätereihenfolge."""
+        return [s.text() for s in self._schilder]
+
+    def schild(self, name: str) -> QLabel:
+        """Das Schild neben der Lampe *name* (für Tests: Lage, Tooltip)."""
+        return self._schilder[[l.name for l in self._lampen].index(name)]
 
     def zeige(self, latch: int, laeuft: bool, eingeschaltet: bool) -> None:
         """*latch* = Rohbyte von ``k1520_panel_lamps`` (aktiv low)."""

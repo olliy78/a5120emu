@@ -49,7 +49,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from PySide6.QtCore import Qt, QPointF, QRectF
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPen
 
 from app.ui.keyboard import KeyboardWidget, _Key, qt_event_to_core_key
 
@@ -68,20 +68,37 @@ LED_READY = 0x08   #: Senden frei (DC1) — grün
 LED_GRAPH = 0x40   #: ESC [?18h/l [?]
 LED_CAPS = 0x80    #: Feststelltaste / ESC [?11h/l
 
-# ── Farben (dem Foto abgenommen) ─────────────────────────────────────────────
+# ── Farben (dem Foto abgenommen, AP-UI2) ─────────────────────────────────────
+# Die K7672 hat KEINEN schwarzen Schacht wie die K7637: der graue Kunststoff
+# geht unter den Tasten weiter, der Ausschnitt ist nur im Schatten dunkler, und
+# an seinem Rand sitzt eine schmale, noch dunklere Kante.  Gemessen am Foto
+# (Tageslicht, daher dunkler als hier): Gehäuse 190/184/164, Kappenoberseite
+# ~200/194/175, Kappenflanke ~138/132/116, Kante/Fuge ~40/35/27 (1–3 px breit).
 _C_BACK = QColor(0x24, 0x23, 0x20)       # Fläche neben der Tastatur
-_C_GEHAEUSE = QColor(0xd6, 0xd0, 0xbe)   # beige Wanne
-_C_KANTE = QColor(0xb9, 0xb2, 0x9e)      # Schattenkante der Wanne
-_C_RAHMEN = QColor(0x2a, 0x29, 0x26)     # schwarze Einfassung der Tastengruppen
-_C_KAPPE = QColor(0xe9, 0xe5, 0xd9)      # Tastenkappe
-_C_KAPPE_RAND = QColor(0xa9, 0xa3, 0x92)
-_C_TEXT = QColor(0x33, 0x32, 0x2e)
+_C_GEHAEUSE = QColor(0xd2, 0xcc, 0xb8)   # graue Wanne
+_C_KANTE = QColor(0xb4, 0xad, 0x98)      # Außenkante der Wanne
+_C_GRUND = QColor(0x92, 0x8b, 0x78)      # Grund des Ausschnitts (Schatten)
+_C_SCHATTEN = QColor(0x5e, 0x59, 0x4d)   # Kante des Ausschnitts
+_C_FLANKE = QColor(0xc4, 0xbe, 0xaa)     # Flanke der Kappe
+_C_KAPPE = QColor(0xe2, 0xde, 0xcd)      # Oberseite der Kappe
+_C_BLIND = QColor(0xae, 0xa8, 0x93)      # Blindstück links neben CAPS LOCK
+_C_TEXT = QColor(0x2c, 0x2b, 0x27)
 _C_ROT = QColor(0xc8, 0x2a, 0x2a)        # rote Zweitbeschriftung (PC-Bedeutung)
 _C_GRUEN = QColor(0x2f, 0x86, 0x4a)      # grüne Zweitbeschriftung (3270-Funktion)
 _C_GRAU = QColor(0x5a, 0x58, 0x52)       # Zweitbeschriftung am Ziffernblock
-_C_FELD = QColor(0xe0, 0xda, 0xc9)       # Lampenfeld
+_C_FELD = QColor(0xdc, 0xd6, 0xc3)       # Lampenfeld
 _C_ACTIVE = QColor(0xd0, 0x80, 0x10)     # rastender Modifikator an
 _FARBEN = {"rot": _C_ROT, "gruen": _C_GRUEN, "grau": _C_GRAU}
+
+# ── Maße in Tastenrastern (dem Foto abgenommen, AP-UI2) ──────────────────────
+# Raster 55,9 px auf dem Foto; Kappe 51,8 px breit ⇒ Fuge 0,075; Mittelblock
+# beginnt 0,50 hinter DEL, Ziffernblock 0,50 hinter PF12 — das Raster selbst
+# stimmte schon.  Zu weit WIRKTEN die Abstände durch schmale Kappen (0,88) in
+# einer schwarzen Einfassung von 0,07.
+FUGE = 0.075        #: Spalt zwischen zwei Kappen (je Seite die Hälfte)
+GRUND_RAND = 0.03   #: so weit reicht der Ausschnitt über die Kappe hinaus
+KANTE_RAND = 0.025  #: dunkle Kante des Ausschnitts, außen um den Grund
+ECKE = 0.10         #: Radius der Kappenecke (der Ausschnitt folgt ihr)
 
 #: (an, aus) je Lampenfarbe.
 _LAMPE = {
@@ -99,17 +116,25 @@ class _Taste(_Key):
     scan: int = -1               # aus der Firmware (D3 0080H), nur für den Hinweis
     front: str = ""              # Zweitbeschriftung vorn an der Kappe
     front_farbe: str = "rot"     # rot | gruen | grau
-    gruppe: str = ""             # Tastenblock (für die schwarze Einfassung)
+    gruppe: str = ""             # Tastenblock (ein Ausschnitt im Gehäuse)
     zeichen: str = ""            # Host-Zeichen, bei denen diese Taste aufleuchtet
+    rechts: str = ""             # Umlauttasten: großes Zeichen rechts (Ü, Ö, Ä, ß)
+    rechts_unten: bool = False   # …in der unteren statt der oberen Zeile (ß)
 
 
 def _t(x, y, low, m, scan, up="", w=1.0, h=1.0, front="", ff="rot", gruppe="haupt",
-       name="", kind="normal", zeichen="", vertical=False) -> _Taste:
+       name="", kind="normal", zeichen="", vertical=False, rechts="",
+       rechts_unten=False) -> _Taste:
     return _Taste(x=x, y=y, low=low, up=up, code=None if kind != "normal" else taste(m),
                   w=w, h=h, style="light", shape="rect", kind=kind,
                   name=name or (f"{up} / {low}" if up else low), vertical=vertical,
                   matrix=m, scan=scan, front=front, front_farbe=ff, gruppe=gruppe,
-                  zeichen=zeichen)
+                  zeichen=zeichen, rechts=rechts, rechts_unten=rechts_unten)
+
+
+#: Feste Blindstücke im Tastenfeld: (x, y, w, h, Gruppe) — keine Tasten, aber
+#: Teil des Ausschnitts.  Auf dem Foto links neben CAPS LOCK.
+BLINDSTUECKE = ((0.0, 3.5, 0.5, 1.0, "haupt"),)
 
 
 def _build_layout_k7672() -> List[_Taste]:
@@ -119,10 +144,12 @@ def _build_layout_k7672() -> List[_Taste]:
     y 0    CTRL · ALT1 ^S MOD2 PF1 · PF2–PF5 · PF6–PF9 · CLEAR RESET BREAK · Lampen
     y 1.5  ESC 1 … 0 ß ´ |←| DEL          · PF10 PF11 PF12 · CE / * −
     y 2.5  →| Q … Ü *+ |←                  · PA2/1 PA3 GRAPH · 7 8 9 +
-    y 3.5  CAPS A … Ö Ä ^# RETURN          ·                 · 4 5 6 =
+    y 3.5  ▯ CAPS A … Ö Ä ^# RETURN        ·                 · 4 5 6 =
     y 4.5  ↕ <> Y … M ;, :. _- ↕ (RETURN)  ·       ↑         · 1 2 3 ENTER
     y 5.5    ALT Leertaste CL              ·     ← ↓ →       · 0 , .  (ENTER)
     ```
+
+    ▯ = festes Blindstück (BLINDSTUECKE); RETURN ist EINE Taste über zwei Reihen.
     """
     k: List[_Taste] = []
     MB, NB = 15.5, 19.0            # linke Kante Mittelblock / Ziffernblock
@@ -160,6 +187,9 @@ def _build_layout_k7672() -> List[_Taste]:
     for i, (low, up, m, sc) in enumerate(ziffern):
         k.append(_t(1.0 + i, Y1, low, m, sc, up=up,
                     zeichen=low + up.replace(" ", "") + {"ß": "~", "´": "'"}.get(low, "")))
+    # ß: links oben ?, links unten ¯ (~ = 7EH, die ASCII-Lage von ß), rechts unten ß.
+    sz = next(t for t in k if t.matrix == 0x05)
+    sz.low, sz.rechts, sz.rechts_unten, sz.name = "¯", "ß", True, "ß"
     k.append(_t(13.0, Y1, "|←|", 0x67, 0x0E, name="Rücktaste |←|", zeichen="\x08"))
     k.append(_t(14.0, Y1, "DEL", 0x47, 0xD3, name="DEL (Umschalt + Entf)", zeichen="\x7f"))
 
@@ -170,19 +200,25 @@ def _build_layout_k7672() -> List[_Taste]:
                                      0x14, 0x54))):
         sc = (0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19)[i]
         k.append(_t(1.5 + i, Y2, ch, m, sc, zeichen=ch + ch.lower()))
-    k.append(_t(11.5, Y2, "Ü", 0x15, 0x1A, up="} ]", name="Ü (} ])", zeichen="]}"))
+    # Umlauttasten wie auf dem Foto: links oben/unten die ASCII-Zeichen derselben
+    # Codes (DIN 66003 ↔ ASCII), rechts groß der Umlaut.
+    k.append(_t(11.5, Y2, "]", 0x15, 0x1A, up="}", rechts="Ü", name="Ü (} ])",
+                zeichen="]}"))
     k.append(_t(12.5, Y2, "+", 0x55, 0x1B, up="*", zeichen="+*"))
     k.append(_t(13.5, Y2, "|←", 0x57, 0x8F, w=1.5, name="Tabulator zurück |← (Umschalt + Tab)"))
 
     # ── Reihe 3: ASDF ────────────────────────────────────────────────────────
-    k.append(_t(0.0, Y3, "CAPS\nLOCK", 0x26, 0x3A, w=1.75,
+    # Links neben CAPS LOCK sitzt ein festes Blindstück (BLINDSTUECKE).
+    k.append(_t(0.5, Y3, "CAPS\nLOCK", 0x26, 0x3A, w=1.25,
                 name="CAPS LOCK (Feststelltaste, Lampe CAPS)"))
     for i, (ch, m, sc) in enumerate(zip("ASDFGHJKL",
                                         (0x20, 0x60, 0x21, 0x61, 0x22, 0x62, 0x23, 0x63, 0x24),
                                         range(0x1E, 0x27))):
         k.append(_t(1.75 + i, Y3, ch, m, sc, zeichen=ch + ch.lower()))
-    k.append(_t(10.75, Y3, "Ö", 0x64, 0x27, up="| \\", name="Ö (| \\)", zeichen="\\|"))
-    k.append(_t(11.75, Y3, "Ä", 0x25, 0x28, up="{ [", name="Ä ({ [)", zeichen="[{"))
+    k.append(_t(10.75, Y3, "\\", 0x64, 0x27, up="|", rechts="Ö", name="Ö (| \\)",
+                zeichen="\\|"))
+    k.append(_t(11.75, Y3, "[", 0x25, 0x28, up="{", rechts="Ä", name="Ä ({ [)",
+                zeichen="[{"))
     k.append(_t(12.75, Y3, "#", 0x65, 0x29, up="^", zeichen="#^"))
     k.append(_t(13.75, Y3, "↵\nRETURN", 0x38, 0x1C, w=1.25, h=2.0, name="RETURN",
                 zeichen="\r"))
@@ -303,6 +339,82 @@ class KeyboardK7672Widget(KeyboardWidget):
         return spots
 
     # ── Zeichnen ─────────────────────────────────────────────────────────────
+    #
+    # Die Ausschnitte im Gehäuse werden NICHT als Pfad vereinigt.  Bis AP-UI1
+    # entstand die Einfassung je Block aus ``QPainterPath.addRect`` aller
+    # (vergrößerten, sich überlappenden) Zellen + ``simplified()`` — und Qts
+    # Pfad-Vereinigung verliert bei bestimmten Fließkomma-Lagen fast
+    # zusammenfallender Kanten ganze Teilflächen: bei rund einem Drittel aller
+    # Fensterbreiten fehlte die Einfassung von RETURN und der rechten
+    # Umschalttaste, und die helle Wanne lag zwischen den Tasten (AP-UI2,
+    # Befund „rot").  Jetzt wird jede Fläche einzeln DECKEND gemalt — je Zelle
+    # ein abgerundetes Rechteck, dazu eckige Brücken zwischen Nachbarzellen,
+    # die Fugen und Innenecken schließen.  Überdeckung statt Mengenlehre: das
+    # kann nichts verlieren, bei keiner Größe.
+
+    def _zellen(self):
+        """(x, y, w, h, Gruppe) aller Zellen im Tastenfeld — Tasten und Blindstücke."""
+        zellen = [(k.x, k.y, k.w, k.h, getattr(k, "gruppe", "")) for k in self._keys]
+        zellen.extend(BLINDSTUECKE)
+        return zellen
+
+    def _zelle_px(self, z, unit: float, ox: float, oy: float) -> QRectF:
+        x, y, w, h, _g = z
+        return QRectF(ox + (self._pad[0] + x) * unit, oy + (self._pad[1] + y) * unit,
+                      w * unit, h * unit)
+
+    def ausschnitt_flaechen(self, unit: float, ox: float, oy: float, rand: float):
+        """Die Flächen, die zusammen den Ausschnitt eines Blocks bilden.
+
+        Liefert ``[(QRectF, Eckradius)]``: je Zelle ihr Umriss (um *rand* Raster
+        über die Kappe hinaus, Ecken = Kappenecke + *rand* — der Ausschnitt folgt
+        der Rundung der Tasten), dazu je Paar aneinanderstoßender Zellen
+        desselben Blocks eine eckige Brücke von Mitte zu Mitte über die
+        gemeinsame Kante.  Die Brücken decken die Fuge und die Innenecken, wo
+        vier Kappen zusammenstoßen; außen bleiben die Rundungen stehen.
+        """
+        eps = 1e-6
+        halb = FUGE / 2.0
+        flaechen = []
+        zellen = self._zellen()
+        for z in zellen:
+            r = self._zelle_px(z, unit, ox, oy)
+            d = (rand - halb) * unit
+            flaechen.append((r.adjusted(-d, -d, d, d), (ECKE + rand) * unit))
+        e = (rand - halb) * unit
+        for i, a in enumerate(zellen):
+            for b in zellen[i + 1:]:
+                if a[4] != b[4]:
+                    continue
+                ax0, ay0, ax1, ay1 = a[0], a[1], a[0] + a[2], a[1] + a[3]
+                bx0, by0, bx1, by1 = b[0], b[1], b[0] + b[2], b[1] + b[3]
+                oy0, oy1 = max(ay0, by0), min(ay1, by1)
+                ox0, ox1 = max(ax0, bx0), min(ax1, bx1)
+                if (abs(ax1 - bx0) < eps or abs(bx1 - ax0) < eps) and oy1 - oy0 > eps:
+                    # nebeneinander: Brücke über die ganze gemeinsame Höhe
+                    links, rechts = (a, b) if abs(ax1 - bx0) < eps else (b, a)
+                    x0 = links[0] + links[2] / 2.0
+                    x1 = rechts[0] + rechts[2] / 2.0
+                    y0, y1 = oy0, oy1
+                elif (abs(ay1 - by0) < eps or abs(by1 - ay0) < eps) and ox1 - ox0 > eps:
+                    oben, unten = (a, b) if abs(ay1 - by0) < eps else (b, a)
+                    y0 = oben[1] + oben[3] / 2.0
+                    y1 = unten[1] + unten[3] / 2.0
+                    x0, x1 = ox0, ox1
+                else:
+                    continue
+                r = self._zelle_px((x0, y0, x1 - x0, y1 - y0, ""), unit, ox, oy)
+                flaechen.append((r.adjusted(-e, -e, e, e), 0.0))
+        return flaechen
+
+    def _male_flaechen(self, p: QPainter, flaechen, farbe: QColor):
+        p.setPen(Qt.NoPen)
+        p.setBrush(farbe)
+        for rect, ecke in flaechen:
+            if ecke > 0.0:
+                p.drawRoundedRect(rect, ecke, ecke)
+            else:
+                p.drawRect(rect)
 
     def paintEvent(self, event):
         unit, ox, oy = self._geometry()
@@ -315,23 +427,19 @@ class KeyboardK7672Widget(KeyboardWidget):
         p.setBrush(_C_GEHAEUSE)
         p.drawRoundedRect(wanne, 0.2 * unit, 0.2 * unit)
 
-        # Schwarze Einfassung je Tastenblock: Vereinigung der Zellen, leicht
-        # vergrößert — wie die Rahmen um die Gruppen auf dem Foto.
-        gruppen = {}
-        for key in self._keys:
-            gruppen.setdefault(getattr(key, "gruppe", ""), []).append(key)
-        rand = 0.07 * unit
-        for keys in gruppen.values():
-            pfad = QPainterPath()
-            # Nicht-Null-Regel: die vergrößerten Zellen überlappen sich, und mit
-            # der Vorgabe (gerade/ungerade) blieben die Überlappungen hell.
-            pfad.setFillRule(Qt.WindingFill)
-            for key in keys:
-                pfad.addRect(self._rect_of(key, unit, ox, oy).adjusted(-rand, -rand,
-                                                                      rand, rand))
-            p.setPen(QPen(_C_RAHMEN, rand, Qt.SolidLine, Qt.FlatCap, Qt.RoundJoin))
-            p.setBrush(_C_RAHMEN)
-            p.drawPath(pfad.simplified())
+        # Ausschnitt: erst die dunkle Kante (etwas größer), darüber der Grund.
+        self._male_flaechen(p, self.ausschnitt_flaechen(unit, ox, oy,
+                                                        GRUND_RAND + KANTE_RAND),
+                            _C_SCHATTEN)
+        self._male_flaechen(p, self.ausschnitt_flaechen(unit, ox, oy, GRUND_RAND),
+                            _C_GRUND)
+
+        for z in BLINDSTUECKE:
+            r = self._zelle_px(z, unit, ox, oy)
+            d = FUGE / 2.0 * unit
+            p.setPen(Qt.NoPen)
+            p.setBrush(_C_BLIND)
+            p.drawRoundedRect(r.adjusted(d, d, -d, -d), ECKE * unit, ECKE * unit)
 
         for key in self._keys:
             self._draw_key(p, key, unit, ox, oy)
@@ -351,7 +459,7 @@ class KeyboardK7672Widget(KeyboardWidget):
             self._draw_text(p, name, QRectF(cx - 0.6 * unit, feld.y() + 0.05 * unit,
                                             1.2 * unit, 0.4 * unit), unit * 0.24)
             ein, aus = _LAMPE[farbe]
-            p.setPen(QPen(_C_RAHMEN, 1.0))
+            p.setPen(QPen(_C_SCHATTEN, 1.0))
             p.setBrush(ein if an else aus)
             p.drawRect(QRectF(cx - 0.17 * unit, cy - 0.07 * unit, 0.34 * unit, 0.14 * unit))
         for cx, cy, an, _name in spots[3:]:
@@ -360,21 +468,29 @@ class KeyboardK7672Widget(KeyboardWidget):
             p.setBrush(ein if an else aus)
             p.drawEllipse(QPointF(cx, cy), 0.07 * unit, 0.07 * unit)
 
-    def _draw_key(self, p: QPainter, key: _Key, unit: float, ox: float, oy: float):
-        zelle = self._rect_of(key, unit, ox, oy)
-        spalt = 0.06 * unit
-        kappe = zelle.adjusted(spalt, spalt, -spalt, -spalt)
-        ecke = 0.12 * unit
+    def kappe_von(self, key: _Key, unit: float, ox: float, oy: float) -> QRectF:
+        """Umriss der Kappe (Zelle abzüglich der halben Fuge) — auch für Tests."""
+        d = FUGE / 2.0 * unit
+        return self._rect_of(key, unit, ox, oy).adjusted(d, d, -d, -d)
 
-        farbe = _C_KAPPE.darker(118) if self._is_down(key) else _C_KAPPE
-        p.setPen(QPen(_C_KAPPE_RAND, max(1.0, 0.03 * unit)))
-        p.setBrush(farbe)
-        p.drawRoundedRect(kappe, ecke, ecke)
-        # Die Oberseite der Kappe etwas heller — sie steht schräg zum Licht.
-        oben = kappe.adjusted(0.08 * unit, 0.05 * unit, -0.08 * unit, -0.2 * unit)
+    @staticmethod
+    def _oberseite(kappe: QRectF, unit: float) -> QRectF:
+        """Die Oberseite der Kappe — ringsum die Flanke, vorn am breitesten."""
+        return kappe.adjusted(0.045 * unit, 0.025 * unit, -0.045 * unit, -0.12 * unit)
+
+    def _draw_key(self, p: QPainter, key: _Key, unit: float, ox: float, oy: float):
+        kappe = self.kappe_von(key, unit, ox, oy)
+        ecke = ECKE * unit
+        gedrueckt = self._is_down(key)
+        flanke = _C_FLANKE.darker(112) if gedrueckt else _C_FLANKE
+        oben_farbe = _C_KAPPE.darker(114) if gedrueckt else _C_KAPPE
+
         p.setPen(Qt.NoPen)
-        p.setBrush(farbe.lighter(104))
-        p.drawRoundedRect(oben, ecke, ecke)
+        p.setBrush(flanke)
+        p.drawRoundedRect(kappe, ecke, ecke)
+        oben = self._oberseite(kappe, unit)
+        p.setBrush(oben_farbe)
+        p.drawRoundedRect(oben, 0.8 * ecke, 0.8 * ecke)
 
         if self._is_active(key):
             p.setBrush(Qt.NoBrush)
@@ -383,42 +499,96 @@ class KeyboardK7672Widget(KeyboardWidget):
 
         self._draw_legend_k7672(p, key, oben, kappe, unit)
 
+    def _text_an(self, p: QPainter, text: str, box: QRectF, size: float,
+                 ausrichtung=Qt.AlignLeft | Qt.AlignVCenter):
+        """Wie ``_draw_text``, aber mit wählbarer Ausrichtung (die K7672 ist
+        links oben beschriftet, nicht mittig)."""
+        if not text:
+            return
+        font = QFont(p.font())
+        font.setWeight(QFont.DemiBold)      # die Kappen sind kräftig bedruckt
+        size = max(5.0, size)
+        while size > 5.0:
+            font.setPixelSize(max(5, int(round(size))))
+            if QFontMetricsF(font).horizontalAdvance(text) <= box.width():
+                break
+            size -= 0.75
+        font.setPixelSize(max(5, int(round(size))))
+        p.setFont(font)
+        p.drawText(box, ausrichtung, text)
+
+    #: Tasten, deren Zeichen mittig steht (Kursorkreuz, Pfeile auf dem Foto).
+    _MITTIG = ("↑", "↓", "←", "→", "↕", "")
+
+    def legenden_boxen(self, key: _Key, oben: QRectF, unit: float):
+        """``[(Text, QRectF, Pixelgröße, Ausrichtung)]`` — wo welche Beschriftung
+        steht (getrennt vom Malen, damit die Tests die Lage prüfen können).
+
+        Nach dem Foto: links oben beschriftet; zwei Ebenen links übereinander;
+        Umlauttasten links die beiden ASCII-Zeichen, rechts groß der Umlaut;
+        RETURN oben ↵, unten „RETURN"; ENTER senkrecht.
+        """
+        mx, my = 0.07 * unit, 0.03 * unit
+        innen = oben.adjusted(mx, my, -mx, -my)
+        zeile = min(0.34 * unit, innen.height() / 2.0)
+        L = Qt.AlignLeft | Qt.AlignVCenter
+        C = Qt.AlignCenter
+        oz = QRectF(innen.x(), innen.y(), innen.width(), zeile)
+        uz = QRectF(innen.x(), innen.bottom() - zeile, innen.width(), zeile)
+        klein, gross = 0.22 * unit, 0.30 * unit
+        boxen = []
+        if key.vertical:
+            zeichen = [c for c in key.low if not c.isspace()]
+            hoehe = innen.height() * 0.85 / max(1, len(zeichen))
+            y0 = innen.y() + innen.height() * 0.05
+            spalte = QRectF(innen.x(), 0, innen.width() * 0.4, 0)
+            for i, c in enumerate(zeichen):
+                boxen.append((c, QRectF(spalte.x(), y0 + i * hoehe, spalte.width(), hoehe),
+                              min(0.24 * unit, hoehe * 0.95), C))
+        elif getattr(key, "rechts", ""):
+            links = innen.width() * 0.42
+            boxen.append((key.up, QRectF(oz.x(), oz.y(), links, oz.height()), klein, L))
+            boxen.append((key.low, QRectF(uz.x(), uz.y(), links, uz.height()), klein, L))
+            ziel = uz if key.rechts_unten else oz
+            boxen.append((key.rechts, QRectF(ziel.x() + links, ziel.y(),
+                                             ziel.width() - links, ziel.height()),
+                          gross, C))
+        elif "\n" in key.low:
+            zeilen = key.low.split("\n")
+            if key.h > 1.0:
+                # RETURN: oben groß ↵, unten klein der Name — eine hohe Taste.
+                boxen.append((zeilen[0], oz, 0.40 * unit, L))
+                boxen.append((" ".join(zeilen[1:]), uz, 0.20 * unit, L))
+            else:
+                h = min(zeile, innen.height() / len(zeilen))
+                for i, z in enumerate(zeilen):
+                    boxen.append((z, QRectF(innen.x(), innen.y() + i * h, innen.width(), h),
+                                  0.19 * unit, L))
+        elif key.up:
+            boxen.append((key.up, oz, klein, L))
+            boxen.append((key.low, uz, klein if len(key.low) > 1 else gross * 0.9, L))
+        elif key.low in self._MITTIG:
+            boxen.append((key.low, innen, 0.34 * unit, C))
+        else:
+            groesse = gross if len(key.low) <= 2 else 0.21 * unit
+            boxen.append((key.low, oz, groesse, L))
+        return [b for b in boxen if b[0]]
+
     def _draw_legend_k7672(self, p: QPainter, key: _Key, oben: QRectF,
                            kappe: QRectF, unit: float):
         p.setPen(_C_TEXT)
+        for text, box, groesse, ausrichtung in self.legenden_boxen(key, oben, unit):
+            self._text_an(p, text, box, groesse, ausrichtung)
         front = getattr(key, "front", "")
-        if key.vertical:
-            zeichen = [c for c in key.low if not c.isspace()]
-            hoehe = oben.height() * 0.8 / max(1, len(zeichen))
-            y0 = oben.center().y() - hoehe * len(zeichen) / 2
-            for i, c in enumerate(zeichen):
-                self._draw_text(p, c, QRectF(oben.x(), y0 + i * hoehe, oben.width(),
-                                             hoehe), min(unit * 0.26, hoehe * 0.95))
-        elif "\n" in key.low:
-            zeilen = key.low.split("\n")
-            h = oben.height() / (len(zeilen) + 0.5)
-            for i, z in enumerate(zeilen):
-                self._draw_text(p, z, QRectF(oben.x(), oben.y() + (i + 0.25) * h,
-                                             oben.width(), h), unit * 0.22)
-        elif key.up:
-            links = QRectF(oben.x() + 0.05 * unit, oben.y(), oben.width() * 0.55,
-                           oben.height())
-            self._draw_text(p, key.up, QRectF(links.x(), links.y(), links.width(),
-                                              links.height() * 0.5), unit * 0.24)
-            self._draw_text(p, key.low, QRectF(links.x(), links.y() + links.height() * 0.5,
-                                               links.width(), links.height() * 0.5),
-                            unit * 0.24)
-        else:
-            groesse = unit * (0.34 if len(key.low) <= 2 else 0.24)
-            self._draw_text(p, key.low, oben, groesse)
         if front:
+            # Vorn auf der Flanke, wie auf dem Foto (Pause, Pg Up, Choi …).
             p.setPen(_FARBEN.get(getattr(key, "front_farbe", "rot"), _C_ROT))
-            unten = QRectF(kappe.x(), kappe.bottom() - 0.2 * unit, kappe.width(),
-                           0.18 * unit)
+            unten = QRectF(kappe.x(), oben.bottom(), kappe.width(),
+                           kappe.bottom() - oben.bottom())
             font = QFont(p.font())
             font.setItalic(True)
             p.setFont(font)
-            self._draw_text(p, front, unten, unit * 0.15)
+            self._draw_text(p, front, unten, unit * 0.14)
             font.setItalic(False)
             p.setFont(font)
 

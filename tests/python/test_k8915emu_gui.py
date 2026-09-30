@@ -346,6 +346,140 @@ def test_the_k7672_lamps_follow_keyboard_leds(qapp, konfig_ordner, monkeypatch):
         _zu(w, qapp)
 
 
+# ─── AP-UI2: Zeichnung der K7672 und Beschriftung der Frontplatte ───────────
+
+def test_every_panel_lamp_carries_its_label_next_to_it(qapp, konfig_ordner):
+    """Sechs Lampen, sechs sichtbare Schilder — jedes rechts neben SEINER Lampe
+    (an der Farbe allein unterscheidet man die drei gelben nicht)."""
+    w = _fenster(qapp, "k8915")
+    try:
+        platte = w.status_widget.frontplatte
+        assert platte.beschriftungen() == [
+            "Run", "Input", "Output", "Mode", "Error", "Power"]
+        lampen = platte.lampen()
+        for i, lampe in enumerate(lampen):
+            schild = platte.schild(lampe.name)
+            assert schild.isVisible() and schild.width() > 0, lampe.name
+            assert lampe.name in schild.toolTip()
+            links = lampe.geometry().right()
+            rechts = (lampen[i + 1].geometry().left() if i + 1 < len(lampen)
+                      else platte.width())
+            assert links < schild.geometry().left() < rechts, lampe.name
+    finally:
+        _zu(w, qapp)
+
+
+def test_k7672_keys_do_not_overlap_and_return_is_one_tall_key(qapp):
+    from app.ui.keyboard_k7672 import BLINDSTUECKE, KeyboardK7672Widget
+
+    kb = KeyboardK7672Widget()
+    zellen = [(k.x, k.y, k.w, k.h, k.name) for k in kb._keys]
+    zellen += [(x, y, w, h, "Blindstück") for x, y, w, h, _g in BLINDSTUECKE]
+    for i, a in enumerate(zellen):
+        for b in zellen[i + 1:]:
+            ueberlapp = (min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0]) > 1e-6
+                         and min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]) > 1e-6)
+            assert not ueberlapp, (a[4], b[4])
+    ret = [k for k in kb._keys if k.name == "RETURN"]
+    assert len(ret) == 1 and ret[0].h == 2.0 and ret[0].matrix == 0x38
+    unit = 40.0
+    kappe = kb.kappe_von(ret[0], unit, 0.0, 0.0)
+    boxen = {t: b for t, b, *_ in kb.legenden_boxen(ret[0], kb._oberseite(kappe, unit),
+                                                     unit)}
+    assert set(boxen) == {"↵", "RETURN"}
+    assert boxen["↵"].bottom() <= boxen["RETURN"].top(), "↵ oben, RETURN unten"
+
+
+@pytest.mark.parametrize("name, oben_links, unten_links, rechts, rechts_unten", [
+    ("Ü (} ])", "}", "]", "Ü", False),
+    ("Ö (| \\)", "|", "\\", "Ö", False),
+    ("Ä ({ [)", "{", "[", "Ä", False),
+    ("ß", "?", "¯", "ß", True),
+])
+def test_k7672_umlaut_keys_are_labelled_like_the_photo(qapp, name, oben_links,
+                                                       unten_links, rechts, rechts_unten):
+    """Links oben und links unten die ASCII-Zeichen, rechts groß der Umlaut
+    (beim ß in der unteren Zeile) — nicht mehr klein übereinander."""
+    from app.ui.keyboard_k7672 import KeyboardK7672Widget
+
+    kb = KeyboardK7672Widget()
+    key = next(k for k in kb._keys if k.name == name)
+    unit = 40.0
+    kappe = kb.kappe_von(key, unit, 0.0, 0.0)
+    boxen = {t: (b, g) for t, b, g, _a in kb.legenden_boxen(key, kb._oberseite(kappe, unit),
+                                                             unit)}
+    assert set(boxen) == {oben_links, unten_links, rechts}
+    mitte = kappe.center()
+    ol, ul, r = boxen[oben_links][0], boxen[unten_links][0], boxen[rechts][0]
+    assert ol.center().x() < mitte.x() and ul.center().x() < mitte.x()
+    assert r.center().x() > mitte.x()
+    assert ol.center().y() < mitte.y() < ul.center().y()
+    assert (r.center().y() > mitte.y()) == rechts_unten
+    assert boxen[rechts][1] > boxen[oben_links][1], "der Umlaut ist groß"
+
+
+def _farbe_nah(c, ziel, tol=40):
+    return all(abs(a - b) <= tol for a, b in zip((c.red(), c.green(), c.blue()),
+                                                 (ziel.red(), ziel.green(), ziel.blue())))
+
+
+@pytest.mark.parametrize("breite, mehr_hoehe", [
+    (900, 0), (1203, 0), (1275, 7), (1533, 0), (1777, 13)])
+def test_k7672_cutouts_never_lose_a_key_or_cover_one(qapp, monkeypatch, breite,
+                                                     mehr_hoehe):
+    """Wächter zum Befund „rot" (AP-UI2): Qts Pfadvereinigung verlor bei rund
+    einem Drittel der Breiten die Einfassung von RETURN/Umschalt rechts (1203 px
+    war eine davon).  In Kennfarben gezeichnet muss bei jeder Größe gelten:
+    jede Kappe ist Kappe (nirgends Gehäuse oder Ausschnitt darauf), jede Fuge
+    zwischen zwei Nachbarn desselben Blocks ist Ausschnitt (nie Gehäuse), und
+    zwischen den Blöcken liegt Gehäuse."""
+    from PySide6.QtGui import QColor
+    from app.ui import keyboard_k7672 as mod
+
+    GEHAEUSE, GRUND, KANTE, KAPPE = (QColor(255, 0, 255), QColor(0, 200, 0),
+                                     QColor(0, 0, 255), QColor(255, 255, 255))
+    for attr, farbe in (("_C_GEHAEUSE", GEHAEUSE), ("_C_GRUND", GRUND),
+                        ("_C_SCHATTEN", KANTE), ("_C_FLANKE", KAPPE),
+                        ("_C_KAPPE", KAPPE), ("_C_BLIND", KAPPE)):
+        monkeypatch.setattr(mod, attr, farbe)
+
+    kb = mod.KeyboardK7672Widget()
+    kb.resize(breite, kb.heightForWidth(breite) + mehr_hoehe)
+    bild = kb.grab().toImage()
+    unit, ox, oy = kb._geometry()
+
+    def px(x, y):
+        return QColor(bild.pixel(int(x), int(y)))
+
+    fehler = []
+    i = 0.06 * unit
+    for key in kb._keys:
+        k = kb.kappe_von(key, unit, ox, oy)
+        for x, y in ((k.left() + i, k.top() + i), (k.right() - i, k.top() + i),
+                     (k.left() + i, k.bottom() - i), (k.right() - i, k.bottom() - i),
+                     (k.right() - i, k.center().y())):
+            if not _farbe_nah(px(x, y), KAPPE, 60):
+                fehler.append(f"Kappe {key.name} bei ({x:.0f},{y:.0f})")
+    zellen = [(key.x, key.y, key.w, key.h, key.gruppe, key.name) for key in kb._keys]
+    for a in zellen:
+        for b in zellen:
+            if a[4] != b[4] or abs(a[0] + a[2] - b[0]) > 1e-6:
+                continue
+            y0, y1 = max(a[1], b[1]), min(a[1] + a[3], b[1] + b[3])
+            if y1 <= y0:
+                continue
+            x = ox + (kb._pad[0] + b[0]) * unit
+            y = oy + (kb._pad[1] + (y0 + y1) / 2) * unit
+            if not _farbe_nah(px(x, y), GRUND):
+                fehler.append(f"Fuge {a[5]} | {b[5]} bei ({x:.0f},{y:.0f})")
+    # Zwischen Haupt- und Mittelblock (DEL ↔ PF10): Gehäuse.
+    x = ox + (kb._pad[0] + 15.25) * unit
+    y = oy + (kb._pad[1] + 2.0) * unit
+    if not _farbe_nah(px(x, y), GEHAEUSE):
+        fehler.append("zwischen DEL und PF10 kein Gehäuse")
+    assert not fehler, fehler[:10]
+
+
 # ─── Rauchtest: k8915emu bootet bis zum Prompt, getippt auf der K7672 ────────
 
 def test_k8915emu_boots_to_the_prompt_and_the_on_screen_keyboard_types_dir(
