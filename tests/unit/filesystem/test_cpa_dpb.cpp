@@ -158,7 +158,7 @@ TEST(CpaDpb, ReproduziertNachgemessenesProfilCpa780) {
  *                 DATENspur (logische Spur 3 = c1h1, 1024 B), also wieder 4/2048/128.
  */
 TEST(CpaDpb, ReproduziertNachgemessenesProfilScpx798) {
-    Erkannt e = erkenne(fixture("scpx17_5x1024_k5601_hardy.hfe"));
+    Erkannt e = erkenne(fixture("scpx17_5x1024_k5601_hardy_norm.hfe"));
     ASSERT_TRUE(e) << e.fehler;
 
     const FsProfile* p = dateisysteme().find("scpx798");

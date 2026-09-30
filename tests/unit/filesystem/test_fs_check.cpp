@@ -182,7 +182,7 @@ TEST(FsCheckKeineFalschmeldungen, JedeUnversehrteFixturePrueftOhneBefund) {
         "cpa_cpa780_k5601_clock.hfe",   "cpa_cpa780_k5601_noclock.hfe",
         "cpa_cpa780_k5601_clock.img",   "cpa_cpa780_k5601_noclock.img",
         "cpa_cpa780_combo5zoll_noclock.img", "cpa_cpa780_combo8zoll_noclock.img",
-        "scpx17_cpa780_k5601.hfe",      "scpx17_5x1024_k5601_hardy.hfe",
+        "scpx17_cpa780_k5601.hfe",      "scpx17_5x1024_k5601_hardy_norm.hfe",
         // Die UDOS-Sitten haben (Etappe 1) noch keinen Pruefer — sie muessen
         // schweigen, und genau das wird hier mitgeprueft.
         "udos_boot_scp.hfe",            "udos_ds77_k5601_fremdsync.hfe",
@@ -943,7 +943,7 @@ TEST(FsCheckGegenprobe, DasRichtigeProfilBekommtKeineMeldung) {
 TEST(FsCheckGegenprobe, DerAusgelieferteKatalogIstEindeutig) {
     static const char* disketten[] = {
         "cpa_cpa780_k5601_clock.hfe",   "cpa_cpa780_k5601_noclock.img",
-        "scpx17_cpa780_k5601.hfe",      "scpx17_5x1024_k5601_hardy.hfe",
+        "scpx17_cpa780_k5601.hfe",      "scpx17_5x1024_k5601_hardy_norm.hfe",
         "scp1700_640k_a7100_system.hfe",
         "udos_boot_scp.hfe",            "udos1715_640k_pc1715_system.img",
         // K8915 (AP-E5a): `scpx8915` steht mit `detect: false` im Katalog und darf

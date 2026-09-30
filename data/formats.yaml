@@ -130,7 +130,7 @@ formats:
     description: "SCPX 798K — Systemzylinder 0 in 16×256, Daten 5×1024"
     drives:      [K5601]
     encoding:    mfm
-    # GEMESSEN an tests/fixtures/disks/scpx17_5x1024_k5601_hardy.hfe (GeometryProbe):
+    # GEMESSEN an tests/fixtures/disks/scpx17_5x1024_k5601_hardy_norm.hfe (GeometryProbe):
     # nur Zylinder 0 ist beidseitig 16×256, ab Zylinder 1 durchgängig 5×1024.  Ohne
     # diesen Eintrag passte die Diskette zu keinem Format des Katalogs.
     tracks:
@@ -668,7 +668,7 @@ filesystems:
     description: "SCPX 798K — Systemzylinder 0 in 16×256, Dateisystem ab Zylinder 2"
     format:      scpx798
     type:        cpm
-    # NACHGEMESSEN an tests/fixtures/disks/scpx17_5x1024_k5601_hardy.hfe.
+    # NACHGEMESSEN an tests/fixtures/disks/scpx17_5x1024_k5601_hardy_norm.hfe.
     data_start:  { cyl: 2, head: 0 }
     block_size:  2048
     dir_entries: 128
