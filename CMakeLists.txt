@@ -96,6 +96,18 @@ if(BUILD_K1520)
     )
     target_include_directories(k1520_util PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # Netzschicht der seriellen Schnittstellen (Entwurf 19): Sockets POSIX/Winsock2,
+    # Adressklassifikation, Portsuche.  Eigene Bibliothek, damit Tests und der spätere
+    # SerialHub sie ohne den Rest des Kerns binden.  ws2_32 gilt für MinGW UND MSVC.
+    add_library(k1520_serial_net STATIC
+        core/serial/net/socket.cpp
+        core/serial/net/adresse.cpp
+    )
+    target_include_directories(k1520_serial_net PUBLIC ${CMAKE_SOURCE_DIR})
+    if(WIN32)
+        target_link_libraries(k1520_serial_net PUBLIC ws2_32)
+    endif()
+
     # Floppy peripheral: Diskettenformat-Datenmodell (DiskFormat/TrackFormat)
     add_library(k1520_floppy STATIC
         core/peripherals/floppy_drive/disk_format.cpp
