@@ -49,7 +49,7 @@ CONFDIR="${XDG_CONFIG_HOME:-$HOME/.config}/k1520emu"
 # erste Maschine, weitere K1520-Rechner bekommen ein eigenes Programm in
 # derselben Installation.  Eine neue gehört hier hinein UND braucht eine
 # <name>.desktop.in; das Deinstallieren räumt danach von selbst mit auf.
-MASCHINEN="a5120emu"
+MASCHINEN="a5120emu k8915emu"
 
 # Werkzeuge der Installation — keine Maschinen, aber ebenfalls mit Starter und
 # Startmenue-Eintrag: das k1520DiskTool tauscht Dateien mit Disketten aus
@@ -437,6 +437,11 @@ mkdir -p "$PREFIX/bin"
 ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/a5120emu"
 chmod +x "$PREFIX/bin/a5120emu"
 
+# Der K8915 Emulator: DIESELBE Vorlage — der Starter erkennt an seinem Namen,
+# welches Programmprofil er übergibt (launcher.sh, `--machine k8915`).
+ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/k8915emu"
+chmod +x "$PREFIX/bin/k8915emu"
+
 # Das Diskettenwerkzeug ist ein eigenes Programm mit eigenem Starter.  Die
 # Kommandozeile liegt bereits als bin/k1520disktool-cli in der Payload; hier
 # entsteht der Starter der Oberflaeche.
@@ -449,6 +454,10 @@ if [ "$SHORTCUTS" = yes ]; then
     ln -sf "$PREFIX/bin/a5120emu" "$BINDIR/a5120emu"
     cp "$PREFIX/share/icons/a5120emu.svg" "$ICONDIR/a5120emu.svg" 2>/dev/null || true
     ersetze_platzhalter "$SELF_DIR/a5120emu.desktop.in" "$PREFIX" > "$APPDIR/a5120emu.desktop"
+
+    # Gleiches Symbol (Icon=a5120emu), anderer Name: „K8915 Emulator".
+    ln -sf "$PREFIX/bin/k8915emu" "$BINDIR/k8915emu"
+    ersetze_platzhalter "$SELF_DIR/k8915emu.desktop.in" "$PREFIX" > "$APPDIR/k8915emu.desktop"
 
     ln -sf "$PREFIX/bin/k1520disktool" "$BINDIR/k1520disktool"
     ersetze_platzhalter "$SELF_DIR/k1520disktool.desktop.in" "$PREFIX" \
@@ -464,7 +473,7 @@ if [ "$SHORTCUTS" = yes ]; then
     if have update-desktop-database; then
         update-desktop-database "$APPDIR" >/dev/null 2>&1 || true
     fi
-    ok "Startmenü-Einträge und $BINDIR/{a5120emu,k1520disktool}"
+    ok "Startmenü-Einträge und $BINDIR/{a5120emu,k8915emu,k1520disktool}"
     case ":$PATH:" in
         *":$BINDIR:"*) ;;
         *) warn "$BINDIR liegt nicht im PATH — der Emulator startet trotzdem über das Startmenü" ;;
@@ -545,11 +554,11 @@ printf "\n"
 info "Fertig."
 printf "     Installiert:  %s (%s)\n" "$PREFIX" \
     "$(du -sh "$PREFIX" 2>/dev/null | awk '{print $1}')"
-printf "     Starten:      %s\n" "$PREFIX/bin/a5120emu"
+printf "     Starten:      %s  (K8915: %s)\n" "$PREFIX/bin/a5120emu" "$PREFIX/bin/k8915emu"
 printf "     Diskettenwerkzeug: %s  (Kommandozeile: %s)\n" \
     "$PREFIX/bin/k1520disktool" "$PREFIX/bin/k1520disktool-cli"
 if [ "$SHORTCUTS" = yes ]; then
-    printf "     oder einfach: a5120emu   (bzw. über das Startmenü)\n"
+    printf "     oder einfach: a5120emu / k8915emu   (bzw. über das Startmenü)\n"
 fi
 
 # Der Debugger bekommt einen eigenen Absatz — er ist das dritte Programm im

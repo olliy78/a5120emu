@@ -551,6 +551,7 @@ else
     cp "$SELF_DIR/disktool_launcher.sh"     "$STAGE/disktool_launcher.sh"
     cp "$SELF_DIR/k1520disktool.desktop.in" "$STAGE/k1520disktool.desktop.in"
     cp "$SELF_DIR/a5120emu.desktop.in"      "$STAGE/a5120emu.desktop.in"
+    cp "$SELF_DIR/k8915emu.desktop.in"      "$STAGE/k8915emu.desktop.in"
     cp "$SELF_DIR/lib/common.sh"            "$STAGE/lib/common.sh"
     chmod +x "$STAGE/install.sh"
 fi

@@ -119,7 +119,10 @@
   + "-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
 
 #define Produkt   "K1520emu"
-#define Programm  "A5120-Emulator"
+#define Programm  "A5120 Emulator"
+; Der zweite Emulator derselben Installation: dasselbe Programm mit dem Profil
+; des K8915 (app/main.py --machine k8915), gleiches Symbol, anderer Name.
+#define Programm2 "K8915 Emulator"
 #define Anbieter  "Olaf Krieger"
 
 [Setup]
@@ -234,6 +237,9 @@ Source: "{#Paket}\wheels\{#GwWheel}";        Flags: dontcopy
 ; pythonw.exe, und ohne eigene Angabe steht im Startmenue das Python-Symbol.
 Name: "{group}\{#Programm}"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
   Parameters: """{app}\app\main.py"""; WorkingDir: "{app}"; Comment: "{#Programm}"; \
+  IconFilename: "{app}\share\icons\a5120emu.ico"
+Name: "{group}\{#Programm2}"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
+  Parameters: """{app}\app\main.py"" --machine k8915"; WorkingDir: "{app}"; Comment: "{#Programm2}"; \
   IconFilename: "{app}\share\icons\a5120emu.ico"
 Name: "{group}\k1520DiskTool"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
   Parameters: """{app}\app\disktool\main.py"""; WorkingDir: "{app}"; Comment: "Dateiaustausch mit K1520-Disketten"; \
@@ -648,6 +654,9 @@ begin
   CreateDir(ExpandConstant('{app}\bin'));
   VorlageSchreiben(ExpandConstant('{tmp}\launcher.cmd'),
                    ExpandConstant('{app}\bin\a5120emu.cmd'));
+  { Der K8915 Emulator: dieselbe Vorlage, der Dateiname waehlt das Profil. }
+  VorlageSchreiben(ExpandConstant('{tmp}\launcher.cmd'),
+                   ExpandConstant('{app}\bin\k8915emu.cmd'));
   VorlageSchreiben(ExpandConstant('{tmp}\disktool_launcher.cmd'),
                    ExpandConstant('{app}\bin\k1520disktool.cmd'));
 

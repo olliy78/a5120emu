@@ -72,6 +72,17 @@ Sieben Dinge, die man dabei nicht kaputtmachen darf:
   Symbol und `.desktop` heißen nach der Maschine. Weitere K1520-Rechner bekommen ein eigenes
   Programm in derselben Installation: eigener Block beim Starterschreiben + `<name>.desktop.in`
   + Eintrag in `MASCHINEN` (`install.sh`), woran das Deinstallieren die Verknüpfungen findet.
+  **Seit AP-UI1 (2026-09-30) gibt es den zweiten: den K8915 Emulator** (`k8915emu`).
+  Dieselbe Starter-Vorlage wie `a5120emu` — `launcher.sh`/`launcher.cmd` wählen das
+  Programmprofil am eigenen NAMEN (`k8915emu*` ⇒ `app/main.py --machine k8915`),
+  `install.sh` schreibt sie zweimal; `k8915emu.desktop.in` (Name „K8915 Emulator",
+  `Icon=a5120emu`); Windows: zweiter `[Icons]`-Eintrag `{#Programm2}` mit
+  `--machine k8915` und `bin\k8915emu.cmd`. Startmenü-Namen „A5120 Emulator" /
+  „K8915 Emulator" (vorher „A5120-Emulator"). Auslieferungskonfiguration je Programm:
+  `share/k1520emu/default_config_a5120.yaml` / `…_k8915.yaml`. Keine
+  K8915-Systemdiskette im Paket (E4l-Rechtsfrage offen). Wächter `py_packaging`
+  (`test_launcher_sh_waehlt_die_maschine_am_namen`, `test_iss_hat_den_k8915_emulator_im_startmenue`,
+  `test_install_sh_schreibt_und_kennt_den_k8915_starter`).
 
 **Drei Programme, nicht eins** (2026-08-18, `doc/design/13_distribution.md` §10a/§10a.5).
 Neben Emulator und DiskTool liefert das Paket den **Debugger `k1520dbg`** aus, dazu die

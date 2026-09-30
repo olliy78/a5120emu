@@ -1,5 +1,7 @@
 @echo off
-rem K1520-Emulator - Starter des A5120 (Windows).  Die Wurzel setzt der Installer.
+rem K1520-Emulator - Starter des A5120 Emulators UND des K8915 Emulators (Windows).
+rem Die Wurzel setzt der Installer.  Eine Vorlage fuer beide (bin\a5120emu.cmd,
+rem bin\k8915emu.cmd): welcher Emulator startet, sagt der Dateiname (%~n0).
 rem
 rem Gegenstueck zu launcher.sh.  Fuer den Aufruf von Hand und aus der
 rem Eingabeaufforderung; die Verknuepfung im Startmenue zeigt dagegen direkt auf
@@ -38,4 +40,7 @@ if defined DATEN (
     if exist "%DATEN%" cd /d "%DATEN%"
 )
 
-"%ROOT%\venv\Scripts\pythonw.exe" "%ROOT%\app\main.py" %*
+set "MASCHINE="
+if /i "%~n0"=="k8915emu" set "MASCHINE=--machine k8915"
+
+"%ROOT%\venv\Scripts\pythonw.exe" "%ROOT%\app\main.py" %MASCHINE% %*

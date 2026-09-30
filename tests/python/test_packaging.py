@@ -144,6 +144,7 @@ def test_lock_nagelt_mit_hashes_fest():
 
 @pytest.mark.parametrize("datei,starter", [
     ("a5120emu.desktop.in", "a5120emu"),
+    ("k8915emu.desktop.in", "k8915emu"),
     ("k1520disktool.desktop.in", "k1520disktool"),
 ])
 def test_desktop_eintrag_ist_gueltig(datei, starter):
@@ -151,6 +152,67 @@ def test_desktop_eintrag_ist_gueltig(datei, starter):
     assert text.startswith("[Desktop Entry]")
     for feld in ("Type=Application", "Name=", f'Exec="@ROOT@/bin/{starter}"', "Icon=a5120emu"):
         assert feld in text, f"{feld} fehlt im Startmenü-Eintrag {datei}"
+
+
+# ─── Zwei Emulatoren, ein Starter (AP-UI1, doc/design/18 §3) ────────────────
+
+def test_beide_emulatoren_haben_einen_startmenue_eintrag_mit_ihrem_titel():
+    """Gleiches Symbol, anderer Name: „A5120 Emulator" und „K8915 Emulator"."""
+    for datei, titel in (("a5120emu.desktop.in", "A5120 Emulator"),
+                         ("k8915emu.desktop.in", "K8915 Emulator")):
+        text = (PACKAGING / datei).read_text(encoding="utf-8")
+        assert f"Name={titel}\n" in text, datei
+        assert "Icon=a5120emu\n" in text, datei
+
+
+def test_install_sh_schreibt_und_kennt_den_k8915_starter():
+    text = (PACKAGING / "install.sh").read_text(encoding="utf-8")
+    assert re.search(r'^MASCHINEN="[^"]*\bk8915emu\b', text, re.M), \
+        "ohne Eintrag in MASCHINEN bleibt der Starter beim Deinstallieren liegen"
+    assert '> "$PREFIX/bin/k8915emu"' in text
+    assert 'k8915emu.desktop.in' in text
+    bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    assert '"$SELF_DIR/k8915emu.desktop.in"' in bp
+
+
+def test_iss_hat_den_k8915_emulator_im_startmenue():
+    iss = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
+    assert '#define Programm  "A5120 Emulator"' in iss
+    assert '#define Programm2 "K8915 Emulator"' in iss
+    eintrag = iss[iss.index('Name: "{group}\\{#Programm2}"'):]
+    eintrag = eintrag[:eintrag.index("\nName:")]
+    assert "--machine k8915" in eintrag and "pythonw.exe" in eintrag
+    assert "a5120emu.ico" in eintrag, "gleiches Symbol"
+    assert "bin\\k8915emu.cmd" in iss, "Starter fuer den Aufruf von Hand"
+
+
+def test_launcher_cmd_waehlt_die_maschine_am_dateinamen():
+    text = (PACKAGING / "launcher.cmd").read_text(encoding="utf-8")
+    assert '"%~n0"=="k8915emu"' in text and "--machine k8915" in text
+    assert "%MASCHINE% %*" in text
+
+
+@nur_unix_installer
+@pytest.mark.parametrize("name,erwartet", [
+    ("a5120emu", []),
+    ("k8915emu", ["--machine", "k8915"]),
+])
+def test_launcher_sh_waehlt_die_maschine_am_namen(tmp_path, name, erwartet):
+    """EINE Vorlage, zwei Starter: der Name entscheidet über das Profil."""
+    wurzel = tmp_path / "inst"
+    (wurzel / "venv" / "bin").mkdir(parents=True)
+    py = wurzel / "venv" / "bin" / "python3"
+    # Ersatzinterpreter: die Pfadauskunft (Datenordner) leer, sonst die Argumente.
+    py.write_text('#!/bin/sh\n[ "$1" = "-c" ] && exit 1\nshift\nprintf "%s\\n" "$@"\n')
+    py.chmod(0o755)
+    text = (PACKAGING / "launcher.sh").read_text(encoding="utf-8")
+    starter = tmp_path / name
+    starter.write_text(text.replace("@ROOT@", str(wurzel)).replace("@DATEN@", ""))
+    starter.chmod(0o755)
+    out = subprocess.run([str(starter), "disk.hfe"], capture_output=True, text=True,
+                         timeout=30)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.split() == erwartet + ["disk.hfe"]
 
 
 @nur_unix_installer
@@ -248,6 +310,7 @@ def test_dokumentenordner_shell_und_python_stimmen_ueberein(tmp_path, aufbau):
 
 @pytest.mark.parametrize("datei,starter", [
     ("a5120emu.desktop.in", "a5120emu"),
+    ("k8915emu.desktop.in", "k8915emu"),
     ("k1520disktool.desktop.in", "k1520disktool"),
 ])
 def test_desktop_exec_ist_gequotet(datei, starter):
@@ -1093,7 +1156,8 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
 
     stage = next(p for p in tmp_path.glob("k1520emu-test-*") if p.is_dir())
     for pflicht in [
-        "install.sh", "launcher.sh", "slim.py", "a5120emu.desktop.in", "uv_pins.txt",
+        "install.sh", "launcher.sh", "slim.py", "a5120emu.desktop.in",
+        "k8915emu.desktop.in", "uv_pins.txt",
         "lib/common.sh", "requirements.lock", "VERSION", "README.md",
         "payload/bin/libk1520core.so",
         "payload/app/main.py", "payload/app/paths.py",
@@ -1224,6 +1288,8 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
     starter = ziel / "bin" / "a5120emu"
     assert starter.is_file() and os.access(starter, os.X_OK)
     assert (heim / ".local" / "share" / "applications" / "a5120emu.desktop").is_file()
+    assert os.access(ziel / "bin" / "k8915emu", os.X_OK)
+    assert (heim / ".local" / "share" / "applications" / "k8915emu.desktop").is_file()
     # Beispieldisketten liegen beim Anwender, nicht in der Installation — und
     # kommen dort AUSGEPACKT und bitgleich an (im Paket liegen sie gepackt).
     nutzer_disks = heim / "Dokumente" / "K1520emu" / "Disketten"
