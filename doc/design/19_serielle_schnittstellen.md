@@ -1,6 +1,6 @@
 # Feinentwurf 19: Serielle Schnittstellen nach außen (Telnet / RFC 2217 / Datei)
 
-**Stand:** 2026-09-30, Entwurf — noch nichts umgesetzt.
+**Stand:** 2026-09-30, in Umsetzung — S1, S2, S3 erledigt (§12).
 **Gilt für:** A5120 (K8025.50) und K8915 (ATS K7028.30), beide Programme (`a5120emu`, `k8915emu`).
 **Bezug:** `doc/design/06_k8025_ass.md`, `doc/design/16_k8915.md` §3.2/§6.6/§6.10,
 `doc/design/10_c_api.md`, `doc/design/11_python_app.md` §10,
@@ -321,7 +321,9 @@ Anmeldung; das Handbuch weist darauf hin.
 Reihenfolge: `inet_pton(AF_INET)` → **IPv4**; sonst `[…]` abstreifen, `%zone` abtrennen,
 `inet_pton(AF_INET6)` → **IPv6**; sonst gültiger Hostname nach RFC 1123 (Labels 1–63
 Zeichen `[A-Za-z0-9-]`, nicht mit `-` beginnend/endend, gesamt ≤ 253) → **Hostname**;
-sonst **ungültig** (Knopf gesperrt). Die Klassifikation sitzt im Kern
+sonst **ungültig** (Knopf gesperrt). Ergänzt in AP-S1: ist das **letzte Label rein
+numerisch**, ist der Name ungültig (RFC 1123 §2.1) — `300.1.1.1`, `1.2.3`, `12345` gelten
+damit nicht als Hostname; ein Schlusspunkt (`host.org.`) ist erlaubt, `host:port` ungültig. Die Klassifikation sitzt im Kern
 (`k1520_serial_classify_host`), die UI zeigt sie als kleines Etikett neben dem Feld.
 
 ### 7.4 Telnet (RFC 854/856/858)
@@ -521,6 +523,58 @@ Dokument im AP-Abschnitt nachführen („erledigt JJJJ-MM-TT", Abweichungen), Co
 | **S8** | `SerielleKopplung.*`, `py_serial_pyserial`, Handtest mit `telnet`/`ser2net`/zweitem Emulator; CLAUDE.md-Absatz + `doc/merkposten/serielle_schnittstellen.md` | S6 (S7 für Handtest) | M |
 
 S1, S2, S3 laufen parallel (S3 berührt `build/` — S1/S2 dann im Worktree).
+
+### 12.1 Stand der Arbeitspakete
+
+**AP-S1 — erledigt 2026-09-30** (`79b811e`). `core/serial/net/{socket,adresse}.{h,cpp}`,
+Bibliothek `k1520_serial_net` (`ws2_32` bei `WIN32`), noch nicht an `libk1520core` gebunden —
+das macht S4. Namespace `k1520::serial::net`: `netzStarten()` (WSAStartup einmalig),
+`Socket` (RAII, nur verschiebbar), `lauschen(port)` / `lauschenMitSuche(ab)` (§7.2),
+`portPruefen(port)` → `{frei, vorschlag}` (§7.4a; „frei" = wirklich bindbar, die Probe lauscht
+kurz), `annehmen`, `aufloesen(host, port)` (alle v6+v4, bewusst ohne `AI_ADDRCONFIG`, sonst
+fiele `::1` weg), `verbinden`/`verbindenAlle(ziele, fristMs)` (Frist gilt für alle Adressen
+zusammen → passt zum 1000-ms-Dauerversuch), `senden`/`empfangen` → `IoStatus{Ok, Warten,
+Geschlossen, Fehler}` (ohne SIGPIPE; RESET = Geschlossen), `warten(vector<PollEintrag>, ms)`
+(poll/WSAPoll), `Wecker` (liegt in `net/socket.cpp`, nicht in `os_compat.h`),
+`adresseZerlegen`/`adresseKlassifizieren`/`hostnameGueltig`. Wächter `SerialAdresse.*` (9),
+`SerialNetz.*` (19). Abweichung: numerisches letztes Label ungültig (§7.3). Unter wine laufen
+beide Binaries grün; der MSVC-Zweig und `SO_EXCLUSIVEADDRUSE` auf echtem Windows sind erst mit
+`windows-ci.yml` geprüft. Bekannt: `WSAPoll` meldet ein gescheitertes `connect` vor Win10 2004
+nicht — dann läuft die Frist ab, für den Dauerversuch unschädlich.
+
+**AP-S2 — erledigt 2026-09-30** (`ab411ba`). `core/serial/{telnet_codec,rfc2217_codec}.{h,cpp}`,
+Bibliothek `k1520_serial_codec`, Namespace `serial`. Beide Codecs gleich zum Transport hin:
+`eingabe(bytes)`, `nimmNutzdaten()`, `sende(...)`, `nimmAusgabe()`/`hatAusgabe()`.
+`TelnetCodec(TelnetRolle::{Client,Server})`: `start()` (Server: `WILL ECHO/SGA/BINARY, DO
+BINARY`), Q-Methode RFC 1143 (kein Pingpong), `erlaube/bieteAn/verlange`,
+`lokalAktiv/entferntAktiv`, Unterverhandlung als `nimmSub()` → `TelnetSub{option, daten}`
+(statt Rückruf; `SUB_MAX` 1024). CR NUL je Richtung nur ohne BINARY; gesendetes CR wird ohne
+Vorgriff zu CR NUL. `Rfc2217Codec(TelnetRolle)`: `nimmEreignisse()` → `Rfc2217Ereignis{art,
+antwort, wert, text}` (Signatur, Baud, Datenbits, Paritaet, Stoppbits, Steuerung, LineState,
+ModemState, …Maske, FlussHalt/Weiter, Leeren); `sendeBaud(wert, alsAntwort)` usw. — **der
+Codec entscheidet nichts**, der Server antwortet mit dem Gastwert (Leitsatz 4).
+`sendeLineState/ModemState` beachten die Masken aus 10/11 (Vorgabe Line 00H, Modem FFH —
+nicht gegen die RFC geprüft). COM-PORT-Befehle gehen ohne Warten auf das Verhandlungsende
+hinaus. Umrechnungen `paritaetNetz/Sio`, `stoppNetz/Halbe`. Wächter `TelnetCodec.*` (19),
+`Rfc2217Codec.*` (16).
+
+**AP-S3 — erledigt 2026-09-30** (`5711d6c`). `Z80SIO::Channel`: `format()` →
+`Format{teiler, stopp_halbe (0=sync), paritaet, tx_bits, rx_bits}`, `rts()`, `dtr()`,
+`breakSenden()`, `autoEnables()`, `setzeCTS/DCD(bool aktiv)`, `setzeBreakEmpfang`,
+`cts()/dcd()/breakEmpfangen()`; Flanke → RR0 eingefroren + Ext/Status-IRQ bei WR1 D0,
+Freigabe mit WR0-Befehl 2. Wandlerseite: `senderHatZeichen()`, `empfaengerFrei()` (FIFO < 3
+und bei Auto Enables /DCD aktiv); Zeichen weiter über `txGet()`/`rxByte()`. **Auto Enables**
+wirkt jetzt datenblattgetreu (kein bekannter Gast setzt WR3 D5 — mit Protokollfalle über beide
+Testrunden belegt). `Z80CTC::teilerTakte(k)` (0 = unbekannt), Eingangsperiode über
+`setzeEingangsQuelle(k, std::function)` (Kaskade) oder `setzeEingangsPeriode(k, takte)`;
+Verdrahtung, überlebt `reset()`, nicht im Savestate. Vorgabe aller Eingänge: **inaktiv** —
+RR0 bleibt für jeden bestehenden Pfad 04H. Savestate-Version 5 → 6 (SIO-Block +3 Felder).
+Befunde für S4/S5: **Tx/Rx-Enable (WR5 D3 / WR3 D0) wird nirgends ausgewertet**; ein
+**getriggerter CTC-Zeitgeber** hält nach dem ersten ZC/TO an (`fireZCTO` löscht `running`,
+am Chip läuft er weiter) → `teilerTakte` liefert danach 0; `rxIntEnabled()` liest WR1 D3–2
+statt D4–3; RR0 D6/D1 nie gesetzt; RTS wirkt ohne Verzögerung. **S5 muss die CTS/DCD-Pegel je
+Karte bewusst setzen** — aktiv getrieben wird RR0 D5/D3 für den Gast sichtbar 1 (offener
+Punkt 2).
 
 ## 13. Offene Punkte
 
