@@ -242,3 +242,116 @@ TEST(K7672, LedsRegister21HUndSummer)
     a.sende({0x07});
     EXPECT_EQ(a.kbd.summerZaehler(), 3u) << "Summerzähler läuft über den Neustart weiter";
 }
+
+// ─── Physische Tasten der Nachbildung (AP-UI1) ──────────────────────────────
+
+namespace {
+constexpr uint32_t T(uint8_t m) { return K7672::QK_TASTE_BASE | m; }
+void tippe(Aufbau& a, uint8_t m, bool shift = false, bool ctrl = false) {
+    a.kbd.keyPress(T(m), shift, ctrl);
+    a.kbd.keyRelease(T(m));
+}
+}  // namespace
+
+/**
+ * @test K7672.MatrixDcpScancodesAusDerFirmware
+ * @brief Die Bildschirmtastatur spricht Matrixpositionen an; im DCP-Modus kommt der
+ *        Scancode aus D3 0080H: A (20H) = 1EH, ß (05H) = 0CH, RETURN (38H) = 1CH,
+ *        PF1 (3EH) = 3BH, Umschalttaste (36H) = 2AH.  Bit 7 im Scancode heißt Vorsatz:
+ *        ↑ (79H, C8H, Tastenart ED = Umschalt) = 2A 48 / C8 AA, ^S (7EH, C5H, Art 08
+ *        = Strg) = 1D 45 / 9D C5 — kein E0 (Firmware 0326H–035FH, 05C2H).
+ */
+TEST(K7672, MatrixDcpScancodesAusDerFirmware)
+{
+    Aufbau a;
+    dcp(a);
+    tippe(a, 0x20);
+    tippe(a, 0x05);
+    tippe(a, 0x38);
+    tippe(a, 0x3E);
+    EXPECT_EQ(alles(a), (std::vector<int>{0x1E, 0x9E, 0x0C, 0x8C, 0x1C, 0x9C, 0x3B, 0xBB}));
+    tippe(a, 0x79);
+    EXPECT_EQ(alles(a), (std::vector<int>{0x2A, 0x48, 0xC8, 0xAA}));
+    tippe(a, 0x7E);
+    EXPECT_EQ(alles(a), (std::vector<int>{0x1D, 0x45, 0x9D, 0xC5}));
+    a.kbd.keyPress(T(0x36), false, false);   // Umschalttaste selbst
+    tippe(a, 0x20);
+    a.kbd.keyRelease(T(0x36));
+    EXPECT_EQ(alles(a), (std::vector<int>{0x2A, 0x1E, 0x9E, 0xAA}));
+}
+
+/**
+ * @test K7672.MatrixUmschaltUndStrgDerNachbildung
+ * @brief Die rastenden Umschalt-/Strg-Tasten der Bildschirmtastatur kommen als Flags
+ *        und wirken wie gehaltene Tasten: 2AH davor, AAH danach; Strg 1DH/9DH.
+ */
+TEST(K7672, MatrixUmschaltUndStrgDerNachbildung)
+{
+    Aufbau a;
+    dcp(a);
+    tippe(a, 0x20, /*shift=*/true);
+    EXPECT_EQ(alles(a), (std::vector<int>{0x2A, 0x1E, 0x9E, 0xAA}));
+    tippe(a, 0x31, false, /*ctrl=*/true);    // C
+    EXPECT_EQ(alles(a), (std::vector<int>{0x1D, 0x2E, 0xAE, 0x9D}));
+}
+
+/**
+ * @test K7672.MatrixKlickUndUnbelegteTastenSendenNichts
+ * @brief `CL` (7DH) schaltet in der Firmware nur den Tastenklick um (030BH), eine
+ *        Matrixposition ohne Taste (0CH, FFH) sendet ebenfalls nichts.
+ */
+TEST(K7672, MatrixKlickUndUnbelegteTastenSendenNichts)
+{
+    Aufbau a;
+    dcp(a);
+    tippe(a, K7672::MATRIX_KLICK);
+    tippe(a, 0x0C);
+    EXPECT_TRUE(alles(a).empty());
+}
+
+/**
+ * @test K7672.MatrixFeststellSchaltetCapsLampe
+ * @brief Firmware 0303H: die Feststelltaste (26H) schaltet LED 21H Bit 7 (CAPS) beim
+ *        Drücken um und sendet 3AH/BAH; `ESC [?11h/l` setzt bzw. löscht dasselbe Bit,
+ *        `ESC [?18h/l` Bit 6 (GRAPH [?]).
+ */
+TEST(K7672, MatrixFeststellSchaltetCapsLampe)
+{
+    Aufbau a;
+    dcp(a);
+    EXPECT_EQ(a.kbd.leds() & 0x80, 0);
+    tippe(a, K7672::MATRIX_FESTSTELL);
+    EXPECT_EQ(alles(a), (std::vector<int>{0x3A, 0xBA}));
+    EXPECT_EQ(a.kbd.leds() & 0x80, 0x80);
+    tippe(a, K7672::MATRIX_FESTSTELL);
+    EXPECT_EQ(a.kbd.leds() & 0x80, 0);
+    a.sende({ESC, '[', '?', '1', '1', 'h'});
+    EXPECT_EQ(a.kbd.leds() & 0x80, 0x80);
+    a.sende({ESC, '[', '?', '1', '1', 'l'});
+    EXPECT_EQ(a.kbd.leds() & 0x80, 0);
+    a.sende({ESC, '[', '?', '1', '8', 'h'});
+    EXPECT_EQ(a.kbd.leds() & 0x40, 0x40);
+    a.sende({ESC, '[', '?', '1', '8', 'l'});
+    EXPECT_EQ(a.kbd.leds() & 0x40, 0);
+}
+
+/**
+ * @test K7672.MatrixScpZeichenAusDerFirmware
+ * @brief SCP-Modus (Boot-ROM): Zeichen aus D3 0400H/0480H — A = 'a', mit Umschalt 'A',
+ *        ß = E1H, RETURN = CR; die Feststellung macht nur Buchstaben groß; eine
+ *        Funktionstaste (PF1, FFH) sendet nichts.
+ */
+TEST(K7672, MatrixScpZeichenAusDerFirmware)
+{
+    Aufbau a;
+    tippe(a, 0x20);
+    tippe(a, 0x20, true);
+    tippe(a, 0x05);
+    tippe(a, 0x38);
+    tippe(a, 0x3E);
+    EXPECT_EQ(alles(a), (std::vector<int>{'a', 'A', 0xE1, 0x0D}));
+    tippe(a, K7672::MATRIX_FESTSTELL);       // Feststellung ein
+    tippe(a, 0x20);
+    tippe(a, 0x00);                          // '1' bleibt '1'
+    EXPECT_EQ(alles(a), (std::vector<int>{'A', '1'}));
+}

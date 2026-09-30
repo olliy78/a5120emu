@@ -358,4 +358,8 @@ uint32_t k1520_bell_count(K1520Handle h) {
     return toMachine(h)->bellCount();
 }
 
+void k1520_nmi(K1520Handle h) {
+    toMachine(h)->nmi();
+}
+
 } // extern "C"

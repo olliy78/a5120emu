@@ -270,3 +270,52 @@ TEST(K8915Boot, ZreCtcLiefertIm2Interrupt)
     EXPECT_FALSE(m.bus().lastIntAck().spurious);
     EXPECT_EQ(m.bus().lastIntAck().vector, 0xF6);
 }
+
+/**
+ * @test K8915Boot.NmiImRomStartetDenSelbsttestNeu
+ * @brief NMI-Taster der Frontplatte (AP-UI1, §3.6): der Lader wartet an der
+ *        Coldstart-Meldung (A8H = 06H, ROM eingeblendet) ⇒ `nmi()` ⇒ ROM 0066H
+ *        `LD A,FFH / OUT (61H),A / JP 001BH` — alle Lampen aus, Selbsttest von vorn
+ *        („DIAGNOSTIC" in der Statuszeile).  Kein /RESET: A8H bleibt 06H.
+ */
+TEST(K8915Boot, NmiImRomStartetDenSelbsttestNeu)
+{
+    K8915Machine m;
+    m.powerOn();
+    m.zre().bankPoke(0, 0x0000, 0xC3);    // Abkürzung wie SystemImRamFuehrtZumLader
+    m.zre().bankPoke(0, 0x0005, 0xC3);
+    long long done = 0;
+    while (done < 5'000'000 && !coldstart(m)) done += m.run(kSchritt);
+    ASSERT_TRUE(coldstart(m)) << vramLines(m);
+    ASSERT_EQ(vramText(m).find("DIAGNOSTIC"), std::string::npos);
+    ASSERT_NE(m.ats().anzeige(), 0xFF) << "Coldstart meldet sich mit 61H = B0H";
+
+    m.nmi();
+    m.run(200);                            // ein paar Befehle: 0066H ist durchlaufen
+    EXPECT_EQ(m.ats().anzeige(), 0xFF) << "0066H: OUT (61H),FFH — alle Lampen aus";
+    EXPECT_EQ(m.panelLamps(), 0xFF) << "Spiegel für die Oberfläche";
+
+    done = 0;
+    while (done < 5'000'000 && vramText(m).find("DIAGNOSTIC") == std::string::npos)
+        done += m.run(kSchritt);
+    EXPECT_NE(vramText(m).find("DIAGNOSTIC"), std::string::npos) << vramLines(m);
+}
+
+/**
+ * @test K8915Boot.NmiOhneDruckGeschiehtNichts
+ * @brief Gegenprobe: ohne `nmi()` bleibt der Lader an der Coldstart-Meldung stehen,
+ *        und ein Druck wird genau EINMAL zugestellt (Flanke, kein Pegel).
+ */
+TEST(K8915Boot, NmiOhneDruckGeschiehtNichts)
+{
+    K8915Machine m;
+    m.powerOn();
+    m.zre().bankPoke(0, 0x0000, 0xC3);
+    m.zre().bankPoke(0, 0x0005, 0xC3);
+    long long done = 0;
+    while (done < 5'000'000 && !coldstart(m)) done += m.run(kSchritt);
+    ASSERT_TRUE(coldstart(m));
+    for (int i = 0; i < 50; ++i) m.run(kSchritt);
+    EXPECT_EQ(vramText(m).find("DIAGNOSTIC"), std::string::npos) << vramLines(m);
+    EXPECT_TRUE(coldstart(m));
+}

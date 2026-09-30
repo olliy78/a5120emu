@@ -59,6 +59,11 @@ public:
     void reset() override;
     int  run(int max_cycles) override;
     void stop() override { stop_.store(true); }
+    /** @brief NMI-Taster der Frontplatte (Steckeinheit 045-8569): nur vorgemerkt,
+     *         die Flanke geht am Anfang des nächsten run() im Lauffaden an den Bus
+     *         — wie die Tastenwarteschlange, sonst ein Wettlauf mit der Laufschleife.
+     *         A8H, SIO, CTC und K5122 bleiben, wie sie sind (kein /RESET). */
+    void nmi() override { nmi_taster_.store(true, std::memory_order_relaxed); }
 
     // ─── Bild ────────────────────────────────────────────────────────────────
     const uint8_t* framebuffer() const override { return screen_.getFramebuffer(); }
@@ -205,6 +210,7 @@ private:
     Laufwerke lw_;        // Laufwerksverwaltung (gemeinsam mit dem A5120)
 
     std::atomic<bool> stop_{false};
+    std::atomic<bool> nmi_taster_{false};   ///< NMI-Taster gedrückt, noch nicht zugestellt
     uint64_t          total_cycles_ = 0;
     bool              prev_afs_int_ = false;   // Flanke des K5122-Interrupts (Index, MKE)
 

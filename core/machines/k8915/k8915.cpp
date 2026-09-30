@@ -102,6 +102,11 @@ void K8915Machine::anzeigenSpiegeln()
 int K8915Machine::run(int max_cycles)
 {
     tastenAbgeben();
+    // NMI-Taster: eine Flanke je Druck, zugestellt vor dem ersten Befehl.
+    if (nmi_taster_.exchange(false, std::memory_order_relaxed)) {
+        bus_.assertNMI();
+        LOG_INFO("K8915", "NMI-Taster");
+    }
     Z80& cpu = zre_.cpu();
     int remaining = max_cycles;
     while (remaining > 0 && !stop_.load(std::memory_order_relaxed)) {

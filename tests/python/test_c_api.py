@@ -140,6 +140,38 @@ def test_k8915_can_be_created_and_reports_its_type():
         _lib.k1520_destroy(h)
 
 
+def test_nmi_button_restarts_the_k8915_self_test_and_does_nothing_on_the_a5120():
+    """`k1520_nmi` (AP-UI1): am K8915 setzt die NMI-Flanke das ROM auf 0066H —
+    `OUT (61H),FFH`, dann Selbsttest von vorn; die Lampen gehen aus.  Am A5120 hat
+    die Funktion keine Wirkung (kein NMI-Taster) — der Lauf geht einfach weiter."""
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    handle = _lib.k1520_create(2)
+    assert handle, _lib.k1520_last_init_error()
+    h = K1520Handle(handle)
+    try:
+        _lib.k1520_power_on(h)
+        _lib.k1520_run(h, 1_000_000)
+        # Die volle Wirkung (Selbsttest von vorn, „DIAGNOSTIC") prüft
+        # K8915Boot.NmiImRomStartetDenSelbsttestNeu; hier geht es um die ABI.
+        _lib.k1520_nmi(h)
+        _lib.k1520_run(h, 200)
+        assert _lib.k1520_panel_lamps(h) == 0xFF, "0066H: OUT (61H),FFH"
+    finally:
+        _lib.k1520_destroy(h)
+
+    handle = _lib.k1520_create(0)
+    assert handle
+    h = K1520Handle(handle)
+    try:
+        _lib.k1520_power_on(h)
+        _lib.k1520_nmi(h)
+        assert _lib.k1520_run(h, 50_000) > 0
+        assert _lib.k1520_panel_lamps(h) == 0
+    finally:
+        _lib.k1520_destroy(h)
+
+
 def test_a5120_answers_the_machine_neutral_indicators(booted):
     """Die angehängten Anzeigefunktionen ändern am A5120 nichts: Typ 0, kein
     Anzeigefeld, kein Summerzähler; `k1520_screen_char` liest dasselbe Bild wie

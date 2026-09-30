@@ -33,6 +33,14 @@ public:
     virtual int  run(int max_cycles) = 0;
     /** @brief Anhalten anfordern (wirkt nach dem laufenden Befehl, fadensicher). */
     virtual void stop() = 0;
+    /**
+     * @brief NMI-Taster: eine /NMI-Flanke an die CPU (fadensicher, zugestellt am
+     *        Anfang des nächsten run()).  Vorgabe: keine Wirkung — der A5120 hat
+     *        keinen NMI-Taster (die K2526 kennt /NMI nur aus der Q240-Schutzlogik).
+     *        K8915: ROM 0066H = Lampen aus + Selbsttest von vorn; unter SCPX liegt
+     *        dort RAM — Verhalten wie am Gerät, nicht abgefangen (§3.6, §6.12).
+     */
+    virtual void nmi() {}
 
     // ─── Bild ──────────────────────────────────────────────────────────────────
     virtual const uint8_t* framebuffer() const = 0;

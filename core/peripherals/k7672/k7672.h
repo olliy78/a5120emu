@@ -35,6 +35,16 @@
  * Cursortasten = Umschalt + Ziffernblock (BIOS: `^H ^X ^D ^E`).  Tastenwiederholung
  * macht die echte K7672 selbst (`ESC [?19h`); hier nicht nachgebildet.
  *
+ * **Tasten der Nachbildung** (Bildschirmtastatur, AP-UI1): `QK_TASTE_BASE | Matrix`
+ * spricht eine PHYSISCHE Taste an (Matrixposition 00H–7FH, Firmware-Register 22H).
+ * Was sie sendet, steht in den Tabellen der Firmware (EPROM D3): im DCP-Modus der
+ * Scancode aus D3 0080H — Bit 7 dort heißt „mit Vorsatz“: Umschalt (2AH) oder Strg
+ * (1DH) je nach Bit 6 der Tastenart (D3 0100H), **kein** `E0` (Firmware 0326H–035FH,
+ * 05C2H) —, im SCP-Modus das Zeichen aus D3 0400H (grund) / 0480H (umgeschaltet).
+ * Tasten ohne Eintrag (FFH) senden nichts; `CL` (7DH) schaltet in der Firmware nur
+ * den Tastenklick um (030BH) und sendet ebenfalls nichts.  Die Umschalt-/Strg-Flags
+ * des Aufrufs gelten als gehaltene Taste (Umschalt bzw. Strg davor und danach).
+ *
  * @see doc/design/16_k8915.md §3.5, §8a AP-E2
  */
 
@@ -86,6 +96,22 @@ public:
      *         Werkzeuge).  Unterliegt `DC3` wie eine Taste. */
     void sendeZeichen(uint8_t ch);
 
+    /// Kennung einer physischen Taste (Matrixposition), siehe Klassenkopf.
+    static constexpr uint32_t QK_TASTE_BASE = 0x03000000;
+    /// Matrixposition der Feststelltaste (Firmware 0303H: schaltet LED 21H Bit 7).
+    static constexpr uint8_t MATRIX_FESTSTELL = 0x26;
+    /// Matrixposition von `CL` (Firmware 030BH: nur Tastenklick um, kein Code).
+    static constexpr uint8_t MATRIX_KLICK = 0x7D;
+    /// Matrixposition von `GRAPH` (SCP: schaltet 60H Bit 5 + LED 21H Bit 6 [?]).
+    static constexpr uint8_t MATRIX_GRAPH = 0x1A;
+    /// Scancode der Taste an Matrixposition @p m aus der Firmware (FFH = keiner;
+    /// Bit 7 = mit Vorsatz, s. @ref vorsatzUmschalt).
+    static uint8_t scancode(uint8_t m);
+    /// Vorsatz einer Taste mit Bit 7 im Scancode: true = Umschalt (2AH), false = Strg (1DH).
+    static bool vorsatzUmschalt(uint8_t m);
+    /// SCP-Zeichen der Taste @p m (FFH = keins).
+    static uint8_t scpZeichen(uint8_t m, bool umschalt);
+
     /** @brief Welches Zeichen sendet der SCP-Modus für diesen Host-Tastencode? (0 = keins) */
     static uint8_t zeichenFuer(uint32_t qt_keycode, bool shift, bool ctrl);
 
@@ -109,6 +135,9 @@ public:
      *        (welche Lampe das ist, sagt die Firmware nicht).  Einschalten und
      *        Neustart (`ESC c`, `ESC [2;0y`) löschen das Register mit dem
      *        Speicherlöscher 04H…7FH.
+     *        Seit AP-UI1 außerdem **Bit 7** = `ESC [?11h/l` und die Feststelltaste
+     *        (Firmware 0467H/0470H, 0303H — die Lampe CAPS) und **Bit 6** =
+     *        `ESC [?18h/l` (048BH/0483H — vermutlich GRAPH **[?]**).
      */
     uint8_t  leds() const           { return leds_; }
     unsigned selbsttests() const    { return selbsttests_; }
@@ -126,6 +155,8 @@ private:
     /// Drücken samt Anpassung von Umschalt/Strg; merkt sich, was beim Loslassen zu tun ist.
     void dcpDruecken(uint32_t schluessel, const DcpTaste& t);
     void dcpLoslassen(uint32_t schluessel);
+    /// Physische Taste (Matrixposition) drücken/loslassen — Firmware-Tabellen.
+    void tasteMatrix(uint8_t m, bool gedrueckt, bool shift, bool ctrl);
 
     Z80SIO* sio_   = nullptr;
     int     kanal_ = 1;
@@ -142,6 +173,9 @@ private:
     bool strg_unten_     = false;     ///< 1DH gesendet, 9DH noch nicht
     struct Gedrueckt { uint32_t schluessel; uint8_t code; int umschalt; int strg; };
     std::deque<Gedrueckt> gedrueckt_;
+    /// Tasten der Nachbildung: je gedrückter Matrixposition die Bytes des Loslassens.
+    struct MatrixGedrueckt { uint8_t m; std::string loslassen; bool umschalt_taste; bool strg_taste; };
+    std::deque<MatrixGedrueckt> matrix_gedrueckt_;
 
     bool        esc_aktiv_ = false;
     std::string esc_folge_;           ///< Zeichen nach ESC

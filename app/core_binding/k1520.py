@@ -301,6 +301,10 @@ _lib.k1520_panel_lamps.restype = ctypes.c_uint8
 _lib.k1520_bell_count.argtypes = [K1520Handle]
 _lib.k1520_bell_count.restype = ctypes.c_uint32
 
+# k1520_nmi(K1520Handle) -> void (K8915: NMI-Taster; A5120: ohne Wirkung)
+_lib.k1520_nmi.argtypes = [K1520Handle]
+_lib.k1520_nmi.restype = None
+
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
 MACHINE_TYPES = {"a5120": 0, "k8915": 2}
 
@@ -410,6 +414,11 @@ class K1520Emulator:
         """Anzeigefeld: Rohbyte des K8915-Latches 61H, **aktiv low** (FFH = alles
         dunkel; Bit4 Lesen, Bit5 Schreiben, Bit6 bereit, Bit7 Fehler).  A5120: 0."""
         return int(_lib.k1520_panel_lamps(self._handle))
+
+    def nmi(self):
+        """NMI-Taster der Frontplatte (K8915): eine /NMI-Flanke, zugestellt beim
+        nächsten :meth:`run`.  Kein /RESET.  Am A5120 ohne Wirkung."""
+        _lib.k1520_nmi(self._handle)
 
     def bell_count(self) -> int:
         """Fortlaufender Zähler der Summertöne — die Oberfläche piept bei Zuwachs."""

@@ -255,6 +255,15 @@ K1520_API uint8_t  k1520_panel_lamps(K1520Handle h);
  *        Never decreases; the GUI beeps on the difference.  A5120: 0.
  */
 K1520_API uint32_t k1520_bell_count(K1520Handle h);
+/**
+ * @brief NMI button (K8915 front panel): one /NMI edge, delivered at the start of
+ *        the next k1520_run().  No /RESET — memory map, SIO, CTC stay as they are.
+ *        With the boot ROM mapped (A8H bit0 = 0) the ROM restarts its self-test
+ *        (0066H); under SCPX RAM sits at 0066H and the CPU jumps there, exactly
+ *        as on the device (not intercepted).  A5120: no effect (no NMI button).
+ *        Thread-safe.
+ */
+K1520_API void     k1520_nmi(K1520Handle h);
 
 #ifdef __cplusplus
 }
