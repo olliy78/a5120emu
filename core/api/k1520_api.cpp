@@ -13,7 +13,8 @@
 #include <filesystem>
 #include <system_error>
 
-#define VERSION "0.1.0"
+#include "core/version.h"
+#define VERSION K1520_VERSION_TEXT
 
 // Das Handle zeigt IMMER auf die Basisklasse — erzeugt wird es in makeMachine()
 // ausdrücklich als K1520Machine*, damit der Rückweg über void* kein Zeigerversatz

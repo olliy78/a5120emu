@@ -103,6 +103,12 @@ PortPruefung portPruefen(int port);
 /// Der neue Socket ist nicht blockierend und hat `TCP_NODELAY`.
 Socket annehmen(SockFd lauscher, Fehler* f = nullptr);
 
+/// Adresse der Gegenstelle eines verbundenen Sockets als Text, numerisch:
+/// `192.168.1.5:40122` bzw. `[::1]:40122`.  Eine IPv4-abgebildete Adresse
+/// (`::ffff:1.2.3.4`, entsteht am Dual-Stack-Lauscher) erscheint als IPv4.
+/// Leer, wenn der Socket nicht verbunden ist.
+std::string gegenstelle(SockFd fd);
+
 // ── Auflösung und Verbinden ──────────────────────────────────────────────────
 
 /// Eine aufgelöste Adresse (undurchsichtig, `sockaddr_storage`-groß).

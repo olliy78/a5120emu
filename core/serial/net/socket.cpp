@@ -275,6 +275,27 @@ Socket annehmen(SockFd lauscher, Fehler* f) {
     return neu;
 }
 
+std::string gegenstelle(SockFd fd) {
+    sockaddr_storage ss{};
+    SockLen len = sizeof ss;
+    if (::getpeername(roh(fd), reinterpret_cast<sockaddr*>(&ss), &len) != 0) return {};
+    char h[NI_MAXHOST] = {};
+    char p[NI_MAXSERV] = {};
+    if (::getnameinfo(reinterpret_cast<sockaddr*>(&ss), len, h, sizeof h, p, sizeof p,
+                      NI_NUMERICHOST | NI_NUMERICSERV) != 0)
+        return {};
+    std::string host = h;
+    if (ss.ss_family == AF_INET6) {
+        // Dual-Stack-Lauscher: ein IPv4-Client erscheint als ::ffff:a.b.c.d.
+        const std::string praefix = "::ffff:";
+        if (host.compare(0, praefix.size(), praefix) == 0 &&
+            host.find('.') != std::string::npos)
+            return host.substr(praefix.size()) + ":" + p;
+        return "[" + host + "]:" + p;
+    }
+    return host + ":" + p;
+}
+
 // ── Auflösung und Verbinden ──────────────────────────────────────────────────
 
 bool Ziel::ist6() const { return familie == AF_INET6; }

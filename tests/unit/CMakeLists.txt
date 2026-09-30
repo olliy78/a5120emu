@@ -63,6 +63,9 @@ k1520_add_test(serial_netz    SRC util/test_serial_netz.cpp    LIBS k1520_serial
 # ── core/serial/ (serielle Schnittstellen nach aussen, Entwurf 19) ───────────
 k1520_add_test(telnet_codec  SRC util/test_telnet_codec.cpp  LIBS k1520_serial_codec LABELS "${_lbl}")
 k1520_add_test(rfc2217_codec SRC util/test_rfc2217_codec.cpp LIBS k1520_serial_codec LABELS "${_lbl}")
+# AP-S4: Wandler (Attrappe statt Socket) und SerialHub über Loopback-TCP — nie feste Ports.
+k1520_add_test(serial_wandler SRC util/test_serial_wandler.cpp LIBS k1520_serial k1520_sio LABELS "${_lbl}")
+k1520_add_test(serial_hub     SRC util/test_serial_hub.cpp     LIBS k1520_serial LABELS "${_lbl}")
 
 # ── core/filesystem/ (k1520DiskTool) ─────────────────────────────────────────
 # Prüft gegen die AUSGELIEFERTE data/formats.yaml und die committeten Disketten.

@@ -115,6 +115,19 @@ if(BUILD_K1520)
         target_link_libraries(k1520_serial_net PUBLIC ws2_32)
     endif()
 
+    # Serielle Schnittstellen nach aussen (Entwurf 19, AP-S4): SerialAnschluss, Wandler,
+    # SerialHub mit I/O-Faden, Transporte Telnet/RFC2217/Datei.  Kennt keine Karte —
+    # die Karten liefern je Schnittstelle einen SerialAnschluss (AP-S5).
+    find_package(Threads REQUIRED)
+    add_library(k1520_serial STATIC
+        core/serial/anschluss.cpp
+        core/serial/wandler.cpp
+        core/serial/transport.cpp
+        core/serial/hub.cpp
+    )
+    target_include_directories(k1520_serial PUBLIC ${CMAKE_SOURCE_DIR})
+    target_link_libraries(k1520_serial PUBLIC k1520_serial_net k1520_serial_codec Threads::Threads)
+
     # Floppy peripheral: Diskettenformat-Datenmodell (DiskFormat/TrackFormat)
     add_library(k1520_floppy STATIC
         core/peripherals/floppy_drive/disk_format.cpp
