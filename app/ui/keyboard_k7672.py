@@ -323,6 +323,9 @@ class KeyboardK7672Widget(KeyboardWidget):
         rand = 0.07 * unit
         for keys in gruppen.values():
             pfad = QPainterPath()
+            # Nicht-Null-Regel: die vergrößerten Zellen überlappen sich, und mit
+            # der Vorgabe (gerade/ungerade) blieben die Überlappungen hell.
+            pfad.setFillRule(Qt.WindingFill)
             for key in keys:
                 pfad.addRect(self._rect_of(key, unit, ox, oy).adjusted(-rand, -rand,
                                                                       rand, rand))
