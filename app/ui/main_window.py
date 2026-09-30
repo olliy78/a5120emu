@@ -1110,7 +1110,12 @@ class MainWindow(QMainWindow):
 
     def _schedule_autosave(self):
         """Queue a debounced write of the current config to the default path."""
-        if self._loading_config or getattr(self, "_autosave_timer", None) is None:
+        # Nach closeEvent nicht mehr: das Abbauen der Kästen meldet noch
+        # Sichtbarkeitswechsel, und ein dann gestarteter Autosave schriebe den
+        # Stand eines geschlossenen Fensters — womöglich über die Datei, die
+        # inzwischen ein anderes Fenster führt.
+        if (self._loading_config or getattr(self, "_geschlossen", False)
+                or getattr(self, "_autosave_timer", None) is None):
             return
         self._autosave_timer.start()  # restarts the single-shot timer
 
@@ -1487,6 +1492,7 @@ class MainWindow(QMainWindow):
         # stammen, das kein Speichern ausgelöst hat.
         self._autosave_timer.stop()
         self._autosave_now()
+        self._geschlossen = True
         self.run_timer.stop()
         self.status_timer.stop()
         self._lamp_timer.stop()

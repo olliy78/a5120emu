@@ -141,7 +141,21 @@ lib built:
 ```sh
 python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
 bash run_a5120emu.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
+bash run_k8915emu.sh      # the same with --machine k8915 (K8915 Emulator)
 ```
+
+> **Zwei Programme, eine Oberfläche** (2026-09-30, AP-UI1,
+> `doc/design/18_k8915emu_oberflaeche.md`, `doc/design/11_python_app.md` §10.9):
+> **A5120 Emulator** (`a5120emu`) und **K8915 Emulator** (`k8915emu`, `app/main.py
+> --machine k8915`).  Alles Maschinenspezifische steht im **Programmprofil
+> `app/profil.py`** (Titel, Konfig-/Vorgabedatei, Takt, Tastatur K7637/K7672,
+> Frontplatte, eigene Aktionen wie `nmi` via `actions.NUR_FUER`) — kein
+> `if machine == …` in der Oberfläche.  Konfiguration je Programm im selben
+> Ordner: **`a5120emu.yaml`** / **`k8915emu.yaml`**, Vorgaben
+> **`data/default_config_a5120.yaml`** / **`default_config_k8915.yaml`**; eine alte
+> `config.yaml` zieht der A5120 beim Start EINMAL nach `a5120emu.yaml` um
+> (`config_io.konfig_umziehen`).  Die Starter der Installation sind EINE Vorlage, der
+> NAME (`k8915emu*`) wählt das Profil.  Wächter: `py_k8915emu_gui`.
 
 > **Die Oberfläche des Emulators ist wie die des DiskTool geschnitten**
 > (2026-09-13, `doc/design/11_python_app.md` §10): **jede Bedienung ist eine
@@ -203,10 +217,10 @@ bash run_a5120emu.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
 > Handbuchs ist ein Vertrag.  Wächter: `py_programme`.
 >
 > **Der Auslieferungszustand ist eine DATEI, kein Programmtext** (2026-09-14,
-> `doc/design/11_python_app.md` §10.7): `data/default_config.yaml` (in der
-> Installation `share/k1520emu/`) hat denselben Aufbau wie die `config.yaml` des
-> Anwenders und wird an zwei Stellen gebraucht — beim ERSTEN Start, solange es
-> noch keine `config.yaml` gibt, und bei *Ansicht ▸ Standard zurücksetzen*, das
+> `doc/design/11_python_app.md` §10.7): `data/default_config_a5120.yaml` bzw.
+> `…_k8915.yaml` (in der Installation `share/k1520emu/`) hat denselben Aufbau wie
+> die `a5120emu.yaml`/`k8915emu.yaml` des Anwenders und wird an zwei Stellen
+> gebraucht — beim ERSTEN Start, solange es noch keine Konfiguration gibt, und bei *Ansicht ▸ Standard zurücksetzen*, das
 > sie nach Rückfrage anwendet und **sofort** zurückschreibt.  Aufgelöst in
 > `app/paths.py::default_config_file()`, gelesen in
 > `app/config_io.py::standard_konfiguration()`.  Vier Dinge dazu:
@@ -404,8 +418,9 @@ Python `K1520Emulator(machine="k8915")`; Bild dort nur über `k1520_screen_char`
 `mem_read`). **`boot_trace`/`k1520dbg` mit `--machine k8915`** (AP-E4d: eine CPU,
 A8H-Speicherbild, `map`/`bank`, Ereignisprotokoll K5122/61H/A8H/Interrupts, Abbruch am
 Prompt; ZVE2/`bbusrq`/Snapshots/Savestates melden „nicht vorhanden“ —
-`tools/k1520dbg.md` §11, `tools/boot_trace.md` §7). **Stand 2026-09-29:**
-Etappen 1–3 fertig (SCPX 8915 V5.3 bootet bis zum Prompt — beide BIOS-Fassungen,
+`tools/k1520dbg.md` §11, `tools/boot_trace.md` §7). **Stand 2026-09-30:** eigenes Programm **k8915emu** (AP-UI1: Frontplatte in der
+Statuszeile, NMI-Taster `k1520_nmi`, Bildschirmtastatur K7672 mit Matrixpositionen —
+Vorsatz 2AH/1DH statt `E0`).  Etappen 1–3 fertig (SCPX 8915 V5.3 bootet bis zum Prompt — beide BIOS-Fassungen,
 drei Systemdisketten als Fixtures, AP-B2), AP-E4a/E4b/**E4c**/E4d/E4e/E4f fertig (C-ABI,
 Werkzeuge, **FORMAT.COM + DISGEN.COM laufen**: Leerdiskette → FORMAT → DISGEN → Kaltstart,
 Wächter `K8915Format.*` in `test-format`; **Drucker (SIO1-B) + DFÜ (SIO2-A, vorläufig) nach

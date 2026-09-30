@@ -3,6 +3,56 @@
 Stand: angelegt 2026-09-29. Gehört zu `doc/design/16_k8915.md` §8a (AP-UI1); ersetzt dort
 den bisherigen Zuschnitt von **E4h** (Maschinenwahl) und **E4i** (Frontplatte).
 
+> **Stand AP-UI1 (erledigt 2026-09-30).** Umgesetzt in vier Commits (Kern → Oberfläche →
+> Paketierung → Doku). Was wo steht:
+>
+> - **Kern:** `K1520Machine::nmi()` (Vorgabe ohne Wirkung), `K8915Machine::nmi()` merkt
+>   den Druck fadensicher vor und stellt die /NMI-Flanke am Anfang von `run()` zu;
+>   C-ABI `k1520_nmi`. `K7672`: `QK_TASTE_BASE | Matrixposition` spricht eine
+>   **physische** Taste an; Scancode, Vorsatz und SCP-Zeichen aus den Tabellen des
+>   EPROMs D3 (0080H Scancode, 0100H Tastenart, 0400H/0480H Zeichen). LED-Register 21H
+>   zusätzlich Bit 7 (CAPS: Feststelltaste, `ESC [?11h/l`) und Bit 6 (`ESC [?18h/l`,
+>   GRAPH [?]). Wächter `K8915Boot.Nmi*`, `K7672.Matrix*`, `test_c_api`.
+> - **Oberfläche:** `app/profil.py` (Programmprofil), `app/main.py --machine`,
+>   `run_k8915emu.sh`, Konfiguration `a5120emu.yaml`/`k8915emu.yaml` + Vorgaben
+>   `data/default_config_{a5120,k8915}.yaml`, Umzug `config.yaml` →
+>   `a5120emu.yaml` (`config_io.konfig_umziehen`), Titel „A5120 Emulator“/„K8915
+>   Emulator“, Frontplatte in der Statuszeile (`status_bar.Frontplatte`), Aktion `nmi`
+>   (`actions.NUR_FUER`), Werkzeugmenü startet den jeweils anderen Emulator (auch aus
+>   dem DiskTool), Bildschirmtastatur `app/ui/keyboard_k7672.py`. Wächter
+>   `tests/python/test_k8915emu_gui.py` (inkl. Boot bis `A>` und `dir` über die
+>   Bildschirmtastatur), CLI-Fälle in `test_a5120emu_cli.py`.
+> - **Paketierung:** eine Starter-Vorlage für beide Emulatoren, der **Name** wählt das
+>   Profil (`k8915emu*` ⇒ `--machine k8915`); `k8915emu.desktop.in`; `.iss` mit zweitem
+>   Startmenü-Eintrag. Wächter `py_packaging`.
+>
+> Tests: `test` 1327/1327, `test-format` 24/24, `test-matrix` 94/94, `win` 1302/1302.
+> Nebenbei behoben: ein geschlossenes Hauptfenster startet keinen Autosave mehr
+> (`MainWindow._geschlossen`) — sonst schrieb der Kastenabbau nach `closeEvent` den Stand
+> eines toten Fensters in die Konfiguration.
+>
+> **Abweichungen von §2/§4:**
+> - **Kein `E0`-Präfix.** Die Firmware (0326H–035FH, IRQ4 05C2H) sendet für Tasten mit
+>   Bit 7 im Scancode einen **Umschalt- (2AH) oder Strg-Vorsatz (1DH)** je Tastenart,
+>   kein `E0` — die Angabe „E0“ in §2 stammte aus einer fremden Nachbildung
+>   (**[Adapter]**). ↑ = `2A 48`/`C8 AA`, ^S = `1D 45`/`9D C5` (= Strg+Pause, das BIOS
+>   schaltet damit XOFF + LED Bit 0).
+> - **Tasten ohne Code:** im DCP-Modus hat jede Taste des Fotos einen Scancode; nur
+>   **CL** sendet nichts (Firmware 030BH: Tastenklick umschalten). Im SCP-Modus
+>   (Boot-ROM) senden die Funktionstasten nichts (ihre ESC-Folgen liegen im fehlenden
+>   Firmwareteil). Beides federt zurück.
+> - **LED-Zuordnung:** READY = Bit 3 (belegt), CAPS = Bit 7 (belegt: die Feststelltaste
+>   schaltet genau dieses Bit, 0303H), GRAPH = Bit 6 (**[?]**: `ESC [?18h/l` schaltet
+>   Modus 60H Bit 5 = zweite Zeichentabelle samt Bit 6). Die drei unbeschrifteten
+>   Punkte über ALT1/^S/MOD2 sind nachgebildet; der über ^S zeigt Bit 0 (**[?]**), die
+>   beiden anderen bleiben dunkel. Farbe GRAPH/CAPS gelb **[?]** (Foto: aus = khaki).
+> - **Rechte Umschalttaste:** zwei Matrixpositionen tragen 36H (16H, 66H) — gewählt 66H
+>   **[?]** (für den Rechner gleichgültig).
+> - **Werkzeugmenü des A5120** hat einen Eintrag mehr („K8915 Emulator starten“) —
+>   von §2 verlangt; sonst ist die A5120-Oberfläche bis auf Titel/Konfig-Name gleich.
+> - **Laufwerkstypen K8915:** nur 5¼″ (K5601, K5600.10, K5600.20) wählbar **[?]**.
+> - **Summer** (`k1520_bell_count`) ist nicht Teil von §2 und nicht umgesetzt.
+
 ## 1. Vorgaben des Anwenders (2026-09-29)
 
 1. Der K8915-Emulator ist ein **eigenes startbares Programm** (`k8915emu`), kein Menüpunkt im

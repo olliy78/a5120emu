@@ -51,6 +51,7 @@ System-Interpreter.
 | `test_config_io.py` | Speichern/Laden, CRT-Parameter-Rundlauf, Toleranz gegen fremde Schlüssel |
 | `test_keyboard_map.py` | `qt_event_to_core_key`: Zeichen, Sondertasten, F1–F8, Ctrl-Kombinationen, Modifikatoren allein |
 | `test_gui_smoke.py` | Hauptfenster offscreen: alle Panels, Emulator, Laufwerksleiste, Konfigurationsrundlauf |
+| `test_k8915emu_gui.py` | K8915 Emulator (AP-UI1): Profil/Titel, eigene Konfiguration + Umzug `config.yaml` → `a5120emu.yaml`, Laufwerke/Takt je Profil, Frontplatte, NMI, Tastatur K7672 gegen das EPROM, Boot bis `A>` + `dir` über die Bildschirmtastatur |
 | `test_programme.py` | Nachbarprogramme starten (`app/programme.py`): Befehlszeile, Abkopplung, Startdatei der Werkzeugkonsole, Werkzeugmenü beider Oberflächen |
 
 ## Grenzen
@@ -65,7 +66,7 @@ System-Interpreter.
   eine committete Fixture darf ein Test nie direkt mounten (der Emulator öffnet
   schreibend).
 - **Eigenes Konfigurationsverzeichnis.** `conftest.py` setzt `XDG_CONFIG_HOME` auf
-  ein Unterverzeichnis, damit `~/.config/k1520emu/config.yaml` des Nutzers
+  ein Unterverzeichnis, damit `~/.config/k1520emu/a5120emu.yaml` (bzw. `k8915emu.yaml`) des Nutzers
   unangetastet bleibt.
 - **`greaseweazle` gehört NICHT in die CI-Abhängigkeiten.** Es brächte keinen
   einzigen zusätzlichen Testfall: hinter `verfuegbar()` steht in der zweiten Zeile

@@ -629,15 +629,16 @@ geht (einlegen bei belegtem, auswerfen bei leerem Laufwerk).
 Der Zustand, in dem der Emulator **nach der Erstinstallation** aufgeht, ist
 keine Sammlung von Vorgabewerten im Programmtext mehr, sondern **eine Datei
 desselben Aufbaus wie die Konfiguration des Anwenders**:
-`data/default_config.yaml` im Quellbaum, `share/k1520emu/default_config.yaml` in
-einer Installation (`packaging/build_payload.sh` legt sie dorthin, Wächter
+`data/default_config_a5120.yaml` bzw. `data/default_config_k8915.yaml` im
+Quellbaum, `share/k1520emu/default_config_*.yaml` in einer Installation (seit
+2026-09-30 je Programm eine, §10.9; vorher `default_config.yaml`) (`packaging/build_payload.sh` legt sie dorthin, Wächter
 `py_packaging`).  Aufgelöst wird sie in `app/paths.py`
 (`default_config_file()`), gelesen in `app/config_io.py`
 (`standard_konfiguration()`), gebraucht an genau zwei Stellen:
 
 * `MainWindow._load_or_create_default_config` — beim ersten Start, solange es
-  noch keine `config.yaml` gibt; sie wird anschliessend als die neue
-  `config.yaml` des Anwenders geschrieben und gehört von da an ihm.
+  noch keine `a5120emu.yaml` bzw. `k8915emu.yaml` gibt; sie wird anschliessend
+  als die neue Konfiguration des Anwenders geschrieben und gehört von da an ihm.
 * `MainWindow._standard_zuruecksetzen` — *Ansicht ▸ Standard zurücksetzen*
   (`act_standard`, kein Tastenkürzel, Symbol `reset-view`).  Nach Rückfrage
   wird die Vorgabe angewandt und **sofort** geschrieben (`_autosave_now()`, nicht
@@ -663,11 +664,11 @@ Vier Festlegungen, die das tragen:
 * **Ohne die Datei läuft alles weiter.**  `standard_konfiguration()` gibt `{}`
   zurück; der erste Start bleibt dann bei den im Programm eingebauten Vorgaben
   (`CRTParams()`, Tempo 1,0, `dt.DEFAULT_DRIVE_TYPES`, `actions.STANDARD`) und
-  schreibt trotzdem eine `config.yaml`, *Standard zurücksetzen* meldet, wo es
+  schreibt trotzdem eine Konfiguration, *Standard zurücksetzen* meldet, wo es
   gesucht hat.  Sie ist eine Beigabe, keine Voraussetzung.
 
 Eine andere Auslieferung herzustellen ist damit ein Kopiervorgang: Fenster
-einrichten, den Inhalt der eigenen `config.yaml` nach `data/default_config.yaml`
+einrichten, den Inhalt der eigenen `a5120emu.yaml` nach `data/default_config_a5120.yaml`
 übernehmen, `disks:` und `window.geometry` streichen.
 
 ### 10.8 Die Nachbarprogramme starten — Werkzeugmenü und Werkzeugkonsole (2026-09-14)
@@ -725,3 +726,49 @@ Das Terminalprogramm wird unter Linux der Reihe nach gesucht
 (`$TERMINAL`, dann `x-terminal-emulator`, `konsole`, `gnome-terminal`, …);
 findet sich keines, nennt die Meldung den Pfad der vorbereiteten Startdatei,
 statt kommentarlos nichts zu tun.
+
+### 10.9 Zwei Programme: A5120 Emulator und K8915 Emulator (2026-09-30, AP-UI1)
+
+Der K8915 bekommt kein Menü im A5120-Emulator, sondern ist ein **eigenes Programm
+mit derselben Codebasis** (`doc/design/18_k8915emu_oberflaeche.md`). Getragen wird das
+vom **Programmprofil** `app/profil.py`: Maschine, Titel, Konfigurations- und
+Vorgabedatei, Takt, Tastatur, Frontplatte, eigene Aktionen. `MainWindow(disks,
+profil=…)` fragt nur das Profil; `app/main.py --machine k8915` wählt es, die Starter
+übergeben es fest (`run_k8915emu.sh`, `bin/k8915emu` — dieselbe Vorlage wie
+`bin/a5120emu`, der Name entscheidet —, Startmenü „K8915 Emulator“).
+
+| | A5120 Emulator | K8915 Emulator |
+|---|---|---|
+| Titel / Programm | „A5120 Emulator“ / `a5120emu` | „K8915 Emulator“ / `k8915emu` |
+| Konfiguration | `a5120emu.yaml` | `k8915emu.yaml` |
+| Vorgabe | `default_config_a5120.yaml` | `default_config_k8915.yaml` |
+| Laufwerke | 3 × K5601 + leer, alle Typen | 2 × K5601, nur 5¼″ |
+| Takt | 2,45 MHz | 2,4576 MHz |
+| Tastatur | K7637 (`keyboard.py`) | K7672 (`keyboard_k7672.py`) |
+| Statuszeile | Takt, Laufwerke | + Frontplatte (6 Lampen) |
+| eigene Aktionen | — | `nmi` (neben Reset, ohne Kürzel) |
+
+Festlegungen, die man nicht aufweichen darf:
+
+* **Kein `if maschine == …` quer durch die Oberfläche** — ein Unterschied gehört ins
+  Profil (oder in eine Tabelle, die nach dem Maschinennamen fragt: `drive_types`,
+  `actions.NUR_FUER`).
+* **Beide Konfigurationen liegen im selben Ordner** (`paths.config_dir()`) und fassen
+  einander nicht an. Die frühere `config.yaml` gehörte dem A5120: gibt es beim Start
+  des A5120 Emulators eine `config.yaml`, aber keine `a5120emu.yaml`, wird sie **einmal
+  umbenannt** (`config_io.konfig_umziehen`, Vermerk im Protokoll) — nicht kopiert, nicht
+  gelöscht; der K8915 rührt sie nicht an. Das DiskTool (QSettings) ist nicht betroffen.
+* **Aktionen, die es nur in einem Programm gibt, entstehen im anderen gar nicht**
+  (`actions.erzeuge_aktionen(fenster, maschine)`, `reihenfolge()`, `standard()`): der
+  A5120 hat keinen NMI-Taster, auch nicht im Einrichtdialog der Symbolleiste. Ein
+  unbekannter Leisten-Name wird wie immer übergangen.
+* **Die Frontplatte** (`status_bar.Frontplatte`): Run grün, Input File/Output File/
+  RUN Mode gelb (61H Bit 4/5/6, aktiv low), ERROR rot (Bit 7), Power rot. Run = die
+  Emulation läuft (Gerät: vermutlich `/HALT` [?]), Power = eingeschaltet. Nachgeführt
+  im 120-ms-Takt der Laufwerksleuchten.
+* **Die K7672 sendet Matrixpositionen** (`TASTE_BASE | m`), nicht Scancodes: was daraus
+  wird (Scancode im DCP-Modus, Zeichen im SCP-Modus), entscheidet der Kern mit den
+  Tabellen der Firmware. Umschalt/CTRL rasten wie bei der K7637 und gehen als Flags mit.
+  Die PC-Tastatur geht als Qt-Code an den Kern, der sie nach der BIOS-Tabelle übersetzt.
+  Wächter: `test_k8915emu_gui.py` (Stichprobe gegen das EPROM, Boot bis `A>` und `dir`
+  über die Bildschirmtastatur).
